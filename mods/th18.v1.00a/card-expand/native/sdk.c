@@ -5,8 +5,8 @@
  *   BP_ce_item_score   0x446cf6  lea eax,[edi+0xc2c]（collect_money_item：esi = 道具身价，已钳 ≥ 10；
  *                      后面 push esi 给弹窗、mul esi 进计分）。沿卡链表调 on_item_score(&esi)。
  *   BP_ce_bomb_spent   0x4203bc  do_bomb 里 consume_bomb 刚返回。沿卡链表调 on_bomb_spent()。
- *   BP_ce_enemy_drop   0x430510  Enemy__drop_items_and_notify_cards 入口（ecx = 敌人）。撒道具之前
- *                                沿卡链表调 on_enemy_drop_pre(counts)，counts = 敌人 +0x04 起 20 个 int32。
+ *   BP_ce_enemy_drop   0x430510  Enemy__drop_items_and_notify_cards 入口（ecx = zEnemyDrop = enemy+0x623c，不是敌人）。撒附加表之前
+ *                                沿卡链表调 on_enemy_drop_pre(counts)，counts = zEnemyDrop+0x04 起 20 个 int32；主掉落 +0x00 已经撒过（S10）。
  *   BP_ce_item_money   0x446d28  inc [MONEY_TOTAL]（紧接 inc [MONEY]）。沿卡链表调 on_item_money(&bonus)，
  *                      bonus > 0 时 MONEY 与 MONEY_TOTAL_COLLECTED 一起 += bonus；原两条 inc 照常放行。
  *   ce_sdk_on_shop_open          不是断点：shop.c 的 BP_ce_shop_reopen 在 MSG 开店那一帧调它，沿卡链表调 on_shop_open()。
@@ -249,16 +249,16 @@ int __cdecl BP_ce_bomb_spent(x86_reg_t *regs, void *bp_info)
     return BP_EXEC_ORIGINAL;
 }
 
-/* Enemy__drop_items_and_notify_cards 0x430510 入口（thiscall，ecx = 敌人）：在引擎**撒之前**
+/* Enemy__drop_items_and_notify_cards 0x430510 入口（thiscall，ecx = zEnemyDrop = enemy+0x623c）：在引擎撒**附加表**之前
  * 把掉落数表交给卡改。改完引擎自己按各 type 正确的角度/速度去撒 —— 比自己调
  * ItemManager__spawn_items（8 个栈参、零售调用方还留了没填的槽）稳得多。AUDIT §S。 */
 int __cdecl BP_ce_enemy_drop(x86_reg_t *regs, void *bp_info)
 {
     (void)bp_info;
     uint8_t *mgr = CE_ABILITY_MGR();
-    uint8_t *enemy = (uint8_t *)regs->ecx;
-    if (!mgr || !enemy) return BP_EXEC_ORIGINAL;
-    int32_t *counts = (int32_t *)(enemy + CE_ENEMY_DROP_COUNTS);
+    uint8_t *drop = (uint8_t *)regs->ecx;                       /* zEnemyDrop，不是敌人对象（S10）*/
+    if (!mgr || !drop) return BP_EXEC_ORIGINAL;
+    int32_t *counts = (int32_t *)(drop + CE_ENEMY_DROP_COUNTS);
     unsigned guard = 0;
     for (const uint8_t *node = *(const uint8_t *const *)(mgr + CE_MGR_CARD_LIST_FIRST);
          node && guard < 256;

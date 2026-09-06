@@ -22,6 +22,8 @@ typedef struct ce_card ce_card_t;          /* = zCardBaseClass*，只通过下�
 #define ce_card_entry(c)  (*(uint8_t **)((uint8_t *)(c) + CE_CARD_TABLE_ENTRY))
 #define ce_card_flags(c)  (*(uint32_t *)((uint8_t *)(c) + CE_CARD_FLAGS))
 #define ce_state(c, T)    ((T *)ce_state_user((c), sizeof(T)))      /* 私有状态（SDK §4）：块头 16 字节是 SDK 的（主动卡状态机），卡从其后起 */
+/* on_enemy_drop_pre 的 counts 是 zEnemyDrop+0x04；主掉落类型在 +0x00（AUDIT S10）*/
+#define ce_drop_main(counts) ((int32_t *)((uint8_t *)(counts) - CE_ENEMY_DROP_COUNTS + CE_ENEMY_DROP_MAIN))
 
 typedef struct {
     int  (*ctor)(ce_card_t *);                                   /* +0x00 非 0 = 当场删卡 */
@@ -43,7 +45,8 @@ typedef struct {
     /* 虚表之外的事件（SDK §6，断点实现）*/
     void (*on_item_score)(ce_card_t *, int32_t *value);          /* 道具身价算完、显示与计分之前 */
     void (*on_item_money)(ce_card_t *, int32_t *bonus);          /* 金钱道具入账（MONEY += 1）之前：*bonus 是额外要加的钱，MONEY 与 MONEY_TOTAL 一起加 */
-    void (*on_enemy_drop_pre)(ce_card_t *, int32_t *counts);     /* 敌人撒道具**之前**：counts 是 CE_ENEMY_DROP_TYPES 个 int32，改它就改掉落数 */
+    void (*on_enemy_drop_pre)(ce_card_t *, int32_t *counts);     /* 敌人撒附加掉落表**之前**：counts = zEnemyDrop.ex_drop（20 个 int32，只撒 1..0x13）。
+                                                                  * 主掉落（dropMain 那一颗）此时已经撒了，用 ce_drop_main(counts) 读类型，要翻倍就往 counts[type-1] 补 */
     void (*on_bomb_spent)(ce_card_t *);                          /* 炸弹刚扣完（consume_bomb 返回那一条）：改 CURRENT/MAX_BOMBS 的时机，同帧生效不闪 */
     void (*on_shop_open)(ce_card_t *);                           /* 每关过关、MSG 请求开第一家店那一帧（商店对象还没建）：改 MONEY 店里就能看到；重开的第二家不算 */
     /* 主动卡（SDK §9）：active_recharge != 0 就是主动卡（C 键 / 充能 / HUD 由 SDK 与引擎处理）*/

@@ -122,6 +122,8 @@ test-host:
 	./tests/build/test_truesilver_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_guding_core tests/test_guding_core.c cards/guding_core.c
 	./tests/build/test_guding_core
+	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_double_core tests/test_double_core.c cards/double_core.c
+	./tests/build/test_double_core
 
 ## x87 自检 —— 只看我们自己的目标文件
 dllx87: $(OBJS)

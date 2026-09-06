@@ -72,6 +72,9 @@
   它取 `drop_counts[type2] / 3`，在 `pos` 附近散射**同样数量的 type 2（金钱）道具**。
   与 THBWiki「让敌人掉落额外的金钱」逐字吻合，且**给出了确切倍率：额外 1/3**。
 - **④ 结论**：**+0x30 = `on_enemy_dropped_items(pos, drop_counts)`；Yachie 的效果 = 金钱道具 ×(1 + 1/3)** ✅。
+- **⑥ 补（2026-09-07，一手）**：`0x430510` 的 `ecx` 是 `zEnemyDrop`（`enemy+0x623c`，`0x430499`），不是敌人；表是它的 `+0x04 ex_drop[20]`（ECL `dropExtra`），
+  循环只撒 type 1..0x13。`+0x00 main_drop`（ECL `dropMain` / `enmCreate` 第 6 参，杂兵的那一颗）由调用方在**调它之前**单独 `spawn_item`（`0x430469`、`0x42d0c6`），
+  不在这张表里、也不进 `+0x30` 的广播。要改杂兵掉落得在 `0x430510` 入口前后同时看两处（`mods/th18.v1.00a/card-expand` AUDIT S10）。
 - **⑤ 证据**：`0x430510`、`0x4306E9`、`0x40D630`；item type 2 的收集处理见
   `ItemManager__collect_money_item` `0x446B00`（[`05-shop-and-money.md`](05-shop-and-money.md) §6）。
 

@@ -36,9 +36,11 @@
 #define CE_ADDR_REPLAY_SAFE_RNG    0x4cf288   /* zRng REPLAY_SAFE_RNG（ExpHP）：弹幕 / 敌人 / 自机弹 / 零售卡（Suwako、Yachie、Miko）都用它；
                                                  * 0x4cf280 那个是商店 / UI 的非回放 RNG（pick_weighted_random_offer 0x41717b）。gameplay 随机一律走 0x4cf288。AUDIT §V */
 #define CE_ADDR_PLAYER_PTR         0x4cf410   /* zPlayer*（ExpHP statics；Nitori/Momoyo 都从这读）*/
-#define CE_ENEMY_DROP_COUNTS       0x04       /* 敌人对象里掉落数表的偏移：20 个 int32（type 1..0x13，(type-1)*4）。
-                                                 * Enemy__drop_items_and_notify_cards 0x430510 按它逐个 spawn，
-                                                 * 广播完 vtable+0x30 后 memset(+0x04, 0, 0x50)。AUDIT §S */
+#define CE_ENEMY_DROP_MAIN         0x00       /* zEnemyDrop（enemy+0x623c；0x430510 的 ecx 就是它，0x430499 lea ecx,[edi+0x623c]）：
+                                                 * +0x00 main_drop：dropMain / enmCreate 第 6 参的那一颗，引擎在调 0x430510 之前撒（0x430469），调完清零（0x4304aa）*/
+#define CE_ENEMY_DROP_COUNTS       0x04       /* +0x04 ex_drop[20]：dropExtra 表，20 个 int32（(type-1)*4）。
+                                                 * Enemy__drop_items_and_notify_cards 0x430510 按 type 1..0x13 逐个 spawn（第 20 格不撒），
+                                                 * 广播完 vtable+0x30 后 memset(+0x04, 0, 0x50)。AUDIT §S / S10 */
 #define CE_ENEMY_DROP_TYPES        20
 #define CE_ADDR_BOMB_MGR           0x4cf2b8   /* 炸弹管理器*；+0x30 = 「正在放炸弹」（do_bomb 置 1，Bomb__can_bomb_and_deathbomb_check 0x420420 查它）*/
 #define CE_BOMB_ACTIVE             0x30       /* 上面那个标志在对象里的偏移 */

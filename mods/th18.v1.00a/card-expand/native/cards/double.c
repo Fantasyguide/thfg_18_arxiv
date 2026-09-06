@@ -16,11 +16,14 @@
  * ★ 只在 CURRENT_LIVES > 0 时多扣，残机永远不会被我们压到负数（引擎自己那一下照常）。
  *
  * 【掉落 ×2】走 SDK 事件 on_enemy_drop_pre（断点 ce_enemy_drop @ 0x430510 入口，AUDIT §S）：
- * 在引擎**撒之前**把敌人 +0x04 起的 20 个掉落数翻倍，撒的活还是引擎自己干 ——
+ * 在引擎**撒之前**把附加掉落表（zEnemyDrop+0x04，dropExtra 那 20 格）翻倍，撒的活还是引擎自己干 ——
  * 各 type 的角度、速度、位置都不用我们操心。
  * （+0x30 那个槽是「撒完之后」才广播、且广播完就 memset 清零，在那里改已经晚了。）
+ * ★ 2026-09-07 修：小怪的掉落是 dropMain 给的**主掉落**（zEnemyDrop+0x00，一颗），引擎在调 0x430510 之前就撒了，
+ *   之前只翻附加表 ⇒ 小怪看着没加倍。现在把主掉落类型补进附加表对应格（+1），引擎的附加循环再撒一颗（double_core.c，AUDIT S10）。
  */
 #include "sdk.h"
+#include "double_core.h"
 
 static int on_death_after_deathbomb(ce_card_t *c, uint32_t acc)
 {
@@ -37,8 +40,9 @@ static int on_death_after_deathbomb(ce_card_t *c, uint32_t acc)
 static void on_enemy_drop_pre(ce_card_t *c, int32_t *counts)
 {
     (void)c;
-    for (int i = 0; i < CE_ENEMY_DROP_TYPES; ++i)
-        if (counts[i] > 0) counts[i] *= 2;
+    int32_t main_drop = *ce_drop_main(counts);
+    int slot = dbl_apply(main_drop, counts);
+    if (slot >= 0) ce_log("double: main drop type %d already spawned once, +1 via ex_drop[%d]", main_drop, slot);
 }
 
 CE_CARD(69, .on_death_after_deathbomb = on_death_after_deathbomb,
