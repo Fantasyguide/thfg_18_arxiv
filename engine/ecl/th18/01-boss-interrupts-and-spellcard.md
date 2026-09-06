@@ -73,7 +73,28 @@ if (slot.time <= data.time_in_ecl.cur) {
 
 boss 找法照 `0x4237F0`：`boss_ids[i]` → 走 `+0x18c` 链表比 `enemy+0x6830`。
 
-## 5. Follow-up
+## 5. 中断槽的命名约定：怎么认出「最后一张符卡」（2026-09-07，ECL 一手）
+
+起因：卡牌扩展 mod 的「古锭刀」（终符期间伤害翻倍）。方法：`thecl -d 18 -m th18.eclm` 反出 `st01–07bs.ecl` 与 `st01–07mbs.ecl`
+（`local/th18.v1.00a/ecl/`），列出每张符卡前的 `setInterrupt(0, 0, time, "子程序")`。
+
+| 文件 | 符卡的中断槽子程序名（文件顺序）|
+| --- | --- |
+| st01bs | `Boss2` `BossDead` |
+| st02bs / st03bs / st04bs | `Boss2` `Boss3` `BossDead` |
+| st05bs | `Boss2` `Boss3` `Boss4` `BossDead` |
+| st06bs | `Boss2` … `Boss6` `BossDead` |
+| st07bs | `Boss2` … `Boss10` `BossDead`（Card9 耐久符 → `Boss10`，Card10 终符 → `BossDead`）|
+| st07mbs | `MBoss2` `MBoss3` `MBossDead` |
+| st01–06mbs | 无 `spell` / `spellEx`：主线道中 boss 只有计时非符（`setInterrupt(1, 0, t, "MBossDead")`）|
+
+- **结论 ✅（th18 全覆盖）**：boss 当前活动槽（§2 的「第一个 `hp_value > -1 && time > 0`」）的子程序名含 `Dead` ⇔ 这段攻击结束即 boss 死亡 ⇔ 最后一张符卡。
+  Extra 道中槽 1 常驻 `MBossDead`（整体计时），但符卡用槽 0、序号在前，不会被误取。
+- **不要用 `stars`（ECL 540）**：它只是血条旁的星数显示。主线 boss 严格（`stars(N)` = 本符之后还剩 N 张），但 st07mbs 的 `MBoss2` / `MBoss3` 都写 `stars(0)`、`MBoss1` 不写——按它判，Extra 道中第二张符卡就会被当成终符。
+- 🟡 4 参 `setInterrupt`（ECL 514）把名字写进 `sub_life`（`+8`）还是 `sub_timeout`（`+0x48`）未逐行反；终符击破 / 超时都进 `BossDead`，所以两个都是它。mod 两个都查。
+- 用法：`mods/th18.v1.00a/card-expand/native/cards/guding_core.c`（`gd_find_active_slot` / `gd_slot_is_final`，主机单测）。
+
+## 6. Follow-up
 
 - 🟡 `0x4cf280` = REPLAY_UNSAFE_RNG、`0x4cf288` = REPLAY_SAFE_RNG（ExpHP 相邻命名规律 + 使用者分布），未登记进 `engine.h`。
 - 🟡 `zSpellcard+0x24` 的语义（超时 60 帧内不清奖励的那个门）未追。

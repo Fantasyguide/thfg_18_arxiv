@@ -120,6 +120,8 @@ test-host:
 	./tests/build/test_firelord_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_truesilver_core tests/test_truesilver_core.c cards/truesilver_core.c
 	./tests/build/test_truesilver_core
+	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_guding_core tests/test_guding_core.c cards/guding_core.c
+	./tests/build/test_guding_core
 
 ## x87 自检 —— 只看我们自己的目标文件
 dllx87: $(OBJS)

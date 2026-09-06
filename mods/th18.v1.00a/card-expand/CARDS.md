@@ -79,6 +79,18 @@ Mr. Bones / Gros Michel 这类「自毁」卡以后都走它。
 
 **真银圣剑（75）补充**：`category: 1`（用户：放装备区）——图鉴 / 编成排在零售子机卡之后，且 SDK 绑定时按零售装备卡置 flags bit6 ⇒ HUD 装备行（破损核心同此，AUDIT X11）。炉石 4/2 → 400 伤害 / 2 耐久。数字贴图 `ability/truesilver/DIGIT_0..9.png`（`make_truesilver_art.py`，DejaVu Serif Bold 白字黑描边 32×32，ability.anm entry24–33 / sprite126–135）；script99 与零售 HUD 图标脚本同款 `layer(26); resolutionMode(2)`，`pos(1080, 561)` = 图标根脚本 (1056, 537) + (24, 24)，实体坐标抄图标根 VM 的 `+0x5f0`。**偏移待实跑调**。卡图用户提供的圣剑插画（`_art/Holy_Sword.png` 居中裁 4:5 后 `fit_card.py`，sprite 152/153）。
 
+## 致敬・三国杀
+
+| id | 名字 | 效果 | 实现（槽 / 事件） | 文件 | 状态 |
+| --- | --- | --- | --- | --- | --- |
+| 76 | 古锭刀 | 装备「武器」：boss 的**最后一张符卡**（终符）期间自机弹伤害 ×2（含 Extra 道中 boss）；炸弹与其他卡的伤害源不翻 | `on_tick_2` 每帧判「符卡进行中 && boss 活动中断槽的子程序名含 `Dead`」并把每敌每帧上限抬到 `sht+0x28` 基值 ×2；`on_bullet_created` 照 K♠ 把 `bullet+0x9c` ×2。AUDIT §Y | `guding.c` + `guding_core.c` | 🔧 |
+
+**古锭刀（76）补充**：「终符」的判据来自 ECL 一手（[`engine/ecl/th18/01`](../../../engine/ecl/th18/01-boss-interrupts-and-spellcard.md) §6）：ZUN 每段攻击用
+`setInterrupt(0, hp, time, "下一段子程序")` 衔接，七关 boss + Extra 道中最后一张符卡的槽名一律 `BossDead` / `MBossDead`，其余 `Boss2`…`Boss10`。
+血条旁的星数（ECL 540 `stars`）不可靠——Extra 道中第二、三张符卡前都写 `stars(0)`，所以不用它。主线 1–6 关道中 boss 没有符卡，自然不触发。
+只翻自机弹不抬上限会白翻（贴脸时自机弹已把 `player+0x47984` 吃满），所以两处一起做；抬的是 sht 基值的 2 倍而不是当前值的 2 倍，免得把炎魔 / 青眼那帧抬过的 300 再翻。
+`category: 1`（武器归装备区，真银圣剑同款）。卡图用户提供的三国杀原卡（`_src/GUDING.png` 320×436，`fit_card.py --no-detect --trim 0 --margin 0` 等比覆盖裁上下各 ~4％，sprite 154/155）。
+
 ## 装备（子机）
 
 | id | 名字 | 效果 | 实现（槽 / 事件） | 文件 | 状态 |

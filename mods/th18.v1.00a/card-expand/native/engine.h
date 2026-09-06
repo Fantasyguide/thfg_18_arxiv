@@ -184,7 +184,8 @@
 #define CE_PLAYER_INVULN_TIMER     0x47774    /* zTimer{prev,cur,float}；复活 0x45c35e 置 {0x117,0x118,280.0}，决死救回 60，炸弹各自置（SDK）*/
 #define CE_PLAYER_SPEED_MULT       0x477ec    /* float；Player tick 末尾 0x45c702 复位 1.0；移动 0x45b5b6 读。AbilityManager tick(0x16) 先于 Player(0x17) → on_tick_2 里写生效（SDK）*/
 #define CE_PLAYER_SPEED_BASE       0x477f0    /* float×2，每帧从 0x5217dc 复制（0x45c717）*/
-#define CE_PLAYER_SHT_PTR          0x47940
+#define CE_PLAYER_SHT_PTR          0x47940    /* zPlayer.sht_file*：GameThread 0x443d32 `mov eax,[ecx+0x47940]; mov eax,[eax+0x28]` 每帧复位伤害上限 */
+#define CE_SHT_MAX_DMG             0x28       /* sht 头 i32 max_dmg：Reimu 90 / Marisa 160 / Sakuya 60 / Sanae 120（engine/sht/th18/01 §5）；古锭刀终符抬到它的 2 倍 */
 #define CE_PLAYER_DAMAGE_MULT      0x47980    /* float；EnemyManager tick 读后复位 1.0（0x42e02f）——别用，顺序不可控 */
 #define CE_PLAYER_ITEM_ATTRACT_SPD 0x47988    /* float：Player__reset {5,30,70,70}，Nitori on_load {10,30,110,110}（ExpHP 名 + SDK）*/
 #define CE_PLAYER_ITEM_COLLECT_R   0x4798c

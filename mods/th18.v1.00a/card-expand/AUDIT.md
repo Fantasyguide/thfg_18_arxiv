@@ -1060,6 +1060,33 @@ type 1 → 只注册 on_tick `0x475c70`（`register__on_tick(…, 0x14)`），�
 
 **实跑要看的**：见 [`NEXT.md`](NEXT.md) §1k。崩溃优先怀疑 X1 / X3 的哑参、X2 的 thiscall；视觉看 X5。
 
+## Y. 古锭刀（id 76）—— 终符期间自机弹伤害 ×2
+
+**没有手写机器码、没有新断点、不调任何新引擎函数、不改任何字节**。读的都是已在用的结构（神之宣告的 boss / 中断槽链、K♠ 的 `bullet+0x9c`、
+炎魔的 `ce_raise_damage_cap`），新读一个 `sht+0x28`。纯逻辑 `guding_core.c` 主机单测（26 例：活动槽选择、`Dead` 匹配含 0x40 满长无终止符、状态沿、倍率）。
+
+| # | claim | 结论 |
+| --- | --- | --- |
+| Y1 | 「终符」= 活动中断槽子程序名含 `Dead` | **CONFIRMED（ECL 一手，全覆盖）** —— 见下「Y1 证据」：七关 boss + Extra 道中最后一张符卡的槽名全是 `BossDead` / `MBossDead`，其余 `Boss2`…`Boss10`；主线道中无符卡 |
+| Y2 | 活动槽 = 第一个 `hp_value > -1 && time > 0` | **CONFIRMED** —— 与引擎超时判定同一条规则（`0x42edf5`，§O28）；神之宣告 `expire_current_attack` 已实跑用它。Extra 道中槽 1 常驻 `MBossDead`（整体计时）但槽 0 在前，Card1 / Card2 期间取到的是 `MBoss2` / `MBoss3` ⇒ 不误判（单测覆盖） |
+| Y3 | 4 参 `setInterrupt` 把名字写进 `sub_life` 与 `sub_timeout` 哪一个 | **推理（领域）** —— 击破走 `sub_life`（`+8`）、超时走 `sub_timeout`（`+0x48`）（§2 ③ / ①），而终符无论击破还是超时都进 `BossDead` ⇒ 两个都是它。代码两个都查、任一含 `Dead` 即算（`gd_slot_is_final`），不押注哪个 |
+| Y4 | 为什么不用 `stars`（ECL 540） | **CONFIRMED 反例** —— st07mbs `MBoss2` / `MBoss3` 都写 `stars(0)`，Card2 会被当终符；`MBoss1` 根本不写。主线 boss 倒是严格（`stars(N)` = 本符之后还剩几张） |
+| Y5 | 翻倍两处一起 | **CONFIRMED（V20 同一事实）** —— 自机弹与卡的源共用每敌每帧上限，贴脸时已吃满，只翻弹不抬等于白翻。抬到 **sht 基值** ×2 而非当前值 ×2，见下「Y5 证据」 |
+| Y6 | 时序 | **CONFIRMED** —— GameThread（0x10）复位上限 → AbilityManager tick（0x16）`on_tick_2` 判定 + 抬 → Player tick（0x17）建弹调 `+0x28` 读同帧判定 → Enemy（0x1b）结算。`on_bullet_created` 只读私有状态，不再走链表 |
+| Y7 | 边界 | **设计** —— 符卡超时：引擎把槽 `hp_value` 写 -1（§2 ①）⇒ 活动槽消失 ⇒ 判定同帧落下，bit0 还挂着的窗口不翻。神之宣告推超时同理。过关 `on_stage_start` 清 `active`；局末 `on_run_reset` 清统计。`sht` 指针空（进关前）→ 上限不抬、弹也没有 |
+| Y8 | 炸弹 / 其他卡不翻 | **设计（用户定）** —— 只改 `bullet+0x9c`；炸弹与 `ce_damage_rect` 的源不经 `+0x28` 槽。抬上限对它们只是「更松」，不是「翻倍」 |
+
+**Y1 证据**：`thecl -d 18 -m th18.eclm` 反出 `st01–07bs.ecl` / `st01–07mbs.ecl`，每张符卡前的 `setInterrupt(0, 0, t, …)` 按文件顺序：
+st01 `Boss2 BossDead`、st02 / st03 / st04 `Boss2 Boss3 BossDead`、st05 `Boss2 Boss3 Boss4 BossDead`、st06 `Boss2…Boss6 BossDead`、
+st07 `Boss2…Boss10 BossDead`（Card10 终符，Card9 耐久符去 `Boss10`）、st07mbs `MBoss2 MBoss3 MBossDead`。
+主线道中（st01–06mbs）无 `spell` / `spellEx`，只有 `setInterrupt(1, 0, t, "MBossDead")` 计时非符——符卡位不置，不触发。
+表格在 [`engine/ecl/th18/01`](../../../engine/ecl/th18/01-boss-interrupts-and-spellcard.md) §5。
+
+**Y5 证据**：`0x443d32` `mov eax,[ecx+0x47940]; mov eax,[eax+0x28]; mov [ecx+0x47984],eax`（GameThread 每帧复位，一手反汇编）⇒ `player+0x47940` 是 sht 指针、
+`sht+0x28` 是 `max_dmg`（`engine/sht/th18/01` §5 的数值表）。取基值 ×2 而不是当前值 ×2：同帧炎魔 / 青眼可能已把它抬到 300，再翻会变 600。`ce_raise_damage_cap` 只抬不降。
+
+**实跑要看的**：见 [`NEXT.md`](NEXT.md) §1l。崩溃优先怀疑：`find_enemy` 链表（与神之宣告同一段代码，已实跑）；视觉：终符血条掉速对比前一张符卡。
+
 ## G. OPEN —— 还没解决的
 
 | # | 事项 | 说明 |

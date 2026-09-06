@@ -14,6 +14,7 @@
 | 7 商店、10 JSON 数据 | 🔧 待实跑（AUDIT §N）|
 | 9 行为（SDK + 黑桃五张 + 强欲之壶 + 反转牌）| 🔧 待实跑（AUDIT §O）← **先做这个** |
 | 8 卡图 | 🔧 工具就位（[`assets/`](assets/README.md)）：黑桃五张占位图 sprite 118–127 已进 `_255/th18/abcard.anm`，待实跑 |
+| **20 古锭刀（id 76）** | 🔧 **待实跑**（AUDIT §Y）—— 被动武器：boss 终符期间自机弹伤害 ×2（含 Extra 道中）；判据 = 活动中断槽名含 `Dead`（§1l）|
 | **19 真银圣剑（id 75）** | 🔧 **待实跑**（AUDIT §X）—— 被动武器：每关前 2 发炸弹 +400 伤害 + 1 残机碎片；**HUD 小卡上画剩余次数**（第一次用虚表 `+0x44` 与 UI 列表建 VM，偏移待调，§1k）|
 | **18 倒吊人（id 74）** | 🔧 **待实跑**（AUDIT §W）—— 即时卡：随机摧毁卡组里另一张卡 + 300 金钱；**第一个局中删卡原语 `ce_destroy_card`**（§1j）|
 | **17 黄金小丑（id 73）** | 🔧 **待实跑**（AUDIT §W）—— 被动：每关进店金钱 +20％；新事件 `on_shop_open`（不开断点）|
@@ -145,6 +146,20 @@ trace: card 59 on_tick_2 (+0x2c) first hit / card 62 on_tick_2 / card 61 on_bull
 `on_power_level_change`（破损核心会在此重申请子机——零售装备卡同款）、`ce_rand` 的 thiscall、V17 震屏工厂的 fastcall + `ret 0x10`（第一颗火球落地那帧崩就是它）。
 视觉怀疑：火球方向（script92 不碰 rotate，C 写 `vm+0x44`；贴图朝 +x）、本体是否被 script91 拉回原点（脚本不碰 pos，应不会）、
 拖尾是否堆在火球身后而不是身前（起在当前帧坐标、火球下一帧才前进）。
+
+## 1l. 古锭刀（id 76，2026-09-07，待实跑，致敬三国杀）
+
+被动「武器」：boss 的最后一张符卡（终符）期间自机弹伤害 ×2，每敌每帧上限同步抬到 sht 基值 ×2；炸弹 / 其他卡不翻。
+不开新断点、不改字节、不调新引擎函数。判据：符卡进行中 && boss 活动中断槽子程序名含 `Dead`（ECL 一手：七关 + Extra 道中全覆盖，
+[`engine/ecl/th18/01`](../../../engine/ecl/th18/01-boss-interrupts-and-spellcard.md) §6）。审计 [`AUDIT.md`](AUDIT.md) §Y。
+`cards_dev.js` 起手卡组没带它——`_test` 商店里买，或临时把起手一格换成 76。**要在零售关看**（devstage 空壳 ECL 的 boss 只有一段攻击）。
+
+应有：非终符阶段日志无 `guding:` 行；boss 进最后一张符卡的那一帧 `guding: final spell ON (boss enemy_id N, interrupt slot 0) -> bullet damage x2, cap 90 -> 180`
+（Reimu 90 / Marisa 160 / Sakuya 60 / Sanae 120），血条掉速肉眼约两倍；符卡结束（击破 / 超时 / 神之宣告）→ `guding: final spell OFF (F frames, B bullets …)`。
+st01 Mike 第二张符卡最直观；Extra 道中 Tsukasa 只有第三张符卡触发（前两张 `MBoss2` / `MBoss3`）。主线 1–6 关道中 boss 不该出现 `ON`。
+局末 `guding: run reset (…)`。崩溃优先怀疑：`find_enemy` 链表（神之宣告同款，已实跑通过）。
+
+通过后：CARDS.md 🔧 → ✅；AUDIT §Y 顶部记「实跑通过」。
 
 ## 1k. 真银圣剑（id 75，2026-09-06，待实跑，致敬炉石传说）
 

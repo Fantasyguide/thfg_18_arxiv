@@ -267,5 +267,20 @@
     "weight": 2,
     "sprite_large": 152,
     "sprite_small": 153
+  },
+  "76": {
+    "name": "古锭刀",
+    "desc": [
+      "boss 的最后一张符卡期间，",
+      "自机弹伤害翻倍。",
+      "包括 Extra 的道中 boss。致敬・三国杀。"
+    ],
+    "internal_name": "GUDING",
+    "initial_unlocked": 1,
+    "category": 1,
+    "price_tier": 7,
+    "weight": 2,
+    "sprite_large": 154,
+    "sprite_small": 155
   }
 }
