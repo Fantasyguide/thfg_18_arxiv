@@ -81,7 +81,7 @@
 #define CE_PLAYER_DMGSRC_POOL      0x20574    /* zPlayerDamageSource[0x400]，stride 0x9c；flags bit0 active、bit1 圆形（create_45de40）/ 清 = 矩形（engine/player/th18/02-damage-sources.md）*/
 #define CE_PLAYER_DMGSRC_STRIDE    0x9c
 #define CE_PLAYER_DMGSRC_SLOTS     0x400
-#define CE_PLAYER_DAMAGE_CAP       0x47984    /* int：敌人侧 enm_compute_damage_sources 0x45f0f0 把本帧总伤害钳到它（0x45f28b）；GameThread 0x443d3b 每帧从 sht+0x28 复位；Remilia 0x40f48e 抬到 300。本 mod 只读不写 */
+#define CE_PLAYER_DAMAGE_CAP       0x47984    /* int：敌人侧 enm_compute_damage_sources 0x45f0f0 把本帧总伤害钳到它（0x45f28b）；GameThread 0x443d3b 每帧从 sht+0x28 复位；Remilia 0x40f48e 抬到 300。本 mod 照 Remilia 在卡 tick 里抬（ce_raise_damage_cap，炎魔爆炸帧；AUDIT V20）*/
 #define CE_ADDR_ANM_MANAGER_PTR    0x51f65c   /* zAnmManager*（ExpHP ANM_MANAGER_PTR；interrupt_tree 0x488be3 读）*/
 #define CE_FN_ANM_GET_VM_WITH_ID   0x488b40   /* thiscall(ANM_MANAGER; id) ret 4 → zAnmVm* / 0（fast 数组 0x624 步长或 world/ui 链表；AUDIT O29c）*/
 #define CE_FN_ANM_INTERRUPT_TREE   0x488be0   /* stdcall(id, n) ret 8：自取 ANM_MANAGER_PTR，找到 VM 写 +0x494 = n 并递归子树（Tenshi 到时长调 (id, 1)）*/

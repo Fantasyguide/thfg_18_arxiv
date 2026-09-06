@@ -24,7 +24,13 @@
 #define FL_BOB_AMP        4.0f      /* px：浮动半幅（本体 64 px 高）*/
 #define FL_BALL_SPEED     4.0f     /* px / 帧（2026-09-06 用户：放慢）：满场 ~600 px 也在 150 帧内到，仍远小于 480 的周期 ⇒ 场上最多一颗 */
 #define FL_BLAST_FRAMES   12       /* 爆炸持续帧：每帧一个新伤害源（一个源对同一敌人只结算一次）。2026-09-06 用户：伤害加大 → 8 → 12 帧 */
-#define FL_BLAST_DMG      50       /* 每帧；12 × 50 = 600。50 ≤ 四个自机的每帧上限最小值（Sakuya 60）⇒ 不被钳；加帧数而不是加单帧值就是为了这个 */
+#define FL_BLAST_DMG      100      /* 每帧；12 × 100 = 1200（2026-09-06 用户：加强）。★ 只有配合 FL_BLAST_CAP 才是实数：
+                                    * 自机弹与我们的源共用「每个敌人每帧」的总伤害上限 player+0x47984（Reimu 90 / Marisa 160 / Sakuya 60 / Sanae 120），
+                                    * 自机对着 boss 开火时配额已被吃满，不抬上限火球只能补差额（此前 50 × 12 名义 600 实际接近 0）*/
+#define FL_BLAST_CAP      300      /* 爆炸帧把 player+0x47984 抬到它（Remilia 0x40f48e 同款值；GameThread 每帧复位，只对当帧有效）。300 − 任何角色的自机弹上限 ≥ 140 > 100 ⇒ 火球整份落在自机弹之上 */
+#define FL_BLAST_CANCEL_R 96.0f    /* 落地那帧消弹半径（= 杀伤框边长；弹变点道具）*/
+#define FL_BALL_CANCEL_R  24.0f    /* 飞行中每帧在火球坐标消弹的半径（开路）*/
+#define FL_CANCEL_MAX     9999     /* 消弹数量不限（与本体挡弹的 hp 上限无关：各自一次调用、各自读计数器）*/
 #define FL_BLAST_W        96.0f    /* 杀伤范围 64 → 96（2026-09-06 用户）*/
 #define FL_BLAST_H        96.0f
 #define FL_PARTICLES      2        /* 飞行中每帧撒几颗橙白粒子（script95，各自随机飘散）*/
@@ -57,6 +63,7 @@ typedef struct {
     uint32_t ball_left;     /* 剩余飞行帧 */
     float    ex, ey;        /* 落点 = 开火时记下的敌人坐标 */
     uint32_t blast_left;    /* 爆炸剩余帧 */
+    uint32_t ball_cancelled, blast_cancelled;   /* 统计：飞行中 / 落地消掉的弹数（引擎侧写，core 不碰）*/
     /* 登场 */
     uint32_t intro_left;    /* 聚气剩余帧；> 0 时本体还没出现，fl_step 只走登场分支 */
     uint32_t rings_left;    /* 还要放几圈爆炸环 */

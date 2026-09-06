@@ -1,6 +1,7 @@
 /* 炎魔之王拉格纳罗斯（id 72）—— 主动卡：按 C 消耗 2.00 火力，召唤一尊不跟随自机的炎魔。FL_HP 点生命替玩家挡子弹
  * （每挡一发 −1，被挡的弹照炸弹消弹变点道具），每 FL_PERIOD 帧抽一个随机落点滑过去，到位那帧向场上**随机一个**敌人
- * 投一颗火球（飞行物，飞向开火时记下的坐标），落地爆炸：连续 FL_BLAST_FRAMES 帧、每帧一个 FL_BLAST_W×H 的矩形伤害源。
+ * 投一颗火球（飞行物，飞向开火时记下的坐标；飞行中每帧在自己坐标消弹 FL_BALL_CANCEL_R 开路），落地爆炸：消弹 FL_BLAST_CANCEL_R，
+ * 然后连续 FL_BLAST_FRAMES 帧、每帧一个 FL_BLAST_W×H 的矩形伤害源，且每帧把每敌每帧伤害上限抬到 FL_BLAST_CAP（Remilia 同款，否则被自机弹吃满）。
  * 生命归零 → 死亡动画、结束；过关 / 局末消失。火力 < FL_POWER_GATE 拒绝（引擎永远保留 1.00，成本 + 一档才扣得实）。
  *
  * 零售原型：扣火力三步 = CardTsukasa__c_press（0x410e60：门槛 → spend_power → repopulate）；挡弹 = Tenshi 要石；
@@ -197,19 +198,30 @@ static int on_active_tick(ce_card_t *c, uint32_t elapsed)
         uint32_t t = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_FIRELORD_TRAIL, 13);
         if (t) ce_anm_set_pos(t, s->bx, s->by, pz);
     }
+    if (s->ball_active) {                                  /* 飞行开路：火球坐标周围的弹变点道具（青眼 / 本体挡弹同一函数，数量不限、不动 hp）*/
+        float bpos[3] = { s->bx, s->by, pz };
+        s->ball_cancelled += (uint32_t)ce_cancel_radius(bpos, FL_BALL_CANCEL_R, FL_CANCEL_MAX, 0);
+    }
     if (s->ball_active) {                                  /* 橙白粒子：每帧几颗，钉在火球当前坐标，各自在脚本里用 ANM 自己的随机飘开（UI RNG，不动 replay 流）*/
         for (int i = 0; i < FL_PARTICLES; i++) {
             uint32_t q = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_FIRELORD_PARTICLE, 13);
             if (q) ce_anm_set_pos(q, s->bx, s->by, pz);
         }
     }
-    if (st.ball_arrived) {                                 /* 打击感：爆炸光环 + 一圈火星 + 小震屏 + 0x2c */
+    if (st.ball_arrived) {                                 /* 打击感：落地消弹 + 爆炸光环 + 一圈火星 + 小震屏 + 0x2c */
+        float epos[3] = { s->ex, s->ey, pz };
+        int n = ce_cancel_radius(epos, FL_BLAST_CANCEL_R, FL_CANCEL_MAX, 0);
+        s->blast_cancelled += (uint32_t)n;
         ce_anm_delete(s->ball_id); s->ball_id = 0;
         impact_fx(s->ex, s->ey, pz);
         ce_play_sound(FL_SE_BLAST, s->ex);
+        ce_log("firelord: blast at (%.1f, %.1f): cancelled %d here + %u in flight; %d frames x %d dmg with cap %d",
+               s->ex, s->ey, n, s->ball_cancelled, FL_BLAST_FRAMES, FL_BLAST_DMG, FL_BLAST_CAP);
+        s->ball_cancelled = 0;
     }
     if (st.blast_dmg) {                                    /* 每帧一个**新**源：一个源对同一敌人只结算一次（AUDIT U9）*/
         float center[3] = { s->ex, s->ey, pz };
+        ce_raise_damage_cap(FL_BLAST_CAP);                 /* 当帧有效（GameThread 每帧复位）：让这 100 落在自机弹之上而不是被它吃掉（V20）*/
         ce_damage_rect(center, 0.0f, 2, st.blast_dmg, FL_BLAST_W, FL_BLAST_H);
     }
     if (elapsed % 60 == 0 && blocked) ce_log("firelord: hp %d (blocked %u, frame %u)", s->hp, s->blocked, s->frames);

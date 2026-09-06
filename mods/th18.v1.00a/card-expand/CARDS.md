@@ -57,13 +57,13 @@ Mr. Bones / Gros Michel 这类「自毁」卡以后都走它。
 
 | id | 名字 | 效果 | 实现（槽 / 事件） | 文件 | 状态 |
 | --- | --- | --- | --- | --- | --- |
-| 72 | 炎魔之王拉格纳罗斯 | 主动（C 键）：消耗 2.00 火力召唤**不跟随自机**的炎魔；800 点生命替玩家挡子弹；每 7 秒滑到弹幕区下 1/3 的随机落点，到位后向场上**随机一个**敌人投火球（飞行物，落地爆炸 600 + 小震屏）；生命归零死亡，过关消失。火力 < 3.00 拒绝。充能 10 s | `on_activate` 照 Tsukasa 三步（门槛 → `spend_power` → `repopulate`）；`on_active_tick` 挡弹 + 状态机 `fl_step` + 火球位姿 + 落地 8 帧 `ce_damage_rect`；随机走 `ce_rand()`（详见下）。AUDIT §V | `firelord.c` + `firelord_core.c` | 🔧 |
+| 72 | 炎魔之王拉格纳罗斯 | 主动（C 键）：消耗 2.00 火力召唤**不跟随自机**的炎魔；800 点生命替玩家挡子弹；每 7 秒滑到弹幕区下 1/3 的随机落点，到位后向场上**随机一个**敌人投火球（飞行物，沿途消弹；落地消弹 r 96 + 爆炸 1200 + 小震屏）；生命归零死亡，过关消失。火力 < 3.00 拒绝。充能 10 s | `on_activate` 照 Tsukasa 三步（门槛 → `spend_power` → `repopulate`）；`on_active_tick` 挡弹 + 状态机 `fl_step` + 火球位姿 + 落地 8 帧 `ce_damage_rect`；随机走 `ce_rand()`（详见下）。AUDIT §V | `firelord.c` + `firelord_core.c` | 🔧 |
 | 70 | 腐化 | 被动：拿到时炸弹上限补满 7；此后**放炸弹消耗的是上限而不是当前数**，且过关不回复 —— 一次给满七发，用一发少一发 | `ctor`（`ce_fresh_acquire` 门控）顶满上限；新 SDK 事件 `on_bomb_spent`（断点 `ce_bomb_spent` @ `0x4203bc`，consume_bomb 刚返回）还原当前数、扣上限；`on_stage_start` 抵消引擎的 `min(3, 上限)` 补给。AUDIT §T | `corruption.c` | 🔧 |
 | 69 | 加倍 | 被动：Miss 损失 **2** 条残机；敌人掉落的道具全部 **×2** | 掉命挂 `on_death_after_deathbomb`（引擎扣命**之前**多扣 1，`return 0` 不救命）；掉落走新 SDK 事件 `on_enemy_drop_pre`（断点 `ce_enemy_drop` @ `0x430510` 入口，撒之前把敌人 `+0x04` 起的 20 个掉落数翻倍）。AUDIT §S | `double.c` | 🔧 |
 
 **炎魔之王（72）补充**：扣火力照零售 `CardTsukasa__c_press` `0x410e60`——门槛「成本 + 一档」（引擎 `spend_power` 永远保留 1.00，
 不留一档实际扣的会比名义少）、`spend_power(200)`、无条件 `repopulate_options`（重建子机 + 广播 `on_power_level_change`）。
-火球 = **飞行物 + 落地 12 个定点伤害源**：直线飞向开火时记下的敌人坐标（4 px/帧，非追踪；飞行中每帧 2 颗橙白粒子 script95），到点起爆炸光环 + 10 颗火星（script96）+ 小震屏（`ce_screen_shake(14, 5, 0)`，ECL setScreenShake 同一工厂 `0x476060`）、放 `0x2c`，之后
+火球 = **飞行物 + 落地 12 个定点伤害源**（2026-09-06 加强：飞行中每帧消弹 r 24，落地消弹 r 96；每帧 100 并把每敌每帧伤害上限抬到 300 —— 自机弹与卡的源共用这个上限，不抬就被自机弹吃满，Remilia 同款做法，AUDIT V20）：直线飞向开火时记下的敌人坐标（4 px/帧，非追踪；飞行中每帧 2 颗橙白粒子 script95），到点起爆炸光环 + 10 颗火星（script96）+ 小震屏（`ce_screen_shake(14, 5, 0)`，ECL setScreenShake 同一工厂 `0x476060`）、放 `0x2c`，之后
 连续 12 帧每帧一个 96×96、50 伤害的 `ce_damage_rect`——一个源对同一敌人只结算一次、50 不超四个自机的每帧上限，所以恰好 600。
 随机（落点 / 目标）走游戏自己的 `Rng__rand_dword(&REPLAY_SAFE_RNG)` `0x402740` / `0x4cf288`。血条复用青眼的 script86 / 87。
 美术：卡图用户立绘（`fit_card.py --fill`，sprite 146/147）；本体用户正面像抠白底 256×256（`ability/make_firelord_art.py`，script91 缩放 0.25 ≈ 64 px 高、挡弹半径 33.6）；待命上下呼吸浮动 ±4 px（`fl_bob_dy`）+ 每帧 2 颗身体火焰粒子（script97，往上飘），移动 60 帧 quintic easing、落点限弹幕区下 1/3；

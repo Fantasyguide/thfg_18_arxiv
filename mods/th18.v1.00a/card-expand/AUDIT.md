@@ -939,7 +939,15 @@ Tenshi 要石是同一个原语，只是尺寸小、寿命短。
 | V16 | 呼吸浮动 `fl_bob_dy` 不引 x87 | **CONFIRMED** —— 头里的 `static inline`（bc_atan2f 同理：i386 返回 float 走 st0）；`make dllx87` = 0。判定 / 血条 / 画面三者用同一个浮动值，不会「看着挡住了实际没挡」|
 | V13 | 私有状态放得下 | **CONFIRMED** —— `sizeof(fl_state_t)` = 112 ≤ `CE_STATE_BYTES − CE_STATE_RESERVED` = 240 |
 | V14 | 语音登记与响度 | **CONFIRMED** —— ORDER 第 1、2 行 → id `0x55` / `0x56`（`make voice` 与 `voice.js` 对账）；转换后 RMS −10.7 / −11.2，在 −10 ± 4 dB 带内；攻击语音 4.3 s < 8 s 周期，不自叠 |
+| V20 | 爆炸帧抬 `player+0x47984` 到 300 | **CONFIRMED** —— 见下「V20 证据」：Remilia 同款、时序保证只对当帧生效 |
+| V21 | 火球消弹不与本体挡弹串扰、不动 hp | **CONFIRMED** —— `ce_cancel_radius` 调前清 `0x7a41e8` 计数器、调后读回，三次调用（本体 / 飞行 / 落地）各自独立；hp 只按本体那次的返回值扣。`max_count` 9999 不会提前停 |
 | V15 | HUD 火力显示不用手动刷 | **CONFIRMED** —— Tsukasa / 商店 / 死亡三处扣火力都没调任何 HUD 刷新函数（对比残机 / 炸弹行要调 `0x441f10` / `0x4420e0`）；火力条每帧读 `CURRENT_POWER` |
+
+**V20 证据**：自机弹的伤害也走同一个源池（`PlayerBullet__create` 建源、`Player__tick_bullets` 每帧刷 dmg；`engine/player/th18/02-damage-sources.md` §0、th16 §08 同构），
+敌人侧 `0x45f0f0` 把命中它的所有源**合计**钳 `player+0x47984`（`0x45f28b`）⇒ 上限是「每个敌人每帧」的总配额，自机弹与卡的源共用。第一版 50 × 12 在自机开火时几乎被吃光。
+零售先例 `CardRemilia__on_tick_2` `0x40f48e`：`mov [edi+0x47984], 0x12c` 紧接着 `call 0x45dfa0` 放 200 的源。复位点 `GameThread__on_tick` `0x443d3b` 每帧从 `sht+0x28` 写回；
+tick 顺序 GameThread 0x10 → AbilityManager 0x16（我们的 `on_active_tick` 在这里）→ Enemy 0x1b ⇒ 写入只影响当帧的敌人结算，下一帧自动复位，不用还原、不留残值。
+`ce_raise_damage_cap` 只抬不降（已 ≥ 300 时不写）。300 − max(自机弹上限 160) = 140 > 100 ⇒ 火球的 100 整份生效。
 
 **V1 证据**：`0x457480`：`mov eax, ecx`（this = GlobalsInner `0x4cccdc`）、`mov edi, [eax+0x5c]`（CURRENT_POWER）、`mov ecx, [eax+0x64]`
 （POWER_PER_LEVEL）、`cmp edi, ecx; jg` 否则 `xor eax, eax; ret 4`；`mov edx, [ebp+8]`（amount）、`sub edi, edx`、写回、`< ecx` 则钳回 ecx；

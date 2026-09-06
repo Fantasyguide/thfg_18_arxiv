@@ -191,6 +191,15 @@ static inline int ce_damage_rect(const float *center, float angle, int life, int
     return idx;
 }
 
+/* 抬「每个敌人每帧」的总伤害上限 player+0x47984（照 CardRemilia__on_tick_2 0x40f48e：写 300 再放源）。自机弹与卡的伤害源共用它，
+ * 自机对着 boss 开火时配额已被自机弹吃满，不抬的话卡的伤害只能补差额。GameThread 0x443d3b（优先级 0x10）每帧从 sht+0x28 复位，
+ * AbilityManager tick（0x16）在其后、敌人结算（0x1b）在更后 ⇒ 在 on_tick_2 / on_active_tick 里写只对当帧生效，不用还原。只抬不降。AUDIT V20。*/
+static inline void ce_raise_damage_cap(int cap)
+{
+    uint8_t *p = CE_PLAYER();
+    if (p && *(int32_t *)(p + CE_PLAYER_DAMAGE_CAP) < cap) *(int32_t *)(p + CE_PLAYER_DAMAGE_CAP) = cap;
+}
+
 /* 装备卡子机（AUDIT §U）。两个函数的调用约定都从零售调用点原样抄来，**别照反编译的形参名改**：
  *
  *   Player__allocate_option —— thiscall + 五个栈参，其中第 1、3 个是 card 自己（`CardReimu1__on_power_level_change`
