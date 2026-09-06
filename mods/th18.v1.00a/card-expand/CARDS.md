@@ -42,6 +42,17 @@
 | --- | --- | --- | --- | --- | --- |
 | 64 | 反转牌 | 主动（C 键）：场上所有子弹速度方向反向；充能 60 s。卡图 UNO 反转牌（`fit_card.py`，sprite 128/129）| 第一张主动卡：`active_recharge = 3600`，`on_activate` 扫子弹池翻 `velocity` 与 `angle`（不动激光），并 `ce_anm_spawn` 起 `ability.anm` script68 亮牌（卡图副本绕 Y 轴一圈）| `reverse.c` | 🔧 |
 
+## 致敬・Balatro
+
+| id | 名字 | 效果 | 实现（槽 / 事件） | 文件 | 状态 |
+| --- | --- | --- | --- | --- | --- |
+| 68 | 黄昏 | 被动：用掉**最后一颗**炸弹时，那一发结束后自动再放一发 | `on_tick_2` 盯炸弹管理器 `[0x4cf2b8]+0x30` 的两个边沿：0→1 时若 `CURRENT_BOMBS == 0` 就武装，1→0 时调引擎自己的 `do_bomb()` `0x420360`。不开断点、不碰炸弹计数（`0x4574d0` 自带钳 0）。AUDIT §R | `dusk.c` | 🔧 |
+| 73 | 黄金小丑 | 被动：每关过关、进商店那一刻金钱 +20％（向下取整，无上限）| 新 SDK 事件 `on_shop_open`（不开断点：`ce_shop_reopen` 的 MSG 开店分支里分派；重开的第二家不算）；`ce_interest` 主机单测。AUDIT §W | `golden.c` | 🔧 |
+| 74 | 倒吊人 | 商店一次性购买：随机摧毁卡组里的另一张卡，获得 300 金钱（固定：摧毁垃圾牌赚、摧毁关键牌亏）；本身不进卡组 | `ctor` 里 `ce_pick_random_card`（游戏 RNG，排除当前选中的主动卡）→ `ce_destroy_card`（照 recount `0x4080e0` 的删卡分支 + 引擎自己重画 HUD）→ 金钱 +300、返回 1 当场销毁。没有可删的卡就什么都不给。AUDIT §W | `hanged.c` | 🔧 |
+
+**黄昏 = Dusk**（最后一手重触发 → 最后一颗炸弹再放一发）。倒吊人的删卡原语 `ce_destroy_card` 是本 mod 第一个局中改卡组的动作，
+Mr. Bones / Gros Michel 这类「自毁」卡以后都走它。
+
 ## 其它
 
 | id | 名字 | 效果 | 实现（槽 / 事件） | 文件 | 状态 |
@@ -49,7 +60,6 @@
 | 72 | 炎魔之王拉格纳罗斯 | 主动（C 键）：消耗 2.00 火力召唤**不跟随自机**的炎魔；800 点生命替玩家挡子弹；每 7 秒滑到弹幕区下 1/3 的随机落点，到位后向场上**随机一个**敌人投火球（飞行物，落地爆炸 600 + 小震屏）；生命归零死亡，过关消失。火力 < 3.00 拒绝。充能 10 s | `on_activate` 照 Tsukasa 三步（门槛 → `spend_power` → `repopulate`）；`on_active_tick` 挡弹 + 状态机 `fl_step` + 火球位姿 + 落地 8 帧 `ce_damage_rect`；随机走 `ce_rand()`（详见下）。AUDIT §V | `firelord.c` + `firelord_core.c` | 🔧 |
 | 70 | 腐化 | 被动：拿到时炸弹上限补满 7；此后**放炸弹消耗的是上限而不是当前数**，且过关不回复 —— 一次给满七发，用一发少一发 | `ctor`（`ce_fresh_acquire` 门控）顶满上限；新 SDK 事件 `on_bomb_spent`（断点 `ce_bomb_spent` @ `0x4203bc`，consume_bomb 刚返回）还原当前数、扣上限；`on_stage_start` 抵消引擎的 `min(3, 上限)` 补给。AUDIT §T | `corruption.c` | 🔧 |
 | 69 | 加倍 | 被动：Miss 损失 **2** 条残机；敌人掉落的道具全部 **×2** | 掉命挂 `on_death_after_deathbomb`（引擎扣命**之前**多扣 1，`return 0` 不救命）；掉落走新 SDK 事件 `on_enemy_drop_pre`（断点 `ce_enemy_drop` @ `0x430510` 入口，撒之前把敌人 `+0x04` 起的 20 个掉落数翻倍）。AUDIT §S | `double.c` | 🔧 |
-| 68 | 黄昏 | 被动：用掉**最后一颗**炸弹时，那一发结束后自动再放一发 | `on_tick_2` 盯炸弹管理器 `[0x4cf2b8]+0x30` 的两个边沿：0→1 时若 `CURRENT_BOMBS == 0` 就武装，1→0 时调引擎自己的 `do_bomb()` `0x420360`。不开断点、不碰炸弹计数（`0x4574d0` 自带钳 0）。AUDIT §R | `dusk.c` | 🔧 |
 
 **炎魔之王（72）补充**：扣火力照零售 `CardTsukasa__c_press` `0x410e60`——门槛「成本 + 一档」（引擎 `spend_power` 永远保留 1.00，
 不留一档实际扣的会比名义少）、`spend_power(200)`、无条件 `repopulate_options`（重建子机 + 广播 `on_power_level_change`）。

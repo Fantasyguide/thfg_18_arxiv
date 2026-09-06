@@ -7,6 +7,7 @@
  *                      eax 带位 = 关末 MSG opcode 36 刚要求开店 → 名额从头算；
  *                      否则若「店刚关（0x4cf2a4 == 0）且本次成交过且名额没用完」→ eax |= 0x20000，原 test 用改过的 eax 算 flags，
  *                      GameThread 这一帧就再 new 一家（0x443b10..0x443c17，与零售同一段代码）。
+ *                      flag_set 那一支（MSG 开第一家店）顺带调 ce_sdk_on_shop_open()：过关结算类的卡（黄金小丑）在这里改钱。
  *   ce_shop_setup      门里：两个断点已挂；记一行配置。
  *
  * 为什么无空档帧：商店 on_tick 优先级 0xc，在自己 tick 里析构（state 5 → 0x4176e0 → 0x417857 清指针）；
@@ -18,6 +19,7 @@
 #include "thcrap_bp.h"
 #include "engine.h"
 #include "shop_core.h"
+#include "sdk.h"
 
 static ce_shop_state_t s_shop;
 
@@ -52,6 +54,7 @@ int __cdecl BP_ce_shop_reopen(x86_reg_t *regs, void *bp_info)
     } else if (flag_set) {
         ce_log("shop: opened by msg (visit 1/%d, stage %d, frame %d, money %d)",
                s_shop.visits, CE_CURRENT_STAGE(), CE_TIME_IN_STAGE(), CE_MONEY());
+        ce_sdk_on_shop_open();                                    /* 过关结算类的卡（黄金小丑）在商店建起来之前改钱 */
     }
     return BP_EXEC_ORIGINAL;
 }

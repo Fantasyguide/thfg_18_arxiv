@@ -220,5 +220,37 @@
     "weight": 2,
     "sprite_large": 146,
     "sprite_small": 147
+  },
+  "73": {
+    "name": "黄金小丑",
+    "desc": [
+      "每关结束进入商店时，",
+      "持有的金钱增加 20％（向下取整）。",
+      "致敬・Balatro。"
+    ],
+    "internal_name": "GOLDEN_JOKER",
+    "initial_unlocked": 1,
+    "price_tier": 8,
+    "weight": 2,
+    "sprite_large": 148,
+    "sprite_small": 149
+  },
+  "74": {
+    "name": "倒吊人",
+    "desc": [
+      "购买后随机摧毁卡组里的另一张卡，",
+      "并获得 300 金钱。",
+      "本身不会进入卡组。致敬・Balatro。"
+    ],
+    "internal_name": "HANGED_MAN",
+    "category": 3,
+    "initial_unlocked": 1,
+    "deck_visible": 0,
+    "repeatable": 1,
+    "hud_show": 0,
+    "price_tier": 3,
+    "weight": 2,
+    "sprite_large": 150,
+    "sprite_small": 151
   }
 }

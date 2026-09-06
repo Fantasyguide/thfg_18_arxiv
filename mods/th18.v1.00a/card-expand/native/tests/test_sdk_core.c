@@ -116,8 +116,24 @@ static void test_judgment(void)
     CHECK(ce_judgment_cost(7) == 4);
 }
 
+static void test_interest_and_pick(void)
+{
+    CHECK(ce_interest(0, 20) == 0);
+    CHECK(ce_interest(-50, 20) == 0);
+    CHECK(ce_interest(4, 20) == 0);          /* 0.8 → 0 */
+    CHECK(ce_interest(5, 20) == 1);
+    CHECK(ce_interest(999, 20) == 199);      /* 199.8 → 199 */
+    CHECK(ce_interest(1000, 20) == 200);
+    CHECK(ce_interest(2147483647, 20) == 429496729);   /* 不溢出 */
+    CHECK(ce_pick_index(123u, 0) == -1);
+    CHECK(ce_pick_index(0u, 1) == 0);
+    CHECK(ce_pick_index(7u, 3) == 1);
+    CHECK(ce_pick_index(0xffffffffu, 5) == 0);          /* 4294967295 % 5 = 0 */
+}
+
 int main(void)
 {
+    test_interest_and_pick();
     test_judgment();
     test_royal();
     test_registry();

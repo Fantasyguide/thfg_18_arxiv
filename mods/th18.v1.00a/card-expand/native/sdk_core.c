@@ -101,3 +101,14 @@ int ce_judgment_cost(int lives)
 {
     return lives <= 0 ? 0 : (lives + 1) / 2;
 }
+
+int ce_interest(int money, int percent)
+{
+    if (money <= 0 || percent <= 0) return 0;
+    return (int)(((int64_t)money * percent) / 100);
+}
+
+int ce_pick_index(uint32_t rnd, unsigned n)
+{
+    return n == 0 ? -1 : (int)(rnd % n);
+}

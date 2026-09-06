@@ -45,3 +45,7 @@ void *ce_state_user(const void *key, unsigned size);
 int ce_royal_flush_ready(const int32_t *owned, uint32_t self_id, const uint32_t *set, unsigned n);
 /* 神之宣告：消耗一半残机（向上取整）；残机 ≤ 0 返回 0 = 不能发动 */
 int ce_judgment_cost(int lives);
+/* 黄金小丑：利息 = money 的 percent％ 向下取整；money ≤ 0 返回 0 */
+int ce_interest(int money, int percent);
+/* 倒吊人：n 个候选里按游戏 RNG 的一个 dword 选下标；n == 0 返回 -1 */
+int ce_pick_index(uint32_t rnd, unsigned n);

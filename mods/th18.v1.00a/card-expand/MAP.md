@@ -110,3 +110,4 @@
 - **卡图**：不是代码活。`assets/build_abcard.py` 重编；余量结论见 [`engine/card/th18/10-extensibility-limits.md`](../../../engine/card/th18/10-extensibility-limits.md) §5（运行时上限 🟡）。
 - ~~商店~~、~~数据~~：已做（第 7 / 10 段），实跑通过（2026-09-04）。
 - **商店走两遍**（每关进店 2 次，2026-09-04）：不碰店内状态机，两个放行断点让零售建店代码再跑一遍；AUDIT §P，待实跑。
+- **局中删卡 / 过关结算事件**（2026-09-06，倒吊人 + 黄金小丑）：不加断点、不改字节。`ce_destroy_card` 复刻 recount `0x4080e0` 的删卡分支，HUD 交给引擎的 `0x408d00`；`on_shop_open` 挂在 `ce_shop_reopen` 已有断点的 MSG 开店分支。AUDIT §W，待实跑。

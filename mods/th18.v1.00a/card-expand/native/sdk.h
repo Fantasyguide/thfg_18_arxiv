@@ -45,6 +45,7 @@ typedef struct {
     void (*on_item_money)(ce_card_t *, int32_t *bonus);          /* 金钱道具入账（MONEY += 1）之前：*bonus 是额外要加的钱，MONEY 与 MONEY_TOTAL 一起加 */
     void (*on_enemy_drop_pre)(ce_card_t *, int32_t *counts);     /* 敌人撒道具**之前**：counts 是 CE_ENEMY_DROP_TYPES 个 int32，改它就改掉落数 */
     void (*on_bomb_spent)(ce_card_t *);                          /* 炸弹刚扣完（consume_bomb 返回那一条）：改 CURRENT/MAX_BOMBS 的时机，同帧生效不闪 */
+    void (*on_shop_open)(ce_card_t *);                           /* 每关过关、MSG 请求开第一家店那一帧（商店对象还没建）：改 MONEY 店里就能看到；重开的第二家不算 */
     /* 主动卡（SDK §9）：active_recharge != 0 就是主动卡（C 键 / 充能 / HUD 由 SDK 与引擎处理）*/
     uint32_t active_recharge;                                    /* 充能帧数（×mgr+0xc58 倍率后装填）*/
     int  (*on_activate)(ce_card_t *);                            /* C 键发动：返回 0 = 瞬发（直接收尾），1 = 进入持续态，CE_ACTIVATE_REFUSED = 条件不满足（充能退回、不算发动）*/
@@ -311,6 +312,13 @@ void ce_sdk_active_reset(void *self, const ce_hooks_t *h, int clear_recharge);
 
 /* sdk.c */
 void ce_sdk_trace(uint32_t id, unsigned slot, const char *name);   /* trace 开着才记；每张卡每槽记第一次 */
+void ce_sdk_on_shop_open(void);                                   /* shop.c 在 MSG 开店那一帧调：沿链表分派 on_shop_open */
+/* 局中从卡组删一张卡（AUDIT §W）：照 recount 0x4080e0 的删卡分支——摘链、按 flags 减类别计数、num_total−1、
+ * owned[id] 清零（能再刷出）、虚表 +0x50 删对象、重画 HUD 三行。★ 不能删当前选中的主动卡（mgr+0x38 指向它，
+ * 重选要重建 HUD 图标 VM，本函数拒绝并返回 0）。只能在没有人正在遍历链表时调（ctor / 事件断点里都可以，链表遍历桩里不行）。*/
+int  ce_destroy_card(ce_card_t *victim);
+/* 随机挑一张可删的卡（链表里除 exclude 与选中主动卡以外的任意一张，RNG = 游戏 replay 安全流）；没有返回 NULL */
+ce_card_t *ce_pick_random_card(ce_card_t *exclude);
 void ce_sdk_register_or_log(const ce_behavior_t *b);
 
 #define CE_TC __attribute__((thiscall))

@@ -971,6 +971,50 @@ type 1 → 只注册 on_tick `0x475c70`（`register__on_tick(…, 0x14)`），�
 **实跑要看的**：见 [`NEXT.md`](NEXT.md) §1i。崩溃优先怀疑 V1 / V3（两个 `ret 4` 抄错就是栈飞）、V5（`ce_rand` 的 thiscall）；
 视觉怀疑 V9（火球方向 = `vm+0x44`，贴图朝 +x）。
 
+## W. 倒吊人（id 74）+ 黄金小丑（id 73）—— 局中删卡原语 `ce_destroy_card` + 过关结算事件 `on_shop_open`
+
+**没有手写机器码、没有新断点、不改任何字节**。删卡是 recount `0x4080e0` 删卡分支的单张复刻 + 引擎自己的 HUD 重画 `0x408d00`；
+`on_shop_open` 挂在 §P 已有的 `ce_shop_reopen` 断点的 MSG 开店分支上。零售先例：商店空白卡在店里 `reset_cards(mgr, 0)` 整副删卡（`0x41842a`，05 §7）。
+纯逻辑 `ce_interest` / `ce_pick_index` 主机单测（`test_sdk_core.c`）。
+
+| # | claim | 结论 |
+| --- | --- | --- |
+| W1 | 链表结点布局与摘链写法 | **CONFIRMED** —— 见下「W1 证据」：`prev` 永不为 NULL，表头无尾指针缓存 |
+| W2 | 计数就地减 = recount 重数 | **CONFIRMED** —— 见下「W2 证据」 |
+| W3 | 删对象的调用约定 | **CONFIRMED** —— `0x408147` `push 1; call [eax+0x50]`（ecx = 卡）= `thiscall(this; 1)`，`ce_base_del_t` 同签名（O5 的 opdelete 桩照它写）。我们的卡走桩（先 `ce_state_free`），零售卡走自己的 `operator_delete` |
+| W4 | HUD 重画 | **CONFIRMED** —— 见下「W4 证据」：店里调有先例、只看三个类别计数、先减计数再调顺序正确 |
+| W5 | 选中的主动卡不能删 | **CONFIRMED（设计）** —— 见下「W5 证据」 |
+| W6 | 倒吊人 ctor 时链表里没有自己、也没人在遍历 | **CONFIRMED** —— 见下「W6 证据」 |
+| W7 | 删装备卡：子机怎么办 | **CONFIRMED（先例）** —— 零售空白卡在店里 `reset_cards(mgr, 0)` 同样把装备卡连子机留到关店，关店后 repopulate 广播重建（SDK §12）。破损核心的子机指针在 `ce_state` 里随桩释放，广播时重新认领 |
+| W8 | 删存档带来的卡（bit0 = 1）只影响本局 | **CONFIRMED** —— 下一局 `reset_cards(reload)` 从存档重建（02 §6）；存档的卡组槽只在编成菜单写。与 Balatro 的 run 内摧毁语义一致 |
+| W9 | `owned[id] := 0` 的后果 | **设计** —— 商店第一轮筛 `owned == 0`，清零后它能再刷出（Balatro 里被摧毁的小丑也会再出现）；`ce_fresh_acquire` 把再买视作新获得（腐化再补满）——预期。解锁位不动 |
+| W10 | replay | **CONFIRMED（推理）** —— 随机只来自 replay 安全流 `0x4cf288`（V5），抽取在成交那一帧；商店进出 `0x417880` 把当时的卡组写进 replay 分段，删后的卡组被记下。利息只依赖 `MONEY` |
+| W11 | 倒吊人永远走不到「火力补差价」 | **CONFIRMED** —— ctor 在扣款前 `MONEY += 300`，价位档 3（≤ 180）< 300 ⇒ `price <= MONEY` 恒成立。没有可删的卡时不给钱，此时才可能走火力补差价（与零售任何卡相同）|
+| W12 | `on_shop_open` 的时点与重开 | **CONFIRMED** —— `0x443b05` `test eax, 0x20000` 是 GameThread 建店（`0x443b10..`）前的判断，`flag_set` 只在 MSG opcode 36 那一帧为真（§P）；重开分支不调。练习 / replay 里 MSG 照样置位 ⇒ 利息照样加（录制时也加了，回放一致）|
+| W13 | 溢出 | **CONFIRMED** —— `ce_interest` 用 `int64_t` 乘再除；`MONEY` 引擎没有上限钳（方片 2 翻倍同样不钳）。HUD 金钱位数 🟡 未查 |
+| W14 | trace 槽表 | **修正** —— `CE_TRACE_SLOTS` 23 → 26：此前 `0x5c` / `0x60` 的 trace 因 `slot/4 ≥ 23` 被静默丢弃，现在连同 `0x64` 都能记 |
+
+**W1 证据**：结点 = `card+0xc` `{+0 card*, +4 next, +8 prev}`。recount `0x40811b..0x408145`：`next->prev = prev`（`+8`）、`prev->next = next`（`+4`）、
+自身两指针清零。插入 `0x412e90` 永远追加到尾、新结点 `prev` = 末结点（空表时 = 表头 `mgr+0x18`，其 `+4` 正是 `mgr+0x1c`）——**`prev` 永不为 NULL**，
+所以「删第一张」也会把表头的首指针改对。表头第四字段 `mgr+0x24` 由 `reset_cards` `0x407da0` 置 0，插入只在它非 0 时维护 ⇒ 没有需要修的尾指针缓存。
+
+**W2 证据**：recount `0x408158..0x40816d`：`flags & 8` → `+0x2c`、`& 0x40` → `+0x30`、否则 `+0x34`；`0x40814c` `dec [edi+0x28]`。
+分配尾段 `0x412d5x` 按同一分法加。三计数只被这两处与 `reset_cards` 写，就地减一与整体重数结果相同。
+
+**W4 证据**：`0x408d00` `thiscall(mgr; int)` `ret 4`（`0x408dd2`）：先按 `mgr+0x58` 的 256 个 id 删旧图标 VM（`0x408d20..0x408d73`，跳过 `+0x538 & 0x10000000` 的），
+再在 `GAME_THREAD_PTR != 0` 时按**三个类别计数**（`0x408d93` `push [ebx+0x2c]` / `0x408d9f` `+0x30` / `0x408db7` `+0x34`）画三行。
+分配尾段 `mode != 1` 时调 `(this, 0)`（商店购买 = mode 2 就在店里调它）⇒ 店里调有先例。**它不看 `num_total`**，且尾段是先调它再 `num_total++`——我们先减计数再调，顺序正确。
+
+**W5 证据**：`mgr+0x38` 在分配尾段被置成最新的主动卡（`0x412d5x`），C 键分派 `0x45c090` 读它；删掉它就是悬指针。`ce_destroy_card` 比对后拒绝；
+`ce_pick_random_card` 一开始就不把它列入候选。非选中的主动卡可删（只减 `+0x2c`，`+0x38` 不动）。recount 那套「从尾往前重选 + 重建图标 VM」（`0x408201..0x408295`）刻意不做。
+
+**W6 证据**：分配尾段先调 ctor（`0x412d0d`）、非 0 返回就 `operator_delete` 早返回，`FUN_00412e90` 入链在其后；`ce_pick_random_card(c)` 再显式排除自己。
+调用链 `AbilityShop__on_tick` 成交分支 `0x4185c7` → `allocate_new_card` → ctor，不在任何链表遍历里；经强欲之壶 `ce_give_card` 进来同理（壶的 ctor 也在这条链上）。
+`on_tick_2` 等遍历桩里**不能**调 `ce_destroy_card`（头文件注释写明）。
+
+**实跑要看的**：见 [`NEXT.md`](NEXT.md) §1j。崩溃优先怀疑 W3（`+0x50` 的 thiscall）、W4（`0x408d00` 的 `ret 4`：店里 HUD 重画后立刻崩就是它）；
+视觉怀疑 W4（删后 HUD 行没重排 / 幽灵图标 = `mgr+0x58` 删 VM 那一步没生效）。
+
 ## G. OPEN —— 还没解决的
 
 | # | 事项 | 说明 |

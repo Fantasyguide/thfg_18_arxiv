@@ -133,6 +133,10 @@
 #define CE_MGR_OWNED               0xd70      /* int[255]，本 mod 搬过来的（战线 C）*/
 #define CE_MGR_RECHARGE_MULT       0xc58      /* float，reset 置 1.0（OM §5）*/
 #define CE_MGR_SELECTED_ACTIVE     0x38       /* 选中的主动卡（C 键分派 0x45c090）*/
+#define CE_MGR_NUM_TOTAL           0x28       /* 四个计数：recount 0x4080e0 `dec [edi+0x28]` / `inc [edi+0x2c|0x30|0x34]`（AUDIT §W）*/
+#define CE_MGR_NUM_ACTIVE          0x2c
+#define CE_MGR_NUM_EQUIPMENT       0x30
+#define CE_MGR_NUM_PASSIVE         0x34
 #define CE_MGR_ABILITY_ANM         0x0c       /* AnmLoaded*：ability.anm（场上特效）。ExpHP zAbilityManager +0x0c；CardTenshi__c_press 0x40ebf0 `mov ecx,[eax+0xc]` 取它起 script 0x1c。★ 第一版写成 0x10 拿到了 abcard，script68 越界成垃圾 VM（AUDIT O24′）*/
 #define CE_MGR_ABCARD_ANM          0x10       /* AnmLoaded*：abcard.anm（卡图；HUD/编成/图鉴起脚本后 set_sprite）。ExpHP +0x10 */
 #define CE_MGR_ABMENU_ANM          0x14       /* AnmLoaded*：abmenu.anm（编成 / 图鉴 UI）。ExpHP +0x14 */
@@ -140,6 +144,7 @@
 /* 卡链表结点（= card+0xc）：{+0 card*, +4 next, +8 prev}（0x412e90 插入；0x408690 遍历 mov ecx,[edi]; mov edi,[edi+4]）*/
 #define CE_NODE_CARD               0x0
 #define CE_NODE_NEXT               0x4
+#define CE_NODE_PREV               0x8        /* recount 0x40811b..0x408132 摘链：next->prev = prev; prev->next = next */
 
 /* ---- zCardBaseClass（0x54 字节；case 56 与尾段一手，SDK §2）---- */
 #define CE_CARD_VTABLE             0x00
@@ -151,7 +156,9 @@
 #define CE_CARD_ELAPSED_TIMER      0x20       /* zTimer：激活经过帧（每帧 Timer__increment；OM §3 订正）*/
 #define CE_CARD_RECHARGE_TIMER     0x34       /* zTimer：充能倒计时（空闲时 Timer__decrement；c_press 门控 +0x38 <= 0）*/
 #define CE_CARD_RECHARGE_TIME      0x48
+#define CE_FLAG_FROM_SAVE          0x01       /* flags bit0：存档 / replay 装载（mode & 1）；局末 recount 只删 bit0 == 0 的卡 */
 #define CE_FLAG_ACTIVE             0x08       /* flags bit3：主动卡（尾段按它入 selected / num_active）*/
+#define CE_FLAG_EQUIPMENT          0x40       /* flags bit6：装备卡（recount 0x408164 test al,0x40 → num_equipment）*/
 #define CE_FLAG_FIRING             0x20       /* flags bit5：正在释放（HUD 配色，method_40）*/
 #define CE_FLAG_ACTIVE_CLEAR       0x46       /* 主动卡 case 清的位（0x411d83 and ~0x46 | 8）*/
 #define CE_CARD_TABLE_ENTRY        0x4c
@@ -189,6 +196,7 @@ typedef struct { int32_t prev; int32_t cur; float cur_f; } ce_timer_t;   /* zTim
 
 /* ---- 可从卡里调的引擎函数（调用约定一手：SDK.md / AUDIT §O16）---- */
 #define CE_FN_ALLOCATE_NEW_CARD    0x411460   /* thiscall(mgr; id, mode)：mode 0 道具 / 1 存档 / 2 购买 / 3 replay；返回 num_total，-1 = 拒 */
+#define CE_FN_CREATE_HUD_LISTS     0x408d00   /* AbilityManager__create_all_card_lists_for_hud：thiscall(mgr; int) ret 4：先按 mgr+0x58 删旧图标 VM，再按三个计数重画三行；分配尾段 mode != 1 时调 (mgr, 0)（AUDIT §W）*/
 #define CE_FN_MARK_OBTAINED        0x418de0   /* fastcall(id, notify)：置解锁位（本 mod 的断点把新 id 转进影子 + side-car）*/
 #define CE_FN_TABLE_GET            0x407d70   /* fastcall(id) → zTableCardData*；未命中回落 NULL 行 */
 #define CE_FN_SHOP_PICK_RANDOM     0x416f50   /* fastcall(out*, tier_lo; tier_hi, exclude[], n)：商店随机池抽一张（未拥有、本关可用、按权重、游戏 RNG）；返回非 0 = 抽到，*out = 表行 */

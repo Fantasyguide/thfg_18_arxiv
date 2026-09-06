@@ -9,6 +9,8 @@
  *                                沿卡链表调 on_enemy_drop_pre(counts)，counts = 敌人 +0x04 起 20 个 int32。
  *   BP_ce_item_money   0x446d28  inc [MONEY_TOTAL]（紧接 inc [MONEY]）。沿卡链表调 on_item_money(&bonus)，
  *                      bonus > 0 时 MONEY 与 MONEY_TOTAL_COLLECTED 一起 += bonus；原两条 inc 照常放行。
+ *   ce_sdk_on_shop_open          不是断点：shop.c 的 BP_ce_shop_reopen 在 MSG 开店那一帧调它，沿卡链表调 on_shop_open()。
+ *   ce_destroy_card              局中删一张卡（倒吊人）：照 recount 0x4080e0 的删卡分支，AUDIT §W。
  *   ce_sdk_setup       门里：基类虚表 21 槽与 engine.h 的常量逐一比对（布局假设的运行时守卫）、三个断点已挂、
  *                      与 cards.js 对账（C 有 JSON 无 → FAIL）、每张行为卡记一行。
  */
@@ -19,7 +21,7 @@
 
 /* ---- trace ---- */
 static int      s_trace;
-#define CE_TRACE_SLOTS 23                  /* 21 个虚表槽 + 事件 0x54 / 0x58 */
+#define CE_TRACE_SLOTS 26                  /* 21 个虚表槽 + 事件 0x54 / 0x58 / 0x5c / 0x60 / 0x64 */
 static uint8_t  s_seen[CE_SDK_MAX_BEHAVIORS][CE_TRACE_SLOTS];
 
 void ce_sdk_set_trace(int on) { s_trace = on; }
@@ -259,6 +261,91 @@ int __cdecl BP_ce_enemy_drop(x86_reg_t *regs, void *bp_info)
         }
     }
     return BP_EXEC_ORIGINAL;
+}
+
+/* GameThread 看到 MSG 的开店位那一帧（shop.c BP_ce_shop_reopen 的 flag_set 分支）：商店对象这一帧稍后才 new，
+ * 这里改 MONEY 店里显示的就是改后的值。重开的第二家（同一断点的另一分支）不调。AUDIT §W。 */
+void ce_sdk_on_shop_open(void)
+{
+    uint8_t *mgr = CE_ABILITY_MGR();
+    if (!mgr) return;
+    unsigned guard = 0;
+    for (const uint8_t *node = *(const uint8_t *const *)(mgr + CE_MGR_CARD_LIST_FIRST);
+         node && guard < 256;
+         node = *(const uint8_t *const *)(node + CE_NODE_NEXT), ++guard) {
+        uint8_t *card = *(uint8_t *const *)(node + CE_NODE_CARD);
+        if (!card) continue;
+        const ce_hooks_t *h = hooks_of(card);
+        if (h && h->on_shop_open) {
+            h->on_shop_open((ce_card_t *)card);
+            ce_sdk_trace(ce_card_id(card), 0x64, "on_shop_open");
+        }
+    }
+}
+
+/* ---- 局中删卡（AUDIT §W）----
+ * 零售只在两处删链表里的卡：局末 recount 0x4080e0（逐张：摘链 → vtable+0x50(1) → num_total−1，最后整体重算三计数并重选主动卡）
+ * 和 reset_cards 0x407da0（全清）。商店空白卡就是在店里调后者，所以「店里删卡、子机等关店广播再重建」有零售先例。
+ * 这里做 recount 那一支的单张版：类别计数按 flags 就地减（recount 是删完重数，结果一样），HUD 用引擎自己的
+ * create_all_card_lists_for_hud(mgr, 0) 重画（分配尾段 mode != 1 时调的就是它；它先按 mgr+0x58 删旧图标 VM，不留幽灵）。 */
+static int card_in_list(const uint8_t *mgr, const uint8_t *victim)
+{
+    unsigned guard = 0;
+    for (const uint8_t *node = *(const uint8_t *const *)(mgr + CE_MGR_CARD_LIST_FIRST);
+         node && guard < 256;
+         node = *(const uint8_t *const *)(node + CE_NODE_NEXT), ++guard)
+        if (*(const uint8_t *const *)(node + CE_NODE_CARD) == victim) return 1;
+    return 0;
+}
+
+int ce_destroy_card(ce_card_t *victim_)
+{
+    uint8_t *mgr = CE_ABILITY_MGR();
+    uint8_t *victim = (uint8_t *)victim_;
+    if (!mgr || !victim) return 0;
+    if (*(uint8_t **)(mgr + CE_MGR_SELECTED_ACTIVE) == victim) {
+        ce_log("destroy: refused, card %u is the selected active card", ce_card_id(victim));
+        return 0;
+    }
+    if (!card_in_list(mgr, victim)) { ce_log("destroy: refused, card %u not in the list", ce_card_id(victim)); return 0; }
+    uint32_t id = ce_card_id(victim), flags = ce_card_flags(victim);
+    uint8_t *node = victim + CE_CARD_LIST_NODE;
+    uint8_t *next = *(uint8_t **)(node + CE_NODE_NEXT);
+    uint8_t *prev = *(uint8_t **)(node + CE_NODE_PREV);
+    if (next) *(uint8_t **)(next + CE_NODE_PREV) = prev;          /* 0x408122..0x408125 */
+    if (prev) *(uint8_t **)(prev + CE_NODE_NEXT) = next;          /* 0x40812f..0x408132（prev 可以是表头 mgr+0x18，其 +4 正是 +0x1c）*/
+    *(uint8_t **)(node + CE_NODE_NEXT) = 0;
+    *(uint8_t **)(node + CE_NODE_PREV) = 0;
+    int32_t *cnt = (int32_t *)(mgr + ((flags & CE_FLAG_ACTIVE) ? CE_MGR_NUM_ACTIVE
+                                    : (flags & CE_FLAG_EQUIPMENT) ? CE_MGR_NUM_EQUIPMENT : CE_MGR_NUM_PASSIVE));
+    if (*cnt > 0) --*cnt;
+    if (*(int32_t *)(mgr + CE_MGR_NUM_TOTAL) > 0) --*(int32_t *)(mgr + CE_MGR_NUM_TOTAL);
+    if (id < 255) ((int32_t *)(mgr + CE_MGR_OWNED))[id] = 0;     /* 像没拿过一样：商店能再刷出它 */
+    void *vt = *(void **)(victim + CE_CARD_VTABLE);
+    ((ce_base_del_t)(*(void **)((uint8_t *)vt + 0x50)))(victim, 1);   /* 0x408147..0x408149 push 1; call [vt+0x50]；我们的桩顺手释放 ce_state */
+    ((void (CE_TC *)(void *, int))CE_FN_CREATE_HUD_LISTS)(mgr, 0);
+    ce_log("destroy: card %u (flags 0x%x) removed; now total %d = %d active + %d equipment + %d passive", id, flags,
+           *(int32_t *)(mgr + CE_MGR_NUM_TOTAL), *(int32_t *)(mgr + CE_MGR_NUM_ACTIVE),
+           *(int32_t *)(mgr + CE_MGR_NUM_EQUIPMENT), *(int32_t *)(mgr + CE_MGR_NUM_PASSIVE));
+    return 1;
+}
+
+ce_card_t *ce_pick_random_card(ce_card_t *exclude)
+{
+    uint8_t *mgr = CE_ABILITY_MGR();
+    if (!mgr) return NULL;
+    uint8_t *cands[256];
+    unsigned n = 0, guard = 0;
+    const uint8_t *selected = *(const uint8_t *const *)(mgr + CE_MGR_SELECTED_ACTIVE);
+    for (const uint8_t *node = *(const uint8_t *const *)(mgr + CE_MGR_CARD_LIST_FIRST);
+         node && guard < 256;
+         node = *(const uint8_t *const *)(node + CE_NODE_NEXT), ++guard) {
+        uint8_t *card = *(uint8_t *const *)(node + CE_NODE_CARD);
+        if (!card || card == (uint8_t *)exclude || card == selected) continue;
+        cands[n++] = card;
+    }
+    int k = ce_pick_index(ce_rand(), n);
+    return k < 0 ? NULL : (ce_card_t *)cands[k];
 }
 
 /* ---- 门里的核对 ---- */
