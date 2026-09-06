@@ -175,6 +175,7 @@ CE_CARD(id, .回调 = 函数, ...);      /* 一张卡一条，放在 native/card
 | `on_item_money` | `0x446d28`（同函数尾部 `inc [MONEY_TOTAL]`，紧接 `inc [MONEY]`）；断点把 `*bonus` 同时加进 `MONEY` 与 `MONEY_TOTAL_COLLECTED` | `void (ce_card_t*, int32_t *bonus)` | 10♠：每第 10 个金钱道具 `*bonus += 1` |
 | `on_enemy_drop_pre` | `0x430510`（`Enemy__drop_items_and_notify_cards` 入口，撒之前）| `void (ce_card_t*, int32_t *counts)` | 加倍：掉落 ×2 |
 | `on_bomb_spent` | `0x4203bc`（`do_bomb` 里 `consume_bomb` 刚返回）| `void (ce_card_t*)` | 腐化：扣上限 |
+| `on_hud_anm`（虚表 `+0x44`）| 不是事件：引擎建好本卡的 HUD 图标后（`0x408fc4`）把图标根 VM 的 anm id 交给卡；图标重建时会再调一次。真银圣剑用它在图标上叠数字（`ce_anm_spawn_ui` + `ce_anm_set_sprite`，AUDIT §X）| `int (ce_card_t*, uint32_t anm_id)` | 真银圣剑：耐久数字 |
 | `on_shop_open` | **不是新断点**：`shop.c` 的 `ce_shop_reopen`（`0x443b05`）在 MSG 请求开第一家店那一帧调 `ce_sdk_on_shop_open()`；商店对象这一帧稍后才建，改 `MONEY` 店里看到的就是改后的值；重开的第二家不算 | `void (ce_card_t*)` | 黄金小丑：金钱 +20％ |
 
 **局中删一张卡**：`ce_destroy_card(victim)`（`sdk.c`，AUDIT §W）照 recount `0x4080e0` 的删卡分支——摘链、按 flags 减类别计数、

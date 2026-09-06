@@ -132,6 +132,8 @@ typedef void (__attribute__((thiscall)) *ce_fn_add_life_t)(void *globals);
 typedef void (__attribute__((thiscall)) *ce_fn_add_bomb_t)(void *globals, int unused);
 static inline void ce_add_life(void) { ((ce_fn_add_life_t)CE_FN_ADD_LIFE)((void *)CE_ADDR_GLOBALS_INNER); }
 static inline void ce_add_bomb(void) { ((ce_fn_add_bomb_t)CE_FN_ADD_BOMB)((void *)CE_ADDR_GLOBALS_INNER, 0); }
+/* +1 残机碎片（0x457570，thiscall + 哑栈参 ret 4，与 add_bomb 同形）：残机已满时引擎清零不加、满每命碎片数自动进整命、自带刷 HUD。零售碎片道具 / CardNarumi 同一入口。AUDIT §X */
+static inline void ce_add_life_fragment(void) { ((ce_fn_add_bomb_t)CE_FN_ADD_LIFE_FRAGMENT)((void *)CE_ADDR_GLOBALS_INNER, 0); }
 /* HUD 残机行刷新（Gui 0x441f10：thiscall(gui; lives, fragments, max) ret 0xc，一手反汇编，AUDIT O28）。改 CURRENT_LIVES 后必须调，零售在死亡 / 商店复原处都这么做。*/
 typedef void (__attribute__((thiscall)) *ce_fn_gui_lives_t)(void *gui, int lives, int fragments, int max);
 static inline void ce_gui_update_lives(void)
@@ -245,6 +247,26 @@ static inline uint8_t *ce_anm_get_vm(uint32_t id)
     void *mgr = CE_ANM_MANAGER();
     return (id && mgr) ? ((ce_fn_anm_get_vm_t)CE_FN_ANM_GET_VM_WITH_ID)(mgr, id) : 0;
 }
+/* UI 列表里起一个 VM（HUD 用；0x409670，世界列表版是 ce_anm_spawn）：pos = 实体坐标（NULL = 0,0,0），脚本里的 layer / resolutionMode 自己写。
+ * 第四个栈参被调方不读但 ret 0x10 会清，必须压（AUDIT §X）。返回 anm id（0 = 失败）。*/
+typedef int *(__attribute__((thiscall)) *ce_fn_anm_inst_ui_t)(void *anm, int *out_id, int script, const float *pos, int unused);
+static inline uint32_t ce_anm_spawn_ui(void *anm, int script, const float *pos)
+{
+    int id = 0;
+    if (!anm) return 0;
+    ((ce_fn_anm_inst_ui_t)CE_FN_ANM_INSTANTIATE_UI_BACK)(anm, &id, script, pos, 0);
+    return (uint32_t)id;
+}
+/* 给一个已存在的 VM 换 sprite（同一份 anm 的 sprite 表下标；0x477b00 thiscall(anm; vm, idx) ret 8）。返回 0 = VM 不在了 */
+typedef int (__attribute__((thiscall)) *ce_fn_anm_set_sprite_t)(void *anm, void *vm, int sprite);
+static inline int ce_anm_set_sprite(void *anm, uint32_t id, int sprite)
+{
+    uint8_t *vm = ce_anm_get_vm(id);
+    if (!vm || !anm) return 0;
+    ((ce_fn_anm_set_sprite_t)CE_FN_ANM_SET_SPRITE)(anm, vm, sprite);
+    return 1;
+}
+
 static inline int ce_anm_set_pos(uint32_t id, float x, float y, float z)
 {
     uint8_t *vm = ce_anm_get_vm(id);

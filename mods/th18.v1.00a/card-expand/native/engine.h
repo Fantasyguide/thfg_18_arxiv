@@ -216,6 +216,9 @@ typedef struct { int32_t prev; int32_t cur; float cur_f; } ce_timer_t;   /* zTim
                                                  * se 0x2c（声像取 PLAYER+0x620）、CALL vtable+4 起各自机的炸弹。返回 0 = 放出去了、-1 = +0x30 或 +0xa0 非零被拦。
                                                  * 引擎调用点 Player__on_tick__body 0x45c051（case 1）与 0x45c2c3（决死窗口）。AUDIT §R */
 #define CE_FN_ADD_BOMB             0x457690   /* thiscall(GlobalsInner*; 一个未读栈参) ★ret 4：CURRENT_BOMBS+1 钳 MAX_BOMBS、清碎片、音效 0x2e、刷 HUD。CardBomb dtor 调它。AUDIT O26 */
+#define CE_FN_ANM_INSTANTIATE_UI_BACK    0x409670 /* AnmLoaded__instantiate_vm_to_ui_list_back：thiscall(AnmLoaded*; int* out_id, int script, float* pos3 或 NULL, int 未读) ★ret 0x10（第四个栈参不读但要压；反汇编 0x409746）。HUD 卡图标就是这条链（0x408de0 内联版）。AUDIT §X */
+#define CE_FN_ANM_SET_SPRITE             0x477b00 /* AnmLoaded__set_sprite：thiscall(AnmLoaded*; vm, sprite_idx) ret 8（两个出口都 ret 8；anm/th18/01 §0）。HUD 图标 0x408fxx 用它换卡图 */
+#define CE_FN_ADD_LIFE_FRAGMENT          0x457570 /* GlobalsInner 加 1 个残机碎片：thiscall(GlobalsInner*; 一个未读栈参) ★ret 4（两个出口 0x457585 / 0x4575e2）。CURRENT_LIVES >= LIVES_MAX 时清零不加；满每命碎片数进位 0x4575f0；刷 HUD 0x441f10。调用方：CardLifeFragment ctor、CardNarumi 每关、道具 type 0x10。AUDIT §X */
 #define CE_FN_ANM_INSTANTIATE_WORLD_BACK 0x405bf0 /* AnmLoaded__instantiate_vm_to_world_list_back：thiscall(AnmLoaded*; int* out_id, int script, int layer, void** out_vm) ret 0x10。建 VM、实体坐标 (0,0,0)、layer<0x18 时写 vm+0x18、AnmVm__run 一帧、挂 world 列表尾；内部自己进临界区。AUDIT O24 */
 #define CE_FN_ANM_SET_SPRITE       0x477b00   /* AnmLoaded__set_sprite：thiscall(AnmLoaded*; vm, sprite_idx) ret 8（备查，特效脚本自己 sprite() 就不用）*/
 #define CE_FN_ANM_DELETE_BY_ID     0x488cf0   /* stdcall(anm_id) ret 4：按 id 标记删除 VM 及其子树（Tenshi 收尾用；一次性脚本自 delete() 就不用）*/

@@ -252,5 +252,19 @@
     "weight": 2,
     "sprite_large": 150,
     "sprite_small": 151
+  },
+  "75": {
+    "name": "真银圣剑",
+    "desc": [
+      "每关前两发炸弹是挥砍：",
+      "附加 400 点伤害，并回复 1 个残机碎片。",
+      "卡上数字 = 本关剩余次数。致敬・炉石传说。"
+    ],
+    "internal_name": "TRUESILVER",
+    "initial_unlocked": 1,
+    "price_tier": 7,
+    "weight": 2,
+    "sprite_large": 116,
+    "sprite_small": 117
   }
 }

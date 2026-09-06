@@ -1,0 +1,12 @@
+script script99 {
+    sprite(@TS_DIGIT_0);
+    ins_431(1);
+    type(1);
+    layer(26);
+    resolutionMode(2);
+    pos(1080.0f, 561.0f, 0.0f);
+    alpha(255);
+    stop();
+    interruptLabel(1);
+    delete();
+}

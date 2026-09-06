@@ -18,6 +18,16 @@
 #define CE_ANM_ABILITY_SPRITE_FIRELORD_BODY         123   /* entry21 */
 #define CE_ANM_ABILITY_SPRITE_FIRELORD_FIREBALL     124   /* entry22 */
 #define CE_ANM_ABILITY_SPRITE_FIRELORD_BLAST        125   /* entry23 */
+#define CE_ANM_ABILITY_SPRITE_TS_DIGIT_0            126   /* entry24 */
+#define CE_ANM_ABILITY_SPRITE_TS_DIGIT_1            127   /* entry25 */
+#define CE_ANM_ABILITY_SPRITE_TS_DIGIT_2            128   /* entry26 */
+#define CE_ANM_ABILITY_SPRITE_TS_DIGIT_3            129   /* entry27 */
+#define CE_ANM_ABILITY_SPRITE_TS_DIGIT_4            130   /* entry28 */
+#define CE_ANM_ABILITY_SPRITE_TS_DIGIT_5            131   /* entry29 */
+#define CE_ANM_ABILITY_SPRITE_TS_DIGIT_6            132   /* entry30 */
+#define CE_ANM_ABILITY_SPRITE_TS_DIGIT_7            133   /* entry31 */
+#define CE_ANM_ABILITY_SPRITE_TS_DIGIT_8            134   /* entry32 */
+#define CE_ANM_ABILITY_SPRITE_TS_DIGIT_9            135   /* entry33 */
 #define CE_ANM_ABILITY_SCRIPT_REVERSE_FLASH          68
 #define CE_ANM_ABILITY_SCRIPT_ROYAL_FLUSH            69
 #define CE_ANM_ABILITY_SCRIPT_ROYAL_SHOW             70
@@ -49,3 +59,4 @@
 #define CE_ANM_ABILITY_SCRIPT_FIRELORD_EMBER         96
 #define CE_ANM_ABILITY_SCRIPT_FIRELORD_AURA          97
 #define CE_ANM_ABILITY_SCRIPT_FIRELORD_GATHER        98
+#define CE_ANM_ABILITY_SCRIPT_HUD_DIGIT              99

@@ -1023,6 +1023,38 @@ type 1 → 只注册 on_tick `0x475c70`（`register__on_tick(…, 0x14)`），�
 **实跑要看的**：见 [`NEXT.md`](NEXT.md) §1j。崩溃优先怀疑 W3（`+0x50` 的 thiscall）、W4（`0x408d00` 的 `ret 4`：店里 HUD 重画后立刻崩就是它）；
 视觉怀疑 W4（删后 HUD 行没重排 / 幽灵图标 = `mgr+0x58` 删 VM 那一步没生效）。
 
+## X. 真银圣剑（id 75）—— 炸弹「挥砍」+ 残机碎片 + HUD 图标上叠数字
+
+**没有手写机器码、没有新断点、不改任何字节**。三个新引擎入口都是普通函数指针调用，签名从反汇编出口与零售调用点取；
+伤害源 / 抬上限 / 删 VM 全是炎魔用过的包装。`ability.anm` 多 10 个 32×32 entry + 一个脚本。纯逻辑 `truesilver_core.c` 主机单测。
+
+| # | claim | 结论 |
+| --- | --- | --- |
+| X1 | `AnmLoaded__instantiate_vm_to_ui_list_back` `0x409670` 的调用约定 | **CONFIRMED** —— 见下「X1 证据」：thiscall + 四个栈参、第四个不读、`ret 0x10` |
+| X2 | `AnmLoaded__set_sprite` `0x477b00` | **CONFIRMED** —— `anm/th18/01-vm-instantiate.md` §0：thiscall(anm; vm, idx) 两个出口都 `ret 8`；HUD 图标 `0x408fxx` 就这么调（`set_sprite(abcard, child, entry+0x30)`）。我们传 ability.anm 与它自己的 sprite 号 |
+| X3 | 加碎片 `0x457570` | **CONFIRMED** —— 见下「X3 证据」：thiscall(GlobalsInner; 哑参) `ret 4`，两个出口一致；语义 = 零售碎片道具 |
+| X4 | 挥砍伤害与上限 | **CONFIRMED（推理）** —— 4 帧 × 100 全场矩形源，同帧还有炸弹自己的源与自机弹，三者合计钳 `player+0x47984`；抬到 400 = 炎魔的 300 再留 100 给炸弹。炸弹单帧源 > 300 的角色（🟡 未逐个量）会挤掉一部分，实跑看 boss 血条 |
+| X5 | 数字与图标的相对位置 | **设计（待实跑）** —— 见下「X5 证据」：实体坐标抄图标根 VM `+0x5f0`，脚本 pos = 根脚本 + (24, 24) |
+| X6 | 数字 VM 不残留 | **CONFIRMED（代码）** —— 每帧 `digit_sync`：图标 `get_vm_with_id` 为 0 → 删数字；`on_hud_anm` 再来（HUD 重建）→ 先删旧再起新；`on_run_reset` 删；数字 VM 自己死了（UI 列表被引擎整清）→ 重起。`ce_anm_delete` 走 `0x488cf0`（标记删除并递归子树），与青眼血条同款 |
+| X7 | `on_hud_anm` 槽的时序 | **CONFIRMED** —— `0x408fc4` 在图标根 VM 与两个子 VM 都建好、`set_sprite` 之后调 `vtable+0x44(id)`；我们在里面调 `0x409670` 起自己的 VM = 引擎同一帧同一函数里刚做过的事（它内联了同一段）。不在任何链表遍历里改链表 |
+| X8 | `on_bomb_spent` 里调加碎片 | **CONFIRMED** —— 断点在 `do_bomb` 内（§T），Player tick 里；`0x457570` 的零售调用方 `ItemManager__on_tick__body` 也是普通 tick 上下文，内部只改 GlobalsInner 与刷 HUD。与腐化同一分派链，顺序无关 |
+| X9 | 耐久不跨关、进店不清 | **设计** —— `on_stage_start`（`+0x34`，每关开场）回满；ctor 每关开场也会再调一次，幂等；商店里买到 → ctor 给 2，下一关开场再回满。爆发中过关清掉（单测覆盖）|
+| X10 | 决死炸 / 黄昏接的第二发 | **设计** —— 都经 `do_bomb` 扣数 ⇒ 都算挥砍。黄昏 + 真银：最后一颗接出来的那发也吃耐久 |
+
+**X5 证据**：图标根脚本 abcard script5 `pos(1056, 537)`，子脚本 6–11 `pos(0,0)`（子随父）；引擎把每张图标的排版坐标写进根 VM 实体坐标 `+0x5f0`
+（`0x408de0`：`pfVar6[0x17c..0x17e] = local_2c/local_10`，x 按 80 px 步进、行 y 0 / 130 / 260）。我们的 VM 实体坐标抄它、脚本 `pos(1080, 561)` = 根脚本 + (24, 24)。
+若实跑发现 `+0x5f0` 不是排版坐标（脚本 `pos` 覆盖了它），改抄脚本 pos 字段即可——日志已打三个分量。
+
+**X1 证据**：`0x409670` 入口 `mov edi, ecx`（this = AnmLoaded）；`push [ebp+0xc]`（script）→ `0x407420` 拷脚本；`[ebp+0x10]` 非 0 时 `movq xmm0, [eax]; movq [esi+0x5f0], xmm0; mov eax, [eax+8]; mov [esi+0x5f8], eax`（pos 三分量）否则清零；
+`[ebp+8]` = out_id（`mov [edi], 0` 后 `mov [edi], ecx` 写回 id）；`[ebp+0x14]` 全程不读；唯一出口 `0x409746` **`ret 0x10`**。⇒ thiscall(anm; int* out_id, int script, float* pos, int unused) ret 0x10。
+`sdk.h` 的 `ce_anm_spawn_ui` 压四个参。层不是参数（世界版 `0x405bf0` 写 `vm+0x18`，这里没有）—— 靠脚本里的 `layer(26)`。
+
+**X3 证据**：`0x457570`：`mov esi, ecx`（this = GlobalsInner `0x4cccdc`）；`CURRENT_LIVES(+0x6c) >= LIVES_MAX(+0x78)` → `+0x70 = 0; ret 4`；否则 `+0x70`（LIFE_FRAGMENTS）+1，
+按难度表（`0x4b40c8` / extra `0x4b3ff4`，下标 `+0x74`）取每命碎片数，`while (frag >= n) { frag -= n; 0x4575f0(加整命) }`，最后 `0x441f10(GUI; lives, frag, max)` 刷 HUD；出口 `0x4575e2` **`ret 4`**。
+调用方 `CardLifeFragment__constructor` `0x409cc0`（先 `LIVES_MAX` +1 钳 7 再调它——那是碎片**卡**的额外效果，我们不要）、`CardNarumi` 每关、道具 type 0x10。⇒ thiscall(GlobalsInner; 哑参) ret 4，`ce_add_life_fragment` 与 `ce_add_bomb` 同形。
+
+**实跑要看的**：见 [`NEXT.md`](NEXT.md) §1k。崩溃优先怀疑 X1 / X3 的哑参、X2 的 thiscall；视觉看 X5。
+
 ## G. OPEN —— 还没解决的
 
 | # | 事项 | 说明 |

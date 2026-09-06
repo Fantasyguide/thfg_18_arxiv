@@ -14,6 +14,7 @@
 | 7 商店、10 JSON 数据 | 🔧 待实跑（AUDIT §N）|
 | 9 行为（SDK + 黑桃五张 + 强欲之壶 + 反转牌）| 🔧 待实跑（AUDIT §O）← **先做这个** |
 | 8 卡图 | 🔧 工具就位（[`assets/`](assets/README.md)）：黑桃五张占位图 sprite 118–127 已进 `_255/th18/abcard.anm`，待实跑 |
+| **19 真银圣剑（id 75）** | 🔧 **待实跑**（AUDIT §X）—— 被动武器：每关前 2 发炸弹 +400 伤害 + 1 残机碎片；**HUD 小卡上画剩余次数**（第一次用虚表 `+0x44` 与 UI 列表建 VM，偏移待调，§1k）|
 | **18 倒吊人（id 74）** | 🔧 **待实跑**（AUDIT §W）—— 即时卡：随机摧毁卡组里另一张卡 + 300 金钱；**第一个局中删卡原语 `ce_destroy_card`**（§1j）|
 | **17 黄金小丑（id 73）** | 🔧 **待实跑**（AUDIT §W）—— 被动：每关进店金钱 +20％；新事件 `on_shop_open`（不开断点）|
 | **16 炎魔之王拉格纳罗斯（id 72）** | 🔧 **待实跑**（AUDIT §V）—— 主动：扣 2.00 火力召唤；800 HP 挡弹、每 7 s 随机移动 + 向随机敌人投火球（§1i）|
@@ -144,6 +145,20 @@ trace: card 59 on_tick_2 (+0x2c) first hit / card 62 on_tick_2 / card 61 on_bull
 `on_power_level_change`（破损核心会在此重申请子机——零售装备卡同款）、`ce_rand` 的 thiscall、V17 震屏工厂的 fastcall + `ret 0x10`（第一颗火球落地那帧崩就是它）。
 视觉怀疑：火球方向（script92 不碰 rotate，C 写 `vm+0x44`；贴图朝 +x）、本体是否被 script91 拉回原点（脚本不碰 pos，应不会）、
 拖尾是否堆在火球身后而不是身前（起在当前帧坐标、火球下一帧才前进）。
+
+## 1k. 真银圣剑（id 75，2026-09-06，待实跑，致敬炉石传说）
+
+被动「武器」：每关前 2 发炸弹是挥砍——炸弹放出的下一帧起 4 帧 × 100 盖满弹幕区的伤害源（上限抬 400），并 +1 残机碎片；HUD 小卡右下角画本关剩余次数。
+不开新断点、不改字节；三个新引擎入口都是普通函数指针（UI 列表建 VM `0x409670`、`set_sprite` `0x477b00`、加碎片 `0x457570`）。审计 [`AUDIT.md`](AUDIT.md) §X。
+`cards_dev.js` 起手卡组没带它——`_test` 商店里买（新卡权重 20，很快刷到），或临时换掉起手一格。
+
+进关应有：`truesilver: stage start, durability 2` → HUD 那一行的小卡上出现数字 **2**（日志 `truesilver: hud digit spawned (icon id N at x, y, z; digit id M)` —— **把这行的坐标贴回来**，数字偏移要按它调）。
+放第一发炸弹 → `truesilver: swing #1 -> durability 1, +400 over 4 frames (cap 400); life fragments L/F -> L/F'`，右上角残机碎片 +1（满 3 进整命、残机已满则不加），
+数字变 **1**，boss 血条比单放炸弹多掉一截（devstage ÷100 一发就死，换零售关看）；第二发 → 数字 **0**；第三发 → `truesilver: bomb without durability`，无额外效果。
+过关 → 数字回 **2**。进店买卡后 HUD 重建 → 数字仍在（日志再来一行 `hud digit spawned`）。
+崩溃优先怀疑：X1（`0x409670` 的 `ret 0x10` 第四个哑参）、X2（`set_sprite` 的 thiscall）、X3（加碎片的 `ret 4` 哑参）。视觉怀疑：数字位置 / 大小（X5：改 script99 的 `pos` 或贴图尺寸）、数字残留（X6）。
+
+通过后：CARDS.md 🔧 → ✅；AUDIT §X 顶部记「实跑通过」。
 
 ## 1j. 黄金小丑（id 73）+ 倒吊人（id 74）（2026-09-06，待实跑，致敬 Balatro）
 

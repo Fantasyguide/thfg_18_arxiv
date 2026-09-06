@@ -18,3 +18,13 @@ BROKEN_CORE_BOLT  ability/broken_core/BOLT.png  256x64
 FIRELORD_BODY  ability/firelord/RAGNAROS.png  256x256
 FIRELORD_FIREBALL  ability/firelord/FIREBALL.png  64x64
 FIRELORD_BLAST  ability/firelord/BLAST.png  128x128
+TS_DIGIT_0  ability/truesilver/DIGIT_0.png  32x32
+TS_DIGIT_1  ability/truesilver/DIGIT_1.png  32x32
+TS_DIGIT_2  ability/truesilver/DIGIT_2.png  32x32
+TS_DIGIT_3  ability/truesilver/DIGIT_3.png  32x32
+TS_DIGIT_4  ability/truesilver/DIGIT_4.png  32x32
+TS_DIGIT_5  ability/truesilver/DIGIT_5.png  32x32
+TS_DIGIT_6  ability/truesilver/DIGIT_6.png  32x32
+TS_DIGIT_7  ability/truesilver/DIGIT_7.png  32x32
+TS_DIGIT_8  ability/truesilver/DIGIT_8.png  32x32
+TS_DIGIT_9  ability/truesilver/DIGIT_9.png  32x32

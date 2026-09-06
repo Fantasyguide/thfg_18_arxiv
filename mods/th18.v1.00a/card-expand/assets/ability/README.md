@@ -18,6 +18,7 @@
 抠白底：四角泛洪 + 边缘按「离白多远」做 alpha 斜坡；script91 缩放 0.5）、`FIREBALL.png`（64×64 火球，程序生成：白芯 → 黄 → 橙 → 红、
 边缘按角度噪声抖出火舌，固定种子；script92 本体 / script93 拖尾共用）、`BLAST.png`（128×128 爆炸：内圈闪光 + 外圈光环，script94）。
 
+`make_truesilver_art.py`：真银圣剑 HUD 耐久数字 —— `truesilver/DIGIT_0..9.png` 10 张 32×32（DejaVu Serif Bold 白字 2 px 黑描边），ORDER 里 `TS_DIGIT_0..9`；script99 `hud_digit` 与零售 HUD 图标同款 `layer(26); resolutionMode(2)`，C 用 `ce_anm_set_sprite` 换数字。
 `gen_banner.py "ROYAL FLUSH"`：金色金属光泽 + 黑描边的大字横幅（512×128，`banner/`），皇家同花顺的亮字用它。
 
 `make anm` 跑 `build_ability.py`：重编 → `native/build/ability.anm`，自检零售部分没变，
