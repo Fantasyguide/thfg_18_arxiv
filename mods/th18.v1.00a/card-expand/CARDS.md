@@ -66,7 +66,7 @@ Mr. Bones / Gros Michel 这类「自毁」卡以后都走它。
 | --- | --- | --- | --- | --- | --- |
 | 72 | 炎魔之王拉格纳罗斯 | 主动（C 键）：消耗 2.00 火力召唤**不跟随自机**的炎魔；800 点生命替玩家挡子弹；每 7 秒滑到弹幕区下 1/3 的随机落点，到位后向场上**随机一个**敌人投火球（飞行物，沿途消弹；落地消弹 r 96 + 爆炸 1200 + 小震屏）；生命归零死亡，过关消失。火力 < 3.00 拒绝。充能 10 s | `on_activate` 照 Tsukasa 三步（门槛 → `spend_power` → `repopulate`）；`on_active_tick` 挡弹 + 状态机 `fl_step` + 火球位姿 + 落地 8 帧 `ce_damage_rect`；随机走 `ce_rand()`（详见下）。AUDIT §V | `firelord.c` + `firelord_core.c` | 🔧 |
 | 70 | 腐化 | 被动：拿到时炸弹上限补满 7；此后**放炸弹消耗的是上限而不是当前数**，且过关不回复 —— 一次给满七发，用一发少一发 | `ctor`（`ce_fresh_acquire` 门控）顶满上限；新 SDK 事件 `on_bomb_spent`（断点 `ce_bomb_spent` @ `0x4203bc`，consume_bomb 刚返回）还原当前数、扣上限；`on_stage_start` 抵消引擎的 `min(3, 上限)` 补给。AUDIT §T | `corruption.c` | 🔧 |
-| 75 | 真银圣剑 | 被动「武器」：每关前 2 发炸弹是挥砍——附加 400 伤害（盖满弹幕区，范围内每个敌人各吃）并回 1 个残机碎片；耐久每关回满；HUD 小卡右下角画本关剩余次数 | `on_bomb_spent` 扣耐久 + `ce_add_life_fragment`（引擎 `0x457570`）；`on_tick_2` 出 4 帧 × 100 的全场矩形源并抬上限 400；`on_hud_anm`（虚表 `+0x44`，第一次被用）拿图标 id → UI 列表起 script99 数字 VM、`set_sprite` 换数字。AUDIT §X | `truesilver.c` + `truesilver_core.c` | 🔧 |
+| 75 | 真银圣剑 | 装备「武器」：每关前 2 发炸弹是挥砍——附加 400 伤害（盖满弹幕区，范围内每个敌人各吃）并回 1 个残机碎片；耐久每关回满；HUD 小卡右下角画本关剩余次数 | `on_bomb_spent` 扣耐久 + `ce_add_life_fragment`（引擎 `0x457570`）；`on_tick_2` 出 4 帧 × 100 的全场矩形源并抬上限 400；`on_hud_anm`（虚表 `+0x44`，第一次被用）拿图标 id → UI 列表起 script99 数字 VM、`set_sprite` 换数字。AUDIT §X | `truesilver.c` + `truesilver_core.c` | 🔧 |
 
 **炎魔之王（72）补充**：扣火力照零售 `CardTsukasa__c_press` `0x410e60`——门槛「成本 + 一档」（引擎 `spend_power` 永远保留 1.00，
 不留一档实际扣的会比名义少）、`spend_power(200)`、无条件 `repopulate_options`（重建子机 + 广播 `on_power_level_change`）。
@@ -77,7 +77,7 @@ Mr. Bones / Gros Michel 这类「自毁」卡以后都走它。
 火球 / 拖尾 / 爆炸贴图程序生成（同脚本，script92–94）。语音 `FIRELORD_SUMMON`（id `0x55`）/ `FIRELORD_ATTACK`（`0x56`）：用户 ogg 经 `voice/convert_voice.py` 转 wav。
 登场序列：语音 → 60 帧聚气粒子（script98，向中心汇聚）→ 本体 + 第一圈爆炸（复用火球落地的 `impact_fx`）→ 每 8 帧再一圈，共 3 圈。设计 `docs/superpowers/specs/2026-09-06-firelord-design.md`。
 
-**真银圣剑（75）补充**：炉石 4/2 → 400 伤害 / 2 耐久。数字贴图 `ability/truesilver/DIGIT_0..9.png`（`make_truesilver_art.py`，DejaVu Serif Bold 白字黑描边 32×32，ability.anm entry24–33 / sprite126–135）；script99 与零售 HUD 图标脚本同款 `layer(26); resolutionMode(2)`，`pos(1080, 561)` = 图标根脚本 (1056, 537) + (24, 24)，实体坐标抄图标根 VM 的 `+0x5f0`。**偏移待实跑调**。卡图占位 116/117。
+**真银圣剑（75）补充**：`category: 1`（用户：放装备区）——图鉴 / 编成排在零售子机卡之后，且 SDK 绑定时按零售装备卡置 flags bit6 ⇒ HUD 装备行（破损核心同此，AUDIT X11）。炉石 4/2 → 400 伤害 / 2 耐久。数字贴图 `ability/truesilver/DIGIT_0..9.png`（`make_truesilver_art.py`，DejaVu Serif Bold 白字黑描边 32×32，ability.anm entry24–33 / sprite126–135）；script99 与零售 HUD 图标脚本同款 `layer(26); resolutionMode(2)`，`pos(1080, 561)` = 图标根脚本 (1056, 537) + (24, 24)，实体坐标抄图标根 VM 的 `+0x5f0`。**偏移待实跑调**。卡图用户提供的圣剑插画（`_art/Holy_Sword.png` 居中裁 4:5 后 `fit_card.py`，sprite 152/153）。
 
 ## 装备（子机）
 

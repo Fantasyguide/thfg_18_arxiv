@@ -153,9 +153,20 @@ int __cdecl BP_ce_card_bind(x86_reg_t *regs, void *bp_info)
         uint8_t *card = (uint8_t *)(uintptr_t)regs->esi;
         *(const void **)card = b->vtable;
         const ce_hooks_t *h = (const ce_hooks_t *)b->hooks;
+        int equip = 0;
         if (h && h->active_recharge) active_init(card, h);
+        else {
+            /* category 1（子机装备）：case 56 给的是被动 flags（& ~0x4a | 4），改成零售装备 case 的写法（& ~0x0a | 0x44），
+             * 引擎据 bit6 把它画进 HUD 装备行、计入 num_equipment（0x408de0 / 0x412d6c）。bit0 由紧接着的原指令按 mode 写，不受影响。AUDIT X11 */
+            const uint8_t *e = ce_table_entry(regs->ebx);
+            if (e && *(const int32_t *)(e + 0x0c) == 1) {
+                uint32_t *flags = (uint32_t *)(card + CE_CARD_FLAGS);
+                *flags = (*flags & ~(uint32_t)CE_FLAG_EQUIPMENT_CLEAR) | CE_FLAG_EQUIPMENT_SET;
+                equip = 1;
+            }
+        }
         if (s_trace) ce_log("trace: card %u object %08x bound to vtable %p%s", regs->ebx, regs->esi, b->vtable,
-                            h && h->active_recharge ? " (active)" : "");
+                            h && h->active_recharge ? " (active)" : equip ? " (equipment)" : "");
     }
     return BP_EXEC_ORIGINAL;
 }

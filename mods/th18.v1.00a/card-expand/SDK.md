@@ -57,7 +57,7 @@ return 1;   /* 放行原指令 */
 | +0x30、+0x44 | 位标志（case 56 清 bit0）|
 | +0x48 | 充能时长（主动卡）|
 | +0x4c | `zTableCardData*`（尾段写）|
-| +0x50 | flags：bit0 = 存档/replay 装载，bit3 = 主动，bit6 = 装备，bit5 = 开火中 |
+| +0x50 | flags：bit0 = 存档/replay 装载，bit3 = 主动，bit6 = 装备，bit5 = 开火中。绑定时 SDK 按 JSON 改：`active_recharge` → 主动写法；`category: 1` → 零售装备写法 `& ~0x0a \| 0x44`（HUD 装备行 / `num_equipment`，AUDIT X11）|
 
 21 个槽（`03-hooks.md` §1 的语义；签名由基类实现的 `ret N` 定，`this` 在 ecx）：
 

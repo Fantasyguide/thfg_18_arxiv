@@ -262,9 +262,10 @@
     ],
     "internal_name": "TRUESILVER",
     "initial_unlocked": 1,
+    "category": 1,
     "price_tier": 7,
     "weight": 2,
-    "sprite_large": 116,
-    "sprite_small": 117
+    "sprite_large": 152,
+    "sprite_small": 153
   }
 }

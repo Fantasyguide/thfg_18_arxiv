@@ -71,6 +71,7 @@ DLL 在开机自检门里调 thcrap 的 `stack_game_json_resolve("cards.js")`，
 子机装备(1)×14 = REIMU_OP…NUE_OP、MAGATAMA，被动(2)×21 = ITEM_CATCH…MUKADE，主动(0)×12 = WARP…RICEBALL，MAGATAMA2(2)。
 `menu.c` 重排顺序表时把每个新 id 排在该类别**最长连续段**的最后一张之后（AUDIT M12；掉队的 BLANK / MAGATAMA2 不算段），
 所以填错类别会让卡出现在错误的区段。类别字段在引擎里唯一的读取点是菜单 `0x416940`（≠ 4 才显示说明面板），不影响玩法。
+**有行为的 category 1 卡**：SDK 绑定时把对象 flags 改成零售装备卡的写法（`& ~0x0a | 0x44`），于是 HUD 画进装备行、计入 `num_equipment`（真银圣剑、破损核心；AUDIT X11）。没有行为的卡不改。
 
 - 所有整数字段必须是 JSON 整数（`5`），不是字串（`"5"`）；thcrap 的 `0x` 十六进制字串**不**支持。
 - 不认识的字段：日志一行警告，不算错。

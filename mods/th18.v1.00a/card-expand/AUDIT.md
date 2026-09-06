@@ -1039,11 +1039,16 @@ type 1 → 只注册 on_tick `0x475c70`（`register__on_tick(…, 0x14)`），�
 | X7 | `on_hud_anm` 槽的时序 | **CONFIRMED** —— `0x408fc4` 在图标根 VM 与两个子 VM 都建好、`set_sprite` 之后调 `vtable+0x44(id)`；我们在里面调 `0x409670` 起自己的 VM = 引擎同一帧同一函数里刚做过的事（它内联了同一段）。不在任何链表遍历里改链表 |
 | X8 | `on_bomb_spent` 里调加碎片 | **CONFIRMED** —— 断点在 `do_bomb` 内（§T），Player tick 里；`0x457570` 的零售调用方 `ItemManager__on_tick__body` 也是普通 tick 上下文，内部只改 GlobalsInner 与刷 HUD。与腐化同一分派链，顺序无关 |
 | X9 | 耐久不跨关、进店不清 | **设计** —— `on_stage_start`（`+0x34`，每关开场）回满；ctor 每关开场也会再调一次，幂等；商店里买到 → ctor 给 2，下一关开场再回满。爆发中过关清掉（单测覆盖）|
+| X11 | category 1 → 装备 flags | **CONFIRMED** —— 见下「X11 证据」：零售装备 case 写 `& ~0x0a \| 0x44`，绑定断点在 case 之后、`bit0 := mode & 1` 之前，改后 bit0 仍由原指令写 |
 | X10 | 决死炸 / 黄昏接的第二发 | **设计** —— 都经 `do_bomb` 扣数 ⇒ 都算挥砍。黄昏 + 真银：最后一颗接出来的那发也吃耐久 |
 
 **X5 证据**：图标根脚本 abcard script5 `pos(1056, 537)`，子脚本 6–11 `pos(0,0)`（子随父）；引擎把每张图标的排版坐标写进根 VM 实体坐标 `+0x5f0`
 （`0x408de0`：`pfVar6[0x17c..0x17e] = local_2c/local_10`，x 按 80 px 步进、行 y 0 / 130 / 260）。我们的 VM 实体坐标抄它、脚本 `pos(1080, 561)` = 根脚本 + (24, 24)。
 若实跑发现 `+0x5f0` 不是排版坐标（脚本 `pos` 覆盖了它），改抄脚本 pos 字段即可——日志已打三个分量。
+
+**X11 证据**：`allocate_new_card` 的 57 路 case 里 flags 四种写法：资源 / 即时 `& ~0x4c | 2`、被动（含 case 56）`& ~0x4a | 4`、装备 `& ~0x0a | 0x44`（REIMU_OP…NUE_OP 14 个）、主动 `& ~0x46 | 8`。
+公共尾段 `0x412cec`（绑定断点）之后才 `flags = flags & ~1 | (mode & 1)`（`0x412cfe`），所以绑定时改 bit2 / bit6 不会碰 bit0。bit6 的读者只有 HUD 分行 `0x408de0`（`param_3 == 1` 行取 `flags & 0x40`）
+与计数 `0x412d6c` / recount；`on_power_level_change` 是全卡广播，不看它（破损核心此前没有 bit6 也能申请子机）。`ce_destroy_card` 按同一 flags 减计数，自洽。
 
 **X1 证据**：`0x409670` 入口 `mov edi, ecx`（this = AnmLoaded）；`push [ebp+0xc]`（script）→ `0x407420` 拷脚本；`[ebp+0x10]` 非 0 时 `movq xmm0, [eax]; movq [esi+0x5f0], xmm0; mov eax, [eax+8]; mov [esi+0x5f8], eax`（pos 三分量）否则清零；
 `[ebp+8]` = out_id（`mov [edi], 0` 后 `mov [edi], ecx` 写回 id）；`[ebp+0x14]` 全程不读；唯一出口 `0x409746` **`ret 0x10`**。⇒ thiscall(anm; int* out_id, int script, float* pos, int unused) ret 0x10。

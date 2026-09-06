@@ -161,6 +161,8 @@
 #define CE_FLAG_EQUIPMENT          0x40       /* flags bit6：装备卡（recount 0x408164 test al,0x40 → num_equipment）*/
 #define CE_FLAG_FIRING             0x20       /* flags bit5：正在释放（HUD 配色，method_40）*/
 #define CE_FLAG_ACTIVE_CLEAR       0x46       /* 主动卡 case 清的位（0x411d83 and ~0x46 | 8）*/
+#define CE_FLAG_EQUIPMENT_SET      0x44       /* 零售装备卡 case 的写法：flags & ~0x0a | 0x44（allocate_new_card 里 REIMU_OP…NUE_OP 那 14 个 case；case 56 走被动 & ~0x4a | 4）。SDK 绑定时对 category 1 的卡照此改（AUDIT X11）*/
+#define CE_FLAG_EQUIPMENT_CLEAR    0x0a
 #define CE_CARD_TABLE_ENTRY        0x4c
 #define CE_CARD_FLAGS              0x50       /* bit0 存档/replay 装载，bit3 主动，bit5 开火中，bit6 装备 */
 #define CE_CARD_OBJECT_SIZE        0x54
