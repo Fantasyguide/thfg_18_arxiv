@@ -115,6 +115,7 @@ static int on_active_tick(ce_card_t *c, uint32_t elapsed)
     float mouth_y = s->y + bob + BE_MOUTH_DY;              /* 龙头 y（含浮动）*/
     if (st.beam_dmg && mouth_y > 0.0f) {                   /* 光束：从龙头到区域顶边（y = 0）的矩形 */
         float center[3] = { s->x, mouth_y * 0.5f, s->z };
+        ce_raise_damage_cap(BE_WAVE_CAP);                  /* 当帧有效：让这 100 落在自机弹之上而不是被它吃掉（V20 / O29e′）*/
         ce_damage_rect(center, 0.0f, 2, st.beam_dmg, BE_BEAM_WIDTH, mouth_y);
         ce_anm_set_pos(s->beam_id, s->x, mouth_y, s->z);   /* 光束父 VM 钉在龙头；子脚本从这里向上画（anchor 左端 + 自转 −90°）*/
     }

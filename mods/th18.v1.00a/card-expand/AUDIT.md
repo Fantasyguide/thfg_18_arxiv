@@ -559,7 +559,7 @@ M < price 的火力补差价路径不动 MONEY（游戏随后清零）。**未�
 
 **O29d** 献祭：`CURRENT_LIVES < 1` 拒绝；−1 后 `ce_gui_update_lives`——同神之宣告 O28c 的路径。✅ 复用。
 
-**O29e** 不写 `player+0x47984`；伤害走引擎每帧上限（`enm_compute` `0x45f28b` 读它当钳）。用户 2026-09-04 定。✅ 设计。
+**O29e** ~~不写 `player+0x47984`~~ → **O29e′（2026-09-06）**：光束帧 `ce_raise_damage_cap(300)`，与炎魔 V20 同一条证据链（自机弹共用配额、Remilia 先例、GameThread 每帧复位）。用户改定。✅
 
 **O29f** 私有状态与 SDK 主动卡状态机同槽 → 块头预留 16 字节（`ce_state_user`），主机单测 `test_sdk_core` 的块头用例。✅ 单测。
 

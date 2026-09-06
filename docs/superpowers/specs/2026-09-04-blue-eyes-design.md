@@ -1,7 +1,7 @@
 # 青眼白龙（card-expand id 67）—— 设计
 
 > **版本**：TH18 v1.00a（`th18.exe`，imagebase `0x400000`）。本文裸地址默认属该版本；引用其他版本须写成 `th16:0x…`。
-> 日期：2026-09-04。状态：用户已审阅（2026-09-04，追加「不抬伤害上限」）。归属：`mods/th18.v1.00a/card-expand/`（行为 SDK 第二批）。
+> 日期：2026-09-04。状态：用户已审阅（2026-09-04，追加「不抬伤害上限」；**2026-09-06 用户改定：抬**——见 §1.3 末尾）。归属：`mods/th18.v1.00a/card-expand/`（行为 SDK 第二批）。
 
 ## 0. 一句话
 
@@ -64,7 +64,7 @@
 | `BE_FOLLOW_LERP` | 0.04 | 跟随插值系数（要石同款） |
 | `BE_WAVE_PERIOD` | 300 | 发波周期（帧）= 5 s；第一波在召唤后 `BE_WAVE_PERIOD` 帧 |
 | `BE_WAVE_FRAMES` | 45 | 一波持续帧数（初版 30，2026-09-04 平衡 ×1.5）|
-| `BE_WAVE_DMG_PER_FRAME` | 100 | 每帧请求伤害；30 × 100 = **3000** 是名义值。**不改 `player+0x47984`**（用户 2026-09-04 定）：实际每帧按引擎上限结算，一波 ≤ 3000 |
+| `BE_WAVE_DMG_PER_FRAME` | 100 | 每帧请求伤害；30 × 100 = **3000** 是名义值。~~不改 `player+0x47984`~~ **2026-09-06 改定：光束帧抬到 300**（`ce_raise_damage_cap`，炎魔 / Remilia 同款）——自机弹与卡的源共用「每敌每帧」配额，不抬时自机开火光束几乎白打；抬后一波实打 45 × 100 = 4500 |
 | `BE_BEAM_WIDTH` | 32.0 | 光束宽（Remilia 同款） |
 | `BE_RECHARGE` | 600 | 充能帧数（10 s）；真正的成本是残机 |
 
@@ -84,7 +84,7 @@
 2. 挡弹：`counter = 0; cancel_radius(pos, BE_RADIUS, max = hp, mode 0)`；`hp −= counter`；`counter > 0` 时染色一帧。
 3. 发波：`wave_timer++`；到 `BE_WAVE_PERIOD` 时 `wave_left = BE_WAVE_FRAMES`、起光束 ANM（`BLUE_EYES_BEAM`，随龙的 x、从龙口到区域顶边）、放音。
    `wave_left > 0` 时每帧 `damage_rect(center = (x, y/2), angle 0, life 2, dmg BE_WAVE_DMG_PER_FRAME, w BE_BEAM_WIDTH, h = y)`，`wave_left−−`。
-   **不写伤害上限**，引擎钳多少算多少。
+   ~~不写伤害上限~~ 2026-09-06 起每个光束帧先 `ce_raise_damage_cap(300)`（GameThread 每帧复位，只对当帧有效；理由与时序见炎魔 spec §2.3、AUDIT V20）。
 4. `hp ≤ 0` → `interrupt_tree(anm_id, 1)`（死亡动画）、放音、返回 0。
 
 **`on_stage_start`（+0x34）/ `on_run_reset`（+0x4c）**：龙在 → 删 VM（`0x488cf0`）、状态清零（用户选「过关消失」；SDK 已把状态机置 0）。

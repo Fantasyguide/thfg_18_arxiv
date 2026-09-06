@@ -6,7 +6,8 @@
 #define BE_HP             1500     /* 2026-09-04 平衡：2500 → 1500 */
 #define BE_WAVE_PERIOD    300      /* 帧：每 5 s 一波；第一波在召唤后第 300 帧 */
 #define BE_WAVE_FRAMES    45       /* 2026-09-04 平衡：30 → 45（×1.5）；脚本 79–85 的保持段同步 */
-#define BE_WAVE_DMG       100      /* 每帧请求伤害；45 × 100 = 4500 名义值，实际受引擎每帧上限钳（不写 player+0x47984）*/
+#define BE_WAVE_DMG       100      /* 每帧伤害；45 × 100 = 4500。2026-09-06 起配合 BE_WAVE_CAP 是实数（此前不抬上限，自机开火时被自机弹吃满配额）*/
+#define BE_WAVE_CAP       300      /* 光束帧把每敌每帧伤害上限 player+0x47984 抬到它（炎魔 FL_BLAST_CAP / Remilia 同款；AUDIT V20、O29e′）*/
 #define BE_RECHARGE       600
 #define BE_RADIUS         48.0f
 #define BE_FOLLOW_DY      (-80.0f)
