@@ -11,15 +11,31 @@ static int vt_a[21], vt_b[21];
 static void test_registry(void)
 {
     ce_sdk_reset_for_test();
-    ce_behavior_t a = { 58, vt_a, "ctor", 0 }, b = { 60, vt_b, "on_tick_2", 0 }, dup = { 58, vt_b, "x", 0 };
+    ce_behavior_t a = { 58, vt_a, "ctor", 0, 0 }, b = { 60, vt_b, "on_tick_2", 0, 0 }, dup = { 58, vt_b, "x", 0, 0 };
+    uint32_t error_id = 0;
+    int error_reason = 0;
+    CHECK(!ce_sdk_registration_error(&error_id, &error_reason));
     CHECK(ce_sdk_register(&a));
     CHECK(ce_sdk_register(&b));
     CHECK(!ce_sdk_register(&dup));                 /* 同 id 两次 = 编程错误 */
+    CHECK(ce_sdk_registration_error(&error_id, &error_reason));
+    CHECK(error_id == 58 && error_reason == CE_SDK_REG_DUPLICATE);
     CHECK(ce_sdk_behavior_count() == 2);
     CHECK(ce_sdk_find(58) == &a);
     CHECK(ce_sdk_find(60)->vtable == vt_b);
     CHECK(ce_sdk_find(59) == NULL);
     CHECK(ce_sdk_find(0) == NULL);
+
+    ce_sdk_reset_for_test();
+    ce_behavior_t low = { 57, vt_a, "", 0, 0 }, high = { 255, vt_b, "", 0, 0 };
+    CHECK(!ce_sdk_register(&low));
+    CHECK(ce_sdk_registration_error(&error_id, &error_reason));
+    CHECK(error_id == 57 && error_reason == CE_SDK_REG_ID_RANGE);
+    ce_sdk_reset_for_test();
+    CHECK(!ce_sdk_registration_error(&error_id, &error_reason));
+    CHECK(!ce_sdk_register(&high));
+    CHECK(ce_sdk_registration_error(&error_id, &error_reason));
+    CHECK(error_id == 255 && error_reason == CE_SDK_REG_ID_RANGE);
 
     /* 满：71 张 */
     ce_sdk_reset_for_test();
@@ -32,7 +48,7 @@ static void test_registry(void)
 static void test_bind_check(void)
 {
     ce_sdk_reset_for_test();
-    ce_behavior_t a = { 58, vt_a, "", 0 }, b = { 60, vt_b, "", 0 };
+    ce_behavior_t a = { 58, vt_a, "", 0, 0 }, b = { 60, vt_b, "", 0, 0 };
     ce_sdk_register(&a); ce_sdk_register(&b);
     uint32_t bad = 0; unsigned unbound = 99;
 
@@ -48,6 +64,34 @@ static void test_bind_check(void)
 
     ce_sdk_reset_for_test();                         /* 没有任何行为：任何 JSON 都过 */
     CHECK(ce_sdk_bind_check(j1, 4, &bad, &unbound) && unbound == 4);
+}
+
+static void test_contract_check(void)
+{
+    uint32_t bad = 0;
+    int reason = 0;
+    uint32_t ids[] = { 58, 59 };
+    uint32_t passive_categories[] = { 2, 1 };
+
+    ce_sdk_reset_for_test();
+    CHECK(ce_sdk_contract_check(ids, passive_categories, 2, &bad, &reason));
+
+    uint32_t active_categories[] = { 0, 1 };
+    CHECK(!ce_sdk_contract_check(ids, active_categories, 2, &bad, &reason));
+    CHECK(bad == 58 && reason == CE_SDK_CONTRACT_ACTIVE_BEHAVIOR_REQUIRED);
+
+    ce_behavior_t active = { 58, vt_a, "active", 0, 1 };
+    ce_sdk_register(&active);
+    CHECK(ce_sdk_contract_check(ids, active_categories, 2, &bad, &reason));
+    CHECK(!ce_sdk_contract_check(ids, passive_categories, 2, &bad, &reason));
+    CHECK(bad == 58 && reason == CE_SDK_CONTRACT_ACTIVE_CATEGORY_REQUIRED);
+
+    ce_sdk_reset_for_test();
+    ce_behavior_t passive = { 58, vt_a, "tick", 0, 0 };
+    ce_sdk_register(&passive);
+    CHECK(!ce_sdk_contract_check(ids, active_categories, 2, &bad, &reason));
+    CHECK(bad == 58 && reason == CE_SDK_CONTRACT_ACTIVE_BEHAVIOR_REQUIRED);
+    CHECK(ce_sdk_contract_check(ids, passive_categories, 2, &bad, &reason));
 }
 
 static void test_state(void)
@@ -138,6 +182,7 @@ int main(void)
     test_royal();
     test_registry();
     test_bind_check();
+    test_contract_check();
     test_state();
     printf("test_sdk_core: %d passed, %d failed\n", s_pass, s_fail);
     return s_fail ? 1 : 0;

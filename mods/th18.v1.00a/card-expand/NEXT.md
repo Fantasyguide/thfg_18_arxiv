@@ -1,4 +1,4 @@
-# NEXT —— 下一个会话从这里开始：实跑第 7 / 9 / 10 段，然后第二批
+# NEXT —— 下一个会话从这里开始：实跑行为与资源段
 
 > **版本**：TH18 v1.00a（`th18.exe`，imagebase `0x400000`）。本文裸地址默认属该版本；引用其他版本须写成 `th16:0x…`。
 > 交接文档。写给**没有本会话上下文**的下一个会话；读完这一页应该能直接动手。
@@ -286,12 +286,12 @@ corruption: bomb spent the cap — bombs 6/6 left
 放一发看到 **7 → 6**（而不是当前数 3 → 2）；过关后仍是 6/6（**不该**回到 3）；
 放到 0/0 后按炸弹键没反应。`sdk:` 那行要报 `ce_bomb_spent` 已应用，否则门会 `FAIL` 并还原。
 
-## 2. 第二批（按优先级）
+## 2. 后续开发（按优先级）
 
 | 块 | 内容 | 接缝 / 依据 |
 | --- | --- | --- |
 | ~~皇家同花顺~~ | 🔧 已做（`cards/royal.c`，五张共用 ctor，不开断点；金钱 +800 / 命 +2 / bomb +2），待实跑 | AUDIT O26；`ce_owned()` / `ce_add_life()` / `ce_add_bomb()` 进了 sdk.h |
-| **主动卡基类** | C 键 / 充能 / HUD 图标 / replay 复原 | `04-active-cards.md` §3–§6：`c_press` 模板、`+0x38/+0x3c/+0x40` 三件套、flags bit3；SDK 里做一份可继承的「主动卡」桩集 |
+| ~~主动卡基类~~ | ✅ C 键 / 充能 / HUD / replay 计时器透传已进入 SDK，反转牌等主动卡已接入，待实跑 | `04-active-cards.md` §3–§6；实现与契约见 [`SDK.md`](SDK.md) §3、§9 |
 | 辅助函数提炼 | 动作出现第二次就进 `sdk.h` | 方案 3 的约定 |
 | 图鉴上限 | 新卡 > 71 时才需要：两处 `cmp r,imm8` → cave | AUDIT §M3 |
 | ANM 特效 | 🔧 已有第一例：`ce_anm_spawn` + `assets/ability/`（反转牌 script68 亮牌），待实跑；透视真假当场看 | AUDIT O24；`engine/anm/th18/01-vm-instantiate.md` |
@@ -301,11 +301,13 @@ corruption: bomb spent the cap — bombs 6/6 left
 
 `make ecl`：st01–st06 空壳 + boss 血量 ÷100 + 死时掉 300 金（`assets/ecl/make_dev_ecl.py`）→ **独立 patch `th18_card_expand_devstage`**（`patch-devstage/`，启动器里单独勾，不依赖别的 patch；想打正常弹幕就不勾）；`cards_dev.js` 的 `retail_weight: 6` / `new_weight: 20` 让商店基本只出新卡（在 `_test`）。正式包不受影响。
 
-## 3. 工具链与验收（照旧）
+## 3. 工具链与验收
 
 ```bash
 cd native
-make check          # 站点扫描 + 不变式
+make quick          # 主机 C 单测 + pytest，日常反馈
+make check          # 资源 / 站点 / 文档 / DLL ABI 完整只读门
+make package        # 生成完整 dist 发布包
 make step3          # 255 行全套 + 主机单测（cards_def、sdk_core）+ DLL + x87 检查 + files.js
 make dllverify
 make conflicts OTHERS="<modkit>/thcrap/repos/nmlgc/base_tsa/th18.v1.00a.js …"

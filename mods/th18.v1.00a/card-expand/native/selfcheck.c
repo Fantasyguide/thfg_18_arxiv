@@ -17,6 +17,7 @@
  */
 #include <string.h>
 #include "card_expand.h"
+#include "selfcheck_core.h"
 
 /* rows 反推：END 站点写的是 cave + rows*0x34 + field。 */
 static unsigned derive_rows(const uint8_t *base, const uint8_t *cave)
@@ -71,8 +72,9 @@ static int fill_table(uint8_t *base, uint8_t *cave, unsigned rows)
  * expected 不匹配被跳过），但分配器上界 binhack 两边都能打上（原字节没被前者动过），
  * 于是上界撑到 254 而跳转表只有 58 项 → 未注册 id 会 jmp 到 cave 之外。
  * 上界回到 56 后，只有 id 0..56 会被分派，任何行数的跳转表都放得下。*/
-static void restore_alloc_bound(uint8_t *base)
+static int restore_alloc_bound(void *ctx)
 {
+    uint8_t *base = ctx;
     uint8_t *cmp = base + CE_ALLOC_CMP_RVA;
     if (cmp[0] == 0x83 && cmp[1] == 0xfb && cmp[2] != 0x38) {
         DWORD old;
@@ -80,8 +82,12 @@ static void restore_alloc_bound(uint8_t *base)
             cmp[2] = 0x38;
             VirtualProtect(cmp, 3, old, &old);
             ce_verdict("mitigation: allocator bound restored to retail (56) — new ids disabled");
+            return CE_ROLLBACK_RESTORED;
         }
+        ce_verdict("mitigation: FAILED to restore allocator bound — DO NOT PLAY");
+        return CE_ROLLBACK_FAILED;
     }
+    return CE_ROLLBACK_NOT_NEEDED;
 }
 
 static int fill_jumptable(uint8_t *base, uint32_t *jt, unsigned rows)
@@ -138,39 +144,40 @@ static int check_grow(uint8_t *base, unsigned rows)
 
 int ce_selfcheck(uint8_t *base)
 {
+    ce_failure_guard_t guard = CE_FAILURE_GUARD_INIT;
     if (!ce_func_get) {
         ce_verdict("FAIL: func_get unavailable — cannot locate codecave; table NOT filled");
-        return 0;
+        goto fail;
     }
     uint8_t *cave = (uint8_t *)ce_func_get(CE_CAVE_NAME);
     if (!cave) {
         ce_verdict("FAIL: %s not found — patch not in the stack?", CE_CAVE_NAME);
-        return 0;
+        goto fail;
     }
     ce_log("gate: BP_ce_gate fired at ScoreFile__load");
     /* 0. 从 patch 反推配置 */
     unsigned rows = derive_rows(base, cave);
     if (!rows) {
         ce_verdict("FAIL: cannot derive row count — END site not patched or out of range");
-        return 0;
+        goto fail;
     }
     uint32_t *jt = (uint32_t *)ce_func_get(CE_JT_CAVE_NAME);
     int alloc = jt != NULL;
     ce_log("config from patch: rows=%u alloc=%d", rows, alloc);
 
-    if (!fill_table(base, cave, rows)) { restore_alloc_bound(base); return 0; }
-    if (alloc && !fill_jumptable(base, jt, rows)) { restore_alloc_bound(base); return 0; }
-    if (alloc && !check_grow(base, rows))          { restore_alloc_bound(base); return 0; }
+    if (!fill_table(base, cave, rows)) goto fail;
+    if (alloc && !fill_jumptable(base, jt, rows)) goto fail;
+    if (alloc && !check_grow(base, rows)) goto fail;
     /* 战线 D 与 B/C 同进退：_255 patch 里一定带影子数组。核对 9 处读 + 3 个断点。 */
-    if (alloc) { ce_unlock_init(base); if (!ce_unlock_check(base)) { restore_alloc_bound(base); return 0; } }
-    if (alloc && !ce_text_check(base))             { restore_alloc_bound(base); return 0; }
+    if (alloc) { ce_unlock_init(base); if (!ce_unlock_check(base)) goto fail; }
+    if (alloc && !ce_text_check(base)) goto fail;
     /* 战线 E 第 10 段：cards.js → 表行 + 文案 + 注册表；顺序表 / 图鉴条目数（menu）消费注册表，所以在它前面 */
-    if (alloc && !ce_cards_load(base, cave, rows)) { restore_alloc_bound(base); return 0; }
-    if (alloc && !ce_menu_setup(base))             { restore_alloc_bound(base); return 0; }
+    if (alloc && !ce_cards_load(base, cave, rows)) goto fail;
+    if (alloc && !ce_menu_setup(base)) goto fail;
     /* 行为 SDK：基类虚表守卫、两断点、与 cards.js 对账 */
-    if (alloc && !ce_sdk_setup(base, ce_dev_trace())) { restore_alloc_bound(base); return 0; }
+    if (alloc && !ce_sdk_setup(base, ce_dev_trace())) goto fail;
     /* 商店走两遍：两个断点已挂（AUDIT §P）*/
-    if (alloc && !ce_shop_setup(base))             { restore_alloc_bound(base); return 0; }
+    if (alloc && !ce_shop_setup(base)) goto fail;
 
     unsigned ok = 0, bad = 0, first_bad = 0;
     for (unsigned i = 0; i < CE_NSITES; ++i) {
@@ -185,6 +192,7 @@ int ce_selfcheck(uint8_t *base)
     if (bad == 0) {
         ce_verdict("OK: table filled (%u rows @ %p)%s, %u/%u sites verified",
                    rows, cave, alloc ? ", allocator relocated, manager grown, unlocked shadowed, text redirected, cards loaded, menu extended" : "", ok, (unsigned)CE_NSITES);
+        ce_failure_guard_success(&guard);
         return 1;
     }
     const ce_site_t *s = &CE_SITES[first_bad];
@@ -193,6 +201,7 @@ int ce_selfcheck(uint8_t *base)
                "%02x %02x %02x %02x %02x %02x %02x — partial application, DO NOT PLAY",
                ok, (unsigned)CE_NSITES, bad, 0x400000u + s->rva,
                p[0], p[1], p[2], p[3], p[4], p[5], p[6]);
-    restore_alloc_bound(base);
+fail:
+    ce_failure_guard_fail(&guard, restore_alloc_bound, base);
     return 0;
 }

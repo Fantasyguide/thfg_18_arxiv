@@ -4,14 +4,36 @@
 
 /* ---- 注册表 ---- */
 static const ce_behavior_t *s_beh[CE_SDK_MAX_BEHAVIORS];
+static const ce_behavior_t *s_beh_by_id[CE_SDK_CARD_ID_MAX + 1];
 static unsigned s_nbeh;
+static uint32_t s_reg_error_id;
+static int s_reg_error_reason;
+
+static int registration_fail(uint32_t id, int reason)
+{
+    if (s_reg_error_reason == CE_SDK_REG_NONE) {
+        s_reg_error_id = id;
+        s_reg_error_reason = reason;
+    }
+    return 0;
+}
 
 int ce_sdk_register(const ce_behavior_t *b)
 {
-    if (s_nbeh >= CE_SDK_MAX_BEHAVIORS) return 0;
-    for (unsigned i = 0; i < s_nbeh; ++i) if (s_beh[i]->id == b->id) return 0;
+    if (!b || b->id < CE_SDK_CARD_ID_MIN || b->id > CE_SDK_CARD_ID_MAX)
+        return registration_fail(b ? b->id : 0, CE_SDK_REG_ID_RANGE);
+    if (s_beh_by_id[b->id]) return registration_fail(b->id, CE_SDK_REG_DUPLICATE);
+    if (s_nbeh >= CE_SDK_MAX_BEHAVIORS) return registration_fail(b->id, CE_SDK_REG_CAPACITY);
     s_beh[s_nbeh++] = b;
+    s_beh_by_id[b->id] = b;
     return 1;
+}
+
+int ce_sdk_registration_error(uint32_t *id, int *reason)
+{
+    if (id) *id = s_reg_error_id;
+    if (reason) *reason = s_reg_error_reason;
+    return s_reg_error_reason != CE_SDK_REG_NONE;
 }
 
 unsigned ce_sdk_behavior_count(void) { return s_nbeh; }
@@ -19,11 +41,17 @@ const ce_behavior_t *ce_sdk_behavior_at(unsigned i) { return i < s_nbeh ? s_beh[
 
 const ce_behavior_t *ce_sdk_find(uint32_t id)
 {
-    for (unsigned i = 0; i < s_nbeh; ++i) if (s_beh[i]->id == id) return s_beh[i];
-    return (const ce_behavior_t *)0;
+    return id <= CE_SDK_CARD_ID_MAX ? s_beh_by_id[id] : (const ce_behavior_t *)0;
 }
 
-void ce_sdk_reset_for_test(void) { s_nbeh = 0; }
+void ce_sdk_reset_for_test(void)
+{
+    memset(s_beh, 0, sizeof s_beh);
+    memset(s_beh_by_id, 0, sizeof s_beh_by_id);
+    s_nbeh = 0;
+    s_reg_error_id = 0;
+    s_reg_error_reason = CE_SDK_REG_NONE;
+}
 
 int ce_sdk_bind_check(const uint32_t *json_ids, unsigned n, uint32_t *bad_id, unsigned *unbound)
 {
@@ -35,6 +63,26 @@ int ce_sdk_bind_check(const uint32_t *json_ids, unsigned n, uint32_t *bad_id, un
     unsigned u = 0;
     for (unsigned k = 0; k < n; ++k) if (!ce_sdk_find(json_ids[k])) ++u;
     if (unbound) *unbound = u;
+    return 1;
+}
+
+int ce_sdk_contract_check(const uint32_t *json_ids, const uint32_t *categories, unsigned n,
+                          uint32_t *bad_id, int *reason)
+{
+    for (unsigned i = 0; i < n; ++i) {
+        const ce_behavior_t *b = ce_sdk_find(json_ids[i]);
+        if (categories[i] == 0 && (!b || !b->is_active)) {
+            if (bad_id) *bad_id = json_ids[i];
+            if (reason) *reason = CE_SDK_CONTRACT_ACTIVE_BEHAVIOR_REQUIRED;
+            return 0;
+        }
+        if (b && b->is_active && categories[i] != 0) {
+            if (bad_id) *bad_id = json_ids[i];
+            if (reason) *reason = CE_SDK_CONTRACT_ACTIVE_CATEGORY_REQUIRED;
+            return 0;
+        }
+    }
+    if (reason) *reason = CE_SDK_CONTRACT_NONE;
     return 1;
 }
 

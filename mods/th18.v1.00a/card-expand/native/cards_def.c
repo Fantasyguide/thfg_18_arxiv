@@ -67,6 +67,21 @@ int ce_card_validate(const ce_card_def_t *d, char *err, unsigned cap)
     return 1;
 }
 
+void ce_card_batch_init(ce_card_batch_t *batch)
+{
+    memset(batch, 0, sizeof *batch);
+}
+
+int ce_card_batch_add(ce_card_batch_t *batch, const ce_card_def_t *def, char *err, unsigned cap)
+{
+    if (!ce_card_validate(def, err, cap)) return 0;
+    if (batch->seen[def->id]) return fail(err, cap, "id", "duplicate");
+    if (batch->count >= CE_CARD_MAX_NEW) return fail(err, cap, "cards", "too many new cards");
+    batch->defs[batch->count++] = *def;
+    batch->seen[def->id] = 1;
+    return 1;
+}
+
 static void put32(uint8_t *p, uint32_t v) { memcpy(p, &v, 4); }
 static uint32_t get32(const uint8_t *p) { uint32_t v; memcpy(&v, p, 4); return v; }
 

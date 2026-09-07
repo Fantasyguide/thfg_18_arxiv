@@ -80,6 +80,28 @@ static void test_validate(void)
     d = good(); d.sprite_small = CE_CARD_UNSET; CHECK(!ce_card_validate(&d, err, sizeof err)); CHECK(strstr(err, "sprite_small") != NULL);
 }
 
+static void test_batch(void)
+{
+    ce_card_batch_t batch;
+    char err[128];
+    ce_card_batch_init(&batch);
+    CHECK(batch.count == 0);
+
+    ce_card_def_t a = good();
+    CHECK(ce_card_batch_add(&batch, &a, err, sizeof err));
+    CHECK(batch.count == 1 && batch.defs[0].id == 58);
+    CHECK(!ce_card_batch_add(&batch, &a, err, sizeof err));
+    CHECK(batch.count == 1 && strstr(err, "duplicate") != NULL);
+
+    ce_card_def_t invalid = good(); invalid.id = 57;
+    CHECK(!ce_card_batch_add(&batch, &invalid, err, sizeof err));
+    CHECK(batch.count == 1);
+
+    ce_card_def_t b = good(); b.id = 59;
+    CHECK(ce_card_batch_add(&batch, &b, err, sizeof err));
+    CHECK(batch.count == 2 && batch.defs[1].id == 59);
+}
+
 static void test_encode_row(void)
 {
     ce_card_def_t d = good();
@@ -189,6 +211,7 @@ int main(void)
     test_defaults();
     test_text_ok();
     test_validate();
+    test_batch();
     test_encode_row();
     test_capacity();
     printf("test_cards_def: %d passed, %d failed\n", s_pass, s_fail);

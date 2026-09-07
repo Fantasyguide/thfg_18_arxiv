@@ -35,6 +35,15 @@ typedef struct {
              deck_visible, initial_unlocked, hud_show, sprite_large, sprite_small;
 } ce_card_def_t;
 
+typedef struct {
+    ce_card_def_t defs[CE_CARD_MAX_NEW];
+    uint8_t seen[CE_CARD_ID_MAX + 1];
+    unsigned count;
+} ce_card_batch_t;
+
+void ce_card_batch_init(ce_card_batch_t *batch);
+int ce_card_batch_add(ce_card_batch_t *batch, const ce_card_def_t *def, char *err, unsigned cap);
+
 /* 默认值；internal_name = id 的十进制；必填字段置 CE_CARD_UNSET */
 void ce_card_def_defaults(ce_card_def_t *d, uint32_t id);
 

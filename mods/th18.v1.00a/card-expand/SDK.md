@@ -22,7 +22,7 @@ CE_CARD(61, .on_bullet_created = on_bullet_created);
 ```
 
 加上 `th18/cards.js` 里的 `"61": {…}`，这张卡就完整了。`CE_CARD` 展开成：这张卡的回调表、一份 21 槽虚表（基类拷贝，用到的槽换成桩）、
-一条登记进 `ce_behaviors[]`。**不用改任何别的文件**——`native/cards/*.c` 由 Makefile 通配。
+一条登记进 SDK 注册表。**不用改任何别的文件**——`native/cards/*.c` 由 Makefile 通配。
 
 ## 1. 机制：断点换虚表，跳转表不动
 
@@ -32,7 +32,7 @@ CE_CARD(61, .on_bullet_created = on_bullet_created);
 SDK 在这里挂 thcrap 断点 `ce_card_bind`（cavesize 6：这条 + 后面的 `mov eax,[edi+0x28]`，都无相对寻址）：
 
 ```
-if (ebx 在 ce_behaviors[] 里)  *(void **)esi = 那张卡的虚表;
+if (behavior_by_id[ebx] != NULL)  *(void **)esi = 那张卡的虚表;
 return 1;   /* 放行原指令 */
 ```
 
@@ -65,7 +65,7 @@ return 1;   /* 放行原指令 */
 | --- | --- | --- | --- |
 | +0x00 | `ctor` | `int (ce_card_t*)` | 返回非 0 → 当场删卡 |
 | +0x04 | `dtor` | `int (ce_card_t*)` | 同上；商店购买先 ctor 再 dtor |
-| +0x08 | — | | 主动卡 C 键，第二批 |
+| +0x08 | SDK 主动卡状态机 | | C 键发动；无 `active_recharge` 时等价于基类 `ret 0` |
 | +0x0c | `on_death_after_deathbomb` | `int (ce_card_t*, uint32_t)` | 返回非 0 = 救下了 |
 | +0x10 | `on_death_before_deathbomb` | `int (ce_card_t*)` | |
 | +0x14 | `on_death_frame2` | `int (ce_card_t*)` | 死亡结算之后（扣钱扣火力已发生）|
@@ -77,7 +77,7 @@ return 1;   /* 放行原指令 */
 | +0x2c | `on_tick_2` | `int (ce_card_t*)` | 管理器侧每帧；菜单 / 商店里**不跑** |
 | +0x30 | `on_enemy_drop` | `int (ce_card_t*, uint32_t, uint32_t)` | 敌人掉落道具后；两参语义 🟡 |
 | +0x34 | `on_stage_start` | `void (ce_card_t*)` | 每关开场 |
-| +0x38..+0x40 | — | | 充能计时器三件套，主动卡用，第一批不覆盖 |
+| +0x38..+0x40 | 基类透传 | | 充能计时器三件套，HUD 与 replay 使用 |
 | +0x44 | `on_hud_anm` | `int (ce_card_t*, uint32_t)` | |
 | +0x48 | `on_draw` | `int (ce_card_t*)` | |
 | +0x4c | `on_run_reset` | `void (ce_card_t*)` | 局末重置 |
@@ -95,16 +95,19 @@ return 1;   /* 放行原指令 */
 CE_CARD(id, .回调 = 函数, ...);      /* 一张卡一条，放在 native/cards/<name>.c */
 ```
 
-门里 `cards.js` 装完之后（`ce_cards_load` 之后、`ce_menu_setup` 之前）做 `ce_sdk_bind_check`：
+门里 `cards.js` 装完之后（`ce_cards_load` 之后、`ce_menu_setup` 之前）做注册错误与跨层契约检查。注册表按 id 直接索引，遍历顺序另存用于稳定日志：
 
 | 情况 | 结果 |
 | --- | --- |
 | JSON 有、C 有 | 绑定；日志 `sdk: 61 bound (.on_bullet_created = on_bullet_created)` |
 | JSON 有、C 无 | 允许；汇总行里计数 `N registered cards without behavior`——开发期正常 |
 | C 有、JSON 无 | **FAIL**：有行为却没登记的卡进不了游戏，是 bug |
-| C 里同一 id 两次 | 编译期链接冲突（符号名含 id）|
+| C 里 id 越界、同一 id 两次或注册表溢出 | **FAIL**：constructor 记录首个错误，门统一拒绝启动并还原分配器上界 |
+| JSON `category: 0`，C 没有 `active_recharge` | **FAIL**：主动类别与行为不一致 |
+| C 有 `active_recharge`，JSON `category` 不是 0 | **FAIL**：主动行为与数据不一致 |
 
 登记靠 `__attribute__((constructor))`（mingw 的 `.ctors`，DLL 装载时跑），加卡不改任何清单；门里再把已登记的行为与 JSON 对账。
+`cards.js` 会先解析并校验完整批次，再一次性发布表行、名字和计数；后面的坏条目不会留下半张已写入的卡。
 
 ## 4. 私有状态
 
@@ -131,7 +134,7 @@ CE_CARD(id, .回调 = 函数, ...);      /* 一张卡一条，放在 native/card
 
 | 函数 | 干什么 | 引擎侧 |
 | --- | --- | --- |
-| `ce_give_card(id, mode, notify)` | 给玩家一张卡 = 商店成交的两步 | `allocate_new_card(mgr; id, mode)` `0x411460` thiscall `ret 8` + `mark_obtained(id, notify)` `0x418de0` fastcall |
+| `ce_give_card(id, mode, notify)` | 给玩家一张卡 = 商店成交的两步；分配返回 `-1` 时不调用 `mark_obtained` | `allocate_new_card(mgr; id, mode)` `0x411460` thiscall `ret 8` + 成功后 `mark_obtained(id, notify)` `0x418de0` fastcall |
 | `ce_shop_pick_random(lo, hi, exclude[], n)` | 按商店随机池的规则抽一张（未拥有、本关可用、按权重、游戏 RNG）| `pick_weighted_random_offer` `0x416f50` fastcall(ecx=out, edx=lo; hi, exclude, n) `ret 0xc` |
 | `ce_table_entry(id)` / `ce_entry_id(e)` | 表行（ctor 里 `card+0x4c` 还没写，用这个）| `TableCardData__get` `0x407d70` fastcall(ecx=id) |
 | `ce_log(fmt, …)` | 一行进 `th18_card_expand.log` | — |
@@ -254,9 +257,11 @@ SDK 在 `+0x2c` 桩里先跑状态机（空闲：清释放位、门控下递减�
 
 ```
 native/
-├── sdk.h            写卡的人 include 这个：ce_card_t、CE_CARD（回调表 + 桩 + 虚表 + 登记）、ce_state
+├── sdk/public.h     稳定作者接口：ce_card_t、hook 类型、状态与公开动作声明
+├── sdk.h            TH18 v1.00a 兼容入口：包含 public.h，并提供 CE_CARD、对象访问器与引擎 helper
 ├── engine.h         一手地址 / 偏移（每条带出处）
-├── sdk_core.h/.c    注册表 / 对账 / 状态槽（纯逻辑，make test-host）
+├── sdk_core.h/.c    O(1) 注册表 / 跨层契约 / 状态槽（纯逻辑，make test-host）
+├── sdk_actions.h/.c 可注入的 give-card 事务（纯逻辑，make test-host）
 ├── sdk.c            断点 ce_card_bind、ce_item_score；门里的守卫与对账；trace
 ├── anm_ids.h        生成物：ability.anm 里我们追加的 sprite / 脚本号（make anm）
 ├── sht_ids.h        生成物：pl0X.sht 里我们追加的 shooterset 索引（make sht，§12）

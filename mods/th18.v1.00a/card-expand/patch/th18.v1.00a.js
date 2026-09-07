@@ -24,7 +24,7 @@
       "code": "fc60bf<codecave:th18_card_table>be<Rxc53c0>b9f2020000f3a5bbc5000000be<codecave:th18_card_table+b60>b90d000000f3a54b75f1bf<codecave:th18_card_jumptable>be<Rx12dac>b939000000f3a5b8<Rx11489>b9c6000000f3abbf<codecave:th18_card_order>be<Rxb3600>b939000000f3a5b839000000b9c6000000f3ab61c3",
       "export": true,
       "access": "RX",
-      "title": "开机把零售表（与跳转表）拷进 codecave；DLL 的 post_init 是权威，这里是保险"
+      "title": "开机把零售表（与跳转表）拷进 codecave；BP_ce_gate 完成运行时提交与回读"
     },
     "th18_snd_cfg": {
       "size": "0x910",

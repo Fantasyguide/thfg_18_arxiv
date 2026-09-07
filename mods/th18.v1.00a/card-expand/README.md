@@ -30,7 +30,9 @@
 
 ```bash
 cd native
-make check          # 扫描 + 校验两条不变式
+make quick          # 主机 C 单测 + pytest
+make check          # 资源、站点、文档与 DLL ABI 完整检查
+make package        # 生成完整 dist 发布包
 make list           # 25 个查表实例的全表
 make gen            # 生成 patch（ROWS=58；ROWS=255 出扩容版）
 make verify         # 把生成好的 patch 拿回真 exe 逐条对账

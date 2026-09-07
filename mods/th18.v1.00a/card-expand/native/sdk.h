@@ -13,47 +13,14 @@
 #include <stdint.h>
 #include "engine.h"
 #include "anm_ids.h"      /* build_ability.py 生成：ability.anm 追加的 sprite / 脚本号 */
+#include "sdk/public.h"
 #include "sdk_core.h"
-
-typedef struct ce_card ce_card_t;          /* = zCardBaseClass*，只通过下面的取值函数看 */
-#define CE_ACTIVATE_REFUSED (-1)           /* on_activate 的返回值：拒绝发动（SDK 退回充能，卡自己放 0x10 无效音）*/
 
 #define ce_card_id(c)     (*(uint32_t *)((uint8_t *)(c) + CE_CARD_ID))
 #define ce_card_entry(c)  (*(uint8_t **)((uint8_t *)(c) + CE_CARD_TABLE_ENTRY))
 #define ce_card_flags(c)  (*(uint32_t *)((uint8_t *)(c) + CE_CARD_FLAGS))
-#define ce_state(c, T)    ((T *)ce_state_user((c), sizeof(T)))      /* 私有状态（SDK §4）：块头 16 字节是 SDK 的（主动卡状态机），卡从其后起 */
 /* on_enemy_drop_pre 的 counts 是 zEnemyDrop+0x04；主掉落类型在 +0x00（AUDIT S10）*/
 #define ce_drop_main(counts) ((int32_t *)((uint8_t *)(counts) - CE_ENEMY_DROP_COUNTS + CE_ENEMY_DROP_MAIN))
-
-typedef struct {
-    int  (*ctor)(ce_card_t *);                                   /* +0x00 非 0 = 当场删卡 */
-    int  (*dtor)(ce_card_t *);                                   /* +0x04 */
-    int  (*on_death_after_deathbomb)(ce_card_t *, uint32_t);     /* +0x0c 非 0 = 救下了 */
-    int  (*on_death_before_deathbomb)(ce_card_t *);              /* +0x10 */
-    int  (*on_death_frame2)(ce_card_t *);                        /* +0x14 结算之后 */
-    int  (*on_power_level_change)(ce_card_t *);                  /* +0x18 */
-    int  (*on_tick_shooters)(ce_card_t *, uint32_t, uint32_t);   /* +0x1c */
-    int  (*on_load)(ce_card_t *);                                /* +0x20 */
-    int  (*on_tick)(ce_card_t *);                                /* +0x24 Player tick 内（在移速倍率复位之前，别在这写移速）*/
-    int  (*on_bullet_created)(ce_card_t *, void *bullet);        /* +0x28 */
-    int  (*on_tick_2)(ce_card_t *);                              /* +0x2c AbilityManager tick，先于 Player tick；菜单里不跑 */
-    int  (*on_enemy_drop)(ce_card_t *, uint32_t, uint32_t);      /* +0x30 */
-    void (*on_stage_start)(ce_card_t *);                         /* +0x34 */
-    int  (*on_hud_anm)(ce_card_t *, uint32_t);                   /* +0x44 */
-    int  (*on_draw)(ce_card_t *);                                /* +0x48 */
-    void (*on_run_reset)(ce_card_t *);                           /* +0x4c */
-    /* 虚表之外的事件（SDK §6，断点实现）*/
-    void (*on_item_score)(ce_card_t *, int32_t *value);          /* 道具身价算完、显示与计分之前 */
-    void (*on_item_money)(ce_card_t *, int32_t *bonus);          /* 金钱道具入账（MONEY += 1）之前：*bonus 是额外要加的钱，MONEY 与 MONEY_TOTAL 一起加 */
-    void (*on_enemy_drop_pre)(ce_card_t *, int32_t *counts);     /* 敌人撒附加掉落表**之前**：counts = zEnemyDrop.ex_drop（20 个 int32，只撒 1..0x13）。
-                                                                  * 主掉落（dropMain 那一颗）此时已经撒了，用 ce_drop_main(counts) 读类型，要翻倍就往 counts[type-1] 补 */
-    void (*on_bomb_spent)(ce_card_t *);                          /* 炸弹刚扣完（consume_bomb 返回那一条）：改 CURRENT/MAX_BOMBS 的时机，同帧生效不闪 */
-    void (*on_shop_open)(ce_card_t *);                           /* 每关过关、MSG 请求开第一家店那一帧（商店对象还没建）：改 MONEY 店里就能看到；重开的第二家不算 */
-    /* 主动卡（SDK §9）：active_recharge != 0 就是主动卡（C 键 / 充能 / HUD 由 SDK 与引擎处理）*/
-    uint32_t active_recharge;                                    /* 充能帧数（×mgr+0xc58 倍率后装填）*/
-    int  (*on_activate)(ce_card_t *);                            /* C 键发动：返回 0 = 瞬发（直接收尾），1 = 进入持续态，CE_ACTIVATE_REFUSED = 条件不满足（充能退回、不算发动）*/
-    int  (*on_active_tick)(ce_card_t *, uint32_t elapsed);       /* 持续态每帧（elapsed = 经过帧）；返回 0 = 结束 */
-} ce_hooks_t;
 
 /* ---- 引擎调用（薄包装，签名见 engine.h）---- */
 typedef int      (__attribute__((thiscall)) *ce_fn_alloc_t)(void *mgr, uint32_t id, uint32_t mode);
@@ -61,15 +28,8 @@ typedef void     (__attribute__((fastcall)) *ce_fn_mark_t)(uint32_t id, uint32_t
 typedef uint8_t *(__attribute__((fastcall)) *ce_fn_table_get_t)(uint32_t id);
 typedef int      (__attribute__((fastcall)) *ce_fn_pick_t)(uint8_t **out, int tier_lo, int tier_hi, uint8_t **exclude, int n);
 
-/* 给玩家一张卡（= 商店成交的两步：allocate_new_card(mode) + mark_obtained）。返回 allocate 的返回值。*/
-static inline int ce_give_card(uint32_t id, uint32_t mode, uint32_t notify)
-{
-    void *mgr = CE_ABILITY_MGR();
-    if (!mgr) return -1;
-    int r = ((ce_fn_alloc_t)CE_FN_ALLOCATE_NEW_CARD)(mgr, id, mode);
-    ((ce_fn_mark_t)CE_FN_MARK_OBTAINED)(id, notify);
-    return r;
-}
+/* 给玩家一张卡。allocate 失败（-1）时不 mark_obtained，避免只解锁却没拿到。*/
+/* ce_give_card 在 sdk/public.h 声明。 */
 /* 表行（不依赖 card+0x4c：ctor 里它还没写）*/
 static inline uint8_t *ce_table_entry(uint32_t id) { return ((ce_fn_table_get_t)CE_FN_TABLE_GET)(id); }
 #define ce_entry_id(e)  (*(uint32_t *)((e) + 0x04))
@@ -81,8 +41,7 @@ static inline uint8_t *ce_shop_pick_random(int tier_lo, int tier_hi, uint8_t **e
     return ((ce_fn_pick_t)CE_FN_SHOP_PICK_RANDOM)(&e, tier_lo, tier_hi, exclude, n) ? e : 0;
 }
 
-/* 日志（card_expand.h 的 ce_log，卡里也能用：th18_card_expand.log 一行）*/
-void ce_log(const char *fmt, ...);
+/* 日志 ce_log 由 sdk/public.h 声明；每次调用写入 th18_card_expand.log 一行。*/
 
 /* 音效：play_sound(id) 是 stdcall，声像位置走 xmm2（世界 x）。三行内联汇编，AUDIT O22。*/
 static inline void ce_play_sound(uint32_t id, float x)
@@ -350,9 +309,7 @@ void ce_sdk_on_shop_open(void);                                   /* shop.c 在 
 /* 局中从卡组删一张卡（AUDIT §W）：照 recount 0x4080e0 的删卡分支——摘链、按 flags 减类别计数、num_total−1、
  * owned[id] 清零（能再刷出）、虚表 +0x50 删对象、重画 HUD 三行。★ 不能删当前选中的主动卡（mgr+0x38 指向它，
  * 重选要重建 HUD 图标 VM，本函数拒绝并返回 0）。只能在没有人正在遍历链表时调（ctor / 事件断点里都可以，链表遍历桩里不行）。*/
-int  ce_destroy_card(ce_card_t *victim);
 /* 随机挑一张可删的卡（链表里除 exclude 与选中主动卡以外的任意一张，RNG = 游戏 replay 安全流）；没有返回 NULL */
-ce_card_t *ce_pick_random_card(ce_card_t *exclude);
 void ce_sdk_register_or_log(const ce_behavior_t *b);
 
 #define CE_TC __attribute__((thiscall))
@@ -434,5 +391,8 @@ typedef void (CE_TC *ce_base_del_t)(void *, uint32_t);
         (const void *)ce_s_##ID##_on_run_reset,              /* +0x4c */ \
         (const void *)ce_s_##ID##_opdelete,                  /* +0x50 */ \
     }; \
-    static const ce_behavior_t ce_beh_##ID = { ID, ce_vt_##ID, #__VA_ARGS__, &ce_hooks_##ID }; \
-    __attribute__((constructor)) static void ce_reg_##ID(void) { ce_sdk_register_or_log(&ce_beh_##ID); }
+    static ce_behavior_t ce_beh_##ID = { ID, ce_vt_##ID, #__VA_ARGS__, &ce_hooks_##ID, 0 }; \
+    __attribute__((constructor)) static void ce_reg_##ID(void) { \
+        ce_beh_##ID.is_active = ce_hooks_##ID.active_recharge != 0; \
+        ce_sdk_register_or_log(&ce_beh_##ID); \
+    }

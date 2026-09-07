@@ -18,6 +18,24 @@
 #include "card_expand.h"
 #include "thcrap_bp.h"
 #include "sdk.h"
+#include "sdk_actions.h"
+
+static int give_allocate(void *ctx, uint32_t id, uint32_t mode)
+{
+    return ((ce_fn_alloc_t)CE_FN_ALLOCATE_NEW_CARD)(ctx, id, mode);
+}
+
+static void give_mark(void *ctx, uint32_t id, uint32_t notify)
+{
+    (void)ctx;
+    ((ce_fn_mark_t)CE_FN_MARK_OBTAINED)(id, notify);
+}
+
+int ce_give_card(uint32_t id, uint32_t mode, uint32_t notify)
+{
+    void *mgr = CE_ABILITY_MGR();
+    return mgr ? ce_give_card_transaction(id, mode, notify, give_allocate, give_mark, mgr) : -1;
+}
 
 /* ---- trace ---- */
 static int      s_trace;
@@ -371,6 +389,12 @@ int ce_sdk_setup(uint8_t *base, int trace)
 {
     s_trace = trace;
     memset(s_seen, 0, sizeof s_seen);
+    uint32_t reg_bad = 0;
+    int reg_reason = 0;
+    if (ce_sdk_registration_error(&reg_bad, &reg_reason)) {
+        ce_verdict("FAIL: sdk: behavior registration error for card %u (reason %d)", reg_bad, reg_reason);
+        return 0;
+    }
     /* 1. 基类虚表：21 槽与我们假设的一致（布局守卫；只核对拷贝时会用到的 4 个透传槽 + 首尾）*/
     const uint32_t *vt = (const uint32_t *)CE_ADDR_BASE_VTABLE;
     struct { unsigned i; uint32_t want; } chk[] = {
@@ -389,12 +413,21 @@ int ce_sdk_setup(uint8_t *base, int trace)
     if (!bp_applied(base + CE_BP_BOMB_SPENT_RVA, 5)) { ce_verdict("FAIL: sdk: breakpoint ce_bomb_spent not applied"); return 0; }
     if (!bp_applied(base + CE_BP_ENEMY_DROP_RVA, 6)) { ce_verdict("FAIL: sdk: breakpoint ce_enemy_drop not applied"); return 0; }
     /* 3. 对账 */
-    uint32_t ids[CE_CARD_MAX_NEW];
+    uint32_t ids[CE_CARD_MAX_NEW], categories[CE_CARD_MAX_NEW];
     unsigned n = ce_new_card_count();
-    for (unsigned i = 0; i < n; ++i) ids[i] = ce_new_card_id(i);
+    for (unsigned i = 0; i < n; ++i) {
+        ids[i] = ce_new_card_id(i);
+        const uint8_t *entry = ce_table_entry(ids[i]);
+        categories[i] = entry ? *(const uint32_t *)(entry + 0x0c) : 4;
+    }
     uint32_t bad = 0; unsigned unbound = 0;
     if (!ce_sdk_bind_check(ids, n, &bad, &unbound)) {
         ce_verdict("FAIL: sdk: card %u has a behavior in the DLL but no entry in cards.js", bad);
+        return 0;
+    }
+    int contract_reason = 0;
+    if (!ce_sdk_contract_check(ids, categories, n, &bad, &contract_reason)) {
+        ce_verdict("FAIL: sdk: card %u violates JSON/behavior contract (reason %d)", bad, contract_reason);
         return 0;
     }
     for (unsigned k = 0; k < ce_sdk_behavior_count(); ++k) {

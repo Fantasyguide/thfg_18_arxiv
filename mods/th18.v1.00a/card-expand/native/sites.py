@@ -370,7 +370,7 @@ def emit_codecaves(rows, alloc):
                            "title": "显示顺序表搬迁目标（%d 项；DLL 重排并追加新卡）" % rows}
     code += ["61", "c3"]                             # popad ; ret
     out[CAVE_INIT] = {"code": "".join(code), "export": True, "access": "RX",
-                      "title": "开机把零售表（与跳转表）拷进 codecave；DLL 的 post_init 是权威，这里是保险"}
+                      "title": "开机把零售表（与跳转表）拷进 codecave；BP_ce_gate 完成运行时提交与回读"}
     return out
 
 

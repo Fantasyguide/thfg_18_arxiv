@@ -4,7 +4,7 @@
  *   1. stack_game_json_resolve("cards.js")：thcrap 把栈里每个 patch 的 th18/cards.js 深合并成一个对象。
  *      NULL = 栈里没有这个文件 = 0 张新卡，不是错。
  *   2. 顶层每个键 = id 的十进制（58..254），值 = 对象；字段见 ../DATA.md §2。
- *      逐张：默认值 → 取字段 → ce_card_validate → 查重 → 写 cave 第 id 行 → ce_text_set → 登记。
+ *      全量解析 / 校验 / 查重 → 暂存表编码与容量检查 → 一次性提交 cave、文案和注册表。
  *   3. ce_shop_capacity_check：随机池 ≤ 560 份、保证卡 ≤ 57（AUDIT §N2、边界 #34）。
  *      （幻影 id 的商店排除——NULL/BACK 行 +0x14 := 6——在 selfcheck.c 的 fill_table 里，不依赖本文件成功。）
  * 任何一条错 → FAIL verdict、返回 0，selfcheck 还原分配器上界——全有或全无。
@@ -20,7 +20,7 @@
  *   token 不可能含换行，所以带 '\n' 前缀的名字永远匹配不上，那条写入路径对新卡永远关着。
  */
 #include <stdio.h>
-#include <stdlib.h>
+#include <stdlib.h>             /* strtoul */
 #include <string.h>
 #include "card_expand.h"
 
@@ -67,6 +67,7 @@ static int resolve_api(void)
 /* ---- 注册表 ---- */
 static uint32_t s_ids[CE_CARD_MAX_NEW];
 static uint8_t  s_initial_unlocked[CE_CARD_MAX_NEW];
+static char     s_internal_names[CE_CARD_MAX_NEW][sizeof ((ce_card_def_t *)0)->internal_name + 1];
 static unsigned s_count;
 
 unsigned ce_new_card_count(void)               { return s_count; }
@@ -214,7 +215,8 @@ int ce_cards_load(uint8_t *base, uint8_t *cave, unsigned rows)
         return 0;
     }
 
-    uint8_t seen[CE_MAX_ROWS] = { 0 };
+    ce_card_batch_t batch;
+    ce_card_batch_init(&batch);
     int ok = 1;
     for (void *it = p_json_object_iter(root); it && ok; it = p_json_object_iter_next(root, it)) {
         const char *key = p_json_object_iter_key(it);
@@ -224,31 +226,37 @@ int ce_cards_load(uint8_t *base, uint8_t *cave, unsigned rows)
             ce_verdict("FAIL: cards: card \"%s\": %s", key, err); ok = 0; break;
         }
         if (d.id >= rows) { ce_verdict("FAIL: cards: card %u: id >= table rows (%u)", d.id, rows); ok = 0; break; }
-        if (seen[d.id])   { ce_verdict("FAIL: cards: card %u: duplicate id", d.id); ok = 0; break; }
-        if (s_count >= CE_CARD_MAX_NEW) {
-            ce_verdict("FAIL: cards: more than %u new cards (encyclopedia count 56+N must fit cmp r,imm8)", (unsigned)CE_CARD_MAX_NEW);
-            ok = 0; break;
+        if (!ce_card_batch_add(&batch, &d, err, sizeof err)) {
+            ce_verdict("FAIL: cards: card \"%s\": %s", key, err); ok = 0; break;
         }
-        seen[d.id] = 1;
-        char *name = (char *)malloc(strlen(d.internal_name) + 2);      /* "\n" + 名字，见文件头 */
-        if (!name) { ce_verdict("FAIL: cards: out of memory"); ok = 0; break; }
-        name[0] = '\n'; strcpy(name + 1, d.internal_name);
-        ce_card_encode_row(&d, (uint32_t)(uintptr_t)name, cave + d.id * CE_ROW_BYTES);
-        ce_text_set(d.id, d.name, (const char (*)[CE_CARD_TEXT_LINE])d.desc, d.ndesc);
-        s_ids[s_count] = d.id;
-        s_initial_unlocked[s_count] = (uint8_t)d.initial_unlocked;
-        ++s_count;
-        ce_log("cards: %u \"%s\" (%s) tier %u weight %u dmode %u sprites %u/%u%s",
-               d.id, d.name, d.internal_name, d.price_tier, d.weight, d.dmode, d.sprite_large, d.sprite_small,
-               d.initial_unlocked ? " initial_unlocked" : "");
     }
     p_json_decref_safe(root);
     if (!ok) { s_count = 0; return 0; }
 
-    load_dev_config(cave, rows);                 /* 权重覆盖要在容量检查之前 */
+    static uint8_t staged[CE_MAX_ROWS * CE_ROW_BYTES];
+    memcpy(staged, cave, rows * CE_ROW_BYTES);
+    s_count = batch.count;
+    for (unsigned i = 0; i < batch.count; ++i) {
+        const ce_card_def_t *d = &batch.defs[i];
+        s_internal_names[i][0] = '\n';
+        strcpy(s_internal_names[i] + 1, d->internal_name);
+        ce_card_encode_row(d, (uint32_t)(uintptr_t)s_internal_names[i], staged + d->id * CE_ROW_BYTES);
+        s_ids[i] = d->id;
+        s_initial_unlocked[i] = (uint8_t)d->initial_unlocked;
+    }
+
+    load_dev_config(staged, rows);                 /* 权重覆盖要在容量检查之前 */
     unsigned pool = 0, guaranteed = 0;
-    if (!ce_shop_capacity_check(cave, rows, &pool, &guaranteed, err, sizeof err)) {
+    if (!ce_shop_capacity_check(staged, rows, &pool, &guaranteed, err, sizeof err)) {
         ce_verdict("FAIL: cards: %s", err); s_count = 0; return 0;
+    }
+    memcpy(cave, staged, rows * CE_ROW_BYTES);
+    for (unsigned i = 0; i < batch.count; ++i) {
+        const ce_card_def_t *d = &batch.defs[i];
+        ce_text_set(d->id, d->name, (const char (*)[CE_CARD_TEXT_LINE])d->desc, d->ndesc);
+        ce_log("cards: %u \"%s\" (%s) tier %u weight %u dmode %u sprites %u/%u%s",
+               d->id, d->name, d->internal_name, d->price_tier, d->weight, d->dmode, d->sprite_large, d->sprite_small,
+               d->initial_unlocked ? " initial_unlocked" : "");
     }
     ce_log("cards: %u registered from cards.js; shop pool %u/%u slots, guaranteed offers <= %u/%u",
            s_count, pool, (unsigned)CE_SHOP_POOL_SLOTS, guaranteed, (unsigned)CE_SHOP_OFFER_SLOTS);

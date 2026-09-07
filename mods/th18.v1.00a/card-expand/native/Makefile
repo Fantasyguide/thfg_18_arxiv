@@ -1,10 +1,14 @@
-# card-expand —— 没有 C 代码要编，全部产物由 sites.py 从真 exe 生成。
+# card-expand —— patch 生成器、行为 DLL、资源与验证入口。
 ROWS ?= 255
 PATCH := ../patch/th18.v1.00a.js
 
-.PHONY: all check gen verify files clean test-host anm anm-verify sht sht-verify ecl snd-check voice
+.PHONY: all quick check package gen verify files clean test-host anm anm-verify sht sht-verify ecl snd-check voice dll dllx87 dllverify
 
-all: gen verify test-host voice dll
+all: quick dll
+
+## quick —— 日常开发反馈：主机 C 单测 + 可导入的 Python 单测。
+quick: test-host
+	python3 -m pytest -q
 
 ## step1 —— 第 1 步交付态：58 行，行为零变化（只进 dist/patch-step1；仓库里 patch/ 提交的是 255 行 = step3）
 step1:
@@ -14,9 +18,13 @@ step1:
 step3: anm sht
 	$(MAKE) ROWS=255 gen verify test-host voice dll dllx87 files
 
-## check  —— 只扫描 + 校验两条不变式，不产出（顺带 anm-verify / sht-verify / snd-check）
-check: anm-verify sht-verify snd-check
+## check —— 提交前完整只读门：代码、资源、站点、文档和 DLL ABI。
+check: quick anm-verify sht-verify snd-check dllx87 dllverify
 	python3 sites.py check
+	python3 ../../../../tooling/check-docs.py
+
+## package —— 生成可安装的完整发布包。
+package: dist
 
 ## snd-check —— 音效表 51 处站点的扫描 + 完整性审计（只读，不产出）
 snd-check:
@@ -83,10 +91,17 @@ clean:
 conflicts:
 	python3 sites.py conflicts $(OTHERS)
 
-# ---- DLL：全有或全无的门（post_init 里填表 + 回读验证 100 处）----
-TOOLCHAIN ?= $(HOME)/Tools/llvm-mingw-20260826-msvcrt-ubuntu-22.04-x86_64
-CC        := $(TOOLCHAIN)/bin/i686-w64-mingw32-gcc
-OBJDUMP   := $(TOOLCHAIN)/bin/i686-w64-mingw32-objdump
+# ---- DLL：全有或全无的门（BP_ce_gate 里填表 + 回读验证 100 处）----
+# TOOLCHAIN 显式指定时优先；否则先查 PATH，最后兼容当前开发机的默认安装目录。
+TOOLCHAIN ?=
+DEFAULT_TOOLCHAIN := $(HOME)/Tools/llvm-mingw-20260826-msvcrt-ubuntu-22.04-x86_64
+ifeq ($(strip $(TOOLCHAIN)),)
+CC      := $(or $(shell command -v i686-w64-mingw32-gcc 2>/dev/null),$(DEFAULT_TOOLCHAIN)/bin/i686-w64-mingw32-gcc)
+OBJDUMP := $(or $(shell command -v i686-w64-mingw32-objdump 2>/dev/null),$(DEFAULT_TOOLCHAIN)/bin/i686-w64-mingw32-objdump)
+else
+CC      := $(TOOLCHAIN)/bin/i686-w64-mingw32-gcc
+OBJDUMP := $(TOOLCHAIN)/bin/i686-w64-mingw32-objdump
+endif
 DLL       := th18_card_expand.dll
 # -fno-math-errno：让 sqrtf 编成一条 sqrtss。不加的话它会带一条「负数就调 libm 设 errno」的退路，
 # 而 libm 的 float 返回值走 st0，我们这边接它就得用 fstp —— 直接顶掉下面 dllx87 的「零 x87」不变式。
@@ -95,7 +110,7 @@ LDFLAGS   := -shared -static-libgcc -s -lkernel32 -Wl,--no-insert-timestamp
 
 ## dll    —— 编 DLL（依赖 gen 出的 sites_gen.h）
 dll: $(DLL)
-SRCS      := dll_main.c selfcheck.c unlocked.c text.c cards_def.c cards.c menu.c bp_trace.c sdk_core.c sdk.c shop_core.c shop.c sound.c $(wildcard cards/*.c)
+SRCS      := dll_main.c selfcheck_core.c selfcheck.c unlocked.c text.c cards_def.c cards.c menu.c bp_trace.c sdk_core.c sdk_actions.c sdk.c shop_core.c shop.c sound.c $(wildcard cards/*.c)
 OBJS      := $(SRCS:.c=.o)
 %.o: %.c card_expand.h sites_gen.h thcrap_bp.h cards_def.h sdk.h sdk_core.h engine.h shop_core.h sound.h voice_ids.h sht_ids.h
 	$(CC) $(CFLAGS) -c -o $@ $<
@@ -110,6 +125,12 @@ test-host:
 	./tests/build/test_cards_def
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_sdk_core tests/test_sdk_core.c sdk_core.c
 	./tests/build/test_sdk_core
+	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_sdk_actions tests/test_sdk_actions.c sdk_actions.c
+	./tests/build/test_sdk_actions
+	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_selfcheck_core tests/test_selfcheck_core.c selfcheck_core.c
+	./tests/build/test_selfcheck_core
+	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_public_sdk_compile tests/test_public_sdk_compile.c
+	./tests/build/test_public_sdk_compile
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_shop_core tests/test_shop_core.c shop_core.c
 	./tests/build/test_shop_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_blue_eyes_core tests/test_blue_eyes_core.c cards/blue_eyes_core.c -lm
@@ -130,11 +151,20 @@ dllx87: $(OBJS)
 	@n=$$($(OBJDUMP) -d $(OBJS) | grep -cE '^\s+[0-9a-f]+:\s+[0-9a-f ]+\s+f(ld|st|add|sub|mul|div|ild|ist|xch|com)' || true); \
 	 echo "x87 in our objects: $$n"; test "$$n" = 0
 
-## dllverify —— 位数 / 导出表 / 依赖
+## dllverify —— 位数 / 导出表 / 依赖；任何 ABI 漂移都失败。
 dllverify: $(DLL)
-	@file $(DLL)
-	@$(OBJDUMP) -p $(DLL) | grep -A 6 '^Export Table:' | sed -n '1,8p'
-	@echo "--- 依赖 ---"; $(OBJDUMP) -p $(DLL) | grep 'DLL Name'
+	@mkdir -p tests/build
+	@file $(DLL) | tee tests/build/dll-file.txt
+	@grep -Eq 'PE32.*Intel 80386' tests/build/dll-file.txt
+	@$(OBJDUMP) -p $(DLL) > tests/build/dll-headers.txt
+	@awk '/^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]+@[0-9]+/{gsub("@", "", $$2); print $$1, $$2}' th18_card_expand.def | while read sym ordinal; do \
+		grep -Eq "^[[:space:]]+$$ordinal[[:space:]]+0x[0-9a-f]+[[:space:]]+$$sym$$" tests/build/dll-headers.txt || exit 1; \
+	done
+	@test "$$(grep -Ec '^[[:space:]]+[0-9]+[[:space:]]+0x[0-9a-f]+[[:space:]]+[A-Za-z_]' tests/build/dll-headers.txt)" = 18
+	@test "$$(grep -c 'DLL Name:' tests/build/dll-headers.txt)" = 2
+	@grep -q 'DLL Name: KERNEL32.dll' tests/build/dll-headers.txt
+	@grep -q 'DLL Name: msvcrt.dll' tests/build/dll-headers.txt
+	@echo "DLL ABI: 18 exports, PE32/i386, dependencies KERNEL32.dll + msvcrt.dll"
 
 ## dist   —— 三个 patch + DLL + zip；_255（patch-step3）里带重建的 th18/abcard.anm（≈22 MB）与 th18/ability.anm（≈1.7 MB），都含零售贴图
 ## dist —— 在 ../dist/ 摆出可直接安装的整套：一个 DLL + patch-step1 / patch-step3 / patch-test

@@ -1,12 +1,14 @@
 /* sdk_core.h —— 行为 SDK 里不依赖平台的部分：行为注册表、与 JSON 的对账、私有状态槽。
  *
- * 纯 C11（只 <stdint.h>），主机上 make test-host 直接测。桩 / 断点 / 引擎访问在 sdk.h / sdk_vtable.c / sdk.c。
+ * 纯 C11（只 <stdint.h>），主机上 make test-host 直接测。桩 / 断点 / 引擎访问在 sdk.h / sdk.c。
  * 设计见 ../SDK.md §3–§4。
  */
 #pragma once
 #include <stdint.h>
 
 #define CE_SDK_MAX_BEHAVIORS 71        /* = CE_CARD_MAX_NEW：JSON 最多登记这么多，行为不可能更多 */
+#define CE_SDK_CARD_ID_MIN   58
+#define CE_SDK_CARD_ID_MAX   254
 #define CE_STATE_SLOTS       256       /* 同时存在的带状态卡对象上限（一局最多 256 张卡，0x411469）*/
 #define CE_STATE_BYTES       256       /* 每张卡私有状态上限 */
 
@@ -16,10 +18,19 @@ typedef struct {
     const void *vtable;
     const char *slots;                 /* 例如 "ctor,on_tick_2" */
     const void *hooks;                 /* ce_hooks_t*（sdk.h）；事件断点按虚表找到它 */
+    uint8_t     is_active;             /* active_recharge != 0；供不依赖 ce_hooks_t 的契约检查 */
 } ce_behavior_t;
 
-/* 登记；返回 0 = 满了或 id 重复（两种都是编程错误，调用方记日志） */
+enum {
+    CE_SDK_REG_NONE = 0,
+    CE_SDK_REG_ID_RANGE,
+    CE_SDK_REG_DUPLICATE,
+    CE_SDK_REG_CAPACITY,
+};
+
+/* 登记；返回 0 = id 越界、重复或容量已满。第一个错误会一直保留到测试 reset。 */
 int ce_sdk_register(const ce_behavior_t *b);
+int ce_sdk_registration_error(uint32_t *id, int *reason);
 unsigned ce_sdk_behavior_count(void);
 const ce_behavior_t *ce_sdk_behavior_at(unsigned i);
 /* 按 id 找；NULL = 这张卡没有行为（保持基类虚表） */
@@ -30,6 +41,14 @@ void ce_sdk_reset_for_test(void);      /* 只给单测用 */
  *   返回 0 且 *bad_id = 第一个「C 有行为、JSON 没登记」的 id（FAIL）；
  *   返回 1；*unbound = 「JSON 有、C 无行为」的张数（允许，开发期正常）。 */
 int ce_sdk_bind_check(const uint32_t *json_ids, unsigned n, uint32_t *bad_id, unsigned *unbound);
+
+enum {
+    CE_SDK_CONTRACT_NONE = 0,
+    CE_SDK_CONTRACT_ACTIVE_BEHAVIOR_REQUIRED,
+    CE_SDK_CONTRACT_ACTIVE_CATEGORY_REQUIRED,
+};
+int ce_sdk_contract_check(const uint32_t *json_ids, const uint32_t *categories, unsigned n,
+                          uint32_t *bad_id, int *reason);
 
 #define CE_STATE_RESERVED    16        /* 块头留给 SDK（主动卡状态机 ce_active_t）；卡的私有状态从这之后起 */
 
