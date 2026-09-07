@@ -10,9 +10,8 @@ all: quick dll
 quick: test-host
 	python3 -m pytest -q
 
-## step1 —— 第 1 步交付态：58 行，行为零变化（只进 dist/patch-step1；仓库里 patch/ 提交的是 255 行 = step3）
-step1:
-	$(MAKE) ROWS=58 gen verify voice dll dllx87 files
+## step1 —— 已退役（2026-09-07）：58 行、行为零变化的第 1 步交付态不再进 dist / modkit。
+##          真要复现那一态做回归对分：make ROWS=58 gen verify dll files（仓库里 patch/ 提交的是 255 行 = step3）。
 
 ## step3 —— 战线 B 验证态：255 行 + 分配器搬迁 + patch-test（空槽→id 58 + 追踪断点）
 step3: anm sht
@@ -167,21 +166,20 @@ dllverify: $(DLL)
 	@echo "DLL ABI: 18 exports, PE32/i386, dependencies KERNEL32.dll + msvcrt.dll"
 
 ## dist   —— 三个 patch + DLL + zip；_255（patch-step3）里带重建的 th18/abcard.anm（≈22 MB）与 th18/ability.anm（≈1.7 MB），都含零售贴图
-## dist —— 在 ../dist/ 摆出可直接安装的整套：一个 DLL + patch-step1 / patch-step3 / patch-test
+## dist —— 在 ../dist/ 摆出可直接安装的整套：一个 DLL + patch-step3 / patch-test / patch-devstage
 ##         （dist/ 已 gitignore：DLL 是构建产物，不入库；随时 make dist 重建）
 DIST := ../dist
 dist: anm sht ecl
-	rm -rf $(DIST) && mkdir -p $(DIST)/bin $(DIST)/patch-step1 $(DIST)/patch-step3 $(DIST)/patch-test $(DIST)/patch-devstage/th18
-	$(MAKE) -s ROWS=58  gen dll files >/dev/null
-	cp $(DLL) $(DIST)/bin/ && cp ../patch/*.js $(DIST)/patch-step1/ && cp -r ../patch-test/. $(DIST)/patch-test/
-	$(MAKE) -s ROWS=255 gen files >/dev/null
+	rm -rf $(DIST) && mkdir -p $(DIST)/bin $(DIST)/patch-step3 $(DIST)/patch-test $(DIST)/patch-devstage/th18
+	$(MAKE) -s ROWS=255 gen dll files >/dev/null
+	cp $(DLL) $(DIST)/bin/ && cp -r ../patch-test/. $(DIST)/patch-test/
 	cp -r ../patch/. $(DIST)/patch-step3/
 	cp build/abcard.anm build/ability.anm $(DIST)/patch-step3/th18/
 	for f in build/sht/pl0[0-3].sht; do [ -f "$$f" ] && cp "$$f" $(DIST)/patch-step3/th18/; done; true
 	python3 mkfiles.py $(DIST)/patch-step3 >/dev/null
 	cp ../patch-devstage/patch.js $(DIST)/patch-devstage/ && cp build/ecl/st0[1-6].ecl build/ecl/st0[1-6]bs.ecl $(DIST)/patch-devstage/th18/ && python3 mkfiles.py $(DIST)/patch-devstage >/dev/null
 	cp ../DIST-README.txt $(DIST)/README.txt
-	cd $(DIST) && rm -f th18_card_expand_bundle.zip && zip -qr th18_card_expand_bundle.zip bin patch-step1 patch-step3 patch-test patch-devstage README.txt
+	cd $(DIST) && rm -f th18_card_expand_bundle.zip && zip -qr th18_card_expand_bundle.zip bin patch-step3 patch-test patch-devstage README.txt
 	@echo "dist/ 就绪："; ls $(DIST)
 
 ## release —— 构建 dist，同步进发布仓库 local/vendor/th18_modkit 并提交；PUSH=1 再推

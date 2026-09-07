@@ -13,7 +13,7 @@
 
 | 步 | 内容 | 状态 |
 | --- | --- | --- |
-| 1 | 只搬表，58 行，行为零变化（`make step1`） | ✅ **实跑通过**（2026-09-02）|
+| 1 | 只搬表，58 行，行为零变化 | ✅ **实跑通过**（2026-09-02）；2026-09-07 退役，不再进 dist / modkit（复现：`make ROWS=58 gen verify dll files`）|
 | 2 | 255 行，仍零变化 | ✅ **实跑通过** |
 | 3 / 战线 B | 分配器搬迁 + 验证钩子（`make step3`） | ✅ **实跑通过**：`allocate_new_card(id=58)` 真的发到手上 |
 | C | `zAbilityManager` 扩容，`owned[]` 255 项（并入 `_255`）| ✅ **实跑通过** |
@@ -232,13 +232,15 @@ modkit 里的对应关系：
 
 | renkolab `dist/` | modkit |
 | --- | --- |
-| `patch-step1/` | `thcrap/repos/Renko_1055/th18_card_expand/` |
 | `patch-step3/` | `thcrap/repos/Renko_1055/th18_card_expand_255/` |
 | `patch-test/`  | `thcrap/repos/Renko_1055/th18_card_expand_test/` |
+| `patch-devstage/` | `thcrap/repos/Renko_1055/th18_card_expand_devstage/` |
 | `bin/th18_card_expand.dll` | `mods/th18_card_expand.dll` |
 
-启动器里：**步骤 1 与步骤 3 二选一，DLL 必勾**；`_test` 只在验证战线 B 时叠上。
-两个 patch 同时勾了也不会崩——DLL 会检出来、把分配器上界还原回零售值并记 `mitigation:`。
+启动器里：**`th18_card_expand_255` + DLL 必勾**；`_test` 只在验证战线 B 时叠上，
+`_devstage` 只在要快速刷商店 / 试卡时勾。
+2026-09-07 起步骤 1（`th18_card_expand`）与空壳补丁 `renko` 已从 modkit 移除：
+前者对玩家零效果、只在启动器里制造「二选一」误选，后者是从没填过东西的空目录。
 
 ## 装法（不用 modkit 时）
 
@@ -257,12 +259,12 @@ DLL 写**自己的**日志：`<游戏 exe 所在目录>/th18_card_expand.log`（
 相对路径会把日志写进 `thcrap/bin/`。第一版就是这么丢的。thcrap 自己的日志里只镜像
 **结论那一行**（`[th18_card_expand] OK/FAIL …`），不刷屏。
 
-## 怎么算通过（第 1 步）
+## 怎么算通过
 
 `th18_card_expand.log` 末尾（或 thcrap 日志里）找这一行：
 
 ```
-OK: table filled (58 rows @ 0x…), 100/100 sites verified
+OK: table filled (255 rows @ 0x…), allocator relocated, … , 100/100 sites verified
 ```
 
 **没有这一行就是没通过**，不管前面的 binhack 日志多整齐。可能的红字：
@@ -274,9 +276,8 @@ OK: table filled (58 rows @ 0x…), 100/100 sites verified
 | `FAIL: table sanity …` | 零售表地址错了（换 build？）|
 | `FAIL: N/100 sites verified … partial application, DO NOT PLAY` | 有 binhack 没打上（`expected` 不匹配被跳过），第一处的实际字节已打出来 |
 
-然后进游戏，**商店、图鉴、卡组编成、局内用卡全部与香草无差别**。
-
-任何一处表现异常都说明搬迁不完整——这一步的全部意义就是让「不完整」变得可观测。
+第 1 步（`ROWS=58`，已退役）的判据是同一行的 58 行版，外加进游戏后**商店、图鉴、卡组编成、
+局内用卡全部与香草无差别**——那一步的全部意义就是让「搬迁不完整」变得可观测。
 
 ## 目录
 

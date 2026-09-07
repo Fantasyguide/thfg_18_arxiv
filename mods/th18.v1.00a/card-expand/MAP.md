@@ -55,6 +55,7 @@
 | `menu_` | 20 | `zAbilityMenu` 大小 ×3、`__card_ids` ×16、清理上界 ×1 | `emit_menu_binhacks` ← `MENU_SITES` | 同上 | §M |
 
 第 1 步 patch（`th18_card_expand`，58 行）只有 `cardtable_`；其余全在 `_255`。
+该 patch 2026-09-07 退役、不再发布（复现：`make ROWS=58 gen`），现在发出去的只有 `_255`。
 
 ### 断点（`breakpoints`，DLL 导出同名 `BP_*`）
 
