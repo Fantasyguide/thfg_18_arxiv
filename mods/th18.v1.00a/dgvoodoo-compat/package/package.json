@@ -1,0 +1,6 @@
+{
+  "id": "dgvoodoo",
+  "title": "dgVoodoo 2.86.2 无边框缩放",
+  "description": "把 32 位 D3D9 代理和配置部署到 game/。提供保持纵横比的无边框全屏与高分辨率缩放；它不处理手柄检测。若 game/ 已有其他 d3d9.dll，启动器不会覆盖。",
+  "files": ["D3D9.dll", "dgVoodoo.conf"]
+}
