@@ -1,0 +1,181 @@
+/* 股市（id 80）—— 主动卡：选中它时 C = 买入 50 金钱，Shift + C = 卖出 50 金钱等值。
+ * 股价由占位随机过程驱动（stock_core.c，每 15 帧一步、4 秒一根 K 线），HUD 右下常驻面板：16 根 K 线 + 三行读数。
+ * 持仓跨关保留、商店只看现金、局末清零。设计 docs/superpowers/specs/2026-09-08-stock-market-design.md，审计 AUDIT §AF。
+ *
+ * 为什么只能是这两个键：replay 只重放 INPUT_HELD 的位（射击 / 炸弹 / 低速 / 方向 / 用卡 / 切卡），别的键回放会失同步。
+ * 用卡位的分派引擎已做好（选中的主动卡才收到 c_press），我们只在 on_activate 里读低速位区分买卖。
+ * 随机数走 ce_rand()（REPLAY_SAFE_RNG），与弹幕 / 零售卡同源 ⇒ replay 天然同步。
+ *
+ * 画图：33 个 UI 层 VM（1 底板 + 16 × {实体, 影线}），脚本 stock_rect（drawRect 1×1，C 写 pos / scale / color 就地改）。
+ * UI 层 VM 的坐标空间是 2× 的（HUD 图标根 VM pos(1056, 537) 对应 640×480 空间的 (528, 268)，AUDIT X5），
+ * ce_hud_text 用的是 640×480 字面量空间（AUDIT AC6）—— 两套常量分开写。⚠️ 全部「待实跑微调」。 */
+#include <string.h>
+
+#include "sdk.h"
+#include "stock_core.h"
+
+#define STOCK_SE_BUY    0x0f            /* se_cardget */
+#define STOCK_SE_SELL   0x2f            /* se_bonus */
+
+/* —— 面板几何：UI 层 2× 空间（1280×960）—— */
+#define UI_CANDLE_X0    848             /* 640 空间 424 */
+#define UI_CANDLE_Y0    776             /* 640 空间 388 */
+#define UI_CANDLE_W     416             /* 16 根 × pitch 26 */
+#define UI_CANDLE_H     96
+#define UI_BG_CX        1056            /* 底板中心 / 尺寸：盖住蜡烛区 + 下面三行字（640 空间 386..476）*/
+#define UI_BG_CY        862
+#define UI_BG_W         432
+#define UI_BG_H         180
+/* —— 文字：640×480 字面量空间 —— */
+#define TEXT_X          424.0f
+#define TEXT_Y1         440.0f
+#define TEXT_Y2         452.0f
+#define TEXT_Y3         464.0f
+#define TEXT_COLOR      CE_HUD_POWER_COLOR
+
+#define COLOR_BG        0xa0000000u     /* AARRGGBB：黑，alpha 160 */
+#define COLOR_UP        0xffff4040u     /* 红涨 */
+#define COLOR_DOWN      0xff40ff40u     /* 绿跌 */
+
+typedef struct {
+    stock_state_t st;
+    uint32_t bg_id;
+    uint32_t body_id[STOCK_CANDLES];
+    uint32_t wick_id[STOCK_CANDLES];
+    uint8_t  frame;                      /* 距上一步的帧数 */
+    uint8_t  inited;
+    uint8_t  vms_logged;
+} stock_card_t;
+
+_Static_assert(sizeof(stock_card_t) <= CE_STATE_BYTES - CE_STATE_RESERVED, "stock_card_t must fit ce_state");
+
+static uint32_t spawn_rect(void)
+{
+    static const float origin[3] = { 0.0f, 0.0f, 0.0f };
+    return ce_anm_spawn_ui(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_STOCK_RECT, origin);
+}
+
+static void kill_vms(stock_card_t *s)
+{
+    ce_anm_delete(s->bg_id); s->bg_id = 0;
+    for (int i = 0; i < STOCK_CANDLES; ++i) {
+        ce_anm_delete(s->body_id[i]); s->body_id[i] = 0;
+        ce_anm_delete(s->wick_id[i]); s->wick_id[i] = 0;
+    }
+}
+
+static int vms_alive(const stock_card_t *s)
+{
+    if (!s->bg_id || !ce_anm_get_vm(s->bg_id)) return 0;
+    for (int i = 0; i < STOCK_CANDLES; ++i)
+        if (!s->body_id[i] || !ce_anm_get_vm(s->body_id[i]) || !s->wick_id[i] || !ce_anm_get_vm(s->wick_id[i])) return 0;
+    return 1;
+}
+
+/* 底板先起（UI 列表尾插 = 后画在上），再 16 组蜡烛。任何一个没了就整组重来，保证叠放顺序。 */
+static int spawn_vms(stock_card_t *s)
+{
+    kill_vms(s);
+    s->bg_id = spawn_rect();
+    for (int i = 0; i < STOCK_CANDLES; ++i) { s->wick_id[i] = spawn_rect(); s->body_id[i] = spawn_rect(); }
+    if (!vms_alive(s)) { kill_vms(s); if (!s->vms_logged) { ce_log("stock: FAILED to spawn panel VMs"); s->vms_logged = 1; } return 0; }
+    ce_anm_set_pos(s->bg_id, (float)UI_BG_CX, (float)UI_BG_CY, 0.0f);
+    ce_anm_set_scale(s->bg_id, (float)UI_BG_W, (float)UI_BG_H);
+    ce_anm_set_color(s->bg_id, COLOR_BG);
+    if (!s->vms_logged) {
+        ce_log("stock: panel spawned (bg id %u at %d,%d size %dx%d; candles x %d..%d y %d..%d; 2x UI space)",
+               s->bg_id, UI_BG_CX, UI_BG_CY, UI_BG_W, UI_BG_H, UI_CANDLE_X0, UI_CANDLE_X0 + UI_CANDLE_W, UI_CANDLE_Y0, UI_CANDLE_Y0 + UI_CANDLE_H);
+        s->vms_logged = 1;
+    }
+    return 1;
+}
+
+static void apply_rect(uint32_t id, const stock_rect_t *r)
+{
+    ce_anm_set_pos(id, (float)r->cx, (float)r->cy, 0.0f);
+    ce_anm_set_scale(id, (float)r->w, (float)r->h);        /* w = h = 0 的空槽就是看不见 */
+    ce_anm_set_color(id, r->up ? COLOR_UP : COLOR_DOWN);
+}
+
+static void draw_candles(stock_card_t *s)
+{
+    stock_rect_t body[STOCK_CANDLES], wick[STOCK_CANDLES];
+    stock_layout(&s->st, UI_CANDLE_X0, UI_CANDLE_Y0, UI_CANDLE_W, UI_CANDLE_H, body, wick);
+    for (int i = 0; i < STOCK_CANDLES; ++i) { apply_rect(s->wick_id[i], &wick[i]); apply_rect(s->body_id[i], &body[i]); }
+}
+
+/* ctor：每关开场引擎会再调一次；只在还没初始化时铺初值（存档 / replay 装载的 mode 1 不调 ctor，所以不用 owned[] 判「刚获得」）。 */
+static int ctor(ce_card_t *c)
+{
+    stock_card_t *s = ce_state(c, stock_card_t);
+    if (s && !s->inited) { stock_init(&s->st); s->inited = 1; ce_log("stock: opened at %d.%02d", s->st.price / 100, s->st.price % 100); }
+    return 0;
+}
+
+/* C 键（引擎已门控：对话中 / 无敌人时不会来）。低速位按住 = 卖，否则买。返回 0 = 瞬发。 */
+static int on_activate(ce_card_t *c)
+{
+    stock_card_t *s = ce_state(c, stock_card_t);
+    if (!s || !s->inited) return ce_refuse("stock", "no state");
+    int sell = (CE_INPUT_HELD() & CE_INPUT_FOCUS) != 0;
+    int32_t money = CE_MONEY();
+    int ok = sell ? stock_sell(&s->st, &money) : stock_buy(&s->st, &money);
+    if (!ok) return ce_refuse("stock", sell ? "no holding" : "no cash");
+    CE_MONEY() = money;
+    ce_play_sound(sell ? STOCK_SE_SELL : STOCK_SE_BUY, ce_player_x());
+    ce_log("stock: %s %d @ %d.%02d -> hold %d.%04d (money %d, cost %d, value %d, pnl %d)",
+           sell ? "sell" : "buy", STOCK_LOT, s->st.price / 100, s->st.price % 100,
+           s->st.hold / 10000, s->st.hold % 10000, money, s->st.cost, stock_value(&s->st), stock_pnl(&s->st));
+    return 0;
+}
+
+/* +0x2c：管理器侧每帧（菜单 / 商店里不跑 ⇒ 行情冻结）。每 15 帧走一步；VM 丢了就整组重建。 */
+static int on_tick_2(ce_card_t *c)
+{
+    stock_card_t *s = ce_state(c, stock_card_t);
+    int redraw = 0;
+    if (!s || !s->inited) return 0;
+    if (++s->frame >= STOCK_STEP_FRAMES) {
+        s->frame = 0;
+        stock_step(&s->st, ce_rand());
+        redraw = 1;
+    }
+    if (!vms_alive(s)) { if (!spawn_vms(s)) return 0; redraw = 1; }
+    if (redraw) draw_candles(s);
+    return 0;
+}
+
+/* +0x48：HUD 文字，只能在这里画（AUDIT AC）。 */
+static int on_draw(ce_card_t *c)
+{
+    stock_card_t *s = ce_state(c, stock_card_t);
+    if (!s || !s->inited) return 0;
+    const stock_state_t *st = &s->st;
+    char arrow = st->price > st->cur.o ? '^' : st->price < st->cur.o ? 'v' : '-';
+    int32_t pnl = stock_pnl(st);
+    ce_hud_text(TEXT_X, TEXT_Y1, TEXT_COLOR, "STK %d.%02d %c", st->price / 100, st->price % 100, arrow);
+    ce_hud_text(TEXT_X, TEXT_Y2, TEXT_COLOR, "HOLD %d.%02d = %d", st->hold / 10000, st->hold % 10000 / 100, stock_value(st));
+    ce_hud_text(TEXT_X, TEXT_Y3, TEXT_COLOR, "P/L %c%d", pnl < 0 ? '-' : '+', pnl < 0 ? -pnl : pnl);
+    return 0;
+}
+
+/* +0x4c：局末。持仓 / 行情清零，面板删掉。 */
+static void on_run_reset(ce_card_t *c)
+{
+    stock_card_t *s = ce_state(c, stock_card_t);
+    if (!s) return;
+    if (s->inited) ce_log("stock: run reset (price %d.%02d, hold %d.%04d, pnl %d, %u steps)",
+                          s->st.price / 100, s->st.price % 100, s->st.hold / 10000, s->st.hold % 10000, stock_pnl(&s->st), s->st.steps);
+    kill_vms(s);
+    memset(s, 0, sizeof *s);
+}
+
+/* +0x50：删对象（局末 recount / 倒吊人摧毁）。私有状态还在，只需把 VM 删掉。 */
+static void on_delete(ce_card_t *c)
+{
+    stock_card_t *s = ce_state(c, stock_card_t);
+    if (s) kill_vms(s);
+}
+
+CE_CARD(80, .active_recharge = 30, .ctor = ctor, .on_activate = on_activate, .on_tick_2 = on_tick_2,
+            .on_draw = on_draw, .on_run_reset = on_run_reset, .on_delete = on_delete);

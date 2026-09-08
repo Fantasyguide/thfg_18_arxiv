@@ -7,7 +7,7 @@
  * CE_CARD 展开：这张卡的回调表 → 21 个 __thiscall 桩 → 一份 21 槽虚表 → 登记进 ce_behaviors。
  * 桩按虚表分派（每张卡一套桩），没写的回调桩返回 0（= 基类槽 `xor eax,eax; ret` 的效果）。
  * +0x08（C 键）由 SDK 的主动卡机器接管（非主动卡等价于基类的 ret 0）；+0x38 / +0x3c / +0x40（充能存取，HUD 与 replay 用）直接指基类实现。
- * +0x50 operator_delete：先释放私有状态，再进基类的 delete。
+ * +0x50 operator_delete：先调卡的 on_delete（此时私有状态还活着），再释放私有状态，最后进基类的 delete。
  */
 #pragma once
 #include <stdint.h>

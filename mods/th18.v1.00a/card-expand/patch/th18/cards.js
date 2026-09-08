@@ -328,5 +328,21 @@
     "weight": 2,
     "sprite_large": 160,
     "sprite_small": 161
+  },
+  "80": {
+    "name": "股市",
+    "desc": [
+      "主动（C 键）：投入 50 金钱买入股票，",
+      "Shift + C 卖出 50 金钱等值。",
+      "股价随时间涨跌，K 线画在右下角。",
+      "持仓过关保留；商店只认现金。"
+    ],
+    "internal_name": "STOCK",
+    "initial_unlocked": 1,
+    "category": 0,
+    "price_tier": 8,
+    "weight": 2,
+    "sprite_large": 168,
+    "sprite_small": 169
   }
 }

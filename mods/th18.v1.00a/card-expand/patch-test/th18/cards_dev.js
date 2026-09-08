@@ -4,7 +4,7 @@
     70,
     68,
     72,
-    67
+    80
   ],
   "trace": true,
   "retail_weight": 6,
