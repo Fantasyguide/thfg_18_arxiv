@@ -60,6 +60,21 @@ unsigned ce_state_in_use(void);
 /* 卡侧私有状态：同一把键、同一块，返回块头 CE_STATE_RESERVED 字节之后的地址；size 超出剩余空间返回 NULL。 */
 void *ce_state_user(const void *key, unsigned size);
 
+/* ---- 自机弹伤害倍率层（AUDIT §AA）----------------------------------------
+ * 「给自机弹加伤害」这件事出现了第三次（K♠ 61、古锭刀 76、衔尾蛇 78），提炼成一层。
+ * 每张参与的卡报一个千分比（CE_DMG_UNIT = ×1），这里连乘出**聚合倍率**，并指定其中一张卡
+ * （id 最小的那张）当「落笔人」——只有它的 `+0x28` 桩真的写 `bullet+0x9c`，所以一颗弹只被乘一次、
+ * 只取整一次，与卡在链表里的顺序无关。上限也由落笔人在 `+0x2c` 里按同一个倍率抬。
+ * 纯逻辑，无引擎依赖，主机单测。*/
+#define CE_DMG_UNIT 1000
+
+void ce_dmg_reset(void);
+/* 登记 / 更新一张卡的贡献。permille = 0 表示这张卡不在场（绑定时登记声明值，`+0x50` 删对象时清 0）。*/
+void ce_dmg_set(uint32_t id, int permille);
+int  ce_dmg_aggregate(void);      /* 千分比连乘；没有贡献者时 = CE_DMG_UNIT */
+int  ce_dmg_applier(void);        /* 落笔那张卡的 id；没有贡献者时 -1 */
+int  ce_dmg_scale(int damage);    /* damage × 聚合 / UNIT，单次取整；聚合 = UNIT 时原样返回 */
+
 /* 集卡判定（纯函数）：self 在 set 里，且 set 里其余每张 owned[id] != 0 → 1。owned 是 int[255]。*/
 int ce_royal_flush_ready(const int32_t *owned, uint32_t self_id, const uint32_t *set, unsigned n);
 /* 神之宣告：消耗一半残机（向上取整）；残机 ≤ 0 返回 0 = 不能发动 */

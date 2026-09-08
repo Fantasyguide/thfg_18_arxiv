@@ -17,6 +17,8 @@
 #include <string.h>
 #include "card_expand.h"
 #include "thcrap_bp.h"
+#include <stdarg.h>
+#include <stdio.h>
 #include "sdk.h"
 #include "sdk_actions.h"
 
@@ -183,10 +185,179 @@ int __cdecl BP_ce_card_bind(x86_reg_t *regs, void *bp_info)
                 equip = 1;
             }
         }
+        /* 伤害层：绑定 = 这张卡在场，把它声明的初值登记进聚合（`+0x50` 删对象时清 0）。AUDIT §AA */
+        if (h && h->bullet_damage_permille) ce_dmg_set(regs->ebx, h->bullet_damage_permille);
         if (s_trace) ce_log("trace: card %u object %08x bound to vtable %p%s", regs->ebx, regs->esi, b->vtable,
                             h && h->active_recharge ? " (active)" : equip ? " (equipment)" : "");
     }
     return BP_EXEC_ORIGINAL;
+}
+
+/* ---- 自机弹伤害倍率层（AUDIT §AA）----------------------------------------
+ * 聚合与「谁落笔」在 sdk_core（纯逻辑、主机单测），这里只做两件带引擎的事。
+ *
+ * `+0x28`：`PlayerBullet__create` `0x45e320` **先**写 `bullet+0x9c = shooter+0x02`、**再**遍历卡链表调 `+0x28`
+ * （一手，AUDIT Z3 的反编译里看得到顺序），所以桩看到的是引擎刚写好的值。只有落笔人乘一次 ⇒ 单次取整。
+ * 就地乘而不是「从 shooter 基值重算」：零售 `CardMomoyo__on_bullet_init` `0x411010` 就是重算派
+ * （`bullet+0x9c = (1 + 擦弹/N) × shooter+0x02`），重算会把她的加成抹掉；就地乘则与她相乘（顺序依赖是既有性质）。
+ *
+ * `+0x2c`：每敌每帧总伤害上限 `player+0x47984` 每帧从 `sht+0x28` 复位（GameThread 0x10 早于 AbilityManager 0x16），
+ * 不按同一倍率抬起来，加的伤害在贴脸打 boss 时会被配额吃掉（§V20 / §Y5 / §Z10 是同一件事的三次重犯）。
+ * 这一层把它变成自动的：卡只要报倍率，上限跟着走。*/
+void ce_sdk_scale_bullet_damage(uint32_t id, void *bullet)
+{
+    int32_t *dmg;
+    if ((int)id != ce_dmg_applier() || ce_dmg_aggregate() == CE_DMG_UNIT || !bullet) return;
+    dmg = (int32_t *)((uint8_t *)bullet + CE_BULLET_DAMAGE);
+    *dmg = ce_dmg_scale(*dmg);
+}
+
+void ce_sdk_damage_cap_tick(uint32_t id)
+{
+    const uint8_t *p = CE_PLAYER();
+    const uint8_t *sht;
+    int base;
+    if ((int)id != ce_dmg_applier() || ce_dmg_aggregate() == CE_DMG_UNIT || !p) return;
+    sht = *(const uint8_t *const *)(p + CE_PLAYER_SHT_PTR);
+    if (!sht) return;
+    base = *(const int32_t *)(sht + CE_SHT_MAX_DMG);
+    if (base > 0) ce_raise_damage_cap(ce_dmg_scale(base));
+}
+
+/* HUD 文字。零售 `CardMomoyo__on_draw` `0x4110a0` 的做法逐条复刻（AUDIT §AC）：
+ * 写 `ASCII_MANAGER_PTR + 0x19228` 的字色 → `AsciiManager__drawf_debug(mgr, pos, fmt, ...)` → 还原成白。
+ * 那个函数是 **cdecl varargs**，但我们不转发 varargs：先自己 vsnprintf 成一行，再用固定的 `"%s"` 交给它，
+ * 于是调用形状永远是 4 个 push、调用方清 0x10 —— 没有浮点提升、没有可变长栈，最省心。 */
+typedef void (__attribute__((cdecl)) *ce_fn_ascii_drawf_t)(void *mgr, const float *pos, const char *fmt, ...);
+
+void ce_hud_text(float x, float y, uint32_t bgra, const char *fmt, ...)
+{
+    void *mgr = *(void **)CE_ADDR_ASCII_MANAGER_PTR;
+    float pos[3];
+    char buf[128];
+    va_list ap;
+
+    if (!mgr) return;
+    va_start(ap, fmt);
+    vsnprintf(buf, sizeof buf, fmt, ap);
+    va_end(ap);
+    pos[0] = x; pos[1] = y; pos[2] = 0.0f;
+    *(uint32_t *)((uint8_t *)mgr + CE_ASCII_COLOR) = bgra;
+    ((ce_fn_ascii_drawf_t)CE_FN_ASCII_DRAWF)(mgr, pos, "%s", buf);
+    *(uint32_t *)((uint8_t *)mgr + CE_ASCII_COLOR) = CE_ASCII_COLOR_WHITE;
+}
+
+/* `+0x48`：`AbilityManager__on_draw` `0x408ab0` 每帧遍历卡链表调它。把聚合倍率写在火力值左边，
+ * 只有落笔人画、且只在倍率不是 ×1 时画（没有加伤害的卡时 HUD 干干净净）。 */
+void ce_sdk_damage_hud_draw(uint32_t id)
+{
+    int agg = ce_dmg_aggregate();
+    if ((int)id != ce_dmg_applier() || agg == CE_DMG_UNIT) return;
+    ce_hud_text(CE_HUD_DMG_X, CE_HUD_POWER_Y, CE_HUD_POWER_COLOR,
+                "x%d.%02d", agg / CE_DMG_UNIT, agg % CE_DMG_UNIT / 10);
+}
+
+void ce_set_bullet_damage_permille(ce_card_t *c, int permille)
+{
+    if (!c) return;
+    ce_dmg_set(ce_card_id(c), permille);
+}
+
+/* ---- 卡侧原语的实现（声明、用法与出处见 sdk.h）------------------------------------ */
+
+int ce_refuse(const char *card, const char *why)
+{
+    ce_play_sound(CE_SE_INVALID, ce_player_x());
+    ce_log("%s: refused (%s)", card, why);
+    return CE_ACTIVATE_REFUSED;
+}
+
+uint8_t *ce_option_claim(ce_card_t *c, ce_option_t *o)
+{
+    uint8_t *p = o ? o->ptr : 0;
+    if (!p) return 0;
+    if (*(int32_t *)(p + CE_OPT_IN_USE) == 0 ||
+        *(uint32_t *)(p + CE_OPT_OWNER_INDEX) != *(uint32_t *)((uint8_t *)c + CE_CARD_ARRAY_INDEX)) {
+        o->ptr = 0;                                  /* 槽被回收 / 被别的卡拿走了 */
+        return 0;
+    }
+    return p;
+}
+
+uint8_t *ce_option_alloc(ce_card_t *c, ce_option_t *o, int offset, int anm_script, const char *card)
+{
+    if (!o || !CE_PLAYER()) return 0;
+    o->ptr = (uint8_t *)ce_allocate_option(c, offset, anm_script);
+    ce_log("%s: option %s (ptr %08x, anm id %08x)", card, o->ptr ? "allocated" : "FAILED (pool full)",
+           (unsigned)(uintptr_t)o->ptr, *(uint32_t *)((uint8_t *)c + CE_CARD_OPTION_ANM_ID));
+    return o->ptr;
+}
+
+uint8_t *ce_option_retry(ce_card_t *c, ce_option_t *o, int offset, int anm_script,
+                         uint32_t retry_frames, const char *card)
+{
+    if (!o) return 0;
+    if (o->retry) { o->retry--; return 0; }
+    o->retry = retry_frames;
+    return ce_option_alloc(c, o, offset, anm_script, card);
+}
+
+/* 收起子机：删它的 ANM VM（零售 `CardReimu1__operator_delete` `0x40ab20` 同款）、清零售在同一时机清的
+ * flags bit1（`CardReimu1__method_4C` `0x40aad0`），松开我们记的指针。槽本身由引擎统一回收。*/
+void ce_option_drop(ce_card_t *c, ce_option_t *o)
+{
+    uint32_t *vm = (uint32_t *)((uint8_t *)c + CE_CARD_OPTION_ANM_ID);
+    ce_card_flags(c) &= ~(uint32_t)CE_FLAG_EQUIP_RESET_BIT1;
+    if (*vm) { ce_anm_delete(*vm); *vm = 0; }
+    if (o) { o->ptr = 0; o->retry = 0; }
+}
+
+static void hud_digit_kill(ce_hud_digit_t *d)
+{
+    if (d->digit_id) ce_anm_delete(d->digit_id);
+    d->digit_id = 0;
+    d->shown = -1;
+}
+
+void ce_hud_digit_clear(ce_hud_digit_t *d)
+{
+    if (!d) return;
+    hud_digit_kill(d);
+    d->icon_id = 0;
+}
+
+void ce_hud_digit_attach(ce_hud_digit_t *d, uint32_t icon_anm_id, int value, const char *card)
+{
+    if (!d) return;
+    if (d->digit_id) hud_digit_kill(d);                    /* 图标重建：旧数字先删 */
+    d->icon_id = icon_anm_id;
+    ce_hud_digit_set(d, value, card);
+}
+
+void ce_hud_digit_set(ce_hud_digit_t *d, int value, const char *card)
+{
+    uint8_t *icon;
+    int v;
+
+    if (!d) return;
+    icon = ce_anm_get_vm(d->icon_id);
+    if (!icon) {                                           /* 图标没了（进店 / 卡被删）：数字跟着走 */
+        if (d->digit_id) { hud_digit_kill(d); ce_log("%s: hud icon gone, digit removed", card); }
+        d->icon_id = 0;
+        return;
+    }
+    if (d->digit_id && !ce_anm_get_vm(d->digit_id)) { d->digit_id = 0; d->shown = -1; }
+    if (!d->digit_id) {
+        const float *ip = (const float *)(icon + CE_ANM_VM_POS);
+        d->digit_id = ce_anm_spawn_ui(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_HUD_DIGIT, ip);
+        d->shown = -1;
+        ce_log("%s: hud digit %s (icon id %u at %.1f, %.1f, %.1f; digit id %u)", card,
+               d->digit_id ? "spawned" : "FAILED", d->icon_id, ip[0], ip[1], ip[2], d->digit_id);
+        if (!d->digit_id) return;
+    }
+    v = value < 0 ? 0 : value > CE_HUD_DIGIT_MAX ? CE_HUD_DIGIT_MAX : value;
+    if (v != d->shown && ce_anm_set_sprite(CE_ABILITY_ANM(), d->digit_id, CE_ANM_ABILITY_SPRITE_TS_DIGIT_0 + v))
+        d->shown = v;
 }
 
 /* 在场的行为卡：沿 mgr 的卡链表走，按虚表认出我们的卡 */
@@ -387,6 +558,7 @@ static int bp_applied(const uint8_t *p, unsigned len)
 
 int ce_sdk_setup(uint8_t *base, int trace)
 {
+    ce_dmg_reset();                                   /* 伤害层：从干净的聚合开始（§AA）*/
     s_trace = trace;
     memset(s_seen, 0, sizeof s_seen);
     uint32_t reg_bad = 0;

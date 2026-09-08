@@ -19,6 +19,13 @@
 边缘按角度噪声抖出火舌，固定种子；script92 本体 / script93 拖尾共用）、`BLAST.png`（128×128 爆炸：内圈闪光 + 外圈光环，script94）。
 
 `make_truesilver_art.py`：真银圣剑 HUD 耐久数字 —— `truesilver/DIGIT_0..9.png` 10 张 32×32（DejaVu Serif Bold 白字 2 px 黑描边），ORDER 里 `TS_DIGIT_0..9`；script99 `hud_digit` 与零售 HUD 图标同款 `layer(26); resolutionMode(2)`，C 用 `ce_anm_set_sprite` 换数字。
+`make_peashooter_art.py`：豌豆射手的三张图，**全程序生成**（距离场 → 平滑掩码 → 球面着色，无外部素材）——
+`peashooter/PEA.png`（32×32 亮绿豌豆，script100 平时那颗 scale 0.80 / script101 开大那些 scale 0.50 共用；
+script103 的开大绿光晕也复用它，加色混合胀开）、`peashooter/PEASHOOTER.png`（64×64 子机本体，**朝上**：
+绿球 + 上伸的吹管 + 一截茎两片叶）、`peashooter/_src/PEASHOOTER_face.png`（512×640 卡图画面：侧面像斜朝右上 +
+三颗飞出去的豌豆，白底 → `fit_card.py --no-detect --trim 0 --margin 0`）。
+⚠️ 弹与子机的贴图都必须在 `ability.anm` 里：引擎开火期间把 `player+0x10` 换成它（AUDIT Z7）。
+
 `gen_banner.py "ROYAL FLUSH"`：金色金属光泽 + 黑描边的大字横幅（512×128，`banner/`），皇家同花顺的亮字用它。
 
 `make anm` 跑 `build_ability.py`：重编 → `native/build/ability.anm`，自检零售部分没变，

@@ -1,0 +1,20 @@
+script script101 {
+    // 开大那 140 颗小豌豆（shooterset PEA_GATLING）。与 script100 同一张贴图、同一套骨架，
+    // 只是小一号：一排 7 颗铺开时才不会糊成一团绿墙。单颗只有 7 伤害，视觉上也该轻。
+-1:
+    layer(13);
+    sprite(@PEA);
+    type(1);
+    alpha(255);
+    zWriteDisable(1);
+    scale(0.50f, 0.50f);        // 场上约 13 px
+0:
+    stop();
+    interruptLabel(1);
+    layer(15);
+    blendMode(1);
+    scaleTime(5, 4, 1.10f, 1.10f);
+    alphaTime(5, 0, 0);
++5: // 5
+    delete();
+}

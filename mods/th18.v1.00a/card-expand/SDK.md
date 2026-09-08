@@ -73,7 +73,7 @@ return 1;   /* 放行原指令 */
 | +0x1c | `on_tick_shooters` | `int (ce_card_t*, uint32_t, uint32_t)` | 每射击帧（**只在按住射击键时**广播）|
 | +0x20 | `on_load` | `int (ce_card_t*)` | 返回值 OR 累加 |
 | +0x24 | `on_tick` | `int (ce_card_t*)` | 玩家侧每帧 |
-| +0x28 | `on_bullet_created` | `int (ce_card_t*, void *bullet)` | 每颗自机弹 |
+| +0x28 | `on_bullet_created` | `int (ce_card_t*, void *bullet)` | 每颗自机弹。**加伤害别写这里**，用 §13 的伤害层 |
 | +0x2c | `on_tick_2` | `int (ce_card_t*)` | 管理器侧每帧；菜单 / 商店里**不跑** |
 | +0x30 | `on_enemy_drop` | `int (ce_card_t*, uint32_t, uint32_t)` | 敌人掉落道具后；两参语义 🟡 |
 | +0x34 | `on_stage_start` | `void (ce_card_t*)` | 每关开场 |
@@ -146,6 +146,14 @@ CE_CARD(id, .回调 = 函数, ...);      /* 一张卡一条，放在 native/card
 | `ce_damage_rect(center, angle, life, dmg, w, h)` | 自机侧矩形伤害源：敌人自己判重叠扣血，每帧总量钳 `player+0x47984` | `0x45dfa0` stdcall + XMM2 宽 / XMM3 高 `ret 0x10`（O29b）|
 | `ce_anm_get_vm / set_pos / set_color` | 按 id 找 VM、写 `vm+0x5f0` 坐标 / `vm+0x524` 颜色 | `0x488b40` thiscall(mgr; id) `ret 4`（O29c）|
 | `ce_anm_interrupt(id, n)` / `ce_anm_delete(id)` | 触发脚本 `interruptLabel(n)`（Tenshi 用 1 收场）/ 标记删除 | `0x488be0` stdcall `ret 8` / `0x488cf0` stdcall `ret 4` |
+| `ce_player_pos()` / `ce_player_x()` | 自机 float3 坐标 / 只要 x（放音效的声像位置）；指针为空时 NULL / 0 | `CE_PLAYER_X` `0x620` 是 float3 基址 |
+| `ce_enemy_pos(e)` / `ce_enemy_lockable(e)` | 敌人 float3 坐标 / 可锁定（非空且不带 `NO_LOCK`）| `CE_ENEMY_POS_X` `0x1270` |
+| `CE_ENEMY_FOREACH(em, e)` | 沿敌人链表遍历（带 guard；`e` 可能为空，用 `ce_enemy_lockable` 一并滤）| 结点 {entry, next, prev} |
+| `ce_spell_flags()` / `ce_spell_active()` | 符卡标志位 / 「现在在打符卡吗」；管理器为空时读作 0 | `SPELLCARD+0x78` |
+| `ce_refuse(card, why)` | 主动卡拒绝发动：无效音 + 一行日志 + `CE_ACTIVATE_REFUSED` | 见 §9 |
+| `ce_enemy_by_id(em, id)` | 按 `enemy_id` 在敌人链表里找 | `get_boss_enemy_full` `0x4237f0` 的走法 |
+| `ce_option_*` | 装备卡子机槽：认领 / 申请 / 补申请 / 收起（§12）| `Player__allocate_option` `0x40a790` |
+| `ce_hud_digit_*` | HUD 小卡上的一位数字：挂图标 / 设值 / 清除（§15）| `ce_anm_spawn_ui` + `ce_anm_set_sprite` |
 
 ### 5.1 语音
 
@@ -253,6 +261,51 @@ SDK 在 `+0x2c` 桩里先跑状态机（空闲：清释放位、门控下递减�
 - 事件断点每个都要过 AUDIT；本批只加一个。
 - 图鉴 ≤ 127 条目（新卡 ≤ 71）、`abcard.anm` sprite 追加：另外的会话。
 
+## 13. 自机弹伤害倍率层
+
+「给自机弹加伤害」这件事出现三次之后收进了 SDK（2026-09-08，AUDIT §AA）。卡不再自己写 `bullet+0x9c`：
+
+```c
+CE_CARD(61, ..., .bullet_damage_permille = 1100);       /* K♠：常数 ×1.1，写完就不用管了 */
+CE_CARD(76, ..., .bullet_damage_permille = CE_DMG_UNIT);/* 古锭刀：初值 ×1 */
+    ce_set_bullet_damage_permille(c, CE_DMG_UNIT * 2);  /*   终符沿上报一次新值 */
+```
+
+千分比，`CE_DMG_UNIT` = 1000 = ×1。SDK 把所有**在场**参与者的值连乘成聚合倍率，
+挑其中 **id 最小的一张**当「落笔人」，只有它在 `+0x28` 桩里对 `bullet+0x9c` **就地乘一次**。于是：
+
+- **单次取整**。三层 +20% 加法叠、基值 90：逐张各自取整会走成 `90 → 108 → 129 → 154`，一次算完是 **144**。
+- **与卡在链表里的顺序无关**，同一副牌组每次结果相同。
+- **每帧伤害上限自动跟着抬**：落笔人在 `+0x2c` 里 `ce_raise_damage_cap(sht+0x28 基值 × 聚合)`。
+  这条以前要每张加伤害的卡自己记得，K♠ 就漏了——贴脸打 boss 时上限（Reimu 90 / Sakuya 60）本来就被自机弹吃满，
+  只翻弹不抬上限等于白翻（§V20 / §Y5 / §Z10 是同一件事的三次重犯）。
+- **生命周期不用管**：绑定时登记声明的初值、`+0x50`（含倒吊人摧毁）退出聚合、`+0x4c`（局末）回到初值。
+
+**HUD 上有读数**：聚合倍率不是 ×1 时，落笔人会在 `+0x48 on_draw` 里把 `x1.60` 写在**火力值左边**
+（`ce_hud_text`，§14）。卡不用管这件事；没有加伤害的卡在场时一个字都不画。
+
+**边界写在名字里**：`bullet_damage` 只管 `bullet+0x9c`。炸弹、以及 `ce_damage_rect` 建的伤害源
+（青眼光束 / 炎魔火球 / 破损核心电弧 / 真银圣剑挥砍）走另一条管线，**不**受它影响。
+另外零售 `CardMomoyo`（54）是「从 shooter 基值重算并覆写」派，与我们谁靠后谁说了算——
+所以本层选择**就地乘**而不是重算，不然带着她时她的擦弹加成会被抹掉（AUDIT AA3）。
+
+## 14. 在 HUD 上写字：`ce_hud_text`
+
+```c
+ce_hud_text(478.0f, 182.0f, 0xff800000u, "x%d.%02d", n, frac);
+```
+
+零售 `CardMomoyo__on_draw` `0x4110a0` 就是「一张卡在 HUD 上画数字」的先例，这个原语照它复刻（AUDIT §AC）。三条规矩：
+
+- **只能在虚表 `+0x48 on_draw` 里调**。`AbilityManager__on_draw` `0x408ab0` 每帧遍历卡链表调它；
+  在 `on_tick_2` 里调是 tick 阶段，不对。
+- **坐标用 Gui 自己那套字面量空间**（`FUN_0043cd00` 里全是常数）：火力 `"%d."` 在 `(540, 182)`、
+  小数 `(560, 189)` scale 0.6、`"/%d."` `(574, 182)`、金钱右对齐 `(620, 204)`。不用做分辨率换算。
+- **颜色是 BGRA 一个 dword**，画完自动还原成白。想和火力看起来是一体的就用 `CE_HUD_POWER_COLOR`。
+
+⚠️ 字号 / 对齐用的是**环境值**（照 Momoyo，我们只设字色）—— 所以位置和大小要实跑一次才能定死，
+和真银圣剑的 HUD 数字是同一句话。
+
 ## 11. 文件
 
 ```
@@ -266,7 +319,7 @@ native/
 ├── anm_ids.h        生成物：ability.anm 里我们追加的 sprite / 脚本号（make anm）
 ├── sht_ids.h        生成物：pl0X.sht 里我们追加的 shooterset 索引（make sht，§12）
 └── cards/           每张卡一个 .c（Makefile 通配）
-    ├── s10.c  sj.c  sq.c  sk.c  sa.c
+    ├── s10.c  sj.c  sq.c  sk.c  sa.c  peashooter.c  ouroboros.c …
     └── 带纯逻辑的还有一个 <名>_core.c/.h（主机单测），如 blue_eyes_core、broken_core_core
 ```
 
@@ -275,27 +328,35 @@ native/
 ## 12. 装备卡（子机 + 自己的弹幕）
 
 零售的「子机会开火」那类卡（各角色 `*_OP`）是两个槽的事，本 mod 现在能照着写。
-**破损核心（71）**（`cards/broken_core.c`）用了前一半（子机），后一半（SHT 连射）它第一版用过、
-后来换成定点伤害源——它要的是「瞬发单体」，自机弹天生要飞过去。所以下面 ②–⑤ 目前**没有卡在用**，
-工具与不变式校验照旧可用。引擎一手在
+**破损核心（71）**（`cards/broken_core.c`）只用了前一半（子机），后一半（SHT 连射）它第一版用过、
+后来换成定点伤害源——它要的是「瞬发单体」，自机弹天生要飞过去。
+**下面 ②–⑤ 的第一个真用户是豌豆射手（77）**（`cards/peashooter.c`，两组 shooterset 切换 + 自己数 short_timer，AUDIT §Z）。引擎一手在
 [`engine/sht/th18/`](../../../engine/sht/th18/README.md) 与
 [`engine/card/th18/03-hooks.md`](../../../engine/card/th18/03-hooks.md) §5，审计 AUDIT §U。
 
 ```c
+typedef struct { ce_option_t opt; bc_state_t st; } bc_card_t;   /* 子机槽存私有状态，不是 card+0x54 */
+
 /* ① 生成子机：脚本号是 ability.anm 的（子机长什么样由我们画）*/
 static int on_power_level_change(ce_card_t *c) {
     bc_card_t *s = ce_state(c, bc_card_t);
-    s->option = ce_allocate_option(c, 0x18 /* 横向偏移 */, CE_ANM_ABILITY_SCRIPT_BROKEN_CORE_ORB);
+    if (s) ce_option_alloc(c, &s->opt, 0x18 /* 横向偏移 */, CE_ANM_ABILITY_SCRIPT_BROKEN_CORE_ORB, "broken_core");
     return 0;
 }
-/* ② 开火：给一组 shooter 的索引；弹从子机位出膛 */
-ce_tick_shooters_for_card(option, short_timer, long_timer, CE_SHT_SET_BROKEN_CORE);
+/* ②a 每帧拿它：认领（槽是公共池，会被回收）；没有就按 60 帧的间隔补申请一次 */
+uint8_t *o = ce_option_get(c, &s->opt, 0x18, CE_ANM_ABILITY_SCRIPT_BROKEN_CORE_ORB, 60, "broken_core");
+if (!o) return 0;
+/* ②b 开火：给一组 shooter 的索引；弹从子机位出膛（坐标用 ce_option_x/y）*/
+ce_tick_shooters_for_card(o, short_timer, long_timer, CE_SHT_SET_BROKEN_CORE);
+/* ③ on_load / on_run_reset 收起 */
+ce_option_drop(c, &s->opt);
 ```
 
 四条要点：
 
 - **子机指针别存 `card+0x54`**（零售存那儿）：新卡对象只有 `0x54` 字节，那已经在对象外。用 `ce_state()`。
-  槽是 12 个的公共池，每次用前认领一次：`option+0x00 != 0 && option+0xd0 == card+0x08`。
+  槽是 12 个的公共池，每次用前认领一次（`option+0x00 != 0 && option+0xd0 == card+0x08`）——
+  这套认领 / 申请 / 收起 2026-09-08 收进了 SDK 的 `ce_option_*`（AUDIT §AD），卡里不用再抄一遍。
 - **弹幕数据**要往四个 `pl0X.sht` 里加一组 shooterset：`assets/sht/append_shooterset.py` 的 `APPEND` 表加一项，
   `make sht` 生成 `build/sht/*.sht` 与 `sht_ids.h`（`CE_SHT_SET_<NAME>`）。零售用了 23 项、总共 40 项，
   **还剩 16 个空位**。脚本每次都回读校验解析不变式（AUDIT U5）。
@@ -306,3 +367,30 @@ ce_tick_shooters_for_card(option, short_timer, long_timer, CE_SHT_SET_BROKEN_COR
 - **想不按射击键也打**：`on_tick_shooters`（`+0x1c`）只在按住射击键时广播。改挂 `on_tick_2`，
   shooter 的 `fire_rate` 填 1、调用时 timer 传 0（`0 % 1 == 0` 必发），节奏交给自己的计数器。
   ⚠️ `fire_rate` **不能填 0**：这条路径上是裸取模，会除零。
+- **节奏自己数**：`ce_tick_shooters_for_card` 的 `short_timer` 是我们传的，而引擎拿它**只做**
+  `timer % fire_rate == start_delay` 这一处判定（往下传给 `PlayerBullet__create` 的那份根本没被用，AUDIT Z3）。
+  所以别用引擎自己的 `player+0x476d4`——它只在 0..14 循环、松开射击键还会跳，表达不出「85 帧一颗」这种节奏。
+  自己维护一个计数器，换形态时清 0，切过去那一帧就能立刻出膛（豌豆射手 77 的做法）。
+- **每敌每帧伤害上限**：单发伤害超过 `sht+0x28`（Reimu 90 / Marisa 160 / Sakuya 60 / Sanae 120）就会被砍。
+  要么把伤害拆成多发小弹（零售子机卡都是 6–32），要么在 `on_tick_2` 里 `ce_raise_damage_cap()`
+  （只在自己的弹可能命中的那几帧抬，别常开——那是对自机弹的隐形加强）。
+
+## 15. HUD 小卡上的一位数字：`ce_hud_digit_*`
+
+一张卡想在自己的 HUD 图标上显示一个数字（真银圣剑的剩余耐久、衔尾蛇的层数）时，三行就够：
+
+```c
+typedef struct { ob_state_t st; ce_hud_digit_t hud; } ob_card_t;
+
+static int on_hud_anm(ce_card_t *c, uint32_t id)      /* +0x44：引擎交来图标根 VM 的 anm id */
+{ ce_hud_digit_attach(&s->hud, id, (int)s->st.stacks, "ouroboros"); return 0; }
+
+static int on_tick_2(ce_card_t *c)                     /* 每帧对账：图标会被引擎重建 */
+{ if (s->hud.icon_id) ce_hud_digit_set(&s->hud, (int)s->st.stacks, "ouroboros"); return 0; }
+
+static void on_run_reset(ce_card_t *c) { ce_hud_digit_clear(&s->hud); }
+```
+
+SDK 读图标根 VM 的实体坐标（`vm+0x5f0`）、在 **UI 列表**里起 `ability.anm` 的 `HUD_DIGIT` 脚本钉在同一点，
+值变了 `set_sprite` 换数字；图标没了删数字、图标重建时旧数字先删。值钳在 `0..CE_HUD_DIGIT_MAX`（贴图只有十张）。
+⚠️ 数字**相对图标的偏移写在脚本里**，是唯一要实跑调的量（日志会打图标坐标）。机制与一手在 AUDIT §X。

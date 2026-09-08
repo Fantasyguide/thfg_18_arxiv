@@ -11,7 +11,7 @@
 | 58 | 黑桃 10 | 从道具获得的金钱 +10％（每第 10 个金钱道具多给 1；确定性计数，replay 安全）| `on_item_money` | `s10.c` | 🔧 |
 | 59 | 黑桃 J | 移动速度 +10％ | `on_tick_2` 写移速倍率 `player+0x477ec` | `sj.c` | 🔧 |
 | 60 | 黑桃 Q | 道具自动回收范围略微增加（吸引半径 70 → 95、吸速 5 → 7；Nitori 是 110）| `on_load` 写玩家回收四参（抄 Nitori）| `sq.c` | 🔧 |
-| 61 | 黑桃 K | 自机弹伤害 +10％ | `on_bullet_created` 改 `bullet+0x9c`（抄 Momoyo）| `sk.c` | 🔧 |
+| 61 | 黑桃 K | 自机弹伤害 +10％ | 走 SDK 的自机弹伤害层（`.bullet_damage_permille = 1100`，AUDIT §AA；2026-09-08 从自己写 `bullet+0x9c` 改过来，顺手补上了漏抬的每帧伤害上限）| `sk.c` | 🔧 |
 | 62 | 黑桃 A | Miss 后的无敌时间 +50％（280 → 420 帧）| `on_tick_2` 识别复活计时器 {279,280} | `sa.c` | 🔧 |
 
 **卡图**：五张用标准英式牌面（Wikimedia Commons，Dmitry Fomin，CC0；`assets/cards/_src/english_pattern/`，`fit_card.py` 出图），sprite 118/119 … 126/127。
@@ -53,6 +53,18 @@
 **黄昏 = Dusk**（最后一手重触发 → 最后一颗炸弹再放一发）。倒吊人的删卡原语 `ce_destroy_card` 是本 mod 第一个局中改卡组的动作，
 Mr. Bones / Gros Michel 这类「自毁」卡以后都走它。
 
+## 致敬・神话
+
+| id | 名字 | 效果 | 实现（槽 / 事件） | 文件 | 状态 |
+| --- | --- | --- | --- | --- | --- |
+| 78 | 衔尾蛇 | 被动：每 miss **X** 次，自机弹伤害**永久** +20％（加法），然后 X += 1；X 初值 1。⇒ 第 N 层要累计 N(N+1)/2 次 miss（1/3/6/10/15…）。HUD 小卡上画当前层数 | `on_death_after_deathbomb`（+0x0c，加倍同款「真的 miss」信号）计数 → 报给 SDK 的自机弹伤害层（AUDIT §AA）；`on_hud_anm` 复用真银圣剑的数字脚本。AUDIT §AB | `ouroboros.c` + `ouroboros_core.c` | 🔧 |
+
+**衔尾蛇（78）补充**：咬住自己尾巴的蛇——每一次死亡喂大下一次的自己，但下一口越来越难吃到。
+「永久」= 一整局之内（局末 `on_run_reset` 清零）。残机有限 ⇒ 现实里到 2–3 层、极限 4 层，自限，不用另设上限
+（代码里 `OB_MAX_STACKS = 9` 只是给 HUD 那一位数字兜底）。与**加倍（69）反协同**：那张让每次 miss 掉 2 命。
+伤害与每帧伤害上限都归伤害层，这张卡一行都不写；纯计数、无随机无浮点 ⇒ replay 天然安全。
+卡图程序生成（`assets/cards/make_ouroboros_art.py`：极坐标距离场画一条渐细的蛇盘成环，鳞片与明暗都是角度的函数；sprite 158/159）。
+
 ## 其它
 
 | id | 名字 | 效果 | 实现（槽 / 事件） | 文件 | 状态 |
@@ -70,6 +82,7 @@ Mr. Bones / Gros Michel 这类「自毁」卡以后都走它。
 | 72 | 炎魔之王拉格纳罗斯 | 主动（C 键）：消耗 2.00 火力召唤**不跟随自机**的炎魔；800 点生命替玩家挡子弹；每 7 秒滑到弹幕区下 1/3 的随机落点，到位后向场上**随机一个**敌人投火球（飞行物，沿途消弹；落地消弹 r 96 + 爆炸 1200 + 小震屏）；生命归零死亡，过关消失。火力 < 3.00 拒绝。充能 10 s | `on_activate` 照 Tsukasa 三步（门槛 → `spend_power` → `repopulate`）；`on_active_tick` 挡弹 + 状态机 `fl_step` + 火球位姿 + 落地 8 帧 `ce_damage_rect`；随机走 `ce_rand()`（详见下）。AUDIT §V | `firelord.c` + `firelord_core.c` | 🔧 |
 | 70 | 腐化 | 被动：拿到时炸弹上限补满 7；此后**放炸弹消耗的是上限而不是当前数**，且过关不回复 —— 一次给满七发，用一发少一发 | `ctor`（`ce_fresh_acquire` 门控）顶满上限；新 SDK 事件 `on_bomb_spent`（断点 `ce_bomb_spent` @ `0x4203bc`，consume_bomb 刚返回）还原当前数、扣上限；`on_stage_start` 抵消引擎的 `min(3, 上限)` 补给。AUDIT §T | `corruption.c` | 🔧 |
 | 75 | 真银圣剑 | 装备「武器」：每关前 2 发炸弹是挥砍——附加 400 伤害（盖满弹幕区，范围内每个敌人各吃）并回 1 个残机碎片；耐久每关回满；HUD 小卡右下角画本关剩余次数 | `on_bomb_spent` 扣耐久 + `ce_add_life_fragment`（引擎 `0x457570`）；`on_tick_2` 出 4 帧 × 100 的全场矩形源并抬上限 400；`on_hud_anm`（虚表 `+0x44`，第一次被用）拿图标 id → UI 列表起 script99 数字 VM、`set_sprite` 换数字。AUDIT §X | `truesilver.c` + `truesilver_core.c` | 🔧 |
+| 79 | 旋风斩 | 被动：放一发炸弹时**额外再连放 X 发**，X = ⌊当前火力⌋ − 1，代价是 **X 点火力**（额外那几发不花炸弹数）。4.00 火力 = 一次按 B 炸四发，火力落回 1.00 | `on_bomb_spent` 算 X + `ce_spend_power(X × 100)` + `repopulate`；`on_tick_2` 每帧看「还在放吗」，不在放就调引擎自己的 `ce_do_bomb()` 接下一发（黄昏同款机制，只是接 X 发），接完把炸弹数精确补回。AUDIT §AE | `whirlwind.c` + `whirlwind_core.c` | 🔧 |
 
 **炎魔之王（72）补充**：扣火力照零售 `CardTsukasa__c_press` `0x410e60`——门槛「成本 + 一档」（引擎 `spend_power` 永远保留 1.00，
 不留一档实际扣的会比名义少）、`spend_power(200)`、无条件 `repopulate_options`（重建子机 + 广播 `on_power_level_change`）。
@@ -81,6 +94,14 @@ Mr. Bones / Gros Michel 这类「自毁」卡以后都走它。
 登场序列：语音 → 60 帧聚气粒子（script98，向中心汇聚）→ 本体 + 第一圈爆炸（复用火球落地的 `impact_fx`）→ 每 8 帧再一圈，共 3 圈。设计 `docs/superpowers/specs/2026-09-06-firelord-design.md`。
 
 **真银圣剑（75）补充**：`category: 1`（用户：放装备区）——图鉴 / 编成排在零售子机卡之后，且 SDK 绑定时按零售装备卡置 flags bit6 ⇒ HUD 装备行（破损核心同此，AUDIT X11）。炉石 4/2 → 400 伤害 / 2 耐久。数字贴图 `ability/truesilver/DIGIT_0..9.png`（`make_truesilver_art.py`，DejaVu Serif Bold 白字黑描边 32×32，ability.anm entry24–33 / sprite126–135）；script99 与零售 HUD 图标脚本同款 `layer(26); resolutionMode(2)`，`pos(1080, 561)` = 图标根脚本 (1056, 537) + (24, 24)，实体坐标抄图标根 VM 的 `+0x5f0`。**偏移待实跑调**。卡图用户提供的圣剑插画（`_art/Holy_Sword.png` 居中裁 4:5 后 `fit_card.py`，sprite 152/153）。
+
+**旋风斩（79）补充**：X 的定义**天然落在引擎的界内侧** —— `spend_power` `0x457480` 在火力 ≤ 一档时拒绝不扣、扣完钳一档，
+而 X = ⌊P⌋ − 1 使得 X > 0 时扣完必然剩 [1.00, 1.99]，那条拒绝分支永远碰不到（单测 `test_cost_never_refused` 枚举 0..400 钉住）。
+**也自带终止**：扣完火力在 [1.00, 1.99]，⌊·⌋ − 1 = 0，所以接出来的那几发再算 X 就是 0，不可能无限连（`chaining` 位是第二道保险）。
+四发不可能同帧 —— `do_bomb` `0x420360` 自己的守卫（`+0x30` 非零就拒绝）决定了只能一发接一发，所以是「`on_bomb_spent` 记账 + `on_tick_2` 接续」两段。
+**已知的跨卡联动**（都是设定内的，不是 bug）：与**腐化（70）**同时在场时，接出来的每一发都各扣一次炸弹上限 —— 一次按 B 烧掉 X+1 点预算；
+与**真银圣剑（75）**同时在场时，每一发都各算一次挥砍（各出 400 伤害 + 各回一个残机碎片）；与**黄昏（68）**同时在场时两张卡都在接，
+可能多接一发。卡图程序生成（`assets/cards/make_whirlwind_art.py`，固定种子；一道扫过 1.45π 的刀光，亮度只是角度与半径的函数，sprite 160/161）。
 
 ## 致敬・三国杀
 
@@ -99,6 +120,7 @@ Mr. Bones / Gros Michel 这类「自毁」卡以后都走它。
 | id | 名字 | 效果 | 实现（槽 / 事件） | 文件 | 状态 |
 | --- | --- | --- | --- | --- | --- |
 | 71 | 破损核心 | 装备：身边多一颗电球子机，每 1 秒朝**最近的敌人**（512 px 内）**瞬间**劈一道电弧，那一个敌人吃 120 伤害（名义 120 DPS，零售子机卡中位）| 第一张走**零售装备卡机制**的卡：`on_power_level_change` 生成子机、`on_tick_2` 计时 + 选目标 + 定点伤害源 + 电弧特效（详见下）。AUDIT §U | `broken_core.c` + `broken_core_core.c` | 🔧 |
+| 77 | 豌豆射手 | 装备：身边多一株豌豆射手子机，向**正前方**（画面上方）吐豌豆；平时 1 秒一颗、一颗 90，每 20–30 秒进入**机枪状态** 100 帧，泼出 20 排 × 7 = 140 颗小豌豆（合 980 伤害）。综合约 123 DPS，但只在按住射击键时打 | 第一张真走 **SHT shooterset** 的卡：`on_power_level_change` 生成子机、`on_tick_shooters` 自带计数器当 short_timer 调 `ce_tick_shooters_for_card`（两组 shooterset 切换）、`on_tick_2` 在豌豆在途的帧抬每帧伤害上限。AUDIT §Z | `peashooter.c` + `peashooter_core.c` | 🔧 |
 
 **破损核心（71）补充**：子机 = `Player__allocate_option(card, 0x18, ability script88)`（指针存 `ce_state()`，
 不是零售的 `card+0x54`：我们的对象只有 `0x54` 字节）。闪电 = **定点伤害源 + 特效**两件独立的事：
@@ -109,6 +131,25 @@ script90 火花在命中点。瞄准角与距离是自己的确定性算术（�
 与「瞬发单体」相悖。那条链的研究（[`engine/sht/th18/`](../../../engine/sht/th18/README.md)）与工具
 （`assets/sht/`）留着给以后真需要「子机连射」的卡。卡图（青色裂核，白底放大居中）与场上电球（黄绿球）是用户原创，电弧（黄白闪电链）程序生成——都过 `assets/ability/make_broken_core_art.py`；卡图 sprite 144/145。
 `category: 1`（子机装备）：图鉴 / 编成里排在零售子机卡 REIMU_OP…MAGATAMA 那一段之后（2026-09-06 起顺序表按类别插入，见 DATA.md `category`）。
+
+**豌豆射手（77）补充**（致敬・植物大战僵尸）：子机 = `Player__allocate_option(card, 0x28, ability script102)`
+（横向偏移与破损核心的 `0x18` 错开，两张同时装不重叠）。开火走**零售装备卡的第二个槽** `+0x1c on_tick_shooters`
+——`assets/sht/append_shooterset.py` 造好之后一直没人用的那条链，本卡是第一个用户（破损核心第一版走过、后来改成定点伤害源）。
+两组追加进 `pl0X.sht` 的 shooterset（索引 `0x17` / `0x18`，落在零售留空的 17 项里）：
+
+| | fire_rate | 一排几颗 | damage | speed | anm |
+| --- | --- | --- | --- | --- | --- |
+| `PEA_NORMAL` | 60（1 秒；PVZ 原版是 1.425 s ≈ 85 帧）| 1 | 90 | 14 | script100 |
+| `PEA_GATLING` | 5 | 7（`spawn_dx` −48…+48）| 7 | 18 | script101 |
+
+**节奏不用引擎的射击计时器**：那个（`player+0x476d4`）只在 0..14 循环、松键就跳，表达不出 60 帧；
+C 自带一个计数器当 `short_timer` 传进去（`param_2` 只进模运算、`PlayerBullet__create` 里根本没用它，AUDIT Z3）。
+计数只在射击帧推进 ⇒ 「开大」不会在不开火时白烧；切换形态时清 0 ⇒ 开大那一刻立刻就有第一排。
+随机等待 1100–1700 个射击帧（`ce_rand`，游戏自己的 replay-safe RNG），加上开大的 100 帧 = 周期 **20–30 秒**。
+开大起手放 `se_powerup`（`0x0d`）+ 子机位置一团绿光（script103，复用豌豆贴图加色混合）。
+**每敌每帧伤害上限**：平时那颗 90 正好塞满 Reimu 的 90（自机弹一开火就把它挤掉）、又超出 Sakuya 的 60，所以有豌豆在途的 40 帧里 `ce_raise_damage_cap(180)`
+（Remilia 同款）；开大那排 7 × 7 = 49 本来就装得下，不用抬。豌豆走的是正常自机弹管线，所以 K♠ / 古锭刀的加成**也吃**（AUDIT Z16）。
+美术全部程序生成（`assets/ability/make_peashooter_art.py`）：豌豆 32×32、子机 64×64、卡图侧面像 + 三颗飞出去的豌豆（sprite 156/157）。
 
 ## 约定
 

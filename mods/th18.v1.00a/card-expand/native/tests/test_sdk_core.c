@@ -175,8 +175,64 @@ static void test_interest_and_pick(void)
     CHECK(ce_pick_index(0xffffffffu, 5) == 0);          /* 4294967295 % 5 = 0 */
 }
 
+
+/* ---- 自机弹伤害倍率层（AUDIT §AA）---- */
+static void test_dmg_layer(void)
+{
+    ce_dmg_reset();
+    CHECK(ce_dmg_aggregate() == CE_DMG_UNIT);          /* 没有贡献者 = 中性 */
+    CHECK(ce_dmg_applier() == -1);
+    CHECK(ce_dmg_scale(100) == 100);
+
+    ce_dmg_set(61, 1100);                              /* K♠ */
+    CHECK(ce_dmg_aggregate() == 1100);
+    CHECK(ce_dmg_applier() == 61);
+    CHECK(ce_dmg_scale(100) == 110);
+
+    ce_dmg_set(76, 2000);                              /* 叠上古锭刀的终符 */
+    CHECK(ce_dmg_aggregate() == 2200);
+    CHECK(ce_dmg_applier() == 61);                     /* 落笔人永远是 id 最小的那张 */
+    CHECK(ce_dmg_scale(90) == 198);                    /* 90 × 2.2，单次取整 */
+
+    /* 三层 +20% 加法叠（衔尾蛇）：单次取整 90 × 1.6 = 144。
+     * 逐张各自取整会走成 90 → 108 → 129 → 154 —— 这层要消灭的就是这个漂移。 */
+    ce_dmg_reset();
+    ce_dmg_set(78, 1600);
+    CHECK(ce_dmg_scale(90) == 144);
+    CHECK(90 * 12 / 10 * 12 / 10 * 12 / 10 == 154);    /* 对照：旧写法确实漂 10 点 */
+
+    /* 登记顺序不影响聚合，也不影响落笔人 */
+    ce_dmg_reset();
+    ce_dmg_set(78, 1600); ce_dmg_set(61, 1100);
+    CHECK(ce_dmg_applier() == 61);
+    CHECK(ce_dmg_aggregate() == 1760);
+
+    /* 卡被摧毁 / 局末置 0 = 退出聚合，落笔人顺延 */
+    ce_dmg_set(61, 0);
+    CHECK(ce_dmg_applier() == 78);
+    CHECK(ce_dmg_aggregate() == 1600);
+    ce_dmg_set(78, 0);
+    CHECK(ce_dmg_applier() == -1);
+    CHECK(ce_dmg_aggregate() == CE_DMG_UNIT);
+
+    /* 中性值 1000 也算在场（古锭刀平时就是它），得能当落笔人 */
+    ce_dmg_reset();
+    ce_dmg_set(76, CE_DMG_UNIT);
+    CHECK(ce_dmg_applier() == 76);
+    CHECK(ce_dmg_aggregate() == CE_DMG_UNIT);
+    CHECK(ce_dmg_scale(90) == 90);
+
+    /* 越界 id 不写坏任何东西 */
+    ce_dmg_reset();
+    ce_dmg_set(9999, 2000);
+    CHECK(ce_dmg_aggregate() == CE_DMG_UNIT);
+    CHECK(ce_dmg_applier() == -1);
+    ce_dmg_reset();
+}
+
 int main(void)
 {
+    test_dmg_layer();
     test_interest_and_pick();
     test_judgment();
     test_royal();

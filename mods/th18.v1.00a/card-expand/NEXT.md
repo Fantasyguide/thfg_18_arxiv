@@ -14,6 +14,9 @@
 | 7 商店、10 JSON 数据 | 🔧 待实跑（AUDIT §N）|
 | 9 行为（SDK + 黑桃五张 + 强欲之壶 + 反转牌）| 🔧 待实跑（AUDIT §O）← **先做这个** |
 | 8 卡图 | 🔧 工具就位（[`assets/`](assets/README.md)）：黑桃五张占位图 sprite 118–127 已进 `_255/th18/abcard.anm`，待实跑 |
+| **23 旋风斩（id 79）** | 🔧 **待实跑**（AUDIT §AE）—— 被动：放炸弹时额外再连放 ⌊火力⌋−1 发，代价是同数的火力；不开新断点，全用已有的件（§1o）|
+| **22 衔尾蛇（id 78）+ 伤害层 + HUD 文字** | 🔧 **待实跑**（AUDIT §AA / §AB / §AC）—— 每 miss X 次自机弹伤害永久 +20％、X 递增；顺带把「加伤害」提炼成 SDK 的一层，K♠ / 古锭刀已迁移（§1n）|
+| **21 豌豆射手（id 77）** | 🔧 **待实跑**（AUDIT §Z）—— 装备卡：豌豆射手子机向上吐豌豆，每 20–30 s 进机枪状态泼 140 颗；**第一张真走 SHT shooterset 的卡**（§1m）|
 | **20 古锭刀（id 76）** | 🔧 **待实跑**（AUDIT §Y）—— 被动武器：boss 终符期间自机弹伤害 ×2（含 Extra 道中）；判据 = 活动中断槽名含 `Dead`（§1l）|
 | **19 真银圣剑（id 75）** | 🔧 **待实跑**（AUDIT §X）—— 被动武器：每关前 2 发炸弹 +400 伤害 + 1 残机碎片；**HUD 小卡上画剩余次数**（第一次用虚表 `+0x44` 与 UI 列表建 VM，偏移待调，§1k）|
 | **18 倒吊人（id 74）** | 🔧 **待实跑**（AUDIT §W）—— 即时卡：随机摧毁卡组里另一张卡 + 300 金钱；**第一个局中删卡原语 `ce_destroy_card`**（§1j）|
@@ -79,6 +82,33 @@ trace: card 59 on_tick_2 (+0x2c) first hit / card 62 on_tick_2 / card 61 on_bull
 
 通过后：MAP §5 与 AUDIT §P 顶部记「实跑通过」。想改次数就改常量（以后可挂 `cards.js`）；
 **关卡中间开店**（MSG opcode 36 或 DLL 直接置 `GameThread+0xb0 |= 0x20000`）技术上可行，但 Stage / Spellcard 不冻结，只该在对话里做——见 §3.5。
+
+## 1o. 旋风斩（id 79，2026-09-08，待实跑）
+
+被动卡，**不开新断点**：`on_bomb_spent`（腐化那个断点）算账 + `on_tick_2` 调引擎自己的 `do_bomb` 接续（黄昏那套机制）。
+实现 `native/cards/whirlwind.c` + `whirlwind_core.c`（主机单测 6 组）；审计 AUDIT §AE。
+
+带满火力（4.00）进关，按 B：
+
+```
+sdk: 79 bound (.on_bomb_spent = on_bomb_spent, .on_tick_2 = on_tick_2, …)
+whirlwind: bomb at power 400 -> 3 extra release(s), power 400 - 300 = 100 (level changed 1)
+whirlwind: extra release #1 (do_bomb -> 0), 2 still owed, bombs 2      ← 三行，一发接一发
+whirlwind: extra release #2 (do_bomb -> 0), 1 still owed, bombs 2
+whirlwind: extra release #3 (do_bomb -> 0), 0 still owed, bombs 2
+```
+
+体感：**一次按 B 连着炸四发**（炸弹演出一发接一发，中间不重叠 —— 引擎自己的守卫决定的），
+右上角火力从 4.00 掉到 1.00、子机跟着减档（`repopulate`），**炸弹数只少 1 颗**（额外那三发不花炸弹）。
+再按一次 B：火力 1.00 ⇒ 日志 `no extra release (need >= 200)`，只炸一发 —— 这条同时验证了「自带终止」。
+火力 2.00 / 3.00 分别应接 1 / 2 发。
+
+要一并看的联动（都不是 bug，AUDIT §AE10/AE11）：与**腐化（70）**同时带 ⇒ 一次按 B 炸弹上限掉 4；
+与**真银圣剑（75）**同时带 ⇒ 前两发各算一次挥砍（各回一个残机碎片，耐久每关 2 点用完就没）。
+
+崩溃优先怀疑：`on_tick_2` 里自机指针为空时调 `do_bomb`（已判空，黄昏踩过这个坑）。
+行为怀疑：X 算错（看日志 `power %d - %d = %d`）、炸弹数补多补少（看每行末尾的 `bombs %d`）。
+卡图 `WHIRLWIND` sprite 160/161（程序生成，`assets/cards/make_whirlwind_art.py`）。
 
 ## 1f. 破损核心（id 71，2026-09-05，待实跑）
 
@@ -146,6 +176,71 @@ trace: card 59 on_tick_2 (+0x2c) first hit / card 62 on_tick_2 / card 61 on_bull
 `on_power_level_change`（破损核心会在此重申请子机——零售装备卡同款）、`ce_rand` 的 thiscall、V17 震屏工厂的 fastcall + `ret 0x10`（第一颗火球落地那帧崩就是它）。
 视觉怀疑：火球方向（script92 不碰 rotate，C 写 `vm+0x44`；贴图朝 +x）、本体是否被 script91 拉回原点（脚本不碰 pos，应不会）、
 拖尾是否堆在火球身后而不是身前（起在当前帧坐标、火球下一帧才前进）。
+
+## 1n. 衔尾蛇（id 78）+ 自机弹伤害倍率层（2026-09-08，待实跑）
+
+**两件事一起**：① 把「给自机弹加伤害」提炼成 SDK 的一层（AUDIT §AA），② 第一张用它的新卡（§AB）。
+不开新断点、不调新引擎入口、不改任何字节。
+
+**层**：卡声明 `.bullet_damage_permille`（千分比），SDK 连乘成聚合倍率，由**id 最小的参与者**在 `+0x28` 里
+对 `bullet+0x9c` 就地乘**一次**（单次取整、与链表顺序无关），并在 `+0x2c` 里把每敌每帧伤害上限
+`player+0x47984` 按同一倍率抬起来。启动日志里 K♠ / 古锭刀 / 衔尾蛇那几行应带
+`.bullet_damage_permille = 1100 / 1000 / 1000`。
+**回归重点**：古锭刀的两行 `guding: final spell ON/OFF` 与血条掉速应与改之前**一模一样**；
+K♠ 单带时打 boss 的血条掉速应**略快于**改之前（它以前漏抬上限，+10% 有一部分被配额吃掉）。
+两张一起带 = ×2.2，`ce_dmg_scale(90) = 198`（不是逐张取整的 198→…漂移，见 §AA4）。
+
+**HUD 倍率读数**（新原语 `ce_hud_text`，AUDIT §AC）：只要场上有任何一张改伤害的卡且倍率不是 ×1，
+**火力值左边**就应该出现一行 `x1.10` / `x1.60` / `x2.20`（与火力同色、同一行 y = 182）。
+带 K♠ 进关就能看到 `x1.10`；古锭刀进终符那一瞬间应该跳到 `x2.00`、符卡结束跳回（没有别的伤害卡时整行消失）。
+★ **第一次实跑要把位置贴回来**：字号与对齐用的是环境值（只设了字色），所以 `x` 可能压到火力上、也可能太靠左，
+调 `engine.h` 的 `CE_HUD_DMG_X` / `CE_HUD_POWER_Y`。崩溃优先怀疑 `ce_hud_text` 的 cdecl 声明（AC1）。
+
+**衔尾蛇**：`_test` 商店里买（价位档 9），或临时把 `cards_dev.js` 起手一格换成 78。
+带着它去送命（devstage 最省事）：
+
+```
+ouroboros: miss #1 -> stack 1 (bullet damage x1.20), next stack needs 2 more miss(es)
+ouroboros: miss #2 -> 1/2 toward stack 2
+ouroboros: miss #3 -> stack 2 (bullet damage x1.40), next stack needs 3 more miss(es)
+```
+
+第 1/3/6/10 次 miss 各升一层；升层那一下有 `se_powerup`（`0x0d`）。HUD 小卡右下角的数字应跟着变
+**0 → 1 → 2**（第一次出现时日志有 `ouroboros: hud digit spawned (icon id …)`——**把坐标贴回来**，
+数字偏移与真银圣剑共用 script99，还没实跑调过）。过关数字不清零（「永久」= 一整局）；
+局末 `ouroboros: run reset (…)`，重开一局回到 0 层、倍率回 ×1。
+血条掉速在 2 层（×1.4）之后应该看得出来。
+崩溃优先怀疑：`ce_anm_spawn_ui` 的 `ret 0x10` 第四个哑参（§X1，真银圣剑同款，也还没实跑）。
+
+通过后：CARDS.md 两行 🔧 → ✅；AUDIT §AA / §AB 顶部各记「实跑通过」；MAP.md §5 那条记一行。
+
+## 1m. 豌豆射手（id 77，2026-09-08，待实跑，致敬植物大战僵尸）
+
+装备卡，**本 mod 第一张真走 SHT shooterset 的卡**（`assets/sht/append_shooterset.py` 造好之后一直没人用那条链）。
+子机在自机右侧（偏移 `0x28`）向**正上方**吐豌豆：平时 **60 帧一颗 × 90 伤害**（PVZ 原版是 1.425 s ≈ 85 帧，2026-09-08 用户改成整 1 秒），
+每 20–30 秒进入 100 帧的**机枪状态**，20 排 × 7 颗 = 140 颗小豌豆（每颗 7，合 980）。综合约 123 DPS，
+但**只在按住射击键时打**（`+0x1c` 本来就只在射击时广播，所以「开大」也不会在不开火时白烧）。
+不改任何 exe 字节、不加断点；新写入面只有 `pl0X.sht` 尾部的两组 shooterset。审计 [`AUDIT.md`](AUDIT.md) §Z。
+`cards_dev.js` 起手卡组没带它 —— `_test` 商店里买（新卡权重 20，很快刷到），或临时把起手一格换成 77。
+
+启动应有 `sdk: 77 bound (.on_power_level_change = …, .on_tick_shooters = …, .on_tick_2 = …, .on_load = …, .on_run_reset = …)`。
+拿到卡进关 → `peashooter: option allocated (ptr …, anm id …)` + `peashooter: next gatling in N shooting frames`（N ∈ 1100–1700）。
+**按住射击键**：右边那株豌豆射手每 **1 秒**吐一颗大豌豆（约 21 px 的亮绿球）直直朝上飞；
+攒够之后 → `peashooter: gatling #1 start at (x, y): 20 frames x 7 peas / 5 frames = 140 peas`，
+子机位置一团绿光 + `se_powerup`，接着约 1.7 秒里**一堵 7 列宽的小豌豆墙**滚上去，
+结束 `peashooter: gatling #1 done, M peas fired in total` + 下一行新的 `next gatling in …`。
+松开射击键：豌豆停、日志也停，**再按住时接着上次的进度**（不是从头等）。
+伤害：devstage 的 boss 血条在机枪那 1.7 秒明显掉一大截；平时那颗单独看不出来，**要在自机开着火的时候比**
+（Z10 抬上限就是为了让那颗 90 不被自机弹挤掉配额）。进商店子机收起、出店回来；过关不消失（装备卡）。
+
+崩溃优先怀疑：`ce_tick_shooters_for_card` 的压栈序（Z2，**第一次真调用**）、`ce_allocate_option`（§U1，破损核心已走过）。
+**开局就崩 / 一按射击键就崩**：先怀疑 `pl0X.sht` 没被 patch 应用到（日志里没有 `option allocated` 却有豌豆 = 不可能；
+真没应用的话开火时会去解析零售留空的第 `0x17` 项 → 指向 set 0 → fire_rate 0 → **除零**）。
+`dist/patch-step3/th18/pl0[0-3].sht` 四个文件必须在包里（`files.js` 应列出它们）。
+视觉怀疑：豌豆太大 / 太小（script100 / 101 的 `scale`）、子机位置（`PS_OPTION_OFFSET`）、
+机枪那堵墙太宽 / 太窄（`append_shooterset.py` 里 `PEA_GATLING` 的七个 `spawn_dx`）。
+
+通过后：CARDS.md 🔧 → ✅；AUDIT §Z 顶部记「实跑通过」；MAP.md §5 那条记一行。
 
 ## 1l. 古锭刀（id 76，2026-09-07，待实跑，致敬三国杀）
 

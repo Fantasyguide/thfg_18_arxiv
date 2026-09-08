@@ -41,14 +41,7 @@ int gd_update(gd_state_t *s, int final_now)
     return 0;
 }
 
-int gd_bullet_damage(gd_state_t *s, int dmg)
+void gd_count_bullet(gd_state_t *s)
 {
-    if (!s->active) return dmg;
-    ++s->bullets;
-    return dmg * GD_MULT;
-}
-
-int gd_damage_cap(const gd_state_t *s, int base)
-{
-    return s->active ? base * GD_MULT : 0;
+    if (s->active) ++s->bullets;
 }

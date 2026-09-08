@@ -38,15 +38,6 @@ static void bar_destroy(be_state_t *s, int fade)
     s->bar_bg_id = 0; s->bar_id = 0;
 }
 
-static float player_x(void) { uint8_t *p = CE_PLAYER(); return p ? *(float *)(p + CE_PLAYER_X) : 0.0f; }
-
-static int refuse(const char *why)
-{
-    ce_play_sound(CE_SE_INVALID, player_x());
-    ce_log("blue_eyes: refused (%s)", why);
-    return CE_ACTIVATE_REFUSED;
-}
-
 static void dismiss(ce_card_t *c, const char *why)
 {
     be_state_t *s = ce_state(c, be_state_t);
@@ -63,16 +54,16 @@ static void dismiss(ce_card_t *c, const char *why)
 static int on_activate(ce_card_t *c)
 {
     uint8_t *p = CE_PLAYER();
-    if (!p) return refuse("no player");
+    if (!p) return ce_refuse("blue_eyes", "no player");
     int lives = CE_CURRENT_LIVES();
-    if (lives < 1) return refuse("no lives");
+    if (lives < 1) return ce_refuse("blue_eyes", "no lives");
     be_state_t *s = ce_state(c, be_state_t);
-    if (!s) return refuse("no state slot");
+    if (!s) return ce_refuse("blue_eyes", "no state slot");
 
-    const float *pp = (const float *)(p + CE_PLAYER_X);
+    const float *pp = ce_player_pos();
     be_summon(s, pp[0], pp[1], pp[2]);
     s->anm_id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_BLUE_EYES_DRAGON, 13);
-    if (!s->anm_id) return refuse("dragon anm failed");
+    if (!s->anm_id) return ce_refuse("blue_eyes", "dragon anm failed");
     ce_anm_set_pos(s->anm_id, s->x, s->y + be_bob_dy(s), s->z);
     s->bar_bg_id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_BLUE_EYES_BAR_BG, 13);
     s->bar_id    = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_BLUE_EYES_BAR, 13);
@@ -96,7 +87,7 @@ static int on_active_tick(ce_card_t *c, uint32_t elapsed)
         bar_destroy(s, 0);
         return 0;
     }
-    const float *pp = (const float *)(p + CE_PLAYER_X);
+    const float *pp = ce_player_pos();
     be_follow(s, pp[0], pp[1], pp[2]);
     float bob = be_bob_dy(s);                              /* 呼吸浮动：画面 / 判定 / 光束起点 / 血条共用同一个值 */
     ce_anm_set_pos(s->anm_id, s->x, s->y + bob, s->z);

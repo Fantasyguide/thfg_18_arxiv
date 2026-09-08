@@ -32,7 +32,16 @@ typedef struct {
     uint32_t active_recharge;
     int  (*on_activate)(ce_card_t *);
     int  (*on_active_tick)(ce_card_t *, uint32_t);
+    /* 自机弹伤害倍率（千分比，1000 = ×1）。非 0 = 这张卡参与伤害层：SDK 在绑定时登记这个初值，
+     * 之后卡可以随时 ce_set_bullet_damage_permille() 改。所有参与者的值连乘成聚合倍率，
+     * 由其中一张（id 最小的）在 +0x28 里对 bullet+0x9c 就地乘一次、并在 +0x2c 里抬每帧伤害上限。
+     * ★ 别再自己写 bullet+0x9c：那样会各自取整、还得各自记得抬上限。边界：只管自机弹，
+     * 炸弹与 ce_damage_rect 的伤害源不在内。AUDIT §AA。*/
+    int  bullet_damage_permille;
 } ce_hooks_t;
+
+/* 改这张卡当前的自机弹伤害倍率（千分比）。只在值真的变了的时候调（古锭刀在终符沿、衔尾蛇在叠层时）。*/
+void ce_set_bullet_damage_permille(ce_card_t *c, int permille);
 
 int ce_give_card(uint32_t id, uint32_t mode, uint32_t notify);
 int ce_destroy_card(ce_card_t *victim);

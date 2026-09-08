@@ -282,5 +282,51 @@
     "weight": 2,
     "sprite_large": 154,
     "sprite_small": 155
+  },
+  "77": {
+    "name": "豌豆射手",
+    "desc": [
+      "身边多一株豌豆射手，向前吐豌豆。",
+      "每隔 20–30 秒进入机枪状态，",
+      "一口气泼出一百多颗豌豆。",
+      "致敬・植物大战僵尸。"
+    ],
+    "internal_name": "PEASHOOTER",
+    "initial_unlocked": 1,
+    "category": 1,
+    "price_tier": 7,
+    "weight": 2,
+    "sprite_large": 156,
+    "sprite_small": 157
+  },
+  "78": {
+    "name": "衔尾蛇",
+    "desc": [
+      "每 miss X 次，自机弹伤害永久 +20％，",
+      "然后 X 增加 1（X 初值 1）。",
+      "卡上数字 = 当前层数。",
+      "死亡喂大下一次的自己。"
+    ],
+    "internal_name": "OUROBOROS",
+    "initial_unlocked": 1,
+    "price_tier": 9,
+    "weight": 2,
+    "sprite_large": 158,
+    "sprite_small": 159
+  },
+  "79": {
+    "name": "旋风斩",
+    "desc": [
+      "放炸弹时额外再连放 X 发，",
+      "X = 当前火力取整 − 1，",
+      "代价是 X 点火力（额外的不花炸弹）。",
+      "4.00 火力：一次按 B 炸四发。"
+    ],
+    "internal_name": "WHIRLWIND",
+    "initial_unlocked": 1,
+    "price_tier": 9,
+    "weight": 2,
+    "sprite_large": 160,
+    "sprite_small": 161
   }
 }

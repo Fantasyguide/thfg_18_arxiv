@@ -46,14 +46,26 @@ TERMINATOR = b"\xff\xff\xff\xff"
 # 一项 = (NAME, [shooter, …])；索引按顺序从 N_RETAIL 起分配。字段图见
 # engine/sht/th18/02-shooter-record.md §1。这里只列非 0 字段，其余补 0。
 APPEND = [
-    # 目前没有卡在用（2026-09-05）：破损核心（71）第一版走过这条路，后来改成「定点伤害源 + 电弧特效」
-    # ——它要的是瞬发单体，而自机弹天生要飞过去。工具与不变式留着给真需要「子机连射」的卡。
-    # 加一项长这样（字段图见 engine/sht/th18/02-shooter-record.md §1，只列非 0 字段）：
-    #   ("NAME", [dict(fire_rate=1, start_delay=0, damage=80, hit_w=24.0, hit_h=16.0,
-    #                  angle=-1.5707964, speed=16.0, opt_slot=0, mode=0,
-    #                  anm="CE_ANM_ABILITY_SCRIPT_<脚本>", sfx=0x46, func_on_init=5)]),
-    #   opt_slot 必须 0（用 tick_shooters 传进来的子机坐标）；fire_rate 1–127；anm 指 ability.anm 的脚本；
-    #   func_on_init=5 = 用 player+0x479cc 覆写弹角（瞄准）。
+    # 豌豆射手（id 77）。两组：平时一颗大豌豆，「开大」时一排 7 颗小豌豆。
+    # 节奏**不**交给引擎的射击计时器 —— peashooter.c 自带计数器当 short_timer 传进
+    # `Player__tick_shooters_for_ability_card`，所以这里的 fire_rate 就是「每 N 个我们的计数发一次」。
+    # 字段图见 engine/sht/th18/02-shooter-record.md §1；发射判定是 `timer % fire_rate == start_delay`。
+    # opt_slot 必须 0（用 tick_shooters 传进来的子机坐标）；angle −π/2 = 正上方；func_* 全 0 = 直飞不瞄准。
+
+    # 平时：1 秒一颗、一颗 90 = 90 DPS（PVZ 原版射速是 1.425 s ≈ 85 帧，2026-09-08 用户改成整 1 秒；
+    # DPS 与改之前的 85/130 基本相同，但节奏更密）。90 塞满 Reimu 的每帧上限、超出 Sakuya 的 60，
+    # 所以卡在豌豆在途的帧把上限抬到 180。
+    ("PEA_NORMAL", [dict(fire_rate=60, start_delay=0, damage=90, hit_w=16.0, hit_h=16.0,
+                         angle=-1.5707964, speed=14.0, opt_slot=0, mode=0,
+                         anm="CE_ANM_ABILITY_SCRIPT_PEA", sfx=0x20, func_on_init=0)]),
+
+    # 开大（PVZ 的机枪射手）：每 5 帧一排，一排 7 颗横向铺开 ±48 px；持续 100 帧 = 20 排 = 140 颗。
+    # 单颗只有 7（= PVZ 原版豌豆伤害的量级），一排 7 颗同帧也只有 49，稳在所有角色的每帧上限
+    # （最低 Sakuya 60）之下 —— 一口气打出去的是**数量**，不是单发。
+    ("PEA_GATLING", [dict(fire_rate=5, start_delay=0, damage=7, hit_w=12.0, hit_h=12.0,
+                          spawn_dx=dx, angle=-1.5707964, speed=18.0, opt_slot=0, mode=0,
+                          anm="CE_ANM_ABILITY_SCRIPT_PEA_SMALL", sfx=-1, func_on_init=0)
+                     for dx in (-48.0, -32.0, -16.0, 0.0, 16.0, 32.0, 48.0)]),
 ]
 
 

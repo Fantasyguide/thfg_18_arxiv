@@ -28,6 +28,8 @@
 #define CE_ANM_ABILITY_SPRITE_TS_DIGIT_7            133   /* entry31 */
 #define CE_ANM_ABILITY_SPRITE_TS_DIGIT_8            134   /* entry32 */
 #define CE_ANM_ABILITY_SPRITE_TS_DIGIT_9            135   /* entry33 */
+#define CE_ANM_ABILITY_SPRITE_PEA                   136   /* entry34 */
+#define CE_ANM_ABILITY_SPRITE_PEASHOOTER_OPT        137   /* entry35 */
 #define CE_ANM_ABILITY_SCRIPT_REVERSE_FLASH          68
 #define CE_ANM_ABILITY_SCRIPT_ROYAL_FLUSH            69
 #define CE_ANM_ABILITY_SCRIPT_ROYAL_SHOW             70
@@ -60,3 +62,7 @@
 #define CE_ANM_ABILITY_SCRIPT_FIRELORD_AURA          97
 #define CE_ANM_ABILITY_SCRIPT_FIRELORD_GATHER        98
 #define CE_ANM_ABILITY_SCRIPT_HUD_DIGIT              99
+#define CE_ANM_ABILITY_SCRIPT_PEA                   100
+#define CE_ANM_ABILITY_SCRIPT_PEA_SMALL             101
+#define CE_ANM_ABILITY_SCRIPT_PEASHOOTER_OPT        102
+#define CE_ANM_ABILITY_SCRIPT_PEA_BURST             103

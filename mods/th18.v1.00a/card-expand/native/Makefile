@@ -144,6 +144,12 @@ test-host:
 	./tests/build/test_guding_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_double_core tests/test_double_core.c cards/double_core.c
 	./tests/build/test_double_core
+	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_peashooter_core tests/test_peashooter_core.c cards/peashooter_core.c
+	./tests/build/test_peashooter_core
+	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_ouroboros_core tests/test_ouroboros_core.c cards/ouroboros_core.c
+	./tests/build/test_ouroboros_core
+	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_whirlwind_core tests/test_whirlwind_core.c cards/whirlwind_core.c
+	./tests/build/test_whirlwind_core
 
 ## x87 自检 —— 只看我们自己的目标文件
 dllx87: $(OBJS)

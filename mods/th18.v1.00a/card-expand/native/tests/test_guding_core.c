@@ -64,16 +64,17 @@ int main(void)
 
     /* 状态机与倍率 */
     gd_state_t s; memset(&s, 0, sizeof s);
-    CHECK(gd_bullet_damage(&s, 8) == 8 && s.bullets == 0);
-    CHECK(gd_damage_cap(&s, 90) == 0);
+    gd_count_bullet(&s);
+    CHECK(s.bullets == 0);
     CHECK(gd_update(&s, 0) == 0 && !s.active);
     CHECK(gd_update(&s, 1) == 1 && s.active && s.frames == 1);
     CHECK(gd_update(&s, 1) == 0 && s.frames == 2);
-    CHECK(gd_bullet_damage(&s, 8) == 16 && s.bullets == 1);
-    CHECK(gd_bullet_damage(&s, 0) == 0);
-    CHECK(gd_damage_cap(&s, 90) == 180 && gd_damage_cap(&s, 160) == 320);
+    gd_count_bullet(&s);
+    CHECK(s.bullets == 1);
+    /* 倍率与上限现在归 SDK 的伤害层（tests/test_sdk_core.c 的 ce_dmg_*）；这里只保留统计 */
     CHECK(gd_update(&s, 0) == -1 && !s.active && s.frames == 2);
-    CHECK(gd_bullet_damage(&s, 8) == 8);
+    gd_count_bullet(&s);
+    CHECK(s.bullets == 1);
     printf("test_guding_core: %d passed, %d failed\n", s_pass, s_fail);
     return s_fail ? 1 : 0;
 }

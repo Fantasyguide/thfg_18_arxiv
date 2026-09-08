@@ -16,12 +16,6 @@ static const uint32_t SPADES[5] = { 58, 59, 60, 61, 62 };
 static uint32_t s_fx_card;            /* 触发那张卡的 id：只由它的 on_tick_2 走倒计时（五张都挂了 tick，避免一帧减五次）*/
 static int      s_fx_countdown;       /* > 0 时每帧 -1，到 0 放 trophy 音效 */
 
-static float p_x(void)
-{
-    uint8_t *p = CE_PLAYER();
-    return p ? *(float *)(p + CE_PLAYER_X) : 0.0f;
-}
-
 int ce_royal_flush_ctor(ce_card_t *c)
 {
     uint32_t self = ce_card_id(c);
@@ -49,7 +43,7 @@ int ce_royal_flush_ctor(ce_card_t *c)
      * （重音拉满），帧 180 收在 C 上落进 170–194 的淡出里。
      * 从演出第 0 帧起，所以放在这里而不是 ce_royal_tick 的倒计时里；
      * 帧 60 的 trophy 音效照旧叠在上面（语音就是可叠加的 SE，AUDIT §Q）。 */
-    ce_play_voice(ROYAL_RAGTIME, p_x());
+    ce_play_voice(ROYAL_RAGTIME, ce_player_x());
     s_fx_card = self; s_fx_countdown = ROYAL_TROPHY_FRAME;
     ce_log("royal: show anm id %08x + ragtime", fx);
     ce_log("royal: ROYAL FLUSH by card %u — money %d -> %d, lives %d (max %d), bombs %d (max %d)",
@@ -61,7 +55,7 @@ void ce_royal_tick(ce_card_t *c)
 {
     if (s_fx_countdown <= 0 || ce_card_id(c) != s_fx_card) return;
     if (--s_fx_countdown == 0) {
-        ce_play_sound(CE_SE_TROPHY, p_x());
+        ce_play_sound(CE_SE_TROPHY, ce_player_x());
         ce_log("royal: trophy sound");
     }
 }
