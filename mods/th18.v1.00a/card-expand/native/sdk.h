@@ -497,6 +497,7 @@ typedef void (CE_TC *ce_base_del_t)(void *, uint32_t);
     static void CE_TC ce_s_##ID##_opdelete(void *self, uint32_t flag) { \
         ce_sdk_trace(ID, 0x50, "operator_delete"); \
         ce_dmg_set(ID, 0);                    /* 退出聚合；无条件，运行时才参与的卡同样要清 */ \
+        if (ce_hooks_##ID.on_delete) ce_hooks_##ID.on_delete((ce_card_t *)self); /* 私有状态还活着 */ \
         ce_state_free(self); \
         ((ce_base_del_t)CE_BASE_SLOT_OPDELETE)(self, flag); } \
     static const void *const ce_vt_##ID[21] = { \

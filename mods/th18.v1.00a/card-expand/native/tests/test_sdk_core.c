@@ -127,6 +127,15 @@ static void test_state(void)
     ce_state_free(&k3);
     CHECK(ce_state_get(&k3) == NULL);
 
+    /* 2026-09-08：股市（id 80）要 430 多字节（17 根 OHLC + 33 个 anm id），块提到 512 */
+    int k4 = 0;
+    CHECK(CE_STATE_BYTES >= 512);
+    unsigned char *big = ce_state_user(&k4, 480);
+    CHECK(big != NULL);
+    big[479] = 1;
+    CHECK(((unsigned char *)ce_state_get(&k4))[CE_STATE_RESERVED + 479] == 1);
+    ce_state_free(&k4);
+
     /* 满 */
     static int keys[CE_STATE_SLOTS + 1];
     for (unsigned i = 0; i < CE_STATE_SLOTS; ++i) CHECK(ce_state_alloc(&keys[i], 8) != NULL);

@@ -10,7 +10,7 @@
 #define CE_SDK_CARD_ID_MIN   58
 #define CE_SDK_CARD_ID_MAX   254
 #define CE_STATE_SLOTS       256       /* 同时存在的带状态卡对象上限（一局最多 256 张卡，0x411469）*/
-#define CE_STATE_BYTES       256       /* 每张卡私有状态上限 */
+#define CE_STATE_BYTES       512       /* 每张卡私有状态上限（2026-09-08 256 → 512：股市 id 80 要 430+ 字节；静态表 256 × 512 = 128 KB）*/
 
 /* 一张卡的行为：id + 它的虚表（21 槽拷贝）+ 一句给日志看的槽清单 */
 typedef struct {

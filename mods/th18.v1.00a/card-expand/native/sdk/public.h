@@ -29,6 +29,9 @@ typedef struct {
     void (*on_enemy_drop_pre)(ce_card_t *, int32_t *);
     void (*on_bomb_spent)(ce_card_t *);
     void (*on_shop_open)(ce_card_t *);
+    /* 删对象（局末 recount / 倒吊人 ce_destroy_card）时、SDK 释放私有状态之前调：卡在这里删自己起的 VM 等外部资源。
+     * on_run_reset 只覆盖局末那条路，局中被摧毁只走这里。2026-09-08 股市（80）第一个用户。 */
+    void (*on_delete)(ce_card_t *);
     uint32_t active_recharge;
     int  (*on_activate)(ce_card_t *);
     int  (*on_active_tick)(ce_card_t *, uint32_t);
