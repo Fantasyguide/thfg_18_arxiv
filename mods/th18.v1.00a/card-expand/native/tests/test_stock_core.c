@@ -175,6 +175,14 @@ static void test_sell(void)
     int32_t before = money;
     CHECK(stock_sell(&s, &money) == 1 && s.hold == 0 && money == before + 1, "不足 50 应全卖：hold=%d money=%d", s.hold, money);
     CHECK(stock_sell(&s, &money) == 0, "卖空了再卖应拒绝");
+
+    /* M5（2026-09-08 复审修的行为）：仓位薄到只剩 1 个持股单位（0.0001 股）时，所得 = 1 × price / 1e6，
+     * 而 price 上限 999900 < 1e6，所以哪怕价格封顶所得也整除成 0。此前这里会返回 1（假成交）——
+     * 卡会播卖出音效、日志报「卖 50」，money 却分毫未动。现在应跟空仓一样直接拒绝、state 原封不动。 */
+    s.price = STOCK_PRICE_MAX; s.hold = 1; s.cost = 0;
+    before = money;
+    CHECK(stock_sell(&s, &money) == 0 && s.hold == 1 && money == before,
+          "1 个持股单位、价格封顶时所得整除为 0，应拒绝而非假成交：hold=%d money=%d", s.hold, money);
 }
 
 /* 一次买卖来回，任意价位损耗 ≤ 1 金钱（零头 = 手续费）；现金永不为负、持股永不为负 */

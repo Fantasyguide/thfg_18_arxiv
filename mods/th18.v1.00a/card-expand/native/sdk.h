@@ -269,7 +269,8 @@ static inline int ce_anm_set_scale(uint32_t id, float sx, float sy)      /* 脚�
     return 1;
 }
 static inline void ce_anm_interrupt(uint32_t id, int n) { if (id) ((ce_fn_anm_interrupt_t)CE_FN_ANM_INTERRUPT_TREE)(id, n); }
-static inline void ce_anm_delete(uint32_t id)           { if (id) ((ce_fn_anm_delete_t)CE_FN_ANM_DELETE_BY_ID)(id); }
+/* 同 ce_anm_get_vm 的门槛（M6）：调用方管理器还没起好（比如对象删除路径抢在 ANM 管理器初始化前跑）就别摸它。 */
+static inline void ce_anm_delete(uint32_t id)           { if (id && CE_ANM_MANAGER()) ((ce_fn_anm_delete_t)CE_FN_ANM_DELETE_BY_ID)(id); }
 /* 火力（AUDIT §V）：照 CardTsukasa__c_press 0x410e60 的三步——门槛 → spend_power → repopulate。
  *   spend_power：thiscall(GlobalsInner; amount) ret 4，返回档数是否变了；CURRENT_POWER <= 一档时拒绝不扣，扣完钳到一档。
  *   repopulate：thiscall(PLAYER+0x620; 哑栈参) ret 4，按新档数重建子机并广播 on_power_level_change。

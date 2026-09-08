@@ -47,7 +47,8 @@ void stock_step(stock_state_t *s, uint32_t rnd)
 
     if (s->regime_left == 0) pick_regime(s, rnd);       /* 本步已用新阶段；段长 = L 步（含本步）*/
     s->regime_left--;
-    if (s->regime > 2) s->regime = 0;
+    if (s->regime > 2) s->regime = 0;    /* 防御性（M4）：正常路径走不到这——唯一写手 pick_regime 用 %3 写、stock_init 清零结构体；
+                                             留着是防私有状态块（s_mem，见 sdk_core.c）被别处写坏，不是没删干净 */
 
     int32_t noise = (uni10(rnd) + uni10(rnd >> 10) + uni10(rnd >> 20)) / 3;          /* 三个均匀数之和 / 3，近似正态，[−1000, 1000] */
     int64_t r = drift[s->regime] + (int64_t)vol[s->regime] * noise / 1000 + (STOCK_PRICE_OPEN - s->price) / 400;
@@ -95,13 +96,17 @@ int stock_buy(stock_state_t *s, int32_t *money)
     return 1;
 }
 
-/* 卖：STOCK_LOT 金钱等值的持股，不足全卖；所得向下取整。 */
+/* 卖：STOCK_LOT 金钱等值的持股，不足全卖；所得向下取整。
+ * M5：所得向下取整到 0 时（仓位薄到几个持股单位、又赶上低价）算不成交，别改状态——
+ * 否则卡会当真卖了一笔在播音效、日志报「卖 50」，而 money 其实分毫未动，误导对拍手感的人。
+ * 这跟空仓拒绝走的是同一条路：调用方看到 0 就照抄"no holding"那句拒绝词，够用，不必再分错误码。 */
 int stock_sell(stock_state_t *s, int32_t *money)
 {
     if (s->hold <= 0) return 0;
     int64_t q = (int64_t)STOCK_LOT * STOCK_HOLD_PER_MONEY / s->price;
     if (q > s->hold) q = s->hold;
     int64_t got = q * s->price / STOCK_HOLD_PER_MONEY;
+    if (got <= 0) return 0;
     s->hold -= (int32_t)q;
     *money += (int32_t)got;
     s->cost -= (int32_t)got;

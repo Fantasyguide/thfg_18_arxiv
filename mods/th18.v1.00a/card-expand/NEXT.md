@@ -106,6 +106,9 @@ stock: panel spawned (bg id … at 1056,862 size 432x180; candles x 848..1264 y 
 三行字若重叠 / 太大，改 `TEXT_Y*`（HUD 字高按 Momoyo 的 `x1.5` 目测）；蜡烛矩形若以左上角为锚而不是中心，几何要整体偏 `(w/2, h/2)`（AF6）。
 崩溃优先怀疑：33 个 UI VM 起不出来（日志 `FAILED to spawn`，AF4）、`ce_anm_set_scale` 被脚本插值器覆盖（脚本里没有 scaleTime，不该）。
 行为怀疑：Shift+C 被当成买（AF2：`INPUT_HELD` 与 `INPUT_PRESSED` 同帧一致性）。
+反过来的情形（2026-09-08 复审 I1，AUDIT AF14）：**C 被当成 Shift+C**——如果玩家开着「射击时自动低速」这个选项，
+按住射击键（几乎全程）会让低速位被录制器强行 OR 成 1，于是按 C 永远走卖出分支，怎么按都买不进。
+测试时如果发现「C 键一直在卖、从没买过」，先去关掉这个选项再下结论，不要以为卡坏了。
 
 ## 1o. 旋风斩（id 79，2026-09-08，待实跑）
 
@@ -415,6 +418,7 @@ corruption: bomb spent the cap — bombs 6/6 left
 | 图鉴上限 | 新卡 > 71 时才需要：两处 `cmp r,imm8` → cave | AUDIT §M3 |
 | ANM 特效 | 🔧 已有第一例：`ce_anm_spawn` + `assets/ability/`（反转牌 script68 亮牌），待实跑；透视真假当场看 | AUDIT O24；`engine/anm/th18/01-vm-instantiate.md` |
 | 更多事件 | 按需：击破、符卡开始 / 结束、擦弹… | 每个 = 一个断点 + AUDIT 一条 |
+| `truesilver.c` / `ouroboros.c` 补 `on_delete` | 两张卡的 HUD 数字 VM 只在局末 `on_run_reset` 里释放；被倒吊人局中摧毁时数字会在 HUD 上留到本局结束才消。股市（id 80）已经加了 `on_delete` 释放面板 VM，是现成的样板——照抄即可，本次不动这两张卡 | 2026-09-08 复审跟手记录，不是股市这条分支的缺陷 |
 
 ## 2b. 开发辅助（`_test`）
 

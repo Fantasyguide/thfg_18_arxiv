@@ -17,6 +17,8 @@
 #define STOCK_SE_BUY    0x0f            /* se_cardget */
 #define STOCK_SE_SELL   0x2f            /* se_bonus */
 
+#define STOCK_SPAWN_RETRY_FRAMES 60     /* 面板 VM 持续起不来时的重试间隔（M1，同 PS_RETRY_FRAMES 量级）*/
+
 /* —— 面板几何：UI 层 2× 空间（1280×960）—— */
 #define UI_CANDLE_X0    848             /* 640 空间 424 */
 #define UI_CANDLE_Y0    776             /* 640 空间 388 */
@@ -44,7 +46,9 @@ typedef struct {
     uint32_t wick_id[STOCK_CANDLES];
     uint8_t  frame;                      /* 距上一步的帧数 */
     uint8_t  inited;
-    uint8_t  vms_logged;
+    uint8_t  log_spawn_fail;             /* 失败日志只打一次（M2：跟成功日志分开旗标，否则先失败一次后面成功就打不出坐标了）*/
+    uint8_t  log_spawn_ok;               /* 成功日志只打一次 */
+    uint8_t  spawn_retry;                /* 持续失败时的重试倒计时（M1，见 vms_retry）*/
 } stock_card_t;
 
 _Static_assert(sizeof(stock_card_t) <= CE_STATE_BYTES - CE_STATE_RESERVED, "stock_card_t must fit ce_state");
@@ -79,16 +83,29 @@ static int spawn_vms(stock_card_t *s)
     kill_vms(s);
     s->bg_id = spawn_rect();
     for (int i = 0; i < STOCK_CANDLES; ++i) { s->wick_id[i] = spawn_rect(); s->body_id[i] = spawn_rect(); }
-    if (!vms_alive(s)) { kill_vms(s); if (!s->vms_logged) { ce_log("stock: FAILED to spawn panel VMs"); s->vms_logged = 1; } return 0; }
+    if (!vms_alive(s)) {
+        kill_vms(s);
+        if (!s->log_spawn_fail) { ce_log("stock: FAILED to spawn panel VMs"); s->log_spawn_fail = 1; }
+        return 0;
+    }
     ce_anm_set_pos(s->bg_id, (float)UI_BG_CX, (float)UI_BG_CY, 0.0f);
     ce_anm_set_scale(s->bg_id, (float)UI_BG_W, (float)UI_BG_H);
     ce_anm_set_color(s->bg_id, COLOR_BG);
-    if (!s->vms_logged) {
+    if (!s->log_spawn_ok) {
         ce_log("stock: panel spawned (bg id %u at %d,%d size %dx%d; candles x %d..%d y %d..%d; 2x UI space)",
                s->bg_id, UI_BG_CX, UI_BG_CY, UI_BG_W, UI_BG_H, UI_CANDLE_X0, UI_CANDLE_X0 + UI_CANDLE_W, UI_CANDLE_Y0, UI_CANDLE_Y0 + UI_CANDLE_H);
-        s->vms_logged = 1;
+        s->log_spawn_ok = 1;
     }
     return 1;
+}
+
+/* 持续失败时的退避（M1）：跟 sdk.h 的 ce_option_retry 一个思路 —— 倒计时到 0 才真的再试一次整组 33 个 VM，
+ * 免得 UI 池长期满着时每帧都白跑一遍查表 + spawn。 */
+static int vms_retry(stock_card_t *s)
+{
+    if (s->spawn_retry) { s->spawn_retry--; return 0; }
+    s->spawn_retry = STOCK_SPAWN_RETRY_FRAMES;
+    return spawn_vms(s);
 }
 
 static void apply_rect(uint32_t id, const stock_rect_t *r)
@@ -141,7 +158,7 @@ static int on_tick_2(ce_card_t *c)
         stock_step(&s->st, ce_rand());
         redraw = 1;
     }
-    if (!vms_alive(s)) { if (!spawn_vms(s)) return 0; redraw = 1; }
+    if (!vms_alive(s)) { if (!vms_retry(s)) return 0; redraw = 1; }
     if (redraw) draw_candles(s);
     return 0;
 }
