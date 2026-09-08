@@ -27,7 +27,7 @@ stride `0x5c`。`th16:` 的 stride 是 `0x58`（[`../th16/05`](../th16/05-th16-f
 | `+0x21` | i8 | **mode**：`2` = 走子机火力分配（读写 `player+0x476fc+slot*4`）；`4`/`5`/`6` = 出膛不做 PosVel 修正减法。其余取值 🟡（零售出现 0/1/2/4/5/6/7）| 同上 |
 | `+0x22` | i16 | **ANM 脚本号** —— 主炮取 `pl0X.anm`，**装备卡子机取 `ability.anm`**（§4）| 同上 |
 | `+0x24` | i16 | **音效 id**（`< 0` = 不响）。零售取值 `-1` / `0` / `0x40`（`se_msl`）| 同上 |
-| `+0x26` | i8 | 🟡 语义未知，零售取值 `{0, 5, 8}` | 无已知读取点 |
+| `+0x26` | i16 | **激光命中特效的 anm 脚本号**（hit 表 idx2 `0x460320` 读；魔理沙 = 8）。零售取值 `{0, 5, 8}` | `playershot_hit_laser_idx2`（[`03`](03-func-tables-timers-and-dead-fields.md) §5.1）|
 | `+0x27`–`+0x29` | — | 🟡 268 条全 0 | — |
 | `+0x2a` | i8 | **fire_rate2**：非 0 时改用 long_timer（`long % fire_rate2 == start_delay2`）| 两处发射循环 |
 | `+0x2b` | i8 | start_delay2（零售 268 条全 0）| 同上 |
@@ -36,7 +36,7 @@ stride `0x5c`。`th16:` 的 stride 是 `0x58`（[`../th16/05`](../th16/05-th16-f
 | `+0x34` | i32 | func_on_draw —— 表 `0x4cf414` | 弹的绘制 |
 | `+0x38` | i32 | func_on_hit —— 表 `0x4b41f0` | 弹的命中 |
 | `+0x3c`–`+0x4b` | — | 🟡 268 条全 0 | — |
-| `+0x4c` | f32 | 🟡 语义未知，零售取值 `{0, ±0.0524(≈3°), 0.3145, 1.3, 2.0}`——量纲像角度/角步进 | 无已知读取点 |
+| `+0x4c` | f32 | **横移倾斜系数**：`func_on_init = 3`（`0x460b60`）算 `角 = norm(PLAYER+0x4790c + angle) + PLAYER+0x47910 × 此值`；零售取值 `{0, ±3°…±20°, 1.3, 2.0}` | `playershot_init_tilt_by_move_idx3`（[`03`](03-func-tables-timers-and-dead-fields.md) §5.2）|
 | `+0x50`–`+0x5b` | — | 🟡 268 条全 0 | — |
 
 > `+0x3c` 起那 `0x20` 字节正是 [`../th16/05`](../th16/05-th16-flags-no-runtime-read.md) 里「运行时不读的 flags 段」
