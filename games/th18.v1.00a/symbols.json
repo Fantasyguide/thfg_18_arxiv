@@ -4330,8 +4330,20 @@
    "addr": "0x0042abc0"
   },
   {
+   "name": "EndingChild__run_msg",
+   "addr": "0x0042be70"
+  },
+  {
    "name": "Enemy__drop_items_and_notify_cards",
    "addr": "0x00430510"
+  },
+  {
+   "name": "Gui__initialize",
+   "addr": "0x0043a730"
+  },
+  {
+   "name": "Gui__start_dialogue",
+   "addr": "0x0043e360"
   },
   {
    "name": "GameThread__teardown_and_recount_cards",
@@ -4358,12 +4370,96 @@
    "addr": "0x0045d5e0"
   },
   {
+   "name": "Player__tick_bullets",
+   "addr": "0x0045edb0"
+  },
+  {
+   "name": "playershot_init_clear_target_idx1",
+   "addr": "0x0045f7b0"
+  },
+  {
+   "name": "playershot_tick_homing_idx1",
+   "addr": "0x0045f7c0"
+  },
+  {
+   "name": "playershot_hit_spread_effect_idx1",
+   "addr": "0x0045f9d0"
+  },
+  {
+   "name": "playershot_init_laser_idx2",
+   "addr": "0x0045fc20"
+  },
+  {
+   "name": "playershot_tick_laser_idx2",
+   "addr": "0x0045fc80"
+  },
+  {
+   "name": "playershot_hit_laser_idx2",
+   "addr": "0x00460320"
+  },
+  {
+   "name": "playershot_tick_accel_idx3",
+   "addr": "0x004609a0"
+  },
+  {
+   "name": "playershot_hit_dmgsrc_child_idx3",
+   "addr": "0x004609c0"
+  },
+  {
+   "name": "playershot_tick_wall_bounce_idx5",
+   "addr": "0x00460ae0"
+  },
+  {
+   "name": "playershot_init_tilt_by_move_idx3",
+   "addr": "0x00460b60"
+  },
+  {
+   "name": "playershot_hit_dmgsrc_child_idx4",
+   "addr": "0x00460cb0"
+  },
+  {
+   "name": "playershot_init_clearsubstate_idx4",
+   "addr": "0x00460da0"
+  },
+  {
+   "name": "playershot_tick_enemylock_dash_idx4",
+   "addr": "0x00460db0"
+  },
+  {
+   "name": "playershot_hit_spread_effect_idx5",
+   "addr": "0x00460f30"
+  },
+  {
+   "name": "playershot_hit_spread_effect_grow_idx6",
+   "addr": "0x00461080"
+  },
+  {
+   "name": "playershot_init_aim_from_player479cc_idx5",
+   "addr": "0x004612d0"
+  },
+  {
+   "name": "playershot_init_random_upper_angle_idx6",
+   "addr": "0x00461330"
+  },
+  {
+   "name": "playershot_init_radial_from_player_idx7",
+   "addr": "0x004613b0"
+  },
+  {
    "name": "ScoreFile__init_unlocked_cards_from_table",
    "addr": "0x00463670"
   },
   {
    "name": "ScoreFile__load",
    "addr": "0x004637d0"
+  },
+  {
+   "name": "ScreenEffect__on_tick_mode0_fade_in",
+   "addr": "0x00475480"
+  },
+  {
+   "name": "ScreenEffect__on_tick_mode5_fade_out",
+   "addr": "0x00475820"
   }
  ],
  "statics": [
@@ -4551,9 +4647,19 @@
    "text": "X-key bomb (input bit 0x2), TH16-style. Gate: BOMB[0xc]==0 (not already bombing). Calls BOMB->vtable+0x4 = zVTableBomb.begin (character-specific bomb). Plays sound 0x2c; sets spell-fail flag if bombing mid-spell. TH18 KEEPS the bomb; cards only replaced TH16 season-release. Stock gate = Bomb__can_bomb_and_deathbomb_check (DAT_004ccd58)."
   },
   {
+   "addr": "0x0042be70",
+   "kind": "eol",
+   "text": "MSG: ending/staff .msg VM (opcode 0..17, same table as th16). Difficulty-gated 15/16/17 share op8 body. See engine/msg/th18/02."
+  },
+  {
    "addr": "0x00430510",
    "kind": "eol",
    "text": "Enemy death drop: for item type 1..0x13 spawn enemy->drop_count[type] (at enemy+0x04+(type-1)*4) items, then notify EVERY card via vtable[0x30]. ExpHP calls that slot 'recharge' but first-hand it is on_enemy_dropped_items(pos, drop_count_table): CardYachie (id 34 MONEY) spawns drop_count[type2]/3 EXTRA money items."
+  },
+  {
+   "addr": "0x0043e360",
+   "kind": "eol",
+   "text": "MSG: ECL ins 518 dialogRead entry. id>=0: new GuiMsgVm at entry-table[id].offset; -1: boss BGM + title anm; -3: stage BGM + title anm; -2: end stage / spell branch. See engine/msg/th18/01."
   },
   {
    "addr": "0x00442f98",
@@ -4589,6 +4695,11 @@
    "addr": "0x0045e320",
    "kind": "pre",
    "text": "PlayerBullet__create. Shooter base = (param1&0xff)*0x5c + *(*(player+0x47940)+0xe0+(param1>>8)*4). this+0xe8/ec/f0/f4 = shooter+0x2c/30/34/38 = SHT func_* ptrs (this+0xe8 called as func_on_init; nonzero -> abort bullet). TAIL: iterates ABILITY_MANAGER card list calling vtable+0x28 (on_bullet_created) on each card with the new bullet = on_bullet_created engine call site."
+  },
+  {
+   "addr": "0x00460b60",
+   "kind": "eol",
+   "text": "SHT func_on_init[3]: angle = norm(PLAYER+0x4790c + sh.angle) + PLAYER+0x47910 * sh[+0x4c]. Only reader of the shooter 'flags' region in TH18. See engine/sht/th18/03."
   },
   {
    "addr": "0x004ad000",

@@ -33,6 +33,10 @@
   100 处 binhack + 开机自检 DLL；`allocate_new_card(id=58)` 实跑成功。下一步存档层，见 [`NEXT.md`](../../mods/th18.v1.00a/card-expand/NEXT.md)
   (thcrap 断点 + 自建 DLL,鼠标操自机 + 左/右/中键映射,2026-09-01 实跑)。
   它同时验通了 Linux 交叉编译 → Windows 的交付链路,以及 `engine/player/th18/01` 的坐标结论在活进程上成立。
+- ✅ **SHT 行为函数表已一手验完**（2026-09-06）:四张表 18 项、15/120 帧计时器、头部判定字段无人读、flags `+0x4c` 读取点。见 [`engine/sht/th18/03`](../../engine/sht/th18/03-func-tables-timers-and-dead-fields.md)，wiki 稿 [`engine/sht/WIKI-DRAFT.md`](../../engine/sht/WIKI-DRAFT.md)。
+- ✅ **MSG 两套指令集已一手验完**（2026-09-06）:关卡对话 0–36 逐 case、结局/staff 0–17、ECL 518/519 握手、
+  跳过机制、立绘 ANM 中断协议、结局编号公式；44 个真实 `.msg` 实测。见 [`engine/msg/th18/`](../../engine/msg/th18/README.md)，
+  面向 THBWiki 的成稿在 [`engine/msg/WIKI-DRAFT.md`](../../engine/msg/WIKI-DRAFT.md)。
 - ⏳ **仍未做**:装备卡 shooter 数据存储与少数标 🟡 的字段仍待验证。
   类型绑定**卡牌那 268 个已做**,`Player__*` / 各 Manager / 全局仍未绑,见下节。
 

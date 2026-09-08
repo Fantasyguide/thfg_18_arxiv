@@ -1,0 +1,369 @@
+== 0. 先说清楚：什么是「VM」、什么是「指令」 ==
+
+本页和 ECL、ANM 页会反复出现「VM」「指令」「opcode」这几个词，先用两段话解释一下。
+
+游戏 exe 里有很多东西是'''写死在程序里'''的：碰撞怎么判、道具怎么飞。但对话内容、弹幕图案、
+动画帧这类每关都不一样的东西，如果也写死在 exe 里，改一句台词就得重新编译整个游戏。
+所以 ZUN 的做法是把它们写成'''脚本'''，编译成一串紧凑的字节，打包进 <code><nowiki>thXX.dat</nowiki></code>。exe 里只留一个
+'''解释器'''：运行时把这串字节一条一条读出来，看每条是「干什么」的，就去调用对应的引擎功能。
+这个「读一条、做一条」的循环，就是'''VM'''（虚拟机，virtual machine）——它不是模拟一台电脑，
+只是「一个按脚本行事的小机器」。ECL、ANM、STD、MSG 各有一台这样的小机器，形状都差不多。
+
+脚本里的每一条叫'''指令（instruction）'''。指令开头有一个小整数，告诉解释器这条是「显示立绘」
+还是「等玩家按键」，这个数叫'''指令号'''，英文 '''opcode'''（operation code）。指令号后面跟着
+'''参数'''：显示哪个立绘、等多少帧、显示什么文本。指令号本身没有含义，含义全在解释器里的一张
+分支表上——<code><nowiki>switch (opcode) { case 11: 等待…; case 17: 写文本… }</nowiki></code>。所以「指令表」就是把这张
+分支表翻译成人话；社区工具（thmsg、trumsg）给指令起的名字（<code><nowiki>pause</nowiki></code>、<code><nowiki>text-add</nowiki></code>）只是为了好读，
+文件里存的只有数字。
+
+MSG 的 VM 还有一个特点：它是'''按时间驱动'''的。每条指令带一个「第几帧执行」的时间戳，解释器
+每帧看一眼「到时间的指令有哪些」，把它们全部执行掉，然后等下一帧。所以一段对话的节奏
+（立绘先出来、隔几帧文字再出来）完全由脚本里的时间戳决定。§3 讲的就是这台小机器每帧在做什么。
+
+== 1. 概述 ==
+
+MSG 文件是东方正作里承载'''剧情文本'''的脚本：关卡里的对话、结局、staff roll 的文字与演出
+都由它控制。它和 ECL（弹幕/流程）、ANM（贴图/动画）一样打包在 <code><nowiki>thXX.dat</nowiki></code> 里，用 thtk 的
+<code><nowiki>thmsg</nowiki></code> 或 ExpHP 的 <code><nowiki>trumsg</nowiki></code> 可以反编译成文本。
+
+读 MSG 最容易踩的一个坑：'''同一个 <code><nowiki>.msg</nowiki></code> 后缀下面其实有两套互不相干的指令集'''。
+
+{| class="wikitable"
+|-
+! 用途 !! 文件 !! 谁来执行 !! 指令集
+|-
+| 关卡内对话 || <code><nowiki>st01a.msg</nowiki></code> … <code><nowiki>st07d.msg</nowiki></code>（关卡号 + 机体 a/b/c/d） || 关卡 HUD 里的对话 VM || §4，编号 0–36（TH18）
+|-
+| 结局 / staff roll || <code><nowiki>e01.msg</nowiki></code> … <code><nowiki>e12.msg</nowiki></code>、<code><nowiki>staff1.msg</nowiki></code> … <code><nowiki>staff4.msg</nowiki></code> || 结局场景自己的解释器 || §5，编号 0–17
+|}
+
+两套表的'''编号重叠但含义完全不同'''：关卡对话里 <code><nowiki>3</nowiki></code> 是显示文本框（现代作已无效），结局里 <code><nowiki>3</nowiki></code> 是写一行文本。
+thmsg 反编译结局文件要加 <code><nowiki>-e</nowiki></code>，就是在切这张表。§2、§3 讲的格式和运行方式两边通用，指令表分开列。
+
+自 TH10 起 ZUN 基本没有重写过 MSG 引擎：指令格式、文本编码、执行方式十几年没变，
+只是零星加了几条指令、给几条旧指令加了参数。所以本页不按版本分表，只在单条指令后注明
+「TH xx 起加入 / 改动」。
+
+== 2. 二进制文件怎么组织 ==
+
+=== 2.1 文件头：入口表 ===
+
+文件开头是一张'''入口表'''，每条 8 字节：
+
+<pre>
+偏移   大小   含义
+0x00   u32    入口条数 N
+0x04   u32    入口 0 的脚本偏移（相对文件头）
+0x08   u32    入口 0 的 flags
+0x0c   u32    入口 1 的脚本偏移
+0x10   u32    入口 1 的 flags
+…      …      共 N 条
+</pre>
+
+'''入口号就是 ECL 里起对话时给的那个数'''：ECL 执行 <code><nowiki>ins_518(x)</nowiki></code>（TH10 世代为 <code><nowiki>ins_418</nowiki></code>）时，
+游戏取入口 x 的偏移，从那里开始解释指令。一关的对话文件通常有 2–5 个入口：boss 登场前、
+道中 boss、击破后等各占一个。
+
+thmsg 反编译输出里的 <code><nowiki>entry 0 (256)</nowiki></code>，括号里的 256 就是 flags 字段（<code><nowiki>0x100</nowiki></code>）。它在 TH10–TH18
+的所有文件里恒为 256，'''引擎读入口表时只取偏移、不读它'''，可以当作编译器留下的常量。TH19 起这 4 个
+字节被拆成 4 个 u8 使用，thmsg 会打印成 <code><nowiki>(a, b, c, d)</nowiki></code>；TH19 的关卡对话文件另外在入口表之前多了一块
+0x50 字节的头。
+
+结局和 staff 文件同样有这张表，只是只有 1 个入口。
+
+=== 2.2 指令：4 字节头 + 变长参数 ===
+
+脚本本体是一串连续的指令，每条：
+
+<pre>
+偏移   大小   含义
+0x00   u16    time    触发时间（帧，相对本入口开始）
+0x02   u8     opcode  指令号
+0x03   u8     size    参数字节数
+0x04   …      参数    按指令号解释，长度 = size
+</pre>
+
+下一条指令的位置 = 当前位置 + 4 + size，没有额外对齐（字符串参数自己会补到 4 的倍数）。
+入口以 <code><nowiki>opcode 0</nowiki></code> 结束。参数类型只有 <code><nowiki>int32</nowiki></code>、<code><nowiki>float</nowiki></code> 和字符串三种，字符串的规则见 §2.3。
+
+用 thmsg 的输出对照一下（原 wiki 页的例子，按 TH18 的 st01a 还原）：
+
+<pre>
+entry 0 (256)          ← 入口 0，flags = 256
+@34                    ← 下面几条的 time 都是 34
+    10;1               ← opcode 10，参数 1：允许快进
+    29;0               ← opcode 29，参数 0：气泡样式 = 圆角矩形
+    28;112.0f;240.0f   ← opcode 28，两个 float：气泡位置
+    17;よかった         ← opcode 17，一个字符串：追加一行文本
+    17;雨が止んで       ← 第二行
+@38
+    11;600             ← opcode 11，参数 600：等玩家按键，最多 600 帧
+</pre>
+
+<code><nowiki>@</nowiki></code> 行是 thmsg 把相同 time 的指令合并显示，二进制里每条指令各自带自己的 time。
+
+=== 2.3 文本编码 ===
+
+带文本的指令（关卡对话的 15/16/17，结局的 3）参数是一个字符串，规则：
+
+# '''Shift-JIS''' 编码，末尾补 <code><nowiki>\0</nowiki></code>，再用 <code><nowiki>\0</nowiki></code> 填充到 4 字节倍数；
+# 整段（含填充）逐字节 XOR 一个'''递增掩码'''：第 1 字节 XOR <code><nowiki>0x77</nowiki></code>，之后每字节的掩码加一个「速度」， 速度初值 <code><nowiki>0x07</nowiki></code>，每字节再加 <code><nowiki>0x10</nowiki></code>。掩码序列 <code><nowiki>0x77, 0x7e, 0x95, 0xbc, …</nowiki></code>（8 位溢出截断）。
+
+这套掩码自 TH09 起就没变过。其它字符串参数（结局里的 ANM 文件名、BGM 名）是'''明文''' ASCII，不加掩码。
+
+'''注音（furigana）bug'''：TH12 起，文本可以用 <code><nowiki>|x偏移,字距,注音文本</nowiki></code> 的形式给下一行加注音（§4 的 17）。
+ZUN 的编译器有个 bug：含注音的指令之后，'''下一条'''文本指令解码出来在 <code><nowiki>\0</nowiki></code> 后面会多出一段
+垃圾，内容是上一条注音的密文残留。游戏运行时读到 <code><nowiki>\0</nowiki></code> 就停，所以不影响显示；但自己写解析器
+时不能按 size 整段解码后当字符串用，要按 <code><nowiki>\0</nowiki></code> 截断。
+
+== 3. 游戏里怎么跑 ==
+
+=== 3.1 关卡内对话 ===
+
+'''加载'''：进关时按'''机体'''选文件（<code><nowiki>st03a.msg</nowiki></code> = 3 面、a 机体），整个文件读进内存，之后不再碰磁盘。
+四个机体各一份文件，是因为对话内容按角色不同，不是格式差异。
+
+'''触发'''：ECL 敌机脚本执行 <code><nowiki>518 dialogRead(x)</nowiki></code> 时：
+
+* 清场：全部子弹、激光、非 boss 敌机被清掉；
+* 建一个对话 VM，指令指针指向入口 x，计时从 0 开始；
+* 对话期间关卡的 boss 计时、敌人血条等 UI 被压住，画面只剩背景、立绘和文本。
+
+<code><nowiki>x</nowiki></code> 为负数时不建 VM，而是走特殊分支：<code><nowiki>-1</nowiki></code> 切 '''boss 曲'''并弹出曲名，<code><nowiki>-3</nowiki></code> 切'''道中曲'''并弹出曲名，
+<code><nowiki>-2</nowiki></code> 结束关卡（TH18；这几个负数 ECL 里常见，原页没提）。TH18 还有一个硬编码分支：6 面持有空白卡时，
+开场对话 <code><nowiki>518(0)</nowiki></code> 会被换成入口 4——所以 st06 有 5 个入口而别的关只有 2–3 个。
+
+'''每帧执行'''：VM 挂在 HUD 的每帧更新里。每帧它从当前指令往下走，只要下一条指令的 <code><nowiki>time</nowiki></code>
+不大于当前计时就执行它，直到撞上一条还没到时间的，或者一条'''阻塞'''指令：
+
+* <code><nowiki>11 pause(max)</nowiki></code>：等玩家按射击键，最多 <code><nowiki>max</nowiki></code> 帧。等待期间'''脚本计时冻结'''，所以脚本作者不需要把 等待时间算进后面的 <code><nowiki>@time</nowiki></code>。
+* <code><nowiki>0 end</nowiki></code>：VM 销毁，对话结束，关卡 UI 恢复。
+
+'''快进'''：只有脚本先执行过 <code><nowiki>10 skippable(1)</nowiki></code>，快进才生效。玩家按下射击键或 Ctrl 后，
+把射击键或 Ctrl '''按住 20 帧以上'''，VM 每帧都把脚本计时直接拨到当前指令的时间，于是所有等待瞬间过完。
+<code><nowiki>10 skippable(0)</nowiki></code> 用来保护「不许跳过」的段落。
+
+'''和 ECL 的握手'''：对话往往穿插在 boss 战里（boss 说两句、飞进来、再说两句）。这靠三条指令配合：
+
+<pre>
+ECL:  518 dialogRead(x)    起对话，ECL 继续往下跑
+ECL:  519 dialogWait       卡在这里，等对话放行
+MSG:  … 台词 …
+MSG:  12 ecl-resume        放行：让卡在 519 的 ECL 越过去（boss 此时飞进来）
+ECL:  … boss 移动 / 出弹 …
+MSG:  … 台词 … 0 end       对话结束
+</pre>
+
+<code><nowiki>12</nowiki></code> 是'''一帧脉冲'''：它置一个标志，<code><nowiki>519</nowiki></code> 当帧看到标志就放行，下一帧标志自动清掉。
+所以一条 <code><nowiki>12</nowiki></code> 恰好放行一条 <code><nowiki>519</nowiki></code>，多条 <code><nowiki>519</nowiki></code> 要配多条 <code><nowiki>12</nowiki></code>。对话整体结束（<code><nowiki>0</nowiki></code>）后，<code><nowiki>519</nowiki></code> 也会放行。
+
+'''渲染'''：立绘、文本行、注音、气泡都是 ANM 精灵，MSG 指令只是在往 ANM 系统里塞脚本和字符串。
+文本不走 Windows 字体绘制那条路，所以换字体、改排版的接口在 ANM 侧，不在 MSG 里。
+
+'''立绘是怎么控制的'''：MSG 不画立绘，它只给立绘的 ANM 脚本发'''中断（interrupt）'''，
+立绘 anm 自己决定「隐藏」「高亮」长什么样：
+
+{| class="wikitable"
+|-
+! 中断号 !! 含义 !! 发送它的指令
+|-
+| 1 || 隐藏 || 4 / 5 / 6
+|-
+| 2 || 高亮（正在说话） || 7 / 8 / 34
+|-
+| 3 || 变暗（未说话） || 7 / 8 / 9 / 33
+|-
+| 7 || 抖动 || 23 / 24
+|-
+| 17 + n || 换到第 n 号表情 || 13 / 14
+|}
+
+敌方立绘用哪个 anm、从哪个脚本号开始，写在每关的'''关卡数据表'''里（每个 boss 一条：立绘 anm 槽、
+立绘脚本号、名牌 anm 槽、名牌脚本号），<code><nowiki>2 show-enemy(who)</nowiki></code> 的 <code><nowiki>who</nowiki></code> 就是这张表的下标——这就是
+原页「号码 a 与立绘的对应关系储存位置未知」的答案。自机立绘来自自机自己的 anm，脚本号按机体查一张小表。
+
+'''文本框与气泡'''：文本每 '''2 行'''一页：第 1 条 <code><nowiki>17</nowiki></code> 写上行，第 2 条写下行，第 3 条会先清框再写。
+<code><nowiki>11 pause</nowiki></code> 放行后也会开新框。<code><nowiki>29 callout-type(t)</nowiki></code> 选气泡样式、<code><nowiki>7/8/9/32</nowiki></code> 决定气泡朝向（自机侧 / 敌方侧 / 无人），
+两者合成一个脚本号（<code><nowiki>t × 3 + 朝向</nowiki></code>）去气泡 anm 里取外观。
+
+=== 3.2 结局与 staff roll ===
+
+结局场景不经过关卡 HUD，自己读 <code><nowiki>eXX.msg</nowiki></code>。TH18 的编号规则：没用过 continue 时
+<code><nowiki>编号 = 角色 × 2 + (持有空白卡 ? 0 : 1)</nowiki></code>（e01–e08），用过 continue 时 <code><nowiki>编号 = 角色 + 8</nowiki></code>（e09–e12）。
+结局 VM 的取指方式和 §3.1 完全一样（同样的 4 字节头、同样的 time 门控），只是指令表换成结局那套：
+
+* 文本是'''滚动的 5 行'''：<code><nowiki>3 text-add</nowiki></code> 写一行并把行号 +1，写满 5 行后下一次 <code><nowiki>3</nowiki></code> 先清屏再从第 0 行写；
+* <code><nowiki>5 wait</nowiki></code> / <code><nowiki>6 wait-clear</nowiki></code> 等玩家按射击键（负数参数 = 999 帧），后者同时把行号归零； '''第一次看某个结局时不能快进'''，看过之后按住射击键或 Ctrl 会每 6 帧自动翻页；
+* <code><nowiki>8 anm-set-slot(slot, src, script)</nowiki></code> 在某个图片槽里显示一张 CG，<code><nowiki>15/16/17</nowiki></code> 是它的难度专属版 （只在 Normal / Hard / Lunatic 下执行）；
+* <code><nowiki>12 switch-to-staff</nowiki></code> 结局播完后'''换载 staff 文件并重置 VM'''，staff roll 就在同一个解释器里接着跑。 指令带一个文件名参数，但 TH10–TH18 引擎忽略它，按难度硬选 <code><nowiki>staff1–4.msg</nowiki></code>（Easy/Extra→1， Normal→2，Hard→3，Lunatic→4）；这四个文件只差最后一张 CG 的脚本号。从音乐室 / 结局回想进入时不接 staff roll； 用过 continue 的结局文件里也没有这条指令。
+
+staff roll 本身就是「图片幻灯 + 音乐」：staff 名字烤在 <code><nowiki>staff.anm</nowiki></code> 的精灵里，文件里没有文本指令。
+按住射击键或 Ctrl 时 staff roll 以 6 倍速播放。
+
+== 4. 关卡对话指令表 ==
+
+编号按 '''TH11 以后'''的体系（TH10 在 9 号处少一条，9 以后整体小 1，用 TH10 时请自行减一）。
+「参数」列：<code><nowiki>S</nowiki></code> = int32，<code><nowiki>f</nowiki></code> = float，<code><nowiki>m</nowiki></code> = 加掩码的字符串，<code><nowiki>—</nowiki></code> = 无参数。
+未标版本的指令自 TH10 起就有；「TH14 起加 who」表示之前没有该参数、之后多了一个 int。
+<code><nowiki>who</nowiki></code> 指立绘槽号：左侧（自机侧）0–3，右侧（敌方侧）0–3，0 一般就是自机 / 主 boss。
+
+{| class="wikitable"
+|-
+! 编号 !! 名称 !! 参数 !! 作用 !! 版本备注
+|-
+| 0 || end || — || 结束对话，销毁 VM || 
+|-
+| 1 || show-player || S who || 左侧第 who 号立绘登场（0 = 自机） || TH18 起读 who，之前参数被忽略
+|-
+| 2 || show-enemy || S who || 右侧第 who 号立绘登场（按关卡数据表取 anm） || 
+|-
+| 3 || show-textbox || — || 显示文本框 || '''现代作无效'''（引擎里没有这条的分支）
+|-
+| 4 || hide-player || S who || 隐藏左侧第 who 号立绘 || TH18 起加 who
+|-
+| 5 || hide-enemy || S who || 隐藏右侧第 who 号立绘，并收起名牌 || TH14 起加 who
+|-
+| 6 || hide-textbox || — || 收起文本框和所有文本行 || 
+|-
+| 7 || focus-player || S who || 左侧第 who 号高亮、其余全部变暗；气泡朝向自机侧 || TH18 起加 who
+|-
+| 8 || focus-enemy || S who || 右侧第 who 号高亮、其余全部变暗；气泡朝向敌方侧 || TH14 起加 who
+|-
+| 9 || focus-none || — || 全部立绘变暗，气泡朝向「无人」（旁白 / 系统提示用） || TH11 新增
+|-
+| 10 || skippable || S || 1 = 允许快进，0 = 禁止 || 
+|-
+| 11 || pause || S max || 等玩家按射击键，最多 max 帧；期间脚本计时冻结 || 
+|-
+| 12 || ecl-resume || — || 放行一条正在 <code><nowiki>519 dialogWait</nowiki></code> 的 ECL（一帧脉冲） || 
+|-
+| 13 || face-player || S face, S who || 左侧第 who 号换表情 face（= anm 中断 17+face） || TH18 起加 who
+|-
+| 14 || face-enemy || S face, S who || 右侧第 who 号换表情 || TH14 起加 who
+|-
+| 15 || text-1 || m || 直接写第 1 行 || 游戏文件未使用
+|-
+| 16 || text-2 || m || 直接写第 2 行 || 游戏文件未使用
+|-
+| 17 || text-add || m || 追加一行文本；每 2 行一页。串以 <code><nowiki>|</nowiki></code> 开头时为注音：<code><nowiki>|x偏移,字距,文本</nowiki></code>，不占行 || 
+|-
+| 18 || text-clear || — || 清掉文本框与文本（不动立绘） || 
+|-
+| 19 || music-boss || — || 切 boss 曲并弹出曲名 || TH185 起带一个 int（曲目索引，文件里恒为 1）
+|-
+| 20 || intro || S who || 弹出第 who 号 boss 的名牌（名字 + 称号） || TH14 起加 who
+|-
+| 21 || stage-end || — || 结算本关、进下一关 || 
+|-
+| 22 || music-fade || — || 淡出 BGM（TH18：8 秒，6 面 2 秒） || 
+|-
+| 23 || shake-player || — || 左侧 0、1 号立绘抖动 || 
+|-
+| 24 || shake-enemy || — || 右侧 0、1 号立绘抖动 || 
+|-
+| 25 || y-offset || S dy || 所有文本行整体下移 dy 像素 || TH11 新增
+|-
+| 26 || modern-26 || — || 置一个文本样式位（影响之后文本的字体模式） || TH11 新增
+|-
+| 27 || music-fade-custom || f 秒 || 按给定秒数淡出 BGM || TH12 新增
+|-
+| 28 || callout-pos || f x, f y || 气泡位置（引擎内部 ×2 后使用） || TH128 新增
+|-
+| 29 || callout-type || S || 气泡样式 0–15（0 圆角矩形、1 尖刺、2 思考云、3 说话云；TH16 的 4–7 为附身红框） || TH128 新增
+|-
+| 30 || route-select || — || 分路选择 || 仅 TH128；之后无效
+|-
+| 31 || show-enemy-1 || S || 等于 show-enemy(1)（参数被忽略） || TH13 新增
+|-
+| 32 || modern-32 || S side || 只改气泡朝向（0 自机侧 / 1 敌方侧 / 2 无人），不改立绘明暗 || TH14 新增
+|-
+| 33 || darken-portrait || S side, S who || 单独把某个立绘变暗，不改「谁在说话」 || TH16 新增（TH143/165 的 33 是 tutorial，另一条指令）
+|-
+| 34 || highlight-portrait || S side, S who || 单独高亮某个立绘 || TH16 新增
+|-
+| 35 || lights-out || — || 用黑幕盖住背景和敌机（<code><nowiki>fronttr.anm</nowiki></code> 脚本） || TH16 新增
+|-
+| 36 || store || — || 置「对话结束后开卡牌商店」标志 || TH18 新增；TH185 改用 ECL 指令开黑市
+|-
+| 37 || bm-info-open || — || 画面变暗，表示说明文字 || TH185 新增
+|-
+| 38 || bm-focus-info || — || 标记「教学 / 系统」在说话（取代教程图片） || TH185 新增
+|-
+| 39 || bm-info-close || — || 取消 37 的变暗 || TH185 新增
+|-
+| 40 / 41 || — || m || 画标题 / 副标题的残次指令，未使用 || TH185 新增（社区）
+|-
+| 42 / 43 || — || S || 对战结束后胜者 / 败者立绘高亮 || TH19 新增（社区）
+|-
+| 44 / 45 || — || f, f || 未知 || TH19 新增（仅 thmsg 签名）
+|-
+| 46 / 47 || — || S, S || 未知 || TH19 新增（仅 thmsg 签名）
+|-
+| 50 / 51 || — || S || 自机 / 敌机立绘提前淡出 || TH19 新增（社区）
+|-
+| 52 – 54 || — || — || 未知 || TH19 新增（仅 thmsg 签名）
+|-
+| 55 || — || — || 敌机点阵图出现 || TH19 新增（社区）
+|-
+| 56 || — || — || 背景逐渐变黑 || TH19 新增（社区）
+|}
+
+版本特例：TH165《秘封噩梦日记》的指令集退回到 TH143（有 33 tutorial、没有 TH16 的 33–35）；TH17 与 TH16 相同。
+
+== 5. 结局 / staff 指令表 ==
+
+结局与 staff 文件共用这张表；<code><nowiki>z</nowiki></code> = 明文 ASCII 字符串。
+
+{| class="wikitable"
+|-
+! 编号 !! 名称 !! 参数 !! 作用 !! 版本备注
+|-
+| 0 || end || — || 结束（结局 → 回标题 / 结算；staff → 结束） || 
+|-
+| 3 || text-add || m || 写一行文本到 5 行滚动窗；写满 5 行后下一次先清屏 || TH20 起串以 <code><nowiki>|</nowiki></code> 开头可作注音（社区）
+|-
+| 4 || text-clear || — || 隐藏全部文本行（不重置行号） || 游戏文件未使用
+|-
+| 5 || wait || S max || 等射击键，最多 max 帧；负数 = 999 || 
+|-
+| 6 || wait-clear || S max || 同 5，并把行号归零（翻页） || 
+|-
+| 7 || anm-source-load || S idx, z 文件名 || 后台线程加载一个 anm 到源槽 idx（加载期间脚本暂停） || 
+|-
+| 8 || anm-set-slot || S slot, S src, S script || 在图片槽 slot 显示源 src 的脚本 script（= 显示一张 CG） || 
+|-
+| 9 || text-color || S color || 之后文本的颜色（COLORREF） || TH20 起变成两个 int（thmsg 签名 <code><nowiki>SS</nowiki></code>，含义未知）
+|-
+| 10 || music || z 名 || 按名播 BGM（<code><nowiki>bgm/th18_15</nowiki></code>）；同时解锁音乐室对应曲目 || 
+|-
+| 11 || music-fade || — || 淡出 BGM（TH18：3 秒） || 
+|-
+| 12 || switch-to-staff || z 文件名 || 转 staff roll。TH10–TH18 忽略参数、按难度选 staff1–4 || TH20 起真正按参数选文件（社区）
+|-
+| 13 || screen-effect-a || S 帧数 || 黑幕'''淡入'''（画面从黑变亮） || 游戏文件未使用
+|-
+| 14 || screen-effect-b || S 帧数 || 黑幕'''淡出'''（画面变黑），结局末尾用 || 
+|-
+| 15 || anm-set-slot-normal || 同 8 || 只在 Normal 难度下执行的 8 || 游戏文件未使用
+|-
+| 16 || anm-set-slot-hard || 同 8 || 只在 Hard 下执行的 8 || 游戏文件未使用
+|-
+| 17 || anm-set-slot-lunatic || 同 8 || 只在 Lunatic 下执行的 8 || 游戏文件未使用
+|}
+
+1、2 两号在引擎里没有分支，也不出现在文件里。
+
+== 6. 各作差异一览 ==
+
+* '''TH10 → TH11'''：TH11 在 9 号插入 focus-none，TH10 的 9–23 整体后移一位；同时新增 25 y-offset、26。
+* '''TH12'''：新增 27 music-fade-custom；文本指令开始带注音 bug。
+* '''TH128'''：新增 28 callout-pos、29 callout-type、30 route-select（30 只此一作有效）。
+* '''TH13'''：新增 31 show-enemy-1。
+* '''TH14'''：5 / 8 / 14 / 20 / 24 改为带 <code><nowiki>who</nowiki></code> 的版本；新增 32。
+* '''TH143'''：新增 33 tutorial；'''TH15''' 去掉它；'''TH165''' 又退回 TH143 的表。
+* '''TH16'''：新增 33 darken-portrait、34 highlight-portrait、35 lights-out（与 TH143 的 33 同号不同义）；TH17 相同。
+* '''TH18'''：4 / 7 / 13 / 23 改为带 <code><nowiki>who</nowiki></code>；新增 36 store。
+* '''TH185'''：19 music-boss 加曲目索引；新增 37–41。
+* '''TH19'''：新增 42–47、50–56；关卡文件头前多 0x50 字节，入口 flags 拆成 4 个 u8。
+* '''TH20'''：结局表 9 改为两个参数，3 支持注音，12 开始读文件名参数。
+* '''结局表'''自 TH10 起到 TH19 没有变化。
