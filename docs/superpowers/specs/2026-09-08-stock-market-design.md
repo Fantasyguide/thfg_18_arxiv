@@ -35,12 +35,12 @@ replay 只重放 `INPUT_HELD` `0x4ca428` 里的位：射击 `0x001`、炸弹 `0x
 | 量 | 单位 | 类型 |
 | --- | --- | --- |
 | 价格 `price` | 0.01 金钱 | `int32`，开盘 `10000`（= 100.00），硬钳位 `[1000, 999900]` |
-| 持股 `hold` | 0.001 股 | `int32` |
+| 持股 `hold` | 0.0001 股 | `int32`（0.001 股时 9999.00 价位来回损耗可达 10 金钱，做不到「≤ 1」；实施时改细一档）|
 | 成本 `cost` | 金钱 | `int32`，累计买入金额 − 累计卖出所得（盈亏显示用）|
 
-- **买**（C）：`MONEY < 50` → `ce_refuse("stock", "no cash")`。否则 `MONEY −= 50`，`hold += 50 × 100 × 1000 / price`（= `5000000 / price`），`cost += 50`。
-- **卖**（Shift + C）：`hold == 0` → `ce_refuse("stock", "no holding")`。否则 `q = min(hold, 5000000 / price)`，
-  `MONEY += q × price / 100000`（向下取整，零头等于手续费），`hold −= q`，`cost −= 所得`。
+- **买**（C）：`MONEY < 50` → `ce_refuse("stock", "no cash")`。否则 `MONEY −= 50`，`hold += 50 × 100 × 10000 / price`（= `50000000 / price`），`cost += 50`。
+- **卖**（Shift + C）：`hold == 0` → `ce_refuse("stock", "no holding")`。否则 `q = min(hold, 50000000 / price)`，
+  `MONEY += q × price / 1000000`（向下取整，零头等于手续费），`hold −= q`，`cost −= 所得`。
 - 现金永不为负、卖出永不超持股、一次买卖来回损耗 ≤ 1 金钱：三条都是单测。
 - 成交放零售音效（买 / 卖各一个，用现有 id；实施时挑），日志 `stock: buy 50 @ 123.45 -> hold 0.405 (money 1234)` / `stock: sell …`。
 - `MONEY` 上限：引擎有钳位就照它（实施时查 `05-shop-and-money.md` §1）；没有就不钳。
