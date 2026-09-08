@@ -102,6 +102,7 @@
 #define CE_HUD_POWER_X             540.0f
 #define CE_HUD_POWER_Y             182.0f
 #define CE_HUD_POWER_COLOR         0xff800000u /* 火力那行的字色（B=0 G=0 R=0x80 A=0xff），照抄以便看起来是一体的 */
+#define CE_HUD_MONEY_COLOR         0xff808000u /* 金钱那行的字色（B=0 G=0x80 R=0x80，FUN_0043cd00 在 (620, 204) 处设的），持仓净值贴着它画 */
 #define CE_HUD_DMG_X               478.0f      /* 倍率读数：贴在火力左边，同一行。"x1.60" 五个字约 55 px ⇒ 478..533，刚好不压到 540 的火力，也在侧栏里（弹幕区右边缘约 x 416）。**待实跑微调** */
 
 #define CE_ANM_VM_POS              0x5f0      /* float3 实体坐标（Tenshi/Miko/Remilia 每帧写；engine/anm/th18/01-vm-instantiate.md）*/

@@ -19,23 +19,34 @@
 
 #define STOCK_SPAWN_RETRY_FRAMES 60     /* 面板 VM 持续起不来时的重试间隔（M1，同 PS_RETRY_FRAMES 量级）*/
 
-/* —— 面板几何：UI 层 2× 空间（1280×960）—— */
-#define UI_CANDLE_X0    848             /* 640 空间 424 */
-#define UI_CANDLE_Y0    776             /* 640 空间 388 */
-#define UI_CANDLE_W     416             /* 16 根 × pitch 26 */
-#define UI_CANDLE_H     96
-#define UI_BG_CX        1056            /* 底板中心 / 尺寸：盖住蜡烛区 + 下面三行字（640 空间 386..476）*/
-#define UI_BG_CY        862
-#define UI_BG_W         432
-#define UI_BG_H         180
-/* —— 文字：640×480 字面量空间 —— */
-#define TEXT_X          424.0f
-#define TEXT_Y1         440.0f
-#define TEXT_Y2         452.0f
-#define TEXT_Y3         464.0f
+/* —— 面板几何：UI 层 2× 空间（1280×960）——
+ * 2026-09-08 挪到**右上角**（原来在侧栏下部，压着卡组图标）。那块地方零售画的是
+ * 总分 `(620, 42)` 与最高分 `(620, 64)`（右对齐，`FUN_0043cd00` 里的字面量，AUDIT §AI），
+ * 本 mod 里得分没有意义，盖掉正好。
+ *
+ * ★ 为什么面板不能垫在文字底下：Gui 的绘制注册在优先级 **0x31**（`Gui__operator_new` `0x43bb4e`），
+ *   而 UI 列表的 ANM 层最早也要到 **0x3c**（层 24 的桩）。所以 HUD 文字**永远**先画、
+ *   我们的图元永远后画 —— 文字压面板做不到，只能让两者不重叠。读数因此放在面板**下方**
+ *   那条空隙里（面板底 96，残机行 120，中间的 104 是空的）。*/
+#define UI_CANDLE_X0    856             /* 640 空间 428 */
+#define UI_CANDLE_Y0    68              /* 640 空间 34 */
+#define UI_CANDLE_W     400             /* 16 根 × pitch 25，实体宽 13 */
+#define UI_CANDLE_H     112             /* 640 空间 56 */
+#define UI_BG_CX        1056            /* 底板中心 (528, 62)，尺寸 212×68 —— 罩住蜡烛区，盖掉总分 / 最高分 */
+#define UI_BG_CY        124
+#define UI_BG_W         424
+#define UI_BG_H         136
+/* —— 文字：640×480 字面量空间（AUDIT AC6）——
+ * 行情读数塞在面板底与残机行之间的空隙；持仓净值贴在金钱数左边，用金钱同款字色，
+ * 这样「我有多少钱 + 多少在股里」是并排的一句话。*/
+#define TEXT_TICKER_X   528.0f          /* 侧栏中线 */
+#define TEXT_TICKER_Y   104.0f          /* 面板底 96 与残机行 120 之间 */
+#define TEXT_HOLD_X     470.0f          /* 金钱右对齐于 620，五位数约占到 570，这里安全 */
+#define TEXT_HOLD_Y     204.0f          /* 与金钱同一行 */
 #define TEXT_COLOR      CE_HUD_POWER_COLOR
+#define TEXT_HOLD_COLOR CE_HUD_MONEY_COLOR
 
-#define COLOR_BG        0xa0000000u     /* AARRGGBB：黑，alpha 160 */
+#define COLOR_BG        0xdc000000u     /* AARRGGBB：黑，alpha 220 —— 要盖住底下的总分 / 最高分，不能太透 */
 #define COLOR_UP        0xffff4040u     /* 红涨 */
 #define COLOR_DOWN      0xff40ff40u     /* 绿跌 */
 
@@ -92,7 +103,7 @@ static int spawn_vms(stock_card_t *s)
     ce_anm_set_scale(s->bg_id, (float)UI_BG_W, (float)UI_BG_H);
     ce_anm_set_color(s->bg_id, COLOR_BG);
     if (!s->log_spawn_ok) {
-        ce_log("stock: panel spawned (bg id %u at %d,%d size %dx%d; candles x %d..%d y %d..%d; 2x UI space)",
+        ce_log("stock: panel spawned at top-right (bg id %u at %d,%d size %dx%d; candles x %d..%d y %d..%d; 2x UI space, /2 = 640 space)",
                s->bg_id, UI_BG_CX, UI_BG_CY, UI_BG_W, UI_BG_H, UI_CANDLE_X0, UI_CANDLE_X0 + UI_CANDLE_W, UI_CANDLE_Y0, UI_CANDLE_Y0 + UI_CANDLE_H);
         s->log_spawn_ok = 1;
     }
@@ -170,10 +181,13 @@ static int on_draw(ce_card_t *c)
     if (!s || !s->inited) return 0;
     const stock_state_t *st = &s->st;
     char arrow = st->price > st->cur.o ? '^' : st->price < st->cur.o ? 'v' : '-';
-    int32_t pnl = stock_pnl(st);
-    ce_hud_text(TEXT_X, TEXT_Y1, TEXT_COLOR, "STK %d.%02d %c", st->price / 100, st->price % 100, arrow);
-    ce_hud_text(TEXT_X, TEXT_Y2, TEXT_COLOR, "HOLD %d.%02d = %d", st->hold / 10000, st->hold % 10000 / 100, stock_value(st));
-    ce_hud_text(TEXT_X, TEXT_Y3, TEXT_COLOR, "P/L %c%d", pnl < 0 ? '-' : '+', pnl < 0 ? -pnl : pnl);
+    int32_t pnl = stock_pnl(st), value = stock_value(st);
+    /* 面板下方一行：现价 + 涨跌箭头 + 本局盈亏 */
+    ce_hud_text(TEXT_TICKER_X, TEXT_TICKER_Y, TEXT_COLOR, "%d.%02d %c %c%d",
+                st->price / 100, st->price % 100, arrow, pnl < 0 ? '-' : '+', pnl < 0 ? -pnl : pnl);
+    /* 金钱左边：持仓净值。没持仓就一个字都不画，免得平时多一行常驻噪音。 */
+    if (st->hold > 0)
+        ce_hud_text(TEXT_HOLD_X, TEXT_HOLD_Y, TEXT_HOLD_COLOR, "+%d", value);
     return 0;
 }
 
