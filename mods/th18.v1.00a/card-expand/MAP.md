@@ -73,10 +73,10 @@
 | `ce_bomb_spent` | `0x4203bc` `do_bomb` 里 `consume_bomb` 刚返回 | 5 | 炸弹已扣、HUD 已刷：沿卡链表调 `on_bomb_spent` | `sdk.c` ← `corruption.c` | §T |
 | `ce_shop_bought` | `0x4183ea` `AbilityShop__on_tick` 成交分支 | 12 | 只记「本次进店成交了」（关卡 + 帧） | `shop.c` | §P1–P2 |
 | `ce_shop_reopen` | `0x443b05` `GameThread__on_tick` `test eax,0x20000` | 5 | 店刚关、成交过、还有名额 → `eax |= 0x20000`，零售建店代码再跑一遍（每关 2 次） | `shop.c` ← `shop_core.c` | §P3–P8 |
-| `ce_item_frame` | `0x446ee3` `ItemManager__on_tick` `0x446ec0` 的最后一道门卫 CMP | 7 | 每帧、道具池 body 前一次：沿卡链表调 `on_item_frame`（辉针城：池空 → 关批结算） | `sdk.c` | §Z |
+| `ce_item_frame` | `0x446ee3` `ItemManager__on_tick` `0x446ec0` 的最后一道门卫 CMP | 7 | 每帧、道具池 body 前一次：沿卡链表调 `on_item_frame`（辉针城：判「无 state-3 在飞」→ 关批结算，Z22） | `sdk.c` | §Z |
 | `ce_item_collect` | `0x44625f` 收集 type 分派前一条 | 6 | 本道具副作用未发生：调 `on_item_collect`（type = `*(uint32_t*)(item+0xc78)`；辉针城：批集计数 + stash SCORE） | `sdk.c` | §Z |
 | `ce_item_commit` | `0x44658a` 共享收尾起点 | 6 | 本道具分值已入 SCORE、公共收尾前：调 `on_item_commit`（辉针城：累加分值增量） | `sdk.c` | §Z |
-| `ce_shot_damage` | `0x45f2a2` `enm_compute_damage_sources` 计分路径 | 7 | 每帧每敌一次可计分命中（dmg 钳后 ≥1）：调 `on_shot_damage`（辉针城：非聚焦命中掉钱） | `sdk.c` | §Z |
+| `ce_shot_damage` | `0x45f2a2` `enm_compute_damage_sources` 计分路径 | 7 | 每帧每敌一次可计分命中（dmg 钳后 ≥1）：调 `on_shot_damage`（辉针城：非聚焦命中掉 P，Z13） | `sdk.c` | §Z |
 | `ce_snd_gate` | `0x476410` `SoundManager::init` 入口 | 5 | 引擎还没读表：扩表装载 + 新行填充、回读验证 | `sound.c`（生成 `sound_emit.py`）| §Q |
 
 ### codecave
@@ -121,7 +121,7 @@
 - **HUD 图标上叠字**（2026-09-06，真银圣剑）：不改字节。虚表 `+0x44` 拿图标 id，UI 列表建 VM（`0x409670`）+ `set_sprite`（`0x477b00`）；加残机碎片走引擎 `0x457570`。AUDIT §X，待实跑。
 - **局中删卡 / 过关结算事件**（2026-09-06，倒吊人 + 黄金小丑）：不加断点、不改字节。`ce_destroy_card` 复刻 recount `0x4080e0` 的删卡分支，HUD 交给引擎的 `0x408d00`；`on_shop_open` 挂在 `ce_shop_reopen` 已有断点的 MSG 开店分支。AUDIT §W，待实跑。
 - **终符判定**（2026-09-07，古锭刀）：不改字节、无新断点、无新引擎调用。`on_tick_2` 读 boss 活动中断槽的子程序名（`BossDead` / `MBossDead` = 最后一张符卡，ECL 一手全覆盖），翻自机弹 + 抬 `sht+0x28` 基值 ×2。AUDIT §Y，待实跑。
-- **收点系统 / 高速掉钱**（2026-09-08，辉针城 id 127）：被动卡。四个新 SDK 事件 + 断点（表见上）：`on_item_collect`/`on_item_commit` 两断点夹引擎分值加法器、stash SCORE 差量入批（有效窗口只在批集收集后）；`on_item_frame` 里判「池内无在飞计数道具」关批、按批量档位给倍率分数补差 + 碎片 spawn；`on_shot_damage` 按帧节流掉钱。批/档位/碎片循环纯逻辑在 `collect2x_core`（主机单测）；倍率弹字 = 原生 5 槽环（`[0x4cf420]`+`0x9cc`，tick `0x464020`/draw `0x464180`，AUDIT §Z10，Task 8）。AUDIT §Z，待实跑。
+- **收点系统 / 高速掉 P**（2026-09-08，辉针城 id 127；✅ 实跑通过 2026-09-09，Z22 成员门「有就起效、没有不起效」闭环）：被动卡。四个新 SDK 事件 + 断点（表见上）：`on_item_collect`/`on_item_commit` 两断点夹引擎分值加法器、stash SCORE 差量入批（有效窗口只在批集收集后——批集 = V 门真空飞行 state 3 的 {P,钱}，普通触收/环收不入批，Z22）；`on_item_frame` 里判「无 state-3 在飞」关批、按批量档位给倍率分数补差 + 碎片 spawn（延迟 20 帧从当下自机位弹，Z12）；`on_shot_damage` 按帧节流掉 P。批/档位/碎片循环纯逻辑在 `collect2x_core`（主机单测）；倍率弹字 = 原生 5 槽环（`[0x4cf420]`+`0x9cc`，tick `0x464020`/draw `0x464180`，AUDIT §Z10，Task 8）。AUDIT §Z。
 - **SHT shooterset 连射**（2026-09-08，豌豆射手）：不改 exe 字节、无新断点。资源侧**新增一处写入面**——往四个 `pl0X.sht` 的 `+0xe0` 偏移数组的空位（零售用 23/40）追加两组 shooterset（索引 `0x17` / `0x18`）并在文件尾接数据；`assets/sht/append_shooterset.py` 每次回读校验三条不变式（头部 40、set 0 的 func 全 0、前 23 组逐字节不变）。代码侧只调早已复刻好的 `ce_tick_shooters_for_card`（`0x40a9c0` stdcall ret 0x10），**short_timer 自己数**（`param_2` 只进模运算，一手 AUDIT AJ3）。AUDIT §AJ，待实跑。
 - **自机弹伤害倍率层**（2026-09-08，衔尾蛇触发的提炼）：不改字节、无新断点、无新引擎入口。`.bullet_damage_permille` + `ce_dmg_*`（`sdk_core.c`，主机单测）把「加伤害」收成一件事：聚合连乘、由 id 最小的参与者在 `+0x28` 里**乘一次**（单次取整）、并在 `+0x2c` 里按同一倍率抬 `player+0x47984`。K♠ 与古锭刀已迁移（K♠ 顺手修了漏抬上限）。AUDIT §AA，待实跑。
 - **HUD 文字原语**（2026-09-08，倍率读数）：不改字节、无新断点。`ce_hud_text` 照零售 `CardMomoyo__on_draw` `0x4110a0` 复刻——`AsciiManager__drawf_debug` `0x41a110`（cdecl varargs，我们只用固定的 `"%s"`）+ `ASCII_MANAGER_PTR` `0x4cf2ac` + 字色 `+0x19228`（BGRA），只在虚表 `+0x48 on_draw` 里调。第一个用户：伤害层把聚合倍率写在火力值左边。AUDIT §AC，待实跑。
