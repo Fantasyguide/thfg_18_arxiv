@@ -117,6 +117,22 @@ cards_dev: new_weight 20 would overflow the shop pool (> 560 slots) — clamped 
 且游戏一切正常 —— 这条验证的是「dev 配置再也压不爆容量」。
 **加新卡时留意**：池子是 `Σ(weight+5)`，`new_weight 15` 到 28 张新卡就正好 560，之后钳位会自动接手并在日志里说明。
 
+## 1s. 倒吊人删不掉选中的主动卡（2026-09-09 已修，待复跑）
+
+实跑：卡组 { 旋风斩, 股市 }，第一次买倒吊人删掉旋风斩，第二次买**什么也没发生**（钱照扣）。
+根因与修法见 [`AUDIT.md`](AUDIT.md) §AJ —— 当前选中的主动卡原先既不进候选也不许删。
+
+复跑：卡组里只留**一张主动卡**，买倒吊人，应看到
+
+```
+destroy: card 80 was the selected active card; reselect -> none left
+destroy: card 80 (flags 0x9) removed; now total 0 = 0 active + 0 equipment + 0 passive
+hanged: destroyed card 80, money … -> …
+```
+
+带**两张以上**主动卡时删掉正选中的那张，`reselect -> ok`，HUD 的主动卡图标应换成另一张、C 键随即对新卡生效。
+崩溃优先怀疑：`mgr+0x38` 摘空的时点（必须早于虚表 `+0x50`，AJ4）。
+
 ## 1p. 股市（id 80，2026-09-08，待实跑）
 
 主动卡，不开新断点。`cards_dev.js` 起手最后一格已换成 80（原 67）。实现 `native/cards/stock.c` + `stock_core.c`（主机单测 10 组）；审计 AUDIT §AF。
