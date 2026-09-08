@@ -711,11 +711,13 @@ int ce_destroy_card(ce_card_t *victim_)
     uint8_t *mgr = CE_ABILITY_MGR();
     uint8_t *victim = (uint8_t *)victim_;
     if (!mgr || !victim) return 0;
-    if (*(uint8_t **)(mgr + CE_MGR_SELECTED_ACTIVE) == victim) {
-        ce_log("destroy: refused, card %u is the selected active card", ce_card_id(victim));
-        return 0;
-    }
     if (!card_in_list(mgr, victim)) { ce_log("destroy: refused, card %u not in the list", ce_card_id(victim)); return 0; }
+    /* 当前选中的主动卡也能删（2026-09-09）。原先一律拒绝，于是「卡组里只剩一张主动卡」时
+     * 倒吊人会白买一次。做法照零售 recount 的收尾：先把 mgr+0x38 摘空，删完再让引擎自己重选。
+     * 顺序不能反 —— 指针留到对象被释放之后就是悬垂的。*/
+    uint8_t **selected = (uint8_t **)(mgr + CE_MGR_SELECTED_ACTIVE);
+    int was_selected = (*selected == victim);
+    if (was_selected) *selected = NULL;
     uint32_t id = ce_card_id(victim), flags = ce_card_flags(victim);
     uint8_t *node = victim + CE_CARD_LIST_NODE;
     uint8_t *next = *(uint8_t **)(node + CE_NODE_NEXT);
@@ -731,6 +733,10 @@ int ce_destroy_card(ce_card_t *victim_)
     if (id < 255) ((int32_t *)(mgr + CE_MGR_OWNED))[id] = 0;     /* 像没拿过一样：商店能再刷出它 */
     void *vt = *(void **)(victim + CE_CARD_VTABLE);
     ((ce_base_del_t)(*(void **)((uint8_t *)vt + 0x50)))(victim, 1);   /* 0x408147..0x408149 push 1; call [vt+0x50]；我们的桩顺手释放 ce_state */
+    if (was_selected) {
+        int ok = ((int (CE_TC *)(void *, int))CE_FN_SET_SELECTED_ACTIVE)(mgr, -1);
+        ce_log("destroy: card %u was the selected active card; reselect -> %s", id, ok ? "ok" : "none left");
+    }
     ((void (CE_TC *)(void *, int))CE_FN_CREATE_HUD_LISTS)(mgr, 0);
     ce_log("destroy: card %u (flags 0x%x) removed; now total %d = %d active + %d equipment + %d passive", id, flags,
            *(int32_t *)(mgr + CE_MGR_NUM_TOTAL), *(int32_t *)(mgr + CE_MGR_NUM_ACTIVE),
@@ -744,12 +750,13 @@ ce_card_t *ce_pick_random_card(ce_card_t *exclude)
     if (!mgr) return NULL;
     uint8_t *cands[256];
     unsigned n = 0, guard = 0;
-    const uint8_t *selected = *(const uint8_t *const *)(mgr + CE_MGR_SELECTED_ACTIVE);
+    /* 2026-09-09：不再排除「当前选中的主动卡」—— ce_destroy_card 现在能删它并让引擎重选。
+     * 原来排除它，导致卡组里只剩一张主动卡时倒吊人抽不到候选、白买一次（实跑发现）。*/
     for (const uint8_t *node = *(const uint8_t *const *)(mgr + CE_MGR_CARD_LIST_FIRST);
          node && guard < 256;
          node = *(const uint8_t *const *)(node + CE_NODE_NEXT), ++guard) {
         uint8_t *card = *(uint8_t *const *)(node + CE_NODE_CARD);
-        if (!card || card == (uint8_t *)exclude || card == selected) continue;
+        if (!card || card == (uint8_t *)exclude) continue;
         cands[n++] = card;
     }
     int k = ce_pick_index(ce_rand(), n);

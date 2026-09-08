@@ -2,7 +2,7 @@
  * 纯 C11、无引擎依赖、全整数、无浮点；随机数走自带 LCG，只在开局播一次种（见下）。
  * 主机单测 tests/test_stock_core.c。设计：docs/superpowers/specs/2026-09-08-stock-market-design.md。
  *
- * 单位：价格 0.01 金钱（10000 = 100.00）；**持股 = 整股**；成本 / 市值 / 盈亏 = 金钱。
+ * 单位：价格 0.01 金钱（5000 = 50.00）；**持股 = 整股**；成本 / 市值 / 盈亏 = 金钱。
  *
  * ★ 2026-09-08 从「每次固定 50 金」改成「**每次一股**」。理由是可读性：弹幕里没人能对着
  *   0.4327 股做判断，而「我有 3 股」一眼就懂。代价是仓位不再自动按价格摊薄（原来的固定金额
@@ -38,9 +38,9 @@
 #define STOCK_STEP_FRAMES      15      /* 每 15 帧走一步（1 秒 4 次）*/
 #define STOCK_STEPS_PER_CANDLE 16      /* 16 步 = 240 帧 = 4 秒一根 */
 #define STOCK_LOT              1       /* 每次买 / 卖的股数 */
-#define STOCK_PRICE_OPEN       10000
-#define STOCK_PRICE_MIN        1000    /* 10.00：与上限关于开盘价 100.00 对数对称 */
-#define STOCK_PRICE_MAX        100000  /* 1000.00 */
+#define STOCK_PRICE_OPEN       5000    /* 50.00 —— 一股开盘 50 金，和一张便宜卡同价 */
+#define STOCK_PRICE_MIN        500     /* 5.00：与上限关于开盘价 50.00 对数对称 */
+#define STOCK_PRICE_MAX        50000   /* 500.00 */
 #define STOCK_DRIFT_TAU        64      /* 漂移的回归时间常数（步）= 16 秒 ≈ 4 根 K 线，一屏能看到三四段趋势 */
 #define STOCK_DRIFT_NOISE      11      /* 每步给漂移的扰动幅度（基点）；调大 = 趋势更猛、也更容易撞钳位 */
 #define STOCK_DRIFT_CAP        300     /* 漂移绝对值上限（基点 / 步）*/
@@ -48,7 +48,10 @@
 #define STOCK_TARGET_CAP       60      /* 上面那个目标的绝对值上限（基点）*/
 #define STOCK_VOL_TAU          64      /* 波动率的回归时间常数 */
 #define STOCK_VOL_NOISE        4
-#define STOCK_VOL_BASE         45      /* 波动率的静息值（基点）*/
+#define STOCK_VOL_BASE         80      /* 波动率的静息值（基点）。2026-09-08 从 45 提到 80「略微加强振荡」——
+                                        * 实测这是一个**纯视觉旋钮**：相邻步反向率 16％ → 23％（图上明显更来回），
+                                        * 而完美倍数 / 趋势跟随收益 / 撞钳率三项几乎不动，因为价格路径由有惯性的
+                                        * 漂移主导、这一项是无自相关的抖动。波动率聚集也没被稀释（r 0.78 → 0.76）。*/
 #define STOCK_VOL_MIN          15
 #define STOCK_VOL_MAX          160
 

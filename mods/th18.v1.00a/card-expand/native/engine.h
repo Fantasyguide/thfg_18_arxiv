@@ -241,6 +241,10 @@ typedef struct { int32_t prev; int32_t cur; float cur_f; } ce_timer_t;   /* zTim
 /* ---- 可从卡里调的引擎函数（调用约定一手：SDK.md / AUDIT §O16）---- */
 #define CE_FN_ALLOCATE_NEW_CARD    0x411460   /* thiscall(mgr; id, mode)：mode 0 道具 / 1 存档 / 2 购买 / 3 replay；返回 num_total，-1 = 拒 */
 #define CE_FN_CREATE_HUD_LISTS     0x408d00   /* AbilityManager__create_all_card_lists_for_hud：thiscall(mgr; int) ret 4：先按 mgr+0x58 删旧图标 VM，再按三个计数重画三行；分配尾段 mode != 1 时调 (mgr, 0)（AUDIT §W）*/
+#define CE_FN_SET_SELECTED_ACTIVE  0x408b00   /* AbilityManager__set_selected_active_card：thiscall(mgr; delta) ret 4，返回 1 = 选中了。
+                                                 * delta = -1 且当前选中为空时，从链表**尾部**往回找第一张带 flags bit3（主动）的卡，
+                                                 * 写 mgr+0x38 并调 update_selected_active_card_hud 刷图标。找不到就返回 0、保持为空。
+                                                 * D 键切卡走的就是它（0x45c0b0）。删掉「当前选中的主动卡」之后靠它重选（AUDIT §W）。*/
 #define CE_FN_MARK_OBTAINED        0x418de0   /* fastcall(id, notify)：置解锁位（本 mod 的断点把新 id 转进影子 + side-car）*/
 #define CE_FN_TABLE_GET            0x407d70   /* fastcall(id) → zTableCardData*；未命中回落 NULL 行 */
 #define CE_FN_SHOP_PICK_RANDOM     0x416f50   /* fastcall(out*, tier_lo; tier_hi, exclude[], n)：商店随机池抽一张（未拥有、本关可用、按权重、游戏 RNG）；返回非 0 = 抽到，*out = 表行 */

@@ -142,9 +142,9 @@ static void test_shock(void)
     stock_state_t s;
     stock_init(&s, 12345u);
     stock_shock(&s, 200);
-    CHECK(s.price == 12000, "+20％ 冲击后应为 12000，得到 %d", s.price);
+    CHECK(s.price == STOCK_PRICE_OPEN * 12 / 10, "+20％ 冲击后应为 %d，得到 %d", STOCK_PRICE_OPEN * 12 / 10, s.price);
     stock_shock(&s, -500);
-    CHECK(s.price == 6000, "−50％ 冲击后应为 6000，得到 %d", s.price);
+    CHECK(s.price == STOCK_PRICE_OPEN * 12 / 10 / 2, "−50％ 冲击后应为 %d，得到 %d", STOCK_PRICE_OPEN * 12 / 10 / 2, s.price);
     for (int i = 0; i < 40; ++i) stock_shock(&s, 900);
     CHECK(s.price == STOCK_PRICE_MAX, "连续暴涨应钳在上限，得到 %d", s.price);
     for (int i = 0; i < 40; ++i) stock_shock(&s, -900);
@@ -157,14 +157,17 @@ static void test_buy(void)
 {
     stock_state_t s;
     stock_init(&s, 1u);
-    int32_t money = 250;
-    CHECK(stock_share_price(&s) == 100, "100.00 一股应花 100 金，得到 %d", stock_share_price(&s));
-    CHECK(stock_buy(&s, &money) == 1 && money == 150 && s.hold == 1, "第一股：money=%d hold=%d", money, s.hold);
-    CHECK(stock_buy(&s, &money) == 1 && money == 50 && s.hold == 2, "第二股：money=%d hold=%d", money, s.hold);
-    CHECK(stock_buy(&s, &money) == 0 && money == 50 && s.hold == 2, "钱不够一股就不该成交");
-    CHECK(s.cost == 200, "成本应为 200，得到 %d", s.cost);
-    s.price = 4000;                                  /* 跌到 40.00，同样的钱能买了 */
-    CHECK(stock_buy(&s, &money) == 1 && money == 10 && s.hold == 3, "便宜时能买：money=%d hold=%d", money, s.hold);
+    /* 用 STOCK_PRICE_OPEN 表达，改基准价时不会朽 */
+    const int32_t px = STOCK_PRICE_OPEN / 100;
+    int32_t money = px * 2 + px / 2;                 /* 够买两股、离第三股差一点 */
+    CHECK(stock_share_price(&s) == px, "开盘一股应花 %d 金，得到 %d", px, stock_share_price(&s));
+    CHECK(stock_buy(&s, &money) == 1 && s.hold == 1, "第一股：money=%d hold=%d", money, s.hold);
+    CHECK(stock_buy(&s, &money) == 1 && s.hold == 2, "第二股：money=%d hold=%d", money, s.hold);
+    CHECK(money == px / 2, "两股之后应剩 %d，得到 %d", px / 2, money);
+    CHECK(stock_buy(&s, &money) == 0 && money == px / 2 && s.hold == 2, "钱不够一股就不该成交");
+    CHECK(s.cost == px * 2, "成本应为 %d，得到 %d", px * 2, s.cost);
+    s.price = STOCK_PRICE_OPEN / 4;                  /* 跌到四分之一：剩下的钱又买得起了 */
+    CHECK(stock_buy(&s, &money) == 1 && s.hold == 3, "便宜时能买：money=%d hold=%d", money, s.hold);
     money = -5;
     CHECK(stock_buy(&s, &money) == 0, "负数现金不该成交");
 }
@@ -176,14 +179,16 @@ static void test_sell(void)
     stock_init(&s, 2u);
     int32_t money = 0;
     CHECK(stock_sell(&s, &money) == 0 && money == 0, "空仓不该卖");
+    const int32_t px = STOCK_PRICE_OPEN / 100;
     money = 1000;
-    stock_buy(&s, &money); stock_buy(&s, &money);     /* 100.00 × 2 股 */
-    CHECK(money == 800 && s.hold == 2, "两股之后 money=%d hold=%d", money, s.hold);
-    s.price = 25000;                                  /* 涨到 250.00 */
-    CHECK(stock_sell(&s, &money) == 1 && money == 1050 && s.hold == 1, "卖一股：money=%d hold=%d", money, s.hold);
-    CHECK(stock_sell(&s, &money) == 1 && money == 1300 && s.hold == 0, "卖光：money=%d hold=%d", money, s.hold);
+    stock_buy(&s, &money); stock_buy(&s, &money);     /* 开盘价 × 2 股 */
+    CHECK(money == 1000 - 2 * px && s.hold == 2, "两股之后 money=%d hold=%d", money, s.hold);
+    s.price = STOCK_PRICE_OPEN * 5;                   /* 涨到五倍 */
+    const int32_t hi = s.price / 100;
+    CHECK(stock_sell(&s, &money) == 1 && money == 1000 - 2 * px + hi && s.hold == 1, "卖一股：money=%d", money);
+    CHECK(stock_sell(&s, &money) == 1 && money == 1000 - 2 * px + 2 * hi && s.hold == 0, "卖光：money=%d", money);
     CHECK(stock_sell(&s, &money) == 0, "卖光了再卖应拒绝");
-    CHECK(s.cost == 200 - 500, "成本应被卖出所得抵成 %d，得到 %d", 200 - 500, s.cost);
+    CHECK(s.cost == 2 * px - 2 * hi, "成本应被卖出所得抵成 %d，得到 %d", 2 * px - 2 * hi, s.cost);
 }
 
 /* 同价来回：任意价位都正好不赚不亏（这是「一股一价、买卖同式」的直接推论）*/
@@ -223,8 +228,9 @@ static void test_value_pnl(void)
     CHECK(stock_pnl(&s) == 23, "盈亏应为 +23，得到 %d", stock_pnl(&s));
     s.price = 5000;
     CHECK(stock_pnl(&s) == -50, "跌到 50.00 盈亏应为 −50，得到 %d", stock_pnl(&s));
-    s.hold = 100000; s.price = STOCK_PRICE_MAX;                             /* 10 万股 × 1000.00：int64 中间量 */
-    CHECK(stock_value(&s) == 100000000, "大持仓市值应为 100000000，得到 %d", stock_value(&s));
+    s.hold = 100000; s.price = STOCK_PRICE_MAX;                             /* 10 万股 × 上限价：int64 中间量 */
+    CHECK(stock_value(&s) == 100000 * (STOCK_PRICE_MAX / 100),
+          "大持仓市值应为 %d，得到 %d", 100000 * (STOCK_PRICE_MAX / 100), stock_value(&s));
 }
 
 static void test_layout(void)

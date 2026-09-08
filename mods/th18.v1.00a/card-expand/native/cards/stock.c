@@ -52,8 +52,6 @@
 #define TEXT_SCALE      1.35f           /* 侧栏这两行比金钱再大一圈 —— 它们是这张卡的主读数 */
 #define TEXT_COLOR      CE_HUD_POWER_COLOR
 #define TEXT_HOLD_COLOR 0xffffd040u      /* 亮金，比金钱那行的暗橄榄色显眼 */
-#define TEXT_GAIN_COLOR 0xff40ff40u      /* AARRGGBB：赚了 = 亮绿 */
-#define TEXT_LOSS_COLOR 0xffff4040u      /* 亏了 = 亮红 */
 
 /* —— 自机头上的价格（640 空间）——
  * 弹幕区视口 (32, 16, 384, 448)，世界坐标 (0,0) 在弹幕区上边框中点（originMode 1，AUDIT §AI）。
@@ -70,8 +68,10 @@
 #define COLOR_BASIS     0xffffd040u      /* 回本线：暖黄，与红涨绿跌都不撞 */
 
 #define COLOR_BG        0xdc000000u     /* AARRGGBB：黑，alpha 220 —— 要盖住底下的总分 / 最高分，不能太透 */
-#define COLOR_UP        0xffff4040u     /* 红涨 */
-#define COLOR_DOWN      0xff40ff40u     /* 绿跌 */
+/* ★ 全卡只有这一对涨跌色，蜡烛与所有数字共用 —— 「红涨绿跌」在一个地方定义，就不会两边跑偏。
+ * （2026-09-09 之前文字用的是西方的绿赚红亏，与蜡烛正好相反。）*/
+#define COLOR_UP        0xffff4040u     /* 红：涨 / 赚 */
+#define COLOR_DOWN      0xff40ff40u     /* 绿：跌 / 亏 */
 
 typedef struct {
     stock_state_t st;
@@ -244,23 +244,24 @@ static int on_draw(ce_card_t *c)
         ce_hud_text_ex(TEXT_HOLD_X, TEXT_HOLD_Y, TEXT_HOLD_COLOR, CE_ASCII_SHADOW_DARK,
                        CE_ASCII_FONT_MONEY, CE_ASCII_GROUP_MONEY, CE_ASCII_ALIGN_RIGHT, TEXT_SCALE,
                        "%dx %d", st->hold, stock_value(st));
-        ce_hud_text_ex(TEXT_HOLD_X, TEXT_PL_Y, pnl < 0 ? TEXT_LOSS_COLOR : TEXT_GAIN_COLOR, CE_ASCII_SHADOW_DARK,
+        ce_hud_text_ex(TEXT_HOLD_X, TEXT_PL_Y, pnl < 0 ? COLOR_DOWN : COLOR_UP, CE_ASCII_SHADOW_DARK,
                        CE_ASCII_FONT_MONEY, CE_ASCII_GROUP_MONEY, CE_ASCII_ALIGN_RIGHT, TEXT_SCALE,
                        "%c%d", pnl < 0 ? '-' : '+', pnl < 0 ? -pnl : pnl);
     }
 
-    /* ③ 自机头顶：两行居中。上行「几股 × 一股多少钱」，下行本局盈亏；空仓时只报一股的价钱。
-       颜色即答案：绿 = 现价高于均价（该卖）、红 = 低于均价（该买）、白 = 空仓。 */
+    /* ③ 自机头顶：两行居中，与侧栏**同一个格式** —— 上行「股数 × 持仓总价」，下行本局盈亏。
+       空仓时那两个数都是 0、没有意义，改报一股的价钱（此时唯一有用的信息：买不买得起）。
+       颜色沿用同一对：红 = 现价高于均价（赚，该卖）、绿 = 低于均价（亏，该买）、白 = 空仓。 */
     pp = ce_player_pos();
     if (pp) {
         uint32_t col = !basis ? CE_ASCII_COLOR_WHITE
-                     : st->price >= basis ? TEXT_GAIN_COLOR : TEXT_LOSS_COLOR;
+                     : st->price >= basis ? COLOR_UP : COLOR_DOWN;
         float cx = PLAYER_TEXT_CX + pp[0], cy = PLAYER_TEXT_CY + pp[1];
         if (st->hold > 0) {
             ce_hud_text_ex(cx, cy + PLAYER_TEXT_DY, col, CE_ASCII_SHADOW_DARK,
                            -1, -1, CE_ASCII_ALIGN_CENTER, PLAYER_SCALE,
-                           "%dx %d", st->hold, stock_share_price(st));
-            ce_hud_text_ex(cx, cy + PLAYER_TEXT_DY2, pnl < 0 ? TEXT_LOSS_COLOR : TEXT_GAIN_COLOR, CE_ASCII_SHADOW_DARK,
+                           "%dx %d", st->hold, stock_value(st));   /* 与侧栏同格式：股数 × 持仓总价 */
+            ce_hud_text_ex(cx, cy + PLAYER_TEXT_DY2, pnl < 0 ? COLOR_DOWN : COLOR_UP, CE_ASCII_SHADOW_DARK,
                            -1, -1, CE_ASCII_ALIGN_CENTER, PLAYER_SCALE,
                            "%c%d", pnl < 0 ? '-' : '+', pnl < 0 ? -pnl : pnl);
         } else {
