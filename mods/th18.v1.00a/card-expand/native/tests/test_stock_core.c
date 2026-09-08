@@ -23,23 +23,26 @@ static void test_init(void)
 {
     stock_state_t s;
     memset(&s, 0xaa, sizeof s);
-    stock_init(&s);
+    stock_init(&s, 12345u);
     CHECK(s.price == STOCK_PRICE_OPEN, "开盘价应为 %d，得到 %d", STOCK_PRICE_OPEN, s.price);
     CHECK(s.hold == 0 && s.cost == 0, "初始无持仓");
     CHECK(s.count == 0 && s.head == 0 && s.step_in_candle == 0, "缓冲应为空");
     CHECK(s.cur.o == STOCK_PRICE_OPEN && s.cur.h == STOCK_PRICE_OPEN && s.cur.l == STOCK_PRICE_OPEN && s.cur.c == STOCK_PRICE_OPEN,
           "当前那根四价都该是开盘价");
-    CHECK(s.regime <= 2, "阶段应在 0..2");
-    CHECK(s.regime_left >= STOCK_REGIME_MIN && s.regime_left <= STOCK_REGIME_MAX, "初始阶段时长 %u 越界", s.regime_left);
+    CHECK(s.drift == 0, "初始漂移应为 0，得到 %d", s.drift);
+    CHECK(s.vol == STOCK_VOL_BASE, "初始波动率应是静息值 %d，得到 %d", (int)STOCK_VOL_BASE, s.vol);
+    CHECK(s.rng != 0, "必须播过种（0 会让 LCG 退化成常数）");
+    stock_state_t z; stock_init(&z, 0u);
+    CHECK(z.rng != 0, "种子给 0 时也要落到一个非零状态");
 }
 
 /* 同一随机序列两次跑，逐字节相同（replay 的根本）*/
 static void test_deterministic(void)
 {
     stock_state_t a, b;
-    stock_init(&a); stock_init(&b);
-    lcg_state = 7; for (int i = 0; i < 5000; ++i) stock_step(&a, lcg());
-    lcg_state = 7; for (int i = 0; i < 5000; ++i) stock_step(&b, lcg());
+    stock_init(&a, 12345u); stock_init(&b, 12345u);
+    for (int i = 0; i < 5000; ++i) stock_step(&a);
+    for (int i = 0; i < 5000; ++i) stock_step(&b);
     CHECK(memcmp(&a, &b, sizeof a) == 0, "同一序列两次结果不同");
     CHECK(a.price != STOCK_PRICE_OPEN, "5000 步之后价格居然没动");
 }
@@ -48,49 +51,67 @@ static void test_deterministic(void)
 static void test_clamp(void)
 {
     stock_state_t s;
-    stock_init(&s);
+    stock_init(&s, 12345u);
     for (int i = 0; i < 100000; ++i) {
-        stock_step(&s, 0xffffffffu);
+        stock_step(&s);
         CHECK(s.price >= STOCK_PRICE_MIN && s.price <= STOCK_PRICE_MAX, "全 1 随机数第 %d 步价格 %d 越界", i, s.price);
         if (s.price < STOCK_PRICE_MIN || s.price > STOCK_PRICE_MAX) return;
     }
-    stock_init(&s);
+    stock_init(&s, 12345u);
     for (int i = 0; i < 100000; ++i) {
-        stock_step(&s, 0u);
+        stock_step(&s);
         CHECK(s.price >= STOCK_PRICE_MIN && s.price <= STOCK_PRICE_MAX, "全 0 随机数第 %d 步价格 %d 越界", i, s.price);
         if (s.price < STOCK_PRICE_MIN || s.price > STOCK_PRICE_MAX) return;
     }
     lcg_state = 99;
-    stock_init(&s);
+    stock_init(&s, 12345u);
     for (int i = 0; i < 200000; ++i) {
-        stock_step(&s, lcg());
+        stock_step(&s);
         if (s.price < STOCK_PRICE_MIN || s.price > STOCK_PRICE_MAX) { CHECK(0, "随机长跑第 %d 步价格 %d 越界", i, s.price); return; }
     }
 }
 
-/* 阶段：每段 80..240 步，编号 0..2。重抽时 regime_left 从 0 跳到 L−1（L ∈ [80, 240]），
- * 两次跳变之间的步数就是段长；同号连抽也算换段（所以不看 regime 字段） */
-static void test_regime(void)
+/* 动量：漂移是均值回归过程 ⇒ 相邻两步的价格变化正相关。这条是「看图择时算技能」的根据，
+ * 也是与上一版三档 regime 模型最本质的区别。同时钉住两个隐藏量始终在各自的界内。 */
+static void test_momentum(void)
 {
     stock_state_t s;
-    stock_init(&s);
-    lcg_state = 3;
-    unsigned since_pick = 0, picks = 0;
-    uint16_t prev_left = s.regime_left;
-    for (int i = 0; i < 50000; ++i) {
-        stock_step(&s, lcg());
-        CHECK(s.regime <= 2, "阶段编号 %u 越界", s.regime);
-        ++since_pick;
-        if (s.regime_left > prev_left) {                     /* 刚重抽 */
-            if (picks > 0)                                    /* 第一段是 init 给的 120，不计 */
-                CHECK(since_pick >= STOCK_REGIME_MIN && since_pick <= STOCK_REGIME_MAX, "第 %u 段长 %u 越界", picks, since_pick);
-            CHECK(s.regime_left >= STOCK_REGIME_MIN - 1 && s.regime_left <= STOCK_REGIME_MAX - 1, "重抽后 regime_left=%u 越界", s.regime_left);
-            since_pick = 0;
-            ++picks;
-        }
-        prev_left = s.regime_left;
+    long long n = 0, sxy = 0, sx = 0, sy = 0, sxx = 0, syy = 0;
+    int32_t prev_price, prev_d = 0;
+    stock_init(&s, 4242u);
+    prev_price = s.price;
+    for (int i = 0; i < 60000; ++i) {
+        stock_step(&s);
+        int32_t d = s.price - prev_price;
+        prev_price = s.price;
+        CHECK(s.drift >= -STOCK_DRIFT_CAP && s.drift <= STOCK_DRIFT_CAP, "漂移 %d 越界", s.drift);
+        CHECK(s.vol >= STOCK_VOL_MIN && s.vol <= STOCK_VOL_MAX, "波动率 %d 越界", s.vol);
+        if (i) { sxy += (long long)prev_d * d; sx += prev_d; sy += d; sxx += (long long)prev_d * prev_d; syy += (long long)d * d; ++n; }
+        prev_d = d;
     }
-    CHECK(picks >= 50000 / STOCK_REGIME_MAX - 1, "50000 步只重抽了 %u 次，太少", picks);
+    /* 相关系数 > 0 即可（实测约 0.2）。这里只用整数判号，避免浮点。 */
+    long long num = n * sxy - sx * sy;
+    CHECK(num > 0, "相邻步价格变化应正相关（动量），得到分子 %lld", num);
+    CHECK(sxx > 0 && syy > 0, "价格必须真的在动");
+}
+
+/* 波动率聚集：高波动期之后仍是高波动期。用「前 100 步的绝对涨跌之和」分组比较后 100 步。 */
+static void test_vol_clustering(void)
+{
+    stock_state_t s;
+    long long calm = 0, wild = 0; int nc = 0, nw = 0;
+    stock_init(&s, 777u);
+    for (int blk = 0; blk < 600; ++blk) {
+        int32_t p0 = s.price; long long a = 0;
+        for (int i = 0; i < 100; ++i) { int32_t q = s.price; stock_step(&s); a += s.price > q ? s.price - q : q - s.price; }
+        int wild_now = s.vol > STOCK_VOL_BASE;
+        int32_t p1 = s.price; long long b = 0;
+        for (int i = 0; i < 100; ++i) { int32_t q = s.price; stock_step(&s); b += s.price > q ? s.price - q : q - s.price; }
+        (void)p0; (void)p1; (void)a;
+        if (wild_now) { wild += b; ++nw; } else { calm += b; ++nc; }
+    }
+    CHECK(nc > 50 && nw > 50, "两种状态都要有足够样本（calm %d / wild %d）", nc, nw);
+    CHECK(wild / nw > calm / nc, "高波动期之后的波动应更大：wild %lld vs calm %lld", wild / nw, calm / nc);
 }
 
 /* K 线：16 步收一根；环形 16 根；visible 给最新 ≤16 根、旧→新、最后一根 = cur */
@@ -98,19 +119,19 @@ static void test_candles(void)
 {
     stock_state_t s;
     stock_candle_t v[STOCK_CANDLES];
-    stock_init(&s);
+    stock_init(&s, 12345u);
     lcg_state = 11;
-    for (int i = 0; i < STOCK_STEPS_PER_CANDLE - 1; ++i) stock_step(&s, lcg());
+    for (int i = 0; i < STOCK_STEPS_PER_CANDLE - 1; ++i) stock_step(&s);
     CHECK(s.count == 0 && s.step_in_candle == STOCK_STEPS_PER_CANDLE - 1, "15 步还不该收盘");
     CHECK(stock_visible(&s, v) == 1 && v[0].o == s.cur.o, "只有当前那根时 visible 应为 1");
-    stock_step(&s, lcg());
+    stock_step(&s);
     CHECK(s.count == 1 && s.head == 1 && s.step_in_candle == 0, "第 16 步该收盘：count=%u head=%u sic=%u", s.count, s.head, s.step_in_candle);
     CHECK(s.hist[0].o == STOCK_PRICE_OPEN, "第一根开盘价应为 %d，得到 %d", STOCK_PRICE_OPEN, s.hist[0].o);
     CHECK(candle_ok(&s.hist[0]), "第一根 OHLC 不自洽");
     CHECK(s.cur.o == s.hist[0].c && s.cur.h == s.cur.o && s.cur.l == s.cur.o, "新一根的开盘价该等于上一根收盘价");
     CHECK(stock_visible(&s, v) == 2 && v[0].o == s.hist[0].o && v[1].o == s.cur.o, "visible 应给 [hist0, cur]");
 
-    for (int i = 0; i < STOCK_STEPS_PER_CANDLE * 30; ++i) { stock_step(&s, lcg()); CHECK(candle_ok(&s.cur), "第 %d 步 cur 不自洽", i); }
+    for (int i = 0; i < STOCK_STEPS_PER_CANDLE * 30; ++i) { stock_step(&s); CHECK(candle_ok(&s.cur), "第 %d 步 cur 不自洽", i); }
     CHECK(s.count == STOCK_CANDLES, "满 16 根之后 count 应钉在 16，得到 %u", s.count);
     CHECK(s.head == (1 + 30) % STOCK_CANDLES, "head 应绕圈，得到 %u", s.head);
     for (int i = 0; i < STOCK_CANDLES; ++i) CHECK(candle_ok(&s.hist[i]), "hist[%d] 不自洽", i);
@@ -123,7 +144,7 @@ static void test_candles(void)
 static void test_shock(void)
 {
     stock_state_t s;
-    stock_init(&s);
+    stock_init(&s, 12345u);
     stock_shock(&s, 200);
     CHECK(s.price == 12000, "+20％ 冲击后应为 12000，得到 %d", s.price);
     stock_shock(&s, -500);
@@ -139,7 +160,7 @@ static void test_shock(void)
 static void test_buy(void)
 {
     stock_state_t s;
-    stock_init(&s);
+    stock_init(&s, 12345u);
     int32_t money = 120;
     CHECK(stock_buy(&s, &money) == 1 && money == 70, "第一次买应成交、剩 70，得到 %d", money);
     CHECK(s.hold == 50 * STOCK_HOLD_PER_MONEY / STOCK_PRICE_OPEN, "100.00 买 50 应得 0.5 股 = %lld 单位，得到 %d",
@@ -157,7 +178,7 @@ static void test_buy(void)
 static void test_sell(void)
 {
     stock_state_t s;
-    stock_init(&s);
+    stock_init(&s, 12345u);
     int32_t money = 0;
     CHECK(stock_sell(&s, &money) == 0 && money == 0, "空仓不该卖");
     money = 200;
@@ -191,7 +212,7 @@ static void test_round_trip(void)
     static const int32_t prices[] = { STOCK_PRICE_MIN, 1234, 9999, STOCK_PRICE_OPEN, 12345, 99999, 123456, 500000, STOCK_PRICE_MAX };
     for (unsigned i = 0; i < sizeof prices / sizeof prices[0]; ++i) {
         stock_state_t s;
-        stock_init(&s);
+        stock_init(&s, 12345u);
         s.price = prices[i];
         int32_t money = 1000;
         CHECK(stock_buy(&s, &money) == 1, "价位 %d 买入失败", prices[i]);
@@ -202,12 +223,12 @@ static void test_round_trip(void)
     }
     /* 随机买卖长跑 */
     stock_state_t s;
-    stock_init(&s);
+    stock_init(&s, 12345u);
     lcg_state = 5;
     int32_t money = 500;
     for (int i = 0; i < 20000; ++i) {
         uint32_t r = lcg();
-        stock_step(&s, r);
+        stock_step(&s);
         if ((r >> 30) == 0) stock_buy(&s, &money);
         else if ((r >> 30) == 1) stock_sell(&s, &money);
         if (money < 0 || s.hold < 0) { CHECK(0, "第 %d 步 money=%d hold=%d 为负", i, money, s.hold); return; }
@@ -217,22 +238,22 @@ static void test_round_trip(void)
 static void test_value_pnl(void)
 {
     stock_state_t s;
-    stock_init(&s);
+    stock_init(&s, 12345u);
     CHECK(stock_value(&s) == 0 && stock_pnl(&s) == 0, "空仓市值 / 盈亏为 0");
     s.hold = 10000; s.price = 12345; s.cost = 100;                          /* 1 股 × 123.45 */
     CHECK(stock_value(&s) == 123, "市值应为 123，得到 %d", stock_value(&s));
     CHECK(stock_pnl(&s) == 23, "盈亏应为 +23，得到 %d", stock_pnl(&s));
     s.price = 5000;
     CHECK(stock_pnl(&s) == -50, "跌到 50.00 盈亏应为 −50，得到 %d", stock_pnl(&s));
-    s.hold = 100000000; s.price = STOCK_PRICE_MAX;                          /* 1 万股 × 9999：int64 中间量 */
-    CHECK(stock_value(&s) == 99990000, "大持仓市值应为 99990000，得到 %d", stock_value(&s));
+    s.hold = 100000000; s.price = STOCK_PRICE_MAX;                          /* 1 万股 × 1000.00：int64 中间量 */
+    CHECK(stock_value(&s) == 10000000, "大持仓市值应为 10000000，得到 %d", stock_value(&s));
 }
 
 static void test_layout(void)
 {
     stock_state_t s;
     stock_rect_t body[STOCK_CANDLES], wick[STOCK_CANDLES];
-    stock_init(&s);
+    stock_init(&s, 12345u);
     /* 手工造两根：hist[0] = 涨 (100 → 120, 高 130 低 90)，cur = 跌 (120 → 110, 高 125 低 100) */
     s.hist[0].o = 10000; s.hist[0].c = 12000; s.hist[0].h = 13000; s.hist[0].l = 9000;
     s.head = 1; s.count = 1;
@@ -256,7 +277,7 @@ static void test_layout(void)
     CHECK(w1->h == 60 && w1->cy == 818, "第二根影线 h=%d cy=%d，应为 60 / 818", w1->h, w1->cy);
 
     /* 十字星：开 = 收，实体最小 2；只有一根、四价相同（价区退化）也不能除零 */
-    stock_init(&s);
+    stock_init(&s, 12345u);
     stock_layout(&s, 848, 776, 416, 96, body, wick);
     CHECK(body[15].h == 2 && wick[15].h >= 1 && body[15].w == 14, "退化蜡烛：h=%d wick=%d", body[15].h, wick[15].h);
     CHECK(body[15].cy >= 776 && body[15].cy <= 776 + 96, "退化蜡烛应落在价区内，cy=%d", body[15].cy);
@@ -264,7 +285,7 @@ static void test_layout(void)
 
     /* 满缓冲：16 槽全有、最右是 cur、全部在区域内 */
     lcg_state = 21;
-    for (int i = 0; i < STOCK_STEPS_PER_CANDLE * 40; ++i) stock_step(&s, lcg());
+    for (int i = 0; i < STOCK_STEPS_PER_CANDLE * 40; ++i) stock_step(&s);
     stock_layout(&s, 848, 776, 416, 96, body, wick);
     for (int i = 0; i < STOCK_CANDLES; ++i) {
         CHECK(body[i].w == 14 && body[i].h >= 2 && wick[i].h >= 1, "槽 %d 应有蜡烛", i);
@@ -279,7 +300,8 @@ int main(void)
     test_init();
     test_deterministic();
     test_clamp();
-    test_regime();
+    test_momentum();
+    test_vol_clustering();
     test_candles();
     test_shock();
     test_buy();

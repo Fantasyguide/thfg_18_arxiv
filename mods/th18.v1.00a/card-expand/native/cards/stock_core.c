@@ -19,41 +19,53 @@ static void candle_track(stock_candle_t *k, int32_t p)
     k->c = p;
 }
 
-/* 阶段重抽：用 rnd 的一个整数散列，跟噪声用的位分开 */
-static void pick_regime(stock_state_t *s, uint32_t rnd)
+/* 自带 LCG（Numerical Recipes 常数）。只为「不去动引擎那只共用 RNG」而存在，见头文件。 */
+static uint32_t lcg(stock_state_t *s)
 {
-    uint32_t h = rnd * 2654435761u;
-    s->regime = (uint8_t)((h >> 8) % 3u);
-    s->regime_left = (uint16_t)(STOCK_REGIME_MIN + (h >> 16) % (uint32_t)(STOCK_REGIME_MAX - STOCK_REGIME_MIN + 1));
+    s->rng = s->rng * 1664525u + 1013904223u;
+    return s->rng;
 }
 
-void stock_init(stock_state_t *s)
+/* 取 v 的低 10 位，映射到 [-amp, amp] 的均匀整数 */
+static int32_t uni(uint32_t v, int32_t amp)
+{
+    return (int32_t)(((v & 0x3ffu) * (uint32_t)(2 * amp + 1)) >> 10) - amp;
+}
+
+static int32_t clampi(int32_t x, int32_t lo, int32_t hi)
+{
+    return x < lo ? lo : x > hi ? hi : x;
+}
+
+void stock_init(stock_state_t *s, uint32_t seed)
 {
     memset(s, 0, sizeof *s);
     s->price = STOCK_PRICE_OPEN;
+    s->rng   = seed ? seed : 1u;          /* 0 是 LCG 的合法状态，但换成 1 省得看着像没播种 */
+    s->drift = 0;
+    s->vol   = STOCK_VOL_BASE;
     candle_open(&s->cur, s->price);
-    s->regime = 0;
-    s->regime_left = 120;               /* 首段：平盘 30 秒，让玩家先看一会儿 */
 }
 
-/* 10 位均匀数 → [−1000, 1000] */
-static int32_t uni10(uint32_t v) { return (int32_t)(((v & 0x3ffu) * 2001u) >> 10) - 1000; }
-
-/* 占位模型（spec §3）：r（基点）= 阶段漂移 + 阶段波动 × 噪声 + 均值回归；price += price × r / 10000 */
-void stock_step(stock_state_t *s, uint32_t rnd)
+/* 一步 = STOCK_STEP_FRAMES 帧。两个隐藏状态各自做均值回归，价格再按它们走。 */
+void stock_step(stock_state_t *s)
 {
-    static const int32_t drift[3] = { 0, 15, -15 };
-    static const int32_t vol[3]   = { 40, 60, 60 };
+    uint32_t r = lcg(s);
 
-    if (s->regime_left == 0) pick_regime(s, rnd);       /* 本步已用新阶段；段长 = L 步（含本步）*/
-    s->regime_left--;
-    if (s->regime > 2) s->regime = 0;    /* 防御性（M4）：正常路径走不到这——唯一写手 pick_regime 用 %3 写、stock_init 清零结构体；
-                                             留着是防私有状态块（s_mem，见 sdk_core.c）被别处写坏，不是没删干净 */
+    /* 估值拉力：价格越高，漂移的回归目标越负 —— 贵了就该跌，便宜了就该涨 */
+    int32_t target = clampi(-(s->price - STOCK_PRICE_OPEN) * STOCK_VALUATION_PULL / STOCK_PRICE_OPEN,
+                            -STOCK_TARGET_CAP, STOCK_TARGET_CAP);
+    int32_t drift  = s->drift + (target - s->drift) / STOCK_DRIFT_TAU + uni(r, STOCK_DRIFT_NOISE);
+    s->drift = (int16_t)clampi(drift, -STOCK_DRIFT_CAP, STOCK_DRIFT_CAP);
 
-    int32_t noise = (uni10(rnd) + uni10(rnd >> 10) + uni10(rnd >> 20)) / 3;          /* 三个均匀数之和 / 3，近似正态，[−1000, 1000] */
-    int64_t r = drift[s->regime] + (int64_t)vol[s->regime] * noise / 1000 + (STOCK_PRICE_OPEN - s->price) / 400;
-    int64_t p = s->price + (int64_t)s->price * r / 10000;
-    s->price = clamp_price(p);
+    int32_t vol = s->vol + (STOCK_VOL_BASE - s->vol) / STOCK_VOL_TAU + uni(r >> 10, STOCK_VOL_NOISE);
+    s->vol = (int16_t)clampi(vol, STOCK_VOL_MIN, STOCK_VOL_MAX);
+
+    /* 两个均匀数相加近似正态；用与上面不重叠的位 */
+    int32_t noise = (uni(r >> 20, 1000) + uni(lcg(s), 1000)) / 2;
+    int64_t rr = s->drift + (int64_t)s->vol * noise / 1000;
+    s->price = clamp_price(s->price + (int64_t)s->price * rr / 10000);
+
     candle_track(&s->cur, s->price);
     s->steps++;
 

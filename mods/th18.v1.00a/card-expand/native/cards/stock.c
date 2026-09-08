@@ -137,7 +137,11 @@ static void draw_candles(stock_card_t *s)
 static int ctor(ce_card_t *c)
 {
     stock_card_t *s = ce_state(c, stock_card_t);
-    if (s && !s->inited) { stock_init(&s->st); s->inited = 1; ce_log("stock: opened at %d.%02d", s->st.price / 100, s->st.price % 100); }
+    if (s && !s->inited) {
+        stock_init(&s->st, ce_rand());          /* 只在这里向引擎那只回放安全 RNG 取一次；之后走自带 LCG（stock_core.h ★）*/
+        s->inited = 1;
+        ce_log("stock: opened at %d.%02d (seed %08x)", s->st.price / 100, s->st.price % 100, s->st.rng);
+    }
     return 0;
 }
 
@@ -166,7 +170,7 @@ static int on_tick_2(ce_card_t *c)
     if (!s || !s->inited) return 0;
     if (++s->frame >= STOCK_STEP_FRAMES) {
         s->frame = 0;
-        stock_step(&s->st, ce_rand());
+        stock_step(&s->st);
         redraw = 1;
     }
     if (!vms_alive(s)) { if (!vms_retry(s)) return 0; redraw = 1; }
