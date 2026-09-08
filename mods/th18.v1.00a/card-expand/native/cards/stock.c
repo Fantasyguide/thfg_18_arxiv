@@ -29,20 +29,22 @@
  *   我们的图元永远后画 —— 文字压面板做不到，只能让两者不重叠。读数因此放在面板**下方**
  *   那条空隙里（面板底 96，残机行 120，中间的 104 是空的）。*/
 #define UI_CANDLE_X0    856             /* 640 空间 428 */
-#define UI_CANDLE_Y0    68              /* 640 空间 34 */
+#define UI_CANDLE_Y0    44              /* 640 空间 22 */
 #define UI_CANDLE_W     400             /* 16 根 × pitch 25，实体宽 13 */
 #define UI_CANDLE_H     112             /* 640 空间 56 */
-#define UI_BG_CX        1056            /* 底板中心 (528, 62)，尺寸 212×68 —— 罩住蜡烛区，盖掉总分 / 最高分 */
-#define UI_BG_CY        124
+/* 底板中心 (528, 50)、尺寸 212×68 ⇒ 顶边落在 640 空间的 y = 16，
+ * 正好与弹幕区上边框对齐（相机 0 的视口是 (32, 16, 384, 448)，AUDIT §AI）。*/
+#define UI_BG_CX        1056
+#define UI_BG_CY        100
 #define UI_BG_W         424
 #define UI_BG_H         136
-/* —— 文字：640×480 字面量空间（AUDIT AC6）——
- * 行情读数塞在面板底与残机行之间的空隙；持仓净值贴在金钱数左边，用金钱同款字色，
- * 这样「我有多少钱 + 多少在股里」是并排的一句话。*/
+/* —— 文字：640×480 字面量空间（AUDIT AC6）—— */
 #define TEXT_TICKER_X   528.0f          /* 侧栏中线 */
-#define TEXT_TICKER_Y   104.0f          /* 面板底 96 与残机行 120 之间 */
-#define TEXT_HOLD_X     470.0f          /* 金钱右对齐于 620，五位数约占到 570，这里安全 */
-#define TEXT_HOLD_Y     204.0f          /* 与金钱同一行 */
+#define TEXT_TICKER_Y   96.0f           /* 面板底 84 与残机行 120 之间 */
+/* 持仓净值：与金钱**同一个右边界**、就在它下面一行，字体也照抄金钱那行（font 10 / group 3），
+ * 默认的 font 0 比金钱小一圈，而且贴在金钱左边会撞上「金」的图标。*/
+#define TEXT_HOLD_X     620.0f
+#define TEXT_HOLD_Y     218.0f
 #define TEXT_COLOR      CE_HUD_POWER_COLOR
 #define TEXT_HOLD_COLOR CE_HUD_MONEY_COLOR
 
@@ -189,9 +191,10 @@ static int on_draw(ce_card_t *c)
     /* 面板下方一行：现价 + 涨跌箭头 + 本局盈亏 */
     ce_hud_text(TEXT_TICKER_X, TEXT_TICKER_Y, TEXT_COLOR, "%d.%02d %c %c%d",
                 st->price / 100, st->price % 100, arrow, pnl < 0 ? '-' : '+', pnl < 0 ? -pnl : pnl);
-    /* 金钱左边：持仓净值。没持仓就一个字都不画，免得平时多一行常驻噪音。 */
+    /* 金钱正下方：持仓净值，右边界与金钱对齐、字体也一样大。没持仓就一个字都不画。 */
     if (st->hold > 0)
-        ce_hud_text(TEXT_HOLD_X, TEXT_HOLD_Y, TEXT_HOLD_COLOR, "+%d", value);
+        ce_hud_text_font(TEXT_HOLD_X, TEXT_HOLD_Y, TEXT_HOLD_COLOR,
+                         CE_ASCII_FONT_MONEY, CE_ASCII_GROUP_MONEY, CE_ASCII_ALIGN_RIGHT, "+%d", value);
     return 0;
 }
 

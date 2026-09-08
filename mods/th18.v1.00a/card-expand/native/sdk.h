@@ -416,6 +416,9 @@ void ce_hud_digit_clear(ce_hud_digit_t *d);
  * 坐标用 Gui 自己那套字面量空间（火力在 (540, 182)）；color 是 BGRA 一个 dword，画完自动还原成白。
  * 自己先 vsnprintf 成一行再交给引擎的 `"%s"`，不转发 varargs。 */
 void ce_hud_text(float x, float y, uint32_t bgra, const char *fmt, ...);
+/* 同上，但指定字体 / 分组 / 水平对齐（各传 -1 = 沿用环境值）。想和金钱那行一样大就传
+ * `CE_ASCII_FONT_MONEY, CE_ASCII_GROUP_MONEY, CE_ASCII_ALIGN_RIGHT`。画完自动还原。*/
+void ce_hud_text_font(float x, float y, uint32_t bgra, int font_id, int group, int align_h, const char *fmt, ...);
 
 /* sdk.c：主动卡机器（桩里调）*/
 int  ce_sdk_c_press(void *self, const ce_hooks_t *h);

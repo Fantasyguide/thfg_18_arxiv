@@ -230,21 +230,49 @@ void ce_sdk_damage_cap_tick(uint32_t id)
  * 于是调用形状永远是 4 个 push、调用方清 0x10 —— 没有浮点提升、没有可变长栈，最省心。 */
 typedef void (__attribute__((cdecl)) *ce_fn_ascii_drawf_t)(void *mgr, const float *pos, const char *fmt, ...);
 
-void ce_hud_text(float x, float y, uint32_t bgra, const char *fmt, ...)
+/* 真正干活的那层。font/group/align 传 -1 表示不动。 */
+static void ce_hud_text_raw(float x, float y, uint32_t bgra, int font_id, int group, int align_h, const char *text)
 {
-    void *mgr = *(void **)CE_ADDR_ASCII_MANAGER_PTR;
+    uint8_t *mgr = *(uint8_t **)CE_ADDR_ASCII_MANAGER_PTR;
     float pos[3];
-    char buf[128];
-    va_list ap;
+    uint32_t old_color;
+    int old_font = 0, old_group = 0, old_align = 0;
 
     if (!mgr) return;
+    pos[0] = x; pos[1] = y; pos[2] = 0.0f;
+    old_color = *(uint32_t *)(mgr + CE_ASCII_COLOR);
+    *(uint32_t *)(mgr + CE_ASCII_COLOR) = bgra;
+    if (font_id >= 0) { old_font  = *(int *)(mgr + CE_ASCII_FONT);    *(int *)(mgr + CE_ASCII_FONT)    = font_id; }
+    if (group   >= 0) { old_group = *(int *)(mgr + CE_ASCII_GROUP);   *(int *)(mgr + CE_ASCII_GROUP)   = group; }
+    if (align_h >= 0) { old_align = *(int *)(mgr + CE_ASCII_ALIGN_H); *(int *)(mgr + CE_ASCII_ALIGN_H) = align_h; }
+    ((ce_fn_ascii_drawf_t)CE_FN_ASCII_DRAWF)(mgr, pos, "%s", text);
+    if (align_h >= 0) *(int *)(mgr + CE_ASCII_ALIGN_H) = old_align;
+    if (group   >= 0) *(int *)(mgr + CE_ASCII_GROUP)   = old_group;
+    if (font_id >= 0) *(int *)(mgr + CE_ASCII_FONT)    = old_font;
+    *(uint32_t *)(mgr + CE_ASCII_COLOR) = old_color;
+}
+
+void ce_hud_text(float x, float y, uint32_t bgra, const char *fmt, ...)
+{
+    char buf[128];
+    va_list ap;
     va_start(ap, fmt);
     vsnprintf(buf, sizeof buf, fmt, ap);
     va_end(ap);
-    pos[0] = x; pos[1] = y; pos[2] = 0.0f;
-    *(uint32_t *)((uint8_t *)mgr + CE_ASCII_COLOR) = bgra;
-    ((ce_fn_ascii_drawf_t)CE_FN_ASCII_DRAWF)(mgr, pos, "%s", buf);
-    *(uint32_t *)((uint8_t *)mgr + CE_ASCII_COLOR) = CE_ASCII_COLOR_WHITE;
+    ce_hud_text_raw(x, y, bgra, -1, -1, -1, buf);
+}
+
+/* 同上，但指定字体 / 分组 / 水平对齐（三者传 -1 = 用环境当前值）。
+ * 金钱那行是 font 10 / group 3 / 右对齐，比默认的 font 0 大一圈 —— 想和它看着是一套就照抄。
+ * 每一项都**先存后改、画完还原**：引擎后面的绘制全靠这些环境值，改了不还等于给别人埋雷。*/
+void ce_hud_text_font(float x, float y, uint32_t bgra, int font_id, int group, int align_h, const char *fmt, ...)
+{
+    char buf[128];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(buf, sizeof buf, fmt, ap);
+    va_end(ap);
+    ce_hud_text_raw(x, y, bgra, font_id, group, align_h, buf);
 }
 
 /* `+0x48`：`AbilityManager__on_draw` `0x408ab0` 每帧遍历卡链表调它。把聚合倍率写在火力值左边，

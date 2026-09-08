@@ -97,6 +97,17 @@
                                                * （`0x411286 add esp,0x14` = 调用方清 3 个 push + 一个 double）*/
 #define CE_ASCII_COLOR             0x19228    /* 字色 BGRA 一个 dword（`0x411245 mov [ecx+0x1922b], al` = alpha 在 +3）*/
 #define CE_ASCII_COLOR_WHITE       0xffffffffu /* Momoyo 画完还原成它（`0x41128a`）*/
+/* zAsciiManager 的其余绘制状态（Ghidra 结构体 zAsciiManager，字段名与偏移一手）。
+ * 画完必须还原 —— 引擎自己后面的绘制全靠这些环境值。*/
+#define CE_ASCII_SCALE             0x19230    /* zFloat2 */
+#define CE_ASCII_FONT              0x19244    /* int */
+#define CE_ASCII_GROUP             0x19248    /* int */
+#define CE_ASCII_ALIGN_H           0x19250    /* int：0 左 / 1 中 / 2 右（金钱那行用 2）*/
+/* 金钱那行的排版（`FUN_0043cd00` 在 (620, 204) 处设的）：比默认 font 0 大一圈，右对齐。
+ * 想让自己的数字看着和金钱是一套，就照抄这三个。*/
+#define CE_ASCII_FONT_MONEY        10
+#define CE_ASCII_GROUP_MONEY       3
+#define CE_ASCII_ALIGN_RIGHT       2
 /* Gui 的 HUD 文字坐标空间（`FUN_0043cd00` 里全是字面量）：火力 "%d." 在 (540, 182)、小数 (560, 189) scale 0.6、
  * "/%d." (574, 182)、金钱右对齐 (620, 204)。我们的倍率读数贴在火力左边。 */
 #define CE_HUD_POWER_X             540.0f
