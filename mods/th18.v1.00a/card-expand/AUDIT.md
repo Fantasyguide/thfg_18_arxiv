@@ -1422,6 +1422,419 @@ th18_full.asm（`local/_scratch`）。
    2/4（`0x445ba3` 系跳过上线判定的两态）语义未追；state-1 坠落体 `0x445c85` `jl 0x445de6` 的横滚段
    （vel_x 清零/出界 [`0x4b9340`]）与 `0x44698d` 系「线下方分值分野」语义 —— 都不挡本门（本门只用
    state==3 谓词）。
+## AJ. 豌豆射手（id 77）—— 第一张真走 SHT shooterset 的卡（子机连射 + 机枪爆发）
+
+**没有手写机器码、没有新断点、不改任何 exe 字节**。两处内联汇编（`ce_allocate_option` / `ce_tick_shooters_for_card`）
+早在 §U 就照零售调用点复刻好了，本卡是 `ce_tick_shooters_for_card` 的**第一个调用者**——所以这一节把那条链
+从头到尾一手重走了一遍（2026-09-08，Ghidra：`Player__tick_shooters_for_ability_card` `0x40a9c0`、
+`Player__shoot_one_bullet` `0x45e930`、`PlayerBullet__create` `0x45e320`、`Player__tick_shooting_state` `0x45ea00`）。
+新写入面只有 `pl0X.sht` 偏移数组的两个空位 + 文件尾两段数据；`ability.anm` 加两个 entry / 四个脚本（本来就在重建）。
+纯逻辑 `peashooter_core.c` 主机单测（等待区间、开大形状、周期、inflight、清零）。
+
+| # | claim | 结论 |
+| --- | --- | --- |
+| AJ1 | 追加 shooterset 不动零售任何字节 | **CONFIRMED（工具每次回读校验）** —— `append_shooterset.py` 的三条不变式：头部 `+0x02` 仍是 40、shooterset 0 的四个 func 仍全 0（空位重复解析靠它幂等）、前 23 组逐字节相同。索引 `0x17` / `0x18` 落在零售留空的 17 项里 |
+| AJ2 | `ce_tick_shooters_for_card` 的调用约定 | **CONFIRMED** —— `0x40a9c0` 反编译为 `(param_1 = option, param_2 = short, param_3 = long, param_4 = set)`，stdcall `ret 0x10`。`sdk.h` 的压栈序与之一致（§U 已复刻，本卡首次真调用）|
+| AJ3 | **short_timer 可以由我们自己数** | **CONFIRMED（一手，本节的关键）** —— 见下「AG3 证据」：`param_2` 只进一处模运算，往下传的那份在 `PlayerBullet__create` 里从未被引用 ⇒ 传什么值都只影响「这一帧发不发」 |
+| AJ4 | `+0x1c` 每帧只广播一次，且只在按住射击键时 | **CONFIRMED** —— 见下「AG4 证据」。⇒ 我们的计数器只在射击帧推进，「开大」不会在不开火时白烧；死亡 / 被读条状态（`player+0x476ac != 1`）也自动暂停 |
+| AJ5 | `opt_slot` 必须 0 | **CONFIRMED** —— `0x45e320`：`if ((shooter[0x20] & 0xf) == 0) 位置 = *param_3`（= `0x40a9c0` 传进来的子机坐标）`else` 读 `player` 自己的第 N 个子机位置块。非 0 就会打到零售子机的位置上 |
+| AJ6 | `fire_rate` 的取值范围 | **CONFIRMED** —— i8、符号位是 shooterset 终止符 ⇒ 1–127；`0` 在这条路径上是裸 `idiv`（`0x40a9c0` 没有零分支，主炮那条有）。我们用 60 / 5，工具也在 `pack_shooter` 里挡住越界 |
+| AJ7 | 弹的贴图取自 `ability.anm` | **CONFIRMED** —— 见下「AG3 证据」的第 2 行与末行：`0x40a9c0` 开火期间换 `player+0x10`、结束还原；`0x45e320` 建 VM 用的就是它 ⇒ shooter 的 `+0x22` 填 ability 脚本号，四个 `pl0X.anm` 不动 |
+| AJ8 | 音效字段 `< 0 = 不响` | **CONFIRMED** —— `0x45e320` 末尾 `if (-1 < *(short *)(shooter+0x24)) play_sound(...)`。平时那颗给 `0x20`（`se_gun00`，−15 dB / 优先级 10，1.42 s 一次）；开大那 7 × 20 颗给 **−1**（20 发/秒的音会炸耳）|
+| AJ9 | 出膛偏移 `spawn_dx/dy` 会被减掉一帧速度 | **CONFIRMED（设计上正确）** —— `0x45e320`：`mode` 不是 4/5/6 时 `pos += (spawn_dx − vx, spawn_dy − vy)`。我们 `mode = 0`、角度 −π/2 ⇒ `vx = 0, vy = −speed`，所以 7 颗横向铺开 ±48 原样生效，纵向统一「先退一格、第一帧补回来」——这正是零售减法的用意 |
+| AJ10 | 平时那颗 90 会被每敌每帧上限砍 | **已规避** —— 上限每帧从 `sht+0x28` 复位（Reimu 90 / Sakuya 60 / Sanae 120 / Marisa 160）：90 塞满 Reimu、超出 Sakuya，还要与自机弹抢配额。**豌豆在途的 40 帧**里 `ce_raise_damage_cap(180)`（Remilia `0x40f48e` 同款）；开大那排 49 不用抬 |
+| AJ11 | 抬上限的副作用 | **设计（有意，已收窄）** —— 上限是自机弹与所有卡共用的，抬高对同帧的自机弹也放宽。收窄见下「AG11 说明」 |
+| AJ12 | 时序 | **CONFIRMED** —— GameThread（0x10）复位上限 → AbilityManager（0x16）`on_tick_2` 抬 → Player（0x17）`on_tick_shooters` 出膛 → Enemy（0x1b）结算 ⇒ 同帧有效、不用还原。子机申请仍挂 `+0x18`（`0x45d5e0` 尾部广播）|
+| AJ13 | replay 安全 | **CONFIRMED** —— 只有两处抽随机：开局第一个射击帧、每次开完大。两处都由 `on_tick_shooters` 驱动 ⇒ 调用序列完全由输入决定，replay 里逐次重放。`ce_rand` 用的就是游戏自己的 `REPLAY_SAFE_RNG`。节奏其余部分是整数计数，无浮点 |
+| AJ14 | 子机槽认领 | **CONFIRMED（§U3 同款）** —— 12 个槽是公共池；用前查 `option+0x00 != 0 && option+0xd0 == card+0x08`。子机指针存 `ce_state()` 而不是 `card+0x54`（§U2）|
+| AJ15 | 自机弹池装得下 | **CONFIRMED** —— `0x45e930` 的槽扫描上界是 **0x1ff = 512** 发。开大 140 颗摊在 100 帧里、每颗 448/18 ≈ 25 帧飞出场 ⇒ 同屏峰值约 **39** 颗，加主炮也远不到 512。满了 `shoot_one_bullet` 直接 `return 0`，不崩 |
+| AJ16 | 与其他卡的交互 | **设计** —— `PlayerBullet__create` 末尾对每张卡广播 `on_bullet_created`（`vtable+0x28`），所以 K♠（×1.1）与古锭刀（终符 ×2）**也会作用在豌豆上**——同一条自机弹管线，一致而非例外。反过来豌豆不吃炸弹 / `ce_damage_rect` 那条路 |
+| AJ17 | 数值 | **设计（用户定，2026-09-08 定稿）** —— 平时 **60 帧一颗 × 90 = 90 DPS**（PVZ 原版是 1.425 s ≈ 85 帧，用户改成整 1 秒：DPS 与 85/130 几乎相同、节奏更密）；开大 20 排 × 7 × 7 = **980**。周期 20–30 s ⇒ 综合约 **123 DPS**，与破损核心同档。代价：必须按住射击键 |
+| AJ18 | `build_ability.py` 的排序改动 | **CONFIRMED 无副作用** —— 脚本文件原来按文件名字典序排，`100_…` 会排到 `68_…` 前面。改成按**编号数值**排；68–99 的相对顺序不变（两位数的字典序与数值序一致），`make anm` 重建后零售部分逐项自检仍通过 |
+
+**AG3 证据**（`0x40a9c0` 反编译，逐行）：
+
+```c
+pcVar4 = *(char **)(*(int *)(PLAYER_PTR->field_47924 + 0x1c) + 0xe0 + ((param_4 << 8) >> 8) * 4);
+*(void **)(PLAYER_PTR->field_0 + 0x10) = ABILITY_MANAGER_PTR->ability_anm;   /* ← AJ7 */
+local_10 = *(int *)(param_1 + 0x5c) * (1/128.f);   local_c = *(int *)(param_1 + 0x60) * (1/128.f);
+do {
+    if (pcVar4[0x29] == 0) { iVar3 = param_2 % (int)pcVar4[-1]; cVar2 = *pcVar4;    }   /* short % fire_rate  == start_delay  */
+    else                   { iVar3 = param_3 % (int)pcVar4[0x29]; cVar2 = pcVar4[0x2a]; }/* long  % fire_rate2 == start_delay2 */
+    if (iVar3 == cVar2) Player__shoot_one_bullet(this, param_4 << 8 | uVar5, param_2, &local_10, param_1);
+    ...
+} while (-1 < *pcVar1);
+*(undefined4 *)(this->field_0 + 0x10) = *(undefined4 *)(this->field_0 + 0xc);   /* 还原 */
+```
+
+`param_2` 在这里只出现两次：模运算、以及原样往下传。`Player__shoot_one_bullet` `0x45e930` 也只是
+`PlayerBullet__create(this_00, param_1, param_2, param_3, param_4)` 转手；而 `PlayerBullet__create` `0x45e320`
+的**整个函数体里 `param_2` 再没有被引用过**（Ghidra 的形参列表里有它，正文没有）。
+⇒ 传我们自己的计数器，语义上等价于「这一帧发不发由我们说了算」，没有任何别的副作用。
+顺带坐实了 [`engine/sht/th18/03`](../../../engine/sht/th18/03-func-tables-timers-and-dead-fields.md) §1 的推论：
+引擎的短计时器只在 0..14 循环，**用它根本表达不出 85 帧的节奏**（`0x13` 那组 `fire_rate = 40` 实际就是每 15 帧一发）。
+
+**AG4 证据**（`0x45ea00` 反汇编）：
+
+```
+0045EB35  cmp  [esi+0x476ac], 1        ; 玩家状态机 != 1（死亡 / 演出）→ 0045ED88 全跳过
+0045EB42  cmp  [esi+0x476d4], 0        ; short < 0（松开射击键）→ 走 0045EB4B 的「是否按住」判定
+0045EB4B  test byte [0x4ca428], 1      ;   没按住 → 0045ED1A，广播不发生
+0045EBB1  cmp  eax, [ebx]              ; short.current == short.previous（计时器这帧没走）→ 0045ECCB 跳过
+...                                    ; 主炮循环
+0045ECA0  mov  eax, [0x4cf298]         ; AbilityManager
+0045ECA5  mov  edi, [eax+0x1c]         ; 卡链表头
+0045ECB2  mov  ecx, [edi]              ; card
+0045ECB4  push esi                     ; long_timer
+0045ECB5  push ebx                     ; short_timer
+0045ECB8  call [eax+0x1c]              ; ← +0x1c 广播，每帧一次
+```
+
+基类 `+0x1c` 桩 `0x413080` = `33 C0 C2 08 00`（`xor eax,eax; ret 8`）⇒ thiscall + 两个栈参，
+与 SDK 的 `int (ce_card_t *, uint32_t, uint32_t)` 一致（PE 直读）。
+
+**AG11 说明**（为什么抬上限是安全的）：收窄成两条——① 只在豌豆可能命中的那 40 帧内抬（`pea_needs_cap`，
+开火帧置 `PEA_INFLIGHT`、每帧递减；间隔 60 帧 > 40 ⇒ 两颗的窗口不重叠，单测有断言）；② 抬到固定 **180** 而不是「按当前值翻倍」，且 `ce_raise_damage_cap` 只抬不降
+⇒ 与炎魔 / 青眼（都是 300）同帧时取更高者，不叠乘。要让这次放宽真的加强主炮，主炮得在同一帧对同一敌人打出
+本机体上限那么多（Reimu 90 = 5400 DPS），零售四机体都做不到；实际它只在我们自己的豌豆落地那一帧起作用。
+
+**实跑要看的**：见 [`NEXT.md`](NEXT.md) §1m。崩溃优先怀疑：`ce_tick_shooters_for_card` 的压栈序（AG2，第一次真调用）、
+`ce_allocate_option`（AG14 / §U1，已随破损核心走过同一条路）。视觉怀疑：豌豆大小（script100 / 101 的 `scale`）、平时那颗的节奏（`PEA_INTERVAL`）、
+子机高低（`PS_OPTION_OFFSET` 与 script102 的 `scale`）、开大那堵墙的宽度（`spawn_dx` 七项）。
+
+## AA. 自机弹伤害倍率层（`ce_dmg_*` + `.bullet_damage_permille`）—— 2026-09-08 提炼
+
+**没有新断点、没有新引擎调用、不改任何字节**：只是把「给自机弹加伤害」这个已经出现三次的动作
+（K♠ 61、古锭刀 76、衔尾蛇 78）从各卡收进 SDK。纯逻辑 `ce_dmg_*` 在 `sdk_core.c`，主机单测。
+
+| # | claim | 结论 |
+| --- | --- | --- |
+| AA1 | 该提炼 | **本仓约定** —— `SDK.md` 方案 3：「动作出现第二次就进 `sdk.h`」。这是第三次，且前两次的写法已经分叉（一张抬上限、一张没抬）|
+| AA2 | 桩看到的是引擎刚写好的原始伤害 | **CONFIRMED（一手）** —— `PlayerBullet__create` `0x45e320` 先 `bullet+0x9c = shooter+0x02`、再遍历卡链表调 `+0x28`（同一份反编译见 §AJ3 证据）|
+| AA3 | **就地乘**，不从 shooter 基值重算 | **CONFIRMED（对抗证伪）** —— 见下「AA3 证据」：零售 `CardMomoyo` 就是重算派，重算会把她的擦弹加成整个抹掉 |
+| AA4 | 一颗弹只乘一次、只取整一次 | **设计** —— 聚合倍率由**落笔人**一张卡在它的 `+0x28` 桩里应用，其余参与者的桩只有一条 `id != applier` 的比较。旧写法逐张取整会漂：见下「AA4 证据」|
+| AA5 | 落笔人的选法 | **设计** —— id 最小的在场参与者（`ce_dmg_applier`）。与卡在链表里的顺序无关 ⇒ 同一副牌组每次结果相同，单测钉住 |
+| AA6 | 上限自动跟着抬 | **CONFIRMED（时序）** —— GameThread（优先级 0x10）每帧从 `sht+0x28` 复位 `player+0x47984` → AbilityManager（0x16）跑 `+0x2c`，落笔人在这里 `ce_raise_damage_cap(基值 × 聚合)` → 敌人结算（0x1b）。同帧有效、不用还原 |
+| AA7 | 生命周期 | **设计** —— 绑定（`ce_card_bind`）登记声明的初值；`+0x50`（对象删除，含倒吊人摧毁）清 0 退出聚合；`+0x4c`（局末）回到声明初值；`ce_sdk_setup` 整体复位。全在 SDK 桩里，卡不用记 |
+| AA8 | 边界 | **设计（写进名字）** —— `bullet_damage`：只管 `bullet+0x9c`。炸弹与 `ce_damage_rect` 的伤害源（青眼 / 炎魔 / 破损核心 / 真银圣剑）走另一条管线，**不**在这一层里 |
+| AA9 | replay 安全 | **CONFIRMED** —— 全整数、无随机；聚合只在卡自己报值时变，而报值的时机由卡的确定性逻辑驱动 |
+| AA10 | 迁移不改既有行为 | **一处例外，是修 bug** —— 古锭刀等价（×2 + 抬上限，仍走 `GD_MULT`）；**K♠ 从此会抬上限**了：它以前只翻弹不抬，贴脸打 boss 时那 +10% 有相当一部分被每敌每帧配额吃掉 |
+| AA11 | 与零售 `CardMomoyo` 的顺序依赖 | **既有性质，非本层引入** —— 她重算覆写，谁在链表里靠后谁说了算。改之前 K♠ 也是同样的处境；本层没有让它更好也没有更坏 |
+| AA13 | HUD 读数 | **设计** —— 聚合倍率不是 ×1 时，落笔人在 `+0x48 on_draw` 里把 `x1.60` 写在火力值左边（§AC）。没有加伤害的卡在场时一个字都不画 |
+| AA12 | 桩的开销 | **可忽略** —— 每颗弹对每张卡多一条 `id != applier` 的比较（原本就要走一次桩）；`+0x2c` 同理 |
+| AA14 | `+0x4c` / `+0x50` 的清账**不看声明值** | **2026-09-08 修**，见下「AA14 证据」 |
+
+**AA14 证据**：这两个桩原本包在 `if (ce_hooks_##ID.bullet_damage_permille)` 里，看的是**声明**值。
+一张声明 0、只在运行时调 `ce_set_bullet_damage_permille()` 参与的卡（接口允许，只是现有三张都声明了
+非零初值，所以还没碰到）在局末与删对象时**不会退出聚合**，倍率跨局残留。守卫去掉，两处无条件调
+`ce_dmg_set` —— 对没参与过的卡是幂等的（写 0 覆盖 0），AA7 那句「卡不用记」才真的成立。
+
+**AA3 证据**：`CardMomoyo__on_bullet_init` `0x411010` 反编译：
+
+```c
+uVar1 = *(uint *)(param_1 + 0xac);                                   /* packed id */
+iVar2 = *(int *)(*(int *)(PLAYER_PTR->field_47924 + 0x1c) + 0xe0 + ((int)uVar1 >> 8) * 4);
+*(int *)(param_1 + 0x9c) = (int)(fVar4 * (float)(int)*(short *)((uVar1 & 0xff) * 0x5c + iVar2 + 2));
+```
+
+= `bullet+0x9c = min(1 + 擦弹/N, 上限) × shooter[+0x02]`：她从 packed id 回查 shooter 行、**从基值重算并覆写**。
+我们要是也重算，同时带她时她的加成就没了。就地乘则与她相乘。
+
+**AA4 证据**（为什么单次取整值得专门做）：三层 +20% 加法叠、基值 90。
+逐张各自取整 `90 → 108 → 129 → 154`；一次算完 `90 × 1600 / 1000 = 144`。旧写法漂 10 点、且层数越多越漂。
+单测 `test_sdk_core.c::test_dmg_layer` 把两个数都钉住了。
+
+**实跑要看的**：K♠ / 古锭刀 / 衔尾蛇任意一张在场时日志有 `sdk: … bound (… .bullet_damage_permille = …)`；
+古锭刀终符那两行不变；K♠ 打 boss 的血条掉速应比改之前**略快**（上限修好了）。崩溃不该有——这一层没有新的引擎入口。
+
+## AB. 衔尾蛇（id 78）—— 每 miss X 次永久 +20％，X 递增
+
+**没有新断点、没有新引擎调用、不改任何字节**：计数挂已经在用的 `+0x0c`，加伤害走 §AA 的层，
+HUD 数字走 §X 已经跑通的那套。纯逻辑 `ouroboros_core.c` 主机单测。
+
+| # | claim | 结论 |
+| --- | --- | --- |
+| AB1 | `+0x0c` 是「这一次是真的 miss」 | **CONFIRMED（§S 已用）** —— `on_death_after_deathbomb`，决死窗口已经过去。加倍（69）就在这个槽里多扣一条命 |
+| AB2 | 返回 0 = 不救命，只记账 | **CONFIRMED（零售先例）** —— `CardTewi` 在同一个槽里只快照金钱、`return 0`（§3 表）|
+| AB3 | 门槛序列 | **设计** —— X 初值 1、每次触发 +1 ⇒ 第 N 层在累计第 `N(N+1)/2` 次 miss 达成：1 / 3 / 6 / 10 / 15 …。单测逐次钉住前 9 层 |
+| AB4 | 加法叠而非乘法 | **设计（用户定）** —— 1.2 / 1.4 / 1.6 …。残机有限 ⇒ 一局现实里 2–3 层、极限 4 层，自限 |
+| AB5 | 「永久」的范围 | **设计** —— 一整局（run）之内。`+0x4c` 局末清零，倍率由 SDK 在同一个桩里回到声明的 ×1（§AA7）|
+| AB6 | ctor 幂等 | **CONFIRMED（已知坑）** —— 每关开场引擎会对卡组每张卡再调一次 `+0x00`。这里只在 `need == 0`（= `ce_state` 刚清零）时铺初值，重调不会把层数抹掉 |
+| AB7 | 零状态自愈 | **设计** —— `ce_state` 给的是清零内存，`need = 0` 是不可能的合法值；`ob_on_miss` 见到它先 `ob_reset`。单测覆盖（万一关卡中途买到卡、ctor 没赶上）|
+| AB8 | HUD 数字 | **复用 §X** —— `+0x44` 拿本卡 HUD 图标根 VM，`ce_anm_spawn_ui` 起 script99、`ce_anm_set_sprite` 换 `TS_DIGIT_0..9`。图标重建时 `+0x44` 会再来一次；`+0x2c` 每帧对账，VM 没了就重建 |
+| AB9 | 上限 | **归层** —— 叠到 ×1.6 不抬上限基本等于没加（Reimu 90）。这张卡一行都不用写，§AA6 自动做 |
+| AB10 | replay 安全 | **CONFIRMED** —— 纯计数，无随机、无浮点。miss 的发生本身由输入决定 |
+| AB11 | 与加倍（69）的交互 | **设计（反协同，有意）** —— 加倍让每次 miss 掉 2 命，衔尾蛇要靠 miss 成长：同时带这两张会更快 game over。属于卡池里正常的取舍 |
+| AB12 | 层数上限 | **设计** —— `OB_MAX_STACKS = 9`（HUD 只有一位数字）。到顶后门槛也不再涨，避免计数溢出；现实里够不着（第 10 层要 55 次 miss）|
+
+**实跑要看的**：见 [`NEXT.md`](NEXT.md) §1n。崩溃优先怀疑：`ce_anm_spawn_ui` 的 `ret 0x10` 第四个哑参（§X1，真银圣剑同款，尚未实跑）。
+
+## AC. HUD 文字原语 `ce_hud_text`（`AsciiManager__drawf_debug`）—— 2026-09-08
+
+用户要「把总的伤害倍率显示在火力值旁边」。**没有新断点、不改任何字节**：零售的
+`CardMomoyo__on_draw` `0x4110a0` 就是「一张卡在 HUD 上画数字」的现成先例，本节把它的调用点逐指令复刻成一个原语。
+第一个用户是伤害层的倍率读数（§AA13）。
+
+| # | claim | 结论 |
+| --- | --- | --- |
+| AC1 | `AsciiManager__drawf_debug` `0x41a110` 的调用约定 | **CONFIRMED（一手）** —— 见下「AC1 证据」：`(mgr, pos[3], fmt, ...)`，**cdecl varargs**（调用方 `add esp, 0x14` 清 3 个 push + 一个 double）|
+| AC2 | `ASCII_MANAGER_PTR = 0x4cf2ac` | **CONFIRMED（两处交叉）** —— Momoyo 的 `mov ecx,[0x4cf2ac]`；th-re-data 的 `statics.json` 同名同址 |
+| AC3 | 字色在 `mgr+0x19228`，BGRA 一个 dword | **CONFIRMED** —— Momoyo `mov [ecx+0x1922b], al`（alpha 在 +3）与 `mov dword [eax+0x19228], 0xffffa000`（= B 00 / G A0 / R FF / A FF，橙红，与反编译的 `color[0..3]` 逐字节对上）。画完还原成 `0xffffffff`（`0x41128a`），我们照做 |
+| AC4 | 只能在虚表 `+0x48 on_draw` 里调 | **CONFIRMED** —— `AbilityManager__on_draw` `0x408ab0` 每帧遍历卡链表调 `+0x48`；基类桩 `0x413160` = `33 C0 C3`（`xor eax,eax; ret`）⇒ thiscall 无栈参，与 SDK 的 `int (ce_card_t*)` 一致。**别在 `on_tick_2` 里调**：那是 tick 阶段 |
+| AC5 | 不转发 varargs | **设计** —— 我们自己 `vsnprintf` 成一行，再用固定的 `"%s"` 交给引擎 ⇒ 调用形状永远是 4 个 push、清 0x10。躲开了 cdecl 变长栈与 `float → double` 提升（Momoyo 那一路要 `sub esp,8` + `movsd`）|
+| AC6 | 坐标空间 | **CONFIRMED** —— Gui 的 `FUN_0043cd00` 里全是字面量：火力 `"%d."` (540, 182)、小数 (560, 189) scale 0.6、`"/%d."` (574, 182)、金钱右对齐 (620, 204)。Momoyo 把 VM 屏幕坐标 `÷ [0x56aca0]` 换算进同一个空间 ⇒ 直接给字面量即可，不用换算 |
+| AC7 | 不设 font / group / scale / alignment | **照 Momoyo（有风险，已知）** —— 她只设字色，其余用环境值。所以我们的**位置与字号取决于同帧早些时候谁最后设过**，第一次实跑要把位置贴回来调（真银圣剑的 HUD 数字也是同一句话）|
+| AC8 | 缓冲区 | **设计** —— 我们 128 字节、引擎那边 0x108 字节。倍率读数最长 `x99.99` |
+| AC9 | 依赖面 | **CONFIRMED** —— `vsnprintf` 走 msvcrt，DLL 本来就依赖它；`make dllverify` 仍是 18 导出 / KERNEL32 + msvcrt 两个依赖 |
+
+**AC1 证据**（`CardMomoyo__on_draw` `0x41122e`–`0x411286` 逐指令）：
+
+```
+0041122E  mov  ecx, [0x004cf2ac]          ; ASCII_MANAGER_PTR
+00411234  sub  esp, 8                     ; 给 double 腾位置
+00411245  mov  [ecx+0x1922b], al          ; color[3] = 图标当前 alpha
+00411270  movsd [esp], xmm0               ; 第 4 参（%.3f 的值，float 提升成 double）
+00411275  push 0x004b4c6c                 ; 第 3 参 fmt "%.3f"
+0041127A  push eax                        ; 第 2 参 &pos（float[3]）
+0041127B  push ecx                        ; 第 1 参 mgr
+0041127C  call 0x0041a110
+00411286  add  esp, 0x14                  ; 调用方清 0xc + 8 ⇒ cdecl
+0041128A  mov  dword [eax+0x19228], 0xffffffff   ; 还原字色
+```
+
+**实跑要看的**：见 [`NEXT.md`](NEXT.md) §1n 的 HUD 那一段。崩溃优先怀疑：`ce_hud_text` 的 cdecl 声明（AC1）、
+`ASCII_MANAGER_PTR` 在关卡外为空（已判空）。视觉怀疑：位置 / 字号（AC7：改 `CE_HUD_DMG_X` / `CE_HUD_POWER_Y`）。
+
+## AD. 卡侧重复原语的提炼（`ce_option_*` / `ce_hud_digit_*` / `ce_refuse` / `ce_enemy_by_id` / `ce_player_x`）—— 2026-09-08
+
+**没有新断点、没有新引擎调用、没有新的机器码，一个字节都没改。** 只是把在两三张卡里**逐字重复**的
+C 代码原样搬进 `sdk.h` / `sdk.c`（`SDK.md` §5 的约定：出现第二次就提炼）。引擎侧的调用约定包装
+（`ce_allocate_option`、`ce_anm_spawn_ui`、`ce_anm_set_sprite`、`ce_play_sound`）**没有被动过**，
+它们的审计（§U1、§X、O22、O29c）继续有效。
+
+| # | claim | 结论 |
+| --- | --- | --- |
+| AD1 | 子机三件套是逐字重复 | **CONFIRMED（机械比对）** —— `broken_core.c:36-67` 与 `peashooter.c:35-66` 归一化标识符后 diff，只剩注释差异 |
+| AD2 | HUD 数字是逐字重复 | **CONFIRMED（机械比对）** —— `truesilver.c:16-38` 与 `ouroboros.c:28-50` 只差一个钳位表达式（`< 0 → 0` vs 无）与一行日志。合并后统一钳 `0..CE_HUD_DIGIT_MAX`，两张卡的取值域都在里面 |
+| AD3 | 破损核心的行为等价 | **CONFIRMED（逐句对照）** —— `ce_option_get` = 「认领；失败则倒计时到 0 再申请一次」，与原 `option_of` + retry 分支同一条控制流；`ce_option_x/y` 是原来那两行定点转换 |
+| AD4 | 豌豆射手的行为等价 | **CONFIRMED（刻意保留分叉）** —— 它原本在补申请的那一帧**无条件 `return 0`**（成功也不出膛），与破损核心「补上就立刻用」不同。所以它用的是 `ce_option_claim` + `ce_option_retry` 两步而不是 `ce_option_get`，节奏计数器 `pea_frame` 仍从下一帧起算 |
+| AD5 | 真银圣剑的状态结构变了 | **无行为影响** —— HUD 三个字段从纯逻辑的 `ts_state_t` 搬进卡侧的 `ts_card_t{ ts_state_t st; ce_hud_digit_t hud; }`（与衔尾蛇的 `ob_card_t` 同构）。`truesilver_core.c` 与它的 12 条主机单测一个字没改、照过；私有状态块 `ce_state` 上限 256 字节，两张卡都远没到 |
+| AD6 | 日志差异 | **只多不少** —— 衔尾蛇现在也会在图标消失时记一行 `ouroboros: hud icon gone, digit removed`（原本只有真银圣剑记）。其余日志文本逐字不变（卡名由参数传入）|
+| AD7 | 拒绝发动的三份合并 | **CONFIRMED** —— 青眼 67 / 神之宣告 66 / 炎魔 72 的 `refuse()` 逐字相同（`CE_SE_INVALID` + `card: refused (why)` + `CE_ACTIVATE_REFUSED`）。合并后调用点写成 `ce_refuse("blue_eyes", "no lives")`，日志文本不变 |
+| AD8 | 按 enemy_id 找敌人的两份合并 | **CONFIRMED** —— 古锭刀 76 与神之宣告 66 的 `find_enemy` 逐字相同（照 `get_boss_enemy_full` `0x4237f0` 的链表走法，`guard < 4096`）。`ce_enemy_by_id` 多一条 `em` 判空，调用点原本都已经判过 |
+| AD9 | 编译门 | **通过** —— `make test-host`（全部主机单测）、`make dll`（零警告，`-Wall -Wextra`）、`make dllx87`（我们的目标文件里 x87 指令 0 条）、`make dllverify`（PE32/i386、18 导出、依赖仍只有 KERNEL32 + msvcrt）、`pytest`（8 passed） |
+| AD11 | 敌人链表遍历的第三次 | **CONFIRMED（机械比对）+ 一处收紧**，见下「AD11 证据」 |
+| AD12 | `flags &= ~2u` 的裸魔数 | **收进 `ce_option_drop`**，见下「AD12 证据」 |
+| AD13 | float3 假设本来就在承重 | **这是收紧，不是扩面**，见下「AD13 证据」 |
+| AD14 | 符卡状态的两处读法 | **CONFIRMED** —— 古锭刀 76 与神之宣告 66 各自 `*(uint32_t *)(spell + CE_SPELL_FLAGS)`。`ce_spell_flags()` 把「管理器为空」统一读作 0（= 不在符卡里），古锭刀原来的 `!spell` 判空分支因此可以去掉，语义等价 |
+| AD10 | 实跑影响面 | **应当为零** —— 涉及的五张卡（71 / 77 / 75 / 78 / 66 / 67 / 72 / 76）本来就都在「待实跑」清单里，本次提炼不改变它们各自的验收标准；实跑时若哪一张的表现与 [`NEXT.md`](NEXT.md) 的描述不符，先怀疑 AD3–AD6 这几条等价性 |
+
+**AD11 证据**：`firelord.c:75,81` 与 `broken_core.c:84` 三处手写同一条链表走法，且**都没有 guard**，
+而 SDK 里 `ce_enemy_by_id` 那份有。合并成 `CE_ENEMY_FOREACH` 后三处一律带 `CE_ENEMY_LIST_GUARD`（4096）：
+坏链表不再可能转死。过滤谓词 `ce_enemy_lockable`（非空 + 不带 `NO_LOCK`）是三处逐字相同的那一条。
+
+**AD12 证据**：破损核心 71 与豌豆射手 77 都在 `on_run_reset` 里紧挨着 `ce_option_drop` 写 `flags &= ~2u`。
+零售 `CardReimu1__method_4C` `0x40aad0` 本来就是「清 bit1 + 删子机 VM」一件事，折进去是照零售、不是我们的发明。
+常量 `CE_FLAG_EQUIP_RESET_BIT1` **🟡 只描述「零售在收起子机时清的那一位」，不主张它的语义**。
+
+**AD13 证据**：`CE_PLAYER_X` 的 engine.h 注释原本只写 `float px`，但青眼 / 豌豆射手 / 炎魔三张卡
+已经在读 `[1]` `[2]` —— 假设散在三处、一处都没记。收进 `ce_player_pos()` 并把 float3 写进 engine.h
+注释之后，它变成一条**可审计**的断言。`ce_enemy_pos` 同理（破损核心 / 炎魔两处）。
+
+## AE. 旋风斩（id 79）—— 炸弹额外连放 ⌊火力⌋−1 发，代价同数的火力
+
+**没有新断点、没有新引擎调用、不改任何字节**：用的全是已有的件 —— SDK 事件 `on_bomb_spent`（腐化 §T 开的断点
+`0x4203bc`）、引擎自己的 `do_bomb`（黄昏 §R 用的 `ce_do_bomb`）、引擎自己的 `spend_power` + `repopulate`（炎魔 §V）。
+纯逻辑 `ww_*` 在 `whirlwind_core.c`，主机单测。
+
+| # | claim | 结论 |
+| --- | --- | --- |
+| AE1 | X = ⌊火力⌋ − 1 永远扣得实 | **CONFIRMED（枚举）** —— 见下「AE1 证据」 |
+| AE2 | 不会无限连 | **CONFIRMED（两道）** —— 见下「AE2 证据」 |
+| AE3 | 四发不可能同帧 | **CONFIRMED（一手）** —— `do_bomb` `0x420360` 开头查 `BOMB_MGR+0x30`「正在放」，非零直接返回 −1。所以只能一发接一发，这也是设计成「记账 + 接续」两段的原因，不是我们的选择 |
+| AE4 | 算 X 的那一刻不会被自己的接续抢跑 | **CONFIRMED（时序，一手）** —— `do_bomb` **先**置 `+0x30` **再**调 `consume_bomb`，而我们的断点在 `consume_bomb` 刚返回处（`0x4203bc`）。所以 `on_bomb_spent` 执行时 `+0x30` 已是 1，同帧的 `on_tick_2` 里 `ww_tick(bombing=1)` 必然返回 0 |
+| AE5 | 接出来的那几发不再算 X、不再花火力 | **设计 + 单测** —— `chaining` 位在调 `do_bomb` **之前**置好（`ww_tick` 返回 1 时就已置），而 `on_bomb_spent` 在 `do_bomb` 内部触发，所以它一定看得到。单测 `test_full_chain` 钉住这条顺序 |
+| AE6 | 额外那几发不花炸弹数 | **设计（精确补回）** —— 见下「AE6 证据」 |
+| AE7 | 引擎拒绝时不会卡死也不会无限重试 | **设计 + 单测** —— `do_bomb` 返回 −1 时欠账不减、下一帧再试；`waited` 攒满 `WW_GIVE_UP`（600 帧 = 10 s）就作废清零。单测 `test_refused_then_give_up` 走完这条路，`test_waited_resets_on_success` 钉住「成功一发就重置计时」（否则长链会被前面攒的帧数误杀）|
+| AE8 | 欠账不跨关、不跨局 | **设计** —— `on_load` / `on_stage_start` / `on_run_reset` 都 `ww_clear`。带着「还欠 2 发」进下一关会在开场莫名其妙炸两下 |
+| AE9 | replay 安全 | **CONFIRMED** —— 全整数、无随机、无浮点。X 只取决于按 B 那一刻的 `CURRENT_POWER`，而它由确定性的输入重放决定 |
+| AE10 | 与腐化（70）的联动 | **设定内，非 bug** —— 腐化在 `on_bomb_spent` 里「退回当前数、扣上限」，接出来的每一发都会各触发一次 ⇒ 一次按 B 烧掉 X+1 点炸弹上限。我们的补回逻辑**不会与它打架**（只补真的少掉的那一下，见 AE6），但上限该扣的照扣 |
+| AE11 | 与真银圣剑（75）/ 黄昏（68）的联动 | **设定内，非 bug** —— 真银圣剑对每一发各算一次挥砍（各 400 伤害 + 各一个残机碎片，受它自己每关 2 点耐久的限制）；黄昏在「最后一颗炸弹」条件下也会接一发，两张卡各自接各自的，可能多出一发。都不会崩、也不会无限 |
+| AE12 | 决死炸也算 | **设计** —— 决死炸走的是同一个 `do_bomb`，所以同样触发。用户没有排除它，也没有理由排除 |
+| AE13 | `repopulate` 的必要性 | **照零售** —— `CardTsukasa__c_press` `0x410e60` 扣完火力**无条件**调 `repopulate`（重建子机 + 广播 `on_power_level_change`）；炎魔 §V 已照做一次，这里第三次照做 |
+
+**AE1 证据**：`spend_power` `0x457480` 的两条边界是「`CURRENT_POWER` ≤ 一档时拒绝、返回 0 且不扣」和「扣完钳到一档」。
+X = ⌊P / per⌋ − 1 使得 X > 0 时 `P − X·per ∈ [per, 2·per)` —— 恒在一档以上、两档以下，两条边界都碰不到。
+单测 `test_cost_never_refused` 把 `power ∈ [0, 400]` 全枚举，逐个断言「扣完 ≥ 一档」且「扣完 < 两档」（后者是在钉住「X 没算小」）。
+
+**AE2 证据**：第一道是**数值自带的** —— 扣完火力落在 [1.00, 1.99]，⌊·⌋ − 1 = 0，接出来的那几发再算 X 就是 0。
+第二道是 `chaining` 位（AE5）。两道任一成立就不会连成串；同时失效才可能出问题，而单测 `test_full_chain` 两条都验。
+
+**AE6 证据**：`do_bomb` 内部的 `consume_bomb` `0x4574d0` 会扣炸弹数（自带钳 0）。这张卡的代价写在火力上，
+所以每接一发之后把炸弹数补回 —— 但**只在它真的少了的时候补**（`CE_CURRENT_BOMBS() < before`）、补完钳 `MAX_BOMBS`。
+这样与腐化共存不会双重补：腐化自己在 `on_bomb_spent` 里已经把当前数退回去了，我们看到「没少」就不动手（AE10）。
+
+**实跑要看的**：见 [`NEXT.md`](NEXT.md) §1o。崩溃优先怀疑：`on_tick_2` 里 `PLAYER_PTR` 为空时调 `do_bomb`（已判空，黄昏踩过）、
+`ce_spend_power` 的 thiscall + `ret 4`（AUDIT §V 已验一次）。行为怀疑：X 算错（看日志里的 `power %d - %d = %d`）、
+炸弹数补多了或补少了（看 `bombs %d`）。
+
+## AF. 股市（id 80）—— C 买 / Shift+C 卖，K 线面板（2026-09-08）
+
+**没有新断点、不改任何字节。** 新引擎访问只有一处读：`INPUT_HELD` `0x4ca428`。新 SDK 面：状态块 256 → 512、`on_delete` 回调（`+0x50` 桩在 `ce_state_free` 之前调）。
+纯逻辑 `stock_core.c` 主机单测（确定性 / 钳位 / 动量 / 波动率聚集 / K 线 / 买卖 / 来回损耗 / 几何）。
+**行情模型 2026-09-08 换成隐藏参数 + 动量**（设计与平衡数据见 spec §3）：随机数改走自带 LCG、只在开局向引擎 RNG 播一次种，
+于是带不带这张卡不再影响同一关的弹幕随机（原来每秒要从共用 RNG 取四次）。AF9 的 replay 论证不受影响：种子取自确定时点，之后纯函数推进。
+
+| # | claim | 结论 |
+| --- | --- | --- |
+| AF1 | replay 安全 | **CONFIRMED（构造）** —— 输入只用 replay 重放的位；随机数 `ce_rand()` = `REPLAY_SAFE_RNG`；步进只在 `on_tick_2`。全整数，见下「AF1 证据」 |
+| AF2 | `on_activate` 里读到的低速位与这次 C 键同帧 | **🟡 待实跑** —— `Input__compute_edges` `0x42abc0` 每帧先算好 `INPUT_HELD` / `INPUT_PRESSED`，Player tick（优先级 0x17）里 `c_press` 才被调，所以读的是同一帧的 held。风险只在「按 C 的同一帧才按下 Shift」这种人手做不到的情形 |
+| AF3 | 写 `MONEY` 的安全 | **照先例** —— 黄金小丑（§W）/ 倒吊人直接写 `0x4ccd34`，HUD 每帧重读；没有钳位（引擎自己也没有发现上限，SM §1）。买时先查 `>= 50` 再减，卖只加：单测 `test_round_trip` 钉住「现金永不为负」 |
+| AF4 | 33 个 UI 层 VM 起得出来 | **🟡 待实跑** —— `ce_anm_spawn_ui` 走 `0x409670`（真银圣剑 / 衔尾蛇各起 1 个已验）；VM 池是 fast 数组（`id & 0x7fff` 下标，`01-vm-instantiate.md`），容量未查。失败返回 0 → 整组删掉、日志一行、下一帧重试；不会半张图 |
+| AF5 | `drawRect` + `scale` = 像素尺寸 | **照先例** —— 青眼血条 script87 `drawRect(1,1); scale(56, 4)` 画出 56×4 的条；`ce_anm_set_scale` 写 `vm+0x54`（O29k）。脚本里没有 `scaleTime`，插值器不会盖 |
+| AF6 | 矩形锚点是中心 | **🟡 待实跑** —— ANM 默认 anchor 居中（thpages）；`stock_layout` 按中心算 cx/cy。若实跑发现是左上角锚，几何整体偏 (w/2, h/2)，改 `apply_rect` 一处 |
+| AF7 | UI 层坐标空间是 2× | **推断（X5）** —— HUD 图标根 VM `pos(1056, 537)`、x 步进 80 对应 640 空间的 (528, 268) / 40 px 图标；`resolutionMode(2)` 同款。面板常量按 2× 写；`ce_hud_text` 是 640 字面量空间（AC6），两套分开 |
+| AF8 | VM 生命周期不漏 | **CONFIRMED（构造）** —— 每帧 `vms_alive` 认领，任一没了整组重建；`on_run_reset` / `on_delete` 都 `kill_vms`。见下「AF8 证据」 |
+| AF9 | ctor 幂等 | **CONFIRMED（构造）** —— `inited` 位；每关开场引擎再调 ctor 不会重开盘（SDK §9 ★）。不用 `owned[]`：mode 1 装载不调 ctor，状态本来就是零 |
+| AF10 | 无敌人 / 对话中不能交易 | **引擎门控** —— `04-active-cards.md` §2 四重门；充能也停。零售主动卡共性，用户已接受 |
+| AF11 | 整数不溢出 | **CONFIRMED（单测 + 2026-09-08 复核修正，M3）** —— 交易 / 市值用 int64 中间量；`test_value_pnl` 1 万股 × 9999.00；价格步进 `price × r` 在价格封顶时可达约 999900 × 2549 ≈ 2.55e9，**超过** 2^31，正因如此才必须走 int64。见下「AF11 证据」 |
+| AF12 | 状态块 512 的副作用 | **CONFIRMED** —— `s_mem[256][512]` 静态 128 KB，`ce_state_alloc` 的上界检查用同一常量（单测）；`_Static_assert(sizeof(stock_card_t) <= 496)` |
+| AF13 | 与其它主动卡共存 | **引擎语义** —— 只有选中的主动卡收到 `c_press`；D 键切卡由引擎管（`0x800`）。面板常驻不随选中变 |
+| AF14 | `on_activate` 读到的低速位不是玩家瞬时按键，可能被录制器 OR 过 | **CONFIRMED（一手，2026-09-08 复审 I1）** —— 开着「射击时自动低速」时，按住射击 ＞9 帧后录制器把低速位强行 OR 进 `INPUT_HELD`，与是否真的按了低速无关；对玩家的后果与 replay 安全性见下「AF14 证据」 |
+
+**AF1 证据**：输入只用 replay 重放的位——用卡 `0x400` 走引擎分派、低速 `0x008` 读 `INPUT_HELD`，回放时二者都由 replay 写入（`04-active-cards.md` §1）；
+随机数 `ce_rand()` = `REPLAY_SAFE_RNG` `0x4cf288`（零售 Suwako / Yachie / Miko 同源）；股价步进只在 `on_tick_2`（管理器 tick，回放同样跑）。
+
+**AF11 证据（2026-09-08 修正，M3）**：`stock_step` 的 `r` = 阶段漂移（幅度 ≤ 15）+ 阶段波动 × 噪声 / 1000（幅度 ≤ 60）+ 均值回归 `(STOCK_PRICE_OPEN − price) / 400`；
+价格封顶 `STOCK_PRICE_MAX = 999900` 时均值回归项 = `(10000 − 999900) / 400 = −2474`（整数截断），三项同号叠加的最坏情形 `r ≈ −(15 + 60 + 2474) = −2549`。
+此时 `price × r ≈ 999900 × 2549 ≈ 2.5487e9`，超过 2^31（2,147,483,648）约 4 亿，32 位有符号乘法会溢出。`stock_core.c:54` 把中间量提升成 `int64_t`
+正是为了扛住这一步，不是因为乘积本来就塞得进 32 位——此前这里写的「≤ 999900 × 2500 < 2^31」漏算了均值回归项，算式本身是错的，结论（不溢出）不受影响。
+
+**AF14 证据**：`0x462940`（replay 录制路径）里，若供体配置位 `0x200`（"射击时自动低速"）被置位、射击位在 `INPUT_HELD` 里、且射击按住计数器 ＞ 9 帧，
+就把低速位 `0x008` 强行 OR 进即将写入的 `INPUT_HELD` 字——不管玩家有没有真的按住低速。后果：开着这个选项的玩家只要在按射击键（STG 里近乎全程都按着），
+`on_activate`（`stock.c:121`）读到的低速位永远是 1，C 键会一直走卖出分支；想买入得先松开射击满 10 帧再按 C，体验上是反直觉的。
+**Replay 不受影响**：录制侧的 OR 发生在把这一帧的输入字写进 replay 之前，回放路径只是把录制下来的字原样写回、不会再跑一次这段 OR 逻辑——
+所以 AF1「输入只用 replay 重放的位」依然成立；这条只是人手操作的手感问题，不是同步性问题。实跑核对见 [`NEXT.md`](NEXT.md) §1p。
+
+**AF8 证据**：底板先起（UI 列表尾插 = 后画在上），再 16 组蜡烛；任一没了整组重建，保证叠放顺序不乱。`on_delete` 是本次新加的 `+0x50` 回调：
+先调卡（此时私有状态还活着，能拿到 `bg_id` / `body_id` / `wick_id`）再 `ce_state_free`，倒吊人摧毁（`ce_destroy_card` → `vt+0x50`）与局末 recount 都经过它。
+
+**实跑要看的**：见 [`NEXT.md`](NEXT.md) §1p。
+
+## AG. 卡组编成崩溃（2026-09-08 实跑）—— dev 权重把商店池顶爆 → 门 FAIL → 菜单读到没建出来的卡
+
+**现象**：只挂 `_test` 时，主菜单进「卡组编成」看到空内容，按 Z 崩在 `0x414b7e`（`MOV ESI,[EAX+4]`，EAX = 0）。
+只挂 `_255` 一切正常。日志逐字给出了前两环。
+
+| # | claim | 结论 |
+| --- | --- | --- |
+| AG1 | 触发源是 dev 权重覆盖 | **CONFIRMED（日志）** —— 见下「AG1 证据」 |
+| AG2 | 为什么现在才炸 | **CONFIRMED（算术）** —— 股市是第 23 张新卡。22 张时 22 × 25 = 550 ≤ 560，第 23 张顶到 575。与卡 80 的行为无关，它只是压垮容量的那一张 |
+| AG3 | FAIL 之后门不再建菜单 | **CONFIRMED（一手）** —— `selfcheck.c` 是直线序列：`ce_cards_load` 失败即 `goto fail`，`ce_menu_setup` 根本不跑；失败处置只有 `restore_alloc_bound` |
+| AG4 | 新卡 id 被禁 | **CONFIRMED（一手）** —— 见下「AG4 证据」 |
+| AG5 | `_test` 把「空槽」变成「什么都没有」 | **CONFIRMED（一手）** —— 见下「AG5 证据」。**这就是「只有 `_test` 才崩」的原因** |
+| AG6 | 空指针的确切来源 | **CONFIRMED（一手）** —— 见下「AG6 证据」 |
+| AG7 | 顺序表尾界被撑到 255 是否有份 | **REFUTED** —— `emit_codecaves` 把 57..254 填成 id 57（BACK），`0x4149de` 查表读 `row+0x20`（`deck_visible`）为 0，在 `0x4149e1` 全部跳过。EDX 仍只是零售可见且已解锁的数量。尾界无害 |
+| AG8 | 菜单搬迁有没有漏站点 | **CONFIRMED 无遗漏** —— 见下「AG8 证据」 |
+
+**AG1 证据**：`cards_dev: … retail_weight=6 new_weight=20 (71 rows changed)` 后紧跟
+`FAIL: cards: shop random pool 575 slots > 560`。`retail_weight 6` 把 55 张零售全踢出随机池，
+池子只剩新卡：23 × (20 + 5) = 575 > `CE_SHOP_POOL_SLOTS` 560。
+
+**AG4 证据**：`restore_alloc_bound` 把 `0x411479` 写回 `cmp ebx,0x38`，于是 id ≥ 57 在 `0x411482`
+的 `jmp [0x412dac+ebx*4]` 落到 default，`allocate_new_card` 返回 `0xffffffff`：不建对象、不入链、
+`mgr+0x28`（`num_total_cards`）不涨。
+
+**AG5 证据**：`BP_ce_test_deck`（`0x407ee3`，在 `AbilityManager__reset_cards` 里）把**每个**空槽换成
+`start_deck` 的下一个 id。不挂 `_test` 时空槽保持 id 56，走 `case 0x38` 分配出 `AbilityCardNullInf`，
+`num_total_cards > 0`；挂上之后这些槽换成 71/70/68/72/80，全部分配失败 ⇒ `num_total_cards` 归零。
+
+**AG6 证据**：菜单对象 `+0xfec` 是「玩家手上卡对象」的指针数组（256 槽），**只由** `0x415af0`
+沿卡链表按 `mgr+0x28` 次填；`+0xe4` 是它的游标。而 `0x414b6d` 处 `TEST EDX,EDX` 的 EDX 是**另一张表**
+（挑选列表 `__card_ids`，由顺序表遍历 `0x4149b0..0x414b59` 得出）的长度。两者由不同的 pass 产生、
+互不校核，所以挑选列表非空、手牌数组却一格没填时，`[EDI+EAX*4+0xfec]` 读到 memset 留下的 0。
+
+**AG8 证据**：全 `.text` 扫 imm32 `0x4b3600` / `0x4b36e4` 与 disp32 `+0x304`：6 处顺序表引用 +
+尾界 `0x414b55` + 16 处 `__card_ids` 全部在册；另一处 `0x4b36e4` 在 `0x4337f7`，是无关常量。
+抬到 255 的清理循环（`0x41495c`，ESI = this+`0xbec`）到 `+0xfe4` 为止，碰不到 `+0xfec`。
+
+**两道修复**（2026-09-08）：
+
+1. **让 dev 配置压不爆容量**（根因）：`ce_weight_override_fit`（`cards_def.c`，主机单测 `test_weight_override_fit`）把 `new_weight` 逐级下压到刚好过 `ce_shop_capacity_check` 为止，下限 1（0 会变必出资源卡、6 会退出随机池，都不是「少出现一点」），压不下去才原样返回让门照常 FAIL。日志 `cards_dev: new_weight 20 would overflow the shop pool (> 560 slots) — clamped to 19`。
+   `cards_dev.js` 同时把 `new_weight` 从 20 调到 15（23 张 = 460/560，留出余量）。
+2. **FAIL 之后别再塞注定失败的 id**（防线）：`selfcheck.c` 的 `fail:` 分支先调 `ce_dev_deck_disable()` 再 `restore_alloc_bound`。空槽于是恢复成 id 56 → `NullInf` 分配得出来 → `num_total_cards > 0`，菜单不再读到没填过的槽。
+
+**遗留（不修，记着）**：`+0xfec` 与 EDX 由两个 pass 各自产生、彼此不校核，是零售自带的脆弱处；零售里 `num_total_cards` 不可能为 0（空槽总能分配 NullInf），所以踩不到。任何让手牌数为 0 的改动都会重新暴露它。
+
+## AH. 商店随机池搬进 codecave（2026-09-08）—— 560 份的天花板
+
+**为什么有 560 这个数**：`CardShop__pick_weighted_random_offer` `0x416f50` 开头 `sub esp, 0x8d4`，
+其中 `0x8c0` 字节是「份数池」，基址 `ebp-0x8c4`，即 **560 个 dword**，每格放一张卡的表行指针。
+填池的两处写（`0x417100` 的 `rep stosd` 压 weight 份、`0x41712f` 起五条 mov 压「没拿过」的 +5 份）
+**全程没有越界检查**，计数器 `edi` 一路累加。而这块缓冲的末尾正好顶到 `ebp-0x4` 的栈金丝雀，
+再往上是保存的 ebp 与返回地址 —— 所以超限不是「多的被丢掉」，是踩烂返回地址，`0x48dc60` 的
+`__security_check_cookie` 把进程打死。
+
+**为什么现在动它**：零售 362 份 + 23 张新卡（权重 2）161 份 = **523 / 560**，正常游玩下再加 5 张就撞顶。
+
+| # | claim | 结论 |
+| --- | --- | --- |
+| AH1 | 560 = `0x8c0 / 4`，且缓冲紧贴金丝雀 | **CONFIRMED（一手）** —— 见上，`0x416f53` / `0x416f60` / `0x416f6e` 三条 |
+| AH2 | 填池无越界检查 | **CONFIRMED（一手）** —— 整段只有 `cmp ecx, 0xd64`（卡 id 循环上界），没有任何针对 `edi` 的比较 |
+| AH3 | 9 处站点就是全部 | **CONFIRMED（一手）** —— 位移 `0xfffff73c`（= −0x8c4）及其 +4/+8/+0xc/+0x10 变体在本函数内的全部出现：两处 `lea`、五条 `mov` 写、一条 `mov` 读，加 memset 的大小立即数 |
+| AH4 | 改写全部原地等长 | **CONFIRMED（编码）** —— 见下「AH4 证据」 |
+| AH5 | 栈帧一个字节不动 | **设计** —— `sub esp, 0x8d4` 与金丝雀保持原样；搬走之后那 0x8c0 只是没人用的栈空间。不动栈 = 不碰金丝雀、不碰任何其它局部的位移 |
+| AH6 | 全有或全无 | **设计** —— `check_pool`（`selfcheck.c`）在门里逐条按 `sites_gen.h` 的模板重算应有字节再比对，任何一处不符即 FAIL。半搬半留比不搬更危险：读走 cave 而写还在栈上（或反之）都会读到空池 |
+| AH7 | 池上限两处常量不许漂 | **CONFIRMED（编译期）** —— `cards.c` 里 `_Static_assert(CE_SHOP_POOL_SLOTS == CE_POOL_SLOTS)`，前者给主机单测用、后者由 `sites.py` 生成 |
+| AH8 | 与容量检查的关系 | 上限从 560 提到 **8192**。`ce_shop_capacity_check` 与 `ce_weight_override_fit` 的单测改成按常量表达（`CE_SHOP_POOL_SLOTS / N − 5`），不再写死边界 |
+
+**AH4 证据**：x86 的 SIB 编码里「mod 00 + base 101」= 纯 disp32、「mod 10 + base 101」= ebp + disp32，**两者同长**。
+所以五条写 `89 94 BD disp32` → `89 14 BD disp32`、一条读 `8B 8C 95 disp32` → `8B 0C 95 disp32`，都是 7 → 7 字节，
+只改 modrm 的 mod 两位。两处 `lea eax,[ebp-0x8c4]`（6 字节）→ `mov eax, imm32`（5）+ 一个 `nop`。
+memset 的 `push 0x8c0` → `push 0x8000`，长度不变。**没有一条指令需要挪位置，也没有一条跨越指令边界。**
+
+## AI. HUD 的坐标与绘制顺序（2026-09-08 一手）
+
+反 `zGui__on_draw` `0x43cd00`（`0x43d710` 是它的一行包装）得到的字面量坐标表 —— 全在 640×480 空间，
+不用做分辨率换算（同 AC6）。股市面板挪位置、持仓净值贴金钱都按这张表来。
+
+| 元素 | 坐标 | 对齐 / 字号 | 颜色（B, G, R）|
+| --- | --- | --- | --- |
+| 总分 | `(620, 42)` | 右对齐，font 10 group 3 | 0x70,0x70,0x70 |
+| 最高分 | `(620, 64)` | 同上 | 0x80,0x10,0x00 |
+| 残机 / 炸弹行 | `(…, 120)` | scale 0.6 | 0,0,0 |
+| 符卡计时 | `(224, 144/150/160/166)` | font 4 group 2 | 随 VM |
+| `%3d` `/%d` | `(576, 158)` `(597, 158)` | scale 0.6 | — |
+| 火力 | `(540, 182)` `.%2d (560, 189)` scale 0.6 `/%d. (574, 182)` `00 (606, 189)` | | 0,0,0x80 |
+| **金钱** | `(620, 204)` | **右对齐** | **0,0x80,0x80**（= `CE_HUD_MONEY_COLOR` `0xff808000`）|
+
+**★ 绘制顺序：HUD 文字永远在 UI 层图元之前。** `Gui__operator_new` `0x43bb4e` 把 `0x43d710`
+注册在优先级 **`0x31`**；而 UI 列表的 ANM 层最早是层 24 的桩、优先级 **`0x3c`**
+（`engine/anm/th18/02-render-stages.md` §1，UI 列表层 24–32 折叠到 37–45 那组桩）。
+两者之间没有任何 UI 层能插进去，**所以「让面板垫在自己的读数底下」这件事做不到** ——
+无论把脚本的 `layer()` 调到多少。唯一的解法是让文字与面板**不重叠**。
+（世界列表的层 20–23 优先级 `0x2e`–`0x38` 确实更早，但它们走相机 1、视口是弹幕区，
+画不到侧栏上，对 HUD 没用。）
+
+**AsciiManager 的排版字段**（Ghidra 结构体 `zAsciiManager`，一手）：字色 `+0x19228`、副色 `+0x1922c`、
+缩放 `+0x19230`、**字体 `+0x19244`**、**分组 `+0x19248`**、水平对齐 `+0x19250`、垂直对齐 `+0x19254`。
+金钱那行用的是 **font 10 / group 3 / 右对齐**，比默认的 font 0 大一圈 —— 想让自己的数字看着和金钱是一套就照抄这三个
+（`ce_hud_text_font`，画完逐项还原；不还原会把引擎后续的绘制带偏）。
+
+**对齐模式 `+0x19250`**：**2 = 右对齐**（金钱 `(620, 204)` 与总分 `(620, 42)` 一手确认）；
+**1 是引擎的常态值**（`FUN_0043cd00` 收尾时设的），实测表现为**左对齐**；于是 **0 只能是居中** —— 这一条是推的，实跑再确认。
+
+**★ 想把数字画在自己的底板之上，只能用 ANM 图元。** HUD 文字的绘制优先级（Gui `0x31`、
+AbilityManager `0x33`）永远早于任何 UI 层图元（≥ `0x3c`），所以 `ce_hud_text` 系列压不住自己的面板。
+`ce_hud_number_*`（`sdk.c`）就是为这个加的：一位一个 VM，脚本 `HUD_NUMBER`（script105，`pos(0,0)`），
+坐标走 UI 的 2× 空间，可右对齐。真银圣剑 / 衔尾蛇那个单位数字的 `ce_hud_digit_*` 是它的前身。
+
+**股市面板的落位（2026-09-08 改）**：从侧栏下部（压着卡组图标）挪到**右上角**，
+底板 640 空间 `(528, 50)` 尺寸 212×68 —— **顶边落在 y = 16，与弹幕区上边框对齐**（相机 0 视口 `(32, 16, 384, 448)`），盖掉总分与最高分——本 mod 里得分没有意义。
+底板 alpha 从 160 提到 220，否则底下的分数会透出来。行情读数放在面板底（84）与残机行（120）
+之间那条空隙（y = 96），持仓净值移到**金钱正下方**（`(620, 218)` 右对齐，与金钱同一个右边界、同款字体与字色 ——
+原先贴在金钱左边会撞上「金」的图标，且默认字体偏小），
+两者都不与面板重叠，于是不受上面那条顺序约束。
 
 ## G. OPEN —— 还没解决的
 

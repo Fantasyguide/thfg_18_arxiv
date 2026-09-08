@@ -49,6 +49,10 @@ int      ce_new_card_initial_unlocked(unsigned i);
 #define CE_DECK_CAP_MAX 3
 /* 开发配置 th18/cards_dev.js（只在 _test 里）：起手卡组与钩子追踪 */
 unsigned ce_dev_deck_count(void);
+/* 门禁失败后必须调：把 dev 起手卡组关掉。新卡 id 此时已被 restore_alloc_bound 禁掉，
+ * 再往空槽里塞它们只会让 allocate_new_card 返回 -1 —— 空槽本来会分配 NullInf 卡（id 56），
+ * 于是 num_total_cards 归零，卡组编成读到没填过的 +0xfec 槽，按 Z 空指针崩溃（AUDIT §AG）。*/
+void     ce_dev_deck_disable(void);
 uint32_t ce_dev_deck_id(unsigned i);
 int      ce_dev_trace(void);
 /* 行为 SDK（sdk.c）：门里核对 + 对账；返回 1 = 通过 */

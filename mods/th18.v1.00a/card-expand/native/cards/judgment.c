@@ -13,17 +13,6 @@
  *   boss 从 ENEMY_MANAGER.boss_ids[4] 走敌人链表按 enemy_id 找（照 get_boss_enemy_full 0x4237f0）；多 boss 一起超时。 */
 #include "sdk.h"
 
-static uint8_t *find_enemy(uint8_t *em, int32_t id)
-{
-    unsigned guard = 0;
-    for (uint8_t *node = *(uint8_t **)(em + CE_EM_ENEMY_LIST_HEAD); node && guard < 4096;
-         node = *(uint8_t **)(node + 4), ++guard) {
-        uint8_t *e = *(uint8_t **)node;
-        if (e && *(int32_t *)(e + CE_ENEMY_ID) == id) return e;
-    }
-    return 0;
-}
-
 /* 把 boss 当前攻击段的计时推到超时阈值；返回 1 = 推了 */
 static int expire_current_attack(uint8_t *enemy)
 {
@@ -42,35 +31,27 @@ static int expire_current_attack(uint8_t *enemy)
     return 0;
 }
 
-static int refuse(const char *why)
-{
-    uint8_t *p = CE_PLAYER();
-    ce_play_sound(CE_SE_INVALID, p ? *(float *)(p + CE_PLAYER_X) : 0.0f);
-    ce_log("judgment: refused (%s)", why);
-    return CE_ACTIVATE_REFUSED;
-}
-
 static int on_activate(ce_card_t *c)
 {
     (void)c;
     uint8_t *spell = CE_SPELLCARD();
     uint8_t *em = CE_ENEMY_MGR();
-    if (!spell || !em) return refuse("no spellcard/enemy manager");
-    uint32_t sf = *(uint32_t *)(spell + CE_SPELL_FLAGS);
-    if (!(sf & CE_SPELL_FLAG_ACTIVE)) return refuse("no spell card in progress");
-    if (sf & CE_SPELL_FLAG_TIMED_OUT) return refuse("spell already timed out");   /* 自然超时到 ECL 523 清 bit0 之间的窗口：别误伤下一段攻击 */
+    if (!spell || !em) return ce_refuse("judgment", "no spellcard/enemy manager");
+    uint32_t sf = ce_spell_flags();
+    if (!(sf & CE_SPELL_FLAG_ACTIVE)) return ce_refuse("judgment", "no spell card in progress");
+    if (sf & CE_SPELL_FLAG_TIMED_OUT) return ce_refuse("judgment", "spell already timed out");   /* 自然超时到 ECL 523 清 bit0 之间的窗口：别误伤下一段攻击 */
     int lives = CE_CURRENT_LIVES();
     int cost = ce_judgment_cost(lives);
-    if (!cost) return refuse("no lives");
+    if (!cost) return ce_refuse("judgment", "no lives");
 
     unsigned expired = 0;
     for (unsigned i = 0; i < CE_EM_BOSS_SLOTS; ++i) {
         int32_t id = *(int32_t *)(em + CE_EM_BOSS_IDS + i * 4);
         if (!id) continue;
-        uint8_t *e = find_enemy(em, id);
+        uint8_t *e = ce_enemy_by_id(em, id);
         if (e && expire_current_attack(e)) ++expired;
     }
-    if (!expired) return refuse("no boss with a timed attack");
+    if (!expired) return ce_refuse("judgment", "no boss with a timed attack");
 
     CE_CURRENT_LIVES() = lives - cost;
     ce_gui_update_lives();
@@ -79,8 +60,7 @@ static int on_activate(ce_card_t *c)
     *(int32_t *)(em + CE_EM_CAN_CAPTURE) = 0;
 
     ce_cancel_all_bullets();                                                  /* 安全垫：全屏消弹（弹 → 点道具）+ 激光 */
-    uint8_t *p = CE_PLAYER();
-    ce_play_sound(CE_SE_RELEASE, p ? *(float *)(p + CE_PLAYER_X) : 0.0f);      /* 反转牌同款发动音 */
+    ce_play_sound(CE_SE_RELEASE, ce_player_x());                              /* 反转牌同款发动音 */
     /* 演出：ability.anm script77（assets/ability/scripts/77_judgment_flash.anm.txt）——卡图副本在场地中央半透明浮现
      * （alpha 140）、铺满弹幕区（scale 1.25 → 1.45，320 高的卡图 × 1.45 ≈ 464 > 区域 448）、75 帧内缓缓放大并上浮 24 px，45 帧后 30 帧淡出。type(1) 二维、层 20，pos y 从区域顶部起算（236 ≈ 正中偏下）。*/
     uint32_t fx = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_JUDGMENT_FLASH, 20);

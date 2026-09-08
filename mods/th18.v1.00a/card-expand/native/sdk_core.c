@@ -160,3 +160,46 @@ int ce_pick_index(uint32_t rnd, unsigned n)
 {
     return n == 0 ? -1 : (int)(rnd % n);
 }
+
+
+/* ---- 自机弹伤害倍率层 ---- */
+
+static int s_dmg_permille[CE_SDK_CARD_ID_MAX + 1];
+static int s_dmg_agg = CE_DMG_UNIT;
+static int s_dmg_applier = -1;
+
+static void dmg_recompute(void)
+{
+    long long agg = CE_DMG_UNIT;
+    s_dmg_applier = -1;
+    for (int id = 0; id <= CE_SDK_CARD_ID_MAX; ++id) {
+        if (s_dmg_permille[id] <= 0) continue;
+        if (s_dmg_applier < 0) s_dmg_applier = id;          /* id 最小的那张落笔，稳定且与链表顺序无关 */
+        agg = agg * s_dmg_permille[id] / CE_DMG_UNIT;
+    }
+    s_dmg_agg = (int)agg;
+}
+
+void ce_dmg_reset(void)
+{
+    for (int id = 0; id <= CE_SDK_CARD_ID_MAX; ++id) s_dmg_permille[id] = 0;
+    s_dmg_agg = CE_DMG_UNIT;
+    s_dmg_applier = -1;
+}
+
+void ce_dmg_set(uint32_t id, int permille)
+{
+    if (id > (uint32_t)CE_SDK_CARD_ID_MAX) return;
+    if (permille < 0) permille = 0;
+    s_dmg_permille[id] = permille;
+    dmg_recompute();
+}
+
+int ce_dmg_aggregate(void) { return s_dmg_agg; }
+int ce_dmg_applier(void)   { return s_dmg_applier; }
+
+int ce_dmg_scale(int damage)
+{
+    if (s_dmg_agg == CE_DMG_UNIT) return damage;
+    return (int)((long long)damage * s_dmg_agg / CE_DMG_UNIT);
+}

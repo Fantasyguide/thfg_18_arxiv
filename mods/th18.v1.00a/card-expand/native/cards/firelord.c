@@ -51,15 +51,6 @@ static void impact_fx(float x, float y, float z)
     ce_screen_shake(FL_SHAKE_TIME, FL_SHAKE_START, FL_SHAKE_END);
 }
 
-static float player_x(void) { uint8_t *p = CE_PLAYER(); return p ? *(float *)(p + CE_PLAYER_X) : 0.0f; }
-
-static int refuse(const char *why)
-{
-    ce_play_sound(CE_SE_INVALID, player_x());
-    ce_log("firelord: refused (%s)", why);
-    return CE_ACTIVATE_REFUSED;
-}
-
 static void dismiss(ce_card_t *c, const char *why)
 {
     fl_state_t *s = ce_state(c, fl_state_t);
@@ -78,21 +69,17 @@ static void dismiss(ce_card_t *c, const char *why)
  * 两遍遍历：先数、再按游戏 RNG 抽的下标取坐标。只在本帧读，不缓存 enemy 指针。返回 0 = 没目标。*/
 static int pick_random_enemy(float *tx, float *ty, uint32_t *out_n, uint32_t *out_idx)
 {
-    uint8_t *em = CE_ENEMY_MGR();
+    uint8_t *em = CE_ENEMY_MGR(), *e;
     uint32_t n = 0, idx, i = 0;
     if (!em) return 0;
-    for (uint8_t **node = *(uint8_t ***)(em + CE_EM_ENEMY_LIST_HEAD); node; node = (uint8_t **)node[1]) {
-        uint8_t *e = node[0];
-        if (e && !(*(uint32_t *)(e + CE_ENEMY_FLAGS) & CE_ENEMY_FLAG_NO_LOCK)) n++;
-    }
+    CE_ENEMY_FOREACH(em, e) if (ce_enemy_lockable(e)) n++;
     if (!n) return 0;
     idx = fl_pick_index(ce_rand(), n);
-    for (uint8_t **node = *(uint8_t ***)(em + CE_EM_ENEMY_LIST_HEAD); node; node = (uint8_t **)node[1]) {
-        uint8_t *e = node[0];
-        if (!e || (*(uint32_t *)(e + CE_ENEMY_FLAGS) & CE_ENEMY_FLAG_NO_LOCK)) continue;
+    CE_ENEMY_FOREACH(em, e) {
+        if (!ce_enemy_lockable(e)) continue;
         if (i++ == idx) {
-            *tx = *(float *)(e + CE_ENEMY_POS_X);
-            *ty = *(float *)(e + CE_ENEMY_POS_Y);
+            *tx = ce_enemy_pos(e)[0];
+            *ty = ce_enemy_pos(e)[1];
             *out_n = n; *out_idx = idx;
             return 1;
         }
@@ -103,13 +90,13 @@ static int pick_random_enemy(float *tx, float *ty, uint32_t *out_n, uint32_t *ou
 static int on_activate(ce_card_t *c)
 {
     uint8_t *p = CE_PLAYER();
-    if (!p) return refuse("no player");
+    if (!p) return ce_refuse("firelord", "no player");
     int power = CE_CURRENT_POWER();
-    if (power < FL_POWER_GATE) return refuse("power too low");
+    if (power < FL_POWER_GATE) return ce_refuse("firelord", "power too low");
     fl_state_t *s = ce_state(c, fl_state_t);
-    if (!s) return refuse("no state slot");
+    if (!s) return ce_refuse("firelord", "no state slot");
 
-    const float *pp = (const float *)(p + CE_PLAYER_X);
+    const float *pp = ce_player_pos();
     fl_summon(s, pp[0], pp[1], pp[2]);                     /* 本体这帧还不出现：先 FL_INTRO_FRAMES 帧聚气（on_active_tick 的登场分支）*/
 
     /* 照 Tsukasa：spend_power → 无条件 repopulate（扣 2 档时档数必变；repopulate 顺手广播 on_power_level_change）*/
@@ -128,7 +115,7 @@ static int on_active_tick(ce_card_t *c, uint32_t elapsed)
     if (!s || !p) return 0;
     if (s->intro_left > 0) {                               /* 登场聚气：目标位置每帧几颗向中心汇聚的粒子；本体、判定、血条都还没有 */
         fl_step_t st = fl_step(s, 0);
-        float pz = ((const float *)(p + CE_PLAYER_X))[2];
+        float pz = ce_player_pos()[2];
         if (st.gather) {
             for (int i = 0; i < FL_GATHER; i++) {
                 uint32_t q = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_FIRELORD_GATHER, 13);
@@ -155,7 +142,7 @@ static int on_active_tick(ce_card_t *c, uint32_t elapsed)
         bar_destroy(s, 0);
         return 0;
     }
-    float pz = ((const float *)(p + CE_PLAYER_X))[2];
+    float pz = ce_player_pos()[2];
     float pos[3] = { s->x, s->y + fl_bob_dy(s), s->z };      /* 判定跟画面：呼吸浮动一起算 */
     int blocked = s->hp > 0 ? ce_cancel_radius(pos, FL_RADIUS, s->hp, 0) : 0;
     ce_anm_set_color(s->anm_id, blocked ? FL_COLOR_HIT : FL_COLOR_IDLE);

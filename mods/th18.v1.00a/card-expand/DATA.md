@@ -91,7 +91,7 @@ DLL 在开机自检门里调 thcrap 的 `stack_game_json_resolve("cards.js")`，
 | 上限 | 数 | 来源 |
 | --- | --- | --- |
 | 新卡总数 | **≤ 71** | 图鉴条目数 56+N 写进两处 `cmp r, imm8`（AUDIT §M）|
-| 商店随机池总份数 `Σ(weight+5)`（weight ∉ {0,6}，零售 + 新卡）| **≤ 560** | `pick_weighted_random_offer` `0x8c0` 栈缓冲（边界 #34）；零售最坏 362，剩 198 份 ≈ 28 张权重 2 的新卡 |
+| 商店随机池总份数 `Σ(weight+5)`（weight ∉ {0,6}，零售 + 新卡）| **≤ 8192** | 池子已搬进 codecave（AUDIT §AH）。零售只有 **560**（`pick_weighted_random_offer` 的 `0x8c0` 栈缓冲 / 4，末尾紧贴金丝雀、填池无越界检查）；零售自己占 362 份 |
 | 必出卡数 `count(weight==0) + count(dmode∈1..5)` + 6 | **≤ 57** | offer 栈数组 `[ebp-0xe4]`（边界 #34）；零售 5 + 6 + 6 = 17 |
 
 DLL 装载时按合并后的表**现算**这三条，超了写 `FAIL:` 并把分配器上界还原到零售值——整个扩容包等于没装。

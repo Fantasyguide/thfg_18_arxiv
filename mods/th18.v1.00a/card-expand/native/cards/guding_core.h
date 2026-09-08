@@ -16,7 +16,7 @@
 #define GD_FINAL_MARK        "Dead"   /* 子程序名里含它 = 这段攻击结束即 boss 死亡 */
 
 typedef struct {
-    int active;         /* 当前帧是否终符（on_bullet_created 读它）*/
+    int active;         /* 当前帧是否终符（伤害层的倍率跟着它的沿走）*/
     uint32_t frames;    /* 统计：本局终符总帧数 */
     uint32_t bullets;   /* 统计：本局翻倍过的自机弹数 */
 } gd_state_t;
@@ -27,7 +27,5 @@ int gd_find_active_slot(const uint8_t *interrupts, unsigned n);
 int gd_slot_is_final(const uint8_t *slot);
 /* 每帧：写入本帧判定，返回 +1 = 刚进入终符、-1 = 刚离开、0 = 没变 */
 int gd_update(gd_state_t *s, int final_now);
-/* 自机弹伤害：终符中 ×GD_MULT，否则原样 */
-int gd_bullet_damage(gd_state_t *s, int dmg);
-/* 每敌每帧上限：终符中 base×GD_MULT，否则 0（= 不抬）*/
-int gd_damage_cap(const gd_state_t *s, int base);
+/* 统计：终符中记一颗翻倍过的自机弹（真正的翻倍与抬上限由 SDK 的伤害层做，AUDIT §AA）*/
+void gd_count_bullet(gd_state_t *s);

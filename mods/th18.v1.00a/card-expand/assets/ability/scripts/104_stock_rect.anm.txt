@@ -1,0 +1,13 @@
+script script104 {
+    sprite(-1);
+    layer(26);
+    resolutionMode(2);
+    zWriteDisable(1);
+    blendMode(0);
+    drawRect(1.0f, 1.0f);
+    color(255, 255, 255);
+    alpha(255);
+    stop();
+    interruptLabel(1);
+    delete();
+}

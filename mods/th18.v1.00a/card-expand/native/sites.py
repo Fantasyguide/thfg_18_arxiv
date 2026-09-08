@@ -81,6 +81,25 @@ ORDER_END   = ORDER_TABLE + ORDER_COUNT * 4          # 0x4b36e4，只有 0x414b5
 ORDER_RVA   = ORDER_TABLE - 0x400000
 ORDER_CAVE  = "th18_card_order"                      # 255 dword；DLL 重排：[零售 0..55, 新 id…, 56, 57 填充]
 ORDER_EXCLUDE = {0x4337f7}                           # ★ 同值不同表：mov eax,[eax*4+0x4b36e4]，不许改
+# --- 商店随机池：pick_weighted_random_offer 0x416f50 的 0x8c0 栈缓冲 → codecave ---
+# 那个缓冲在 ebp-0x8c4，长 0x8c0（560 dword），**末尾紧贴 ebp-0x4 的栈金丝雀**，
+# 填池子的两处写全程无越界检查 ⇒ 超过 560 份直接踩烂金丝雀与返回地址（AUDIT §AH）。
+# 搬到 codecave 后份数上限只受 cave 大小限制；栈帧一个字节都不动（sub esp 保持 0x8d4）。
+POOL_CAVE   = "th18_card_pool"
+POOL_SLOTS  = 8192          # dword；零售最坏 362 份，255 张卡 × 权重 27 也放得下
+POOL_DISP   = 0xfffff73c    # 缓冲基址在栈上的位移（= -0x8c4），9 处站点都以它为基
+POOL_SITES  = (             # (地址, 原字节, 相对 cave 基址的偏移)  —— 全部原地等长改写
+    (0x416f6e, "68c0080000", None),   # push 0x8c0            → push <cave 字节数>（memset 大小）
+    (0x416f73, "8d853cf7ffff", None), # lea eax,[ebp-0x8c4]   → mov eax,<cave>; nop
+    (0x417100, "8d853cf7ffff", None), # 同上（填池子那段）
+    (0x41712f, "8994bd3cf7ffff", 0x00),  # mov [ebp+edi*4-0x8c4],edx → mov [edi*4+<cave>],edx
+    (0x417136, "8994bd40f7ffff", 0x04),
+    (0x41713d, "8994bd44f7ffff", 0x08),
+    (0x417144, "8994bd48f7ffff", 0x0c),
+    (0x41714b, "8994bd4cf7ffff", 0x10),
+    (0x41718f, "8b8c953cf7ffff", 0x00),  # mov ecx,[ebp+edx*4-0x8c4] → mov ecx,[edx*4+<cave>]
+)
+
 MENU_SIZE     = 0x13fc      # zAbilityMenu 大小（operator new / memset / sized delete）
 CARD_IDS_OLD  = 0x304       # __card_ids int32[0x38]，后面紧跟 num_total_cards，原地扩不了
 CARD_IDS_NEW  = 0x13fc      # 搬到对象尾部，255 项
@@ -621,6 +640,49 @@ MENU_SITES = (   # zAbilityMenu：(地址, 原字节, 新字节)。全部同长�
                                      0x41514a, 0x4151ef, 0x41520c, 0x4152b4, 0x4152d5, 0x415868, 0x415e83))
 
 
+def _pool_header_row(va, exp, off):
+    """把一条池站点编成 DLL 能自查的记录：改后字节（disp32 位置置 0）+ disp32 的位置与加数。"""
+    raw = bytes.fromhex(exp)
+    if raw[0] == 0x68:                       # push <字节数>：不依赖 cave
+        want, disp_at, uses_cave, add = bytearray(b"\x68\x00\x00\x00\x00"), 1, 0, POOL_SLOTS * 4
+    elif raw[0] == 0x8d:                     # mov eax,<cave>; nop
+        want, disp_at, uses_cave, add = bytearray(b"\xb8\x00\x00\x00\x00\x90"), 1, 1, 0
+    else:                                    # mov 的 modrm 去掉 ebp 基址，disp32 紧随 SIB
+        want, disp_at, uses_cave, add = bytearray([raw[0], raw[1] & 0x3f, raw[2], 0, 0, 0, 0]), 3, 1, off
+    assert len(want) == len(raw)
+    return "    { 0x%06x, %d, %d, %d, { %s }, 0x%x }," % (
+        va - 0x400000, len(want), disp_at, uses_cave,
+        ", ".join("0x%02x" % b for b in want) + ", 0" * (8 - len(want)), add)
+
+
+def emit_pool_codecave():
+    """商店随机池的搬迁目标。只给 size ⇒ thcrap 清零（同 th18_card_unlocked）。"""
+    return {POOL_CAVE: {"size": "0x%x" % (POOL_SLOTS * 4), "access": "RW",
+                        "title": "商店随机池搬迁目标（%d dword；零售是 ebp-0x8c4 的 560 格栈缓冲）" % POOL_SLOTS}}
+
+
+def emit_pool_binhacks(text, text_va):
+    """9 处，全部原地等长。x86 的「无基址 + 变址 + disp32」与「ebp + 变址 + disp32」同长，
+    所以 5 处 mov 与 1 处读都是 7 → 7；两处 lea 6 字节改成 `mov eax,imm32` 5 字节 + 一个 nop。"""
+    B = {}
+    for va, exp, off in POOL_SITES:
+        raw = bytes.fromhex(exp)
+        got = text[va - text_va: va - text_va + len(raw)]
+        if got != raw:
+            raise ShapeError("0x%06x：exe 里是 %s，表里写的是 %s" % (va, got.hex(), exp))
+        ref = "<codecave:%s%s>" % (POOL_CAVE, ("+%x" % off) if off else "")
+        if raw[0] == 0x68:                                  # push imm32（memset 大小）
+            code = "68" + "%08x" % 0                        # 占位，下面换成真实字节数
+            code = "68" + "".join("%02x" % b for b in (POOL_SLOTS * 4).to_bytes(4, "little"))
+        elif raw[0] == 0x8d:                                # lea eax,[ebp+disp32] → mov eax,<cave>; nop
+            code = "b8" + ref + "90"
+        else:                                               # mov 的 modrm：mod 10 → mod 00（去掉 ebp 基址）
+            code = "%02x%02x%02x" % (raw[0], raw[1] & 0x3f, raw[2]) + ref
+        B["pool_%06x" % va] = {"addr": "0x%06x" % va, "code": code, "expected": exp,
+                               "title": "商店随机池 → codecave（%d dword，栈缓冲只有 560）" % POOL_SLOTS}
+    return B
+
+
 def emit_menu_binhacks(text, text_va):
     """zAbilityMenu 扩容：3 处大小、16 处 __card_ids、1 处清理上界。新旧字节各自从 exe 现取/现算。"""
     new_size = MENU_SIZE + CE_MAX_ROWS * 4
@@ -779,6 +841,48 @@ def emit_test_patch():
     }
 
 
+def verify_pool_binhack(name, bh, text, text_va):
+    """逐条把 code 解回字节（<codecave:…> 当 4 字节占位），核三件事：
+    expected 与 exe 一致、改后与改前等长、改动只发生在允许的位置（memset 大小的立即数、
+    lea→mov 的 opcode、modrm 的 mod 位、以及 disp32）。"""
+    out = []
+    va = int(bh["addr"], 16); off = va - text_va
+    exp = bytes.fromhex(bh["expected"])
+    if text[off:off + len(exp)] != exp:
+        out.append("%s：exe 里是 %s，expected 写的是 %s" % (name, text[off:off + len(exp)].hex(), bh["expected"]))
+        return out
+    code = bh["code"]
+    n_ref = code.count("<")
+    if n_ref > 1:
+        out.append("%s：code 里有 %d 个 codecave 引用，应至多 1 个" % (name, n_ref))
+        return out
+    if n_ref:
+        i, j = code.index("<"), code.index(">")
+        pre, post = code[:i], code[j + 1:]
+        if len(pre) % 2 or len(post) % 2:
+            out.append("%s：code 的前/后缀不是整字节" % name)
+            return out
+        rendered = len(pre) // 2 + 4 + len(post) // 2
+        head = bytes.fromhex(pre)
+    else:
+        rendered, head, post = len(code) // 2, bytes.fromhex(code), ""
+    if rendered != len(exp):
+        out.append("%s：code 渲染 %d 字节 != expected %d（thcrap 会静默跳过校验）" % (name, rendered, len(exp)))
+        return out
+    if exp[0] == 0x68:                                   # push imm32：opcode 必须原样
+        if head[:1] != exp[:1]:
+            out.append("%s：push 的 opcode 被改了" % name)
+    elif exp[0] == 0x8d:                                 # lea eax,[ebp+disp32] → mov eax,imm32; nop
+        if head != b"\xb8" or post != "90":
+            out.append("%s：lea 应改成 `b8 <cave>` + 一个 nop，实得 %s…%s" % (name, head.hex(), post))
+    else:                                                # mov：只许把 modrm 的 mod 10 改成 00
+        if len(head) != 3 or head[0] != exp[0] or head[2] != exp[2]:
+            out.append("%s：mov 的 opcode / SIB 被改了" % name)
+        elif head[1] != (exp[1] & 0x3f) or (exp[1] >> 6) != 0b10:
+            out.append("%s：modrm 改法不对（应 mod 10 → 00，reg/rm 不变）" % name)
+    return out
+
+
 def verify_patch(path, text, text_va):
     """对账：把**已生成的 patch 文件**逐条拿回真 exe 核对。
 
@@ -806,6 +910,12 @@ def verify_patch(path, text, text_va):
         if name.startswith("snd_"):
             # 音效表这批有「常量后还有字节」与「纯立即数」两种形状，通用分支认不了
             bad += verify_sound_binhack(name, bh, text, text_va)
+            continue
+        if name.startswith("pool_"):
+            # 池搬迁有三种形状：纯立即数（memset 大小）、`mov eax,<cave>` + nop、
+            # 以及把 modrm 的 mod 从 10 改成 00（去掉 ebp 基址）后接 disp32 —— 通用分支的
+            # 「只许换常量、常量收尾」两条都对不上，单独核。
+            bad += verify_pool_binhack(name, bh, text, text_va)
             continue
         if name.startswith(("alloc_", "grow_", "menu_")):
             va = int(bh["addr"], 16); off = va - text_va
@@ -1004,6 +1114,13 @@ def emit_header(sites, unlock_reads, order_sites, menu_binhacks):
                                                   ", ".join("0x%02x" % x for x in bytes.fromhex(b["code"])) + ", 0" * (7 - len(bytes.fromhex(b["code"]))))
                    for b in menu_binhacks.values()] + [
               "};", "#define CE_NMENU (sizeof(CE_MENU)/sizeof(CE_MENU[0]))",
+              "#define CE_POOL_CAVE_NAME \"codecave:%s\"" % POOL_CAVE,
+              "#define CE_POOL_SLOTS  %d" % POOL_SLOTS,
+              "/* 每条：改后应有的字节（disp32 处先置 0），uses_cave 时 disp32 = cave + off，否则 = off */",
+              "typedef struct { uint32_t rva; uint8_t len, disp_at, uses_cave, want[8]; uint32_t off; } ce_pool_t;",
+              "static const ce_pool_t CE_POOL[] = {",
+              ] + [_pool_header_row(va, exp, off) for va, exp, off in POOL_SITES] + [
+              "};", "#define CE_NPOOL (sizeof(CE_POOL)/sizeof(CE_POOL[0]))",
               "typedef struct { uint32_t rva; uint8_t len, pre_len, post_len, pre[2], post[2]; } ce_unlock_t;",
               "static const ce_unlock_t CE_UNLOCK[] = {"]
     for va, d, raw in unlock_reads:
@@ -1085,7 +1202,7 @@ def main():
         path = a.out or os.path.join(HERE, "..", "patch", "%s.js" % VERSION)
         n, bad = verify_patch(path, text, text_va)
         print("对账 %s：%d 条 binhack" % (os.path.relpath(path, REPO), n))
-        n_alloc = sum(1 for k in json.load(open(path, encoding="utf-8"))["binhacks"] if k.startswith(("alloc_", "grow_", "unlock_", "order_", "menu_", "snd_")))
+        n_alloc = sum(1 for k in json.load(open(path, encoding="utf-8"))["binhacks"] if k.startswith(("alloc_", "grow_", "unlock_", "order_", "menu_", "pool_", "snd_")))
         if n - n_alloc != len(sites):
             bad.append("patch 里 %d 条搬表 binhack，扫描器认为应有 %d 条" % (n - n_alloc, len(sites)))
         for b in bad:
@@ -1163,6 +1280,8 @@ def main():
         doc["binhacks"].update(emit_unlock_binhacks(unlock_reads))
         doc["binhacks"].update(emit_order_binhacks(find_order_sites(text, text_va)))
         doc["binhacks"].update(emit_menu_binhacks(text, text_va))
+        doc["codecaves"].update(emit_pool_codecave())
+        doc["binhacks"].update(emit_pool_binhacks(text, text_va))
         doc["breakpoints"].update(emit_unlock_breakpoints(text, text_va))
         doc["breakpoints"].update(emit_text_breakpoints(text, text_va))
         doc["breakpoints"].update(emit_sdk_breakpoints(text, text_va))

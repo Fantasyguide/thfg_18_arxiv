@@ -43,7 +43,9 @@ def plan(retail_text: str):
     sprite0 = L.max_sprite_id(retail_text) + 1
     entries = [(r[0], src_path(r[1]), n_entry + k, sprite0 + k, (r[2] if len(r) > 2 else None)) for k, r in enumerate(L.read_order(ENTRIES))]
     scripts = []
-    for k, p in enumerate(sorted(SCRIPTS.glob("*.anm.txt"))):
+    # 按**编号数值**排（不是文件名字典序）：脚本号过 99 之后 "100_…" 的字典序会排到 "68_…" 前面
+    for k, p in enumerate(sorted(SCRIPTS.glob("*.anm.txt"),
+                                 key=lambda q: (int(m.group(1)) if (m := _FILE.match(q.name)) else -1, q.name))):
         m = _FILE.match(p.name)
         if not m:
             raise SystemExit(f"{p.name}：文件名要像 68_reverse_flash.anm.txt")

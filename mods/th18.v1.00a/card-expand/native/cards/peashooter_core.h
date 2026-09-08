@@ -1,0 +1,49 @@
+/* peashooter_core.h —— 豌豆射手（id 77）的纯逻辑：开火节奏状态机。
+ * 不碰引擎，主机 make test-host 直接测。
+ *
+ * 两种形态，都由**我们自己的计数器**当 `Player__tick_shooters_for_ability_card` 的 short_timer
+ * （引擎那个 `player+0x476d4` 松开射击键会跳，相位不可控）：
+ *   平时  —— 每 PEA_INTERVAL 帧一颗大豌豆（PVZ 原版是 1.425 s 一颗；本卡取整 1 秒）
+ *   开大  —— 每 PEA_GAT_INTERVAL 帧一排 PEA_GAT_ROWS 颗小豌豆，持续 PEA_GAT_FRAMES 帧
+ * 计时只在**射击帧**推进（`+0x1c` 本来就只在按住射击键时广播），所以「开大」不会在不开火时白烧。 */
+#pragma once
+#include <stdint.h>
+
+#define PEA_INTERVAL      60    /* 帧：1 秒一颗（PVZ 原版是 1.425 s ≈ 85 帧，2026-09-08 用户改成整 1 秒）*/
+#define PEA_DMG           90    /* 一颗大豌豆（sht 里的 damage，此处只作对账）→ 90 DPS */
+#define PEA_GAT_INTERVAL   5    /* 帧：开大时每 5 帧一排 */
+#define PEA_GAT_ROWS       7    /* 一排 7 颗，横向铺开 ±48 px */
+#define PEA_GAT_DMG        7    /* 一颗小豌豆；一排同帧 49，稳在最低的每帧上限（Sakuya 60）之下 */
+#define PEA_GAT_FRAMES   100    /* 开大持续帧数 → 20 排 × 7 = 140 颗 = 980 伤害 */
+#define PEA_WAIT_MIN    1100    /* 帧：两次开大之间至少等这么久（射击帧计）*/
+#define PEA_WAIT_SPAN    601    /* wait = MIN + rnd % SPAN ⇒ 周期 1200–1800 帧 = 20–30 s */
+#define PEA_CAP          180    /* 有豌豆在途的帧把每敌每帧伤害上限抬到这里 = Reimu 基值 90 + 一颗 90：
+                                   90 正好塞满 Reimu 的上限（自机弹一开火就把它挤掉）、又超出 Sakuya 的 60 */
+#define PEA_INFLIGHT      40    /* 帧：一颗豌豆（14 px/帧）飞出弹幕区的余量，448/14 ≈ 32 帧 */
+
+enum { PEA_SET_NORMAL = 0, PEA_SET_GATLING = 1 };
+
+typedef struct {
+    uint32_t timer;        /* 传给引擎当 short_timer；换形态时清 0，所以切进开大立刻就有第一排 */
+    uint32_t wait;         /* 距离下次开大还剩几个射击帧 */
+    uint32_t gat_left;     /* > 0 = 开大中，还剩几帧 */
+    uint32_t inflight;     /* > 0 = 可能有豌豆在途（每帧 −1；开火那帧置 PEA_INFLIGHT）*/
+    uint32_t bursts;       /* 开过几次大 */
+    uint32_t peas;         /* 打出去几颗（日志用）*/
+    uint8_t  pending_wait; /* 1 = 等调用方给一个随机数（见 pea_set_wait）*/
+} pea_state_t;
+
+typedef struct {
+    int      set;          /* PEA_SET_NORMAL / PEA_SET_GATLING —— 本帧该用哪一组 shooterset */
+    uint32_t timer;        /* 本帧传给引擎的 short_timer */
+    int      fires;        /* 1 = 这一帧这组会出膛 */
+    int      rows;         /* 本帧出膛几颗 */
+    int      burst_start;  /* 1 = 开大就在本帧开始（放光晕 + 音效）*/
+    int      burst_end;    /* 1 = 开大在本帧结束（之后要重新抽 wait）*/
+} pea_out_t;
+
+void pea_clear(pea_state_t *s);                        /* 局末 / 关店收子机：清干净并要一个新的 wait */
+void pea_set_wait(pea_state_t *s, uint32_t rnd);       /* 调用方在 pending_wait 时用游戏 RNG 喂进来 */
+void pea_shoot_frame(pea_state_t *s, pea_out_t *o);    /* 每个射击帧一次（要求 pending_wait == 0）*/
+void pea_frame(pea_state_t *s);                        /* 每帧一次（含不射击的帧）：inflight 倒数 */
+int  pea_needs_cap(const pea_state_t *s);              /* 1 = 本帧要抬每敌每帧伤害上限 */

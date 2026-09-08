@@ -14,11 +14,8 @@ typedef struct {
     int      durability;    /* 本关剩余挥砍次数 */
     uint32_t burst_left;    /* 还要出几帧伤害源 */
     uint32_t swings;        /* 统计：本局挥砍总数 */
-    /* HUD 数字（引擎侧，core 不碰）*/
-    uint32_t icon_id;       /* 引擎交来的 HUD 图标根 VM id（on_hud_anm）*/
-    uint32_t digit_id;      /* 我们的数字 VM id */
-    int      digit_shown;   /* digit VM 当前显示的数字（-1 = 还没设）*/
 } ts_state_t;
+/* HUD 数字不在这里：由 SDK 的 ce_hud_digit_t 管（truesilver.c 的 ts_card_t 包着它）*/
 
 void ts_stage_start(ts_state_t *s);       /* 每关开场：耐久回满、清爆发 */
 int  ts_on_bomb(ts_state_t *s);           /* 放了一发炸弹：耐久 > 0 → 扣 1、武装爆发、返回 1；否则 0 */

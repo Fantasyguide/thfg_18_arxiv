@@ -72,6 +72,32 @@ static int fill_table(uint8_t *base, uint8_t *cave, unsigned rows)
  * expected 不匹配被跳过），但分配器上界 binhack 两边都能打上（原字节没被前者动过），
  * 于是上界撑到 254 而跳转表只有 58 项 → 未注册 id 会 jmp 到 cave 之外。
  * 上界回到 56 后，只有 id 0..56 会被分派，任何行数的跳转表都放得下。*/
+/* 商店随机池搬迁（AUDIT §AH）：9 处站点逐条按 sites_gen.h 的模板重算应有字节再比对。
+ * 零售那 560 格是 `pick_weighted_random_offer` 里 `ebp-0x8c4` 的栈缓冲，末尾紧贴金丝雀、
+ * 填池的两处写没有越界检查 —— 所以这些站点只要有一处没打上，超过 560 份就会踩返回地址。
+ * 全有或全无：任何一处不符就 FAIL，别让「一半搬走一半还在栈上」跑起来。*/
+static int check_pool(uint8_t *base)
+{
+    uint32_t cave = ce_func_get ? (uint32_t)(uintptr_t)ce_func_get(CE_POOL_CAVE_NAME) : 0;
+    if (!cave) { ce_verdict("FAIL: %s not found — pool relocation incomplete", CE_POOL_CAVE_NAME); return 0; }
+    unsigned bad = 0;
+    for (unsigned i = 0; i < CE_NPOOL; ++i) {
+        const ce_pool_t *q = &CE_POOL[i];
+        uint8_t want[8];
+        memcpy(want, q->want, sizeof want);
+        uint32_t disp = q->uses_cave ? cave + q->off : q->off;
+        memcpy(want + q->disp_at, &disp, 4);
+        if (memcmp(base + q->rva, want, q->len) != 0) {
+            ++bad;
+            ce_log("pool: site 0x%08x NOT patched", 0x400000u + q->rva);
+        }
+    }
+    if (bad) { ce_verdict("FAIL: shop pool relocation — %u/%u sites not patched", bad, (unsigned)CE_NPOOL); return 0; }
+    ce_log("pool: %u sites verified, %d slots at %08x (retail stack buffer was 560)",
+           (unsigned)CE_NPOOL, (int)CE_POOL_SLOTS, cave);
+    return 1;
+}
+
 static int restore_alloc_bound(void *ctx)
 {
     uint8_t *base = ctx;
@@ -172,6 +198,7 @@ int ce_selfcheck(uint8_t *base)
     if (alloc) { ce_unlock_init(base); if (!ce_unlock_check(base)) goto fail; }
     if (alloc && !ce_text_check(base)) goto fail;
     /* 战线 E 第 10 段：cards.js → 表行 + 文案 + 注册表；顺序表 / 图鉴条目数（menu）消费注册表，所以在它前面 */
+    if (alloc && !check_pool(base)) goto fail;   /* 池上限依赖它，必须早于容量检查 */
     if (alloc && !ce_cards_load(base, cave, rows)) goto fail;
     if (alloc && !ce_menu_setup(base)) goto fail;
     /* 行为 SDK：基类虚表守卫、两断点、与 cards.js 对账 */
@@ -202,6 +229,7 @@ int ce_selfcheck(uint8_t *base)
                ok, (unsigned)CE_NSITES, bad, 0x400000u + s->rva,
                p[0], p[1], p[2], p[3], p[4], p[5], p[6]);
 fail:
+    ce_dev_deck_disable();                       /* 新卡 id 马上要被禁掉，别再往空槽里塞它们（AUDIT §AG）*/
     ce_failure_guard_fail(&guard, restore_alloc_bound, base);
     return 0;
 }

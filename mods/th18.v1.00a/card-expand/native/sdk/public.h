@@ -29,6 +29,9 @@ typedef struct {
     void (*on_enemy_drop_pre)(ce_card_t *, int32_t *);
     void (*on_bomb_spent)(ce_card_t *);
     void (*on_shop_open)(ce_card_t *);
+    /* 删对象（局末 recount / 倒吊人 ce_destroy_card）时、SDK 释放私有状态之前调：卡在这里删自己起的 VM 等外部资源。
+     * on_run_reset 只覆盖局末那条路，局中被摧毁只走这里。2026-09-08 股市（80）第一个用户。 */
+    void (*on_delete)(ce_card_t *);
     uint32_t active_recharge;
     int  (*on_activate)(ce_card_t *);
     int  (*on_active_tick)(ce_card_t *, uint32_t);
@@ -37,7 +40,16 @@ typedef struct {
     void (*on_item_collect)(ce_card_t *, uint32_t, const void *); /* BP_ce_item_collect 0x44625f：type 分派前；type = *(uint32_t*)(item+0xc78)，副作用未发生 */
     void (*on_item_commit)(ce_card_t *);                   /* BP_ce_item_commit  0x44658a：本道具分值已入 SCORE、公共收尾前 */
     void (*on_shot_damage)(ce_card_t *, int32_t, const float *);  /* BP_ce_shot_damage 0x45f2a2：本帧本敌可计分命中；(dmg 钳后 ≥1, pos = 敌世界坐标 x,y) */
+    /* 自机弹伤害倍率（千分比，1000 = ×1）。非 0 = 这张卡参与伤害层：SDK 在绑定时登记这个初值，
+     * 之后卡可以随时 ce_set_bullet_damage_permille() 改。所有参与者的值连乘成聚合倍率，
+     * 由其中一张（id 最小的）在 +0x28 里对 bullet+0x9c 就地乘一次、并在 +0x2c 里抬每帧伤害上限。
+     * ★ 别再自己写 bullet+0x9c：那样会各自取整、还得各自记得抬上限。边界：只管自机弹，
+     * 炸弹与 ce_damage_rect 的伤害源不在内。AUDIT §AA。*/
+    int  bullet_damage_permille;
 } ce_hooks_t;
+
+/* 改这张卡当前的自机弹伤害倍率（千分比）。只在值真的变了的时候调（古锭刀在终符沿、衔尾蛇在叠层时）。*/
+void ce_set_bullet_damage_permille(ce_card_t *c, int permille);
 
 int ce_give_card(uint32_t id, uint32_t mode, uint32_t notify);
 int ce_destroy_card(ce_card_t *victim);

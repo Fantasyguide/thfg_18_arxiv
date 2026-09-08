@@ -20,7 +20,9 @@
 #define CE_CARD_UNSET       0xffffffffu   /* 必填字段的「没给」*/
 
 /* 商店（AUDIT §N2、边界 #34） */
-#define CE_SHOP_POOL_SLOTS  560       /* pick_weighted_random_offer 的 0x8c0 栈缓冲 / 4 */
+#define CE_SHOP_POOL_SLOTS  8192      /* 池子已搬进 codecave（AUDIT §AH）。零售只有 560：
+                                       * pick_weighted_random_offer 的 0x8c0 栈缓冲 / 4，且末尾紧贴栈金丝雀、填池无越界检查。
+                                       * 必须与 sites_gen.h 的 CE_POOL_SLOTS 一致 —— cards.c 里有 _Static_assert 钉着。*/
 #define CE_SHOP_OFFER_SLOTS 57        /* AbilityShop__initialize 的 [ebp-0xe4] */
 #define CE_SHOP_RANDOM_MAX  6         /* 随机抽 3 张，带招财猫 6 张 */
 #define CE_SHOP_NEVER_WEIGHT 6        /* +0x14 == 6：永不进随机池；写进 NULL/BACK 行排除幻影 */
@@ -64,6 +66,15 @@ void ce_card_encode_row(const ce_card_def_t *d, uint32_t name_ptr, uint8_t row[C
  * new_ids 里的行改成 new_weight；传 -1 表示不动。返回改了几行。6 = 永不进随机池，0 = 保底资源卡（不动）。*/
 unsigned ce_weight_override(uint8_t *table, unsigned nrows, int retail_weight, int new_weight,
                             const uint32_t *new_ids, unsigned n_new);
+
+/* 同上，但**保证结果能过 `ce_shop_capacity_check`**：若覆盖后的随机池超过 `CE_SHOP_POOL_SLOTS`，
+ * 把 new_weight 逐级往下压（下限 1 —— 0 会把卡变成必出资源卡，6 会把它踢出池，都不是「少出现一点」的意思），
+ * 直到放得下为止。返回**实际生效的** new_weight（-1 = 没做覆盖；压不下去时返回传入值，容量问题交给门 FAIL）。
+ * `*changed` = 最终那一遍改了多少行。
+ * 由来：2026-09-08 实跑，dev 配置 new_weight 20 × 23 张新卡 = 575 > 560 让整个卡表装载被拒，
+ * 而静态 binhack 早已把菜单结构撑到 255 项 —— 卡组编成于是读到没建出来的卡对象，按 Z 就崩（AUDIT §AG）。 */
+int ce_weight_override_fit(uint8_t *table, unsigned nrows, int retail_weight, int new_weight,
+                           const uint32_t *new_ids, unsigned n_new, unsigned *changed);
 
 int  ce_shop_capacity_check(const uint8_t *table, unsigned nrows, unsigned *pool, unsigned *guaranteed,
                             char *err, unsigned cap);

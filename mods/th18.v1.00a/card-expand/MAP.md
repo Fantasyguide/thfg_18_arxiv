@@ -55,6 +55,7 @@
 | `menu_` | 20 | `zAbilityMenu` 大小 ×3、`__card_ids` ×16、清理上界 ×1 | `emit_menu_binhacks` ← `MENU_SITES` | 同上 | §M |
 
 第 1 步 patch（`th18_card_expand`，58 行）只有 `cardtable_`；其余全在 `_255`。
+该 patch 2026-09-07 退役、不再发布（复现：`make ROWS=58 gen`），现在发出去的只有 `_255`。
 
 ### 断点（`breakpoints`，DLL 导出同名 `BP_*`）
 
@@ -121,3 +122,6 @@
 - **局中删卡 / 过关结算事件**（2026-09-06，倒吊人 + 黄金小丑）：不加断点、不改字节。`ce_destroy_card` 复刻 recount `0x4080e0` 的删卡分支，HUD 交给引擎的 `0x408d00`；`on_shop_open` 挂在 `ce_shop_reopen` 已有断点的 MSG 开店分支。AUDIT §W，待实跑。
 - **终符判定**（2026-09-07，古锭刀）：不改字节、无新断点、无新引擎调用。`on_tick_2` 读 boss 活动中断槽的子程序名（`BossDead` / `MBossDead` = 最后一张符卡，ECL 一手全覆盖），翻自机弹 + 抬 `sht+0x28` 基值 ×2。AUDIT §Y，待实跑。
 - **收点系统 / 高速掉钱**（2026-09-08，辉针城 id 127）：被动卡。四个新 SDK 事件 + 断点（表见上）：`on_item_collect`/`on_item_commit` 两断点夹引擎分值加法器、stash SCORE 差量入批（有效窗口只在批集收集后）；`on_item_frame` 里判「池内无在飞计数道具」关批、按批量档位给倍率分数补差 + 碎片 spawn；`on_shot_damage` 按帧节流掉钱。批/档位/碎片循环纯逻辑在 `collect2x_core`（主机单测）；倍率弹字 = 原生 5 槽环（`[0x4cf420]`+`0x9cc`，tick `0x464020`/draw `0x464180`，AUDIT §Z10，Task 8）。AUDIT §Z，待实跑。
+- **SHT shooterset 连射**（2026-09-08，豌豆射手）：不改 exe 字节、无新断点。资源侧**新增一处写入面**——往四个 `pl0X.sht` 的 `+0xe0` 偏移数组的空位（零售用 23/40）追加两组 shooterset（索引 `0x17` / `0x18`）并在文件尾接数据；`assets/sht/append_shooterset.py` 每次回读校验三条不变式（头部 40、set 0 的 func 全 0、前 23 组逐字节不变）。代码侧只调早已复刻好的 `ce_tick_shooters_for_card`（`0x40a9c0` stdcall ret 0x10），**short_timer 自己数**（`param_2` 只进模运算，一手 AUDIT AJ3）。AUDIT §AJ，待实跑。
+- **自机弹伤害倍率层**（2026-09-08，衔尾蛇触发的提炼）：不改字节、无新断点、无新引擎入口。`.bullet_damage_permille` + `ce_dmg_*`（`sdk_core.c`，主机单测）把「加伤害」收成一件事：聚合连乘、由 id 最小的参与者在 `+0x28` 里**乘一次**（单次取整）、并在 `+0x2c` 里按同一倍率抬 `player+0x47984`。K♠ 与古锭刀已迁移（K♠ 顺手修了漏抬上限）。AUDIT §AA，待实跑。
+- **HUD 文字原语**（2026-09-08，倍率读数）：不改字节、无新断点。`ce_hud_text` 照零售 `CardMomoyo__on_draw` `0x4110a0` 复刻——`AsciiManager__drawf_debug` `0x41a110`（cdecl varargs，我们只用固定的 `"%s"`）+ `ASCII_MANAGER_PTR` `0x4cf2ac` + 字色 `+0x19228`（BGRA），只在虚表 `+0x48 on_draw` 里调。第一个用户：伤害层把聚合倍率写在火力值左边。AUDIT §AC，待实跑。

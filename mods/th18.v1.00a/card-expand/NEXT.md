@@ -14,7 +14,11 @@
 | 7 商店、10 JSON 数据 | 🔧 待实跑（AUDIT §N）|
 | 9 行为（SDK + 黑桃五张 + 强欲之壶 + 反转牌）| 🔧 待实跑（AUDIT §O）← **先做这个** |
 | 8 卡图 | 🔧 工具就位（[`assets/`](assets/README.md)）：黑桃五张占位图 sprite 118–127 已进 `_255/th18/abcard.anm`，待实跑 |
-| **21 辉针城（id 127）** | 🔧 **待实跑**（AUDIT §Z）—— 被动：TH14 收点 1:1 复刻（批量档位倍率 + 碎片 4:1 循环）+ 高速命中掉 P；四个新 SDK 事件（§1m）。2026-09-08 已八跑（钟声 ~0.13 s / 档位 / 碎片 4:1 / 掉 P 定案，Z15–Z21）；待第九跑 = Z22 成员门回归 |
+| **25 辉针城（id 127）** | 🔧 **待实跑**（AUDIT §Z）—— 被动：TH14 收点 1:1 复刻（批量档位倍率 + 碎片 4:1 循环）+ 高速命中掉 P；四个新 SDK 事件（§1s）。2026-09-08 已八跑（钟声 ~0.13 s / 档位 / 碎片 4:1 / 掉 P 定案，Z15–Z21）；待第九跑 = Z22 成员门回归 |
+| **24 股市（id 80）** | 🔧 **待实跑**（AUDIT §AF）—— 第一张「新机制」卡：C 买 / Shift+C 卖 50 金钱，K 线面板常驻 HUD 右下。**面板坐标 / 字号全是猜的**，实跑第一件事是把它挪到不挡东西的位置（§1p）。顺带 SDK：状态块 512、`on_delete` 回调 |
+| **23 旋风斩（id 79）** | 🔧 **待实跑**（AUDIT §AE）—— 被动：放炸弹时额外再连放 ⌊火力⌋−1 发，代价是同数的火力；不开新断点，全用已有的件（§1o）|
+| **22 衔尾蛇（id 78）+ 伤害层 + HUD 文字** | 🔧 **待实跑**（AUDIT §AA / §AB / §AC）—— 每 miss X 次自机弹伤害永久 +20％、X 递增；顺带把「加伤害」提炼成 SDK 的一层，K♠ / 古锭刀已迁移（§1n）|
+| **21 豌豆射手（id 77）** | 🔧 **待实跑**（AUDIT §AJ）—— 装备卡：豌豆射手子机向上吐豌豆，每 20–30 s 进机枪状态泼 140 颗；**第一张真走 SHT shooterset 的卡**（§1m）|
 | **20 古锭刀（id 76）** | 🔧 **待实跑**（AUDIT §Y）—— 被动武器：boss 终符期间自机弹伤害 ×2（含 Extra 道中）；判据 = 活动中断槽名含 `Dead`（§1l）|
 | **19 真银圣剑（id 75）** | 🔧 **待实跑**（AUDIT §X）—— 被动武器：每关前 2 发炸弹 +400 伤害 + 1 残机碎片；**HUD 小卡上画剩余次数**（第一次用虚表 `+0x44` 与 UI 列表建 VM，偏移待调，§1k）|
 | **18 倒吊人（id 74）** | 🔧 **待实跑**（AUDIT §W）—— 即时卡：随机摧毁卡组里另一张卡 + 300 金钱；**第一个局中删卡原语 `ce_destroy_card`**（§1j）|
@@ -80,6 +84,108 @@ trace: card 59 on_tick_2 (+0x2c) first hit / card 62 on_tick_2 / card 61 on_bull
 
 通过后：MAP §5 与 AUDIT §P 顶部记「实跑通过」。想改次数就改常量（以后可挂 `cards.js`）；
 **关卡中间开店**（MSG opcode 36 或 DLL 直接置 `GameThread+0xb0 |= 0x20000`）技术上可行，但 Stage / Spellcard 不冻结，只该在对话里做——见 §3.5。
+
+## 1r. 商店随机池上限 560 → 8192（2026-09-08，待实跑）
+
+把 `pick_weighted_random_offer` 那块 560 格的栈缓冲搬进 codecave，9 处站点原地等长改写；
+栈帧与金丝雀一个字节不动。原理与逐条证据见 [`AUDIT.md`](AUDIT.md) §AH。
+
+日志应多一行（在 `cards:` 之前）：
+
+```
+pool: 9 sites verified, 8192 slots at XXXXXXXX (retail stack buffer was 560)
+```
+
+体感应当**完全没有变化** —— 这一改只挪了池子的住处，抽卡的算法一个字没动。
+所以验收要点是「商店照常出货、权重感觉没变、多逛几家店不崩」。任何 `pool: site … NOT patched` 或
+`FAIL: shop pool relocation` 都是回归。想压力测一把：把 `cards_dev.js` 的 `new_weight` 调到 200
+（23 张 × 205 = 4715 份，远超零售的 560、仍在 8192 内），商店应当照常工作 —— 这是这次改动的直接证据。
+
+**天花板不再是瓶颈**：零售 362 + 23 张新卡（权重 2）161 = 523，现在离 8192 还很远。
+
+## 1q. 卡组编成崩溃（2026-09-08 已修，待复跑）
+
+**症状**：只挂 `_test` 时进「卡组编成」看到空内容、按 Z 崩在 `0x414b7e`。根因与两道修复见 [`AUDIT.md`](AUDIT.md) §AG。
+一句话：dev 的 `new_weight: 20` × 23 张新卡 = 575 份 > 商店随机池上限 560 ⇒ 卡表装载被拒 ⇒ 菜单没建起来 ⇒ 空指针。
+
+复跑要看的：日志里**不该**再出现 `FAIL: cards:` 与 `mitigation:`；`cards_dev:` 那行的 `new_weight` 应是 15。
+再把 `cards_dev.js` 的 `new_weight` 故意调回 20 跑一次，应看到
+
+```
+cards_dev: new_weight 20 would overflow the shop pool (> 560 slots) — clamped to 19
+```
+
+且游戏一切正常 —— 这条验证的是「dev 配置再也压不爆容量」。
+**加新卡时留意**：池子是 `Σ(weight+5)`，`new_weight 15` 到 28 张新卡就正好 560，之后钳位会自动接手并在日志里说明。
+
+## 1p. 股市（id 80，2026-09-08，待实跑）
+
+主动卡，不开新断点。`cards_dev.js` 起手最后一格已换成 80（原 67）。实现 `native/cards/stock.c` + `stock_core.c`（主机单测 10 组）；审计 AUDIT §AF。
+
+进关卡后日志应有：
+
+```
+sdk: 80 bound (.active_recharge = 30, .ctor = ctor, .on_activate = on_activate, .on_tick_2 = on_tick_2, .on_draw = on_draw, .on_run_reset = on_run_reset, .on_delete = on_delete)
+stock: opened at 100.00 (seed XXXXXXXX)
+stock: panel spawned (bg id … at 1056,862 size 432x180; candles x 848..1264 y 776..872; 2x UI space)
+```
+
+体感：**HUD 右上角**（原总分 / 最高分那块）一块近乎不透明的黑底板，**顶边与弹幕区上边框齐平**，里面一排红绿蜡烛每 4 秒多一根、最右那根每 0.25 秒变形；**现价用 ANM 数字画在 K 线图右上角**（不是文字 —— 文字压不住底板）；**买了之后**金钱数正下方两行 `2x 240` / `+18`（持股数与净值、本局盈亏；比金钱大一圈、黑描边、亮金 / 亮绿 / 亮红，空仓不画）；
+K 线图上还会多一条**暖黄的横线 = 买入均价**，蜡烛在线上方就是赚 —— 「该不该卖」不用读数字。
+**自机头顶**两行居中：上行 `2x 123`（几股 × 一股多少钱）、下行本局盈亏；空仓时只有一行价钱。
+颜色即答案：绿 = 高于均价（该卖）、红 = 低于均价（该买）、白 = 空仓。
+**居中用的是 `alignment_mode_h = 0`，这个值是推的**（2 = 右已确认、1 实测是左）—— 实跑第一眼就看得出来，
+不居中就把 `CE_ASCII_ALIGN_CENTER` 改成另一个值。
+分数与最高分被底板盖住是**故意的**（AUDIT §AI）—— HUD 文字永远画在 UI 层图元之前，读数与面板只能不重叠，所以读数放在面板底与残机行之间那条空隙里。
+选中股市（D 键切到它）→ 场上有敌人时按 C：金钱 −50、`HOLD` 变 `0.50`、`se_cardget` 音、日志 `stock: buy 50 @ 100.00 -> hold 0.5000 (money …)`；
+充能条空了约半秒回满。按住 Shift 再按 C：金钱回来（差 ≤ 1）、`se_bonus` 音、`stock: sell …`。钱 < 50 按 C / 空仓按 Shift+C → 无效音 + `card: refused (no cash / no holding)`，充能不掉。
+过关进店：面板停住（行情冻结）、持仓还在；下一关接着走。局末 `stock: run reset (…)`，面板消失。
+倒吊人摧毁它 → 面板立刻消失（`on_delete`）。
+
+**要调的**（全在 `stock.c` 顶部常量）：底板 / 蜡烛位置若压到卡组第三行图标（装备行 y≈398..430）或超出窗口，改 `UI_*`；
+三行字若重叠 / 太大，改 `TEXT_Y*`（HUD 字高按 Momoyo 的 `x1.5` 目测）；蜡烛矩形若以左上角为锚而不是中心，几何要整体偏 `(w/2, h/2)`（AF6）。
+崩溃优先怀疑：34 个 UI VM 起不出来（日志 `FAILED to spawn`，AF4）、`ce_anm_set_scale` 被脚本插值器覆盖（脚本里没有 scaleTime，不该）。
+行为怀疑：Shift+C 被当成买（AF2：`INPUT_HELD` 与 `INPUT_PRESSED` 同帧一致性）。
+反过来的情形（2026-09-08 复审 I1，AUDIT AF14）：**C 被当成 Shift+C**——如果玩家开着「射击时自动低速」这个选项，
+按住射击键（几乎全程）会让低速位被录制器强行 OR 成 1，于是按 C 永远走卖出分支，怎么按都买不进。
+测试时如果发现「C 键一直在卖、从没买过」，先去关掉这个选项再下结论，不要以为卡坏了。
+**已知的日志不精确**（2026-09-08 复审留的观察，不是 bug）：卖出那行日志里的金额永远印 `STOCK_LOT`（50），
+而实际成交额在两种情况下会更小 —— 持仓不足 50 金钱等值时是全卖，以及尾数被向下取整吃掉的那部分。
+看日志对账时以 `money` 那个字段的前后差为准，别信行首那个 50。
+
+**行情模型（2026-09-08 第二版）**：隐藏参数 + 动量，取代原来的三档 regime（那版一关只赚 5 金，等于没有）。
+现在**趋势会延续**，看得懂 K 线就能赚：机器人跑 300 关，趋势跟随一关中位 +529、反向 −184、完美抄底逃顶 2.18 倍。
+实跑时重点看**体感**：价格是不是「一段一段地走」而不是纯抖动；影线变长之后是不是真的更颠（波动率聚集，相关系数 0.76）。
+随机数改走卡自带的 LCG、只在开局向引擎 RNG 播一次种 —— 所以**带不带这张卡不该再影响同一关的弹幕**，
+这条可以用同一个 replay 对拍验证。设计与平衡数据见 spec §3。
+
+
+## 1o. 旋风斩（id 79，2026-09-08，待实跑）
+
+被动卡，**不开新断点**：`on_bomb_spent`（腐化那个断点）算账 + `on_tick_2` 调引擎自己的 `do_bomb` 接续（黄昏那套机制）。
+实现 `native/cards/whirlwind.c` + `whirlwind_core.c`（主机单测 6 组）；审计 AUDIT §AE。
+
+带满火力（4.00）进关，按 B：
+
+```
+sdk: 79 bound (.on_bomb_spent = on_bomb_spent, .on_tick_2 = on_tick_2, …)
+whirlwind: bomb at power 400 -> 3 extra release(s), power 400 - 300 = 100 (level changed 1)
+whirlwind: extra release #1 (do_bomb -> 0), 2 still owed, bombs 2      ← 三行，一发接一发
+whirlwind: extra release #2 (do_bomb -> 0), 1 still owed, bombs 2
+whirlwind: extra release #3 (do_bomb -> 0), 0 still owed, bombs 2
+```
+
+体感：**一次按 B 连着炸四发**（炸弹演出一发接一发，中间不重叠 —— 引擎自己的守卫决定的），
+右上角火力从 4.00 掉到 1.00、子机跟着减档（`repopulate`），**炸弹数只少 1 颗**（额外那三发不花炸弹）。
+再按一次 B：火力 1.00 ⇒ 日志 `no extra release (need >= 200)`，只炸一发 —— 这条同时验证了「自带终止」。
+火力 2.00 / 3.00 分别应接 1 / 2 发。
+
+要一并看的联动（都不是 bug，AUDIT §AE10/AE11）：与**腐化（70）**同时带 ⇒ 一次按 B 炸弹上限掉 4；
+与**真银圣剑（75）**同时带 ⇒ 前两发各算一次挥砍（各回一个残机碎片，耐久每关 2 点用完就没）。
+
+崩溃优先怀疑：`on_tick_2` 里自机指针为空时调 `do_bomb`（已判空，黄昏踩过这个坑）。
+行为怀疑：X 算错（看日志 `power %d - %d = %d`）、炸弹数补多补少（看每行末尾的 `bombs %d`）。
+卡图 `WHIRLWIND` sprite 160/161（程序生成，`assets/cards/make_whirlwind_art.py`）。
 
 ## 1f. 破损核心（id 71，2026-09-05，待实跑）
 
@@ -147,6 +253,71 @@ trace: card 59 on_tick_2 (+0x2c) first hit / card 62 on_tick_2 / card 61 on_bull
 `on_power_level_change`（破损核心会在此重申请子机——零售装备卡同款）、`ce_rand` 的 thiscall、V17 震屏工厂的 fastcall + `ret 0x10`（第一颗火球落地那帧崩就是它）。
 视觉怀疑：火球方向（script92 不碰 rotate，C 写 `vm+0x44`；贴图朝 +x）、本体是否被 script91 拉回原点（脚本不碰 pos，应不会）、
 拖尾是否堆在火球身后而不是身前（起在当前帧坐标、火球下一帧才前进）。
+
+## 1n. 衔尾蛇（id 78）+ 自机弹伤害倍率层（2026-09-08，待实跑）
+
+**两件事一起**：① 把「给自机弹加伤害」提炼成 SDK 的一层（AUDIT §AA），② 第一张用它的新卡（§AB）。
+不开新断点、不调新引擎入口、不改任何字节。
+
+**层**：卡声明 `.bullet_damage_permille`（千分比），SDK 连乘成聚合倍率，由**id 最小的参与者**在 `+0x28` 里
+对 `bullet+0x9c` 就地乘**一次**（单次取整、与链表顺序无关），并在 `+0x2c` 里把每敌每帧伤害上限
+`player+0x47984` 按同一倍率抬起来。启动日志里 K♠ / 古锭刀 / 衔尾蛇那几行应带
+`.bullet_damage_permille = 1100 / 1000 / 1000`。
+**回归重点**：古锭刀的两行 `guding: final spell ON/OFF` 与血条掉速应与改之前**一模一样**；
+K♠ 单带时打 boss 的血条掉速应**略快于**改之前（它以前漏抬上限，+10% 有一部分被配额吃掉）。
+两张一起带 = ×2.2，`ce_dmg_scale(90) = 198`（不是逐张取整的 198→…漂移，见 §AA4）。
+
+**HUD 倍率读数**（新原语 `ce_hud_text`，AUDIT §AC）：只要场上有任何一张改伤害的卡且倍率不是 ×1，
+**火力值左边**就应该出现一行 `x1.10` / `x1.60` / `x2.20`（与火力同色、同一行 y = 182）。
+带 K♠ 进关就能看到 `x1.10`；古锭刀进终符那一瞬间应该跳到 `x2.00`、符卡结束跳回（没有别的伤害卡时整行消失）。
+★ **第一次实跑要把位置贴回来**：字号与对齐用的是环境值（只设了字色），所以 `x` 可能压到火力上、也可能太靠左，
+调 `engine.h` 的 `CE_HUD_DMG_X` / `CE_HUD_POWER_Y`。崩溃优先怀疑 `ce_hud_text` 的 cdecl 声明（AC1）。
+
+**衔尾蛇**：`_test` 商店里买（价位档 9），或临时把 `cards_dev.js` 起手一格换成 78。
+带着它去送命（devstage 最省事）：
+
+```
+ouroboros: miss #1 -> stack 1 (bullet damage x1.20), next stack needs 2 more miss(es)
+ouroboros: miss #2 -> 1/2 toward stack 2
+ouroboros: miss #3 -> stack 2 (bullet damage x1.40), next stack needs 3 more miss(es)
+```
+
+第 1/3/6/10 次 miss 各升一层；升层那一下有 `se_powerup`（`0x0d`）。HUD 小卡右下角的数字应跟着变
+**0 → 1 → 2**（第一次出现时日志有 `ouroboros: hud digit spawned (icon id …)`——**把坐标贴回来**，
+数字偏移与真银圣剑共用 script99，还没实跑调过）。过关数字不清零（「永久」= 一整局）；
+局末 `ouroboros: run reset (…)`，重开一局回到 0 层、倍率回 ×1。
+血条掉速在 2 层（×1.4）之后应该看得出来。
+崩溃优先怀疑：`ce_anm_spawn_ui` 的 `ret 0x10` 第四个哑参（§X1，真银圣剑同款，也还没实跑）。
+
+通过后：CARDS.md 两行 🔧 → ✅；AUDIT §AA / §AB 顶部各记「实跑通过」；MAP.md §5 那条记一行。
+
+## 1m. 豌豆射手（id 77，2026-09-08，待实跑，致敬植物大战僵尸）
+
+装备卡，**本 mod 第一张真走 SHT shooterset 的卡**（`assets/sht/append_shooterset.py` 造好之后一直没人用那条链）。
+子机在自机右侧（偏移 `0x28`）向**正上方**吐豌豆：平时 **60 帧一颗 × 90 伤害**（PVZ 原版是 1.425 s ≈ 85 帧，2026-09-08 用户改成整 1 秒），
+每 20–30 秒进入 100 帧的**机枪状态**，20 排 × 7 颗 = 140 颗小豌豆（每颗 7，合 980）。综合约 123 DPS，
+但**只在按住射击键时打**（`+0x1c` 本来就只在射击时广播，所以「开大」也不会在不开火时白烧）。
+不改任何 exe 字节、不加断点；新写入面只有 `pl0X.sht` 尾部的两组 shooterset。审计 [`AUDIT.md`](AUDIT.md) §AJ。
+`cards_dev.js` 起手卡组没带它 —— `_test` 商店里买（新卡权重 20，很快刷到），或临时把起手一格换成 77。
+
+启动应有 `sdk: 77 bound (.on_power_level_change = …, .on_tick_shooters = …, .on_tick_2 = …, .on_load = …, .on_run_reset = …)`。
+拿到卡进关 → `peashooter: option allocated (ptr …, anm id …)` + `peashooter: next gatling in N shooting frames`（N ∈ 1100–1700）。
+**按住射击键**：右边那株豌豆射手每 **1 秒**吐一颗大豌豆（约 21 px 的亮绿球）直直朝上飞；
+攒够之后 → `peashooter: gatling #1 start at (x, y): 20 frames x 7 peas / 5 frames = 140 peas`，
+子机位置一团绿光 + `se_powerup`，接着约 1.7 秒里**一堵 7 列宽的小豌豆墙**滚上去，
+结束 `peashooter: gatling #1 done, M peas fired in total` + 下一行新的 `next gatling in …`。
+松开射击键：豌豆停、日志也停，**再按住时接着上次的进度**（不是从头等）。
+伤害：devstage 的 boss 血条在机枪那 1.7 秒明显掉一大截；平时那颗单独看不出来，**要在自机开着火的时候比**
+（Z10 抬上限就是为了让那颗 90 不被自机弹挤掉配额）。进商店子机收起、出店回来；过关不消失（装备卡）。
+
+崩溃优先怀疑：`ce_tick_shooters_for_card` 的压栈序（Z2，**第一次真调用**）、`ce_allocate_option`（§U1，破损核心已走过）。
+**开局就崩 / 一按射击键就崩**：先怀疑 `pl0X.sht` 没被 patch 应用到（日志里没有 `option allocated` 却有豌豆 = 不可能；
+真没应用的话开火时会去解析零售留空的第 `0x17` 项 → 指向 set 0 → fire_rate 0 → **除零**）。
+`dist/patch-step3/th18/pl0[0-3].sht` 四个文件必须在包里（`files.js` 应列出它们）。
+视觉怀疑：豌豆太大 / 太小（script100 / 101 的 `scale`）、子机位置（`PS_OPTION_OFFSET`）、
+机枪那堵墙太宽 / 太窄（`append_shooterset.py` 里 `PEA_GATLING` 的七个 `spawn_dx`）。
+
+通过后：CARDS.md 🔧 → ✅；AUDIT §AJ 顶部记「实跑通过」；MAP.md §5 那条记一行。
 
 ## 1l. 古锭刀（id 76，2026-09-07，待实跑，致敬三国杀）
 
@@ -287,7 +458,7 @@ corruption: bomb spent the cap — bombs 6/6 left
 放一发看到 **7 → 6**（而不是当前数 3 → 2）；过关后仍是 6/6（**不该**回到 3）；
 放到 0/0 后按炸弹键没反应。`sdk:` 那行要报 `ce_bomb_spent` 已应用，否则门会 `FAIL` 并还原。
 
-## 1m. 辉针城（id 127，2026-09-08，待实跑）
+## 1s. 辉针城（id 127，2026-09-08，待实跑）
 
 TH14 Collect Point 收点系统的 1:1 复刻（占位名 = TH14 三字名，用户定案）+ 被动二：高速射击命中掉 P（2026-09-08 实跑变更：原「掉钱」未出现 → 用户拍板改 P）。审计 [`AUDIT.md`](AUDIT.md) §Z；设计 `docs/superpowers/specs/2026-09-08-collect-2x-design.md`。
 机制/数值/卡数据见 [`CARDS.md`](CARDS.md) 辉针城补充；`price_tier` 10、sprite 116/117（透明占位）都是**占位，待用户确认/供图**。
@@ -313,6 +484,7 @@ TH14 Collect Point 收点系统的 1:1 复刻（占位名 = TH14 三字名，用
 | 图鉴上限 | 新卡 > 71 时才需要：两处 `cmp r,imm8` → cave | AUDIT §M3 |
 | ANM 特效 | 🔧 已有第一例：`ce_anm_spawn` + `assets/ability/`（反转牌 script68 亮牌），待实跑；透视真假当场看 | AUDIT O24；`engine/anm/th18/01-vm-instantiate.md` |
 | 更多事件 | 按需：击破、符卡开始 / 结束、擦弹… | 每个 = 一个断点 + AUDIT 一条 |
+| `truesilver.c` / `ouroboros.c` 补 `on_delete` | 两张卡的 HUD 数字 VM 只在局末 `on_run_reset` 里释放；被倒吊人局中摧毁时数字会在 HUD 上留到本局结束才消。股市（id 80）已经加了 `on_delete` 释放面板 VM，是现成的样板——照抄即可，本次不动这两张卡 | 2026-09-08 复审跟手记录，不是股市这条分支的缺陷 |
 
 ## 2b. 开发辅助（`_test`）
 

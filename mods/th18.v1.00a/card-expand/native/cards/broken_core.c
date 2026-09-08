@@ -2,7 +2,8 @@
  *
  * 子机走**零售装备卡机制**：`Player__allocate_option` 的 zPlayerOption（引擎管位置 / 聚焦位移 / 开店收起），
  * 长相 = ability.anm script88。与零售装备卡的两处不同：
- *   ① 子机指针存 `ce_state()` 而不是 card+0x54 —— 我们的对象是基类 0x54 字节，+0x54 在对象外；
+ *   ① 子机指针存 `ce_state()` 而不是 card+0x54 —— 我们的对象是基类 0x54 字节，+0x54 在对象外
+ *      （认领 / 申请 / 收起三件套 2026-09-08 提炼进 SDK 的 `ce_option_*`，见 sdk.h）；
  *   ② 不用 SHT shooterset 开火（那条链只在按住射击键时广播、而且弹要飞过去）。
  *
  * 闪电 = **定点伤害源 + 电弧特效**，两件独立的事：
@@ -26,57 +27,24 @@
 #define BC_BEAM_TEX_W     256.0f    /* 电弧贴图的宽（scale.x = 距离 / 它）*/
 
 typedef struct {
-    uint8_t   *option;              /* zPlayerOption*；0 = 还没有 */
-    uint32_t   retry;               /* 重试倒计时 */
-    bc_state_t st;
+    ce_option_t opt;                /* 子机槽（SDK：认领 / 申请 / 收起）*/
+    bc_state_t  st;
 } bc_card_t;
-
-/* 子机槽是引擎的公共资源：可能被回收、被别的卡拿走。每次用之前认领一次
- * （option+0xd0 是建它那张卡的 array_index，`Player__allocate_option` `0x40a790` 写的）。*/
-static uint8_t *option_of(ce_card_t *c, bc_card_t *s)
-{
-    uint8_t *o = s->option;
-    if (!o) return 0;
-    if (*(int32_t *)(o + CE_OPT_IN_USE) == 0 ||
-        *(uint32_t *)(o + CE_OPT_OWNER_INDEX) != *(uint32_t *)((uint8_t *)c + CE_CARD_ARRAY_INDEX)) {
-        s->option = 0;
-        return 0;
-    }
-    return o;
-}
-
-static uint8_t *make_option(ce_card_t *c, bc_card_t *s)
-{
-    if (!CE_PLAYER()) return 0;
-    s->option = (uint8_t *)ce_allocate_option(c, BC_OPTION_OFFSET, CE_ANM_ABILITY_SCRIPT_BROKEN_CORE_ORB);
-    ce_log("broken_core: option %s (ptr %08x, anm id %08x)", s->option ? "allocated" : "FAILED (pool full)",
-           (unsigned)(uintptr_t)s->option, *(uint32_t *)((uint8_t *)c + CE_CARD_OPTION_ANM_ID));
-    return s->option;
-}
-
-/* 收起电球：删掉子机的 ANM VM（零售在 `CardReimu1__operator_delete` `0x40ab20` 里做同一件事），
- * 并松开我们记的指针。槽本身由 `Player__repopulate_options_and_notify_cards` 统一回收。*/
-static void drop_option(ce_card_t *c, bc_card_t *s)
-{
-    uint32_t *vm = (uint32_t *)((uint8_t *)c + CE_CARD_OPTION_ANM_ID);
-    if (*vm) { ce_anm_delete(*vm); *vm = 0; }
-    if (s) { s->option = 0; s->retry = 0; }
-}
 
 /* +0x18：`Player__repopulate_options_and_notify_cards` `0x45d5e0` 尾部广播（开局 / 火力档变 / 关店后）。
  * 池刚被重建过，所以这里无条件重新申请一个 —— 与零售装备卡一致。*/
 static int on_power_level_change(ce_card_t *c)
 {
     bc_card_t *s = ce_state(c, bc_card_t);
-    if (s) make_option(c, s);
+    if (s) ce_option_alloc(c, &s->opt, BC_OPTION_OFFSET, CE_ANM_ABILITY_SCRIPT_BROKEN_CORE_ORB, "broken_core");
     return 0;
 }
 
 /* +0x20 / +0x4c：照 `CardReimu1____on_load__2` `0x40aab0` 与 `CardReimu1__method_4C` `0x40aad0`。*/
 static void on_run_reset(ce_card_t *c)
 {
-    ce_card_flags(c) &= ~2u;                 /* 零售装备卡在这个槽里清的就是 bit1 */
-    drop_option(c, ce_state(c, bc_card_t));
+    bc_card_t *s = ce_state(c, bc_card_t);
+    ce_option_drop(c, s ? &s->opt : 0);      /* 删子机 VM + 清零售在此清的 flags bit1 */
 }
 
 static int on_load(ce_card_t *c)
@@ -91,34 +59,30 @@ static int on_tick_2(ce_card_t *c)
     bc_card_t *s = ce_state(c, bc_card_t);
     uint8_t *p = CE_PLAYER();
     uint8_t *em = CE_ENEMY_MGR();
-    uint8_t *o;
+    uint8_t *o, *enemy;
     bc_aim_t aim;
     float ox, oy, tx, ty, pz, angle;
     uint32_t beam, spark;
 
     if (!s || !p) return 0;
-    o = option_of(c, s);
-    if (!o) {                                /* 关卡中途买到这张卡：广播可能还没来，自己补一个 */
-        if (s->retry) { s->retry--; return 0; }
-        s->retry = BC_RETRY_FRAMES;
-        o = make_option(c, s);
-        if (!o) return 0;
-    }
+    /* 认领；没有就按 BC_RETRY_FRAMES 的间隔补一个（关卡中途买到这张卡时广播可能还没来）*/
+    o = ce_option_get(c, &s->opt, BC_OPTION_OFFSET, CE_ANM_ABILITY_SCRIPT_BROKEN_CORE_ORB,
+                      BC_RETRY_FRAMES, "broken_core");
+    if (!o) return 0;
     /* 上一道的后续伤害帧：每帧在钉住的目标坐标放一个新源（AUDIT U9：一源一算，所以要拆帧；U12：单帧 30 不撞上限）*/
-    pz = ((const float *)(p + CE_PLAYER_X))[2];
+    pz = ce_player_pos()[2];
     if (bc_hit_frame(&s->st)) {
         float center[3] = { s->st.tx, s->st.ty, pz };
         ce_damage_rect(center, 0.0f, BC_HIT_LIFE, BC_DMG_FRAME, BC_HIT_W, BC_HIT_H);
     }
     if (!bc_tick(&s->st) || !em) return 0;
 
-    ox = (float)*(int32_t *)(o + CE_OPT_POS_X) * CE_SUBPIXEL_TO_PIXEL;
-    oy = (float)*(int32_t *)(o + CE_OPT_POS_Y) * CE_SUBPIXEL_TO_PIXEL;
+    ox = ce_option_x(o);
+    oy = ce_option_y(o);
     bc_aim_reset(&aim);
-    for (uint8_t **node = *(uint8_t ***)(em + CE_EM_ENEMY_LIST_HEAD); node; node = (uint8_t **)node[1]) {
-        uint8_t *e = node[0];
-        if (!e || (*(uint32_t *)(e + CE_ENEMY_FLAGS) & CE_ENEMY_FLAG_NO_LOCK)) continue;
-        bc_aim_consider(&aim, ox, oy, *(float *)(e + CE_ENEMY_POS_X), *(float *)(e + CE_ENEMY_POS_Y));
+    CE_ENEMY_FOREACH(em, enemy) {
+        if (!ce_enemy_lockable(enemy)) continue;
+        bc_aim_consider(&aim, ox, oy, ce_enemy_pos(enemy)[0], ce_enemy_pos(enemy)[1]);
     }
     if (!bc_aim_angle(&aim, &angle)) return 0;               /* 没目标：继续攒着（蓄满状态保持）*/
     tx = ox + aim.dx;

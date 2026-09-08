@@ -7,12 +7,13 @@
  * CE_CARD 展开：这张卡的回调表 → 21 个 __thiscall 桩 → 一份 21 槽虚表 → 登记进 ce_behaviors。
  * 桩按虚表分派（每张卡一套桩），没写的回调桩返回 0（= 基类槽 `xor eax,eax; ret` 的效果）。
  * +0x08（C 键）由 SDK 的主动卡机器接管（非主动卡等价于基类的 ret 0）；+0x38 / +0x3c / +0x40（充能存取，HUD 与 replay 用）直接指基类实现。
- * +0x50 operator_delete：先释放私有状态，再进基类的 delete。
+ * +0x50 operator_delete：先调卡的 on_delete（此时私有状态还活着），再释放私有状态，最后进基类的 delete。
  */
 #pragma once
 #include <stdint.h>
 #include "engine.h"
 #include "anm_ids.h"      /* build_ability.py 生成：ability.anm 追加的 sprite / 脚本号 */
+#include "sht_ids.h"      /* append_shooterset.py 生成：pl0X.sht 追加的 shooterset 索引（§12）*/
 #include "sdk/public.h"
 #include "sdk_core.h"
 
@@ -268,7 +269,8 @@ static inline int ce_anm_set_scale(uint32_t id, float sx, float sy)      /* 脚�
     return 1;
 }
 static inline void ce_anm_interrupt(uint32_t id, int n) { if (id) ((ce_fn_anm_interrupt_t)CE_FN_ANM_INTERRUPT_TREE)(id, n); }
-static inline void ce_anm_delete(uint32_t id)           { if (id) ((ce_fn_anm_delete_t)CE_FN_ANM_DELETE_BY_ID)(id); }
+/* 同 ce_anm_get_vm 的门槛（M6）：调用方管理器还没起好（比如对象删除路径抢在 ANM 管理器初始化前跑）就别摸它。 */
+static inline void ce_anm_delete(uint32_t id)           { if (id && CE_ANM_MANAGER()) ((ce_fn_anm_delete_t)CE_FN_ANM_DELETE_BY_ID)(id); }
 /* 火力（AUDIT §V）：照 CardTsukasa__c_press 0x410e60 的三步——门槛 → spend_power → repopulate。
  *   spend_power：thiscall(GlobalsInner; amount) ret 4，返回档数是否变了；CURRENT_POWER <= 一档时拒绝不扣，扣完钳到一档。
  *   repopulate：thiscall(PLAYER+0x620; 哑栈参) ret 4，按新档数重建子机并广播 on_power_level_change。
@@ -319,6 +321,144 @@ static inline int  ce_owned(uint32_t id) { return id < 255 && CE_OWNED_ARRAY()[i
  * 「获得即触发」的效果在 ctor 里先问这个。*/
 static inline int  ce_fresh_acquire(ce_card_t *c) { return !ce_owned(ce_card_id(c)); }
 
+/* ---- 反复出现的卡侧原语（SDK.md §5「先在卡里写，出现第二次就提炼进 sdk.h」）--------------
+ * 2026-09-08 提炼：装备卡子机三件套（破损核心 71 / 豌豆射手 77 的实现逐字相同）、HUD 图标数字
+ * （真银圣剑 75 / 衔尾蛇 78）、按 enemy_id 找敌人（古锭刀 76 / 神之宣告 66）、主动卡拒绝发动
+ * （青眼 67 / 神之宣告 66 / 炎魔 72）、自机 x（三处）。全部是原样搬家，引擎侧调用一个字节没变。*/
+
+/* 自机坐标。`CE_PLAYER_X` 是 float3 的基址 —— 这个假设本来就被青眼 / 豌豆射手 / 炎魔三张卡在用
+ * （各自 `(const float *)(p + CE_PLAYER_X)` 再取 `[1]` `[2]`），只是没写在一处。收进这里之后
+ * 它变成一条可审计的断言（engine.h 的 `CE_PLAYER_X` 注释）。自机指针为空时返回 NULL。*/
+static inline const float *ce_player_pos(void)
+{
+    uint8_t *p = CE_PLAYER();
+    return p ? (const float *)(p + CE_PLAYER_X) : 0;
+}
+/* 自机世界 x（放音效的声像位置）；自机指针为空时 0。*/
+static inline float ce_player_x(void)
+{
+    const float *pp = ce_player_pos();
+    return pp ? pp[0] : 0.0f;
+}
+
+/* 敌人坐标（同为 float3 基址；破损核心与炎魔在用）。*/
+static inline const float *ce_enemy_pos(const uint8_t *e) { return (const float *)(e + CE_ENEMY_POS_X); }
+/* 可锁定 = 非空且不带 NO_LOCK（破损核心瞄准与炎魔投火球是同一套过滤）。*/
+static inline int ce_enemy_lockable(const uint8_t *e)
+{
+    return e && !(*(const uint32_t *)(e + CE_ENEMY_FLAGS) & CE_ENEMY_FLAG_NO_LOCK);
+}
+/* 沿 EnemyManager 的敌人链表遍历（结点 {entry, next, prev}）。E 每轮拿到一个 zEnemy*（**可能为空**，
+ * 用 `ce_enemy_lockable(e)` 一并过滤掉）。guard 与 `ce_enemy_by_id` 同一条不变式：坏链表不会转死。
+ *     uint8_t *e;
+ *     CE_ENEMY_FOREACH(em, e) { if (!ce_enemy_lockable(e)) continue; … }
+ * 只在本帧读，别缓存 enemy 指针。*/
+#define CE_ENEMY_FOREACH(EM, E)                                                                     \
+    for (struct { uint8_t **n; unsigned g; } ce_it_ =                                               \
+             { (EM) ? *(uint8_t ***)((uint8_t *)(EM) + CE_EM_ENEMY_LIST_HEAD) : (uint8_t **)0, 0 }; \
+         ce_it_.n && ce_it_.g < CE_ENEMY_LIST_GUARD ? (((E) = ce_it_.n[0]), 1) : 0;                 \
+         ce_it_.n = (uint8_t **)ce_it_.n[1], ++ce_it_.g)
+
+/* 符卡状态（古锭刀看「在不在打符卡」、神之宣告还要改奖励位）。管理器为空时 flags 读作 0 = 不在符卡里。*/
+static inline uint32_t ce_spell_flags(void)
+{
+    uint8_t *sp = CE_SPELLCARD();
+    return sp ? *(uint32_t *)(sp + CE_SPELL_FLAGS) : 0;
+}
+static inline int ce_spell_active(void) { return (ce_spell_flags() & CE_SPELL_FLAG_ACTIVE) != 0; }
+
+/* 按 enemy_id 在 EnemyManager 的敌人链表里找（照 `get_boss_enemy_full` `0x4237f0`：结点 {entry, next, prev}）。
+ * 找不到 / em 为空返回 0；guard 防坏链表。要遍历全部敌人用下面的 `CE_ENEMY_FOREACH`。boss 用 `em + CE_EM_BOSS_IDS + i*4` 取 id 再问它。*/
+static inline uint8_t *ce_enemy_by_id(uint8_t *em, int32_t id)
+{
+    unsigned guard = 0;
+    if (!em) return 0;
+    for (uint8_t *node = *(uint8_t **)(em + CE_EM_ENEMY_LIST_HEAD); node && guard < CE_ENEMY_LIST_GUARD;
+         node = *(uint8_t **)(node + 4), ++guard) {
+        uint8_t *e = *(uint8_t **)node;
+        if (e && *(int32_t *)(e + CE_ENEMY_ID) == id) return e;
+    }
+    return 0;
+}
+
+/* 主动卡拒绝发动：`0x10` 无效音 + 一行 `card: refused (why)` + `CE_ACTIVATE_REFUSED`
+ * （c_press 桩看到它就退回刚装填的充能、不进释放态）。在 `on_activate` 里 `return ce_refuse(…)`。*/
+int ce_refuse(const char *card, const char *why);
+
+/* ---- 装备卡子机（AUDIT §U）----
+ * 槽是引擎的 12 个公共池，会被回收、被别的卡拿走 —— 每次用前认领一次
+ * （`option+0x00 != 0 && option+0xd0 == card+0x08`，`Player__allocate_option` `0x40a790` 写的）。
+ * 指针存卡的私有状态：新卡对象只有 0x54 字节，零售存的 `card+0x54` 已在对象外。
+ *   `on_power_level_change` → `ce_option_alloc`（池刚被重建，无条件再要一个，与零售装备卡一致）
+ *   `on_tick_2`            → `ce_option_get`（认领；没有就按 retry 间隔补申请一次）
+ *   `on_load` / `on_run_reset` → `ce_option_drop`（删子机的 ANM VM；槽本身由
+ *                                `Player__repopulate_options_and_notify_cards` 统一回收）*/
+typedef struct {
+    uint8_t *ptr;                    /* zPlayerOption*；0 = 还没有 */
+    uint32_t retry;                  /* 补申请的倒计时 */
+} ce_option_t;
+
+uint8_t *ce_option_claim(ce_card_t *c, ce_option_t *o);
+uint8_t *ce_option_alloc(ce_card_t *c, ce_option_t *o, int offset, int anm_script, const char *card);
+uint8_t *ce_option_retry(ce_card_t *c, ce_option_t *o, int offset, int anm_script,
+                         uint32_t retry_frames, const char *card);
+/* 收起子机：删它的 ANM VM + 清 flags 的 `CE_FLAG_EQUIP_RESET_BIT1`（零售 `CardReimu1__method_4C` 两件一起做）。
+ * o 可为 NULL：`card+0x1c` 的 VM 与 flags 照样处理。*/
+void     ce_option_drop(ce_card_t *c, ce_option_t *o);
+static inline uint8_t *ce_option_get(ce_card_t *c, ce_option_t *o, int offset, int anm_script,
+                                     uint32_t retry_frames, const char *card)
+{
+    uint8_t *p = ce_option_claim(c, o);
+    return p ? p : ce_option_retry(c, o, offset, anm_script, retry_frames, card);
+}
+/* 子机的世界坐标（`option+0x5c/0x60` 是定点数，× 1/128）*/
+static inline float ce_option_x(const uint8_t *o) { return (float)*(const int32_t *)(o + CE_OPT_POS_X) * CE_SUBPIXEL_TO_PIXEL; }
+static inline float ce_option_y(const uint8_t *o) { return (float)*(const int32_t *)(o + CE_OPT_POS_Y) * CE_SUBPIXEL_TO_PIXEL; }
+
+/* ---- HUD 小卡上的一位数字（AUDIT §X）----
+ * 引擎建好本卡的 HUD 图标后经 `+0x44` 把图标根 VM 的 anm id 交来（图标重建时会再交一次）；
+ * 在它的实体坐标上起 `ability.anm` 的 `HUD_DIGIT` 脚本，值变了就换 sprite。
+ *   `on_hud_anm`           → `ce_hud_digit_attach(&d, id, 当前值, "卡名")`（旧数字先删）
+ *   值变了 / `on_tick_2`    → `ce_hud_digit_set(&d, 值, "卡名")`（每帧对账，只有指针变了才真动手）
+ *   `on_run_reset`         → `ce_hud_digit_clear(&d)`
+ * 值钳在 0..CE_HUD_DIGIT_MAX —— 贴图只有十张。*/
+#define CE_HUD_DIGIT_MAX 9
+typedef struct {
+    uint32_t icon_id;                /* 引擎交来的 HUD 图标根 VM id */
+    uint32_t digit_id;               /* 我们的数字 VM id */
+    int      shown;                  /* 当前显示的数字（-1 = 还没设）*/
+} ce_hud_digit_t;
+
+void ce_hud_digit_attach(ce_hud_digit_t *d, uint32_t icon_anm_id, int value, const char *card);
+
+/* 多位数字，用 ANM 图元画（不是 ascii 文字）。
+ * ★ 存在的理由：HUD 文字的绘制优先级（Gui 0x31 / AbilityManager 0x33）**永远早于**任何 UI 层图元（≥ 0x3c），
+ *   所以「把数字画在自己的底板上面」用 ce_hud_text 做不到。图元对图元就没这个问题 —— 后起的画在上面。
+ * 坐标是 UI 层的 2× 空间；`right_align` 时 x 是右边界。脚本 `HUD_NUMBER` 的 pos 是 (0,0)，
+ * 所以位置完全由实体坐标决定。值为负按 0 处理；超过位数按最低几位显示。*/
+#define CE_HUD_NUMBER_MAX 6
+typedef struct {
+    uint32_t id[CE_HUD_NUMBER_MAX];
+    int      shown[CE_HUD_NUMBER_MAX];
+    int      digits;
+} ce_hud_number_t;
+void ce_hud_number_set(ce_hud_number_t *n, float x, float y, float spacing,
+                       int value, int digits, int right_align, const char *tag);
+void ce_hud_number_clear(ce_hud_number_t *n);
+void ce_hud_digit_set(ce_hud_digit_t *d, int value, const char *card);
+void ce_hud_digit_clear(ce_hud_digit_t *d);
+
+/* 在 HUD 上写一行字（只能在虚表 `+0x48 on_draw` 里调 —— 零售 `CardMomoyo__on_draw` 同款，AUDIT §AC）。
+ * 坐标用 Gui 自己那套字面量空间（火力在 (540, 182)）；color 是 BGRA 一个 dword，画完自动还原成白。
+ * 自己先 vsnprintf 成一行再交给引擎的 `"%s"`，不转发 varargs。 */
+void ce_hud_text(float x, float y, uint32_t bgra, const char *fmt, ...);
+/* 同上，但把 AsciiManager 的排版状态全摊开：描边色（0 = 不动）、字体 / 分组 / 水平对齐
+ * （各 -1 = 不动）、缩放（≤0 = 不动）。想和金钱那行一样就传
+ * `CE_ASCII_FONT_MONEY, CE_ASCII_GROUP_MONEY, CE_ASCII_ALIGN_RIGHT`，想更大再给 scale。
+ * 每一项都先存后改、画完还原 —— 引擎后面的绘制全靠这些环境值。*/
+void ce_hud_text_ex(float x, float y, uint32_t bgra, uint32_t shadow,
+                    int font_id, int group, int align_h, float scale, const char *fmt, ...);
+
 /* sdk.c：主动卡机器（桩里调）*/
 int  ce_sdk_c_press(void *self, const ce_hooks_t *h);
 void ce_sdk_active_tick(void *self, const ce_hooks_t *h);
@@ -326,6 +466,10 @@ void ce_sdk_active_reset(void *self, const ce_hooks_t *h, int clear_recharge);
 
 /* sdk.c */
 void ce_sdk_trace(uint32_t id, unsigned slot, const char *name);   /* trace 开着才记；每张卡每槽记第一次 */
+/* 伤害层（§AA）：两个桩里各调一次。只有「落笔人」那张卡真的动手，其余是一条比较就返回。 */
+void ce_sdk_scale_bullet_damage(uint32_t id, void *bullet);
+void ce_sdk_damage_cap_tick(uint32_t id);
+void ce_sdk_damage_hud_draw(uint32_t id);
 void ce_sdk_on_shop_open(void);                                   /* shop.c 在 MSG 开店那一帧调：沿链表分派 on_shop_open */
 /* collect-2x（辉针城卡）presence 续批谓词（§Z21/§Z22）：池里有没有批集道具（type∈{1,2}）在
  * **真空飞行**（state == CE_ITEM_STATE_VACUUM）—— state 3 = V 门（上线/放 B/对话）放飞的收点道具
@@ -373,13 +517,17 @@ typedef void (CE_TC *ce_base_del_t)(void *, uint32_t);
     CE_STUB2(ID, on_tick_shooters, 0x1c) \
     CE_STUB0(ID, on_load, 0x20) \
     CE_STUB0(ID, on_tick, 0x24) \
-    CE_STUB1(ID, on_bullet_created, 0x28, void *) \
+    static int CE_TC ce_s_##ID##_on_bullet_created(void *self, void *b) { \
+        ce_sdk_trace(ID, 0x28, "on_bullet_created"); \
+        ce_sdk_scale_bullet_damage(ID, b); \
+        return ce_hooks_##ID.on_bullet_created ? ce_hooks_##ID.on_bullet_created((ce_card_t *)self, b) : 0; } \
     static int CE_TC ce_s_##ID##_c_press(void *self) { \
         ce_sdk_trace(ID, 0x08, "c_press"); \
         return ce_sdk_c_press(self, &ce_hooks_##ID); } \
     static int CE_TC ce_s_##ID##_on_tick_2(void *self) { \
         ce_sdk_trace(ID, 0x2c, "on_tick_2"); \
         ce_sdk_active_tick(self, &ce_hooks_##ID); \
+        ce_sdk_damage_cap_tick(ID); \
         return ce_hooks_##ID.on_tick_2 ? ce_hooks_##ID.on_tick_2((ce_card_t *)self) : 0; } \
     CE_STUB2(ID, on_enemy_drop, 0x30) \
     static void CE_TC ce_s_##ID##_on_stage_start(void *self) { \
@@ -387,13 +535,19 @@ typedef void (CE_TC *ce_base_del_t)(void *, uint32_t);
         ce_sdk_active_reset(self, &ce_hooks_##ID, 0); \
         if (ce_hooks_##ID.on_stage_start) ce_hooks_##ID.on_stage_start((ce_card_t *)self); } \
     CE_STUB1(ID, on_hud_anm, 0x44, uint32_t) \
-    CE_STUB0(ID, on_draw, 0x48) \
+    static int CE_TC ce_s_##ID##_on_draw(void *self) { \
+        ce_sdk_trace(ID, 0x48, "on_draw"); \
+        ce_sdk_damage_hud_draw(ID); \
+        return ce_hooks_##ID.on_draw ? ce_hooks_##ID.on_draw((ce_card_t *)self) : 0; } \
     static void CE_TC ce_s_##ID##_on_run_reset(void *self) { \
         ce_sdk_trace(ID, 0x4c, "on_run_reset"); \
         ce_sdk_active_reset(self, &ce_hooks_##ID, 1); \
+        ce_dmg_set(ID, ce_hooks_##ID.bullet_damage_permille); /* 回到声明的初值；声明 0 的卡也要清掉运行时报过的倍率 */ \
         if (ce_hooks_##ID.on_run_reset) ce_hooks_##ID.on_run_reset((ce_card_t *)self); } \
     static void CE_TC ce_s_##ID##_opdelete(void *self, uint32_t flag) { \
         ce_sdk_trace(ID, 0x50, "operator_delete"); \
+        ce_dmg_set(ID, 0);                    /* 退出聚合；无条件，运行时才参与的卡同样要清 */ \
+        if (ce_hooks_##ID.on_delete) ce_hooks_##ID.on_delete((ce_card_t *)self); /* 私有状态还活着 */ \
         ce_state_free(self); \
         ((ce_base_del_t)CE_BASE_SLOT_OPDELETE)(self, flag); } \
     static const void *const ce_vt_##ID[21] = { \

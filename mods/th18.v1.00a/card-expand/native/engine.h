@@ -48,6 +48,9 @@
 #define CE_ADDR_GUI_PTR            0x4cf2e0   /* zGui*（ExpHP）；+0x1b0 = msg（对话 VM，非 0 = 对话中）。C 键门控 0x45c069、Tenshi state0 0x40ea0d 读它 */
 #define CE_ADDR_ENEMY_MGR_PTR      0x4cf2d0   /* zEnemyManager*；+0x198 = enemy_count_real（ExpHP）。== 0 时 C 键与充能都停（0x45c07b / 0x40ea1f）*/
 #define CE_ADDR_INPUT_PRESSED      0x4ca434   /* 本帧上升沿；bit 0x400 = C 键（0x45c084）*/
+#define CE_ADDR_INPUT_HELD         0x4ca428   /* 本帧按住的位（录制时原始位、回放时 replay 写入；04-active-cards.md §1）。0x008 = 低速 / 聚焦（0x45b3fa 读它）*/
+#define CE_INPUT_FOCUS             0x008
+#define CE_INPUT_HELD()   (*(uint32_t *)CE_ADDR_INPUT_HELD)
 #define CE_ADDR_SHOP_PTR           0x4cf2a4   /* zAbilityShop*：GameThread__on_tick 0x443bed 写、析构 0x417857 清零；敌人 / 弹幕 / GUI 非 0 即冻结（SM §3.5）*/
 #define CE_ADDR_TIME_IN_STAGE      0x4ccce8   /* int：GameThread__on_tick 尾 0x443d16 inc（ExpHP TIME_IN_STAGE）*/
 #define CE_ADDR_CURRENT_STAGE      0x4cccdc   /* int：= GlobalsInner 首字段（ExpHP CURRENT_STAGE_globalsinner_base）*/
@@ -86,6 +89,37 @@
 #define CE_ADDR_ANM_MANAGER_PTR    0x51f65c   /* zAnmManager*（ExpHP ANM_MANAGER_PTR；interrupt_tree 0x488be3 读）*/
 #define CE_FN_ANM_GET_VM_WITH_ID   0x488b40   /* thiscall(ANM_MANAGER; id) ret 4 → zAnmVm* / 0（fast 数组 0x624 步长或 world/ui 链表；AUDIT O29c）*/
 #define CE_FN_ANM_INTERRUPT_TREE   0x488be0   /* stdcall(id, n) ret 8：自取 ANM_MANAGER_PTR，找到 VM 写 +0x494 = n 并递归子树（Tenshi 到时长调 (id, 1)）*/
+/* ---- HUD 文字（zAsciiManager）。一手 2026-09-08：零售 `CardMomoyo__on_draw` `0x4110a0` 的调用点逐指令读出来的
+ * （AUDIT §AC）——它就是「一张卡在 HUD 上画数字」的现成先例，走的也是虚表 `+0x48 on_draw`。 */
+#define CE_ADDR_ASCII_MANAGER_PTR  0x4cf2ac   /* zAsciiManager*（th-re-data statics 同名，交叉对上）*/
+#define CE_FN_ASCII_DRAWF          0x41a110   /* AsciiManager__drawf_debug(mgr, pos[3], fmt, ...)：**cdecl varargs**
+                                               * （`0x411286 add esp,0x14` = 调用方清 3 个 push + 一个 double）*/
+#define CE_ASCII_COLOR             0x19228    /* 字色 BGRA 一个 dword（`0x411245 mov [ecx+0x1922b], al` = alpha 在 +3）*/
+#define CE_ASCII_COLOR_WHITE       0xffffffffu /* Momoyo 画完还原成它（`0x41128a`）*/
+/* zAsciiManager 的其余绘制状态（Ghidra 结构体 zAsciiManager，字段名与偏移一手）。
+ * 画完必须还原 —— 引擎自己后面的绘制全靠这些环境值。*/
+#define CE_ASCII_COLOR2            0x1922c    /* 描边 / 副色 BGRA */
+#define CE_ASCII_SCALE             0x19230    /* zFloat2；引擎常用 1.0，小字用 0.6 */
+#define CE_ASCII_SHADOW_DARK       0xff000000u /* 黑描边：压在花花绿绿的 HUD 上最清楚 */
+#define CE_ASCII_FONT              0x19244    /* int */
+#define CE_ASCII_GROUP             0x19248    /* int */
+#define CE_ASCII_ALIGN_H           0x19250    /* int：**2 = 右对齐**（金钱 / 总分一手确认）；1 是引擎的常态值、实测表现为左对齐；
+                                                  * 于是 0 只能是居中 —— 实跑再确认一次（AUDIT §AI）*/
+#define CE_ASCII_ALIGN_CENTER      0
+#define CE_ASCII_ALIGN_LEFT        1
+/* 金钱那行的排版（`FUN_0043cd00` 在 (620, 204) 处设的）：比默认 font 0 大一圈，右对齐。
+ * 想让自己的数字看着和金钱是一套，就照抄这三个。*/
+#define CE_ASCII_FONT_MONEY        10
+#define CE_ASCII_GROUP_MONEY       3
+#define CE_ASCII_ALIGN_RIGHT       2
+/* Gui 的 HUD 文字坐标空间（`FUN_0043cd00` 里全是字面量）：火力 "%d." 在 (540, 182)、小数 (560, 189) scale 0.6、
+ * "/%d." (574, 182)、金钱右对齐 (620, 204)。我们的倍率读数贴在火力左边。 */
+#define CE_HUD_POWER_X             540.0f
+#define CE_HUD_POWER_Y             182.0f
+#define CE_HUD_POWER_COLOR         0xff800000u /* 火力那行的字色（B=0 G=0 R=0x80 A=0xff），照抄以便看起来是一体的 */
+#define CE_HUD_MONEY_COLOR         0xff808000u /* 金钱那行的字色（B=0 G=0x80 R=0x80，FUN_0043cd00 在 (620, 204) 处设的），持仓净值贴着它画 */
+#define CE_HUD_DMG_X               478.0f      /* 倍率读数：贴在火力左边，同一行。"x1.60" 五个字约 55 px ⇒ 478..533，刚好不压到 540 的火力，也在侧栏里（弹幕区右边缘约 x 416）。**待实跑微调** */
+
 #define CE_ANM_VM_POS              0x5f0      /* float3 实体坐标（Tenshi/Miko/Remilia 每帧写；engine/anm/th18/01-vm-instantiate.md）*/
 #define CE_ANM_VM_COLOR1           0x524      /* D3DCOLOR 0xAARRGGBB：Tenshi 0x40eb4c 无命中写 0xffffffff、0x40eb60 有命中写 0xff0080ff（= 蓝 (0,128,255)）*/
 #define CE_ANM_VM_FVARS            0x4b4      /* float[4] 脚本变量 %F0–%F3（ExpHP zAnmVmPrefix float_script_vars）；C 写、脚本 scale(%F0, …) 读 */
@@ -165,6 +199,9 @@
 #define CE_FLAG_ACTIVE_CLEAR       0x46       /* 主动卡 case 清的位（0x411d83 and ~0x46 | 8）*/
 #define CE_FLAG_EQUIPMENT_SET      0x44       /* 零售装备卡 case 的写法：flags & ~0x0a | 0x44（allocate_new_card 里 REIMU_OP…NUE_OP 那 14 个 case；case 56 走被动 & ~0x4a | 4）。SDK 绑定时对 category 1 的卡照此改（AUDIT X11）*/
 #define CE_FLAG_EQUIPMENT_CLEAR    0x0a
+#define CE_FLAG_EQUIP_RESET_BIT1   0x02       /* flags bit1：🟡 语义未确认 —— 只知道零售装备卡在 `method_4C` / `____on_load__2`
+                                               * （`CardReimu1` `0x40aad0` / `0x40aab0`）里清它，且它在 EQUIPMENT_CLEAR(0x0a) 里。
+                                               * 名字只描述「零售在收起子机时清的那一位」，不主张它是什么。SDK 的 ce_option_drop 照抄。*/
 #define CE_CARD_TABLE_ENTRY        0x4c
 #define CE_CARD_FLAGS              0x50       /* bit0 存档/replay 装载，bit3 主动，bit5 开火中，bit6 装备 */
 #define CE_CARD_OBJECT_SIZE        0x54
@@ -179,7 +216,8 @@
 #define CE_BASE_SLOT_OPDELETE      0x411410   /* CardNull__operator_delete(this, flag)，thiscall + 1 栈参 */
 
 /* ---- zPlayer ---- */
-#define CE_PLAYER_X                0x620      /* float px（PL §1）*/
+#define CE_PLAYER_X                0x620      /* float px（PL §1）。★ 是 float3 的基址：+0x624 py、+0x628 pz —— 青眼 / 豌豆射手 /
+                                               * 炎魔都在读 [1] [2]，用 `ce_player_pos()` 而不是各自转指针 */
 #define CE_PLAYER_Y                0x624
 #define CE_PLAYER_STATE            0x476ac    /* PL §3 */
 #define CE_PLAYER_FOCUSED()        (*(int32_t *)(CE_PLAYER() + 0x476cc))   /* 聚焦位 = player+0x476cc（PL §3）：每帧 = INPUT_HELD>>3 & 1，dword 写
@@ -249,7 +287,8 @@ typedef struct { int32_t prev; int32_t cur; float cur_f; } ce_timer_t;   /* zTim
 #define CE_PLAYER_AIM_ANGLE        0x479cc    /* float：卡把瞄准角写这里，shooter 的 func_on_init = 5（`0x4612d0`）
                                                  在建弹时用它覆写 bullet+0x64。CardAlice `0x40b5fa` 同款用法 */
 /* ---- zEnemy（`CardAlice__on_shoot` 0x40b4e0 与最近敌人搜索 0x438cb0 一手）---- */
-#define CE_ENEMY_POS_X             0x1270     /* = data(+0x122c).final_pos(+0x44).pos */
+#define CE_ENEMY_POS_X             0x1270     /* = data(+0x122c).final_pos(+0x44).pos。★ 同为 float3 基址；用 `ce_enemy_pos(e)` */
+#define CE_ENEMY_LIST_GUARD        4096       /* 敌人链表遍历的护栏（坏链表不转死）；ce_enemy_by_id / CE_ENEMY_FOREACH 共用 */
 #define CE_ENEMY_POS_Y             0x1274
 #define CE_ENEMY_FLAGS             0x635c
 #define CE_ENEMY_FLAG_NO_LOCK      0x0c000021 /* 任一位置起 = 不可锁定（死亡 / 无敌 / 未登场…）*/

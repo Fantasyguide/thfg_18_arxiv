@@ -1,0 +1,17 @@
+script script103 {
+    // 开大起手那一下的绿光晕：C 在子机位置起一个，20 帧胀开淡出。
+    // 复用豌豆贴图（加色混合下就是一团绿光），不另占 entry。
+-1:
+    layer(15);
+    sprite(@PEA);
+    type(1);
+    blendMode(1);
+    zWriteDisable(1);
+0:
+    alpha(255);
+    scale(0.30f, 0.30f);
+    scaleTime(20, 4, 3.20f, 3.20f);
+    alphaTime(20, 0, 0);
++20: // 20
+    delete();
+}
