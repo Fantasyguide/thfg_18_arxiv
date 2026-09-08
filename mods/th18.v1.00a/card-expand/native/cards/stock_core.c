@@ -84,11 +84,39 @@ int stock_visible(const stock_state_t *s, stock_candle_t out[STOCK_CANDLES])
     return n;
 }
 
-/* —— 交易与几何：Task 3 / Task 4 —— */
-int stock_buy(stock_state_t *s, int32_t *money) { (void)s; (void)money; return 0; }
-int stock_sell(stock_state_t *s, int32_t *money) { (void)s; (void)money; return 0; }
-int32_t stock_value(const stock_state_t *s) { (void)s; return 0; }
-int32_t stock_pnl(const stock_state_t *s) { (void)s; return 0; }
+/* 买：固定 STOCK_LOT 金钱 → 持股 += 50 × 1e6 / price（向下取整，零头 = 手续费）。 */
+int stock_buy(stock_state_t *s, int32_t *money)
+{
+    if (*money < STOCK_LOT) return 0;
+    int64_t q = (int64_t)STOCK_LOT * STOCK_HOLD_PER_MONEY / s->price;
+    *money -= STOCK_LOT;
+    s->hold += (int32_t)q;
+    s->cost += STOCK_LOT;
+    return 1;
+}
+
+/* 卖：STOCK_LOT 金钱等值的持股，不足全卖；所得向下取整。 */
+int stock_sell(stock_state_t *s, int32_t *money)
+{
+    if (s->hold <= 0) return 0;
+    int64_t q = (int64_t)STOCK_LOT * STOCK_HOLD_PER_MONEY / s->price;
+    if (q > s->hold) q = s->hold;
+    int64_t got = q * s->price / STOCK_HOLD_PER_MONEY;
+    s->hold -= (int32_t)q;
+    *money += (int32_t)got;
+    s->cost -= (int32_t)got;
+    return 1;
+}
+
+int32_t stock_value(const stock_state_t *s)
+{
+    return (int32_t)((int64_t)s->hold * s->price / STOCK_HOLD_PER_MONEY);
+}
+
+int32_t stock_pnl(const stock_state_t *s)
+{
+    return stock_value(s) - s->cost;
+}
 void stock_layout(const stock_state_t *s, int x0, int y0, int w, int h,
                   stock_rect_t body[STOCK_CANDLES], stock_rect_t wick[STOCK_CANDLES])
 { (void)s; (void)x0; (void)y0; (void)w; (void)h; (void)body; (void)wick; }

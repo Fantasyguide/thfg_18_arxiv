@@ -135,6 +135,91 @@ static void test_shock(void)
     CHECK(s.cur.h == STOCK_PRICE_MAX && s.cur.l == STOCK_PRICE_MIN, "冲击也要记进当前那根的高低价");
 }
 
+/* 买：50 金钱换 50e6 / price 单位持股；钱不够拒绝 */
+static void test_buy(void)
+{
+    stock_state_t s;
+    stock_init(&s);
+    int32_t money = 120;
+    CHECK(stock_buy(&s, &money) == 1 && money == 70, "第一次买应成交、剩 70，得到 %d", money);
+    CHECK(s.hold == 50 * STOCK_HOLD_PER_MONEY / STOCK_PRICE_OPEN, "100.00 买 50 应得 0.5 股 = %lld 单位，得到 %d",
+          (long long)(50 * STOCK_HOLD_PER_MONEY / STOCK_PRICE_OPEN), s.hold);
+    CHECK(s.cost == 50, "成本应为 50");
+    CHECK(stock_buy(&s, &money) == 1 && money == 20, "第二次买应成交、剩 20，得到 %d", money);
+    CHECK(stock_buy(&s, &money) == 0 && money == 20, "20 块买不起，不该扣钱");
+    money = STOCK_LOT;
+    CHECK(stock_buy(&s, &money) == 1 && money == 0, "正好 50 应能买");
+    money = -5;
+    CHECK(stock_buy(&s, &money) == 0, "负数现金不该成交");
+}
+
+/* 卖：50 金钱等值；不足全卖；没持仓拒绝；现金永不减 */
+static void test_sell(void)
+{
+    stock_state_t s;
+    stock_init(&s);
+    int32_t money = 0;
+    CHECK(stock_sell(&s, &money) == 0 && money == 0, "空仓不该卖");
+    money = 200;
+    stock_buy(&s, &money); stock_buy(&s, &money); stock_buy(&s, &money);      /* 150 进场，1.5 股 */
+    CHECK(money == 50 && s.hold == 15000, "三次买后应剩 50、持 1.5 股，得到 %d / %d", money, s.hold);
+    s.price = 20000;                                                        /* 翻倍 */
+    CHECK(stock_sell(&s, &money) == 1, "有持仓应能卖");
+    CHECK(money == 100, "200.00 卖 50 块等值：现金 50 → 100，得到 %d", money);
+    CHECK(s.hold == 15000 - 2500, "应卖掉 0.25 股，剩 %d", s.hold);
+    CHECK(s.cost == 150 - 50, "成本应减去所得");
+    s.price = 200000;                                                       /* 2000.00：50 块只够 0.025 股 */
+    stock_sell(&s, &money);
+    CHECK(s.hold == 12500 - 250 && money == 150, "高价卖：hold=%d money=%d", s.hold, money);
+    s.price = 10000; s.hold = 100;                                          /* 只剩 0.01 股 = 1 块钱 */
+    int32_t before = money;
+    CHECK(stock_sell(&s, &money) == 1 && s.hold == 0 && money == before + 1, "不足 50 应全卖：hold=%d money=%d", s.hold, money);
+    CHECK(stock_sell(&s, &money) == 0, "卖空了再卖应拒绝");
+}
+
+/* 一次买卖来回，任意价位损耗 ≤ 1 金钱（零头 = 手续费）；现金永不为负、持股永不为负 */
+static void test_round_trip(void)
+{
+    static const int32_t prices[] = { STOCK_PRICE_MIN, 1234, 9999, STOCK_PRICE_OPEN, 12345, 99999, 123456, 500000, STOCK_PRICE_MAX };
+    for (unsigned i = 0; i < sizeof prices / sizeof prices[0]; ++i) {
+        stock_state_t s;
+        stock_init(&s);
+        s.price = prices[i];
+        int32_t money = 1000;
+        CHECK(stock_buy(&s, &money) == 1, "价位 %d 买入失败", prices[i]);
+        CHECK(stock_sell(&s, &money) == 1, "价位 %d 卖出失败", prices[i]);
+        CHECK(s.hold == 0, "价位 %d 一买一卖后应清仓，剩 %d", prices[i], s.hold);
+        CHECK(money >= 999 && money <= 1000, "价位 %d 来回损耗应 ≤ 1：money=%d", prices[i], money);
+        CHECK(s.cost == 1000 - money, "价位 %d 成本应等于净支出", prices[i]);
+    }
+    /* 随机买卖长跑 */
+    stock_state_t s;
+    stock_init(&s);
+    lcg_state = 5;
+    int32_t money = 500;
+    for (int i = 0; i < 20000; ++i) {
+        uint32_t r = lcg();
+        stock_step(&s, r);
+        if ((r >> 30) == 0) stock_buy(&s, &money);
+        else if ((r >> 30) == 1) stock_sell(&s, &money);
+        if (money < 0 || s.hold < 0) { CHECK(0, "第 %d 步 money=%d hold=%d 为负", i, money, s.hold); return; }
+    }
+}
+
+static void test_value_pnl(void)
+{
+    stock_state_t s;
+    stock_init(&s);
+    CHECK(stock_value(&s) == 0 && stock_pnl(&s) == 0, "空仓市值 / 盈亏为 0");
+    s.hold = 10000; s.price = 12345; s.cost = 100;                          /* 1 股 × 123.45 */
+    CHECK(stock_value(&s) == 123, "市值应为 123，得到 %d", stock_value(&s));
+    CHECK(stock_pnl(&s) == 23, "盈亏应为 +23，得到 %d", stock_pnl(&s));
+    s.price = 5000;
+    CHECK(stock_pnl(&s) == -50, "跌到 50.00 盈亏应为 −50，得到 %d", stock_pnl(&s));
+    s.hold = 100000000; s.price = STOCK_PRICE_MAX;                          /* 1 万股 × 9999：int64 中间量 */
+    CHECK(stock_value(&s) == 99990000, "大持仓市值应为 99990000，得到 %d", stock_value(&s));
+}
+
 int main(void)
 {
     test_init();
@@ -143,6 +228,10 @@ int main(void)
     test_regime();
     test_candles();
     test_shock();
+    test_buy();
+    test_sell();
+    test_round_trip();
+    test_value_pnl();
     printf("test_stock_core: %s\n", fails ? "FAILED" : "OK");
     return fails ? 1 : 0;
 }
