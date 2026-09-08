@@ -342,7 +342,7 @@
     "category": 0,
     "price_tier": 8,
     "weight": 2,
-    "sprite_large": 168,
-    "sprite_small": 169
+    "sprite_large": 162,
+    "sprite_small": 163
   }
 }
