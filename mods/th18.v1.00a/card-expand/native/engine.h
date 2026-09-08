@@ -220,7 +220,7 @@
                                                * 炎魔都在读 [1] [2]，用 `ce_player_pos()` 而不是各自转指针 */
 #define CE_PLAYER_Y                0x624
 #define CE_PLAYER_STATE            0x476ac    /* PL §3 */
-#define CE_PLAYER_FOCUSED()        (*(int32_t *)(CE_PLAYER() + 0x476cc))   /* 聚焦位 = player+0x476cc（PL §3）：每帧 = INPUT_HELD>>3 & 1，dword 写
+#define CE_PLAYER_FOCUSED()        ((CE_PLAYER() != 0) && *(int32_t *)(CE_PLAYER() + 0x476cc) != 0)   /* 聚焦位 = player+0x476cc（PL §3；空指针安全，同 CE_BOMB_ACTIVE 口径）：每帧 = INPUT_HELD>>3 & 1，dword 写
                                                                               （0x45b414 `89 97 cc 76 04 00` mov [edi+0x476cc],edx；0/1）*/
 #define CE_PLAYER_INVULN_TIMER     0x47774    /* zTimer{prev,cur,float}；复活 0x45c35e 置 {0x117,0x118,280.0}，决死救回 60，炸弹各自置（SDK）*/
 #define CE_PLAYER_SPEED_MULT       0x477ec    /* float；Player tick 末尾 0x45c702 复位 1.0；移动 0x45b5b6 读。AbilityManager tick(0x16) 先于 Player(0x17) → on_tick_2 里写生效（SDK）*/
