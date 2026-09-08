@@ -1352,6 +1352,35 @@ X = ⌊P / per⌋ − 1 使得 X > 0 时 `P − X·per ∈ [per, 2·per)` ——
 `ce_spend_power` 的 thiscall + `ret 4`（AUDIT §V 已验一次）。行为怀疑：X 算错（看日志里的 `power %d - %d = %d`）、
 炸弹数补多了或补少了（看 `bombs %d`）。
 
+## AF. 股市（id 80）—— C 买 / Shift+C 卖，K 线面板（2026-09-08）
+
+**没有新断点、不改任何字节。** 新引擎访问只有一处读：`INPUT_HELD` `0x4ca428`。新 SDK 面：状态块 256 → 512、`on_delete` 回调（`+0x50` 桩在 `ce_state_free` 之前调）。
+纯逻辑 `stock_core.c` 主机单测（确定性 / 钳位 / 阶段 / K 线 / 买卖 / 来回损耗 / 几何）。
+
+| # | claim | 结论 |
+| --- | --- | --- |
+| AF1 | replay 安全 | **CONFIRMED（构造）** —— 输入只用 replay 重放的位；随机数 `ce_rand()` = `REPLAY_SAFE_RNG`；步进只在 `on_tick_2`。全整数，见下「AF1 证据」 |
+| AF2 | `on_activate` 里读到的低速位与这次 C 键同帧 | **🟡 待实跑** —— `Input__compute_edges` `0x42abc0` 每帧先算好 `INPUT_HELD` / `INPUT_PRESSED`，Player tick（优先级 0x17）里 `c_press` 才被调，所以读的是同一帧的 held。风险只在「按 C 的同一帧才按下 Shift」这种人手做不到的情形 |
+| AF3 | 写 `MONEY` 的安全 | **照先例** —— 黄金小丑（§W）/ 倒吊人直接写 `0x4ccd34`，HUD 每帧重读；没有钳位（引擎自己也没有发现上限，SM §1）。买时先查 `>= 50` 再减，卖只加：单测 `test_round_trip` 钉住「现金永不为负」 |
+| AF4 | 33 个 UI 层 VM 起得出来 | **🟡 待实跑** —— `ce_anm_spawn_ui` 走 `0x409670`（真银圣剑 / 衔尾蛇各起 1 个已验）；VM 池是 fast 数组（`id & 0x7fff` 下标，`01-vm-instantiate.md`），容量未查。失败返回 0 → 整组删掉、日志一行、下一帧重试；不会半张图 |
+| AF5 | `drawRect` + `scale` = 像素尺寸 | **照先例** —— 青眼血条 script87 `drawRect(1,1); scale(56, 4)` 画出 56×4 的条；`ce_anm_set_scale` 写 `vm+0x54`（O29k）。脚本里没有 `scaleTime`，插值器不会盖 |
+| AF6 | 矩形锚点是中心 | **🟡 待实跑** —— ANM 默认 anchor 居中（thpages）；`stock_layout` 按中心算 cx/cy。若实跑发现是左上角锚，几何整体偏 (w/2, h/2)，改 `apply_rect` 一处 |
+| AF7 | UI 层坐标空间是 2× | **推断（X5）** —— HUD 图标根 VM `pos(1056, 537)`、x 步进 80 对应 640 空间的 (528, 268) / 40 px 图标；`resolutionMode(2)` 同款。面板常量按 2× 写；`ce_hud_text` 是 640 字面量空间（AC6），两套分开 |
+| AF8 | VM 生命周期不漏 | **CONFIRMED（构造）** —— 每帧 `vms_alive` 认领，任一没了整组重建；`on_run_reset` / `on_delete` 都 `kill_vms`。见下「AF8 证据」 |
+| AF9 | ctor 幂等 | **CONFIRMED（构造）** —— `inited` 位；每关开场引擎再调 ctor 不会重开盘（SDK §9 ★）。不用 `owned[]`：mode 1 装载不调 ctor，状态本来就是零 |
+| AF10 | 无敌人 / 对话中不能交易 | **引擎门控** —— `04-active-cards.md` §2 四重门；充能也停。零售主动卡共性，用户已接受 |
+| AF11 | 整数不溢出 | **CONFIRMED（单测）** —— 交易 / 市值用 int64 中间量；`test_value_pnl` 1 万股 × 9999.00；价格步进 `price × r` ≤ 999900 × 2500 < 2^31 但仍走 int64 |
+| AF12 | 状态块 512 的副作用 | **CONFIRMED** —— `s_mem[256][512]` 静态 128 KB，`ce_state_alloc` 的上界检查用同一常量（单测）；`_Static_assert(sizeof(stock_card_t) <= 496)` |
+| AF13 | 与其它主动卡共存 | **引擎语义** —— 只有选中的主动卡收到 `c_press`；D 键切卡由引擎管（`0x800`）。面板常驻不随选中变 |
+
+**AF1 证据**：输入只用 replay 重放的位——用卡 `0x400` 走引擎分派、低速 `0x008` 读 `INPUT_HELD`，回放时二者都由 replay 写入（`04-active-cards.md` §1）；
+随机数 `ce_rand()` = `REPLAY_SAFE_RNG` `0x4cf288`（零售 Suwako / Yachie / Miko 同源）；股价步进只在 `on_tick_2`（管理器 tick，回放同样跑）。
+
+**AF8 证据**：底板先起（UI 列表尾插 = 后画在上），再 16 组蜡烛；任一没了整组重建，保证叠放顺序不乱。`on_delete` 是本次新加的 `+0x50` 回调：
+先调卡（此时私有状态还活着，能拿到 `bg_id` / `body_id` / `wick_id`）再 `ce_state_free`，倒吊人摧毁（`ce_destroy_card` → `vt+0x50`）与局末 recount 都经过它。
+
+**实跑要看的**：见 [`NEXT.md`](NEXT.md) §1p。
+
 ## G. OPEN —— 还没解决的
 
 | # | 事项 | 说明 |

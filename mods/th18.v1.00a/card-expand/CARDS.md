@@ -70,7 +70,10 @@ Mr. Bones / Gros Michel 这类「自毁」卡以后都走它。
 | id | 名字 | 效果 | 实现（槽 / 事件） | 文件 | 状态 |
 | --- | --- | --- | --- | --- | --- |
 | 69 | 加倍 | 被动：Miss 损失 **2** 条残机；敌人掉落的道具全部 **×2** | 掉命挂 `on_death_after_deathbomb`（引擎扣命**之前**多扣 1，`return 0` 不救命）；掉落走新 SDK 事件 `on_enemy_drop_pre`（断点 `ce_enemy_drop` @ `0x430510` 入口，撒之前把敌人 `+0x04` 起的 20 个掉落数翻倍）。AUDIT §S | `double.c` | 🔧 |
+| 80 | 股市 | 主动（C 键）：选中时 **C 买入 50 金钱**、**Shift + C 卖出 50 金钱等值**（不足全卖）。股价按占位随机过程每 15 帧走一步、4 秒一根 K 线，HUD 右下常驻 16 根 K 线 + 现价 / 持仓 / 盈亏。持仓跨关、商店只认现金、局末清零。充能 30 帧（节流） | `on_activate` 读 `INPUT_HELD` 低速位分买卖、写 `MONEY`；`on_tick_2` 走 `stock_step` + 33 个 UI 层 VM；`on_draw` 三行 `ce_hud_text`；`on_delete` 删 VM。纯逻辑 `stock_core.c`（主机单测） | `cards/stock.c` + `stock_core.c/.h` | 🔧 待实跑（AUDIT §AF）|
 
+
+**股市（80）补充**：`on_tick_2` 每 15 帧 `stock_step(ce_rand())` 走一步，33 个 UI 层 VM（1 底板 + 16 × {实体, 影线}）用 `stock_rect` script104 就地改 pos/scale/color；`on_delete`（本次新加的 `+0x50` 回调）负责把 VM 删掉。纯逻辑层留了 `stock_shock()` 给以后的事件联动，本版没有调用者。
 
 **加倍（69）补充**（2026-09-07 修）：实跑退回「小怪掉落没加倍」。根因：杂兵的掉落是 `dropMain` 给的**主掉落**（`zEnemyDrop+0x00`，一颗），引擎在调 `0x430510` 之前就撒了；
 断点只翻了 `+0x04` 的附加表（`dropExtra`，基本只有 boss / 中型敌人用）。修：断点里读主掉落类型（`ce_drop_main`），往附加表对应格 +1，引擎的附加循环再撒一颗（`double_core.c`，AUDIT S10）。
