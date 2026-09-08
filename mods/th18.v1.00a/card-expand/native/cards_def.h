@@ -65,6 +65,15 @@ void ce_card_encode_row(const ce_card_def_t *d, uint32_t name_ptr, uint8_t row[C
 unsigned ce_weight_override(uint8_t *table, unsigned nrows, int retail_weight, int new_weight,
                             const uint32_t *new_ids, unsigned n_new);
 
+/* 同上，但**保证结果能过 `ce_shop_capacity_check`**：若覆盖后的随机池超过 `CE_SHOP_POOL_SLOTS`，
+ * 把 new_weight 逐级往下压（下限 1 —— 0 会把卡变成必出资源卡，6 会把它踢出池，都不是「少出现一点」的意思），
+ * 直到放得下为止。返回**实际生效的** new_weight（-1 = 没做覆盖；压不下去时返回传入值，容量问题交给门 FAIL）。
+ * `*changed` = 最终那一遍改了多少行。
+ * 由来：2026-09-08 实跑，dev 配置 new_weight 20 × 23 张新卡 = 575 > 560 让整个卡表装载被拒，
+ * 而静态 binhack 早已把菜单结构撑到 255 项 —— 卡组编成于是读到没建出来的卡对象，按 Z 就崩（AUDIT §AG）。 */
+int ce_weight_override_fit(uint8_t *table, unsigned nrows, int retail_weight, int new_weight,
+                           const uint32_t *new_ids, unsigned n_new, unsigned *changed);
+
 int  ce_shop_capacity_check(const uint8_t *table, unsigned nrows, unsigned *pool, unsigned *guaranteed,
                             char *err, unsigned cap);
 

@@ -181,6 +181,52 @@ static void test_weight_override(void)
     #undef W
 }
 
+/* dev 权重覆盖不许把商店随机池顶爆。2026-09-08 实跑事故：new_weight 20 × 23 张新卡 = 575 > 560，
+ * 门里 FAIL → ce_menu_setup 不跑 → 卡组编成里读到没建出来的卡对象，按 Z 空指针崩溃（AUDIT §AG）。
+ * ce_weight_override_fit 把 new_weight 往下压到刚好能过容量检查；压到 1 还不行就原样返回，让门照常 FAIL。 */
+static void test_weight_override_fit(void)
+{
+    static uint8_t t[255 * CE_ROW_BYTES];
+    static uint32_t ids[23];
+    char err[160];
+    unsigned changed = 0, pool = 0, guaranteed = 0;
+    #define W(id) (*(uint32_t *)(t + (id) * CE_ROW_BYTES + 0x14))
+    #define ID(id) (*(uint32_t *)(t + (id) * CE_ROW_BYTES + 0x04))
+    /* 真实形状：装载器给 NULL/BACK 与所有没用的行写 weight 6（退出随机池），
+     * 零售 1..55 与 23 张新卡进池。不这么铺的话，weight 0 的空行会被算成「必出卡」而先撞另一条上限。 */
+    #define SETUP() do { memset(t, 0, sizeof t); \
+        for (unsigned q = 0; q < 255; ++q) { ID(q) = q; W(q) = CE_SHOP_NEVER_WEIGHT; } \
+        for (unsigned q = 1; q < 56; ++q) W(q) = 2; \
+        for (unsigned q = 0; q < 23; ++q) { ids[q] = 58 + q; W(58 + q) = 2; } } while (0)
+
+    /* 真实现场：retail_weight 6 把零售全踢出池，new_weight 20 × 23 = 575 > 560 → 压到 19（23 × 24 = 552）*/
+    SETUP();
+    CHECK(ce_weight_override_fit(t, 255, 6, 20, ids, 23, &changed) == 19);
+    CHECK(W(58) == 19 && W(80) == 19);
+    CHECK(ce_shop_capacity_check(t, 255, &pool, &guaranteed, err, sizeof err));
+    CHECK(pool <= CE_SHOP_POOL_SLOTS);
+    CHECK(changed > 0);
+
+    /* 本来就放得下：用原值 */
+    SETUP();
+    CHECK(ce_weight_override_fit(t, 255, 6, 5, ids, 23, &changed) == 5);
+    CHECK(W(58) == 5);
+
+    /* -1 = 不覆盖：原样返回，一行不改 */
+    SETUP();
+    CHECK(ce_weight_override_fit(t, 255, -1, -1, ids, 23, &changed) == -1);
+    CHECK(changed == 0 && W(58) == 2);
+
+    /* 零售自己就撑爆了（不覆盖零售）：压 new_weight 也救不回来 → 原样返回，交给门 FAIL */
+    SETUP();
+    for (unsigned id = 1; id < 56; ++id) W(id) = 200;
+    CHECK(ce_weight_override_fit(t, 255, -1, 20, ids, 23, &changed) == 20);
+    CHECK(!ce_shop_capacity_check(t, 255, &pool, &guaranteed, err, sizeof err));
+    #undef SETUP
+    #undef ID
+    #undef W
+}
+
 static void test_build_order(void)
 {
     /* 零售缩影（含两张掉队的 c2：块首 BLANK、块尾 MAGATAMA2）：新卡 100(被动) 101(子机) 102(主动) 103(类别 9 不存在) 104(子机) */
@@ -208,6 +254,7 @@ int main(void)
 {
     test_build_order();
     test_weight_override();
+    test_weight_override_fit();
     test_defaults();
     test_text_ok();
     test_validate();

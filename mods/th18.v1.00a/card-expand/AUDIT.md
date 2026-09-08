@@ -1393,6 +1393,51 @@ X = ⌊P / per⌋ − 1 使得 X > 0 时 `P − X·per ∈ [per, 2·per)` ——
 
 **实跑要看的**：见 [`NEXT.md`](NEXT.md) §1p。
 
+## AG. 卡组编成崩溃（2026-09-08 实跑）—— dev 权重把商店池顶爆 → 门 FAIL → 菜单读到没建出来的卡
+
+**现象**：只挂 `_test` 时，主菜单进「卡组编成」看到空内容，按 Z 崩在 `0x414b7e`（`MOV ESI,[EAX+4]`，EAX = 0）。
+只挂 `_255` 一切正常。日志逐字给出了前两环。
+
+| # | claim | 结论 |
+| --- | --- | --- |
+| AG1 | 触发源是 dev 权重覆盖 | **CONFIRMED（日志）** —— 见下「AG1 证据」 |
+| AG2 | 为什么现在才炸 | **CONFIRMED（算术）** —— 股市是第 23 张新卡。22 张时 22 × 25 = 550 ≤ 560，第 23 张顶到 575。与卡 80 的行为无关，它只是压垮容量的那一张 |
+| AG3 | FAIL 之后门不再建菜单 | **CONFIRMED（一手）** —— `selfcheck.c` 是直线序列：`ce_cards_load` 失败即 `goto fail`，`ce_menu_setup` 根本不跑；失败处置只有 `restore_alloc_bound` |
+| AG4 | 新卡 id 被禁 | **CONFIRMED（一手）** —— 见下「AG4 证据」 |
+| AG5 | `_test` 把「空槽」变成「什么都没有」 | **CONFIRMED（一手）** —— 见下「AG5 证据」。**这就是「只有 `_test` 才崩」的原因** |
+| AG6 | 空指针的确切来源 | **CONFIRMED（一手）** —— 见下「AG6 证据」 |
+| AG7 | 顺序表尾界被撑到 255 是否有份 | **REFUTED** —— `emit_codecaves` 把 57..254 填成 id 57（BACK），`0x4149de` 查表读 `row+0x20`（`deck_visible`）为 0，在 `0x4149e1` 全部跳过。EDX 仍只是零售可见且已解锁的数量。尾界无害 |
+| AG8 | 菜单搬迁有没有漏站点 | **CONFIRMED 无遗漏** —— 见下「AG8 证据」 |
+
+**AG1 证据**：`cards_dev: … retail_weight=6 new_weight=20 (71 rows changed)` 后紧跟
+`FAIL: cards: shop random pool 575 slots > 560`。`retail_weight 6` 把 55 张零售全踢出随机池，
+池子只剩新卡：23 × (20 + 5) = 575 > `CE_SHOP_POOL_SLOTS` 560。
+
+**AG4 证据**：`restore_alloc_bound` 把 `0x411479` 写回 `cmp ebx,0x38`，于是 id ≥ 57 在 `0x411482`
+的 `jmp [0x412dac+ebx*4]` 落到 default，`allocate_new_card` 返回 `0xffffffff`：不建对象、不入链、
+`mgr+0x28`（`num_total_cards`）不涨。
+
+**AG5 证据**：`BP_ce_test_deck`（`0x407ee3`，在 `AbilityManager__reset_cards` 里）把**每个**空槽换成
+`start_deck` 的下一个 id。不挂 `_test` 时空槽保持 id 56，走 `case 0x38` 分配出 `AbilityCardNullInf`，
+`num_total_cards > 0`；挂上之后这些槽换成 71/70/68/72/80，全部分配失败 ⇒ `num_total_cards` 归零。
+
+**AG6 证据**：菜单对象 `+0xfec` 是「玩家手上卡对象」的指针数组（256 槽），**只由** `0x415af0`
+沿卡链表按 `mgr+0x28` 次填；`+0xe4` 是它的游标。而 `0x414b6d` 处 `TEST EDX,EDX` 的 EDX 是**另一张表**
+（挑选列表 `__card_ids`，由顺序表遍历 `0x4149b0..0x414b59` 得出）的长度。两者由不同的 pass 产生、
+互不校核，所以挑选列表非空、手牌数组却一格没填时，`[EDI+EAX*4+0xfec]` 读到 memset 留下的 0。
+
+**AG8 证据**：全 `.text` 扫 imm32 `0x4b3600` / `0x4b36e4` 与 disp32 `+0x304`：6 处顺序表引用 +
+尾界 `0x414b55` + 16 处 `__card_ids` 全部在册；另一处 `0x4b36e4` 在 `0x4337f7`，是无关常量。
+抬到 255 的清理循环（`0x41495c`，ESI = this+`0xbec`）到 `+0xfe4` 为止，碰不到 `+0xfec`。
+
+**两道修复**（2026-09-08）：
+
+1. **让 dev 配置压不爆容量**（根因）：`ce_weight_override_fit`（`cards_def.c`，主机单测 `test_weight_override_fit`）把 `new_weight` 逐级下压到刚好过 `ce_shop_capacity_check` 为止，下限 1（0 会变必出资源卡、6 会退出随机池，都不是「少出现一点」），压不下去才原样返回让门照常 FAIL。日志 `cards_dev: new_weight 20 would overflow the shop pool (> 560 slots) — clamped to 19`。
+   `cards_dev.js` 同时把 `new_weight` 从 20 调到 15（23 张 = 460/560，留出余量）。
+2. **FAIL 之后别再塞注定失败的 id**（防线）：`selfcheck.c` 的 `fail:` 分支先调 `ce_dev_deck_disable()` 再 `restore_alloc_bound`。空槽于是恢复成 id 56 → `NullInf` 分配得出来 → `num_total_cards > 0`，菜单不再读到没填过的槽。
+
+**遗留（不修，记着）**：`+0xfec` 与 EDX 由两个 pass 各自产生、彼此不校核，是零售自带的脆弱处；零售里 `num_total_cards` 不可能为 0（空槽总能分配 NullInf），所以踩不到。任何让手牌数为 0 的改动都会重新暴露它。
+
 ## G. OPEN —— 还没解决的
 
 | # | 事项 | 说明 |

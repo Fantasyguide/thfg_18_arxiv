@@ -84,6 +84,21 @@ trace: card 59 on_tick_2 (+0x2c) first hit / card 62 on_tick_2 / card 61 on_bull
 通过后：MAP §5 与 AUDIT §P 顶部记「实跑通过」。想改次数就改常量（以后可挂 `cards.js`）；
 **关卡中间开店**（MSG opcode 36 或 DLL 直接置 `GameThread+0xb0 |= 0x20000`）技术上可行，但 Stage / Spellcard 不冻结，只该在对话里做——见 §3.5。
 
+## 1q. 卡组编成崩溃（2026-09-08 已修，待复跑）
+
+**症状**：只挂 `_test` 时进「卡组编成」看到空内容、按 Z 崩在 `0x414b7e`。根因与两道修复见 [`AUDIT.md`](AUDIT.md) §AG。
+一句话：dev 的 `new_weight: 20` × 23 张新卡 = 575 份 > 商店随机池上限 560 ⇒ 卡表装载被拒 ⇒ 菜单没建起来 ⇒ 空指针。
+
+复跑要看的：日志里**不该**再出现 `FAIL: cards:` 与 `mitigation:`；`cards_dev:` 那行的 `new_weight` 应是 15。
+再把 `cards_dev.js` 的 `new_weight` 故意调回 20 跑一次，应看到
+
+```
+cards_dev: new_weight 20 would overflow the shop pool (> 560 slots) — clamped to 19
+```
+
+且游戏一切正常 —— 这条验证的是「dev 配置再也压不爆容量」。
+**加新卡时留意**：池子是 `Σ(weight+5)`，`new_weight 15` 到 28 张新卡就正好 560，之后钳位会自动接手并在日志里说明。
+
 ## 1p. 股市（id 80，2026-09-08，待实跑）
 
 主动卡，不开新断点。`cards_dev.js` 起手最后一格已换成 80（原 67）。实现 `native/cards/stock.c` + `stock_core.c`（主机单测 10 组）；审计 AUDIT §AF。

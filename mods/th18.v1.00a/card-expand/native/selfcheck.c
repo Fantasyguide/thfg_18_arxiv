@@ -202,6 +202,7 @@ int ce_selfcheck(uint8_t *base)
                ok, (unsigned)CE_NSITES, bad, 0x400000u + s->rva,
                p[0], p[1], p[2], p[3], p[4], p[5], p[6]);
 fail:
+    ce_dev_deck_disable();                       /* 新卡 id 马上要被禁掉，别再往空槽里塞它们（AUDIT §AG）*/
     ce_failure_guard_fail(&guard, restore_alloc_bound, base);
     return 0;
 }

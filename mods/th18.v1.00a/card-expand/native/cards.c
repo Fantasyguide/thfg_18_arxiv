@@ -162,6 +162,7 @@ static unsigned s_dev_deck_n;
 static int      s_dev_trace;
 
 unsigned ce_dev_deck_count(void)      { return s_dev_deck_n; }
+void     ce_dev_deck_disable(void)    { if (s_dev_deck_n) { s_dev_deck_n = 0; ce_log("cards_dev: start_deck disabled (gate failed; new ids cannot be allocated)"); } }
 uint32_t ce_dev_deck_id(unsigned i)   { return i < s_dev_deck_n ? s_dev_deck[i] : 0; }
 int      ce_dev_trace(void)           { return s_dev_trace; }
 
@@ -191,9 +192,13 @@ static void load_dev_config(uint8_t *cave, unsigned rows)
     } else
         ce_log("cards_dev: cards_dev.js root is not an object — ignored");
     p_json_decref_safe(root);
-    unsigned changed = ce_weight_override(cave, rows, retail_w, new_w, s_ids, s_count);
+    unsigned changed = 0;
+    int used_w = ce_weight_override_fit(cave, rows, retail_w, new_w, s_ids, s_count, &changed);
     ce_log("cards_dev: start_deck has %u ids, trace=%d, retail_weight=%d new_weight=%d (%u rows changed)",
-           s_dev_deck_n, s_dev_trace, retail_w, new_w, changed);
+           s_dev_deck_n, s_dev_trace, retail_w, used_w, changed);
+    if (used_w != new_w)
+        ce_log("cards_dev: new_weight %d would overflow the shop pool (> %u slots) — clamped to %d",
+               new_w, (unsigned)CE_SHOP_POOL_SLOTS, used_w);
 }
 
 /* ---- 入口 ---- */

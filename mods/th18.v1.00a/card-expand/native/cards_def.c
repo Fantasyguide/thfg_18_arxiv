@@ -151,6 +151,30 @@ unsigned ce_weight_override(uint8_t *table, unsigned nrows, int retail_weight, i
     return changed;
 }
 
+int ce_weight_override_fit(uint8_t *table, unsigned nrows, int retail_weight, int new_weight,
+                           const uint32_t *new_ids, unsigned n_new, unsigned *changed)
+{
+    unsigned pool = 0, guaranteed = 0;
+    unsigned n = ce_weight_override(table, nrows, retail_weight, new_weight, new_ids, n_new);
+    if (changed) *changed = n;
+    if (new_weight < 0) return new_weight;                       /* 没覆盖新卡：没什么可压的 */
+    if (ce_shop_capacity_check(table, nrows, &pool, &guaranteed, NULL, 0)) return new_weight;
+
+    /* 往下压。每一轮都从当前表继续写：新卡行此刻是上一轮的值（既不是 0 也不是 6），所以还会被覆盖到。 */
+    for (int w = new_weight - 1; w >= 1; --w) {
+        if (w == CE_SHOP_NEVER_WEIGHT) continue;                 /* 6 = 退出随机池，不是「少一点」 */
+        n = ce_weight_override(table, nrows, retail_weight, w, new_ids, n_new);
+        if (ce_shop_capacity_check(table, nrows, &pool, &guaranteed, NULL, 0)) {
+            if (changed) *changed = n;
+            return w;
+        }
+    }
+    /* 压到 1 还放不下 = 撑爆的不是新卡（零售权重本身就过大）。恢复调用方要的值，让门照常 FAIL。 */
+    n = ce_weight_override(table, nrows, retail_weight, new_weight, new_ids, n_new);
+    if (changed) *changed = n;
+    return new_weight;
+}
+
 unsigned ce_build_order(uint32_t *out, unsigned cap,
                         const uint32_t *retail, const uint32_t *retail_cat, unsigned nretail,
                         const uint32_t *new_ids, const uint32_t *new_cat, unsigned nnew,
