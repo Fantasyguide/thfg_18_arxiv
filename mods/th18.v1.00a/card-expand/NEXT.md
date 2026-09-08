@@ -132,6 +132,7 @@ hanged: destroyed card 80, money … -> …
 ```
 
 带**两张以上**主动卡时删掉正选中的那张，`reselect -> ok`，HUD 的主动卡图标应换成另一张、C 键随即对新卡生效。
+**空卡组 / 无候选**（删到 0 张后立刻再买一张）：只应看到日志 `hanged: no other card to destroy, nothing gained`——不删、不加 300、不崩。守卫：hanged ctor `!victim` 短路；底层 `ce_pick_index(·, 0) == -1` 已主机测（test_sdk_core）。
 崩溃优先怀疑：`mgr+0x38` 摘空的时点（必须早于虚表 `+0x50`，AJ4）。
 
 ## 1p. 股市（id 80，2026-09-08，待实跑）
