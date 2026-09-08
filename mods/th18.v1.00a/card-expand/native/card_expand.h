@@ -45,6 +45,8 @@ int      ce_cards_load(uint8_t *module_base, uint8_t *cave, unsigned rows);
 unsigned ce_new_card_count(void);
 uint32_t ce_new_card_id(unsigned i);
 int      ce_new_card_initial_unlocked(unsigned i);
+/* 引擎编成上限 3（0x4449d4 容量递增链 1→2→3 封顶，无 3→4 分支）——start_deck 在此截断 */
+#define CE_DECK_CAP_MAX 3
 /* 开发配置 th18/cards_dev.js（只在 _test 里）：起手卡组与钩子追踪 */
 unsigned ce_dev_deck_count(void);
 uint32_t ce_dev_deck_id(unsigned i);

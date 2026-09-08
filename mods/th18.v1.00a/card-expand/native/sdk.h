@@ -282,6 +282,27 @@ static inline void ce_repopulate_options(void)
     uint8_t *p = CE_PLAYER();
     if (p) ((ce_fn_repopulate_t)CE_FN_PLAYER_REPOPULATE_OPTIONS)(p + CE_PLAYER_INNER, 0);
 }
+/* 道具 spawn（collect-2x 辉针城用；AUDIT §Z）—— 0x446f40 ★栈参 8 个、callee ret 0x20（与初版「RET 0x1c/6 参」
+ * 记法不同：0x430479 `sub esp,8` 起的尾两槽被调方不读但 ret 会清，必须压）。ECX = CE_ITEM_MANAGER()；
+ * 栈参自低向高 (type, pos float3*, junk(原生从不写，传 0), angle, speed, timer(原生撒落传 0 → 出生 state 1),
+ * u7, u8)。type ≥ 0x14 → 0；1..0x13 → 槽指针。原生 main-drop 实参 = (type, 敌pos, 垃圾, −π/2, 2.2f, 0)。*/
+typedef uint8_t *(__attribute__((thiscall)) *ce_fn_spawn_item_t)(void *mgr, uint32_t type, const float *pos, uint32_t junk,
+                                                                float angle, float speed, uint32_t timer, uint32_t u7, uint32_t u8);
+static inline uint8_t *ce_spawn_item(uint32_t type, const float *pos, float angle, float speed)
+{
+    void *mgr = CE_ITEM_MANAGER();
+    if (!mgr) return 0;
+    return ((ce_fn_spawn_item_t)CE_FN_SPAWN_ITEM)(mgr, type, pos, 0, angle, speed, 0, 0, 0);
+}
+/* SCORE += delta：int64 应用（防中间溢出），钳 [0, 999999999]（SM §1 同口径）。collect-2x 档位补差用——
+ * delta 可为负（×0.5/×0.8 档 = 把已入账的 100% 分值扣回倍率，1:1 原义）。AUDIT §Z。*/
+static inline void ce_add_score_delta(int64_t delta)
+{
+    int64_t v = (int64_t)CE_SCORE() + delta;
+    if (v < 0) v = 0;
+    if (v > 999999999) v = 999999999;
+    CE_SCORE() = (int32_t)v;
+}
 /* 游戏自己的 replay 安全 RNG（thiscall(zRng*) 无栈参）：gameplay 里的「随机」一律走它，不引入自己的随机源。*/
 typedef uint32_t (__attribute__((thiscall)) *ce_fn_rng_t)(void *rng);
 static inline uint32_t ce_rand(void) { return ((ce_fn_rng_t)CE_FN_RNG_RAND_DWORD)((void *)CE_ADDR_REPLAY_SAFE_RNG); }
@@ -306,6 +327,13 @@ void ce_sdk_active_reset(void *self, const ce_hooks_t *h, int clear_recharge);
 /* sdk.c */
 void ce_sdk_trace(uint32_t id, unsigned slot, const char *name);   /* trace 开着才记；每张卡每槽记第一次 */
 void ce_sdk_on_shop_open(void);                                   /* shop.c 在 MSG 开店那一帧调：沿链表分派 on_shop_open */
+/* collect-2x（辉针城卡）presence 续批谓词（§Z21/§Z22）：池里有没有批集道具（type∈{1,2}）在
+ * **真空飞行**（state == CE_ITEM_STATE_VACUUM）—— state 3 = V 门（上线/放 B/对话）放飞的收点道具
+ * （state 机模型见 engine.h CE_ITEM_STATE 注）。§Z22 收窄掉 state 4：70px 环 swoosh = 普通游玩磁吸
+ * （任何时刻都在发生），不属全屏收点 → 不续批（run-9：普通游玩环收把批撑过 5 → 误弹灰 NO BONUS）。
+ * state 1（抛物/坠落）不算：场道具不续批（TH14 原义，0x43898e 只在 state-3 在飞体上重载）。早停。
+ * 由 collect2x.c 在批开时每帧调。*/
+int ce_item_pool_any_attracting(void);
 /* 局中从卡组删一张卡（AUDIT §W）：照 recount 0x4080e0 的删卡分支——摘链、按 flags 减类别计数、num_total−1、
  * owned[id] 清零（能再刷出）、虚表 +0x50 删对象、重画 HUD 三行。★ 不能删当前选中的主动卡（mgr+0x38 指向它，
  * 重选要重建 HUD 图标 VM，本函数拒绝并返回 0）。只能在没有人正在遍历链表时调（ctor / 事件断点里都可以，链表遍历桩里不行）。*/

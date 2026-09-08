@@ -156,7 +156,9 @@ static int parse_card(const char *key, const json_t *obj, ce_card_def_t *d, char
 
 /* ---- 开发配置：th18/cards_dev.js（只放 _test）----
  *   { "start_deck": [58, 59, ...], "trace": true }
- * start_deck：BP_ce_test_deck 把初始卡组的空槽依次换成这些 id；trace：桩被调时记日志。缺失 = 都关。*/
+ * start_deck：BP_ce_test_deck 把开局卡组**强制**成这些 id（容量域提到 dev 张数、槽按序覆盖；
+ *   引擎编成上限 3 = CE_DECK_CAP_MAX，超出截断——重置后 reset_cards 只走容量域那么多个槽）。
+ *   trace：桩被调时记日志。缺失 = 都关（BP 放行原语义）。*/
 static uint32_t s_dev_deck[16];
 static unsigned s_dev_deck_n;
 static int      s_dev_trace;
@@ -191,6 +193,11 @@ static void load_dev_config(uint8_t *cave, unsigned rows)
     } else
         ce_log("cards_dev: cards_dev.js root is not an object — ignored");
     p_json_decref_safe(root);
+    if (s_dev_deck_n > CE_DECK_CAP_MAX) {
+        ce_log("cards_dev: start_deck %u ids truncated to %u (engine deck cap; slots beyond never read)",
+               s_dev_deck_n, (unsigned)CE_DECK_CAP_MAX);
+        s_dev_deck_n = CE_DECK_CAP_MAX;
+    }
     unsigned changed = ce_weight_override(cave, rows, retail_w, new_w, s_ids, s_count);
     ce_log("cards_dev: start_deck has %u ids, trace=%d, retail_weight=%d new_weight=%d (%u rows changed)",
            s_dev_deck_n, s_dev_trace, retail_w, new_w, changed);

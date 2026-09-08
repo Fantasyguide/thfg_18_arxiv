@@ -1334,6 +1334,30 @@
       "expected": "558bec83ec20",
       "title": "行为 SDK → BP_ce_enemy_drop：Enemy__drop_items_and_notify_cards 入口（thiscall，ecx = 敌人）：push ebp/mov ebp,esp/sub esp,0x20，无相对寻址。在引擎撒道具**之前**沿卡链表调 on_enemy_drop_pre(counts)，counts = 敌人 +0x04 起的 20 个 int32（type 1..0x13）"
     },
+    "ce_item_frame": {
+      "addr": "0x446ee3",
+      "cavesize": 7,
+      "expected": "833da4f24c0000",
+      "title": "行为 SDK → BP_ce_item_frame：ItemManager tick 0x446ec0 的门卫 CMP（cmp dword [0x4cf2a4],0，**单条 7 字节**）：每个正常游玩帧、道具池 body 前到达一次（菜单/暂停帧跳走不经过）；handler 不读 CMP 结果、不改标志。沿卡链表调 on_item_frame()"
+    },
+    "ce_item_collect": {
+      "addr": "0x44625f",
+      "cavesize": 6,
+      "expected": "8b97780c0000",
+      "title": "行为 SDK → BP_ce_item_collect：collect 分派前一条 mov edx,[edi+0xc78]（edi = 道具槽，**单条 6 字节**）：此时本道具的副作用都没发生（分值未入 SCORE）。handler 从**内存** *(uint32_t*)(edi+0xc78) 读 type（EDX 还没写），不是读寄存器。沿卡链表调 on_item_collect(card, type, item)"
+    },
+    "ce_item_commit": {
+      "addr": "0x44658a",
+      "cavesize": 6,
+      "expected": "f30f10166a25",
+      "title": "行为 SDK → BP_ce_item_commit：共享收尾起点：movss xmm2,[esi]（4 字节）+ push 0x25（2 字节），本道具分值已按 type 计入 SCORE、公共收尾（清 state、接 commit tail）之前；各收集路线（线/半径）在此汇聚。两条都无相对寻址。沿卡链表调 on_item_commit()"
+    },
+    "ce_shot_damage": {
+      "addr": "0x45f2a2",
+      "cavesize": 7,
+      "expected": "b867666666f7ee",
+      "title": "行为 SDK → BP_ce_shot_damage：enm_compute_damage_sources 0x45f0f0 里可计分命中路径：mov eax,0xee666667 + imul esi（两条，都无相对寻址；0x45f2dc 因 guard-fail 路 0x45f14e jmp 0x45f2de 落在窗内而**被否**，此窗已对齐 objdump 确认无窗内跳转目标）。esi = 本帧本敌伤害（钳 cap 后 ≥1），ebx = 帧基 → pos 在 [ebx+8]（敌世界坐标 x,y）、param_6 在 [ebx+0x1c]。沿卡链表调 on_shot_damage(card, dmg, pos)"
+    },
     "ce_shop_bought": {
       "addr": "0x4183ea",
       "cavesize": 12,

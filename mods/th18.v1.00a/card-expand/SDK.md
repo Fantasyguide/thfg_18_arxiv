@@ -146,6 +146,8 @@ CE_CARD(id, .回调 = 函数, ...);      /* 一张卡一条，放在 native/card
 | `ce_damage_rect(center, angle, life, dmg, w, h)` | 自机侧矩形伤害源：敌人自己判重叠扣血，每帧总量钳 `player+0x47984` | `0x45dfa0` stdcall + XMM2 宽 / XMM3 高 `ret 0x10`（O29b）|
 | `ce_anm_get_vm / set_pos / set_color` | 按 id 找 VM、写 `vm+0x5f0` 坐标 / `vm+0x524` 颜色 | `0x488b40` thiscall(mgr; id) `ret 4`（O29c）|
 | `ce_anm_interrupt(id, n)` / `ce_anm_delete(id)` | 触发脚本 `interruptLabel(n)`（Tenshi 用 1 收场）/ 标记删除 | `0x488be0` stdcall `ret 8` / `0x488cf0` stdcall `ret 4` |
+| `ce_spawn_item(type, pos3, angle, speed)` | 池里放一个道具（type 1/2/4/6/9–0xe…），返回道具指针、池满失败 0。角度 −π/2、速 2.2 与原生 main-drop 同参 | `ItemManager__spawn_item` `0x446f40` thiscall（ecx = mgr `0x4cf2ec`）`ret 0x20`：8 栈参 (type, pos*, junk, angle, speed, timer, u7, u8)，**尾两槽必须压**（AUDIT §Z）|
+| `ce_add_score_delta(delta)` | 分数增减（可为负），钳 `0..999999999` | `SCORE` `0x4cccfc` int32（`05-shop-and-money.md` §1）|
 
 ### 5.1 语音
 
@@ -180,6 +182,10 @@ CE_CARD(id, .回调 = 函数, ...);      /* 一张卡一条，放在 native/card
 | `on_bomb_spent` | `0x4203bc`（`do_bomb` 里 `consume_bomb` 刚返回）| `void (ce_card_t*)` | 腐化：扣上限 |
 | `on_hud_anm`（虚表 `+0x44`）| 不是事件：引擎建好本卡的 HUD 图标后（`0x408fc4`）把图标根 VM 的 anm id 交给卡；图标重建时会再调一次。真银圣剑用它在图标上叠数字（`ce_anm_spawn_ui` + `ce_anm_set_sprite`，AUDIT §X）| `int (ce_card_t*, uint32_t anm_id)` | 真银圣剑：耐久数字 |
 | `on_shop_open` | **不是新断点**：`shop.c` 的 `ce_shop_reopen`（`0x443b05`）在 MSG 请求开第一家店那一帧调 `ce_sdk_on_shop_open()`；商店对象这一帧稍后才建，改 `MONEY` 店里看到的就是改后的值；重开的第二家不算 | `void (ce_card_t*)` | 黄金小丑：金钱 +20％ |
+| `on_item_frame` | `0x446ee3`（`ItemManager__on_tick` `0x446ec0` 最后一道门卫 `cmp [0x4cf2a4],0`）。每个正常游玩帧、道具池 body 前到一次；handler 只看**声明了该槽的卡**，不读 CMP 结果 | `void (ce_card_t*)` | 辉针城：批开时查池，池空 → 关批结算 |
+| `on_item_collect` | `0x44625f`（type 分派前一条 `mov edx,[edi+0xc78]`，副作用未发生）。type 用 `*(uint32_t*)(item+0xc78)` 读，别信 EDX（窗前值不可靠） | `void (ce_card_t*, uint32_t type, const void *item)` | 辉针城：批集计数 + stash SCORE |
+| `on_item_commit` | `0x44658a`（共享收尾起点 `movss xmm2,[esi]` + `push 0x25`）。本道具分值**已按 type 计入 SCORE**、公共收尾（清槽等）之前 | `void (ce_card_t*)` | 辉针城：`(SCORE − stash)` 差量入批 |
+| `on_shot_damage` | `0x45f2a2`（`enm_compute_damage_sources` `0x45f0f0` 计分路径 `mov eax,0xee666667` + `imul esi`）。每帧每敌一次可计分命中：dmg 已钳 ≥1、pos = 敌世界坐标 (x,y)；聚焦 / 炸弹 / param_6≠0 的路径被窗口前判定挡掉（handler 再门一道，纵深防御） | `void (ce_card_t*, int32_t damage, const float *pos)` | 辉针城：非聚焦射击命中按帧节流掉钱 |
 
 **局中删一张卡**：`ce_destroy_card(victim)`（`sdk.c`，AUDIT §W）照 recount `0x4080e0` 的删卡分支——摘链、按 flags 减类别计数、
 `num_total−1`、`owned[id]` 清零、虚表 `+0x50` 删对象、引擎自己的 `create_all_card_lists_for_hud(mgr, 0)` 重画 HUD。
@@ -266,8 +272,8 @@ native/
 ├── anm_ids.h        生成物：ability.anm 里我们追加的 sprite / 脚本号（make anm）
 ├── sht_ids.h        生成物：pl0X.sht 里我们追加的 shooterset 索引（make sht，§12）
 └── cards/           每张卡一个 .c（Makefile 通配）
-    ├── s10.c  sj.c  sq.c  sk.c  sa.c
-    └── 带纯逻辑的还有一个 <名>_core.c/.h（主机单测），如 blue_eyes_core、broken_core_core
+    ├── s10.c  sj.c  sq.c  sk.c  sa.c （黑桃五张；其余每卡一个 .c，见 CARDS.md：double.c、collect2x.c …）
+    └── 带纯逻辑的还有一个 <名>_core.c/.h（主机单测），如 double_core、collect2x_core
 ```
 
 审计：[`AUDIT.md`](AUDIT.md) §O。

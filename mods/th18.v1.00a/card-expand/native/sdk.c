@@ -9,12 +9,22 @@
  *                                沿卡链表调 on_enemy_drop_pre(counts)，counts = zEnemyDrop+0x04 起 20 个 int32；主掉落 +0x00 已经撒过（S10）。
  *   BP_ce_item_money   0x446d28  inc [MONEY_TOTAL]（紧接 inc [MONEY]）。沿卡链表调 on_item_money(&bonus)，
  *                      bonus > 0 时 MONEY 与 MONEY_TOTAL_COLLECTED 一起 += bonus；原两条 inc 照常放行。
+ *   BP_ce_item_frame   0x446ee3  ItemManager tick 0x446ec0 的门卫 CMP（cmp [0x4cf2a4],0，单条 7 字节）：
+ *                      每个正常游玩帧、道具池 body 前到达一次（菜单/暂停帧跳走不经过）；handler 不读 CMP 结果。沿卡链表调 on_item_frame()。
+ *   BP_ce_item_collect 0x44625f  collect type 分派前一条 mov edx,[edi+0xc78]（单条 6 字节）：本道具副作用都没发生
+ *                      （分值未入 SCORE）。type 由窗内指令装载 → **读内存 *(uint32_t*)(edi+0xc78)**，不是读 EDX。沿卡链表调 on_item_collect(card, type, item)。
+ *   BP_ce_item_commit  0x44658a  共享收尾起点 movss xmm2,[esi] + push 0x25（两条，无相对寻址）：本道具分值已按 type 计入
+ *                      SCORE、公共收尾（清 state、接 commit tail）之前；线/半径各收集路线在此汇聚。沿卡链表调 on_item_commit()。
+ *   BP_ce_shot_damage  0x45f2a2  enm_compute_damage_sources 0x45f0f0 计分路径 mov eax,0xee666667 + imul esi（两条，无窗内跳转目标）：
+ *                      esi = 本帧本敌伤害（钳后 ≥1）；守卫失败路 0x45f14e jmp 0x45f2de 天然到不了这里。沿卡链表调
+ *                      on_shot_damage(dmg, pos)；弹/激光 bomb 伤害与聚焦射击由 handler 门（CE_BOMB_ACTIVE / CE_PLAYER_FOCUSED）。
  *   ce_sdk_on_shop_open          不是断点：shop.c 的 BP_ce_shop_reopen 在 MSG 开店那一帧调它，沿卡链表调 on_shop_open()。
  *   ce_destroy_card              局中删一张卡（倒吊人）：照 recount 0x4080e0 的删卡分支，AUDIT §W。
- *   ce_sdk_setup       门里：基类虚表 21 槽与 engine.h 的常量逐一比对（布局假设的运行时守卫）、三个断点已挂、
+ *   ce_sdk_setup       门里：基类虚表 21 槽与 engine.h 的常量逐一比对（布局假设的运行时守卫）、九个断点已挂、
  *                      与 cards.js 对账（C 有 JSON 无 → FAIL）、每张行为卡记一行。
  */
 #include <string.h>
+#include <stdio.h>
 #include "card_expand.h"
 #include "thcrap_bp.h"
 #include "sdk.h"
@@ -39,7 +49,8 @@ int ce_give_card(uint32_t id, uint32_t mode, uint32_t notify)
 
 /* ---- trace ---- */
 static int      s_trace;
-#define CE_TRACE_SLOTS 26                  /* 21 个虚表槽 + 事件 0x54 / 0x58 / 0x5c / 0x60 / 0x64 */
+#define CE_TRACE_SLOTS 30                  /* 21 个虚表槽 + 事件 0x54 / 0x58 / 0x5c / 0x60 / 0x64 / 0x68 / 0x6c / 0x70 / 0x74 */
+                                          /* 后四个 = collect-2x 事件（伪偏移，无虚表槽，仅 trace 记首次命中用）*/
 static uint8_t  s_seen[CE_SDK_MAX_BEHAVIORS][CE_TRACE_SLOTS];
 
 void ce_sdk_set_trace(int on) { s_trace = on; }
@@ -292,6 +303,131 @@ int __cdecl BP_ce_enemy_drop(x86_reg_t *regs, void *bp_info)
     return BP_EXEC_ORIGINAL;
 }
 
+/* ---- collect-2x（辉针城卡）四断点（AUDIT §Z）。四个 handler 都在**原指令前**触发，读的是窗前值；
+ * 与 public.h 四槽位（Task 2 追加在 hooks 表尾，缺槽 = NULL，不动的旧卡不受影响）一一对应。
+ * 分派只认声明了该槽的卡；mgr 空 → 放行不触发。 ---- */
+int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
+{
+    (void)regs; (void)bp_info;
+    uint8_t *mgr = CE_ABILITY_MGR();
+    if (!mgr) return BP_EXEC_ORIGINAL;
+    unsigned guard = 0;
+    for (const uint8_t *node = *(const uint8_t *const *)(mgr + CE_MGR_CARD_LIST_FIRST);
+         node && guard < 256;
+         node = *(const uint8_t *const *)(node + CE_NODE_NEXT), ++guard) {
+        uint8_t *card = *(uint8_t *const *)(node + CE_NODE_CARD);
+        if (!card) continue;
+        const ce_hooks_t *h = hooks_of(card);
+        if (h && h->on_item_frame) {
+            h->on_item_frame((ce_card_t *)card);
+            ce_sdk_trace(ce_card_id(card), 0x68, "on_item_frame");
+        }
+    }
+    return BP_EXEC_ORIGINAL;
+}
+
+int __cdecl BP_ce_item_collect(x86_reg_t *regs, void *bp_info)
+{
+    (void)bp_info;
+    uint8_t *mgr = CE_ABILITY_MGR();
+    uint8_t *item = (uint8_t *)(uintptr_t)regs->edi;
+    if (!mgr || !item) return BP_EXEC_ORIGINAL;
+    uint32_t type = *(const uint32_t *)(item + CE_ITEM_TYPE);   /* ★ 窗前值：EDX 由窗内指令装载，这里读内存 */
+    unsigned guard = 0;
+    for (const uint8_t *node = *(const uint8_t *const *)(mgr + CE_MGR_CARD_LIST_FIRST);
+         node && guard < 256;
+         node = *(const uint8_t *const *)(node + CE_NODE_NEXT), ++guard) {
+        uint8_t *card = *(uint8_t *const *)(node + CE_NODE_CARD);
+        if (!card) continue;
+        const ce_hooks_t *h = hooks_of(card);
+        if (h && h->on_item_collect) {
+            h->on_item_collect((ce_card_t *)card, type, item);
+            ce_sdk_trace(ce_card_id(card), 0x6c, "on_item_collect");
+        }
+    }
+    return BP_EXEC_ORIGINAL;
+}
+
+int __cdecl BP_ce_item_commit(x86_reg_t *regs, void *bp_info)
+{
+    (void)regs; (void)bp_info;
+    uint8_t *mgr = CE_ABILITY_MGR();
+    if (!mgr) return BP_EXEC_ORIGINAL;
+    unsigned guard = 0;
+    for (const uint8_t *node = *(const uint8_t *const *)(mgr + CE_MGR_CARD_LIST_FIRST);
+         node && guard < 256;
+         node = *(const uint8_t *const *)(node + CE_NODE_NEXT), ++guard) {
+        uint8_t *card = *(uint8_t *const *)(node + CE_NODE_CARD);
+        if (!card) continue;
+        const ce_hooks_t *h = hooks_of(card);
+        if (h && h->on_item_commit) {
+            h->on_item_commit((ce_card_t *)card);
+            ce_sdk_trace(ce_card_id(card), 0x70, "on_item_commit");
+        }
+    }
+    return BP_EXEC_ORIGINAL;
+}
+
+int __cdecl BP_ce_shot_damage(x86_reg_t *regs, void *bp_info)
+{
+    (void)bp_info;
+    uint8_t *mgr = CE_ABILITY_MGR();
+    if (!mgr) return BP_EXEC_ORIGINAL;
+    /* 门（放行不触发，AUDIT §Z）：esi==0 / param_6≠0 / 聚焦射击 / 炸弹中 ——
+     * 掉 P 只挂「非聚焦非炸弹的射击命中」（辉针城 passive 2 原义）。param_6 与 esi 在窗前的
+     * 0x45f298/0x45f29e 已判过、守卫失败路跳 0x45f2de 到不了这里，再门一次是纵深防御。*/
+    if (!regs->esi || !regs->ebx) return BP_EXEC_ORIGINAL;
+    if (*(const int32_t *)(uintptr_t)(regs->ebx + 0x1c) != 0) return BP_EXEC_ORIGINAL;
+    if (CE_PLAYER_FOCUSED() || CE_BOMB_ACTIVE()) return BP_EXEC_ORIGINAL;
+    /* ★ pos 源（§Z15 定案，探针已删）：0x45f0f0 是 `push ebx; mov ebx,esp` 栈帧别名，[ebx+8] = arg1
+     * **参数槽，槽里是指针**。callee 圆形分支 [ebp-0x40]（=arg1）减各源中心判重叠、矩形分支把 arg1
+     * 传 0x404440 —— arg1 全 1024 槽扫描期恒定 = 本帧被结算那个身体（敌人）的 {x,y}；调用方
+     * 0x42ee75 压 edi（敌人内偏移）、0x43955b/0x43959d 压自家帧缓冲 lea [esp+0x38]（敌人坐标拷贝）。
+     * 早前版本把槽地址当坐标读 = 指针位型 ≈ 亚正规 ≈ 世界原点——这里**解引用**才是坐标。*/
+    const float *pos = *(const float *const *)(uintptr_t)(regs->ebx + 8);
+    if (!pos) return BP_EXEC_ORIGINAL;      /* arg1 可空防御（引擎侧几何判重叠前已解引用过它，实跑必非空）*/
+    unsigned guard = 0;
+    for (const uint8_t *node = *(const uint8_t *const *)(mgr + CE_MGR_CARD_LIST_FIRST);
+         node && guard < 256;
+         node = *(const uint8_t *const *)(node + CE_NODE_NEXT), ++guard) {
+        uint8_t *card = *(uint8_t *const *)(node + CE_NODE_CARD);
+        if (!card) continue;
+        const ce_hooks_t *h = hooks_of(card);
+        if (h && h->on_shot_damage) {
+            h->on_shot_damage((ce_card_t *)card, (int32_t)regs->esi, pos);
+            ce_sdk_trace(ce_card_id(card), 0x74, "on_shot_damage");
+        }
+    }
+    return BP_EXEC_ORIGINAL;
+}
+
+/* presence 续批谓词（§Z21，前身 ce_item_pool_any_flying = 池空门 {1,3,4}，§Z18 弃用）：
+ * 池里有没有批集道具（type∈{1,2}）在**真空飞行**（state == CE_ITEM_STATE_VACUUM）。
+ * ★ state 口径一手（AUDIT §Z21/§Z22，state 机写点普查 0x445b0f/0x445e38/0x445f6f/0x446146/
+ * 0x446595/0x446647 + 出生 0x446fac/0x4471d3）：type {1,2} 进入 state 3 的唯一入口 = V 门
+ * （0x445b9a 系：上线 / 放 B 前 60 帧（0x4cf2b8+0x30/+0x38）/ 对话管理器 [0x4cf2e0]+0x1b0）
+ * 翻 0x445f63/0x445f6f —— state 2→3 的顶点翻转（0x445f59 落穿）只发生在 state-5 出生的 9–0xe
+ * 分数转换点族（0x4471d3 = CE_FN_SPAWN_ITEM 的 9–0xe 分支），P/钱不经过 state 2/5 → 分发时
+ * state==3 即引擎原生的「飞过来的收点道具」谓词（P/钱 handler 0x44699e/0x446c0a 自己也读它给全额）。
+ * §Z22 收窄掉 state 4：4 = 70px 环 swoosh（0x446647）= 普通游玩磁吸，任何时刻都发生、不属全屏
+ * 收点 → 不续批（run-9：普通游玩环收把批撑过 5 → 误弹灰 NO BONUS）。TH14 原生 0x43898e 也只在
+ * state-3 在飞体上重载批计时（§Z21）。state 1（抛物/坠落）不算：落地残余不挡批（TH14 原义；
+ * 池空门的 {1,3,4} 把抛物/休止也算「在飞」→ 躲弹幕挂批 + 急切切批三症状，§Z18）。吸收帧自身由
+ * 收集断点续期（c2x_collect_batch），两源合盖从起飞到落地的全程。早停。AUDIT §Z。*/
+int ce_item_pool_any_attracting(void)
+{
+    uint8_t *mgr = CE_ITEM_MANAGER();
+    if (!mgr) return 0;
+    uint8_t *slot = mgr + CE_ITEM_POOL_OFF;
+    for (unsigned i = 0; i < CE_ITEM_SLOTS; ++i, slot += CE_ITEM_STRIDE) {
+        uint32_t type = *(const uint32_t *)(slot + CE_ITEM_TYPE);
+        if (!(type == 1 || type == 2)) continue;
+        uint32_t state = *(const uint32_t *)(slot + CE_ITEM_STATE);
+        if (state == CE_ITEM_STATE_VACUUM) return 1;
+    }
+    return 0;
+}
+
 /* GameThread 看到 MSG 的开店位那一帧（shop.c BP_ce_shop_reopen 的 flag_set 分支）：商店对象这一帧稍后才 new，
  * 这里改 MONEY 店里显示的就是改后的值。重开的第二家（同一断点的另一分支）不调。AUDIT §W。 */
 void ce_sdk_on_shop_open(void)
@@ -406,12 +542,31 @@ int ce_sdk_setup(uint8_t *base, int trace)
             ce_verdict("FAIL: sdk: base vtable slot %u = %08x, expected %08x — not the layout we know", chk[i].i, vt[chk[i].i], chk[i].want);
             return 0;
         }
-    /* 2. 三个断点已挂 */
-    if (!bp_applied(base + CE_BP_CARD_BIND_RVA, 6))  { ce_verdict("FAIL: sdk: breakpoint ce_card_bind not applied");  return 0; }
-    if (!bp_applied(base + CE_BP_ITEM_SCORE_RVA, 6)) { ce_verdict("FAIL: sdk: breakpoint ce_item_score not applied"); return 0; }
-    if (!bp_applied(base + CE_BP_ITEM_MONEY_RVA, 6)) { ce_verdict("FAIL: sdk: breakpoint ce_item_money not applied"); return 0; }
-    if (!bp_applied(base + CE_BP_BOMB_SPENT_RVA, 5)) { ce_verdict("FAIL: sdk: breakpoint ce_bomb_spent not applied"); return 0; }
-    if (!bp_applied(base + CE_BP_ENEMY_DROP_RVA, 6)) { ce_verdict("FAIL: sdk: breakpoint ce_enemy_drop not applied"); return 0; }
+    /* 2. 九个断点已挂。聚合检查：任何一个失败都打印现场字节（判断 thcrap 没下断 vs 下错位置），
+     * 全部查完再决定成败——避免第一个失败点挡住后面断点的诊断信息。 */
+    struct { const char *name; uint32_t rva; unsigned len; } bps[] = {
+        { "ce_card_bind",   CE_BP_CARD_BIND_RVA,   6 },
+        { "ce_item_score",  CE_BP_ITEM_SCORE_RVA,  6 },
+        { "ce_item_money",  CE_BP_ITEM_MONEY_RVA,  6 },
+        { "ce_bomb_spent",  CE_BP_BOMB_SPENT_RVA,  5 },
+        { "ce_enemy_drop",  CE_BP_ENEMY_DROP_RVA,  6 },
+        { "ce_item_frame",  CE_BP_ITEM_FRAME_RVA,  7 },
+        { "ce_item_collect",CE_BP_ITEM_COLLECT_RVA,6 },
+        { "ce_item_commit", CE_BP_ITEM_COMMIT_RVA, 6 },
+        { "ce_shot_damage", CE_BP_SHOT_DAMAGE_RVA, 7 },
+    };
+    unsigned n_bp_fail = 0;
+    for (unsigned i = 0; i < sizeof bps / sizeof bps[0]; ++i) {
+        const uint8_t *p = base + bps[i].rva;
+        if (bp_applied(p, bps[i].len)) continue;
+        char hex[3 * 16];
+        char *q = hex;
+        for (unsigned k = 0; k < bps[i].len; ++k) q += sprintf(q, "%02x ", p[k]);
+        ce_log("FAIL: sdk: breakpoint %s not applied (%u bytes at +%08x: %s)",
+               bps[i].name, bps[i].len, bps[i].rva, hex);
+        ++n_bp_fail;
+    }
+    if (n_bp_fail) { ce_verdict("FAIL: sdk: %u/%u behavior breakpoints not applied", n_bp_fail, (unsigned)(sizeof bps / sizeof bps[0])); return 0; }
     /* 3. 对账 */
     uint32_t ids[CE_CARD_MAX_NEW], categories[CE_CARD_MAX_NEW];
     unsigned n = ce_new_card_count();

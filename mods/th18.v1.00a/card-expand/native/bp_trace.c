@@ -40,20 +40,26 @@ int __cdecl BP_ce_trace_alloc(x86_reg_t *regs, void *bp_info)
 }
 
 /* 初始卡组钩子（patch-test 的 ce_test_deck，0x407ee3，盖住整条 movzx eax, byte [eax+esi+0x5f608]）。
- * 语义复刻：eax = 那一格的 id。读到空槽(56) 且 cards_dev.js 的 start_deck 还有 id → 换成下一个。
- * esi 是槽序号（0 起；reset_cards 的循环 0x407ed4..0x407f05），esi == 0 时把游标归零，
- * 所以每次 reset_cards 都从 start_deck[0] 重新发。返回 0 = 跳过原指令（eax 已经是结果）。
- * 原 movzx 不设 flags；紧接着 push eax; call —— 无人读 flags。 */
+ * 语义复刻：eax = 那一格的 id。
+ *
+ * dev 卡组（cards_dev.js start_deck）把槽值**换掉**（只改 eax、不写内存——2026-09-08 写容量域
+ * [0x5f678] 触发开局卡死，已回滚）：esi < dev 张数的槽无条件 = dev 卡组 id（档里预装默认卡被顶掉，
+ * 引擎 alloc 的是 dev 卡）；reset_cards 循环按容量域走（编成档位 1–3，引擎封顶 3 = CE_DECK_CAP_MAX，
+ * 0x4449d4 无 3→4 分支），容量不足时只发前几张——日志可读出发了几张。
+ * 返回 0 = 跳过原指令（eax 已经是结果）。原 movzx 不设 flags；紧接着 push eax; call —— 无人读 flags。
+ * 无 dev 卡组（cards_dev.js 缺失）= 原语义放行。 */
 int __cdecl BP_ce_test_deck(x86_reg_t *regs, void *bp_info)
 {
     (void)bp_info;
-    static unsigned cursor;
-    if (regs->esi == 0) cursor = 0;
+    const unsigned n = ce_dev_deck_count();
+    if (n == 0) return BP_EXEC_ORIGINAL;
     uint32_t id = *(const uint8_t *)(uintptr_t)(regs->eax + regs->esi + CE_TEST_DECK_SAVE_OFF);
-    if (id == CE_NULL_ROW && cursor < ce_dev_deck_count()) {
-        uint32_t nid = ce_dev_deck_id(cursor++);
-        ce_log("test: initial deck slot %u: empty -> id %u", regs->esi, nid);
-        id = nid;
+    if (regs->esi < n) {
+        uint32_t nid = ce_dev_deck_id(regs->esi);
+        if (id != nid)
+            ce_log("test: deck slot %u: %u -> dev id %u", regs->esi, id, nid);
+        regs->eax = nid;
+        return 0;
     }
     regs->eax = id;
     return 0;

@@ -18,3 +18,7 @@ EXPORTS
 	BP_ce_snd_gate		@16
 	BP_ce_enemy_drop	@17
 	BP_ce_bomb_spent	@18
+	BP_ce_item_frame	@19
+	BP_ce_item_collect	@20
+	BP_ce_item_commit	@21
+	BP_ce_shot_damage	@22

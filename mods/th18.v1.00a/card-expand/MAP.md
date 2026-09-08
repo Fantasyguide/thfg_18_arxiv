@@ -1,7 +1,7 @@
 # MAP —— 为了加一张新卡，我们到底改了游戏的哪些东西
 
 > **版本**：TH18 v1.00a（`th18.exe`，imagebase `0x400000`）。本文裸地址默认属该版本；引用其他版本须写成 `th16:0x…`。
-> 这是**追溯表**：`patch/th18.v1.00a.js` 里 201 条 binhack、13 个断点、10 个 codecave，加上 DLL 在运行时写的
+> 这是**追溯表**：`patch/th18.v1.00a.js` 里 201 条 binhack、19 个断点、10 个 codecave，加上 DLL 在运行时写的
 > 立即数，每一条都能从这里找到「为什么改、谁生成的、在哪审计的」。改动只增不减，**每加一块就在这里补一行**。
 
 ## 0. 一张卡要经过的路，和每一段卡在哪
@@ -68,8 +68,15 @@
 | `ce_card_bind` | `0x412cec` 分配公共尾段 | 6 | esi = 卡对象、ebx = id：有行为的换虚表 | `sdk.c` | §O1–O2 |
 | `ce_item_score` | `0x446cf6` `collect_money_item` | 6 | esi = 道具身价，沿卡链表调 `on_item_score` | `sdk.c` | §O10 |
 | `ce_item_money` | `0x446d28` `collect_money_item` 尾 | 6 | 金钱入账前，沿卡链表调 `on_item_money`，`MONEY`/`MONEY_TOTAL` 一起 += bonus | `sdk.c` | §O14 |
+| `ce_enemy_drop` | `0x430510` `Enemy__drop_items_and_notify_cards` 入口 | 6 | 撒附加表之前：翻敌人 `+0x04` 起的掉落数（加倍 ×2） | `sdk.c` ← `double.c` | §S |
+| `ce_bomb_spent` | `0x4203bc` `do_bomb` 里 `consume_bomb` 刚返回 | 5 | 炸弹已扣、HUD 已刷：沿卡链表调 `on_bomb_spent` | `sdk.c` ← `corruption.c` | §T |
 | `ce_shop_bought` | `0x4183ea` `AbilityShop__on_tick` 成交分支 | 12 | 只记「本次进店成交了」（关卡 + 帧） | `shop.c` | §P1–P2 |
 | `ce_shop_reopen` | `0x443b05` `GameThread__on_tick` `test eax,0x20000` | 5 | 店刚关、成交过、还有名额 → `eax |= 0x20000`，零售建店代码再跑一遍（每关 2 次） | `shop.c` ← `shop_core.c` | §P3–P8 |
+| `ce_item_frame` | `0x446ee3` `ItemManager__on_tick` `0x446ec0` 的最后一道门卫 CMP | 7 | 每帧、道具池 body 前一次：沿卡链表调 `on_item_frame`（辉针城：池空 → 关批结算） | `sdk.c` | §Z |
+| `ce_item_collect` | `0x44625f` 收集 type 分派前一条 | 6 | 本道具副作用未发生：调 `on_item_collect`（type = `*(uint32_t*)(item+0xc78)`；辉针城：批集计数 + stash SCORE） | `sdk.c` | §Z |
+| `ce_item_commit` | `0x44658a` 共享收尾起点 | 6 | 本道具分值已入 SCORE、公共收尾前：调 `on_item_commit`（辉针城：累加分值增量） | `sdk.c` | §Z |
+| `ce_shot_damage` | `0x45f2a2` `enm_compute_damage_sources` 计分路径 | 7 | 每帧每敌一次可计分命中（dmg 钳后 ≥1）：调 `on_shot_damage`（辉针城：非聚焦命中掉钱） | `sdk.c` | §Z |
+| `ce_snd_gate` | `0x476410` `SoundManager::init` 入口 | 5 | 引擎还没读表：扩表装载 + 新行填充、回读验证 | `sound.c`（生成 `sound_emit.py`）| §Q |
 
 ### codecave
 
@@ -113,3 +120,4 @@
 - **HUD 图标上叠字**（2026-09-06，真银圣剑）：不改字节。虚表 `+0x44` 拿图标 id，UI 列表建 VM（`0x409670`）+ `set_sprite`（`0x477b00`）；加残机碎片走引擎 `0x457570`。AUDIT §X，待实跑。
 - **局中删卡 / 过关结算事件**（2026-09-06，倒吊人 + 黄金小丑）：不加断点、不改字节。`ce_destroy_card` 复刻 recount `0x4080e0` 的删卡分支，HUD 交给引擎的 `0x408d00`；`on_shop_open` 挂在 `ce_shop_reopen` 已有断点的 MSG 开店分支。AUDIT §W，待实跑。
 - **终符判定**（2026-09-07，古锭刀）：不改字节、无新断点、无新引擎调用。`on_tick_2` 读 boss 活动中断槽的子程序名（`BossDead` / `MBossDead` = 最后一张符卡，ECL 一手全覆盖），翻自机弹 + 抬 `sht+0x28` 基值 ×2。AUDIT §Y，待实跑。
+- **收点系统 / 高速掉钱**（2026-09-08，辉针城 id 127）：被动卡。四个新 SDK 事件 + 断点（表见上）：`on_item_collect`/`on_item_commit` 两断点夹引擎分值加法器、stash SCORE 差量入批（有效窗口只在批集收集后）；`on_item_frame` 里判「池内无在飞计数道具」关批、按批量档位给倍率分数补差 + 碎片 spawn；`on_shot_damage` 按帧节流掉钱。批/档位/碎片循环纯逻辑在 `collect2x_core`（主机单测）；倍率弹字 = 原生 5 槽环（`[0x4cf420]`+`0x9cc`，tick `0x464020`/draw `0x464180`，AUDIT §Z10，Task 8）。AUDIT §Z，待实跑。

@@ -25,8 +25,7 @@ typedef struct {
 
 static int bombing(void)
 {
-    uint8_t *m = CE_BOMB_MGR();
-    return m && *(int32_t *)(m + CE_BOMB_ACTIVE) != 0;
+    return CE_BOMB_ACTIVE() != 0;   /* engine.h 访问器：mgr 空指针安全 */
 }
 
 /* 复位：带着卡进入一发**正在放**的炸弹时，别把它当成新炸弹的 0→1 边沿 */

@@ -58,10 +58,16 @@ Mr. Bones / Gros Michel 这类「自毁」卡以后都走它。
 | id | 名字 | 效果 | 实现（槽 / 事件） | 文件 | 状态 |
 | --- | --- | --- | --- | --- | --- |
 | 69 | 加倍 | 被动：Miss 损失 **2** 条残机；敌人掉落的道具全部 **×2** | 掉命挂 `on_death_after_deathbomb`（引擎扣命**之前**多扣 1，`return 0` 不救命）；掉落走新 SDK 事件 `on_enemy_drop_pre`（断点 `ce_enemy_drop` @ `0x430510` 入口，撒之前把敌人 `+0x04` 起的 20 个掉落数翻倍）。AUDIT §S | `double.c` | 🔧 |
+| 127 | 辉针城 | 被动：TH14 Collect Point 1:1 复刻 —— 一次性收点按批结算（首个计数道具 → 池空为止）；批 ≥20 按档位 ×0.5/0.8/1.2/1.6/2.0（只作用分数，低档负补差）+ 每批 1 枚碎片（4:1 循环 / ≥60 命碎）；被动二：高速射击命中掉金钱道具（按火力节流）| 四个新 SDK 事件 `on_item_frame`/`on_item_collect`/`on_item_commit`/`on_shot_damage`（断点 `0x446ee3`/`0x44625f`/`0x44658a`/`0x45f2a2`）：collect/commit 夹引擎分值加法器、stash 差量入批；frame 判池空关批结算 + 碎片 spawn。AUDIT §Z | `collect2x.c` + `collect2x_core.c` | 🔧 |
 
 
 **加倍（69）补充**（2026-09-07 修）：实跑退回「小怪掉落没加倍」。根因：杂兵的掉落是 `dropMain` 给的**主掉落**（`zEnemyDrop+0x00`，一颗），引擎在调 `0x430510` 之前就撒了；
 断点只翻了 `+0x04` 的附加表（`dropExtra`，基本只有 boss / 中型敌人用）。修：断点里读主掉落类型（`ce_drop_main`），往附加表对应格 +1，引擎的附加循环再撒一颗（`double_core.c`，AUDIT S10）。
+
+**辉针城（127）补充**：数值行（spec §3，`collect2x_core.h` 同名常量）：批集 = 引擎道具 type {1(P)、2(钱)、9–0xe(小分)}；档位 20/30/40/50/60 → 倍率 500/800/1200/1600/2000 permille，倍率**只作用分数**：`SCORE += batch_score×(mult−1000)/1000`（×0.5/×0.8 为负补差，1:1 原义；`ce_add_score_delta` 钳 0..9 亿）；碎片每批 1 枚，<60 走 `fragment_cycle` 4 符卡碎 : 1 命碎（循环按 run 计，`on_run_reset` 归零）、≥60 命碎不动游标。
+批分值捕获（stash）：collect 断点在 type 分派**前**存 SCORE、commit 断点（分值已入 SCORE）累加差量；stash 只对批集收集置位、任意提交后失效 —— 批集道具按池槽顺序「收集→提交」背靠背走完，夹在中间的碎片提交见不到活 stash。帧源 = `card+0x20` 的 zTimer（引擎每 tick 自增、随暂停停走），弃用 TIME_IN_STAGE（stage 重置会压住掉钱节流游标）。
+早结敞口（Z7，Task 9 实跑定案）：批闭判定只挡 state∈{1,3,4} 的批集道具，若存在「收集了、分值提交滞后到批闭之后」的道具，那一枚分值会漏出本批（日志会现 `commit after batch closed` 行）。
+卡图：暂无用户原图，sprite 暂填 116/117（零售 NULL 的 `empty`/`dummy` 透明占位，同黑桃五张最初做法；DATA.md §6）；画好走 ORDER.txt + `make anm` 换新索引。`price_tier` 10（300 档）、`weight` 2 —— 占位，待用户确认。设计 `docs/superpowers/specs/2026-09-08-collect-2x-design.md`。
 
 ## 致敬・炉石传说
 

@@ -42,8 +42,7 @@
                                                  * Enemy__drop_items_and_notify_cards 0x430510 按 type 1..0x13 逐个 spawn（第 20 格不撒），
                                                  * 广播完 vtable+0x30 后 memset(+0x04, 0, 0x50)。AUDIT §S / S10 */
 #define CE_ENEMY_DROP_TYPES        20
-#define CE_ADDR_BOMB_MGR           0x4cf2b8   /* 炸弹管理器*；+0x30 = 「正在放炸弹」（do_bomb 置 1，Bomb__can_bomb_and_deathbomb_check 0x420420 查它）*/
-#define CE_BOMB_ACTIVE             0x30       /* 上面那个标志在对象里的偏移 */
+#define CE_ADDR_BOMB_MGR           0x4cf2b8   /* 炸弹管理器*；+0x30 = 「正在放炸弹」（do_bomb 置 1，Bomb__can_bomb_and_deathbomb_check 0x420420 查它；道具磁力判定 0x445bc4 也查它决定吸不吸）*/
 #define CE_ADDR_ABILITY_MGR_PTR    0x4cf298   /* zAbilityManager*（OM §4）*/
 #define CE_ADDR_BULLET_MGR_PTR     0x4cf2bc   /* zBulletManager*（ExpHP statics；cancel_all 0x4297a9 读）*/
 #define CE_ADDR_GUI_PTR            0x4cf2e0   /* zGui*（ExpHP）；+0x1b0 = msg（对话 VM，非 0 = 对话中）。C 键门控 0x45c069、Tenshi state0 0x40ea0d 读它 */
@@ -121,6 +120,7 @@
 #define ce_price_for_tier(t)  (((t) >= 0 && (t) < 15) ? ((const int32_t *)CE_ADDR_CARD_PRICE_BY_TIER)[(t)] : 0)
 #define CE_PLAYER()       (*(uint8_t **)CE_ADDR_PLAYER_PTR)
 #define CE_BOMB_MGR()     (*(uint8_t **)CE_ADDR_BOMB_MGR)
+#define CE_BOMB_ACTIVE()  ((CE_BOMB_MGR() != 0) && *(int32_t *)(CE_BOMB_MGR() + 0x30) != 0)   /* 放弹中（mgr+0x30 布尔；空指针安全。见 CE_ADDR_BOMB_MGR 出处）*/
 #define CE_ABILITY_MGR()  (*(uint8_t **)CE_ADDR_ABILITY_MGR_PTR)
 #define CE_BULLET_MGR()   (*(uint8_t **)CE_ADDR_BULLET_MGR_PTR)
 #define CE_GUI()          (*(uint8_t **)CE_ADDR_GUI_PTR)
@@ -182,7 +182,8 @@
 #define CE_PLAYER_X                0x620      /* float px（PL §1）*/
 #define CE_PLAYER_Y                0x624
 #define CE_PLAYER_STATE            0x476ac    /* PL §3 */
-#define CE_PLAYER_FOCUSED          0x476cc    /* PL §3 */
+#define CE_PLAYER_FOCUSED()        (*(int32_t *)(CE_PLAYER() + 0x476cc))   /* 聚焦位 = player+0x476cc（PL §3）：每帧 = INPUT_HELD>>3 & 1，dword 写
+                                                                              （0x45b414 `89 97 cc 76 04 00` mov [edi+0x476cc],edx；0/1）*/
 #define CE_PLAYER_INVULN_TIMER     0x47774    /* zTimer{prev,cur,float}；复活 0x45c35e 置 {0x117,0x118,280.0}，决死救回 60，炸弹各自置（SDK）*/
 #define CE_PLAYER_SPEED_MULT       0x477ec    /* float；Player tick 末尾 0x45c702 复位 1.0；移动 0x45b5b6 读。AbilityManager tick(0x16) 先于 Player(0x17) → on_tick_2 里写生效（SDK）*/
 #define CE_PLAYER_SPEED_BASE       0x477f0    /* float×2，每帧从 0x5217dc 复制（0x45c717）*/
@@ -210,6 +211,7 @@ typedef struct { int32_t prev; int32_t cur; float cur_f; } ce_timer_t;   /* zTim
 #define CE_SE_EXTEND     0x11   /* 音效 id（engine/_shared/th18-sound-table.md 一手）*/
 #define CE_SE_BOMB       0x2c
 #define CE_SE_CARDGET    0x2e
+#define CE_SE_PIN00      0x39   /* 收点结算钟声：TH14 v1.00b 原生结算同 id 同 wav 同调校（AUDIT §Z17）*/
 #define CE_SE_RELEASE    0x4d   /* Tenshi 发动 */
 #define CE_SE_CHANGEITEM 0x4e   /* 切主动卡 */
 #define CE_SE_TROPHY     0x4f
@@ -273,3 +275,83 @@ typedef struct { int32_t prev; int32_t cur; float cur_f; int32_t speed_src; uint
 
 /* ---- zPlayerBullet ---- */
 #define CE_BULLET_DAMAGE           0x9c       /* int；PlayerBullet__create 0x45e396 写、0x45e7f5 调槽 +0x28、0x45e837 用；Momoyo 覆写（SDK）*/
+
+/* ---- 道具池 zItem（ItemManager* = [0x4cf2ec]；2026-09-08 一手，进 AUDIT 登记）---- */
+#define CE_ADDR_ITEM_MANAGER_PTR  0x4cf2ec   /* ItemManager*：spawn 调用方从这取 ecx（0x430473 `8b 0d ec f2 4c 00`）*/
+#define CE_ITEM_POOL_OFF          0x14       /* 池首槽 = mgr+0x14（body 0x445a80 起点 `lea 0x14(%ecx),%edi` 0x445ac0）；
+                                                slot_i = mgr+0x14 + i×0xc94（循环 0x4467e9 `add edi,0xc94` / 0x4467fc `cmp eax,0x1258` jl 回头）*/
+#define CE_ITEM_SLOTS             0x1258     /* 4696 槽；池尾 mgr+0xe6baf4。与 TH15 道具池上限同源（th15but14 宿主 `cmp eax,0x1258`）*/
+#define CE_ITEM_STRIDE            0xc94
+#define CE_ITEM_POS               0xc2c      /* float3 世界坐标 x,y,z（spawn 0x446fba movq + [eax+8] 拷贝；collect 半径判定 0x446227 读）*/
+#define CE_ITEM_STATE             0xc74      /* int 状态机（2026-09-08 写点普查全链一手，AUDIT §Z21/§Z22 —— 本注为校正后模型）：
+                                                0 = 空/已删（commit 尾 0x446595、出界 0x445e38 清 0；循环头 0x445ae8 je 跳槽）
+                                                1 = 抛物/坠落体（CE_FN_SPAWN_ITEM 常规分支 0x446fac 置 1；spawn 第 6 参可给
+                                                    intro 倒计时 +0xc84（0x445b78 系），到期调 0x4472b0；此后每帧跑 V 门
+                                                    0x445b9a —— 命中翻 3（0x445bb9 系），无 V 则 0x445be6 起重力坠落、
+                                                    过 0x44620a 共享尾收点检查、出界删 0x445e38；全程可 30px 触收/70px 环收）
+                                                2 = 延迟释放下落体（state 5 intro 到期 0x445b0f 置 2 + FX 0x407420；纯重力
+                                                    积分到尾 vel_y ≥ 0 → 0x445f4e/0x445f59 落穿 0x445f5b → 0x445f63 翻 3；
+                                                    ★ 只影响 state-5 出生的 9–0xe 族，type 1/2 不经过 2/5）
+                                                3 = 真空飞行（翻 3 后 0x445f6f 置位；飞向自机，跳过 70px 环 0x4465e0 系，
+                                                    直飞至 <30px 分发 0x44625f；★ type {1,2} 的 state 3 = 「飞过来的收点
+                                                    道具」（V 门产物；批成员/续批谓词 —— handler 0x44699e/0x446c0a
+                                                    分发时读 state==3 给全额，引擎同一谓词）
+                                                4 = 70px 环吸附（0x446647 置 4，速度 = player+0x47988 系；state 3/4 都跳过
+                                                    环入口；state 4 case 每帧重查 V（0x445fe4 系）→ 命中翻 3；
+                                                    自机 state 4 时 0x446146 放回 1）
+                                                5 = 出生 intro（CE_FN_SPAWN_ITEM 的 type 9–0xe 分支 0x44713a 置 5 + 帧计数
+                                                    反聚集散布（0x400/0x200/0x100 分档）+0xc84 倒计时；到期置 2 + FX 0x445b0f）
+                                                吸附速度存 +0xc80，来源 player+0x47988。state 写点全集 = 0x445b0f/0x445e38/
+                                                0x445f6f/0x446146/0x446595/0x446647 + 出生 0x446fac(=1)/0x4471d3(=5) */
+#define CE_ITEM_STATE_VACUUM      3          /* 真空飞行（V 门产物）；辉针城批成员/续批谓词（§Z22）*/
+#define CE_ITEM_TYPE              0xc78      /* 1=P、2=金钱（collect_money_item 0x446b00 每枚 +1 钱）、4=命碎、6=符卡碎、
+                                                9–0xe = 分数转换点族（§Z19：0x44685c 映射表六 type 共指加分 handler 0x446547，
+                                                强制收集产物，非玩家收点道具）；0x44625f `mov edx,[edi+0xc78]` 起 type 分派：
+                                                0x44685c 映射表 + 0x446830 跳表；spawn 0x447051 写 */
+#define CE_ITEM_MAG_SPEED         0xc80      /* float：磁力吸附速度（= player+0x47988；见 CE_ITEM_STATE 出处）*/
+#define CE_ITEM_TIMER             0xc84      /* int：延迟/倒计时（spawn 第 6 栈参；state 1/5 各用其一，0x445b7e / 0x445af3）*/
+#define CE_FN_SPAWN_ITEM          0x446f40   /* ★ 栈参 8 个、callee `ret 0x20`（0x446f56/0x447137 `c2 20 00`）：
+                                                ECX = CE_ITEM_MANAGER()（0x430473）；栈参自低向高 (type@[ebp+8], pos float3*@[ebp+0xc],
+                                                junk@[ebp+0x10]（原生从不写——0x43047c 前 `sub esp,8` 的未初始化区；我方传 0）, angle@[ebp+0x14],
+                                                speed@[ebp+0x18], timer@[ebp+0x1c]（原生撒落传 0 → 出生 state 1 + 立即调 0x4472b0）,
+                                                [ebp+0x20]@未读, [ebp+0x24]@未读)。type≥0x14 → 返回 0；type 1..0x13 → 返回槽指针。
+                                                原生 main-drop 实参 = (type, 敌pos, 垃圾, −1.5707964f, 2.2f, 0)；我方一律补满 8 参。
+                                                ★ 与初版「RET 0x1c / 6 参」记法不同——0x430479 `sub esp,8` 起尾两槽必须压（AUDIT）*/
+#define CE_ITEM_MANAGER()         (*(uint8_t **)CE_ADDR_ITEM_MANAGER_PTR)
+
+/* ---- 弹字 ring（PopupManager* = [0x4cf420]；2026-09-08 一手反汇编，进 AUDIT §Z）----
+ * mgr 布局：+0x10 = 数字槽分配计数器（adder 0x4645f0 用它当槽号、≥10 归零 wrap）。
+ * 18 槽 @ mgr+0x624，stride 0x48：k0–12 = 数字槽（adder 0x4645f0 只写 10 个：计数器 wrap at 10）、
+ * k13–17 = 倍率槽（rate 区 @ mgr+0x9cc）。tick 0x464020 遍历 13 槽（0x464049 `lea 0x64c(%edi)`，edx=slot+0x28）
+ * 再 5 槽（0x4640e0 `lea 0x9f4(%edi)`）；draw 0x464180 同构。 */
+#define CE_ADDR_POPUP_MGR_PTR     0x4cf420
+#define CE_POPUP_RING             0x624      /* 18 槽环首（stride 0x48，共 0x510）；k13 起 = rate 区 */
+#define CE_POPUP_RING_RATE        0x9cc      /* = RING + 13×0x48：5 个倍率槽起点 */
+#define CE_POPUP_RATE_SLOTS       5
+#define CE_POPUP_STRIDE           0x48
+/* slot 字段（busy @ +0x3c；全部对 adder 0x4645f0 / tick / draw 交叉核对）：
+ *   +0x00  数字槽：ASCII 数字串（adder 逆序写 0x30+digit… 见下）；倍率槽不用
+ *   +0x0c  float3 世界坐标 x,y,z（adder `movq (%eax)→+0xc` + `movl +0x8→+0x14`）
+ *   +0x18  float scale（adder 写 1.0f `0x3f800000`；tick 拿它乘帧常量当弹出动画）
+ *   +0x1c  dword color 0xAARRGGBB（adder 从栈参抄；tick 淡出 = 每帧 alpha−4 写回，≤0 → 清 busy）
+ *   +0x20  int −1（adder 初值）
+ *   +0x24  int age（adder 初值 0；tick 每帧 +1：-0x4(%edx) 读、-0x8(%edx)=+0x20 留上一帧）
+ *   +0x28  int 0（adder 初值）
+ *   +0x2c  int 0（adder：+0x30 bit0 未置时清 0 再置 bit0）
+ *   +0x30  dword 动画类标志（adder 初值 = 置 bit0；tick `0x4(%edx)`=+0x2c ≥1 则清 0 → 表 0x4b35c0[0]）
+ *   +0x3c  byte busy（1 = 占用；tick 数字槽 age>0x3c 直接清 0；倍率槽走 alpha 淡出后清）
+ *   +0x3d  byte 数字槽 = 数字串长（adder `movb %dl`）；倍率槽 draw 不读
+ *   +0x40  int value —— 倍率槽专属：draw 0x464553 以它作 "%d"（fmt 0x4b61a4）的实参；<0 → 走 "NO BONUS"
+ *   +0x44  float mult —— 倍率槽专属：draw 0x464522 cvtps2pd 后作 "BONUS %.1f"（fmt 0x4b71f8）的实参
+ * draw 倍率槽两连文本调用 0x419cb0（this 显式传 [0x4cf2ac]）：slot 颜色先抄进 文本对象+0x19228
+ * （0x4644c2）；"%d" 的 y 再偏 +0x4b9278（低一行的数值）。数字槽由 draw 0x4641f5 起直接走字形路径，
+ * 字符偏移表 +0x121/+0x12c/+0x136（0x51f65c 字形源）。adder 0x4645f0 写数字串是**裸 digit 字节**
+ * （0..9，非 0x30+digit），负值写 0x0a —— draw 对裸字节加基再取字形，勿在串里写 ASCII。 */
+#define CE_POPUP_BUSY             0x3c
+#define CE_POPUP_POS              0x0c
+#define CE_POPUP_COLOR            0x1c
+#define CE_POPUP_AGE              0x24
+#define CE_POPUP_VALUE            0x40      /* 倍率槽 */
+#define CE_POPUP_MULT             0x44      /* 倍率槽 */
+#define CE_FN_TEXT_ADD            0x419cb0  /* draw 0x464180 的文本管理器接口（本 mod 不直接调；记档）*/
+#define CE_POPUP_MGR()            (*(uint8_t **)CE_ADDR_POPUP_MGR_PTR)

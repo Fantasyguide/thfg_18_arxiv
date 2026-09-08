@@ -1,10 +1,8 @@
 {
   "start_deck": [
-    71,
-    70,
-    68,
-    72,
-    67
+    127,
+    76,
+    68
   ],
   "trace": true,
   "retail_weight": 6,

@@ -282,5 +282,21 @@
     "weight": 2,
     "sprite_large": 154,
     "sprite_small": 155
+  },
+  "127": {
+    "name": "辉针城",
+    "desc": [
+      "一次性收点：批量 ≥20 按档位结算，",
+      "批量越大倍率越高，最高 ×2.0；",
+      "碎片按 4:1 循环出符卡碎，",
+      "第 5 次结算出命碎；≥60 直出命碎。",
+      "高速命中敌人掉金钱，火力越高越快。"
+    ],
+    "internal_name": "COLLECT_2X",
+    "initial_unlocked": 1,
+    "price_tier": 10,
+    "weight": 2,
+    "sprite_large": 116,
+    "sprite_small": 117
   }
 }

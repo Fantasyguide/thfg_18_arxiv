@@ -150,6 +150,10 @@ static const ce_grow_t CE_GROW[] = {
 #define CE_BP_ITEM_MONEY_RVA  0x046d28
 #define CE_BP_BOMB_SPENT_RVA  0x0203bc
 #define CE_BP_ENEMY_DROP_RVA  0x030510
+#define CE_BP_ITEM_FRAME_RVA   0x046ee3
+#define CE_BP_ITEM_COLLECT_RVA 0x04625f
+#define CE_BP_ITEM_COMMIT_RVA  0x04658a
+#define CE_BP_SHOT_DAMAGE_RVA 0x05f2a2
 #define CE_BP_SHOP_BOUGHT_RVA 0x0183ea
 #define CE_BP_SHOP_REOPEN_RVA 0x043b05
 #define CE_TEST_DECK_SAVE_OFF 0x5f608   /* reset_cards：byte [eax+esi+0x5f608] 初始卡组一格 */

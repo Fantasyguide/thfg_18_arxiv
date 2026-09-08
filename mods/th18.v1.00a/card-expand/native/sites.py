@@ -706,6 +706,24 @@ SDK_SITES = [
     ("ce_enemy_drop", 0x430510, 6, "558bec83ec20",
      "Enemy__drop_items_and_notify_cards 入口（thiscall，ecx = 敌人）：push ebp/mov ebp,esp/sub esp,0x20，无相对寻址。"
      "在引擎撒道具**之前**沿卡链表调 on_enemy_drop_pre(counts)，counts = 敌人 +0x04 起的 20 个 int32（type 1..0x13）"),
+    # collect-2x 四断点（AUDIT §Z；辉针城卡）：窗口单条/两条指令、无相对寻址、窗内无跳转目标 ——
+    # 逐条与原始 exe 字节对过（emit_sdk_breakpoints 每跑必验），objdump aligned 扫过窗口边界。
+    ("ce_item_frame", 0x446ee3, 7, "833da4f24c0000",
+     "ItemManager tick 0x446ec0 的门卫 CMP（cmp dword [0x4cf2a4],0，**单条 7 字节**）：每个正常游玩帧、道具池 body 前到达一次"
+     "（菜单/暂停帧跳走不经过）；handler 不读 CMP 结果、不改标志。沿卡链表调 on_item_frame()"),
+    ("ce_item_collect", 0x44625f, 6, "8b97780c0000",
+     "collect 分派前一条 mov edx,[edi+0xc78]（edi = 道具槽，**单条 6 字节**）：此时本道具的副作用都没发生"
+     "（分值未入 SCORE）。handler 从**内存** *(uint32_t*)(edi+0xc78) 读 type（EDX 还没写），不是读寄存器。"
+     "沿卡链表调 on_item_collect(card, type, item)"),
+    ("ce_item_commit", 0x44658a, 6, "f30f10166a25",
+     "共享收尾起点：movss xmm2,[esi]（4 字节）+ push 0x25（2 字节），本道具分值已按 type 计入 SCORE、"
+     "公共收尾（清 state、接 commit tail）之前；各收集路线（线/半径）在此汇聚。两条都无相对寻址。"
+     "沿卡链表调 on_item_commit()"),
+    ("ce_shot_damage", 0x45f2a2, 7, "b867666666f7ee",
+     "enm_compute_damage_sources 0x45f0f0 里可计分命中路径：mov eax,0xee666667 + imul esi（两条，都无相对寻址；"
+     "0x45f2dc 因 guard-fail 路 0x45f14e jmp 0x45f2de 落在窗内而**被否**，此窗已对齐 objdump 确认无窗内跳转目标）。"
+     "esi = 本帧本敌伤害（钳 cap 后 ≥1），ebx = 帧基 → pos 在 [ebx+8]（敌世界坐标 x,y）、param_6 在 [ebx+0x1c]。"
+     "沿卡链表调 on_shot_damage(card, dmg, pos)"),
 ]
 
 
@@ -958,6 +976,10 @@ def emit_header(sites, unlock_reads, order_sites, menu_binhacks):
               "#define CE_BP_ITEM_MONEY_RVA  0x%06x" % (SDK_SITES[2][1] - 0x400000),
               "#define CE_BP_BOMB_SPENT_RVA  0x%06x" % (SDK_SITES[3][1] - 0x400000),
               "#define CE_BP_ENEMY_DROP_RVA  0x%06x" % (SDK_SITES[4][1] - 0x400000),
+              "#define CE_BP_ITEM_FRAME_RVA   0x%06x" % (SDK_SITES[5][1] - 0x400000),
+              "#define CE_BP_ITEM_COLLECT_RVA 0x%06x" % (SDK_SITES[6][1] - 0x400000),
+              "#define CE_BP_ITEM_COMMIT_RVA  0x%06x" % (SDK_SITES[7][1] - 0x400000),
+              "#define CE_BP_SHOT_DAMAGE_RVA 0x%06x" % (SDK_SITES[8][1] - 0x400000),
               "#define CE_BP_SHOP_BOUGHT_RVA 0x%06x" % (SHOP_SITES[0][1] - 0x400000),
               "#define CE_BP_SHOP_REOPEN_RVA 0x%06x" % (SHOP_SITES[1][1] - 0x400000),
               "#define CE_TEST_DECK_SAVE_OFF 0x5f608   /* reset_cards：byte [eax+esi+0x5f608] 初始卡组一格 */",

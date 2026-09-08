@@ -112,7 +112,7 @@ LDFLAGS   := -shared -static-libgcc -s -lkernel32 -Wl,--no-insert-timestamp
 dll: $(DLL)
 SRCS      := dll_main.c selfcheck_core.c selfcheck.c unlocked.c text.c cards_def.c cards.c menu.c bp_trace.c sdk_core.c sdk_actions.c sdk.c shop_core.c shop.c sound.c $(wildcard cards/*.c)
 OBJS      := $(SRCS:.c=.o)
-%.o: %.c card_expand.h sites_gen.h thcrap_bp.h cards_def.h sdk.h sdk_core.h engine.h shop_core.h sound.h voice_ids.h sht_ids.h
+%.o: %.c card_expand.h sites_gen.h thcrap_bp.h cards_def.h sdk.h sdk_core.h engine.h shop_core.h sound.h voice_ids.h sht_ids.h $(wildcard cards/*.h)
 	$(CC) $(CFLAGS) -c -o $@ $<
 $(DLL): $(OBJS) th18_card_expand.def
 	$(CC) $(CFLAGS) -o $@ $(OBJS) th18_card_expand.def $(LDFLAGS)
@@ -145,6 +145,8 @@ test-host:
 	./tests/build/test_guding_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_double_core tests/test_double_core.c cards/double_core.c
 	./tests/build/test_double_core
+	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_collect2x_core tests/test_collect2x_core.c cards/collect2x_core.c
+	./tests/build/test_collect2x_core
 
 ## x87 自检 —— 只看我们自己的目标文件
 dllx87: $(OBJS)
@@ -157,14 +159,14 @@ dllverify: $(DLL)
 	@file $(DLL) | tee tests/build/dll-file.txt
 	@grep -Eq 'PE32.*Intel 80386' tests/build/dll-file.txt
 	@$(OBJDUMP) -p $(DLL) > tests/build/dll-headers.txt
-	@awk '/^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]+@[0-9]+/{gsub("@", "", $$2); print $$1, $$2}' th18_card_expand.def | while read sym ordinal; do \
+	@awk '/^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]+@[0-9]+/{gsub("@", "", $$2); print $$1, $$2}' th18_card_expand.def | tr -d '\r' | while read sym ordinal; do \
 		grep -Eq "^[[:space:]]+$$ordinal[[:space:]]+0x[0-9a-f]+[[:space:]]+$$sym$$" tests/build/dll-headers.txt || exit 1; \
 	done
-	@test "$$(grep -Ec '^[[:space:]]+[0-9]+[[:space:]]+0x[0-9a-f]+[[:space:]]+[A-Za-z_]' tests/build/dll-headers.txt)" = 18
+	@test "$$(grep -Ec '^[[:space:]]+[0-9]+[[:space:]]+0x[0-9a-f]+[[:space:]]+[A-Za-z_]' tests/build/dll-headers.txt)" = 22
 	@test "$$(grep -c 'DLL Name:' tests/build/dll-headers.txt)" = 2
 	@grep -q 'DLL Name: KERNEL32.dll' tests/build/dll-headers.txt
 	@grep -q 'DLL Name: msvcrt.dll' tests/build/dll-headers.txt
-	@echo "DLL ABI: 18 exports, PE32/i386, dependencies KERNEL32.dll + msvcrt.dll"
+	@echo "DLL ABI: 22 exports, PE32/i386, dependencies KERNEL32.dll + msvcrt.dll"
 
 ## dist   —— 三个 patch + DLL + zip；_255（patch-step3）里带重建的 th18/abcard.anm（≈22 MB）与 th18/ability.anm（≈1.7 MB），都含零售贴图
 ## dist —— 在 ../dist/ 摆出可直接安装的整套：一个 DLL + patch-step1 / patch-step3 / patch-test

@@ -306,7 +306,7 @@ E5 已经说明它验不了 binhack；这一条说明它连「表填了没」都
 | L2 | 三处 imul 后紧跟 `add r, 基址`，中间无人读 flags | **CONFIRMED** —— `0x41669a add ecx,edi`；`0x416780 add edi,0x40 … 0x416797 add edi,eax`（中间是 mov/movss）；`0x419270 add eax,[0x4cf29c]` |
 | L3 | 三处的基址都是 `ABILITY_TXT_PTR` 那个对象 | **CONFIRMED** —— `0x41655d mov edi,[0x4cf29c]`（FUN_00416540 全程不改 edi 直到 `0x416780`）；`0x419270` 直接读全局。所以 `ext - [0x4cf29c]` 这个相对偏移对三处都对 |
 | L4 | `0x416779` 时 `[ebp+0xc]` 是 id | **CONFIRMED** —— 序言 `push ebp; mov ebp,esp; and esp,-8`，`ret 0x10` 四个栈参，`0x416550 mov ebx,[ebp+0xc]` 同一个值；此时 ebx 已被 `0x4166b8` 改写，所以不能用 ebx |
-| L5 | 零售 57 张 = `0x63c0`，第 57 张的位置就是尾部字段 | **CONFIRMED** —— `0x4165ae mov eax,[edi+0x63c0]`、`0x41676b lea esi,[edi+0x63c4]`；57 × 0x1c0 = 0x63c0。阈值取 57：id 57（BACK）也重定向，零售从不为它渲染文案，无观察差异 |
+| L5 | 零售 57 张 = `0x63c0`，第 57 张的位置就是尾部字段 | **CONFIRMED** —— `0x4165ae mov eax,[edi+0x63c0]`、`0x41676b lea esi,[edi+0x63c4]`；57 × `0x1c0` = `0x63c0`。阈值取 57：id 57（BACK）也重定向，零售从不为它渲染文案，无观察差异 |
 | L6 | 名字被当作格式串 | **CONFIRMED** —— `FUN_004873f0` 先 `FUN_00404e40(param_7, …)`（vsprintf 类）再渲染；占位文案不含 `%` |
 | L7 | UTF-8 能显示 | **CONFIRMED（源码）** —— win32_utf8 `MultiByteToWideCharU`：先 `CP_UTF8 + MB_ERR_INVALID_CHARS`，失败退 `fallback_codepage`；base_tsa 是依赖，textdisp 一定在。字宽算式用 `strlen`，3 字节/字比 Shift-JIS 多，字会略挤——外观问题，不是安全问题 |
 | L8 | 断点里 `GetModuleHandleA` / 读全局 | **CONFIRMED** —— 无 x87、无 thcrap API；`make dllx87` = 0 |
@@ -353,7 +353,7 @@ E5 已经说明它验不了 binhack；这一条说明它连「表填了没」都
 **M3 为什么不是 `0xff`**：两处 imm8 符号扩展；且条目数 = 56 + 已注册新卡数，不是 255（否则图鉴列出 198 个 NULL 副本）。
 改为 DLL 在门里现写 7 处，上限 127。
 
-**M6 `__card_ids` 访问点**：AbilityMenu 全部函数（`0x413470..0x4160b0`）objdump 过滤位移 ∈ [0x304,0x3e4) 与负位移：
+**M6 `__card_ids` 访问点**：AbilityMenu 全部函数（`0x413470..0x4160b0`）objdump 过滤位移 ∈ [`0x304`,`0x3e4`) 与负位移：
 直接 `+0x304` 14 处；`0x4145d2 [esi-0x4e8]`（esi 走 `+0x7ec`）、`0x414b3f [eax-0x8e8]`（eax 走 `+0xbec`）→
 改成 `+0xc10` / `+0x810`，`0x7ec+0xc10 = 0xbec+0x810 = 0x13fc`。全二进制 `+0x304` 的其它 6 处在
 `0x405e21..0x406349`（另一类对象）与 CRT `0x491b26`，不是菜单。
@@ -420,12 +420,12 @@ E5 已经说明它验不了 binhack；这一条说明它连「表填了没」都
 | O1 | `0x412cec` 处 esi = 卡对象、ebx = id；断点 cavesize 6 盖住的两条指令无相对寻址 | **CONFIRMED** —— 见下「O1 证据」 |
 | O2 | 换完虚表后 ctor 槽仍会被按零售语义调用 | **CONFIRMED** —— ctor 调用在 `0x412d11`，晚于 `0x412cec`；`mode&1` 判定（`0x412cf9..0x412d0b`）与 dtor（`0x412d35`）不动 |
 | O3 | 基类 21 槽的签名 = `ret N`；桩的 ABI 与之一致 | **CONFIRMED** —— 见下「O3 证据」 |
-| O4 | 桩不用的槽透传基类实现是安全的 | **CONFIRMED** —— +0x08/+0x38/+0x3c/+0x40 直接填基类地址；门里 `ce_sdk_setup` 把 `0x4b4c78` 的 0/2/14/15/16/20 槽与 `engine.h` 常量比对，不符 FAIL（布局守卫）|
-| O5 | +0x50 桩的尾跳 | **CONFIRMED** —— `ce_state_free(this)` 后 `jmp 0x411410`，ecx 重新装 this，栈上的 flag 参数原样留给基类的 `ret 4`（objdump：`mov ecx,esi; pop esi; jmp eax`）|
-| O6 | 私有状态不会泄漏 | **CONFIRMED** —— 所有销毁路径都走 +0x50 槽（`reset_cards` / `recount` / 即时卡当场删 `0x412d1d`），SDK 在那释放；256 槽 = 一局卡数上限（`0x411469`）|
+| O4 | 桩不用的槽透传基类实现是安全的 | **CONFIRMED** —— +`0x08`/+`0x38`/+`0x3c`/+`0x40` 直接填基类地址；门里 `ce_sdk_setup` 把 `0x4b4c78` 的 0/2/14/15/16/20 槽与 `engine.h` 常量比对，不符 FAIL（布局守卫）|
+| O5 | +`0x50` 桩的尾跳 | **CONFIRMED** —— `ce_state_free(this)` 后 `jmp 0x411410`，ecx 重新装 this，栈上的 flag 参数原样留给基类的 `ret 4`（objdump：`mov ecx,esi; pop esi; jmp eax`）|
+| O6 | 私有状态不会泄漏 | **CONFIRMED** —— 所有销毁路径都走 +`0x50` 槽（`reset_cards` / `recount` / 即时卡当场删 `0x412d1d`），SDK 在那释放；256 槽 = 一局卡数上限（`0x411469`）|
 | O7 | 移速倍率在 `on_tick_2` 里写才生效 | **CONFIRMED** —— 见下「O7 证据」 |
 | O8 | `player+0x47774` 是复活无敌计时器，`{0x117,0x118}` 只在刚置好那一帧出现 | **CONFIRMED（推断链）** —— 见下「O8 证据」，实跑看 A♠ |
-| O9 | `bullet+0x9c` 在 +0x28 槽被调时已是最终基础伤害 | **CONFIRMED** —— `PlayerBullet__create` `0x45e396` 写、`0x45e7f5` 调槽、`0x45e837` 取用；`CardMomoyo__on_bullet_init` `0x411083` 同一字段覆写 |
+| O9 | `bullet+0x9c` 在 +`0x28` 槽被调时已是最终基础伤害 | **CONFIRMED** —— `PlayerBullet__create` `0x45e396` 写、`0x45e7f5` 调槽、`0x45e837` 取用；`CardMomoyo__on_bullet_init` `0x411083` 同一字段覆写 |
 | O10 | `0x446cf6` 处 esi = 道具身价且改它同时影响弹窗与计分 | **CONFIRMED** —— `0x446cf3 cmovle esi,eax`（钳 ≥10）之后；`0x446cfc push esi` 给弹窗 `0x4645f0`，`0x446d0d mul esi` → `SCORE += esi/10`；`lea eax,[edi+0xc2c]` 6 字节不含相对寻址 |
 | O11 | 测试卡组断点复刻原 movzx 语义 | **CONFIRMED** —— 原指令 `movzx eax, byte [eax+esi+0x5f608]`；断点读同一字节，写 eax，返回 0 跳过；不设 flags（原指令也不设，后随 `push eax; call`）；esi 是槽序号（循环 `0x407ed4..0x407f05` 里 `inc esi`），esi==0 时游标归零 |
 | O12 | 事件断点里遍历卡链表安全 | **CONFIRMED** —— 表头 `mgr+0x18`、首结点 `[mgr+0x1c]`、结点 `{card,next,prev}`（`0x412e90` / `0x408690`）；`AbilityManager__on_tick` 用同一走法；加 256 步护栏 |
@@ -445,13 +445,13 @@ E5 已经说明它验不了 binhack；这一条说明它连「表填了没」都
 ebx 自 `0x411479 cmp ebx,0x38` 起就是 id；esi 自各 case 的 `mov esi,eax`（`new` 的返回）起是对象；
 `0x412ce4 test esi,esi; jz` 在前，断点里再判 esi≠0。
 
-**O3 证据**：读 `0x4b4c78` 的 21 个指针逐个反汇编，带栈参的只有 +0x0c(`ret 4`)、+0x1c(`ret 8`)、+0x28(`ret 4`)、
-+0x30(`ret 8`)、+0x44(`ret 4`)，其余裸 `ret`。桩用 `__attribute__((thiscall))`，objdump 确认 this 在 ecx、
+**O3 证据**：读 `0x4b4c78` 的 21 个指针逐个反汇编，带栈参的只有 +`0x0c`(`ret 4`)、+`0x1c`(`ret 8`)、+`0x28`(`ret 4`)、
++`0x30`(`ret 8`)、+`0x44`(`ret 4`)，其余裸 `ret`。桩用 `__attribute__((thiscall))`，objdump 确认 this 在 ecx、
 一参桩 `ret 4`、二参 `ret 8`（checklist 的 ABI 项）。
 
 **O7 证据**：`player+0x477ec` 由移动函数 `0x45b5b6` 读、Player tick 末尾 `0x45c702` 复位 1.0。UpdateFunc 优先级
-AbilityManager 0x16 < Player 0x17（注册点 `0x40847f` / `0x45a8b4`，同一注册函数 `0x401180`）→ 管理器 tick 里的写
-在同一帧被移动读到；`on_tick`（+0x24，`0x45c0e5`）在复位之前，白写。BombMarisa（0x19）写 0.5 是同一字段。
+AbilityManager `0x16` < Player `0x17`（注册点 `0x40847f` / `0x45a8b4`，同一注册函数 `0x401180`）→ 管理器 tick 里的写
+在同一帧被移动读到；`on_tick`（+`0x24`，`0x45c0e5`）在复位之前，白写。BombMarisa（`0x19`）写 0.5 是同一字段。
 
 **O8 证据**：写入者穷举（全二进制扫 `0x47774/78/7c`）：复活 `0x45c35e`（280）、决死救回两处（60）、四个角色炸弹
 （40 / 120 / 110 …）、ECL `515 setInvuln`；zTimer `{prev,cur,float}` 布局与 `CardAya__on_tick` 的读写一致。
@@ -476,10 +476,10 @@ edi/esi 由我们的 thiscall 桩按 ABI 保住。外层不再使用任何在 ct
 我们的对象走 case 56 + `0x412cd5`，绑定断点在 `0x412cec`（归一化之后、`0x412d59 test al,8` 之前），在那里按主动 case 的写法重写 flags 与计时器，
 尾段随后把它入 `selected_active_card` / `num_active` / HUD，与零售无差。`+0x54` 不属于我们的对象，state 放私有状态；引擎从不读它。
 
-**O20 证据**：C 键分派 `0x45c084`：`INPUT_PRESSED & 0x400` → `mgr+0x38` 的槽 +0x08。Tenshi `c_press` `0x40ebf9`：门 `+0x54 == 0 && +0x38 <= 0`；
+**O20 证据**：C 键分派 `0x45c084`：`INPUT_PRESSED & 0x400` → `mgr+0x38` 的槽 +`0x08`。Tenshi `c_press` `0x40ebf9`：门 `+0x54 == 0 && +0x38 <= 0`；
 装填 `+0x38 = (int)(+0x48 × mgr+0xc58)`、`+0x3c = 同 float`、`+0x34 = int − 1`；经过帧 `+0x20` 组清零；`flags |= 0x20`。
-`__on_tick_2` `0x40e8c0`：state 0 清 0x20、门控（`GUI_PTR->msg(+0x1b0) == 0 && ENEMY_MANAGER->enemy_count_real(+0x198) != 0`，ExpHP 名）下 `+0x38 > 0` 才 `Timer__decrement(+0x34)`；
-state 2 清 0x20、`+0x24 > 8` 回 0；末尾门控下 `Timer__increment(+0x20)`。`__on_load__2` 只清状态与经过帧，`method_4C` 再清充能。
+`__on_tick_2` `0x40e8c0`：state 0 清 `0x20`、门控（`GUI_PTR->msg(+0x1b0) == 0 && ENEMY_MANAGER->enemy_count_real(+0x198) != 0`，ExpHP 名）下 `+0x38 > 0` 才 `Timer__decrement(+0x34)`；
+state 2 清 `0x20`、`+0x24 > 8` 回 0；末尾门控下 `Timer__increment(+0x20)`。`__on_load__2` 只清状态与经过帧，`method_4C` 再清充能。
 两个 Timer 函数 thiscall(ecx = zTimer*)、无栈参（`0x409750` / `0x405990`）。SDK 逐条照抄；差异只有 state 的存放位置。
 
 **O21 证据**：`cancel_all` `0x4297a0`：`edi = BULLET_MANAGER + 0x5a8`，2000 次，`add edi, 0xfa0`，状态 `word [edi+0xaac]`（0 / 3 跳过）。
@@ -499,7 +499,7 @@ Tenshi 调它们之前都有一条 `push ecx`（`0x40ea2e`、`0x40ead3`）——
 **O24（2026-09-04）反转牌发动亮牌：`ce_anm_spawn` 调 `AnmLoaded__instantiate_vm_to_world_list_back` `0x405bf0`**。
 一手：`mov edi, ecx`（this = `AnmLoaded*`），`[ebp+8]` out_id、`[ebp+0xc]` script、`[ebp+0x10]` layer、`[ebp+0x14]` out_vm，
 **唯一出口 `ret 0x10`**（O23 教训：全部出口都看了）。内部自己进 `DAT_00521738` 临界区，调用方不用管；实体坐标固定 (0,0,0)。
-`CardTenshi__c_press` `0x40ebf0` 内联的就是这套（层 13、脚本 0x1c、坐标改玩家位），证明从 c_press 时点调它安全。
+`CardTenshi__c_press` `0x40ebf0` 内联的就是这套（层 13、脚本 `0x1c`、坐标改玩家位），证明从 c_press 时点调它安全。
 C 侧用 `__attribute__((thiscall))` 函数指针，4 个栈参；`reverse.o` objdump：`mov ecx,[0x4cf298+0x10]`、`push out_vm; push 0x10; push 0x44; push out_id; call`，
 call 后直接 `mov eax,[esp]` 读 id、**无 `add esp`**——与被调方清栈一致。`ce_anm_spawn` 对 `anm == NULL` 早退返回 0。
 备查未用：`AnmLoaded__set_sprite` `0x477b00` thiscall ret 8（两出口）、`0x488cf0` stdcall(id) ret 4。
@@ -507,7 +507,7 @@ ANM 侧：`ability.anm` 追加 entry7（`REVERSE.png`，字段抄 abcard `BLANK_
 `build_ability.py` 校验零售 7 entry / 68 脚本 / 贴图逐项不变，`thanm -l` 往返一致。脚本自 `delete()`，卡对象不记 id。
 ~~🟡 世界层投影是否透视未验~~ → 实跑显示不对；根因：模式 8 走 WORLD 矩阵不加相机 2 的区域原点偏移（`AnmManager+0xd0/+0xd8`），放层 16 会整体偏位（`engine/anm/th18/01-vm-instantiate.md` §3b）。改为零售配方 `layer(20); resolutionMode(1); type(8);`，`ce_anm_spawn` 的层参数同步 20（脚本内 `layer()` 会覆盖，纯注释意义）。复跑仍全空白 → 见 O24′。
 
-**O24′（根因，2026-09-04 二轮）**：`engine.h` 把 `CE_MGR_ABILITY_ANM` 写成 `0x10`——那是 **abcard_anm**。ExpHP `zAbilityManager`：`+0x0c ability_anm / +0x10 abcard_anm / +0x14 abmenu_anm`；`CardTenshi__c_press` `0x40ebf0` 取 `[ABILITY_MANAGER_PTR+0xc]` 起 script 0x1c 与之一致。错拿 abcard.anm（18 个脚本）后 `AnmManager__sub_407420` **无边界检查**地把脚本表第 68 项（表外内存）拷成 VM → 垃圾 VM，什么都画不出，两版（层 16 / 层 20）全空白。来源是 `10-extensibility-limits.md` §5 旧文一句写反的偏移，没有对着结构体 / 反汇编重取——**又一次 K′/M6/O1 教训：偏移必须从上下文重取，不能抄文档**。修正为 0x0c，2D 零售配方脚本先跑基线（实跑 ✅ 显示在上边框中点 = ECL 原点），再切回 type(8) 层 20（实跑 ✅ 有透视；锚点顶边对齐，pos y 上移 96 补偿）。
+**O24′（根因，2026-09-04 二轮）**：`engine.h` 把 `CE_MGR_ABILITY_ANM` 写成 `0x10`——那是 **abcard_anm**。ExpHP `zAbilityManager`：`+0x0c ability_anm / +0x10 abcard_anm / +0x14 abmenu_anm`；`CardTenshi__c_press` `0x40ebf0` 取 `[ABILITY_MANAGER_PTR+0xc]` 起 script `0x1c` 与之一致。错拿 abcard.anm（18 个脚本）后 `AnmManager__sub_407420` **无边界检查**地把脚本表第 68 项（表外内存）拷成 VM → 垃圾 VM，什么都画不出，两版（层 16 / 层 20）全空白。来源是 `10-extensibility-limits.md` §5 旧文一句写反的偏移，没有对着结构体 / 反汇编重取——**又一次 K′/M6/O1 教训：偏移必须从上下文重取，不能抄文档**。修正为 `0x0c`，2D 零售配方脚本先跑基线（实跑 ✅ 显示在上边框中点 = ECL 原点），再切回 type(8) 层 20（实跑 ✅ 有透视；锚点顶边对齐，pos y 上移 96 补偿）。
 附带订正：O24 里「层 16 会偏位」的推断经 `02-render-stages.md` 一手对表后不成立（层 12–19 在相机 3 下，偏移为 0）。
 
 **O25（2026-09-04）方片 2 `d2.c`**：只读数据，无新引擎调用——价格表 `CARD_PRICE_BY_TIER` `0x4b35c4`（int[15]，SM 一手 dump）按表行 `+0x10` 的 tier 取价，越界返回 0；
@@ -515,8 +515,8 @@ ANM 侧：`ability.anm` 追加 entry7（`REVERSE.png`，字段抄 abcard `BLANK_
 M < price 的火力补差价路径不动 MONEY（游戏随后清零）。**未实跑。**
 
 **O26（2026-09-04）皇家同花顺 `cards/royal.c`**（黑桃五张共用 ctor）。触发不开新断点：成交 `allocate_new_card(mode 2)` 调 ctor（`0x412d11`），`owned[id]=1` 在其后（`0x412d42`），ctor 里查其余四张 `owned[]`（`mgr+0xd70`，本 mod 搬迁后的数组）齐了即第五张，天然只触发一次；纯函数 `ce_royal_flush_ready` 有单测。
-两个新引擎调用：**`0x4575f0` 加命**——`mov esi,ecx`（this = GlobalsInner `0x4cccdc`），不读栈参，唯一出口裸 `ret`；`[esi+0x6c]` CURRENT_LIVES 钳 `[esi+0x78]` LIVES_MAX，内部再调 `0x405bf0` 起特效、`0x476be0` 放音效 0x11。**`0x457690` 加 bomb**——this = ecx，`[ecx+0x7c]` CURRENT_BOMBS 钳 `[ecx+0x88]` MAX_BOMBS，音效 0x2e，**唯一出口 `ret 4`** 但函数体不读任何栈参（O23 同款），C 侧签名带一个 dummy int。`royal.o` objdump：加命 `mov ecx,0x4cccdc; call`（无 push）；加 bomb `mov ecx; push 0; call`，call 后无 `add esp` —— 与两函数的出口一致。上限照 `CardLife__destructor` `0x409b80` / `CardBomb__destructor` `0x409c20`：先 `+1` 钳 7 再调加法。门：`GAME_THREAD_PTR` `0x4cf2e4` 非 0（零售即时卡 dtor 的门）。ctor 返回 0 保留卡。
-实跑（2026-09-04）：购买第五张触发 ✅，但**之后每关开始又触发一次**（共 6 次）——引擎在每关开始对卡组里每张卡再调一次 +0x00（trace：初始携带的 64 `on_stage_start` 后紧跟 `ctor`；02-lifecycle 只记了 mode 0/2 调 ctor，漏了这条）。修：ctor 开头 `ce_fresh_acquire(c)`（= `owned[自己] == 0`；获得路径里 owned 在 ctor 之后 `0x412d42` 才置 1，关卡开始那次早已是 1）。复跑 ✅ 只触发一次。
+两个新引擎调用：**`0x4575f0` 加命**——`mov esi,ecx`（this = GlobalsInner `0x4cccdc`），不读栈参，唯一出口裸 `ret`；`[esi+0x6c]` CURRENT_LIVES 钳 `[esi+0x78]` LIVES_MAX，内部再调 `0x405bf0` 起特效、`0x476be0` 放音效 `0x11`。**`0x457690` 加 bomb**——this = ecx，`[ecx+0x7c]` CURRENT_BOMBS 钳 `[ecx+0x88]` MAX_BOMBS，音效 `0x2e`，**唯一出口 `ret 4`** 但函数体不读任何栈参（O23 同款），C 侧签名带一个 dummy int。`royal.o` objdump：加命 `mov ecx,0x4cccdc; call`（无 push）；加 bomb `mov ecx; push 0; call`，call 后无 `add esp` —— 与两函数的出口一致。上限照 `CardLife__destructor` `0x409b80` / `CardBomb__destructor` `0x409c20`：先 `+1` 钳 7 再调加法。门：`GAME_THREAD_PTR` `0x4cf2e4` 非 0（零售即时卡 dtor 的门）。ctor 返回 0 保留卡。
+实跑（2026-09-04）：购买第五张触发 ✅，但**之后每关开始又触发一次**（共 6 次）——引擎在每关开始对卡组里每张卡再调一次 +`0x00`（trace：初始携带的 64 `on_stage_start` 后紧跟 `ctor`；02-lifecycle 只记了 mode 0/2 调 ctor，漏了这条）。修：ctor 开头 `ce_fresh_acquire(c)`（= `owned[自己] == 0`；获得路径里 owned 在 ctor 之后 `0x412d42` 才置 1，关卡开始那次早已是 1）。复跑 ✅ 只触发一次。
 演出：`ability.anm` 追加 entry8–14（`ROYAL_FLUSH.png` / 五张黑桃卡图副本 / `GOLD_888.png`）+ script69–76（父脚本 70 用 `scriptNew` 起七个子脚本，时间线写死在各子脚本里，194 帧一起 `delete()`），`ce_anm_spawn`（O24 同一调用）+ `ce_play_sound(0x4f = se_trophy)`（O22 同一调用；id 表一手见 `engine/_shared/th18-sound-table.md`）。trophy 音效要在第 60 帧放，C 里没有延时：五张黑桃都挂 `on_tick_2` → `ce_royal_tick`，只有触发那张卡（`s_fx_card`）递减倒计时。无新引擎接口。**演出待实跑。**
 
 **O27（2026-09-04）开发辅助，只进开发用 patch（① 在 `_test`；② 自 2026-09-04 拆成独立可勾选的 `_devstage`）**：① `cards_dev.js` 的 `retail_weight` / `new_weight`——纯数据，改 cave 表行 `+0x14`，在 `ce_shop_capacity_check` 之前应用（否则池子超 560 的 FAIL 会漏）；跳过 id 0 / 56 / 57 与 weight ∈ {0,6} 的行；`ce_weight_override` 有单测。② st01–st06 空壳源文本入库（`assets/ecl/stNN.ecl.txt`，`--regen-shells` 生成：头部 + `main` + `LogoEnemy` + `MainBoss`，`main` 里 `@MainFront()`…`setChapter(41)` 前的道中段与 `debug22` 全删，零售敌机子程序不留；六关 main 同构、`MainBoss` 只引用 bs 文件里的 `Boss`/`BossM`），thecl 直接编；`stNNbs.ecl`（满是符卡脚本）由 `make_dev_ecl.py` 现场反编译零售文件、血量常数等比 ÷100（`lifeSet`、`setInterrupt(槽, 血量, 超时, 子)` 的血量、`lifeMarker` 的血量；超时不动）、编回（往返字节一致）。第一版只把 `lifeSet` 改 1、阈值 2100 没动，实跑血条 / 阶段切换乱掉——阈值必须一起缩。③ ~~`start_money`~~：试过在 `BP_ce_test_deck` 第 0 槽写 `MONEY`，实跑不生效且 `reset_cards` 一局多次会反复重置，已回退（97155d5）；改为 ECL 让 boss 死时多掉金钱道具（`BossDead` 里 `dropExtra(2, 300)` + `dropItems()`，type 2 = 金钱道具，每个 +1）。
@@ -538,7 +538,7 @@ M < price 的火力补差价路径不动 MONEY（游戏随后清零）。**未�
 | O28h | 全屏消弹调用的两个引擎函数的约定 | **REFUTED → 修正（实跑崩溃 2026-09-04）** —— 见下「O28h」；`BulletManager__cancel_all` 不是无参，是 `ret 4` |
 | O28f | 残机减半的边界 | **CONFIRMED** —— `ce_judgment_cost`：`lives <= 0 → 0`（拒绝），否则 `(lives+1)/2`（单测 7 项）；只动 `CURRENT_LIVES`，碎片不动 |
 
-**O28a 证据**：C 键在 Player tick（0x17）、判定在 EnemyManager tick（0x1b，Enemy tick 体 `0x42ff80` 里比较先于 `Timer__increment`）：**同一帧**收场；ECL VM `0x430d30` 只在宣言 case `0x434fc2` 碰 `+0x2bc`，`wait` 用别的计时器，改它不会提前唤醒脚本； `0x42ED40` 每帧取第一个 `hp_value > -1 && time > 0` 的槽，`slot.time <= cur` 即走超时段（血量钉到阈值、`sub_timeout`、Spellcard 置 0x80 / 清奖励）；比较是 `<=`，写成等值下一帧必触发；`prev` 一并写，`cur_f` 同步（zTimer 三件套，O23 教训）
+**O28a 证据**：C 键在 Player tick（`0x17`）、判定在 EnemyManager tick（`0x1b`，Enemy tick 体 `0x42ff80` 里比较先于 `Timer__increment`）：**同一帧**收场；ECL VM `0x430d30` 只在宣言 case `0x434fc2` 碰 `+0x2bc`，`wait` 用别的计时器，改它不会提前唤醒脚本； `0x42ED40` 每帧取第一个 `hp_value > -1 && time > 0` 的槽，`slot.time <= cur` 即走超时段（血量钉到阈值、`sub_timeout`、Spellcard 置 `0x80` / 清奖励）；比较是 `<=`，写成等值下一帧必触发；`prev` 一并写，`cur_f` 同步（zTimer 三件套，O23 教训）
 
 **O28b 证据**：超时段对 `flags & 8` 的槽走 `(flags & 9) == 9` = 收下；我们在写计时的同一帧清 bit1、`bonus = 0`、`can_still_capture_spell = 0`，结束 `0x42A780` 看 bit1 走失败演出，ECL 523 的 Sannyo 碎片也看 bit1。**限制**：耐久符卡的 `sub_timeout` 脚本本身是「守住」分支，脚本里写的掉落照旧；`0x42ed40` 耐久路径累加的 `0x4ccd6c` 无人读
 
@@ -551,9 +551,9 @@ M < price 的火力补差价路径不动 MONEY（游戏随后清零）。**未�
 
 **O29（2026-09-04）青眼白龙 `cards/blue_eyes.c`**（主动卡：献祭 1 残机召唤跟随龙，2500 挡弹，每 300 帧一道矩形伤害光束）。设计 `docs/superpowers/specs/2026-09-04-blue-eyes-design.md`。
 
-**O29a** `BulletManager__cancel_radius_as_bomb` `0x429370` = stdcall 四栈参 + XMM2 半径，ret 0x10；计数器 `mgr+0x7a41e8`。**证据**：反汇编四个出口都 `ret 0x10`；序言 `movaps xmm0,xmm2` 存 `[ebp-4]` 当半径；Tenshi `0x40eb13` `movss xmm2,[0x4b9290]`(18.0) 后 `push 0; push 0x1869f; push 0; push ebx; call`；`0x40eb46..0x40eb6a` 调前 `mov [ecx+0x7a41e8],0` 调后读。🟡 静态一致，待实跑。
+**O29a** `BulletManager__cancel_radius_as_bomb` `0x429370` = stdcall 四栈参 + XMM2 半径，ret `0x10`；计数器 `mgr+0x7a41e8`。**证据**：反汇编四个出口都 `ret 0x10`；序言 `movaps xmm0,xmm2` 存 `[ebp-4]` 当半径；Tenshi `0x40eb13` `movss xmm2,[0x4b9290]`(18.0) 后 `push 0; push 0x1869f; push 0; push ebx; call`；`0x40eb46..0x40eb6a` 调前 `mov [ecx+0x7a41e8],0` 调后读。🟡 静态一致，待实跑。
 
-**O29b** `FUN_0045dfa0` = stdcall(center*, angle, life, dmg) + XMM2 宽 / XMM3 高，ret 0x10，返回 1-based 槽号。**证据**：反汇编 `movss [ebp-8],xmm3; movss [ebp-4],xmm2`、两个出口 `ret 0x10`、`+0x14/+0x18` 收 XMM、`[ebp+0xc]` 角度归一到 (−π, π]；Remilia `0x40f478 movaps xmm3,xmm2`(高) `0x40f480 movss xmm2,[0x4b92b4]`(宽 32) `push 0xc8; push 2; push 0(角度); push eax(center); call`。🟡
+**O29b** `FUN_0045dfa0` = stdcall(center*, angle, life, dmg) + XMM2 宽 / XMM3 高，ret `0x10`，返回 1-based 槽号。**证据**：反汇编 `movss [ebp-8],xmm3; movss [ebp-4],xmm2`、两个出口 `ret 0x10`、`+0x14/+0x18` 收 XMM、`[ebp+0xc]` 角度归一到 (−π, π]；Remilia `0x40f478 movaps xmm3,xmm2`(高) `0x40f480 movss xmm2,[0x4b92b4]`(宽 32) `push 0xc8; push 2; push 0(角度); push eax(center); call`。🟡
 
 **O29c** `AnmManager__get_vm_with_id` `0x488b40` thiscall(mgr; id) ret 4；`interrupt_tree` `0x488be0` stdcall(id, n) ret 8；`0x488cf0` stdcall(id) ret 4。**证据**：`0x488b47 mov esi,ecx`、三个出口 `ret 4`；`0x488be3 mov ecx,[0x51f65c]`（自取 this）、`0x488c4e ret 8`；三张零售卡都 `push [esi+0x1c]; mov ecx,[0x51f65c]; call 0x488b40` 后写 `[eax+0x5f0]`。🟡
 
@@ -569,7 +569,7 @@ M < price 的火力补差价路径不动 MONEY（游戏随后清零）。**未�
 
 **O29j**（🟡 视觉，实跑看）光束 = 父 VM（C 每帧钉在龙头）+ `scriptNew` 子 VM：子的原点是父位置（thpages `ignoreParent` 说明反推子默认继承父的位置 / 旋转 / 缩放）。为不押注旋转继承，父脚本不转、每个子脚本自己 `rotate(0,0,−π/2)`、彩光沿 −y 飞（不用 `attached`/ins 314）：继承与否结果都朝上。贴图是零售 `pl01b`/`pl01b2`（ORDER 里 `local/` 源，构建时取，仓库不含字节）。
 
-**O29k** 血条 = 两个根 VM（script86 底槽 / 87 填充，`sprite(-1); drawRect(1,1)`），C 每帧写 `vm+0x54/+0x58`（scale x/y）与位置、颜色。**证据**：ExpHP `zAnmVmPrefix` scale = +0x54 zFloat2（同结构 color_1 = +0x524 已被 Tenshi 一手印证）；零售 HUD 充能条 `draw_active_card_hud_entry` `0x408a53`/`0x408a70` 把 fill 比例写进 `vm+0x58`（同时 `+0x70` uv_scale、`+0x80` uv 滚动、`flags |= 0x18`）——「代码写 scale」是零售做法，thpages `drawRect` 也这么建议。脚本里没有 scaleTime 在跑，写入不被插值器覆盖。颜色 D3DCOLOR `0xAARRGGBB`（Tenshi 的 `0xff0080ff` = 蓝 (0,128,255)，第一版文档写成橙是读反了字节序）。🟡 drawRect 是否吃 scale / 层 13 上的表现实跑看。
+**O29k** 血条 = 两个根 VM（script86 底槽 / 87 填充，`sprite(-1); drawRect(1,1)`），C 每帧写 `vm+0x54/+0x58`（scale x/y）与位置、颜色。**证据**：ExpHP `zAnmVmPrefix` scale = +`0x54` zFloat2（同结构 color_1 = +`0x524` 已被 Tenshi 一手印证）；零售 HUD 充能条 `draw_active_card_hud_entry` `0x408a53`/`0x408a70` 把 fill 比例写进 `vm+0x58`（同时 `+0x70` uv_scale、`+0x80` uv 滚动、`flags |= 0x18`）——「代码写 scale」是零售做法，thpages `drawRect` 也这么建议。脚本里没有 scaleTime 在跑，写入不被插值器覆盖。颜色 D3DCOLOR `0xAARRGGBB`（Tenshi 的 `0xff0080ff` = 蓝 (0,128,255)，第一版文档写成橙是读反了字节序）。🟡 drawRect 是否吃 scale / 层 13 上的表现实跑看。
 
 **O29h** 龙 VM 被引擎删掉（关卡切换 / 消弹演出）时卡不悬空：`on_active_tick` 每帧先 `ce_anm_get_vm`，为 0 就结束持续态；`on_stage_start`/`on_run_reset` 主动删。🟡 实跑。
 
@@ -581,10 +581,10 @@ M < price 的火力补差价路径不动 MONEY（游戏随后清零）。**未�
 
 | # | claim | 结论 |
 | --- | --- | --- |
-| P1 | `0x4183ea` 盖住的 12 字节是四条完整指令且无相对寻址 | **CONFIRMED** —— `6a 06` / `6a 00` / `6a 06` / `8d 8f 28 02 00 00`（push 6; push 0; push 6; lea ecx,[edi+0x228]）；`sites.py` 生成时与 exe 逐字节对账，门里再核 `e8` + 7 个 `90` |
+| P1 | `0x4183ea` 盖住的 12 字节是四条完整指令且无相对寻址 | **CONFIRMED** —— `6a 06` / `6a 00` / `6a 06` / `8d 8f 28 02 00 00`（push 6; push 0; push 6; lea ecx,[edi+`0x228`]）；`sites.py` 生成时与 exe 逐字节对账，门里再核 `e8` + 7 个 `90` |
 | P2 | `0x4183ea` 只在「玩家选是、真的成交」时经过 | **CONFIRMED** —— 它在 `case 6/7` 的 `param_1[3]==0` 分支里，前一条是 `0x4183e5 call FUN_00416c80(this,5)`；空白卡路线（state 3 → `0x418584` 置 4）、取消（`0x418551` 置 2）、买不起（state 8）都不经过 |
 | P3 | `0x443b05` 处 `eax` = `GameThread+0xb0`、`esi` = this；改 `eax` 后原 `test` 算出的 flags 正是零售语义 | **CONFIRMED** —— 见下「P3 证据」 |
-| P4 | 重开与关店在同一帧，敌人 / MSG 看不到指针为 0 | **CONFIRMED** —— 商店 on_tick 0xc（`0x4171de`）在自己 tick 里 `0x417857` 清指针；GameThread 0x10（`0x442a97`）本帧随后建店 `0x443bed`；EnemyManager 0x1b（`0x42dcd8`）、Gui 0x21（`0x43bac5`）在后 |
+| P4 | 重开与关店在同一帧，敌人 / MSG 看不到指针为 0 | **CONFIRMED** —— 商店 on_tick 0xc（`0x4171de`）在自己 tick 里 `0x417857` 清指针；GameThread `0x10`（`0x442a97`）本帧随后建店 `0x443bed`；EnemyManager `0x1b`（`0x42dcd8`）、Gui `0x21`（`0x43bac5`）在后 |
 | P4′ | GameThread 在 `0x443b05` 之前的提前返回不会造成空档 | **PARTIAL** —— 见下「P4′」：两条提前返回若恰在关店那一帧命中，晚一帧重开（敌人 / MSG 跑一帧）；日志标 `late` 实跑核对 |
 | P5 | 第二家店与第一家共用零售代码，无新对象布局假设 | **CONFIRMED** —— 建店 / `AbilityShop__initialize` / on_tick / 析构全是零售路径；offer 重抽自动排除已拥有（`mgr+0xd70` owned，`pick` 与两个保证循环同一门控，SM §4） |
 | P6 | 练习 / replay 回放 / 空白卡 / 中途退出都不会多开店 | **CONFIRMED** —— 见下「P6 证据」 |
@@ -597,8 +597,8 @@ M < price 的火力补差价路径不动 MONEY（游戏随后清零）。**未�
 **P3 证据**：`0x443aff mov eax,[esi+0xb0]`；`0x443874 mov esi,ecx`（fastcall this）；esi 在 `0x443a8e mov esi,1` 被借用后于 `0x443a96` 从 `[esp+8]`（`0x443877` 存的 this）重载，`0x443a75` 的跳过支路不碰它——两条路到 `0x443b05` 都是 this；`test eax,0x20000` 由 cave 里执行，
 `0x443b0a jz` 看它的 ZF；创建后 `0x443c17 and [esi+0xb0],~0x20000`、`0x443c21` 重读 —— 内存位我们不动，不会残留。
 
-**P4′**：`0x44387b`（`[0x4cd624] & 0x180` → return 0，线程注销）与 `0x4439ed`（`this+0xb0 & 4` → 置 0x80 后 return 1）都在 `0x443b05` 之前。
-前者是关闭 / 切模式，商店时段不会命中；后者的位 4 语义未钉死。真命中那一帧本断点不跑，下一帧才重开，中间敌人 0x1b / Gui 0x21 各跑一帧。
+**P4′**：`0x44387b`（`[0x4cd624] & 0x180` → return 0，线程注销）与 `0x4439ed`（`this+0xb0 & 4` → 置 `0x80` 后 return 1）都在 `0x443b05` 之前。
+前者是关闭 / 切模式，商店时段不会命中；后者的位 4 语义未钉死。真命中那一帧本断点不跑，下一帧才重开，中间敌人 `0x1b` / Gui `0x21` 各跑一帧。
 `BP_ce_shop_reopen` 把重开帧与成交帧的差记进日志（零售应为 +31），> 31 标 `(late, gap!)`；`test_pause_after_purchase` 钉住「暂停不走帧号」的前提。
 
 **P6 证据**：练习（`0x4c5f8c >= 0`）与回放（`0x417cd8` 先要 `[0x4cf418] != 0` 再看 `GT+0xd0`）在 `0x417cc7` 30 帧自动退、空白卡走 state 3/4，三者都不经 `0x4183ea`；
@@ -790,7 +790,7 @@ Alt-Tab 切出切回后仍能放（`0x45a4a0` 的重播循环）；
 
 **S5 证据**：`0x430539 lea eax,[ecx+0x54]` 存进 `[ebp-0xc]`，
 `0x43054a mov edi,[eax-0x50]` = `[enemy+0x04]` 取 type 1 的掉落数；
-广播后 `memset(&enemy+0x04, 0, 0x50)` = 0x50 字节 = **20 个 int32**（type 1..0x13）。
+广播后 `memset(&enemy+0x04, 0, 0x50)` = `0x50` 字节 = **20 个 int32**（type 1..`0x13`）。
 `enemy+0x54` 是另一个字段（`0x43055b mov ecx,[eax]` 读它做部分击破的折算），**不在表内、不要碰**。
 
 **S7 证据**：`+0x30` 是**撒完之后**才广播，且广播完立刻 `memset(&enemy+0x04, 0, 0x50)` ——
@@ -807,7 +807,7 @@ Alt-Tab 切出切回后仍能放（`0x45a4a0` 的重播循环）；
 结构：`+0x00 main_drop`、`+0x04 ex_drop[20]`（ExpHP `zEnemyDrop`，与函数内 `local_8+0x54-0x50` 一致）。两处调用点都是
 `if (main_drop) spawn_item(main_drop, pos, -π/2, 2.2, 0)` → **然后**才 `call 0x430510` → 之后 `main_drop = 0`（`0x430469..0x4304aa`、`0x42d0c6..0x42d0fd`）。
 ECL 一手：st01–07 共 `dropMain` 50 处（类型 1 / 2 / 16 / 19）、`enmCreate` 第 6 参 0 / 1 / 2 / 16–19，`dropExtra` 95 处几乎全在 boss / 中型敌人的 `BossItem` 里
-——所以杂兵 = 主掉落一颗，之前的实现对它一个字节都没改。附加循环只撒 type 1..0x13（`0x12 < i` 退出），第 20 格永远不撒（`double_core.h` `DBL_DROP_MAX 19`）。
+——所以杂兵 = 主掉落一颗，之前的实现对它一个字节都没改。附加循环只撒 type 1..`0x13`（`0x12 < i` 退出），第 20 格永远不撒（`double_core.h` `DBL_DROP_MAX 19`）。
 修法不引入新调用：断点时主掉落已飞出但字段未清，读 `ce_drop_main(counts)` 得类型，`ex_drop[type-1] += 1`，引擎的附加循环撒第二颗（散射位置按 `dropArea`，方向同样朝上）。
 纯逻辑 `double_core.c` 主机单测 46 例。翻倍前后合计每种 = 2 ×（主 + 附加）。
 
@@ -872,7 +872,7 @@ Miss 一次 → 残机一次少 **2**，日志
 | U1 | `Player__allocate_option` 的调用约定 | **CONFIRMED** —— 见下「U1 证据」 |
 | U2 | 子机指针不能存 `card+0x54` | **CONFIRMED** —— 见下「U2 证据」 |
 | U3 | 认领子机槽不会误用别人的 | **CONFIRMED** —— 12 个槽是公共池；用前查 `option+0x00 != 0` 且 `option+0xd0 == card+0x08`（`0x40a790` 把后者写进前者）。不成立就松手重申请 |
-| U4 | 子机的贴图来自 `ability.anm` | **CONFIRMED** —— `allocate_option` 的最后一参是脚本号，取 `AbilityManager->ability_anm`（Reimu 2、Alice 0x10）。我们给 script88 |
+| U4 | 子机的贴图来自 `ability.anm` | **CONFIRMED** —— `allocate_option` 的最后一参是脚本号，取 `AbilityManager->ability_anm`（Reimu 2、Alice `0x10`）。我们给 script88 |
 | U5 | 子机坐标的读法 | **CONFIRMED** —— `option+0x5c/+0x60` 是定点 int32，`× 0x4b908c = 1/128` 变像素（`0x40a9c0`、`0x40b6f4` 两处一手）|
 | U6 | 开火挂 `on_tick_2` | **CONFIRMED** —— AbilityManager 每帧、菜单 / 商店不跑；节奏是 C 的计数器（`bc_tick`，主机单测）。不依赖 `+0x1c on_tick_shooters`（那个只在按住射击键时广播）|
 | U7 | 遍历敌人链表安全 | **CONFIRMED** —— 与零售最近敌人搜索 `0x438cb0` 同一套规则（`EnemyManager+0x18c`、跳过 `+0x635c & 0xc000021`、坐标 `+0x1270/+0x1274`）；只在 `on_tick_2` 读，不跨帧缓存 enemy 指针 |
@@ -942,7 +942,7 @@ Tenshi 要石是同一个原语，只是尺寸小、寿命短。
 | V10 | 复用青眼 script86 / 87 做血条 | **CONFIRMED** —— 两个脚本是 `drawRect(1,1)` 根 VM，没有任何卡专属的东西；pos / scale / color 全由 C 每帧写（O29k）。两张卡各起自己的一对 VM，互不干扰 |
 | V11 | 敌人链表遍历 | **CONFIRMED** —— 与 U7 同一套（`+0x18c` 链表、`+0x635c & 0xc000021`、`+0x1270/+0x1274`），两遍都在同一个 `on_active_tick` 里、不缓存 enemy 指针 |
 | V12 | replay 安全的算术 | **CONFIRMED** —— 随机只来自游戏 RNG；smoothstep / 位移 / `bc_atan2f` / `sqrtss` 全是确定性 SSE；`make dllx87` = 0 |
-| V17 | 震屏工厂 `0x476060` 的调用约定 | **CONFIRMED** —— 见下「V17 证据」：fastcall(ecx = type, edx = time; start, end, 0, 0x5b) `ret 0x10`；type 1 的 on_tick 用 UI RNG，不进 replay 流 |
+| V17 | 震屏工厂 `0x476060` 的调用约定 | **CONFIRMED** —— 见下「V17 证据」：fastcall(ecx = type, edx = time; start, end, 0, `0x5b`) `ret 0x10`；type 1 的 on_tick 用 UI RNG，不进 replay 流 |
 | V18 | 粒子 / 火星脚本里的 `%RANDF` 不进 replay 流 | **CONFIRMED** —— ANM 的随机读 `0x4cf280`（AnmVm 代码 `FUN_00405d70` / `FUN_00407590` 的 xref），与商店 / UI 同流。VM 量：飞行粒子 + 身体火焰各 2 颗/帧 × 27 帧、火星 10 颗 × 33 帧 ⇒ 同时 ≤ ~120 个一次性 VM |
 | V19 | 登场聚气期间本体不存在 | **CONFIRMED（代码）** —— `intro_left > 0` 时 `on_active_tick` 只走登场分支：不查本体 VM、不消弹、不计帧；`fl_step` 早返回。`dismiss` 在聚气中也能撤（`intro_left` 计入「有东西要清」）。聚气粒子 6 颗/帧 × 20 帧 ⇒ 峰值 +120 个一次性 VM，只持续 1 s |
 | V16 | 呼吸浮动 `fl_bob_dy` 不引 x87 | **CONFIRMED** —— 头里的 `static inline`（bc_atan2f 同理：i386 返回 float 走 st0）；`make dllx87` = 0。判定 / 血条 / 画面三者用同一个浮动值，不会「看着挡住了实际没挡」|
@@ -955,7 +955,7 @@ Tenshi 要石是同一个原语，只是尺寸小、寿命短。
 **V20 证据**：自机弹的伤害也走同一个源池（`PlayerBullet__create` 建源、`Player__tick_bullets` 每帧刷 dmg；`engine/player/th18/02-damage-sources.md` §0、th16 §08 同构），
 敌人侧 `0x45f0f0` 把命中它的所有源**合计**钳 `player+0x47984`（`0x45f28b`）⇒ 上限是「每个敌人每帧」的总配额，自机弹与卡的源共用。第一版 50 × 12 在自机开火时几乎被吃光。
 零售先例 `CardRemilia__on_tick_2` `0x40f48e`：`mov [edi+0x47984], 0x12c` 紧接着 `call 0x45dfa0` 放 200 的源。复位点 `GameThread__on_tick` `0x443d3b` 每帧从 `sht+0x28` 写回；
-tick 顺序 GameThread 0x10 → AbilityManager 0x16（我们的 `on_active_tick` 在这里）→ Enemy 0x1b ⇒ 写入只影响当帧的敌人结算，下一帧自动复位，不用还原、不留残值。
+tick 顺序 GameThread `0x10` → AbilityManager `0x16`（我们的 `on_active_tick` 在这里）→ Enemy `0x1b` ⇒ 写入只影响当帧的敌人结算，下一帧自动复位，不用还原、不留残值。
 `ce_raise_damage_cap` 只抬不降（已 ≥ 300 时不写）。300 − max(自机弹上限 160) = 140 > 100 ⇒ 火球的 100 整份生效。
 
 **V1 证据**：`0x457480`：`mov eax, ecx`（this = GlobalsInner `0x4cccdc`）、`mov edi, [eax+0x5c]`（CURRENT_POWER）、`mov ecx, [eax+0x64]`
@@ -975,7 +975,7 @@ tick 顺序 GameThread 0x10 → AbilityManager 0x16（我们的 `on_active_tick`
 **V17 证据**：ECL 517 `setScreenShake(time, start, end)` 的 case（派发 `0x430dd4` 跳转表第 116 项 → `0x434d8d`）：
 `push 0x5b; push 0; get_int_arg(2) → push; get_int_arg(1) → push; get_int_arg(0) → edx; mov ecx, 1; call 0x476060`。
 `0x476060`：`new(0x40)`、`memset`、`ScreenEffect__operator_new(this; type, time, start, end, p5, prio)` `0x4760b0`，尾 `0x4760a8` **`ret 0x10`**（四个栈参）。
-type 1 → 只注册 on_tick `0x475c70`（`register__on_tick(…, 0x14)`），不注册 on_draw（所以 0x5b 用不到）；写 `+0x18 = time`、`+0x1c = start`、`+0x20 = end`。
+type 1 → 只注册 on_tick `0x475c70`（`register__on_tick(…, 0x14)`），不注册 on_draw（所以 `0x5b` 用不到）；写 `+0x18 = time`、`+0x1c = start`、`+0x20 = end`。
 `0x475c70` 每帧：强度 = start + (end − start) × 已过 / time，`Rng__rand_dword(0x4cf280) % 3` 决定 x / y 各取 {0, +I, −I}，写 `SUPERVISOR.camera_1/camera_3` 的偏移；
 到时返回 7（UpdateFunc 自删）。零售同一工厂的其他用法：Sanae 炸弹 `FUN_00476060(8, 4, 1, 0x3c, 10, 0x5b)`（type 8 是别的效果）。
 `sdk.h` 的 `ce_screen_shake(time, start, end)` = `fastcall(1, time; start, end, 0, 0x5b)`。
@@ -1060,19 +1060,19 @@ type 1 → 只注册 on_tick `0x475c70`（`register__on_tick(…, 0x14)`），�
 与计数 `0x412d6c` / recount；`on_power_level_change` 是全卡广播，不看它（破损核心此前没有 bit6 也能申请子机）。`ce_destroy_card` 按同一 flags 减计数，自洽。
 
 **X1 证据**：`0x409670` 入口 `mov edi, ecx`（this = AnmLoaded）；`push [ebp+0xc]`（script）→ `0x407420` 拷脚本；`[ebp+0x10]` 非 0 时 `movq xmm0, [eax]; movq [esi+0x5f0], xmm0; mov eax, [eax+8]; mov [esi+0x5f8], eax`（pos 三分量）否则清零；
-`[ebp+8]` = out_id（`mov [edi], 0` 后 `mov [edi], ecx` 写回 id）；`[ebp+0x14]` 全程不读；唯一出口 `0x409746` **`ret 0x10`**。⇒ thiscall(anm; int* out_id, int script, float* pos, int unused) ret 0x10。
+`[ebp+8]` = out_id（`mov [edi], 0` 后 `mov [edi], ecx` 写回 id）；`[ebp+0x14]` 全程不读；唯一出口 `0x409746` **`ret 0x10`**。⇒ thiscall(anm; int* out_id, int script, float* pos, int unused) ret `0x10`。
 `sdk.h` 的 `ce_anm_spawn_ui` 压四个参。层不是参数（世界版 `0x405bf0` 写 `vm+0x18`，这里没有）—— 靠脚本里的 `layer(26)`。
 
 **X3 证据**：`0x457570`：`mov esi, ecx`（this = GlobalsInner `0x4cccdc`）；`CURRENT_LIVES(+0x6c) >= LIVES_MAX(+0x78)` → `+0x70 = 0; ret 4`；否则 `+0x70`（LIFE_FRAGMENTS）+1，
 按难度表（`0x4b40c8` / extra `0x4b3ff4`，下标 `+0x74`）取每命碎片数，`while (frag >= n) { frag -= n; 0x4575f0(加整命) }`，最后 `0x441f10(GUI; lives, frag, max)` 刷 HUD；出口 `0x4575e2` **`ret 4`**。
-调用方 `CardLifeFragment__constructor` `0x409cc0`（先 `LIVES_MAX` +1 钳 7 再调它——那是碎片**卡**的额外效果，我们不要）、`CardNarumi` 每关、道具 type 0x10。⇒ thiscall(GlobalsInner; 哑参) ret 4，`ce_add_life_fragment` 与 `ce_add_bomb` 同形。
+调用方 `CardLifeFragment__constructor` `0x409cc0`（先 `LIVES_MAX` +1 钳 7 再调它——那是碎片**卡**的额外效果，我们不要）、`CardNarumi` 每关、道具 type `0x10`。⇒ thiscall(GlobalsInner; 哑参) ret 4，`ce_add_life_fragment` 与 `ce_add_bomb` 同形。
 
 **实跑要看的**：见 [`NEXT.md`](NEXT.md) §1k。崩溃优先怀疑 X1 / X3 的哑参、X2 的 thiscall；视觉看 X5。
 
 ## Y. 古锭刀（id 76）—— 终符期间自机弹伤害 ×2
 
 **没有手写机器码、没有新断点、不调任何新引擎函数、不改任何字节**。读的都是已在用的结构（神之宣告的 boss / 中断槽链、K♠ 的 `bullet+0x9c`、
-炎魔的 `ce_raise_damage_cap`），新读一个 `sht+0x28`。纯逻辑 `guding_core.c` 主机单测（26 例：活动槽选择、`Dead` 匹配含 0x40 满长无终止符、状态沿、倍率）。
+炎魔的 `ce_raise_damage_cap`），新读一个 `sht+0x28`。纯逻辑 `guding_core.c` 主机单测（26 例：活动槽选择、`Dead` 匹配含 `0x40` 满长无终止符、状态沿、倍率）。
 
 | # | claim | 结论 |
 | --- | --- | --- |
@@ -1081,7 +1081,7 @@ type 1 → 只注册 on_tick `0x475c70`（`register__on_tick(…, 0x14)`），�
 | Y3 | 4 参 `setInterrupt` 把名字写进 `sub_life` 与 `sub_timeout` 哪一个 | **推理（领域）** —— 击破走 `sub_life`（`+8`）、超时走 `sub_timeout`（`+0x48`）（§2 ③ / ①），而终符无论击破还是超时都进 `BossDead` ⇒ 两个都是它。代码两个都查、任一含 `Dead` 即算（`gd_slot_is_final`），不押注哪个 |
 | Y4 | 为什么不用 `stars`（ECL 540） | **CONFIRMED 反例** —— st07mbs `MBoss2` / `MBoss3` 都写 `stars(0)`，Card2 会被当终符；`MBoss1` 根本不写。主线 boss 倒是严格（`stars(N)` = 本符之后还剩几张） |
 | Y5 | 翻倍两处一起 | **CONFIRMED（V20 同一事实）** —— 自机弹与卡的源共用每敌每帧上限，贴脸时已吃满，只翻弹不抬等于白翻。抬到 **sht 基值** ×2 而非当前值 ×2，见下「Y5 证据」 |
-| Y6 | 时序 | **CONFIRMED** —— GameThread（0x10）复位上限 → AbilityManager tick（0x16）`on_tick_2` 判定 + 抬 → Player tick（0x17）建弹调 `+0x28` 读同帧判定 → Enemy（0x1b）结算。`on_bullet_created` 只读私有状态，不再走链表 |
+| Y6 | 时序 | **CONFIRMED** —— GameThread（`0x10`）复位上限 → AbilityManager tick（`0x16`）`on_tick_2` 判定 + 抬 → Player tick（`0x17`）建弹调 `+0x28` 读同帧判定 → Enemy（`0x1b`）结算。`on_bullet_created` 只读私有状态，不再走链表 |
 | Y7 | 边界 | **设计** —— 符卡超时：引擎把槽 `hp_value` 写 -1（§2 ①）⇒ 活动槽消失 ⇒ 判定同帧落下，bit0 还挂着的窗口不翻。神之宣告推超时同理。过关 `on_stage_start` 清 `active`；局末 `on_run_reset` 清统计。`sht` 指针空（进关前）→ 上限不抬、弹也没有 |
 | Y8 | 炸弹 / 其他卡不翻 | **设计（用户定）** —— 只改 `bullet+0x9c`；炸弹与 `ce_damage_rect` 的源不经 `+0x28` 槽。抬上限对它们只是「更松」，不是「翻倍」 |
 
@@ -1096,6 +1096,333 @@ st07 `Boss2…Boss10 BossDead`（Card10 终符，Card9 耐久符去 `Boss10`）�
 
 **实跑要看的**：见 [`NEXT.md`](NEXT.md) §1l。崩溃优先怀疑：`find_enemy` 链表（与神之宣告同一段代码，已实跑）；视觉：终符血条掉速对比前一张符卡。
 
+## Z. 辉针城（id 127，原 254）—— 收点批结算 + 非聚焦命中掉钱（collect-2x）
+
+四个新 SDK 断点（全放行原指令、无手写机器码）+ 四个 hooks 尾槽 + 纯逻辑 core；批次状态机与掉钱策略
+在 `collect2x_core`（主机单测），卡文件只做接线。弹字呈现走原生倍率环（Task 8）。**本段 = Task 4 断点先行的
+静态断言；卡行为断言与实跑结论在 Task 9 追加。🟡 = 未实跑。**
+
+| # | claim | 结论 |
+| --- | --- | --- |
+| Z1 | 四窗字节与 sites.py 表一致、窗内无跳转目标 | **CONFIRMED（静态）** —— expected hex 逐窗对照原始 exe 相等（`emit_sdk_breakpoints` 每跑必验，gen 已过）；全图 33445 条分支目标无一落在窗内（起点命中安全：断点覆盖后跳向窗口首字节 = 跳向补丁指令） |
+| Z2 | 每窗是单条 / 两条完整指令、无相对寻址 → thcrap 可整窗搬进 cave | **CONFIRMED（静态）** —— objdump 对齐反汇编逐窗验证（各窗指令见下证据）；expected hex 与原始 exe 逐字节相等由 gen 每跑必验 |
+| Z3 | `BP_ce_item_collect` 读窗前值：type 由窗内指令装载，handler 读内存 `[edi+0xc78]` 而非 EDX | **CONFIRMED（静态）** —— 断点在原指令**前**触发（thcrap 惯例，§E）；代码照此实现 |
+| Z4 | `ce_item_frame` 每个正常游玩帧、道具池 body 前到达一次 | 🟡 **未实跑** —— `0x446ec0` 门卫链：`GAME_THREAD` 状态与 `0x400`（商店）前段已排除，`[0x4cf2e4]` 空或位测试失败即跳过 body（跳转细节见下证据）。trace 首命中 + 帧计数（Task 9）验「每帧恰一次」 |
+| Z5 | `ce_item_commit` = 各收集路线共同收尾起点（分值已入 SCORE） | 🟡 **未实跑（覆盖风险点）** —— 反汇编看线/半径两路都汇聚 `0x44658a`；**若实跑发现某路线直通 case 不经此点，批入账点补在 commit BP**（见 plan §分数补差） |
+| Z6 | `BP_ce_shot_damage` 只触发「非聚焦、非炸弹的射击命中」（dmg 钳后 ≥1、pos = 敌世界坐标）| 🟡 **未实跑** —— handler 门 = `esi==0` / `param_6≠0` / 聚焦位 / bomb 任一 → 放行不触发；窗前已判 param_6 与 esi，守卫失败路跳不到此窗（纵深防御，见下证据）。实跑看：聚焦 / 炸弹不掉钱、非聚焦命中按间隔掉 |
+| Z7 | `ce_item_pool_any_flying` 谓词 = 批未闭谓词（type∈{1,2,9–0xe} 且 state∈{1,3,4}） | 🟡 **未实跑** —— state 机为 2026-09-08 spawn/body 一手（`0x446fac` 置 1、`0x445f6f` 置 3、`0x446647` 置 4）；「state 5 延迟段不入谓词」是否漏批（收点弹字已出但延迟段道具后补）由 Task 9 批次对照实跑定案 |
+| Z8 | hooks 尾槽 designated-init 增量：既有卡不受影响 | **CONFIRMED（静态）** —— `ce_hooks_t` 尾部追加、`CE_CARD` 的 `__VA_ARGS__` 是 designated init（C99 保证未列字段 = 0/NULL）；全量主机套件与全部既有卡编译通过 |
+| Z9 | 批开窗口外的帧不发全池扫描（`0x1258` 槽 × `0xc94` ≈ 4 MB 跨度） | **CONFIRMED（静态）** —— 扫描函数只在 Task 6 的批开分支调用（文档写明）；函数自身有类型/状态过滤早停 |
+| Z10 | 倍率弹字 = 纯视觉写：helper 只写 PopupManager 环槽（busy 最后置，字段集 = adder `0x4645f0` 同款 + 值/倍率）；原生 tick `0x464020`/draw `0x464180` 自驱位移动画、α 淡出与 busy 回收 | **CONFIRMED（静态）** —— 反汇编两函数只读写环槽字段与文本对象 `[0x4cf2ac]`（draw 抄槽色进 +`0x19228`）；不触 SCORE/道具池/卡状态；值 = 已入账结算分副本（分数由 ce_add_score_delta 独立管）；零 RNG 消费、不进 replay；画面 Task 9 双跑复核 |
+
+**Z4 证据**：`0x446ec0` 对齐反汇编（objdump PE 直解）：
+`mov edx,[0x4cf2e4] / test edx,edx / je 0x446ee3`（mgr 空直落门卫）、`mov edx,[edx+0xb0]` 后
+位测试 `jne 0x446eec`（跳过门卫提前 `mov eax,1; ret`）、`0x446ee3: cmp dword [0x4cf2a4],0 / je 0x446ef2`（进 body）。
+`0x446eec` 是提前返回桩、`0x446ef2` 是 body 继续 —— `0x446ee3` 恰好是「最后一次门卫、决定 body 是否跑」的位次。
+
+**Z7 证据**：state 机写点一手：出生 `0x446fac movl $1,0xc74(esi)`（state=1）、磁力吸附 `0x445f6f` 置 3 /
+`0x446647` 置 4、分派瞬态 2（`0x445b0f`/`0x44625f` 路）、收尾清 0 `0x446595`；type 于 spawn `0x447051` 写入 `+0xc78`。
+磁力判定对 type 9–0xe 除外（`0x4465da`+ 段）——所以小分自己不会飞向自机（只能回收线收），批未闭谓词仍以 state 1（在飞）兜底等它落地。
+
+| Z11 | 卡组编成 deck 槽能装任意 ≤`0x7f` 的卡 id；>`0x7f` 被当负值剔除 | 🟡 **实跑现象 + 一手半程（2026-09-08）** —— 见下「Z11 证据」；处置：本卡 254 → 127（降序天花板 127，后卡 126…），复跑验 |
+
+**Z11 证据（2026-09-08，用户实跑 + objdump）**：编成 deck [2 张老卡] 时把辉针城（254 = `0xfe`）手动装进第 1 格 →
+该格**当场消失、后槽前移、可带数 −1**（现象）；老卡 id 58–76（≤`0x7f`）全部正常，254 是第一个越界 id。
+deck 槽 = save+`0x5f608`（字节槽，reset_cards `0x407ee3 movzbl` 读）；写槽路径 `0x41511c mov %cl,0x5f608(%edx,%eax,1)`
+只存不验（cl 全 0..255），空槽哨兵 = id 56（`0x415070 cmpl $0x38,4(%eax)` 语境为「槽里是空卡才放行」）——
+**墙不在写槽点本身**，在槽显示/重建/存盘链的某处符号扩展（≥`0x80` → 负 → 剔除压缩；未钉到指令）。
+处置 = 不押注墙位，新卡 id 上限降至 127（`0x7f`，符号界内最大值），降序分配后卡 126、125…。
+**若 127 复跑仍被剔** → 墙比符号界更怪，回钉 `0x415af0` 重建链（AUDIT §G 挂账）。
+
+**Z10 证据（2026-09-08 一手 objdump）**：rate 槽生命周期 = tick `0x464020` 第二循环（`0x4640e0 lea 0x9f4(%edi)`，ecx = slot+`0x28`，busy@`0x14`）：age 字段 +`0x24` 每帧 +1（`0x46413d`）、>`0x3c`（60 帧）起 color@`-0xc` = slot+`0x1c` 的 alpha 字节 −4（`0x464145`–`0x464165`），≤0 清 busy（`0x464154`）——**原生自动回收**。draw `0x464180` 第二循环（esi = slot+`0x1c`）每槽两连 `0x419cb0`（this = `[0x4cf2ac]`，显式压栈）：格式串 `0x4b71f8` = `"BONUS %.1f"`（mult float@`0x28`→slot+`0x44`，cvtps2pd）、`0x4b61a4` = `"%d"`（值 int@`0x24`→slot+`0x40`）；值 <0 分支走 `0x4b7204` `"NO BONUS"`。槽色先抄进文本对象 +`0x19228`（`0x4644c2`）。adder `0x4645f0` 的字段写序 = 本 helper 的复位模板（+`0x20`=-1 / +`0x24`=0 / +`0x28`=0 / scale=1.0 / bit0 动画标志；★原生回收只清 busy，不复零的话 tick 看到残留 age>60 当帧淡出、位移 float 残留会瞬移）。
+
+| Z12 | 碎片奖励 = TH18 原生卡道具 type `0x10`/`0x11`（非 4/6 宝石残留）| 🟡 **一手 2026-09-08（表 dump + 分派 + spawner + 半径门四路互证）+ 处置待实跑** —— 见下「Z12 证据」 |
+
+**Z12 证据（2026-09-08，用户实跑纠偏「虹龙洞原生碎片就是卡」+ objdump/PE 一手）**：道具 type 4/6 残机碎/符卡碎**宝石**是旧引擎血统残留——虹龙洞自己的资源卡掉落 = 道具 type `0x10`–`0x13` 卡道具：
+- 表 `0x4b4020`（stride 8）一手 dump：type `0x10`–`0x13` 行第一 dword = **card_id 3/4/5/6**（EXTEND2/BOMB2/PENDULUM/DANGO，05-shop §8 自洽）；type 1–0xe 第一 dword = 连续 anm 脚本 `0x70`–`0x7d`。
+- 收集分派 `0x445A80` case `0x10`–`0x13` → `allocate_new_card(mgr, table[type].card_id, 0)`（mode 0 只调 ctor → ctor 型即时卡当场生效：id 3 CardLifeFragment / id 4 CardBombFragment）。
+- spawner `0x446f40`：type ≥`0x14` → 0；1..`0x13` 收；type 0xf 在 `0x446ff7` 重映射为 6；type `0x10`–`0x13` 走 `0x447089` 特化卡 sprite 分支（非 `0x4470d4` 通用双 VM）；pos/angle/speed/timer 栈参两分支共用 → `ce_spawn_item` 直发 `0x10`/`0x11` 即可。
+- **收集半径门**（弹点锚定的物理依据）：`0x45ae67` 起初始化 [player+`0x47988`]=5.0（磁速）、[+`0x4798c`]=`0x41f00000`=**30.0**（直接收集闸 `0x44624a`：dist²<30² 落 `0x44625f` 分派）、[+`0x47990`/94]=`0x428c0000`=**70.0**（swoosh 闸 `0x4465fb`/`0x44660e`，type 9–0xe 豁免 `0x44661d` 系）、[+`0x47998`]=128（`0x45ae8f`）/224（`0x40c275`）= 回收线（player.y ≤ 线 → 无条件真空 `0x445ffc` 系）。
+- 处置：`C2X_FRAG_BOMB` 6→`0x11`、`C2X_FRAG_LIFE` 4→`0x10`；弹点 −100@2.2 → **−76@1.2**（70+6 余量内最短可见弧 ~1.4s；原弧顶 180px 被用户嫌「位置远」）。settle 日志 type 改 hex（新 DLL 格式记号）。观感与卡外观实跑复核。
+- ★ 首轮复跑仍见 `frag type 0x6`（hex 记号已生效 = 新 collect2x.o、旧 core.o）：根因 = `native/Makefile` `%.o` 规则依赖表漏 `cards/*.h` —— core.h 常量改动不触发 `collect2x_core.o` 重编，旧 6/4 烘焙进 DLL。处置（2026-09-08）：依赖表追加 `$(wildcard cards/*.h)`，删两个 .o 强重建后核验 core.o 立即数 `0x11`/`0x10`、4/6 归零。教训：**改任何 cards/*.h 后核对 make 是否真的重编了 core .o**（或直接 `make clean` 级重建）。
+
+| Z13 | 被动二掉落物：钱 type 2 → **P 火力道具 type 1**（设计变更）| 🟡 **实跑现象 + 用户拍板（2026-09-08）** —— 非聚焦命中掉钱未出现（链路未明未深挖），用户裁「还是掉 P 吧」；P 与「打人掉 P」引擎语义同语言。门控/节流不变，见下「Z13 证据」 |
+
+**Z13 证据（2026-09-08 实跑）**：卡片碎片修复后（Z12）复跑，frag 卡正常；被动二钱掉落仍不出现——**换 P 是产品决策不是引擎结论**：P type 1 ∈ 计数批集 → 掉 P 被吃拉长收点批（梦A式，预期内）；P 满 4.00 引擎转分无碍。接线 = `spawn_item_at(1, …)`（同 2.2 初速）；core 侧仅改名（`c2x_drop_money`/`C2X_MONEY_INTERVAL_*` → `c2x_maybe_drop`/`C2X_DROP_INTERVAL_*`，语义不变）。若掉 P 复跑仍不见 → 回头查 `ce_shot_damage` `0x45f2a2` 断点链（聚焦位 / bomb / param_6 门控是否误杀高速段），AUDIT §G 挂账。
+
+| Z14 | 碎片延迟不弹 + 掉 P 三连零出现的**共同根因 = 帧钟选错**（次因 pos 槽读错）| 🔧 **静态 CONFIRMED + 修复处置待实跑（2026-09-08 第二跑）** —— 见下「Z14 证据（第二跑）」 |
+| Z15 | P 落点定案：`0x45f0f0` 的 arg1（`[ebx+8]` 槽）是**指针**——指向本帧被结算敌人（身体）的 {x,y}；handler 缺一层解引用（探针已删）| ✅ **实跑确认（2026-09-08 第三跑：「P预期正常」）** —— P 从被打中的敌人身上掉，见下「Z15 证据」 |
+| Z16 | 收点完毕音：本卡全链路无音效代码、结算又是合成事件 → 结算帧播 `ce_play_sound(0x2e)`（se_cardget，商店买符卡同款）| ⚠️ 未实跑即被 Z17 一手替代（`0x2e` 商店语义不符，见「Z17 证据」）—— 处置已改 `0x39`，Z16 原处置作废 |
+
+**Z14 证据（2026-09-08 第二跑，用户实跑：「碎片完全不生成了」且旧问题依旧 → 根因落定）**：碎片延迟一挂上
+zTimer 就完全不弹、P 依然零出现，两个症状共同指向 `frame_now` 的时钟源 `card+0x20` —— 该钟对**被动卡是死的**：
+- 引擎侧（01-object-model §3）：`+0x20` 每帧 `Timer__increment` 的一手证据全在**主动卡**路径（`0x40E8C0`
+  `CardTenshi____on_tick_2` 等 12 张主动卡 c_press 模板：函数末尾无条件递增 +`0x20`、触发时清零）；本卡
+  `0x54` 纯被动（无释放状态机）不在这条路径上。
+- SDK 侧（sdk.c `ce_sdk_active_tick` 首行）：`if (!h->active_recharge) return;` —— 经过帧只有**主动卡**
+  （`active_recharge` ≠ 0）才被帮手 tick 递增；被动卡从不碰 +`0x20`。
+- 后果链：死值 0 → 结算登记 `pending_at = 0 + 20` 后每帧 `now(0) < 20` **永不弹**（碎片完全不生成，正是用户
+  所见）；节流 `next_drop_at` 首枪过（`0 ≥ 0`，落点 pos 垃圾不可见）后 `96` 永远够不着（钱/P 三轮零可见）。
+  **先前「掉钱不掉 = pos bug」只对了一半：节流钟根本没走。**
+- 修复（collect2x.c）：帧源弃 zTimer → 接线层自计数 `s_play_frame`——`on_item_frame` 分派点 `0x446ee3`
+  是 ItemManager tick `0x446ec0` 包装的门卫 CMP：包装先查 `[0x4cf2e4]+0xb0` 状态位与开店 `[0x4cf2a4]`，
+  冻结帧连 CMP 都到不了（sites.py 711 一手 disasm；与 Z4 证据同款）→ **每次分派 = 一个正常游玩帧**；
+  run reset 归零。碎片 pending 与掉 P 节流共用此钟（语义 = TH14 的「游玩帧」节奏）。P 落点本轮锚自机上方
+  76px（碎片同锚实测可见；pos 槽真命中点由探针定位后换回、删探针）。日志 settle / spawn / P drop 行加 `t=%d`
+  便于对照节奏。
+
+**实跑要看的**：见 [`NEXT.md`](NEXT.md)（Task 9 追加 §行）。`sdk:` 启动日志应报四个新断点已应用（否则门 `FAIL`）；
+trace 首次命中行应出现 `on_item_frame / on_item_collect / on_item_commit / on_shot_damage` 各一次。
+
+**Z15 证据（2026-09-08 第三跑，用户：「1、掉p是从敌人掉；2、似乎没有collect2x-dbg：」）**：P 落点定案——
+pos 参数槽（`[ebx+8]`）当年被当坐标直接读 = 把**槽地址**当 float 对（指针位型 ≈ 亚正规 ≈ 世界原点，正好解释
+「P 掉在 (0,400) 附近/不可见」），真值是**槽里的指针**指向的 {x,y}：
+- callee `0x45f0f0` 是 `push ebx; mov ebx,esp` 栈帧别名，`[ebx+8]` = arg1 参数槽。全量重读 disasm：
+  1024 源槽扫描环 `0x45f1c0`–`0x45f282`；**重叠几何以 arg1 为固定点**：圆形分支 `0x45f2f3` `eax=[ebp-0x40]`（=arg1）
+  减每源中心 `[edi-0x4]/[edi]`（rec+`0x1c`/`0x20`）取 dx/dy → 点对旋转源判重叠；矩形分支 `0x45f1fc` 系把 arg1
+  与 arg2 两对坐标传 `0x404440`。arg1 全扫描期恒定 → 就是**本调用被结算那个身体**（调用方 = 敌人侧 step）。
+- 调用方核对（`0x42ee75` 段：`push edi` 作 arg1 + 同函数 ebx+`0x5588`/`0x120` = 大型敌结构；`0x43955b` 段：
+  arg1 = `lea [esp+0x38]` 调用方帧缓冲（敌人坐标每帧拷贝），arg2 = `lea [esp+0x2c]`、arg3 = ebx）——
+  两类调用方 arg1 都指向敌人坐标对。award `0x45f2a2` 在循环后（esi = min(`[player+0x47984]`, 剩余预算
+  [ebp-`0x3c`])，门 param_6==0 && esi>0），每调用一次。
+- `[player+0x47984]` 语义复核（仅 3 处引用）：`0x443d3b` GameThread 每帧 `= [[player+0x47940]+0x28]`
+  （当前射击模式的每帧伤害额度，**常量非累加器**）；`0x40f48e` = `create_damage_source_rect` 调用侧把额度
+  置 `0x12c`=300（**不是**「Remilia 写 300」的独立写入）。→ award 是否命中门控**静态无法定案**（award 路径
+  不读任何「本调用开火过」标志；早退只有池空 `0x45f14c` / `[0x4cf2b8]+0x30`==0 / getter ≤0）。观测点见
+  NEXT：**停火（弹池未空、敌人存活）时敌人身上还掉不掉 P** —— 掉 = award 与命中无关，下一步在 `0x45f171`
+  BP 捕获初始预算、ebp 键控做「本调用真开火」门。
+- 修复（sdk.c）：pos = `*(float const *const *)(ebx+8)` + 可空防御；**探针（collect2x-dbg 一次性日志）删除**
+  —— 问题已由静态定案（用户未见该行：与掉 P 同 handler，可能贴取被截断，不再追）。collect2x.c：`spawn_item_at`
+  改从 `pos[0],pos[1]`（敌人中心，初速 2.2 向上小抛 = 原生 main-drop 实参，引擎道具重力带回 swoosh/自机行），
+  P drop 日志打敌人坐标。
+- 「收点音效」推测 = 引擎内置（用户点 3）—— **第四跑推翻（Z16）**：结算/碎片链上无任何原生时刻会响
+  （本卡全链路原无音效代码），引擎不会自己播。
+
+**实跑要看的**：见 [`NEXT.md`](NEXT.md)（Task 9 追加 §行）。`sdk:` 启动日志应报四个新断点已应用（否则门 `FAIL`）；
+trace 首次命中行应出现 `on_item_frame / on_item_collect / on_item_commit / on_shot_damage` 各一次。
+
+**Z16 证据（2026-09-08 第四跑，用户：「P预期正常。音效没有播放」）**：P 落点实跑通过（Z15 关闭）。
+音效缺 = **结算帧无声**——run2 结算能跑但全程无声、run3 猜「引擎内置」（DLL 无音效资产）、run4 仍无声
+→ 定案非内置。根因 = 结算是**合成事件**（无引擎原时刻）且全链路从未调 `ce_play_sound`。当时的处置 =
+批闭播 `ce_play_sound(0x2e se_cardget)`（05-shop §288 商店买符卡同款）——**未实跑即被 Z17 一手推翻**
+（`0x2e` 是商店语义；真源 = TH14 原生 `0x39` se_pin00），Z16 处置作废，代码已改。
+
+| Z17 | 收点音**一手定源**：TH14 ≥20 五档弹字前（on_tick__body 尾 `0x438dfe` 系）一律 `push 0x39 → play_sound_at_position`；cfg `0x39` = `se_pin00.wav`，TH18 同 wav 同调校 → 弃 `0x2e`、直用 `CE_SE_PIN00` | 🔧 **修复处置待实跑（2026-09-08 第五跑：听 `0x39` 钟声）** —— 见下「Z17 证据」 |
+
+**Z17 证据（2026-09-08，用户问「th14 or th15 收点结算的原生音效是啥」后一手分析）**：材料 =
+`local/_scratch/th14_100b.exe`（前轮已拉，与 [th14] 目录零售 exe 同 md5 家族）+ th-re-data
+th14.v1.00b funcs.json 命名。链：**播放点** → **id** → **cfg** → **名表** → **跨作对表**：
+
+1. **播放点（一手反汇编）**：`ItemManager::on_tick__body` `0x438550` 的结算尾 `0x438dfe` 起：
+   `[0x4f5884]` 批次倒计时归零 → 按 `[0x4f5880]` 收点计数分档（`0x3c`/`0x32`/`0x28`/`0x1e`/`0x14`），
+   五档各自在弹字（`0x458000` 倍率加法器，色 `0xffffff00`/`0xe0ffff60`/`0xd0c0ff80`/`0xc0a0ffa0`/`0xb040ffff`）
+   **之前**播声：`push 0x39; call 0x46e470`（SoundManager::play_sound_at_position，@ `0x438e09`/
+   `0x438e60`/`0x438eb2`/`0x438f04`/`0x438f4e`；声像 xmm2 ← `[esp+0x28]` = 批位 x——438e03 起 movss）。
+   5–19 = 灰字（`0x80a0a0a0`, value −1）**无音**；<5 全无。碎片 spawn（ItemManager::spawn_item
+   `0x4397b0`，type `0x28`/0xc 系 @ `0x438fda`+）无声——「收点结算的音」只有这一声 `0x39`。
+2. **id → wav（一手 cfg + 名表）**：cfg 行基 `0x4d61b8`、stride `0x14`、行构 {+0 id, +4 wav 下标,
+   +8 低字音量(dB) 高字优先级, +0xc 循环, +`0x10` 游戏内标志}（play 函数 `movsx word [id×0x14+0x4d61c2]`
+   即行 +8 低字对得上）。行 `0x39`（`0x4d662c`）：`39 00 00 00 | 2e 00 00 00 |
+   38 ff 64 00 | …` → 下标 `0x2e` → 名表 `0x4d60b0`（65 个 char*：64 名 + NULL，与 cfg 首尾相接
+   `0x4d61b4`）第 `0x2e` 项 = **`se_pin00.wav`**（非按字符串序数——序数第 46 是 pin01，以指针表为准）。
+3. **跨作对表**：TH18 的 `0x39` 行（engine/_shared/th18-sound-table.md §7 一手）= `se_pin00.wav`，
+   **−2dB / prio 100 / 非循环 / 游戏内**——与 TH14 行 `0x39` 调校逐项相同（TH14 行: `0xff38`=−200 即
+   −2.00dB、prio `0x64`=100、+0xc=0、+`0x10`=1）。同 wav、同 id、同调校 → 收点结算音直用
+   `CE_SE_PIN00 0x39`，无需扩表/注入。
+4. **语义专一性**：th14 全 exe `push 0x39` 仅 8 处，其中播音 5 处全在收点结算；另 3 处
+   （`0x47b78b` / `0x49f6c5` / `0x49fad4`）压 `0x39` 后跟对象构造（vtable 写 `0x47e470`/`0x47e3c0` 系）
+   = 参数非播音 → **se_pin00 在 DDC 就是收点结算的钟声**。`0x2e` se_cardget（商店买符卡，
+   05-shop-and-money §288）语义不符，Z16 处置作废。
+5. **对齐核对**：原生 ×0（<20）无声 ←→ 本卡 mult==0 早 return 在其上 ✓；原生只有结算一声、
+   碎片弹出无声 ←→ 本卡 spawn 帧无音 ✓（碎片收集时走原生 `0x25` se_item00 等自响）。
+6. **处置**：collect2x.c 结算音 CE_SE_CARDGET(`0x2e`) → `CE_SE_PIN00(0x39)`；engine.h 增
+   `CE_SE_PIN00 0x39`（注释引本条）。DLL 2026-09-08 19:35 重建已同步 mods/。
+7. **TH15 三方交叉（2026-09-08 一手，材料 `local/_scratch/th15_vanilla.exe` = 零售 1.00b
+   md5 同族）**：play 系两入口（`0x476360`/`0x476400`）prio 读点 `movsx word [0x4e46aa+id×0x14]`
+   = 槽+0xa（槽基 **`0x4e46b4`**，stride `0x14`，行构与 TH14 同构）；槽 `0x39` @ `0x4e4b28`：
+   `39 00 00 00 | 2e 00 00 00 | 38 ff 64 00 | …` = **id `0x39` / wav 下标 `0x2e` / −2dB(`0xff38`) /
+   prio 100(`0x64`) / loop 0 / 游戏内 1** —— 与 TH14 行 `0x39`、TH18 行 `0x39` 逐项全同 → ZUN
+   三作 SE 表按行直抄。用户听感参照的「魔改 TH15」d3d9 shell 亦以 `0x39` 为参调 TH15 播声
+   （TH15BUT14-REPORT 🟡 `0x4408d0`），与 vanilla 行一致。
+   🟡 **残留（TH15 名字腿）**：TH15 的 65 个 `se_*.wav` 串在 .rdata `0x4ce6d4` 起，但全 exe
+   无任何指针/立即数引用（死串）→ TH15 运行时按序号解析（thbgm 句柄序），名字对不上一手，
+   只能行级三作一致 + TH14 名表腿（pin00）收口。
+   🟡 **残留**：th14/th18 两 thbgm.dat 的 wav 字节级 md5 未比对（本机 thtk 未编，
+   tooling/thtk/build.sh 可补）——凭 同 id + 同文件名 + 同调校 三重一致 + 实跑听感收口。
+
+| Z18 | 批闭门订正：**「池空即闭」→ TH14 原生 timer 语义**（最后一收后 8 游玩帧无新收才结）。池空门实跑三症状：结算音比 TH14 急 ~7 帧（池空 = 最后一收的下一帧即结）；NO BONUS 偶缺（急切把 8 帧窗口内的残余收点拆成 <5 微批静默关）；**躲弹幕时突然冒过期 ×0.5 弹字+钟声**（一枚残余点挂住批几十帧不落，离池才结） | 🔧 **timer 语义定案，结构被 Z20/Z21 承继**（idle 值 8→30→8+presence）；DLL 2026-09-08 19:54 首建已同步 mods/ —— 见下「Z18 证据」 |
+
+| Z19 | 批集订正：**TH14「红点与蓝点」→ TH18 = 只计 P(1) 与钱(2)**（无蓝点，钱占其位）。原实现把 type 9–0xe 也收进批 —— 引擎击破转换（强制收集）专出的分数转换点，DDC 原义不入收点批 → 剔除：不入批、不计数、不触发 | ✅ **实跑确认**（run-7，用户「击破转换确实不触发 bonus 了」）；白名单 {1,2} 定案；单位小分量级（P=+10？钱=身价/10？）留 settle 日志对照 —— 见下「Z19 证据」 |
+| Z20 | 批闭 idle 8→30 游玩帧（TH18 滴入物理适配，§Z18 结构不改）：TH14 原生 8 帧按 DDC 满火力收点线校准，TH18 无收点线、70px 环 ~5px/帧 滴入 → 波内吸收空洞 >8 帧常态 → 第六跑「一次收点被拆两次结算」（≥20+≥20、二次 settle 盖 pending）| 🔧 run-7 实跑：拆批不再现（30 兜住）但「体感慢了」（0.5 s 拖拍 = 副作用登记兑现）→ **已被 Z21 取代**（presence 续批 + idle 回 8）；16–20 兜底旋钮由 Z21 承继 —— 见下「Z20 证据」 |
+
+| Z21 | 批闭 idle 30→8 + **presence 续批**（TH14 一手定案 Z20 遗留 #5：`0x43898e` 续期门在 item state-3 飞行 body、距离判定之前 —— 在飞批集道具每帧重载 timer → 批闭 = 收点流真停后 ~8 帧，与 DDC 同拍）。TH15/LoLK census：批记账块只写不读、timer 无消费 → 原生无批结算可对齐 | 🔧 已改、965 单测全过、DLL 22:04 重建同步 mods/；run-8 实跑：拆批/钟声未再报（presence 结构成立），新症状 = 无全屏事件也误弹灰 NO BONUS（Z21 证据残留 6 兑现：谓词 state∈{3,4} 过宽）→ **收窄落地 = Z22 成员门** —— 见下「Z21 证据」 |
+| Z22 | **成员门 = 真空飞行体**（run-9）：批开/计数/续批只认**分发时 state==3** 的 {1,2} —— state 机普查：{1,2} 进 state 3 唯一入口 = V 门 `0x445b9a`；触收 1 / 环收 4 不入批；state-2 翻 3 只盖 9–0xe；引擎 `0x44699e`/`0x446c0a` 以 state==3 判「飞来」= 同谓词 | 🔧 已改（collect2x.c 成员门 + sdk.c presence 收窄 + engine.h state 机模型校正）、965 单测全过、DLL 22:56 重建同步 mods/；待第九跑 —— 见下「Z22 证据」 |
+`local/_scratch/th14_100b.exe` 全量 disasm（th14_full.asm）。原实现门 = `ce_item_pool_any_flying()`
+池空才关批（collect2x.c），批计时来自 TH14 accessor 族：
+1. **原生计时 = `[0x4f5884]`**：per-item 收点分支 `0x43898e` 系对 type≠9/0xa/0xb 重载 `edx=0x8`；
+   accessor `0x439d60` = `mov [0x4f5884],0x8`（收点入批重载专用）；池循环帧尾 `0x438dad`
+   `dec`、`0x438dc0` 归零 jne 落空即走结算（`0x438df1` 读 `[0x4f5880]` count 分档）→
+   **批闭 = 最后一次收点后 ~7–8 游玩帧**。收点入批 = `0x439c90`（`inc [0x4f5880]` + 批分累加
+   `[0x4f5878]`，与计时重载分开的两个 accessor）。
+2. **原生不等池空**：计时归零无条件结算 —— 在飞残余点迟到 = 拆下一批单独计（<5 静默）。
+   对照旧池空门：结算发生在「池内无批集道具」的下一帧 ≈ 最后一收 +1 帧 → 音急 ~7 帧；
+   且任一残余点（掉出回收线才消失）可把批挂住数十帧 → 躲弹幕期突然冒出过期 ×0.5 + `0x39` 钟声
+   （用户实跑：冒出那一刻完全没有收点动作）→ 两症状同根。
+3. **NO BONUS 偶缺**：急切关批把本应并入同批（8 帧窗口内）的收点拆成 <5 微批 → 静默。
+4. **处置**：idle 判据收入 core —— `c2x_collect_batch(+frame)` 记 `last_collect_at`；
+   `c2x_maybe_settle(s, frame)` 批开且 `frame−last_collect_at ≥ C2X_BATCH_SETTLE_IDLE(8)` 才关
+   （flying 参数删除——它编码的就是池空门）。接线层去掉 `ce_item_pool_any_flying()` 门。
+   游玩帧 = on_item_frame 分派（§Z14 帧源），冻结/暂停帧不计，与原生池循环 tick 同口径。
+   单测改 idle 语义 + 两新例（idle 窗口内收点并入同批；迟来残余拆新批静默关）。811 项全过。
+
+**Z19 证据（2026-09-08，用户两连勘误后一手追 TH18 收点 type 语义）**：材料 =
+`local/_scratch/th18_full.asm` + `th14_full.asm`。
+1. **用户勘误链**：TH14 官方文本 =「一次性收点超过 20 个道具（**红点与蓝点总数**）即奖励一个碎片，
+   只考虑红点和蓝点」→「TH18 没有蓝点，而是钱」→ 收点批集合必须是 **P 点与钱**，而非当时实现含
+   转换点族的 {1,2,9–0xe}。原实现中 9–0xe 入批 → 用户实跑「击破自动小分收集（强制收集）触发 bonus」，
+   与 DDC 行为不符（强制收集在 TH14 原生就不驱动收点批）。
+2. **TH18 type 分派一手**（材料 th18_full.asm）：分派点 `0x44625f` 查映射表 `0x44685c`（19 bytes）
+   再跳 `0x446830` 跳表（11 handlers）。type 1 → `0x4462cc`（P/power，经 `0x446870`）；type 2 →
+   `0x4463ba` = collect_money_item `0x446b00`；**type 9–0xe 六型共指加分 handler `0x446547`**
+   （`SCORE [0x4cccfc] += [0x4ccd34]/100`，cap 1e9）—— 只由击破转换（强制收集）产出，玩家正常收点
+   吃不到；type `0x10`–`0x13` → `0x446531`（卡道具）。★ **尾段订正（写 Z19 当日再追一手推翻早先推断）**：
+   P/钱例程**都**在分派窗内给 SCORE 加分 —— P（power 例程 `0x446870`）尾 `0x446ac0` 无条件
+   `SCORE += edi/10`（cap 1e9−1；edi = `0x64`=100 → +10，或火力相关折算值，钳 ≥10）+ 前置弹窗
+   `0x4645f0` 两次；钱（`0x446b00`）尾 `0x446d03` 无条件 `SCORE += esi/10`（esi = 道具身价，
+   `0x446cf3 cmovle` 钳 ≥10）+ 弹窗 `0x446cfe`，并 inc `[0x4ccd20]/[0x4ccd30]/[0x4ccd34]` ——
+   与 §O10（`0x446cf6` esi 身价同控弹窗与计分）互证。**P/钱道具各带小分** → stash delta = 该道具
+   小分、批分 = 批内 Σ小分，非恒 0；「TH18 无 collect-score」推断作废（早先只看 handler stub 没读
+   例程体，O10 已在案未回引）。
+3. **TH14 侧收口**：计时重载门 `0x43898e` 只对 type≠9/0xa/0xb 生效 —— 强制收集系道具在原生
+   语义里**不驱动收点批**（不拖计时、不被 20 连计数）；官方「红点与蓝点」与之一致。原 {1,2,9–0xe}
+   集是臆测插值，违背这条一手。
+4. **处置**：`type_in_batch` 收敛为 `type==1||type==2`（collect2x_core.c）。stash（collect BP 捕获
+   SCORE 差）继续按分派窗差量入批 —— P/钱各带小分（上条尾段订正），批分 = Σ小分，TH14
+   「batch-score × tier」的分数部分在 TH18 由此有真实来源；碎片与档位判定只吃 batch_count，不受
+   影响。单测改写：批集白名单 {1,2}（碎片 4/6、卡 `0x10`–`0x13`、转换点 9/0xa/0xe 及其它 type、
+   0/`0xffff` 全部不入不开批）、混收例（P+钱 = count 2；转换点贴着 P/钱被吃也不进批）。812 项全过。
+   DLL 20:17 重建（128512 B，md5 aeba25920e61f924e620d04bdd92672d）已同步 mods/。
+5. 🟡 **待验（run-7 部分确认，其余留第八跑）**：P/钱收点串如期触发碎片 + SE 时机正常（第八跑听
+   `0x39` 钟声 = Z21 的 ~8 帧 latency）；**击破转换（转分点潮）不再触发 bonus = 实跑确认**（run-7，
+   用户「哦对，击破转换确实不触发 bonus 了」）；结算弹窗值应 = 批内 Σ(P/钱小分)×档、**非零**
+   （settle 日志 `batch score` 字段直接可读）——对照跑分确认每 P/钱的单位小分量级（P = +10？钱 =
+   身价/10？）与弹窗/补差观感是否合理；若与 TH14 蓝点面值量级差距大，另行对齐。
+
+**Z20 证据（2026-09-08 第六跑，用户：「批次判断错误，有时会连续触发两次收点」→ 澄清「不是同帧连续触发，
+而是感觉上是一次收点的过程，被拆成两个结算」）**：场景（AskUserQuestion）= 攒了一波上线收点，同/下一波
+小怪还在被打、道具持续生成；两次结算间隔 <0.5 s；两次弹字都完整、但基本只有一次生成碎片。
+1. **症状与当时机制逐条吻合**：批闭 = 最后一收后 `C2X_BATCH_SETTLE_IDLE`（当时 8）游玩帧无新收（§Z18）。
+   TH18 **没有 DDC 的满火力收点线**：道具不是一过线即全收，而是落进自机旁 70px swoosh 环后以
+   ~5px/帧 磁速滴入吸收点 → 一波道具的高度散布直接映射为到达时间散布，**波内天然有 8–25 帧吸收空洞**。
+   攒的波被空洞腰斩：前半 ≥20 → 结算 1（弹字完整）；后半 ≥20 → 结算 2（<0.5 s = 30 帧内）。两结之间隔
+   < 碎片延迟窗 20 帧 → 第二枚碎片登记覆盖第一枚 pending（接线层 `frag pending overwritten` 日志）→
+   「基本只有一次生成碎片」——三项用户观察全对上。§Z18 的「NO BONUS 偶缺」是同一空洞的 <5 静默变体
+   （急切切批）；当时归因池空门，timer 门保留 8 帧后（第六跑）症状仍在 → 根因修正为**窗口值对 TH18
+   滴入物理太小**，与池空/timer 无关。
+2. **TH14 原义不矛盾**：8 = 原生重载常量（`[0x4f5884]` @ th14 `0x43898e`/`0x439d60`，帧尾递减归零即结）
+   —— 按 DDC 收集线物理校准：满火力线吸 = 道具一过线即收、到达流紧密，一波收点的吸收空洞 ≪8 帧，
+   8 帧窗在 DDC 里就是「流停 ~0.13 s 即结」。TH18 复刻的批闭**结构**照搬原义（timer 语义、最后一收后
+   idle 满才关、在飞残余不挡批、迟到拆下一批、结算不等在飞道具）；**窗口值是物理适配参数**：空洞 >8 帧
+   拆批在 DDC 不存在、在 TH18 是波内常态。
+3. **处置**：`C2X_BATCH_SETTLE_IDLE` 8 → 30 游玩帧（0.5 s）。语义零改：`c2x_collect_batch` 仍只记
+   `last_collect_at`（批集 {1,2}，§Z19），`c2x_maybe_settle` 仍 idle 满才关批。音（`0x39`）/弹字/碎片登记
+   都在 settle 帧 → 本值是「收点流停后多久发奖」的唯一时旋钮（弹字与钟声同步，不存在挪进
+   `spawn_pending_frags` 的分歧，§Z18 注）。单测：新增「波内 20 帧空洞（>8 旧值、<30 新值）不拆批」
+   （21+21 并入一批 = ×1.2 一结一碎片）；迟来残余拆批例改为批闭 +5 帧重开、静默自关（语义不变）。
+   859 项全过。DLL 21:21 重建（128512 B，md5 `44d3f63f2b990489c45e536ddc3eb618`）已同步 D 盘 mods/
+   （唯一加载源）。连带修正：dllverify 导出计数 18→22（Z 系列四个 `BP_ce_item_*` 加进 def 后 Makefile
+   一直没同步，本次 `make dllverify` 才暴露 —— H8 之后加的导出漏了自检基线）。
+4. **副作用登记**：结算（钟声+弹字+碎片登记）在收点流真停后最多 +30 帧（0.5 s）才发 —— 单次抓取 ≥20
+   的体感由 ~0.13 s 变 ≤0.5 s 内响；若第七跑觉得钟声钝，把常量降到 16–20（越接近波内空洞上界 ~25 帧
+   越有复拆风险，以实跑为准）。持续农场（空洞 <30 帧）会并入更大的批：流不停不结（DDC 线农正是这个
+   体验），奖励按大档 + 碎片循环发放。
+5. **遗留（下个杠杆，未定案不臆测）**：若 30 仍偶拆（用户视为同一次过程的空洞 >30 帧），下一个候选 =
+   TH14 `0x43898e` 所在 per-item 路径若是对在飞批集道具**每帧续期**（presence reload 而非吸收时重载——
+   重载点在距离判定之前、进入条件未追完），则正确修法是「批集道具仍在 swoosh 环内 = 续 idle」，等价
+   「道具真正离场 ~8 帧才结」且不动 30 与钟声；先一手定案再动。
+
+**Z21 证据（2026-09-08 run-7，用户：「体感慢了，你不能在各项上对齐 TH15（d3d9 壳内 vanilla 1.00b）
+吗？还是机制变了」→ 本跑 = 上条遗留 #5 的定案与落地）**：材料 = th14_full.asm / th15_full.asm /
+th18_full.asm（`local/_scratch`）。
+1. **TH15/LoLK 一手 census（机制确实变了，但没有「更快的批节奏」可对齐）**：批记账块 {`0x4e7464`
+   score-add、`0x4e746c` count-inc、`0x4e7474` qword、`0x4e747c`/`0x4e7480`} 只被 item manager 收点例程
+   （`0x4402f9`–`0x440e64` 区间）写、全 exe 无任何读取；timer `0x4e7470` 全文件仅 3 处引用 = 续期门
+   自读自写 `0x43fd12`/`0x43fd1d` + `mov [0x4e7470],0x8; ret 4` accessor `0x440ef0` —— **无 dec、无
+   cmp/test、无消费端** → LoLK 把帧尾递减 → 五档比较 → 弹字/钟声 → 清零 的整条结算链删了。
+   活着的 `0x4e7484`/88（有 cmp 有读）= 点道具总数/总分，`0x43ab79`/`0x43ac50` 只是结算屏「平均分」
+   显示除法（divss），不是批链。→ 收点在 LoLK 根本没有批结算事件：TH15 手感的「快」= 批奖整个
+   不存在、没有任何结算延迟可感知，不是存在一个更快的原生节奏 —— 「各项对齐 TH15」无锚点。
+2. **TH15 续期门残骸与 TH14 同构 = presence 续批是 ZUN 跨作标准布局**：th15 `0x43fce3`-`0x43fcf3`
+   （state-3 置位 [edi+`0xc64`]=3 + type 装载 [edi+`0xc68`]）→ `0x43fd12` `mov eax,[0x4e7470]` →
+   type 豁免 {9,0xa,0xb,0xd,0xe} 跳过 + 0xf `cmovne` identity + 其余 `cmovne eax,edx` 重载
+   （edx=8 @ `0x43f841`）→ `0x43fd42` 起距离判定 —— 与 TH14 `0x438974`（[edi+`0xbf0`]=3）→ `0x43898e`
+   （豁免 {9,0xa}、0xb identity、其余重载）→ `0x43899e` 距离/atan2 逐位同构。结构在 DDC 活着、
+   在 LoLK 是死代码 → 以 TH14 为对齐基准（非 TH15）成立。
+3. **TH14 定案（关 Z20 #5）**：续期门在 state-3 飞行 body 内每帧执行（置 3 后无条件直落到重载、
+   距离判定之前）→ **在飞批集道具每帧重载 timer** → 批闭只发生在「既无在飞批集道具、又无新收」
+   的真停段后 ~8 帧（帧尾 `0x438dad` 递减、归零即结，Z18 证据 1）。重载常数 = 8 经 `mov [0x4f5884],0x8` accessor
+   `0x439d60` 收口（门内 edx 出处为调用方，静态追不到，不臆测）。
+4. **处置**：`C2X_BATCH_SETTLE_IDLE` 30→8；core 增 `c2x_batch_presence`（批开即续
+   `last_event_at`）；接线 on_item_frame 在 settle 检查前问 `ce_item_pool_any_attracting()`
+   （= TH18 的「在飞」：state {3,4}，flip 点 `0x445f6f`/`0x445f63` 置 3、`0x446647` 置 4；落地休止/
+   抛物 state 1/2 不续 —— 与 TH14 原义同：未提交道具不属于当前收点流）→ 续期并早退。批闭
+   latency 回原生 ~8 帧（0.13 s；Z20 副作用登记的 0.5 s 拖拍消除）。§Z20 的 8–25 帧波内空洞 =
+   在飞散布（环内道具飞行期）→ presence 盖掉；环空的真空洞才消耗 idle。
+5. **单测**：presence 族 —— 批开后续期不关批、40 帧大空洞被续期桥成单批、批未开 presence 不
+   开批（首个收点才开）、批集道具落地休止（无 presence）照旧按 idle 关批、presence 不触发也不
+   算计数；§Z20 空洞双向模型化（洞内有在飞 → 并单批 ×1.2 count 42；洞内无在飞 → +8 关批重开、
+   ×0.5 各自静默）。常量全部由 `C2X_BATCH_SETTLE_IDLE` 驱动。965 全过。sdk 谓词改名
+   `ce_item_pool_any_flying` → `ce_item_pool_any_attracting`（防旧语义误解）。DLL 22:04 重建
+   （128512 B，md5 `ff84b1c7c9ba1793d779e483a443eacd`）已同步 D 盘 mods/（唯一加载源）；
+   dllx87 0、dllverify 22 exports。
+6. **残留（run-8 先验，不臆测）**：presence 只续「环内有在飞道具」的帧 —— 若第八跑仍见拆批 =
+   连续 ≥8 帧环内无在飞且无新收的真空洞（细尾散布 >~22 帧到达间隙），兜底 = idle 16（Z20 #4
+   预留旋钮），或谓词扩到近环抛物段（先一手追 TH18 state 机再动）。
+
+**Z22 证据（2026-09-08 run-9，用户：「新的bug：我在没有进入全屏收点的模式的时候 no bonus 也触发了。
+这个机制是我或者放b，或者上线，或者进入对话自动全屏收p+金钱的时候才会开始触发的」→ 中途补充：
+「所以这里面会出现一个问题是：当我下全屏收点线的时候依旧会有p收过来，但是此时产生的p显然不会
+飞过来，那么正确的行为自然是当飞过来的p收完之后就结算」）**：材料 = th18_full.asm
+（`local/_scratch`；slot loop `0x445a80` + 出生函数 CE_FN_SPAWN_ITEM `0x446f40` 段）。
+1. **症状机制链（与当时实现逐条吻合）**：批开 = 任意 type∈{1,2} 收集（含 30px 触收 state 1 /
+   70px 环收 state 4）；presence 谓词 = 池扫 type∈{1,2} 且 state∈{3,4} → 普通游玩环收既开批又
+   续批 → 小批 5–19 关 → 灰 NO BONUS 误弹；下收点线后新掉 P 经环入批拉长批（用户：「此时产生的
+   p显然不会飞过来」）。
+2. **state 写点普查**（每槽续点 `0x4467d2` `xorps xmm4,xmm4` → 各 case 的零比较干净）：写点全集 =
+   `0x445b0f`(=2)/`0x445e38`(=0 删)/`0x445f6f`(=3)/`0x446146`(=1 自机 state 4 放回)/`0x446595`(=0 commit
+   摘链)/`0x446647`(=4 环) + 出生 `0x446fac`(=1)/`0x4471d3`(=5)。state 5 = 出生 intro（+`0xc84` 倒计时，
+   `0x445af3` 递减 → 到期置 2 + FX `0x407420`）——**state 5 唯一出生点 = `0x446f40` 的 type 9–0xe 分支
+   `0x44713a`**（`0x446f62`–`0x446f8f` 六个 je；帧计数 [ecx+`0xe6bb20`] 按 `0x400`/`0x200`/`0x100` 分档取模
+   散布 → 倒计时错峰）。state 2 = 释放下落体（`0x445ed6` 纯重力积分）→ vel_y ≥ 0（顶点）`0x445f4e`
+   `comiss xmm0(=新 vel_y), xmm4(=0)` → 落穿 `0x445f59` → `0x445f5b` → `0x445f63` 置速 + `0x445f6f` 置 3
+   —— 无条件翻 3，但只覆盖 9–0xe 族（P/钱 type 1/2 在该出生函数永远走 `0x446fa3` 常规 state-1 分支，
+   不经过 state 2/5）。
+3. **V 门 = type {1,2} 进 state 3 的唯一入口**（state-1 case：countdown ≤ 0 → 每帧跑 `0x445b9a`）：
+   (a) 上线：player state ∉ {2,4}（`0x445ba3`/`0x445ba8` je `0x445bbf` 跳过线检）且线 `[player+0x47998]`
+   > 自机 y `[player+0x624]`（`0x445bb2` comiss → ja `0x445f63`）；(b) 放 B：BombManager `[0x4cf2b8]`
+   +`0x30` == 1 且 +`0x38` < `0x3c`（`0x445bc4`–`0x445bce`，R1 已确认 +`0x30` = 放弹标志）；(c) `[0x4cf2e0]`
+   +`0x1b0` ≠ 0（对话自动收点；对象未命名 🟡）。无 V → `0x445be6` 起重力坠落体（state 保持 1）→ 逐帧
+   过 `0x44620a` 共享尾（30px 触收闸 `0x44624a` / 70px 环 `0x4465da`）→ 出界 [`0x4b93a4`](y)/[`0x4b9340`](|x|)
+   删 —— **普通游玩永不翻 3**。
+4. **引擎原生谓词 = 分发时 slot state == 3**：state 3/4 跳过环入口（`0x4465da` 读 state；`0x4465e3`/
+   `0x4465e8` je `0x446659`）直飞至 <30px 分发 `0x44625f`（分派前 state 未清）；P handler `0x446870` / 钱
+   handler `0x446b00` 分发后读 `[slot+0xc74]`（`0x44699e`/`0x446c0a`）——state==3 与「自机在收点线上方」
+   （线 `[player+0x47998]` ≥ 自机 y）汇到同一处理点（`0x446a21`/`0x446cb4`），线下方且 state≠3 走另
+   一段（`0x4469a7` 起，分值分野语义未全追，不挡本门）—— TH18 用 state 3 认「飞过来的收点道具」。
+5. **修复（三改 + 一校正）**：(a) `on_item_collect` 成员门 —— type∈{1,2} 之外还要求分发时 slot
+   state == CE_ITEM_STATE_VACUUM(3)（engine.h 新常量）；触收/环收不开批、不计数、不 stash；
+   (b) presence `ce_item_pool_any_attracting` 从 state∈{3,4} 收窄为 ==3（4 = 普通游玩 70px 环
+   swoosh，不续批；TH14 原生 `0x43898e` 也只在 state-3 在飞体上重载，§Z21）；(c) 注释同步
+   collect2x.c / collect2x_core.h / sdk.h / sdk.c；(d) engine.h CE_ITEM_STATE 注校正（旧注把 5 当
+   「收集完成延迟段」、2 当「分派处理瞬态」、谓词 state∈{1,3,4} = §Z18 池空门时代模型，与普查
+   矛盾）。批闭语义与用户补充完全对齐：下收点线后残余 state-3 在飞 P 继续计数、presence 续到
+   收完 +8 帧即结；新掉落（无 V 不翻 3）永不开批不续批。Z21 证据尾部「谓词扩到近环抛物段」遗留
+   （item 6 残留）随本行作废：谓词按 state==3 收窄而非扩集。
+   🟡 **残留**：对话 V 门 `[0x4cf2e0]+0x1b0` 对象未命名（邻 BombManager `0x4cf2b8`）；player state
+   2/4（`0x445ba3` 系跳过上线判定的两态）语义未追；state-1 坠落体 `0x445c85` `jl 0x445de6` 的横滚段
+   （vel_x 清零/出界 [`0x4b9340`]）与 `0x44698d` 系「线下方分值分野」语义 —— 都不挡本门（本门只用
+   state==3 谓词）。
+
 ## G. OPEN —— 还没解决的
 
 | # | 事项 | 说明 |
@@ -1106,3 +1433,4 @@ st07 `Boss2…Boss10 BossDead`（Card10 终符，Card9 耐久符去 `Boss10`）�
 | G5 | ~~新卡在卡组编成里「未获取」~~ | 战线 D 已做（§K，待实跑）。原因是 `unlocked_cards` 是 `uint8_t[57]`，`[58]` 落在未知区读出 0 |
 | G6 | ~~新卡解锁后名字 / 说明是乱码~~ | **已做**（§L，待实跑）——三处读重定向到 DLL 缓冲，占位「测试卡牌 N」。原因：`zAbilityText` 只有 57 张，id 58 落在对象之外 |
 | G4 | MSVC 换 build 后骨架是否仍然一致 | 未验证。`make check` 的锚点数会立刻暴露（不是 25 就停） |
+| G7 | deck 槽 id 符号扩展墙的指令位 | §Z11：id ≥`0x80` 装槽被剔（现象实跑），写槽点 `0x41511c` 无校验 → 墙在显示/重建链；处置已绕道（id ≤127），墙位待钉死（`0x415af0` 起）后才知 127 以上能否解锁 |
