@@ -64,6 +64,7 @@ static void kill_vms(stock_card_t *s)
     }
 }
 
+/* 33 次查表每帧都跑，不是漏优化：这是故意的自愈检查（VM 可能被引擎在别处摧毁），只在该重绘时才查会晚一帧发现。 */
 static int vms_alive(const stock_card_t *s)
 {
     if (!s->bg_id || !ce_anm_get_vm(s->bg_id)) return 0;

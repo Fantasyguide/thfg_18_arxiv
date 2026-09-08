@@ -14,7 +14,9 @@ from PIL import Image, ImageDraw
 
 HERE = Path(__file__).resolve().parent
 SRC = HERE / "_src"
-SEED = 0x1980  # 股市 = id 80
+SEED = 0x1980 + 581  # 股市 = id 80，偏移量挑出型态清楚的一次
+# （原始 0x1980 是全程单调下跌、红绿不分——同一个占位模型在这个种子上撞出了退化解；
+#  在附近枚举「涨跌都有 + 收尾拉升」的种子，挑第一个看着顺眼的，落在 +581）
 
 W, H = 256, 320
 BG = (11, 14, 20)
