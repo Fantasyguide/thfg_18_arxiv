@@ -99,10 +99,15 @@
 #define CE_ASCII_COLOR_WHITE       0xffffffffu /* Momoyo 画完还原成它（`0x41128a`）*/
 /* zAsciiManager 的其余绘制状态（Ghidra 结构体 zAsciiManager，字段名与偏移一手）。
  * 画完必须还原 —— 引擎自己后面的绘制全靠这些环境值。*/
-#define CE_ASCII_SCALE             0x19230    /* zFloat2 */
+#define CE_ASCII_COLOR2            0x1922c    /* 描边 / 副色 BGRA */
+#define CE_ASCII_SCALE             0x19230    /* zFloat2；引擎常用 1.0，小字用 0.6 */
+#define CE_ASCII_SHADOW_DARK       0xff000000u /* 黑描边：压在花花绿绿的 HUD 上最清楚 */
 #define CE_ASCII_FONT              0x19244    /* int */
 #define CE_ASCII_GROUP             0x19248    /* int */
-#define CE_ASCII_ALIGN_H           0x19250    /* int：0 左 / 1 中 / 2 右（金钱那行用 2）*/
+#define CE_ASCII_ALIGN_H           0x19250    /* int：**2 = 右对齐**（金钱 / 总分一手确认）；1 是引擎的常态值、实测表现为左对齐；
+                                                  * 于是 0 只能是居中 —— 实跑再确认一次（AUDIT §AI）*/
+#define CE_ASCII_ALIGN_CENTER      0
+#define CE_ASCII_ALIGN_LEFT        1
 /* 金钱那行的排版（`FUN_0043cd00` 在 (620, 204) 处设的）：比默认 font 0 大一圈，右对齐。
  * 想让自己的数字看着和金钱是一套，就照抄这三个。*/
 #define CE_ASCII_FONT_MONEY        10

@@ -231,24 +231,30 @@ void ce_sdk_damage_cap_tick(uint32_t id)
 typedef void (__attribute__((cdecl)) *ce_fn_ascii_drawf_t)(void *mgr, const float *pos, const char *fmt, ...);
 
 /* 真正干活的那层。font/group/align 传 -1 表示不动。 */
-static void ce_hud_text_raw(float x, float y, uint32_t bgra, int font_id, int group, int align_h, const char *text)
+static void ce_hud_text_raw(float x, float y, uint32_t bgra, uint32_t shadow,
+                            int font_id, int group, int align_h, float scale, const char *text)
 {
     uint8_t *mgr = *(uint8_t **)CE_ADDR_ASCII_MANAGER_PTR;
-    float pos[3];
-    uint32_t old_color;
+    float pos[3], *sc, old_sc[2];
+    uint32_t old_color, old_shadow = 0;
     int old_font = 0, old_group = 0, old_align = 0;
 
     if (!mgr) return;
     pos[0] = x; pos[1] = y; pos[2] = 0.0f;
+    sc = (float *)(mgr + CE_ASCII_SCALE);
     old_color = *(uint32_t *)(mgr + CE_ASCII_COLOR);
     *(uint32_t *)(mgr + CE_ASCII_COLOR) = bgra;
+    if (shadow)       { old_shadow = *(uint32_t *)(mgr + CE_ASCII_COLOR2); *(uint32_t *)(mgr + CE_ASCII_COLOR2) = shadow; }
     if (font_id >= 0) { old_font  = *(int *)(mgr + CE_ASCII_FONT);    *(int *)(mgr + CE_ASCII_FONT)    = font_id; }
     if (group   >= 0) { old_group = *(int *)(mgr + CE_ASCII_GROUP);   *(int *)(mgr + CE_ASCII_GROUP)   = group; }
     if (align_h >= 0) { old_align = *(int *)(mgr + CE_ASCII_ALIGN_H); *(int *)(mgr + CE_ASCII_ALIGN_H) = align_h; }
+    if (scale > 0.0f) { old_sc[0] = sc[0]; old_sc[1] = sc[1]; sc[0] = scale; sc[1] = scale; }
     ((ce_fn_ascii_drawf_t)CE_FN_ASCII_DRAWF)(mgr, pos, "%s", text);
+    if (scale > 0.0f) { sc[0] = old_sc[0]; sc[1] = old_sc[1]; }
     if (align_h >= 0) *(int *)(mgr + CE_ASCII_ALIGN_H) = old_align;
     if (group   >= 0) *(int *)(mgr + CE_ASCII_GROUP)   = old_group;
     if (font_id >= 0) *(int *)(mgr + CE_ASCII_FONT)    = old_font;
+    if (shadow)       *(uint32_t *)(mgr + CE_ASCII_COLOR2) = old_shadow;
     *(uint32_t *)(mgr + CE_ASCII_COLOR) = old_color;
 }
 
@@ -259,20 +265,21 @@ void ce_hud_text(float x, float y, uint32_t bgra, const char *fmt, ...)
     va_start(ap, fmt);
     vsnprintf(buf, sizeof buf, fmt, ap);
     va_end(ap);
-    ce_hud_text_raw(x, y, bgra, -1, -1, -1, buf);
+    ce_hud_text_raw(x, y, bgra, 0, -1, -1, -1, 0.0f, buf);
 }
 
 /* 同上，但指定字体 / 分组 / 水平对齐（三者传 -1 = 用环境当前值）。
  * 金钱那行是 font 10 / group 3 / 右对齐，比默认的 font 0 大一圈 —— 想和它看着是一套就照抄。
  * 每一项都**先存后改、画完还原**：引擎后面的绘制全靠这些环境值，改了不还等于给别人埋雷。*/
-void ce_hud_text_font(float x, float y, uint32_t bgra, int font_id, int group, int align_h, const char *fmt, ...)
+void ce_hud_text_ex(float x, float y, uint32_t bgra, uint32_t shadow,
+                    int font_id, int group, int align_h, float scale, const char *fmt, ...)
 {
     char buf[128];
     va_list ap;
     va_start(ap, fmt);
     vsnprintf(buf, sizeof buf, fmt, ap);
     va_end(ap);
-    ce_hud_text_raw(x, y, bgra, font_id, group, align_h, buf);
+    ce_hud_text_raw(x, y, bgra, shadow, font_id, group, align_h, scale, buf);
 }
 
 /* `+0x48`：`AbilityManager__on_draw` `0x408ab0` 每帧遍历卡链表调它。把聚合倍率写在火力值左边，
@@ -386,6 +393,43 @@ void ce_hud_digit_set(ce_hud_digit_t *d, int value, const char *card)
     v = value < 0 ? 0 : value > CE_HUD_DIGIT_MAX ? CE_HUD_DIGIT_MAX : value;
     if (v != d->shown && ce_anm_set_sprite(CE_ABILITY_ANM(), d->digit_id, CE_ANM_ABILITY_SPRITE_TS_DIGIT_0 + v))
         d->shown = v;
+}
+
+void ce_hud_number_clear(ce_hud_number_t *n)
+{
+    if (!n) return;
+    for (int i = 0; i < CE_HUD_NUMBER_MAX; ++i) { ce_anm_delete(n->id[i]); n->id[i] = 0; n->shown[i] = -1; }
+    n->digits = 0;
+}
+
+void ce_hud_number_set(ce_hud_number_t *n, float x, float y, float spacing,
+                       int value, int digits, int right_align, const char *tag)
+{
+    int d[CE_HUD_NUMBER_MAX], i;
+    void *anm = CE_ABILITY_ANM();
+
+    if (!n || !anm) return;
+    if (digits < 1) digits = 1;
+    if (digits > CE_HUD_NUMBER_MAX) digits = CE_HUD_NUMBER_MAX;
+    if (value < 0) value = 0;
+    for (i = digits - 1; i >= 0; --i) { d[i] = value % 10; value /= 10; }
+
+    if (n->digits != digits) { ce_hud_number_clear(n); n->digits = digits; }
+    for (i = 0; i < digits; ++i) {
+        float px = right_align ? x - spacing * (digits - 1 - i) : x + spacing * i;
+        float pos[3];
+        pos[0] = px; pos[1] = y; pos[2] = 0.0f;
+        if (n->id[i] && !ce_anm_get_vm(n->id[i])) { n->id[i] = 0; n->shown[i] = -1; }
+        if (!n->id[i]) {
+            n->id[i] = ce_anm_spawn_ui(anm, CE_ANM_ABILITY_SCRIPT_HUD_NUMBER, pos);
+            n->shown[i] = -1;
+            if (!n->id[i]) { ce_log("%s: hud number digit %d FAILED to spawn", tag, i); return; }
+        } else {
+            ce_anm_set_pos(n->id[i], px, y, 0.0f);
+        }
+        if (d[i] != n->shown[i] && ce_anm_set_sprite(anm, n->id[i], CE_ANM_ABILITY_SPRITE_TS_DIGIT_0 + d[i]))
+            n->shown[i] = d[i];
+    }
 }
 
 /* 在场的行为卡：沿 mgr 的卡链表走，按虚表认出我们的卡 */

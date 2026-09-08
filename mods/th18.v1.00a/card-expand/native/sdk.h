@@ -409,6 +409,21 @@ typedef struct {
 } ce_hud_digit_t;
 
 void ce_hud_digit_attach(ce_hud_digit_t *d, uint32_t icon_anm_id, int value, const char *card);
+
+/* 多位数字，用 ANM 图元画（不是 ascii 文字）。
+ * ★ 存在的理由：HUD 文字的绘制优先级（Gui 0x31 / AbilityManager 0x33）**永远早于**任何 UI 层图元（≥ 0x3c），
+ *   所以「把数字画在自己的底板上面」用 ce_hud_text 做不到。图元对图元就没这个问题 —— 后起的画在上面。
+ * 坐标是 UI 层的 2× 空间；`right_align` 时 x 是右边界。脚本 `HUD_NUMBER` 的 pos 是 (0,0)，
+ * 所以位置完全由实体坐标决定。值为负按 0 处理；超过位数按最低几位显示。*/
+#define CE_HUD_NUMBER_MAX 6
+typedef struct {
+    uint32_t id[CE_HUD_NUMBER_MAX];
+    int      shown[CE_HUD_NUMBER_MAX];
+    int      digits;
+} ce_hud_number_t;
+void ce_hud_number_set(ce_hud_number_t *n, float x, float y, float spacing,
+                       int value, int digits, int right_align, const char *tag);
+void ce_hud_number_clear(ce_hud_number_t *n);
 void ce_hud_digit_set(ce_hud_digit_t *d, int value, const char *card);
 void ce_hud_digit_clear(ce_hud_digit_t *d);
 
@@ -416,9 +431,12 @@ void ce_hud_digit_clear(ce_hud_digit_t *d);
  * 坐标用 Gui 自己那套字面量空间（火力在 (540, 182)）；color 是 BGRA 一个 dword，画完自动还原成白。
  * 自己先 vsnprintf 成一行再交给引擎的 `"%s"`，不转发 varargs。 */
 void ce_hud_text(float x, float y, uint32_t bgra, const char *fmt, ...);
-/* 同上，但指定字体 / 分组 / 水平对齐（各传 -1 = 沿用环境值）。想和金钱那行一样大就传
- * `CE_ASCII_FONT_MONEY, CE_ASCII_GROUP_MONEY, CE_ASCII_ALIGN_RIGHT`。画完自动还原。*/
-void ce_hud_text_font(float x, float y, uint32_t bgra, int font_id, int group, int align_h, const char *fmt, ...);
+/* 同上，但把 AsciiManager 的排版状态全摊开：描边色（0 = 不动）、字体 / 分组 / 水平对齐
+ * （各 -1 = 不动）、缩放（≤0 = 不动）。想和金钱那行一样就传
+ * `CE_ASCII_FONT_MONEY, CE_ASCII_GROUP_MONEY, CE_ASCII_ALIGN_RIGHT`，想更大再给 scale。
+ * 每一项都先存后改、画完还原 —— 引擎后面的绘制全靠这些环境值。*/
+void ce_hud_text_ex(float x, float y, uint32_t bgra, uint32_t shadow,
+                    int font_id, int group, int align_h, float scale, const char *fmt, ...);
 
 /* sdk.c：主动卡机器（桩里调）*/
 int  ce_sdk_c_press(void *self, const ce_hooks_t *h);

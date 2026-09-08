@@ -39,17 +39,21 @@
 #define UI_BG_W         424
 #define UI_BG_H         136
 /* —— 文字：640×480 字面量空间（AUDIT AC6）—— */
-#define TEXT_TICKER_X   528.0f          /* 侧栏中线 */
-#define TEXT_TICKER_Y   96.0f           /* 面板底 84 与残机行 120 之间 */
+/* 现价改用 **ANM 数字**画在 K 线图右上角（2× 空间）。ascii 文字画不进面板 —— 它永远比 UI 层图元先画。 */
+#define UI_PRICE_X      (UI_CANDLE_X0 + UI_CANDLE_W - 4)   /* 右边界，右对齐 */
+#define UI_PRICE_Y      (UI_CANDLE_Y0 + 12)
+#define UI_PRICE_SPACE  22.0f           /* 字距（2× 空间；贴图 32 px 见方）*/
+#define UI_PRICE_DIGITS 4
 /* 持仓净值：与金钱**同一个右边界**、就在它下面一行，字体也照抄金钱那行（font 10 / group 3），
  * 默认的 font 0 比金钱小一圈，而且贴在金钱左边会撞上「金」的图标。*/
 #define TEXT_HOLD_X     620.0f
 #define TEXT_HOLD_Y     218.0f
-#define TEXT_PL_Y       232.0f          /* 盈亏：紧贴净值下面一行，两者一起说「我的仓位」 */
+#define TEXT_PL_Y       238.0f          /* 盈亏：紧贴净值下面一行，两者一起说「我的仓位」 */
+#define TEXT_SCALE      1.35f           /* 侧栏这两行比金钱再大一圈 —— 它们是这张卡的主读数 */
 #define TEXT_COLOR      CE_HUD_POWER_COLOR
-#define TEXT_HOLD_COLOR CE_HUD_MONEY_COLOR
-#define TEXT_GAIN_COLOR 0xff00a000u      /* AARRGGBB：赚了 = 绿 */
-#define TEXT_LOSS_COLOR 0xffc00000u      /* 亏了 = 红 */
+#define TEXT_HOLD_COLOR 0xffffd040u      /* 亮金，比金钱那行的暗橄榄色显眼 */
+#define TEXT_GAIN_COLOR 0xff40ff40u      /* AARRGGBB：赚了 = 亮绿 */
+#define TEXT_LOSS_COLOR 0xffff4040u      /* 亏了 = 亮红 */
 
 /* —— 自机头上的价格（640 空间）——
  * 弹幕区视口 (32, 16, 384, 448)，世界坐标 (0,0) 在弹幕区上边框中点（originMode 1，AUDIT §AI）。
@@ -57,7 +61,9 @@
  * 而弹幕 / 敌人 / 自机都在 0x2b 之前画完 ⇒ 这行字盖在弹幕上，看得见。**待实跑微调**。*/
 #define PLAYER_TEXT_CX  224.0f
 #define PLAYER_TEXT_CY  16.0f
-#define PLAYER_TEXT_DY  (-28.0f)         /* 顶在自机上方，别糊住自身判定点 */
+#define PLAYER_TEXT_DY  (-34.0f)         /* 顶在自机上方，别糊住自身判定点 */
+#define PLAYER_TEXT_DY2 (-22.0f)         /* 第二行 */
+#define PLAYER_SCALE    0.85f            /* 弹幕上的字：小一点，别挡视野 */
 
 #define COLOR_BASIS     0xffffd040u      /* 回本线：暖黄，与红涨绿跌都不撞 */
 
@@ -69,6 +75,7 @@ typedef struct {
     stock_state_t st;
     uint32_t bg_id;
     uint32_t basis_id;          /* 回本线：买入均价那条横线 */
+    ce_hud_number_t price_num;  /* 图右上角的现价（ANM 数字）*/
     uint32_t body_id[STOCK_CANDLES];
     uint32_t wick_id[STOCK_CANDLES];
     uint8_t  frame;                      /* 距上一步的帧数 */
@@ -90,6 +97,7 @@ static void kill_vms(stock_card_t *s)
 {
     ce_anm_delete(s->bg_id); s->bg_id = 0;
     ce_anm_delete(s->basis_id); s->basis_id = 0;
+    ce_hud_number_clear(&s->price_num);
     for (int i = 0; i < STOCK_CANDLES; ++i) {
         ce_anm_delete(s->body_id[i]); s->body_id[i] = 0;
         ce_anm_delete(s->wick_id[i]); s->wick_id[i] = 0;
@@ -167,6 +175,10 @@ static void draw_candles(stock_card_t *s)
     ce_anm_set_pos(s->basis_id, (float)line.cx, (float)line.cy, 0.0f);
     ce_anm_set_scale(s->basis_id, (float)line.w, (float)line.h);
     ce_anm_set_color(s->basis_id, COLOR_BASIS);
+
+    /* 图右上角：现价的整数部分。用图元画才能压在底板之上。 */
+    ce_hud_number_set(&s->price_num, (float)UI_PRICE_X, (float)UI_PRICE_Y, UI_PRICE_SPACE,
+                      s->st.price / 100, UI_PRICE_DIGITS, 1, "stock");
 }
 
 /* ctor：每关开场引擎会再调一次；只在还没初始化时铺初值（存档 / replay 装载的 mode 1 不调 ctor，所以不用 owned[] 判「刚获得」）。 */
@@ -220,31 +232,40 @@ static int on_draw(ce_card_t *c)
     stock_card_t *s = ce_state(c, stock_card_t);
     if (!s || !s->inited) return 0;
     const stock_state_t *st = &s->st;
-    char arrow = st->price > st->cur.o ? '^' : st->price < st->cur.o ? 'v' : '-';
     int32_t pnl = stock_pnl(st), basis = stock_basis(st);
     const float *pp;
 
-    /* ① 面板下方：只讲市场 —— 现价 + 涨跌箭头 */
-    ce_hud_text(TEXT_TICKER_X, TEXT_TICKER_Y, TEXT_COLOR, "%d.%02d %c",
-                st->price / 100, st->price % 100, arrow);
+    /* ① 现价已经由 draw_candles 用 ANM 数字画在图的右上角了（文字画不进面板）。
 
-    /* ② 金钱下方：只讲我的仓位 —— 净值一行、盈亏一行。空仓时两行都不画。 */
+       ② 金钱下方：只讲我的仓位 —— 净值一行、盈亏一行，都比金钱再大一圈、带黑描边。空仓不画。 */
     if (st->hold > 0) {
-        ce_hud_text_font(TEXT_HOLD_X, TEXT_HOLD_Y, TEXT_HOLD_COLOR,
-                         CE_ASCII_FONT_MONEY, CE_ASCII_GROUP_MONEY, CE_ASCII_ALIGN_RIGHT,
-                         "%dx +%d", st->hold, stock_value(st));
-        ce_hud_text_font(TEXT_HOLD_X, TEXT_PL_Y, pnl < 0 ? TEXT_LOSS_COLOR : TEXT_GAIN_COLOR,
-                         -1, -1, CE_ASCII_ALIGN_RIGHT,
-                         "%c%d", pnl < 0 ? '-' : '+', pnl < 0 ? -pnl : pnl);
+        ce_hud_text_ex(TEXT_HOLD_X, TEXT_HOLD_Y, TEXT_HOLD_COLOR, CE_ASCII_SHADOW_DARK,
+                       CE_ASCII_FONT_MONEY, CE_ASCII_GROUP_MONEY, CE_ASCII_ALIGN_RIGHT, TEXT_SCALE,
+                       "%dx %d", st->hold, stock_value(st));
+        ce_hud_text_ex(TEXT_HOLD_X, TEXT_PL_Y, pnl < 0 ? TEXT_LOSS_COLOR : TEXT_GAIN_COLOR, CE_ASCII_SHADOW_DARK,
+                       CE_ASCII_FONT_MONEY, CE_ASCII_GROUP_MONEY, CE_ASCII_ALIGN_RIGHT, TEXT_SCALE,
+                       "%c%d", pnl < 0 ? '-' : '+', pnl < 0 ? -pnl : pnl);
     }
 
-    /* ③ 自机头上：一股多少钱。颜色就是答案 —— 比均价高是绿（该卖），低是红（该买），空仓白。 */
+    /* ③ 自机头顶：两行居中。上行「几股 × 一股多少钱」，下行本局盈亏；空仓时只报一股的价钱。
+       颜色即答案：绿 = 现价高于均价（该卖）、红 = 低于均价（该买）、白 = 空仓。 */
     pp = ce_player_pos();
     if (pp) {
         uint32_t col = !basis ? CE_ASCII_COLOR_WHITE
                      : st->price >= basis ? TEXT_GAIN_COLOR : TEXT_LOSS_COLOR;
-        ce_hud_text(PLAYER_TEXT_CX + pp[0], PLAYER_TEXT_CY + pp[1] + PLAYER_TEXT_DY, col,
-                    "%d", stock_share_price(st));
+        float cx = PLAYER_TEXT_CX + pp[0], cy = PLAYER_TEXT_CY + pp[1];
+        if (st->hold > 0) {
+            ce_hud_text_ex(cx, cy + PLAYER_TEXT_DY, col, CE_ASCII_SHADOW_DARK,
+                           -1, -1, CE_ASCII_ALIGN_CENTER, PLAYER_SCALE,
+                           "%dx %d", st->hold, stock_share_price(st));
+            ce_hud_text_ex(cx, cy + PLAYER_TEXT_DY2, pnl < 0 ? TEXT_LOSS_COLOR : TEXT_GAIN_COLOR, CE_ASCII_SHADOW_DARK,
+                           -1, -1, CE_ASCII_ALIGN_CENTER, PLAYER_SCALE,
+                           "%c%d", pnl < 0 ? '-' : '+', pnl < 0 ? -pnl : pnl);
+        } else {
+            ce_hud_text_ex(cx, cy + PLAYER_TEXT_DY2, col, CE_ASCII_SHADOW_DARK,
+                           -1, -1, CE_ASCII_ALIGN_CENTER, PLAYER_SCALE,
+                           "%d", stock_share_price(st));
+        }
     }
     return 0;
 }
