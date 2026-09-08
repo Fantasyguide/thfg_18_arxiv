@@ -1,5 +1,7 @@
 # TH18 v1.00a controller polling audit
 
+> **版本**：TH18 v1.00a（`th18.exe`，imagebase `0x400000`）。本文裸地址默认属该版本。
+
 目标程序：`local/th18.v1.00a/th18.exe`
 
 - SHA256: `5aeb74b19939a29a8cf06e4fe7777aaf9139e93478507e039f43318171020e9f`

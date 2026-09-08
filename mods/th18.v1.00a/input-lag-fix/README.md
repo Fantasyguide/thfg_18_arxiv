@@ -1,5 +1,7 @@
 # TH18 controller polling patch
 
+> **版本**：TH18 v1.00a（`th18.exe`）。本文裸地址默认属该版本。
+
 这是一个仅适用于《东方虹龙洞》v1.00a 的可选 thcrap 补丁，用来规避
 XInput / DirectInput 手柄轮询被 vJoy 等虚拟设备拖慢的问题。
 
