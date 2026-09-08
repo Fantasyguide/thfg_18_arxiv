@@ -1,5 +1,7 @@
 # 股市（card-expand id 80）实施计划
 
+> **版本**：TH18 v1.00a（`th18.exe`，imagebase `0x400000`）。本文裸地址默认属该版本。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 给 TH18 card-expand 加一张主动卡「股市」（id 80）：C 买 / Shift+C 卖各 50 金钱，股价由回放安全的随机过程驱动，HUD 右下常驻 16 根 K 线 + 三行读数。
@@ -137,7 +139,7 @@ Expected: 每个 `test_*: OK`；`make dll` 无 error，产出 `th18_card_expand.
 
 - [ ] **Step 8: 改 SDK.md**
 
-`SDK.md` §2 槽表里 `| +0x50 | （SDK 自己占）| | 先清私有状态，再跳基类 `0x411410` |` 改为：
+`SDK.md` §2 槽表里 `+0x50` 那一行（现在写的是「（SDK 自己占）… 先清私有状态，再跳基类」）改为：
 ```
 | +0x50 | `on_delete` | `void (ce_card_t*)` | 删对象：SDK 先调它（私有状态仍在，卡删自己的 VM 等），再释放私有状态、跳基类 `0x411410`。局中被倒吊人摧毁只走这里，`on_run_reset` 不会来 |
 ```
