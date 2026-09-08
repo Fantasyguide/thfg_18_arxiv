@@ -61,9 +61,11 @@
  * 而弹幕 / 敌人 / 自机都在 0x2b 之前画完 ⇒ 这行字盖在弹幕上，看得见。**待实跑微调**。*/
 #define PLAYER_TEXT_CX  224.0f
 #define PLAYER_TEXT_CY  16.0f
-#define PLAYER_TEXT_DY  (-34.0f)         /* 顶在自机上方，别糊住自身判定点 */
-#define PLAYER_TEXT_DY2 (-22.0f)         /* 第二行 */
-#define PLAYER_SCALE    0.85f            /* 弹幕上的字：小一点，别挡视野 */
+/* 两行都顶在自机上方。行距 15 是 scale 1.2 下不重叠的下限（引擎里 1.0 的行与 0.6 的行相隔 7 px，
+ * 据此估 1.2 的字高约 15）—— 想再挤就得先把字调小。两个常量都在这，实跑随手调。*/
+#define PLAYER_TEXT_DY  (-37.0f)         /* 上行：几股 × 一股多少钱 */
+#define PLAYER_TEXT_DY2 (-22.0f)         /* 下行：本局盈亏。与上行相隔 15 */
+#define PLAYER_SCALE    1.2f             /* 比侧栏的 1.35 小一点点：它压在弹幕上，不能太占视野 */
 
 #define COLOR_BASIS     0xffffd040u      /* 回本线：暖黄，与红涨绿跌都不撞 */
 
