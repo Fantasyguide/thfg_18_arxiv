@@ -125,7 +125,7 @@ cards_dev: new_weight 20 would overflow the shop pool (> 560 slots) — clamped 
 
 ```
 sdk: 80 bound (.active_recharge = 30, .ctor = ctor, .on_activate = on_activate, .on_tick_2 = on_tick_2, .on_draw = on_draw, .on_run_reset = on_run_reset, .on_delete = on_delete)
-stock: opened at 100.00 (seed XXXXXXXX)
+stock: opened at 50.00 (seed XXXXXXXX)
 stock: panel spawned (bg id … at 1056,862 size 432x180; candles x 848..1264 y 776..872; 2x UI space)
 ```
 
@@ -153,7 +153,8 @@ K 线图上还会多一条**暖黄的横线 = 买入均价**，蜡烛在线上�
 看日志对账时以 `money` 那个字段的前后差为准，别信行首那个 50。
 
 **行情模型（2026-09-08 第二版）**：隐藏参数 + 动量，取代原来的三档 regime（那版一关只赚 5 金，等于没有）。
-现在**趋势会延续**，看得懂 K 线就能赚：机器人跑 300 关，趋势跟随一关中位 +529、反向 −184、完美抄底逃顶 2.18 倍。
+现在**趋势会延续**，看得懂 K 线就能赚：机器人跑 300 关，趋势跟随一关中位 +589、反向 −190、完美抄底逃顶 2.18 倍。
+**基准价 50.00**（一股 50 金 = 一张便宜卡的价），实际走到 19–118;波动率静息值 80，相邻步反向率约 23％。
 实跑时重点看**体感**：价格是不是「一段一段地走」而不是纯抖动；影线变长之后是不是真的更颠（波动率聚集，相关系数 0.76）。
 随机数改走卡自带的 LCG、只在开局向引擎 RNG 播一次种 —— 所以**带不带这张卡不该再影响同一关的弹幕**，
 这条可以用同一个 replay 对拍验证。设计与平衡数据见 spec §3。
