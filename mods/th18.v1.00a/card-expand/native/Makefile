@@ -150,6 +150,8 @@ test-host:
 	./tests/build/test_ouroboros_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_whirlwind_core tests/test_whirlwind_core.c cards/whirlwind_core.c
 	./tests/build/test_whirlwind_core
+	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_stock_core tests/test_stock_core.c cards/stock_core.c
+	./tests/build/test_stock_core
 
 ## x87 自检 —— 只看我们自己的目标文件
 dllx87: $(OBJS)
