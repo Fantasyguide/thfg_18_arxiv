@@ -2,7 +2,14 @@
  * 纯 C11、无引擎依赖、全整数、无浮点；随机数走自带 LCG，只在开局播一次种（见下）。
  * 主机单测 tests/test_stock_core.c。设计：docs/superpowers/specs/2026-09-08-stock-market-design.md。
  *
- * 单位：价格 0.01 金钱（10000 = 100.00）；持股 0.0001 股；成本 / 市值 / 盈亏 = 金钱。
+ * 单位：价格 0.01 金钱（10000 = 100.00）；**持股 = 整股**；成本 / 市值 / 盈亏 = 金钱。
+ *
+ * ★ 2026-09-08 从「每次固定 50 金」改成「**每次一股**」。理由是可读性：弹幕里没人能对着
+ *   0.4327 股做判断，而「我有 3 股」一眼就懂。代价是仓位不再自动按价格摊薄（原来的固定金额
+ *   其实是定投，便宜时自动多买）——但那点理财上的优越性，换不来一个看不懂的数字。
+ *   附带好处：一股的成交额 = price/100（截断），买卖对称，**同价来回正好不赚不亏**，
+ *   于是原先靠取整损耗顺带产生的「横跳税」消失了。要惩罚乱按的话以后加**显式手续费**，
+ *   那比一个取整副产物诚实。
  *
  * 行情模型（2026-09-08 第二版，替换占位的三档 regime）——**隐藏参数 + 动量**：
  *   玩家只看得到价格，看不到下面两个状态量，得从 K 线里把它们推断出来。
@@ -30,7 +37,7 @@
 #define STOCK_CANDLES          16      /* 环形缓冲根数 = 屏幕上的根数 */
 #define STOCK_STEP_FRAMES      15      /* 每 15 帧走一步（1 秒 4 次）*/
 #define STOCK_STEPS_PER_CANDLE 16      /* 16 步 = 240 帧 = 4 秒一根 */
-#define STOCK_LOT              50      /* 每次买 / 卖的金钱数 */
+#define STOCK_LOT              1       /* 每次买 / 卖的股数 */
 #define STOCK_PRICE_OPEN       10000
 #define STOCK_PRICE_MIN        1000    /* 10.00：与上限关于开盘价 100.00 对数对称 */
 #define STOCK_PRICE_MAX        100000  /* 1000.00 */
@@ -44,13 +51,12 @@
 #define STOCK_VOL_BASE         45      /* 波动率的静息值（基点）*/
 #define STOCK_VOL_MIN          15
 #define STOCK_VOL_MAX          160
-#define STOCK_HOLD_PER_MONEY   1000000LL  /* 1 金钱 = 100 (0.01) × 10000 (0.0001 股) —— 换算常量：hold = 金钱 × 1e6 / price */
 
 typedef struct { int32_t o, h, l, c; } stock_candle_t;
 
 typedef struct {
     int32_t  price;
-    int32_t  hold;
+    int32_t  hold;             /* 整股 */
     int32_t  cost;             /* 累计买入 − 累计卖出所得；盈亏 = 市值 − cost */
     uint32_t steps;
     uint32_t rng;              /* 自带 LCG 的状态；开局由调用方用引擎 RNG 播一次种 */
@@ -69,7 +75,10 @@ void stock_step(stock_state_t *s);                     /* 走一步（调用方�
 void stock_shock(stock_state_t *s, int permille);     /* 价格 × (1000 + permille) / 1000，钳位；留给以后的事件联动，本版无调用者 */
 int  stock_visible(const stock_state_t *s, stock_candle_t out[STOCK_CANDLES]);   /* 最新 ≤16 根，旧→新，最后一根 = cur；返回根数 */
 
-/* 交易：money 是调用方的现金（引擎 MONEY），成交就地改。返回 1 成交 / 0 拒绝（现金不够 / 没持仓）。 */
+/* 交易：一次一股。money 是调用方的现金（引擎 MONEY），成交就地改。
+ * 一股的价钱 = price / 100（截断），买卖用同一个式子 ⇒ 同价买回卖出正好归零。
+ * 返回 1 成交 / 0 拒绝（钱不够一股 / 没持仓）。 */
+int32_t stock_share_price(const stock_state_t *s);   /* 当前一股要花多少金钱 */
 int  stock_buy (stock_state_t *s, int32_t *money);
 int  stock_sell(stock_state_t *s, int32_t *money);
 int32_t stock_value(const stock_state_t *s);          /* 持仓市值（金钱，向下取整）*/
@@ -78,5 +87,16 @@ int32_t stock_pnl(const stock_state_t *s);            /* 市值 − cost */
 /* 蜡烛几何：把 visible 的根数铺进 (x0, y0, w, h) 的区域，最新一根永远在最右。
  * 坐标是调用方的像素单位（胶水层用 UI 层 VM 的 2× 空间）；cx/cy = 矩形中心；空槽 w = h = 0。 */
 typedef struct { int16_t cx, cy, w, h; uint8_t up; } stock_rect_t;
+
+/* 视野内（stock_visible 那批）的最低 / 最高价。缓冲为空时给出开盘价附近的退化区间。
+ * stock_layout 内部用的就是它 —— 想在图上画一条「某个价位」的横线，先拿这两个数。 */
+void stock_range(const stock_state_t *s, int32_t *lo, int32_t *hi);
+
+/* 价格 → stock_layout 同一坐标系里的 y（价高在上）。price 落在 [lo, hi] 之外时钳到边并返回 0。 */
+int  stock_price_row(int32_t price, int32_t lo, int32_t hi, int y0, int h, int *y_out);
+
+/* 当前持仓的买入均价（价格单位 = 0.01 金钱）。没持仓、或成本已被卖出所得抵成非正数时返回 0 ——
+ * 后者意味着这笔仓位已经稳赚，画不出「回本线」也不需要画。 */
+int32_t stock_basis(const stock_state_t *s);
 void stock_layout(const stock_state_t *s, int x0, int y0, int w, int h,
                   stock_rect_t body[STOCK_CANDLES], stock_rect_t wick[STOCK_CANDLES]);

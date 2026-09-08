@@ -97,37 +97,36 @@ int stock_visible(const stock_state_t *s, stock_candle_t out[STOCK_CANDLES])
     return n;
 }
 
-/* 买：固定 STOCK_LOT 金钱 → 持股 += 50 × 1e6 / price（向下取整，零头 = 手续费）。 */
+int32_t stock_share_price(const stock_state_t *s)
+{
+    return s->price / 100;                 /* 截断；买卖同式，所以同价来回归零 */
+}
+
+/* 买一股。 */
 int stock_buy(stock_state_t *s, int32_t *money)
 {
-    if (*money < STOCK_LOT) return 0;
-    int64_t q = (int64_t)STOCK_LOT * STOCK_HOLD_PER_MONEY / s->price;
-    *money -= STOCK_LOT;
-    s->hold += (int32_t)q;
-    s->cost += STOCK_LOT;
+    int32_t px = stock_share_price(s);
+    if (px <= 0 || *money < px) return 0;
+    *money -= px;
+    s->hold += STOCK_LOT;
+    s->cost += px;
     return 1;
 }
 
-/* 卖：STOCK_LOT 金钱等值的持股，不足全卖；所得向下取整。
- * M5：所得向下取整到 0 时（仓位薄到几个持股单位、又赶上低价）算不成交，别改状态——
- * 否则卡会当真卖了一笔在播音效、日志报「卖 50」，而 money 其实分毫未动，误导对拍手感的人。
- * 这跟空仓拒绝走的是同一条路：调用方看到 0 就照抄"no holding"那句拒绝词，够用，不必再分错误码。 */
+/* 卖一股。 */
 int stock_sell(stock_state_t *s, int32_t *money)
 {
-    if (s->hold <= 0) return 0;
-    int64_t q = (int64_t)STOCK_LOT * STOCK_HOLD_PER_MONEY / s->price;
-    if (q > s->hold) q = s->hold;
-    int64_t got = q * s->price / STOCK_HOLD_PER_MONEY;
-    if (got <= 0) return 0;
-    s->hold -= (int32_t)q;
-    *money += (int32_t)got;
-    s->cost -= (int32_t)got;
+    int32_t px = stock_share_price(s);
+    if (s->hold < STOCK_LOT) return 0;
+    s->hold -= STOCK_LOT;
+    *money += px;
+    s->cost -= px;
     return 1;
 }
 
 int32_t stock_value(const stock_state_t *s)
 {
-    return (int32_t)((int64_t)s->hold * s->price / STOCK_HOLD_PER_MONEY);
+    return (int32_t)((int64_t)s->hold * s->price / 100);
 }
 
 int32_t stock_pnl(const stock_state_t *s)
@@ -143,6 +142,30 @@ static int price_y(int32_t p, int32_t lo, int32_t hi, int y0, int h)
     return y0 + h - (int)((int64_t)(p - lo) * h / (hi - lo));
 }
 
+void stock_range(const stock_state_t *s, int32_t *lo, int32_t *hi)
+{
+    stock_candle_t v[STOCK_CANDLES];
+    int n = stock_visible(s, v);
+    int32_t l = v[0].l, h = v[0].h;
+    for (int i = 1; i < n; ++i) { l = imin(l, v[i].l); h = imax(h, v[i].h); }
+    if (h <= l) h = l + 1;                              /* 四价全同（刚开盘）：别除零 */
+    *lo = l; *hi = h;
+}
+
+int stock_price_row(int32_t price, int32_t lo, int32_t hi, int y0, int h, int *y_out)
+{
+    int inside = price >= lo && price <= hi;
+    int32_t p = price < lo ? lo : price > hi ? hi : price;
+    *y_out = price_y(p, lo, hi, y0, h);
+    return inside;
+}
+
+int32_t stock_basis(const stock_state_t *s)
+{
+    if (s->hold <= 0 || s->cost <= 0) return 0;
+    return (int32_t)((int64_t)s->cost * 100 / s->hold);   /* 金钱 → 价格单位 */
+}
+
 void stock_layout(const stock_state_t *s, int x0, int y0, int w, int h,
                   stock_rect_t body[STOCK_CANDLES], stock_rect_t wick[STOCK_CANDLES])
 {
@@ -150,12 +173,11 @@ void stock_layout(const stock_state_t *s, int x0, int y0, int w, int h,
     int n = stock_visible(s, v);
     int pitch = w / STOCK_CANDLES;
     int bw = pitch * 7 / 13;
-    int32_t lo = v[0].l, hi = v[0].h;
+    int32_t lo, hi;
 
     memset(body, 0, sizeof(stock_rect_t) * STOCK_CANDLES);
     memset(wick, 0, sizeof(stock_rect_t) * STOCK_CANDLES);
-    for (int i = 1; i < n; ++i) { lo = imin(lo, v[i].l); hi = imax(hi, v[i].h); }
-    if (hi <= lo) hi = lo + 1;                          /* 四价全同（刚开盘）：别除零 */
+    stock_range(s, &lo, &hi);
 
     for (int i = 0; i < n; ++i) {
         int slot = STOCK_CANDLES - n + i;               /* 最新的永远在最右 */

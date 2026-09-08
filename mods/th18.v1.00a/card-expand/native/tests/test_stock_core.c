@@ -10,8 +10,6 @@ static int fails;
     printf(__VA_ARGS__); printf("\n"); fails++; } } while (0)
 
 /* 测试自己的随机序列（LCG）；引擎里换成 ce_rand() */
-static uint32_t lcg_state;
-static uint32_t lcg(void) { lcg_state = lcg_state * 1664525u + 1013904223u; return lcg_state; }
 
 static int candle_ok(const stock_candle_t *k)
 {
@@ -63,7 +61,6 @@ static void test_clamp(void)
         CHECK(s.price >= STOCK_PRICE_MIN && s.price <= STOCK_PRICE_MAX, "全 0 随机数第 %d 步价格 %d 越界", i, s.price);
         if (s.price < STOCK_PRICE_MIN || s.price > STOCK_PRICE_MAX) return;
     }
-    lcg_state = 99;
     stock_init(&s, 12345u);
     for (int i = 0; i < 200000; ++i) {
         stock_step(&s);
@@ -120,7 +117,6 @@ static void test_candles(void)
     stock_state_t s;
     stock_candle_t v[STOCK_CANDLES];
     stock_init(&s, 12345u);
-    lcg_state = 11;
     for (int i = 0; i < STOCK_STEPS_PER_CANDLE - 1; ++i) stock_step(&s);
     CHECK(s.count == 0 && s.step_in_candle == STOCK_STEPS_PER_CANDLE - 1, "15 步还不该收盘");
     CHECK(stock_visible(&s, v) == 1 && v[0].o == s.cur.o, "只有当前那根时 visible 应为 1");
@@ -156,81 +152,63 @@ static void test_shock(void)
     CHECK(s.cur.h == STOCK_PRICE_MAX && s.cur.l == STOCK_PRICE_MIN, "冲击也要记进当前那根的高低价");
 }
 
-/* 买：50 金钱换 50e6 / price 单位持股；钱不够拒绝 */
+/* 买：一次一股，花掉 price/100 金钱 */
 static void test_buy(void)
 {
     stock_state_t s;
-    stock_init(&s, 12345u);
-    int32_t money = 120;
-    CHECK(stock_buy(&s, &money) == 1 && money == 70, "第一次买应成交、剩 70，得到 %d", money);
-    CHECK(s.hold == 50 * STOCK_HOLD_PER_MONEY / STOCK_PRICE_OPEN, "100.00 买 50 应得 0.5 股 = %lld 单位，得到 %d",
-          (long long)(50 * STOCK_HOLD_PER_MONEY / STOCK_PRICE_OPEN), s.hold);
-    CHECK(s.cost == 50, "成本应为 50");
-    CHECK(stock_buy(&s, &money) == 1 && money == 20, "第二次买应成交、剩 20，得到 %d", money);
-    CHECK(stock_buy(&s, &money) == 0 && money == 20, "20 块买不起，不该扣钱");
-    money = STOCK_LOT;
-    CHECK(stock_buy(&s, &money) == 1 && money == 0, "正好 50 应能买");
+    stock_init(&s, 1u);
+    int32_t money = 250;
+    CHECK(stock_share_price(&s) == 100, "100.00 一股应花 100 金，得到 %d", stock_share_price(&s));
+    CHECK(stock_buy(&s, &money) == 1 && money == 150 && s.hold == 1, "第一股：money=%d hold=%d", money, s.hold);
+    CHECK(stock_buy(&s, &money) == 1 && money == 50 && s.hold == 2, "第二股：money=%d hold=%d", money, s.hold);
+    CHECK(stock_buy(&s, &money) == 0 && money == 50 && s.hold == 2, "钱不够一股就不该成交");
+    CHECK(s.cost == 200, "成本应为 200，得到 %d", s.cost);
+    s.price = 4000;                                  /* 跌到 40.00，同样的钱能买了 */
+    CHECK(stock_buy(&s, &money) == 1 && money == 10 && s.hold == 3, "便宜时能买：money=%d hold=%d", money, s.hold);
     money = -5;
     CHECK(stock_buy(&s, &money) == 0, "负数现金不该成交");
 }
 
-/* 卖：50 金钱等值；不足全卖；没持仓拒绝；现金永不减 */
+/* 卖：一次一股；没持仓拒绝；同价买回卖出正好归零（一股一价，买卖同式）*/
 static void test_sell(void)
 {
     stock_state_t s;
-    stock_init(&s, 12345u);
+    stock_init(&s, 2u);
     int32_t money = 0;
     CHECK(stock_sell(&s, &money) == 0 && money == 0, "空仓不该卖");
-    money = 200;
-    stock_buy(&s, &money); stock_buy(&s, &money); stock_buy(&s, &money);      /* 150 进场，1.5 股 */
-    CHECK(money == 50 && s.hold == 15000, "三次买后应剩 50、持 1.5 股，得到 %d / %d", money, s.hold);
-    s.price = 20000;                                                        /* 翻倍 */
-    CHECK(stock_sell(&s, &money) == 1, "有持仓应能卖");
-    CHECK(money == 100, "200.00 卖 50 块等值：现金 50 → 100，得到 %d", money);
-    CHECK(s.hold == 15000 - 2500, "应卖掉 0.25 股，剩 %d", s.hold);
-    CHECK(s.cost == 150 - 50, "成本应减去所得");
-    s.price = 200000;                                                       /* 2000.00：50 块只够 0.025 股 */
-    stock_sell(&s, &money);
-    CHECK(s.hold == 12500 - 250 && money == 150, "高价卖：hold=%d money=%d", s.hold, money);
-    s.price = 10000; s.hold = 100;                                          /* 只剩 0.01 股 = 1 块钱 */
-    int32_t before = money;
-    CHECK(stock_sell(&s, &money) == 1 && s.hold == 0 && money == before + 1, "不足 50 应全卖：hold=%d money=%d", s.hold, money);
-    CHECK(stock_sell(&s, &money) == 0, "卖空了再卖应拒绝");
-
-    /* M5（2026-09-08 复审修的行为）：仓位薄到只剩 1 个持股单位（0.0001 股）时，所得 = 1 × price / 1e6，
-     * 而 price 上限 999900 < 1e6，所以哪怕价格封顶所得也整除成 0。此前这里会返回 1（假成交）——
-     * 卡会播卖出音效、日志报「卖 50」，money 却分毫未动。现在应跟空仓一样直接拒绝、state 原封不动。 */
-    s.price = STOCK_PRICE_MAX; s.hold = 1; s.cost = 0;
-    before = money;
-    CHECK(stock_sell(&s, &money) == 0 && s.hold == 1 && money == before,
-          "1 个持股单位、价格封顶时所得整除为 0，应拒绝而非假成交：hold=%d money=%d", s.hold, money);
+    money = 1000;
+    stock_buy(&s, &money); stock_buy(&s, &money);     /* 100.00 × 2 股 */
+    CHECK(money == 800 && s.hold == 2, "两股之后 money=%d hold=%d", money, s.hold);
+    s.price = 25000;                                  /* 涨到 250.00 */
+    CHECK(stock_sell(&s, &money) == 1 && money == 1050 && s.hold == 1, "卖一股：money=%d hold=%d", money, s.hold);
+    CHECK(stock_sell(&s, &money) == 1 && money == 1300 && s.hold == 0, "卖光：money=%d hold=%d", money, s.hold);
+    CHECK(stock_sell(&s, &money) == 0, "卖光了再卖应拒绝");
+    CHECK(s.cost == 200 - 500, "成本应被卖出所得抵成 %d，得到 %d", 200 - 500, s.cost);
 }
 
-/* 一次买卖来回，任意价位损耗 ≤ 1 金钱（零头 = 手续费）；现金永不为负、持股永不为负 */
+/* 同价来回：任意价位都正好不赚不亏（这是「一股一价、买卖同式」的直接推论）*/
 static void test_round_trip(void)
 {
-    static const int32_t prices[] = { STOCK_PRICE_MIN, 1234, 9999, STOCK_PRICE_OPEN, 12345, 99999, 123456, 500000, STOCK_PRICE_MAX };
+    static const int32_t prices[] = { STOCK_PRICE_MIN, 1234, 9999, STOCK_PRICE_OPEN, 12345, 99999, STOCK_PRICE_MAX };
     for (unsigned i = 0; i < sizeof prices / sizeof prices[0]; ++i) {
         stock_state_t s;
-        stock_init(&s, 12345u);
+        stock_init(&s, 3u);
         s.price = prices[i];
-        int32_t money = 1000;
+        int32_t money = 2000, before = money;
         CHECK(stock_buy(&s, &money) == 1, "价位 %d 买入失败", prices[i]);
         CHECK(stock_sell(&s, &money) == 1, "价位 %d 卖出失败", prices[i]);
-        CHECK(s.hold == 0, "价位 %d 一买一卖后应清仓，剩 %d", prices[i], s.hold);
-        CHECK(money >= 999 && money <= 1000, "价位 %d 来回损耗应 ≤ 1：money=%d", prices[i], money);
-        CHECK(s.cost == 1000 - money, "价位 %d 成本应等于净支出", prices[i]);
+        CHECK(s.hold == 0, "价位 %d 应清仓", prices[i]);
+        CHECK(money == before, "价位 %d 同价来回应正好归零，得到 %d", prices[i], money - before);
+        CHECK(s.cost == 0, "价位 %d 成本应归零，得到 %d", prices[i], s.cost);
     }
-    /* 随机买卖长跑 */
+    /* 随机买卖长跑：钱与股数都不许为负 */
     stock_state_t s;
-    stock_init(&s, 12345u);
-    lcg_state = 5;
+    stock_init(&s, 5u);
     int32_t money = 500;
     for (int i = 0; i < 20000; ++i) {
-        uint32_t r = lcg();
         stock_step(&s);
-        if ((r >> 30) == 0) stock_buy(&s, &money);
-        else if ((r >> 30) == 1) stock_sell(&s, &money);
+        if ((i & 3) == 0) stock_buy(&s, &money);
+        else if ((i & 3) == 1) stock_sell(&s, &money);
         if (money < 0 || s.hold < 0) { CHECK(0, "第 %d 步 money=%d hold=%d 为负", i, money, s.hold); return; }
     }
 }
@@ -240,13 +218,13 @@ static void test_value_pnl(void)
     stock_state_t s;
     stock_init(&s, 12345u);
     CHECK(stock_value(&s) == 0 && stock_pnl(&s) == 0, "空仓市值 / 盈亏为 0");
-    s.hold = 10000; s.price = 12345; s.cost = 100;                          /* 1 股 × 123.45 */
+    s.hold = 1; s.price = 12345; s.cost = 100;                              /* 1 股 × 123.45 */
     CHECK(stock_value(&s) == 123, "市值应为 123，得到 %d", stock_value(&s));
     CHECK(stock_pnl(&s) == 23, "盈亏应为 +23，得到 %d", stock_pnl(&s));
     s.price = 5000;
     CHECK(stock_pnl(&s) == -50, "跌到 50.00 盈亏应为 −50，得到 %d", stock_pnl(&s));
-    s.hold = 100000000; s.price = STOCK_PRICE_MAX;                          /* 1 万股 × 1000.00：int64 中间量 */
-    CHECK(stock_value(&s) == 10000000, "大持仓市值应为 10000000，得到 %d", stock_value(&s));
+    s.hold = 100000; s.price = STOCK_PRICE_MAX;                             /* 10 万股 × 1000.00：int64 中间量 */
+    CHECK(stock_value(&s) == 100000000, "大持仓市值应为 100000000，得到 %d", stock_value(&s));
 }
 
 static void test_layout(void)
@@ -284,7 +262,6 @@ static void test_layout(void)
     for (int i = 0; i < STOCK_CANDLES - 1; ++i) CHECK(body[i].w == 0, "只有一根时其它槽应为空");
 
     /* 满缓冲：16 槽全有、最右是 cur、全部在区域内 */
-    lcg_state = 21;
     for (int i = 0; i < STOCK_STEPS_PER_CANDLE * 40; ++i) stock_step(&s);
     stock_layout(&s, 848, 776, 416, 96, body, wick);
     for (int i = 0; i < STOCK_CANDLES; ++i) {
@@ -293,6 +270,53 @@ static void test_layout(void)
         CHECK(body[i].cx >= 848 && body[i].cx <= 848 + 416, "槽 %d x 越界", i);
     }
     CHECK(body[15].up == (s.cur.c >= s.cur.o), "最右一根应是 cur");
+}
+
+
+/* 买入均价（回本线画在哪）。cost 被卖出所得抵成非正数时不画 —— 那笔仓位已经稳赚。 */
+static void test_basis(void)
+{
+    stock_state_t s;
+    int32_t money = 1000;
+    stock_init(&s, 1u);
+    CHECK(stock_basis(&s) == 0, "空仓不该有均价");
+
+    s.price = 10000;                       /* 100.00 买一股 */
+    stock_buy(&s, &money);
+    CHECK(stock_basis(&s) == 10000, "单股买入的均价就是成交价，得到 %d", stock_basis(&s));
+
+    s.price = 20000;                       /* 200.00 再买一股 ⇒ 均价 = (100+200)/2 = 150.00 */
+    stock_buy(&s, &money);
+    CHECK(stock_basis(&s) == 15000, "两股均价应为 15000，得到 %d", stock_basis(&s));
+
+    /* 涨到 600.00 卖一股：一股就把两股的成本全收回来了 */
+    s.price = 60000;
+    stock_sell(&s, &money);
+    CHECK(s.hold == 1, "还剩一股，得到 %d", s.hold);
+    CHECK(s.cost <= 0, "卖回超过成本之后 cost 应 ≤ 0，得到 %d", s.cost);
+    CHECK(stock_basis(&s) == 0, "成本已收回时不画回本线");
+}
+
+/* 价格 → y：与 stock_layout 用同一套映射；越界钳到边并报告越界 */
+static void test_price_row(void)
+{
+    stock_state_t s;
+    stock_rect_t body[STOCK_CANDLES], wick[STOCK_CANDLES];
+    int32_t lo, hi; int y;
+    stock_init(&s, 9u);
+    s.hist[0].o = 10000; s.hist[0].c = 12000; s.hist[0].h = 13000; s.hist[0].l = 9000;
+    s.head = 1; s.count = 1;
+    s.cur.o = 12000; s.cur.c = 11000; s.cur.h = 12500; s.cur.l = 10000;
+    stock_range(&s, &lo, &hi);
+    CHECK(lo == 9000 && hi == 13000, "视野区间应是 9000..13000，得到 %d..%d", lo, hi);
+
+    stock_layout(&s, 848, 776, 416, 96, body, wick);
+    CHECK(stock_price_row(10000, lo, hi, 776, 96, &y) == 1, "10000 在区间内");
+    CHECK(y == 848, "10000 应映射到 y=848（与蜡烛实体同一套），得到 %d", y);
+    CHECK(stock_price_row(13000, lo, hi, 776, 96, &y) == 1 && y == 776, "最高价贴顶，得到 %d", y);
+    CHECK(stock_price_row(9000, lo, hi, 776, 96, &y) == 1 && y == 872, "最低价贴底，得到 %d", y);
+    CHECK(stock_price_row(50000, lo, hi, 776, 96, &y) == 0 && y == 776, "越上界应报 0 并钳到顶");
+    CHECK(stock_price_row(100, lo, hi, 776, 96, &y) == 0 && y == 872, "越下界应报 0 并钳到底");
 }
 
 int main(void)
@@ -309,6 +333,8 @@ int main(void)
     test_round_trip();
     test_value_pnl();
     test_layout();
+    test_basis();
+    test_price_row();
     printf("test_stock_core: %s\n", fails ? "FAILED" : "OK");
     return fails ? 1 : 0;
 }
