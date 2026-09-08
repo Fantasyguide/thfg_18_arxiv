@@ -97,6 +97,7 @@ runtime/
       format/          .anm v8 二进制解析（entry 表、sprite、script）
       vm/              opcode 执行；一组一个文件，对应 thpages 的七组
       render/          WebGL 薄壳：四相机、渲染阶段、混合模式
+                       + D3D9-MAPPING.md（§10.4）
     tests/             最小 .anm 夹具 + 单测
     web/               查看器页面（时间轴、逐帧 VM 状态）
 ```
@@ -113,7 +114,7 @@ runtime/
 | --- | --- | --- |
 | 0 · 地基 | v8 文件格式一手确认（thtk 权威 + th16 loader 复核） | `engine/anm/th16/01-format.md` + `runtime/README.md` |
 | 1 · 语义 | 135 条 opcode 按七组分批对账 | `engine/anm/th16/02..08-*.md` |
-| 2 · 实现 | 每组文档落地后立刻实现该组并跑通 | `runtime/anm/` |
+| 2 · 实现 | 每组文档落地后立刻实现该组并跑通；Drawing 组含 render state 一手扫描（§10.4） | `runtime/anm/` |
 | 3 · th18 | 补 439 / 614 两条 + 地址对账 | `engine/anm/th18/` |
 
 ### 为什么按组交替，而不是 135 条写完再动手
@@ -178,16 +179,84 @@ Math 与 Jumps 的描述由 thpages 的 `OPERATOR_DATA` / `JUMP_DATA` / `OPERATO
 - **f32 语义按需下沉**：默认用 JS number（f64）；确认某处需要单精度时，
   该处用 `Math.fround` 包成专用子模块并注明理由。不全局铺开（D1）。
 
-## 10. 风险
+## 10. 层 A / 层 B：D3D9 → WebGL 的映射
+
+### 10.1 两层切分（第一阶段的结构前提）
+
+ANM 系统分两层，**可移植性相反**：
+
+| | 干什么 | 与 Direct3D 的关系 | opcode 数 |
+| --- | --- | --- | ---: |
+| **层 A · VM** | 算每个 vm 的 pos / scale / rotation / color / uv / flags / interrupt 跳转 | **零关系，纯算术** | 121 |
+| **层 B · 渲染后端** | 把 vm 状态变成 draw call | D3D9 固定管线 | 14（Drawing 组） |
+
+两个后果，都影响计划怎么排：
+
+- **知识工作的主体在层 A**，与渲染 API 的选择无关——换 Rust / Canvas2D / Vulkan 都不改变
+  §6 那 135 条的产出。D2（选 JS + WebGL）因此是**低风险决策**，选错了也只废掉层 B。
+- **层 B 会掩盖层 A 的错误**：VM 算错 `pos`，画面歪了，分不清是算术错还是渲染没对齐。
+  这是 trace harness 的正当性来源——它抓的是**层 A 的输出**，绕开渲染直接验算术（§7）。
+
+### 10.2 已确认的 D3D9 用法（一手）
+
+`engine/anm/th18/02-render-stages.md` 已给出：
+
+```
+D3DXMatrixLookAtLH(view, eye, at, up = (0, −1, 0))          // y 朝下
+D3DXMatrixPerspectiveFovLH(proj, fov, W/H, near 1.0, far 10000.0)
+SetRenderState(ZWRITEENABLE, 0) + SetRenderState(ZFUNC, ALWAYS)   // 层 20–23
+CreateVertexBuffer(0x2d0, FVF 0x102)                        // XYZ|TEX1，每顶点 0x14 = xyz + uv
+```
+
+矩阵在 `th18:0x454950`（四台相机共用），模式 8 的共享顶点缓冲在 `th18:0x485110`，
+层派发在 `th18:0x488260`。四台相机全透视，exe 里没有 Ortho。
+
+### 10.3 映射表（首批）
+
+| D3D9 | WebGL 对应 | 难度 | 可信度 |
+| --- | --- | --- | :---: |
+| 行向量 `v*M`、左手系、NDC z ∈ [0,1] | 列向量 `M*v`、NDC z ∈ [−1,1] | 低——`LookAtLH` / `PerspectiveFovLH` 公式公开，照抄 | ✅ |
+| 像素中心在整数处（D3D9 的 −0.5 偏移） | 像素中心在 0.5 | **中——2D 精灵对齐肉眼可见** | ✅ |
+| 多渲染目标 surface 0 / 1 + 视口切换 | FBO | 低 | ✅ |
+| `D3DRS_ALPHATESTENABLE` / `ALPHAREF` | 无对应，fragment shader 里 `discard` | 低 | 🟡 |
+| 固定管线 texture stage states | 无对应，写 shader 复现 | 中 | 🟡 |
+| `D3DBLEND_*` | `gl.blendFunc`，基本 1:1 | 低 | 🟡 |
+
+**后三行标 🟡 是因为仓库还没有一手证据说 ANM 具体设了哪些**——已确认的只有矩阵与
+`ZWRITEENABLE` / `ZFUNC` 两条渲染状态。它们是按 D3D9 固定管线的一般情况推的，
+按 `METHOD.md` 属「推断」，不是结论。
+
+### 10.4 两样交付物
+
+| 交付物 | 落点 | 为什么在那 |
+| --- | --- | --- |
+| `D3D9-MAPPING.md`：逐条「D3D9 语义 / WebGL 对应 / 差异 / 处置」 | `runtime/anm/render/` | 是我们的**实现决策**，不是引擎结论 |
+| **render state 一手扫描**：ANM 绘制路径到底设了哪些 `SetRenderState` / `SetTextureStageState` | `engine/anm/th16/` | 是**引擎结论**，排进 Drawing 组 |
+
+这两样分开放，正是 §4 双向互指纪律的第一个实例：扫描结论进 `engine/`，
+照它做的取舍进 `runtime/`，后者引用前者。
+
+### 10.5 为什么「逐像素一致」是错的标准
+
+**原版自己跨 GPU / 驱动就不逐像素相同**——光栅化规则、纹理过滤精度、mipmap 选择
+都有实现自由度。拿它当标准会把无穷的时间花在不存在的偏差上。
+
+一个现成旁证：**dgVoodoo2**（一个 D3D9 → D3D12/Vulkan 的**通用**翻译层，不认识东方）
+能跑 TH18 且画面正常。这说明**这游戏的渲染不依赖 D3D9 的冷门行为**，
+能被按语义重写的后端正确重现——难度上限有参照。
+
+所以 §12 的验收标准写的是「无可见差异」，不是「逐像素相同」。
+
+## 11. 风险
 
 | 风险 | 影响 | 处置 |
 | --- | --- | --- |
 | 135 条全靠一手复核，工作量被低估 | 阶段 1 拖长 | Math/Jumps 先跑通流水线，用真实速度重估后面五组 |
-| 渲染差异肉眼看不出（混合模式、深度、相机） | 假阳性「实现正确」 | 触发 trace harness（§7） |
-| WebGL 与 D3D9 语义不完全对应 | 画面细节偏差 | 差异逐条记进 `runtime/`，不污染 `engine/` 的一手结论 |
+| 层 B 的偏差掩盖层 A 的算术错误 | 假阳性「实现正确」 | trace harness 抓层 A 输出、绕开渲染（§7 / §10.1） |
+| WebGL 与 D3D9 语义不完全对应 | 画面细节偏差 | §10 的映射表 + render state 一手扫描；差异记进 `runtime/`，不污染 `engine/` |
 | 在 `runtime/` 里写引擎结论 | 层次归属复辟 | §4 的双向互指纪律 + code review 时按 `CLAUDE.md` 查 |
 
-## 11. 验收标准（第一阶段）
+## 12. 验收标准（第一阶段）
 
 1. `runtime/anm/` 能加载真实 th16 `.anm`，播放**至少一个非平凡 script**（含时间标签跳转、
    interrupt、child vm 三者）；与原版同帧截图比对无可见差异。「非平凡」是硬要求——
