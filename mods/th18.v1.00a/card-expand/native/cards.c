@@ -201,6 +201,9 @@ static void load_dev_config(uint8_t *cave, unsigned rows)
                new_w, (unsigned)CE_SHOP_POOL_SLOTS, used_w);
 }
 
+_Static_assert(CE_SHOP_POOL_SLOTS == CE_POOL_SLOTS,
+               "cards_def.h 的池上限与 sites.py 生成的 codecave 大小不一致");
+
 /* ---- 入口 ---- */
 int ce_cards_load(uint8_t *base, uint8_t *cave, unsigned rows)
 {

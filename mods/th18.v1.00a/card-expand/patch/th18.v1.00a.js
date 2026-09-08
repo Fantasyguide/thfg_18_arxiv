@@ -26,6 +26,11 @@
       "access": "RX",
       "title": "开机把零售表（与跳转表）拷进 codecave；BP_ce_gate 完成运行时提交与回读"
     },
+    "th18_card_pool": {
+      "size": "0x8000",
+      "access": "RW",
+      "title": "商店随机池搬迁目标（8192 dword；零售是 ebp-0x8c4 的 560 格栈缓冲）"
+    },
     "th18_snd_cfg": {
       "size": "0x910",
       "access": "RW",
@@ -953,6 +958,60 @@
       "code": "8d87fc130000",
       "expected": "8d8704030000",
       "title": "zAbilityMenu 扩容 / __card_ids → +0x13fc"
+    },
+    "pool_416f6e": {
+      "addr": "0x416f6e",
+      "code": "6800800000",
+      "expected": "68c0080000",
+      "title": "商店随机池 → codecave（8192 dword，栈缓冲只有 560）"
+    },
+    "pool_416f73": {
+      "addr": "0x416f73",
+      "code": "b8<codecave:th18_card_pool>90",
+      "expected": "8d853cf7ffff",
+      "title": "商店随机池 → codecave（8192 dword，栈缓冲只有 560）"
+    },
+    "pool_417100": {
+      "addr": "0x417100",
+      "code": "b8<codecave:th18_card_pool>90",
+      "expected": "8d853cf7ffff",
+      "title": "商店随机池 → codecave（8192 dword，栈缓冲只有 560）"
+    },
+    "pool_41712f": {
+      "addr": "0x41712f",
+      "code": "8914bd<codecave:th18_card_pool>",
+      "expected": "8994bd3cf7ffff",
+      "title": "商店随机池 → codecave（8192 dword，栈缓冲只有 560）"
+    },
+    "pool_417136": {
+      "addr": "0x417136",
+      "code": "8914bd<codecave:th18_card_pool+4>",
+      "expected": "8994bd40f7ffff",
+      "title": "商店随机池 → codecave（8192 dword，栈缓冲只有 560）"
+    },
+    "pool_41713d": {
+      "addr": "0x41713d",
+      "code": "8914bd<codecave:th18_card_pool+8>",
+      "expected": "8994bd44f7ffff",
+      "title": "商店随机池 → codecave（8192 dword，栈缓冲只有 560）"
+    },
+    "pool_417144": {
+      "addr": "0x417144",
+      "code": "8914bd<codecave:th18_card_pool+c>",
+      "expected": "8994bd48f7ffff",
+      "title": "商店随机池 → codecave（8192 dword，栈缓冲只有 560）"
+    },
+    "pool_41714b": {
+      "addr": "0x41714b",
+      "code": "8914bd<codecave:th18_card_pool+10>",
+      "expected": "8994bd4cf7ffff",
+      "title": "商店随机池 → codecave（8192 dword，栈缓冲只有 560）"
+    },
+    "pool_41718f": {
+      "addr": "0x41718f",
+      "code": "8b0c95<codecave:th18_card_pool>",
+      "expected": "8b8c953cf7ffff",
+      "title": "商店随机池 → codecave（8192 dword，栈缓冲只有 560）"
     },
     "snd_40111a": {
       "addr": "0x40111a",

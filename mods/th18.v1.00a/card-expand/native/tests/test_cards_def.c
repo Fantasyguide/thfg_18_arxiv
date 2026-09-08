@@ -149,13 +149,18 @@ static void test_capacity(void)
     CHECK(pool == 7 + 9);                     /* (2+5) + (4+5) */
     CHECK(guaranteed == 1 + 1 + CE_SHOP_RANDOM_MAX);   /* w0 一张 + dmode 1-5 一张 + 随机最多 6 */
 
-    /* 池超限：80 张 weight 2 = 560 刚好过，81 张不过 */
-    static uint8_t big[81 * CE_ROW_BYTES];
-    for (unsigned i = 0; i < 81; ++i) mkrow(big, i, 58 + i, 2, 0);   /* 避开 56/57 */
-    CHECK(ce_shop_capacity_check(big, 80, &pool, &guaranteed, err, sizeof err));
-    CHECK(pool == 560);
-    CHECK(!ce_shop_capacity_check(big, 81, &pool, &guaranteed, err, sizeof err));
+    /* 池超限：边界按 CE_SHOP_POOL_SLOTS 表达，池子搬进 codecave 改大之后不会朽。
+     * 64 张卡、每张 (POOL/64 - 5) 权重 ⇒ 份数正好等于上限；第 65 张就过不去。 */
+    #define FIT_N 64u
+    #define FIT_W (CE_SHOP_POOL_SLOTS / FIT_N - 5u)
+    static uint8_t big[(FIT_N + 1) * CE_ROW_BYTES];
+    for (unsigned i = 0; i < FIT_N + 1; ++i) mkrow(big, i, 58 + i, FIT_W, 0);   /* 避开 56/57 */
+    CHECK(ce_shop_capacity_check(big, FIT_N, &pool, &guaranteed, err, sizeof err));
+    CHECK(pool == CE_SHOP_POOL_SLOTS);
+    CHECK(!ce_shop_capacity_check(big, FIT_N + 1, &pool, &guaranteed, err, sizeof err));
     CHECK(strstr(err, "pool") != NULL);
+    #undef FIT_W
+    #undef FIT_N
 
     /* 保证卡超限：52 张 weight 0 → 52 + 6 = 58 > 57 */
     for (unsigned i = 0; i < 52; ++i) mkrow(big, i, 58 + i, 0, 0);
@@ -187,22 +192,27 @@ static void test_weight_override(void)
 static void test_weight_override_fit(void)
 {
     static uint8_t t[255 * CE_ROW_BYTES];
-    static uint32_t ids[23];
+    static uint32_t ids[64];
     char err[160];
     unsigned changed = 0, pool = 0, guaranteed = 0;
     #define W(id) (*(uint32_t *)(t + (id) * CE_ROW_BYTES + 0x14))
     #define ID(id) (*(uint32_t *)(t + (id) * CE_ROW_BYTES + 0x04))
     /* 真实形状：装载器给 NULL/BACK 与所有没用的行写 weight 6（退出随机池），
      * 零售 1..55 与 23 张新卡进池。不这么铺的话，weight 0 的空行会被算成「必出卡」而先撞另一条上限。 */
-    #define SETUP() do { memset(t, 0, sizeof t); \
+    #define SETUP_N(n, w) do { memset(t, 0, sizeof t); \
         for (unsigned q = 0; q < 255; ++q) { ID(q) = q; W(q) = CE_SHOP_NEVER_WEIGHT; } \
         for (unsigned q = 1; q < 56; ++q) W(q) = 2; \
-        for (unsigned q = 0; q < 23; ++q) { ids[q] = 58 + q; W(58 + q) = 2; } } while (0)
+        for (unsigned q = 0; q < (n); ++q) { ids[q] = 58 + q; W(58 + q) = (w); } } while (0)
+    #define SETUP() SETUP_N(23u, 2u)
 
-    /* 真实现场：retail_weight 6 把零售全踢出池，new_weight 20 × 23 = 575 > 560 → 压到 19（23 × 24 = 552）*/
-    SETUP();
-    CHECK(ce_weight_override_fit(t, 255, 6, 20, ids, 23, &changed) == 19);
-    CHECK(W(58) == 19 && W(80) == 19);
+    /* 顶爆时往下压。上限已随 codecave 提到 CE_SHOP_POOL_SLOTS，所以用能撑爆它的组合：
+     * CLAMP_N 张新卡、权重 255（份数 CLAMP_N × 260）⇒ 压到 POOL/CLAMP_N − 5 为止。
+     * 2026-09-08 的真实事故是 23 张 × 25 = 575 > 560 —— 那条现在压根到不了上限（见 §AH）。 */
+    #define CLAMP_N 32u
+    #define CLAMP_WANT (int)(CE_SHOP_POOL_SLOTS / CLAMP_N - 5u)
+    SETUP_N(CLAMP_N, 255);
+    CHECK(ce_weight_override_fit(t, 255, 6, 255, ids, CLAMP_N, &changed) == CLAMP_WANT);
+    CHECK((int)W(58) == CLAMP_WANT && (int)W(58 + CLAMP_N - 1) == CLAMP_WANT);
     CHECK(ce_shop_capacity_check(t, 255, &pool, &guaranteed, err, sizeof err));
     CHECK(pool <= CE_SHOP_POOL_SLOTS);
     CHECK(changed > 0);
@@ -223,6 +233,9 @@ static void test_weight_override_fit(void)
     CHECK(ce_weight_override_fit(t, 255, -1, 20, ids, 23, &changed) == 20);
     CHECK(!ce_shop_capacity_check(t, 255, &pool, &guaranteed, err, sizeof err));
     #undef SETUP
+    #undef SETUP_N
+    #undef CLAMP_WANT
+    #undef CLAMP_N
     #undef ID
     #undef W
 }

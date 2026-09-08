@@ -1438,6 +1438,33 @@ X = ⌊P / per⌋ − 1 使得 X > 0 时 `P − X·per ∈ [per, 2·per)` ——
 
 **遗留（不修，记着）**：`+0xfec` 与 EDX 由两个 pass 各自产生、彼此不校核，是零售自带的脆弱处；零售里 `num_total_cards` 不可能为 0（空槽总能分配 NullInf），所以踩不到。任何让手牌数为 0 的改动都会重新暴露它。
 
+## AH. 商店随机池搬进 codecave（2026-09-08）—— 560 份的天花板
+
+**为什么有 560 这个数**：`CardShop__pick_weighted_random_offer` `0x416f50` 开头 `sub esp, 0x8d4`，
+其中 `0x8c0` 字节是「份数池」，基址 `ebp-0x8c4`，即 **560 个 dword**，每格放一张卡的表行指针。
+填池的两处写（`0x417100` 的 `rep stosd` 压 weight 份、`0x41712f` 起五条 mov 压「没拿过」的 +5 份）
+**全程没有越界检查**，计数器 `edi` 一路累加。而这块缓冲的末尾正好顶到 `ebp-0x4` 的栈金丝雀，
+再往上是保存的 ebp 与返回地址 —— 所以超限不是「多的被丢掉」，是踩烂返回地址，`0x48dc60` 的
+`__security_check_cookie` 把进程打死。
+
+**为什么现在动它**：零售 362 份 + 23 张新卡（权重 2）161 份 = **523 / 560**，正常游玩下再加 5 张就撞顶。
+
+| # | claim | 结论 |
+| --- | --- | --- |
+| AH1 | 560 = `0x8c0 / 4`，且缓冲紧贴金丝雀 | **CONFIRMED（一手）** —— 见上，`0x416f53` / `0x416f60` / `0x416f6e` 三条 |
+| AH2 | 填池无越界检查 | **CONFIRMED（一手）** —— 整段只有 `cmp ecx, 0xd64`（卡 id 循环上界），没有任何针对 `edi` 的比较 |
+| AH3 | 9 处站点就是全部 | **CONFIRMED（一手）** —— 位移 `0xfffff73c`（= −0x8c4）及其 +4/+8/+0xc/+0x10 变体在本函数内的全部出现：两处 `lea`、五条 `mov` 写、一条 `mov` 读，加 memset 的大小立即数 |
+| AH4 | 改写全部原地等长 | **CONFIRMED（编码）** —— 见下「AH4 证据」 |
+| AH5 | 栈帧一个字节不动 | **设计** —— `sub esp, 0x8d4` 与金丝雀保持原样；搬走之后那 0x8c0 只是没人用的栈空间。不动栈 = 不碰金丝雀、不碰任何其它局部的位移 |
+| AH6 | 全有或全无 | **设计** —— `check_pool`（`selfcheck.c`）在门里逐条按 `sites_gen.h` 的模板重算应有字节再比对，任何一处不符即 FAIL。半搬半留比不搬更危险：读走 cave 而写还在栈上（或反之）都会读到空池 |
+| AH7 | 池上限两处常量不许漂 | **CONFIRMED（编译期）** —— `cards.c` 里 `_Static_assert(CE_SHOP_POOL_SLOTS == CE_POOL_SLOTS)`，前者给主机单测用、后者由 `sites.py` 生成 |
+| AH8 | 与容量检查的关系 | 上限从 560 提到 **8192**。`ce_shop_capacity_check` 与 `ce_weight_override_fit` 的单测改成按常量表达（`CE_SHOP_POOL_SLOTS / N − 5`），不再写死边界 |
+
+**AH4 证据**：x86 的 SIB 编码里「mod 00 + base 101」= 纯 disp32、「mod 10 + base 101」= ebp + disp32，**两者同长**。
+所以五条写 `89 94 BD disp32` → `89 14 BD disp32`、一条读 `8B 8C 95 disp32` → `8B 0C 95 disp32`，都是 7 → 7 字节，
+只改 modrm 的 mod 两位。两处 `lea eax,[ebp-0x8c4]`（6 字节）→ `mov eax, imm32`（5）+ 一个 `nop`。
+memset 的 `push 0x8c0` → `push 0x8000`，长度不变。**没有一条指令需要挪位置，也没有一条跨越指令边界。**
+
 ## G. OPEN —— 还没解决的
 
 | # | 事项 | 说明 |

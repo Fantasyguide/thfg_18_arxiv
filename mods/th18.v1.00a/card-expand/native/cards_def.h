@@ -20,7 +20,9 @@
 #define CE_CARD_UNSET       0xffffffffu   /* 必填字段的「没给」*/
 
 /* 商店（AUDIT §N2、边界 #34） */
-#define CE_SHOP_POOL_SLOTS  560       /* pick_weighted_random_offer 的 0x8c0 栈缓冲 / 4 */
+#define CE_SHOP_POOL_SLOTS  8192      /* 池子已搬进 codecave（AUDIT §AH）。零售只有 560：
+                                       * pick_weighted_random_offer 的 0x8c0 栈缓冲 / 4，且末尾紧贴栈金丝雀、填池无越界检查。
+                                       * 必须与 sites_gen.h 的 CE_POOL_SLOTS 一致 —— cards.c 里有 _Static_assert 钉着。*/
 #define CE_SHOP_OFFER_SLOTS 57        /* AbilityShop__initialize 的 [ebp-0xe4] */
 #define CE_SHOP_RANDOM_MAX  6         /* 随机抽 3 张，带招财猫 6 张 */
 #define CE_SHOP_NEVER_WEIGHT 6        /* +0x14 == 6：永不进随机池；写进 NULL/BACK 行排除幻影 */

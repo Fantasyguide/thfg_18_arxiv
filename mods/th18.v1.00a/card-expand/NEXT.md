@@ -84,6 +84,24 @@ trace: card 59 on_tick_2 (+0x2c) first hit / card 62 on_tick_2 / card 61 on_bull
 通过后：MAP §5 与 AUDIT §P 顶部记「实跑通过」。想改次数就改常量（以后可挂 `cards.js`）；
 **关卡中间开店**（MSG opcode 36 或 DLL 直接置 `GameThread+0xb0 |= 0x20000`）技术上可行，但 Stage / Spellcard 不冻结，只该在对话里做——见 §3.5。
 
+## 1r. 商店随机池上限 560 → 8192（2026-09-08，待实跑）
+
+把 `pick_weighted_random_offer` 那块 560 格的栈缓冲搬进 codecave，9 处站点原地等长改写；
+栈帧与金丝雀一个字节不动。原理与逐条证据见 [`AUDIT.md`](AUDIT.md) §AH。
+
+日志应多一行（在 `cards:` 之前）：
+
+```
+pool: 9 sites verified, 8192 slots at XXXXXXXX (retail stack buffer was 560)
+```
+
+体感应当**完全没有变化** —— 这一改只挪了池子的住处，抽卡的算法一个字没动。
+所以验收要点是「商店照常出货、权重感觉没变、多逛几家店不崩」。任何 `pool: site … NOT patched` 或
+`FAIL: shop pool relocation` 都是回归。想压力测一把：把 `cards_dev.js` 的 `new_weight` 调到 200
+（23 张 × 205 = 4715 份，远超零售的 560、仍在 8192 内），商店应当照常工作 —— 这是这次改动的直接证据。
+
+**天花板不再是瓶颈**：零售 362 + 23 张新卡（权重 2）161 = 523，现在离 8192 还很远。
+
 ## 1q. 卡组编成崩溃（2026-09-08 已修，待复跑）
 
 **症状**：只挂 `_test` 时进「卡组编成」看到空内容、按 Z 崩在 `0x414b7e`。根因与两道修复见 [`AUDIT.md`](AUDIT.md) §AG。
