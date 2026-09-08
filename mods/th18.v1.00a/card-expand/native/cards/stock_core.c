@@ -117,6 +117,43 @@ int32_t stock_pnl(const stock_state_t *s)
 {
     return stock_value(s) - s->cost;
 }
+static int32_t imax(int32_t a, int32_t b) { return a > b ? a : b; }
+static int32_t imin(int32_t a, int32_t b) { return a < b ? a : b; }
+
+/* 价 → y（价高在上）；hi > lo 由调用方保证 */
+static int price_y(int32_t p, int32_t lo, int32_t hi, int y0, int h)
+{
+    return y0 + h - (int)((int64_t)(p - lo) * h / (hi - lo));
+}
+
 void stock_layout(const stock_state_t *s, int x0, int y0, int w, int h,
                   stock_rect_t body[STOCK_CANDLES], stock_rect_t wick[STOCK_CANDLES])
-{ (void)s; (void)x0; (void)y0; (void)w; (void)h; (void)body; (void)wick; }
+{
+    stock_candle_t v[STOCK_CANDLES];
+    int n = stock_visible(s, v);
+    int pitch = w / STOCK_CANDLES;
+    int bw = pitch * 7 / 13;
+    int32_t lo = v[0].l, hi = v[0].h;
+
+    memset(body, 0, sizeof(stock_rect_t) * STOCK_CANDLES);
+    memset(wick, 0, sizeof(stock_rect_t) * STOCK_CANDLES);
+    for (int i = 1; i < n; ++i) { lo = imin(lo, v[i].l); hi = imax(hi, v[i].h); }
+    if (hi <= lo) hi = lo + 1;                          /* 四价全同（刚开盘）：别除零 */
+
+    for (int i = 0; i < n; ++i) {
+        int slot = STOCK_CANDLES - n + i;               /* 最新的永远在最右 */
+        int cx = x0 + pitch * slot + pitch / 2;
+        int top = price_y(imax(v[i].o, v[i].c), lo, hi, y0, h);
+        int bot = price_y(imin(v[i].o, v[i].c), lo, hi, y0, h);
+        int bh = imax(bot - top, 2);
+        int wt = price_y(v[i].h, lo, hi, y0, h);
+        int wb = price_y(v[i].l, lo, hi, y0, h);
+        int wh = imax(wb - wt, 1);
+        body[slot].cx = (int16_t)cx; body[slot].cy = (int16_t)((top + bot) / 2);
+        body[slot].w = (int16_t)bw;  body[slot].h = (int16_t)bh;
+        body[slot].up = v[i].c >= v[i].o;
+        wick[slot].cx = (int16_t)cx; wick[slot].cy = (int16_t)((wt + wb) / 2);
+        wick[slot].w = 2;            wick[slot].h = (int16_t)wh;
+        wick[slot].up = body[slot].up;
+    }
+}

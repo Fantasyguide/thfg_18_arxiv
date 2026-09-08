@@ -220,6 +220,52 @@ static void test_value_pnl(void)
     CHECK(stock_value(&s) == 99990000, "大持仓市值应为 99990000，得到 %d", stock_value(&s));
 }
 
+static void test_layout(void)
+{
+    stock_state_t s;
+    stock_rect_t body[STOCK_CANDLES], wick[STOCK_CANDLES];
+    stock_init(&s);
+    /* 手工造两根：hist[0] = 涨 (100 → 120, 高 130 低 90)，cur = 跌 (120 → 110, 高 125 低 100) */
+    s.hist[0].o = 10000; s.hist[0].c = 12000; s.hist[0].h = 13000; s.hist[0].l = 9000;
+    s.head = 1; s.count = 1;
+    s.cur.o = 12000; s.cur.c = 11000; s.cur.h = 12500; s.cur.l = 10000;
+    s.price = 11000;
+
+    stock_layout(&s, 848, 776, 416, 96, body, wick);       /* pitch 26；价区 9000..13000 → 96 px，24 px / 1000 */
+    for (int i = 0; i < STOCK_CANDLES - 2; ++i) CHECK(body[i].w == 0 && body[i].h == 0 && wick[i].w == 0 && wick[i].h == 0, "槽 %d 应为空", i);
+
+    const stock_rect_t *b0 = &body[14], *w0 = &wick[14], *b1 = &body[15], *w1 = &wick[15];
+    CHECK(b0->cx == 848 + 26 * 14 + 13 && b1->cx == 848 + 26 * 15 + 13, "中心 x 应按 pitch 排：%d / %d", b0->cx, b1->cx);
+    CHECK(w0->cx == b0->cx && w1->cx == b1->cx, "影线与实体同一列");
+    CHECK(b0->w == 14 && w0->w == 2, "实体宽 14 / 影线宽 2，得到 %d / %d", b0->w, w0->w);
+    CHECK(b0->up == 1 && b1->up == 0, "第一根涨、第二根跌：%u / %u", b0->up, b1->up);
+    /* 第一根：开 100 → y 776+96−24 = 848；收 120 → 776+96−72 = 800；实体高 48、中心 824 */
+    CHECK(b0->h == 48 && b0->cy == 824, "第一根实体 h=%d cy=%d，应为 48 / 824", b0->h, b0->cy);
+    /* 第一根影线：高 130 → 776；低 90 → 872；高 96、中心 824 */
+    CHECK(w0->h == 96 && w0->cy == 824, "第一根影线 h=%d cy=%d，应为 96 / 824", w0->h, w0->cy);
+    /* 第二根：开 120 → 800；收 110 → 824；实体高 24、中心 812；影线 125 → 788、100 → 848：高 60、中心 818 */
+    CHECK(b1->h == 24 && b1->cy == 812, "第二根实体 h=%d cy=%d，应为 24 / 812", b1->h, b1->cy);
+    CHECK(w1->h == 60 && w1->cy == 818, "第二根影线 h=%d cy=%d，应为 60 / 818", w1->h, w1->cy);
+
+    /* 十字星：开 = 收，实体最小 2；只有一根、四价相同（价区退化）也不能除零 */
+    stock_init(&s);
+    stock_layout(&s, 848, 776, 416, 96, body, wick);
+    CHECK(body[15].h == 2 && wick[15].h >= 1 && body[15].w == 14, "退化蜡烛：h=%d wick=%d", body[15].h, wick[15].h);
+    CHECK(body[15].cy >= 776 && body[15].cy <= 776 + 96, "退化蜡烛应落在价区内，cy=%d", body[15].cy);
+    for (int i = 0; i < STOCK_CANDLES - 1; ++i) CHECK(body[i].w == 0, "只有一根时其它槽应为空");
+
+    /* 满缓冲：16 槽全有、最右是 cur、全部在区域内 */
+    lcg_state = 21;
+    for (int i = 0; i < STOCK_STEPS_PER_CANDLE * 40; ++i) stock_step(&s, lcg());
+    stock_layout(&s, 848, 776, 416, 96, body, wick);
+    for (int i = 0; i < STOCK_CANDLES; ++i) {
+        CHECK(body[i].w == 14 && body[i].h >= 2 && wick[i].h >= 1, "槽 %d 应有蜡烛", i);
+        CHECK(wick[i].cy - wick[i].h / 2 >= 776 - 1 && wick[i].cy + wick[i].h / 2 <= 776 + 96 + 1, "槽 %d 影线越界", i);
+        CHECK(body[i].cx >= 848 && body[i].cx <= 848 + 416, "槽 %d x 越界", i);
+    }
+    CHECK(body[15].up == (s.cur.c >= s.cur.o), "最右一根应是 cur");
+}
+
 int main(void)
 {
     test_init();
@@ -232,6 +278,7 @@ int main(void)
     test_sell();
     test_round_trip();
     test_value_pnl();
+    test_layout();
     printf("test_stock_core: %s\n", fails ? "FAILED" : "OK");
     return fails ? 1 : 0;
 }
