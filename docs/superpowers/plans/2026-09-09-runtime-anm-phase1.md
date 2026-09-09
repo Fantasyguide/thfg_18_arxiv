@@ -31,7 +31,8 @@
 | R3 | ✅ | `c12f499`→`037755c` | `engine/anm/th16/03-math-jumps.md`（41 ✅ / 5 🟡） |
 | I3 | ✅ | `4373548` | `runtime/anm/src/vm/group-math.js`（46 条全注册） |
 | 收口 | ✅ | `5cd4918`/`7b44583`/`916b4a8` | 消两处虚标 ✅、断言回流、矩阵生成器防抹平 |
-| **RV** | ⬜ **下一个** | — | `engine/anm/th16/04-variables.md` |
+| **RV1** | ⬜ **下一个** | — | `engine/anm/th16/04-variables.md`（36 行表） |
+| **RV2** | ⬜ | — | 同上，补 `10033–10035` 专项（可与波 D 并行） |
 | **IV** | ⬜ | — | `resolveArg` 8 槽 → 22 槽 |
 | 波 D–F | ⬜ | — | 见下 |
 
@@ -96,7 +97,8 @@
 波 A（串行）  T0 ──> R1 ──> I1
 波 B（串行）  R2 ──> I2                      VM 骨架，后面全部依赖它
 波 C（串行）  R3 ──> I3                      Math+Jumps：用来跑通整条流水线并校准方法
-波 C′（串行） RV ──> IV                      ★ 变量表专项：波 D 的前置依赖，不是后续任务
+波 C′（串行） RV1 ──> IV                     ★ 变量表：波 D 的前置依赖，有界任务
+              └──> RV2                     mystery-angle 三条专项：开放式，不挡 IV / 波 D
 波 D（并行）  R4 R5 R6 R7 R8                 ★ 五个 agent 同时派发，各读 HTML
 波 E（串行）  I4 ─> I5 ─> I6 ─> I7 ─> I8     按 spec §6 的组顺序实现
 波 F（串行）  I9 ──> T10 ──> R11
@@ -134,7 +136,7 @@
 | `runtime/anm/tests/build-fixtures.sh` | 用 `thanm` 把源码编成 `.anm`（产物 gitignored） | I1 |
 | `runtime/anm/web/index.html` | 查看器：时间轴、逐帧 vm 状态、加载本地 `.anm` | I9 |
 | `engine/anm/th16/01-format.md` … `09-*.md` | 一手结论（九篇） | R1–R3、**RV**、R4–R8 |
-| `engine/anm/th16/04-variables.md` | **变量表**：36 个变量号的语义 / 可写性 / PRNG 流归属 | **RV** |
+| `engine/anm/th16/04-variables.md` | **变量表**：36 个变量号的语义 / 可写性 / PRNG 流归属 | **RV1**（+ RV2 补 §mystery） |
 | `engine/anm/OVERVIEW.md` | 断言矩阵扩到覆盖 VM 语义 | T10 |
 
 `vm/` 按 opcode 组切文件而非按功能切，是为了让**代码结构与 opcode 表一一对应**——
@@ -565,7 +567,7 @@ test('所有 46 条 opcode 都已注册', () => {
 
 ## 波 C′ — 变量表专项（波 D 的前置依赖）
 
-### RV：th16 ANM 变量表一手确认（36 个变量号）
+### RV1：th16 ANM 变量表一手确认（36 个变量号）
 
 **独立逆向会话。** 静态快照 + PE 直解，不碰 Ghidra MCP。
 
@@ -588,10 +590,10 @@ test('所有 46 条 opcode 都已注册', () => {
 - `03-math-jumps.md` §7.4：随机族的 PRNG 流划界（10010–10012 走 Stream B，10030–10032 走 Stream A）
 - `02-vm-core.md` §3.4：已在收口轮修正过 `10026/10027/10028`
 
-**★ 最可能超过社区的地方**：`wip:2` 的三条 **`10033/10034/10035 = mystery-angle-x/y/z`**，
-ExpHP 原话是 "Is somehow related to rotation? Little is known."。
-我们手上有它没有的东西——真实用法数据：**`10035` 有 7 次读、48 次写，`10033`/`10034` 各 6 次读**。
-按 `03-math-jumps.md` 的方法（拿 54 个真实 `.anm` 跑统计去证伪竞争假设）比纯读反编译强得多。
+**`10033–10035`（`mystery-angle-x/y/z`）不归你** —— 它们是 **RV2** 的专项。
+你在表里给出类型、可写性、case 地址、落在 vm 的哪个字段（这些都是有界的一手工作），
+**语义一栏标 ❓ 并指向 RV2**，不要在本任务里去追它们的含义。这条边界是刻意的：
+本任务必须是**有界**的，判据可验证。
 
 **产出**：`engine/anm/th16/04-variables.md`。**单版本文档**（默认 th16），开头 20 行内声明版本。
 一张 36 行表（变量号 / 社区名 / 类型 / **可写性** / 语义 / 落在 vm 的哪个字段 / case 地址 / 可信度）
@@ -607,6 +609,40 @@ ExpHP 原话是 "Is somehow related to rotation? Little is known."。
 
 ---
 
+### RV2：`mystery-angle-x/y/z`（`10033–10035`）专项
+
+**开放式研究任务。可与波 D 并行 —— 它不产出波 D 需要的东西。**
+
+**为什么单开**：这三条是 thpages 标 `wip:2` 的，ExpHP 原话
+"Is somehow related to rotation? Little is known."。要下结论就得过 `METHOD.md` 的
+**额外闸门**（一手到底 / 对抗证伪 / 量纲常识 / 交叉对名），**没有收敛保证**。
+把它和 RV1 的 36 行表放在一起，会让有界的那半被无界的这半劫持。
+
+**你手上有 ExpHP 没有的东西**：真实用法数据。`10035` 有 **7 次读、48 次写**，
+`10033`/`10034` 各 **6 次读**（全库 54 个 `.anm`）。现成工具：
+`runtime/anm/src/format/anm-v8.js` 的 `parseAnm(bytes)`，指令对象 `{time, opcode, paramMask, args}`。
+`03-math-jumps.md` 反复证明了「拿真实数据跑统计去**证伪**竞争假设」比纯读反编译强得多 ——
+它就是这么推翻「跳转 `t` 取自目标标签」的。
+
+**方法建议**（不是硬性步骤）：
+① 从 RV1 已确认的 case 地址出发，看这三个号读/写的是 vm 的哪个字段，再用 xref 找谁还碰那个字段；
+② 拿 48 次写 + 19 次读的**上下文**做统计——写它们的是哪些 opcode、紧邻指令是什么、
+   同一 script 里和 `rot-x/y/z`（`10023–10025`）、`rot-z-effective`（`10026`）如何共现；
+③ 列出竞争假设并逐个证伪（例：「是 rot 的另一份拷贝」「是父级累积角」「是渲染用的欧拉角缓存」），
+   **把证伪过程和 negative set 都写出来**。
+
+**产出**：追加进 `engine/anm/th16/04-variables.md` 的一个专项小节（不新开文件），
+并把表里那三行的语义与可信度就地更新。
+
+**完成判据（刻意放松）**：
+1. **给出结论并过额外闸门，或诚实标 ❓ 并写清「排除了哪些假设、依据是什么」** —— 后者同样算完成
+2. 统计写明分母与所算字段；穷举类宣称附 negative set
+3. `check-docs.py` 四项全绿
+
+**做不出来不算失败。** 诚实的 ❓ + 一份「已排除假设」清单，对下一个人的价值高于硬凑的结论。
+
+---
+
 ### IV：变量表实现（把 `resolveArg` 从 8 槽扩到 22 槽）
 
 **Files:**
@@ -615,7 +651,7 @@ ExpHP 原话是 "Is somehow related to rotation? Little is known."。
 - Test: 新增 `runtime/anm/tests/vm-vars.test.js`
 
 **Interfaces:**
-- Consumes: `engine/anm/th16/04-variables.md` 的 36 行表
+- Consumes: `engine/anm/th16/04-variables.md` 的 36 行表（**RV1 产出即可，不必等 RV2**）
 - Produces: `resolveArg` / `isVarBit` 签名**不变**，只扩定义域；只读变量写入时抛错
 
 - [ ] **步骤 1：按 04 的表扩读侧到 36 个号、写侧到 22 个可写号**，只读的 14 个在写入时抛带变量名的错。
