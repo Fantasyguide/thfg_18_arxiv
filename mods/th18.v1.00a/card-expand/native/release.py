@@ -57,6 +57,20 @@ MAP_DIRS = {
 PATCH_DIRS = ("th18_card_expand_255", "th18_card_expand_test", "th18_card_expand_devstage")
 
 
+def blob_bytes(data):
+    """files.js 的 crc 必须等于 **thcrap 实际下载到的字节** = git blob。
+
+    modkit 的 `.gitattributes` 是 `* text=auto eol=crlf` ⇒ Windows 工作区里文本文件是 CRLF，
+    但 blob 里是 LF；二进制文件（含 NUL）原样存。所以这里照 git 的 text=auto 口径：
+    **前 8000 字节里没有 NUL 就按文本处理（CRLF→LF），否则原样**。
+
+    ⚠️ 2026-09-10 踩坑：原来直接 crc32(工作区字节) ⇒ 在 CRLF 工作区里算出的 crc 与 blob 不符，
+    `_devstage/patch.js` 因此被写成错的 crc（上游那份是对的 2243114325，我们写成 796875985）。"""
+    if b"\0" in data[:8000]:
+        return data
+    return data.replace(b"\r\n", b"\n")
+
+
 def sh(*args, cwd=None, check=True):
     return subprocess.run(args, cwd=cwd, check=check, text=True, capture_output=True).stdout.strip()
 
@@ -111,7 +125,7 @@ def main():
             for n in sorted(names):
                 rel = os.path.relpath(os.path.join(root, n), d).replace(os.sep, "/")
                 if rel.endswith((".js", ".anm", ".ecl", ".wav", ".sht")) and rel != "files.js":
-                    out[rel] = zlib.crc32(open(os.path.join(root, n), "rb").read()) & 0xffffffff
+                    out[rel] = zlib.crc32(blob_bytes(open(os.path.join(root, n), "rb").read())) & 0xffffffff
         out = dict(sorted(out.items()))
         f = os.path.join(d, "files.js")
         txt = json.dumps(out, indent=2) + "\n"
