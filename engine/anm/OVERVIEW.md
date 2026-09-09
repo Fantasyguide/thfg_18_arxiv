@@ -12,7 +12,7 @@ MSG 的文本绘制走它（[`../msg/OVERVIEW.md`](../msg/OVERVIEW.md)）、弹�
 
 | 断言 | th16 | th18 | 证据 |
 | --- | :---: | :---: | --- |
-| 存在 anm 脚本 VM，每帧驱动显示对象 | ✅ | 🟡 | [th16/README](th16/README.md)（做弹幕时顺带掀开的口子，多为 call-site/二手） |
+| 存在 anm 脚本 VM，每帧驱动显示对象 | ✅ | 🟡 | [th16/02-vm-core](th16/02-vm-core.md) §1（一手反 `th16:0x45f980`） |
 | VM = 单函数解释器 `th16:0x45f980`，主循环 `th16:0x45fba0`，时间闸门 `ins.time <= vm.time` | ✅ | ❓ | [th16/02-vm-core](th16/02-vm-core.md) §2 |
 | 脚本时间每帧 `+= GAME_SPEED`；`6 wait n` 是把时间往回拨 n，不是设唤醒点 | ✅ | ❓ | [th16/02-vm-core](th16/02-vm-core.md) §4 |
 | interrupt = 从脚本开头线性扫 `ins 5 <n>`；`ins 5 -1` 是 default；命中后时间设成标签的 `time` | ✅ | ❓ | [th16/02-vm-core](th16/02-vm-core.md) §5 |

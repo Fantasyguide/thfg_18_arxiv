@@ -57,9 +57,15 @@
 | 表址 | 用途 | 索引来源 |
 | --- | --- | --- |
 | `0x4919c0` / `0x4919a0` / `0x4a6f04` / `0x491980` | 自机 func_on_init/tick/draw/hit(见 03) | SHT shooter 字段 |
-| **`0x491b0c`** | ~~效果/敌弹行为派发~~ → **实为 `ANM_ON_SWITCH_FUNCS`**(ANM VM on-switch 回调,见下) | ANM 对象 `+0x5d0` switch 类型 |
+| **`0x491b0c`** | ~~效果/敌弹行为派发~~ → ANM VM 的事件回调表(🟡 `on_switch` → ✅ `on_interrupt`,见下) | ANM VM `+0x5d0` |
 
 > ❌ **更正(2026-06-09,th-re-data + dump + 反编译,见 `../engine/ecl/th16/03-thredata-crosscheck.md` §4c)**:`0x491b0c` **不是**"敌弹/效果子系统入口",而是 **ANM(动画)VM 的 on-switch 回调表**:`void*[4]`={null,`0x407900`,`0x405f20`,`0x406920`}=`AnmVm::on_switch__1/2/3`(操作 AnmVm 顶点数组 `+0x5b8`、设渲染/混合模式)。属一整族 ANM 事件表(`0x491b0c`..`0x491b58`:switch/sprite_set/draw/copy/delete)。`FUN_0044f810`/`FUN_0044c8c0` 是 ANM 管理器(`DAT_004c0f48`)的每帧渲染更新器,不是敌弹派发器。**敌弹行为请走 `../engine/bullet/th16/`(弹运动 VM `0x413860`),别再顺这表挖敌弹。** 归口 `../engine/anm/th16/`。
+
+> ⚠️ **再更正(2026-09-09)**:上面把该表叫 `on-switch` 这一步**下调为 🟡**。
+> 全 exe 32 个引用点的形态是 `ECX = vm; EDX = <中断号>; CALL [0x491b0c + vm[+0x5d0]*4]`,
+> 随后 `vm[+0x490] = 同一个中断号`(`vm+0x490` = pending_interrupt),**即 on_interrupt** ✅。
+> 证据与 VM 侧语义见 `engine/anm/th16/02-vm-core.md` §3.5 / §5。
+> **本节关于"不是敌弹派发器"的结论不受影响**,只是那张表的名字换了。
 
 ## 4. 常用辅助函数(已实证,复用)✅/🟡
 `FUN_0046efa0(mgr,handle)` 句柄→对象 | `FUN_0046f0b0(handle,mode)` 释放/改状态 | `FUN_00406380` 分配

@@ -296,7 +296,9 @@ TH16 有两张并列的 9 项查表，都按 `format` 值索引：`0x491b90` = �
   但要知道游戏里加载是跨帧摊开的 ✅。
 - **走到最后一个 entry 才预跑 script 模板**：`0x46d1c0` 在 `next_offset == 0` 那一次跳出循环后，
   对 `n_scripts` 个 VM 模板逐个 `AnmVm::wipe` + `AnmVm::run`（步长 `0x5fc`），
-  结果就是 `+0x10c` 的模板数组；实例化时整块拷贝（`0x407b20`）✅。
+  结果就是 `+0x10c` 的模板数组；实例化时由 `0x407b20` 拷出来——
+  **只拷模板的前 `0x538` 字节（prefix），不是整个 `0x5fc`**：suffix 先被 `AnmVm::wipe_suffix` `0x407a50` 清掉，
+  两个 zTimer 随后重置为 `set_value(0)`。细节见 [`02-vm-core.md`](02-vm-core.md) §8 ✅。
   → **播放器要复刻这一步**：脚本的 `time <= 0` 段在「实例化之前」就已执行完。
 - **贴图 slot（0x18 字节）**：`+0x00` `IDirect3DTexture9*`、`+0x04`/`+0x08` 外部 png 的字节与长度、
   `+0x0c` bpp、`+0x10` 回指 entry、`+0x14` 标志位 ✅。

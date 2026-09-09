@@ -47,8 +47,18 @@
 - **第一刀**:反 `mgr+0x10c` 模板数组的**装载**端(谁把 .anm 解析进这个数组?stride 0x5fc 模板的字段布局?),
   和 `FUN_0046e7d0`(注册/句柄分配)。这能解出"显示对象/anm 槽"的对象模型。
 
-### B. ✅ ANM 事件回调表族(已坐实,2026-06-09;th-re-data + dump + 反编译)
-- **`0x491b0c` = `ANM_ON_SWITCH_FUNCS`**(`void*[4]`={null,`0x407900`,`0x405f20`,`0x406920`}=`AnmVm::on_switch__1/2/3`)。反 `0x407900`:操作 AnmVm 顶点数组 `+0x5b8`(4 顶点)、设渲染/混合模式(`+0x534`、`+0x18`=0x17/0x24/0x1e)、写颜色/UV 常量 = **ANM 精灵渲染状态切换**。索引 = ANM 对象 `+0x5d0`(switch 类型,0=无→对应调用方 `if(idx!=0)` 守卫)。
+### B. ANM 事件回调表族(2026-06-09;th-re-data + dump + 反编译)
+
+> ⚠️ **更正(2026-09-09,[`02-vm-core.md`](02-vm-core.md) §3.5)**:下面那条"`0x491b0c` = `ANM_ON_SWITCH_FUNCS`"
+> **由 ✅ 下调为 🟡** —— `on_switch` 这个名字在全 exe 找不到调用点支撑。
+> 一手看全部 **32 个引用该表的函数**,抽查 `0x46f0c8`/`0x46f14e`(`AnmManager::interrupt_tree(_and_run)`)与
+> `0x44b843`–`0x44b863`(`MainMenu::do_title_screen`),形态**完全一致**:
+> `ECX = vm; EDX = <中断号>; CALL [0x491b0c + vm[+0x5d0]*4]`,**紧接着** `vm[+0x490] = 同一个中断号`
+> (例:`0x44b849` 写 `EDX = 0x1f`,`0x44b863` 写 `[EAX+0x490] = 0x1f`,再 `0x44b86d` 调 `AnmVm::run`)。
+> 而 `vm+0x490` 已一手证实是 **pending_interrupt**。**所以在这些调用点它是 `ANM_ON_INTERRUPT_FUNCS`** ✅。
+> 表项本身(`0x407900`/`0x405f20`/`0x406920`)干了什么仍如下述,只是**它们是被 interrupt 触发的**。
+
+- 🟡 **`0x491b0c` 旧名 `ANM_ON_SWITCH_FUNCS`**(`void*[4]`={null,`0x407900`,`0x405f20`,`0x406920`}=`AnmVm::on_switch__1/2/3`)。反 `0x407900`:操作 AnmVm 顶点数组 `+0x5b8`(4 顶点)、设渲染/混合模式(`+0x534`、`+0x18`=0x17/0x24/0x1e)、写颜色/UV 常量 = **ANM 精灵渲染状态切换**。索引 = ANM 对象 `+0x5d0`(switch 类型,0=无→对应调用方 `if(idx!=0)` 守卫)。
 - **整族 ANM 事件回调表**(ExpHP th-re-data,相邻):`0x491b0c` on_switch[4] · `0x491b1c` on_sprite_set[4](`AnmVm::on_sprite_set__*`)· `0x491b2c` on_draw[7](`AnmVm::on_draw__*`)· `0x491b48`/`0x491b50` on_copy[2]×2 · `0x491b58` on_delete[4]。→ **这是 ANM VM 的事件分派骨架,逐表反 entry 即得各事件语义。**
 - 消费者 `FUN_0044f810`/`FUN_0044c8c0` = ANM 管理器(`DAT_004c0f48`)每帧渲染更新器;`0x46efa0`=`AnmManager::get_vm_with_id`(句柄→AnmVm)。
 - ⚠️ **更正**:`0x491b0c` **不是** SHT 特效/敌弹派发(旧 `engine/sht/th16/04`/`06` 误标,已修);也不是 anm**脚本步进**(那是另找 anm bytecode VM,见 §C),而是**事件回调**。

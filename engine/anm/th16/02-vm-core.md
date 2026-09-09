@@ -23,8 +23,23 @@ TH16 的 ANM VM 是一台 **「时间闸门 + 字节码顺序执行」的协程*
 以及函数名 `AnmVm::run` `0x45f980`。
 **② 推测**：`0x45fba0` 是取指 + 分发的循环头。
 **③ 验证**：反汇编 `0x45fba0`–`0x45fbf5`，六条指令就是标准的解释器循环：取脚本基址 → 加 `vm+0x28`
-→ 比较 `ins.time` 与 `vm+0x544` → 按 `opcode` 查两级表跳转。全部 137 条 case label 的落点都在
-`0x45fbfc`–`0x462c92` 之间，且每条 case 都以 `ADD dword ptr [EBX+0x28], ins.size` + `JMP 0x45fb9a` 收尾。
+→ 比较 `ins.time` 与 `vm+0x544` → 按 `opcode` 查两级表跳转。所有 case label 的落点都在
+`0x45fbfc`–`0x462c92` 之间；**回边只有两条**（`JMP 0x45fb9a` 与 `JMP 0x45fba0`），
+把它们的来源全列出来就闭合了整个循环。
+
+**指令指针怎么前进 —— 不是所有 handler 都 `+= size`**（这条一定要说准，否则 `jmp` 会被写坏）：
+`AnmVm::run` 里对 `vm+0x28` 的写只有两族，逐条数得清 ✅
+
+| 写法 | 处数 | 谁在用 |
+| --- | :---: | --- |
+| `ADD dword ptr [EBX+0x28], ins.size` | **108** | 顺序执行的 handler，含默认分支 `0x4629c8` |
+| `MOV dword ptr [EBX+0x28], <算出来的值>` | **7** | 见下 |
+
+七处 `MOV` 分别是：`0x45fb97`（interrupt 命中后落到标签之后）、
+`0x45fc0d`（`200 jmp`）、`0x45fc5d`（`201 jmpIfPos` 的成立分支）、
+`0x460ba1`（`202`–`213` 全体条件跳转共用的尾巴）、`0x45fce0`（`7 caseReturn` 恢复快照）、
+`0x462bfc`（`1 delete` 写 `-1`）、`0x462c08`（`2 static` 写 `-1`）。
+**跳转族与终止族不做 `+= size`**；`3 stop` / `4 stopHide` 则两样都不做（指针原地不动）。
 **④ 结论**：`AnmVm::run` = 整台 VM（取指 / 分发 / 时间 / interrupt / 终止全在一个函数里），
 `EBX` = `zAnmVm*`，`EDI` = 当前指令指针，`ESI` = 常量 `0x100`（给 `param_mask` bit8 用，见 `01-format.md` §5.2）✅。
 **⑤ 证据**：`0x45fba0`（循环头）、`0x45fbc2`（时间闸门）、`0x45fbf5`（跳表）、`0x4629c8`（默认 = 跳过）、
@@ -50,15 +65,18 @@ ins             = script_base(vm) + vm.instr_offset
 // AnmVm::run(vm) -> int      th16:0x45f980   __fastcall(ECX = zAnmVm*)
 // 返回 1 = 请销毁这个 VM；返回 0 = 继续存活
 int AnmVm_run(vm) {
-    saved_speed = GAME_SPEED;                        // 0x45f99a  全局 float @0x4a5788，默认 1.0
-    if (vm.flags_hi & 0x200) GAME_SPEED = 1.0;       // 0x45f9ad  “本 VM 不吃减速”
+    saved_speed = GAME_SPEED;                        // 0x45f99a  读进 XMM3，此后全程不再重载
+    if (vm.flags_hi & 0x200) GAME_SPEED = 1.0;       // 0x45f9ad  “本 VM 不吃全局减速”
 
     // ── ① 减速（子弹时间）：整棵树共用「根 VM 的 slowdown」 ────────── 0x45f9c3
     root = vm.root_vm;                                            // +0x5ac
     f = (root && !(vm.flags_hi & 0x10000)) ? get_slowdown_factor(root)   // 0x406340
                                            : vm.slowdown;               // +0x5b4
-    if (f > 0.0)                                                  // 0x45f9ed
-        GAME_SPEED = max(0.0, GAME_SPEED - f * GAME_SPEED);       // 0x45fa16..0x45fa2e
+    if (f > 0.0) {                                                // 0x45f9ed
+        // ★ 两个操作数都是 saved_speed（XMM3），不是上一行可能刚被改成 1.0 的 GAME_SPEED
+        GAME_SPEED = saved_speed - f * saved_speed;                // 0x45fa16 / 0x45fa1a / 0x45fa1d
+        if (GAME_SPEED < 0.0) GAME_SPEED = 0.0;                    // 0x45fa21 / 0x45fa24 / 0x45fa2e
+    }
 
     // ── ② on_tick 回调，可以整帧抢走 ─────────────────────────────── 0x45fa38
     if (vm.on_tick_idx)                                           // +0x5c4
@@ -89,12 +107,13 @@ DISPATCH:                                                         // 0x45fba0
             case 3:           if (vm.pending_interrupt) goto DO_INTERRUPT;            // 0x4629e3
                               vm.flags_lo |= 0x4000;
                               Timer_decrement(&vm.timer); goto FRAME_TAIL;            // 0x4629fa
-            case 6:           n = arg0;                                               // 0x45fc65
+            case 6:           n = resolve_int(vm, ins, 0);   // param_mask bit0 → get_int_var  0x45fc65
                               vm.timer.previous = vm.timer.current;
                               vm.timer.current_f -= (float)n;
                               vm.timer.current = (int)vm.timer.current_f;   // 截断向零
                               vm.instr_offset += ins.size; continue;
-            case 7:           Timer_copy(&vm.timer, vm.saved_time);                   // 0x45fcc1
+            case 7:           // ★ 不是结构体拷贝：只搬 current，小数位被截掉，见 §3.2
+                              Timer_copy(&vm.timer, vm.saved_time);                   // 0x45fcc1
                               vm.instr_offset = vm.saved_instr_offset; continue;
             default:          vm.instr_offset += ins.size; continue;                  // 0x4629c8
         }
@@ -108,7 +127,7 @@ FRAME_TAIL:                                                       // 0x462a06
         vm.entity_pos.y += GLOBAL_SCROLL_DY;
         vm.entity_pos.z += GLOBAL_SCROLL_DZ;
     }
-    if (vm.flags_hi & 0x2000) recompute_uv_quad(vm);              // 0x462a7d → 0x468c00 → +0x3a8..0x3c4
+    if (vm.flags_hi & 0x2000) recompute_uv_quad(vm);              // CALL 0x462a87 → 0x468c00 → +0x3a8..0x3c4
     step_interpolators(vm);                                       // 0x462bc1 → 0x463b30
     update_geometry_for_render_mode(vm);                          // 0x462bc8 → 0x4632f0
     if (cb = ANM_ON_WAIT_CALLABLES[vm.on_wait_idx])               // 0x462bcd  +0x5c0，表 @0x4c0f44
@@ -124,6 +143,19 @@ FRAME_TAIL:                                                       // 0x462a06
 `0x4629c8` 是「默认 = `instr_offset += size` 后 `JMP 0x45fb9a`」，
 而 `0x45fb9a` 只是 `MOV ESI,0x100; NOP` 后落进 `0x45fba0` —— 即 `end_loop_iter` → `begin_loop_iter`
 就是一次循环迭代的接缝。133 个 handler 的收尾全部走这两条路之一（唯一例外是 §6 的五个终止 / 让出分支）。
+
+### 2.0 一个 ZUN 怪癖：`flags_hi & 0x200` 会被自己的 slowdown 悄悄打败
+
+`0x45f99a` 把入口时的 `GAME_SPEED` 读进 `XMM3` 之后**全程没有再重载过**，
+而减速那三条算的是 `XMM3 - f * XMM3`（`0x45fa16` `MULSS XMM1,XMM3` / `0x45fa1a` `MOVAPS XMM0,XMM3` /
+`0x45fa1d` `SUBSS XMM0,XMM1`）。也就是说：
+
+- `flags_hi & 0x200` 那句 `GAME_SPEED = 1.0`（`0x45f9b9` 的立即数写）**只在 `f <= 0` 时才留得住**；
+- 一旦 `f > 0`，`GAME_SPEED` 立刻被 `saved_speed - f * saved_speed` **整个覆盖掉**，
+  刚写进去的 `1.0` 完全不参与运算。
+
+**所以「本 VM 不吃全局减速」这个标志，会被本 VM 自己（或它那棵树的根）的 `slowdown` 打败** ✅。
+照「`GAME_SPEED - f * GAME_SPEED`」写 JS 会在两者同时成立时算出与游戏不同的速度 —— 别踩。
 
 ### 2.1 `apply_velocities`（`0x4630f0`）：真正的「一帧推进多少」
 
@@ -176,12 +208,25 @@ uv_scroll_pos+= uv_scroll_vel * GAME_SPEED;          // +0x78 += +0x3c8
 | `+0x0c` | s32 | 速度源下标 | 索引 `0x490eb0`；**`increment` 里 ≥1 一律改回 0** | ✅ | `0x406190`、`0x40d490` |
 | `+0x10` | u32 | `control` | bit0 = 已初始化 | ✅ | `0x406493` |
 
-三个操作（全部 `__thiscall`）：
+四个操作（全部 `__thiscall`）：
 
 - `Timer::increment` `0x406190` —— `prev = cur`；取 `p = *(float**)0x490eb0[idx]`；
   若 `p` 非空且 `*p <= 0.99 || *p >= 1.01` 则 `cur_f += *p`、`cur = (int)cur_f`，否则 `cur += 1`、`cur_f += 1.0`。
 - `Timer::set_value` `0x406490` —— `cur = v; prev = v - 1; cur_f = (float)v`（未初始化时先填哨兵 `0xfff0bdc1`）。
 - `Timer::decrement` `0x40d490` —— 与 `increment` 对称，`cur_f -= 速度`。
+- `Timer::copy` `0x464d80` —— **不是结构体拷贝**。见下。
+
+**`Timer::copy` 的坑（interrupt 快照与 `7 caseReturn` 都走它）**：
+它按值收一个 20 字节的源 timer（`RET 0x14`），但**函数体与 `set_value` 逐字节相同**——
+只用到源的 `current`（`0x464dab` 取 `[EBP+0xc]`，即传值结构里的第二个 dword），然后
+
+```
+dst.current = src.current;  dst.previous = src.current - 1;  dst.current_f = (float)src.current;
+```
+
+`src.current_f` 的小数部分、`src.previous`、`src` 的速度源下标与 control 位**全部丢弃** ✅。
+→ **被 interrupt 打断再 `7 caseReturn` 回来，脚本时间的小数位会被截掉两次**；
+`GAME_SPEED == 1.0` 时看不出来，减速期（浮点路径）可观测。写播放器要照此实现，别写成 `dst = src`。
 
 **速度源表 `0x490eb0` 的第 0 项直接读出来是 `0x4a5788` = `GAME_SPEED`**（PE 手工解字节：`88 57 4a 00`）✅。
 `increment` / `decrement` 都会把非 0 的下标强行改回 0，所以 **TH16 里所有 zTimer 都以 `GAME_SPEED` 为步长**，
@@ -191,7 +236,7 @@ uv_scroll_pos+= uv_scroll_vel * GAME_SPEED;          // +0x78 += +0x3c8
 
 | 偏移 | 类型 | 名 | 可信度 | 一手证据 |
 | --- | --- | --- | :---: | --- |
-| `+0x2c` | f32[3] | `pos` | ✅ | `0x46162f`（`400 move`）、`0x463b30` |
+| `+0x2c` | f32[3] | `pos` | ✅ | `0x46162a`（`400 move` 写 `.xy`）、`0x463b30` |
 | `+0x38` | f32[3] | `rotation` | ✅ | `0x4613bf`、`0x4630f0` |
 | `+0x44` | f32[3] | `angular_velocity` | ✅ | 写 `0x4614a2`；积分 `0x4630f0` |
 | `+0x50` | f32[2] | `scale` | ✅ | `0x46101f`（`402 scale`） |
@@ -213,7 +258,15 @@ uv_scroll_pos+= uv_scroll_vel * GAME_SPEED;          // +0x78 += +0x3c8
 **默认值来自 `AnmVm::wipe` `0x4090f0`**：整块 `memset 0`（保留 `+0x18` `+0x53c` `+0x5e0..0x5eb`），
 然后 `scale = scale_2 = uv_scale = (1,1)`、`color_1 = 0xffffffff`、`+0x3d0` 单位阵、
 `flags_lo` 的低 16 位 `= 7`、`flags_hi = (flags_hi & ~0x8000) | 0x4000`、
-`+0x4d4 = 1.0`、`+0x4d8 = π`、`+0x4dc = 0x10000`、两个 zTimer 归零、四个链表节点自指 ✅。
+`+0x4d4 = 1.0`、`+0x4d8 = π`、`+0x4dc = 0x10000` ✅。
+
+两处措辞要说准（否则移植会写错初值）：
+
+- **两个 zTimer 不是「归零」**：`current = 0`、`current_f = 0.0f`，但
+  **`previous` 被写成哨兵 `0xfff0bdc1`（= −999999）**，不是 0（`0x4090f0` 里对 `+0x540`/`+0x554` 的立即数写）。
+  这与 `Timer::set_value` 首次初始化时填的是同一个哨兵。
+- **四个链表节点不是「自指」**：`zAnmVmList` 的首字段是 `entry`，`wipe` 往 `+0x568`/`+0x578`/`+0x588`/`+0x598`
+  写的是**宿主 VM 自己的指针**（节点认领它属于哪个 VM），`next`/`prev`/`tail` 三个字段才是清 0。
 
 ### 3.4 插值器（12 组）与脚本变量
 
@@ -263,8 +316,8 @@ uv_scroll_pos+= uv_scroll_vel * GAME_SPEED;          // +0x78 += +0x3c8
 | `+0x5b8` | void* | 顶点缓冲 | 🟡 | `0x4632f0` |
 | `+0x5c0` | s32 | `on_wait` 回调下标；表 `0x4c0f44` | ✅ | `0x462bcd`（见 §9 的坑） |
 | `+0x5c4` | s32 | `on_tick` 回调下标；表 `0x4919e8` | ✅ | `0x45fa38` |
-| `+0x5d0` | s32 | **`on_interrupt`** 回调下标；表 `0x491b0c` | ✅ | `0x46f0d6`、`0x46f15b` |
-| `+0x5dc` | s32 | `on_sprite_set` 回调下标；表 `0x491b1c` | ✅ | `0x460bd8` |
+| `+0x5d0` | s32 | **`on_interrupt`** 回调下标；表 `0x491b0c` | ✅ | 读字段 `0x46f0c8`、`0x46f14e`；取表项 `0x46f0d6` |
+| `+0x5dc` | s32 | `on_sprite_set` 回调下标；表 `0x491b1c` | ✅ | 读字段 `0x460bb0`/`0x460bd0`；取表项 `0x460bd8` |
 
 `node16` = `{zAnmVm* entry; node* next; node* prev; node* tail}`（`zAnmVmList`，16 字节）。
 
@@ -300,7 +353,7 @@ uv_scroll_pos+= uv_scroll_vel * GAME_SPEED;          // +0x78 += +0x3c8
 | `0x20` / `0x40` | 请求销毁 / 已销毁（管理器用） | ✅ | `0x46e340`、`0x46e660` |
 | `0x200` | 本 VM 强制 `GAME_SPEED = 1.0` | ✅ | `0x45f9ad` |
 | `0x400` | 由管理器托管（`create_managed_*` 置） | ✅ | `0x46eea0`、`0x46ed60` |
-| `0x2000` | 帧尾重算 sprite 的 UV 四角 | ✅ | `0x462a6d` |
+| `0x2000` | 帧尾重算 sprite 的 UV 四角 | ✅ | 判据 `0x462a6d`；调用 `0x462a87` |
 | `0x4000` / `0x8000` | 暂停类：仅 `0x4000` 时受游戏暂停影响 | ✅ | `0x45fa91`；`wipe` 默认置 `0x4000` |
 | `0x10000` | 不向父/根继承（减速、缩放） | ✅ | `0x45f9cd`、`0x406350`、`0x4632f0` |
 | `0x40000` / `0x80000` | 由 layer 区间派生（3–19 / 20–23） | ✅ | `0x406d93`、`0x406db5` |
@@ -362,7 +415,8 @@ DO_INTERRUPT:
         if (!fallback) { Timer_decrement(&vm.timer); goto FRAME_TAIL; }       // 0x4629fa
         ins = fallback; off = fallback_off;
     }
-    vm.saved_time         = vm.timer;           // Timer::copy(vm+0x00, …)    0x45fb6b
+    // ★ Timer::copy 不是 memberwise：saved_time.current_f 只保留 (float)timer.current
+    vm.saved_time         = Timer_copy(vm+0x00, vm.timer);                    // 0x45fb6b
     vm.saved_instr_offset = vm.instr_offset;    // +0x14                      0x45fb7d
     off += ins.size;                            // 跳过 case 指令本身          0x45fb84
     Timer_set_value(&vm.timer, (s16)ins.time);  // ★ 时间直接设成标签的 time   0x45fb8b
@@ -406,12 +460,34 @@ DO_INTERRUPT:
 打上 `flags_hi |= 0x40`，再 `destroy_possibly_managed_vm`）✅。
 → **父 VM 被 delete，子树一并销毁** ✅。
 
-**「跑到末尾一定会 delete」是可以证死的**：终止标记那条指令的 `time` 字段，
-在 54 个文件 1929 个 script 里 **全部 = 0**（`size` 也全 = 0，与 [`01-format.md`](01-format.md) §5.1 一致）。
-`0 <= vm.time` 永真（`vm.time` 从 0 起且只增），所以**任何走到末尾的脚本都会执行这条 `-1` 并把自己删掉** ✅。
+**「跑到末尾就会 delete」要分两步说，不能一句带过。**
+先摆事实：终止标记那条指令的 `time` 字段，在 54 个文件 1929 个 script 里 **全部 = 0**
+（`size` 也全 = 0，与 [`01-format.md`](01-format.md) §5.1 一致）。于是：
+
+1. **`vm.time >= 0` 时，指针一走到终止标记就地执行 → 当帧返回「请销毁」** ✅。
+   这是压倒性的常见情形：VM 实例化时两个 zTimer 都被 `set_value(0)`（§8），此后每帧 `+= GAME_SPEED`。
+2. **`vm.time < 0` 时，VM 会「停在」终止标记上**（`0 > vm.time` 闸门不放行），
+   每帧 `Timer::increment` 把它推近 0，`⌈-vm.time / GAME_SPEED⌉` 帧后过闸再删 🟡。
+
+> ⚠️ **`vm.time` 既不是 ≥ 0 也不是单调的** —— 本文自己给了四条反例：
+> `6 wait n` 做减法（`0x45fc97`）、`3 stop` 做 `Timer::decrement`（`0x4629fa`）、
+> interrupt 直接 `set_value(标签 time)`（`0x45fb8b`，43268 条指令里有 3540 条 `time < 0`）、
+> `200 jmp` 用 arg1 调 `Timer::set_value`（`0x45fbfc` → `0x406490`，可为负）。
+> 所以**不能拿「时间从 0 起且只增」当论据**，第 2 步只能靠「每帧 `+GAME_SPEED`，有限帧内必然过闸」。
+
+**第 2 步为什么只能标 🟡**：这条「有限帧」的推理有五个可枚举的逃逸口，本文没有逐一证否 ——
+`flags_lo & 0x100000`（冻结，`0x45fa5f` 早退，连 `increment` 都不跑）、
+暂停闸门（`0x45fa91`，同样在 `increment` 之前返回）、
+`GAME_SPEED` 被减速压到 `0.0`（`0x45fa2e`，`cur_f += 0` 原地踏步）、
+`on_tick` 回调返回非 0（`0x45fa4f` 抢走整帧）、
+以及**在过闸之前收到 interrupt**（`0x45fa7b` 在取指之前，会把指针从终止标记上带走）。
+**结论**：情形 1 ✅、情形 2 🟡（条件成立时为真，条件本身没穷举）。
 
 **`2 static`**：只写 `instr_offset = -1`，返回 0。VM 留在链表里继续被渲染，
-但从下一帧起 `0x45fa55` 的早退闸门会命中 —— **连计时器、插值器、速度积分都不再跑**，彻底冻结 ✅。
+从下一帧起 `0x45fa55` 的早退闸门会命中，**脚本、两个计时器、插值器、速度积分、帧尾几何全部不再跑** ✅。
+**但不是「整个 `run` 都不跑」**：`0x45fa55` 之前的那一段每帧照跑 ——
+`GAME_SPEED` 的存/减速/复原（`0x45f99a`–`0x45fa2e`）与 `on_tick` 回调（`0x45fa38`，
+它甚至能返回非 0 让这个 static 的 VM 被销毁）✅。
 
 **`3 stop`**：`flags_lo |= 0x4000`，然后 `Timer::decrement(&vm.timer)`（`0x4629fa` → `0x40d490`）
 再走完整个帧尾，帧尾末尾又 `Timer::increment`。**一减一加净变化 0 ⇒ 脚本时间冻结**，
@@ -438,12 +514,15 @@ TH16 的 opcode 0 是 no-op，opcode 15 根本没有 handler（落默认分支�
 
 `0x45fbce`–`0x45fbf5` 与 `0x460c46`–`0x460c5d`，两级「字节索引表 + 跳表」：
 
-| 范围 | 判据 | 索引表（字节） | 跳表（dword） | 目标数 |
-| --- | --- | --- | --- | :---: |
-| `op <= 299` | `INC EAX; CMP EAX,0xd6; JA 默认` | `0x462d8c`，215 项 | `0x462cb8`，53 项 | 53 |
-| `op == 300` | `JZ 0x460ba9` 直接内联 | — | — | 1 |
-| `301 <= op <= 613` | `SUB EAX,0x12d; CMP EAX,0x138; JA 默认` | `0x462fa8`，313 项 | `0x462e64`，81 项 | 81 |
-| 其余 | 落 `0x4629c8` | — | — | 默认 = 跳过 |
+| 范围 | 判据 | 索引表（字节） | 跳表项数 | 其中非默认槽 | 已实现 opcode |
+| --- | --- | --- | :---: | :---: | :---: |
+| `op <= 299` | `INC EAX; CMP EAX,0xd6; JA 默认` | `0x462d8c`，215 项 | `0x462cb8`，53 | 52 | **53** |
+| `op == 300` | `JZ 0x460ba9` 直接内联 | — | — | 1 | **1** |
+| `301 <= op <= 613` | `SUB EAX,0x12d; CMP EAX,0x138; JA 默认` | `0x462fa8`，313 项 | `0x462e64`，81 | 80 | **80** |
+| 其余 | 落 `0x4629c8` | — | — | — | 0（默认 = 跳过） |
+
+**53 + 1 + 80 = 134** ✅。两张跳表各有一个槽指向默认分支 `0x4629c8`（所以是 53/81 项而非 52/80）；
+低段「52 个非默认槽却有 53 个 opcode」是因为 **`-1` 与 `1` 共用槽 0**（§6.1）。
 
 **表是直接从 PE 里解字节读出来的**（不经 Ghidra），据此列出 **134 个真正有 handler 的 opcode** ✅：
 
@@ -468,9 +547,32 @@ TH16 的 opcode 0 是 no-op，opcode 15 根本没有 handler（落默认分支�
 - **分配**：`AnmManager::allocate_vm` `0x46f600` —— 从 `ANM_MANAGER + 0x184f4e0` 的空闲链摘一个
   `zAnmFastVm`（`0x614` 字节 = `zAnmVm` + 空闲链节点 + `is_alive` + `fast_id`），空了才 `operator_new(0x5fc)` ✅。
 - **挂上去**：`AnmLoaded::create_managed_root` `0x46eea0` / `create_managed_child` `0x46ed60` ——
-  置 `flags_hi |= 0x400`、继承 layer、（child 还要）写 `+0x5b0` 父指针与 `+0x5ac` 根指针，
-  **然后立刻 `AnmVm::run` 跑一次**（`0x46eefa` / `0x46edc9`），最后才插进 world / ui 链表 ✅。
-  → **播放器要复刻：创建当帧就 tick 一次。**
+  **然后立刻 `AnmVm::run` 跑一次**（`0x46ef4e` / `0x46ee00`），最后才插进 world / ui 链表 ✅。
+  → **播放器要复刻：创建当帧就 tick 一次。** tick 前的状态见 §8.1。
+
+### 8.1 `create_managed_*` 在第一次 tick 之前往新 VM 里写了什么
+
+要复刻「创建即 tick」，就得知道 tick 前的初值。两条路都一手逐条读了 ✅：
+
+| 目标字段 | root（`0x46eea0`） | child（`0x46ed60`） |
+| --- | --- | --- |
+| `flags_hi \| 0x400` | `0x46eedf`（**copy_vm 之后**） | `0x46eda8`（**copy_vm 之前**） |
+| `layer` `+0x18` | ← 源对象 `+0x18`，`0x46eeef` | ← 源对象 `+0x18`，`0x46edb5` |
+| `flags_hi` bit `0x2000000` | 从源对象同位复制，`0x46eef2`–`0x46ef02` | 同，`0x46edce`–`0x46ede7` |
+| `entity_pos` `+0x5e0..0x5e8` | ← 源对象同偏移，`0x46ef0a`–`0x46ef20` | **清 0**，`0x46edba`/`0x46edc3` |
+| `rotation` `+0x38..0x40` | ← 源对象同偏移，`0x46ef26`–`0x46ef35` | 不写（用模板值） |
+| `pos_2` `+0x4e0..0x4e8` | ← 源对象的 **`pos` `+0x2c..0x34`**，`0x46ef38`–`0x46ef48` | 不写 |
+| `+0x5b0` 父 / `+0x5ac` 根 | 不写（保持 0 = 自己是根） | `0x46ede1` / `0x46edf8`，根 = 父的根 ?: 父 |
+
+三个容易写错的细节：
+
+1. **root 把源对象的 `pos` 拷进了新 VM 的 `pos_2`（`+0x4e0`），不是 `pos`（`+0x2c`）** ✅
+   —— `MOVQ XMM0,[EDX+0x2c]` / `MOVQ [ESI+0x4e0],XMM0`。配合 `flags_lo & 0x400` 的取位置逻辑看（§3.5、§3.3）。
+2. **child 的 `entity_pos` 清 0 写在 `copy_vm` 之前，却活了下来** ——
+   因为 `copy_vm` 先调的 `AnmVm::wipe_suffix` `0x407a50` **保留 `+0x18`/`+0x53c`/`+0x5e0..0x5eb`**（`memset` 后再写回）✅。
+3. **`layer` 的写入时序两条路不同**：root 在 `copy_vm` 之后（源对象的 layer 生效），
+   child 在 `copy_vm` 之前 —— 而 `+0x18` 属于 prefix，会被模板整块覆盖。
+   这是反汇编里明摆着的顺序差 ✅；**ZUN 是有意还是笔误，本文不下判断** ❓。
 
 **谁 tick 它**：两条路，都一手确认 ✅。
 
