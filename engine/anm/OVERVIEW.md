@@ -27,6 +27,12 @@ MSG 的文本绘制走它（[`../msg/OVERVIEW.md`](../msg/OVERVIEW.md)）、弹�
 | `format` 是 9 项查表下标（bpp `th16:0x491b90` / D3DFORMAT `th16:0x491bb4`）；7 = `D3DFMT_A8` | ✅ | ❓ | [th16/01-format](th16/01-format.md) §7 |
 | TH16 加载器只接受 `version == 8`，没有旧版本分支 | ✅ | ❓ | [th16/01-format](th16/01-format.md) §9 |
 | 脚本表在 `anm+0x10c`，模板步长 0x60c（th16 0x5fc） | 🟡 | ✅ | 同上 §2 |
+| 跳转的 `dest` 是**脚本内字节偏移**（不是指令下标）；`instr_offset` 裸赋值、取指裸相加，全路径无乘法 | ✅ | ❓ | [th16/03-math-jumps](th16/03-math-jumps.md) §5（`th16:0x45fc0d`；857/857 真实跳转落在指令边界） |
+| 跳转成功时 `script_time` 被 `Timer::set_value(t)` **覆盖成参数 `t`**，与目标指令的 `time` 标签无关 | ✅ | ❓ | [th16/03-math-jumps](th16/03-math-jumps.md) §6（`th16:0x406490`；857 条里 106 条 `t ≠ 目标 time`） |
+| `I0–I3` = 变量号 10000–10003、`F0–F3` = 10004–10007，且**变量号的编码宽度跟指令类型走**（整型指令编 int32、浮点指令编 float32；跨类型是转换不是重解释位） | ✅ | ❓ | [th16/03-math-jumps](th16/03-math-jumps.md) §3（`th16:0x45f890` / `th16:0x45f780` 两张索引表） |
+| 整数除 / 取模**没有零守卫**：`b == 0` 与 `INT_MIN / -1` 都是裸 `idiv` ⇒ x86 `#DE`；浮点除走 IEEE 不崩 | ✅ | ❓ | [th16/03-math-jumps](th16/03-math-jumps.md) §4（`th16:0x4602fa` 等四条 case） |
+| `131 mathCirclePosRand` 的半径**不是** `[lo, hi]`：一手是 `lo + s·(hi − lo)`、`s ∈ [−1, 1)` ⇒ 区间宽一倍且向下越过 `lo`（社区判错） | ✅ | ❓ | [th16/03-math-jumps](th16/03-math-jumps.md) §7.2（`th16:0x46075e`–`th16:0x460775`） |
+| 操作数求值次序共**六种形态**，不是「一律下标升序」；判据 = case 体里 `test byte [edi+6]` 的执行次序 | ✅ | ❓ | [th16/03-math-jumps](th16/03-math-jumps.md) §9.1（46/46 穷举） |
 | 渲染阶段 × 相机 × 层：层 0–2 相机 2、3–19 相机 3、20–23 相机 1、24+ 相机 2；四台相机全透视（LookAt + PerspectiveFov，无 Ortho） | — | ✅ | [th18/02-render-stages](th18/02-render-stages.md) |
 | 渲染模式 8 = D3D WORLD 矩阵 + 单位四边形；2D 路径自算顶点并加相机 2D 偏移（只有相机 2 非零） | — | ✅ | [th18/01 §3b](th18/01-vm-instantiate.md) |
 

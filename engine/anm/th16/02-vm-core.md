@@ -161,11 +161,19 @@ FRAME_TAIL:                                                       // 0x462a06
 
 ```c
 // 只有 flags_hi & 0x1000000 时才跑
-rotation.xyz += angular_velocity.xyz * GAME_SPEED;   // +0x38 += +0x44，各自 wrap 进 (-π, π]，最多 33 次
+rotation.xyz += angular_velocity.xyz * GAME_SPEED;   // +0x38 += +0x44，各自 wrap 进 [-π, π]，最多 34 次
 scale.y      += scale_growth.y * GAME_SPEED;         // +0x54 += +0x64
 scale.x      += scale_growth.x * GAME_SPEED;         // +0x50 += +0x60
 uv_scroll_pos+= uv_scroll_vel * GAME_SPEED;          // +0x78 += +0x3c8
 ```
+
+> **角度归一的两个数字与 `129 mathReduceAngle` 是同一套** ✅：这里的 wrap 不是 `call 0x402d30`，
+> 是编译器把它**内联**进来的两段循环（`0x463130` 减 `2π` / `0x463146` 加 `2π`），
+> 与 `0x402d30` 逐条同形——守卫 `mov eax,edx; inc edx; cmp eax,0x20; jg` **比的是自增前的值**，
+> 所以上限是 **34 次**不是 33 次；两段的出口判据分别是 `x <= π`（`comiss xmm0,xmm2; jbe`）与
+> `-π <= x`（`comiss xmm3,xmm0; jbe`），**两端都闭** ⇒ 区间是 `[-π, π]` 不是 `(-π, π]`。
+> 完整推导、泄漏阈值 `±216.77`（= 69π）与 float32 逐步模拟表见
+> [`03-math-jumps.md`](03-math-jumps.md) §7.1。
 
 **`GAME_SPEED` 是全 VM 共享的全局 float** `0x4a5788`（默认 `1.0`），
 `AnmVm::run` 在进入时按本 VM 的 slowdown **临时改写它**、退出时恢复（`0x45f99a` 存 / `0x462ca4` 复）✅。
@@ -298,8 +306,23 @@ dst.current = src.current;  dst.previous = src.current - 1;  dst.current_f = (fl
 | 10027 / 10028 / 10029 | `+0x4d4` / `+0x4d8` / `+0x4dc` | 1.0 / π / `0x10000` |
 | 10033–10035 | `+0x4c0` f32[3] | 旋转相关 |
 
-浮点侧 `AnmVm::get_float_var` `0x45f2d0` 多出 10026/10027/10028（`UNSAFE` 随机）与
-10030/10031/10032（`REPLAY_SAFE_RNG` 随机）两组 ✅。
+浮点侧 `AnmVm::get_float_var` `0x45f2d0` 的定义域是 **10000–10035**
+（`add eax,-10000; cmp eax,0x23; ja …; jmp [eax*4+0x45f578]`，36 项跳表），大部分变量号与整型侧同号同义。
+**跳表逐项直读 PE 解出来后，走 PRNG 的只有这两组** ✅：
+
+| 变量号 | case 地址 | 公式 | 流 |
+| --- | --- | --- | :---: |
+| 10010 / 10011 / 10012 | `0x45f3e7` / `0x45f39b` / `0x45f3c1` | `+0x4d8`(π)`·randf_pm1()` / `+0x4d4`(1.0)`·randf01()` / `+0x4d4`(1.0)`·randf_pm1()` | **B**（表现流，`mov ecx,0x4a6d80`） |
+| 10030 / 10031 / 10032 | `0x45f54a` / `0x45f4fe` / `0x45f524` | 与上一行逐字节相同 | **A**（回放流，`mov ecx,0x4a6d88`） |
+| 10022 | `0x45f4d8` | raw draw 转 float（浮点侧不取模） | **B** |
+
+> ⚠️ **本节初版把 `10026/10027/10028` 写成「`UNSAFE` 随机」——错了**，而且与上面整型表里
+> 「`10027/10028/10029` = `1.0` / π / `0x10000`」当场自相矛盾。逐条解跳表（`0x45f578`，直读 PE）：
+> `10026` → `0x45f443` 是 `call 0x464dd0; movss xmm0,[eax+8]`，**整条路径一次 PRNG 都没碰**（返回值是什么
+> 归变量表文档解，本文只否掉「随机」这个标签）；`10027` → `0x45f4b1` = `movss xmm0,[ecx+0x4d4]`（常量 `1.0`）；
+> `10028` → `0x45f4bd` = `movss xmm0,[ecx+0x4d8]`（常量 π）。真正走 Stream B 随机的是 `10010`–`10012` ✅。
+> 两条流的划界、ANM 子系统 16 个 PRNG 调用点的穷举与 negative set 见
+> [`03-math-jumps.md`](03-math-jumps.md) §7.4。
 
 ### 3.5 树、链表、回调下标
 
