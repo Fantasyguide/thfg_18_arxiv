@@ -16,45 +16,67 @@
 
 **Spec**：[`../specs/2026-09-09-runtime-anm-design.md`](../specs/2026-09-09-runtime-anm-design.md)
 
-## 执行状态（2026-09-09 收工）
+## 执行状态（2026-09-09）
 
-**波 A–C 已完成并推送**：分支 `runtime/anm-phase1`，19 提交，未合并 `main`。
-`npm test` 44/44 · `check-docs.py` 164 文件四项全绿 · 54 个真实 `.anm` 解析 54/54。
+**分支 `runtime/anm-phase1`**，未合并 `main`。`npm test` 74/74 · `check-docs.py` 170 文件四项全绿。
 
-| 任务 | 状态 | 提交 | 产出 |
+### 知识层：135 条 opcode + 36 个变量号 **全部有一手文档**
+
+| 文档 | 覆盖 | 可信度 | 审阅 |
 | --- | --- | --- | --- |
-| T0 | ✅ | `9912c65`→`f021690` | `runtime/` 骨架、th16 HTML 快照（`local/th16.v1.00a/state/`）、opcode 矩阵生成器 |
-| R1 | ✅ | `4e1503b`→`a4ddd7a` | `engine/anm/th16/01-format.md`（25 ✅ / 4 🟡） |
-| I1 | ✅ | `7b5bd62`→`e6943a8` | `runtime/anm/src/format/anm-v8.js` |
-| R2 | ✅ | `640aaf2`→`2b8484e` | `engine/anm/th16/02-vm-core.md`（62 ✅ / 9 🟡） |
-| I2 | ✅ | `0da2ebd`→`2192e80` | `runtime/anm/src/vm/core.js` |
-| R3 | ✅ | `c12f499`→`037755c` | `engine/anm/th16/03-math-jumps.md`（41 ✅ / 5 🟡） |
-| I3 | ✅ | `4373548` | `runtime/anm/src/vm/group-math.js`（46 条全注册） |
-| 收口 | ✅ | `5cd4918`/`7b44583`/`916b4a8` | 消两处虚标 ✅、断言回流、矩阵生成器防抹平 |
-| **RV1** | ⬜ **下一个** | — | `engine/anm/th16/04-variables.md`（36 行表） |
-| **RV2** | ⬜ | — | 同上，补 `10033–10035` 专项（可与波 D 并行） |
-| **IV** | ⬜ | — | `resolveArg` 8 槽 → 22 槽 |
-| 波 D–F | ⬜ | — | 见下 |
+| `01-format.md` | v8 文件格式 | 25 ✅ / 4 🟡 | ✅ 过审 + 修复 |
+| `02-vm-core.md` | VM 骨架 / 时间 / interrupt / 终止四态 | 62 ✅ / 9 🟡 | ✅ 过审 + 修复 |
+| `03-math-jumps.md` | Math + Jumps 46 条 | 41 ✅ / 5 🟡 | ✅ 过审 ×2 + 修复 |
+| `04-variables.md` | 36 个变量号（含 RV2 的 mystery-angle 结论） | 49 ✅ / 16 🟡 / 1 ❓ | ⚠️ **未审阅** |
+| `05-system.md` | System 0–99，8 条 | 37 ✅ / 5 🟡 | ⚠️ **未审阅** |
+| `06-settings.md` | Settings 300–399，18 条 | 49 ✅ / 17 🟡 | ⚠️ **未审阅** |
+| `07-general.md` | General 400–499，39 条 | 63 ✅ / 12 🟡 / 3 ❓ | ⚠️ **未审阅** |
+| `08-child.md` | Child 500–599，10 条 | 24 ✅ / 5 🟡 / 2 ❓ | ⚠️ **未审阅** |
+| `09-drawing.md` | Drawing 600–699，14 条 | 38 ✅ / 14 🟡 / 2 ❓ | ⚠️ **未审阅** |
 
-**下次开工从 RV1 起**，brief 已生成在 `.superpowers/sdd/2026-09-09-runtime-anm-phase1/task-RV1-brief.md`
-（RV2 的 brief 同目录；RV1 完成后才派 RV2。该目录 gitignored，含 19 份 brief + 各任务 report
-+ 完整执行账本 `progress.md`，里面有全部 11 条控制器裁定与每轮审阅发现——**下次审阅时读它**）。
+**RV1 / RV2 / 波 D 均已完成**（04–09 六篇由用户产出）。逆向部分实质做完，缺的是后六篇的审阅闸门。
 
-### 已知遗留（不在本分支范围，波 D 前建议处理）
+### 实现层：1468 行，46 / 135 条 opcode
 
-1. **`resolveArg` 只覆盖 8/22 个可写变量号** —— 实测 Math+Jumps 组 2525 条真实指令里
-   **1078 条（42.7%）会抛**，1929 个 script 里 338 个（17.5%）受影响。这正是 RV1/IV 要解决的。
+| 文件 | 行数 | 内容 |
+| --- | ---: | --- |
+| `runtime/anm/src/format/anm-v8.js` | 233 | v8 解析器 —— 54/54 真实文件 |
+| `runtime/anm/src/vm/core.js` | 733 | VM 骨架 + 36 变量号读 / 22 可写号写 + 死循环护栏 |
+| `runtime/anm/src/vm/group-math.js` | 502 | Math + Jumps 46 条 |
+
+**IV 已完成**（commit `ed2a1d6`）：变量表从 8 槽扩到全 36 号。54 文件真实数据实验
+**抛出率 42.7% → 3.2%**（1078 → 80 条），受影响 script **17.5% → 0.7%**（338 → 14 个）；
+**残余 80 条全部是 `10016–10021`（camera/lookat）这类有意不建模的引擎全局态**，
+不是变量表覆盖不足。此数字经控制器独立复跑确认。
+
+### 还缺什么
+
+**代码（8 个文件，未开始）**：`group-system.js`(8) · `group-settings.js`(18) ·
+`group-general.js`(39) · `group-child.js`(10) · `group-draw.js`(14) —— 共 **89 条 opcode**；
+外加 `render/webgl.js` · `render/D3D9-MAPPING.md` · `web/index.html`。
+`runtime/anm/OVERVIEW.md` 矩阵：**52 已实现 / 182 未开始**。
+
+**收尾**：`T10`（naming-batch 落库 + `symbols.py export`）· `R11`（th18 补 439/614 + 地址对账）。
+
+**离验收标准（spec §12 第 1 条：播放含时间标签跳转 + interrupt + child vm 的非平凡 script、
+与原版同帧无可见差异）还差**：层 A 的 75 条（System/Settings/General/Child）+ 整个层 B
+（Drawing 14 条 + WebGL 后端 + D3D9 映射表）。**该标准目前一条都未触及。**
+
+### 已知遗留
+
+1. **`createVm(script, opts)` 静默吞掉不认识的 opts 键** —— 控制器实测踩过：写
+   `createVm(s, {prng: fn})` 注入 PRNG 钩子毫无效果（钩子必须直接挂 `vm.prng`），
+   失败方式隐蔽（不报错，只是 PRNG 变量开始抛）。建议加未知键守卫，与本项目
+   「宁可抛不要静默」的既有取舍一致。
 2. **「33 次 / `(-π, π]`」在仓里还有 4 处未改**（`_shared/math-and-prng.md` §2/§2.1、
-   `bullet/th16/03-lasers.md`、`sht/th16/06`、`sht/th18/02`），其中一处写着「跟数学模块同套」——
-   现在指向一个已知错误的数字（一手为 **34 次 / `[-π, π]`**，见 `03-math-jumps.md` §7.1）。
-   与 anm 侧构成跨子系统互相矛盾的 ✅。
+   `bullet/th16/03-lasers.md`、`sht/th16/06`、`sht/th18/02`）。一手为 **34 次 / `[-π, π]`**
+   （`03-math-jumps.md` §7.1）。跨子系统互相矛盾的 ✅。
 3. **`124–128` 的 CRT 函数身份**靠常量指纹判定、无运行时验证。升 ✅ 不需要 32 位环境：
-   这五个是纯叶子函数无导入，用 `unicorn` 映射 `.text`/`.rdata` 直接调（约 30 行）与 libm 对拍即可。
+   纯叶子函数无导入，`unicorn` 映射 `.text`/`.rdata` 直接调（约 30 行）与 libm 对拍即可。
 4. **`naming-batch.md` 待落库**（T10）：`102__iadd`→`102__add` 与 `112__add`→`112__add3`
-   **必须同一 MCP 批次原子应用**，否则中途库里会出现两个 `112__add`。
-5. **Ghidra MCP 的 `th16` 注册项已泄漏**（开报 DuplicateId、关报 NotFound），需重启 MCP 服务端才能清；
-   本轮四个逆向任务全部改走静态快照 + PE 直解完成，质量未打折。
-   另：`local/th16.v1.00a/ghidra_projects/th16.exe.gpr` 是 **0 字节**，工程注册有历史损伤，可能是根因。
+   **必须同一 MCP 批次原子应用**。
+5. **Ghidra MCP 的 `th16` 注册项已泄漏**（开报 DuplicateId、关报 NotFound），需重启 MCP 服务端。
+   本轮全部逆向任务改走静态快照 + `tooling/pe_read.py` 完成，质量未打折。
 
 ---
 
