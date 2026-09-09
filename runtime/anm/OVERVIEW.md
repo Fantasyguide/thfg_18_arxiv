@@ -242,45 +242,45 @@ thpages / th-re-data 是社区单源——「文档」列指向 `engine/anm/th16
 | 315 | Settings | `colorizeChildren` | 已实现 | 已实现 | — |
 | 316 | Settings | `v8-flag-316` | 已实现 | 已实现 | 🟡（社区 wip:2，需过额外闸门） |
 | 317 | Settings | `v8-flag-317` | 已实现 | 已实现 | 🟡（社区 wip:2，需过额外闸门） |
-| 400 | General | `pos` | 未开始 | 未开始 | — |
-| 401 | General | `rotate` | 未开始 | 未开始 | — |
-| 402 | General | `scale` | 未开始 | 未开始 | — |
-| 403 | General | `alpha` | 未开始 | 未开始 | — |
-| 404 | General | `rgb` | 未开始 | 未开始 | — |
-| 405 | General | `alpha2` | 未开始 | 未开始 | — |
-| 406 | General | `rgb2` | 未开始 | 未开始 | — |
-| 407 | General | `posTime` | 未开始 | 未开始 | — |
-| 408 | General | `rgbTime` | 未开始 | 未开始 | — |
-| 409 | General | `alphaTime` | 未开始 | 未开始 | — |
-| 410 | General | `rotateTime` | 未开始 | 未开始 | — |
-| 411 | General | `rotateTime2D` | 未开始 | 未开始 | — |
-| 412 | General | `scaleTime` | 未开始 | 未开始 | — |
-| 413 | General | `rgb2Time` | 未开始 | 未开始 | — |
-| 414 | General | `alpha2Time` | 未开始 | 未开始 | — |
-| 415 | General | `angleVel` | 未开始 | 未开始 | — |
-| 416 | General | `scaleGrowth` | 未开始 | 未开始 | — |
-| 417 | General | `alphaTimeLinear` | 未开始 | 未开始 | — |
-| 418 | General | `v8-418` | 未开始 | 未开始 | — |
-| 419 | General | `v8-flag-419` | 未开始 | 未开始 | — |
-| 420 | General | `posBezier` | 未开始 | 未开始 | — |
-| 421 | General | `anchor` | 未开始 | 未开始 | — |
-| 422 | General | `posAdopt` | 未开始 | 未开始 | 🟡（社区 wip:2，需过额外闸门） |
-| 423 | General | `colorMode` | 未开始 | 未开始 | — |
-| 424 | General | `rotateAuto` | 未开始 | 未开始 | — |
-| 425 | General | `uVel` | 未开始 | 未开始 | — |
-| 426 | General | `vVel` | 未开始 | 未开始 | — |
-| 427 | General | `uVelTime` | 未开始 | 未开始 | — |
-| 428 | General | `vVelTime` | 未开始 | 未开始 | — |
-| 429 | General | `uvScale` | 未开始 | 未开始 | — |
-| 430 | General | `uvScaleTime` | 未开始 | 未开始 | — |
-| 431 | General | `v8-flag-431` | 未开始 | 未开始 | 🟡（社区 wip:2，需过额外闸门） |
-| 432 | General | `slowdown-immune` | 未开始 | 未开始 | — |
-| 433 | General | `posTime2D` | 未开始 | 未开始 | — |
-| 434 | General | `scale2` | 未开始 | 未开始 | — |
-| 435 | General | `scale2Time` | 未开始 | 未开始 | — |
-| 436 | General | `anchorOffset` | 未开始 | 未开始 | — |
-| 437 | General | `rotationSystem` | 未开始 | 未开始 | — |
-| 438 | General | `originMode` | 未开始 | 未开始 | — |
+| 400 | General | `pos` | 已实现 | 已实现 | — |
+| 401 | General | `rotate` | 已实现 | 已实现 | — |
+| 402 | General | `scale` | 已实现 | 已实现 | — |
+| 403 | General | `alpha` | 已实现 | 已实现 | — |
+| 404 | General | `rgb` | 已实现 | 已实现 | — |
+| 405 | General | `alpha2` | 已实现 | 已实现 | — |
+| 406 | General | `rgb2` | 已实现 | 已实现 | — |
+| 407 | General | `posTime` | 已实现 | 已实现 | — |
+| 408 | General | `rgbTime` | 已实现 | 已实现 | — |
+| 409 | General | `alphaTime` | 已实现 | 已实现 | — |
+| 410 | General | `rotateTime` | 已实现 | 已实现 | — |
+| 411 | General | `rotateTime2D` | 已实现 | 已实现 | — |
+| 412 | General | `scaleTime` | 已实现 | 已实现 | — |
+| 413 | General | `rgb2Time` | 已实现 | 已实现 | — |
+| 414 | General | `alpha2Time` | 已实现 | 已实现 | — |
+| 415 | General | `angleVel` | 已实现 | 已实现 | — |
+| 416 | General | `scaleGrowth` | 已实现 | 已实现 | — |
+| 417 | General | `alphaTimeLinear` | 已实现 | 已实现 | — |
+| 418 | General | `v8-418` | 已实现 | 已实现 | — |
+| 419 | General | `v8-flag-419` | 已实现 | 已实现 | — |
+| 420 | General | `posBezier` | 已实现 | 已实现 | — |
+| 421 | General | `anchor` | 已实现 | 已实现 | — |
+| 422 | General | `posAdopt` | 已实现 | 已实现 | 🟡（社区 wip:2，需过额外闸门） |
+| 423 | General | `colorMode` | 已实现 | 已实现 | — |
+| 424 | General | `rotateAuto` | 已实现 | 已实现 | — |
+| 425 | General | `uVel` | 已实现 | 已实现 | — |
+| 426 | General | `vVel` | 已实现 | 已实现 | — |
+| 427 | General | `uVelTime` | 已实现 | 已实现 | — |
+| 428 | General | `vVelTime` | 已实现 | 已实现 | — |
+| 429 | General | `uvScale` | 已实现 | 已实现 | — |
+| 430 | General | `uvScaleTime` | 已实现 | 已实现 | — |
+| 431 | General | `v8-flag-431` | 已实现 | 已实现 | 🟡（社区 wip:2，需过额外闸门） |
+| 432 | General | `slowdown-immune` | 已实现 | 已实现 | — |
+| 433 | General | `posTime2D` | 已实现 | 已实现 | — |
+| 434 | General | `scale2` | 已实现 | 已实现 | — |
+| 435 | General | `scale2Time` | 已实现 | 已实现 | — |
+| 436 | General | `anchorOffset` | 已实现 | 已实现 | — |
+| 437 | General | `rotationSystem` | 已实现 | 已实现 | — |
+| 438 | General | `originMode` | 已实现 | 已实现 | — |
 | 500 | Child management | `createChild` | 未开始 | 未开始 | — |
 | 501 | Child management | `createChildUi` | 未开始 | 未开始 | — |
 | 502 | Child management | `prependChild` | 未开始 | 未开始 | — |

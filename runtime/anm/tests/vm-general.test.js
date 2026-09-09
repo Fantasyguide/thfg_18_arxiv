@@ -503,3 +503,45 @@ test('412 scaleTime：mode 真的落进插值器（不是被存到别的字段/�
 // 三处改坏 + 复原的过程是手动跑 `npm test` 观察红/绿完成的（改动会在提交前撤销），
 // 具体操作与实际输出写进报告，不留在测试代码里（留在这里会让「改坏」变成两份要维护的
 // 拷贝，且下一位读者分不清哪份是当前生效的实现）。
+
+// ── 2026-09-09 接线回归：frameTail 真的调用了 stepInterpolators ─────────────────────
+// 背景：本文件其余插值测试都**直接调** stepInterpolators，绕过了 stepFrame 的帧尾。
+// 那样即使 core.js 压根没接线也全绿。这两条专门走 createVm 注入 + 只调 stepFrame 的路径。
+test('接线：createVm 注入 stepInterpolators 后，只调 stepFrame 插值也会推进', () => {
+  const gate = 10;
+  // ⚠️ 脚本必须**活过这一帧**，否则跑不到帧尾：只有一条指令时会跑到末尾走隐式 delete，
+  // 而 vm-core §6.1 明确「opcode -1 不跑帧尾」——插值自然不会推进。这里用一条未来时刻的
+  // 指令把时间闸门挡住（stepFrame 的分发循环 break 出来后才落到 frameTail）。
+  const vm = createVm(
+    {
+      instructions: [
+        instr(407, [gate, 0, f32bits(1), f32bits(0), f32bits(0)]),
+        instr(0, [], { time: 9999 }), // nop，只为把脚本留在「未终止」状态
+      ],
+    },
+    { stepInterpolators },
+  );
+  stepFrame(vm, ops); // 这一帧建库，帧尾走第一次步进
+  const afterFirst = vm.pos.x;
+  for (let i = 0; i < gate; i++) stepFrame(vm, ops); // 只用 stepFrame，不手调 stepInterpolators
+  assert.ok(afterFirst < vm.pos.x, '插值必须随 stepFrame 推进——没推进说明 frameTail 没接线');
+  assert.ok(Math.abs(vm.pos.x - 1) < 1e-6, `linear 走满 gate 应抵达 target=1，实得 ${vm.pos.x}`);
+});
+
+test('接线：不注入钩子时 stepFrame 不推进插值（钩子是可选的，不是默认行为）', () => {
+  const vm = createVm({
+    instructions: [
+      instr(407, [10, 0, f32bits(1), f32bits(0), f32bits(0)]),
+      instr(0, [], { time: 9999 }),
+    ],
+  });
+  for (let i = 0; i < 20; i++) stepFrame(vm, ops);
+  assert.equal(vm.pos.x, 0, '没注入钩子就不该有人推进插值器');
+});
+
+test('createVm 对不认识的 opts 键抛错（历史坑：静默忽略 prng 钩子）', () => {
+  assert.throws(
+    () => createVm({ instructions: [] }, { prng: () => 0 }),
+    /不认识的 opts 键 "prng"/,
+  );
+});

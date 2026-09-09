@@ -73,7 +73,22 @@ export const PC_HANDLED = Symbol('anm-vm:pc-handled');
  * @param {{ instructions: Array<{ time: number, opcode: number, paramMask: number, args: number[] }> }} script
  * @param {{ gameSpeed?: number }} [opts]
  */
+// `createVm` 认识的 opts 键。**未知键直接抛**，不静默忽略——
+// 2026-09-09 实测踩过：写 `createVm(s, { prng: fn })` 注入 PRNG 钩子毫无效果、
+// 也不报错，统计里 PRNG 变量全抛，差点误判实现有问题。钩子要直接挂 `vm.prng`。
+// 与本模块「宁可抛不要静默」的既有取舍一致（除零、PRNG 缺失、只读变量写入都抛）。
+const KNOWN_VM_OPTS = new Set(['gameSpeed', 'maxInstructionsPerFrame', 'stepInterpolators']);
+
 export function createVm(script, opts = {}) {
+  for (const key of Object.keys(opts)) {
+    if (!KNOWN_VM_OPTS.has(key)) {
+      throw new Error(
+        `createVm: 不认识的 opts 键 ${JSON.stringify(key)}。` +
+          `已知键：${[...KNOWN_VM_OPTS].join(' / ')}。` +
+          'PRNG 钩子不走 opts——直接挂 vm.prng / vm.prngReplay（见 group-math.js「实现决策②」）。',
+      );
+    }
+  }
   const instructions = script.instructions;
 
   // 字节偏移表：vm-core §5（跳转）与 §1“取脚本基址”一节明确 instr_offset 是相对脚本起点
@@ -131,6 +146,9 @@ export function createVm(script, opts = {}) {
     _savedPc: 0, // vm-core §3.1 saved_instr_offset
     _gameSpeed: opts.gameSpeed ?? 1, // 见文件头“不建模”清单：真实 GAME_SPEED 是全局态，
     // 骨架把它简化成每个 vm 自己的固定步长
+    _stepInterpolators: opts.stepInterpolators ?? null, // 07-general.md §3 的帧尾插值器钩子：
+    // 由调用方在装 generalGroup 时一并注入（`createVm(script, { stepInterpolators })`）。
+    // 见 frameTail：骨架只负责调用时序，不认识插值器结构本身。
     _maxInstructionsPerFrame: opts.maxInstructionsPerFrame ?? DEFAULT_MAX_INSTRUCTIONS_PER_FRAME,
     // 见文件头“分发循环的护栏”一条：vm-core §9 点名要求移植方自己加保护
   };
@@ -243,6 +261,13 @@ function frameTail(vm) {
   // vm-core §2 ⑥：本骨架只保留“脚本时间每帧 += GAME_SPEED”这一条（§4 结论）；
   // 几何/回调部分见文件头“不建模”清单。
   timerAdjust(vm, vm._gameSpeed);
+  // 07-general.md §3：12 组帧尾插值器（`AnmVm::step_interpolators` th16:0x463b30）——
+  // `*Time` 指令往插值器里填「起点/终点/切线/剩余帧闸门/mode」，真正的推进在帧尾。
+  // 状态与步进逻辑都在 group-general.js（骨架不认识那 12 组的结构），这里只负责按
+  // 真机的时序调用它：**在 timerAdjust 之后**。
+  // 用运行时注入而不是静态 import：core.js 是骨架，不该反向依赖任何 opcode 组
+  // （层次归属：组可以依赖骨架，骨架不依赖组）。没装就是没实现该组，不报错。
+  if (typeof vm._stepInterpolators === 'function') vm._stepInterpolators(vm);
 }
 
 /**
