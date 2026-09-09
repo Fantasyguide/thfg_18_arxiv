@@ -7,8 +7,9 @@
 
 这是一个 ANM v8（TH13+，参见 [`engine/anm/OVERVIEW.md`](../../engine/anm/OVERVIEW.md)）
 精灵动画播放器，用「行为对不对得上 th16」反向证伪 `engine/anm/` 的断言。当前处于
-**阶段 1：地基**——格式层（I1）与 VM 骨架（I2）已实现，opcode 状态矩阵（指令语义）仍全部「未开始」
-（骨架本身不含任何具体 opcode 语义，见下）。
+**阶段 1：地基**——格式层（I1）、VM 骨架（I2）已实现；opcode 语义里 Math + Jumps 两组
+（100–199/200–299，46 条，I3）已实现，其余组（System 8 条、Settings/General/Child
+management/Drawing）仍「未开始」。
 
 ## 格式层：已实现
 
@@ -69,6 +70,42 @@ entry 链表 / sprite 表 / script 表 / 指令流，只做结构解析，不含
 - 测试：`tests/vm-core.test.js`，夹具 `tests/fixtures/vm-timing.anm.txt`（自写、零版权
   字节）。细节见 `.superpowers/sdd/2026-09-09-runtime-anm-phase1/task-I2-report.md`。
 
+## Math + Jumps 组（opcode 100–199 / 200–299，46 条）：已实现
+
+`src/vm/group-math.js` 导出 `mathJumpsGroup`（`{ [opcode]: handler }`，供 `registerGroup`
+并入总 `ops` 表），依据 [`engine/anm/th16/03-math-jumps.md`](../../engine/anm/th16/03-math-jumps.md)
+§2 的 46 条指令表，每条 handler 上方注释指回具体 opcode 行。32 条算术/数学（100–131）
+写 I0–I3/F0–F3 这 8 个变量槽（消费 `core.js` 的 `resolveArg` 做右值读；左值写回没有对应的
+骨架导出函数，本文件补了一对镜像 `resolveArg` 的写函数，范围同样限定在 I0–I3/F0–F3），
+14 条跳转（200–213）只改 `vm.pc`/`vm.time`（消费 `PC_HANDLED`）。
+
+- **两处本文件自己做的实现决策**（math-jumps.md 没有给出唯一答案，属于 `runtime/` 层的
+  取舍，不是 engine/ 结论）：
+  1. **整数除 0 / 取模 0 / `INT_MIN÷-1`**（108/110/118/120）：真机是裸 `idiv`，无保护，
+     触发 x86 `#DE` 崩溃（`03-math-jumps.md` §4.1）。JS 没有等价的"崩溃"——本文件选择
+     **抛异常**（不是返回哨兵、不是套用 IEEE 的 `Infinity`/`NaN`），保留"这个位置在真机
+     上会崩"这个事实，让调用方显式处理，而不是让一个查不出处的数字悄悄传播下去。
+     理由的完整权衡见 `group-math.js` 文件头「实现决策①」。
+  2. **PRNG（122/rand、123/randF、131/mathCirclePosRand，`03-math-jumps.md` §7.4 钉死
+     这三条走 Stream B 表现流）**：本文件不硬编码 `Math.random()`，而是约定一个可选钩子
+     `vm.prng`（`() => number`，每次返回 `[0, 2^32)` 的无符号 32 位整数，对应真机 raw draw
+     的返回值，地址见 `03-math-jumps.md` §7.4）——三条指令的三种派生分布（整数取模、
+     `[0,1)`、`[-1,1)`）都在本文件内从这一个 raw 值推导。不提供 `vm.prng` 时退化到一个
+     基于 `Math.random()` 的占位
+     实现（非确定性，仅用于烟雾测试）；接 `engine/_shared/math-and-prng.md` 已解出的
+     ZUN 算法是调用方的事，不在本组范围内。详见 `group-math.js` 文件头「实现决策②」。
+- **未实现的路径**：非变量左值（math-jumps §9 坑表第一条"自修改字节码"）——ZUN 自家
+  数据 0 处例外都是变量左值（§8），本组遇到非变量左值直接报错，不实现改写指令流字节。
+- **🟡 标注**：124–128（sin/cos/tan/acos/atan）的签名（读 `arg1`、写 `arg0`）是 ✅，
+  但"被调 CRT 函数究竟是哪一个"是 `03-math-jumps.md` §2.2 靠数值指纹认定、未经运行时
+  验证的结论——本文件对应 5 条 handler 上方注释都标了这条不确定性，选用 JS 对应的
+  `Math.sin`/`Math.cos`/`Math.tan`/`Math.acos`/`Math.atan`（+ `Math.fround`）实现。
+- 测试：`tests/vm-math.test.js`，夹具 `tests/fixtures/math-ops.anm.txt`（自写、零版权
+  字节；brief 给的 5 条测试之外自己加了除零/取模边界、`paramMask` 变量右值、PRNG 可
+  注入、★ 跳转 dest/t 下标随 opcode 变的回归测试（200→arg0、201→arg1、202–213→arg2，
+  math-jumps §2/§5 点名的坑）、129 角度归一边界值）。细节见
+  `.superpowers/sdd/2026-09-09-runtime-anm-phase1/task-I3-report.md`。
+
 ## opcode 状态矩阵
 
 下表由 [`tools/gen-opcode-matrix.py`](tools/gen-opcode-matrix.py) 从 thpages 的
@@ -91,52 +128,52 @@ thpages / th-re-data 是社区单源——「文档」列指向 `engine/anm/th16
 | 5 | System | `case` | 未开始 | 未开始 | — |
 | 6 | System | `wait` | 未开始 | 未开始 | — |
 | 7 | System | `caseReturn` | 未开始 | 未开始 | — |
-| 100 | Math | `set` | 未开始 | 未开始 | — |
-| 101 | Math | `setF` | 未开始 | 未开始 | — |
-| 102 | Math | `add` | 未开始 | 未开始 | — |
-| 103 | Math | `addF` | 未开始 | 未开始 | — |
-| 104 | Math | `sub` | 未开始 | 未开始 | — |
-| 105 | Math | `subF` | 未开始 | 未开始 | — |
-| 106 | Math | `mul` | 未开始 | 未开始 | — |
-| 107 | Math | `mulF` | 未开始 | 未开始 | — |
-| 108 | Math | `div` | 未开始 | 未开始 | — |
-| 109 | Math | `divF` | 未开始 | 未开始 | — |
-| 110 | Math | `mod` | 未开始 | 未开始 | — |
-| 111 | Math | `modF` | 未开始 | 未开始 | — |
-| 112 | Math | `add3` | 未开始 | 未开始 | — |
-| 113 | Math | `addF3` | 未开始 | 未开始 | — |
-| 114 | Math | `sub3` | 未开始 | 未开始 | — |
-| 115 | Math | `subF3` | 未开始 | 未开始 | — |
-| 116 | Math | `mul3` | 未开始 | 未开始 | — |
-| 117 | Math | `mulF3` | 未开始 | 未开始 | — |
-| 118 | Math | `div3` | 未开始 | 未开始 | — |
-| 119 | Math | `divF3` | 未开始 | 未开始 | — |
-| 120 | Math | `mod3` | 未开始 | 未开始 | — |
-| 121 | Math | `modF3` | 未开始 | 未开始 | — |
-| 122 | Math | `rand` | 未开始 | 未开始 | — |
-| 123 | Math | `randF` | 未开始 | 未开始 | — |
-| 124 | Math | `mathSin` | 未开始 | 未开始 | — |
-| 125 | Math | `mathCos` | 未开始 | 未开始 | — |
-| 126 | Math | `mathTan` | 未开始 | 未开始 | — |
-| 127 | Math | `mathAcos` | 未开始 | 未开始 | — |
-| 128 | Math | `mathAtan` | 未开始 | 未开始 | — |
-| 129 | Math | `mathReduceAngle` | 未开始 | 未开始 | — |
-| 130 | Math | `mathCirclePos` | 未开始 | 未开始 | — |
-| 131 | Math | `mathCirclePosRand` | 未开始 | 未开始 | — |
-| 200 | Jumps | `jmp` | 未开始 | 未开始 | — |
-| 201 | Jumps | `jmpDec` | 未开始 | 未开始 | — |
-| 202 | Jumps | `jmpEq` | 未开始 | 未开始 | — |
-| 203 | Jumps | `jmpEqF` | 未开始 | 未开始 | — |
-| 204 | Jumps | `jmpNe` | 未开始 | 未开始 | — |
-| 205 | Jumps | `jmpNeF` | 未开始 | 未开始 | — |
-| 206 | Jumps | `jmpLt` | 未开始 | 未开始 | — |
-| 207 | Jumps | `jmpLtF` | 未开始 | 未开始 | — |
-| 208 | Jumps | `jmpLe` | 未开始 | 未开始 | — |
-| 209 | Jumps | `jmpLeF` | 未开始 | 未开始 | — |
-| 210 | Jumps | `jmpGt` | 未开始 | 未开始 | — |
-| 211 | Jumps | `jmpGtF` | 未开始 | 未开始 | — |
-| 212 | Jumps | `jmpGe` | 未开始 | 未开始 | — |
-| 213 | Jumps | `jmpGeF` | 未开始 | 未开始 | — |
+| 100 | Math | `set` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
+| 101 | Math | `setF` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
+| 102 | Math | `add` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
+| 103 | Math | `addF` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
+| 104 | Math | `sub` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
+| 105 | Math | `subF` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
+| 106 | Math | `mul` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
+| 107 | Math | `mulF` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
+| 108 | Math | `div` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
+| 109 | Math | `divF` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
+| 110 | Math | `mod` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
+| 111 | Math | `modF` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
+| 112 | Math | `add3` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
+| 113 | Math | `addF3` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
+| 114 | Math | `sub3` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
+| 115 | Math | `subF3` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
+| 116 | Math | `mul3` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
+| 117 | Math | `mulF3` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
+| 118 | Math | `div3` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
+| 119 | Math | `divF3` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
+| 120 | Math | `mod3` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
+| 121 | Math | `modF3` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
+| 122 | Math | `rand` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
+| 123 | Math | `randF` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
+| 124 | Math | `mathSin` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | 🟡（签名 ✅ / 身份未经运行时验证，`03-math-jumps.md` §2.2） |
+| 125 | Math | `mathCos` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | 🟡（签名 ✅ / 身份未经运行时验证，`03-math-jumps.md` §2.2） |
+| 126 | Math | `mathTan` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | 🟡（签名 ✅ / 身份未经运行时验证，`03-math-jumps.md` §2.2） |
+| 127 | Math | `mathAcos` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | 🟡（签名 ✅ / 身份未经运行时验证，`03-math-jumps.md` §2.2） |
+| 128 | Math | `mathAtan` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | 🟡（签名 ✅ / 身份未经运行时验证，`03-math-jumps.md` §2.2） |
+| 129 | Math | `mathReduceAngle` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
+| 130 | Math | `mathCirclePos` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
+| 131 | Math | `mathCirclePosRand` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
+| 200 | Jumps | `jmp` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
+| 201 | Jumps | `jmpDec` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
+| 202 | Jumps | `jmpEq` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
+| 203 | Jumps | `jmpEqF` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
+| 204 | Jumps | `jmpNe` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
+| 205 | Jumps | `jmpNeF` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
+| 206 | Jumps | `jmpLt` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
+| 207 | Jumps | `jmpLtF` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
+| 208 | Jumps | `jmpLe` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
+| 209 | Jumps | `jmpLeF` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
+| 210 | Jumps | `jmpGt` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
+| 211 | Jumps | `jmpGtF` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
+| 212 | Jumps | `jmpGe` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
+| 213 | Jumps | `jmpGeF` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
 | 300 | Settings | `sprite` | 未开始 | 未开始 | — |
 | 301 | Settings | `spriteRand` | 未开始 | 未开始 | — |
 | 302 | Settings | `renderMode` | 未开始 | 未开始 | — |
@@ -235,16 +272,19 @@ runtime/anm/
       anm-v8.js         v8 格式解析器（parseAnm），指回 01-format.md §2–§6
     vm/
       core.js           VM 骨架（取指/时间/跳转/interrupt/生死），指回 02-vm-core.md §2
+      group-math.js     Math + Jumps 组（opcode 100–199/200–299），指回 03-math-jumps.md §2
   tools/
-    gen-opcode-matrix.py   重生成上面那张矩阵
+    gen-opcode-matrix.py   重生成上面那张矩阵（只重生成「未开始」骨架，已实现的行要手改）
   tests/
     smoke.test.js       node:test 能跑起来的最小验证
     format.test.js       v8 解析器差分测试，以 thanm -l 为 oracle
     vm-core.test.js      VM 骨架测试
+    vm-math.test.js      Math + Jumps 组测试
     build-fixtures.sh    用 thanm -c 8 把 fixtures/*.anm.txt 编译成 .anm
     fixtures/
       minimal.anm.txt      自写夹具源码（入库）
       vm-timing.anm.txt    自写夹具源码（入库），VM 骨架测试用
+      math-ops.anm.txt     自写夹具源码（入库），Math + Jumps 组测试用
       *.anm/*.png          build-fixtures.sh 编译产物（gitignored，不入库）
 ```
 

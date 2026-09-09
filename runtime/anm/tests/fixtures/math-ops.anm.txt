@@ -1,0 +1,58 @@
+// math-ops.anm.txt — 自写最小 v8 夹具，服务 task-I3（Math + Jumps 组）测试，零版权字节
+//
+// 语法参考：同 vm-timing.anm.txt/minimal.anm.txt 的写法（thanm/anmparse.y 的 formats_v8
+// 表、`ins_<opcode>(args...)` 通用记法、`[N]` 变量引用、`label:` 字节偏移标签）。
+//
+// 单 entry、单 sprite（REQUIRE 字段，内容不重要）、单 script——tests/vm-math.test.js 的
+// `run()` 固定取 `entries[0].scripts[0]`，brief 步骤 2 给的 5 条测试全部对同一个 script
+// 跑不同帧数（1 帧或 3 帧），所以整篇夹具只有一个 script，靠 time 标签把「一帧内看到什么」
+// 分层：
+//
+//   time 0：100 set / 102 add / 106 mul / 110 mod（整型四则，写 I0–I2）+ 112 add3（写 I3，
+//     a/b 用字面量，天然不改 a/b）+ 101 setF（写 F0，验证浮点槽与整型槽独立存储）。
+//     跑完一帧（run(fixture,1)）应有 i0=7 i1=6 i2=1 i3=9 f0=1.5——对应 brief 前三条测试。
+//   time 1：一个有限次数的 jmpLt 循环（I1 从 6 累加到 9 才退出，206 jmpLt + 200 jmp），
+//     故意打在 time>=0 之后的标签上，靠 stepFrame 的时间闸门保证它**不会**在 run(fixture,1)
+//     那一帧里跑到——第 1 帧只到 f0=1.5 那条就因为下一条指令 time=1>vm.time=0 被挡住，
+//     进 frameTail，vm.time 变成 1；循环只有在 run(fixture,3) 的第 2/3 帧才会真正执行。
+//     循环只在 I1 身上打转（I1 全篇除了这里不会再被读），不接触 I0–I3 其余槽位——所以
+//     不管循环跑了几帧、跑没跑完，brief 第四条测试断言的 i3===9 都不受影响；测的是
+//     「跳转成立时设 time + 改 pc、不成立时顺序执行」这套语义本身没把前面算好的值弄坏，
+//     不是循环的具体次数。
+entry mathOps {
+    version: 8,
+    name: "minimal.png",
+    format: 1,
+    hasData: 1,
+    sprites: {
+        sprite0: { x: 0, y: 0, w: 8, h: 8 }
+    }
+}
+
+script -1 mathOps {
+0:
+    ins_100([10000], 3);
+    ins_102([10000], 4);        // I0 = 3 + 4 = 7
+
+    ins_100([10001], 2);
+    ins_106([10001], 3);        // I1 = 2 * 3 = 6
+
+    ins_100([10002], 7);
+    ins_110([10002], 3);        // I2 = 7 % 3 = 1
+
+    ins_112([10003], 4, 5);     // I3 = 4 + 5 = 9（a/b 是字面量，这条指令本身不改 a/b）
+
+    // ★ 浮点变量引用要写 `[10004.0]`（带小数点），不是 `[10004]`——thanm/anmparse.y 的
+    // `"[" FLOATING "]"` 产生式才会把变量号编成 float32（math-jumps §3 结论④：浮点指令
+    // 把变量号也编成 float32，`[10004]`（整数字面量）走的是 `"[" INTEGER "]"` 产生式，
+    // 编出来是 int32 的 10004，喂给期望 `f` 类型的参数会被 thanm 直接拒绝：
+    // "wrong parameter 1 type for opcode 101, expected: f"）。
+    ins_101([10004.0], 1.5);    // F0 = 1.5，不动 I0（浮点槽与整型槽独立存储）
++1:
+loopHead:
+    ins_206([10001], 9, loopBody, 1);   // I1 < 9 时跳 loopBody，t=1
+    ins_3();                             // I1 >= 9：退出循环，停机
+loopBody:
+    ins_102([10001], 1);        // I1 += 1
+    ins_200(loopHead, 1);        // 跳回 loopHead，t=1（math-jumps §6 结论2：同一帧内继续判断）
+}
