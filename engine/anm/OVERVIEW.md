@@ -2,8 +2,6 @@
 
 > **版本**：跨版本。本文出现的地址一律带版本前缀（如 `th18:0x405bf0`）。
 
-⚠️ **本子系统尚未系统开工。**
-
 东方里几乎所有「显示」都挂在 `.anm` 上：创建一个显示对象 = 选一段 anm 脚本/模板，
 由 anm VM 每帧驱动它的精灵、变换、特效。它因此是**图形侧的总接缝**——
 MSG 的文本绘制走它（[`../msg/OVERVIEW.md`](../msg/OVERVIEW.md)）、弹幕的外观也走它。
@@ -33,6 +31,9 @@ MSG 的文本绘制走它（[`../msg/OVERVIEW.md`](../msg/OVERVIEW.md)）、弹�
 | 整数除 / 取模**没有零守卫**：`b == 0` 与 `INT_MIN / -1` 都是裸 `idiv` ⇒ x86 `#DE`；浮点除走 IEEE 不崩 | ✅ | ❓ | [th16/03-math-jumps](th16/03-math-jumps.md) §4（`th16:0x4602fa` 等四条 case） |
 | `131 mathCirclePosRand` 的半径**不是** `[lo, hi]`：一手是 `lo + s·(hi − lo)`、`s ∈ [−1, 1)` ⇒ 区间宽一倍且向下越过 `lo`（社区判错） | ✅ | ❓ | [th16/03-math-jumps](th16/03-math-jumps.md) §7.2（`th16:0x46075e`–`th16:0x460775`） |
 | 操作数求值次序共**六种形态**，不是「一律下标升序」；判据 = case 体里 `test byte [edi+6]` 的执行次序 | ✅ | ❓ | [th16/03-math-jumps](th16/03-math-jumps.md) §9.1（46/46 穷举） |
+| 变量号 10000–10035 共 36 条；可写 22 / 只读 14；`$` int 8 个、`%` float 28 个；整型读对 19 个浮点号返回变量号本身（跨类型读非对称） | ✅ | ❓ | [th16/04-variables](th16/04-variables.md) §2/§3/§4（`th16:0x45f578` 跳表 + 两张 lvalue 表穷举） |
+| 随机族：10010–10012、10022 走 Stream B `th16:0x4a6d80`；10030–10032 走 Stream A `th16:0x4a6d88`；10022 浮读 = u32→float 不取模、整读 = `raw % +0x4dc` | ✅ | ❓ | [th16/04-variables](th16/04-variables.md) §5；[th16/03-math-jumps](th16/03-math-jumps.md) §7.4 |
+| 10026 = 有效 z 旋转（`th16:0x464dd0` 沿 `+0x5ac` 递归累积、`flags_hi & 0x10000` 闸门）；10016–10021 读舞台相机镜像块（非 vm 字段） | ✅ | ❓ | [th16/04-variables](th16/04-variables.md) §6 |
 | 渲染阶段 × 相机 × 层：层 0–2 相机 2、3–19 相机 3、20–23 相机 1、24+ 相机 2；四台相机全透视（LookAt + PerspectiveFov，无 Ortho） | — | ✅ | [th18/02-render-stages](th18/02-render-stages.md) |
 | 渲染模式 8 = D3D WORLD 矩阵 + 单位四边形；2D 路径自算顶点并加相机 2D 偏移（只有相机 2 非零） | — | ✅ | [th18/01 §3b](th18/01-vm-instantiate.md) |
 
