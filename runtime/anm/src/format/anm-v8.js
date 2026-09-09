@@ -13,10 +13,16 @@
 // 内存池，`.buffer` 拿到的是整个池（还带 byteOffset），不是文件字节。
 
 const ENTRY_HEADER_SIZE = 0x40; // 01-format.md §3：header 固定 0x40 字节
-const SPRITE_RECORD_SIZE = 20; // 01-format.md §4：sprite 记录 20 字节
 const SCRIPT_TABLE_ENTRY_SIZE = 8; // 01-format.md §5：script 表每项 8 字节
 const INSTR_HEADER_SIZE = 8; // 01-format.md §5.1：指令头 8 字节
 const OPCODE_END = -1; // 01-format.md §5.1：opcode = -1（0xffff）= 脚本结束
+
+// ★ 消费方契约（I2 VM 骨架直接依赖）：sprite.id / script.id 是文件里存的原始值，
+// 不是位置序号（01-format.md §4/§5：加载器不读这两个字段，真实文件里可以和位置序号
+// 对不上，script id 甚至可以是负数）。想要 VM 用的跨 entry 累加运行时索引，用
+// `entries.flatMap(e => e.scripts)`/`entries.flatMap(e => e.sprites)` 的**数组下标**，
+// 数组顺序就是文件顺序，天然等于游戏 VM 用的序号——不要用 `id`，也不要用 entry 内的
+// 局部下标。
 
 /**
  * @param {Uint8Array} bytes
@@ -35,7 +41,14 @@ export function parseAnm(bytes) {
 
   // 01-format.md §2：文件 = entry 单向链表，next_offset 相对*本 entry 起始*，0 结束。
   for (;;) {
-    const entry = parseEntry(view, bytes, entryBase);
+    let entry;
+    try {
+      entry = parseEntry(view, bytes, entryBase);
+    } catch (err) {
+      // 给冒出来的错误（不管是本文件里显式 throw 的还是 DataView 原生 RangeError）
+      // 补上「这是文件里哪个 entry 出的事」，不然只有一串没有文件坐标的报错。
+      throw new Error(`anm-v8: failed to parse entry at byte offset ${entryBase}: ${err.message}`);
+    }
     entries.push(entry.value);
 
     const nextOffset = entry.nextOffset;
@@ -70,7 +83,7 @@ function parseEntry(view, bytes, base) {
   const name = readCString(bytes, base + nameOffset);
 
   const sprites = parseSprites(view, base, nSprites);
-  const scripts = parseScripts(view, bytes, base, nSprites, nScripts);
+  const scripts = parseScripts(view, base, nSprites, nScripts, view.byteLength);
 
   // THTX 块本身（贴图像素）不在 parseAnm 的输出契约里（interfaces 只要 name/width/
   // height/format/sprites/scripts），这里只按 01-format.md §6 校验偏移在场时形状合法，
@@ -112,7 +125,7 @@ function parseSprites(view, entryBase, nSprites) {
   return sprites;
 }
 
-function parseScripts(view, bytes, entryBase, nSprites, nScripts) {
+function parseScripts(view, entryBase, nSprites, nScripts, bufferEnd) {
   // 01-format.md §5：script 表紧接 sprite 偏移表之后，每项 8 字节 {s32 id; u32 offset}。
   const scriptTableBase = entryBase + ENTRY_HEADER_SIZE + nSprites * 4;
   const scripts = [];
@@ -120,24 +133,54 @@ function parseScripts(view, bytes, entryBase, nSprites, nScripts) {
     const tableEntry = scriptTableBase + i * SCRIPT_TABLE_ENTRY_SIZE;
     const id = view.getInt32(tableEntry + 0x00, true);
     const scriptOffset = view.getUint32(tableEntry + 0x04, true);
-    const instructions = parseInstructions(view, entryBase + scriptOffset);
+    const instructions = parseInstructions(view, entryBase + scriptOffset, bufferEnd);
     scripts.push({ id, instructions });
   }
   return scripts;
 }
 
-function parseInstructions(view, scriptBase) {
+function parseInstructions(view, scriptBase, bufferEnd) {
   // 01-format.md §5.1：指令头 8 字节 {s16 opcode; u16 size; s16 time; u16 param_mask}，
   // args = (size - 8) / 4 个 u32。opcode === -1 是脚本结束标记；它的 size 字段实测恒为 0，
   // 但在文件里仍占 8 字节——步进游标必须当 8 字节处理，否则会死循环（这里不把它计入
   // instructions 数组：它是结构性终止符，不是一条可执行指令）。
+  //
+  // 两条显式防线（都是代码审查后补的，不是走运躲过的隐式行为）：
+  //   1. size < INSTR_HEADER_SIZE（含 size === 0）直接报错。不这样做的话，游标步进
+  //      量可以是 0（死循环）；现在唯一挡住它的是 `new Array(负数)` 抛 RangeError——
+  //      这是意外副作用，不是意图，改天有人把 `new Array(argCount)` 重构成
+  //      `[]` + push 循环，`argCount` 为负时循环体一次都不进也不抛，死循环就复活了。
+  //   2. cursor（连同这条指令的整个 size）不能超出 bufferEnd。没有这条的话，损坏文件
+  //      缺失 -1 结束标记时，解析器会把文件里其它结构（name 字符串、别的 script、
+  //      sprite 表）当成指令继续解析——要么最终越界抛 RangeError（没有位置信息），
+  //      要么更糟：巧合撞上 0xFFFF 提前「成功」结束，静默吐出错误数据。
   const instructions = [];
   let cursor = scriptBase;
   for (;;) {
+    if (cursor + INSTR_HEADER_SIZE > bufferEnd) {
+      throw new Error(
+        `anm-v8: instruction stream at byte offset ${cursor} (script started at ${scriptBase}) ` +
+        `runs past end of buffer (length ${bufferEnd}) without a -1 end marker`,
+      );
+    }
+
     const opcode = view.getInt16(cursor + 0x00, true);
     if (opcode === OPCODE_END) break;
 
     const size = view.getUint16(cursor + 0x02, true);
+    if (size < INSTR_HEADER_SIZE) {
+      throw new Error(
+        `anm-v8: instruction at byte offset ${cursor} (opcode ${opcode}) has size ${size}, ` +
+        `smaller than the 8-byte instruction header`,
+      );
+    }
+    if (cursor + size > bufferEnd) {
+      throw new Error(
+        `anm-v8: instruction at byte offset ${cursor} (opcode ${opcode}, size ${size}) ` +
+        `runs past end of buffer (length ${bufferEnd})`,
+      );
+    }
+
     const time = view.getInt16(cursor + 0x04, true);
     // param_mask（cursor + 0x06）标出哪些 args 是变量 id，属 VM 语义，格式层不解释，
     // 保留在 01-format.md §5.1 里，不在这个输出契约（{time, opcode, args}）里吐出。
@@ -157,6 +200,11 @@ function parseInstructions(view, scriptBase) {
 function readCString(bytes, offset) {
   let end = offset;
   while (end < bytes.length && bytes[end] !== 0) end++;
+  if (end >= bytes.length) {
+    // 与 version / THTX magic 两处一致：宁可带位置信息地报错，也不要静默吞掉——
+    // 截断字符串会被当成合法 name 用，问题会在很远的下游才暴露。
+    throw new Error(`anm-v8: name string starting at byte offset ${offset} has no NUL terminator before end of buffer`);
+  }
   return bytesToString(bytes, offset, end);
 }
 

@@ -24,6 +24,10 @@ entry 链表 / sprite 表 / script 表 / 指令流，只做结构解析，不含
   41339 + 每 script 一条被本解析器排除在 `instructions` 之外的 `opcode=-1` 结束标记
   （1929）= 43268，同样吻合该文档的总指令数。细节见
   `.superpowers/sdd/2026-09-09-runtime-anm-phase1/task-I1-report.md`。
+- **契约（下游 VM 骨架要遵守）**：`sprite.id`/`script.id` 是文件里存的原始值，不是
+  位置序号（01-format.md §4/§5：加载器不读这两个字段）。要跨 entry 累加的运行时索引，
+  用 `entries.flatMap(e => e.scripts)`/`entries.flatMap(e => e.sprites)` 的**数组下标**，
+  不要用 `id`。详见 `anm-v8.js` 顶部注释。
 
 ## opcode 状态矩阵
 
