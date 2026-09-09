@@ -194,7 +194,7 @@ CE_CARD(id, .回调 = 函数, ...);      /* 一张卡一条，放在 native/card
 | `on_item_frame` | `0x446ee3`（`ItemManager__on_tick` `0x446ec0` 最后一道门卫 `cmp [0x4cf2a4],0`）。每个正常游玩帧、道具池 body 前到一次；handler 只看**声明了该槽的卡**，不读 CMP 结果 | `void (ce_card_t*)` | 辉针城：批开时查池，池空 → 关批结算 |
 | `on_item_collect` | `0x44625f`（type 分派前一条 `mov edx,[edi+0xc78]`，副作用未发生）。type 用 `*(uint32_t*)(item+0xc78)` 读，别信 EDX（窗前值不可靠） | `void (ce_card_t*, uint32_t type, const void *item)` | 辉针城：批集计数 + stash SCORE |
 | `on_item_commit` | `0x44658a`（共享收尾起点 `movss xmm2,[esi]` + `push 0x25`）。本道具分值**已按 type 计入 SCORE**、公共收尾（清槽等）之前 | `void (ce_card_t*)` | 辉针城：`(SCORE − stash)` 差量入批 |
-| `on_shot_damage` | `0x45f2a2`（`enm_compute_damage_sources` `0x45f0f0` 计分路径 `mov eax,0xee666667` + `imul esi`）。每帧每敌一次可计分命中：dmg 已钳 ≥1、pos = 敌世界坐标 (x,y)；聚焦 / 炸弹 / param_6≠0 的路径被窗口前判定挡掉（handler 再门一道，纵深防御） | `void (ce_card_t*, int32_t damage, const float *pos)` | 辉针城：非聚焦射击命中按帧节流掉钱 |
+| `on_shot_damage` | `0x45f2a2`（`enm_compute_damage_sources` `0x45f0f0` 计分路径 `mov eax,0xee666667` + `imul esi`）。每帧每敌一次可计分命中：dmg 已钳 ≥1、pos = 敌世界坐标 (x,y)；聚焦 / 炸弹 / param_6≠0 的路径被窗口前判定挡掉（handler 再门一道，纵深防御） | `void (ce_card_t*, int32_t damage, const float *pos)` | 辉针城：非聚焦射击命中按帧节流掉 P |
 
 **局中删一张卡**：`ce_destroy_card(victim)`（`sdk.c`，AUDIT §W）照 recount `0x4080e0` 的删卡分支——摘链、按 flags 减类别计数、
 `num_total−1`、`owned[id]` 清零、虚表 `+0x50` 删对象、引擎自己的 `create_all_card_lists_for_hud(mgr, 0)` 重画 HUD。
@@ -285,7 +285,7 @@ CE_CARD(76, ..., .bullet_damage_permille = CE_DMG_UNIT);/* 古锭刀：初值 ×
 - **与卡在链表里的顺序无关**，同一副牌组每次结果相同。
 - **每帧伤害上限自动跟着抬**：落笔人在 `+0x2c` 里 `ce_raise_damage_cap(sht+0x28 基值 × 聚合)`。
   这条以前要每张加伤害的卡自己记得，K♠ 就漏了——贴脸打 boss 时上限（Reimu 90 / Sakuya 60）本来就被自机弹吃满，
-  只翻弹不抬上限等于白翻（§V20 / §Y5 / §Z10 是同一件事的三次重犯）。
+  只翻弹不抬上限等于白翻（§V20 / §Y5 / §AJ10 是同一件事的三次重犯）。
 - **生命周期不用管**：绑定时登记声明的初值、`+0x50`（含倒吊人摧毁）退出聚合、`+0x4c`（局末）回到初值。
 
 **HUD 上有读数**：聚合倍率不是 ×1 时，落笔人会在 `+0x48 on_draw` 里把 `x1.60` 写在**火力值左边**

@@ -52,3 +52,7 @@ mods/th18.v1.00a/card-expand/assets/ability/font2/FONT2_*.png
 # TH15 eff_sloweffect.png / front02.png 切出来的环与面板
 mods/th18.v1.00a/card-expand/assets/ability/lolk/RING.png
 mods/th18.v1.00a/card-expand/assets/ability/lolk/PANEL*.png
+
+# dgVoodoo2 转译层（D3D9.dll + dgVoodoo.conf）：第三方二进制,不是我们的产物,
+# 按「不入库」纪律留在工作区本地;要装的人自己去 dege.freeweb.hu 取。
+mods/th18.v1.00a/stg 补丁/

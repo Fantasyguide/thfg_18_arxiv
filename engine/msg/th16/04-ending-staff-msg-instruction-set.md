@@ -152,6 +152,12 @@ Normal/Hard/Lunatic 专属图;case 0xc 的 staff 选择:Easy/Extra→staff1、No
 
 ## 2.6 这是不是"第一张 ending opcode 表"?(诚实校准,防过拟合)
 
+> **2026-09-06 追记**:ExpHP thpages 于 2026-03 合并了 `js/tables/reference/end.ts`(结局表,TH10–TH18 共用),
+> 命名 delete / text-add / text-clear / wait / wait-clear / anm-source-load / anm-set-slot / text-color / music /
+> music-fade / switch-to-staff / screen-effect-a / screen-effect-b / anm-set-slot-normal|hard|lunatic。
+> 与本表逐条对应;其 13/14 仍标 "Does. Something.",行数(非 TH18)与淡出时长标 wip——这些本表与
+> [`../th18/02`](../th18/02-ending-msg.md) 已给出。下文「thpages 列为 to be documented」为 2026-06 时的事实,现已过时。
+
 - **签名层(opcode→实参类型):不是首创**。thmsg `th10_msg_ed_fmts` 早有(`-e` 选用),多年来 thmsg 就靠它反编译 ending。
 - **行为/语义层(opcode→干什么 + 命名 + 结构字段 + 运行时逻辑如难度分支/staff 衔接/无 ECL 生命周期):
   据现有公开英文 RE 资料,我们应是第一份**。依据:① ExpHP thpages(最权威现代 hub)把 ending MSG 明列 "to be documented";
