@@ -140,7 +140,14 @@ function wrapAngle32(x) {
 // 默认是 0x00000000**（很容易想当然写成 0xffffffff，与 color_1 搞混）。entity_pos
 // `+0x5e0` 是 wipe **不清**的一块——但那是「wipe 时保留旧值」，本骨架里 vm 是全新创建的，
 // 没有「旧值」这回事，取 0 是唯一合理的初值。
-function ensureGeneralState(vm) {
+//
+// ★ 2026-09-09（task-I7 / Child management 组）导出此函数：`pos_2`（+0x4e0）与
+// `entity_pos`（+0x5e0）是 zAnmVm 的物理字段，`createRoot`/`createChild`（08-child.md §3）
+// 需要读写*同一份*存储，不是各建一份影子状态——否则一旦调用方把 generalGroup 与
+// childGroup 一起接进同一个 vm，两组对「pos_2 到底是什么」会各执一词。group-child.js
+// 因此直接复用这里的惰性初始化，而不是在自己文件里重新定义一遍默认值（那样两处默认值
+// 迟早会漂移）。这是本组唯一为响应另一个组的需求而扩大的公开面，写进了 task-I7 报告。
+export function ensureGeneralState(vm) {
   if (vm._general) return vm._general;
   vm._general = {
     pos2: { x: 0, y: 0, z: 0 }, // +0x4e0，`flags_lo & 0x400` 时 400/pos 写这里而不是 vm.pos
