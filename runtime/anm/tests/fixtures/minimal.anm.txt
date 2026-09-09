@@ -1,0 +1,31 @@
+// minimal.anm.txt — 自写最小 v8 夹具，零版权字节
+//
+// 语法参考：thanm 反编译真实文件得到的 .anm.txt（仅当语法参考，不抄内容），
+// 及 thanm 源码 thanm/anmparse.y（字段名、REQUIRE/OPTIONAL、指令格式表 formats_v8）。
+// 字段含义见 engine/anm/th16/01-format.md §3（entry header）/ §4（sprite）/ §5（script/指令头）。
+//
+// 一个 entry、一张 8x8 纯色贴图引用（minimal.png，build-fixtures.sh 现生成，不入库）、
+// 两个 sprite、一个 script（set / add / jmp / stop，用 ins_<opcode> 通用记法，
+// 不依赖任何 mnemonic 映射表——thanm 无 -m 时就是这么认的，见 thanm/anmparse.y:984）。
+
+entry entry0 {
+    version: 8,
+    name: "minimal.png",
+    format: 1,
+    hasData: 1,
+    sprites: {
+        sprite0: { x: 0, y: 0, w: 8, h: 8 },
+        sprite1: { x: 0, y: 0, w: 4, h: 4 }
+    }
+}
+
+script script0 {
+0:
+    ins_100(0, 1);
+    ins_102(0, 2);
++1:
+    ins_200(finish, 0);
++1:
+finish:
+    ins_3();
+}

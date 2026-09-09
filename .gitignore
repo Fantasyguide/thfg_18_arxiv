@@ -35,5 +35,7 @@ mods/th18.v1.00a/card-expand/native/voice_ids.h
 mods/th18.v1.00a/stg 补丁/
 
 # runtime/anm 测试夹具：我们自写源码 + thanm 编译出的产物，不入库（不留版权字节纪律同上）。
+# .png 是 build-fixtures.sh 现生成的 8x8 纯色贴图源（喂给 thanm -c），同样是构建产物。
 runtime/anm/tests/fixtures/*.anm
+runtime/anm/tests/fixtures/*.png
 runtime/anm/node_modules/

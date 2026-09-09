@@ -7,7 +7,23 @@
 
 这是一个 ANM v8（TH13+，参见 [`engine/anm/OVERVIEW.md`](../../engine/anm/OVERVIEW.md)）
 精灵动画播放器，用「行为对不对得上 th16」反向证伪 `engine/anm/` 的断言。当前处于
-**阶段 1：地基**（T0）——本文档只是骨架，opcode 状态矩阵全部「未开始」。
+**阶段 1：地基**——格式层（I1）已实现，opcode 状态矩阵（指令语义）仍全部「未开始」。
+
+## 格式层：已实现
+
+`src/format/anm-v8.js` 的 `parseAnm(bytes: Uint8Array)` 按
+[`engine/anm/th16/01-format.md`](../../engine/anm/th16/01-format.md) §2–§6 的字段表解析
+entry 链表 / sprite 表 / script 表 / 指令流，只做结构解析，不含任何 opcode 语义
+（VM 语义仍是下面矩阵的事）。
+
+- 差分测试：`tests/format.test.js`，以 `thanm -l` 的输出为 oracle（夹具
+  `tests/fixtures/minimal.anm.txt`，自写、零版权字节，`tests/build-fixtures.sh` 用
+  `thanm -c 8` 编译）。
+- 真实文件冒烟：`local/th16.v1.00a/dat/` 下全部 54 个 `.anm` 解析零异常，entry/script/
+  sprite 计数（423 / 1929 / 3101）与 `01-format.md` §10 的一手审计逐字吻合；指令数
+  41339 + 每 script 一条被本解析器排除在 `instructions` 之外的 `opcode=-1` 结束标记
+  （1929）= 43268，同样吻合该文档的总指令数。细节见
+  `.superpowers/sdd/2026-09-09-runtime-anm-phase1/task-I1-report.md`。
 
 ## opcode 状态矩阵
 
@@ -170,11 +186,18 @@ thpages / th-re-data 是社区单源——「文档」列指向 `engine/anm/th16
 runtime/anm/
   OVERVIEW.md         本文件
   package.json         零依赖，node --test 跑测试
+  src/
+    format/
+      anm-v8.js         v8 格式解析器（parseAnm），指回 01-format.md §2–§6
   tools/
     gen-opcode-matrix.py   重生成上面那张矩阵
   tests/
     smoke.test.js       node:test 能跑起来的最小验证
-    fixtures/            测试用 .anm（我们自写源码 + thanm 编译，不含版权字节，gitignored）
+    format.test.js       v8 解析器差分测试，以 thanm -l 为 oracle
+    build-fixtures.sh    用 thanm -c 8 把 fixtures/*.anm.txt 编译成 .anm
+    fixtures/
+      minimal.anm.txt     自写夹具源码（入库）
+      minimal.anm/.png    build-fixtures.sh 编译产物（gitignored，不入库）
 ```
 
 ## 下一步
