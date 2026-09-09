@@ -167,7 +167,16 @@ function buildChildOpts(creatorVm) {
   if (typeof creatorVm._stepInterpolators === 'function') {
     opts.stepInterpolators = creatorVm._stepInterpolators;
   }
+  // 10026 的拓扑钩子：本组一旦建树，`core.js` 的 computeRotZEffective 就必须能读到
+  // `+0x5ac`。骨架不认识 `vm._child`，所以由本组把读法注入进去——凡是经 500–506 建出来的
+  // VM 一律自动带上，调用方手工搭的顶层 VM 要自己传 `{ getRootVm }`（本文件已导出）。
+  opts.getRootVm = getRootVm;
   return opts;
+}
+
+// `zAnmVm +0x5ac`（02 §3.5「根 VM」）的公开读法。注入给 core.js 用，见 buildChildOpts。
+export function getRootVm(vm) {
+  return vm._child?.root ?? null;
 }
 
 // 02 §8：「两个 helper 都在插列表之前各调一次 AnmVm::run」——创建即 tick。本骨架没有
@@ -288,14 +297,30 @@ function createManagedRoot(sourceVm, scriptId) {
 // 一并销毁」不可能是 stepFrame 自动做的事，必须由知道树结构的这一层（也就是这里）在
 // 检测到某个 vm 死亡之后主动调用。谁来触发这次检测，是下面「骨架接线需求」里要报告的事。
 export function destroyTree(vm) {
-  vm.flagsHi = (vm.flagsHi | 0x40) >>> 0; // 02 §6.1：flags_hi |= 0x40（请求销毁/已销毁标记）
-  vm.alive = false;
-  vm.pc = -1;
+  // 逐条对着 `th16:0x46e660`（管理器侧的递归销毁）抄，**顺序也照抄**：
+  //   `0x46e66c`–`0x46e691`  先沿 `+0x58c` 子链把每个子递归销毁（子先于己）
+  //   `0x46e697`–`0x46e6a1`  `(flags_hi & 0x60) != 0x40` 才把自己挂进待销毁链——
+  //                          已经是「已销毁」(0x40 置、0x20 清) 的 VM 不重复入队
+  //   `0x46e6e8`/`0x46e6f5`  `+0x5ac = 0`、`+0x5b0 = 0`（根与父指针都断开）
+  //   `0x46e6e5`+`0x46e6f2`  `flags_hi = (flags_hi & ~0x20) | 0x40`（请求销毁 → 已销毁）
+  //
+  // ★ 断开 `+0x5ac` 不是可省的细节：core.js 的 10026 递归就是靠它决定要不要累加根旋转，
+  //   销毁后仍挂着根指针的话，一棵死树还会继续贡献有效旋转。
   const state = ensureChildState(vm);
   for (const child of state.children) {
-    destroyTree(child);
+    destroyTree(child); // 子先于己，同 `0x46e688` 的递归位置
   }
   state.children.length = 0; // 已经整棵销毁，清空子链，避免悬挂引用被误当「还活着的子」
+  const alreadyDestroyed = (vm.flagsHi & 0x60) === 0x40; // `0x46e69d`/`0x46e69f`
+  state.root = null; // `0x46e6e8`
+  state.parent = null; // `0x46e6f5`
+  vm.flagsHi = (((vm.flagsHi & ~0x20) | 0x40) >>> 0); // `0x46e6e5` + `0x46e6f2`
+  if (!alreadyDestroyed) {
+    // 真实引擎在这里挂进待销毁链（`0x46e6a3`–`0x46e6dc`），由管理器稍后回收。骨架没有
+    // 管理器和列表，「被回收」在这层等价于 vm 不再被主循环推进——记在 vm.alive 上。
+    vm.alive = false;
+    vm.pc = -1;
+  }
   return vm;
 }
 

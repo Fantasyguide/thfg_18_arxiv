@@ -7,9 +7,10 @@
 
 这是一个 ANM v8（TH13+，参见 [`engine/anm/OVERVIEW.md`](../../engine/anm/OVERVIEW.md)）
 精灵动画播放器，用「行为对不对得上 th16」反向证伪 `engine/anm/` 的断言。当前处于
-**阶段 1：地基**——格式层（I1）、VM 骨架（I2）已实现；opcode 语义里 Math + Jumps 两组
-（100–199/200–299，46 条，I3）已实现，其余组（System 8 条、Settings/General/Child
-management/Drawing）仍「未开始」。
+**阶段 1：地基**——格式层（I1）、VM 骨架（I2）已实现；opcode 语义已实现 **121 / 135 条**：
+Math + Jumps 46（I3）· System 8（I4）· Settings 18（I5）· General 39（I6）· Child management 10（I7）。
+只剩 **Drawing 组 14 条**（600–699）未开始——那是层 A 的最后一块，且与层 B（WebGL 渲染后端）
+天然成对，见设计文档 §10.1 的层 A / 层 B 切分。
 
 ## 格式层：已实现
 
@@ -281,16 +282,16 @@ thpages / th-re-data 是社区单源——「文档」列指向 `engine/anm/th16
 | 436 | General | `anchorOffset` | 已实现 | 已实现 | — |
 | 437 | General | `rotationSystem` | 已实现 | 已实现 | — |
 | 438 | General | `originMode` | 已实现 | 已实现 | — |
-| 500 | Child management | `createChild` | 未开始 | 未开始 | — |
-| 501 | Child management | `createChildUi` | 未开始 | 未开始 | — |
-| 502 | Child management | `prependChild` | 未开始 | 未开始 | — |
-| 503 | Child management | `prependChildUi` | 未开始 | 未开始 | — |
-| 504 | Child management | `createRoot` | 未开始 | 未开始 | — |
-| 505 | Child management | `createChildPos` | 未开始 | 未开始 | — |
-| 506 | Child management | `createRootPos` | 未开始 | 未开始 | — |
-| 507 | Child management | `ignoreParent` | 未开始 | 未开始 | — |
-| 508 | Child management | `createEffect` | 未开始 | 未开始 | — |
-| 509 | Child management | `copyParentVars` | 未开始 | 未开始 | — |
+| 500 | Child management | `createChild` | 已实现 | 已实现 | — |
+| 501 | Child management | `createChildUi` | 已实现 | 已实现 | — |
+| 502 | Child management | `prependChild` | 已实现 | 已实现 | — |
+| 503 | Child management | `prependChildUi` | 已实现 | 已实现 | — |
+| 504 | Child management | `createRoot` | 已实现 | 已实现 | — |
+| 505 | Child management | `createChildPos` | 已实现 | 已实现 | — |
+| 506 | Child management | `createRootPos` | 已实现 | 已实现 | — |
+| 507 | Child management | `ignoreParent` | 已实现 | 已实现 | — |
+| 508 | Child management | `createEffect` | 已实现 | 已实现 | 🟡（effect 表项 1 一手，其余表项未逐条追） |
+| 509 | Child management | `copyParentVars` | 已实现 | 已实现 | — |
 | 600 | Drawing | `textureCircle` | 未开始 | 未开始 | — |
 | 601 | Drawing | `textureArcEven` | 未开始 | 未开始 | — |
 | 602 | Drawing | `textureArc` | 未开始 | 未开始 | — |

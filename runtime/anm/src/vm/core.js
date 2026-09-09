@@ -77,7 +77,9 @@ export const PC_HANDLED = Symbol('anm-vm:pc-handled');
 // 2026-09-09 实测踩过：写 `createVm(s, { prng: fn })` 注入 PRNG 钩子毫无效果、
 // 也不报错，统计里 PRNG 变量全抛，差点误判实现有问题。钩子要直接挂 `vm.prng`。
 // 与本模块「宁可抛不要静默」的既有取舍一致（除零、PRNG 缺失、只读变量写入都抛）。
-const KNOWN_VM_OPTS = new Set(['gameSpeed', 'maxInstructionsPerFrame', 'stepInterpolators']);
+const KNOWN_VM_OPTS = new Set([
+  'gameSpeed', 'maxInstructionsPerFrame', 'stepInterpolators', 'getRootVm',
+]);
 
 export function createVm(script, opts = {}) {
   for (const key of Object.keys(opts)) {
@@ -146,6 +148,11 @@ export function createVm(script, opts = {}) {
     _savedPc: 0, // vm-core §3.1 saved_instr_offset
     _gameSpeed: opts.gameSpeed ?? 1, // 见文件头“不建模”清单：真实 GAME_SPEED 是全局态，
     // 骨架把它简化成每个 vm 自己的固定步长
+    // 04-variables.md §6.2 的 10026 递归要读 `+0x5ac`（根 VM）。骨架不认识任何 opcode 组的
+    // 私有字段，所以拓扑靠**注入**供给（与上面 stepInterpolators 同一套路）：
+    // `getRootVm(vm)` 返回该 vm 的 `+0x5ac`，没有就返回 null。group-child.js 负责在
+    // create_managed_* 里把它挂上，手工搭树的调用方自己传。
+    _getRootVm: opts.getRootVm ?? null,
     _stepInterpolators: opts.stepInterpolators ?? null, // 07-general.md §3 的帧尾插值器钩子：
     // 由调用方在装 generalGroup 时一并注入（`createVm(script, { stepInterpolators })`）。
     // 见 frameTail：骨架只负责调用时序，不认识插值器结构本身。
@@ -602,14 +609,28 @@ function computeRand22Float(vm) {
 }
 
 // ── 10026（rot-z-effective）：04 §6.2，`0x464dd0` 递归累积祖先旋转再 wrap ─────────────
-// 本骨架没有 VM 树（parent/root 指针）——Child management（opcode 500+）还没实现，见
-// 本文件与 OVERVIEW.md 的“不建模”/“下一步”——所以无法构造出“有父”的 vm 实例：本骨架
-// 里*每一个* vm 都等价于 04 §6.2 递归伪代码里 `root == null` 的那个分支。这不是“漏了一部分
-// 逻辑的近似值”，是该分支下 100% 精确的实现——`root == null` 时递归直接跳过，只把自己
-// 三个旋转分量 wrap 进 [-π,π]，取 z 分量返回，正是下面这一行做的事。等 500+ 组把父子关系
-// 接进来之后，这里要补上“若 vm 存在父级则递归累加”那条分支，不在本任务范围。
+// 逐条对着 `th16:0x464dd0` 抄：
+//   `0x464dda`/`0x464de5`  scratch ← 自己的 rotation（x/y/z 三分量，本函数只用得上 z）
+//   `0x464ddf`+`0x464def`  ECX = vm->+0x5ac（根 VM）；为 0 → 跳过累积
+//   `0x464df7`             闸门测的是**自己**的 flags_hi & 0x10000（507 ignoreParent），不是根的
+//   `0x464e07`             CALL 自身（thiscall，ECX = 根）——递归拿根的*有效*旋转，逐分量加进 scratch
+//   `0x464e48`–`0x464ef7`  最后把自己三个分量各 wrap 进 (-π, π]（同 129 mathReduceAngle 的 34 步上限）
+//
+// ★ 递归实际只有一层深：`0x46edf8` 建子时写的是 `子->+0x5ac = 父->+0x5ac ?: 父`，归纳可知
+//   任何深度的 `+0x5ac` 都指**真·根**而非中间父，而根自己的 `+0x5ac == 0` 使递归立刻终止。
+//   所以 10026 = wrap(自身 z + 根的 z)，**中间父的旋转不参与**——这条正是 04 §6.2 ④ 里
+//   标 🟡 的拓扑问题，2026-09-09 由上面两处一手反汇编交叉坐实（该 🟡 已在文档里收口）。
+//   代码仍写成递归而不是「读一次根」，因为这才是 `0x464dd0` 真正做的事：万一将来发现
+//   某条路径上 `+0x5ac` 会指向中间父，这里不需要改。
+//
+// 与原版一样**没有环检测**：`0x464dd0` 自己也没有。构造出环的树本身就不是引擎能产生的状态。
 function computeRotZEffective(vm) {
-  return wrapAngle34Step(vm.rotation.z);
+  let z = vm.rotation.z;
+  const root = typeof vm._getRootVm === 'function' ? vm._getRootVm(vm) : null;
+  if (root && !(vm.flagsHi & 0x10000)) {
+    z += computeRotZEffective(root);
+  }
+  return wrapAngle34Step(z);
 }
 
 // u32 位模式 <-> float32，用来在“浮点指令把变量号编成 float32”（math-jumps §3 结论④）

@@ -18,7 +18,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createVm, stepFrame, registerGroup } from '../src/vm/core.js';
-import { childGroup, ensureChildState, destroyTree } from '../src/vm/group-child.js';
+import { childGroup, ensureChildState, destroyTree, getRootVm } from '../src/vm/group-child.js';
 import { ensureGeneralState } from '../src/vm/group-general.js';
 
 function mkVm(script) {
@@ -285,4 +285,105 @@ test('父死 → 整棵子树销毁（02-vm-core.md §6：flags_hi |= 0x40 递�
   assert.equal(grandchild.alive, false);
   assert.notEqual(grandchild.flagsHi & 0x40, 0);
   assert.equal(ensureChildState(root).children.length, 0, '销毁后清空子链');
+});
+
+// ── 接线回归：10026（rot-z-effective）在有树之后要真的递归 ────────────────────────
+// 背景：core.js 原来的 computeRotZEffective 写死成「root == null 分支」（当时骨架里确实
+// 造不出有父的 vm），本组把树接起来之后那个前提就不成立了。骨架不认识 `vm._child`，所以
+// 拓扑走注入：group-child.js 导出 `getRootVm`，buildChildOpts 把它塞进新建 vm 的 opts。
+// 这几条测的就是这根线本身——不是 childGroup 的语义，是「骨架和本组接上了没有」。
+//
+// 一手依据：`th16:0x464dd0`（递归 + `0x464df7` 的 flags_hi & 0x10000 闸门）、
+// `th16:0x46edf8`（子的 `+0x5ac` = 父的 root ?: 父）、`th16:0x46e6e8`（销毁时 `+0x5ac = 0`）。
+import { resolveArg } from '../src/vm/core.js';
+
+// 10026 是只读浮点变量。浮点侧的变量号按 03-math-jumps.md §3 ④ 编成 float32 的位模式，
+// 所以读法与生产路径一致：先把 10026 转成 float32 位模式再交给 resolveArg。
+const f32b = new Float32Array(1);
+const u32b = new Uint32Array(f32b.buffer);
+function f32BitsOf(n) {
+  f32b[0] = n;
+  return u32b[0];
+}
+function rotZEffective(vm) {
+  return resolveArg(vm, f32BitsOf(10026), true, 'float');
+}
+
+// 顶层 VM 是调用方手搭的，骨架没法替它决定拓扑，所以 getRootVm 要显式传（由 500 建出来的
+// 后代则由 buildChildOpts 自动带上——最后一条测试专门守这件事）。
+function mkTreeRoot() {
+  const vm = createVm(staticScript, { getRootVm });
+  ensureChildState(vm).scripts = [staticScript];
+  return vm;
+}
+
+test('接线：子 VM 的 10026 累加根的 z 旋转（0x464e07 递归），不是只看自己', () => {
+  const parent = mkTreeRoot();
+  parent.rotation.z = 0.5;
+  const child = callOp(parent, 500, [0]);
+  child.rotation.z = 0.25;
+
+  assert.equal(ensureChildState(child).root, parent, '0x46edf8：父无 root 时子的 root = 父本身');
+  assert.ok(Math.abs(rotZEffective(child) - 0.75) < 1e-6, '子 0.25 + 根 0.5 = 0.75');
+  assert.ok(Math.abs(rotZEffective(parent) - 0.5) < 1e-6, '根自己的 +0x5ac == 0，递归立刻终止');
+});
+
+test('接线：507 ignoreParent 置位后 10026 不再累加（0x464df7 闸门测的是自己的位）', () => {
+  const parent = mkTreeRoot();
+  parent.rotation.z = 0.5;
+  const child = callOp(parent, 500, [0]);
+  child.rotation.z = 0.25;
+
+  callOp(child, 507, [1]); // flags_hi bit 0x10000 = 1
+  assert.ok(Math.abs(rotZEffective(child) - 0.25) < 1e-6, '闸门开 → 只剩自己的 0.25');
+  callOp(child, 507, [0]); // 08 §4.1：507 是设值不是翻转，写 0 要能关回去
+  assert.ok(Math.abs(rotZEffective(child) - 0.75) < 1e-6, '闸门关 → 恢复累加');
+});
+
+test('接线：树深 3 时 10026 跳过中间父、只累加真·根（0x46edf8 的归纳结论）', () => {
+  const root = mkTreeRoot();
+  root.rotation.z = 0.5;
+  const mid = callOp(root, 500, [0]);
+  mid.rotation.z = 100; // 故意给个巨大值：一旦中间父被算进去，结果会离谱到 wrap 都藏不住
+  const leaf = callOp(mid, 500, [0]);
+  leaf.rotation.z = 0.25;
+
+  assert.equal(ensureChildState(leaf).root, root, '孙子的 +0x5ac = 父的 root（= 真·根），不是父');
+  assert.ok(Math.abs(rotZEffective(leaf) - 0.75) < 1e-6, '0.25 + 根 0.5，中间父的 100 不参与');
+});
+
+test('接线：destroyTree 断开 +0x5ac 后，死树不再贡献有效旋转（0x46e6e8）', () => {
+  const parent = mkTreeRoot();
+  parent.rotation.z = 0.5;
+  const child = callOp(parent, 500, [0]);
+  child.rotation.z = 0.25;
+  assert.ok(Math.abs(rotZEffective(child) - 0.75) < 1e-6, '销毁前先确认累加是活的');
+
+  destroyTree(parent);
+  assert.equal(ensureChildState(child).root, null, '0x46e6e8：递归销毁把每个节点的 +0x5ac 清 0');
+  assert.equal(ensureChildState(child).parent, null, '0x46e6f5：+0x5b0 同样清 0');
+  assert.equal((child.flagsHi & 0x60) >>> 0, 0x40, '0x46e6e5+0x46e6f2：0x20 清、0x40 置');
+  assert.ok(Math.abs(rotZEffective(child) - 0.25) < 1e-6, '断开后只剩自己的 0.25');
+});
+
+test('接线：10026 的累加结果照样 wrap 进 (-π, π]（0x464e48 起三组循环）', () => {
+  const parent = mkTreeRoot();
+  parent.rotation.z = 3.0;
+  const child = callOp(parent, 500, [0]);
+  child.rotation.z = 3.0; // 和 = 6.0 > π，必须被 wrap 回 6.0 - 2π ≈ -0.283185
+  const got = rotZEffective(child);
+  assert.ok(Math.abs(got - (6.0 - 2 * Math.PI)) < 1e-5, `6.0 应 wrap 成 ${6 - 2 * Math.PI}，实得 ${got}`);
+});
+
+test('接线：500 建出来的 vm 自动带 getRootVm，调用方不必手工传', () => {
+  // 上面几条给顶层 vm 显式传了 getRootVm（顶层是调用方手搭的，骨架没法替它决定拓扑）；
+  // 但由 create_managed_* 建出来的 vm 必须自带这根线，否则树深 ≥ 3 时孙子读 10026 会静默
+  // 退回「root == null 分支」。这条就守这件事。
+  const root = mkTreeRoot();
+  const mid = callOp(root, 500, [0]);
+  assert.equal(typeof mid._getRootVm, 'function', 'buildChildOpts 要把 getRootVm 传下去');
+  root.rotation.z = 0.5;
+  const leaf = callOp(mid, 500, [0]);
+  leaf.rotation.z = 0.25;
+  assert.ok(Math.abs(rotZEffective(leaf) - 0.75) < 1e-6, '孙子这一层的递归确实接上了');
 });

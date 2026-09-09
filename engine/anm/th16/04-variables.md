@@ -226,10 +226,23 @@ case 地址 = `get_float_var` 跳表 `0x45f578` 的落点（读侧主分发表�
 逐分量加进 scratch，再把自己三个 rotation 分量各 wrap 进 `[-π,π]`（`0x464e48` 起三组循环，同 `129 mathReduceAngle` 的
 34 步上限）。返回 scratch 指针；case 取 `[+0x8]` = `vm+0x5f8` = scratch[2] = **有效 z 旋转**。
 
-**④ 结论**（✅ TH16）：10026 = 有效 z 旋转 = 自身 `rotation.z` 累加上祖先链（沿 `+0x5ac`，受 `flags_hi & 0x10000`
-「不继承」闸门控制）的 z 旋转，wrap 进 `[-π,π]`。与社区 `rot-z-effective`（*"including the rotation of the parent"*）一致。
-**一处措辞要说准**：累积沿的是 `+0x5ac`（02 §3.5 记为「根 VM」，非 `+0x5b0` 父指针），故「含父旋转」在
-树深 > 2 时是否含**每一级**中间父、还是只跳到根——本任务没穷举 `+0x5ac` 在多层树里的赋值链，这条拓扑细节标 🟡。
+**④ 结论**（✅ TH16）：10026 = 有效 z 旋转 = 自身 `rotation.z` 累加上**根 VM**（沿 `+0x5ac`，受 `flags_hi & 0x10000`
+「不继承」闸门控制）的 z 旋转，wrap 进 `[-π,π]`。与社区 `rot-z-effective`（*"including the rotation of the parent"*）
+方向一致，但社区那句 *"of the parent"* **说得不准**：累积沿的是 `+0x5ac`（02 §3.5 的「根 VM」），不是 `+0x5b0` 父指针。
+
+**④′ 拓扑收口**（✅ TH16，2026-09-09 补）：原先这里标 🟡 的「树深 > 2 时含每一级中间父、还是只跳到根」，
+由建树侧的一手反汇编交叉坐实为**只到根、跳过所有中间父**：
+
+- `create_managed_child` `0x46edf3`–`0x46edf8`：`ECX = 父`；`EAX = 父->+0x5ac`；`CMOVNZ ECX,EAX`；
+  `MOV [ESI+0x5ac],ECX` ⇒ 子的 `+0x5ac` = **父的 root ?: 父**。归纳：父的 `+0x5ac` 若已是真·根，
+  子拿到的还是同一个真·根 ⇒ 任何深度上 `+0x5ac` 都指真·根。
+- `create_managed_root` `0x46eea0`：不写 `+0x5ac`（= 0，自己是根）⇒ 归纳的基例成立。
+- 于是 `0x464dd0` 的递归（`0x464e07`）实际深度恒为 1：进到根之后根自己的 `+0x5ac == 0`，
+  `0x464df1` 直接跳去 `0x464efc` 只做 wrap。
+
+⇒ **10026 = wrap(自身 `rotation.z` + 根的 `rotation.z`)**，中间父的旋转不参与。闸门 `0x464df7`
+测的是**自己**的 `flags_hi & 0x10000`（`507 ignoreParent`），不是根的。销毁路径 `0x46e6e8` 会把
+`+0x5ac` 清 0，死树因此不再贡献有效旋转。
 
 **⑤ 证据**：`0x45f443`；`0x464dd0` 反汇编（`0x464dd4` scratch、`0x464ddf`/`0x464def` 根与闸门、`0x464e07` 递归、
 `0x464e48`–`0x464ef7` 三组 wrap）；调用方（`0x4660b0`/`0x46390`/`0x466f00`/`0x467410`）都是按 z 旋转画 sprite 的路径。
