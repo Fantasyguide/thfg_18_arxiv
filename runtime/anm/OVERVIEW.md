@@ -49,12 +49,34 @@ entry 链表 / sprite 表 / script 表 / 指令流，只做结构解析，不含
   `registerGroup(ops, groupTable) -> void`、变量解析 `resolveArg(vm, raw, isVariable, kind)`
   （配套小工具 `isVarBit(paramMask, index)`）、`triggerInterrupt(vm, n) -> void`、
   handler 用来声明「我已经自己改过 pc」的哨兵 `PC_HANDLED`。
-- **变量解析**：目前只实现 I0–I3 / F0–F3（变量号 10000–10007，
-  [`engine/anm/th16/03-math-jumps.md`](../../engine/anm/th16/03-math-jumps.md) §3 专项①），
-  **支持这 8 个槽内部的跨类型读**（整型指令读浮点槽走 `cvttss2si`，浮点指令读整型槽走
-  `cvtdq2ps`——`03-math-jumps.md` §3：`get_int_var`/`get_float_var` 的定义域都是
-  10000–10035，真实数据里 opcode 100/112 有 9 次这样跨类型读 F0，不是边角情况）。
-  `02-vm-core.md` §3.4 变量表里其余变量号（10008 及以上）留给用到它们的 opcode 组按需扩展。
+- **变量表**：`resolveArg`（读）+ `writeIntVar`/`writeFloatVar`（写）覆盖
+  [`engine/anm/th16/04-variables.md`](../../engine/anm/th16/04-variables.md)（下称「04」）
+  §2 的全 **36 个变量号**（10000–10035），22 个可写（7 整型 + 15 浮点，04 §3 穷举）/
+  14 个只读，逐号落在真实 `vm` 字段（`vm.i`/`vm.f`/`vm.pos`/`vm.rotation`/`vm.i4`/`vm.i5`/
+  `vm.randParamOne`/`vm.randParamPi`/`vm.randParamInt`/`vm.mysteryVars`），不是各存一份影子
+  状态；只读号写入会抛带变量名的错，类型不匹配的写（比如用整型指令写一个只浮点可写的号）
+  也抛错（04 §3：真机会自修改字节码，本骨架不实现这条路径）。
+  - **跨类型读支持全 36 号、且是非对称的**（04 §4 一手穷举）：7 个整型存储号
+    int→float 走 `cvtdq2ps`，9 个号 float→int 走 `cvttss2si`（截零）；`10022` 单独一条
+    公式；**其余 19 个只有浮点语义的号，整型读不算字段值，直接返回变量号本身**——
+    这条对“不建模”的号是个好消息：camera/lookat 与 `rot-z-effective` 的整型读根本不需要
+    真的碰相机/祖先链，直接落这条默认分支。
+  - **随机族两条独立 PRNG 流**（04 §5，承 `03-math-jumps.md` §7.4）：`10010–10012`/`10022`
+    走 Stream B，复用 `group-math.js` 122/123/131 已经约定的 `vm.prng` 钩子（同一条物理流，
+    不新开名字）；`10030–10032` 走 Stream A，另开 `vm.prngReplay`，与 `vm.prng` 严格独立。
+    两个钩子都是必填——没注入时对应变量号直接抛，不静默退化。
+  - **`10026`（rot-z-effective）**：04 §6.2 的算法要递归累加祖先旋转，但本骨架没有 VM
+    树（`500+` Child management 组还没实现）——每个 `vm` 都等价于该算法 `root == null`
+    的分支，所以这里给出的是该分支下**精确**的值（`wrapAngle34Step(vm.rotation.z)`，
+    与 129 mathReduceAngle 同一算法），不是近似；等父子关系接进来后要补递归那条分支。
+  - **`10016–10021`（camera-x/y/z、lookat-x/y/z）浮点读**：04 §6.1 证实这是舞台相机
+    位置/朝向镜像块的全局态，不落在 `vm` 字段里——本骨架显式列进「不建模」清单并抛错，
+    不静默返回 0（画面悄悄错位会没人发现，与「PRNG 缺失直接抛」「除零宁可抛」同一哲学）。
+  - **`10033–10035`（mystery-angle-x/y/z）**：04 §8（RV2）定论为**通用可写浮点暂存，
+    无固定引擎语义**（ZUN 数据里 x/y 常存 2D 偏移、z 常存角度，是用法不是约束）——
+    落在 `vm.mysteryVars`，字段名沿用社区叫法，代码注释指回 04 §8 说明这条限定。
+  - 细节、逐号映射表、两处故意改坏验证见
+    `.superpowers/sdd/2026-09-09-runtime-anm-phase1/task-IV-report.md`。
 - **跳转**：骨架只提供「handler 可以直接改写 `vm.pc`（字节偏移），骨架据此不再 `+= size`」
   这套通用机制（`PC_HANDLED`），不认识任何具体跳转 opcode。**这个 VM 里不存在变量跳转
   目标**——`03-math-jumps.md` §2.1/§5 一手证实跳转族（200/201/202–213）的 `dest`/`t` 恒为
@@ -75,9 +97,9 @@ entry 链表 / sprite 表 / script 表 / 指令流，只做结构解析，不含
 `src/vm/group-math.js` 导出 `mathJumpsGroup`（`{ [opcode]: handler }`，供 `registerGroup`
 并入总 `ops` 表），依据 [`engine/anm/th16/03-math-jumps.md`](../../engine/anm/th16/03-math-jumps.md)
 §2 的 46 条指令表，每条 handler 上方注释指回具体 opcode 行。32 条算术/数学（100–131）
-写 I0–I3/F0–F3 这 8 个变量槽（消费 `core.js` 的 `resolveArg` 做右值读；左值写回没有对应的
-骨架导出函数，本文件补了一对镜像 `resolveArg` 的写函数，范围同样限定在 I0–I3/F0–F3），
-14 条跳转（200–213）只改 `vm.pc`/`vm.time`（消费 `PC_HANDLED`）。
+读写变量槽（消费 `core.js` 的 `resolveArg` 做右值读、`writeIntVar`/`writeFloatVar` 做左值写——
+两者都覆盖上面「变量表」小节说的全 36 个变量号，不再本地维护一份镜像），14 条跳转
+（200–213）只改 `vm.pc`/`vm.time`（消费 `PC_HANDLED`）。
 
 - **两处本文件自己做的实现决策**（math-jumps.md 没有给出唯一答案，属于 `runtime/` 层的
   取舍，不是 engine/ 结论）：
@@ -102,26 +124,24 @@ entry 链表 / sprite 表 / script 表 / 指令流，只做结构解析，不含
   但"被调 CRT 函数究竟是哪一个"是 `03-math-jumps.md` §2.2 靠数值指纹认定、未经运行时
   验证的结论——本文件对应 5 条 handler 上方注释都标了这条不确定性，选用 JS 对应的
   `Math.sin`/`Math.cos`/`Math.tan`/`Math.acos`/`Math.atan`（+ `Math.fround`）实现。
-- ⚠️ **已知接口缺口：变量表只覆盖 8 / 22 个可写号，真实 th16 数据里本组 42.7% 的指令会抛。**
-  「46 条已实现 ✅」说的是**opcode 语义**（每条 handler 的算术/比较/跳转行为都指得回
-  `03-math-jumps.md` §2 的一行）；但这些 handler 读写变量要经过 `core.js` 的
-  `resolveArg` 与本文件的 `writeIntVar`/`writeFloatVar`，而**这三者目前都只认
-  I0–I3 / F0–F3 这 8 个槽**（变量号 10000–10007），`02-vm-core.md` §3.4 的变量表实际有
-  **22 个可写号**、更多只读号。实测（用本仓的解析器 + 骨架 + 本组表，对
-  `local/th16.v1.00a/dat/` 全部 54 个 `.anm` 的本组指令逐条调 handler）：
+- ✅ **变量表缺口已由 IV 任务补齐——残余抛出率 3.2%，且全部是刻意的「不建模」抛错，
+  不是变量表还没写的号。** I3 交付时的实测是变量表只覆盖 8/22 个可写号，真实 th16
+  数据里本组 42.7% 的指令会抛（该数字与失败清单仍见本文件 git 历史/`task-I3-report.md`）。
+  IV 任务把 `core.js` 的变量表扩到 `04-variables.md` 的全 36 号后，用同一套方法重跑
+  （本仓解析器 + 骨架 + 本组表，对 `local/th16.v1.00a/dat/` 全部 54 个 `.anm` 的本组
+  指令逐条调 handler，固定注入 `vm.prng`/`vm.prngReplay`）：
 
   ```
-  本组指令 2525 条 → 正常执行 1447，抛异常 1078（42.7%）
-    未覆盖的读：10012×341 10022×168 10011×146 10008×81 10010×80 10026×14
-                10016–10021 各 13–14  10035×7  10033/10034 各 6  10030/10031 各 1
-    未覆盖的写：10008×83 10035×48 10028×10 10033×6
-  1929 个真实 script 里 338 个（17.5%）含至少一条会抛的指令
+  本组指令 2525 条 → 正常执行 2445，抛异常 80（3.2%）
+    未覆盖读：10016–10021（camera-x/y/z、lookat-x/y/z）各 13–14 次，共 80 次
+  1929 个真实 script 里 14 个（0.7%）含至少一条会抛的指令
   ```
 
-  **所以这一组现在还不能拿去跑真实 `.anm`。** 补齐变量表是一个独立任务（它要动
-  `core.js` 的变量解析、并把 `pos`/`rotation` 这些字段接进 VM 状态，范围超出本组），
-  不在 I3 的范围内——这里把数字写下来，是为了让读者不要从矩阵里那 46 个「已实现 ✅」
-  推出「这组能直接播真实动画」。
+  **残余的 80 次抛出全部落在 `10016–10021`**——舞台相机位置/朝向镜像块，04 §6.1 证实
+  这是播放器不建模的引擎全局态（不落在 `vm` 字段里，本骨架没有 Stage 全局状态可读），
+  是刻意选择抛错、不是变量表遗漏。**这一组现在已经可以拿去跑真实 `.anm`**，除了脚本
+  确实用到相机/朝向读数的极少数指令（54 个文件里 14/1929 个 script）。
+  细节见 `.superpowers/sdd/2026-09-09-runtime-anm-phase1/task-IV-report.md`。
 
 - 测试：`tests/vm-math.test.js`，夹具 `tests/fixtures/math-ops.anm.txt`（自写、零版权
   字节；brief 给的 5 条测试之外自己加了除零/取模边界、`paramMask` 变量右值、PRNG 可

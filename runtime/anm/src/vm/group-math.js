@@ -4,28 +4,27 @@
 // handler 上方注释指回具体 opcode 行（双向互指纪律，见 runtime/README.md）。本文件不
 // 重新论证任何语义结论——那是 engine/ 层的事，这里只做「把结论翻成 JS」的实现决策。
 //
-// 消费 I2 骨架（src/vm/core.js）导出的 registerGroup / resolveArg / isVarBit / PC_HANDLED。
-// 变量解析（右值读）全部通过 core.js 的 resolveArg 完成——不在本文件重新实现一份读变量
-// 的逻辑（那会制造两份变量表，正是分层要避免的事）。
+// 消费 I2 骨架（src/vm/core.js）导出的 registerGroup / resolveArg / writeIntVar /
+// writeFloatVar / isVarBit / PC_HANDLED。变量解析（右值读 + 左值写）全部通过 core.js
+// 完成——不在本文件重新实现一份变量表（那会制造两份变量表，正是分层要避免的事）。
 //
-// ⚠️ ── 已知接口缺口：变量表只覆盖 8 / 22 个可写号 ──────────────────────────────
-// core.js 的 resolveArg 与本文件的 writeIntVar/writeFloatVar 目前都只认 I0–I3 / F0–F3
-// 这 8 个槽（变量号 10000–10007）；02-vm-core.md §3.4 的变量表实际有 22 个可写号，
-// 只读号更多。**本文件此处初版写的「其余变量号……这 46 条指令用不到」是事实错误**——
-// 它被自己引用的 math-jumps §8 直接证伪：那张真实数据表统计的就是本组指令的参数，
-// 里面白纸黑字写着 10008×164、10022×168、10030/10031 各 1。实测（54 个真实 .anm，
-// 本组指令逐条调 handler）：
+// ✅ ── 变量表缺口已由 IV 任务补齐（engine/anm/th16/04-variables.md）────────────────
+// 曾经的状态（I3 交付时）：core.js 的 resolveArg 与本文件本地的 writeIntVar/writeFloatVar
+// 都只认 I0–I3/F0–F3 这 8 个槽，54 个真实 .anm 逐条调 handler 实测本组指令 2525 条里
+// 1078 条（42.7%）会抛。IV 任务把 core.js 的变量表扩到 04-variables.md 的全 36 号
+// （22 可写/14 只读），本文件的 writeIntVar/writeFloatVar 也改成直接 import core.js
+// 的版本（不再本地维护一份只有 8 槽的镜像）。重跑同一实验：
 //
-//     本组指令 2525 条 → 正常执行 1447，抛异常 1078（42.7%）
-//       未覆盖读：10012×341 10022×168 10011×146 10008×81 10010×80 10026×14
-//                 10016–10021 各 13–14  10035×7  10033/10034 各 6  10030/10031 各 1
-//       未覆盖写：10008×83 10035×48 10028×10 10033×6
-//     1929 个真实 script 里 338 个（17.5%）含至少一条会抛的指令
+//     本组指令 2525 条 → 正常执行 2445，抛异常 80（3.2%）
+//       未覆盖读：10016–10021（camera-x/y/z、lookat-x/y/z）各 13–14 次
+//     1929 个真实 script 里 14 个（0.7%）含至少一条会抛的指令
+//     （具体数字见 runtime/anm/OVERVIEW.md「已知接口缺口」块与
+//      .superpowers/sdd/2026-09-09-runtime-anm-phase1/task-IV-report.md）
 //
-// 也就是说：**这 46 条的 opcode 语义是实现完了的，但这一组还不能拿去跑真实 .anm。**
-// 补齐变量表要动 core.js 的变量解析、并把 pos/rotation 这些 VM 字段接进来，范围超出
-// 本组，是一个独立任务。下面写变量时抛的错保留了这个事实（不静默丢弃、不悄悄写别处），
-// 与「实现决策①」的除零处理同一套哲学。
+// 残余的 80 次抛出**全部**是 04 §6.1 点名的“播放器不建模的引擎全局态”——camera-*/
+// lookat-*（10016–10021）读的是舞台相机位置/朝向镜像块，本骨架没有 Stage 全局状态。
+// 这是刻意选择抛错而不是静默返回 0（同「实现决策①」除零的哲学），不是变量表还没补的
+// 缺口——04 §3 的 22 个可写号、其余只读号的读写全部已接上真实 vm 字段，见 core.js。
 //
 // ── 层次边界：本文件是 runtime/ 实现，不是 engine/ 结论 ──────────────────────────
 // 下面两处 math-jumps.md 本身没有给出唯一答案、需要本文件自己做取舍，各自在对应 handler
@@ -37,7 +36,7 @@
 //      约定成必填钩子 `vm.prng`，**没注入就抛**（不静默退化到 Math.random），
 //      见下面「实现决策②」。
 
-import { resolveArg, isVarBit, PC_HANDLED } from './core.js';
+import { resolveArg, writeIntVar, writeFloatVar, isVarBit, PC_HANDLED } from './core.js';
 
 // ── 实现决策① 整数除 0 / 取模 0 / INT_MIN÷-1：抛异常，不返回哨兵 ──────────────────
 // math-jumps §4.1 结论④：真机的 108/110/118/120 四条是裸 `cdq;idiv`，前面一条比较、
@@ -130,35 +129,8 @@ function readArg(vm, instr, index, kind) {
   return resolveArg(vm, instr.args[index], isVarBit(instr.paramMask, index), kind);
 }
 
-// 写：core.js 没有导出对应的"左值"函数（它的 resolveArg 只管右值读），但本组 32 条
-// 算术/数学指令里 30 条要写回一个变量槽，所以这里补一对镜像 resolveArg 的写函数。
-// 范围与 core.js 的读范围保持同一份依据（02-vm-core.md §3.4 / math-jumps §3），不是
-// 本组自创的新范围（也不是完整范围——见顶部「已知接口缺口」）——
-// I0–I3 只能被"整型左值指针"写、F0–F3 只能被"浮点左值指针"写，
-// math-jumps §3 的两张索引表本身就是分开的（get_int_var_ptr 与 get_float_var_ptr 的
-// 可写变量号集合不相交），所以写侧**不需要**读侧那种跨类型转换——这不是遗漏。
-function writeIntVar(vm, varId, value) {
-  if (varId >= 10000 && varId <= 10003) {
-    vm.i[varId - 10000] = value | 0;
-    return;
-  }
-  throw new Error(
-    `group-math: 整型变量号 ${varId} 落在尚未实现的变量表范围（本实现只覆盖 I0–I3）` +
-      '——02-vm-core.md §3.4 的变量表共 22 个可写号；真实 th16 数据里本组确实会写 10008 等号' +
-      '（见本文件顶部「已知接口缺口」的实测分布），不是边角情况。',
-  );
-}
-function writeFloatVar(vm, varId, value) {
-  if (varId >= 10004 && varId <= 10007) {
-    vm.f[varId - 10004] = Math.fround(value);
-    return;
-  }
-  throw new Error(
-    `group-math: 浮点变量号 ${varId} 落在尚未实现的变量表范围（本实现只覆盖 F0–F3）` +
-      '——02-vm-core.md §3.4 的变量表共 22 个可写号（含 pos/rotation 分量）；真实 th16 数据里' +
-      '本组确实会写 10035/10033 等号（见本文件顶部「已知接口缺口」的实测分布），不是边角情况。',
-  );
-}
+// 写：core.js 现在导出了 writeIntVar/writeFloatVar（04-variables.md §3 的 22 个可写号
+// 全覆盖，只读/类型不匹配会带变量名报错）——本组不再本地维护一份镜像，直接转发。
 
 // u32 位模式 -> float32，用来解出"这个左值参数指的是哪个变量号"（浮点指令把变量号也
 // 编成 float32——math-jumps §3 结论④）。与 core.js 内部的同名小工具重复 4 行，是刻意

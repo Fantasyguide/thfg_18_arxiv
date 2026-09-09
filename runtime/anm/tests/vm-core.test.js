@@ -71,11 +71,18 @@ test('paramMask 置位的参数被当变量号解析（wait 的参数取自 I0�
   assert.equal(vm.time, -5);
 });
 
-test('resolveArg 对未注册的变量号报错（不是静默按字面量放行）', () => {
+test('resolveArg 对越界的变量号报错（不是静默按字面量放行）', () => {
   const vm = createVm(loadScript('./fixtures/vm-timing.anm', 1));
-  // 10010 不在 I2 骨架实现的 I0–I3/F0–F3 范围内（02-vm-core.md §3.4 还有别的变量号，
-  // 但那些留给用到它们的 opcode 组扩展）——resolveArg 应该报错，而不是返回某个乱数。
-  assert.throws(() => resolveArg(vm, 10010, true, 'int'), /I2 骨架尚未覆盖/);
+  // 10010 现在在 IV 任务扩到的 36 号定义域内（engine/anm/th16/04-variables.md §2），
+  // 不再抛错——这条测试改成真正越界的号（10036，超出 04 §2 定义域 10000–10035）。
+  assert.throws(() => resolveArg(vm, 10036, true, 'int'), /不是合法的 ANM 变量号/);
+});
+
+// 04-variables.md §4 专项②：整型读是「非对称」的——10010（randrad）只有浮点语义，
+// 整型指令读它不会真的算随机数，get_int_var 的默认分支把变量号本身原样退回。
+test('resolveArg 整型读只有浮点语义的变量号（10010）：返回变量号本身，不是计算值', () => {
+  const vm = createVm(loadScript('./fixtures/vm-timing.anm', 1));
+  assert.equal(resolveArg(vm, 10010, true, 'int'), 10010);
 });
 
 // 跨类型变量读：math-jumps §3 明确 get_int_var/get_float_var 的定义域都是 10000–10035，

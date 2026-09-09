@@ -43,7 +43,10 @@
 //   createVm(script, opts?) -> vm
 //   stepFrame(vm, ops) -> void
 //   registerGroup(ops, groupTable) -> void
-//   resolveArg(vm, raw, isVariable, kind) -> number   （变量解析，供各 opcode 组用）
+//   resolveArg(vm, raw, isVariable, kind) -> number   （变量右值读，供各 opcode 组用；
+//                                                        36 个变量号全覆盖，见 04-variables.md）
+//   writeIntVar(vm, varId, value) -> void              （整型变量左值写；只读/类型不匹配抛错）
+//   writeFloatVar(vm, varId, value) -> void             （浮点变量左值写；只读/类型不匹配抛错）
 //   isVarBit(paramMask, index) -> boolean              （resolveArg 的配套小工具）
 //   triggerInterrupt(vm, n) -> void
 //   PC_HANDLED                                          （handler 用它告诉骨架“我已经改过 pc”）
@@ -93,6 +96,18 @@ export function createVm(script, opts = {}) {
     scale: { x: 1, y: 1 }, // vm-core §3.3 +0x50；wipe 默认 (1,1)
     rotation: { x: 0, y: 0, z: 0 }, // vm-core §3.3 +0x38；wipe 默认全零
     color: 0xffffffff, // vm-core §3.3 +0x520（color_1）；wipe 默认 0xffffffff
+
+    // ── IV：04-variables.md §2 补的其余变量号落点（不是各存一份影子状态，直接是
+    //   36 号变量表里那几个不在 i[]/f[]/pos/rotation 里的物理字段）──────────────
+    i4: 0, // 04-variables.md §2 行 10008，`+0x4cc`；I4，除“整型寄存器”外无其他已知语义（🟡）
+    i5: 0, // 04-variables.md §2 行 10009，`+0x4d0`；I5，同上（🟡，社区称仅拍照小游戏用，未复核）
+    randParamOne: 1.0, // 04-variables.md §2 行 10027，`+0x4d4`；10011/10012 的刻度，wipe 默认 1.0
+    randParamPi: Math.fround(Math.PI), // 04-variables.md §2 行 10028，`+0x4d8`；10010 的刻度，wipe 默认 π
+    randParamInt: 0x10000, // 04-variables.md §2 行 10029，`+0x4dc`；10022 整读的模数，wipe 默认 0x10000
+    mysteryVars: { x: 0, y: 0, z: 0 }, // 04-variables.md §2 行 10033–10035，`+0x4c0/4c4/4c8`；
+    // RV2 定论（04 §8）：三个无固定引擎语义的通用可写浮点暂存，字段名沿用社区叫法
+    // “mystery”但不代表真是角度——ZUN 数据里 x/y 常存 2D 偏移、z 常存角度，这是用法
+    // 不是约束（04 §8.5：“别按角度做归一”）。wipe 只 memset 0，默认 0.0（04 §8.1）。
     time: 0, // vm-core §3.2 zTimer.current；wipe 后 Timer::set_value(0)
     pc: 0, // vm-core §3.1 instr_offset；新建 VM 从脚本开头跑
     alive: true, // 骨架自己的记账字段：真实引擎用 AnmVm_run 的返回值（1=销毁）表示这件事，
@@ -323,42 +338,243 @@ export function stepFrame(vm, ops) {
   frameTail(vm);
 }
 
-// ── 变量解析：math-jumps §3 结论④ ────────────────────────────────────────────
-// I0–I3 = 变量号 10000–10003（vm.i[0..3]），F0–F3 = 10004–10007（vm.f[0..3]）。
-// vm-core §3.4 的完整变量表还有 10008/10009、pos/rotation 分量、10022 随机、
-// 10027–10029 常量……本骨架只实现 I0–I3/F0–F3 这 8 个（brief 明确只要这些）——
-// 其余变量号留给要用到它们的 opcode 组（比如要读 pos.x 的 General 组）自己按需扩展
-// 这张表，不在 I2 骨架范围内。
-//
-// ★ 跨类型读（读取值，不是解析哪个变量号——见下面 resolveArg 的两段式说明）：
-// math-jumps §3 明确 `get_int_var`/`get_float_var` 的定义域**都是 10000–10035**，
-// 不是各自只认自己那 4 个槽——`get_int_var(10004..10007)` 走 `cvttss2si`（读浮点槽转
-// 整型，截零），`get_float_var(10000..10003)` 走 `cvtdq2ps`（读整型槽转浮点）。真实数据
-// 里这不是理论边界：827 个整型变量参数里有 9 次是 opcode 100/112 用整型指令去读 F0
-// （math-jumps §3 结论④：“变量号的编码取决于指令的类型，不取决于变量本身”——即使引用的
-// 是 F0，只要宿主指令是整型指令，那 4 个字节就按 int32 编码）。所以 I0–I3/F0–F3 这 8 个
-// 槽内部要能跨类型读，这不是“未实现的变量号”（10008/10022 那类才是），下面两个函数
-// 分别处理各自的两种情况：本类型直接读，另一类型转换后读。10008 及以上仍然抛，但
-// 措辞改成“I2 骨架尚未覆盖”而不是笼统的“越界”——这两者不是一回事。
+// ── 变量解析：engine/anm/th16/04-variables.md（下称「04」）§2 的 36 条变量表 ─────────
+// 04 是本节的一手依据：36 个变量号（10000–10035）、22 个可写（7 整型 + 15 浮点）、
+// 14 个只读，逐条对到 case 地址与 vm 字段落点（04 §1/§2）。math-jumps §3 只给了这套
+// 变量机制的公共骨架（get_var 的 mask 分派、变量号按指令类型编码）；具体每个号是什么、
+// 能不能写、落在哪，以 04 为准。
 
-function readIntVar(vm, varId) {
-  if (varId >= 10000 && varId <= 10003) return vm.i[varId - 10000];
-  if (varId >= 10004 && varId <= 10007) return Math.trunc(vm.f[varId - 10004]); // cvttss2si：截零，不是 floor
-  throw new Error(
-    `resolveArg: 变量号 ${varId} 是 I2 骨架尚未覆盖的变量号` +
-      '（02-vm-core.md §3.4 还有更多变量号——10008/10009、pos/rotation 分量、随机数……' +
-      '留给需要它们的 opcode 组扩展；I0–I3/F0–F3 这 8 个槽本身已经支持跨类型读）',
-  );
+// 7 个可写整型号（走 get_int_var_ptr，04 §3 穷举）：I0–I3、I4、I5、rand-param-int。
+const INT_WRITABLE = new Set([10000, 10001, 10002, 10003, 10008, 10009, 10029]);
+// 15 个可写浮点号（走 get_float_var_ptr，04 §3 穷举）：F0–F3、pos、rot、两个随机刻度、
+// 三个 mystery。
+const FLOAT_WRITABLE = new Set([
+  10004, 10005, 10006, 10007,
+  10013, 10014, 10015,
+  10023, 10024, 10025,
+  10027, 10028,
+  10033, 10034, 10035,
+]);
+// 14 个只读号（04 §3 negative set，穷举 + 与社区 mut 字段对账一致）。
+const READONLY = new Set([
+  10010, 10011, 10012,
+  10016, 10017, 10018, 10019, 10020, 10021,
+  10022, 10026,
+  10030, 10031, 10032,
+]);
+// float→int 支持 cvttss2si（截零）转换的 9 个号（04 §4③穷举）——正是 7 个可写整型号
+// 之外“有整型可读意义”的浮点号：F0–F3、两个随机刻度、三个 mystery。10022 单独走一条
+// u32→模数的路（04 §5），不在这条转换规则里，虽然它也是整型号。
+const CVTTSS2SI_IDS = new Set([10004, 10005, 10006, 10007, 10027, 10028, 10033, 10034, 10035]);
+// int→float 支持 cvtdq2ps 转换的 7 个号（04 §4①）：恰好就是 7 个可写整型号——
+// 10022 的 int→float 方向（浮读）单独走 u32→float 的路，不经过这条 cvtdq2ps 规则。
+const CVTDQ2PS_IDS = INT_WRITABLE;
+// 播放器不建模的引擎全局态：舞台相机位置/朝向镜像块（04 §6.1，🟡 结构 ✅ / 语义身份 🟡）。
+// 只影响“浮点读”——整型读这 6 个号走的是下面“19 个非对称号”那条默认分支，根本不碰
+// 相机全局，见 04 §4：get_int_var 对它们的 case 全部指向默认分支，返回变量号本身。
+const UNMODELED_CAMERA_IDS = new Set([10016, 10017, 10018, 10019, 10020, 10021]);
+
+// 36 个变量号的社区名（04 §2 表第 2 列），只用于报错信息更好认，不含任何判定逻辑。
+const VAR_NAMES = {
+  10000: 'i0', 10001: 'i1', 10002: 'i2', 10003: 'i3',
+  10004: 'f0', 10005: 'f1', 10006: 'f2', 10007: 'f3',
+  10008: 'i4', 10009: 'i5',
+  10010: 'randrad', 10011: 'randf-01', 10012: 'randf-11',
+  10013: 'pos-x', 10014: 'pos-y', 10015: 'pos-z',
+  10016: 'camera-x', 10017: 'camera-y', 10018: 'camera-z',
+  10019: 'lookat-x', 10020: 'lookat-y', 10021: 'lookat-z',
+  10022: 'rand',
+  10023: 'rot-x', 10024: 'rot-y', 10025: 'rot-z',
+  10026: 'rot-z-effective',
+  10027: 'rand-param-one', 10028: 'rand-param-pi', 10029: 'rand-param-int',
+  10030: 'randrad-replay', 10031: 'randf-01-replay', 10032: 'randf-11-replay',
+  10033: 'mystery-angle-x', 10034: 'mystery-angle-y', 10035: 'mystery-angle-z',
+};
+function varLabel(varId) {
+  const name = VAR_NAMES[varId];
+  return name ? `${varId}（${name}）` : `${varId}`;
 }
 
-function readFloatVar(vm, varId) {
-  if (varId >= 10004 && varId <= 10007) return vm.f[varId - 10004];
-  if (varId >= 10000 && varId <= 10003) return Math.fround(vm.i[varId - 10000]); // cvtdq2ps：整型转 float32 精度
-  throw new Error(
-    `resolveArg: 变量号 ${varId} 是 I2 骨架尚未覆盖的变量号` +
-      '（02-vm-core.md §3.4 还有更多变量号——10008/10009、pos/rotation 分量、随机数……' +
-      '留给需要它们的 opcode 组扩展；I0–I3/F0–F3 这 8 个槽本身已经支持跨类型读）',
-  );
+function assertKnownVarId(caller, varId) {
+  if (!Number.isInteger(varId) || varId < 10000 || varId > 10035) {
+    throw new Error(
+      `${caller}: 变量号 ${varId} 不是合法的 ANM 变量号（04-variables.md §2：定义域是 ` +
+        '10000–10035 共 36 个号，越界之外没有变量）',
+    );
+  }
+}
+
+// ── 15 个浮点存储号 / 7 个整型存储号的直接字段落点（04 §2「vm 字段」列）──────────────
+function getStoredFloat(vm, varId) {
+  switch (varId) {
+    case 10004: return vm.f[0];
+    case 10005: return vm.f[1];
+    case 10006: return vm.f[2];
+    case 10007: return vm.f[3];
+    case 10013: return vm.pos.x; // 04 §2 行 10013：`+0x2c`
+    case 10014: return vm.pos.y;
+    case 10015: return vm.pos.z;
+    case 10023: return vm.rotation.x; // 04 §2 行 10023：`+0x38`
+    case 10024: return vm.rotation.y;
+    case 10025: return vm.rotation.z;
+    case 10027: return vm.randParamOne;
+    case 10028: return vm.randParamPi;
+    case 10033: return vm.mysteryVars.x;
+    case 10034: return vm.mysteryVars.y;
+    case 10035: return vm.mysteryVars.z;
+    default:
+      throw new Error(`core.js 内部错误：getStoredFloat 收到不在 FLOAT_WRITABLE 里的 ${varId}`);
+  }
+}
+function setStoredFloat(vm, varId, value) {
+  const v = Math.fround(value);
+  switch (varId) {
+    case 10004: vm.f[0] = v; return;
+    case 10005: vm.f[1] = v; return;
+    case 10006: vm.f[2] = v; return;
+    case 10007: vm.f[3] = v; return;
+    case 10013: vm.pos.x = v; return; // ⚠️ 04 §3 备注：直接改字段，绕过 400 pos 的插值器
+    case 10014: vm.pos.y = v; return;
+    case 10015: vm.pos.z = v; return;
+    case 10023: vm.rotation.x = v; return;
+    case 10024: vm.rotation.y = v; return;
+    case 10025: vm.rotation.z = v; return;
+    case 10027: vm.randParamOne = v; return;
+    case 10028: vm.randParamPi = v; return;
+    case 10033: vm.mysteryVars.x = v; return;
+    case 10034: vm.mysteryVars.y = v; return;
+    case 10035: vm.mysteryVars.z = v; return;
+    default:
+      throw new Error(`core.js 内部错误：setStoredFloat 收到不在 FLOAT_WRITABLE 里的 ${varId}`);
+  }
+}
+function getStoredInt(vm, varId) {
+  switch (varId) {
+    case 10000: return vm.i[0];
+    case 10001: return vm.i[1];
+    case 10002: return vm.i[2];
+    case 10003: return vm.i[3];
+    case 10008: return vm.i4;
+    case 10009: return vm.i5;
+    case 10029: return vm.randParamInt;
+    default:
+      throw new Error(`core.js 内部错误：getStoredInt 收到不在 INT_WRITABLE 里的 ${varId}`);
+  }
+}
+function setStoredInt(vm, varId, value) {
+  const v = value | 0;
+  switch (varId) {
+    case 10000: vm.i[0] = v; return;
+    case 10001: vm.i[1] = v; return;
+    case 10002: vm.i[2] = v; return;
+    case 10003: vm.i[3] = v; return;
+    case 10008: vm.i4 = v; return;
+    case 10009: vm.i5 = v; return;
+    case 10029: vm.randParamInt = v; return;
+    default:
+      throw new Error(`core.js 内部错误：setStoredInt 收到不在 INT_WRITABLE 里的 ${varId}`);
+  }
+}
+
+// ── PRNG：两条独立流（04 §5，承 math-jumps §7.4）───────────────────────────────
+// Stream B（`0x4a6d80`，表现流）：10010–10012、10022。group-math.js 的 122/123/131
+// 已经在用 `vm.prng` 这个钩子名表示 Stream B（同一份「实现决策②」的约定，见该文件
+// 头部）——这里复用同一个钩子，不新开一个名字，否则同一条物理 PRNG 流会被两个不同的
+// 钩子名各自要求注入，调用方稍不注意就会喂出两条不同步的序列。
+// Stream A（`0x4a6d88`，回放流）：10030–10032。这条流本组骨架/math-jumps 都没有任何
+// opcode 用到过，是 04 §5 第一次要求播放器接的钩子，另开一个名字 `vm.prngReplay`，
+// 与 `vm.prng` 严格不共用状态（04 §5：“两组是逐字节同公式的镜像”，但底层是两个独立
+// 计数器/种子，混用会让两条本该独立的序列相互污染）。
+// 两个钩子都是**必填**：没注入时对应变量号直接抛，不静默退化——与 group-math.js
+// 「实现决策②」、本文件除零/相机的取舍同一套哲学（除零宁可抛、PRNG 缺失直接抛）。
+function requirePrngRaw32(vm, hookName, varId) {
+  const fn = vm[hookName];
+  if (typeof fn !== 'function') {
+    const streamLabel = hookName === 'prng' ? 'Stream B（0x4a6d80，表现流）' : 'Stream A（0x4a6d88，回放流）';
+    throw new Error(
+      `resolveArg: 变量 ${varLabel(varId)} 需要 PRNG，但 vm.${hookName} 没有注入（04-variables.md §5：` +
+        `${streamLabel}）。两条流是独立状态，不能共用同一个钩子——Stream B 复用 group-math.js ` +
+        '122/123/131 已经约定的 vm.prng（同一条物理流）；Stream A 是 10030–10032 专属的 ' +
+        'vm.prngReplay，本模块不提供隐式退化。',
+    );
+  }
+  return fn(vm) >>> 0;
+}
+// 04 §5 公式（承 math-jumps §2.2/§7.2）：raw·2⁻³² ∈ [0,1)；raw·2⁻³¹−1.0 ∈ [-1,1)。
+// 与 group-math.js 的 prngUnit/prngSigned 是同一对纯数学公式——那边没有导出，这里
+// 复制 2 行是刻意的（同本文件已有的 u32BitsToFloat32 复制先例），不是没看到那份实现。
+function randF01(raw) {
+  return raw / 0x100000000;
+}
+function randFpm1(raw) {
+  return raw / 0x80000000 - 1;
+}
+
+// ── 04 §8.5 / 129 mathReduceAngle 同款角度归约：34 步上限，10026 专用 ───────────────
+// 与 group-math.js 的 reduceAngle129（129 mathReduceAngle 的实现）是同一个算法
+// （04 §6.2 原话：“wrap 进 [-π,π]…同 129 mathReduceAngle 的 34 步上限”）——group-math.js
+// 是 core.js 的消费者，core.js 不能反过来 import 它，所以这里独立复制一份（本文件已有
+// u32BitsToFloat32 的复制先例；这次复制的是“04 与 math-jumps 两篇文档都描述的同一个
+// 引擎算法”，不是本文件自创的近似）。
+const PI32 = Math.fround(Math.PI);
+const TWO_PI32 = Math.fround(2 * Math.PI);
+function wrapAngle34Step(x) {
+  let k = 0;
+  if (x > PI32) {
+    do {
+      const old = k;
+      x = Math.fround(x - TWO_PI32);
+      k++;
+      if (old > 32) break;
+    } while (x > PI32);
+  }
+  if (-PI32 > x) {
+    do {
+      const old = k;
+      x = Math.fround(x + TWO_PI32);
+      k++;
+      if (old > 32) break;
+    } while (-PI32 > x);
+  }
+  return x;
+}
+
+// ── 10010–10012/10030–10032：随机族浮点值（04 §5，只读，每次读都会消费一次 PRNG draw）──
+function computeRandVarFloat(vm, varId) {
+  switch (varId) {
+    case 10010: return Math.fround(vm.randParamPi * randFpm1(requirePrngRaw32(vm, 'prng', varId)));
+    case 10011: return Math.fround(vm.randParamOne * randF01(requirePrngRaw32(vm, 'prng', varId)));
+    case 10012: return Math.fround(vm.randParamOne * randFpm1(requirePrngRaw32(vm, 'prng', varId)));
+    case 10030: return Math.fround(vm.randParamPi * randFpm1(requirePrngRaw32(vm, 'prngReplay', varId)));
+    case 10031: return Math.fround(vm.randParamOne * randF01(requirePrngRaw32(vm, 'prngReplay', varId)));
+    case 10032: return Math.fround(vm.randParamOne * randFpm1(requirePrngRaw32(vm, 'prngReplay', varId)));
+    default:
+      throw new Error(`core.js 内部错误：computeRandVarFloat 收到不认识的 ${varId}`);
+  }
+}
+
+// ── 10022（rand）：整读取模、浮读不取模——两条完全不同的公式（04 §5「10022 的两面」）──
+function computeRand22Int(vm) {
+  const mod = vm.randParamInt >>> 0;
+  if (mod === 0) return 0; // 04 §5：模数为 0 短路成 0，与 group-math.js 122 的零守卫一致
+  const raw = requirePrngRaw32(vm, 'prng', 10022);
+  return (raw % mod) | 0; // 结果落回 s32 字段，可能环绕成负数（同 group-math.js 122）
+}
+function computeRand22Float(vm) {
+  const raw = requirePrngRaw32(vm, 'prng', 10022); // 浮读同样消费一次 draw，不取模
+  return Math.fround(raw); // raw 已经是 [0, 2^32) 的无符号数值，Math.fround = 04 §5 描述的
+  // CVTDQ2PD→（按符号位加 2³²，此处 raw 恒非负所以这步等价于 no-op）→CVTPD2PS 全链路结果
+}
+
+// ── 10026（rot-z-effective）：04 §6.2，`0x464dd0` 递归累积祖先旋转再 wrap ─────────────
+// 本骨架没有 VM 树（parent/root 指针）——Child management（opcode 500+）还没实现，见
+// 本文件与 OVERVIEW.md 的“不建模”/“下一步”——所以无法构造出“有父”的 vm 实例：本骨架
+// 里*每一个* vm 都等价于 04 §6.2 递归伪代码里 `root == null` 的那个分支。这不是“漏了一部分
+// 逻辑的近似值”，是该分支下 100% 精确的实现——`root == null` 时递归直接跳过，只把自己
+// 三个旋转分量 wrap 进 [-π,π]，取 z 分量返回，正是下面这一行做的事。等 500+ 组把父子关系
+// 接进来之后，这里要补上“若 vm 存在父级则递归累加”那条分支，不在本任务范围。
+function computeRotZEffective(vm) {
+  return wrapAngle34Step(vm.rotation.z);
 }
 
 // u32 位模式 <-> float32，用来在“浮点指令把变量号编成 float32”（math-jumps §3 结论④）
@@ -368,6 +584,105 @@ const u32Scratch = new Uint32Array(f32Scratch.buffer);
 function u32BitsToFloat32(u32) {
   u32Scratch[0] = u32 >>> 0;
   return f32Scratch[0];
+}
+
+// ── 读侧总分派：36 个号全覆盖（04 §1：get_int_var/get_float_var 的跳表都是 36 项）───
+// ★ 跨类型读是非对称的（04 §4，一手穷举）：
+//   - 7 个整型存储号（INT_WRITABLE）int→float 走 cvtdq2ps；10022 的 int→float 另有公式。
+//   - 9 个号（CVTTSS2SI_IDS）float→int 走 cvttss2si（截零）。
+//   - 其余 19 个“只有浮点语义”的号（10010–10021、10023–10026、10030–10032），整型读
+//     不会真的去算字段值——get_int_var 的索引表把它们全指向默认分支，原样退回变量号
+//     本身（04 §4③穷举）。这不是“没实现”，是真机的真实行为：用整型指令读 pos.x（10013）
+//     拿到的不是坐标，是 10013 这个数。★ 这条也是本节的一个好消息：camera/lookat
+//     （10016–10021）与 rot-z-effective（10026）的“不建模”只影响*浮点*读——整型读走
+//     这条默认分支，根本不需要真的碰相机全局或祖先链。
+
+function readIntVar(vm, varId) {
+  assertKnownVarId('resolveArg', varId);
+  if (INT_WRITABLE.has(varId)) return getStoredInt(vm, varId);
+  if (varId === 10022) return computeRand22Int(vm);
+  if (CVTTSS2SI_IDS.has(varId)) return Math.trunc(getStoredFloat(vm, varId)); // cvttss2si：截零
+  return varId; // 19 个非对称号：默认分支原样退回变量号本身（04 §4）
+}
+
+function readFloatVar(vm, varId) {
+  assertKnownVarId('resolveArg', varId);
+  if (FLOAT_WRITABLE.has(varId)) return getStoredFloat(vm, varId);
+  if (CVTDQ2PS_IDS.has(varId)) return Math.fround(getStoredInt(vm, varId)); // cvtdq2ps
+  if (varId === 10022) return computeRand22Float(vm);
+  if (varId === 10010 || varId === 10011 || varId === 10012 || varId === 10030 || varId === 10031 || varId === 10032) {
+    return computeRandVarFloat(vm, varId);
+  }
+  if (varId === 10026) return computeRotZEffective(vm);
+  if (UNMODELED_CAMERA_IDS.has(varId)) {
+    throw new Error(
+      `resolveArg: 变量 ${varLabel(varId)} 读的是播放器不建模的引擎全局态` +
+        '（舞台相机位置/朝向镜像块，04-variables.md §6.1：只读、读全局，不落在 vm 字段里）——' +
+        '本骨架没有 Stage 全局状态可读，故意不静默返回 0：返回错的坐标会让画面悄悄错位而无人' +
+        '察觉，与本项目“除零宁可抛”“PRNG 缺失直接抛”同一哲学。想要真实相机数据，调用方需要' +
+        '在骨架之外自己接一份 Stage 状态、拦截这几个变量号。',
+    );
+  }
+  throw new Error(`core.js 内部错误：readFloatVar 的分支表没盖住 ${varId}（04 §2 应有 36 个号，逻辑有遗漏）`);
+}
+
+// ── 写侧总分派：22 个可写号，只读/类型不匹配一律带变量名报错 ──────────────────────
+// 04 §3 穷举：INT_WRITABLE（7）与 FLOAT_WRITABLE（15）互不相交——写一个只在另一类型
+// lvalue 表里的号，真机会落进默认分支，把入参指针原样退回（写进指令流本身，见
+// math-jumps §9 坑表第一条“自修改字节码”）。本骨架不实现这条路径（ZUN 数据 0 处例外，
+// math-jumps §8），遇到就抛“类型不匹配”错误，不静默改写 instr.args、也不静默丢弃。
+
+/**
+ * 写一个整型变量槽。只有 7 个整型可写号（04 §3）会真的落地；只读号与浮点专属号都抛错
+ * （错误信息带变量名，不静默忽略——brief 步骤 1 明确要求）。
+ * @param {ReturnType<typeof createVm>} vm
+ * @param {number} varId
+ * @param {number} value
+ */
+export function writeIntVar(vm, varId, value) {
+  assertKnownVarId('writeIntVar', varId);
+  if (INT_WRITABLE.has(varId)) {
+    setStoredInt(vm, varId, value);
+    return;
+  }
+  if (READONLY.has(varId)) {
+    throw new Error(
+      `writeIntVar: 变量 ${varLabel(varId)} 是只读变量，不能写入（04-variables.md §3：` +
+        '22 可写 / 14 只读的 negative set 之一）',
+    );
+  }
+  // 剩下的必然是 15 个浮点可写号之一：真机没有整型 lvalue，写会自修改字节码。
+  throw new Error(
+    `writeIntVar: 变量 ${varLabel(varId)} 只能通过浮点左值写入（04-variables.md §3：` +
+      'get_int_var_ptr 的表里没有它），用整型指令写在真机上会把入参指针原样退回、改写指令流字节' +
+      '（自修改字节码，math-jumps §9 坑表第一条），本骨架未实现这条路径，拒绝静默执行。',
+  );
+}
+
+/**
+ * 写一个浮点变量槽。只有 15 个浮点可写号（04 §3）会真的落地；只读号与整型专属号都抛错。
+ * @param {ReturnType<typeof createVm>} vm
+ * @param {number} varId
+ * @param {number} value
+ */
+export function writeFloatVar(vm, varId, value) {
+  assertKnownVarId('writeFloatVar', varId);
+  if (FLOAT_WRITABLE.has(varId)) {
+    setStoredFloat(vm, varId, value);
+    return;
+  }
+  if (READONLY.has(varId)) {
+    throw new Error(
+      `writeFloatVar: 变量 ${varLabel(varId)} 是只读变量，不能写入（04-variables.md §3：` +
+        '22 可写 / 14 只读的 negative set 之一）',
+    );
+  }
+  // 剩下的必然是 7 个整型可写号之一：真机没有浮点 lvalue，写会自修改字节码。
+  throw new Error(
+    `writeFloatVar: 变量 ${varLabel(varId)} 只能通过整型左值写入（04-variables.md §3：` +
+      'get_float_var_ptr 的表里没有它），用浮点指令写在真机上会把入参指针原样退回、改写指令流字节' +
+      '（自修改字节码，math-jumps §9 坑表第一条），本骨架未实现这条路径，拒绝静默执行。',
+  );
 }
 
 /**
