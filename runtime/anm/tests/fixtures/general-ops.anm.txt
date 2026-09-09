@@ -1,0 +1,32 @@
+// general-ops.anm.txt — 自写最小 v8 夹具，服务 task-I6（General 组）测试，零版权字节
+//
+// 语法参考：同 settings-ops.anm.txt 的写法（thanm/thanm.c 的 formats_v8 表，400–438 段，
+// local/vendor/thtk/thanm/thanm.c 逐条列了每个 opcode 的签名字符）。只当语法参考，
+// 不抄真实游戏内容——这里的数值都是随手挑的、没有任何游戏意义。
+//
+// 单 entry、单 sprite、单 script，端到端冒烟：走真实 parseAnm -> createVm -> stepFrame
+// 全链路，验证格式层解出的 paramMask/args 与 group-general.js 的 handler 接得上（含一条
+// *Time 指令，验证浮点参数的位模式编码没被格式层搞错）。详尽的曲线数值验证、求值顺序
+// 回归、flag 位测试见 vm-general.test.js 的手写指令部分。
+entry generalOps {
+    version: 8,
+    name: "minimal.png",
+    format: 1,
+    hasData: 1,
+    sprites: {
+        sprite0: { x: 0, y: 0, w: 8, h: 8 }
+    }
+}
+
+script -1 generalOps {
+0:
+    ins_400(1.5, 2.5, 3.5);      // pos = (1.5, 2.5, 3.5)
+    ins_401(0.1, 0.2, 0.3);      // rotate，flags_lo |= 4
+    ins_402(2.0, 3.0);            // scale = (2, 3)，flags_lo |= 8
+    ins_403(200);                  // alpha
+    ins_404(10, 20, 30);           // rgb
+    ins_421(1, 2);                 // anchor：h=1 v=2 打包进一个 u32
+    ins_409(60, 4, 128);           // alphaTime(t=60, mode=4, alpha=128)
+    ins_437(3);                    // rotationSystem
+    ins_3();
+}
