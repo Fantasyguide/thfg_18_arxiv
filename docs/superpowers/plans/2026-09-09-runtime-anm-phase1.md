@@ -16,6 +16,47 @@
 
 **Spec**：[`../specs/2026-09-09-runtime-anm-design.md`](../specs/2026-09-09-runtime-anm-design.md)
 
+## 执行状态（2026-09-09 收工）
+
+**波 A–C 已完成并推送**：分支 `runtime/anm-phase1`，19 提交，未合并 `main`。
+`npm test` 44/44 · `check-docs.py` 164 文件四项全绿 · 54 个真实 `.anm` 解析 54/54。
+
+| 任务 | 状态 | 提交 | 产出 |
+| --- | --- | --- | --- |
+| T0 | ✅ | `9912c65`→`f021690` | `runtime/` 骨架、th16 HTML 快照（`local/th16.v1.00a/state/`）、opcode 矩阵生成器 |
+| R1 | ✅ | `4e1503b`→`a4ddd7a` | `engine/anm/th16/01-format.md`（25 ✅ / 4 🟡） |
+| I1 | ✅ | `7b5bd62`→`e6943a8` | `runtime/anm/src/format/anm-v8.js` |
+| R2 | ✅ | `640aaf2`→`2b8484e` | `engine/anm/th16/02-vm-core.md`（62 ✅ / 9 🟡） |
+| I2 | ✅ | `0da2ebd`→`2192e80` | `runtime/anm/src/vm/core.js` |
+| R3 | ✅ | `c12f499`→`037755c` | `engine/anm/th16/03-math-jumps.md`（41 ✅ / 5 🟡） |
+| I3 | ✅ | `4373548` | `runtime/anm/src/vm/group-math.js`（46 条全注册） |
+| 收口 | ✅ | `5cd4918`/`7b44583`/`916b4a8` | 消两处虚标 ✅、断言回流、矩阵生成器防抹平 |
+| **RV** | ⬜ **下一个** | — | `engine/anm/th16/04-variables.md` |
+| **IV** | ⬜ | — | `resolveArg` 8 槽 → 22 槽 |
+| 波 D–F | ⬜ | — | 见下 |
+
+**下次开工从 RV 起**，brief 已生成在 `.superpowers/sdd/2026-09-09-runtime-anm-phase1/task-RV-brief.md`
+（该目录 gitignored，含 17 份 brief + 各任务 report + 完整执行账本 `progress.md`，
+里面有全部 11 条控制器裁定与每轮审阅发现——**下次审阅时读它**）。
+
+### 已知遗留（不在本分支范围，波 D 前建议处理）
+
+1. **`resolveArg` 只覆盖 8/22 个可写变量号** —— 实测 Math+Jumps 组 2525 条真实指令里
+   **1078 条（42.7%）会抛**，1929 个 script 里 338 个（17.5%）受影响。这正是 RV/IV 要解决的。
+2. **「33 次 / `(-π, π]`」在仓里还有 4 处未改**（`_shared/math-and-prng.md` §2/§2.1、
+   `bullet/th16/03-lasers.md`、`sht/th16/06`、`sht/th18/02`），其中一处写着「跟数学模块同套」——
+   现在指向一个已知错误的数字（一手为 **34 次 / `[-π, π]`**，见 `03-math-jumps.md` §7.1）。
+   与 anm 侧构成跨子系统互相矛盾的 ✅。
+3. **`124–128` 的 CRT 函数身份**靠常量指纹判定、无运行时验证。升 ✅ 不需要 32 位环境：
+   这五个是纯叶子函数无导入，用 `unicorn` 映射 `.text`/`.rdata` 直接调（约 30 行）与 libm 对拍即可。
+4. **`naming-batch.md` 待落库**（T10）：`102__iadd`→`102__add` 与 `112__add`→`112__add3`
+   **必须同一 MCP 批次原子应用**，否则中途库里会出现两个 `112__add`。
+5. **Ghidra MCP 的 `th16` 注册项已泄漏**（开报 DuplicateId、关报 NotFound），需重启 MCP 服务端才能清；
+   本轮四个逆向任务全部改走静态快照 + PE 直解完成，质量未打折。
+   另：`local/th16.v1.00a/ghidra_projects/th16.exe.gpr` 是 **0 字节**，工程注册有历史损伤，可能是根因。
+
+---
+
 ## Global Constraints
 
 - **仓库不留任何版权字节。** 真 `.anm`、`.exe`、贴图只在 `local/`（gitignored）。入库夹具一律
