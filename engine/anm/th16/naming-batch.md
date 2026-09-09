@@ -14,7 +14,7 @@
 | 地址 | 现名 | 建议名 | 依据 |
 | --- | --- | --- | --- |
 | `0x46d0c0` | `AnmLoaded::load_one_script` | `AnmLoaded__preread_external_png_for_entry` | 它不碰 script，只在 `has_data==0` 且名字非 `@` 时预读同名 png |
-| `0x46d1c0` | `FUN_0046d1c0` | `AnmLoaded__parse_all_entries` | 遍历 entry 链表调 `0x46d3b0`，收尾预跑每个 script 模板 |
+| `0x46d1c0` | `FUN_0046d1c0` | `AnmLoaded__parse_next_entry` | **增量**：每次调用只解析一个 entry，用 `+0x128` 当续跑计数器；只有走到最后一个 entry 才预跑 script 模板 |
 | `0x46d3b0` | `FUN_0046d3b0` | `AnmLoaded__parse_one_entry` | 解析单个 entry：建贴图 + sprite 表 + script 表 |
 | `0x46c920` | `FUN_0046c920` | `AnmTextureSlot__create_from_png_memory` | D3DX 从内存解码 png，按 `x/y/w/h` 裁剪 |
 | `0x46cb60` | `FUN_0046cb60` | `AnmTextureSlot__create_from_thtx` | 从 THTX 块建贴图 |
