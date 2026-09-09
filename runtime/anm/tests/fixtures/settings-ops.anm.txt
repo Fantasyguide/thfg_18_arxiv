@@ -1,0 +1,30 @@
+// settings-ops.anm.txt — 自写最小 v8 夹具，服务 task-I5（Settings 组）测试，零版权字节
+//
+// 语法参考：同 math-ops.anm.txt/vm-timing.anm.txt 的写法（thanm/anmparse.y 的 formats_v8
+// 表——300–317 全部是 "S"/"n"/"" 整型/无参签名，没有一条是浮点，见
+// local/vendor/thtk/thanm/thanm.c 的 formats_v8 数组）。只当语法参考，不抄真实游戏内容。
+//
+// 单 entry、单 sprite（REQUIRE 字段，内容不重要）、单 script，只做一次端到端冒烟：
+// 走真实 parseAnm -> createVm -> stepFrame 全链路，验证格式层解出的 paramMask/args 与
+// group-settings.js 的 handler 接得上（详尽的边界/位场测试见 vm-settings.test.js 的手写
+// 指令部分，那些测试要精确控制 paramMask 位与参数，用真实文件反而不直观）。
+entry settingsOps {
+    version: 8,
+    name: "minimal.png",
+    format: 1,
+    hasData: 1,
+    sprites: {
+        sprite0: { x: 0, y: 0, w: 8, h: 8 }
+    }
+}
+
+script -1 settingsOps {
+0:
+    ins_300(3);          // sprite(3)：flags_lo bit0 置位 + spriteId=3
+    ins_302(1);          // renderMode(1)：flags_lo bit25-29 = 1
+    ins_304(26);          // layer(26)：vm.layer=26，落 20-31 派生位（+0x100000）
+    ins_308();             // flipX：scale.x 取反 + bit11 toggle + bit3 置位
+    ins_312(2, 0);          // scrollMode(x=2, y=0)：flags_hi bit0-1=2，flags_lo bit30-31=0
+    ins_316();               // wip:2 flag：flags_lo bit1 置位（其实默认就置位）
+    ins_3();
+}
