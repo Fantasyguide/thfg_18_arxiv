@@ -69,7 +69,9 @@
 
 - ✅ **已出**:[`01-format.md`](01-format.md) —— `.anm` v8 文件格式（entry/sprite/script/指令头/THTX/format 表），
   一手加载路径 `0x46cdd0` → `0x46d1c0` → `0x46d3b0`；配套命名单 [`naming-batch.md`](naming-batch.md)。
-- 待做:`02-anm-vm-opcodes.md`(脚本 VM + opcode 表,对 thanm)、显示对象模型(创建/池/模板/释放)。
+- ✅ **已出**:[`02-vm-core.md`](02-vm-core.md) —— VM 骨架(`AnmVm::run` `0x45f980` 主循环、`zAnmVm` 字段图、
+  时间闸门与 `GAME_SPEED`、interrupt 查找、`delete`/`static`/`stop` 终止语义、三段式分发表)。
+- 待做:`03-anm-vm-opcodes.md`(134 个 opcode 的语义,对 thanm/thpages)、显示对象模型(创建/池/模板/释放)。
 - `tooling/ghidra/scripts/apply_th16_anm_names.py`(函数/数据符号/注释,headless 可复现)。
 - 稳定后回填 THTK-Studio 仓库的 `docs/`。
 
