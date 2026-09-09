@@ -6,9 +6,21 @@
 这类链式 spread，th16（游戏键 `'16'`）= th15 的表 + 两条新增。助记名在 `byRefId` 里，
 少数几条带 `wip: 2`（社区自己标"不确定"，对应 Global Constraints 里"社区标 wip:2 的 6 条"）。
 
-    python3 runtime/anm/tools/gen-opcode-matrix.py           # 重写 OVERVIEW.md 里两个
-                                                               # 注释锚点之间的表格
-    python3 runtime/anm/tools/gen-opcode-matrix.py --check    # 只校验+跑自校验，不写文件（CI 用）
+    python3 runtime/anm/tools/gen-opcode-matrix.py           # 默认：**保留已填行**，
+                                                               # 只补新 opcode / 只重写仍是
+                                                               # 「未开始」的骨架行
+    python3 runtime/anm/tools/gen-opcode-matrix.py --check    # 只校验，不写文件（CI 用）
+    python3 runtime/anm/tools/gen-opcode-matrix.py --force    # 全表推平成「未开始」（危险）
+
+**默认保留已填行**：矩阵的「文档 / 实现 / 可信度」三列是人手填的（一条 opcode 在
+`engine/anm/th16/` 里被一手确认之后才改），而 `OVERVIEW.md` 就在矩阵上方指导读者
+「重生成：python3 …」。初版的 `build_rows()` 无条件发「未开始」——照那句指引跑一次，
+所有手填状态当场被抹平（收口审阅发现时是 46 行，波 D 之后损失面积 ~135 行）。
+现在的规则：**逐 opcode 比对**，本次生成的骨架行与 `OVERVIEW.md` 里现有的行一致就
+照发，不一致说明这行被人改过 ⇒ **原样保留**；只有 opcode 在现有表里根本不存在时才
+发骨架行。要真的推平必须显式 `--force`。
+`preserve_check()` 在每次运行（含 `--check`）时复核这条不变量：现有表里每一条
+「被改过的行」都必须在输出里**逐字节**出现，否则当场 SystemExit。
 
 **解析方式**：这是 TypeScript，不是 JSON，这里用正则抠字段，不引入 Node/ts 工具链
 （本项目零依赖，见 `runtime/anm/package.json`）。这类正则解析天然脆弱——已知的两个前提，
@@ -32,7 +44,7 @@
 **跑完这个脚本一定要看 stderr 里的自检结果，不能只看退出码。**
 
 产物：`runtime/anm/OVERVIEW.md` 里 `<!-- gen-opcode-matrix:begin -->` 到
-`<!-- gen-opcode-matrix:end -->` 之间的表格内容（135 行，初始状态全部「未开始」）。
+`<!-- gen-opcode-matrix:end -->` 之间的表格内容（135 行；未被人改过的行是「未开始」骨架）。
 """
 import argparse
 import re
@@ -166,16 +178,91 @@ def self_check(maps: dict[str, OpMap]) -> list[str]:
     return problems
 
 
-def build_rows(opmap: OpMap, wip_by_name: dict[str, int]) -> list[str]:
-    rows = []
+_ROW_RE = re.compile(r"^\|\s*(\d+)\s*\|")
+
+
+def read_existing_rows(doc: str) -> dict[int, str]:
+    """把 OVERVIEW.md 两个锚点之间**现有**的数据行读成 {opcode: 整行原文}。
+
+    不解析各列——保留的时候要的是**逐字节原样**，解析再拼回去等于给自己留一条
+    "格式微调也算改动"的暗坑。表头/分隔行不以数字开头，天然被 `_ROW_RE` 滤掉。
+    锚点不存在（首次生成）时返回空表。
+    """
+    if BEGIN_MARK not in doc or END_MARK not in doc:
+        return {}
+    body = doc.split(BEGIN_MARK, 1)[1].split(END_MARK, 1)[0]
+    rows: dict[int, str] = {}
+    for line in body.splitlines():
+        line = line.rstrip()
+        m = _ROW_RE.match(line)
+        if m:
+            rows[int(m.group(1))] = line
+    return rows
+
+
+def skeleton_row(opcode: int, mnemonic: str, wip: "int | None") -> str:
+    confidence = "🟡（社区 wip:2，需过额外闸门）" if wip == 2 else "—"
+    return f"| {opcode} | {group_of(opcode)} | `{mnemonic}` | 未开始 | 未开始 | {confidence} |"
+
+
+def build_rows(
+    opmap: OpMap,
+    wip_by_name: dict[str, int],
+    existing: dict[int, str],
+    force: bool = False,
+) -> tuple[list[str], dict[str, list[int]]]:
+    """生成表体。**默认保留已填行**（见模块 docstring）。
+
+    判据故意做成"逐字节比对骨架"而不是"看某一列是不是『未开始』"：任何人手改动
+    （文档列、实现列、可信度列的自定义措辞，甚至只是补了个链接）都会让整行与骨架
+    不等，于是被原样保留。代价是 thpages 上游改助记名时，已填行不会自动跟着改——
+    所以这里把这种情况单独挑出来报到 stderr（`renamed`），让人自己决定怎么处理，
+    而不是替他覆盖掉一行手写的状态。
+    """
+    rows: list[str] = []
+    stats: dict[str, list[int]] = {"kept": [], "fresh": [], "new": [], "renamed": []}
     for opcode in sorted(opmap):
         mnemonic, entry_wip = opmap[opcode]
         wip = wip_by_name.get(mnemonic, entry_wip)
-        confidence = "🟡（社区 wip:2，需过额外闸门）" if wip == 2 else "—"
-        rows.append(
-            f"| {opcode} | {group_of(opcode)} | `{mnemonic}` | 未开始 | 未开始 | {confidence} |"
+        skel = skeleton_row(opcode, mnemonic, wip)
+        old = existing.get(opcode)
+        if force or old is None:
+            rows.append(skel)
+            stats["new" if old is None and not force else "fresh"].append(opcode)
+            continue
+        if old == skel:
+            rows.append(skel)
+            stats["fresh"].append(opcode)
+            continue
+        rows.append(old)                       # ★ 被改过 ⇒ 逐字节保留
+        stats["kept"].append(opcode)
+        if f"| `{mnemonic}` |" not in old:
+            stats["renamed"].append(opcode)
+    return rows, stats
+
+
+def preserve_check(existing: dict[int, str], rows: list[str], force: bool) -> None:
+    """不变量：非 `--force` 模式下，现有表里每一条**被改过的行**都必须在输出里逐字节出现。
+
+    这是本脚本自己的回归测试——它防的正是这次要修的坏法（`build_rows()` 无条件发
+    「未开始」，而 OVERVIEW 就在矩阵上方指导读者跑这个脚本）。故意改坏 `build_rows`
+    让它推平已填行，这里会当场 SystemExit。
+    """
+    if force:
+        return
+    out = set(rows)
+    lost = []
+    for opcode in sorted(existing):
+        line = existing[opcode]
+        if _ROW_RE.match(line) and line not in out:
+            # 只有"曾被人改过"的行才需要逐字节保住；骨架行被重发是正常的。
+            lost.append(opcode)
+    if lost:
+        raise SystemExit(
+            "✗ [preserve-check] 下列 opcode 的现有行没能逐字节保留下来："
+            f"{lost}\n  默认模式**不许**动已填行（要推平请显式 --force）；"
+            "build_rows() 的保留逻辑坏了，先别写文件。"
         )
-    return rows
 
 
 def render_table(rows: list[str]) -> str:
@@ -188,7 +275,12 @@ def render_table(rows: list[str]) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--check", action="store_true", help="只解析+自检，不写文件")
+    ap.add_argument("--check", action="store_true", help="只解析+自检+保留检查，不写文件")
+    ap.add_argument(
+        "--force",
+        action="store_true",
+        help="全表推平成「未开始」骨架，丢掉所有手填状态（危险，默认不这么干）",
+    )
     args = ap.parse_args()
 
     if not ANM_TS.is_file():
@@ -214,13 +306,33 @@ def main() -> int:
         raise SystemExit(f"anm.ts 里没有 refByOpcode.set('{GAME}', ...) —— thpages 改了游戏键？")
 
     wip_by_name = parse_by_ref_id_wip(text)
-    rows = build_rows(maps[GAME], wip_by_name)
+    doc = OVERVIEW.read_text(encoding="utf-8") if OVERVIEW.is_file() else ""
+    existing = read_existing_rows(doc)
+    rows, stats = build_rows(maps[GAME], wip_by_name, existing, force=args.force)
+    preserve_check(existing, rows, args.force)
+
+    if args.force:
+        print(f"[gen-opcode-matrix] --force：全表 {len(rows)} 行推平成「未开始」骨架",
+              file=sys.stderr)
+    else:
+        print(
+            f"[gen-opcode-matrix] 保留已填 {len(stats['kept'])} 行 · "
+            f"骨架 {len(stats['fresh'])} 行 · 新增 {len(stats['new'])} 行"
+            + (f" · 新增的是 {stats['new']}" if stats["new"] else ""),
+            file=sys.stderr,
+        )
+        if stats["renamed"]:
+            print(
+                f"⚠ [gen-opcode-matrix] 下列 opcode 在 thpages 里改了助记名，但本地行是手填的，"
+                f"已原样保留、**没有**跟着改，请人工确认：{stats['renamed']}",
+                file=sys.stderr,
+            )
+    print("[gen-opcode-matrix] 保留检查通过：现有的已填行逐字节未变", file=sys.stderr)
 
     if args.check:
         return 0
 
     table = render_table(rows)
-    doc = OVERVIEW.read_text(encoding="utf-8")
     if BEGIN_MARK not in doc or END_MARK not in doc:
         raise SystemExit(f"{OVERVIEW.relative_to(REPO)} 里没有 {BEGIN_MARK}/{END_MARK} 锚点")
     pre, rest = doc.split(BEGIN_MARK, 1)

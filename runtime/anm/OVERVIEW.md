@@ -90,16 +90,39 @@ entry 链表 / sprite 表 / script 表 / 指令流，只做结构解析，不含
      这三条走 Stream B 表现流）**：本文件不硬编码 `Math.random()`，而是约定一个可选钩子
      `vm.prng`（`() => number`，每次返回 `[0, 2^32)` 的无符号 32 位整数，对应真机 raw draw
      的返回值，地址见 `03-math-jumps.md` §7.4）——三条指令的三种派生分布（整数取模、
-     `[0,1)`、`[-1,1)`）都在本文件内从这一个 raw 值推导。不提供 `vm.prng` 时退化到一个
-     基于 `Math.random()` 的占位
-     实现（非确定性，仅用于烟雾测试）；接 `engine/_shared/math-and-prng.md` 已解出的
-     ZUN 算法是调用方的事，不在本组范围内。详见 `group-math.js` 文件头「实现决策②」。
+     `[0,1)`、`[-1,1)`）都在本文件内从这一个 raw 值推导。**`vm.prng` 是必填的：没注入时
+     122/123/131 直接抛，不静默退化**——初版会悄悄退化到 `Math.random()`，把一个非确定、
+     不可复现、与真机无关的数字当成正常结果返回，这与同文件「除零宁可抛」的取舍自相矛盾，
+     且退化路径零测试覆盖。只想跑通不在乎数值时显式用本模块导出的 `placeholderPrng`。
+     接 `engine/_shared/math-and-prng.md` 已解出的 ZUN 算法是调用方的事，不在本组范围内。
+     详见 `group-math.js` 文件头「实现决策②」。
 - **未实现的路径**：非变量左值（math-jumps §9 坑表第一条"自修改字节码"）——ZUN 自家
   数据 0 处例外都是变量左值（§8），本组遇到非变量左值直接报错，不实现改写指令流字节。
 - **🟡 标注**：124–128（sin/cos/tan/acos/atan）的签名（读 `arg1`、写 `arg0`）是 ✅，
   但"被调 CRT 函数究竟是哪一个"是 `03-math-jumps.md` §2.2 靠数值指纹认定、未经运行时
   验证的结论——本文件对应 5 条 handler 上方注释都标了这条不确定性，选用 JS 对应的
   `Math.sin`/`Math.cos`/`Math.tan`/`Math.acos`/`Math.atan`（+ `Math.fround`）实现。
+- ⚠️ **已知接口缺口：变量表只覆盖 8 / 22 个可写号，真实 th16 数据里本组 42.7% 的指令会抛。**
+  「46 条已实现 ✅」说的是**opcode 语义**（每条 handler 的算术/比较/跳转行为都指得回
+  `03-math-jumps.md` §2 的一行）；但这些 handler 读写变量要经过 `core.js` 的
+  `resolveArg` 与本文件的 `writeIntVar`/`writeFloatVar`，而**这三者目前都只认
+  I0–I3 / F0–F3 这 8 个槽**（变量号 10000–10007），`02-vm-core.md` §3.4 的变量表实际有
+  **22 个可写号**、更多只读号。实测（用本仓的解析器 + 骨架 + 本组表，对
+  `local/th16.v1.00a/dat/` 全部 54 个 `.anm` 的本组指令逐条调 handler）：
+
+  ```
+  本组指令 2525 条 → 正常执行 1447，抛异常 1078（42.7%）
+    未覆盖的读：10012×341 10022×168 10011×146 10008×81 10010×80 10026×14
+                10016–10021 各 13–14  10035×7  10033/10034 各 6  10030/10031 各 1
+    未覆盖的写：10008×83 10035×48 10028×10 10033×6
+  1929 个真实 script 里 338 个（17.5%）含至少一条会抛的指令
+  ```
+
+  **所以这一组现在还不能拿去跑真实 `.anm`。** 补齐变量表是一个独立任务（它要动
+  `core.js` 的变量解析、并把 `pos`/`rotation` 这些字段接进 VM 状态，范围超出本组），
+  不在 I3 的范围内——这里把数字写下来，是为了让读者不要从矩阵里那 46 个「已实现 ✅」
+  推出「这组能直接播真实动画」。
+
 - 测试：`tests/vm-math.test.js`，夹具 `tests/fixtures/math-ops.anm.txt`（自写、零版权
   字节；brief 给的 5 条测试之外自己加了除零/取模边界、`paramMask` 变量右值、PRNG 可
   注入、★ 跳转 dest/t 下标随 opcode 变的回归测试（200→arg0、201→arg1、202–213→arg2，
@@ -110,7 +133,14 @@ entry 链表 / sprite 表 / script 表 / 指令流，只做结构解析，不含
 
 下表由 [`tools/gen-opcode-matrix.py`](tools/gen-opcode-matrix.py) 从 thpages 的
 `local/vendor/thpages/js/tables/reference/anm.ts` 生成（th16 继承链 `'16'` = `'15'` + 2 条，
-135 个 opcode）。**重生成**：`python3 runtime/anm/tools/gen-opcode-matrix.py`。
+135 个 opcode）。
+
+**重生成**：`python3 runtime/anm/tools/gen-opcode-matrix.py`。**默认保留已填行**——
+逐 opcode 与本次生成的骨架行比对，只要现有行被人改过（文档/实现/可信度任一列）就
+**逐字节原样保留**，只补 thpages 新出现的 opcode、只重写仍是「未开始」的骨架行；
+脚本自带的 `preserve_check()` 每次运行都复核这条不变量，保不住就当场退出且不写文件。
+要把全表推平成「未开始」必须显式 `--force`（会丢掉所有手填状态）。
+`--check` 只解析 + 自检 + 保留检查，不写文件（CI 用）。
 
 thpages / th-re-data 是社区单源——「文档」列指向 `engine/anm/th16/` 里一手复核过的小节才算数，
 纯抄 thpages 的助记名不算；「可信度」列默认 `—`（未看），community 自己标 `wip: 2`
@@ -274,7 +304,7 @@ runtime/anm/
       core.js           VM 骨架（取指/时间/跳转/interrupt/生死），指回 02-vm-core.md §2
       group-math.js     Math + Jumps 组（opcode 100–199/200–299），指回 03-math-jumps.md §2
   tools/
-    gen-opcode-matrix.py   重生成上面那张矩阵（只重生成「未开始」骨架，已实现的行要手改）
+    gen-opcode-matrix.py   重生成上面那张矩阵（默认保留已填行；--force 才推平）
   tests/
     smoke.test.js       node:test 能跑起来的最小验证
     format.test.js       v8 解析器差分测试，以 thanm -l 为 oracle
