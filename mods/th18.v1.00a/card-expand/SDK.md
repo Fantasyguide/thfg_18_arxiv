@@ -156,6 +156,7 @@ CE_CARD(id, .回调 = 函数, ...);      /* 一张卡一条，放在 native/card
 | `ce_enemy_by_id(em, id)` | 按 `enemy_id` 在敌人链表里找 | `get_boss_enemy_full` `0x4237f0` 的走法 |
 | `ce_option_*` | 装备卡子机槽：认领 / 申请 / 补申请 / 收起（§12）| `Player__allocate_option` `0x40a790` |
 | `ce_hud_digit_*` | HUD 小卡上的一位数字：挂图标 / 设值 / 清除（§15）| `ce_anm_spawn_ui` + `ce_anm_set_sprite` |
+| `ce_hud_vm_text_*` | **贴图 VM 版数字/符号**（TH18 font 2 零售字形，暂停时会被模糊罩盖住）（§16）| `ce_anm_spawn_ui` + `ce_anm_set_sprite` |
 
 ### 5.1 语音
 
@@ -402,3 +403,38 @@ static void on_run_reset(ce_card_t *c) { ce_hud_digit_clear(&s->hud); }
 SDK 读图标根 VM 的实体坐标（`vm+0x5f0`）、在 **UI 列表**里起 `ability.anm` 的 `HUD_DIGIT` 脚本钉在同一点，
 值变了 `set_sprite` 换数字；图标没了删数字、图标重建时旧数字先删。值钳在 `0..CE_HUD_DIGIT_MAX`（贴图只有十张）。
 ⚠️ 数字**相对图标的偏移写在脚本里**，是唯一要实跑调的量（日志会打图标坐标）。机制与一手在 AUDIT §X。
+
+## 16. 贴图 VM 版数字：`ce_hud_vm_text_*`（★ 想被暂停模糊罩盖住就用它）
+
+```c
+static ce_hud_vm_text_t s_digit;          /* 状态放 DLL 静态区（一张卡同时只在场一个）*/
+
+char buf[8];
+snprintf(buf, sizeof buf, "%d", level);
+ce_hud_vm_text_set(&s_digit, 182.0f, 455.0f, 0xffffffffu,
+                   CE_ASCII_ALIGN_CENTER, 0.0f /* 缩放用环境值 */, buf, "season");
+/* 卡被删 / HUD 收起时： */
+ce_hud_vm_text_clear(&s_digit);
+```
+
+**为什么需要它**：`ce_hud_text`（§14）走 ASCII 字符串，而 **ASCII 文字永远进不了暂停模糊罩下面** ——
+模糊罩是 `text.anm` script59 的 UI VM（层 38 → 绘制优先级 `0x3e`），四个 ASCII 绘制趟里
+只有组 1 比它早（`0x37`），但那一趟跑在 **surface 1 + 相机 0** 上（`0x2c` 切到 surface 1、`0x3a` 才回后备缓冲），
+实跑**数字全看不见**（用户 2026-09-10 实测）。贴图 VM 放 **UI 层 25** 就解决了：
+`AnmManager__render_layer` `0x4882b8` 把层 25 折到 **38** ⇒ 与模糊罩**同一个绘制桩**（`0x3e`），
+而罩子是暂停时**新起**的 VM（尾插 = 画在后面）⇒ 我们的字被罩住；平时没有罩子 = 全分辨率。
+
+**排版**（一手：`AsciiManager__draw_string` `0x41a2b0` 的 font 2/3 分支）：
+
+| 项 | 值 |
+| --- | --- |
+| 坐标空间 | 与 `ce_hud_text` 相同（640×480），内部 × `DAT_0056aca0` 换表面 px |
+| 字距 | `scale_x × 7`；**`.` 特例 `× 4`** |
+| 水平对齐 `align_h` | `0` 居中（每字退半个字距）、`1` 左、`2` 右（退满整串宽）|
+| 垂直对齐 | 取 **ASCII 环境的 `align_v`**（`mgr+0x19254`）：0 居中（退半行高）、1 顶、2 底；行高 = `scale_y × 10` |
+| 字形 | TH18 **font 2** 的零售切图（`make_font2_art.py` → `ability.anm` 的 `FONT2_*`，脚本 136，16×32 entry 里 16×20 字形居中）|
+
+认得的字符：`0-9 . % + -`（其余按字距跳过、不画；空格就是「跳过一个字距」）。
+⚠️ 引擎有个怪癖：**空格紧跟 `.` 之后时字距会沿用 `.` 的 4**（`local_c` 只在画字时更新）——
+本 SDK 不复制这个怪癖（我们的串里不会出现 `.`+空格）。
+

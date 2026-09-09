@@ -161,6 +161,87 @@ C 自带一个计数器当 `short_timer` 传进去（`param_2` 只进模运算�
 （Remilia 同款）；开大那排 7 × 7 = 49 本来就装得下，不用抬。豌豆走的是正常自机弹管线，所以 K♠ / 古锭刀的加成**也吃**（AUDIT Z16）。
 美术全部程序生成（`assets/ability/make_peashooter_art.py`）：豌豆 32×32、子机 64×64、卡图侧面像 + 三颗飞出去的豌豆（sprite 156/157）。
 
+## 致敬・东方绀珠传
+
+| id | 名字 | 效果 | 实现（槽 / 事件） | 文件 | 状态 |
+| --- | --- | --- | --- | --- | --- |
+| 118 | 绀珠传 | 被动：**擦弹判定区里有敌方子弹时**，子弹变黄、自机周围出现一圈环、场上掉落物一直慢（速度 ×0.3，出框后约 0.12 s 恢复）；boss 战按「**一段攻击 = 一波**」切章，每波末按**擦弹数 × 击破率**结算章节奖，够高再给碎片；左侧一块 TH15 风格的波次面板显示实时读数（**玩家贴近时整块淡到 0.3 alpha**，本卡自定——绀珠传把波次拉长，面板挡视线） | `on_tick_2`：差分读 `GRAZE` `0x4ccd0c` + 符卡位 `SPELLCARD+0x78` 下降沿切波；擦弹帧写 `ITEM_MANAGER+0xe6bb14` = 0.3（引擎自己每帧 +0.1 恢复）；`on_draw` 三行 HUD 文字 | `lolk.c` + `lolk_core.c` | 🔧 |
+
+**绀珠传（118）补充**：TH15 章节系统的复刻，一手在
+[`engine/chapter/th15/01`](../../../engine/chapter/th15/01-chapter-and-bonus.md) 与
+[`engine/player/th15/01`](../../../engine/player/th15/01-graze-and-item-slowdown.md)，
+设计 [`docs/superpowers/specs/2026-09-09-lolk-chapter-design.md`](../../../docs/superpowers/specs/2026-09-09-lolk-chapter-design.md)。
+公式照 TH15：`bonus = ⌊擦弹 × 击破率％ × 50 / 10⌋ × 10`，分数 += `bonus/10`，
+`bonus ≥ 1,000,000` 给一枚碎片（每 5 波第 5 波给命碎 `0x10`，其余符卡碎 `0x11`）。
+**两个接缝都是引擎里现成的残骸**（用户猜的「ZUN 的残留代码」成立）：TH18 的
+`zItemManager` 里还留着 `lolk_item_slowdown_factor`（`+0xe6bb14`，引擎每帧恢复、**没人写它**），
+`Player__do_graze` 也还在（只加两个计数，TH15 的 PIV/浮字/减速三样都被删了）——
+见 [`engine/chapter/th18/01`](../../../engine/chapter/th18/01-chapter-residuals.md) 与
+[`engine/player/th18/02`](../../../engine/player/th18/02-graze-and-item-slowdown.md)。
+**不加断点、不改字节**：只读三个字段、写一个 float。
+面板五行的数值（TH15 `Gui::on_draw_2e` 的 `"%d"` / `"%3.1f%%"` / `"%3d"` / `"%6d"` / `"  +%d"`）
+**2026-09-10 起从 ASCII 文字改成贴图 VM**（`ce_hud_vm_text_set` + 脚本 136 + TH18 font 2 零售字形）：
+面板本体在 UI 层 24（暂停时被模糊罩盖住），数值行放层 25（与罩子同桩、罩子后起）⇒ 一起被盖住。
+卡名 / 文案 / sprite 116/117 都是**占位**，待用户确认。
+
+## 致敬・东方天空璋
+
+| id | 名字 | 效果 | 实现（槽 / 事件） | 文件 | 状态 |
+| --- | --- | --- | --- | --- | --- |
+| 119 | 季节 | **装备卡**：季节点（擦弹 / 敌人掉落 / 解放消弹）→ 0..6 档 → 子机 → **A 键解放 / S 键切副季节**；掉落量、运动学、出场动画、HUD 全部照 TH16 一手，详见下表下方的「季节（119）补充」 | `on_tick_2` + `on_enemy_drop_pre` + `on_power_level_change` + `on_tick_shooters` + `on_draw` | `season.c` + `season_core.c` | 🔧 |
+
+**季节（119）补充**：TH16 季节系统的复刻（**装备卡**），数值全部来自 TH16 v1.00a **脱壳版**一手
+（[`engine/season/th16/01`](../../../engine/season/th16/01-season-data-and-tables.md)；纯逻辑在 `season_core.c`，
+单测 `tests/test_season_core.c`）。残骸审计见 [`engine/season/th18/01`](../../../engine/season/th18/01-season-residuals.md)：
+**TH18 里五样全无**（季节点道具 / 季节槽全局 / 季节子机数组 / 等级表 / 第二个 Bomb），所以全部自建。
+要点：
+- 季节点三条通道：**擦弹**（原生计数 `th18:0x4ccd0c` 的增量，TH16 `Player__do_graze` 同款）、
+  **敌人掉落**（`on_enemy_drop_pre`，位置 = 敌人坐标；数量见下条）、
+  **解放消弹**（`ce_cancel_radius` 返回值每 8 颗 1 点）；
+- **掉落量按 TH16 的计时衰减结算，档位逐敌人**（用户 2026-09-10：「小怪出场时间推移打死掉得会更少」✓
+  → 「th16 有不同档位吗？」✓ 有，是逐敌人手写的 `(T,N,M)`）。
+  衰减公式一手 `th16:0x420585`（`dropItems` 结算那一刻）：`n = (N−M) × 剩余帧 / T + M`（剩余 < 1 → `M`），
+  计时器由 `dropSeason(T,N,M)`（`th16:0x422a26`）在敌人子程序开头设成 `T`；
+  计时用引擎自己的 `zEnemyData.time_alive`（`enemy+0x1500`，每帧 +1 —— 一手 `0x430209` 的
+  `LEA ECX,[ESI+0x2d0]; CALL 0x405990`，`ESI` = zEnemyData 基址）。
+  **T 与档位取敌人自己的原生配置**（TH18 有同款机制：ECL opcode 573/574 → `zEnemyDrop.timed_ex_drop_time`
+  / `timed_ex_drop`，结算 `n = ex_drop + timed×(T−timer)/T`；一手见
+  [`engine/season/th18/01`](../../../engine/season/th18/01-season-residuals.md) §1b′）：
+  `T` = `enemy+0x623c+0xa4`（零售 40..900），数量 = 原生 timed 计数（1..20）映射到 TH16 量级
+  8/10/13/30（`season_drop_native_tier`，映射本身 ❓ 自定），`M` 恒 1；没配原生窗口的敌人
+  （T = 0，含所有 boss）退回 TH16 小妖精 `(60,8,1)`。boss 恒 **200 颗**（每相位一次）。
+  纯逻辑 = `season_core.c` 的 `season_drop_count_decay()` + `season_drop_native_tier()`（单测 31 断言）；
+- 季节点是**本卡自己的 VM**（`ability.anm` script115，DLL 静态池 512 槽），**运动学逐条照抄原版道具**
+  （`th16:0x42f4e0` / `th18:0x445a80`）：**出生态 = 待发射（`item+0xc50 = 6`，错帧 `total_items_created & 3`、
+  VM 还没建）→ 飞散（TH16 state 3：`pos += vel × 减速因子`、`r -= 0.03`、`vel = polar(角度, r)`，
+  角度不变、速度线性衰减，飞 `速度²/0.06` = 0.7..73 px，**无重力也不清 `vx`**）→ 飘落（重力 0.03、
+  下落上限 2.0、`vy ≥ 0 → vx = 0`）/ 飞向自机**；出界 472/200、吸引初速 = 磁速/3 后每帧 +0.2 到 12.0、
+  过回收线 `player+0x47998` 初速 = 磁速、收集半径/吸引半径/磁速读 `player+0x47988..94`
+  ——**为什么不直接借原生道具**见 [`engine/season/th18/01`](../../../engine/season/th18/01-season-residuals.md) §1d
+  （原生管线可用，但贴图/脚本绑在 `bullet.anm` 的类型表上）；
+- 档位 = TH16 阈值 100/230/390/590/840/1140（0..6 档）；**子机数 = 档位（最多 6 颗）**——
+  TH16 `num_season_options = season_lvl`、阵位表按 `{0,1,3,6,10,15,21,28}` 累计；子机走 `shooterset SEASON`
+  （`assets/sht/append_shooterset.py`，弹 = `SEASON_SEED`），节奏 = `帧数 × 档位` 当 short_timer、
+  `fire_rate = 120` ⇒ 间隔 120/60/40/30/24 帧；
+- **季节解放绑 A 键、副季节切换绑 S 键**：TH18 的键盘配置只占 Z/X/Shift/Esc/C/D，A/S 空着
+  （一手 [`engine/input/th18/01`](../../../engine/input/th18/01-key-mapping.md)）。
+  ⚠️ 原始键不进 replay 输入流 → 回放里不重现（同文档 §4a）。
+设计 [`docs/superpowers/specs/2026-09-10-season-and-animal-design.md`](../../../docs/superpowers/specs/2026-09-10-season-and-animal-design.md)。
+子机阵位写 option 记录的 `+0x64/+0x68/+0x6c/+0x70`（零售卡 `th18:0x40b8c1` 同款）；**S 键切副季节时子机的贴图与阵位一起换**（`refresh_options`）。
+季节点外观 = `ability.anm` script 115 + **TH16 零售切图**（`bullet/item.png` 右上 2×2 = 春/夏/秋/冬 + `(224,32)` = 土用，各 16×16，按副季节换 sprite；出场动画照 TH16 script129，**含 `angleVel(%F0)` 的 0..5°/帧 随机自转**）。
+档位数字（原 ASCII）**2026-09-10 起改成贴图 VM**（`ce_hud_vm_text_set` + 脚本 136 + TH18 font 2 的零售切图），
+这样暂停时数字也跟槽一起被模糊罩盖住（ASCII 文字做不到，见 [`engine/anm/th18/03`](../../../engine/anm/th18/03-ascii-text.md) §2f）。
+HUD = **游玩区内的左下角**（字面量空间 x 44 起）：季节字 PNG（`front00.png` (832,80)+32k，32×32）+ 实心 `drawRect(102,10)` 打底 + `drawRect(100,8)` 填充（scale.x = 档内进度）+ 档位数字贴在条右端；**UI VM 坐标 = 640 字面量 × 2**（AUDIT AF7），`ce_hud_text` 仍是 640 空间。★ 矩形脚本必须写 `sprite(-1)`，否则整条不可见。
+**解放视觉**：两个 `drawPoly(1.0f,32)` 实心圆照 TH16 `pl00sub.anm` script3/4（外圈 layer13 减算灰→绿、内圈 layer12 加算红），前 10 帧扩到半径、之后 250 帧淡到 64、最后 20 帧淡到 0；**圆心 = 释放原点，只有秋跟着自机**（TH16 `BombSubFall__on_tick` `0x40eeb0`）。
+卡图 sprite 116/117 是**占位**（与绀珠传共用）。
+
+## ⚠️ 改 cards.js 前必看：字段不合规 = 整批新卡消失
+
+`desc` ≤ 6 行、每行 < 64 字节 UTF-8、非空、**不含 ASCII `%`**（用 `％`）；`price_tier` 0..14、
+`weight` 0..255、sprite 必填 —— 任何一条不合规，DLL 的自检（`cards_def.c`）会走
+`mitigation: allocator bound restored to retail (56)`，**整批新卡失效**（现象是「卡全没了」）。
+构建期已加 `make cards-check`（并入 `make check` 与 `make release`）。
+
 ## 约定
 
 - **即时卡**（买了就生效、不进卡组）：`ctor` 或 `dtor` 施加效果后 `return 1`（零售 EXTEND / 六文钱同款，`02-lifecycle.md` §3）。

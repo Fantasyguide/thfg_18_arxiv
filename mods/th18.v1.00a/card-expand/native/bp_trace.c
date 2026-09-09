@@ -53,6 +53,21 @@ int __cdecl BP_ce_test_deck(x86_reg_t *regs, void *bp_info)
     (void)bp_info;
     const unsigned n = ce_dev_deck_count();
     if (n == 0) return BP_EXEC_ORIGINAL;
+    /* ★ 2026-09-10：新档的编成容量只有 1 槽（游戏自己的递增链 1→2→3，靠通关解锁），
+     * 于是 dev 卡组只会装第 1 张。这里的循环**每轮都重读上界**
+     * （`0x407ecb` / `0x407efe`：`CMP [scorefile + shottype*4 + 0x5f678], esi`），
+     * 所以顺手把容量写成 dev 张数即可让三个槽都生效（只写内存，不碰盘上的存档）。*/
+    {
+        uint8_t *sf = *(uint8_t **)(uintptr_t)CE_ADDR_SCOREFILE_PTR;
+        if (sf) {
+            int shot = *(const int32_t *)(uintptr_t)(regs->ebx + CE_DECK_SHOTTYPE_OFF);
+            int32_t *cnt = (int32_t *)(sf + shot * 4 + CE_DECK_CAP_OFF);
+            if (*cnt < (int32_t)n) {
+                ce_log("test: deck capacity %d -> %u (shot type %d)", (int)*cnt, n, shot);
+                *cnt = (int32_t)n;
+            }
+        }
+    }
     uint32_t id = *(const uint8_t *)(uintptr_t)(regs->eax + regs->esi + CE_TEST_DECK_SAVE_OFF);
     if (regs->esi < n) {
         uint32_t nid = ce_dev_deck_id(regs->esi);

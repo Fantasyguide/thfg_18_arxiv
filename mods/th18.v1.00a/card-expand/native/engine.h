@@ -36,12 +36,24 @@
 #define CE_ADDR_REPLAY_SAFE_RNG    0x4cf288   /* zRng REPLAY_SAFE_RNG（ExpHP）：弹幕 / 敌人 / 自机弹 / 零售卡（Suwako、Yachie、Miko）都用它；
                                                  * 0x4cf280 那个是商店 / UI 的非回放 RNG（pick_weighted_random_offer 0x41717b）。gameplay 随机一律走 0x4cf288。AUDIT §V */
 #define CE_ADDR_PLAYER_PTR         0x4cf410   /* zPlayer*（ExpHP statics；Nitori/Momoyo 都从这读）*/
+#define CE_ADDR_CHARACTER          0x4cccf4   /* int32 角色号 0..3（灵梦/魔理沙/咲夜/早苗）。一手
+                                                * `Player__initialize` `0x45a7a3`：`preload_anm(9, (&PTR_s_pl00_anm)[CHARACTER])`
+                                                * —— 残像/主炸等按角色分支的表都用它当索引 */
 #define CE_ENEMY_DROP_MAIN         0x00       /* zEnemyDrop（enemy+0x623c；0x430510 的 ecx 就是它，0x430499 lea ecx,[edi+0x623c]）：
                                                  * +0x00 main_drop：dropMain / enmCreate 第 6 参的那一颗，引擎在调 0x430510 之前撒（0x430469），调完清零（0x4304aa）*/
 #define CE_ENEMY_DROP_COUNTS       0x04       /* +0x04 ex_drop[20]：dropExtra 表，20 个 int32（(type-1)*4）。
                                                  * Enemy__drop_items_and_notify_cards 0x430510 按 type 1..0x13 逐个 spawn（第 20 格不撒），
                                                  * 广播完 vtable+0x30 后 memset(+0x04, 0, 0x50)。AUDIT §S / S10 */
 #define CE_ENEMY_DROP_TYPES        20
+#define CE_ENEMY_DROP_TIMED_COUNTS 0x54       /* +0x54 timed_ex_drop[20]：**按出场计时的加成表**，同 20 个 int32。
+                                                 * ECL opcode 573（社区 eclmap 无名）→ 0x433a4a → FUN_0042d020(drop, type, count)
+                                                 * 写 `drop[type*4+0x50]`（type 1 → +0x54）。结算见 CE_ENEMY_DROP_TIMED_TIME */
+#define CE_ENEMY_DROP_TIMED_TIME   0xa4       /* +0xa4 timed_ex_drop_time（窗口 T，帧）。ECL opcode 574 → 0x433a70
+                                                 * → FUN_0042d040(drop, T)：写 +0xa4 并把计时器复位。
+                                                 * 结算（0x430510 一手）：`n = ex_drop[i] + timed_ex_drop[i] × (T − timer)/T`
+                                                 * ⇒ 出场 T 帧内给满、之后只剩 ex_drop。计时器 = +0xa8（cur 在 +0xac），
+                                                 * 由敌人每帧入口 FUN_0042ff80 的 0x430161 段内联 +1。零售普查：T=40..900、
+                                                 * 计数 1..20，越大只窗口越长、给得越多（engine/season/th18/01 §1b′）*/
 #define CE_ADDR_BOMB_MGR           0x4cf2b8   /* 炸弹管理器*；+0x30 = 「正在放炸弹」（do_bomb 置 1，Bomb__can_bomb_and_deathbomb_check 0x420420 查它；道具磁力判定 0x445bc4 也查它决定吸不吸）*/
 #define CE_ADDR_ABILITY_MGR_PTR    0x4cf298   /* zAbilityManager*（OM §4）*/
 #define CE_ADDR_BULLET_MGR_PTR     0x4cf2bc   /* zBulletManager*（ExpHP statics；cancel_all 0x4297a9 读）*/
@@ -71,7 +83,19 @@
 #define CE_EM_BOSS_SLOTS           4
 #define CE_EM_ENEMY_LIST_HEAD      0x18c      /* zEnemyList* {entry, next, prev}（ExpHP active_enemy_list_head）*/
 #define CE_ENEMY_ID                0x6830     /* zEnemy.enemy_id */
+#define CE_ENEMY_DDC_UNUSED        0x6838     /* ★ zEnemy 里的**死字段**（ExpHP `__only_used_in_ddc`）：
+                                               * 全 exe 只有一处 `mov [esi+0x6838],0`（`0x42e427`，敌人初始化）——
+                                               * 也就是**每个敌人出生时被清零、之后再没人读写**。
+                                               * 季节卡拿它当「这个敌人已经掉过季节点」的闩锁（见 season.c）。*/
 #define CE_ENEMY_DATA              0x122c     /* zEnemyData 在 zEnemy 里的偏移：enemy+0x6374 = data.interrupts(+0x5148)、enemy+0x14ec = data.time_in_ecl.cur(+0x2c0)、enemy+0x6220 = data.life(+0x4ff4)（步进 0x42ed40 三处交叉核对）*/
+#define CE_ED_TIME_ALIVE           0x2d4      /* ★ zEnemyData.time_alive.current（zTimer 的 current 在 +0x4）。
+                                               * 一手：敌人每帧入口 `FUN_0042ff80`（`this` = zEnemyData 基址）
+                                               * 尾部 `0x430209` `LEA ECX,[ESI+0x2d0]; CALL 0x405990`
+                                               *（`Timer::increment`，每帧 +1，随游戏速度 `0x4ccbf0` 缩放；
+                                               * 同段 `[ESI+0x50f0]/[ESI+0x5104]` 就是 invuln/no_hitbox 计时器）。
+                                               * 绝对偏移 = `CE_ENEMY_DATA + 0x2d4` = enemy+0x1500。季节卡拿它算
+                                               * TH16 的掉落计时衰减（`dropSeason(60,8,1)`：出场 60 帧内
+                                               * 击破给 8，之后线性降到 1）。*/
 #define CE_ED_TIME_IN_ECL          0x2bc      /* zTimer{prev,cur,cur_f,…}：中断槽的超时阈值拿它比（0x42edf5 起：slot.time <= cur → 超时子程序）*/
 #define CE_ED_INTERRUPTS           0x5148     /* zEnemyInterrupt[8]：{+0 hp_value, +4 time, +8 sub_life[0x40], +0x48 sub_timeout[0x40]}，stride 0x88；活动槽 = 第一个 hp_value > -1 && time > 0 */
 #define CE_ED_INTERRUPT_STRIDE     0x88
@@ -92,8 +116,18 @@
 /* ---- HUD 文字（zAsciiManager）。一手 2026-09-08：零售 `CardMomoyo__on_draw` `0x4110a0` 的调用点逐指令读出来的
  * （AUDIT §AC）——它就是「一张卡在 HUD 上画数字」的现成先例，走的也是虚表 `+0x48 on_draw`。 */
 #define CE_ADDR_ASCII_MANAGER_PTR  0x4cf2ac   /* zAsciiManager*（th-re-data statics 同名，交叉对上）*/
-#define CE_FN_ASCII_DRAWF          0x41a110   /* AsciiManager__drawf_debug(mgr, pos[3], fmt, ...)：**cdecl varargs**
-                                               * （`0x411286 add esp,0x14` = 调用方清 3 个 push + 一个 double）*/
+#define CE_ADDR_UI_SCALE           0x56aca0   /* float：全局 UI 缩放（`DAT_0056aca0`）。1280×960 → 2.0。
+                                               * 三个用途：世界坐标→表面 px 的换算、ASCII 记录位置 ×它、
+                                               * 以及 ascii 管理器按它选字形文件（>1.6 ascii1280 / >1.1 ascii_960 / 否则 ascii，
+                                               * `0x419390`）。`ce_hud_vm_text_set` 用它把 ASCII 坐标换成表面 px。*/
+/* ★★ 画字符串**必须**走 `create_string` `0x419b90`：thiscall(mgr, pos[3], text)。
+ * 它把环境字体/分组/缩放/对齐抄进记录，之后由 ascii 的绘制趟按分组画。
+ * ⚠️ **别用 `drawf_debug` `0x41a110`**（旧的 CE_FN_ASCII_DRAWF）：它 create_string 之后
+ * 还会写 `mgr + 0xc0c + num_strings*0x138 = 1`，而这个地址正好是**刚建那条记录的 `+0x120`**
+ * （记录基址 = `mgr+0xc24+idx*0x138` ⇒ `0xc0c + 0x138 = 0xd44 = 0xc24 + 0x120`）——
+ * 也就是**把字体强制改成 1**，我们设的 font 全部无效（2026-09-10 反汇编坐实）。*/
+#define CE_FN_ASCII_CREATE         0x419b90
+#define CE_FN_ASCII_DRAWF          0x41a110   /* ⚠️ 会把字体强制成 1；只在「就想要字体 1」时用 */
 #define CE_ASCII_COLOR             0x19228    /* 字色 BGRA 一个 dword（`0x411245 mov [ecx+0x1922b], al` = alpha 在 +3）*/
 #define CE_ASCII_COLOR_WHITE       0xffffffffu /* Momoyo 画完还原成它（`0x41128a`）*/
 /* zAsciiManager 的其余绘制状态（Ghidra 结构体 zAsciiManager，字段名与偏移一手）。
@@ -101,10 +135,16 @@
 #define CE_ASCII_COLOR2            0x1922c    /* 描边 / 副色 BGRA */
 #define CE_ASCII_SCALE             0x19230    /* zFloat2；引擎常用 1.0，小字用 0.6 */
 #define CE_ASCII_SHADOW_DARK       0xff000000u /* 黑描边：压在花花绿绿的 HUD 上最清楚 */
+#define CE_ASCII_DRAW_SHADOWS      0x19240    /* int：1 = 画描边遍（`create_string` 抄进记录 `+0x124`）*/
 #define CE_ASCII_FONT              0x19244    /* int */
 #define CE_ASCII_GROUP             0x19248    /* int */
+#define CE_ASCII_PAGE              0x2c       /* int：**`zAnmManager.preloaded` 的下标**（`draw_string` 现读）
+                                                  * ⇒ 2 = `anm_02_ascii`；**不是** 10 + entry 号 */
 #define CE_ASCII_ALIGN_H           0x19250    /* int：**2 = 右对齐**（金钱 / 总分一手确认）；1 是引擎的常态值、实测表现为左对齐；
                                                   * 于是 0 只能是居中 —— 实跑再确认一次（AUDIT §AI）*/
+#define CE_ASCII_ALIGN_V           0x19254    /* int：垂直对齐（抄进记录 `+0x134`）。一手 `0x41a2b0`：
+                                                  * 0 = 居中（退半个行高）、1 = 顶、2 = 底（退一个行高）；
+                                                  * 行高 = `scale_y × 10`（font 2/3）*/
 #define CE_ASCII_ALIGN_CENTER      0
 #define CE_ASCII_ALIGN_LEFT        1
 /* 金钱那行的排版（`FUN_0043cd00` 在 (620, 204) 处设的）：比默认 font 0 大一圈，右对齐。
@@ -121,7 +161,9 @@
 #define CE_HUD_DMG_X               478.0f      /* 倍率读数：贴在火力左边，同一行。"x1.60" 五个字约 55 px ⇒ 478..533，刚好不压到 540 的火力，也在侧栏里（弹幕区右边缘约 x 416）。**待实跑微调** */
 
 #define CE_ANM_VM_POS              0x5f0      /* float3 实体坐标（Tenshi/Miko/Remilia 每帧写；engine/anm/th18/01-vm-instantiate.md）*/
+#define CE_ANM_VM_COLOR2           0x528      /* D3DCOLOR：`color2()` 写的第二个色（渐变条靠它）*/
 #define CE_ANM_VM_COLOR1           0x524      /* D3DCOLOR 0xAARRGGBB：Tenshi 0x40eb4c 无命中写 0xffffffff、0x40eb60 有命中写 0xff0080ff（= 蓝 (0,128,255)）*/
+#define CE_ANM_VM_SPRITE_ID        0x24       /* int32：当前 sprite 号（ExpHP zAnmVmPrefix.sprite_id；残像照自机当下那帧取）*/
 #define CE_ANM_VM_FVARS            0x4b4      /* float[4] 脚本变量 %F0–%F3（ExpHP zAnmVmPrefix float_script_vars）；C 写、脚本 scale(%F0, …) 读 */
 #define CE_ANM_VM_ROTATION         0x3c       /* zFloat3 rx/ry/rz（zAnmVmPrefix；自机弹每帧更新 `0x45edb0` 写 +0x44 = rz = 弹的实时角度）*/
 #define CE_ANM_VM_SCALE            0x54       /* zFloat2 scale x/y：HUD 充能条 0x408a53 写 +0x58 = fill 比例（thpages drawRect：动态尺寸就改 scale）；ExpHP zAnmVmPrefix（AUDIT O29k）*/
@@ -155,12 +197,17 @@
 #define CE_PLAYER()       (*(uint8_t **)CE_ADDR_PLAYER_PTR)
 #define CE_BOMB_MGR()     (*(uint8_t **)CE_ADDR_BOMB_MGR)
 #define CE_BOMB_ACTIVE()  ((CE_BOMB_MGR() != 0) && *(int32_t *)(CE_BOMB_MGR() + 0x30) != 0)   /* 放弹中（mgr+0x30 布尔；空指针安全。见 CE_ADDR_BOMB_MGR 出处）*/
+#define CE_BOMB_TIME      0x38       /* zBomb.bomb_time_and_release_cooldown.current（放弹帧钟，原版道具 V 门拿它比 0x3c）*/
+#define CE_BOMB_COLLECTING() (CE_BOMB_MGR() != 0 && *(int32_t *)(CE_BOMB_MGR() + 0x30) == 1 && \
+                              *(int32_t *)(CE_BOMB_MGR() + CE_BOMB_TIME) < 0x3c)   /* ★ 原版「放 B 收道具」那一门（`0x445bc4`–`0x445bce`，一手）：+0x30 == 1 且帧钟 < 60 */
+
 #define CE_ABILITY_MGR()  (*(uint8_t **)CE_ADDR_ABILITY_MGR_PTR)
 #define CE_BULLET_MGR()   (*(uint8_t **)CE_ADDR_BULLET_MGR_PTR)
 #define CE_GUI()          (*(uint8_t **)CE_ADDR_GUI_PTR)
 #define CE_ENEMY_MGR()    (*(uint8_t **)CE_ADDR_ENEMY_MGR_PTR)
 #define CE_ANM_MANAGER()  (*(uint8_t **)CE_ADDR_ANM_MANAGER_PTR)
 #define CE_GUI_MSG            0x1b0       /* zGui.msg：对话中 */
+#define CE_GUI_MSG_ACTIVE()   (CE_GUI() != 0 && *(int32_t *)(CE_GUI() + CE_GUI_MSG) != 0)   /* 对话中（指针非 0）；引擎自己的门见 `0x445bd0` 系 */
 #define CE_EM_ENEMY_COUNT     0x198       /* zEnemyManager.enemy_count_real */
 
 /* ---- zAbilityManager ---- */
@@ -216,6 +263,11 @@
 #define CE_BASE_SLOT_OPDELETE      0x411410   /* CardNull__operator_delete(this, flag)，thiscall + 1 栈参 */
 
 /* ---- zPlayer ---- */
+/* ---- 卡组容量 / 存档（dev 用；一手：`0x407ec5`..`0x407efe` 的 reset_cards 循环）---- */
+#define CE_ADDR_SCOREFILE_PTR    0x4cf41c   /* zScoreFile*（`0x407ec5 mov ecx,[0x4cf41c]`）*/
+#define CE_DECK_CAP_OFF          0x5f678    /* scorefile + shottype*4 + 它 = 该槽卡数上限（循环每轮重读）*/
+#define CE_DECK_SHOTTYPE_OFF     0xc5c      /* 卡对象 +0xc5c = 当前 shot type */
+
 #define CE_PLAYER_X                0x620      /* float px（PL §1）。★ 是 float3 的基址：+0x624 py、+0x628 pz —— 青眼 / 豌豆射手 /
                                                * 炎魔都在读 [1] [2]，用 `ce_player_pos()` 而不是各自转指针 */
 #define CE_PLAYER_Y                0x624
@@ -233,6 +285,22 @@
 #define CE_PLAYER_ITEM_ATTRACT_RF  0x47990    /* focused */
 #define CE_PLAYER_ITEM_ATTRACT_RU  0x47994    /* unfocused */
 #define CE_PLAYER_POC_HEIGHT       0x47998    /* Kanako 置 224.0 */
+
+/* ---- 自机弹池（`Player__tick_bullets` `0x45edb0` 一手：`LEA EDI,[ECX+0x1570]`、512 槽、
+ * 循环尾 `ADD EDI,0xf8` ⇒ 步长 **0xf8**；循环里 `EDI = 槽+0x14`，故 `[EDI+0x78]` = 槽+0x8c = 状态）---- */
+#define CE_PB_POOL                 0x1570     /* zPlayer + 0x1570 */
+#define CE_PB_COUNT                512
+#define CE_PB_STRIDE               0xf8
+#define CE_PB_VM_ID                0x08       /* 弹的 anm vm id（激光 = 束 VM；tick2 收束时对它发 interrupt 1）*/
+#define CE_PB_STATE                0x8c       /* 1 = 活动、2 = 完成（`0x45fc80` 自杀段 / `0x45f6f0` 命中段都写 2）*/
+#define CE_PB_OPTION               0xe4       /* 指向发射它的子机 zPlayerOption*（`PlayerBullet__create` `0x45e3ae` 从第 5 个栈参写）*/
+#define CE_PB_DAMAGE_IDX           0xb0       /* 伤害源下标（`tick_bullets` `0x45ee6f` 用它算 `PLAYER+0x204d8+idx*0x9c`）*/
+
+/* ---- zPlayer 的头两个 anm 指针（`Player__initialize` `0x45a7b8` / `0x45a7c3` 一手：
+ * `preload_anm(9, pl0X.anm)` 的返回值同时写进 `+0x0c` 与 `+0x10`）---- */
+#define CE_PLAYER_ANM              0x0c       /* AnmLoaded*：**自机自己的 anm**（pl0X.anm，残像用它起脚本）*/
+#define CE_PLAYER_ANM_CURRENT      0x10       /* 同上，但开火期间被换成 ability.anm（0x40a9c0），别拿它当玩家 anm */
+#define CE_PLAYER_VM               0x14       /* 自机本体 zAnmVm（`Player__on_tick__body` 里 `LEA ECX,[EDI+0x14]`）*/
 
 typedef struct { int32_t prev; int32_t cur; float cur_f; } ce_timer_t;   /* zTimer 前三个字段（Bomb / Card 的写法一致）*/
 #define CE_PLAYER_INVULN()   ((ce_timer_t *)(CE_PLAYER() + CE_PLAYER_INVULN_TIMER))
@@ -285,12 +353,24 @@ typedef struct { int32_t prev; int32_t cur; float cur_f; } ce_timer_t;   /* zTim
 #define CE_OPT_IN_USE              0x00       /* zPlayerOption：非 0 = 占用中（allocate 找空位看它）*/
 #define CE_OPT_POS_X               0x5c       /* 定点数，× 1/128 = 像素（`0x40a9c0` 出膛坐标就取这两个）*/
 #define CE_OPT_POS_Y               0x60
+#define CE_OPT_OFF_NF_X            0x64       /* 非聚焦位置偏移 x（定点 ×1/128）：`Player::allocate_option` `th18:0x40a80a` 写 0，
+                                               * 零售卡 `th18:0x40b8c1` 写它 → 卡可以自己摆阵型 */
+#define CE_OPT_OFF_NF_Y            0x68       /* 非聚焦位置偏移 y（allocate_option 从第 2 个栈参 ×128 写，`th18:0x40a7fc`）*/
+#define CE_OPT_OFF_F_X             0x6c       /* 聚焦位置偏移 x（allocate_option 写 0，`th18:0x40a811`）*/
+#define CE_OPT_OFF_F_Y             0x70       /* 聚焦位置偏移 y（allocate_option 从第 5 个栈参 ×128 写，`th18:0x40a805`）*/
 #define CE_OPT_ANM_ID              0xb0       /* 子机的 anm vm id */
 #define CE_OPT_OWNER_INDEX         0xd0       /* = 建它那张卡的 card+0x08（array_index）；用来认领「这个槽还是我的吗」*/
 #define CE_SUBPIXEL_TO_PIXEL       (1.0f / 128.0f)   /* `0x4b908c` */
 #define CE_PLAYER_AIM_ANGLE        0x479cc    /* float：卡把瞄准角写这里，shooter 的 func_on_init = 5（`0x4612d0`）
                                                  在建弹时用它覆写 bullet+0x64。CardAlice `0x40b5fa` 同款用法 */
 /* ---- zEnemy（`CardAlice__on_shoot` 0x40b4e0 与最近敌人搜索 0x438cb0 一手）---- */
+#define CE_ENEMY_DROP              0x623c     /* zEnemy.drop（zEnemyData+0x5010；SDK 的 on_enemy_drop_pre 拿到的就是这个指针）*/
+#define CE_ENEMY_OWN_BOSS_ID       0x636c     /* zEnemyData.own_boss_id（非 0 = 关底/道中 boss）*/
+#define CE_ENEMY_ID                0x6830     /* zEnemy.enemy_id：**每个敌人实例唯一**、单调递增。
+                                                 * 一手 `Enemy__constructor` `0x42e3f0`：
+                                                 * `id = mgr[0x90]; mgr[0x94] = mgr[0x90]; mgr[0x90] = id + 1`
+                                                 * （`0x42e3fc`–`0x42e408`）⇒ 内存复用也不会撞号，
+                                                 * 拿去重（同一个敌人的多次掉落回调）比指针可靠。*/
 #define CE_ENEMY_POS_X             0x1270     /* = data(+0x122c).final_pos(+0x44).pos。★ 同为 float3 基址；用 `ce_enemy_pos(e)` */
 #define CE_ENEMY_LIST_GUARD        4096       /* 敌人链表遍历的护栏（坏链表不转死）；ce_enemy_by_id / CE_ENEMY_FOREACH 共用 */
 #define CE_ENEMY_POS_Y             0x1274
@@ -353,6 +433,9 @@ typedef struct { int32_t prev; int32_t cur; float cur_f; int32_t speed_src; uint
                                                 0x44685c 映射表 + 0x446830 跳表；spawn 0x447051 写 */
 #define CE_ITEM_MAG_SPEED         0xc80      /* float：磁力吸附速度（= player+0x47988；见 CE_ITEM_STATE 出处）*/
 #define CE_ITEM_TIMER             0xc84      /* int：延迟/倒计时（spawn 第 6 栈参；state 1/5 各用其一，0x445b7e / 0x445af3）*/
+#define CE_FN_POLAR_TO_VEL         0x447430   /* FUN_00447430：thiscall(float3 *out; angle, speed) `ret 8` —— FSINCOS 一次算出
+                                                (cos·speed, sin·speed)。道具的吸引飞行 / TH16 的弹出生都用它（TH16 同款 `0x430df0`）。
+                                                卡里用 `ce_polar_to_vel()`，别自己写 sin/cos（DLL 不链 libm）*/
 #define CE_FN_SPAWN_ITEM          0x446f40   /* ★ 栈参 8 个、callee `ret 0x20`（0x446f56/0x447137 `c2 20 00`）：
                                                 ECX = CE_ITEM_MANAGER()（0x430473）；栈参自低向高 (type@[ebp+8], pos float3*@[ebp+0xc],
                                                 junk@[ebp+0x10]（原生从不写——0x43047c 前 `sub esp,8` 的未初始化区；我方传 0）, angle@[ebp+0x14],
@@ -360,6 +443,11 @@ typedef struct { int32_t prev; int32_t cur; float cur_f; int32_t speed_src; uint
                                                 [ebp+0x20]@未读, [ebp+0x24]@未读)。type≥0x14 → 返回 0；type 1..0x13 → 返回槽指针。
                                                 原生 main-drop 实参 = (type, 敌pos, 垃圾, −1.5707964f, 2.2f, 0)；我方一律补满 8 参。
                                                 ★ 与初版「RET 0x1c / 6 参」记法不同——0x430479 `sub esp,8` 起尾两槽必须压（AUDIT）*/
+#define CE_ITEM_SLOWDOWN          0xe6bb14   /* zItemManager.lolk_item_slowdown_factor（float）—— TH15 擦弹减速的残骸：
+                                                引擎每帧照旧把飘落态位移与重力增量乘它、照旧 +0.1/帧 回 1.0，
+                                                但 TH18 自己从不写 0.3（全 exe 6 处引用：1 写 1.0 / 3 读 / 恢复 1 读 1 写）。
+                                                ★ 绀珠传卡（118）每帧写 0.3 就是在复活 TH15 的机制；卡里的季节点也读它，
+                                                免得同一屏上 P 点慢了、季节点不慢。见 `engine/player/th18/02` */
 #define CE_ITEM_MANAGER()         (*(uint8_t **)CE_ADDR_ITEM_MANAGER_PTR)
 
 /* ---- 弹字 ring（PopupManager* = [0x4cf420]；2026-09-08 一手反汇编，进 AUDIT §Z）----

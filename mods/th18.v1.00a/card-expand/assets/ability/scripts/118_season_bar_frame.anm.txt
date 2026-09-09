@@ -1,0 +1,17 @@
+script script118 {
+    // 计量槽的**外框**（照 TH16 `front.anm` script114 的 `drawRectBorder(102,10)` + 灰 (80,80,80)；
+    //   TH18 的 anm 里没有一处用 drawRectBorder，改用**同尺寸实心 drawRect(102,10)** 打底 ——
+    //   填充条 100×8 盖在上面，露出的就是 1 px 边框。★ 必须写 `sprite(-1)`：不写的话 VM 没有
+    //   可画的矩形，整条看不见（2026-09-10 用户反馈「缺少进度条」的根因）。
+-1:
+    sprite(-1);
+    layer(20);
+    resolutionMode(2);
+    zWriteDisable(1);
+    blendMode(0);
+    drawRect(102.0f, 10.0f);
+    color(80, 80, 80);
+    alpha(255);
+0:
+    stop();
+}

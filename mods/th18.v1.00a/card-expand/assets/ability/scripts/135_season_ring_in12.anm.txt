@@ -1,0 +1,24 @@
+script script135 {
+    // 季节解放 · **内圈（12 边形版）** —— TH16 各副季节释放脚本的第二个 VM 逐条抄。
+    // 与 script121（32 边形）的唯一差别就是 `drawPoly(1.0f, 12)`：
+    //   春 `pl00sub` script4 = 32 边形；夏 `pl02sub` 3 / 秋 `pl03sub` 3 / 冬 `pl01sub` script21 / 土用 `pl04sub` 3
+    //   都是 **12 边形**（边数少 → 看得出一圈棱角，这是原版冬/秋释放圈的手感）。
+    // 颜色 / alpha / 自转由卡每帧写（`season_ring()` 表；`angleVel` 在 TH16 里是 ±0.17453292 rad/帧）。
+-1:
+    sprite(-1);
+    layer(12);
+    zWriteDisable(1);
+    drawPoly(1.0f, 12);
+    blendMode(1);
+    color(255, 128, 128);
+    color2(255, 0, 0);
+    alpha(255);
+    alpha2(255);
+0:
+    stop();
+    interruptLabel(1);
+    alphaTime(10, 0, 0);
+    alpha2Time(10, 0, 0);
++10: // 10
+    delete();
+}

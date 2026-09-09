@@ -1,0 +1,29 @@
+script script130 {
+    // 秋（早苗副季节子机）的弹 —— TH16 `pl03sub.anm` **script0** 逐条搬（一手）。
+    // 主体：sprite0（64×64，scale (1.0, 0.3)、alpha 160、color(224,192,64) 金黄、layer 13、rotateAuto）。
+    // 命中 → interruptLabel(1)：layer 15、blendMode 1、sprite1→2→3 每 3 帧，+3 后淡出 delete。
+-1:
+    layer(13);
+    sprite(@BULLET_FALL);
+    type(1);
+    zWriteDisable(1);
+    rotateAuto(1);
+    scale(1.0f, 0.3f);
+    scaleTime(8, 0, 1.0f, 0.3f);
+    alpha(160);
+    color(224, 192, 64);
+0:
+    stop();
+    interruptLabel(1);
+    layer(15);
+    blendMode(1);
+    sprite(@HIT_FALL_1);
++3: // 3
+    sprite(@HIT_FALL_2);
++3: // 6
+    sprite(@HIT_FALL_3);
++3: // 9
+    alpha(0);
++1: // 10
+    delete();
+}

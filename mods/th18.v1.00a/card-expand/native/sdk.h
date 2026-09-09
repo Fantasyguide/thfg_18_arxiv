@@ -260,6 +260,16 @@ static inline int ce_anm_set_rotation(uint32_t id, float rx, float ry, float rz)
     r[0] = rx; r[1] = ry; r[2] = rz;
     return 1;
 }
+/* 写 VM 的 color_2（`+0x528`，TH18 zAnmVm 字段图；`color2()` 写的就是它）。
+ * 渐变图元（`drawRectGrad`）的第二个色只能靠它 —— `ce_anm_set_color` 只写 color_1。*/
+static inline int ce_anm_set_color2(uint32_t id, uint32_t rgba)
+{
+    uint8_t *vm = ce_anm_get_vm(id);
+    if (!vm) return 0;
+    *(uint32_t *)(vm + CE_ANM_VM_COLOR2) = rgba;
+    return 1;
+}
+
 static inline int ce_anm_set_scale(uint32_t id, float sx, float sy)      /* 脚本里没有在跑的 scaleTime 时写入才不被插值器覆盖 */
 {
     uint8_t *vm = ce_anm_get_vm(id);
@@ -295,6 +305,32 @@ static inline uint8_t *ce_spawn_item(uint32_t type, const float *pos, float angl
     void *mgr = CE_ITEM_MANAGER();
     if (!mgr) return 0;
     return ((ce_fn_spawn_item_t)CE_FN_SPAWN_ITEM)(mgr, type, pos, 0, angle, speed, 0, 0, 0);
+}
+/* ASCII 的「页」= `mgr+0x2c`（一手：`draw_string` `0x41a2b0` 用
+ * `preloaded.anm_10_anms_for_ecl_anim[*(int*)(mgr+0x2c) - 10]` 选字形表 ⇒ 页 = 10 + ascii.anm 的 entry 号：
+ * entry0 = ascii.png（小字，320 sprite = 3 套 96 字形）、entry1 = ascii_big（98 字形）、
+ * entry3 = ascii_big2（98 字形）、entry2/4 是 big 的「描边」版）。
+ * 想用大字体就得切页 + 把字体 id 设 0（大字体表里只有一套字形）。返回旧页（-1 = mgr 空）。*/
+static inline int ce_hud_font_page(int page)
+{
+    uint8_t *mgr = *(uint8_t **)CE_ADDR_ASCII_MANAGER_PTR;
+    int old;
+    if (!mgr) return -1;
+    old = *(int *)(mgr + CE_ASCII_PAGE);
+    *(int *)(mgr + CE_ASCII_PAGE) = page;
+    return old;
+}
+
+/* 擦弹事件（引擎自己的子弹擦弹路径 `0x42497f` 断点记下的）：取「自上次调用以来」的擦弹次数，
+ * >0 时把**最后一次被擦到的那颗弹**的坐标写进 x/y。季节点用它撒在弹的位置上。*/
+int ce_graze_take(float *x, float *y);
+
+/* 极坐标 → 速度（`0x447430`，thiscall + ret 8：ECX = out，栈 = angle, speed）。
+ * 写 out[0] = cos(angle)·speed、out[1] = sin(angle)·speed。角度约定与引擎一致（0 = +x，−π/2 = 上）。*/
+typedef void (__attribute__((thiscall)) *ce_fn_polar_to_vel_t)(float *out, float angle, float speed);
+static inline void ce_polar_to_vel(float *out, float angle, float speed)
+{
+    ((ce_fn_polar_to_vel_t)CE_FN_POLAR_TO_VEL)(out, angle, speed);
 }
 /* SCORE += delta：int64 应用（防中间溢出），钳 [0, 999999999]（SM §1 同口径）。collect-2x 档位补差用——
  * delta 可为负（×0.5/×0.8 档 = 把已入账的 100% 分值扣回倍率，1:1 原义）。AUDIT §Z。*/
@@ -403,8 +439,16 @@ uint8_t *ce_option_alloc(ce_card_t *c, ce_option_t *o, int offset, int anm_scrip
 uint8_t *ce_option_retry(ce_card_t *c, ce_option_t *o, int offset, int anm_script,
                          uint32_t retry_frames, const char *card);
 /* 收起子机：删它的 ANM VM + 清 flags 的 `CE_FLAG_EQUIP_RESET_BIT1`（零售 `CardReimu1__method_4C` 两件一起做）。
- * o 可为 NULL：`card+0x1c` 的 VM 与 flags 照样处理。*/
+ * o 可为 NULL：`card+0x1c` 的 VM 与 flags 照样处理。**同时会收掉这个子机发射出去的激光**（见下）。*/
 void     ce_option_drop(ce_card_t *c, ce_option_t *o);
+/* 把「挂在这个子机上」的自机弹收掉 —— 一手：激光（`mode=2`）的寿命**只跟射击键走**
+ * （`tick2` `0x45fc80` 尾部：`shoot_key_short_timer >= 0` 且不在死亡/对话态就继续活着），
+ * 子机被收走时束**不会**自己消失 ⇒ 玩家按住 Z 会看到一条钉在旧位置的残束
+ * （用户 2026-09-10 实跑：冬子机在季节解放后、不放开 Z 就还有激光）。
+ * 收束序列照 `tick2` 自己的自杀段：`bullet+0x8c = 2` + 对束 VM 发 `interrupt 1`；
+ * 之后 `Player__tick_bullets` `0x45edb0` 发现束 VM 没了就回收弹槽并清伤害源。
+ * 返回收掉的弹数。`ce_option_drop` 已经会调它（不用自己调）。*/
+int      ce_option_kill_bullets(void *option);
 static inline uint8_t *ce_option_get(ce_card_t *c, ce_option_t *o, int offset, int anm_script,
                                      uint32_t retry_frames, const char *card)
 {
@@ -445,8 +489,40 @@ typedef struct {
 void ce_hud_number_set(ce_hud_number_t *n, float x, float y, float spacing,
                        int value, int digits, int right_align, const char *tag);
 void ce_hud_number_clear(ce_hud_number_t *n);
+
+/* —— 贴图 VM 版「文字」：TH18 **font 2** 的零售字形（0-9 . % + -），逐字一个 VM ——
+ * ★ 存在的理由：**ASCII 文字永远盖不到暂停模糊罩下面**（实跑证伪：唯一早于罩子的组 1 趟
+ *   `0x419950` 跑在 surface 1 + 相机 0 上，画出来看不见），而贴图 VM 放 UI 层 25
+ *   （折到组 38 → 与罩子同桩 `0x3e`、罩子后起 ⇒ 被罩住）就能做到。
+ * 排版**照抄 `AsciiManager__draw_string` `0x41a2b0` 的 font 2/3 分支**：
+ *   · 字距 = `scale_x × 7`，`.` 特例 `× 4`（`0x41a487` 段）；坐标空间与 `ce_hud_text_ex` 相同（640×480），
+ *     内部 × `DAT_0056aca0` 换表面 px；
+ *   · 水平对齐（`align_h`）：0 = 居中（每个字退半个字距）、1 = 左、2 = 右（退满整个字距）
+ *     —— 与引擎的 `record+0x130` 三个分支逐条对应；
+ *   · 字形是 **16×20** 的单元（`ascii1280` 变体），贴图 entry 声明 16×32、上下各补 6 px 透明，
+ *     于是「精灵中心」= 单元水平中线；VM 位置 = `(字笔 x, (y + 5) × DAT)` 就与引擎画出来的像素对齐。
+ * 只认这 15 个字符（其余按字距跳过、不画）：`0-9 . % + -` 与空格。*/
+#define CE_HUD_VM_TEXT_MAX 10
+typedef struct {
+    uint32_t id[CE_HUD_VM_TEXT_MAX];     /* 每个字形一个 VM；0 = 空 */
+    uint32_t shown[CE_HUD_VM_TEXT_MAX];  /* 该 VM 当前挂的 sprite 号（省一次 set_sprite）*/
+    int      n;                          /* 上一帧用了几个槽 */
+} ce_hud_vm_text_t;
+void ce_hud_vm_text_set(ce_hud_vm_text_t *t, float x, float y, uint32_t bgra,
+                        int align_h, float scale, const char *s, const char *tag);
+void ce_hud_vm_text_clear(ce_hud_vm_text_t *t);
 void ce_hud_digit_set(ce_hud_digit_t *d, int value, const char *card);
 void ce_hud_digit_clear(ce_hud_digit_t *d);
+
+/* 原始键盘状态（`GetKeyboardState`，user32）。TH18 自己的输入掩码只认配置里的 6 个键
+ * （Shot=Z / Bomb=X / Slow=Shift / Pause=Esc / Item=C / Change=D；配置表 `th18:0x4ca470` 起，
+ * 一手见 engine/input/th18/01），**A / S 没被任何动作占用**（D 是 Change）——
+ * 卡要用「游戏不认识的键」时读这里。
+ * ⚠️ 这些键**不进 replay 输入流**（回放只录 `th18:0x4ca428` 的 16 位掩码）→ 用它触发的效果在回放里不重现。*/
+#define CE_VK_A 0x41
+#define CE_VK_S 0x53
+#define CE_VK_D 0x44
+int ce_key_down(int vk);
 
 /* 在 HUD 上写一行字（只能在虚表 `+0x48 on_draw` 里调 —— 零售 `CardMomoyo__on_draw` 同款，AUDIT §AC）。
  * 坐标用 Gui 自己那套字面量空间（火力在 (540, 182)）；color 是 BGRA 一个 dword，画完自动还原成白。

@@ -18,7 +18,7 @@ step3: anm sht
 	$(MAKE) ROWS=255 gen verify test-host voice dll dllx87 files
 
 ## check —— 提交前完整只读门：代码、资源、站点、文档和 DLL ABI。
-check: quick anm-verify sht-verify snd-check dllx87 dllverify
+check: quick cards-check anm-verify sht-verify snd-check dllx87 dllverify
 	python3 sites.py check
 	python3 ../../../../tooling/check-docs.py
 
@@ -66,6 +66,12 @@ anm-verify:
 	python3 ../assets/build_abcard.py --verify-only
 	python3 ../assets/build_ability.py --verify-only
 
+## cards-check —— cards.js 静态校验（desc<=6 行 / 每行<64 字节 / 无 ASCII %）。
+## ★ 为什么要有：DLL 的自检在**运行时**逐卡查，任何一张不合规就「整批新卡禁用」（玩家看到「卡全没了」）。
+## 2026-09-09 真踩过（119 的 desc 写了 7 行）→ 挪到构建期，红着退出。
+cards-check:
+	python3 mkfiles.py --check
+
 ## list   —— 25 个查表实例的全表
 list:
 	python3 sites.py list
@@ -105,7 +111,7 @@ DLL       := th18_card_expand.dll
 # -fno-math-errno：让 sqrtf 编成一条 sqrtss。不加的话它会带一条「负数就调 libm 设 errno」的退路，
 # 而 libm 的 float 返回值走 st0，我们这边接它就得用 fstp —— 直接顶掉下面 dllx87 的「零 x87」不变式。
 CFLAGS    := -O2 -Wall -Wextra -mfpmath=sse -msse2 -fno-math-errno -I.
-LDFLAGS   := -shared -static-libgcc -s -lkernel32 -Wl,--no-insert-timestamp
+LDFLAGS   := -shared -static-libgcc -s -lkernel32 -luser32 -Wl,--no-insert-timestamp
 
 ## dll    —— 编 DLL（依赖 gen 出的 sites_gen.h）
 dll: $(DLL)
@@ -148,6 +154,10 @@ test-host:
 	./tests/build/test_collect2x_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_peashooter_core tests/test_peashooter_core.c cards/peashooter_core.c
 	./tests/build/test_peashooter_core
+	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_season_core tests/test_season_core.c cards/season_core.c
+	./tests/build/test_season_core
+	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_lolk_core tests/test_lolk_core.c cards/lolk_core.c
+	./tests/build/test_lolk_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_ouroboros_core tests/test_ouroboros_core.c cards/ouroboros_core.c
 	./tests/build/test_ouroboros_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_whirlwind_core tests/test_whirlwind_core.c cards/whirlwind_core.c
@@ -170,10 +180,11 @@ dllverify: $(DLL)
 		grep -Eq "^[[:space:]]+$$ordinal[[:space:]]+0x[0-9a-f]+[[:space:]]+$$sym$$" tests/build/dll-headers.txt || exit 1; \
 	done
 	@test "$$(grep -Ec '^[[:space:]]+[0-9]+[[:space:]]+0x[0-9a-f]+[[:space:]]+[A-Za-z_]' tests/build/dll-headers.txt)" = 22
-	@test "$$(grep -c 'DLL Name:' tests/build/dll-headers.txt)" = 2
+	@test "$$(grep -c 'DLL Name:' tests/build/dll-headers.txt)" = 3
 	@grep -q 'DLL Name: KERNEL32.dll' tests/build/dll-headers.txt
 	@grep -q 'DLL Name: msvcrt.dll' tests/build/dll-headers.txt
-	@echo "DLL ABI: 22 exports, PE32/i386, dependencies KERNEL32.dll + msvcrt.dll"
+	@grep -q 'DLL Name: USER32.dll' tests/build/dll-headers.txt
+	@echo "DLL ABI: 22 exports, PE32/i386, dependencies KERNEL32.dll + msvcrt.dll + USER32.dll"
 
 ## dist   —— 三个 patch + DLL + zip；_255（patch-step3）里带重建的 th18/abcard.anm（≈22 MB）与 th18/ability.anm（≈1.7 MB），都含零售贴图
 ## dist —— 在 ../dist/ 摆出可直接安装的整套：一个 DLL + patch-step3 / patch-test / patch-devstage

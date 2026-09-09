@@ -236,10 +236,13 @@ void ce_sdk_damage_cap_tick(uint32_t id)
 }
 
 /* HUD 文字。零售 `CardMomoyo__on_draw` `0x4110a0` 的做法逐条复刻（AUDIT §AC）：
- * 写 `ASCII_MANAGER_PTR + 0x19228` 的字色 → `AsciiManager__drawf_debug(mgr, pos, fmt, ...)` → 还原成白。
- * 那个函数是 **cdecl varargs**，但我们不转发 varargs：先自己 vsnprintf 成一行，再用固定的 `"%s"` 交给它，
- * 于是调用形状永远是 4 个 push、调用方清 0x10 —— 没有浮点提升、没有可变长栈，最省心。 */
-typedef void (__attribute__((cdecl)) *ce_fn_ascii_drawf_t)(void *mgr, const float *pos, const char *fmt, ...);
+ * 写 `ASCII_MANAGER_PTR + 0x19228` 的字色 → 建字符串 → 还原成白。
+ * ★★ 2026-09-10 修正：**必须用 `AsciiManager__create_string` `0x419b90`**，不能用 `drawf_debug`
+ * `0x41a110` —— 后者在 create_string 之后还会写 `mgr + 0xc0c + num_strings*0x138 = 1`，
+ * 而那个地址就是**刚建那条记录的 `+0x120`（font_id）** ⇒ 我们设的字体被强行改成 **1**，
+ * 于是「字体扫描」五行全长一个样、换字体毫无效果（反汇编：`0x41a14e`/`0x41a15d`）。
+ * `create_string` 是 thiscall(mgr, pos[3], text)，文本我们已 vsnprintf 好，直接传指针。*/
+typedef void (__attribute__((thiscall)) *ce_fn_ascii_create_t)(void *mgr, const float *pos, const char *text);
 
 /* 真正干活的那层。font/group/align 传 -1 表示不动。 */
 static void ce_hud_text_raw(float x, float y, uint32_t bgra, uint32_t shadow,
@@ -248,24 +251,32 @@ static void ce_hud_text_raw(float x, float y, uint32_t bgra, uint32_t shadow,
     uint8_t *mgr = *(uint8_t **)CE_ADDR_ASCII_MANAGER_PTR;
     float pos[3], *sc, old_sc[2];
     uint32_t old_color, old_shadow = 0;
-    int old_font = 0, old_group = 0, old_align = 0;
+    int old_font = 0, old_group = 0, old_align = 0, old_shadows = 0;
 
     if (!mgr) return;
     pos[0] = x; pos[1] = y; pos[2] = 0.0f;
     sc = (float *)(mgr + CE_ASCII_SCALE);
     old_color = *(uint32_t *)(mgr + CE_ASCII_COLOR);
     *(uint32_t *)(mgr + CE_ASCII_COLOR) = bgra;
-    if (shadow)       { old_shadow = *(uint32_t *)(mgr + CE_ASCII_COLOR2); *(uint32_t *)(mgr + CE_ASCII_COLOR2) = shadow; }
+    if (shadow) {
+        old_shadow = *(uint32_t *)(mgr + CE_ASCII_COLOR2);
+        *(uint32_t *)(mgr + CE_ASCII_COLOR2) = shadow;
+        old_shadows = *(int *)(mgr + CE_ASCII_DRAW_SHADOWS);
+        *(int *)(mgr + CE_ASCII_DRAW_SHADOWS) = 1;          /* 打开描边遍 */
+    }
     if (font_id >= 0) { old_font  = *(int *)(mgr + CE_ASCII_FONT);    *(int *)(mgr + CE_ASCII_FONT)    = font_id; }
     if (group   >= 0) { old_group = *(int *)(mgr + CE_ASCII_GROUP);   *(int *)(mgr + CE_ASCII_GROUP)   = group; }
     if (align_h >= 0) { old_align = *(int *)(mgr + CE_ASCII_ALIGN_H); *(int *)(mgr + CE_ASCII_ALIGN_H) = align_h; }
     if (scale > 0.0f) { old_sc[0] = sc[0]; old_sc[1] = sc[1]; sc[0] = scale; sc[1] = scale; }
-    ((ce_fn_ascii_drawf_t)CE_FN_ASCII_DRAWF)(mgr, pos, "%s", text);
+    ((ce_fn_ascii_create_t)CE_FN_ASCII_CREATE)(mgr, pos, text);
     if (scale > 0.0f) { sc[0] = old_sc[0]; sc[1] = old_sc[1]; }
     if (align_h >= 0) *(int *)(mgr + CE_ASCII_ALIGN_H) = old_align;
     if (group   >= 0) *(int *)(mgr + CE_ASCII_GROUP)   = old_group;
     if (font_id >= 0) *(int *)(mgr + CE_ASCII_FONT)    = old_font;
-    if (shadow)       *(uint32_t *)(mgr + CE_ASCII_COLOR2) = old_shadow;
+    if (shadow) {
+        *(int *)(mgr + CE_ASCII_DRAW_SHADOWS) = old_shadows;
+        *(uint32_t *)(mgr + CE_ASCII_COLOR2) = old_shadow;
+    }
     *(uint32_t *)(mgr + CE_ASCII_COLOR) = old_color;
 }
 
@@ -282,6 +293,16 @@ void ce_hud_text(float x, float y, uint32_t bgra, const char *fmt, ...)
 /* 同上，但指定字体 / 分组 / 水平对齐（三者传 -1 = 用环境当前值）。
  * 金钱那行是 font 10 / group 3 / 右对齐，比默认的 font 0 大一圈 —— 想和它看着是一套就照抄。
  * 每一项都**先存后改、画完还原**：引擎后面的绘制全靠这些环境值，改了不还等于给别人埋雷。*/
+/* 原始键盘状态。窗口没焦点 / 线程没泵消息时 GetKeyboardState 给的是旧状态 —— 游戏主线程两者都满足。
+ * 256 字节栈缓冲，按虚拟键码索引，高位（0x80）置位 = 按下。*/
+int ce_key_down(int vk)
+{
+    unsigned char st[256];
+    if (vk < 0 || vk > 255) return 0;
+    if (!GetKeyboardState(st)) return 0;
+    return (st[vk] & 0x80) != 0;
+}
+
 void ce_hud_text_ex(float x, float y, uint32_t bgra, uint32_t shadow,
                     int font_id, int group, int align_h, float scale, const char *fmt, ...)
 {
@@ -348,14 +369,58 @@ uint8_t *ce_option_retry(ce_card_t *c, ce_option_t *o, int offset, int anm_scrip
     return ce_option_alloc(c, o, offset, anm_script, card);
 }
 
+/* 收掉挂在某个子机上的自机弹（激光）。一手：`Player__tick_bullets` `0x45edb0` 的池
+ * （`PLAYER+0x1570`、512 × 0x9c）、`PlayerBullet__create` `0x45e3ae` 把子机指针写进 `bullet+0xe4`、
+ * `tick2` `0x45fc80` 尾部的自杀段（`bullet+0x8c = 2` + 对 `bullet+8` 的束 VM 发 interrupt 1）。*/
+int ce_option_kill_bullets(void *option)
+{
+    uint8_t *pl = CE_PLAYER();
+    int i, n = 0;
+
+    if (!pl || !option) return 0;
+    for (i = 0; i < CE_PB_COUNT; ++i) {
+        uint8_t *b = pl + CE_PB_POOL + i * CE_PB_STRIDE;
+        if (*(int32_t *)(b + CE_PB_STATE) != 1) continue;              /* 只收「活动」的弹 */
+        if (*(void **)(b + CE_PB_OPTION) != option) continue;
+        *(int32_t *)(b + CE_PB_STATE) = 2;                             /* tick2 自杀段第一步 */
+        ce_anm_interrupt(*(uint32_t *)(b + CE_PB_VM_ID), 1);           /* 束脚本 interrupt 1 = 收束淡出 */
+        ++n;
+    }
+    if (n > 0) ce_log("option: killed %d lasers attached to %08x", n, (unsigned)(uintptr_t)option);
+    return n;
+}
+
 /* 收起子机：删它的 ANM VM（零售 `CardReimu1__operator_delete` `0x40ab20` 同款）、清零售在同一时机清的
- * flags bit1（`CardReimu1__method_4C` `0x40aad0`），松开我们记的指针。槽本身由引擎统一回收。*/
+ * flags bit1（`CardReimu1__method_4C` `0x40aad0`）、**收掉它发射出去的激光**，松开我们记的指针。
+ * 槽本身由引擎统一回收。*/
 void ce_option_drop(ce_card_t *c, ce_option_t *o)
 {
-    uint32_t *vm = (uint32_t *)((uint8_t *)c + CE_CARD_OPTION_ANM_ID);
     ce_card_flags(c) &= ~(uint32_t)CE_FLAG_EQUIP_RESET_BIT1;
-    if (*vm) { ce_anm_delete(*vm); *vm = 0; }
-    if (o) { o->ptr = 0; o->retry = 0; }
+    if (o && o->ptr) {
+        /* ★ 按**这个槽自己**的 VM id 删（option+0xb0）——不能一律删 card+0x1c：
+         * 引擎的 `Player__allocate_option` 每次分配都覆盖 card+0x1c（`th18:0x40a906`），
+         * 多子机卡里 card+0x1c 只记得**最后一个**；而且「收起没分配过的槽」时若按 card+0x1c 删，
+         * 会把**刚分配好的那颗**一起删掉（2026-09-09 季节卡实机：子机一直不出现就是这么来的）。
+         * 槽里的 VM id 在 option+0xb0（`th18:0x40a909`），分配器自己也按它清旧 VM（`th18:0x40a7d2`）。*/
+        uint32_t vm = *(uint32_t *)(o->ptr + CE_OPT_ANM_ID);
+        ce_option_kill_bullets(o->ptr);            /* ★ 先收激光：束只认射击键，子机没了它不会自己走 */
+        if (vm) {
+            uint32_t *card_vm = (uint32_t *)((uint8_t *)c + CE_CARD_OPTION_ANM_ID);
+            ce_anm_delete(vm);
+            *(uint32_t *)(o->ptr + CE_OPT_ANM_ID) = 0;
+            if (*card_vm == vm) *card_vm = 0;      /* 引擎那格也清掉，免得零售析构再删一次 */
+        }
+        /* ★ 槽也要真的松开：`Player__allocate_option` `0x40a790` 找空位的判据就是
+         * `equipment[i].in_use == 0`（`while (*(int *)pzVar11->field_0 != 0)`），**没有别的回收者**
+         * （全程序只有它自己写 in_use 与 option+0xb0）。不置 0 就是每收一次子机漏一格 ——
+         * 12 格用完后新子机再也申请不到（日志会是 `option allocated FAILED (pool full)`）。*/
+        *(int32_t *)(o->ptr + CE_OPT_IN_USE) = 0;
+        o->ptr = 0;
+        o->retry = 0;
+    } else {
+        uint32_t *vm = (uint32_t *)((uint8_t *)c + CE_CARD_OPTION_ANM_ID);
+        if (*vm) { ce_anm_delete(*vm); *vm = 0; }   /* o == NULL：零售单子机写法 */
+    }
 }
 
 static void hud_digit_kill(ce_hud_digit_t *d)
@@ -441,6 +506,111 @@ void ce_hud_number_set(ce_hud_number_t *n, float x, float y, float spacing,
         if (d[i] != n->shown[i] && ce_anm_set_sprite(anm, n->id[i], CE_ANM_ABILITY_SPRITE_TS_DIGIT_0 + d[i]))
             n->shown[i] = d[i];
     }
+}
+
+/* ============================ 贴图 VM 版文字 ============================ */
+
+/* 字符 → 零售字形 sprite。映射一手：`AsciiManager__draw_string` `0x41a2b0` 的 font 2/3 分支
+ * （数字 `char + 0x94` ⇒ '0' = 0xC4 = 196；`-` = 0xd0、`%` = 0xd2、`.` = 0xd3、`+` = 0xd4）。
+ * 切图见 assets/ability/make_font2_art.py，进 ability.anm 后就是 anm_ids.h 里的 FONT2_*。*/
+static uint32_t hud_vm_glyph(char ch)
+{
+    if (ch >= '0' && ch <= '9') return CE_ANM_ABILITY_SPRITE_FONT2_0 + (uint32_t)(ch - '0');
+    switch (ch) {
+    case '-': return CE_ANM_ABILITY_SPRITE_FONT2_MINUS;
+    case '%': return CE_ANM_ABILITY_SPRITE_FONT2_PERCENT;
+    case '.': return CE_ANM_ABILITY_SPRITE_FONT2_DOT;
+    case '+': return CE_ANM_ABILITY_SPRITE_FONT2_PLUS;
+    default:  return 0;                      /* 空格等：按字距跳过 */
+    }
+}
+
+static float hud_vm_ui_scale(void)
+{
+    float s = *(const float *)CE_ADDR_UI_SCALE;
+    return (s > 0.1f && s < 16.0f) ? s : 2.0f;
+}
+
+void ce_hud_vm_text_clear(ce_hud_vm_text_t *t)
+{
+    int i;
+    if (!t) return;
+    for (i = 0; i < CE_HUD_VM_TEXT_MAX; ++i) { ce_anm_delete(t->id[i]); t->id[i] = 0; t->shown[i] = 0; }
+    t->n = 0;
+}
+
+void ce_hud_vm_text_set(ce_hud_vm_text_t *t, float x, float y, uint32_t bgra,
+                        int align_h, float scale, const char *s, const char *tag)
+{
+    const char *p;
+    uint8_t *mgr = *(uint8_t **)CE_ADDR_ASCII_MANAGER_PTR;
+    void *anm = CE_ABILITY_ANM();
+    float dat = hud_vm_ui_scale(), sx = 1.0f, sy = 1.0f, total = 0.0f, pen, ytop;
+    int slot = 0, i;
+
+    if (!t || !anm || !s) return;
+
+    /* 字距/行高都乘 ASCII 环境的缩放（`ce_hud_text_ex` 的 scale 参数同款语义：0 = 用环境值）*/
+    if (scale > 0.0f) {
+        sx = sy = scale;
+    } else if (mgr) {
+        sx = *(float *)(mgr + CE_ASCII_SCALE);
+        sy = *(float *)(mgr + CE_ASCII_SCALE + 4);
+        if (!(sx > 0.01f && sx < 8.0f)) sx = 1.0f;
+        if (!(sy > 0.01f && sy < 8.0f)) sy = 1.0f;
+    }
+
+    /* ① 先量总宽（`.` 的字距是 4 而不是 7 —— 引擎的 `fVar11` 就是被它改掉的）*/
+    for (p = s; *p; ++p) total += (*p == '.') ? 4.0f * sx * dat : 7.0f * sx * dat;
+    pen = x * dat + ((align_h == CE_ASCII_ALIGN_CENTER) ? -total * 0.5f
+                   : (align_h == CE_ASCII_ALIGN_RIGHT)  ? -total
+                                                        : 0.0f);
+
+    /* ② 字形墨迹上沿（= 引擎的 VM pos.y）：`record+0x134` 三个分支 ——
+     *    0 居中（退半个行高 = 5×scale_y）、2 底（退一个行高 = 10×scale_y）、1 顶（不退）。*/
+    ytop = y * dat;
+    if (mgr) {
+        int av = *(int *)(mgr + CE_ASCII_ALIGN_V);
+        if (av == 0) ytop -= 5.0f * sy * dat;
+        else if (av == 2) ytop -= 10.0f * sy * dat;
+    }
+
+    /* ③ 逐字摆：VM 位置 = (笔 x, 墨迹上沿 + 5×scale_y×DAT)。
+     *    +5 来自贴图：16×32 的 entry 里 20 行字形上下各补 6 行，精灵中心 = 字形中心往下 1.5 行，
+     *    折到「上沿 + 半个字形高」就是 +5（详见脚本 136 与 make_font2_art.py 的注释）。*/
+    for (p = s; *p; ++p) {
+        uint32_t spr = hud_vm_glyph(*p);
+        float adv = (*p == '.') ? 4.0f * sx * dat : 7.0f * sx * dat;
+
+        if (spr && slot < CE_HUD_VM_TEXT_MAX) {
+            uint32_t *id = &t->id[slot];
+            float pos[3];
+            pos[0] = pen; pos[1] = ytop + 5.0f * sy * dat; pos[2] = 0.0f;
+            if (*id && !ce_anm_get_vm(*id)) { *id = 0; t->shown[slot] = 0; }
+            if (!*id) {
+                *id = ce_anm_spawn_ui(anm, CE_ANM_ABILITY_SCRIPT_HUD_GLYPH, pos);
+                t->shown[slot] = 0;
+                if (!*id) { ce_log("%s: hud glyph %d FAILED to spawn", tag, slot); return; }
+            } else {
+                ce_anm_set_pos(*id, pos[0], pos[1], 0.0f);
+            }
+            if (t->shown[slot] != spr) {
+                if (ce_anm_set_sprite(anm, *id, spr)) t->shown[slot] = spr;
+            }
+            ce_anm_set_color(*id, bgra);
+            ce_anm_set_scale(*id, sx, sy);
+            ++slot;
+        }
+        pen += adv;
+    }
+
+    /* ③ 串变短了 → 多出来的 VM 收掉 */
+    for (i = slot; i < t->n && i < CE_HUD_VM_TEXT_MAX; ++i) {
+        ce_anm_delete(t->id[i]);
+        t->id[i] = 0;
+        t->shown[i] = 0;
+    }
+    t->n = slot;
 }
 
 /* 在场的行为卡：沿 mgr 的卡链表走，按虚表认出我们的卡 */
@@ -549,6 +719,32 @@ int __cdecl BP_ce_enemy_drop(x86_reg_t *regs, void *bp_info)
 /* ---- collect-2x（辉针城卡）四断点（AUDIT §Z）。四个 handler 都在**原指令前**触发，读的是窗前值；
  * 与 public.h 四槽位（Task 2 追加在 hooks 表尾，缺槽 = NULL，不动的旧卡不受影响）一一对应。
  * 分派只认声明了该槽的卡；mgr 空 → 放行不触发。 ---- */
+/* ★ 擦弹（2026-09-10，天空璋卡）：`0x42497f` = 引擎自己算完一次**子弹擦弹**之后那一条。
+ * ESI = 刚被擦到的弹（`0x42496f` 已判过 `[esi+0x20]&4` 没擦过、`0x424984` 才置位），位置在 `esi+0x638`。
+ * 卡用 `ce_graze_take(&x,&y)` 取「自上次以来」的擦弹次数 + 最后一次的弹坐标（季节点从弹上撒）。*/
+static float   s_graze_x, s_graze_y;
+static int32_t s_graze_pending;
+
+int __cdecl BP_ce_graze(x86_reg_t *regs, void *bp_info)
+{
+    uint8_t *b = (uint8_t *)(uintptr_t)regs->esi;
+    (void)bp_info;
+    if (b) {
+        s_graze_x = *(const float *)(b + CE_BULLET_POS);
+        s_graze_y = *(const float *)(b + CE_BULLET_POS + 4);
+        if (s_graze_pending < 64) ++s_graze_pending;
+    }
+    return BP_EXEC_ORIGINAL;
+}
+
+int ce_graze_take(float *x, float *y)
+{
+    int n = s_graze_pending;
+    s_graze_pending = 0;
+    if (n > 0) { if (x) *x = s_graze_x; if (y) *y = s_graze_y; }
+    return n;
+}
+
 int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
 {
     (void)regs; (void)bp_info;

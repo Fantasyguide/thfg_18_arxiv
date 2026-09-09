@@ -1,0 +1,47 @@
+script script125 {
+    // 季节槽**实心背景条**（等级亮度）—— TH16 `front.anm` script116 逐条搬：
+    //   `drawRect(100,8)`；interrupt 8..13 = 逐档变亮（引擎写 `pending_interrupt = 档 + 7`）。
+    //   ★ 宽度**永不被引擎写**（恒 100）⇒ 它是背景；档 0 时卡侧写 alpha 0（TH16 连中断都不发）。
+-1:
+    sprite(-1);
+    ins_431(1);
+    layer(24);   // ★ 2026-09-10 第三十一轮：UI 表面 + 组 37（优先级 0x39）—— 比暂停模糊罩（组 38 = 0x3e）早画 ⇒ 暂停时被罩住
+    type(1);
+    zWriteDisable(1);
+    blendMode(0);
+    resolutionMode(2);
+    drawRect(100.0f, 8.0f);
+    color(64, 64, 255);
+    alpha(255);
++20: // 20
+    alphaTime(20, 0, 255);
+    stop();
+    interruptLabel(8);
+    color(64, 64, 255);
+    caseReturn();
+    interruptLabel(9);
+    color(96, 96, 255);
+    caseReturn();
+    interruptLabel(10);
+    color(128, 128, 255);
+    caseReturn();
+    interruptLabel(11);
+    color(144, 144, 255);
+    caseReturn();
+    interruptLabel(12);
+    color(192, 192, 255);
+    caseReturn();
+    interruptLabel(13);
+    color(224, 224, 255);
+    caseReturn();
+    interruptLabel(4);
+    alphaTime(5, 0, 255);
+    caseReturn();
+    interruptLabel(5);
+    alphaTime(5, 0, 64);
+    caseReturn();
+    interruptLabel(1);
+    alphaTime(20, 0, 0);
++20: // 40
+    delete();
+}

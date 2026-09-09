@@ -1,0 +1,36 @@
+script script115 {
+    // ★季节点本身（id 119）—— 外观**逐条照抄** TH16 `bullet.anm` script129（`bullet/item.png`
+    //   的 5 个 16×16 单元，见 engine/season/th16/01 §4 的一手字节）：
+    //     加算混合、10 帧淡入、16 帧从 2 倍缩到 1 倍、**随机自转**（第 0 帧 `rotate(%RANDRAD)`
+    //     + `fsetMul(%F0,%RANDF2,0.08726646)` + `angleVel(%F0)` = 0..5°/帧、方向随机）、
+    //     第 16 帧起 300 帧缩到 0.7 并淡到 alpha128、第 36 帧关掉加算并 stop。
+    //   贴图 = 从 TH16 零售 `bullet/item.png` 切的 5 张 16×16（春/夏/秋/冬/土用，右上 2×2 + (224,32)），
+    //   卡按副季节 `ce_anm_set_sprite` 换（脚本里的 @PT_SPRING 只是默认值）。
+    //   收集时卡发 interruptLabel(1) → 放大淡出后 delete。
+-1:
+    layer(13);
+    sprite(@PT_SPRING);
+    blendMode(1);
+    type(1);
+    zWriteDisable(1);
+    alpha(0);
+    alphaTime(10, 0, 255);
+    scale(2.0f, 2.0f);
+    scaleTime(16, 0, 1.0f, 1.0f);
+0:
+    rotate(0.0f, 0.0f, %RANDRAD);
+    fsetMul(%F0, %RANDF2, 0.08726646f);
+    angleVel(0.0f, 0.0f, %F0);
++16: // 16
+    scaleTime(300, 0, 0.7f, 0.7f);
+    alphaTime(300, 0, 128);
++20: // 36
+    blendMode(0);
+    stop();
+    interruptLabel(1);
+    blendMode(1);
+    scaleTime(8, 0, 1.8f, 1.8f);
+    alphaTime(8, 0, 0);
++8: // 8
+    delete();
+}

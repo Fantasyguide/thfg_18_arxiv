@@ -6,6 +6,7 @@
 
     python3 mkfiles.py                 # patch/ 与 patch-test/
     python3 mkfiles.py <dir> [<dir>…]  # 只刷给定目录（make dist 对 dist/patch-step3 用）
+    python3 mkfiles.py --check         # 只校验 cards.js（不写 files.js）
 """
 import subprocess
 import sys
@@ -52,9 +53,62 @@ def refresh(patch_dir):
     print("%s/files.js:" % os.path.basename(patch_dir), out)
 
 
-if len(sys.argv) > 1:
+# ── cards.js 静态校验（2026-09-09 加）──────────────────────────────────────
+# 为什么要有：DLL 的自检在**运行时**逐卡校验（cards_def.c `ce_card_validate`），任何一张卡不合规
+# 就走「mitigation: allocator bound restored to retail (56)」——**整批新卡全部失效**，玩家只看到
+# 「改的卡全没了」。2026-09-09 真的踩了：119 的 desc 写了 7 行（上限 6）。所以在**构建期**先查一遍，
+# 让它在 make files/dist/release 就红着退出，而不是等实跑。
+CARD_TEXT_LINE = 64          # 与 cards_def.h 的 CE_CARD_TEXT_LINE 同步（< 64 字节 UTF-8）
+CARD_DESC_LINES = 6          # 与 CE_CARD_DESC_LINES 同步
+
+
+def _card_text_ok(s):
+    return isinstance(s, str) and 0 < len(s.encode("utf-8")) < CARD_TEXT_LINE and "%" not in s
+
+
+def check_cards(patch_dir):
+    path = os.path.join(patch_dir, "th18", "cards.js")
+    if not os.path.isfile(path):
+        return
+    with open(path, encoding="utf-8") as f:
+        cards = json.load(f)
+    bad = []
+    for cid, c in cards.items():
+        if not isinstance(c, dict):
+            continue
+        if not _card_text_ok(c.get("name")):
+            bad.append("%s.name" % cid)
+        desc = c.get("desc")
+        if not isinstance(desc, list) or len(desc) > CARD_DESC_LINES:
+            bad.append("%s.desc (>%d lines)" % (cid, CARD_DESC_LINES))
+        else:
+            for i, line in enumerate(desc):
+                if not _card_text_ok(line):
+                    bad.append("%s.desc[%d]" % (cid, i))
+        for k, lo, hi in (("price_tier", 0, 14), ("weight", 0, 255)):
+            v = c.get(k)
+            if not isinstance(v, int) or not lo <= v <= hi:
+                bad.append("%s.%s" % (cid, k))
+        for k in ("sprite_large", "sprite_small"):
+            if not isinstance(c.get(k), int):
+                bad.append("%s.%s" % (cid, k))
+    if bad:
+        print("cards.js 校验失败（DLL 会因此把全部新卡禁用！）:", file=sys.stderr)
+        for b in bad:
+            print("  - " + b, file=sys.stderr)
+        sys.exit(1)
+    print("cards.js: %d 张卡全部合规（desc<=%d 行、每行<%d 字节、无 ASCII %%）"
+          % (len(cards), CARD_DESC_LINES, CARD_TEXT_LINE))
+
+
+if len(sys.argv) > 1 and sys.argv[1] == "--check":
+    for d in ("patch", "patch-test"):
+        check_cards(os.path.join(HERE, "..", d))
+elif len(sys.argv) > 1:
     for d in sys.argv[1:]:
+        check_cards(os.path.abspath(d))
         refresh(os.path.abspath(d))
 else:
     for d in ("patch", "patch-test"):
+        check_cards(os.path.join(HERE, "..", d))
         refresh(os.path.join(HERE, "..", d))

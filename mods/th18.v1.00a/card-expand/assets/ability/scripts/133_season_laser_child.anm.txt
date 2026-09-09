@@ -1,0 +1,20 @@
+script script133 {
+    // 激光的光斑（束根那颗转动的亮点）—— TH16 `pl01sub.anm` **script1** 逐条搬（一手）：
+    // layer 15 / 加算 / 自转 0.5067085 rad/帧 / 1.0↔0.5 每 4 帧脉动 / interrupt 1 缩到 0 再删。
+    layer(15);
+    type(1);
+    alpha(224);
+    blendMode(1);
+    angleVel(0.0f, 0.0f, 0.5067085f);
+    sprite(@LASER_CHILD);
+offset80:
+    scaleTime(4, 9, 1.0f, 1.0f);
++4: // 4
+    scaleTime(4, 9, 0.5f, 0.5f);
++4: // 8
+    jmp(offset80, 0);
+    interruptLabel(1);
+    scaleTime(8, 1, 0.0f, 0.0f);
++8: // 16
+    delete();
+}

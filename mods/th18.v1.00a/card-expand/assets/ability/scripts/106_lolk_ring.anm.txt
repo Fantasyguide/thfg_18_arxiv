@@ -1,0 +1,31 @@
+script script106 {
+    // 绀珠传（id 118）的擦弹圈 —— TH15 `effect.anm` script27 的 1:1 复刻
+    //（sprite24 = 零售 eff_sloweffect.png 右半那个空心环；见 assets/ability/make_lolk_ring_art.py）。
+    // 叠法 blendMode(2) = 反向减算：TH15 `AnmManager__setup_render_state_for_vm` th15:0x47d840
+    //   case 2 → SRCBLEND=SRCALPHA(5)、DESTBLEND=ONE(2)、BLENDOP=REVSUBTRACT(3)
+    //   ⇒ 结果 = dst − src×alpha（把背后的画面压暗，不发光）。
+    // 出现：alpha 0 → 96（30 帧淡入）＋ 2.48 → 1.155（12 帧由大变小）。
+    // 缩放值：我们的贴图是 TH15 的 64×64 放大到 128×128（亮环半径 44 px），
+    //   而擦弹判定的有效半径 = `3.6 × 判定半径(3.0) + max(br/2.5,40) ≈ 50.8 px`
+    //   （TH15 `th15:0x455d00` 的「变大」态系数 3.6，见 lolk.c 的 LOLK_GRAZE_RADIUS_SCALE）
+    //   ⇒ 落定 scale = 50.8 / 44 = 1.155；起始 = 1.155 × 2.15 = 2.48。
+    // ★ 2026-09-10 第二十六轮：之前落定 scale 写 1.0（= 44 px，正好等于 TH18 的**普通**擦弹圈），
+    //   用户指出「绀珠传的圈比普通的大」—— 按原代码的 3.6 系数改回大圈。
+    // 消失：C 触发 interruptLabel(1) → 12 帧渐隐 → 自删。
+-1:
+    sprite(@LOLK_RING);
+    type(1);
+    layer(12);
+    blendMode(2);
+    alpha(0);
+    alphaTime(30, 0, 96);
+    scale(2.48f, 2.48f);
+    scaleTime(12, 4, 1.155f, 1.155f);
+    angleVel(0.0f, 0.0f, 0.017453292f);
+0:
+    stop();
+    interruptLabel(1);
+    alphaTime(12, 0, 0);
++12: // 12
+    delete();
+}

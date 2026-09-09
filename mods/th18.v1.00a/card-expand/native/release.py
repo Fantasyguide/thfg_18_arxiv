@@ -7,6 +7,10 @@
 renkolab 是开发仓库，th18_modkit 是发布仓库（朋友 clone 下来一键启动）。
 Windows 那边只负责 `git pull`。
 
+**同步到别的 clone**（例如直接喂 WSL 里能看到的 `D:\…\th18_modkit`）：
+`MODKIT_DIR=<那个 clone> NO_GIT=1 make release` —— 只写文件 + 重算 files.js，
+不 fetch/pull/commit，也不要求目标仓库工作区干净（`patch.js` / 侧车 `.json` / README 是那边手工维护的，同步集里没有它们）。
+
 只覆盖**生成物**：两个 patch 的 th18.v1.00a.js、三个 patch 的 files.js、DLL、_255 的 th18/cards.js、th18/voice.js 与
 th18/voice/*.wav 与 th18/*.sht（目录镜像：dist 里没有就删）与重建的 th18/abcard.anm / ability.anm、_test 的 cards_dev.js、
 _devstage 的 patch.js + 六关 ECL（这个 patch 整个以 renkolab 为准）。
@@ -17,8 +21,9 @@ import json, os, subprocess, sys, zlib, hashlib
 HERE   = os.path.dirname(os.path.abspath(__file__))
 REPO   = os.path.abspath(os.path.join(HERE, "..", "..", "..", ".."))
 DIST   = os.path.join(HERE, "..", "dist")
-MODKIT = os.path.join(REPO, "local", "vendor", "th18_modkit")
+MODKIT = os.environ.get("MODKIT_DIR") or os.path.join(REPO, "local", "vendor", "th18_modkit")
 R      = os.path.join(MODKIT, "thcrap", "repos", "Renko_1055")
+NO_GIT = os.environ.get("NO_GIT") == "1"   # 只写文件 + 重算 files.js，不 fetch/pull/commit
 
 MAP = {                                   # dist 里的 → modkit 里的
     "patch-step3/th18.v1.00a.js": "thcrap/repos/Renko_1055/th18_card_expand_255/th18.v1.00a.js",
@@ -58,7 +63,7 @@ def sh(*args, cwd=None, check=True):
 
 def main():
     push = os.environ.get("PUSH") == "1"
-    if not os.path.isdir(os.path.join(MODKIT, ".git")):
+    if not NO_GIT and not os.path.isdir(os.path.join(MODKIT, ".git")):
         raise SystemExit("找不到发布仓库：%s\n先 git clone https://github.com/Renko6626/th18_modkit.git 到 local/vendor/" % MODKIT)
     for src in MAP:
         if not os.path.exists(os.path.join(DIST, src)):
@@ -67,14 +72,15 @@ def main():
         if not os.path.isdir(os.path.join(DIST, src)):
             raise SystemExit("dist 不完整，缺目录 %s —— 先 make dist" % src)
 
-    # 发布仓库必须干净、且在 main 的最新
-    if sh("git", "status", "--porcelain", cwd=MODKIT):
-        raise SystemExit("th18_modkit 工作区不干净，先处理掉再发布")
-    sh("git", "fetch", "-q", "origin", cwd=MODKIT)
-    behind = sh("git", "rev-list", "--count", "HEAD..origin/main", cwd=MODKIT)
-    if behind != "0":
-        sh("git", "pull", "-q", "--ff-only", "origin", "main", cwd=MODKIT)
-        print("th18_modkit：已快进 %s 个远端提交" % behind)
+    # 发布仓库必须干净、且在 main 的最新（NO_GIT 模式跳过：那是「同步到别人/别的 clone」）
+    if not NO_GIT:
+        if sh("git", "status", "--porcelain", cwd=MODKIT):
+            raise SystemExit("th18_modkit 工作区不干净，先处理掉再发布")
+        sh("git", "fetch", "-q", "origin", cwd=MODKIT)
+        behind = sh("git", "rev-list", "--count", "HEAD..origin/main", cwd=MODKIT)
+        if behind != "0":
+            sh("git", "pull", "-q", "--ff-only", "origin", "main", cwd=MODKIT)
+            print("th18_modkit：已快进 %s 个远端提交" % behind)
 
     changed = []
     for src, dst in MAP.items():
@@ -113,6 +119,11 @@ def main():
             open(f, "w", encoding="utf-8").write(txt)
             changed.append("thcrap/repos/Renko_1055/%s/files.js" % p)
 
+    if NO_GIT:
+        print("NO_GIT=1：已写入 %d 处改动（未提交、未推送）" % len(changed))
+        for c in changed:
+            print("  " + c)
+        return 0
     if not sh("git", "status", "--porcelain", cwd=MODKIT):
         print("th18_modkit 已是最新，无需提交")
         return 0

@@ -360,5 +360,39 @@
     "weight": 2,
     "sprite_large": 162,
     "sprite_small": 163
+  },
+  "118": {
+    "name": "绀珠传",
+    "desc": [
+      "擦弹会让场上的掉落物慢下来，",
+      "松手后很快恢复。",
+      "boss 战按「一个非符 + 一张符卡」",
+      "切成一波，波末按擦弹数与击破率",
+      "结算章节奖。",
+      "致敬・东方绀珠传。"
+    ],
+    "internal_name": "LOLK_CHAPTER",
+    "initial_unlocked": 1,
+    "price_tier": 10,
+    "weight": 2,
+    "sprite_large": 116,
+    "sprite_small": 117
+  },
+  "119": {
+    "name": "天空璋",
+    "desc": [
+      "敌人掉落、擦弹、消弹都会掉出季节点，",
+      "按 TH16 阈值分 0..6 档；子机越多越快。",
+      "S 键切换春/夏/秋/冬/土用，阵位照原版。",
+      "按 A 季节解放：按副季节清弹 + 无敌，",
+      "春/秋/冬 清空槽、夏/土用 只扣一档。",
+      "致敬・东方天空璋。"
+    ],
+    "internal_name": "SEASON",
+    "initial_unlocked": 1,
+    "price_tier": 10,
+    "weight": 2,
+    "sprite_large": 116,
+    "sprite_small": 117
   }
 }

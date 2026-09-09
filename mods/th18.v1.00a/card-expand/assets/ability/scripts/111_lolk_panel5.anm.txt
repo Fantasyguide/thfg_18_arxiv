@@ -1,0 +1,18 @@
+script script111 {
+    // 绀珠传（id 118）波次面板第 5 条：TH15 front.anm script241 的子脚本 248
+    //（scale(0,1) → scaleTime(10,0,1,1) 的横向展开）。C 起 VM、按 TH15 的偏移摆位。
+-1:
+    sprite(@LOLK_PANEL_5);
+    ins_431(1);
+    type(1);
+    layer(24);      // ★ 2026-09-10 第三十一轮：UI 表面 + 组 37（0x39）—— 早于暂停模糊罩（组 38 = 0x3e）⇒ 暂停时被罩住，平时保持全分辨率
+    resolutionMode(2);
+    scale(0.0f, 1.0f);
+    scaleTime(10, 0, 1.0f, 1.0f);
+0:
+    stop();
+    interruptLabel(1);
+    alphaTime(10, 0, 0);
++10: // 10
+    delete();
+}
