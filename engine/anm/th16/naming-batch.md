@@ -124,7 +124,7 @@
 | `0x460568` | `126` | `126__mathTan` | 调 `0x488790`（同 `32/π` 归约 + 一条倒数 `divsd`） |
 | `0x4605a3` | `127` | `127__mathAcos` | 调 `0x487af0`（asin Taylor 系数 + `sqrtsd` + π/2 与 π） |
 | `0x4605de` | `128` | `128__mathAtan` | 调 `0x488010`（`abs(x)==inf → ±π/2`，`-1.0/x` 归约） |
-| `0x460619` | `129` | `129__mathReduceAngle` | 调 `0x402d30`，第二参传 0；把 θ 折进 `[-π, π]`，最多 33 次 |
+| `0x460619` | `129` | `129__mathReduceAngle` | 调 `0x402d30`，第二参传 0；把 θ 折进 `[-π, π]`，**最多 34 次** |
 | `0x460663` | `130` | `130__mathCirclePos` | 调 `0x464930`；`*x = cos(θ)*r`、`*y = sin(θ)*r` |
 | `0x4606f5` | `131` | `131__mathCirclePosRand` | 两次 `0x402cb0`（**`[-1,1)`**）抽角与半径，再调 `0x464d60` |
 | `0x45fc12` | `201__jmpIfPos` | `201__jmpDec` | 先 `dec` 再判 `> 0`；社区名没体现「自减」这一半，而自减才是它的主要作用 |
@@ -145,7 +145,7 @@
 | `0x488010` | `FUN_00488010` | `libm_sse2_atan` | `0x4882a6` 判 `abs(x)==+inf` 返回 `±π/2`；`-1.0/x` 归约；无 `sqrtsd` |
 | `0x464930` | `cartesian_from_polar_464930` | `math_polar_to_xy_2ptr` | 输出写**两个**独立 `float*`（`ECX`/`EDX`），只服务 `130` |
 | `0x464d60` | `cartesian_from_polar_464d60` | `math_polar_to_xy_vec2` | 输出写**同一个** `float[2]`（`ECX`），8 处调用方 |
-| `0x402d30` | `math_wrap_angle_402d30` | `math_wrap_angle_clamped33` | 名字要体现「最多 33 次 ±2π 就放弃」，否则移植会写成无界 `fmod` |
+| `0x402d30` | `math_wrap_angle_402d30` | `math_wrap_angle_max34steps` | 名字要体现「最多 34 次 ±2π 就放弃」（守卫比的是自增**前**的计数器），否则移植会写成无界 `fmod`；泄漏阈值 `abs(θ) ≈ 216.77` = 69π |
 
 ### 数据符号
 
@@ -156,8 +156,8 @@
 | `0x45f8fc` / `0x45f91c` | `ANM_INTVARPTR_JUMPTABLE`（`void*[8]`）/ `ANM_INTVARPTR_JUMPINDEX`（`u8[30]`） | `get_int_var_ptr` `0x45f890` 的两级表，基 10000 |
 | `0x45f830` / `0x45f870` | `ANM_FLOATVARPTR_JUMPTABLE`（`void*[16]`）/ `ANM_FLOATVARPTR_JUMPINDEX`（`u8[32]`） | `get_float_var_ptr` `0x45f780` 的两级表，基 10004 |
 | `0x45f710` / `0x45f758` | `ANM_INTVAR_JUMPTABLE`（`void*[18]`）/ `ANM_INTVAR_JUMPINDEX`（`u8[36]`） | `get_int_var` `0x45f610` 的两级表，基 10000 |
-| `0x4a6d80` | `PRNG_STREAM_B__PRESENTATION` | ANM VM / 屏幕震动 / 雾 全走它；**不进回放**。见 `03-math-jumps.md` §7.4 |
-| `0x4a6d88` | `PRNG_STREAM_A__GAMEPLAY` | ECL / 弹幕 / 掉落 全走它；回放关键。（🟡：命名依据是调用方分布，非直接标记） |
+| `0x4a6d80` | `PRNG_STREAM_B` | ANM 侧 16 个 PRNG 调用点里的 13 个走它（`122`/`123`/`131` 与变量 `10010–10012`/`10022`），另有屏幕震动 / 雾。**⚠️ 别把「不进回放」写进符号名**——ANM 变量 `10030–10032` 走的是 Stream A，见 `03-math-jumps.md` §7.4 |
+| `0x4a6d88` | `PRNG_STREAM_A` | ECL / 弹幕 / 掉落 走它；ANM 侧变量 `10030–10032` 也走它。（🟡：「回放关键」这层含义来自调用方分布，非直接标记） |
 | `0x494588` | `F_PI`（`3.1415927f`） | `0x402d30` 的上界、`0x46073d` 把 `[-1,1)` 乘成角度 |
 | `0x4945b8` | `F_TWO_PI`（`6.2831855f`） | `0x402d52` / `0x402d72` 的步长 |
 | `0x494734` | `F_NEG_PI`（`-3.1415927f`） | `0x402d61` 的下界 |
@@ -176,6 +176,8 @@
 | `0x4600bb` | 120 mod3：同 idiv，取 EDX 余数；余数符号随被除数 |
 | `0x460472` | 122 rand：唯一做了零除守卫的一条（n==0 → 0）；div 是**无符号**的 |
 | `0x46075e` | 131：半径 = lo + randf_signed()*(hi-lo)，randf_signed ∈ [-1,1) ⇒ 区间不是 [lo,hi]，社区文档在此有误 |
+| `0x402d50` | 角度归一循环：守卫 cmp 的是自增**前**的计数器 ⇒ 上限 34 步（两个循环共用计数器）；abs(x) > 69π≈216.77 会原样漏出 |
+| `0x45f4fe` | ★ get_float_var 变量 10031/10032/10030 走 **Stream A（`0x4a6d88`，回放流）**，与紧邻的 10011/10012/10010（Stream B）是同公式镜像 |
 | `0x45f8f6` | get_int_var_ptr 默认分支：把入参指针原样退回 = 指令流里的那 4 字节（自修改字节码入口） |
 | `0x45f82a` | get_float_var_ptr 默认分支：同上 |
 | `0x488540` | libm_sse2_sin 的扇区偏置 `0x1c7600`；cos（`0x488380`）是 `0x1c7610`，差 16 个 π/32 扇区 = π/2 |

@@ -81,7 +81,17 @@
   一手加载路径 `0x46cdd0` → `0x46d1c0` → `0x46d3b0`；配套命名单 [`naming-batch.md`](naming-batch.md)。
 - ✅ **已出**:[`02-vm-core.md`](02-vm-core.md) —— VM 骨架(`AnmVm::run` `0x45f980` 主循环、`zAnmVm` 字段图、
   时间闸门与 `GAME_SPEED`、interrupt 查找、`delete`/`static`/`stop` 终止语义、三段式分发表)。
-- 待做:`03-anm-vm-opcodes.md`(134 个 opcode 的语义,对 thanm/thpages)、显示对象模型(创建/池/模板/释放)。
+- ✅ **已出**:[`03-math-jumps.md`](03-math-jumps.md) —— opcode **100–131 / 200–213** 共 46 条
+  (整/浮算术、随机、sin/cos/tan/acos/atan、角度归一、极坐标、14 条跳转)的签名与语义，
+  含四个专项:变量槽编号与编码、除零/取模边界、跳转目标是字节偏移、跳转后 `time` 怎么设。
+  **这一篇同时是后续 opcode 分组文档的格式范例**(表 + 专项 + 社区裁决 + 真实数据对账 + 播放器的坑)。
+- 待做:`134` 个 opcode 里剩下的 **88 条**——System(300–317)、Settings、General(400–438)、
+  Child(500–509)、Drawing(600–613)分组各一篇;以及显示对象模型(创建/池/模板/释放)。
+
+> ⚠️ **新增分组文档时,记得回来把它加进上面这份清单。**
+> `tooling/check-docs.py --orphans` **查不出**这类遗漏——分组文档与 [`naming-batch.md`](naming-batch.md)
+> 互相链接就已经"有入链"了(自满足的交叉链接),但从 README / OVERVIEW 仍然走不到它。
+> 收口任务请**显式对照本清单**,不要依赖 `--orphans`。
 - `tooling/ghidra/scripts/apply_th16_anm_names.py`(函数/数据符号/注释,headless 可复现)。
 - 稳定后回填 THTK-Studio 仓库的 `docs/`。
 
