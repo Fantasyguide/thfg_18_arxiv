@@ -317,7 +317,8 @@ git add runtime/anm engine/anm/th16 && git commit -m "feat(runtime/anm): v8 解�
 1. `zAnmVm` 的字段图（至少：当前指令指针、时间、pos/scale/rotation/color/uv、flag 位场、父子指针）
 2. 每帧驱动：谁 tick、一帧内推进多少、时间标签（`time`）与指令执行的关系
 3. **interrupt 机制**：怎么触发、怎么找到目标标签、触发后时间怎么变
-4. 指令流的终止语义（`0 delete` / `15 static` / `stop` / 跑到末尾）
+4. 指令流的终止语义（v8 的 `1 delete` / `2 static` / `3 stop` / 跑到末尾；
+   ⚠️ `0` 在 v8 是 `nop`，v8 无 opcode 15 —— 初稿误把 TH06(v0) 的编号搬进 v8 语境，R2 一手纠正）
 
 **一手源**：`labels.json` 的 `anm` 键给了 137 条 case label 带地址，其中
 `th16:0x45fb9a end_loop_iter` / `th16:0x45fba0 begin_loop_iter` 直接框出了**解释器主循环**——从那里往外扩。
@@ -527,7 +528,8 @@ test('所有 46 条 opcode 都已注册', () => {
 
 ### R4：System 组（0–99，8 条）→ `engine/anm/th16/04-system.md`
 
-含社区 `wip:2` 的 `4 stop2`。重点：与 `0 delete` / `15 static` / `stop` 的生死语义如何区分——
+含社区 `wip:2` 的 `4 stop2`。重点：与 `1 delete` / `2 static` / `3 stop` 的生死语义如何区分
+（⚠️ `0` 是 `nop`，v8 无 opcode 15；R2 已在 `02-vm-core.md` §6.2 给出一手，本组据此复核）——
 这条直接决定 I2 的骨架对不对，若与 `02-vm-core.md` 冲突，**以本任务的一手为准并回改 02**。
 
 ### R5：Settings 组（300–399，18 条）→ `engine/anm/th16/05-settings.md`
