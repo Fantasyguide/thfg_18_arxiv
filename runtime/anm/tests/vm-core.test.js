@@ -10,7 +10,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { parseAnm } from '../src/format/anm-v8.js';
-import { createVm, stepFrame, registerGroup, resolveArg, PC_HANDLED, triggerInterrupt } from '../src/vm/core.js';
+import { createVm, stepFrame, registerGroup, resolveArg, isVarBit, PC_HANDLED, triggerInterrupt } from '../src/vm/core.js';
+
+// resolveArg 的浮点侧变量号解码要求“10000 的 float32 位模式”，不是十进制 10000
+// （math-jumps §3 结论④：浮点指令把变量号也编成 float32）——测试里独立算一遍位模式，
+// 不复用 core.js 内部的 u32BitsToFloat32（那是私有实现细节，测试不应该依赖它）。
+function f32BitsOf(value) {
+  const f = new Float32Array([value]);
+  return new Uint32Array(f.buffer)[0];
+}
 
 // 最小 op 表：只实现 set/add，用来验骨架而非验组
 const ops = {};
@@ -67,7 +75,27 @@ test('resolveArg 对未注册的变量号报错（不是静默按字面量放行
   const vm = createVm(loadScript('./fixtures/vm-timing.anm', 1));
   // 10010 不在 I2 骨架实现的 I0–I3/F0–F3 范围内（02-vm-core.md §3.4 还有别的变量号，
   // 但那些留给用到它们的 opcode 组扩展）——resolveArg 应该报错，而不是返回某个乱数。
-  assert.throws(() => resolveArg(vm, 10010, true, 'int'), /不在 I2 骨架已实现的范围内/);
+  assert.throws(() => resolveArg(vm, 10010, true, 'int'), /I2 骨架尚未覆盖/);
+});
+
+// 跨类型变量读：math-jumps §3 明确 get_int_var/get_float_var 的定义域都是 10000–10035，
+// 不是各自只认自己类型那 4 个槽——真实数据里 827 个整型变量参数有 9 次是 opcode 100/112
+// （整型指令）去读 F0。这不是边角情况，I0–I3/F0–F3 这 8 个槽必须支持跨类型读。
+test('跨类型变量读：整型指令读浮点槽 F0（cvttss2si，截零）', () => {
+  const vm = createVm(loadScript('./fixtures/vm-timing.anm', 1));
+  vm.f[0] = 3.75;
+  // kind='int' 时变量号本身按 int32 解码（math-jumps §3 结论④：编码取决于指令类型，
+  // 不取决于被引用的变量），所以这里直接传十进制 10004，不用转 float32 位模式。
+  assert.equal(resolveArg(vm, 10004, true, 'int'), 3, 'cvttss2si 截零：3.75 -> 3（不是 4，不是 floor）');
+});
+
+test('跨类型变量读：浮点指令读整型槽 I0（cvtdq2ps）', () => {
+  const vm = createVm(loadScript('./fixtures/vm-timing.anm', 1));
+  vm.i[0] = 7;
+  // kind='float' 时变量号按 float32 位模式编码——传 f32BitsOf(10000)，不是十进制 10000
+  // （直接传十进制会被 u32BitsToFloat32 按位重解释成一个跟 10000 毫不相干的极小浮点数，
+  // Math.trunc 之后大概率是 0，命中 I0 反而说明测试写错了，不是巧合过关）。
+  assert.equal(resolveArg(vm, f32BitsOf(10000), true, 'float'), 7);
 });
 
 // ── 跳转（字面目标）──────────────────────────────────────────────────────
@@ -100,4 +128,54 @@ test('interrupt：命中标签后从标签之后的指令继续跑', () => {
   triggerInterrupt(vm, 7);
   stepFrame(vm, ops); // 需要 opcode 100（set）的 handler 才能跑标签后面那条指令
   assert.equal(vm.i[0], 777, 'interrupt 命中 7 号标签，跳过标签本身，执行紧跟着的 ins_100(0,777)');
+});
+
+// ── 终止（五个分支里“死”的那一半，前一轮完全没覆盖）──────────────────────────
+// vm-core.md §6.1：-1/1（delete）不跑帧尾、直接销毁；2（static）不跑帧尾但只冻结，
+// alive 不变；这是两条容易混淆的路径，必须分别断言。
+test('终止：opcode 1 delete 后 pc=-1 且 alive=false', () => {
+  const vm = createVm(loadScript('./fixtures/vm-timing.anm', 4));
+  stepFrame(vm, ops);
+  assert.equal(vm.i[0], 11, 'delete 之前那条 ins_100 应该先跑完');
+  assert.equal(vm.pc, -1);
+  assert.equal(vm.alive, false);
+});
+
+test('终止：opcode 2 static 冻结（pc=-1）但 alive 不变——这是它与 delete 的关键差异', () => {
+  const vm = createVm(loadScript('./fixtures/vm-timing.anm', 5));
+  stepFrame(vm, ops);
+  assert.equal(vm.i[0], 22, 'static 之前那条 ins_100 应该先跑完');
+  assert.equal(vm.pc, -1);
+  assert.equal(vm.alive, true, 'static 只冻结脚本，vm 本身仍然“活着”，不同于 delete');
+});
+
+test('终止：脚本隐式结束（没有任何终止指令，fetchInstruction 返回 null）等价于 delete', () => {
+  const vm = createVm(loadScript('./fixtures/vm-timing.anm', 6));
+  stepFrame(vm, ops);
+  assert.equal(vm.i[0], 33);
+  assert.equal(vm.pc, -1);
+  assert.equal(vm.alive, false, '01-format.md §5.1：脚本末尾的 opcode=-1 结束标记不进 instructions 数组，' +
+    '但跑到那里就是 delete 语义');
+});
+
+// ── 分发循环护栏（vm-core.md §9 点名要求，见 core.js 文件头）────────────────────
+test('分发循环护栏：自跳脚本被护栏截住，不会真的死循环下去', () => {
+  const jmpOps = {};
+  registerGroup(jmpOps, {
+    200: (vm, args) => {
+      vm.pc = args[0];
+      return PC_HANDLED;
+    },
+  });
+  // 覆盖成很小的上限，好让测试快速触发，不用真的空转 20 万次。
+  const vm = createVm(loadScript('./fixtures/vm-timing.anm', 7), { maxInstructionsPerFrame: 5 });
+  assert.throws(() => stepFrame(vm, jmpOps), /单帧执行的指令数超过 5 条上限/);
+});
+
+// isVarBit 是给各 opcode 组用的小工具，骨架自己（case 6 wait）也在用它，这里顺带验证
+// 一下它本身的行为：bit 0 置位 / 不置位两种情况都要对。
+test('isVarBit：按位判断 param_mask 的第 index 位', () => {
+  assert.equal(isVarBit(0b1, 0), true);
+  assert.equal(isVarBit(0b10, 0), false);
+  assert.equal(isVarBit(0b10, 1), true);
 });

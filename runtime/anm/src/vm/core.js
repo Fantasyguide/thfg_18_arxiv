@@ -28,6 +28,17 @@
 //     （entry → 多个活 VM 实例）的职责，`createVm(script, opts)` 直接吃一个 script，
 //     没有模板/克隆的概念。
 //
+// ★ 有一处是刻意“建模”成跟原版不一样的，不在上面“不建模”清单里，单独说：
+//   - **分发循环的护栏**（vm-core §9 原话：“主循环无上限……自跳脚本会真的卡死。移植时
+//     必须自己加护栏”——这句是文档点名要求的，不能算“正当省略”）。原版没有保护，
+//     `200 jmp` 跳回同一时间刻度是已知会让 `0x45fba0` 死转的情形；照抄“无保护”搬到
+//     JS 里后果比原版更严重——原版死循环好歹能靠任务管理器强杀进程，浏览器主线程真死
+//     没有等价手段。所以 `stepFrame` 的分发循环有一个每帧最大指令数的硬顶
+//     （`createVm(script, { maxInstructionsPerFrame })`，默认见下方常量），超过就抛错
+//     （带 `vm.pc`/`vm.time`，方便定位是哪个脚本卡死），不会真的把 JS 主线程锁死。
+//     代价：理论上单帧执行指令数极端多的合法脚本会被误伤——真实 54 个 th16 anm 里最长
+//     单帧执行量远低于默认阈值，目前没有见过这种脚本。
+//
 // 接口：
 //   createVm(script, opts?) -> vm
 //   stepFrame(vm, ops) -> void
@@ -38,6 +49,12 @@
 //   PC_HANDLED                                          （handler 用它告诉骨架“我已经改过 pc”）
 
 const INSTR_HEADER_SIZE = 8; // 01-format.md §5.1，与 anm-v8.js 的 INSTR_HEADER_SIZE 同一常量
+
+// vm-core §9 点名要求的分发循环护栏（见文件头“刻意建模成跟原版不一样”那条）的默认值。
+// 54 个真实 th16 anm 里最长单 script 才 43268 条*全脚本*指令（不是单帧执行量，单帧通常
+// 只跑同一 time 标签下的几条），这里给了两个数量级的余量；调用方可以用
+// `createVm(script, { maxInstructionsPerFrame })` 覆盖（测试里会调小它来快速触发护栏）。
+const DEFAULT_MAX_INSTRUCTIONS_PER_FRAME = 200_000;
 
 function instrSize(instr) {
   return INSTR_HEADER_SIZE + instr.args.length * 4;
@@ -93,6 +110,8 @@ export function createVm(script, opts = {}) {
     _savedPc: 0, // vm-core §3.1 saved_instr_offset
     _gameSpeed: opts.gameSpeed ?? 1, // 见文件头“不建模”清单：真实 GAME_SPEED 是全局态，
     // 骨架把它简化成每个 vm 自己的固定步长
+    _maxInstructionsPerFrame: opts.maxInstructionsPerFrame ?? DEFAULT_MAX_INSTRUCTIONS_PER_FRAME,
+    // 见文件头“分发循环的护栏”一条：vm-core §9 点名要求移植方自己加保护
   };
 }
 
@@ -223,7 +242,16 @@ export function stepFrame(vm, ops) {
   }
 
   // §2 ⑤：分发循环——把这一帧该跑的指令一口气跑完。
+  let guard = 0;
   for (;;) {
+    // 见文件头“分发循环的护栏”：vm-core §9 点名要求的保护，原版没有、这里刻意加了。
+    if (++guard > vm._maxInstructionsPerFrame) {
+      throw new Error(
+        `stepFrame: 单帧执行的指令数超过 ${vm._maxInstructionsPerFrame} 条上限，多半是脚本` +
+          `发生了死循环（vm-core.md §9：原版对此没有任何保护，自跳脚本会真的卡死；` +
+          `骨架加了这道护栏，代价见 core.js 文件头）。当前 vm.pc=${vm.pc}, vm.time=${vm.time}`,
+      );
+    }
     const fetch = fetchInstruction(vm);
     if (fetch === null) {
       terminateDeleted(vm);
@@ -260,7 +288,7 @@ export function stepFrame(vm, ops) {
         // wait n：不是“设定目标”，是把时间往回拨 n（§2 case 6 / §4 结论）。
         // n 走 param_mask bit0：可以是字面量，也可以是变量（这条本身就是 resolveArg
         // 在骨架里的一个真实用例，不需要靠任何 opcode 组）。
-        const isVar = (instr.paramMask & 1) !== 0;
+        const isVar = isVarBit(instr.paramMask, 0);
         const n = resolveArg(vm, instr.args[0], isVar, 'int');
         timerAdjust(vm, -n);
         vm.pc += size;
@@ -301,20 +329,35 @@ export function stepFrame(vm, ops) {
 // 10027–10029 常量……本骨架只实现 I0–I3/F0–F3 这 8 个（brief 明确只要这些）——
 // 其余变量号留给要用到它们的 opcode 组（比如要读 pos.x 的 General 组）自己按需扩展
 // 这张表，不在 I2 骨架范围内。
+//
+// ★ 跨类型读（读取值，不是解析哪个变量号——见下面 resolveArg 的两段式说明）：
+// math-jumps §3 明确 `get_int_var`/`get_float_var` 的定义域**都是 10000–10035**，
+// 不是各自只认自己那 4 个槽——`get_int_var(10004..10007)` 走 `cvttss2si`（读浮点槽转
+// 整型，截零），`get_float_var(10000..10003)` 走 `cvtdq2ps`（读整型槽转浮点）。真实数据
+// 里这不是理论边界：827 个整型变量参数里有 9 次是 opcode 100/112 用整型指令去读 F0
+// （math-jumps §3 结论④：“变量号的编码取决于指令的类型，不取决于变量本身”——即使引用的
+// 是 F0，只要宿主指令是整型指令，那 4 个字节就按 int32 编码）。所以 I0–I3/F0–F3 这 8 个
+// 槽内部要能跨类型读，这不是“未实现的变量号”（10008/10022 那类才是），下面两个函数
+// 分别处理各自的两种情况：本类型直接读，另一类型转换后读。10008 及以上仍然抛，但
+// 措辞改成“I2 骨架尚未覆盖”而不是笼统的“越界”——这两者不是一回事。
 
 function readIntVar(vm, varId) {
   if (varId >= 10000 && varId <= 10003) return vm.i[varId - 10000];
+  if (varId >= 10004 && varId <= 10007) return Math.trunc(vm.f[varId - 10004]); // cvttss2si：截零，不是 floor
   throw new Error(
-    `resolveArg: 整型变量号 ${varId} 不在 I2 骨架已实现的范围内` +
-      '（目前只有 I0–I3 = 10000–10003，见 02-vm-core.md §3.4；其余变量号留给需要它们的 opcode 组扩展）',
+    `resolveArg: 变量号 ${varId} 是 I2 骨架尚未覆盖的变量号` +
+      '（02-vm-core.md §3.4 还有更多变量号——10008/10009、pos/rotation 分量、随机数……' +
+      '留给需要它们的 opcode 组扩展；I0–I3/F0–F3 这 8 个槽本身已经支持跨类型读）',
   );
 }
 
 function readFloatVar(vm, varId) {
   if (varId >= 10004 && varId <= 10007) return vm.f[varId - 10004];
+  if (varId >= 10000 && varId <= 10003) return Math.fround(vm.i[varId - 10000]); // cvtdq2ps：整型转 float32 精度
   throw new Error(
-    `resolveArg: 浮点变量号 ${varId} 不在 I2 骨架已实现的范围内` +
-      '（目前只有 F0–F3 = 10004–10007，见 02-vm-core.md §3.4；其余变量号留给需要它们的 opcode 组扩展）',
+    `resolveArg: 变量号 ${varId} 是 I2 骨架尚未覆盖的变量号` +
+      '（02-vm-core.md §3.4 还有更多变量号——10008/10009、pos/rotation 分量、随机数……' +
+      '留给需要它们的 opcode 组扩展；I0–I3/F0–F3 这 8 个槽本身已经支持跨类型读）',
   );
 }
 
@@ -336,7 +379,9 @@ function u32BitsToFloat32(u32) {
  *
  * @param {ReturnType<typeof createVm>} vm
  * @param {number} raw    01-format.md §5.1 的原始 u32 参数值（未经解释的那 4 个字节）
- * @param {boolean} isVariable   这个参数位在 param_mask 里的对应 bit 是否置位
+ * @param {boolean} isVariable   这个参数位在 param_mask 里的对应 bit 是否置位（通常来自
+ *   isVarBit——它对 bit 9–15 同样能算，但 01-format.md §5.2 说这些高位从没被验证过，
+ *   调用方引用 9 个以上参数的 opcode 时留意这条）
  * @param {'int' | 'float'} kind   调用方（某条具体 opcode 的语义）知道这个参数该按整型
  *   还是浮点读——骨架本身不含这个知识，所以要求调用方明说
  * @returns {number}
@@ -360,7 +405,11 @@ export function resolveArg(vm, raw, isVariable, kind) {
 
 /**
  * resolveArg 的配套小工具：判断 param_mask 的第 index 位是否置位。
- * 01-format.md §5.1/§5.2：bit i = 第 i 个参数是变量 id。
+ * 01-format.md §5.1：bit i = 第 i 个参数是变量 id。纯位运算，对任意 index 都对；
+ * 但 01-format.md §5.2 的可信度分层要带过来：真实数据只验证过 bit 0–8（54 个 th16
+ * anm 里最高只用到 bit 8），**bit 9–15 ❓ 从没被验证过**——不代表它们是保留位，只是
+ * 没有证据；调用方（尤其是要写 9 个以上参数的 opcode，如果真的存在）读高位时心里要有
+ * 这根弦，这条 isVarBit 本身不会替你做这个判断。
  * @param {number} paramMask
  * @param {number} index
  */

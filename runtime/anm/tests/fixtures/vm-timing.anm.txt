@@ -22,6 +22,18 @@
 //   script 3（id -4）interrupt —— interrupt 测试：`ins_5(7)` 是 interrupt 号 7 的标签
 //     （opcode 5 的语义就是“我是一个标签，我的参数是我的编号”，vm-core.md §5 结论1），
 //     命中后从标签之后的指令继续跑。
+//
+//   script 4（id -5）explicitDelete —— 终止测试①：`ins_1()` = opcode 1 delete。
+//     vm-core.md §6.1：pc 写 -1，vm 被标记“请销毁”（骨架落成 vm.alive=false）。
+//   script 5（id -6）explicitStatic —— 终止测试②：`ins_2()` = opcode 2 static。
+//     与 delete 的关键差异：只冻结（pc=-1），vm.alive **不**变——这条差异之前没有测试
+//     覆盖过，是这一轮补的。
+//   script 6（id -7）implicitEnd —— 终止测试③：脚本没有任何显式终止指令，直接跑完。
+//     01-format.md §5.1：脚本末尾那条 opcode=-1 的结束标记不进 instructions 数组，
+//     跑到这里 = fetchInstruction 返回 null，等价于 delete（vm.alive=false）。
+//   script 7（id -8）selfJmp —— 分发循环护栏测试：`ins_200(here, 0)` 的 dest 是它自己
+//     的字节偏移，真死循环（vm-core.md §9 点名的那种）。这条不测真实值，只测骨架的
+//     `maxInstructionsPerFrame` 护栏会不会在合理的指令数内截住它。
 entry vmTiming {
     version: 8,
     name: "minimal.png",
@@ -59,4 +71,27 @@ script -4 interrupt {
 0:
     ins_5(7);
     ins_100(0, 777);
+}
+
+script -5 explicitDelete {
+0:
+    ins_100(0, 11);
+    ins_1();
+}
+
+script -6 explicitStatic {
+0:
+    ins_100(0, 22);
+    ins_2();
+}
+
+script -7 implicitEnd {
+0:
+    ins_100(0, 33);
+}
+
+script -8 selfJmp {
+0:
+here:
+    ins_200(here, 0);
 }

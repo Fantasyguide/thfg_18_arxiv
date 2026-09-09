@@ -49,12 +49,19 @@ entry 链表 / sprite 表 / script 表 / 指令流，只做结构解析，不含
   （配套小工具 `isVarBit(paramMask, index)`）、`triggerInterrupt(vm, n) -> void`、
   handler 用来声明「我已经自己改过 pc」的哨兵 `PC_HANDLED`。
 - **变量解析**：目前只实现 I0–I3 / F0–F3（变量号 10000–10007，
-  [`engine/anm/th16/03-math-jumps.md`](../../engine/anm/th16/03-math-jumps.md) §3 专项①）——
-  `02-vm-core.md` §3.4 变量表里其余变量号留给用到它们的 opcode 组按需扩展。
+  [`engine/anm/th16/03-math-jumps.md`](../../engine/anm/th16/03-math-jumps.md) §3 专项①），
+  **支持这 8 个槽内部的跨类型读**（整型指令读浮点槽走 `cvttss2si`，浮点指令读整型槽走
+  `cvtdq2ps`——`03-math-jumps.md` §3：`get_int_var`/`get_float_var` 的定义域都是
+  10000–10035，真实数据里 opcode 100/112 有 9 次这样跨类型读 F0，不是边角情况）。
+  `02-vm-core.md` §3.4 变量表里其余变量号（10008 及以上）留给用到它们的 opcode 组按需扩展。
 - **跳转**：骨架只提供「handler 可以直接改写 `vm.pc`（字节偏移），骨架据此不再 `+= size`」
   这套通用机制（`PC_HANDLED`），不认识任何具体跳转 opcode。**这个 VM 里不存在变量跳转
   目标**——`03-math-jumps.md` §2.1/§5 一手证实跳转族（200/201/202–213）的 `dest`/`t` 恒为
   字面量，不查 `param_mask`。
+- **分发循环护栏**：`02-vm-core.md` §9 点名要求移植方自己加保护（原版无迭代上限，自跳
+  脚本会真死循环，JS 主线程死锁比原版更致命）——`stepFrame` 每帧执行指令数有一个可配置
+  上限（`createVm(script, { maxInstructionsPerFrame })`，默认 20 万），超限抛错而不是
+  真的锁死。这是骨架里唯一一处**刻意**跟原版行为不同的地方，理由见 `core.js` 文件头。
 - **明确不建模**（范围决策，理由见 `core.js` 文件头注释）：GAME_SPEED 全局寄存器与
   slowdown、`on_tick`/`on_wait` 回调、`flags_lo`/`flags_hi`（含 `stop`/`stopHide` 的可见性
   差异）、帧尾几何（速度积分/全局滚动/UV 重算/插值器）、`AnmLoaded`/`AnmManager` 层的模板
