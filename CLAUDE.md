@@ -73,3 +73,7 @@ source tooling/env.sh         # 探测并导出 GHIDRA_INSTALL_DIR / JAVA_HOME
   都要带前缀 `th16:`。写完跑 `python tooling/check-docs.py`。细则见 [`DOCSTYLE.md`](DOCSTYLE.md)。
 - 涉及**手写机器码 / ABI** 的产出（cave、hook），必须上对抗审计——
   见 [`mods/_template/AUDIT-checklist.md`](mods/_template/AUDIT-checklist.md)。
+- **★ 铁律：UI 与动画行为一律先从原代码找。** 动手写任何 UI / 动画 / 特效前，
+  必须先在原游戏的 anm 脚本 + 引擎函数里找到它**原本怎么做**（脚本号、地址、数值、触发条件），
+  照抄实现；贴图走零售切图，别自己画。原版确实找不到的，标 `❓ 自定` 并登记，**不许包装成「复刻」**。
+  完整版与反面教材见 [`METHOD.md`](METHOD.md) 的「铁律:UI 与动画一律先从原代码找」。

@@ -7,23 +7,27 @@
 
 | 项 | 值 |
 | --- | --- |
-| exe | `local/th16.v1.00a/th16.exe`，md5 `cb9caf54ce5738f70086e783ec88fd2a`，683,520 B |
+| exe | `local/th16.v1.00a/th16.exe`，683,520 B，md5 `70d3429444e1e6c18a72e7200a4d7ce8`（**Steamless 脱壳版**；零售 md5 `cb9caf54ce5738f70086e783ec88fd2a` 因 PE 容器重建而不同，代码段一致）|
 | imagebase | `0x400000`（32 位 PE） |
 | Ghidra 工程 | `local/th16.v1.00a/ghidra_projects/th16.exe.{gpr,rep}` |
 | MCP `database_id` | `th16` |
 | 归档 | `local/th16.v1.00a/th16.dat`（THA1，解包结论见 [`archive-tha1.md`](../../engine/_shared/archive-tha1.md)） |
 
+> ✅ **2026-09-09 样本现状**：本机只有 **Steam 包装版** exe（md5 `701a603c2afc686776ffddacbed4ee4e`，
+> `.text` 被 SteamStub 3.1 加密），已用 **Steamless** 在 Linux 上脱壳为可分析样本（配方见
+> [`local/README.md`](../../local/README.md)），Ghidra 工程已重建。上表 Ghidra 工程路径仍有效。
+
 ## 符号覆盖
 
-由 `tooling/ghidra/bootstrap.py th16 --dry-run` 实测（2026-09-01）：
+由 `tooling/ghidra/bootstrap.py th16` 重建后实测（2026-09-09，脱壳版 exe）：
 
 | 来源 | 数量 |
 | --- | --- |
-| exe 内函数总数 | 1764 |
-| 已命名（ExpHP + 我们自己） | 1294 |
-| 🔬 真·待挖（仍是 `FUN_`） | 470 → 清单见 [`unexplored.md`](unexplored.md) |
-| ExpHP 可套符号 | `skipped=1185 missing=123`（safe 模式，`applied=0` = 已全部套过，幂等） |
-| ExpHP 结构体 | 158（`failed=0`） |
+| exe 内函数总数 | 1863 |
+| 已命名（ExpHP + 我们自己） | 1334 |
+| 🔬 真·待挖（仍是 `FUN_`） | 529 → 清单见 [`unexplored.md`](unexplored.md) |
+| ExpHP 符号 | `applied=1267 skipped=41 missing=0`；补建函数 `created=213` |
+| ExpHP 结构体 | 158（`failed=7`）+ statics 398 + labels 422 |
 
 > ⚠️ [`unexplored.md`](unexplored.md) 本身的统计停在 2026-06-10（当时 872 已命名 / 515 待挖），
 > 比上表旧。要刷新，跑 `bootstrap.py` 后再跑 `tooling/ghidra/build_worklist.py`。

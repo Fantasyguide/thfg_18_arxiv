@@ -13,20 +13,25 @@
 
 ## 断言 × 版本矩阵
 
-| 断言 | th16 | th18 | 证据 |
-| --- | :---: | :---: | --- |
-| 生命是 5 态状态机，`player_update_perframe` `th16:0x442560` 按 `+0x165a8` switch | ✅ | 🟡 | [th16/01 §1](th16/01-hit-life-system.md) |
-| 无敌帧计数在 `+0x1663c` | ✅ | 🟡 | [th16/01 §3](th16/01-hit-life-system.md) |
-| 死亡 commit 与复活是分离的两步（复活在状态 2、帧 >0x1d） | ✅ | 🟡 | [th16/01 §4–5](th16/01-hit-life-system.md) |
-| 聚焦 = INPUT bit3，读 `+0x165c8`（**订正**了早期把它当 SHT 字段的说法） | ✅ | 🟡 | [th16/03 §3](th16/03-fire-input-movement.md) |
-| 开火门控在 `Player__tick_shooting_state` `th16:0x4455d0` | ✅ | 🟡 | [th16/03 §2](th16/03-fire-input-movement.md) |
-| 炸弹由独立 `Bomb` 对象承载（0x108 字节，`Bomb__operator_new` `th16:0x40d890`） | ✅ | ❓ | [th16/02 §1](th16/02-season-release-and-bombs.md)、[th16/05 §2](th16/05-object-field-maps.md) |
-| **主炸与季节释放是两套计费**：主炸耗角色库存，季节释放耗季节槽 | ✅ | ❌ | [th16/02 §2–5](th16/02-season-release-and-bombs.md)；th18 见 [card/](../card/OVERVIEW.md) |
-| option/子机由 `PlayerInner__repopulate_options` `th16:0x4440e0` 整体重建 | ✅ | 🟡 | [th16/04 §1](th16/04-options-subshot-system.md) |
-| 本体子机挂火力档、季节子机挂季节档，是两条独立链 | ✅ | ❌ | [th16/04 §2–3](th16/04-options-subshot-system.md) |
-| 伤害源从 `PLAYER+0xd080` 池分配（stride 0x94，256 个） | ✅ | 🟡 | [th16/05 §3](th16/05-object-field-maps.md)、[sht/th16/08 §2](../sht/th16/08-th16-player-damage-pipeline.md) |
-| 命碎片**没有任何拾取来源**（负结论，evidence-complete） | ✅ | 🟡 | [th16/06 §4](th16/06-resource-economy.md) |
-| 自机位置 = `inner.field_0` 前 12 字节（float px）+ 8 字节 1/128 定点 | 🟡 | ✅ | [th18/01](th18/01-position-and-state-timers.md) |
+| 断言 | th15 | th16 | th18 | 证据 |
+| --- | :---: | :---: | :---: | --- |
+| 生命是 5 态状态机，`player_update_perframe` `th16:0x442560` 按 `+0x165a8` switch | — | ✅ | 🟡 | [th16/01 §1](th16/01-hit-life-system.md) |
+| 无敌帧计数在 `+0x1663c` | — | ✅ | 🟡 | [th16/01 §3](th16/01-hit-life-system.md) |
+| 死亡 commit 与复活是分离的两步（复活在状态 2、帧 >0x1d） | — | ✅ | 🟡 | [th16/01 §4–5](th16/01-hit-life-system.md) |
+| 聚焦 = INPUT bit3，读 `+0x165c8`（**订正**了早期把它当 SHT 字段的说法） | — | ✅ | 🟡 | [th16/03 §3](th16/03-fire-input-movement.md) |
+| 开火门控在 `Player__tick_shooting_state` `th16:0x4455d0` | — | ✅ | 🟡 | [th16/03 §2](th16/03-fire-input-movement.md) |
+| 擦弹落点 = 一个 per-graze 函数（`th15:0x4573a0` / `th16:0x444cf0` / `th18:0x45e160`） | ✅ | ✅ | ✅ | [th15/01 §1](th15/01-graze-and-item-slowdown.md)、[th16/01 §2c](th16/01-hit-life-system.md)、[th18/02 §1](th18/02-graze-and-item-slowdown.md) |
+| 擦弹把「道具下落减速因子」打成 0.3（每帧 +0.1 恢复） | ✅ | ❌ | ❌ | [th15/01 §4](th15/01-graze-and-item-slowdown.md)、[th18/02 §2](th18/02-graze-and-item-slowdown.md) |
+| `zItemManager` 有 `lolk_item_slowdown_factor` 字段、引擎每帧 +0.1 恢复（TH18 无人写它） | ❓ | ❓ | ✅ | [th18/02 §2](th18/02-graze-and-item-slowdown.md) |
+| 擦弹判定两种模式：矩形外扩 **24 px** / 圆形边距 `max(弹半径/2.5, 40)` | ✅ | 🟡 | ✅ | [th15/01 §1b](th15/01-graze-and-item-slowdown.md)、[th18/02 §1b](th18/02-graze-and-item-slowdown.md) |
+| 同一颗弹可以重复擦弹（per-bullet 冷却） | ✅ | ❓ | ❌ | [th15/01 §1b](th15/01-graze-and-item-slowdown.md)、[th18/02 §1b](th18/02-graze-and-item-slowdown.md) |
+| 炸弹由独立 `Bomb` 对象承载（0x108 字节，`Bomb__operator_new` `th16:0x40d890`） | — | ✅ | ❓ | [th16/02 §1](th16/02-season-release-and-bombs.md)、[th16/05 §2](th16/05-object-field-maps.md) |
+| **主炸与季节释放是两套计费**：主炸耗角色库存，季节释放耗季节槽 | — | ✅ | ❌ | [th16/02 §2–5](th16/02-season-release-and-bombs.md)；th18 见 [card/](../card/OVERVIEW.md) |
+| option/子机由 `PlayerInner__repopulate_options` `th16:0x4440e0` 整体重建 | — | ✅ | 🟡 | [th16/04 §1](th16/04-options-subshot-system.md) |
+| 本体子机挂火力档、季节子机挂季节档，是两条独立链 | — | ✅ | ❌ | [th16/04 §2–3](th16/04-options-subshot-system.md) |
+| 伤害源从 `PLAYER+0xd080` 池分配（stride 0x94，256 个） | — | ✅ | 🟡 | [th16/05 §3](th16/05-object-field-maps.md)、[sht/th16/08 §2](../sht/th16/08-th16-player-damage-pipeline.md) |
+| 命碎片**没有任何拾取来源**（负结论，evidence-complete） | — | ✅ | 🟡 | [th16/06 §4](th16/06-resource-economy.md) |
+| 自机位置 = `inner.field_0` 前 12 字节（float px）+ 8 字节 1/128 定点 | — | 🟡 | ✅ | [th18/01](th18/01-position-and-state-timers.md) |
 
 > **图例**：✅ 该版本一手验过（证据列给地址/出处） · 🟡 待验（从别的版本借来的假设，或单源） · ❌ 已知不同/不存在 · ❓ 存疑 · — 未看
 >

@@ -143,3 +143,29 @@
   覆写 `bullet+0x64`）。这是 `CardAlice` 的做法，零售天天在跑。
 - **`+0x1c` 只在按住射击键时广播**（`0x45EA00` 里被 `short_timer != prev` 那层门罩着）；
   想要不按射击键也定时开火，得自己在别的槽里调 `0x40A9C0` 并自带计时器。
+
+### 5b. 子机槽是**12 格公共池**，收子机时槽要自己松开（一手，2026-09-10）✅
+
+`Player__allocate_option` `0x40A790`（`ecx = card`）逐格扫 `PLAYER->inner.equipment`（`inner+0x410`）：
+
+```c
+for (i = 0; i < 12 && equipment[i].in_use != 0; ++i) {}   // 0x40a79b 起：`while (*(int*)pzVar11->field_0 != 0)`
+if (i > 11) return NULL;                                   // 池满
+equipment[i].in_use = 2;                                   // 0x40a7a7 写 2（不是 1）
+AnmManager__sub_488cf0(equipment[i].anm_id);               // 0x40a7d2 删旧 VM
+equipment[i].anm_id = 0;                                   // 0x40a7e3
+equipment[i].owner   = *(int*)(card + 8);                  // 0x40a7f2 → option+0xd0
+... 之后建新 VM，id 写进 option+0xb0（0x40a909）与 card+0x1c（0x40a906）
+```
+
+- **空位判据只有 `in_use == 0`**：全程序**没有任何其它写 `in_use` 或 `option+0xb0` 的地方**
+  （`find_struct_writes` 扫 `+0xb0` / `+0x00` 两处均只有 `0x40A790` 自己，2026-09-10 复核）。
+  ⇒ 卡 `ce_anm_delete` 掉子机 VM **不等于**还了槽；不写 `in_use = 0` 就是每收一次漏一格，
+  12 格漏完新子机再也申请不到。
+- **槽的公共性**：零售卡（`CardReimu1__on_power_level_change` `0x40AAE0`）与 mod 的装备卡共用这 12 格
+  （`zPlayerOption` 步长 **0xf0**，一手 `PlayerBullet__create` `0x45e430` 的 `IMUL EAX,EAX,0xf0`
+  + `[player + EAX + 0x5dc]`；日志里连续三次 `option allocated` 的指针正好差 0xf0）；
+  认领时用 `option+0x00 != 0 && option+0xd0 == card+0x08` 判「这格还是我的吗」。
+- **收子机还要收它的激光**：激光（`mode=2`）的寿命只跟射击键走、**不跟子机** ——
+  见 [`../../sht/th18/03`](../../sht/th18/03-func-tables-timers-and-dead-fields.md) §5.4；
+  只删子机 VM 会在按住射击键时留下一条残束。

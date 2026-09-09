@@ -29,12 +29,39 @@
 - `0x488cf0`：`push [ebp+8]` 后调 `get_vm_with_id`，唯一出口 `ret 4`。
 - `sub_407420` 的脚本表：`anm+0x10c` 基址、步长 `0x60c`——与 [`../th16/README.md`](../th16/README.md) 里 th16 的「`mgr+0x10c` 步长 `0x5fc` 模板数组」同构（th18 模板多 0x10 字节）。
 
+## 2b. 卡里写 UI VM 脚本的两条硬约束（2026-09-10 实跑踩出来的）✅
+
+1. **别在脚本里写 `pos()`**。UI 列表的 VM 位置由 C 每帧 `ce_anm_set_pos` 写；脚本里的 `pos()`
+   会把它覆盖成脚本里的值。从 TH16 搬 `front.anm` 的季节槽脚本时，`pos(-377, 888)` 是 TH16 的槽坐标，
+   在 TH18 的 UI 空间里等于屏幕外 → **整组 VM 消失**（数字是 ASCII 文字画的，所以还在）。
+2. **别用 opcode 612（`drawRectBorder`）**。thtk 的 `v8.anmm` 标它 `TH16+`，而 TH18 的**所有零售 anm
+   里零使用**（`grep drawRectBorder local/th18.v1.00a/anm/*/*.anm.txt` 无命中）。用它会出问题
+   （2026-09-10 实测：改用它之后游戏启动即 `C0000005`，改回 `drawRect` 正常）→ 外框用
+   `drawRect(102,10)` 打底 + 内部填充盖住 1 px 即可。
+3. 层号：UI 列表 VM 的层 24–32 会被折到 37–45 组；**层 20–23 也能画**（相机 1），
+   但 20–23 **不参与暂停模糊**（模糊只作用在层 3–19 的游玩区 surface）。
+4. **同层叠放顺序 = 生成顺序：后生成的画在上面**（一手 `0x4882b8`）。
+   `ce_anm_spawn_ui` 走 `AnmLoaded__instantiate_vm_to_ui_list_back` `0x409670` →
+   `AnmManager__insert_in_ui_list_back` `0x488490`（节点 = `vm+0x574`，`node[0]=vm`、`node[1]=next`、
+   `node[2]=prev`，**尾插**、`ui_list_tail` 后移）；`AnmManager__render_layer` `0x4882b8`
+   先走 `mgr+0x6f0`（`world_list_head`）再走 `mgr+0x6f8`（`ui_list_head`），**两条都是表头 → 表尾**
+   ⇒ 尾部的（最后生成的）最后画 = 压在上面。
+   复刻原版层内叠放时按原版 `scriptNew` 次序生成即可（季节槽就靠这条：背景条先生成、进度条后生成）。
+
 ## 3. 坐标与层（与 ANM 脚本的配合）
 
 - `vm+0x54/+0x58` = scale x/y（ExpHP；HUD 充能条 `0x408a53` 写 +0x58 当 fill 比例，同时 `+0x70` uv_scale.y、`+0x80` uv 滚动）；`vm+0x524` color_1 是 D3DCOLOR `0xAARRGGBB`。
 - 实体坐标 `vm+0x5f0` 是 ECL 坐标；`originMode(1)` 下 (0,0) 是**弹幕区上边框中点**（x 居中、y 从顶部起算；2026-09-04 实跑 ✅：
   2D 配方脚本 pos(0,0,0) 出现在上边框中点）。场地正中 = **(0, 224)**（384×448 的区域）。thpages 说的「ECL (0,0)」就是这个点，不是几何中心。
 - `layer` 参数写 `vm+0x18`；脚本里的 `layer(n)` 会再覆盖。零售「场地中央展示卡」的 `abcard.anm script14` 用 `layer(16)`（子弹之上）；Tenshi 要石用 13。
+- **世界层 VM 的坐标与尺寸都是「640 空间」的 ECL 单位：1 单位 = 2 表面 px**（scale 2 时）。
+  一手换算：表面 = `(640 + x × DAT_0056aca0, 32 + y × DAT_0056aca0)`（`DAT_0056acb4 = ac80/2 = 640`、
+  `DAT_0056acb8 = scale × 16 = 32`，`FUN_00454b20` `0x454b20` 尾）；游玩区 = ECL x ∈ [−192,192]、y ∈ [0,448]。
+  ⚠️ 与 `resolutionMode` 的相互作用（`AnmManager__draw_vm` `0x4817d8`/`0x481b3f`：
+  `vm+0x538 & 0x1c00000` = 0 → 尺寸 ×1；= `0x400000`（`resolutionMode(1)`）→ × `DAT_0056aca0`；
+  = `0x800000`（`resolutionMode(2)`）→ × `DAT_0056aca0 × 0.5`）：
+  **世界层里 `resolutionMode(2)` 的尺寸就是世界单位**，所以从 UI 层（1 单位 = 1 表面 px）搬过来的脚本
+  要**把尺寸 ÷2** 才保持屏幕大小（2026-09-10 季节槽/绀珠传面板搬迁时踩过：漏了这步 → 字与条整体放大一倍）。
 - 一次性特效让脚本自己 `delete()`，卡对象不必记 id；需要外部收尾才走 `interrupt_tree` + `0x488cf0`（Tenshi 模式）。
 
 ## 3b. 渲染模式 8（`type(8)`，三维旋转）与相机偏移 —— 2026-09-04 实跑「显示不对」的根因

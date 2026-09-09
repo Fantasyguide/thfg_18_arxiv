@@ -96,7 +96,14 @@ SUBSEASON_BOMB_PTR = sub;
 
 **充能 `item_collect_season` `0x43de50`**(捡一个季节道具):`CURRENT_SEASON_POWER += 1`(封顶 `MAX_SEASON_POWER`);
 返回 `true` 当且仅当这一加**跨过了一个档位阈值**(给 UI/音效播"升档")。
-**当前档位 `get_season_gauge_fill_ratio` `0x43df20`**:数 `CURRENT_SEASON_POWER` 越过几个阈值 = 当前档(0..5)。
+**档位 vs 填充比**:「当前档」= 数 `CURRENT_SEASON_POWER` 越过几个阈值（0..6，各调用点内联计数）；
+**`get_season_gauge_fill_ratio` `0x43df20` 返回的是「当档内的填充比 0..1」**（满档返回常量 `0x4944d8`），
+不是档位本身 —— 2026-09-09 一手反编译订正，见
+[`season/th16/01`](../../season/th16/01-season-data-and-tables.md) §2.3。
+
+**季节点从哪来**（掉落机制）:两条通道 —— ①按累计伤害（`seasonItemDamage(D)` → 每 `D` 点伤害掉一个）；
+②死亡时按计时器线性衰减（`dropSeason(T,N,M)` → `N` 个衰减到 `M` 个）。全链一手反编译见
+[`season/th16/01`](../../season/th16/01-season-data-and-tables.md) §5。
 
 ## 3. 能不能放 / 放出去:`Bomb::can_bomb` / `activate_bomb` ✅
 
@@ -168,6 +175,29 @@ ENEMY_MANAGER+0x40 += 1;                          // 释放计数器(疑计分/�
   在半径内**当炸弹清弹**(`BulletManager__cancel_radius_as_bomb` / `LaserXxx__cancel_as_bomb_*` 族)。
 - **强度随季节档**:三张 per-副季节表 `RELEASE_LEVEL_RADIUS_* / _RADIUS_2_* / _DURATION_*`(Doyou 版已见;
   其余副季节各有一组,命名同形)→ 档越高,清弹圈越大、屏障越久。
+**释放的视觉** ✅(2026-09-10 补,`BombSubDoyou__begin` `0x40e0f0` 一手 + `pl00sub.anm` 字节):
+
+```c
+pos = player->pos;  bomb+0x2c = -1.5707964f;  play_sound_centered(0x4a);
+vm_out = create(PLAYER_PTR->subseason_anm_file, script 3, pos);   // 外圈
+vm_out->F0 = RELEASE_LEVEL_RADIUS_<季节>[level];      // +0x4b0 = float_script_vars[0]
+vm_out->F1 = RELEASE_LEVEL_RADIUS_2_<季节>[level];    // +0x4b4 = float_script_vars[1]
+vm_out->I3 = RELEASE_LEVEL_DURATION_<季节>[level];    // +0x4ac = int_script_vars[3]
+vm_in  = create(PLAYER_PTR->subseason_anm_file, script 4, pos);    // 内圈
+```
+
+anm 源 = **`zPlayer.subseason_anm_file`**（= 副 sht 的贴图包 `plXXsub.anm`），两个脚本逐条同构：
+
+| 脚本 | 层 | 混合 | 颜色 | 动作 |
+| --- | --- | --- | --- | --- |
+| `pl00sub script3`（外） | 13 | `blendMode(2)` 减算 | `color(128,128,128)` → `color2(0,128,0)` | `drawPoly(1.0f,32)` |
+| `pl00sub script4`（内） | 12 | `blendMode(1)` 加算 | `color(255,128,128)` → `color2(255,0,0)` | `drawPoly(1.0f,32)` |
+
+两者都是：`sprite(-1)` + `drawPoly(1.0f, 32)`（1 单位半径的 32 边形 = 实心圆），
+第 1 帧 `scaleTime(10, 4, %F0, %F1)`（10 帧扩到半径）、第 11 帧起 `alphaTime(250, 0, 64)`，
+然后 `wait($I3)`（持续帧数）→ `interruptLabel(1)` → `alphaTime(20, 0, 0)` → `delete()`。
+→ **特效的生命周期就是释放的生命周期**（§5d 的 `on_tick` 拿 VM 还在不在决定结束）。
+
 ### 5b. 五个季节释放 `begin` 同构(Spring 实证,补)✅
 
 `BombSubSpring__begin` `0x411460` 与 Doyou 版**逐行同构**,仅换 per-副季节常量:
@@ -246,8 +276,64 @@ for (laser in g_laser_mgr 链表)  if (laser+0x10 != 1)
 - → **主炸 = 实例化自主寻的弹对象(自带物理/AI/生命周期),季节释放 = 跟随一个 anm 特效在其中心清弹+造伤**。
   两者只共用 `Bomb` 外壳调度。(BombReimu 实证;其余角色主炸 begin 同样置 `+0x1664c` bit0x4 + 120 帧无敌,见 `05`。)
 
-## 6. player 侧的触发点(回指 `engine/player/th16/01`)✅
+### 5g. 五个副季节的**释放圈配色/形状**（一手逐字节，2026-09-10 补）✅
 
+`BombSub*__begin` 各建 **两个** `drawPoly` VM，脚本号**不是统一的 3/4** —— 冬在 `pl01sub` 的 **20/21**：
+
+| 副季节 | anm 文件 | 脚本（外/内） | 外圈 `color` → `color2` | 内圈 `color` → `color2` | 内圈边数 | 自转 `angleVel` | 内圈 `alpha` | 额外 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 春 Spring | `pl00sub` | 3 / 4 | (128,128,128)→(0,128,0) 灰→绿 | (255,128,128)→(255,0,0) 粉→红 | 32 | 无 | 255 | — |
+| 夏 Summer | `pl02sub` | 3 / 4 | (255,128,128)→(255,128,0) 粉→橙 | (128,192,255)→(0,192,255) 蓝→青 | 12 | ±0.17453292 | 128 | — |
+| 秋 Fall | `pl03sub` | 3 / 4 | (128,128,255)→(0,128,255) 蓝→青 | (255,192,128)→(255,192,0) 橙→黄 | 12 | ±0.17453292 | 128 | 两段 scale |
+| 冬 Winter | `pl01sub` | **20 / 21** | (255,128,128)→(255,128,0) 粉→橙 | (128,192,255)→(0,192,255) **蓝→青** | 12 | ±0.17453292 | 128 | 两段 scale |
+| 土用 Doyou | `pl04sub` | 3 / 4 | (255,128,128)→(255,128,0) 粉→橙 | (128,192,255)→(0,192,255) 蓝→青 | 12 | ±0.17453292 | 128 | `posTime(60,1,0,48,0)` |
+
+- 两个脚本都是 `sprite(-1)` + `drawPoly(1.0f, N)`（半径 1 的 N 边形 = 圆）：**外圈 `blendMode(2)` 减算、
+  内圈 `blendMode(1)` 加算**；自转 `angleVel(±0.17453292, 0, ±0.17453292)` = 10°/帧（外 +、内 −）。
+  ⚠️ 2D 图元只读 **rz**（`AnmManager__draw_vm` `th18:0x4817d8` 只取 `vm+0x44`）⇒ x 分量不参与观感。
+- 扩张：春/夏 `scaleTime(10, 4, %F0, %F1)`；秋/冬 `scaleTime(10,4,%F0,%F0)` 后再
+  `scaleTime($I3, 4, %F1, %F1)`；土用 `scale(%F0,%F0)` + `scaleTime(50, 0, %F1, %F1)`。
+- **冬 = 蓝圈**（用户实跑口径「冬天是蓝色的，外面有描边」= 蓝→青的 12 边形内圈叠在粉→橙外圈上），
+  这也是「五季都写成春的粉色」的对照物：卡的 `season_ring()` 表逐行照本表。
+- 脚本号一手：`BombSub*__begin` 里两处 `AnmLoaded__create_40e5c0(..., script, ...)` 的实参
+  （`0x410150` 冬 = `0x14`/`0x15`，其余 `0x411460`/`0x40f590`/`0x40ec70`/`0x40e0f0` = `3`/`4`）。
+
+### 5h. ★ 秋 / 冬 的「加速态」= 1.5× 速度 + 每帧一个**自机残像**（一手，2026-09-10）✅
+
+**① 两个字段**（`BombSub*__on_tick` 每帧写、消费端每帧复位 1.0）：
+
+| 副季节 | on_tick | 写的字段 | 值 | 消费端（一手） |
+| --- | --- | --- | --- | --- |
+| 秋 Fall | `0x40eeb0` | `player+0x16688` | 1.5f | `Player__move` `0x441f43`：**自机移速 ×1.5** + `Player__on_tick` `0x442ce7`（残像）|
+| 冬 Winter | `0x4103e0` | `player+0x2c7cc` | 1.5f | `EnemyData__step_logic` `0x41c5d6`：`enm_compute_damage_sources` `0x445a30` 算出的**对敌伤害 ×1.5**；另 `EnemyManager__on_tick_1a__body` `0x41b449` 按它 >1.01 置 `player+0x1664c` bit0x20（→ 残像）|
+
+> ⚠️ 早前 `05` §1b 把 bit0x20 记成「速度缩放态」是**错的**：全程序读 bit0x20 的只有
+> `Player__on_tick` `0x442c32`（残像/闪色），真正被乘的是 `+0x2c7cc` 自己 ——
+> 乘在**伤害**上（`0x41c5d6` 紧跟在 `enm_compute_damage_sources` 的返回之后）。
+> 秋/冬 的差异因此是「**秋 = 加速、冬 = 加伤**」，不是同一种。
+
+**② 残像**（`Player__on_tick` `0x442c76` / `0x442d33`，两个分支各一份、逐字节同构）：
+
+```c
+// 无敌中（0x442bda 那一支）只写 color_1 = 0xff0000ff（洋红），**不建残像**；
+// 否则：
+color_1 = (flag 0x20 ? 0xffff0000 /*蓝*/ : 0xffffff00 /*黄*/);   // 0x442c61 / 0x442d1e
+AnmLoaded__create_40e5c0(player+0xc /* 自机 anm */, &out, AFTERIMAGE_SCRIPT[CHARACTER], 自机坐标, 0, -1);
+vm = AnmManager__get_vm_with_id(out);
+AnmLoaded__set_sprite(player+0xc, vm, player+0x34 /* 自机当下那帧 sprite */);
+vm->color_1 = 状态色;
+```
+
+- **脚本表 `0x494800` = `{10, 9, 13, 16, 0}` 按 `CHARACTER`**（`0x4a57a4` = `CHARACTER`，
+  **不是**副季节 —— 一开始按副季节读会得出「秋 = 8 连残像」的错误结论）。
+- 每帧建一个 ⇒ 玩家移动时留下一串淡出的自机影子（`alphaTime(30,0,0)`）。
+  只有秋/冬会走到这两支（它们才写速度字段），且**无敌结束后**才建（无敌期是闪色）。
+- TH18：`Player__on_tick__body` **把建 VM 那段删了**（`0x45c6e4` 直接跳 `0x45c702`），
+  但零售 `pl0X.anm` 的残像脚本还在（`sprite(sprite0)` + `color(60,0,192)` + `alphaTime(20,0,0)`，
+  脚本号按角色 **pl00 17 / pl01 19 / pl02 14 / pl03 14**）⇒ 要复刻得自己每帧起一个
+  （card-expand 的 `season.c` `afterimage_tick` 就是这么做的）。
+
+## 6. player 侧的触发点(回指 `engine/player/th16/01`)✅
 `player_update_perframe`(`0x442560`):
 - **状态 1(存活)**:`MAIN_BOMB_PTR & can_bomb & (INPUT_RISING_EDGE&0x2)` → 主炸;
   `SUBSEASON_BOMB_PTR & can_bomb & (INPUT_RISING_EDGE&0x800)` → **季节释放**。
@@ -256,11 +342,14 @@ for (laser in g_laser_mgr 链表)  if (laser+0x10 != 1)
 
 ## 7. 待办 / ❓
 
-1. ❓ **季节档阈值/增量的实际数值**:`SEASON_POWER_LEVEL_REQUIREMENTS/DELTAS`、`MAX_SEASON_POWER`
-   运行时填充,静态为 0;需从关卡 init(`Player__init_season_level_deltas` 的调用方喂参)或动态实测取值。
+1. ✅ **季节档阈值/增量已解（2026-09-09 一手复核）**:阈值 `{100,230,390,590,840,1140}`、DELTAS
+   `{0,100,130,160,200,250,300,0}`、满槽 1140 —— 见
+   [`season/th16/01`](../../season/th16/01-season-data-and-tables.md) §2.1（含 `init_season_level_deltas` 反编译）。
 2. 部分完成:`BombSub{Spring,Doyou}::begin` + Doyou `on_tick`/`method_10` 已反(§5b/§5d,清弹+清激光+伤害
    ✅);🟡 剩 Summer/Fall/Winter 的 on_tick 是否有副季节专属差异(自动收集等)、与 `BombMain*` 主炸 on_tick。
-3. 🟡 `RELEASE_LEVEL_*` 三表的逐档数值(per 副季节)。
+3. ✅ **`RELEASE_LEVEL_*` 三表的逐档数值已取（2026-09-09）**：五副季节 × (时长 / 半径 / 半径2) 共 10 张表的
+   全部字节见 [`season/th16/01`](../../season/th16/01-season-data-and-tables.md) §2（静态 `.rdata` 直读）。
+   春 = 半径最大(60→300)、时长最短(10→20 帧)；冬 = 半径最小(30→60)、时长最长(30→190 帧)。🟡 剩 `RADIUS_2` 语义。
 4. 🟡 物理键位:DInput 重映射(`Supervisor__read_keyboard_input` `0x401d50`)未逐位解;确认 0x2=主炸键、
    0x800=季节键的默认物理键(TH16 默认 X / C)。
 5. 季节槽对**敌人伤害/符卡**的反作用:`CURRENT_SEASON_POWER` 被 `EnemyData__step_logic`、

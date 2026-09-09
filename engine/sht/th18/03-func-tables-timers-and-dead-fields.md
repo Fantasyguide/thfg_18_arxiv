@@ -115,7 +115,90 @@ draw @0x4cf414 : 全 0（唯一引用点 = 装载循环；TH18 与 TH16 一样�
 零售数据里也只有 `+0x4c` 非零（[`02`](02-shooter-record.md) §1），两侧吻合。其余 `+0x3c..+0x5b` 仍未见读取（🟡：本篇只穷举了
 20 个 sht 基址消费者 + 18 个表项，未做 TH16 那样的全指令扫描）。
 
-`+0x26`（sht-webedit 的 `new_th18_int32`）也是活的：hit2 把它当 **激光命中特效的 anm 脚本号**（魔理沙 = 8）。
+`+0x26`（sht-webedit 的 `new_th18_int32`）也是活的：hit2 把它当 **激光命中特效的 anm 脚本号**。
+
+### 5.3 ★ 零售怎么用它：魔理沙「ミニ八卦炉」= 卡 10 = `pl0X.sht` set `0xb` ✅
+
+`dat/ability.txt` 的 `@MARISA_OP` = **ミニ八卦炉**（「レーザーを撃つ霧雨魔理沙の能力」，
+[`../../card/th18/08-catalog.md`](../../card/th18/08-catalog.md) §D 的 id 10）。四个角色的
+`pl0X.sht` set **0xb** 逐字段相同（一手逐字节）：
+
+| 字段 | 值 | 说明 |
+| --- | --- | --- |
+| `+0x00` rate / `+0x01` delay | **5 / 0** | 每 5 帧「发」一发（激光是长驻的，见下）|
+| `+0x02` damage | 13 | |
+| `+0x14` angle | **−π/2** | 竖直向上 |
+| `+0x18` speed | **0.0** | 激光不飞 —— tick2 每帧把位置钉回子机 |
+| `+0x20` opt / `+0x21` mode | `0x00` / **2** | mode 2 = 子机火力分配（激光分支）|
+| `+0x22` anm | **3** | **`ability.anm` script3 = 激光束** |
+| `+0x24` sfx | −1 | |
+| `+0x26` hit_fx | **5** | `ability.anm` script5 = 命中特效（⚠️ 不是本文早前写的 8）|
+| `+0x2c`/`+0x30`/`+0x38` func | **2 / 2 / 2** | init2 + tick2 + hit2 |
+
+`ability.anm` 里的两支脚本（一手 `thanm spec`）：
+
+```
+script3 (束)                       script5 (命中特效，由 hit2 每 2 帧在束端起)
+  scriptNew(script4)                 layer(15); sprite(sprite10);
+  layer(15); sprite(sprite8);        alpha(192); alphaTime(20,0,0); blendMode(1);
+  type(1); anchor(1, 0);             anchor(1,0);
+  scale(1.0, 0.0);                   color(255,32,255); colorTime(20,0,32,32,255);
+  scaleTime(4,1, 1.0, 0.5);          scale(1,1); scaleTime(20,1, 0.0,0.0);
+  alpha(160); blendMode(1);        +20: delete()
+  rotateAuto(1); fset(%F0,%RANDF);
+  scrollX(%F0); +1: scrollX(-0.04761905); stop()
+  interrupt 2 → colorTime(8,0,64,64,255)   （被挡 / 充能中的蓝调）
+  interrupt 3 → colorTime(2,0,255,255,255)
+  interrupt 1 → scaleTime(8,1,1.0,0.0) → delete
+```
+
+- `sprite8` = `player/option/op00.png` **(0,16) 512×16** —— 就是那条激光贴图；
+  `sprite10` = (32,32) 32×32 星形迸溅；`script4` = 束根那颗自转脉动的光斑（`sprite9`）。
+- **整条链**：`Player__tick_shooters_for_ability_card` 按 `fire_rate` 发一颗 `mode=2` 的「弹」
+  → `init2` 把它变成激光（长度 0、伤害源线型）→ `tick2` 每帧钉在子机上、长度 `+18` 到 512、
+  按长度拉伸 `script3` 的贴图、按 `sh+0x20` 槽位与火力档开关 → `hit2` 求交截断 + 束端特效。
+- ⇒ **激光不是「弹」，是一条挂在子机上每帧重画的束**；`fire_rate` 只是它的「重新起束」节奏。
+- TH16 的同款（`pl0Xsub.sht` set 1..6，[`../th16/01`](../../season/th16/01-season-data-and-tables.md) §5.6）
+  除 `hit_fx = 0` 外完全同构，脚本在 `pl0Xsub.anm`（script 0/3/6/9/12/15 按档变长）。
+- **给 card-expand 的结论**：冬的激光照这套填就行 —— `mode=2` + `func 2/2/2` + `anm=<束脚本>`
+  + `hit_fx=<命中脚本>`，束脚本放 `ability.anm` 里（装备卡子机的 `+0x22` 就是 ability.anm 的脚本号）。
+  之前「激光损坏内存」不是这条路的锅，是参数没照零售填（`mode=0` / 无 `hit_fx`）。
+
+### 5.4 激光的**寿命只跟射击键走**，不跟子机（一手，2026-09-10）✅
+
+`tick2` `0x45fc80` 尾部（`0x4600xx` 段）才是束的生死判据：
+
+```c
+if (bullet+0x8c /* 状态 */ == 1) {                       // 活动态才判
+    if (shoot_key_short_timer.current >= 0                // ★ 只要射击键还按着
+        && player->state != 2 && player->state != 4       // 不在死亡/决死态
+        && (player->field_470d8[0xa4] & 0x40) == 0        // 不在过场
+        && (GUI->msg == 0) && ENEMY_MANAGER_PTR != 0) {
+        if (shooter[+0x20] /* opt 槽位 */ == 0) goto alive;   // 本体弹：一直活
+        uVar9 = shooter[+0x20];
+        if ((uVar9 - 1) < player->field_470d8                 // 子机还在 → 继续
+            && ...) goto alive;
+    }
+    /* —— 否则收束 —— */
+    *(uint *)ds_active &= ~1;                 // 清伤害源
+    bullet+0x8c = 2;                          // 状态 = 完成
+    AnmManager__interrupt_tree(bullet+8, 1);  // 束 VM（bullet+8）发 interrupt 1 → 脚本自己淡出 delete
+    player->field_470d8[opt] = 0;             // 清这个槽的发射额度
+}
+```
+
+- **子机被收走（卡主动 `delete` VM）时这条链不会触发** —— 判据里只有「射击键 + 自机状态 + 玩家自己的
+  option 槽额度」，**没有「装备卡子机是否还在」**。装备卡的子机由 `Player__allocate_option`
+  （`0x40a790`，12 槽公共池）管，池里的记录与 `bullet+0xe4` 是唯一的联系。
+- 弹与子机的联系：`PlayerBullet__create` `0x45e3ae` 把第 5 个栈参（子机指针）写进 **`bullet+0xe4`**，
+  `tick2` 每帧用它取子机定点坐标（`option+0x5c/+0x60 × 1/128`）钉住束根。
+- 弹池（`Player__tick_bullets` `0x45edb0` 一手）：`this = PLAYER_PTR`，池基址 **`PLAYER+0x1570`**、
+  **512 槽 × `0xf8`**（`LEA EDI,[ECX+0x1570]`，循环尾 `ADD EDI,0xf8`；循环里 `EDI = 槽+0x14`，
+  所以 `[EDI+0x78]` = 槽+0x8c = 状态）。束 VM 被删后这一帧 `get_vm_with_id(bullet+8)` 返回 0
+  → `slot+0x8c = 0` 回收槽位。
+- **给 mod 的结论**：装备卡收子机时必须**自己把该子机的激光收掉**
+  （`sdk.c` 的 `ce_option_kill_bullets`：扫池、`bullet+0xe4 == 该子机` 的按上面那条序列收），
+  否则玩家按住射击键会看到一条钉在旧位置的残束（用户 2026-09-10 实跑）。
 
 ## 6. 与 TH16 表的对照（[`../th16/03`](../th16/03-th16-funcstar-jumptables.md) §6.4）
 

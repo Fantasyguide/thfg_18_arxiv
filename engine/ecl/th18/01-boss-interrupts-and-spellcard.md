@@ -20,6 +20,7 @@ boss 的每段攻击是敌人对象里的一个**中断槽** `{hp_value, time, s
 | `zEnemy` | `+0x122c` | `zEnemyData` 内嵌于此（`enemy+0x6374` = `data.interrupts`、`enemy+0x14ec` = `data.time_in_ecl.cur`、`enemy+0x6220` = `data.life`，`0x42ED40` 三处相减一致）|
 | `zEnemy` | `+0x6830` | `enemy_id` |
 | `zEnemyData` | `+0x2bc` | `time_in_ecl`：zTimer `{prev, cur, cur_f, …}` |
+| `zEnemyData` | `+0x2d0` | `time_alive`：zTimer（`cur` 在 `+0x2d4` = `enemy+0x1500`）。**每帧 +1**（见 §1a）|
 | `zEnemyData` | `+0x4ff4` | `life {current, maximum, remaining_for_cur_attack, current_scaled_by_seven, starting_value_for_next_attack, total_damage, is_spell}` |
 | `zEnemyData` | `+0x50d4` | 「下一帧附加伤害」：`0x42ED40` 读到就加进本帧伤害并清零（ExpHP `__some_kind_of_extra_damage`）|
 | `zEnemyData` | `+0x5148` | `interrupts[8]`，stride `0x88`：`+0 hp_value`（-1 = 空槽）、`+4 time`（帧；0 = 无超时）、`+8 sub_life[0x40]`、`+0x48 sub_timeout[0x40]` |
@@ -30,6 +31,31 @@ boss 的每段攻击是敌人对象里的一个**中断槽** `{hp_value, time, s
 | `zSpellcard` | `+0x74` | 符卡 id |
 | `zSpellcard` | `+0x78` | 标志：bit0 进行中、bit1 奖励存活、bit3 耐久符卡（ECL 542）、bit4（ECL 另一 case）、bit5 用过炸弹、bit7 已超时、bit8 ECL 开关 |
 | `zSpellcard` | `+0x7c` / `+0x80` | 奖励分（`0x42A320` 按难度表 × 关卡号；`+0x80` 封顶 999999999）|
+
+### 1a. `time_alive`（`zEnemyData+0x2d0`）每帧 +1 ✅（一手，2026-09-10）
+
+敌人每帧的入口是 `FUN_0042ff80`（`EnemyManager::on_tick` → `FUN_0042fe80(enemy)` → `FUN_0042ff80(enemy+0x122c)`，
+即**它拿到的 `this` 就是 `zEnemyData` 基址**）。它先调 `EnemyData::step_game_logic` `0x42ed40`，
+**尾段**再刷四个计时器：
+
+```asm
+004301de  CMP dword ptr [ESI+0x50f4],0x0    ; invuln_timer.current > 0 ?
+004301e5  JLE 0x004301f3
+004301e8  LEA ECX,[ESI+0x50f0] / CALL 0x00409750   ; Timer::decrement(invuln_timer)
+004301f3  CMP dword ptr [ESI+0x5108],0x0    ; no_hitbox_timer.current > 0 ?
+004301fa  JLE 0x00430208
+004301fd  LEA ECX,[ESI+0x5104] / CALL 0x00409750   ; Timer::decrement(no_hitbox_timer)
+00430209  LEA ECX,[ESI+0x2d0] / CALL 0x00405990    ; Timer::increment(time_alive)
+00430215  LEA ECX,[ESI+0x2bc] / CALL 0x00405990    ; Timer::increment(time_in_ecl)
+```
+
+- `[ESI+0x50f0]` / `[ESI+0x5104]` 正是 ExpHP 结构体里的 `invuln_timer` / `no_hitbox_timer`
+  ⇒ 后两条 increment 的对象就是 `time_alive` 与 `time_in_ecl`（同一基址、相邻字段）。
+- `Timer::increment` `0x405990` 一手：`prev = cur; cur += 1`（`0x4ccbf0` = 游戏速度，非 1 时按浮点累加）
+  ⇒ **正常速度下 `time_alive.current` = 该敌人已经活了多少帧**。
+- 绝对偏移：`zEnemy` + `0x122c` + `0x2d4` = **`enemy+0x1500`**（`current` 在 zTimer 的 `+0x4`）。
+- 用途：TH18 自己没有 `dropSeason`，卡侧复刻 TH16 的掉落计时衰减时拿它当计时器
+  （见 [`season/th18/01`](../../season/th18/01-season-residuals.md) §4）。
 
 ## 2. 每帧判定（`EnemyData__step_game_logic` `0x42ED40`，一手逐段）
 

@@ -10,6 +10,9 @@ engine/<子系统>/
 
 `_shared/` 是例外：装真正跨子系统的引擎知识（主循环、数学/PRNG、归档格式、社区来源）。
 
+> **★ 铁律**：写 UI / 动画 / 特效前，**先在本层找到原版怎么做**（anm 脚本号 + 引擎地址 + 数值 +
+> 触发条件），照抄后再动手；找不到就标 `❓ 自定`。见 [`../METHOD.md`](../METHOD.md)。
+
 ## 为什么是这个轴
 
 版本为主会让共通部分在各作之间重复，长出互相打架的说法；
@@ -21,11 +24,17 @@ engine/<子系统>/
 
 | 子系统 | 已覆盖版本 | 状态 |
 | --- | --- | --- |
-| [`player/`](player/OVERVIEW.md) | th16、th18 | th16 三大子系统已反；th18 已定位自机位置与状态计时器 |
+| [`player/`](player/OVERVIEW.md) | th15、th16、th18 | th16 三大子系统已反；th18 已定位自机位置与状态计时器；th15 擦弹已反 |
 | [`bullet/`](bullet/OVERVIEW.md) | th16 | 核心引擎 + 运动 VM + 激光 |
 | [`ecl/`](ecl/OVERVIEW.md) | th16 | VM 核心已基本反完 |
 | [`sht/`](sht/OVERVIEW.md) | th16 | 运行时语义已攻下（社区此前无公开破解） |
 | [`msg/`](msg/OVERVIEW.md) | th16 | 两套指令集全反，已告一段落 |
 | [`menu/`](menu/OVERVIEW.md) | th16 | 状态机 + 选择链 |
 | [`card/`](card/OVERVIEW.md) | th18 | 已反完：对象模型 / 生命周期 / 21 槽钩子 / C 键释放 / 商店与金钱 |
-| [`anm/`](anm/OVERVIEW.md) | th16 | ⚠️ 未系统开工，只有旁敲的锚点 |
+| [`chapter/`](chapter/OVERVIEW.md) | th15 | 章节（波次）系统 + 章节奖：边界/计数/结算/UI 全链 |
+| [`season/`](season/OVERVIEW.md) | th16 | 季节系统（季节点/季节槽/季节子机/升级/季节解放）；**th18 侧残骸审计 = 五样全无** |
+| [`animal/`](animal/OVERVIEW.md) | th17 | 动物灵 / 咆哮（HYPER）；**th18 侧残骸审计 = 六样全无（只剩一串无名死槽）** |
+| [`ufo/`](ufo/OVERVIEW.md) | th12 | 飞碟（UFO）：令牌槽 → 召唤 → 吸收道具 → 击破奖励全链一手 |
+| [`spirit/`](spirit/OVERVIEW.md) | th13 | 神灵 / 灵界（Trance）：六条生成通道 + 槽 + 灵界两道「中弹不死」闸门 |
+| [`input/`](input/th18/01-key-mapping.md) | th18 | 输入装配线：键盘配置表 / 掩码位 / 哪些键空着（A、S 空着，D 被切卡占用）|
+| [`anm/`](anm/OVERVIEW.md) | th16、th18 | th18 已反 VM 实例化 / 渲染阶段 / **ASCII 文字系统**；th16 仍只有旁敲锚点 |
