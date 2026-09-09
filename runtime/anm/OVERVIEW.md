@@ -22,8 +22,14 @@ entry 链表 / sprite 表 / script 表 / 指令流，只做结构解析，不含
 - 真实文件冒烟：`local/th16.v1.00a/dat/` 下全部 54 个 `.anm` 解析零异常，entry/script/
   sprite 计数（423 / 1929 / 3101）与 `01-format.md` §10 的一手审计逐字吻合；指令数
   41339 + 每 script 一条被本解析器排除在 `instructions` 之外的 `opcode=-1` 结束标记
-  （1929）= 43268，同样吻合该文档的总指令数。细节见
+  （1929）= 43268，同样吻合该文档的总指令数；其中 `paramMask !== 0` 的指令有
+  **2572** 条（下游做变量引用解析的 sanity check 基数）。细节见
   `.superpowers/sdd/2026-09-09-runtime-anm-phase1/task-I1-report.md`。
+- **输出契约**：`instructions[i]` = `{ time, opcode, paramMask, args }`。`paramMask`
+  是 01-format.md §5.1 的原始 u16，格式层只**透出**、不解释——按位判断某个 `args[i]`
+  是不是变量引用，再去查 VM 变量表，是下一步 VM 骨架的事，不是这层的事。可信度分层
+  见 `01-format.md` §5.2：bit 0–8 ✅ 一手验证过，bit 9–15 ❓ 从没被测试到（不代表
+  保留位，只是没证据）。
 - **契约（下游 VM 骨架要遵守）**：`sprite.id`/`script.id` 是文件里存的原始值，不是
   位置序号（01-format.md §4/§5：加载器不读这两个字段）。要跨 entry 累加的运行时索引，
   用 `entries.flatMap(e => e.scripts)`/`entries.flatMap(e => e.sprites)` 的**数组下标**，

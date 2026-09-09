@@ -33,6 +33,13 @@ script -72 script0 {
 0:
     ins_100(0, 1);
     ins_102(0, 2);
+    // `[10000]` = thanm 的「数字裸写变量 id」语法（thanm/anmparse.y 里
+    // `"[" INTEGER "]"` 那条规则），不需要 -m ANMMAP 就能用（`$I0` 那种具名写法要
+    // 靠 anmmap 把名字翻成 id，本仓没有可依赖的 v8 anmmap，见 build-fixtures.sh 的
+    // 说明）。10000 对应 engine/anm/th16/03-math-jumps.md 确认的 I0——这里只是借用
+    // 这个数字造一个「参数是变量引用」的样本，不代表这条 set 指令有什么运行时意义。
+    // 会让 arg0 的 is_var=1，编译时反映到这条指令的 param_mask bit0=1。
+    ins_100([10000], 5);
 +1:
     ins_200(finish, 0);
 +1:

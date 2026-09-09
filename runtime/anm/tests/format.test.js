@@ -74,17 +74,34 @@ test('script.id 与夹具源码吻合（含负数，验证 s32 而非 u32 读法
   assert.equal(entry1.scripts[0].id, -1);
 });
 
-test('指令内容与夹具源码（set/add/jmp/stop）吻合', () => {
+test('指令内容与夹具源码（set/add/set-with-var/jmp/stop）吻合', () => {
   const parsed = parseAnm(readFileSync(FIX));
   const ins = parsed.entries[0].scripts[0].instructions;
-  // minimal.anm.txt：ins_100(0,1); ins_102(0,2); ins_200(finish,0); ins_3();
-  // 结束标记 opcode=-1 不计入 instructions（见 anm-v8.js parseInstructions 的注释）。
-  assert.deepEqual(ins.map(i => i.opcode), [100, 102, 200, 3]);
-  assert.deepEqual(ins.map(i => i.time), [0, 0, 1, 2]);
+  // minimal.anm.txt：ins_100(0,1); ins_102(0,2); ins_100([10000],5); ins_200(finish,0);
+  // ins_3()。结束标记 opcode=-1 不计入 instructions（见 anm-v8.js parseInstructions 的
+  // 注释）。
+  assert.deepEqual(ins.map(i => i.opcode), [100, 102, 100, 200, 3]);
+  assert.deepEqual(ins.map(i => i.time), [0, 0, 0, 1, 2]);
   assert.deepEqual(ins[0].args, [0, 1]);
   assert.deepEqual(ins[1].args, [0, 2]);
-  assert.equal(ins[2].args.length, 2);
-  assert.deepEqual(ins[3].args, []);
+  assert.deepEqual(ins[2].args, [10000, 5]);
+  assert.equal(ins[3].args.length, 2);
+  assert.deepEqual(ins[4].args, []);
+});
+
+test('paramMask：格式层透出原始值，不解释', () => {
+  const parsed = parseAnm(readFileSync(FIX));
+  const ins = parsed.entries[0].scripts[0].instructions;
+  // 前两条、jmp、stop 都没有变量参数，paramMask 该是 0。第三条 `ins_100([10000], 5)`
+  // 的 arg0 是用 `[10000]` 写的变量引用（thanm/anmparse.y 的 "[" INTEGER "]" 语法，
+  // 编译时把它标成 is_var，写进这条指令的 param_mask bit0），其余参数不是变量——
+  // 断言 paramMask === 0b1 === 1，且只有这一条非零。
+  assert.deepEqual(ins.map(i => i.paramMask), [0, 0, 1, 0, 0]);
+
+  // 夹具里目前只覆盖了 bit0；01-format.md §5.2 说 bit0–8 ✅ 一手验证过、bit9–15 ❓
+  // 从没被测试到——这条测试不代表对 16 位全覆盖，只是证明「读出来的字段没丢、
+  // 位置对」。真实文件的统计见 build-fixtures 之外的 54 文件冒烟（parseAnm 本身
+  // 对所有 16 位一视同仁地读出来，不做任何位级别的特殊处理）。
 });
 
 test('entry 元信息（name/width/height/format）与夹具源码吻合', () => {

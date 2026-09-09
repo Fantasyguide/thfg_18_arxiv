@@ -6,7 +6,9 @@
 //
 // 接口：parseAnm(bytes: Uint8Array) -> { entries: [{ name, width, height, format, sprites, scripts }] }
 //   sprites: [{ id, x, y, w, h }]
-//   scripts: [{ id, instructions: [{ time, opcode, args }] }]
+//   scripts: [{ id, instructions: [{ time, opcode, paramMask, args }] }]
+//   paramMask 是原始 u16，格式层只透出、不解释（哪个 arg 是变量引用是 VM 层的事，
+//   见 parseInstructions 里的详细注释和 01-format.md §5.2）。
 //
 // 参数必须是 Uint8Array（Node 的 Buffer 是其子类），不是 ArrayBuffer——用
 // `readFileSync(path)` 直接传，不要 `.buffer`：Node 对小文件返回的 Buffer 来自共享
@@ -28,7 +30,8 @@ const OPCODE_END = -1; // 01-format.md §5.1：opcode = -1（0xffff）= 脚本�
  * @param {Uint8Array} bytes
  * @returns {{ entries: Array<{ name: string, width: number, height: number,
  *   format: number, sprites: Array<{ id: number, x: number, y: number, w: number, h: number }>,
- *   scripts: Array<{ id: number, instructions: Array<{ time: number, opcode: number, args: number[] }> }>
+ *   scripts: Array<{ id: number, instructions: Array<{ time: number, opcode: number,
+ *     paramMask: number, args: number[] }> }>
  * }> }}
  */
 export function parseAnm(bytes) {
@@ -182,15 +185,23 @@ function parseInstructions(view, scriptBase, bufferEnd) {
     }
 
     const time = view.getInt16(cursor + 0x04, true);
-    // param_mask（cursor + 0x06）标出哪些 args 是变量 id，属 VM 语义，格式层不解释，
-    // 保留在 01-format.md §5.1 里，不在这个输出契约（{time, opcode, args}）里吐出。
+    // param_mask（cursor + 0x06，u16）：bit i = 第 i 个参数是变量 id（01-format.md §5.1）。
+    // 格式层只**透出**原始值（`paramMask`），不解释——按位判断某个 arg 是不是变量引用、
+    // 再去查 VM 变量表，那是 VM 层的事，不是这个解析器的事。但「不解释」≠「不传递」：
+    // 这个字段在文件里就是指令的一部分，格式层读了却不放进输出对象，等于信息在这一层
+    // 丢失，下游除了重新解析文件没有别的办法拿回来（例如区分 jmp 的目标是字面字节偏移
+    // 还是要从某个变量里读——01-format.md §5.2 记了这个真实案例）。
+    // 可信度分层（01-format.md §5.2）：bit 0–8 ✅ 一手验证过（真实文件最高用到 bit 8），
+    // bit 9–15 ❓ 从没在 exe 或真实数据里被测试到——不代表这 7 位没用，只是没证据，
+    // 消费方按位读全部 16 位没问题，但别假设 9–15 一定是保留位。
+    const paramMask = view.getUint16(cursor + 0x06, true);
 
     const argCount = (size - INSTR_HEADER_SIZE) / 4;
     const args = new Array(argCount);
     for (let i = 0; i < argCount; i++) {
       args[i] = view.getUint32(cursor + INSTR_HEADER_SIZE + i * 4, true);
     }
-    instructions.push({ time, opcode, args });
+    instructions.push({ time, opcode, paramMask, args });
 
     cursor += size;
   }
