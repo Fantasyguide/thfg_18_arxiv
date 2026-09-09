@@ -91,8 +91,8 @@ Settings 组的 handler 分成两种形态：
 | 305 | `noZBuffer` / `zWriteDisable` | `S disable` | `flags_lo` bit13 = `disable & 1` | bit13 | `0x461868` | ✅ |
 | 306 | `v8-306` /（无） | `S enable` | `flags_lo` bit15 = `enable & 1`；见 §3.1 | bit15（`0x8000`） | `0x461893` | ✅ |
 | 307 | `v8-randMode` / `randMode` | `b mode` | `flags_hi` bit10 = `mode & 1`；**死位**，见 §3.4 | bit10（`0x400`） | `0x4629b0` | ✅ |
-| 308 | `flipX` / `flipX` | — | `scale.x = -scale.x`；`flags_lo ^= 0x800` | bit11（`0x800`）toggle | `0x4612ed` | ✅ |
-| 309 | `flipY` / `flipY` | — | `scale.y = -scale.y`；`flags_lo ^= 0x1000` | bit12（`0x1000`）toggle | `0x461323` | ✅ |
+| 308 | `flipX` / `flipX` | — | `scale.x = -scale.x`；`flags_lo ^= 0x800` **且 `\|= 8`** | bit11 toggle **+ bit3 置位**（见 §2.3） | `0x4612ed` | ✅ |
+| 309 | `flipY` / `flipY` | — | `scale.y = -scale.y`；`flags_lo ^= 0x1000` **且 `\|= 8`** | bit12 toggle **+ bit3 置位**（见 §2.3） | `0x461323` | ✅ |
 | 310 | `visible` / `visible` | `S visible` | `flags_lo` bit0 = `visible & 1` | bit0 | `0x46177b` | ✅ |
 | 311 | `resampleMode` / `resampleMode` | `S n` | `flags_hi` bit11 = `n & 1` | bit11（`0x800`） | `0x4618be` | ✅ |
 | 312 | `scrollMode` / `scrollMode` | `$S x, $S y` | `flags_hi` bit0–1 = `x & 3`；`flags_lo` bit30–31 = `y & 3` | hi bit0–1 / lo bit30–31 | `0x46284a` | ✅ |
@@ -171,10 +171,60 @@ if ((20 <= layer <= 31) || (36 <= layer <= 42))                        // 0x406d
 
 ---
 
+## 2.3 审阅更正汇总（2026-09-09）
+
+### `308` / `309` 还置了 `flags_lo` bit3（缩放脏位）
+
+一手（`th16:0x4612ed` / `th16:0x461323`）是**寄存器上的两步**，不是内存 `xor`：
+
+- `mov eax,[ebx+0x530]` → `xor eax, 0x800`（或 `0x1000`）→ **`or eax, 8`** → `mov [ebx+0x530], eax`
+
+`or eax,8` 即 [`02-vm-core.md`](02-vm-core.md) 已 ✅ 的 **bit3「缩放脏位」**——翻转 `scale.x/y`
+后必须让下游重算变换。原文只记了 toggle 位、且把形态写成内存 `xor [..+0x530], 0x800`，两处都不准。
+
+### `301` 的 `b` 边界：与 `03-math-jumps.md` §4.3 对齐
+
+`xor edx,edx; div esi` 取的是**余数**。所以：
+
+- `b` 按 **u32** 解释。写成负数（如 `-1` = `0xFFFFFFFF`）时模数极大，`raw % b == raw`
+  ⇒ `id = a + raw`，是个**大随机数**，不是「几乎恒 = a」。
+- **`301` 没有零守卫**，`b == 0` 直接 `#DE` 崩。
+  ⚠️ 原文写「与 `122 rand` 同款边界」是**反的**——[`03-math-jumps.md`](03-math-jumps.md) §4.3
+  明写 `122` 是该组**唯一**做了零守卫的（`th16:0x460472` `test esi,esi; je`），`301` 恰恰没有。
+
+### `layer` / `v8-randMode` 与社区的签名分歧（补记 2 处）
+
+按本文裁决 #4 的同一口径（宽度不符 = 社区记错）：thpages 的 `layer` 与 `v8-randMode`
+签名都记 `'S'`（32 位），而 handler 是 `movzx eax, byte ptr [edi+8]`（**字节**）。
+故 §7 的「签名与语义 15 条全部一致」应为 **13 条一致 + 4 处分歧**（原 2 处 + 这 2 处）。
+
+### `flags_hi` bit10（`0x400`）：要求下调 `02-vm-core.md` §3.6 的 ✅
+
+本文 §3.3 证明该位**没有任何读者**（扫 `+0x534` 全部 217 个访问点，`0x400` 只出现在
+`or` 写入侧；无 `test`/`cmp` 立即数、无 `shr …,0xa`、字节位移 `+0x535..0x537` 在 `.text` 里 0 次）。
+而 `02-vm-core.md` §3.6 把它标 ✅「由管理器托管（`create_managed_*` 置）」——
+**一个无人读的位不应有 ✅ 的语义名**。置位事实成立，语义应降 🟡/❓。此处提出，待 02 收口时同改。
+
+> **判据的补充说明**：仅用「`test`/`and`/`cmp` 带 `0x400` 立即数」扫描**会漏掉移位式读者**
+> （例：`311` 自己的读者 `th16:0x465136` 是 `shr 0xb; and 1`，不带 `0x800` 立即数）。
+> 本节的 negative set 是按「立即数 + 移位量 + 字节位移」三种形态一起扫的。
+
+### 操作数求值次序（补 `03-math-jumps.md` §9.1 的判据）
+
+本组多参数指令为 `301`（`$S a, $S b`）与 `312`（`$S x, $S y`）。按 §9.1 的判据
+（case 体里 `test byte [edi+6]` 的执行次序）：
+
+| opcode | 次序 | 备注 |
+| --- | --- | --- |
+| `301` | arg0 → arg1（升序） | **两个参数都读完之后**才 `call th16:0x402be0` 抽随机——若 `a`/`b` 是会推进 PRNG 的变量号，序列位置由此确定 |
+| `312` | arg0 → arg1（升序） | 无随机 |
+
+其余 16 条为 0 或 1 个参数，次序问题不适用。
+
 ## 3. 专项① 每个 flag 位被谁读
 
 **方法**：capstone 按 `functions.jsonl` 的函数边界逐函数反汇编全 `.text`，扫所有 `[reg+0x530]`/`[reg+0x534]`
-访问点（`flags_lo` 217 处 / `flags_hi` 277 处），把「置位」opcode 与「读位」渲染器一一对上。读者是下面的关键几条：
+访问点（`flags_lo`（`+0x530`）**281** 处 / `flags_hi`（`+0x534`）**217** 处），把「置位」opcode 与「读位」渲染器一一对上。读者是下面的关键几条：
 
 ### 3.1 `306` 置 `flags_lo` 位15（`0x8000`）→ 帧尾把全局滚动加进 `entity_pos`
 

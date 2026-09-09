@@ -34,6 +34,15 @@ MSG 的文本绘制走它（[`../msg/OVERVIEW.md`](../msg/OVERVIEW.md)）、弹�
 | 变量号 10000–10035 共 36 条；可写 22 / 只读 14；`$` int 8 个、`%` float 28 个；整型读对 19 个浮点号返回变量号本身（跨类型读非对称） | ✅ | ❓ | [th16/04-variables](th16/04-variables.md) §2/§3/§4（`th16:0x45f578` 跳表 + 两张 lvalue 表穷举） |
 | 随机族：10010–10012、10022 走 Stream B `th16:0x4a6d80`；10030–10032 走 Stream A `th16:0x4a6d88`；10022 浮读 = u32→float 不取模、整读 = `raw % +0x4dc` | ✅ | ❓ | [th16/04-variables](th16/04-variables.md) §5；[th16/03-math-jumps](th16/03-math-jumps.md) §7.4 |
 | 10026 = 有效 z 旋转（`th16:0x464dd0` 沿 `+0x5ac` 递归累积、`flags_hi & 0x10000` 闸门）；10016–10021 读舞台相机镜像块（非 vm 字段） | ✅ | ❓ | [th16/04-variables](th16/04-variables.md) §6 |
+| System 组终止四态：`0 nop` / `1 delete` / `2 static`（冻结但 `alive` 不变）/ `3 stop`（自锁但可被 interrupt 唤醒）/ `4 stopHide`（清可见位后**直落 `stop` 主体**） | ✅ | ❓ | [th16/05-system](th16/05-system.md) §3/§8.1（`th16:0x4629dc`） |
+| `5 case` / `7 caseReturn` 的 `caseReturn` 跳回 **DISPATCH** `th16:0x45fba0` 而非帧尾 | ✅ | ❓ | [th16/05-system](th16/05-system.md) §3（`th16:0x45fcc1`） |
+| `300 sprite` 的 `id < 0` 走「系统贴图」分支（ascii.anm 的 sprite `0x102`），**是热路径**：4683 条里 80 条 `arg0 == -1` | ✅ | ❓ | [th16/06-settings](th16/06-settings.md) §2.1（`th16:0x460bf8`） |
+| Settings 组的 flag 位归属：`306`→`flags_lo` bit15、`316/317`→bit1（`draw_vm` 双闸门）、`307`→`flags_hi` bit10（**无任何读者，死位**） | ✅ | ❓ | [th16/06-settings](th16/06-settings.md) §3（全 `.text` 扫描 + negative set） |
+| 插值曲线共 31 个 mode（跳表 `th16:0x403a10`），mode 0 / 负 / >31 落 linear；22–26 = `g_c(u)` 下凹会 < 0，**27–31 = `1−g_c(1−u)`** 上凸会 > 1 | ✅ | ❓ | [th16/07-general](th16/07-general.md) §4（`th16:0x4038e7`；峰值 1.125–1.800 数值复算吻合） |
+| `433` 是极坐标 `(cos θ·r, sin θ·r)`（`fsincos` 后 ST0 = cos），社区未记 | ✅ | ❓ | [th16/07-general](th16/07-general.md) §6.2（`th16:0x464d60`） |
+| child 出生时**不拷父的变换字段**，只继承 layer / root / `flags_hi` bit25；而 `createRoot` 把源的 `pos +0x2c..0x34` 拷进新 VM 的 **`pos_2 +0x4e0..0x4e8`**（非同偏移） | ✅ | ❓ | [th16/08-child](th16/08-child.md) §3；[th16/02-vm-core](th16/02-vm-core.md) §8.1 |
+| ANM 绘制路径的 render state：全局重置 8 项（`ALPHAREF=1`/`ALPHAFUNC=7`/`ZFUNC=8`/alpha test 与 blend 均 enable）；**`COLORARG1`/`ALPHAARG1` 从不设 ⇒ 恒 `D3DTA_TEXTURE`**；blend mode 共 10 种，唯 mode 3 关 `ALPHATESTENABLE` | ✅ | 🟡 | [th16/09-drawing](th16/09-drawing.md) §4（`th16:0x45ba80` / `th16:0x465254`） |
+| Drawing 组只**置状态**不发 draw call；真正的绘制在 `draw_vm` 按 `render_mode` 分派（28 个 mode，索引表 `th16:0x468bac` / 跳表 `th16:0x468b70`） | ✅ | 🟡 | [th16/09-drawing](th16/09-drawing.md) §1/§3 |
 | 渲染阶段 × 相机 × 层：层 0–2 相机 2、3–19 相机 3、20–23 相机 1、24+ 相机 2；四台相机全透视（LookAt + PerspectiveFov，无 Ortho） | — | ✅ | [th18/02-render-stages](th18/02-render-stages.md) |
 | 渲染模式 8 = D3D WORLD 矩阵 + 单位四边形；2D 路径自算顶点并加相机 2D 偏移（只有相机 2 非零） | — | ✅ | [th18/01 §3b](th18/01-vm-instantiate.md) |
 

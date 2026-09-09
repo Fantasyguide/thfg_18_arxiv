@@ -218,13 +218,26 @@ CreateVertexBuffer(0x2d0, FVF 0x102)                        // XYZ|TEX1，每顶
 | 行向量 `v*M`、左手系、NDC z ∈ [0,1] | 列向量 `M*v`、NDC z ∈ [−1,1] | 低——`LookAtLH` / `PerspectiveFovLH` 公式公开，照抄 | ✅ |
 | 像素中心在整数处（D3D9 的 −0.5 偏移） | 像素中心在 0.5 | **中——2D 精灵对齐肉眼可见** | ✅ |
 | 多渲染目标 surface 0 / 1 + 视口切换 | FBO | 低 | ✅ |
-| `D3DRS_ALPHATESTENABLE` / `ALPHAREF` | 无对应，fragment shader 里 `discard` | 低 | 🟡 |
-| 固定管线 texture stage states | 无对应，写 shader 复现 | 中 | 🟡 |
-| `D3DBLEND_*` | `gl.blendFunc`，基本 1:1 | 低 | 🟡 |
+| `D3DRS_ALPHATESTENABLE` / `ALPHAREF` | 无对应，fragment shader 里 `discard` | 低 | ✅ |
+| 固定管线 texture stage states | 无对应，写 shader 复现 | **低**（比原估计简单，见下） | ✅ |
+| `D3DBLEND_*` | `gl.blendFunc`，基本 1:1 | 低 | ✅ |
 
-**后三行标 🟡 是因为仓库还没有一手证据说 ANM 具体设了哪些**——已确认的只有矩阵与
-`ZWRITEENABLE` / `ZFUNC` 两条渲染状态。它们是按 D3D9 固定管线的一般情况推的，
-按 `METHOD.md` 属「推断」，不是结论。
+**后三行原为 🟡（按 D3D9 固定管线一般情况推的），2026-09-09 已由
+[`engine/anm/th16/09-drawing.md`](../../../engine/anm/th16/09-drawing.md) §4 的一手扫描全部落实**
+（即 §10.4 的第二样交付物，审阅独立复算零偏差）：
+
+- **alpha test**：`Supervisor__reset_render_state` `th16:0x45ba80` 全局设 `ALPHATESTENABLE=1`、
+  `ALPHAREF=1`、`ALPHAFUNC=7`（`D3DCMP_GREATEREQUAL`）⇒ WebGL 侧就是
+  `if (color.a < 1.0/255.0) discard;`，无需猜。
+- **texture stage states**：**`COLORARG1` / `ALPHAARG1` 全程从不设置，恒为默认 `D3DTA_TEXTURE`**；
+  组合是 MODULATE(TEXTURE, DIFFUSE)，TFACTOR 只在特定 mode 参与。
+  ⇒ 比原估计**简单得多**——不需要复现一整套可编程的 stage 状态机，一个固定的
+  `texture * vertexColor` 片元着色器即可覆盖主路径。
+- **blend modes**：`th16:0x465254` 的跳表给出 **10 种全表**，其中**唯独 mode 3 关掉
+  `ALPHATESTENABLE`**（这条不看一手是猜不到的）。
+
+连带关闭：[`01-format.md`](../../../engine/anm/th16/01-format.md) 里「`D3DFMT_A8` 贴图从哪取
+color（推测 `D3DTA_DIFFUSE`）」那条开放项——一手是恒 `D3DTA_TEXTURE`。
 
 ### 10.4 两样交付物
 

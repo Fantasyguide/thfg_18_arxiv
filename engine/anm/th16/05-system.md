@@ -6,7 +6,12 @@
 > （**不用** `functions.jsonl` 反编译文本——Ghidra 会把 `flags_lo` 位测试糊成指针运算）。
 > 再用自写解析器跑 `local/th16.v1.00a/dat/` 的 **54 个真实 `.anm`（41339 条指令，其中本组 9391 条）**对账证伪。
 > **可信度**：**8 条的签名、控制流与副作用全部 ✅**（每条断言背后是一条读/写该字段的机器指令）；
-> 只有「`flags_lo & 0x4000` 在全 exe 无读取者」与「caseReturn 无 interrupt 先导时的行为」两处是 🟡（见 §11）。
+> **三处**是 🟡（见 §11）：「`flags_lo & 0x4000` 在全 exe 无读取者」、「caseReturn 无 interrupt 先导时的行为」、
+> 以及「`6 wait` 参数为负时把时间往**前**拨」——最后这条代码侧证据充分，但真实数据 0 次出现、未经验证。
+>
+> ⚠️ **2026-09-09 审阅更正**：原写「两处」，漏了 `wait < 0` 那条。根因是 §6 用了一个**段级**的
+> 「④结论（✅ TH16）」标题，把它下辖的 `wait < 0` 子断言一并盖成了 ✅——违反 `DOCSTYLE.md` §5
+> 「可信度标记挂**断言**、不挂小节」。该子断言已就地单独降 🟡。
 > **衔接**：指令头 8 字节与 `param_mask` 见 [`01-format.md`](01-format.md) §5；VM 主循环、时间闸门、`zAnmVm` 字段图、
 > interrupt 查找、终止语义的骨架见 [`02-vm-core.md`](02-vm-core.md) §2/§3/§5/§6——本文把**这 8 条的一手细节补全**，
 > 不重复骨架论证。变量号解析见 [`04-variables.md`](04-variables.md)。
@@ -172,6 +177,12 @@
 ---
 
 ## 4. 专项② `stop` 的「自锁 + 可唤醒」与 `static` 的「冻死」
+
+> **2026-09-09 审阅更正（重复论证）**：本节的发现→验证→结论链与 [`02-vm-core.md`](02-vm-core.md)
+> §5（DO_INTERRUPT 伪代码）+ §6.1（stop 的 interrupt 免疫）**实质重复**——同样的地址
+> （`th16:0x45fa7b` / `th16:0x45fb21` / `th16:0x45fb90` / `th16:0x46f0e3` / `th16:0x45fa55`）、
+> 同样的论证。**02 是权威，本节只保留 opcode 视角的关联**（`4 stopHide` 与 thpages `stop2` 的对应）。
+> 两份文档将来若语义漂移，以 02 为准。
 
 **① 发现**：`stop` 的 case 体在置 `0x4000` **之前**先查 `pending_interrupt`（`0x4629e3`），命中就跳
 `0x45fac6`（DO_INTERRUPT）而不是置位。interrupt 服务尾在 `0x45fb21` 清 `0x4000`、`0x45fb90` 重设可见位 `1`。
@@ -356,6 +367,11 @@ visibility flag… Successful interrupts will automatically re-enable the visibi
   作为别名保留在文档表里。命名请求见 [`naming-batch.md`](naming-batch.md)（由 T10 统一落库）。
 
 ### 8.2 「v8 无 opcode 15」——一手确认
+
+> **2026-09-09 审阅更正**：本小节与 [`02-vm-core.md`](02-vm-core.md) §6.2 近乎逐句重复，
+> 且 opcode 15 **不在本文 0–7 的编号范围内**，属越界的重复劳动。保留是因为读者常从
+> TH06(v0) 的 `0 delete` / `15 static` 带着错误前提进来（本项目的计划初稿就栽过这一次），
+> 但结论以 02 §6.2 为准，本节不再独立主张。
 
 本任务 brief 与 [`02-vm-core.md`](02-vm-core.md) §6.2 都说 `0` 是 nop、v8 无 opcode 15。一手复核：
 
