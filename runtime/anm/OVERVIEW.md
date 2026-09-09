@@ -170,14 +170,14 @@ thpages / th-re-data 是社区单源——「文档」列指向 `engine/anm/th16
 
 | opcode | 组 | thpages 名 | 文档 | 实现 | 可信度 |
 | ---: | --- | --- | --- | --- | --- |
-| 0 | System | `nop` | 未开始 | 未开始 | — |
-| 1 | System | `delete` | 未开始 | 未开始 | — |
-| 2 | System | `static` | 未开始 | 未开始 | — |
-| 3 | System | `stop` | 未开始 | 未开始 | — |
-| 4 | System | `stop2` | 未开始 | 未开始 | 🟡（社区 wip:2，需过额外闸门） |
-| 5 | System | `case` | 未开始 | 未开始 | — |
-| 6 | System | `wait` | 未开始 | 未开始 | — |
-| 7 | System | `caseReturn` | 未开始 | 未开始 | — |
+| 0 | System | `nop` | 已实现 | 已实现 | — |
+| 1 | System | `delete` | 已实现 | 已实现 | — |
+| 2 | System | `static` | 已实现 | 已实现 | — |
+| 3 | System | `stop` | 已实现 | 已实现 | — |
+| 4 | System | `stop2` | 已实现 | 已实现 | 🟡（社区 wip:2，需过额外闸门） |
+| 5 | System | `case` | 已实现 | 已实现 | — |
+| 6 | System | `wait` | 已实现 | 已实现 | — |
+| 7 | System | `caseReturn` | 已实现 | 已实现 | — |
 | 100 | Math | `set` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
 | 101 | Math | `setF` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
 | 102 | Math | `add` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
@@ -224,24 +224,24 @@ thpages / th-re-data 是社区单源——「文档」列指向 `engine/anm/th16
 | 211 | Jumps | `jmpGtF` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
 | 212 | Jumps | `jmpGe` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
 | 213 | Jumps | `jmpGeF` | ✅ `03-math-jumps.md` §2 | 已实现 `group-math.js` | ✅ |
-| 300 | Settings | `sprite` | 未开始 | 未开始 | — |
-| 301 | Settings | `spriteRand` | 未开始 | 未开始 | — |
-| 302 | Settings | `renderMode` | 未开始 | 未开始 | — |
-| 303 | Settings | `blendMode` | 未开始 | 未开始 | — |
-| 304 | Settings | `layer` | 未开始 | 未开始 | — |
-| 305 | Settings | `noZBuffer` | 未开始 | 未开始 | — |
-| 306 | Settings | `v8-306` | 未开始 | 未开始 | 🟡（社区 wip:2，需过额外闸门） |
-| 307 | Settings | `v8-randMode` | 未开始 | 未开始 | — |
-| 308 | Settings | `flipX` | 未开始 | 未开始 | — |
-| 309 | Settings | `flipY` | 未开始 | 未开始 | — |
-| 310 | Settings | `visible` | 未开始 | 未开始 | — |
-| 311 | Settings | `resampleMode` | 未开始 | 未开始 | — |
-| 312 | Settings | `scrollMode` | 未开始 | 未开始 | — |
-| 313 | Settings | `resolutionMode` | 未开始 | 未开始 | — |
-| 314 | Settings | `attached` | 未开始 | 未开始 | — |
-| 315 | Settings | `colorizeChildren` | 未开始 | 未开始 | — |
-| 316 | Settings | `v8-flag-316` | 未开始 | 未开始 | 🟡（社区 wip:2，需过额外闸门） |
-| 317 | Settings | `v8-flag-317` | 未开始 | 未开始 | 🟡（社区 wip:2，需过额外闸门） |
+| 300 | Settings | `sprite` | 已实现 | 已实现 | — |
+| 301 | Settings | `spriteRand` | 已实现 | 已实现 | — |
+| 302 | Settings | `renderMode` | 已实现 | 已实现 | — |
+| 303 | Settings | `blendMode` | 已实现 | 已实现 | — |
+| 304 | Settings | `layer` | 已实现 | 已实现 | — |
+| 305 | Settings | `noZBuffer` | 已实现 | 已实现 | — |
+| 306 | Settings | `v8-306` | 已实现 | 已实现 | 🟡（社区 wip:2，需过额外闸门） |
+| 307 | Settings | `v8-randMode` | 已实现 | 已实现 | — |
+| 308 | Settings | `flipX` | 已实现 | 已实现 | — |
+| 309 | Settings | `flipY` | 已实现 | 已实现 | — |
+| 310 | Settings | `visible` | 已实现 | 已实现 | — |
+| 311 | Settings | `resampleMode` | 已实现 | 已实现 | — |
+| 312 | Settings | `scrollMode` | 已实现 | 已实现 | — |
+| 313 | Settings | `resolutionMode` | 已实现 | 已实现 | — |
+| 314 | Settings | `attached` | 已实现 | 已实现 | — |
+| 315 | Settings | `colorizeChildren` | 已实现 | 已实现 | — |
+| 316 | Settings | `v8-flag-316` | 已实现 | 已实现 | 🟡（社区 wip:2，需过额外闸门） |
+| 317 | Settings | `v8-flag-317` | 已实现 | 已实现 | 🟡（社区 wip:2，需过额外闸门） |
 | 400 | General | `pos` | 未开始 | 未开始 | — |
 | 401 | General | `rotate` | 未开始 | 未开始 | — |
 | 402 | General | `scale` | 未开始 | 未开始 | — |

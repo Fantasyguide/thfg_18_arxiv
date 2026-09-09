@@ -25,10 +25,7 @@
 // 风险比「惰性建字段 + 显眼 TODO」更大；且 (b) 与本仓库已有先例一致（04-variables.md
 // 的 IV 任务把 `i4`/`i5`/`randParamOne` 等字段加进了 createVm 本身，说明「哪些字段该在
 // 契约里」历来是由持有 core.js 的任务决定的，本组不该越权替它决定）。
-// **TODO(骨架收口)**：等有人重新审视 core.js 的 vm 契约时，应该把 `flagsLo`/`flagsHi`
-// 两个字段（含下面 `getFlagsLo`/`getFlagsHi` 里写的默认值）搬进 `createVm` 本体，删掉这里
-// 的惰性初始化——本组这套 getter/setter 只是「core.js 没给字段之前的过渡」，不是最终形态。
-//
+// （2026-09-09：该 TODO 已收口——字段现由 core.js 的 createVm 提供。）
 import { resolveArg, isVarBit } from './core.js';
 
 // 默认值：06 §3.2 证实 `AnmVm::wipe`（`th16:0x409128`/`th16:0x409220`）把 `flags_lo` 低
@@ -36,19 +33,18 @@ import { resolveArg, isVarBit } from './core.js';
 // `flagsLo` 的惰性默认值取 0x7，不是 0——316/317 两条测试都依赖这个默认值（317 清位要
 // 从「默认已置位」清成「清位」才有区分力，见 vm-settings.test.js）。`flags_hi` 没有一手
 // 证据支持任何非零默认值，惰性默认值取 0。
+// 2026-09-09 收口：`flagsLo`/`flagsHi` 已由 `core.js` 的 `createVm` 保证存在
+// （`flagsLo = 0x7`、`flagsHi = 0x4000`，依据 vm-core §3.3 的 `AnmVm::wipe`），
+// 原来的惰性初始化连同 TODO 一并撤掉——本组不再自建 vm 字段。
+// ⚠️ `flagsHi` 的默认值是 **0x4000** 不是 0：vm-core §3.3 记 wipe = `(flags_hi & ~0x8000) | 0x4000`，
+// 且 vm-core §2 的「可暂停」判据是 `(flags_hi & 0xc000) == 0x4000`，默认值有行为意义。
 function getFlagsLo(vm) {
-  if (vm.flagsLo === undefined) {
-    vm.flagsLo = 0x7; // 06-settings.md §3.2：AnmVm::wipe 默认低 16 位 = 7（bit0/1/2）
-  }
   return vm.flagsLo;
 }
 function setFlagsLo(vm, value) {
   vm.flagsLo = value >>> 0;
 }
 function getFlagsHi(vm) {
-  if (vm.flagsHi === undefined) {
-    vm.flagsHi = 0; // 06 没有给出 flags_hi 的非零默认值证据
-  }
   return vm.flagsHi;
 }
 function setFlagsHi(vm, value) {

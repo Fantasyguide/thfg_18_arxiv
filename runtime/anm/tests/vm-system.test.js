@@ -143,3 +143,37 @@ test('05-system.md #5 case：没有 interrupt 命中时是纯 no-op，标签前�
   assert.equal(vm.i[1], 77, '标签之后的 marker——case 标签本身不该产生任何可观察副作用');
   assert.equal(vm.alive, false, '脚本正常跑完（隐式结尾）');
 });
+
+// ── 2026-09-09 收口补测：stopHide 清可见位 ───────────────────────────────
+// 背景：I4 实现时 core.js 还没有 flags 字段，`case 3: case 4:` 走同一分支，
+// stopHide「清可见位」这一半没法建模；I5 引入 flagsLo 后字段有了，骨架已补上。
+// 05-system.md §8.1 一手：`th16:0x4629dc` `AND [EBX+0x530],0xFFFFFFFE` 清 bit0。
+test('4 stopHide 清 flagsLo bit0（可见位），3 stop 不清', () => {
+  const mk = (op) => ({
+    id: 0,
+    instructions: [
+      { time: 0, opcode: op, paramMask: 0, args: [] },
+    ],
+  });
+  const ops = {};
+  registerGroup(ops, systemGroup);
+
+  const vmHide = createVm(mk(4));
+  assert.equal(vmHide.flagsLo & 1, 1, 'wipe 默认 bit0 = 1（可见）');
+  stepFrame(vmHide, ops);
+  assert.equal(vmHide.flagsLo & 1, 0, 'stopHide 之后可见位应被清掉');
+  assert.equal(vmHide.alive, true, 'stopHide 只是隐藏 + 自锁，vm 仍存活');
+
+  const vmStop = createVm(mk(3));
+  stepFrame(vmStop, ops);
+  assert.equal(vmStop.flagsLo & 1, 1, '3 stop 不动可见位——这正是它与 4 的唯一差别');
+});
+
+test('1 delete 也清可见位（05-system.md §2 表）', () => {
+  const ops = {};
+  registerGroup(ops, systemGroup);
+  const vm = createVm({ id: 0, instructions: [{ time: 0, opcode: 1, paramMask: 0, args: [] }] });
+  stepFrame(vm, ops);
+  assert.equal(vm.flagsLo & 1, 0);
+  assert.equal(vm.alive, false);
+});

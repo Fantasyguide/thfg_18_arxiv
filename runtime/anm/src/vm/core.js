@@ -108,6 +108,12 @@ export function createVm(script, opts = {}) {
     // RV2 定论（04 §8）：三个无固定引擎语义的通用可写浮点暂存，字段名沿用社区叫法
     // “mystery”但不代表真是角度——ZUN 数据里 x/y 常存 2D 偏移、z 常存角度，这是用法
     // 不是约束（04 §8.5：“别按角度做归一”）。wipe 只 memset 0，默认 0.0（04 §8.1）。
+    flagsLo: 0x7, // vm-core §3.3 `+0x530`；`AnmVm::wipe` 把低 16 位写成 7（bit0/1/2）。
+    // bit0 = 可见位（`1 delete` 与 `4 stopHide` 都清它，见 05-system.md §8.1）；
+    // bit3 = 缩放脏位（`308/309` 置，见 06-settings.md §2.3）
+    flagsHi: 0x4000, // vm-core §3.3 `+0x534`；wipe = `(flags_hi & ~0x8000) | 0x4000`，
+    // 新建 VM 的前值为 0 ⇒ 0x4000。**这个默认值有行为意义**：vm-core §2 的
+    // `(flags_hi & 0xc000) == 0x4000` 是「可暂停」判据（`th16:0x45fa91`）
     time: 0, // vm-core §3.2 zTimer.current；wipe 后 Timer::set_value(0)
     pc: 0, // vm-core §3.1 instr_offset；新建 VM 从脚本开头跑
     alive: true, // 骨架自己的记账字段：真实引擎用 AnmVm_run 的返回值（1=销毁）表示这件事，
@@ -279,14 +285,18 @@ export function stepFrame(vm, ops) {
 
     switch (instr.opcode) {
       case 1: // delete（§6.1：-1 与 1 共用同一段代码，-1 在上面 fetch===null 分支处理过了）
+        vm.flagsLo = (vm.flagsLo & ~1) >>> 0; // 05-system.md §2 表：delete 也清可见位
         terminateDeleted(vm);
         return; // 不跑帧尾
       case 2: // static
         vm.pc = -1; // alive 不变——vm 仍然“活着”，只是脚本冻结（§6.1）
         return; // 不跑帧尾
-      case 3: // stop
-      case 4: {
-        // stopHide：骨架不建模可见性 flag，与 3 走同一套逻辑（见文件头“不建模”清单）。
+      case 4: // stopHide：先清可见位，再原样落进 `3 stop`
+        // 05-system.md §8.1 一手（`th16:0x4629dc` `AND [EBX+0x530],0xFFFFFFFE`）：
+        // 清 flags_lo bit0 后**直落** stop 主体。这是社区标 wip:2 的那条，已一手坐实。
+        vm.flagsLo = (vm.flagsLo & ~1) >>> 0;
+      // falls through
+      case 3: { // stop
         // §2 case 3：进自锁前再查一次 pending_interrupt——被 stop 的 VM 仍可被 interrupt 唤醒。
         if (vm._pendingInterrupt !== 0) {
           const outcome = doInterrupt(vm);
