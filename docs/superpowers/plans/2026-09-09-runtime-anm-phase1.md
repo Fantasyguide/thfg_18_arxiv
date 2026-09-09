@@ -36,14 +36,14 @@
 | **IV** | ⬜ | — | `resolveArg` 8 槽 → 22 槽 |
 | 波 D–F | ⬜ | — | 见下 |
 
-**下次开工从 RV 起**，brief 已生成在 `.superpowers/sdd/2026-09-09-runtime-anm-phase1/task-RV-brief.md`
-（该目录 gitignored，含 17 份 brief + 各任务 report + 完整执行账本 `progress.md`，
-里面有全部 11 条控制器裁定与每轮审阅发现——**下次审阅时读它**）。
+**下次开工从 RV1 起**，brief 已生成在 `.superpowers/sdd/2026-09-09-runtime-anm-phase1/task-RV1-brief.md`
+（RV2 的 brief 同目录；RV1 完成后才派 RV2。该目录 gitignored，含 19 份 brief + 各任务 report
++ 完整执行账本 `progress.md`，里面有全部 11 条控制器裁定与每轮审阅发现——**下次审阅时读它**）。
 
 ### 已知遗留（不在本分支范围，波 D 前建议处理）
 
 1. **`resolveArg` 只覆盖 8/22 个可写变量号** —— 实测 Math+Jumps 组 2525 条真实指令里
-   **1078 条（42.7%）会抛**，1929 个 script 里 338 个（17.5%）受影响。这正是 RV/IV 要解决的。
+   **1078 条（42.7%）会抛**，1929 个 script 里 338 个（17.5%）受影响。这正是 RV1/IV 要解决的。
 2. **「33 次 / `(-π, π]`」在仓里还有 4 处未改**（`_shared/math-and-prng.md` §2/§2.1、
    `bullet/th16/03-lasers.md`、`sht/th16/06`、`sht/th18/02`），其中一处写着「跟数学模块同套」——
    现在指向一个已知错误的数字（一手为 **34 次 / `[-π, π]`**，见 `03-math-jumps.md` §7.1）。
@@ -98,7 +98,7 @@
 波 B（串行）  R2 ──> I2                      VM 骨架，后面全部依赖它
 波 C（串行）  R3 ──> I3                      Math+Jumps：用来跑通整条流水线并校准方法
 波 C′（串行） RV1 ──> IV                     ★ 变量表：波 D 的前置依赖，有界任务
-              └──> RV2                     mystery-angle 三条专项：开放式，不挡 IV / 波 D
+              └──> RV2                     mystery-angle 三条专项：开放式，RV1 完成后与波 D 并行，不挡 IV
 波 D（并行）  R4 R5 R6 R7 R8                 ★ 五个 agent 同时派发，各读 HTML
 波 E（串行）  I4 ─> I5 ─> I6 ─> I7 ─> I8     按 spec §6 的组顺序实现
 波 F（串行）  I9 ──> T10 ──> R11
@@ -135,7 +135,8 @@
 | `runtime/anm/tests/fixtures/*.anm.txt` | 夹具**源码**（我们自写，入库） | I1 起各任务追加 |
 | `runtime/anm/tests/build-fixtures.sh` | 用 `thanm` 把源码编成 `.anm`（产物 gitignored） | I1 |
 | `runtime/anm/web/index.html` | 查看器：时间轴、逐帧 vm 状态、加载本地 `.anm` | I9 |
-| `engine/anm/th16/01-format.md` … `09-*.md` | 一手结论（九篇） | R1–R3、**RV**、R4–R8 |
+| `tooling/pe_read.py` | 按 VA 直读 exe 字节（手解 PE 节表）——解跳表 / 常量池，**不占工程锁** | RV1（前置） |
+| `engine/anm/th16/01-format.md` … `09-*.md` | 一手结论（九篇） | R1–R3、**RV1**（+ RV2）、R4–R8 |
 | `engine/anm/th16/04-variables.md` | **变量表**：36 个变量号的语义 / 可写性 / PRNG 流归属 | **RV1**（+ RV2 补 §mystery） |
 | `engine/anm/OVERVIEW.md` | 断言矩阵扩到覆盖 VM 语义 | T10 |
 
@@ -578,6 +579,17 @@ test('所有 46 条 opcode 都已注册', () => {
 - 读侧：`AnmVm::get_int_var` `th16:0x45f610`、`AnmVm::get_float_var` `th16:0x45f2d0`
   （后者的 `add eax,-10000; cmp eax,0x23; jmp [eax*4+0x45f578]` 是一张 **36 项**跳表，
   与社区表条数精确对应）
+- ★ **那张跳表已解出，直接用**（2026-09-09 实测，`tooling/pe_read.py`）：
+  `th16:0x45f578` 36 项 → case 地址，例 `10000 → th16:0x45f2ed`、`10010 → th16:0x45f3e7`、
+  `10035 → th16:0x45f371`。⚠️ **表项顺序 ≠ case 代码顺序**（`10010` 的 case 体排在 `10011` 之后），
+  照反编译 switch 顺序猜会错——自己重跑一遍核对：
+  `python3 tooling/pe_read.py local/th16.v1.00a/th16.exe 0x45f578 --dwords 36 --base 10000`
+- 读侧**字段落点**：`local/th16.v1.00a/state/f/0045f2d0.html` 反汇编里每个 case 的
+  `MOVD XMM0,[ECX+0x…]` 就是落点（`10013–10015 → +0x2c/0x30/0x34`、
+  `10023–10025 → +0x38/0x3c/0x40`、`10033–10035 → +0x4c0/0x4c4/0x4c8`；
+  `10016–10021` 与 `10026` **没有直接字段读**，走 helper，单独交代）。
+  ⚠️ **别用 `state/data/functions.jsonl` 的反编译文本**——Ghidra 丢了 XMM 返回值，
+  36 个 case 全被糊成裸 `return;`（实测）。**看反汇编。**
 - 写侧：两张 lvalue 表（`03-math-jumps.md` §9 已解出并逐条列举，可直接接用）
 
 **社区源（对账，非结论）**：`local/vendor/thpages/js/tables/reference/anmvar.ts`
@@ -601,11 +613,15 @@ test('所有 46 条 opcode 都已注册', () => {
 
 **完成判据**：
 1. 36 条**全部**有 case 地址与可信度；可写性逐条有一手依据（不是照抄 `mut` 字段）
-2. 三条 `wip:2` 给出结论或诚实标 ❓；若得出结论，过 `METHOD.md` 的额外闸门
+2. `10033–10035` 的类型 / 可写性 / case 地址 / 字段落点已给，语义栏标 ❓ 并指向 RV2；
+   **不去追它们的含义**（那是 RV2 的事，越界即判据不达标）
 3. **每个统计写明分母与所算字段**；「全部/一律」类宣称附穷举 + **negative set**
 4. 与 `02-vm-core.md` §3.4、`03-math-jumps.md` §3/§7.4/§9 逐条衔接，冲突处以本篇一手为准并写明
-5. 断言**回流** `engine/anm/OVERVIEW.md`（这条是波 D 模板的必备项，本篇先做示范）
-6. `python3 tooling/check-docs.py` 四项全绿；命名追加进 `naming-batch.md`（**别覆盖**）
+5. 断言**回流** `engine/anm/OVERVIEW.md`（这条是波 D 模板的必备项，本篇先做示范）；
+   顺带把该文件开头「⚠️ 本子系统尚未系统开工」的过期状态改掉
+6. `python3 tooling/check-docs.py` 四项全绿；`04-variables.md` 加进 `engine/anm/th16/README.md`
+   的「计划产出」清单（**`--orphans` 查不出这类遗漏**，见该 README 的警告）；命名追加进
+   `naming-batch.md`（**别覆盖**）
 
 ---
 
@@ -635,7 +651,8 @@ test('所有 46 条 opcode 都已注册', () => {
 并把表里那三行的语义与可信度就地更新。
 
 **完成判据（刻意放松）**：
-1. **给出结论并过额外闸门，或诚实标 ❓ 并写清「排除了哪些假设、依据是什么」** —— 后者同样算完成
+1. **给出结论并过额外闸门，或诚实标 ❓ 并写清「排除了哪些假设、依据是什么」** —— 后者同样算完成；
+   **结论若与 thpages `wip:2` 冲突，必须列出冲突点 + 一手证据**（这是额外闸门的落点）
 2. 统计写明分母与所算字段；穷举类宣称附 negative set
 3. `check-docs.py` 四项全绿
 
