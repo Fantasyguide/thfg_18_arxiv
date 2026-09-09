@@ -1,0 +1,62 @@
+// vm-timing.anm.txt — 自写最小 v8 夹具，服务 task-I2（VM 骨架）测试，零版权字节
+//
+// 语法参考：thanm/anmparse.y 的格式表 formats_v8（opcode -> 参数类型序列），以及已经跑通
+// 的 tests/fixtures/minimal.anm.txt 的写法（`ins_<opcode>(args...)` 通用记法、`[N]` 变量
+// 引用语法、`label:` 字节偏移标签）。只当语法参考，不抄真实游戏内容。
+//
+// 独立成篇（不复用 minimal.anm.txt 的两个 entry）：本文件只服务 vm-core.test.js，
+// 一个 entry、一个 sprite（REQUIRE 字段，内容不重要），四个 script：
+//
+//   script 0（id -1）timing    —— task-I2-brief.md 步骤 1/2/3 那三条现成测试用的脚本：
+//     set(100,"SS") / add3(112,"SSS"，这里故意只给 2 个参数——thanm 对“少给参数”只警告
+//     不报错，state->was_error 不置位，见 anmparse.y instr_check_types 的注释 “it compiles
+//     fine”）/ 时间没到会被挡住的第三条 / stop(3)。
+//   script 1（id -2）waitVar   —— 变量解析测试：6 wait 的参数是变量（[10000] = I0）。
+//     6 wait 是骨架自己处理的（vm-core.md §2 case 6 明确调 resolve_int），不需要任何
+//     opcode 组，所以可以直接测 core.js 内部有没有正确接上 resolveArg。
+//   script 2（id -3）jmpLit    —— 跳转测试：200 jmp 的 dest 是字面标签。★ 只测字面目标——
+//     math-jumps.md §2.1/§5 一手证实 th16 的跳转族（200/201/202–213）dest 与 t 永远
+//     按字面量读，从不查 param_mask，这个 VM 里不存在“变量跳转目标”这回事，所以没有
+//     对应的“变量目标”测试（早先任务说明里提过要测这个，是控制器给错的前提，已撤回）。
+//
+//   script 3（id -4）interrupt —— interrupt 测试：`ins_5(7)` 是 interrupt 号 7 的标签
+//     （opcode 5 的语义就是“我是一个标签，我的参数是我的编号”，vm-core.md §5 结论1），
+//     命中后从标签之后的指令继续跑。
+entry vmTiming {
+    version: 8,
+    name: "minimal.png",
+    format: 1,
+    hasData: 1,
+    sprites: {
+        sprite0: { x: 0, y: 0, w: 8, h: 8 }
+    }
+}
+
+script -1 timing {
+0:
+    ins_100(0, 3);
+    ins_112(0, 4);
++10:
+    ins_100(1, 99);
++1:
+    ins_3();
+}
+
+script -2 waitVar {
+0:
+    ins_6([10000]);
+}
+
+script -3 jmpLit {
+0:
+    ins_200(landing, 0);
+    ins_100(0, 111);
+landing:
+    ins_100(0, 222);
+}
+
+script -4 interrupt {
+0:
+    ins_5(7);
+    ins_100(0, 777);
+}

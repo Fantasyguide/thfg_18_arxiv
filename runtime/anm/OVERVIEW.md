@@ -7,7 +7,8 @@
 
 这是一个 ANM v8（TH13+，参见 [`engine/anm/OVERVIEW.md`](../../engine/anm/OVERVIEW.md)）
 精灵动画播放器，用「行为对不对得上 th16」反向证伪 `engine/anm/` 的断言。当前处于
-**阶段 1：地基**——格式层（I1）已实现，opcode 状态矩阵（指令语义）仍全部「未开始」。
+**阶段 1：地基**——格式层（I1）与 VM 骨架（I2）已实现，opcode 状态矩阵（指令语义）仍全部「未开始」
+（骨架本身不含任何具体 opcode 语义，见下）。
 
 ## 格式层：已实现
 
@@ -34,6 +35,32 @@ entry 链表 / sprite 表 / script 表 / 指令流，只做结构解析，不含
   位置序号（01-format.md §4/§5：加载器不读这两个字段）。要跨 entry 累加的运行时索引，
   用 `entries.flatMap(e => e.scripts)`/`entries.flatMap(e => e.sprites)` 的**数组下标**，
   不要用 `id`。详见 `anm-v8.js` 顶部注释。
+
+## VM 骨架：已实现
+
+`src/vm/core.js` 实现取指 / 时间推进 / 跳转 / interrupt / 生死，依据
+[`engine/anm/th16/02-vm-core.md`](../../engine/anm/th16/02-vm-core.md) §2 的 `AnmVm_run`
+伪代码（逐段注释指回对应小节）。**不含任何具体 opcode 语义**——100+/200+/300+/400+/500+/600+
+全部通过 `registerGroup(ops, groupTable)` 注入的 `ops` 表间接调用，`core.js` 本身只认
+`-1/0/1/2/3/4/5/6/7` 这几个数字（生死/时间控制的骨架特例）。
+
+- **接口**：`createVm(script, opts?) -> vm`、`stepFrame(vm, ops) -> void`、
+  `registerGroup(ops, groupTable) -> void`、变量解析 `resolveArg(vm, raw, isVariable, kind)`
+  （配套小工具 `isVarBit(paramMask, index)`）、`triggerInterrupt(vm, n) -> void`、
+  handler 用来声明「我已经自己改过 pc」的哨兵 `PC_HANDLED`。
+- **变量解析**：目前只实现 I0–I3 / F0–F3（变量号 10000–10007，
+  [`engine/anm/th16/03-math-jumps.md`](../../engine/anm/th16/03-math-jumps.md) §3 专项①）——
+  `02-vm-core.md` §3.4 变量表里其余变量号留给用到它们的 opcode 组按需扩展。
+- **跳转**：骨架只提供「handler 可以直接改写 `vm.pc`（字节偏移），骨架据此不再 `+= size`」
+  这套通用机制（`PC_HANDLED`），不认识任何具体跳转 opcode。**这个 VM 里不存在变量跳转
+  目标**——`03-math-jumps.md` §2.1/§5 一手证实跳转族（200/201/202–213）的 `dest`/`t` 恒为
+  字面量，不查 `param_mask`。
+- **明确不建模**（范围决策，理由见 `core.js` 文件头注释）：GAME_SPEED 全局寄存器与
+  slowdown、`on_tick`/`on_wait` 回调、`flags_lo`/`flags_hi`（含 `stop`/`stopHide` 的可见性
+  差异）、帧尾几何（速度积分/全局滚动/UV 重算/插值器）、`AnmLoaded`/`AnmManager` 层的模板
+  预跑与「创建即 tick」。
+- 测试：`tests/vm-core.test.js`，夹具 `tests/fixtures/vm-timing.anm.txt`（自写、零版权
+  字节）。细节见 `.superpowers/sdd/2026-09-09-runtime-anm-phase1/task-I2-report.md`。
 
 ## opcode 状态矩阵
 
@@ -199,15 +226,19 @@ runtime/anm/
   src/
     format/
       anm-v8.js         v8 格式解析器（parseAnm），指回 01-format.md §2–§6
+    vm/
+      core.js           VM 骨架（取指/时间/跳转/interrupt/生死），指回 02-vm-core.md §2
   tools/
     gen-opcode-matrix.py   重生成上面那张矩阵
   tests/
     smoke.test.js       node:test 能跑起来的最小验证
     format.test.js       v8 解析器差分测试，以 thanm -l 为 oracle
+    vm-core.test.js      VM 骨架测试
     build-fixtures.sh    用 thanm -c 8 把 fixtures/*.anm.txt 编译成 .anm
     fixtures/
-      minimal.anm.txt     自写夹具源码（入库）
-      minimal.anm/.png    build-fixtures.sh 编译产物（gitignored，不入库）
+      minimal.anm.txt      自写夹具源码（入库）
+      vm-timing.anm.txt    自写夹具源码（入库），VM 骨架测试用
+      *.anm/*.png          build-fixtures.sh 编译产物（gitignored，不入库）
 ```
 
 ## 下一步
