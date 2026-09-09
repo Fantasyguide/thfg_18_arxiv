@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { parseAnm } from '../src/format/anm-v8.js';
 import { createVm, stepFrame, registerGroup } from '../src/vm/core.js';
-import { mathJumpsGroup } from '../src/vm/group-math.js';
+import { mathJumpsGroup, placeholderPrng } from '../src/vm/group-math.js';
 
 const ops = {};
 registerGroup(ops, mathJumpsGroup);
@@ -49,6 +49,18 @@ test('浮点槽与整型槽相互独立', () => {
 test('jmpLt 条件成立时跳转并按表设定 time', () => {
   const vm = run('./fixtures/math-ops.anm', 3);
   assert.equal(vm.i[3], 9, '循环体按 03-math-jumps.md 的跳转语义执行');
+  // ★ 上面那句断言不了跳转：i3 在 time 0 段就已经是 9，循环体只碰 I1。
+  //   （收口审阅实测：把 14 条跳转 handler 全删掉，只留这一句时测试仍然绿。）
+  //   下面这句才是有区分力的部分——夹具 math-ops.anm.txt 的 time 1 段是
+  //   `206 jmpLt I1<9 -> loopBody` + `102 add I1,1` + `200 jmp loopHead`：
+  assert.equal(
+    vm.i[1],
+    9,
+    '循环必须真的跑完：I1 从 6 每轮 +1 直到 206 jmpLt 的 I1<9 不再成立 ⇒ 终值恰为 9。' +
+      '206/200 任何一条不生效，I1 会停在 6（不跳=直接 ins_3 停机）或 7（跳一次就丢了回边）',
+  );
+  // 「按表设定 time」那一半在这个夹具上测不出来（206/200 的 t 都是 1，与帧尾推进后的
+  // 时间同值，删掉 handler 也还是 1）——单独用手工指令测，见下面那条 `t 覆盖 script_time`。
 });
 
 test('所有 46 条 opcode 都已注册', () => {
@@ -220,6 +232,25 @@ test('跳转不成立：202–213 一族条件不满足时顺序执行，不跳�
   assert.equal(vm.i[0], 999);
 });
 
+test('跳转的 t 覆盖 script_time（math-jumps §6：Timer::set_value(t)，且 previous = t - 1）', () => {
+  const { instructions } = buildScript([
+    { opcode: 200, args: [{ ref: 'landing' }, 5] }, // time 0：跳 landing，t = 5
+    { opcode: 100, paramMask: 0b01, args: [10000, 999] }, // 毒药（顺序执行才会碰到）
+    { label: 'landing', time: 5, opcode: 100, paramMask: 0b01, args: [10000, 42] },
+    { time: 5, opcode: 3, args: [] },
+  ]);
+  const vm = mkVm(instructions);
+  stepFrame(vm, ops);
+  assert.equal(vm.time, 5, 't=5 被直接写进 script_time —— 不是保持 0、也不是取目标指令的 time 标签');
+  assert.equal(vm._timePrev, 4, 'Timer::set_value 同时把 previous 设成 t-1（math-jumps §6 结论 3）');
+  assert.equal(
+    vm.i[0],
+    42,
+    '时间被拨到 5 之后 landing（time=5）当帧就过闸门执行；跳转不生效的话会先吃到毒药 999、' +
+      '而 landing 的 time=5 > 0 会被闸门挡住',
+  );
+});
+
 // ── 129 mathReduceAngle：上限 34 步 / 泄漏阈值 ±216.77（math-jumps §7.1，刚被修正过
 // 的数字——之前的版本写的是 33 步 / ±207.3，本组照修正后的实现，用文档给出的模拟表验）───
 
@@ -243,4 +274,30 @@ test('129 mathReduceAngle：216.77（超过泄漏阈值）归约后仍越界，�
   stepFrame(vm, ops);
   assert.ok(Math.abs(vm.f[0] - 3.1416459) < 1e-3, `got ${vm.f[0]}`);
   assert.ok(vm.f[0] > Math.PI, '这是文档 §7.1 表格里明确「刚好越过 π」的那一行，不是 bug');
+});
+
+// ── A7 收口修复：defaultPrng 静默退化已改成抛异常（group-math.js「实现决策②」）───────
+// 之前没注入 vm.prng 时会悄悄退化到 Math.random()——非确定、不可复现、与真机无关的数字
+// 被当成正常结果返回，且这条退化路径零测试覆盖（4 条既有 PRNG 测试全都注入了 vm.prng）。
+
+test('122/123/131 没注入 vm.prng 时抛异常，不静默退化到 Math.random', () => {
+  for (const [opcode, args, paramMask] of [
+    [122, [10000, 7], 0b01],
+    [123, [f32bits(10004), f32bits(1)], 0b01],
+    [131, [f32bits(10004), f32bits(10005), f32bits(1), f32bits(2)], 0b0011],
+  ]) {
+    const vm = mkVm([instr(opcode, args, { paramMask })]);
+    assert.throws(
+      () => stepFrame(vm, ops),
+      /vm\.prng/,
+      `opcode ${opcode} 未注入 PRNG 时必须抛，且错误信息要指出缺的是 vm.prng`,
+    );
+  }
+});
+
+test('placeholderPrng 是显式导出的占位实现，注入后 122 不再抛', () => {
+  const vm = mkVm([instr(122, [10000, 7], { paramMask: 0b01 })]);
+  vm.prng = placeholderPrng;
+  stepFrame(vm, ops); // 不抛即通过
+  assert.ok(Number.isInteger(vm.i[0]) && vm.i[0] >= 0 && vm.i[0] < 7, `got ${vm.i[0]}`);
 });
