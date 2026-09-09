@@ -105,3 +105,77 @@
 | `0x462c08` | opcode 2 static：instr_offset=-1 但返回 0，VM 保留并继续渲染 |
 | `0x4629fa` | opcode 3/4 stop：Timer::decrement 抵消帧尾的 increment，脚本时间冻结 |
 | `0x462c11` | 帧尾内联 Timer::increment(&vm->script_time)：每帧 += GAME_SPEED |
+
+---
+
+## 批次 R3 · Math + Jumps 组（来自 [`03-math-jumps.md`](03-math-jumps.md)）
+
+### case label 改名（`AnmVm::run` `0x45f980` 函数体内的 label，不是函数）
+
+社区 label 里 **122–131 只有裸数字**，另有 4 条名字与一手语义有出入。建议全部改成
+`<opcode>__<助记>` 的统一形式（助记取 thpages 名，与 `03-math-jumps.md` §2 的表一致）。
+
+| 地址 | 现 label | 建议 label | 依据 |
+| --- | --- | --- | --- |
+| `0x46045b` | `122` | `122__rand` | `div esi` 取余；`n == 0` 短路成 0；用 PRNG Stream B `0x4a6d80` |
+| `0x460492` | `123` | `123__randF` | `0x402c70`（`[0,1)`）乘 `arg1` |
+| `0x4604f2` | `124` | `124__mathSin` | 调 `0x4884c0`（sin 的 Taylor 系数指纹） |
+| `0x46052d` | `125` | `125__mathCos` | 调 `0x488300`（与 sin 同构，扇区偏置多 `0x10` = +π/2） |
+| `0x460568` | `126` | `126__mathTan` | 调 `0x488790`（同 `32/π` 归约 + 一条倒数 `divsd`） |
+| `0x4605a3` | `127` | `127__mathAcos` | 调 `0x487af0`（asin Taylor 系数 + `sqrtsd` + π/2 与 π） |
+| `0x4605de` | `128` | `128__mathAtan` | 调 `0x488010`（`abs(x)==inf → ±π/2`，`-1.0/x` 归约） |
+| `0x460619` | `129` | `129__mathReduceAngle` | 调 `0x402d30`，第二参传 0；把 θ 折进 `[-π, π]`，最多 33 次 |
+| `0x460663` | `130` | `130__mathCirclePos` | 调 `0x464930`；`*x = cos(θ)*r`、`*y = sin(θ)*r` |
+| `0x4606f5` | `131` | `131__mathCirclePosRand` | 两次 `0x402cb0`（**`[-1,1)`**）抽角与半径，再调 `0x464d60` |
+| `0x45fc12` | `201__jmpIfPos` | `201__jmpDec` | 先 `dec` 再判 `> 0`；社区名没体现「自减」这一半，而自减才是它的主要作用 |
+| `0x45fd68` | `112__add` | `112__add3` | 三操作数 `x = a + b`，与 `102__iadd`（`a += b`）不是一回事，现名易混 |
+| `0x460169` | `102__iadd` | `102__add` | 同上；`i` 前缀在 thpages 体系里表示「整型」，而这里 102/103 是整/浮对，不是 in-place 标记 |
+| `0x4607ce` 等 12 条 | `202__jmpEq` … `213__jmpGeqf` | 保留 | 一手逐条核过，语义全对（含 NaN 行为） |
+
+> ⚠️ `112`–`121` 与 `102`–`111` 的社区 Ghidra label 前缀（`add` vs `iadd`）与 thpages 的
+> `add` / `add3` **正好相反**，两套都在仓里出现会长期误导。建议统一到 thpages 体系
+> （`102 add` / `112 add3`），因为 thanm 生成的反汇编文本用的就是那套。
+
+### 函数改名
+
+| 地址 | 现名 | 建议名 | 依据 |
+| --- | --- | --- | --- |
+| `0x488790` | `FUN_00488790` | `libm_sse2_tan` | 与 `libm_sse2_sin/cos` 同套 `32/π` 扇区归约表 + 一条取倒数 `divsd` |
+| `0x487af0` | `FUN_00487af0` | `libm_sse2_acos` | 常量池 = asin Taylor 系数 `1/6, 3/40, 15/336, 105/3456, …`；3 条 `sqrtsd`；同时有 π/2 与 π |
+| `0x488010` | `FUN_00488010` | `libm_sse2_atan` | `0x4882a6` 判 `abs(x)==+inf` 返回 `±π/2`；`-1.0/x` 归约；无 `sqrtsd` |
+| `0x464930` | `cartesian_from_polar_464930` | `math_polar_to_xy_2ptr` | 输出写**两个**独立 `float*`（`ECX`/`EDX`），只服务 `130` |
+| `0x464d60` | `cartesian_from_polar_464d60` | `math_polar_to_xy_vec2` | 输出写**同一个** `float[2]`（`ECX`），8 处调用方 |
+| `0x402d30` | `math_wrap_angle_402d30` | `math_wrap_angle_clamped33` | 名字要体现「最多 33 次 ±2π 就放弃」，否则移植会写成无界 `fmod` |
+
+### 数据符号
+
+| 地址 | 建议名 | 依据 |
+| --- | --- | --- |
+| `0x462cb8` | `ANM_VM_JUMPTABLE_LO`（`void*[53]`） | 已在 R2 批次登记；本批复核确认覆盖 opcode `-1..213` |
+| `0x462d8c` | `ANM_VM_JUMPINDEX_LO`（`u8[215]`） | 同上；下标 = opcode + 1，`0x45fbe3` 的上界是 `0xd6` |
+| `0x45f8fc` / `0x45f91c` | `ANM_INTVARPTR_JUMPTABLE`（`void*[8]`）/ `ANM_INTVARPTR_JUMPINDEX`（`u8[30]`） | `get_int_var_ptr` `0x45f890` 的两级表，基 10000 |
+| `0x45f830` / `0x45f870` | `ANM_FLOATVARPTR_JUMPTABLE`（`void*[16]`）/ `ANM_FLOATVARPTR_JUMPINDEX`（`u8[32]`） | `get_float_var_ptr` `0x45f780` 的两级表，基 10004 |
+| `0x45f710` / `0x45f758` | `ANM_INTVAR_JUMPTABLE`（`void*[18]`）/ `ANM_INTVAR_JUMPINDEX`（`u8[36]`） | `get_int_var` `0x45f610` 的两级表，基 10000 |
+| `0x4a6d80` | `PRNG_STREAM_B__PRESENTATION` | ANM VM / 屏幕震动 / 雾 全走它；**不进回放**。见 `03-math-jumps.md` §7.4 |
+| `0x4a6d88` | `PRNG_STREAM_A__GAMEPLAY` | ECL / 弹幕 / 掉落 全走它；回放关键。（🟡：命名依据是调用方分布，非直接标记） |
+| `0x494588` | `F_PI`（`3.1415927f`） | `0x402d30` 的上界、`0x46073d` 把 `[-1,1)` 乘成角度 |
+| `0x4945b8` | `F_TWO_PI`（`6.2831855f`） | `0x402d52` / `0x402d72` 的步长 |
+| `0x494734` | `F_NEG_PI`（`-3.1415927f`） | `0x402d61` 的下界 |
+| `0x494720` | `F_NEG_ONE`（`-1.0f`） | 46 条 handler 收尾前都会把它搬回 `XMM1`；是循环不变量，**不是语义的一部分** |
+| `0x494ad0` | `D_PI_OVER_2`（`double`，`0x494ad8` = 负值） | `libm_sse2_atan` 对 `±inf` 的返回值 |
+
+### 注释（`set_comment`）
+
+| 地址 | 注释 |
+| --- | --- |
+| `0x45fc0d` | 200 jmp：instr_offset 直接 = arg0，即 **script 内字节偏移**（非指令下标）；857/857 真实跳转落在指令边界 |
+| `0x45fbff` | 200 jmp：Timer::set_value(script_time, arg1) —— 时间由参数覆盖，与目标指令的 time 标签无关 |
+| `0x45fc27` | 201 jmpDec：先 dec 计数器再判 >0；若 param_mask bit0 未置位，这条会改写指令流里的立即数 |
+| `0x460b88` | 202–213 共用尾巴：Timer::set_value(script_time, arg3) + instr_offset = arg2；此处不查 param_mask ⇒ dest/t 不可为变量 |
+| `0x460324` | 108 div：cdq+idiv，**无零除守卫** —— b==0 或 INT_MIN/-1 直接 #DE |
+| `0x4600bb` | 120 mod3：同 idiv，取 EDX 余数；余数符号随被除数 |
+| `0x460472` | 122 rand：唯一做了零除守卫的一条（n==0 → 0）；div 是**无符号**的 |
+| `0x46075e` | 131：半径 = lo + randf_signed()*(hi-lo)，randf_signed ∈ [-1,1) ⇒ 区间不是 [lo,hi]，社区文档在此有误 |
+| `0x45f8f6` | get_int_var_ptr 默认分支：把入参指针原样退回 = 指令流里的那 4 字节（自修改字节码入口） |
+| `0x45f82a` | get_float_var_ptr 默认分支：同上 |
+| `0x488540` | libm_sse2_sin 的扇区偏置 `0x1c7600`；cos（`0x488380`）是 `0x1c7610`，差 16 个 π/32 扇区 = π/2 |
