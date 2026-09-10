@@ -23,6 +23,10 @@
    "addr": "0x1400069b0"
   },
   {
+   "name": "AnmManager__LoadSurface",
+   "addr": "0x140007620"
+  },
+  {
    "name": "BombData__BombReimuACalc",
    "addr": "0x14000d1a0"
   },
@@ -155,8 +159,28 @@
    "addr": "0x1400373b0"
   },
   {
+   "name": "GameErrorContext__Flush",
+   "addr": "0x14003a0d0"
+  },
+  {
+   "name": "GameManager__AddedCallback",
+   "addr": "0x14003a9c0"
+  },
+  {
+   "name": "Gui__LoadMsg",
+   "addr": "0x14003eb80"
+  },
+  {
    "name": "ItemManager__SpawnItem",
    "addr": "0x1400426e0"
+  },
+  {
+   "name": "WinMain",
+   "addr": "0x1400454f0"
+  },
+  {
+   "name": "MainMenu__OnUpdate",
+   "addr": "0x1400479e0"
   },
   {
    "name": "Player__AddedCallback",
@@ -217,6 +241,22 @@
   {
    "name": "ResultScreen__WriteScoreDat",
    "addr": "0x140074470"
+  },
+  {
+   "name": "SoundPlayer__InitSoundBuffers",
+   "addr": "0x1400767d0"
+  },
+  {
+   "name": "Stage__LoadStageData",
+   "addr": "0x1400785c0"
+  },
+  {
+   "name": "Supervisor__AddedCallback",
+   "addr": "0x14007a6d0"
+  },
+  {
+   "name": "Supervisor__LoadConfig",
+   "addr": "0x14007b5d0"
   }
  ],
  "statics": [
@@ -914,7 +954,7 @@
   {
    "addr": "0x1400020b0",
    "kind": "plate",
-   "text": "[NC first-hand] LoadAnm(this, anmIdx, path, spriteIdxOffset). Signature matches the TH06 community reconstruction parameter for parameter."
+   "text": "[NC first-hand] Named via the original TH06 log message it emits (2 messages, exact). self-validation: this address was already named AnmManager__LoadAnm in the ANM round; the matcher reproduced it without knowing."
   },
   {
    "addr": "0x140002980",
@@ -980,6 +1020,11 @@
    "addr": "0x140007494",
    "kind": "plate",
    "text": "36 RVA entries for ANM opcodes 0..35."
+  },
+  {
+   "addr": "0x140007620",
+   "kind": "plate",
+   "text": "[NC first-hand] Named via the original TH06 log message it emits (1 message, exact)."
   },
   {
    "addr": "0x14000d1a0",
@@ -1742,14 +1787,39 @@
    "text": "[NC first-hand] Per-enemy tick. Identified because CC0 TH06 has exactly two callers of CalcKillBoxCollision (BulletManager::OnUpdate and EnemyManager::OnUpdate) and NC has exactly two as well, one already independently named BulletManager__OnUpdate. Content confirms it: hitbox scaled by 1/1.5, life -= 10 on a body hit, damage clamped to 70, then the spellcard divisors."
   },
   {
+   "addr": "0x14003a0d0",
+   "kind": "plate",
+   "text": "[NC first-hand] Named via the original TH06 log message it emits (1 message, exact)."
+  },
+  {
+   "addr": "0x14003a9c0",
+   "kind": "plate",
+   "text": "[NC first-hand] Named via the original TH06 log message it emits (8 messages, inlined). 7 of the 8 messages are GameManager::AddedCallback's; the 8th belongs to EclManager::Load, which CC0 calls from here (GameManager.cpp:427) and NC inlined."
+  },
+  {
    "addr": "0x14003b490",
    "kind": "pre",
    "text": "Loader scan for an opcode-13 timeline checkpoint."
   },
   {
+   "addr": "0x14003eb80",
+   "kind": "plate",
+   "text": "[NC first-hand] Named via the original TH06 log message it emits (1 message, exact)."
+  },
+  {
    "addr": "0x1400426e0",
    "kind": "plate",
    "text": "[ECL cross-match, exact] Located by matching the ECL opcodes whose handler calls it against the CC0 th06-decomp source: opcodes 119, 124. Name follows that upstream."
+  },
+  {
+   "addr": "0x1400454f0",
+   "kind": "plate",
+   "text": "[NC first-hand] Application entry, called from the CRT startup. Several functions are inlined into it, including SoundPlayer::InitializeDSound (whose success message lives here). Also calls SteamAPI_* and SetDllDirectoryA."
+  },
+  {
+   "addr": "0x1400479e0",
+   "kind": "plate",
+   "text": "[NC first-hand] Named via the original TH06 log message it emits (1 message, exact)."
   },
   {
    "addr": "0x140068160",
@@ -1870,6 +1940,26 @@
    "addr": "0x140074470",
    "kind": "plate",
    "text": "[NC first-hand] Serializes HSCR/CLRD/CATK/PSCR and writes score.dat. The whole body is gated on the +0x9e99 dirty flag, which the unlock cheats set."
+  },
+  {
+   "addr": "0x1400767d0",
+   "kind": "plate",
+   "text": "[NC first-hand] Named via the original TH06 log message it emits (1 message, exact)."
+  },
+  {
+   "addr": "0x1400785c0",
+   "kind": "plate",
+   "text": "[NC first-hand] Named via the original TH06 log message it emits (1 message, exact)."
+  },
+  {
+   "addr": "0x14007a6d0",
+   "kind": "plate",
+   "text": "[NC first-hand] Named via the original TH06 log message it emits (1 message, exact)."
+  },
+  {
+   "addr": "0x14007b5d0",
+   "kind": "plate",
+   "text": "[NC first-hand] Named via the original TH06 log message it emits (1 message, exact)."
   },
   {
    "addr": "0x1402c0000",

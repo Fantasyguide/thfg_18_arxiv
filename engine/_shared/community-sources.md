@@ -31,6 +31,11 @@ blob,不解析内部)。**不存在 `thsht` 这种官方工具**。网上"thsht 
 - **单向**:符号的唯一源是 `games/th06nc/symbols.json`,公开仓库只接收。别反过来编辑它。
 - **发布安全**:`tooling/ghidra/tests/test_publish_th06nc_re_data.py` 守三条——
   不含游戏字节 / 不转发上游名字(mapfile 只准出现 32-35)/ 不漏本机路径与非 ASCII。
+> ⚠️ **这条约束直接决定了 TH06NC 的迁名策略**：TH06 工程里那 1267 个已命名函数
+> 绝大多数来自无 LICENSE 的 `th06-re`，**不能搬进 `games/th06nc/symbols.json`**。
+> 能安全转发的只有 CC0 推出来的名字。三种批量手法的实测见
+> [`th06nc-name-transfer.md`](th06nc-name-transfer.md)。
+
 - **有 LICENSE**:选 CC0 就是因为 ExpHP 那边没有 LICENSE 给我们造成过麻烦,不想重复。
 
 ## ★★ TH06 专用金矿:`th06-re` 的 Ghidra XML
