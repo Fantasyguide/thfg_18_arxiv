@@ -82,9 +82,13 @@ class Th06ncPlayerSpecTests(unittest.TestCase):
 
     def test_player_state_offset_correction_is_kept(self):
         # +0x773c 曾被本仓误标成 playerState；真的在 +0x7898。
+        # 该字段现已解出为 respawnTimer，所以这里守的不再是「还叫 unk_773c」，
+        # 而是**那次纠错的记录没被删掉** —— 记录比名字更该留住。
         by_name = {n: o for o, n, _s, _e in self.spec.PLAYER_FIELDS}
         self.assertEqual(by_name["playerState"], 0x7898)
-        self.assertIn("unk_773c", by_name)
+        evidence = {n: e for _o, n, _s, e in self.spec.PLAYER_FIELDS}
+        self.assertEqual(by_name["respawnTimer"], 0x773C)
+        self.assertIn("playerState", evidence["respawnTimer"])
 
     def test_spawn_positions_match_th06_on_both_paths(self):
         # 曾经把 NC 的复活路径与 CC0 的初始化路径对比，误报出一个不存在的差异。
@@ -261,3 +265,72 @@ class Th06ncDamageChainTests(unittest.TestCase):
         # EnemyManager__OnUpdate 是靠「调用者集合双向唯一」认出来的，
         # 注释里必须留着这条推理，否则以后没人知道该信几分。
         self.assertIn("exactly two", by["EnemyManager__OnUpdate"])
+
+
+class Th06ncDeathChainTests(unittest.TestCase):
+    """阶段三：死亡链。
+
+    最要紧的一条是**决死窗口的跨版本差异**：TH06 是 8 帧然后每次复活变 6，
+    NC 每次都是 8。差异只有一条指令（Die 里多写了一次 respawnTimer），
+    极易被「照抄 TH06」抹平，所以钉死。
+    """
+
+    def setUp(self):
+        self.spec = load("th06nc_player_spec")
+
+    def test_respawn_timer_is_no_longer_an_unknown(self):
+        # 这个字段被误标过两次：先当成 playerState，再降级成 unk_773c。
+        by = {n: o for o, n, _s, _e in self.spec.PLAYER_FIELDS}
+        self.assertEqual(by["respawnTimer"], 0x773C)
+        self.assertNotIn("unk_773c", by)
+        src = {n: s for _o, n, s, _e in self.spec.PLAYER_FIELDS}
+        self.assertEqual(src["respawnTimer"], "code")
+
+    def test_deathbomb_window_difference_is_not_flattened(self):
+        self.assertEqual(self.spec.DEATHBOMB_WINDOW, 8)
+        self.assertEqual(self.spec.DEATHBOMB_WINDOW_TH06_FIRST_LIFE, 8)
+        self.assertEqual(self.spec.DEATHBOMB_WINDOW_TH06_AFTER_RESPAWN, 6)
+        # 差异的本质：TH06 复活后会把窗口改小，NC 不会。写成相等就说明有人抹平了它。
+        self.assertNotEqual(self.spec.DEATHBOMB_WINDOW,
+                            self.spec.DEATHBOMB_WINDOW_TH06_AFTER_RESPAWN)
+
+    def test_invulnerability_timer_is_an_eight_byte_zuntimer(self):
+        by = {n: o for o, n, _s, _e in self.spec.PLAYER_FIELDS}
+        # previous 在 +0x7854、current 在 +0x7858 —— 相差 4，与 8 字节 ZunTimer 一致
+        self.assertEqual(by["invulnerabilityTimer"], 0x7854)
+        self.assertEqual(self.spec.ZUNTIMER_SIZE, 8)
+        self.assertEqual(self.spec.ZUNTIMER_PREVIOUS_SENTINEL, -999)
+
+    def test_death_signature_constants(self):
+        # Die() 是靠这组常量从内联体里切出来的，改了就等于换了识别依据
+        self.assertEqual(self.spec.DEATH_SOUND, 4)          # SOUND_PICHUN
+        self.assertEqual(self.spec.DEATH_LASER_TIMER_VALUE, 2)
+        self.assertEqual(self.spec.INVULNERABILITY_FRAMES, 30)
+        self.assertEqual(self.spec.INVULNERABLE_TIMER_VALUE, 240)
+        ids = [pid for pid, _n, _c, _w in self.spec.DEATH_PARTICLES]
+        counts = [c for _p, c, _c2, _w in self.spec.DEATH_PARTICLES]
+        self.assertEqual(ids, [12, 6])
+        self.assertEqual(counts, [1, 16])
+
+    def test_death_payout(self):
+        self.assertEqual(self.spec.DEATH_ITEMS_WITH_LIVES, 6)
+        self.assertEqual(self.spec.DEATH_ITEMS_GAME_OVER, 5)
+        self.assertEqual(self.spec.DEATH_POWER_LOSS, 16)
+        # 6 + 5 = 11，正好是 Player__OnUpdate 里 SpawnItem 的调用次数
+        self.assertEqual(self.spec.DEATH_ITEMS_WITH_LIVES
+                         + self.spec.DEATH_ITEMS_GAME_OVER, 11)
+
+    def test_deathbomb_revives_via_all_four_bomb_calcs(self):
+        # 决死之所以成立，是因为 Bomb*Calc 把 playerState 改回 INVULNERABLE。
+        # 四个自机型必须都有，缺一个就说明只看了一条路径。
+        names = [n for _a, n in self.spec.DEATHBOMB_REVIVE_WRITES]
+        self.assertEqual(len(names), 4)
+        declared = {n for _a, n, _c in self.spec.FUNCTIONS}
+        for n in names:
+            self.assertIn(n, declared)
+
+    def test_the_nc_only_mode_flag_stays_marked_unknown(self):
+        # 机制一手确定，但这个开关叫什么不知道。别让它被安上一个自信的名字。
+        self.assertEqual(self.spec.NC_MODE_FLAG, 0x1404F27C4)
+        self.assertEqual(self.spec.NC_DEATH_POWER_FLOOR, 8)
+        self.assertEqual(self.spec.NC_MODE_FLAG_CONFIG_BYTE, 0x140C21DBB)

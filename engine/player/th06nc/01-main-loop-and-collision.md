@@ -564,6 +564,112 @@ bit2 `hasBeenInBounds`、bit3 `isBoss`、bit4 `isDamageable`；`+0xbe` bit3 `isI
 逐个对上 CC0。**两轮加起来 13 个常量零偏差**——这是「NC 只换了工具链、没改玩法数值」
 这一判断目前最强的证据。
 
+## 2.17 死亡链：`Die()` 的两处内联，以及决死窗口
+
+`Die()` 和阶段一/二那两段一样**没有独立地址**。内联点有两处：
+`Player__CalcKillBoxCollision`（被弹）与 `Player__CalcLaserHitbox`（被激光）。
+靠常量签名切出来——`CalcKillBoxCollision` 里恰好两次 `SpawnParticles`，正是 `Die()` 的那两次。
+
+### `th06nc:0x14006aaa5`–`0x14006ab6c`：内联的 `Die()`
+
+```
+14006aaa5  CMP byte [RBX+0x7898],0x0        ; playerState == ALIVE 才继续
+14006aab8  MOV byte [0x140badf6c],0x0       ; spellcardInfo.isCapturing = 0
+14006aaca  MOV EDX,0xc  / R9D=1  / 0xff4040ff   ; SpawnParticles(12, pos, 1, NEONBLUE)
+14006aae5  MOV EDX,0x6  / R9D=0x10 / 0xffffffff ; SpawnParticles(6,  pos, 16, WHITE)
+14006aaf1  MOV byte [RBX+0x7898],0x2        ; playerState = DEAD
+14006aaf8  MOV dword [RBX+0x7858],0         ; invulnerabilityTimer.current  = 0
+14006aafe  MOV dword [RBX+0x773c],0x8       ; ★ respawnTimer = 8   <- NC 独有，见下
+14006ab08  MOV dword [RBX+0x7854],0xfffffc19; invulnerabilityTimer.previous = -999
+14006ab12  …                                ; 音效 4 = SOUND_PICHUN 入队
+14006ab44  MOV dword [RBX+0x79ec],0x2       ; laserTimer[0].SetCurrent(2)
+14006ab58  MOV dword [RBX+0x79f4],0x2       ; laserTimer[1].SetCurrent(2)
+```
+
+`{current = 0, previous = -999}` 正是 CC0 `ZunTimer::InitializeForPopup()`；
+`{current = 2, previous = -999}` 正是 `SetCurrent(2)`。两边**只差一个 `subFrame`**——
+NC 没有那个字段，这是 [§2.13](#213--nc-的-zuntimer-比-th06-短-4-字节) 的**第四次独立印证**。
+
+于是顺带定位 **`invulnerabilityTimer` = `player+0x7854`**。
+
+## 2.18 ★ `+0x773c` 是 `respawnTimer` —— 一个开了很久的 ❓ 关掉了
+
+这个字段被误标过**两次**：先当成 `playerState`（错，它被写成 8），
+再降级成 `unk_773c`（不够）。现在三处写入与 CC0 逐条对上：
+
+| NC | 值 | CC0 |
+| --- | --- | --- |
+| `AddedCallback` `th06nc:0x1400687ce` | `8` | `Player.cpp:138` `respawnTimer = 8` |
+| `OnUpdate` `th06nc:0x140068f3c` | `0` | `:281` `respawnTimer = 0`（复活动画中） |
+| `OnUpdate` `th06nc:0x140068fd9` | `6` | `:290` `respawnTimer = 6`；**同一段**还有 `invulnerabilityTimer.SetCurrent(240)`（`0xf0`）与 `playerState = 3` |
+
+再加上 `th06nc:0x140068afd` 的「读 → 减一 → 写回 → 归零则发道具」，身份没有别的可能 ✅。
+
+**它就是决死（deathbomb）窗口**：允许按炸弹的条件是 `respawnTimer != 0`，
+而 DEAD 期间它正从 8（或 6）往下数。
+
+### 跨版本差异：NC 的决死窗口恒为 8 帧
+
+| | TH06 | TH06NC |
+| --- | --- | --- |
+| `Die()` 是否写 `respawnTimer` | **否** | **是，写 8** |
+| 首条命的窗口 | 8 帧 | 8 帧 |
+| 复活之后的窗口 | **6 帧**（进 INVULNERABLE 时写 6，`Die` 不再改） | **8 帧**（每次死亡重写 8） |
+
+TH06 侧是**一手到底**的：不只看 CC0 源码，还读了原版二进制
+`th06:0x00427770`（`Player__Die`，230 字节）的全部指令——
+它写 `isCapturing`、两次粒子、`playerState`、`invulnerabilityTimer` 三字段、
+音效 4、`deaths++`、两个 `laserTimer`，**没有任何一条碰 `respawnTimer`**。
+
+> 🟡 **未实机验证。** 差异只有一条指令，推理链完整，但没有在游戏里数过帧。
+> 另外 TH06 侧「复活后窗口变 6」这一点本身是否为社区共识，本文没有查证。
+
+### 顺带：`deaths++` 被挪走了
+
+TH06 在 `Die()` 里 `deaths++`（`th06:0x004277ff`，全局 `th06:0x0069bcc0`）。
+NC 的 `Die()` 内联段里**没有这一句** ❓ ——NC 在死亡结算（`respawnTimer` 归零）
+处 `INC` 了 `th06nc:0x1404f1e60`，但那个全局的语义不是 `deaths`（见 §2.20）。
+
+## 2.19 死亡结算与复活
+
+`respawnTimer` 归零那一帧（`th06nc:0x140068b14` 之后）：
+
+- `livesRemaining > 0`：撒 **6** 个道具（`POWER_BIG` ×1 + `POWER_SMALL` ×5），
+  `currentPower <= 16 ? 0 : -16`。
+- `livesRemaining <= 0`：撒 **5** 个 `FULL_POWER`。
+
+6 + 5 = 11，正好等于 `Player__OnUpdate` 里 `ItemManager__SpawnItem` 的调用次数 ✅
+——**与 CC0 逐项相同**。
+
+复活：`invulnerabilityTimer >= 30` → `playerState = SPAWNING`、位置 `(192, 384, 0.2)`；
+再等到进入 `INVULNERABLE` 时 `SetCurrent(240)`。
+
+**决死为什么能取消死亡**：四个 `BombData__Bomb*Calc` 都会把
+`playerState` 写回 `INVULNERABLE(3)`（`th06nc:0x14000d5f6` / `0x14000e11f` /
+`0x14000e63e` / `0x14000ebcd`），与 CC0 `BombData.cpp:79/329/412/524` 一一对应 ✅。
+
+顺带定位的资源全局：`th06nc:0x1404ff0f0` `livesRemaining`、
+`th06nc:0x1404ff0f1` `bombsRemaining`（1UP/炸弹道具上限都是 **8**）、
+`th06nc:0x1404f1e88` `currentPower`、`th06nc:0x1404ff0dd` `powerItemCountForScore`。
+
+## 2.20 ❓ NC 特有的一个模式开关（TH06 没有对应物）
+
+`th06nc:0x1404f27c4`，由配置字节 `th06nc:0x140c21dbb` 置位
+（`th06nc:0x14004dbe8` 的 `SETNZ`，同一段还读初始机数/炸弹数、Extra 固定 2 命 3 炸）。
+在死亡与资源路径上已观察到**两个效果**：
+
+| 效果 | 位置 |
+| --- | --- |
+| 死亡扣火力后设**下限 8**（`currentPower < 8` → `8`） | `th06nc:0x140068bb8` |
+| 1UP **不加命**，改为 `DEC` 一个抵扣计数 `th06nc:0x1404f1e60`；死亡时 `INC` 它 | `th06nc:0x1400433ff` / `0x140068b1a` |
+
+即：开关打开时，死亡记一笔"债"，捡到 1UP 先还债而不是加命。
+
+> 🟡 **机制是一手确定的，但这个开关叫什么、对应界面上哪个选项，未知。**
+> 别按"New Classic 模式"之类的猜测去命名——那还没有证据。
+> 下一步应该从配置文件布局入手（`th06nc:0x140c21db4/db5/dbb` 相邻，
+> 前两个已知是初始机数与炸弹数）。
+
 ## 3. ⚠️ 顺序推断在这里翻了车
 
 第一版我按「地址顺序 = 源码顺序」把 `BulletManager__OnUpdate` 调的三个函数
@@ -595,7 +701,7 @@ CC0 把它写在 `CheckGraze` 里，NC 把它**抽成了独立函数** `0x14006a
 5. ❓ **`arcadeRegionTopLeftPos` 在哪**：关卡区在窗口里的定位。实测布局已解出
    （§2.11：宽高比自适应 + 水平居中），但**代码里找不到对应常量**，
    推测由 D3D 视口/投影矩阵完成，未验证。
-6. ❓ **`+0x773c` 是什么**：init 与死亡判定都写 8，曾被误标成 `playerState`。
+6. ✅ ~~`+0x773c` 是什么~~ —— 已解：`respawnTimer`，即决死窗口，见 §2.18。
 7. — 射击、Bomb 的具体逻辑（`FireBullet*` 四个自机型、`BombData`）本文没碰。
 
 ## 6. 复现

@@ -110,6 +110,22 @@ def apply(program):
             % (name, why, start, end))
         stats["inlined"] += 1
 
+    # Die() 的内联点（在 CalcKillBoxCollision / CalcLaserHitbox 里，不在 OnUpdate 里，
+    # 所以单独走一遍，不混进 INLINED_RANGES）。
+    for start, end, host in spec.DIE_INLINED_AT:
+        location = va(start)
+        label = "INLINED_Die_in_" + host.split("__")[-1]
+        if symbols.getGlobalSymbol(label, location) is None:
+            symbols.createLabel(location, label, user)
+        listing.setComment(
+            location, CodeUnit.PRE_COMMENT,
+            "=== Player::Die (inlined here; a standalone function in CC0 TH06) ===\n"
+            "Sets playerState=DEAD, InitializeForPopup on invulnerabilityTimer, "
+            "respawnTimer=8 (the deathbomb window; TH06 does NOT write it here), "
+            "sound 4 = PICHUN, laserTimer[0..1].SetCurrent(2)."
+            + ("" if end is None else "\nrange 0x%x-0x%x" % (start, end)))
+        stats["inlined"] += 1
+
     return stats
 
 

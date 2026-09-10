@@ -853,6 +853,14 @@
    "name": "INLINED_SpawnBullets"
   },
   {
+   "addr": "0x14006aaa5",
+   "name": "INLINED_Die_in_CalcKillBoxCollision"
+  },
+  {
+   "addr": "0x14006ad4b",
+   "name": "INLINED_Die_in_CalcLaserHitbox"
+  },
+  {
    "addr": "0x14006e2dc",
    "name": "RESULT_CHEAT__FILL_CLRD_WITH_99"
   },
@@ -1791,9 +1799,19 @@
    "text": "[NC first-hand] Death collision against a bullet box. Runs the bomb-projectile clip test first (0x14006a8c0), and on a hit spawns the death particles, sets the death state and enqueues sound 4 (SOUND_PICHUN) -- TH06's Player::Die is inlined here. NOT graze: the only function that enqueues sound 30 (SOUND_GRAZE) for bullets is BulletManager__OnUpdate, so CheckGraze/ScoreGraze are inlined there. The extra char parameter selects circle-vs-AABB (0) or circle-vs-circle (1)."
   },
   {
+   "addr": "0x14006aaa5",
+   "kind": "pre",
+   "text": "=== Player::Die (inlined here; a standalone function in CC0 TH06) ===\nSets playerState=DEAD, InitializeForPopup on invulnerabilityTimer, respawnTimer=8 (the deathbomb window; TH06 does NOT write it here), sound 4 = PICHUN, laserTimer[0..1].SetCurrent(2).\nrange 0x14006aaa5-0x14006ab6c"
+  },
+  {
    "addr": "0x14006aba0",
    "kind": "plate",
    "text": "[NC first-hand] Laser collision. The signature matches CC0's CalcLaserHitbox(laserCenter, laserSize, rotation, angle, canGraze) parameter for parameter, and it calls cosf/sinf for the rotation plus the graze particle effect."
+  },
+  {
+   "addr": "0x14006ad4b",
+   "kind": "pre",
+   "text": "=== Player::Die (inlined here; a standalone function in CC0 TH06) ===\nSets playerState=DEAD, InitializeForPopup on invulnerabilityTimer, respawnTimer=8 (the deathbomb window; TH06 does NOT write it here), sound 4 = PICHUN, laserTimer[0..1].SetCurrent(2)."
   },
   {
    "addr": "0x14006e020",

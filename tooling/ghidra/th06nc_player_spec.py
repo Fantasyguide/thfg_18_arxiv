@@ -213,9 +213,12 @@ PLAYER_FIELDS = [
     (0x7730, "positionCenter", "code",
      "Player__OnUpdate 每帧 ADDSS/MOVSS 读改写 +0x7730/34/38；"
      "绝对地址 0x140506ad0 被 18 个函数读，含 ECL VM 内联的 AngleToPlayer"),
-    (0x773C, "unk_773c", "weak",
-     "init 与死亡判定都写 8。曾被本仓标成 playerState —— **错的**，"
-     "真正的 playerState 在 +0x7898（枚举值与 TH06 相同）。这里究竟是什么仍未知"),
+    (0x773C, "respawnTimer", "code",
+     "曾被本仓标成 playerState（错），随后降级成 unk_773c（也不够）。**现已解**："
+     "三处写入与 CC0 逐条对应 —— AddedCallback 写 8（Player.cpp:138）、"
+     "OnUpdate 复活动画里写 0（:281）、进入 INVULNERABLE 时写 6（:290，同段 "
+     "invulnerabilityTimer.SetCurrent(240) = 0xf0）；DEAD 期间每帧 -- 并在归零时发道具。"
+     "非零期间允许按炸弹 —— 这就是决死窗口"),
     (0x7740, "positionOfLastEnemyHit", "code",
      "每帧先写 (-999,-999,0)（立即数 0xc479c000）；追踪弹判 x > -100 才启用"),
     (0x774C, "hitboxRadius", "code",
@@ -223,6 +226,9 @@ PLAYER_FIELDS = [
      "CalcKillBoxCollision 用它的平方与距离平方比较"),
     (0x7750, "playerDirection", "code", "Player__OnUpdate 在移动 switch 里写 0..8"),
     (0x7754, "bombProjectiles", "code", "0x14006a8c0 遍历它，跳过 x==0 的项"),
+    (0x7854, "invulnerabilityTimer", "code",
+     "ZunTimer（8 字节）。Die 里 InitializeForPopup：+0x7858(current)=0、+0x7854(previous)=-999；"
+     "复活时 SetCurrent(240) 写 0xf0。**ZunTimer 为 8 字节的第四次独立印证**"),
     (0x785C, "isFocused", "code", "Player__OnUpdate 里 *(bool*)(p+0x785c) = (input & 4) != 0"),
     (0x7860, "characterData_orthogonalMovementSpeed", "code",
      "移动 switch 在 focus 位为 0 的分支读它（0x140069143/68/94/1b9）；"
@@ -489,6 +495,64 @@ MARISA_A_ORB_SIZES = (32.0, 42.0, 48.0, 48.0)
 BOMB_ACTIVE_DAMAGE_DIVISOR = 3        # 炸弹期间子弹伤害 /3（结果为 0 则取 1）
 TYPE2_DAMAGE_DECAY = 4                # BULLET_TYPE_2 命中后 damage /= 4（为 0 则取 1）
 COLLIDED_VELOCITY_SCALE = 0.125       # 0x14030cd1c，命中后 velocity /= 8
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 阶段三：死亡链。Die() 与阶段一/二的两段一样被内联，只能登记区间。
+#
+# 内联点有两处：CalcKillBoxCollision（被弹）与 CalcLaserHitbox（被激光）。
+# 两处都以「playerState == ALIVE 才继续」开头，以 laserTimer[0..1].SetCurrent(2) 结尾。
+DIE_INLINED_AT = [
+    (0x14006AAA5, 0x14006AB6C, "Player__CalcKillBoxCollision"),
+    (0x14006AD4B, None, "Player__CalcLaserHitbox"),   # 只定位到 respawnTimer 那一句
+]
+DEATH_PARTICLES = [
+    (12, 1, 0xFF4040FF, "PARTICLE_EFFECT_UNK_12 / COLOR_NEONBLUE"),
+    (6, 16, 0xFFFFFFFF, "PARTICLE_EFFECT_UNK_6 / COLOR_WHITE"),
+]
+DEATH_SOUND = 4                  # SOUND_PICHUN，经由音效队列 0x140509670
+DEATH_LASER_TIMER_VALUE = 2      # laserTimer[i].SetCurrent(2)
+INVULNERABILITY_FRAMES = 30      # DEAD -> SPAWNING 的门限（复活动画长度）
+INVULNERABLE_TIMER_VALUE = 240   # 进入 INVULNERABLE 时 SetCurrent(240) = 0xf0
+ZUNTIMER_PREVIOUS_SENTINEL = -999   # 0xfffffc19，InitializeForPopup / SetCurrent 都写它
+
+# 决死（deathbomb）窗口 = 死亡时 respawnTimer 的值。
+# ⚠️ 这是 NC 与 TH06 的一处**行为差异**，见 engine/player/th06nc/01 §2.17：
+#   TH06：Die() 不碰 respawnTimer -> 首条命 8 帧，之后每次复活写 6 -> 6 帧
+#   NC  ：Die() 显式写 8          -> **每次都是 8 帧**
+DEATHBOMB_WINDOW = 8
+DEATHBOMB_WINDOW_TH06_FIRST_LIFE = 8
+DEATHBOMB_WINDOW_TH06_AFTER_RESPAWN = 6
+
+# 死亡结算（respawnTimer 归零那一帧）
+DEATH_ITEMS_WITH_LIVES = 6       # POWER_BIG x1 + POWER_SMALL x5
+DEATH_ITEMS_GAME_OVER = 5        # FULL_POWER x5
+DEATH_POWER_LOSS = 16            # currentPower <= 16 -> 0，否则 -16
+ITEM_POWER_BIG, ITEM_POWER_SMALL = 2, 0
+
+# 决死取消死亡：四个 Bomb*Calc 都写 playerState = INVULNERABLE(3)
+DEATHBOMB_REVIVE_WRITES = [
+    (0x14000D5F6, "BombData__BombReimuACalc"),
+    (0x14000E11F, "BombData__BombReimuBCalc"),
+    (0x14000E63E, "BombData__BombMarisaACalc"),
+    (0x14000EBCD, "BombData__BombMarisaBCalc"),
+]
+
+# 资源全局（这一轮顺带定位）
+G_LIVES_REMAINING = 0x1404FF0F0     # byte，1UP 上限 8
+G_BOMBS_REMAINING = 0x1404FF0F1     # byte，同上限
+G_CURRENT_POWER = 0x1404F1E88       # u16
+G_POWER_ITEM_COUNT_FOR_SCORE = 0x1404FF0DD
+
+# ❓ NC 特有：一个配置驱动的模式开关，TH06 没有对应物。
+# 置位处 0x14004dbe8 SETNZ，源是配置字节 0x140c21dbb（同段还读初始机数/炸弹数）。
+# 已观察到两个效果，都在死亡/资源路径上：
+#   1. 死亡扣火力后设下限 8（0x140068bb8：currentPower < 8 -> 8）
+#   2. 1UP 不加命，改为 DEC 抵扣计数 0x1404f1e60（0x1400433ff）；死亡时 INC 它（0x140068b1a）
+# 机制一手确定；**这个开关叫什么、对应界面上哪个选项，未知**。
+NC_MODE_FLAG = 0x1404F27C4
+NC_DEATH_DEBT_COUNTER = 0x1404F1E60
+NC_DEATH_POWER_FLOOR = 8
+NC_MODE_FLAG_CONFIG_BYTE = 0x140C21DBB
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 炸弹：同样是按 (机型, 角色) 索引的函数指针表，每项 {Calc, Draw}。
