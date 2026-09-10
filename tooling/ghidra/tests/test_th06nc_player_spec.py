@@ -42,7 +42,7 @@ class Th06ncPlayerSpecTests(unittest.TestCase):
     def test_the_function_table_does_not_silently_shrink(self):
         # 上面改成子集查之后，需要另一道闸防止有人删条目而没人发现。
         # 数量变了就该有人来看一眼并改掉这个数。
-        self.assertEqual(len(self.spec.FUNCTIONS), 19)
+        self.assertEqual(len(self.spec.FUNCTIONS), 21)
         addresses = [a for a, _n, _c in self.spec.FUNCTIONS]
         names = [n for _a, n, _c in self.spec.FUNCTIONS]
         self.assertEqual(len(addresses), len(set(addresses)))
@@ -99,10 +99,11 @@ class Th06ncPlayerSpecTests(unittest.TestCase):
     def test_player_fields_are_evidenced(self):
         for _offset, name, source, evidence in self.spec.PLAYER_FIELDS:
             with self.subTest(field=name):
-                self.assertIn(source, ("code", "weak"))
+                self.assertIn(source, ("code", "code-unk", "weak"))
                 self.assertTrue(evidence)
-                # 没定下来的字段必须叫 unk_*，别用一个像模像样的名字掩盖不确定性
-                if source == "weak":
+                # 没定下来的东西必须叫 unk_*，别用一个像模像样的名字掩盖不确定性。
+                # code-unk = 偏移一手确定但语义连 CC0 也未知 —— 也归入 unk_ 一类。
+                if source in ("weak", "code-unk"):
                     self.assertTrue(name.startswith("unk_"), name)
                 else:
                     self.assertFalse(name.startswith("unk_"), name)
@@ -188,3 +189,75 @@ class Th06ncShootingChainTests(unittest.TestCase):
                 self.assertLess(lo, hi)
                 self.assertGreater(lo, start)
                 self.assertLess(hi, start + 0x2000)
+
+
+class Th06ncDamageChainTests(unittest.TestCase):
+    """阶段二：射击 → 敌人的判定链。
+
+    这里守的是**一整串数值**。它们逐个对上了 CC0 EnemyManager.cpp:583-635
+    与 Player.cpp:343-472，任何一个被「顺手改正」都说明有人在照抄而不是在读。
+    """
+
+    def setUp(self):
+        self.spec = load("th06nc_player_spec")
+
+    def test_the_damage_pipeline_constants(self):
+        self.assertEqual(self.spec.DAMAGE_CAP, 70)
+        self.assertEqual(self.spec.BODY_COLLISION_DAMAGE, 10)
+        self.assertAlmostEqual(self.spec.ENEMY_HITBOX_BODY_SCALE, 1.0 / 1.5)
+        self.assertEqual(self.spec.SCORE_PER_DAMAGE, (5, 10))
+        self.assertEqual(self.spec.SPELLCARD_DAMAGE_DIVISORS,
+                         {"no_laser": 7, "laser_after_bomb": 3})
+        self.assertEqual(self.spec.BOMB_ACTIVE_DAMAGE_DIVISOR, 3)
+        self.assertEqual(self.spec.TYPE2_DAMAGE_DECAY, 4)
+        self.assertEqual(self.spec.COLLIDED_VELOCITY_SCALE, 0.125)
+
+    def test_marisa_a_orb_sizes_stay_asymmetric(self):
+        # 32 / 42 / 48 / 48 —— 最后两档**相同**，这是 CC0 里就有的形状，
+        # 看着像笔误但不是。写成 32/42/48/54 之类就说明有人在补齐规律。
+        self.assertEqual(self.spec.MARISA_A_ORB_SIZES, (32.0, 42.0, 48.0, 48.0))
+        self.assertEqual(self.spec.MARISA_A_ORB_ANM_BASE, 0x461)
+
+    def test_bullet_state_and_type_enums(self):
+        self.assertEqual(self.spec.PLAYER_BULLET_STATE_UNUSED, 0)
+        self.assertEqual(self.spec.PLAYER_BULLET_STATE_FIRED, 1)
+        self.assertEqual(self.spec.PLAYER_BULLET_STATE_COLLIDED, 2)
+        self.assertEqual(self.spec.BULLET_TYPE_2, 2)
+        self.assertEqual(self.spec.BULLET_TYPE_LASER, 3)
+
+    def test_bomb_regions_are_four_parallel_arrays_that_do_not_overlap(self):
+        by = {n: o for o, n, _s, _e in self.spec.PLAYER_FIELDS}
+        n = self.spec.PLAYER_BOMB_REGION_COUNT
+        self.assertEqual(n, 32)
+        # 位置/尺寸是 D3DXVECTOR3（12 字节），伤害/累计是 i32（4 字节）
+        self.assertEqual(by["bombRegionPositions"] + n * 12, by["bombRegionSizes"])
+        self.assertEqual(by["bombRegionSizes"] + n * 12, by["bombRegionDamages"])
+        self.assertEqual(by["bombRegionDamages"] + n * 4, by["unk_838"])
+        self.assertLessEqual(by["unk_838"] + n * 4, by["fireBulletTimer"])
+
+    def test_damage_field_sits_inside_the_bullet(self):
+        by = {n: o for o, n, _s, _e in self.spec.PLAYER_BULLET_FIELDS}
+        self.assertEqual(by["damage"], 0x15C)
+        self.assertLess(by["damage"], self.spec.PLAYER_BULLET_SIZE)
+        # size 是 D3DXVECTOR3，x 与 y 必须相邻
+        self.assertEqual(by["size.x"] + 4, by["size.y"])
+
+    def test_anm_file_index_agrees_with_the_anm_spec_again(self):
+        # 第二次自证：sprite 基址 +0x18，anmFileIndex 在 +0x50，而 0x18+0x38 = 0x50。
+        # 0x38 是 ANM 那一轮独立解出的「脚本号在 vm+0x38」。
+        by = {n: o for o, n, _s, _e in self.spec.PLAYER_BULLET_FIELDS}
+        self.assertEqual(by["sprite"] + 0x38, by["sprite.anmFileIndex"])
+
+    def test_enemy_manager_spellcard_fields(self):
+        by = {n: o for o, n, _s, _e in self.spec.ENEMY_MANAGER_FIELDS}
+        self.assertEqual(by["spellcardInfo.isActive"] + 4, by["spellcardInfo.usedBomb"])
+        for _o, _n, source, evidence in self.spec.ENEMY_MANAGER_FIELDS:
+            self.assertEqual(source, "code")
+            self.assertTrue(evidence)
+
+    def test_both_new_functions_are_named_and_evidenced(self):
+        by = {n: c for _a, n, c in self.spec.FUNCTIONS}
+        self.assertIn("Player__CalcDamageToEnemy", by)
+        # EnemyManager__OnUpdate 是靠「调用者集合双向唯一」认出来的，
+        # 注释里必须留着这条推理，否则以后没人知道该信几分。
+        self.assertIn("exactly two", by["EnemyManager__OnUpdate"])

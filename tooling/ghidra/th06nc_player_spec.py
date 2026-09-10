@@ -47,6 +47,24 @@ FUNCTIONS = [
         "OnUpdate + HandlePlayerInputs (2282 + 3482 bytes); NC inlined them (5309).",
     ),
     (
+        0x140069D00,
+        "Player__CalcDamageToEnemy",
+        "[NC first-hand] Player bullets vs one enemy. Walks bullets[80] doing an AABB "
+        "overlap test against (enemyPos, enemyHitboxSize) and accumulates bullet->damage "
+        "(only a third of it while a bomb is active), then walks the 32 bomb regions and "
+        "adds their damage. Sets *hitWithLazerDuringBomb when a bomb region connects while "
+        "bombInfo.isInUse. Called from EnemyManager__OnUpdate right after the body check.",
+    ),
+    (
+        0x1400373B0,
+        "EnemyManager__OnUpdate",
+        "[NC first-hand] Per-enemy tick. Identified because CC0 TH06 has exactly two callers "
+        "of CalcKillBoxCollision (BulletManager::OnUpdate and EnemyManager::OnUpdate) and NC "
+        "has exactly two as well, one already independently named BulletManager__OnUpdate. "
+        "Content confirms it: hitbox scaled by 1/1.5, life -= 10 on a body hit, damage "
+        "clamped to 70, then the spellcard divisors.",
+    ),
+    (
         0x140068160,
         "Player__AddedCallback",
         "[NC first-hand] Player init: loads the player ANM, sets the spawn position "
@@ -166,13 +184,29 @@ FUNCTIONS = [
 G_PLAYER = 0x1404FF3A0
 
 # 已定位的玩家结构体偏移。分档同 ECL 那边：code = 直接从指令读出。
+# 来源三档：
+#   code     —— 偏移由指令直接读出，语义明确
+#   code-unk —— 偏移由指令直接读出，但**语义连 CC0 也未知**，沿用其 unk_ 名以便对照
+#   weak     —— 偏移本身就不确定，只算线索
 PLAYER_FIELDS = [
+    (0x0000, "bombRegionPositions", "code",
+     "D3DXVECTOR3[32]。CalcDamageToEnemy 第二个循环 LEA RBX,[player+0x184] 步长 0xc、32 次，"
+     "位置读 [RBX-0x184] 即 player+0x0 + idx*12"),
+    (0x0180, "bombRegionSizes", "code",
+     "D3DXVECTOR3[32]，[RBX-0x4]。size.x <= 0 的槽跳过 —— 与 CC0 同一判据"),
+    (0x0300, "bombRegionDamages", "code",
+     "i32[32]，LEA RDI,[player+0x380] 步长 4，读 [RDI-0x80] 即 player+0x300 + idx*4"),
+    (0x0380, "unk_838", "code-unk",
+     "i32[32]，[RDI]。命中时 += bombRegionDamages[idx]，与 CC0 的 unk_838 对应"),
     (0x0408, "fireBulletTimer", "code",
      "ZunTimer：读 +0x40c(current)、与 +0x408(previous) 比较判断是否跳过；"
      "生成完一轮后 previous=current、current++，并与 0x1e(30) 比较"),
     (0x0410, "bullets", "code",
      "PlayerBullet[80]，步长 0x170。LEA RBX,[RDI+0x410] 在生成与更新两个循环里都出现；"
      "0x410 + 80*0x170 = 0x7710，正好接上 +0x7720 的回调字段 —— 布局自洽"),
+    (0x7718, "unk_9e4", "code-unk",
+     "byte 计数器。激光弹命中时 INC 后 TEST 0x7（%8）、炸弹区域命中时 TEST 0x3（%4），"
+     "用来给粒子特效降频"),
     (0x7720, "fireBulletCallback", "code",
      "AddedCallback 从 characterData(+0x7870) 拷来；SpawnBullets 在非低速时 CALL 它"),
     (0x7728, "fireBulletFocusCallback", "code", "同上，低速时用（+0x7878 拷来）"),
@@ -209,6 +243,8 @@ PLAYER_FIELDS = [
     (0x79E8, "laserTimer", "code",
      "ZunTimer[2]，步长 8。两处证据：laser 弹用 [RDI + idx*8 + 0x79ec] 读 current 与 70/1 比较；"
      "UpdatePlayerBullets 开头把 CC0 的 2 次递减循环展开成对 +0x79ec 与 +0x79f4 的两段"),
+    (0x9EC8, "bombInfo.isInUse", "code",
+     "CMP byte [player+0x9ec8],0：为真则子弹伤害 /3，且炸弹区域命中会置 hitWithLazerDuringBomb"),
     (0x9F28, "grabItemSize", "code", "init 写 (12.0, 12.0, 5.0)，与 TH06 逐值相同"),
 ]
 
@@ -380,6 +416,10 @@ PLAYER_BULLET_FIELDS = [
     (0x012, "bulletType", "code", "i16；switch 的分支变量，1/2/3 三路"),
     (0x018, "sprite", "code",
      "AnmVm 基址：LEA RDX,[RBX+0x18] 传给 AnmManager__ExecuteScript(0x1400069b0)"),
+    (0x050, "sprite.anmFileIndex", "code",
+     "CalcDamageToEnemy 里 MOVSX word [+0x50] 与 0x461..0x464 比较（魔理沙A 光球四档）；"
+     "命中时写回 +0x20 = CC0 的 SetAndExecuteScriptIdx(anmFileIndex + 0x20)。"
+     "= sprite(+0x18) + 0x38，与 ANM spec 里「脚本号在 vm+0x38」一致"),
     (0x0A2, "sprite.pendingInterrupt", "code",
      "laser 分支写 1；= sprite(+0x18) + 0x8a，与 ANM spec 里 SeekInterruptLabel 匹配的 vm+0x8a 吻合"),
     (0x0E0, "sprite.pos.x", "code", "SpawnBullets 把 position 拷进来"),
@@ -397,6 +437,11 @@ PLAYER_BULLET_FIELDS = [
     (0x14C, "spawnPositionIdx", "code",
      "i16；取 orbsPosition[idx-1]，基址 0x7880-12=0x7874 把 -1 折进了寻址"),
     (0x154, "unk_134.y", "code", "追踪的速度状态：/4 参与转向、结果 MIN(len,10.0)"),
+    (0x15C, "damage", "code",
+     "i16。CalcDamageToEnemy 命中时累加它（炸弹中则 /3，为 0 取 1）；"
+     "BULLET_TYPE_2 命中后自身 /= 4 并写回，为 0 取 1"),
+    (0x160, "size.x", "code",
+     "AABB 判定的半宽来源；魔理沙A 光球命中后按脚本号写 32/42/48"),
     (0x164, "size.y", "code", "laser 分支 = position.y*2"),
 ]
 
@@ -411,6 +456,39 @@ BULLET_CONSTANTS = [
     (0x14030CD9C, 1.0,     "下限钳位"),
 ]
 POSITION_OF_LAST_ENEMY_HIT_RESET = -999.0   # 立即数 0xc479c000，每帧重置
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 阶段二：射击 → 敌人的判定链。
+#
+# EnemyManager__OnUpdate 的顺序，与 CC0 EnemyManager.cpp:583-635 逐条同构：
+#   1. hitbox = enemy->hitboxDimensions * (1/1.5)，调 CalcKillBoxCollision
+#      —— 体术碰撞，命中且 isInteractable && !isBoss 时 enemy->life -= 10
+#   2. CalcDamageToEnemy(&enemy->position, &enemy->hitboxDimensions, &hitWithLazerDuringBomb)
+#   3. damage = MIN(damage, 70)；g_Score += (damage/5)*10
+#   4. 符卡中：没打中激光 -> damage /= 7；打中了且 usedBomb -> damage /= 3；否则 damage = 0
+#   5. isDamageable 才真正 enemy->life -= damage
+#   6. enemy->position.y > positionOfLastEnemyHit.y 就更新它
+#      —— **追踪弹的数据源**，与阶段一的 UpdatePlayerBullets 闭环
+DAMAGE_CAP = 70                       # CMP EAX,0x46 / CMOVGE
+BODY_COLLISION_DAMAGE = 10            # ADD dword [enemy+0x234],-0xa
+ENEMY_HITBOX_BODY_SCALE = 1.0 / 1.5   # 0x14030cd74
+SCORE_PER_DAMAGE = (5, 10)            # (damage / 5) * 10，加到 g_Score(0x1404f2798)
+SPELLCARD_DAMAGE_DIVISORS = {"no_laser": 7, "laser_after_bomb": 3}
+
+ENEMY_MANAGER_FIELDS = [
+    (0x10C0D0, "spellcardInfo.isActive", "code", "CMP dword [R12+0x10c0d0],0 决定是否走符卡减伤"),
+    (0x10C0D4, "spellcardInfo.usedBomb", "code", "CMP byte [R12+0x10c0d4],0 —— 决定 /3 还是清零"),
+]
+
+PLAYER_BOMB_REGION_COUNT = 32
+PLAYER_BULLET_STATE_COLLIDED = 2
+BULLET_TYPE_2 = 2
+BULLET_TYPE_LASER = 3
+MARISA_A_ORB_ANM_BASE = 0x461         # 四个脚本号 0x461..0x464
+MARISA_A_ORB_SIZES = (32.0, 42.0, 48.0, 48.0)
+BOMB_ACTIVE_DAMAGE_DIVISOR = 3        # 炸弹期间子弹伤害 /3（结果为 0 则取 1）
+TYPE2_DAMAGE_DECAY = 4                # BULLET_TYPE_2 命中后 damage /= 4（为 0 则取 1）
+COLLIDED_VELOCITY_SCALE = 0.125       # 0x14030cd1c，命中后 velocity /= 8
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 炸弹：同样是按 (机型, 角色) 索引的函数指针表，每项 {Calc, Draw}。
@@ -477,7 +555,7 @@ def validate():
     if offsets != sorted(offsets):
         errors.append("player field table must be sorted by offset")
     for _offset, name, source, evidence in PLAYER_FIELDS:
-        if source not in ("code", "xmatch", "weak"):
+        if source not in ("code", "code-unk", "xmatch", "weak"):
             errors.append("%s: bad source tag" % name)
         if not evidence:
             errors.append("%s: no evidence recorded" % name)

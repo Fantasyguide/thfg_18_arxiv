@@ -15,7 +15,8 @@
 
 TH06NC 的玩家主循环 `th06nc:0x140068820`（chain 回调，无直接 xref）、
 弹幕 tick `th06nc:0x140010870`、被弹判定 `th06nc:0x14006a980`、
-激光判定 `th06nc:0x14006aba0` 已定位。
+激光判定 `th06nc:0x14006aba0`、射击伤害 `th06nc:0x140069d00`、
+敌人 tick `th06nc:0x1400373b0` 已定位。
 
 ### TH06 → TH06NC 的已验差异
 
@@ -33,7 +34,9 @@ TH06NC 的玩家主循环 `th06nc:0x140068820`（chain 回调，无直接 xref�
 | 移动速度与角色数据 | `CharacterData` 32 字节 | **相同**（灵梦 4.0/2.0、魔理沙 5.0/2.5） | [01 §2.10](th06nc/01-main-loop-and-collision.md) |
 | `PlayerBullet` | `AnmVm` 打头 | **重排**：小标量提前（`bulletState +0x10`、`sprite +0x18`），大小 `0x170`、80 发 | [01 §2.12](th06nc/01-main-loop-and-collision.md) |
 | `SpawnBullets` / `UpdatePlayerBullets` | 独立函数 | **内联进 `Player__OnUpdate`**，只能登记区间 | [01 §2.12](th06nc/01-main-loop-and-collision.md) |
-| 弹幕语义常量（0.5 / 0.3 / -100 / 10 / 14 / 0.25） | — | **七个全中** | [01 §2.14](th06nc/01-main-loop-and-collision.md) |
+| 射击→敌人的伤害链（钳 70、体术 -10、`(dmg/5)*10` 计分、符卡 ÷7/÷3） | — | **逐条同构** | [01 §2.16](th06nc/01-main-loop-and-collision.md) |
+| 玩法数值常量（两轮共 13 个：0.5 / 0.3 / -100 / 10 / 14 / 0.25 / 1.5 / 0.125 / 0.1 / 32 / 42 / 48 …） | — | **零偏差全中** | [01 §2.14](th06nc/01-main-loop-and-collision.md)、[§2.16](th06nc/01-main-loop-and-collision.md) |
+| `Player` 前 0x400 字节 | `playerSprite` 打头 | **重排**：四张炸弹区域平行数组排到最前 | [01 §2.16](th06nc/01-main-loop-and-collision.md) |
 
 半径与半宽同为 1.25，所以圆内接于方，判定面积小约 21%。
 

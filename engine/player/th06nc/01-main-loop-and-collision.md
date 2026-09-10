@@ -477,6 +477,93 @@ laser 的 `position.z = 0.44`、新弹的 `sprite.pos.z = 0.495`。
 | `+0x7880` | `orbsPosition[2]` | 两个 `D3DXVECTOR3` 每帧都写成 `positionCenter` |
 | `+0x79e8` | `laserTimer[2]` | 步长 8；CC0 的 2 次递减循环在 NC 里被展开成 `+0x79ec` / `+0x79f4` 两段 |
 
+## 2.16 射击打到敌人：`Player__CalcDamageToEnemy` `th06nc:0x140069d00`
+
+阶段一挖的是「弹怎么生出来、怎么飞」，这一节是「弹怎么算打中」。
+入口在 `EnemyManager__OnUpdate` `th06nc:0x1400373b0`，与 CC0
+`EnemyManager.cpp:583-635` **逐条同构**。
+
+### 先说 `EnemyManager__OnUpdate` 是怎么认出来的
+
+不是靠地址顺序，是靠**调用者集合双向唯一**：CC0 里 `CalcKillBoxCollision`
+恰好有两个调用者（`BulletManager::OnUpdate`、`EnemyManager::OnUpdate`），
+NC 里也恰好两个，其中一个我们早已独立命名为 `BulletManager__OnUpdate`。
+剩下那个只能是它 ✅。内容随即证实：`hitbox × 1/1.5`、体术命中 `life -= 10`、伤害钳到 70。
+
+### 每帧对每个敌人做的事
+
+| 步骤 | NC | 证据 |
+| --- | --- | --- |
+| 1 | `hitbox = hitboxDimensions × (1/1.5)` 后调 `CalcKillBoxCollision` | `th06nc:0x14030cd74` = `0.6666667` |
+| 2 | 命中且 `isInteractable && !isBoss` → `enemy->life -= 10` | `ADD dword [enemy+0x234],-0xa` |
+| 3 | `CalcDamageToEnemy(&position, &hitboxDimensions, &hitWithLazerDuringBomb)` | 四参数与 CC0 一致 |
+| 4 | `damage = MIN(damage, 70)` | `CMP EAX,0x46` / `CMOVGE` |
+| 5 | `g_Score += (damage / 5) × 10` | 魔数 `0x66666667`（÷5）+ `LEA/ADD`（×10） |
+| 6 | 符卡中：没打中激光 → `÷7`；打中了且 `usedBomb` → `÷3`；否则 `damage = 0` | 魔数 `0x92492493` / `0x55555556` |
+| 7 | `isDamageable` 才 `enemy->life -= damage` | `TEST byte [enemy+0xbd],0x10` |
+| 8 | `enemy->position.y > positionOfLastEnemyHit.y` → 更新它 | 写 `0x140506ae0` = `player+0x7740` |
+
+**第 8 步与阶段一闭环**：追踪弹（`BULLET_TYPE_1`）读的就是这个字段
+（[§2.14](#214-playerbullet-字段步长-0x17080-发)），所以「打中过谁」直接决定下一帧弹往哪拐。
+而且它从**另一侧**独立确认了 `positionOfLastEnemyHit` 的偏移 ✅。
+
+### `CalcDamageToEnemy` 内部
+
+两个循环。第一个走 80 发子弹：
+
+- 跳过条件与 CC0 同构：`bulletState == 0`，或 `bulletState != 1 && bulletType != 2`。
+- AABB 重叠判定：两边都用 `半宽 = size × 0.5`（`th06nc:0x14030cd58`），四次 `COMISS`/`JA` 拒绝。
+- 命中：`damage += bullet->damage`；**炸弹期间只加三分之一**（`÷3`，为 0 取 1）。
+- `bulletType == 2` 命中后自身衰减：`damage /= 4`（为 0 取 1），并按 `sprite.anmFileIndex`
+  改自己的 `size`：脚本号 `0x461`/`0x462`/`0x463`/`0x464` → `32` / `42` / `48` / `48`。
+  每 6 帧放一次粒子（`unk_140.current % 6 == 0`）。
+- 非激光弹命中后：脚本号 `+= 0x20` 重放、放粒子、`position.z = 0.1`、
+  `bulletState = 2`（`COLLIDED`）、`velocity /= 8`。
+- 激光弹（`bulletType == 3`）不消耗，只每 8 次放一个粒子。
+
+第二个循环走 **32 个炸弹区域**：`bombRegionSizes[i].x <= 0` 跳过，
+AABB 命中则 `damage += bombRegionDamages[i]`，每 4 次放粒子；
+**若此时 `bombInfo.isInUse`，就置 `*hitWithLazerDuringBomb = true`** ——
+这个标志回到第 6 步决定符卡是 `÷3` 还是清零。
+
+### 又一次自证
+
+`sprite.anmFileIndex` 在 `bullet+0x50`，而 `sprite` 基址是 `+0x18`——`0x18 + 0x38 = 0x50`，
+`0x38` 正是 [`../../anm/th06nc/01`](../../anm/th06nc/01-vm-and-anchor-opcodes.md)
+独立解出的「脚本号在 `vm+0x38`」。这是 ANM 与 Player 两条线第二次对上
+（第一次是 `pendingInterrupt` 的 `vm+0x8a`，见 §2.14）。
+
+### 这一轮新定位的字段
+
+**`Player`**（前 `0x400` 字节全是炸弹区域的四张平行数组——NC 把它们排到了结构体最前面）：
+
+| 偏移 | 字段 |
+| --- | --- |
+| `+0x000` | `bombRegionPositions[32]`（`D3DXVECTOR3`） |
+| `+0x180` | `bombRegionSizes[32]` |
+| `+0x300` | `bombRegionDamages[32]`（`i32`） |
+| `+0x380` | `unk_838[32]`（`i32`，命中时累加伤害；**CC0 也不知道它做什么**） |
+| `+0x7718` | `unk_9e4`（byte 计数器，给粒子降频；CC0 同样是 `unk_`） |
+| `+0x9ec8` | `bombInfo.isInUse` |
+
+**`PlayerBullet`**：`+0x050` `sprite.anmFileIndex`、`+0x15c` `damage`（i16）、`+0x160` `size.x`。
+
+**`EnemyManager`**：`+0x10c0d0` `spellcardInfo.isActive`、`+0x10c0d4` `spellcardInfo.usedBomb`。
+
+**`Enemy`**：`+0x234` = `life` ——**这条顺带把两个旧的 weak 结论扶正了**：
+`+0x238`（`maxLife`，原先只有 opcode 111 单锚）正好紧邻其后；
+`+0xa0` 与 `+0xc54` 在敌人死亡时被写 `-1`，与
+[`../../ecl/th06nc/04`](../../ecl/th06nc/04-enemy-struct.md) 里
+`lifeCallbackThreshold` / `timerCallbackThreshold` 的猜测一致。
+`flags` 的 `+0xbd` 字节：bit0 `isInteractable`、bit1 `isCollidable`、
+bit2 `hasBeenInBounds`、bit3 `isBoss`、bit4 `isDamageable`；`+0xbe` bit3 `isInvisible`。
+
+### 语义常量：这一轮又是全中
+
+`1/1.5`、`0.5`、`0.125`、`0.1`、`32/42/48`，以及五个除法魔数（÷3 ÷4 ÷5 ÷6 ÷7）
+逐个对上 CC0。**两轮加起来 13 个常量零偏差**——这是「NC 只换了工具链、没改玩法数值」
+这一判断目前最强的证据。
+
 ## 3. ⚠️ 顺序推断在这里翻了车
 
 第一版我按「地址顺序 = 源码顺序」把 `BulletManager__OnUpdate` 调的三个函数

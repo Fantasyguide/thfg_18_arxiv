@@ -151,6 +151,10 @@
    "addr": "0x140036260"
   },
   {
+   "name": "EnemyManager__OnUpdate",
+   "addr": "0x1400373b0"
+  },
+  {
    "name": "ItemManager__SpawnItem",
    "addr": "0x1400426e0"
   },
@@ -161,6 +165,10 @@
   {
    "name": "Player__OnUpdate",
    "addr": "0x140068820"
+  },
+  {
+   "name": "Player__CalcDamageToEnemy",
+   "addr": "0x140069d00"
   },
   {
    "name": "Player__FireBulletFromTable",
@@ -1708,6 +1716,11 @@
    "text": "Timeline dispatch accepts only opcodes 0..12."
   },
   {
+   "addr": "0x1400373b0",
+   "kind": "plate",
+   "text": "[NC first-hand] Per-enemy tick. Identified because CC0 TH06 has exactly two callers of CalcKillBoxCollision (BulletManager::OnUpdate and EnemyManager::OnUpdate) and NC has exactly two as well, one already independently named BulletManager__OnUpdate. Content confirms it: hitbox scaled by 1/1.5, life -= 10 on a body hit, damage clamped to 70, then the spellcard divisors."
+  },
+  {
    "addr": "0x14003b490",
    "kind": "pre",
    "text": "Loader scan for an opcode-13 timeline checkpoint."
@@ -1736,6 +1749,11 @@
    "addr": "0x140069bd1",
    "kind": "pre",
    "text": "=== Player__SpawnBullets (inlined here; a standalone function in CC0 TH06) ===\nScans bullets[80] for a free slot (bulletState == 0), picks the plain or focus callback by isFocused and calls it; see FIRE_BULLET_RESULT for the return codes.\nrange 0x140069bd1-0x140069c6a"
+  },
+  {
+   "addr": "0x140069d00",
+   "kind": "plate",
+   "text": "[NC first-hand] Player bullets vs one enemy. Walks bullets[80] doing an AABB overlap test against (enemyPos, enemyHitboxSize) and accumulates bullet->damage (only a third of it while a bomb is active), then walks the 32 bomb regions and adds their damage. Sets *hitWithLazerDuringBomb when a bomb region connects while bombInfo.isInUse. Called from EnemyManager__OnUpdate right after the body check."
   },
   {
    "addr": "0x14006a580",
