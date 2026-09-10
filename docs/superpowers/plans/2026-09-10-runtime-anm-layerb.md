@@ -130,7 +130,7 @@ poly 族（`th16:0x4689b3`）。**按需插入**——B3 撞到哪个再逆哪�
 | B1 THTX 解码 | ✅ 已完成 | 见下方 commit；真实数据 417 entry / 89.7M 像素全通 |
 | B2 WebGL 后端 | ✅ 已完成 | 见 commit；含 D3D9-MAPPING.md |
 | B3 几何生成 | ✅ 已完成 | 见 commit；顺带补 apply_velocities 与帧尾时序 |
-| B4 最小宿主 | 未开始 | — |
+| B4 最小宿主 | ✅ 已完成 | 见 commit |
 | B5 viewer 页面 | 未开始 | — |
 | B6 补逆 draw_vm | 未开始 | — |
 

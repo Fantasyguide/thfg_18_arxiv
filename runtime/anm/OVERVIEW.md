@@ -69,6 +69,23 @@ entry 链表 / sprite 表 / script 表 / 指令流，只做结构解析，不含
 因此比真机**更准**。真实数据里两个 format 不同的只有 1 个 entry（`enemy.anm` 的
 `enemy/enemy_aura.png`：源 1、目标 6）。
 
+## 层 B · 最小宿主：已实现（B4）
+
+`src/host/manager.js` —— 骨架**故意**没做的那层 AnmManager：VM 列表、layer 排序、
+子 VM 收编与回收、以及「script / sprite 的**全局运行序号** → 哪个 entry 的哪条记录」
+（01 §4/§5：加载器从不读记录里的 `id`；script 的 `id` 在 e01–e08 里是 −72…−1，与序号真的对不上）。
+
+两处**有意偏离真机**，都显式记着：
+
+- **`sprite(-1)`**：真机换成 AsciiManager 的 `ascii.anm` sprite `0x102`（06 §2.1，热路径）；
+  独立播放器没加载 ascii.anm，按 thpages 的「不使用图像」处理并记进 `skipped`。
+  真实数据 4683 条 `300` 里有 **80 条**是 -1（全部恰好 -1）——不处理的话真实文件一放就抛。
+- **未实现的渲染模式不抛**，收进 `skipped` 逐条给原因。播放器要放得动真实文件，
+  一条 mode 8（真实用量 196 次）不该炸掉整帧；但也不能静默。
+
+`set_sprite` 的解析**必须在 opcode 里做、不能挪到帧尾**：同帧里 `603 drawRect` 会改写同一对
+`sprite_size` 槽（09 §5(2)），帧尾统一刷会把它冲掉。有一条测试专门守这个顺序。
+
 ## 层 B · WebGL 后端：已实现（B2）
 
 `src/render/render-state.js`（纯映射，不碰 gl）+ `src/render/webgl.js`（喂给 GL）+
