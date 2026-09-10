@@ -246,6 +246,11 @@
    "type": "string"
   },
   {
+   "addr": "0x1404e12b8",
+   "name": "g_Lasers",
+   "type": "undefined4"
+  },
+  {
    "addr": "0x1404f2798",
    "name": "g_Score",
    "type": "undefined8"
@@ -877,6 +882,14 @@
    "name": "RESULT_STATE_3_TO_7__SHARED_RECORDS"
   },
   {
+   "addr": "0x1403ec2a8",
+   "name": "g_Bullets"
+  },
+  {
+   "addr": "0x1404e12a8",
+   "name": "g_BulletCount"
+  },
+  {
    "addr": "0x140a6eb78",
    "name": "g_EclFile"
   },
@@ -1021,12 +1034,12 @@
   {
    "addr": "0x1400105e0",
    "kind": "plate",
-   "text": "[ECL cross-match, exact] Located by matching the ECL opcodes whose handler calls it against the CC0 th06-decomp source: opcodes 85, 86. Name follows that upstream."
+   "text": "[NC first-hand] Scans lasers[64] for a free slot (inUse == 0 at +0x274) and fills it from an EnemyLaserShooter. Gives the pool base (0x1404e12b8), stride (0x298) and count (0x40) directly as immediates."
   },
   {
    "addr": "0x140010870",
    "kind": "plate",
-   "text": "[NC first-hand] Bullet per-frame tick. Identified by its callee profile: it calls all three player collision entry points plus AnmManager__ExecuteScript and EffectManager__SpawnParticles -- the same shape as TH06's BulletManager tick."
+   "text": "[NC first-hand] Bullet + laser per-frame tick. Walks bullets[640] (stride 0x620) running a switch on state, then lasers[64] (stride 0x298). Graze is inlined here."
   },
   {
    "addr": "0x1400127d0",
@@ -3702,6 +3715,21 @@
    "addr": "0x1403213e8",
    "kind": "eol",
    "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403ec2a8",
+   "kind": "plate",
+   "text": "Bullet[640], stride 0x620 (BulletManager + 0x08)."
+  },
+  {
+   "addr": "0x1404e12a8",
+   "kind": "plate",
+   "text": "i32, recomputed every frame by BulletManager__OnUpdate."
+  },
+  {
+   "addr": "0x1404e12b8",
+   "kind": "plate",
+   "text": "Laser[64], stride 0x298 (BulletManager + 0xf5018)."
   },
   {
    "addr": "0x1404f2798",

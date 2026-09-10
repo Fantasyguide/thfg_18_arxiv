@@ -9,6 +9,23 @@ TH16 的敌弹**不是**由一个中央弹幕系统统一驱动的。每颗弹�
 
 激光是另一个类族（有独立 RTTI 与 vtable），显示、判定、Bomb 取消三件事分开走。
 
+## TH06NC 入口
+
+`g_BulletManager` `th06nc:0x1403ec2a0`：`bullets[640]`（步长 `0x620`，`+0x08`）与
+`lasers[64]`（步长 `0x298`，`+0xf5018`）两个池，逐帧 tick 在
+`BulletManager__OnUpdate` `th06nc:0x140010870`。
+
+| 断言 | TH06 | TH06NC | 出处 |
+| --- | --- | --- | --- |
+| `sizeof(Bullet)` | `0x5c4` | **`0x620`** | [th06nc/01 §1.3](th06nc/01-pools-and-structs.md) |
+| `sizeof(Laser)` | `0x270` | **`0x298`** | 同上 |
+| 池容量（640 / 64） | — | **都没变** | 同上 |
+| `BulletManager` 开头 | `bulletTypeTemplates[16]` | **`ZunTimer` 后直接是 `bullets`** | 同上 |
+| 弹出界后不立刻回收（`offscreenFrames > 0xff`） | — | ✅ 一手 | [th06nc/01 §2](th06nc/01-pools-and-structs.md) |
+| 擦弹逻辑内联在弹幕 tick 里 | ❌（独立函数） | ✅ | [player/th06nc/01 §2.8](../player/th06nc/01-main-loop-and-collision.md) |
+
+> 结构体两边都重排过，**偏移一律要在各自 exe 上重取**；只有「有哪些字段」可以借。
+
 ## 断言 × 版本矩阵
 
 | 断言 | th16 | th18 | 证据 |
