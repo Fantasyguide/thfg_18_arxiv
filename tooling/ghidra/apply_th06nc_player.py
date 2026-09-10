@@ -84,7 +84,11 @@ def apply(program):
     # 先清掉上一轮留下的、这一轮已经不在 spec 里的内联标记。
     # 起因：本轮把 UpdatePlayerBullets 的起点从 0x1400697c0 改到 0x140069740，
     # 旧地址上的标签和注释却留在库里 —— apply 对「地址改了」并不幂等。
+    # ⚠️ 必须把**所有**会造 INLINED_ 标签的来源都算进来，否则会把自己刚要写的
+    # 标签当成陈旧的删掉再重建 —— 净效果无害，但 stale-cleared 变成噪声，
+    # 真正的陈旧标签就藏在噪声里看不见了。
     wanted = {start for start, _e, _n, _w in spec.INLINED_RANGES}
+    wanted |= {start for start, _e, _h in spec.DIE_INLINED_AT}
     for symbol in list(symbols.getAllSymbols(False)):
         name = symbol.getName()
         if not name.startswith("INLINED_"):
