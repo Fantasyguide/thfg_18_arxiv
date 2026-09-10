@@ -93,12 +93,20 @@ class Th06ncEnemyFieldTests(unittest.TestCase):
                     self.assertTrue(evidence)
 
     def test_the_directly_read_offsets_stay_directly_read(self):
-        # 这四个是从指令里直接读出来的，是整张表的锚。
+        # 这四个是从指令里直接读出来的，是整张表的锚 —— **不许被降级**。
+        # 这里查的是「都在且都是 code」，不是「恰好只有这四个」：
+        # 后来的轮次会把别的字段从 weak 升上来（maxLife 就是），那是好事。
         got = {n: o for o, n, s, _e in self.spec.ENEMY_FIELDS if s == "code"}
-        self.assertEqual(
-            got,
-            {"position": 0x0B0, "flags": 0x0BC, "bulletProps": 0x26C, "shootOffset": 0xC5C},
-        )
+        for name, offset in (("position", 0x0B0), ("flags", 0x0BC),
+                             ("bulletProps", 0x26C), ("shootOffset", 0xC5C)):
+            with self.subTest(field=name):
+                self.assertEqual(got.get(name), offset)
+
+    def test_maxlife_was_upgraded_from_weak_to_code(self):
+        # 原先只有 opcode 111 一个锚；生成路径给了一手证据
+        # （engine/enemy/th06nc/01 §5）。别退回 weak。
+        by = {n: (o, s) for o, n, s, _e in self.spec.ENEMY_FIELDS}
+        self.assertEqual(by["maxLife"], (0x238, "code"))
 
     def test_nc_reordered_the_struct_relative_to_th06(self):
         # TH06 的 shootOffset 排在 bulletProps 之前；NC 反过来。这条差异是

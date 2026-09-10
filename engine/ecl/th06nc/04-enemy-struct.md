@@ -65,7 +65,7 @@ R12 被**当作 `bulletProps` 实参传进去**了，所以 `enemy + 0x26c` 就�
 | `+0xbc` | `flags` | **code** | `TEST byte ptr [RDI+0xbc],0x20` |
 | `+0xc0` | `laserProps` | xmatch | opcodes 85, 86；起一片连续偏移 |
 | `+0x230` | `bossId` | weak | opcode 101 |
-| `+0x238` | `maxLife` | weak | opcode 111 |
+| `+0x238` | `maxLife` | **code** | `SpawnEnemy` 里 `MOV [enemy+0x238],[enemy+0x234]`（[`../../enemy/th06nc/01`](../../enemy/th06nc/01-pool-and-spawn.md) §5）|
 | `+0x26c` | `bulletProps` | **code** | 见 §2 |
 | `+0x2c0` | `hitboxDimensions` | weak | opcode 103；`+0x2c0/0x2c4/0x2c8` |
 | `+0xbd8` | `laserStore` | xmatch | opcodes 85, 86, 87 |
@@ -113,9 +113,16 @@ R12 被**当作 `bulletProps` 实参传进去**了，所以 `enemy + 0x26c` 就�
 2. ❓ **从 `EnemyEclInstr__*` 那 16 个函数入手**：它们参数少、职责单一，
    逐个读比在 27928 字节的 VM 里切区间可靠得多。
    例如 `EnemyEclInstr__MovePosTime` 只碰 move 相关的几个字段。
-3. ❓ 结构体总大小：找 `EnemyManager` 里分配/遍历 enemy 数组的地方，步长即大小。
-4. — **暂不在 Ghidra 里建 `Th06ncEnemy` 结构体**：60 个字段里只定位了 15 个，
-   且总大小未知，现在建出来的结构体会误导多于帮助。
+3. ✅ ~~结构体总大小~~ —— **已解**：`0x10b0`（TH06 是 `0xec8`），
+   从 `EnemyManager__SpawnEnemy` 的找空闲槽循环直接读出。
+   见 [`../../enemy/th06nc/01`](../../enemy/th06nc/01-pool-and-spawn.md) §1。
+4. — **仍不在 Ghidra 里建 `Th06ncEnemy` 结构体**：总大小已经知道了，
+   但已定位字段仍只有 20 出头，现在建出来会把敌人相关的反编译输出全改一遍，
+   收益不抵风险。理由与去留见
+   [`../../enemy/th06nc/01`](../../enemy/th06nc/01-pool-and-spawn.md) §6。
+5. — 本文这 15 个字段来自 opcode 交叉比对；**从生成路径读出来的另一批**在
+   [`../../enemy/th06nc/01`](../../enemy/th06nc/01-pool-and-spawn.md)。
+   两张表合并是一次独立的整理，尚未做。
 
 ## 6. 复现
 

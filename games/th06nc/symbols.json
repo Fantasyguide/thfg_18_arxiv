@@ -1034,7 +1034,7 @@
   {
    "addr": "0x1400105e0",
    "kind": "plate",
-   "text": "[NC first-hand] Scans lasers[64] for a free slot (inUse == 0 at +0x274) and fills it from an EnemyLaserShooter. Gives the pool base (0x1404e12b8), stride (0x298) and count (0x40) directly as immediates."
+   "text": "[ECL cross-match, exact] Located by matching the ECL opcodes whose handler calls it against the CC0 th06-decomp source: opcodes 85, 86. Name follows that upstream."
   },
   {
    "addr": "0x140010870",
