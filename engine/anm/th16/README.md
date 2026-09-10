@@ -88,8 +88,22 @@
 - ✅ **已出**:[`04-variables.md`](04-variables.md) —— 脚本变量号 **10000–10035** 共 36 条逐条定死
   (语义/类型/可写性/vm 字段落点/读侧 case 地址/随机族 PRNG 流)，可写 22 / 只读 14 的一手划界，
   含四个专项:可写性穷举、跨类型读非对称、随机族流划界、helper 变量(相机/有效旋转)。
-- 待做:`134` 个 opcode 里剩下的 **88 条**——System(300–317)、Settings、General(400–438)、
-  Child(500–509)、Drawing(600–613)分组各一篇;以及显示对象模型(创建/池/模板/释放)。
+- ✅ **已出**:[`05-system.md`](05-system.md) —— opcode **0–7** 共 8 条(nop/delete/static/stop/
+  stopHide/case/wait/caseReturn),含终止语义与 interrupt 标签扫描。
+- ✅ **已出**:[`06-settings.md`](06-settings.md) —— opcode **300–317** 共 18 条(sprite/blendMode/
+  layer/renderMode/scrollMode/resampleMode…),含三条 `wip:2` 的裁决与 `flags_lo`/`flags_hi` 位归属。
+- ✅ **已出**:[`07-general.md`](07-general.md) —— opcode **400–438** 共 39 条(变换与外观层),
+  含 12 组帧尾插值器的结构图、32 条缓动曲线公式、求值次序表。
+- ✅ **已出**:[`08-child.md`](08-child.md) —— opcode **500–509** 共 10 条(建子/建根/继承开关/
+  拷父变量/effect 表),含父子坐标继承与 `create_managed_child` vs `create_managed_root` 的分野。
+- ✅ **已出**:[`09-drawing.md`](09-drawing.md) —— opcode **600–613** 共 14 条 + **render state 一手扫描**
+  (blend 10 模式 / alpha test / texture stage / FVF),含帧尾几何 `0x4632f0` 三族的完整公式
+  (mode 9 整圆环、13/14 圆环弧、24/25 3D 圆柱与平面圆环)。
+- ✅ **已出**:[`10-sprite-geometry.md`](10-sprite-geometry.md) —— **`draw_vm` 的 sprite 四边形路径**
+  (mode 0/1/2/3):锚点两张表、位置公式(含旋转)、UV 的 `uv_scale` 子矩形、`423 colorMode` 的四种
+  平涂/渐变。**这是播放器真正要画的那件事**——真实数据里只有 4.7% 的 script 用 Drawing 组。
+- 待做:`draw_vm` 的 **mode 4 / 8 / 15**(走 `0x467410`,mode 8 真实用量 196 次)、
+  rect 族(`0x468722`)与 poly 族(`0x4689b3`)的顶点计算;以及显示对象模型(创建/池/模板/释放)。
 
 > ⚠️ **新增分组文档时,记得回来把它加进上面这份清单。**
 > `tooling/check-docs.py --orphans` **查不出**这类遗漏——分组文档与 [`naming-batch.md`](naming-batch.md)
