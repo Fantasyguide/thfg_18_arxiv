@@ -39,9 +39,9 @@ TH06NC 的玩家主循环 `th06nc:0x140068820`（chain 回调，无直接 xref�
 | 玩法数值常量（两轮共 13 个：0.5 / 0.3 / -100 / 10 / 14 / 0.25 / 1.5 / 0.125 / 0.1 / 32 / 42 / 48 …） | — | **零偏差全中** | [01 §2.14](th06nc/01-main-loop-and-collision.md)、[§2.16](th06nc/01-main-loop-and-collision.md) |
 | `Player` 前 0x400 字节 | `playerSprite` 打头 | **重排**：四张炸弹区域平行数组排到最前 | [01 §2.16](th06nc/01-main-loop-and-collision.md) |
 | **决死窗口** | 首命 8 帧，之后每次复活变 **6** 帧 | **恒为 8 帧**（`Die()` 每次重写 `respawnTimer = 8`） | [01 §2.18](th06nc/01-main-loop-and-collision.md) 🟡 未实机 |
-| `Die()` 里的 `deaths++` | 有（`th06:0x004277ff`） | **没有** ❓ | [01 §2.18](th06nc/01-main-loop-and-collision.md) |
+| `deaths++` 的时机 | 被弹当场（`Die()` 内，`th06:0x004277ff`） | **挪到死亡结算**（决死窗口耗尽才算）→ 决死成功不计死亡 | [01 §2.20](th06nc/01-main-loop-and-collision.md) 🟡 |
 | 死亡结算（6 道具 / 5 道具、扣 16 火力） | — | **逐项相同** | [01 §2.19](th06nc/01-main-loop-and-collision.md) |
-| 配置驱动的模式开关：死亡火力下限 8 + 1UP 变还债 | **无对应物** | ✅ 机制一手确定，**开关名未知** | [01 §2.20](th06nc/01-main-loop-and-collision.md) ❓ |
+| **挑战模式**：不扣命 / 死亡火力下限 8 / 1UP 改抵扣死亡数 / 死 >5 次拿不到满记录 | **无对应物** | ✅ 机制一手；名称与意图由用户告知 | [01 §2.20](th06nc/01-main-loop-and-collision.md) |
 
 半径与半宽同为 1.25，所以圆内接于方，判定面积小约 21%。
 

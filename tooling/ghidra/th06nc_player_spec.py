@@ -543,16 +543,31 @@ G_BOMBS_REMAINING = 0x1404FF0F1     # byte，同上限
 G_CURRENT_POWER = 0x1404F1E88       # u16
 G_POWER_ITEM_COUNT_FOR_SCORE = 0x1404FF0DD
 
-# ❓ NC 特有：一个配置驱动的模式开关，TH06 没有对应物。
-# 置位处 0x14004dbe8 SETNZ，源是配置字节 0x140c21dbb（同段还读初始机数/炸弹数）。
-# 已观察到两个效果，都在死亡/资源路径上：
-#   1. 死亡扣火力后设下限 8（0x140068bb8：currentPower < 8 -> 8）
-#   2. 1UP 不加命，改为 DEC 抵扣计数 0x1404f1e60（0x1400433ff）；死亡时 INC 它（0x140068b1a）
-# 机制一手确定；**这个开关叫什么、对应界面上哪个选项，未知**。
-NC_MODE_FLAG = 0x1404F27C4
-NC_DEATH_DEBT_COUNTER = 0x1404F1E60
-NC_DEATH_POWER_FLOOR = 8
-NC_MODE_FLAG_CONFIG_BYTE = 0x140C21DBB
+# NC 特有：**挑战模式**（TH06 没有对应物）。
+#
+# ⚠️ 出处分两层，别混：
+#   · **机制**（下面这四条）全部一手反汇编读出，地址在旁。
+#   · **「叫挑战模式、目的是让玩家近乎无限命地一路 try 下去」** 来自**用户告知**
+#     （游戏内可见），不是从二进制推出来的。名字与意图按此记，机制按一手记。
+#
+# 开关 0x1404f27c4，由配置字节 0x140c21dbb 置位（0x14004dbe8 SETNZ；
+# 同一段还读初始机数/炸弹数，Extra 固定 2 命 3 炸）。四个效果：
+#   1. **不扣命** —— 0x140068e7d：开着就跳过 livesRemaining--。这是"近乎无限命"的实现。
+#      （仍要求 livesRemaining > 0，否则进 retry 菜单，所以是"近乎"而非绝对无限。）
+#   2. **死亡火力下限 8** —— 0x140068bb8：扣完 16 后若 < 8 则拉回 8，避免死后打不动。
+#   3. **1UP 不加命，改为减少死亡计数** —— 0x1400433ff。命既然无限，1UP 改成"赎回一次失误"。
+#   4. **死亡次数 > 5 就拿不到完全通关记录** —— 0x14002ca19，
+#      不满足则只写较低等级的 clear flag（表在 0x1404ff300 一带，值 0x63）。
+CHALLENGE_MODE_FLAG = 0x1404F27C4
+CHALLENGE_MODE_CONFIG_BYTE = 0x140C21DBB
+CHALLENGE_MODE_SKIPS_LIFE_LOSS_AT = 0x140068E7D
+CHALLENGE_MODE_POWER_FLOOR = 8
+CHALLENGE_MODE_FULL_CLEAR_MAX_DEATHS = 5
+
+# g_GameManager.deaths。**NC 把 TH06 在 Die() 里的 deaths++ 挪到了死亡结算处**
+# （0x140068b1a，respawnTimer 归零那一帧），这就是 NC 的 Die 内联段里找不到它的原因。
+# 挑战模式下 1UP 会 DEC 它。
+G_DEATHS = 0x1404F1E60
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 炸弹：同样是按 (机型, 角色) 索引的函数指针表，每项 {Calc, Draw}。

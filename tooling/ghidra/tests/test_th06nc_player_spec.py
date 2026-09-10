@@ -6,6 +6,7 @@
 - `Player__CheckGraze` 多出来的那个参数是未解之处，别被悄悄写成已解。
 """
 import importlib.util
+import pathlib
 import unittest
 from pathlib import Path
 
@@ -329,8 +330,20 @@ class Th06ncDeathChainTests(unittest.TestCase):
         for n in names:
             self.assertIn(n, declared)
 
-    def test_the_nc_only_mode_flag_stays_marked_unknown(self):
-        # 机制一手确定，但这个开关叫什么不知道。别让它被安上一个自信的名字。
-        self.assertEqual(self.spec.NC_MODE_FLAG, 0x1404F27C4)
-        self.assertEqual(self.spec.NC_DEATH_POWER_FLOOR, 8)
-        self.assertEqual(self.spec.NC_MODE_FLAG_CONFIG_BYTE, 0x140C21DBB)
+    def test_challenge_mode_mechanics(self):
+        # NC 独有。机制一手，名称与意图由用户告知（游戏内可见）——
+        # spec 的注释里必须把这两层出处分开写，别让来源被抹平。
+        self.assertEqual(self.spec.CHALLENGE_MODE_FLAG, 0x1404F27C4)
+        self.assertEqual(self.spec.CHALLENGE_MODE_CONFIG_BYTE, 0x140C21DBB)
+        self.assertEqual(self.spec.CHALLENGE_MODE_POWER_FLOOR, 8)
+        self.assertEqual(self.spec.CHALLENGE_MODE_FULL_CLEAR_MAX_DEATHS, 5)
+        # 「不扣命」是这个模式的核心，站点丢了就等于结论没了
+        self.assertEqual(self.spec.CHALLENGE_MODE_SKIPS_LIFE_LOSS_AT, 0x140068E7D)
+
+    def test_deaths_counter_moved_out_of_die(self):
+        # TH06 在 Die() 里 deaths++，NC 挪到了死亡结算处 —— 这不只是搬家，
+        # 它让决死成功不计入死亡次数，而那正是「死 <= 5 次才算满记录」的前提。
+        self.assertEqual(self.spec.G_DEATHS, 0x1404F1E60)
+        src = pathlib.Path(REPO / "tooling" / "ghidra" / "th06nc_player_spec.py").read_text(
+            encoding="utf-8")
+        self.assertIn("0x140068b1a", src)
