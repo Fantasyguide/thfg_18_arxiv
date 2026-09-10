@@ -17,6 +17,12 @@
 //    画成「加色」，是肉眼可见的错。
 // 3. **alpha test 只能在 shader 里 discard**：`ALPHAREF=1` + `GREATEREQUAL` ⇒
 //    丢弃 `a < 1/255`，且**只在 blend mode ≠ 3 时**（09 §4.1/§4.2）。
+// 4. **canvas 还要 `alpha: false`**（不只是 `premultipliedAlpha: false`）。09 §4.2.1 ② ——
+//    D3D9 没开 `SEPARATEALPHABLENDENABLE`，同一对因子也作用在 alpha 上，于是
+//    **blend mode 2 / 4 / 6 在源不透明时把目标 alpha 算成 0**。真机的后备缓冲不透明、
+//    alpha 不参与显示，所以没人在意；网页上画到带 alpha 的 canvas 里就是**打洞**，
+//    背景会透出来。真实数据里 mode 2 用了 43 次、mode 4 用了 6 次，不是理论问题。
+//    ⇒ `getContext('webgl2', { alpha: false, premultipliedAlpha: false })`。
 import {
   ALPHA_TEST_THRESHOLD, GLOBAL_DEFAULTS, renderStateFor, TEXTURE_STAGE,
 } from './render-state.js';

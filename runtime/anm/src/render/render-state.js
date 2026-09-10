@@ -33,18 +33,33 @@ export const ALPHA_TEST_THRESHOLD = 1 / 255;
 // ── §4.2 (a) blend mode = `flags_lo` bit 5–8，10 项跳表 `th16:0x465254` ────────────
 // 每行：[alphaTest, SRCBLEND, DESTBLEND, BLENDOP]，D3D 值 → WebGL 符号名。
 // **唯独 mode 3（Replace）把 ALPHATESTENABLE 设 0**，其余 9 种都开。
+// `formula` 是把因子代进混合方程得到的闭式（09 §4.2.1）；`killsDestAlpha` = 源不透明时
+// 会把目标 alpha 打成 0 —— **网页画布上就是「打洞」**，见文件尾的说明与 D3D9-MAPPING.md §6。
 export const BLEND_MODES = [
-  { alphaTest: true, src: 'SRC_ALPHA', dst: 'ONE_MINUS_SRC_ALPHA', op: 'FUNC_ADD', note: 'Normal 透明' },
-  { alphaTest: true, src: 'SRC_ALPHA', dst: 'ONE', op: 'FUNC_ADD', note: 'Add 加色' },
-  { alphaTest: true, src: 'SRC_ALPHA', dst: 'ONE', op: 'FUNC_REVERSE_SUBTRACT', note: 'Subtract 减色' },
-  { alphaTest: false, src: 'ONE', dst: 'ZERO', op: 'FUNC_ADD', note: 'Replace 不透明（唯一关 alpha test 的）' },
-  { alphaTest: true, src: 'ONE_MINUS_DST_COLOR', dst: 'ONE_MINUS_SRC_COLOR', op: 'FUNC_ADD', note: '反向色混合' },
-  { alphaTest: true, src: 'DST_COLOR', dst: 'ZERO', op: 'FUNC_ADD', note: 'Multiply 正片叠底' },
-  { alphaTest: true, src: 'ONE_MINUS_SRC_COLOR', dst: 'ONE_MINUS_SRC_ALPHA', op: 'FUNC_ADD', note: '—' },
-  { alphaTest: true, src: 'DST_ALPHA', dst: 'ONE_MINUS_DST_ALPHA', op: 'FUNC_ADD', note: '前置（画在 dst 后）' },
-  { alphaTest: true, src: 'SRC_ALPHA', dst: 'ONE', op: 'MIN', note: '只取暗部' },
-  { alphaTest: true, src: 'SRC_ALPHA', dst: 'ONE', op: 'MAX', note: '只取亮部' },
+  { alphaTest: true, src: 'SRC_ALPHA', dst: 'ONE_MINUS_SRC_ALPHA', op: 'FUNC_ADD', formula: 'S·Sa + D(1−Sa)', killsDestAlpha: false, note: 'Normal 透明' },
+  { alphaTest: true, src: 'SRC_ALPHA', dst: 'ONE', op: 'FUNC_ADD', formula: 'S·Sa + D', killsDestAlpha: false, note: 'Add 加色' },
+  { alphaTest: true, src: 'SRC_ALPHA', dst: 'ONE', op: 'FUNC_REVERSE_SUBTRACT', formula: 'D − S·Sa', killsDestAlpha: true, note: 'Subtract 减色' },
+  { alphaTest: false, src: 'ONE', dst: 'ZERO', op: 'FUNC_ADD', formula: 'S', killsDestAlpha: false, note: 'Replace 不透明（唯一关 alpha test 的）' },
+  // ★ 不是 Screen：thpages 记作「Screen? (S + D − SD)」，实际是 S + D − **2**SD。
+  // 白叠白 (S=D=1) 本式给 0（黑）、Screen 给 1（白），差满量程。09 §4.2.1 ①。
+  { alphaTest: true, src: 'ONE_MINUS_DST_COLOR', dst: 'ONE_MINUS_SRC_COLOR', op: 'FUNC_ADD', formula: 'S + D − 2SD', killsDestAlpha: true, note: '对称差型；**不是 Screen**' },
+  { alphaTest: true, src: 'DST_COLOR', dst: 'ZERO', op: 'FUNC_ADD', formula: 'S·D', killsDestAlpha: false, note: 'Multiply 正片叠底' },
+  { alphaTest: true, src: 'ONE_MINUS_SRC_COLOR', dst: 'ONE_MINUS_SRC_ALPHA', op: 'FUNC_ADD', formula: 'S(1−S) + D(1−Sa)', killsDestAlpha: true, note: '—' },
+  { alphaTest: true, src: 'DST_ALPHA', dst: 'ONE_MINUS_DST_ALPHA', op: 'FUNC_ADD', formula: 'S·Da + D(1−Da)', killsDestAlpha: false, note: '前置（画在 dst 后）' },
+  // 8/9：GL 规范明文规定 MIN/MAX **不带权重**，所以这两个因子在 GL 端是空转的（09 §4.2.1 ③）。
+  { alphaTest: true, src: 'SRC_ALPHA', dst: 'ONE', op: 'MIN', formula: 'min(S, D)（因子空转）', killsDestAlpha: false, note: '只取暗部' },
+  { alphaTest: true, src: 'SRC_ALPHA', dst: 'ONE', op: 'MAX', formula: 'max(S, D)（因子空转）', killsDestAlpha: false, note: '只取亮部' },
 ];
+
+/**
+ * 会把目标 alpha 打掉的那几种模式（09 §4.2.1 ②）。D3D9 没开 `SEPARATEALPHABLENDENABLE`，
+ * 所以同一对因子也作用在 alpha 上；源不透明时 mode 2/4/6 的结果 alpha 都是 0。
+ * 真机无所谓（后备缓冲不透明），**网页画布会被打洞** —— 真实数据里 mode 2 用了 43 次、
+ * mode 4 用了 6 次。解法见 D3D9-MAPPING.md §6：把 canvas 建成 `{ alpha: false }`。
+ */
+export const ALPHA_DESTROYING_MODES = BLEND_MODES
+  .map((b, i) => (b.killsDestAlpha ? i : -1))
+  .filter((i) => i >= 0);
 
 /**
  * `flags_lo` bit 5–8 → blend 状态。

@@ -387,6 +387,56 @@ if ((flags_lo & 0x3e000000) == 0x32000000) {   // mode 25 = 610
 | 9 | 1 | 5 SRCALPHA | 2 ONE | 5 MAX | 只取亮部 |
 
 **与 thpages 的 blendMode 表逐格一致** ✅（thpages 自己标 `wip:1`「只看了汇编」，本文在 th16 上复核成 ✅）。
+
+#### 4.2.1 ★ 把因子代进混合方程：闭式、两处对 thpages 的更正、以及一个网页端的坑
+
+上表的三列因子是一手 ✅。把它们代进 D3D9 / OpenGL 共用的 ADD 方程
+`result = S·SRCBLEND + D·DESTBLEND`（`REVSUBTRACT` 则是 `D·DESTBLEND − S·SRCBLEND`），
+就得到每种模式的闭式。**这一节不是新的反汇编结论**，是「一手因子 + 混合方程定义」的推导——
+但它能纠正两处社区措辞，也能挡住一个网页播放器必踩的坑。
+
+| mode | 颜色通道闭式（S=源色 D=底色 Sa=源 alpha Da=底 alpha） | thpages 的说法 | 裁决 |
+| :---: | --- | --- | --- |
+| 0 | `S·Sa + D(1−Sa)` | Normal | 一致 ✅ |
+| 1 | `S·Sa + D` | Add | 一致 ✅ |
+| 2 | `D − S·Sa` | Subtract (but weird?) | 一致；「weird」的成因见下 |
+| 3 | `S` | Replace | 一致 ✅ |
+| 4 | **`S + D − 2SD`** | **「Screen? (S + D − SD)」** | ❌ **不是 Screen，且式子差一个 2** |
+| 5 | `S·D` | Multiply, I guess? | 一致 ✅（可以去掉「I guess」） |
+| 6 | `S(1−S) + D(1−Sa)` | *uh.* `S(1−S) + D(1−alpha)` | 一致 ✅ |
+| 7 | `S·Da + D(1−Da)` | Normal but src drawn behind dest | 一致 ✅ |
+| 8 / 9 | `min(S,D)` / `max(S,D)` | Darken / Lighten only? | 一致，但**两个因子是空转的**，见下 |
+
+**① 更正 mode 4：它不是 Screen。** `SRCBLEND = INVDESTCOLOR = (1−D)`、`DESTBLEND = INVSRCCOLOR = (1−S)`
+⇒ `S(1−D) + D(1−S) = S + D − 2SD`。标准的 Screen 是 `S + D − SD`，**少一个 2**。
+**对抗证伪（取分离最大的点）**：`S = D = 1`（白叠白）——
+
+- 本式：`1 + 1 − 2 = 0` ⇒ **黑**
+- Screen：`1 + 1 − 1 = 1` ⇒ 白
+
+差满量程。`S = D = 0.8` 时是 `0.32` vs `0.96`。所以既不能叫它 Screen，也不能照 thpages 的
+`S + D − SD` 去实现。**交叉对名**：`S + D − 2SD` 在图形学里没有通名（它是「对称差」型算子，
+两者都亮或都暗时反而变暗），所以本文不给它起社区名，只写式子。
+
+**② mode 2 / 4 / 6 会把目标 alpha 打掉。** D3D9 未开 `SEPARATEALPHABLENDENABLE`
+（`0x45ba80` 的扫描里没有它），所以**同一对因子也作用在 alpha 通道上**。代入 `Sa = Da = 1`：
+
+| mode | alpha 闭式 | `Sa = Da = 1` 时 |
+| :---: | --- | :---: |
+| 2 | `Da − Sa²` | **0** |
+| 4 | `Sa + Da − 2·Sa·Da` | **0** |
+| 6 | `(1−Sa)(Sa + Da)` | **0** |
+| 其余 | — | 1 |
+
+thpages 只对 mode 2 提了这件事（*"this would also subtract alpha…"*），**mode 4 与 6 同样如此**。
+真机上无所谓——后备缓冲是不透明的，alpha 不参与显示；**但网页播放器把它画到带 alpha 的
+canvas 上就会被「打洞」**，而真实数据里 `mode 2` 用了 43 次、`mode 4` 用了 6 次。
+播放器侧的处理见 [`runtime/anm/src/render/D3D9-MAPPING.md`](../../../runtime/anm/src/render/D3D9-MAPPING.md) §6。
+
+**③ mode 8/9 的两个因子是空转的。** OpenGL / OpenGL ES 的规范明文规定 `MIN`/`MAX`
+**不带权重**（`Cr = min(Cs, Cd)`，`S`、`D` 不出现在式子里），所以表里的 `SRCALPHA` / `ONE`
+在 GL 端完全不起作用。D3D9 侧多半同理，但这一条**没法从 exe 里证**，标 🟡。
+结论一致（都是 min/max），只是别以为那两个因子在参与运算。
 这张表是 `303 blendMode`（R5）写 bit 5–8 后**被谁读**的答案；Drawing 组本身不碰它。
 
 **(b) 纹理过滤** = `flags_hi` bit 11（缓存 `+0x184fbba`）：`SetSamplerState(0, MAGFILTER=5, v)` +

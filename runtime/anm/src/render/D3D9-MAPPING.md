@@ -37,6 +37,23 @@
 | 9 | 5 / 2 / 5 | `SRC_ALPHA, ONE` · `MAX` | 开 |
 | >9 | — | **不设**（保持上一次的状态） | 不变 |
 
+### 2.1 把因子代进方程之后（09 §4.2.1）
+
+| mode | 闭式 | 备注 |
+| :---: | --- | --- |
+| 0 | `S·Sa + D(1−Sa)` | Normal |
+| 1 | `S·Sa + D` | Add |
+| 2 | `D − S·Sa` | Subtract · **打洞** |
+| 3 | `S` | Replace |
+| 4 | `S + D − 2SD` | **不是 Screen** · **打洞** |
+| 5 | `S·D` | Multiply |
+| 6 | `S(1−S) + D(1−Sa)` | **打洞** |
+| 7 | `S·Da + D(1−Da)` | src 画在 dst 后 |
+| 8 / 9 | `min(S,D)` / `max(S,D)` | 两个因子在 GL 下**空转**（规范规定 MIN/MAX 不带权重） |
+
+> **mode 4 不是 Screen**：thpages 记作「Screen? (S + D − SD)」，实际是 `S + D − **2**SD`。
+> 白叠白（`S = D = 1`）本式给 **0（黑）**、Screen 给 1（白），差满量程。别照 thpages 实现。
+
 **实测用量**（54 个真实 `.anm` 里 `303 blendMode` 的分布）：`1`×440 · `2`×43 · `0`×16 ·
 `3`×12 · `4`×6 · `9`×2 · `7`×1；**5 / 6 / 8 从未使用，也从未越界**。所以「>9 不设」这条
 分支没有 ground truth——代码返回 `null` 让调用方什么都不做，**不回落到 mode 0**。
@@ -89,6 +106,22 @@ vec4 c = texture2D(uTex, vUv) * vColor;   // 整条 texture stage 就是这一�
    缺扩展时本实现**抛**，不静默退回 `FUNC_ADD`——那会把「只取亮部」画成「加色」。
 3. **D3D 屏幕坐标原点在左上、y 向下**，NDC 原点居中、y 向上。顶点着色器里
    `y_ndc = 1 - y/h*2`，少这一步整个画面上下颠倒。
+4. **canvas 还要 `alpha: false`**（不只是 `premultipliedAlpha: false`）。D3D9 没开
+   `SEPARATEALPHABLENDENABLE`（`th16:0x45ba80` 的扫描里没有它），所以**同一对因子也作用在
+   alpha 通道上**，于是 **blend mode 2 / 4 / 6 在源不透明时把目标 alpha 算成 0**：
+
+   | mode | alpha 闭式 | `Sa = Da = 1` |
+   | :---: | --- | :---: |
+   | 2 | `Da − Sa²` | 0 |
+   | 4 | `Sa + Da − 2·Sa·Da` | 0 |
+   | 6 | `(1−Sa)(Sa + Da)` | 0 |
+
+   真机的后备缓冲不透明、alpha 不参与显示，所以没人在意；**网页上画到带 alpha 的 canvas
+   里就是「打洞」**，页面背景会从图里透出来。真实数据里 mode 2 用了 **43 次**、mode 4 用了
+   **6 次**，不是理论问题。thpages 只对 mode 2 提过这件事，4 与 6 同样如此。
+
+   ⇒ `getContext('webgl2', { alpha: false, premultipliedAlpha: false })`。
+   代码里 `ALPHA_DESTROYING_MODES` 导出了这三个号，测试逐条断言。
 
 ## 7. 没有一手依据的地方（如实标注）
 
