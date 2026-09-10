@@ -114,6 +114,9 @@ source tooling/env.sh
 "$JAVA_HOME/bin/python" tooling/ghidra/export_html.py th18
 tooling/ghidra/serve.sh th18            # 只绑 127.0.0.1；远程用 ssh -L 转发
 
+# 按 VA 直读 exe 字节（跳表 / 常量池），不占工程锁
+python3 tooling/pe_read.py local/th16.v1.00a/th16.exe 0x45f578 --dwords 36 --base 10000
+
 # 干完活把成果存回仓库 —— 不导出就等于没有
 tooling/ghidra/symbols.py status th18
 tooling/ghidra/symbols.py export th18

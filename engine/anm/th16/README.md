@@ -47,8 +47,18 @@
 - **第一刀**:反 `mgr+0x10c` 模板数组的**装载**端(谁把 .anm 解析进这个数组?stride 0x5fc 模板的字段布局?),
   和 `FUN_0046e7d0`(注册/句柄分配)。这能解出"显示对象/anm 槽"的对象模型。
 
-### B. ✅ ANM 事件回调表族(已坐实,2026-06-09;th-re-data + dump + 反编译)
-- **`0x491b0c` = `ANM_ON_SWITCH_FUNCS`**(`void*[4]`={null,`0x407900`,`0x405f20`,`0x406920`}=`AnmVm::on_switch__1/2/3`)。反 `0x407900`:操作 AnmVm 顶点数组 `+0x5b8`(4 顶点)、设渲染/混合模式(`+0x534`、`+0x18`=0x17/0x24/0x1e)、写颜色/UV 常量 = **ANM 精灵渲染状态切换**。索引 = ANM 对象 `+0x5d0`(switch 类型,0=无→对应调用方 `if(idx!=0)` 守卫)。
+### B. ANM 事件回调表族(2026-06-09;th-re-data + dump + 反编译)
+
+> ⚠️ **更正(2026-09-09,[`02-vm-core.md`](02-vm-core.md) §3.5)**:下面那条"`0x491b0c` = `ANM_ON_SWITCH_FUNCS`"
+> **由 ✅ 下调为 🟡** —— `on_switch` 这个名字在全 exe 找不到调用点支撑。
+> 一手看全部 **32 个引用该表的函数**,抽查 `0x46f0c8`/`0x46f14e`(`AnmManager::interrupt_tree(_and_run)`)与
+> `0x44b843`–`0x44b863`(`MainMenu::do_title_screen`),形态**完全一致**:
+> `ECX = vm; EDX = <中断号>; CALL [0x491b0c + vm[+0x5d0]*4]`,**紧接着** `vm[+0x490] = 同一个中断号`
+> (例:`0x44b849` 写 `EDX = 0x1f`,`0x44b863` 写 `[EAX+0x490] = 0x1f`,再 `0x44b86d` 调 `AnmVm::run`)。
+> 而 `vm+0x490` 已一手证实是 **pending_interrupt**。**所以在这些调用点它是 `ANM_ON_INTERRUPT_FUNCS`** ✅。
+> 表项本身(`0x407900`/`0x405f20`/`0x406920`)干了什么仍如下述,只是**它们是被 interrupt 触发的**。
+
+- 🟡 **`0x491b0c` 旧名 `ANM_ON_SWITCH_FUNCS`**(`void*[4]`={null,`0x407900`,`0x405f20`,`0x406920`}=`AnmVm::on_switch__1/2/3`)。反 `0x407900`:操作 AnmVm 顶点数组 `+0x5b8`(4 顶点)、设渲染/混合模式(`+0x534`、`+0x18`=0x17/0x24/0x1e)、写颜色/UV 常量 = **ANM 精灵渲染状态切换**。索引 = ANM 对象 `+0x5d0`(switch 类型,0=无→对应调用方 `if(idx!=0)` 守卫)。
 - **整族 ANM 事件回调表**(ExpHP th-re-data,相邻):`0x491b0c` on_switch[4] · `0x491b1c` on_sprite_set[4](`AnmVm::on_sprite_set__*`)· `0x491b2c` on_draw[7](`AnmVm::on_draw__*`)· `0x491b48`/`0x491b50` on_copy[2]×2 · `0x491b58` on_delete[4]。→ **这是 ANM VM 的事件分派骨架,逐表反 entry 即得各事件语义。**
 - 消费者 `FUN_0044f810`/`FUN_0044c8c0` = ANM 管理器(`DAT_004c0f48`)每帧渲染更新器;`0x46efa0`=`AnmManager::get_vm_with_id`(句柄→AnmVm)。
 - ⚠️ **更正**:`0x491b0c` **不是** SHT 特效/敌弹派发(旧 `engine/sht/th16/04`/`06` 误标,已修);也不是 anm**脚本步进**(那是另找 anm bytecode VM,见 §C),而是**事件回调**。
@@ -67,7 +77,38 @@
 
 ## 计划产出
 
-- `01-display-object-model.md`(对象模型 + 创建/池/模板/释放)、`02-anm-vm-opcodes.md`(脚本 VM + opcode 表,对 thanm)。
+- ✅ **已出**:[`01-format.md`](01-format.md) —— `.anm` v8 文件格式（entry/sprite/script/指令头/THTX/format 表），
+  一手加载路径 `0x46cdd0` → `0x46d1c0` → `0x46d3b0`；配套命名单 [`naming-batch.md`](naming-batch.md)。
+- ✅ **已出**:[`02-vm-core.md`](02-vm-core.md) —— VM 骨架(`AnmVm::run` `0x45f980` 主循环、`zAnmVm` 字段图、
+  时间闸门与 `GAME_SPEED`、interrupt 查找、`delete`/`static`/`stop` 终止语义、三段式分发表)。
+- ✅ **已出**:[`03-math-jumps.md`](03-math-jumps.md) —— opcode **100–131 / 200–213** 共 46 条
+  (整/浮算术、随机、sin/cos/tan/acos/atan、角度归一、极坐标、14 条跳转)的签名与语义，
+  含四个专项:变量槽编号与编码、除零/取模边界、跳转目标是字节偏移、跳转后 `time` 怎么设。
+  **这一篇同时是后续 opcode 分组文档的格式范例**(表 + 专项 + 社区裁决 + 真实数据对账 + 播放器的坑)。
+- ✅ **已出**:[`04-variables.md`](04-variables.md) —— 脚本变量号 **10000–10035** 共 36 条逐条定死
+  (语义/类型/可写性/vm 字段落点/读侧 case 地址/随机族 PRNG 流)，可写 22 / 只读 14 的一手划界，
+  含四个专项:可写性穷举、跨类型读非对称、随机族流划界、helper 变量(相机/有效旋转)。
+- ✅ **已出**:[`05-system.md`](05-system.md) —— opcode **0–7** 共 8 条(nop/delete/static/stop/
+  stopHide/case/wait/caseReturn),含终止语义与 interrupt 标签扫描。
+- ✅ **已出**:[`06-settings.md`](06-settings.md) —— opcode **300–317** 共 18 条(sprite/blendMode/
+  layer/renderMode/scrollMode/resampleMode…),含三条 `wip:2` 的裁决与 `flags_lo`/`flags_hi` 位归属。
+- ✅ **已出**:[`07-general.md`](07-general.md) —— opcode **400–438** 共 39 条(变换与外观层),
+  含 12 组帧尾插值器的结构图、32 条缓动曲线公式、求值次序表。
+- ✅ **已出**:[`08-child.md`](08-child.md) —— opcode **500–509** 共 10 条(建子/建根/继承开关/
+  拷父变量/effect 表),含父子坐标继承与 `create_managed_child` vs `create_managed_root` 的分野。
+- ✅ **已出**:[`09-drawing.md`](09-drawing.md) —— opcode **600–613** 共 14 条 + **render state 一手扫描**
+  (blend 10 模式 / alpha test / texture stage / FVF),含帧尾几何 `0x4632f0` 三族的完整公式
+  (mode 9 整圆环、13/14 圆环弧、24/25 3D 圆柱与平面圆环)。
+- ✅ **已出**:[`10-sprite-geometry.md`](10-sprite-geometry.md) —— **`draw_vm` 的 sprite 四边形路径**
+  (mode 0/1/2/3):锚点两张表、位置公式(含旋转)、UV 的 `uv_scale` 子矩形、`423 colorMode` 的四种
+  平涂/渐变。**这是播放器真正要画的那件事**——真实数据里只有 4.7% 的 script 用 Drawing 组。
+- 待做:`draw_vm` 的 **mode 4 / 8 / 15**(走 `0x467410`,mode 8 真实用量 196 次)、
+  rect 族(`0x468722`)与 poly 族(`0x4689b3`)的顶点计算;以及显示对象模型(创建/池/模板/释放)。
+
+> ⚠️ **新增分组文档时,记得回来把它加进上面这份清单。**
+> `tooling/check-docs.py --orphans` **查不出**这类遗漏——分组文档与 [`naming-batch.md`](naming-batch.md)
+> 互相链接就已经"有入链"了(自满足的交叉链接),但从 README / OVERVIEW 仍然走不到它。
+> 收口任务请**显式对照本清单**,不要依赖 `--orphans`。
 - `tooling/ghidra/scripts/apply_th16_anm_names.py`(函数/数据符号/注释,headless 可复现)。
 - 稳定后回填 THTK-Studio 仓库的 `docs/`。
 

@@ -33,6 +33,9 @@ import os
 import re
 import sys
 import time
+
+# 单个函数最多列多少条反汇编。最大的 ECL VM 约 6600 条，留足余量。
+DISASM_LIMIT = 20000
 from collections import Counter
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -196,14 +199,20 @@ def collect(prog, base, ours_addrs, limit=None, decomp=True):
             rec["entry_bytes"] = ""
 
         # 反汇编（= MCP 的 disassemble_function）
+        # ⚠️ 上限曾是 4000 且**静默截断**：TH06NC 的 ECL VM（27928 字节 ≈ 6600 条）
+        # 被砍掉最后三分之一，页面上却照样写「反汇编（4000 条）」——照着它做统计会
+        # 得出错误结论（实际踩过）。现在上限抬高，且截断必须在页面上说出来。
         dis = []
+        truncated = False
         it = lst.getInstructions(f.getBody(), True)
         while it.hasNext():
             ins = it.next()
             dis.append(("%08x" % ins.getAddress().getOffset(), str(ins)))
-            if len(dis) > 4000:
+            if len(dis) >= DISASM_LIMIT:
+                truncated = it.hasNext()
                 break
         rec["disasm"] = dis
+        rec["disasm_truncated"] = truncated
 
         # 反编译 + 局部变量（= decompile_function / list_decompiler_variables）
         rec["c"] = ""
@@ -327,7 +336,11 @@ def render_func(rec, out_dir):
 
     if rec["disasm"]:
         full = "\n".join(f"{d[0]}  {d[1]}" for d in rec["disasm"])
-        b.append(f"<h2>反汇编（{len(rec['disasm'])} 条）</h2><pre>{esc(full)}</pre>")
+        warn = ""
+        if rec.get("disasm_truncated"):
+            warn = (f"<p class=sub><b>⚠️ 已截断</b>：只列出前 {DISASM_LIMIT} 条，"
+                    f"函数还没完。别拿这一页做全函数统计。</p>")
+        b.append(f"<h2>反汇编（{len(rec['disasm'])} 条）</h2>{warn}<pre>{esc(full)}</pre>")
 
     with open(os.path.join(out_dir, "f", a + ".html"), "w", encoding="utf-8") as fh:
         fh.write(page(nm, "".join(b), depth=1))

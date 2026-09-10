@@ -1,0 +1,3744 @@
+{
+ "version": "th06nc",
+ "exe_md5": "b0cc28ec904e9efce2439ad857c938b5",
+ "funcs": [
+  {
+   "name": "AnmManager__LoadAnm",
+   "addr": "0x1400020b0"
+  },
+  {
+   "name": "AnmManager__SetActiveSprite",
+   "addr": "0x140002980"
+  },
+  {
+   "name": "AnmManager__Draw",
+   "addr": "0x140002a80"
+  },
+  {
+   "name": "AnmManager__SeekInterruptLabel",
+   "addr": "0x1400068f0"
+  },
+  {
+   "name": "AnmManager__ExecuteScript",
+   "addr": "0x1400069b0"
+  },
+  {
+   "name": "BombData__BombReimuACalc",
+   "addr": "0x14000d1a0"
+  },
+  {
+   "name": "BombData__BombReimuADraw",
+   "addr": "0x14000d9c0"
+  },
+  {
+   "name": "BombData__BombReimuBCalc",
+   "addr": "0x14000db50"
+  },
+  {
+   "name": "BombData__BombReimuBDraw",
+   "addr": "0x14000e130"
+  },
+  {
+   "name": "BombData__BombMarisaACalc",
+   "addr": "0x14000e270"
+  },
+  {
+   "name": "BombData__BombMarisaADraw",
+   "addr": "0x14000e650"
+  },
+  {
+   "name": "BombData__BombMarisaBCalc",
+   "addr": "0x14000e7f0"
+  },
+  {
+   "name": "BombData__BombMarisaBDraw",
+   "addr": "0x14000ebe0"
+  },
+  {
+   "name": "BulletManager__TurnAllBulletsIntoPoints",
+   "addr": "0x14000ef00"
+  },
+  {
+   "name": "BulletManager__SpawnBulletPattern",
+   "addr": "0x14000f870"
+  },
+  {
+   "name": "BulletManager__SpawnLaserPattern",
+   "addr": "0x1400105e0"
+  },
+  {
+   "name": "BulletManager__OnUpdate",
+   "addr": "0x140010870"
+  },
+  {
+   "name": "Input__PublishButtonBitmap",
+   "addr": "0x1400127d0"
+  },
+  {
+   "name": "Input__CollectKeyboard",
+   "addr": "0x140012be0"
+  },
+  {
+   "name": "EclManager__RunEcl",
+   "cc": "unknown",
+   "ret": "int",
+   "params": [
+    {
+     "name": "self",
+     "type": "Th06ncEclManager *"
+    },
+    {
+     "name": "enemy",
+     "type": "void *"
+    }
+   ],
+   "addr": "0x140022060"
+  },
+  {
+   "name": "EffectManager__SpawnParticles",
+   "addr": "0x14002b0d0"
+  },
+  {
+   "name": "EnemyEclInstr__MoveDirTime",
+   "addr": "0x14002dfc0"
+  },
+  {
+   "name": "EnemyEclInstr__MovePosTime",
+   "addr": "0x14002e0a0"
+  },
+  {
+   "name": "EnemyEclInstr__MoveTime",
+   "addr": "0x14002e180"
+  },
+  {
+   "name": "EnemyEclInstr__GetVarFloat",
+   "addr": "0x14002e260"
+  },
+  {
+   "name": "EnemyEclInstr__SetVar",
+   "addr": "0x14002e620"
+  },
+  {
+   "name": "EnemyEclInstr__MathAdd",
+   "addr": "0x14002ecf0"
+  },
+  {
+   "name": "EnemyEclInstr__MathSub",
+   "addr": "0x14002f770"
+  },
+  {
+   "name": "EnemyEclInstr__MathMul",
+   "addr": "0x1400301f0"
+  },
+  {
+   "name": "EnemyEclInstr__MathDiv",
+   "addr": "0x1400310f0"
+  },
+  {
+   "name": "EnemyEclInstr__MathMod",
+   "addr": "0x140031b70"
+  },
+  {
+   "name": "EnemyEclInstr__MathAtan2",
+   "addr": "0x1400325f0"
+  },
+  {
+   "name": "EnemyManager__SpawnEnemy",
+   "addr": "0x1400360d0"
+  },
+  {
+   "name": "EnemyManager__RunEclTimeline",
+   "addr": "0x140036260"
+  },
+  {
+   "name": "ItemManager__SpawnItem",
+   "addr": "0x1400426e0"
+  },
+  {
+   "name": "Player__AddedCallback",
+   "addr": "0x140068160"
+  },
+  {
+   "name": "Player__OnUpdate",
+   "addr": "0x140068820"
+  },
+  {
+   "name": "Player__FireBulletFromTable",
+   "addr": "0x14006a580"
+  },
+  {
+   "name": "Player__FireBulletReimuA",
+   "addr": "0x14006a840"
+  },
+  {
+   "name": "Player__FireBulletReimuB",
+   "addr": "0x14006a860"
+  },
+  {
+   "name": "Player__FireBulletMarisaA",
+   "addr": "0x14006a880"
+  },
+  {
+   "name": "Player__FireBulletMarisaB",
+   "addr": "0x14006a8a0"
+  },
+  {
+   "name": "Player__BombProjectileClipsBox",
+   "addr": "0x14006a8c0"
+  },
+  {
+   "name": "Player__CalcKillBoxCollision",
+   "addr": "0x14006a980"
+  },
+  {
+   "name": "Player__CalcLaserHitbox",
+   "addr": "0x14006aba0"
+  },
+  {
+   "name": "ResultScreen__UpdateUnlockCheats",
+   "addr": "0x14006e020"
+  },
+  {
+   "name": "ResultScreen__UpdateKeyboardUnlockCheat",
+   "addr": "0x14006e190"
+  },
+  {
+   "name": "ResultScreen__OnUpdate",
+   "addr": "0x14006e3a0"
+  },
+  {
+   "name": "ResultScreen__WriteScoreDat",
+   "addr": "0x140074470"
+  }
+ ],
+ "statics": [
+  {
+   "addr": "0x140007494",
+   "name": "g_AnmOpcodeJumpTable",
+   "type": "uint"
+  },
+  {
+   "addr": "0x140072824",
+   "name": "g_ResultScreenStateJumpTable",
+   "type": "uint"
+  },
+  {
+   "addr": "0x1403081c0",
+   "name": "g_RemappedScancodes",
+   "type": "undefined1"
+  },
+  {
+   "addr": "0x14030c520",
+   "name": "g_ResultCheatKeyTable",
+   "type": "undefined1"
+  },
+  {
+   "addr": "0x14030c560",
+   "name": "g_ResultCheatPassword",
+   "type": "string"
+  },
+  {
+   "addr": "0x1404f2798",
+   "name": "g_Score",
+   "type": "undefined8"
+  },
+  {
+   "addr": "0x1404ff0cc",
+   "name": "g_GrazeInStage",
+   "type": "undefined4"
+  },
+  {
+   "addr": "0x1404ff0d0",
+   "name": "g_GrazeInTotal",
+   "type": "undefined4"
+  },
+  {
+   "addr": "0x1404ff0f4",
+   "name": "g_ClrdRecords",
+   "type": "undefined4"
+  },
+  {
+   "addr": "0x1404ff100",
+   "name": "g_ClrdRecord0Flags",
+   "type": "undefined4"
+  },
+  {
+   "addr": "0x140509268",
+   "name": "g_BombInUse",
+   "type": "undefined1"
+  },
+  {
+   "addr": "0x140509670",
+   "name": "g_SoundRequestQueue",
+   "type": "undefined4"
+  },
+  {
+   "addr": "0x140509694",
+   "name": "g_SoundRequestBlocked",
+   "type": "undefined1"
+  },
+  {
+   "addr": "0x140a6e9b0",
+   "name": "g_AnmManager",
+   "type": "undefined8"
+  },
+  {
+   "addr": "0x140a6eb70",
+   "name": "g_EclManager",
+   "type": "Th06ncEclManager"
+  },
+  {
+   "addr": "0x140c21dba",
+   "name": "g_PadSwapConfirmCancel",
+   "type": "undefined1"
+  },
+  {
+   "addr": "0x140c21e58",
+   "name": "g_PadCheatButtons",
+   "type": "undefined4"
+  },
+  {
+   "addr": "0x140c21e60",
+   "name": "g_KeyRemap",
+   "type": "undefined4"
+  }
+ ],
+ "labels": [
+  {
+   "addr": "0x140006a50",
+   "name": "ANM_DISPATCH_BOUND__OPCODE_MAX_35"
+  },
+  {
+   "addr": "0x140006d44",
+   "name": "ANM_CASE_18_19_20__POS_TIME_INTERP"
+  },
+  {
+   "addr": "0x140006fbe",
+   "name": "ANM_CASE_23__ANCHORTOPLEFT"
+  },
+  {
+   "addr": "0x140007085",
+   "name": "ANM_CASE_32__ANCHORTOPCENTER"
+  },
+  {
+   "addr": "0x14000709d",
+   "name": "ANM_CASE_33__ANCHORLEFT"
+  },
+  {
+   "addr": "0x1400070b5",
+   "name": "ANM_CASE_35__ANCHORRIGHT"
+  },
+  {
+   "addr": "0x1400070cd",
+   "name": "ANM_CASE_34__ANCHORTOPRIGHT"
+  },
+  {
+   "addr": "0x1400070e3",
+   "name": "ANM_ADVANCE_TO_NEXT_INSTR"
+  },
+  {
+   "addr": "0x1400221b1",
+   "name": "ECL_OPCODE_DISPATCH"
+  },
+  {
+   "addr": "0x1400221df",
+   "name": "ECL_OP_003_JUMPDEC"
+  },
+  {
+   "addr": "0x1400224ba",
+   "name": "ECL_OP_002_JUMP"
+  },
+  {
+   "addr": "0x1400224d0",
+   "name": "ECL_OP_004_SETINT"
+  },
+  {
+   "addr": "0x1400224e3",
+   "name": "ECL_OP_026_MATHNORMANGLE"
+  },
+  {
+   "addr": "0x1400227be",
+   "name": "ECL_OP_006_SETINTRAND"
+  },
+  {
+   "addr": "0x140022ac1",
+   "name": "ECL_OP_007_SETINTRANDMIN"
+  },
+  {
+   "addr": "0x140023067",
+   "name": "ECL_OP_008_SETFLOATRAND"
+  },
+  {
+   "addr": "0x1400230e1",
+   "name": "ECL_OP_009_SETFLOATRANDMIN"
+  },
+  {
+   "addr": "0x14002318c",
+   "name": "ECL_OP_010_SETVARSELFX"
+  },
+  {
+   "addr": "0x1400231a2",
+   "name": "ECL_OP_011_SETVARSELFY"
+  },
+  {
+   "addr": "0x1400231b8",
+   "name": "ECL_OP_012_SETVARSELFZ"
+  },
+  {
+   "addr": "0x1400231ce",
+   "name": "ECL_OP_013_MATHINTADD"
+  },
+  {
+   "addr": "0x1400231e5",
+   "name": "ECL_OP_018_MATHINC"
+  },
+  {
+   "addr": "0x1400234b5",
+   "name": "ECL_OP_019_MATHDEC"
+  },
+  {
+   "addr": "0x140023785",
+   "name": "ECL_OP_014_MATHINTSUB"
+  },
+  {
+   "addr": "0x14002379c",
+   "name": "ECL_OP_015_MATHINTMUL"
+  },
+  {
+   "addr": "0x1400237b3",
+   "name": "ECL_OP_016_MATHINTDIV"
+  },
+  {
+   "addr": "0x1400237ca",
+   "name": "ECL_OP_017_MATHINTMOD"
+  },
+  {
+   "addr": "0x1400237e1",
+   "name": "ECL_OP_025_MATHATAN2"
+  },
+  {
+   "addr": "0x14002380a",
+   "name": "ECL_OP_027_CMPINT"
+  },
+  {
+   "addr": "0x140023d49",
+   "name": "ECL_OP_028_CMPFLOAT"
+  },
+  {
+   "addr": "0x140023da9",
+   "name": "ECL_OP_029_JUMPLSS"
+  },
+  {
+   "addr": "0x140023dbb",
+   "name": "ECL_OP_030_JUMPLEQ"
+  },
+  {
+   "addr": "0x140023dcd",
+   "name": "ECL_OP_031_JUMPEQU"
+  },
+  {
+   "addr": "0x140023ddf",
+   "name": "ECL_OP_032_JUMPGRE"
+  },
+  {
+   "addr": "0x140023df1",
+   "name": "ECL_OP_033_JUMPGEQ"
+  },
+  {
+   "addr": "0x140023e03",
+   "name": "ECL_OP_034_JUMPNEQ"
+  },
+  {
+   "addr": "0x140023e15",
+   "name": "ECL_OP_037_CALLLSS"
+  },
+  {
+   "addr": "0x1400240ee",
+   "name": "ECL_OP_035_CALL"
+  },
+  {
+   "addr": "0x1400241c5",
+   "name": "ECL_OP_038_CALLLEQ"
+  },
+  {
+   "addr": "0x14002449c",
+   "name": "ECL_OP_039_CALLEQU"
+  },
+  {
+   "addr": "0x140024773",
+   "name": "ECL_OP_040_CALLGRE"
+  },
+  {
+   "addr": "0x140024a4a",
+   "name": "ECL_OP_041_CALLGEQ"
+  },
+  {
+   "addr": "0x140024d21",
+   "name": "ECL_OP_042_CALLNEQ"
+  },
+  {
+   "addr": "0x140024ff8",
+   "name": "ECL_OP_097_ANMSETMAIN"
+  },
+  {
+   "addr": "0x14002506a",
+   "name": "ECL_OP_099_ANMSETSLOT"
+  },
+  {
+   "addr": "0x1400250eb",
+   "name": "ECL_OP_043_MOVEPOSITION"
+  },
+  {
+   "addr": "0x1400251aa",
+   "name": "ECL_OP_044_MOVEAXISVELOCITY"
+  },
+  {
+   "addr": "0x140025210",
+   "name": "ECL_OP_045_MOVEVELOCITY"
+  },
+  {
+   "addr": "0x140025257",
+   "name": "ECL_OP_046_MOVEANGULARVELOCITY"
+  },
+  {
+   "addr": "0x14002528d",
+   "name": "ECL_OP_051_MOVEATPLAYER"
+  },
+  {
+   "addr": "0x140025308",
+   "name": "ECL_OP_047_MOVESPEED"
+  },
+  {
+   "addr": "0x14002533b",
+   "name": "ECL_OP_048_MOVEACCELERATION"
+  },
+  {
+   "addr": "0x140025371",
+   "name": "ECL_CASE_67_75_201__BULLET_PATTERN"
+  },
+  {
+   "addr": "0x140025371",
+   "name": "ECL_OP_067_BULLETFANAIMED"
+  },
+  {
+   "addr": "0x140025dc2",
+   "name": "ECL_OP_082_BULLETEFFECTS"
+  },
+  {
+   "addr": "0x140026865",
+   "name": "ECL_OP_100_ANMSETDEATH"
+  },
+  {
+   "addr": "0x140026880",
+   "name": "ECL_OP_076_SHOOTINTERVAL"
+  },
+  {
+   "addr": "0x1400268d4",
+   "name": "ECL_OP_077_SHOOTINTERVALDELAYED"
+  },
+  {
+   "addr": "0x140026989",
+   "name": "ECL_OP_078_SHOOTDISABLED"
+  },
+  {
+   "addr": "0x140026995",
+   "name": "ECL_OP_079_SHOOTENABLED"
+  },
+  {
+   "addr": "0x1400269a1",
+   "name": "ECL_OP_080_SHOOTNOW"
+  },
+  {
+   "addr": "0x140026a01",
+   "name": "ECL_OP_081_SHOOTOFFSET"
+  },
+  {
+   "addr": "0x140026a41",
+   "name": "ECL_CASE_200__SHOOT_OFFSET_POLAR"
+  },
+  {
+   "addr": "0x140026a41",
+   "name": "ECL_OP_200_SHOOTOFFSETPOLAR"
+  },
+  {
+   "addr": "0x140026aa4",
+   "name": "ECL_OP_085_LASERCREATE"
+  },
+  {
+   "addr": "0x140026bda",
+   "name": "ECL_OP_087_LASERINDEX"
+  },
+  {
+   "addr": "0x140026f52",
+   "name": "ECL_OP_088_LASERROTATE"
+  },
+  {
+   "addr": "0x140026f97",
+   "name": "ECL_OP_089_LASERROTATEFROMPLAYER"
+  },
+  {
+   "addr": "0x140027019",
+   "name": "ECL_OP_090_LASEROFFSET"
+  },
+  {
+   "addr": "0x140027074",
+   "name": "ECL_OP_091_LASERTEST"
+  },
+  {
+   "addr": "0x14002709e",
+   "name": "ECL_OP_092_LASERCANCEL"
+  },
+  {
+   "addr": "0x1400270ee",
+   "name": "ECL_OP_134_LASERCLEARALL"
+  },
+  {
+   "addr": "0x1400271d3",
+   "name": "ECL_OP_101_BOSSSET"
+  },
+  {
+   "addr": "0x140027249",
+   "name": "ECL_OP_102_SPELLCARDEFFECT"
+  },
+  {
+   "addr": "0x1400272b1",
+   "name": "ECL_OP_052_MOVEDIRTIMEDECELERATE"
+  },
+  {
+   "addr": "0x1400272cf",
+   "name": "ECL_OP_053_MOVEDIRTIMEDECELERATEFAST"
+  },
+  {
+   "addr": "0x1400272ed",
+   "name": "ECL_OP_054_MOVEDIRTIMEACCELERATE"
+  },
+  {
+   "addr": "0x14002730b",
+   "name": "ECL_OP_055_MOVEDIRTIMEACCELERATEFAST"
+  },
+  {
+   "addr": "0x140027329",
+   "name": "ECL_OP_056_MOVEPOSITIONTIMELINEAR"
+  },
+  {
+   "addr": "0x140027340",
+   "name": "ECL_OP_057_MOVEPOSITIONTIMEDECELERATE"
+  },
+  {
+   "addr": "0x14002735e",
+   "name": "ECL_OP_058_MOVEPOSITIONTIMEDECELERATEFAST"
+  },
+  {
+   "addr": "0x14002737c",
+   "name": "ECL_OP_059_MOVEPOSITIONTIMEACCELERATE"
+  },
+  {
+   "addr": "0x14002739a",
+   "name": "ECL_OP_060_MOVEPOSITIONTIMEACCELERATEFAST"
+  },
+  {
+   "addr": "0x1400273b8",
+   "name": "ECL_OP_061_MOVETIMEDECELERATE"
+  },
+  {
+   "addr": "0x1400273d6",
+   "name": "ECL_OP_062_MOVETIMEDECELERATEFAST"
+  },
+  {
+   "addr": "0x1400273f4",
+   "name": "ECL_OP_063_MOVETIMEACCELERATE"
+  },
+  {
+   "addr": "0x140027412",
+   "name": "ECL_OP_064_MOVETIMEACCELERATEFAST"
+  },
+  {
+   "addr": "0x140027430",
+   "name": "ECL_OP_065_MOVEBOUNDSSET"
+  },
+  {
+   "addr": "0x140027456",
+   "name": "ECL_OP_066_MOVEBOUNDSDISABLE"
+  },
+  {
+   "addr": "0x140027462",
+   "name": "ECL_OP_049_MOVERAND"
+  },
+  {
+   "addr": "0x1400274ee",
+   "name": "ECL_OP_050_MOVERANDINBOUND"
+  },
+  {
+   "addr": "0x140027649",
+   "name": "ECL_OP_098_ANMSETPOSES"
+  },
+  {
+   "addr": "0x14002768f",
+   "name": "ECL_OP_103_ENEMYSETHITBOX"
+  },
+  {
+   "addr": "0x1400276b0",
+   "name": "ECL_OP_104_ENEMYFLAGCOLLISION"
+  },
+  {
+   "addr": "0x1400276cf",
+   "name": "ECL_OP_105_ENEMYFLAGCANTAKEDAMAGE"
+  },
+  {
+   "addr": "0x1400276ee",
+   "name": "ECL_OP_106_EFFECTSOUND"
+  },
+  {
+   "addr": "0x140027735",
+   "name": "ECL_OP_107_ENEMYFLAGDEATH"
+  },
+  {
+   "addr": "0x140027751",
+   "name": "ECL_OP_108_DEATHCALLBACKSUB"
+  },
+  {
+   "addr": "0x14002775e",
+   "name": "ECL_OP_109_ENEMYINTERRUPTSET"
+  },
+  {
+   "addr": "0x14002776d",
+   "name": "ECL_OP_111_ENEMYLIFESET"
+  },
+  {
+   "addr": "0x14002779a",
+   "name": "ECL_OP_093_SPELLCARDSTART"
+  },
+  {
+   "addr": "0x140027bcf",
+   "name": "ECL_OP_094_SPELLCARDEND"
+  },
+  {
+   "addr": "0x140027dd9",
+   "name": "ECL_OP_112_BOSSTIMERSET"
+  },
+  {
+   "addr": "0x140027de9",
+   "name": "ECL_OP_113_LIFECALLBACKTHRESHOLD"
+  },
+  {
+   "addr": "0x140027df6",
+   "name": "ECL_OP_114_LIFECALLBACKSUB"
+  },
+  {
+   "addr": "0x140027e03",
+   "name": "ECL_OP_115_TIMERCALLBACKTHRESHOLD"
+  },
+  {
+   "addr": "0x140027e1a",
+   "name": "ECL_OP_116_TIMERCALLBACKSUB"
+  },
+  {
+   "addr": "0x140027e27",
+   "name": "ECL_OP_117_ENEMYFLAGINTERACTABLE"
+  },
+  {
+   "addr": "0x140027e43",
+   "name": "ECL_OP_118_EFFECTPARTICLE"
+  },
+  {
+   "addr": "0x140027e62",
+   "name": "ECL_OP_119_DROPITEMS"
+  },
+  {
+   "addr": "0x140028131",
+   "name": "ECL_OP_120_ANMFLAGROTATION"
+  },
+  {
+   "addr": "0x140028150",
+   "name": "ECL_OP_121_EXINSCALL"
+  },
+  {
+   "addr": "0x140028169",
+   "name": "ECL_OP_122_EXINSREPEAT"
+  },
+  {
+   "addr": "0x140028193",
+   "name": "ECL_OP_123_TIMESET"
+  },
+  {
+   "addr": "0x1400284b7",
+   "name": "ECL_OP_124_DROPITEMID"
+  },
+  {
+   "addr": "0x1400284cf",
+   "name": "ECL_OP_125_STDUNPAUSE"
+  },
+  {
+   "addr": "0x1400284db",
+   "name": "ECL_OP_126_BOSSSETLIFECOUNT"
+  },
+  {
+   "addr": "0x1400284f2",
+   "name": "ECL_OP_095_ENEMYCREATE"
+  },
+  {
+   "addr": "0x140028574",
+   "name": "ECL_OP_096_ENEMYKILLALL"
+  },
+  {
+   "addr": "0x1400285e4",
+   "name": "ECL_OP_128_ANMINTERRUPTMAIN"
+  },
+  {
+   "addr": "0x1400285f3",
+   "name": "ECL_OP_129_ANMINTERRUPTSLOT"
+  },
+  {
+   "addr": "0x14002860f",
+   "name": "ECL_OP_083_BULLETCANCEL"
+  },
+  {
+   "addr": "0x14002861b",
+   "name": "ECL_OP_084_BULLETSOUND"
+  },
+  {
+   "addr": "0x140028645",
+   "name": "ECL_OP_130_ENEMYFLAGDISABLECALLSTACK"
+  },
+  {
+   "addr": "0x140028664",
+   "name": "ECL_OP_131_BULLETRANKINFLUENCE"
+  },
+  {
+   "addr": "0x1400286a6",
+   "name": "ECL_OP_132_ENEMYFLAGINVISIBLE"
+  },
+  {
+   "addr": "0x1400286c5",
+   "name": "ECL_OP_133_BOSSTIMERCLEAR"
+  },
+  {
+   "addr": "0x1400286e0",
+   "name": "ECL_OP_135_SPELLCARDFLAGTIMEOUT"
+  },
+  {
+   "addr": "0x1400286ff",
+   "name": "ECL_OP_036_RET"
+  },
+  {
+   "addr": "0x14002876a",
+   "name": "ECL_OP_110_ENEMYINTERRUPT"
+  },
+  {
+   "addr": "0x140028838",
+   "name": "ECL_OP_001_UNIMP"
+  },
+  {
+   "addr": "0x140036492",
+   "name": "ECL_TIMELINE_OPCODE_DISPATCH"
+  },
+  {
+   "addr": "0x14003b490",
+   "name": "ECL_SCAN_TIMELINE_OPCODE_13"
+  },
+  {
+   "addr": "0x14006e2dc",
+   "name": "RESULT_CHEAT__FILL_CLRD_WITH_99"
+  },
+  {
+   "addr": "0x14006e30e",
+   "name": "RESULT_CHEAT__ENQUEUE_SOUND_1UP"
+  },
+  {
+   "addr": "0x14006fab4",
+   "name": "RESULT_STATE_6_LUNATIC__UNLOCK_CHEAT"
+  },
+  {
+   "addr": "0x14006fac3",
+   "name": "RESULT_STATE_3_TO_7__SHARED_RECORDS"
+  },
+  {
+   "addr": "0x140a6eb78",
+   "name": "g_EclFile"
+  },
+  {
+   "addr": "0x140a6eb80",
+   "name": "g_EclSubTable"
+  },
+  {
+   "addr": "0x140a6eb88",
+   "name": "g_EclTimelineCheckpoint"
+  },
+  {
+   "addr": "0x140a6eb90",
+   "name": "g_EclTimelineCheckpointPending"
+  },
+  {
+   "addr": "0x140c21f70",
+   "name": "g_KeyState"
+  }
+ ],
+ "comments": [
+  {
+   "addr": "0x1400020b0",
+   "kind": "plate",
+   "text": "[NC first-hand] LoadAnm(this, anmIdx, path, spriteIdxOffset). Signature matches the TH06 community reconstruction parameter for parameter."
+  },
+  {
+   "addr": "0x140002980",
+   "kind": "plate",
+   "text": "[NC first-hand] Resolves a script-relative sprite index against the manager's per-anm sprite base table and stores it into vm+0x100."
+  },
+  {
+   "addr": "0x140002a80",
+   "kind": "plate",
+   "text": "[NC first-hand] Main draw path. Reads the anchor field (vm+0xc4 & 0x700) and compares it by value, not by bit -- see the anchor enum."
+  },
+  {
+   "addr": "0x1400068f0",
+   "kind": "plate",
+   "text": "[NC first-hand] Scans the script for an opcode-22 label matching vm+0x8a, remembering the -1 (default) label. Opcode 22 is a no-op during execution."
+  },
+  {
+   "addr": "0x1400069b0",
+   "kind": "plate",
+   "text": "[NC first-hand] ANM v0 script interpreter. Instruction header is {s16 time; u8 opcode; u8 args_size} with args at +4; dispatch is a 36-entry jump table at 0x140007494 bounded by CMP DL,0x23."
+  },
+  {
+   "addr": "0x140006a50",
+   "kind": "pre",
+   "text": "CMP DL,0x23 / JA: opcodes above 35 fall through to the advance tail. No shipped .anm uses an opcode >= 36."
+  },
+  {
+   "addr": "0x140006d44",
+   "kind": "pre",
+   "text": "Shared handler for PosTimeLinear/Decel/Accel; they differ only in flag bits."
+  },
+  {
+   "addr": "0x140006fbe",
+   "kind": "pre",
+   "text": "AND [vm+0xc4],0xfffffcff / OR [vm+0xc4],0x400 -> anchor field 4 = (left, top). Zero-argument, absolute assignment."
+  },
+  {
+   "addr": "0x140007085",
+   "kind": "pre",
+   "text": "AND [vm+0xc4],0xfffffbff / OR [vm+0xc4],0x300 -> anchor field 3 = (center, top). Zero-argument, absolute assignment."
+  },
+  {
+   "addr": "0x14000709d",
+   "kind": "pre",
+   "text": "AND [vm+0xc4],0xfffff9ff / OR [vm+0xc4],0x100 -> anchor field 1 = (left, center). Zero-argument, absolute assignment."
+  },
+  {
+   "addr": "0x1400070b5",
+   "kind": "pre",
+   "text": "AND [vm+0xc4],0xfffffaff / OR [vm+0xc4],0x200 -> anchor field 2 = (right, center). Zero-argument, absolute assignment."
+  },
+  {
+   "addr": "0x1400070cd",
+   "kind": "pre",
+   "text": "AND [vm+0xc4],0xfffffdff / OR [vm+0xc4],0x500 -> anchor field 5 = (right, top). Zero-argument, absolute assignment."
+  },
+  {
+   "addr": "0x1400070e3",
+   "kind": "pre",
+   "text": "next = current + 4 + args_size. Also the direct jump-table target for the execution-time no-ops (opcode 6 nop, opcode 22 interruptLabel)."
+  },
+  {
+   "addr": "0x140007494",
+   "kind": "plate",
+   "text": "36 RVA entries for ANM opcodes 0..35."
+  },
+  {
+   "addr": "0x14000d1a0",
+   "kind": "plate",
+   "text": "[NC first-hand] Bomb logic for ReimuA, from g_BombData. Called through player+0x9ed0."
+  },
+  {
+   "addr": "0x14000d9c0",
+   "kind": "plate",
+   "text": "[NC first-hand] Bomb draw for ReimuA, from g_BombData. Stored at player+0x9ed8."
+  },
+  {
+   "addr": "0x14000db50",
+   "kind": "plate",
+   "text": "[NC first-hand] Bomb logic for ReimuB, from g_BombData. Called through player+0x9ed0."
+  },
+  {
+   "addr": "0x14000e130",
+   "kind": "plate",
+   "text": "[NC first-hand] Bomb draw for ReimuB, from g_BombData. Stored at player+0x9ed8."
+  },
+  {
+   "addr": "0x14000e270",
+   "kind": "plate",
+   "text": "[NC first-hand] Bomb logic for MarisaA, from g_BombData. Called through player+0x9ed0."
+  },
+  {
+   "addr": "0x14000e650",
+   "kind": "plate",
+   "text": "[NC first-hand] Bomb draw for MarisaA, from g_BombData. Stored at player+0x9ed8."
+  },
+  {
+   "addr": "0x14000e7f0",
+   "kind": "plate",
+   "text": "[NC first-hand] Bomb logic for MarisaB, from g_BombData. Called through player+0x9ed0."
+  },
+  {
+   "addr": "0x14000ebe0",
+   "kind": "plate",
+   "text": "[NC first-hand] Bomb draw for MarisaB, from g_BombData. Stored at player+0x9ed8."
+  },
+  {
+   "addr": "0x14000ef00",
+   "kind": "plate",
+   "text": "[ECL cross-match, exact] Located by matching the ECL opcodes whose handler calls it against the CC0 th06-decomp source: opcodes 83, 93. Name follows that upstream."
+  },
+  {
+   "addr": "0x14000f870",
+   "kind": "plate",
+   "text": "[ECL cross-match, near] Located by matching the ECL opcodes whose handler calls it against the CC0 th06-decomp source: opcodes 67, 68, 69, 70, 71, 72, 73, 74, 75, 80. Name follows that upstream."
+  },
+  {
+   "addr": "0x1400105e0",
+   "kind": "plate",
+   "text": "[ECL cross-match, exact] Located by matching the ECL opcodes whose handler calls it against the CC0 th06-decomp source: opcodes 85, 86. Name follows that upstream."
+  },
+  {
+   "addr": "0x140010870",
+   "kind": "plate",
+   "text": "[NC first-hand] Bullet per-frame tick. Identified by its callee profile: it calls all three player collision entry points plus AnmManager__ExecuteScript and EffectManager__SpawnParticles -- the same shape as TH06's BulletManager tick."
+  },
+  {
+   "addr": "0x1400127d0",
+   "kind": "plate",
+   "text": "[NC first-hand] Merges keyboard bits with XInput pad state and writes the 6-bit pad bitmap g_PadCheatButtons (0x140c21e58)."
+  },
+  {
+   "addr": "0x140012be0",
+   "kind": "plate",
+   "text": "[NC first-hand] Rebuilds the layout-aware scancode remap table at 0x140c21e60 via GetKeyboardLayout/MapVirtualKeyExW, then feeds the logical button bitmap builder. This is why the cheat is typed as letters, not key positions."
+  },
+  {
+   "addr": "0x140022060",
+   "kind": "plate",
+   "text": "[TH06 baseline + NC verified] Per-enemy ECL interpreter. The record layout, difficulty mask, variable encoding, time gate, and offset-to-next loop match TH06."
+  },
+  {
+   "addr": "0x1400221b1",
+   "kind": "pre",
+   "text": "Main opcode dispatch; encoded table accepts IDs 1..201."
+  },
+  {
+   "addr": "0x1400221df",
+   "kind": "pre",
+   "text": "ECL opcode 3 = JUMPDEC."
+  },
+  {
+   "addr": "0x1400224ba",
+   "kind": "pre",
+   "text": "ECL opcode 2 = JUMP."
+  },
+  {
+   "addr": "0x1400224d0",
+   "kind": "pre",
+   "text": "Shared handler for 2 opcodes: 4 SETINT, 5 SETFLOAT."
+  },
+  {
+   "addr": "0x1400224e3",
+   "kind": "pre",
+   "text": "ECL opcode 26 = MATHNORMANGLE."
+  },
+  {
+   "addr": "0x1400227be",
+   "kind": "pre",
+   "text": "ECL opcode 6 = SETINTRAND."
+  },
+  {
+   "addr": "0x140022ac1",
+   "kind": "pre",
+   "text": "ECL opcode 7 = SETINTRANDMIN."
+  },
+  {
+   "addr": "0x140023067",
+   "kind": "pre",
+   "text": "ECL opcode 8 = SETFLOATRAND."
+  },
+  {
+   "addr": "0x1400230e1",
+   "kind": "pre",
+   "text": "ECL opcode 9 = SETFLOATRANDMIN."
+  },
+  {
+   "addr": "0x14002318c",
+   "kind": "pre",
+   "text": "ECL opcode 10 = SETVARSELFX."
+  },
+  {
+   "addr": "0x1400231a2",
+   "kind": "pre",
+   "text": "ECL opcode 11 = SETVARSELFY."
+  },
+  {
+   "addr": "0x1400231b8",
+   "kind": "pre",
+   "text": "ECL opcode 12 = SETVARSELFZ."
+  },
+  {
+   "addr": "0x1400231ce",
+   "kind": "pre",
+   "text": "Shared handler for 2 opcodes: 13 MATHINTADD, 20 MATHFLOATADD."
+  },
+  {
+   "addr": "0x1400231e5",
+   "kind": "pre",
+   "text": "ECL opcode 18 = MATHINC."
+  },
+  {
+   "addr": "0x1400234b5",
+   "kind": "pre",
+   "text": "ECL opcode 19 = MATHDEC."
+  },
+  {
+   "addr": "0x140023785",
+   "kind": "pre",
+   "text": "Shared handler for 2 opcodes: 14 MATHINTSUB, 21 MATHFLOATSUB."
+  },
+  {
+   "addr": "0x14002379c",
+   "kind": "pre",
+   "text": "Shared handler for 2 opcodes: 15 MATHINTMUL, 22 MATHFLOATMUL."
+  },
+  {
+   "addr": "0x1400237b3",
+   "kind": "pre",
+   "text": "Shared handler for 2 opcodes: 16 MATHINTDIV, 23 MATHFLOATDIV."
+  },
+  {
+   "addr": "0x1400237ca",
+   "kind": "pre",
+   "text": "Shared handler for 2 opcodes: 17 MATHINTMOD, 24 MATHFLOATMOD."
+  },
+  {
+   "addr": "0x1400237e1",
+   "kind": "pre",
+   "text": "ECL opcode 25 = MATHATAN2."
+  },
+  {
+   "addr": "0x14002380a",
+   "kind": "pre",
+   "text": "ECL opcode 27 = CMPINT."
+  },
+  {
+   "addr": "0x140023d49",
+   "kind": "pre",
+   "text": "ECL opcode 28 = CMPFLOAT."
+  },
+  {
+   "addr": "0x140023da9",
+   "kind": "pre",
+   "text": "ECL opcode 29 = JUMPLSS."
+  },
+  {
+   "addr": "0x140023dbb",
+   "kind": "pre",
+   "text": "ECL opcode 30 = JUMPLEQ."
+  },
+  {
+   "addr": "0x140023dcd",
+   "kind": "pre",
+   "text": "ECL opcode 31 = JUMPEQU."
+  },
+  {
+   "addr": "0x140023ddf",
+   "kind": "pre",
+   "text": "ECL opcode 32 = JUMPGRE."
+  },
+  {
+   "addr": "0x140023df1",
+   "kind": "pre",
+   "text": "ECL opcode 33 = JUMPGEQ."
+  },
+  {
+   "addr": "0x140023e03",
+   "kind": "pre",
+   "text": "ECL opcode 34 = JUMPNEQ."
+  },
+  {
+   "addr": "0x140023e15",
+   "kind": "pre",
+   "text": "ECL opcode 37 = CALLLSS."
+  },
+  {
+   "addr": "0x1400240ee",
+   "kind": "pre",
+   "text": "ECL opcode 35 = CALL."
+  },
+  {
+   "addr": "0x1400241c5",
+   "kind": "pre",
+   "text": "ECL opcode 38 = CALLLEQ."
+  },
+  {
+   "addr": "0x14002449c",
+   "kind": "pre",
+   "text": "ECL opcode 39 = CALLEQU."
+  },
+  {
+   "addr": "0x140024773",
+   "kind": "pre",
+   "text": "ECL opcode 40 = CALLGRE."
+  },
+  {
+   "addr": "0x140024a4a",
+   "kind": "pre",
+   "text": "ECL opcode 41 = CALLGEQ."
+  },
+  {
+   "addr": "0x140024d21",
+   "kind": "pre",
+   "text": "ECL opcode 42 = CALLNEQ."
+  },
+  {
+   "addr": "0x140024ff8",
+   "kind": "pre",
+   "text": "ECL opcode 97 = ANMSETMAIN."
+  },
+  {
+   "addr": "0x14002506a",
+   "kind": "pre",
+   "text": "ECL opcode 99 = ANMSETSLOT."
+  },
+  {
+   "addr": "0x1400250eb",
+   "kind": "pre",
+   "text": "ECL opcode 43 = MOVEPOSITION."
+  },
+  {
+   "addr": "0x1400251aa",
+   "kind": "pre",
+   "text": "ECL opcode 44 = MOVEAXISVELOCITY."
+  },
+  {
+   "addr": "0x140025210",
+   "kind": "pre",
+   "text": "ECL opcode 45 = MOVEVELOCITY."
+  },
+  {
+   "addr": "0x140025257",
+   "kind": "pre",
+   "text": "ECL opcode 46 = MOVEANGULARVELOCITY."
+  },
+  {
+   "addr": "0x14002528d",
+   "kind": "pre",
+   "text": "ECL opcode 51 = MOVEATPLAYER."
+  },
+  {
+   "addr": "0x140025308",
+   "kind": "pre",
+   "text": "ECL opcode 47 = MOVESPEED."
+  },
+  {
+   "addr": "0x14002533b",
+   "kind": "pre",
+   "text": "ECL opcode 48 = MOVEACCELERATION."
+  },
+  {
+   "addr": "0x140025371",
+   "kind": "pre",
+   "text": "Shared bullet-pattern handler for opcodes 67..75 and 201 (jump-table slot 60). Stores aim_mode = opcode - 67 into bullet_props+0x30, so opcode 201 selects 134 -- a mode the consumer at 0x14000f870 does not implement (its switch covers 0..8 with no default), leaving the angle at its pre-switch 0.0. Settled, not provisional."
+  },
+  {
+   "addr": "0x140025dc2",
+   "kind": "pre",
+   "text": "ECL opcode 82 = BULLETEFFECTS."
+  },
+  {
+   "addr": "0x140026865",
+   "kind": "pre",
+   "text": "ECL opcode 100 = ANMSETDEATH."
+  },
+  {
+   "addr": "0x140026880",
+   "kind": "pre",
+   "text": "ECL opcode 76 = SHOOTINTERVAL."
+  },
+  {
+   "addr": "0x1400268d4",
+   "kind": "pre",
+   "text": "ECL opcode 77 = SHOOTINTERVALDELAYED."
+  },
+  {
+   "addr": "0x140026989",
+   "kind": "pre",
+   "text": "ECL opcode 78 = SHOOTDISABLED."
+  },
+  {
+   "addr": "0x140026995",
+   "kind": "pre",
+   "text": "ECL opcode 79 = SHOOTENABLED."
+  },
+  {
+   "addr": "0x1400269a1",
+   "kind": "pre",
+   "text": "ECL opcode 80 = SHOOTNOW."
+  },
+  {
+   "addr": "0x140026a01",
+   "kind": "pre",
+   "text": "ECL opcode 81 = SHOOTOFFSET."
+  },
+  {
+   "addr": "0x140026a41",
+   "kind": "pre",
+   "text": "NC opcode 200, the one genuinely new ECL instruction: a polar form of TH06's SHOOTOFFSET (opcode 81). Writes enemy+0xc5c = (cos(arg0)*arg1, sin(arg0)*arg1, 0); the z zero comes from R12D, cleared by XOR R12D,R12D at 0x14002213f. arg2 unused."
+  },
+  {
+   "addr": "0x140026aa4",
+   "kind": "pre",
+   "text": "Shared handler for 2 opcodes: 85 LASERCREATE, 86 LASERCREATEAIMED."
+  },
+  {
+   "addr": "0x140026bda",
+   "kind": "pre",
+   "text": "ECL opcode 87 = LASERINDEX."
+  },
+  {
+   "addr": "0x140026f52",
+   "kind": "pre",
+   "text": "ECL opcode 88 = LASERROTATE."
+  },
+  {
+   "addr": "0x140026f97",
+   "kind": "pre",
+   "text": "ECL opcode 89 = LASERROTATEFROMPLAYER."
+  },
+  {
+   "addr": "0x140027019",
+   "kind": "pre",
+   "text": "ECL opcode 90 = LASEROFFSET."
+  },
+  {
+   "addr": "0x140027074",
+   "kind": "pre",
+   "text": "ECL opcode 91 = LASERTEST."
+  },
+  {
+   "addr": "0x14002709e",
+   "kind": "pre",
+   "text": "ECL opcode 92 = LASERCANCEL."
+  },
+  {
+   "addr": "0x1400270ee",
+   "kind": "pre",
+   "text": "ECL opcode 134 = LASERCLEARALL."
+  },
+  {
+   "addr": "0x1400271d3",
+   "kind": "pre",
+   "text": "ECL opcode 101 = BOSSSET."
+  },
+  {
+   "addr": "0x140027249",
+   "kind": "pre",
+   "text": "ECL opcode 102 = SPELLCARDEFFECT."
+  },
+  {
+   "addr": "0x1400272b1",
+   "kind": "pre",
+   "text": "ECL opcode 52 = MOVEDIRTIMEDECELERATE."
+  },
+  {
+   "addr": "0x1400272cf",
+   "kind": "pre",
+   "text": "ECL opcode 53 = MOVEDIRTIMEDECELERATEFAST."
+  },
+  {
+   "addr": "0x1400272ed",
+   "kind": "pre",
+   "text": "ECL opcode 54 = MOVEDIRTIMEACCELERATE."
+  },
+  {
+   "addr": "0x14002730b",
+   "kind": "pre",
+   "text": "ECL opcode 55 = MOVEDIRTIMEACCELERATEFAST."
+  },
+  {
+   "addr": "0x140027329",
+   "kind": "pre",
+   "text": "ECL opcode 56 = MOVEPOSITIONTIMELINEAR."
+  },
+  {
+   "addr": "0x140027340",
+   "kind": "pre",
+   "text": "ECL opcode 57 = MOVEPOSITIONTIMEDECELERATE."
+  },
+  {
+   "addr": "0x14002735e",
+   "kind": "pre",
+   "text": "ECL opcode 58 = MOVEPOSITIONTIMEDECELERATEFAST."
+  },
+  {
+   "addr": "0x14002737c",
+   "kind": "pre",
+   "text": "ECL opcode 59 = MOVEPOSITIONTIMEACCELERATE."
+  },
+  {
+   "addr": "0x14002739a",
+   "kind": "pre",
+   "text": "ECL opcode 60 = MOVEPOSITIONTIMEACCELERATEFAST."
+  },
+  {
+   "addr": "0x1400273b8",
+   "kind": "pre",
+   "text": "ECL opcode 61 = MOVETIMEDECELERATE."
+  },
+  {
+   "addr": "0x1400273d6",
+   "kind": "pre",
+   "text": "ECL opcode 62 = MOVETIMEDECELERATEFAST."
+  },
+  {
+   "addr": "0x1400273f4",
+   "kind": "pre",
+   "text": "ECL opcode 63 = MOVETIMEACCELERATE."
+  },
+  {
+   "addr": "0x140027412",
+   "kind": "pre",
+   "text": "ECL opcode 64 = MOVETIMEACCELERATEFAST."
+  },
+  {
+   "addr": "0x140027430",
+   "kind": "pre",
+   "text": "ECL opcode 65 = MOVEBOUNDSSET."
+  },
+  {
+   "addr": "0x140027456",
+   "kind": "pre",
+   "text": "ECL opcode 66 = MOVEBOUNDSDISABLE."
+  },
+  {
+   "addr": "0x140027462",
+   "kind": "pre",
+   "text": "ECL opcode 49 = MOVERAND."
+  },
+  {
+   "addr": "0x1400274ee",
+   "kind": "pre",
+   "text": "ECL opcode 50 = MOVERANDINBOUND."
+  },
+  {
+   "addr": "0x140027649",
+   "kind": "pre",
+   "text": "ECL opcode 98 = ANMSETPOSES."
+  },
+  {
+   "addr": "0x14002768f",
+   "kind": "pre",
+   "text": "ECL opcode 103 = ENEMYSETHITBOX."
+  },
+  {
+   "addr": "0x1400276b0",
+   "kind": "pre",
+   "text": "ECL opcode 104 = ENEMYFLAGCOLLISION."
+  },
+  {
+   "addr": "0x1400276cf",
+   "kind": "pre",
+   "text": "ECL opcode 105 = ENEMYFLAGCANTAKEDAMAGE."
+  },
+  {
+   "addr": "0x1400276ee",
+   "kind": "pre",
+   "text": "ECL opcode 106 = EFFECTSOUND."
+  },
+  {
+   "addr": "0x140027735",
+   "kind": "pre",
+   "text": "ECL opcode 107 = ENEMYFLAGDEATH."
+  },
+  {
+   "addr": "0x140027751",
+   "kind": "pre",
+   "text": "ECL opcode 108 = DEATHCALLBACKSUB."
+  },
+  {
+   "addr": "0x14002775e",
+   "kind": "pre",
+   "text": "ECL opcode 109 = ENEMYINTERRUPTSET."
+  },
+  {
+   "addr": "0x14002776d",
+   "kind": "pre",
+   "text": "ECL opcode 111 = ENEMYLIFESET."
+  },
+  {
+   "addr": "0x14002779a",
+   "kind": "pre",
+   "text": "ECL opcode 93 = SPELLCARDSTART."
+  },
+  {
+   "addr": "0x140027bcf",
+   "kind": "pre",
+   "text": "ECL opcode 94 = SPELLCARDEND."
+  },
+  {
+   "addr": "0x140027dd9",
+   "kind": "pre",
+   "text": "ECL opcode 112 = BOSSTIMERSET."
+  },
+  {
+   "addr": "0x140027de9",
+   "kind": "pre",
+   "text": "ECL opcode 113 = LIFECALLBACKTHRESHOLD."
+  },
+  {
+   "addr": "0x140027df6",
+   "kind": "pre",
+   "text": "ECL opcode 114 = LIFECALLBACKSUB."
+  },
+  {
+   "addr": "0x140027e03",
+   "kind": "pre",
+   "text": "ECL opcode 115 = TIMERCALLBACKTHRESHOLD."
+  },
+  {
+   "addr": "0x140027e1a",
+   "kind": "pre",
+   "text": "ECL opcode 116 = TIMERCALLBACKSUB."
+  },
+  {
+   "addr": "0x140027e27",
+   "kind": "pre",
+   "text": "ECL opcode 117 = ENEMYFLAGINTERACTABLE."
+  },
+  {
+   "addr": "0x140027e43",
+   "kind": "pre",
+   "text": "ECL opcode 118 = EFFECTPARTICLE."
+  },
+  {
+   "addr": "0x140027e62",
+   "kind": "pre",
+   "text": "ECL opcode 119 = DROPITEMS."
+  },
+  {
+   "addr": "0x140028131",
+   "kind": "pre",
+   "text": "ECL opcode 120 = ANMFLAGROTATION."
+  },
+  {
+   "addr": "0x140028150",
+   "kind": "pre",
+   "text": "ECL opcode 121 = EXINSCALL."
+  },
+  {
+   "addr": "0x140028169",
+   "kind": "pre",
+   "text": "ECL opcode 122 = EXINSREPEAT."
+  },
+  {
+   "addr": "0x140028193",
+   "kind": "pre",
+   "text": "ECL opcode 123 = TIMESET."
+  },
+  {
+   "addr": "0x1400284b7",
+   "kind": "pre",
+   "text": "ECL opcode 124 = DROPITEMID."
+  },
+  {
+   "addr": "0x1400284cf",
+   "kind": "pre",
+   "text": "ECL opcode 125 = STDUNPAUSE."
+  },
+  {
+   "addr": "0x1400284db",
+   "kind": "pre",
+   "text": "ECL opcode 126 = BOSSSETLIFECOUNT."
+  },
+  {
+   "addr": "0x1400284f2",
+   "kind": "pre",
+   "text": "ECL opcode 95 = ENEMYCREATE."
+  },
+  {
+   "addr": "0x140028574",
+   "kind": "pre",
+   "text": "ECL opcode 96 = ENEMYKILLALL."
+  },
+  {
+   "addr": "0x1400285e4",
+   "kind": "pre",
+   "text": "ECL opcode 128 = ANMINTERRUPTMAIN."
+  },
+  {
+   "addr": "0x1400285f3",
+   "kind": "pre",
+   "text": "ECL opcode 129 = ANMINTERRUPTSLOT."
+  },
+  {
+   "addr": "0x14002860f",
+   "kind": "pre",
+   "text": "ECL opcode 83 = BULLETCANCEL."
+  },
+  {
+   "addr": "0x14002861b",
+   "kind": "pre",
+   "text": "ECL opcode 84 = BULLETSOUND."
+  },
+  {
+   "addr": "0x140028645",
+   "kind": "pre",
+   "text": "ECL opcode 130 = ENEMYFLAGDISABLECALLSTACK."
+  },
+  {
+   "addr": "0x140028664",
+   "kind": "pre",
+   "text": "ECL opcode 131 = BULLETRANKINFLUENCE."
+  },
+  {
+   "addr": "0x1400286a6",
+   "kind": "pre",
+   "text": "ECL opcode 132 = ENEMYFLAGINVISIBLE."
+  },
+  {
+   "addr": "0x1400286c5",
+   "kind": "pre",
+   "text": "ECL opcode 133 = BOSSTIMERCLEAR."
+  },
+  {
+   "addr": "0x1400286e0",
+   "kind": "pre",
+   "text": "ECL opcode 135 = SPELLCARDFLAGTIMEOUT."
+  },
+  {
+   "addr": "0x1400286ff",
+   "kind": "pre",
+   "text": "ECL opcode 36 = RET."
+  },
+  {
+   "addr": "0x14002876a",
+   "kind": "pre",
+   "text": "ECL opcode 110 = ENEMYINTERRUPT."
+  },
+  {
+   "addr": "0x140028838",
+   "kind": "pre",
+   "text": "ECL opcode 1 = UNIMP."
+  },
+  {
+   "addr": "0x14002b0d0",
+   "kind": "plate",
+   "text": "[ECL cross-match, exact] Located by matching the ECL opcodes whose handler calls it against the CC0 th06-decomp source: opcodes 102, 118. Name follows that upstream."
+  },
+  {
+   "addr": "0x14002dfc0",
+   "kind": "plate",
+   "text": "[ECL cross-match, exact] Located by matching the ECL opcodes whose handler calls it against the CC0 th06-decomp source: opcodes 52, 53, 54, 55. Name follows that upstream."
+  },
+  {
+   "addr": "0x14002e0a0",
+   "kind": "plate",
+   "text": "[ECL cross-match, exact] Located by matching the ECL opcodes whose handler calls it against the CC0 th06-decomp source: opcodes 56, 57, 58, 59, 60. Name follows that upstream."
+  },
+  {
+   "addr": "0x14002e180",
+   "kind": "plate",
+   "text": "[ECL cross-match, exact] Located by matching the ECL opcodes whose handler calls it against the CC0 th06-decomp source: opcodes 61, 62, 63, 64. Name follows that upstream."
+  },
+  {
+   "addr": "0x14002e260",
+   "kind": "plate",
+   "text": "[ECL cross-match, exact] Located by matching the ECL opcodes whose handler calls it against the CC0 th06-decomp source: opcodes 8, 9, 28, 43, 44, 45, 46, 47, 48, 51, 67, 68, 69, 70, 71, 72, 73, 74, 75, 78, 82, 87, 88, 89, 90, 118. Name follows that upstream."
+  },
+  {
+   "addr": "0x14002e620",
+   "kind": "plate",
+   "text": "[ECL cross-match, near] Located by matching the ECL opcodes whose handler calls it against the CC0 th06-decomp source: opcodes 3, 4, 5, 6, 7, 9, 10, 11, 12, 26. Name follows that upstream."
+  },
+  {
+   "addr": "0x14002ecf0",
+   "kind": "plate",
+   "text": "[ECL cross-match, exact] Located by matching the ECL opcodes whose handler calls it against the CC0 th06-decomp source: opcodes 13, 20. Name follows that upstream."
+  },
+  {
+   "addr": "0x14002f770",
+   "kind": "plate",
+   "text": "[ECL cross-match, exact] Located by matching the ECL opcodes whose handler calls it against the CC0 th06-decomp source: opcodes 14, 21. Name follows that upstream."
+  },
+  {
+   "addr": "0x1400301f0",
+   "kind": "plate",
+   "text": "[ECL cross-match, exact] Located by matching the ECL opcodes whose handler calls it against the CC0 th06-decomp source: opcodes 15, 22. Name follows that upstream."
+  },
+  {
+   "addr": "0x1400310f0",
+   "kind": "plate",
+   "text": "[ECL cross-match, exact] Located by matching the ECL opcodes whose handler calls it against the CC0 th06-decomp source: opcodes 16, 23. Name follows that upstream."
+  },
+  {
+   "addr": "0x140031b70",
+   "kind": "plate",
+   "text": "[ECL cross-match, exact] Located by matching the ECL opcodes whose handler calls it against the CC0 th06-decomp source: opcodes 17, 24. Name follows that upstream."
+  },
+  {
+   "addr": "0x1400325f0",
+   "kind": "plate",
+   "text": "[ECL cross-match, exact] Located by matching the ECL opcodes whose handler calls it against the CC0 th06-decomp source: opcodes 25. Name follows that upstream."
+  },
+  {
+   "addr": "0x1400360d0",
+   "kind": "plate",
+   "text": "[TH06 baseline + NC verified] Allocates an enemy slot, initializes its ECL context, selects a subroutine from g_EclSubTable, and runs its first ECL frame."
+  },
+  {
+   "addr": "0x140036260",
+   "kind": "plate",
+   "text": "[TH06 baseline + NC verified] Stage timeline interpreter. Runtime dispatch remains limited to opcodes 0..12 and advances by the int16 size field at +0x06."
+  },
+  {
+   "addr": "0x140036492",
+   "kind": "pre",
+   "text": "Timeline dispatch accepts only opcodes 0..12."
+  },
+  {
+   "addr": "0x14003b490",
+   "kind": "pre",
+   "text": "Loader scan for an opcode-13 timeline checkpoint."
+  },
+  {
+   "addr": "0x1400426e0",
+   "kind": "plate",
+   "text": "[ECL cross-match, exact] Located by matching the ECL opcodes whose handler calls it against the CC0 th06-decomp source: opcodes 119, 124. Name follows that upstream."
+  },
+  {
+   "addr": "0x140068160",
+   "kind": "plate",
+   "text": "[NC first-hand] Player init: loads the player ANM, sets the spawn position (192, 384, 0.49), the hitbox RADIUS 1.25 at +0x774c and grabItemSize (12, 12, 5) at +0x9f28. All of those match TH06 numerically."
+  },
+  {
+   "addr": "0x140068820",
+   "kind": "plate",
+   "text": "[NC first-hand] Player per-frame tick, registered as a chain callback (hence no direct xrefs). Tests the logical button bitmap at 0x140a6ec60: bomb on a press edge of bit 1, focus flag stored to player+0x785c from bit 2, an 8-case movement switch on the direction bits, shooting on bit 0. TH06 splits this into OnUpdate + HandlePlayerInputs (2282 + 3482 bytes); NC inlined them (5309)."
+  },
+  {
+   "addr": "0x14006a580",
+   "kind": "plate",
+   "text": "[NC first-hand, our own name] The one data-driven fire-bullet implementation. TH06 has four hand-written FireBullet{ReimuA,ReimuB,MarisaA,MarisaB}; NC replaced them with 26-byte thunks that each pass a CharacterPowerData table to this. No upstream name to borrow, because upstream has no such function."
+  },
+  {
+   "addr": "0x14006a840",
+   "kind": "plate",
+   "text": "[NC first-hand] 26-byte thunk: passes the ReimuA CharacterPowerData table to Player__FireBulletFromTable. Selected via g_CharData[0]."
+  },
+  {
+   "addr": "0x14006a860",
+   "kind": "plate",
+   "text": "[NC first-hand] 26-byte thunk: passes the ReimuB CharacterPowerData table to Player__FireBulletFromTable. Selected via g_CharData[1]."
+  },
+  {
+   "addr": "0x14006a880",
+   "kind": "plate",
+   "text": "[NC first-hand] 26-byte thunk: passes the MarisaA CharacterPowerData table to Player__FireBulletFromTable. Selected via g_CharData[2]."
+  },
+  {
+   "addr": "0x14006a8a0",
+   "kind": "plate",
+   "text": "[NC first-hand] 26-byte thunk: passes the MarisaB CharacterPowerData table to Player__FireBulletFromTable. Selected via g_CharData[3]."
+  },
+  {
+   "addr": "0x14006a8c0",
+   "kind": "plate",
+   "text": "[NC first-hand, our own name] Walks the bomb-projectile array at player+0x7754, skips entries whose x extent is 0, and AABB-tests each against the caller's box using half extents. CC0 has this logic INLINED inside Player::CheckGraze, so there is no upstream name to borrow -- note this is the opposite of NC's usual direction, which inlines more than TH06 rather than less."
+  },
+  {
+   "addr": "0x14006a980",
+   "kind": "plate",
+   "text": "[NC first-hand] Death collision against a bullet box. Runs the bomb-projectile clip test first (0x14006a8c0), and on a hit spawns the death particles, sets the death state and enqueues sound 4 (SOUND_PICHUN) -- TH06's Player::Die is inlined here. NOT graze: the only function that enqueues sound 30 (SOUND_GRAZE) for bullets is BulletManager__OnUpdate, so CheckGraze/ScoreGraze are inlined there. The extra char parameter selects circle-vs-AABB (0) or circle-vs-circle (1)."
+  },
+  {
+   "addr": "0x14006aba0",
+   "kind": "plate",
+   "text": "[NC first-hand] Laser collision. The signature matches CC0's CalcLaserHitbox(laserCenter, laserSize, rotation, angle, canGraze) parameter for parameter, and it calls cosf/sinf for the rotation plus the graze particle effect."
+  },
+  {
+   "addr": "0x14006e020",
+   "kind": "plate",
+   "text": "[NC first-hand] Runs the keyboard cheat, then an inlined 4-step XInput pad cheat over the 0x140c21e58 bitmap (hold L3+R3, Y, X, hold LB+RB). Either success sets the score.dat dirty flag at +0x9e99."
+  },
+  {
+   "addr": "0x14006e190",
+   "kind": "plate",
+   "text": "[NC first-hand] Types-the-password cheat. Edge-detects the 8 letters of the 0x14030c520 table, walks \"classiclager\" via +0x4430, and on the 12th letter fills the CLRD table with 99. Wrong letter resets to 0, 'c' restarts at 1."
+  },
+  {
+   "addr": "0x14006e2dc",
+   "kind": "pre",
+   "text": "Writes 10 bytes of 99 at 0x1404ff100 + n*0x18 for n in 0..3."
+  },
+  {
+   "addr": "0x14006e30e",
+   "kind": "pre",
+   "text": "Enqueues sound id 0x1c (SOUND_1UP in the TH06 numbering) into g_SoundRequestQueue."
+  },
+  {
+   "addr": "0x14006e3a0",
+   "kind": "plate",
+   "text": "[NC first-hand] Result-screen per-frame tick. Switches on +0x9e94 through the 18-entry jump table at 0x140072824; only state 6 (Lunatic records) reaches the cheat call at 0x14006fab4."
+  },
+  {
+   "addr": "0x14006fab4",
+   "kind": "pre",
+   "text": "Jump-table target for state 6 (Lunatic records). Only this state calls the unlock cheats; states 3/4/5/7 enter the shared handler directly."
+  },
+  {
+   "addr": "0x14006fac3",
+   "kind": "pre",
+   "text": "Shared records-page handler for result-screen states 3..7."
+  },
+  {
+   "addr": "0x140072824",
+   "kind": "plate",
+   "text": "18 RVA entries; index is ResultScreen +0x9e94."
+  },
+  {
+   "addr": "0x140074470",
+   "kind": "plate",
+   "text": "[NC first-hand] Serializes HSCR/CLRD/CATK/PSCR and writes score.dat. The whole body is gated on the +0x9e99 dirty flag, which the unlock cheats set."
+  },
+  {
+   "addr": "0x1402c0000",
+   "kind": "pre",
+   "text": "1531  UnhandledExceptionFilter  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0008",
+   "kind": "pre",
+   "text": "1464  SetUnhandledExceptionFilter  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0010",
+   "kind": "pre",
+   "text": "577  GetCurrentProcess  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0018",
+   "kind": "pre",
+   "text": "1496  TerminateProcess  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0020",
+   "kind": "pre",
+   "text": "952  IsProcessorFeaturePresent  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0028",
+   "kind": "pre",
+   "text": "1258  ReleaseSRWLockExclusive  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0030",
+   "kind": "pre",
+   "text": "0  AcquireSRWLockExclusive  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0038",
+   "kind": "pre",
+   "text": "1581  WakeAllConditionVariable  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0040",
+   "kind": "pre",
+   "text": "1289  RtlCaptureContext  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0048",
+   "kind": "pre",
+   "text": "922  InitializeSListHead  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0050",
+   "kind": "pre",
+   "text": "1573  WaitForSingleObject  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0058",
+   "kind": "pre",
+   "text": "1474  SetWaitableTimerEx  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0060",
+   "kind": "pre",
+   "text": "285  CreateWaitableTimerExW  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0068",
+   "kind": "pre",
+   "text": "673  GetModuleFileNameW  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0070",
+   "kind": "pre",
+   "text": "653  GetLastError  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0078",
+   "kind": "pre",
+   "text": "1363  SetDllDirectoryA  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0080",
+   "kind": "pre",
+   "text": "1015  LoadLibraryW  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0088",
+   "kind": "pre",
+   "text": "1359  SetCurrentDirectoryW  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0090",
+   "kind": "pre",
+   "text": "733  GetProcAddress  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0098",
+   "kind": "pre",
+   "text": "677  GetModuleHandleW  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c00a0",
+   "kind": "pre",
+   "text": "468  FreeLibrary  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c00a8",
+   "kind": "pre",
+   "text": "1012  LoadLibraryA  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c00b0",
+   "kind": "pre",
+   "text": "578  GetCurrentProcessId  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c00b8",
+   "kind": "pre",
+   "text": "1482  SleepConditionVariableSRW  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c00c0",
+   "kind": "pre",
+   "text": "944  IsDebuggerPresent  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c00c8",
+   "kind": "pre",
+   "text": "1304  RtlVirtualUnwind  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c00d0",
+   "kind": "pre",
+   "text": "1297  RtlLookupFunctionEntry  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c00d8",
+   "kind": "pre",
+   "text": "769  GetStartupInfoW  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c00e0",
+   "kind": "pre",
+   "text": "582  GetCurrentThreadId  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c00e8",
+   "kind": "pre",
+   "text": "794  GetSystemTimeAsFileTime  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c00f0",
+   "kind": "pre",
+   "text": "1153  QueryPerformanceCounter  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0100",
+   "kind": "pre",
+   "text": "1460  _Thrd_id  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0108",
+   "kind": "pre",
+   "text": "1365  _Cnd_wait  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0110",
+   "kind": "pre",
+   "text": "26  ??0?$basic_istream@DU?$char_traits@D@std@@@std@@QEAA@PEAV?$basic_streambuf@DU?$char_traits@D@std@@@1@_N@Z  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0118",
+   "kind": "pre",
+   "text": "131  ??1?$basic_istream@DU?$char_traits@D@std@@@std@@UEAA@XZ  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0120",
+   "kind": "pre",
+   "text": "1461  _Thrd_join  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0128",
+   "kind": "pre",
+   "text": "1417  _Mtx_unlock  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0130",
+   "kind": "pre",
+   "text": "1355  _Cnd_broadcast  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0138",
+   "kind": "pre",
+   "text": "655  ?_Xout_of_range@std@@YAXPEBD@Z  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0140",
+   "kind": "pre",
+   "text": "654  ?_Xlength_error@std@@YAXPEBD@Z  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0148",
+   "kind": "pre",
+   "text": "652  ?_Xbad_function_call@std@@YAXXZ  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0150",
+   "kind": "pre",
+   "text": "537  ?_Ipfx@?$basic_istream@DU?$char_traits@D@std@@@std@@QEAA_N_N@Z  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0158",
+   "kind": "pre",
+   "text": "1221  ?setstate@?$basic_ios@DU?$char_traits@D@std@@@std@@QEAAXH_N@Z  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0160",
+   "kind": "pre",
+   "text": "47  ??0?$basic_streambuf@DU?$char_traits@D@std@@@std@@IEAA@XZ  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0168",
+   "kind": "pre",
+   "text": "1173  ?sbumpc@?$basic_streambuf@DU?$char_traits@D@std@@@std@@QEAAHXZ  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0170",
+   "kind": "pre",
+   "text": "1231  ?sgetc@?$basic_streambuf@DU?$char_traits@D@std@@@std@@QEAAHXZ  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0178",
+   "kind": "pre",
+   "text": "1240  ?snextc@?$basic_streambuf@DU?$char_traits@D@std@@@std@@QEAAHXZ  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0180",
+   "kind": "pre",
+   "text": "1332  ?widen@?$basic_ios@DU?$char_traits@D@std@@@std@@QEBADD@Z  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0188",
+   "kind": "pre",
+   "text": "12  ??0?$basic_ios@DU?$char_traits@D@std@@@std@@IEAA@XZ  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0190",
+   "kind": "pre",
+   "text": "19  ??0?$basic_iostream@DU?$char_traits@D@std@@@std@@QEAA@PEAV?$basic_streambuf@DU?$char_traits@D@std@@@1@@Z  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0198",
+   "kind": "pre",
+   "text": "125  ??1?$basic_ios@DU?$char_traits@D@std@@@std@@UEAA@XZ  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c01a0",
+   "kind": "pre",
+   "text": "137  ??1?$basic_streambuf@DU?$char_traits@D@std@@@std@@UEAA@XZ  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c01a8",
+   "kind": "pre",
+   "text": "552  ?_Lock@?$basic_streambuf@DU?$char_traits@D@std@@@std@@UEAAXXZ  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c01b0",
+   "kind": "pre",
+   "text": "639  ?_Unlock@?$basic_streambuf@DU?$char_traits@D@std@@@std@@UEAAXXZ  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c01b8",
+   "kind": "pre",
+   "text": "1237  ?showmanyc@?$basic_streambuf@DU?$char_traits@D@std@@@std@@MEAA_JXZ  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c01c0",
+   "kind": "pre",
+   "text": "1307  ?uflow@?$basic_streambuf@DU?$char_traits@D@std@@@std@@MEAAHXZ  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c01c8",
+   "kind": "pre",
+   "text": "1347  ?xsgetn@?$basic_streambuf@DU?$char_traits@D@std@@@std@@MEAA_JPEAD_J@Z  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c01d0",
+   "kind": "pre",
+   "text": "1358  _Cnd_do_broadcast_at_thread_exit  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c01d8",
+   "kind": "pre",
+   "text": "1205  ?setbuf@?$basic_streambuf@DU?$char_traits@D@std@@@std@@MEAAPEAV12@PEAD_J@Z  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c01e0",
+   "kind": "pre",
+   "text": "1277  ?sync@?$basic_streambuf@DU?$char_traits@D@std@@@std@@MEAAHXZ  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c01e8",
+   "kind": "pre",
+   "text": "1014  ?imbue@?$basic_streambuf@DU?$char_traits@D@std@@@std@@MEAAXAEBVlocale@2@@Z  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c01f0",
+   "kind": "pre",
+   "text": "128  ??1?$basic_iostream@DU?$char_traits@D@std@@@std@@UEAA@XZ  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c01f8",
+   "kind": "pre",
+   "text": "306  ??Bios_base@std@@QEBA_NXZ  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0200",
+   "kind": "pre",
+   "text": "1362  _Cnd_signal  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0208",
+   "kind": "pre",
+   "text": "629  ?_Throw_Cpp_error@std@@YAXH@Z  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0210",
+   "kind": "pre",
+   "text": "1413  _Mtx_lock  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0218",
+   "kind": "pre",
+   "text": "1350  ?xsputn@?$basic_streambuf@DU?$char_traits@D@std@@@std@@MEAA_JPEBD_J@Z  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0228",
+   "kind": "pre",
+   "text": "510  GetWindowRect  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0230",
+   "kind": "pre",
+   "text": "670  MonitorFromWindow  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0238",
+   "kind": "pre",
+   "text": "920  SetWindowPos  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0240",
+   "kind": "pre",
+   "text": "4  AdjustWindowRectEx  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0248",
+   "kind": "pre",
+   "text": "261  EnumDisplayMonitors  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0250",
+   "kind": "pre",
+   "text": "296  GetAsyncKeyState  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0258",
+   "kind": "pre",
+   "text": "32  CallNextHookEx  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0260",
+   "kind": "pre",
+   "text": "371  GetKeyboardLayout  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0268",
+   "kind": "pre",
+   "text": "658  MessageBoxA  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0270",
+   "kind": "pre",
+   "text": "650  MapVirtualKeyExW  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0278",
+   "kind": "pre",
+   "text": "469  GetSystemMetrics  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0288",
+   "kind": "pre",
+   "text": "54  _purecall  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0290",
+   "kind": "pre",
+   "text": "35  __std_terminate  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0298",
+   "kind": "pre",
+   "text": "62  memset  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c02a0",
+   "kind": "pre",
+   "text": "60  memcpy  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c02a8",
+   "kind": "pre",
+   "text": "61  memmove  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c02b0",
+   "kind": "pre",
+   "text": "59  memcmp  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c02b8",
+   "kind": "pre",
+   "text": "8  __C_specific_handler  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c02c0",
+   "kind": "pre",
+   "text": "1  _CxxThrowException  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c02c8",
+   "kind": "pre",
+   "text": "27  __current_exception  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c02d0",
+   "kind": "pre",
+   "text": "28  __current_exception_context  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c02d8",
+   "kind": "pre",
+   "text": "33  __std_exception_copy  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c02e0",
+   "kind": "pre",
+   "text": "34  __std_exception_destroy  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c02e8",
+   "kind": "pre",
+   "text": "65  strrchr  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c02f0",
+   "kind": "pre",
+   "text": "64  strchr  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0300",
+   "kind": "pre",
+   "text": "0  __CxxFrameHandler4  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0310",
+   "kind": "pre",
+   "text": "99  strtoll  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0318",
+   "kind": "pre",
+   "text": "97  strtol  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0320",
+   "kind": "pre",
+   "text": "94  strtod  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0328",
+   "kind": "pre",
+   "text": "81  atol  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0330",
+   "kind": "pre",
+   "text": "101  strtoull  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0338",
+   "kind": "pre",
+   "text": "79  atof  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0348",
+   "kind": "pre",
+   "text": "63  remove  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0350",
+   "kind": "pre",
+   "text": "25  _mkdir  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0360",
+   "kind": "pre",
+   "text": "22  _set_new_mode  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0368",
+   "kind": "pre",
+   "text": "26  realloc  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0370",
+   "kind": "pre",
+   "text": "25  malloc  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0378",
+   "kind": "pre",
+   "text": "24  free  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0380",
+   "kind": "pre",
+   "text": "8  _callnewh  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0390",
+   "kind": "pre",
+   "text": "18  localeconv  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0398",
+   "kind": "pre",
+   "text": "8  _configthreadlocale  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c03a8",
+   "kind": "pre",
+   "text": "125  ceilf  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c03b0",
+   "kind": "pre",
+   "text": "16  _dclass  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c03b8",
+   "kind": "pre",
+   "text": "281  tanf  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c03c0",
+   "kind": "pre",
+   "text": "202  fmodf  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c03c8",
+   "kind": "pre",
+   "text": "275  sinf  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c03d0",
+   "kind": "pre",
+   "text": "145  cosf  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c03d8",
+   "kind": "pre",
+   "text": "86  atan2f  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c03e0",
+   "kind": "pre",
+   "text": "9  __setusermatherr  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c03e8",
+   "kind": "pre",
+   "text": "237  modf  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c03f0",
+   "kind": "pre",
+   "text": "279  sqrtf  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c03f8",
+   "kind": "pre",
+   "text": "280  tan  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0400",
+   "kind": "pre",
+   "text": "263  rintf  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0408",
+   "kind": "pre",
+   "text": "74  acos  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0410",
+   "kind": "pre",
+   "text": "85  atan2  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0418",
+   "kind": "pre",
+   "text": "144  cos  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0420",
+   "kind": "pre",
+   "text": "178  exp  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0428",
+   "kind": "pre",
+   "text": "219  log10  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0430",
+   "kind": "pre",
+   "text": "254  pow  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0438",
+   "kind": "pre",
+   "text": "274  sin  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0440",
+   "kind": "pre",
+   "text": "278  sqrt  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0448",
+   "kind": "pre",
+   "text": "201  fmod  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0450",
+   "kind": "pre",
+   "text": "43  _fpclass  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0458",
+   "kind": "pre",
+   "text": "190  floor  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0468",
+   "kind": "pre",
+   "text": "84  abort  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0470",
+   "kind": "pre",
+   "text": "58  _invoke_watson  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0478",
+   "kind": "pre",
+   "text": "103  terminate  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0480",
+   "kind": "pre",
+   "text": "24  _configure_narrow_argv  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0488",
+   "kind": "pre",
+   "text": "51  _initialize_narrow_environment  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0490",
+   "kind": "pre",
+   "text": "52  _initialize_onexit_table  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0498",
+   "kind": "pre",
+   "text": "60  _register_onexit_function  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c04a0",
+   "kind": "pre",
+   "text": "30  _crt_atexit  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c04a8",
+   "kind": "pre",
+   "text": "22  _cexit  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c04b0",
+   "kind": "pre",
+   "text": "64  _seh_filter_exe  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c04b8",
+   "kind": "pre",
+   "text": "66  _set_app_type  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c04c0",
+   "kind": "pre",
+   "text": "33  _errno  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c04c8",
+   "kind": "pre",
+   "text": "43  _get_narrow_winmain_command_line  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c04d0",
+   "kind": "pre",
+   "text": "54  _initterm  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c04d8",
+   "kind": "pre",
+   "text": "55  _initterm_e  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c04e0",
+   "kind": "pre",
+   "text": "85  exit  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c04e8",
+   "kind": "pre",
+   "text": "35  _exit  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c04f0",
+   "kind": "pre",
+   "text": "20  _beginthreadex  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c04f8",
+   "kind": "pre",
+   "text": "21  _c_exit  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0500",
+   "kind": "pre",
+   "text": "61  _register_thread_local_exe_atexit_callback  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0508",
+   "kind": "pre",
+   "text": "65  _set_abort_behavior  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0518",
+   "kind": "pre",
+   "text": "125  fopen  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0520",
+   "kind": "pre",
+   "text": "1  __p__commode  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0528",
+   "kind": "pre",
+   "text": "13  __stdio_common_vsprintf  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0530",
+   "kind": "pre",
+   "text": "84  _set_fmode  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0538",
+   "kind": "pre",
+   "text": "116  fclose  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0540",
+   "kind": "pre",
+   "text": "3  __stdio_common_vfprintf  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0548",
+   "kind": "pre",
+   "text": "0  __acrt_iob_func  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0550",
+   "kind": "pre",
+   "text": "131  fread  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0558",
+   "kind": "pre",
+   "text": "16  __stdio_common_vsscanf  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0560",
+   "kind": "pre",
+   "text": "137  ftell  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0568",
+   "kind": "pre",
+   "text": "138  fwrite  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0570",
+   "kind": "pre",
+   "text": "135  fseek  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0580",
+   "kind": "pre",
+   "text": "142  strncmp  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0588",
+   "kind": "pre",
+   "text": "143  strncpy  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0590",
+   "kind": "pre",
+   "text": "134  strcmp  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c05a0",
+   "kind": "pre",
+   "text": "35  _localtime64  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c05a8",
+   "kind": "pre",
+   "text": "48  _time64  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c05b0",
+   "kind": "pre",
+   "text": "70  strftime  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c05c0",
+   "kind": "pre",
+   "text": "29  srand  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c05d0",
+   "kind": "pre",
+   "text": "97  CoInitializeEx  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c05d8",
+   "kind": "pre",
+   "text": "43  CoCreateInstance  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c05e0",
+   "kind": "pre",
+   "text": "145  CoUninitialize  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c05f0",
+   "kind": "pre",
+   "text": "932  SteamAPI_RunCallbacks  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c05f8",
+   "kind": "pre",
+   "text": "1050  SteamInternal_FindOrCreateUserInterface  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0600",
+   "kind": "pre",
+   "text": "931  SteamAPI_RestartAppIfNecessary  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0608",
+   "kind": "pre",
+   "text": "929  SteamAPI_RegisterCallback  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0610",
+   "kind": "pre",
+   "text": "1020  SteamAPI_UnregisterCallback  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0618",
+   "kind": "pre",
+   "text": "3  SteamAPI_GetHSteamUser  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0620",
+   "kind": "pre",
+   "text": "936  SteamAPI_Shutdown  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0628",
+   "kind": "pre",
+   "text": "1052  SteamInternal_SteamAPI_Init  <<not bound>>"
+  },
+  {
+   "addr": "0x1402c0630",
+   "kind": "pre",
+   "text": "1047  SteamInternal_ContextInit  <<not bound>>"
+  },
+  {
+   "addr": "0x1403081c0",
+   "kind": "plate",
+   "text": "The 0x25 scancodes pushed through MapVirtualKeyExW."
+  },
+  {
+   "addr": "0x14030c520",
+   "kind": "plate",
+   "text": "8 x {int ch; int dik;} decode table for the classiclager cheat."
+  },
+  {
+   "addr": "0x14030c560",
+   "kind": "plate",
+   "text": "ASCII \"classiclager\" (13 bytes with NUL)."
+  },
+  {
+   "addr": "0x140320db8",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320dc0",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320dc8",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320dd0",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320dd8",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320de0",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320de8",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320df0",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320df8",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320e00",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320e08",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320e10",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320e18",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320e20",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320e28",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320e30",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320e38",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320e40",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320e48",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320e50",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320e58",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320e60",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320e68",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320e70",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320e78",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320e80",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320e88",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320e90",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320e98",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320ea0",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320ea8",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320eb8",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320ec0",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320ec8",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320ed0",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320ed8",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320ee0",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320ee8",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320ef0",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320ef8",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320f00",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320f08",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320f10",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320f18",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320f20",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320f28",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320f30",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320f38",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320f40",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320f48",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320f50",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320f58",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320f60",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320f68",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320f70",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320f78",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320f80",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320f88",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320f90",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320f98",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320fa0",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320fa8",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320fb0",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320fb8",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320fc0",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320fc8",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320fd0",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320fe0",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320fe8",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320ff0",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140320ff8",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321000",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321008",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321010",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321018",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321020",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321028",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321030",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321040",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321048",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321050",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321058",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321060",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321068",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321070",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321078",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321080",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321088",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321090",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321098",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403210a0",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403210a8",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403210b8",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403210c8",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403210d0",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403210d8",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403210e0",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403210e8",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403210f0",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321100",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321108",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321118",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321120",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321128",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321130",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321138",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321148",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321150",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321160",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321168",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321170",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321178",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321180",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321188",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321190",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321198",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403211a0",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403211a8",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403211b0",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403211b8",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403211c0",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403211c8",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403211d0",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403211d8",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403211e0",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403211e8",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403211f0",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403211f8",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321200",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321208",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321210",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321220",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321228",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321230",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321238",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321240",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321248",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321250",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321258",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321260",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321268",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321270",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321278",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321280",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321288",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321290",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321298",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403212a0",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403212a8",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403212b0",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403212b8",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403212c0",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403212d0",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403212d8",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403212e0",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403212e8",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403212f0",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403212f8",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321300",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321308",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321310",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321318",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321320",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321328",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321338",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321340",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321348",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321358",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321360",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321368",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321378",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321388",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321390",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x140321398",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403213a8",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403213b0",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403213b8",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403213c0",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403213c8",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403213d0",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403213d8",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403213e0",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1403213e8",
+   "kind": "eol",
+   "text": "IMAGE_THUNK_DATA64"
+  },
+  {
+   "addr": "0x1404f2798",
+   "kind": "plate",
+   "text": "[NC first-hand] Score. A graze adds 500, same as TH06."
+  },
+  {
+   "addr": "0x1404ff0cc",
+   "kind": "plate",
+   "text": "[NC first-hand] Per-stage graze counter, capped at 99999. TH06 caps it at 9999 (CC0 Player::ScoreGraze) -- this is the one graze number NC actually changed."
+  },
+  {
+   "addr": "0x1404ff0d0",
+   "kind": "plate",
+   "text": "[NC first-hand] Total graze counter, capped at 999999 (same as TH06)."
+  },
+  {
+   "addr": "0x1404ff0f4",
+   "kind": "plate",
+   "text": "Four 0x18-byte CLRD records; clear flags start at +0x0c."
+  },
+  {
+   "addr": "0x1404ff100",
+   "kind": "plate",
+   "text": "CLRD[0] clear flags: 5 with-retries + 5 without-retries bytes."
+  },
+  {
+   "addr": "0x140509268",
+   "kind": "plate",
+   "text": "[NC first-hand] Non-zero suppresses graze counting, same as TH06."
+  },
+  {
+   "addr": "0x140509670",
+   "kind": "plate",
+   "text": "Three int slots; negative means free. Cheat enqueues 28 (SOUND_1UP)."
+  },
+  {
+   "addr": "0x140509694",
+   "kind": "plate",
+   "text": "Non-zero skips sound enqueueing; exact meaning still unconfirmed."
+  },
+  {
+   "addr": "0x140a6e9b0",
+   "kind": "plate",
+   "text": "ANM manager instance; confirmed from two independent call sites."
+  },
+  {
+   "addr": "0x140a6eb70",
+   "kind": "plate",
+   "text": "TH06NC ECL manager, verified from loader and VM references."
+  },
+  {
+   "addr": "0x140a6eb78",
+   "kind": "plate",
+   "text": "Loaded ECL file buffer (g_EclManager + 0x08)."
+  },
+  {
+   "addr": "0x140a6eb80",
+   "kind": "plate",
+   "text": "Relocated ECL subroutine pointer table (+0x10)."
+  },
+  {
+   "addr": "0x140a6eb88",
+   "kind": "plate",
+   "text": "Opcode-13 timeline checkpoint selected by the loader (+0x18)."
+  },
+  {
+   "addr": "0x140a6eb90",
+   "kind": "plate",
+   "text": "Requests use of the saved timeline checkpoint (+0x20)."
+  },
+  {
+   "addr": "0x140c21dba",
+   "kind": "plate",
+   "text": "Non-zero swaps the A/B confirm/cancel pad buttons."
+  },
+  {
+   "addr": "0x140c21e58",
+   "kind": "plate",
+   "text": "6-bit XInput button bitmap consumed by the pad unlock cheat."
+  },
+  {
+   "addr": "0x140c21e60",
+   "kind": "plate",
+   "text": "256-byte layout-aware scancode remap table, rebuilt when the HKL changes."
+  },
+  {
+   "addr": "0x140c21f70",
+   "kind": "plate",
+   "text": "256-byte keyboard down-state array."
+  }
+ ],
+ "structs": {}
+}

@@ -13,6 +13,8 @@ exports/
 
 # mod 的构建产物:由 mods/<版本>/<mod名>/native/Makefile 重建,不入库。
 mods/**/native/*.dll
+mods/**/native/*.lib
+mods/**/native/*.exp
 mods/**/native/*.o
 mods/**/native/tests/build/
 mods/**/native/build/
@@ -56,3 +58,13 @@ mods/th18.v1.00a/card-expand/assets/ability/lolk/PANEL*.png
 # dgVoodoo2 转译层（D3D9.dll + dgVoodoo.conf）：第三方二进制,不是我们的产物,
 # 按「不入库」纪律留在工作区本地;要装的人自己去 dege.freeweb.hu 取。
 mods/th18.v1.00a/stg 补丁/
+
+# runtime/anm 测试夹具：我们自写源码 + thanm 编译出的产物，不入库（不留版权字节纪律同上）。
+# .png 是 build-fixtures.sh 现生成的 8x8 纯色贴图源（喂给 thanm -c），同样是构建产物。
+runtime/anm/tests/fixtures/*.anm
+runtime/anm/tests/fixtures/*.png
+runtime/anm/node_modules/
+
+# thdat-nc 的本机构建和下载缓存；Windows 发布产物单独保留在 bin/。
+tooling/thdat-nc/build/
+tooling/thdat-nc/.cache/

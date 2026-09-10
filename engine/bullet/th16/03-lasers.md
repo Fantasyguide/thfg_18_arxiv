@@ -29,7 +29,7 @@ Window::do_frame → run_all_on_draw                    [engine/_shared/frame-lo
     │ - 走 g_laser_mgr+0x14 活动链
     │ - 每节点 node[4]==1(dying)跳过,否则:
     └→ vtable[5] = LaserLine::on_draw 0x433720 / LaserInfinite::on_draw 0x4357a0 / 曲线/beam 各自
-       │ - 算 angle+π/2,归一化到 (−π,π](33 次迭代上限,跟数学模块同套)
+       │ - 算 angle+π/2,归一化到 [-π,π](★ 两端都闭、上限 34 次,跟数学模块同套)
        │ - 把激光的 (pos, angle, sprite 状态) 写进对象内嵌的 ANM 子精灵
        │ - 对每个子精灵调 AnmManager::draw_vm 真画
        └→ 子精灵数:LaserLine 三个(body +0x92c / head +0x1524 / tail +0xf28);

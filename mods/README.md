@@ -58,6 +58,7 @@ mods/<版本>/<mod名>/
 | --- | --- | --- |
 | [`th18.v1.00a/mouse-control`](th18.v1.00a/mouse-control/README.md) | 鼠标控制自机 + 左/右/中键映射 | ✅ **实跑通过**(2026-09-01) |
 | [`th18.v1.00a/runtime-probe`](th18.v1.00a/runtime-probe/README.md) | 只读探针:汇报玩家坐标与状态位 | 已编译 + 静态审计通过，**未实跑** |
+| [`th06nc/mouse-control`](th06nc/mouse-control/README.md) | 鼠标控制自机 + 左/右/中键映射(单 DLL 代理,不走 thcrap) | ✅ **实跑通过**(2026-09-10,VCRUNTIME140_1 代理);坐标需两点标定 |
 | [`th18.v1.00a/card-expand`](th18.v1.00a/card-expand/README.md) | 卡表搬迁 / 扩容（战线 A–C） | ✅ A、B **实跑通过**（2026-09-02）；C 已发布待实跑；下一步 D 见 [`NEXT.md`](th18.v1.00a/card-expand/NEXT.md) |
 | [`th18.v1.00a/card-rework`](th18.v1.00a/card-rework/ROADMAP.md) | 卡牌系统改造 | 📋 调研与方案，见 [`PLAN-255-ids.md`](th18.v1.00a/card-rework/PLAN-255-ids.md) |
 | [`th16.v1.00a/tracking-laser`](th16.v1.00a/tracking-laser/README.md) | 重指 SHT tick 槽注入追踪激光 | 静态审计通过，**未实跑** |
