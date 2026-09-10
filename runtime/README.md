@@ -1,42 +1,36 @@
-# runtime — 引擎知识的可执行形式
+# runtime/ —— 引擎知识的可执行形式
 
-`runtime/` 是本仓库的第四层：把 `engine/` 里已经验过的引擎语义，实现成一个真的能跑起来的
-播放器/模拟器，用**行为对不对得上**去反向证伪那些语义。第一个入住的子项目是
-[`anm/`](anm/OVERVIEW.md)（ANM v8 精灵动画播放器）。
-
-## 四层分工
-
-> `engine/` 引擎怎么工作 · `runtime/` 同一份知识的可执行形式 · `mods/` 我改了什么 ·
-> `tooling/` 怎么再来一遍
+> **版本**：TH16 v1.00a（`th16.exe`，imagebase `0x400000`）——本文只在举例时提到地址。
 >
-> - `runtime/` 里每条实现必须能指回 `engine/` 的一条断言。指不回去 = 你在猜，代码里标 🟡。
-> - `runtime/` 跑出来的差异回流 `engine/` 当新问题。播放器是证伪装置。
-> - `runtime/` **不放引擎结论**。
+> **这一层的内容已经拆出去独立成仓库了**（2026-09-10）。
 
-也就是说：`runtime/` 里的代码注释可以写"实现了 `engine/anm/th16/xxx.md` §2 的这条断言"，
-但不能反过来在 `runtime/` 里第一次断言"th16 的这个 opcode 是干什么的"——那种结论要先落在
-`engine/anm/`，`runtime/` 只负责照着实现、再拿实际运行结果去戳它。
+## live-anm
 
-## 子项目
+**ANM v8 播放器**（VM + 渲染 + 宿主 + 网页壳子）现在住在
+**<https://github.com/Fantasyguide/live-anm>**，在线版
+**<https://fantasyguide.github.io/live-anm/>**。
 
-| 子项目 | 是什么 | 门面 |
-| --- | --- | --- |
-| [`anm/`](anm/OVERVIEW.md) | ANM v8 精灵动画播放器（Node，零依赖） | [`anm/OVERVIEW.md`](anm/OVERVIEW.md) |
+拆分理由：本仓库是**知识库**（引擎结论 / Ghidra 工具链 / 各作登记），播放器是**产品**。
+两者的读者、发布节奏、公开程度都不一样——`renkolab` 是 private，而播放器要发 GitHub Pages
+就得 public。混在一起既让本仓越来越杂，也让播放器的 CI 与发布变得别扭。
 
-## 只读的 th16 Ghidra 快照（波 D 并行用）
+拆走的是 `git subtree split -P runtime/anm`，**26 个 commit 的历史完整保留**在新仓里。
 
-Ghidra 工程锁是工程级独占的（MCP 开库 / GUI 开工程 / driver 在跑，三者同一时刻只能有一个，
-见 [`docs/SETUP.md`](../docs/SETUP.md) 的「锁」）。为了让后续多个 R 任务能并行只读地翻 th16 的
-反编译/反汇编/交叉引用/调用图/结构体/字符串/函数表而不互相撞锁，T0 已经用
-`tooling/ghidra/export_html.py` 做过一次性 HTML 导出（占锁几分钟，导出完之后随便翻都不占锁）：
+## 依赖方向是单向的
 
-- **导出目录**：`local/th16.v1.00a/state/`（gitignored，不入库；产物本身不含版权字节，
-  只是反编译文本/函数表/结构体的静态快照）
-- **模型冷启动读**：`local/th16.v1.00a/state/data/functions.jsonl`
-- **人看**：`tooling/ghidra/serve.sh th16 <端口>` 起一个只绑 `127.0.0.1` 的 http.server
-  （默认端口 6090 在这台机器上已被 th18 的导出占用，T0 起 th16 时用了 **6091**；
-  下次起的时候先 `ss -tlnp | grep <端口>` 看看有没有别人占着）
+```
+live-anm （播放器）  ──引用──▶  renkolab/engine/ （知识）
+```
 
-**并行的 R 任务一律读这份 HTML 快照，不碰 MCP。** 这是硬规则。需要写库的动作（重命名函数、
-建结构体、加 label）必须串行化：写一份 `naming-batch.md` 交回，由统一的任务用 MCP 落库，
-再 `tooling/ghidra/symbols.py export th16` 导出——不导出就等于没有。
+播放器的代码注释里保留着 `09 §3.2`、`th16:0x4636e7` 这种引用，指的就是本仓
+`engine/anm/th16/` 下那十篇。**引用是文本不是链接**——本仓 private，链过去只会 404，
+但文档号 + 节号 + 机器码地址足以让人自行复核。
+
+反过来**本仓不依赖播放器**：`engine/` 的结论独立成立，播放器只是它的一个消费者
+（也是最好的证伪器——跑起来画得不对，就说明某条断言错了）。
+
+## 这一层还会有别的东西吗
+
+会。`runtime/` 这个名字仍然占着位（README 的四层表里也还留着它），
+将来若要做 ECL 的可执行形式、或别的格式版本的播放器，仍然按「跟着**格式版本**走
+而不是跟着某一作走」的原则放在这里或同样拆出去。

@@ -394,7 +394,7 @@ visibility flag… Successful interrupts will automatically re-enable the visibi
 
 ## 9. 真实数据对账（54 个 `.anm`）
 
-自写解析器（[`runtime/anm/src/format/anm-v8.js`](../../../runtime/anm/src/format/anm-v8.js) 的 `parseAnm`）
+自写解析器（[`runtime/anm/src/format/anm-v8.js`](https://github.com/Fantasyguide/live-anm/blob/main/src/format/anm-v8.js) 的 `parseAnm`）
 跑 `local/th16.v1.00a/dat/*.anm`：54 文件 / **41339** 条指令（不含每 script 一条被解析器排除的
 `opcode=-1` 结束标记；加上 1929 条 = 43268，与 [`01-format.md`](01-format.md) §10 一致），其中本组 **9391** 条：
 

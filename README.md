@@ -35,7 +35,7 @@ engine/        知识层 —— 子系统为主，版本为辅
   anm/           ANM 精灵动画 VM(未系统开工)
 
 games/         每作一页薄导航:样本、Ghidra 工程、覆盖统计、待挖图
-runtime/       引擎知识的可执行形式 —— 播放器/模拟器，跑起来反向证伪 engine/ 的断言
+runtime/       引擎知识的可执行形式 —— ★ ANM v8 播放器已拆成独立仓库 live-anm，见 runtime/README.md
 mods/          产物层 —— 版本为主，死绑 build
 tooling/       工具层 —— Ghidra 工具链
 local/         gitignored:exe / 资产 / Ghidra 工程 / vendor 克隆

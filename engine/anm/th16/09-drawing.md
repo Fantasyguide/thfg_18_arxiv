@@ -431,7 +431,7 @@ if ((flags_lo & 0x3e000000) == 0x32000000) {   // mode 25 = 610
 thpages 只对 mode 2 提了这件事（*"this would also subtract alpha…"*），**mode 4 与 6 同样如此**。
 真机上无所谓——后备缓冲是不透明的，alpha 不参与显示；**但网页播放器把它画到带 alpha 的
 canvas 上就会被「打洞」**，而真实数据里 `mode 2` 用了 43 次、`mode 4` 用了 6 次。
-播放器侧的处理见 [`runtime/anm/src/render/D3D9-MAPPING.md`](../../../runtime/anm/src/render/D3D9-MAPPING.md) §6。
+播放器侧的处理见 [`runtime/anm/src/render/D3D9-MAPPING.md`](https://github.com/Fantasyguide/live-anm/blob/main/src/render/D3D9-MAPPING.md) §6。
 
 **③ mode 8/9 的两个因子是空转的。** OpenGL / OpenGL ES 的规范明文规定 `MIN`/`MAX`
 **不带权重**（`Cr = min(Cs, Cd)`，`S`、`D` 不出现在式子里），所以表里的 `SRCALPHA` / `ONE`

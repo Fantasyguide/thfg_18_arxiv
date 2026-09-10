@@ -9,6 +9,12 @@
 > **写给谁**：可能跨多个会话执行。每条任务写「做什么 + 验收标准 + 已知的坑」，
 > **不写抄代码级别的步骤**——执行者要么是我自己，要么是能读 `engine/anm/th16/` 的 subagent。
 
+
+> ★ **2026-09-10：代码已拆出去独立成仓库** —— `runtime/anm/` 整个搬到了
+> <https://github.com/Fantasyguide/live-anm>（在线版 <https://fantasyguide.github.io/live-anm/>），
+> 26 个 commit 的历史完整保留。本计划留在这里作为**过程记录**；后续的实现进度
+> 以新仓的 `OVERVIEW.md` 为准。理由与依赖方向见 [`runtime/README.md`](../../../runtime/README.md)。
+
 ## 0. 现在站在哪
 
 **层 A（纯状态机）已收口**：opcode 135/135 全实现，`runtime/anm/` 210 个测试全绿。
@@ -139,4 +145,4 @@ poly 族（`th16:0x4689b3`）。**按需插入**——B3 撞到哪个再逆哪�
 - 设计文档：[`../specs/2026-09-09-runtime-anm-design.md`](../specs/2026-09-09-runtime-anm-design.md)
 - 第一阶段（层 A）计划与执行状态：[`2026-09-09-runtime-anm-phase1.md`](2026-09-09-runtime-anm-phase1.md)
 - 六篇审阅发现与处置：[`2026-09-09-anm-review-findings.md`](2026-09-09-anm-review-findings.md)
-- 实现状态矩阵：[`../../../runtime/anm/OVERVIEW.md`](../../../runtime/anm/OVERVIEW.md)
+- 实现状态矩阵：[`https://github.com/Fantasyguide/live-anm/blob/main/OVERVIEW.md`](https://github.com/Fantasyguide/live-anm/blob/main/OVERVIEW.md)

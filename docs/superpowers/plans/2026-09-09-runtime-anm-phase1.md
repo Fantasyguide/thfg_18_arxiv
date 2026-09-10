@@ -16,6 +16,12 @@
 
 **Spec**：[`../specs/2026-09-09-runtime-anm-design.md`](../specs/2026-09-09-runtime-anm-design.md)
 
+
+> ★ **2026-09-10：代码已拆出去独立成仓库** —— `runtime/anm/` 整个搬到了
+> <https://github.com/Fantasyguide/live-anm>（在线版 <https://fantasyguide.github.io/live-anm/>），
+> 26 个 commit 的历史完整保留。本计划留在这里作为**过程记录**；后续的实现进度
+> 以新仓的 `OVERVIEW.md` 为准。理由与依赖方向见 [`runtime/README.md`](../../../runtime/README.md)。
+
 ## 执行状态（2026-09-09）
 
 **分支 `runtime/anm-phase1`**，未合并 `main`。`npm test` 74/74 · `check-docs.py` 170 文件四项全绿。
