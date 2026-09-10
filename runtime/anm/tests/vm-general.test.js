@@ -16,7 +16,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { parseAnm } from '../src/format/anm-v8.js';
 import { createVm, stepFrame, registerGroup } from '../src/vm/core.js';
-import { generalGroup, stepInterpolators } from '../src/vm/group-general.js';
+import { generalGroup, stepInterpolators, ensureGeneralState } from '../src/vm/group-general.js';
 
 const ops = {};
 registerGroup(ops, generalGroup);
@@ -544,4 +544,50 @@ test('createVm 对不认识的 opts 键抛错（历史坑：静默忽略 prng �
     () => createVm({ instructions: [] }, { prng: () => 0 }),
     /不认识的 opts 键 "prng"/,
   );
+});
+
+// ══════════════════════════════════════════════════════════════════════════════════
+// § 闸门 <= 0 的两条路（★ 2026-09-10：审阅 07-9 引出的实现修正）
+// ══════════════════════════════════════════════════════════════════════════════════
+// 一手：`th16:0x406e24` `test eax,eax` → `0x406e26` `jle 0x406f16` → `0x406f16` `jz 0x406ed8`
+// （ZF 仍来自上面那次 test）。所以 ==0 与 <0 走的**不是**同一条路。
+// 调用方侧的判据是 `!= 0`（ANM 侧 `th16:0x463b39` `cmp dword ptr [esi+0xdc],0` / `je`），
+// 所以负闸门真的会进到 step 里。真实数据：16 条 `410 rotateTime(t=-1, mode=7)`。
+
+test('闸门 < 0 + mode 7：每帧相对旋转、永不结束（真实数据里的 410 rotateTime(-1,7,…)）', () => {
+  // 16 条真实指令就是这个形态。旧实现 `gate <= 0 → return false` 会让它一动不动。
+  const vm = mkVm([instr(410, [-1, 7, f32bits(0.25), f32bits(0), f32bits(0)])]);
+  stepFrame(vm, ops);
+  assert.equal(vm.rotation.x, 0, '建库帧本身不步进');
+  stepInterpolators(vm);
+  assert.ok(Math.abs(vm.rotation.x - 0.25) < 1e-6, '第 1 帧：start += target');
+  stepInterpolators(vm);
+  assert.ok(Math.abs(vm.rotation.x - 0.5) < 1e-6, '第 2 帧：继续累加');
+  for (let i = 0; i < 20; i++) stepInterpolators(vm);
+  assert.ok(Math.abs(vm.rotation.x - Math.fround(0.25 * 22)) < 1e-4, '22 帧后仍在累加——永不结束');
+});
+
+test('闸门 < 0 不推进计时器（`th16:0x406f18` 全程不碰 +0x3c/+0x40/+0x44）', () => {
+  const vm = mkVm([instr(410, [-1, 7, f32bits(0.25), f32bits(0), f32bits(0)])]);
+  stepFrame(vm, ops);
+  const entry = ensureGeneralState(vm).interp.rotation;
+  const before = { currentF: entry.currentF, current: entry.current, gate: entry.gate };
+  for (let i = 0; i < 5; i++) stepInterpolators(vm);
+  assert.equal(entry.currentF, before.currentF, 'current_f 不动');
+  assert.equal(entry.current, before.current, 'current 不动');
+  assert.equal(entry.gate, before.gate, '闸门保持负值，不会被写回 0');
+});
+
+test('闸门 < 0 + 未解码的 mode：显式抛，不静默当 no-op', () => {
+  const vm = mkVm([instr(410, [-1, 0, f32bits(1), f32bits(0), f32bits(0)])]);
+  stepFrame(vm, ops);
+  assert.throws(() => stepInterpolators(vm), /闸门 -1 < 0 且 mode=0/);
+});
+
+test('闸门 == 0：什么都不做（真机由调用方的 `cmp …,0 / je` 挡在函数外）', () => {
+  const vm = mkVm([instr(410, [0, 7, f32bits(0.25), f32bits(0), f32bits(0)])]);
+  stepFrame(vm, ops);
+  const before = vm.rotation.x;
+  for (let i = 0; i < 5; i++) stepInterpolators(vm);
+  assert.equal(vm.rotation.x, before, 'gate==0 不写回任何字段');
 });

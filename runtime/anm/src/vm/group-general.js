@@ -284,7 +284,51 @@ function hermite(u, start, target, t1, t2) {
 // 返回 true 表示这一步真的动了（gate 原本 > 0），调用方据此决定要不要把 output 写回
 // 真实字段——gate<=0（从未激活，或已经跑完）时什么都不做，字段维持上一次的值。
 function stepGeneric(vm, entry, kind) {
-  if (entry.gate <= 0) return false;
+  // ★ 2026-09-10 修正（审阅 07-9 引出）：原来这里写的是 `if (entry.gate <= 0) return false;`，
+  // 把「闸门 == 0」与「闸门 < 0」当成同一件事。一手反汇编 `th16:0x406e10` 说它们是两条路：
+  //
+  //   `0x406e24` `test eax,eax` / `0x406e26` `jle 0x406f16`
+  //   `0x406f16` `jz 0x406ed8`   ← ZF 还是上面那次 test 的，所以：
+  //       == 0 → `0x406ed8`：按 mode 返回终值（mode 7/17 返回 start，其余返回 target）
+  //        < 0 → `0x406f18`：**落进逐帧步进**，且全程不碰 `+0x3c/+0x40/+0x44`（不推进计时器）
+  //
+  // 闸门 == 0：调用方侧本来就有 `cmp dword ptr [.. + 0x50], 0` / `je 跳过`
+  // （ANM 侧 `th16:0x463b39` 读 `+0xdc` = 插值块基址 `+0x8c` 加 0x50），所以真机根本不会
+  // 带着 gate==0 进来——「什么都不做」与真机等价，保持 return false。
+  //
+  // 闸门 < 0：真机**会**进来（调用方的判据是 `!= 0` 而不是 `> 0`）。真实数据里有
+  // **16 条 `410 rotateTime(t=-1, mode=7)`**（自写解析器跑 54 个 .anm 实测；`415 angleVel`
+  // 与 `436 anchorOffset` 签名是 `fff`/`ff`、根本没有 t 参数，不在此列），语义是
+  // 「每帧相对旋转、永不结束」。`0x406f18` 的 mode 7 段与 mode 17 段逐条比对下来
+  // **与中间帧同式**（mode 7：`start += target`；mode 17：`start += tangent2; tangent2 += target`），
+  // 差别只在不推进计时器、也永远不会走到结束帧。其余 mode 走 `0x406feb`，没有真实数据
+  // 覆盖、本次也没解码——按本文件既有策略显式抛，不静默当 no-op。
+  if (entry.gate === 0) return false;
+  if (entry.gate < 0) {
+    const dimsN = entry.start.length;
+    if (entry.mode === 7) {
+      for (let d = 0; d < dimsN; d++) entry.start[d] += entry.target[d];
+      if (kind === 'angle') entry.start[0] = wrapAngle32(entry.start[0]);
+    } else if (entry.mode === 17) {
+      for (let d = 0; d < dimsN; d++) {
+        entry.start[d] += entry.tangent2[d];
+        entry.tangent2[d] += entry.target[d];
+      }
+      if (kind === 'angle') entry.start[0] = wrapAngle32(entry.start[0]);
+    } else {
+      throw new Error(
+        `group-general stepInterpolators: 闸门 ${entry.gate} < 0 且 mode=${entry.mode} —— ` +
+          '`th16:0x406f18` 只有 mode 7 与 mode 17 两段被解码过（各与中间帧同式），其余 mode ' +
+          '走 `th16:0x406feb`，本次未解码、真实数据也一次没出现（负 t 全部是 ' +
+          '`410 rotateTime(-1, 7, …)`）。宁可抛，不要静默当 no-op。',
+      );
+    }
+    entry.output = entry.start.slice();
+    if (kind === 'int') {
+      for (let d = 0; d < dimsN; d++) entry.output[d] = entry.output[d] & 0xff;
+    }
+    return true; // 注意：不推进 currentF/current，也永远不进结束帧
+  }
   entry.currentF += vm._gameSpeed; // 速度源 = GAME_SPEED（02-vm-core.md §3.2：内嵌 zTimer 恒以它为步长）
   entry.current = Math.trunc(entry.currentF); // CVTTSS2SI 截零，不是 floor（同 core.js timerAdjust）
   const dims = entry.start.length;

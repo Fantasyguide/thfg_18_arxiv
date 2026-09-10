@@ -156,7 +156,7 @@ jmp [byte[mode + 0x468bac] * 4 + 0x468b70];        // 索引表 28 字节 + 跳�
 
 | 模式 | handler | 谁设的 | 模式 | handler | 谁设的 |
 | :---: | --- | --- | :---: | --- | --- |
-| 0/1/3 | `0x468504`/`0x468542`（sprite 角点） | `300 sprite` / 默认 | 15 | `0x468647`（存变换 + mode 8） | `302` |
+| 0 → `0x468504`；1 与 3 → `0x468542`（sprite 角点） | 见左 | `300 sprite` / 默认 | 15 | `0x468647`（存变换 + mode 8） | `302` |
 | 2 | `0x4686e0`（sprite，−0.5px 偏移） | `302` | 16/20/21/22/26/27 | `0x468722`（rect 族） | **603/606/607/608/613/612** |
 | 4 | `0x468584`（mode 4） | `302` | 17/18/19 | `0x4689b3`（poly 族） | **604/605/611** |
 | 5/6/7/8 | `0x4685af`/`0x4685d5`/`0x4685fb`/`0x468621` | `302` | 24/25 | `0x4686c1`（textureArc3D） | **609/610** |
@@ -201,7 +201,12 @@ jmp [byte[mode + 0x468bac] * 4 + 0x468b70];        // 索引表 28 字节 + 跳�
 
 ### 4.1 全局重置：`Supervisor__reset_render_state` `0x45ba80`
 
-设备初始化时设一次默认状态（逐条反汇编，✅；括号内是 D3D9 SDK 的枚举名，🟡）：
+设备初始化时设一次默认状态（逐条反汇编，✅；括号内是 D3D9 SDK 的枚举名，🟡）。
+★ **下表只是它设的一个子集**（2026-09-10 审阅补）：`0x45ba80` 除这 8 条 `SetRenderState` 外，还调了
+**8 次 `SetTextureStageState`**（`0x45bc36`–`0x45bcc2`，`[ecx+0x10c]`）与 **6 次 `SetSamplerState`**
+（`0x45bcd6`–`0x45bd3a`，`[ecx+0x114]`）设默认值。这些默认值后续都被 per-VM（§4.2）与 mode 函数（§4.3）
+覆盖，**不影响本节的行为结论**——但原文「逐条反汇编」这句没说明只挑了一个子集，写播放器时若照本节
+当成「ANM 只设了这 8 条」会漏掉初始态。
 
 | state | value | 含义 |
 | --- | :---: | --- |
@@ -377,6 +382,10 @@ rect 族（`drawRect` 等）**写进 sprite 批量缓冲**（`0x4694a8` 处 `Set
 ## 关联
 
 - 指令头 / `param_mask` / script 表：[`01-format.md`](01-format.md)
+  —— ★ 顺带关掉它 §7 的一条开放项：「`D3DFMT_A8` 贴图在 TH16 的 texture stage 里从哪取 color
+  （推测 `D3DTA_DIFFUSE`，未在 exe 上证）」🟡，答案在本文 [§4.3](#43-mode-函数里的-texture-stage-statereg0x10c)：
+  `COLORARG1`/`ALPHAARG1` **从不设**，恒为 D3D9 默认 `D3DTA_TEXTURE`；被 MODULATE 乘上去的是
+  `COLORARG2` = `DIFFUSE`（sprite/textureCircle）或 `TFACTOR`（textureArc3D）。
 - VM 主循环、`zAnmVm` 字段图、渲染模式字段位、帧尾流程：[`02-vm-core.md`](02-vm-core.md) §2/§3.3/§3.6
 - 变量号（`I0`=10000、`F0–F3`=10004–10007）：[`04-variables.md`](04-variables.md) §2
 - 操作数求值次序判据（本组 §2.1 引用）：[`03-math-jumps.md`](03-math-jumps.md) §9.1

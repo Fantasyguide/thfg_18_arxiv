@@ -359,7 +359,7 @@ TH16 有两张并列的 9 项查表，都按 `format` 值索引：`0x491b90` = �
 | `+0x08` / `+0x18` / `+0x23` / `+0x28..0x40` 在**整个** exe 里是否真无人读（只查了加载路径） | ❓ |
 | `format` 0/2/4/6/8 只有查表项、没有代码路径证据（真实数据里仅 6 出现 1 次），见 §7 的分层可信度 | 🟡 |
 | `param_mask` 的 bit 9–15：exe 里从没测试过，真实数据也从没置位——是保留位还是别作用到的 | ❓ |
-| `D3DFMT_A8` 贴图在 TH16 的 texture stage 里从哪取 color（推测 `D3DTA_DIFFUSE`，未在 exe 上证） | 🟡 |
+| ~~`D3DFMT_A8` 贴图从哪取 color~~ → **已解决**，见 [`09-drawing.md`](09-drawing.md) §4.3：`COLORARG1` 恒为默认 `D3DTA_TEXTURE`（原推测的 `D3DTA_DIFFUSE` 是 ARG2 不是 ARG1） | ✅ |
 | opcode 语义（137 个 case）—— 本文只定死了指令**头**，不含语义 | — 归下一份文档 |
 | `AnmVm` 0x5fc 字节的字段图 | — 归下一份文档 |
 
