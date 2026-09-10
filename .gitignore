@@ -13,6 +13,8 @@ exports/
 
 # mod 的构建产物:由 mods/<版本>/<mod名>/native/Makefile 重建,不入库。
 mods/**/native/*.dll
+mods/**/native/*.lib
+mods/**/native/*.exp
 mods/**/native/*.o
 mods/**/native/tests/build/
 mods/**/native/build/
@@ -39,3 +41,7 @@ mods/th18.v1.00a/stg 补丁/
 runtime/anm/tests/fixtures/*.anm
 runtime/anm/tests/fixtures/*.png
 runtime/anm/node_modules/
+
+# thdat-nc 的本机构建和下载缓存；Windows 发布产物单独保留在 bin/。
+tooling/thdat-nc/build/
+tooling/thdat-nc/.cache/

@@ -69,7 +69,13 @@ def resolve(version, exe=None, data_dir=None):
     cands = sorted(p for p in (REPO / "local").glob(f"{version}*") if p.is_dir())
     if not cands:
         die(f"找不到版本目录 local/{version}* —— 样本要自己放，见 local/README.md")
-    vdir = cands[0]
+    # 前缀通配会命中多个版本（local/th06nc 与 local/th06v1.02h 都被 "th06" 命中）。
+    # 静默取第一个 = 本文件开头列的第 4 号坑「开错程序」，所以这里必须报错。
+    exact = [p for p in cands if p.name == version]
+    if len(cands) > 1 and not exact:
+        die("版本号 %r 有歧义，命中 %s —— 请写全，例如 %r"
+            % (version, [p.name for p in cands], cands[0].name))
+    vdir = exact[0] if exact else cands[0]
 
     if exe:
         exe = Path(exe).resolve()

@@ -38,6 +38,8 @@ from import_th_re_data_structs import struct_members                 # noqa: E40
 from import_th_re_data_labels import label_name                      # noqa: E402
 
 TH_RE_TAG = "[th-re-data]"
+TH06_RE_TAG = "[th06-re]"      # import_th06_re_xml.py 打的标
+VENDOR_TAGS = (TH_RE_TAG, TH06_RE_TAG)
 GHIDRA_DEFAULT_PREFIXES = ("FUN_", "DAT_", "LAB_", "SUB_", "UNK_", "EXT_",
                            "thunk_FUN_", "switchD", "switchdataD", "caseD")
 COMMENT_KINDS = ("plate", "pre", "eol", "post", "repeatable")
@@ -178,7 +180,7 @@ def collect(prog, base):
         a = it.next()
         for kind, cid in kinds.items():
             txt = lst.getComment(cid, a)
-            if not txt or txt.startswith(TH_RE_TAG):
+            if not txt or txt.startswith(VENDOR_TAGS):
                 continue
             if kind == "eol" and txt in blocks:
                 continue                             # PE 装载器给段头写的 ".text"/".rdata"
@@ -365,6 +367,31 @@ def apply_layer(prog, data, dry=False):
     return n
 
 
+def merge_th06_re_xml(base, P):
+    """TH06 还有第三层上游：th06-re 的 Ghidra XML（1520 个函数名）。
+
+    它由 `import_th06_re_xml.py` 重放，和 ExpHP 那层一样**只进不出**——
+    上游没有 LICENSE，不擅自转发。不并进基线的话，导出会把 ~900 个社区名字
+    当成「我们的活」倒进 games/<版本>/symbols.json。
+    """
+    if P["vdir"].name != "th06.v1.02h":
+        return base
+    try:
+        from import_th06_re_xml import XML_PATH, flatten, parse
+    except ImportError:
+        return base
+    if not XML_PATH.is_file():
+        return base
+    funcs, data_symbols, _comments = parse(
+        XML_PATH.read_text(encoding="utf-8", errors="replace"))
+    for addr, name, _sig in funcs:
+        base["funcs"].setdefault(addr, flatten(name))
+    for addr, name in data_symbols:
+        base["labels"].setdefault(addr, set()).add(flatten(name))
+        base["statics"].setdefault(addr, flatten(name))
+    return base
+
+
 # ──────────────────────────────────────────────────────── diff / 落盘
 
 def _key(kind, r):
@@ -416,6 +443,7 @@ def main():
 
     P = resolve(a.version)
     base = exphp_baseline(P["data_dir"])
+    merge_th06_re_xml(base, P)
     repo = load_repo(P["symbols"])
     rel = P["symbols"].relative_to(REPO)
 
