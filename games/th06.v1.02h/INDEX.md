@@ -63,6 +63,7 @@ python3 tooling/ghidra/symbols.py status th06.v1.02h
 | --- | --- | --- |
 | ECL | `EclManager__run_ecl`（ExpHP 命名） | [engine/ecl/th06nc](../../engine/ecl/th06nc/README.md) |
 | ANM | `AnmManager__run_vm` `0x00433960`，跳表 `0x00434a63`（32 项） | [对照](../../engine/anm/th06nc/02-th06-baseline-comparison.md)：同一台机器，x64 重编译 + 4 条新 opcode |
+| STD | `Stage__on_tick_06` `0x403810`，opcode 0–5 | [对照](../../engine/std/th06nc/01-stage-runtime-and-nc-loop.md)：同一台机器，opcode 3 多两个魔数参数构成背景循环 |
 | 结果页解锁 | `HOME×5 → Q×2 → S×3`（Extra 成绩页） | [engine/menu/th06nc](../../engine/menu/th06nc/02-classiclager-unlock-cheat.md)，`classiclager`（Lunatic 页） |
 
 不要把 exe、DAT 或导出的 HTML 提交到仓库；它们都是本地研究输入。

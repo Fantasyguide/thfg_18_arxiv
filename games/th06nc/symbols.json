@@ -27,6 +27,10 @@
    "addr": "0x140007620"
   },
   {
+   "name": "AsciiManager__AddedCallback",
+   "addr": "0x140009700"
+  },
+  {
    "name": "BombData__BombReimuACalc",
    "addr": "0x14000d1a0"
   },
@@ -75,6 +79,10 @@
    "addr": "0x140010870"
   },
   {
+   "name": "BulletManager__AddedCallback",
+   "addr": "0x140011f80"
+  },
+  {
    "name": "Input__PublishButtonBitmap",
    "addr": "0x1400127d0"
   },
@@ -101,6 +109,18 @@
   {
    "name": "EffectManager__SpawnParticles",
    "addr": "0x14002b0d0"
+  },
+  {
+   "name": "EffectManager__AddedCallback",
+   "addr": "0x14002b390"
+  },
+  {
+   "name": "Ending__LoadEnding",
+   "addr": "0x14002b7a0"
+  },
+  {
+   "name": "Ending__AddedCallback",
+   "addr": "0x14002c8d0"
   },
   {
    "name": "EnemyEclInstr__MoveDirTime",
@@ -167,8 +187,24 @@
    "addr": "0x14003a9c0"
   },
   {
+   "name": "Gui__OnDraw",
+   "addr": "0x14003cd20"
+  },
+  {
+   "name": "Gui__ActualAddedCallback",
+   "addr": "0x14003d500"
+  },
+  {
    "name": "Gui__LoadMsg",
    "addr": "0x14003eb80"
+  },
+  {
+   "name": "GuiImpl__MsgRead",
+   "addr": "0x14003ece0"
+  },
+  {
+   "name": "Gui__DrawStageElements",
+   "addr": "0x140041820"
   },
   {
    "name": "ItemManager__SpawnItem",
@@ -181,6 +217,10 @@
   {
    "name": "MainMenu__OnUpdate",
    "addr": "0x1400479e0"
+  },
+  {
+   "name": "MusicRoom__AddedCallback",
+   "addr": "0x140058cc0"
   },
   {
    "name": "Player__AddedCallback",
@@ -227,6 +267,10 @@
    "addr": "0x14006aba0"
   },
   {
+   "name": "ResultScreen__HandleReplaySaveKeyboard",
+   "addr": "0x14006d310"
+  },
+  {
    "name": "ResultScreen__UpdateUnlockCheats",
    "addr": "0x14006e020"
   },
@@ -239,6 +283,10 @@
    "addr": "0x14006e3a0"
   },
   {
+   "name": "ResultScreen__AddedCallback",
+   "addr": "0x140073d50"
+  },
+  {
    "name": "ResultScreen__WriteScoreDat",
    "addr": "0x140074470"
   },
@@ -247,12 +295,40 @@
    "addr": "0x1400767d0"
   },
   {
-   "name": "Stage__LoadStageData",
+   "name": "Stage__OnUpdate",
+   "addr": "0x140077bb0"
+  },
+  {
+   "name": "Stage__OnDrawHighPrio",
+   "addr": "0x140078290"
+  },
+  {
+   "name": "Stage__OnDrawLowPrio",
+   "addr": "0x140078390"
+  },
+  {
+   "name": "Stage__AddedCallback",
    "addr": "0x1400785c0"
+  },
+  {
+   "name": "Stage__RegisterChain",
+   "addr": "0x1400789a0"
+  },
+  {
+   "name": "Stage__DeletedCallback",
+   "addr": "0x140078c30"
+  },
+  {
+   "name": "Stage__RenderObjects",
+   "addr": "0x140078cb0"
   },
   {
    "name": "Supervisor__AddedCallback",
    "addr": "0x14007a6d0"
+  },
+  {
+   "name": "Supervisor__LoadPbg3",
+   "addr": "0x14007b360"
   },
   {
    "name": "Supervisor__LoadConfig",
@@ -271,6 +347,11 @@
    "type": "uint"
   },
   {
+   "addr": "0x14007826c",
+   "name": "g_StageOpcodeJumpTable",
+   "type": "uint"
+  },
+  {
    "addr": "0x1403081c0",
    "name": "g_RemappedScancodes",
    "type": "undefined1"
@@ -284,6 +365,11 @@
    "addr": "0x14030c560",
    "name": "g_ResultCheatPassword",
    "type": "string"
+  },
+  {
+   "addr": "0x1403de540",
+   "name": "g_StageFiles",
+   "type": "pointer"
   },
   {
    "addr": "0x1404e12b8",
@@ -922,12 +1008,48 @@
    "name": "RESULT_STATE_3_TO_7__SHARED_RECORDS"
   },
   {
+   "addr": "0x140077c4f",
+   "name": "STD_OP_FOG"
+  },
+  {
+   "addr": "0x140077cc3",
+   "name": "STD_OP_FOG_INTERP"
+  },
+  {
+   "addr": "0x140077d03",
+   "name": "STD_OP_CAMERA_FACING"
+  },
+  {
+   "addr": "0x140077d39",
+   "name": "STD_OP_CAMERA_FACING_INTERP_LINEAR"
+  },
+  {
+   "addr": "0x140077d52",
+   "name": "STD_OP3_ARG_MINUS1__SAVE_LOOP_POINT"
+  },
+  {
+   "addr": "0x140077d8b",
+   "name": "STD_OP3_ARG_MINUS2__JUMP_TO_LOOP_POINT"
+  },
+  {
+   "addr": "0x140077dd0",
+   "name": "STD_OP_PAUSE"
+  },
+  {
+   "addr": "0x140077e0c",
+   "name": "STD_OP_CAMERA_POSITION_KEY"
+  },
+  {
    "addr": "0x1403ec2a8",
    "name": "g_Bullets"
   },
   {
    "addr": "0x1404e12a8",
    "name": "g_BulletCount"
+  },
+  {
+   "addr": "0x140509b60",
+   "name": "g_Stage"
   },
   {
    "addr": "0x140a6eb78",
@@ -1027,6 +1149,11 @@
    "text": "[NC first-hand] Named via the original TH06 log message it emits (1 message, exact)."
   },
   {
+   "addr": "0x140009700",
+   "kind": "plate",
+   "text": "[NC first-hand] Named via CC0 string literals it references (3 literals, unique on both sides). LEA'd by 0x140009400 and never called: the chain-callback signature. 0x140009400 (which carries the same three anm names, inlined) is called by Supervisor__AddedCallback and is AsciiManager::RegisterChain."
+  },
+  {
    "addr": "0x14000d1a0",
    "kind": "plate",
    "text": "[NC first-hand] Bomb logic for ReimuA, from g_BombData. Called through player+0x9ed0."
@@ -1085,6 +1212,11 @@
    "addr": "0x140010870",
    "kind": "plate",
    "text": "[NC first-hand] Bullet + laser per-frame tick. Walks bullets[640] (stride 0x620) running a switch on state, then lasers[64] (stride 0x298). Graze is inlined here."
+  },
+  {
+   "addr": "0x140011f80",
+   "kind": "plate",
+   "text": "[NC first-hand] Named via CC0 string literals it references (2 literals, unique on both sides). Called by GameManager__AddedCallback (0x14003a9c0) and address-taken there too, matching CC0 where GameManager::AddedCallback brings the bullet chain up."
   },
   {
    "addr": "0x1400127d0",
@@ -1712,6 +1844,21 @@
    "text": "[ECL cross-match, exact] Located by matching the ECL opcodes whose handler calls it against the CC0 th06-decomp source: opcodes 102, 118. Name follows that upstream."
   },
   {
+   "addr": "0x14002b390",
+   "kind": "plate",
+   "text": "[NC first-hand] Named via CC0 string literals it references (5 literals, unique on both sides). LEA'd by 0x14002b490 and never called: the chain-callback signature. 0x14002b490 is called by GameManager__AddedCallback and is EffectManager::RegisterChain with AddedCallback inlined."
+  },
+  {
+   "addr": "0x14002b7a0",
+   "kind": "plate",
+   "text": "[NC first-hand] Named via CC0 string literals it references (1 literal, unique on both sides). Called by 0x14002bac0, matching CC0 Ending.cpp:223 where Ending::OnUpdate loads the next ending file. The six literal call sites in Ending::AddedCallback were inlined into 0x14002c8d0."
+  },
+  {
+   "addr": "0x14002c8d0",
+   "kind": "plate",
+   "text": "[NC first-hand] Named via CC0 string literals it references (9 literals, unique on both sides). LEA'd by 0x14002b840 (Ending::RegisterChain) and never called. Ending::LoadEnding is inlined into it, which is why it also carries that function's error message."
+  },
+  {
    "addr": "0x14002dfc0",
    "kind": "plate",
    "text": "[ECL cross-match, exact] Located by matching the ECL opcodes whose handler calls it against the CC0 th06-decomp source: opcodes 52, 53, 54, 55. Name follows that upstream."
@@ -1802,9 +1949,29 @@
    "text": "Loader scan for an opcode-13 timeline checkpoint."
   },
   {
+   "addr": "0x14003cd20",
+   "kind": "plate",
+   "text": "[NC first-hand] Named via CC0 string literals it references (5 literals, unique on both sides). LEA'd by 0x140041ca0 and never called: chain-callback signature. It calls 0x140041820 (Gui__DrawStageElements below), exactly as CC0 Gui.cpp:95 does. The rival 0x14003fca0 is CALLED (by 0x14003cc50, 43 bytes) and is a helper."
+  },
+  {
+   "addr": "0x14003d500",
+   "kind": "plate",
+   "text": "[NC first-hand] Named via CC0 string literals it references (28 literals, unique on both sides). 28 supporting literals - every face/msg/front/loading asset name. Called by 0x140041ca0, the same function that registers Gui__OnDraw, matching CC0 where Gui::AddedCallback forwards to ActualAddedCallback."
+  },
+  {
    "addr": "0x14003eb80",
    "kind": "plate",
    "text": "[NC first-hand] Named via the original TH06 log message it emits (1 message, exact)."
+  },
+  {
+   "addr": "0x14003ece0",
+   "kind": "plate",
+   "text": "[NC first-hand] Named via CC0 string literals it references (3 literals, unique on both sides). Called by 0x140036260 = EnemyManager__RunEclTimeline (named in the ECL round), matching CC0 EnemyManager.cpp:297/301 g_Gui.MsgRead(...). The one-line forwarder Gui::MsgRead was inlined."
+  },
+  {
+   "addr": "0x140041820",
+   "kind": "plate",
+   "text": "[NC first-hand] Named via CC0 string literals it references (3 literals, unique on both sides). Called by Gui__OnDraw (0x14003cd20), matching CC0 Gui.cpp:95. Both ends of this edge were named independently by their own literals."
   },
   {
    "addr": "0x1400426e0",
@@ -1820,6 +1987,11 @@
    "addr": "0x1400479e0",
    "kind": "plate",
    "text": "[NC first-hand] Named via the original TH06 log message it emits (1 message, exact)."
+  },
+  {
+   "addr": "0x140058cc0",
+   "kind": "plate",
+   "text": "[NC first-hand] Named via CC0 string literals it references (4 literals, unique on both sides). LEA'd by 0x1400581b0 (MusicRoom::RegisterChain) and never called."
   },
   {
    "addr": "0x140068160",
@@ -1897,6 +2069,11 @@
    "text": "=== Player::Die (inlined here; a standalone function in CC0 TH06) ===\nSets playerState=DEAD, InitializeForPopup on invulnerabilityTimer, respawnTimer=8 (the deathbomb window; TH06 does NOT write it here), sound 4 = PICHUN, laserTimer[0..1].SetCurrent(2)."
   },
   {
+   "addr": "0x14006d310",
+   "kind": "plate",
+   "text": "[NC first-hand] Named via CC0 string literals it references (1 literal, unique on both sides). Called by 0x14006e3a0 = ResultScreen__OnUpdate (named in the menu round), matching CC0 ResultScreen.cpp:1699. Its rival for the 'replay' literal was that same OnUpdate, which already has a name."
+  },
+  {
    "addr": "0x14006e020",
    "kind": "plate",
    "text": "[NC first-hand] Runs the keyboard cheat, then an inlined 4-step XInput pad cheat over the 0x140c21e58 bitmap (hold L3+R3, Y, X, hold LB+RB). Either success sets the score.dat dirty flag at +0x9e99."
@@ -1937,6 +2114,11 @@
    "text": "18 RVA entries; index is ResultScreen +0x9e94."
   },
   {
+   "addr": "0x140073d50",
+   "kind": "plate",
+   "text": "[NC first-hand] Named via CC0 string literals it references (4 literals, unique on both sides). LEA'd by 0x14006dd20 and never called. 0x14006dd20 also takes the address of 0x14006e3a0, already named ResultScreen__OnUpdate in the menu round, so it is ResultScreen::RegisterChain."
+  },
+  {
    "addr": "0x140074470",
    "kind": "plate",
    "text": "[NC first-hand] Serializes HSCR/CLRD/CATK/PSCR and writes score.dat. The whole body is gated on the +0x9e99 dirty flag, which the unlock cheats set."
@@ -1947,9 +2129,84 @@
    "text": "[NC first-hand] Named via the original TH06 log message it emits (1 message, exact)."
   },
   {
+   "addr": "0x140077bb0",
+   "kind": "plate",
+   "text": "[NC first-hand] STD interpreter, calc chain prio 6. Instruction records are 0x14 bytes {i32 frame; i16 opcode; i16 size; i32 args[3]}; the opcode at +0x04 indexes the 6-entry jump table at 0x14007826c. Opcode set is identical to TH06 (0..5); opcode 3 gained two NC-only magic arguments, see the OP3_ labels."
+  },
+  {
+   "addr": "0x140077c4f",
+   "kind": "plate",
+   "text": "STD opcode 1. args are {colour, nearPlane, farPlane} -> Stage +0x40/+0x44/+0x48. When the fog interp duration at +0x90 is zero they are pushed straight to the renderer."
+  },
+  {
+   "addr": "0x140077cc3",
+   "kind": "plate",
+   "text": "STD opcode 4. skyFogInterpInitial <- skyFog, duration <- args[0] at +0x90, timer reset to {-999, 0} at +0x94/+0x98."
+  },
+  {
+   "addr": "0x140077d03",
+   "kind": "plate",
+   "text": "STD opcode 2. facingDirInterpInitial <- facingDirInterpFinal, then facingDirInterpFinal <- args."
+  },
+  {
+   "addr": "0x140077d39",
+   "kind": "plate",
+   "text": "STD opcode 3. args[0] is the interpolation duration - except for the two NC-only magic values, see the OP3_ labels below."
+  },
+  {
+   "addr": "0x140077d52",
+   "kind": "plate",
+   "text": "NC-only. args[0] == -1: saves the script timer pair at Stage +0xb0, the camera position at +0xc0/+0xc8 and the *next* instruction index into +0x208 / +0x214 / +0x21c / +0x210. TH06's opcode 3 has no such branch (th06:0x403810)."
+  },
+  {
+   "addr": "0x140077d8b",
+   "kind": "plate",
+   "text": "NC-only. args[0] == -2: restores those four and sets the instruction index back to the saved one - an unconditional backward jump. Because the script timer is restored too, the camera motion replays identically, so the pair forms an endless background loop. The shipped data uses it once: stage7.std instruction 32 (frame 9345, -1) and instruction 40 (frame 10945, -2)."
+  },
+  {
+   "addr": "0x140077dd0",
+   "kind": "plate",
+   "text": "STD opcode 5. Blocks until the unpause flag at Stage +0x68 is set, then clears it."
+  },
+  {
+   "addr": "0x140077e0c",
+   "kind": "plate",
+   "text": "STD opcode 0. frame == -1 seeds the interpolation; otherwise it commits the key, then scans forward for the next opcode-0 record to pick up the interpolation end frame and target."
+  },
+  {
+   "addr": "0x14007826c",
+   "kind": "plate",
+   "text": "6 RVA entries for STD opcodes 0..5, read by Stage__OnUpdate."
+  },
+  {
+   "addr": "0x140078290",
+   "kind": "plate",
+   "text": "[NC first-hand] Draw chain prio 5. Pushes fog colour and fog start/end through the two cached render-state setters, then draws object z-levels 0 and 1 via Stage__RenderObjects."
+  },
+  {
+   "addr": "0x140078390",
+   "kind": "plate",
+   "text": "[NC first-hand] Draw chain prio 6. Draws object z-levels 2 and 3, the stage-to-spellcard dim square, and the spellcard background vm."
+  },
+  {
    "addr": "0x1400785c0",
    "kind": "plate",
-   "text": "[NC first-hand] Named via the original TH06 log message it emits (1 message, exact)."
+   "text": "[NC first-hand] Named via the original TH06 log message it emits (1 message, inlined). CORRECTED 2026-09-11: this round named it Stage__LoadStageData after the error message it emits, but the STD round proved it is Stage::AddedCallback with LoadStageData inlined - it is registered as the calc chain's addedCallback and it is the only referencer of g_StageFiles, which CC0's LoadStageData never touches. See th06nc_std_spec.RENAMES."
+  },
+  {
+   "addr": "0x1400789a0",
+   "kind": "plate",
+   "text": "[NC first-hand] Builds the three ChainElem structs at 0x140509b20 / 0x140509ae0 / 0x140509aa0 (calc prio 6, draw prio 5, draw prio 6), all with arg = g_Stage. NB the two draw priorities are 5/6 in NC where TH06 uses 3/4."
+  },
+  {
+   "addr": "0x140078c30",
+   "kind": "plate",
+   "text": "[NC first-hand] Calc-chain deletedCallback, registered by Stage__RegisterChain."
+  },
+  {
+   "addr": "0x140078cb0",
+   "kind": "plate",
+   "text": "[NC first-hand] Draws every stage object whose zLevel equals the second argument; called twice by each of the two draw callbacks."
   },
   {
    "addr": "0x14007a6d0",
@@ -1957,9 +2214,24 @@
    "text": "[NC first-hand] Named via the original TH06 log message it emits (1 message, exact)."
   },
   {
+   "addr": "0x14007b360",
+   "kind": "plate",
+   "text": "[NC first-hand] Named via CC0 string literals it references (1 literal, unique on both sides). Called from five places - GameManager__AddedCallback, MainMenu__OnUpdate, Supervisor__AddedCallback, Ending__AddedCallback and WinMain - which is the call shape of the archive loader, one call per .dat."
+  },
+  {
    "addr": "0x14007b5d0",
    "kind": "plate",
    "text": "[NC first-hand] Named via the original TH06 log message it emits (1 message, exact)."
+  },
+  {
+   "addr": "0x1400969c0",
+   "kind": "plate",
+   "text": "[NC first-hand] Cached fog-colour setter: packs 0xff000000 | rgb, and only forwards to the renderer when the cached value at 0x14050a488 actually changes. Replaces TH06's SetRenderState(D3DRS_FOGCOLOR, ...)."
+  },
+  {
+   "addr": "0x140096b00",
+   "kind": "plate",
+   "text": "[NC first-hand] Cached fog start/end setter, two floats in XMM0/XMM1, cache at 0x14050a48c / 0x14050a490. Replaces TH06's SetRenderState(D3DRS_FOGSTART/FOGEND, ...)."
   },
   {
    "addr": "0x1402c0000",
@@ -3807,6 +4079,11 @@
    "text": "IMAGE_THUNK_DATA64"
   },
   {
+   "addr": "0x1403de540",
+   "kind": "plate",
+   "text": "8 x {char *anmFile; char *stdFile;}, entry 0 is the CC0 dummy pair. Indexed by the stage number at 0x1404f1e84."
+  },
+  {
    "addr": "0x1403ec2a8",
    "kind": "plate",
    "text": "Bullet[640], stride 0x620 (BulletManager + 0x08)."
@@ -3860,6 +4137,11 @@
    "addr": "0x140509694",
    "kind": "plate",
    "text": "Non-zero skips sound enqueueing; exact meaning still unconfirmed."
+  },
+  {
+   "addr": "0x140509b60",
+   "kind": "plate",
+   "text": "The Stage instance. Passed as the arg of all three chain elements."
   },
   {
    "addr": "0x140a6e9b0",

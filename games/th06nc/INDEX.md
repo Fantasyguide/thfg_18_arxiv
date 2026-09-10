@@ -12,19 +12,20 @@
 
 ## 当前覆盖
 
-- Ghidra 共 **2992** 个函数（`list_functions` 实测，2026-09-11）：
-  - `FUN_*` 未命名 **2652**
-  - 已命名 340，其中**我们这层 51 个**（其余是 Ghidra 自动识别的导入/CRT，
+- Ghidra 共 **2992** 个函数：
+  - 已命名里**我们这层 74 个**（其余是 Ghidra 自动识别的导入/CRT，
     如 `__scrt_*`、`__CxxFrameHandler4`）
-  - 判据：名字含 `__` 的共 65 个，减去 14 个 CRT 内部符号 = 51，与 `symbols.json` 的 `funcs` 一致
-- 另有 **147** 个标签（`ECL_OP_*` 120 个 opcode handler、`INLINED_*` 内联区间、`g_*` 全局）
-- `symbols.json` 合计 **794** 条：51 funcs / 18 statics / 146 labels / 579 comments
+- 另有 **148** 个标签（`ECL_OP_*` 120 个 opcode handler、`INLINED_*` 内联区间、`g_*` 全局）
+- `symbols.json` 合计 **882** 条：80 funcs / 21 statics / 157 labels / 624 comments
+  （2026-09-11 非日志字符串迁名 + STD 一轮后，见
+  [批量迁名](../../engine/_shared/th06nc-name-transfer.md) §4 与
+  [STD 运行时](../../engine/std/th06nc/01-stage-runtime-and-nc-loop.md)）
 
 > 数字取自 MCP 直查（`th06nc_live`），不是 HTML 导出——导出会滞后于 apply。
 - ECL：已确认 TH06 风格记录、敌机解释器、时间线；新增主 opcode `200/201` 与时间线 `13/14` 见 [ECL 记录](../../engine/ecl/th06nc/01-th06-baseline-and-nc-deltas.md)。
 - ANM：125 个文件均可解码；**VM 已定位**（`0x1400069b0`），指令集 0–35，新增 opcode 32/33/34/35 = 锚点设置，见 [ANM VM 与锚点 opcode](../../engine/anm/th06nc/01-vm-and-anchor-opcodes.md)。
-- STD：7 个文件已解包，结构级语义未开始。
-- SHT：尚未定位运行时入口。
+- STD：**解释器已定位**（`0x140077bb0`），opcode 0–5 与 TH06 逐项一致，但 opcode 3 多了 `-1`/`-2` 两个魔数构成背景循环，见 [STD 运行时](../../engine/std/th06nc/01-stage-runtime-and-nc-loop.md)。静态几何那半边未拆。
+- SHT：TH06 系没有 `.sht` 文件，火力表烧在 exe 里——**入口其实已经有了**：`g_CharData` `0x1403de3b0` 与四张 `CharacterPowerData` 表，见 `tooling/ghidra/th06nc_player_spec.py`。缺的只是把表 dump 成文档。
 - 存档/解锁：`score.dat` 读写已见；**全开秘籍已一手反出**——口令 `classiclager` 与一条 XInput 手柄序列，挂在 Lunatic 成绩页，见 [解锁秘籍](../../engine/menu/th06nc/02-classiclager-unlock-cheat.md)（调查过程见 [01](../../engine/menu/th06nc/01-result-screen-unlock-cheat-recon.md)）。
 
 ## 对外发布

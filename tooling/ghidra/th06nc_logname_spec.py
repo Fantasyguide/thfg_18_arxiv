@@ -28,7 +28,12 @@ LOG_NAMES = [
     (0x14003EB80, "Gui__LoadMsg", 1, "exact", ""),
     (0x1400479E0, "MainMenu__OnUpdate", 1, "exact", ""),
     (0x1400767D0, "SoundPlayer__InitSoundBuffers", 1, "exact", ""),
-    (0x1400785C0, "Stage__LoadStageData", 1, "exact", ""),
+    (0x1400785C0, "Stage__AddedCallback", 1, "inlined",
+     "CORRECTED 2026-09-11: this round named it Stage__LoadStageData after the error message "
+     "it emits, but the STD round proved it is Stage::AddedCallback with LoadStageData "
+     "inlined - it is registered as the calc chain's addedCallback and it is the only "
+     "referencer of g_StageFiles, which CC0's LoadStageData never touches. "
+     "See th06nc_std_spec.RENAMES."),
     (0x14007A6D0, "Supervisor__AddedCallback", 1, "exact", ""),
     (0x14007B5D0, "Supervisor__LoadConfig", 1, "exact", ""),
 ]
@@ -46,6 +51,14 @@ WINMAIN = (0x1400454F0, "WinMain",
 # 匹配器认为唯一、但人工判定为**假阳性**的，记在这里防止以后又被"发现"一次。
 REJECTED = {
     0x1400454F0: "SoundPlayer__InitializeDSound —— 实为 WinMain，见上",
+}
+
+# 本轮判对了地址、**判错了名字**的。与 REJECTED 不同：地址是对的，只是把内联者
+# 认成了被内联者。记下来是为了让人明白「有锚 ≠ 一定对」。
+CORRECTED = {
+    0x1400785C0: ("Stage__LoadStageData", "Stage__AddedCallback",
+                  "STD 那轮从 chain 注册与 g_StageFiles 的唯一引用者两条独立证据改判；"
+                  "TH06 原版两者是分开的两个函数（th06:0x4044c0 / th06:0x404690）。"),
 }
 
 
