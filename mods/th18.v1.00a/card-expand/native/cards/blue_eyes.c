@@ -126,5 +126,15 @@ static int on_active_tick(ce_card_t *c, uint32_t elapsed)
 static void on_stage_start(ce_card_t *c) { dismiss(c, "stage start"); }
 static void on_run_reset(ce_card_t *c)   { dismiss(c, "run reset"); }
 
+/* ★ 2026-09-10（用户指出边界情况）：**卡被局中删掉时（倒吊人）龙必须跟着走**。
+ * 倒吊人是「商店一次性购买」——ctor 在**商店里**跑，此刻 `AbilityManager::on_tick` 被
+ * `ABILITY_SHOP_PTR != 0` 冻住（`engine/card/th18/05` §「冻结靠一个指针」），所以
+ * `on_active_tick` / `on_tick_2` 都不会再跑；`on_run_reset` 也要等局末。只有 `on_delete`
+ * （虚表 +0x50，`ce_destroy_card` 直接调）能在这里收尾。
+ * 不收的后果：龙脚本 78 与两条血条脚本 86/87 都是 `stop()`（不自己 delete），
+ * 卡对象一没，`dismiss` 再也不会被调用 ⇒ 龙 + 血条**永久钉在屏幕上**（血条还停在最后一格）。
+ * 注意 `ce_state` 在 `on_delete` 里仍然活着（SDK 的 `opdelete` 是先调 on_delete 再 ce_state_free）。*/
+static void on_delete(ce_card_t *c) { dismiss(c, "card destroyed"); }
+
 CE_CARD(67, .active_recharge = BE_RECHARGE, .on_activate = on_activate, .on_active_tick = on_active_tick,
-            .on_stage_start = on_stage_start, .on_run_reset = on_run_reset);
+            .on_stage_start = on_stage_start, .on_run_reset = on_run_reset, .on_delete = on_delete);

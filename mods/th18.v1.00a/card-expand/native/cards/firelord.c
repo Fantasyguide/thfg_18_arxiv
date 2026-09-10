@@ -227,5 +227,10 @@ static int on_active_tick(ce_card_t *c, uint32_t elapsed)
 static void on_stage_start(ce_card_t *c) { dismiss(c, "stage start"); }
 static void on_run_reset(ce_card_t *c)   { dismiss(c, "run reset"); }
 
+/* ★ 2026-09-10（同 blue_eyes 的边界情况）：倒吊人是**商店里**成交的即时卡（ctor 里删卡），
+ * 那时 `AbilityManager::on_tick` 被 `ABILITY_SHOP_PTR` 冻住 ⇒ `on_active_tick` 不会再跑，
+ * 只有 `on_delete`（虚表 +0x50）能收尾。不收的话炎魔本体 + 血条 VM 会永久留在场上。*/
+static void on_delete(ce_card_t *c) { dismiss(c, "card destroyed"); }
+
 CE_CARD(72, .active_recharge = FL_RECHARGE, .on_activate = on_activate, .on_active_tick = on_active_tick,
-            .on_stage_start = on_stage_start, .on_run_reset = on_run_reset);
+            .on_stage_start = on_stage_start, .on_run_reset = on_run_reset, .on_delete = on_delete);

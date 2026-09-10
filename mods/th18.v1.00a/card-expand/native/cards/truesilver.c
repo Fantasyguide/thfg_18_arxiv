@@ -75,5 +75,16 @@ static void on_run_reset(ce_card_t *c)
     s->st.burst_left = 0;
 }
 
+/* ★ 2026-09-10：**卡被局中删掉时也要把 HUD 数字收掉**。数字 VM 是我们自己建的独立 VM
+ *（`ce_hud_digit_set` 用 `ce_anm_spawn`，不是 HUD 图标的子 VM），`ce_destroy_card` 只重画
+ * HUD 图标（`create_all_card_lists_for_hud`）带不走它 —— 不收就是屏幕角落留一串没有图标的数字。
+ * `hud_digit_set` 里那条「图标没了就删数字」的自愈检查也失效了（卡没了就没人再调它）。*/
+static void on_delete(ce_card_t *c)
+{
+    ts_card_t *s = ce_state(c, ts_card_t);
+    if (s) ce_hud_digit_clear(&s->hud);
+}
+
 CE_CARD(75, .ctor = ctor, .on_stage_start = on_stage_start, .on_bomb_spent = on_bomb_spent,
-            .on_hud_anm = on_hud_anm, .on_tick_2 = on_tick_2, .on_run_reset = on_run_reset);
+            .on_hud_anm = on_hud_anm, .on_tick_2 = on_tick_2, .on_run_reset = on_run_reset,
+            .on_delete = on_delete);

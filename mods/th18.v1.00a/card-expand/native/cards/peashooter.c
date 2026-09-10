@@ -48,6 +48,16 @@ static void on_run_reset(ce_card_t *c)
     if (s) pea_clear(&s->st);
 }
 
+/* ★ 2026-09-10：卡被局中删掉（倒吊人，商店里成交）时也要**把子机还回池子** ——
+ * `on_run_reset` 要等局末，而在商店里 `AbilityManager::on_tick` 冻着，`on_load` 也不会再来。
+ * 不收的后果不只是画面：`Player__allocate_option` 的 12 格槽**没有别的回收者**，
+ * 每漏一次就少一格（日志会是 `option allocated FAILED (pool full)`）。*/
+static void on_delete(ce_card_t *c)
+{
+    ps_card_t *s = ce_state(c, ps_card_t);
+    ce_option_drop(c, s ? &s->opt : 0);
+}
+
 static int on_load(ce_card_t *c)
 {
     on_run_reset(c);
@@ -110,4 +120,5 @@ static int on_tick_shooters(ce_card_t *c, uint32_t short_timer, uint32_t long_ti
 }
 
 CE_CARD(77, .on_power_level_change = on_power_level_change, .on_tick_shooters = on_tick_shooters,
-            .on_tick_2 = on_tick_2, .on_load = on_load, .on_run_reset = on_run_reset);
+            .on_tick_2 = on_tick_2, .on_load = on_load, .on_run_reset = on_run_reset,
+            .on_delete = on_delete);

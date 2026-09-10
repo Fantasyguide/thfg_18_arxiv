@@ -967,9 +967,104 @@ HUD 文字在非 `on_draw` 里调（已按 SDK §14 放对）。
    ⚠️ 映射本身是**自定**（两边的数字都一手，但跨作对应关系无原版依据）—— `season_core.h` 已标。
    单测 105 → **120 passed**；日志加 `T … native …` 两个字段，实跑可逐个敌人对账。
 
+**2026-09-10 第三十六轮（用户指出边界情况：长持续效果撞上倒吊人删卡 —— 商店里那一下）**：
+
+用户问：「我一个持续时间很长的效果，可能在商店还触发着，此时碰到倒吊人怎么办」。查下来是**真 bug，且不止一张卡**。
+
+1. **为什么这一下特别危险**：倒吊人（74）是**商店一次性购买**的即时卡 —— 干活的是它的 `ctor`
+   （`hanged.c`：随机挑一张别的卡 + `ce_destroy_card` + 给钱），也就是说**删卡发生在商店里**。
+   而商店期间 `AbilityManager__on_tick__stub` `0x408a90` 被 `ABILITY_SHOP_PTR != 0` **冻住**
+   （一手见 `engine/card/th18/05-shop-and-money.md` §「冻结靠一个指针」）⇒ 被删那张卡的
+   `on_tick_2` / `on_active_tick` 当场停摆、`on_load` 也不会再来、`on_run_reset` 要等局末。
+   **唯一还能跑的收尾点 = `on_delete`（虚表 `+0x50`）**：`ce_destroy_card` 直接调
+   `[vt+0x50](victim, 1)` → SDK 的 `opdelete` 桩 → `on_delete` → 才 `ce_state_free`。
+2. **审计结果**：凡是「自己建 VM / 占子机槽 / 建 HUD 数字」的卡，只要**没写 `on_delete`** 就会漏。
+   逐卡扫 `ce_anm_spawn*` / `ce_option_alloc|claim` / `ce_hud_digit_set` 后命中 7 张：
+
+   | 卡 | 漏什么 | 处置 |
+   | --- | --- | --- |
+   | 67 青眼白龙 | 龙脚本 78 + 两条血条 86/87 都是 `stop()`（不自己 delete）⇒ 龙和血条永久钉在屏幕上 | 新增 `on_delete = dismiss(c, "card destroyed")` |
+   | 72 炎魔之王 | 炎魔本体 + 血条 VM（同款 `stop()` 脚本）| 同上 |
+   | 71 破损核心 | 子机 **options 槽**（`Player__allocate_option` 的 12 格**没有别的回收者** ⇒ 每漏一次少一格）| `on_delete` → `ce_option_drop` |
+   | 77 豌豆射手 | 同上 | 同上 |
+   | 75 真银圣剑 | HUD 耐久数字 VM（`ce_hud_digit_set` 建的是**独立 VM**，删卡的 `create_all_card_lists_for_hud` 带不走它）| `on_delete` → `ce_hud_digit_clear` |
+   | 78 衔尾蛇 | 同上（层数数字）| 同上 |
+   | 118 绀珠传 | 面板 6 条 VM + 五行数字（`on_delete` 里原来只收擦弹圈）| `on_delete` 补 `panel_hide(s)` |
+3. **没动的**：64 反转牌 / 66 神之宣告只 spawn 一个**瞬时闪光** VM（脚本 68/77 尾部都是 `+10: delete()`，自己收），
+   不需要 `on_delete`；写全局旋钮的卡（60 黑桃 Q 的一次性道具半径、59/61/76 的伤害倍率等）要么每帧重写、
+   要么走 SDK 的按卡聚合（删卡即退出）✓。
+4. **实跑验收（下一跑顺手做）**：商店买倒吊人，让它删掉正在生效的卡 ——
+   - 67/72：日志应出现 `blue_eyes: dismissed (card destroyed)` / `firelord: dismissed (card destroyed)`，屏幕上**不留**龙 / 炎魔 / 血条；
+   - 71/77：删卡后子机消失，且**再买同卡还能正常出子机**（不在 12 格池里留尸）；
+   - 75/78：HUD 小卡上的数字跟着图标一起没；
+   - 118：波次结算面板（及其五行数字）当场收掉。
+
 **没做（下一步）**：绿分数道具（TH18 无此概念）、土用「消弹圈向后移动」、子机按档位换弹型；
 **动物灵卡（id 120）** 只有设计（击杀点撒灵 / 收集槽 / 咆哮抬伤害 / `on_death_before_deathbomb` +
 `cancel_impending_death` 实现「中弹只退咆哮」），待实现。
+
+## 1v. 鬼形兽（id 115，2026-09-10，Stage 2 待实跑）—— 动物灵 / 咆哮
+
+TH17 动物灵 / 咆哮的卡侧复刻。一手 [`engine/animal/th17/01`](../../../engine/animal/th17/01-animal-spirits.md)
+（本次会话补反编译了 `0x410af0` token tick / `0x40f980` 收集 / `0x410640` 鱼灵换道具 / `0x4491b0` 真死）；
+TH18 无残骸审计 [`engine/animal/th18/01`](../../../engine/animal/th18/01-animal-residuals.md)。
+实现 `native/cards/animal.c` + `animal_core.c`（纯逻辑，主机单测 **116 断言**）；
+资源 `assets/ability/make_animal_art.py`（零售 `beast1.png` 13 单元 + `beastf.png` 槽框 + 脚本 137–145）；
+审计 AUDIT §AL。**零新断点 / binhack / codecave**，只新增 `th18:0x45d590`。
+
+**同时登记的四张空壳卡**（id 111–114，只有 JSON、无行为）：风神录 / 地灵殿 / 星莲船 / 神灵庙
+—— 见 [`CARDS.md`](CARDS.md) 的新表；下一步按 [`IDEAS.md`](IDEAS.md) 的批次表逐张填。
+
+**叠 `_255` + DLL 启动**（`_test` 的起手卡组 = **`[115, 21, 22]`** —— 引擎编成上限 3，
+所以 115 必须排第一；21/22 = 道具回收范围 / 回收线两张原版被动卡），日志应出现：
+
+```
+sdk: 115 bound (.active_recharge = 1, .on_activate = …, .on_tick_2 = …, .on_draw = …, .on_enemy_drop_pre = …, .on_death_before_deathbomb = …, .on_death_frame2 = …)
+wba_wc: hyper ready (type 1 rush, 840 frames, queue 1 1 1 2 3)
+wba_wc: hyper #1 by C key (type 1)
+wba_wc: hyper extended (820/840 frames left)
+wba_wc: fish 4 -> items immediately (hyper active)
+wba_wc: hyper save #1 (deathbomb cancelled)
+wba_wc: hyper end #1 (normal; 2 fish -> items, 2 animals released)
+wba_wc: miss -> 2 non-cycling animals (type 1)
+```
+
+体感：杀敌掉出会**弹跳**的动物灵 / 鱼灵（贴图 = TH17 零售切图）→ 飞过去收 → 左下角 5 格灵槽逐格亮 →
+满 5 按 C → 清弹 + 无敌；满槽时中弹**不扣命**；满槽不按 C 等超时 → 自机附近放出 2 只变色动物灵。
+
+**★ 调试键（2026-09-10，用户要求）**：本卡在卡组里时，**拍空格**从画面中央 (ECL x=0, y=224)
+召唤一只随机**动物灵**（type 1..3，变色版）。日志 `wba_wc: DEBUG spawn type N at (0, 224) by SPACE`。
+`ce_key_down` 走 `GetKeyboardState`（user32），空格不在游戏配置里、**不进 replay 输入流**。
+发布前把 `animal.c` 顶部的 `ANIMAL_DEBUG_KEY` 改成 0。
+
+**要调的地方（实跑第一遍）**：
+
+1. 掉落节奏已按 TH17 `BossItem` 对齐（杂兵不掉；boss/中 boss 死亡 → 4/5；boss 相位边界 → 动物 87% / 点鱼灵 13%）；
+   实跑看一关够不够攒满 5 格，不够再调比例；
+2. 灵槽几何 `ANIMAL_HUD_X0 / Y / DX`（300 / 924 / 36，表面 px）—— TH17 是 `pos(-360+36i, 872)`，
+   坐标系不同，待实跑量；
+3. 灵速（`token_spawn` 的 `spd = 1.0` + 60 px 减速 ×0.5 + 速度下限 0.5）—— 用户要的「DVD 约 45°」；
+4. 延长表 `animal_next_extend`（用户口径 90/60/42/…）与 TH17 代码的 180×2/3（120/80/53）二选一；
+5. 霊撃伤害源 40/帧、半径 `(1−f⁴)×200`。
+
+**咆哮期间的自机特效（2026-09-10 Stage 3 已接）**：
+
+- **类型光环**：零售 `beastAURA.png` 的 24 个 64×64 单元 + 脚本 146–148（照 TH17 script41–43 生成），
+  layer 13 跟随自机；红狼 / 绿水獭 / 紫鹫。日志无关键字，看画面；
+- **水獭 3 消弹体**：零售 `beastot.png` sprite70（80×64 → 128×64 补边）+ 手写脚本 149，
+  `hyper_type==2` 的霊撃期间绕自机 56 px 转、每个半径 24 px 消弹；
+- **自机弹染色**：咆哮期间按类型染红 / 绿 / 紫（`on_bullet_created` 写弹 VM 的 color）；
+- **射击强化（标准版）**：狼 / 鹫暴走把自机弹伤害抬到 ×1.5（`ce_set_bullet_damage_permille`）。
+
+**Stage 4（未做，别当已复刻）**：
+
+- 射击强化逐发复刻：TH17 是换 `pl0X.sht` 的 shot 组 +10（狼）/ +15（鹫），TH18 没有那两组，
+  要改 shot 模式 / 追加 shooterset；
+- 稀有动物灵（8..14）与「+480 凭依加成」（用户 2026-09-10 定案不做）；
+- 就绪光效（`beastf.png` 0x1e/0x1f，围着原版 15 子 VM 槽画）—— 霊撃三色光圈已接（脚本 150–153）；
+- 灵槽的 TH17 原版 15 个子 VM（scripts 14–28）逐脚本移植 —— 现在是「槽框 + 图标」两层简化版；
+- **HUD 布局分配器**（跨卡）：现在季节 119 / 鬼形兽 115 的左下角 UI 各写各的坐标、允许重叠；
+  最终要「竖直堆叠 / 部分改右下角」，方案见 [`SDK.md`](SDK.md) §17。
 
 ## 1t-补. 绀珠传（118）2026-09-09 实跑修的三处
 

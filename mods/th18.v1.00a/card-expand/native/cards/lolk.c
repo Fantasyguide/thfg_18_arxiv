@@ -769,6 +769,11 @@ static void on_delete(ce_card_t *c)
     lolk_card_t *s = ce_state(c, lolk_card_t);
     if (!s) return;
     if (s->ring_id) { ce_anm_delete(s->ring_id); s->ring_id = 0; }
+    /* ★ 2026-09-10 补：**面板 6 条 VM + 五行数字也要收**。原来只收擦弹圈 ⇒
+     * 「波次结算后面板还挂着的那段时间里被倒吊人删卡」（倒吊人是**商店里成交**的即时卡，
+     * ctor 里就删）会留下一整块停住的面板 + 五行旧数字，直到下一次换关清 anm。
+     * `on_stage_start` / `on_run_reset` 都调了 `panel_hide`，只有这里漏了。*/
+    panel_hide(s);
 }
 
 static void on_run_reset(ce_card_t *c)

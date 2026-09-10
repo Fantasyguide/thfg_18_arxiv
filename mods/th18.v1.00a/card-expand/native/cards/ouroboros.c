@@ -75,6 +75,16 @@ static void on_run_reset(ce_card_t *c)
     ob_reset(&s->st);
 }
 
+/* ★ 2026-09-10：同真银圣剑 —— 卡被局中删掉（倒吊人，商店里成交）时把 HUD 数字收掉，
+ * 否则那串层数会留在屏幕上（数字是独立 VM，HUD 图标重建带不走它）。
+ * 倍率不用管：`opdelete` 会 `ce_dmg_set(id, 0)` 把它退出聚合。*/
+static void on_delete(ce_card_t *c)
+{
+    ob_card_t *s = ce_state(c, ob_card_t);
+    if (s) ce_hud_digit_clear(&s->hud);
+}
+
 CE_CARD(78, .ctor = ctor, .on_death_after_deathbomb = on_death_after_deathbomb,
             .on_hud_anm = on_hud_anm, .on_tick_2 = on_tick_2, .on_run_reset = on_run_reset,
+            .on_delete = on_delete,
             .bullet_damage_permille = OB_BASE_PERMILLE);   /* 起手 ×1，每叠一层报一次新值 */
