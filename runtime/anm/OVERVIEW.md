@@ -46,6 +46,29 @@ entry 链表 / sprite 表 / script 表 / 指令流，只做结构解析，不含
   用 `entries.flatMap(e => e.scripts)`/`entries.flatMap(e => e.sprites)` 的**数组下标**，
   不要用 `id`。详见 `anm-v8.js` 顶部注释。
 
+## 贴图解码（THTX → RGBA8）：已实现
+
+`src/format/thtx.js`（B1）。`parseAnm` 只把 THTX 块的绝对偏移放进 `entry.thtxOffset`，
+像素解码归这里；实现了 `thtx.format` 1 / 3 / 5 / 7 四个值，其余**显式抛**。
+
+**真实数据全量跑通**（测试覆盖不到，记在这里）：54 个 th16 `.anm` 的 **417 个带贴图 entry
+全部解码成功、89.7 M 像素、零失败**；`thtx.format` 实测分布 `1`×190 · `5`×136 · `3`×52 · `7`×39。
+
+**两条与 thanm 的有意分歧**（`src/format/thtx.js` 文件头有完整论证）：
+
+1. **RGB565 不抄 thanm**。thanm `image.c` 蓝通道三项都写成 `<< 16`、掩码却在 bit18/17/16，
+   前两项恒为 0 ⇒ **蓝通道永远到不了 255**（纯白解出 `(255,255,249)`）；它整体还用「复制最低位」
+   而非「高位补低位」，**65536 个取值里 65280 个（99.6%）与 GPU 不同**。真机把 RGB565 交给
+   D3D9 纹理、**扩位是 GPU 做的**，所以本实现走标准高位复制。`{ rgb565: 'thanm' }` 可切回去对拍。
+2. **format 7 默认按 `D3DFMT_A8`**（`rgb = 0`、`a = 源字节`）而不是 thanm 的 `GRAY8`（亮度+不透明）。
+   `01-format.md` §7 一手证明 D3DFORMAT 值是 28 = A8。⚠️ 这条分歧在 TH16 **不影响任何真实画面**——
+   39 个 format-7 entry 全部是同一个 `face/dummy.png` 占位图。`{ a8: 'luminance' }` 可切。
+
+**一条有意偏离真机**（A 保真度下的取舍）：游戏加载时会把源像素**转成 `entry.format` 的目标格式**
+（`th16:0x46cc45`），如 A8R8G8B8 → A4R4G4B4 会掉到 4 位/通道。本实现**只用源精度、不做这步降位**，
+因此比真机**更准**。真实数据里两个 format 不同的只有 1 个 entry（`enemy.anm` 的
+`enemy/enemy_aura.png`：源 1、目标 6）。
+
 ## VM 骨架：已实现
 
 `src/vm/core.js` 实现取指 / 时间推进 / 跳转 / interrupt / 生死，依据

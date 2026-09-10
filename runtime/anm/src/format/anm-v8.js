@@ -88,9 +88,10 @@ function parseEntry(view, bytes, base) {
   const sprites = parseSprites(view, base, nSprites);
   const scripts = parseScripts(view, base, nSprites, nScripts, view.byteLength);
 
-  // THTX 块本身（贴图像素）不在 parseAnm 的输出契约里（interfaces 只要 name/width/
-  // height/format/sprites/scripts），这里只按 01-format.md §6 校验偏移在场时形状合法，
-  // 不吐出像素数据。hasData === 0 时 thtxOffset 恒为 0，不校验。
+  // THTX 块的**像素**不在 parseAnm 的输出契约里——解码是 thtx.js 的事（format 位布局、
+  // 扩位规则那一堆），格式层只负责把块的位置交出来。这里按 01-format.md §6 校验 magic，
+  // 并把绝对偏移放进 `thtxOffset`（无贴图时为 null），调用方拿它喂 decodeThtx()。
+  // hasData === 0 时 thtxOffset 恒为 0，不校验。
   if (hasData !== 0) {
     const magic = readFixedString(bytes, base + thtxOffset, 4);
     if (magic !== 'THTX') {
@@ -102,7 +103,19 @@ function parseEntry(view, bytes, base) {
 
   return {
     nextOffset,
-    value: { name, width, height, format, sprites, scripts },
+    value: {
+      name,
+      width,
+      height,
+      format, // ★ 这是 **entry.format**（目标贴图格式）。解像素要用 **THTX 自己的 format**
+      // （01-format.md §6：行距按 `th16:0x46cccb` 用 THTX 的，目标面按 `th16:0x46cc45` 用 entry 的）。
+      // 两者在 54 个真实 th16 文件里有 1 处不同（`enemy.anm` 的 `enemy/enemy_aura.png`：
+      // THTX 源 format 1、entry 目标 format 6）——用错这一个 entry 会整块错位。
+      // decodeThtx() 读的是 THTX 里那个，不看这里。
+      sprites,
+      scripts,
+      thtxOffset: hasData !== 0 ? base + thtxOffset : null,
+    },
   };
 }
 
