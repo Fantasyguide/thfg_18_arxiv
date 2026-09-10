@@ -69,6 +69,22 @@ entry 链表 / sprite 表 / script 表 / 指令流，只做结构解析，不含
 因此比真机**更准**。真实数据里两个 format 不同的只有 1 个 entry（`enemy.anm` 的
 `enemy/enemy_aura.png`：源 1、目标 6）。
 
+## 层 B · WebGL 后端：已实现（B2）
+
+`src/render/render-state.js`（纯映射，不碰 gl）+ `src/render/webgl.js`（喂给 GL）+
+[`src/render/D3D9-MAPPING.md`](src/render/D3D9-MAPPING.md)（每条状态指回 09 §4 的哪一行）。
+
+**能在 Node 里测**：状态映射是纯函数；GL 那层的 `gl` 是**参数**，测试传一个记录调用的 mock，
+逐条断言「设了哪些状态、设了几次、顶点怎么摆」——比真开一个上下文更精确。
+
+照抄的保真细节：**blend mode 3 是唯一关 alpha test 的**；跳表越界时**不设**（保持上一次）
+而不是回落 mode 0；**U 寻址在 `flags_hi`、V 在 `flags_lo`** 两个不同字段；
+真机那份「与上次不同才重设」的状态缓存（`mgr+0x184fbb4` 等）也照抄了。
+
+显式抛而不猜的三处：寻址位值 3（09 §4.2 只记了 {0,1,2}，真实数据从未写出 3）、
+`MIN`/`MAX` 缺 `EXT_blend_minmax`（静默退回 `FUNC_ADD` 会把「只取亮部」画成「加色」）、
+model 空间没给矩阵（`th16:0x467d00` 的 WORLD 矩阵还没逆）。
+
 ## 层 B · 几何生成：已实现（B3）
 
 `src/render/geometry.js` —— 「vm 状态 → 顶点数组」的**纯计算**，不碰 WebGL，纯 Node 可测。
