@@ -96,12 +96,16 @@ class PublishTh06ncReDataTests(unittest.TestCase):
     def test_th06nc_symbols_carry_no_unlicensed_upstream_names(self):
         """th06nc 的符号层必须**零**上游名。
 
-        renkolab 是私有仓库，但 th06nc-re-data 是公开发布的 —— 私有的是仓库，
-        不是它的产物。上游名（th-re-data / th06-re，均无 LICENSE）一旦进了
-        local/ 的 Ghidra 库，就会顺着 symbols.py export 流进 symbols.json，
-        再流进公开仓库。而且污染之后就分不开"哪些是我们读出来的、哪些是抄的"。
+        ⚠️ 这**不是**合规要求。用一个短名字（EnemyManager__SpawnEnemy 之类）
+        不构成侵权，且 community-sources.md 早已记下「用户确认可研究/移植，
+        发布时注明出处」。受保护的是**整份数据集**那种汇编形态，而迁名到 NC
+        根本不搬 TH06 的地址。
 
-        策略记在 engine/_shared/community-sources.md；这条测试是它的执行者。
+        这条守的是**工程卫生**：保持「哪些是我们在 NC 字节上读出来的、
+        哪些是从别处借的」可分。混进去之后事后再拆成本极高。
+        另外那批名字若靠纯结构迁移而来，按 METHOD.md 只能算线索。
+
+        策略见 engine/_shared/community-sources.md 的同名小节。
         """
         import json
         path = REPO / "games" / "th06nc" / "symbols.json"

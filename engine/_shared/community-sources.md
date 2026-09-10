@@ -31,27 +31,35 @@ blob,不解析内部)。**不存在 `thsht` 这种官方工具**。网上"thsht 
 - **单向**:符号的唯一源是 `games/th06nc/symbols.json`,公开仓库只接收。别反过来编辑它。
 - **发布安全**:`tooling/ghidra/tests/test_publish_th06nc_re_data.py` 守三条——
   不含游戏字节 / 不转发上游名字(mapfile 只准出现 32-35)/ 不漏本机路径与非 ASCII。
-### ⚠️ 仓库是 private，但 TH06NC 的库仍然不导上游名（2026-09-11 定）
+### TH06NC 的库不导上游名（2026-09-11 定）—— 但理由不是「侵权」
 
-`renkolab` 目前是私有仓库，所以「不入库」这条的**法律压力**比公开时小。
-**但 TH06NC 的 Ghidra 库仍然不导入无 LICENSE 的上游名**，理由与许可证无关：
+> ⚠️ **本节曾把理由写成「被许可证挡死」，那是错的**，且与本文第 108 行早已记下的
+> 「用户确认可研究/移植（社区公开、作者允许），正式发布前建议注明出处」直接冲突。
+> 更正如下。
 
-1. **`th06nc-re-data` 是要公开发布的。** 一旦上游名进了 `local/` 的库，
-   它就会随 `symbols.py export` 流进 `games/th06nc/symbols.json`，
-   再流进那个公开仓库。私有的是 `renkolab`，不是它的产物。
-2. **污染了就分不开了。** 现在 th06nc 的 `symbols.json` 里带上游标记的条目是
-   **0 条**（可自查）；这个"干净"的状态一旦破坏，事后要区分「哪些是我们读出来的、
-   哪些是抄的」成本极高。
-3. **认识论上也不该导**：那批名字是**纯结构迁移**的产物，按
-   [`../../METHOD.md`](../../METHOD.md) 的「迁名的两类」只能当线索。
+**先把两件事分开：**
 
-**可以做的**：把 TH06 的库当**参考**——开着它对照读、拿它的名字帮自己认函数，
-但结论要在 NC 自己的字节上重新取证，落笔用我们自己的命名。
-这正是本轮 `EnemyManager__OnUpdate`、`GameManager__AddedCallback` 的做法。
+| | 是什么 | 风险 |
+| --- | --- | --- |
+| **用一个名字** | `EnemyManager__SpawnEnemy` 这种短的事实性标签 | 基本没有。它不构成可保护的表达 |
+| **转发整份数据集** | th06-re 的 1267 条 `address ↔ name` 映射 | 这才是「不入库、不转发」针对的东西（汇编/数据库形态） |
 
-> **自查**：`python3 -c "import json;d=json.load(open('games/th06nc/symbols.json'));
-> print(sum(1 for k in d for r in d[k] if isinstance(r,dict) and
-> str(r.get('comment','')).startswith(('[th-re-data]','[th06-re]'))))"` 应当是 0。
+**而迁名到 TH06NC 根本不涉及第二件事**：TH06 的地址一个都不会搬过去，
+共享的只有词汇，地址与验证都是我们自己在 NC 上重做的。
+
+所以**不导入 TH06NC 的库，是一个政策选择，不是法律必然**。成立的理由有两条：
+
+1. **认识论**（独立成立，与许可证无关）：那批名字若靠**纯结构迁移**搬过来，
+   按 [`../../METHOD.md`](../../METHOD.md) 的「迁名的两类」只能当线索——
+   实测 ground truth 命中 0/25，见
+   [`th06nc-name-transfer.md`](th06nc-name-transfer.md) §1。
+2. **保持来源可分**：现在 th06nc 的 `symbols.json` 里带上游标记的条目是 **0 条**，
+   混进去之后要区分「哪些是我们读出来的、哪些是借的」成本极高。
+   这是工程卫生，不是合规要求。
+
+**可以做、也应该做的**：把 TH06 的库当**参考**——开着对照读、拿它的名字帮自己认函数，
+结论在 NC 自己的字节上重新取证。本轮 `EnemyManager__OnUpdate`、
+`GameManager__AddedCallback` 就是这么来的。**若将来公开发布，按第 108 行注明出处。**
 
 > ⚠️ **这条约束直接决定了 TH06NC 的迁名策略**：TH06 工程里那 1267 个已命名函数
 > 绝大多数来自无 LICENSE 的 `th06-re`，**不能搬进 `games/th06nc/symbols.json`**。
