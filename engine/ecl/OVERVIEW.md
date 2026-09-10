@@ -9,6 +9,14 @@ opcode 分两层：**系统 opcode**（0–0x5d，控制流/变量/栈，VM 自�
 文件格式（`.ecl` 二进制、thecl 的降级规则、eclmap 命名层）见
 [`format-reference.md`](format-reference.md)——那部分跨版本，不放在版本目录下。
 
+## TH06NC 快照
+
+TH06NC 不是这里描述的现代 300+ opcode 架构；它沿用 TH06 风格的敌机解释器和独立 timeline。
+**指令集与 TH06 逐项对完**：1–135 的「已实现/未实现」集合两边完全相同（连 127 `DEBUGWATCH`
+两边都没实现），NC 真正新增的只有 `th06nc:0x140026a41` 一条（opcode 200，极坐标 shootOffset）；
+opcode 201 借 67–75 的壳但选中的 aim_mode 无分支实现。
+证据见 [engine/ecl/th06nc](th06nc/02-th06-baseline-comparison.md)。
+
 ## 断言 × 版本矩阵
 
 | 断言 | th16 | th18 | 证据 |

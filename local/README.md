@@ -57,6 +57,11 @@ local/
 | --- | --- | --- |
 | TH16 | `local/th16.v1.00a/th16.exe` | `th16` |
 | TH18 | `local/th18.v1.00a/th18.exe` | `th18` |
+| TH06 | `local/th06.v1.02h/th06.exe` | `th06.v1.02h` |
+| TH06NC | `local/th06nc/th06nc.exe` | `th06nc` |
+
+⚠️ 版本号别只写 `th06`——`local/th06*` 同时命中 `th06nc` 与 `th06.v1.02h`，
+`_driver.resolve` 遇到这种歧义会直接报错，要求写全。
 
 MCP 支持多库并存，两个 `database` 可以**并排对照**同名函数（ExpHP 命名一致），
 这是把 TH16 已反清楚的逻辑映射到 TH18 的主要手法——

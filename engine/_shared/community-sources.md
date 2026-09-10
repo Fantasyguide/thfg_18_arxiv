@@ -20,6 +20,33 @@ ECL 指令名：`local/vendor/eclmap`（Priw8/eclmap，`eclmap/th18.eclm`）。*
 ✅ **关键事实:thtk 和 ExpHp 的 truth 都不解析 SHT**(thtk 只能用 thdat 从 .dat 里解出 `.sht`
 blob,不解析内部)。**不存在 `thsht` 这种官方工具**。网上"thsht 存符卡名"是错的(符卡名属 MSG)。
 
+## ↗ 我们自己发布的:`Renko6626/th06nc-re-data`
+
+<https://github.com/Renko6626/th06nc-re-data>(**CC0**)—— TH06NC 的符号数据与 mapfile 叠加层,
+本仓 `games/th06nc/symbols.json` 的**单向下游**。TH06NC 此前社区零覆盖
+(truth 的 `v0.anmm` 只到 ANM opcode 31、`th-re-data` 无 NC 条目、`th06-re` 是原版),这是第一份。
+
+- **生成**:`python3 tooling/publish_th06nc_re_data.py local/vendor/th06nc-re-data`
+  (幂等;`--check` 只比对不写,可当 CI)。
+- **单向**:符号的唯一源是 `games/th06nc/symbols.json`,公开仓库只接收。别反过来编辑它。
+- **发布安全**:`tooling/ghidra/tests/test_publish_th06nc_re_data.py` 守三条——
+  不含游戏字节 / 不转发上游名字(mapfile 只准出现 32-35)/ 不漏本机路径与非 ASCII。
+- **有 LICENSE**:选 CC0 就是因为 ExpHP 那边没有 LICENSE 给我们造成过麻烦,不想重复。
+
+## ★★ TH06 专用金矿:`th06-re` 的 Ghidra XML
+
+✅ **`local/vendor/th06-re-xml/th06_102h.exe.xml`**(15 MB)—— th06-re 社区工程的 Ghidra XML 导出:
+**1520 个函数名**、718 条签名注释、1230 条注释、2310 个结构体定义。TH06 这作它比 ExpHP
+(`th-re-data` 只给 274 个函数)丰富得多,是这作**第一个该去翻的**。
+
+- **不能直接 import 成程序**:XML 引用外部 `th06_102h.exe.bytes`,我们没有。它只能当**符号/注释来源**,
+  套在用真 exe 建好的库上——这正是 [`tooling/ghidra/import_th06_re_xml.py`](../../tooling/ghidra/import_th06_re_xml.py) 干的事。
+- **上游无 LICENSE**,和 `th-re-data` 一样**不入库、不转发**;由脚本重放,
+  `symbols.py` 的归属判定已把它并进基线。
+- **有对齐闸门**:导入前先数 XML 函数入口在库里的命中率,低于 70% 直接中止。
+  我们手上这份 exe 命中 **91.6%**,哈希与 th06-decomp README 记的不同但代码布局一致。
+- 配套还有 `local/vendor/th06-re/src/th06_102h.exe/`(逐函数 C 源码)与 `local/vendor/th06-decomp/`。
+
 ## ★★ 逆向符号金矿:ExpHP `th-re-data`(逆向时第一个去翻的)
 
 ✅ **`exphp-share/th-re-data`** —— ExpHP 从 binja 导出的**逐游戏符号数据库**,是**当前最硬的 TH16(及他作)

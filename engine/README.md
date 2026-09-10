@@ -21,11 +21,11 @@ engine/<子系统>/
 
 | 子系统 | 已覆盖版本 | 状态 |
 | --- | --- | --- |
-| [`player/`](player/OVERVIEW.md) | th16、th18 | th16 三大子系统已反；th18 已定位自机位置与状态计时器 |
+| [`player/`](player/OVERVIEW.md) | th06nc、th16、th18 | th06nc 主循环与碰撞/擦弹已定位；th16 三大子系统已反 |
 | [`bullet/`](bullet/OVERVIEW.md) | th16 | 核心引擎 + 运动 VM + 激光 |
-| [`ecl/`](ecl/OVERVIEW.md) | th16 | VM 核心已基本反完 |
+| [`ecl/`](ecl/OVERVIEW.md) | th06nc、th16、th18 | th06nc 已完成 TH06 基线与新增 opcode 勘探；th16 VM 核心已基本反完 |
 | [`sht/`](sht/OVERVIEW.md) | th16 | 运行时语义已攻下（社区此前无公开破解） |
 | [`msg/`](msg/OVERVIEW.md) | th16 | 两套指令集全反，已告一段落 |
 | [`menu/`](menu/OVERVIEW.md) | th16 | 状态机 + 选择链 |
 | [`card/`](card/OVERVIEW.md) | th18 | 已反完：对象模型 / 生命周期 / 21 槽钩子 / C 键释放 / 商店与金钱 |
-| [`anm/`](anm/OVERVIEW.md) | th16 | ⚠️ 未系统开工，只有旁敲的锚点 |
+| [`anm/`](anm/OVERVIEW.md) | th06nc、th16 | th06nc VM 已定位、新增 opcode 32–35 已反完；th16 未系统开工 |

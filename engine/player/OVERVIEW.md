@@ -11,6 +11,17 @@
 季节释放（C 键）消耗季节槽——它们走同一个 `Bomb` 对象但计费不同。这个区分在别的作品里
 未必成立（TH18 用卡牌取代了季节系统），是矩阵里最需要逐版本重验的一行。
 
+## TH06NC 入口
+
+TH06NC 的玩家主循环 `th06nc:0x140068820`（chain 回调，无直接 xref）、
+弹幕 tick `th06nc:0x140010870`、被弹判定 `th06nc:0x14006a980`、
+激光判定 `th06nc:0x14006aba0` 已定位。
+
+⚠️ **跨版本注意**：TH06NC 的被弹判定是**圆形**（半径 1.25，字段 `player+0x774c`），
+而 TH06 是轴对齐盒（`hitboxTopLeft`/`hitboxBottomRight`/`hitboxSize` 三个字段）。
+半径与半宽同为 1.25，所以圆内接于方，判定面积小约 21%。定位手法与本页其余版本不同，
+见 [th06nc/01-main-loop-and-collision.md](th06nc/01-main-loop-and-collision.md)。
+
 ## 断言 × 版本矩阵
 
 | 断言 | th16 | th18 | 证据 |
