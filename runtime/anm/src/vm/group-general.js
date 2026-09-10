@@ -154,6 +154,7 @@ export function ensureGeneralState(vm) {
     color2: 0x00000000, // +0x524（color_2），★ 默认 0，不是 0xffffffff（见上）
     scale2: { x: 1, y: 1 }, // +0x58，wipe 覆盖成 (1,1)（op 434 的目标）
     uvScale: { x: 1, y: 1 }, // +0x68，wipe 覆盖成 (1,1)
+    uvScrollPos: { x: 0, y: 0 }, // +0x78（`uv_scroll_pos`）——02 §2.1 每帧由 uvScrollVel 积分
     uvScrollVel: { x: 0, y: 0 }, // +0x3c8
     angularVelocity: { x: 0, y: 0, z: 0 }, // +0x44（415 写）
     scaleGrowth: { x: 0, y: 0 }, // +0x60（416 写）
@@ -471,6 +472,51 @@ const INTERP_GROUPS = [
  * 需要在每帧的帧尾显式调用一次。见本文件顶部「frameTail 接线需求」。
  * @param {ReturnType<import('./core.js').createVm>} vm
  */
+/**
+ * `apply_velocities` —— 02-vm-core.md §2.1（`th16:0x4630f0`）。帧尾第一件事，
+ * **只有 `flags_hi & 0x1000000` 时才跑**（`th16:0x462a12` 的判据；置位者是
+ * `415 angleVel` / `416 scaleGrowth` / `425 uVel` / `426 vVel`）。
+ *
+ * 四条逐条照抄，**包括 scale.y 写在 scale.x 之前这个次序**（`+0x54` 先于 `+0x50`）——
+ * 两者互不依赖所以不可观察，但没有理由重排。三个旋转分量各自 wrap 进 `[-π, π]`
+ * （34 步上限，与 `129 mathReduceAngle` 同一套，见 02 §2.1 的更正块）。
+ *
+ * ★ 这条在 2026-09-10 之前**整个没实现**：`uvScrollVel` 有、`angularVelocity` 有、
+ * `scaleGrowth` 有，但「每帧积分」这步没人做，`uv_scroll_pos`（`+0x78`）这个字段
+ * 甚至不存在。「opcode 135/135 全实现」盖不住它——它是帧尾行为，不是 opcode。
+ * @param {ReturnType<import('./core.js').createVm>} vm
+ */
+export function applyVelocities(vm) {
+  if ((vm.flagsHi & 0x1000000) === 0) return false;
+  const general = ensureGeneralState(vm);
+  const speed = vm._gameSpeed;
+  const av = general.angularVelocity;
+  vm.rotation.x = wrapAngle32(Math.fround(vm.rotation.x + Math.fround(av.x * speed)));
+  vm.rotation.y = wrapAngle32(Math.fround(vm.rotation.y + Math.fround(av.y * speed)));
+  vm.rotation.z = wrapAngle32(Math.fround(vm.rotation.z + Math.fround(av.z * speed)));
+  vm.scale.y = Math.fround(vm.scale.y + Math.fround(general.scaleGrowth.y * speed)); // +0x54 先
+  vm.scale.x = Math.fround(vm.scale.x + Math.fround(general.scaleGrowth.x * speed)); // +0x50 后
+  general.uvScrollPos.x = Math.fround(general.uvScrollPos.x + Math.fround(general.uvScrollVel.x * speed));
+  general.uvScrollPos.y = Math.fround(general.uvScrollPos.y + Math.fround(general.uvScrollVel.y * speed));
+  return true;
+}
+
+/**
+ * 帧尾里 group-general 该做的全部事情，按 02 §2 ⑥ 的顺序。**这是应该注入给
+ * `createVm(script, { frameTail })` 的那个函数**——单独注入 `stepInterpolators`
+ * 会漏掉速度积分。
+ *
+ * 中间被跳过的两步都在 core.js 文件头的「不建模」清单里：
+ * `entity_pos += 全局滚动`（`flags_lo & 0x8000`，全局量）与
+ * `recompute_uv_quad`（`flags_hi & 0x2000`，写 sprite 的 UV 四角 `+0x3a8..+0x3c4`——
+ * 那份状态由宿主层从 sprite 表算，骨架没有贴图表）。
+ * @param {ReturnType<import('./core.js').createVm>} vm
+ */
+export function stepFrameTail(vm) {
+  applyVelocities(vm);
+  stepInterpolators(vm);
+}
+
 export function stepInterpolators(vm) {
   const general = ensureGeneralState(vm);
   for (const group of INTERP_GROUPS) {

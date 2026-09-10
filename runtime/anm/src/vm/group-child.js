@@ -164,8 +164,8 @@ function buildChildOpts(creatorVm) {
   if (typeof creatorVm._maxInstructionsPerFrame === 'number') {
     opts.maxInstructionsPerFrame = creatorVm._maxInstructionsPerFrame;
   }
-  if (typeof creatorVm._stepInterpolators === 'function') {
-    opts.stepInterpolators = creatorVm._stepInterpolators;
+  if (typeof creatorVm._frameTail === 'function') {
+    opts.frameTail = creatorVm._frameTail;
   }
   // 10026 的拓扑钩子：本组一旦建树，`core.js` 的 computeRotZEffective 就必须能读到
   // `+0x5ac`。骨架不认识 `vm._child`，所以由本组把读法注入进去——凡是经 500–506 建出来的
@@ -177,6 +177,14 @@ function buildChildOpts(creatorVm) {
 // `zAnmVm +0x5ac`（02 §3.5「根 VM」）的公开读法。注入给 core.js 用，见 buildChildOpts。
 export function getRootVm(vm) {
   return vm._child?.root ?? null;
+}
+
+// `zAnmVm +0x5b0`（02 §3.5「父 VM」）的公开读法。与 getRootVm 并列——**两者不是一回事**
+// （04 §6.2 ④′：`+0x5ac` 在任何深度都指真·根）。层 B 的几何计算两个都要读：
+// 缩放继承读**父**（10 §3 / 09 §3.5 的 `[EAX+0x50]`，EAX = `+0x5b0`），
+// 位置继承读**根**（`th16:0x406a70` 的 `[EDI+0x5ac]`）。
+export function getParentVm(vm) {
+  return vm._child?.parent ?? null;
 }
 
 // 02 §8：「两个 helper 都在插列表之前各调一次 AnmVm::run」——创建即 tick。本骨架没有

@@ -16,7 +16,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { parseAnm } from '../src/format/anm-v8.js';
 import { createVm, stepFrame, registerGroup } from '../src/vm/core.js';
-import { generalGroup, stepInterpolators, ensureGeneralState } from '../src/vm/group-general.js';
+import { generalGroup, stepInterpolators, ensureGeneralState, applyVelocities, stepFrameTail } from '../src/vm/group-general.js';
 
 const ops = {};
 registerGroup(ops, generalGroup);
@@ -590,4 +590,80 @@ test('闸门 == 0：什么都不做（真机由调用方的 `cmp …,0 / je` 挡
   const before = vm.rotation.x;
   for (let i = 0; i < 5; i++) stepInterpolators(vm);
   assert.equal(vm.rotation.x, before, 'gate==0 不写回任何字段');
+});
+
+// ══════════════════════════════════════════════════════════════════════════════════
+// § apply_velocities（02-vm-core.md §2.1，`th16:0x4630f0`）
+// ══════════════════════════════════════════════════════════════════════════════════
+// ★ 2026-09-10 补：这条帧尾步骤此前**整个没实现**——三个速度字段都在，但「每帧积分」
+// 没人做，`uv_scroll_pos`（+0x78）字段甚至不存在。「opcode 135/135」盖不住它。
+
+test('apply_velocities：闸门是 flags_hi & 0x1000000，没置位就一动不动', () => {
+  const vm = mkVm([instr(0, [])]);
+  const g = ensureGeneralState(vm);
+  g.angularVelocity.z = 0.5;
+  g.scaleGrowth.x = 2;
+  g.uvScrollVel.x = 0.25;
+  assert.equal(applyVelocities(vm), false, '`th16:0x462a12` 的判据没过，整条不跑');
+  assert.equal(vm.rotation.z, 0);
+  assert.equal(vm.scale.x, 1);
+  assert.equal(g.uvScrollPos.x, 0);
+});
+
+test('apply_velocities：四条各自积分（rotation / scale.y / scale.x / uv_scroll_pos）', () => {
+  const vm = mkVm([instr(0, [])]);
+  vm.flagsHi = (vm.flagsHi | 0x1000000) >>> 0;
+  const g = ensureGeneralState(vm);
+  g.angularVelocity.x = 0.1;
+  g.angularVelocity.y = 0.2;
+  g.angularVelocity.z = 0.3;
+  g.scaleGrowth.x = 0.5;
+  g.scaleGrowth.y = -0.25;
+  g.uvScrollVel.x = 0.125;
+  g.uvScrollVel.y = -0.5;
+
+  assert.equal(applyVelocities(vm), true);
+  assert.ok(Math.abs(vm.rotation.x - 0.1) < 1e-6);
+  assert.ok(Math.abs(vm.rotation.y - 0.2) < 1e-6);
+  assert.ok(Math.abs(vm.rotation.z - 0.3) < 1e-6);
+  assert.ok(Math.abs(vm.scale.x - 1.5) < 1e-6, 'scale.x = 1 + 0.5');
+  assert.ok(Math.abs(vm.scale.y - 0.75) < 1e-6, 'scale.y = 1 - 0.25');
+  assert.ok(Math.abs(g.uvScrollPos.x - 0.125) < 1e-6);
+  assert.ok(Math.abs(g.uvScrollPos.y + 0.5) < 1e-6);
+
+  applyVelocities(vm); // 第二帧继续累加，不是「设值」
+  assert.ok(Math.abs(vm.scale.x - 2.0) < 1e-6, '累加不是覆盖');
+  assert.ok(Math.abs(g.uvScrollPos.x - 0.25) < 1e-6);
+});
+
+test('apply_velocities：旋转分量各自 wrap 进 [-π, π]（不是任其无限增长）', () => {
+  const vm = mkVm([instr(0, [])]);
+  vm.flagsHi = (vm.flagsHi | 0x1000000) >>> 0;
+  const g = ensureGeneralState(vm);
+  vm.rotation.z = 3.0;
+  g.angularVelocity.z = 1.0; // 3.0 + 1.0 = 4.0 > π，必须折回
+  applyVelocities(vm);
+  assert.ok(Math.abs(vm.rotation.z - (4.0 - 2 * Math.PI)) < 1e-5, `4.0 应 wrap 成 ${4 - 2 * Math.PI}`);
+  assert.ok(vm.rotation.z >= -Math.PI && vm.rotation.z <= Math.PI);
+});
+
+test('apply_velocities：乘的是 gameSpeed，不是恒 1', () => {
+  const vm = createVm({ instructions: [instr(0, [])] }, { gameSpeed: 0.5 });
+  vm.flagsHi = (vm.flagsHi | 0x1000000) >>> 0;
+  const g = ensureGeneralState(vm);
+  g.scaleGrowth.x = 1.0;
+  applyVelocities(vm);
+  assert.ok(Math.abs(vm.scale.x - 1.5) < 1e-6, 'gameSpeed=0.5 ⇒ 每帧只加半格');
+});
+
+test('帧尾接线：注入 stepFrameTail 后，速度积分与插值器都会跑', () => {
+  // 守「只注入 stepInterpolators 会漏掉 apply_velocities」这件事。
+  const script = { instructions: [instr(425, [f32bits(0.25)]), instr(0, [], { time: 99 })] };
+  const vm = createVm(script, { frameTail: stepFrameTail });
+  stepFrame(vm, ops); // 425 uVel(0.25) 顺带置 flags_hi bit24；同一帧的帧尾就该积分一次
+  const g = ensureGeneralState(vm);
+  assert.notEqual(vm.flagsHi & 0x1000000, 0, '425 置了速度积分位');
+  assert.ok(Math.abs(g.uvScrollPos.x - 0.25) < 1e-6, '帧尾积分了一次');
+  stepFrame(vm, ops);
+  assert.ok(Math.abs(g.uvScrollPos.x - 0.5) < 1e-6, '第二帧再积一次');
 });

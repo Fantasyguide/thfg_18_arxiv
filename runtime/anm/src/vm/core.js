@@ -78,7 +78,7 @@ export const PC_HANDLED = Symbol('anm-vm:pc-handled');
 // 也不报错，统计里 PRNG 变量全抛，差点误判实现有问题。钩子要直接挂 `vm.prng`。
 // 与本模块「宁可抛不要静默」的既有取舍一致（除零、PRNG 缺失、只读变量写入都抛）。
 const KNOWN_VM_OPTS = new Set([
-  'gameSpeed', 'maxInstructionsPerFrame', 'stepInterpolators', 'getRootVm',
+  'gameSpeed', 'maxInstructionsPerFrame', 'frameTail', 'stepInterpolators', 'getRootVm',
 ]);
 
 export function createVm(script, opts = {}) {
@@ -162,9 +162,12 @@ export function createVm(script, opts = {}) {
     // `getRootVm(vm)` 返回该 vm 的 `+0x5ac`，没有就返回 null。group-child.js 负责在
     // create_managed_* 里把它挂上，手工搭树的调用方自己传。
     _getRootVm: opts.getRootVm ?? null,
-    _stepInterpolators: opts.stepInterpolators ?? null, // 07-general.md §3 的帧尾插值器钩子：
-    // 由调用方在装 generalGroup 时一并注入（`createVm(script, { stepInterpolators })`）。
-    // 见 frameTail：骨架只负责调用时序，不认识插值器结构本身。
+    // 帧尾钩子。vm-core §2 ⑥ 的帧尾里，骨架能做的只有「脚本时间 += GAME_SPEED」一条；
+    // 其余（apply_velocities、12 组插值器）的状态都在 group-general.js 里，骨架不认识，
+    // 所以走**运行时注入**（组依赖骨架、骨架不依赖组）。推荐注入 group-general 的
+    // `stepFrameTail`——它按 §2 ⑥ 的顺序做 apply_velocities 再走插值器。
+    // `stepInterpolators` 是旧键名，仍然接受（只走插值器，不做速度积分）。
+    _frameTail: opts.frameTail ?? opts.stepInterpolators ?? null,
     _maxInstructionsPerFrame: opts.maxInstructionsPerFrame ?? DEFAULT_MAX_INSTRUCTIONS_PER_FRAME,
     // 见文件头“分发循环的护栏”一条：vm-core §9 点名要求移植方自己加保护
   };
@@ -276,14 +279,19 @@ function doInterrupt(vm) {
 function frameTail(vm) {
   // vm-core §2 ⑥：本骨架只保留“脚本时间每帧 += GAME_SPEED”这一条（§4 结论）；
   // 几何/回调部分见文件头“不建模”清单。
+  // ★ 2026-09-10 顺序更正：原来这里先 `timerAdjust` 再调钩子，并在注释里断言「真机就是
+  // 在 timerAdjust 之后」——**说反了**。vm-core §2 ⑥ 的帧尾（`th16:0x462a06` 起）是：
+  //   `0x462a12` apply_velocities（`flags_hi & 0x1000000` 才跑）
+  //   `0x462a19` entity_pos += 全局滚动（`flags_lo & 0x8000`；全局量不建模）
+  //   `0x462a87` recompute_uv_quad（`flags_hi & 0x2000`；sprite UV 四角，不建模）
+  //   `0x462bc1` step_interpolators
+  //   `0x462bc8` update_geometry_for_render_mode（层 B 的事）
+  //   `0x462bcd` on_wait 回调（不建模）
+  //   `0x462c11` **Timer_increment —— 脚本时间在最后才前进**
+  // 所以钩子要在 timerAdjust **之前**。当前这个顺序差异在骨架里不可观察（插值器用自己的
+  // currentF，不读 vm.time），但没有理由留着一个与文档相反的时序。
+  if (typeof vm._frameTail === 'function') vm._frameTail(vm);
   timerAdjust(vm, vm._gameSpeed);
-  // 07-general.md §3：12 组帧尾插值器（`AnmVm::step_interpolators` th16:0x463b30）——
-  // `*Time` 指令往插值器里填「起点/终点/切线/剩余帧闸门/mode」，真正的推进在帧尾。
-  // 状态与步进逻辑都在 group-general.js（骨架不认识那 12 组的结构），这里只负责按
-  // 真机的时序调用它：**在 timerAdjust 之后**。
-  // 用运行时注入而不是静态 import：core.js 是骨架，不该反向依赖任何 opcode 组
-  // （层次归属：组可以依赖骨架，骨架不依赖组）。没装就是没实现该组，不报错。
-  if (typeof vm._stepInterpolators === 'function') vm._stepInterpolators(vm);
 }
 
 /**

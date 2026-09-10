@@ -69,6 +69,28 @@ entry 链表 / sprite 表 / script 表 / 指令流，只做结构解析，不含
 因此比真机**更准**。真实数据里两个 format 不同的只有 1 个 entry（`enemy.anm` 的
 `enemy/enemy_aura.png`：源 1、目标 6）。
 
+## 层 B · 几何生成：已实现（B3）
+
+`src/render/geometry.js` —— 「vm 状态 → 顶点数组」的**纯计算**，不碰 WebGL，纯 Node 可测。
+覆盖 **render mode 0/1/2/3**（sprite 四边形，[`10-sprite-geometry.md`](../../engine/anm/th16/10-sprite-geometry.md)）
+与 **9 / 13 / 14 / 24 / 25**（帧尾几何三族，[`09-drawing.md`](../../engine/anm/th16/09-drawing.md) §3.2–§3.5）。
+未覆盖的 mode **显式抛**：4/8/15 走 `th16:0x467410`、rect 族走 `th16:0x468722`、
+poly 族走 `th16:0x4689b3`，这三条路径还没逆（计划里的 B6）。
+
+**宿主必须提供、VM 不建模的两样**（`ctx`）：`spriteUv`（sprite 的 UV 四角 `+0x3a8..+0x3c4`，
+真机由 `set_sprite` 从贴图表算，骨架没有贴图表）与 `resolutionRatio`（`th16:0x4d9d34`，默认 1）。
+
+**顺带补上的两处层 A 缺口**（都不是 opcode，所以「135/135」盖不住）：
+
+- **`apply_velocities`（`th16:0x4630f0`）此前整个没实现**：三个速度字段都在，但「每帧积分」
+  没人做，`uv_scroll_pos`（`+0x78`）字段甚至不存在。现在 `group-general.js` 导出
+  `applyVelocities` 与 `stepFrameTail`（= 速度积分 + 插值器，按 02 §2 ⑥ 的顺序）。
+  **注入 `createVm(script, { frameTail: stepFrameTail })`**；旧键名 `stepInterpolators` 仍接受，
+  但它只走插值器、会漏掉速度积分。
+- **帧尾时序更正**：`Timer_increment` 在 02 §2 ⑥ 里是**最后一步**，而 core.js 原来把它放在
+  钩子**之前**、并在注释里断言「真机就是这个顺序」——说反了。已改成钩子先、计时器后。
+  该差异在骨架里不可观察（插值器用自己的 currentF，不读 `vm.time`），但没理由留着与文档相反的时序。
+
 ## VM 骨架：已实现
 
 `src/vm/core.js` 实现取指 / 时间推进 / 跳转 / interrupt / 生死，依据
