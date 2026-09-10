@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(thdat-nc VERSION 0.1.0 LANGUAGES C)
+project(thdat-nc VERSION 0.2.0 LANGUAGES C)
 
 add_executable(thdat-nc
   src/main.c
