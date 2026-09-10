@@ -1,0 +1,27 @@
+script script127 {
+    // 季节槽的「releaseable / 等级」小条 —— TH16 `front.anm` script118 逐条搬：
+    //   `sprite87` = front00.png (832,112,64,16)；interrupt 2 = 淡入后白↔粉 20 帧脉动，3 = 隐藏。
+-1:
+    ins_431(1);
+    layer(24);   // ★ 同上（UI 表面 + 组 37）
+    sprite(@SEASON_STRIP);
+    resolutionMode(2);
+    interruptLabel(3);
+    alpha(0);
+    stop();
+    interruptLabel(2);
+    alphaTime(4, 0, 255);
+offset144:
+    color(255, 255, 255);
++20: // 20
+    color(255, 224, 224);
++20: // 40
+    jmp(offset144, 0);
+    stop();
+    interruptLabel(4);
+    alphaTime(5, 0, 255);
+    caseReturn();
+    interruptLabel(5);
+    alphaTime(5, 0, 64);
+    caseReturn();
+}

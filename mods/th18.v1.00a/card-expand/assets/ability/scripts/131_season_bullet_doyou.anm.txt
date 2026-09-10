@@ -1,0 +1,28 @@
+script script131 {
+    // 土用（隐岐奈副季节子机）的弹 —— TH16 `pl04sub.anm` **script0** 逐条搬（一手）。
+    // 主体：sprite0（30×14 → 补到 32×16、alpha 128、layer 13、rotateAuto）。
+    // 命中 → interruptLabel(1)：layer 15、alpha 192、alphaTime(30, 0, 0)、blendMode 1、
+    //   sprite1→2→3 每 10 帧，30 帧后 delete。
+-1:
+    layer(13);
+    sprite(@BULLET_DOYOU);
+    type(1);
+    alpha(128);
+    zWriteDisable(1);
+    rotateAuto(1);
+0:
+    stop();
+    interruptLabel(1);
+    layer(15);
+    alpha(192);
+    alphaTime(30, 0, 0);
+    blendMode(1);
+    type(1);
+    sprite(@HIT_DOYOU_1);
++10: // 10
+    sprite(@HIT_DOYOU_2);
++10: // 20
+    sprite(@HIT_DOYOU_3);
++10: // 30
+    delete();
+}

@@ -86,6 +86,9 @@ TH06NC 的 3 位字段里 6/7 无 opcode 可达。
 | Drawing 组只**置状态**不发 draw call；真正的绘制在 `draw_vm` 按 `render_mode` 分派（28 个 mode，索引表 `th16:0x468bac` / 跳表 `th16:0x468b70`） | ✅ | 🟡 | [th16/09-drawing](th16/09-drawing.md) §1/§3 |
 | 渲染阶段 × 相机 × 层：层 0–2 相机 2、3–19 相机 3、20–23 相机 1、24+ 相机 2；四台相机全透视（LookAt + PerspectiveFov，无 Ortho） | — | ✅ | [th18/02-render-stages](th18/02-render-stages.md) |
 | 渲染模式 8 = D3D WORLD 矩阵 + 单位四边形；2D 路径自算顶点并加相机 2D 偏移（只有相机 2 非零） | — | ✅ | [th18/01 §3b](th18/01-vm-instantiate.md) |
+| `blendMode(n)` = VM `+0x18` bit 5..8 → D3D9 SRCBLEND/DESTBLEND/BLENDOP；**2 = 反向减算** `dst − src×alpha` | ✅ | 🟡 | [th15/01-blend-modes](th15/01-blend-modes.md) |
+| ASCII 文字：字形集 = **页（`vm+0x20` → `preloaded[页]`）+ 字体 id（`+0x19244` → 精灵表字形块）** 两段 | ✅ | ✅ | [th18/03-ascii-text](th18/03-ascii-text.md) |
+| 字符串记录步长 0x138，`create_string` 抄 10 个环境字段（字体在 `+0x120`），**页不抄** | ✅ | ✅ | 同上 §1 |
 
 > **图例**：✅ 该版本一手验过（证据列给地址/出处） · 🟡 待验（从别的版本借来的假设，或单源） · ❌ 已知不同/不存在 · ❓ 存疑 · — 未看
 >

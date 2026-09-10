@@ -120,7 +120,12 @@
 | 0x04 | **主炸进行中**(禁止开火)| set `BombMainMarisa__begin` `0x40faf2`(`OR [PLAYER+0x1664c],4`,实证;同时给 120 帧无敌);clear 主炸结束(`on_tick` 帧 300)/ `shot_init` `0x4416ef` / `Player__destroy` | ✅(Marisa;余角色主炸同 idiom 🟡)|
 | 0x08 | **死亡音效抑制**(`player_on_death` 据此跳过 sound 2)| set 未找到(疑整字写);clear `Player__destroy` | 🟡 |
 | 0x10 | 置位时**禁止开火** + 判定盒 `+0x2c7c8×3.6` 特殊缩放 + 特殊渲染 →**疑"剧情/无操控"态**(非普通聚焦)| **set 点未找到**(全 .text 无 `OR ...,0x10`,疑整字赋值/别名写);clear 未找到 | ❓ set 点 |
-| 0x20 | **速度缩放态**(`+0x2c7cc>1.01` 时置,否则清)| set/clear `EnemyManager__on_tick_1a__body` `0x41b456`/0x41b45f(按 `+0x2c7cc`);**冬季节释放每帧写 `+0x2c7cc=1.5` → 触发**(跨 agent 互证 `02` §5e)| ✅机制 / 🟡玩法义 |
+| 0x20 | **「加速/加伤态」标记**（`+0x2c7cc>1.01` 时置，否则清）——**唯一读者 = 残像/闪色分支**（`Player__on_tick` `0x442c32`）；冬释放每帧写 `+0x2c7cc=1.5` 触发（语义订正见下注）| set/clear `EnemyManager__on_tick_1a__body` `0x41b456`/`0x41b45f`（按 `+0x2c7cc`）| ✅机制 |
+
+> ⚠️ **bit0x20 的语义订正（2026-09-10，一手）**：早前记成「速度缩放态」是**错的**。
+> 真正被乘的是 `+0x2c7cc` 自己，乘在**对敌伤害**上 —— `EnemyData__step_logic` `0x41c5d6`
+> 紧跟在 `enm_compute_damage_sources` `0x445a30` 的返回之后 `MULSS`；`BombSubWinter__on_tick`
+> `0x410408` 每帧写 1.5 ⇒ **冬 = 1.5× 伤害**（秋的 1.5× 才是速度，见 [`02`](02-season-release-and-bombs.md) §5h）。
 
 > ⚠️ 纪律:bit0x10 的**写入点全程序未找到 `OR ...,0x10`**(只剩整字写/别名写可能),保持 ❓;**绝不要**当聚焦
 > ——聚焦是 `+0x165c8`(bit0x10 与禁射并存,而聚焦时可射)。bit0x4/0x2/0x20 已落到具体置/清位指令(✅)。

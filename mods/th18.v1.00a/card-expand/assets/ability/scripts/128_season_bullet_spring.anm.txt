@@ -1,0 +1,43 @@
+script script128 {
+    // 春（灵梦副季节子机）的弹 —— TH16 `pl00sub.anm` **script0** 逐条搬（一手：`thanm spec` + 反编译）。
+    // 引擎侧来源：`PlayerBullet__create` `th16:0x444e10` 的副季节分支
+    //   anm = `player->subseason_anm_file`（= pl0Xsub.anm）、脚本号 = 副 .sht 的 `+0x22`（春 = 0）。
+    // 主体：sprite9/10 每 2 帧循环（32×32，scale 0.6、alpha 160、layer 13、rotateAuto）。
+    // 命中：引擎发 interruptLabel(1) → sprite1..8 每 3 帧（layer 15、blendMode 1 加算）。
+-1:
+    layer(13);
+    type(1);
+    alpha(160);
+    zWriteDisable(1);
+    rotateAuto(1);
+    scale(0.6f, 0.6f);
+0:
+offsetA:
+    sprite(@BULLET_SPRING_A);
++2: // 2
+    sprite(@BULLET_SPRING_B);
++2: // 4
+    jmp(offsetA, 0);
+    stop();
+    interruptLabel(1);
+    layer(15);
+    blendMode(1);
+    type(1);
+    sprite(@HIT_SPRING_1);
++3: // 3
+    sprite(@HIT_SPRING_2);
++3: // 6
+    sprite(@HIT_SPRING_3);
++3: // 9
+    sprite(@HIT_SPRING_4);
++3: // 12
+    sprite(@HIT_SPRING_5);
++3: // 15
+    sprite(@HIT_SPRING_6);
++3: // 18
+    sprite(@HIT_SPRING_7);
++3: // 21
+    sprite(@HIT_SPRING_8);
++3: // 24
+    delete();
+}

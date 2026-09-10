@@ -1,0 +1,35 @@
+script script113 {
+    // 季节（id 119）的季节子机本体 —— 由 `Player__allocate_option` 起（脚本号当它最后一个栈参）。
+    // 骨架照零售子机脚本 script2 / script16 与本 mod 的 script102（豌豆射手）：
+    // interruptLabel(2) 出场、(3) 进店收起、(1) 销毁 —— 这三个都是引擎发的，我们不自己发。
+    // 贴图是实心的，落定后切回普通混合（照 script2），只留很慢的呼吸。
+-1:
+    layer(13);
+    blendMode(1);
+    type(1);
+    zWriteDisable(1);
+0:
+    interruptLabel(2);
+    sprite(@SEASON_OPT);
+    scale(0.0f, 0.0f);
+    scaleTime(10, 4, 0.42f, 0.42f);   // 64 px 贴图 → 场上约 27 px
+    alpha(255);
++10: // 10
+    blendMode(0);
+breathe:
+    alphaTime(24, 4, 208);
++24: // 34
+    alphaTime(24, 4, 255);
++24: // 58
+    jmp(breathe, 10);
+    stop();
+    interruptLabel(3);
+    scaleTime(20, 4, 0.0f, 0.0f);
++20:
+    stop();
+    interruptLabel(1);
+    blendMode(1);
+    scaleTime(20, 4, 0.0f, 3.0f);
++20:
+    delete();
+}

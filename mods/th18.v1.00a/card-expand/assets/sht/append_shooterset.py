@@ -66,6 +66,39 @@ APPEND = [
                           spawn_dx=dx, angle=-1.5707964, speed=18.0, opt_slot=0, mode=0,
                           anm="CE_ANM_ABILITY_SCRIPT_PEA_SMALL", sfx=-1, func_on_init=0)
                      for dx in (-48.0, -32.0, -16.0, 0.0, 16.0, 32.0, 48.0)]),
+
+    # ★ 季节（id 119）：**五副季节各一组**，数值逐条照 TH16 `pl00sub/pl02sub/pl03sub/pl01sub/pl04sub.sht`
+    # 的 option 弹（2026-09-10 一手解析：sets 按季节档，每个 set 里每个 option 一条 shooter）。
+    # TH16 的 func 表与 TH18 **init1/tick1（寻的）、init2/tick2/hit2（激光）同族**（`engine/sht/th18/03` §6），
+    # 所以「春追踪 / 冬激光」能直接映射；秋的 tick5(+0.5/帧) 在 TH18 是 **tick3(+0.3/帧)**（同族不同常量）。
+    # 每条都是「一颗弹从子机位置发出」，opt_slot=0 = 用 tick_shooters 传进来的那颗子机。
+    # TH16 每档的伤害/角度略有差别（春 8→3、冬 5→15、秋 8~16、土用 13~15），这里取**档 1 的值**。
+    ("SEASON_SPRING", [dict(fire_rate=5, start_delay=0, damage=8, hit_w=16.0, hit_h=16.0,
+                            angle=-1.5707964, speed=-0.2, opt_slot=0, mode=0,
+                            anm="CE_ANM_ABILITY_SCRIPT_SEASON_BULLET_SPRING", sfx=-1,
+                            func_on_init=1, func_on_tick=1)]),        # 寻的（初速≈0，靠 tick1 转向加速）
+    ("SEASON_SUMMER", [dict(fire_rate=5, start_delay=0, damage=15, hit_w=16.0, hit_h=16.0,
+                            angle=-1.5707964, speed=10.0, opt_slot=0, mode=0,
+                            anm="CE_ANM_ABILITY_SCRIPT_SEASON_BULLET_SUMMER", sfx=-1, func_on_init=0)]),
+    ("SEASON_FALL",   [dict(fire_rate=5, start_delay=0, damage=16, hit_w=16.0, hit_h=16.0,
+                            angle=-1.5707964, speed=0.0, opt_slot=0, mode=0,
+                            anm="CE_ANM_ABILITY_SCRIPT_SEASON_BULLET_FALL", sfx=-1,
+                            func_on_init=0, func_on_tick=3)]),        # 匀加速（TH18 tick3 = +0.3/帧）
+    # ★★ 2026-09-10 第二十八轮：**照零售「ミニ八卦炉」重做激光**（一手：`ability.txt` @MARISA_OP
+    # = 卡 10 = SHT set **0xb**，四个角色的 set 0xb 逐字段相同）：
+    #   `rate=5 delay=0 dmg=13 ang=−π/2 **speed=0** mode=**2** anm=**3** sfx=−1 hit_fx(+0x26)=**5**
+    #    func=init2/tick2/hit2`，而 `ability.anm` 的 **script3** 就是激光束（`anchor(1,0)` +
+    #   `scale(1,0)→scaleTime(4,1,1,0.5)` + `blendMode(1)` + `scrollX(−1/21)` + `scriptNew(script4)` 光斑）。
+    # ⇒ 上次「损坏内存」不是这条路的锅，是我们没照零售参数填（mode=0 / 无 hit_fx / 用了别的脚本）。
+    # 我们照 TH16 `pl01sub` 的对应脚本自建 132（束）/133（光斑）/134（命中特效），贴图用 TH16 的激光条。
+    ("SEASON_WINTER", [dict(fire_rate=15, start_delay=0, damage=5, hit_w=8.0, hit_h=16.0,
+                            angle=-1.5707964, speed=0.0, opt_slot=0, mode=2,
+                            anm="CE_ANM_ABILITY_SCRIPT_SEASON_LASER_BEAM", sfx=-1,
+                            hit_fx="CE_ANM_ABILITY_SCRIPT_SEASON_LASER_HIT",
+                            func_on_init=2, func_on_tick=2, func_on_hit=2)]),
+    ("SEASON_DOYOU",  [dict(fire_rate=3, start_delay=0, damage=15, hit_w=48.0, hit_h=18.0,
+                            angle=1.5707964, speed=24.0, opt_slot=0, mode=0,
+                            anm="CE_ANM_ABILITY_SCRIPT_SEASON_BULLET_DOYOU", sfx=-1, func_on_init=0)]),  # 向后 24/帧
 ]
 
 
@@ -82,6 +115,10 @@ def pack_shooter(s: dict, anm_ids: dict) -> bytes:
     struct.pack_into("<ff", b, 0x14, s["angle"], s["speed"])
     struct.pack_into("<bb", b, 0x20, s["opt_slot"], s["mode"])
     struct.pack_into("<hh", b, 0x22, anm, s["sfx"])
+    # +0x26 = 激光命中特效的 anm 脚本号（只有 hit2 `0x460320` 读；零售魔理沙「迷你八卦炉」= 5）
+    hf = s.get("hit_fx", 0)
+    hf = anm_ids[hf] if isinstance(hf, str) else hf
+    struct.pack_into("<h", b, 0x26, hf)
     struct.pack_into("<bb", b, 0x2A, s.get("fire_rate2", 0), s.get("start_delay2", 0))
     struct.pack_into("<4i", b, 0x2C, s["func_on_init"], s.get("func_on_tick", 0),
                      s.get("func_on_draw", 0), s.get("func_on_hit", 0))

@@ -3,3 +3,8 @@
 
 #define CE_SHT_SET_PEA_NORMAL               0x17   /* 1 shooter */
 #define CE_SHT_SET_PEA_GATLING              0x18   /* 7 shooter */
+#define CE_SHT_SET_SEASON_SPRING            0x19   /* 1 shooter */
+#define CE_SHT_SET_SEASON_SUMMER            0x1a   /* 1 shooter */
+#define CE_SHT_SET_SEASON_FALL              0x1b   /* 1 shooter */
+#define CE_SHT_SET_SEASON_WINTER            0x1c   /* 1 shooter */
+#define CE_SHT_SET_SEASON_DOYOU             0x1d   /* 1 shooter */

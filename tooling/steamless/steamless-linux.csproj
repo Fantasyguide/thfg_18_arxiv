@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    本机（Linux/.NET 8）驱动 Steamless 的最小工程。
+    Steamless 上游是 .NET Framework 4.5.2 + WinForms，本机没有 Mono/Wine，故把它的
+    **跨平台源码原样 Compile Include 进来**（不修改上游任何文件），另写一个 Driver 直接调插件。
+    上游许可证 CC BY-NC-ND 4.0：只在本地跑、不转发、不发布。
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>steamless-linux</AssemblyName>
+    <RootNamespace>SteamlessLinuxDriver</RootNamespace>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <NoWarn>CS0649;CS0169;CS0414;CS0219;CS0162;CS8981;SYSLIB0022;SYSLIB0021;SYSLIB0053;CS0618</NoWarn>
+    <SteamlessRoot>$(MSBuildThisFileDirectory)../../local/vendor/Steamless</SteamlessRoot>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Driver.cs" />
+
+    <!-- Steamless.API（排除两个用 WPF 的 ViewModel 文件） -->
+    <Compile Include="$(SteamlessRoot)/Steamless.API/Crypto/AesHelper.cs" />
+    <Compile Include="$(SteamlessRoot)/Steamless.API/Model/NotifiableModel.cs" />
+    <Compile Include="$(SteamlessRoot)/Steamless.API/Model/SteamlessOptions.cs" />
+    <Compile Include="$(SteamlessRoot)/Steamless.API/Model/SteamlessPlugin.cs" />
+    <Compile Include="$(SteamlessRoot)/Steamless.API/PE32/NativeApi32.cs" />
+    <Compile Include="$(SteamlessRoot)/Steamless.API/PE32/Pe32File.cs" />
+    <Compile Include="$(SteamlessRoot)/Steamless.API/PE32/Pe32Helpers.cs" />
+    <Compile Include="$(SteamlessRoot)/Steamless.API/Services/LoggingService.cs" />
+    <Compile Include="$(SteamlessRoot)/Steamless.API/Events/LogMessageEventArgs.cs" />
+    <Compile Include="$(SteamlessRoot)/Steamless.API/Events/LogMessageType.cs" />
+    <Compile Include="$(SteamlessRoot)/Steamless.API/Extensions/FileStreamExtensions.cs" />
+    <Compile Include="$(SteamlessRoot)/Steamless.API/SteamlessApiVersionAttribute.cs" />
+    <Compile Include="$(SteamlessRoot)/Steamless.API/SteamlessEvents.cs" />
+
+    <!-- 解包插件：3.1 / 3.0（x86） -->
+    <Compile Include="$(SteamlessRoot)/Steamless.Unpacker.Variant31.x86/Main.cs" />
+    <Compile Include="$(SteamlessRoot)/Steamless.Unpacker.Variant31.x86/Classes/*.cs" />
+    <Compile Include="$(SteamlessRoot)/Steamless.Unpacker.Variant30.x86/Main.cs" />
+    <Compile Include="$(SteamlessRoot)/Steamless.Unpacker.Variant30.x86/Classes/*.cs" />
+  </ItemGroup>
+
+</Project>

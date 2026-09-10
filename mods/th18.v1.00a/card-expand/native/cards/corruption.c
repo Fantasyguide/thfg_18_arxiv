@@ -56,4 +56,19 @@ static void on_stage_start(ce_card_t *c)
     }
 }
 
-CE_CARD(70, .ctor = ctor, .on_bomb_spent = on_bomb_spent, .on_stage_start = on_stage_start);
+/* 撞了之后失效的根因（2026-09-09 用户实跑）：死亡/复活路径会写 CURRENT_BOMBS
+ *（`0x40a3d0` 一带的碎片进位、`0x44278f` 的每关 min(3,上限) 补给），把不变式
+ *「CURRENT == MAX = 剩余预算」打破 —— 之后 on_bomb_spent 的 +1 还原就落在错的基准上，
+ * 预算显示与扣减全乱。每帧把不变式拉回来（这张卡的模型就是 CURRENT 恒等于 MAX）。*/
+static int on_tick_2(ce_card_t *c)
+{
+    (void)c;
+    if (CE_CURRENT_BOMBS() != CE_MAX_BOMBS()) {
+        CE_CURRENT_BOMBS() = CE_MAX_BOMBS();
+        sync_hud();
+    }
+    return 0;
+}
+
+CE_CARD(70, .ctor = ctor, .on_bomb_spent = on_bomb_spent, .on_stage_start = on_stage_start,
+            .on_tick_2 = on_tick_2);

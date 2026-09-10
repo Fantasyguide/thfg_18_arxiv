@@ -1,0 +1,24 @@
+script script126 {
+    // 季节字 —— TH16 `front.anm` script117 逐条搬（sprite = 82 + SUBSEASON，layer 21）
+-1:
+    ins_431(1);
+    layer(24);   // ★ 同上（UI 表面 + 组 37）
+    sprite(@GLYPH_SPRING);
+    resolutionMode(2);
+    alpha(255);
++20: // 20
+    alphaTime(20, 0, 255);
+    stop();
+    interruptLabel(2);
+    alphaTime(30, 0, 255);
+    stop();
+    interruptLabel(3);
+    alphaTime(10, 0, 64);
+    stop();
+    interruptLabel(4);
+    alphaTime(5, 0, 255);
+    caseReturn();
+    interruptLabel(5);
+    alphaTime(5, 0, 64);
+    caseReturn();
+}

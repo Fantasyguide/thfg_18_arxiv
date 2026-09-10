@@ -1,0 +1,31 @@
+script script123 {
+    // 季节槽**外框的一条边**：1×1 的实心矩形模板。
+    // ★ 2026-09-10 第三十二轮：TH18 **没有** `drawRectBorder`（opcode 612 用了启动就崩，
+    //   见 engine/anm/th18/01-vm-instantiate.md §2b），所以外框改用**四条 1px 矩形拼**出来
+    //   —— 这正是 TH16 `front.anm` script114 的 `drawRectBorder(102, 10)` 的等价画法
+    //   （102×10 的 1px 描边 = 上/下各 102×1、左/右各 1×8 围住内部 100×8）。
+    // C 侧 `season.c` 的 `k_season_frame[]` 逐条设 scale（矩形尺寸）与位置（表面 px）——
+    // 上/左各 2px、下/右各 1px（复刻原版「填充在框里差 1px」的错位）；
+    // 颜色也由卡每帧写（灰 80 + HUD alpha），脚本里的 alphaTime 只是初始态。
+    sprite(-1);
+    ins_431(1);
+    type(1);
+    layer(24);
+    resolutionMode(2);
+    drawRect(1.0f, 1.0f);   // 1×1；实际尺寸全靠 VM scale（resolutionMode(2) ⇒ 1 单位 = 1 表面 px）
+    color(80, 80, 80);
+    alpha(255);
++20: // 20
+    alphaTime(20, 0, 255);
+    stop();
+    interruptLabel(4);
+    alphaTime(5, 0, 255);
+    caseReturn();
+    interruptLabel(5);
+    alphaTime(5, 0, 64);
+    caseReturn();
+    interruptLabel(1);
+    alphaTime(20, 0, 0);
++20: // 40
+    delete();
+}

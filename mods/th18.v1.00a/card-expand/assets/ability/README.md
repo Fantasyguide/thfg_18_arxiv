@@ -18,6 +18,19 @@
 抠白底：四角泛洪 + 边缘按「离白多远」做 alpha 斜坡；script91 缩放 0.5）、`FIREBALL.png`（64×64 火球，程序生成：白芯 → 黄 → 橙 → 红、
 边缘按角度噪声抖出火舌，固定种子；script92 本体 / script93 拖尾共用）、`BLAST.png`（128×128 爆炸：内圈闪光 + 外圈光环，script94）。
 
+`make_lolk_ring_art.py`：绀珠传（id 118）的擦弹圈 —— 从 TH15 零售贴图 `local/th15.v1.00b/anm/effect/effect/eff_sloweffect.png`（128×64，两个 64×64）抠**右半的空心环**，LANCZOS 放大到 128×128 → `lolk/RING.png`；ORDER 一行 `LOLK_RING`（128x128），script106 `lolk_ring` 挂在自机位置、C 用 `ce_anm_set_color` 的 alpha 控制显隐。
+
+`make_season_art.py`：季节（id 119）的图 —— `season/SEASON_OPT.png`（64×64 子机本体，script113）与
+`season/SEASON_SEED.png`（32×32 子机打出的种子，script114）**程序生成**；
+**季节点本体（script115）走零售切图**：从 TH16 `local/th16.v1.00a/anm/bullet/bullet/item.png` 切 5 个
+**16×16** 单元 → `season/PT_{SPRING,SUMMER,FALL,WINTER,DOYOU}.png` —— 右上 2×2 = 春/夏（上行）、秋/冬（下行），
+再加一行 `(224,32)` = 土用；切片尺寸与 P 点 / 蓝点一致（TH16 用「脚本号 = 129 + SUBSEASON」选，
+一手 `th16:0x430cb7 add eax,0x81`）。卡按副季节 `ce_anm_set_sprite` 换图；出场动画照 TH16 `bullet.anm`
+script129 **逐条抄**（加算、10 帧淡入、16 帧 2 倍缩到 1 倍、`rotate(%RANDRAD)` + `fsetMul(%F0,%RANDF2,0.08726646f)`
++ `angleVel(0,0,%F0)` = **0..5°/帧 随机自转**、之后 300 帧缩到 0.7 并淡到 alpha128、第 36 帧关加算）。
+季节 HUD 三件套也走零售切图 / 矩形：`GLYPH_*.png`（32×32，`front00.png` (832,80)+32k 的五个单元，script117）、
+`118_season_bar_frame`（`drawRectBorder(102,10)`）、`119_season_bar_fill`（`drawRect(100,8)`）——
+几何照 TH16 `front.anm` script114–117（`pos(-377,888)` 一族 = 游玩区左下角）。
 `make_truesilver_art.py`：真银圣剑 HUD 耐久数字 —— `truesilver/DIGIT_0..9.png` 10 张 32×32（DejaVu Serif Bold 白字 2 px 黑描边），ORDER 里 `TS_DIGIT_0..9`；script99 `hud_digit` 与零售 HUD 图标同款 `layer(26); resolutionMode(2)`，C 用 `ce_anm_set_sprite` 换数字。
 `make_peashooter_art.py`：豌豆射手的三张图，**全程序生成**（距离场 → 平滑掩码 → 球面着色，无外部素材）——
 `peashooter/PEA.png`（32×32 亮绿豌豆，script100 平时那颗 scale 0.80 / script101 开大那些 scale 0.50 共用；
@@ -26,6 +39,13 @@ script103 的开大绿光晕也复用它，加色混合胀开）、`peashooter/P
 三颗飞出去的豌豆，白底 → `fit_card.py --no-detect --trim 0 --margin 0`）。
 ⚠️ 弹与子机的贴图都必须在 `ability.anm` 里：引擎开火期间把 `player+0x10` 换成它（AUDIT Z7）。
 
+`make_font2_art.py`：**TH18 font 2 的字形切图**（`font2/FONT2_{0..9,MINUS,PERCENT,DOT,PLUS}.png`，各 16×20）——
+从零售 `local/th18.v1.00a/anm/ascii1280/ascii/ascii_1280.png` 按 `ascii1280.anm.txt` 的精灵矩形切
+（数字 = sprite 196..205，`-`/`%`/`.`/`+` = 208/210/211/212，一手映射见
+[`engine/anm/th18/03-ascii-text.md`](../../../../../engine/anm/th18/03-ascii-text.md) §2f）。
+**连 16×20 的单元一起切**（`.` 的墨迹在单元第 12–17 行，按墨迹裁会把它抬到基线上方）。
+ORDER 里按 `16x32` 声明（构建脚本把 16×20 居中补透明），脚本 `136_hud_glyph` 逐字起 VM ——
+这是「数字也要被暂停模糊罩盖住」的唯一出路（ASCII 文字做不到，见同一篇 §2f 末尾）。
 `gen_banner.py "ROYAL FLUSH"`：金色金属光泽 + 黑描边的大字横幅（512×128，`banner/`），皇家同花顺的亮字用它。
 
 `make anm` 跑 `build_ability.py`：重编 → `native/build/ability.anm`，自检零售部分没变，

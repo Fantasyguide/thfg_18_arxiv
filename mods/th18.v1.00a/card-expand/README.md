@@ -6,6 +6,9 @@
 **「加一张卡到底改了什么」的追溯表在 [`MAP.md`](MAP.md)**——150 条 binhack、7 个断点、5 个 codecave 各自的出处。
 **想加一张卡：读 [`DATA.md`](DATA.md)**（登记，JSON）和 **[`SDK.md`](SDK.md)**（行为，C）；已有的卡在 [`CARDS.md`](CARDS.md)。
 踩过的坑与方法论总结在 [`../../LESSONS.md`](../../LESSONS.md)。
+**★ 铁律：UI / 动画一律先从原代码找** —— 动手写任何 UI、动画、特效前，先在原游戏的 anm 脚本 +
+引擎函数里找到它**原本怎么做**（脚本号 / 地址 / 数值 / 触发条件）并照抄；贴图走零售切图。
+完整版与反面教材见 [`../../../METHOD.md`](../../../METHOD.md)。
 方案全貌见 [`../card-rework/PLAN-255-ids.md`](../card-rework/PLAN-255-ids.md)，
 边界依据见 [`engine/card/th18/11-sentinels-56-57.md`](../../../engine/card/th18/11-sentinels-56-57.md)。
 

@@ -1,0 +1,14 @@
+script script122 {
+    // 冬（魔理沙）季节子机的**激光**贴图 —— TH16 `pl01sub.anm` entry0 sprite0（256×30 横条）。
+    // TH18 的激光 tick（func_on_tick = 2）把这条贴图沿束向拉伸，所以贴图必须是**横向**长条。
+    // 层 13（子弹层），加算混合照 TH16 的激光观感。
+-1:
+    sprite(@SEASON_LASER);
+    type(1);
+    layer(13);
+    zWriteDisable(1);
+    blendMode(1);
+    alpha(255);
+0:
+    stop();
+}

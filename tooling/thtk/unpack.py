@@ -25,6 +25,7 @@ VENDOR = LOCAL / "vendor"
 
 # 版本目录前缀 → (thtk 版本参数, anmmap 文件名)
 GAMES = {
+    "th15": ("15", "v8.anmm"),
     "th16": ("16", "v8.anmm"),
     "th18": ("18", "v8.anmm"),
 }

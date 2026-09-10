@@ -1,0 +1,27 @@
+script script116 {
+    // 波次面板第 6 条之二 = **残机碎片条**（TH15 front.anm script243 / sprite151，粉色，pos(0,240)）：
+    // 与 112（绿色 = 符卡碎片条 sprite150）同构，只有贴图不同；卡按奖励类型二选一。
+-1:
+    sprite(@LOLK_PANEL_7);
+    ins_431(1);
+    type(1);
+    layer(24);      // ★ 2026-09-10 第三十一轮：UI 表面 + 组 37（0x39）—— 早于暂停模糊罩（组 38 = 0x3e）⇒ 暂停时被罩住，平时保持全分辨率
+    resolutionMode(2);
+    scale(0.0f, 1.0f);
++90: // 90
+    scaleTime(10, 0, 1.0f, 1.0f);
++10: // 100
+    color(128, 128, 128);
+offset128:
+    color(255, 255, 255);
++4: // 104
+    color(160, 160, 160);
++4: // 108
+    jmp(offset128, 100);
+0:
+    stop();
+    interruptLabel(1);
+    alphaTime(10, 0, 0);
++10: // 10
+    delete();
+}

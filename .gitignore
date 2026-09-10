@@ -32,6 +32,29 @@ mods/**/dist/
 mods/th18.v1.00a/card-expand/patch/th18/voice/*.wav
 mods/th18.v1.00a/card-expand/native/voice_ids.h
 
+# tooling/steamless 的 .NET 构建产物
+tooling/steamless/bin/
+tooling/steamless/obj/
+
+# card-expand：**零售切图**（`assets/ability/make_*_art.py` 从 local/ 现切）。
+# 纪律：版权字节只在 local/，构建时取；这些是切出来的中间产物，别入库。
+# 程序生成的图（SEASON_OPT/SEASON_SEED 等）照常入库 —— 只有「从零售 PNG 切出来」的才在这里。
+# ⚠️ gitignore 没有行尾注释：注释必须单独成行，写在同一行会把整行变成一条匹配不到的规则。
+# TH16 bullet/item.png / front00.png / pl0X(sub).png 切出来的
+mods/th18.v1.00a/card-expand/assets/ability/season/SEASON_LASER.png
+mods/th18.v1.00a/card-expand/assets/ability/season/SEASON_STRIP.png
+mods/th18.v1.00a/card-expand/assets/ability/season/BULLET_*.png
+mods/th18.v1.00a/card-expand/assets/ability/season/HIT_*.png
+mods/th18.v1.00a/card-expand/assets/ability/season/LASER_*.png
+mods/th18.v1.00a/card-expand/assets/ability/season/PT_*.png
+mods/th18.v1.00a/card-expand/assets/ability/season/GLYPH_*.png
+mods/th18.v1.00a/card-expand/assets/ability/season/OPT_*.png
+# TH18 ascii_1280.png 切出来的字形
+mods/th18.v1.00a/card-expand/assets/ability/font2/FONT2_*.png
+# TH15 eff_sloweffect.png / front02.png 切出来的环与面板
+mods/th18.v1.00a/card-expand/assets/ability/lolk/RING.png
+mods/th18.v1.00a/card-expand/assets/ability/lolk/PANEL*.png
+
 # dgVoodoo2 转译层（D3D9.dll + dgVoodoo.conf）：第三方二进制,不是我们的产物,
 # 按「不入库」纪律留在工作区本地;要装的人自己去 dege.freeweb.hu 取。
 mods/th18.v1.00a/stg 补丁/

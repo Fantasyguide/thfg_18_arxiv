@@ -1,0 +1,34 @@
+script script132 {
+    // ★ 冬（魔理沙）子机的**激光束** —— TH16 `pl01sub.anm` script0 逐条搬（一手），
+    //   贴图换成 TH16 自己的激光条（`pl01sub` sprite0 = (0,1,512,30)）。
+    // 引擎侧：副 .sht 的 shooter 是 `mode=2 + func init2/tick2/hit2`（TH16 pl01sub set1..6 一手；
+    //   TH18 零售「ミニ八卦炉」= `pl0X.sht` set 0xb，字段一模一样）——
+    //   tick2 `th18:0x45fc80` 把弹钉在子机上、`+0xa0 += 18` 长到 512、按长度拉伸这支脚本的贴图，
+    //   hit2 `0x460320` 把长度截到命中点、每 2 帧在束端起 `+0x26` 号特效。
+    // 脚本本身：anchor(1,0) = 右端锚（束从子机往目标方向拉长）、scale y 0→0.3、加算、自转、贴图滚动。
+    scriptNew(script133);
+    layer(15);
+    sprite(@SEASON_LASER);
+    type(1);
+    anchor(1, 0);
+    scale(1.0f, 0.0f);
+    scaleTime(4, 1, 1.0f, 0.3f);
+    blendMode(1);
+    rotateAuto(1);
+    alpha(96);
+    fset(%F0, %RANDF);
+    scrollX(%F0);
++1: // 1
+    scrollX(-0.04761905f);
+    stop();
+    interruptLabel(2);
+    colorTime(8, 0, 64, 64, 255);
+    caseReturn();
+    interruptLabel(3);
+    colorTime(2, 0, 255, 255, 255);
+    caseReturn();
+    interruptLabel(1);
+    scaleTime(8, 1, 1.0f, 0.0f);
++8: // 9
+    delete();
+}

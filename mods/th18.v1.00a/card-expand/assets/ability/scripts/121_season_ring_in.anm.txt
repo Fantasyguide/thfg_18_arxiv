@@ -1,0 +1,21 @@
+script script121 {
+    // 季节解放 · **内圈**（TH16 `pl00sub.anm` script4 逐条抄：layer12、blendMode1 加算、
+    //   color(255,128,128)→color2(255,0,0) 的红圆）。
+-1:
+    sprite(-1);
+    layer(12);
+    zWriteDisable(1);
+    drawPoly(1.0f, 32);
+    blendMode(1);
+    color(255, 128, 128);
+    color2(255, 0, 0);
+    alpha(255);
+    alpha2(255);
+0:
+    stop();
+    interruptLabel(1);
+    alphaTime(10, 0, 0);
+    alpha2Time(10, 0, 0);
++10: // 10
+    delete();
+}

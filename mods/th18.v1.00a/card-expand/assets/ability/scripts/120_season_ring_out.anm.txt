@@ -1,0 +1,23 @@
+script script120 {
+    // 季节解放 · **外圈**（TH16 `pl00sub.anm` script3 逐条抄：layer13、blendMode2 减算、
+    //   color(128,128,128)→color2(0,128,0) 的渐变圆、`drawPoly(1.0f, 32)` 32 边形当实心圆）。
+    //   扩张/淡出由卡每帧写 scale.x/scale.y 与 color_1 的 alpha 驱动（TH16 用 VM 脚本变量
+    //   `%F0/%F1` = 半径、`$I3` = 持续帧；我们这边卡自己算，省掉脚本变量）。
+-1:
+    sprite(-1);
+    layer(13);
+    zWriteDisable(1);
+    drawPoly(1.0f, 32);
+    blendMode(2);
+    color(128, 128, 128);
+    color2(0, 128, 0);
+    alpha(255);
+    alpha2(255);
+0:
+    stop();
+    interruptLabel(1);
+    alphaTime(10, 0, 0);
+    alpha2Time(10, 0, 0);
++10: // 10
+    delete();
+}

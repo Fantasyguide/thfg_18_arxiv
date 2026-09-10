@@ -1,0 +1,22 @@
+script script136 {
+    // HUD 字形（TH18 **font 2** 的零售字形，见 assets/ability/make_font2_art.py）——
+    // 「贴图 VM 版数字」用的模板脚本：C 侧 ce_hud_vm_text_set 逐字起一个 VM、用 ce_anm_set_sprite 换字形。
+    // 为什么不继续用 ASCII 文字（ce_hud_text_ex）：ASCII 永远进不了暂停模糊罩下面 ——
+    //   组 1 的绘制趟（0x419950，优先级 0x37）跑在 surface 1 + 相机 0 上（实跑不可见），
+    //   其余三趟（0x419940/0x419a80/0x419b10）都晚于模糊罩（组 38 = 0x3e）。贴图 VM 就没这个问题。
+    // 层 25（UI 列表）→ AnmManager__render_layer 0x4882b8 折到 **38** → 与模糊罩同一个桩（0x3e）：
+    //   罩子是暂停时**新起**的 VM（尾插 ⇒ 画在后面）⇒ 我们的字被罩住；平时没有罩子 = 全分辨率。
+    //   （层 24 会折到 37 = 优先级 0x39，更早，但和季节槽/绀路面板的底板同层 —— 底板重起时会盖住数字。）
+    // 尺寸：resolutionMode(2) → 尺寸 ×(DAT_0056aca0 × 0.5)；贴图声明 16×32、字形本体 16×20 居中
+    //   ⇒ 1280×960（DAT=2）下正好 16×32 表面 px，与引擎自己的 ASCII 字形同尺寸。
+    sprite(@FONT2_0);
+    ins_431(1);
+    type(1);
+    layer(25);
+    resolutionMode(2);
+    pos(0.0f, 0.0f, 0.0f);
+    alpha(255);
+    stop();
+    interruptLabel(1);
+    delete();
+}

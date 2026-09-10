@@ -39,6 +39,26 @@ local/
 
 ## 怎么放回去
 
+> ✅ **TH16 样本已可用（2026-09-09）**：本机两份 `th16.exe`（Steam 安装
+> `F:/D/SteamLibrary/steamapps/common/th16/`、桌面副本）都是 **Steam 包装版**
+> （md5 `701a603c2afc686776ffddacbed4ee4e`，812,400 B，`.text` 熵 8.000 = SteamStub Variant 3.1 加密）。
+> 已用 **Steamless** 在 Linux 上脱壳（见下），得到 `local/th16.v1.00a/th16.exe`
+> （683,520 B，md5 `70d3429444e1e6c18a72e7200a4d7ce8`，`.text` 熵 6.504）；它与仓库记录的零售 md5
+> `cb9caf54ce5738f70086e783ec88fd2a` 不同，**只因 Steamless 重建了 PE 容器**——代码段字节是零售的
+> （`th-re-data` 的 v1.00a 函数地址逐一对上序言，抽检 40/40）。原始包装版留档为 `th16.exe.steamstub`。
+>
+> **脱壳配方**（本机无 Mono/Wine，用 .NET 8 直接编上游源码，不修改上游文件）——完整说明见
+> [`../tooling/steamless/README.md`](../tooling/steamless/README.md)：
+>
+> ```bash
+> git clone --depth 1 https://github.com/atom0s/Steamless.git local/vendor/Steamless   # CC BY-NC-ND：只本地跑
+> curl -sSL https://dot.net/v1/dotnet-install.sh | bash -s -- --channel 8.0 --install-dir "$HOME/.dotnet"
+> cd tooling/steamless && ~/.dotnet/dotnet build -c Release
+> ~/.dotnet/dotnet bin/Release/net8.0/steamless-linux.dll <包装版.exe>
+> ```
+>
+> ⚠️ 结尾别加 `--recalcchecksum`（走 `imagehlp.dll`，Linux 上必抛异常）——**脱壳文件在此之前就已落盘**。
+
 1. **游戏 exe / .dat**：用你自己合法持有的副本，按上表哈希核对后放进对应版本目录。
    **不要去下载。**
 2. **vendor 克隆**：各仓库上游 commit 记录在
