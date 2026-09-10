@@ -1,12 +1,15 @@
 # thdat-nc
 
+> **版本**：TH06NC（`th06nc.exe`，MD5 `b0cc28ec904e9efce2439ad857c938b5`）。
+> 本文出现的裸地址/常量默认属该版本。
+
 Quick-and-dirty unpacker for TH06NC's `data/*.dat`. The game dropped ZUN's old
 `PBG3` container for a new one (`PKGL`, zstd inside), so `thdat` from THTK just
 shrugs at it. I wanted the ECL/ANM files out *now*, so here we are. Same
 `-l` / `-x` / `-c` flags as `thdat`, because muscle memory.
 
 > ⚠️ **Fair warning: this is vibe-coded slop.** First pass came out of
-> GPT-5.6-Sol, then Claude Fable 5.1 tidied it up while I added comments. It works
+> GPT-5.6-Sol, then Claude Sonnet 5 tidied it up while I added comments. It works
 > and has tests (also machine-written, obviously), but treat it as a prototype.
 > If THTK ever ships proper support, use that instead. The only write-up of the
 > format so far is the header comment in `src/pkgl.h`; nothing in `engine/` yet.

@@ -17,10 +17,31 @@ TH06NC 的玩家主循环 `th06nc:0x140068820`（chain 回调，无直接 xref�
 弹幕 tick `th06nc:0x140010870`、被弹判定 `th06nc:0x14006a980`、
 激光判定 `th06nc:0x14006aba0` 已定位。
 
-⚠️ **跨版本注意**：TH06NC 的被弹判定是**圆形**（半径 1.25，字段 `player+0x774c`），
-而 TH06 是轴对齐盒（`hitboxTopLeft`/`hitboxBottomRight`/`hitboxSize` 三个字段）。
-半径与半宽同为 1.25，所以圆内接于方，判定面积小约 21%。定位手法与本页其余版本不同，
-见 [th06nc/01-main-loop-and-collision.md](th06nc/01-main-loop-and-collision.md)。
+### TH06 → TH06NC 的已验差异
+
+底本是 CC0 的 [`th06-decomp`](https://github.com/GensokyoClub/th06)，逐条一手比对。
+详见 [th06nc/01-main-loop-and-collision.md](th06nc/01-main-loop-and-collision.md)。
+
+| 断言 | TH06 | TH06NC | 出处 |
+| --- | --- | --- | --- |
+| 被弹判定形状 | 轴对齐盒（三字段） | **圆**（半径 1.25，`player+0x774c`） | [01 §2.7](th06nc/01-main-loop-and-collision.md) |
+| 擦弹判定形状 | 轴对齐盒 | **圆**，复用同一半径字段 | [01 §2.9](th06nc/01-main-loop-and-collision.md) |
+| 每关擦弹上限 | 9999 | **99999** | [01 §2.9](th06nc/01-main-loop-and-collision.md) |
+| `ZunTimer` | 12 字节 `{previous, subFrame, current}` | **8 字节 `{previous, current}`** | [01 §2.13](th06nc/01-main-loop-and-collision.md) |
+| 关卡区在窗口里的位置 | 左边界固定 `x=32`，右侧留 HUD | **水平居中**，虚拟屏高固定 480、宽随宽高比 | [01 §2.11](th06nc/01-main-loop-and-collision.md) |
+| 自机坐标系 / 可动区 | 关卡区局部，可动区 `(8,16)+(368,416)` | **相同** | [01 §2.11](th06nc/01-main-loop-and-collision.md) |
+| 移动速度与角色数据 | `CharacterData` 32 字节 | **相同**（灵梦 4.0/2.0、魔理沙 5.0/2.5） | [01 §2.10](th06nc/01-main-loop-and-collision.md) |
+| `PlayerBullet` | `AnmVm` 打头 | **重排**：小标量提前（`bulletState +0x10`、`sprite +0x18`），大小 `0x170`、80 发 | [01 §2.12](th06nc/01-main-loop-and-collision.md) |
+| `SpawnBullets` / `UpdatePlayerBullets` | 独立函数 | **内联进 `Player__OnUpdate`**，只能登记区间 | [01 §2.12](th06nc/01-main-loop-and-collision.md) |
+| 弹幕语义常量（0.5 / 0.3 / -100 / 10 / 14 / 0.25） | — | **七个全中** | [01 §2.14](th06nc/01-main-loop-and-collision.md) |
+
+半径与半宽同为 1.25，所以圆内接于方，判定面积小约 21%。
+
+> **两条反复出现的教训**（不只对 TH06NC 成立）：
+> ① **结构体顺序不能跨版本照抄**——`Enemy` 与 `PlayerBullet` 都被 NC 重排过；
+> 偏移必须靠访问模式或数组步长这类硬证据。
+> ② **NC 内联得比 TH06 多**，被内联的函数在 NC 侧根本没有地址可命名
+> （[`../ecl/th06nc/03`](../ecl/th06nc/03-opcode-crossmatch.md) §4）。
 
 ## 断言 × 版本矩阵
 

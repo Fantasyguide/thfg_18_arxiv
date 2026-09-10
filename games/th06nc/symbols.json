@@ -837,6 +837,14 @@
    "name": "ECL_SCAN_TIMELINE_OPCODE_13"
   },
   {
+   "addr": "0x140069740",
+   "name": "INLINED_UpdatePlayerBullets"
+  },
+  {
+   "addr": "0x140069bd1",
+   "name": "INLINED_SpawnBullets"
+  },
+  {
    "addr": "0x14006e2dc",
    "name": "RESULT_CHEAT__FILL_CLRD_WITH_99"
   },
@@ -1718,6 +1726,16 @@
    "addr": "0x140068820",
    "kind": "plate",
    "text": "[NC first-hand] Player per-frame tick, registered as a chain callback (hence no direct xrefs). Tests the logical button bitmap at 0x140a6ec60: bomb on a press edge of bit 1, focus flag stored to player+0x785c from bit 2, an 8-case movement switch on the direction bits, shooting on bit 0. TH06 splits this into OnUpdate + HandlePlayerInputs (2282 + 3482 bytes); NC inlined them (5309)."
+  },
+  {
+   "addr": "0x140069740",
+   "kind": "pre",
+   "text": "=== Player__UpdatePlayerBullets (inlined here; a standalone function in CC0 TH06) ===\nStarts by decrementing laserTimer[0] and [1] (CC0's 2-iteration loop, unrolled), then walks bullets[80]: branch on bulletType, advance position, recycle when out of bounds or the anm script ends.\nrange 0x140069740-0x140069b03"
+  },
+  {
+   "addr": "0x140069bd1",
+   "kind": "pre",
+   "text": "=== Player__SpawnBullets (inlined here; a standalone function in CC0 TH06) ===\nScans bullets[80] for a free slot (bulletState == 0), picks the plain or focus callback by isFocused and calls it; see FIRE_BULLET_RESULT for the return codes.\nrange 0x140069bd1-0x140069c6a"
   },
   {
    "addr": "0x14006a580",

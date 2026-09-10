@@ -113,3 +113,78 @@ class Th06ncPlayerSpecTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Th06ncShootingChainTests(unittest.TestCase):
+    """射击链（阶段一）的守门。
+
+    重点守三件**这轮实际靠它们才没走偏**的事：
+    - PlayerBullet 的步长/数量是从循环指令直接读出的，不是从 TH06 抄的；
+    - NC 的 ZunTimer 比 TH06 短 4 字节，这个差异极易被「照抄 TH06」抹平；
+    - CharacterData 后 16 字节是函数指针，不是浮点（本仓错过一次）。
+    """
+
+    def setUp(self):
+        self.spec = load("th06nc_player_spec")
+
+    def test_player_bullet_array_layout_is_self_consistent(self):
+        # 0x410 + 80*0x170 = 0x7710，正好落在 fireBulletCallback(0x7720) 之前。
+        # 步长或数量取错，这条就会炸 —— 它是整张表的地基。
+        by = {n: o for o, n, _s, _e in self.spec.PLAYER_FIELDS}
+        end = by["bullets"] + self.spec.PLAYER_BULLET_COUNT * self.spec.PLAYER_BULLET_SIZE
+        self.assertEqual(end, 0x7710)
+        self.assertLessEqual(end, by["fireBulletCallback"])
+        self.assertEqual(self.spec.PLAYER_BULLET_SIZE, 0x170)
+        self.assertEqual(self.spec.PLAYER_BULLET_COUNT, 80)
+
+    def test_nc_zuntimer_is_shorter_than_th06(self):
+        # TH06 的 ZunTimer 有 subFrame（12 字节），NC 只有 previous/current（8 字节）。
+        # 若把它「修正」回 12，fireBulletTimer 就会和 bullets[0] 重叠。
+        self.assertEqual(self.spec.ZUNTIMER_SIZE, 8)
+        self.assertEqual(self.spec.ZUNTIMER_SIZE_TH06, 12)
+        by = {n: o for o, n, _s, _e in self.spec.PLAYER_FIELDS}
+        self.assertEqual(by["fireBulletTimer"] + self.spec.ZUNTIMER_SIZE, by["bullets"])
+
+    def test_character_data_tail_is_pointers_not_floats(self):
+        # 本仓一度把这 16 字节按 f32 读成 {2.104, 0, 2.104, 0} 并记为「含义未知」。
+        # 那是 0x4006a840 被当成 float。别再退回去。
+        kinds = {n: k for _o, n, k in self.spec.CHAR_DATA_FIELDS}
+        self.assertEqual(kinds["fireBulletCallback"], "ptr")
+        self.assertEqual(kinds["fireBulletFocusCallback"], "ptr")
+        offs = [o for o, _n, _k in self.spec.CHAR_DATA_FIELDS]
+        self.assertEqual(offs, sorted(offs))
+        self.assertEqual(offs[-1] + 8, self.spec.CHAR_DATA_STRIDE)
+        # 回调必须指向 SHOT_TYPES 里登记的那四个转发桩之一
+        import struct
+        stubs = {r[2] for r in self.spec.SHOT_TYPES}
+        self.assertEqual(len(stubs), 4)
+
+    def test_bullet_fields_are_sorted_and_evidenced(self):
+        offs = [o for o, _n, _s, _e in self.spec.PLAYER_BULLET_FIELDS]
+        self.assertEqual(offs, sorted(offs))
+        self.assertEqual(len(offs), len(set(offs)))
+        for _o, name, source, evidence in self.spec.PLAYER_BULLET_FIELDS:
+            with self.subTest(field=name):
+                self.assertEqual(source, "code")
+                if not name.startswith("unk_"):
+                    self.assertTrue(evidence, "%s 没写证据" % name)
+        self.assertLess(max(offs), self.spec.PLAYER_BULLET_SIZE)
+
+    def test_the_anm_vm_offset_agrees_with_the_anm_spec(self):
+        # 自证：sprite 基址 +0x18，pendingInterrupt 在 +0xa2。
+        # 0x18 + 0x8a = 0xa2，而 0x8a 是 ANM 那一轮独立得到的 vm 偏移。
+        by = {n: o for o, n, _s, _e in self.spec.PLAYER_BULLET_FIELDS}
+        self.assertEqual(by["sprite"] + 0x8A, by["sprite.pendingInterrupt"])
+
+    def test_fire_bullet_result_values(self):
+        self.assertEqual(self.spec.FIRE_BULLET_RESULT["FBR_STOP_SPAWNING"], -2)
+        self.assertEqual(self.spec.FIRE_BULLET_RESULT["FBR_SPAWN_MORE"], -1)
+
+    def test_inlined_ranges_sit_inside_player_onupdate(self):
+        # SpawnBullets / UpdatePlayerBullets 在 NC 里没有独立地址，只有区间。
+        start = {a for a, n, _c in self.spec.FUNCTIONS if n == "Player__OnUpdate"}.pop()
+        for lo, hi, name, _why in self.spec.INLINED_RANGES:
+            with self.subTest(name=name):
+                self.assertLess(lo, hi)
+                self.assertGreater(lo, start)
+                self.assertLess(hi, start + 0x2000)

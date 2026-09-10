@@ -261,8 +261,25 @@ p->characterData.diagonalMovementSpeedFocus = p->characterData.orthogonalMovemen
 **与 TH06 逐值相同** ✅，且同角色两个机型共享速度（TH06 也如此）。
 量纲关：低速正好是常速的一半，斜向 = 4/√2 ≈ 2.83，都落在合理范围。
 
-> 表项 32 字节里只用掉了前 16。后 16 字节（`+0x3de3c0`）被写到 `player+0x7870`，
-> 四个角色都是 `{2.104, 0, 2.104, 0}` ❓ 含义未知，本文不下结论。
+### 表项的后 16 字节是**函数指针**（此处有一次误读，已更正）
+
+本文早前写「后 16 字节四个角色都是 `{2.104, 0, 2.104, 0}` ❓ 含义未知」——**错的**。
+那是把两个函数指针按 `f32` 读了：指针 `0x14006a840` 的低 dword `0x4006a840`
+当成 float 恰好是 `2.1041`，高 dword `0x00000001` 是个次正规数、打印成 `0`。
+
+完整的 `CharacterData`（32 字节，与 CC0 `Player.hpp` 同名结构逐字段一致）：
+
+| 偏移 | 字段 | 值 |
+| --- | --- | --- |
+| `+0x00` / `+0x04` | `orthogonalMovementSpeed` / `…Focus` | 灵梦 4.0 / 2.0，魔理沙 5.0 / 2.5 |
+| `+0x08` / `+0x0c` | `diagonalMovementSpeed` / `…Focus` | 初始化时 `= 正交 / sqrt(2)` |
+| `+0x10` | `fireBulletCallback` | → 该机型的射击转发桩 |
+| `+0x18` | `fireBulletFocusCallback` | 同上 |
+
+> **教训**：一块数据「按浮点读出来像个合理的数」不等于它就是浮点。
+> `2.104` 落在速度的合理量纲里，正因如此才骗过了当时的量纲关。
+> 判据应该是**谁在用它、怎么用**——这里 `AddedCallback` 把这 8 字节
+> 拷进 `player+0x7720` 之后是 `CALL RAX`，一看就是指针。
 
 ## 2.11 自机可动区域：钳位边界与坐标系确认
 
@@ -351,6 +368,114 @@ x ∈ [0,384]、y ∈ [0,448]，与 TH06 相同**。
 > 🟡 这是**从实测数据拟合**的，不是从二进制读出的常量。对应的
 > `arcadeRegionTopLeftPos` ❓ **在 NC 里没找到**——很可能压根不存在，
 > 关卡区的定位由 D3D 视口/投影矩阵完成。两组样本都是 16:9。
+
+## 2.12 射击链：`SpawnBullets` 与 `UpdatePlayerBullets` 都被内联
+
+CC0 侧这是两个独立函数（`Player.cpp:1043` / `:472`）。**NC 侧没有对应地址可命名**——
+两段都被内联进 `Player__OnUpdate`，与 `EnemyEclInstr::GetVar` 被内联 25 份是同一类现象
+（[`../../ecl/th06nc/03`](../../ecl/th06nc/03-opcode-crossmatch.md) §4）。所以下面登记的是**区间**：
+
+| 区间 | 对应 CC0 |
+| --- | --- |
+| `th06nc:0x140069740`–`0x140069b03` | `Player::UpdatePlayerBullets`（开头是展开的 `laserTimer` 递减） |
+| `th06nc:0x140069bd1`–`0x140069c6a` | `Player::SpawnBullets` |
+
+### 结构体骨架是从循环指令直接读出的
+
+```
+140069bd1  LEA  RBX,[RDI + 0x410]          ; &bullets[0]        -> bullets = +0x410
+140069be0  CMP  word ptr [RBX + 0x10],0x0  ; bulletState == 0（找空闲槽）
+140069bf0  CMP  byte ptr [RDI + 0x785c],0  ; isFocused
+140069c05  MOV  RAX,[RDI + 0x7720]         ; fireBulletCallback
+140069c0e  MOV  RAX,[RDI + 0x7728]         ; fireBulletFocusCallback
+140069c15  CALL RAX                        ; (player, bullet, idx, timer)
+140069c59  ADD  RBX,0x170                  ; sizeof(PlayerBullet) = 368
+140069c60  CMP  R14D,0x50                  ; 80 发
+```
+
+**布局自洽**：`0x410 + 80 × 0x170 = 0x7710`，正好接上 `+0x7720` 的回调字段。
+步长或数量取错，这个等式立刻不成立——所以它同时是一道校验。
+
+> ⚠️ 偏移**不能从 TH06 抄**：CC0 的 `PlayerBullet` 以 `AnmVm sprite` 打头，
+> NC 把小标量提到了前面（`bulletState` 在 `+0x10`，`sprite` 在 `+0x18`）。
+> 与 `Enemy` 被重排是同一情况（[`../../ecl/th06nc/04`](../../ecl/th06nc/04-enemy-struct.md) §1）。
+
+### 回调返回值
+
+由 `CMP` 常量直接读出，语义与 CC0 的 `FireBulletResult` 一致：
+`-2` = 停止本帧生成、`-1` = 同一槽再打一发（跳回循环体）、`> 0` = 停止；
+`>= 0` 视为已发射（拷 `position` → `sprite.pos`，`z = 0.495`，`bulletState = 1`）。
+
+## 2.13 ★ NC 的 `ZunTimer` 比 TH06 短 4 字节
+
+| | TH06 | TH06NC |
+| --- | --- | --- |
+| 布局 | `{i32 previous; f32 subFrame; i32 current}` | `{i32 previous; i32 current}` |
+| 大小 | 12 字节 | **8 字节** |
+
+三条独立证据：
+
+1. `fireBulletTimer` 的 `previous`/`current` 相差 4（`th06nc:` `+0x408` / `+0x40c`）。
+2. `laserTimer[]` 的索引步长是 8（`[RDI + idx*8 + 0x79ec]`）。
+3. 若是 12 字节，`fireBulletTimer` 会与 `bullets[0]`（`+0x410`）重叠 —— **排除**。
+
+`subFrame` 在 TH06 里服务于 `effectiveFramerateMultiplier` 的分帧累积。
+NC 把它去掉了 ❓ **是否意味着 NC 不再做可变帧率补偿，本文不下结论**——
+需要单独查 `effectiveFramerateMultiplier` 在 NC 里还在不在。
+
+## 2.14 `PlayerBullet` 字段（步长 `0x170`，80 发）
+
+全部 **code**（直接从指令读出），且每条都能对上 CC0 `UpdatePlayerBullets` 的某一行。
+
+| 偏移 | 字段 | 证据 |
+| --- | --- | --- |
+| `+0x000` / `+0x004` | `unk_140.previous` / `.current` | `CMP EAX,0x28` = CC0 的 `AsFrames() < 40` |
+| `+0x008` / `+0x00c` | `velocity.x` / `.y` | 类型 2 分支 `SUBSS [RBX+0xc],0.3` |
+| `+0x010` | `bulletState` | i16，`0` = 空闲、`1` = 已发射 |
+| `+0x012` | `bulletType` | i16，switch 的分支变量 |
+| `+0x018` | `sprite`（`AnmVm`） | `LEA RDX,[RBX+0x18]` 传给 `AnmManager__ExecuteScript` |
+| `+0x0a2` | `sprite.pendingInterrupt` | laser 分支写 1 |
+| `+0x0e0`–`+0x0e8` | `sprite.pos` | 新弹 `z = 0.495` |
+| `+0x0fc` | `sprite.scaleY` | `= position.y × 2 / 14` |
+| `+0x138` | `unk_152` | i16，`laserTimer` 的下标 |
+| `+0x13c`–`+0x144` | `position` | laser 分支 `z = 0.44` |
+| `+0x148` | `sidewaysMotion` | laser 分支 `position.x += 它` |
+| `+0x14c` | `spawnPositionIdx` | i16，取 `orbsPosition[idx-1]` |
+| `+0x154` | `unk_134.y` | 追踪的速度状态 |
+| `+0x164` | `size.y` | `= position.y × 2` |
+
+### 两条自证
+
+**其一：`AnmVm` 偏移与 ANM 那一轮吻合。** `sprite` 基址 `+0x18`、`pendingInterrupt` 在 `+0xa2`，
+而 `0x18 + 0x8a = 0xa2` —— `0x8a` 正是
+[`../../anm/th06nc/01`](../../anm/th06nc/01-vm-and-anchor-opcodes.md) 里
+`AnmManager__SeekInterruptLabel` 独立解出的 `vm` 偏移。两次互不知情的调查对上了 ✅。
+
+**其二：七个语义常量全中（量纲关）。**
+
+| 地址 | 值 | CC0 里的用途 |
+| --- | --- | --- |
+| `th06nc:0x14030cd58` | `0.5` | `position.y /= 2` |
+| `th06nc:0x14030cd40` | `0.3` | `velocity.y -= 0.3` |
+| `th06nc:0x14030d0f0` | `-100.0` | 追踪前置条件 |
+| `th06nc:0x14030cea0` | `10.0` | `ZUN_MIN(len, 10)` |
+| `th06nc:0x14030ceac` | `14.0` | `scaleY` 的除数 |
+| `th06nc:0x14030cd34` | `0.25` | `unk_134.y / 4` |
+| `th06nc:0x14030cd9c` | `1.0` | 下限钳位 |
+
+外加三个立即数：`positionOfLastEnemyHit` 每帧重置为 `-999.0`（`0xc479c000`）、
+laser 的 `position.z = 0.44`、新弹的 `sprite.pos.z = 0.495`。
+
+## 2.15 顺带定位的 Player 字段
+
+| 偏移 | 字段 | 证据 |
+| --- | --- | --- |
+| `+0x408` | `fireBulletTimer` | `ZunTimer`；生成完一轮后 `current++` 并与 `30` 比较 |
+| `+0x410` | `bullets[80]` | 见 §2.12 |
+| `+0x7720` / `+0x7728` | `fireBulletCallback` / `…Focus` | `AddedCallback` 从 `characterData` 拷来 |
+| `+0x7740` | `positionOfLastEnemyHit` | 每帧写 `(-999,-999,0)`；追踪弹判 `x > -100` |
+| `+0x7880` | `orbsPosition[2]` | 两个 `D3DXVECTOR3` 每帧都写成 `positionCenter` |
+| `+0x79e8` | `laserTimer[2]` | 步长 8；CC0 的 2 次递减循环在 NC 里被展开成 `+0x79ec` / `+0x79f4` 两段 |
 
 ## 3. ⚠️ 顺序推断在这里翻了车
 

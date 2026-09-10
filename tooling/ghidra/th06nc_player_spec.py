@@ -167,12 +167,23 @@ G_PLAYER = 0x1404FF3A0
 
 # 已定位的玩家结构体偏移。分档同 ECL 那边：code = 直接从指令读出。
 PLAYER_FIELDS = [
+    (0x0408, "fireBulletTimer", "code",
+     "ZunTimer：读 +0x40c(current)、与 +0x408(previous) 比较判断是否跳过；"
+     "生成完一轮后 previous=current、current++，并与 0x1e(30) 比较"),
+    (0x0410, "bullets", "code",
+     "PlayerBullet[80]，步长 0x170。LEA RBX,[RDI+0x410] 在生成与更新两个循环里都出现；"
+     "0x410 + 80*0x170 = 0x7710，正好接上 +0x7720 的回调字段 —— 布局自洽"),
+    (0x7720, "fireBulletCallback", "code",
+     "AddedCallback 从 characterData(+0x7870) 拷来；SpawnBullets 在非低速时 CALL 它"),
+    (0x7728, "fireBulletFocusCallback", "code", "同上，低速时用（+0x7878 拷来）"),
     (0x7730, "positionCenter", "code",
      "Player__OnUpdate 每帧 ADDSS/MOVSS 读改写 +0x7730/34/38；"
      "绝对地址 0x140506ad0 被 18 个函数读，含 ECL VM 内联的 AngleToPlayer"),
     (0x773C, "unk_773c", "weak",
      "init 与死亡判定都写 8。曾被本仓标成 playerState —— **错的**，"
      "真正的 playerState 在 +0x7898（枚举值与 TH06 相同）。这里究竟是什么仍未知"),
+    (0x7740, "positionOfLastEnemyHit", "code",
+     "每帧先写 (-999,-999,0)（立即数 0xc479c000）；追踪弹判 x > -100 才启用"),
     (0x774C, "hitboxRadius", "code",
      "Player__AddedCallback 的 MOV qword [RBX+0x774c],0x3fa00000 = 1.25f（高 dword 顺带清零 +0x7750）；"
      "CalcKillBoxCollision 用它的平方与距离平方比较"),
@@ -189,9 +200,15 @@ PLAYER_FIELDS = [
      "0x14006840c 写入 = +0x7860 / sqrtf(2)，与 CC0 Player.cpp:115 同式"),
     (0x786C, "characterData_diagonalMovementSpeedFocus", "code",
      "0x140068414 写入 = +0x7864 / sqrtf(2)，对应 CC0 Player.cpp:116"),
+    (0x7880, "orbsPosition", "code",
+     "D3DXVECTOR3[2]：+0x7880 与 +0x788c 每帧都被写成 positionCenter；"
+     "laser 弹取 orbsPosition[spawnPositionIdx-1]"),
     (0x7898, "playerState", "code",
      "擦弹前查 != 1 && != 2；死亡判定写 2、复活写 1。"
      "与 TH06 的 PLAYER_STATE_ALIVE/SPAWNING/DEAD/INVULNERABLE = 0/1/2/3 逐值相同"),
+    (0x79E8, "laserTimer", "code",
+     "ZunTimer[2]，步长 8。两处证据：laser 弹用 [RDI + idx*8 + 0x79ec] 读 current 与 70/1 比较；"
+     "UpdatePlayerBullets 开头把 CC0 的 2 次递减循环展开成对 +0x79ec 与 +0x79f4 的两段"),
     (0x9F28, "grabItemSize", "code", "init 写 (12.0, 12.0, 5.0)，与 TH06 逐值相同"),
 ]
 
@@ -275,6 +292,23 @@ PLAYER_POSITION_GLOBAL = 0x140506AD0
 # 且 focus 与非 focus 用同一个回调 —— 这点也和 TH06 一样。
 G_CHAR_DATA = 0x1403DE3B0
 CHAR_DATA_STRIDE = 32
+
+# CharacterData 的完整布局（32 字节），与 CC0 Player.hpp 的同名结构逐字段一致：
+#   +0x00 f32 orthogonalMovementSpeed       +0x04 f32 orthogonalMovementSpeedFocus
+#   +0x08 f32 diagonalMovementSpeed         +0x0c f32 diagonalMovementSpeedFocus
+#   +0x10 FireBulletCallback fireBulletCallback
+#   +0x18 FireBulletCallback fireBulletFocusCallback
+# ⚠️ 后 16 字节**是两个函数指针，不是浮点**。本仓一度把它们按 f32 读出
+# `{2.104, 0, 2.104, 0}` 并记为「含义未知」——那是指针低 dword 0x4006a840
+# 被当成 float（恰好 = 2.1041）。四个自机型的表项分别指向 SHOT_TYPES 里的转发桩。
+CHAR_DATA_FIELDS = [
+    (0x00, "orthogonalMovementSpeed", "f32"),
+    (0x04, "orthogonalMovementSpeedFocus", "f32"),
+    (0x08, "diagonalMovementSpeed", "f32"),
+    (0x0C, "diagonalMovementSpeedFocus", "f32"),
+    (0x10, "fireBulletCallback", "ptr"),
+    (0x18, "fireBulletFocusCallback", "ptr"),
+]
 CHAR_SELECT_GLOBALS = (0x1404F1E80, 0x1404F1E81)   # 角色, 机型
 FIRE_BULLET_IMPL = 0x14006A580
 
@@ -295,6 +329,88 @@ POWER_LEVELS = (8, 16, 32, 48, 64, 80, 96, 128)
 #   +0x1c u16 damage              +0x1e u8 spawnPositionIdx  +0x1f u8 bulletType
 #   +0x20 i16 anmFileIdx          +0x22 i16 bulletSoundIdx
 POWER_BULLET_STRIDE = 0x24
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 射击链：SpawnBullets 与 UpdatePlayerBullets **都被内联进 Player__OnUpdate**。
+#
+# CC0 侧是两个独立函数（Player.cpp:472 UpdatePlayerBullets、:1043 SpawnBullets），
+# NC 侧没有对应地址可命名 —— 与 EnemyEclInstr::GetVar 被内联 25 份是同一类现象
+# （engine/ecl/th06nc/03 §4）。所以这里登记的是**区间**而不是函数。
+INLINED_RANGES = [
+    # ⚠️ 第三个字段会被写进 Ghidra 并随 th06nc-re-data 发布 —— **必须 ASCII**。
+    # 中文说明写在 engine/player/th06nc/01 §2.12，不要挪到这里。
+    (0x140069740, 0x140069B03, "Player__UpdatePlayerBullets",
+     "Starts by decrementing laserTimer[0] and [1] (CC0's 2-iteration loop, unrolled), "
+     "then walks bullets[80]: branch on bulletType, advance position, "
+     "recycle when out of bounds or the anm script ends."),
+    (0x140069BD1, 0x140069C6A, "Player__SpawnBullets",
+     "Scans bullets[80] for a free slot (bulletState == 0), picks the plain or focus "
+     "callback by isFocused and calls it; see FIRE_BULLET_RESULT for the return codes."),
+]
+
+# 回调返回值。由内联代码里的 CMP 常量直接读出，语义对照 CC0 的 FireBulletResult：
+#   ECX <  0 且 == -2 -> 立即停止本帧的生成（FBR_STOP_SPAWNING）
+#   ECX == -1         -> 同一个槽再打一发（FBR_SPAWN_MORE，跳回循环体开头）
+#   ECX >  0          -> 停止
+#   ECX >= 0          -> 视为已发射：拷 position -> sprite.pos，z=0.495，bulletState=1
+FIRE_BULLET_RESULT = {"FBR_STOP_SPAWNING": -2, "FBR_SPAWN_MORE": -1}
+
+PLAYER_BULLET_SIZE = 0x170      # 循环里的 ADD RBX,0x170
+PLAYER_BULLET_COUNT = 80        # CMP R14D,0x50；与 CC0 的 bullets[80] 相同
+PLAYER_BULLET_STATE_UNUSED = 0
+PLAYER_BULLET_STATE_FIRED = 1
+
+# ⚠️ NC 的 ZunTimer 是 **8 字节 {i32 previous; i32 current}**，
+# TH06 是 12 字节 {i32 previous; f32 subFrame; i32 current}（CC0 ZunTimer.hpp）。
+# 三条独立证据：
+#   1. fireBulletTimer 的 previous/current 相差 4（+0x408 / +0x40c）
+#   2. laserTimer[] 的索引步长是 8（[RDI + idx*8 + 0x79ec]）
+#   3. 若为 12 字节，fireBulletTimer 会与 bullets[0]（+0x410）重叠 —— 排除
+ZUNTIMER_SIZE = 8
+ZUNTIMER_SIZE_TH06 = 12
+
+# PlayerBullet 字段（相对 bullets[i] 基址）。
+# 来源 code = 直接从指令读出；每条都能对上 CC0 UpdatePlayerBullets/SpawnBullets 的某一行。
+PLAYER_BULLET_FIELDS = [
+    (0x000, "unk_140.previous", "code", "Tick(): MOV [RBX],EAX 把 current 抄进来"),
+    (0x004, "unk_140.current", "code", "CMP EAX,0x28 对应 CC0 的 unk_140.AsFrames() < 40"),
+    (0x008, "velocity.x", "code", "追踪分支里 ADDSS XMM6,[RBX+0x8]"),
+    (0x00C, "velocity.y", "code", "BULLET_TYPE_2 分支 SUBSS [RBX+0xc],0.3 = CC0 的 velocity.y -= 0.3f"),
+    (0x010, "bulletState", "code", "i16；==0 视为空闲槽，发射后写 1"),
+    (0x012, "bulletType", "code", "i16；switch 的分支变量，1/2/3 三路"),
+    (0x018, "sprite", "code",
+     "AnmVm 基址：LEA RDX,[RBX+0x18] 传给 AnmManager__ExecuteScript(0x1400069b0)"),
+    (0x0A2, "sprite.pendingInterrupt", "code",
+     "laser 分支写 1；= sprite(+0x18) + 0x8a，与 ANM spec 里 SeekInterruptLabel 匹配的 vm+0x8a 吻合"),
+    (0x0E0, "sprite.pos.x", "code", "SpawnBullets 把 position 拷进来"),
+    (0x0E4, "sprite.pos.y", "code",
+     "SpawnBullets 里与 .x/.z 同一段拷贝：MOV [RBX+0xe4] <- position.y(+0x140)"),
+    (0x0E8, "sprite.pos.z", "code", "新弹写 0.495（0x3efd70a4）"),
+    (0x0FC, "sprite.scaleY", "code", "laser 分支 = position.y*2/14.0"),
+    (0x138, "unk_152", "code", "i16；laserTimer 的下标（[RDI+idx*8+0x79ec]）"),
+    (0x13C, "position.x", "code",
+     "追踪分支 SUBSS XMM6,[RBX+0x13c] 求到 positionOfLastEnemyHit 的差；"
+     "laser 分支 position.x += sidewaysMotion"),
+    (0x140, "position.y", "code", "laser 分支 *= 0.5，对应 CC0 的 position.y /= 2.0f"),
+    (0x144, "position.z", "code", "laser 分支写 0.44（0x3ee147ae）"),
+    (0x148, "sidewaysMotion", "code", "laser 分支 position.x += 它"),
+    (0x14C, "spawnPositionIdx", "code",
+     "i16；取 orbsPosition[idx-1]，基址 0x7880-12=0x7874 把 -1 折进了寻址"),
+    (0x154, "unk_134.y", "code", "追踪的速度状态：/4 参与转向、结果 MIN(len,10.0)"),
+    (0x164, "size.y", "code", "laser 分支 = position.y*2"),
+]
+
+# 这一轮把 CC0 的语义常量逐个在 NC 里核对过，**七个全中**（量纲关）。
+BULLET_CONSTANTS = [
+    (0x14030CD58, 0.5,     "laser: position.y /= 2"),
+    (0x14030CD40, 0.3,     "BULLET_TYPE_2: velocity.y -= 0.3"),
+    (0x14030D0F0, -100.0,  "追踪前置条件 positionOfLastEnemyHit.x > -100"),
+    (0x14030CEA0, 10.0,    "ZUN_MIN(vecLength, 10.0)"),
+    (0x14030CEAC, 14.0,    "sprite.scaleY = position.y*2 / 14"),
+    (0x14030CD34, 0.25,    "unk_134.y / 4"),
+    (0x14030CD9C, 1.0,     "下限钳位"),
+]
+POSITION_OF_LAST_ENEMY_HIT_RESET = -999.0   # 立即数 0xc479c000，每帧重置
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 炸弹：同样是按 (机型, 角色) 索引的函数指针表，每项 {Calc, Draw}。
@@ -330,8 +446,17 @@ def validate():
     if "NOT graze" not in by_name.get("Player__CalcKillBoxCollision", ""):
         errors.append("Player__CalcKillBoxCollision must keep the 'not graze' correction")
 
-    if G_PLAYER + PLAYER_FIELDS[0][0] != PLAYER_POSITION_GLOBAL:
+    # 按名字查，不靠表内顺序 —— 早先写成 PLAYER_FIELDS[0]，
+    # 后来在 positionCenter 之前插入了 bullets/fireBulletTimer，那个假设就塌了。
+    _by_off = {n: o for o, n, _s, _e in PLAYER_FIELDS}
+    if "positionCenter" not in _by_off:
+        errors.append("positionCenter 不在字段表里")
+    elif G_PLAYER + _by_off["positionCenter"] != PLAYER_POSITION_GLOBAL:
         errors.append("g_Player + positionCenter 偏移必须等于记录的绝对地址")
+    # bullets[80] 的尾部必须正好接上 fireBulletCallback —— 布局自洽性检查
+    if "bullets" in _by_off and "fireBulletCallback" in _by_off:
+        if _by_off["bullets"] + PLAYER_BULLET_COUNT * PLAYER_BULLET_SIZE > _by_off["fireBulletCallback"]:
+            errors.append("bullets[80] 覆盖到了 fireBulletCallback —— 步长或数量取错了")
     if SPAWN_POSITION != (192.0, 384.0, 0.49) or RESPAWN_POSITION != (192.0, 384.0, 0.2):
         errors.append("出生/复活坐标与一手读到的立即数不符")
     # 真正的差异在形状不在数值——别让这两条被写反
