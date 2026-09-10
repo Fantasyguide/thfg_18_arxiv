@@ -12,7 +12,15 @@
 
 ## 当前覆盖
 
-- Ghidra 共 2816 个函数；**已命名 30 个**（ECL VM 与子系统 19、菜单/输入/存档 6、ANM 5），另有 120 个 ECL opcode handler 标签。
+- Ghidra 共 **2992** 个函数（`list_functions` 实测，2026-09-11）：
+  - `FUN_*` 未命名 **2652**
+  - 已命名 340，其中**我们这层 51 个**（其余是 Ghidra 自动识别的导入/CRT，
+    如 `__scrt_*`、`__CxxFrameHandler4`）
+  - 判据：名字含 `__` 的共 65 个，减去 14 个 CRT 内部符号 = 51，与 `symbols.json` 的 `funcs` 一致
+- 另有 **147** 个标签（`ECL_OP_*` 120 个 opcode handler、`INLINED_*` 内联区间、`g_*` 全局）
+- `symbols.json` 合计 **794** 条：51 funcs / 18 statics / 146 labels / 579 comments
+
+> 数字取自 MCP 直查（`th06nc_live`），不是 HTML 导出——导出会滞后于 apply。
 - ECL：已确认 TH06 风格记录、敌机解释器、时间线；新增主 opcode `200/201` 与时间线 `13/14` 见 [ECL 记录](../../engine/ecl/th06nc/01-th06-baseline-and-nc-deltas.md)。
 - ANM：125 个文件均可解码；**VM 已定位**（`0x1400069b0`），指令集 0–35，新增 opcode 32/33/34/35 = 锚点设置，见 [ANM VM 与锚点 opcode](../../engine/anm/th06nc/01-vm-and-anchor-opcodes.md)。
 - STD：7 个文件已解包，结构级语义未开始。
