@@ -84,6 +84,60 @@
 - [ ] 原音效 id（查 `engine/_shared/th18-sound-table.md` 一类表）？
 - [ ] 找不到的部分是否已标 `❓ 自定` 并登记？
 
+## 铁律:长持续效果的卡必须交代「被删掉会怎样」（2026-09-10 立）
+
+> **一句话**：任何会**跨帧留下东西**的卡（自建 VM / 子机槽 / HUD 数字 / 伤害源 / 计时器 / 队列 / 全局旋钮），
+> 必须在 `on_delete` 里收干净 —— 因为**删卡发生在商店里**，那一刻这张卡的所有 tick 回调都停着。
+> 写卡时先自问一遍：**「它被倒吊人删掉、或者被原版空白卡清空整副牌，会留下什么？」**
+
+### 为什么立这条
+
+2026-09-10 用户问：「我一个持续时间很长的效果，可能在商店还触发着，此时碰到倒吊人怎么办」。
+一查是真 bug，一次命中 7 张卡：青眼白龙（龙 + 血条脚本是 `stop()`，不自己 delete ⇒ 永久钉在屏幕上）、
+炎魔之王（同款）、破损核心 / 豌豆射手（子机槽漏在 12 格池里）、真银圣剑 / 衔尾蛇（HUD 数字是独立 VM）、
+绀珠传（面板 6 条 VM + 五行数字）。**这些卡都只有一个共同点：没写 `on_delete`。**
+
+**为什么专挑商店这一下**（一手）：
+
+| 删卡路径 | 机制 | 证据 |
+| --- | --- | --- |
+| 倒吊人（card-expand id 74）| **商店一次性购买**的即时卡，`ctor` 里 `ce_destroy_card(victim)` → `[vt+0x50](victim,1)` | `mods/th18.v1.00a/card-expand/native/cards/hanged.c`、`sdk.c` |
+| **原版空白卡**（id 0 / `CardChimata`）| 商店 state 3 确认时 `AbilityManager__reset_cards(mgr, 0)` = **整副卡组逐张 `vtable->operator_delete(1)`**，再免费发本次商店的非消耗型待售卡 + `MONEY = 0` | [`engine/card/th18/05-shop-and-money.md`](engine/card/th18/05-shop-and-money.md) §7、[`02-lifecycle.md`](engine/card/th18/02-lifecycle.md) §6 |
+| 局末 / 换局 | `on_run_reset`（虚表 `+0x4c`），之后才是对象销毁 | [`mods/th18.v1.00a/card-expand/SDK.md`](mods/th18.v1.00a/card-expand/SDK.md) §2 |
+
+而**商店期间整个 AbilityManager 被冻住**：`AbilityManager__on_tick__stub` `th18:0x408a90` 开头
+`ABILITY_SHOP_PTR != 0` 就跳过本帧 ⇒ 被删卡的 `on_tick_2` / `on_active_tick` 当场停摆，
+`on_load` 不会再来（它只在关卡开场跑），`on_run_reset` 要等局末。
+**唯一还跑得到的收尾点 = `on_delete`（虚表 `+0x50`。SDK 的 `opdelete` 桩顺序：`ce_dmg_set(id,0)`
+→ `on_delete` → 才 `ce_state_free`）。**
+
+### 做法（动手前必走完）
+
+1. **每个「会留下东西」的卡都写 `on_delete`**，哪怕只有一行转发到一个共用的 `clear_card()`。
+2. **`on_run_reset` ≠ `on_delete`**：前者是局末（还会换新对象），后者是「这个对象没了」。
+   两条路都要收干净；能共用就共用同一个函数（季节 / 动物灵卡的 `clear_card` 就是这么写的）。
+3. **只靠 tick 的清理等于没有清理**。别写「下一帧我会发现并收掉」——商店里没有下一帧。
+   同一个道理：SDK 里那条「HUD 图标没了就删数字」的自愈检查，在卡被删之后也不会再被调用。
+4. **`on_delete` 里 `ce_state` 还活着**（SDK 故意留的顺序），可以从中取句柄；但别在里面调 tick 系列 API。
+5. **要能连续多张执行**：原版空白卡会一口气删光整副牌 —— 清理不能假设「自己是唯一那张卡」
+   （文件级 `static` 缓存、共享池索引尤其小心）。
+6. **别只盯着画面**：漏子机槽 = `Player__allocate_option` 的 12 格池**没有别的回收者**
+   （每漏一次少一格，日志会是 `option allocated FAILED (pool full)`）；漏 VM = 永久留在屏幕上。
+7. **全局旋钮也要交代**（自机道具半径、伤害倍率、道具减速因子…）：要么每帧重写、要么走 SDK 的按卡聚合
+   （删卡即退出聚合），要么在 `on_delete` 里还原。
+
+### 清单（每张新卡动手前打勾）
+
+- [ ] 这张卡会不会跨帧留下东西？（自建 VM / 子机 / HUD 数字 / 伤害源 / 计时器 / 队列 / 全局旋钮）
+- [ ] 有没有 `on_delete`？清理逻辑和 `on_run_reset` 是同一个吗？
+- [ ] 清理是否**完全不依赖 tick**（商店里 tick 停着）？
+- [ ] 连续删多张（空白卡那条路）时还成立吗？
+- [ ] 子机槽 / VM / HUD 数字 / 全局旋钮，逐类对过一遍了吗？
+- [ ] 实跑清单里写了「买倒吊人删掉它」的验收步骤吗？（记进 `mods/th18.v1.00a/card-expand/NEXT.md`）
+
+> 写卡时的操作用清单（六个生命周期钩子 × 三类资源 × 实跑验收模板）见
+> [`mods/th18.v1.00a/card-expand/CARD-CHECKLIST.md`](mods/th18.v1.00a/card-expand/CARD-CHECKLIST.md)。
+
 ## 适用
 
 `findings/` 下每篇、每条结论都按此写。已有的 01–04 若有"裸结论"应回补证据链。回流到 `shared/`、

@@ -56,6 +56,8 @@
 
 [`README.md`](README.md) → [`DATA.md`](DATA.md) → [`SDK.md`](SDK.md) → [`MAP.md`](MAP.md)（追溯表，**每改必补**）→ AUDIT §N、§O。
 
+**写新卡之前**先过一遍 [`CARD-CHECKLIST.md`](CARD-CHECKLIST.md)（生命周期钩子 / 删卡三路径 / 资源回收 / 实跑验收模板）——尤其那条铁律：**长持续效果必须在 `on_delete` 里收干净**（删卡都发生在商店里，那时卡的 tick 全停着）。
+
 ## 1. 实跑清单（叠 `_255` + `_test`，Windows `git pull` 后）
 
 日志 `th18_card_expand.log` 应有：
