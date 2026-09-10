@@ -1,5 +1,8 @@
 # anm — ANM v8 播放器实现状态
 
+> **版本**：TH16 v1.00a（`th16.exe`，imagebase `0x400000`）——本文裸地址默认属该版本，
+> 引用其他版本须写成 `th18:0x…`。实现以 th16 主攻、th18 补差（见设计文档 D5）。
+>
 > **层次**：本文档是 `runtime/` 层，追踪**实现进度**，不是引擎结论。引擎语义的断言 ×
 > 版本矩阵在 [`engine/anm/OVERVIEW.md`](../../engine/anm/OVERVIEW.md)；本文任何一行「实现」
 > 都必须能指回那边的一条断言，指不回去就在代码里标 🟡（见 [`../README.md`](../README.md) 的
@@ -7,10 +10,15 @@
 
 这是一个 ANM v8（TH13+，参见 [`engine/anm/OVERVIEW.md`](../../engine/anm/OVERVIEW.md)）
 精灵动画播放器，用「行为对不对得上 th16」反向证伪 `engine/anm/` 的断言。当前处于
-**阶段 1：地基**——格式层（I1）、VM 骨架（I2）已实现；opcode 语义已实现 **121 / 135 条**：
-Math + Jumps 46（I3）· System 8（I4）· Settings 18（I5）· General 39（I6）· Child management 10（I7）。
-只剩 **Drawing 组 14 条**（600–699）未开始——那是层 A 的最后一块，且与层 B（WebGL 渲染后端）
-天然成对，见设计文档 §10.1 的层 A / 层 B 切分。
+**阶段 1：地基**——格式层（I1）、VM 骨架（I2）已实现；opcode 语义 **135 / 135 条全部已实现**：
+Math + Jumps 46（I3）· System 8（I4）· Settings 18（I5）· General 39（I6）· Child management 10（I7）·
+Drawing 14（I8）。**层 A（纯状态机）到此收口**——设计文档 §10.1 的层 A / 层 B 切分里，
+剩下的是层 B：帧尾几何填充（`th16:0x4632f0`）+ `draw_vm`（`th16:0x468490`）的 WebGL 后端。
+
+> **「135 条全实现」不等于「画面对得上」**：Drawing 组 14 条自身不发 draw call，只置渲染模式 +
+> 写 `sprite_size`/`I0`/顶点缓冲（[`09-drawing.md`](../../engine/anm/th16/09-drawing.md) §0）。
+> 真正把这些状态变成像素的是层 B，尚未开始。另外 09 §6 证实 `601`/`607`/`609`/`610`/`611`/`613`
+> 这 6 条 ZUN 自家 54 个 `.anm` 一次都没用过——语义 ✅，但**没有 ground truth 可对画面**。
 
 ## 格式层：已实现
 
@@ -292,20 +300,20 @@ thpages / th-re-data 是社区单源——「文档」列指向 `engine/anm/th16
 | 507 | Child management | `ignoreParent` | 已实现 | 已实现 | — |
 | 508 | Child management | `createEffect` | 已实现 | 已实现 | 🟡（effect 表项 1 一手，其余表项未逐条追） |
 | 509 | Child management | `copyParentVars` | 已实现 | 已实现 | — |
-| 600 | Drawing | `textureCircle` | 未开始 | 未开始 | — |
-| 601 | Drawing | `textureArcEven` | 未开始 | 未开始 | — |
-| 602 | Drawing | `textureArc` | 未开始 | 未开始 | — |
-| 603 | Drawing | `drawRect` | 未开始 | 未开始 | — |
-| 604 | Drawing | `drawPoly` | 未开始 | 未开始 | — |
-| 605 | Drawing | `drawPolyBorder` | 未开始 | 未开始 | — |
-| 606 | Drawing | `drawRectGrad` | 未开始 | 未开始 | — |
-| 607 | Drawing | `drawRectShadow` | 未开始 | 未开始 | — |
-| 608 | Drawing | `drawRectShadowGrad` | 未开始 | 未开始 | — |
-| 609 | Drawing | `textureCylinder3D` | 未开始 | 未开始 | — |
-| 610 | Drawing | `textureRing3D` | 未开始 | 未开始 | — |
-| 611 | Drawing | `drawRing` | 未开始 | 未开始 | — |
-| 612 | Drawing | `drawRectBorder` | 未开始 | 未开始 | — |
-| 613 | Drawing | `drawLine` | 未开始 | 未开始 | — |
+| 600 | Drawing | `textureCircle` | 已实现 | 已实现 | — |
+| 601 | Drawing | `textureArcEven` | 已实现 | 已实现 | ZUN 数据 0 次；🟡 弧角展开公式（09 §9，归层 B） |
+| 602 | Drawing | `textureArc` | 已实现 | 已实现 | 🟡 弧角展开公式（09 §9，归层 B） |
+| 603 | Drawing | `drawRect` | 已实现 | 已实现 | — |
+| 604 | Drawing | `drawPoly` | 已实现 | 已实现 | — |
+| 605 | Drawing | `drawPolyBorder` | 已实现 | 已实现 | — |
+| 606 | Drawing | `drawRectGrad` | 已实现 | 已实现 | — |
+| 607 | Drawing | `drawRectShadow` | 已实现 | 已实现 | ZUN 数据 0 次 |
+| 608 | Drawing | `drawRectShadowGrad` | 已实现 | 已实现 | — |
+| 609 | Drawing | `textureCylinder3D` | 已实现 | 已实现 | ZUN 数据 0 次；🟡 3D 几何公式（09 §9，归层 B） |
+| 610 | Drawing | `textureRing3D` | 已实现 | 已实现 | ZUN 数据 0 次；🟡 3D 几何公式（09 §9，归层 B） |
+| 611 | Drawing | `drawRing` | 已实现 | 已实现 | ZUN 数据 0 次 |
+| 612 | Drawing | `drawRectBorder` | 已实现 | 已实现 | — |
+| 613 | Drawing | `drawLine` | 已实现 | 已实现 | ZUN 数据 0 次 |
 
 <!-- gen-opcode-matrix:end -->
 
@@ -341,5 +349,13 @@ runtime/anm/
 
 ## 下一步
 
-阶段 1 的后续任务（波 D 及以后）在 `.superpowers/sdd/2026-09-09-runtime-anm-phase1/` 下的
-计划里逐条排；这里不重复列——按 T0 brief 的说法，本文档不该跟踪其他任务的范围。
+层 A 已收口（135/135）。下一步是**层 B：渲染后端**——两块，边界在
+[`09-drawing.md`](../../engine/anm/th16/09-drawing.md) §0 划得很清楚：
+
+1. **帧尾几何填充**（`th16:0x4632f0`）：按渲染模式把顶点写进 `vm.vertexBuffer`。字段读落点
+   09 §3.1 已经一手列全，但 **601/602 的弧角展开公式、609/610 的 3D 几何公式仍 🟡**（09 §9）。
+2. **绘制分发**（`draw_vm` `th16:0x468490`）：mode → handler 的两级跳表 09 §3 已逐字解出；
+   render state（blend / alpha test / texture stage / FVF）09 §4 全部 ✅，可直接照着写 WebGL。
+
+其余任务（T10 命名落库、R11 的 th18 差分）在 `.superpowers/sdd/2026-09-09-runtime-anm-phase1/`
+下的计划里逐条排；这里不重复列——按 T0 brief 的说法，本文档不该跟踪其他任务的范围。

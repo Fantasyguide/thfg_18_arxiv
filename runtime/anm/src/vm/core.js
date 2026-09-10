@@ -113,6 +113,15 @@ export function createVm(script, opts = {}) {
     scale: { x: 1, y: 1 }, // vm-core §3.3 +0x50；wipe 默认 (1,1)
     rotation: { x: 0, y: 0, z: 0 }, // vm-core §3.3 +0x38；wipe 默认全零
     color: 0xffffffff, // vm-core §3.3 +0x520（color_1）；wipe 默认 0xffffffff
+    spriteSize: { x: 0, y: 0 }, // vm-core §3.3 `+0x70`/`+0x74`（f32[2]）；wipe 整块 memset 0 ⇒ 默认 (0,0)。
+    // ★ 这是**一对槽两个写者**：`300 sprite` 经 `th16:0x45ee36` 用贴图的像素尺寸填它，
+    // Drawing 组的 `603/606/607/608/612/613` 直接把 `w/h` 写进来（09-drawing.md §5(2)）。
+    // 播放器只能有一份——各组各存一份影子状态会让「先 drawRect 再 sprite」这类序列错。
+    // （本骨架没有贴图表，300 那侧目前只记 spriteId，填不了尺寸，见 group-settings.js #300。）
+    vertexBuffer: null, // vm-core §3.5 `+0x5b8`；ArrayBuffer 或 null。09-drawing.md §2.2：
+    // `600/601/602/609/610` 经 `th16:0x4064e0` 按字节数分配，`0x405670`（508 的 effect
+    // 回调，未建模）也写这里。顶点由帧尾 `th16:0x4632f0` 填——本骨架只到「分配」这一层。
+    vertexBufferSize: 0, // vm-core §3.5 `+0x5bc`；上面那块的字节大小（09 §2.2 补的字段）
 
     // ── IV：04-variables.md §2 补的其余变量号落点（不是各存一份影子状态，直接是
     //   36 号变量表里那几个不在 i[]/f[]/pos/rotation 里的物理字段）──────────────
