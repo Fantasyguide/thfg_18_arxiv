@@ -31,6 +31,28 @@ blob,不解析内部)。**不存在 `thsht` 这种官方工具**。网上"thsht 
 - **单向**:符号的唯一源是 `games/th06nc/symbols.json`,公开仓库只接收。别反过来编辑它。
 - **发布安全**:`tooling/ghidra/tests/test_publish_th06nc_re_data.py` 守三条——
   不含游戏字节 / 不转发上游名字(mapfile 只准出现 32-35)/ 不漏本机路径与非 ASCII。
+### ⚠️ 仓库是 private，但 TH06NC 的库仍然不导上游名（2026-09-11 定）
+
+`renkolab` 目前是私有仓库，所以「不入库」这条的**法律压力**比公开时小。
+**但 TH06NC 的 Ghidra 库仍然不导入无 LICENSE 的上游名**，理由与许可证无关：
+
+1. **`th06nc-re-data` 是要公开发布的。** 一旦上游名进了 `local/` 的库，
+   它就会随 `symbols.py export` 流进 `games/th06nc/symbols.json`，
+   再流进那个公开仓库。私有的是 `renkolab`，不是它的产物。
+2. **污染了就分不开了。** 现在 th06nc 的 `symbols.json` 里带上游标记的条目是
+   **0 条**（可自查）；这个"干净"的状态一旦破坏，事后要区分「哪些是我们读出来的、
+   哪些是抄的」成本极高。
+3. **认识论上也不该导**：那批名字是**纯结构迁移**的产物，按
+   [`../../METHOD.md`](../../METHOD.md) 的「迁名的两类」只能当线索。
+
+**可以做的**：把 TH06 的库当**参考**——开着它对照读、拿它的名字帮自己认函数，
+但结论要在 NC 自己的字节上重新取证，落笔用我们自己的命名。
+这正是本轮 `EnemyManager__OnUpdate`、`GameManager__AddedCallback` 的做法。
+
+> **自查**：`python3 -c "import json;d=json.load(open('games/th06nc/symbols.json'));
+> print(sum(1 for k in d for r in d[k] if isinstance(r,dict) and
+> str(r.get('comment','')).startswith(('[th-re-data]','[th06-re]'))))"` 应当是 0。
+
 > ⚠️ **这条约束直接决定了 TH06NC 的迁名策略**：TH06 工程里那 1267 个已命名函数
 > 绝大多数来自无 LICENSE 的 `th06-re`，**不能搬进 `games/th06nc/symbols.json`**。
 > 能安全转发的只有 CC0 推出来的名字。三种批量手法的实测见

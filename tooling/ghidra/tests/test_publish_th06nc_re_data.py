@@ -92,6 +92,36 @@ class PublishTh06ncReDataTests(unittest.TestCase):
                 for needle in ("/data/", "/home/", "sunyunbo", "C:\\"):
                     self.assertNotIn(needle, text)
 
+
+    def test_th06nc_symbols_carry_no_unlicensed_upstream_names(self):
+        """th06nc 的符号层必须**零**上游名。
+
+        renkolab 是私有仓库，但 th06nc-re-data 是公开发布的 —— 私有的是仓库，
+        不是它的产物。上游名（th-re-data / th06-re，均无 LICENSE）一旦进了
+        local/ 的 Ghidra 库，就会顺着 symbols.py export 流进 symbols.json，
+        再流进公开仓库。而且污染之后就分不开"哪些是我们读出来的、哪些是抄的"。
+
+        策略记在 engine/_shared/community-sources.md；这条测试是它的执行者。
+        """
+        import json
+        path = REPO / "games" / "th06nc" / "symbols.json"
+        data = json.loads(path.read_text(encoding="utf-8"))
+        tags = ("[th-re-data]", "[th06-re]")
+        offenders = []
+        for key, rows in data.items():
+            if not isinstance(rows, list):
+                continue
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                for field in ("comment", "text", "name"):
+                    value = str(row.get(field, "") or "")
+                    if value.startswith(tags):
+                        offenders.append((key, row.get("addr"), value[:60]))
+        self.assertEqual(
+            offenders, [],
+            "th06nc 的符号层混进了无 LICENSE 的上游名：%r" % (offenders[:5],))
+
     def test_wrong_sample_hash_is_refused(self):
         bad = dict(self.symbols, exe_md5="0" * 32)
         with self.assertRaises(SystemExit):
