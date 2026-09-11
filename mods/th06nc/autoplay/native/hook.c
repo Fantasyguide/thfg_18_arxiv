@@ -25,11 +25,15 @@
 
 static uint8_t *g_base;
 static uint8_t *g_stub;
-static int      g_on = 1;             /* 默认开启；C 键随时切 */
+/* 三种模式，C 键轮换：MANUAL（不插手）→ AUTO（AI 接管 + 左键按住时朝光标引导）→ BYPASS（AI 完全接管） */
+enum { MODE_MANUAL = 0, MODE_AUTO = 1, MODE_BYPASS = 2 };
+static int      g_mode = MODE_BYPASS;
+static const char *MODE_NAME[3] = { "MANUAL MODE", "AUTO MODE", "BYPASS MODE" };
+static const uint32_t MODE_COLOR[3] = { 0xffa0a0a0u, 0xff80d0ffu, 0xff80ff80u };   /* 灰 / 浅蓝 / 浅绿 */
 static int      g_disabled;
 static int      g_toggle_vk = 'C';    /* NC 不用 C 键（只认 Z/X/Shift/方向/Esc），拿来当开关 */
 static int      g_log_every = 60;     /* 每 N 帧记一行状态；0 = 不记 */
-static int      g_show_text = 1;      /* 屏幕上显示 AI Control On/Off */
+static int      g_show_text = 1;      /* 屏幕上显示当前模式 */
 static float    g_text_scale = 0.75f;
 static float    g_text_dx = 4.0f, g_text_dy = 20.0f;   /* 相对关卡区左上角 */
 static FILE    *g_log;
@@ -108,16 +112,30 @@ static void ascii_add(float x, float y, float scale, uint32_t color, const char 
 
 /* 关卡区左上角在虚拟屏里的位置：高固定 480，宽随客户区宽高比伸展，关卡区水平居中、顶边 16
  * （mouse-control/TARGET.md §6 实测；FPS 画在 (758,464) 也印证宽 > 640）。 */
-static void overlay_draw(HWND hwnd, int on)
+static void overlay_draw(HWND hwnd, int mode)
 {
     RECT rc;
     float w = 640.0f, left;
     if (GetClientRect(hwnd, &rc) && rc.bottom > 0)
         w = ASCII_VIRT_H * (float)rc.right / (float)rc.bottom;
     left = (w - PLAYFIELD_W) * 0.5f;
-    ascii_add(left + g_text_dx, g_text_dy, g_text_scale,
-              on ? 0xff80ff80u : 0xffa0a0a0u,           /* 开 = 浅绿，关 = 灰 */
-              on ? "AI Control On" : "AI Control Off");
+    ascii_add(left + g_text_dx, g_text_dy, g_text_scale, MODE_COLOR[mode], MODE_NAME[mode]);
+}
+
+/* 光标 → 协议坐标（x 中轴为 0、y 顶边为 0）。布局模型照 mouse-control/TARGET.md §6（两次实测标定）：
+ * 虚拟屏高 480、宽随宽高比；关卡区 384×448 水平居中、顶边 16；缩放 = 客户区高 / 480。
+ * 返回 0 = 取不到 / 客户区无效。非 16:9 窗口未验证（🟡）。 */
+static int cursor_to_field(HWND hwnd, float *gx, float *gy)
+{
+    POINT pt; RECT rc; float s, left, top;
+    if (!GetCursorPos(&pt) || !ScreenToClient(hwnd, &pt) || !GetClientRect(hwnd, &rc)) return 0;
+    if (rc.right <= 0 || rc.bottom <= 0) return 0;
+    s = (float)rc.bottom / ASCII_VIRT_H;
+    left = ((float)rc.right - PLAYFIELD_W * s) * 0.5f;
+    top = 16.0f * s;
+    *gx = ((float)pt.x - left) / s - PLAYFIELD_W * 0.5f;
+    *gy = ((float)pt.y - top) / s;
+    return 1;
 }
 
 /* ------------------------------------------------------------------ *
@@ -136,14 +154,24 @@ void agent_tick(void)
     if (!hwnd || hwnd != GetActiveWindow()) return;   /* 不是前台就彻底不插手 */
 
     if (GetAsyncKeyState(g_toggle_vk) & 1) {
-        g_on = !g_on;
-        rk_log("[autoplay] %s", g_on ? "开" : "关");
+        g_mode = (g_mode + 1) % 3;
+        rk_log("[autoplay] -> %s", MODE_NAME[g_mode]);
     }
-    if (g_show_text) overlay_draw(hwnd, g_on);   /* 开关状态都画，关着时也能看见 */
-    if (!g_on) return;
+    if (g_show_text) overlay_draw(hwnd, g_mode);   /* 三种模式都画 */
+    if (g_mode == MODE_MANUAL) return;
 
     th06nc_extract(g_base, &g_world);
     g_frames++;
+
+    /* AUTO：左键按住 → 朝光标引导（光标钳到可动区内）；否则与 BYPASS 相同 */
+    if (g_mode == MODE_AUTO && (GetAsyncKeyState(VK_LBUTTON) & 0x8000)) {
+        float gx, gy;
+        if (cursor_to_field(hwnd, &gx, &gy)) {
+            if (gx < g_world.area.xmin) gx = g_world.area.xmin; else if (gx > g_world.area.xmax) gx = g_world.area.xmax;
+            if (gy < g_world.area.ymin) gy = g_world.area.ymin; else if (gy > g_world.area.ymax) gy = g_world.area.ymax;
+            ap_policy_set_guide(&g_policy, 1, gx, gy);
+        } else ap_policy_set_guide(&g_policy, 0, 0.0f, 0.0f);
+    } else ap_policy_set_guide(&g_policy, 0, 0.0f, 0.0f);
 
     if (!(g_world.phase & AP_PHASE_PLAYER_CONTROLLABLE)) {
         ONCE(d_badstate, "[diag] playerState=%u —— 本帧不接管", g_world.player.state);
@@ -158,10 +186,10 @@ void agent_tick(void)
          g_world.player.speed, g_world.player.speed_focus, g_world.nbullets, g_world.nenemies, g_world.nlasers,
          g_world.area.xmin, g_world.area.xmax, g_world.area.ymin, g_world.area.ymax, bits);
     if (g_log_every > 0 && (g_frames % (uint32_t)g_log_every) == 0)
-        rk_log("[tick] frame=%u pos=(%.1f,%.1f) st=%u b=%d e=%d l=%d lives=%u bombs=%u phase=0x%x F=(%.2f,%.2f) held=0x%02x",
-               g_world.frame, g_world.player.x, g_world.player.y, g_world.player.state,
+        rk_log("[tick] %s frame=%u pos=(%.1f,%.1f) st=%u b=%d e=%d l=%d lives=%u bombs=%u phase=0x%x F=(%.2f,%.2f) guide=%d(%.0f,%.0f) held=0x%02x",
+               MODE_NAME[g_mode], g_world.frame, g_world.player.x, g_world.player.y, g_world.player.state,
                g_world.nbullets, g_world.nenemies, g_world.nlasers, g_world.player.lives, g_world.player.bombs,
-               g_world.phase, g_policy.last_fx, g_policy.last_fy, bits);
+               g_world.phase, g_policy.last_fx, g_policy.last_fy, g_policy.guide_on, g_policy.guide_x, g_policy.guide_y, bits);
     if (buttons & BTN_BOMB) rk_log("[bomb] frame=%u %d 帧内九向全部会撞，用炸弹", g_world.frame, g_policy.vo_frames);
 
     /* 唯一的一次写：7 个逻辑按钮位整体覆盖，其余位（菜单等）一位不碰 */
@@ -262,7 +290,9 @@ static void load_ini(const char *dir)
 {
     char ini[MAX_PATH];
     snprintf(ini, sizeof ini, "%s\\th06nc_autoplay.ini", dir);
-    g_on        = GetPrivateProfileIntA("autoplay", "enabled",   1,        ini) ? 1 : 0;
+    g_mode      = GetPrivateProfileIntA("autoplay", "start_mode", MODE_BYPASS, ini);
+    if (!GetPrivateProfileIntA("autoplay", "enabled", 1, ini)) g_mode = MODE_MANUAL;   /* 旧键兼容 */
+    if (g_mode < 0 || g_mode > 2) g_mode = MODE_BYPASS;
     g_toggle_vk = GetPrivateProfileIntA("autoplay", "toggle_vk", 'C',      ini);
     g_log_every = GetPrivateProfileIntA("autoplay", "log_every", 60,       ini);
     g_show_text = GetPrivateProfileIntA("autoplay", "show_text", 1,        ini) ? 1 : 0;
@@ -325,8 +355,8 @@ int autoplay_install(void)
     }
     ap_policy_init(&g_policy);
     load_ini(dir);
-    rk_log("[ini] enabled=%d toggle_vk=0x%02x horizon=%d tau=%.0f safe_r=%.0f vortex=%.2f vo_frames=%d slow_dist=%.0f att=(%.2f,%.2f) home_y=%.0f wall=(%.0f,%.0f x%.2f) smooth=%.2f hyst=%.2f hold=%d slow_exit=%.0f bomb_cooldown=%d log_every=%d show_text=%d scale=%.2f at=(+%.0f,%.0f)",
-           g_on, g_toggle_vk, g_policy.horizon, g_policy.tau, g_policy.safe_r, g_policy.vortex, g_policy.vo_frames,
+    rk_log("[ini] start_mode=%s toggle_vk=0x%02x horizon=%d tau=%.0f safe_r=%.0f vortex=%.2f vo_frames=%d slow_dist=%.0f att=(%.2f,%.2f) home_y=%.0f wall=(%.0f,%.0f x%.2f) smooth=%.2f hyst=%.2f hold=%d slow_exit=%.0f bomb_cooldown=%d log_every=%d show_text=%d scale=%.2f at=(+%.0f,%.0f)",
+           MODE_NAME[g_mode], g_toggle_vk, g_policy.horizon, g_policy.tau, g_policy.safe_r, g_policy.vortex, g_policy.vo_frames,
            g_policy.slow_dist, g_policy.k_att, g_policy.k_att_y, g_policy.home_y, g_policy.wall_margin, g_policy.wall_margin_bottom,
            g_policy.wall_k_bottom, g_policy.smooth, g_policy.switch_hyst, g_policy.hold_frames, g_policy.slow_exit,
            g_policy.bomb_cooldown, g_log_every, g_show_text, g_text_scale, g_text_dx, g_text_dy);
@@ -342,6 +372,6 @@ int autoplay_install(void)
         return 0;
     }
     if (!build_trampoline(target)) { g_disabled = 1; return 0; }
-    rk_log("[guard] 序言签名匹配，跳板就绪（vk=0x%02x 开关 autoplay）", g_toggle_vk);
+    rk_log("[guard] 序言签名匹配，跳板就绪（vk=0x%02x 轮换 MANUAL / AUTO / BYPASS）", g_toggle_vk);
     return 1;
 }

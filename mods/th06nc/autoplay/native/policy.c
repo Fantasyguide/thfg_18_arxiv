@@ -43,6 +43,9 @@
  *       涡旋选边翻转 → 参考点 (0, home_y) 在自机贴近中轴时 x 正负每帧变，切向力左右反转——
  *                      参考点改成带 12 px 死带的闩锁（ref_sx / ref_sy）。
  *     硬层 VO 掩码看的是原始几何，不经平滑，安全性不降；代价是反应慢一两帧。
+ * D11 鼠标引导（AUTO 模式）：左键按住时，引力换成拉向光标点的恒力 k_guide（0.5：高于起动阈值、
+ *     低于斥力满值，所以有威胁时躲弹仍优先），不受 D6 的安静计数门控（引导要即时）。松开即回到
+ *     默认引力。死区 8 px，落点抖动靠 D10 的滞回压。
  * 不做：道具、弹的 exFlags 外推、激光的转角、符卡时间。
  * ================================================================================ */
 #include <math.h>
@@ -74,6 +77,12 @@ void ap_policy_init(ap_policy_t *p)
     p->f_stop = 0.025f;
     p->slow_exit = 60.0f;
     p->slow_hold = 10;
+    p->k_guide = 0.5f;
+}
+
+void ap_policy_set_guide(ap_policy_t *p, int on, float x, float y)
+{
+    p->guide_on = on ? 1 : 0; p->guide_x = x; p->guide_y = y;
 }
 
 static float clampf(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
@@ -247,6 +256,15 @@ static void field_attraction(const ap_policy_t *p, const ap_world_t *w, float *f
 }
 
 /* 斥力 + 墙，不含引力（引力受 D6 的安静计数门控，在 decide 里加）。测试与日志用。 */
+static void field_guide(const ap_policy_t *p, const ap_world_t *w, float *fx, float *fy)   /* D11 */
+{
+    float dx = p->guide_x - w->player.x, dy = p->guide_y - w->player.y;
+    if (dx > -8.0f && dx < 8.0f) dx = 0.0f;
+    if (dy > -8.0f && dy < 8.0f) dy = 0.0f;
+    *fx += p->k_guide * clampf(dx / 8.0f, -1.0f, 1.0f);
+    *fy += p->k_guide * clampf(dy / 8.0f, -1.0f, 1.0f);
+}
+
 void ap_policy_field(const ap_policy_t *p, const ap_world_t *w, float *fx, float *fy)
 {
     field_repulsion(p, w, fx, fy);
@@ -287,7 +305,8 @@ uint32_t ap_policy_decide(ap_policy_t *p, const ap_world_t *w)
     field_walls(p, w, &fx, &fy);
     if (rmag < 0.5f * p->f_min) { if (CALM_GET(p) < 0xFFFF) CALM_SET(p, CALM_GET(p) + 1); }
     else CALM_SET(p, 0);
-    if (CALM_GET(p) >= CALM_FRAMES) field_attraction(p, w, &fx, &fy);                     /* D6 */
+    if (p->guide_on) field_guide(p, w, &fx, &fy);                                          /* D11 */
+    else if (CALM_GET(p) >= CALM_FRAMES) field_attraction(p, w, &fx, &fy);                /* D6 */
     p->sm_fx = p->smooth * fx + (1.0f - p->smooth) * p->sm_fx;                            /* D10 平滑 */
     p->sm_fy = p->smooth * fy + (1.0f - p->smooth) * p->sm_fy;
     fx = p->sm_fx; fy = p->sm_fy;

@@ -289,6 +289,34 @@ int main(void)
         assert(first != 0 && consistent);
     }
 
+    /* 25. 鼠标引导：无弹时立刻朝引导点走（不等安静 30 帧）；到了死区就停；有弹压顶时躲弹优先于引导 */
+    reset(); ap_policy_init(&P);
+    ap_policy_set_guide(&P, 1, 100.0f, 300.0f);
+    a = ap_policy_decide(&P, &W);
+    assert((a & BTN_RIGHT) && (a & BTN_UP));
+    reset(); ap_policy_init(&P);
+    ap_policy_set_guide(&P, 1, 3.0f, 386.0f);
+    a = ap_policy_decide(&P, &W);
+    assert(!(a & (BTN_UP | BTN_DOWN | BTN_LEFT | BTN_RIGHT)));
+    reset(); ap_policy_init(&P);
+    ap_policy_set_guide(&P, 1, 0.0f, 300.0f);                   /* 引导在正上方 */
+    bullet(0.0f, 384.0f - 40.0f, 0.0f, 4.0f, 6.0f);              /* 弹也在正上方、10 帧后到 */
+    {
+        int hit = 0;
+        a = ap_policy_decide(&P, &W);
+        assert(a & (BTN_LEFT | BTN_RIGHT));          /* 不是纯朝引导点冲 */
+        for (int f = 0; f < 15; f++) {
+            step_world(a);
+            for (int i = 0; i < W.nbullets; i++) {
+                float dx = W.bullets[i].x - W.player.x, dy = W.bullets[i].y - W.player.y;
+                if (sqrtf(dx * dx + dy * dy) < W.bullets[i].radius + W.player.hit_radius) hit = 1;
+            }
+            a = ap_policy_decide(&P, &W);
+        }
+        assert(!hit);
+    }
+    ap_policy_set_guide(&P, 0, 0.0f, 0.0f);
+
     puts("test_policy ok");
     return 0;
 }

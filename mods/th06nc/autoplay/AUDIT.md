@@ -89,7 +89,9 @@ XMM0–5 是易失的。跳板到达时 `Player__OnUpdate` 尚未开始执行、
 ## E. 收尾
 
 - [x] 汇编后比对反汇编 —— CONFIRMED（`check.py` C 节）。
-- [x] 可一键关掉 —— CONFIRMED：C 键；或删 DLL。屏幕文字 `show_text = 0` 可关。
+- [x] 可一键关掉 —— CONFIRMED：C 键切到 MANUAL；或删 DLL。屏幕文字 `show_text = 0` 可关。
+- [x] 鼠标引导的坐标换算 —— 借 mouse-control 两次实测标定的布局模型（16:9），非 16:9 未验 🟡；
+      算错的后果只是引导点偏移，躲弹不受影响（斥力仍按内存里的真坐标算）。
 - [x] **游戏内实跑** —— CONFIRMED（首跑）。开发机是 Linux。验收表在 `README.md`「怎么确认成功」，
       五条按序看。跑完把结果（含崩溃与「不像在躲」的观察）回填到这里。
 

@@ -41,6 +41,10 @@ typedef struct {
     float f_stop;         /* 停下阈值（< f_min，施密特触发） */
     float slow_exit;      /* 低速退出距离（> slow_dist，施密特触发） */
     int   slow_hold;      /* 低速状态最少保持帧数 */
+    /* ---- 鼠标引导（AUTO 模式，D11）---- */
+    float k_guide;        /* 引导力（恒力，< 斥力满值 1.0，> 起动阈值） */
+    int   guide_on;
+    float guide_x, guide_y;
     /* ---- 硬层：一帧速度障碍掩码 + 应急炸弹 ---- */
     int   vo_frames;      /* 掩码外推帧数：这么多帧内会撞的动作直接禁用 */
     int   bomb_cooldown;  /* 两次 bomb 之间的最少帧数 */
@@ -59,6 +63,8 @@ typedef struct {
 } ap_policy_t;
 
 void     ap_policy_init(ap_policy_t *p);
+/* 鼠标引导：on 时引力改为拉向 (x,y)（协议坐标），不受安静计数门控；斥力照常优先 */
+void     ap_policy_set_guide(ap_policy_t *p, int on, float x, float y);
 uint32_t ap_policy_decide(ap_policy_t *p, const ap_world_t *w);
 
 /* 硬层用的外推：自机按 (vx,vy) 走 horizon 帧，返回时间窗内到最近弹 / 敌的净距（负 = 会撞），

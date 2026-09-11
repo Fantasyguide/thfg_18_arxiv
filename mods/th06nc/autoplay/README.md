@@ -3,8 +3,14 @@
 > **版本**：TH06NC（Steam 2026 重制版，`th06nc.exe`，MD5 `b0cc28ec904e9efce2439ad857c938b5`，
 > imagebase `0x140000000`）。本文裸地址默认属该版本。
 
-装上就自己打：每帧读出自机 / 全部敌弹 / 全部敌人，跑一个内嵌的躲弹策略，
-把「这一帧该按哪些键」写进游戏的逻辑按钮位图。**C 键**开关。
+装上就自己打：每帧读出自机 / 全部敌弹 / 全部敌人 / 激光，跑一个内嵌的躲弹策略，
+把「这一帧该按哪些键」写进游戏的逻辑按钮位图。**C 键**在三种模式间轮换：
+
+| 模式 | 屏幕文字 | 行为 |
+| --- | --- | --- |
+| MANUAL | `MANUAL MODE`（灰） | 不插手，键盘照常 |
+| AUTO | `AUTO MODE`（浅蓝） | AI 接管；**按住鼠标左键**时自机被引导朝光标走，松开即回默认行为。躲弹始终优先于引导 |
+| BYPASS | `BYPASS MODE`（浅绿） | AI 完全接管 |
 
 这是 [`docs/superpowers/specs/2026-09-10-ai-agent-bridge-design.md`](../../../docs/superpowers/specs/2026-09-10-ai-agent-bridge-design.md)
 的**原型先行**版本：协议、网络、Python 全部推后，只留下「内存 → 中立快照 → 决策 → 输入」这条链路。
@@ -66,10 +72,11 @@ make -C tests test    # 单独跑宿主单测
 
 | 操作 | 效果 |
 | --- | --- |
-| （无） | 装上即开启。进关卡后自机自己动、自己射、必要时自己炸 |
-| **C** | 开 / 关 AI 代管。关掉后键盘立即恢复（NC 本身不用 C 键） |
-| （屏幕） | 关卡区左上角一行 `AI Control On`（浅绿）/ `AI Control Off`（灰），走游戏自己的 AsciiManager，与 FPS 显示同一条路 |
-| 键盘 | 开启期间 Z / X / Shift / 方向键**全部失效**（每帧被覆盖）；关掉即恢复 |
+| （无） | 装上即 BYPASS。进关卡后自机自己动、自己射、必要时自己炸 |
+| **C** | 轮换 MANUAL → AUTO → BYPASS → MANUAL（NC 本身不用 C 键） |
+| **鼠标左键**（AUTO） | 按住：自机朝光标走（光标钳到可动区内）；有弹威胁时躲弹优先。松开：回到默认（对齐 boss、待在中下） |
+| （屏幕） | 关卡区左上角一行模式名，走游戏自己的 AsciiManager，与 FPS 显示同一条路 |
+| 键盘 | AUTO / BYPASS 下 Z / X / Shift / 方向键**全部失效**（每帧被覆盖）；MANUAL 即恢复 |
 
 - 只在游戏是前台时接管，alt-tab 出去不会走火。
 - 出生 / 死亡动画期间不接管（那时游戏也不读方向位）。
@@ -81,7 +88,7 @@ make -C tests test    # 单独跑宿主单测
 
 ```ini
 [autoplay]
-enabled       = 1     ; 1 = 启动即开启（默认），0 = 默认关闭、按 C 再开
+start_mode    = 2     ; 启动模式：0 MANUAL / 1 AUTO / 2 BYPASS（默认）。旧键 enabled = 0 等价 0
 toggle_vk     = 67    ; 开关键虚拟键码，67 = 0x43 = C；想用 F9 填 120
 horizon       = 60    ; 最近接近点的搜索窗（帧）
 tau           = 20    ; 时间折扣常数（帧）：t* 帧后才到的弹，权重 exp(−t*/tau)
@@ -122,7 +129,7 @@ th06nc autoplay —— imagebase=00007FF7XXXXXXXX
 [who] 本 DLL  = ...\VCRUNTIME140_1.dll
 [who] 游戏目录 = ...
 [ini] enabled=1 toggle_vk=0x78 horizon=24 bomb_cooldown=90 log_every=60
-[guard] 序言签名匹配，跳板就绪（vk=0x43 开关 autoplay）
+[guard] 序言签名匹配，跳板就绪（vk=0x43 轮换 MANUAL / AUTO / BYPASS）
 [diag] agent_tick 首次触发
 [diag] 首次生效 frame=… pos=(0.0,384.0) r=1.25 speed=4.0/2.0 bullets=0 enemies=1 area=[-184,184]x[16,432] -> held=0x01
 [tick] frame=… pos=(…) st=0 b=… e=… lives=… bombs=… phase=0x41 held=0x…
@@ -136,7 +143,8 @@ th06nc autoplay —— imagebase=00007FF7XXXXXXXX
 | 2 | `[tick]` 行的 `b=` 随画面上的弹数涨落、`e=` 与画面敌人数同量级（关卡脚本本身可能占 1 个槽） | 弹池 / 敌池布局读对了 | 池基址 / 步长 / state 偏移错 |
 | 3 | 自机一直在射击，且**朝 boss 的 x 对齐** | 注入路线成立、次要目标生效 | `held` 写了但游戏没读 → 时序问题，见 [`TARGET.md`](TARGET.md) §5 |
 | 4 | 弹靠近时自机会让开；密集弹幕下有 `[bomb]` 行且画面真的放了炸弹 | 弹道外推 + 炸弹按下沿都成立 | 只让不炸 → 炸弹边沿被 `INPUT_PREV` 吞了，见 `TARGET.md` §5 |
-| 5 | 按 C 后键盘立即接管，且左上角文字在 On / Off 之间切换 | 覆盖是逐帧的、没有残留；AsciiManager 记录写对了 | 文字不出现 → 见 `TARGET.md` §5 的 AsciiManager 一节，先看 `numStrings` 是否被别处占满 | 覆盖是逐帧的、没有残留 | — |
+| 5 | 按 C 轮换三种模式，左上角文字随之变；MANUAL 下键盘立即接管 | 覆盖是逐帧的、没有残留；AsciiManager 记录写对了 | 文字不出现 → 见 `TARGET.md` §5 的 AsciiManager 一节，先看 `numStrings` 是否被别处占满 |
+| 6 | AUTO 下按住左键，自机朝光标走并停在光标附近 | 光标→关卡区的布局模型成立（16:9 实测过） | 整体偏一个固定量 → 非 16:9 窗口，布局模型待标定（同 mouse-control §6） | 覆盖是逐帧的、没有残留 | — |
 
 判定式是照 `Player__CalcKillBoxCollision` 一手复刻的（弹：`min(grazeSize)/2 + 1.25` 圆对圆；
 敌人本体：`hitboxDimensions/3` 半宽盒、圆对盒、且只对 `flags & 3 == 3` 的敌人），
