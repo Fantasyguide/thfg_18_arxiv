@@ -67,7 +67,7 @@ R12 被**当作 `bulletProps` 实参传进去**了，所以 `enemy + 0x26c` 就�
 | `+0x230` | `bossId` | weak | opcode 101 |
 | `+0x238` | `maxLife` | **code** | `SpawnEnemy` 里 `MOV [enemy+0x238],[enemy+0x234]`（[`../../enemy/th06nc/01`](../../enemy/th06nc/01-pool-and-spawn.md) §5）|
 | `+0x26c` | `bulletProps` | **code** | 见 §2 |
-| `+0x2c0` | `hitboxDimensions` | weak | opcode 103；`+0x2c0/0x2c4/0x2c8` |
+| `+0x2c0` | `hitboxDimensions` | **code** | opcode 103；**2026-09-11 升级**：`EnemyManager__OnUpdate` `th06nc:0x1400373b0` 把它 × 2/3 传给 `Player__CalcKillBoxCollision` 当本体致死盒（[`player/01`](../../player/th06nc/01-main-loop-and-collision.md) §2.7） |
 | `+0xbd8` | `laserStore` | xmatch | opcodes 85, 86, 87 |
 | `+0xbe0` | `deathCallbackSub` | xmatch | opcodes 108, 133 |
 | `+0xc54` | `timerCallbackThreshold` | weak | opcode 115 |

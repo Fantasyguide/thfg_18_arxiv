@@ -2,7 +2,8 @@
  *
  * 每帧枚举 18 个候选（八向 + 不动，各配常速 / 低速），把每颗飞行中的弹按
  * pos + vel × t 线性外推 horizon 帧，自机按候选速度走（撞可动区边界就停），
- * 取整个时间窗里「自机到最近弹的净距」作为该候选的安全度；敌人本体按静止盒算。
+ * 取整个时间窗里「自机到最近弹的净距」作为该候选的安全度；敌人本体按静止盒算
+ * （判定式与 Player__CalcKillBoxCollision 0x14006a980 两条分支同式）。
  * 选安全度最高的；安全度都为正时按次要目标（对齐 boss x、回到 home_y、少动）打破平手。
  * 每个候选都躲不开且马上要中弹 → 用炸弹（有炸弹、且冷却过了）。
  *
@@ -43,9 +44,14 @@ float ap_policy_score_move(const ap_world_t *w, float vx, float vy, int horizon,
             if (m < worst) { worst = m; if (m < 0.0f && *first_hit_t == 0.0f) *first_hit_t = ft; }
         }
         for (i = 0; i < w->nenemies; i++) {
+            /* 与引擎同式：圆对轴对齐盒 —— 自机圆心钳到盒内取最近点，再比半径 */
             const ap_enemy_t *e = &w->enemies[i];
-            float dx = fabsf(e->x - px) - e->hit_w, dy = fabsf(e->y - py) - e->hit_h;
-            float m = (dx > dy ? dx : dy) - r;
+            float cx, cy, dx, dy, m;
+            if (!e->collidable) continue;
+            cx = clampf(px, e->x - e->hit_w, e->x + e->hit_w);
+            cy = clampf(py, e->y - e->hit_h, e->y + e->hit_h);
+            dx = px - cx; dy = py - cy;
+            m = sqrtf(dx * dx + dy * dy) - r;
             if (m < worst) { worst = m; if (m < 0.0f && *first_hit_t == 0.0f) *first_hit_t = ft; }
         }
     }

@@ -63,8 +63,15 @@
 #define OFF_E_BOSS_ID         0x230    /* i32（weak：只有 opcode 101 一个锚） */
 #define OFF_E_LIFE            0x234    /* i32（code：SpawnEnemy 直写） */
 #define OFF_E_MAX_LIFE        0x238    /* i32（code） */
-#define OFF_E_HITBOX          0x2C0    /* f32 x,y,z（weak：opcode 103） */
+#define OFF_E_HITBOX          0x2C0    /* f32 x,y,z（code：EnemyManager__OnUpdate × 2/3 传给 CalcKillBoxCollision） */
+#define OFF_E_FLAGS2          0x0BD    /* byte；(& 3) == 3 才做本体碰撞（EnemyManager__OnUpdate 0x1400373b0） */
 #define ENEMY_FLAG_ALIVE      0x80
+#define ENEMY_FLAGS2_COLLIDE  0x03
+/* engine/player/th06nc/01 §2.7 完整公式（一手，0x14006a980）：
+ *   弹：  R = min(grazeSize.x, grazeSize.y) × 0.5 + hitboxRadius，dist² < R² 即死
+ *   敌人：盒半宽 = hitboxDimensions × (2/3) × 0.5 = /3，圆对轴对齐盒 */
+#define BULLET_KILL_SIZE_SCALE  0.5f          /* 0x14030cd58 */
+#define ENEMY_KILL_BOX_SCALE    (0.6666667f * 0.5f)   /* 0x14030cd74 × 0x14030cd58 */
 
 /* --- 逻辑按钮位（engine/menu/th06nc/02 §8）--- */
 #define IN_SHOOT  0x01

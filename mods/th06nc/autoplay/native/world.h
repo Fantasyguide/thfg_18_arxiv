@@ -21,9 +21,10 @@ typedef struct {
 
 typedef struct {
     float x, y;
-    float hit_w, hit_h;    /* 撞自机的框（半宽半高） */
+    float hit_w, hit_h;    /* 致死盒半宽半高（圆对轴对齐盒，自机圆半径另算） */
     int32_t hp, hp_max;
     uint8_t boss;          /* 🟡 弱锚 */
+    uint8_t collidable;    /* 引擎本帧会不会拿它撞自机 */
 } ap_enemy_t;
 
 typedef struct {

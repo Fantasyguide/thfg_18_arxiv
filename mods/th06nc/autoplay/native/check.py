@@ -102,8 +102,8 @@ def main():
     ef = {n: (o, s) for o, n, s, _e in cs.ENEMY_FIELDS}
     ok(D["OFF_E_BOSS_ID"] == ef["bossId"][0] and D["OFF_E_HITBOX"] == ef["hitboxDimensions"][0],
        "敌 bossId / hitboxDimensions = ecl_spec.ENEMY_FIELDS")
-    print("       注意：bossId / hitboxDimensions 在 spec 里是 %s / %s 档（弱锚），README 已标 🟡"
-          % (ef["bossId"][1], ef["hitboxDimensions"][1]))
+    ok(ef["hitboxDimensions"][1] == "code", "hitboxDimensions 已是 code 档（player/01 §2.7 完整公式）")
+    print("       注意：bossId 仍是 %s 档（弱锚），只影响次要目标" % ef["bossId"][1])
     ok(D["IN_SHOOT"] == 1 and D["IN_BOMB"] == 2 and D["IN_FOCUS"] == 4, "按键位与 spec 的 BUTTON_BITS 一致")
     ok(D["IN_ALL_MASK"] == 0xF7, "整体覆盖的掩码 = 7 个逻辑按钮位")
 

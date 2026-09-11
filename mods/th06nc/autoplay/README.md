@@ -19,7 +19,7 @@
 三步，全在 `Player__OnUpdate` 入口的跳板回调里跑（与 [`mouse-control`](../mouse-control/README.md) 同一个 hook 点）：
 
 1. **抽取**（`native/extract.c`）：只读。自机坐标 / 判定半径 / 状态 / 速度，
-   640 槽弹池里 `state != 0` 的弹（位置、速度、判定半径），256 槽敌池里活着的敌人，
+   640 槽弹池里 `state != 0` 的弹（位置、速度、致死半径），256 槽敌池里活着的敌人（含「引擎会不会拿它撞自机」的门），
    命 / 炸弹 / 火力 / 分数 / 擦弹、符卡进行中、可动区。坐标统一平移到**中轴原点**（x ∈ [-192,192]）。
 2. **策略**（`native/policy.c`）：枚举 18 个候选（八向 + 不动 × 常速 / 低速），
    把每颗弹按 `pos + vel × t` 线性外推 24 帧、自机按候选速度走（撞可动区就停），
@@ -112,8 +112,9 @@ th06nc autoplay —— imagebase=00007FF7XXXXXXXX
 | 4 | 弹靠近时自机会让开；密集弹幕下有 `[bomb]` 行且画面真的放了炸弹 | 弹道外推 + 炸弹按下沿都成立 | 只让不炸 → 炸弹边沿被 `INPUT_PREV` 吞了，见 `TARGET.md` §5 |
 | 5 | 按 F9 后键盘立即接管 | 覆盖是逐帧的、没有残留 | — |
 
-判定半径那条（弹的 `radius = min(grazeSize)/2`）是 🟡 推定，症状是「明明看着没碰到却死了」或「贴着弹擦过去」：
-调 `horizon` 没用，得回 [`engine/bullet/th06nc/01`](../../../engine/bullet/th06nc/01-pools-and-structs.md) 核 `CalcKillBoxCollision` 用的半径。
+判定式是照 `Player__CalcKillBoxCollision` 一手复刻的（弹：`min(grazeSize)/2 + 1.25` 圆对圆；
+敌人本体：`hitboxDimensions/3` 半宽盒、圆对盒、且只对 `flags & 3 == 3` 的敌人），
+见 [`TARGET.md`](TARGET.md) §6。「看着没碰到却死了」的话先怀疑时序，不是半径。
 
 ## 没反应？按这张表查
 

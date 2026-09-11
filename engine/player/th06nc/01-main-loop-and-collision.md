@@ -124,6 +124,36 @@ TH06 完全不是这样。它的 `Player` 有**三个真字段** `hitboxTopLeft`
 `param_4` 选择比较方式：`0` = 圆对轴对齐盒（把玩家中心钳制到弹幕盒内再算距离），
 `1` = 圆对圆。TH06 只有盒对盒一种。
 
+### 完整公式（2026-09-11 补，MCP 直读 `0x14006a980`）
+
+上面那段只是 `param_4 == 0` 分支的尾巴。两条分支全文：
+
+```c
+// 先用「盒各向外扩 size×0.5」做炸弹裁剪（BombProjectileClipsBox），命中返回 2
+half = size × 0.5                                  // 0x14030cd58 = 0.5f
+if (param_4 == 0) {                                // 圆对轴对齐盒（敌人本体）
+    cx = clamp(player.x, center.x − half.x, center.x + half.x)
+    cy = clamp(player.y, center.y − half.y, center.y + half.y)
+    hit = (player − (cx,cy))² < r²                 // r = +0x774c = 1.25
+} else {                                           // 圆对圆（子弹）
+    R   = min(size.x, size.y) × 0.5 + r
+    hit = (player − center)² < R²                  // 严格小于
+}
+```
+
+两个调用方传的 `size` 不同：
+
+| 调用方 | `center` / `size` | `param_4` | 备注 |
+| --- | --- | --- | --- |
+| `BulletManager__OnUpdate` `0x140010870` | `bullet+0x30` / `bullet+0x5f4`（`grazeSize`） | 1 | 所以**弹的致死半径 = `min(grazeSize)/2 + 1.25`**，与擦弹公式（§2.9）共用同一个 `grazeSize` |
+| `EnemyManager__OnUpdate` `0x1400373b0` | `enemy+0xb0` / `enemy+0x2c0 × (2/3)`（`0x14030cd74` = 0.6667f） | 0 | 只在 `(enemy+0xbd & 3) == 3` 时才调；命中且 `(enemy+0xbd & 9) == 1` 时敌人自己也 `life −= 10` |
+
+第二行把 [`ecl/th06nc/04`](../../ecl/th06nc/04-enemy-struct.md) 里 `hitboxDimensions +0x2c0` 从 weak 升到 **code**：
+`local_100 = enemy[0xb0(dword)] × 0.6667` 三个分量直接进 `CalcKillBoxCollision` 的 `size`。
+于是**敌人本体的致死盒半宽 = `hitboxDimensions / 3`**（× 2/3 再 × 0.5）。
+
+用它的 mod：[`mods/th06nc/autoplay`](../../../mods/th06nc/autoplay/README.md)（`native/extract.c`）。
+
 ### 范围：只有被弹判定变圆
 
 道具吸取仍是 AABB——`+0xa2ac = +0x9f2c + +0x7734`（`grabItemSize` 与 `position` 相加），

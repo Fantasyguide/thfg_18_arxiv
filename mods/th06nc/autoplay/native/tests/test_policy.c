@@ -85,9 +85,14 @@ int main(void)
     /* 9. 敌人本体也是障碍：一个敌人贴在头顶正上方 30px、半宽半高 16，不动 —— 向上走必须被判危险 */
     reset(); ap_policy_init(&P);
     W.enemies[W.nenemies].x = 0.0f; W.enemies[W.nenemies].y = 384.0f - 30.0f;
-    W.enemies[W.nenemies].hit_w = 16.0f; W.enemies[W.nenemies].hit_h = 16.0f; W.nenemies++;
+    W.enemies[W.nenemies].hit_w = 16.0f; W.enemies[W.nenemies].hit_h = 16.0f;
+    W.enemies[W.nenemies].collidable = 1; W.nenemies++;
     assert(ap_policy_score_move(&W, 0.0f, -4.0f, 24, &t) < 0.0f);
     assert(ap_policy_score_move(&W, 0.0f, 0.0f, 24, &t) > 0.0f);
+
+    /* 10. 同一个敌人但引擎不拿它撞自机（collidable=0）：向上走不该被判危险 */
+    W.enemies[0].collidable = 0;
+    assert(ap_policy_score_move(&W, 0.0f, -4.0f, 24, &t) > 0.0f);
 
     puts("test_policy ok");
     return 0;

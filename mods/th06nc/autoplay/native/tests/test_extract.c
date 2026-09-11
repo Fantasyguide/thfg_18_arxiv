@@ -56,12 +56,12 @@ int main(void)
     /* 敌：槽 2 活着且是 boss；槽 5 活着非 boss；其余空 */
     {
         uint64_t e2 = RVA_G_ENEMIES + 2 * ENEMY_SIZE, e5 = RVA_G_ENEMIES + 5 * ENEMY_SIZE;
-        img[e2 + OFF_E_FLAGS] = 0x80 | 0x20;
+        img[e2 + OFF_E_FLAGS] = 0x80 | 0x20; img[e2 + OFF_E_FLAGS2] = 0x03;
         put_f32(e2 + OFF_E_POS, 192.0f); put_f32(e2 + OFF_E_POS + 4, 128.0f);
         put_i32(e2 + OFF_E_BOSS_ID, 0);
         put_i32(e2 + OFF_E_LIFE, 900); put_i32(e2 + OFF_E_MAX_LIFE, 1200);
-        put_f32(e2 + OFF_E_HITBOX, 32.0f); put_f32(e2 + OFF_E_HITBOX + 4, 32.0f);
-        img[e5 + OFF_E_FLAGS] = 0x80;
+        put_f32(e2 + OFF_E_HITBOX, 48.0f); put_f32(e2 + OFF_E_HITBOX + 4, 30.0f);
+        img[e5 + OFF_E_FLAGS] = 0x80; img[e5 + OFF_E_FLAGS2] = 0x01;   /* 只有 bit0：不碰撞 */
         put_f32(e5 + OFF_E_POS, 192.0f - 100.0f); put_f32(e5 + OFF_E_POS + 4, 64.0f);
         put_i32(e5 + OFF_E_BOSS_ID, -1);
         put_i32(e5 + OFF_E_LIFE, 10); put_i32(e5 + OFF_E_MAX_LIFE, 10);
@@ -93,7 +93,8 @@ int main(void)
     assert(w->nenemies == 2);
     assert(w->enemies[0].x == 0.0f && w->enemies[0].y == 128.0f && w->enemies[0].boss == 1);
     assert(w->enemies[0].hp == 900 && w->enemies[0].hp_max == 1200);
-    assert(w->enemies[0].hit_w == 16.0f && w->enemies[0].hit_h == 16.0f);   /* 半宽半高 */
+    assert(w->enemies[0].hit_w == 16.0f && w->enemies[0].hit_h == 10.0f);   /* hitboxDimensions / 3 */
+    assert(w->enemies[0].collidable == 1 && w->enemies[1].collidable == 0);
     assert(w->enemies[1].x == -100.0f && w->enemies[1].boss == 0 && w->enemies[1].hp == 10);
 
     /* 可动区读到 0 时退回默认 */

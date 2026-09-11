@@ -70,7 +70,7 @@
 | `+0x008` | `velocity`（x,y） | `bullet/01` §2 |
 | `+0x030` | `pos`（x,y） | 同上 |
 | `+0x044` | `state`（i16；0 空槽不入表） | 同上 |
-| `+0x5f4` / `+0x5f8` | `grazeSize.x/y` → 判定半径取 `min × 0.5` 🟡 | 同上；半径推定见 §6 |
+| `+0x5f4` / `+0x5f8` | `grazeSize.x/y` → 致死半径 = `min × 0.5`（+ 自机 1.25） | `player/01` §2.7 完整公式 ✅ |
 | `+0x618` | `isGrazed` | 同上 |
 
 ### `Enemy` 偏移（步长 `0x10b0`）
@@ -79,9 +79,10 @@
 | --- | --- | --- | --- |
 | `+0x0b0` | `position` | code | `enemy/01` §5 |
 | `+0x0bc` | `flags`，bit7 = 槽占用 | code | `enemy/01` §1 |
+| `+0x0bd` | 第二个 flags 字节，`& 3 == 3` 才做本体碰撞 | code | `player/01` §2.7（`EnemyManager__OnUpdate` 的调用门） |
 | `+0x230` | `bossId`（≥ 0 视为 boss） | **weak** | [`ecl/04`](../../../engine/ecl/th06nc/04-enemy-struct.md) §3 |
 | `+0x234` / `+0x238` | `life` / `maxLife` | code | `enemy/01` §5 |
-| `+0x2c0` | `hitboxDimensions`（x,y；取半） | **weak** | `ecl/04` §3 |
+| `+0x2c0` | `hitboxDimensions`（x,y）→ 致死盒半宽 = `/ 3` | code | `player/01` §2.7（× 2/3 再 × 0.5） |
 
 ### 逻辑按钮位（`INPUT_HELD`）
 
@@ -92,18 +93,27 @@
 
 出处：[`engine/menu/th06nc/02`](../../../engine/menu/th06nc/02-classiclager-unlock-cheat.md) §8。
 
-## 6. 推定与时序（🟡，实机才能定）
+## 6. 判定公式（✅ 一手）与仍待实机的时序（🟡）
 
-1. **弹的判定半径 = `min(grazeSize.x, grazeSize.y) × 0.5`**。这是擦弹公式里的同一项
-   （`bullet/01` §4），死亡判定 `CalcKillBoxCollision(center, size, …, 1)` 圆对圆用的确切半径
-   还没对过 `0x14006a980`。偏大只会让 AI 过于谨慎，偏小会死得莫名其妙。
-2. **敌人 `hitboxDimensions` 是全宽还是半宽**：按 CC0 的用法当全宽、取半。弱锚。
-3. **hook 处读到的世界是「上一帧终态」还是「本帧改到一半」**：取决于 Player 在 calc 链里
+**判定式已按 `Player__CalcKillBoxCollision` `0x14006a980` 原样复刻**（[`player/01`](../../../engine/player/th06nc/01-main-loop-and-collision.md) §2.7，2026-09-11 MCP 直读）：
+
+| 对象 | 引擎 | 本 mod |
+| --- | --- | --- |
+| 弹 | `R = min(grazeSize) × 0.5 + 1.25`，`dist² < R²` | `bullet.radius = min × 0.5`，策略算 `dist − (r + radius)` |
+| 敌人本体 | 仅 `(enemy+0xbd & 3) == 3`；盒半宽 = `hitboxDimensions × 2/3 × 0.5`，圆心钳到盒内再比 1.25 | `collidable` 门 + `hit_w = hitbox / 3`，策略同式钳位 |
+
+两个常量：`0x14030cd58` = 0.5f、`0x14030cd74` = 0.6667f，MCP `read_bytes` 直读。
+
+仍是 🟡 的只有时序两条：
+
+1. **hook 处读到的世界是「上一帧终态」还是「本帧改到一半」**：取决于 Player 在 calc 链里
    排在 Bullet / Enemy 之前还是之后（已知 Stage 6、EnemyManager 9，Player 未读出）。
    对内嵌策略影响很小（一帧的外推误差），对将来的协议语义有影响，spec §6b.4 已登记。
-4. **炸弹按下沿**：`Player__OnUpdate` 自己比 `INPUT_HELD` 与 `INPUT_PREV`（`0x140a6ec64`）
+2. **炸弹按下沿**：`Player__OnUpdate` 自己比 `INPUT_HELD` 与 `INPUT_PREV`（`0x140a6ec64`）
    判上升沿。mouse-control 用中键 OR 上 `0x02` 实机放出过炸弹，说明在入口写入的位能形成沿。
    本 mod 只在那一帧写 `0x02`、下一帧清掉，与中键按下一帧等价。
+
+弱锚只剩 `bossId`（只影响「对齐谁的 x」）。
 
 ## 7. 换版本时必须重取
 

@@ -2,8 +2,9 @@
  *
  * 坐标：th06nc 的自机 / 弹 / 敌坐标都是关卡区局部、原点左上角（engine/player/th06nc/01 §2.11），
  * 这里统一减去 PLAYFIELD_W/2 平移到中轴原点，y 不动。
- * 弹的判定半径：min(grazeSize.x, grazeSize.y) × 0.5 —— 🟡 按擦弹公式的同一项取，
- * 死亡判定（CalcKillBoxCollision 第四参 = 1 圆对圆）的确切半径待对一遍 0x14006a980。 */
+ * 判定尺寸照 Player__CalcKillBoxCollision 0x14006a980 一手（engine/player/th06nc/01 §2.7）：
+ * 弹 = min(grazeSize) × 0.5（圆对圆，自机半径另加）；敌人本体 = hitboxDimensions / 3 的半宽盒
+ * （圆对轴对齐盒），且只有 (enemy+0xbd & 3) == 3 的敌人才参与。 */
 #include <string.h>
 #include "extract.h"
 #include "th06nc.h"
@@ -62,7 +63,7 @@ void th06nc_extract(const uint8_t *base, ap_world_t *w)
         o->vx = rd_f32(b + OFF_B_VELOCITY);
         o->vy = rd_f32(b + OFF_B_VELOCITY + 4);
         sx = rd_f32(b + OFF_B_GRAZE_SIZE); sy = rd_f32(b + OFF_B_GRAZE_SIZE + 4);
-        o->radius = (sx < sy ? sx : sy) * 0.5f;
+        o->radius = (sx < sy ? sx : sy) * BULLET_KILL_SIZE_SCALE;
         o->state = (uint8_t)st;
         o->grazed = b[OFF_B_IS_GRAZED] ? 1 : 0;
     }
@@ -75,8 +76,9 @@ void th06nc_extract(const uint8_t *base, ap_world_t *w)
         o = &w->enemies[w->nenemies++];
         o->x = rd_f32(e + OFF_E_POS) - HALF_W;
         o->y = rd_f32(e + OFF_E_POS + 4);
-        o->hit_w = rd_f32(e + OFF_E_HITBOX) * 0.5f;
-        o->hit_h = rd_f32(e + OFF_E_HITBOX + 4) * 0.5f;
+        o->hit_w = rd_f32(e + OFF_E_HITBOX) * ENEMY_KILL_BOX_SCALE;
+        o->hit_h = rd_f32(e + OFF_E_HITBOX + 4) * ENEMY_KILL_BOX_SCALE;
+        o->collidable = (e[OFF_E_FLAGS2] & ENEMY_FLAGS2_COLLIDE) == ENEMY_FLAGS2_COLLIDE ? 1 : 0;
         o->hp = rd_i32(e + OFF_E_LIFE);
         o->hp_max = rd_i32(e + OFF_E_MAX_LIFE);
         o->boss = rd_i32(e + OFF_E_BOSS_ID) >= 0 ? 1 : 0;
