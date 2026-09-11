@@ -18,13 +18,22 @@
 | imagebase | `0x140000000` |
 | 版本校验 | 运行时比对 `Player__OnUpdate` 入口 13 字节，见 §2 |
 
-## 2. 唯一的写入点 / hook 点
+## 2. 写入点 / hook 点
 
 与 [`../mouse-control/TARGET.md`](../mouse-control/TARGET.md) §2 完全相同：
 `Player__OnUpdate` `0x140068820` 入口 13 字节 `48 8b c4 57 41 54 48 81 ec d8 00 00 00`，
 跳板与入口补丁逐字节相同（`check.py` C–E 节反汇编核对），只是回调换成 `agent_tick`。
 
-写入的内存只有一处：`INPUT_HELD` `0x140a6ec60` 的低 7 位（`0xf7`）。
+写入的内存有两处：
+
+| # | 地址 | 写什么 | 依据 |
+| --- | --- | --- | --- |
+| 1 | `INPUT_HELD` `0x140a6ec60` | 低 7 位（`0xf7`）整体覆盖 | `engine/menu/th06nc/02` §8 |
+| 2 | `g_AsciiManager` `0x1403de620` 的 `+0x7bb0`（`numStrings`）与 `+0x7bb4 + n × 0x60` 那一条记录 | 追加一条「AI Control On/Off」，与引擎内联 `AddString`（`0x14007a3a0`）逐字段相同 | [`engine/anm/th06nc/03`](../../../engine/anm/th06nc/03-ascii-manager-strings.md) §3 |
+
+第 2 处每帧写，draw 回调（优先级 `0x13`）画完清零；我们的写入发生在 calc 链的 `Player__OnUpdate`
+里，晚于 AsciiManager 自己的 calc 回调（优先级 1）、早于 draw 链，与引擎自己画 FPS 的时序同类。
+上限 256 条，满了就不写（`check.py` 与 `tooling/ghidra/th06nc_ascii_spec.py` 对账）。
 
 ## 3. 代理入口
 
@@ -52,6 +61,7 @@
 | `g_Score` / `g_GrazeInStage` | `0x1404f2798` / `0x1404ff0cc` | u64 / i32 | `player/01` §2.9 |
 | `g_BombInUse` | `0x140509268` | u8 | 同上 |
 | `spellcardInfo.isActive` | `0x140badf60` | i32（= `EnemyManager + 0x10c0d0`） | `player/01` §2.16、`enemy/01` §6.3 |
+| `g_AsciiManager` | `0x1403de620` | `+0x52c8` isGui、`+0x52c9` isSelected（拷进记录）、`+0x7bb0` numStrings、`+0x7bb4` strings[256]×0x60 | `anm/th06nc/03` §2–§3 |
 
 ### `Player` 偏移
 
@@ -72,6 +82,19 @@
 | `+0x044` | `state`（i16；0 空槽不入表） | 同上 |
 | `+0x5f4` / `+0x5f8` | `grazeSize.x/y` → 致死半径 = `min × 0.5`（+ 自机 1.25） | `player/01` §2.7 完整公式 ✅ |
 | `+0x618` | `isGrazed` | 同上 |
+
+### `Laser` 偏移（步长 `0x298`，池 `0x1404e12b8`，64 条）
+
+| 偏移 | 字段 | 依据 |
+| --- | --- | --- |
+| `+0x004` | `width` → 致死盒半高 = `width / 4` | `bullet/01` §3.1 |
+| `+0x00c` | `timer.current` | 同上 |
+| `+0x010` / `+0x014` | `startOffset` / `endOffset`（沿线起止） | 同上 |
+| `+0x260` | `angle`（弧度） | 同上 |
+| `+0x268` / `+0x270` | state 1 时长 / state 0 预警时长（`t_active = +0x270 − timer`） | 同上（名字别按 CC0 猜） |
+| `+0x26c` / `+0x288` | `speed` / `startLength` | 同上 |
+| `+0x274` / `+0x290` | `inUse` / `state`（0 预警、1 有效、2 收缩；只收 0 和 1） | 同上 |
+| `+0x278` | `pos`（旋转原点） | 同上 |
 
 ### `Enemy` 偏移（步长 `0x10b0`）
 
@@ -100,6 +123,7 @@
 | 对象 | 引擎 | 本 mod |
 | --- | --- | --- |
 | 弹 | `R = min(grazeSize) × 0.5 + 1.25`，`dist² < R²` | `bullet.radius = min × 0.5`，策略算 `dist − (r + radius)` |
+| 激光 | 自机绕 `pos` 旋转 −angle 进激光坐标系，钳到盒 `[start,end] × ±width/4` 比 1.25；只在 state 1 | `laser_margin()` 同式；state 0 带 `t_active`，硬层在此之前不算撞 |
 | 敌人本体 | 仅 `(enemy+0xbd & 3) == 3`；盒半宽 = `hitboxDimensions × 2/3 × 0.5`，圆心钳到盒内再比 1.25 | `collidable` 门 + `hit_w = hitbox / 3`，策略同式钳位 |
 
 两个常量：`0x14030cd58` = 0.5f、`0x14030cd74` = 0.6667f，MCP `read_bytes` 直读。
@@ -122,6 +146,7 @@
 - [ ] 弹池 / 敌池基址、步长、数量，以及 §5 列出的每一个偏移（NC 相对 TH06 重排过，见 `ecl/04` §1）
 - [ ] 命 / 炸弹 / 火力 / 分数 / 擦弹 / 符卡 / 放弹中 七个全局
 - [ ] 按钮位定义
+- [ ] `g_AsciiManager` 与字符串记录布局（NC 相对 TH06 已把字宽从 14 改成 12，别假设不变）
 - [ ] 重新确认 `SetDefaultDllDirectories` 仍未被调用，否则代理路线失效
 
 可以借的只有：方法论、字段语义、跳板设计、策略代码。

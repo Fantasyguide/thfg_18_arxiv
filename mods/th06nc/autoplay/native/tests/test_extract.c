@@ -68,7 +68,28 @@ int main(void)
         put_f32(e5 + OFF_E_HITBOX, 24.0f); put_f32(e5 + OFF_E_HITBOX + 4, 24.0f);
     }
 
+    /* 激光：槽 0 state 1 有效；槽 1 state 0 预警（还差 30 帧）；槽 2 state 2 收缩（不收）；槽 3 未用 */
+    {
+        uint64_t l0 = RVA_G_LASERS + 0 * LASER_SIZE, l1 = RVA_G_LASERS + 1 * LASER_SIZE, l2 = RVA_G_LASERS + 2 * LASER_SIZE;
+        img[l0 + OFF_L_IN_USE] = 1; img[l0 + OFF_L_STATE] = 1;
+        put_f32(l0 + OFF_L_POS, 192.0f + 40.0f); put_f32(l0 + OFF_L_POS + 4, 100.0f);
+        put_f32(l0 + OFF_L_ANGLE, 1.5f); put_f32(l0 + OFF_L_WIDTH, 16.0f);
+        put_f32(l0 + OFF_L_START_OFFSET, 10.0f); put_f32(l0 + OFF_L_END_OFFSET, 250.0f);
+        put_f32(l0 + OFF_L_START_LEN, 300.0f); put_f32(l0 + OFF_L_SPEED, 6.0f);
+        img[l1 + OFF_L_IN_USE] = 1; img[l1 + OFF_L_STATE] = 0;
+        put_i32(l1 + OFF_L_STATE0_LEN, 50); put_i32(l1 + OFF_L_TIMER_CUR, 20);
+        put_f32(l1 + OFF_L_WIDTH, 8.0f);
+        img[l2 + OFF_L_IN_USE] = 1; img[l2 + OFF_L_STATE] = 2;
+    }
+
     th06nc_extract(img, w);
+
+    assert(w->nlasers == 2);
+    assert(w->lasers[0].x == 40.0f && w->lasers[0].y == 100.0f && w->lasers[0].angle == 1.5f);
+    assert(w->lasers[0].start == 10.0f && w->lasers[0].end == 250.0f && w->lasers[0].start_len == 300.0f);
+    assert(w->lasers[0].speed == 6.0f && w->lasers[0].half_h == 4.0f && w->lasers[0].state == 1);
+    assert(w->lasers[0].t_active == 0);
+    assert(w->lasers[1].state == 0 && w->lasers[1].t_active == 30 && w->lasers[1].half_h == 2.0f);
 
     assert(w->frame == 1234);
     assert(w->phase & AP_PHASE_IN_GAME);

@@ -123,6 +123,18 @@ FUNCTIONS = [
     ),
 ]
 
+# 激光判定（engine/bullet/th06nc/01 §3.1，2026-09-11）：只在 state 1 判；
+# 盒 = 激光坐标系里 center=(pos.x+startOffset+len/2, pos.y)、size=(len, width/2) 的 ±size/2 → 半高 width/4；
+# 自机绕 pos 旋转 −angle 进坐标系后钳到盒内比 hitboxRadius。
+LASER_HITBOX_FN = 0x14006ABA0
+LASER_HITBOX_CALLSITE = 0x140011883          # 唯一调用点
+LASER_KILL_STATE = 1
+LASER_HALF_H_SCALE = 0.25                    # 半高 = width × 0.25
+LASER_GRAZE_MARGIN = 48.0                    # 0x14030cf20
+LASER_RETIRE_START_OFFSET = 640.0            # 0x14030d03c：startOffset ≥ 它即回收
+LASER_STATE0_LEN = 0x270                     # 预警时长（CC0 start_time）
+LASER_STATE1_LEN = 0x268                     # 有效时长（CC0 duration）
+
 # 池的绝对地址标签
 POOL_LABELS = [
     (0x1403EC2A8, "g_Bullets", "Bullet[640], stride 0x620 (BulletManager + 0x08)."),

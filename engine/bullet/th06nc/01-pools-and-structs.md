@@ -121,6 +121,39 @@ laser 游标 0xf502c − 0xf5018  = 0x14      ← 于是 OnUpdate 的 [+0x260] =
 
 `flags` 位 0 选两种消失方式：按宽度收缩（改 `vm0.scaleY`）还是按 alpha 淡出。
 
+### 3.1 激光什么时候杀人、怎么判（2026-09-11 补，MCP 直读 `BulletManager__OnUpdate` 激光段 + `Player__CalcLaserHitbox` `0x14006aba0`）
+
+激光 tick 的游标是 `laser+0x14`（`endOffset`），逐帧：
+
+```
+endOffset   += speed(+0x26c)
+startOffset  = max(startOffset, endOffset − startLength(+0x288))，且 ≥ 0
+length       = endOffset − startOffset
+center       = (pos.x + startOffset + length/2, pos.y)       // 激光自己的坐标系：沿 +x 从 pos 伸出
+size         = (length, width(+0x04) / 2)
+```
+
+`Player__CalcLaserHitbox(player, &center, &size, &pos, angle(+0x260), canGraze)`：先把自机绕 `pos`
+**旋转 −angle** 进激光坐标系（`x' = cos·dx + sin·dy + pos.x`，`y' = cos·dy − sin·dx + pos.y`），
+再把 `(x', y')` 钳到盒 `center ± size × 0.5` 内取最近点，`dist² < 1.25²` 即死。
+**盒的半高 = width / 4**（不是 width / 2）。`canGraze` 时盒各向外扩 48.0（`0x14030cf20`）判擦弹。
+
+**只有一个调用点**（`0x140011883`）。按 `state(+0x290)` 分：
+
+| state | 含义 | 判定 |
+| --- | --- | --- |
+| 0 | 预警线，`timer(+0x0c)` 计到 `+0x270` 转 1 | **不判**；转 1 的那一帧起判 |
+| 1 | 有效，`timer` 计到 `+0x268` 转 2 | **每帧判** |
+| 2 | 收缩 / 淡出，`timer` 计到 `+0x18` 或 `+0x18 == 0` 即回收 | **不判** |
+
+另：`startOffset ≥ 640.0`（`0x14030d03c`）时直接回收（整条已出屏）。
+
+> 与 TH06 的差别：CC0 在 state 0 里 `graze_delay` 之后就调判定、state 2 里 `graze_interval` 之前也调；
+> NC 都删了，只剩 state 1。字段名沿用 CC0 时注意：`+0x270` 是 **state 0 的时长**（CC0 `start_time`），
+> `+0x268` 是 **state 1 的时长**（CC0 `duration`）——上面 §3 的表里叫 `duration` / `hitboxStartTime`，按偏移用，别按名字猜。
+
+用它的 mod：[`mods/th06nc/autoplay`](../../../mods/th06nc/autoplay/README.md)（`native/extract.c` 的激光表、`policy.c` 的激光项）。
+
 ## 4. 顺带验证了三条旧结论
 
 这一轮读到的代码同时印证了别处已经记下的东西——都不是重新推导，是交叉命中：

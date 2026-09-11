@@ -148,6 +148,8 @@ if (param_4 == 0) {                                // 圆对轴对齐盒（敌�
 | `BulletManager__OnUpdate` `0x140010870` | `bullet+0x30` / `bullet+0x5f4`（`grazeSize`） | 1 | 所以**弹的致死半径 = `min(grazeSize)/2 + 1.25`**，与擦弹公式（§2.9）共用同一个 `grazeSize` |
 | `EnemyManager__OnUpdate` `0x1400373b0` | `enemy+0xb0` / `enemy+0x2c0 × (2/3)`（`0x14030cd74` = 0.6667f） | 0 | 只在 `(enemy+0xbd & 3) == 3` 时才调；命中且 `(enemy+0xbd & 9) == 1` 时敌人自己也 `life −= 10` |
 
+激光走另一条 `Player__CalcLaserHitbox` `0x14006aba0`：圆对**旋转矩形**，半高 = `width/4`，只在激光 state 1 判，见 [`bullet/th06nc/01`](../../bullet/th06nc/01-pools-and-structs.md) §3.1。
+
 第二行把 [`ecl/th06nc/04`](../../ecl/th06nc/04-enemy-struct.md) 里 `hitboxDimensions +0x2c0` 从 weak 升到 **code**：
 `local_100 = enemy[0xb0(dword)] × 0.6667` 三个分量直接进 `CalcKillBoxCollision` 的 `size`。
 于是**敌人本体的致死盒半宽 = `hitboxDimensions / 3`**（× 2/3 再 × 0.5）。

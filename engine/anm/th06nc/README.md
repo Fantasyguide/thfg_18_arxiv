@@ -20,3 +20,4 @@ TH06NC 沿用 **ANM v0 容器 + TH06 式单函数解释器**，但指令集从 0
 Ghidra 应用脚本为 [`tooling/ghidra/apply_th06nc_anm.py`](../../../tooling/ghidra/apply_th06nc_anm.py)；
 数据侧的独立统计工具是 [`tooling/anm0_scan.py`](../../../tooling/anm0_scan.py)，
 两者都要求样本 MD5 `b0cc28ec904e9efce2439ad857c938b5`。
+- [`03-ascii-manager-strings.md`](03-ascii-manager-strings.md) —— HUD 文字：`g_AsciiManager` 的字符串表布局，画一行字只需追加一条记录（2026-09-11）

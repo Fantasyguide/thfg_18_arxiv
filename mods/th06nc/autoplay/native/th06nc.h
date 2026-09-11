@@ -55,6 +55,25 @@
 #define OFF_B_IS_GRAZED       0x618    /* u8 */
 #define BULLET_STATE_FLYING   1
 
+/* --- Laser 偏移（engine/bullet/th06nc/01 §3 / §3.1，全部 code）--- */
+#define RVA_G_LASERS          0x4E12B8      /* lasers[64]，步长 0x298（BulletManager + 0xf5018） */
+#define LASER_COUNT           64
+#define LASER_SIZE            0x298
+#define OFF_L_WIDTH           0x004    /* f32 */
+#define OFF_L_TIMER_CUR       0x00C    /* i32 */
+#define OFF_L_START_OFFSET    0x010    /* f32 */
+#define OFF_L_END_OFFSET      0x014    /* f32 */
+#define OFF_L_ANGLE           0x260    /* f32 弧度 */
+#define OFF_L_STATE1_LEN      0x268    /* i32：state 1 的时长（CC0 duration） */
+#define OFF_L_SPEED           0x26C    /* f32 */
+#define OFF_L_STATE0_LEN      0x270    /* i32：state 0 预警时长（CC0 start_time）→ 转 1 才开始杀 */
+#define OFF_L_IN_USE          0x274    /* u8 */
+#define OFF_L_POS             0x278    /* f32 x,y,z（旋转原点） */
+#define OFF_L_START_LEN       0x288    /* f32 */
+#define OFF_L_STATE           0x290    /* u8：0 预警 / 1 有效 / 2 收缩 */
+#define LASER_KILL_STATE      1        /* 只有 state 1 判死（唯一调用点 0x140011883） */
+#define LASER_HALF_H_SCALE    0.25f    /* 致死盒半高 = width × 0.25（size.y = width/2 再 × 0.5） */
+
 /* --- Enemy 偏移（engine/enemy/th06nc/01 §1 §5、engine/ecl/th06nc/04 §3）--- */
 #define ENEMY_COUNT           256
 #define ENEMY_SIZE            0x10B0
@@ -72,6 +91,28 @@
  *   敌人：盒半宽 = hitboxDimensions × (2/3) × 0.5 = /3，圆对轴对齐盒 */
 #define BULLET_KILL_SIZE_SCALE  0.5f          /* 0x14030cd58 */
 #define ENEMY_KILL_BOX_SCALE    (0.6666667f * 0.5f)   /* 0x14030cd74 × 0x14030cd58 */
+
+/* --- AsciiManager：HUD 文字（engine/anm/th06nc/03，一手）---
+ * 画一行字 = 往 strings[numStrings++] 写一条 0x60 字节记录；draw 回调每帧画完清零，所以每帧都要加。 */
+#define RVA_ASCII_MANAGER     0x3DE620
+#define ASCII_MGR_IS_GUI      0x52C8   /* u8：拷进记录 +0x0c */
+#define ASCII_MGR_IS_SELECTED 0x52C9   /* u8：拷进记录 +0x5c（字形集选择） */
+#define ASCII_MGR_NUM_STRINGS 0x7BB0   /* i32，上限 0x100 */
+#define ASCII_MGR_STRINGS     0x7BB4   /* 记录[256] */
+#define ASCII_MAX_STRINGS     0x100
+#define ASCII_STRING_SIZE     0x60
+#define ASCII_STR_SCALE_X     0x00     /* f32 */
+#define ASCII_STR_SCALE_Y     0x04
+#define ASCII_STR_COLOR       0x08     /* u32 AARRGGBB */
+#define ASCII_STR_IS_GUI      0x0C     /* u8 */
+#define ASCII_STR_POS         0x10     /* f32 x,y,z */
+#define ASCII_STR_TEXT        0x1C     /* char[64] */
+#define ASCII_STR_TEXT_CAP    0x40
+#define ASCII_STR_IS_SELECTED 0x5C     /* u8 */
+#define ASCII_CHAR_ADVANCE    12.0f    /* 每字前进 scale.x × 12（0x14030cea8） */
+#define ASCII_LINE_HEIGHT     16.0f
+/* 坐标空间 = NC 虚拟屏：高 480，宽 = 480 × 客户区宽高比；关卡区左上角 ((W−384)/2, 16)。FPS 画在 (758,464)。 */
+#define ASCII_VIRT_H          480.0f
 
 /* --- 逻辑按钮位（engine/menu/th06nc/02 §8）--- */
 #define IN_SHOOT  0x01

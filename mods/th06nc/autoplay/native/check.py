@@ -93,6 +93,16 @@ def main():
                       ("OFF_B_ANGLE", "angle"), ("OFF_B_STATE", "state"), ("OFF_B_GRAZE_SIZE", "grazeSize.x"),
                       ("OFF_B_IS_GRAZED", "isGrazed")):
         ok(D[key] == bf[name], f"{key} = bullet_spec 的 {name}")
+    ok(IB + D["RVA_G_LASERS"] == bs.LASERS_ABS and D["LASER_SIZE"] == bs.LASER_SIZE and D["LASER_COUNT"] == 0x40,
+       "激光池 = bullet_spec.LASERS_ABS，步长 / 数量一致")
+    lf = {n: o for o, n, _s, _e in bs.LASER_FIELDS}
+    for key, name in (("OFF_L_WIDTH", "width"), ("OFF_L_TIMER_CUR", "timer.current"), ("OFF_L_START_OFFSET", "startOffset"),
+                      ("OFF_L_END_OFFSET", "endOffset"), ("OFF_L_ANGLE", "angle"), ("OFF_L_STATE1_LEN", "hitboxStartTime"),
+                      ("OFF_L_SPEED", "speed"), ("OFF_L_STATE0_LEN", "duration"), ("OFF_L_IN_USE", "inUse"),
+                      ("OFF_L_POS", "pos.x"), ("OFF_L_START_LEN", "startLength"), ("OFF_L_STATE", "state")):
+        ok(D[key] == lf[name], f"{key} = bullet_spec 的 {name}")
+    ok(D["LASER_KILL_STATE"] == bs.LASER_KILL_STATE and D["OFF_L_STATE0_LEN"] == bs.LASER_STATE0_LEN
+       and D["OFF_L_STATE1_LEN"] == bs.LASER_STATE1_LEN, "激光只在 state 1 判 / 两个时长偏移 = bullet_spec §3.1")
     ok(IB + D["RVA_G_ENEMIES"] == es.ENEMY_MANAGER + es.ENEMIES_OFFSET, "敌池 = EnemyManager + ENEMIES_OFFSET")
     ok(D["ENEMY_SIZE"] == es.ENEMY_SIZE and D["ENEMY_COUNT"] == es.ENEMY_COUNT, "敌步长 / 数量 = enemy_spec")
     ok(D["OFF_E_FLAGS"] == es.ENEMY_SLOT_FLAGS, "OFF_E_FLAGS = ENEMY_SLOT_FLAGS（bit7 占用）")
@@ -106,6 +116,41 @@ def main():
     print("       注意：bossId 仍是 %s 档（弱锚），只影响次要目标" % ef["bossId"][1])
     ok(D["IN_SHOOT"] == 1 and D["IN_BOMB"] == 2 and D["IN_FOCUS"] == 4, "按键位与 spec 的 BUTTON_BITS 一致")
     ok(D["IN_ALL_MASK"] == 0xF7, "整体覆盖的掩码 = 7 个逻辑按钮位")
+    import th06nc_ascii_spec as asc
+    ok(asc.validate() == [], "ascii_spec 自洽")
+    ok(IB + D["RVA_ASCII_MANAGER"] == asc.G_ASCII_MANAGER, "RVA_ASCII_MANAGER = ascii_spec.G_ASCII_MANAGER")
+    for key, name in (("ASCII_MGR_IS_GUI", "MGR_IS_GUI"), ("ASCII_MGR_IS_SELECTED", "MGR_IS_SELECTED"),
+                      ("ASCII_MGR_NUM_STRINGS", "MGR_NUM_STRINGS"), ("ASCII_MGR_STRINGS", "MGR_STRINGS"),
+                      ("ASCII_MAX_STRINGS", "MAX_STRINGS"), ("ASCII_STRING_SIZE", "STRING_SIZE"),
+                      ("ASCII_STR_COLOR", "STR_COLOR"), ("ASCII_STR_IS_GUI", "STR_IS_GUI"),
+                      ("ASCII_STR_POS", "STR_POS"), ("ASCII_STR_TEXT", "STR_TEXT"),
+                      ("ASCII_STR_TEXT_CAP", "STR_TEXT_CAP"), ("ASCII_STR_IS_SELECTED", "STR_IS_SELECTED")):
+        ok(D[key] == getattr(asc, name), f"{key} = ascii_spec.{name}")
+    if exe is not None:
+        # 引擎自己那段内联 AddString（0x14007a3a0）：LEA R9,[rip+disp] 取管理器基址，
+        # 之后各字段都以 [R8+R9+disp32] 写入 —— 直接读 exe 校验基址与逐字段 disp。
+        fn = 0x14007A3A0
+        body = d[v2f(fn):v2f(fn) + 0x170]
+        base_hit = False
+        for i in range(len(body) - 7):
+            if body[i] in (0x48, 0x4C) and body[i + 1] == 0x8D and (body[i + 2] & 0xC7) == 0x05:
+                disp = struct.unpack_from("<i", body, i + 3)[0]
+                if fn + i + 7 + disp == asc.G_ASCII_MANAGER:
+                    base_hit = True
+        ok(base_hit, "0x14007a3a0 里有一条 lea 取 g_AsciiManager 基址")
+        for name, off in (("scale.x", asc.STR_SCALE_X), ("scale.y", asc.STR_SCALE_Y), ("color", asc.STR_COLOR),
+                          ("isGui", asc.STR_IS_GUI), ("pos", asc.STR_POS), ("text", asc.STR_TEXT),
+                          ("isSelected", asc.STR_IS_SELECTED)):
+            disp = struct.pack("<i", asc.MGR_STRINGS + off)
+            ok(disp in body, f"内联 AddString 里出现 disp32 = strings+{name}（{asc.MGR_STRINGS + off:#x}）")
+        # numStrings 是 rip 相对的 MOVSXD/MOV：任一条 rip 相对访存解出的绝对地址命中即可
+        n_hit = False
+        for i in range(len(body) - 6):
+            if body[i] in (0x89, 0x8B) and (body[i + 1] & 0xC7) == 0x05:
+                disp = struct.unpack_from("<i", body, i + 2)[0]
+                if fn + i + 6 + disp == asc.G_ASCII_MANAGER + asc.MGR_NUM_STRINGS:
+                    n_hit = True
+        ok(n_hit, "内联 AddString 里读写的计数就是 g_AsciiManager+0x7bb0（numStrings）")
 
     print("== C. 跳板机器码：反汇编 hook.c 实际写入的字节 ==")
     src = SRC.read_text(encoding="utf-8")

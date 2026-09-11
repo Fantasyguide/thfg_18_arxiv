@@ -10,8 +10,9 @@
  *   AUDIT-checklist 的 A 节整节不适用，C 节只剩「偏移是否有一手出处」。
  * 唯一的手写机器码是那段跳板，逐字节说明见 build_trampoline()。
  *
- * 与 mouse-control 的差别只有两处：回调里跑的是 extract + policy；
- * 写入的是全部 7 个逻辑按钮位（开启时键盘完全让位，F9 关掉即恢复）。
+ * 与 mouse-control 的差别：回调里跑的是 extract + policy；写入的是全部 7 个逻辑按钮位
+ * （开启时键盘完全让位，C 键关掉即恢复）；另外每帧往 AsciiManager 的字符串表追加一条
+ * 「AI Control On/Off」——写法照抄引擎自己画 FPS 的那段内联 AddString（engine/anm/th06nc/03）。
  */
 #include <windows.h>
 #include <stdint.h>
@@ -24,10 +25,13 @@
 
 static uint8_t *g_base;
 static uint8_t *g_stub;
-static int      g_on = 1;             /* 默认开启；F9 随时关 */
+static int      g_on = 1;             /* 默认开启；C 键随时切 */
 static int      g_disabled;
-static int      g_toggle_vk = VK_F9;
+static int      g_toggle_vk = 'C';    /* NC 不用 C 键（只认 Z/X/Shift/方向/Esc），拿来当开关 */
 static int      g_log_every = 60;     /* 每 N 帧记一行状态；0 = 不记 */
+static int      g_show_text = 1;      /* 屏幕上显示 AI Control On/Off */
+static float    g_text_scale = 0.75f;
+static float    g_text_dx = 4.0f, g_text_dy = 20.0f;   /* 相对关卡区左上角 */
 static FILE    *g_log;
 static const char *g_tag;
 static void       *g_self;
@@ -75,6 +79,48 @@ static uint32_t map_buttons(uint32_t b)
 }
 
 /* ------------------------------------------------------------------ *
+ * HUD 文字：往 g_AsciiManager 的字符串表追加一条记录（engine/anm/th06nc/03 §3）。
+ * 与引擎画 FPS 的内联 AddString（0x14007a3a0）逐字段相同；isGui / isSelected 照引擎
+ * 的做法拷管理器当前值。draw 回调画完会把 numStrings 清零，所以每帧调一次。
+ * ------------------------------------------------------------------ */
+static void ascii_add(float x, float y, float scale, uint32_t color, const char *text)
+{
+    uint8_t *mgr = g_base + RVA_ASCII_MANAGER;
+    int32_t *n = (int32_t *)(mgr + ASCII_MGR_NUM_STRINGS);
+    uint8_t *rec;
+    size_t len;
+    if (*n < 0 || *n >= ASCII_MAX_STRINGS) return;
+    rec = mgr + ASCII_MGR_STRINGS + (size_t)(*n) * ASCII_STRING_SIZE;
+    *(float *)(rec + ASCII_STR_SCALE_X) = scale;
+    *(float *)(rec + ASCII_STR_SCALE_Y) = scale;
+    *(uint32_t *)(rec + ASCII_STR_COLOR) = color;
+    rec[ASCII_STR_IS_GUI] = mgr[ASCII_MGR_IS_GUI];
+    *(float *)(rec + ASCII_STR_POS + 0) = x;
+    *(float *)(rec + ASCII_STR_POS + 4) = y;
+    *(float *)(rec + ASCII_STR_POS + 8) = 0.0f;
+    len = strlen(text);
+    if (len > ASCII_STR_TEXT_CAP - 1) len = ASCII_STR_TEXT_CAP - 1;
+    memcpy(rec + ASCII_STR_TEXT, text, len);
+    rec[ASCII_STR_TEXT + len] = 0;
+    rec[ASCII_STR_IS_SELECTED] = mgr[ASCII_MGR_IS_SELECTED];
+    (*n)++;
+}
+
+/* 关卡区左上角在虚拟屏里的位置：高固定 480，宽随客户区宽高比伸展，关卡区水平居中、顶边 16
+ * （mouse-control/TARGET.md §6 实测；FPS 画在 (758,464) 也印证宽 > 640）。 */
+static void overlay_draw(HWND hwnd, int on)
+{
+    RECT rc;
+    float w = 640.0f, left;
+    if (GetClientRect(hwnd, &rc) && rc.bottom > 0)
+        w = ASCII_VIRT_H * (float)rc.right / (float)rc.bottom;
+    left = (w - PLAYFIELD_W) * 0.5f;
+    ascii_add(left + g_text_dx, g_text_dy, g_text_scale,
+              on ? 0xff80ff80u : 0xffa0a0a0u,           /* 开 = 浅绿，关 = 灰 */
+              on ? "AI Control On" : "AI Control Off");
+}
+
+/* ------------------------------------------------------------------ *
  * 每帧回调：在 Player__OnUpdate 真正开始之前跑
  * ------------------------------------------------------------------ */
 void agent_tick(void)
@@ -93,6 +139,7 @@ void agent_tick(void)
         g_on = !g_on;
         rk_log("[autoplay] %s", g_on ? "开" : "关");
     }
+    if (g_show_text) overlay_draw(hwnd, g_on);   /* 开关状态都画，关着时也能看见 */
     if (!g_on) return;
 
     th06nc_extract(g_base, &g_world);
@@ -106,16 +153,16 @@ void agent_tick(void)
     buttons = ap_policy_decide(&g_policy, &g_world);
     bits = map_buttons(buttons);
 
-    ONCE(d_ok, "[diag] 首次生效 frame=%u pos=(%.1f,%.1f) r=%.2f speed=%.1f/%.1f bullets=%d enemies=%d area=[%.0f,%.0f]x[%.0f,%.0f] -> held=0x%02x",
+    ONCE(d_ok, "[diag] 首次生效 frame=%u pos=(%.1f,%.1f) r=%.2f speed=%.1f/%.1f bullets=%d enemies=%d lasers=%d area=[%.0f,%.0f]x[%.0f,%.0f] -> held=0x%02x",
          g_world.frame, g_world.player.x, g_world.player.y, g_world.player.hit_radius,
-         g_world.player.speed, g_world.player.speed_focus, g_world.nbullets, g_world.nenemies,
+         g_world.player.speed, g_world.player.speed_focus, g_world.nbullets, g_world.nenemies, g_world.nlasers,
          g_world.area.xmin, g_world.area.xmax, g_world.area.ymin, g_world.area.ymax, bits);
     if (g_log_every > 0 && (g_frames % (uint32_t)g_log_every) == 0)
-        rk_log("[tick] frame=%u pos=(%.1f,%.1f) st=%u b=%d e=%d lives=%u bombs=%u phase=0x%x held=0x%02x",
+        rk_log("[tick] frame=%u pos=(%.1f,%.1f) st=%u b=%d e=%d l=%d lives=%u bombs=%u phase=0x%x F=(%.2f,%.2f) held=0x%02x",
                g_world.frame, g_world.player.x, g_world.player.y, g_world.player.state,
-               g_world.nbullets, g_world.nenemies, g_world.player.lives, g_world.player.bombs,
-               g_world.phase, bits);
-    if (buttons & BTN_BOMB) rk_log("[bomb] frame=%u 预计 %d 帧内被弹，用炸弹", g_world.frame, 6);
+               g_world.nbullets, g_world.nenemies, g_world.nlasers, g_world.player.lives, g_world.player.bombs,
+               g_world.phase, g_policy.last_fx, g_policy.last_fy, bits);
+    if (buttons & BTN_BOMB) rk_log("[bomb] frame=%u %d 帧内九向全部会撞，用炸弹", g_world.frame, g_policy.vo_frames);
 
     /* 唯一的一次写：7 个逻辑按钮位整体覆盖，其余位（菜单等）一位不碰 */
     held = (uint32_t *)(g_base + RVA_INPUT_HELD);
@@ -216,12 +263,31 @@ static void load_ini(const char *dir)
     char ini[MAX_PATH];
     snprintf(ini, sizeof ini, "%s\\th06nc_autoplay.ini", dir);
     g_on        = GetPrivateProfileIntA("autoplay", "enabled",   1,        ini) ? 1 : 0;
-    g_toggle_vk = GetPrivateProfileIntA("autoplay", "toggle_vk", VK_F9,    ini);
+    g_toggle_vk = GetPrivateProfileIntA("autoplay", "toggle_vk", 'C',      ini);
     g_log_every = GetPrivateProfileIntA("autoplay", "log_every", 60,       ini);
+    g_show_text = GetPrivateProfileIntA("autoplay", "show_text", 1,        ini) ? 1 : 0;
+    g_text_scale = (float)GetPrivateProfileIntA("autoplay", "text_scale_pct", 75, ini) / 100.0f;
+    g_text_dx = (float)GetPrivateProfileIntA("autoplay", "text_x", 4,  ini);
+    g_text_dy = (float)GetPrivateProfileIntA("autoplay", "text_y", 20, ini);
+    if (g_text_scale <= 0.0f) g_text_scale = 0.75f;
     g_policy.horizon       = GetPrivateProfileIntA("autoplay", "horizon",       g_policy.horizon, ini);
     g_policy.bomb_cooldown = GetPrivateProfileIntA("autoplay", "bomb_cooldown", g_policy.bomb_cooldown, ini);
+    g_policy.vo_frames     = GetPrivateProfileIntA("autoplay", "vo_frames",     g_policy.vo_frames, ini);
+    g_policy.tau        = (float)GetPrivateProfileIntA("autoplay", "tau",         (int)g_policy.tau, ini);
+    g_policy.safe_r     = (float)GetPrivateProfileIntA("autoplay", "safe_r",      (int)g_policy.safe_r, ini);
+    g_policy.vortex     = (float)GetPrivateProfileIntA("autoplay", "vortex_pct",  (int)(g_policy.vortex * 100.0f), ini) / 100.0f;
+    g_policy.slow_dist  = (float)GetPrivateProfileIntA("autoplay", "slow_dist",   (int)g_policy.slow_dist, ini);
+    g_policy.k_att      = (float)GetPrivateProfileIntA("autoplay", "att_x_pct",   (int)(g_policy.k_att * 100.0f), ini) / 100.0f;
+    g_policy.k_att_y    = (float)GetPrivateProfileIntA("autoplay", "att_y_pct",   (int)(g_policy.k_att_y * 100.0f), ini) / 100.0f;
+    g_policy.home_y     = (float)GetPrivateProfileIntA("autoplay", "home_y",      (int)g_policy.home_y, ini);
+    g_policy.wall_margin        = (float)GetPrivateProfileIntA("autoplay", "wall_margin",        (int)g_policy.wall_margin, ini);
+    g_policy.wall_margin_bottom = (float)GetPrivateProfileIntA("autoplay", "wall_margin_bottom", (int)g_policy.wall_margin_bottom, ini);
+    g_policy.wall_k_bottom      = (float)GetPrivateProfileIntA("autoplay", "wall_bottom_pct",    (int)(g_policy.wall_k_bottom * 100.0f), ini) / 100.0f;
     if (g_policy.horizon < 1) g_policy.horizon = 1;
-    if (g_policy.horizon > 120) g_policy.horizon = 120;
+    if (g_policy.horizon > 240) g_policy.horizon = 240;
+    if (g_policy.vo_frames < 1) g_policy.vo_frames = 1;
+    if (g_policy.tau < 1.0f) g_policy.tau = 1.0f;
+    if (g_policy.safe_r < 8.0f) g_policy.safe_r = 8.0f;
 }
 
 /* ------------------------------------------------------------------ *
@@ -252,8 +318,10 @@ int autoplay_install(void)
     }
     ap_policy_init(&g_policy);
     load_ini(dir);
-    rk_log("[ini] enabled=%d toggle_vk=0x%02x horizon=%d bomb_cooldown=%d log_every=%d",
-           g_on, g_toggle_vk, g_policy.horizon, g_policy.bomb_cooldown, g_log_every);
+    rk_log("[ini] enabled=%d toggle_vk=0x%02x horizon=%d tau=%.0f safe_r=%.0f vortex=%.2f vo_frames=%d slow_dist=%.0f att=(%.2f,%.2f) home_y=%.0f wall=(%.0f,%.0f x%.2f) bomb_cooldown=%d log_every=%d show_text=%d scale=%.2f at=(+%.0f,%.0f)",
+           g_on, g_toggle_vk, g_policy.horizon, g_policy.tau, g_policy.safe_r, g_policy.vortex, g_policy.vo_frames,
+           g_policy.slow_dist, g_policy.k_att, g_policy.k_att_y, g_policy.home_y, g_policy.wall_margin, g_policy.wall_margin_bottom,
+           g_policy.wall_k_bottom, g_policy.bomb_cooldown, g_log_every, g_show_text, g_text_scale, g_text_dx, g_text_dy);
 
     target = g_base + RVA_PLAYER_ONUPDATE;
     /* 守门：序言不是我们记的那 13 字节 = 不是这个 build，什么都不做。 */
@@ -266,7 +334,6 @@ int autoplay_install(void)
         return 0;
     }
     if (!build_trampoline(target)) { g_disabled = 1; return 0; }
-    rk_log("[guard] 序言签名匹配，跳板就绪（%s 开关 autoplay）",
-           g_toggle_vk == VK_F9 ? "F9" : "配置的按键");
+    rk_log("[guard] 序言签名匹配，跳板就绪（vk=0x%02x 开关 autoplay）", g_toggle_vk);
     return 1;
 }

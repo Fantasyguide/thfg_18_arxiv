@@ -10,6 +10,7 @@
 
 #define AP_MAX_BULLETS 640
 #define AP_MAX_ENEMIES 256
+#define AP_MAX_LASERS  64
 
 typedef struct {
     float x, y;            /* 位置 */
@@ -26,6 +27,20 @@ typedef struct {
     uint8_t boss;          /* 🟡 弱锚 */
     uint8_t collidable;    /* 引擎本帧会不会拿它撞自机 */
 } ap_enemy_t;
+
+/* 直线激光：从 (x,y) 沿 angle 方向伸出，致死盒在沿线 [start, end] 之间、半高 half_h 的旋转矩形
+ *（与 th06nc Player__CalcLaserHitbox 同式：自机绕 (x,y) 旋转 −angle 进激光坐标系后钳到盒内比半径）。
+ * 每帧 end += speed，start = max(start, end − start_len)。 */
+typedef struct {
+    float x, y;            /* 旋转原点 */
+    float angle;           /* 弧度，世界方向 (cos, sin) */
+    float start, end;      /* 沿线的起止偏移 */
+    float start_len;       /* 尾巴追赶的长度上限 */
+    float speed;           /* end 每帧前进 */
+    float half_h;          /* 致死盒半高（th06nc = width/4） */
+    int32_t t_active;      /* 还要几帧才开始杀人：0 = 现在就杀；>0 = 预警中 */
+    uint8_t state;         /* 原值透传 */
+} ap_laser_t;
 
 typedef struct {
     float x, y;
@@ -51,6 +66,8 @@ typedef struct {
     ap_bullet_t bullets[AP_MAX_BULLETS];
     int nenemies;
     ap_enemy_t enemies[AP_MAX_ENEMIES];
+    int nlasers;
+    ap_laser_t lasers[AP_MAX_LASERS];
 } ap_world_t;
 
 #define AP_PHASE_IN_GAME             (1u << 0)

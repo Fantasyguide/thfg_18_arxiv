@@ -2,6 +2,8 @@
  *
  * 坐标：th06nc 的自机 / 弹 / 敌坐标都是关卡区局部、原点左上角（engine/player/th06nc/01 §2.11），
  * 这里统一减去 PLAYFIELD_W/2 平移到中轴原点，y 不动。
+ * 激光照 engine/bullet/th06nc/01 §3.1：只收 state 0（预警，带「还有几帧开始杀」）和 state 1（有效）；
+ * state 2 不判、不收。致死盒半高 = width/4。
  * 判定尺寸照 Player__CalcKillBoxCollision 0x14006a980 一手（engine/player/th06nc/01 §2.7）：
  * 弹 = min(grazeSize) × 0.5（圆对圆，自机半径另加）；敌人本体 = hitboxDimensions / 3 的半宽盒
  * （圆对轴对齐盒），且只有 (enemy+0xbd & 3) == 3 的敌人才参与。 */
@@ -82,5 +84,29 @@ void th06nc_extract(const uint8_t *base, ap_world_t *w)
         o->hp = rd_i32(e + OFF_E_LIFE);
         o->hp_max = rd_i32(e + OFF_E_MAX_LIFE);
         o->boss = rd_i32(e + OFF_E_BOSS_ID) >= 0 ? 1 : 0;
+    }
+
+    w->nlasers = 0;
+    for (i = 0; i < LASER_COUNT && w->nlasers < AP_MAX_LASERS; i++) {
+        const uint8_t *l = base + RVA_G_LASERS + (uint64_t)i * LASER_SIZE;
+        ap_laser_t *o;
+        uint8_t st;
+        if (!l[OFF_L_IN_USE]) continue;
+        st = l[OFF_L_STATE];
+        if (st != 0 && st != LASER_KILL_STATE) continue;
+        o = &w->lasers[w->nlasers++];
+        o->x = rd_f32(l + OFF_L_POS) - HALF_W;
+        o->y = rd_f32(l + OFF_L_POS + 4);
+        o->angle = rd_f32(l + OFF_L_ANGLE);
+        o->start = rd_f32(l + OFF_L_START_OFFSET);
+        o->end = rd_f32(l + OFF_L_END_OFFSET);
+        o->start_len = rd_f32(l + OFF_L_START_LEN);
+        o->speed = rd_f32(l + OFF_L_SPEED);
+        o->half_h = rd_f32(l + OFF_L_WIDTH) * LASER_HALF_H_SCALE;
+        o->state = st;
+        if (st == 0) {
+            int32_t left = rd_i32(l + OFF_L_STATE0_LEN) - rd_i32(l + OFF_L_TIMER_CUR);
+            o->t_active = left > 0 ? left : 0;
+        } else o->t_active = 0;
     }
 }
