@@ -8,9 +8,11 @@
 
 | 模式 | 屏幕文字 | 行为 |
 | --- | --- | --- |
-| MANUAL | `MANUAL MODE`（灰） | 不插手，键盘照常 |
-| AUTO | `AUTO MODE`（浅蓝） | AI 接管；**按住鼠标左键**时自机被引导朝光标走，松开即回默认行为。躲弹始终优先于引导 |
-| BYPASS | `BYPASS MODE`（浅绿） | AI 完全接管 |
+| MANUAL | `MANUAL MODE`（灰） | 不插手，键盘照常。**默认** |
+| AUTO | `AUTO MODE`（黄） | AI 接管；**按住鼠标左键**时自机被引导朝光标走，松开即回默认行为。躲弹始终优先于引导 |
+| BYPASS | `BYPASS MODE`（红） | AI 完全接管 |
+
+模式名下面一行小字 `(press c to switch)`。
 
 这是 [`docs/superpowers/specs/2026-09-10-ai-agent-bridge-design.md`](../../../docs/superpowers/specs/2026-09-10-ai-agent-bridge-design.md)
 的**原型先行**版本：协议、网络、Python 全部推后，只留下「内存 → 中立快照 → 决策 → 输入」这条链路。
@@ -72,7 +74,7 @@ make -C tests test    # 单独跑宿主单测
 
 | 操作 | 效果 |
 | --- | --- |
-| （无） | 装上即 BYPASS。进关卡后自机自己动、自己射、必要时自己炸 |
+| （无） | 装上即 MANUAL，按 C 切到 AUTO / BYPASS 后自机自己动、自己射、必要时自己炸 |
 | **C** | 轮换 MANUAL → AUTO → BYPASS → MANUAL（NC 本身不用 C 键） |
 | **鼠标左键**（AUTO） | 按住：自机朝光标走（光标钳到可动区内）；有弹威胁时躲弹优先。松开：回到默认（对齐 boss、待在中下） |
 | （屏幕） | 关卡区左上角一行模式名，走游戏自己的 AsciiManager，与 FPS 显示同一条路 |
@@ -88,7 +90,7 @@ make -C tests test    # 单独跑宿主单测
 
 ```ini
 [autoplay]
-start_mode    = 2     ; 启动模式：0 MANUAL / 1 AUTO / 2 BYPASS（默认）。旧键 enabled = 0 等价 0
+start_mode    = 0     ; 启动模式：0 MANUAL（默认）/ 1 AUTO / 2 BYPASS
 toggle_vk     = 67    ; 开关键虚拟键码，67 = 0x43 = C；想用 F9 填 120
 horizon       = 60    ; 最近接近点的搜索窗（帧）
 tau           = 20    ; 时间折扣常数（帧）：t* 帧后才到的弹，权重 exp(−t*/tau)

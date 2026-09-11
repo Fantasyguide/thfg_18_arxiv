@@ -27,9 +27,9 @@ static uint8_t *g_base;
 static uint8_t *g_stub;
 /* 三种模式，C 键轮换：MANUAL（不插手）→ AUTO（AI 接管 + 左键按住时朝光标引导）→ BYPASS（AI 完全接管） */
 enum { MODE_MANUAL = 0, MODE_AUTO = 1, MODE_BYPASS = 2 };
-static int      g_mode = MODE_BYPASS;
+static int      g_mode = MODE_MANUAL;
 static const char *MODE_NAME[3] = { "MANUAL MODE", "AUTO MODE", "BYPASS MODE" };
-static const uint32_t MODE_COLOR[3] = { 0xffa0a0a0u, 0xff80d0ffu, 0xff80ff80u };   /* 灰 / 浅蓝 / 浅绿 */
+static const uint32_t MODE_COLOR[3] = { 0xffa0a0a0u, 0xffffe040u, 0xffff5050u };   /* 灰 / 黄 / 红（AARRGGBB） */
 static int      g_disabled;
 static int      g_toggle_vk = 'C';    /* NC 不用 C 键（只认 Z/X/Shift/方向/Esc），拿来当开关 */
 static int      g_log_every = 60;     /* 每 N 帧记一行状态；0 = 不记 */
@@ -120,6 +120,9 @@ static void overlay_draw(HWND hwnd, int mode)
         w = ASCII_VIRT_H * (float)rc.right / (float)rc.bottom;
     left = (w - PLAYFIELD_W) * 0.5f;
     ascii_add(left + g_text_dx, g_text_dy, g_text_scale, MODE_COLOR[mode], MODE_NAME[mode]);
+    /* 下面一行小字：字号 0.6 倍，行距按上一行的行高（scale × 16） */
+    ascii_add(left + g_text_dx, g_text_dy + g_text_scale * ASCII_LINE_HEIGHT, g_text_scale * 0.6f,
+              0xffc0c0c0u, "(press c to switch)");
 }
 
 /* 光标 → 协议坐标（x 中轴为 0、y 顶边为 0）。布局模型照 mouse-control/TARGET.md §6（两次实测标定）：
@@ -290,9 +293,8 @@ static void load_ini(const char *dir)
 {
     char ini[MAX_PATH];
     snprintf(ini, sizeof ini, "%s\\th06nc_autoplay.ini", dir);
-    g_mode      = GetPrivateProfileIntA("autoplay", "start_mode", MODE_BYPASS, ini);
-    if (!GetPrivateProfileIntA("autoplay", "enabled", 1, ini)) g_mode = MODE_MANUAL;   /* 旧键兼容 */
-    if (g_mode < 0 || g_mode > 2) g_mode = MODE_BYPASS;
+    g_mode      = GetPrivateProfileIntA("autoplay", "start_mode", MODE_MANUAL, ini);
+    if (g_mode < 0 || g_mode > 2) g_mode = MODE_MANUAL;
     g_toggle_vk = GetPrivateProfileIntA("autoplay", "toggle_vk", 'C',      ini);
     g_log_every = GetPrivateProfileIntA("autoplay", "log_every", 60,       ini);
     g_show_text = GetPrivateProfileIntA("autoplay", "show_text", 1,        ini) ? 1 : 0;
