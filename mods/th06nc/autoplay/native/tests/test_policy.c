@@ -234,6 +234,61 @@ int main(void)
     ap_policy_field(&P, &W, &fx, &fy);
     assert(fy < 0.0f);
 
+    /* 22. 去抖：弹从正上方偏右 2 px 直落（合力几乎正左，略带分量落在扇区边界附近），
+     *     躲避阶段（前 30 帧）方向改变（含起停）不超过 3 次，且不被打中。
+     *     只数前 30 帧：之后安静计数满、引力把自机拉回中轴是正常回位，不是抖动 */
+    reset(); ap_policy_init(&P);
+    bullet(2.0f, 384.0f - 80.0f, 0.0f, 4.0f, 6.0f);
+    {
+        int changes = 0, hit = 0;
+        uint32_t last = 0xFFFFFFFFu;
+        for (int f = 0; f < 30; f++) {
+            uint32_t dir;
+            a = ap_policy_decide(&P, &W);
+            dir = a & (BTN_UP | BTN_DOWN | BTN_LEFT | BTN_RIGHT);
+            if (last != 0xFFFFFFFFu && dir != last) changes++;
+            last = dir;
+            step_world(a);
+            for (int i = 0; i < W.nbullets; i++) {
+                float dx = W.bullets[i].x - W.player.x, dy = W.bullets[i].y - W.player.y;
+                if (sqrtf(dx * dx + dy * dy) < W.bullets[i].radius + W.player.hit_radius) hit = 1;
+            }
+        }
+        assert(changes <= 3);
+        assert(!hit);
+    }
+    /* 23. 低速键不翻转：一颗弹在自机上方 45 px 处从左往右掠过（最近距离在 40 px 阈值附近来回），
+     *     100 帧内 SLOW 位最多翻转 2 次 */
+    reset(); ap_policy_init(&P);
+    bullet(-200.0f, 384.0f - 45.0f, 4.0f, 0.0f, 6.0f);
+    {
+        int toggles = 0, last = -1;
+        for (int f = 0; f < 100; f++) {
+            int sl;
+            a = ap_policy_decide(&P, &W);
+            sl = (a & BTN_SLOW) ? 1 : 0;
+            if (last >= 0 && sl != last) toggles++;
+            last = sl;
+            step_world(a);
+        }
+        assert(toggles <= 2);
+    }
+    /* 24. 涡旋选边不随中轴翻转：自机在 x=+3，一颗弹正对头顶直落 —— 连续 10 帧的横向方向一致 */
+    reset(); ap_policy_init(&P);
+    W.player.x = 3.0f;
+    bullet(3.0f, 384.0f - 120.0f, 0.0f, 4.0f, 6.0f);
+    {
+        int first = 0, consistent = 1;
+        for (int f = 0; f < 10; f++) {
+            int h;
+            a = ap_policy_decide(&P, &W);
+            h = (a & BTN_RIGHT) ? 1 : (a & BTN_LEFT) ? -1 : 0;
+            if (f == 0) first = h; else if (h != 0 && h != first) consistent = 0;
+            step_world(a);
+        }
+        assert(first != 0 && consistent);
+    }
+
     puts("test_policy ok");
     return 0;
 }

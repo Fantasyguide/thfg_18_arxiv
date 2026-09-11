@@ -283,6 +283,13 @@ static void load_ini(const char *dir)
     g_policy.wall_margin        = (float)GetPrivateProfileIntA("autoplay", "wall_margin",        (int)g_policy.wall_margin, ini);
     g_policy.wall_margin_bottom = (float)GetPrivateProfileIntA("autoplay", "wall_margin_bottom", (int)g_policy.wall_margin_bottom, ini);
     g_policy.wall_k_bottom      = (float)GetPrivateProfileIntA("autoplay", "wall_bottom_pct",    (int)(g_policy.wall_k_bottom * 100.0f), ini) / 100.0f;
+    g_policy.smooth      = (float)GetPrivateProfileIntA("autoplay", "smooth_pct",      (int)(g_policy.smooth * 100.0f), ini) / 100.0f;
+    g_policy.switch_hyst = (float)GetPrivateProfileIntA("autoplay", "switch_hyst_pct", (int)(g_policy.switch_hyst * 100.0f), ini) / 100.0f;
+    g_policy.hold_frames = GetPrivateProfileIntA("autoplay", "hold_frames", g_policy.hold_frames, ini);
+    g_policy.slow_exit   = (float)GetPrivateProfileIntA("autoplay", "slow_exit",   (int)g_policy.slow_exit, ini);
+    g_policy.slow_hold   = GetPrivateProfileIntA("autoplay", "slow_hold",   g_policy.slow_hold, ini);
+    if (g_policy.smooth <= 0.0f || g_policy.smooth > 1.0f) g_policy.smooth = 1.0f;
+    if (g_policy.slow_exit < g_policy.slow_dist) g_policy.slow_exit = g_policy.slow_dist;
     if (g_policy.horizon < 1) g_policy.horizon = 1;
     if (g_policy.horizon > 240) g_policy.horizon = 240;
     if (g_policy.vo_frames < 1) g_policy.vo_frames = 1;
@@ -318,10 +325,11 @@ int autoplay_install(void)
     }
     ap_policy_init(&g_policy);
     load_ini(dir);
-    rk_log("[ini] enabled=%d toggle_vk=0x%02x horizon=%d tau=%.0f safe_r=%.0f vortex=%.2f vo_frames=%d slow_dist=%.0f att=(%.2f,%.2f) home_y=%.0f wall=(%.0f,%.0f x%.2f) bomb_cooldown=%d log_every=%d show_text=%d scale=%.2f at=(+%.0f,%.0f)",
+    rk_log("[ini] enabled=%d toggle_vk=0x%02x horizon=%d tau=%.0f safe_r=%.0f vortex=%.2f vo_frames=%d slow_dist=%.0f att=(%.2f,%.2f) home_y=%.0f wall=(%.0f,%.0f x%.2f) smooth=%.2f hyst=%.2f hold=%d slow_exit=%.0f bomb_cooldown=%d log_every=%d show_text=%d scale=%.2f at=(+%.0f,%.0f)",
            g_on, g_toggle_vk, g_policy.horizon, g_policy.tau, g_policy.safe_r, g_policy.vortex, g_policy.vo_frames,
            g_policy.slow_dist, g_policy.k_att, g_policy.k_att_y, g_policy.home_y, g_policy.wall_margin, g_policy.wall_margin_bottom,
-           g_policy.wall_k_bottom, g_policy.bomb_cooldown, g_log_every, g_show_text, g_text_scale, g_text_dx, g_text_dy);
+           g_policy.wall_k_bottom, g_policy.smooth, g_policy.switch_hyst, g_policy.hold_frames, g_policy.slow_exit,
+           g_policy.bomb_cooldown, g_log_every, g_show_text, g_text_scale, g_text_dx, g_text_dy);
 
     target = g_base + RVA_PLAYER_ONUPDATE;
     /* 守门：序言不是我们记的那 13 字节 = 不是这个 build，什么都不做。 */

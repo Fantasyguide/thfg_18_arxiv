@@ -35,6 +35,14 @@
  *     带「还有 t_active 帧开始杀」：硬层在 t < t_active 时不算撞；软层把势放在 t_active 时刻的盒上、
  *     按 w(t_active) 折扣，所以预警线一出现就开始往外推、但远期的推得轻。
  *     伸长中的激光（end += speed）按同一套外推。不加涡旋项（沿着激光滑没有意义）。
+ * D10 去抖（2026-09-11 实机反馈「移动太抽搐」）：势场是连续向量，游戏只收八向，抖动全出在
+ *     「连续 → 离散」这一步。四个来源与四招：
+ *       扇区边界抖动 → 合力指数平滑 + 换向滞回（新方向得分要高出当前 25%）+ 换向后最短保持 4 帧；
+ *       起停闪烁     → 施密特触发（起动 f_min、停下 f_stop = f_min/2）；
+ *       低速键翻转   → 施密特触发（进 slow_dist、出 slow_exit）+ 最短保持；
+ *       涡旋选边翻转 → 参考点 (0, home_y) 在自机贴近中轴时 x 正负每帧变，切向力左右反转——
+ *                      参考点改成带 12 px 死带的闩锁（ref_sx / ref_sy）。
+ *     硬层 VO 掩码看的是原始几何，不经平滑，安全性不降；代价是反应慢一两帧。
  * 不做：道具、弹的 exFlags 外推、激光的转角、符卡时间。
  * ================================================================================ */
 #include <math.h>
@@ -60,6 +68,12 @@ void ap_policy_init(ap_policy_t *p)
     p->vo_frames = 3;
     p->bomb_cooldown = 90;
     p->last_bomb_frame = 0xFFFFFFFFu;
+    p->smooth = 0.4f;
+    p->switch_hyst = 0.25f;
+    p->hold_frames = 4;
+    p->f_stop = 0.025f;
+    p->slow_exit = 60.0f;
+    p->slow_hold = 10;
 }
 
 static float clampf(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
@@ -123,7 +137,10 @@ float ap_policy_score_move(const ap_world_t *w, float vx, float vy, int horizon,
 static void field_repulsion(const ap_policy_t *p, const ap_world_t *w, float *fx, float *fy)
 {
     const float px = w->player.x, py = w->player.y, rp = w->player.hit_radius;
-    const float ccx = 0.0f, ccy = p->home_y;   /* 选边参考点（D5）：中轴、中下，不是可动区中心 */
+    /* 选边参考点（D5 / D10）：中轴、中下；用闩锁的方向 ±64 px 代替「减去自机坐标」，
+     * 自机贴近中轴时不会每帧翻边。ref_sx == 0（未闩，测试直接调 field 时）退回按位置算。 */
+    const float ccx = p->ref_sx ? px + 64.0f * (float)p->ref_sx : 0.0f;
+    const float ccy = p->ref_sy ? py + 64.0f * (float)p->ref_sy : p->home_y;
     float F_x = 0.0f, F_y = 0.0f;
     int i;
 
@@ -252,7 +269,16 @@ uint32_t ap_policy_decide(ap_policy_t *p, const ap_world_t *w)
     int d, spd, best = -1, forbid[2][9], all_forbidden[2], i, want_slow;
     uint32_t prev_dir = p->prev_buttons & (BTN_UP | BTN_DOWN | BTN_LEFT | BTN_RIGHT), out;
 
-    if (w->player.state != 0 && w->player.state != 3) { CALM_SET(p, 0); return 0; }
+    if (w->player.state != 0 && w->player.state != 3) {
+        CALM_SET(p, 0); p->hold_left = 0; p->moving = 0; p->sm_fx = p->sm_fy = 0.0f;
+        return 0;
+    }
+
+    /* --- D10：涡旋选边参考点的闩锁（12 px 死带） --- */
+    if (w->player.x > 12.0f) p->ref_sx = -1; else if (w->player.x < -12.0f) p->ref_sx = 1;
+    else if (p->ref_sx == 0) p->ref_sx = (w->player.x >= 0.0f) ? -1 : 1;
+    if (w->player.y > p->home_y + 12.0f) p->ref_sy = -1; else if (w->player.y < p->home_y - 12.0f) p->ref_sy = 1;
+    else if (p->ref_sy == 0) p->ref_sy = 1;    /* 在 home 附近未闩时默认往下让（下面有空间） */
 
     /* --- 软层：合力 --- */
     field_repulsion(p, w, &rx, &ry);
@@ -262,6 +288,9 @@ uint32_t ap_policy_decide(ap_policy_t *p, const ap_world_t *w)
     if (rmag < 0.5f * p->f_min) { if (CALM_GET(p) < 0xFFFF) CALM_SET(p, CALM_GET(p) + 1); }
     else CALM_SET(p, 0);
     if (CALM_GET(p) >= CALM_FRAMES) field_attraction(p, w, &fx, &fy);                     /* D6 */
+    p->sm_fx = p->smooth * fx + (1.0f - p->smooth) * p->sm_fx;                            /* D10 平滑 */
+    p->sm_fy = p->smooth * fy + (1.0f - p->smooth) * p->sm_fy;
+    fx = p->sm_fx; fy = p->sm_fy;
     p->last_fx = fx; p->last_fy = fy;
 
     /* --- 低速：有弹已经很近就精细走位 --- */
@@ -271,7 +300,13 @@ uint32_t ap_policy_decide(ap_policy_t *p, const ap_world_t *w)
         float dd = sqrtf(dx * dx + dy * dy) - w->bullets[i].radius;
         if (dd < min_d) min_d = dd;
     }
-    want_slow = min_d < p->slow_dist;
+    /* D10：低速施密特触发 + 最短保持 */
+    if (p->slow_hold_left > 0) p->slow_hold_left--;
+    else {
+        int next = p->slow_on ? (min_d < p->slow_exit) : (min_d < p->slow_dist);
+        if (next != p->slow_on) { p->slow_on = next; p->slow_hold_left = p->slow_hold; }
+    }
+    want_slow = p->slow_on;
 
     /* --- 硬层：两档速度的 9 向掩码 --- */
     for (spd = 0; spd < 2; spd++) {
@@ -304,22 +339,34 @@ uint32_t ap_policy_decide(ap_policy_t *p, const ap_world_t *w)
         }
         out |= DIR_BITS[best];
         p->prev_buttons = (p->prev_buttons & 0xFFFF0000u) | (out & 0xFFFFu);
+        p->hold_left = 0; p->moving = best != 0;
         return out;
     }
 
-    /* --- 量化：合力与 8 向点积 + 惯性 --- */
+    /* --- 量化：合力与 8 向点积，带滞回 / 最短保持 / 起停施密特（D6、D10） --- */
     best_score = -1e9f;
     {
-        float best_raw = -1e9f;
+        float best_raw = -1e9f, cur_raw = -1e9f;
+        int cur = 0;
+        for (d = 1; d < 9; d++) if (DIR_BITS[d] == prev_dir) cur = d;
         for (d = 1; d < 9; d++) {
-            float dx = (float)DIRS[d][0], dy = (float)DIRS[d][1], raw, s;
+            float dx = (float)DIRS[d][0], dy = (float)DIRS[d][1], raw;
             if (forbid[spd][d]) continue;
             if (DIRS[d][0] && DIRS[d][1]) { dx *= 0.70710678f; dy *= 0.70710678f; }
             raw = fx * dx + fy * dy;
-            s = raw + ((DIR_BITS[d] == prev_dir && raw > 0.0f) ? p->persist : 0.0f);   /* D6：惯性只锦上添花 */
-            if (s > best_score) { best_score = s; best = d; best_raw = raw; }
+            if (d == cur) cur_raw = raw;
+            if (raw > best_score) { best_score = raw; best = d; best_raw = raw; }
         }
-        if (best_raw < p->f_min && !forbid[spd][0]) best = 0;   /* 没有足够的推力就不动（不看惯性） */
+        if (cur && !forbid[spd][cur] && cur_raw > 0.0f) {
+            /* 当前方向还能用：保持期内不换；过了保持期也要新方向明显更好才换 */
+            if (p->hold_left > 0 || best_raw < cur_raw * (1.0f + p->switch_hyst) + p->persist * 0.0f)
+                { best = cur; best_raw = cur_raw; }
+        }
+        if (p->moving) { if (best_raw < p->f_stop && !forbid[spd][0]) best = 0; }
+        else           { if (best_raw < p->f_min  && !forbid[spd][0]) best = 0; }
+        if (best != cur) p->hold_left = (best != 0) ? p->hold_frames : 0;
+        else if (p->hold_left > 0) p->hold_left--;
+        p->moving = best != 0;
     }
     out |= DIR_BITS[best];
     p->prev_buttons = (p->prev_buttons & 0xFFFF0000u) | (out & 0xFFFFu);

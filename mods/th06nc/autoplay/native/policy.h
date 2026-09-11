@@ -34,6 +34,13 @@ typedef struct {
     float f_min;          /* 合力低于它就不动 */
     float slow_dist;      /* 有弹在这个当前距离内就按低速（px） */
     float home_y;         /* 引力的 y 目标 */
+    /* ---- 连续 → 八向的去抖（D10）---- */
+    float smooth;         /* 合力指数平滑系数：F = smooth·F_now + (1−smooth)·F_prev */
+    float switch_hyst;    /* 换方向滞回：新方向得分要超过当前方向 (1+switch_hyst) 倍才换 */
+    int   hold_frames;    /* 换向后最少保持的帧数（被硬层禁用或得分转负除外） */
+    float f_stop;         /* 停下阈值（< f_min，施密特触发） */
+    float slow_exit;      /* 低速退出距离（> slow_dist，施密特触发） */
+    int   slow_hold;      /* 低速状态最少保持帧数 */
     /* ---- 硬层：一帧速度障碍掩码 + 应急炸弹 ---- */
     int   vo_frames;      /* 掩码外推帧数：这么多帧内会撞的动作直接禁用 */
     int   bomb_cooldown;  /* 两次 bomb 之间的最少帧数 */
@@ -42,6 +49,13 @@ typedef struct {
     uint32_t prev_buttons;
     /* ---- 上一帧的合力（日志 / 调试用） ---- */
     float last_fx, last_fy;
+    /* ---- 去抖的运行状态 ---- */
+    float sm_fx, sm_fy;   /* 平滑后的合力 */
+    int   hold_left;      /* 当前方向还要保持几帧 */
+    int   slow_on;        /* 低速闩锁 */
+    int   slow_hold_left;
+    int   moving;         /* 起停闩锁 */
+    int   ref_sx, ref_sy; /* 涡旋选边参考点的闩锁：±1；0 = 尚未闩（按位置直接算） */
 } ap_policy_t;
 
 void     ap_policy_init(ap_policy_t *p);
