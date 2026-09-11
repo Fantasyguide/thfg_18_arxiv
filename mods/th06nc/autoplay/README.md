@@ -130,7 +130,7 @@ th06nc autoplay —— imagebase=00007FF7XXXXXXXX
 [who] 代理 = VCRUNTIME140_1.dll
 [who] 本 DLL  = ...\VCRUNTIME140_1.dll
 [who] 游戏目录 = ...
-[ini] enabled=1 toggle_vk=0x78 horizon=24 bomb_cooldown=90 log_every=60
+[ini] start_mode=MANUAL MODE toggle_vk=0x43 horizon=60 …
 [guard] 序言签名匹配，跳板就绪（vk=0x43 轮换 MANUAL / AUTO / BYPASS）
 [diag] agent_tick 首次触发
 [diag] 首次生效 frame=… pos=(0.0,384.0) r=1.25 speed=4.0/2.0 bullets=0 enemies=1 area=[-184,184]x[16,432] -> held=0x01
