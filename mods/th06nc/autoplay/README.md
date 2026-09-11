@@ -18,8 +18,7 @@
 的**原型先行**版本：协议、网络、Python 全部推后，只留下「内存 → 中立快照 → 决策 → 输入」这条链路。
 快照结构（`native/world.h`）就是将来协议编码器的输入，字段名照 spec §4.3.2 起。
 
-> ✅ **2026-09-11 实机首跑通过**（采样版策略）：能跑、能躲弹。细节见 [`AUDIT.md`](AUDIT.md) §E.1。
-> ⏳ 之后换成的**势场版策略**、C 键开关、屏幕文字三项**尚未实机**。
+> ✅ **2026-09-11 实机验收通过**：势场版策略、激光、三模式与鼠标引导、屏幕文字。见 [`AUDIT.md`](AUDIT.md) §E.1。
 
 ## 原理
 
@@ -60,6 +59,15 @@
 > ⚠️ **不能和 mouse-control 同时装**：两个 mod 是同名文件，也都写 `INPUT_HELD`。装谁就只放谁。
 
 **卸载**：删掉 `VCRUNTIME140_1.dll`（ini 和 log 可一并删）。
+
+### 发布
+
+```sh
+bash release.sh [版本号]     # 先跑 check.py + 单测 + 编译，再打 dist/th06nc-autoplay-<版本>.zip
+```
+
+压缩包里只有三个文件：`VCRUNTIME140_1.dll`、示例 `th06nc_autoplay.ini`、给玩家的 `README.txt`
+（源在 `release/`，面向完全不懂的玩家，尽量傻瓜式）。`dist/` 不入库。
 
 ### 自己编译
 
@@ -203,6 +211,8 @@ autoplay/
 ├── README.md              # 你在这
 ├── TARGET.md              # ★ 死绑登记：hook 点 / 读取点 / 换版本要重取什么
 ├── AUDIT.md               # 对抗审计 + 实跑记录
+├── release.sh             # 打发布包（三个文件）
+├── release/               # 玩家 README.txt + 示例 ini
 └── native/
     ├── th06nc.h           ★ 全部死绑量集中一处
     ├── world.h            与作品无关的一帧快照（= 将来协议编码器的输入）
