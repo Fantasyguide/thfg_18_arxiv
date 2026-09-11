@@ -109,6 +109,9 @@ switch_hyst_pct = 25  ; 换方向滞回：新方向得分要高出当前 25% 才
 hold_frames   = 4     ; 换向后最少保持帧数（被硬层禁用或得分转负除外）
 slow_exit     = 60    ; 低速退出距离（进入是 slow_dist），施密特触发
 slow_hold     = 10    ; 低速状态最少保持帧数
+guide_pct     = 70    ; AUTO 下鼠标引导力百分比（低于 100 = 躲弹优先）
+guide_dead    = 12    ; 离光标小于它就停（px）
+guide_release = 24    ; 停下后光标要离开这么远才重新跟（施密特，防重合抽搐）
 bomb_cooldown = 90    ; 两次炸弹之间最少帧数
 log_every     = 60    ; 每 N 帧记一行状态；0 = 不记
 show_text     = 1     ; 屏幕上显示 AI Control On/Off

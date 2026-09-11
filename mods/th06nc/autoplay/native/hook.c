@@ -315,6 +315,10 @@ static void load_ini(const char *dir)
     g_policy.wall_margin        = (float)GetPrivateProfileIntA("autoplay", "wall_margin",        (int)g_policy.wall_margin, ini);
     g_policy.wall_margin_bottom = (float)GetPrivateProfileIntA("autoplay", "wall_margin_bottom", (int)g_policy.wall_margin_bottom, ini);
     g_policy.wall_k_bottom      = (float)GetPrivateProfileIntA("autoplay", "wall_bottom_pct",    (int)(g_policy.wall_k_bottom * 100.0f), ini) / 100.0f;
+    g_policy.k_guide       = (float)GetPrivateProfileIntA("autoplay", "guide_pct",     (int)(g_policy.k_guide * 100.0f), ini) / 100.0f;
+    g_policy.guide_dead    = (float)GetPrivateProfileIntA("autoplay", "guide_dead",    (int)g_policy.guide_dead, ini);
+    g_policy.guide_release = (float)GetPrivateProfileIntA("autoplay", "guide_release", (int)g_policy.guide_release, ini);
+    if (g_policy.guide_release < g_policy.guide_dead) g_policy.guide_release = g_policy.guide_dead;
     g_policy.smooth      = (float)GetPrivateProfileIntA("autoplay", "smooth_pct",      (int)(g_policy.smooth * 100.0f), ini) / 100.0f;
     g_policy.switch_hyst = (float)GetPrivateProfileIntA("autoplay", "switch_hyst_pct", (int)(g_policy.switch_hyst * 100.0f), ini) / 100.0f;
     g_policy.hold_frames = GetPrivateProfileIntA("autoplay", "hold_frames", g_policy.hold_frames, ini);

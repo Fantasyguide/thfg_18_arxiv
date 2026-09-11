@@ -43,8 +43,11 @@ typedef struct {
     int   slow_hold;      /* 低速状态最少保持帧数 */
     /* ---- 鼠标引导（AUTO 模式，D11）---- */
     float k_guide;        /* 引导力（恒力，< 斥力满值 1.0，> 起动阈值） */
+    float guide_dead;     /* 到引导点小于它就停（px） */
+    float guide_release;  /* 停下后要离开这么远才重新跟（施密特） */
     int   guide_on;
     float guide_x, guide_y;
+    int   guide_parked;   /* 已在死区内停下的闩锁 */
     /* ---- 硬层：一帧速度障碍掩码 + 应急炸弹 ---- */
     int   vo_frames;      /* 掩码外推帧数：这么多帧内会撞的动作直接禁用 */
     int   bomb_cooldown;  /* 两次 bomb 之间的最少帧数 */

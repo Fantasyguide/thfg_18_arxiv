@@ -317,6 +317,30 @@ int main(void)
     }
     ap_policy_set_guide(&P, 0, 0.0f, 0.0f);
 
+    /* 26. 引导死区：光标压在自机 5 px 处不动；从 60 px 外跟过去，40 帧内停在 release 距离内、
+     *     最后 10 帧一步不走，且横向方向不翻转 */
+    reset(); ap_policy_init(&P);
+    ap_policy_set_guide(&P, 1, 5.0f, 384.0f);
+    a = ap_policy_decide(&P, &W);
+    assert(!(a & (BTN_UP | BTN_DOWN | BTN_LEFT | BTN_RIGHT)));
+    reset(); ap_policy_init(&P);
+    ap_policy_set_guide(&P, 1, 60.0f, 384.0f);
+    {
+        int fl = 0, lh = 0, late = 0;
+        for (int f = 0; f < 40; f++) {
+            int h;
+            a = ap_policy_decide(&P, &W);
+            h = (a & BTN_RIGHT) ? 1 : (a & BTN_LEFT) ? -1 : 0;
+            if (h && lh && h != lh) fl++;
+            if (h) lh = h;
+            if (f >= 30 && (a & (BTN_UP | BTN_DOWN | BTN_LEFT | BTN_RIGHT))) late = 1;
+            step_world(a);
+        }
+        assert(fl == 0 && !late);
+        assert(fabsf(W.player.x - 60.0f) < P.guide_release);
+    }
+    ap_policy_set_guide(&P, 0, 0.0f, 0.0f);
+
     puts("test_policy ok");
     return 0;
 }
