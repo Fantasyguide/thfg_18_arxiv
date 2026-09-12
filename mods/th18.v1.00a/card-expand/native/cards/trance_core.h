@@ -285,11 +285,18 @@ int32_t trance_anm_script(int32_t type, int in_trance);
  * ★ 113 **不在**这一层（SPEC 用户定案 ③：113 是事后层 `+0x14`）⇒ `trance_rescue_resolve()`
  *   里对 113 有**硬拒**（返回 0），这是「分层不许越界」的可执行形式（SPEC §7 第一条）。
  *
- * ⚠ 接线现状（2026-09-12）：107 还是空壳、117 的 `+0x10` 由它自己处理
- *   ⇒ 本文件提供**记账 + 顺序**，卡侧 `cards/trance.c` 只**记录**、不代人执行。
+ * ★ 定位（2026-09-12 订正，别再当成「待接线」）：本函数是**契约的可执行形式 + 回归断言**，
+ *   **不是**要 107 / 117 在各自 `+0x10` 里回调的 TODO。四条细则都由**已有共享层**落地、卡间零互调：
+ *     ① 两家各自在自己的 `+0x10` 里动作 + 调 `Player__cancel_impending_death` `0x45d590`
+ *        （返回值恒 0 且 `Player__die` 忽略它 ⇒ 「先到先得」在执行层不存在，这正是定案）——
+ *        107 = `cards/senro.c` 的 `senro_do_libyou(..., by_hit=1)`；117 = `cards/animal.c`。
+ *     ② 全屏消弹只一次 ⇒ `ce_cancel_latch_claim`（先认领者做，后到者记日志即退）。
+ *     ③ 无敌取 max ⇒ `ce_invuln_request`（`invuln_recompute` 取 max，不求和、不截短）。
+ *     ④ 决死 B 拿不到机会 ⇒ `Player__die` 先置 state 4、最后才广播 `+0x10`（技术事实，无需动作）。
+ *   113 的分层靠**结构性保证**（`cards/trance.c` 里不出现 `cancel_impending_death`），不靠本函数拒绝。
  */
 #define TRANCE_RESCUE_COUNT   2
-#define TRANCE_RESCUE_107     107   /* 森罗结界（空壳中）*/
+#define TRANCE_RESCUE_107     107   /* 森罗结界（`cards/senro.c`，2026-09-12 已实装：`senro_do_libyou`）*/
 #define TRANCE_RESCUE_117     117   /* 鬼形兽咆哮（`cards/animal.c`）*/
 
 /* 契约顺序：**107 → 117**（用户定案，不许改）。`trance_rescue_order()` 返回它，单测钉死。*/
