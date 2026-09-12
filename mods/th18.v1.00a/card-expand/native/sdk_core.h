@@ -123,8 +123,10 @@ int  ce_cancel_latch_owner(void);          /* 本帧认领者 id；没人 = -1 *
  * 出灵界再死一次），所以它**必须知道前面三家有没有人已经救过**，否则会出现
  * 「107/117 花钱救了你、113 的窗口结束时又把你杀掉」。
  * 每帧初 reset（与 ce_cancel_latch_reset 同一处：`ce_item_frame` 断点），各救援者 claim 报到：
- *   107（`cards/senro.c`）/ 117（`cards/animal.c`）**无条件** claim（两家同时触发是已定案）；
- *   113（`cards/trance.c`）**查 owner**：没人认领才轮到它动手。
+ *   107（`cards/senro.c`）/ 117（`cards/animal.c`）**无条件** claim，且**必须丢弃返回值** ——
+ *   用户 2026-09-12 重申「**107 和 117 同时触发的时候，得要 107 和 117 同时破除**」
+ *   ⇒ 这两家谁也不能靠「先 claim 到账」把另一家挡掉（把返回值当门 = 让先到的独占救援 = 违规）；
+ *   113（`cards/trance.c`）**查 owner**：没人认领才轮到它动手（它是最后一家）。
  * ⚠️ 为什么「每帧」够用：一次死亡横跨多帧（`Player__die` 置 state 4 之后还有决死窗口 / 死亡动画），
  *   同帧不可能发生两次死亡 ⇒ 每帧闩锁 == 每次死亡闩锁。*/
 void ce_rescue_note_reset(void);

@@ -462,8 +462,11 @@ static int on_death_before_deathbomb(ce_card_t *c)
     if (!s) return 0;
     if (!senro_border_active(&s->st)) return 0;
     /* ★ 救援层报到（用户 2026-09-12 定案：顺序 107 → 117 → 决死 B → 113）。
-     * **无条件 claim**：107 与 117 同时触发是已定案，不许因为没拿到账就不救；
-     * 这个闩锁的唯一消费者是 113（它是最后一家，只在没人认领时才动手）。*/
+     * ⚠️⚠️ **返回值必须丢弃**（`(void)` 不是手滑）：用户 2026-09-12 重申
+     *   「**107 和 117 同时触发的时候，得要 107 和 117 同时破除**」⇒ 两家都必须**无条件**破自己的资源，
+     *   谁也不能靠「先 claim 到账」把另一家挡掉。
+     * 这个闩锁的**唯一消费者是 113**（它是最后一家，只在 `ce_rescue_note_owner() < 0` 时才动手）。
+     * ⇒ 谁把这里改成 `if (ce_rescue_note_claim(...))`，就是让先到的那家独占救援 = 违规。*/
     (void)ce_rescue_note_claim(SENRO_ID);
     senro_do_libyou(c, s, /*by_hit=*/1);
     return 0;   /* 返回值被 Player__die 忽略；救命靠 cancel_impending_death 的副作用 */

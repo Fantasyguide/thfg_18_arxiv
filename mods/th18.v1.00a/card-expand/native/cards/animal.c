@@ -1894,7 +1894,9 @@ static int on_death_before_deathbomb(ce_card_t *c)
     }
     if (!s->core.ready || s->core.hypering) return 0;
     /* ★ 救援层报到（用户 2026-09-12 定案：顺序 107 → 117 → 决死 B → 113）。
-     * **无条件 claim**（107 与 117 同时触发是已定案）；闩锁的唯一消费者是 113。*/
+     * ⚠️⚠️ **返回值必须丢弃**：用户同日重申「**107 和 117 同时触发的时候，得要 107 和 117 同时破除**」
+     *   ⇒ 本卡**无条件** `animal_hyper_start()`（`st->ready = 0`），不许因为闩锁被别人拿了就不破。
+     * 闩锁的唯一消费者是 113（最后一家）。把这里改成 `if (claim(...))` 就是独占救援 = 违规。*/
     (void)ce_rescue_note_claim(ANIMAL_ID_NUM);
     hyper_begin(s, 1);
     return 0;   /* 返回值被 Player__die 忽略；救命靠 cancel_impending_death 的副作用 */
