@@ -17,6 +17,17 @@ opcode 23 的位型跟着变了但**含义仍是左上**。证据见
 
 ⚠️ 因此 **TH06 的 `flags` 位型不能直接套 NC**——能沿用的只有 opcode 层面的语义。
 
+## TH07 快照（索引）
+
+TH07 的 anm 是 **v2**，编号方式与 v8 那套不同：它有一个**全局 id 空间** ——
+`loadAnm(index, 文件名, base)` 把每个 entry 按 `base + 文件内 id` 铺进 `AnmManager`（sprite / script 共用 base），
+base 在每个 entry 之后前进「`max(全部 sprite id ∪ 全部 script id) + 1`」。
+一手过程、零售 63 个 `.anm` 的适用性边界、以及 `EffectManager` type → id → (anm, 脚本) 的完整链路见
+[th07/01-anm-id-space.md](th07/01-anm-id-space.md)（`th07:0x44df90` / `th07:0x44e05e` / `th07:0x49efc0`）。
+
+⚠️ 这套编号是**本作特有**的，**别当跨作通则**：至少 TH18 就不是这样（那作按「每文件扁平脚本号」索引，
+见 [th18/04](th18/04-anm-slot-selection.md) §4 的一手结论）；其它作品**未验**。
+
 ## 锚点（anchor）的跨版本演化
 
 同一个概念在 ANM 各版本里的表达方式变了三次，**记号和能力都不通用**：
