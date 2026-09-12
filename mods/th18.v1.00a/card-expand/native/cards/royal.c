@@ -59,3 +59,21 @@ void ce_royal_tick(ce_card_t *c)
         ce_log("royal: trophy sound");
     }
 }
+
+/* ★ 2026-09-12（删卡收尾审计）：**上面那两个文件级 static 也要在删卡时收**（CARD-CHECKLIST §3 的
+ * 「文件级 static 缓存」那一行）。触发演出的那张黑桃被倒吊人（74）/ 原版空白卡删掉时：
+ *   · 演出 VM（script70）自己 `delete()`，不用管（它是瞬时的，200 帧后自灭）；
+ *   · 但 `s_fx_countdown` 是**靠这张卡的 `on_tick_2` 走的**，卡一没就永远减不下去 ⇒ 静态变量一直挂着
+ *     `{s_fx_card = 那张已被删的 id, s_fx_countdown = 剩下的帧数}`。`ce_destroy_card` 会把
+ *     `owned[id]` 清零 ⇒ 这张卡**会被商店重新刷出来**；再买到它时，新对象的 `on_tick_2` 一上来就
+ *     匹配上 `s_fx_card`，于是 60 帧后在局中冒出**一声没有演出配套的 trophy 音效**。
+ * 删卡发生在商店里（AbilityManager 冻住）⇒ 唯一跑得到的收尾点是 `on_delete`（虚表 +0x50），
+ * 所以由五张黑桃各自的 on_delete 调这里。只收「倒计时属于自己」的那一张：别的黑桃被删时演出照走。*/
+void ce_royal_dismiss(ce_card_t *c)
+{
+    if (s_fx_countdown <= 0 || ce_card_id(c) != s_fx_card) return;
+    ce_log("royal: show card %u destroyed before the frame-%d accent (%d frames left) — countdown dropped",
+           s_fx_card, ROYAL_TROPHY_FRAME, s_fx_countdown);
+    s_fx_countdown = 0;
+    s_fx_card = 0;
+}

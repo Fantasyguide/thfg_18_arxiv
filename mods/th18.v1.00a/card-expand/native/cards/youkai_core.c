@@ -1,0 +1,412 @@
+/* youkai_core.c —— 108「永夜抄」的纯逻辑（主机单测：tests/test_youkai_core.c）。
+ * 每条规则的出处写在 youkai_core.h；这里只写实现上的取舍。无引擎依赖、无浮点库依赖（只用 < > 比较）。*/
+#include "youkai_core.h"
+
+/* ------------------------------------------------------------------ §3.1 止射闸 */
+int yk_suppress_native_shot(int player_present, int focused)
+{
+    /* spec §3.1：108 active && 聚焦 ⇒ 本帧不发原生弹。没有自机（标题 / 过场）时**不抑制**：
+     * 那时原生行循环本来也不会跑，抑制只会让 `retaddr` 改控制流多一次（少一次风险）。*/
+    return player_present && focused ? 1 : 0;
+}
+
+/* --------------------------------------------------------------- §3.2 本体贴图 */
+int yk_body_sprite(int focused)
+{
+    /* < 0 = 不抢写。高速恒不抢（设计）；低速现在是占位 -1（资产未到）⇒ 两档现都返回 -1，
+     * 但**代码路径已经在**：资产一到只改 YK_BODY_SPRITE_FOCUSED。*/
+    return focused ? YK_BODY_SPRITE_FOCUSED : YK_BODY_SPRITE_UNFOCUSED;
+}
+
+/* ------------------------------------------------------------------ §3.3 子机 */
+int yk_option_count(int focused)
+{
+    return focused ? YK_OPTION_COUNT_FOCUSED : YK_OPTION_COUNT_UNFOCUSED;
+}
+
+int yk_option_wanted(int focused) { return yk_option_count(focused) > 0; }
+
+int yk_option_script_changed(int want, int have)
+{
+    if (have < 0) return 0;                              /* 手里没有子机 ⇒ 没什么可「换」*/
+    return want != have;
+}
+
+/* ------------------------------------------------------------------ §3.4 弹幕 */
+/* ★ TODO(资产 §3.4)：TH08 妖侧每档伤害（`rec[+0x1c]`，读点 `th08:0x451805`）**尚未抽出**
+ *（TH08 抽取的工具坑见 spec §5：`thdat -x 8` 对所有条目失败，得自写 PBGZ+LZSS 提取）。
+ * 五档全填 `YK_SHOT_DMG_NOT_SET`(=0) = 不覆盖 ⇒ 保留 shooter 记录自己的 damage。
+ * 档序按 TH08 六档阈值（`8/24/48/80/128/999`，人妖两表共用）压到 TH18 的五个火力档。*/
+static const int32_t yk_shot_damage[YK_SHOT_TIERS] = {
+    YK_SHOT_DMG_NOT_SET,   /* 档 0 = P < 100  —— TODO(资产) */
+    YK_SHOT_DMG_NOT_SET,   /* 档 1 = P < 200  —— TODO(资产) */
+    YK_SHOT_DMG_NOT_SET,   /* 档 2 = P < 300  —— TODO(资产) */
+    YK_SHOT_DMG_NOT_SET,   /* 档 3 = P < 400  —— TODO(资产) */
+    YK_SHOT_DMG_NOT_SET,   /* 档 4 = P >= 400 —— TODO(资产) */
+};
+
+int yk_shot_tier(int power)
+{
+    int t;
+    if (power <= 0) return 0;
+    t = power / YK_SHOT_POWER_PER_LEVEL;
+    if (t >= YK_SHOT_TIERS) t = YK_SHOT_TIERS - 1;       /* 满 P 以上（含 P 溢出）钳到最高档 */
+    return t;
+}
+
+int32_t yk_shot_tier_damage(int tier)
+{
+    if (tier < 0) tier = 0;
+    if (tier >= YK_SHOT_TIERS) tier = YK_SHOT_TIERS - 1;
+    return yk_shot_damage[tier];
+}
+
+int yk_bullet_is_youkai(uint32_t packed_id)
+{
+    return (int)((packed_id >> 8) & 0xffu) == YK_SHOT_SET_YOUKAI;
+}
+
+int yk_bullet_damage_apply(int32_t current, uint32_t packed_id, int power, int32_t *out)
+{
+    int32_t want;
+    if (!yk_bullet_is_youkai(packed_id)) return 0;       /* 人侧弹 / 别的卡的弹一律不碰 */
+    want = yk_shot_tier_damage(yk_shot_tier(power));
+    if (want == YK_SHOT_DMG_NOT_SET) return 0;           /* 占位：档位表还是空的 ⇒ 不覆盖 */
+    if (want == current) return 0;
+    if (out) *out = want;
+    return 1;
+}
+
+int yk_shotset_usable(int fire_rate)
+{
+    /* 记录 `+0x00` 是 `fire_rate`（i8）：符号位 = shooterset 终止符，`0` 在装备卡路径上整数除零
+     *（`0x40a9c0` 的 `idiv ecx` 没有 0 分支，engine/sht/th18/02 §2）。
+     * ⇒ 「0x16 那格装上资产没有」这个事实**可以运行期自检**，不用另立开关。*/
+    return fire_rate > 0 && fire_rate < 128;
+}
+
+/* ------------------------------------------------------- §3.5 发射口 → 使魔 */
+void yk_emit_world_pos(const float enemy_xy[2], const float off3[3], const float org3[3], float out_xy[2])
+{
+    float ox, oy;
+    if (!out_xy) return;
+    if (org3 && org3[2] > YK_ORIGIN_ABS_THRESHOLD) {     /* 绝对模式（etOffsetAbs）：原点 + 相对偏移 */
+        ox = org3[0]; oy = org3[1];
+    } else {                                             /* 相对模式：敌人位置 */
+        ox = enemy_xy ? enemy_xy[0] : 0.0f;
+        oy = enemy_xy ? enemy_xy[1] : 0.0f;
+    }
+    if (off3) { ox += off3[0]; oy += off3[1]; }
+    out_xy[0] = ox;
+    out_xy[1] = oy;
+}
+
+int yk_emit_active(uint16_t prop_type) { return prop_type != 0; }
+
+void yk_map_reset(yk_map_t *m)
+{
+    unsigned i;
+    if (!m) return;
+    for (i = 0; i < YK_FAM_MAX; ++i) {
+        m->e[i].enemy_id = 0;
+        m->e[i].fam_id = 0;
+        m->e[i].prev_life = YK_LIFE_UNSAMPLED;
+        m->e[i].x = 0.0f;
+        m->e[i].y = 0.0f;
+        m->e[i].slot = 0;
+        m->e[i].seen = 0;
+        m->e[i].active = 0;
+        m->e[i].broken = 0;
+        m->e[i].fam_seen = 0;
+    }
+}
+
+unsigned yk_map_fam_count(const yk_map_t *m)
+{
+    unsigned i, n = 0;
+    if (!m) return 0;
+    for (i = 0; i < YK_FAM_MAX; ++i) if (m->e[i].fam_id) ++n;
+    return n;
+}
+
+yk_slot_t *yk_map_find(yk_map_t *m, uint32_t enemy_id, int slot)
+{
+    unsigned i;
+    if (!m || !enemy_id || slot < 0 || slot >= YK_EMIT_SLOTS) return 0;
+    for (i = 0; i < YK_FAM_MAX; ++i)
+        if (m->e[i].enemy_id == enemy_id && m->e[i].slot == (uint8_t)slot) return &m->e[i];
+    return 0;
+}
+
+yk_slot_t *yk_map_find_fam(yk_map_t *m, uint32_t fam_id)
+{
+    unsigned i;
+    if (!m || !fam_id) return 0;
+    for (i = 0; i < YK_FAM_MAX; ++i) if (m->e[i].fam_id == fam_id) return &m->e[i];
+    return 0;
+}
+
+void yk_frame_begin(yk_map_t *m)
+{
+    unsigned i;
+    if (!m) return;
+    for (i = 0; i < YK_FAM_MAX; ++i) m->e[i].seen = 0;
+}
+
+static yk_slot_t *yk_map_alloc(yk_map_t *m, uint32_t enemy_id, int slot)
+{
+    unsigned i;
+    for (i = 0; i < YK_FAM_MAX; ++i) {
+        if (m->e[i].enemy_id) continue;
+        m->e[i].enemy_id = enemy_id;
+        m->e[i].fam_id = 0;
+        m->e[i].prev_life = YK_LIFE_UNSAMPLED;
+        m->e[i].slot = (uint8_t)slot;
+        m->e[i].broken = 0;
+        m->e[i].fam_seen = 0;
+        return &m->e[i];
+    }
+    return 0;                                             /* 表满：放弃这个槽（卡侧记日志）*/
+}
+
+static void yk_fill_action(yk_action_t *a, int kind, const yk_slot_t *e)
+{
+    if (!a) return;
+    a->kind = kind;
+    a->enemy_id = e->enemy_id;
+    a->fam_id = e->fam_id;
+    a->slot = (int)e->slot;
+    a->x = e->x;
+    a->y = e->y;
+}
+
+int yk_note_slot(yk_map_t *m, uint32_t enemy_id, int slot, int active, const float xy[2],
+                 yk_action_t *act)
+{
+    yk_slot_t *e;
+    int was_active;
+
+    if (act) {
+        act->kind = YK_ACT_NONE;
+        act->enemy_id = enemy_id;
+        act->fam_id = 0;
+        act->slot = slot;
+        act->x = xy ? xy[0] : 0.0f;
+        act->y = xy ? xy[1] : 0.0f;
+    }
+    if (!m || !enemy_id || slot < 0 || slot >= YK_EMIT_SLOTS) return 0;
+
+    e = yk_map_find(m, enemy_id, slot);
+    if (!e) {
+        /* 不活跃的槽**不建条目**（表小、每帧扫描短）；活跃且无条目 ⇒ 1:1 映射要求一只使魔。*/
+        if (!active) return 0;
+        e = yk_map_alloc(m, enemy_id, slot);
+        if (!e) return 0;
+        e->seen = 1;
+        e->active = 1;
+        e->x = act ? act->x : 0.0f;
+        e->y = act ? act->y : 0.0f;
+        yk_fill_action(act, YK_ACT_CREATE, e);
+        return 1;
+    }
+
+    was_active = e->active != 0;
+    e->seen = 1;
+    e->active = (uint8_t)(active != 0);
+    if (xy) { e->x = xy[0]; e->y = xy[1]; }
+
+    /* 发射口被 ECL 重新武装（`etNew(i)` 清零 → `etSprite(i)` 写 type，spec §6.3）⇒ 「打破」复位。
+     * 「下一波要重开」这条就是这么自动成立的（review §6.3 末）。*/
+    if (active && !was_active) { e->broken = 0; e->fam_seen = 0; }  /* ★ ECL 重新武装 ⇒ 关闸复位 */
+
+    /* 状态差分：不活跃且有使魔 → 撤。*/
+    if (!active && e->fam_id) {
+        yk_fill_action(act, YK_ACT_WITHDRAW, e);
+        e->fam_id = 0;
+        e->prev_life = YK_LIFE_UNSAMPLED;
+        return 1;
+    }
+    /* 活跃、没有使魔、也没被打死过 ⇒ 建。*/
+    if (active && !e->fam_id && !e->broken) {
+        yk_fill_action(act, YK_ACT_CREATE, e);
+        return 1;
+    }
+    return 0;
+}
+
+int yk_frame_end(yk_map_t *m, yk_action_t *out, int max)
+{
+    unsigned i;
+    int n = 0;
+    if (!m) return 0;
+    for (i = 0; i < YK_FAM_MAX; ++i) {
+        yk_slot_t *e = &m->e[i];
+        if (!e->enemy_id || e->seen) continue;            /* 空条目 / 本帧还在 */
+        if (e->fam_id) {
+            /* 发射口所属敌人没了（过场全清 / 静默移除）⇒ 它身上的使魔也一起撤。
+             * ⚠ 输出数组装不下就**不退休**这个条目（否则会留下一只没人管的真敌人）。*/
+            if (out && n >= max) continue;
+            yk_fill_action(&out[n], YK_ACT_WITHDRAW, e);
+            ++n;
+        }
+        e->enemy_id = 0;                                  /* `enemy_id` 单调不复用 ⇒ 退休是安全的 */
+        e->fam_id = 0;
+        e->prev_life = YK_LIFE_UNSAMPLED;
+        e->slot = 0;
+        e->seen = 0;
+        e->active = 0;
+        e->broken = 0;
+        e->fam_seen = 0;
+    }
+    return n;
+}
+
+void yk_fam_created(yk_map_t *m, uint32_t enemy_id, int slot, uint32_t fam_id)
+{
+    yk_slot_t *e = yk_map_find(m, enemy_id, slot);
+    if (!e) return;
+    e->fam_id = fam_id;
+    e->fam_seen = 1;                                      /* ★ 关闸的「曾经有过」记忆 */
+    e->prev_life = YK_LIFE_UNSAMPLED;                     /* 新使魔：下一帧才允许出 delta */
+}
+
+int yk_fam_broken(yk_map_t *m, uint32_t fam_id)
+{
+    yk_slot_t *e = yk_map_find_fam(m, fam_id);
+    if (!e) return 0;
+    e->fam_id = 0;
+    e->prev_life = YK_LIFE_UNSAMPLED;
+    /* ★ 「打死使魔 ⇒ 关掉那个发射口」的**近似**：真正的关槽要 hook `0x434019`（`etOn` 里 `push eax`
+     * 前，`esi = enemy + i*0x488` 可反推 `i`）—— 那是**新断点**（sites.py，本卡不能加）。
+     * 这里做的两件事替代它：① 使魔不再重建（本标志）② 它带来的转嫁归零（没有使魔就没差分）。
+     * ⇒ ⚠ 发射口**本身还在开火**（ECL 直接调 etOn，不经我们），这是已知的近似缺口。*/
+    e->broken = 1;
+    return 1;
+}
+
+void yk_fam_gone(yk_map_t *m, uint32_t fam_id)
+{
+    yk_slot_t *e = yk_map_find_fam(m, fam_id);
+    if (!e) return;
+    e->fam_id = 0;
+    e->prev_life = YK_LIFE_UNSAMPLED;
+    /* ★ 2026-09-12：这里**不能**置 `broken`（试过，直接把既有的「静默移除 ⇒ 下一帧补建」断言打红）。
+     * 理由：`broken` 唯一的复位口是 `yk_note_slot` 的 inactive→active 边沿，而本函数处理的是
+     * **我们自己主动松手**的两条路：
+     *   ① 真的静默消失（过场 destroy_all / 被打死但没走到死亡事件）：发射口多半还在，
+     *      1:1 映射**下一帧就该补建**（既有单测钉的就是这条）；
+     *   ② `yk_run_action` 的 WITHDRAW / `yk_transfer_tick` 的「查不到就松开」：我们刚把它标了删除或
+     *      正在收尾，下一帧同一条路会在 `broken == 0` 时重建/重钉 —— 置 broken 就把这条路堵死。
+     * ⇒ 结论：**松手不置 `broken`**，`broken` 只留给「真被打死」（`yk_fam_broken`）。
+     *   关闸判据改用 `fam_id != 0` 记「这一槽曾经有过我们的使魔」（见下）。
+     * ⚠ 由此产生的半帧空窗由发射口闸兜住：`fam_id` 清 0 而敌人还在 ⇒ 该槽当帧不发射，
+     *   重建发生在同一帧的 `yk_familiars_tick` 里（AbilityManager tick 早于敌人结算，顺序安全）。 */
+}
+
+/* §3.5.1 发射口关闸的判据（纯逻辑；断点/语义、以及「为什么不能只看有没有使魔」的三分
+ * 都在 youkai_core.h 的注释里）。**不读 `props[].type`** ⇒ 不受 etOn / etSprite 先后影响。
+ *
+ * 判据 = **「这一槽曾经有过我们的使魔（`fam_id != 0` 的记忆）而现在回查不到了」**。
+ *   `have_fam_id` = 卡侧按 id 回查的结果（0 = 查不到）。
+ *   ⚠ 用 `fam_id` 而不是 `broken` 当「曾经有过」的记忆：`yk_fam_gone` 会清 `fam_id`，
+ *     所以「清 0 那一刻」正是闸该夹上的那一刻；而下一帧重建回填 `fam_id` 后闸自动放开。 */
+int yk_shot_slot_suppressed(const yk_map_t *m, uint32_t enemy_id, int slot, uint32_t have_fam_id)
+{
+    const yk_slot_t *e;
+
+    if (!m || !enemy_id || slot < 0 || slot >= YK_EMIT_SLOTS) return 0;  /* 不是我们的槽域 ⇒ 绝不掐 */
+    e = yk_map_find((yk_map_t *)m, enemy_id, slot);
+    if (!e) return 0;                        /* ③ 表里没这个槽 ⇒ 我们**从没管过** ⇒ 放行 */
+    if (have_fam_id) return 0;               /* 使魔还在（卡侧已按 id 核过）⇒ 放行 */
+    /* ② 曾经有过我们的使魔、现在没了 ⇒ 掐。`fam_seen` 是唯一可靠的「曾经有过」记忆：
+     *    `fam_id` 会被 broken / gone 清掉，`broken` 会被重新武装清掉 ⇒ 两个都不能单独用。
+     * ① 从没建过（`fam_seen == 0`，含「建被排到下一个 on_tick_2」）⇒ **放行**，
+     *    否则第一帧就把槽掐死、永远建不出来。
+     * ⚠ 复位口 = `yk_note_slot` 的 inactive→active 边沿（ECL 重新武装）+ `yk_map_reset`
+     *    （删卡 / 松开低速 / 局末 / 断链）—— 后者保证「删卡后敌人不哑火」。 */
+    return e->fam_seen ? 1 : 0;
+}
+
+int yk_withdraw_all(yk_map_t *m, yk_action_t *out, int max)
+{
+    unsigned i;
+    int n = 0, truncated = 0;
+    if (!m) return 0;
+    for (i = 0; i < YK_FAM_MAX; ++i) {
+        yk_slot_t *e = &m->e[i];
+        if (!e->enemy_id || !e->fam_id) continue;
+        if (out && n >= max) { truncated = 1; break; }   /* 缓冲区满：**剩下的先留着** */
+        yk_fill_action(&out[n], YK_ACT_WITHDRAW, e);
+        ++n;
+        e->fam_id = 0;
+        e->prev_life = YK_LIFE_UNSAMPLED;
+    }
+    /* ★ 只有「全部处理完」才清表。原来无条件 `yk_map_reset()` —— 缓冲区不够时会**丢掉还没撤的条目**
+     *（`fam_id` 被清零 ⇒ 卡再也不认识那几个真敌人 = 孤儿敌机：既不钉位置也不会被静默撤退）。
+     * 现在被截断时表保持原样，下一帧接着撤（不变式：表里有条目 ⇔ 场上那个载体还在）。*/
+    if (!truncated) yk_map_reset(m);
+    return n;
+}
+
+int32_t yk_clamp_spawn_life(int32_t life)
+{
+    if (life < 1) return 1;                               /* 0 及以下没有意义（引擎拿它算血条 / 死亡判定）*/
+    if (life >= YK_LIFE_LIMIT) return YK_LIFE_MAX_ALLOWED;
+    return life;
+}
+
+/* --------------------------------------------------------------- §3.7 伤害转交 */
+void yk_transfer_reset(yk_transfer_t *t)
+{
+    if (!t) return;
+    t->carry = 0;
+    t->pending = 0;
+}
+
+int32_t yk_half_with_carry(int32_t delta, int32_t *carry)
+{
+    int32_t sum, half, rem;
+    if (delta <= 0) return 0;
+    sum = delta + (carry ? *carry : 0);
+    half = sum / YK_TRANSFER_DEN;
+    rem = sum - half * YK_TRANSFER_DEN;
+    if (carry) *carry = rem;
+    return half;
+}
+
+void yk_transfer_feed(yk_transfer_t *t, int32_t delta)
+{
+    if (!t || delta <= 0) return;
+    t->pending += yk_half_with_carry(delta, &t->carry);
+}
+
+int32_t yk_transfer_clamp(int32_t pending, int32_t cap)
+{
+    if (pending <= 0) return 0;
+    if (cap > 0 && pending > cap) return cap;
+    return pending;
+}
+
+int32_t yk_sample_life(yk_slot_t *e, uint32_t fam_id, int32_t life_now)
+{
+    int32_t d;
+    if (!e) return 0;
+    if (e->fam_id != fam_id || e->prev_life == YK_LIFE_UNSAMPLED) {
+        e->fam_id = fam_id;
+        e->prev_life = life_now;
+        return 0;                                         /* 第一次看到这只使魔（或换了对象）*/
+    }
+    d = e->prev_life - life_now;
+    e->prev_life = life_now;
+    /* life **变大** = 引擎自己重算（换攻击 / 复活），不是「负数伤害」⇒ 归 0。
+     * 我们自造的惰性空壳没有 ECL、没有符卡，理论上不会发生（research §7.4 仍要求对账）。*/
+    return d > 0 ? d : 0;
+}
+
+int yk_in_transfer_zone(float fx, float fy, float cx, float cy, float w, float h)
+{
+    float dx = fx - cx, dy = fy - cy;
+    if (dx < 0.0f) dx = -dx;
+    if (dy < 0.0f) dy = -dy;
+    return (dx <= w * 0.5f + YK_FAM_HURTBOX_HALF) && (dy <= h * 0.5f + YK_FAM_HURTBOX_HALF);
+}

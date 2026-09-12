@@ -760,14 +760,29 @@ SDK_SITES = [
      "allocate_new_card 公共尾段 mov [esi+4],ebx（esi=卡对象, ebx=id）+ mov eax,[edi+0x28]：登记了行为的 id 换虚表"),
     ("ce_item_score", 0x446cf6, 6, "8d872c0c0000",
      "collect_money_item：esi=道具身价，弹窗与计分之前；沿卡链表调 on_item_score(&esi)"),
+    ("ce_item_score_below", 0x446caa, 8, "8b45f8052c0c0000",
+     "collect_money_item 0x446b00 的**线下分支**计分汇合点：mov eax,[ebp-8] / add eax,0xc2c（8 字节、无相对寻址）。"
+     "一手：0x446c01 comiss + 0x446c04 jae 0x446cb4 / 0x446c0a cmp [edi+0xc74],3 + 0x446c11 je 0x446cb4 都不成立时"
+     "（= 自机在回收线**下方**且道具非真空飞行）走这一支算分，esi 已算好最终身价，走到 0x446cb2 `jmp 0x446cfc` "
+     "**绕过** `ce_item_score` 那个断点 ⇒ 只挂 0x446cf6 会漏掉线下收的金钱（110/111 的 PV 注入对它完全不生效）。"
+     "handler = 与 ce_item_score 同一份（两个站点互斥、每次收集只走一支 ⇒ 事件仍是一颗道具一次）。"),
     ("ce_item_money", 0x446d28, 6, "ff0530cd4c00",
      "collect_money_item：inc [MONEY_TOTAL]（下一条 inc [MONEY]）；沿卡链表调 on_item_money(&bonus)，两个全局一起 += bonus"),
     ("ce_bomb_spent", 0x4203bc, 5, "a1c0f24c00",
      "do_bomb 里 consume_bomb(0x4574d0) **刚返回**那一条：mov eax,ds:0x4cf2c0，5 字节绝对寻址无相对量。"
      "0x4574d0 全库只有 0x4203b7 一个调用方，所以这里不多不少覆盖每一次炸弹消耗；沿卡链表调 on_bomb_spent()"),
     ("ce_enemy_drop", 0x430510, 6, "558bec83ec20",
-     "Enemy__drop_items_and_notify_cards 入口（thiscall，ecx = 敌人）：push ebp/mov ebp,esp/sub esp,0x20，无相对寻址。"
-     "在引擎撒道具**之前**沿卡链表调 on_enemy_drop_pre(counts)，counts = 敌人 +0x04 起的 20 个 int32（type 1..0x13）"),
+     "Enemy__drop_items_and_notify_cards 入口（thiscall，**ecx = zEnemyDrop = enemy+0x623c，不是敌人对象**；"
+     "一手 0x430499 `lea ecx,[edi+0x623c]`、ECL dropItems 0x42d0c0 同）：push ebp/mov ebp,esp/sub esp,0x20，无相对寻址。"
+     "在引擎撒附加表**之前**沿卡链表调 on_enemy_drop_pre(counts)，counts = zEnemyDrop+0x04 起的 20 个 int32（type 1..0x13，"
+     "主掉落 +0x00 已经撒过）；卡循环之后 SDK 施加掉落乘法层 ce_drop_apply()（EVENTS-CONTRACT §2）"),
+    ("ce_enemy_shot_slot", 0x433ffa, 8, "f30f108f44510000",
+     "敌人 ECL opcode 0x259（etOn、handler 0x433f34）里「发弹三步」的汇聚点：movss xmm1,[edi+0x5144]（8 字节、"
+     "**窗内无相对寻址**）。edi = &enemy->data（enemy+0x122c，一手 0x430d30 `add ecx,0x122c`）、"
+     "槽号 i 在 [ebp-0x56c]（0x433f3d 写）、esi = &data + i*0x488（0x433fcf/0x433fd9）。"
+     "handler 返回非 0 时 regs->retaddr = 0x43402d（= 该 opcode 的收尾 `jmp 0x436417`）⇒ **本帧不发射这一槽**，"
+     "跳过 et_protect_range 的 set / call 0x427810(__fire) / 复位三步。零内存写、不动敌人生命周期。"
+     "详见 local/_scratch/research-108-shot-slot-off.md"),
     # collect-2x 四断点（AUDIT §Z；辉针城卡）：窗口单条/两条指令、无相对寻址、窗内无跳转目标 ——
     # 逐条与原始 exe 字节对过（emit_sdk_breakpoints 每跑必验），objdump aligned 扫过窗口边界。
     ("ce_item_frame", 0x446ee3, 7, "833da4f24c0000",
@@ -786,6 +801,21 @@ SDK_SITES = [
      "0x45f2dc 因 guard-fail 路 0x45f14e jmp 0x45f2de 落在窗内而**被否**，此窗已对齐 objdump 确认无窗内跳转目标）。"
      "esi = 本帧本敌伤害（钳 cap 后 ≥1），ebx = 帧基 → pos 在 [ebx+8]（敌世界坐标 x,y）、param_6 在 [ebx+0x1c]。"
      "沿卡链表调 on_shot_damage(card, dmg, pos)"),
+    ("ce_bomb_gate", 0x45c048, 7, "f60534a44c0002",
+     "Player__on_tick__body 0x45be90 的普通炸弹分支：test BYTE PTR ds:0x4ca434,0x2（7 字节，输入上升沿 bit1）。"
+     "handler 沿卡链表问 on_bomb_gate()；任一卡返回 1 时用 retaddr 跳到 0x45c056 跳过 call do_bomb 0x45c051。"
+     "只在咆哮 ready/hypering 的卡返回 1；其余帧/无卡时放行原指令（真实炸弹不受影响）。"),
+    ("ce_enemy_death", 0x430240, 6, "558bec83ec14",
+     "FUN_00430240（SDK 名 Enemy__die）入口：push ebp/mov ebp,esp/sub esp,0x14，无相对寻址。"
+     "thiscall，ecx = zEnemy；**引擎撒主掉落之前**（0x430493 才是撒、0x43049f 才通知卡）、链表仍挂着，"
+     "恒定 mov eax,1 返回 ⇒ 一敌一生正好一次。handler 用 regs->retaddr 分死因"
+     "（0x42f3b7 = 打死主路 / 0x42ee90 = 炸弹秒杀 / 0x430f59 = ECL die / killAll 三兄弟），"
+     "沿卡链表调 on_enemy_death(&ev)。详见 docs/superpowers/specs/2026-09-12-shared-enemy-death-event-design.md"),
+    ("ce_shot_set_index", 0x45ebfb, 7, "8bbc97e0000000",
+     "Player__tick_shooting_state 0x45ea00 查主炮 shooterset 前的 mov edi,[edi+edx*4+0xe0]（7 字节，无相对寻址）。"
+     "edx = 本帧 fire-time set index（0..9 主炮；eax = 火力档），ebp-8 暂存同一 set index，随后 0x45ec69 会打包进 bullet+0xac。\n"
+     "handler 沿卡链表问 on_shot_set_index(card, eax)：返回 >=0 时改写 edx 与 [ebp-8] 为咆哮组 base+power，放行原指令；"
+     "不咆哮/无卡时返回 -1，原版主炮 0..9 一个字节都不动。"),
     # ★ 2026-09-10（天空璋卡）：引擎自己算完一次**子弹擦弹**之后那一条。ESI = 刚被擦到的弹
     # （0x42496f 已判过 `[esi+0x20] & 4` 没擦过、0x424984 才置位），位置在 esi+0x638。
     # 卡用它把季节点撒在**弹的位置**上（此前只能扫弹池猜「最近的已擦弹」，会撒到自机背后）。
@@ -793,6 +823,15 @@ SDK_SITES = [
     # ("ce_graze", 0x42497f, 5, "a1bcf24c00",
      # "FUN_004248a0 的子弹擦弹路径 …"),
 ]
+
+def _sdk_rva(name):
+    """按**名字**取 SDK 断点地址 —— 别再用 `SDK_SITES[i]` 下标：插一条就全体错位
+    （2026-09-12 踩过：插入 `ce_enemy_death` 后 `CE_BP_SHOT_SET_INDEX_RVA` 变成了 0x030240）。"""
+    for site in SDK_SITES:
+        if site[0] == name:
+            return site[1]
+    raise KeyError("SDK_SITES 里没有断点 %r（sites_gen.h 生成时才发现 = 太晚）" % name)
+
 
 
 def emit_sdk_breakpoints(text, text_va):
@@ -1087,15 +1126,20 @@ def emit_header(sites, unlock_reads, order_sites, menu_binhacks):
               "#define CE_BP_TEXT_NAME_RVA   0x%06x" % (TEXT_SITES[0][1] - 0x400000),
               "#define CE_BP_TEXT_DESC_RVA   0x%06x" % (TEXT_SITES[1][1] - 0x400000),
               "#define CE_BP_TEXT_NOTIFY_RVA 0x%06x" % (TEXT_SITES[2][1] - 0x400000),
-              "#define CE_BP_CARD_BIND_RVA   0x%06x" % (SDK_SITES[0][1] - 0x400000),
-              "#define CE_BP_ITEM_SCORE_RVA  0x%06x" % (SDK_SITES[1][1] - 0x400000),
-              "#define CE_BP_ITEM_MONEY_RVA  0x%06x" % (SDK_SITES[2][1] - 0x400000),
-              "#define CE_BP_BOMB_SPENT_RVA  0x%06x" % (SDK_SITES[3][1] - 0x400000),
-              "#define CE_BP_ENEMY_DROP_RVA  0x%06x" % (SDK_SITES[4][1] - 0x400000),
-              "#define CE_BP_ITEM_FRAME_RVA   0x%06x" % (SDK_SITES[5][1] - 0x400000),
-              "#define CE_BP_ITEM_COLLECT_RVA 0x%06x" % (SDK_SITES[6][1] - 0x400000),
-              "#define CE_BP_ITEM_COMMIT_RVA  0x%06x" % (SDK_SITES[7][1] - 0x400000),
-              "#define CE_BP_SHOT_DAMAGE_RVA 0x%06x" % (SDK_SITES[8][1] - 0x400000),
+              "#define CE_BP_CARD_BIND_RVA 0x%06x" % (_sdk_rva("ce_card_bind") - 0x400000),
+              "#define CE_BP_ITEM_SCORE_RVA 0x%06x" % (_sdk_rva("ce_item_score") - 0x400000),
+              "#define CE_BP_ITEM_MONEY_RVA 0x%06x" % (_sdk_rva("ce_item_money") - 0x400000),
+              "#define CE_BP_BOMB_SPENT_RVA 0x%06x" % (_sdk_rva("ce_bomb_spent") - 0x400000),
+              "#define CE_BP_ENEMY_DROP_RVA 0x%06x" % (_sdk_rva("ce_enemy_drop") - 0x400000),
+              "#define CE_BP_ITEM_FRAME_RVA 0x%06x" % (_sdk_rva("ce_item_frame") - 0x400000),
+              "#define CE_BP_ITEM_COLLECT_RVA 0x%06x" % (_sdk_rva("ce_item_collect") - 0x400000),
+              "#define CE_BP_ITEM_COMMIT_RVA 0x%06x" % (_sdk_rva("ce_item_commit") - 0x400000),
+              "#define CE_BP_SHOT_DAMAGE_RVA 0x%06x" % (_sdk_rva("ce_shot_damage") - 0x400000),
+              "#define CE_BP_BOMB_GATE_RVA 0x%06x" % (_sdk_rva("ce_bomb_gate") - 0x400000),
+              "#define CE_BP_SHOT_SET_INDEX_RVA 0x%06x" % (_sdk_rva("ce_shot_set_index") - 0x400000),
+              "#define CE_BP_ENEMY_DEATH_RVA 0x%06x" % (_sdk_rva("ce_enemy_death") - 0x400000),
+              "#define CE_BP_ENEMY_SHOT_SLOT_RVA 0x%06x" % (_sdk_rva("ce_enemy_shot_slot") - 0x400000),
+              "#define CE_BP_ITEM_SCORE_BELOW_RVA 0x%06x" % (_sdk_rva("ce_item_score_below") - 0x400000),
               "#define CE_BP_SHOP_BOUGHT_RVA 0x%06x" % (SHOP_SITES[0][1] - 0x400000),
               "#define CE_BP_SHOP_REOPEN_RVA 0x%06x" % (SHOP_SITES[1][1] - 0x400000),
               "#define CE_TEST_DECK_SAVE_OFF 0x5f608   /* reset_cards：byte [eax+esi+0x5f608] 初始卡组一格 */",
@@ -1156,6 +1200,38 @@ def emit_header(sites, unlock_reads, order_sites, menu_binhacks):
         "",
     ]
     return "\n".join(lines)
+
+
+
+def emitted_breakpoint_names(text, text_va):
+    """`gen` 会写进 patch 的全部断点名（与 gen 的拼装**同一份代码路径**）。
+
+    ★ 为什么需要它：patch 里声明了 `"ce_xxx"` 而 DLL 没导出 `BP_ce_xxx` ⇒ thcrap 在
+    `GetProcAddress` 那一步拿不到处理函数，**游戏里静默不生效**（不报错）。
+    2026-09-12 真踩过一次：`ce_enemy_death` 加了站点与 handler、忘了 `th18_card_expand.def` 的导出。
+    """
+    doc = {"breakpoints": {"ce_gate": {}, "ce_test_deck": {}}}
+    # `patch-test/th18.v1.00a.js`（emit_test_patch）里还有几个断点，也要有导出（否则 `_test` 里静默失效）
+    doc["breakpoints"].update(emit_test_patch().get("breakpoints") or {})
+    doc["breakpoints"].update(emit_unlock_breakpoints(text, text_va))
+    doc["breakpoints"].update(emit_text_breakpoints(text, text_va))
+    doc["breakpoints"].update(emit_sdk_breakpoints(text, text_va))
+    doc["breakpoints"].update(emit_shop_breakpoints(text, text_va))
+    doc["breakpoints"].update(emit_sound_breakpoints(text, text_va))
+    return set(doc["breakpoints"])
+
+
+def check_def_exports(names):
+    """断点名 ↔ `th18_card_expand.def` 的 `BP_<名>` 双向对账。返回 (缺失, 多余)。"""
+    path = os.path.join(HERE, "th18_card_expand.def")
+    have = set()
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                m = re.match(r"\s*(BP_[A-Za-z0-9_]+)\s*@\d+", line)
+                if m:
+                    have.add(m.group(1)[len("BP_"):])
+    return (names - have), (have - names)
 
 
 def main():
@@ -1259,6 +1335,24 @@ def main():
         print()
         if in_text or in_data:
             bad.append("表区间还有 %d 处引用不在已知站点里" % (len(in_text) + len(in_data)))
+        if bad:
+            print("❌ 不变式校验失败：")
+            for b in bad:
+                print("   " + b)
+            return 1
+        bp_names = emitted_breakpoint_names(text, text_va)
+        missing, stale = check_def_exports(bp_names)
+        print("\n断点导出对账（patch 声明 %d 个 ↔ th18_card_expand.def 的 BP_*）：" % len(bp_names))
+        if missing:
+            print("   ❌ patch 里有断点但 DLL 没导出（游戏里会静默不生效）："
+                  + ", ".join("BP_" + n for n in sorted(missing)))
+            bad.append("断点缺导出：%s" % ", ".join("BP_" + n for n in sorted(missing)))
+        if stale:
+            print("   ❌ def 里有导出但 patch 没有对应断点（僵尸导出）："
+                  + ", ".join("BP_" + n for n in sorted(stale)))
+            bad.append("def 僵尸导出：%s" % ", ".join("BP_" + n for n in sorted(stale)))
+        if not missing and not stale:
+            print("   ✅ 全部对上（%d 个 BP_* 双向一致）" % len(bp_names))
         if bad:
             print("❌ 不变式校验失败：")
             for b in bad:

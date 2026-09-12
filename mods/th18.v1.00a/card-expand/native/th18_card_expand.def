@@ -22,3 +22,8 @@ EXPORTS
 	BP_ce_item_collect	@20
 	BP_ce_item_commit	@21
 	BP_ce_shot_damage	@22
+	BP_ce_bomb_gate		@23
+	BP_ce_shot_set_index	@24
+	BP_ce_enemy_death	@25
+	BP_ce_enemy_shot_slot	@26
+	BP_ce_item_score_below	@27

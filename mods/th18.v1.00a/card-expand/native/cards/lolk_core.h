@@ -1,4 +1,4 @@
-/* lolk_core.h —— 绀珠传（card-expand id 118）纯逻辑：波状态机 + 章节奖公式 + 擦弹减速曲线。
+/* lolk_core.h —— 绀珠传（card-expand id 115）纯逻辑：波状态机 + 章节奖公式 + 擦弹减速曲线。
  * 纯 C11、不含任何引擎地址；主机单测 tests/test_lolk_core.c（make test-host）。
  *
  * 语义来源（一手，TH15 v1.00b / TH18 v1.00a）：

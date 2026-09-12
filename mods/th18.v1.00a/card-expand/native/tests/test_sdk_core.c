@@ -239,9 +239,309 @@ static void test_dmg_layer(void)
     ce_dmg_reset();
 }
 
+
+/* ---- 2026-09-12 新增的四层（EVENTS-CONTRACT.md）：无敌取最大 / 计分声明 / 消弹闩锁 / 低速子机选举 ---- */
+static void test_declare_layers(void)
+{
+    /* 无敌：取最大值；并列取 id 最小；退出声明后回落 */
+    ce_invuln_reset();
+    CHECK(ce_invuln_frames() == 0 && ce_invuln_applier() == -1);
+    ce_invuln_request(117, 40);
+    CHECK(ce_invuln_frames() == 40 && ce_invuln_applier() == 117);
+    ce_invuln_request(107, 40);                        /* 同值 ⇒ 并列取 id 最小 */
+    CHECK(ce_invuln_frames() == 40 && ce_invuln_applier() == 107);
+    ce_invuln_request(117, 280);                       /* 更长者胜 */
+    CHECK(ce_invuln_frames() == 280 && ce_invuln_applier() == 117);
+    ce_invuln_request(117, 0);                         /* 退出 ⇒ 回落 */
+    CHECK(ce_invuln_frames() == 40 && ce_invuln_applier() == 107);
+
+    /* 计分：求和 + id 最小者落笔 */
+    ce_score_reset();
+    CHECK(ce_score_aggregate() == 0 && ce_score_applier() == -1);
+    ce_score_declare(111, 25000);
+    ce_score_declare(110, 50000);
+    CHECK(ce_score_aggregate() == 75000);
+    CHECK(ce_score_applier() == 110);                  /* 110 < 111 */
+    ce_score_declare(110, 0);                          /* 110 退出 ⇒ 111 落笔 */
+    CHECK(ce_score_aggregate() == 25000 && ce_score_applier() == 111);
+
+    /* 消弹闩锁：本帧只有第一个认领者拿得到 */
+    ce_cancel_latch_reset();
+    CHECK(ce_cancel_latch_owner() == -1);
+    CHECK(ce_cancel_latch_claim(107) == 1);
+    CHECK(ce_cancel_latch_claim(117) == 0);            /* 已被 107 认领 */
+    CHECK(ce_cancel_latch_owner() == 107);
+
+    /* 低速子机声明：id 最小者胜；退出后第二张顶上 */
+    ce_optpose_reset();
+    CHECK(ce_optpose_winner() == -1 && ce_optpose_pose() == NULL);
+    ce_optpose_declare(111, 2, 30, 20.0f, 0.0f, 30.0f, 0.0f);
+    CHECK(ce_optpose_winner() == 111);
+    ce_optpose_declare(108, 4, 17, 12.0f, 0.0f, 18.0f, 0.0f);
+    CHECK(ce_optpose_winner() == 108);                 /* 108 < 111 ⇒ 妖机体覆盖 SA 子机层 */
+    CHECK(ce_optpose_pose()->count == 4 && ce_optpose_pose()->anm_script == 17);
+    ce_optpose_declare(108, 0, 0, 0.0f, 0.0f, 0.0f, 0.0f);
+    CHECK(ce_optpose_winner() == 111 && ce_optpose_pose()->count == 2);
+}
+
+
+/* ---- 2026-09-12 掉落层（先加后乘、乘作用最终总数）---- */
+static void test_drop_layer(void)
+{
+    /* z = zEnemyDrop 基址：[0] main_drop、[1..20] ex_drop、[21..40] timed_ex_drop */
+    int32_t z[41];
+
+    /* 无贡献者 ⇒ 一个字节都不碰 */
+    ce_drop_reset();
+    memset(z, 0, sizeof z);
+    z[0] = 1; z[1] = 1;
+    ce_drop_apply(z);
+    CHECK(z[1] == 1);
+
+    /* ×2：主掉落那一颗已经撒了 ⇒ final = (1 + 1) × 2 = 4 ⇒ 写回 3
+     * （★「别的卡/附加表加的那颗也被翻倍」= 用户 2026-09-12 的裁决）*/
+    ce_drop_reset();
+    ce_drop_mult_set(69, 2000);
+    CHECK(ce_drop_mult_aggregate() == 2000);
+    memset(z, 0, sizeof z);
+    z[0] = 1; z[1] = 1;
+    ce_drop_apply(z);
+    CHECK(z[1] == 3);
+    /* 对照：旧实现（只翻附加表、主掉落 +1）给 1×2+1 = 3 ⇒ 写回 2。差一位就是这次改动的意义。*/
+
+    /* 无主掉落（z[0] == 0）⇒ 不做「已撒一颗」补偿 */
+    ce_drop_reset(); ce_drop_mult_set(69, 2000);
+    memset(z, 0, sizeof z);
+    z[0] = 0; z[1] = 1;
+    ce_drop_apply(z);
+    CHECK(z[1] == 2);
+
+    /* timed 表同步乘（引擎按 ex[i] + timed[i]×(T−timer)/T 折算 ⇒ 对乘数线性） */
+    ce_drop_reset(); ce_drop_mult_set(69, 2000);
+    memset(z, 0, sizeof z);
+    z[0] = 0;
+    z[1 + CE_DROP_TYPES + 0] = 5;                     /* timed[type 1] = 5 */
+    z[1 + CE_DROP_TYPES + 18] = 3;                    /* timed[type 19] = 3 */
+    z[1 + CE_DROP_TYPES + 19] = 7;                    /* type 20：引擎不撒，但层照乘（无害） */
+    z[1 + CE_DROP_TYPES + 5] = -4;                    /* 负数 = 引擎直接跳过 ⇒ 层不动它 */
+    ce_drop_apply(z);
+    CHECK(z[1 + CE_DROP_TYPES + 0] == 10);
+    CHECK(z[1 + CE_DROP_TYPES + 18] == 6);
+    CHECK(z[1 + CE_DROP_TYPES + 19] == 14);
+    CHECK(z[1 + CE_DROP_TYPES + 5] == -4);
+    /* timed 表**不**做「已撒一颗」补偿：main == 1 也只乘 */
+    ce_drop_reset(); ce_drop_mult_set(69, 2000);
+    memset(z, 0, sizeof z);
+    z[0] = 1; z[1] = 4;
+    z[1 + CE_DROP_TYPES + 0] = 4;
+    ce_drop_apply(z);
+    CHECK(z[1] == 9);                                 /* (4 + 1) × 2 = 10 ⇒ 写回 9 */
+    CHECK(z[1 + CE_DROP_TYPES + 0] == 8);             /* 4 × 2，无补偿 */
+
+    /* 多个乘数连乘（2000‰ × 1500‰ = 3000‰） */
+    ce_drop_reset();
+    ce_drop_mult_set(69, 2000);
+    ce_drop_mult_set(70, 1500);
+    CHECK(ce_drop_mult_aggregate() == 3000);
+    /* 退出声明后回落 ×1 */
+    ce_drop_mult_set(70, 0);
+    CHECK(ce_drop_mult_aggregate() == 2000);
+    ce_drop_mult_set(69, 0);
+    CHECK(ce_drop_mult_aggregate() == CE_DROP_MULT_UNIT);
+
+    /* 主掉落类型超出引擎会撒的范围（> 19）⇒ 不补偿 */
+    ce_drop_reset(); ce_drop_mult_set(69, 2000);
+    memset(z, 0, sizeof z);
+    z[0] = 20; z[1] = 1;
+    ce_drop_apply(z);
+    CHECK(z[1] == 2);
+
+    /* 负计数（引擎当 0 处理）⇒ 钳 0，不写出负数 */
+    ce_drop_reset(); ce_drop_mult_set(69, 2000);
+    memset(z, 0, sizeof z);
+    z[0] = 0; z[1] = -5;
+    ce_drop_apply(z);
+    CHECK(z[1] == 0);
+
+    /* 空指针 ⇒ 直接返回（断点里 drop 可能为 0） */
+    ce_drop_apply(NULL);
+}
+
+/* ---- 2026-09-12 HUD 槽位分配器（HUD-LAYOUT.md §2/§3/§4）---- */
+static void test_hud_slots(void)
+{
+    ce_hud_slot_t a, b, again;
+    ce_hud_block_t blk   = { 108.0f, 36.0f, CE_HUD_SIDE_LEFT };
+    ce_hud_block_t blk2  = { 108.0f, 36.0f, CE_HUD_SIDE_LEFT };
+
+    /* 首块：贴左锚点、坐底边，640 空间给同一点 */
+    ce_hud_slots_reset();
+    CHECK(!ce_hud_slot_claimed(111));
+    CHECK(ce_hud_slot_claim(111, &blk, &a));
+    CHECK(a.x == CE_HUD_ANCHOR_X && a.y == CE_HUD_ANCHOR_Y);
+    CHECK(a.x640 == CE_HUD_ANCHOR_X * CE_HUD_640_SCALE);
+    CHECK(a.y640 == CE_HUD_ANCHOR_Y * CE_HUD_640_SCALE);
+    CHECK(a.w == 108.0f && a.h == 36.0f && a.side == CE_HUD_SIDE_LEFT);
+
+    /* 底部货架（§2）：按 card_id 升序**从左往右**排 ⇒ 108 落在 111 左边、同一行。
+     * ⚠ 认领那一刻填的坐标会被同批次后来的认领重排 ⇒ 用 getter 拿最新值。*/
+    CHECK(ce_hud_slot_claim(108, &blk2, &b));
+    CHECK(ce_hud_slot_get(108, &b) && ce_hud_slot_get(111, &a));
+    CHECK(b.x == CE_HUD_ANCHOR_X);
+    CHECK(a.x == CE_HUD_ANCHOR_X + blk2.w + CE_HUD_GAP);   /* 257 + 108 + 8 = 373 */
+    CHECK(a.y == b.y);                                     /* 同一行（y 向下增长，底边同值） */
+
+    /* 幂等（§4.4）：同一张卡重复认领返回同一个槽（on_load 每关都会再调） */
+    CHECK(ce_hud_slot_claim(111, &blk, &again));
+    CHECK(again.x == a.x && again.y == a.y);
+
+    /* 排不下 ⇒ 上抬一行；游标**单向**（抬行后不回填上一行的空档，照 §2 伪码）——
+     * 108(36高) 坐底行、109 放不下 ⇒ 行 2 底边 924−36−8 = 880、
+     * 111 又放不下行 2（965+108 > 1000）⇒ 行 3 底边 880−20−8 = 852。*/
+    ce_hud_block_t mid = { 700.0f, 20.0f, CE_HUD_SIDE_LEFT };
+    CHECK(ce_hud_slot_claim(109, &mid, &again));
+    CHECK(ce_hud_slot_get(108, &b) && ce_hud_slot_get(109, &again) && ce_hud_slot_get(111, &a));
+    CHECK(b.x == CE_HUD_ANCHOR_X && b.y == CE_HUD_ANCHOR_Y);
+    CHECK(again.x == CE_HUD_ANCHOR_X && again.y == CE_HUD_ANCHOR_Y - blk.h - CE_HUD_GAP);
+    CHECK(a.x == CE_HUD_ANCHOR_X && a.y == CE_HUD_ANCHOR_Y - blk.h - mid.h - 2.0f * CE_HUD_GAP);
+
+    /* 局中删卡不当场重排（§4.4）：release 保留占位、别人坐标不变 */
+    ce_hud_slot_release(108);
+    CHECK(ce_hud_slot_claimed(108));                              /* 仍算已认领 */
+    CHECK(ce_hud_slot_get(111, &again) && again.x == a.x && again.y == a.y);
+    CHECK(ce_hud_slot_get(108, &again) && again.x == CE_HUD_ANCHOR_X);
+    /* 关卡开场 reset 才真正收回 */
+    ce_hud_slots_reset();
+    CHECK(!ce_hud_slot_claimed(108) && !ce_hud_slot_claimed(109) && !ce_hud_slot_claimed(111));
+
+    /* 硬约束（§4.2）：块右边缘不许越过 1040 ⇒ 声明宽度超限直接拒绝 */
+    ce_hud_block_t too_wide = { CE_HUD_X_HARD_MAX - CE_HUD_ANCHOR_X + 1.0f, 36.0f, CE_HUD_SIDE_LEFT };
+    CHECK(!ce_hud_slot_claim(110, &too_wide, &a));
+    /* 越软上限 1000 但仍合法 ⇒ 单独占一行（空行上的超大块不抬行） */
+    ce_hud_slots_reset();
+    ce_hud_block_t greed = { 780.0f, 36.0f, CE_HUD_SIDE_LEFT };   /* 257+780 ≤ 硬上限 1040 */
+
+    CHECK(ce_hud_slot_claim(110, &greed, &a));
+    CHECK(a.x == CE_HUD_ANCHOR_X && a.y == CE_HUD_ANCHOR_Y);
+    ce_hud_block_t next = { 100.0f, 36.0f, CE_HUD_SIDE_LEFT };
+    CHECK(ce_hud_slot_claim(111, &next, &b));
+    CHECK(b.x == CE_HUD_ANCHOR_X);                                /* 1045 + 100 > 1000 ⇒ 抬行 */
+    CHECK(b.y == CE_HUD_ANCHOR_Y - greed.h - CE_HUD_GAP);
+    ce_hud_block_t bad = { 0.0f, 36.0f, CE_HUD_SIDE_LEFT };
+    CHECK(!ce_hud_slot_claim(110, &bad, &a));                     /* 尺寸非法 */
+    CHECK(!ce_hud_slot_claim(112, &next, NULL));                 /* out == NULL */
+    CHECK(!ce_hud_slot_claim(CE_SDK_CARD_ID_MAX + 1u, &next, &a)); /* id 非法 */
+    CHECK(!ce_hud_slot_get(CE_SDK_CARD_ID_MAX + 1u, &a));
+    CHECK(!ce_hud_slot_get(107, &a));                             /* 没认领过 */
+
+    /* 右列：从右锚点**向左**排，块右边缘贴游标（§6.2 ❓ 无先例卡） */
+    ce_hud_slots_reset();
+    ce_hud_block_t right  = { 100.0f, 20.0f, CE_HUD_SIDE_RIGHT };
+    ce_hud_block_t right2 = { 150.0f, 20.0f, CE_HUD_SIDE_RIGHT };
+    CHECK(ce_hud_slot_claim(113, &right, &a));
+    CHECK(a.x == CE_HUD_ANCHOR_X_RIGHT - right.w && a.y == CE_HUD_ANCHOR_Y);
+    CHECK(ce_hud_slot_claim(112, &right2, &b));
+    CHECK(ce_hud_slot_get(112, &b) && ce_hud_slot_get(113, &a));
+    CHECK(b.x == CE_HUD_ANCHOR_X_RIGHT - right2.w);               /* 112 先排、贴右锚点 */
+    CHECK(a.x == CE_HUD_ANCHOR_X_RIGHT - right2.w - CE_HUD_GAP - right.w);
+    CHECK(a.y == b.y);
+
+
+    /* 自带锚点（CE_HUD_SIDE_PINNED，117）：按量过的位置登记，且**不参与货架排布** */
+    ce_hud_slots_reset();
+    {
+        ce_hud_block_t pin = { 193.0f, 48.0f, CE_HUD_SIDE_PINNED };
+        ce_hud_slot_t p1, p2;
+        ce_hud_block_t shelf = { 108.0f, 36.0f, CE_HUD_SIDE_LEFT };
+        CHECK(ce_hud_slot_claim_pinned(117, &pin, 88.0f, 924.0f, &p1));
+        CHECK(p1.x == 88.0f && p1.y == 924.0f);            /* 锚点原样 */
+        CHECK(p1.x640 == 44.0f && p1.y640 == 462.0f);      /* 640 空间同步 */
+        /* 货架卡照旧从锚点 257 起（pinned 不占它的位、也不被它顶动）*/
+        CHECK(ce_hud_slot_claim(111, &shelf, &p2));
+        CHECK(p2.x == CE_HUD_ANCHOR_X && p2.y == CE_HUD_ANCHOR_Y);
+        CHECK(ce_hud_slot_get(117, &p1) && p1.x == 88.0f && p1.y == 924.0f);
+        /* 重复认领幂等 */
+        CHECK(ce_hud_slot_claim_pinned(117, &pin, 88.0f, 924.0f, &p1) && p1.x == 88.0f);
+        /* side 不符 ⇒ 拒绝（两个入口互相把关）*/
+        CHECK(!ce_hud_slot_claim(117, &pin, &p1));         /* pinned 走 claim → 拒 */
+        CHECK(!ce_hud_slot_claim_pinned(111, &shelf, 88.0f, 924.0f, &p1));  /* 非 pinned 走 pinned → 拒 */
+        /* 越硬上限也拒 */
+        ce_hud_block_t wide = { 1000.0f, 20.0f, CE_HUD_SIDE_PINNED };
+        CHECK(!ce_hud_slot_claim_pinned(117, &wide, 88.0f, 924.0f, &p1));
+    }
+
+    /* 关卡纪元：同一关不重排；关卡号一变 ⇒ 先清空再认领（HUD-LAYOUT §4.4）*/
+    ce_hud_slots_reset();
+    /* 模拟「认领前推进纪元」：直接调 core 层的 stage_begin（sdk.h 的 wrapper 会带 CE_CURRENT_STAGE）*/
+    ce_hud_stage_begin(3);
+    CHECK(ce_hud_stage_current() == 3);
+    CHECK(ce_hud_slot_claim(108, &blk, &a));
+    CHECK(ce_hud_slot_claim(111, &blk, &b));
+    CHECK(ce_hud_slot_claimed(108) && ce_hud_slot_claimed(111));
+    ce_hud_stage_begin(3);                                  /* 同一关重复推进：不动 */
+    CHECK(ce_hud_slot_claimed(108) && ce_hud_slot_claimed(111));
+    ce_hud_slot_release(108);                               /* 局中删卡：占位保留 */
+    CHECK(ce_hud_slot_claimed(108));
+    ce_hud_stage_begin(4);                                  /* 下一关：全部收敛、重新认领 */
+    CHECK(!ce_hud_slot_claimed(108) && !ce_hud_slot_claimed(111));
+    CHECK(ce_hud_slot_claim(111, &blk, &a));
+    CHECK(a.x == CE_HUD_ANCHOR_X);                          /* 重排后 111 从锚点起（108 已不在）*/
+    ce_hud_stage_begin(-1);
+    CHECK(!ce_hud_slot_claimed(111));
+
+    /* 计分层第二通道：乘数附加项（EVENTS-CONTRACT §3.1，110×111 同装时落笔者读它） */
+    ce_score_reset();
+    CHECK(ce_score_mul_aggregate() == 0);
+    ce_score_mul_declare(111, 500);                       /* 信号强度 0.50 ⇒ 500‰ */
+    CHECK(ce_score_mul_aggregate() == 500);
+    ce_score_mul_declare(110, 250);                       /* 两张卡都声明 ⇒ 求和 */
+    CHECK(ce_score_mul_aggregate() == 750);
+    ce_score_mul_declare(110, 0);                         /* 退出声明 */
+    CHECK(ce_score_mul_aggregate() == 500);
+    ce_score_mul_declare(111, -3);                        /* 负数按 0 处理 */
+    CHECK(ce_score_mul_aggregate() == 0);
+    ce_score_mul_declare(111, 1234);
+    ce_score_declare(111, 50000);
+    CHECK(ce_score_mul_aggregate() == 1234);
+    CHECK(ce_score_aggregate() == 50000);                 /* 两个通道互不干扰 */
+    /* 非法 id 不改聚合 */
+    ce_score_mul_declare(CE_SDK_CARD_ID_MAX + 1u, 999);
+    CHECK(ce_score_mul_aggregate() == 1234);
+    /* reset 两个通道一起清 */
+    ce_score_reset();
+    CHECK(ce_score_mul_aggregate() == 0 && ce_score_aggregate() == 0);
+
+    /* 淡出栅格 + 迟滞（TH16 同款）：★ 每帧只推进一次（SDK 调 update），卡只读 near_corner() */
+    ce_hud_slots_reset();
+    CHECK(ce_hud_near_corner() == 0);
+    ce_hud_near_corner_update(-100.0f, 500.0f);            /* 进栅格 ⇒ 淡出 */
+    CHECK(ce_hud_near_corner() == 1);
+    ce_hud_near_corner_update(-100.0f, 390.0f);            /* y 回到 384..400 之间 ⇒ 迟滞保持 */
+    CHECK(ce_hud_near_corner() == 1);
+    ce_hud_near_corner_update(-100.0f, 383.0f);            /* y < 384 ⇒ 淡回 */
+    CHECK(ce_hud_near_corner() == 0);
+    ce_hud_near_corner_update(-100.0f, 500.0f);            /* 再进 */
+    CHECK(ce_hud_near_corner() == 1);
+    ce_hud_near_corner_update(-10.0f, 500.0f);             /* x > −64 ⇒ 淡回 */
+    CHECK(ce_hud_near_corner() == 0);
+    /* 兼容入口 = update + read */
+    CHECK(ce_hud_player_near_corner(-100.0f, 500.0f) == 1);
+    CHECK(ce_hud_near_corner() == 1);
+
+    /* 淡出栅格 + 迟滞（TH16 同款） */
+    ce_hud_slots_reset();
+    CHECK(!ce_hud_player_near_corner(-10.0f, 500.0f));
+    CHECK(ce_hud_player_near_corner(-100.0f, 500.0f));   /* x < −64 && y > 400 ⇒ 淡出 */
+    CHECK(ce_hud_player_near_corner(-100.0f, 390.0f));   /* 迟滞：还没到恢复条件 */
+    CHECK(!ce_hud_player_near_corner(-100.0f, 380.0f));  /* y < 384 ⇒ 淡回 */
+}
+
 int main(void)
 {
     test_dmg_layer();
+    test_declare_layers();
+    test_drop_layer();
+    test_hud_slots();
     test_interest_and_pick();
     test_judgment();
     test_royal();

@@ -15,4 +15,7 @@ static void on_item_money(ce_card_t *c, int32_t *bonus)
 }
 
 static int royal_tick(ce_card_t *c) { ce_royal_tick(c); return 0; }
-CE_CARD(58, .ctor = ce_royal_flush_ctor, .on_tick_2 = royal_tick, .on_item_money = on_item_money);
+/* on_delete：这张卡在商店里被删掉（倒吊人 / 原版空白卡）时，把皇家同花顺演出的文件级倒计时收掉
+ * —— 倒计时靠本卡的 on_tick_2 走，卡没了就永远挂着。理由与做法见 royal.c 的 ce_royal_dismiss。*/
+CE_CARD(58, .ctor = ce_royal_flush_ctor, .on_tick_2 = royal_tick, .on_item_money = on_item_money,
+            .on_delete = ce_royal_dismiss);

@@ -13,4 +13,6 @@ static int on_tick_2(ce_card_t *c)
     return 0;
 }
 
-CE_CARD(59, .ctor = ce_royal_flush_ctor, .on_tick_2 = on_tick_2);
+/* on_delete：删卡（倒吊人 / 原版空白卡）时收掉皇家同花顺演出的文件级倒计时（见 royal.c 的 ce_royal_dismiss）。
+ * 移动速度那一项不用还：`player+0x477ec` 是**每帧**倍率，Player tick 末尾自己复位 1.0。*/
+CE_CARD(59, .ctor = ce_royal_flush_ctor, .on_tick_2 = on_tick_2, .on_delete = ce_royal_dismiss);

@@ -7,6 +7,7 @@
  *   BP_ce_bomb_spent   0x4203bc  do_bomb 里 consume_bomb 刚返回。沿卡链表调 on_bomb_spent()。
  *   BP_ce_enemy_drop   0x430510  Enemy__drop_items_and_notify_cards 入口（ecx = zEnemyDrop = enemy+0x623c，不是敌人）。撒附加表之前
  *                                沿卡链表调 on_enemy_drop_pre(counts)，counts = zEnemyDrop+0x04 起 20 个 int32；主掉落 +0x00 已经撒过（S10）。
+ *                                卡循环之后施加**乘法层** ce_drop_apply()（EVENTS-CONTRACT §2）。
  *   BP_ce_item_money   0x446d28  inc [MONEY_TOTAL]（紧接 inc [MONEY]）。沿卡链表调 on_item_money(&bonus)，
  *                      bonus > 0 时 MONEY 与 MONEY_TOTAL_COLLECTED 一起 += bonus；原两条 inc 照常放行。
  *   BP_ce_item_frame   0x446ee3  ItemManager tick 0x446ec0 的门卫 CMP（cmp [0x4cf2a4],0，单条 7 字节）：
@@ -18,9 +19,15 @@
  *   BP_ce_shot_damage  0x45f2a2  enm_compute_damage_sources 0x45f0f0 计分路径 mov eax,0xee666667 + imul esi（两条，无窗内跳转目标）：
  *                      esi = 本帧本敌伤害（钳后 ≥1）；守卫失败路 0x45f14e jmp 0x45f2de 天然到不了这里。沿卡链表调
  *                      on_shot_damage(dmg, pos)；弹/激光 bomb 伤害与聚焦射击由 handler 门（CE_BOMB_ACTIVE / CE_PLAYER_FOCUSED）。
+ *                      同一断点还发 **on_shot_damage_any**（trace 0x88）：非 bomb 帧的**全部**自机弹命中（含聚焦），
+ *                      给需要高速/低速两条通道的卡（107）；老事件的策略门不变。
+ *   BP_ce_shot_set_index 0x45ebfb 主炮查 set 前的 mov edi,[edi+edx*4+0xe0]；handler 问 on_shot_set_index(card, eax)，
+ *                      返回 >=0 时同时改 edx 与 [ebp-8]（弹里也记 beast set），不碰 sht 0..9。
+ *   BP_ce_enemy_shot_slot 0x433ffa 敌人 ECL etOn(opcode 0x259) 的「发弹三步」汇聚点：沿卡链表问
+ *                      on_enemy_shot_slot(ev)，返回非 0 ⇒ retaddr = 0x43402d 本帧不发射这一槽（108 使魔）。
  *   ce_sdk_on_shop_open          不是断点：shop.c 的 BP_ce_shop_reopen 在 MSG 开店那一帧调它，沿卡链表调 on_shop_open()。
  *   ce_destroy_card              局中删一张卡（倒吊人）：照 recount 0x4080e0 的删卡分支，AUDIT §W。
- *   ce_sdk_setup       门里：基类虚表 21 槽与 engine.h 的常量逐一比对（布局假设的运行时守卫）、九个断点已挂、
+ *   ce_sdk_setup       门里：基类虚表 21 槽与 engine.h 的常量逐一比对（布局假设的运行时守卫）、十二个断点已挂、
  *                      与 cards.js 对账（C 有 JSON 无 → FAIL）、每张行为卡记一行。
  */
 #include <string.h>
@@ -51,7 +58,7 @@ int ce_give_card(uint32_t id, uint32_t mode, uint32_t notify)
 
 /* ---- trace ---- */
 static int      s_trace;
-#define CE_TRACE_SLOTS 30                  /* 21 个虚表槽 + 事件 0x54 / 0x58 / 0x5c / 0x60 / 0x64 / 0x68 / 0x6c / 0x70 / 0x74 */
+#define CE_TRACE_SLOTS 40                  /* 21 个虚表槽 + 事件 0x54..0x88（槽号/4 当数组下标 ⇒ 40 覆盖到 0x9c）*/
                                           /* 后四个 = collect-2x 事件（伪偏移，无虚表槽，仅 trace 记首次命中用）*/
 static uint8_t  s_seen[CE_SDK_MAX_BEHAVIORS][CE_TRACE_SLOTS];
 
@@ -625,9 +632,12 @@ static const ce_hooks_t *hooks_of(const uint8_t *card)
     return NULL;
 }
 
-int __cdecl BP_ce_item_score(x86_reg_t *regs, void *bp_info)
+/* 两个站点共用一份实现（见 sites.py 的 ce_item_score / ce_item_score_below）：
+ *   0x446cf6 = 「自机在回收线上方」或「道具 state == 3（真空飞行）」那一支；
+ *   0x446caa = **线下且非真空飞行**那一支（0x446cb2 `jmp 0x446cfc` 绕过前者）。
+ * 两支互斥 ⇒ 每次收集仍然只派发一次事件。*/
+static int ce_item_score_common(x86_reg_t *regs)
 {
-    (void)bp_info;
     uint8_t *mgr = CE_ABILITY_MGR();
     if (!mgr) return BP_EXEC_ORIGINAL;
     int32_t value = (int32_t)regs->esi;
@@ -645,6 +655,18 @@ int __cdecl BP_ce_item_score(x86_reg_t *regs, void *bp_info)
     }
     regs->esi = (uint32_t)value;
     return BP_EXEC_ORIGINAL;
+}
+
+int __cdecl BP_ce_item_score(x86_reg_t *regs, void *bp_info)
+{
+    (void)bp_info;
+    return ce_item_score_common(regs);
+}
+
+int __cdecl BP_ce_item_score_below(x86_reg_t *regs, void *bp_info)
+{
+    (void)bp_info;
+    return ce_item_score_common(regs);
 }
 
 int __cdecl BP_ce_item_money(x86_reg_t *regs, void *bp_info)
@@ -691,6 +713,83 @@ int __cdecl BP_ce_bomb_spent(x86_reg_t *regs, void *bp_info)
     return BP_EXEC_ORIGINAL;
 }
 
+/* Player__on_tick__body 0x45c048 的普通炸弹分支：原指令 `test BYTE PTR ds:0x4ca434,0x2`。
+ * 任一在场行为卡的 `on_bomb_gate` 返回 1 时，跳过原指令并把 retaddr 指到 0x45c056（**跳过 0x45c051
+ * 的 `call do_bomb`**；该调用前后只有 test/je/call 三条）。没有卡要求拦截时返回 1 放行，原版炸弹不受影响。*/
+int __cdecl BP_ce_bomb_gate(x86_reg_t *regs, void *bp_info)
+{
+    (void)bp_info;
+    uint8_t *mgr = CE_ABILITY_MGR();
+    if (!mgr) return BP_EXEC_ORIGINAL;
+    unsigned guard = 0;
+    for (const uint8_t *node = *(const uint8_t *const *)(mgr + CE_MGR_CARD_LIST_FIRST);
+         node && guard < 256;
+         node = *(const uint8_t *const *)(node + CE_NODE_NEXT), ++guard) {
+        uint8_t *card = *(uint8_t *const *)(node + CE_NODE_CARD);
+        if (!card) continue;
+        const ce_hooks_t *h = hooks_of(card);
+        if (h && h->on_bomb_gate && h->on_bomb_gate((ce_card_t *)card)) {
+            ce_sdk_trace(ce_card_id(card), 0x78, "on_bomb_gate");
+            regs->retaddr = 0x45c056;   /* 原版: 0x45c048 test / 0x45c04f je / 0x45c051 call do_bomb */
+            return 0;                    /* 不执行原 test，直接从这里继续 */
+        }
+    }
+    return BP_EXEC_ORIGINAL;
+}
+
+/* Player__tick_shooting_state 0x45ea00 的查表点 0x45ebfb：原指令 `mov edi,[edi+edx*4+0xe0]`，
+ * edx = 本帧从火力/聚焦算出的 set index，eax = 火力档；同帧 0x45ebed/0x45ebf8 已把同一 set index
+ * 暂存在 [ebp-8]，0x45ec69 再打包成 `(set<<8)|row` 写进 PlayerBullet+0xac、命中时再回读。
+ * 只改这两个位置：edx 管本帧从哪组取 row，[ebp-8] 管弹里记哪一组；不碰 sht 的 0..9 槽。
+ * 任一卡的 on_shot_set_index 返回 >=0 时覆盖，否则原版放行。*/
+int __cdecl BP_ce_shot_set_index(x86_reg_t *regs, void *bp_info)
+{
+    (void)bp_info;
+    uint8_t *mgr = CE_ABILITY_MGR();
+    if (!mgr) return BP_EXEC_ORIGINAL;
+    unsigned guard = 0;
+    for (const uint8_t *node = *(const uint8_t *const *)(mgr + CE_MGR_CARD_LIST_FIRST);
+         node && guard < 256;
+         node = *(const uint8_t *const *)(node + CE_NODE_NEXT), ++guard) {
+        uint8_t *card = *(uint8_t *const *)(node + CE_NODE_CARD);
+        if (!card) continue;
+        const ce_hooks_t *h = hooks_of(card);
+        if (h && h->on_shot_set_index) {
+            int idx = h->on_shot_set_index((ce_card_t *)card, (int)regs->eax);
+            if (idx >= 0) {
+                if (regs->edx != (uint32_t)idx) {
+                    /* 两个副本必须一起改：edx 决定本帧取出哪组 row；[ebp-8] 决定 bullet+0xac 里存的 set。*/
+                    regs->edx = (uint32_t)idx;
+                    if (regs->ebp) *(uint32_t *)(uintptr_t)(regs->ebp - 8) = (uint32_t)idx;
+                }
+                ce_sdk_trace(ce_card_id(card), 0x7c, "on_shot_set_index");
+                /* ★ 有卡覆写了 set（= 117 咆哮）⇒ **本帧不抑制**（咆哮优先：EVENTS-CONTRACT §5.2）。*/
+                return BP_EXEC_ORIGINAL;
+            }
+        }
+    }
+    /* 没有任何卡覆写 set ⇒ 再问「本帧跳过原生行循环」。
+     * 108（低速妖机体）与 109（蓄力拦 Z）挂同一个槽；两者语义都是「本帧不发原生弹」⇒ OR，无需优先序。
+     * 做法：return 0 + retaddr 跳到 0x45eca0（**引擎自己的空行落点** `0x45ec06 js 0x45eca0`）——
+     * 跳过 0x45ebfb..0x45ec9f 的原生行循环，但**保留 0x45eca0 起的卡广播**（77 / 116 不受影响）。
+     * 寄存器安全性：0x45eca0 起只用 eax/edi（就地重写）与 ebx/esi（从 [ebp-0xc]/[ebp-0x10] 重载，
+     * 而那两个槽在行循环**之前**就写好了）—— 见 AUDIT。*/
+    guard = 0;
+    for (const uint8_t *node = *(const uint8_t *const *)(mgr + CE_MGR_CARD_LIST_FIRST);
+         node && guard < 256;
+         node = *(const uint8_t *const *)(node + CE_NODE_NEXT), ++guard) {
+        uint8_t *card = *(uint8_t *const *)(node + CE_NODE_CARD);
+        if (!card) continue;
+        const ce_hooks_t *h = hooks_of(card);
+        if (h && h->on_native_shot_suppress && h->on_native_shot_suppress((ce_card_t *)card)) {
+            ce_sdk_trace(ce_card_id(card), 0x80, "on_native_shot_suppress");
+            regs->retaddr = 0x45eca0;
+            return 0;                    /* 不执行原行选择，直接去卡广播 */
+        }
+    }
+    return BP_EXEC_ORIGINAL;
+}
+
 /* Enemy__drop_items_and_notify_cards 0x430510 入口（thiscall，ecx = zEnemyDrop = enemy+0x623c）：在引擎撒**附加表**之前
  * 把掉落数表交给卡改。改完引擎自己按各 type 正确的角度/速度去撒 —— 比自己调
  * ItemManager__spawn_items（8 个栈参、零售调用方还留了没填的槽）稳得多。AUDIT §S。 */
@@ -712,6 +811,14 @@ int __cdecl BP_ce_enemy_drop(x86_reg_t *regs, void *bp_info)
             h->on_enemy_drop_pre((ce_card_t *)card, counts);
             ce_sdk_trace(ce_card_id(card), 0x5c, "on_enemy_drop_pre");
         }
+    }
+    /* ★ 乘法层（EVENTS-CONTRACT §2）：各卡只做**加法**（照现状直接改 counts），倍数在这里一次性
+     * 作用在「最终总数」上 ⇒ 「别的卡/附加表加的那颗也被翻倍」（用户 2026-09-12 裁决）。
+     * 必须在卡循环**之后**、引擎按 counts 撒之前（本断点就在撒附加表之前）。*/
+    if (ce_drop_mult_aggregate() != CE_DROP_MULT_UNIT) {
+        /* ★ 传的是 zEnemyDrop **基址**（regs->ecx），不是 counts —— counts 是基址 +0x04，
+         * 传错会整体错开一个 type 格（2026-09-12 审计抓到的 off-by-one）。*/
+        ce_drop_apply((int32_t *)drop);
     }
     return BP_EXEC_ORIGINAL;
 }
@@ -750,6 +857,20 @@ int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
     (void)regs; (void)bp_info;
     uint8_t *mgr = CE_ABILITY_MGR();
     if (!mgr) return BP_EXEC_ORIGINAL;
+    /* ★ 帧初：清「本帧已消过弹」闩锁（EVENTS-CONTRACT §5.2 细则 2）。这个断点每个正常游玩帧到一次，
+     * 且在道具池 body 之前 ⇒ 是天然的帧边界。107 的结界灵击与 117 的霊撃同帧都触发时，
+     * 只有第一个 claim 的负责全屏消弹，第二家让位（避免空池扫荡 / 重复记账）。*/
+    ce_cancel_latch_reset();
+    /* ★ 帧初：把「无敌声明层」的聚合值落到 `player+0x47774`（取各卡声明帧数的**最大值**，
+     * 只在比当前计时器更长时才写 ⇒ 不截短别人给的无敌、也不动引擎自己的）。
+     * 卡只需要 `ce_invuln_request(id, frames)` 声明，落笔由 SDK 统一做（单一落笔，EVENTS-CONTRACT §1）。*/
+    ce_invuln_apply();
+    /* ★ 帧初：推进「玩家贴近左下角 → HUD 整摞淡出」的迟滞（每帧**只推一次**；
+     * 卡片读 `ce_hud_near_corner()` 即可，别自己调 —— 多张卡同帧各调会反复推进状态）。*/
+    {
+        const float *pp = ce_player_pos();
+        if (pp) ce_hud_near_corner_update(pp[0], pp[1]);
+    }
     unsigned guard = 0;
     for (const uint8_t *node = *(const uint8_t *const *)(mgr + CE_MGR_CARD_LIST_FIRST);
          node && guard < 256;
@@ -817,6 +938,29 @@ int __cdecl BP_ce_shot_damage(x86_reg_t *regs, void *bp_info)
      * 0x45f298/0x45f29e 已判过、守卫失败路跳 0x45f2de 到不了这里，再门一次是纵深防御。*/
     if (!regs->esi || !regs->ebx) return BP_EXEC_ORIGINAL;
     if (*(const int32_t *)(uintptr_t)(regs->ebx + 0x1c) != 0) return BP_EXEC_ORIGINAL;
+    /* ★ 2026-09-12：**先**发「不过滤聚焦」的那一份（on_shot_damage_any），再走老事件的策略门。
+     *   老门（非聚焦 + 非 bomb）保持原样 ⇒ 114 的「非聚焦命中掉 P」语义零变化。*/
+    {
+        const int focused_any = CE_PLAYER_FOCUSED();
+        const int bomb_any    = CE_BOMB_ACTIVE();
+        if (!bomb_any) {
+            const float *pos_any = *(const float *const *)(uintptr_t)(regs->ebx + 8);
+            if (pos_any) {
+                unsigned g2 = 0;
+                for (const uint8_t *node = *(const uint8_t *const *)(mgr + CE_MGR_CARD_LIST_FIRST);
+                     node && g2 < 256;
+                     node = *(const uint8_t *const *)(node + CE_NODE_NEXT), ++g2) {
+                    uint8_t *card = *(uint8_t *const *)(node + CE_NODE_CARD);
+                    if (!card) continue;
+                    const ce_hooks_t *h2 = hooks_of(card);
+                    if (h2 && h2->on_shot_damage_any) {
+                        h2->on_shot_damage_any((ce_card_t *)card, (int32_t)regs->esi, pos_any, focused_any);
+                        ce_sdk_trace(ce_card_id(card), 0x88, "on_shot_damage_any");
+                    }
+                }
+            }
+        }
+    }
     if (CE_PLAYER_FOCUSED() || CE_BOMB_ACTIVE()) return BP_EXEC_ORIGINAL;
     /* ★ pos 源（§Z15 定案，探针已删）：0x45f0f0 是 `push ebx; mov ebx,esp` 栈帧别名，[ebx+8] = arg1
      * **参数槽，槽里是指针**。callee 圆形分支 [ebp-0x40]（=arg1）减各源中心判重叠、矩形分支把 arg1
@@ -970,6 +1114,12 @@ static int bp_applied(const uint8_t *p, unsigned len)
 int ce_sdk_setup(uint8_t *base, int trace)
 {
     ce_dmg_reset();                                   /* 伤害层：从干净的聚合开始（§AA）*/
+    ce_invuln_reset();                                /* 无敌取最大层（EVENTS-CONTRACT §4）*/
+    ce_score_reset();                                 /* 计分声明层（EVENTS-CONTRACT §3）*/
+    ce_optpose_reset();                               /* 低速子机选举层（§1 选举覆盖）*/
+    ce_cancel_latch_reset();                          /* 「本帧已消过弹」闩锁（§5.2 细则 2）*/
+    ce_hud_slots_reset();                             /* HUD 槽位分配器（HUD-LAYOUT §3）*/
+    ce_drop_reset();                                  /* 掉落乘法层（EVENTS-CONTRACT §2）*/
     s_trace = trace;
     memset(s_seen, 0, sizeof s_seen);
     uint32_t reg_bad = 0;
@@ -989,11 +1139,12 @@ int ce_sdk_setup(uint8_t *base, int trace)
             ce_verdict("FAIL: sdk: base vtable slot %u = %08x, expected %08x — not the layout we know", chk[i].i, vt[chk[i].i], chk[i].want);
             return 0;
         }
-    /* 2. 九个断点已挂。聚合检查：任何一个失败都打印现场字节（判断 thcrap 没下断 vs 下错位置），
+    /* 2. 十四个断点已挂。聚合检查：任何一个失败都打印现场字节（判断 thcrap 没下断 vs 下错位置），
      * 全部查完再决定成败——避免第一个失败点挡住后面断点的诊断信息。 */
     struct { const char *name; uint32_t rva; unsigned len; } bps[] = {
         { "ce_card_bind",   CE_BP_CARD_BIND_RVA,   6 },
         { "ce_item_score",  CE_BP_ITEM_SCORE_RVA,  6 },
+        { "ce_item_score_below", CE_BP_ITEM_SCORE_BELOW_RVA, 8 },
         { "ce_item_money",  CE_BP_ITEM_MONEY_RVA,  6 },
         { "ce_bomb_spent",  CE_BP_BOMB_SPENT_RVA,  5 },
         { "ce_enemy_drop",  CE_BP_ENEMY_DROP_RVA,  6 },
@@ -1001,6 +1152,10 @@ int ce_sdk_setup(uint8_t *base, int trace)
         { "ce_item_collect",CE_BP_ITEM_COLLECT_RVA,6 },
         { "ce_item_commit", CE_BP_ITEM_COMMIT_RVA, 6 },
         { "ce_shot_damage", CE_BP_SHOT_DAMAGE_RVA, 7 },
+        { "ce_bomb_gate",   CE_BP_BOMB_GATE_RVA,   7 },
+        { "ce_shot_set_index", CE_BP_SHOT_SET_INDEX_RVA, 7 },
+        { "ce_enemy_death", CE_BP_ENEMY_DEATH_RVA, 6 },
+        { "ce_enemy_shot_slot", CE_BP_ENEMY_SHOT_SLOT_RVA, 8 },
     };
     unsigned n_bp_fail = 0;
     for (unsigned i = 0; i < sizeof bps / sizeof bps[0]; ++i) {
@@ -1039,4 +1194,106 @@ int ce_sdk_setup(uint8_t *base, int trace)
     ce_log("sdk: %u behaviors, %u registered cards without behavior; base vtable @ %08x verified; trace=%d",
            ce_sdk_behavior_count(), unbound, (unsigned)CE_ADDR_BASE_VTABLE, s_trace);
     return 1;
+}
+
+/* ============================ 敌人发射口（共享事件，108） ============================
+ * 断点 0x433ffa（敌人 ECL opcode 0x259 = etOn，handler 0x433f34 内「发弹三步」的汇聚点）：
+ *   433ff4  mov [esi+0x5a8],eax          ; 槽记录写瞄准值（在我们的站点**之前**，照常执行）
+ *   433ffa  movss xmm1,[edi+0x5144]      ; ★ 站点（8 字节、无相对寻址）
+ *   434002  mov ecx,ds:0x4cf2bc / call 0x42cca0   ; et_protect_range 置位 / 取值
+ *   434013  lea eax,[esi+0x598] / push / call 0x427810   ; __fire(props)（唯一的发射点）
+ *   434025  xorps xmm1,xmm1 / call 0x42cca0      ; 复位
+ *   43402d  jmp 0x436417                          ; opcode 收尾
+ * ⇒ handler 返回非 0 时 `retaddr = 0x43402d`：**本帧这一槽不发射**，其余（瞄准值、ECL 状态机）照旧。
+ * 寄存器（一手）：edi = &enemy->data（= enemy+0x122c）、槽号 i = [ebp-0x56c]、esi = &data + i*0x488。
+ * 不加任何内存写、不碰敌人生命周期 ⇒ 与 BP_ce_shot_set_index 同风险级。*/
+#define CE_ESHOT_SLOT_STACK   0x56c      /* [ebp-0x56c] = 槽号（0x433f3d 写；x86 栈向下增长）*/
+#define CE_ESHOT_DATA_OFF     0x122c     /* zEnemy → zEnemyData 的偏移（0x430d30 add ecx,0x122c）*/
+int __cdecl BP_ce_enemy_shot_slot(x86_reg_t *regs, void *bp_info)
+{
+    (void)bp_info;
+    uint8_t *mgr = CE_ABILITY_MGR();
+    uint8_t *data = (uint8_t *)(uintptr_t)regs->edi;
+    if (!mgr || !data || !regs->ebp) return BP_EXEC_ORIGINAL;
+
+    int32_t slot = *(const int32_t *)(uintptr_t)(regs->ebp - CE_ESHOT_SLOT_STACK);
+    if (slot < 0 || slot > 15) return BP_EXEC_ORIGINAL;                     /* 界外 ⇒ 不动（防御）*/
+    /* 自检：站点处 esi 必须正好是 &data + slot*0x488（对不上说明我们记的寄存器语义过时了）*/
+    if (regs->esi != (uint32_t)(uintptr_t)(data + (size_t)slot * 0x488)) return BP_EXEC_ORIGINAL;
+
+    uint8_t *enemy = data - CE_ESHOT_DATA_OFF;                               /* 回到 zEnemy* */
+    ce_enemy_shot_t ev;
+    ev.enemy_id = *(const uint32_t *)(enemy + CE_ENEMY_ID);
+    ev.slot     = slot;
+    ev.enemy    = enemy;
+
+    unsigned guard = 0;
+    for (const uint8_t *node = *(const uint8_t *const *)(mgr + CE_MGR_CARD_LIST_FIRST);
+         node && guard < 256;
+         node = *(const uint8_t *const *)(node + CE_NODE_NEXT), ++guard) {
+        uint8_t *card = *(uint8_t *const *)(node + CE_NODE_CARD);
+        if (!card) continue;
+        const ce_hooks_t *h = hooks_of(card);
+        if (h && h->on_enemy_shot_slot && h->on_enemy_shot_slot((ce_card_t *)card, &ev)) {
+            ce_sdk_trace(ce_card_id(card), 0x8c, "on_enemy_shot_slot");
+            regs->retaddr = 0x43402du;                                       /* opcode 收尾：本帧不发射 */
+            return 0;
+        }
+    }
+    return BP_EXEC_ORIGINAL;
+}
+
+/* ============================ 敌人死亡 / 击破（共享事件） ============================
+ * 断点 0x430240（FUN_00430240，SDK 内部叫 Enemy__die）入口：
+ *   thiscall，ecx = zEnemy；**在引擎撒主掉落之前**（0x430469 读表 → 0x430493 call 0x446f40 撒 →
+ *   0x43049f call 0x430510 通知卡 → 0x4304aa 清表）；恒定 `mov eax,1` 返回 ⇒ 调用方同帧 sweep 删，
+ *   **一敌一生正好一次**。
+ * 死因用调用点的返回地址分（见 sdk/public.h 的 CE_EDEATH_*）：
+ *   0x42f3b7 = life ≤ 0 的主路（= 四张卡要的「击破」）；0x42ee90 = 炸弹秒杀路；
+ *   0x430f59 = ECL die opcode；0x4307f1 / 0x430a00 / 0x430c08 = killAll 三兄弟；其余 = OTHER。
+ * 设计：docs/superpowers/specs/2026-09-12-shared-enemy-death-event-design.md（AUDIT 对应节）。*/
+static uint32_t edeath_kind(uint32_t retaddr)
+{
+    switch (retaddr) {
+    case 0x42f3b7u: return CE_EDEATH_KILLED;
+    case 0x42ee90u: return CE_EDEATH_BOMB_KILL;
+    case 0x430f59u: return CE_EDEATH_ECL_DIE;
+    case 0x4307f1u:
+    case 0x430a00u:
+    case 0x430c08u: return CE_EDEATH_KILL_ALL;
+    default:        return CE_EDEATH_OTHER;
+    }
+}
+
+int __cdecl BP_ce_enemy_death(x86_reg_t *regs, void *bp_info)
+{
+    (void)bp_info;
+    uint8_t *mgr = CE_ABILITY_MGR();
+    uint8_t *e = (uint8_t *)(uintptr_t)regs->ecx;      /* zEnemy；唯一可信的寄存器 */
+    if (!mgr || !e) return BP_EXEC_ORIGINAL;
+
+    ce_enemy_death_t ev;
+    uint32_t flags = *(const uint32_t *)(e + CE_ENEMY_FLAGS);
+    ev.id        = *(const uint32_t *)(e + CE_ENEMY_ID);
+    ev.kind      = edeath_kind(regs->retaddr);
+    ev.flags     = ((flags & 0x31u) == 0 ? CE_EDEATH_F_REAL : 0u);   /* ★ 置位 = 被排除在真敌人之外 */
+    ev.drop_main = *(const int32_t *)(e + CE_ENEMY_DROP);
+    ev.x         = *(const float *)(e + CE_ENEMY_POS_X);
+    ev.y         = *(const float *)(e + CE_ENEMY_POS_X + 4);
+    ev.enemy     = e;
+    if (ev.drop_main != 0) ev.flags |= CE_EDEATH_F_HAS_DROP;
+
+    unsigned guard = 0;
+    for (const uint8_t *node = *(const uint8_t *const *)(mgr + CE_MGR_CARD_LIST_FIRST);
+         node && guard < 256;
+         node = *(const uint8_t *const *)(node + CE_NODE_NEXT), ++guard) {
+        uint8_t *card = *(uint8_t *const *)(node + CE_NODE_CARD);
+        if (!card) continue;
+        const ce_hooks_t *h = hooks_of(card);
+        if (h && h->on_enemy_death) {
+            h->on_enemy_death((ce_card_t *)card, &ev);
+            ce_sdk_trace(ce_card_id(card), 0x84, "on_enemy_death");
+        }
+    }
+    return BP_EXEC_ORIGINAL;
 }

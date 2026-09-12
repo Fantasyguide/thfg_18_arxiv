@@ -1,4 +1,4 @@
-/* 绀珠传（card-expand id 118）—— 被动：TH15 章节系统 + 擦弹减速。
+/* 绀珠传（card-expand id 115）—— 被动：TH15 章节系统 + 擦弹减速。
  *
  * 一手来源：
  *   engine/chapter/th15/01-chapter-and-bonus.md      （章节奖公式 / 阈值 / 面板）
@@ -794,6 +794,6 @@ static void on_run_reset(ce_card_t *c)
     s->st.slow = LOLK_SLOW_FULL;
 }
 
-CE_CARD(118, .on_tick_2 = on_tick_2, .on_draw = on_draw,
+CE_CARD(115, .on_tick_2 = on_tick_2, .on_draw = on_draw,
               .on_stage_start = on_stage_start, .on_run_reset = on_run_reset,
               .on_delete = on_delete);

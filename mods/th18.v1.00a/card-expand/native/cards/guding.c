@@ -47,6 +47,9 @@ static int on_tick_2(ce_card_t *c)
 {
     gd_state_t *s = ce_state(c, gd_state_t);
     int32_t boss_id = 0; int slot = -1;
+    /* ★ 2026-09-12（删卡收尾审计顺手加固）：`ce_state` 在 256 槽耗尽时会返回 NULL
+     *（`ce_state_user` 静默失败）⇒ 每个钩子都要判，别直接解引用。同批其它卡都判了。*/
+    if (!s) return 0;
     int now = final_spell_now(&boss_id, &slot);
     int edge = gd_update(s, now);
     if (edge) ce_set_bullet_damage_permille(c, now ? CE_DMG_UNIT * GD_MULT : CE_DMG_UNIT);
@@ -59,13 +62,16 @@ static int on_tick_2(ce_card_t *c)
 static int on_bullet_created(ce_card_t *c, void *bullet)
 {
     (void)bullet;
-    gd_count_bullet(ce_state(c, gd_state_t));     /* 只统计：乘法在伤害层里 */
+    gd_state_t *s = ce_state(c, gd_state_t);
+    if (!s) return 0;                             /* 同上：NULL 守卫 */
+    gd_count_bullet(s);                           /* 只统计：乘法在伤害层里 */
     return 0;
 }
 
 static void on_stage_start(ce_card_t *c)
 {
     gd_state_t *s = ce_state(c, gd_state_t);
+    if (!s) return;
     s->active = 0;                                   /* 上一关末帧的判定不带进新关的第一颗弹 */
     ce_set_bullet_damage_permille(c, CE_DMG_UNIT);
 }
@@ -73,6 +79,7 @@ static void on_stage_start(ce_card_t *c)
 static void on_run_reset(ce_card_t *c)
 {
     gd_state_t *s = ce_state(c, gd_state_t);
+    if (!s) return;
     if (s->frames) ce_log("guding: run reset (%u final-spell frames, %u bullets doubled)", s->frames, s->bullets);
     s->active = 0; s->frames = 0; s->bullets = 0;
     /* 倍率的复位由 SDK 在 `+0x4c` 桩里做（回到声明的初值），这里不用管 */

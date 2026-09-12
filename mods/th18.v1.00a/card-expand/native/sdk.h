@@ -25,6 +25,7 @@
 
 /* ---- 引擎调用（薄包装，签名见 engine.h）---- */
 typedef int      (__attribute__((thiscall)) *ce_fn_alloc_t)(void *mgr, uint32_t id, uint32_t mode);
+typedef void    *( __attribute__((thiscall)) *ce_fn_alloc_enemy_t)(void *mgr, const char *ecl_name, void *spawn, int unused);
 typedef void     (__attribute__((fastcall)) *ce_fn_mark_t)(uint32_t id, uint32_t notify);
 typedef uint8_t *(__attribute__((fastcall)) *ce_fn_table_get_t)(uint32_t id);
 typedef int      (__attribute__((fastcall)) *ce_fn_pick_t)(uint8_t **out, int tier_lo, int tier_hi, uint8_t **exclude, int n);
@@ -522,6 +523,9 @@ void ce_hud_digit_clear(ce_hud_digit_t *d);
 #define CE_VK_A 0x41
 #define CE_VK_S 0x53
 #define CE_VK_D 0x44
+#define CE_VK_SPACE 0x20
+#define CE_VK_CONTROL 0x11   /* VK_CONTROL：调试组合键（Ctrl+空格）用 */
+#define CE_VK_SHIFT 0x10
 int ce_key_down(int vk);
 
 /* 在 HUD 上写一行字（只能在虚表 `+0x48 on_draw` 里调 —— 零售 `CardMomoyo__on_draw` 同款，AUDIT §AC）。
@@ -619,10 +623,12 @@ typedef void (CE_TC *ce_base_del_t)(void *, uint32_t);
         ce_sdk_trace(ID, 0x4c, "on_run_reset"); \
         ce_sdk_active_reset(self, &ce_hooks_##ID, 1); \
         ce_dmg_set(ID, ce_hooks_##ID.bullet_damage_permille); /* 回到声明的初值；声明 0 的卡也要清掉运行时报过的倍率 */ \
+        ce_layer_drop_card(ID);               /* 2026-09-12：四个声明层 + HUD 槽位一起退回声明态 */ \
         if (ce_hooks_##ID.on_run_reset) ce_hooks_##ID.on_run_reset((ce_card_t *)self); } \
     static void CE_TC ce_s_##ID##_opdelete(void *self, uint32_t flag) { \
         ce_sdk_trace(ID, 0x50, "operator_delete"); \
         ce_dmg_set(ID, 0);                    /* 退出聚合；无条件，运行时才参与的卡同样要清 */ \
+        ce_layer_drop_card(ID);               /* 同上：无敌 / 计分 / 子机声明 / 消弹闩锁 / HUD 槽位 */ \
         if (ce_hooks_##ID.on_delete) ce_hooks_##ID.on_delete((ce_card_t *)self); /* 私有状态还活着 */ \
         ce_state_free(self); \
         ((ce_base_del_t)CE_BASE_SLOT_OPDELETE)(self, flag); } \
@@ -654,3 +660,100 @@ typedef void (CE_TC *ce_base_del_t)(void *, uint32_t);
         ce_beh_##ID.is_active = ce_hooks_##ID.active_recharge != 0; \
         ce_sdk_register_or_log(&ce_beh_##ID); \
     }
+
+/* ==================== 共享 helper（EVENTS-CONTRACT.md：四个共享件）====================
+ * 这四个是「多张卡都要做同一件事」提炼出来的，别在卡里自己再写一份。
+ * 已有件（不用重复造）：消弹计数 = `ce_cancel_radius(pos, r, max_count, mode)` 的**返回值**
+ * （它调前清 CE_BM_CANCEL_COUNTER 0x7a41e8、调后读 = 消掉几颗；`ce_cancel_all_bullets()` 是 void、数不出来）。 */
+
+/* ① 全屏收点：把道具池里所有活道具的 state 置 3（真空飞行）⇒ 引擎自己把它们飞向自机、走原生收集
+ * （计分 / HUD / 计数 / 磁吸全原生）。用于 **107 森罗结界「自动回收道具」** 与 **111「满槽全收」**。
+ * 返回被置 3 的道具数。⚠ 只动 state，不动 pos/vel。*/
+static inline int ce_item_collect_all(void)
+{
+    uint8_t *mgr = CE_ITEM_MANAGER();
+    if (!mgr) return 0;
+    int n = 0;
+    for (unsigned i = 0; i < CE_ITEM_SLOTS; ++i) {
+        uint8_t *it = mgr + CE_ITEM_POOL_OFF + (size_t)i * CE_ITEM_STRIDE;
+        int32_t st = *(int32_t *)(it + CE_ITEM_STATE);
+        if (st == 0 || st == CE_ITEM_STATE_VACUUM) continue;        /* 空槽 / 已经在飞 */
+        *(int32_t *)(it + CE_ITEM_STATE) = CE_ITEM_STATE_VACUUM;
+        ++n;
+    }
+    return n;
+}
+
+/* ② 无敌帧请求（声明层）：各卡每帧声明自己想要的帧数，层取**最大值**，由这里落到
+ * `player+0x47774`（zTimer）。▸ 只在比当前计时器更长时才写（不截短别人给的无敌，也不缩短引擎自己的）。
+ * 用于 **107 结界结束 0.67s**、**109 爆风 C1–C4** 与 **117 霊撃 40 帧**（117 原来的局部 set_invuln 就是这个语义）。
+ * ★ 卡只**声明**（`ce_invuln_request(id, frames)`，每帧声明剩余帧数），落笔由 SDK 在每帧的
+ * `ce_item_frame` 断点里统一调本函数做 —— 卡不必自己调（自己调也幂等，同一 max）。*/
+static inline void ce_invuln_apply(void)
+{
+    int frames = ce_invuln_frames();
+    ce_timer_t *t = CE_PLAYER() ? CE_PLAYER_INVULN() : 0;
+    if (!t || frames <= 0) return;
+    if (t->cur < frames) { t->prev = t->cur; t->cur = frames; t->cur_f = (float)frames; }
+}
+
+/* ③ 「本帧已消过弹」闩锁：同帧多张卡都要全屏消弹时，只有第一个认领的去做。
+ * 每帧由 SDK 在 `ce_item_frame` 断点里 reset（见 sdk.c）；卡侧这么用：
+ *     if (ce_cancel_latch_claim(ce_card_id(c))) { n = ce_cancel_radius(pos, 4000.0f, 0, 0); ... }
+ * 返回非 0 = 本帧由你（这张卡）负责消弹。*/
+static inline int ce_shoot_cancel_claim(uint32_t card_id) { return ce_cancel_latch_claim(card_id); }
+
+/* 一次性把 ID 的所有声明层退回「不参与」态（CE_CARD 的 on_run_reset / opdelete 里自动调，卡不用管）。*/
+static inline void ce_layer_drop_card(uint32_t id)
+{
+    ce_dmg_set(id, 0);
+    ce_invuln_request(id, 0);
+    ce_score_declare(id, 0);
+    ce_score_mul_declare(id, 0);   /* 乘数附加项（EVENTS-CONTRACT §3.1）*/
+    ce_optpose_declare(id, 0, 0, 0.0f, 0.0f, 0.0f, 0.0f);
+    ce_drop_mult_set(id, 0);          /* 掉落乘数（EVENTS-CONTRACT §2）*/
+    ce_hud_slot_release(id);
+}
+
+/* ---- 自建真敌人载体（108 使魔 / 112 彩虹令牌 / 后续任何「要能被打、能掉东西」的实体）----
+ * 一手 ABI 见 `engine.h` 的 `CE_FN_ALLOCATE_NEW_ENEMY`：名字是**加载中的 `default.ecl` 的 ECL 子程序名**
+ * （不是 C 函数名），查不到时 `0x48b3a0` 干净退出 ⇒ 占位期可用原版自带的惰性壳（108 用 `"NoEnemyDebug"`）。
+ * `spawn` 至少 0x54 字节（字段表 `engine.h` 的 `CE_SPAWN_*`；卡可只填 pos/life/main_drop，其余 0）。
+ * ⚠ `spawn+0x14`（life）必须 < 1000；⚠ **禁止在敌人死亡栈里调**（DEATH §2.4：死亡回调中析构/新建会重入）。
+ * 返回新敌人指针（NULL = 失败）。调用方自己保证主线程（桩 / 断点 / tick 回调内）。*/
+static inline void *ce_spawn_enemy(const char *ecl_name, const void *spawn_params)
+{
+    void *mgr = (void *)CE_ENEMY_MGR();
+    if (!mgr || !ecl_name || !spawn_params) return 0;
+    return ((ce_fn_alloc_enemy_t)CE_FN_ALLOCATE_NEW_ENEMY)(mgr, ecl_name, (void *)spawn_params, 0);
+}
+
+/* ---- HUD 槽位（HUD-LAYOUT.md §3）：表面 px ↔ 640 空间 ----
+ * `ce_hud_vm_text_set` / `ce_hud_number_set` 收的是 640×480 空间的点（引擎内部 × `DAT_0056aca0`
+ * 换表面 px；TH18 表面 = 1280×960 ⇒ 系数 2.0，🟡 待实跑确认一次）。*/
+#define CE_HUD_SURFACE_TO_640   CE_HUD_640_SCALE
+
+static inline int ce_hud_slot_claim_card(uint32_t card_id, const ce_hud_block_t *blk, ce_hud_slot_t *out)
+{
+    /* ★ 关卡纪元（HUD-LAYOUT §4.4）：关卡号变了 ⇒ 先把上一关的占位清掉再认领。
+     * 只在「认领前」比较 ⇒ 同一关内（局中删卡）一笔都不重排；而删卡留下的占位会在下一关收敛。
+     * 卡侧一律用这个入口，别直接 `ce_hud_slot_claim()`（那样不会重排）。*/
+    ce_hud_stage_begin(CE_CURRENT_STAGE());
+    return ce_hud_slot_claim(card_id, blk, out);
+}
+
+/* ★ 自带锚点认领（`CE_HUD_SIDE_PINNED`）：按用户量过的固定位置登记（117 用）。
+ * 与 `_card` 版一样先把关卡号推进纪元 ⇒ 新关卡照样要重新认领。*/
+static inline int ce_hud_slot_claim_pinned_card(uint32_t card_id, const ce_hud_block_t *blk,
+                                                float anchor_x, float anchor_y, ce_hud_slot_t *out)
+{
+    ce_hud_stage_begin(CE_CURRENT_STAGE());
+    return ce_hud_slot_claim_pinned(card_id, blk, anchor_x, anchor_y, out);
+}
+
+static inline void ce_hud_slot_pos640(const ce_hud_slot_t *s, float *x640, float *y640)
+{
+    if (!s) return;
+    if (x640) *x640 = s->x * CE_HUD_SURFACE_TO_640;
+    if (y640) *y640 = s->y * CE_HUD_SURFACE_TO_640;
+}

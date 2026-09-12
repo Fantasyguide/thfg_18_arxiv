@@ -1,0 +1,587 @@
+/* trance_core.c —— 神灵庙 / 灵界（card-expand id 113）的纯逻辑实现。
+ * 语义、一手出处、明确不做的部分全部写在 `trance_core.h` 的文件头（那里是唯一口径来源）。
+ *
+ * ★ **全整数**（`int32_t`），**一个 `float` 都没有**：
+ *   i686-w64-mingw32 的 ABI 让 `float` 返回值走 x87 `st(0)`，而本仓有 `make dllx87` 门
+ *   （「我们的 object 里 0 条 x87 指令」）。这条卡没有任何需要浮点的量：
+ *   槽 / 奖励 / 弧长 / 计数全是整数，`astral.anm` 的脚本号是整数，最大得点也是定点整数。
+ *   ⇒ 本文件与 `trance_core.h` 里都**不出现 float**（后续要加角度 / 半径之类请照
+ *   `cards/animal_core.h` 的 `animal_hyper_radius(…, float *out)` 形状走出参）。
+ */
+#include "trance_core.h"
+#include <string.h>   /* memset：只在 trance_core_selfcheck 里用（局部状态清零，无引擎依赖）*/
+
+/* 待撒队列被丢弃的颗数（诊断）。⚠ 文件级：卡侧不必清 —— 它只增不减、只进日志。 */
+int32_t trance_kill_queue_dropped;
+
+/* ============================ 槽 ============================ */
+
+int32_t trance_gauge_tier(int32_t gauge)
+{
+    int32_t tier;
+    if (gauge <= 0) return 0;
+    if (gauge >= TRANCE_GAUGE_MAX) return TRANCE_GAUGE_TIERS;
+    tier = gauge / TRANCE_GAUGE_TIER;     /* 一手：`th13:0x43d530` 用 旧值/200 与新值/200 比 */
+    if (tier > TRANCE_GAUGE_TIERS) tier = TRANCE_GAUGE_TIERS;
+    return tier;
+}
+
+void trance_gauge_reset(trance_gauge_t *g)
+{
+    if (!g) return;
+    g->gauge = 0;                          /* 一手：关卡开始写 0（`th13:0x42bbfd`）*/
+    g->tier = 0;
+}
+
+void trance_gauge_set(trance_gauge_t *g, int32_t v)
+{
+    if (!g) return;
+    if (v < 0) v = 0;
+    if (v > TRANCE_GAUGE_MAX) v = TRANCE_GAUGE_MAX;
+    g->gauge = v;
+    g->tier = trance_gauge_tier(v);
+}
+
+static trance_gauge_add_t gauge_move(trance_gauge_t *g, int32_t delta)
+{
+    trance_gauge_add_t out;
+    int32_t before_tier, before, want;
+    out.gauge = 0; out.tier = 0; out.crossed_tier = 0; out.delta = 0;
+    if (!g || delta == 0) return out;
+
+    before = g->gauge;
+    before_tier = g->tier;
+    want = before + delta;
+    if (want < 0) want = 0;
+    if (want > TRANCE_GAUGE_MAX) want = TRANCE_GAUGE_MAX;
+    g->gauge = want;
+    g->tier = trance_gauge_tier(want);
+
+    out.gauge = g->gauge;
+    out.tier = g->tier;
+    out.delta = g->gauge - before;
+    /* 跨格反馈只在**上升**时报（一手：`0x43d530` 比较新旧 /200 的商，跨一格播 0x44 + 效果 0x6b+格数）*/
+    out.crossed_tier = (delta > 0 && g->tier > before_tier) ? 1 : 0;
+    return out;
+}
+
+trance_gauge_add_t trance_gauge_add(trance_gauge_t *g, int32_t delta) { return gauge_move(g, delta); }
+trance_gauge_add_t trance_gauge_sub(trance_gauge_t *g, int32_t delta) { return gauge_move(g, -delta); }
+
+trance_gauge_tick_t trance_gauge_drain(trance_gauge_t *g)
+{
+    trance_gauge_tick_t out;
+    out.gauge = 0;
+    out.floor = 0;
+    if (!g) return out;
+    if (g->gauge > 0) {
+        g->gauge -= TRANCE_GAUGE_DRAIN;    /* 一手：−1/帧（`th13:0x43d4f0`），不是一次性扣 200 */
+        if (g->gauge < 0) g->gauge = 0;
+    }
+    g->tier = trance_gauge_tier(g->gauge);
+    out.gauge = g->gauge;
+    out.floor = (g->gauge < 1) ? 1 : 0;    /* 一手 `0x43d4f0`：`if (GAUGE < 1) end()` */
+    return out;
+}
+
+/* ============================ 相位 / 状态机 ============================ */
+
+/* 激活条件表（`th13:0x4057f0` 八条）。`auto_mode` 是 SPEC §9 #1 的兜底口径：
+ * 「满槽自动进」= 把「按键」那一条换成「自动」（其余七条一条不少）。
+ * ★ 第 8 条 = `(GAME_FLAGS & 0x30) != 0x20`（`th13:0x405859`）—— 由调用方读引擎面后填
+ *   `c->game_flags_ok`（本文件不认识地址；TH18 侧那个全局的定位见 `trance_cond_t` 的注释）。*/
+int trance_can_activate(const trance_state_t *s, const trance_cond_t *c)
+{
+    if (!s || !c) return 0;
+    if (s->phase != TRANCE_PHASE_IDLE) return 0;          /* `0x4057fa` 不在灵界（也 = c->in_trance）*/
+    if (c->in_trance) return 0;                           /* 调用方可能另有一份口径，两条都尊重 */
+    if (c->bombing) return 0;                             /* `0x405806`–`0x405813` 没在放 B */
+    if (!c->full) return 0;                               /* `0x405815` CURRENT_SPIRIT_GAUGE >= 600 */
+    if (!c->enemies) return 0;                            /* `0x40582a` 场上有敌 */
+    if (!c->cooldown) return 0;                           /* `0x405842` this+0x20 >= 0x1e */
+    if (c->dialogue) return 0;                            /* `0x40584d` GUI->msg == 0 */
+    if (!c->key && !c->auto_mode) return 0;               /* `0x405833` 输入位 0x800（auto 兜底见上）*/
+    if (!c->game_flags_ok) return 0;                      /* `0x405859` (GAME_FLAGS & 0x30) != 0x20 ★第 8 条 */
+    return 1;
+}
+
+static void begin_common(trance_state_t *s, int death_free)
+{
+    s->phase = death_free ? TRANCE_PHASE_DEATH_FREE : TRANCE_PHASE_MANUAL;
+    s->ended_death_free = 0;
+    s->cooldown = 0;                        /* 一手：begin 里重置 this+0x1c/0x20/0x24 计时 */
+    ++s->activations;
+    if (death_free) ++s->deaths_forced;
+}
+
+int trance_begin(trance_state_t *s, int death_free, const trance_cond_t *c)
+{
+    int32_t gauge;
+    if (!s) return 0;
+    /* 一手 `0x405a20` 第一行：`if (this+0x14 & 1) return 0;` ⇒ **已在灵界视为成功**（返回 0 = 成功）*/
+    if (s->phase != TRANCE_PHASE_IDLE) return 1;
+    gauge = s->gauge.gauge;
+    /* 一手 `0x405a40`：`if (CURRENT_SPIRIT_GAUGE < 200) return -1;` ⇒ 失败。
+     * ★ 死亡强制那条路**也吃这个门**（一手 `SPIRIT` §7：第二次 die 时槽已扣到 0 ⇒ 必然失败）；
+     *   我们不做延时，所以死亡强制**照同一道门**走，不另开后门。*/
+    if (gauge < TRANCE_GAUGE_MIN_ENTER) return 0;
+    begin_common(s, death_free);
+    if (c) {                                /* 条件表只是为了「是否允许」，进来后不用它 */
+        (void)c;
+    }
+    return 1;
+}
+
+void trance_end(trance_state_t *s, trance_tick_t *out)
+{
+    int was_death_free;
+    if (!s) return;
+    if (s->phase == TRANCE_PHASE_IDLE) return;
+    was_death_free = (s->phase == TRANCE_PHASE_DEATH_FREE);
+    s->phase = TRANCE_PHASE_IDLE;
+    s->ended_death_free = was_death_free;
+    if (!was_death_free) {
+        /* 一手 `0x405cdd`：**非死亡触发**的灵界结束再 −200（夹到 0）。
+         * ★ 死亡触发那条**不补扣**、也**不**「再调一次 Player::die」（一手 `th13:0x405c3e` 是延时机制，
+         *   用户定案 ② 明确不做延时）⇒ 这条分支里**没有别的动作**，这是有意为之。*/
+        trance_gauge_sub(&s->gauge, TRANCE_GAUGE_END_PENALTY);
+    }
+    if (out) {
+        out->ended = 1;
+        out->ended_death_free = was_death_free;
+        out->phase = s->phase;
+    }
+}
+
+trance_tick_t trance_tick(trance_state_t *s, int32_t frame)
+{
+    trance_tick_t out;
+    int dropped;
+
+    out.phase = TRANCE_PHASE_IDLE;
+    out.started = 0;
+    out.ended = 0;
+    out.ended_death_free = 0;
+    out.drain_floor = 0;
+    if (!s) return out;
+
+    dropped = trance_chain_tick(s, frame);   /* 连锁窗口在两个相位下都要走 */
+    (void)dropped;
+
+    if (s->phase == TRANCE_PHASE_IDLE) {
+        if (s->cooldown < TRANCE_COOLDOWN_FRAMES) ++s->cooldown;   /* 冷却到 30 就停（不必再涨）*/
+        if (s->cooldown > TRANCE_COOLDOWN_FRAMES) s->cooldown = TRANCE_COOLDOWN_FRAMES;
+        out.phase = s->phase;
+        return out;
+    }
+
+    /* 灵界中：−1/帧；归零 ⇒ 收尾（一手 `0x43d4f0`：`if (GAUGE < 1) end()`）。
+     * ⚠ 槽已经是 0（卡侧手工改过槽）时**也**走这条路并报 floor —— 一手同一形状（`GAUGE < 1` 恒真），
+     *   所以这里没有「异常态」分支：归零判定是幂等的。*/
+    {
+        trance_gauge_tick_t gt = trance_gauge_drain(&s->gauge);
+        out.drain_floor = gt.floor;
+        if (gt.floor) {
+            /* 逐帧耗尽也走 `end`：一手 `0x43d4f0` 调的就是它，而 `end` 里
+             * `if (!(flags & 2)) GAUGE -= 200` 照跑（此时槽已 0 ⇒ 夹到 0，等效于没扣）。*/
+            trance_end(s, 0);
+            out.ended = 1;
+            out.ended_death_free = s->ended_death_free;
+        }
+    }
+    out.phase = s->phase;
+    return out;
+}
+
+int trance_force_on_death(trance_state_t *s)
+{
+    trance_cond_t c;
+    int ok;
+    if (!s) return 0;
+    if (s->phase != TRANCE_PHASE_IDLE) return 0;   /* 已在灵界：`begin` 会视为成功，但我们不重复开窗 */
+    if (s->gauge.gauge < TRANCE_GAUGE_MIN_ENTER) return 0;   /* 一手 `0x405a40` 的同一道门 */
+    c.full = (s->gauge.gauge >= TRANCE_GAUGE_MAX);
+    c.enemies = 1;      /* 死亡强制的路**不查**「场上有敌」/ 键 / 冷却（一手 `0x444a1d` 直接 begin(1)）*/
+    c.cooldown = 1;
+    c.dialogue = 0;
+    c.bombing = 0;
+    c.in_trance = 0;
+    c.key = 1;
+    c.auto_mode = 1;
+    /* ★ 第 8 条（`0x405859`）在这条路上**也填通过值**：一手的 `Player::die` 里确实有 `TEST …0x30`
+     * （`th13:0x444a14`），但那是**死亡流程自己的门**；我们的落点是死亡**结算之后**（`+0x14`，
+     * 用户定案 ③ / SPEC §3.1「零新件」）⇒ 照 `begin(ptr,1)` 的语义走，不复制死亡流程的门。
+     * ⚠ 一定要填：本函数不 memset 整张表，漏填就是**未初始化读**（哪怕现在 `begin` 不看它）。*/
+    c.game_flags_ok = 1;
+    ok = trance_begin(s, 1, &c);
+    return ok;
+}
+
+/* ============================ 连锁 ============================ */
+
+int trance_chain_note(trance_state_t *s, int32_t type)
+{
+    int fired;
+    if (!s) return 0;
+    if (type == 3 || type == 4) return 0;      /* 一手：`if (type != 3 && type != 4)` 才推进连锁 */
+    s->chain_count += TRANCE_CHAIN_STEP;
+    s->chain_timer = TRANCE_CHAIN_WINDOW;      /* 一手 `0x4391a0`：每颗重置 60 帧窗口 */
+    /* ★ **第 10 颗触发**（2026-09-12 订正）：一手是 `this+0x8838++ ; if (this+0x8838 > 9) spawn_spirit(…,3,…)`
+     * ⇒ 判据是「**加完之后 ≥ 10**」= 本次这颗就是窗口内第 10 颗。
+     * ⚠ 旧实现写的 `> TRANCE_CHAIN_THRESHOLD`（10）等于「第 11 颗才触发」——比一手晚一颗，已改。*/
+    fired = (s->chain_count >= TRANCE_CHAIN_THRESHOLD) ? 1 : 0;
+    if (fired) ++s->chain_bonus_spawned;
+    return fired;
+}
+
+int trance_chain_tick(trance_state_t *s, int32_t frame)
+{
+    (void)frame;                                /* frame 只作接口一致性：窗口是「每帧 −1」的计时器，
+                                                 * 一手 `SPIRIT` §3.6 就是这么实现的（不依赖绝对帧号）*/
+    if (!s) return 0;
+    if (s->chain_timer > 0) {
+        --s->chain_timer;
+        if (s->chain_timer == 0) {
+            s->chain_count = 0;                 /* 一手：窗口归零 ⇒ `+0x8838 = 0` */
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* ============================ 四类神灵：收集 / 奖励 ============================ */
+
+trance_reward_t trance_reward(int32_t type, int in_trance, int is_sanae)
+{
+    trance_reward_t r;
+    int32_t t = type;
+
+    r.life_frag = 0; r.max_point = 0; r.spell_frag = 0; r.gauge = 0; r.gauge_type3 = 0;
+    if (t == 4) t = 1;                          /* 一手 `SPIRIT:75` 注：type 4 在 `0x438ed8` 与 1 同奖 */
+    if (t < 0 || t >= TRANCE_TYPE_COUNT) return r;
+    (void)is_sanae;
+
+    /* 统一槽账（一手 `th13:0x438b3d`：所有类型 +2；灵界中不再加槽 `SPIRIT:326`）。
+     * type 3 的额外 +1（`0x438c3d`）同样受灵界门控。*/
+    r.gauge = in_trance ? TRANCE_REWARD_GAUGE_TRANCE : TRANCE_REWARD_GAUGE_ALWAYS;
+    r.gauge_type3 = 0;
+
+    switch (t) {
+    case 0:   /* 命碎（一手 普通 +1 `0x43d330` / 灵界 +2；效果 id 0x60 / 0x61）*/
+        r.life_frag = in_trance ? 2 : 1;
+        break;
+    case 1:   /* 最大得点（一手 普通 +10 / 灵界 +100；常量 `0x4aeea4` / `0x4aeaf0`）*/
+        r.max_point = in_trance ? 100 : 10;
+#if TRANCE_ENABLE_SANAE_TYPE1_BONUS
+        if (is_sanae && !in_trance) r.gauge += TRANCE_GAUGE_SANAE_TYPE1;  /* 一手 `0x438bea` */
+#else
+        (void)is_sanae;
+#endif
+        break;
+    case 2:   /* 符卡碎（一手 普通 +1 `0x43d480` / 灵界 +2）*/
+        r.spell_frag = in_trance ? 2 : 1;
+        break;
+    case 3:   /* 灵界槽 +1 且加分（`0x43d530`）；灵界中**只加分**（不加槽）*/
+        r.gauge_type3 = in_trance ? 0 : TRANCE_GAUGE_TYPE3_BONUS;
+        break;
+    default:
+        break;
+    }
+    return r;
+}
+
+int trance_collect(trance_state_t *s, int32_t type, trance_collect_t *out)
+{
+    trance_reward_t r;
+    trance_gauge_add_t ga;
+    int32_t t = type;
+
+    if (out) { out->gauge_add = 0; out->tier_crossed = 0; out->chain_extra = 0; }
+    if (!s) return 0;
+    if (t == 4) t = 1;                          /* 与 trance_reward 同一口径 */
+    if (t < 0 || t >= TRANCE_TYPE_COUNT) return 0;
+
+    /* ① 奖励表（相位决定倍率）*/
+    r = trance_reward(type, s->phase != TRANCE_PHASE_IDLE, 0);
+
+    /* ② 槽：统一 +2（灵界中 0）+ type 3 的 +1；两笔都要**跨格反馈**，所以分两次加 */
+    ga = trance_gauge_add(&s->gauge, r.gauge);
+    if (out) {
+        out->gauge_add = ga.delta;
+        out->tier_crossed = ga.crossed_tier;
+    }
+    if (r.gauge_type3) {
+        trance_gauge_add_t g3 = trance_gauge_add(&s->gauge, r.gauge_type3);
+        if (out) {
+            out->gauge_add += g3.delta;
+            if (g3.crossed_tier) out->tier_crossed = 1;
+        }
+    }
+
+    /* ③ 连锁：非 3/4 才推进；返回 1 = 调用方要**额外**再撒一颗 type 3（一手：第 11 颗）*/
+    if (out) out->chain_extra = trance_chain_note(s, type);
+    else (void)trance_chain_note(s, type);
+
+    /* ④ 记账（**按 type 重建**，不是「蓝 / 白」二分，SPEC §2.2）*/
+    ++s->spirits_seen[t];
+    return 1;
+}
+
+int32_t trance_max_point_field_addends(int32_t display_delta, int32_t field_unit_per_display)
+{
+    int64_t v;
+    if (field_unit_per_display <= 0) return display_delta;   /* 单位未知 ⇒ 原样返回（宁可少乘）*/
+    v = (int64_t)display_delta * (int64_t)field_unit_per_display;
+    if (v > 2147483647LL) return 2147483647;
+    if (v < -2147483648LL) return (-2147483647 - 1);
+    return (int32_t)v;
+}
+
+int32_t trance_type3_popup_from_piv(int32_t piv)
+{
+    int32_t q, rem;
+    if (piv <= 0) return 0;
+    /* 一手 `th13:0x438c3d` 起汇编（逐条对上）：
+     *   eax = 0x51eb851f ; imul DWORD PTR ds:0x4be7dc ; sar edx,5 ; (shr ecx,0x1f / add) ⇒ edx = piv / 100
+     *   mov ecx,0xa ; idiv ecx ⇒ 商 eax = (piv/100)/10、余数 edx = (piv/100) % 10
+     *   ⇒ 「向下取整到 10 的倍数」= (piv/100) − 余数 （`SPIRIT:84` 的口径）。*/
+    q = piv / 100;
+    rem = q % 10;
+    return q - rem;
+}
+
+int32_t trance_anm_script(int32_t type, int in_trance)
+{
+    int32_t t = type;
+    if (t == 4) t = 1;                       /* 一手：type 4 与 1 同外形（`0x438ed8`）*/
+    if (t < 0 || t >= TRANCE_TYPE_COUNT) return 0;
+    return t * 6 + (in_trance ? 4 : 1);      /* 一手 `th13:0x43907e`：type*6+1（普通）/ type*6+4（灵界）*/
+}
+
+/* ============================ 救援层 ============================ */
+
+/* 契约顺序：**107 → 117**（用户 2026-09-12 定案，`EC` §5.2）。静态常数组 —— 调用方只能读。*/
+static const int32_t s_rescue_order[TRANCE_RESCUE_COUNT] = { TRANCE_RESCUE_107, TRANCE_RESCUE_117 };
+
+const int32_t *trance_rescue_order(void) { return s_rescue_order; }
+
+int32_t trance_rescue_invuln_frames(int32_t id)
+{
+    /* `EC` §5.2 细则 3 一手口径：107 森罗结界结束给 0.67 s ≈ 40 帧、117 霊撃 40 帧
+     * （117 的一手在 `engine/animal/th17/01-animal-spirits.md` §5.3：40 帧 / 半径 (1−f⁴)×200）。
+     * ⇒ 两家都是 40 ⇒ 汇总 max 恰好 40（不叠加、也不互相截短）。*/
+    if (id == TRANCE_RESCUE_107) return 40;
+    if (id == TRANCE_RESCUE_117) return 40;
+    return 0;
+}
+
+int trance_rescue_resolve(int32_t active_mask, int32_t card_id, trance_rescue_report_t *out)
+{
+    int i;
+
+    /* ★ 分层硬拒（SPEC §7 第一条 / `EC` §4.2）：113 是**事后层**（`+0x14`），
+     *   **禁止**参与救援层（`+0x10`）的决定。这条拒绝是可执行的，不是注释。*/
+    if (card_id == TRANCE_ID) return 0;
+    if (!out) return 0;
+
+    out->any = 0;
+    out->death_cancelled = 0;
+    out->invuln_frames = 0;
+    out->cancel_taken = -1;
+    for (i = 0; i < TRANCE_RESCUE_COUNT; ++i) {
+        out->slots[i].id = s_rescue_order[i];
+        out->slots[i].was_active = ((active_mask >> i) & 1) ? 1 : 0;
+        out->slots[i].consumed = 0;
+        out->slots[i].invuln = 0;
+        out->slots[i].cancel_all = 0;
+        out->slots[i].burst = 0;
+    }
+
+    /* 按契约顺序逐个结算：**一次中弹把救援者全部烧掉**（不挑一个），动作都要执行。*/
+    for (i = 0; i < TRANCE_RESCUE_COUNT; ++i) {
+        trance_rescue_slot_t *sl = &out->slots[i];
+        if (!sl->was_active) continue;
+        sl->consumed = 1;
+        sl->burst = 1;
+        sl->invuln = trance_rescue_invuln_frames(sl->id);
+        out->any = 1;
+        /* 细则 2：**全屏消弹只发生一次**，由先执行且带消弹效果的那张做 ⇒ 第一家有 burst 的拿账。
+         * 107 在顺序里排第一，所以两家都在场时账落在 107（一手契约：107 的结界灵击 = 消弹 + 小樱点）。*/
+        if (out->cancel_taken < 0) {
+            sl->cancel_all = 1;
+            out->cancel_taken = sl->id;
+        }
+        /* 细则 3：无敌走「声明 + 取最大值」（不是求和）*/
+        if (sl->invuln > out->invuln_frames) out->invuln_frames = sl->invuln;
+    }
+
+    /* 细则 4 的反面：**只有至少烧掉一家**才谈得上取消死亡；一家都不在 ⇒ 死亡照走，
+     * 那次死亡之后才会轮到 113 的 `+0x14`（SPEC §4.2 ③ 事后层）。*/
+    out->death_cancelled = out->any ? 1 : 0;
+    return 1;
+}
+
+/* ============================ 击破 → 神灵（记账层） ============================ */
+
+void trance_kill_note(trance_state_t *s, int32_t frame, float x, float y)
+{
+    int32_t n;
+    if (!s) return;
+    n = s->kill_pending;
+    if (n >= TRANCE_KILL_QUEUE_MAX) {
+        ++trance_kill_queue_dropped;
+        return;
+    }
+    /* 只抄**标量**：`ev->enemy` 指针同帧就被 sweep 删掉（`DEATH` §2.4 禁止缓存）⇒ 队列里不放指针。
+     * 整个函数 O(1)：一次数组写 + 计数 ++（清场帧会被调 100–300 次，见 `DEATH` §1.7）。*/
+    s->kill_x[n] = x;
+    s->kill_y[n] = y;
+    s->kill_pending = n + 1;
+    s->kill_last_frame = frame;
+}
+
+int32_t trance_kill_take(trance_state_t *s, int32_t frame, float *out_x, float *out_y, int32_t cap)
+{
+    int32_t n, i, c;
+    (void)frame;
+    if (!s) return 0;
+    n = s->kill_pending;
+    s->kill_pending = 0;
+    if (n <= 0) return 0;
+    if (out_x && out_y && cap > 0) {
+        c = (n < cap) ? n : cap;
+        for (i = 0; i < c; ++i) {          /* 按入队顺序抄位置（帧末撒落要的就是它）*/
+            out_x[i] = s->kill_x[i];
+            out_y[i] = s->kill_y[i];
+        }
+    }
+    return n;
+}
+
+/* ============================ ★ 神灵实体（VM 池）的策略 ============================
+ *
+ * 用户裁决 / 一手数值 / 「为什么策略放这里」见 `trance_core.h` 的那一段（唯一口径来源）。
+ * 本段**全整数**：千分点的缩放、整数像素的方波与平方比较 ⇒ 与文件头「一个 float 都没有」同一条纪律。 */
+
+int32_t trance_spirit_scale_permille(int32_t age)
+{
+    int64_t d;
+
+    if (age <= 0) return TRANCE_SPIRIT_SCALE_START_PERMILLE;
+    if (age >= TRANCE_SPIRIT_SCALE_FRAMES) return TRANCE_SPIRIT_SCALE_END_PERMILLE;
+    /* 线性：START + (END − START) × age / FRAMES（整数除**向零截断**）。
+     * 一手是 VM 里的浮点插值，我们只要「单调变小 + 两个端点逐字照抄」这一条语义；
+     * 千分点的取整误差 ≤ 1/1000（0.001 的缩放差肉眼不可见）。
+     * 例：age=100 ⇒ 1500 − 1100×100/200 = 950；age=199 ⇒ 1500 − 1094 = 406；age=200 ⇒ 400。*/
+    d = (int64_t)(TRANCE_SPIRIT_SCALE_END_PERMILLE - TRANCE_SPIRIT_SCALE_START_PERMILLE) * (int64_t)age;
+    return TRANCE_SPIRIT_SCALE_START_PERMILLE + (int32_t)(d / TRANCE_SPIRIT_SCALE_FRAMES);
+}
+
+int32_t trance_spirit_bob_offset(int32_t age)
+{
+    int32_t h, q;
+
+    if (age < 0) return 0;
+    h = age % TRANCE_SPIRIT_BOB_PERIOD;          /* 0 .. PERIOD−1 */
+    q = TRANCE_SPIRIT_BOB_PERIOD / 4;            /* 一季 = 8 帧（周期 32 帧的 1/4）*/
+    if (q <= 0) return 0;
+    if (h < q) return 0;                         /* 第 1 季：不动（= 出生那一刻就在正位）*/
+    if (h < q * 2) return -TRANCE_SPIRIT_BOB_PX; /* 第 2 季：上浮 1 px */
+    if (h < q * 3) return 0;                     /* 第 3 季：回正 */
+    return TRANCE_SPIRIT_BOB_PX;                 /* 第 4 季：下沉 1 px */
+}
+
+int trance_spirit_expired(int32_t life)
+{
+    return (life <= 0) ? 1 : 0;
+}
+
+int trance_spirit_in_pickup_range(int32_t dx, int32_t dy)
+{
+    int64_t r = (int64_t)TRANCE_SPIRIT_PICK_RADIUS;
+    /* 整数平方比较（**边界含**：dist² ≤ r²）。用 int64 中间量 ⇒ 不会在极端入参上溢出
+     * （dx/dy 是自机与神灵的位移，正常 ≤ 几百 px；这里只是不给自己留坑）。*/
+    return ((int64_t)dx * (int64_t)dx + (int64_t)dy * (int64_t)dy <= r * r) ? 1 : 0;
+}
+
+int32_t trance_spirit_pool_room(int32_t used)
+{
+    if (used < 0) used = 0;
+    if (used >= TRANCE_SPIRIT_POOL) return 0;
+    return TRANCE_SPIRIT_POOL - used;
+}
+
+int32_t trance_spirit_gauge_value(int32_t type, int in_trance)
+{
+    /* 复用奖励表（唯一一份槽账就在那里）⇒ 这里不重写「+2 / type3 +1 / 灵界中 0」。*/
+    trance_reward_t r = trance_reward(type, in_trance, 0);
+    return r.gauge + r.gauge_type3;
+}
+
+/* ============================ 自检 ============================ */
+
+int trance_core_selfcheck(void)
+{
+    int bad = 0;
+    /* 编译期能断言的都写在这里，让「改了常量忘了改语义」在单测里立刻红。*/
+    if (TRANCE_GAUGE_MAX != 600) ++bad;
+    if (TRANCE_GAUGE_TIER != 200) ++bad;
+    if (TRANCE_GAUGE_TIERS != 3) ++bad;
+    if (TRANCE_GAUGE_PER_SPIRIT != 2) ++bad;
+    if (TRANCE_GAUGE_END_PENALTY != 200) ++bad;
+    if (TRANCE_GAUGE_MIN_ENTER != 200) ++bad;
+    if (TRANCE_COOLDOWN_FRAMES != 30) ++bad;
+    if (TRANCE_CHAIN_WINDOW != 60) ++bad;
+    if (TRANCE_CHAIN_THRESHOLD != 10) ++bad;
+    if (TRANCE_KILL_SPIRIT_TYPE != 1) ++bad;        /* SPEC §2.2：击破 = 通道 B ⇒ type 1 */
+    if (TRANCE_KILL_SPIRITS_PER_KILL != 1) ++bad;
+    if (TRANCE_DURATION_FRAMES_MAX != 600) ++bad;
+    if (TRANCE_TYPE_COUNT != 4) ++bad;
+    if (TRANCE_RESCUE_COUNT != 2) ++bad;
+    if (s_rescue_order[0] != 107 || s_rescue_order[1] != 117) ++bad;   /* 顺序契约不许改 */
+    if (TRANCE_RESCUE_107 == TRANCE_ID || TRANCE_RESCUE_117 == TRANCE_ID) ++bad;  /* 113 不在这层 */
+
+    /* ★ 行为不变式：连锁是「第 10 颗触发」（一手 `+0x8838++ ; if (> 9)`）——
+     * 常量对了但比较符写错（> 而不是 >=）只有跑一遍才看得出来 ⇒ 在这里跑一遍。
+     * 纯计算、不改全局；卡侧 `on_load` 每次都会调本函数，成本 = 10 次加法。*/
+    {
+        trance_state_t t;
+        int32_t i;
+        memset(&t, 0, sizeof t);
+        for (i = 1; i < TRANCE_CHAIN_THRESHOLD; ++i) {
+            if (trance_chain_note(&t, 1) != 0) ++bad;      /* 第 1..9 颗都不许触发 */
+        }
+        if (i != TRANCE_CHAIN_THRESHOLD) ++bad;
+        if (trance_chain_note(&t, 1) != 1) ++bad;          /* 第 10 颗必须触发 */
+        if (t.chain_count != TRANCE_CHAIN_THRESHOLD) ++bad;
+        if (trance_chain_note(&t, 3) != 0) ++bad;          /* type 3 自身不推进（一手同一句）*/
+    }
+
+    /* ★ 行为不变式：**神灵实体池的策略**（用户 2026-09-12 裁决的四条）——
+     * 常量对了但曲线 / 边界的写法错了（例如「到点」判成 `life < 0`、半径判成 `<` 而不是 `<=`）
+     * 只有跑一遍才看得出来 ⇒ 在这里各跑一次端点。
+     *   ① 缩小曲线：出生 1.5、200 帧后 0.4（一手 `astral.anm` script1）；
+     *   ② 到期：剩余生命 ≤ 0 才算到点（寿命 480 帧照抄一手）。*/
+    if (TRANCE_SPIRIT_SCALE_START_PERMILLE != 1500) ++bad;
+    if (TRANCE_SPIRIT_SCALE_END_PERMILLE != 400) ++bad;
+    if (TRANCE_SPIRIT_SCALE_FRAMES != 200) ++bad;
+    if (TRANCE_SPIRIT_LIFE_FRAMES != 480) ++bad;
+    if (trance_spirit_scale_permille(0) != TRANCE_SPIRIT_SCALE_START_PERMILLE) ++bad;
+    if (trance_spirit_scale_permille(TRANCE_SPIRIT_SCALE_FRAMES) != TRANCE_SPIRIT_SCALE_END_PERMILLE) ++bad;
+    if (trance_spirit_scale_permille(TRANCE_SPIRIT_SCALE_FRAMES / 2)
+        >= trance_spirit_scale_permille(0)) ++bad;         /* 中途必须已经变小 */
+    if (trance_spirit_scale_permille(TRANCE_SPIRIT_LIFE_FRAMES) != TRANCE_SPIRIT_SCALE_END_PERMILLE) ++bad;
+    if (trance_spirit_expired(TRANCE_SPIRIT_LIFE_FRAMES) != 0) ++bad;
+    if (trance_spirit_expired(1) != 0) ++bad;
+    if (trance_spirit_expired(0) != 1) ++bad;              /* ← 边界：0 就是到点 */
+    if (trance_spirit_expired(-1) != 1) ++bad;
+    if (trance_spirit_bob_offset(0) != 0) ++bad;           /* 出生那一刻不许有偏移 */
+    if (trance_spirit_in_pickup_range(0, 0) != 1) ++bad;
+    if (trance_spirit_in_pickup_range(TRANCE_SPIRIT_PICK_RADIUS, 0) != 1) ++bad;      /* 边界含 */
+    if (trance_spirit_in_pickup_range(TRANCE_SPIRIT_PICK_RADIUS + 1, 0) != 0) ++bad;
+    if (trance_spirit_pool_room(0) != TRANCE_SPIRIT_POOL) ++bad;
+    if (trance_spirit_pool_room(TRANCE_SPIRIT_POOL) != 0) ++bad;
+    if (trance_spirit_gauge_value(TRANCE_KILL_SPIRIT_TYPE, 0) != TRANCE_GAUGE_PER_SPIRIT) ++bad;
+    if (trance_spirit_gauge_value(TRANCE_KILL_SPIRIT_TYPE, 1) != 0) ++bad;             /* 灵界中不加槽 */
+    return bad;
+}

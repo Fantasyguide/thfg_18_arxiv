@@ -1,4 +1,4 @@
-/* season_core.h —— 季节（TH16，card-expand id 119）的**纯逻辑**：档位阈值、五副季节释放档位表、消耗规则。
+/* season_core.h —— 季节（TH16，card-expand id 116）的**纯逻辑**：档位阈值、五副季节释放档位表、消耗规则。
  * 纯 C11、**不含任何引擎地址**；主机单测 `tests/test_season_core.c`（`make test-host`）。
  *
  * 语义来源（一手，TH16 v1.00a）：`engine/season/th16/01-season-data-and-tables.md`

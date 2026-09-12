@@ -95,6 +95,130 @@
 #define CE_ANM_ABILITY_SPRITE_FONT2_PERCENT         200   /* entry98 */
 #define CE_ANM_ABILITY_SPRITE_FONT2_DOT             201   /* entry99 */
 #define CE_ANM_ABILITY_SPRITE_FONT2_PLUS            202   /* entry100 */
+#define CE_ANM_ABILITY_SPRITE_WOLF_0                203   /* entry101 */
+#define CE_ANM_ABILITY_SPRITE_WOLF_1                204   /* entry102 */
+#define CE_ANM_ABILITY_SPRITE_WOLF_2                205   /* entry103 */
+#define CE_ANM_ABILITY_SPRITE_OTTER_0               206   /* entry104 */
+#define CE_ANM_ABILITY_SPRITE_OTTER_1               207   /* entry105 */
+#define CE_ANM_ABILITY_SPRITE_OTTER_2               208   /* entry106 */
+#define CE_ANM_ABILITY_SPRITE_EAGLE_0               209   /* entry107 */
+#define CE_ANM_ABILITY_SPRITE_EAGLE_1               210   /* entry108 */
+#define CE_ANM_ABILITY_SPRITE_EAGLE_2               211   /* entry109 */
+#define CE_ANM_ABILITY_SPRITE_FISH_BOMB             212   /* entry110 */
+#define CE_ANM_ABILITY_SPRITE_FISH_LIFE             213   /* entry111 */
+#define CE_ANM_ABILITY_SPRITE_FISH_POWER            214   /* entry112 */
+#define CE_ANM_ABILITY_SPRITE_FISH_POINT            215   /* entry113 */
+#define CE_ANM_ABILITY_SPRITE_GAUGE_FRAME           216   /* entry114 */
+#define CE_ANM_ABILITY_SPRITE_AURA_EAGLE_0          217   /* entry115 */
+#define CE_ANM_ABILITY_SPRITE_AURA_EAGLE_1          218   /* entry116 */
+#define CE_ANM_ABILITY_SPRITE_AURA_EAGLE_2          219   /* entry117 */
+#define CE_ANM_ABILITY_SPRITE_AURA_EAGLE_3          220   /* entry118 */
+#define CE_ANM_ABILITY_SPRITE_AURA_EAGLE_4          221   /* entry119 */
+#define CE_ANM_ABILITY_SPRITE_AURA_EAGLE_5          222   /* entry120 */
+#define CE_ANM_ABILITY_SPRITE_AURA_EAGLE_6          223   /* entry121 */
+#define CE_ANM_ABILITY_SPRITE_AURA_EAGLE_7          224   /* entry122 */
+#define CE_ANM_ABILITY_SPRITE_AURA_WOLF_0           225   /* entry123 */
+#define CE_ANM_ABILITY_SPRITE_AURA_WOLF_1           226   /* entry124 */
+#define CE_ANM_ABILITY_SPRITE_AURA_WOLF_2           227   /* entry125 */
+#define CE_ANM_ABILITY_SPRITE_AURA_WOLF_3           228   /* entry126 */
+#define CE_ANM_ABILITY_SPRITE_AURA_WOLF_4           229   /* entry127 */
+#define CE_ANM_ABILITY_SPRITE_AURA_WOLF_5           230   /* entry128 */
+#define CE_ANM_ABILITY_SPRITE_AURA_WOLF_6           231   /* entry129 */
+#define CE_ANM_ABILITY_SPRITE_AURA_WOLF_7           232   /* entry130 */
+#define CE_ANM_ABILITY_SPRITE_AURA_OTTER_0          233   /* entry131 */
+#define CE_ANM_ABILITY_SPRITE_AURA_OTTER_1          234   /* entry132 */
+#define CE_ANM_ABILITY_SPRITE_AURA_OTTER_2          235   /* entry133 */
+#define CE_ANM_ABILITY_SPRITE_AURA_OTTER_3          236   /* entry134 */
+#define CE_ANM_ABILITY_SPRITE_AURA_OTTER_4          237   /* entry135 */
+#define CE_ANM_ABILITY_SPRITE_AURA_OTTER_5          238   /* entry136 */
+#define CE_ANM_ABILITY_SPRITE_AURA_OTTER_6          239   /* entry137 */
+#define CE_ANM_ABILITY_SPRITE_AURA_OTTER_7          240   /* entry138 */
+#define CE_ANM_ABILITY_SPRITE_OTTER_ORB             241   /* entry139 */
+#define CE_ANM_ABILITY_SPRITE_STRIKE_RING           242   /* entry140 */
+#define CE_ANM_ABILITY_SPRITE_SOUL_0                243   /* entry141 */
+#define CE_ANM_ABILITY_SPRITE_SOUL_1                244   /* entry142 */
+#define CE_ANM_ABILITY_SPRITE_SOUL_2                245   /* entry143 */
+#define CE_ANM_ABILITY_SPRITE_SOUL_3                246   /* entry144 */
+#define CE_ANM_ABILITY_SPRITE_SOUL_4                247   /* entry145 */
+#define CE_ANM_ABILITY_SPRITE_SOUL_5                248   /* entry146 */
+#define CE_ANM_ABILITY_SPRITE_SOUL_6                249   /* entry147 */
+#define CE_ANM_ABILITY_SPRITE_SOUL_7                250   /* entry148 */
+#define CE_ANM_ABILITY_SPRITE_SOUL_8                251   /* entry149 */
+#define CE_ANM_ABILITY_SPRITE_SOUL_9                252   /* entry150 */
+#define CE_ANM_ABILITY_SPRITE_SOUL_10               253   /* entry151 */
+#define CE_ANM_ABILITY_SPRITE_ITEM_P                254   /* entry152 */
+#define CE_ANM_ABILITY_SPRITE_ITEM_MONEY            255   /* entry153 */
+#define CE_ANM_ABILITY_SPRITE_ITEM_LIFE             256   /* entry154 */
+#define CE_ANM_ABILITY_SPRITE_ITEM_BOMB             257   /* entry155 */
+#define CE_ANM_ABILITY_SPRITE_FLAME_0               258   /* entry156 */
+#define CE_ANM_ABILITY_SPRITE_FLAME_1               259   /* entry157 */
+#define CE_ANM_ABILITY_SPRITE_FLAME_2               260   /* entry158 */
+#define CE_ANM_ABILITY_SPRITE_FLAME_3               261   /* entry159 */
+#define CE_ANM_ABILITY_SPRITE_FLAME_4               262   /* entry160 */
+#define CE_ANM_ABILITY_SPRITE_FLAME_5               263   /* entry161 */
+#define CE_ANM_ABILITY_SPRITE_FLAME_6               264   /* entry162 */
+#define CE_ANM_ABILITY_SPRITE_FLAME_7               265   /* entry163 */
+#define CE_ANM_ABILITY_SPRITE_FLAME_8               266   /* entry164 */
+#define CE_ANM_ABILITY_SPRITE_FLAME_9               267   /* entry165 */
+#define CE_ANM_ABILITY_SPRITE_FLAME_10              268   /* entry166 */
+#define CE_ANM_ABILITY_SPRITE_FLAME_11              269   /* entry167 */
+#define CE_ANM_ABILITY_SPRITE_ICON_WOLF             270   /* entry168 */
+#define CE_ANM_ABILITY_SPRITE_ICON_OTTER            271   /* entry169 */
+#define CE_ANM_ABILITY_SPRITE_ICON_EAGLE            272   /* entry170 */
+#define CE_ANM_ABILITY_SPRITE_ICON_FISH_BOMB        273   /* entry171 */
+#define CE_ANM_ABILITY_SPRITE_ICON_FISH_LIFE        274   /* entry172 */
+#define CE_ANM_ABILITY_SPRITE_ICON_FISH_POWER       275   /* entry173 */
+#define CE_ANM_ABILITY_SPRITE_ICON_FISH_POINT       276   /* entry174 */
+#define CE_ANM_ABILITY_SPRITE_CARD_BOMB             277   /* entry175 */
+#define CE_ANM_ABILITY_SPRITE_CARD_LIFE             278   /* entry176 */
+#define CE_ANM_ABILITY_SPRITE_CARD_MONEY            279   /* entry177 */
+#define CE_ANM_ABILITY_SPRITE_FISH_MONEY            280   /* entry178 */
+#define CE_ANM_ABILITY_SPRITE_ICON_FISH_MONEY       281   /* entry179 */
+#define CE_ANM_ABILITY_SPRITE_BEASTAP_A             282   /* entry180 */
+#define CE_ANM_ABILITY_SPRITE_BEASTAP_B             283   /* entry181 */
+#define CE_ANM_ABILITY_SPRITE_EAGLE_BEAM            284   /* entry182 */
+#define CE_ANM_ABILITY_SPRITE_UFO_RED_0             285   /* entry183 */
+#define CE_ANM_ABILITY_SPRITE_UFO_RED_1             286   /* entry184 */
+#define CE_ANM_ABILITY_SPRITE_UFO_RED_2             287   /* entry185 */
+#define CE_ANM_ABILITY_SPRITE_UFO_RED_3             288   /* entry186 */
+#define CE_ANM_ABILITY_SPRITE_UFO_BLUE_0            289   /* entry187 */
+#define CE_ANM_ABILITY_SPRITE_UFO_BLUE_1            290   /* entry188 */
+#define CE_ANM_ABILITY_SPRITE_UFO_BLUE_2            291   /* entry189 */
+#define CE_ANM_ABILITY_SPRITE_UFO_BLUE_3            292   /* entry190 */
+#define CE_ANM_ABILITY_SPRITE_UFO_GREEN_0           293   /* entry191 */
+#define CE_ANM_ABILITY_SPRITE_UFO_GREEN_1           294   /* entry192 */
+#define CE_ANM_ABILITY_SPRITE_UFO_GREEN_2           295   /* entry193 */
+#define CE_ANM_ABILITY_SPRITE_UFO_GREEN_3           296   /* entry194 */
+#define CE_ANM_ABILITY_SPRITE_UFO_RAINBOW_0         297   /* entry195 */
+#define CE_ANM_ABILITY_SPRITE_UFO_RAINBOW_1         298   /* entry196 */
+#define CE_ANM_ABILITY_SPRITE_UFO_RAINBOW_2         299   /* entry197 */
+#define CE_ANM_ABILITY_SPRITE_UFO_RAINBOW_3         300   /* entry198 */
+#define CE_ANM_ABILITY_SPRITE_TOKEN_RED_0           301   /* entry199 */
+#define CE_ANM_ABILITY_SPRITE_TOKEN_RED_1           302   /* entry200 */
+#define CE_ANM_ABILITY_SPRITE_TOKEN_BLUE_0          303   /* entry201 */
+#define CE_ANM_ABILITY_SPRITE_TOKEN_BLUE_1          304   /* entry202 */
+#define CE_ANM_ABILITY_SPRITE_TOKEN_GREEN_0         305   /* entry203 */
+#define CE_ANM_ABILITY_SPRITE_TOKEN_GREEN_1         306   /* entry204 */
+#define CE_ANM_ABILITY_SPRITE_TOKEN_RBRED_0         307   /* entry205 */
+#define CE_ANM_ABILITY_SPRITE_TOKEN_RBRED_1         308   /* entry206 */
+#define CE_ANM_ABILITY_SPRITE_TOKEN_RBBLUE_0        309   /* entry207 */
+#define CE_ANM_ABILITY_SPRITE_TOKEN_RBBLUE_1        310   /* entry208 */
+#define CE_ANM_ABILITY_SPRITE_TOKEN_RBGREEN_0       311   /* entry209 */
+#define CE_ANM_ABILITY_SPRITE_TOKEN_RBGREEN_1       312   /* entry210 */
+#define CE_ANM_ABILITY_SPRITE_SPIRIT_PLAIN_0        313   /* entry211 */
+#define CE_ANM_ABILITY_SPRITE_SPIRIT_PLAIN_1        314   /* entry212 */
+#define CE_ANM_ABILITY_SPRITE_SPIRIT_TRANCE_0       315   /* entry213 */
+#define CE_ANM_ABILITY_SPRITE_SPIRIT_TRANCE_1       316   /* entry214 */
+#define CE_ANM_ABILITY_SPRITE_SPIRIT_TRANCE_2       317   /* entry215 */
+#define CE_ANM_ABILITY_SPRITE_SPIRIT_TRANCE_3       318   /* entry216 */
+#define CE_ANM_ABILITY_SPRITE_TRANCE_GAUGE_TOP      319   /* entry217 */
+#define CE_ANM_ABILITY_SPRITE_TRANCE_GAUGE_BAR      320   /* entry218 */
+#define CE_ANM_ABILITY_SPRITE_TRANCE_GAUGE_BAR2     321   /* entry219 */
+#define CE_ANM_ABILITY_SPRITE_TRANCE_GAUGE_MARK     322   /* entry220 */
+#define CE_ANM_ABILITY_SPRITE_FAITH_DOT             323   /* entry221 */
+#define CE_ANM_ABILITY_SPRITE_SAKURA_POINT          324   /* entry222 */
+#define CE_ANM_ABILITY_SPRITE_SAKURA_SMALL          325   /* entry223 */
+#define CE_ANM_ABILITY_SPRITE_TPOINT                326   /* entry224 */
 #define CE_ANM_ABILITY_SCRIPT_REVERSE_FLASH          68
 #define CE_ANM_ABILITY_SCRIPT_ROYAL_FLUSH            69
 #define CE_ANM_ABILITY_SCRIPT_ROYAL_SHOW             70
@@ -164,3 +288,55 @@
 #define CE_ANM_ABILITY_SCRIPT_SEASON_LASER_HIT      134
 #define CE_ANM_ABILITY_SCRIPT_SEASON_RING_IN12      135
 #define CE_ANM_ABILITY_SCRIPT_HUD_GLYPH             136
+#define CE_ANM_ABILITY_SCRIPT_ANIMAL_WOLF           137
+#define CE_ANM_ABILITY_SCRIPT_ANIMAL_OTTER          138
+#define CE_ANM_ABILITY_SCRIPT_ANIMAL_EAGLE          139
+#define CE_ANM_ABILITY_SCRIPT_FISH_BOMB             140
+#define CE_ANM_ABILITY_SCRIPT_FISH_LIFE             141
+#define CE_ANM_ABILITY_SCRIPT_FISH_POWER            142
+#define CE_ANM_ABILITY_SCRIPT_FISH_POINT            143
+#define CE_ANM_ABILITY_SCRIPT_GAUGE_FRAME           144
+#define CE_ANM_ABILITY_SCRIPT_GAUGE_ICON            145
+#define CE_ANM_ABILITY_SCRIPT_AURA_WOLF             146
+#define CE_ANM_ABILITY_SCRIPT_AURA_OTTER            147
+#define CE_ANM_ABILITY_SCRIPT_AURA_EAGLE            148
+#define CE_ANM_ABILITY_SCRIPT_OTTER_ORB             149
+#define CE_ANM_ABILITY_SCRIPT_STRIKE                150
+#define CE_ANM_ABILITY_SCRIPT_STRIKE_RED            151
+#define CE_ANM_ABILITY_SCRIPT_STRIKE_GREEN          152
+#define CE_ANM_ABILITY_SCRIPT_STRIKE_PURPLE         153
+#define CE_ANM_ABILITY_SCRIPT_SLOT_SOUL             154
+#define CE_ANM_ABILITY_SCRIPT_SELF_AURA             155
+#define CE_ANM_ABILITY_SCRIPT_SLOT_FLAME            156
+#define CE_ANM_ABILITY_SCRIPT_HYPER_BAR_FRAME       157
+#define CE_ANM_ABILITY_SCRIPT_HYPER_BAR_FILL        158
+#define CE_ANM_ABILITY_SCRIPT_AURA_RAINBOW          159
+#define CE_ANM_ABILITY_SCRIPT_BEASTAP               160
+#define CE_ANM_ABILITY_SCRIPT_BEASTAP_A             161
+#define CE_ANM_ABILITY_SCRIPT_BEASTAP_B             162
+#define CE_ANM_ABILITY_SCRIPT_EAGLE_BEAM            163
+#define CE_ANM_ABILITY_SCRIPT_UFO_RED               164
+#define CE_ANM_ABILITY_SCRIPT_UFO_BLUE              165
+#define CE_ANM_ABILITY_SCRIPT_UFO_GREEN             166
+#define CE_ANM_ABILITY_SCRIPT_UFO_RAINBOW           167
+#define CE_ANM_ABILITY_SCRIPT_UFO_TOKEN_RED         168
+#define CE_ANM_ABILITY_SCRIPT_UFO_TOKEN_BLUE        169
+#define CE_ANM_ABILITY_SCRIPT_UFO_TOKEN_GREEN       170
+#define CE_ANM_ABILITY_SCRIPT_UFO_TOKEN_RBRED       171
+#define CE_ANM_ABILITY_SCRIPT_UFO_TOKEN_RBBLUE      172
+#define CE_ANM_ABILITY_SCRIPT_UFO_TOKEN_RBGREEN     173
+#define CE_ANM_ABILITY_SCRIPT_TRANCE_GAUGE          174
+#define CE_ANM_ABILITY_SCRIPT_TRANCE_GAUGE_FRAME    175
+#define CE_ANM_ABILITY_SCRIPT_TRANCE_GAUGE_FILL     176
+#define CE_ANM_ABILITY_SCRIPT_TRANCE_GAUGE_FRAME_B  177
+#define CE_ANM_ABILITY_SCRIPT_TRANCE_GAUGE_MARK     178
+#define CE_ANM_ABILITY_SCRIPT_SPIRIT_PLAIN          179
+#define CE_ANM_ABILITY_SCRIPT_SPIRIT_PLAIN_RING     180
+#define CE_ANM_ABILITY_SCRIPT_SPIRIT_PLAIN_CORE     181
+#define CE_ANM_ABILITY_SCRIPT_SPIRIT_TRANCE         182
+#define CE_ANM_ABILITY_SCRIPT_SPIRIT_TRANCE_RING    183
+#define CE_ANM_ABILITY_SCRIPT_SPIRIT_TRANCE_GLOW    184
+#define CE_ANM_ABILITY_SCRIPT_FAITH_DOT             185
+#define CE_ANM_ABILITY_SCRIPT_SAKURA_POINT          186
+#define CE_ANM_ABILITY_SCRIPT_SAKURA_SMALL          187
+#define CE_ANM_ABILITY_SCRIPT_TPOINT                188

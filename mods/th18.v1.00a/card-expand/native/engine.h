@@ -345,6 +345,26 @@ typedef struct { int32_t prev; int32_t cur; float cur_f; } ce_timer_t;   /* zTim
                                                  的压栈序：push script / push off / push ecx / push off / push ecx）。
                                                  从 PLAYER->inner.equipment 的 12 个槽找空位；最后一参是 **ability.anm** 的脚本号。
                                                  返回 zPlayerOption*（满了返回 NULL）；顺手把子机的 anm vm id 写进 card+0x1c。AUDIT U1 */
+#define CE_FN_ALLOCATE_NEW_ENEMY 0x42d7d0 /* ★EnemyManager__allocate_new_enemy：thiscall(mgr; name, spawn*, unused) ★ret 0xc
+                                              —— 一手：`0x42d7d6 push 0x683c` 分配 → `0x42d7ed call 0x42e100`
+                                              Enemy__constructor(名字表 = `enemy+0x1218` 二分查 ECL 子程序，未命中写 -1)
+                                              → 拷 spawn 字段 → `0x42d9e7` 挂 `mgr+0x190` 链表、`0x42d9ef inc [mgr+0x198]`、
+                                              `0x42d9ed mov eax,esi` **返回敌人指针**。零售调用点 `0x40ff46`（CardLilyWhite：
+                                              `push 垃圾 / mov ecx,mgr / push &spawn / push 名字`）。★ 死亡栈里禁止调（DEATH §2.4）。*/
+/* spawn 结构（0x54 字节；一手字段表 plans/2026-09-10-ufo-card-feasibility.md §1.1）*/
+#define CE_SPAWN_POS        0x00   /* float3 出生世界坐标 → `enemy+0x12b4`（zEnemyData.abs_pos）*/
+#define CE_SPAWN_SCORE      0x0c   /* int32 score_reward → `enemy+0x621c`*/
+#define CE_SPAWN_MAIN_DROP  0x10   /* int32 主掉落道具类型（0 = 不掉落）→ `enemy+0x623c`（zEnemyDrop.main_drop）*/
+#define CE_SPAWN_LIFE       0x14   /* int32 → `enemy+0x6220/0x6224/0x6228`（current/maximum/remaining）
+                                    * ⚠ >= 1000 时 `0x42d8f6` 会置 `flags_lo |= 0x40000000`（锁定黑名单，读点未定位）
+                                    * ⇒ 自建载体一律钳 < 1000（108 spec §3.5、youkai_core.h 的 yk_clamp_spawn_life）*/
+#define CE_SPAWN_FLAG_A     0x18   /* int32，仅 bit0 → `flags_lo |= 0x80000`*/
+#define CE_SPAWN_FLAG_B     0x1c   /* int32，仅 bit0 → `flags_lo |= 0x4000000`*/
+#define CE_SPAWN_ECL_I      0x20   /* int32[8]  → ECL `$I0..$I7`*/
+#define CE_SPAWN_ECL_F      0x40   /* float[4]  → ECL `$F0..$F3`*/
+#define CE_SPAWN_PARENT     0x50   /* int32 parent_enemy_id → `enemy+0x6834`*/
+#define CE_SPAWN_SIZE       0x54
+
 #define CE_FN_TICK_SHOOTERS_FOR_CARD 0x40a9c0 /* stdcall(option, short_timer, long_timer, sht_set_index) ret 0x10：
                                                  取 *(int*)(PLAYER+0x47940)+0xe0+idx*4 那组 shooter，逐条判
                                                  `timer % fire_rate == start_delay` 就发；弹从 option+0x5c/+0x60 出膛。
@@ -433,6 +453,15 @@ typedef struct { int32_t prev; int32_t cur; float cur_f; int32_t speed_src; uint
                                                 0x44685c 映射表 + 0x446830 跳表；spawn 0x447051 写 */
 #define CE_ITEM_MAG_SPEED         0xc80      /* float：磁力吸附速度（= player+0x47988；见 CE_ITEM_STATE 出处）*/
 #define CE_ITEM_TIMER             0xc84      /* int：延迟/倒计时（spawn 第 6 栈参；state 1/5 各用其一，0x445b7e / 0x445af3）*/
+#define CE_ITEM_SOUND_ID          0xc90      /* int32：**出生 intro 结束那一帧**由引擎播的 SE id（<0 = 不播）。
+                                                一手 `th18:0x447323`：`eax=[edi+0xc90]; if (eax>=0) call 0x476be0(eax,…)`
+                                                （0x476be0 = 12 通道的 SE 播放器）。零售 spawn 把它**恒写 -1**
+                                                （`th18:0x447057` / `0x447295`）⇒ 零售道具这条音是**死的**；
+                                                本卡拿它当「道具出现」的播音（每颗各自在自己的 intro 末尾响）。
+                                                ★ 只有 type {1,2} 的 intro-end 走这条路（`0x4472ee`），
+                                                别的 type 在 `0x4472e4` 段直接跳走 ⇒ 对它们写这个字段无效。
+                                                ⚠️ **2026-09-10 实跑结论：本卡往这里写 SE id（0x0d / 0x0e 都试过）
+                                                听不到声音** ⇒ 改在 C 侧 `ce_play_sound`。字段本身的一手结论保留备查。*/
 #define CE_FN_POLAR_TO_VEL         0x447430   /* FUN_00447430：thiscall(float3 *out; angle, speed) `ret 8` —— FSINCOS 一次算出
                                                 (cos·speed, sin·speed)。道具的吸引飞行 / TH16 的弹出生都用它（TH16 同款 `0x430df0`）。
                                                 卡里用 `ce_polar_to_vel()`，别自己写 sin/cos（DLL 不链 libm）*/
@@ -446,7 +475,7 @@ typedef struct { int32_t prev; int32_t cur; float cur_f; int32_t speed_src; uint
 #define CE_ITEM_SLOWDOWN          0xe6bb14   /* zItemManager.lolk_item_slowdown_factor（float）—— TH15 擦弹减速的残骸：
                                                 引擎每帧照旧把飘落态位移与重力增量乘它、照旧 +0.1/帧 回 1.0，
                                                 但 TH18 自己从不写 0.3（全 exe 6 处引用：1 写 1.0 / 3 读 / 恢复 1 读 1 写）。
-                                                ★ 绀珠传卡（118）每帧写 0.3 就是在复活 TH15 的机制；卡里的季节点也读它，
+                                                ★ 绀珠传卡（115）每帧写 0.3 就是在复活 TH15 的机制；卡里的季节点也读它，
                                                 免得同一屏上 P 点慢了、季节点不慢。见 `engine/player/th18/02` */
 #define CE_ITEM_MANAGER()         (*(uint8_t **)CE_ADDR_ITEM_MANAGER_PTR)
 

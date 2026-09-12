@@ -1,4 +1,4 @@
-/* lolk_core.c —— 绀珠传（id 118）纯逻辑实现。语义见 lolk_core.h 头注。 */
+/* lolk_core.c —— 绀珠传（id 115）纯逻辑实现。语义见 lolk_core.h 头注。 */
 #include "lolk_core.h"
 
 #include <string.h>

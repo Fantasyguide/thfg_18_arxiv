@@ -55,7 +55,10 @@ static void dismiss(ce_card_t *c, const char *why)
 {
     fl_state_t *s = ce_state(c, fl_state_t);
     if (!s) return;
-    if (s->anm_id || s->ball_id || s->bar_id || s->intro_left) {
+    /* 同青眼：这个条件是「有没有东西要清」的判据，必须点名每一个会被删的 VM —— `bar_bg_id` 原来漏在外面
+     * （底槽起成功、填充起失败时它非 0 而 `bar_id` 是 0 ⇒ 只按 bar_id 判断会留下底槽）。
+     * 2026-09-12 删卡审计补的防线，当前调用顺序下不可复现。*/
+    if (s->anm_id || s->ball_id || s->bar_bg_id || s->bar_id || s->intro_left) {
         ce_anm_delete(s->anm_id);
         ce_anm_delete(s->ball_id);
         bar_destroy(s, 0);

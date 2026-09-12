@@ -15,15 +15,14 @@
  *
  * ★ 只在 CURRENT_LIVES > 0 时多扣，残机永远不会被我们压到负数（引擎自己那一下照常）。
  *
- * 【掉落 ×2】走 SDK 事件 on_enemy_drop_pre（断点 ce_enemy_drop @ 0x430510 入口，AUDIT §S）：
- * 在引擎**撒之前**把附加掉落表（zEnemyDrop+0x04，dropExtra 那 20 格）翻倍，撒的活还是引擎自己干 ——
- * 各 type 的角度、速度、位置都不用我们操心。
- * （+0x30 那个槽是「撒完之后」才广播、且广播完就 memset 清零，在那里改已经晚了。）
- * ★ 2026-09-07 修：小怪的掉落是 dropMain 给的**主掉落**（zEnemyDrop+0x00，一颗），引擎在调 0x430510 之前就撒了，
- *   之前只翻附加表 ⇒ 小怪看着没加倍。现在把主掉落类型补进附加表对应格（+1），引擎的附加循环再撒一颗（double_core.c，AUDIT S10）。
+ * 【掉落 ×2】2026-09-12 改成**声明式**（EVENTS-CONTRACT.md §2）：本卡只 `ce_drop_mult_set(69, 2000)`
+ * 声明「我的倍数是 ×2」，乘法由 SDK 的掉落层在敌人撒之前**一次性**作用在「最终总数」上：
+ *     final[t] = ( base[t] + Σ 各卡的加法 ) × Π 各卡的乘数       （base[main] = counts[main] + 1）
+ * ⇒ 不再依赖卡链顺序，且**别的卡加到的那颗也会被翻倍**（`(1+1)×2 = 4`，旧实现给 `1×2+1 = 3`）。
+ * 小怪的主掉落（dropMain 一颗，引擎在调 0x430510 **之前**就撒了）也由层里的 `+1` 补偿覆盖
+ * —— 旧实现把这条补偿写在卡自己的 `dbl_apply` 里，现在搬进了层（单一落笔，见 AUDIT §S10）。
  */
 #include "sdk.h"
-#include "double_core.h"
 
 static int on_death_after_deathbomb(ce_card_t *c, uint32_t acc)
 {
@@ -37,13 +36,14 @@ static int on_death_after_deathbomb(ce_card_t *c, uint32_t acc)
     return 0;                                        /* 不救命，只记账 */
 }
 
-static void on_enemy_drop_pre(ce_card_t *c, int32_t *counts)
+/* 声明 ×2（千分比 2000）。声明是粘性的：绑定/每关 on_load 时登记一次，
+ * 删卡（倒吊人 / 原版空白卡）时 CE_CARD 的 on_run_reset / opdelete 自动 `ce_layer_drop_card()` 清掉。*/
+static int on_load(ce_card_t *c)
 {
     (void)c;
-    int32_t main_drop = *ce_drop_main(counts);
-    int slot = dbl_apply(main_drop, counts);
-    if (slot >= 0) ce_log("double: main drop type %d already spawned once, +1 via ex_drop[%d]", main_drop, slot);
+    ce_drop_mult_set(69, 2000);
+    return 0;
 }
 
-CE_CARD(69, .on_death_after_deathbomb = on_death_after_deathbomb,
-            .on_enemy_drop_pre = on_enemy_drop_pre);
+CE_CARD(69, .on_load = on_load,
+            .on_death_after_deathbomb = on_death_after_deathbomb);

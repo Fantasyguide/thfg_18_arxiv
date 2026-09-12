@@ -12,7 +12,7 @@ Windows 那边只负责 `git pull`。
 不 fetch/pull/commit，也不要求目标仓库工作区干净（`patch.js` / 侧车 `.json` / README 是那边手工维护的，同步集里没有它们）。
 
 只覆盖**生成物**：两个 patch 的 th18.v1.00a.js、三个 patch 的 files.js、DLL、_255 的 th18/cards.js、th18/voice.js 与
-th18/voice/*.wav 与 th18/*.sht（目录镜像：dist 里没有就删）与重建的 th18/abcard.anm / ability.anm、_test 的 cards_dev.js、
+th18/voice/*.wav 与 th18/*.sht（目录镜像：dist 里没有就删）与重建的 th18/abcard.anm / ability.anm / pl0X.anm、_test 的 cards_dev.js、
 _devstage 的 patch.js + 六关 ECL（这个 patch 整个以 renkolab 为准）。
 patch.js / 侧车 .json / README 是 modkit 里手工维护的文案，这里**不碰**。
 """
@@ -30,6 +30,11 @@ MAP = {                                   # dist 里的 → modkit 里的
     "patch-step3/th18/cards.js":  "thcrap/repos/Renko_1055/th18_card_expand_255/th18/cards.js",
     "patch-step3/th18/abcard.anm": "thcrap/repos/Renko_1055/th18_card_expand_255/th18/abcard.anm",
     "patch-step3/th18/ability.anm": "thcrap/repos/Renko_1055/th18_card_expand_255/th18/ability.anm",
+    "patch-step3/th18/default.ecl": "thcrap/repos/Renko_1055/th18_card_expand_255/th18/default.ecl",
+    "patch-step3/th18/pl00.anm":   "thcrap/repos/Renko_1055/th18_card_expand_255/th18/pl00.anm",
+    "patch-step3/th18/pl01.anm":   "thcrap/repos/Renko_1055/th18_card_expand_255/th18/pl01.anm",
+    "patch-step3/th18/pl02.anm":   "thcrap/repos/Renko_1055/th18_card_expand_255/th18/pl02.anm",
+    "patch-step3/th18/pl03.anm":   "thcrap/repos/Renko_1055/th18_card_expand_255/th18/pl03.anm",
     "patch-test/th18.v1.00a.js":  "thcrap/repos/Renko_1055/th18_card_expand_test/th18.v1.00a.js",
     "patch-test/th18/cards_dev.js": "thcrap/repos/Renko_1055/th18_card_expand_test/th18/cards_dev.js",
     "patch-devstage/patch.js":      "thcrap/repos/Renko_1055/th18_card_expand_devstage/patch.js",   # 这个 patch 的 patch.js 以 renkolab 为准

@@ -1,4 +1,4 @@
-/* 辉针城（id 127，内部 COLLECT_2X）—— 被动卡，双被动（spec §3–4，逻辑 collect2x_core.h，接线本文件）：
+/* 辉针城（id 114，内部 COLLECT_2X）—— 被动卡，双被动（spec §3–4，逻辑 collect2x_core.h，接线本文件）：
  * id 从 254 改为 127（2026-09-08 实跑）：编成 deck 槽对 id > 0x7f 当负值剔除（零售符号扩展界），
  * 新卡上限 → 127，后卡 126、125… 降序（AUDIT §Z11）。
  *
@@ -272,6 +272,6 @@ static void on_run_reset(ce_card_t *c)
     s_play_frame = 0;                                   /* run 游玩帧计数同归零 */
 }
 
-CE_CARD(127, .on_item_frame = on_item_frame, .on_item_collect = on_item_collect,
+CE_CARD(114, .on_item_frame = on_item_frame, .on_item_collect = on_item_collect,
               .on_item_commit = on_item_commit, .on_shot_damage = on_shot_damage,
               .on_stage_start = on_stage_start, .on_run_reset = on_run_reset);

@@ -1,4 +1,4 @@
-/* 季节（TH16，card-expand id 119）—— **装备卡**：季节点 → 季节子机 → 季节解放。
+/* 季节（TH16，card-expand id 116）—— **装备卡**：季节点 → 季节子机 → 季节解放。
  *
  * 一手依据：[`engine/season/th16/01-season-data-and-tables.md`]（TH16 v1.00a 脱壳版 exe 反编译）
  *   · 档位阈值 100/230/390/590/840/1140（`th16:0x43deb0` + seed 字节）
@@ -129,6 +129,40 @@
  * 档位数字是 ASCII 文字，另见 `ce_hud_text_ex` 那段的组号说明。*/
 #define SEASON_GAUGE_BX    308.0f     /* 外框中心 x（表面 px）：游玩区左边缘内侧，框宽 102 ⇒ 257..359 */
 #define SEASON_GAUGE_BY    916.0f     /* 外框中心 y：游玩区底边（928）上方 12 */
+/* ★★ 2026-09-12 第三十七轮：**迁进 `HUD-LAYOUT.md` §2 的左下角货架**（用户 2026-09-12 裁决
+ * 「116 可以直接迁移」）。原来 `SEASON_GAUGE_BX/BY` 是**写死的绝对坐标** ⇒ 与 117 / 107 / 111
+ * 各画各的、必然压在同一片地方。现在：
+ *   · `on_load` 用 `ce_hud_slot_claim_card(116, ...)` 认领一块（带关卡纪元 ⇒ 每关开场重排）；
+ *   · `on_draw` 每帧 `ce_hud_slot_get(116, ...)` 取**最新**锚点（同批后来的认领会按 id 重排）；
+ *   · 所有元素的绝对坐标一律换成「**槽锚点 + 下面的相对偏移**」，`SEASON_GAUGE_BX/BY` 退居为
+ *     「锚点恰在货架第一格 (257,924) 时」的等价写法（257+51 = 308 / 924−8 = 916，
+ *     所以上表每个像素与迁移前**逐字节相同**，只是当锚点被挪走时会跟着走）。
+ * 块尺寸口径照 §2：**视觉最高元素 → 最低元素**（不是外框）：
+ *   最高 = 季节字贴图的可见上沿 **888**（VM 中心 904、32×32），最低 = 外框下边 **920** ⇒ 32；
+ *   上下各留 4 px ⇒ **36**（§6.1 说的 `CE_HUD_BLOCK_PAD` 口径，先在这张卡上落地）。
+ *   ❓ 自定：36 这个 h（含 4 px pad）与 104 这个 w（外沿 263..365 的 102 + 左右各 1 px 余量）
+ *   都是我拍的，实跑看一眼货架行高/与 117 的间距对不对再说（§6.1 待定项）。*/
+#define SEASON_HUD_BLOCK_W  104.0f    /* ❓ 自定：块宽（表面 px，报给货架分配器）*/
+#define SEASON_HUD_BLOCK_H   36.0f    /* ❓ 自定：块高 = 视觉 888..920（32）+ 上下各 4 */
+
+/* —— 块内布局：**每个元素相对「块左下角」的偏移**（表面 px）——§2「块内部怎么摆仍归卡自己」。
+ * 每个偏移 = **迁移前源码里的绝对表达式 − 锚点 (257, 924)**（锚点 = 货架第一格的块左下角）：
+ *   外框中心 = (`SEASON_GAUGE_BX`, `SEASON_GAUGE_BY`) = (308, 916) ⇒ **(+51, −8)**，
+ *              四条边再各加 `k_season_frame[]` 的 (dx, dy)（那组数一个没动）；
+ *   长条（进度 + 背景）= (`BX + 7`, `BY`) = (315, 916) ⇒ **(+58, −8)**；
+ *   季节字 = (`BX − 28`, `BY − 12`) = (280, 904) ⇒ **(+23, −20)**；
+ *   releaseable 条 = (`BX + 20`, `BY − 8`) = (328, 908) ⇒ **(+71, −16)**；
+ *   档位数字（贴图 VM，**640×480 字面量空间**，走 `ce_hud_vm_text_set`）= 迁移前的写死值
+ *   (95.75, 451.75) − 锚点的 640 空间值 (128.5, 462) = **(−32.75, −10.25)**。
+ * ⇒ 锚点落在 (257, 924) 时，下面每一个偏移都把元素摆回**迁移前的同一个像素**（逐项对账见报告）。*/
+#define SEASON_HUD_BAR_DX       58.0f    /* 长条中心 x = 锚点 + 它（308+7−257）*/
+#define SEASON_HUD_BAR_DY       (-8.0f)  /* 长条中心 y = 锚点 + 它（916−924）*/
+#define SEASON_HUD_GLYPH_DX     23.0f    /* 季节字中心 x = 锚点 + 它（308−28−257）*/
+#define SEASON_HUD_GLYPH_DY    (-20.0f)  /* 季节字中心 y = 锚点 + 它（916−12−924）*/
+#define SEASON_HUD_STRIP_DX     71.0f    /* releaseable 条中心 x = 锚点 + 它（308+20−257）*/
+#define SEASON_HUD_STRIP_DY    (-16.0f)  /* releaseable 条中心 y = 锚点 + 它（916−8−924）*/
+#define SEASON_HUD_DIGIT_X640  (-32.75f) /* 档位数字（640 空间）= 锚点.x640 + 它*/
+#define SEASON_HUD_DIGIT_Y640  (-10.25f) /* 档位数字（640 空间）= 锚点.y640 + 它*/
 /* ★★ 2026-09-10 第三十二轮：外框改成**四条矩形**拼出来（TH16 `front.anm` script114 的
  * `drawRectBorder(102,10)` 等价画法；脚本 123 = 1×1 模板，实际尺寸全靠 VM `scale`）。
  * 像素口径（用户 1280 档 100% 截图逐轮标定）：
@@ -186,6 +220,13 @@ static int32_t s_stat_frame;
 /* ★ 档位数字的贴图 VM（同上：状态放 DLL 静态区；本卡同时只会有一张在场）*/
 static ce_hud_vm_text_t s_hud_digit;
 
+/* ★★ 2026-09-12：HUD 块在货架上的**锚点**（块左下角，表面 px）。放在 DLL 静态区
+ * （`ce_state` 只有 496 字节，见 AUDIT AF12 的同款静态池；本卡同时只会有一张在场）。
+ * 与 117 那种「自带锚点」不同，本卡走**货架**：认领时给的是「块多大」，坐标由分配器按
+ * card_id 升序算 ⇒ 必须每帧用 `ce_hud_slot_get()` 取最新（见 `hud_slot_sync`）。*/
+static ce_hud_slot_t s_slot;
+static int32_t s_slot_ok;               /* 1 = 本关已认领到槽（拿不到就退回原绝对坐标兜底）*/
+
 
 typedef struct {
     ce_option_t opt[SEASON_OPTS];          /* 子机槽 */
@@ -213,6 +254,7 @@ typedef struct {
     int32_t     hud_glyph;                 /* script117 季节字 */
     int32_t     hud_strip;                 /* script118 releaseable / 等级条 */
     int32_t     hud_last_state;            /* 上次发过的 interrupt 组合（2/3 + 档 + 4/5），变了才重发 */
+    int32_t     hud_slot_ok;               /* ★ 2026-09-12：本刻已认领到货架槽（`s_slot` 在静态区）*/
     int32_t     spawn_seq;                 /* ★ 季节点出生序号（TH16 的 `total_items_created`，给待发射错帧用）*/
     int32_t     burst_left;                /* 待撒的季节点数（boss 死亡那一下排 200 个，逐帧撒）*/
     int16_t     burst_x, burst_y;          /* 爆发原点（敌人坐标）*/
@@ -1264,9 +1306,55 @@ static int on_tick_shooters(ce_card_t *c, uint32_t short_timer, uint32_t long_ti
 }
 
 /* —— ⑤ HUD —— */
+
+/* ★★ 2026-09-12：**在 `on_load`（每关开场）认领货架槽**（`HUD-LAYOUT.md` §3/§4.4）。
+ * `ce_hud_slot_claim_card()` = 先把关卡号推进纪元（关卡号变了 ⇒ 上一关的占位先清空）再认领，
+ * 认领**幂等**（`on_load` 每关都会再调一次，重复认领返回同一个槽）。
+ * 释放不在这里做：删卡时 `on_delete` 走 `ce_layer_drop_card()` → `ce_hud_slot_release()`
+ * （§4.4：局中删卡只「保留占位」，不当场重排，下关开场自然收敛）。*/
+static void hud_slot_claim(void)
+{
+    ce_hud_block_t blk;
+
+    memset(&blk, 0, sizeof blk);
+    blk.w = SEASON_HUD_BLOCK_W;
+    blk.h = SEASON_HUD_BLOCK_H;
+    blk.side = CE_HUD_SIDE_LEFT;                   /* 左下角货架（§2 从 (257,924) 向右排）*/
+    s_slot_ok = ce_hud_slot_claim_card(116, &blk, &s_slot);
+    if (s_slot_ok) {
+        ce_log("season: HUD block %.0fx%.0f claimed at surface (%.0f, %.0f)",
+               (double)blk.w, (double)blk.h, (double)s_slot.x, (double)s_slot.y);
+    } else {
+        ce_log("season: ce_hud_slot_claim_card FAILED");
+    }
+}
+
+/* 每帧取**最新**锚点。⚠ 两个坑（`sdk_core.c` 一手）：
+ *   ① `ce_hud_slot_claim_card()` 给的是「认领那一刻」的坐标，同一开场批次里 id 更大的卡
+ *      后认领会重排 ⇒ 必须每帧 `get`（开销可忽略）；取不到（还没认领 / 本关被 reset）就退回默认锚点；
+ *   ② `ce_hud_slot_get()` **只填 x/y/w/h/side，不填 x640/y640**（认领时填、get 时不填）
+ *      ⇒ 直接读 `s_slot.x640` 是上一关的陈旧值，这里按 SDK 口径自己换算（`CE_HUD_SURFACE_TO_640` = 0.5）。*/
+static void hud_slot_sync(season_card_t *s)
+{
+    if (!s->hud_slot_ok) {
+        s_slot.x = CE_HUD_ANCHOR_X;
+        s_slot.y = CE_HUD_ANCHOR_Y;
+    } else {
+        (void)ce_hud_slot_get(116, &s_slot);
+    }
+    s_slot.x640 = s_slot.x * CE_HUD_SURFACE_TO_640;
+    s_slot.y640 = s_slot.y * CE_HUD_SURFACE_TO_640;
+}
+
 static void hud_ensure(season_card_t *s)
 {
     float pos[3];
+
+    /* ★ 2026-09-12：万一 `on_load` 那次认领失败（或本关的槽被 SDK 的纪元重置清掉了），
+     * 这里补一次 —— 认领是幂等的，正常路径只有开场那一次真正落账。
+     * ⚠ 只在「本卡状态说没认领到」时补：不看 `ce_hud_slot_claimed()`，因为局中删卡时 SDK
+     * 只把占位标记为「保留」、`claimed` 仍为真，那种情况不该重新认领（§4.4 不当场重排）。*/
+    if (!s->hud_slot_ok) hud_slot_claim();
 
     pos[2] = 0.0f;
     /* ★ 2026-09-10 第二十九轮：任何 VM 被**重新生成**（换关时引擎清过 anm，或 VM 被删）都要把
@@ -1302,24 +1390,27 @@ static void hud_ensure(season_card_t *s)
     if (!s->hud_strip || !ce_anm_get_vm((uint32_t)s->hud_strip))
         s->hud_strip = (int32_t)ce_anm_spawn_ui(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_SEASON_GAUGE_STRIP, 0);
     /* 位置：**表面 px**（UI 列表 VM 的坐标空间 = 相机 2，原点在表面左上角）。
-     * 相对关系照 TH16 脚本 + 用户逐条微调（第二十二/二十五/三十二轮，单位就是表面 px）。
-     * ★ 2026-09-10 第三十二轮：用户 1280 档 100% 截图逐元素量的「最终渲染还要挪多少」——
+     * ★★ 2026-09-12：全部由**槽锚点 + 块内偏移**推导（偏移见 `SEASON_HUD_*_DX/DY` 那组宏）——
+     *   锚点落在货架第一格 (257,924) 时逐像素等于迁移前的 `SEASON_GAUGE_BX/BY` 写法。
+     * 相对关系照 TH16 脚本 + 用户逐条微调（第二十二/二十五/三十二轮，单位就是表面 px）：
      *   进度条整体 **+8 x**（外框/进度条/背景条一起走）、季节字 **+7 x**、
-     *   releaseable 条 **+37 x / +8 y**（见下）。数字单独在 `ce_hud_vm_text_set` 那处改。*/
-    /* ★ 第三十二轮：外框 = **四条矩形**（脚本 123 = 1×1 模板 + 逐边 scale，见 `k_season_frame[]`），
+     *   releaseable 条 **+37 x / +8 y**；数字单独在 `ce_hud_vm_text_set` 那处改。
+     * ★ 第三十二轮：外框 = **四条矩形**（脚本 123 = 1×1 模板 + 逐边 scale，见 `k_season_frame[]`），
      * 不再是「实心矩形打底」。上/左各 2px、下/右各 1px ⇒ 外沿像素 x 263..365 / y 910..920。*/
     for (fi = 0; fi < SEASON_FRAME_N; ++fi) {
         if (!s->hud_frame[fi]) continue;
-        ce_anm_set_pos((uint32_t)s->hud_frame[fi], SEASON_GAUGE_BX + k_season_frame[fi].dx,
-                       SEASON_GAUGE_BY + k_season_frame[fi].dy, 0.0f);
+        ce_anm_set_pos((uint32_t)s->hud_frame[fi],
+                       (s_slot.x + 51.0f) + k_season_frame[fi].dx,      /* 51 = 308−257，外框中心 */
+                       (s_slot.y - 8.0f) + k_season_frame[fi].dy,       /* −8 = 916−924 */
+                       0.0f);
     }
-    if (s->hud_grad)  { pos[0] = SEASON_GAUGE_BX + 7.0f;     pos[1] = SEASON_GAUGE_BY;
+    if (s->hud_grad)  { pos[0] = s_slot.x + SEASON_HUD_BAR_DX;   pos[1] = s_slot.y + SEASON_HUD_BAR_DY;
                         ce_anm_set_pos((uint32_t)s->hud_grad, pos[0], pos[1], 0.0f); }
-    if (s->hud_solid) { pos[0] = SEASON_GAUGE_BX + 7.0f;     pos[1] = SEASON_GAUGE_BY;
+    if (s->hud_solid) { pos[0] = s_slot.x + SEASON_HUD_BAR_DX;   pos[1] = s_slot.y + SEASON_HUD_BAR_DY;
                         ce_anm_set_pos((uint32_t)s->hud_solid, pos[0], pos[1], 0.0f); }
-    if (s->hud_glyph) { pos[0] = SEASON_GAUGE_BX - 28.0f;    pos[1] = SEASON_GAUGE_BY - 12.0f;
+    if (s->hud_glyph) { pos[0] = s_slot.x + SEASON_HUD_GLYPH_DX; pos[1] = s_slot.y + SEASON_HUD_GLYPH_DY;
                         ce_anm_set_pos((uint32_t)s->hud_glyph, pos[0], pos[1], 0.0f); }
-    if (s->hud_strip) { pos[0] = SEASON_GAUGE_BX + 20.0f;    pos[1] = SEASON_GAUGE_BY - 8.0f;
+    if (s->hud_strip) { pos[0] = s_slot.x + SEASON_HUD_STRIP_DX; pos[1] = s_slot.y + SEASON_HUD_STRIP_DY;
                         ce_anm_set_pos((uint32_t)s->hud_strip, pos[0], pos[1], 0.0f); }
 }
 
@@ -1344,7 +1435,13 @@ static int on_draw(ce_card_t *c)
     int fi;
 
     if (!s) return 0;
-    if (!*(volatile uint32_t *)CE_ADDR_GAME_THREAD_PTR) { hud_hide(s); return 0; }
+    /* ★ 2026-09-12：`on_draw`（虚表 +0x48）在**主菜单 / 标题 / 商店**里也会被调，而 `on_tick_2`（+0x2c）
+     * 不会 ⇒ 不设门会在菜单上留着一整块季节槽。两道门照 111 `signal.c:556` / 115 `lolk.c:706` 的先例：
+     *   ① 没有游戏线程 = 标题/主菜单退出路径；② 没有自机 = 菜单/商店/结算里 `CE_PLAYER()` 为 NULL。
+     * 门关着时把 5 个 VM + 数字收掉，**槽位的账不动**（那归 `on_load` / `on_delete`，见 `hud_slot_claim`）。*/
+    if (!CE_GAME_THREAD() || !CE_PLAYER()) { hud_hide(s); return 0; }
+
+    hud_slot_sync(s);                    /* ★ 每帧取最新锚点（同批后来的认领会按 id 重排）*/
 
     level = level_of(s);
     next = (int)season_points_for_level(level + 1);
@@ -1428,13 +1525,14 @@ static int on_draw(ce_card_t *c)
     if (s->hud_grad) {
         ce_anm_set_scale((uint32_t)s->hud_grad, ratio, 1.0f);       /* 进度：宽 = 档内进度 */
         /* 条宽 100 表面 px ⇒ 左端固定、宽度按 ratio 收缩（中心随之左移 (1−ratio)×50）*/
-        ce_anm_set_pos((uint32_t)s->hud_grad, SEASON_GAUGE_BX + 7.0f - (1.0f - ratio) * 50.0f,
-                       SEASON_GAUGE_BY, 0.0f);       /* ★ 第三十二轮：整体 +8 x（这里 −1+8 = +7）*/
+        ce_anm_set_pos((uint32_t)s->hud_grad,
+                       s_slot.x + SEASON_HUD_BAR_DX - (1.0f - ratio) * 50.0f,
+                       s_slot.y + SEASON_HUD_BAR_DY, 0.0f);
     }
     if (s->hud_solid) {
         ce_anm_set_scale((uint32_t)s->hud_solid, 1.0f, 1.0f);       /* 背景：全长 100 */
-        ce_anm_set_pos((uint32_t)s->hud_solid, SEASON_GAUGE_BX + 7.0f,
-                       SEASON_GAUGE_BY, 0.0f);       /* ★ 同上 */
+        ce_anm_set_pos((uint32_t)s->hud_solid,
+                       s_slot.x + SEASON_HUD_BAR_DX, s_slot.y + SEASON_HUD_BAR_DY, 0.0f);
     }
 
     /* ★★ 等级数字定案（2026-09-10 一手：`th16:0x428e70` `Gui::on_draw_2` 尾段）：
@@ -1479,8 +1577,13 @@ static int on_draw(ce_card_t *c)
              * ⇒ ASCII 空间（÷DAT）−86 / −3：182−86 = 96、455−3 = 452。
              * ★ 第三十二轮追加亚像素：再 **左 0.5 / 上 0.5**（表面 px）⇒ ASCII 各 −0.25 ⇒ (95.75, 451.75)。
              * ⚠️ 目标落点 = 表面 x≈185（槽在 257..359）—— 数字会跑到**游玩区左边界 256 之外的黑边里**，
-             * 与槽分开；若这不是你要的（比如想让它贴条左端 / 或量的是别的元素），说一声再挪。*/
-            ce_hud_vm_text_set(&s_hud_digit, 95.75f, 451.75f,
+             * 与槽分开；若这不是你要的（比如想让它贴条左端 / 或量的是别的元素），说一声再挪。
+             * ★★ 2026-09-12 迁移：这两个数是**绝对**的 640 空间坐标，现在改成「槽锚点（640 空间）
+             *   + 块内偏移」：锚点 (257,924) ⇒ (128.5, 462)，于是
+             *   95.75 − 128.5 = −32.75、451.75 − 462 = −10.25（= `SEASON_HUD_DIGIT_X640/Y640`）。*/
+            ce_hud_vm_text_set(&s_hud_digit,
+                               s_slot.x640 + SEASON_HUD_DIGIT_X640,
+                               s_slot.y640 + SEASON_HUD_DIGIT_Y640,
                                (alpha << 24) | (col & 0xffffffu),
                                CE_ASCII_ALIGN_CENTER, 0.0f /* 缩放用 ASCII 环境值 */,
                                buf, "season");
@@ -1499,6 +1602,11 @@ static void clear_card(ce_card_t *c)
     ring_hide(s, 0);
     hud_hide(s);
     ce_hud_vm_text_clear(&s_hud_digit);        /* 数字 VM 跟着卡一起收 */
+    /* ★ 2026-09-12：HUD **槽位**也在这里退（`CE_CARD` 的 `on_run_reset`/`opdelete` 会先调
+     * `ce_layer_drop_card()` → `ce_hud_slot_release()`，这里显式再来一次是幂等的；
+     * 好处是 `on_load` 之后即使没删卡、状态被 `memset` 掉，下一个 `on_load` 也会重认领）。*/
+    ce_hud_slot_release(116);
+    s_slot_ok = 0;
     memset(s, 0, sizeof *s);
     s->last_graze = -1;
     s->hud_last_state = -1;
@@ -1509,12 +1617,22 @@ static void clear_card(ce_card_t *c)
  * 由 `AbilityShop__sub_417880` 触发，而那个函数在**每关结束的商店/结算**里都会跑
  * （`AbilityShop::on_tick`、`GameThread__teardown_and_recount_cards`）。
  * 原来在这里 `clear_card` ⇒ 每过一关 `memset` 把 `subseason` 清零（= 春）、季节点也清零。
- * 现在 `on_load` 什么都不做；状态只在 **局末（+0x4c on_run_reset）** 与 **销毁（+0x50 on_delete）** 清。
- * 新一局是**新卡对象**，`ce_state_user` 的槽是 `memset` 过的 ⇒ 天然从 0 开始。*/
-static int on_load(ce_card_t *c) { (void)c; return 0; }
+ * 现在 `on_load` 只做**认领 HUD 槽**这一件事（状态只在 **局末（+0x4c on_run_reset）** 与
+ * **销毁（+0x50 on_delete）** 清）；新一局是**新卡对象**，`ce_state_user` 的槽是 `memset` 过的
+ * ⇒ 天然从 0 开始。
+ * ★ 2026-09-12：认领**必须**放在这里 —— 槽位带「关卡纪元」（`ce_hud_slot_claim_card` 把
+ * `CE_CURRENT_STAGE()` 推进去），关卡号一变 SDK 就清空整张表 ⇒ 不重认领的话本关就没有槽，
+ * `hud_slot_sync` 只能退回默认锚点（虽然像素相同，但账就不对了）。*/
+static int on_load(ce_card_t *c)
+{
+    (void)c;
+    s_slot_ok = 0;
+    hud_slot_claim();
+    return 0;
+}
 static void on_run_reset(ce_card_t *c) { clear_card(c); }
 static void on_delete(ce_card_t *c) { clear_card(c); }
 
-CE_CARD(119, .on_power_level_change = on_power_level_change, .on_tick_shooters = on_tick_shooters,
+CE_CARD(116, .on_power_level_change = on_power_level_change, .on_tick_shooters = on_tick_shooters,
          .on_tick_2 = on_tick_2, .on_enemy_drop_pre = on_enemy_drop_pre, .on_draw = on_draw,
          .on_load = on_load, .on_run_reset = on_run_reset, .on_delete = on_delete);

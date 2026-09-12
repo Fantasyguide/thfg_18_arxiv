@@ -42,7 +42,10 @@ static void dismiss(ce_card_t *c, const char *why)
 {
     be_state_t *s = ce_state(c, be_state_t);
     if (!s) return;
-    if (s->anm_id || s->beam_id || s->bar_id) {
+    /* 这个条件就是「有没有东西要清」，所以必须点名**每一个**会被删的 VM：`bar_bg_id`（血条底槽）原来漏在外面
+     * ——「底槽起成功、填充起失败」时它非 0 而 `bar_id` 是 0，只按 bar_id 判断就会把底槽留在场上
+     * （2026-09-12 删卡审计顺手补的防线；当前调用顺序下不可复现，但清理判据不该依赖「另一个 VM 一定也起了」）。*/
+    if (s->anm_id || s->beam_id || s->bar_bg_id || s->bar_id) {
         ce_anm_delete(s->anm_id);
         ce_anm_delete(s->beam_id);
         bar_destroy(s, 0);

@@ -1,4 +1,4 @@
-/* collect2x_core.h —— 收点系统（辉针城，id 127）纯逻辑：批计数 / 档位结算 / 碎片 4:1 循环 / 掉落节流。
+/* collect2x_core.h —— 收点系统（辉针城，id 114）纯逻辑：批计数 / 档位结算 / 碎片 4:1 循环 / 掉落节流。
  * 纯 C11、不进引擎地址，主机单测 tests/test_collect2x_core.c（make test-host）。
  *
  * 语义（spec §3 + plan Task 5；批闭门演进 §Z18「池空」→ §Z20「timer 30」→ §Z21「presence 续批 + 8」

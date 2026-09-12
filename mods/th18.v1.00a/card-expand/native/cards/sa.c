@@ -17,4 +17,6 @@ static int on_tick_2(ce_card_t *c)
     return 0;
 }
 
-CE_CARD(62, .ctor = ce_royal_flush_ctor, .on_tick_2 = on_tick_2);
+/* on_delete：删卡（倒吊人 / 原版空白卡）时收掉皇家同花顺演出的文件级倒计时（见 royal.c 的 ce_royal_dismiss）。
+ * 无敌计时器不用还：那是玩家自己的 zTimer，逐帧自减，本卡只是在复活那一帧把它改长。*/
+CE_CARD(62, .ctor = ce_royal_flush_ctor, .on_tick_2 = on_tick_2, .on_delete = ce_royal_dismiss);
