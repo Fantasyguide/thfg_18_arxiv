@@ -4384,11 +4384,12 @@ GUI 的 per-boss 列表与 `ENM_CNT` 看不到它。⇒ 实跑清单里要专门
 ### BO-6 107 结界特效 VM 落地（A4 收口）+ 一条新的 TH07 规则
 
 **做了什么**：TH07 里结界的视觉**不是 C 侧画的**，是 `EffectManager` 的两个 effect type
-（type→脚本表 `th07:0x49efc0`，`{u16 id; u16 pad; void* update; void* draw}`，stride `0xc`）：
+（type→脚本表 `th07:0x49efc0`，`{u16 id; u16 pad; void* update; void* on_create}`，stride `0xc` ——
+⚠ `+0x8` 是**一次性 on_create**（返回值非 0 就杀实例），**不是** draw（见 `engine/anm/th07/01-anm-id-space.md` §4.5））：
 
 - **结界展开 / 灵击崩结界的大环 = type `0x1c` → id 731**：开结界 `th07:0x441aa4`、崩结界 `th07:0x441c19`
   都 `push 0x1c; push 自机坐标; push 4; push 1; push -1; ecx=EffectManager; call th07:0x41c610`；
-  崩结界**先杀旧 VM**（`th07:0x441be5` 把 `[player+0xb7e6c]` 的 `+0x2cc` 置 0）再起新的。
+  崩结界**先杀旧 VM**（写点 `th07:0x441bee`：把 `[player+0xb7e6c]` 的 `+0x2cc` 置 0；句柄清 0 在 `0x441bf8`）再起新的。
 - **灵击那 32 颗 = type `0x1d` → id 690**：`th07:0x441dd9`–`0x441e38` 循环（`cmp i,0x20`）；
   起始角 `0xC0490FDB` = **−π**、步长 `[0x498cfc]` = **2π/32**；`[vm+0x294]=fcos`、`[vm+0x298]=fsin`。
 - 两个脚本**逐条照抄**成 `204_senro_field` / `205_senro_ring`（唯一差异 = `sprite(N)` → `@名字@`），
@@ -4409,9 +4410,21 @@ GUI 的 per-boss 列表与 `ENM_CNT` 看不到它。⇒ 实跑清单里要专门
 
 **❓ 留给用户的决策 / 未验**：
 
-1. ★ **结界「持续期」在原版没有任何视觉**（`th07:0x441330`–`0x441670` 逐条核过：那段每帧逻辑里
-   一个 effect spawn 都没有）⇒ 甲是**一次性 33 帧闪光**。本轮**照抄、没有自行加长**；
-   若要「结界全程挂环」是一行开关，但**那就不是复刻了** ⇒ 要不要做由用户拍。
+1. ★★ **2026-09-12 订正（独立复核，见 [`engine/spirit/th07/01-barrier-visual.md`](../../../engine/spirit/th07/01-barrier-visual.md)）**：
+   原文写的「持续期在原版**没有任何视觉**」—— **「那段没有 effect spawn」这个事实是对的，但推论错了**。
+   持续期（state 4，**540 帧**）每帧都在画两样东西：
+   ① **全屏 sprite 变暗到 37.5 %**（`th07:0x44162a` → `Stage::sub_406930` `0x406930`；
+   绘制侧 `Stage::on_draw_03` `0x406b52`–`0x406b81` 把 `STAGE+0x52ac` 灌进 `AnmManager+0x0` 全局色乘子，
+   顶点色 `0x44f485`–`0x44f509` 逐通道 `(c·b)>>7`）；
+   ② **自机贴图红/白每 2 帧闪**（`th07:0x441553`–`0x44158a`：`timer%4<2` ⇒ `player+0x1b8 = 0xffff0000`；
+   绘制侧 `Player::on_draw_06` `0x44225c`–`0x442296`）。
+   **环（id 731）确实只在发动瞬间 ~33 帧**：脚本结尾是 **opcode 1**（`0x450df3` = `flags &= ~1` 不可见
+   → 落进 opcode 2 的停指令流 → **`return 1`**），而 `EffectManager::on_tick_0b` `0x41c790` 在
+   `0x41c8a8`–`0x41c8b1` **对非 0 返回就收槽** ⇒ **op1 效果上等于 `delete()`**。
+   ★ TH07 的 effect VM **没有「停下来但继续画」这条路**（op2 也返回 1、也被收槽；
+   只有像 script63 那样用 `ins_4` 跳回自己的死循环才活得久）。
+   那个「活到结束」的环是**另一个** type：`0x19` → id **730**（`etama3.png`，script63 死循环），
+   由 `Player::bomb_on_tick__*` 的 12 处 `0x4084f0` 生成 ⇒ 那是**灵击炸弹的无敌环**，不是森罗结界。
 2. 崩结界时 C 侧写进 VM 的宿主字段（`[vm+0xb4+8]`=剩余结界帧、`[vm+0xc8]`、
    `[vm+0x218]/[vm+0x21c]`=1.0、`[vm+0x220]/[vm+0x224]`=0.25、`[vm+0x14] ×= -1.0`）
    属于 TH07 effect 管理器的结构，TH18 无对应物 ⇒ **没搬**（`[vm+0x14] ×= -1` 的语义也没定死）。
