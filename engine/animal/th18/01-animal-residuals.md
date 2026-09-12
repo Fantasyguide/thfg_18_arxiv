@@ -95,4 +95,11 @@ TH18：`Player::die` `0x45d3a0` 里**没有**这种分支（一手反编译：�
 | 按 `zGoastManager` 的形状（`+0xc` anm 指针 / `+0x10` 计数 / `+0x14` 链表头）扫 TH18 全 `.data` 找同形对象 | ❓ 没做 —— 这是把 §1 的 🟡 变 ✅/❌ 的唯一办法 |
 | 按 `zToken` 的 stride 0x70 找 TH18 里的同形池 | ❓ 没做 |
 | TH18 死槽（§2b）逐个找「曾经的名字」 | ❓ 没做 —— 需要跨版本字段对齐（TH16→TH17→TH18 的 `inner` 位移图）|
-| 卡侧占位实现（动物灵掉落 + 收集槽 + 咆哮 + 死亡取消） | 🔧 设计见 `docs/superpowers/specs/2026-09-10-season-and-animal-design.md` |
+| 卡侧实现（动物灵掉落 + 收集槽 + 咆哮 + 死亡取消） | ✅ **Stage 2 已落地**（2026-09-10，id 117「鬼形兽」）|
+
+**卡侧 Stage 2 详情**（2026-09-10）：`mods/th18.v1.00a/card-expand/native/cards/animal.c` + `animal_core.c`
+（纯逻辑单测 116 断言）；动物灵实体 = 自建 VM 池 + TH17 零售切图（`beast1.png` 13 单元 / `beastf.png` 槽框 /
+`beast.anm` script0–6 生成的 137–143），DVD 式弹跳 / 24 px 吸收 / 60 px 减速 / 变色 / 版边消失；
+审计 `mods/th18.v1.00a/card-expand/AUDIT.md` §AL；实跑清单 `NEXT.md` §1v；
+设计 `docs/superpowers/specs/2026-09-10-season-and-animal-design.md` §2。
+**仍待实装**：暴走咆哮的射击强化、水獭消弹体视觉、稀有动物灵（用户定案不做）——见 `NEXT.md` §1v Stage 3。

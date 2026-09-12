@@ -133,7 +133,7 @@ Timer__increment(&time);
 | 35 | lights-out | — | 用 `fronttr.anm`（`Gui` 预载）起脚本 0x30，id 存 `Gui+0x100` | 同 |
 | 36 | **store** | — | `GAME_THREAD+0xb0 \|= 0x20000`；推进；**直接 `return 0`** | TH18 新增 |
 
-**op2 anm 源选择器**（一手）：`msg_face_anim_index` 四分支 —— `0` = 弹幕 anm；`1` = `DAT_004cf2c8+0xc` ❓；`7` = `DAT_004cf2b4+0x3464` ❓；其余 = `ENEMY_MANAGER+0x168+idx*4`，即 ECL 载入的 anm 槽。op1 的 `who≠0` 分支共用同一选择器。
+**op2 anm 源选择器**（一手，2026-09-12 复核消 ❓）：`msg_face_anim_index` 四分支 —— `0` = `bullet.anm`（`th18:0x4cf2bc` = BulletManager，`+0x7a41ec`）；`1` = `effect.anm`（`th18:0x4cf2c8` = EffectManager，`+0xc`，载入点 `th18:0x42acf7`）；`7` = **当前关的 `st0Xwl.anm`**（`th18:0x4cf2b4` = Stage，`+0x3464`，文件名取自 `st0X.std` 偏移 `+0x10`，载入点 `th18:0x41b907`）；**其余** = `ENEMY_MANAGER+0x168+idx*4` = 本关 ECL 头 `anim{}` 的第 `idx-2` 条（`2` → `enemy.anm`、`3` → `st0Xenm.anm`；列表装载器 `th18:0x42da90`）。op1 的 `who≠0` 分支共用同一选择器。全推导见 [`../../anm/th18/04-anm-slot-selection.md`](../../anm/th18/04-anm-slot-selection.md)。
 
 **op11 pause 细节**（一手）：首次进入把 `pause_timer` 装成 `arg`；每帧 `Timer__decrement`。
 放行条件：`INPUT_PRESSED & 0x80001`（射击键或 bit19 ❓）、或计时归 0、或 §3 的长按快进门。
@@ -194,3 +194,7 @@ MSG 不画立绘，它只给立绘 anm 发 **interrupt**。协议（一手，op4
 ECL 派发 `0x430d30`（518 `0x434dbf` / 519 `0x434e2b`；`FUN_00407d60` 读 `Gui+0x1b0`，`FUN_0042d5b0` 读 `msg+0x198`）·
 `Input__compute_edges` `0x42abc0`（长按计数表 `0x4ca3a4`）· 常量 `0x4b9200`=2.0、`0x4b9268`=8.0、`0x4b6620`={40,46,29,28} ·
 结构 `zGuiMsgVm` / `zTableStageData` / `zTableStageBossData`（ExpHP th-re-data th18）。
+
+> **本文 §4 的 op2「anm 源选择器」结论来源**：[`../../anm/th18/04-anm-slot-selection.md`](../../anm/th18/04-anm-slot-selection.md)
+> （2026-09-12，消掉本条原来的两个 ❓）。该文同时给出 `anmSelect(N)`/`anmSetSprite(K,S)` 的完整语义，
+> 以及 `th18:0x438d40` 这条选择器在 exe 里另外至少 13 处同构副本（含本文件 op2 用的那 3 处 `th18:0x43f857`/`th18:0x43f965`/`th18:0x43fa72`）。

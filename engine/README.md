@@ -40,3 +40,4 @@ engine/<子系统>/
 | [`spirit/`](spirit/OVERVIEW.md) | th13 | 神灵 / 灵界（Trance）：六条生成通道 + 槽 + 灵界两道「中弹不死」闸门 |
 | [`input/`](input/th18/01-key-mapping.md) | th18 | 输入装配线：键盘配置表 / 掩码位 / 哪些键空着（A、S 空着，D 被切卡占用）|
 | [`anm/`](anm/OVERVIEW.md) | th06nc、th16、th18 | th06nc VM 已定位、新增 opcode 32–35 已反完；th18 已反 VM 实例化 / 渲染阶段 / **ASCII 文字系统**；th16 仍只有旁敲锚点 |
+| [`item/`](item/OVERVIEW.md) | th07、th08 | 道具池 + `spawn_item` + 掉落 opcode；th07 樱点三档的来源与数量、th08 时点 |

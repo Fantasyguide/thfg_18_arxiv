@@ -165,7 +165,7 @@ case 0x10..0x13 → AbilityManager__allocate_new_card（抽卡）
 (b) 新增一个「给 VM 重指脚本 / 贴图到别的 anm 文件」的引擎入口（`0x407420` 是普通函数，可加 SDK 封装）。
 两条都还没做。
 
-**④ 本仓现状（id 119）**：自己起 `ability.anm` script115 的 VM，但**运动学逐条照抄**原版
+**④ 本仓现状（id 116）**：自己起 `ability.anm` script115 的 VM，但**运动学逐条照抄**原版
 （重力 0.03、上限 2.0、出界 472/200、吸引初速 = 磁速/3 后每帧 +0.2 到 12.0、回收线 = `player+0x47998`、
 半径/磁速直接读 `player+0x47988..0x47994`）⇒ 手感与原生 P/钱一致，且零售卡 ITEM_CATCH / ITEM_LINE
 改参数时季节点跟着变；代价是它不进 TH18 的得分/道具统计（卡片自己的资源），收集音是自己放的 `se_item00`。
@@ -231,5 +231,5 @@ TH16 的季节释放走 `INPUT_RISING_EDGE & 0x800`。TH18 里 **`0x800` 也被�
 | 升级 | 自己按槽值换 anm 脚本 / shooter 组 | `ce_option_*` / `ce_tick_shooters_for_card` |
 | 季节解放 | 主动卡 `c_press` + 清弹 + 无敌帧 | `ce_cancel_all_bullets` / `ce_cancel_radius` / `ce_player_pos` |
 
-> 本仓占位实现见 `mods/th18.v1.00a/card-expand/native/cards/season.c`（id 119）与
+> 本仓占位实现见 `mods/th18.v1.00a/card-expand/native/cards/season.c`（id 116）与
 > `docs/superpowers/specs/2026-09-10-season-and-animal-design.md`。

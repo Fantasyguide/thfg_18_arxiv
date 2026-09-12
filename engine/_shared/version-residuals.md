@@ -63,6 +63,6 @@ ZUN 换版本时**不删旧代码**：他把「喂数端」和「消费端」拆
   [`chapter/th18/01`](../chapter/th18/01-chapter-residuals.md)（TH18 只剩槽）
 - 擦弹 / 道具减速：[`player/th15/01`](../player/th15/01-graze-and-item-slowdown.md)、
   [`player/th18/02`](../player/th18/02-graze-and-item-slowdown.md)
-- 复刻它的卡：`mods/th18.v1.00a/card-expand/` 的辉针城（id 127，收点）、绀珠传（id 118，章节 + 减速）
+- 复刻它的卡：`mods/th18.v1.00a/card-expand/` 的辉针城（id 114，收点）、绀珠传（id 115，章节 + 减速）
 - TH16 季节 / TH17 动物灵在 TH18 的残骸审计：[`season/th18/01`](../season/th18/01-season-residuals.md)、
   [`animal/th18/01`](../animal/th18/01-animal-residuals.md)（两个子系统都**没有可复活残骸**，只能自建）

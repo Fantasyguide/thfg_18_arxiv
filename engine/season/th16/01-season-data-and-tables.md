@@ -271,7 +271,7 @@ TH16 的 func 表与 TH18 **init1/tick1（寻的）、init2/tick2/hit2（激光�
 在 TH18 是 tick3(+0.3)（[`sht/th18/03`](../../sht/th18/03-func-tables-timers-and-dead-fields.md) §6）——
 所以复刻时可以直接映射，不必自己写 AI。
 
-**TH18 卡（id 119）的落地**：`assets/sht/append_shooterset.py` 追加 **5 组** shooterset
+**TH18 卡（id 116）的落地**：`assets/sht/append_shooterset.py` 追加 **5 组** shooterset
 （`SEASON_SPRING/SUMMER/FALL/WINTER/DOYOU` = 索引 0x19..0x1d），字段取上表**档 1** 的值，
 func 用 TH18 的 1/1、0、3、2/2/2；`season.c` 按副季节选 set、每颗子机各发自己那发、
 节奏用引擎的 short_timer（不再 `帧×档`）。
@@ -468,7 +468,7 @@ if (!(gui->flags_1ac & 1)) {                       /* 当前显示 */
 
 → **道中小怪一颗就是 8–10 个**（且只有快速击杀才拿满）；TH16 里**一个季节点 = 1 点季节点槽**
 （`item_collect_season` `0x43de50` 每次 +1），所以「一串 8 个」= 8 点。
-TH18 卡（id 119）**照这个数量撒**（小怪 8 颗、boss 200 颗，每颗 1 点）——
+TH18 卡（id 116）**照这个数量撒**（小怪 8 颗、boss 200 颗，每颗 1 点）——
 2026-09-10 之前曾把「一串折成一颗 = 8 点」，现已改回原义。
 
 **出场过程** ✅（`zItem` + `bullet.anm` script129）：季节点出生时是**白色**且**不可收集**

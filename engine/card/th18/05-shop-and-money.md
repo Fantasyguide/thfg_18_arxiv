@@ -137,8 +137,25 @@ if 卡组有 0x26:                pick(1, 0xe)
 **第二段：两个「保证」循环**（同样的拥有/可重复门控）
 
 - **loop1**：`is_available_at_stage() == 1` **且** `entry+0x14 == 0` → 必加。
-  `+0x14 == 0` 的正是 EXTEND / BOMB / EXTEND2 / BOMB2 / PENDULUM / DANGO 这批通用资源卡。
+  `+0x14 == 0` 的正是 **EXTEND / BOMB / PENDULUM / DANGO**（card id **1 / 2 / 5 / 6**）这批通用资源卡。
+  ⚠ **EXTEND2 / BOMB2（id 3 / 4）不在这批里**——它们 `+0x14 == 6`（**订正**，见 §4.1）。
 - **loop2**：`is_available_at_stage() == **2**` → 必加。**这就是「本关专属卡必出」的唯一路径。**
+
+### 4.1 `entry+0x14` 不是纯权重（2026-09-10 一手订正）
+
+随机池在「压份」之前有**两条拒绝**：`0x4170a0` `cmp [eax],0 / je 拒绝`、`0x4170cf` `cmp [eax],6 / je 拒绝`
+（`eax = entry + 0x14`，`0x41709a`）。通过后按 `entry+0x14` 往候选数组里压 **那么多份**
+（`0x41710d` `rep stosd` + `0x417115` `add edi,ebx`）⇒ **0 与 6 都是「不进随机池」的哨兵**，
+`≥1 且 ≠6` 才是真权重（实测 id 7 = 4，id 38/39/40 = 2）。
+
+| card id | 卡 | `+0x14` | 商店怎么拿到 |
+| --- | --- | --- | --- |
+| 1 EXTEND / 2 BOMB | 整残 / 整炸 | **0** | **loop1 必上架 —— 唯一来路**（`+0x1c == 1` ⇒ **同一局可反复买**）|
+| 3 EXTEND2 / 4 BOMB2 | 残碎 / 符卡碎 | **6** | **永不上架** ⇒ 只能靠道具掉落（`item type 0x10` / `0x11` → `allocate_new_card(mode 0)`）|
+| 5 PENDULUM / 6 DANGO | 金钱 +50 / 火力 +0.5 | 0 | loop1 必上架 **且** 可掉落（`0x12` / `0x13`）|
+
+> 后果：**「整」只能买、「碎」只能掉**。对齐证据见
+> [`06-resource-economy.md`](06-resource-economy.md) §4 的 `ITEM_TYPE_TABLE 0x4b4020`。
 
 **第三段**：把 `local_e8[]` 去重复制进 `this+0xa30`，写回数量；扫链表设 `this+0xe34`。
 

@@ -90,6 +90,12 @@ HUD 三参函数是 `FUN_00441f10(GUI, CURRENT_LIVES, LIFE_FRAGMENTS, LIVES_STOC
 ## 5. Follow-up
 
 - 🟡 `LIVES_STOCK` vs `CURRENT_LIVES` 的分工（§3）。
-- ⏳ `FUN_004575f0` / `FUN_00457570` / `FUN_004576e0` / `FUN_00457690` 这组 `GlobalsInner` 方法
-  的确切语义（看着是「加命 / 加命碎片 / 加符卡碎片 / 符卡进位」，未逐个反）。
+- ✅ **2026-09-10 一手闭合**：`0x457570`（= 道具 `type 4` 与 `CardLifeFragment` 共用）= **命碎累加**——
+  `[0x4cccdc+0x70]`(`LIFE_FRAGMENTS` `0x4ccd4c`) `+1`，按 `[+0x74]` 取下标查难度表
+  （`difficulty(0x4ccd00) == 4` → `0x4b3ff4`，否则 `0x4b40c8`），满则 `sub 阈值` + `FUN_004575f0`（进位加命）。
+  ⇒ **命碎阈值随难度表**（实测全 3），而 **B 碎阈值硬编码 3**（`0x44648f` `cmp eax,3`），两者不对称。
+- ✅ `0x457690` = **符卡进位**（读 `CURRENT_BOMBS` / `BOMB_FRAGMENTS` / `MAX_BOMBS`，放音 `0x2e`，刷 HUD `0x4420e0`）。
+- ⏳ `FUN_004575f0` / `FUN_004576e0` 本体仍未逐反（前者 = 命碎片进位落点）。
+- 📌 道具 type 全表（分派器 `0x44625f` → byte 表 `0x44685c` → jump 表 `0x446830`，含 `0x10–0x13` 卡道具）
+  见 [`2026-09-10-th06-playrank-design.md` §3.1](../../../docs/superpowers/specs/2026-09-10-th06-playrank-design.md)。
 - ⏳ `DAT_004ccd60`（每命初始符卡数）随难度/角色的取值。
