@@ -33,6 +33,18 @@ void trance_gauge_reset(trance_gauge_t *g)
     g->tier = 0;
 }
 
+/* ============================ 状态初始化 ============================
+ * ⚠ `pending_frame = -1` = 「没有待处理的死亡」。卡侧**必须**在初始化时调本函数
+ *   （`memset` 出来的 0 会被读成「第 0 帧报到过一次死亡」⇒ 立刻误触发救援）。
+ *   `cards/trance.c` 的 `ctor` / `on_stage_start` / `trance_clear` 三条路都走它。*/
+void trance_state_init(trance_state_t *s)
+{
+    if (!s) return;
+    memset(s, 0, sizeof *s);
+    s->pending_frame = -1;
+    s->re_dying = 0;
+    s->re_die_age = 0;
+}
 void trance_gauge_set(trance_gauge_t *g, int32_t v)
 {
     if (!g) return;
@@ -118,12 +130,28 @@ int trance_begin(trance_state_t *s, int death_free, const trance_cond_t *c)
 {
     int32_t gauge;
     if (!s) return 0;
-    /* 一手 `0x405a20` 第一行：`if (this+0x14 & 1) return 0;` ⇒ **已在灵界视为成功**（返回 0 = 成功）*/
-    if (s->phase != TRANCE_PHASE_IDLE) return 1;
+    /* 一手 `0x405a20` 第一行：`if (this+0x14 & 1) return 0;` ⇒ **已在灵界视为成功**（返回 0 = 成功）。
+     * ★★ **第二版补**（一手 `0x405a4c`–`0x405a50`）：一手的这条早退路**不是空操作** ——
+     *   它在「已在灵界」时**仍然**写 `this+0x14 |= 1` 且把 bit1 设成 `param_1`
+     *   ⇒ **手动灵界被中弹打断 ⇒ 那个窗口当场变成「死亡强制」档**（结束时也要再死一次）。
+     *   我们的对应动作：把 `PHASE_MANUAL` **升格**成 `PHASE_DEATH_FREE`（并 ++deaths_forced）。
+     *   这就是「保命是延时不是免死」在纯逻辑里的落点：只要这次中弹被吃下，窗口结束时一定欠一次死亡。
+     *   ⚠ 升格时**不重开窗口、不重置槽**（槽继续按 −1/帧 走）—— 一手也只改那两个位。*/
+    if (s->phase != TRANCE_PHASE_IDLE) {
+        if (death_free && s->phase == TRANCE_PHASE_MANUAL) {
+            int32_t gauge_now = s->gauge.gauge;
+            /* 一手同一道门（`0x405a40`）：`begin` 在写位之前先查槽 —— 槽 < 200 时它返回 −1、
+             * **什么都没改** ⇒ 手动窗**不被升格**，那次中弹也就没有「延时死亡」的欠账。*/
+            if (gauge_now < TRANCE_GAUGE_MIN_ENTER) return 0;
+            begin_common(s, 1);
+            return 1;
+        }
+        return 1;
+    }
     gauge = s->gauge.gauge;
     /* 一手 `0x405a40`：`if (CURRENT_SPIRIT_GAUGE < 200) return -1;` ⇒ 失败。
-     * ★ 死亡强制那条路**也吃这个门**（一手 `SPIRIT` §7：第二次 die 时槽已扣到 0 ⇒ 必然失败）；
-     *   我们不做延时，所以死亡强制**照同一道门**走，不另开后门。*/
+     * ★ 中弹救援那条路**也吃这个门**（一手 `SPIRIT` §7：第二次 die 时槽已扣到 0 ⇒ 必然失败）。
+     *   第二版起我们**照抄**这一点 ⇒ 「槽不满就不救、照常死」正是这条门（无需另开分支）。*/
     if (gauge < TRANCE_GAUGE_MIN_ENTER) return 0;
     begin_common(s, death_free);
     if (c) {                                /* 条件表只是为了「是否允许」，进来后不用它 */
@@ -142,9 +170,16 @@ void trance_end(trance_state_t *s, trance_tick_t *out)
     s->ended_death_free = was_death_free;
     if (!was_death_free) {
         /* 一手 `0x405cdd`：**非死亡触发**的灵界结束再 −200（夹到 0）。
-         * ★ 死亡触发那条**不补扣**、也**不**「再调一次 Player::die」（一手 `th13:0x405c3e` 是延时机制，
-         *   用户定案 ② 明确不做延时）⇒ 这条分支里**没有别的动作**，这是有意为之。*/
+         * ★ 死亡触发那条**不补扣**：一手 `th13:0x405b80` 里 `if (!(this+0x14 & 2))` 只包住扣槽那一步，
+         *   而它上面那句 `if (this+0x14 & 2) { … if (PLAYER_PTR) FUN_00444a10(); }`（`0x405c3e`）
+         *   才是这一档的真动作 —— **再调一次 `Player::die`** ⇒ 那次保命是**延时**而不是免死。
+         *   ⚠ 本文件**不调** `Player::die`（纯逻辑层不认识引擎）：只把「欠一次死亡」记成 `re_dying`
+         *     守卫，由 `trance_should_redie()` 交给调用方执行。一手同一形状：此时槽已被逐帧扣到 0
+         *     ⇒ 第二次 `die` 里的 `begin` 必然撞 `0x405a40` 那道门 ⇒ 不会再被救 ⇒ 正常扣命。*/
         trance_gauge_sub(&s->gauge, TRANCE_GAUGE_END_PENALTY);
+    } else {
+        s->re_dying = 1;
+        s->re_die_age = 0;
     }
     if (out) {
         out->ended = 1;
@@ -162,11 +197,31 @@ trance_tick_t trance_tick(trance_state_t *s, int32_t frame)
     out.started = 0;
     out.ended = 0;
     out.ended_death_free = 0;
+    out.re_die = 0;
     out.drain_floor = 0;
     if (!s) return out;
 
     dropped = trance_chain_tick(s, frame);   /* 连锁窗口在两个相位下都要走 */
     (void)dropped;
+
+    /* ★ 守卫看门狗（第二版）：`re_dying` 正常由 `+0x14` / `trance_redie_state_exit()` 清掉；
+     *   万一两条路都没来（实跑里可能出现的未知路径）⇒ `TRANCE_RE_DIE_TIMEOUT` 帧后自动失效。
+     *   宁可漏一次救援（照常死），也不要带着一个永不清的守卫把本卡以后所有救援都掐掉。*/
+    if (s->re_dying) {
+        ++s->re_die_age;
+        if (s->re_die_age > TRANCE_RE_DIE_TIMEOUT) {
+            s->re_dying = 0;
+            s->re_die_age = 0;
+        }
+    }
+
+    /* ★ 相位 3 = **只是排队**（灵界还没开）：不扣槽、不算「在灵界里」。
+     *   实测这条路上唯一该推进的是排队帧数（`trance_pending_age()`，由卡在帧点调用），
+     *   所以这里直接返回（`out.phase` = 3 ⇒ 卡侧据此知道「这次死亡还在等我的轮次」）。*/
+    if (s->phase == TRANCE_PHASE_DEATH_PENDING) {
+        out.phase = s->phase;
+        return out;
+    }
 
     if (s->phase == TRANCE_PHASE_IDLE) {
         if (s->cooldown < TRANCE_COOLDOWN_FRAMES) ++s->cooldown;   /* 冷却到 30 就停（不必再涨）*/
@@ -187,34 +242,123 @@ trance_tick_t trance_tick(trance_state_t *s, int32_t frame)
             trance_end(s, 0);
             out.ended = 1;
             out.ended_death_free = s->ended_death_free;
+            out.re_die = s->ended_death_free;      /* ★ 欠一次死亡 ⇒ 调用方补 `Player__die` */
         }
     }
     out.phase = s->phase;
     return out;
 }
 
+/* 死亡强制档的条件表。**只有一条硬门**：槽 ≥ 200（一手 `0x405a40`）。
+ * 一手的 `Player::die` 里确实还有 `TEST GAME_FLAGS,0x30` + `gui->msg`（`th13:0x444a14`），
+ * 但那是**死亡流程自己的门**（决定「要不要试免费灵界」）；我们这条路的触发者已经过了那道门
+ * （能走到 `+0x10` 就说明死亡流程在跑）⇒ 照 `begin(ptr,1)` 的语义走，不再复制第二遍。
+ * ⚠ 其余条件**都要显式填**：本函数不 memset 整张表，漏填就是未初始化读（哪怕 `begin` 现在不看它）。*/
+static void fill_cond_death_free(trance_cond_t *c, int32_t gauge)
+{
+    memset(c, 0, sizeof *c);
+    c->full = (gauge >= TRANCE_GAUGE_MAX);
+    c->enemies = 1;      /* 死亡强制的路**不查**「场上有敌」/ 键 / 冷却（一手 `0x444a1d` 直接 begin(1)）*/
+    c->cooldown = 1;
+    c->key = 1;
+    c->auto_mode = 1;
+    c->game_flags_ok = 1;
+}
+
 int trance_force_on_death(trance_state_t *s)
 {
     trance_cond_t c;
-    int ok;
     if (!s) return 0;
-    if (s->phase != TRANCE_PHASE_IDLE) return 0;   /* 已在灵界：`begin` 会视为成功，但我们不重复开窗 */
-    if (s->gauge.gauge < TRANCE_GAUGE_MIN_ENTER) return 0;   /* 一手 `0x405a40` 的同一道门 */
-    c.full = (s->gauge.gauge >= TRANCE_GAUGE_MAX);
-    c.enemies = 1;      /* 死亡强制的路**不查**「场上有敌」/ 键 / 冷却（一手 `0x444a1d` 直接 begin(1)）*/
-    c.cooldown = 1;
-    c.dialogue = 0;
-    c.bombing = 0;
-    c.in_trance = 0;
-    c.key = 1;
-    c.auto_mode = 1;
-    /* ★ 第 8 条（`0x405859`）在这条路上**也填通过值**：一手的 `Player::die` 里确实有 `TEST …0x30`
-     * （`th13:0x444a14`），但那是**死亡流程自己的门**；我们的落点是死亡**结算之后**（`+0x14`，
-     * 用户定案 ③ / SPEC §3.1「零新件」）⇒ 照 `begin(ptr,1)` 的语义走，不复制死亡流程的门。
-     * ⚠ 一定要填：本函数不 memset 整张表，漏填就是**未初始化读**（哪怕现在 `begin` 不看它）。*/
-    c.game_flags_ok = 1;
-    ok = trance_begin(s, 1, &c);
-    return ok;
+    /* ★ 守卫（第二版）：这次死亡已经由 113 救过、正在等它自己把死亡补上 ⇒ 一律不救。
+     *   触发者是 `Player__die` 里那个 `+0x10` 广播（`th18:0x45d574`）—— 窗口结束时的「再死一次」
+     *   会再广播一遍 ⇒ 没有这道门就会**自己救自己**、永不真死。*/
+    if (s->re_dying) return 0;
+    /* 已在一档真灵界里（手动 / 死亡强制）：`begin` 会走「已在灵界」那条路 ——
+     * 一手的 `0x405a4c`–`0x405a50` 在那里**仍然**把 bit1 设成 `param_1` ⇒ 手动窗会被**升格**成
+     * 死亡强制档（⇒ 结束时也要再死一次）。所以这里不能直接返回 0，而要**走 `begin` 拿它的判定**：
+     * 返回 1 = 真的升格了（算救下）；返回 0 = 槽 < 200，没升格（那次中弹没被救）。*/
+    if (s->phase == TRANCE_PHASE_DEATH_PENDING) return 0;   /* 还在排队等轮次：不许抢跑 */
+    fill_cond_death_free(&c, s->gauge.gauge);
+    return trance_begin(s, 1, &c);
+}
+
+/* ============================ ★ 救援层的最后一家（第二版）============================
+ * 完整的一手依据 / 帧序 / 为什么 `+0x10` 只登记 见 `trance_core.h` 的同名段（唯一口径来源）。
+ * 本段全是**纯状态**：帧号、帧数、两个标志 + 四条谓词。**一个引擎地址都没有。*/
+
+void trance_note_death(trance_state_t *s, int32_t frame)
+{
+    if (!s) return;
+    if (s->re_dying) return;            /* 自己欠的那次死亡还在走 ⇒ 别再排一次（防自锁）*/
+    if (s->phase != TRANCE_PHASE_IDLE && s->phase != TRANCE_PHASE_MANUAL
+        && s->phase != TRANCE_PHASE_DEATH_FREE) return;
+    /* 已经在排队 ⇒ **只刷新帧号**（同一帧报到两次也只算一次排队）。
+     * ⚠ 手动/死亡强制窗里**照样登记**：那一刻槽可能还够（一手：手动窗也能被升格）。*/
+    s->pending_frame = frame;
+    s->pending_age = 0;
+    /* ★ 相位：还没开窗时切到「排队」相位；已在灵界里则**保持原相位**
+     *   （升格由 `trance_force_on_death` 走 `begin` 完成；排队相位只表示「灵界还没开」）。*/
+    if (s->phase == TRANCE_PHASE_IDLE) s->phase = TRANCE_PHASE_DEATH_PENDING;
+}
+
+int trance_death_pending(const trance_state_t *s)
+{
+    return (s && s->pending_frame >= 0) ? 1 : 0;
+}
+
+int32_t trance_pending_age(trance_state_t *s)
+{
+    if (!s) return -1;
+    if (s->pending_frame < 0) return 0;      /* 没在排队 ⇒ 0（**不是**「已等够」）*/
+    ++s->pending_age;
+    if (s->pending_age > TRANCE_RE_DIE_TIMEOUT) return -1;   /* 等太久 ⇒ 调用方放弃 */
+    return s->pending_age;
+}
+
+int trance_pending_ready(const trance_state_t *s, int player_in_death_state)
+{
+    if (!s) return 0;
+    if (s->pending_frame < 0) return 0;
+    if (s->pending_age < TRANCE_PENDING_FRAMES) return 0;
+    if (!player_in_death_state) return 0;
+    return 1;
+}
+
+void trance_pending_drop(trance_state_t *s)
+{
+    if (!s) return;
+    s->pending_frame = -1;
+    s->pending_age = 0;
+    if (s->phase == TRANCE_PHASE_DEATH_PENDING) s->phase = TRANCE_PHASE_IDLE;
+}
+
+int trance_should_redie(trance_state_t *s, const trance_tick_t *t)
+{
+    if (!s || !t) return 0;
+    if (!t->re_die) return 0;
+    /* `trance_end` 里已经置过 `re_dying`，这里只保证「欠账」这件事在调用方看来是原子的：
+     * 返回 1 ⇒ 守卫已在位 ⇒ 紧接着调 `Player__die` 是安全的（它广播的 `+0x10` 不会再被自己救）。*/
+    s->re_dying = 1;
+    s->re_die_age = 0;
+    return 1;
+}
+
+int trance_re_dying(const trance_state_t *s) { return (s && s->re_dying) ? 1 : 0; }
+
+void trance_redie_done(trance_state_t *s)
+{
+    if (!s) return;
+    s->re_dying = 0;
+    s->re_die_age = 0;
+}
+
+void trance_redie_state_exit(trance_state_t *s, int player_in_death_state)
+{
+    if (!s) return;
+    if (s->re_dying && !player_in_death_state) {
+        s->re_dying = 0;      /* 死亡流程已经走完（或玩家用别的方式活了下来）⇒ 解除守卫 */
+        s->re_die_age = 0;
+    }
 }
 
 /* ============================ 连锁 ============================ */
