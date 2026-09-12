@@ -3709,7 +3709,7 @@ wba_wc: SE probe 6/6 id 0x39 (se_heal)
   （源 / `mods/` / `thcrap/bin/` / `thcrap/repos/Renko_1055/th18_card_expand_255/` 四份一致）。
 
 
-### AL42. ★ 鬼形兽（id 117）十二修：SPACE 随机 1..7、撒道具 SE A/B/C、咆哮期间拦掉装备子机普通弹（2026-09-12）
+### AL42. ★ 鬼形兽（id 117）十二修：SPACE 随机 1..7、撒道具 SE A/B/C、咆哮拦装备子机、魔理沙鹫改 5 连扇形粗激光（2026-09-12）
 
 用户 2026-09-12 实跑回报：
 
@@ -3765,19 +3765,46 @@ wba_wc: SE probe 6/6 id 0x39 (se_heal)
 - 导出 `BP_ce_option_shot_gate` `@28`、`dllverify` 27 → **28 exports**；`sites_gen.h` /
   `patch/th18.v1.00a.js` 同步再生成。
 
-#### D. 鹫视觉按角色分派（`native/cards/animal.c` + `assets/sht/append_shooterset.py`）
+#### D. 鹫视觉：pl01 = 本体 5 连扇形粗激光；pl00/pl02 = 5 发诱导弹；pl03 安全回退
 
-- `eagle_beam_tick()` 增加 `CE_ADDR_CHARACTER == ANIMAL_CHAR_MARISA(1)` 门：
-  - pl00 灵梦 / pl02 咲夜：鹫 = **5 颗 body 追尾弹**（`pl00.sht` 的 EAGLE `0x24..0x27`，
-    `mode=1` / `func init1/tick1`），数据路径已画对，不再叠 pl01 激光条。
-  - pl01 魔理沙：主炮 EAGLE 组留空，卡侧矩形束挂在**原生子机** `player+0x670` 每颗一条
-    （脚本 163 = TH17 pl01.anm entry0 sprite29），松 Z / 咆哮结束立即收。
-  - pl03 早苗：没有 TH17 对应；原来的 pl01a 模板把 TH17 `mode=2` 行原样搬进 `pl03.sht`，而
-    `opt_slot` 的 TH17 编码 `0/16/32/48/64` 在 TH18 主炮路径只取低半字节 ⇒ 全变 body；
-    `mode=2` 的 tick2 在 `0x45fcc8` 无条件读 `[bullet+0xe4 + 0x5c]`，`bullet+0xe4 == 0` ⇒
-    **空指针崩溃**。已把 `HYPER_SOURCE["pl03.sht"]["EAGLE"]` 改成 `pl00a.sht`（与 pl02 同款
-    安全回退：5 颗 body 追尾弹，贴图 identity 到 pl03 正常弹）。`make sht` 后 pl03 set
-    `0x24..0x27` = `mode=1 / slot=0`。
+**数据路径的结论（先逐字段核对，再决定不走它）**：
+
+- TH17 `pl01a.sht` EAGLE 5 行（`engine/sht/th17/02` §2.4）：伤害 80/60/60/50/50、角度
+  -90°/-75°/-105°/-60°/-120°、`opt_slot` 原值 `0x00/0x10/0x20/0x30/0x40`、`mode=2`。按
+  TH18 主炮路径的字段图（`engine/sht/th18/02` §1）翻译后：`anm=16`（pl01.anm script16 =
+  sprite29 512×32 激光条）、`hit_fx=8`、`func=init2/tick2/hit2`（都 = 2）、`hit_h=34`、
+  `speed=0`。**func 映射核过：就是 TH18 的 2 = `init2 0x45fc20` / `tick2 0x45fc80` /
+  `hit2 0x460320`**，没有映射错。
+- 与零售 `pl01.sht` 的**真激光行**（主炮路径的原生子机激光：set `0x01..0x09` 的 `mode=2` 行，
+  以及 `0x0b` 迷你八卦炉）逐字段比：零售用 `anm=6`（pl01.anm script6 = 原生激光束）、
+  `hit_h=16`、`opt_slot=1..4`（真子机）；TH17 行用 `anm=16`、`hit_h=34`、`opt_slot` 低 4 位
+  全 0（本体）+ 高 4 位 mode=2 状态槽。也就是说：**TH18 的 tick2/hit2 是按 `anm=6` + 真子机
+  写的；TH17 的 512 px 束脚本 + body + 合成 option 的组合没在零售里跑过。**
+- 上一轮（§AL38）就是走「合成 option 指针 + 主炮路径」并实跑：用户看到的是**贴着激光图的
+  移动弹**，不是束（§AL39 的结论）。⇒ 按父任务给的 fallback：卡侧 5 条；用户已明确接受
+  「5 条散开的粗激光」这一表现。
+
+**卡侧实现**（`native/cards/animal.c`）：
+
+- `eagle_beam_tick()` 门 = `roaring()` + `hyper_type==3` + Z 按住 + `CE_ADDR_CHARACTER==1`
+  （魔理沙）。不满足就 `eagle_beam_kill()`。**狼咆哮（type 1）绝不会碰卡侧束。**
+- 5 条束都从**本体位置**出发，角度表 `s_eagle_beam_angle[5]` = 上述 TH17 5 行角度；脚本 163
+  （`ability.anm`，anchor(1,0) + rotate(-90°)）用 `ce_anm_set_rotation(id,0,0,angle)` 逐条改朝向。
+- 伤害：每条沿轴 `ce_damage_rect(center=本体+dir×256, angle=angle+π/2, life=2, dmg=20,
+  w=34, h=512)`；消弹：每条沿轴 5 个 `ce_cancel_radius(r=20, mode=1)` 近似 34 px 宽柱。
+  `ce_polar_to_vel(dir, angle, 512)` 给束尖方向（与 anm 角度同一套约定）。
+- 松 Z / 咆哮结束 / 对话暂停：`eagle_beam_kill()`（`interrupt 1` 淡出）。
+
+**数据 / 其它角色**：
+
+- pl00 灵梦 / pl02 咲夜：鹫 = **5 颗 body 追尾弹**（`pl00.sht` EAGLE `0x24..0x27`，
+  `mode=1` / `func init1/tick1`），数据路径已画对，不再叠 pl01 激光条。
+- pl03 早苗：没有 TH17 对应；原来的 pl01a 模板把 TH17 `mode=2` 行原样搬进 `pl03.sht`，
+  而 `opt_slot` 的 TH17 编码 `0/16/32/48/64` 在 TH18 主炮路径只取低半字节 ⇒ 全变 body，
+  `mode=2` 的 tick2 在 `0x45fcc8` 无条件读 `[bullet+0xe4 + 0x5c]`，`bullet+0xe4 == 0` ⇒
+  **空指针崩溃**。已把 `HYPER_SOURCE["pl03.sht"]["EAGLE"]` 改成 `pl00a.sht`（与 pl02 同款
+  安全回退：5 颗 body 追尾弹，贴图 identity 到 pl03 正常弹）。`make sht` 后 pl03 set
+  `0x24..0x27` = `mode=1 / slot=0`。
 
 #### E. 门 / 部署（本轮）
 
@@ -3785,7 +3812,7 @@ wba_wc: SE probe 6/6 id 0x39 (se_heal)
   `python3 tooling/check-docs.py` 通过。
 - **新增 `BP_ce_option_shot_gate`**：`th18_card_expand.def` `@28`，`Makefile` 的 `dllverify`
   27 → **28 exports**（26 BP → 27 BP + init）。
-- `MODKIT_DIR=… NO_GIT=1 make release` 成功；DLL md5 = `12a93d8c4c8797dd98ea64322d9331fe`
+- `MODKIT_DIR=… NO_GIT=1 make release` 成功；DLL md5 = `b83509d7f69edfbc3539420eeefa5463`
   （native / dist / 部署 `mods/` 三者 `cmp` 相同）；`build/sht/pl00..03.sht`、`abcard.anm`、
   `ability.anm`、`pl0X.anm`、`default.ecl` 与部署逐文件 `cmp` 相同。
 - `bash local/sync_modkit_dll.sh`：四个加载路径全部同步为同一 md5，**本轮未被游戏锁**。
@@ -3796,8 +3823,11 @@ wba_wc: SE probe 6/6 id 0x39 (se_heal)
 2. 连续撒道具：按顺序听 A(`0x34`) / B(`0x43`) / C(`0x3e`)，回报哪个最像「大量道具」。
 3. 灵梦狼咆哮 + 带装备 option 卡：子机普通激光应停；日志
    `wba_c: option shot suppressed while roaring (retail equip option set 0x.., ...)`。
-4. 魔理沙狼咆哮：子机普通激光应停；魔理沙鹫咆哮：应是卡侧 option 激光（pl01 样式）。
-5. 灵梦鹫咆哮：应是 5 颗 body 追尾弹，不再有 pl01 激光条。
+4. 魔理沙狼咆哮：子机普通激光应停；魔理沙鹫咆哮：应是**本体发出的 5 条扇形粗激光**
+   （-90°/-75°/-105°/-60°/-120°），日志 `wba_c: eagle beam on (5 body fan lasers, ...)`；
+   松 Z / 咆哮结束出现 `wba_c: eagle beam off (5 beams, ...)`。
+5. 灵梦鹫咆哮：应是 5 颗 body 追尾弹，不再有 pl01 激光条；灵梦狼咆哮也**绝不该**有 pl01 激光
+   （若还有，请把日志里的 `char=` 与 `option shot suppressed ...` 行发回）。
 
 
 ## G. OPEN —— 还没解决的
@@ -4974,3 +5004,101 @@ C 侧：占位 `CE_ANM_ABILITY_SCRIPT_PEASHOOTER_OPT`（卡 77 的豌豆射手�
 ⑤ 血条 134/136 的视觉分工（谁是外框、谁是填充）＝ 仍需实机截图。
 ⑥ TH18 `flags_lo` 位 30（`0x42d8f6`）的语义：只复核了指令本身，**没 grep 谁读它**（`engine.h` 的「锁定黑名单」口径仍 🟡）。
 ⑦ `0x4b0c48` / `0x4b0cd0` 的字段名：用同址判据间接定死（玩家火力 / 满火力阈值），未与 th-re-data 的字面对上。
+
+### BO-12 112 的 UFO 血量 UI：环与条的**真身**（★ 环不是贴图环）+ §BO-11 ❓6 结案
+
+用户点名「要有血量 UI」，且口径是「**环绕实体身边的一圈按进度填充的环** + **正上方居中无框的血条**」。
+查清了 —— **两件都是「脚本给参数、引擎每帧现算几何」**，不是贴图：
+
+| 件 | 脚本 | 比例来源 | 落到哪 |
+| --- | --- | --- | --- |
+| **环（吸收/喂饱进度）** | `th12` `bullet.anm` **script206**（挂在光环树 script207 下，VM 句柄存 `zUfo+0x3c`）| `zUfo+0x50`（float `fill`）| **`VM.rotation.x = fill × 2π`**（`th12:0x44a499`，2π = double `0x4a3cd0`）|
+| **条（血量）** | `th12` `front.anm` **script136**（句柄 `zUfo+0x44`）| `life.current/life.maximum`（`enemy+0x2648/+0x264c`）| **`VM.scale.x`**（`th12:0x44a801`–`0x44a814`）+ `entity_pos = 敌人坐标`（`0x44a83e`）|
+
+#### 一、★ 环的真身：一条竖条带被引擎「扫」成圆弧
+
+- 脚本字面：`iset($I0,32); iset($I1,2); ins_101($I0); sprite(sprite404); scale(6.0f,59.0f);
+  scrollY(0.025f); rotate(3.1415927f,0.0f,1.5707964f); stop();`
+- **贴图只是一条 14×128 的竖条带**（`bullet/etama3.png` **sprite404 = `{x:49, y:0, w:14, h:128}`**）
+  —— 所以「**找不到环的贴图**」是正常的（用户的观察 ✅），环是被引擎沿弧扫出来的；
+  另外两条**静态描边**：子脚本 **204** = `drawPolyBorder(62.0f,48)`、**205** = `drawPolyBorder(55.0f,48)`
+  （内外两圈，正好夹住填充带 56..62）。
+- **模式 = anm mode 13（居中弧）**：`ins_101` = 原始 opcode 101 → `AnmVm::run` `0x455630` 跳表
+  `0x458730[N+1]` → `0x456ee1`：`flags_lo = (flags & 0xF6FFFFFF) | 0x6800000`；TH12 的
+  `mode = (flags_lo>>23) & 0x1f`（`draw_vm` `0x45c928`）⇒ **`0x6800000>>23 = 13`**。
+  （TH18 里同一个模式叫 **`601 texArcEven`**，见下。）
+- **顶点每帧在 `AnmVm::run` 里现算**（`0x45842c` 起的 case 体，每个顶点 28 B，`malloc(56×I0)` 在 `0x456f09`）：
+  `start = norm(rotation.z − rotation.x × 0.5)`（`0x458435`–`0x45845a`，0.5 = double `0x4a3cf8`）·
+  `dθ = rotation.x / (I0 − 1)`（`0x458474`–`0x458481`）·
+  `r_out = scale.y + scale.x × 0.5`（`0x458317`）· `r_in = scale.y − scale.x × 0.5`（`0x45862c`）·
+  位置 = `pos + pos_2 + entity_pos + 父链 final`（`0x458495`–`0x45856d`）；`I1` = 贴图沿环重复次数。
+- **★ 为什么正好是「从 6 点起，顺/逆时针同时填到 12 点」**（与用户口述**逐字对上**）：
+  `rotation.z = 1.5707964 = π/2`，而屏幕 y 向下 ⇒ **π/2 = 6 点**；
+  `rotation.x = fill × 2π` 且 **mode 13 以 base 为中心向两侧展开** ⇒ 两端同时长，`fill → 1` 时在 **12 点闭合** ✓。
+  **`I0 = 32` 段 ⇒ 观感「粗糙」** ✓（用户的两条观察都成立）。
+
+#### 二、条：纯引擎四边形，`sprite(-1)` 不画精灵
+
+- `front.anm` **script136** = `scriptNew(137); sprite(-1); drawRect(32.0f,4.0f); layer(10);
+  color(255,96,96); pos(0.0f,-28.0f,0.0f); stop();`
+  子 **137** = `sprite(-1); drawRect(32,4); layer(9); color(0,0,0); pos(1,1,0)` = **1 px 投影，不是框**。
+- 「**居中、无框**」怎么来的：`drawRect` 是**图心锚**的引擎四边形 ⇒ `scale.x < 1` 时**左右对称收缩**；
+  子 VM 继承父的实时 scale（`AnmVm::write_sprite_corners__without_rot` `0x45a570` 里有父则读父 `+0x40/+0x44`）
+  ⇒ 投影随条一起缩，**确实不是框** ✓。
+- ⚠ **`front.anm` 的 134/135 不是环**：那是 `front_ufo.png` 的两张 **96×96**，**固定屏幕位 `pos(528,288,0)`**
+  （句柄 `zUfo+0x40`）= 右侧那块「吸收数记录」（与 thbwiki 口径吻合）；
+  文字读数是 `Ufo::on_draw`（优先级 60，`0x44a4f0`）打的 `%3d`（cntA/cntB）与 `%3d%%`（fill×100）。
+
+#### 三、满时的表现与时序（用户口述的「闪烁 + 先掉碎片」）
+
+`fill > 1.0` ⇒ `0x44ad74` 夹回 1.0 ⇒ `0x44ad86` 音效 0x30 ⇒ `0x44ad8b/0x44ad94` **`anm_interrupt_by_id(vm3c, 2)`**
+（`0x461970` **递归子树**）⇒ 204/205/206 **全部**进 `interruptLabel(2)`：
+`color(255,255,0) → (255,0,0) → (0,255,0) → (0,255,255)` **每 2 帧一换并 `jmp` 循环 = 闪烁** ⇒
+**同一帧**吐奖励（红 `push $0x4` `0x44adf8`、绿 `push $0x7` `0x44adcd`、蓝**无 case**、彩虹按 `COLLECTED_UFO[2]`）。
+⚠ **顺序是「先发闪烁中断、后吐道具」**（`0x44ad94` 早于 `0x44adfa`），用户说的「先掉碎片再闪烁」在一手里是**同一帧**。
+比照**击破**那条（`FUN_0044af00`）：赏金道具 16/17/18 + 红 `4`+`0xd`、绿 `5`+`0xf`、蓝 `0xe`、彩虹 13/14/15。
+⇒ 用户口述的「**红：喂饱 1 碎片 + 击破 1 碎片**」✓✓ 对得上；**绿「喂饱」一手 = 道具 7（整颗 Bomb）**，
+击破才是 5（Bomb 碎片）⇒ 即 §BO-11 的 **P6**（我们映射到 TH18 type 6，差一格，待裁决）。
+
+#### 四、TH18 能不能落地：能，但**零资产白拿做不到**
+
+- ✅ **同一套原语、算式逐条对上**：`601/602` handler `th18:0x47b211`/`th18:0x47b223`
+  （TH18 的 `mode = flags_lo>>26` ⇒ 13/14）；绘制器 `th18:0x47bef0` 的 mode 13/14 case **`th18:0x47c23b`**：
+  `rotation.x(+0x3c)` / `rotation.z(+0x44)` · `start = norm(z − x×0.5)`（`0x47c25a`，0.5 = `0x4b9138`）·
+  `dθ = x/(I0−1)`（`0x47c298`）· `r = scale.y ± scale.x×0.5`（`0x47c33d`–`0x47c360`）；
+  mode 14 改成「从 `rotation.z` 起」（`0x47c312`）。
+  ★ **TH18 的 `rotate` handler（`0x47a13b`）不置任何脏位** ⇒ 卡侧**每帧只写 `rotation.x` 就即时生效**。
+- ❌ **「用引擎自带的程序化环白拿」不成立（穷举否定）**：TH18 唯一**无贴图**的程序化环 =
+  `drawRing`（611 → mode 19，handler `0x47b4a6`，writer `0x483060`）**恒整圈**
+  （`0x4830a6` 直接取 `0x4b9260` = 2π 除以段数，**没有任何角度参数**）⇒ **做不了角度填充**；
+  `drawRect` / `drawPoly` / `drawPolyBorder` / `drawLine` / `texCircle` 全是整圈 / 整多边形。
+  ⇒ **唯一有角度范围的 = `texArc` / `texArcEven`（必须有条带贴图）**。
+- ★ 而「**条带扫成环**」正是 **TH18 自己的原厂做法**：`front.anm` entry11 = **`front/lifebar.png`**
+  （sprite183 = 8×32、sprite184 = 4×32），script378 = `texArc(38)` + `scale(8,112)` + `rotate(−2π,0,−π/2)`、
+  379/380 = `texCircle(38)`。⚠ 我们的 SDK 只有 `CE_MGR_ABILITY_ANM` / `CE_MGR_ABCARD_ANM` 两个句柄
+  ⇒ 够不到 TH18 自己那份条带 ⇒ **要自备一条带贴图**（TH12 是 14×128）。
+
+#### 五、§BO-11 ❓6 结案：`flags_lo` 位 30 是什么
+
+`flags_lo & 0xc0000021`（**位 0 / 5 / 30 / 31**）在**三处伤害扫描**里被判为「跳过这只敌人」：
+`CardAlice::on_shoot+0x51` `th18:0x40b531`、`th18:0x40b7b1`（同形状：按 id 找敌人 → 掩码 → 跳过）、
+`BombReimu::on_tick+0x8c7` `th18:0x421e57`。另有 ECL 侧 `th18:0x433b38`（`ecl_run_over_300` 内某 opcode，
+**号未定 ❓**）：**若已是 boss（位 23）就置位 30**。
+⇒ **位 30 = 「Alice 人偶 / 灵梦炸弹这类 C++ 伤害源别打到我」的黑名单位**；`spawn life ≥ 1000` 会被
+`th18:0x42d8f6` **自动置位**（`0x42d8a8` 另有 `[enemy+0x6324] = 0x40000000`）
+⇒ **照抄一手 HP `{1600..2500}` 会让 UFO 被这两条伤害路径忽略**；玩家子弹走的是**别的掩码**
+（`0x42d457 testb $0x31` = 位 0/4/5）。🟡 完整语义仍建议按伤害源逐条过一遍。
+
+#### 六、❓（本轮未解）
+
+1. ★ **环的屏幕落点有两种读法**（需实机截图 / TH12 渲染阶段定死）：一手把光环的 `entity_pos` 重设成
+   **`敌人 + (32 + 192, 16)`**（`0x44a412`–`0x44a447`；192 = 场地半宽 `0x4a3d28`、32 = `0x4a3d70`）。
+   **读法 A**：那是世界坐标 ⇒ 环在敌人**右侧 224 px**（屏幕右缘，与 thbwiki 的「记录在屏幕右侧」吻合）；
+   **读法 B**：`+192` 只是在换算坐标空间 ⇒ 环在敌人**右侧 32 px、贴着它**。
+   ⚠ 同帧给血条 136 写的 `entity_pos` **不加 192**（就是敌人坐标本身）⇒ 两者不同源。
+   ⇒ 本卡按**读法 B（贴着敌人右侧 32 px）**实现（用户口径是「环绕在实体**身边**」），标 🟡 待实机确认。
+2. `flags_lo` **位 2**（TH12 侧）：`rotate()` handler `0x4580ed` 与引擎专用 setter `0x4620e0`
+  （`orl $0x4,0x47c; fstps 0x24`）都置位、mode 6/8 绘制器 `0x45ba00`/`0x45be09` 清位
+  ⇒ 🟡 像「rotation 被写过」的脏位（未逐读者钉死）；**TH18 无对应位** ⇒ 对落地无影响。
+3. `front.anm` 134/135 两张 96×96 的视觉分工（只确认了「134 不是环」）。
+4. `th18:0x433b38` 那个 ECL opcode 的号（位 30 的自动置位点）。
