@@ -25,11 +25,14 @@
  *
  * ── 长持续效果的自查（`METHOD.md` 铁律二 / `SDK.md` §6.1 尾）────────────────────────────
  * 本卡跨帧留下的东西：① 无敌声明层的一格（`ce_invuln_request`）；② 计分声明层的一格（`ce_score_declare`）；
- * ③ HUD 槽位 + 三行贴图 VM 文字。①② 由 `CE_CARD` 的 `on_run_reset` / `opdelete` 自动 `ce_layer_drop_card()` 清，
+ * ③ HUD 槽位 + 三行贴图 VM 文字；④ **★ 结界特效的两个世界层 VM**（甲 = 那个环的句柄 + 乙 = 32 颗的句柄，
+ * 2026-09-12 补，见文件中部长注）。①② 由 `CE_CARD` 的 `on_run_reset` / `opdelete` 自动 `ce_layer_drop_card()` 清，
  * ③ 的槽位也自动 release，但**文字 VM 是本卡自己的**，必须在 `on_delete` / `on_run_reset` 里 `ce_hud_vm_text_clear()`。
+ * ④ 同理（`ce_layer_drop_card` 只清声明层）⇒ `senro_clear()` 里的 `senro_fx_clear()` 把 33 个句柄全 `ce_anm_delete`。
  * ⚠ 删卡发生在**商店里**（倒吊人 / 原版空白卡清空整副牌），那一刻 AbilityManager 冻着、卡的 tick 全停
- * ⇒ 只能靠 `on_delete`（虚表 `+0x50`），不能等下一帧。本卡**不建任何世界 VM**（结界的特效需要
- * `ability.anm` 新增脚本 = 资产改动，不在本次范围）⇒ 世界侧没有要收的东西。
+ * ⇒ 只能靠 `on_delete`（虚表 `+0x50`），不能等下一帧；`on_stage_start` 也收一次（特效不跨关）。
+ * ⚠ 甲的环与乙的 32 颗都是**脚本自己 `delete()` 的一次性特效**（第 33 / 第 30 帧），但句柄仍必须记着：
+ * 删除卡时要能提前掐掉，起不来时只报日志不崩（`ce_anm_set_pos` 返回 0 ⇒ 句柄自愈）。
  */
 #include <stddef.h>          /* sdk.h 的 ce_item_collect_all 用了 size_t（内置 Linux 头不带）*/
 #include <string.h>
@@ -105,6 +108,97 @@
  * ⇒ Bonus 分放进 `%d` 行、第二行恒 1.0（= ×1，不额外改分）。*/
 #define SENRO_POPUP_MULT            1.0f
 
+/* ==================== ★ 结界的「看得见的那一半」：两个世界层 VM（2026-09-12 补）====================
+ *
+ * 背景：本卡原来只有「机制 + SE + 震屏」(`TUNING.md` §3 的 A4「107 结界特效 VM 未做」)。
+ * 一手表明 **TH07 的结界视觉也不是 C 侧画的，而是两个 EffectManager 的 effect type**：
+ *
+ *   ① **结界展开 / 崩结界的大环** = effect **type 0x1c**
+ *      开结界 `th07:0x441aa4`、灵击崩结界 `th07:0x441c19` 都是
+ *      `push 0x1c; push <自机坐标 player+0x930>; push 4; push 1; push -1; ecx=EffectManager(0x12fe250);
+ *       call 0x41c610`（`0x41c610` = 起一个 effect VM）。崩结界那一路**先杀旧的**（`th07:0x441be5`
+ *      把 `[player+0xb7e6c]` 那个 VM 的存活位 `+0x2cc` 置 0）**再起新的** —— 本卡照这个顺序。
+ *   ② **灵击时飞出去的那 32 颗** = effect **type 0x1d**
+ *      `th07:0x441dd9`–`0x441e38` 的循环（`cmp i,0x20` = **32 次**）每轮 `push 0x1d; call 0x41c1c0`；
+ *      角度与速度**是 C 侧算好写进 VM 的**（一手逐指令）：
+ *          起始角 `0xC0490FDB` = **-π**，每轮 `ang += [0x498cfc]` = **0.19634954 = 2π/32 = 11.25°**
+ *          `[vm+0x294] = cos(ang)`（`call 0x48bbf0` = **fcos**）
+ *          `[vm+0x298] = sin(ang)`（`call 0x48bb40` = **fsin**）
+ *      运动在 type 0x1d 的 update `th07:0x41ad10` 里：
+ *          `pos[vm+0x24c] = home[vm+0x288] + v[+0x294..] × (帧 × 256 / 30)`
+ *      ⇒ **从自机位置线性外扩**，30 帧走满 **256 单位**（640 空间；游玩区宽 384）。本卡照抄这个公式。
+ *
+ * type → 脚本号的表 = `th07:0x49efc0`（`{u16 id; u16 pad; void* update; void* draw}`，stride 0xc）：
+ *   **type 0x1c → id 731**、**type 0x1d → id 690**。两个 id 都落在零售 `data/etama.anm` 上
+ *   （`AnmManager::loadAnm` `th07:0x44df90` 的 base **每个 entry 前进「上一 entry 的 sprite 数」**；
+ *   etama base 512 + entry0 的 168 sprites = 680（entry1）→ +50 = 730（entry2）→ +1 = **731**（entry3））：
+ *     731 = entry3（`data/etama/etama4.png` 整张 256×256）的文件内脚本 0 → **本卡 `204`**
+ *     690 = entry1（`data/etama/etama2.png`）的文件内 id 10（`thanm -l` 的 script35）→ **本卡 `205`**
+ *   ⇒ 两个脚本**逐条照抄**（唯一差异 = `sprite(...)` 换成 ORDER 名字），见
+ *     `assets/ability/scripts/204_senro_field.anm.txt` / `205_senro_ring.anm.txt` 的 diff 块与
+ *     `assets/ability/make_senro_art.py` 的完整一手推导。
+ *     交叉印证：道具脚本 = `0x2c4 + type`（`th07:0x4328ea`）= 708+type，正好落在同一段 base 上
+ *     （`186_sakura_point.anm.txt` 已独立复核过那十条）。
+ *
+ * ⚠️ 与 `ufo.c` 的跟随 VM 的**结构差异**（照抄它、但这卡没有「载体」）：
+ *   ufo 的两个 VM 是**跟着一个敌机实体**跑的（每帧抄 `abs_pos`）；107 的两个**没有载体** ——
+ *   甲（204）是「就地起一次、脚本自己 `wait(32); delete()`」，乙（205）是「32 个 VM 各带一个固定方向、
+ *   每帧按公式摆位置、脚本第 30 帧自己 `delete()`」。⇒ 生命周期管理与 ufo 同形
+ *   （`*_vm_kill` 句柄清零幂等 + `on_delete` 全收），但**没有 follow**（位置由本文件算）。
+ *
+ * ⚠️⚠️ **建 VM 只能在 tick / 帧末**（`ufo.c` 的死亡栈纪律）：`on_death_before_deathbomb` 跑在
+ *   **死亡栈**里（本卡文件头的长注 + spec §6.3）⇒ 那里**只置 pending 位**，
+ *   真正的 `ce_anm_spawn` 一律发生在 `on_tick_2` 尾部的 `senro_fx_flush()`。
+ *   中弹那一路因此晚 **1 帧**（≈16 ms）出现 —— 与既有「中弹消弹推迟一帧」同一口径，spec §9 第 3 条。 */
+#define SENRO_ANM_SCRIPT_FIELD      204    /* 本地号：anm_ids.h 由主 agent 统一压号后合并（现用 204/205）*/
+#define SENRO_ANM_SCRIPT_RING       205
+/* 层：**零售脚本不写 `layer()`**（TH07 的 effect VM 由 EffectManager 自己排）⇒ 由本文件（挂它的那一方）
+ * 补世界层（3–19；HUD 那两层的 24/25 不适用）。❓ 自定：**两个都取 19**（世界列表最高的那一层，
+ * `engine/anm/th18/02-render-stages.md` §1 的 0x2b 桩），理由 = 原版这两半都盖在弹幕之上：
+ *   · 甲是「结界展开 / 崩结界」的全屏闪光（全屏 ⇒ 必须在最上面）；
+ *   · 乙是 32 颗（原版是「被打掉的弹变成小樱点飞出去」，看得见才有意义）。
+ * 旁边的口径（都可作参照，但都不是同一个东西）：`lolk.c:425` 的擦弹圈（自机位置上的环）取 **12**、
+ * `ufo.c` 的令牌 / 本体取 **13 / 7**（与原生道具 / 敌机同层）。**实跑若发现被弹幕盖住，改这两行即可。** */
+#define SENRO_FIELD_ANM_LAYER       19
+#define SENRO_RING_ANM_LAYER        19
+/* 32 颗的参数：全部一手（见上面的逐指令）。
+ *   `SENRO_RING_UNITS` = `th07:0x441dee cmp [ebp-0x8],0x20`；
+ *   `SENRO_RING_LIFE`  = 脚本 205 第 30 帧 `delete()`（`+20: // 30`），与公式分母的 30 同源；
+ *   `SENRO_RING_SPAN / _DEN` = `th07:0x41ad30 fmul 256.0 (0x498a98) / 0x41ad36 fdiv 30.0 (0x498b00)`。 */
+#define SENRO_RING_UNITS            32
+#define SENRO_RING_LIFE             30
+#define SENRO_RING_SPAN             256.0f
+#define SENRO_RING_DEN              30.0f
+/* 甲的自杀帧数（脚本 204：`iset($I0,32); +1: wait($I0); delete()` ⇒ 第 33 帧）。C 侧只用来清句柄。 */
+#define SENRO_FIELD_LIFE            33
+/* pending 位（死亡栈里只置位、tick 里兑现）。 */
+#define SENRO_FX_PEND_FIELD         1
+#define SENRO_FX_PEND_RING          2
+
+/* 32 颗的方向表：`(cos(ang), sin(ang))`，`ang = -π + i × (2π/32)` —— **编译期常量**，不在运行时算三角函数
+ * （零售那两条是 C 侧 `fcos`/`fsin`；我们这边照数值抄成表 ⇒ 卡侧零 x87，`make dllx87` 的不变式不动）。
+ * 逐项 = `cos(-3.1415927 + i*0.19634954)` / `sin(同上)`（i = 行号×2 + 列号）。 */
+static const float s_ring_v[SENRO_RING_UNITS][2] = {
+    {-1.0f, 0.0f}, {-0.9807853f, -0.1950903f},
+    {-0.9238795f, -0.3826834f}, {-0.8314696f, -0.5555702f},
+    {-0.7071068f, -0.7071068f}, {-0.5555702f, -0.8314696f},
+    {-0.3826834f, -0.9238795f}, {-0.1950903f, -0.9807853f},
+    {0.0f, -1.0f}, {0.1950903f, -0.9807853f},
+    {0.3826834f, -0.9238795f}, {0.5555702f, -0.8314696f},
+    {0.7071068f, -0.7071068f}, {0.8314696f, -0.5555702f},
+    {0.9238795f, -0.3826834f}, {0.9807853f, -0.1950903f},
+    {1.0f, 0.0f}, {0.9807853f, 0.1950903f},
+    {0.9238795f, 0.3826834f}, {0.8314696f, 0.5555702f},
+    {0.7071068f, 0.7071068f}, {0.5555702f, 0.8314696f},
+    {0.3826834f, 0.9238795f}, {0.1950903f, 0.9807853f},
+    {0.0f, 1.0f}, {-0.1950903f, 0.9807853f},
+    {-0.3826834f, 0.9238795f}, {-0.5555702f, 0.8314696f},
+    {-0.7071068f, 0.7071068f}, {-0.8314696f, 0.5555702f},
+    {-0.9238795f, 0.3826834f}, {-0.9807853f, 0.1950903f},
+};
+
+_Static_assert(sizeof(s_ring_v) / sizeof(s_ring_v[0]) == SENRO_RING_UNITS, "32 颗 = 32 个方向");
+
 typedef struct {
     senro_state_t    st;                /* 纯逻辑状态（senro_core.h）*/
     ce_hud_slot_t    slot;              /* HUD 槽（左下角货架；认领在 on_load）*/
@@ -116,6 +210,16 @@ typedef struct {
     int32_t          spell_bonus_alive; /* 本张符卡期间奖励位还活着（= 收掉，不是超时）*/
     int32_t          collect_log_at;    /* 结界自动收点的日志节流 */
     int32_t          hit_cancel_pending;/* 中弹灵击的消弹待补做（下一帧 flush；理由见 senro_do_libyou）*/
+    /* ---- ★ 结界特效（世界层 VM，见文件中部那段长注）---- */
+    uint32_t         fx_field_id;       /* 甲：结界展开那个大环（脚本 204）的 VM 句柄 */
+    int32_t          fx_field_frame;    /* 甲的帧计数（≥ SENRO_FIELD_LIFE 就清句柄）*/
+    uint32_t         fx_ring_id[SENRO_RING_UNITS];  /* 乙：32 颗（脚本 205）*/
+    int32_t          fx_ring_frame;     /* 乙的帧计数（32 颗同帧起 ⇒ 共用一个）*/
+    int32_t          fx_ring_live;      /* 1 = 这一批还活着 */
+    int32_t          fx_pending;        /* 死亡栈里只置位，`senro_fx_flush()` 在 tick 尾兑现 */
+    float            fx_home[3];        /* 乙的起点（= 起的那一刻的自机坐标，照 th07:0x441df8）*/
+    int32_t          stat_fx_field;     /* 诊断：起过几次甲 */
+    int32_t          stat_fx_ring;      /* 诊断：起过几批乙（×32 颗）*/
     int32_t          stat_collect;      /* 诊断：结界期间自动收点总数 */
     int32_t          stat_gain_item;    /* 诊断：道具通道加的樱点总数 */
     int32_t          stat_gain_graze;   /* 诊断：擦弹通道 */
@@ -180,12 +284,138 @@ static void senro_popup_at_player(int32_t value, uint32_t color)
     if (pp) (void)senro_popup(pp, value, color);
 }
 
+/* ============================ ★ 结界特效：两个世界层 VM ============================
+ * 全部一手依据（逐指令 + 地址）在文件中部那段长注里，这里只写「怎么落地」。
+ * ⚠️ 三个铁律：① **建** VM 只在 tick / 帧末（死亡栈里只置 pending）；
+ *             ② 每一条路都要能把句柄收干净（`senro_fx_clear()` 在 `on_delete` / `on_run_reset` 也跑）；
+ *             ③ 脚本自己 `delete()` 掉之后句柄要能自愈（`ce_anm_set_pos` 返回 0）。 */
+
+/* 甲：收掉结界的那个环（句柄清零 ⇒ 幂等）。 */
+static void senro_fx_field_kill(senro_card_t *s)
+{
+    if (s->fx_field_id) { ce_anm_delete(s->fx_field_id); s->fx_field_id = 0; }
+    s->fx_field_frame = 0;
+}
+
+/* 甲：在 `pos` 起一个（照 `th07:0x441aa4`/`0x441c19`：**先杀旧的再起新的**，见 `th07:0x441be5`）。
+ * 立刻摆一次位置（世界层 (0,0,0) = 场地正中 ⇒ 不摆会先在正中闪一帧）。 */
+static void senro_fx_field_spawn(senro_card_t *s, const float *pos)
+{
+    uint32_t id;
+
+    senro_fx_field_kill(s);
+    id = ce_anm_spawn(CE_ABILITY_ANM(), SENRO_ANM_SCRIPT_FIELD, SENRO_FIELD_ANM_LAYER);
+    if (!id) {
+        ce_log("senro: 结界环 VM 起不来（脚本 %d、层 %d）—— 机制不受影响，只是这一半看不见",
+               SENRO_ANM_SCRIPT_FIELD, SENRO_FIELD_ANM_LAYER);
+        return;
+    }
+    s->fx_field_id = id;
+    s->fx_field_frame = 0;
+    ++s->stat_fx_field;
+    if (pos) (void)ce_anm_set_pos(id, pos[0], pos[1], 0.0f);
+}
+
+/* 乙：收掉那 32 颗（**只看句柄**：`on_ctor` / `on_run_reset` 之后颜色之类的字段已经没意义）。 */
+static void senro_fx_ring_kill(senro_card_t *s)
+{
+    int i;
+    for (i = 0; i < SENRO_RING_UNITS; ++i) {
+        if (s->fx_ring_id[i]) { ce_anm_delete(s->fx_ring_id[i]); s->fx_ring_id[i] = 0; }
+    }
+    s->fx_ring_frame = 0;
+    s->fx_ring_live = 0;
+}
+
+/* 乙：在 `pos` 起 32 颗（照 `th07:0x441df4` 的循环：同一个起点、32 个方向由 `s_ring_v` 给）。
+ * ⚠️ 方向/速度在零售里是 C 侧写进 VM 的（`[vm+0x294] = cos(ang)`、`[vm+0x298] = sin(ang)`），
+ *    本卡没有 effect type 那一套 ⇒ 方向留在本文件、每帧用公式摆位置（见 `senro_fx_tick`）。 */
+static void senro_fx_ring_spawn(senro_card_t *s, const float *pos)
+{
+    int i, n = 0;
+
+    senro_fx_ring_kill(s);
+    if (!pos) return;
+    s->fx_home[0] = pos[0];
+    s->fx_home[1] = pos[1];
+    s->fx_home[2] = 0.0f;
+    for (i = 0; i < SENRO_RING_UNITS; ++i) {
+        uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(), SENRO_ANM_SCRIPT_RING, SENRO_RING_ANM_LAYER);
+        if (!id) continue;
+        s->fx_ring_id[i] = id;
+        (void)ce_anm_set_pos(id, s->fx_home[0], s->fx_home[1], 0.0f);
+        ++n;
+    }
+    s->fx_ring_frame = 0;
+    s->fx_ring_live = (n > 0);
+    ++s->stat_fx_ring;
+    if (n != (int)SENRO_RING_UNITS)
+        ce_log("senro: 灵击环只起了 %d/%d 颗（ANM VM 池满？）", n, (int)SENRO_RING_UNITS);
+}
+
+/* pending 兑现：**只能在 `on_tick_2` 里调**（建 VM = 分配；死亡栈里绝不建）。 */
+static void senro_fx_flush(senro_card_t *s)
+{
+    const float *pp;
+
+    if (!s || !s->fx_pending) return;
+    pp = ce_player_pos();                       /* 一手：零售取起效那一刻的 `player+0x930` */
+    if (s->fx_pending & SENRO_FX_PEND_FIELD) senro_fx_field_spawn(s, pp);
+    if (s->fx_pending & SENRO_FX_PEND_RING) senro_fx_ring_spawn(s, pp);
+    s->fx_pending = 0;
+}
+
+/* 每帧：甲清句柄（脚本 204 第 33 帧自杀）；乙按 `pos = home + v × (帧 × 256 / 30)` 外扩
+ * （一手公式 = `th07:0x41ad10`：`fmul [0x498a98]=256.0` / `fdiv [0x498b00]=30.0`，再与
+ *  `[vm+0x288]`（起点）相加写回 `[vm+0x24c]`）。 */
+static void senro_fx_tick(senro_card_t *s)
+{
+    int i;
+
+    if (!s) return;
+    if (s->fx_field_id) {
+        ++s->fx_field_frame;
+        if (s->fx_field_frame >= SENRO_FIELD_LIFE || !ce_anm_get_vm(s->fx_field_id))
+            senro_fx_field_kill(s);
+    }
+    if (!s->fx_ring_live) return;
+    ++s->fx_ring_frame;
+    if (s->fx_ring_frame > SENRO_RING_LIFE) {    /* 脚本第 30 帧 delete() ⇒ 这里收句柄 */
+        senro_fx_ring_kill(s);
+        return;
+    }
+    {
+        float r = (float)s->fx_ring_frame * SENRO_RING_SPAN / SENRO_RING_DEN;
+        for (i = 0; i < SENRO_RING_UNITS; ++i) {
+            uint32_t id = s->fx_ring_id[i];
+            if (!id) continue;
+            if (!ce_anm_set_pos(id, s->fx_home[0] + s_ring_v[i][0] * r,
+                                    s->fx_home[1] + s_ring_v[i][1] * r, 0.0f))
+                s->fx_ring_id[i] = 0;            /* 脚本已经自杀 ⇒ 清句柄（自愈）*/
+        }
+    }
+}
+
+/* 收尾（`on_tick` 之外的一切路：`on_delete` / `on_run_reset` / `on_stage_start`）。 */
+static void senro_fx_clear(senro_card_t *s)
+{
+    if (!s) return;
+    senro_fx_field_kill(s);
+    senro_fx_ring_kill(s);
+    s->fx_pending = 0;
+}
+
 /* 把纯逻辑累积的事件变成表现 + 日志（每次入账之后与每帧各调一次；事件取走即清）。*/
 static void senro_handle_events(ce_card_t *c, senro_card_t *s, int ev)
 {
     (void)c;
-    if (!ev) return;
+    if (!ev || !s) return;
     if (ev & SENRO_EV_BORDER_OPEN) {
+        /* ★ 结界展开的视觉（零售 effect type 0x1c，`th07:0x441aa4`）——
+         * ⚠️ 这里只**置 pending**，真正的 `ce_anm_spawn` 在 `on_tick_2` 尾部兑现：
+         *    本函数也会从断点回调（`on_item_collect` / `on_shot_damage_any`）里被调到，
+         *    而「建 VM = 分配」这件事只在 tick / 帧末做（ufo.c 的死亡栈纪律）。 */
+        s->fx_pending |= SENRO_FX_PEND_FIELD;
         ce_play_sound(SENRO_SE_BORDER_OPEN, ce_player_x());
         ce_log("senro: 森罗结界 OPEN (%d frames, cherry %d/%d, +C %d)",
                (int)SENRO_BORDER_FRAMES, (int)s->st.cherry, (int)s->st.cherry_max, (int)s->st.plus);
@@ -293,6 +523,12 @@ static void senro_do_libyou(ce_card_t *c, senro_card_t *s, int by_hit)
     ce_invuln_request(SENRO_ID, s->st.invuln);
     ce_invuln_apply();                                   /* 中弹路发生在 Player tick，晚于 SDK 的落笔点 ⇒ 当场补一笔 */
     senro_handle_events(c, s, senro_take_events(&s->st));
+    /* ★ 灵击的视觉（零售 effect type 0x1c「环」+ type 0x1d「32 颗」，见文件中部长注）：
+     *   零售在同一个函数里连做三件 —— `th07:0x441c19`（环）+ `th07:0x441dd9`–`0x441e38`（32 颗）
+     *   + 两条 SE；本卡同款，但**只置 pending**（`by_hit` 那一路跑在死亡栈里，不许建 VM）：
+     *     · 按 B 路：本帧尾部 `senro_fx_flush()` 兑现 ⇒ **同帧**看得见；
+     *     · 中弹路：下一帧兑现（≈16 ms，与既有的「中弹消弹推迟一帧」同一口径，spec §9 第 3 条）。 */
+    s->fx_pending |= SENRO_FX_PEND_FIELD | SENRO_FX_PEND_RING;
     ce_play_sound(SENRO_SE_LIBYOU, pp[0]);
     ce_screen_shake(SENRO_SHAKE_TIME, SENRO_SHAKE_START, SENRO_SHAKE_END);
     if (by_hit) senro_cancel_impending_death();           /* 救援：取消本次死亡（EVENTS-CONTRACT §4.2 ②层）*/
@@ -392,13 +628,19 @@ static int on_tick_2(ce_card_t *c)
     /* ⑧ 诊断汇总（实跑对账用）。 */
     if (s->frame - s->log_frame >= SENRO_LOG_EVERY) {
         s->log_frame = s->frame;
-        ce_log("senro: cherry %d/%d, +C %d, border %s%s (%d 帧剩余), 开 %d 自然结 %d 灵击 %d 消弹 %d 道具 +%d 擦弹 +%d 命中 +%d",
+        ce_log("senro: cherry %d/%d, +C %d, border %s%s (%d 帧剩余), 开 %d 自然结 %d 灵击 %d 消弹 %d 道具 +%d 擦弹 +%d 命中 +%d 特效 环%d 灵击%d",
                (int)s->st.cherry, (int)s->st.cherry_max, (int)s->st.plus,
                s->st.active ? "on" : "off", s->st.queued ? " (queued)" : "",
                (int)s->st.timer, (int)s->st.stat_open, (int)s->st.stat_natural, (int)s->st.stat_libyou,
                (int)s->st.stat_cancel, (int)s->stat_gain_item, (int)s->stat_gain_graze,
-               (int)s->stat_gain_hit);
+               (int)s->stat_gain_hit, (int)s->stat_fx_field, (int)s->stat_fx_ring);
     }
+
+    /* ⑨ 结界特效：先推进（老的一批按公式外扩 / 到点收句柄），再兑现本帧新置的 pending——
+     *    这样「本帧起的」下一帧才开始动（与零售 effect VM 的帧计数从 0 起同形）。
+     *    ⚠️ 位置：**必须**在 ②（开结界事件）与 ⑤（按 B 灵击）之后，否则当帧的 pending 要等下一帧。 */
+    senro_fx_tick(s);
+    senro_fx_flush(s);
     return 0;
 }
 
@@ -555,6 +797,10 @@ static void senro_clear(ce_card_t *c, int keep_slot)
     ce_hud_vm_text_clear(&s_hud_cherry);
     ce_hud_vm_text_clear(&s_hud_max);
     if (!s) return;
+    /* ★ 世界层 VM 是本卡自己的（`ce_layer_drop_card` 只管声明层）⇒ 必须在 memset 之前收干净。
+     *   删卡发生在**商店里**（倒吊人 / 原版空白卡清空整副牌），那一刻 tick 全停、只有 `on_delete` 跑得到
+     *   —— 这条 memset 就是最后一道网（句柄一旦被 memset 掉，那些 VM 就永远留在场上了）。 */
+    senro_fx_clear(s);
     memset(s, 0, sizeof *s);
     s->st.graze_last = -1;
     s->spell_was = 0;
@@ -605,12 +851,14 @@ static void on_stage_start(ce_card_t *c)
     if (!s) return;
     /* th07 每关重设基准（`th07:0x4043b9` 樱点 = 基准；最大樱点按难度表重取）⇒ 本卡每关从 0 起。 */
     senro_stage_reset(&s->st, senro_difficulty());
+    senro_fx_clear(s);       /* ★ 上一关留下的结界特效（环 / 32 颗）不跨关 */
     s->frame = 0;
     s->log_frame = 0;
     s->maxed_popup_at = 0;
     s->spell_was = 0;
     s->spell_bonus_alive = 0;
     s->stat_collect = s->stat_gain_item = s->stat_gain_graze = s->stat_gain_hit = 0;
+    s->stat_fx_field = s->stat_fx_ring = 0;
     senro_declare_score(s);
 }
 

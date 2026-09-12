@@ -5,18 +5,26 @@
  *     §3.4 弹幕 / §3.5 使魔 1:1 映射与状态差分 / §3.6 击破信号 / §3.7 伤害转交 1/2 / §4 数值）
  *   `local/_scratch/research-108-damage-transfer.md`（life 差分、取整、上限、自伤回路）
  *   `local/_scratch/research-108-shooter-tick.md`（打包 set id、0x16 那格 fire_rate = 0）
+ *   `assets/sht/append_shooterset.py` 的 `REPLACE`（妖侧 shooterset 的 9 行 = TH08 v1.00d
+ *     `ply03as.sht` 满 P 档逐字段翻译；槽号/行数会与本文件的断言对账）
  *   `docs/superpowers/plans/2026-09-10-ufo-card-feasibility.md` §1.1（spawn 参数 +0x14 = life）
  *
- * 覆盖：低速判定 / 子机取得与聚焦边沿 / 档位与妖侧弹识别 / shooterset 自检 /
+ * 覆盖：低速判定 / 子机取得与聚焦边沿 / 档位与妖侧弹识别 / shooterset 自检（槽号·行数·fire_rate）/
  *       发射点世界坐标（相对 vs 绝对）/ 1:1 发射口映射 / 状态差分（建·撤·退休·打破·重新武装）/
  *       表满 / 使魔计数 / 全撤 / 伤害转交的取整与上限 / life 采样 / 自伤保护盒 / spawn life 硬约束。
  *
- * ⚠ 档位伤害表当前是**占位**（全 `YK_SHOT_DMG_NOT_SET` = 不覆盖，等 TH08 资产）
- *   ⇒ 这里只断言**档位映射**与「不覆盖」这个占位语义；资产到位后再补数值断言。 */
+ * ⚠ 档位伤害表是**故意不填**（全 `YK_SHOT_DMG_NOT_SET` = 不覆盖；TH08 的单发伤害随 P 下降，
+ *   只搬数字会让「P 越高越弱」，理由见 `cards/youkai_core.c` §3.4）
+ *   ⇒ 这里只断言**档位映射**与「不覆盖」这个语义。 */
 #include <stdio.h>
 #include <string.h>
 
 #include "../cards/youkai_core.h"
+#ifdef __has_include
+#  if __has_include("../sht_ids.h")
+#    include "../sht_ids.h"     /* 生成物（make sht）：CE_SHT_SET_* */
+#  endif
+#endif
 
 static int s_fail, s_pass;
 #define CHECK(cond) do { if (cond) ++s_pass; else { ++s_fail; printf("  FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); } } while (0)
@@ -71,7 +79,7 @@ int main(void)
     CHECK(yk_shot_tier(99999) == YK_SHOT_TIERS - 1);          /* 溢出钳最高档 */
     CHECK(yk_shot_tier_damage(-1) == yk_shot_tier_damage(0)); /* 越界钳位 */
     CHECK(yk_shot_tier_damage(99) == yk_shot_tier_damage(YK_SHOT_TIERS - 1));
-    CHECK(yk_shot_tier_damage(0) == YK_SHOT_DMG_NOT_SET);     /* ★ 占位：档位表还没填 */
+    CHECK(yk_shot_tier_damage(0) == YK_SHOT_DMG_NOT_SET);     /* ★ 故意不填（见文件头注释 / youkai_core.c §3.4）*/
     CHECK(yk_shot_tier_damage(4) == YK_SHOT_DMG_NOT_SET);
 
     /* 打包 id = (set << 8) | 组内行号（`0x45ec69` 打包 / `0x45ee10` 回读）*/
@@ -87,12 +95,44 @@ int main(void)
     CHECK(yk_bullet_damage_apply(50, 0x0501u, 400, &out_dmg) == 0);         /* 不是妖侧弹 ⇒ 不碰 */
     CHECK(yk_bullet_damage_apply(50, ((uint32_t)YK_SHOT_SET_YOUKAI << 8) | 1, 400, 0) == 0); /* out=NULL 安全 */
 
-    /* shooterset 自检：0x16 零售那格 = fire_rate 0（装备卡路径会整数除零）*/
-    CHECK(!yk_shotset_usable(0));
+    /* shooterset 自检：那一格必须是**我们写的合法记录**才敢调 `ce_tick_shooters_for_card`
+     *（零售原值是 `fire_rate = 0` ⇒ 装备卡路径整数除零，`0x40aa4f` 没有零分支）。
+     * 零售那格长什么样、我们写进去的 9 行长什么样、逐字段出处 —— 全在
+     * `assets/sht/append_shooterset.py` 的 `REPLACE` 注释里（一手：TH08 v1.00d `ply03as.sht` 满 P 档）。*/
+    CHECK(!yk_shotset_usable(0));        /* ★ 零售那一格的值 = 自检必须拒绝（这条就是除零护栏本身）*/
     CHECK(!yk_shotset_usable(-1));       /* 负 = 终止符 */
     CHECK(!yk_shotset_usable(128));
     CHECK(yk_shotset_usable(1));
     CHECK(yk_shotset_usable(127));
+    /* 我们那 9 行的 fire_rate 逐行 = TH08 `rec[+0x00]`（10/5/3/5/10/6/5/5/6）⇒ 每一行都必须判「可用」。
+     * ⚠ 这一组数改了要**同时**改 `append_shooterset.py` 的 `REPLACE`（生成器会核对 header 常量）。*/
+    CHECK(yk_shotset_usable(3));
+    CHECK(yk_shotset_usable(5));
+    CHECK(yk_shotset_usable(6));
+    CHECK(yk_shotset_usable(10));
+
+    /* 槽号与行数：生成器（`make sht`）会回来核对这两个常量，对不上就失败（防静默漂移）*/
+    CHECK(YK_SHOT_SET_YOUKAI == 0x16);          /* 零售唯一无卡映射的那一格（见 youkai_core.h 的出处）*/
+    CHECK(YK_SHOT_SET_YOUKAI < 0x17);           /* ★ 必须落在**零售区**：0x17–0x27 是本 mod 追加区，
+                                                 *   动了会让别的卡（77/116/117）的索引漂移 */
+    CHECK(YK_SHOT_SET_YOUKAI_ROWS == 9);        /* 9 行 = `REPLACE` 里的行数 */
+    CHECK(YK_SHOT_SET_YOUKAI_ROWS <= 256);      /* 行号进 `packed_id` 低 8 位 */
+    /* 打包 id 往返：9 行都在我们的 set 字节下；别的 set 一律不认（人侧 0x05 / 追加区 0x17）*/
+    for (i = 0; i < (unsigned)YK_SHOT_SET_YOUKAI_ROWS; ++i)
+        CHECK(yk_bullet_is_youkai(((uint32_t)YK_SHOT_SET_YOUKAI << 8) | i));
+    CHECK(!yk_bullet_is_youkai(((uint32_t)(YK_SHOT_SET_YOUKAI - 1) << 8) | 0));
+    CHECK(!yk_bullet_is_youkai(((uint32_t)(YK_SHOT_SET_YOUKAI + 1) << 8) | 0));
+    CHECK(!yk_bullet_is_youkai(0x1700u));       /* 追加区第一格（77 的豌豆）不是妖侧弹 */
+    /* ★ 判据**只看 set 字节**（不夹行号）：行号越界的打包 id 也算「我们的」——
+     * 因为引擎不会造出这种弹（`0x40a9c0` 的行循环在终止符处就停，`0x40aa8f`）。
+     * 钉住这条语义，免得以后误以为这里有行号闸。*/
+    CHECK(yk_bullet_is_youkai(((uint32_t)YK_SHOT_SET_YOUKAI << 8) | YK_SHOT_SET_YOUKAI_ROWS));
+    CHECK(yk_bullet_is_youkai(((uint32_t)YK_SHOT_SET_YOUKAI << 8) | 0xffu));
+#ifdef CE_SHT_SET_YOUKAI
+    /* `native/sht_ids.h` 是生成物：跑过 `make sht` 之后它就会有这一条 ⇒ 两边必须相等。
+     * （没跑过 `make sht` 时这个宏不存在，上面那条硬编码 0x16 仍然钉着槽号。）*/
+    CHECK(CE_SHT_SET_YOUKAI == YK_SHOT_SET_YOUKAI);
+#endif
 
     /* ============================== §3.5 发射点世界坐标（etOn 的算法）*/
     ep[0] = 5.0f; ep[1] = 6.0f;

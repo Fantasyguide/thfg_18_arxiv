@@ -469,9 +469,11 @@ static void yk_option_apply(ce_card_t *c, yk_card_t *s)
     }
 }
 
-/* 妖侧 shooterset（0x16 那格）装上资产没有：读记录首字节 `fire_rate`（i8，`engine/sht/th18/02` §1）。
- * `0` = 零售那格（装备卡路径 `idiv` 除零）、`< 0` = 终止符 ⇒ 都不可用。**运行期自检**，
- * 不靠一个手写的「资产已装」开关。*/
+/* 妖侧 shooterset 装上没有：读那一格记录的首字节 `fire_rate`（i8，`engine/sht/th18/02` §1）。
+ * 我们的记录 = TH08 `ply03as.sht` 满 P 档 9 行，`fire_rate ∈ {3,5,6,10}`（`assets/sht/append_shooterset.py`
+ * 的 `REPLACE` 覆盖零售那格 0x16）；零售原值 / build/sht 没重跑时那格还是 `0`
+ * ⇒ `yk_shotset_usable` 返回 0（装备卡路径 `0x40aa4f` 的 `idiv` 没有零分支）。
+ * `< 0` = 终止符 ⇒ 也不可用。**运行期自检**，不靠一个手写的「资产已装」开关。*/
 static int yk_youkai_shotset_installed(void)
 {
     uint8_t *p = CE_PLAYER();
@@ -560,11 +562,13 @@ static int on_power_level_change(ce_card_t *c)
 
 /* +0x1c：只在射击帧广播（`0x45ecb8` 卡广播）。低速出妖侧那一套 shooterset。
  * ⚠ 两条前置（都是一手）：
- *   ① 膛口 = 子机：`0x40a9c0` **不读记录里的 `opt_slot`**，膛口恒取 `option+0x5c/0x60`；
- *      `option == NULL` 时它 `test edx,edx / je` 直接返回 ⇒ 没有子机就不发弹
- *      （⇒ spec §3.4.1 的「opt_slot=0 ⇒ 从自机本体出膛」在**卡路径**上不成立，资产侧要知道）。
- *   ② 0x16 那格零售是 `fire_rate = 0`，装备卡路径会整数除零（`engine/sht/th18/02` §2）
- *      ⇒ 必须自检记录（`yk_shotset_usable`），资产没装就不调。*/
+ *   ① 膛口 = 子机：`0x40a9c0` **不读记录里的 `opt_slot`**，膛口恒取 `option+0x5c/0x60`
+ *      （`0x40aa0c`／`0x40aa21`，整组只算一次）；`option == NULL` 时它 `test edx,edx / je`
+ *      直接返回 ⇒ 没有子机就不发弹 —— 所以本卡现在**还发不出妖侧弹**：
+ *      `YK_OPTION_COUNT_FOCUSED`（占位 0）没定之前 `yk_option_wanted()` 恒 0。
+ *   ② 那一格必须是**我们写的合法记录**：零售 0x16 是 `fire_rate = 0`，装备卡路径会整数除零
+ *      （`engine/sht/th18/02` §2）⇒ 自检记录（`yk_shotset_usable`），没覆盖成功就不调。
+ *      覆盖由 `assets/sht/append_shooterset.py` 的 `REPLACE` 做（`make sht`）。*/
 static int on_tick_shooters(ce_card_t *c, uint32_t short_timer, uint32_t long_timer)
 {
     yk_card_t *s = ce_state(c, yk_card_t);
@@ -576,8 +580,9 @@ static int on_tick_shooters(ce_card_t *c, uint32_t short_timer, uint32_t long_ti
     if (!yk_youkai_shotset_installed()) {
         if (!s->logged_sht) {
             s->logged_sht = 1;
-            ce_log("youkai: youkai shooterset 0x%02x not installed - no youkai bullets until "
-                   "assets land (calling it would divide by zero, engine/sht/th18/02 §2)",
+            ce_log("youkai: youkai shooterset 0x%02x not installed (record fire_rate is 0) - no "
+                   "youkai bullets until `make sht` covers that retail slot "
+                   "(calling it would divide by zero, engine/sht/th18/02 §2)",
                    YK_SHOT_SET_YOUKAI);
         }
         return 0;
@@ -610,16 +615,23 @@ static int on_bullet_created(ce_card_t *c, void *bullet)
 static int on_native_shot_suppress(ce_card_t *c)
 {
     yk_card_t *s = ce_state(c, yk_card_t);
+    const char *why;
     if (!yk_suppress_native_shot(CE_PLAYER() != 0, CE_PLAYER_FOCUSED())) return 0;
-    /* ⚠ 这对是**一体**的：闸把原生弹压掉了，妖侧弹又要靠 0x16 那组 shooterset
-     * ⇒ 资产没装时低速**一发弹都没有**。第一次命中时把这句话记下来（实跑诊断用），
-     * 但不改行为（行为 = spec §3.1 的原文：只看「有自机 + 聚焦」）。*/
-    if (s && !s->logged_noshot && !yk_youkai_shotset_installed()) {
-        s->logged_noshot = 1;
-        ce_log("youkai: native shots suppressed at focus but youkai shooterset 0x%02x is NOT "
-               "installed -> NO bullets at all until assets land (spec §3.1 + §3.4.1)",
-               YK_SHOT_SET_YOUKAI);
+    /* ⚠ 这对是**一体**的：闸把原生弹压掉了，而妖侧弹要**先有子机**（`0x40a9c0` 的膛口，
+     * 见 `on_tick_shooters` 前置①）⇒ 下面两种情况下低速**一发弹都没有**。
+     * 第一次命中时把原因记下来（实跑诊断用），但不改行为
+     *（行为 = spec §3.1 的原文：只看「有自机 + 聚焦」）。*/
+    if (!s || s->logged_noshot) return 1;
+    if (!yk_youkai_shotset_installed()) {
+        why = "youkai shooterset is NOT installed (run `make sht`)";
+    } else if (!yk_option_wanted(1)) {
+        why = "there is no option to fire from (YK_OPTION_COUNT_FOCUSED is still 0, spec §3.3)";
+    } else {
+        return 1;
     }
+    s->logged_noshot = 1;
+    ce_log("youkai: native shots suppressed at focus but %s -> NO bullets at all "
+           "(spec §3.1 + §3.4.1)", why);
     return 1;
 }
 
@@ -739,7 +751,11 @@ _Static_assert(sizeof(yk_card_t) <= CE_STATE_BYTES - CE_STATE_RESERVED,
  * 每一条都「不自己发明数值」，取值一律是**不做**这个语义：
  *   §5 资产
  *     1. `YK_BODY_SPRITE_FOCUSED` = -1        —— 妖侧本体 sprite 号（射命丸文 / TH16 pl03.anm 未接进 pl0X.anm）
- *     2. `YK_SHOT_SET_YOUKAI` = 0x16 + 档位表 —— 妖侧 shooterset 记录与每档伤害（0x16 零售 = fire_rate 0）
+ *     2. ~~`YK_SHOT_SET_YOUKAI` = 0x16 + 档位表~~ —— ✅ 2026-09-12 **已接真数据**：
+ *        shooterset = TH08 `ply03as.sht` 满 P 档 9 行（`assets/sht/append_shooterset.py` 的 `REPLACE`
+ *        覆盖零售那格，`fire_rate ∈ {3,5,6,10}`，除零风险随之消失）；**档位伤害表仍不填**
+ *        （原因见 `youkai_core.c` §3.4 的注释：TH08 单发伤害随 P 下降，是配着路数设计的）。
+ *        ⚠ 但它现在**还发不出来**：`0x40a9c0` 的膛口恒取子机 ⇒ 要等第 3 条的子机数量定案。
  *     3. `YK_OPTION_SCRIPT_YOUKAI` + `YK_OPTION_COUNT_FOCUSED` = 0 —— 妖侧子机脚本（借 102 占位）与数量
  *        （数量没给、且声明层只有一套偏移 ⇒ 现在整条子机链**不参与声明**）
  *     4. `YK_FAM_ANM_INDEX` / `YK_FAM_ANM_SCRIPT` = -1 —— 使魔贴图（借零售 or 复用 116/117 的做法）

@@ -16,7 +16,7 @@
  * | 激活条件**全 8 条**（满槽 600 + 场上有敌 + 30 帧冷却 + 不在对话 + 没在放 B + 不在灵界 + 键/自动 + **`(GAME_FLAGS & 0x30) != 0x20`**）| §4 表 · §1 表 | `SPIRIT:272-284`（`th13:0x4057f0`，第 8 条 `0x405859`）|
  * | 连锁（60 帧窗口内**第 10 颗**触发 ⇒ 额外的第 11 颗是 type 3）| §4 表 · §9 #7 | `SPIRIT:209-222`（`th13:0x4391a0`：`if (+0x8838 > 9)`）|
  * | **救援层记账：一次中弹烧掉全部救援者、顺序 107 → 117** | `EC` §5.2（用户 2026-09-12 定案）| 契约文（非一手反汇编）|
- * | ★ **中弹救援（第二版）= 救援层的最后一家**：`+0x10` 只登记 → 帧点等 `TRANCE_PENDING_FRAMES` 后「取消死亡 + 开死亡强制窗」→ 窗口结束**再死一次** | §2.1 行 4 订正 · `EC` §4.2 ② | 一手 `th13:0x444a1d` / `0x405c3e`（原作就是**延时**）+ TH18 死链 `th18:0x45d3a0` / `0x45d590` / `0x45d090` |
+ * | ★ **中弹救援（第二版）= 救援层的最后一家**：在**卡虚表 `+0x0c`** 里「让位检查 → 槽门 → 取消死亡 → `return 1`」→ 窗口结束**再死一次** | §2.1 行 4 订正 · `EC` §4.2 ② | 一手 `th13:0x405c3e`（原作是**延时**）+ TH18 死链 `th18:0x45d3a0` / `0x45d590` / `0x45d090` / `0x45c114`（`+0x0c` 广播）/ `0x40a544`（Eirin 的 `return 1`）|
  * | 击破 → 神灵（type 1）= **帧内队列记账 + 该撒什么/撒几颗**（回调接线在 `cards/trance.c`，**已接**）| §3.3 候选 ① · §2.2 | `SPIRIT:153-167` 通道 B（`type=1`；颗数在 TH18 无对应 ⇒ ❓ 自定 1 颗）|
  *
  * ## 明确**不在**本文件（也**不在** TH18 侧做）
@@ -119,8 +119,6 @@ typedef struct {
 /* ⚠ 相位 2 的语义（2026-09-12 第二版）：它是**救援层最后一家**开出来的窗口 ——
  *   中弹（死亡已发起）⇒ 113 **取消这次死亡** + 开这个窗口 ⇒ 窗口结束时**再死一次**。
  *   代价是**延时**不是免死：一手同一形状（`th13:0x405c3e`），用户的定案与一手逐字一致。*/
-/* ⚠ 相位 3 `TRANCE_PHASE_DEATH_PENDING` 定义在下面「救援层的最后一家」段：
- *   它 ≠ 「在灵界里」（灵界还没开），只是**排队**等 113 的轮次。*/
 
 /* ============================ 槽 ============================ */
 
@@ -174,17 +172,16 @@ typedef struct {
 
     /* 诊断 */
     int32_t activations;       /* 本局开过几次灵界（含手动升格；`begin` 里 ++）*/
-    int32_t deaths_forced;     /* 中弹救下（=`begin(param_1=1)` 真的开出/升格）几次 —— 诊断口径 */
+    int32_t deaths_rescued;    /* 中弹救下（=`begin(param_1=1)` 真的开出/升格）几次 —— 诊断口径 */
 
-    /* ★ 救援层的最后一家（2026-09-12 第二版）：见下面「救援层的最后一家」段的完整说明。
-     *   · pending_frame：`+0x10` 报到那一帧的**游玩帧号**（< 0 = 没有待处理的死亡）。
-     *     用帧号而不是计数器：`trance_pending_age()` 每帧只 +1 一次，重复调用不会多加，
-     *     而且**同一帧报到两次**也只算一次（一手：同帧不可能两次死亡，`AUDIT` §BL-3）。*/
-    int32_t pending_frame;     /* -1 = 空闲；≥ 0 = 已报到、等 113 的轮次 */
-    int32_t pending_age;       /* 报到之后过了几个游玩帧（每次 `trance_pending_age()` +1）*/
-    int32_t re_dying;          /* 1 = 死亡强制窗口结束时欠了一次死亡、还没死成 ⇒ **禁止再救** */
-    int32_t re_die_age;        /* 守卫的看门狗（`TRANCE_RE_DIE_TIMEOUT` 帧后自动失效，防御用）*/
+    /* ★ 救援层（第二版订正版）：**没有排队状态** —— 救援在 `+0x0c` 回调里一次做完
+     *   （见下面「救援层」段）。这里只留 `re_die` 相关的一个 `trance_tick_t` 输出。*/
 } trance_state_t;
+
+/* ★ 整个 `trance_state_t` 的初始化 —— **卡侧必须用它，别用裸 `memset`**（可读性 + 将来加字段不必改卡）。
+ * 它同时清零 `gauge` 与相位 ⇒ 含义是「**一张全新的卡**」。
+ * `cards/trance.c` 的 `ctor` / `on_stage_start` / `trance_clear`（= `on_delete` / `on_run_reset`）都走它。*/
+void trance_state_init(trance_state_t *s);
 
 
 typedef struct {
@@ -237,16 +234,17 @@ void trance_end(trance_state_t *s, trance_tick_t *out);
  * 返回出的 out 见 trance_tick_t。**调用方**负责：满槽自动进 / 键 / 死亡强制。*/
 trance_tick_t trance_tick(trance_state_t *s, int32_t frame);
 
-/* 死亡强制开灵界（一手 `th13:0x405a20` `TranceManager::begin(ptr, 1)`）。
+/* 中弹救援时开「死亡强制」灵界（一手 `th13:0x405a20` `TranceManager::begin(ptr, 1)`）。
  *
- * ★★ **2026-09-12 第二版定案（救援层最后一家）改变了本函数的落点**：
- *   它**不再**挂在死亡结算之后的 `+0x14`，而是挂在**帧点**上 —— `+0x10` 只登记「这次死亡有待处理」，
- *   等决死窗口关掉、且没人认领这次救援时，才在帧点里调本函数 + `Player__cancel_impending_death` `th18:0x45d590`。
- *   ⇒ 调用方在**玩家 state 4（决死窗口）**那一刻调它。
+ * ★★ **落点（2026-09-12 第二版·订正版）：卡虚表 `+0x0c` `on_death_after_deathbomb`。**
+ *   引擎只在「决死窗口走完 + B 键那条路没救成」之后才广播 `+0x0c`（一手 `th18:0x45c114`）
+ *   ⇒ 在那里调本函数就**结构性**排在 107/117（`+0x10`）与决死 B **之后**。
+ *   调用方拿到 1 之后必须接着做两件事：`Player__cancel_impending_death` `th18:0x45d590`
+ *   **和** `return 1`（后者是引擎扣不扣命的判据）—— 完整依据见 `cards/trance.c` 文件头。
  *
- * 返回值：1 = **本次真的开出了一个新的死亡强制窗口**（调用方据此播音 / 记日志）；
- *   0 = 没开：① 槽 < 200（一手 `0x405a40` 同一道门 ⇒ 照常死）；② 已在死亡强制窗里；
- *   ③ 已在**手动**窗里但槽 < 200 ⇒ **那次中弹没有被救**，调用方**不许**取消死亡（见下）。
+ * 返回值：1 = **这次中弹被吃下了**（真的开出了新的死亡强制窗口，或把手动窗**升格**成它）；
+ *   0 = 没吃下：① 槽 < 200（一手 `0x405a40` 同一道门 ⇒ 照常死）；② 已在**手动**窗里但槽 < 200。
+ *   ⚠ 调用方必须用返回值决定要不要取消死亡 + `return 1` —— 返回 0 却取消就会白丢一条命。
  *
  * ★ **手动灵界被中弹打断时会把窗口「升格」成死亡强制**（一手 `th13:0x405a4c`–`0x405a50`：
  *   `begin` 在「已在灵界」那条路上**仍然写** `this+0x14 |= 1` 与 bit1 = param_1 ⇒ 原本手动的窗口
@@ -258,7 +256,7 @@ trance_tick_t trance_tick(trance_state_t *s, int32_t frame);
  *   取消死亡是调用方在**同一个帧点**里紧跟着做的事，不是本函数的职责）。*/
 int trance_force_on_death(trance_state_t *s);
 
-/* ============================ ★ 救援层的最后一家（2026-09-12 第二版定案）============================
+/* ============================ ★ 救援层（2026-09-12 第二版，**落点订正版**）============================
  *
  * **用户原话（唯一权威）**：
  *   「灵界有两个触发方式，一个是手动触发；一个是**在确定中弹后，取消掉死亡，进入灵界状态；
@@ -266,81 +264,54 @@ int trance_force_on_death(trance_state_t *s);
  *   ＋ 「113 这条机制能够确定说，它一定在**救援层的最后**出发，**甚至比决死 B 还靠后**」
  * ⇒ 层内顺序被钉死：`107 → 117 → 决死 B → 113`。
  *
- * ## 为什么 `+0x10` 里**只登记**、动作全在帧点（`on_item_frame`）
+ * ## 落点 = 卡虚表 **`+0x0c`** `on_death_after_deathbomb`（**不是** `+0x10`、也**不是**帧点）
  *
- * 一手中弹的帧序（TH18 v1.00a，本仓一手反汇编）：
- *   `Player__die` `th18:0x45d3a0`（自机碰撞 `0x45cd27` / `0x45ce81` / `0x45d060` 三处 thiscall 调用）
- *   → 置 `state = 4`（`0x45d4e4`）、决死窗口计时器清零、`num_deathbomb_frames = 8`（`0x45d557`）
- *   → **最后**沿卡链表广播虚表 `+0x10`（`0x45d570`–`0x45d57c`）。
- *   之后每帧 `Player__on_tick__body` `th18:0x45be90` 的 case 4（`0x45c0f4`）：
- *   `if (state4_timer < num_deathbomb_frames) 去查 B 键（`0x45c2a9`）` 否则
- *   ① 广播 `+0x0c`（`0x45c114`–`0x45c11c`，决死 B 类救命）② `acc == 0` ⇒ `Player__commit_death_and_enter_state2`
- *   `th18:0x45d090`（`0x45c135`，**扣命**）。
- * ⇒ 卡在 `+0x10` 里动作就**抢在决死 B 前面**（一手：107/117 正是这么做的）⇒ 113 不许在这里动作。
+ * 一手（TH18 v1.00a，`Player__on_tick__body` `th18:0x45be90` 的 case 4，入口 `0x45c0f4`）：
  *
- * ## 「决死窗口关掉之后，`cancel_impending_death` 还管用吗」—— ✅ 一手可证
+ * ```c
+ * 0x45c0f4: eax = player->state4_timer (+0x638)
+ * 0x45c0fa: cmp eax, player->num_deathbomb_frames (+0x47908)      // = 8（0x45d557 置）
+ * 0x45c100: jl  0x45c2a9            // ★ 窗口**还没过** ⇒ 去查决死 B（B 键 + can_bomb + do_bomb
+ *                                   //   + cancel_impending_death 0x45d590，0x45c2a9–0x45c2dc）
+ * 0x45c106: esi = CARD_LIST.head
+ * 0x45c112: edi = 0                 // ★ edi 从「player」改成「累加器」
+ * 0x45c114: 循环：push 0(acc); call [vtbl+0xc]; or edi, eax     // ★★ **就是本条路**
+ * 0x45c127: test edi, edi
+ * 0x45c12d: jne 0x45c3d1            // ★★ 任一卡返回非 0 ⇒ **跳过扣命**（state 早已被它改成 1）
+ * 0x45c133/0x45c135: call 0x45d090  // 否则**同一 tick 内立刻 commit**（state 2、扣命）
+ * ```
  *
- * `Player__cancel_impending_death` `th18:0x45d590`（thiscall(Player*)，`ret` = **void**，全函数 70 B）读**零**个
- * 计时器，只写 5 个字段：`+0x644 |= 1` / `+0x640 = 0` / `+0x638 = 0x3c` / `+0x63c = 60.0f` /
- * `+0x634 = 0x3b` / **`+0x476ac = 1`**（`0x45d5cb`）。⇒ **判定「能不能取消」的不是计时器，而是
- * 「`commit_death_and_enter_state2` 有没有已经跑过」**：后者只在一处被调（`0x45c135`），跑过就扣命。
- * ⇒ 只有「`state` 仍是 4 且命还没扣」时可取消 —— 而那正是决死窗口关掉、`+0x0c` 全返回 0、
- * `commit` 还**没轮到**的那一刻（`0x45c129` 的 `test edi,edi / jne` 分支）。
- * ⚠ **本文件不做「取消成功」的验证**：调用方必须在**同一次帧点调用**里
- * 「先 `trance_force_on_death`（拿到 1 才继续）→ 再 `cancel_impending_death`」，并且**只在 `state == 4` 时动手**。
+ * ★★ **这条一起决定了「落点」和「一手依据」**：
+ *   ① `+0x0c` 是「**决死窗口已经过完、B 键那条路已经走掉了**」才广播的 ⇒ 用它就**结构性**排在
+ *      107/117（`+0x10`，在 `Player__die` 里就出手）**与决死 B 之后** —— 不需要猜帧号；
+ *   ② 窗口关掉的那一帧**没有「窗口已关但命还没扣」的中间态**：同一条分支里要么被某个 `+0x0c` 挡住，
+ *      要么当场 `commit_death`。⇒ **「帧点（`on_item_frame`）等 9 帧」那条路不可达**
+ *      （`+0x0c` 广播在 Player 线 `0x17` 里，`on_item_frame` 在 ItemManager 线 `0x1e` 里，
+ *      后者跑到时 state 已经不是 4）—— 这是本文件**第一版**的错误，已在 `AUDIT` §BN7 留痕。
+ *   ③ **返回 1 是实质动作**：一手零售先例 `CardEirin__on_player_death_after_deathbomb` `0x40a4f0`
+ *      （尾段 `0x40a534 call 0x40a2a0` → `0x40a539 mov ecx,[0x4cf410]` → `0x40a53f call 0x45d590`
+ *      → **`0x40a544 mov eax,1`** → `0x40a54a ret 4`）⇒ **调 `cancel_impending_death` 与
+ *      `return 1` 两件都要做**：只调不返回 1，`0x45c12d` 会继续走到 `0x45c135` 把命扣掉。
  *
- * ## 三件状态（本段全部在 core 里，纯整数、可主机单测）
+ * ## 三道门（顺序即优先级；由卡侧读引擎面后调 core）
  *
- *   · **pending**（`TRANCE_PHASE_DEATH_PENDING`）：`+0x10` 报到 ⇒ `trance_note_death()`；
- *     帧点每帧 `trance_pending_age()` ⇒ 到 `TRANCE_PENDING_FRAMES` 且自机仍在死亡流程
- *     ⇒ `trance_pending_ready()` = 1（调用方这时才动手）。
- *   · **re-dying**（`trance_re_dying` 标志）：死亡强制窗口结束时**欠一次死亡**，调用方调
- *     `Player__die` 补上；在它跑完之前**不许再救**（否则会自己救自己）。
- *   · 两者都由 `trance_clear()`（删卡 / 局末 / 关卡开始）经 `memset` 归零。
+ *   ① 让位：`ce_rescue_note_owner() >= 0` 且不是 113 ⇒ **放弃**（这次死亡已经有人救了）。
+ *      ⚠ 为什么这次**不需要帧闩锁**：`+0x10`（`Player__die` 内，`0x45d570`–`0x45d57c`）**先于** `+0x0c`
+ *      （`0x45c114`）在同一 tick 里跑完 ⇒ 107/117 报到时写下的 owner 在这一刻仍然是本帧的值。
+ *   ② 槽门：`trance_force_on_death()`（一手 `th13:0x405a40`：槽 < 200 失败）⇒ 失败就**照常死**。
+ *   ③ 取消 + 返回 1（卡侧）：`Player__cancel_impending_death` `0x45d590` + `return 1`。
+ *      ⚠ **不要**用「自机 state 是否仍是 4」当第 4 道门：`+0x0c` 广播时 state 本来就是 4
+ *      （引擎自己那一段），而 `0x45c114` 的循环**不看**前一张卡的返回值就继续广播 ⇒
+ *      前面有卡已经取消时 state 已经变 1，那是**别人的救命**，113 后续的 `return 1` 只是「附和」，
+ *      无害（`ce_rescue_note_owner()` 那道门已经把这种情形挡住了）。
+ *
+ * ## 本段**没有**排队状态（第一版的 `TRANCE_PENDING_FRAMES` / 排队相位已删）
+ *
+ * 落点从帧点改成 `+0x0c` 之后，「排队 + 数帧」这套东西**整体不需要**（也**不可达**）。
+ * ⇒ `trance_state_t` 不再有 `pending_*` / `re_die_note`，`TRANCE_PENDING_*` / `TRANCE_PHASE_DEATH_PENDING`
+ * 三个常量与 6 个 `trance_pending_*` / `trance_note_death` / `trance_redie_note` 函数**全部删除**，
+ * 不留死代码（单测也一并删）。
  */
-
-/* 等多少**游玩帧**才轮到 113 动手。一手的帧账（上面那段）：
- *   中弹那一帧 = `Player__die` 当帧（帧点 0）；下一帧起 `state4_timer` 每帧 +1（`Timer__increment` `th18:0x405990`）；
- *   `Player__on_tick__body` case 4 在 `timer >= 8` 时收窗（`0x45c0fa` / `0x45c100`）。
- * ★ 帧序（一手，`register__on_tick` 的线程序号）：AbilityManager `0x16` → Player `0x17` → **ItemManager `0x1e`**
- *   （注册点 `th18:0x4458a0`）⇒ `on_item_frame`（`th18:0x446ee3`）**在自机 tick 之后**跑，
- *   它读到的 `state4_timer` 是**本帧自机 tick 之后**的值 ⇒ 窗口在「计时器 ≥ 8」那一帧就已经收掉。
- * ⇒ 取 **9**：第 9 帧时计时器 ≥ 8 且 `state` 仍是 4（`commit` 会在下一帧才轮到）⇒ 满足用户的
- *   「决死 B 的窗口已经过去、玩家仍在死亡流程里」。实跑若发现 113 抢在决死 B 之前，把这个值调大。*/
-#define TRANCE_PENDING_FRAMES   9
-
-/* 死亡强制窗口结束时「欠的那次死亡」要在多少游玩帧内补上（`Player__die` 的死亡动画是 3 帧 + 复活 60 帧，
- * 一手见 `Cards.md` §4 的死亡链）⇒ 90 帧 ≈ 1.5 s 足够；超时清标志只是**防御**：
- * 宁可漏一次救援（照常死），也不要带着一个永不清的守卫把本卡以后所有救援都掐掉。*/
-#define TRANCE_RE_DIE_TIMEOUT   90
-/* 相位：**死亡已发起、113 排队等自己的轮次**（不是「在灵界里」—— 这一相位下灵界还没开）。
- * ⚠ 它必须 ≠ `TRANCE_PHASE_IDLE`：排队期间**不许**再被第二次中弹覆盖
- *   （一手：一次死亡横跨多帧，同帧不可能两次），也不许手动按 C 开窗（会与救援抢同一笔槽）。*/
-#define TRANCE_PHASE_DEATH_PENDING  3
-
-/* `+0x10`（`on_death_before_deathbomb`）里的**唯一**动作：登记「这次死亡有待 113 处理」。
- * 幂等（已在排队就只刷新帧号）。★ **别的什么都不做**：不开窗、不动槽、不取消死亡、不读引擎面 ——
- * 因为这一刻 107/117（以及它们身后还可能有的救援卡）都还没轮到，113 必须等它们先表态。
- * ⚠ 「玩家此刻是否已在**手动**灵界里」**不在这里记**：帧点动手那一刻直接看 `phase` 就够了
- *   （一手里手动窗也会被中弹升格成死亡强制档，见 `trance_force_on_death` 的注释）。*/
-void trance_note_death(trance_state_t *s, int32_t frame);
-
-/* 还在排队吗（调用方用它决定要不要每帧推进 `trance_pending_age`）。*/
-int trance_death_pending(const trance_state_t *s);
-
-/* 排队帧数（每次调用 +1，并返回**加完之后**的值）。只有 `trance_death_pending()` 为 1 时才有意义：
- * 相位不是 PENDING 时返回 0（避免调用方把它当「已等够」）。
- * 超过 `TRANCE_RE_DIE_TIMEOUT` 仍未动手 ⇒ 返回 `-1`（调用方应当 `trance_pending_drop()` 放弃）。*/
-int32_t trance_pending_age(trance_state_t *s);
-
-/* 等够帧数了吗 + 自机**仍在死亡流程**吗（两者都成立才返回 1）。
- * `player_in_death_state` = 调用方读 `CE_PLAYER_STATE` 得到的 `player+0x476ac == 4`（决死窗口态）。
- * ★ 这道门是「救命窗口真实上界」的可执行形式：一手 `cancel_impending_death` 只写 `state = 1`，
- *   而扣命只发生在 state 4 的收窗分支 ⇒ **只有仍停在 4** 才救得回来（进了 2 = 命已扣，来不及了）。*/
-int trance_pending_ready(const trance_state_t *s, int player_in_death_state);
-
-/* 放弃这次排队（别人救了 / 自机已经走完死亡流程 / 超时）—— 清相位回空闲 + 清帧号。*/
-void trance_pending_drop(trance_state_t *s);
 
 /* ============================ ★ 灵界窗口结束 → **重新死亡** ============================
  *
@@ -348,25 +319,30 @@ void trance_pending_drop(trance_state_t *s);
  * **死亡触发的灵界在结束时再调一次 `Player::die`** ⇒ 原作那次「保命」是**延时**而不是免死
  * （此时槽已被逐帧扣到 0 ⇒ 第二次必然失败 ⇒ 照常扣命）。用户 2026-09-12 定案与一手**逐字一致**。
  *
- * 卡侧的落点：`trance_tick()` 报出 `re_die == 1` 的那一帧调 `Player__die` `th18:0x45d3a0`
- * （thiscall(Player*)、无栈参、返回 void；一手见下）。
- * ⚠ **`Player__die` 会再广播一次 `+0x10`**（`0x45d574`）⇒ 加一条守卫：`trance_redie_begin()` 之后
- *   `trance_force_on_death()` 一律返回 0，**不许再救**（否则等于自己救自己、永不真死）。*/
+ * 卡侧的落点：`trance_tick()` 报出 `re_die == 1` 的那一帧（`on_item_frame`）调
+ * `Player__die` `th18:0x45d3a0`（thiscall(Player*)、无栈参、返回 void）。
+ *
+ * ### 补死那一刻 `state` 是什么（本版新推导，一手）
+ *
+ * 灵界窗口是**自机活着的时候**在跑的 ⇒ 窗口走完那一刻 `state == 1`
+ * （一手：`+0x476ac` 的写点只有 `0x45d4e4`（`Player__die` 写 4）、`0x45d5cb`
+ * （`cancel_impending_death` 写 1）、`0x40da62`（`CardShikiEiki::on_tick` 的扣钱救命写 1）、
+ * `0x45bff1`（state 3 的 60 帧复活结束写 1）⇒ 正常游玩态就是 1）。
+ * 卡侧照抄 `Player__die` 三个一手调用点自己那道德门（`0x45cd0d`/`0x45ce69`/`0x45d046`：
+ * `state ∉ {2,3,4}`）⇒ **只在 `state == 1` 时调**；不是 1 就记一行日志放过（那种情况下死亡流程本来就在跑）。
+ *
+ * ### 链式（用户定案「就这样，允许链式」）是**天然的**，不靠任何标志
+ *
+ * 补死就是一次**普通死亡**：`Player__die` 照常置 state 4、照常广播 `+0x10`（`0x45d570`），
+ * 窗口走完照常广播 `+0x0c`（`0x45c114`） ⇒ 107/117 与 **113 自己**都能按各自的门再救一次。
+ * ⇒ 本文件**没有任何**「禁止再救」的状态位（第一版那个 `re_die_note` 已删）；
+ *   唯一的天然上限是槽门：窗口 = 进入时的槽值帧、槽 −1/帧 ⇒ 自然结束时槽必然已扣光。
+ */
 
-/* 本帧结束的窗口是不是**死亡强制**档 ⇒ 调用方必须补一次 `Player__die`。
- * 返回 1 时本函数**已经**置好守卫（re-dying），调用方紧接着调 `Player__die` 即可。*/
-int trance_should_redie(trance_state_t *s, const trance_tick_t *t);
-
-/* 守卫：现在是不是「欠一次死亡、还没死成」。1 ⇒ 一律不许再救。*/
-int trance_re_dying(const trance_state_t *s);
-
-/* 死亡真的发生了（`+0x14` 跑到 / 调用方确认这次 re-die 已落地）⇒ 清守卫，允许本卡以后再救援。
- * 幂等。⚠ 它**不**清其它状态。*/
-void trance_redie_done(trance_state_t *s);
-
-/* 防御：自机已经不在死亡流程里（例如玩家用决死 B 活了下来、或复活完了）⇒ 清守卫。
- * `player_in_death_state` 与 `trance_pending_ready` 同一个入参。*/
-void trance_redie_state_exit(trance_state_t *s, int player_in_death_state);
+/* 本帧结束的窗口是不是**中弹救下**的那一档 ⇒ 调用方必须补一次 `Player__die`（一手 `th13:0x405c3e`）。
+ * `re_die` 与 `ended_death_free` 目前恒等（欠死亡的那一档 == 死亡强制档），
+ * 分开写是为了让卡侧的判据读起来就是语义。*/
+int trance_should_redie(const trance_tick_t *t);
 
 /* 连锁记账（`spawn_spirit` 尾部，`th13:0x4391a0`）。`type` 是刚撒出来的神灵类型。
  * 返回 1 = **本次**应当额外再撒一颗 type 3（一手「第 10 颗触发」⇒ 那份额外的 type 3 就是场上的第 11 颗）。
@@ -427,8 +403,9 @@ int32_t trance_anm_script(int32_t type, int in_trance);
  *
  * ★★ **2026-09-12 第二版定案：113 也在救援层里，且是最后一家** ——
  *   用户原话「113 这条机制能够确定说，它一定在**救援层的最后**出发，**甚至比决死 B 还靠后**」
- *   ⇒ 层内顺序 **107 → 117 → 决死 B → 113**。113 的动作不再挂在 `+0x14`（旧口径**已作废**）：
- *   `+0x10` 只登记，帧点等 `TRANCE_PENDING_FRAMES`（决死窗口关掉）后「取消死亡 + 开死亡强制窗」，
+ *   ⇒ 层内顺序 **107 → 117 → 决死 B → 113**。113 的动作落点是**卡虚表 `+0x0c`**
+ *   （`on_death_after_deathbomb`：决死窗口与 B 键那条路都走完之后才广播，`0x45c114`），
+ *   在那一帧里做完「让位检查 → 槽门 → `cancel_impending_death` → `return 1`」；
  *   窗口结束时再死一次（**延时**不是免死）。本文件不变量 `TRANCE_RESCUE_COUNT = 2`
  *   （只有 107/117 是「烧掉自己资源换爆发」那种救援者）⇒ **`trance_rescue_resolve()` 仍然硬拒 113**：
  *   113 不是「被烧掉的救援者」，它排在这一层之后、靠 `ce_rescue_note_owner()` 让位。
@@ -441,9 +418,9 @@ int32_t trance_anm_script(int32_t type, int in_trance);
  *        第二版追加：两家各在自己的动作之前 `ce_rescue_note_claim(自己的 id)` **报到**（无条件，见 §BL-2）。
  *     ② 全屏消弹只一次 ⇒ `ce_cancel_latch_claim`（先认领者做，后到者记日志即退）。
  *     ③ 无敌取 max ⇒ `ce_invuln_request`（`invuln_recompute` 取 max，不求和、不截短）。
- *     ④ 决死 B 拿不到机会 ⇒ `Player__die` 先置 state 4、最后才广播 `+0x10` ⇒ **107/117 在场时**
- *        它们把 window 关掉（`ce_rescue_note_owner() >= 0`）；两家都不在场 / 不满足时决死 B 才有机会，
- *        而 113 **永远排在决死 B 之后**（帧点 + `TRANCE_PENDING_FRAMES`）。
+ *     ④ 决死 B 的顺序 ⇒ `Player__die` 先置 state 4、最后才广播 `+0x10`（`0x45d574`）⇒ **107/117 在场时**
+ *        它们当场把死亡取消（`ce_rescue_note_owner() >= 0`）；两家都不在场 / 不满足时窗口才跑完，
+ *        决死 B 在窗口内（`0x45c2a9`）有机会，**再之后**才广播 `+0x0c`（`0x45c114`）⇒ 113 **永远最后**。
  */
 #define TRANCE_RESCUE_COUNT   2
 #define TRANCE_RESCUE_107     107   /* 森罗结界（`cards/senro.c`，2026-09-12 已实装：`senro_do_libyou`）*/

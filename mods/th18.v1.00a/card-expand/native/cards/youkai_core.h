@@ -65,15 +65,30 @@ int yk_option_script_changed(int want, int have);
  * 认出妖侧弹 ⇒ 改 `bullet+0x9c`。
  *   档 = `CURRENT_POWER / POWER_PER_LEVEL(100)` 钳到 [0,4]（TH18 五档；TH08 是六档阈值
  *   `8/24/48/80/128/999`，人妖两表共用 —— 映射到 TH18 五档是**本卡的决定**，见报告）。
- * ★ TODO(资产 §3.4 / §5)：TH08 妖侧每档伤害逐档烧在表里（`rec[+0x1c]`，读点 `th08:0x451805`），
- *   **没有抽出**（TH08 抽取工具坑见 spec §5）⇒ 五档全填 `YK_SHOT_DMG_NOT_SET = 0` = 「不覆盖」，
- *   保留 shooter 记录自己的 damage（引擎已写进 `bullet+0x9c`，`engine/sht/th18/02` §1 的 `+0x02`）。*/
+ *
+ * ★ 2026-09-12 一手补齐：TH08 妖侧每档伤害**已经抽出来了**（`rec[+0x1c]`，读点
+ *   `th08:0x451805`；来源 `local/th08.v1.00d/dat/ply03as.sht`，解析脚本见报告）。
+ *   但**不能照抄进下面那张表**：TH08 的「每发伤害」是配着「路数」一起设计的 ——
+ *   满 P 档 9 发里单发 22–30，最低档 3 发里单发 36–48，**单发伤害随 P 下降**、靠路数变多
+ *   把总 DPS 顶上去。我们的形态是**一档固定**（见下），把 TH08 的单发值搬进五档表
+ *   会让「P 越高越弱」。⇒ 五档保持 `YK_SHOT_DMG_NOT_SET`（不覆盖），
+ *   **这是决定不是占位遗漏**：要不要另设计一条随 P 上升的曲线由用户定（报告 §4 ❓）。*/
 #define YK_SHOT_TIERS            5      /* TH18 火力档 0..4（CURRENT_POWER 0..400 / 100）*/
 #define YK_SHOT_POWER_PER_LEVEL  100    /* = `CE_ADDR_POWER_PER_LEVEL`（0x4ccd40）*/
 #define YK_SHOT_DMG_NOT_SET      0      /* 档位表里这个值 = 「不覆盖 `bullet+0x9c`」*/
-#define YK_SHOT_SET_YOUKAI       0x16   /* ★ TODO(资产 §3.4.1)：妖侧 shooterset 槽 = 零售唯一无卡映射的 0x16。
-                                         *   零售那格 `fire_rate = 0`（= 装备卡路径整数除零）⇒ 装上资产前
-                                         *   **不能**调 `ce_tick_shooters_for_card`，见 yk_shotset_usable。 */
+/* 妖侧 shooterset 槽 = **覆盖**零售那格空槽（不是追加 —— 偏移数组 40 格已经全满）。
+ * 一手：四份零售 `pl0X.sht` 的 `+0x02` 都是 40、`0x00`–`0x16` 逐项非 0、`0x17`–`0x27` 是本 mod
+ * 其余四张卡（`native/sht_ids.h`）⇒ 没有「新索引」可加；而 `0x16` 是零售**唯一没有卡映射**的一格
+ * （扫全 exe，调 `Player__tick_shooters_for_ability_card` `0x40a9c0` 的 11 处压栈立即数 =
+ * `{0x0a,0x0b,0x0c/0x0d,0x0e,0x0f,0x10,0x11,0x12,0x13,0x14,0x15}`，没有 `0x16`；
+ * 主炮 `0x45ea00` 的公式只给 `0x00`–`0x09`）。
+ * 分配／写入它的是 `assets/sht/append_shooterset.py` 的 `REPLACE` 表；那份脚本会回头核对
+ * 本文件里的这两个常量，对不上就让 `make sht` 失败（防两边静默漂移）。
+ * 内容 = TH08 v1.00d `ply03as.sht`（妖夢＆幽々子 的**妖侧**）第 5 档（`thr = 128` = 满 P）
+ * 的 9 行逐字段翻译，`fire_rate = 3/5/10/6` ⇒ **除零风险随覆盖一起消失**（零售那格是 0，
+ * 而 `0x40a9c0` 的 `idiv` 在 `0x40aa4f` 没有零分支）。逐字段出处见该脚本的 `REPLACE` 注释。*/
+#define YK_SHOT_SET_YOUKAI       0x16
+#define YK_SHOT_SET_YOUKAI_ROWS  9      /* 那组有几行（行号进 `packed_id` 低 8 位；认出妖侧弹只看 set 字节）*/
 int     yk_shot_tier(int power);
 int32_t yk_shot_tier_damage(int tier);
 /* 打包 id = `(set << 8) | 组内行号`（`0x45ec69` 打包 / `0x45ee10` 回读）。 */

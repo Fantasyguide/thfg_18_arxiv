@@ -38,7 +38,8 @@
  *
  * ## 长持续效果的自查（`METHOD.md` 铁律二）
  *
- * 本卡跨帧留下的东西：① 绿点 VM 池（共用件，静态区）；② HUD 的三个文字。
+ * 本卡跨帧留下的东西：① 绿点 VM 池（共用件，静态区）；② HUD 的 **9 个 VM**
+ * （图标 1 + 数字位 6 + 连击条 2 —— 2026-09-12 从「两行贴图字数字」换成零售那一整块）。
  * **`on_delete` 与 `on_run_reset` 都走同一个 `mof_clear()`**：收池 + 收 HUD + 从计分层撤销声明
  * （`ce_score_declare(id, 0)`）；删卡发生在**商店**里、那一刻 AbilityManager 冻住
  * ⇒ 只能靠 `on_delete`（虚表 `+0x50`），不能等下一帧。
@@ -62,11 +63,57 @@
                                           * 一手：`collect_money_item` 拿它当 switch 选择子，`cmp eax,4` +
                                           * 5 项跳转表 0x446d40；th06rank.c 同址，**只读**）*/
 #define MOF_LOG_EVERY         600        /* 每 600 帧一条汇总（实跑对账）*/
-#define MOF_HUD_FAITH_X       52.0f      /* HUD：左下角（HUD 字面量空间 640×480）*/
-#define MOF_HUD_FAITH_Y       366.0f
-#define MOF_HUD_COMBO_Y       378.0f
-#define MOF_HUD_COLOR_FAITH   0xffffffffu /* 白字 + 黑描边（`ce_hud_text_ex` 默认描边）*/
-#define MOF_HUD_COLOR_COMBO   0xff60ff60u /* ❓ 自定：连击条数值用亮绿（原版 MoF 是同色数字）*/
+
+/* ---- HUD（左下角的**信仰读数**；全部是零售几何，逐条给一手出处）----
+ * ★ 2026-09-12 本轮：坐标**从「❓ 自定 (52,366/378)」换成零售原值** —— TH10 的信仰读数在
+ *   `Gui::on_tick` th10:0x414a60 起被逐位画进 `GUI+0x8094` 的 **7 个 VM**（`Gui::initialize`
+ *   th10:0x413d5e–0x413d7e 给它们跑 `front.anm` script51..57），几何 = 那 7 条脚本的 `pos`：
+ *
+ *     VM[0] script51 图标 16×16  `pos(32,448)`          anchor(1,1)=（左，顶）
+ *     VM[1..5] script52..56 数字 `pos(48+7k,450)` k=0..4
+ *     VM[6] script57 **恒 '0'**  `pos(83,450)`（全 exe 无一处写它的 sprite ⇒ 显示值 = 存储值×10）
+ *
+ *    `anchor(1,1)` = 「pos 是矩形左上角」的一手证法：TH10 `front.anm` 的 HUD 边框条
+ *   script2..5（sprite0/1/2/3 分别 `pos(0,0)/(416,0)/(32,0)/(32,464)`）只有这条解释才正好
+ *   铺满 640×480 的四条边（v4 的 `65 anchor` 取值表见 `engine/anm/OVERVIEW.md`）——
+ *   与 TH18 的 3×3「anchor(0,0)=锚心」**不是同一套**，别按 TH18 的直觉套。
+ *
+ *   坐标空间 = 640×480 字面量空间（TH10 的 HUD 空间）⇒ 写进 VM 时 ×2 换成表面 px
+ *   （脚本里 `resolutionMode(2)`，见 209/210 的注释）。 */
+#define MOF_HUD_ICON_X        32.0f      /* 零售 script51 `pos(32,448)` */
+#define MOF_HUD_ICON_Y        448.0f
+#define MOF_HUD_DIGIT_X0      48.0f      /* 零售 script52 `pos(48,450)` */
+#define MOF_HUD_DIGIT_DX      7.0f       /* script53..56 逐条 +7 ⇒ 55 / 62 / 69 / 76 */
+#define MOF_HUD_DIGIT_Y       450.0f
+#define MOF_HUD_ZERO_X        83.0f      /* 零售 script57 `pos(83,450)`：**恒 '0'** 的末位 */
+#define MOF_HUD_SLOTS         5          /* 动态位数（零售 `mov ebx,5` + 逐个 idiv 10000..1）*/
+#define MOF_HUD_DIGIT_MAX     99999      /* 5 位十进制上限（存储单位；超了钳住，照零售的 5 位窗口）*/
+#define MOF_HUD_U640_TO_SURF  2.0f       /* 640×480 字面量空间 → 表面 px（= `resolutionMode(2)`）*/
+#define MOF_HUD_INT_DIM       3          /* 脚本 `interruptLabel(3)` = `alphaTime(8,1,32)`（压暗）*/
+#define MOF_HUD_INT_SHOW      2          /* 脚本 `interruptLabel(2)` = `alphaTime(8,1,255)`（淡回）*/
+#define MOF_HUD_DIM_Y_HI      416.0f     /* 一手 0x470bdc：`y > 416` 才可能压暗 */
+#define MOF_HUD_DIM_X_LO     (-128.0f)   /* 一手 0x470d10（double −128.0）：`x < −128` 才可能压暗 */
+#define MOF_HUD_SHOW_Y_LO     400.0f     /* 一手 0x470d08：`y < 400` 淡回 */
+#define MOF_HUD_SHOW_X_HI    (-112.0f)   /* 一手 0x470d00（double −112.0）：`x > −112` 淡回 */
+
+/* 连击条：零售**不是 anm 精灵**，是引擎自己在 `Gui::on_draw` th10:0x4158b6–0x415937 画的
+ * 两个实心四边形（`call 0x43bda0` = D3D 设备画四边形；四个 float 是 (x, y, x2, y2)）：
+ *     X = 51 + 连击槽 × (38/130)      （`fild [0x474c58]` × `[0x470cb8]` + `[0x470d2c]`）
+ *     四边形 A = (51, 461)–(X, 463)   （`0x4158da/0x4158e2/0x4158f0`）
+ *     四边形 B = (50, 460)–(X−1, 462) （`0x41591b/0x415923/0x41592f`，`[0x470afc] = 1.0f`）
+ *     颜色 = `[gui+0x8393] << 24 | 0xffffff`（白）
+ * ⇒ 我们只能用 `drawRect`（现成脚本 104 = 1×1 白矩形、layer 25）拼出这两个四边形，
+ *   **几何/宽度/颜色逐条照抄**，但载体不同 ⇒ 报告里登记为「❓ 自定（载体差异）」。 */
+#define MOF_HUD_BAR_X_A       51.0f      /* 0x4158da = 51.0f */
+#define MOF_HUD_BAR_Y_A       461.0f     /* 0x4158e2 = 461.0f */
+#define MOF_HUD_BAR_BOT_A     463.0f     /* 0x4158f0 = 463.0f（高 = 2 px）*/
+#define MOF_HUD_BAR_X_B       50.0f      /* 0x41591b = 50.0f */
+#define MOF_HUD_BAR_Y_B       460.0f     /* 0x415923 = 460.0f */
+#define MOF_HUD_BAR_BOT_B     462.0f     /* 0x41592f = 462.0f */
+#define MOF_HUD_BAR_INSET     1.0f       /* 0x470afc = 1.0f：B 比 A 窄 1 px */
+#define MOF_HUD_BAR_W_FULL    38.0f      /* 0x470cb8 = 38/130 ⇒ 连击槽满（130）时宽 38 px */
+#define MOF_COMBO_MAX         130        /* 0x413035 `mov [esi+4],0x82`（槽上限，共用件同值）*/
+#define MOF_HUD_BAR_COLOR     0xffffffffu/* = `[gui+0x8393]<<24 | 0xffffff`；alpha 那个字节取 255（❓）*/
 
 typedef struct {
     faith_slot_t slot;              /* Δ_110 / 连击槽（130f）/ 基础 50000（共用件）*/
@@ -94,9 +141,26 @@ typedef struct {
 
 _Static_assert(sizeof(mof_card_t) <= 496, "ce_state 上限 496 字节（超了会静默返回 NULL）");
 
-/* HUD 的文字 VM（DLL 静态区；本卡同时只会有一张在场 —— 与 season.c 的 s_hud_digit 同口径）*/
-static ce_hud_vm_text_t s_faith_txt;
-static ce_hud_vm_text_t s_combo_txt;
+/* HUD 的 9 个 VM（DLL 静态区；本卡同时只会有一张在场 —— 原来那两行文字 VM 也是这个口径）：
+ *   图标 1 + 数字位 6（5 动态 + 恒 '0' 的末位）+ 连击条 2 = **零售那一块的全部元素**。
+ * ⚠ `s_hud_bar[]` 用的是**现成脚本 104**（`stock_rect` = 1×1 drawRect、layer 25、左上锚）
+ *   ⇒ 每帧写 `pos`+`scale`，不写 anchor（写 `anchor(0,0)` 反而会变成锚心）。*/
+static uint32_t s_hud_icon;
+static uint32_t s_hud_digit[MOF_HUD_SLOTS + 1];
+static int32_t  s_hud_digit_spr[MOF_HUD_SLOTS + 1];   /* 该 VM 当前挂的 sprite（-1 = 未知；省一次 set_sprite）*/
+static uint32_t s_hud_bar[2];
+static int32_t  s_hud_dim;                            /* 零售 `gui+0x9eb4` bit0：1 = 已压暗到 alpha 32 */
+static int      s_hud_warned;                         /* 起 VM 失败只报一次（实跑对账用，别刷日志）*/
+
+/* 数字 → sprite 号（ORDER 里的 MOF_FAITH_DIGIT_0..9 是**同一个 sprite 表里连续**的 sprite，
+ * 但这里**按名字逐个列**：ORDER 段一旦被重排/并入主 ORDER，连续假设就不成立）。*/
+static const int32_t s_hud_digit_tbl[10] = {
+    CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_0, CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_1,
+    CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_2, CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_3,
+    CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_4, CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_5,
+    CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_6, CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_7,
+    CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_8, CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_9,
+};
 
 static mof_card_t *st(ce_card_t *c) { return ce_state(c, mof_card_t); }
 
@@ -533,35 +597,187 @@ static int on_tick_2(ce_card_t *c)
     return 0;
 }
 
-/* ---- HUD（左下角：信仰数字 + 连击条数值；111 在场时多一行信号）----
- * 用 **贴图 VM 字形**（`ce_hud_vm_text_set`：TH18 **font 2** 的零售切图，season.c 的档位数字先例）——
- * 不用 ASCII 文字的原因是 `sdk.h` 记下的一手结论：**ASCII 文字永远盖不到暂停模糊罩下面**，
- * 而贴图 VM 走 UI 层 25（折到组 38、与罩子同桩）能被罩住。坐标仍是 HUD 字面量空间（640×480）。
+/* ============================ HUD（左下角的零售「信仰读数」）============================
  *
- * ❓ 坐标是**初版**：按「游玩区左下角」的意图给的（季节点槽那套 308,916 是 TH16 原版的表面像素，
- *   两套空间不同、不能照搬）。原版 MoF 的信仰数字位置**我们没抄到**（TH10 的 HUD 脚本未查）
- *   ⇒ 标 `❓ 自定`，实跑按截图挪。连击条的「条」也还没画（只有数字），同属待实跑项。*/
+ * ★★ 2026-09-12 本轮（审计 A3 的 110 部分）：**原来的两行贴图字数字（`ce_hud_vm_text_set`，
+ *    ❓ 自定坐标 52/366/378）整段换掉**，改成**零售那一块本身** —— 图标 + 6 位数字 + 连击条：
+ *
+ *  | 元素 | 谁 | 几何（640×480 字面量空间）| 一手 |
+ *  | --- | --- | --- | --- |
+ *  | 图标 16×16 | `MOF_FAITH_ICON`（TH10 front.anm sprite29）| `pos(32,448)` | `front.anm` script51 |
+ *  | 5 个动态位 | `MOF_FAITH_DIGIT_0..9`（sprite30..39，8×9）| `pos(48+7k,450)` | script52..56 |
+ *  | 末位恒 '0' | `MOF_FAITH_DIGIT_0` | `pos(83,450)` | script57（全 exe 无一处改它的 sprite）|
+ *  | 连击条 | 两个 `drawRect` 四边形（脚本 104）| (51,461)–(X,463) 与 (50,460)–(X−1,462) | `Gui::on_draw` 0x4158b6 |
+ *
+ *  · **显示的是「存储值 ×10」**：5 个动态位取 `显示值/10`（= 零售 `0x414a60` 读的 `0x474c4c`）的各位，
+ *    末位永远是字面 '0' ⇒ 画面 = `50000`（初值）… `999990`（上限）。**这就是零售的读数**，
+ *    不是排版巧合（初值 5000 存储 ⇒ `05000` + `0` = 50000，正是 `0x417931 push 0xc350` 喂进去的数）。
+ *  · 位置、字距（7 px）、连击条宽度公式（`连击槽 × 38/130`）**全部照抄**，一个数都不自己定。
+ *  · 层：脚本里 `layer(25)` + `resolutionMode(2)` ⇒ 组 38、桩 `th18:0x4878e0`（直接进后备缓冲）：
+ *    被暂停模糊罩（同组、后画）盖住，且进得了 P 键截图。依据
+ *    `engine/anm/th18/05-snapshot-and-surfaces.md` §5/§6/§7.1。
+ *  · ❓ 只有两处「载体/版本差异」（都登记在报告里）：
+ *    ① 连击条零售是**引擎 D3D 四边形**（`0x43bda0`，全 exe 没有对应的 anm 精灵/脚本）
+ *       ⇒ 我们用 `drawRect` 拼，几何/宽度/颜色逐条照抄；四边形色里的 alpha 取自 `[gui+0x8393]`，
+ *       我们写死 255。
+ *    ② 零售的 `layer(15)`（TH10 的世界层号）改成 25，见 `209_…`/`210_…` 的脚本注释。
+ *
+ * 长持续效果（`METHOD.md` 铁律二）：这 9 个 VM 全是**跨帧留下**的东西 ⇒ `mof_clear()` 里统一收
+ *   （`on_run_reset` / `on_delete` 都走它）；`on_delete` 那条尤其重要 —— 删卡发生在商店里、
+ *   那一刻 `on_draw` 不会再来，只有 `on_delete`（虚表 `+0x50`）收得到。*/
+
+/* 起一个 HUD VM：`pos` 用 640×480 字面量空间写，内部 ×2 换成表面 px（脚本 `resolutionMode(2)`）。*/
+static uint32_t mof_hud_spawn(int script, float x640, float y640)
+{
+    float pos[3];
+
+    pos[0] = x640 * MOF_HUD_U640_TO_SURF;
+    pos[1] = y640 * MOF_HUD_U640_TO_SURF;
+    pos[2] = 0.0f;
+    return ce_anm_spawn_ui(CE_ABILITY_ANM(), script, pos);
+}
+
+/* 起 VM 失败只报一次（VM 池满之类；不然每帧一条日志）。*/
+static void mof_hud_warn_once(const char *what)
+{
+    if (s_hud_warned) return;
+    s_hud_warned = 1;
+    ce_log("mof: HUD VM spawn failed (%s) -- 这一块 HUD 会缺", what);
+}
+
+/* VM 还活着吗（引擎会在别处摧毁 VM ⇒ 每帧自愈检查，`signal.c` / `stock.c` 同款）。*/
+static int mof_hud_alive(uint32_t id) { return id != 0 && ce_anm_get_vm(id) != 0; }
+
+/* 收掉全部 9 个 VM + 复位「当前挂的 sprite / 压暗态」。删卡、局末、菜单门关闭时都走它。*/
+static void mof_hud_kill(void)
+{
+    int i;
+
+    if (s_hud_icon) { ce_anm_delete(s_hud_icon); s_hud_icon = 0; }
+    for (i = 0; i <= MOF_HUD_SLOTS; ++i) {
+        if (s_hud_digit[i]) { ce_anm_delete(s_hud_digit[i]); s_hud_digit[i] = 0; }
+        s_hud_digit_spr[i] = -1;
+    }
+    for (i = 0; i < 2; ++i) {
+        if (s_hud_bar[i]) { ce_anm_delete(s_hud_bar[i]); s_hud_bar[i] = 0; }
+    }
+    s_hud_dim = 0;
+    s_hud_warned = 0;
+}
+
+/* 数字第 i 位（i = 0 是最左 = 万位）。纯整数除法 ⇒ 与零售逐个 `idiv 10000…1` 同序、确定性。*/
+static int mof_hud_digit_of(int32_t v, int i)
+{
+    static const int32_t div_tbl[MOF_HUD_SLOTS] = { 10000, 1000, 100, 10, 1 };
+
+    if (i < 0 || i >= MOF_HUD_SLOTS) return 0;
+    return (int)((v / div_tbl[i]) % 10);
+}
+
+/* 整块淡出 / 淡回 —— 逐条照抄零售 `Gui::on_tick` th10:0x41499f–0x414a5a：
+ *   flag（零售 `gui+0x9eb4` bit0）为 0（显示中）：`y > 416 且 x < −128` ⇒ 发中断 3（压暗）+ 置位；
+ *   flag 为 1（已压暗）       ：`y < 400 或 x > −112` ⇒ 发中断 2（淡回）+ 清位。
+ * ⚠ 门限是 **TH10 自己的**（416/400、−128/−112），与 SDK 的 `ce_hud_near_corner()`
+ *   （TH16 栅格 400/384，`sdk_core.c`）**不是同一组** ⇒ 本卡自算（共享件不动）。
+ * ⚠ 只在**边沿**发中断（零售也是靠那个 flag 位做边沿触发）—— 每帧重发会把 alphaTime 反复重头开始。
+ * ⚠ 自机坐标用 `ce_player_pos()`（游玩区空间，与上面那两条门限同一空间）。*/
+static void mof_hud_dim_tick(void)
+{
+    const float *pp = ce_player_pos();
+    int i, intno = 0;
+
+    if (!pp) return;
+    if (!s_hud_dim) {
+        if (pp[1] > MOF_HUD_DIM_Y_HI && pp[0] < MOF_HUD_DIM_X_LO) { intno = MOF_HUD_INT_DIM; s_hud_dim = 1; }
+    } else {
+        if (pp[1] < MOF_HUD_SHOW_Y_LO || pp[0] > MOF_HUD_SHOW_X_HI) { intno = MOF_HUD_INT_SHOW; s_hud_dim = 0; }
+    }
+    if (!intno) return;
+    /* 零售把中断写给**同一组的全部 7 个 VM**（`0x4149e0` / `0x414a32` 那条循环，stride 0x3ac）*/
+    if (s_hud_icon) ce_anm_interrupt(s_hud_icon, intno);
+    for (i = 0; i <= MOF_HUD_SLOTS; ++i) if (s_hud_digit[i]) ce_anm_interrupt(s_hud_digit[i], intno);
+}
+
+static void mof_hud_draw(mof_card_t *s)
+{
+    void *anm = CE_ABILITY_ANM();
+    int32_t v, stored, sp;
+    float bar_w;
+    int i;
+
+    if (!anm) return;
+
+    /* ① 图标（零售 VM[0]）*/
+    if (!mof_hud_alive(s_hud_icon)) {
+        s_hud_icon = mof_hud_spawn(CE_ANM_ABILITY_SCRIPT_MOF_FAITH_ICON, MOF_HUD_ICON_X, MOF_HUD_ICON_Y);
+        if (!s_hud_icon) mof_hud_warn_once("icon");
+    }
+    if (s_hud_icon)
+        ce_anm_set_pos(s_hud_icon, MOF_HUD_ICON_X * MOF_HUD_U640_TO_SURF,
+                       MOF_HUD_ICON_Y * MOF_HUD_U640_TO_SURF, 0.0f);
+
+    /* ② 6 个数字位（零售 VM[1..6]）：先 /10 拿「存储值」，再逐位取（末位恒 '0'）。*/
+    v = faith_slot_total(&s->slot);                  /* 显示单位（= 存储 ×10，spec §7.4 / 研究 §2）*/
+    stored = v / 10;
+    if (stored < 0) stored = 0;
+    if (stored > MOF_HUD_DIGIT_MAX) stored = MOF_HUD_DIGIT_MAX;
+    for (i = 0; i <= MOF_HUD_SLOTS; ++i) {
+        /* 前 5 位 = 零售 script52..56 的 x（48 + 7k）；第 6 位 = 零售 script57 的 x(83) 且恒 sprite30。*/
+        float x640 = (i < MOF_HUD_SLOTS) ? MOF_HUD_DIGIT_X0 + MOF_HUD_DIGIT_DX * (float)i : MOF_HUD_ZERO_X;
+
+        if (!mof_hud_alive(s_hud_digit[i])) {
+            s_hud_digit[i] = mof_hud_spawn(CE_ANM_ABILITY_SCRIPT_MOF_FAITH_DIGIT, x640, MOF_HUD_DIGIT_Y);
+            s_hud_digit_spr[i] = -1;
+        }
+        if (!s_hud_digit[i]) { mof_hud_warn_once("digit"); continue; }
+        ce_anm_set_pos(s_hud_digit[i], x640 * MOF_HUD_U640_TO_SURF,
+                       MOF_HUD_DIGIT_Y * MOF_HUD_U640_TO_SURF, 0.0f);
+        sp = (i < MOF_HUD_SLOTS) ? s_hud_digit_tbl[mof_hud_digit_of(stored, i)]
+                                 : (int32_t)CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_0;
+        if (s_hud_digit_spr[i] != sp && ce_anm_set_sprite(anm, s_hud_digit[i], sp))
+            s_hud_digit_spr[i] = sp;
+    }
+
+    /* ③ 连击条：零售那两个四边形（几何/颜色逐条照抄，见常量块的注释）。
+     * 宽度 = `连击槽 × 38/130`（`0x470cb8`）⇒ 130 帧时 38 px（640 空间）；A 在 (51,461)、
+     * B 在 (50,460) 且**窄 1 px**（`0x470afc` = 1.0f），两者都 2 px 高。
+     * `drawRect`（脚本 104）的默认锚点 = 左上角（`AUDIT.md` §AL20 两次实跑）⇒ `pos` 就是左上角，
+     * 脚本里**不写 anchor**（写了 `anchor(0,0)` 会变成锚心，见 157 的注释）。*/
+    bar_w = (float)s->slot.combo * (MOF_HUD_BAR_W_FULL / (float)MOF_COMBO_MAX);
+    if (bar_w < 0.0f) bar_w = 0.0f;
+    for (i = 0; i < 2; ++i) {
+        float x = (i == 0) ? MOF_HUD_BAR_X_A : MOF_HUD_BAR_X_B;
+        float y = (i == 0) ? MOF_HUD_BAR_Y_A : MOF_HUD_BAR_Y_B;
+        float h = (i == 0) ? (MOF_HUD_BAR_BOT_A - MOF_HUD_BAR_Y_A) : (MOF_HUD_BAR_BOT_B - MOF_HUD_BAR_Y_B);
+        float w = (i == 0) ? bar_w : (bar_w - MOF_HUD_BAR_INSET);
+
+        if (w < 0.0f) w = 0.0f;
+        if (!mof_hud_alive(s_hud_bar[i]))
+            s_hud_bar[i] = mof_hud_spawn(CE_ANM_ABILITY_SCRIPT_STOCK_RECT, x, y);
+        if (!s_hud_bar[i]) { mof_hud_warn_once("combo bar"); continue; }
+        ce_anm_set_pos(s_hud_bar[i], x * MOF_HUD_U640_TO_SURF, y * MOF_HUD_U640_TO_SURF, 0.0f);
+        ce_anm_set_scale(s_hud_bar[i], w * MOF_HUD_U640_TO_SURF, h * MOF_HUD_U640_TO_SURF);
+        ce_anm_set_color(s_hud_bar[i], MOF_HUD_BAR_COLOR);
+    }
+
+    /* ④ 整块淡出 / 淡回（自机贴到左下角的 HUD 上时压暗；门限是一手的 TH10 值）*/
+    mof_hud_dim_tick();
+}
+
 static int on_draw(ce_card_t *c)
 {
     mof_card_t *s = st(c);
-    char buf[32];
 
     if (!s) return 0;
     /* ★ 2026-09-12 审计：`on_draw`（虚表 `+0x48`）在**主菜单 / 标题**里也会被调，而 `on_tick_2`
-     *   （`+0x2c`）不会 ⇒ 不设门就会把两行 HUD 数字画到菜单上（117 的 bug3 就是这个坑；
+     *   （`+0x2c`）不会 ⇒ 不设门就会把整块 HUD 画到菜单上（117 的 bug3 就是这个坑；
      *   115 `lolk.c` / 116 `season.c` / 117 `animal.c` 三张卡都用同款门）。
      *   门关着时**把 VM 收掉**，别只是不画（VM 会留着被别处按旧坐标重画）。*/
     if (!CE_PLAYER() || !CE_GAME_THREAD()) {
-        ce_hud_vm_text_clear(&s_faith_txt);
-        ce_hud_vm_text_clear(&s_combo_txt);
+        mof_hud_kill();
         return 0;
     }
-    snprintf(buf, sizeof buf, "%d", (int)faith_slot_total(&s->slot));
-    ce_hud_vm_text_set(&s_faith_txt, MOF_HUD_FAITH_X, MOF_HUD_FAITH_Y, MOF_HUD_COLOR_FAITH,
-                       CE_ASCII_ALIGN_LEFT, 0.0f, buf, "mof");
-    snprintf(buf, sizeof buf, "%d/130", (int)s->slot.combo);
-    ce_hud_vm_text_set(&s_combo_txt, MOF_HUD_FAITH_X, MOF_HUD_COMBO_Y, MOF_HUD_COLOR_COMBO,
-                       CE_ASCII_ALIGN_LEFT, 0.0f, buf, "mof");
+    mof_hud_draw(s);
     /* ★ 2026-09-12：这里原来有一行 111 信号槽的占位（`"sig 0"`）。111 现在有自己的 HUD 与信号实现
      * ⇒ 110 **不再替它画**（两张卡各画各的，避免同一份状态两处显示、也避免跨卡读状态）。*/
     return 0;
@@ -580,8 +796,11 @@ static void mof_clear(ce_card_t *c)
      * （两张卡共用一个实体池，`faith.h` 头注）。按 `slot_mask` 筛的那一支是 2026-09-12 审计补的，
      * 下面这一行就是「删卡路径漏在哪」的补丁。*/
     faith_clear_entities_mask(1 << FAITH_SLOT_110);
-    ce_hud_vm_text_clear(&s_faith_txt);
-    ce_hud_vm_text_clear(&s_combo_txt);
+    /* ★ 2026-09-12 本轮：HUD 从「两行贴图字数字」换成零售那一整块（图标+6 位数字+连击条）
+     * ⇒ 收尾从两条 `ce_hud_vm_text_clear` 换成 `mof_hud_kill()`（9 个 VM + 压暗态一起复位）。
+     * ⚠ 这里**必须**收干净：删卡（倒吊人 / 原版空白卡）发生在商店里，那一刻 `on_draw` 不会再来
+     *   —— 只有 `on_delete`（虚表 `+0x50`）跑得到。*/
+    mof_hud_kill();
     if (!s) return;
     memset(s, 0, sizeof *s);
     s->last_graze = -1;

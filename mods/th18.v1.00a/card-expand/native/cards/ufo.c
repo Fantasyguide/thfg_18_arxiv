@@ -201,20 +201,108 @@ static int ufo_body_anm_script(int32_t color)
     }
 }
 
-/* 颜色 → 令牌跟随 VM 的脚本号。贴图 = 零售 `bullet.anm` 175..180 的 6 态（`make_ufo_token_art.py`）。
- * ⚠❓ **彩虹令牌只取第一态**（`RBRED`）：一手 TH12 的彩虹令牌是**道具**、由引擎每 150 帧把
- *   `type` 在 13→14→15 之间轮转（`th12:0x4262f5`，`engine/ufo/th12/01-ufo-system.md` §9）；
- *   本卡的令牌颜色由卡侧的轮转表定死（实体不带颜色，见文件尾 §自定 24）⇒ 换色这一半**没做**
- *   （三个脚本的贴图是同一形制的三色，取红那态；要接换色就在 `ufo_tokens_tick` 里按帧数重指脚本）。 */
+/* 颜色 → 令牌跟随 VM 的脚本号（**非彩虹**那一半；彩虹走 `ufo_tok_script()` 的三态）。
+ * 贴图 = 零售 `bullet.anm` 175..180 的 6 态（`make_ufo_token_art.py`）。★ 2026-09-12（A8）：
+ * 彩虹那三条（171..173）是**被截断**的版本（没有 `interruptLabel`）⇒ **这里不再给彩虹用**；
+ * 彩虹改指 `ability.anm` 219..221（全文版，三轮中断都在），见下面那个常量块。 */
 static int ufo_token_anm_script(int32_t color)
 {
     switch (ufo_color_art_index(color)) {
     case 0:  return CE_ANM_ABILITY_SCRIPT_UFO_TOKEN_RED;
     case 1:  return CE_ANM_ABILITY_SCRIPT_UFO_TOKEN_BLUE;   /* ★ 金令牌用蓝那一套（用户裁决 ①）*/
     case 2:  return CE_ANM_ABILITY_SCRIPT_UFO_TOKEN_GREEN;
-    case 3:  return CE_ANM_ABILITY_SCRIPT_UFO_TOKEN_RBRED;  /* 彩虹令牌第一态（❓ 不换色，见上）*/
-    default: return CE_ANM_ABILITY_SCRIPT_UFO_TOKEN_BLUE;
+    default: return CE_ANM_ABILITY_SCRIPT_UFO_TOKEN_BLUE;   /* 彩虹到不了这里（`ufo_tok_script` 先截）*/
     }
+}
+
+/* ============================ ★★ 彩虹令牌：三段 interrupt + 每 150 帧换色（2026-09-12 A8）============================
+ * 一手 = TH12 v1.00b `ItemManager__on_tick__body`（`th12:0x425c20`）的令牌分支
+ * （`0x4262a0`–`0x4264f4`），全部用 `objdump -d` 逐条复核；下面每条都给了指令地址。
+ * 复核手段：`cd local/th12.v1.00b && objdump -d --start-address=0x… --stop-address=0x… -M intel th12.exe`。
+ *
+ * **① 三段标签各是谁发的**（令牌的 anm VM **就嵌在道具对象里**；`vm+0x494` = on_interrupt 回调、
+ * `vm+0x3c4` = `pending_interrupt`（u16），一手 `0x44a992`–`0x44a9a9` 的 Ufo 光环那段同构代码）：
+ *
+ *   | 标签 | 段正文（零售 `bullet.anm`） | 发送者 | 触发条件 |
+ *   | --- | --- | --- | --- |
+ *   | `3` 主循环 | `offset64:` 4 帧交替 + 32 帧 `rotateTime(±0.20943952)` | `FUN_004219e0(item)` `0x4219e0` | 玩家**离开** 60 px 圈 **且** 计时器 `< 90`（`0x426347`）|
+ *   | `2` 快闪 | `offset340:` 同样的交替但**每 2 帧** | `FUN_0040d5d0(item)` `0x40d5d0` | ① 计时器 **== 90**（`0x426358`→`0x426363`）② 离开圈时计时器 `>= 90`（`0x426340`）|
+ *   | `7` 固定色慢摆 | `sprite(<固定色>)` + 12 帧半周期慢摆 | `FUN_00421a10(item, 0)` `0x421a10`（函数体开头就是 `add eax,7`）| 玩家**进入** 60 px 圈那一帧（`0x42631c`）|
+ *
+ *   ⚠ 三条都是「**状态变了才发**」的闩，靠道具的 `+0x9c4` 标志（0 = 圈外 / 1 = 圈内）：
+ *   进圈 `0x42630f`–`0x426321`（`cmp flag,0` / `jne` / 发 7 / `flag = 1`）、
+ *   出圈 `0x42632d`–`0x42634c`（`cmp flag,0` / `je` / 按计时器发 3 或 2 / `flag = 0`）。
+ *   `spawn_item` 把它清 0（`0x427595`）⇒ **出生时算「圈外」**，第一帧不会白发一次中断。
+ *
+ * **② 60 px 圈**：`0x4262b8 fld dist²` / `0x4262bc fcomp qword [0x4a4410]`（一手读出该 double = **3600.0**）
+ *   / `0x4262c4 test ah,0x41` / `0x4262c7 jp 0x42632d`。
+ *   ★ 这条 FPU idiom 的方向是**实测**过的（`test ah,0x41; jp` 在 `a > b` 时跳、`a <= b` 时落；
+ *     用 32 位汇编 `flds a; fcomps b; fnstsw ax; testb $0x41,%ah; jp` 跑三种取值验证）：
+ *     **jp 目标 = 圈外（dist² > 3600）、落下来 = 圈内（dist² ≤ 3600）**。
+ *
+ * **③ 计时器（`item+0x9a0`，= 计时器对象 `item+0x99c` 的 `cur`）**：
+ *   圈**外**：只有公共那一次 `0x42636a Timer__increment(&item+0x99c)` ⇒ **每帧 +1**
+ *            （`0x464a80`：`cur_f += 1.0`（`0x4a3ce0` = double 1.0）、`cur += 1`）。
+ *   圈**内**：先 `0x4262db Timer__decrement(&item+0x99c, -1.0f)`（`0x4a3da8` 一手 = **−1.0f**；
+ *            `0x464a20` 是 `cur_f += amt`）⇒ 与公共那次**抵消** ⇒ **冻结**；
+ *            若 `cur == 90` 再多来一次 −1（`0x4262fe`/`0x42630a`，防止同帧的 2 号中断盖掉 7 号）。
+ *            ⚠ 圈内**只有彩虹令牌**走这段（一手整段的门外是 `0x426276 mov eax,[edi+0x9b4]` /
+ *            `cmp eax,0xd` / `0xe` / `0xf`，三命中跳 `0x42628f`；固定色令牌 10/11/12 不进）。
+ *
+ * **④ 150 帧**：`0x426483 cmp eax,0x96; jl`（`cur >= 150` 才换色）+ `0x426497 Timer__set_current(&t99c, 0)`
+ *   + `0x4264a2 (type−0xc)%3` + `0x4264b6 type = 余数 + 0xd`（13→14→15→13）
+ *   + `0x4264bc script = type + 0xa5`（= 178/179/180）。
+ *   ★ 判阈值在 `0x426352`/`0x426483`，**推进在它之后**（`0x426368`/`0x42636a`），换色那一帧也照走一次推进
+ *     ⇒ 稳定周期**正好 150 帧**（0→149 判、150 换、换完 cur = 1）；`90` 起开始快闪 ⇒ 最后 60 帧在闪。
+ *
+ * **⑤ 换色不是中断，是「重指脚本」**：`0x4264cb call 0x4061e0(vm = item, bullet_anm, script)`，该函数是
+ *   `AnmVm__wipe`（`0x402520`）+ `0x454d10 AnmLoaded__load_script_into_vm`（**同一个 VM** 换脚本）
+ *   —— 所以换色后 VM 从新脚本的主循环重开。
+ *
+ * ★ 本卡的对应物（**逐条照抄，差别只有下面这两条**）：
+ *   ① 我们的令牌是**自造的敌机实体**（ECL 惰性壳）+ 一个跟随 VM ⇒ 「重指脚本」= **删旧 VM + 按新脚本
+ *      再起一个**（SDK 没有「给已有 VM 换脚本」这条通路；见 `ufo_tok_rainbow_recolor`）。
+ *   ② **不搬**「圈内连道具寿命（`item+0x988`，1200 帧）也冻结」那一条（`0x4262f0`）——
+ *      那是 TH12 **道具**的寿命计时器，我们的 `ttl` 是自定值（`UFO_TOKEN_TTL_FRAMES`），换掉它等于
+ *      顺手改一个跟本题无关的行为 ⇒ 留着，登记在文件尾。
+ * ⚠ 一手的 60 px 圈**在实机上没验过**（我们照抄数值）；三段中断的实际观感同样待实跑（见文件尾）。 */
+/* ★ 时序列自证（2026-09-12）：把 ②③④ 的指令逐条翻成一个状态机，与下面 `ufo_tok_rainbow_tick`
+ *   的逐行实现做**逐事件对照**（13 种进出圈脚本：全程外 / 全程内 / 在第 5/89/90/91/148/149/150/151/300
+ *   帧进圈再出圈 / 每 10 帧抖边界 / 出生即贴脸）⇒ 中断序列与换色帧**完全一致**
+ *   （唯一差别是「同一帧里重复发同一个中断号」，而 `pending_interrupt` 是单寄存器、同值后写无影响）。
+ *   全远场景下换色发生在第 **150 / 300 / 450** 帧（间隔恒 150），首次快闪在第 **90** 帧
+ *   ⇒ 「90 起闪、150 换色、闪 60 帧」这条读法由指令顺序自洽。 */
+#define UFO_TOK_INT_RESUME   3        /* 主循环（`interruptLabel(3)`）*/
+#define UFO_TOK_INT_BLINK    2        /* 2 帧快闪（`interruptLabel(2)`）*/
+#define UFO_TOK_INT_NEAR     7        /* 换固定色 sprite + 慢摆（`interruptLabel(7)`）*/
+#define UFO_TOK_NEAR_R2      3600.0f  /* 60 px 的平方 —— 一手 `th12:0x4a4410` = double 3600.0 */
+#define UFO_TOK_BLINK_AT     90       /* 一手 `0x5a`（`th12:0x426358`）：走到 90 起开始快闪 */
+#define UFO_TOK_CYCLE_TICKS  150      /* 一手 `th12:0x426483`（`0x95 < cur`，即 `cur >= 150`）*/
+#define UFO_TOK_RB_STATES    3        /* 三态：脚本 219/220/221（一手 type 13/14/15 → 178/179/180）
+                                       * ⚠ 「219/220/221」是**落地当天的号**；并发开发期各人各拿一段靠后的号，
+                                       *   收尾会跑 `assets/renumber_scripts.py --apply` 压紧 ⇒ 以
+                                       *   `anm_ids.h` 的 `CE_ANM_ABILITY_SCRIPT_UFO_TOKEN_RAINBOW_*` 宏名为准。 */
+
+/* 彩虹令牌的态 → 脚本号。一手顺序 = `(type − 0xc) % 3`：13→14→15→13（`th12:0x4264a2`），
+ * 脚本 = `178 + 余数`（`0x4264bc` 的 `+0xa5`）。
+ * ⚠ **必须**用带 `interruptLabel` 的全文版（219..221，`make_ufo_token_art.py` 生成）：
+ *   168..173 里那三条彩虹（171..173）**没有标签** ⇒ 发中断进去也停在原地（`ce_anm_interrupt` 会静默无效）。 */
+static int ufo_token_rainbow_script(int state)
+{
+    switch (state) {
+    case 0:  return CE_ANM_ABILITY_SCRIPT_UFO_TOKEN_RAINBOW_RED;
+    case 1:  return CE_ANM_ABILITY_SCRIPT_UFO_TOKEN_RAINBOW_BLUE;
+    case 2:  return CE_ANM_ABILITY_SCRIPT_UFO_TOKEN_RAINBOW_GREEN;
+    default: return CE_ANM_ABILITY_SCRIPT_UFO_TOKEN_RAINBOW_RED;
+    }
+}
+
+/* 令牌跟随 VM 的脚本号 —— **唯一出口**（非彩虹 = 固定色那三条；彩虹 = 三态轮转）。 */
+static int ufo_tok_script(int32_t color, int rb_state)
+{
+    if (ufo_color_art_index(color) == 3)                 /* 3 = 彩虹那一格（`ufo_color_art_index`）*/
+        return ufo_token_rainbow_script(rb_state % UFO_TOK_RB_STATES);
+    return ufo_token_anm_script(color);
 }
 
 /* ---- HUD 槽声明的块尺寸（表面 px）与第一版元素常量（用户 2026-09-12 裁决 ④）------------
@@ -263,8 +351,9 @@ _Static_assert(UFO_HUD_CELL_H + UFO_HUD_BAR_H <= UFO_HUD_BLOCK_H,
 /* ------------------------------------------------------------------ 卡状态
  * 私有状态预算 = `CE_STATE_BYTES`(512) − `CE_STATE_RESERVED`(16) = 496 B（sdk_core.h）。
  * 令牌表 16 × 16 B = 256 B 进私有状态（比照 108/117 的静态表，但本表**必须**随卡对象走：
- * 卡对象可能在局中被重建 ⇒ 静态表会串台）。当前 `sizeof(ufo_card_t)` = **400 B**（2026-09-12 加
- * `pentagon_hint` 之后实测；编译期断言守着 ≤ 496 B）。 */
+ * 卡对象可能在局中被重建 ⇒ 静态表会串台）。当前 `sizeof(ufo_card_t)` = **468 B**
+ * （2026-09-12 **实测**，编译期断言守着 ≤ 496 B；A8 加的彩虹三字段填进了 `ufo_tok_t` 原来的尾巴，
+ * `sizeof(ufo_tok_t)` 仍是 20 B ⇒ 净增 0）。 */
 #define UFO_TOKEN_SLOTS 16      /* ★❓ 自定：同时最多记几个令牌实体（`UFO_TOKEN_MAX` 是「同时活几个」，
                                  * 这里是「能记几个」的分配护栏）*/
 /* 令牌颜色的**登记环**容量（死亡回调里入队、帧末出队落槽）。
@@ -296,6 +385,17 @@ typedef struct {
      *（= 槽里正好 2 枚、收了它就能成组）。判据在纯逻辑层 `ufo_pentagon_hint_for_color()`，
      * 每帧由 `ufo_pentagon_hint_update()` 刷新。⚠ **本卡不画**（缺 anm 脚本，见那个函数的注）。 */
     uint8_t  pentagon_hint;
+    /* ★ 2026-09-12（A8）彩虹令牌的三段中断 + 换色（一手见上面的常量块）。**三个字段都塞进
+     *   `pentagon_hint` 后面的 3 字节尾巴里**（`ufo_tok_t` 仍是 20 B ⇒ `sizeof(ufo_card_t)` 不变）：
+     *   `rb_state` = 当前态 0/1/2 ⇒ 脚本 219/220/221（TH12 的道具类型 13/14/15，`th12:0x4264b6`）；
+     *   `rb_cycle` = 换色计时器（TH12 的 `item+0x9a0`）—— 一手只在 0..150 之间取值（到 150 就换色并
+     *                清 0）⇒ **uint8 够**（断言在下面）；
+     *   `near`     = 上一帧在不在 60 px 圈内（TH12 的 `item+0x9c4` 闩，0 = 圈外 —— 出生也清 0）。
+     * ⚠ 只有**彩虹**令牌用这三个字段（一手把整段关在 `if (type == 13||14||15)` 里）；
+     *   非彩虹令牌恒为 0（换来的是「一个结构体一套语义」，不做 union）。 */
+    uint8_t  rb_state;
+    uint8_t  rb_cycle;
+    uint8_t  near;
 } ufo_tok_t;
 
 typedef struct {
@@ -439,13 +539,18 @@ static void ufo_tok_kill(ufo_tok_t *t)
     t->color = UFO_COLOR_NONE;
     t->enemy_id = 0;
     t->ttl = 0;
+    /* ★ A8 的三个字段一起清（`color = NONE` 已经让槽变「空」，这里是防御性对账：
+     *   下一次 `ufo_tok_spawn` 复用同一个槽时不该吃到上一枚令牌的计时器）。 */
+    t->rb_state = 0;
+    t->near = 0;
+    t->rb_cycle = 0;
 }
 
 /* 起一个令牌跟随 VM，并**立刻**摆到实体位置上（世界层 VM 的实体坐标 (0,0,0) = 弹幕区上边框中点
  * ⇒ 不先摆位置的话会先在屏幕最上方闪一帧）。`e` = 令牌敌机（用来取位置）。失败只报日志（画不出来 ≠ 卡坏）。 */
 static void ufo_tok_vm_spawn(ufo_tok_t *t, const uint8_t *e)
 {
-    int script = ufo_token_anm_script(t->color);
+    int script = ufo_tok_script(t->color, t->rb_state);
     uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(), script, UFO_TOKEN_ANM_LAYER);
     if (!id) {
         ce_log("ufo: token follow-VM spawn FAILED (color %d, script %d, layer %d) - the token entity "
@@ -470,6 +575,65 @@ static void ufo_tok_vm_follow(ufo_tok_t *t, const uint8_t *e)
     }
     ce_anm_set_pos(t->anm_id, *(const float *)(e + CE_ENEMY_POS_X),
                               *(const float *)(e + CE_ENEMY_POS_Y), 0.0f);
+}
+
+/* ---- ★ 彩虹令牌的换色（= TH12 的「重指脚本」，`th12:0x4061e0`；一手见常量块 ⑤）----
+ * TH12 在**同一个 VM** 上 `AnmVm__wipe` + `load_script_into_vm`；SDK 没有这条通路
+ * （`ce_anm_set_sprite` 只会被脚本下一帧的 `sprite()` 覆盖）⇒ 用**删旧 + 起新**等价达成，
+ * 位置由 `ufo_tok_vm_spawn` 当场摆好（中间不产生「留在原点的 VM」）。
+ * ⚠ 一手同时做了三件事，本函数逐条对应：
+ *   ① `Timer__set_current(&t99c, 0)`（`0x426497`）⇒ `rb_cycle = 0`；
+ *   ② `type = (type−0xc)%3 + 0xd`（`0x4264b6`）⇒ 态 +1 取模（13→14→15→13）；
+ *   ③ 用 `type + 0xa5` 重新装载（`0x4264bc`）⇒ 换脚本重开。
+ * ⚠ 一手还会播一个音（`0x4264dd` `0x453e20(x, 0x35)`）——`0x35` 是 **TH12 的 se id**，
+ *   本仓没有 TH12→TH18 的音效映射表（`engine/_shared/th18-sound-table.md` 只有 TH18 那张）
+ *   ⇒ **不播**，宁可没声音也不随便借一个 TH18 的 id 冒充。登记在文件尾。 */
+static void ufo_tok_rainbow_recolor(ufo_tok_t *t, const uint8_t *e)
+{
+    t->rb_state = (uint8_t)((t->rb_state + 1) % UFO_TOK_RB_STATES);
+    t->rb_cycle = 0;
+    ufo_tok_vm_kill(t);                                /* 句柄清零（幂等）*/
+    ufo_tok_vm_spawn(t, e);                            /* 新脚本 + 当场摆位置；失败只报日志 */
+}
+
+/* ---- ★ 彩虹令牌每帧：60 px 闩 + 三段中断 + 换色计时器（一手见上面那个常量块）----
+ * ⚠ 与 `ufo_tok_pick`（20 px 接触判定）是**两件事**：60 px 圈只影响画面与计时器，不是收集半径。 */
+static void ufo_tok_rainbow_tick(ufo_tok_t *t, const uint8_t *e, float px, float py)
+{
+    float dx, dy;
+    int near;
+
+    if (t->color != UFO_COLOR_RAINBOW) return;         /* 一手整段只在 type 13/14/15 上跑 */
+    dx = *(const float *)(e + CE_ENEMY_POS_X) - px;
+    dy = *(const float *)(e + CE_ENEMY_POS_Y) - py;
+    near = (dx * dx + dy * dy <= UFO_TOK_NEAR_R2);     /* 一手：距离² ≤ 3600（60 px）*/
+
+    if (near != (int)t->near) {
+        /* 进 / 出 60 px 圈的那一帧各发一次（一手两个「状态变了才发」的闩：`0x42630f` / `0x42632d`）。
+         * 出圈时按计时器选 3（还没到 90 ⇒ 回主循环）或 2（已经在闪 ⇒ 接着闪）。 */
+        if (near) ce_anm_interrupt(t->anm_id, UFO_TOK_INT_NEAR);
+        else      ce_anm_interrupt(t->anm_id, t->rb_cycle < UFO_TOK_BLINK_AT ? UFO_TOK_INT_RESUME
+                                                                            : UFO_TOK_INT_BLINK);
+        t->near = (uint8_t)(near ? 1 : 0);
+    }
+    if (near) {
+        /* 圈内：计时器冻结（一手那天 −1 由公共的 +1 抵消）。
+         * ⚠ 一手**不是**纯粹的冻结：`0x4262f5` 在减完之后再看一眼「== 90 吗？是就再减一次」
+         *   ⇒ 唯一残差是「`cur == 91` 会被摁回 90」（冻结在 90 而不是 91）。照抄它 ——
+         *   不抄的话，在「91 帧那一刻进圈」这种情形下换色相位会差 1 帧（对照模型实测）。
+         *   而 `cur == 90` 时它不动（90−1=89 → 不再减 → +1 回 90）⇒ 第 90 帧那次快闪中断
+         *   在圈内**不会**被重复触发（这正是它存在的理由：别让 2 号中断盖掉同帧的 7 号）。 */
+        if (t->rb_cycle == UFO_TOK_BLINK_AT + 1) t->rb_cycle = UFO_TOK_BLINK_AT;
+        return;
+    }
+
+    /* ⚠ 顺序照一手：**先判阈值、后推进**（两个判在 `0x426352`/`0x426483`，推进在 `0x426368`）。
+     * 换色那一帧也照走一次推进（一手换完 `jmp 0x42636a`）⇒ 稳定周期正好 `UFO_TOK_CYCLE_TICKS` 帧。
+     * `rb_cycle` 是 uint8 ⇒ 推进前必须挡住 150（否则会加到 151/越界）——一手因为那个「换完再 +1」
+     * 才让周期是整数 150：换色帧 0 → 1，此后每帧 +1，到 150 再换。 */
+    if (t->rb_cycle == UFO_TOK_BLINK_AT) ce_anm_interrupt(t->anm_id, UFO_TOK_INT_BLINK);
+    if (t->rb_cycle >= UFO_TOK_CYCLE_TICKS) ufo_tok_rainbow_recolor(t, e);   /* 内部把计时器清 0 */
+    if (t->rb_cycle < UFO_TOK_CYCLE_TICKS) ++t->rb_cycle;
 }
 
 /* 造一个令牌实体。颜色 = 实体自己的事（一手：彩虹令牌每 150 帧换色、60 px 内暂停 ——
@@ -520,6 +684,14 @@ static uint8_t *ufo_tok_spawn(ufo_card_t *s, float x, float y)
         t->ttl = UFO_TOKEN_TTL_FRAMES;
         t->pentagon_hint = 0;
         t->anm_id = 0;                                 /* ★ 新槽先清句柄（`ufo_tok_free` 只查 `color`）*/
+        /* ★ A8：彩虹令牌的初始态。一手：`spawn_item` 把闩清 0（`0x427595`）⇒ 出生算「圈外」、
+         * 第一帧不发中断；计时器从 0 起（换色后 `Timer__set_current(0)`）。起始**态**取 0 = 红那一态
+         * （= TH12 的道具类型 13 ⇒ 脚本 178）。⚠❓ 一手里真正的起始态由「哪个 UFO 掉的」决定
+         * （红 UFO → 13、蓝 → 14、绿 → 15、彩虹 → 按第 3 个令牌的颜色，`th12:0x44af00`）；
+         * 我们的令牌实体**不携带颜色**（卡侧轮转表给，见文件尾 §自定 24）⇒ 统一从红起。 */
+        t->rb_state = 0;
+        t->near = 0;
+        t->rb_cycle = 0;
         /* ★ 画面：起跟随 VM（ECL 侧是惰性壳，什么都不画 —— 见文件头「跟随 VM」注释块）*/
         ufo_tok_vm_spawn(t, e);
         ++s->spawned_tokens;
@@ -899,6 +1071,9 @@ static void ufo_tokens_tick(ufo_card_t *s)
         /* ★ 画面：跟随 VM 每帧抄实体的 `abs_pos`（放在 TTL / 成组早停**之前** ——
          *   令牌只要还在场上就得跟着走，包括「槽里有成组、这一颗暂时不收」那段等待期）。 */
         ufo_tok_vm_follow(t, e);
+        /* ★ A8：彩虹令牌的三段中断 + 换色（60 px 闩 / 90 帧起闪 / 150 帧换色）。
+         * ⚠ 也放在早停之前：计时器与玩家距离无关地每帧要走（一手在道具的 tick 里，不受「槽满了没」影响）。 */
+        ufo_tok_rainbow_tick(t, e, px, py);
         if (t->ttl) --t->ttl;
         if (!t->ttl) {                                 /* 占位期惰性壳不会自己消失 ⇒ TTL 兜底 */
             ufo_tok_kill(t);
@@ -1448,6 +1623,14 @@ _Static_assert(UFO_HP_PLACEHOLDER < UFO_LIFE_LIMIT, "UFO life must stay below 10
  *   ② 主机单测 `tests/test_ufo_core.c` 的 `ufo_clamp_spawn_life(1000/1600/2500) == 999` 那一组
  *      （钳制函数返回 ≥1000 时会红）。⇒ 改钳制函数必须动单测，这条链是有人的。 */
 _Static_assert(UFO_CLAMP_OUTPUT_MAX < UFO_LIFE_LIMIT, "clamped spawn life must stay below 1000");
+/* ★ A8：彩虹令牌的换色计时器是 **uint8**（为了不撑大 `ufo_tok_t`）⇒ 150 必须装得下，
+ *   而且「到 150 就换色并清 0」这条不变量必须由 `ufo_tok_rainbow_tick` 自己守住
+ *   （推进写成「先判 ≥150 换色、再只在 <150 时 ++」）。 */
+_Static_assert(UFO_TOK_CYCLE_TICKS <= 255, "the 150-frame recolour tick must fit in a uint8_t");
+_Static_assert(UFO_TOK_BLINK_AT < UFO_TOK_CYCLE_TICKS,
+               "the 90-frame blink must start before the 150-frame recolour (one-hand order)");
+_Static_assert(UFO_TOK_RB_STATES == 3,
+               "the rainbow script table must stay 3 entries (one-hand type 13/14/15 -> 178/179/180)");
 
 /* ============================== ★ 占位 / TODO 清单 ==============================
  * 每条都是「需要 ECL / 资产 / 用户决策」，取值一律是**不做**这个语义：
@@ -1471,9 +1654,30 @@ _Static_assert(UFO_CLAMP_OUTPUT_MAX < UFO_LIFE_LIMIT, "clamped spawn life must s
  *        （本卡刻意把 life 压到 < 1000，spec §4 的取舍）
  *     8. ★ **令牌贴图 6 态 —— ✅ 本轮实装**（`ability.anm` script 168..173 + `ufo_tok_vm_spawn/follow`；
  *        零售来源 `bullet.anm` 175..180 / `etama8.png`，切图器 `make_ufo_token_art.py`）。
- *        ⚠❓ 两处**没做**的：① 彩虹令牌的**每 150 帧换色**（只取第一态 `RBRED`）；
- *        ② **金令牌与蓝令牌长得一模一样**（金借蓝那一套贴图，用户裁决 ①「等 P 图」，本文件没上色）
+ *        ★ 2026-09-12（A8）：**彩虹令牌的每 150 帧换色 + 三段 `interruptLabel` 已实装** ——
+ *        彩虹改用 `ability.anm` **219..221**（全文版，`make_ufo_token_art.py` 生成）+
+ *        `ufo_tok_rainbow_tick` 按一手发 3/2/7 号中断（发送者 / 触发条件 / 地址见文件头那个常量块）。
+ *        ⚠ 由此 171..173（被截断的那三条彩虹）**现在没有调用者**了 ⇒ 留着没删（等统一压号时一起处理）。
+ *        ⚠ 仍然**没做**的是：**金令牌与蓝令牌长得一模一样**（金借蓝那一套贴图，用户裁决 ①「等 P 图」）
  *     9. `UFO_SE_ITEM_BREAK` = 0x11 是**占位**（TH12 的击破/赏金音未查一手）
+ *    8b. ⚠ A8 两处**故意没搬**（一手里有、本卡不做，别当成漏了）：
+ *        ① 一手在 60 px 圈内会**连道具寿命也一起冻结**（`th12:0x4262f0` 的第二个 timer = 道具 1200 帧
+ *           的寿命计时器）——我们的 `ttl`（`UFO_TOKEN_TTL_FRAMES`）是自定值、语义不同 ⇒ 不跟着冻
+ *           （跟了就等于顺手换掉一个与本题无关的行为）。
+ *        ② 一手换色时会播一个音（`th12:0x4264dd` → se id **`0x35`**）——那是 **TH12** 的 id，
+ *           本仓只有 TH18 的音效表（`engine/_shared/th18-sound-table.md`）⇒ **不播**：宁可没声音，
+ *           也不借一个 TH18 的 id 冒充（要补得先查 TH12 `0x4aea50` 那张 se 名表对到 TH18 的哪一条）。
+ *    8c. ❓ A8 待实跑：① 三段中断的观感（进圈换固定色慢摆 / 90 帧起快闪 / 出圈回主循环）；
+ *        ② 60 px 圈读的是**实体坐标**（`CE_ENEMY_POS_X/Y`，与 `ufo_tok_pick` 同一套）；一手是 TH12 的
+ *           道具坐标 —— 两边都是 ECL 640 空间，但「60」的量纲**没验过**（1 单位 = 2 表面 px ⇒ 约 120 px）；
+ *        ③ 换色走「删旧 VM + 起新 VM」（TH12 是同一个 VM 原地换脚本）⇒ 理论上可能有一帧叠影/空档，
+ *           实跑若看到换色那一帧闪一下，就是它（要消掉得给 SDK 加「重指脚本」）。
+ *    8d. 脚本号对账（A8）：彩虹全文版由 `make_ufo_token_art.py` 的 `SCRIPT_FULL_PORTS` 生成，
+ *        落地当天用的号 = `ability.anm` **219..221**（`CE_ANM_ABILITY_SCRIPT_UFO_TOKEN_RAINBOW_{RED,BLUE,GREEN}`）。
+ *        ⚠ 生成器要求脚本号从 68 起**连续**（`build_ability.py` 的硬门）⇒ 并发开发期中间有洞时
+ *        `make anm` 会直接 raise（这跟本卡无关，是抢号协议）；收尾压号 = `assets/renumber_scripts.py --apply`：
+ *        它按文件名 + 首行改号、**不会**改生成器那张表 ⇒ 压完**要回头把 `SCRIPT_FULL_PORTS` 的三个号改掉**
+ *        （C 侧不受影响：只认宏名）。
  *    9b. ★★ **五边形框 anm 脚本**（用户 2026-09-12 裁决 ③；spec §5 资产清单新加的那一条）：
  *        触发条件「槽里 2 枚、且再来一枚即可成组」已经落成纯逻辑判据 + 卡侧预留钩子
  *        （`ufo_pentagon_hint_for_color()` / `ufo_pentagon_hint_update()`），**框本身没画**

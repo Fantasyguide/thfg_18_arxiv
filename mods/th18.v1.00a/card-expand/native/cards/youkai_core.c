@@ -33,16 +33,23 @@ int yk_option_script_changed(int want, int have)
 }
 
 /* ------------------------------------------------------------------ §3.4 弹幕 */
-/* ★ TODO(资产 §3.4)：TH08 妖侧每档伤害（`rec[+0x1c]`，读点 `th08:0x451805`）**尚未抽出**
- *（TH08 抽取的工具坑见 spec §5：`thdat -x 8` 对所有条目失败，得自写 PBGZ+LZSS 提取）。
- * 五档全填 `YK_SHOT_DMG_NOT_SET`(=0) = 不覆盖 ⇒ 保留 shooter 记录自己的 damage。
- * 档序按 TH08 六档阈值（`8/24/48/80/128/999`，人妖两表共用）压到 TH18 的五个火力档。*/
+/* 档位表 = **不覆盖**（全 `YK_SHOT_DMG_NOT_SET` = 保留 shooter 记录自己写进 `bullet+0x9c` 的 damage）。
+ * 档序按 TH08 六档阈值（`8/24/48/80/128/999`，人妖两表共用）压到 TH18 的五个火力档。
+ *
+ * ★ 2026-09-12：TH08 妖侧的每档伤害**已经抽出来了**（一手：`local/th08.v1.00d/dat/ply03as.sht`，
+ * 读点 `th08:0x451805`）—— 逐档「路数 / 每发伤害」＝ thr8: 3 发 48/36/36、thr24: 3 发 48/32/32、
+ * thr48: 5 发 28/32/28/32/32、thr80: 7 发 24/30/24/32/22/22/32、thr128: 9 发 24/26/30/26/24/22/24/24/22。
+ * **为什么仍不填**：TH08 的单发伤害是**配着「路数」**设计的 —— 单发随 P 大致**下降**、路数随 P
+ * 上升（3→9），总 DPS 才是升的。我们的形态是**一档固定**（`YK_SHOT_SET_YOUKAI` 那一组，
+ * 满 P 形态），把这串随 P 下降的单发值填进来会让「P 越高越弱」，那是**照抄数据却没有照抄结构**。
+ * ⇒ 保持不覆盖 = 一个诚实的「一档固定、伤害不随 P 变」；要不要另设一条上升曲线属数值设计
+ * （报告 §4 ❓ 已登记）。*/
 static const int32_t yk_shot_damage[YK_SHOT_TIERS] = {
-    YK_SHOT_DMG_NOT_SET,   /* 档 0 = P < 100  —— TODO(资产) */
-    YK_SHOT_DMG_NOT_SET,   /* 档 1 = P < 200  —— TODO(资产) */
-    YK_SHOT_DMG_NOT_SET,   /* 档 2 = P < 300  —— TODO(资产) */
-    YK_SHOT_DMG_NOT_SET,   /* 档 3 = P < 400  —— TODO(资产) */
-    YK_SHOT_DMG_NOT_SET,   /* 档 4 = P >= 400 —— TODO(资产) */
+    YK_SHOT_DMG_NOT_SET,   /* 档 0 = P < 100  */
+    YK_SHOT_DMG_NOT_SET,   /* 档 1 = P < 200  */
+    YK_SHOT_DMG_NOT_SET,   /* 档 2 = P < 300  */
+    YK_SHOT_DMG_NOT_SET,   /* 档 3 = P < 400  */
+    YK_SHOT_DMG_NOT_SET,   /* 档 4 = P >= 400 */
 };
 
 int yk_shot_tier(int power)
@@ -63,6 +70,9 @@ int32_t yk_shot_tier_damage(int tier)
 
 int yk_bullet_is_youkai(uint32_t packed_id)
 {
+    /* 只看**打包 id 的 set 字节**（`(packed_id >> 8) & 0xff`）。引擎只为我们那一组里**存在的行**
+     * 发弹（`0x40a9c0` 的行循环 + `0x40aa7d or eax,edi` 打包），所以行号不需要再夹
+     * `YK_SHOT_SET_YOUKAI_ROWS` —— 换 index 也好、改组内行数也好，这一条判据都自洽。*/
     return (int)((packed_id >> 8) & 0xffu) == YK_SHOT_SET_YOUKAI;
 }
 
@@ -80,8 +90,12 @@ int yk_bullet_damage_apply(int32_t current, uint32_t packed_id, int power, int32
 int yk_shotset_usable(int fire_rate)
 {
     /* 记录 `+0x00` 是 `fire_rate`（i8）：符号位 = shooterset 终止符，`0` 在装备卡路径上整数除零
-     *（`0x40a9c0` 的 `idiv ecx` 没有 0 分支，engine/sht/th18/02 §2）。
-     * ⇒ 「0x16 那格装上资产没有」这个事实**可以运行期自检**，不用另立开关。*/
+     *（`0x40a9c0` 的 `idiv ecx`（`0x40aa4f`）没有 0 分支，engine/sht/th18/02 §2）。
+     * ⇒ 「那一格到底装的是我们的记录还是零售那条」这个事实**可以运行期自检**，不用另立开关：
+     *   · 零售 `/ build/sht 没重跑` ⇒ 那格还是 `fire_rate = 0` ⇒ 返回 0（**正确地拒绝发射**，
+     *     见 youkai.c 的 on_tick_shooters / on_native_shot_suppress；也正因如此，
+     *     原生弹被压掉时那一句「一发弹都没有」的日志才有意义）；
+     *   · 我们的记录 = TH08 满 P 档那 9 行，`fire_rate ∈ {3,5,6,10}` ⇒ 返回 1。*/
     return fire_rate > 0 && fire_rate < 128;
 }
 

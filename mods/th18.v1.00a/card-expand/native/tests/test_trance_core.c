@@ -180,7 +180,7 @@ int main(void)
     c = cond_all_ok();
     CHECK(trance_begin(&s, 0, &c) == 1);
     CHECK(s.phase == TRANCE_PHASE_MANUAL);
-    CHECK(s.activations == 1 && s.deaths_forced == 0);
+    CHECK(s.activations == 1 && s.deaths_rescued == 0);
     CHECK(trance_begin(&s, 0, &c) == 1);          /* 一手：已在灵界 = 视为成功（幂等）*/
     CHECK(s.activations == 1);                    /* 但没有第二次激活 */
 
@@ -198,7 +198,7 @@ int main(void)
     trance_gauge_reset(&s.gauge);
     trance_gauge_set(&s.gauge, 600);
     CHECK(trance_begin(&s, 1, &c) == 1);
-    CHECK(s.phase == TRANCE_PHASE_DEATH_FREE && s.deaths_forced == 1);
+    CHECK(s.phase == TRANCE_PHASE_DEATH_FREE && s.deaths_rescued == 1);
     tk.ended = 0; tk.ended_death_free = 0;
     trance_end(&s, &tk);
     CHECK(tk.ended == 1 && tk.ended_death_free == 1);
@@ -254,10 +254,15 @@ int main(void)
     trance_gauge_set(&s.gauge, TRANCE_GAUGE_MAX);
     CHECK(trance_force_on_death(&s) == 1);
     CHECK(s.phase == TRANCE_PHASE_DEATH_FREE);
-    CHECK(s.deaths_forced == 1 && s.activations == 1);
+    CHECK(s.deaths_rescued == 1 && s.activations == 1);
     CHECK(s.gauge.gauge == TRANCE_GAUGE_MAX);     /* ★ 不消耗槽：开窗口 ≠ 扣 200 */
-    CHECK(trance_force_on_death(&s) == 0);        /* 已在灵界 ⇒ 不重复开窗 */
-    CHECK(s.deaths_forced == 1);
+    /* ★ 第二版：**已在灵界**时 `begin` 走「幂等成功」那条路 —— 一手在那里**仍然**把 bit1 设成
+     * `param_1`（`0x405a4c`–`0x405a50`）⇒ 我们的语义是「返回 1 = 这次中弹被吃下了」，
+     * 但**不**重复计数（`deaths_rescued` 不涨：本来就是死亡强制档，没有第二次欠账）。*/
+    CHECK(trance_force_on_death(&s) == 1);
+    CHECK(s.phase == TRANCE_PHASE_DEATH_FREE);
+    CHECK(s.deaths_rescued == 1);
+    CHECK(s.activations == 1);
     trance_end(&s, NULL);
     CHECK(s.gauge.gauge == TRANCE_GAUGE_MAX);     /* 死亡强制的结束不补扣 */
 
@@ -265,7 +270,7 @@ int main(void)
     trance_gauge_reset(&s.gauge);
     trance_gauge_set(&s.gauge, TRANCE_GAUGE_MIN_ENTER - 1);
     CHECK(trance_force_on_death(&s) == 0);        /* 同一道门：槽 < 200 开不成 */
-    CHECK(s.phase == TRANCE_PHASE_IDLE && s.deaths_forced == 0);
+    CHECK(s.phase == TRANCE_PHASE_IDLE && s.deaths_rescued == 0);
     CHECK(trance_force_on_death(NULL) == 0);
 
     /* ================= 7. 四类神灵：奖励表（普通 / 灵界两套值）================= */
@@ -579,6 +584,165 @@ int main(void)
         tk = trance_tick(&s, 9999);
         CHECK(s.gauge.gauge == TRANCE_GAUGE_MAX - TRANCE_GAUGE_DRAIN);
     }
+
+    /* ================= M. ★★ 中弹救援（**救援层的最后一家**，2026-09-12 第二版·落点订正版）=================
+     *
+     * 用户口径（唯一权威）：
+     *   「灵界有两个触发方式，一个是手动触发；一个是**在确定中弹后，取消掉死亡，进入灵界状态；
+     *     灵界状态退出后，重新死亡**。」
+     *   ＋ 「113 这条机制能够确定说，它一定在**救援层的最后**出发，**甚至比决死 B 还靠后**」
+     * ⇒ 顺序 107 → 117 → 决死 B → 113，落点 = **卡虚表 `+0x0c`**（`on_death_after_deathbomb`）。
+     * 卡侧（`cards/trance.c`）只做「读引擎面 + 调那两个地址 + `return 1`」，
+     * **能算错的判断全在这里** ⇒ 本节逐个钉门、钉窗口、钉链式。
+     *
+     * 用户点名的四条覆盖：
+     *   ① 槽 < 200 ⇒ 不救；② 槽 ≥ 200 ⇒ 救且进 `TRANCE_PHASE_DEATH_FREE`；
+     *   ③ 死亡强制窗口结束 ⇒ **报出「需要再死一次」**；④ 链式（用户定案允许）。
+     *   ⚠ 两条**第一版**的写法已被推翻，这里改成正面断言：
+     *     · 「正在重新死亡时不许再救」⇒ **允许链式**（原话「就这样，**允许链式**」）；
+     *     · 「等帧点（`TRANCE_PENDING_FRAMES`）」⇒ **不可达**（`+0x0c` 与 `commit` 在同一 tick，
+     *       `on_item_frame` 跑到时命已扣），那套常量/相位/函数已整体删除（`AUDIT` §BM7）。*/
+
+    /* ---- M.1 相位只有三个取值（多一个就是第一版的排队相位没删干净）---- */
+    CHECK(TRANCE_PHASE_IDLE == 0);
+    CHECK(TRANCE_PHASE_MANUAL == 1);
+    CHECK(TRANCE_PHASE_DEATH_FREE == 2);
+
+    /* ---- M.2 `trance_state_init`：一张全新的卡（槽 0、空闲、无残留）---- */
+    trance_state_init(&s);
+    CHECK(s.phase == TRANCE_PHASE_IDLE);
+    CHECK(s.gauge.gauge == 0 && s.gauge.tier == 0);
+    CHECK(s.activations == 0 && s.deaths_rescued == 0);
+    CHECK(s.chain_count == 0 && s.chain_timer == 0);
+    CHECK(s.kill_pending == 0);
+    trance_gauge_set(&s.gauge, 600);
+    trance_state_init(&s);
+    CHECK(s.gauge.gauge == 0);                         /* ★ 它连槽一起清零（= gauge_reset 的效果）*/
+
+    /* ---- M.3 ① 槽 < 200 ⇒ **不救**（一手 `th13:0x405a40` 的门）---- */
+    trance_state_init(&s);
+    trance_gauge_set(&s.gauge, TRANCE_GAUGE_MIN_ENTER - 1);
+    CHECK(trance_force_on_death(&s) == 0);             /* `+0x0c` 里拿到 0 ⇒ return 0 ⇒ 照常死 */
+    CHECK(s.phase == TRANCE_PHASE_IDLE);
+    CHECK(s.deaths_rescued == 0 && s.activations == 0);
+    trance_gauge_set(&s.gauge, 0);
+    CHECK(trance_force_on_death(&s) == 0);             /* 槽 0（窗口自然结束时就是它）*/
+
+    /* ---- M.4 ② 槽 ≥ 200 ⇒ 救，且进 `TRANCE_PHASE_DEATH_FREE` ---- */
+    trance_state_init(&s);
+    trance_gauge_set(&s.gauge, TRANCE_GAUGE_MIN_ENTER);
+    CHECK(trance_force_on_death(&s) == 1);             /* 恰好 200 ⇒ 成功（边界含）*/
+    CHECK(s.phase == TRANCE_PHASE_DEATH_FREE);
+    CHECK(s.deaths_rescued == 1 && s.activations == 1);
+    CHECK(s.gauge.gauge == TRANCE_GAUGE_MIN_ENTER);    /* ★ 拿窗口**不消耗槽**（−1/帧 才是消耗）*/
+
+    /* ---- M.5 ③ 窗口结束 ⇒ 报出「需要再死一次」（一手 `th13:0x405c3e`）----
+     * 用户点名的那条：**保命是延时，不是免死** ⇒ 结束时必须给出「再死一次」的信号。
+     * ⚠ 窗口长度 = **进入时的槽值**（一手：槽 −1/帧）⇒ 想造短窗口就把槽调到刚过门。*/
+    trance_state_init(&s);
+    trance_gauge_set(&s.gauge, TRANCE_GAUGE_MIN_ENTER);
+    CHECK(trance_force_on_death(&s) == 1);
+    for (i = 0; i < TRANCE_GAUGE_MIN_ENTER - 1; ++i) {
+        tk = trance_tick(&s, i);
+        if (tk.ended || tk.re_die) break;              /* 还没到点：不许提前报收尾 */
+    }
+    CHECK(i == TRANCE_GAUGE_MIN_ENTER - 1);
+    CHECK(tk.ended == 0 && tk.re_die == 0);
+    CHECK(s.gauge.gauge == 1);
+    tk = trance_tick(&s, TRANCE_GAUGE_MIN_ENTER);
+    CHECK(tk.ended == 1 && tk.ended_death_free == 1);
+    CHECK(tk.re_die == 1);                             /* ★ 欠一次死亡 */
+    CHECK(trance_should_redie(&tk) == 1);               /* ← 卡侧据此调 `Player__die` */
+    CHECK(s.phase == TRANCE_PHASE_IDLE);
+    CHECK(s.gauge.gauge == 0);
+    /* 手动窗口结束**不**欠死亡（`re_die` 恒 0）⇒ 不会无缘无故再死一次 */
+    trance_state_init(&s);
+    trance_gauge_set(&s.gauge, TRANCE_GAUGE_MIN_ENTER);
+    CHECK(trance_begin(&s, 0, &c) == 1);
+    for (i = 0; i < TRANCE_GAUGE_MIN_ENTER; ++i) tk = trance_tick(&s, i);
+    CHECK(tk.ended == 1 && tk.ended_death_free == 0);
+    CHECK(tk.re_die == 0);
+    CHECK(trance_should_redie(&tk) == 0);
+
+    /* ---- M.6 ③b 一手链的另一半：**第二次 `die` 必然救不成**（槽已被扣到 0）----
+     * 一手 `SPIRIT` §7：死亡触发的灵界结束时槽已逐帧扣到 0 ⇒ 第二次 `begin` 必然撞 `0x405a40`。
+     * ⇒ 「延时」在纯逻辑层就该闭环：窗口走完 ⇒ 槽 0 ⇒ 想救也救不了 ⇒ 正常扣命。*/
+    trance_state_init(&s);
+    trance_gauge_set(&s.gauge, TRANCE_GAUGE_MAX);
+    CHECK(trance_force_on_death(&s) == 1);
+    for (i = 0; i < TRANCE_GAUGE_MAX; ++i) tk = trance_tick(&s, 1000 + i);
+    CHECK(tk.re_die == 1);
+    CHECK(s.gauge.gauge == 0);                         /* 槽被扣光 */
+    CHECK(trance_force_on_death(&s) == 0);             /* 补死那次救不成（一手同一形状）*/
+
+    /* ---- M.7 ★ **链式救援是允许的**（用户 2026-09-12 定案：「就这样，允许链式」）----
+     * 唯一的天然上限 = 槽门：窗口里又攒回 ≥ 200 ⇒ 补死那次**照样能救**（再开一个窗口）。
+     * ⚠ 第一版那条「re-dying 期间不许再救」是**错的**，这里正面钉死它已被删：
+     *   本卡**没有任何**「已经救过」的状态位。*/
+    trance_state_init(&s);
+    trance_gauge_set(&s.gauge, TRANCE_GAUGE_MAX);
+    CHECK(trance_force_on_death(&s) == 1);
+    CHECK(s.deaths_rescued == 1);
+    trance_end(&s, &tk);
+    CHECK(tk.re_die == 1);                             /* 补死的欠账 */
+    trance_gauge_set(&s.gauge, TRANCE_GAUGE_MAX);      /* 窗口里又攒回 ≥ 200 */
+    CHECK(trance_force_on_death(&s) == 1);             /* ★ 照样能救（链式）*/
+    CHECK(s.phase == TRANCE_PHASE_DEATH_FREE);
+    CHECK(s.deaths_rescued == 2);
+    /* 兜底：槽不够时链式也就到不了 —— 这证明「上限只有槽门」，不是靠标志 */
+    trance_state_init(&s);
+    trance_gauge_set(&s.gauge, TRANCE_GAUGE_MIN_ENTER - 1);
+    CHECK(trance_force_on_death(&s) == 0);
+
+    /* ---- M.8 手动窗被中弹**升格**（一手 `0x405a4c`–`0x405a50` 的位写）----
+     * 手动灵界里中弹 ⇒ 那个窗口当场变成「死亡强制」档 ⇒ 结束时也要再死一次。
+     * ⚠ 升格同样吃 `槽 >= 200` 那道门（否则一次中弹会变成两条命）。*/
+    trance_state_init(&s);
+    trance_gauge_set(&s.gauge, TRANCE_GAUGE_MAX);
+    CHECK(trance_begin(&s, 0, &c) == 1);
+    CHECK(s.phase == TRANCE_PHASE_MANUAL && s.deaths_rescued == 0);
+    CHECK(trance_force_on_death(&s) == 1);
+    CHECK(s.phase == TRANCE_PHASE_DEATH_FREE);
+    CHECK(s.deaths_rescued == 1);
+    /* 升格走的是同一个 `begin` ⇒ **另算一次激活**（一手也只改位、不重开窗口）。
+     * ⚠ 这是有意的：`activations` 是「begin 跑了几次」的诊断口径，不是「开了几个窗口」。*/
+    CHECK(s.activations == 2);
+    /* 已经在死亡强制档里再被中弹（同一帧第二次撞弹）⇒ 幂等成功、不重复记账。*/
+    CHECK(trance_force_on_death(&s) == 1);
+    CHECK(s.deaths_rescued == 1 && s.activations == 2);
+    /* 槽不够 ⇒ **不许**升格 */
+    trance_state_init(&s);
+    trance_gauge_set(&s.gauge, TRANCE_GAUGE_MAX);
+    trance_begin(&s, 0, &c);
+    trance_gauge_set(&s.gauge, TRANCE_GAUGE_MIN_ENTER - 1);
+    CHECK(trance_force_on_death(&s) == 0);
+    CHECK(s.phase == TRANCE_PHASE_MANUAL);
+    CHECK(s.deaths_rescued == 0);
+
+    /* ---- M.9 一条完整的「中弹 → 救 → 补死」账（卡侧 `+0x0c` 回调的纯逻辑镜像）----
+     * 卡侧的序列（`cards/trance.c` 的 `on_death_after_deathbomb` / `on_item_frame` ③）：
+     *   门① `ce_rescue_note_owner()`（引擎面，本文件测不了）⇒ 门② `trance_force_on_death()`
+     *   ⇒ `cancel_impending_death()` + **`return 1`**
+     *   窗口走完 ⇒ `trance_tick` 报 `re_die` ⇒ `trance_should_redie()` ⇒ 卡调 `Player__die`*/
+    trance_state_init(&s);
+    trance_gauge_set(&s.gauge, 300);                   /* 槽 300 ⇒ 窗口 300 帧 */
+    CHECK(trance_force_on_death(&s) == 1);             /* ← 卡在这里 `cancel` + `return 1` */
+    CHECK(s.phase == TRANCE_PHASE_DEATH_FREE);
+    CHECK(s.gauge.gauge == 300);
+    for (i = 0; i < 300; ++i) tk = trance_tick(&s, 600 + i);
+    CHECK(tk.ended == 1 && tk.re_die == 1);
+    CHECK(s.gauge.gauge == 0);                         /* 300 帧窗口走完 ⇒ 槽 0 */
+    CHECK(trance_should_redie(&tk) == 1);               /* ← 卡在这里调 `Player__die` */
+    CHECK(trance_force_on_death(&s) == 0);             /* 补死那次：槽 0 ⇒ 救不成（链式到此为止）*/
+
+    /* ---- M.10 NULL / 越界入参（纯逻辑层的防御面）---- */
+    CHECK(trance_should_redie(NULL) == 0);
+    CHECK(trance_force_on_death(NULL) == 0);
+    trance_state_init(NULL);
+    tk.re_die = 0;
+    CHECK(trance_should_redie(&tk) == 0);
+    tk.re_die = 1;
+    CHECK(trance_should_redie(&tk) == 1);
 
     /* ================= N. ★ 神灵实体池（自建 VM 池）的纯策略 =================
      *

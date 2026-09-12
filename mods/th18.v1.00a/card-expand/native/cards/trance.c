@@ -1,31 +1,41 @@
-/* 神灵庙 / 灵界（card-expand id **113**，内部 TRANCE）—— **0x54 纯被动卡**：灵界槽 + 灵界窗口 +
- * 死亡后的强制灵界 + 神灵奖励。
+/* 神灵庙 / 灵界（card-expand id **113**，内部 TRANCE）—— 灵界槽 + 灵界窗口 + **中弹救援（延时）** +
+ * 神灵奖励。
  *
- * ## 一句话（用户定案，SPEC §0）
+ * ## 一句话（用户 2026-09-12 **第二版**定案）
  *
- * **收神灵充灵界槽；满槽的灵界里中弹无伤、收神灵奖励翻倍；死亡时（死亡已确定）先强制开灵界，
- * 然后照常 biu。**
+ * **收神灵充灵界槽；灵界有两条触发方式 —— ① 手动（D 切到本卡 + 按 C，槽满才可）；
+ * ② 中弹：取消掉这次死亡、进灵界（死亡强制档），灵界状态退出后重新死亡。**
+ * ⇒ 第 ② 条是**延时**而不是免死（用户原话：「已确定死了之后的回光返照」）。
  *
  * ## 分工：本文件只做「接线」，全部判断在 `cards/trance_core.c`
  *
  *   | 件 | 在哪 | 管什么 |
  *   | --- | --- | --- |
- *   | 灵界槽 / 窗口状态机 / 奖励表 / 连锁 / 救援层记账 | `trance_core.c` | 纯逻辑、无引擎地址、有主机单测 |
- *   | **本文件** | — | 读引擎面 → 调 core → 落引擎副作用（无敌声明 / 音效 / 分数声明 / HUD）|
+ *   | 灵界槽 / 窗口状态机 / 奖励表 / 连锁 / 救援层记账 / **排队与补死记账** | `trance_core.c` | 纯逻辑、无引擎地址、有主机单测 |
+ *   | **本文件** | — | 读引擎面 → 调 core → 落引擎副作用（取消死亡 / 补死 / 无敌声明 / 音效 / HUD）|
  *
- * 设计稿：`docs/superpowers/specs/2026-09-12-ten-desires-113-design.md`。
- * ★ **实装期的三条硬结论**（本文件存在的原因，逐条写清出处）：
+ * 设计稿：`docs/superpowers/specs/2026-09-12-ten-desires-113-design.md`（**末尾有订正块**）。
+ * ★ **实装期的四条硬结论**（本文件存在的原因，逐条写清出处）：
  *
- *   1. **挂 `+0x14`（`on_death_frame2`），绝不挂 `+0x10`**（SPEC 用户定案 ③）。
- *      `+0x10` = `on_death_before_deathbomb` = **救援层**（调 `cancel_impending_death` `0x45d590`
- *      取消死亡，117 先例 `cards/animal.c`）；`+0x14` = 死亡结算**之后**（扣钱扣火力已发生，
- *      `SDK.md:71`）⇒ 113 的「死后照死、只是先开灵界」只可能落在这里。
- *      ⚠ 113 里**不许**出现 `cancel_impending_death`（SPEC §7 第一条：分层不许越界）。
- *   2. **`+0x14` 拿不到中弹点**：现场是 respawn 之后、`ce_player_pos()` 已经是复活点
- *      （`cards/animal.c:1777` 的一手注释）⇒ 本文件**一次都不读自机坐标**（连 `ce_player_pos()` 都不调）。
+ *   1. ★★ **113 在救援层的最后一家**（2026-09-12 第二版，用户原话「它一定在救援层的最后出发，
+ *      **甚至比决死 B 还靠后**」）⇒ 层内顺序 **107 → 117 → 决死 B → 113**。
+ *      ⇒ 落点 = 卡虚表 **`+0x0c` `on_death_after_deathbomb`**：引擎只在**决死窗口与 B 键那条路
+ *      都走完之后**才广播它（一手 `0x45c114`，判据在 `0x45c100` 的 `jl 0x45c2a9`）
+ *      ⇒ 用它就**结构性**排在 107/117（`+0x10`，在 `Player__die` 里就出手）**与决死 B 之后**。
+ *      ⚠ 「挂在 `+0x10` 上只登记、再等帧点动手」那条**第一版实现是错的**（`on_item_frame` 不可达，
+ *        见 `AUDIT` §BN7）—— 窗口关掉的那一帧**没有**「命还没扣」的中间态。
+ *      ⚠「113 里**不许**出现 `cancel_impending_death`」/「挂 `+0x14` 的死后层」这些**第一版旧口径**
+ *        **已被用户推翻**：现在 113 **就是要**调 `Player__cancel_impending_death` `th18:0x45d590`，
+ *        并且**必须同时 `return 1`**（引擎拿它的返回值决定扣不扣命）。
+ *   2. **`+0x14`（`on_death_frame2`）只做日志**：它现在是「补死真的发生了」的**唯一回执**，
+ *      除此之外本卡不需要它做任何事（不再开灵界、也没有记账要清）。
  *   3. **「中弹无伤」不写 `player+0x47774`**：那是 TH18 的**复活无敌** zTimer（`engine.h:277`），
  *      写它既不等于灵界、还会把 107/117 给的长无敌截短（SPEC §2.1 行 2 · `EC` §4.1）。
  *      本卡要无敌帧时**只声明** `ce_invuln_request(113, n)`（层取 max、SDK 统一落笔）。
+ *   4. **补死是一次「普通死亡」，允许链式**（用户 2026-09-12 定案原话：「**就这样，允许链式**
+ *      （灵界期间攒到咆哮 / 结界开着 ⇒ 补死被救）」）⇒ 本卡**不给补死加任何禁止救援的闸**，
+ *      也**没有**任何「已经救过」的状态位：补死之后引擎照常广播 `+0x10` / `+0x0c`，
+ *      107/117 与 113 自己都能按各自的门再救一次（113 的门 = 让位检查 + 槽 ≥ 200）。
  *
  * ## ★ 槽怎么被填（**2026-09-12 接通的那条链**，每步给代码位置）
  *
@@ -37,31 +47,62 @@
  *   ① **来源 = 击破**（SPEC §3.3 候选 ①，`DEATH:263` 预定的那一条）：
  *      `on_enemy_death()`（本文件尾；事件钩子，非虚表槽）过滤 `kind == CE_EDEATH_KILLED`
  *      且 `flags & CE_EDEATH_F_REAL` ⇒ `trance_kill_note()` **只做 O(1) 入队**（`DEATH` §2.4）。
- *   ② **撒实体**（帧末 `on_item_frame` ⑤）：`trance_kill_take()` 取走 → 每颗按
+ *   ② **撒实体**（帧末 `on_item_frame` ⑦）：`trance_kill_take()` 取走 → 每颗按
  *      `TRANCE_KILL_SPIRIT_TYPE`（= **1**，SPEC §2.2：击破走通道 B）与
  *      `TRANCE_KILL_SPIRITS_PER_KILL`（❓ 自定 = 1）调 `trance_spirit_spawn()` **建一颗神灵 VM**
  *      （自建池，见下「神灵实体」段）——★ **不再**在帧末按「已收」入账。
- *   ③ **靠近才吃**（`on_item_frame` ⑥ = `trance_spirits_tick()`）：自机走到 ≤
+ *   ③ **靠近才吃**（`on_item_frame` ⑧ = `trance_spirits_tick()`）：自机走到 ≤
  *      `TRANCE_SPIRIT_PICK_RADIUS`（❓ 自定 24 px）才调 **`trance_on_spirit_collected()`**
  *      → `trance_collect()`（core）→ `trance_gauge_add(+2)`。**每颗神灵 +2 槽**（一手 `th13:0x438b3d`）。
  *   ④ **满槽 + 8 条条件**：`trance_fill_cond()` 把 core 的条件表喂满（含第 8 条 `(GAME_FLAGS & 0x30) != 0x20`
  *      → `trance_game_flags_ok()`，TH18 全局 `0x4cccc8`，站址见该函数注释）⇒ `trance_can_activate()`。
- *   ⑤ **开灵界**：`trance_begin()`（一手两道门：已在灵界幂等 / 槽 < 200 失败）——
- *      **主动卡**：`on_activate`（D 切到本卡 + 按 C；2026-09-12 用户定案，原「满槽自动进」已删）。
- *   ⑥ **窗口**：`trance_tick()` 每帧 −1，`on_death_frame2()`（虚表 `+0x14`）可强制开一遍（相位 2）。
- *   ⑦ **收尾**：归零 ⇒ `trance_end()`（非死亡结束 −200）；删卡 ⇒ `trance_clear()`（`+0x50`，含清池）。
+ *   ⑤ **开灵界（两条路）**：
+ *      **① 手动**：`on_activate`（D 切到本卡 + 按 C；2026-09-12 用户定案，原「满槽自动进」已删）。
+ *      **② 中弹**：`on_death_after_deathbomb`（**`+0x0c`**）里当场做
+ *        「让位检查 → `trance_force_on_death()` → `Player__cancel_impending_death` `0x45d590`
+ *        → **`return 1`**」（详见下面「中弹救援」段）。
+ *   ⑥ **窗口**：`trance_tick()` 每帧 −1；到点 ⇒ `trance_end()`。
+ *   ⑦ **收尾**：手动结束 −200；**中弹救下的窗口结束 ⇒ `t.re_die` ⇒ 本卡补一次 `Player__die` `0x45d3a0`**。
+ *      删卡 ⇒ `trance_clear()`（`+0x50`，含清池）。
  *
  *   ⇒ 速率账（一手）：1 颗 = +2 槽，满槽 600 ⇒ **300 颗**；满槽窗口 = 600 帧 = 10.00 s。
  *     击破一颗只算 1 颗（❓ 自定，见 §9 #4）⇒ 本卡一关的强弱直接由击破数决定，实跑首日先看汇总日志。
+ *
+ * ## ★ 中弹救援：落点与地址链（**本段是这次改动的核心**）
+ *
+ *   ```
+ *   自机碰撞（th18:0x45cd27 / 0x45ce81 / 0x45d060 三处 thiscall）
+ *     └─► Player__die th18:0x45d3a0：state(+0x476ac) = 4、死亡特效、num_deathbomb_frames(+0x47908) = 8
+ *           └─► 最后沿卡链表广播虚表 +0x10（0x45d570–0x45d57c）← 107 / 117 在这里当场取消死亡
+ *   之后每帧 Player__on_tick__body th18:0x45be90 的 case 4（入口 0x45c0f4）：
+ *     · state4_timer(+0x638) <  8（0x45c0fa / 0x45c100 jl）⇒ 查 B 键那条路 0x45c2a9：
+ *         can_bomb 0x420420 → do_bomb 0x420360 → cancel_impending_death 0x45d590（0x45c2d7）→ 跳过扣命
+ *     · state4_timer >= 8 ⇒ ① 循卡链表广播虚表 +0x0c（0x45c114，**参数 = 累加器，初值 0**）
+ *                          ② 累加器 == 0 ⇒ commit_death_and_enter_state2 0x45d090（0x45c135，**扣命**）
+ *                             累加器 != 0 ⇒ 跳 0x45c3d1（0x45c12d），**不扣命**
+ *   ★ 113 的轮次 = **就是那个 +0x0c 回调**：让位检查 → 槽门 → cancel_impending_death → return 1。
+ *     （「等帧点」那条路不可达：+0x0c 广播在 Player 线 0x17 里，on_item_frame 在 ItemManager 线
+ *       0x1e 里 ⇒ 后者跑到时命已经扣了。这是第一版的错，见 AUDIT §BN7。）
+ *   ```
+ *
+ * `cancel_impending_death` `0x45d590` 只写 6 个字段（`+0x644` / `+0x640` / `+0x638` /
+ * `+0x63c` / `+0x634` / **`+0x476ac = 1`**），**读零个计时器**；真正的不归点是
+ * `commit_death_and_enter_state2` `0x45d090`（全 exe 唯一调用点 `0x45c135`，扣命）。
+ * ⇒ 在 `+0x0c` 里「取消 + `return 1`」两件都做到，就一定不会扣命
+ *   （★ 一手零售先例：`CardEirin__on_player_death_after_deathbomb` `0x40a4f0`
+ *    尾段 `0x40a53f call 0x45d590` → **`0x40a544 mov eax,1`** → `0x40a54a ret 4`）。
  *
  * ## 长持续效果的自查（`METHOD.md` 铁律二 / SPEC §3.5）
  *
  * 本卡跨帧留下的东西：① 灵界槽与窗口相位（卡私有状态 `ce_state`）；② 每帧的**无敌声明**；
  * ③ HUD 文字 VM；④ 击破待撒队列；⑤ ★ **神灵实体池**（自建 VM 池，文件级 static，见下）。
+ * ★ **本卡不再有「跨帧排队的死亡」**（第一版那套 `pending_*` 已删）：救援在 `+0x0c` 回调里
+ *   一次做完，那一刻要么取消死亡、要么照常死 ⇒ 没有需要跨帧收尾的中途状态。
  * ⇒ `on_delete`（虚表 `+0x50`）与 `on_run_reset` **都走同一个 `trance_clear()`**：
  * **先退声明层**（`ce_invuln_request(113, 0)`）、**再收 HUD**、**再删光池里所有神灵 VM**、
- * 最后 `memset` 私有状态。删卡发生在**商店**里、那一刻 AbilityManager 冻住、tick 全停
- * ⇒ 只能靠 `on_delete`，等下一帧等于没有清理（`SDK.md:71` 那条）。
+ * 最后 `trance_state_init()` 清私有状态（删卡之后本卡不该再有任何残留）。
+ * 删卡发生在**商店**里、那一刻 AbilityManager 冻住、tick 全停 ⇒ 只能靠 `on_delete`，
+ * 等下一帧等于没有清理（`SDK.md:71` 那条）。
  *
  * ## ⛔ 计分声明：**已停用**（`SPEC §9 #5` 未拍 ⇒ 未定项不许悄悄生效）
  *
@@ -89,6 +130,9 @@
  *     （2026-09-12 第二轮起真的用它建 VM，见下）。
  *   · 帧末那一步（`trance_kill_take()` → `trance_spirit_spawn()`）在 `on_item_frame` 里，
  *     **不在回调里** ⇒ 建 VM / 记账都不在死亡栈上（`DEATH` §2.4 第三条禁令）。
+ *   · ★ **`+0x10` 也在死亡栈上**（`Player__die` 的调用点里）⇒ 它的纪律与 `on_enemy_death` 同级：
+ *     **不许建 VM / 不许 `ce_spawn_*` / 不许扫全场**（`METHOD.md` 铁律 + `AUDIT` §AL/§BL 的先例）。
+ *     本卡的 `+0x10` 只做「写两个 int + 可能一行日志」。
  *
  * ## ★ 神灵实体：**已实装**（2026-09-12 第二轮，自建 VM 池 = 本文件 `s_spirit[]`）
  *
@@ -112,18 +156,22 @@
  *     `trance_spirit_expired()` ⇒ 播载体脚本的 interrupt 1（消失段）并回收槽。
  *   · **容量**：`TRANCE_SPIRIT_POOL`（❓ 自定 128；一手 TH13 是 256 槽）⇒ 溢出**丢尾**并
  *     计 `s_stat_spirit_dropped`（诊断，进汇总日志）。
- *   · **生成时机**：帧末（`on_item_frame` ⑤），源 = 已有的击破队列（带 `x/y` 快照）
+ *   · **生成时机**：帧末（`on_item_frame` ⑦），源 = 已有的击破队列（带 `x/y` 快照）
  *     ⇒ **不在死亡回调里建 VM**（`DEATH` §2.4 第三条禁令）。
  *
  * ## ⛔ 仍未接线（诚实登记，别当成已实现）
  *
  *   · **通道 E（玩家死亡每帧掉 type 3）/ F（连锁真撒一颗 type 3）**：SPEC §3.3 ② / §4 都是 ⏳ 待拍
  *     ⇒ 只记账 / 只打日志（`trance_chain_note` 的计数与 `chain_extra` 日志照跑），不撒。
- *   · **救援层（107 → 117）**：**不是未接线** —— 定案（`EC` §5.2）是「**全部同时爆发**」，
- *     107（`cards/senro.c`）与 117（`cards/animal.c`）**各自**在自己的 `+0x10` 里动作 + 救命，
- *     消弹归属走 `ce_cancel_latch_claim`、无敌走 `ce_invuln_request`（取 max）⇒ **卡间零互调**。
- *     本卡的定位是**事后层**（死亡已确定之后，挂 `+0x14`，即用户口径的「回光返照」）
- *     ⇒ 只记录、不代人执行、且**结构性拒绝进救援层**（本文件不出现 `cancel_impending_death`）。
+ *   · **救援层（107 → 117 → 决死 B → ★113）**：**已接线**（2026-09-12 第二版）。定案是
+ *     107/117「**全部同时爆发**」（各自在自己的 `+0x10` 里动作 + 救命，消弹归属走
+ *     `ce_cancel_latch_claim`、无敌走 `ce_invuln_request` 取 max）⇒ 那两家**卡间零互调**，
+ *     本卡**不代它们执行**；本卡自己是**最后一家**：在 `+0x0c` 里先查
+ *     `ce_rescue_note_owner()`（`>= 0` 且不是 113 ⇒ 这次死亡已经有人救了 ⇒ 什么都不做）。
+ *     ⚠ 旧口径「本卡**结构性拒绝进救援层**（不出现 `cancel_impending_death`）」**已作废**
+ *       —— 那是第一版的「死后层」设计，用户 2026-09-12 第二版**推翻**了它。
+ *   · **链式救援**：补死（灵界窗口结束那一次）是一次普通死亡 ⇒ 107/117/113 都还能再救
+ *     （用户定案允许；上限 = 槽 ≥ 200 那道门）。本卡**没有任何**「禁止再救」的闸。
  *   · **BGM 变体 / 灵界背景 anm / 神灵专属切图**：SPEC §5 全部 ⏳（资产未做）⇒ 不起背景 VM；
  *     神灵实体本身用**借来的现成脚本 + 贴图 + 染色**顶着（见下「载体脚本」段的 ❓ 自定登记）。
  */
@@ -136,6 +184,36 @@
 
 #define TRANCE_NUM  113          /* ⚠ `CE_CARD` 会对 ID 做 ## 拼接 ⇒ 里面必须写字面量 113 */
 #define TRANCE_LOG_EVERY 600     /* 每 600 游玩帧一条汇总 */
+
+/* ---- ★ 中弹救援用到的两个引擎函数（第二版新增；**地址不是猜的**，逐条给一手证据）----
+ *
+ * `Player__cancel_impending_death` `th18:0x45d590` —— thiscall(**zPlayer***)，**无栈参**，返回值 **void**。
+ *   一手（本机 Capstone 反汇编 `local/th18.v1.00a/th18.exe`，70 字节整函数）：
+ *     `mov eax,[ecx+0x644] / test al,1 / … or eax,1 / mov [ecx+0x640],0 / mov [ecx+0x644],eax`
+ *     `mov [ecx+0x638],0x3c / mov [ecx+0x63c],0x42700000(60.0f) / mov [ecx+0x634],0x3b`
+ *     `mov [ecx+0x476ac],1 / ret`
+ *   ⇒ 它**只写 6 个字段、读零个计时器**：`state(+0x476ac) → 1`（活）、无敌计时器 = 60 帧。
+ *   ⇒ 「决死窗口关掉之后还管不管用」的答案：**管用**（它不看窗口计时器）；
+ *    真正的不归点是 `Player__commit_death_and_enter_state2` `th18:0x45d090`（**扣命**）。
+ *   先例：`cards/senro.c:51`（107）、`cards/animal.c:268`（117）已经照同一形状在用；
+ *   引擎自己也在 `CardEirin__on_player_death_after_deathbomb`（`0x40a53f`，卡的回调里）
+ *   与 `Player__on_tick__body` 的决死 B 分支（`0x45c2d7`）调它。
+ *
+ * `Player__die` `th18:0x45d3a0` —— thiscall(**zPlayer***)，**无栈参**，返回值 **void**（尾 `c3`，不是 `ret N`）。
+ *   一手：① 全 exe 的 `call 0x45d3a0` 只有 **3 处**（`0x45cd27` / `0x45ce81` / `0x45d060`），
+ *   全是「自机与弹/激光/敌体碰撞」例程里 `mov ecx,<player>; call` 的 thiscall 形状；
+ *   ② 它做的事：`+0x4779c` 无位 8 时播音效 2（miss 音）、建死亡特效 VM（script 0x1d）、
+ *   **`+0x476ac = 4`**（`0x45d4e4`）、决死窗口计时器清零、`num_deathbomb_frames = 8`（`0x45d557`）、
+ *   最后循卡链表广播虚表 `+0x10`（`0x45d570`–`0x45d57c`）。
+ *   ③ 「能不能从帧点调」的**实证**（不是推断）：它自己就被 `Player__on_tick__body` 的 state-4 分支
+ *   邻域调用（`0x45cd27` 在同一个 tick 例程家族里），而**卡的回调里调「玩家侧大事」有现成先例** ——
+ *   `CardEirin__on_player_death_after_deathbomb` `0x40a4f0` 里 `call 0x45d590`（`0x40a53f`）。
+ *   ⇒ 结论：**它只看 `ecx` 一个指针**，与调用它的线程无关；从 `on_item_frame` 调**结构上安全**
+ *     （本卡的用法见 `on_death_after_deathbomb`：补死时**只在 `state == 1`** 时调）。
+ *   ⚠ 可信度：调用约定与副作用 = **✅ 一手**；「从帧点调不会有别的时序副作用」= **🟡 推断**
+ *     （依据是「同族调用 + 卡回调先例」，实跑首日要按下面那条实跑清单核）。*/
+#define TRANCE_FN_CANCEL_IMPENDING_DEATH 0x45d590u   /* Player__cancel_impending_death（thiscall(Player*)）*/
+#define TRANCE_FN_PLAYER_DIE             0x45d3a0u   /* Player__die（thiscall(Player*)；广播 +0x10）*/
 
 /* ---- 音效：TH13 的 id 在 TH18 无意义 ⇒ **全部 ❓ 自定，实跑首日校准**（SPEC §5 末行）----
  * 只挑 TH18 现有表里语义最近的（SDK.md §7 的零售 se 表）。 */
@@ -247,7 +325,9 @@ typedef struct {
     int32_t frame;            /* 本卡的**游玩帧计数**（on_item_frame = 正常游玩帧，见下）*/
     int32_t last_gauge;       /* 上一帧的槽值（HUD 只在变了的时候重排）*/
     int32_t log_frame;
-    int32_t stat_forced;      /* 诊断：死亡强制次数 */
+    int32_t stat_rescued;     /* 诊断：中弹救援成功几次（帧点里取消死亡 + 开死亡强制窗）*/
+    int32_t stat_redie;       /* 诊断：灵界窗口结束「补死」几次（调 Player__die）*/
+    int32_t stat_rescue_lost; /* 诊断：在 `+0x0c` 里**没救成**几次（别人救了 / 槽不够）*/
     int32_t stat_levelups;    /* 诊断：跨格次数 */
     int32_t stat_kill_drop;   /* 诊断：击破记账（入队→帧末取走）的颗数 */
     int32_t stat_kill_spirit; /* 诊断：由击破**撒出去**的神灵实体颗数（★ 不等于收到的颗数 ——
@@ -636,9 +716,142 @@ static int on_activate(ce_card_t *c)
     return 0;                               /* 瞬发：窗口由 `trance_tick` 自己推 */
 }
 
+/* ============================ ★ 中弹救援（救援层的**最后一家**，2026-09-12 第二版） ============================
+ *
+ * 用户口径（唯一权威）：
+ *   「灵界有两个触发方式，一个是手动触发；一个是**在确定中弹后，取消掉死亡，进入灵界状态；
+ *     灵界状态退出后，重新死亡**。」
+ *   ＋ 「113 这条机制能够确定说，它一定在**救援层的最后**出发，**甚至比决死 B 还靠后**」
+ * ⇒ 层内顺序 **107 → 117 → 决死 B → 113**。
+ *
+ * ## 落点 = 卡虚表 **`+0x0c`** `on_death_after_deathbomb`（引擎自带的那条救援钩子）
+ *
+ * 一手（`Player__on_tick__body` `th18:0x45be90` 的 case 4，入口 `th18:0x45c0f4`）：
+ *
+ * ```c
+ * 0x45c0f4: eax = player->state4_timer(+0x638)
+ * 0x45c0fa: cmp eax, player->num_deathbomb_frames(+0x47908)   // = 8（0x45d557 置）
+ * 0x45c100: jl  0x45c2a9      // ★ 窗口没过 ⇒ 决死 B 那条路（can_bomb 0x420420 → do_bomb 0x420360
+ *                             //   → cancel_impending_death 0x45d590，0x45c2d7）
+ * 0x45c112: edi = 0           // ★ edi 从「player」改成「累加器」
+ * 0x45c114: 循环 push 0(acc); call [vtbl+0xc]; or edi, eax     // ★★ 就是本条路（参数 = 累加器）
+ * 0x45c12d: jne 0x45c3d1      // ★★ 任一卡返回非 0 ⇒ **跳过扣命**
+ * 0x45c135: call 0x45d090     // 否则**同一 tick 内立刻 commit_death**（扣命）
+ * ```
+ *
+ * ⇒ 这条一起给出了两件事：
+ *   ① **顺序**：`+0x0c` 只在「决死窗口走完 + B 键那条路没救成」之后才广播 ⇒ 用它就**结构性**
+ *      排在 107/117（走 `+0x10`，在 `Player__die` 里就出手）与决死 B **之后**；
+ *      不需要数帧、也不需要猜时间点。
+ *   ② **落点**：窗口关掉的那一帧**没有**「窗口已关但命还没扣」的中间态（同一条分支里
+ *      要么被某个 `+0x0c` 挡住、要么当场扣命）⇒ **「帧点等 9 帧」那条路不可达**：
+ *      `+0x0c` 在 Player 线 `0x17` 里广播，而 `on_item_frame` 在 ItemManager 线 `0x1e` 里跑
+ *      ⇒ 后者跑到时 state 早不是 4。**第一版实现就是错在这里**（`AUDIT` §BN7 留痕）。
+ *
+ * ## 两道门 + 两个必做动作（**顺序不能改**）
+ *
+ *   ① `ce_rescue_note_owner()`：`>= 0` 且不是 113 ⇒ **这次死亡已经有人救了** ⇒ `return 0`。
+ *      ⚠ 这一档**不需要帧闩锁**：`+0x10`（`Player__die` 内，`0x45d570`）**先于** `+0x0c`（`0x45c114`）
+ *        在同一 tick 里跑完 ⇒ 107/117 写下的 owner 在本刻仍是本帧的值。
+ *   ② `trance_force_on_death()`：槽 < 200 ⇒ 失败（一手 `th13:0x405a40` 同一道门）⇒ `return 0`（照常死）。
+ *      ★ 它的返回值**同时**是两件事：① 这次死亡被不被吃下；② 补死的欠账记不记
+ *        —— 返回 1 ⇒ 相位变 `TRANCE_PHASE_DEATH_FREE`（或手动窗被**升格**成它）⇒ 窗口结束时
+ *        `trance_tick` 就会报 `re_die`。
+ *   ③ **`Player__cancel_impending_death()`**（`th18:0x45d590`）—— 取消这次死亡。
+ *   ④ ★ **`return 1`** —— 让引擎跳过 `0x45c135` 的扣命。**这两件缺一不可**：
+ *      只调 `0x45d590` 不返回 1 ⇒ 引擎照样 `commit`（state 被拉回 1 也没用，命已经扣了）；
+ *      只返回 1 不调 `0x45d590` ⇒ 引擎不扣命，但 state 仍是 4 ⇒ 下一帧照样进死亡流程。
+ *      一手零售先例：`CardEirin__on_player_death_after_deathbomb` `0x40a4f0`
+ *      （`0x40a53f call 0x45d590` → **`0x40a544 mov eax,1`** → `0x40a54a ret 4`，stdcall 1 个 dword）。
+ *
+ * ## 为什么不在 `+0x0c` 里判「自机 state 是否仍是 4」
+ *
+ * 引擎广播 `+0x0c` 时 state 本来就是 4（它自己那一帧就是这么进来的），而 `0x45c114` 的循环
+ * **不看**前一张卡的返回值就继续广播 ⇒ 若前面已有卡取消过死亡，state 会变成 1 ——
+ * 那种情形已经被**门 ①**（`ce_rescue_note_owner()`）挡住（那张卡会 claim），
+ * 所以本卡不需要再自己读 state（少一次引擎面读取，也就少一个会漂的判据）。
+ *
+ * ## 死亡栈纪律
+ *
+ * `+0x0c` 是**死亡栈**（在 `Player__die` 的调用链里）：本函数只做
+ * 「读几个字段 + 调两个引擎函数 + 写私有状态 + 一行日志」。**不建 anm VM、不 `ce_spawn_*`、不扫链表**；
+ * `ce_play_sound` 可以（107/117 在 `+0x10` 里就播）。
+ * ---------------------------------------------------------------------------------------------- */
+
+typedef void (*trance_fn_player_t)(void *player);
+
+/* 取消这次死亡（`Player__cancel_impending_death` `th18:0x45d590`）。照 `cards/senro.c` 的
+ * `senro_cancel_impending_death()` 的形状（同样是 `CE_PLAYER()` 判空后再调）。
+ * ⚠ 它是 **thiscall**：`ecx` = `zPlayer*`，无栈参，返回 void ⇒ 只能用内联汇编传 `ecx`。*/
+static void trance_cancel_impending_death(void)
+{
+    void *p = (void *)CE_PLAYER();
+    if (!p) return;
+    ((trance_fn_player_t)(uintptr_t)TRANCE_FN_CANCEL_IMPENDING_DEATH)(p);
+}
+
+/* ★ **补死**：灵界窗口结束时把「欠的那次死亡」补上（一手 `th13:0x405c3e` 的同一动作）。
+ * 同 ABI（thiscall(Player*)、无栈参、void）。调用点只有一处：`on_item_frame` ③。*/
+static void trance_player_die(void)
+{
+    void *p = (void *)CE_PLAYER();
+    if (!p) return;
+    ((trance_fn_player_t)(uintptr_t)TRANCE_FN_PLAYER_DIE)(p);
+}
+
+/* ★★ **`+0x0c` `on_death_after_deathbomb` —— 113 的中弹救援就是它**（第二版·落点订正版）。
+ * 返回值：**1 = 救下了**（引擎据此跳过扣命），0 = 不救、照常死。
+ * `acc` = 引擎传进来的累加器（前面各卡返回值 OR 起来，初值 0；一手 `0x45c114` 的 `push edi`）。
+ * 本卡不看它，但**必须接收**（stdcall 由被调方清栈 —— 少一个形参就是栈错位）。*/
+static int on_death_after_deathbomb(ce_card_t *c, uint32_t acc)
+{
+    trance_card_t *s = st(c);
+    int owner;
+
+    (void)acc;
+    if (!s) return 0;
+
+    /* 门 ① 让位：本帧已经有别家认领过这次死亡 ⇒ 本卡什么都不做。
+     * ⚠ 口径（2026-09-12 复核，见 AUDIT §BO-4）：107/117 的 claim 发生在**中弹帧 N** 的 `+0x10` 里，
+     *    而本回调是**窗口关闭的 N+8 帧**的 `+0x0c`；`ce_rescue_note_*` 又**每帧 reset**
+     *    （`sdk.c` 的 `BP_ce_item_frame`，在 ItemManager 线 0x1e 跑）⇒ 帧 N 的 claim **到不了**本帧，
+     *    **所以这道门在现行路线下不会触发**（`stat_rescue_lost` 那条分支同理）。
+     *    真正保证「113 是救援层最后一家」的是**引擎结构**：107/117 若真救了，死亡当场被取消、
+     *    窗口根本不会开 ⇒ 引擎**根本不会叫 113**。
+     *    保留这道门的理由：兜住「有人 claim 却没 cancel」的异常路径（那时让位比抢着救更对）。*/
+    owner = ce_rescue_note_owner();
+    if (owner >= 0 && owner != TRANCE_NUM) {
+        ++s->stat_rescue_lost;
+        ce_log("trance: +0x0c rescue SKIPPED - death already claimed by card %d "
+               "(113 is the LAST in the rescue layer: 107 -> 117 -> deathbomb -> 113)", owner);
+        return 0;                    /* 不救命：让救过的那一家生效（它已经 cancel 过了）*/
+    }
+
+    /* 门 ② 拿窗口（`trance_begin(core, death_free=1, &cond)`；槽 < 200 ⇒ 失败，一手 `0x405a40`）。*/
+    if (!trance_force_on_death(&s->core)) {
+        ++s->stat_rescue_lost;
+        ce_log("trance: +0x0c rescue FAILED - gauge %d < %d (一手 0x405a40 的门) => death proceeds",
+               (int)s->core.gauge.gauge, TRANCE_GAUGE_MIN_ENTER);
+        return 0;
+    }
+
+    /* 动作 ③ 取消死亡 + 动作 ④ 告诉引擎「我救下了」。顺序：**先确认救得成才 claim**，
+     * 再 cancel，最后 return 1（返回 1 是引擎那一侧的唯一判据，见文件头）。*/
+    (void)ce_rescue_note_claim(TRANCE_NUM);
+    trance_cancel_impending_death();
+    ++s->stat_rescued;
+    ce_play_sound(TRANCE_SE_FORCED, 0.0f);   /* ❓ 声像 0：死亡栈上不读自机坐标 */
+    ce_log("trance: +0x0c RESCUED (last in the rescue layer) - death CANCELLED + return 1, "
+           "death-free window opened (phase %d, gauge %d, frame %d); will re-die when it ends",
+           (int)s->core.phase, (int)s->core.gauge.gauge, (int)s->frame);
+    return 1;                        /* ★ 实质动作：引擎在 `0x45c12d` 用累加器决定扣不扣命 */
+}
+
 /* `on_item_frame` = 断点 `0x446ee3`（ItemManager tick 的门卫位次，`sites.py:711` 一手 disasm）：
  * 正常游玩帧一次；菜单 / 商店 / 暂停 / 对话**冻结帧连 CMP 都到不了**（**这里不触发**）
- * ⇒ 它就是本卡要的帧源（与 `cards/collect2x.c` 的 `s_play_frame` 同口径，但**存在私有状态里**）。*/
+ * ⇒ 它就是本卡要的帧源（与 `cards/collect2x.c` 的 `s_play_frame` 同口径，但**存在私有状态里**）。
+ * ⚠ 中弹救援**不在**这里（那是卡虚表 `+0x0c` 的事，见上）；本帧点只做：
+ * 推窗口 / **补死** / 无敌声明 / 撒神灵 / 收神灵 / HUD / 日志。*/
 static void on_item_frame(ce_card_t *c)
 {
     trance_card_t *s = st(c);
@@ -650,7 +863,7 @@ static void on_item_frame(ce_card_t *c)
     if (!s) return;
     ++s->frame;
 
-    /* ① 窗口推进（相位 0：推冷却 + 连锁窗口；相位 ≠ 0：槽 −1/帧、归零收尾）*/
+    /* ① 窗口推进（空闲：推冷却 + 连锁窗口；在灵界里：槽 −1/帧、归零收尾并报 `re_die`）*/
     t = trance_tick(&s->core, s->frame);
 
     /* ② ★ 2026-09-12 用户定案：**灵界改成主动触发**（原来这里有一条「满槽自动进」，
@@ -658,18 +871,45 @@ static void on_item_frame(ce_card_t *c)
      *   发动实现在上面的 `on_activate()`（`active_recharge = 1`：真实代价是**灵界槽**，
      *   槽不满就 `ce_refuse` ⇒ SDK 把刚装填的充能退回、不算发动）。*/
 
-    /* ③ 「中弹无伤」（SPEC §3.2 ⏳）：灵界进行中**只声明无敌帧**（层取 max）。
-     * 每帧重新声明 ⇒ 窗口一结束声明自动掉回 0；`on_delete` 里也显式清一次。*/
-    ce_invuln_request(TRANCE_NUM, (s->core.phase != TRANCE_PHASE_IDLE) ? TRANCE_INVULN_DECLARE : 0);
-
-    /* ④ 结束反馈 */
-    if (t.ended) {
-        ce_play_sound(TRANCE_SE_END, 0.0f);
-        ce_log("trance: end (%s), gauge %d, frame %d", t.ended_death_free ? "death-free" : "manual",
-               (int)s->core.gauge.gauge, (int)s->frame);
+    /* ③ ★ **补死**：中弹救下的窗口结束时**欠一次死亡**（一手 `th13:0x405c3e`：`end` 里再调一次
+     *   `Player::die`）⇒ 这里真的去调 `th18:0x45d3a0`。
+     *   ⚠ 只在自机**活着**（state 1）时补：死在别的 state 里（2/3/4）说明死亡流程已经在跑，
+     *     再调一次只会把死亡动画 / 计时器重来一遍（`Player__die` 会重新置 `num_deathbomb_frames = 8`）。
+     *     证据与不确定性：`Player__die` 的 3 个一手调用点都在「state ∉ {2,3,4}」的门之后
+     *     （`0x45cd0d` / `0x45ce69` / `0x45d046`）⇒ 状态门本来就是引擎自己的调用前提，这里照抄。
+     *   ★ 补死 = **普通死亡**，允许链式（用户定案）：引擎照常广播 `+0x10`，107/117/113 都还能再救。*/
+    {
+        uint8_t *pl = CE_PLAYER();
+        const int32_t pstate = pl ? *(int32_t *)(pl + CE_PLAYER_STATE) : -1;
+        if (trance_should_redie(&t)) {
+            if (pstate == 1) {
+                trance_player_die();
+                ++s->stat_redie;
+                ce_log("trance: re-die (death-free window ended, frame %d) — Player__die called; "
+                       "chaining is allowed (107/117/113 may rescue this death again)", (int)s->frame);
+            } else {
+                ce_log("trance: re-die SKIPPED (player state %d, not 1) — death is already in flight",
+                       (int)pstate);
+            }
+        }
     }
 
-    /* ⑤ ★ **击破 → 神灵实体 → （靠近才）入槽**（2026-09-12 第二轮：实体层就是这一步接上的）。
+    /* ④ 「中弹无伤」（SPEC §3.2 ⏳）：灵界进行中**只声明无敌帧**（层取 max）。
+     * 每帧重新声明 ⇒ 窗口一结束声明自动掉回 0；`on_delete` 里也显式清一次。
+     * ⚠ 本卡**没有**「排队相位」那种中间态（救援在 `+0x0c` 里一次做完）⇒ 只有真在灵界里才声明。*/
+    ce_invuln_request(TRANCE_NUM,
+                      (s->core.phase == TRANCE_PHASE_MANUAL
+                       || s->core.phase == TRANCE_PHASE_DEATH_FREE) ? TRANCE_INVULN_DECLARE : 0);
+
+    /* ⑤ 结束反馈 */
+    if (t.ended) {
+        ce_play_sound(TRANCE_SE_END, 0.0f);
+        ce_log("trance: end (%s), gauge %d, frame %d%s", t.ended_death_free ? "death-free" : "manual",
+               (int)s->core.gauge.gauge, (int)s->frame,
+               t.re_die ? " — re-die owed (延时不是免死)" : "");
+    }
+
+    /* ⑥ ★ **击破 → 神灵实体 → （靠近才）入槽**（2026-09-12 第二轮：实体层就是这一步接上的）。
      * 帧末一次性取走队列（`on_enemy_death` 只入队，**死亡栈上不建 VM**），然后每一条按 SPEC 的条款撒实体：
      *   · 类型 = `TRANCE_KILL_SPIRIT_TYPE`（**type 1**：SPEC §2.2 订正「击破走通道 B `spec1/spec2`」，
      *     一手 `SPIRIT` §3 通道表 B 行 `type=1`）；
@@ -693,19 +933,19 @@ static void on_item_frame(ce_card_t *c)
                (int)s_stat_spirit_dropped);
     }
 
-    /* ⑥ ★ **神灵池每帧推进**（缩小 / 微动 / 靠近才吃 / 到点消失）—— 裁决四条都在这一个函数里。
+    /* ⑦ ★ **神灵池每帧推进**（缩小 / 微动 / 靠近才吃 / 到点消失）—— 裁决四条都在这一个函数里。
      * ⚠ 顺序：**先撒后推**（本帧刚撒的也能吃到；`age` 从 1 开始，出生那帧的 scale 已在 spawn 里写过）。*/
     trance_spirits_tick(c);
 
-    /* ⑦ 计分声明（模板 `EC` §3）：★ **已停用**（`SPEC §9 #5` 未拍 ⇒ 只记本地账，不发声明）。
+    /* ⑧ 计分声明（模板 `EC` §3）：★ **已停用**（`SPEC §9 #5` 未拍 ⇒ 只记本地账，不发声明）。
      * 见 trance_declare_score()：那 10000 一旦发出去会污染 110/111 的 PV 聚合。*/
     trance_declare_score(s);
 
-    /* ⑧ 汇总日志 */
+    /* ⑨ 汇总日志 */
     if (s->frame - s->log_frame >= TRANCE_LOG_EVERY) {
         s->log_frame = s->frame;
         ce_log("trance: gauge %d/%d tier %d phase %d, spirits %d/%d/%d/%d, chain %d(bonus %d), "
-               "activations %d forced %d levelups %d killdrop %d killspirit %d "
+               "activations %d rescued %d redie %d resclost %d levelups %d killdrop %d killspirit %d "
                "| entity pool: %d/%d alive, spawned %d picked %d expired %d dropped %d "
                "(r=%d px, life %d f, scale %d->%d over %d f), "
                "score-decl BLOCKED (decl %d, %d frames)",
@@ -713,7 +953,8 @@ static void on_item_frame(ce_card_t *c)
                (int)s->core.spirits_seen[0], (int)s->core.spirits_seen[1],
                (int)s->core.spirits_seen[2], (int)s->core.spirits_seen[3],
                (int)s->core.chain_count, (int)s->core.chain_bonus_spawned,
-               (int)s->core.activations, (int)s->stat_forced, (int)s->stat_levelups,
+               (int)s->core.activations, (int)s->stat_rescued, (int)s->stat_redie,
+               (int)s->stat_rescue_lost, (int)s->stat_levelups,
                (int)s->stat_kill_drop, (int)s->stat_kill_spirit,
                s_n_spirit, TRANCE_SPIRIT_POOL,
                (int)s_stat_spirit_spawned, (int)s_stat_spirit_picked,
@@ -725,27 +966,21 @@ static void on_item_frame(ce_card_t *c)
     }
 }
 
-/* ============================ ★ 死亡后的强制灵界（虚表 +0x14） ============================ */
-
-/* 挂 **`+0x14` `on_death_frame2`** —— 理由见文件头第 1 条（SPEC 用户定案 ③）：
- * 死亡**已经确定**（扣钱 / 扣火力已发生，`SDK.md:71`）⇒ 我们只做「先开灵界」这一件额外的事。
- * ★ 这个函数里**禁止**：调 `cancel_impending_death`（救援层）、读自机坐标（现场是 respawn 之后）、
- *   改生命 / 炸弹 / 死亡流程（用户定案 ②：死后照死、不延时、不免死）。
- * 返回值：0（与 117 先例一致 —— `+0x14` 不是「救下了」那条路）。*/
+/* ============================ ★ 死亡结算之后（虚表 +0x14）：**只记一行日志** ============================
+ *
+ * ★ **2026-09-12 第二版（含落点订正）：本回调不做任何动作。**
+ *   它现在唯一的用途是**回执**：补死（`Player__die`）真的走完了死亡结算 ⇒ 实跑时能在日志里
+ *   对出「补死落地了几次」。本卡**没有任何跨帧状态**需要在这里收（第一版的排队 / 记账位已删）。
+ *   ⚠ 中弹救援**不在**这里：那一档走 `+0x0c`（见上），而且救下之后这次死亡根本不会被结算。
+ *   ⚠ 「玩家死在灵界里」（灵界窗口还开着就死）这一档也不在这里做事：窗口会自然 −1/帧 走到 0，
+ *     相位 2 ⇒ `trance_tick` 报 `re_die` ⇒ 交给帧点补死。
+ * 返回值：0（一手：`Player__die` 的三个调用点都直接 `ret`，`+0x14` 的返回值无人读）。*/
 static int on_death_frame2(ce_card_t *c)
 {
     trance_card_t *s = st(c);
     if (!s) return 0;
-    if (trance_force_on_death(&s->core)) {
-        ++s->stat_forced;
-        ce_play_sound(TRANCE_SE_FORCED, ce_player_x());   /* ⚠ 这是**死亡之后**的一帧：
-                                                           * 读 x 只为声像，不当「中弹位置」用 */
-        ce_log("trance: death-forced trance (phase 2, gauge %d, frame %d)", (int)s->core.gauge.gauge, (int)s->frame);
-    } else {
-        /* 没开成 = 已在灵界（`begin` 幂等）或槽 < 200（一手 `0x405a40` 的同一道门）。
-         * 两条都是**预期**路径，不是错误。*/
-        ce_log("trance: +0x14 forced trance SKIPPED (phase %d, gauge %d)", (int)s->core.phase, (int)s->core.gauge.gauge);
-    }
+    ce_log("trance: +0x14 (frame %d, phase %d, gauge %d) - death settled", 
+           (int)s->frame, (int)s->core.phase, (int)s->core.gauge.gauge);
     return 0;
 }
 
@@ -865,7 +1100,12 @@ static void trance_clear(ce_card_t *c)
     ce_hud_vm_text_clear(&s_txt_time);
     trance_spirit_clear_all();          /* ★ 神灵实体：删光池里所有 VM + 清计数 */
     if (!s) return;
-    memset(s, 0, sizeof *s);
+    /* ★ 私有状态清零 = **撤销这一次排队中的救援**（`pending_frame = -1`）：
+     *   删卡之后不该再替玩家取消死亡 —— 那一刻 AbilityManager 冻住、本卡的 tick 全停，
+     *   排队永远不会被消费 ⇒ 留着它只会让 `phase` 卡在 3。
+     *   ⚠ 用 `trance_state_init()` 而不是 `memset`：`pending_frame` 的「空闲」值就是 **−1**
+     *     （0 会被读成「第 0 帧报到过一次死亡」）。*/
+    trance_state_init(&s->core);
 }
 
 static int ctor(ce_card_t *c)
@@ -873,15 +1113,16 @@ static int ctor(ce_card_t *c)
     trance_card_t *s = st(c);
     if (!s) return 0;
     memset(s, 0, sizeof *s);
-    trance_gauge_reset(&s->core.gauge);   /* 一手：关卡开始写 0（`th13:0x42bbfd`）*/
+    trance_state_init(&s->core);          /* ★ `pending_frame = -1`（空闲）+ 槽 0，别用裸 memset */
     s->core.cooldown = TRANCE_COOLDOWN_FRAMES;  /* 开局不必等 30 帧冷却（关卡开始槽是 0，进不去）*/
     s->last_gauge = -1;
     /* ⚠ ctor **不清神灵池**：ctor 会在「每关开始引擎对卡组里每张卡再调一次」时重进
      *   （`sdk.h:357` 的一手记录），而池的生命周期是**关卡**（由 `on_stage_start` / `on_run_reset` /
      *   `on_delete` 收）—— 在 ctor 里清会在换关那一瞬间把上一关残影删掉，也会误删刚撒的实体。
      *   ⇒ 这里只清**卡的私有状态**（上面那行 memset），池交给 trance_clear()。*/
-    ce_log("trance: ctor (id %d) — trance gauge 0/%d, **主动卡**（D 切到本卡 + 按 C 发动灵界；"
-           "2026-09-12 用户定案，原来的满槽自动进已删）, spirit pool %d slots (static)",
+    ce_log("trance: ctor (id %d) — trance gauge 0/%d, **主动卡**（D 切到本卡 + 按 C 发动灵界）"
+           "+ **中弹救援（救援层最后一家：取消死亡 → 进灵界 → 出灵界再死）**, "
+           "spirit pool %d slots (static)",
            TRANCE_NUM, TRANCE_GAUGE_MAX, TRANCE_SPIRIT_POOL);
     return 0;
 }
@@ -895,11 +1136,16 @@ static int on_load(ce_card_t *c)
     ce_log("trance: load — selfcheck %d (0 = ok); WIRED: enemy-death hook -> kill queue -> "
            "spirit ENTITY pool (%d slots, script %d sprite %d layer %d) -> walk within %d px to collect "
            "(type %d, %d per kill) -> trance_collect -> gauge; "
+           "MID-HIT RESCUE (2nd revision, landing fixed): at card slot +0x0c "
+           "(on_death_after_deathbomb, after the 8-frame deathbomb window and after the B path) -> "
+           "no other claimer -> trance_force_on_death + cancel_impending_death 0x%x + **return 1**; "
+           "window end -> Player__die 0x%x (delay, not immunity; chaining allowed); "
            "PENDING: score CARRIER (SPEC 9 #5 — **declaration STOPPED**, see trance_declare_score), "
            "HUD slot (#6), channel E/F spawns (#4), astral art (SPEC 5)",
            trance_core_selfcheck(), TRANCE_SPIRIT_POOL, TRANCE_SPIRIT_ANM_SCRIPT, TRANCE_SPIRIT_SPRITE,
            TRANCE_SPIRIT_LAYER, TRANCE_SPIRIT_PICK_RADIUS,
-           TRANCE_KILL_SPIRIT_TYPE, TRANCE_KILL_SPIRITS_PER_KILL);
+           TRANCE_KILL_SPIRIT_TYPE, TRANCE_KILL_SPIRITS_PER_KILL,
+           (unsigned)TRANCE_FN_CANCEL_IMPENDING_DEATH, (unsigned)TRANCE_FN_PLAYER_DIE);
     return 0;
 }
 
@@ -949,15 +1195,22 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
  *   声明值再写一遍、没有载体语义），并且 **2026-09-12 起连 `ce_score_declare(113, …)` 的写入也停了**
  *   （那 10000 会被 110/111 的落笔者当信仰算进 PV 聚合 ⇒ 污染）。完整理由与「拍板后怎么接」
  *   见文件头「计分声明：已停用」段 + `trance_declare_score()`。
- *   本卡的其它功能（灵界槽 / 满槽自动进 / `+0x14` 死亡强制灵界 / 无敌声明 / HUD / 击破记账）
- *   **一律照常**，与计分层无关。*/
+ *   本卡的其它功能（灵界槽 / 主动卡发动 / **中弹救援（第二版）** / `+0x14` 收尾 / 无敌声明 /
+ *   HUD / 击破记账）**一律照常**，与计分层无关。
+ *
+ * ★ 注册的三个死亡相关槽（**2026-09-12 第二版**）：
+ *   · `+0x0c on_death_after_deathbomb` = ★ **中弹救援就在这里**（决死窗口与 B 键那条路都走完之后
+ *     才广播 ⇒ 天然排在 107/117/决死 B 之后）；**必须 `return 1`** 才会阻止引擎扣命；
+ *   · `+0x14 on_death_frame2` = **只记一行日志**（补死落地的回执；旧版的「在这里强制开灵界」已删）；
+ *   · **不挂 `+0x10`**（那是 107/117 的位置 —— 在 `Player__die` 里就出手，比 113 早两档）。*/
 CE_CARD(113,
         .active_recharge = 1,                   /* ★ 主动卡（代价 = 灵界槽，见 on_activate）*/
         .ctor = ctor,
         .on_activate = on_activate,
         .on_load = on_load,
         .on_item_frame = on_item_frame,
-        .on_death_frame2 = on_death_frame2,     /* ★ 死后层 +0x14：见 on_death_frame2 的注释 */
+        .on_death_after_deathbomb = on_death_after_deathbomb,   /* ★★ 中弹救援（救援层最后一家）*/
+        .on_death_frame2 = on_death_frame2,     /* ★ 死亡结算之后 +0x14：只记日志 */
         .on_enemy_death = on_enemy_death,       /* ★ 击破 → 神灵（事件钩子，非虚表槽）*/
         .on_stage_start = on_stage_start,
         .on_draw = on_draw,
