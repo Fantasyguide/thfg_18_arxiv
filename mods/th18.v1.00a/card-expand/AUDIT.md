@@ -4128,3 +4128,39 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 - **跨头文件冲突宏**：同名不同值 = **0**。
 - **声明层仲裁**：`ce_invuln_request` 取 **max**（`invuln_recompute`，不会被短请求截短）；`ce_score_*` / `ce_score_mul_*` 取 **sum**；`ce_optpose` / `ce_cancel_latch` 取 **id 最小者**，都是一手写明的规则，且各卡按规则自守。
 - **引擎全局写点**：`CE_ADDR_CURRENT_POWER` / `CE_ITEM_STATE` / `CE_PLAYER_ITEM_ATTRACT_*` / `CE_SPELL_BONUS` 等热点在卡侧**只有读、没有写** ⇒ 没有「两张卡互相盖同一个字段」的情况。
+
+## §BK. 113 / 116 改成「主动卡」（2026-09-12 用户定案）
+
+用户口径原话：「**得改 th16 卡：它是主动卡，触发季节解放是通过 D 键切换到该卡，然后按 C**；
+**灵界应该也是主动触发的，也按照该契约做**」。（th16 卡 = 116 天空璋 / 季节；灵界 = 113 神灵庙。）
+
+### BK-1 契约（`SDK.md` §9，零售 12 张主动卡共用）
+
+| 字段 | 语义 | 本批取值 |
+| --- | --- | --- |
+| `active_recharge` | 充能帧数（装填时 × `mgr+0xc58`）；**非 0 = 主动卡**（绑定时 SDK 改 flags 成主动写法、按 Tenshi 初始化两个 zTimer，引擎据此放进主动卡组 / HUD / C 键分派）| **`1`**（两张都是）|
+| `on_activate(c)` | C 键发动（门：state 空闲且充能到底；SDK 已装填充能、置「释放中」）。`0` = 瞬发、`1` = 进持续态、`CE_ACTIVATE_REFUSED` = 条件不满足（**SDK 退回充能、不算发动**，卡自己放无效音）| 113 返回 0（瞬发）；116 返回 1（解放期间持续）|
+| `on_active_tick(c, elapsed)` | 持续态每帧；返回 0 = 结束进收尾 | 116：`s->rel_frames > 0` |
+
+**为什么 `active_recharge = 1` 而不是真冷却**：两张卡的**真实代价都不是时间** ——
+113 的代价是**灵界槽**（600 满）、116 的代价是**季节点档位**（春/秋/冬清空槽、夏/土用扣一档）。
+先例 = 117 咆哮（`cards/animal.c`：`active_recharge = 1`，代价是动物灵槽 ⇒ `!ready` 就 `ce_refuse`）。
+⇒ 充能只作「SDK 主动卡机器的入场券」，**门槛全留在 `on_activate` 的 `ce_refuse` 里**。
+
+### BK-2 实装
+
+| 卡 | 改了什么 | 证据 |
+| --- | --- | --- |
+| **113** | `cards/trance.c`：新增 `on_activate`（`phase != IDLE` / `!trance_can_activate` ⇒ `ce_refuse`；否则 `trance_begin` + 入场音 + 日志）；**删掉 `on_item_frame` 里那条「满槽自动进」** | `cards/trance.c` |
+| **116** | `cards/season.c`：新增 `on_activate`（`level <= 0` / `rel_frames > 0` ⇒ `ce_refuse`；否则 `release()`、返回 1 进持续态）+ `on_active_tick`；**删掉 A 键边沿**（连 `key_prev` 字段一起删）；**S 切副季节不动** | `cards/season.c` |
+| 数据 | `patch/th18/cards.js`：113 / 116 加 `"category": 0`（`SDK.md` §自检的两条 FAIL 规则：主动卡必须 `category: 0`，反之亦然）；两条 `desc` 改成「D 切到本卡 + 按 C」口径 | `mkfiles.py --check` 35 张全合规；`patch/files.js` 已刷新 |
+
+### BK-3 顺带查到、**本次没动**的一条（留给下一批）
+
+`release()` 里**直接覆写** `CE_PLAYER_INVULN()` 的 zTimer（`cards/season.c` 的 `inv->cur = pr.invuln`），
+**绕过了 `ce_invuln_request` 声明层** ⇒ 正是 `EVENTS-CONTRACT.md` §4.1 点名的那种写法：
+**会把 107 / 117 / 113 给的长无敌截短**（层取 max 就是为了这个）。
+（同类：`cards/sa.c`（62，**别人的卡**）也直接改无敌计时器，但它是「把引擎自己的复活无敌 280 → 420」，
+不截短别人，属有意设计 ⇒ 只在 §BJ-2 记着，未动。）
+⇒ 要把 116 的无敌改成声明式（`rel_invuln` 逐帧声明 + `ce_invuln_apply()` 当场补一笔），
+**与本次的「触发方式」是两件事**，没混在一起做。

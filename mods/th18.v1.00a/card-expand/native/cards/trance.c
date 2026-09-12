@@ -46,7 +46,8 @@
  *      → `trance_collect()`（core）→ `trance_gauge_add(+2)`。**每颗神灵 +2 槽**（一手 `th13:0x438b3d`）。
  *   ④ **满槽 + 8 条条件**：`trance_fill_cond()` 把 core 的条件表喂满（含第 8 条 `(GAME_FLAGS & 0x30) != 0x20`
  *      → `trance_game_flags_ok()`，TH18 全局 `0x4cccc8`，站址见该函数注释）⇒ `trance_can_activate()`。
- *   ⑤ **开灵界**：`trance_begin()`（一手两道门：已在灵界幂等 / 槽 < 200 失败）—— `on_item_frame` ②。
+ *   ⑤ **开灵界**：`trance_begin()`（一手两道门：已在灵界幂等 / 槽 < 200 失败）——
+ *      **主动卡**：`on_activate`（D 切到本卡 + 按 C；2026-09-12 用户定案，原「满槽自动进」已删）。
  *   ⑥ **窗口**：`trance_tick()` 每帧 −1，`on_death_frame2()`（虚表 `+0x14`）可强制开一遍（相位 2）。
  *   ⑦ **收尾**：归零 ⇒ `trance_end()`（非死亡结束 −200）；删卡 ⇒ `trance_clear()`（`+0x50`，含清池）。
  *
@@ -606,6 +607,35 @@ static void trance_spirits_tick(ce_card_t *c)
 
 /* ============================ 每帧（游玩帧） ============================ */
 
+/* ============================ 主动卡发动（`on_activate` / 用户的 C 键） ============================
+ * 用户 2026-09-12 定案：**灵界是主动触发的** —— 「用 D 键切换到该卡，然后按 C」，
+ * 与 116（天空璋）同一套契约。⇒ 本卡声明 `active_recharge`（= 主动卡），
+ * 真正的门槛留在 `on_activate` 里：**灵界槽不满 / 已在灵界 ⇒ `ce_refuse`**
+ * （SDK 看到 `CE_ACTIVATE_REFUSED` 会把刚装填的充能退回、**不算发动**，卡侧自己放无效音）。
+ *
+ * ⚠ `active_recharge = 1`（不是真冷却）：先例 = 117 咆哮（`cards/animal.c` 的 `hyper_begin`），
+ *   它的代价是**动物灵槽**而不是时间 ⇒ 充能只做「SDK 主动卡机器的入场券」。
+ *   本卡的代价同样是槽（600 = 满）⇒ 同一形状。 */
+static int on_activate(ce_card_t *c)
+{
+    trance_card_t *s = st(c);
+    trance_cond_t cond;
+
+    if (!s) return ce_refuse("TD_SPIRIT", "no state slot");
+    if (s->core.phase != TRANCE_PHASE_IDLE) return ce_refuse("TD_SPIRIT", "already in trance");
+    trance_fill_cond(s, &cond);
+    if (!trance_can_activate(&s->core, &cond)) {
+        ce_log("trance: refuse (C) - gauge %d/%d, conditions not met (SPEC §9 #1 的 8 条)",
+               (int)s->core.gauge.gauge, TRANCE_GAUGE_MAX);
+        return ce_refuse("TD_SPIRIT", "gauge not full");
+    }
+    if (!trance_begin(&s->core, 0, &cond)) return ce_refuse("TD_SPIRIT", "begin refused");
+    ce_play_sound(TRANCE_SE_ENTER, 0.0f);   /* ❓ 声像：进入不是 `+0x14` ⇒ 本可读自机 x，
+                                             * 但主动卡发动发生在 Player tick 里，保守起见仍传 0 */
+    ce_log("trance: enter (C, manual), gauge %d, frame %d", (int)s->core.gauge.gauge, (int)s->frame);
+    return 0;                               /* 瞬发：窗口由 `trance_tick` 自己推 */
+}
+
 /* `on_item_frame` = 断点 `0x446ee3`（ItemManager tick 的门卫位次，`sites.py:711` 一手 disasm）：
  * 正常游玩帧一次；菜单 / 商店 / 暂停 / 对话**冻结帧连 CMP 都到不了**（**这里不触发**）
  * ⇒ 它就是本卡要的帧源（与 `cards/collect2x.c` 的 `s_play_frame` 同口径，但**存在私有状态里**）。*/
@@ -613,7 +643,6 @@ static void on_item_frame(ce_card_t *c)
 {
     trance_card_t *s = st(c);
     trance_tick_t t;
-    trance_cond_t cond;
     float kx[TRANCE_KILL_QUEUE_MAX];
     float ky[TRANCE_KILL_QUEUE_MAX];
     int i;
@@ -624,15 +653,10 @@ static void on_item_frame(ce_card_t *c)
     /* ① 窗口推进（相位 0：推冷却 + 连锁窗口；相位 ≠ 0：槽 −1/帧、归零收尾）*/
     t = trance_tick(&s->core, s->frame);
 
-    /* ② 满槽自动进（唯一入口；SPEC §9 #1 的兜底口径）*/
-    if (s->core.phase == TRANCE_PHASE_IDLE) {
-        trance_fill_cond(s, &cond);
-        if (trance_can_activate(&s->core, &cond) && trance_begin(&s->core, 0, &cond)) {
-            ce_play_sound(TRANCE_SE_ENTER, 0.0f);   /* ❓ 声像：+0x14 与这里都不该读自机坐标，
-                                                     * 但**进入**不是 +0x14 ⇒ 自机 x 可读 */
-            ce_log("trance: enter (manual/auto), gauge %d, frame %d", (int)s->core.gauge.gauge, (int)s->frame);
-        }
-    }
+    /* ② ★ 2026-09-12 用户定案：**灵界改成主动触发**（原来这里有一条「满槽自动进」，
+     *   已删）—— 与 116 同一套契约：「**用 D 键切换到该卡，然后按 C 发动**」。
+     *   发动实现在上面的 `on_activate()`（`active_recharge = 1`：真实代价是**灵界槽**，
+     *   槽不满就 `ce_refuse` ⇒ SDK 把刚装填的充能退回、不算发动）。*/
 
     /* ③ 「中弹无伤」（SPEC §3.2 ⏳）：灵界进行中**只声明无敌帧**（层取 max）。
      * 每帧重新声明 ⇒ 窗口一结束声明自动掉回 0；`on_delete` 里也显式清一次。*/
@@ -856,8 +880,9 @@ static int ctor(ce_card_t *c)
      *   （`sdk.h:357` 的一手记录），而池的生命周期是**关卡**（由 `on_stage_start` / `on_run_reset` /
      *   `on_delete` 收）—— 在 ctor 里清会在换关那一瞬间把上一关残影删掉，也会误删刚撒的实体。
      *   ⇒ 这里只清**卡的私有状态**（上面那行 memset），池交给 trance_clear()。*/
-    ce_log("trance: ctor (id %d) — trance gauge 0/%d, auto-enter mode (no key: SPEC §9 #1), "
-           "spirit pool %d slots (static)", TRANCE_NUM, TRANCE_GAUGE_MAX, TRANCE_SPIRIT_POOL);
+    ce_log("trance: ctor (id %d) — trance gauge 0/%d, **主动卡**（D 切到本卡 + 按 C 发动灵界；"
+           "2026-09-12 用户定案，原来的满槽自动进已删）, spirit pool %d slots (static)",
+           TRANCE_NUM, TRANCE_GAUGE_MAX, TRANCE_SPIRIT_POOL);
     return 0;
 }
 
@@ -927,7 +952,9 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
  *   本卡的其它功能（灵界槽 / 满槽自动进 / `+0x14` 死亡强制灵界 / 无敌声明 / HUD / 击破记账）
  *   **一律照常**，与计分层无关。*/
 CE_CARD(113,
+        .active_recharge = 1,                   /* ★ 主动卡（代价 = 灵界槽，见 on_activate）*/
         .ctor = ctor,
+        .on_activate = on_activate,
         .on_load = on_load,
         .on_item_frame = on_item_frame,
         .on_death_frame2 = on_death_frame2,     /* ★ 死后层 +0x14：见 on_death_frame2 的注释 */

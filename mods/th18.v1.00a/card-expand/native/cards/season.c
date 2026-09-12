@@ -234,7 +234,6 @@ typedef struct {
     int32_t     points;                    /* 累计季节点 */
     int32_t     subseason;                 /* 副季节 0..4 */
     int32_t     frame;                     /* 射击帧计数 */
-    int32_t     key_prev;                  /* A 键上一帧 */
     int32_t     sub_prev;                  /* S 键上一帧 */
     int32_t     last_graze;                /* 上一帧原生擦弹计数；-1 = 未初始化 */
     int32_t     releases;                  /* 解放次数（日志）*/
@@ -1013,6 +1012,33 @@ static void afterimage_tick(season_card_t *s, const float *pp)
 }
 
 /* ④ 季节解放：按副季节查表，开始一段持续清弹 + 伤害 + 无敌 */
+static void release(ce_card_t *c, season_card_t *s);   /* 定义在下面（`on_activate` 要用）*/
+
+/* ============================ 主动卡发动（`on_activate` / 用户的 C 键） ============================
+ * 用户 2026-09-12 定案：**116 是主动卡** —— 「用 D 键切换到该卡，然后按 C」触发**季节解放**
+ * （原先是读 A 键的边沿）。⇒ 本卡声明 `active_recharge`，门槛留在 `on_activate` 里：
+ * **档位 0 / 正在解放 ⇒ `ce_refuse`**（SDK 会把刚装填的充能退回、**不算发动**）。
+ *
+ * ⚠ `active_recharge = 1`（不是真冷却）：先例 = 117 咆哮（`cards/animal.c`）—— 它的真代价是**槽**
+ *   而不是时间 ⇒ 充能只作「SDK 主动卡机器的入场券」。本卡的真代价是**季节点档位**
+ *   （春/秋/冬 清空槽、夏/土用 只扣一档，见 `season_points_after_release`）⇒ 同一形状。 */
+static int on_activate(ce_card_t *c)
+{
+    season_card_t *s = st(c);
+    if (!s) return ce_refuse("SEASON", "no state slot");
+    if (level_of(s) <= 0) return ce_refuse("SEASON", "level 0");
+    if (s->rel_frames > 0) return ce_refuse("SEASON", "release in progress");
+    release(c, s);
+    return 1;          /* 持续态：释放期间保持「正在释放」；`on_active_tick` 返回 0 时由 SDK 收尾 */
+}
+
+static int on_active_tick(ce_card_t *c, uint32_t elapsed)
+{
+    season_card_t *s = st(c);
+    (void)elapsed;                          /* 帧数由 `release_tick` 自己推（`s->rel_frames`）*/
+    return s && s->rel_frames > 0;
+}
+
 static void release(ce_card_t *c, season_card_t *s)
 {
     season_profile_t pr;
@@ -1204,7 +1230,7 @@ static void graze_tick(season_card_t *s)
 static int on_tick_2(ce_card_t *c)
 {
     season_card_t *s = st(c);
-    int down, sub_down, i;
+    int sub_down, i;
 
     if (!s || !CE_PLAYER()) return 0;
     ++s->frame;
@@ -1213,9 +1239,9 @@ static int on_tick_2(ce_card_t *c)
     points_tick(c, s);
     burst_tick(s);
 
-    down = ce_key_down(CE_VK_A) ? 1 : 0;
-    if (down && !s->key_prev) release(c, s);
-    s->key_prev = down;
+    /* ★ 2026-09-12 用户定案：季节解放**不再读 A 键** —— 本卡是**主动卡**，
+     *   「用 D 键切换到该卡，然后按 C」触发（实现在下面的 `on_activate()`）。
+     *   ⚠ 原来这里是 `ce_key_down(CE_VK_A)` 的边沿。 */
 
     sub_down = ce_key_down(CE_VK_S) ? 1 : 0;
     if (sub_down && !s->sub_prev) {
@@ -1633,6 +1659,8 @@ static int on_load(ce_card_t *c)
 static void on_run_reset(ce_card_t *c) { clear_card(c); }
 static void on_delete(ce_card_t *c) { clear_card(c); }
 
-CE_CARD(116, .on_power_level_change = on_power_level_change, .on_tick_shooters = on_tick_shooters,
+CE_CARD(116, .active_recharge = 1,          /* ★ 主动卡（D 切换 + C 发动；代价 = 季节点档位）*/
+         .on_activate = on_activate, .on_active_tick = on_active_tick,
+         .on_power_level_change = on_power_level_change, .on_tick_shooters = on_tick_shooters,
          .on_tick_2 = on_tick_2, .on_enemy_drop_pre = on_enemy_drop_pre, .on_draw = on_draw,
          .on_load = on_load, .on_run_reset = on_run_reset, .on_delete = on_delete);

@@ -192,9 +192,9 @@ C 自带一个计数器当 `short_timer` 传进去（`param_2` 只进模运算�
 
 | id | 名字 | 效果 | 实现（槽 / 事件） | 文件 | 状态 |
 | --- | --- | --- | --- | --- | --- |
-| 116 | 季节 | **装备卡**：季节点（擦弹 / 敌人掉落 / 解放消弹）→ 0..6 档 → 子机 → **A 键解放 / S 键切副季节**；掉落量、运动学、出场动画、HUD 全部照 TH16 一手，详见下表下方的「季节（116）补充」 | `on_tick_2` + `on_enemy_drop_pre` + `on_power_level_change` + `on_tick_shooters` + `on_draw` | `season.c` + `season_core.c` | 🔧 |
+| 116 | 季节 | **主动卡**（2026-09-12 用户定案）：季节点（擦弹 / 掉落 / 解放消弹）→ 0..6 档 → 子机 → **D 切到本卡后按 C 解放**、S 键切副季节；掉落量、运动学、出场动画、HUD 全部照 TH16 一手，详见下表下方的「季节（116）补充」 | `on_tick_2` + `on_enemy_drop_pre` + `on_power_level_change` + `on_tick_shooters` + `on_draw` | `season.c` + `season_core.c` | 🔧 |
 
-**季节（116）补充**：TH16 季节系统的复刻（**装备卡**），数值全部来自 TH16 v1.00a **脱壳版**一手
+**季节（116）补充**：TH16 季节系统的复刻（**主动卡**：D 切到本卡 + C 发动季节解放），数值全部来自 TH16 v1.00a **脱壳版**一手
 （[`engine/season/th16/01`](../../../engine/season/th16/01-season-data-and-tables.md)；纯逻辑在 `season_core.c`，
 单测 `tests/test_season_core.c`）。残骸审计见 [`engine/season/th18/01`](../../../engine/season/th18/01-season-residuals.md)：
 **TH18 里五样全无**（季节点道具 / 季节槽全局 / 季节子机数组 / 等级表 / 第二个 Bomb），所以全部自建。
@@ -227,9 +227,13 @@ C 自带一个计数器当 `short_timer` 传进去（`param_2` 只进模运算�
   TH16 `num_season_options = season_lvl`、阵位表按 `{0,1,3,6,10,15,21,28}` 累计；子机走 `shooterset SEASON`
   （`assets/sht/append_shooterset.py`，弹 = `SEASON_SEED`），节奏 = `帧数 × 档位` 当 short_timer、
   `fire_rate = 120` ⇒ 间隔 120/60/40/30/24 帧；
-- **季节解放绑 A 键、副季节切换绑 S 键**：TH18 的键盘配置只占 Z/X/Shift/Esc/C/D，A/S 空着
+- ★ **2026-09-12 用户定案：116 改成「主动卡」** —— 触发**季节解放**的方式是
+  **用 D 键切换到该卡、然后按 C**（走 SDK 的主动卡通路：`active_recharge = 1` + `on_activate`，
+  门槛「档位 0 / 正在解放」⇒ `ce_refuse`）。**原来的 A 键解放已删**。
+  `active_recharge = 1` 的原因：真实代价是**季节点档位**而不是时间（先例 = 117 咆哮的动物灵槽）。
+- **副季节切换仍绑 S 键**：TH18 的键盘配置只占 Z/X/Shift/Esc/C/D，S 空着
   （一手 [`engine/input/th18/01`](../../../engine/input/th18/01-key-mapping.md)）。
-  ⚠️ 原始键不进 replay 输入流 → 回放里不重现（同文档 §4a）。
+  ⚠️ 原始键不进 replay 输入流 → 回放里不重现（同文档 §4a）；`C` 是引擎自己的主动卡键，进流。
 设计 [`docs/superpowers/specs/2026-09-10-season-and-animal-design.md`](../../../docs/superpowers/specs/2026-09-10-season-and-animal-design.md)。
 子机阵位写 option 记录的 `+0x64/+0x68/+0x6c/+0x70`（零售卡 `th18:0x40b8c1` 同款）；**S 键切副季节时子机的贴图与阵位一起换**（`refresh_options`）。
 季节点外观 = `ability.anm` script 115 + **TH16 零售切图**（`bullet/item.png` 右上 2×2 = 春/夏/秋/冬 + `(224,32)` = 土用，各 16×16，按副季节换 sprite；出场动画照 TH16 script129，**含 `angleVel(%F0)` 的 0..5°/帧 随机自转**）。
@@ -250,7 +254,7 @@ HUD = **游玩区内的左下角**（字面量空间 x 44 起）：季节字 PNG
 | 110 | 风神录 | **风神录信仰**：绿点实体池（与 111 共用）+ 按槽记账、连击 130f、灵击（门槛 2.00 档 / 扣 1 档 / 下限 1.05）、PV→计分只由落笔者落笔 | `on_enemy_death` + `on_enemy_drop_pre` + `on_item_collect` + `on_item_score` + `on_tick_2` + `on_draw` | `mof.c` + `mof_core.c` + `faith.c` + `faith_core.c` | 🔧 待实跑（92 断言；绿点实体池 `faith.c` 也是 111 的共用件） |
 | 111 | 地灵殿 | **地灵殿信号槽**：回收线上方 +50/f、满 100 自动全收道具、线下 −0.3/f、被弹归零（0–130）；绿点信仰（共用池，按槽记账）；蓝点分 = 信仰 ×(擦弹倍率 + 信号强度) 落在金钱道具分数上（**不改金钱数量**）；B 双选与 110 同规则 | `on_item_collect` + `on_item_score` + `on_tick_2` + `on_draw` + `on_death_after_deathbomb` | `signal.c` + `signal_core.c`（共用 `faith.c`） | 🔧 待实跑（201 断言；HUD 坐标/配色与灵击伤害是 ❓ 自定占位） |
 | 112 | 星莲船 | **飞碟**：令牌 = 自建真敌人载体（`ce_spawn_enemy`，占位 ECL 名）；吸收链 = 伪磁场拉拽 type 1/2 → 置空槽 → 计数；击破走 `on_enemy_death`（排除清场）；凑组三同色 / 三色各一 / **两同一异 = 丢最旧**（一手 KEEP2）；**金 UFO = 蓝 UFO**（P 图调色）| `on_enemy_death` + `on_item_frame` + `on_tick_2` + `on_draw` | `ufo.c` + `ufo_core.c` | 🔧 待实跑（925 断言；HUD 第一版在层 25；**真 ECL 已从 TH12 移植**（`assets/ecl/ufo.ecl.txt`）；**本体/令牌用官方零售切图**（`ability.anm` script 164–173）由**卡侧跟随 VM** 画、ECL 侧 `anmSetSprite(0,-1)` 当隐形载体 ⇒ 已可发布）|
-| 113 | 神灵庙 | **神灵庙灵界**：挂虚表 `+0x14`（死后层，**不进救援层**）；中弹无伤做成每帧声明无敌（近似，❓）；**神灵实体池已落地**（自建 VM：不下落 / 走过去才吃 / 越缩越小，一手寿命 480 f）；奖励翻倍；救援层烧毁顺序 107→117 的契约由本卡提供（执行需 107/117 接手）| `on_death_frame2`（`+0x14`）+ `on_item_frame` + `on_enemy_death` + `on_tick_2` + `on_draw` | `trance.c` + `trance_core.c` | 🔧 待实跑（**1038 断言**；计分载体按 spec §9 #5 **搁置**、音效 5 个 ❓ 自定）|
+| 113 | 神灵庙 | **神灵庙灵界**：**主动卡**（用户 2026-09-12 定案）：D 切到本卡后按 C 发动灵界（槽满才可）；挂虚表 `+0x14`（死后层，**不进救援层**）；中弹无伤做成每帧声明无敌（近似，❓）；**神灵实体池已落地**（自建 VM：不下落 / 走过去才吃 / 越缩越小，一手寿命 480 f）；奖励翻倍；救援层烧毁顺序 107→117 的契约由本卡提供（执行需 107/117 接手）| `on_death_frame2`（`+0x14`）+ `on_item_frame` + `on_enemy_death` + `on_tick_2` + `on_draw` | `trance.c` + `trance_core.c` | 🔧 待实跑（**1038 断言**；计分载体按 spec §9 #5 **搁置**、音效 5 个 ❓ 自定）|
 | 117 | 鬼形兽 | **主动**：收集 5 颗动物灵 → **满槽即自动起咆哮**（暴走 = 同类 ≥3 时主炮换成兽灵专属弹幕），**按 X（炸弹键）**把它用成 40 帧霊撃；中弹可用咆哮抵消死亡。细节见下「鬼形兽（117）补充」| `on_enemy_drop_pre` + `on_item_collect` + `on_death_before_deathbomb` + `on_activate` + `on_tick_2` + `on_draw` | `animal.c` + `animal_core.c` | 🔧 待实跑（Stage 1；兽灵弹 ANM 已修，见 §AL27）|
 
 **鬼形兽（117）补充**：TH17 动物灵 / 咆哮的卡侧复刻（一手 [`engine/animal/th17/01`](../../../engine/animal/th17/01-animal-spirits.md)；
