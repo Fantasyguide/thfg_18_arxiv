@@ -456,22 +456,38 @@ int32_t ufo_clamp_spawn_life(int32_t life);
  * 卡侧 HUD 的第一版血条（用户 2026-09-12 裁决 ④）就用它把本体 HP 画成进度条。 */
 int32_t ufo_hp_permille(int32_t cur, int32_t max);
 
-/* ================================================= §3.2 令牌载体（ECL 真敌机）
- * 载体 = ECL 真敌机（spec 用户定案 ②，先例 = 零售 `CardLilyWhite` `0x40fe70` 的 `ItemCarryLily`）。
- * ⚠ 真 ECL 子程序**还没写**（spec §6 步 3，要资产管理线）⇒ 用具名占位常量：
- *   原版自带的惰性壳 `"NoEnemyDebug"`（108 已用同一招；`wait(1000)` 死循环 ⇒ 不动、不开火、不掉落）。 */
-#define UFO_ECL_TOKEN_NAME  "NoEnemyDebug"  /* ★ TODO(资产/ECL §6 步 3)：令牌自己的 ECL 子程序名待写 */
-/* UFO **本体**的子程序名不在这里 —— 它按颜色分 4 件（一手名字表 `th12:0x4b33e0` =
+/* ================================================= §3.2 令牌载体（★ 2026-09-12：**自建 VM 池**）
+ * ★★ 用户 2026-09-12 拍板：「**token 得是自建 VM 池子**」—— 令牌**不再是真敌人**。
+ *
+ * 为什么换（三条代价，前两条是可观测的 bug 级问题；依据见 `AUDIT.md` §BO-11 的 P3）：
+ *   ① 一手 TH12 的令牌是**道具**（type 10..15，`th12:0x4121e0` 的 `EnemyDrop__spawn_ex_drops`）：
+ *      **打不掉、只能接触收**。我们那会儿用「真敌人壳 + `UFO_TOKEN_LIFE` = 1」⇒ **任何一发子弹
+ *      都能把令牌「收」走** ⇒ 「碰到才收」形同虚设、风险收益手感被抹掉。
+ *   ② 真敌人壳会被 `enemy_count_real` 照计 ⇒ **炸弹门 `0x420453` / 决死门 `0x45c07b` 被放行**
+ *      （`AUDIT.md` §BO-3：空场也能放炸弹/决死）。
+ *   ③ 壳本身是多余的：贴图早就由卡侧的 anm VM 画、位置也是卡侧每帧写的
+ *      ⇒ 壳只剩「占位」，却带来上面两条 + 每次 spawn 的分配成本 + 对一个占位 ECL 名的依赖。
+ * 先例（同仓已有两处，照着抄）：117 `animal.c` 的 `s_tok[40]`、113 `trance.c` 的 `s_spirit[128]`
+ *   —— 文件级静态句柄表 + `ce_anm_spawn` / `ce_anm_delete`，**没有实体**。
+ *
+ * ⇒ 本层里与「真敌人」绑在一起的东西**一条都不留**：占位 ECL 名常量 / 令牌 HP 常量 /
+ *   「令牌被子弹打掉也算收」那个判据函数（`ufo_token_kill_counts`）全部删除。
+ *   ⚠ **令牌的来源不动**：仍在**小怪击破时**登记、帧末生成（`ufo.c` 的 `on_enemy_death` ③）。
+ *   ⚠ **UFO 本体不动**：它有血量 / 受击盒 / 要被子弹打死 ⇒ 仍然是 ECL 真敌机。
+ * UFO **本体**的子程序名也不在这里 —— 它按颜色分 4 件（一手名字表 `th12:0x4b33e0` =
  * {`UFO_Red`, `UFO_Blue`, `UFO_Green`, `UFO_Rainbow`}，索引 = 上面的 `ufo_color_art_index()`），
  * 具名表放卡侧 `ufo.c`（`UFO_ECL_BODY_RED/BLUE/GREEN/RAINBOW`，★ **金借蓝那一件** = 用户裁决 ①）。 */
-#define UFO_TOKEN_LIFE      1      /* ★❓ 自定：令牌 HP。硬约束 < 1000；1 = 一发即破（能收） */
-#define UFO_TOKEN_MAX       3      /* ★❓ 自定（spec §3.2 ⏳「令牌实体的出现规则」待拍）：同时最多几个令牌
-                                    * 实体。⚠ 占位 1 会让「凑齐 3 个」几乎不可能（场上只有一个、且容易被
-                                    * 子弹误伤或超时撤掉）⇒ 取 3；令牌表另有 `UFO_TOKEN_SLOTS` 分配护栏 */
-#define UFO_TOKEN_TTL_FRAMES 2400  /* ★❓ 自定：令牌实体的存活帧上限（到点自己静默撤）。换关时随 run 复位。
+#define UFO_TOKEN_MAX       3      /* ★❓ 自定（spec §3.2 ⏳「令牌实体的出现规则」待拍）：同时最多几个令牌。
+                                    * ⚠ 占位 1 会让「凑齐 3 个」几乎不可能 ⇒ 取 3。
+                                    * （一手的道具池是 16 格 —— 见 `AUDIT.md` §BO-11；我们的池容量
+                                    *  `UFO_TOKEN_CAP` 是「同时活几个 + 余量」，判据在下面那个
+                                    *  `ufo_token_pool_room()`，卡侧表用的是它。）*/
+#define UFO_TOKEN_TTL_FRAMES 2400  /* ★❓ 自定：令牌的存活帧上限（到点自己静默撤）。换关时随 run 复位。
                                     * ⚠ 与一手的 1200 帧门（`UFO_TOK_NO_BOUNCE_FRAMES`）**不是一回事**：
                                     *   一手 1200 帧之后只是「不反弹 + 出界即删」，令牌自己飞出去就没了；
-                                    *   我们的惰性壳不会自己飞出去 ⇒ 留一个更长的 TTL 兜底（防漏实体）。 */
+                                    *   我们的 VM 不会自己飞出去 ⇒ 留一个更长的 TTL 兜底（防漏 VM）。
+                                    * ★ 换池之后这条 TTL 的语义**没变**（仍然只撤「自己」），只是载体从
+                                    *   敌机换成了 VM；它仍然是**唯一**会给令牌设寿命的那条路。 */
 /* 令牌实体的出生点（自定）：横行在活动框内、纵在框上沿附近 —— 框一手 = TH12 `moveLimit(0,128,280,128)`
  * ⇒ x ∈ [−140,140]、y ∈ [64,192]（spec §1 表末行「照抄成自写 ECL 的飘行框」）。
  * 占位期由卡侧按 `enemy_id` 确定性散列落点（**不调 `ce_rand()`**：死亡回调里不引入随机流）。 */
@@ -479,7 +495,7 @@ int32_t ufo_hp_permille(int32_t cur, int32_t max);
 #define UFO_FRAME_Y_TOP      64.0f  /* ✅ 一手：框上沿 y */
 #define UFO_FRAME_Y_BOTTOM  192.0f  /* ✅ 一手：框下沿 y */
 
-/* ================== ★★ 令牌的**运动**（本轮新增；用户口述「飞碟在场上…飞行」= 这一条）
+/* ================== ★★ 令牌的**运动**（用户口述「飞碟在场上…飞行」= 这一条）
  * 一手全在 TH12 `ItemManager__on_tick__body`（`th12:0x425c20`）的 **state 6**（令牌道具专用状态）里：
  *
  * ① **初速**（`th12:0x4273f0` 的 `0x4274b1`–`0x4274ef`，type 10..15 专用，**无视调用方传的角度/速度**）：
@@ -496,15 +512,21 @@ int32_t ufo_hp_permille(int32_t cur, int32_t max);
  *      `y >= [0x4a4408]`(370)  且 `vel.y > 0` ⇒ `vel.y *= −1`
  *    ⚠ 单位 = TH12 的道具/ECL 空间（活动区 x ∈ [−192,192]、y ∈ [0,448]）⇒ 反弹发生在**离左右版边 16、
  *      上 160、下 370** 处（社区描述「左右版边 / 板中偏上 / 自机复活线上方」✅）。
+ *      ★★ 2026-09-12 **换池复核**：这套常量**就直接写在我们自己的坐标字段上**，不做任何换算 ——
+ *      TH12 的道具坐标与 TH18 的**世界层 VM 实体坐标**是同一个 ECL 640 空间
+ *      （一手：`vm+0x5f0` = ECL 坐标、1 单位 = 2 表面 px、游玩区 x ∈ [−192,192] y ∈ [0,448]，
+ *       见 `engine/anm/th18/01-vm-instantiate.md` §3）⇒ 量纲一致。
+ *      ⚠ 一手的**活动框**在 TH12 由道具管理器管；我们的令牌是**自建 VM**（§3.2）⇒ 位置/速度**只**存在
+ *      我们自己的结构里（`ufo_tok_motion_t` 的 `x/y/vx/vy`），**不碰任何敌人字段**。
  * ④ **1200 帧之后不再反弹**（`0x4263d1 cmp [edi+0x98c],0x4b0; jge 0x42650f` ⇒ `0x42650f` 只判出界不判反弹），
- *    出界即删：外框 = `x ≤ [0x4a4400]`(−208) / `x ≥ [0x4a43a0]`(208) / `y ≤ [0x4a43f8]`(−16) /
+ *    出界即撤：外框 = `x ≤ [0x4a4400]`(−208) / `x ≥ [0x4a43a0]`(208) / `y ≤ [0x4a43f8]`(−16) /
  *    `y ≥ [0x4a3e90]`(464) ⇒ `0x42655b mov [edi+0x9b0],0`（state 0 = 回收）。
  *    ★ 社区说的「变色碎片变色 8 次后不再反弹 / 固定碎片 20 s 后不再反弹」= **同一个 1200 帧门**
  *      （1200 ÷ 150 帧换色 = 8 次）。两种说法同源 ✅。
  * ⑤ 6/7 状态的取舍见 `ufo_step_allowed` 一族；令牌的**收取**（自机碰到）在 TH12 是
  *    「道具位置落进自机的收点矩形 `player+0xc444..`」（`0x426100`/`0x426131`/`0x426144`/`0x426157` 四次比较），
  *    该矩形的半尺寸来自玩家表 `0x4b31b4` = {60,70,60}（按机体，× 0.5 × 0.5 ⇒ 半宽 **15 单位**）——
- *    ⚠ 我们的令牌不是道具、走不到那条引擎通路 ⇒ 卡侧只能自算距离（见 ufo.c 的 `UFO_TOKEN_PICK_DIST`）。 */
+ *    ⚠ 我们的令牌不走引擎那条通路 ⇒ 卡侧只能自算距离（见 ufo.c 的 `UFO_TOKEN_PICK_DIST`）。 */
 #define UFO_TOK_FLY_SPEED   1.5f         /* ✅ 一手：`0x4a4270` */
 #define UFO_TOK_ANGLE_DOWN_RIGHT 0.785398185f  /* ✅ 一手：`0x4a4274` = π/4（右下方）*/
 #define UFO_TOK_ANGLE_DOWN_LEFT  2.3561945f    /* ✅ 一手：`0x4a4278` = 3π/4（左下方）*/
@@ -513,7 +535,7 @@ int32_t ufo_hp_permille(int32_t cur, int32_t max);
 #define UFO_TOK_BOUNCE_X    176.0f       /* ✅ 一手：`0x4a4198` / 左边界 `0x4a440c` = −176 */
 #define UFO_TOK_BOUNCE_Y_TOP    160.0f   /* ✅ 一手：`0x4a3f4c` */
 #define UFO_TOK_BOUNCE_Y_BOTTOM 370.0f   /* ✅ 一手：`0x4a4408` */
-#define UFO_TOK_OUT_X       208.0f       /* ✅ 一手：`0x4a43a0` / `0x4a4400` = −208（外框，出界即删）*/
+#define UFO_TOK_OUT_X       208.0f       /* ✅ 一手：`0x4a43a0` / `0x4a4400` = −208（外框，出界即撤）*/
 #define UFO_TOK_OUT_Y_TOP   (-16.0f)     /* ✅ 一手：`0x4a43f8` */
 #define UFO_TOK_OUT_Y_BOTTOM 464.0f      /* ✅ 一手：`0x4a3e90` */
 /* 出生点夹取（一手 `th12:0x4273f0` 的 `0x42747d`–`0x4274b1`：x 夹 ±192（`0x4a3d88`/`0x4a3d98`）、
@@ -521,18 +543,37 @@ int32_t ufo_hp_permille(int32_t cur, int32_t max);
 #define UFO_TOK_SPAWN_CLAMP_X 192.0f     /* ✅ 一手：`0x4a3d88` / `0x4a3d98` */
 #define UFO_TOK_NO_BOUNCE_FRAMES 1200    /* ✅ 一手：`0x4263d1` 的 `0x4b0`（= 20 s = 8 次换色）*/
 
-/* 一枚令牌的**运动状态**（纯数据，卡侧每槽一份）。⚠ 卡私有状态放不下 16 份 ⇒ 卡侧放文件静态
- * （与五边形框句柄同一套做法，理由见 ufo.c 的 `s_tok_motion`）。 */
+/* 一枚令牌的**运动状态**（= 它的**位置与速度**，纯数据）。
+ * ★★ 2026-09-12 换池之后**这两个坐标就是我们自己的字段**（以前是每帧读/写敌机的
+ *   `CE_ENEMY_POS_X/Y` 与 `enemy+0x12b4` 的 `abs_pos`）⇒ 本结构体是那一枚令牌**唯一的**坐标真相。
+ *   具体怎么接到 VM 上（`ce_anm_set_pos`）由卡侧 `ufo.c` 的令牌池负责；本层只管算。
+ * ⚠ 池深 × 这个结构体（实测 `sizeof` = 20 B × 池 5 = 100 B，再加卡侧那一层
+ *   `ufo_tok_t` 的其它字段）⇒ 卡侧把**整张令牌池**放**文件静态区**（`ufo.c` 的 `s_tokpool`，
+ *   理由与先例 `trance.c` 的 `s_spirit[128]` / `animal.c` 的 `s_tok[40]` 同一套），**不进卡私状态**
+ *   （`CE_STATE_BYTES − CE_STATE_RESERVED` = 496 B 的预算）。 */
 typedef struct {
-    float   vx, vy;   /* 每帧位移（单位 = 道具/ECL 空间）*/
+    float   x, y;     /* 当前位置（ECL 640 空间 = 世界层 VM 的实体坐标；1 单位 = 2 表面 px）*/
+    float   vx, vy;   /* 每帧位移（单位同上）*/
     int32_t age;      /* 出厂帧数（一手：>= `UFO_TOK_NO_BOUNCE_FRAMES` 之后不反弹）*/
 } ufo_tok_motion_t;
 
-/* 初始化（角度按「本关第几个令牌」的奇偶交替；`serial` = 0 基的令牌序号 ⇒ 第 1 枚 = 左下 45°）。 */
-void ufo_tok_motion_init(ufo_tok_motion_t *m, uint32_t serial);
+/* 令牌池的容量判据（**上限只有这一处定义**：纯逻辑层给判据、卡侧表用同一个宏）。
+ * `UFO_TOKEN_MAX` 是「同时活几个」（玩家手感上限），容量判据要再留一点余量给同帧的边界状态
+ * ⇒ 池 = `UFO_TOKEN_MAX` + `UFO_TOKEN_POOL_SLACK`。⚠ 池是文件静态的**定长数组** ⇒ 判据必须
+ * 在写表之前问（`ufo.c` 的 `ufo_tok_free()` 与它对账，越界就是内存写坏）。 */
+#define UFO_TOKEN_POOL_SLACK 2
+#define UFO_TOKEN_CAP (UFO_TOKEN_MAX + UFO_TOKEN_POOL_SLACK)
+static inline int ufo_token_pool_room(int live)
+{
+    return live < 0 ? 0 : (live < UFO_TOKEN_CAP ? UFO_TOKEN_CAP - live : 0);
+}
+
+/* 初始化（角度按「本关第几个令牌」的奇偶交替；`serial` = 0 基的令牌序号 ⇒ 第 1 枚 = 左下 45°）。
+ * `x/y` = 出生点（一手：那只敌人的**死亡坐标**，已在卡侧夹取过）。全字段都写（不留半初始化状态）。 */
+void ufo_tok_motion_init_at(ufo_tok_motion_t *m, uint32_t serial, float x, float y);
 /* 走一帧：位移 + 反弹 + 出界判定。返回非 0 = **该令牌该被撤掉**（一手：出界即 state 0）。
  * 指针入参、整型返回 ⇒ 不产生 x87（`dllx87` 门）。 */
-int  ufo_tok_motion_step(ufo_tok_motion_t *m, float *x, float *y);
+int  ufo_tok_motion_step(ufo_tok_motion_t *m);
 
 /* ================================================= §3.4 伪磁场扫描（成本记账）
  * 池 = `CE_ITEM_SLOTS` 4696 槽 × stride 0xc94（`engine.h:426-427`）。本层的早停判据：
@@ -544,17 +585,18 @@ int  ufo_tok_motion_step(ufo_tok_motion_t *m, float *x, float *y);
 int ufo_absorb_type_index(uint32_t type);   /* 1 → 0、2 → 1、其它 → −1（早停用） */
 
 /* ============================================ 死亡事件过滤（DEATH §1.3 / spec §7）
- * 四张卡要的「击破」= `CE_EDEATH_KILLED`；**必须排除 `KILL_ALL`**（否则过场清场把计数器刷满，
- * spec §7 AUDIT）。本层不 include sdk/public.h ⇒ 自己钉一遍 kind 常量（值来自 DEATH §2.1，
+ * 本层不 include sdk/public.h ⇒ 自己钉一遍 kind 常量（值来自 DEATH §2.1，
  * 编译期由 ufo.c 的 `_Static_assert` 对账）。 */
 #define UFO_EDEATH_KILLED    0u
 #define UFO_EDEATH_BOMB_KILL 1u
 #define UFO_EDEATH_ECL_DIE   2u
 #define UFO_EDEATH_OTHER     3u
 #define UFO_EDEATH_KILL_ALL  4u
-/* 令牌「入槽」认哪几种死因：被打死 / 炸弹秒杀 —— ★❓ 自定（spec §9 #13「`BOMB_KILL` 算不算击破」未拍板）。
- * 取「算」：玩家炸掉一个自己能打的令牌实体却什么都拿不到会很怪；`KILL_ALL` **一律不算**。
- * ⏳ 用户拍板后改这一个函数。 */
-int ufo_token_kill_counts(uint32_t kind);
-/* UFO 本体的「击破」认哪几种：同为 ★❓ 自定（同上 #13）。 */
+/* 哪里用：★ 2026-09-12 **换池之后只剩一处** —— 令牌的**来源**门（小怪击破时登记，`ufo.c` 的
+ * `on_enemy_death` ③；一手 `dropExtra(10..12,n)`，op 407 handler `th12:0x4179cc`）。
+ * 认哪几种死因：被打死 / 炸弹秒杀 —— ★❓ 自定（spec §9 #13「`BOMB_KILL` 算不算击破」未拍板）。
+ * 取「算」；`KILL_ALL` **一律不算**（过场清场会把计数器刷满，spec §7 AUDIT 硬要求）。
+ * ⚠ 这里**没有** `ufo_token_kill_counts()` 了：那条路是「**令牌自己被子弹打掉也算收**」——
+ *   它是**真敌人载体**的产物（令牌有 HP 才会死），换池之后令牌根本没有死亡事件
+ *   ⇒ 用户拍板的「token 得是自建 VM 池子」把整条路删掉了（`AUDIT.md` §BO-11 的 P3 代价①）。 */
 int ufo_body_kill_counts(uint32_t kind);

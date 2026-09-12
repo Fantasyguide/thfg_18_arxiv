@@ -96,14 +96,14 @@
 /* 敌人「静默撤退」位：置 `flags_lo` 位 25 ⇒ 同一帧的 EnemyManager sweep 直接析构它，
  * 不跑死亡处理 / 不掉落 / 不跑死亡 ECL。一手指令：`0x42d200 or [ecx+0x635c],0x2000000`（写）、
  * `0x42dfc5 test [ecx+0x635c],0x2000000` + `0x42dfcf jne 0x42dfe8` + `0x42dff2 call [eax+0x14]`（读/析构）。
- * ⚠ 不自己调析构（那是 UAF：我们可能正处在别人的链表遍历里，`DEATH` §2.5）。108 `youkai.c` 同款。 */
+ * ⚠ 不自己调析构（那是 UAF：我们可能正处在别人的链表遍历里，`DEATH` §2.5）。108 `youkai.c` 同款。
+ * ★★ 2026-09-12 换池：这个位**现在只用于 UFO 本体**（它仍然是 ECL 真敌机）——
+ *   令牌换成自建 VM 之后不再需要「静默撤退」（直接 `ce_anm_delete` 自己那只 VM 就行）。 */
 #define UFO_FLAGS_DELETE_NOW 0x2000000u
-/* `zEnemyData.abs_pos` = `enemy + 0x122c (CE_ENEMY_DATA) + 0x88` = `+0x12b4`（float3）。
- * 为什么要钉它：令牌现在是**卡侧自己在动**（一手 state 6 的直线飞行 + 反弹），而引擎每帧用
- * `abs_pos` 重算 `final_pos` —— 只写 `CE_ENEMY_POS_X/Y`（= `final_pos`）有「当帧被引擎 tick 覆盖」的风险。
- * **先例 = 108 `youkai.c` 的 `YK_ENEMY_ABS_POS`（同一地址、同一双写做法）**。*/
-#define UFO_ENEMY_ABS_POS   0x12b4
-#define UFO_ENEMY_ABS_POS_Y 0x12b8
+/* ★ **已随真敌人壳一起删除**：`zEnemyData.abs_pos` 的偏移（`+0x12b4` / `+0x12b8`，float3）。
+ *   它当年是为了「令牌是卡侧自己在动的**敌人**」才钉的（引擎每帧用 `abs_pos` 重算 `final_pos`，
+ *   只写 `CE_ENEMY_POS_X/Y` 有「当帧被引擎 tick 覆盖」的风险）。**令牌不是敌人了** ⇒ 那套双写在
+ *   `ufo_tokens_tick` 里整段消失，偏移也就没有用户了（`grep UFO_ENEMY_ABS_POS` = 0 命中）。 */
 
 /* 音效（`engine/_shared/th18-sound-table.md` 一手表；用**具名宏**，不写裸数字）*/
 #define UFO_SE_ABSORB   0x0d    /* `se_powerup.wav`（-1 dB / prio 90）：每吸一颗 */
@@ -126,11 +126,12 @@
  * ── ★★★ 2026-09-12 更新：**TH12 的真脚本已经移植好了**，等资产 ─────────────────────────
  * 真名 = 一手名字表 `th12:0x4b33e0`（4 项，全是本体的；`th12:0x44a909` 索引，`color-1`，`-1`→彩虹）：
  *
- *   ★★ 资产到位后要改的就是下面这 4 行（**只改值，不改名**）：
- *   RED     "NoEnemyDebug" → "UFO_Red"
- *   BLUE    "NoEnemyDebug" → "UFO_Blue"       （金也走这一件，见上）
- *   GREEN   "NoEnemyDebug" → "UFO_Green"
- *   RAINBOW "NoEnemyDebug" → "UFO_Rainbow"
+ *   ★★ 资产到位后要改的就是下面这 4 行（**只改值，不改名**）—— ★ 2026-09-12：**已经改过了**，
+ *      现在这 4 行就是 `_TTL` 那一组真名（只对**本体**；令牌已换池，不走 ECL）：
+ *   RED     "NoEnemyDebug" → "UFO_Red_TTL"
+ *   BLUE    "NoEnemyDebug" → "UFO_Blue_TTL"       （金也走这一件，见上）
+ *   GREEN   "NoEnemyDebug" → "UFO_Green_TTL"
+ *   RAINBOW "NoEnemyDebug" → "UFO_Rainbow_TTL"
  *
  *   ⚠ 但**别急着改**：TH18 版的脚本文本已落在 `assets/ecl/ufo.ecl.txt`（9 个子程序：
  *     4 色原样移植 + 4 色自计时等价改写 + `UFO_EtBreak`），它必须先进 `default.ecl`
@@ -144,10 +145,12 @@
  *     ⚠ 现在这 4 个名字**真的会被 `ce_spawn_enemy` 查到**（default.ecl 已进 patch-step3）——
  *       若实跑仍打 `failed - placeholder ECL name only`，那就是名字没进包（查 release/dist 那一环）。
  *
- *   ⚠ **令牌（`UFO_ECL_TOKEN`）没有可移植的真名** —— 一手名字表里**只有那 4 项**，没有令牌子程序。
- *     TH12 的令牌是**道具**（type 10–15），行为在 C 侧（`th12:0x4262f5` 每 150 帧换色 / 60 px 内暂停），
- *     不在 ECL 里 ⇒ 令牌子程序只能**新写**（`assets/ecl/ufo.ecl.txt` 也还没写它）。 */
-#define UFO_ECL_TOKEN   UFO_ECL_TOKEN_NAME     /* ★ TODO(资产/ECL §6 步 3)：令牌自己的子程序名待写 */
+ *   ⚠ **令牌不再走 ECL 了**（★ 2026-09-12 用户拍板换池）：令牌是**自建 VM 池**里的一只 VM，
+ *     既没有子程序名也没有实体 ⇒ 下面这段只对**本体**有效（`UFO_ECL_BODY_*` 四件）。
+ *   ⚠ 一手的令牌在 TH12 里是**道具**（type 10–15），行为全在 C 侧
+ *     （`th12:0x4262f5` 每 150 帧换色 / 60 px 内暂停），ECL 名字表（`th12:0x4b33e0`）里**根本没有**
+ *     令牌子程序 ⇒ 当年那个 `UFO_ECL_TOKEN = "NoEnemyDebug"` 的占位依赖**已整个删除**
+ *     （见 `AUDIT.md` §BO-11 的 P3：真敌人壳的三条代价 + 用户裁决）。 */
 #define UFO_ECL_BODY_RED     "UFO_Red_TTL"    /* ★ 真名 = `UFO_Red`（`th12:0x4b33e0[0]`）；**用 `_TTL` 那一组**：
                                                * 卡侧写不到 UFO 敌机的 `int_vars[0]`（A 组的离场靠引擎写它）⇒ 见 assets/ecl/ufo.ecl.txt */
 #define UFO_ECL_BODY_BLUE    "UFO_Blue_TTL"   /* 真名 = `UFO_Blue`（[1]）；**金也用这一件**（金 = 蓝的调色版，等 P 图）*/
@@ -166,13 +169,21 @@ static const char *ufo_ecl_body_name(int32_t color)
     }
 }
 
-/* ============================ ★ 跟随 VM：本体与令牌的**画面**（2026-09-12 本轮新增）============================
+/* ============================ ★ 跟随 VM：本体与令牌的**画面**（2026-09-12 新增）============================
  * 背景：TH12 的四色飞碟动画（+ 六态令牌）**已经移植**进 `ability.anm`（脚本 164..167 / 168..173，
  * `make anm` 产出、号在 `native/anm_ids.h`），但 **ECL 画不出来** —— 见下面那个注释块。
  * 做法：ECL 侧只把 UFO 敌机刷成**隐形载体**（`assets/ecl/ufo.ecl.txt` 的 Δ2），画面由本文件
  * 起一个**跟随 VM**（world 列表、实体坐标每帧抄敌机的 `abs_pos`）来画。
- * 令牌**不需要新 ECL**：它现在挂 `"NoEnemyDebug"`（零售 `default.ecl` 里的死循环空壳 `wait(1000)`，
- * 不移动不开火）—— 正是我们要的惰性载体，本文件补上跟随 VM 即可。 */
+ *
+ * ★★ 2026-09-12（本轮，用户拍板「**token 得是自建 VM 池子**」）—— **令牌的那一半已经不是「跟随 VM」了**：
+ *   令牌**不再是真敌人**（壳 / `UFO_TOKEN_LIFE` / 占位 ECL 名 `UFO_ECL_TOKEN` 全部删除），
+ *   改成文件级静态池 `s_tokpool`（先例：117 `animal.c` 的 `s_tok[40]`、113 `trance.c` 的 `s_spirit[128]`）：
+ *   **一只 token = 一个 `ce_anm_spawn` 出来的 VM**（脚本仍是 `CE_ANM_ABILITY_SCRIPT_UFO_TOKEN_*`、
+ *   层仍是 `UFO_TOKEN_ANM_LAYER`），位置由**我们自己的坐标字段**（`ufo_tok_motion_t` 的 `x/y`）算出来、
+ *   每帧 `ce_anm_set_pos` 写进去。
+ *   ⚠ 所以令牌这里**没有**「贴图 VM + 跟随 VM」两份 —— 一只 token 就一个 VM，它既是画面也是本体。
+ *   ⚠ **本体（UFO）不受影响**：它有血量 / 受击盒 / 要被子弹打死 ⇒ 仍然是 ECL 真敌机 + 跟随 VM
+ *     （下面 `ufo_body_vm_*` 这一段**一个字没改**）。 */
 
 /* ECL 把本体刷成隐形用的脚本号 —— **`-1` = `anmSetSprite` 的「拆槽」分支**：
  * `S < 0` ⇒ 先 `call 0x488cf0` 把该槽旧 VM 标删、槽写 0、**不建新 VM**（一手 `th18:0x436bf6`：
@@ -445,104 +456,90 @@ _Static_assert(UFO_HUD_CELL_H + UFO_HUD_BAR_H <= UFO_HUD_BLOCK_H,
 
 /* ------------------------------------------------------------------ 卡状态
  * 私有状态预算 = `CE_STATE_BYTES`(512) − `CE_STATE_RESERVED`(16) = 496 B（sdk_core.h）。
- * 令牌表 16 × 16 B = 256 B 进私有状态（比照 108/117 的静态表，但本表**必须**随卡对象走：
- * 卡对象可能在局中被重建 ⇒ 静态表会串台）。当前 `sizeof(ufo_card_t)` = **468 B**
- * （2026-09-12 **实测**，编译期断言守着 ≤ 496 B；A8 加的彩虹三字段填进了 `ufo_tok_t` 原来的尾巴，
- * `sizeof(ufo_tok_t)` 仍是 20 B ⇒ 净增 0）。 */
-#define UFO_TOKEN_SLOTS 16      /* ★❓ 自定：同时最多记几个令牌实体（`UFO_TOKEN_MAX` 是「同时活几个」，
-                                 * 这里是「能记几个」的分配护栏）*/
-/* 令牌颜色的**登记环**容量（死亡回调里入队、帧末出队落槽）。
- * 为什么要环：死亡事件是**广播**、一次 `Enemy__die` 扫描里可能死好几只（炸弹 / 清场），
- * 单寄存器会互相覆盖 ⇒ 丢掉的颜色随实体一起没了（玩家看到「令牌没了、什么都没发生」）。
- * ★ **唯一真源就是这一个宏**（结构体数组与 `ufo_pending_put` 的边界判据都用它，别再各写一遍表达式）。 */
-#define UFO_PENDING_CAP (UFO_TOKEN_MAX + 2)
+ * ★★ 2026-09-12（第二轮换池）体积账：令牌从「真敌人壳 + 20 B/槽」变成「自建 VM + 位置/速度」，
+ *   **每槽变大了** —— 实测 `sizeof(ufo_tok_t)` = **40 B**（20 → 40：`motion` 20 B 顶掉了原来那句
+ *   「再加一个 12 B 的 `ufo_tok_motion_t`」的算法），池 `UFO_TOKEN_CAP` = 5 ⇒ 200 B，**再加**
+ *   五边形框句柄表 5 × 4 B = 20 B ⇒ 220 B；而 `sizeof(ufo_card_t)` 换池前只剩 8 B 余量（488/496）
+ *   ⇒ 照**先例**（117 `animal.c` 的 `s_tok[40]`、113 `trance.c` 的 `s_spirit[128]`）把**整张令牌池
+ *   连同框句柄一起搬进文件级静态区**（`s_tokpool` / `s_penta_id`，见它们自己的注）。
+ * ⚠ 卡私状态里**一丝 token 状态都不留**（实测 `sizeof(ufo_card_t)` = 144 B；换池前是 488 B）。
+ *
+ * ---- ★★ 令牌池：换池时**一起删掉**的四条旧状态（逐条给依据，别当成漏了）
+ * 换池前这里有：令牌颜色**登记环**（`pending_color[]` + `pending_n` + `pending_token` + 环满记账
+ *   `pending_drop` + 容量宏 + 一对 `put/take`）+ `on_tick_2` 里的一整段「出队 → 落槽」。
+ * **依据（为什么它们只为旧载体而存在）**：那套环的**全部**用途是「**令牌实体被子弹/炸弹打掉时**，
+ *   在死亡回调里把它的颜色登记下来、帧末再落进凑组槽」—— 即用户要删掉的那条
+ *   「token 被子弹打掉也算收」。令牌换成自建 VM 之后**根本没有死亡事件**（VM 不会自己死，只有
+ *   我们主动删它）⇒ 环里永远不会有人往里放东西。留着就是**死代码**；而且 `-Wunused-function`
+ *   会当场把登记函数判出来 —— 实装时正是那条告警把这一整块暴露出来的（自证见报告）。
+ * ⚠ 令牌的**来源**不受影响：小怪击破 → `on_enemy_death` 登记**落点**（`pend_drop` / `pend_drop_x/y`）
+ *   → 帧末 `on_tick_2` ②b 建 VM。那一条路**一个字没改**（用户明确：来源不要动）。 */
 /* ★❓ 自定（spec §9 #12「令牌掉落普查」：TH18 侧「谁产令牌、产多少」没有一手 ⇒ 自定）：
- * ★ 2026-09-12 **本轮订正**：触发点已按一手改成「**小怪被击破时掉**」（见 `on_enemy_death` ③：
+ * ★ 2026-09-12 **触发点已按一手改成「小怪被击破时掉」**（见 `on_enemy_death` ③：
  * 一手的令牌来自敌人 ECL 掉落表 `dropExtra(10..12,n)`，op 407 handler `th12:0x4179cc`）。
+ * ★★ 2026-09-12（换池）**这一段不变** —— 令牌的**来源**与载体是两件事：
+ *   来源仍是「小怪击破时登记、帧末生成」（`on_enemy_death` ③ → `on_tick_2` ②b），
+ *   换掉的只是「登记之后用什么承载它」（真敌人壳 → 自建 VM）。
  * 下面三个数现在只剩**节流**一个作用（一手是「表里有就掉」，既没有概率也没有冷却）：
- *   `INTERVAL` = 两枚令牌之间的**最短**间隔；`RETRY` = 造失败（ECL 名查不到 / 表满）后的重试间隔；
+ *   `INTERVAL` = 两枚令牌之间的**最短**间隔；`RETRY` = 造失败（表满 / VM 建不出来）后的重试间隔；
  *   `FIRST` = 开局头 3 s 不掉落。⏳ 三个都是手感值，等实跑标定。 */
 #define UFO_TOKEN_SPAWN_INTERVAL 300  /* 两枚令牌之间的最短间隔（300 游玩帧 = 5 s）*/
-#define UFO_TOKEN_SPAWN_RETRY    120  /* 造失败（ECL 名查不到 / 表满）时的重试间隔 */
+#define UFO_TOKEN_SPAWN_RETRY    120  /* 造失败（表满 / anm VM 建不出来）时的重试间隔 */
 #define UFO_TOKEN_SPAWN_FIRST    180  /* 开局先等 3 s 再允许第一枚掉落 */
 
+/* ★★ 令牌池的一只成员（2026-09-12 换池：**这就是那一枚 token 的全部状态**）-------------------
+ * 一只 token = **一个** `ce_anm_spawn` 出来的 VM（`vm_id`）+ **我们自己的**位置与速度
+ * （`ufo_tok_motion_t`，纯逻辑层算）。**没有实体、没有敌机字段、没有第二个 VM。**
+ *
+ * 逐字段交代（哪些是旧载体留下的、哪些是新搬进来的）：
+ *   · `motion.x/y`  ← 以前读/写敌机的 `CE_ENEMY_POS_X/Y`（`enemy+0x12b4` 的 `abs_pos` 也是双写目标）
+ *     ⇒ 换池后**唯一的坐标真相**（依据：用户拍板 + 真敌人壳的三条代价，`AUDIT.md` §BO-11 P3）。
+ *   · `motion.vx/vy/age` ← 以前在文件静态 `s_tok_motion[16]` 里按槽号存（因为私状态放不下）；
+ *     现在池本来就在静态区 ⇒ **并进同一个结构体**，少一层「槽号 → 运动表」的间接。
+ *   · `ttl`  = 存活上限（★❓ 自定 `UFO_TOKEN_TTL_FRAMES`）。**换池后仍然需要**：VM 不会自己消失
+ *     （一手是靠「出界即删」回收的，我们的 VM 出界那一步由 `ufo_tok_motion_step` 判、这里兜底）。
+ *   · `vor`  = 保留名（`enemy_id` 的**替代**）：换池前它是「这只令牌是哪个敌人」⇒ 用来找实体、
+ *     认死亡事件。**现在没有实体了** ⇒ 这个字段的语义降级为「本局第几个令牌」（= `motion_init` 用的
+ *     `serial`，一手 `ItemManager+0x666fe0` 那个计数），日志对账用；**不参与任何判定**。
+ *   · `anm_id` = 唯一的 VM 句柄（0 = 空槽）。铁律：句柄非 0 ⇒ 必须有一条删除路径
+ *     （`ufo_tok_pool_clear_all` / `ufo_tok_kill` / 每帧自愈）。
+ *   ⚠ 下面四个 uint8 字段是**照抄旧结构体**的（那时为了压住 20 B 的槽宽）：`pentagon_hint`
+ *     （够不够格画五边形框，判据在纯逻辑层 `ufo_pentagon_hint_for_color()`）、
+ *     `rb_state` / `rb_cycle` / `near`（彩虹令牌三段中断 + 每 150 帧换色，一手 `th12:0x42630f`–`0x4264b7`）。
+ *     ⚠ 只有**彩虹**令牌用后三个（一手把整段关在 `if (type == 13||14||15)` 里），非彩虹恒 0。 */
 typedef struct {
-    int32_t  color;      /* UFO_COLOR_*；UFO_COLOR_NONE = 空条目 */
-    /* ★ 这里曾经有个 `int32_t armed`（「已算进令牌槽」），但它**恒为 0** ⇒ 让
-     * `ufo_tok_live_count` 恒返回 0、`UFO_TOKEN_MAX` 的上限形同不存在（每一帧都能再撒一个令牌）。
-     * 实装后**整个删掉**（不留占位格）：没有实体需要「已武装」这个中间态（入槽即撤，
-     * `ufo_tok_take_and_kill`），去重靠 `enemy_id`（撤掉之后 `ufo_tok_slot` 自然找不到）。 */
-    uint32_t enemy_id;   /* 该令牌实体的 `enemy_id`（⚠ 不存指针） */
-    uint32_t ttl;        /* 剩余存活帧（到 0 ⇒ 静默撤退；占位期惰性壳不会自己消失，靠它兜底） */
-    /* ★ 本轮新增：这一枚令牌的**跟随 VM**（`ability.anm` 168..173 之一）的 anm id。
-     * 为什么要有它：ECL 侧那个 `"NoEnemyDebug"` 惰性壳**什么都不画**（它只是载体），
-     * 令牌的贴图由本文件起一个跟随 VM 画在实体位置上（见 `ufo_token_anm_script()` 上面的注释块）。
-     * ⚠ 铁律：句柄非 0 ⇒ 必须有一条删除路径（`ufo_tok_kill()` / 退休分支 / `ufo_withdraw_all()`）。*/
-    uint32_t anm_id;
-    /* ---- 下面四个字节字段（★ 全是 uint8，为的是 `ufo_tok_t` 不长胖；`ufo_tok_t` = 20 B）---- */
-    /* ★ 用户 2026-09-12 裁决 ③：这一枚令牌够不够格被画一圈**五边形框**
-     *（= 槽里正好 2 枚、收了它就能成组）。判据在纯逻辑层 `ufo_pentagon_hint_for_color()`，
-     * 每帧由 `ufo_pentagon_hint_update()` 刷新；**框本身自 2026-09-12（A7）起已实装**（脚本 223）。
-     * ⚠ 框的 **VM 句柄不在这个结构体里**（16 个令牌槽各要 4 B = 64 B，私状态放不下）⇒
-     *   在 `s_penta_id[]`（文件静态），理由与收尾路径见那个数组的注。 */
-    uint8_t  pentagon_hint;
-    /* ★ 2026-09-12（A8）彩虹令牌的三段中断 + 换色（一手见上面的常量块）。**三个字段与
-     *   `pentagon_hint` 挤在同一段尾巴里**（`ufo_tok_t` 一直是 20 B）：
-     *   `rb_state` = 当前态 0/1/2 ⇒ 脚本 219/220/221（TH12 的道具类型 13/14/15，`th12:0x4264b6`）；
-     *   `rb_cycle` = 换色计时器（TH12 的 `item+0x9a0`）—— 一手只在 0..150 之间取值（到 150 就换色并
-     *                清 0）⇒ **uint8 够**（断言在下面）；
-     *   `near`     = 上一帧在不在 60 px 圈内（TH12 的 `item+0x9c4` 闩，0 = 圈外 —— 出生也清 0）。
-     * ⚠ 只有**彩虹**令牌用这三个字段（一手把整段关在 `if (type == 13||14||15)` 里）；
-     *   非彩虹令牌恒为 0（换来的是「一个结构体一套语义」，不做 union）。 */
-    uint8_t  rb_state;
-    uint8_t  rb_cycle;
-    uint8_t  near;
+    int32_t           anm_id;        /* ★ 唯一 VM 句柄（0 = 空槽）；以前是「贴图跟随 VM」，现在它**就是**令牌 */
+    int32_t           color;         /* `UFO_COLOR_*`；`UFO_COLOR_NONE` ⇒ 槽空（分配器只看它）*/
+    uint32_t          ttl;           /* 剩余存活帧（到 0 ⇒ 静默撤：删 VM + 回收槽）*/
+    ufo_tok_motion_t  motion;        /* ★ 位置 + 速度 + 年龄（我们自己的字段，见上）*/
+    uint32_t          vor;           /* 本局第几个令牌（= 一手那个计数的对账值；不参与判定）*/
+    uint8_t           pentagon_hint; /* 这一枚此刻该不该画五边形框（纯逻辑层判据的结果）*/
+    uint8_t           rb_state;      /* 彩虹令牌的当前态 0/1/2 ⇒ 脚本 219/220/221*/
+    uint8_t           rb_cycle;      /* 彩虹令牌的换色计时器（一手 `item+0x9a0`，0..150）*/
+    uint8_t           near;          /* 上一帧在不在 60 px 圈内（一手 `item+0x9c4` 的闩）*/
 } ufo_tok_t;
 
-typedef struct {
-    ufo_group_t grp;                                   /* 3 个令牌槽（spec §3.3 末行）*/
-    ufo_ufo_t   u;                                     /* UFO 生命周期 / 两个计数 / fill */
-    ufo_tok_t   tok[UFO_TOKEN_SLOTS];
-    float       last_x, last_y;                        /* 最近一次已知的 UFO 位置（击破时由死亡事件给；
-                                                        * ⚠ 不是缓存指针 ⇒ 合规，`DEATH` §2.4 只禁指针）*/
-    uint32_t    play_frame;                            /* 游玩帧计数 */
-    uint32_t    next_token_at;                         /* 下一个令牌最早能在哪一帧出现（节流）*/
-    uint32_t    token_serial;                          /* 本局第几个令牌（颜色轮转表 / 运动角度奇偶）*/
-    /* ★ 本轮新增：**死亡回调里登记的令牌落点**（帧末在 `on_tick_2` 建实体）。
-     * 为什么要一格：死亡回调里**禁止建敌人**（重入，`DEATH` §2.4）⇒ 只能先记坐标。
-     * 一格就够：`next_token_at` 节流保证同一次 sweep 里最多落一枚（先到先得）。 */
-    uint8_t     pend_drop;                             /* 1 = 有一枚令牌等着落地 */
-    float       pend_drop_x, pend_drop_y;              /* 落点 = 那只敌人的死亡坐标 */
-    /* ★ 本轮新增：**本体**的跟随 VM 句柄（`ability.anm` 164..167 之一）。
-     * 生命周期与 `u` 绑死：`ufo_try_summon()` 建起来、`ufo_teardown()` / `ufo_withdraw_all()` 收掉
-     * （⚠ 删卡走 `on_delete`，那一刻 tick 全停 ⇒ 必须在 `ufo_withdraw_all()` 里收，不能指望每帧跟随时收）。*/
-    uint32_t    body_anm_id;
-    /* 死亡回调里登记的令牌颜色（帧末落槽）。★ 是一个**小环**而不是单个寄存器：
-     * 同一次 `Enemy__die` 扫描里可能有**多只**令牌一起死（炸弹 / 清场），单寄存器会互相覆盖
-     * ⇒ 丢掉的颜色随实体一起没了（玩家看到「令牌没了、什么都没发生」）。 */
-    int32_t     pending_color[UFO_PENDING_CAP];
-    uint8_t     pending_n;                             /* 环里存了几个（<= 容量）*/
-    uint8_t     pending_drop;                          /* 环满而丢掉的令牌数（记账；日志里打）*/
-    uint8_t     pending_token;                         /* 兼容位：环非空 == 1（帧末处理）*/
-    uint8_t     pending_break;                         /* 1 = 帧末要按「击破」收尾开奖 */
-    uint8_t     logged_no_hud;                         /* 保留名：HUD 第一版「画起来了」日志只报一次 */
-    uint8_t     logged_lifetime;                       /* 存活上限日志每局只报一次 */
-    uint8_t     pentagon_any;                          /* 本帧有没有令牌够格画五边形框（= 场上真有框）*/
-    uint8_t     pentagon_logged;                       /* 五边形框条件第一次成立时只报一条日志 */
-    /* —— 统计（只用于日志，不参与判定）—— */
-    uint32_t    spawned_tokens;
-    uint32_t    taken_tokens;                          /* 被自机吃掉的 */
-    uint32_t    lost_tokens;                           /* 超时 / 被打死 / 过场清掉 */
-    uint32_t    ufos_spawned;
-    uint32_t    ufos_broken;
-    uint32_t    ufos_vanished;
-    uint32_t    items_pulled;
-    uint32_t    rewards_spit;
-    uint32_t    bursts;                                /* 吸满吐奖的次数 */
-    uint32_t    dropped_by_ufo;                        /* UFO 击破/吸满返还的令牌数（一手：每色 1 枚）*/
-    uint32_t    dropped_tokens;                        /* 「两同一异」丢最旧丢掉的最旧令牌数（一手 KEEP2）*/
-    uint32_t    failed_summons;                        /* `ce_spawn_enemy` 建不出来（占位 ECL 名）*/
-} ufo_card_t;
+/* ★★ 令牌池（**文件级静态**，先例：117 `animal.c` 的 `s_tok[40]` / 113 `trance.c` 的 `s_spirit[128]`）----
+ * 为什么在这里而不是卡私状态：实测 `UFO_TOKEN_CAP` × `sizeof(ufo_tok_t)` = 5 × 40 = **200 B**
+ *   （+ 框句柄表 20 B），而换池后私状态只剩 8 B 余量 —— 用户硬约束是「**不要为了省字节去砍功能**」
+ *   ⇒ 整块搬到这里（卡私状态因此**反而变小**，见文件头体积账）。
+ * 为什么**可以**在这里：本卡是**单例**（`CE_CARD(112, …)`）⇒ 没有串台问题（与 `s_penta_id` / HUD 那几组
+ *   句柄同一个理由）。⚠ 换池前作者担心「卡对象局中重建 ⇒ 静态表串台」—— 本池的**分配器只看 `color`**、
+ *   每次 `on_ctor` 都 `ufo_tok_pool_clear_all()`（清句柄 + 清表），所以重建只会「先收干净再重来」。
+ * 收尾（长持续效果的铁律）：`on_delete` / `on_run_reset` / `on_stage_start` 三条路都汇到
+ *   `ufo_withdraw_all()` → `ufo_tok_pool_clear_all()`；删卡那一刻卡的 tick 全停、**只有 `on_delete` 跑得到**。 */
+static struct {
+    ufo_tok_t tok[UFO_TOKEN_CAP];   /* 紧凑数组：`[0, n)` 全是活的；swap-remove 保持紧凑 */
+    int32_t   n;                    /* 池里活着几只（0..UFO_TOKEN_CAP）*/
+    int32_t   dropped;              /* 池满而丢掉的枚数（记账；`on_tick_2` / `on_item_frame` 里打日志）*/
+} s_tokpool;
+
+/* ---- ★ 五边形框的**每个令牌槽一个** VM 句柄（`s_tokpool` 的同一个下标；同样是文件静态）------------
+ * 为什么与令牌池一样放静态：一个框 = 一个独立 VM（零售也是：框的句柄在 `item+0x968`、令牌自己的 VM
+ *   在另一格）⇒ 池深 × 4 B 又放不进私状态（第一版塞进 `ufo_tok_t` 时被文件尾的 `_Static_assert`
+ *   当场拦下，clang 原话 `532 <= 496`）。
+ * 收尾：`ufo_tok_pool_clear_all()` 按**下标**逐个 `ce_anm_delete`（只看句柄、不看 `color`）⇒ 删卡也收得掉。 */
+static uint32_t s_penta_id[UFO_TOKEN_CAP];
 
 /* ⚠ 全静态（无堆）：卡单例 + 无指针 ⇒ 与 108 的 12 KB 使魔表不是一回事，这里不需要第二个静态表。 */
 
@@ -564,15 +561,49 @@ static ce_hud_vm_text_t s_hud_text;          /* 一行读数（脚本 136 字形
  *   `ufo_tok_vm_kill_all()` 是**只看句柄、不看 `color`** 的（帧内还配合 `ce_anm_get_vm` 自愈），
  *   而 `on_load` 的防御支 / `ufo_withdraw_all`（`on_stage_start` / `on_run_reset` / `on_delete` 都汇到它）
  *   都调它 ⇒ 句柄不会漏。⚠ 与 HUD 的区别：框是**世界层** VM（跟着令牌在游玩区动），不是 UI VM。 */
-static uint32_t s_penta_id[UFO_TOKEN_SLOTS];
+static uint32_t s_penta_id[UFO_TOKEN_CAP];
 
-/* ---- ★★ 令牌的**运动状态**（2026-09-12 本轮新增；一手指令与常量见 ufo_core.h 那一块）----------
- * 为什么放**文件静态**而不进卡私状态：`ufo_tok_motion_t` = 12 B × 16 槽 = 192 B，而
- * `sizeof(ufo_card_t)` 只剩 ~28 B（§BO-7 的同一笔账）。理由与收尾方式照抄 `s_penta_id`：
- *   · 卡单例（`CE_CARD(112, …)`）⇒ 静态没有串台问题；
- *   · `on_ctor` 的 `memset` 清不到它 ⇒ 由 `ufo_tok_spawn_ex()` 每次重新 `init`、
- *     `ufo_tok_kill()` 清零、`ufo_withdraw_all()` 走 `ufo_tok_kill()` ⇒ 不会留下残速。 */
-static ufo_tok_motion_t s_tok_motion[UFO_TOKEN_SLOTS];
+/* ★★ 卡私状态（`ce_state()` 指的那块 496 B）---------------------------------------------------------
+ * ★ 2026-09-12 换池：**令牌池整个移出这里**（`s_tokpool`），所以本结构体现在只剩三块：
+ *   凑组槽 / 本体生命周期 / 帧计数与登记位。**没有 token 表、没有 token 坐标、没有 token 句柄。**
+ * 三块令牌相关状态**刻意留在这里**（它们不是「每只 token 的状态」，是「卡的账」）：
+ *   · `pend_drop*` —— 死亡回调里登记的**落点**（回调里禁止建 VM，`DEATH` §2.4）⇒ 帧末建。一格够：
+ *     节流保证同一次 sweep 最多落一枚。⚠ 换池后这一步从「建敌人」变成「建自己的 VM」，
+ *     但**纪律不变**：仍然只在**帧末**（`on_tick_2`）建 VM。**这就是「令牌的来源」那条路。**
+ *   · `token_serial` —— 本局第几个令牌（颜色轮转表 / 运动角度奇偶，一手 `ItemManager+0x666fe0`）。 */
+typedef struct {
+    ufo_group_t grp;                                   /* 3 个令牌槽（spec §3.3 末行）*/
+    ufo_ufo_t   u;                                     /* UFO 生命周期 / 两个计数 / fill */
+    float       last_x, last_y;                        /* 最近一次已知的 UFO 位置（击破时由死亡事件给；
+                                                        * ⚠ 不是缓存指针 ⇒ 合规，`DEATH` §2.4 只禁指针）*/
+    uint32_t    play_frame;                            /* 游玩帧计数 */
+    uint32_t    next_token_at;                         /* 下一个令牌最早能在哪一帧出现（节流）*/
+    uint32_t    token_serial;                          /* 本局第几个令牌（颜色轮转表 / 运动角度奇偶）*/
+    float       pend_drop_x, pend_drop_y;              /* 落点 = 那只敌人的死亡坐标 */
+    /* ★ **本体**的跟随 VM 句柄（`ability.anm` 164..167 之一）。换池**没动本体**（它仍是 ECL 真敌机）。
+     * 生命周期与 `u` 绑死：`ufo_try_summon()` 建起来、`ufo_teardown()` / `ufo_withdraw_all()` 收掉
+     * （⚠ 删卡走 `on_delete`，那一刻 tick 全停 ⇒ 必须在 `ufo_withdraw_all()` 里收，不能指望每帧跟随时收）。*/
+    uint32_t    body_anm_id;
+    uint8_t     pend_drop;                             /* 1 = 有一枚令牌等着落地（来源那条路）*/
+    uint8_t     pending_break;                         /* 1 = 帧末要按「击破」收尾开奖 */
+    uint8_t     logged_no_hud;                         /* 保留名：HUD 第一版「画起来了」日志只报一次 */
+    uint8_t     logged_lifetime;                       /* 存活上限日志每局只报一次 */
+    uint8_t     pentagon_any;                          /* 本帧有没有令牌够格画五边形框（= 场上真有框）*/
+    uint8_t     pentagon_logged;                       /* 五边形框条件第一次成立时只报一条日志 */
+    /* —— 统计（只用于日志，不参与判定）—— */
+    uint32_t    spawned_tokens;
+    uint32_t    taken_tokens;                          /* 被自机吃掉的 */
+    uint32_t    lost_tokens;                           /* 超时 / 出界 / VM 被引擎销毁 */
+    uint32_t    ufos_spawned;
+    uint32_t    ufos_broken;
+    uint32_t    ufos_vanished;
+    uint32_t    items_pulled;
+    uint32_t    rewards_spit;
+    uint32_t    bursts;                                /* 吸满吐奖的次数 */
+    uint32_t    dropped_by_ufo;                        /* UFO 击破/吸满返还的令牌数（一手：每色 1 枚）*/
+    uint32_t    dropped_tokens;                        /* 「两同一异」丢最旧丢掉的最旧令牌数（一手 KEEP2）*/
+    uint32_t    failed_summons;                        /* 本体 `ce_spawn_enemy` 建不出来 */
+} ufo_card_t;
 
 /* ============================== 小工具 ============================== */
 static uint8_t *ufo_enemy_by_id(uint32_t id)
@@ -598,32 +629,29 @@ static void ufo_player_xy(float *px, float *py)
  * 第 1 关增量 0.030），这是「照抄一手同一格」最保守的取法，不是本机关卡号。 ⏳ 待实跑标定。 */
 #define UFO_PLACEHOLDER_STAGE 1
 
-/* ========================= §3.2 令牌实体：建 / 撤 / 找 ========================= */
-static ufo_tok_t *ufo_tok_slot(ufo_card_t *s, uint32_t id)
+/* ==================== ★★ §3.2 令牌池：建 / 撤 / 找（2026-09-12 换池，自建 VM）====================
+ * 一只 token = `s_tokpool.tok[i]` 的一条 + **它的那个 anm VM**。池是**紧凑数组**（`[0, n)` 全是活的），
+ * 回收用 swap-remove（照 113 `trance.c` 的 `spirit_remove`）：槽号会变，所以**任何持有下标的循环
+ * 都要用「不 ++i」的写法重跑当前位置**（池很小，最多 5 条）。 */
+static ufo_tok_t *ufo_tok_at(int i)
 {
-    int i;
-    if (!id) return 0;
-    for (i = 0; i < UFO_TOKEN_SLOTS; ++i)
-        if (s->tok[i].color != UFO_COLOR_NONE && s->tok[i].enemy_id == id) return &s->tok[i];
-    return 0;
+    return (i >= 0 && i < s_tokpool.n) ? &s_tokpool.tok[i] : 0;
 }
 
-static ufo_tok_t *ufo_tok_free(ufo_card_t *s)
+/* 池里还活着几只（= `n`）。分配器的**唯一**判据是 `color`：`UFO_COLOR_NONE` ⇒ 空。
+ * ⚠ 上限判据走纯逻辑层的 `ufo_token_pool_room()`（单一真源），越界写表 = 内存写坏。 */
+static int ufo_tok_live_count(void)
 {
-    int i;
-    for (i = 0; i < UFO_TOKEN_SLOTS; ++i)
-        if (s->tok[i].color == UFO_COLOR_NONE) return &s->tok[i];
-    return 0;
+    return s_tokpool.n;
 }
 
-/* 场上还挂着几个令牌实体。⚠ **只看颜色**（原来多读了一个恒为 0 的 `armed`，
- * 导致恒返回 0、`UFO_TOKEN_MAX` 的上限完全失效）。 */
-static int ufo_tok_live_count(const ufo_card_t *s)
+/* swap-remove：把尾元素换到 i（**不 ++i**，尾元素也要过筛）。`s_penta_id` 跟着一起搬
+ * —— 框的句柄是**按下标**存的，不搬就会把 A 的框留给 B（框的颜色/寿命全错）。 */
+static void ufo_tok_remove(int i)
 {
-    int i, n = 0;
-    for (i = 0; i < UFO_TOKEN_SLOTS; ++i)
-        if (s->tok[i].color != UFO_COLOR_NONE) ++n;
-    return n;
+    s_tokpool.tok[i] = s_tokpool.tok[--s_tokpool.n];
+    s_penta_id[i] = s_penta_id[s_tokpool.n];
+    s_penta_id[s_tokpool.n] = 0;
 }
 
 /* 收掉**某个令牌槽**的**五边形框 VM**（句柄清零 ⇒ 幂等）。★ 2026-09-12（A7）新增。
@@ -631,95 +659,112 @@ static int ufo_tok_live_count(const ufo_card_t *s)
  *（`AnmManager__delete_vm`：只**标删**，真正的析构由 AnmManager 自己的 update 走 ⇒ 在死亡栈上叫也安全）。*/
 static void ufo_tok_penta_kill(int slot)
 {
+    if (slot < 0 || slot >= UFO_TOKEN_CAP) return;
     if (s_penta_id[slot]) { ce_anm_delete(s_penta_id[slot]); s_penta_id[slot] = 0; }
 }
 
-/* 收掉一枚令牌的**贴图跟随 VM**（只这一个句柄）。
+/* 收掉一枚令牌的 **VM**（换池后这是它**唯一**的句柄：画面就是它本体，没有第二个 VM）。
  * ★ 为什么要与框分开：彩虹令牌每 150 帧换色时走「删旧 VM + 起新 VM」（`ufo_tok_rainbow_recolor`），
  *   而零售换色只重指**令牌自己的那只 VM**（`0x4061e0(vm = item, …)`），**不动**框那只
  *   （框在 `item+0x968`，是另一个 VM）。⇒ 换色不该把框也删掉 —— 否则每 150 帧框会重新
  *   `scaleTime(10,4,20,20)` 胀一次（零售没有这个动作）。 */
 static void ufo_tok_art_vm_kill(ufo_tok_t *t)
 {
-    if (t->anm_id) { ce_anm_delete(t->anm_id); t->anm_id = 0; }
+    if (t->anm_id) { ce_anm_delete((uint32_t)t->anm_id); t->anm_id = 0; }
 }
 
-/* 收掉一个令牌槽的**两个跟随 VM**（贴图 `anm_id` + 五边形框 `s_penta_id[slot]`；句柄清零 ⇒ 幂等；
+/* 收掉一个令牌槽的**两个 VM**（令牌自己 `anm_id` + 五边形框 `s_penta_id[slot]`；句柄清零 ⇒ 幂等；
  * `ce_anm_delete` 内部有 ANM 管理器门槛）。
- * ★ 铁律：令牌实体消失的**每一条路**都要过这里（撤实体 / 超时退休 / 静默消失 / 删卡），
- *   否则 VM 会留在场上画一个**看不见实体的幽灵令牌**（框也一样：一个没有令牌的空五边形）。 */
+ * ★ 铁律：令牌消失的**每一条路**都要过这里（被收 / 超时 / 出界 / VM 被引擎销毁 / 删卡），
+ *   否则 VM 会留在场上画一个**幽灵令牌**（框也一样：一个没有令牌的空五边形）。 */
 static void ufo_tok_vm_kill(int slot, ufo_tok_t *t)
 {
     ufo_tok_art_vm_kill(t);
     ufo_tok_penta_kill(slot);
 }
 
-/* 收掉**整张表**的令牌跟随 VM。⚠ **只看句柄、不看 `color`**：`on_ctor` 的 `memset` 与
- * `ufo_withdraw_all` 都需要这一支 —— 句柄一旦被 memset 掉，那些 VM 就永远留在场上了
- * （删卡那一刻 tick 回调全停，没有任何「顺手收」的机会）。
- * ★ 框那 16 个句柄是**文件静态**（理由见它的定义处）⇒ 这一支**不依赖令牌表**，memset 之后照样收得掉。 */
-static void ufo_tok_vm_kill_all(ufo_card_t *s)
+/* 收掉**整池**的令牌 VM + 五边形框 VM，并把池清空。⚠ **只看句柄、不看 `color`** ——
+ * `on_ctor` 的 `memset`（卡私状态）与 `ufo_withdraw_all` 都需要这一支：句柄一旦被清掉，
+ * 那些 VM 就永远留在场上了（删卡那一刻 tick 回调全停，没有任何「顺手收」的机会）。
+ * ★ 换池后这里**更强**了：令牌的 VM 与框的句柄**都是文件静态**（不依赖卡私状态）⇒ 这一支
+ *   在 `on_ctor` 的 `memset` **之后**调也照样收得掉（`s_penta_id` 旧版就已经是这个性质）。
+ * ⚠ 池是「紧凑数组」⇒ 直接按 `[0, s_tokpool.n)` 走；`n` 之外的 `s_penta_id` 只可能残留 0。
+ * ⚠ **不碰诊断计数**（与 113 `trance_spirit_clear_all` 同一口径：计数只进日志）。 */
+static void ufo_tok_pool_clear_all(void)
 {
     int i;
-    for (i = 0; i < UFO_TOKEN_SLOTS; ++i) ufo_tok_vm_kill(i, &s->tok[i]);
+    for (i = 0; i < UFO_TOKEN_CAP; ++i) {
+        if (i < s_tokpool.n && s_tokpool.tok[i].anm_id)
+            ce_anm_delete((uint32_t)s_tokpool.tok[i].anm_id);
+        s_tokpool.tok[i].anm_id = 0;
+        s_tokpool.tok[i].color = UFO_COLOR_NONE;
+        if (s_penta_id[i]) { ce_anm_delete(s_penta_id[i]); s_penta_id[i] = 0; }
+    }
+    s_tokpool.n = 0;
 }
 
-/* 撤一个令牌实体：置「本帧删」位 ⇒ 同帧 sweep 静默析构（不掉落、不跑死亡处理）+ 收跟随 VM。
- * ⚠ 调用点有一半在**死亡栈**上（`on_enemy_death` → `ufo_tok_take_and_kill`）⇒ 必须守住 `DEATH` §2.4：
- *   **不析构敌人、不缓存 `ev->enemy`**（置位那一步正合纪律）。
- *   而「删一个 anm VM」**可以**在死亡栈上做 —— `0x488cf0` 只是把 VM **标删**
- *   （`vm+0x538 |= 0x80`，一手见 `engine/anm/th18/01-vm-instantiate.md` §0 的表），真正的析构由
- *   AnmManager 自己的 update 走；引擎在敌人析构那条路上也同样标自己的 `anm_vm_ids` 槽。
- *   ⚠❓ 但「从共享死亡断点直接进 AnmManager」这条组合**实跑没验过**（本卡第一次这么写）。
- *   对比：**建** VM 是绝对不行的（要分配）—— 本卡所有 `ce_anm_spawn` 都在 tick / 帧末，不在死亡栈。 */
-static void ufo_tok_kill(int slot, ufo_tok_t *t)
+/* 撤一只令牌（下标）、回收槽位。**换池后这就是「撤实体」的全部**：
+ *   · 以前这里要置敌机的「本帧删」位（`flags_lo` 位 25）让引擎 sweep 静默析构它 ——
+ *     **现在没有敌人了** ⇒ 那一段连同 `UFO_FLAGS_DELETE_NOW` 的令牌用法一起删除。
+ *   · 删一个 anm VM 走 `ce_anm_delete`（`0x488cf0` 只把 VM **标删**：`vm+0x538 |= 0x80`，
+ *     一手见 `engine/anm/th18/01-vm-instantiate.md` §0 的表，真正的析构由 AnmManager 自己的 update 走）。
+ *   ⚠ 换池后**任何调用点都不再是死亡栈**（令牌不产生死亡事件了）⇒ 「死亡栈上能不能删 VM」那条
+ *     🟡 未验证的组合**整个消失了**（附带好处）。 */
+static void ufo_tok_kill(int slot)
 {
-    uint8_t *e = ufo_enemy_by_id(t->enemy_id);
-    if (e) *(uint32_t *)(e + CE_ENEMY_FLAGS) |= UFO_FLAGS_DELETE_NOW;
-    ufo_tok_vm_kill(slot, t);
-    /* ★ 运动状态一起清（下一枚令牌复用同一个槽时不该吃到上一枚的速度/年龄）*/
-    s_tok_motion[slot].vx = 0.0f;
-    s_tok_motion[slot].vy = 0.0f;
-    s_tok_motion[slot].age = 0;
-    t->color = UFO_COLOR_NONE;
-    t->enemy_id = 0;
+    ufo_tok_t *t = ufo_tok_at(slot);
+    if (!t) return;
+    ufo_tok_vm_kill(slot, t);            /* 令牌 VM + 五边形框，句柄都清零 */
+    t->color = UFO_COLOR_NONE;           /* 分配器看它 ⇒ 之后这个槽就是空的（swap-remove 会覆盖它）*/
     t->ttl = 0;
-    /* ★ A8 的三个字段一起清（`color = NONE` 已经让槽变「空」，这里是防御性对账：
-     *   下一次 `ufo_tok_spawn` 复用同一个槽时不该吃到上一枚令牌的计时器）。 */
+    t->vor = 0;
+    t->pentagon_hint = 0;
     t->rb_state = 0;
     t->near = 0;
     t->rb_cycle = 0;
+    /* 运动状态一起清（swap-remove 之后尾元素会搬进来，别让它吃到上一枚的速度/年龄）*/
+    t->motion.x = 0.0f;
+    t->motion.y = 0.0f;
+    t->motion.vx = 0.0f;
+    t->motion.vy = 0.0f;
+    t->motion.age = 0;
+    ufo_tok_remove(slot);
 }
 
-/* 起一个令牌跟随 VM，并**立刻**摆到实体位置上（世界层 VM 的实体坐标 (0,0,0) = 弹幕区上边框中点
- * ⇒ 不先摆位置的话会先在屏幕最上方闪一帧）。`e` = 令牌敌机（用来取位置）。失败只报日志（画不出来 ≠ 卡坏）。 */
-static void ufo_tok_vm_spawn(ufo_tok_t *t, const uint8_t *e)
+/* 起一只令牌的 VM，并**立刻**摆到它的坐标上（世界层 VM 的实体坐标 (0,0,0) = 弹幕区上边框中点
+ * ⇒ 不先摆位置的话会先在屏幕最上方闪一帧）。失败只报日志（画不出来 ≠ 卡坏）。
+ * ★★ 换池（2026-09-12）之后**这就是令牌本体**：一只 token 一个 VM，位置来自 `t->motion.x/y`
+ *   （我们自己的字段），**不再**从任何敌机字段抄。 */
+static void ufo_tok_vm_spawn(ufo_tok_t *t)
 {
     int script = ufo_tok_script(t->color, t->rb_state);
     uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(), script, UFO_TOKEN_ANM_LAYER);
     if (!id) {
-        ce_log("ufo: token follow-VM spawn FAILED (color %d, script %d, layer %d) - the token entity "
-               "is alive but invisible (`%s` is a lazy shell and paints nothing)",
-               (int)t->color, script, UFO_TOKEN_ANM_LAYER, UFO_ECL_TOKEN);
+        ce_log("ufo: token VM spawn FAILED (color %d, script %d, layer %d) - the token exists in the "
+               "pool but has nothing to draw with (1 token = 1 VM; script %d is a port of retail "
+               "bullet.anm 175..180)", (int)t->color, script, UFO_TOKEN_ANM_LAYER, script);
         return;
     }
-    t->anm_id = id;
-    if (e) ce_anm_set_pos(id, *(const float *)(e + CE_ENEMY_POS_X),
-                              *(const float *)(e + CE_ENEMY_POS_Y), 0.0f);
+    t->anm_id = (int32_t)id;
+    ce_anm_set_pos(id, t->motion.x, t->motion.y, 0.0f);
 }
 
-/* 每帧跟随（令牌）：把 VM 的位置抄成实体的 `abs_pos`。
+/* 每帧把 VM 摆到令牌自己的坐标上（**这是令牌唯一的写位置点**）。
  * ⚠ 句柄在别处被引擎销毁过（`ce_anm_get_vm` 找不到）⇒ **自愈**：丢掉句柄重新起一个
- *   （照 `ufo_hud_ensure()` 的同一支写法；一次性特效的脚本不会自己 `delete()`，都是死循环）。 */
-static void ufo_tok_vm_follow(ufo_tok_t *t, const uint8_t *e)
+ *   （照 `ufo_hud_ensure()` 的同一支写法；令牌脚本不会自己 `delete()`，都是死循环）。
+ * ⚠❓ 用户点名要求「自愈」：**`ce_anm_set_pos` / `ce_anm_interrupt` 返回 0 ⇒ 清句柄**
+ *   （本函数里就是这一条：`ce_anm_set_pos` 返回 0 说明这个 id 已经查不到 VM 了 ⇒ 下一帧重建）。
+ *   ⚠ `ce_anm_interrupt` 是 `void`（SDK 面），所以那条「返回 0」只落在 set_pos 这一支；
+ *     中断发不出去的那一只（`anm_id` 已经为 0）在下一次 tick 会被这里重建。 */
+static void ufo_tok_vm_follow(ufo_tok_t *t)
 {
-    if (!t->anm_id || !ce_anm_get_vm(t->anm_id)) {
+    if (!t->anm_id || !ce_anm_get_vm((uint32_t)t->anm_id)) {
         t->anm_id = 0;
-        ufo_tok_vm_spawn(t, e);
+        ufo_tok_vm_spawn(t);
         return;                                        /* spawn 里已经摆好位置 */
     }
-    ce_anm_set_pos(t->anm_id, *(const float *)(e + CE_ENEMY_POS_X),
-                              *(const float *)(e + CE_ENEMY_POS_Y), 0.0f);
+    if (!ce_anm_set_pos((uint32_t)t->anm_id, t->motion.x, t->motion.y, 0.0f))
+        t->anm_id = 0;                                 /* 句柄自愈：返回 0 ⇒ 下一帧重建 */
 }
 
 /* ============================ ★★ 五边形框（提示 UI）的建 / 跟随 / 收（2026-09-12 A7）============================
@@ -758,11 +803,12 @@ static int ufo_pentagon_label_for_color(const ufo_group_t *g, int32_t color)
  *   下一帧才轮到 pending 中断跳到标签段（TH12 侧同构：`0x454db9` 的 `call 0x455630`）。
  * ⚠ 本函数会**建 VM** ⇒ 只能从 tick / 帧末调（本卡的调用点 = `ufo_pentagon_hint_update()`，
  *   而它在 `ufo_tokens_tick()` 里 ⇒ 每游玩帧的门卫位次，不是死亡栈）。 */
-static void ufo_tok_penta_spawn(int slot, const uint8_t *e, int label)
+static void ufo_tok_penta_spawn(int slot, const ufo_tok_t *t, int label)
 {
     uint32_t id;
 
-    if (s_penta_id[slot] || !label || !CE_ABILITY_ANM()) return;
+    if (slot < 0 || slot >= UFO_TOKEN_CAP) return;
+    if (s_penta_id[slot] || !label || !CE_ABILITY_ANM() || !t) return;
     id = ce_anm_spawn(CE_ABILITY_ANM(), UFO_PENTAGON_ANM_SCRIPT, UFO_PENTAGON_ANM_LAYER);
     if (!id) {
         ce_log("ufo: pentagon hint-VM spawn FAILED (script %d, layer %d) - the frame around the "
@@ -770,27 +816,25 @@ static void ufo_tok_penta_spawn(int slot, const uint8_t *e, int label)
         return;
     }
     s_penta_id[slot] = id;
-    if (e) ce_anm_set_pos(id, *(const float *)(e + CE_ENEMY_POS_X),
-                              *(const float *)(e + CE_ENEMY_POS_Y), 0.0f);
+    ce_anm_set_pos(id, t->motion.x, t->motion.y, 0.0f);   /* ★ 换池：位置 = 我们自己的坐标字段 */
     /* 标签 = 框的颜色。SDK 面 = 既有的 `ce_anm_interrupt`（`AnmManager__interrupt_tree` `th18:0x488be0`，
      * 写 pending interrupt 并递归子树；TH12 侧是 `0x461970`）—— A8 的彩虹三段中断用的就是它，零新 SDK 面。 */
     ce_anm_interrupt(id, label);
 }
 
-/* 每帧跟随（框）：与令牌贴图 VM 同一支写法（自愈 + 抄实体 `abs_pos`）。
+/* 每帧跟随（框）：同一支写法（自愈 + 抄令牌自己的坐标）。
  * ⚠ 零售**不跟随**（框的位置在 `create_vm` 那一刻被拷进 VM，之后道具飘走它也不动）——
- *   我们的令牌是**敌机实体**，真 ECL 到位后会飘（`moveLimit(0,128,280,128)`）⇒ 不跟随就会
- *   「框留在原地、令牌飘走」。实体不动时两者等价（占位期 `NoEnemyDebug` 就是不动）。
+ *   我们的令牌会飞、会反弹（`ufo_tok_motion_step`）⇒ 不跟随就会「框留在原地、令牌飘走」。
  * ⚠ 句柄被引擎在别处销毁过 ⇒ 只**丢掉句柄**，重建交给紧接着的 `ufo_tok_penta_spawn()`
  *   （它带着本帧算出来的标签；这里自己重建就会造出一个「没有标签 = 停在白色」的框）。 */
-static void ufo_tok_penta_follow(int slot, const uint8_t *e)
+static void ufo_tok_penta_follow(int slot, const ufo_tok_t *t)
 {
     if (!s_penta_id[slot] || !ce_anm_get_vm(s_penta_id[slot])) {
         s_penta_id[slot] = 0;
         return;
     }
-    ce_anm_set_pos(s_penta_id[slot], *(const float *)(e + CE_ENEMY_POS_X),
-                                      *(const float *)(e + CE_ENEMY_POS_Y), 0.0f);
+    if (!ce_anm_set_pos(s_penta_id[slot], t->motion.x, t->motion.y, 0.0f))
+        s_penta_id[slot] = 0;                          /* 句柄自愈（与令牌那一支同款）*/
 }
 
 /* ---- ★ 彩虹令牌的换色（= TH12 的「重指脚本」，`th12:0x4061e0`；一手见常量块 ⑤）----
@@ -803,35 +847,40 @@ static void ufo_tok_penta_follow(int slot, const uint8_t *e)
  *   ③ 用 `type + 0xa5` 重新装载（`0x4264bc`）⇒ 换脚本重开。
  * ⚠ 一手还会播一个音（`0x4264dd` `0x453e20(x, 0x35)`）——`0x35` 是 **TH12 的 se id**，
  *   本仓没有 TH12→TH18 的音效映射表（`engine/_shared/th18-sound-table.md` 只有 TH18 那张）
- *   ⇒ **不播**，宁可没声音也不随便借一个 TH18 的 id 冒充。登记在文件尾。 */
-static void ufo_tok_rainbow_recolor(ufo_tok_t *t, const uint8_t *e)
+ *   ⇒ **不播**，宁可没声音也不随便借一个 TH18 的 id 冒充。登记在文件尾。
+ * ★ 换池（2026-09-12）之后这一段**更贴一手了**：一手就是「在**同一个对象自己的** VM 上换脚本」，
+ *   我们现在也是「在**同一只令牌自己的** VM 上换脚本」（删旧 + 起新是 SDK 面不足的等价物）。 */
+static void ufo_tok_rainbow_recolor(ufo_tok_t *t)
 {
     t->rb_state = (uint8_t)((t->rb_state + 1) % UFO_TOK_RB_STATES);
     t->rb_cycle = 0;
-    /* ★ 只收**贴图**那只（`ufo_tok_art_vm_kill`），**不碰五边形框**（A7）：零售换色重指的是
+    /* ★ 只收**令牌自己那只** VM（`ufo_tok_art_vm_kill`），**不碰五边形框**（A7）：零售换色重指的是
      *   令牌自己那只 VM，框在另一个槽（`item+0x968`）里、不受影响 ⇒ 框不该跟着重播胀开动画。 */
     ufo_tok_art_vm_kill(t);                            /* 句柄清零（幂等）*/
-    ufo_tok_vm_spawn(t, e);                            /* 新脚本 + 当场摆位置；失败只报日志 */
+    ufo_tok_vm_spawn(t);                               /* 新脚本 + 当场摆位置；失败只报日志 */
 }
 
 /* ---- ★ 彩虹令牌每帧：60 px 闩 + 三段中断 + 换色计时器（一手见上面那个常量块）----
- * ⚠ 与 `ufo_tok_pick`（20 px 接触判定）是**两件事**：60 px 圈只影响画面与计时器，不是收集半径。 */
-static void ufo_tok_rainbow_tick(ufo_tok_t *t, const uint8_t *e, float px, float py)
+ * ⚠ 与 `ufo_tok_pick`（20 px 接触判定）是**两件事**：60 px 圈只影响画面与计时器，不是收集半径。
+ * ⚠ 换池后 60 px 圈读的是**令牌自己的坐标**（`t->motion.x/y`）—— 以前读敌机的 `CE_ENEMY_POS_X/Y`，
+ *   两边都是同一个 ECL 640 空间（§量纲那条注），所以数值**逐条不变**。 */
+static void ufo_tok_rainbow_tick(ufo_tok_t *t, float px, float py)
 {
     float dx, dy;
     int near;
 
     if (t->color != UFO_COLOR_RAINBOW) return;         /* 一手整段只在 type 13/14/15 上跑 */
-    dx = *(const float *)(e + CE_ENEMY_POS_X) - px;
-    dy = *(const float *)(e + CE_ENEMY_POS_Y) - py;
+    dx = t->motion.x - px;
+    dy = t->motion.y - py;
     near = (dx * dx + dy * dy <= UFO_TOK_NEAR_R2);     /* 一手：距离² ≤ 3600（60 px）*/
 
     if (near != (int)t->near) {
         /* 进 / 出 60 px 圈的那一帧各发一次（一手两个「状态变了才发」的闩：`0x42630f` / `0x42632d`）。
          * 出圈时按计时器选 3（还没到 90 ⇒ 回主循环）或 2（已经在闪 ⇒ 接着闪）。 */
-        if (near) ce_anm_interrupt(t->anm_id, UFO_TOK_INT_NEAR);
-        else      ce_anm_interrupt(t->anm_id, t->rb_cycle < UFO_TOK_BLINK_AT ? UFO_TOK_INT_RESUME
-                                                                            : UFO_TOK_INT_BLINK);
+        if (near) ce_anm_interrupt((uint32_t)t->anm_id, UFO_TOK_INT_NEAR);
+        else      ce_anm_interrupt((uint32_t)t->anm_id,
+                                   t->rb_cycle < UFO_TOK_BLINK_AT ? UFO_TOK_INT_RESUME
+                                                                  : UFO_TOK_INT_BLINK);
         t->near = (uint8_t)(near ? 1 : 0);
     }
     if (near) {
@@ -849,29 +898,32 @@ static void ufo_tok_rainbow_tick(ufo_tok_t *t, const uint8_t *e, float px, float
      * 换色那一帧也照走一次推进（一手换完 `jmp 0x42636a`）⇒ 稳定周期正好 `UFO_TOK_CYCLE_TICKS` 帧。
      * `rb_cycle` 是 uint8 ⇒ 推进前必须挡住 150（否则会加到 151/越界）——一手因为那个「换完再 +1」
      * 才让周期是整数 150：换色帧 0 → 1，此后每帧 +1，到 150 再换。 */
-    if (t->rb_cycle == UFO_TOK_BLINK_AT) ce_anm_interrupt(t->anm_id, UFO_TOK_INT_BLINK);
-    if (t->rb_cycle >= UFO_TOK_CYCLE_TICKS) ufo_tok_rainbow_recolor(t, e);   /* 内部把计时器清 0 */
+    if (t->rb_cycle == UFO_TOK_BLINK_AT) ce_anm_interrupt((uint32_t)t->anm_id, UFO_TOK_INT_BLINK);
+    if (t->rb_cycle >= UFO_TOK_CYCLE_TICKS) ufo_tok_rainbow_recolor(t);   /* 内部把计时器清 0 */
     if (t->rb_cycle < UFO_TOK_CYCLE_TICKS) ++t->rb_cycle;
 }
 
-/* 造一个令牌实体。颜色 = 实体自己的事（一手：彩虹令牌每 150 帧换色、60 px 内暂停 ——
- * spec §3.2/§1 末行「落在令牌实体上」）⇒ **占位期不写颜色**，由卡侧的合成规则决定它算哪一色。
- * ⚠ `spawn+0x14`（life）必须 < 1000（`0x42d8f6` 会置锁定黑名单位）。
+/* ★★ **造一只令牌**（2026-09-12 换池：从「建一个真敌人」变成「建一个 VM + 一条池记录」）----------------
+ * 换池前这里要 `memset(spawn)` + 填 `CE_SPAWN_*` 一整张表 + `ce_spawn_enemy(UFO_ECL_TOKEN, …)`
+ *   —— 那段**整段删掉**了（依据：用户拍板 + `AUDIT.md` §BO-11 的 P3 三条代价）。
+ * 现在只有三步：① 池里有位置吗 ② 记下颜色 / 相位 / 位置 / 速度 ③ 起一个 VM 画它。
+ * ⚠ **建 VM 仍然只能在 non-death-stack 上调**（要分配）—— 调用点两条都没变：
+ *   `on_tick_2` ②b（帧末）与 `ufo_try_item` 的吸满支（`on_item_frame` 内）。
  *
- * ★ 2026-09-12（本轮）加 `color` / `rb_state` 两个**显式**入参：UFO 被打破 / 吸满时掉的那一枚是
- * **指定颜色**的（一手 `th12:0x44af00` 的跳表 `0x44b590`：红→道具 13、蓝→14、绿→15、
- * 彩虹→按 `COLLECTED_UFOS[2]`）—— 不能走「本局第几个令牌」的轮转表（那是给「小怪掉」用的占位）。 */
-static uint8_t *ufo_tok_spawn_ex(ufo_card_t *s, float x, float y, int32_t color, int rb_state)
+ * ★ `color` / `rb_state` 两个**显式**入参（2026-09-12 那轮加的，换池后语义不变）：UFO 被打破 / 吸满
+ *   时掉的那一枚是**指定颜色**的（一手 `th12:0x44af00` 的跳表 `0x44b590`：红→道具 13、蓝→14、
+ *   绿→15、彩虹→按 `COLLECTED_UFOS[2]`）—— 不能走「本局第几个令牌」的轮转表（那是给「小怪掉」用的占位）。
+ * 返回非 0 = 真的造出来了（池里多一只）；0 = 池满 / VM 建不出来（调用方记账 + 走重试节流）。 */
+static int ufo_tok_spawn_ex(ufo_card_t *s, float x, float y, int32_t color, int rb_state)
 {
-    uint8_t spawn[CE_SPAWN_SIZE];
-    float *pos;
     ufo_tok_t *t;
     uint32_t serial;
+    int slot;
 
-    if (!CE_ENEMY_MGR()) return 0;
-    t = ufo_tok_free(s);
-    if (!t) {
-        ce_log("ufo: token table full (%d slots) - token dropped", UFO_TOKEN_SLOTS);
+    if (!s) return 0;
+    if (ufo_token_pool_room(ufo_tok_live_count()) <= 0) {   /* ★ 上限判据在纯逻辑层（单一真源）*/
+        ++s_tokpool.dropped;
+        ce_log("ufo: token pool full (%d slots) - token dropped", UFO_TOKEN_CAP);
         return 0;
     }
     /* 出生点夹取（一手 `th12:0x4273f0`：x 夹 ±192、y 不小于 0）—— 令牌从敌人死亡点掉出来 */
@@ -879,68 +931,47 @@ static uint8_t *ufo_tok_spawn_ex(ufo_card_t *s, float x, float y, int32_t color,
     if (x >  UFO_TOK_SPAWN_CLAMP_X) x =  UFO_TOK_SPAWN_CLAMP_X;
     if (y < 0.0f) y = 0.0f;
     if (y > UFO_TOK_OUT_Y_BOTTOM) y = UFO_TOK_OUT_Y_BOTTOM;
-    memset(spawn, 0, sizeof spawn);
-    pos = (float *)(spawn + CE_SPAWN_POS);
-    pos[0] = x;
-    pos[1] = y;
-    pos[2] = 0.0f;
-    *(int32_t *)(spawn + CE_SPAWN_SCORE) = 0;          /* ★ 打死令牌不给分（占位期取「不做」）*/
-    *(int32_t *)(spawn + CE_SPAWN_MAIN_DROP) = 0;      /* ★ 令牌不打掉落（它自己就是令牌）
-                                                        *   ⚠ 顺带一个好处：`main_drop == 0` ⇒ 死亡事件里
-                                                        *   `CE_EDEATH_F_HAS_DROP` 为假 ⇒ **令牌不会掉令牌** */
-    *(int32_t *)(spawn + CE_SPAWN_PARENT) = 0;
-    /* `CE_SPAWN_FLAG_A/B` 一律不设：`flags_lo & 0x31` 置位 = **伤害免疫**（`DEATH:163` 一手订正）
-     * ⇒ 置了就收不了令牌。life 钳在 < 1000。 */
-    *(int32_t *)(spawn + CE_SPAWN_LIFE) = ufo_clamp_spawn_life(UFO_TOKEN_LIFE);
-    {
-        uint8_t *e = (uint8_t *)ce_spawn_enemy(UFO_ECL_TOKEN, spawn);
-        if (!e) {
-            ce_log("ufo: ce_spawn_enemy(\"%s\") returned nothing - that ECL subroutine is a "
-                   "placeholder and does not exist in default.ecl yet (spec §6 step 3)", UFO_ECL_TOKEN);
-            return 0;
-        }
-        /* ★ 令牌的**颜色**：小怪掉的那条路仍是**卡侧按确定性轮转给**（真 ECL 到位后应改成
-         * 「实体携带颜色 = `$I0`」并由卡侧读它，见 impl.md §2 第 8 条）；UFO 掉的那条路由调用方指定。
-         * ⚠⚠ 这里曾经写成 `(int32_t)ufo_hash_unit(0, serial)` —— `ufo_hash_unit` 返回 [0,1] 的小数，
-         *   cast 成 int 几乎恒为 0（= `UFO_COLOR_NONE`）⇒ 令牌对所有代码路径**不可见**
-         *   （`ufo_tok_slot` 找不到它 ⇒ 死亡事件不认账；`ufo_tokens_tick` 直接 continue ⇒ 不收不撤；
-         *   `ufo_tok_free` 永远发同一个槽 ⇒ 每 300 帧泄漏一个真敌人；`ufo_color_valid(0)` 挡住召唤）。
-         *   实测：serial 0..99999 里只有 1 个 cast 出非 0。⇒ **颜色必须是枚举值，不是散列**。
-         * ★ 用户裁决 ①（金 = 蓝的调色版）：小怪掉的那条路颜色走 `ufo_token_color_for_serial_gold()` ——
-         *   它在轮转表之上把「轮到蓝」的那些令牌每隔 `UFO_GOLD_CYCLE` 个周期做成**金**。金进槽即归一成蓝
-         *   （`ufo_color_norm`）⇒ 除了贴图/颜色显示，**行为与蓝一字不差**。 */
-        serial = s->token_serial;
-        t->color = ufo_color_valid(color) ? color : ufo_token_color_for_serial_gold(serial);
-        t->enemy_id = *(uint32_t *)(e + CE_ENEMY_ID);
-        t->ttl = UFO_TOKEN_TTL_FRAMES;
-        t->pentagon_hint = 0;
-        t->anm_id = 0;                                 /* ★ 新槽先清句柄（`ufo_tok_free` 只查 `color`）*/
-        /* ★ A7：同一个槽的**五边形框**句柄一起清（防御性对账 —— 正常路径上 `ufo_tok_kill()` /
-         *   退休分支已经把它收成 0 了；句柄在文件静态数组里，所以这里按**槽号**清）。
-         *   ⚠ `t` 一定来自 `s->tok[]`（`ufo_tok_free(s)` 返回的指针）⇒ 指针相减就是槽号。 */
-        s_penta_id[(int)(t - s->tok)] = 0;
-        /* ★ 运动：一手 state 6 的直线飞行 + 反弹（角度按**本关第几个令牌**的奇偶交替）。
-         *   ⚠ 一手那个计数把「UFO 掉的令牌」也算进去（`0x427411 inc [edi+0x666fe0]` 在两条路之前）
-         *   ⇒ 我们用同一个 `token_serial`（两条路都自增）✓。 */
-        ufo_tok_motion_init(&s_tok_motion[(int)(t - s->tok)], serial);
-        /* ★ A8：彩虹令牌的初始态。一手：`spawn_item` 把闩清 0（`0x427595`）⇒ 出生算「圈外」、
-         * 第一帧不发中断；计时器从 0 起（换色后 `Timer__set_current(0)`）。
-         * 起始**态**：小怪掉的统一从 0 = 红那一态起（= TH12 的道具类型 13 ⇒ 脚本 178）；
-         * UFO 掉的由一手掉落表给（红 UFO → 13、蓝 → 14、绿 → 15、彩虹 → 按第 3 个令牌的颜色，
-         * `th12:0x44af00`）⇒ 现在由调用方按 `ufo_break_token_state()` 传进来。 */
-        t->rb_state = (uint8_t)((rb_state >= 0 && rb_state < UFO_TOK_RB_STATES) ? rb_state : 0);
-        t->near = 0;
-        t->rb_cycle = 0;
-        /* ★ 画面：起跟随 VM（ECL 侧是惰性壳，什么都不画 —— 见文件头「跟随 VM」注释块）*/
-        ufo_tok_vm_spawn(t, e);
-        ++s->spawned_tokens;
-        ++s->token_serial;
-        return e;
-    }
+    /* 槽 = 池尾（紧凑数组）⇒ `on_item_frame` 里记下的下标在整个生命周期里都指向同一只令牌。 */
+    slot = s_tokpool.n;
+    t = &s_tokpool.tok[slot];
+    s_penta_id[slot] = 0;                              /* 防御性对账：池尾的框句柄必须是空的 */
+    serial = s->token_serial;
+    /* ★ 令牌的**颜色**：小怪掉的那条路仍是**卡侧按确定性轮转给**；UFO 掉的那条路由调用方指定。
+     * ⚠⚠ 这里曾经写成 `(int32_t)ufo_hash_unit(0, serial)` —— `ufo_hash_unit` 返回 [0,1] 的小数，
+     *   cast 成 int 几乎恒为 0（= `UFO_COLOR_NONE`）⇒ 令牌对所有代码路径**不可见**
+     *   （池的循环直接跳过它 ⇒ 不收不撤；分配器永远发同一个槽 ⇒ 每 300 帧泄漏一只）。
+     *   实测：serial 0..99999 里只有 1 个 cast 出非 0。⇒ **颜色必须是枚举值，不是散列**。
+     * ★ 用户裁决 ①（金 = 蓝的调色版）：小怪掉的那条路颜色走 `ufo_token_color_for_serial_gold()` ——
+     *   它在轮转表之上把「轮到蓝」的那些令牌每隔 `UFO_GOLD_CYCLE` 个周期做成**金**。金进槽即归一成蓝
+     *   （`ufo_color_norm`）⇒ 除了贴图/颜色显示，**行为与蓝一字不差**。 */
+    t->color = ufo_color_valid(color) ? color : ufo_token_color_for_serial_gold(serial);
+    t->ttl = UFO_TOKEN_TTL_FRAMES;
+    t->vor = serial;                                   /* 对账用（一手 `ItemManager+0x666fe0` 那个计数）*/
+    t->pentagon_hint = 0;
+    t->anm_id = 0;                                     /* ★ 新的 VM 句柄从头开始（下面 spawn 里填）*/
+    /* ★ 运动：一手 state 6 的直线飞行 + 反弹（角度按**本关第几个令牌**的奇偶交替）。
+     *   ⚠ 一手那个计数把「UFO 掉的令牌」也算进去（`0x427411 inc [edi+0x666fe0]` 在两条路之前）
+     *   ⇒ 我们用同一个 `token_serial`（两条路都自增）✓。
+     *   ★★ 换池：位置/速度写进**我们自己的** `t->motion`（以前位置在敌机字段里）。 */
+    ufo_tok_motion_init_at(&t->motion, serial, x, y);
+    /* ★ A8：彩虹令牌的初始态。一手：`spawn_item` 把闩清 0（`0x427595`）⇒ 出生算「圈外」、
+     * 第一帧不发中断；计时器从 0 起（换色后 `Timer__set_current(0)`）。
+     * 起始**态**：小怪掉的统一从 0 = 红那一态起（= TH12 的道具类型 13 ⇒ 脚本 178）；
+     * UFO 掉的由一手掉落表给（红 UFO → 13、蓝 → 14、绿 → 15、彩虹 → 按第 3 个令牌的颜色，
+     * `th12:0x44af00`）⇒ 现在由调用方按 `ufo_break_token_state()` 传进来。 */
+    t->rb_state = (uint8_t)((rb_state >= 0 && rb_state < UFO_TOK_RB_STATES) ? rb_state : 0);
+    t->near = 0;
+    t->rb_cycle = 0;
+    ++s_tokpool.n;                                     /* ★ 先入池（VM 建失败也要在池里，好让 TTL 收掉它）*/
+    /* ★ 画面 = 本体：起**那一个** VM（1 只 token = 1 个 VM，没有第二个） */
+    ufo_tok_vm_spawn(t);
+    ++s->spawned_tokens;
+    ++s->token_serial;
+    return 1;
 }
 
-/* 小怪掉的那一条（颜色走轮转表、起始态 0）—— 旧签名保留，调用点只有一处。 */
-static uint8_t *ufo_tok_spawn(ufo_card_t *s, float x, float y)
+/* 小怪掉的那一条（颜色走轮转表、起始态 0）—— 旧签名保留，调用点只有一处（`on_tick_2` ②b）。 */
+static int ufo_tok_spawn(ufo_card_t *s, float x, float y)
 {
     return ufo_tok_spawn_ex(s, x, y, UFO_COLOR_NONE, 0);
 }
@@ -1098,8 +1129,9 @@ static int ufo_try_item(ufo_card_t *s, uint8_t *it, float ux, float uy, float px
                 else ce_log("ufo: reward spit type %d failed (item pool full?)", reward);
             }
             if (tok_state != UFO_TOK_DROP_NONE) {
-                /* ★ 彩虹 UFO 吸满 ⇒ 掉一枚**令牌**（一手 `0x44ae03`；TH18 没有令牌道具类型 ⇒ 掉实体）。
-                 * 位置 = 本体位置（一手：`[esi+0x34]+0x1074` = 敌机 pos）。 */
+                /* ★ 彩虹 UFO 吸满 ⇒ 掉一枚**令牌**（一手 `0x44ae03`；TH18 没有令牌道具类型 ⇒ 掉令牌）。
+                 * 位置 = 本体位置（一手：`[esi+0x34]+0x1074` = 敌机 pos）。
+                 * ⚠ 换池后「掉令牌」= 池里多一只 VM（不再建敌人）⇒ 仍是**非死亡栈**（`on_item_frame`）。 */
                 if (ufo_tok_spawn_ex(s, ux, uy, UFO_COLOR_RAINBOW, tok_state))
                     ce_log("ufo: rainbow UFO filled up - spat one RAINBOW TOKEN (rb state %d, "
                            "one-hand th12:0x44ae03 by COLLECTED_UFOS[2])", (int)tok_state);
@@ -1214,37 +1246,20 @@ static int ufo_token_to_slot(ufo_card_t *s, int32_t color)
     return put;
 }
 
-/* 入队。返回 0 = 环满（调用方记账；此时那个令牌的颜色只能丢）。**死亡栈里可安全调**（只动我们的表）。 */
-static int ufo_pending_put(ufo_card_t *s, int32_t color)
-{
-    if (s->pending_n >= UFO_PENDING_CAP) return 0;
-    s->pending_color[s->pending_n++] = color;
-    s->pending_token = 1;
-    return 1;
-}
+/* ★ `ufo_pending_put/_take`（死亡栈上的「令牌颜色」登记环）**已随旧载体一起删除** ——
+ *   理由见文件头那段「令牌池的四条已删除的旧状态」：那套环只服务「令牌被子弹打掉也算收」。
+ *   令牌的来源（小怪击破 ⇒ 登记落点 ⇒ 帧末建 VM）走的是 `pend_drop` / `pend_drop_x/y`，与它无关。 */
 
-/* 出队（空 ⇒ 返回 `UFO_COLOR_NONE`）。 */
-static int32_t ufo_pending_take(ufo_card_t *s)
+/* 读走并撤掉一只令牌（**先取值再清条目** —— 顺序反了就把颜色读成 NONE）。
+ * ★ 换池后这里**不再有死亡栈调用点**（令牌不产生死亡事件）⇒ 「死亡栈上删 VM」那条 🟡 未验证的
+ *   组合整个消失了。现在只在两处调：接触收取（`ufo_tokens_tick`）与出界/TTL 退休。 */
+static int32_t ufo_tok_take_and_kill(int slot)
 {
-    int32_t c;
-    int i;
-    if (s->pending_n == 0) {
-        s->pending_token = 0;
-        return UFO_COLOR_NONE;
-    }
-    c = s->pending_color[0];
-    for (i = 0; i + 1 < s->pending_n; ++i) s->pending_color[i] = s->pending_color[i + 1];
-    --s->pending_n;
-    if (s->pending_n == 0) s->pending_token = 0;
-    return c;
-}
-
-/* 读走并撤掉一个令牌实体（**先取值再清条目** —— 顺序反了就把颜色读成 NONE）。
- * 死亡栈里也能安全调（只置 `flags_lo` 位 25 + 改我们自己的表，不析构任何东西）。 */
-static int32_t ufo_tok_take_and_kill(int slot, ufo_tok_t *t)
-{
-    int32_t color = t->color;
-    ufo_tok_kill(slot, t);
+    ufo_tok_t *t = ufo_tok_at(slot);
+    int32_t color;
+    if (!t) return UFO_COLOR_NONE;
+    color = t->color;
+    ufo_tok_kill(slot);
     return color;
 }
 
@@ -1299,63 +1314,61 @@ static void ufo_try_summon(ufo_card_t *s)
            s->u.ufo_id, s->play_frame);
 }
 
-/* 帧末跑一遍令牌表：① 实体还在不在 ② 死亡事件解到的颜色 ③ TTL ④ 自机接触。 */
+/* 每游玩帧跑一遍令牌池：① VM 还在不在 ② 走位（位移 + 反弹 + 出界）③ 摆 VM ④ 彩虹计时 ⑤ TTL ⑥ 自机接触。
+ * ★ 换池（2026-09-12）：以前这里要「找敌机实体 → 写它的 `final_pos`/`abs_pos`」；现在**没有实体**了 ——
+ *   令牌的坐标就是 `t->motion.x/y`，写画面就是 `ce_anm_set_pos`（一只 token 一个 VM）。
+ * ⚠ 池是**紧凑数组**：回收用 swap-remove ⇒ 循环**不能 `++i`**（尾元素会搬进来，也要过一遍筛）。 */
 static void ufo_pentagon_hint_update(ufo_card_t *s);   /* 定义在下面（算判据 + 驱动框 VM，见它的注释块）*/
 static void ufo_tokens_tick(ufo_card_t *s)
 {
     float px, py;
     int i;
     ufo_player_xy(&px, &py);
-    for (i = 0; i < UFO_TOKEN_SLOTS; ++i) {
-        ufo_tok_t *t = &s->tok[i];
-        uint8_t *e;
+    for (i = 0; i < s_tokpool.n; ) {
+        ufo_tok_t *t = &s_tokpool.tok[i];
         int32_t color;
 
-        if (t->color == UFO_COLOR_NONE) continue;
-        e = ufo_enemy_by_id(t->enemy_id);
-        if (!e) {
-            /* 实体没了，却没走过死亡事件 ⇒ 过场全清 / 重开（`DEATH` §1.4 的「静默消失」那三类）
-             * ⇒ 直接退休，**不入槽**。★ 这条分支**绕过了 `ufo_tok_kill()`**（直接清 `color`）
-             * ⇒ 跟随 VM 必须在这里**显式**收掉，否则场上来一个没有实体的幽灵令牌。 */
-            ufo_tok_vm_kill(i, t);
-            s_tok_motion[i].vx = 0.0f;                 /* 运动状态一起清（同 `ufo_tok_kill`）*/
-            s_tok_motion[i].vy = 0.0f;
-            s_tok_motion[i].age = 0;
-            ++s->lost_tokens;
-            t->color = UFO_COLOR_NONE;
-            t->enemy_id = 0;
-            t->ttl = 0;
-            continue;
+        /* ① VM 不在了（**且自愈也建不出来**）⇒ 这一只令牌**没有画面了**，整套退休（不入槽、不算收）。
+         * 走到这一条的三类情形：引擎在别处摧毁了这个 VM **并且** `CE_ABILITY_ANM()` 这时也取不到
+         * （anm 还没装载 / 已卸载）；`on_delete` 那一刻引擎已经拆了 anm；本帧的 `ce_anm_spawn` 失败。
+         * ⚠ 先给一次**自愈**机会（与令牌自己那一支同一个口径）：句柄没了就重建一个 —— 只有连
+         *   `ufo_tok_vm_spawn` 也建不出来（它会把 `anm_id` 留 0）才算真没了。
+         *   ★ 这条让「VM 被引擎在别处销毁」不再必然损失一枚令牌（换池前那条路是直接退休）。
+         * ⚠ 这条分支**绕过了 `ufo_tok_kill()`**（句柄已经是 0）⇒ 直接 swap-remove 回收槽。 */
+        if (!t->anm_id || !ce_anm_get_vm((uint32_t)t->anm_id)) {
+            t->anm_id = 0;
+            ufo_tok_vm_spawn(t);                       /* 自愈一次 */
+            if (!t->anm_id) {
+                ce_log("ufo: token VM is gone AND could not be respawned (color %d, serial %u) - "
+                       "retiring the pool entry (no collection, no reward)", (int)t->color, t->vor);
+                t->color = UFO_COLOR_NONE;
+                ++s->lost_tokens;
+                ufo_tok_penta_kill(i);                 /* 框跟着一起收（不然留一个空五边形）*/
+                ufo_tok_remove(i);
+                continue;                              /* ★ 不 ++i */
+            }
         }
-        /* ★★ 令牌**运动**（一手 `th12:0x425c20` 的 state 6；用户口述的「飞碟在场上…飞行」）：
+        /* ② ★★ 令牌**运动**（一手 `th12:0x425c20` 的 state 6；用户口述的「飞碟在场上…飞行」）：
          *   位移 + 四边反弹 + 1200 帧后不再反弹 + 出界即撤 —— 常量与指令地址全在
          *   `ufo_core.h` 的「令牌的运动」那一块，逻辑在 `ufo_tok_motion_step()`（有主机单测）。
-         *   ⚠ 位置要**同时**写 `final_pos`（`CE_ENEMY_POS_X/Y`）与 `abs_pos`（`+0x12b4`）：
-         *     引擎每帧会用 `abs_pos` 重算 `final_pos`；先例 = 108 `youkai.c` 的 `yk_pin_familiar()`。
-         *   ⚠ 必须在 `ufo_tok_vm_follow()` **之前**走位（跟随 VM 抄的就是这两个坐标）。 */
-        {
-            float mx = *(const float *)(e + CE_ENEMY_POS_X);
-            float my = *(const float *)(e + CE_ENEMY_POS_Y);
-            if (ufo_tok_motion_step(&s_tok_motion[i], &mx, &my)) {
-                /* 一手：飞出外框 = 该道具 state 0（回收），**不入槽**（`0x42655b`）*/
-                ++s->lost_tokens;
-                ufo_tok_kill(i, t);
-                continue;
-            }
-            *(float *)(e + CE_ENEMY_POS_X) = mx;
-            *(float *)(e + CE_ENEMY_POS_Y) = my;
-            *(float *)(e + UFO_ENEMY_ABS_POS) = mx;
-            *(float *)(e + UFO_ENEMY_ABS_POS_Y) = my;
+         *   ★★ 换池：位置直接写**我们自己的** `t->motion`（不再双写敌机的 `final_pos` / `abs_pos`
+         *     —— 那两个偏移是「真敌人壳」逼出来的，已经随壳一起删掉了）。 */
+        if (ufo_tok_motion_step(&t->motion)) {
+            /* 一手：飞出外框 = 该道具 state 0（回收），**不入槽**（`0x42655b`）*/
+            ++s->lost_tokens;
+            ufo_tok_kill(i);                           /* 内部 swap-remove ⇒ 不 ++i */
+            continue;
         }
-        /* ★ 画面：跟随 VM 每帧抄实体的 `abs_pos`（放在 TTL / 成组早停**之前** ——
+        /* ③ 画面：把**这一个** VM 摆到令牌坐标上（放在 TTL / 成组早停**之前** ——
          *   令牌只要还在场上就得跟着走，包括「槽里有成组、这一颗暂时不收」那段等待期）。 */
-        ufo_tok_vm_follow(t, e);
-        /* ★ A8：彩虹令牌的三段中断 + 换色（60 px 闩 / 90 帧起闪 / 150 帧换色）。
+        ufo_tok_vm_follow(t);
+        /* ④ ★ A8：彩虹令牌的三段中断 + 换色（60 px 闩 / 90 帧起闪 / 150 帧换色）。
          * ⚠ 也放在早停之前：计时器与玩家距离无关地每帧要走（一手在道具的 tick 里，不受「槽满了没」影响）。 */
-        ufo_tok_rainbow_tick(t, e, px, py);
+        ufo_tok_rainbow_tick(t, px, py);
+        /* ⑤ TTL 兜底（一手靠「出界即删」回收；我们的 VM 不会自己消失 ⇒ 这一条守着漏网）*/
         if (t->ttl) --t->ttl;
-        if (!t->ttl) {                                 /* 占位期惰性壳不会自己消失 ⇒ TTL 兜底 */
-            ufo_tok_kill(i, t);
+        if (!t->ttl) {
+            ufo_tok_kill(i);
             ++s->lost_tokens;
             continue;
         }
@@ -1363,11 +1376,12 @@ static void ufo_tokens_tick(ufo_card_t *s)
         /* ⚠ 槽里**已经**有一个干等着的组（上一帧被「场上已有 UFO」挡下、或刚被打死一个本体）：
          * 这一颗**不收也不撤** —— 收了也只是白吃一颗 + 白响一声（`ufo_group_put` 会原样报 READY）。
          * 让它留在场上，等组被消费掉之后再接触入槽。 */
-        if (ufo_present_group_ready(s)) continue;
-        if (!ufo_tok_pick(s, *(float *)(e + CE_ENEMY_POS_X), *(float *)(e + CE_ENEMY_POS_Y), px, py))
-            continue;
-        /* 接触即入槽（spec §3.2 ⏳① 取这支）：**先取值、再撤实体**（顺序见 `ufo_tok_take_and_kill`）*/
-        color = ufo_tok_take_and_kill(i, t);
+        if (ufo_present_group_ready(s)) { ++i; continue; }
+        /* ⑥ **接触收取**（用户点名保持不变的行为）：判定 = 20 px 圆（★❓ 自定，`UFO_TOKEN_PICK_DIST`；
+         *    一手是自机收点矩形、半尺寸 15 单位，差距登记在 `AUDIT.md` §BO-11 的 P5，**本次不改半径**）。 */
+        if (!ufo_tok_pick(s, t->motion.x, t->motion.y, px, py)) { ++i; continue; }
+        /* 接触即入槽：**先取值、再撤令牌**（顺序见 `ufo_tok_take_and_kill`）*/
+        color = ufo_tok_take_and_kill(i);              /* 内部 swap-remove ⇒ 不 ++i */
         /* ⚠ 这里不是死亡栈（`on_item_frame` 是每游玩帧的门卫位次）⇒ 可以立刻建本体；
          *   死亡事件那条路只登记、由 `on_tick_2` 兑现。 */
         if (ufo_token_to_slot(s, color) == UFO_PUT_READY) ufo_try_summon(s);
@@ -1400,28 +1414,27 @@ static void ufo_pentagon_hint_update(ufo_card_t *s)
     if (!ufo_group_pentagon_hint(&s->grp)) {
         /* 早停：槽里不是 2 枚（或某种颜色都补不出组）⇒ 全部清零 + **把框全收了**
          * （零售：条件一不成立就删框，不留一个孤零零的五边形在场上）。 */
-        for (i = 0; i < UFO_TOKEN_SLOTS; ++i) {
-            s->tok[i].pentagon_hint = 0;
+        for (i = 0; i < s_tokpool.n; ++i) {
+            s_tokpool.tok[i].pentagon_hint = 0;
             ufo_tok_penta_kill(i);
         }
+        for (i = s_tokpool.n; i < UFO_TOKEN_CAP; ++i) ufo_tok_penta_kill(i);  /* 池外的残留句柄也收 */
         s->pentagon_any = 0;
         s->pentagon_logged = 0;                        /* 条件消失后允许再报一次 */
         return;
     }
-    for (i = 0; i < UFO_TOKEN_SLOTS; ++i) {
-        ufo_tok_t *t = &s->tok[i];
-        uint8_t *e;
+    for (i = 0; i < s_tokpool.n; ++i) {
+        ufo_tok_t *t = &s_tokpool.tok[i];
         int label;
 
-        if (t->color == UFO_COLOR_NONE) { t->pentagon_hint = 0; ufo_tok_penta_kill(i); continue; }
         label = ufo_pentagon_label_for_color(&s->grp, t->color);
         t->pentagon_hint = (uint8_t)(label ? 1 : 0);
         if (!label) { ufo_tok_penta_kill(i); continue; }
-        e = ufo_enemy_by_id(t->enemy_id);
-        /* 实体没了：**不建框**（实体退休那两条路在上一趟已经 `ufo_tok_vm_kill()` 收过句柄了）*/
-        if (!e) continue;
-        ufo_tok_penta_follow(i, e);                    /* 先跟随（顺带自愈掉死句柄）*/
-        ufo_tok_penta_spawn(i, e, label);              /* 没框才建；有框则原样留着*/
+        /* ★ 换池：不再需要「先找敌机实体」那一步（以前实体没了就 `continue`、不建框）——
+         *   现在令牌与它的 VM **同生共死**（VM 没了那一支在上一趟 `ufo_tokens_tick` 里
+         *   已经把整条池记录 + 框一起收了）⇒ 走到这里必然有 VM 可跟。 */
+        ufo_tok_penta_follow(i, t);                    /* 先跟随（顺带自愈掉死句柄）*/
+        ufo_tok_penta_spawn(i, t, label);              /* 没框才建；有框则原样留着*/
         any = 1;
     }
     s->pentagon_any = (uint8_t)any;
@@ -1484,12 +1497,13 @@ static void ufo_break(ufo_card_t *s)
             ce_log("ufo: break bonus type %d failed (item pool full?)", bonus);
         }
     }
-    /* ★ 返还令牌（一手：每色 1 枚；出界/被收就没了 —— 与零售一致，风险收益的来源） */
+    /* ★ 返还令牌（一手：每色 1 枚；出界/被收就没了 —— 与零售一致，风险收益的来源）
+     * ⚠ 换池后失败原因只剩「池满 / anm VM 建不出来」（以前还有「ECL 名查不到」那条）。 */
     if (tok_state != UFO_TOK_DROP_NONE) {
         if (ufo_tok_spawn_ex(s, s->last_x, s->last_y, UFO_COLOR_RAINBOW, tok_state))
             ++s->dropped_by_ufo;
         else
-            ce_log("ufo: break - the returned token could NOT be spawned (table full / ECL shell missing)");
+            ce_log("ufo: break - the returned token could NOT be spawned (pool full / anm not loaded)");
     }
     /* ★ 赏金道具（一手 16/17/18 三个 type）：TH18 侧**一个都不能用**（16 = 0x10 是 EXTEND2 卡道具、
      * 17/18 超出 type 上限 0x13；`UFO_BOUNTY_TYPES_USABLE == 0`）⇒ 不生成，只留日志。 */
@@ -1646,18 +1660,19 @@ static int on_ctor(ce_card_t *c)
 {
     ufo_card_t *s = ce_state(c, ufo_card_t);
     if (!s) return 0;
-    /* ★ 先收本体的跟随 VM **再** memset（本轮新增）：句柄就存在这块状态里 ⇒
+    /* ★ 先收本体的跟随 VM **再** memset：句柄就存在这块状态里 ⇒
      * 只 memset 的话句柄没了、VM 却还留在场上（长持续效果铁律里最典型的那种漏）。
-     * ★ 令牌的 16 个句柄同理 —— 一起收（`ufo_tok_vm_kill_all` 只看句柄、不看 `color`）。
-     * 正常路径上这一步已经是无操作（`ufo_withdraw_all` 先收过一遍），这是防御，不是主路径。 */
+     * ★★ 换池后令牌与它那一堆 VM **不在这块状态里**（都在文件静态 `s_tokpool` / `s_penta_id`）
+     *   ⇒ memset 清不到它们，所以**必须显式**收：`ufo_tok_pool_clear_all()`（只看句柄、不看 `color`）。
+     *   这一步是**幂等**的（池空 = 无操作），而且**不依赖 tick** —— 删卡那一刻 tick 全停也照样收。
+     *   正常路径上它已经是无操作（`ufo_withdraw_all` 先收过一遍），这里是防御，不是主路径。 */
     ufo_body_vm_kill(s);
-    ufo_tok_vm_kill_all(s);
+    ufo_tok_pool_clear_all();
     memset(s, 0, sizeof *s);
     ufo_group_reset(&s->grp);
     ufo_reset(&s->u);
-    s->pending_n = 0;                                  /* memset 已经把环清空，这里只明确语义 */
-    s->pending_drop = 0;
-    s->pending_token = 0;
+    s->pend_drop = 0;
+    s_tokpool.dropped = 0;                             /* 诊断计数每局从零（与 113 的口径一致）*/
     s->next_token_at = UFO_TOKEN_SPAWN_FIRST;          /* 开局先等一会儿再出第一个令牌 */
     return 0;
 }
@@ -1690,19 +1705,19 @@ static int on_load(ce_card_t *c)
     return 0;
 }
 
-/* 把本卡留在场上的真敌人全部静默撤掉（**不析构**：可能正在别人的链表遍历里 ⇒ 只置位，sweep 收）。
- * 令牌与 UFO 都是真敌人 ⇒ 换关 / 局末 / 删卡三条路都要走它（METHOD 铁律）。
- * ★ 跟随 VM **也在这里收**（本轮新增）：删卡走的是 `on_delete`（虚表 `+0x50`），
- *   那一刻 tick 回调**全停** ⇒ 「每帧跟随时顺手收」这条路根本不会跑。
- *   ⇒ 这里**无条件**收两遍句柄（本体一个 + 令牌 16 个，都只看句柄、不看 `color`）：句柄非 0
- *     就是还欠引擎一个 VM（`ufo_tok_kill` 里也收一份，这里那遍对它是无操作的兜底）。 */
+/* 把本卡留在场上的东西全部收干净：**本体**（真敌人：静默撤，不析构）+ **令牌池**（VM，直接删）。
+ * ★ 换关 / 局末 / 删卡三条路都要走它（METHOD 铁律：长持续效果必须交代「被删掉会怎样」）。
+ * ★ 令牌的 VM 与五边形框 **都在文件静态区**（换池的结果）⇒ 删卡那一刻 tick 全停也收得掉 ——
+ *   这正是用户点名的那条（「只有 `on_delete` 跑得到」）：`ufo_tok_pool_clear_all()` 只看句柄。 */
 static void ufo_withdraw_all(ufo_card_t *s, const char *why)
 {
-    int i, n = 0;
+    int n = 0;
     ufo_body_vm_kill(s);
-    ufo_tok_vm_kill_all(s);                            /* ★ 只看句柄（`color` 还没清）*/
-    for (i = 0; i < UFO_TOKEN_SLOTS; ++i)
-        if (s->tok[i].color != UFO_COLOR_NONE) { ufo_tok_kill(i, &s->tok[i]); ++n; }
+    n += ufo_tok_live_count();                         /* 池里有几只 ⇒ 就是一个日志数字 */
+    ufo_tok_pool_clear_all();                          /* ★ 令牌 VM + 五边形框，全部只看句柄 */
+    if (s_tokpool.dropped)
+        ce_log("ufo: token pool dropped %d token(s) while full (cap %d)", s_tokpool.dropped,
+               UFO_TOKEN_CAP);
     if (ufo_present(&s->u)) {
         uint8_t *e = ufo_enemy_by_id(s->u.ufo_id);
         if (e) *(uint32_t *)(e + CE_ENEMY_FLAGS) |= UFO_FLAGS_DELETE_NOW;
@@ -1729,56 +1744,47 @@ static void on_stage_start(ce_card_t *c)
 }
 
 /* ★ 共享死亡事件（spec §7 / DEATH §4 表）：只认 `KILLED` / `BOMB_KILL`，**必须排除 `KILL_ALL`**
- *（过场清场会把计数器刷满）。回调里**禁止**析构任何敌人、**禁止**缓存 `ev->enemy`。 */
+ *（过场清场会把计数器刷满）。回调里**禁止**析构任何敌人、**禁止**缓存 `ev->enemy`。
+ *
+ * ★★ 2026-09-12 换池：这里**只剩两件事** ——
+ *   ① 本体被打死 ⇒ 记位置（帧末开奖）；
+ *   ② **令牌的来源**：小怪被击破 ⇒ 登记一个落点（帧末建令牌）。
+ *   删掉的那一件是「**令牌自己被子弹打掉 ⇒ 也算收**」（`ufo_token_kill_counts` + `ufo_tok_slot`）：
+ *   它是**真敌人载体**的产物（令牌有 HP 才会死）。一手 TH12 的令牌是**道具**（打不掉、只能接触收）
+ *   ⇒ 用户拍板的换池把那条路整个去掉了（`AUDIT.md` §BO-11 的 P3 代价①）。
+ *   ⚠ 顺带的好处：`on_enemy_death` 里**不再有「撤掉我们的东西」**这种动作（只登记两个数）⇒
+ *     `DEATH` §2.4 的两条禁令现在天然满足（不改任何敌人对象、不建 VM）。 */
 static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
 {
     ufo_card_t *s = ce_state(c, ufo_card_t);
-    ufo_tok_t *t;
     if (!s || !ev) return;
     (void)c;
-    /* ① 令牌实体被打死 ⇒ 入槽（令牌「自己就是实体」那一支）。
-     * ⚠ `KILL_ALL`（过场清场）一律不算：`ufo_token_kill_counts` 已经挡掉（spec §7 AUDIT 硬要求）。
-     * ⚠ 回调体里**禁止析构任何敌人**、**禁止缓存 `ev->enemy`**（`DEATH` §2.4）——
-     *   这里只改我们自己的表 + 登记，不动任何敌人对象。 */
-    t = ufo_tok_slot(s, ev->id);
-    if (t && ufo_token_kill_counts(ev->kind)) {
-        /* **只登记**：出槽这件事本身是纯逻辑（改我们的表），可以当场做；
-         * 但「出槽后要不要召唤」必须先登记、帧末才动手 —— 死亡栈里**禁止新建敌人**（重入）。
-         * ⚠ `t` 来自 `s->tok[]` ⇒ 槽号 = 指针相减（五边形框句柄在**文件静态数组**里、按槽号存，
-         *   所以这里要多带一个槽号 —— A7；收 VM 只标删、不析构，死亡栈上做是安全的）。 */
-        if (!ufo_pending_put(s, ufo_tok_take_and_kill((int)(t - s->tok), t))) {
-            ++s->pending_drop;
-            ce_log("ufo: pending token ring full (cap %d) - a token colour was dropped "
-                   "(expected never to happen: at most UFO_TOKEN_MAX = %d tokens are alive at once, "
-                   "so at most that many can die in one sweep)", UFO_PENDING_CAP, UFO_TOKEN_MAX);
-        }
-        return;
-    }
-    /* ② UFO 本体被打死 ⇒ 击破（记下位置；开奖放帧末 —— 与飞离分支共用同一段，顺序也更清楚）*/
+    /* ① UFO 本体被打死 ⇒ 击破（记下位置；开奖放帧末 —— 与飞离分支共用同一段，顺序也更清楚）*/
     if (ev->id == s->u.ufo_id && ufo_body_kill_counts(ev->kind)) {
         s->last_x = ev->x;
         s->last_y = ev->y;
         s->pending_break = 1;
         return;
     }
-    /* ★★ ③ **令牌从哪来**（2026-09-12 本轮订正；用户口述「会有小怪爆飞碟」）----------------
+    /* ★★ ② **令牌从哪来**（2026-09-12 订正；用户口述「会有小怪爆飞碟」）----------------
      * 一手 = TH12 的敌人**掉落表**：`dropExtra(10..12, n)`（ECL op 407，handler `th12:0x4179cc`）
      * 由 `EnemyDrop__spawn_ex_drops` `th12:0x4121e0` 生成为**道具**（type 10..15）⇒ 令牌是
      * 「敌人被击破时按其掉落表掉出来的」。**TH18 的敌人没有这张表**（type 10..15 在 TH18 是别的
      * 东西/不存在）⇒ 只剩两件事能照一手：**触发点**（击破时）与**落点**（那只敌人的位置）。
      * 本节此前是「卡侧按 300 帧节流自己撒」，与一手/用户口述都不符 ⇒ 已删（见 `on_item_frame`）。
      * 门（全是 ❓ 自定，一手没有对应物）：
-     *   ① 死因：`ufo_token_kill_counts()`（= 打死 / 炸弹秒杀；`KILL_ALL` 过场清场**一律不算**）；
+     *   ① 死因：`ufo_body_kill_counts()`（= 打死 / 炸弹秒杀；`KILL_ALL` 过场清场**一律不算**）；
      *   ② **有掉落表的真敌人**：`CE_EDEATH_F_HAS_DROP` + `CE_EDEATH_F_REAL` —— 一手那边令牌来自
      *      某个**具体敌人子程序**的掉落表，TH18 没有表可比 ⇒ 用「这只敌人本来就会掉东西」当代理；
-     *      ⚠ 顺带天然排除**我们自己的载体**（令牌与本体 spawn 时 `main_drop = 0` ⇒ 没有这个位）；
+     *      ⚠ 顺带天然排除**我们自己的东西**（本体 spawn 时 `main_drop = 0` ⇒ 没有这个位）。
+     *      ⚠ 令牌**不再有** `main_drop` 这回事（它已经不是敌人了，永远进不了这个回调）。
      *   ③ 节流 `next_token_at`（一手是「表里有就掉、没有不掉」，没有概率也没有冷却）；
      *   ④ 场上上限 `UFO_TOKEN_MAX`；⑤ 落点先到先得（`pend_drop` 只存一格）。
-     * ⚠ 回调里**只登记**（建敌人是禁止的，`DEATH` §2.4）⇒ 帧末 `on_tick_2` 才 `ce_spawn_enemy`。 */
+     * ⚠ 回调里**只登记**（建 VM 是禁止的 —— 要分配，`DEATH` §2.4）⇒ 帧末 `on_tick_2` 才建。 */
     if (!s->pend_drop && s->play_frame >= s->next_token_at &&
         (ev->flags & CE_EDEATH_F_HAS_DROP) && (ev->flags & CE_EDEATH_F_REAL) &&
-        ufo_token_kill_counts(ev->kind) &&
-        ufo_tok_live_count(s) < UFO_TOKEN_MAX) {
+        ufo_body_kill_counts(ev->kind) &&
+        ufo_tok_live_count() < UFO_TOKEN_MAX) {
         s->pend_drop = 1;
         s->pend_drop_x = ev->x;
         s->pend_drop_y = ev->y;
@@ -1820,29 +1826,22 @@ static void on_item_frame(ce_card_t *c)
 }
 
 /* 帧末统一判定（对齐 109 的教训：`DEATH` §4.1「回调里只登记、帧末动手」）。
- * 三段**都要跑**（不许早 return：① 与 ③ 之间没有互斥关系，早退会让飞走判定晚一帧）。
- * ⚠ **顺序是刻意的**：先 ① 落槽（可能要**建**一个新 UFO），再 ② 击破开奖，最后 ③ 存亡差分。
- *   反过来的话，① 刚建出来的 UFO 会被 ③ 立刻判成「不在了」—— 它这一帧还没挂上链表尾呢。 */
+ * ⚠ **顺序是刻意的**：先 ②b 建令牌（可能要**建** VM）与 ② 击破开奖，最后 ③ 存亡差分。
+ *   反过来的话，① 刚建出来的 UFO 会被 ③ 立刻判成「不在了」—— 它这一帧还没挂上链表尾呢。
+ * ★★ 2026-09-12 换池：原来的 ① 段（「死亡栈里登记的令牌颜色」出队 → 落槽 → 可能召唤）**整段删除** ——
+ *   那是「令牌被子弹打掉也算收」的兑现点，令牌换成自建 VM 之后环里永远不会有人放东西。 */
 static int on_tick_2(ce_card_t *c)
 {
     ufo_card_t *s = ce_state(c, ufo_card_t);
     if (!s) return 0;
 
-    if (s->pending_token) {                            /* ① 死亡栈里只登记了「若干令牌没了」*/
-        /* 这一刻**已经离开死亡栈**（`on_tick_2` 是能力管理器 tick）⇒ 可以安全建本体。
-         * 环里可能有多个（同一次扫描里死了好几只）⇒ 全出队。 */
-        while (s->pending_n) {
-            int32_t color = ufo_pending_take(s);
-            if (ufo_token_to_slot(s, color) == UFO_PUT_READY) ufo_try_summon(s);
-        }
-        s->pending_token = 0;
-    }
     if (s->pending_break) {                            /* ② 击破（死亡栈里只记了位置）*/
         s->pending_break = 0;
         ufo_break(s);
     }
-    /* ②b ★ 令牌落地（死亡栈里只登记了落点；这一刻已经离开死亡栈 ⇒ 可以安全建敌人）。
-     *   一手：令牌是「敌人掉落表」的产物（`dropExtra`）⇒ 触发点 = 那一只敌人的死亡位置。 */
+    /* ②b ★ 令牌落地（死亡栈里只登记了落点；这一刻已经离开死亡栈 ⇒ 可以安全建 VM）。
+     *   一手：令牌是「敌人掉落表」的产物（`dropExtra`）⇒ 触发点 = 那一只敌人的死亡位置。
+     *   ⚠ 换池后这一步建的是**我们自己的 VM**（不是敌人）—— 「不在死亡栈上建」这条纪律不变。 */
     if (s->pend_drop) {
         s->pend_drop = 0;
         if (ufo_tok_spawn(s, s->pend_drop_x, s->pend_drop_y))
@@ -1892,33 +1891,41 @@ static void on_run_reset(ce_card_t *c)
 {
     ufo_card_t *s = ce_state(c, ufo_card_t);
     if (s && (s->spawned_tokens || s->ufos_spawned))
-        ce_log("ufo: run reset - %u tokens (%u taken / %u lost / %u dropped / %u pending-dropped), "
-               "%u UFOs (%u broken / %u vanished / %u failed), %u items pulled, %u rewards, %u bursts",
-               s->spawned_tokens, s->taken_tokens, s->lost_tokens, s->dropped_tokens, s->pending_drop,
-               s->ufos_spawned, s->ufos_broken, s->ufos_vanished, s->failed_summons, s->items_pulled,
-               s->rewards_spit, s->bursts);
+        ce_log("ufo: run reset - %u tokens spawned (%u taken / %u lost / %u dropped by UFO / "
+               "%u slot-dropped / %d pool-overflow), %u UFOs (%u broken / %u vanished / %u failed), "
+               "%u items pulled, %u rewards, %u bursts",
+               s->spawned_tokens, s->taken_tokens, s->lost_tokens, s->dropped_by_ufo, s->dropped_tokens,
+               s_tokpool.dropped, s->ufos_spawned, s->ufos_broken, s->ufos_vanished, s->failed_summons,
+               s->items_pulled, s->rewards_spit, s->bursts);
     ufo_hud_kill();                                    /* ★ 局末收 HUD VM（长持续效果铁律）*/
     if (s) ufo_withdraw_all(s, "run reset");
     on_ctor(c);
 }
 
 /* ★ 删卡（METHOD 铁律 / spec §7）：商店里 AbilityManager 冻着、tick 回调全停 ⇒ 只有这里收得到。
- * 该收的：令牌实体（**真敌人**，会留在场上）+ UFO 本体 + 计数 + **本卡自己的 HUD VM**。
- * ⚠ 这里**不能**析构敌人（UAF：可能正在别人的链表遍历里，`DEATH` §2.5）⇒ 跟 108 一样走
- *   「置 `flags_lo` 位 25」的静默撤退，由引擎同帧 sweep。
- * ★ HUD 二件（用户裁决 ④ 的必答项，别漏）：
- *   ① `ufo_hud_kill()` —— 3 个格子矩形 + 血条底 / 填充 + 那行读数的（最多 10 个）字形 VM；
- *   ② `ce_hud_slot_release()` —— 退出左下角货架的占位（`CE_CARD` 的 opdelete 里
+ * ★★ 换池之后这条路的**分工变了**（说清楚，免得下一个人以为漏了）：
+ *   ① **令牌 + 五边形框** —— **自建 VM**，句柄在**文件静态区**（`s_tokpool` / `s_penta_id`）
+ *      ⇒ `ufo_withdraw_all()` → `ufo_tok_pool_clear_all()` 直接 `ce_anm_delete` 收干净。
+ *      ⚠ 这是**最关键**的一条：静态区的句柄不会被 SDK 释放私有状态时清掉，只能靠这里显式收。
+ *   ② **UFO 本体** —— 仍然是**真敌人** ⇒ 这里**不能**析构它（UAF：可能正在别人的链表遍历里，
+ *      `DEATH` §2.5）⇒ 跟 108 一样走「置 `flags_lo` 位 25」的静默撤退，由引擎同帧 sweep。
+ *   ③ **HUD 二件**（用户裁决 ④ 的必答项，别漏）：
+ *      `ufo_hud_kill()` —— 3 个格子矩形 + 血条底 / 填充 + 那行读数的（最多 10 个）字形 VM；
+ *      `ce_hud_slot_release()` —— 退出左下角货架的占位（`CE_CARD` 的 opdelete 里
  *      `ce_layer_drop_card()` 也会调一次，这里显式写出来是为了让「谁退了槽」一眼可查，
- *      幂等 ⇒ 调两次无害，与 `signal.c` 同款）。 */
+ *      幂等 ⇒ 调两次无害，与 `signal.c` 同款）。
+ * ⚠ 换池后「删卡那一刻只有 `on_delete` 跑得到」这条**更容易满足**了：令牌再也没有「要等下一帧才消失」
+ *   的东西（以前真敌人壳还得靠引擎 sweep 析构，现在 VM 直接标删、AnmManager 当帧就清）。 */
 static void on_delete(ce_card_t *c)
 {
     ufo_card_t *s = ce_state(c, ufo_card_t);
     if (!s) return;
-    ce_log("ufo: card deleted - %u tokens spawned (%u taken / %u lost / %u dropped), %u UFOs summoned "
-           "(%u broken / %u failed), %u items pulled, %u rewards",
-           s->spawned_tokens, s->taken_tokens, s->lost_tokens, s->dropped_tokens, s->ufos_spawned,
-           s->ufos_broken, s->failed_summons, s->items_pulled, s->rewards_spit);
+    ce_log("ufo: card deleted - %u tokens spawned (%u taken / %u lost / %u dropped by UFO / "
+           "%u slot-dropped / %d pool-overflow), %u UFOs summoned (%u broken / %u failed), "
+           "%u items pulled, %u rewards",
+           s->spawned_tokens, s->taken_tokens, s->lost_tokens, s->dropped_by_ufo, s->dropped_tokens,
+           s_tokpool.dropped, s->ufos_spawned, s->ufos_broken, s->failed_summons, s->items_pulled,
+           s->rewards_spit);
     ufo_withdraw_all(s, NULL);                         /* 私有状态随后由 SDK 释放（`ce_state_free`）*/
     ufo_hud_kill();
     ce_hud_slot_release(UFO_ID_NUM);
@@ -1953,9 +1960,11 @@ _Static_assert(UFO_EDEATH_KILL_ALL == CE_EDEATH_KILL_ALL, "death kind table drif
  * ⚠ 只断言**输入常量**是不够的（把 `ufo_clamp_spawn_life` 改成返回 >= 1000 时它们照样过）——
  *   所以真正守不变量的那条是 **钳制边界本身**：`UFO_LIFE_MAX_ALLOWED < UFO_LIFE_LIMIT`。
  *   再加上「`ufo_clamp_spawn_life` 的返回值永远 < 1000」这条**运行期**检查（主机单测里覆盖，
- *   见 `tests/test_ufo_core.c` 的 `ufo_clamp_spawn_life(UFO_LIFE_LIMIT) == UFO_LIFE_MAX_ALLOWED`）。 */
+ *   见 `tests/test_ufo_core.c` 的 `ufo_clamp_spawn_life(UFO_LIFE_LIMIT) == UFO_LIFE_MAX_ALLOWED`）。
+ * ★ 2026-09-12 换池：原来这里还有一条「令牌 life < 1000」的断言 ——
+ *   **连同那个常量一起删了**：令牌不是敌人 ⇒ 没有 `spawn.life` 这回事
+ *   （以前那个常量 = 1 的后果正是「任何一发子弹都能收走令牌」，即用户要修掉的那条）。 */
 _Static_assert(UFO_LIFE_MAX_ALLOWED < UFO_LIFE_LIMIT, "the clamp ceiling itself must stay below 1000");
-_Static_assert(UFO_TOKEN_LIFE < UFO_LIFE_LIMIT, "token life must stay below 1000");
 _Static_assert(UFO_HP_PLACEHOLDER < UFO_LIFE_LIMIT, "UFO life must stay below 1000");
 /* ⚠ 下面这条**单独**不够（两边都是常量，钳制函数改了它也不会红）⇒ 真正兜底的是两张网：
  *   ① `UFO_CLAMP_OUTPUT_MAX`（= `UFO_LIFE_MAX_ALLOWED`）**就是** `ufo_clamp_spawn_life` 的返回上界
@@ -1972,12 +1981,24 @@ _Static_assert(UFO_TOK_BLINK_AT < UFO_TOK_CYCLE_TICKS,
                "the 90-frame blink must start before the 150-frame recolour (one-hand order)");
 _Static_assert(UFO_TOK_RB_STATES == 3,
                "the rainbow script table must stay 3 entries (one-hand type 13/14/15 -> 178/179/180)");
+/* ★★ 2026-09-12 换池：令牌池的**两条**结构不变量（池是文件静态定长数组，越界就是内存写坏）。
+ *   ① 池容量必须 >= 「同时活几个」的上限（否则 `UFO_TOKEN_MAX` 这条手感上限根本到不了）；
+ *   ② 五边形框的句柄表与池**同下标**（`ufo_tok_remove` 的 swap-remove 要一起搬）⇒ 两张表必须同长。
+ *   ⚠ 纯逻辑层的 `ufo_token_pool_room()` 就是①的判据入口（分配前先问它，越界不可达）。 */
+_Static_assert(UFO_TOKEN_CAP >= UFO_TOKEN_MAX,
+               "the token pool must be able to hold UFO_TOKEN_MAX live tokens");
+_Static_assert(UFO_TOKEN_CAP == UFO_TOKEN_MAX + UFO_TOKEN_POOL_SLACK,
+               "UFO_TOKEN_CAP must come from the pure-logic pool room rule (single source of truth)");
 
 /* ============================== ★ 占位 / TODO 清单 ==============================
  * 每条都是「需要 ECL / 资产 / 用户决策」，取值一律是**不做**这个语义：
- *   §6 步 3 —— ECL（**最大的缺口，本卡现在只有壳**）
- *     1. `UFO_ECL_TOKEN` = `"NoEnemyDebug"`：令牌自己的 ECL 子程序**待写**（飘行 / 换色 / 接触）。
- *        一手活动框 = `moveLimit(0,128,280,128)`（spec §1 末行），换色 = 每 150 帧、60 px 内暂停。
+ *   §6 步 3 —— ECL（**剩下的只有本体**）
+ *     1. ★★ **令牌已不需要 ECL**（2026-09-12 换池）：它不再是真敌人、没有子程序、没有惰性壳。
+ *        当年那条占位 ECL 名依赖（`"NoEnemyDebug"`）**连同整个常量删掉了**
+ *        （依据见文件头「跟随 VM」那一段 + `AUDIT.md` §BO-11 的 P3）。
+ *        ⚠ 一手的活动框 `moveLimit(0,128,280,128)` 现在**没有意义**：令牌的位置由我们自己的
+ *        `ufo_tok_motion_t` 算（一手 state 6 的直线飞行 + 反弹，`ufo_tok_motion_step`）——
+ *        这正是「一手令牌是道具、运动在 C 侧」的忠实对应物。
  *     2. `UFO_ECL_BODY` = `"NoEnemyDebug"`：UFO 本体四色子程序待写（一手名字表 `th12:0x4b33e0`
  *        = `UFO_Red`/`UFO_Blue`/`UFO_Green`/`UFO_Rainbow`）。**没有它 UFO 不会飘、不会飞走、
  *        不会自己消弹**（spec §9 #10b 的「飞走由谁驱动」也一起没解）。
@@ -1993,8 +2014,10 @@ _Static_assert(UFO_TOK_RB_STATES == 3,
  *        仍然**没做**的是：光环 / 击破特效 / 收集爆环（`bullet.anm` 207/208/211）—— 那三件还是空
  *     7. 血条外框 / 填充（`front.anm` 134/136）—— 第一版血条是 `drawRect` 拼的；**原生血条**不会出
  *        （本卡刻意把 life 压到 < 1000，spec §4 的取舍）
- *     8. ★ **令牌贴图 6 态 —— ✅ 本轮实装**（`ability.anm` script 168..173 + `ufo_tok_vm_spawn/follow`；
+ *     8. ★ **令牌贴图 6 态 —— ✅ 实装**（`ability.anm` script 168..173 + `ufo_tok_vm_spawn/follow`；
  *        零售来源 `bullet.anm` 175..180 / `etama8.png`，切图器 `make_ufo_token_art.py`）。
+ *        ★★ 2026-09-12 换池：`ufo_tok_vm_spawn/follow` 现在起的是**令牌本体那只 VM**
+ *        （一只 token = 一个 VM；以前是「惰性壳 + 跟随 VM」两份）。
  *        ★ 2026-09-12（A8）：**彩虹令牌的每 150 帧换色 + 三段 `interruptLabel` 已实装** ——
  *        彩虹改用 `ability.anm` **219..221**（全文版，`make_ufo_token_art.py` 生成）+
  *        `ufo_tok_rainbow_tick` 按一手发 3/2/7 号中断（发送者 / 触发条件 / 地址见文件头那个常量块）。
@@ -2009,8 +2032,9 @@ _Static_assert(UFO_TOK_RB_STATES == 3,
  *           本仓只有 TH18 的音效表（`engine/_shared/th18-sound-table.md`）⇒ **不播**：宁可没声音，
  *           也不借一个 TH18 的 id 冒充（要补得先查 TH12 `0x4aea50` 那张 se 名表对到 TH18 的哪一条）。
  *    8c. ❓ A8 待实跑：① 三段中断的观感（进圈换固定色慢摆 / 90 帧起快闪 / 出圈回主循环）；
- *        ② 60 px 圈读的是**实体坐标**（`CE_ENEMY_POS_X/Y`，与 `ufo_tok_pick` 同一套）；一手是 TH12 的
- *           道具坐标 —— 两边都是 ECL 640 空间，但「60」的量纲**没验过**（1 单位 = 2 表面 px ⇒ 约 120 px）；
+ *        ② 60 px 圈读的是**令牌自己的坐标**（`t->motion.x/y` = 世界层 VM 的实体坐标；换池前读的是
+ *           敌机 `CE_ENEMY_POS_X/Y`，两边同属 ECL 640 空间 ⇒ 数值逐条不变，但「60」的**量纲**
+ *           仍**没验过**（1 单位 = 2 表面 px ⇒ 约 120 px）；
  *        ③ 换色走「删旧 VM + 起新 VM」（TH12 是同一个 VM 原地换脚本）⇒ 理论上可能有一帧叠影/空档，
  *           实跑若看到换色那一帧闪一下，就是它（要消掉得给 SDK 加「重指脚本」）。
  *    8d. 脚本号对账（A8）：彩虹全文版由 `make_ufo_token_art.py` 的 `SCRIPT_FULL_PORTS` 生成，
@@ -2027,8 +2051,9 @@ _Static_assert(UFO_TOK_RB_STATES == 3,
  *        （算判据 + 建框 / 每帧跟随 / 条件不成立就收）。**没有用 `drawRect` 硬凑** ✓。
  *        ⚠ **这项资产没有贴图可切**：`drawPolyBorder` 是引擎程序画的多边形（`sprite(-1)`）⇒
  *        无 PNG、无 ORDER 片段（TH18 零售同款写法见 `effect.anm` script101 / `ability.anm` script35）。
- *        ⚠ 三处与零售的差别（都是「我们的令牌是敌机实体」逼出来的，常量块里逐条写了理由）：
- *        ① 框**每帧跟随**实体坐标（零售建完就不动）；② 金走 `ufo_color_norm()` 落蓝那一格；
+ *        ⚠ 三处与零售的差别（常量块里逐条写了理由）：
+ *        ① 框**每帧跟随**令牌坐标（零售建完就不动）—— ★ 换池后更必要了：令牌会飞会反弹；
+ *        ② 金走 `ufo_color_norm()` 落蓝那一格；
  *        ③ 判据用**卡自己的「彩虹 = 通配」**模型（零售的彩虹令牌按**当前显示态**算）——
  *        ⏳ **这一格待用户拍板**（要改成零售字面口径 = `ufo_pentagon_hint_update()` 里把 `t->color`
  *        换成 `rb_state` 对应的色，就一处）。
@@ -2058,38 +2083,50 @@ _Static_assert(UFO_TOK_RB_STATES == 3,
  *        ⏳ 坐标 / 配色 / 字号全是 ❓ 初版，等用户逐个对
  *    17b. ★ HUD 的「整摞一起淡」（玩家贴近左下角，`ce_hud_near_corner()`）**没做** ——
  *        HUD-LAYOUT §4.5 要求多块一起淡，本版先不淡（形制未定，不自己发明淡出曲线）
- *    18. #9 令牌实体三处细节 —— 取「自己就是实体 + 接触即入槽 + 与本体共用惰性壳」
+ *    18. #9 令牌实体三处细节 —— ★★ **已按用户 2026-09-12 的拍板改掉**：令牌**不是实体了**，
+ *        是**自建 VM 池**里的一只 VM（`s_tokpool`）⇒ 「自己就是实体 + 接触即入槽」这两条保留，
+ *        「与本体共用惰性壳」那条**作废**（没有壳了）。依据：`AUDIT.md` §BO-11 的 P3 三条代价。
  *    19. #10 / #10b 离场信号通道 + 飞走由谁驱动 —— 卡侧只认「id 不在了」（可以工作，但**飞不起来**）
  *    20. #11 循环音停止 API —— 本卡没起循环音（`on_enemy_death` 里不播音）⇒ 这一条**目前不适用**；
  *        真 ECL 到位、加了循环音之后必须补
- *    21. #12 令牌掉落普查 —— ★ 2026-09-12 **本轮订正**：触发点不再「按节流自己撒」，改成
+ *    21. #12 令牌掉落普查 —— ★ 2026-09-12 **订正**：触发点不再「按节流自己撒」，改成
  *        **小怪被击破时掉**（一手：令牌 = 敌人 ECL 掉落表的产物 `dropExtra(10..12,n)`，op 407
  *        handler `th12:0x4179cc` → `EnemyDrop__spawn_ex_drops` `th12:0x4121e0`）；「谁掉」用
  *        `CE_EDEATH_F_HAS_DROP + F_REAL`（有掉落表的真敌人）当代理，节流见 `UFO_TOKEN_SPAWN_*`。
  *        ⏳ 仍是 ❓ 自定：TH18 的敌人**没有**令牌掉落表（type 10..15 在 TH18 不是令牌）⇒ 「哪只掉、
  *        掉几个、什么颜色」三格没有一手可抄（一手只有「掉落表里写了就有」这个结构）。
- *    22. #13 `BOMB_KILL` 算不算击破 —— 取「算」（`ufo_token_kill_counts` / `ufo_body_kill_counts`）
+ *        ★ 换池**没动这条**（来源与载体是两件事）—— 用户明确要求过。
+ *    22. #13 `BOMB_KILL` 算不算击破 —— 取「算」（现在只剩 `ufo_body_kill_counts` 一处；
+ *        ★ 换池删掉了 `ufo_token_kill_counts`，令牌没有死因这回事了）
  *   ★ 自定参数（spec 没有、一手也没有 ⇒ 具名常量 + ❓）
- *    23. `UFO_TOKEN_LIFE` = 1（令牌 HP）、`UFO_TOKEN_MAX` = **3**（同时几个；⚠ 原为 1，理由见常量注 ——
- *        上限 1 时场上永远只有一个、容易被误伤或超时撤掉 ⇒ 那一局基本凑不齐）、`UFO_TOKEN_TTL_FRAMES` = 2400、
+ *    23. ★ `UFO_TOKEN_MAX` = **3**（同时活几只；⚠ 原为 1，理由见常量注 —— 上限 1 时场上永远只有
+ *        一个、很容易错过 ⇒ 那一局基本凑不齐）、`UFO_TOKEN_TTL_FRAMES` = 2400、
  *        `UFO_TOKEN_SPAWN_INTERVAL` = 300 / `UFO_TOKEN_SPAWN_RETRY` = 120 / `UFO_TOKEN_SPAWN_FIRST` = 180、
  *        `UFO_TOKEN_PICK_DIST` = 20 px（⚠ 一手是**自机收点矩形**：`th12:0x426100` 四次比较读
  *        `player+0xc444..`，半尺寸来自玩家表 `0x4b31b4` = {60,70,60} ×0.5×0.5 = **15 单位**；
- *        我们的令牌不是道具、走不到那条通路 ⇒ 仍用自算距离，⏳ 见报告「需要重新拍」那一节）、
+ *        我们的令牌不是道具、走不到那条通路 ⇒ 尚用自算距离；⏳ P5，**本次刻意没有改半径**）、
  *        `UFO_PLACEHOLDER_STAGE` = 1（填充率公式的关卡号）、
- *        `UFO_PENDING_CAP` = `UFO_TOKEN_MAX + 2`（死亡登记环容量）
- *    24. 令牌颜色：**小怪掉**的那条路仍由卡侧轮转表给（实体自己不携带颜色；表在纯逻辑层
+ *        `UFO_TOKEN_POOL_SLACK` = 2（池容量 = `UFO_TOKEN_MAX` + 它，判据在纯逻辑层 `ufo_token_pool_room`）。
+ *        ★ 换池**删除**的两个自定常量：令牌 HP（令牌不是敌人，没有 HP 这回事）、
+ *        死亡登记环容量（令牌不再有死亡事件 ⇒ 那整套登记环一起删）。
+ *    24. 令牌颜色：**小怪掉**的那条路仍由卡侧轮转表给（令牌自己不携带颜色；表在纯逻辑层
  *        `k_ufo_token_color_rotation`）；**UFO 掉**的那条路由一手掉落表指定（`ufo_break_token_state()`）。
  *        ⚠ 一手的事实是「**颜色固定**：哪只敌人掉、掉什么颜色都写在敌人的 ECL 掉落表里，没有随机、
  *        也没有轮转」（`dropExtra(10/11/12,n)` 三种固定色；`13/14/15` = 彩虹令牌的三种起始态，
  *        由 UFO 击破时按色/`COLLECTED_UFOS[2]` 指定）⇒ 轮转表是 ❓ 自定的占位（TH18 无掉落表）。
- *        真 ECL 到位后应改成「实体携带颜色 = `$I0`」并让卡侧读它。
- *    29c. ★ 本轮「跟随 VM」的**待实跑**（三条，全是❓）：① 令牌层的层号 `UFO_TOKEN_ANM_LAYER` = 13
- *        （与原生道具同层的二手口径，没实测过；小了会被别的层压住、大了会压住子弹）；
- *        ② 本体 VM 的位置可能比敌机**晚一帧**（跟随读的是 `on_item_frame` 时刻的坐标，敌人 sweep
+ *        ⚠ 换池前这一条写的是「真 ECL 到位后应改成**实体携带**颜色 `$I0`」—— **现在没有实体了**
+ *        ⇒ 那条路线作废；要改只能改成「按掉落的**那只敌人**选色」（需要一个 TH18 侧的映射表，同样没有一手）。
+ *    29c. ★ 「跟随 VM」的**待实跑**（原三条，换池后第二条对**令牌**已经不适用、对**本体**仍适用）：
+ *        ① 令牌层的层号 `UFO_TOKEN_ANM_LAYER` = 13（与原生道具同层的二手口径，没实测过；
+ *           小了会被别的层压住、大了会压住子弹）；
+ *        ② **本体** VM 的位置可能比敌机**晚一帧**（跟随读的是 `on_item_frame` 时刻的坐标，敌人 sweep
  *           在同一帧更晚的位次）—— 敌机本体是隐形的，肉眼看不到这一帧差，但「吸收判定」用的坐标
- *           与画面若差一帧，贴脸时可能有 1 px 级的观感错位；③ 自愈重建（VM 被引擎在别处销毁时）
- *           会从头播一遍淡入（`alphaTime(60,0,255)`）⇒ 若实跑看到飞碟周期性闪一下，就是它。
+ *           与画面若差一帧，贴脸时可能有 1 px 级的观感错位；★ **令牌没有这一条**了（它的坐标就是
+ *           我们自己的字段，同一帧写、同一帧画）；
+ *        ③ 自愈重建（VM 被引擎在别处销毁时）会从头播一遍淡入（`alphaTime(60,0,255)`）⇒ 若实跑看到
+ *           飞碟/令牌周期性闪一下，就是它。★ 换池后令牌自愈还有一个新观察点：自愈会**重建整个
+ *           令牌 VM**（位置由 `ufo_tok_vm_spawn` 当场摆好，但脚本从第 0 帧重开 ⇒ 会重播一次
+ *           `scaleTime` 之类）。
  *    29d. ★ **五边形框（A7）的待实跑**（三条，全是❓）：① 观感 —— 2°/帧自转 + 10 帧从 0 胀到 20
  *        （`drawPolyBorder(1.0f, 5)` 的第一个参 = 半径 1.0，乘 `scaleTime` 到 20；世界层 1 单位 = 2 表面 px
  *        ⇒ 成品半径约 40 表面 px）与令牌（32×32 画布）的大小关系是**照零售数值推的**，没在实机上看过；
@@ -2105,8 +2142,11 @@ _Static_assert(UFO_TOK_RB_STATES == 3,
  *    27. `ufo_drag_speed` 的步长（一手公式照抄，但 TH18 没有「飞向 UFO」状态 ⇒ 手感要重标）
  *    28. 围栏三件的边界（|x| >= 200 / y > 472 / 自机 30 px）—— 一手值已复核，但「引擎当帧删」的
  *        时序在实跑里没验过
- *    29. `on_item_frame` 里建敌人（`ufo_tok_spawn`）—— 这条不是死亡栈（是每游玩帧的门卫位次），
- *        但「断点里 `new`」这件事本身没有先例 ⇒ AUDIT 待补
+ *    29. `on_item_frame` / `on_tick_2` 里建**令牌 VM**（`ufo_tok_spawn`）—— 这两条都不是死亡栈
+ *        （前者是每游玩帧的门卫位次、后者是能力管理器 tick），但「断点里 `new`」这件事本身没有先例
+ *        ⇒ AUDIT 待补。★ 换池后**新的**待验点：令牌那一只 VM 是**我们唯一**的画面载体
+ *        （以前还有敌机壳兜着）⇒ 若 `ce_anm_spawn` 在某个时点返回 0，令牌就「看不见但仍然存在」，
+ *        只能等 TTL 收掉（日志会打 `token VM spawn FAILED`）。
  *    29b. ★ **HUD 第一版全都没在实机上跑过**：三格槽 / 血条的矩形锚点（`AUDIT.md` §AL20 说矩形默认
  *        左上角锚，`signal.c` 的注释说图心 —— 两者冲突，本卡按 AL20 的实跑结论写，留了
  *        `UFO_HUD_RECT_ANCHOR_CENTER` 一个宏）· 块落点（货架给的槽坐标）· 读数那一行的垂直对齐
@@ -2137,10 +2177,37 @@ _Static_assert(UFO_TOK_RB_STATES == 3,
  *   34. **令牌运动会飞、会反弹**（一手 `0x425c20` 的 state 6 全段）：初速 1.5（`0x4a4270`）、
  *       角度按奇偶取 π/4 / 3π/4（`0x4a4274`/`0x4a4278`）、四边反弹 ×(−1.0)（`0x4a4168`，
  *       边界 176 / −176 / 160 / 370）、1200 帧后不再反弹、出界即撤（208 / −208 / −16 / 464）。
- *       落地 = 纯逻辑 `ufo_tok_motion_init/step()`（有单测）+ 卡侧每帧写 `final_pos` 与 `abs_pos`。
+ *       落地 = 纯逻辑 `ufo_tok_motion_init_at/step()`（有单测）+ 卡侧每帧 `ce_anm_set_pos`。
  *   35. **KEEP2 的第三条分支**（`0x422ed4`/`0x422ed6`）⇒ `{A,B,A}` 也走 KEEP2 ⇒ 我们与字面一手
  *       **完全一致**（订正 `ufo_group_keep2_literal_th12()` 与单测；行为本来就没变）。
  *   36. ⏳ **没改但要用户拍**（一手已给数值，改法不明确/有争议）：HP 一手是 {1600,1900,2100,2300,2500}
  *       按火力档（`th12:0x4b33f0`，照抄会触发 TH18 的 `0x42d8f6` 位）；令牌收取一手是自机收点矩形
  *       （半尺寸 15 单位，来自玩家表 `0x4b31b4`）而我们是 20 px 圆；血条一手是 `front.anm` 134/136
- *       （`0x44a5d0` 每帧写 `scale.x = life.cur/max`）而我们用 `drawRect` 占位。见报告。 */
+ *       （`0x44a5d0` 每帧写 `scale.x = life.cur/max`）而我们用 `drawRect` 占位。见报告。
+ *
+ * ============== ★★ 2026-09-12（第二轮）**令牌从真敌人载体 → 自建 VM 池**（用户拍板）==============
+ * 一句话：**一只 token = 一个 `ce_anm_spawn` 出来的 VM**（脚本不变、层不变），位置与运动跑在
+ * **我们自己的** `ufo_tok_motion_t` 上，池是文件静态的 `s_tokpool`（先例 117 `animal.c` / 113 `trance.c`）。
+ *   37. **删掉的东西**（逐条 + 它们**只为旧载体而存在**的依据）：
+ *       · `ce_spawn_enemy(UFO_ECL_TOKEN, spawn)` 那条路 + 整个 `CE_SPAWN_*` 填表（令牌不是敌人了）；
+ *       · `UFO_ECL_TOKEN` / `UFO_ECL_TOKEN_NAME`（`"NoEnemyDebug"` 占位 ECL 名依赖，纯属载体）；
+ *       · `UFO_TOKEN_LIFE`（令牌 HP）—— 没有实体就没有 HP，它的存在只是为了「能被子弹打掉」；
+ *       · **「token 被子弹打掉也算收」那条路**：`ufo_token_kill_counts()` + `ufo_tok_slot()`（按
+ *         `enemy_id` 找实体的分配器）+ `on_enemy_death` 里的令牌死亡支 + 死亡栈登记环
+ *         （`pending_color/pending_n/pending_token/pending_drop` + `ufo_pending_put/take` +
+ *         `on_tick_2` 的出队段）—— 这一整套的唯一用途就是那条路；
+ *       · `UFO_ENEMY_ABS_POS/_Y`（`enemy+0x12b4/+0x12b8` 的 `abs_pos` 双写）—— 只为「令牌是敌人」而钉；
+ *       · `UFO_FLAGS_DELETE_NOW` 的**令牌用法**（位 25 静默撤退；常量本身留着，本体仍要用）。
+ *       自证（只数**代码行**，注释与日志字符串不算）：对 `cards/ufo.c` 跑一条「只看非注释行」的
+ *              `grep -E`，令牌相关的符号（旧壳名 / 旧 HP 常量 / 旧死亡判据 / 旧实体分配器 /
+ *              旧的 `pending_*` 环）命中为 **0**；本体那一个建敌入口命中 **1**。
+ *              ⚠ 那条 grep 的**原文刻意不写进这里**（免得它自己命中自己，把判据污染掉）；
+ *              报告里有可复制的原句与输出。
+ *   38. **换来的好处**（用户点名的第一条副作用）：令牌不再是真敌人 ⇒ **`enemy_count_real` 不再把它
+ *       算进去** ⇒ 炸弹门 `0x420453` / 决死门 `0x45c07b` 不会再因为「场上有令牌」而放行
+ *       （`AUDIT.md` §BO-3 的那条副作用随之消失）。同时令牌也**打不掉了** —— 与一手（道具、只能接触收）
+ *       一致，「碰到才收」的手感回来了。
+ *   39. **保持不变的**：变色（150 帧一轮、红→蓝→绿）、快闪（90 帧起）、**接触收取**（20 px 圆，
+ *       半径本次刻意不改）、五边形提示框跟着令牌走、`UFO_TOKEN_MAX` 上限、`ufo_core.*` 的槽逻辑。
+ *       ★ 换色仍是「删旧 VM + 起新 VM」（SDK 没有「给已有 VM 重指脚本」这条通路；零售是同一个 VM
+ *       原地换脚本）—— 行为与换池前一致，差别只在那一个理论上的「换色帧空档」。 */

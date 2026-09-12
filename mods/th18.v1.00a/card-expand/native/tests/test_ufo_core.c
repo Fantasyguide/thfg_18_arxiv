@@ -28,8 +28,16 @@
  *      旧版每颗都返回 1 ⇒ 红 UFO 的命碎片能无限刷（漏洞）。
  *   ② `ufo_group_keep2_literal_th12`：KEEP2 的条件是**三条**（漏抄了 `0x422ed4`/`0x422ed6`）
  *      ⇒ `{A,B,A}` 首尾同色**也**走 KEEP2 ⇒ 我们与字面一手一致，「有意偏离」那条作废。
- *   ③ 新增：`ufo_break_token_state` / `ufo_spit_token_state`（掉落表：每色恰好 1 枚令牌）、
- *      `ufo_tok_motion_init/step`（令牌的直线飞行 1.5 + 四边反弹 + 1200 帧后不反弹 + 出界即撤）。
+ * ③ 新增：`ufo_break_token_state` / `ufo_spit_token_state`（掉落表：每色恰好 1 枚令牌）、
+ *      `ufo_tok_motion_init_at/step`（令牌的直线飞行 1.5 + 四边反弹 + 1200 帧后不反弹 + 出界即撤）。
+ *
+ * ★★ 2026-09-12（第二轮，用户拍板「**token 得是自建 VM 池子**」）—— 令牌不再是真敌人：
+ *   ① 运动结构体 `ufo_tok_motion_t` **带上了位置**（`x/y`）⇒ `ufo_tok_motion_init_at(&m, serial, x, y)`
+ *      与 `ufo_tok_motion_step(&m)`（旧签名吃 `float *x, *y` 指针，因为位置当年在敌机字段里）。
+ *      行为逐条不变（本文件那一整块断言因此只改了调用形式）。
+ *   ② 令牌 HP 常量与「令牌被子弹打掉也算收」那个判据函数**已删**（那条路只服务旧载体）
+ *      ⇒ 对应的断言换成池容量判据 `ufo_token_pool_room()` 的真值表。
+ *   ③ 令牌的**来源**那条门没变（仍是 `ufo_body_kill_counts()` + 掉落标志位）—— 见卡侧 `on_enemy_death`。
  */
 #include <stdio.h>
 #include <string.h>
@@ -906,79 +914,74 @@ int main(void)
     /* ================= ★★ 令牌运动（一手 `th12:0x425c20` state 6；用户口述的「飞行」） */
     {
         ufo_tok_motion_t m;
-        float x, y;
         /* 一手：`0x4a4270` = 1.5f、角度 `0x4a4274` = π/4 / `0x4a4278` = 3π/4 按奇偶交替，
          * 且计数在自增之后判 ⇒ **序号 0（本关第 1 枚）= 左下 45°**。 */
         CHECK(feq(UFO_TOK_FLY_SPEED, 1.5f, 1e-6f));
         CHECK(feq(UFO_TOK_ANGLE_DOWN_RIGHT, 0.785398185f, 1e-6f));   /* π/4 */
         CHECK(feq(UFO_TOK_ANGLE_DOWN_LEFT, 2.3561945f, 1e-6f));      /* 3π/4 */
         CHECK(feq(UFO_TOK_VEL_COMP, 1.060660124f, 1e-5f));           /* 1.5 × √2/2 */
-        ufo_tok_motion_init(&m, 0u);                                 /* 第 1 枚 */
+        /* ★★ 2026-09-12 换池：位置/速度**都在运动结构体自己身上**（以前位置在敌机字段里、
+         *  `init/step` 只吃 `float *x, *y` 指针）⇒ 签名变成 `uo_tok_motion_init_at(&m, serial, x, y)`
+         *  与 `ufo_tok_motion_step(&m)`，**行为逐条不变**（下面每条断言照旧）。 */
+        ufo_tok_motion_init_at(&m, 0u, 0.0f, 0.0f);                  /* 第 1 枚 */
         CHECK(m.vx < 0.0f && feq(m.vy, UFO_TOK_VEL_COMP, 1e-6f));    /* 左下 45° */
         CHECK(m.age == 0);
-        ufo_tok_motion_init(&m, 1u);                                 /* 第 2 枚 */
+        CHECK(m.x == 0.0f && m.y == 0.0f);                           /* 出生点 = 传入坐标 */
+        ufo_tok_motion_init_at(&m, 1u, 0.0f, 0.0f);                  /* 第 2 枚 */
         CHECK(m.vx > 0.0f && feq(m.vy, UFO_TOK_VEL_COMP, 1e-6f));    /* 右下 45° */
-        ufo_tok_motion_init(&m, 2u);
+        ufo_tok_motion_init_at(&m, 2u, 0.0f, 0.0f);
         CHECK(m.vx < 0.0f);                                          /* 再交替回来 */
+        /* 出生点被原样记下（一手：落点 = 那只敌人的死亡坐标；调用方已经夹取过）*/
+        ufo_tok_motion_init_at(&m, 3u, -120.0f, 96.5f);
+        CHECK(m.x == -120.0f && m.y == 96.5f);
+        CHECK(ufo_tok_motion_step(&m) == 0);
+        CHECK(feq(m.x, -120.0f + m.vx, 1e-5f) && feq(m.y, 96.5f + m.vy, 1e-5f));
 
         /* 位移：每帧 vx/vy（一手 `0x4263a1`–`0x4263cb`）*/
-        ufo_tok_motion_init(&m, 1u);                                 /* 右下 */
-        x = 0.0f; y = 0.0f;
-        CHECK(ufo_tok_motion_step(&m, &x, &y) == 0);
-        CHECK(feq(x, UFO_TOK_VEL_COMP, 1e-6f) && feq(y, UFO_TOK_VEL_COMP, 1e-6f));
+        ufo_tok_motion_init_at(&m, 1u, 0.0f, 0.0f);                  /* 右下 */
+        CHECK(ufo_tok_motion_step(&m) == 0);
+        CHECK(feq(m.x, UFO_TOK_VEL_COMP, 1e-6f) && feq(m.y, UFO_TOK_VEL_COMP, 1e-6f));
         CHECK(m.age == 1);
 
         /* 反弹：右边界 176（一手 `0x4a4198`）⇒ vx 取反；下边界 370（`0x4a4408`）⇒ vy 取反 */
-        ufo_tok_motion_init(&m, 1u);
-        x = 175.5f; y = 0.0f;
-        CHECK(ufo_tok_motion_step(&m, &x, &y) == 0);
+        ufo_tok_motion_init_at(&m, 1u, 175.5f, 0.0f);
+        CHECK(ufo_tok_motion_step(&m) == 0);
         CHECK(m.vx < 0.0f);                                          /* 撞右边界 ⇒ 反射（`0x4a4168` = −1.0）*/
-        CHECK(feq(x, 175.5f + UFO_TOK_VEL_COMP, 1e-5f));             /* 位置不被夹，只有速度翻 */
-        ufo_tok_motion_init(&m, 0u);
-        x = -175.5f; y = 0.0f;
-        CHECK(ufo_tok_motion_step(&m, &x, &y) == 0);
+        CHECK(feq(m.x, 175.5f + UFO_TOK_VEL_COMP, 1e-5f));           /* 位置不被夹，只有速度翻 */
+        ufo_tok_motion_init_at(&m, 0u, -175.5f, 0.0f);
+        CHECK(ufo_tok_motion_step(&m) == 0);
         CHECK(m.vx > 0.0f);                                          /* 撞左边界（−176）*/
-        ufo_tok_motion_init(&m, 1u);
-        x = 0.0f; y = 369.5f;
-        CHECK(ufo_tok_motion_step(&m, &x, &y) == 0);
+        ufo_tok_motion_init_at(&m, 1u, 0.0f, 369.5f);
+        CHECK(ufo_tok_motion_step(&m) == 0);
         CHECK(m.vy < 0.0f);                                          /* 撞下边界 370 */
-        x = 0.0f; y = 100.0f;
-        ufo_tok_motion_init(&m, 0u);                                 /* 左下 ⇒ vy > 0 */
+        ufo_tok_motion_init_at(&m, 0u, 0.0f, 160.5f);                /* 左下 ⇒ vy > 0 */
         m.vy = -UFO_TOK_VEL_COMP;                                    /* 手工构造「向上撞上边界」*/
-        y = 160.5f;
-        CHECK(ufo_tok_motion_step(&m, &x, &y) == 0);
+        CHECK(ufo_tok_motion_step(&m) == 0);
         CHECK(m.vy > 0.0f);                                          /* 撞上边界 160（`0x4a3f4c`）*/
 
         /* 方向守卫：朝外走才翻（一手四条反弹都带 `vel.x < 0` / `vel.x > 0` 的守卫）*/
-        ufo_tok_motion_init(&m, 1u);                                 /* 右下：vx > 0、vy > 0 */
+        ufo_tok_motion_init_at(&m, 1u, 176.0f, 0.0f);                /* 右下：vx > 0、vy > 0 */
         m.vx = -m.vx;                                                /* 已经朝左，却贴在右边界 */
-        x = 176.0f; y = 0.0f;
-        CHECK(ufo_tok_motion_step(&m, &x, &y) == 0);
+        CHECK(ufo_tok_motion_step(&m) == 0);
         CHECK(m.vx < 0.0f);                                          /* 不被翻回来 */
 
         /* 1200 帧之后**不再反弹**（一手 `0x4263d1 cmp [edi+0x98c],0x4b0; jge`），只判出界 */
-        ufo_tok_motion_init(&m, 1u);
+        ufo_tok_motion_init_at(&m, 1u, 176.5f, 380.0f);
         m.age = UFO_TOK_NO_BOUNCE_FRAMES;
-        x = 176.5f; y = 380.0f;
-        CHECK(ufo_tok_motion_step(&m, &x, &y) == 0);                 /* 外框内 ⇒ 还在 */
+        CHECK(ufo_tok_motion_step(&m) == 0);                         /* 外框内 ⇒ 还在 */
         CHECK(m.vx > 0.0f && m.vy > 0.0f);                           /* 速度没被翻 */
         CHECK(UFO_TOK_NO_BOUNCE_FRAMES == 1200);                     /* ✅ 一手 `0x4b0` = 20 s = 8 次换色 */
 
         /* 出界即撤：外框 208 / −208（`0x4a43a0`/`0x4a4400`）、y −16（`0x4a43f8`）/ 464（`0x4a3e90`）*/
-        ufo_tok_motion_init(&m, 1u);
-        x = 207.5f; y = 0.0f;
-        CHECK(ufo_tok_motion_step(&m, &x, &y) == 1);                 /* x 越过 208 ⇒ 撤 */
-        ufo_tok_motion_init(&m, 0u);
-        x = -207.5f; y = 0.0f;
-        CHECK(ufo_tok_motion_step(&m, &x, &y) == 1);
-        ufo_tok_motion_init(&m, 1u);
-        x = 0.0f; y = 463.5f;
-        CHECK(ufo_tok_motion_step(&m, &x, &y) == 1);                 /* y 越过 464 ⇒ 撤 */
-        ufo_tok_motion_init(&m, 1u);
-        x = 0.0f; y = 0.0f;
-        CHECK(ufo_tok_motion_step(&m, &x, &y) == 0);                 /* 场内 ⇒ 活 */
-        CHECK(ufo_tok_motion_step(NULL, &x, &y) == 1);               /* 空指针 ⇒ 报「撤」（防御）*/
-        CHECK(ufo_tok_motion_step(&m, NULL, &y) == 1);
+        ufo_tok_motion_init_at(&m, 1u, 207.5f, 0.0f);
+        CHECK(ufo_tok_motion_step(&m) == 1);                         /* x 越过 208 ⇒ 撤 */
+        ufo_tok_motion_init_at(&m, 0u, -207.5f, 0.0f);
+        CHECK(ufo_tok_motion_step(&m) == 1);
+        ufo_tok_motion_init_at(&m, 1u, 0.0f, 463.5f);
+        CHECK(ufo_tok_motion_step(&m) == 1);                         /* y 越过 464 ⇒ 撤 */
+        ufo_tok_motion_init_at(&m, 1u, 0.0f, 0.0f);
+        CHECK(ufo_tok_motion_step(&m) == 0);                         /* 场内 ⇒ 活 */
+        CHECK(ufo_tok_motion_step(NULL) == 1);                       /* 空指针 ⇒ 报「撤」（防御）*/
     }
 
 
@@ -1038,10 +1041,19 @@ int main(void)
     CHECK(ufo_hp_permille(50, -1) == 0);
     CHECK(ufo_hp_permille(1, 3) == 333);               /* 截断（不是四舍五入）：1×1000/3 = 333 */
 
-    /* 令牌 / 载体占位常量本身也要过硬约束 */
-    CHECK(UFO_TOKEN_LIFE < UFO_LIFE_LIMIT);
-    CHECK(UFO_TOKEN_TTL_FRAMES > 0);
+    /* 令牌池的容量常量（★ 2026-09-12 换池：令牌是**自建 VM**，不再有 HP —— `UFO_TOKEN_LIFE`
+     * 连同「令牌被子弹打掉也算收」那条路一起删了，见 `AUDIT.md` §BO-11 的 P3）。 */
     CHECK(UFO_TOKEN_MAX >= 1);
+    CHECK(UFO_TOKEN_TTL_FRAMES > 0);
+    CHECK(UFO_TOKEN_POOL_SLACK >= 0);
+    CHECK(UFO_TOKEN_CAP == UFO_TOKEN_MAX + UFO_TOKEN_POOL_SLACK);
+    /* 池容量判据（`ufo.c` 的分配器**唯一**的上限入口）—— 逐格真值表 */
+    CHECK(ufo_token_pool_room(0) == UFO_TOKEN_CAP);
+    CHECK(ufo_token_pool_room(UFO_TOKEN_MAX) == UFO_TOKEN_POOL_SLACK);
+    CHECK(ufo_token_pool_room(UFO_TOKEN_CAP - 1) == 1);
+    CHECK(ufo_token_pool_room(UFO_TOKEN_CAP) == 0);            /* 满 ⇒ 一枚都放不下 */
+    CHECK(ufo_token_pool_room(UFO_TOKEN_CAP + 100) == 0);      /* 越界（坏状态）也不给负数 */
+    CHECK(ufo_token_pool_room(-1) == 0);                       /* 负数（坏状态）⇒ 0，绝不放行 */
 
     /* ============================== 死亡事件 kind 过滤（spec §7 AUDIT：必须排除 KILL_ALL） */
     CHECK(UFO_EDEATH_KILLED == 0u);                    /* 值对账（DEATH §2.1；ufo.c 另有 _Static_assert）*/
@@ -1049,17 +1061,15 @@ int main(void)
     CHECK(UFO_EDEATH_ECL_DIE == 2u);
     CHECK(UFO_EDEATH_OTHER == 3u);
     CHECK(UFO_EDEATH_KILL_ALL == 4u);
-    CHECK(ufo_token_kill_counts(UFO_EDEATH_KILLED));
-    CHECK(ufo_token_kill_counts(UFO_EDEATH_BOMB_KILL));
-    CHECK(!ufo_token_kill_counts(UFO_EDEATH_KILL_ALL));   /* ★ 过场清场不算 */
-    CHECK(!ufo_token_kill_counts(UFO_EDEATH_ECL_DIE));
-    CHECK(!ufo_token_kill_counts(UFO_EDEATH_OTHER));
-    CHECK(!ufo_token_kill_counts(99u));
+    /* ★ 2026-09-12 换池：`ufo_token_kill_counts()` **已删**（令牌不是敌人 ⇒ 没有死亡事件）。
+     * 现在**只有** `ufo_body_kill_counts`，而且它的用途变成了**两处**：
+     *   ① 本体自己的击破（`ev->id == ufo->id`）；② **令牌的来源门**（小怪击破 ⇒ 登记一枚令牌）。 */
     CHECK(ufo_body_kill_counts(UFO_EDEATH_KILLED));
     CHECK(ufo_body_kill_counts(UFO_EDEATH_BOMB_KILL));
-    CHECK(!ufo_body_kill_counts(UFO_EDEATH_KILL_ALL));
+    CHECK(!ufo_body_kill_counts(UFO_EDEATH_KILL_ALL));   /* ★ 过场清场不算 */
     CHECK(!ufo_body_kill_counts(UFO_EDEATH_ECL_DIE));
     CHECK(!ufo_body_kill_counts(UFO_EDEATH_OTHER));
+    CHECK(!ufo_body_kill_counts(99u));
 
     /* ================================ 端到端小场景：三次令牌 → 合成 → 召唤 → 吸 → 收尾 */
     ufo_group_reset(&g);

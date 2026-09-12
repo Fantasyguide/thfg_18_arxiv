@@ -1315,6 +1315,42 @@ SDK 把执行从 `0x45c048` 改到 `0x45c056`，**跳过 `0x45c051` 的 `call do
 
 
 
+### 1v-补6. 鬼形兽（117）十二修：SPACE 1..7 + 撒道具 A/B/C + 咆哮拦装备子机 + 鹫按角色分派（2026-09-12）
+
+> 对应 AUDIT §AL42。用户 2026-09-12 复听 + 实跑口径：倒数第 4 个 = 第 3 候选 `0x3e`；
+> roar-exit 仍是 `0x42`（§1v-补5 已锁）。本轮新增**一个断点** `BP_ce_option_shot_gate`。
+
+- **SPACE 调试键随机 1..7**：`ANIMAL_DEBUG_TYPE_MAX` `3` → `7` ⇒ 一拍空格动物灵 1..3 + 鱼灵
+  4..7 都可能出；Shift+空格（4..7 循环）/ Ctrl+空格（强制就绪）不变。日志改口径
+  `wba_wc: DEBUG spawn spirit type N at (0, 224) by SPACE`。
+- **撒道具 SE A/B/C**：`scatter_se_select()` 从 A/B 扩成 A/B/C（`0x34` / `0x43` / `0x3e`，
+  名表 `se_lgods4` / `se_release` / `se_tan03`），每段连续 `se_left` 序列轮换一次、段首打
+  `wba_wc: scatter SE A/B/C -> id 0x.. (table name ...)`。release 恒 `0x34`。
+  **要用户听 / 回报**：多撒几次道具，A / B / C 哪个才是「大量道具」的音。
+- **咆哮期间装备子机普通弹被拦**：一手定位 = 主炮路径 `Player__tick_shooting_state` `0x45ea00`
+  的行循环会按 row `+0x20` 低半字节从**原生子机** `player+0x580+slot*0xf0` 出弹（咆哮换 set 时一起换）；
+  但**装备 option 卡**走另一条 `Player__tick_shooters_for_ability_card` `0x40a9c0`（set `0x0a..0x15`），
+  咆哮管不到 ⇒ 用户看到「灵梦 / 魔理沙子机照旧打普通激光、松 Z 才停」。新增断点
+  `BP_ce_option_shot_gate` `0x40a9c3`：`ready || hypering` 时对零售组 `0x0a..0x15` 返回 1，
+  SDK 跳到该函数空路径收尾 `0x40aa9e` 跳过整段（option / anm / 其它卡广播不动）。日志
+  `wba_c: option shot suppressed while roaring (retail equip option set 0x.., type .., char ..)`。
+  不碰 `0x16`（108）/ `0x17+`（77 / 119）。
+- **鹫按角色分派**：`eagle_beam_tick()` 只给魔理沙（pl01，卡侧 option 激光，脚本 163）；
+  灵梦 / 咲夜走数据路径的 5 颗 body 追尾弹（pl00 EAGLE `0x24..0x27`）；早苗原来借 pl01a 模板
+  的 `mode=2` body 行会在 `0x45fcc8` 空指针崩溃，已把 `HYPER_SOURCE["pl03.sht"]["EAGLE"]`
+  改成 `pl00a.sht`（安全回退，pl03.sht 已随发布同步）。
+- **ABI**：新增 `BP_ce_option_shot_gate @28`；`dllverify` 27 → **28 exports**。
+- **要用户实跑验证**：
+  1. 拍空格随机出 1..7（4..7 = 鱼灵）；
+  2. A/B/C 撒道具音选一个；
+  3. 灵梦狼咆哮 + 装备 option 卡：普通激光停、出现 suppressed 日志；
+  4. 魔理沙狼咆哮：普通激光停；魔理沙鹫咆哮：卡侧 option 激光（pl01 样式）；
+  5. 灵梦鹫咆哮：5 颗 body 追尾弹，不再有 pl01 激光条。
+- **门 / 部署**：`make check`、`sites.py verify`、`assets/check_player_anm_bounds.py`、
+  `tooling/check-docs.py` 全绿；DLL md5 `12a93d8c4c8797dd98ea64322d9331fe`，四个 modkit
+  加载路径已 `sync_modkit_dll.sh` 同步。
+
+
 ## 1t-补. 绀珠传（115）2026-09-09 实跑修的三处
 
 1. **碎片条贴图**：面板第 6 条原来固定用 `sprite150`——它是**绿色**（符卡碎片条），
@@ -1794,7 +1830,7 @@ TH14 Collect Point 收点系统的 1:1 复刻（占位名 = TH14 三字名，用
 | 109 | 花映塚 爆风/蓄力 | `pofv.c` | 🔧 已实装待实跑（527 断言；CA 无敌帧数已订正）|
 | 110 | 风神录 信仰/灵击 | `mof.c` + `faith.c` | 🔧 已实装待实跑（868 断言；按 TH10 一手订正：无擦弹倍率 / 无逐帧衰减 / 连击 +120）|
 | 111 | 地灵殿 信号槽 | `signal.c` | 🔧 已实装待实跑（233 断言；绿点来源已补、每关归零已补、乘数通道已接）|
-| 112 | 星莲船 飞碟 | `ufo.c` | 🔧 已实装待实跑（**987** 断言；金=蓝、两同一异照抄、**HUD 第一版在层 25**；**真 ECL 已从 TH12 移植**，缺贴图/anm ⇒ 暂不发布）|
+| 112 | 星莲船 飞碟 | `ufo.c` | 🔧 已实装待实跑（**992** 断言；金=蓝、两同一异照抄、**HUD 第一版在层 25**；**真 ECL 已从 TH12 移植**，缺贴图/anm ⇒ 暂不发布）|
 | 113 | 神灵庙 灵界 | `trance.c` | 🔧 已实装待实跑（**1103** 断言；**中弹救援 = 救援层最后一家（延时不是免死；落点 = 卡虚表 `+0x0c` + `return 1`）**；**神灵实体池已落地**：不下落/走过去才吃/越缩越小；计分载体仍搁置）|
 
 ### 本轮（2026-09-12 第三轮：对抗审计 + 收口）
@@ -1888,7 +1924,9 @@ make release PUSH=1
 ### 9z.2 112 的载体：用户已拍板（2026-09-12）
 
 用户原话：「**是不是因为语义的偏差导致了 token 按照真敌人走？得是自建 VM 池子**」
-⇒ **token 改成自建 VM 池**（照 117 动物灵 `s_tok[40]` / 113 神灵 `s_spirit[128]` 的写法）。
+⇒ **token 改成自建 VM 池**（照 117 动物灵 `s_tok[40]` / 113 神灵 `s_spirit[128]` 的写法）—— **✅ 已落地**
+（一只 token 一个 VM、位置运动在自己字段上；`ce_spawn_enemy` / `UFO_TOKEN_LIFE` / 「被弹打掉也算收」整条链已删；
+两个副作用消失：不再被 `enemy_count_real` 照计、token 打不掉只能碰；`sizeof(ufo_card_t)` 488 → 144；断言 992）。
 **被召唤出来的 UFO 敌人仍然必须是真敌人**（有血量/受击盒/要被子弹打死、走 `on_enemy_death`）—— 只换 token。
 
 **为什么它当初走了真敌人**（一句话）：引进 `NoEnemyDebug` 惰性壳是为了「要一个能每帧钉坐标、能挂 anm 的实体，

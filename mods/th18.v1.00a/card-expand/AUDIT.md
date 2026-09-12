@@ -3709,6 +3709,97 @@ wba_wc: SE probe 6/6 id 0x39 (se_heal)
   （源 / `mods/` / `thcrap/bin/` / `thcrap/repos/Renko_1055/th18_card_expand_255/` 四份一致）。
 
 
+### AL42. ★ 鬼形兽（id 117）十二修：SPACE 随机 1..7、撒道具 SE A/B/C、咆哮期间拦掉装备子机普通弹（2026-09-12）
+
+用户 2026-09-12 实跑回报：
+
+- 6 候选里「lgod4」其实是**倒数第 4 个** = 第 3 个候选 `0x3e`（不是倒数第 3 个 = 第 4 个 `0x43`）；
+  roar-exit 仍是第 5 个候选 `0x42`（§AL41 已锁，不动）。
+- 拍空格要**同时包含鱼灵和动物灵**。
+- 灵梦狼咆哮时子机打「魔理沙普通子机激光」；魔理沙按住 Z 进狼 / 鹫咆哮时子机仍打激光、松手才消失；
+  大鹫咆哮样式不对。
+
+#### A. SPACE 调试键：随机 1..7（`native/cards/animal.c`）
+
+- `ANIMAL_DEBUG_TYPE_MAX` `3` → `7`：一拍空格 = `1 + ce_rand() % 7`，动物灵 1..3 + 资源鱼灵 4..7
+  都可能出。Shift+空格（4..7 循环）/ Ctrl+空格（强制就绪）不变。
+- 日志口径改为 `wba_wc: DEBUG spawn spirit type N at (0, 224) by SPACE`（原写 `animal`）。
+- 非调试构建不受影响。
+
+#### B. 撒道具 SE：A/B/C 三候选（`native/cards/animal.c`）
+
+- 原来 A/B = `0x34` / `0x43`；新增 C = `0x3e`（试听表名 `se_tan03`）。
+- `scatter_se_select()` 按 A→B→C→A 每段连续 `se_left` 序列轮换，只在段首打一行：
+
+  ```
+  wba_wc: scatter SE A -> id 0x34 (table name se_lgods4)
+  wba_wc: scatter SE B -> id 0x43 (table name se_release)
+  wba_wc: scatter SE C -> id 0x3e (table name se_tan03)
+  ```
+
+- release（`ANIMAL_DEBUG_KEY=0`）恒 `0x34`；roar-exit 仍 `ANIMAL_SE_ROAR_END = 0x42`（§AL41 锁定）。
+
+#### C. 咆哮期间「装备子机」照旧打普通弹：新增 `BP_ce_option_shot_gate`
+
+**一手定位（哪条路径在开火）**：
+
+- **主炮 + 原生子机**：`Player__tick_shooting_state` `0x45ea00` 的行循环在 `0x45ec41` 读 row `+0x20`
+  低半字节当选中的 option（`player + 0x580 + slot*0xf0`，slot 0 = 本体）⇒ 咆哮换 set index 后
+  **原生子机行也一起换**（pl00 / pl01 狼行、pl00 鹫行全是 slot 0 ⇒ 原生子机停火）。
+- **装备 option 卡**：每张卡 `__on_shoot`（如 `CardReimu1__on_shoot` `0x40ab00`）调
+  `Player__tick_shooters_for_ability_card` `0x40a9c0`，烧死自己的零售 set `0x0a..0x15`，在
+  `option+0x5c/+0x60` 出弹。`on_shot_set_index`（`0x45ebfb`）管不到这条路 ⇒ 用户看到的
+  「子机照旧打普通激光」= 这些装备 option 卡；该函数在 `Player__tick_shooting_state` 的
+  `0x45eca0` 卡广播里被调，所以「松开 Z 就消失」。
+- 一手 TH17 `Player__do_shooting` `th17:0x44a710`：咆哮时整组 set 被替换；pl00 狼行全 body ⇒
+  子机停火，pl01 鹫行的 `mode=2` option 行由本卡卡侧束接管。
+
+**修法**（新增一个断点，不写机器码）：
+
+- 站点 `0x40a9c3` = `mov edx,[ebp+8]`（3 字节 `8b5508`，序言后、任何副作用前）。
+- `BP_ce_option_shot_gate`：读 `[ebp+0x14]` = 本组 set；只对零售组 `0x0a..0x15` 沿卡链表问
+  `on_option_shot_gate(card, set)`。117 在 `roaring()`（ready || hypering）时返回 1；SDK 用
+  `regs->retaddr = 0x40aa9e`（该函数自己的「`option==NULL`」收尾 `mov esp,ebp / pop ebp / ret 0x10`）
+  跳过整段：栈平衡，option / anm 上下文 / 其它卡广播都不动。
+- 不碰 `0x16`（108 妖侧）与 `0x17+`（77 / 119 的卡子机）。
+- 导出 `BP_ce_option_shot_gate` `@28`、`dllverify` 27 → **28 exports**；`sites_gen.h` /
+  `patch/th18.v1.00a.js` 同步再生成。
+
+#### D. 鹫视觉按角色分派（`native/cards/animal.c` + `assets/sht/append_shooterset.py`）
+
+- `eagle_beam_tick()` 增加 `CE_ADDR_CHARACTER == ANIMAL_CHAR_MARISA(1)` 门：
+  - pl00 灵梦 / pl02 咲夜：鹫 = **5 颗 body 追尾弹**（`pl00.sht` 的 EAGLE `0x24..0x27`，
+    `mode=1` / `func init1/tick1`），数据路径已画对，不再叠 pl01 激光条。
+  - pl01 魔理沙：主炮 EAGLE 组留空，卡侧矩形束挂在**原生子机** `player+0x670` 每颗一条
+    （脚本 163 = TH17 pl01.anm entry0 sprite29），松 Z / 咆哮结束立即收。
+  - pl03 早苗：没有 TH17 对应；原来的 pl01a 模板把 TH17 `mode=2` 行原样搬进 `pl03.sht`，而
+    `opt_slot` 的 TH17 编码 `0/16/32/48/64` 在 TH18 主炮路径只取低半字节 ⇒ 全变 body；
+    `mode=2` 的 tick2 在 `0x45fcc8` 无条件读 `[bullet+0xe4 + 0x5c]`，`bullet+0xe4 == 0` ⇒
+    **空指针崩溃**。已把 `HYPER_SOURCE["pl03.sht"]["EAGLE"]` 改成 `pl00a.sht`（与 pl02 同款
+    安全回退：5 颗 body 追尾弹，贴图 identity 到 pl03 正常弹）。`make sht` 后 pl03 set
+    `0x24..0x27` = `mode=1 / slot=0`。
+
+#### E. 门 / 部署（本轮）
+
+- `make check` 全绿；`python3 sites.py verify`、`python3 assets/check_player_anm_bounds.py`、
+  `python3 tooling/check-docs.py` 通过。
+- **新增 `BP_ce_option_shot_gate`**：`th18_card_expand.def` `@28`，`Makefile` 的 `dllverify`
+  27 → **28 exports**（26 BP → 27 BP + init）。
+- `MODKIT_DIR=… NO_GIT=1 make release` 成功；DLL md5 = `12a93d8c4c8797dd98ea64322d9331fe`
+  （native / dist / 部署 `mods/` 三者 `cmp` 相同）；`build/sht/pl00..03.sht`、`abcard.anm`、
+  `ability.anm`、`pl0X.anm`、`default.ecl` 与部署逐文件 `cmp` 相同。
+- `bash local/sync_modkit_dll.sh`：四个加载路径全部同步为同一 md5，**本轮未被游戏锁**。
+
+#### F. 用户请实跑验证
+
+1. 拍空格：日志出现 `DEBUG spawn spirit type N`，N 会随机出现 4..7（鱼灵）。
+2. 连续撒道具：按顺序听 A(`0x34`) / B(`0x43`) / C(`0x3e`)，回报哪个最像「大量道具」。
+3. 灵梦狼咆哮 + 带装备 option 卡：子机普通激光应停；日志
+   `wba_c: option shot suppressed while roaring (retail equip option set 0x.., ...)`。
+4. 魔理沙狼咆哮：子机普通激光应停；魔理沙鹫咆哮：应是卡侧 option 激光（pl01 样式）。
+5. 灵梦鹫咆哮：应是 5 颗 body 追尾弹，不再有 pl01 激光条。
+
+
 ## G. OPEN —— 还没解决的
 
 | # | 事项 | 说明 |
@@ -4852,14 +4943,20 @@ C 侧：占位 `CE_ANM_ABILITY_SCRIPT_PEASHOOTER_OPT`（卡 77 的豌豆射手�
   ⇒ 现在照用户口述。**这是本轮唯一与用户口述直接冲突的一条**，需拍。
 - **P2 token 颜色规则**：TH18 没有敌人的掉落表 ⇒ 我们用「本局第 n 枚」轮转表（❓ 自定）。
   选项：接受轮转占位 / 改成「按敌人 id 取模」/ 等真 ECL 到位让实体自带颜色。
-- **P3 ★ 载体选择 + 「token 会被子弹打掉」**：TH12 = **道具**（打不掉、只能接触收）；
-  我们 = **真敌人壳**。代价：会被 `enemy_count_real` 照计 ⇒ **炸弹门/决死门被放行**（§BO-3）；
-  且现在 `UFO_TOKEN_LIFE = 1` ⇒ **任何一发子弹都能「收」走 token** ⇒ **「碰到才收」形同虚设、风险收益手感被抹掉**。
-  修法需要「伤害免疫位」（`flags_lo & 0x31`；`engine.h` **没有**现成旋钮 ⇒ 要么直写 `enemy+0x635c`、要么加 SDK 面）；
-  ⚠ **顺带好处**：置了免疫位还能把它从 `CE_EDEATH_F_REAL` / `enemy_count_real` 里摘出去，**§BO-3 那个副作用一起消失**。
-  另两条路：改用**自建 VM 池**（零副作用/零分配、能在死亡栈上帧末建；❌ 引擎的命中/清场/`on_enemy_death` 碰不到它
-  —— 而这**更贴一手**，因为 TH12 的 token 是打不掉的道具）；**道具载体在 TH18 不可用**（type > 0x13 上限，
-  且 0x10..0x13 是卡道具）。
+- ~~**P3 载体选择 + 「token 会被子弹打掉」**~~ **✅ 2026-09-12 用户拍板并已落地：token 改成「自建 VM 池」**
+  （用户原话「得是自建 VM 池子」；另：**被召唤出来的 UFO 敌人仍然是真敌人**，只换 token）。
+  新结构 = 文件级静态 `s_tokpool`（`ufo_tok_t tok[5]` 紧凑数组 + swap-remove，照 113 `trance.c` 的 `spirit_remove`；
+  先例 117 `animal.c` 的 `s_tok[40]` / 113 的 `s_spirit[128]`），**一只 token 一个 VM**
+  （既有 `CE_ANM_ABILITY_SCRIPT_UFO_TOKEN_*` 与 `UFO_TOKEN_ANM_LAYER` 都不变），位置/速度全在**我们自己的字段**上
+  （`ufo_tok_motion_t` 20 B：`x,y,vx,vy,age`；不再碰 `enemy+0x12b4` 一族）。
+  **删干净**（grep 自证零残留）：`ce_spawn_enemy` 令牌路 + 整张 `CE_SPAWN_*` 填表、`UFO_ECL_TOKEN(_NAME)`、
+  `UFO_TOKEN_LIFE`、**「token 被弹打掉也算收」整条链**（`ufo_token_kill_counts` / `ufo_tok_slot` /
+  `on_enemy_death` 令牌死亡支 / 死亡栈登记环 `pending_*`）、`UFO_ENEMY_ABS_POS/_Y`。
+  ⇒ **两个副作用一起消失**：① 不再进敌人池 ⇒ `enemy_count_real` 不再照计 ⇒ **炸弹门 `0x420453` / 决死门 `0x45c07b`
+  不再被放行**；② **token 打不掉了、只能接触收** ⇒ 「碰到才收」的手感回来（与一手「token 是道具」一致）。
+  `sizeof(ufo_card_t)` **488 → 144**（池移出私状态 ⇒ 静态区净增约 240 B，**没为省字节砍功能**）；
+  `ufo_core` 断言 **987 → 992**；`make check` / `make verify` 均 exit 0。
+  ⚠ 来源那条**一个字没改**（仍是小怪击破登记 → 帧末建 VM）；**UFO 本体一个字没改**。
 - **P4 血条 UI**（用户点名）：走资产线切零售 `front.anm` **134/136**（未切图）＋ **HP 数值口径**
   （一手 {1600..2500} 按火力档；照抄会触发 TH18 `0x42d8f6` 的位 30 ⇒ 需要缩法）。
 - **P5 收取半径**：我们现在 20 px 圆（❓ 自定）vs 一手「自机收点矩形半尺寸 **15 单位**」；跨版本单位等价未证。

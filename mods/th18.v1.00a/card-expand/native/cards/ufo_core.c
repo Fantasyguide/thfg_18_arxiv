@@ -499,37 +499,43 @@ int32_t ufo_spit_token_state(int32_t ufo_color, int32_t slot2_color)
     return ufo_break_token_state(UFO_COLOR_RAINBOW, slot2_color);
 }
 
-/* ---- ★★ 令牌运动（一手逐条见头文件那一块）---- */
-void ufo_tok_motion_init(ufo_tok_motion_t *m, uint32_t serial)
+/* ---- ★★ 令牌运动（一手逐条见头文件那一块）----
+ * ★ 2026-09-12 换池：位置与速度**都在 `ufo_tok_motion_t` 自己身上**（以前位置在敌机字段里、
+ *   这两个函数只吃 `float *x, *y` 指针）。行为逐条不变：位移 → 四边反弹（带朝向守卫）→
+ *   1200 帧后不反弹 → 出界即撤。 */
+void ufo_tok_motion_init_at(ufo_tok_motion_t *m, uint32_t serial, float x, float y)
 {
     if (!m) return;
     /* 一手：`and edi,1` 的奇偶选角度。⚠ 一手的计数在**自增之后**判（`0x427411 inc` 在 `0x4274b1 and` 之前）
      * ⇒ 序号 0（= 本关第 1 枚）落**奇** = 3π/4 = 左下 45°。
      * ⚠ 我们的 `serial` 是**本局**序号（不按关复位）⇒ 换关后奇偶性会与原版差一个（🟡 待实跑，一行可改）。 */
     int leftdown = (int)((serial & 1u) == 0u);            /* 序号 0（本关第 1 枚）⇒ 左下 45° */
+    m->x = x;
+    m->y = y;
     m->vx = leftdown ? -UFO_TOK_VEL_COMP : UFO_TOK_VEL_COMP; /* cos(3π/4) = −√2/2、cos(π/4) = +√2/2 */
     m->vy = UFO_TOK_VEL_COMP;                             /* 两种角度的 sin 都是 +√2/2（都朝下）*/
     m->age = 0;
 }
 
-int ufo_tok_motion_step(ufo_tok_motion_t *m, float *x, float *y)
+int ufo_tok_motion_step(ufo_tok_motion_t *m)
 {
-    if (!m || !x || !y) return 1;
+    if (!m) return 1;
     /* ① 位移（一手 `0x4263a1`–`0x4263cb`：pos += vel；GAME_SPEED 标量按 1.0 取）*/
-    *x += m->vx;
-    *y += m->vy;
+    m->x += m->vx;
+    m->y += m->vy;
     if (m->age < UFO_TOK_NO_BOUNCE_FRAMES) ++m->age;
     /* ② 反弹（一手 `0x4263d1 cmp [edi+0x98c],0x4b0; jge` ⇒ 1200 帧那一段跳过反弹）*/
     if (m->age < UFO_TOK_NO_BOUNCE_FRAMES) {
         float bx = UFO_TOK_BOUNCE_X;
-        if (*x <= -bx && m->vx < 0.0f) m->vx = -m->vx;            /* 反射因子一手 = −1.0（`0x4a4168`）*/
-        else if (*x >= bx && m->vx > 0.0f) m->vx = -m->vx;
-        if (*y <= UFO_TOK_BOUNCE_Y_TOP && m->vy < 0.0f) m->vy = -m->vy;
-        else if (*y >= UFO_TOK_BOUNCE_Y_BOTTOM && m->vy > 0.0f) m->vy = -m->vy;
+        if (m->x <= -bx && m->vx < 0.0f) m->vx = -m->vx;            /* 反射因子一手 = −1.0（`0x4a4168`）*/
+        else if (m->x >= bx && m->vx > 0.0f) m->vx = -m->vx;
+        if (m->y <= UFO_TOK_BOUNCE_Y_TOP && m->vy < 0.0f) m->vy = -m->vy;
+        else if (m->y >= UFO_TOK_BOUNCE_Y_BOTTOM && m->vy > 0.0f) m->vy = -m->vy;
     }
-    /* ③ 出界即撤（一手 `0x42650f`–`0x42655b`：四个外框常量，命中就把 state 写 0）*/
-    if (*x <= -UFO_TOK_OUT_X || *x >= UFO_TOK_OUT_X) return 1;
-    if (*y <= UFO_TOK_OUT_Y_TOP || *y >= UFO_TOK_OUT_Y_BOTTOM) return 1;
+    /* ③ 出界即撤（一手 `0x42650f`–`0x42655b`：四个外框常量，命中就把 state 写 0）
+     * ★ 换池之后「撤」这件事由卡侧执行（`ufo_tok_kill()`：删自己的 VM + 清槽）—— 本层只报判据。 */
+    if (m->x <= -UFO_TOK_OUT_X || m->x >= UFO_TOK_OUT_X) return 1;
+    if (m->y <= UFO_TOK_OUT_Y_TOP || m->y >= UFO_TOK_OUT_Y_BOTTOM) return 1;
     return 0;
 }
 
@@ -570,13 +576,9 @@ int32_t ufo_hp_permille(int32_t cur, int32_t max)
     return (int32_t)(((int64_t)cur * 1000) / (int64_t)max);
 }
 
-/* ============================================================ 死亡事件过滤 */
-int ufo_token_kill_counts(uint32_t kind)
-{
-    /* ★❓ 自定（spec §9 #13 未拍板）：算「打死」+「炸弹秒杀」，**排除 KILL_ALL**（spec §7 AUDIT 硬要求）。*/
-    return kind == UFO_EDEATH_KILLED || kind == UFO_EDEATH_BOMB_KILL;
-}
-
+/* ============================================================ 死亡事件过滤
+ * ★ 2026-09-12 换池：`ufo_token_kill_counts()` **已删** —— 它只服务「令牌自己被子弹打掉也算收」
+ *   那条路（= 真敌人载体的产物）。令牌现在是自建 VM，不产生死亡事件（用户拍板的换池，见头文件 §3.2）。 */
 int ufo_body_kill_counts(uint32_t kind)
 {
     return kind == UFO_EDEATH_KILLED || kind == UFO_EDEATH_BOMB_KILL;
