@@ -63,6 +63,22 @@ source tooling/env.sh         # 探测并导出 GHIDRA_INSTALL_DIR / JAVA_HOME
 `tooling/ghidra/bootstrap.py` 会自动套用（safe 模式，不覆盖已有名）。
 **翻它能省掉大量从零命名**——详见 [`engine/_shared/community-sources.md`](engine/_shared/community-sources.md) 的金矿条目。
 
+## ★ 协作纪律：**只做自己那批卡；动到别人的卡必须醒目声明**
+
+本仓是**多人协作**，卡按批次分人：**系统卡 = id 106–117**（红魔乡…鬼形兽，各作系统复刻），
+其余（id 58–80 那批：黑桃五张 / 皇家同花顺 / 青眼白龙 / 黄昏 / 加倍 / 腐化 / 损破核心 / 炎魔 /
+黄金小丑 / 倒吊人 / 真银圣剑 / 古锭刀 / 豌豆射手 / 衔尾蛇 / 旋风斩 / 股市 …）属于**别人**。
+
+1. **改别人的卡之前先问**；确实必须改（例如共享件升级逼着所有卡跟着改、或审计查出真 bug）时，
+   **必须在 [`AUDIT.md` §BE](mods/th18.v1.00a/card-expand/AUDIT.md) 里逐条登记**
+   （`文件 → 改了什么 → 为什么 → 谁改的 → 怎么验证的`）+ **在被改的文件里留一段注释**说明来龙去脉；
+   作者会自己查这份清单（**不用逐个去问/通知**），但登记**一次都不能省**。
+2. **改共享件等于改所有人的卡**：`sdk.h` / `sdk.c` / `sdk_core.*` / `sdk/public.h` / `engine.h` /
+   `sites.py` / `Makefile` / `cards_def.c` / `patch/**` / `assets/ability/scripts/**`（脚本的 layer 也算！）
+   ——动这些要在报告里单开一节说明「对既有卡的影响面 + 回归跑了什么」。
+3. 汇总见 [`mods/th18.v1.00a/card-expand/AUDIT.md`](mods/th18.v1.00a/card-expand/AUDIT.md) 的
+   **§BE「非系统卡改动清单（协作须知）」**（每次动别人的卡都往那里追加一行）。
+
 ## 落笔纪律（完整版在 METHOD.md）
 
 - 每条结论写全**发现 → 推测 → 验证 → 结论（可信度 + 版本）→ 证据（地址/出处）**。

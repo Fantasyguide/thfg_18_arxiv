@@ -186,6 +186,17 @@ python3 tooling/ghidra/scripts/find_struct_writes.py th17 0x50
   [`engine/animal/th17/01`](../../engine/animal/th17/01-animal-spirits.md) §11 与 [`engine/spirit/OVERVIEW.md`](../../engine/spirit/OVERVIEW.md)。
 - **TH18**：**没有**动物灵 / 咆哮（残骸审计 [`engine/animal/th18/01`](../../engine/animal/th18/01-animal-residuals.md)）；
   唯一被继承的思路是 `Player::cancel_impending_death`（`th18:0x45d590`），我们的卡侧 deathbomb 钩子接在这条线上。
+  **2026-09-10**：卡侧复刻已落地（card-expand id 117「鬼形兽」**Stage 2**）——
+  [`mods/th18.v1.00a/card-expand/native/cards/animal.c`](../../mods/th18.v1.00a/card-expand/native/cards/animal.c) +
+  `animal_core.c`（纯逻辑 116 断言），动物灵实体 = 自建 VM 池 + 零售 `beast1.png` 切图（DVD 式弹跳 /
+  24 px 吸收 / 60 px 减速 / 变色 / 版边消失），审计 `AUDIT.md` §AL、实跑清单 `NEXT.md` §1v；
+  本文 §4/§5 的掉落 / 队列 / 时长表 / 霊撃 / 中弹链数值被逐条照抄。
+  **咆哮的 shot 组**（狼 = `set 11..14`、鹫 = `16..19`）也已解码并追加进 TH18 的 `pl0X.sht`：布局 / 全解码 /
+  func 与 anm 映射见 [`engine/sht/th17/01`](../../engine/sht/th17/01-file-layout-and-shooterset-index.md)、
+  [`02`](../../engine/sht/th17/02-hyper-shot-groups.md)。⚠️ 那两组**分机体**（霊夢 / 魔理沙 / 妖夢 字节全不同）、
+  **不分火力档也不分 shot type**；TH18 只有霊夢 / 魔理沙能同源，**咲夜 / 早苗 目前是替身** ——
+  待定方案（A 保持 / B 按本人原生弹幕放大 / C 借妖夢）与四个机体的原生弹幕对照写在
+  [`mods/th18.v1.00a/card-expand/NEXT.md`](../../mods/th18.v1.00a/card-expand/NEXT.md) §1v-补。
 - **跨版本台账**：[`engine/_shared/version-residuals.md`](../../engine/_shared/version-residuals.md)。
 - **本作登记与导航**：[`INDEX.md`](INDEX.md)（样本 / 符号覆盖 / 待挖图）。
 

@@ -53,7 +53,7 @@ return 1;   /* 放行原指令 */
 | +0x00 | 虚表 |
 | +0x04 | `card_id` |
 | +0x08 | `array_index`（分配序号）|
-| +0x0c..+0x1b | 链表结点（`mgr+0x18` 表头，`0x412e90` 插入）|
+| +0x0c..+0x1b | 链表结点（**表头在 `mgr+0x18`、首结点在 `mgr+0x1c`**；`0x412e90` 插入）|
 | +0x30、+0x44 | 位标志（case 56 清 bit0）|
 | +0x48 | 充能时长（主动卡）|
 | +0x4c | `zTableCardData*`（尾段写）|
@@ -181,11 +181,11 @@ CE_CARD(id, .回调 = 函数, ...);      /* 一张卡一条，放在 native/card
 
 ## 6. SDK 事件（虚表之外）
 
-有些效果不在 21 个槽里。SDK 用 thcrap 断点补，回调写在同一张 `CE_CARD` 表里，SDK 在断点里沿 `mgr+0x18` 卡链表找出有该回调的对象逐个调：
+有些效果不在 21 个槽里。SDK 用 thcrap 断点补，回调写在同一张 `CE_CARD` 表里，SDK 在断点里沿 `mgr+0x1c` 起的卡链表找出有该回调的对象逐个调（**`+0x18` 是表头、`+0x1c` 才是首结点**，`engine.h` 的 `CE_MGR_CARD_LIST_FIRST`）：
 
 | 事件 | 断点 | 回调 | 本批用 |
 | --- | --- | --- | --- |
-| `on_item_score` | `0x446cf6`（`collect_money_item` 里 `lea eax,[edi+0xc2c]`，esi = 身价，已钳 ≥10；之后 `push esi` 给弹窗、`mul esi` 计分）| `void (ce_card_t*, int32_t *value)` | 暂无（留给以后的得分卡）|
+| `on_item_score` | **两个站点同一份 handler**：`0x446cf6`（向上分支：线上 / `state==3`）+ **`0x446caa`**（线下且非真空飞行；`0x446cb2 jmp 0x446cfc` 会绕过前者）。esi = 身价 | `void (ce_card_t*, int32_t *value)` | 暂无（留给以后的得分卡）|
 | `on_item_money` | `0x446d28`（同函数尾部 `inc [MONEY_TOTAL]`，紧接 `inc [MONEY]`）；断点把 `*bonus` 同时加进 `MONEY` 与 `MONEY_TOTAL_COLLECTED` | `void (ce_card_t*, int32_t *bonus)` | 10♠：每第 10 个金钱道具 `*bonus += 1` |
 | `on_enemy_drop_pre` | `0x430510`（`Enemy__drop_items_and_notify_cards` 入口，撒之前）| `void (ce_card_t*, int32_t *counts)` | 加倍：掉落 ×2 |
 | `on_bomb_spent` | `0x4203bc`（`do_bomb` 里 `consume_bomb` 刚返回）| `void (ce_card_t*)` | 腐化：扣上限 |
@@ -195,6 +195,9 @@ CE_CARD(id, .回调 = 函数, ...);      /* 一张卡一条，放在 native/card
 | `on_item_collect` | `0x44625f`（type 分派前一条 `mov edx,[edi+0xc78]`，副作用未发生）。type 用 `*(uint32_t*)(item+0xc78)` 读，别信 EDX（窗前值不可靠） | `void (ce_card_t*, uint32_t type, const void *item)` | 辉针城：批集计数 + stash SCORE |
 | `on_item_commit` | `0x44658a`（共享收尾起点 `movss xmm2,[esi]` + `push 0x25`）。本道具分值**已按 type 计入 SCORE**、公共收尾（清槽等）之前 | `void (ce_card_t*)` | 辉针城：`(SCORE − stash)` 差量入批 |
 | `on_shot_damage` | `0x45f2a2`（`enm_compute_damage_sources` `0x45f0f0` 计分路径 `mov eax,0xee666667` + `imul esi`）。每帧每敌一次可计分命中：dmg 已钳 ≥1、pos = 敌世界坐标 (x,y)；聚焦 / 炸弹 / param_6≠0 的路径被窗口前判定挡掉（handler 再门一道，纵深防御） | `void (ce_card_t*, int32_t damage, const float *pos)` | 辉针城：非聚焦射击命中按帧节流掉 P |
+| `on_enemy_death` | `0x430240`（`FUN_00430240`，SDK 名 `Enemy__die`；**在引擎撒主掉落之前**、链表仍挂着）| `void (ce_card_t*, const ce_enemy_death_t*)`；`kind` 用 retaddr 分（`0x42f3b7` = 打死主路）| 共享事件（109/110/112/113）|
+| `on_native_shot_suppress` | 复用 `0x45ebfb`（与 `on_shot_set_index` 同点）：**先问 set index，有覆盖则不抑制** | `int (ce_card_t*)`，非 0 = 本帧跳过原生行循环 | 108（低速妖机体）/ 109（蓄力拦 Z）|
+| `on_shot_damage_any` | **与 `on_shot_damage` 同一个断点**（`0x45f2a2`）、同一份实参，但**不按聚焦过滤**（仍排除 bomb 生效帧与 `param_6 != 0` 的路径）；`focused` 由 SDK 传 | `void (ce_card_t*, int32_t dmg, const float *pos, int focused)` | 107（森罗结界要高速/低速两条命中通道）|
 
 **局中删一张卡**：`ce_destroy_card(victim)`（`sdk.c`，AUDIT §W）照 recount `0x4080e0` 的删卡分支——摘链、按 flags 减类别计数、
 `num_total−1`、`owned[id]` 清零、虚表 `+0x50` 删对象、引擎自己的 `create_all_card_lists_for_hud(mgr, 0)` 重画 HUD。
@@ -202,6 +205,51 @@ CE_CARD(id, .回调 = 函数, ...);      /* 一张卡一条，放在 native/card
 `ce_pick_random_card(exclude)` 用游戏 RNG 在链表里挑一张（只排除 `exclude` 自己）。倒吊人是第一个用户。
 
 以后加事件照此：一个断点 + 一个回调名 + AUDIT 一条。
+
+> **⚠ 多卡同装时谁说了算 → 见 [`EVENTS-CONTRACT.md`](EVENTS-CONTRACT.md)**：每个事件属于哪一类合成语义
+> （累加 / 聚合公式 + 单一落笔 / 先加后乘 / 选举覆盖 / OR / 广播只读），规则**不依赖卡链顺序**。
+> 该文同时记着三处已定裁决：`on_shot_set_index` **咆哮(117) 优先**、低速子机**id 最小者落笔**（108 胜 111）、
+> `on_enemy_drop_pre` 的**乘数作用在最终总数上**（= 加倍(69) 的意图是 ×2，即使实现写的是 +1）。
+
+### 6.1 声明层（2026-09-12，系统卡共用）
+
+多张卡同时想改同一个引擎状态时，**不许各写各的**（谁后遍历到谁说了算 = 依赖卡链顺序）。统一写成
+「卡**声明**意图 → 层**聚合** → 每帧由 SDK 或**被选举的那张卡**落一笔」。纯逻辑在 `sdk_core.c`
+（主机单测 `tests/test_sdk_core.c`，无引擎依赖），落笔在 `sdk.c` / `sdk.h`。合成语义分类见
+[`EVENTS-CONTRACT.md`](EVENTS-CONTRACT.md) §1。
+
+| 层 | 卡侧 API | 聚合 / 落笔 | 用户 |
+| --- | --- | --- | --- |
+| 无敌帧 | `ce_invuln_request(id, frames)`（每帧声明**剩余**帧数）| 取 **max**；SDK 在每帧 `ce_item_frame` 断点里 `ce_invuln_apply()` 落 `player+0x47774`（只写更长值）| 107 结界结束 0.67s、109 爆风 C1–C4、117 霊撃 |
+| 得分 | `ce_score_declare(id, value)` + `ce_score_mul_declare(id, permille)`（乘数附加项：110×111 同装时的「信号强度」）；落笔者读两个聚合值 | **Σ 各卡贡献**；落笔者 = **id 最小**（`ce_score_applier()`），由它写 SCORE | 110（信仰）+ 111（信号）|
+| 「本帧已消过弹」 | `ce_cancel_latch_claim(id)` | 先到先得（OR）；SDK 每帧 reset | 107 结界灵击 + 117 霊撃 同帧 |
+| 子机姿态 | `ce_optpose_declare(id, count, anm_script, fx, fy, ux, uy)` | **选举覆盖**：`ce_optpose_winner()` = id 最小，赢家独占落笔 | 111（低速子机）、108 |
+| 掉落乘数 | `ce_drop_mult_set(id, permille)`（1000 = ×1，粘性）| **先加后乘**：各卡只做加法，`ce_drop_apply(counts)` 在 `BP_ce_enemy_drop` 的卡循环**之后**一次性乘 | 69（加倍）|
+| HUD 槽位 | **卡侧用 `ce_hud_slot_claim_card(id, blk, out)`**（认领前推进「关卡纪元」⇒ 每关开场重排；裸 `ce_hud_slot_claim` 不重排）（`ce_hud_slot_get` 取最新值）；整摞淡出读 `ce_hud_near_corner()`（SDK 每帧推进一次，卡别自己调 `*_update`）| 底部货架按 **card_id 升序**确定性排布（[`HUD-LAYOUT.md`](HUD-LAYOUT.md) §2）；认领幂等、局中删卡不重排 | 110/111/113/116/117 |
+| 敌人死亡 | `on_enemy_death`（只读广播）| 广播只读：谁都不许在回调里析构敌人 / 缓存指针 | 109/110/112/113 |
+| 自建真敌人 | `ce_spawn_enemy(ecl_name, spawn)`（`CE_SPAWN_*` 字段表）| —（直接调引擎 `0x42d7d0`，返回敌人指针）| 108 使魔、112 彩虹令牌 |
+
+**★ HUD 的层硬规则（2026-09-12 一手复核，`HUD-LAYOUT.md` §4.1）**：暂停模糊罩 = `text.anm` script59 的 UI VM（**层 38**）；
+`0x4882b8` 把 layer 24–32 折到组 37–45、**其它任何层兜底折到 39** ⇒
+**只有 layer 24 / 25 会被罩住**（26+ 与 20–23 都在罩子之后画 ⇒ 暂停时依然清晰）。
+⇒ 新卡的 HUD 图元/文字一律用 **layer 25** 的贴图 VM（`ce_hud_vm_text_*` / `ce_hud_digit_*` / `ce_hud_number_*` / 自己起的脚本）；
+**ASCII 文字（`ce_hud_text*`）结构上不可能被罩住**，所以 HUD 数字别用它。
+
+**★ 编译期硬门之一：卡私有状态 ≤ 496 字节。** `ce_state(c, T)` 走 `ce_state_user()`，它只接受
+`size <= CE_STATE_BYTES(512) − CE_STATE_RESERVED(16) = 496`，**超了会静默返回 NULL**（运行时才发现）。
+结构体里一律加 `_Static_assert(sizeof(T) <= 496, "ce_state 上限 496 字节")` 把它顶到编译期。
+（2026-09-12 踩过：113 的击破队列按 64 格存 float2 = 512 B ⇒ 结构体 600 B。）
+
+**★ 编译期硬门之二（`make dllx87`）：我们的 object 里不许有 x87 指令。** i686 上 x87 有三个来源：
+① **`float` 返回值走 `st(0)`** ⇒ 任何返回 `float` 的非 `static inline` 函数都会顶红这道门；
+② **`float/double` ↔ `int` 的转换**（`fldl`/`fistpll`/`fldcw` 一组）；③ 变参 `printf` 里的浮点。
+⇒ core 尽量**整数化**（比例用千分比/百万分比存 `int32`），几何/换算函数写成 `static inline float …`
+（实现放头里）或 out 参数（`void f(..., float *out)`）。自检：
+`i686-w64-mingw32-objdump -d cards/<x>.o | grep -cE 'f(ld|st|add|sub|mul|div|ild|ist|xch|com)'` 必须是 `0`。
+
+**★ 铁律（`METHOD.md`）**：这些层都是**跨帧**的 ⇒ 卡被删时要收干净。`CE_CARD` 的 `on_run_reset`（虚表 `+0x4c`）
+与 `opdelete`（`+0x50`）现在都会自动调 `ce_layer_drop_card(ID)`：清伤害/无敌/得分/子机姿态/掉落乘数并
+`ce_hud_slot_release()`。**卡自己的**队列、池、VM 仍要自己清（删卡只跑得到这两个回调 + `on_delete`）。
 
 ## 7. 第一批：黑桃五张
 
@@ -327,7 +375,7 @@ native/
 ├── sht_ids.h        生成物：pl0X.sht 里我们追加的 shooterset 索引（make sht，§12）
 └── cards/           每张卡一个 .c（Makefile 通配）
     ├── s10.c  sj.c  sq.c  sk.c  sa.c （黑桃五张；其余每卡一个 .c，见 CARDS.md：double.c、collect2x.c …）
-    └── 带纯逻辑的还有一个 <名>_core.c/.h（主机单测），如 double_core、collect2x_core
+    └── 带纯逻辑的还有一个 <名>_core.c/.h（主机单测），如 collect2x_core、blue_eyes_core
     ├── s10.c  sj.c  sq.c  sk.c  sa.c  peashooter.c  ouroboros.c …
     └── 带纯逻辑的还有一个 <名>_core.c/.h（主机单测），如 blue_eyes_core、broken_core_core
 ```
@@ -438,3 +486,21 @@ ce_hud_vm_text_clear(&s_digit);
 ⚠️ 引擎有个怪癖：**空格紧跟 `.` 之后时字距会沿用 `.` 的 4**（`local_c` 只在画字时更新）——
 本 SDK 不复制这个怪癖（我们的串里不会出现 `.`+空格）。
 
+
+## 17. HUD 布局：左下角槽位的堆叠（待做，2026-09-10 登记）
+
+**现状**：每张带左下角 HUD 的卡（季节 116、鬼形兽 117）各自 `ce_anm_spawn_ui` 自己的 VM，
+坐标写死在卡里（表面 px）。**用户 2026-09-10 口径**：先按原版复刻、**允许不同卡重叠**；
+最终形态是「多张左下角 UI 的卡**竖直堆叠**，或部分改放右下角」。
+
+**要做的**：一个共享的 HUD 槽位分配器（`ce_hud_slot_*`）：
+
+- 卡按「我要一块多高、优先左下还是右下」申请，分配器按注册顺序把左下角的块从上往下堆
+  （或右下角同理）并返回锚点；
+- 卡自己的 VM 仍自己管，只是坐标从分配器拿；
+- 与 §15 / §16 的 HUD 数字 / 文字原语共用同一套锚点；
+- 能表达「互斥槽」——一次装备的槽位类卡（信号 / 灵界 / 信仰）本来就约定共享同一块显示区
+  （[`IDEAS.md`](IDEAS.md) §4）。
+
+**层位**：想被暂停模糊罩盖住，VM 必须放 **UI 层 25**（`AnmManager__render_layer` 折到 38 ⇒
+与模糊罩同一个绘制桩）—— 见 §16 与 [`engine/anm/th18/03`](../../../engine/anm/th18/03-ascii-text.md) §2f。

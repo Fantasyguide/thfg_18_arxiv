@@ -283,22 +283,6 @@
     "sprite_large": 154,
     "sprite_small": 155
   },
-  "127": {
-    "name": "辉针城",
-    "desc": [
-      "一次性收点：批量 ≥20 按档位结算，",
-      "批量越大倍率越高，最高 ×2.0；",
-      "碎片按 4:1 循环出符卡碎，",
-      "第 5 次结算出命碎；≥60 直出命碎。",
-      "高速命中敌人掉 P，火力越高越快。"
-    ],
-    "internal_name": "COLLECT_2X",
-    "initial_unlocked": 1,
-    "price_tier": 10,
-    "weight": 2,
-    "sprite_large": 116,
-    "sprite_small": 117
-  },
   "77": {
     "name": "豌豆射手",
     "desc": [
@@ -361,7 +345,143 @@
     "sprite_large": 162,
     "sprite_small": 163
   },
-  "118": {
+  "106": {
+    "name": "红魔乡",
+    "desc": [
+      "红魔乡的 PlayRank：收点、擦弹、",
+      "吃道具都会涨 Rank，中弹与 Bomb 掉 Rank，",
+      "Rank 越高弹幕与出怪越凶。",
+      "判定点指示的透明度调为 0。"
+    ],
+    "internal_name": "EOSD_PLAYRANK",
+    "initial_unlocked": 1,
+    "price_tier": 10,
+    "weight": 2,
+    "sprite_large": 116,
+    "sprite_small": 117
+  },
+  "107": {
+    "name": "妖妖梦",
+    "desc": [
+      "妖妖梦的樱点：攒樱点和最大樱点，",
+      "越接近上限越容易展开森罗结界。",
+      "结界期间全屏自动收点、擦弹更值钱，",
+      "中弹或放炸弹会以灵击崩掉结界。"
+    ],
+    "internal_name": "PCB_CHERRY",
+    "initial_unlocked": 1,
+    "price_tier": 10,
+    "weight": 2,
+    "sprite_large": 116,
+    "sprite_small": 117
+  },
+  "108": {
+    "name": "永夜抄",
+    "desc": [
+      "永夜抄的妖机体：低速时收起原生弹，",
+      "改用妖侧弹幕；子机随火力增援。",
+      "使魔能被打破，它挨的伤害减半",
+      "记到最近的敌人头上。"
+    ],
+    "internal_name": "IN_HUMAN_YOUKAI",
+    "initial_unlocked": 1,
+    "price_tier": 10,
+    "weight": 2,
+    "sprite_large": 116,
+    "sprite_small": 117
+  },
+  "109": {
+    "name": "花映塚",
+    "desc": [
+      "花映塚的爆风：击破敌人炸出一圈爆风，",
+      "被消掉的白弹转成分。",
+      "X 蓄力涨气槽；蓝圈只吃白弹，",
+      "红圈吃掉圈内一切。"
+    ],
+    "internal_name": "POFV_BLAST",
+    "initial_unlocked": 1,
+    "price_tier": 10,
+    "weight": 2,
+    "sprite_large": 116,
+    "sprite_small": 117
+  },
+  "110": {
+    "name": "风神录",
+    "desc": [
+      "风神录的信仰：收集绿点攒信仰与连击，",
+      "信仰越高金钱道具的得分越高。",
+      "火力 2.00 档以上可发动灵击消弹，",
+      "每次扣 1 档火力（下限 1.05）。"
+    ],
+    "internal_name": "MOF_FAITH",
+    "initial_unlocked": 1,
+    "price_tier": 10,
+    "weight": 2,
+    "sprite_large": 116,
+    "sprite_small": 117
+  },
+  "111": {
+    "name": "地灵殿",
+    "desc": [
+      "地灵殿的信号槽：在回收线上方供养信号，",
+      "满槽会像上线一样自动收走全部道具。",
+      "收集绿点攒信仰，信仰越高，",
+      "金钱道具的得分越高。"
+    ],
+    "internal_name": "SA_COMM",
+    "initial_unlocked": 1,
+    "price_tier": 10,
+    "weight": 2,
+    "sprite_large": 116,
+    "sprite_small": 117
+  },
+  "112": {
+    "name": "星莲船",
+    "desc": [
+      "星莲船的飞碟：击破敌人掉下彩色令牌，",
+      "凑够三枚同色（或三色各一）就召唤 UFO。",
+      "UFO 会吸走道具并把奖励翻倍，",
+      "击破它才开奖，拖太久它会飞走。"
+    ],
+    "internal_name": "UFO",
+    "initial_unlocked": 1,
+    "price_tier": 10,
+    "weight": 2,
+    "sprite_large": 116,
+    "sprite_small": 117
+  },
+  "113": {
+    "name": "神灵庙",
+    "desc": [
+      "神灵庙的灵界：中弹不扣命，",
+      "而是被先拉进灵界挨下这一击。",
+      "灵界期间无敌、得分提升，",
+      "结束时照原版结算。"
+    ],
+    "internal_name": "TD_SPIRIT",
+    "initial_unlocked": 1,
+    "price_tier": 10,
+    "weight": 2,
+    "sprite_large": 116,
+    "sprite_small": 117
+  },
+  "114": {
+    "name": "辉针城",
+    "desc": [
+      "一次性收点：批量 ≥20 按档位结算，",
+      "批量越大倍率越高，最高 ×2.0；",
+      "碎片按 4:1 循环出符卡碎，",
+      "第 5 次结算出命碎；≥60 直出命碎。",
+      "高速命中敌人掉 P，火力越高越快。"
+    ],
+    "internal_name": "COLLECT_2X",
+    "initial_unlocked": 1,
+    "price_tier": 10,
+    "weight": 2,
+    "sprite_large": 116,
+    "sprite_small": 117
+  },
+  "115": {
     "name": "绀珠传",
     "desc": [
       "擦弹会让场上的掉落物慢下来，",
@@ -378,7 +498,7 @@
     "sprite_large": 116,
     "sprite_small": 117
   },
-  "119": {
+  "116": {
     "name": "天空璋",
     "desc": [
       "敌人掉落、擦弹、消弹都会掉出季节点，",
@@ -390,6 +510,23 @@
     ],
     "internal_name": "SEASON",
     "initial_unlocked": 1,
+    "price_tier": 10,
+    "weight": 2,
+    "sprite_large": 116,
+    "sprite_small": 117
+  },
+  "117": {
+    "name": "鬼形兽",
+    "desc": [
+      "敌人掉出动物灵，收集 5 颗填满槽。",
+      "槽满后按 C 发动霊撃：消弹 + 无敌；",
+      "中弹时若槽已满，会消耗咆哮抵消死亡。",
+      "不发动、等它自然结束会放出 2 只动物灵。",
+      "致敬・东方鬼形兽。"
+    ],
+    "internal_name": "WBAWC",
+    "initial_unlocked": 1,
+    "category": 0,
     "price_tier": 10,
     "weight": 2,
     "sprite_large": 116,
