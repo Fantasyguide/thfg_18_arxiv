@@ -272,6 +272,22 @@ static void test_declare_layers(void)
     CHECK(ce_cancel_latch_claim(117) == 0);            /* 已被 107 认领 */
     CHECK(ce_cancel_latch_owner() == 107);
 
+    /* 「这次死亡由谁救」闩锁（用户 2026-09-12 定案：救援层顺序 107 → 117 → 决死 B → 113）。
+     * 107/117 **无条件**报到（两家同时触发是定案），113 只在没人认领时才动手。*/
+    ce_rescue_note_reset();
+    CHECK(ce_rescue_note_owner() == -1);
+    CHECK(ce_rescue_note_claim(107) == 1);             /* 107 先报到 */
+    CHECK(ce_rescue_note_owner() == 107);
+    CHECK(ce_rescue_note_claim(117) == 0);             /* 117 照样救，但拿不到账 */
+    CHECK(ce_rescue_note_owner() == 107);              /* 归属不变 ⇒ 113 会看到「有人救了」*/
+    CHECK(ce_rescue_note_claim(113) == 0);             /* ⇒ 113 放弃（不烧槽、不排重新死亡）*/
+    ce_rescue_note_reset();
+    CHECK(ce_rescue_note_owner() == -1);
+    CHECK(ce_rescue_note_claim(113) == 1);             /* 前面三家都没动手 ⇒ 轮到 113 */
+    ce_rescue_note_reset();
+    CHECK(ce_rescue_note_claim(999) == 0);             /* 越界 id：不记、返回 0 */
+    CHECK(ce_rescue_note_owner() == -1);
+
     /* 低速子机声明：id 最小者胜；退出后第二张顶上 */
     ce_optpose_reset();
     CHECK(ce_optpose_winner() == -1 && ce_optpose_pose() == NULL);

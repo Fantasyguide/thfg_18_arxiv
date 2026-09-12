@@ -296,6 +296,22 @@ static int s_cancel_latch_owner;
 
 void ce_cancel_latch_reset(void) { s_cancel_latch_owner = -1; }
 
+/* ---- 「这次死亡由谁救」闩锁（用户 2026-09-12 定案：救援层顺序 107 → 117 → 决死 B → 113）----
+ * 纯记账：SDK 每帧 reset；107/117 无条件报到，113 只在 owner < 0 时才动手（见 sdk_core.h）。*/
+static int s_rescue_note_owner = -1;
+
+void ce_rescue_note_reset(void) { s_rescue_note_owner = -1; }
+
+int ce_rescue_note_claim(uint32_t id)
+{
+    if (id > (uint32_t)CE_SDK_CARD_ID_MAX) return 0;
+    if (s_rescue_note_owner >= 0) return 0;
+    s_rescue_note_owner = (int)id;
+    return 1;
+}
+
+int ce_rescue_note_owner(void) { return s_rescue_note_owner; }
+
 int ce_cancel_latch_claim(uint32_t id)
 {
     if (id > (uint32_t)CE_SDK_CARD_ID_MAX) return 0;

@@ -461,6 +461,10 @@ static int on_death_before_deathbomb(ce_card_t *c)
     senro_card_t *s = st(c);
     if (!s) return 0;
     if (!senro_border_active(&s->st)) return 0;
+    /* ★ 救援层报到（用户 2026-09-12 定案：顺序 107 → 117 → 决死 B → 113）。
+     * **无条件 claim**：107 与 117 同时触发是已定案，不许因为没拿到账就不救；
+     * 这个闩锁的唯一消费者是 113（它是最后一家，只在没人认领时才动手）。*/
+    (void)ce_rescue_note_claim(SENRO_ID);
     senro_do_libyou(c, s, /*by_hit=*/1);
     return 0;   /* 返回值被 Player__die 忽略；救命靠 cancel_impending_death 的副作用 */
 }

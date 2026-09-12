@@ -861,6 +861,9 @@ int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
      * 且在道具池 body 之前 ⇒ 是天然的帧边界。107 的结界灵击与 117 的霊撃同帧都触发时，
      * 只有第一个 claim 的负责全屏消弹，第二家让位（避免空池扫荡 / 重复记账）。*/
     ce_cancel_latch_reset();
+    /* ★ 帧初：清「这次死亡由谁救」闩锁（用户 2026-09-12 定案：救援层 107 → 117 → 决死 B → 113；
+     * 113 只在没人认领时才动手 —— 否则会「别人救了你、113 的窗口结束时又把你杀掉」）。*/
+    ce_rescue_note_reset();
     /* ★ 帧初：把「无敌声明层」的聚合值落到 `player+0x47774`（取各卡声明帧数的**最大值**，
      * 只在比当前计时器更长时才写 ⇒ 不截短别人给的无敌、也不动引擎自己的）。
      * 卡只需要 `ce_invuln_request(id, frames)` 声明，落笔由 SDK 统一做（单一落笔，EVENTS-CONTRACT §1）。*/
@@ -1118,6 +1121,7 @@ int ce_sdk_setup(uint8_t *base, int trace)
     ce_score_reset();                                 /* 计分声明层（EVENTS-CONTRACT §3）*/
     ce_optpose_reset();                               /* 低速子机选举层（§1 选举覆盖）*/
     ce_cancel_latch_reset();                          /* 「本帧已消过弹」闩锁（§5.2 细则 2）*/
+    ce_rescue_note_reset();                           /* 「这次死亡由谁救」闩锁（救援层顺序，§5.2）*/
     ce_hud_slots_reset();                             /* HUD 槽位分配器（HUD-LAYOUT §3）*/
     ce_drop_reset();                                  /* 掉落乘法层（EVENTS-CONTRACT §2）*/
     s_trace = trace;

@@ -1893,6 +1893,9 @@ static int on_death_before_deathbomb(ce_card_t *c)
         if (pp) { s->death_x = pp[0]; s->death_y = pp[1]; s->death_valid = 1; }
     }
     if (!s->core.ready || s->core.hypering) return 0;
+    /* ★ 救援层报到（用户 2026-09-12 定案：顺序 107 → 117 → 决死 B → 113）。
+     * **无条件 claim**（107 与 117 同时触发是已定案）；闩锁的唯一消费者是 113。*/
+    (void)ce_rescue_note_claim(ANIMAL_ID_NUM);
     hyper_begin(s, 1);
     return 0;   /* 返回值被 Player__die 忽略；救命靠 cancel_impending_death 的副作用 */
 }

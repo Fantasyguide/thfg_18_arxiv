@@ -118,6 +118,19 @@ void ce_cancel_latch_reset(void);
 int  ce_cancel_latch_claim(uint32_t id);   /* 本帧第一个认领的返回 1（并记住 id）；已被别人认领返回 0 */
 int  ce_cancel_latch_owner(void);          /* 本帧认领者 id；没人 = -1 */
 
+/* ---- 「这次死亡由谁救」闩锁（EVENTS-CONTRACT.md §5.2；用户 2026-09-12 定案）----
+ * 救援层顺序被钉死为 **107 → 117 → 决死 B → 113**。113 的语义是**延时**（取消死亡 → 进灵界 →
+ * 出灵界再死一次），所以它**必须知道前面三家有没有人已经救过**，否则会出现
+ * 「107/117 花钱救了你、113 的窗口结束时又把你杀掉」。
+ * 每帧初 reset（与 ce_cancel_latch_reset 同一处：`ce_item_frame` 断点），各救援者 claim 报到：
+ *   107（`cards/senro.c`）/ 117（`cards/animal.c`）**无条件** claim（两家同时触发是已定案）；
+ *   113（`cards/trance.c`）**查 owner**：没人认领才轮到它动手。
+ * ⚠️ 为什么「每帧」够用：一次死亡横跨多帧（`Player__die` 置 state 4 之后还有决死窗口 / 死亡动画），
+ *   同帧不可能发生两次死亡 ⇒ 每帧闩锁 == 每次死亡闩锁。*/
+void ce_rescue_note_reset(void);
+int  ce_rescue_note_claim(uint32_t id);    /* 记下「这次死亡由 id 救了」；第一个返回 1，已被别人记返回 0 */
+int  ce_rescue_note_owner(void);           /* 这次死亡的救援者 id；没人 = -1 */
+
 /* ---- 低速子机声明层（EVENTS-CONTRACT.md §1「选举覆盖」；108 spec §3.3.1）----
  * 108（妖机体）与 111（SA 子机层）都要定义「低速时子机长什么样」，而最终落在同一批 zPlayerOption
  * （原生聚焦偏移 +0x6c/+0x70、非聚焦 +0x64/+0x68、贴图脚本、数量）⇒ 各自写 = 谁后写谁赢。
