@@ -56,6 +56,7 @@ void ufo_group_reset(ufo_group_t *g)
     for (i = 0; i < UFO_SLOT_COUNT; ++i) g->slot[i] = UFO_COLOR_NONE;
     g->filled = 0;
     g->last_group = UFO_COLOR_NONE;
+    g->last_slot2 = UFO_COLOR_NONE;
 }
 
 int ufo_slots_filled(const ufo_group_t *g)
@@ -148,16 +149,22 @@ static void ufo_group_drop_oldest(ufo_group_t *g, int32_t *out_dropped)
     if (out_dropped) *out_dropped += 1;
 }
 
-/* ★ 字面一手的 KEEP2 条件（`0x422ee3 cmp eax,edi` = `slots[1]==color`；
- *   `0x422ee7 cmp ecx,eax` = `slots[0]==slots[1]`；两条都不成立就掉到 `0x422eeb or eax,-1` = 彩虹）。
- * 只判不改，给单测留一个「我们偏离了字面一手的哪一格」的可查点（见头文件）。
+/* ★ 字面一手的 KEEP2 条件（`0x422ed4`–`0x422ee9` 的**三条**，2026-09-12 订正）：
+ *   ① `0x422ed4 cmp ecx,edi` + `0x422ed6 jne`：`slots[0] == color` 且（`0x422ed8 cmp eax,edi`）
+ *      `0x422eda jne 0x422ef3` ⇒ `slots[1] != color` ⇒ **也走 KEEP2**（←旧版漏掉的就是这一条）
+ *   ② `0x422ee3 cmp eax,edi` + `0x422ee5 je`：`slots[1] == color` ⇒ KEEP2
+ *   ③ `0x422ee7 cmp ecx,eax` + `0x422ee9 je`：`slots[0] == slots[1]` ⇒ KEEP2
+ *   三条都不成立（= 三色互不相同）⇒ `0x422eeb or eax,-1` = 彩虹。
+ * ⇒ **6 种排列里「两同一异」全走 KEEP2**（含首尾同色 `{A,B,A}`）⇒ 我们的实现（全部丢最旧）
+ *   与字面一手**没有差异**（AUDIT §BF4 那条「有意偏离」作废，见报告）。
  * ⚠ 比较前先过 `ufo_color_norm()`：一手没有金色，金 ≡ 蓝 ⇒ 这只是把我们这套颜色映射套进一手的比较式。 */
 int ufo_group_keep2_literal_th12(const ufo_group_t *g, int32_t color)
 {
     if (!g || g->filled != UFO_SLOT_COUNT) return 0;
     if (!ufo_color_valid(color) || !ufo_color_valid(g->slot[0]) || !ufo_color_valid(g->slot[1]))
         return 0;
-    return ufo_color_norm(g->slot[1]) == ufo_color_norm(color) ||
+    return ufo_color_norm(g->slot[0]) == ufo_color_norm(color) ||
+           ufo_color_norm(g->slot[1]) == ufo_color_norm(color) ||
            ufo_color_norm(g->slot[0]) == ufo_color_norm(g->slot[1]);
 }
 
@@ -220,13 +227,15 @@ int32_t ufo_group_peek_color(const ufo_group_t *g)
 
 int32_t ufo_group_consume(ufo_group_t *g)
 {
-    int32_t c;
+    int32_t c, s2;
     if (!g) return UFO_COLOR_NONE;
     c = ufo_group_classify(g);
     if (c == UFO_COLOR_NONE) return UFO_COLOR_NONE;    /* 没得合：状态不动（调用方据此不召唤）*/
+    s2 = g->slot[UFO_SLOT_COUNT - 1];                  /* ★ 一手 `COLLECTED_UFOS[2]`（`0x4b0c54`）*/
     g->last_group = c;
     ufo_group_reset(g);
     g->last_group = c;                                 /* reset 会把 last_group 清掉，放回 */
+    g->last_slot2 = s2;                                /* ★ 同理：彩虹 UFO 的掉落表要读它 */
     return c;
 }
 
@@ -407,19 +416,23 @@ int ufo_absorb_item(ufo_ufo_t *u, uint32_t type, int32_t stage, int32_t scale_pe
     if (idx < 0) return 0;
     /* 一手（`th12:0x44aca0`）：颜色 ≠ −1 时 type 1 → `cntA`、type 2 → `cntB`；彩虹时**反过来**。
      * 本层把两个计数按 TH18 的 type 语义命名（`cnt_p` / `cnt_money`），彩虹的「反过来」照抄语义：
-     * 彩虹 UFO 吸 P 道具算到 `cnt_money`、吸金钱算到 `cnt_p`。 */
+     * 彩虹 UFO 吸 P 道具算到 `cnt_money`、吸金钱算到 `cnt_p`。
+     * ⚠ 计数在**满着时也照加**（一手 `0x44acc8` 的 `add [esi+0x48],edi` 在第一个满格检查**之前**）*/
     if (u->color == UFO_COLOR_RAINBOW) {
         if (idx == 0) ++u->cnt_money; else ++u->cnt_p;
     } else {
         if (idx == 0) ++u->cnt_p; else ++u->cnt_money;
     }
     ++u->absorbed;
-    /* ⚠ 累加**无条件**做（不写 `if (fill < UNIT)`）：只有这样「满着期间再吸」才会重新越过阈值、
-     * 返回值语义才自洽（见头文件里 `ufo_absorb_item` 的语义边界注）。上界在下面夹住。 */
+    /* ★★ 2026-09-12 订正（一手 `0x44acd8 fld1; fcom fill; test ah,0x41; jnp 0x44ae98`）：
+     * **fill 已经 >= 1.0 ⇒ 整个收工**（不加 fill、不吐奖励）。
+     * 旧版在这里无条件累加并 `> UNIT` 就返回 1 ⇒ 「满着期间每颗都开一次奖」，
+     * 而 `ufo_spit_reward(红)` 是**命碎片** ⇒ 那是一条可以刷资源的漏洞。 */
+    if (u->fill_millionths >= UFO_FILL_UNIT) return 0;
     u->fill_millionths += ufo_inc_millionths(stage, scale_permille);
     if (u->fill_millionths > UFO_FILL_UNIT) {
-        u->fill_millionths = UFO_FILL_UNIT;         /* 一手：满了夹回 1.0 */
-        return 1;
+        u->fill_millionths = UFO_FILL_UNIT;         /* 一手：满了夹回 1.0（`0x44ad74`）*/
+        return 1;                                   /* ★ 一次吸满只开这一次奖 */
     }
     return 0;
 }
@@ -444,8 +457,80 @@ int32_t ufo_break_color_bonus(int32_t color)
     case UFO_COLOR_RED:   return UFO_REWARD_LIFE_FRAG;   /* 一手：红 UFO 击破额外掉道具 4 */
     case UFO_COLOR_GREEN: return UFO_REWARD_BOMB_FRAG;   /* 一手：绿 UFO 击破额外掉道具 5（→ TH18 6）*/
     case UFO_COLOR_GOLD:                                 /* ★ 金照蓝：无额外 */
-    default: return UFO_REWARD_NONE;                     /* 一手：蓝无额外；彩虹另给令牌（TH18 无）*/
+    default: return UFO_REWARD_NONE;                     /* 一手：蓝无额外；彩虹另给令牌（见下）*/
     }
+}
+
+/* ---- ★★ 令牌掉落：相位表（一手 `th12:0x44af00` 的跳表 `0x44b590` + 四段 spawn）----
+ * 相位 0/1/2 = TH12 的道具 13/14/15（= 彩虹令牌的红/蓝/绿起始态，脚本 178/179/180
+ * ↔ 我们的 `ability.anm` 219/220/221）。
+ * ⚠ **只有这四种颜色 + 三色互不相同才召唤**（`0x44b12d inc eax; cmp eax,4; ja` 之后的跳表），
+ *   我们把「金」并进蓝（用户裁决 ①）⇒ 金走蓝那一格（相位 1）。 */
+int32_t ufo_break_token_state(int32_t ufo_color, int32_t slot2_color)
+{
+    switch (ufo_color) {
+    case UFO_COLOR_RED:   return 0;                      /* `0x44b23a push 0xd` = 道具 13（红起始）*/
+    case UFO_COLOR_BLUE:                                 /* `0x44b32a push 0xe` = 道具 14 */
+    case UFO_COLOR_GOLD:  return 1;                      /* ★ 金照蓝（用户裁决 ①：金 = 蓝的调色版）*/
+    case UFO_COLOR_GREEN: return 2;                      /* `0x44b409 push 0xf` = 道具 15 */
+    case UFO_COLOR_RAINBOW:
+        /* `0x44b416 mov eax,[0x4b0c54]; sub eax,1; je → 0xd / sub 1 → 0xe / sub 1 → 0xf`
+         * ⇒ **按 `COLLECTED_UFOS[2]`（第 3 枚令牌的颜色，1/2/3）选相位**。
+         * ⚠ 一手那里 `slot2` 里存的也是颜色值 1/2/3（`0x422ecb mov [esi+0x8],edi`，edi = 1/2/3）
+         *   —— 彩虹令牌本身（颜色 −1）**进不了槽**（槽机 `0x422e81 test edi,edi; jle` 挡掉 ≤0）
+         *   ⇒ 这里的 `slot2_color` 只可能是 1/2/3，不会是 UFO_COLOR_RAINBOW。 */
+        if (slot2_color == UFO_COLOR_RED)   return 0;
+        if (slot2_color == UFO_COLOR_BLUE)  return 1;
+        if (slot2_color == UFO_COLOR_GREEN) return 2;
+        /* 槽里没记到（老存档 / 外部改 struct）：退回红那一态（`ufo_token_rainbow_script` 的
+         * 默认也是红），而不是不掉 —— 一手这条路必掉一枚。 */
+        return 0;
+    default: return UFO_TOK_DROP_NONE;
+    }
+}
+
+int32_t ufo_spit_token_state(int32_t ufo_color, int32_t slot2_color)
+{
+    /* 一手 `th12:0x44aca0`：吸满那条 switch（`0x44ad99`–`0x44ae97`）里
+     *   红(`eax==1`) → 道具 4（`0x44adf8`）、绿(`eax==3`) → 道具 7（`0x44adcd`）、
+     *   蓝(`eax==2`) → **无 case ⇒ 什么都不吐**、彩虹(`eax==-1`) → `0x44ae03` 按 `[0x4b0c54]` 吐令牌。
+     * ⇒ 只有**彩虹**在这条路上吐令牌；其余走道具（`ufo_spit_reward`）或什么都不吐。 */
+    if (ufo_color != UFO_COLOR_RAINBOW) return UFO_TOK_DROP_NONE;
+    return ufo_break_token_state(UFO_COLOR_RAINBOW, slot2_color);
+}
+
+/* ---- ★★ 令牌运动（一手逐条见头文件那一块）---- */
+void ufo_tok_motion_init(ufo_tok_motion_t *m, uint32_t serial)
+{
+    if (!m) return;
+    /* 一手：`and edi,1` 的奇偶选角度。⚠ 一手的计数在**自增之后**判（`0x427411 inc` 在 `0x4274b1 and` 之前）
+     * ⇒ 序号 0（= 本关第 1 枚）落**奇** = 3π/4 = 左下 45°。
+     * ⚠ 我们的 `serial` 是**本局**序号（不按关复位）⇒ 换关后奇偶性会与原版差一个（🟡 待实跑，一行可改）。 */
+    int leftdown = (int)((serial & 1u) == 0u);            /* 序号 0（本关第 1 枚）⇒ 左下 45° */
+    m->vx = leftdown ? -UFO_TOK_VEL_COMP : UFO_TOK_VEL_COMP; /* cos(3π/4) = −√2/2、cos(π/4) = +√2/2 */
+    m->vy = UFO_TOK_VEL_COMP;                             /* 两种角度的 sin 都是 +√2/2（都朝下）*/
+    m->age = 0;
+}
+
+int ufo_tok_motion_step(ufo_tok_motion_t *m, float *x, float *y)
+{
+    if (!m || !x || !y) return 1;
+    /* ① 位移（一手 `0x4263a1`–`0x4263cb`：pos += vel；GAME_SPEED 标量按 1.0 取）*/
+    *x += m->vx;
+    *y += m->vy;
+    if (m->age < UFO_TOK_NO_BOUNCE_FRAMES) ++m->age;
+    /* ② 反弹（一手 `0x4263d1 cmp [edi+0x98c],0x4b0; jge` ⇒ 1200 帧那一段跳过反弹）*/
+    if (m->age < UFO_TOK_NO_BOUNCE_FRAMES) {
+        float bx = UFO_TOK_BOUNCE_X;
+        if (*x <= -bx && m->vx < 0.0f) m->vx = -m->vx;            /* 反射因子一手 = −1.0（`0x4a4168`）*/
+        else if (*x >= bx && m->vx > 0.0f) m->vx = -m->vx;
+        if (*y <= UFO_TOK_BOUNCE_Y_TOP && m->vy < 0.0f) m->vy = -m->vy;
+        else if (*y >= UFO_TOK_BOUNCE_Y_BOTTOM && m->vy > 0.0f) m->vy = -m->vy;
+    }
+    /* ③ 出界即撤（一手 `0x42650f`–`0x42655b`：四个外框常量，命中就把 state 写 0）*/
+    if (*x <= -UFO_TOK_OUT_X || *x >= UFO_TOK_OUT_X) return 1;
+    if (*y <= UFO_TOK_OUT_Y_TOP || *y >= UFO_TOK_OUT_Y_BOTTOM) return 1;
+    return 0;
 }
 
 int32_t ufo_bounty_item_type(const ufo_ufo_t *u)

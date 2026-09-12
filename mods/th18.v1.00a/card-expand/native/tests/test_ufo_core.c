@@ -21,7 +21,16 @@
  * ⚠ 占位项（一律断言「不做」这个语义，不假装是复刻）：HP、令牌 TTL/数量、
  *   赏金分值权重、BOMB_KILL 算不算击破、ECL 子程序名。
  * ★ 金（用户 2026-09-12 裁决 ①）：本文件用**对照表**断言「金与蓝逐项相同」；「金在凑组里算不算
- *   独立一色」是 ❓ 自定（`UFO_GOLD_COUNTS_AS_BLUE`）⇒ 两种取法各写一份断言（改宏必红一半）。 */
+ *   独立一色」是 ❓ 自定（`UFO_GOLD_COUNTS_AS_BLUE`）⇒ 两种取法各写一份断言（改宏必红一半）。
+ *
+ * ★★ 2026-09-12「逐条对账 TH12 一手」这一轮改了三条**语义**（都对着反汇编订正，见各段注释）：
+ *   ① `ufo_absorb_item`：fill 满了之后**不再开奖、不再累加**（一手 `0x44acd8` 的早退）——
+ *      旧版每颗都返回 1 ⇒ 红 UFO 的命碎片能无限刷（漏洞）。
+ *   ② `ufo_group_keep2_literal_th12`：KEEP2 的条件是**三条**（漏抄了 `0x422ed4`/`0x422ed6`）
+ *      ⇒ `{A,B,A}` 首尾同色**也**走 KEEP2 ⇒ 我们与字面一手一致，「有意偏离」那条作废。
+ *   ③ 新增：`ufo_break_token_state` / `ufo_spit_token_state`（掉落表：每色恰好 1 枚令牌）、
+ *      `ufo_tok_motion_init/step`（令牌的直线飞行 1.5 + 四边反弹 + 1200 帧后不反弹 + 出界即撤）。
+ */
 #include <stdio.h>
 #include <string.h>
 
@@ -402,8 +411,11 @@ int main(void)
             CHECK(g.filled == 0);
         }
 
-        /* ---- 具体一格手算一遍（红 蓝 红 = 首尾同色，也就是**字面一手会掉到彩虹**的那一格）----
-         * 我们按用户口径走「丢最旧」（三种排列一致）⇒ 这里钉住我们的取值。 */
+        /* ---- 具体一格手算一遍（红 蓝 红 = 首尾同色 ⇒ **一手也走 KEEP2 ⇒ 丢最旧**）----
+         * ★ 2026-09-12 订正：这一格过去被写成「我们偏离一手」，原因是漏读了一手 KEEP2 的
+         *   第一条分支（`0x422ed4`/`0x422ed6`：`slots[0]==color` 且 `slots[1]!=color` 也跳 `0x422ef3`）。
+         *   三条分支抄全之后，「两同一异」的三种排列（含首尾同色）**全部**走 KEEP2 ⇒ 我们的口径
+         *   与字面一手**一致**。 */
         ufo_group_reset(&g);
         CHECK(ufo_group_put(&g, UFO_COLOR_RED, &dropped) == UFO_GROUP_PUT_HELD);
         CHECK(dropped == 0);
@@ -417,20 +429,24 @@ int main(void)
         CHECK(g.slot[1] == UFO_COLOR_RED);
         CHECK(ufo_group_classify(&g) == UFO_COLOR_NONE);
 
-        /* ★★ 我们与**字面一手**的差异点（钉成断言，防以后有人「顺手照抄」又改回去）：
-         * 一手的 KEEP2 条件是 `slots[1]==color || slots[0]==slots[1]`（前两格同色 或 后两格同色）。
-         * 红 蓝 红 这种**首尾同色**不满足它 ⇒ 字面一手会掉到 `0x422eeb or eax,-1` 出彩虹 UFO。
-         * 用户 2026-09-12 的口径是「槽满且不成组 ⇒ 丢最旧」（三种排列一致）⇒ 我们**有意偏离**这一格。
-         * TODO(待查/待跑)：TH12 实机收 红 蓝 红 到底出不出彩虹 —— 要实机复现一次。 */
+        /* ★★ 「字面一手条件」对照表（钉住：**两同一异的三条排列全部 KEEP2**，只有三色互不相同才彩虹）：
+         * 一手三条分支 —— ① `slots[0]==color && slots[1]!=color`（`0x422ed4`+`0x422ed6`）
+         *                ② `slots[1]==color`（`0x422ee3`）
+         *                ③ `slots[0]==slots[1]`（`0x422ee7`）
+         * 三条都不成立 ⇒ `0x422eeb or eax,-1` = 彩虹。 */
         {
             ufo_group_t k2;
             ufo_group_reset(&k2);
             k2.slot[0] = UFO_COLOR_RED;  k2.slot[1] = UFO_COLOR_BLUE; k2.slot[2] = UFO_COLOR_RED;
             k2.filled = 3;
-            CHECK(!ufo_group_keep2_literal_th12(&k2, UFO_COLOR_RED));   /* ★ 首尾同色 ⇒ 字面一手**不**走 KEEP2 */
-            CHECK(ufo_group_keep2_literal_th12(&k2, UFO_COLOR_BLUE));   /* slots[1]==color ⇒ 走 KEEP2 */
+            CHECK(ufo_group_keep2_literal_th12(&k2, UFO_COLOR_RED));    /* ★ 首尾同色：① 命中 ⇒ KEEP2 */
+            CHECK(ufo_group_keep2_literal_th12(&k2, UFO_COLOR_BLUE));   /* slots[1]==color ⇒ ② 走 KEEP2 */
             k2.slot[0] = UFO_COLOR_RED; k2.slot[1] = UFO_COLOR_RED; k2.slot[2] = UFO_COLOR_BLUE;
-            CHECK(ufo_group_keep2_literal_th12(&k2, UFO_COLOR_GREEN));  /* slots[0]==slots[1] ⇒ 走 KEEP2 */
+            CHECK(ufo_group_keep2_literal_th12(&k2, UFO_COLOR_GREEN));  /* slots[0]==slots[1] ⇒ ③ 走 KEEP2 */
+            /* 三条都不成立 = 三色互不相同（例：槽里 红/蓝、新来 绿）⇒ **不**是 KEEP2 ⇒ 彩虹 */
+            k2.slot[0] = UFO_COLOR_RED; k2.slot[1] = UFO_COLOR_BLUE;
+            CHECK(!ufo_group_keep2_literal_th12(&k2, UFO_COLOR_GREEN));
+            CHECK(!ufo_group_keep2_literal_th12(&k2, UFO_COLOR_RAINBOW));
             /* 金令牌彼此相等（与「金算不算独立一色」这个 ❓ 取值无关 —— 两枚金始终同桶）*/
             k2.slot[0] = UFO_COLOR_GOLD; k2.slot[1] = UFO_COLOR_GOLD; k2.slot[2] = UFO_COLOR_RED;
             CHECK(ufo_group_keep2_literal_th12(&k2, UFO_COLOR_GREEN));  /* slots[0]==slots[1] ⇒ 走 KEEP2 */
@@ -802,16 +818,23 @@ int main(void)
     /* 吸满：33 颗 + 1 = 34（stage 1）*/
     for (i = 0; i < 31; ++i) CHECK(ufo_absorb_item(&u, 1, 1, 1000) == 0);
     CHECK(u.absorbed == 33);
-    CHECK(ufo_absorb_item(&u, 1, 1, 1000) == 1);       /* 第 34 颗：本颗之后满着 */
+    CHECK(ufo_absorb_item(&u, 1, 1, 1000) == 1);       /* 第 34 颗：**这一颗把它吸满了** */
     CHECK(u.cnt_p == 33);                              /* 1（第 1 颗）+ 31 + 1 */
-    CHECK(u.fill_millionths == UFO_FILL_UNIT);         /* 夹回 1.0（一手）*/
-    /* 满着期间再吸：返回值**仍是 1**（读作「这一颗之后满着」，见 ufo_core.h 的语义边界注）*/
-    CHECK(ufo_absorb_item(&u, 1, 1, 1000) == 1);
-    CHECK(u.cnt_p == 34);
-    CHECK(u.absorbed == 35);
-    CHECK(u.fill_millionths == UFO_FILL_UNIT);
+    CHECK(u.fill_millionths == UFO_FILL_UNIT);         /* 夹回 1.0（一手 `0x44ad74`）*/
+    /* ★★ 满着期间再吸（一手 `0x44acd8 fld1; fcom fill; test ah,0x41; jnp 0x44ae98`）：
+     *   **返回值 0**（不再开奖）、**fill 不再涨**、但**计数照加**（`0x44acc8` 的 add 在检查之前）。
+     *   这是本轮订正的漏洞：旧版这里返回 1 ⇒ 卡侧每颗都 `ufo_spit_reward()` 一次，
+     *   而红 UFO 的那件奖励是**命碎片** ⇒ 吸满之后可以无限刷资源。 */
+    CHECK(ufo_absorb_item(&u, 1, 1, 1000) == 0);
+    CHECK(ufo_absorb_item(&u, 1, 1, 1000) == 0);
+    CHECK(u.cnt_p == 35);                              /* 计数照加（满着也数）*/
+    CHECK(u.absorbed == 36);
+    CHECK(u.fill_millionths == UFO_FILL_UNIT);         /* 仍是 1.0（满着不加）*/
     CHECK(feq(ufo_fill_ratio(&u), 1.0f, 1e-6f));       /* 唯一浮点出口，只给 HUD 用 */
     CHECK(u.cnt_money == 1);
+    /* 满着时吸**另一种** type 也一样：计数 +1、不再开奖 */
+    CHECK(ufo_absorb_item(&u, 2, 1, 1000) == 0);
+    CHECK(u.cnt_money == 2);
 
     /* 彩虹 UFO 的两个计数**倒置**（一手：颜色 == −1 时 `cntA`/`cntB` 互换）*/
     ufo_reset(&u);
@@ -842,6 +865,122 @@ int main(void)
     CHECK(ufo_break_color_bonus(UFO_COLOR_RAINBOW) == UFO_REWARD_NONE);
     CHECK(ufo_break_color_bonus(UFO_COLOR_NONE) == UFO_REWARD_NONE);
     CHECK(ufo_break_color_bonus(-7) == UFO_REWARD_NONE);
+
+    /* ============ ★★ 掉落表：**每色恰好返还 1 枚令牌**（一手 `th12:0x44af00` 跳表 `0x44b590`）
+     * 索引 = color+1；红→`0x44b23a push 0xd`(13)、蓝→`0x44b32a push 0xe`(14)、绿→`0x44b409 push 0xf`(15)、
+     * 彩虹→`0x44b416` 按 `COLLECTED_UFOS[2]`（`0x4b0c54`）选 13/14/15。
+     * 相位 0/1/2 = 道具 13/14/15 = 彩虹令牌的红/蓝/绿起始态。 */
+    CHECK(UFO_TOK_DROP_NONE == -1);
+    CHECK(ufo_break_token_state(UFO_COLOR_RED, UFO_COLOR_NONE) == 0);      /* 13 = 红起始 */
+    CHECK(ufo_break_token_state(UFO_COLOR_BLUE, UFO_COLOR_NONE) == 1);     /* 14 = 蓝起始 */
+    CHECK(ufo_break_token_state(UFO_COLOR_GREEN, UFO_COLOR_NONE) == 2);    /* 15 = 绿起始 */
+    CHECK(ufo_break_token_state(UFO_COLOR_GOLD, UFO_COLOR_NONE) == 1);     /* ★ 金照蓝（用户裁决 ①）*/
+    /* 彩虹 UFO：按「开碟时第 3 枚令牌的颜色」选相位（一手 `sub eax,1; je…`） */
+    CHECK(ufo_break_token_state(UFO_COLOR_RAINBOW, UFO_COLOR_RED) == 0);
+    CHECK(ufo_break_token_state(UFO_COLOR_RAINBOW, UFO_COLOR_BLUE) == 1);
+    CHECK(ufo_break_token_state(UFO_COLOR_RAINBOW, UFO_COLOR_GREEN) == 2);
+    CHECK(ufo_break_token_state(UFO_COLOR_RAINBOW, UFO_COLOR_NONE) == 0);  /* 没记到 ⇒ 退回红那一态 */
+    CHECK(ufo_break_token_state(UFO_COLOR_NONE, UFO_COLOR_RED) == UFO_TOK_DROP_NONE);
+    CHECK(ufo_break_token_state(99, UFO_COLOR_RED) == UFO_TOK_DROP_NONE);
+    /* 吸满那条只有彩虹吐令牌（一手 `0x44ad99` 的 switch：红/绿走道具 4/7、蓝无 case）*/
+    CHECK(ufo_spit_token_state(UFO_COLOR_RED, UFO_COLOR_RED) == UFO_TOK_DROP_NONE);
+    CHECK(ufo_spit_token_state(UFO_COLOR_GREEN, UFO_COLOR_GREEN) == UFO_TOK_DROP_NONE);
+    CHECK(ufo_spit_token_state(UFO_COLOR_BLUE, UFO_COLOR_BLUE) == UFO_TOK_DROP_NONE);
+    CHECK(ufo_spit_token_state(UFO_COLOR_GOLD, UFO_COLOR_BLUE) == UFO_TOK_DROP_NONE);  /* ★ 金照蓝 */
+    CHECK(ufo_spit_token_state(UFO_COLOR_RAINBOW, UFO_COLOR_GREEN) == 2);
+    CHECK(ufo_spit_token_state(UFO_COLOR_NONE, UFO_COLOR_GREEN) == UFO_TOK_DROP_NONE);
+
+    /* ---- `last_slot2` = 一手 `COLLECTED_UFOS[2]`（`0x4b0c54`）的快照（彩虹掉落表要读它）---- */
+    ufo_group_reset(&g);
+    CHECK(ufo_group_put(&g, UFO_COLOR_BLUE, NULL) == UFO_GROUP_PUT_HELD);
+    CHECK(ufo_group_put(&g, UFO_COLOR_RED, NULL) == UFO_GROUP_PUT_HELD);
+    CHECK(ufo_group_put(&g, UFO_COLOR_GREEN, NULL) == UFO_GROUP_PUT_READY);
+    CHECK(ufo_group_consume(&g) == UFO_COLOR_RAINBOW);
+    CHECK(g.last_slot2 == UFO_COLOR_GREEN);            /* ★ 第 3 枚的颜色留下来 */
+    CHECK(g.last_group == UFO_COLOR_RAINBOW);
+    CHECK(g.filled == 0);
+    CHECK(ufo_break_token_state(g.last_group, g.last_slot2) == 2);          /* 彩虹 UFO ⇒ 相位 2 */
+    ufo_group_reset(&g);
+    CHECK(g.last_slot2 == UFO_COLOR_NONE);             /* reset 清掉（不会串到下一组）*/
+
+    /* ================= ★★ 令牌运动（一手 `th12:0x425c20` state 6；用户口述的「飞行」） */
+    {
+        ufo_tok_motion_t m;
+        float x, y;
+        /* 一手：`0x4a4270` = 1.5f、角度 `0x4a4274` = π/4 / `0x4a4278` = 3π/4 按奇偶交替，
+         * 且计数在自增之后判 ⇒ **序号 0（本关第 1 枚）= 左下 45°**。 */
+        CHECK(feq(UFO_TOK_FLY_SPEED, 1.5f, 1e-6f));
+        CHECK(feq(UFO_TOK_ANGLE_DOWN_RIGHT, 0.785398185f, 1e-6f));   /* π/4 */
+        CHECK(feq(UFO_TOK_ANGLE_DOWN_LEFT, 2.3561945f, 1e-6f));      /* 3π/4 */
+        CHECK(feq(UFO_TOK_VEL_COMP, 1.060660124f, 1e-5f));           /* 1.5 × √2/2 */
+        ufo_tok_motion_init(&m, 0u);                                 /* 第 1 枚 */
+        CHECK(m.vx < 0.0f && feq(m.vy, UFO_TOK_VEL_COMP, 1e-6f));    /* 左下 45° */
+        CHECK(m.age == 0);
+        ufo_tok_motion_init(&m, 1u);                                 /* 第 2 枚 */
+        CHECK(m.vx > 0.0f && feq(m.vy, UFO_TOK_VEL_COMP, 1e-6f));    /* 右下 45° */
+        ufo_tok_motion_init(&m, 2u);
+        CHECK(m.vx < 0.0f);                                          /* 再交替回来 */
+
+        /* 位移：每帧 vx/vy（一手 `0x4263a1`–`0x4263cb`）*/
+        ufo_tok_motion_init(&m, 1u);                                 /* 右下 */
+        x = 0.0f; y = 0.0f;
+        CHECK(ufo_tok_motion_step(&m, &x, &y) == 0);
+        CHECK(feq(x, UFO_TOK_VEL_COMP, 1e-6f) && feq(y, UFO_TOK_VEL_COMP, 1e-6f));
+        CHECK(m.age == 1);
+
+        /* 反弹：右边界 176（一手 `0x4a4198`）⇒ vx 取反；下边界 370（`0x4a4408`）⇒ vy 取反 */
+        ufo_tok_motion_init(&m, 1u);
+        x = 175.5f; y = 0.0f;
+        CHECK(ufo_tok_motion_step(&m, &x, &y) == 0);
+        CHECK(m.vx < 0.0f);                                          /* 撞右边界 ⇒ 反射（`0x4a4168` = −1.0）*/
+        CHECK(feq(x, 175.5f + UFO_TOK_VEL_COMP, 1e-5f));             /* 位置不被夹，只有速度翻 */
+        ufo_tok_motion_init(&m, 0u);
+        x = -175.5f; y = 0.0f;
+        CHECK(ufo_tok_motion_step(&m, &x, &y) == 0);
+        CHECK(m.vx > 0.0f);                                          /* 撞左边界（−176）*/
+        ufo_tok_motion_init(&m, 1u);
+        x = 0.0f; y = 369.5f;
+        CHECK(ufo_tok_motion_step(&m, &x, &y) == 0);
+        CHECK(m.vy < 0.0f);                                          /* 撞下边界 370 */
+        x = 0.0f; y = 100.0f;
+        ufo_tok_motion_init(&m, 0u);                                 /* 左下 ⇒ vy > 0 */
+        m.vy = -UFO_TOK_VEL_COMP;                                    /* 手工构造「向上撞上边界」*/
+        y = 160.5f;
+        CHECK(ufo_tok_motion_step(&m, &x, &y) == 0);
+        CHECK(m.vy > 0.0f);                                          /* 撞上边界 160（`0x4a3f4c`）*/
+
+        /* 方向守卫：朝外走才翻（一手四条反弹都带 `vel.x < 0` / `vel.x > 0` 的守卫）*/
+        ufo_tok_motion_init(&m, 1u);                                 /* 右下：vx > 0、vy > 0 */
+        m.vx = -m.vx;                                                /* 已经朝左，却贴在右边界 */
+        x = 176.0f; y = 0.0f;
+        CHECK(ufo_tok_motion_step(&m, &x, &y) == 0);
+        CHECK(m.vx < 0.0f);                                          /* 不被翻回来 */
+
+        /* 1200 帧之后**不再反弹**（一手 `0x4263d1 cmp [edi+0x98c],0x4b0; jge`），只判出界 */
+        ufo_tok_motion_init(&m, 1u);
+        m.age = UFO_TOK_NO_BOUNCE_FRAMES;
+        x = 176.5f; y = 380.0f;
+        CHECK(ufo_tok_motion_step(&m, &x, &y) == 0);                 /* 外框内 ⇒ 还在 */
+        CHECK(m.vx > 0.0f && m.vy > 0.0f);                           /* 速度没被翻 */
+        CHECK(UFO_TOK_NO_BOUNCE_FRAMES == 1200);                     /* ✅ 一手 `0x4b0` = 20 s = 8 次换色 */
+
+        /* 出界即撤：外框 208 / −208（`0x4a43a0`/`0x4a4400`）、y −16（`0x4a43f8`）/ 464（`0x4a3e90`）*/
+        ufo_tok_motion_init(&m, 1u);
+        x = 207.5f; y = 0.0f;
+        CHECK(ufo_tok_motion_step(&m, &x, &y) == 1);                 /* x 越过 208 ⇒ 撤 */
+        ufo_tok_motion_init(&m, 0u);
+        x = -207.5f; y = 0.0f;
+        CHECK(ufo_tok_motion_step(&m, &x, &y) == 1);
+        ufo_tok_motion_init(&m, 1u);
+        x = 0.0f; y = 463.5f;
+        CHECK(ufo_tok_motion_step(&m, &x, &y) == 1);                 /* y 越过 464 ⇒ 撤 */
+        ufo_tok_motion_init(&m, 1u);
+        x = 0.0f; y = 0.0f;
+        CHECK(ufo_tok_motion_step(&m, &x, &y) == 0);                 /* 场内 ⇒ 活 */
+        CHECK(ufo_tok_motion_step(NULL, &x, &y) == 1);               /* 空指针 ⇒ 报「撤」（防御）*/
+        CHECK(ufo_tok_motion_step(&m, NULL, &y) == 1);
+    }
+
 
     /* 赏金 type 选择（一手规则本身保留；TH18 侧三个 type 都不可用 ⇒ 不接线）*/
     CHECK(UFO_BOUNTY_TYPE_BOTH == 18);

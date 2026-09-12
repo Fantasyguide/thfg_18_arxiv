@@ -1059,10 +1059,14 @@ wba_wc: miss -> 2 non-cycling animals (type 1)
 3. 灵速（`token_spawn` 的 `spd = 1.0` + 60 px 减速 ×0.5 + 速度下限 0.5）—— 用户要的「DVD 约 45°」；
 4. 延长表 `animal_next_extend`（用户口径 90/60/42/…）与 TH17 代码的 180×2/3（120/80/53）二选一；
 5. 霊撃伤害源 40/帧、半径 `(1−f⁴)×200`；
-6. **音效 id 对照**（2026-09-11 二次重解，见 AUDIT §AL29）：TH18 的 `id -> wav`
-   看的是 `u32[0x4c9b80 + id*0x14 + 0x04]`，不是 `+0x00`。因此
-   `0x3f` = se_lgods4（撒道具）、`0x43` = se_pldead01（咆哮正常退出）；
-   旧代码的 `0x34`/`0x38` 实际是 se_don00/se_ch03，已改。
+6. **音效 id 对照 / 撒道具 A/B**：⚠ **2026-09-12 最新口径见 §1v-补5（AUDIT §AL41）**：
+   - 正常咆哮退出 = **`0x42`**（用户听完 6 候选回报第 5 声 + 一手 TH17 `th17:0x40f4fc`
+     `push 0x42`）；旧 `0x38` 是早期错误读数，作废。
+   - 撒道具 release 默认仍 `0x34`（名表 `se_lgods4`）；debug build 下一轮 A/B `0x34` / `0x43`
+     （名表 `se_release`），等用户耳朵裁决。
+   - 用户解包 `th17/data/` 的 wav 文件名可能与 exe 内建 name table 不一致
+     ⇒ **创造性音效选择以用户耳朵实听的 id 为准**，表名只随日志显示。
+   - 早期 `+0x04` / `+0x00` 的 SE 行解码线索见 AUDIT §AL26 / §AL29 / §AL35，但不再直接决定这里的 id。
 
 **X 炸弹拦截（2026-09-11）**：咆哮 `ready || hypering` 时，SDK 新增断点 `BP_ce_bomb_gate` @ `th18:0x45c048`
 （`Player__on_tick__body` 普通炸弹分支的 `test BYTE PTR ds:0x4ca434,0x2`）询问本卡；本卡返回 1 时
@@ -1253,6 +1257,62 @@ SDK 把执行从 `0x45c048` 改到 `0x45c056`，**跳过 `0x45c051` 的 `call do
   `0x39 se_heal`。用户要回报「哪个 probe 号最像 TH17 的 roar-exit」。
 - **门**：`make check`、`sites.py verify`、`assets/check_player_anm_bounds.py` 全绿；
   未新增 `BP_*`，`.def` 仍 24 exports。部署结果见 AUDIT §AL39 与最终会话报告。
+
+
+### 1v-补4. 鬼形兽（117）十修：鹫束 = 每颗原生子机一条 + SE 试听 3 s 间距（2026-09-12）
+
+> 对应 AUDIT §AL40。`1v-补3` 的「单条自机体束」按用户 2026-09-12 实跑反馈作废。
+
+- **Item 1（普通子机）**：用户原话「魔理沙的应该是普通子机激光，不是从（灵梦）机体本体射出」
+  ⇒ `eagle_beam_tick()` 不再只挂一条自机体束，而是遍历引擎**原生子机数组** `inner+0x50`
+  （= `player+0x670`，4 格、stride `0xf0`、`option+0x00 != 0` 判活），每个子机位置
+  （`option+0x5c/+0x60` 定点 ×1/128）各挂一条 `ability.anm` **script163**，各自带
+  `ce_damage_rect` + 5 点 `ce_cancel_radius`；没有子机（火力 <1.00）才回退**一条本体束**。
+  松 Z / 咆哮结束 / 对话暂停全收。
+- **数据侧不动**：`pl01.sht` 的 EAGLE `0x23..0x27` 仍是合法空组（只有 `ff ff ff ff`），
+  主炮照旧不建 sprite-bullet。
+- **Item 2（SE 试听）**：6 候选间距 **30 → 180 帧（3 s）**；候选顺序 / 抑制正常退出 SE /
+  每条一行日志都不动。用户暂定 `0x39 se_heal`，**未写死**，等 3 s 版实跑回报。
+- **实跑要 grep**：
+  `wba_c: eagle beam mode = option (n=N)`（有子机；N=1..4）/
+  `wba_c: eagle beam mode = body (no options)`（无子机兜底）/
+  `wba_c: eagle beam on (N beams, len 512, width 34, dmg 20/frame cap 300)` /
+  `wba_c: eagle beam off (N beams, len 512, width 34, dmg 20/frame cap 300, fade=…)`；
+  `wba_wc: SE probe active (6 candidates, 180 frames apart); normal roar-end SE 0x38 suppressed`
+  + `wba_wc: SE probe N/6 id 0x.. (name)`。
+- **要用户检查**：① 灵梦 / 魔理沙在不同火力档：束应从**每颗子机位置**出来（0 子机时从本体一条）、
+  数量随子机数；② 松开 Z 束立即消失、咆哮结束 / 对话暂停不残留；③ 3 s 一档听 6 个候选，
+  回报哪一号最像 TH17 正常 roar-exit（暂定 6 号 `0x39 se_heal`）。
+- **门**：`make check`、`sites.py verify`、`assets/check_player_anm_bounds.py` 全绿；
+  未新增 `BP_*`，`.def` 仍 27 exports（26 个 `BP_*` + `thcrap_plugin_init`）。
+  部署 DLL md5 见 AUDIT §AL40 与会话报告。
+
+### 1v-补5. 鬼形兽（117）十一修：roar-exit = 0x42 + 试听探针停用 + 撒道具音 A/B（2026-09-12）
+
+> 对应 AUDIT §AL41。`1v-补4` 的「暂定 6 号 `0x39 se_heal`」按用户 2026-09-12 实跑作废：
+> 用户回报第 5 声（id `0x42`）才是 TH17 的 roar-exit。
+
+- **roar-exit 锁定 0x42**：`ANIMAL_SE_ROAR_END` `0x38` → `0x42`。证据 = 用户听完 6 候选
+  （180 帧一档）回报第 5 声 + 一手 TH17 `th17:0x40f4fc` 在 roar end `push 0x42`。
+  旧 `0x38` 是早期候选探查阶段的错误读数，保留备注。
+- **试听探针停用**：新增 `ANIMAL_SE_PROBE 0`；试听表 / `se_probe_tick()` / `hyper_end()` 分支 /
+  `on_tick_2()` 调用全部改成 `#if ANIMAL_DEBUG_KEY && ANIMAL_SE_PROBE`。默认不编译、不打任何
+  probe 日志；正常咆哮退出恢复播 `0x42`。
+- **撒道具 A/B（仅 debug）**：新增 `scatter_se_select()`，每段连续 `se_left` 序列（一次听得出的
+  “撒道具声”）在 `0x34` / `0x43` 间轮换，段首打
+  `wba_wc: scatter SE A/B -> id 0x34 (table name se_lgods4)` 或
+  `wba_wc: scatter SE A/B -> id 0x43 (table name se_release)`；release 恒 `0x34`，与改动前一致。
+- **要用户听 / 回报**：下一轮多跑几次咆哮正常结束，回报 `0x34`（名表 `se_lgods4`）还是
+  `0x43`（名表 `se_release`）才是「大量道具」的音。
+- **命名口径**：用户解包 `th17/data/` 的 wav 文件名可能与 exe 内建 name table 不一致
+  ⇒ **创造性音效选择以用户耳朵实听的 id 为准**，表名只随日志显示，不作最终裁决依据。
+- **实跑 grep**：
+  - 不再出现 `wba_wc: SE probe active` / `wba_wc: SE probe N/6 id ...`；
+  - 正常咆哮结束听到 `0x42`；
+  - 撒道具时看到 `wba_wc: scatter SE A/B -> id 0x.. (table name ...)`。
+- **门**：`make check`、`sites.py verify`、`assets/check_player_anm_bounds.py`、
+  `tooling/check-docs.py` 全绿；未新增 `BP_*`，`.def` 仍 27 exports；部署 md5 见 §AL41 D / 会话报告。
+
 
 
 ## 1t-补. 绀珠传（115）2026-09-09 实跑修的三处
@@ -1734,7 +1794,7 @@ TH14 Collect Point 收点系统的 1:1 复刻（占位名 = TH14 三字名，用
 | 109 | 花映塚 爆风/蓄力 | `pofv.c` | 🔧 已实装待实跑（527 断言；CA 无敌帧数已订正）|
 | 110 | 风神录 信仰/灵击 | `mof.c` + `faith.c` | 🔧 已实装待实跑（868 断言；按 TH10 一手订正：无擦弹倍率 / 无逐帧衰减 / 连击 +120）|
 | 111 | 地灵殿 信号槽 | `signal.c` | 🔧 已实装待实跑（233 断言；绿点来源已补、每关归零已补、乘数通道已接）|
-| 112 | 星莲船 飞碟 | `ufo.c` | 🔧 已实装待实跑（925 断言；金=蓝、两同一异照抄、**HUD 第一版在层 25**；**真 ECL 已从 TH12 移植**，缺贴图/anm ⇒ 暂不发布）|
+| 112 | 星莲船 飞碟 | `ufo.c` | 🔧 已实装待实跑（**987** 断言；金=蓝、两同一异照抄、**HUD 第一版在层 25**；**真 ECL 已从 TH12 移植**，缺贴图/anm ⇒ 暂不发布）|
 | 113 | 神灵庙 灵界 | `trance.c` | 🔧 已实装待实跑（**1103** 断言；**中弹救援 = 救援层最后一家（延时不是免死；落点 = 卡虚表 `+0x0c` + `return 1`）**；**神灵实体池已落地**：不下落/走过去才吃/越缩越小；计分载体仍搁置）|
 
 ### 本轮（2026-09-12 第三轮：对抗审计 + 收口）

@@ -3563,6 +3563,152 @@ wba_wc: SE probe 6/6 id 0x39 (se_heal)
 - 部署 DLL 与 `native/build/` 文件逐字节 `cmp` 见最终报告；`AUDIT.md` 本节 / `NEXT.md` §1v-补3 是文档变更。
 
 
+
+### AL40. ★ 鬼形兽（id 117）十修：鹫束改「每颗原生子机一条」+ SE 试听间距 30 → 180（2026-09-12）
+
+用户 2026-09-12 实跑反馈（Item 1 / Item 2）：
+
+- 原话：「我去，魔理沙的应该是普通子机激光从灵梦机体大鹫咆哮射出来了」
+  —— 上一轮（§AL39）的卡侧束是从**自机本体**射出一条；用户要的是**每颗普通子机各一条**。
+- SE 试听：6 个候选 30 帧一声太密、听不清；改成 **180 帧（3 s）**。
+  用户暂定答案是最后一个 `0x39 se_heal`，但本轮**不写死**，等 3 s 版实跑确认。
+
+#### A. 结论：子机列表用引擎**原生 4 格** `inner+0x50`
+
+`Player::repopulate_options_and_notify_cards`（`0x45d5e0`，this = `PLAYER+0x620`）维护
+**原生子机数组** `inner+0x50` = `player+0x670`，4 格、stride `0xf0`。一手：
+
+- 写点：`th18:0x45b8ea push 4`（每帧跟随 count=4）、`0x45dbf4` 清 `option+0x00=0`、
+  `0x45dafe mov [esi],2` 置 in_use；
+- 每帧跟随 `FUN_0045bc90`（`0x45b8ea` 调用）：`option+0x00 != 0` 才算数，把
+  `player_pos + (focused ? +0x6c/+0x70 : +0x64/+0x68)` 写回 `option+0x5c/+0x60`（定点 ×1/128）；
+- 主炮出膛也读同一格：`PlayerBullet__create` `0x45e430` 对 slot != 0 取
+  `player + slot*0xf0 + 0x5dc` = `option[slot-1]+0x5c`）。
+
+因此 `eagle_beam_tick()` 改成：
+
+- 遍历 i=0..3，`option+0x00 != 0` 就取 `option+0x5c/+0x60 × 1/128` 当束根；
+- 每个束根各挂一条 `ability.anm` **script163**（贴图 / 朝向 / 长度同 §AL39）；
+- 每颗各打 `ce_damage_rect`（life 2、dmg 20、宽 34、高 512）+ 沿轴 5 点
+  `ce_cancel_radius(r=20, max=9999, mode=1)`；
+- `ce_raise_damage_cap(300)` 每帧只抬一次（总量仍 300，**不按束数翻倍**）；
+- 子机数变少 / 回退本体 → 多出来的束立刻删；松 Z / 咆哮结束 / 对话暂停 → 全部收掉；
+- **没有子机（火力 <1.00，level==0）时回退 1 条本体束**，并打 body 模式日志
+  （否则画面看着像死掉）。
+
+字段/常量：`eagle_beam_kill()` 改成收 `beam_id[4]` 全数组；`animal.c` 本地常量
+`ANIMAL_EAGLE_OPT_BASE (CE_PLAYER_INNER+0x50)` / `..._STRIDE 0xf0` / `..._MAX 4`。
+`engine.h` 的 `CE_OPT_IN_USE/POS_X/POS_Y` 与 `CE_SUBPIXEL_TO_PIXEL` 原样复用，**未改共享件**。
+
+**数据侧不变**（复核）：`native/build/sht/pl01.sht` 的 EAGLE `0x23..0x27` 仍是**空组**
+（每组 4 字节 `ff ff ff ff`）；WOLF `0x1e..0x22` = 0/5/5/5/5 条。`on_shot_set_index` 仍返回
+`0x23 + power` ⇒ 引擎取到空组、不创建 sprite-bullet，视觉 / 伤害全走卡侧束。
+
+日志（实跑 grep）：
+
+```
+wba_c: eagle beam mode = option (n=N)          # 有子机；N = 本帧束数（1..4）
+wba_c: eagle beam mode = body (no options)     # 火力 <1.00 / 无子机兜底
+wba_c: eagle beam on (N beams, len 512, width 34, dmg 20/frame cap 300)
+wba_c: eagle beam off (N beams, len 512, width 34, dmg 20/frame cap 300, fade=…)
+```
+
+`on/off` 由旧名 `eagle body beam on/off` 改名而来；`shot set -> eagle` / `shot set index -> eagle`
+两行里的 `body beam` 字样同步改成 `option beams`。
+
+#### B. SE 试听间距 30 → 180
+
+只动两个点：新常量 `ANIMAL_SE_PROBE_GAP = 180` 与 `hyper_end()` 里的表头日志；候选表 / 顺序 /
+「试听期间抑制 `ANIMAL_SE_ROAR_END`」/ 每条一行日志全部不动。首条仍在正常结束当帧播，
+之后每 180 帧一条；对话暂停照旧冻结。
+
+```
+wba_wc: SE probe active (6 candidates, 180 frames apart); normal roar-end SE 0x38 suppressed
+wba_wc: SE probe 1/6 id 0x34 (se_lgods4)
+…
+wba_wc: SE probe 6/6 id 0x39 (se_heal)
+```
+
+⚠ 用户暂定 `0x39 se_heal` 是对的，但 **未写死**：等 3 s 版实跑回报。非 debug build 仍播 `0x38`。
+
+#### C. 门 / 部署（本轮）
+
+- `make check` 全绿（含 `sites.py check` + `dllverify` 27 exports + `check-docs.py`）；
+  `python3 sites.py verify` 210 条全对；`python3 assets/check_player_anm_bounds.py` 通过。
+- **未新增 `BP_*`**：`th18_card_expand.def` 一个字节未动、dllverify 仍 27 exports
+  （无需动 def / 计数）。
+- `MODKIT_DIR=… NO_GIT=1 make release` 成功；部署 `mods/th18_card_expand.dll` 与
+  `native/th18_card_expand.dll`、`native/build/**` 逐文件 `cmp` 相同；
+  部署 DLL md5 = `2892cea820e4740c2b512035165b611b`。
+- `bash local/sync_modkit_dll.sh` 把同一 md5 同步到 modkit 三处加载路径 + 源，四份一致，
+  **本轮未被游戏锁**。
+
+### AL41. ★ 鬼形兽（id 117）十一修：roar-exit SE 锁定 0x42、试听探针停用、撒道具音 A/B（2026-09-12）
+
+用户 2026-09-12 实跑回报：
+
+- 6 个候选（180 帧一档）里，**第 5 声**最像 TH17 正常咆哮退出；第 5 个候选 = `0x42`。
+- 第 4 个候选 `0x43`，用户耳朵叫它 “lgod4”；但用户解包 `th17/data/` 的文件名与 exe 内建
+  SE 名表可能不一致 —— 因此「撒一大片道具」该用 `0x34`（名表 `se_lgods4`）还是 `0x43`
+  （名表 / 耳朵 `se_release`）**尚未锁死**，需要下一轮实跑 A/B 后再定。
+
+#### A. `ANIMAL_SE_ROAR_END` = 0x42（锁定）
+
+证据：
+
+- **用户耳朵**：6 候选以 180 帧（3 s）一档播放，用户回报第 5 声像 TH17 roar-exit；
+  第 5 个候选 id = `0x42`。
+- **一手 TH17**：零售 TH17 `th17:0x40f4fc` 在 roar end 同一条路径 `push 0x42`
+  （与 §AL26 / §AL39 / §AL40 的线索一致）。
+
+旧值 `0x38` 是 2026-09-11 早期候选探查阶段的错误读数，现已被上述两条证据推翻。非 debug build
+的 `hyper_end(!by_hyper)` 现在播放 `0x42`；`ANIMAL_SE_PROBE` 即使误开，`0x42` 也仍是 normal 路径的目标 id。
+
+#### B. 自动 SE 探针停用（保留代码）
+
+- 新增 `#define ANIMAL_SE_PROBE 0`（与 `ANIMAL_DEBUG_KEY` 并列）。
+- 试听表、`se_probe_tick()`、`hyper_end()` 里的试听分支、`on_tick_2()` 的调用全部改成
+  `#if ANIMAL_DEBUG_KEY && ANIMAL_SE_PROBE`。默认 0 时**整块不编译**：
+  不设 `se_probe_*`、不打印 `wba_wc: SE probe active ...` 或 `wba_wc: SE probe N/6 ...`；
+  正常咆哮退出照常播 `ANIMAL_SE_ROAR_END`（= `0x42`）。
+- 代码 / 6 候选表原样保留，以后要再听只需把 `ANIMAL_SE_PROBE` 改 1。
+
+#### C. 撒道具（鱼灵 → 道具）音 A/B（仅 debug build）
+
+`native/cards/animal.c` 新增 `scatter_se_select()`，在 `fish_to_items()` 把鱼灵换成道具、
+准备补播 `se_left` 序列时调用：
+
+- **debug**（`ANIMAL_DEBUG_KEY` = 1）：每一段连续播出的 `se_left` 序列（一次可听出来的
+  “撒道具声”）在 `0x34` / `0x43` 间轮换；一段内多颗鱼 / 多个 `fish_to_items()` 合并时保持同一
+  id，只在段首打日志：
+
+  ```
+  wba_wc: scatter SE A/B -> id 0x34 (table name se_lgods4)
+  wba_wc: scatter SE A/B -> id 0x43 (table name se_release)
+  ```
+
+- **release**（`ANIMAL_DEBUG_KEY` = 0）：恒用 `ANIMAL_SE_FISH_ITEMS`（`0x34`），行为与改动前一致。
+- 下一轮实跑请用户回报：`0x34` / `0x43` 哪个才是“大量道具”的音。
+
+⚠ **命名口径的教训**：用户解包 `th17/data/` 里的 wav 文件名可能和 exe 内建 name table 不一致；
+本卡的**创造性音效选择以用户耳朵实听的 id 为准**，表格名只做日志标注，不作为最终裁决依据。
+
+#### D. 门 / 部署（本轮）
+
+- `make check` 全绿；`python3 sites.py verify`、`python3 assets/check_player_anm_bounds.py`、
+  `tooling/check-docs.py` 通过。
+- **未新增 `BP_*`**，`.def` / dllverify 计数不变（27 exports = 26 BP + init）。
+- `MODKIT_DIR=… NO_GIT=1 make release` 成功；`native/th18_card_expand.dll`、
+  `dist/bin/th18_card_expand.dll`、部署 `mods/th18_card_expand.dll` 三者逐字节 `cmp` 相同，
+  md5 = `49913d034f385c97a20feb73d71f9bf2`。
+- `native/build/` 的生成物（`abcard.anm`、`ability.anm`、`pl00..03.anm`、
+  `ecl/default.ecl`、`sht/pl00..03.sht`）与部署 `th18/` 逐文件 `cmp` 相同。
+- `bash local/sync_modkit_dll.sh`：第一次跑到 `thcrap/bin/mod_th18_card_expand.dll` 时
+  被占用（旧 md5 `2892cea820e4740c2b512035165b611b`，多半是游戏在运行），脚本按设计报 WARN
+  并 exit 1；随后的重跑已解锁，四个路径全部同步为 `49913d034f385c97a20feb73d71f9bf2`
+  （源 / `mods/` / `thcrap/bin/` / `thcrap/repos/Renko_1055/th18_card_expand_255/` 四份一致）。
+
+
 ## G. OPEN —— 还没解决的
 
 | # | 事项 | 说明 |
@@ -4008,9 +4154,9 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 | # | 断言 | 可信度 | 证据 |
 | --- | --- | --- | --- |
 | BF1 | **金 UFO = 蓝 UFO**（用户：「到时候进行 P 图素材替换即可」）：`UFO_COLOR_GOLD`（编号 4，❓自定）在**凑组归一 / 奖励表 / 击破加成 / 吸收两计数 / HP 与飘行参数 / ECL 子程序**上**逐项走蓝的同一段代码**；贴图借 `UFO_ECL_BODY_BLUE` | ✅ 实现即此 | `ufo_core.c` 的 `ufo_color_norm()` / `ufo_color_art_index()`（一手 `th12:0x44a909`：idx=(c==−1)?3:c−1）|
-| BF2 | 「**金算不算独立一色**」这一格留宏 `UFO_GOLD_COUNTS_AS_BLUE`（默认 1 = 归一成蓝）；两条分支**都过单测**（925 / 919）| ✅ | `tests/test_ufo_core.c` |
+| BF2 | 「**金算不算独立一色**」这一格留宏 `UFO_GOLD_COUNTS_AS_BLUE`（默认 1 = 归一成蓝）；两条分支**都过单测**（**987** / 981）| ✅ | `tests/test_ufo_core.c` |
 | BF3 | **两同一异 = 丢第一个 token**（用户确认）：第 3 枚放上不成组 ⇒ **当场丢最旧 + 重判**；六种排列统一 `dropped=1 / filled=2 / {原第 2 枚, 新一枚}` | ✅ 一手（`th12:0x422e80` 的 KEEP2 `0x422ef8`–`0x422f12` 逐字）| `ufo_group_put()` + 单测 |
-| BF4 | ⚠ 一处**与字面一手的差异**：一手 KEEP2 的字面条件是 `slots[1]==color \|\| slots[0]==slots[1]` ⇒ `{A,B,A}`（首尾同色）**不走 KEEP2、会出彩虹**；用户口径「槽满不成组 ⇒ 丢最旧」是**有意偏离**这一格 ⇒ 已钉成断言 + `ufo_group_keep2_literal_th12()` 记录，⏳ 待实机复现一次 | 🟡 | `ufo_core.c`；spec §2 |
+| BF4 | ~~一处**与字面一手的差异**~~ **✅ 2026-09-12 作废：与字面一手本来就没有差异** —— KEEP2 还有**第三条分支**（`th12:0x422ed4`–`0x422ed6`），`{A,B,A}` **也走 KEEP2**；行为**零变化**，只是删掉一条假差异声明。详见 §BO-11 第一条第 15 点 | ✅ 一手 | `ufo_core.c`；spec §2 |
 | BF5 | **五边形提示框**：纯逻辑判据 `ufo_pentagon_hint_for_color()`（∃c 使再加一枚成组；当前规则下等价 `filled==2`）+ 卡侧 `ufo_pentagon_hint_update()` **已真驱动**（脚本 **223**，建/跟随/删）；★ 层 = **`layer(12)`**（照抄零售，**不是** 25），见 §BO-7 | ✅ 一手 + 实跑未验 | `ufo.c`；spec §5.9 |
 | BF6 | **HUD 第一版**（用户：「先写，我一点一点对」）：`ce_hud_slot_claim_card(112, 112×30, LEFT)`；3 格令牌槽（20×20、格距 4）+ 血条（112×6，填充按 HP‰）+ 贴图 VM 读数；**全在层 25** ⇒ 暂停时会被模糊罩盖住 | ✅ 实现即此 | `ufo.c`；`HUD-LAYOUT.md` §4.1 |
 | BF7 | 收尾：`on_delete` / `on_run_reset` / 菜单门都调 `ufo_hud_kill()` + `ce_hud_slot_release(112)`；VM 句柄放**文件静态**（`on_ctor` 会 memset 私有状态）| ✅ | `ufo.c` |
@@ -4619,3 +4765,115 @@ C 侧：占位 `CE_ANM_ABILITY_SCRIPT_PEASHOOTER_OPT`（卡 77 的豌豆射手�
 **❓ 未定**：① 止射闸与声明层是否在**同一帧的同一时刻**读机体号/火力档（换机体、松 Shift、升档那一帧的边界）
 **无一手证据** ⇒ 理论上存在「声明 1 个却按 0 判、放行原生弹」的**单帧窗口**（最坏 = 一帧多打一发原生弹，可接受），
 🟡 待实跑；② 口径本身只跑过纯逻辑层，实跑验收未做；③ `logged_pass0` 只记一次（非边沿触发）。
+
+### BO-11 112 星莲船 UFO：用户口述 + thbwiki 与 TH12 一手的**逐条对账**（2026-09-12）
+
+**怎么来的**：用户口述了整套系统 + 贴了 thbwiki。thbwiki 是**社区单源**，按仓规**只当假设**，
+所以逐条去 `local/th12.v1.00b/th12.exe`（md5 `212f187591f4f1fa99eb2845d1b3cf20`，与
+`engine/ufo/th12/01-ufo-system.md` 的样本一致）核了真伪。**术语**：**token** = 小怪掉的、场上飞的那个
+（TH12 里是**道具**）；**UFO 敌人** = 收齐合法组后召唤出来的那只。
+
+#### 一、订正（★ 这几条改变了认知，其中两条推翻我先前给你的答复）
+
+1. **token 来源**：一手 = **敌人的 ECL 掉落表**（`dropExtra(10..12,n)`，op 407 handler `th12:0x4179cc`
+   → `EnemyDrop__spawn_ex_drops` `th12:0x4121e0`），**没有任何概率**——「表里写了就有」。
+   ⇒ 我们原先「卡侧每 300 帧自己撒」**不符**（空场也会冒 token），已改成**小怪击破时登记、帧末建实体**。
+2. **token 颜色是固定的**（wiki 对）：由**那只敌人的掉落表**写死；`13/14/15` 是**彩虹 token 的三种起始态**，
+   只在 UFO 击破/吸满时按色或 `COLLECTED_UFO[2]` 指定。**既没有随机也没有轮转**。
+   ⚠ TH18 **没有这张掉落表** ⇒ 我们仍用「本局第 n 枚」轮转表（❓ 自定），换法待拍（P2）。
+3. **token 的运动**（我们原先完全静止，已补全）：初速 **1.5**（`0x4a4270`）、角度按
+   `[mgr+0x666fe0] & 1` 取 π/4（右下）/ 3π/4（左下）且计数在自增**之后**判 ⇒ **本关第 1 枚 = 左下 45°**；
+   四边反弹 ×(−1.0)：x ≤ **−176** / x ≥ **176** / y ≤ **160** / y ≥ **370**；
+   **1200 帧后不再反弹**（`0x4263d1 cmp [edi+0x98c],0x4b0`）；出界即撤（外框 ±208 / −16 / 464）。
+4. ★★ **我之前答错了一格**：`th12:0x4262bc fcomp qword [0x4a4410]`（= 3600 = 60 px）**不是收取判定**，
+   是**变色/寿命计时器的冻结圈**（圈内 `Timer__decrement −1.0f` 抵消公共的 +1 ⇒ 冻结；连道具 1200 帧寿命也一起冻）。
+   **真正的收取判定** = token 落进自机的**收点矩形**（`th12:0x4260af` 尾段四次比较读
+   `player+0xc444/0xc448/0xc450/0xc454`；半尺寸来自玩家表 **`0x4b31b4` = {60,70,60}** × 0.5 × 0.5 = **15 单位**）。
+   ⇒ 我们现在是 20 px 圆（❓ 自定），差距登记为 P5。
+5. ★★ **槽什么时候清空 —— 用户口述与一手冲突**（**没有自己翻**）：一手在 **UFO 结束**那一刻才清
+   （`th12:0x44a326`–`0x44a344` 清 `COLLECTED_UFO[0..2]`），召唤只把 `0x4b0c5c` 置 3；
+   且槽满时再收 token 只给 +100000 PIV（`0x4270b0` 开头）⇒ **UFO 在场期间槽是满的**（HUD 3 格亮着、收不进新 token）。
+   我们照**用户口述**（召唤即清）⇒ 可见差异：UFO 在场时我们的槽是空的、还能继续收。待拍 P1。
+6. **UFO 吸点**：引擎侧 `FUN_004271c0` `0x4271c0` —— `UFO.timer >= 60` 且道具 **type == 1 或 2** ⇒
+   `state = 7`、清速度/吸引距离；**四种颜色走同一分支**（跳表 `0x427214` 五格全指 `0x4271dc`）
+   ⇒ 吸的是**全场的 P 道具 + 点道具，没有半径限制**；视觉 = 道具飞向 UFO（`0x426879`：`atan2` + 速度
+   `item+0x9bc += (UFO.timer/600)*0.05+0.02`，上限 6.0，到 18 px 消失并入账）。
+   ✅ **wiki B11 两句都对**：被吸走的点**不再被自机吸引**（state 3/4 被抢成 7），**但自机碰触仍能吃到**
+   （失败支 `jp 0x4260af` 落在公共收点尾上）。
+7. **HP 与血条**：HP = `th12:0x4b33f0` = **{1600,1900,2100,2300,2500}**，索引 = `CURRENT_POWER/POWER_PER_LEVEL`；
+   血条 = `front.anm` **脚本 134**（sprite102 = `front_ufo.png` 96×96）+ **136**（`sprite(-1)` + `color(255,96,96)`），
+   **引擎每帧写 `scale.x = life.cur / life.max`**（`Ufo::on_draw_16` `th12:0x44a5d0`）。
+   ⇒ 我们仍是 `UFO_HP_PLACEHOLDER 100` + `drawRect` 占位（**用户点名要有血量 UI**）⇒ P4。
+8. **时限**：一手 `zUfo+0x28 = 720`，**实际 420 帧开始离场**（`0x44a3af` 段把 `enemy+0x127c` 写 999 →
+   ECL `_920: moveLimitReset(); movePosTime(300,1,…,-64)`）；**没打破 = ECL 自己 `delete()`**、
+   **不经过 `Enemy__die`** ⇒ **不返还、不掉落（全额归零）**，与我们「id 不在了 = `ufo_teardown("vanished")` 不发奖」一致 ✅。
+9. ★★ **返还倍率（用户记的「双倍」的真相）** —— `FUN_0044af00` 写进赏金道具 `+0x9d4`：
+   红 = **火力满 2.0 / 否则 1.0**；蓝 = **8·fill+2**（fill<0.5）/ **6.0**（0.5≤fill<1）/ **8.0**（fill≥1）；
+   绿 = **恒 2.0**；彩虹 = **2·fill+2** / **3.0** / **4.0**。
+   返还**形式** = **一件赏金道具**（type 16/17/18，携带 `cntA/cntB/颜色/倍率`）**在收集时才结算**
+   （红 = `cntA·PV·mult + cntB·PV`；蓝/绿/彩虹 = `cntB·PV·mult`）。
+   ⇒ 「至少一倍」成立；**绿恒 2×、红满火力 2×**。
+10. ★★ **掉落表（含用户猜的三格）** —— 跳表 `0x44b590`：**红 → 道具 4（残机碎片）+ 道具 13（彩虹 token，红起始）**；
+    **蓝 → 只有道具 14（彩虹 token，蓝起始），没有加成道具**；**绿 → 道具 5（B 碎片）+ 道具 15**；
+    **彩虹 → 道具 13/14/15，按 `COLLECTED_UFO[2]`（`0x4b0c54`：1→13、2→14、3→15）**。
+    ⇒ **每色恰好 1 枚 token**：用户猜的「**掉两个飞碟**」**不成立**（另一件是加成道具 4/5）；
+    用户猜的「**蓝是纯加分**」**半对**（蓝**确实掉一枚彩虹 token**，只是没有加成道具；「纯加分」只在**赏金**那件上对，
+    而蓝的赏金倍率最高 6~8）。★ **吸满**那条（`0x44aca0` 的 switch `0x44ad99`）：
+    红 → 道具 4、**绿 → 道具 7（整颗 Bomb！）**、蓝 → **无 case**、彩虹 → token（同表）。
+11. ★★ **彩虹 UFO 的「转化」到底是什么**（用户自己不确定的那半句）：**打破 → 一枚彩虹 token**，
+    它的**起始态 = 开碟时第 3 枚 token 的颜色**；**代码里没有任何「转化」语义**——它不改场上 token 的颜色、
+    不改道具种类、不动已吸收的点数。彩虹那条路上**唯一的「反」**是：
+    ① 吸收记账时 `color == −1` ⇒ **`cntA`/`cntB` 互换**（`0x44aca0` 的 `0x44accb cmp ecx,0xffffffff; jne`）；
+    ② 赏金倍率随 fill 缩放（`2·fill+2` → 3 → 4）。
+    ⇒ **社区 wiki 说的「红点↔蓝点互换」在代码里就是这两件事（计数互换 + 倍率），不是把道具本身变色。**
+12. ★ **「体术判定」的方向判死**：ECL 的 `setHitbox(16,16)` = **敌人对自机的判定盒 ⇒ 它撞自机会伤自机**；
+    `setHurtbox(48,24)` = **自机弹打得到的受击盒** ⇒ **不是**「自机撞它能伤它」（那要靠子弹）。
+13. ✅ **UFO 不发弹**：`default.ecl` 的四个 UFO 子程序**一条 shoot 都没有**（`grep shoot` = 0），
+    我们的移植逐字节一致；`UFO_EtBreak`（半径 16→112 每帧 +6，`etCancel`）✅ **wiki B10 的「小范围消弹」对**。
+14. ★★ **我们自己的一个真 bug（本轮修掉）**：`ufo_absorb_item()` 旧版在「已吸满」期间**每颗都返回「开奖」**
+    ⇒ 红 UFO 那件奖励是**命碎片** ⇒ **可以无限刷资源**。一手 `0x44acd8` 是**早退**（fill ≥ 1.0 整个收工：
+    计数照加、fill 不加、不吐）⇒ 已按一手改（新增断言钉住）。
+15. ★ **§BF4 那条「有意偏离」作废**（**行为零变化**）：复核 `th12:0x422ed4`–`0x422ed6` 后发现 KEEP2 还有
+    **第三条分支** `slots[0] == color && slots[1] != color` ⇒ `{A,B,A}`（首尾同色）**也走 KEEP2**（= 丢最旧），
+    **不是**「会出彩虹」。⇒ 我们与字面一手**本来就没有差异**，只是先前把一条假差异写成了「有意偏离」。
+
+#### 二、本轮落地（`ufo.c` / `ufo_core.{c,h}` / `test_ufo_core.c`）
+
+- **吸满只开一次奖**（修上面第 14 条那个无限刷资源的漏洞）。
+- **击破/吸满返还一枚 token**（红→13 / 蓝→14 / 绿→15 / 彩虹→按 `COLLECTED_UFO[2]`），每色恰好 1 枚。
+- **token 来源改成小怪击破**（删掉「每 300 帧自己撒」的卡侧定时器）。
+- **token 会飞会反弹**（纯逻辑 `ufo_tok_motion_init/step` + 卡侧每帧写 `final_pos`/`abs_pos`）。
+- **KEEP2 第三条分支订正**（见上面第 15 条）。
+- 断言 **925 → 987**（0 failed）；x87 = 0；`sizeof(ufo_card_t)` = **488 ≤ 496**；`make check` / `make verify` 均 exit 0。
+
+#### 三、待用户拍板
+
+- **P1 ★ 槽何时清空**：一手在 **UFO 结束时**清、在场期间槽是满的（收不进新 token）；用户口述是「收到合法组就清空」
+  ⇒ 现在照用户口述。**这是本轮唯一与用户口述直接冲突的一条**，需拍。
+- **P2 token 颜色规则**：TH18 没有敌人的掉落表 ⇒ 我们用「本局第 n 枚」轮转表（❓ 自定）。
+  选项：接受轮转占位 / 改成「按敌人 id 取模」/ 等真 ECL 到位让实体自带颜色。
+- **P3 ★ 载体选择 + 「token 会被子弹打掉」**：TH12 = **道具**（打不掉、只能接触收）；
+  我们 = **真敌人壳**。代价：会被 `enemy_count_real` 照计 ⇒ **炸弹门/决死门被放行**（§BO-3）；
+  且现在 `UFO_TOKEN_LIFE = 1` ⇒ **任何一发子弹都能「收」走 token** ⇒ **「碰到才收」形同虚设、风险收益手感被抹掉**。
+  修法需要「伤害免疫位」（`flags_lo & 0x31`；`engine.h` **没有**现成旋钮 ⇒ 要么直写 `enemy+0x635c`、要么加 SDK 面）；
+  ⚠ **顺带好处**：置了免疫位还能把它从 `CE_EDEATH_F_REAL` / `enemy_count_real` 里摘出去，**§BO-3 那个副作用一起消失**。
+  另两条路：改用**自建 VM 池**（零副作用/零分配、能在死亡栈上帧末建；❌ 引擎的命中/清场/`on_enemy_death` 碰不到它
+  —— 而这**更贴一手**，因为 TH12 的 token 是打不掉的道具）；**道具载体在 TH18 不可用**（type > 0x13 上限，
+  且 0x10..0x13 是卡道具）。
+- **P4 血条 UI**（用户点名）：走资产线切零售 `front.anm` **134/136**（未切图）＋ **HP 数值口径**
+  （一手 {1600..2500} 按火力档；照抄会触发 TH18 `0x42d8f6` 的位 30 ⇒ 需要缩法）。
+- **P5 收取半径**：我们现在 20 px 圆（❓ 自定）vs 一手「自机收点矩形半尺寸 **15 单位**」；跨版本单位等价未证。
+- **P6 绿 UFO 喂饱**：一手是 **道具 7 = 整颗 Bomb**，我们映射到 TH18 type 6（符卡碎）⇒ 口径差一格（TH18 有没有该 type 未查）。
+
+#### 四、❓ 查不到的（含排查范围）
+
+① **「哪些敌人掉 token、掉几个」的完整名单**（未逐关普查 8 个 `st0X.ecl` 与敌人脚本；只确认了「结构 = 敌人掉落表」）。
+② wiki 的 **「11 s 倒计时 / 剩 7.5 s / 剩 3 s」三个数字**：一手只钉死 **420 帧开始离场**与 `+0x28 = 720`；
+「11/7.5/3」没有对应的常量/比较被找到（搜过 `0x44a2d0`–`0x44a4f0` 段与 item/敌机 tick 的比较常量）；
+**HUD 上那个倒计时画在哪**也完全没查（`front.anm` 未翻）。
+③ wiki B15 后半「关底/对话 ⇒ UFO 自爆（= 与击破相同）」：只见到 `0x44a3ab` 的 `life.is_spell |= 2`，
+**没追到走 `0x44af00` 的调用点**。
+④ 「被吸走的点 miss 后正常掉落」与赏金道具 `+0x9c8` 颜色在收集时的分流：没追到 miss 分支。
+⑤ 血条 134/136 的视觉分工（谁是外框、谁是填充）＝ 仍需实机截图。
+⑥ TH18 `flags_lo` 位 30（`0x42d8f6`）的语义：只复核了指令本身，**没 grep 谁读它**（`engine.h` 的「锁定黑名单」口径仍 🟡）。
+⑦ `0x4b0c48` / `0x4b0cd0` 的字段名：用同址判据间接定死（玩家火力 / 满火力阈值），未与 th-re-data 的字面对上。
