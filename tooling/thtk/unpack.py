@@ -24,9 +24,24 @@ LOCAL = REPO / "local"
 VENDOR = LOCAL / "vendor"
 
 # 版本目录前缀 → (thtk 版本参数, anmmap 文件名)
+#
+# anmmap 按 **anm 文件头版本**选（不是按作品号）：头里 `version:` 是哪个数，
+# 就用那张表。选错不会报错，只会把 mnemonic 译成垃圾——例如拿 v8.anmm 读 TH11
+# 会把 `sprite(sprite1)` 译成 `stop(sprite1)`（2026-09-12 实测）。
+#   头 0 → v0（th06）   头 2/3 → v2（th07 PCB、th08 IN）   头 4/7 → v4（th10 MoF、th11 SA、th12 UFO）
+#   头 8 → v8（th13 起，含 th18；th18 的额外 id 由 thanm 内部按版本参数叠加）
+# 各作头版本实测命令（2026-09-12）：
+#   thanm -l <版本参数> local/<版本>/dat/<某个>.anm -m <mapfile>
 GAMES = {
+    "th07": ("7", "v2.anmm"),     # 头 2；v4.anmm 会把 pos(...) 译成 iset(...)
+    "th08": ("8", "v2.anmm"),     # 头 3；v2.anmm 头部自述含 "version 3: IN"
+    "th10": ("10", "v4.anmm"),    # 头 4
+    "th11": ("11", "v4.anmm"),    # 头 7；v8.anmm 会把 sprite 译成 stop
+    "th12": ("12", "v4.anmm"),    # 头 7
+    "th13": ("13", "v8.anmm"),    # 头 8
     "th15": ("15", "v8.anmm"),
     "th16": ("16", "v8.anmm"),
+    "th17": ("17", "v8.anmm"),    # 头 8
     "th18": ("18", "v8.anmm"),
 }
 ANMMAP_DIRS = (
