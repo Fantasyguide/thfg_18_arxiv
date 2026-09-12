@@ -21,6 +21,9 @@
  * 但 `final_pos` 是否每帧由 `abs_pos` 重算**没有一手证据** ⇒ 只钉 `final_pos` 有「当帧被敌人 tick
  * 写回出生点」的风险。双写是**保守**做法，🟡 待实跑确认哪一格才是可见位置的源头。
  *
+ * ★ 使魔的**画面**：惰性空壳不跑 ECL ⇒ 谁也不会给它装 anm 脚本 ⇒ 卡侧起一个**跟随 VM**
+ *   （`YK_FAM_ANM_LAYER` 那一节，范式照 112 飞碟）画四色零售切图（`ability.anm` 206..209）。
+ *
  * ★ 占位清单（每条都是「需要资产 / 需要用户决策」）见文件尾 —— 取值一律是**不做**这个语义。 */
 #include <string.h>
 
@@ -108,7 +111,10 @@
 #define YK_SUBPIXEL          (1.0f / CE_SUBPIXEL_TO_PIXEL)   /* 128.0f：像素 → 原生定点 */
 #define YK_FAM_ANM_INDEX  (-1)      /* ★ TODO(资产 §5)：使魔贴图。`NoEnemyDebug` 不跑 ECL ⇒ 不写这两格
                                      * 时会画「当前关卡敌人 anm 的 slot 0」（audit-open-items-106-109 §②）。
-                                     * 占位 = 不写（< 0）；填真值时两格一起给。*/
+                                     * 占位 = 不写（< 0）；填真值时两格一起给。
+                                     * ★★ 2026-09-12：**画面不再走这条路** —— 四色零售切图已在 `ability.anm`
+                                     * 206..209，由卡侧的**跟随 VM** 画（见下面 `YK_FAM_ANM_LAYER` 那一节）。
+                                     * 这两格保持占位（偏移本身仍 ❓ 未证实，别翻成真值）。*/
 #define YK_FAM_ANM_SCRIPT (-1)
 #define YK_TRANSFER_BOX_W 16.0f     /* 转嫁源盒子。研究 §4 的建议值（放 boss 坐标的小盒，
                                      * 避免顺带打到部件 / 杂鱼）；🟡 待实跑微调。*/
@@ -245,10 +251,140 @@ static void yk_kill_familiar(uint8_t *f)
     *(uint32_t *)(f + CE_ENEMY_FLAGS) |= YK_FLAGS_DELETE_NOW;
 }
 
+/* ====================== ★ 使魔的跟随 VM（画面）======================
+ * 为什么需要：使魔 = `NoEnemyDebug` 的**惰性空壳**（`wait(1000)` 死循环）—— 它不跑 ECL，
+ * 也就**没有任何人**给它装 anm 脚本 ⇒ 引擎画不出东西（`YK_FAM_ANM_*` 那两个偏移 ❓ 未证实，
+ * 而且 `etSprite` 只在 ECL 里跑）。四色零售切图已经进了 `ability.anm`
+ * （script 206..209 = TH08 `enemy.anm` script53..56；见
+ * `assets/ability/scripts/206_youkai_familiar_s53.anm.txt` 的注）⇒ 由卡侧起 VM 画。
+ * **范式逐条照 112 飞碟的跟随 VM**：`ufo.c` 的 `ufo_body_vm_spawn` / `ufo_body_vm_follow` /
+ * `ufo_body_vm_kill`（建壳那一刻起、每帧钉位置、壳没了就删）。
+ *
+ * 生命周期（**铁律：长持续效果必须交代「被删掉会怎样」**）：使魔消失的**每一条路**都要过
+ * `yk_fam_vm_*`，尤其 `on_delete`（删卡那一刻 AbilityManager 冻着、卡的 tick 回调全停，
+ * 只有 `on_delete` 跑得到）⇒ `yk_drop_all` 里兜一次 `yk_fam_vm_kill_all`。*/
+
+/* 跟随 VM 的层 = **世界层 7**。
+ *   一手：`engine/anm/th18/02-render-stages.md` §1 —— 层 6/7/8/9/10/11 = 「敌机等」，
+ *         且按 §2 的相机表全在**相机 3 = 游玩区**；使魔是**场上实体**，就该落在这一档。
+ *   先例：`ufo.c` 的 `UFO_BODY_ANM_LAYER 7`（同一用途：卡侧替一个场上实体起 VM）。
+ *   ⚠ 使魔的脚本**没有** `layer()`（零售 enemy.anm script53..56 都没写，那几份 anm.txt 注明）
+ *     ⇒ 这个参数是**唯一**的层来源（飞碟本体能说「脚本自己写 layer(7)」，这里不能照抄那句话）。
+ *   ❌ 不用 HUD 的 24/25：那是**相机 2 的外围 UI 列表**（§1 的 `0x3c` / `0x39` 两行专门提醒
+ *     「世界列表 24」与「UI 列表 24」是两码事），与场上实体的语义无关。
+ *   🟡 层号本身未实跑核（ufo.c 的 7 也标着未验）。实跑若整只看不见，第一个该动的就是这一个数。*/
+#define YK_FAM_ANM_LAYER 7
+
+/* 变体（0..3）→ `ability.anm` 里的脚本号。★ 用 `anm_ids.h` 的**宏名**（`make anm` 生成），
+ * 不写死数字；四条逐一列（不假设号连续 —— 万一资产重排，这里会**编译期**就对不上而不是静默画错）。*/
+static int yk_fam_anm_script(int variant)
+{
+    switch (variant) {
+    case 0:  return CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_S53;   /* 红 */
+    case 1:  return CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_S54;   /* 绿 */
+    case 2:  return CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_S55;   /* 蓝白 */
+    default: return CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_S56;   /* 黄 */
+    }
+}
+
+/* 使魔 ↔ 跟随 VM 的对照表（**文件级静态**，照 117 动物灵 `s_tok[40]` / 112 的做法；
+ * 不进卡的 496 B 私有状态预算）。32 × 12 B = **384 B**。
+ * 键 = `fam_id`（单调递增、不复用 ⇒ 不会撞键）；`fam_id == 0` = 空槽。
+ * ★ 为什么不塞进 `yk_slot_t`：那是**纯逻辑**层的结构（进主机单测、有 sizeof 断言，头文件只 <stdint.h>），
+ *   anm 句柄是引擎侧的东西 ⇒ 分开放（也顺手让 `sizeof(yk_card_t)` 一个字节都不变）。*/
+typedef struct {
+    uint32_t fam_id;   /* 0 = 空槽 */
+    uint32_t anm_id;   /* 0 = 没有 VM（起失败 / 已被引擎销毁）*/
+    int32_t  variant;  /* 0..3：自愈重起时要按同一套脚本再起一个 */
+} yk_fam_vm_t;
+static yk_fam_vm_t s_fam_vm[YK_FAM_MAX];
+
+static yk_fam_vm_t *yk_fam_vm_find(uint32_t fam_id)
+{
+    unsigned i;
+    if (!fam_id) return 0;
+    for (i = 0; i < YK_FAM_MAX; ++i) if (s_fam_vm[i].fam_id == fam_id) return &s_fam_vm[i];
+    return 0;
+}
+
+/* 收掉一条记录（句柄清零 ⇒ 幂等；`ce_anm_delete` 内部有 ANM 管理器门槛）。*/
+static void yk_fam_vm_kill(yk_fam_vm_t *v)
+{
+    if (!v) return;
+    if (v->anm_id) { ce_anm_delete(v->anm_id); v->anm_id = 0; }
+    v->fam_id = 0;
+    v->variant = 0;
+}
+
+static void yk_fam_vm_kill_id(uint32_t fam_id) { yk_fam_vm_kill(yk_fam_vm_find(fam_id)); }
+
+/* 收掉**整张表**的 VM。⚠ 只看句柄、不看 `fam_id` 的来路：删卡那一刻 tick 全停，
+ * 没有任何「顺手收」的机会（照 `ufo.c` 的 `ufo_tok_vm_kill_all`）⇒
+ * `yk_drop_all`（删卡 / 高速 / 局末 / 断链）与 `on_ctor` 都要过这里。*/
+static void yk_fam_vm_kill_all(void)
+{
+    unsigned i;
+    for (i = 0; i < YK_FAM_MAX; ++i) yk_fam_vm_kill(&s_fam_vm[i]);
+}
+
+/* 起一个跟随 VM 并**立刻**摆到实体坐标（世界层 VM 的实体坐标 (0,0,0) = 弹幕区上边框中点
+ * ⇒ 不先摆会闪一帧）。失败只报日志（画不出来 ≠ 卡坏，`ufo_body_vm_spawn` 同款）。*/
+static void yk_fam_vm_spawn(uint32_t fam_id, int variant, float x, float y)
+{
+    yk_fam_vm_t *v = yk_fam_vm_find(fam_id);
+    uint32_t id;
+    int script;
+    unsigned i;
+
+    if (!fam_id) return;
+    if (!v) {
+        for (i = 0; i < YK_FAM_MAX; ++i) if (!s_fam_vm[i].fam_id) { v = &s_fam_vm[i]; break; }
+    }
+    if (!v) {   /* 表满：VM 表与使魔表同容量（每条使魔至多一条记录）⇒ 理论上到不了 */
+        ce_log("youkai: familiar follow-VM table full (%d) - familiar %u stays invisible",
+               (int)YK_FAM_MAX, fam_id);
+        return;
+    }
+    script = yk_fam_anm_script(variant);
+    id = ce_anm_spawn(CE_ABILITY_ANM(), script, YK_FAM_ANM_LAYER);
+    if (!id) {
+        ce_log("youkai: familiar follow-VM spawn FAILED (fam %u, script %d, layer %d) - the "
+               "familiar entity is alive but invisible (`NoEnemyDebug` runs no ECL, so nothing "
+               "else can paint it)", fam_id, script, YK_FAM_ANM_LAYER);
+        return;
+    }
+    v->fam_id = fam_id;
+    v->anm_id = id;
+    v->variant = variant;
+    ce_anm_set_pos(id, x, y, 0.0f);
+}
+
+/* 每帧跟随：位置 = 使魔**实体**的 `final_pos`（`CE_ENEMY_POS_X/Y` = spec §3.5 钉的那两格；
+ * 世界层 VM 的实体坐标与 ECL 是同一套 640 空间 ⇒ 不需要换算，`ufo_body_vm_follow` 的注）。
+ * ⚠ 句柄被引擎销毁过（过场重建 ANM 管理器 / VM 列表被清）⇒ **自愈**：丢掉句柄按同一变体重起。
+ * ⚠ 脚本自己 `delete()` 了 ⇒ `ce_anm_set_pos` 返回 0 ⇒ 清句柄，下一帧自愈。*/
+static void yk_fam_vm_follow(uint32_t fam_id, int variant, const uint8_t *f)
+{
+    yk_fam_vm_t *v;
+    if (!f || !fam_id) return;
+    v = yk_fam_vm_find(fam_id);
+    if (!v || !v->anm_id || !ce_anm_get_vm(v->anm_id)) {
+        /* 记录还在 ⇒ `spawn` 按 `fam_id` 找回**同一条**（旧句柄早就没了，直接覆盖不泄漏）；
+         * 记录也没了 ⇒ 它占一条空槽。两种都按**同一个变体**重起。*/
+        yk_fam_vm_spawn(fam_id, variant, *(const float *)(f + CE_ENEMY_POS_X),
+                                         *(const float *)(f + CE_ENEMY_POS_Y));
+        return;                                            /* spawn 里已经摆好位置 */
+    }
+    if (!ce_anm_set_pos(v->anm_id, *(const float *)(f + CE_ENEMY_POS_X),
+                                    *(const float *)(f + CE_ENEMY_POS_Y), 0.0f))
+        v->anm_id = 0;                                     /* 句柄作废 ⇒ 下一帧自愈重起 */
+}
+
 static void yk_run_action(yk_card_t *s, const yk_action_t *act)   /* s 可为 NULL（卡状态没了也要把敌人收干净）*/
 {
     if (act->kind == YK_ACT_CREATE) {
         uint8_t *f = yk_spawn_familiar(act->x, act->y);
+        uint32_t fid;
         if (!f) {
             if (s) ++s->fam_full;
             if (s && !s->logged_full) {
@@ -258,11 +394,16 @@ static void yk_run_action(yk_card_t *s, const yk_action_t *act)   /* s 可为 NU
             }
             return;
         }
-        yk_fam_created(&s_map, act->enemy_id, act->slot, *(uint32_t *)(f + CE_ENEMY_ID));
+        fid = *(uint32_t *)(f + CE_ENEMY_ID);
+        yk_fam_created(&s_map, act->enemy_id, act->slot, fid);
         yk_pin_familiar(f, act->x, act->y);
+        /* ★ 壳建好的**那一刻**起跟随 VM（脚本按发射口槽选：槽 i → s53+i 那一套四色之一）。
+         * ⚠ 建 VM 只能在 tick / 帧末（要分配），绝不在死亡栈上 —— 这条路径是 `on_tick_2`，合法。*/
+        yk_fam_vm_spawn(fid, yk_fam_variant(act->slot), act->x, act->y);
         if (s) ++s->spawns;
     } else if (act->kind == YK_ACT_WITHDRAW) {
         uint8_t *f = yk_familiar_by_id(act->fam_id);
+        yk_fam_vm_kill_id(act->fam_id);                    /* ★ 壳要撤了 ⇒ VM 必须同时收（不留幽灵使魔）*/
         if (f) yk_kill_familiar(f);
         if (s) ++s->lost;
     }
@@ -289,6 +430,9 @@ static void yk_drop_all(yk_card_t *s, const char *why)
     int n = yk_withdraw_all(&s_map, acts, (int)YK_FAM_MAX);
 
     yk_run_actions(s, acts, n);
+    /* ★ 兜底收 VM（句柄幂等）：`acts` 装不下的条目、以及 `fam_id` 已经被清掉但 VM 还挂着的残局，
+     * 都靠这一支清干净 —— 删卡那一刻 tick 全停，这里就是**唯一**的机会（照 112 的 kill_all）。*/
+    yk_fam_vm_kill_all();
     if (had && why) ce_log("youkai: withdrew %u familiar(s) (%s)", had, why);
     if (s) s->tr.pending = 0;
 }
@@ -343,11 +487,16 @@ static void yk_transfer_tick(yk_card_t *s)
         if (!sl->enemy_id || !sl->fam_id) continue;
         f = yk_familiar_by_id(sl->fam_id);
         if (!f) {
-            /* 不走死亡事件就没了（过场 `destroy_all`）⇒ 双保险：自己松开（spec §9 实跑清单 6）。*/
+            /* 不走死亡事件就没了（过场 `destroy_all`）⇒ 双保险：自己松开（spec §9 实跑清单 6），
+             * 并且**同时收掉跟随 VM** —— 实体没了还留 VM = 场上一个打不到的幽灵使魔。*/
+            yk_fam_vm_kill_id(sl->fam_id);
             yk_fam_gone(&s_map, sl->fam_id);
             continue;
         }
         yk_pin_familiar(f, sl->x, sl->y);                              /* 位置每帧重钉 */
+        /* ★ 每帧跟随 VM：位置与上面那次钉的是**同一个** `final_pos`（`CE_ENEMY_POS_X/Y`）
+         * ⇒ VM 与实体永远重合（脚本是 8 帧循环、不自删；句柄自愈见 `yk_fam_vm_follow`）。*/
+        yk_fam_vm_follow(sl->fam_id, yk_fam_variant((int)sl->slot), f);
         if (bp && yk_in_transfer_zone(sl->x, sl->y, bp[0], bp[1],
                                       YK_TRANSFER_BOX_W, YK_TRANSFER_BOX_H)) {
             /* 使魔就压在转嫁盒里（boss 自己的发射口常在本体上）⇒ 它这一帧掉的血可能是**我们自己的源**
@@ -492,6 +641,10 @@ static int on_ctor(ce_card_t *c)
 {
     yk_card_t *s = ce_state(c, yk_card_t);
     if (!s) return 0;
+    /* ★ 先收跟随 VM 再复位静态表：本函数**在局中被重建时也会跑**（每关开始引擎对卡组每张卡
+     * 再调一次 ctor）—— 那时 `yk_map_reset` 会把使魔一并忘掉，它们身上的 VM 若不复位就永久留下
+     * （`s_fam_vm` 是文件级静态，不是卡状态）。句柄为空时是纯 no-op。*/
+    yk_fam_vm_kill_all();
     yk_map_reset(&s_map);
     yk_transfer_reset(&s->tr);
     __builtin_memset(s->opt, 0, sizeof s->opt);
@@ -532,15 +685,42 @@ static void on_delete(ce_card_t *c)
 
 /* +0x48（帧末）：抢写本体 sprite。★ 全仓无先例（114–117 都没改过自机本体贴图）⇒ AUDIT 单列一条。
  * 本体脚本每帧写 `vm+0x24`，所以必须**每帧**在绘制前抢写；写的是 VM 字段（不是脚本），
- * 不动 `+0x28 instr_offset`（换脚本 = 重启、丢状态，spec §3.2 明确不做）。*/
+ * 不动 `+0x28 instr_offset`（换脚本 = 重启、丢状态，spec §3.2 明确不做）。
+ *
+ * ★★ 2026-09-12 一手订正：**不能直写 `p + CE_PLAYER_VM + CE_ANM_VM_SPRITE_ID`**。正确形状 =
+ *   `AnmLoaded__set_sprite`（`0x477b00`；thiscall(anm; vm, sprite_idx) ret 8，engine.h 的
+ *   `CE_FN_ANM_SET_SPRITE`），一手逐条：
+ *     ① `477b24: mov [edx+0x24],eax` **只是第一句**：它接着用 `esi+0x11c`（anm 的 sprite 表，
+ *         stride 0x44）把 UV（`vm+0x3ac/0x3b0/0x3b4/0x3b8` 与 `+0x3c0..+0x3c8` 两组）、
+ *        尺寸基准（`vm+0x74/+0x78`）与 scale 反比（`vm+0x454/+0x468`）一起算出来并写回
+ *        （`477b2e`–`477d1a`）⇒ **直写会让这些缓存停在上一张图上**。
+ *     ② 而**画的时候**贴图取的不是 `vm+0x24` 之外的东西，是 **VM 自己那一页的 anm**：
+ *        `0x4810d0`（AnmVm 的绘制）`481117: mov eax,[esi+0x20]`（页号）→
+ *        `481129: mov edx,[0x51f65c+eax*4+0x312072c]`（该页 = AnmLoaded*）→
+ *        `481130: mov eax,[edx+0x11c]`（它的 sprite 表）→ `481136: mov ecx,[eax+ecx*4+0x8]`
+ *        （texture id）→ SetTexture（`481171 call [esi+0x104]`）。
+ *   ⇒ 传的 `anm` 必须是 **VM 的页所指向的那一份**：自机本体就是 `player+0xc`（pl0X.anm）。
+ *     ⚠ **不是** `player+0x10`：那一格开火期间被引擎换成 ability.anm（engine.h 的注）⇒
+ *       传错 = UV 从一个 anm 取、贴图从另一个 anm 取，画出来是错的。
+ *   先例：`season.c:996-1003`（起残影 VM 后读本体 sprite 号，再 `ce_anm_set_sprite(anm, id, sprite)`，
+ *   传的 anm 就是 `player+0xc`）。
+ *   ⚠ sdk.h 的 `ce_anm_set_sprite(anm, id, sprite)` 收的是**世界列表的 anm id**（内部走
+ *     `ce_anm_get_vm(id)`），而本体 VM **没有 id**（它是 `player+0x14` 里的内嵌 zAnmVm）
+ *     ⇒ 这里直接调 `0x477b00`，复用 sdk.h 的 `ce_fn_anm_set_sprite_t` 签名（不改共享件）。
+ *   🟡 今天这一支**一次都不会执行**：`YK_BODY_SPRITE_FOCUSED = -1`（妖侧本体资产未接，占位）
+ *     ⇒ 连旧的直写也从来没生效过（`if (sprite >= 0)` 恒假）。见报告。*/
 static int on_draw(ce_card_t *c)
 {
     uint8_t *p = CE_PLAYER();
+    void *anm;
     int sprite;
     (void)c;
     if (!p) return 0;
     sprite = yk_body_sprite(CE_PLAYER_FOCUSED());
-    if (sprite >= 0) *(int32_t *)(p + CE_PLAYER_VM + CE_ANM_VM_SPRITE_ID) = sprite;
+    if (sprite < 0) return 0;                             /* 占位期走这条（高速恒走这条，是设计）*/
+    anm = *(void **)(p + CE_PLAYER_ANM);
+    if (!anm) return 0;
+    ((ce_fn_anm_set_sprite_t)CE_FN_ANM_SET_SPRITE)(anm, p + CE_PLAYER_VM, sprite);
     return 0;
 }
 
@@ -704,6 +884,11 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
         ev->kind != CE_EDEATH_KILL_ALL)
         return;
     if (!yk_fam_broken(&s_map, ev->id)) return;           /* 不是我们的使魔（道中妖精 / boss 死了）*/
+    /* ★ 壳体已经被引擎析构了 ⇒ 跟随 VM 也必须同时收，否则会留下一个**画着已死使魔的幽灵**
+     *（打不到、不消失）。这里是**共享死亡断点的死亡栈**上：删 VM 只是给它标删
+     *（`0x488cf0` 置 `vm+0x538` 位 7，真正的析构由 AnmManager 自己的 update 走）⇒ 与
+     * `ufo.c` 的 `ufo_tok_kill` 同一条纪律、同一个 🟡（「从死亡断点直接进 AnmManager」未实跑验证）。*/
+    yk_fam_vm_kill_id(ev->id);
     ++s->broken;
     ce_log("youkai: familiar enemy_id %u killed (kind %u, real=%u) at (%.0f, %.0f) - "
            "that emitter slot stays without a familiar until ECL re-arms it "
@@ -746,6 +931,9 @@ CE_CARD(108, .ctor = on_ctor, .on_load = on_load, .on_power_level_change = on_po
  * 使魔表在文件级静态数组里，所以这里只查状态结构。*/
 _Static_assert(sizeof(yk_card_t) <= CE_STATE_BYTES - CE_STATE_RESERVED,
                "youkai card private state exceeds the SDK budget");
+/* 跟随 VM 的静态表：32 × 12 B = 384 B（文件级静态，不进卡的 496 B 预算）。
+ * 钉住记录的大小是为了让「加字段 = 表变大」这件事**在编译期**被看见（12 = 3 × u32/i32，无 padding）。*/
+_Static_assert(sizeof(yk_fam_vm_t) == 12, "familiar follow-VM record grew (table is 32 of these)");
 
 /* ============================== ★ 占位 / TODO 清单 ==============================
  * 每一条都「不自己发明数值」，取值一律是**不做**这个语义：
@@ -759,6 +947,10 @@ _Static_assert(sizeof(yk_card_t) <= CE_STATE_BYTES - CE_STATE_RESERVED,
  *     3. `YK_OPTION_SCRIPT_YOUKAI` + `YK_OPTION_COUNT_FOCUSED` = 0 —— 妖侧子机脚本（借 102 占位）与数量
  *        （数量没给、且声明层只有一套偏移 ⇒ 现在整条子机链**不参与声明**）
  *     4. `YK_FAM_ANM_INDEX` / `YK_FAM_ANM_SCRIPT` = -1 —— 使魔贴图（借零售 or 复用 116/117 的做法）
+ *        → ✅ 2026-09-12 **资产已到**：四色零售切图 = `ability.anm` script 206..209
+ *          （TH08 `enemy.anm` script53..56，红/绿/蓝白/黄），由**跟随 VM** 画
+ *          （`YK_FAM_ANM_LAYER` 那一节；槽 i → s53+i）。上面那两个偏移保持占位（仍 ❓ 未证实）。
+ *        🟡 未实跑：层号 7 与「VM 位置 = 实体 final_pos」都只在代码层对账过。
  *   §10 决策
  *     5. `YK_FAM_LIFE` = 1（使魔 HP；硬约束 < 1000）
  *     6. `YK_TRANSFER_CAP_PER_FRAME` = 0（单帧转嫁上限：0 = 无上限；研究 §7.5 提醒会顶掉 boss 配额）

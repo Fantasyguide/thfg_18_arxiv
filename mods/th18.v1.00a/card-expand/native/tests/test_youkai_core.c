@@ -152,6 +152,18 @@ int main(void)
     CHECK(yk_emit_active(1) == 1);
     CHECK(yk_emit_active(0x1234) == 1);              /* `props[i].type != 0` = 活跃 */
 
+    /* 槽 → 皮肤变体（四色一套一槽，用户定案；脚本宏在 cards/youkai.c，这里只钉映射）：
+     * 槽 0..3 ⇒ 变体 0..3（= S53..S56，红/绿/蓝白/黄）；槽 >= 4 走 `& 3` 兜底（规格说走不到）。*/
+    CHECK(yk_fam_variant(0) == 0);
+    CHECK(yk_fam_variant(1) == 1);
+    CHECK(yk_fam_variant(2) == 2);
+    CHECK(yk_fam_variant(3) == 3);
+    CHECK(yk_fam_variant(4) == 0);                   /* 兜底：四色循环（❓ 自定，非第 5 色）*/
+    CHECK(yk_fam_variant(5) == 1);
+    CHECK(yk_fam_variant(YK_EMIT_SLOTS - 1) < 4);    /* 变体恒在四色域内 ⇒ 卡侧查表不会越界 */
+    CHECK(yk_fam_variant(-1) == 0);                  /* 越界入参也安全 */
+    for (i = 0; i < (unsigned)YK_EMIT_SLOTS; ++i) CHECK(yk_fam_variant((int)i) >= 0 && yk_fam_variant((int)i) < 4);
+
     /* ============================== §3.5 1:1 映射 + 状态差分 */
     yk_map_reset(&m);
     CHECK(yk_map_fam_count(&m) == 0);

@@ -117,6 +117,15 @@ int     yk_shotset_usable(int fire_rate);
  *   定案后改这一行即可（`yk_clamp_spawn_life` 会拦住 >= 1000 的误填）。*/
 #define YK_FAM_LIFE       1
 
+/* 槽位 → 使魔皮肤**变体**（0..3）。卡侧把变体映射到 `anm_ids.h` 的脚本宏（**不写死数字**）：
+ * `CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_S53 + 变体`。
+ * 语义（用户 2026-09-12 定案，spec §3.5）：**使魔数量 = 该敌当前活跃发射口槽数（1–4）
+ * ⇒ 四色正好一槽一套，槽 i 用 `s53+i` 那一套**。四色零售切图 = TH08 `enemy.anm` script53..56
+ * （红 / 绿 / 蓝白 / 黄），已切进 `assets/ability/scripts/206_youkai_familiar_s53.anm.txt` … `209_…_s56`。
+ * 槽域是 0..`YK_EMIT_SLOTS`-1 而四色只有 4 套 ⇒ 槽 >= 4 取 `slot & 3`
+ * （❓ **自定兜底**：规格说实测最多 4 个活跃槽，这条理论上走不到；不是一个「第 5 种颜色」的承诺）。*/
+int     yk_fam_variant(int slot);
+
 /* 发射点世界坐标（`etOn` 的算法，IDEAS.md §1.3）：`origins[i].z > 0.9` = 绝对模式。 */
 #define YK_ORIGIN_ABS_THRESHOLD 0.9f
 void yk_emit_world_pos(const float enemy_xy[2], const float off3[3], const float org3[3], float out_xy[2]);

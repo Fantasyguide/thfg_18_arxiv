@@ -117,6 +117,13 @@ void yk_emit_world_pos(const float enemy_xy[2], const float off3[3], const float
 
 int yk_emit_active(uint16_t prop_type) { return prop_type != 0; }
 
+/* 槽 → 皮肤变体（出处 / 语义在 youkai_core.h）。**纯查表逻辑**，卡侧只把它换成脚本宏。*/
+int yk_fam_variant(int slot)
+{
+    if (slot < 0) return 0;
+    return slot & 3;                                      /* 四色一套一槽；槽 >= 4 的兜底见头文件注 */
+}
+
 void yk_map_reset(yk_map_t *m)
 {
     unsigned i;
