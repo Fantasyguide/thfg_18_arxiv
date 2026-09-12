@@ -358,3 +358,6 @@ YOUKAI_OPT_AYA_S36  ability/youkai_option/YOUKAI_OPT_AYA_S36.png  16x16
 YOUKAI_OPT_AYA_S37  ability/youkai_option/YOUKAI_OPT_AYA_S37.png  16x16
 YOUKAI_OPT_AYA_S38  ability/youkai_option/YOUKAI_OPT_AYA_S38.png  16x16
 YOUKAI_OPT_AYA_S39  ability/youkai_option/YOUKAI_OPT_AYA_S39.png  16x16
+
+# ── 来自 ORDER.ufo_gauge.txt（本轮合并；原片段保留作记录）
+UFO_ARC_STRIP  ability/ufo_gauge/UFO_ARC_STRIP.png  16x128

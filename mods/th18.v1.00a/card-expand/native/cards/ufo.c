@@ -1060,6 +1060,168 @@ static void ufo_body_vm_follow(ufo_card_t *s)
                                    *(const float *)(e + CE_ENEMY_POS_Y), 0.0f);
 }
 
+/* ==================== ★★ 实体上的两件 UI（用户点名：血量 UI + 照原版样式）====================
+ * 需求 ① **环绕实体右侧的吸收进度环**（按 `fill` 双向填充）、需求 ② **实体正上方的血量条**
+ * （居中、只有进度、**没有框**）。两件都是**世界层 VM**，每帧跟随 UFO 本体敌机。
+ *
+ * **一手（全部可复核；TH12 v1.00b）**
+ *   ① 环 = `bullet.anm` **script206**（光环树 script207 的第三个子脚本），卡侧脚本 = `ability.anm` **228**
+ *      （逐条照抄，只把 `sprite(sprite404)` 换成 `@UFO_ARC_STRIP@`，并补了「描边挂到弧下面」的两条
+ *       `scriptNew`，登记见该脚本的注释）。两条静态描边 = script204/205 ⇒ 卡侧脚本 **229 / 230**。
+ *      · 半径：`scale(6.0f,59.0f)` ⇒ 外 62 / 内 56。
+ *      · 弧的模式位：`iset($I0,32); iset($I1,2); ins_101($I0)` —— 一手 opcode **101**，
+ *        TH18 handler `th18:0x47b211` 是 `and eax,0xb7ffffff; or eax,0x34000000` ⇒ `flags_lo>>26` = **13**
+ *        = v8 助记符 **`texArcEven`**（v8.anmm 的 601；`602 texArc` = mode 14 是 `or 0x38000000`）；
+ *        参数 = 弧的**段数**（零售 32 ⇒ 观感粗糙，照抄不改）。
+ *      · `rotation.z = 1.5707964` = π/2：屏幕 y 向下 ⇒ π/2 是**6 点**；mode 13 以 base 为中心向两侧展开
+ *        ⇒ fill→1 时两端在 **12 点**闭合 —— 这就是「从 6 点双向填充」的来源。
+ *   ② 进度每帧由引擎写 `rotation.x = fill × 2π`（`th12:0x44a499`–`0x44a4c7`：
+ *      `fld [zUfo+0x50]` / `fmul qword [0x4a3cd0]` = 6.2831854820251465 / `fstp [vm+0x430]`，
+ *      同一段还 `or [vm+0x47c],4` 置脏位）。TH18 的 `rotate` handler（`th18:0x47a13b`）不置脏位
+ *      ⇒ 卡侧每帧写 `rotation.x` 同样即时生效（顶点在 draw 时按 live 字段重算）。
+ *   ③ 条 = `front.anm` **script136**（卡侧脚本 **231**），子 **137** = 1 px 黑投影（卡侧脚本 **232**）；
+ *      引擎每帧写 `scale.x = life.current / life.maximum`（`th12:0x44a801`–`0x44a814`，读
+ *      `enemy+0x2648/+0x264c`）+ `entity_pos = 敌人坐标`（`th12:0x44a83e`–`0x44a849`，**不加偏移**）。
+ *      ⚠ 零售那口「框」是**另一条 VM**（script134 = `0x86`、`sprite102` = `front_ufo.png` 的 96×96）——
+ *      用户口径明确「只有进度、没有框」⇒ **本卡不起 134**。
+ *
+ * **层号（世界层；理由在每个脚本的注释里）**：环 / 两条描边 = **7**、条 = **10**、投影 = **9**
+ *   —— 三条都是**零售原值**，且都落在 TH18 的世界层区间 3–19（相机 3 = 游玩区，
+ *   `engine/anm/th18/02-render-stages.md` §0/§1）。**不是** HUD 的 24/25（外围 UI 列表 + 暂停模糊）：
+ *   实体身边的物件进 24/25 就会丢掉「跟着实体在游玩区里动」这个空间关系。
+ *   先例：脚本 223（五边形框）的 `layer(12)`、本体脚本 164..167 的 `layer(7)`，都是从零售原样搬的层号。
+ *   ⚠ `ce_anm_spawn` 的 layer 参数会被脚本里的 `layer(n)` 覆盖，这里仍写同一个值（可读 + 与本体一致）。
+ *
+ * **收尾**（METHOD 铁律）：三件都在文件静态区（同 `s_penta_id` 的先例），
+ *   `ufo_withdraw_all()` → `ufo_gauge_kill()` 一条路收干净 —— 删卡那一刻 tick 全停，
+ *   只有这条路跑得到；`on_stage_start` / `on_run_reset` 也汇到它。 */
+
+/* --- ❓ 环的落点偏移（**唯一**待实机确认的一处）-----------------------------------------------------
+ * 一手 `th12:0x44a412`–`0x44a447` 把光环实体坐标重设成 `敌人 + (32, 16)`，**同一段里另有 192**。
+ * 192 = 场地半宽（`th12:0x4a3d28` 一手读出 = double **192.0**；`0x4a3d70` = double **32.0**）。两种读法：
+ *   **读法 A（绝对值）**：那是世界坐标 ⇒ 环在敌人**右侧 224 px**（32 + 192）—— 在一个 408 px 宽的游玩区里
+ *      等于贴着右缘，作为「实体身边的物件」很怪；
+ *   **读法 B（换算用的中心项）**：+192 只在换算坐标空间（把「以游玩区中心为原点」的 ECL 坐标折到屏幕系）
+ *      时出现，环看着就是**贴着敌人右侧 32 px**。
+ * ★ 用户口径是「环绕在实体**身边**」⇒ **本卡取读法 B**（`DX = +32`）。同帧写血条那一支**不加** 192
+ *   （`th12:0x44a83e` 直接把敌人坐标写进去）⇒ 血条与环同处一个坐标空间，两者一致。
+ * **实机若发现环跑到屏幕最右缘** ⇒ 把 `UFO_GAUGE_RING_DX` 改成 `224.0f`（**只改这一行**）。 */
+#define UFO_GAUGE_RING_DX      32.0f      /* 🟡 读法 B（读法 A = 224.0f）；见上 */
+#define UFO_GAUGE_RING_DY      16.0f      /* 一手：零售在同一处 +16（`th12:0x44a4b7` 的 `fadd [0x4a3d68]` = 16.0）*/
+#define UFO_GAUGE_BAR_DY     (-28.0f)     /* 一手：脚本 231（TH12 `front.anm` script136）的 `pos(0,-28,0)` */
+#define UFO_GAUGE_LAYER_RING   7          /* 一手：TH12 script206/204/205 自己写的 `layer(7)` */
+#define UFO_GAUGE_LAYER_BAR   10          /* 一手：TH12 script136 自己写的 `layer(10)` */
+#define UFO_GAUGE_BAR_FULL_W  32.0f       /* 一手：脚本 231 的 `drawRect(32.0f, 4.0f)` */
+#define UFO_GAUGE_BAR_H        4.0f       /* 一手：同上（`4.0f`）*/
+#define UFO_GAUGE_BAR_COLOR 0xffff6060u   /* 一手：脚本 231 的 `color(255,96,96)` ⇒ D3DCOLOR 0xAARRGGBB */
+/* π/2 = 环的 base 角（6 点方向）。**不许**在 .c 里算三角函数 / 跑浮点（x87 硬门）⇒ 写成常量。
+ * 一手值 = 脚本 228 的 `rotate(3.1415927f, 0.0f, 1.5707964f)` 第三个参数（TH12 script206 原值）。 */
+static const float k_ufo_gauge_pi_over_2 = 1.5707964f;
+
+/* --- 脚本号：`make anm` 之前 `native/anm_ids.h` 里还没有这两条宏 ⇒ 走**字面量**；
+ *     `make anm` 之后宏就存在了，下面的 `#ifdef` 自动切过去（**这一步不用手改**）。
+ *     形状照抄同仓先例 `cards/youkai.c` 的 `YK_OPT_SCRIPT_*`（那里的 224..227 也是同一天落地的新脚本）。
+ *     ⚠ 号 = 228..232 连续五条：228 环 / 229+230 环的两条描边（环的子 VM，C 不直接起）/
+ *       231 血条 / 232 血条的 1 px 投影（条的子 VM，C 不直接起）。 */
+#ifdef CE_ANM_ABILITY_SCRIPT_UFO_GAUGE_ARC
+#define UFO_GAUGE_SCRIPT_ARC   CE_ANM_ABILITY_SCRIPT_UFO_GAUGE_ARC
+#else
+#define UFO_GAUGE_SCRIPT_ARC   228     /* `make anm` 后换宏（本行会被上面的 #ifdef 取代）*/
+#endif
+#ifdef CE_ANM_ABILITY_SCRIPT_UFO_GAUGE_BAR
+#define UFO_GAUGE_SCRIPT_BAR   CE_ANM_ABILITY_SCRIPT_UFO_GAUGE_BAR
+#else
+#define UFO_GAUGE_SCRIPT_BAR   231     /* `make anm` 后换宏 */
+#endif
+
+/* --- 三件 VM 的句柄（★ 文件静态，照 `s_penta_id` 的先例：`on_ctor` 的 memset 清不掉它 ⇒
+ *     收尾**只能**走显式路径，这条纪律与本文件其它静态句柄完全一致）。 */
+static uint32_t s_ring_arc_id;                 /* 环（脚本 228；它的两条描边是它的 `scriptNew` 子 VM）*/
+static uint32_t s_gauge_bar_id;                /* 血条（脚本 231；它的 1 px 投影是它的 `scriptNew` 子 VM）*/
+
+static void ufo_gauge_follow(ufo_card_t *s);   /* 定义在下面（spawn 里也调它摆一次位置）*/
+
+/* 收干净这两件（幂等：句柄清零）。**长持续效果铁律**：`ufo_withdraw_all()` 是唯一入口，
+ * `on_stage_start` / `on_run_reset` / `on_delete` 三条路都汇到它。
+ * ⚠ **不用** `ce_anm_interrupt`：删卡那一刻 tick 全停，脚本里的 `interruptLabel(1)`（淡出 → `delete()`）
+ *   根本跑不到 —— 直接 `ce_anm_delete`（父 VM 删掉 = 它的 `scriptNew` 子 VM 一并清）。 */
+static void ufo_gauge_kill(void)
+{
+    if (s_ring_arc_id)  { ce_anm_delete(s_ring_arc_id);  s_ring_arc_id = 0; }
+    if (s_gauge_bar_id) { ce_anm_delete(s_gauge_bar_id); s_gauge_bar_id = 0; }
+}
+
+/* 起这两件（在本体跟随 VM 之后调；建完立刻由 `ufo_gauge_follow` 摆一次位置 ⇒ 不闪一帧）。
+ * `e` 只用于日志（位置统一由 follow 那一处算，避免「两处各算一次」的漂移）。 */
+static void ufo_gauge_spawn(ufo_card_t *s, const uint8_t *e)
+{
+    void *anm = CE_ABILITY_ANM();
+
+    if (!anm) return;
+    ufo_gauge_kill();                                  /* 幂等：正常路径上已经是空的 */
+
+    /* ① 环：父 = 填充弧（脚本 228）——两条静态描边是它 `scriptNew` 出来的子 VM（照零售同一棵树）。 */
+    s_ring_arc_id = ce_anm_spawn(anm, UFO_GAUGE_SCRIPT_ARC, UFO_GAUGE_LAYER_RING);
+    /* ② 血条：父 = 脚本 231 —— 1 px 投影（脚本 232）是它 `scriptNew` 出来的子 VM（脚本 231 的第一行）。 */
+    s_gauge_bar_id = ce_anm_spawn(anm, UFO_GAUGE_SCRIPT_BAR, UFO_GAUGE_LAYER_BAR);
+
+    if (!s_ring_arc_id || !s_gauge_bar_id)
+        ce_log("ufo: gauge VM spawn FAILED (ring %u, bar %u; scripts %d/%d, layers %d/%d, enemy %p) - the "
+               "two entity gauges stay invisible this summon (assets/ability/scripts/228_,231_*)",
+               s_ring_arc_id, s_gauge_bar_id, UFO_GAUGE_SCRIPT_ARC,
+               UFO_GAUGE_SCRIPT_BAR, UFO_GAUGE_LAYER_RING, UFO_GAUGE_LAYER_BAR, (const void *)e);
+
+    ufo_gauge_follow(s);                               /* 摆好位置 / 颜色 / 角度（唯一的摆位点）*/
+}
+
+/* 每游玩帧跟随这两件（位置 / 环角 / 条宽）。调用点 = `on_tick_2` 末尾（每帧一次，与 `fill` 同一拍）。 */
+static void ufo_gauge_follow(ufo_card_t *s)
+{
+    uint8_t *e;
+    float x, y;
+    int32_t permille;
+
+    if (!s) return;
+    if (!s_ring_arc_id && !s_gauge_bar_id) return;     /* 两件都没起（UFO 不在）⇒ 无操作 */
+    e = ufo_enemy_by_id(s->u.ufo_id);
+    if (!e) {                                          /* 本体不在了（飞走 / 击破 / 被清）⇒ 收干净 */
+        ufo_gauge_kill();
+        return;
+    }
+    /* 句柄在别处被引擎销毁过 ⇒ 自愈：丢掉句柄重新起（与本体跟随 VM / `ufo_hud_ensure()` 同款口径）。 */
+    if (!s_ring_arc_id || !ce_anm_get_vm(s_ring_arc_id)
+        || !s_gauge_bar_id || !ce_anm_get_vm(s_gauge_bar_id)) {
+        ufo_gauge_spawn(s, e);
+        return;                                        /* spawn 里已经摆好位置 */
+    }
+
+    /* 位置 = 敌机坐标（`CE_ENEMY_POS_X/Y` = `data.final_pos`，ECL 640 空间；世界层 VM 的实体坐标就是
+     * 这个空间，1 单位 = 2 表面 px —— 与本体跟随 VM 同一套口径，不需要任何换算）。 */
+    x = *(const float *)(e + CE_ENEMY_POS_X);
+    y = *(const float *)(e + CE_ENEMY_POS_Y);
+
+    /* ① 环：贴着实体右侧（🟡 读法 B，见 `UFO_GAUGE_RING_DX`）+ 角度 = `fill × 2π`、base = π/2（6 点）。
+     *    比例来源 = 我们自己的 `fill`（`ufo_core` 的 `fill_millionths`；一手门 = 每面 34/36/39/42/46/51/56）。
+     *    浮点只在**头文件**的 `static inline ufo_fill_ratio()` 里出（x87 硬门）。 */
+    ce_anm_set_pos(s_ring_arc_id, x + UFO_GAUGE_RING_DX, y + UFO_GAUGE_RING_DY, 0.0f);
+    ce_anm_set_rotation(s_ring_arc_id, ufo_fill_ratio(&s->u) * 6.2831855f, 0.0f,
+                        k_ufo_gauge_pi_over_2);
+
+    /* ② 条：宽 = HP 千分比 × 32，高 = 4（照抄 `drawRect(32,4)`）。
+     *    HP 当前值 = `zEnemyData.life.current` = `enemy+0x6220`（同址先例：`animal.c` 的
+     *    `ANIMAL_ENEMY_LIFE_CUR` / `lolk.c` 的 `CE_ENEMY_LIFE_CUR`），上限 = 我们 spawn 时写进去的 life。
+     *    颜色每帧写一次（脚本里的 `color(255,96,96)` 是我们照抄的 ⇒ 幂等，同时保证「引擎重建过 VM
+     *    之后颜色不丢」）。
+     *    ⚠ 投影（子 VM 232）**只跟位置、不跟 scale** —— 照抄零售：引擎只缩放条那一只 VM
+     *      （`th12:0x44a801` 写的就是 `zUfo+0x44` 那一只），影子恒长 32。别顺手也去 set_scale 它。 */
+    permille = ufo_hp_permille(*(const volatile int32_t *)(e + UFO_ENEMY_LIFE_CUR),
+                               ufo_clamp_spawn_life(UFO_HP_PLACEHOLDER));
+    ce_anm_set_color(s_gauge_bar_id, UFO_GAUGE_BAR_COLOR);
+    ce_anm_set_pos(s_gauge_bar_id, x, y + UFO_GAUGE_BAR_DY, 0.0f);
+    ce_anm_set_scale(s_gauge_bar_id, UFO_GAUGE_BAR_FULL_W * (float)permille / 1000.0f,
+                     UFO_GAUGE_BAR_H);
+}
+
 /* 复刻引擎清尾的 **freelist LRU 摘挂**（`0x4465b4`–`0x4465d2`，指令原文见文件头 ④）。
  * 逐指令对照（ecx = 头、eax = 头的 next、edi = 本槽）：
  *     ecx = *(item+0)                      ; 池的 list head（`zItemManager` 的 normal_items_freelist_head）
@@ -1307,6 +1469,9 @@ static void ufo_try_summon(ufo_card_t *s)
      * ⚠ 放在 `ufo_spawn()` **成功之后**：所有失败 / 孤儿路径都在它上面返回 ⇒
      *   绝不会出现「没有本体却有 VM」的幽灵。位置在 `ufo_body_vm_spawn` 里当场摆好。 */
     ufo_body_vm_spawn(s, made, body);
+    /* ★★ 实体上的两件 UI（用户点名）：吸收环 + 血量条。与本体 VM **同一拍**起（位置在 spawn 里当场
+     * 摆好），生命周期也绑在一起 —— 收尾走 `ufo_withdraw_all()` → `ufo_gauge_kill()`。 */
+    ufo_gauge_spawn(s, body);
     /* ★ 日志带 `art idx`：用户裁决 ① 说「金 = 蓝的调色版」，这一格就是证据 ——
      *   金（4）打出来必须是 **1**（= 蓝那一格，`ufo_color_art_index`），实跑一眼可核。 */
     ce_log("ufo: summoned UFO (color %d, art idx %d%s) enemy_id %u at frame %u", (int)made,
@@ -1713,6 +1878,9 @@ static void ufo_withdraw_all(ufo_card_t *s, const char *why)
 {
     int n = 0;
     ufo_body_vm_kill(s);
+    /* ★★ 实体上的两件 UI（吸收环 / 血量条）：**必须在这里收** —— 删卡那一刻 tick 全停
+     * （`on_delete`），漏了就会在场上留一圈弧 + 一条血条（METHOD 长持续效果铁律）。 */
+    ufo_gauge_kill();
     n += ufo_tok_live_count();                         /* 池里有几只 ⇒ 就是一个日志数字 */
     ufo_tok_pool_clear_all();                          /* ★ 令牌 VM + 五边形框，全部只看句柄 */
     if (s_tokpool.dropped)
@@ -1823,6 +1991,10 @@ static void on_item_frame(ce_card_t *c)
      * ② 组是在**死亡事件**里落成的（那条路只在 `on_tick_2` 里落槽，落完当下没有召唤机会）。
      * `ufo_try_summon` 自己三门全查（成组 / 单例 / 建得出来）⇒ 常态下这只是两次比较。 */
     ufo_try_summon(s);
+    /* ★★ 实体上的两件 UI：每帧跟随（位置 = 敌机坐标；环角 = `fill × 2π`；条宽 = HP 千分比 × 32）。
+     * 放在**召唤之后**：这一帧刚召唤出来的本体与两件 UI 由 `ufo_gauge_spawn` 当场摆好，
+     * 这里再跟一次是幂等的；而「敌机被静默撤掉 / 击破」那一帧由 `ufo_gauge_follow` 自己收干净。 */
+    ufo_gauge_follow(s);
 }
 
 /* 帧末统一判定（对齐 109 的教训：`DEATH` §4.1「回调里只登记、帧末动手」）。

@@ -5102,3 +5102,36 @@ C 侧：占位 `CE_ANM_ABILITY_SCRIPT_PEASHOOTER_OPT`（卡 77 的豌豆射手�
   ⇒ 🟡 像「rotation 被写过」的脏位（未逐读者钉死）；**TH18 无对应位** ⇒ 对落地无影响。
 3. `front.anm` 134/135 两张 96×96 的视觉分工（只确认了「134 不是环」）。
 4. `th18:0x433b38` 那个 ECL opcode 的号（位 30 的自动置位点）。
+
+#### 七、本条已落地（2026-09-12）
+
+| 件 | 脚本 | 层 | 说明 |
+| --- | --- | --- | --- |
+| 吸收进度环（填充） | **228** `ufo_gauge_arc`（← TH12 `bullet.anm` script206）| **7**（零售原值）| `iset($I0,32); texArcEven($I0); sprite(@UFO_ARC_STRIP@); scale(6,59); scrollY(0.025); rotate(π,0,π/2); stop();` |
+| 环的两条静态描边 | **229 / 230**（← script204 / 205，`drawPolyBorder(62,48)` / `(55,48)`）| 7 | 零售原值；同层叠放 = 生成顺序（父子 204→205→206，描边在弧下面，与零售树内顺序一致）|
+| 血量条 | **231** `ufo_gauge_bar`（← TH12 `front.anm` script136）| **10**（零售原值）| `sprite(-1); drawRect(32,4); color(255,96,96); pos(0,-28,0)`；**不起 134**（零售那口「框」是另一条 VM，用户口径要「没有框」）|
+| 条的 1 px 投影 | **232**（← script137）| 9（零售原值）| `pos(1,1,0)`；层号各自写死（**不是**子继承父）|
+
+- **贴图**：`assets/ability/ufo_gauge/UFO_ARC_STRIP.png` = `local/th12.v1.00b/anm/bullet/etama3.png`（**128×128**）
+  的 sprite404 `{49,0,14,128}`（矩形从 anm 文本的 sprites 表读 + 断言）⇒ 补成 **16×128**（2 的幂，左右各 1 px
+  透明**居中**）；生成器 `make_ufo_gauge_art.py` 幂等。**血条不需要贴图**（`drawRect`）。
+- ★ **跨版本助记符**：TH12 那行 `ins_101`（指令字节 `65 00 04 00` = opcode 101）在 v8 里必须写成
+  **`texArcEven($I0)`**（601 = mode 13；`602 texArc` = mode 14）；TH18 handler `th18:0x47b211`
+  （`and eax,0xb7ffffff; or eax,0x34000000` ⇒ `>>26` = 13）/ `0x47b223`（`or 0x38000000` = 14）。
+  v4 文本里把 101 印成 `fset` 是**助记符表错位**、不是语义。
+- **接线**（`ufo.c`，+212 行）：`ufo_gauge_spawn`（`ufo_try_summon` 里紧跟本体 VM 起，脚本号走 `#ifdef` + 字面量，
+  形状照抄 `youkai.c` 的 `YK_OPT_SCRIPT_*`）；`ufo_gauge_follow`（`on_tick_2` 末尾每帧：
+  环 = `ce_anm_set_pos(敌人 + 32, 敌人 + 16)` + `ce_anm_set_rotation(fill×2π, 0, π/2)`；
+  条 = `0xffff6060` + `ce_anm_set_scale(hp千分比/1000×32, 4)` + `ce_anm_set_pos(敌人 + (0, −28))`；
+  **投影子 VM 只跟位置、不跟 scale**（照抄零售：引擎只缩放血条那一只））。
+  句柄在**文件静态区**（`s_ring_arc_id` / `s_gauge_bar_id`，同 `s_penta_id` 先例）；父 VM 删掉 ⇒ `scriptNew` 子 VM 一并清。
+- **收尾**：`ufo_withdraw_all()` → `ufo_gauge_kill()`（`on_stage_start` / `on_run_reset` / **`on_delete`** 三条路都汇到它；
+  删卡那刻 tick 全停 ⇒ **只有这里跑得到**）。⚠ **不用** `ce_anm_interrupt` —— `interruptLabel(1)` 的「淡出→`delete()`」
+  在删卡路径上跑不到。
+- **落点集中**：环的横向偏移是一个宏 `UFO_GAUGE_RING_DX`（实机若见环贴屏幕右缘 ⇒ 改成 `224.0f`，见上面 ❓1）；
+  层号四个宏；脚本号两个 `#ifdef`。
+- **验收**：`make anm`（**351 entry / 233 script**）· `make check` **exit 0** · `make verify` **exit 0** · `test-host` 20 组全 0 failed ·
+  `ufo_core` **992 checks / 0 failed** · `-fsyntax-only` 零告警 · **x87 = 0** · PNG 2 的幂 / 1792 可见像素 / 两次 md5 一致 ·
+  与零售逐行 diff（229/230/232 **一字不差**；228 只差跨版本助记符那 3 行 + sprite 名 + 2 行 `scriptNew`）。
+- ❓ 新增 **`I1 = 2` 的语义**（TH18 侧没定位到 `$I1` 的读者，只确认了 `$I0`）与 **`dθ = rotation.x / I0` vs `/(I0−1)`**
+  （TH18 `th18:0x47c249 divss xmm7,xmm2` 读作 `/I0`，一手是 `/(I0−1)`；**对填充方向与闭合点无影响**，且本件逐字节复刻）⇒ 都标 🟡。

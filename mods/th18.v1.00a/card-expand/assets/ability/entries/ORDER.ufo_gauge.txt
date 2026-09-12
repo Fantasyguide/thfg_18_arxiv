@@ -1,0 +1,7 @@
+# 星莲船（系统卡 112）**吸收进度环**的竖条带 —— TH12 v1.00b `bullet/etama3.png` 切图。
+# 本片段由 assets/ability/make_ufo_gauge_art.py 生成（幂等，整段重写）；合并时把下面这行追加进 ORDER.txt。
+# 一处矩形（一手）：sprite404 = {x:49, y:0, w:14, h:128} —— TH12 `bullet.anm` script206 用的就是它。
+# 14×128 不是 2 的幂 ⇒ 补成 16×128（左右各 1 px 透明、**居中**，见生成器文件头「为什么居中」）。
+# 用法：脚本 228 `sprite(@UFO_ARC_STRIP@)`（`texArcEven` 把它扫成半径 62/56 的圆弧）。
+# ⚠ 血条（脚本 231/232）**不需要贴图**：它是 `sprite(-1)` + `drawRect` ⇒ 本片段只有 1 行。
+UFO_ARC_STRIP  ability/ufo_gauge/UFO_ARC_STRIP.png  16x128

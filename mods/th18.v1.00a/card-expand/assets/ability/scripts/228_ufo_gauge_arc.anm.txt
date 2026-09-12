@@ -1,0 +1,90 @@
+script script228 {
+    // 星莲船（系统卡 112）**吸收进度环**（需求 ①：环绕实体右侧的圆弧带，按 fill 双向填充）
+    // —— 零售 TH12 v1.00b `bullet.anm` **script206** 的逐条移植
+    // （`local/th12.v1.00b/anm/bullet/bullet.anm.txt`；正文除 `sprite(...)` 换成 ORDER 名字外**一字未改**）。
+    //
+    // 一手（全部可复核）：
+    //   ① 零售脚本 = TH12 `bullet.anm` script206，挂在光环树 **script207** 下（script207 = `scriptNew(204/205/206)`
+    //      + `layer(0x17)`），由 `Ufo::on_tick`（`th12:0x44a2d0`）每帧驱动；建 VM 点 = `th12:0x44a8a0`。
+    //   ② **它不是贴图环、是「一条竖条带被引擎扫成圆弧」**：贴图 = `bullet/etama3.png` 的
+    //      sprite404 = `{x:49, y:0, w:14, h:128}`（14×128 竖条带；矩形读自 anm 的 sprites 表，
+    //      不是写死的 —— 见 `assets/ability/make_ufo_gauge_art.py` 的断言）。
+    //   ③ 半径来自 `scale(6,59)`：外径 = 59 + 6/2 = **62**、内径 = 59 − 6/2 = **56**
+    //      （与同树的两条静态描边 script204 `drawPolyBorder(62.0f,48)` / script205 `drawPolyBorder(55.0f,48)` 对得上）。
+    //   ④ 弧的模式位来自 **opcode 101**：`engine/ufo/th12/01-ufo-system.md` §9 记的 `iset($I0,32); iset($I1,2);
+    //      ins_101($I0);` —— 一手 opcode 101 ⇒ TH18 handler `th18:0x47b211`（`and 0xb7ffffff; or 0x34000000`
+    //      ⇒ `flags_lo>>26` = **13**）= v8 助记符 **`texArcEven`**（一个 int 参数 = 弧的段数 I0）。
+    //      ★ 本文件按 TH18 的助记符写 `texArcEven($I0)`（v8.anmm 里 **601** 就是它，见下面那张表）；
+    //      TH12 侧 v4/v7 的 anmmap 把 101 印成 `ins_101`（未命名指令的兜底写法 `thanm.c` 的 `ins_%d(`）。
+    //   ⑤ 角度由**引擎每帧写** `rotation.x = fill × 2π`（`th12:0x44a499`–`0x44a4c7`：`fld [zUfo+0x50]`、
+    //      `fmul qword [0x4a3cd0]` = 6.2831854820251465、`fstp [vm+0x430]`），
+    //      并且 `or [vm+0x47c], 4`（脏位）⇒ 卡侧每帧只写 `rotation.x` 就即时生效（TH18 的 `rotate` handler
+    //      `th18:0x47a13b` 不置任何脏位，顶点在 draw 时按 live 字段重算）。
+    //   ⑥ **为什么观感是「从 6 点向两侧同时长、到 12 点闭合」**：`rotation.z = 1.5707964` = π/2，
+    //      屏幕 y 向下 ⇒ π/2 是**6 点**；mode 13（even）以 base 为中心向**两侧各展开一半**，
+    //      顶点角 = norm(base − rotation.x/2) 起步 ⇒ fill→1 时两端在 **12 点闭合** ✓。
+    //      ⚠ 每段的角度步长：TH18 `th18:0x47c249` 一手是 `divss xmm7, xmm2`，其中
+    //      `xmm7 = rotation.x`（来自 `[esi+0x1c]`）、`xmm2 = (float)段数 I0`（`cvtdq2ps`，eax = 那个 int 参数）
+    //      ⇒ **dθ = rotation.x / I0**（本节按这个读法写注释；`/(I0−1)` 那个写法**没有**在一手里对上，
+    //      标 🟡）。两种读法只差「最后一段是否与首段重合 1/32 圈」，**对填充方向与闭合点没有影响**
+    //      —— 而且本件是**逐字节复刻**（编译产物与零售 script206 的指令流一致），所以这不是实装分歧。
+    //      段数 32 就是「观感粗糙」的来源（照抄，别顺手调大）。
+    //
+    // 本件**改了哪一行**（逐条登记，别当成整条复刻）：
+    //   · `sprite(sprite404)` → `sprite(@UFO_ARC_STRIP@)`（零售 sprite 号在本仓不存在；
+    //     贴图由 `make_ufo_gauge_art.py` 从零售 `bullet/etama3.png` 切出 → ORDER 片段 `ORDER.ufo_gauge.txt`）。
+    //   · 其它行（含 `iset($I0,32)` / `iset($I1,2)` / `texArcEven($I0)` / `scale(6.0f,59.0f)` /
+    //     `scrollY(0.025f)` / `rotate(3.1415927f,0.0f,1.5707964f)`）**逐条照抄**。
+    //   · 层号 `layer(7)` 是**零售原值**（TH12 script206 自己写 7）。
+    //   · **新增两行 `scriptNew(...)`**（本卡的结构决定，见下）—— 这是本件**唯一**的加法。
+    //
+    // ★★ 为什么这里多了两条 `scriptNew`（与零售 script207 的关系，一次说清）：
+    //   零售是一棵树 —— **script207**（`layer(0x17)` / `alpha(0)` / `scriptNew(204); scriptNew(205);
+    //   scriptNew(206);` / `stop();`，并在 UFO 结束时 `interrupt 1` → 20 帧后 `delete()`）当父，
+    //   204/205/206 三条当子。本卡**只起 1 个 VM**（`ufo.c` 的 `s_ring_arc_id`）⇒ **不另建 207**
+    //   （它上面那点 `layer(0x17)`/`alpha(0)`/`interrupt 1` 的调度，本卡不需要：环的显隐跟着 UFO 本体的
+    //   生命周期走，收尾一律 `ce_anm_delete`，见 `ufo.c` 的 `ufo_gauge_kill()`）；
+    //   ⇒ 把**填充弧自己**当父（它就写 `layer(7)`），两条静态描边照零售挂在它下面
+    //   （脚本 229 = `bullet.anm` script204、脚本 230 = script205，均逐条照抄）。
+    //   ⚠ 层号在**各自脚本里**写死（子 VM 不继承父的层），所以三条各写各的 7 / 7 —— 与零售一致。
+    //   ⚠ 若将来要「结束时的 20 帧淡出」，就把 script207 一并移植成第六个脚本、由 C 起它当父 —— 现在**不**做。
+    //
+    // ★★ 层号 `layer(7)` 的**理由**（这是一处刻意的选择，不是照抄就完事）：
+    //   环是**跟着场上实体（UFO 本体）在游玩区里动的物件** ⇒ 必须用**世界层**。TH18 的层 3–19 归
+    //   相机 3（弹幕区，`engine/anm/th18/02-render-stages.md` §0/§1），而 HUD 的 24/25 在**相机 2 的外围 UI 列表**
+    //   （+层 25 会被暂停模糊罩住）—— 环进 24/25 就会**折到别组、跟着游玩区一起缩放/偏移**，与「实体身边的物件」
+    //   这个身份矛盾。照抄零售 7 同时满足两条：① 落在世界层区间内 ✅；② 与**本体跟随 VM** 的层号一致
+    //   （`ufo.c` 的 `UFO_BODY_ANM_LAYER` = 7，它的出处也是零售 TH12 `enemy.anm` script135 原样搬）。
+    //   ⚠ 同层（7）的叠放顺序 = 生成顺序（后生成的画在上面；`th18:0x4882b8` 表头→表尾），
+    //     本卡的生成顺序是「本体 → 环」⇒ 环压在本体上（环本来就画在本体右侧 32 px 外，不得事）。
+    //   对照先例：脚本 223（五边形框）也选了 **12** 而不是 HUD 的 25，理由同一句话（见该文件的「层号」段）。
+    alpha(0);
+    alphaTime(60, 0, 128);
+    blendMode(1);
+    scriptNew(@SCRIPT_UFO_GAUGE_ARC_BORDER_OUT@);
+    scriptNew(@SCRIPT_UFO_GAUGE_ARC_BORDER_IN@);
+    iset($I0, 32);
+    iset($I1, 2);
+    texArcEven($I0);
+    layer(7);
+    sprite(@UFO_ARC_STRIP@);
+    scale(6.0f, 59.0f);
+    scrollY(0.025f);
+    rotate(3.1415927f, 0.0f, 1.5707964f);
+    stop();
+    interruptLabel(2);
+offset180:
+    color(255, 255, 0);
++2: // 2
+    color(255, 0, 0);
++2: // 4
+    color(0, 255, 0);
++2: // 6
+    color(0, 255, 255);
++2: // 8
+    jmp(offset180, 0);
+    interruptLabel(1);
+    alphaTime(20, 0, 0);
++20: // 28
+    delete();
+}
