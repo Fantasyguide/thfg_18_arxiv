@@ -1,10 +1,13 @@
 script script227 {
     // 由 assets/ability/make_youkai_option_art.py 从 TH16 v1.00a `pl03` script11 生成，别手改。
     // 本支子机 = 射命丸文（AYA，TH18 机体 3 那一支）；TH16 pl03 = 文（`CHARACTER` = 2，菜单序）
-    // 指令逐条照抄（标签/时序/数值一字未动），只把 sprite 引用换成 ORDER 名字：
+    // 指令逐条照抄（段序/时序/数值一字未动），只做两件事：① sprite 引用换成 ORDER 名字；
+    //   ② 中断标签按 TH18 口径重编号（见下面 ★★，这是唯一一处语义偏离）。sprite 换名表：
     //   sprite32 → @YOUKAI_OPT_AYA_S32@，sprite33 → @YOUKAI_OPT_AYA_S33@，sprite34 → @YOUKAI_OPT_AYA_S34@，sprite35 → @YOUKAI_OPT_AYA_S35@，sprite36 → @YOUKAI_OPT_AYA_S36@，sprite37 → @YOUKAI_OPT_AYA_S37@，sprite38 → @YOUKAI_OPT_AYA_S38@，sprite39 → @YOUKAI_OPT_AYA_S39@
     // ★ `layer(13)` 是**零售自己写的**（TH16 那代 VM 的层由脚本给）⇒ 照抄，不改。
-    // ★ 中断标签与 TH18 零售本体子机脚本**同款**：`(2)` 出场、`(3)` 进店收起、`(1)` 销毁 —— 天然对得上。
+    // ★ 中断标签与 TH18 零售子机脚本**同款**、**一字未动**：`(2)` 出场、`(3)` 进商店收起、
+    //   `(1)` 销毁 —— 天然对得上（一手：TH18 子机 VM 用 `ability.anm`，其 s2/s6/s7/s14/s16/
+    //   s18/s20/s22 都是这三个号；引擎的发送点见生成器文件头 ③）。
 -1:
     layer(13);
     type(0);
