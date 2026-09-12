@@ -3675,6 +3675,9 @@ wba_wc: SE probe 6/6 id 0x39 (se_heal)
 
 #### C. 撒道具（鱼灵 → 道具）音 A/B（仅 debug build）
 
+> ⚠ **本节及下面的「B. A/B/C 三候选」都是当时的中间状态**：同日晚 **§AL44 已定案** C = `0x3e`，
+> 并把试听轮换整体删除（`ANIMAL_SE_FISH_ITEMS = 0x3e`，debug / release 同音）。本节保留作历史。
+
 `native/cards/animal.c` 新增 `scatter_se_select()`，在 `fish_to_items()` 把鱼灵换成道具、
 准备补播 `se_left` 序列时调用：
 
@@ -3829,6 +3832,244 @@ wba_wc: SE probe 6/6 id 0x39 (se_heal)
 5. 灵梦鹫咆哮：应是 5 颗 body 追尾弹，不再有 pl01 激光条；灵梦狼咆哮也**绝不该**有 pl01 激光
    （若还有，请把日志里的 `char=` 与 `option shot suppressed ...` 行发回）。
 
+### AL43. ★ 鬼形兽（id 117）十三修：`BP_ce_option_shot_gate` 3 字节站点被 thcrap 拒绝 → 门失败降级腐化卡对象；默认关 + 6 字节站点 + 完整性探针 + ability 索引硬校验（2026-09-12）
+
+**用户报告**：「卡又成滚木了，撞到槽里会导致 slot 消失」；用户补充：与更早 id=254（0xfe，有符号字节为负）时几乎一致 ⇒ 先怀疑卡对象 / manager 被写坏，而不是纯美术索引。
+
+**一手证据（部署日志）**：`/mnt/d/项目/幻想指南/18/th18_modkit/game/th18_card_expand.log`（2026-09-12 21:27）逐行：
+
+```
+FAIL: sdk: breakpoint ce_option_shot_gate not applied (3 bytes at +0000a9c3: 8b 55 08 )
+FAIL: sdk: 1/15 behavior breakpoints not applied
+cards_dev: start_deck disabled (gate failed; new ids cannot be allocated)
+mitigation: allocator bound restored to retail (56) — new ids disabled
+...
+trace: allocate_new_card(id=117, mode=1)  <- NEW ID
+```
+
+**根因链**：
+
+1. `native/sites.py` 把 `ce_option_shot_gate` 站点写成 `0x40a9c3`、`cavesize=3`（`mov edx,[ebp+8]`）。
+   thcrap 的 sourcecave 下限是 **5 字节**（`thcrap/bin/thcrap.dll` 的 `cavesize too small to implement breakpoint`；
+   上游源码 `breakpoint_local_init` 同样拒绝 `cavesize < 5`）⇒ **断点根本没装上**。
+2. `ce_sdk_setup` 回读 15 个行为断点时，`ce_option_shot_gate` 仍是原字节 `8b 55 08` ⇒ 门失败；
+   `ce_selfcheck` 走 `ce_failure_guard_fail` → `restore_alloc_bound` 把 `allocate_new_card` 的
+   `cmp ebx,0x38` 还原到 56，禁止新 id。
+3. 但存档 / `_test` 起手卡组 / 上一局编成里已经有 id 117 等新 id；日志显示门失败后引擎仍调
+   `allocate_new_card(id=117, mode=1)`。新 id 被拒后，卡表 / HUD 槽侧留下了「半个卡对象」或垃圾 id ——
+   这正是「卡图变滚木 / 槽消失」的同型腐化。**与 224–227 这批美术无关；ability.anm 的 117 索引本轮也单独核过没漂。**
+
+**修法（本轮已落地）**：
+
+| 文件 | 改动 |
+| --- | --- |
+| `native/sites.py` | 站点改到 `0x40a9c3` 的 `mov edx,[ebp+8]; sub esp,0xc`（6 字节，`expected=8b550883ec0c`，无相对寻址）；新增硬门：任何 SDK/商店断点 `cavesize < 5` 直接 `ShapeError`，`verify_patch` 也报错。**不用 `je rel32`**：thcrap 不重定位 cave 里的 `0f 84`。 |
+| `native/sdk.c` | `BP_ce_option_shot_gate` 改用 6 字节站点；新增 `CE_OPTION_SHOT_GATE_ENABLE 0`：断点仍挂上以通过门回读，但 handler 立即放行原 `je`，**功能默认关**；要重开需实机证明 option 路径不再腐化卡对象 |
+| `native/sdk.c` | 新增 `ce_integrity_check()`（`BP_ce_item_frame` 帧界）：每关 dump 卡链表 id/flags + counts + owned[128..254]；异常打 `integrity[...]` / `BAD card` / `CARD MANAGER INTEGRITY FAILURE`。 |
+| `native/sdk/public.h`、`native/cards/animal.c` | 注释同步「默认关 + 6 字节站点」；`on_option_shot_gate` 回调保留但当前不会被调用 |
+| `native/Makefile`、`assets/check_ability_anm_bounds.py`（新） | `anm-verify` 硬校验 117 脚本 137–163：script/sprite 存在、sprite 落在源脚本 `@NAME@` entry、`scriptNew` 目标存在；C 侧 sprite macro 同名 entry。 |
+| `assets/ability/make_youkai_option_art.py` | 修 `check_names()`：先把生成器的绝对 Path 归一到相对 `assets/` 的字符串，再与主 `ORDER.txt` 比。此前主表合并后一重跑就误报重名，导致 224–227 生成器不能幂等复跑；修后输出与前次逐字节一致 |
+| `patch/th18.v1.00a.js`、`native/sites_gen.h`、`patch/files.js` | `make gen` / `make files` 重新生成；`.def` 仍 28 exports，`dllverify` 仍 28（站点从 3 字节修成 6 字节，不是新增导出） |
+
+**ability.anm 117 索引审计（用户点名脚本）**：用 `thanm -l 18` 回读 `native/build/ability.anm` 和部署中的
+`ability.anm`，脚本 137–163 全部存在，且每个 sprite 引用落在预期 entry：
+
+- 137/138/139 → `WOLF_0/1/2`(203/204/205)、`OTTER_0/1/2`(206/207/208)、`EAGLE_0/1/2`(209/210/211)
+- 140/141/142/143 → `FISH_BOMB/LIFE/POWER`(212/213/214)、`FISH_MONEY`(280)
+- 144/145 → `GAUGE_FRAME`(216)、`WOLF_0`(203；C 每帧按槽内 type 换 ICON_*)
+- 146/147/148 → `AURA_{WOLF,OTTER,EAGLE}_0..7`(225..240)
+- 149/150–153/154/155/156/157/158/159 → `OTTER_ORB`(241)、`STRIKE_RING`(242)、`SOUL_0..10`(243..253)、`SELF_AURA`(无 sprite)、`FLAME_0..11`(258..269)、`HYPER_BAR_*`(无 sprite)、`AURA_RAINBOW`(默认 `WOLF_0`，C 每帧换)
+- 160/161/162/163 → `BEASTAP`→`161/162`、`BEASTAP_A/B`(282/283)、`EAGLE_BEAM`(284)
+
+部署中的 `ability.anm` 比本轮 `native/build` 少脚本 228–232 / entry 350（那是 112 UFO 血量条批次；其 ORDER 行在
+117 之后，**不会反向移动 117 的 sprite 号**）。117 本身在部署文件里的 137–163 映射与本轮一致，**没有 sprite 漂移**。
+
+**验证 / 部署**：`make check`（含新 `check_ability_anm_bounds.py`、`sites.py verify`、DLL `dllverify` 28 exports）、
+`python3 tooling/check-docs.py` 全绿；`make_youkai_option_art.py` 可重复跑；`BP_ce_option_shot_gate` 6 字节站点 `0f84cd000000`。
+
+**用户下一份日志要看**：① 不再出现 `FAIL: sdk: breakpoint ce_option_shot_gate not applied` 与
+`mitigation: allocator bound restored`；② 每关开场出现 `integrity[stage ..]: card[i] id=... flags=...` 与一行汇总；
+③ 收满 5 格 / 咆哮 / 结束时 5 个 HUD 槽都还在；④ 因为功能默认关，**咆哮中装备子机普通激光会照旧发射**（已知、非崩坏），
+等实机确认稳定后再开 `CE_OPTION_SHOT_GATE_ENABLE 1` 做专项验证。
+
+
+### AL44. ★ 鬼形兽（id 117）十四修：撒道具 SE 定案 = `0x3e`（用户耳朵，C 候选）（2026-09-12）
+
+**用户口径（原话）**：「应该是这个里面的最后一个音效是对的：`D:\项目\幻想指南\18\th18_modkit\game\th18_card_expand.log`
+也就是 C」⇒ 指 A/B/C 三段试听里**最后一段**那一声。
+
+**一手证据（部署日志，2026-09-12 21:43 那份）**：每段连续 `se_left` 序列段首一行，最后一行即用户所指：
+
+```
+wba_wc: scatter SE A -> id 0x34 (table name se_lgods4)
+wba_wc: scatter SE B -> id 0x43 (table name se_release)
+wba_wc: scatter SE C -> id 0x3e (table name se_tan03)
+...
+wba_wc: scatter SE C -> id 0x3e (table name se_tan03)   ← 用户指「最后一个音效」
+```
+
+**处置**：
+
+- `ANIMAL_SE_FISH_ITEMS` `0x34` → **`0x3e`**（试听表名 `se_tan03`）；`0x34`（A）/ `0x43`（B）否决。
+- 试听机构**整体删除**：`s_scatter_se[]`、`ANIMAL_SE_SCATTER_N`、`se_scatter_abc` 字段与 run-reset 初始化。
+  `scatter_se_select()` 只剩「段首（`se_left <= 0`）认一次 `ANIMAL_SE_FISH_ITEMS` + 打一行
+  `wba_wc: scatter SE -> id 0x.. (locked by user ear 2026-09-12; candidates were A …)`」，
+  且**不再有 `#if ANIMAL_DEBUG_KEY` 分支** —— debug / release 同音（否则用户用 debug build 复跑还会听到被否的 A/B）。
+- **观察（非 RE 结论）**：`0x3e` 与 `ANIMAL_SE_RELEASE`（咆哮自然结束放灵那一声，一手 TH17 `th17:0x40e920`）**同 id**
+  ⇒ 本卡「放灵 / 撒道具」共用同一个「释放」音，与用户两次耳听的口径一致。
+- `se_volume_fix()` 的行号跟着走（`ids[0]` 现为 `0x3e`；只在 `+0x0a == 0` 时写 100 并打日志）。
+- **音效 id 的裁决口径（重申）**：试听表里的名字只作**日志标注**，与用户解包 `th17/data/` 的文件名可能不一致
+  ⇒ **创造性音效一律以用户耳朵为准**（§AL35、§AL41 同规则）。
+
+**门**：`make check` 全绿（`sites.py verify` / `check_player_anm_bounds.py` / `check_ability_anm_bounds.py` /
+`tooling/check-docs.py`）；**未新增 `BP_*`** ⇒ `.def` 仍 28 exports。
+
+### AL45. ★ 鬼形兽（117）十五修 bug2：灵梦大鹫灵「打人不掉血 / 不播击中动画 / 穿过去」静态对账（2026-09-13）
+
+**用户口径（原话）**：「灵梦的大鹫灵咆哮打人不播放击中动画并且直接穿过去了（好像这个bug又没有了，可能是追踪问题）」。
+
+**① 发现（一手：TH17 行 vs 我们生成的行逐字段对账）**。灵梦鹫在数据路径 = `pl00a.sht` EAGLE
+（`engine/sht/th17/02` §2.2，TH17 set16 = 本卡 `CE_SHT_SET_EAGLE_1..4`）。独立回读
+`local/th17.v1.00b/dat/pl00a.sht` 与 `native/build/sht/pl00.sht` 的 set `0x24..0x27`：
+
+| 字段 | TH17 `pl00a.sht` set16 | 本卡生成（set 0x24..0x27，5 行全同） |
+| --- | --- | --- |
+| `rate/delay/dmg` | 3 / 0 / **20** | 3 / 0 / **20** |
+| `hit_w × hit_h` | **16×16** | **16×16** |
+| `angle` | -90°/-60°/-120°/-30°/-150° | 逐条一致（-1.5708/-1.0472/-2.0944/-0.5236/-2.6180） |
+| `speed` | 10 | 10 |
+| `mode` | 1 | 1 |
+| `anm` | 6（TH17 实际 = `pl00.anm` script `6+5`=11）| **11**（TH18 直接索引：`HYPER_ANM_MAP` 6→11）|
+| `func init/tick/hit` | **1 / 1 / 0** | **1 / 1 / 0** |
+| `hit_fx`（`+0x26`）| 无此等价字段；hit0 ⇒ 无 | **0** |
+
+**② 逐项判定**：
+
+- **伤害 ✅**：`func_on_hit` **不是**扣血入口。TH16/TH18 自机弹伤害走独立「伤害源池」管线
+  （`engine/sht/th16/08` 一手：`PlayerBullet__create` 建伤害源、`tick_bullets` 每帧把它拷进去，
+  敌人侧遍历重叠扣血）⇒ 行里 `dmg=20` 就是每命中帧 20。本卡**没有**声明 `bullet_damage_permille`
+  （`grep .bullet_damage_permille cards/animal.c` 无）⇒ 不会把 20 改小。
+- **击中动画：hit func=0 是原样 ✅**。TH17 hit 表 `0x4a0f80` 逐项 = `[0]=0 [1]=0x44b9c0 …`，
+  TH18 hit 表 `0x4b41f0` 同样 `[0]=0` ⇒ 两边 `hit0` 都是 **NULL**（不是「我们漏了一个」）。
+  TH17 `hit=0` / 我们生成 `hit=0` / `hit_fx=0` 三处一致 ⇒ **没有额外命中特效本来就是原版行为**。
+  🟡 唯一没核死：pl00.anm script11 自带 `interruptLabel(1)`（sprite39/40/41 命中动画），
+  由一个**通用「弹命中时对弹 VM 发 interrupt 1」**机制触发；本遍没在 TH18 侧钉到那个调用点
+  （`hit1` `th17:0x44b9c0` 只建 script0x95 特效、不 interrupt 弹 VM）⇒ 标 🟡。
+- **追尾 ✅**：tick 表 `th17:0x4a0fa0[1] = 0x44b7d0`（TH17 寻的）；映射 `HYPER_FUNC_MAP["tick"][1] = 1`
+  → TH18 tick1 `0x45f7c0` = `find_nearest_enemy_id` 半径 256 + 逐帧转向上限 16（`engine/sht/th18/03` §5.1）。
+  行里 `speed=10` / `mode=1`，不会「因为追尾而穿透」——伤害源每帧跟弹位置走。
+- **结论**：**静态上找不到「不掉血」的 bug；「无击中动画」符合原版 hit0。** 用户后一句「好像又没有了」
+  与「可能是追踪问题」跟本条一致 —— 更像**命中观感 / 追踪半径**问题，不是数据缺陷。
+
+**③ 可证伪判据（本轮新增，无新 `BP_*`）**：新增 `on_bullet_created`（vtable `+0x28`，既有引擎循环）
+只读 `bullet+0xac`（打包 `(set<<8)|row`，一手 `th18:0x45ec69`）与 `bullet+0x9c`（dmg），封顶 3 条：
+
+```
+wba_c: eagle body bullet created (char 0 set 0x24 row 0, dmg 20; hit data-path auto)
+```
+
+- **有**这行（char 0、set 0x24..0x27、dmg 20）⇒ 灵梦的鹫弹确实在生成、伤害值正确；
+  实机若仍「不掉血」，下一步查敌人侧伤害源 / 无敌，而不是弹的数据。
+- **一条都没有** ⇒ 咆哮没换到 EAGLE 组：去看既有日志 `shot set index req: … -> eagle`（§AL37/§AL39 探针）。
+- **击中动画观感**：原版 `hit0` 本来就只在**极短命中瞬间**由弹 VM 自己播（🟡），不播 / 看不清都不算数据 bug；
+  用「敌人血条是否下降」当判据，不要用「有没有爆炸」当判据。
+
+### AL46. ★ 鬼形兽（117）十五修 bug6：魔理沙大鹫灵激光「不够大 / 不往外走」（2026-09-13）
+
+**用户口径（原话）**：「魔理沙大鹫咆哮的激光不够大，宽度起码是现在的三倍，并且动画上它是在往外移动的，也就是贴图真的在被发射出去」。
+
+**① `anchor(1,0)` 让贴图朝哪边延伸（一手）**：`engine/anm/th16/10` §2 直读锚点表 `0x4a3048`
+（h=1 = 左）四角 x = `0, +1, 0, +1` ⇒ 图**左端贴 VM、沿本地 +x 往右伸**；`pl01.anm` script16 再
+`rotate(0,0,-π/2)` ⇒ 本地 +x = 屏幕上。**留 VM 的是束的近端，512 px 远端朝外**（与青眼 script80 同款）。
+
+**② TH17 的尺寸 / 延伸语义（一手 `pl01.anm` script16 = TH17/TH18 逐字节同）**：
+
+```
+scale(4.0f, 0.0f);  scaleTime(20, 1, 4.0f, 4.0f);   // 贴图高 32 → 视觉宽 128 px
+scrollX(%F0);  +1: scrollX(-0.04761905f); stop();   // 贴图沿束向外流（-1/21 每帧）
+```
+
+引擎侧 `th17:0x44bba0`（tick5）把 `+0xa0` 每帧 `+= 18`（常量 `th17:0x4a3ccc`）到 512
+（`th17:0x4a3dac`），再 `th17:0x44bfa3` 写 `vm+0x68 = +0xa0 × (1/512)`（常量 `th17:0x4a3aa0`）
+⇒ **束长 0→512 往外长**、视觉宽恒 32×4。TH17 `pl01a.sht` EAGLE 5 行 `rate=15 / speed=0 / mode=2`。
+
+| 量 | TH17 一手值 | 本卡现在 |
+| --- | --- | --- |
+| 视觉宽 | 32 × **4** = **128 px** | `ANIMAL_EAGLE_BEAM_VIS_W_SCALE=4.0` → **128 px**（原 32）|
+| 判定宽 | `pl01a.sht` EAGLE `hit_h` = **34** | `ANIMAL_EAGLE_BEAM_HIT_W=34`（**不动**）|
+| 束长 | 0→512 延伸 | `TRAVEL=512` · `SHOT_FRAMES=15` · `MIN_FRAC=0.5` · `LOOP=1` |
+
+**③ 处置**：
+
+- 判定宽**保持 34**：TH17 的视觉 128 本来就是判定的 ~4 倍 ——「视觉放宽、判定不动」才是原版比值；
+  用户要的「×3」用 TH17 的 `scale y=4` 满足（视觉 32 → 128）。
+- 脚本 163 搬 script16 的 `anchor(1,0)` / `scale(1,4)` / `fset+scrollX(-1/21)`；**脚本里不再跑 `scaleTime`**
+  （C 每帧 `ce_anm_set_scale`，插值器会覆盖）。C 侧 `eagle_beam_vis_len()` 按 `SHOT_FRAMES=15` 的锯齿
+  把长度从 `0.5×512` 拉到 512（= TH17 `+0xa0` 延伸的 15 帧版），远端沿束方向来回扫 =「真的在被发射出去」；
+  `scrollX` 连贴图本体一起外流。
+- 具名常量：`ANIMAL_EAGLE_BEAM_TRAVEL`（行程 512）· `SHOT_FRAMES`（每发 15 = rate）·
+  `LOOP`（1 = 循环；**改 0 = 拉满一次并保持满长**，实机嫌锯齿就一键切）。
+- 边界：松开 Z / 咆哮结束仍走 `eagle_beam_kill()`（fade / delete），只服务 `CE_ADDR_CHARACTER == 1`；
+  灵梦 / 咲夜不受影响。
+- 日志：`eagle beam on (… hit_w 34, vis_w 128, travel 512/15 frames loop=1 …)` / `eagle beam off (… vis_w 128 …)`。
+
+### AL47. ★ 鬼形兽（117）十五修 bug7/8：渐变圆收回按退出路径 + 每条路都播 0x42（2026-09-13）
+
+**用户口径（原话）**：「按 X or 中弹退出咆哮模式，背后的那个渐变圆的收回速度更快，只要退出咆哮模式，就会有那个之前调了很久的那个声音」/「好像渐变圆的整体收回速度都比现在快」。
+
+**① 一手：TH17 三条退出路径对 `manager+0x30`（= 脚本 0x20 渐变圆 VM）发的 interrupt**
+
+| 路径 | TH17 一手 | 对渐变圆 | 脚本 155/32 label | 效果 |
+| --- | --- | --- | --- | --- |
+| 自然结束（`HYPER_FLAGS & 4 == 0`）| `th17:0x40f508` `push 1; push [edi+0x30]; call 0x476510` | interrupt **1** | `scaleTime(30,4,0,0)` | 30 帧缩回 0 |
+| X / 中弹（`do_hyper_cancel`）| `th17:0x40f7bf` `push 2; push [edi+0x30]; call 0x476510` | interrupt **2**（句柄**不清零**）| `scaleTime(20,4,200,200)` + frame40 `scaleTime(10,1,0,0)` | 先缩到 200、停 20 帧、再 10 帧收 0（共 50 帧）|
+| 霊撃 40 帧跑完 | 同 `th17:0x40f508` | interrupt **1**（补发）| 同自然结束 | 覆盖上面的尾段 |
+
+⇒ 用户 bug7「X / 中弹收回更快」= 过去我们只在 `hyper_end` 发 interrupt 1（30 帧直线收），
+而 TH17 在**按键那一刻**就发 interrupt 2（50 帧两段收）。bug8「整体都比现在快」：自然结束本就走 interrupt 1，
+✅ 不动；X / 中弹补上 interrupt 2 即对齐。
+
+**② 一手：roar-exit SE = `0x42` 在两条路的公共尾部**。`do_hyper_cancel` 段结束后 `HYPER_TIME <= 0` 在
+`th17:0x40f394` 判，两条路在 `th17:0x40f4d0` 汇合，`th17:0x40f4fc` `push 0x42; call 0x465450`
+⇒ **自然结束与霊撃结束都恰好播一次**。旧代码只在 `if (!by_hyper)` 里播 ⇒ X / 中弹漏播；
+本轮把它提到 if 之前统一播（试听探针仍只在自然结束分支）。
+
+**③ 处置**：`hyper_begin` 加 `self_aura_interrupt(s, ANIMAL_SELF_AURA_FADE_BY_HYPER)`（= 2，不清句柄）；
+`hyper_end` 的 `self_aura_kill(s,0)` 仍发 interrupt 1（= `ANIMAL_SELF_AURA_FADE_NATURAL`）；
+`ce_play_sound(ANIMAL_SE_ROAR_END, px)` 移到两条路径之前。三条路（自然 / X / 中弹）现在都恰好一次 0x42。
+
+**④ 门**：`make check` exit 0；**未新增 `BP_*`**（新增的 `on_bullet_created` 走既有 vtable `+0x28`，
+不新增站点）⇒ `.def` 仍 28 exports。实机判据：X / 中弹退出时渐变圆应「先缩到半程再慢慢没」（≈70 帧），
+且**无论哪条路都听到同一 0x42**。
+
+### AL48. ★ 鬼形兽（117）十五修（追加）：鱼灵从根本上不进「变色 / 换种类」路径（2026-09-13 用户口径）
+
+**用户口径（原话，比 §AL44 的 bug1 更彻底）**：「鱼灵从一开始就不应该换种类啊」。
+
+**① 一手（TH17 `spawn_token` `th17:0x410380` 逐指令）**：只有 **type 15..17 的稀有动物分支**
+（`0x41045b` `lea eax,[type-0xf]; cmp eax,2` 进）会写 `[token+0x6c] |= 2`（`0x41047e`）
++ `[token+0x5c] = 240`（`0x41049f`）；**type 1..7 的非稀有分支**（`0x4104b6` 起）既不碰 `+0x6c`
+（memset 保持 0）也不设 life。而每帧 token tick `sub_410af0` 开头 `0x410c06` `test [token+0x6c],2; je 0x410d2e`
+⇒ **flags bit1 = 0 的 token 整块 life/变色逻辑（含 flicker、`interrupt 2`、换种类 `0x410cd9` 的
+`type % 3 + 1`、se `0x4e`）直接跳过**。⇒ 鱼灵（4..7）在 TH17 里**永远不会换种类 / 不会闪 / 不会因
+寿命到点消失**；它们只被 24 px 收走或走出屏幕（离屏帧数 > 119，§4.2）。
+
+**② 我们之前的错**：`token_spawn(type, long_life, …)` 由调用方给 `long_life`；调试键 SPACE 撒到
+type 4..7 时传 `1` ⇒ 鱼灵带着 long_life 进 `tokens_tick` 的变色块：life 240 到点 → `animal_next_type()`
+对 4..7 返回原值 → 实际表现 = **删 VM 重建（动画从头）+ 重置 life 180 + 播 `0x4e`**（正是用户听到/看到的）。
+
+**③ 处置（一处收口）**：`token_spawn()` 里对鱼灵**无条件清零 long_life**
+（`if (animal_type_is_fish(type)) long_life = 0;`）⇒ 所有调用方（release 爆散 / 调试键 / 未来新增）
+都不可能再把鱼灵带进那条路。`token_change_type()` 的「只对 1..3 播 SE」特例**删掉**、恢复无条件播放，
+并写注释说明「鱼灵到不了这里」——靠数据流门而不是播 SE 的补丁。调试键两处 `token_spawn(t,1,…)` 也
+改成 `animal_type_is_fish(t) ? 0 : 1`（Shift+空格恒 0），语义一致。
+
+**④ 实机判据**：调试 build 用 SPACE 连撒鱼灵（4..7）后，日志**不应**再出现
+`wba_wc: token flicker (…)`；耳朵不应再听到 `0x4e`；鱼灵只走「被收 → 换道具」。动物灵（1..3，尤其
+暴走/释放出来的长寿命变体）的变色与 `0x4e` 不受影响。
+
+**⑤ 未做（一手已排除）**：TH17 鱼灵没有别的「到期」行为（不下落 / 不变道具 / 不自动消失）⇒ 我们
+的鱼灵继续游到被收或离屏，与一手一致，**无需**新增到期逻辑。
 
 ## G. OPEN —— 还没解决的
 
@@ -5096,7 +5337,12 @@ C 侧：占位 `CE_ANM_ABILITY_SCRIPT_PEASHOOTER_OPT`（卡 77 的豌豆射手�
    **读法 A**：那是世界坐标 ⇒ 环在敌人**右侧 224 px**（屏幕右缘，与 thbwiki 的「记录在屏幕右侧」吻合）；
    **读法 B**：`+192` 只是在换算坐标空间 ⇒ 环在敌人**右侧 32 px、贴着它**。
    ⚠ 同帧给血条 136 写的 `entity_pos` **不加 192**（就是敌人坐标本身）⇒ 两者不同源。
-   ⇒ 本卡按**读法 B（贴着敌人右侧 32 px）**实现（用户口径是「环绕在实体**身边**」），标 🟡 待实机确认。
+   ⇒ 本卡按**读法 B**实现。
+   ★★ **2026-09-12 用户确认「环是环绕着敌人的」⇒ 读法 A 排除**（右侧 224 px 会把环心扔到屏幕最右缘，谈不上环绕）。
+   ⚠ 而读法 B 的 `(32, 16)` **与「环绕」并不矛盾**：环半径 = `scale.y` = **59**（带宽 56..62），
+   敌人到环心的距离 = √(32² + 16²) ≈ **36 < 内径 56** ⇒ **敌人就落在环的洞里**，观感即「环圈住敌人」（环心略偏右下）。
+   ⇒ 我们**照抄零售的 `(32, 16)` 偏移**（不是把它归零）。若将来要「绝对同心」＝改 `UFO_GAUGE_RING_DX` / DY 那一处，
+   但**那会偏离零售**。
 2. `flags_lo` **位 2**（TH12 侧）：`rotate()` handler `0x4580ed` 与引擎专用 setter `0x4620e0`
   （`orl $0x4,0x47c; fstps 0x24`）都置位、mode 6/8 绘制器 `0x45ba00`/`0x45be09` 清位
   ⇒ 🟡 像「rotation 被写过」的脏位（未逐读者钉死）；**TH18 无对应位** ⇒ 对落地无影响。
