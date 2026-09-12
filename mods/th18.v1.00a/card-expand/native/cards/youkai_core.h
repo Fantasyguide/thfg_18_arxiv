@@ -37,24 +37,79 @@ int yk_suppress_native_shot(int player_present, int focused);
 int yk_body_sprite(int focused);
 
 /* ==================================================================== §3.3 子机
- * 换位（低速阵型）是**原生双偏移** `+0x64/+0x68` vs `+0x6c/+0x70`，引擎自己做，卡侧零成本。
- * 换图 / 数量走 **SDK 的低速子机声明层**（spec §3.3.1，`ce_optpose_declare` /
- * `ce_optpose_winner` / `ce_optpose_pose`，sdk_core.h）：各卡只**声明**，层选举 **id 最小者落笔**
- * ⇒ **108(108) < 111(111)** ⇒ 108 胜、且只有它写字段（没有「谁后写谁赢」的竞态）。
- * 本卡只回答两个问题：**低速声明什么**、**高速退出声明**（用户定案 5「高速互不影响」= 高速时不占位，
- * 111 在高速自然不受 108 影响）。 */
-#define YK_OPTION_COUNT_FOCUSED   0   /* ★ TODO(资产 §5 / 决策 §3.3)：占位 0 = **本帧不参与声明**。
-                                       *   两个原因都是「不能自己发明」：
-                                       *   ① 妖侧子机贴图（`ability.anm` 里的脚本）还不存在 —— 申请了也只能
-                                       *      借豌豆射手的图（`anm_ids.h` 没有 youkai 条目）；
-                                       *   ② **数量**：spec §4 没给。TH08 妖侧是「两只使魔」，但 spec 的
-                                       *      `ce_option_pose_t` 只有**一套**聚焦/非聚焦偏移 ⇒ 「左右对称两只」
-                                       *      那种形态表达不出来 ⇒ 要么 count=1（引擎的原生双偏移管左右），
-                                       *      要么等 §10 决策。翻成 > 0 时本卡才会进选举、才会真去申请子机
-                                       *      （落笔逻辑已经在 youkai.c 里写好）。*/
-#define YK_OPTION_COUNT_UNFOCUSED 0   /* 高速：不声明（一格槽都不占）*/
-int yk_option_count(int focused);
-int yk_option_wanted(int focused);                    /* = count > 0：这张卡本帧参不参与选举 */
+ * 换位（低速阵型）是**原生双偏移** `+0x64/+0x68` vs `+0x6c/+0x70`，引擎每帧自己取用，卡侧零成本。
+ * 换图 / 数量 / **逐格阵型**走 **SDK 的低速子机声明层**（spec §3.3.1，sdk.h 的
+ * `ce_option_pose_declare` / `ce_option_pose_winner` / ce_hooks_t 的 `on_option_pose_apply`）：
+ * 各卡只**声明**，层选举 **id 最小者落笔** ⇒ **108(108) < 111(111)** ⇒ 108 胜、且只有它写字段。
+ * 本卡只回答三个问题：**低速声明什么数量**、**每格摆在哪**、**高速退出声明**（用户定案 5
+ * 「高速互不影响」= 高速时不占位，111 在高速自然不受 108 影响）。*/
+
+/* ---- ★ 低速子机**数量**表（用户 2026-09-12 定案：「看不同机体在永夜抄与天空璋（文文）的数量」）----
+ * `[机体][火力档]`，机体 = `CE_ADDR_CHARACTER` `0x4cccf4` 的 0..3 = 霊夢 / 魔理沙 / 咲夜 / 早苗，
+ * 火力档 = `CURRENT_POWER / POWER_PER_LEVEL(100)` 钳到 0..4（= `yk_shot_tier()`，与 `th18:0x45d604`
+ * 的算式同款）。逐行的**一手出处**：
+ *
+ *   行 0 霊夢 → 妖侧 = 八雲紫（TH08 `pl00`）   : **1，与 P 无关**
+ *   行 1 魔理沙 → 妖侧 = アリス（TH08 `pl01`） : **1，与 P 无关**
+ *   行 2 咲夜 → 妖侧 = レミリア（TH08 `pl02`） : **4，与 P 无关**
+ *        ↑ 一手：TH08 激活表 `th08:0x4c7d40[shottype][4]`（进低速那一帧读，`th08:0x44b0ac`；
+ *          非 0 项数 = 活的格数），行 0/1 只有第 1 项非 0、行 2 四项全非 0；独立印证 = 8 张 `ply*.sht`
+ *          的子机索引集合（`ply00as={0,1}` / `ply01as={0,1}` / `ply02as={0,1,2,3,4}`；`N=0` 是本体）。
+ *          `GameManager::get_current_power` `th08:0x422480` 的 22 个 call **没有一个落在子机链** ⇒ 与 P 无关。
+ *   行 3 早苗 → 射命丸文（TH16 `pl03`）        : **`floor(P/100)` = 0/1/2/3/4**
+ *        ↑ 一手：`th16:0x444100 mov eax,ds:0x4a57e4`（CURRENT_POWER）→ `th16:0x444106 idiv
+ *          DWORD ds:0x4a57ec`（÷100 = 档）→ 建 `档` 格（`th16:0x4444aa cmp edx,ecx`），
+ *          `th16:0x4444c1 cmp edx,0x4` 起把剩下的格清空 ⇒ 档 0 = **0 个**。
+ *
+ * ⚠ 三行常数就把 5 个档写同一个数（形状见 spec §12.4：一张表同时表达「固定」与「随火力变」，
+ *   换口径只改这张表、不动调用点）。
+ * ⚠ 这里说的是**本卡声明几个妖侧子机**，**不是**屏幕上的子机总数 —— TH18 档 ≥ 1 时
+ *   原生自己也有 `档` 个子机（`th18:0x45dbcf` 的循环），那是另一个数组（spec §12.3 的 ⚠）。
+ * ⚠ 档 0 的那一格：TH08 妖侧**不看 P、一按低速就有**（所以行 0–2 的档 0 仍是 1/1/4，与原作一致），
+ *   而 TH16/TH18 档 0 = 0（行 3 照抄）。*/
+#define YK_OPTION_TIERS   5      /* 列数 = TH18 火力档（= YK_SHOT_TIERS / `CE_ADDR_MAX_POWER`/100 + 1）*/
+#define YK_OPTION_CHARS   4      /* 行数 = `CE_ADDR_CHARACTER` 的 0..3 */
+
+static const unsigned char YK_OPTION_BY_CHAR[YK_OPTION_CHARS][YK_OPTION_TIERS] = {
+    /* 霊夢   → th08 pl00 妖侧 = 八雲紫   */ { 1, 1, 1, 1, 1 },
+    /* 魔理沙 → th08 pl01 妖侧 = アリス   */ { 1, 1, 1, 1, 1 },
+    /* 咲夜   → th08 pl02 妖侧 = レミリア */ { 4, 4, 4, 4, 4 },
+    /* 早苗   → th16 pl03      = 射命丸文 */ { 0, 1, 2, 3, 4 },
+};
+
+/* 本帧该声明几个妖侧子机。`focused` = 低速位（`player+0x476cc`，spec §3.1）；
+ * 高速恒 0（= 不参与声明）。character / power_level 越界一律钳进表内（引擎读到的值不信任）。 */
+int yk_option_count(int focused, int character, int power_level);
+/* = count > 0：这张卡本帧参不参与声明（子机 = 妖侧弹的膛口 ⇒ 顺带是「能不能发弹」的判据）。 */
+int yk_option_wanted(int focused, int character, int power_level);
+
+/* ---- ★ 逐格阵型（spec §12.4 的形状缺口；为什么必须逐格，一手见 sdk_core.h 的 `CE_OPTION_POSE_CELLS`）----
+ * 每格偏移取自**本作（TH18）零售 `pl0X.sht` 自己的位置块**，与引擎给原生子机摆的阵型同一份数据：
+ *   非聚焦块 `+0x40`、聚焦块 `+0x90`，每格 `(x,y)` float、单位 = **像素**；
+ *   格号 `k = T[count-1] + i`（`T = {0,1,3,6,10,11,13,...}`，一手 `th18:0x45d8fc`：
+ *   `edx = TRI[档−1] + i`，`movss xmm0,[ecx+edx*8+0x40]`）⇒ 「声明 N 个」时用的就是引擎给
+ *   **N 个原生子机**准备的那 N 个位置。
+ * ⚠ **咲夜（机体 2）的那两块不是像素**：`x` 是**弧度**、`y` 是**半径**（一手：零售 `pl02.sht` 的
+ *   `(0, 38) (0.3,38) (-0.3,38) …`；引擎对机体 2 另挂 `th18:0x45dd10` 每帧把极坐标转成位置）。
+ *   本表里机体 2 那一行已经**离线换算成像素**（换算规则一手：`th18:0x45dd10` 读 `option+0xa8` 的角度
+ *   加 `player+0x4790c`（`Player::reset` `th18:0x45ade6` 置 **−π/2**）→ `call 0x45e300`（= `(r·cosθ, r·sinθ)`，
+ *   `fsincos` + `fmul`；同族见 `engine/_shared/math-and-prng.md` §1.5）→ 乘 `0x4b9464`（= **−128.0f**）
+ *   再**减**自机坐标 ⇒ 位移 = `(r·cosθ, r·sinθ)`、θ = −π/2 + 表里的角度）。
+ *   取「静止（lean = −π/2）」那一态 ⇒ 4 格 = 头顶上一圈扇形。**偏差**：原生的环会随左右移动的
+ *   lean 角转，我们的是**静态**位置（要转动得每帧算三角函数 = 引 libm，本仓 .c 禁 x86 浮点库，故不做）🟡。
+ * ⚠ 位置这一项的**口径**：数量照各自的原作（上表），**位置照本作同机体同档的原生阵型**（一手数据）。
+ *   这不是「复刻 TH08 的妖侧阵型」—— TH08 每格子机的阵型烧在各自脚本/表里，本轮没有一手数据 ⇒ 标 ❓自定。*/
+#define YK_OPTION_CELLS   4      /* = `CE_OPTION_POSE_CELLS`（youkai.c 有 _Static_assert 对账）*/
+
+typedef struct {
+    float nfx, nfy;   /* 非聚焦块（`sht +0x40`）该格的偏移，像素 */
+    float fx,  fy;    /* 聚焦块（`sht +0x90`）该格的偏移，像素 */
+} yk_opt_off_t;
+
+/* 取 `count` 个妖侧子机里第 `cell` 格的偏移（`count` = 1..YK_OPTION_CELLS，`cell` = 0..count-1）。
+ * 返回 1 = 填好 `*out`；0 = 参数越界（`*out` 不动）。**无浮点运算**（纯查表搬运）。*/
+int yk_option_offsets(int character, int count, int cell, yk_opt_off_t *out);
+
 /* 声明的脚本和手里那个子机的脚本不一样 ⇒ 必须重申请（脚本是申请时定死的）。
  * `have < 0` = 手里还没有子机 ⇒ 不算「变了」。 */
 int yk_option_script_changed(int want, int have);

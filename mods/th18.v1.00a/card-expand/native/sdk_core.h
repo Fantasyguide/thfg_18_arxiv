@@ -136,20 +136,59 @@ int  ce_rescue_note_owner(void);           /* 这次死亡的救援者 id；没�
 /* ---- 低速子机声明层（EVENTS-CONTRACT.md §1「选举覆盖」；108 spec §3.3.1）----
  * 108（妖机体）与 111（SA 子机层）都要定义「低速时子机长什么样」，而最终落在同一批 zPlayerOption
  * （原生聚焦偏移 +0x6c/+0x70、非聚焦 +0x64/+0x68、贴图脚本、数量）⇒ 各自写 = 谁后写谁赢。
- * 规则：**各卡只声明，SDK 选举 id 最小者落笔**（与伤害层/计分层同一套选举），`only_focused` 由卡自己填。
- * 纯逻辑、无引擎依赖（真正写引擎字段由被选举的卡在自己的 tick 里做）。*/
+ * 规则：**各卡只声明，SDK 选举 id 最小者落笔**（与伤害层/计分层同一套选举）。
+ * 纯逻辑、无引擎依赖（真正写引擎字段由被选举的卡在 `on_option_pose_apply` 里做，分派见 sdk.c）。
+ *
+ * ★★ 2026-09-12 **逐格偏移**（spec §12.4 点名的形状缺口；一手依据在下面 `CE_OPTION_POSE_CELLS`）：
+ *   声明的是**每一格**自己的偏移，不是一套偏移给所有格 —— 否则 `count >= 2` 会全部叠在同一个点上。
+ *   引擎侧为什么必须逐格、且为什么「不写偏移、留给原生阵型」这条路走不通（一手）：
+ *     · 原生阵型（`sht[0x40/0x90 + (TRI[档−1]+i)*8]`）由 `Player__repopulate_options` `0x45d5e0`
+ *       写进**原生子机数组** `inner+0x50`（4 格，`th18:0x45b8ea push 4` + `0x45d81e mov edi,4`，
+ *       逐格写下标见 `th18:0x45d8fc`）；
+ *     · 卡申请的装备卡子机在**另一个数组** `inner+0x410`（12 格，`Player__allocate_option` `0x40a790`
+ *       扫的就是它，`th18:0x40a7a4 add edi,0xa30`）；
+ *     · 两个数组共用一个**每帧**的跟随更新 `FUN_0045bc90`（`th18:0x45b8ea`/`0x45b8fa` 两处调用：
+ *       原生 count=4、卡池 count=12），它对每一格算
+ *       `pos = player_pos + (focused ? [+0x6c/+0x70] : [+0x64/+0x68])`（`th18:0x45bce8`–`0x45bd08`）
+ *       并写回该格的 `+0x5c/+0x60`（出膛点）与两个 VM 的位置。
+ *   ⇒ **原生阵型永远不会落到卡池的格子上** ⇒ (b)「不写偏移、留给引擎」对卡申请的格子**不成立**，
+ *     要 `count >= 2` 不叠就必须逐格给偏移（(a)）。
+ *   单位 = **像素**（引擎自己在 `0x45d902` 把 sht 的 float 乘 128 变成定点写进 `+0x64`；
+ *   `0x4b9310` = 128.0f 一手）⇒ 卡侧落笔时 ×128 取整即可。*/
+
+/* 逐格上限 = **原生上限 4**（一手：原生数组 4 格 `th18:0x45b8ea push 0x4` / `0x45d81e mov edi,0x4`；
+ * 卡池 12 格 `th18:0x45b8fa push 0xc`）。要支持更多格的卡（如 111 将来「携带子机上限 8」）
+ * 就是把这个常量改大一行 —— 存储代价 = 256 × (16·N + 8) 字节（这张表是静态的）。*/
+#define CE_OPTION_POSE_CELLS 4
+
 typedef struct {
-    int   count;        /* 想要几个低速子机（0 = 这张卡本帧不声明）*/
+    float fx, fy;       /* 聚焦（低速）偏移 —— 对应原生 option +0x6c/+0x70，单位 = 像素 */
+    float ux, uy;       /* 非聚焦偏移 —— 对应 +0x64/+0x68；卡只吃低速时给同值即可 */
+} ce_option_cell_t;
+
+typedef struct {
+    int   count;        /* 想要几个低速子机（<= 0 = 这张卡本帧不声明；> CELLS ⇒ 钳到 CELLS）*/
     int   anm_script;   /* 子机贴图脚本号（= ce_option_alloc 第 4 参）*/
-    float fx, fy;       /* 聚焦（低速）偏移，对应原生 option +0x6c/+0x70 */
-    float ux, uy;       /* 非聚焦偏移，对应 +0x64/+0x68 */
+    ce_option_cell_t cell[CE_OPTION_POSE_CELLS];   /* 逐格偏移；只有 [0, count) 有效 */
 } ce_option_pose_t;
 
-void ce_optpose_reset(void);
-/* 粘性声明：count <= 0 = 这张卡退出声明（绑定时清 0、删对象时清 0）。*/
-void ce_optpose_declare(uint32_t id, int count, int anm_script, float fx, float fy, float ux, float uy);
+void ce_optpose_reset(void);          /* 全清（含落笔权交接记账）：setup / 单测用 */
+/* ★ **每帧**声明（`BP_ce_item_frame` 每帧清集合 ⇒ 不声明 = 本帧退出）：
+ *   p == NULL 或 p->count <= 0 = 退出声明；返回真正记下的格数（clamp 后）。*/
+int  ce_optpose_declare(uint32_t id, const ce_option_pose_t *p);
+/* 删卡路径 = 立刻退出声明（不等下一帧的清集合）。*/
+void ce_optpose_drop(uint32_t id);
+/* 帧初清声明集合（SDK 在 `BP_ce_item_frame` 里与 `ce_cancel_latch_reset()` 同处调）。*/
+void ce_optpose_frame_reset(void);
 int  ce_optpose_winner(void);                       /* 落笔者 id（最小）；无人声明 = -1 */
 const ce_option_pose_t *ce_optpose_pose(void);      /* 落笔者的声明；无人 = NULL */
+/* ★ 落笔权交接（**每帧落笔点调一次**）：
+ *   · 返回本帧落笔者 id（-1 = 无人声明）；
+ *   · `*out_prev` = **上一帧的落笔者、而这一帧没赢**的那张卡（-1 = 没有）——
+ *     SDK 要拿它去调一次对方的 `on_option_pose_apply`（**退位通知**）：那张卡此刻
+ *     `ce_optpose_winner() != 自己` ⇒ 只许把子机收干净，不许写字段。
+ *   没有这条通知，「松开 Shift 的 108」会把自己的子机永远留在池里（它不再被选举 ⇒ 没人再调它）。*/
+int  ce_optpose_frame(int *out_prev);
 
 /* ---- HUD 槽位分配器（HUD-LAYOUT.md §3/§4；110/111/113 + 58–80 的 5 张卡都要）----
  * 目的：多张卡都要占「左下角」时不再各自硬编码坐标而重叠。规则（§4.4）：

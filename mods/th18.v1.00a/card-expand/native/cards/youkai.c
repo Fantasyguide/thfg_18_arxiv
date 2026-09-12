@@ -94,20 +94,16 @@
                                      /* ★ TODO(资产 §5)：妖侧子机的 anm 脚本 —— **占位 = 借**豌豆射手的
                                       * 子机脚本 102（先例做法：116 借零售贴图）。真值要往 `ability.anm`
                                       * 追加妖侧子机脚本（`assets/build_ability.py` 的 ORDER）。
-                                      * 注意：`yk_option_count()` 现在是 0 ⇒ 这一项**还不会**被声明出去。*/
+                                      * ⚠ 数量/阵型/落笔都已接上（spec §3.3.1）⇒ 这一项**现在真的**会被声明出去。*/
 #define YK_OPTION_RETRY      60     /* 没拿到子机时的重试间隔（槽满 / 关卡中途买到），照 77 */
-#define YK_OPTION_MAX        2      /* 一次最多管几个子机槽（12 格公共池还要留给 71/77/116）*/
-/* ★ TODO(资产/决策 §3.3)：低速子机阵型 —— 声明层收的偏移（`+0x6c/+0x70` 聚焦、`+0x64/+0x68` 非聚焦）。
- * 占位 = 全 0（= 自机中心）：不自作主张摆阵型。单位约定（**🟡 待实跑核**）：声明层的 float 按**像素**，
- * 原生字段是 1/128 定点 ⇒ 落笔时 × `YK_SUBPIXEL`。`ce_option_alloc` 的 off 参数是 x 还是 y
- * 两处文档说法不一致（71 写 0x18 / 77 写 0x28）⇒ 落笔时四个字段都自己写，不依赖它。*/
-#define YK_OPTION_OFFSET_FX  0.0f
-#define YK_OPTION_OFFSET_FY  0.0f
-#define YK_OPTION_OFFSET_UX  0.0f
-#define YK_OPTION_OFFSET_UY  0.0f
-#define YK_OPTION_OFFSET_ALLOC 0    /* 传给 `ce_option_alloc` 的那个 off（随后被上面四个字段覆盖）。
-                                     * 落笔走 `ce_option_get`：它第一次调用就是 `ce_option_alloc`
-                                     *（认领失败 ⇒ 立即申请；之后才按 `YK_OPTION_RETRY` 补申请）。*/
+#define YK_OPTION_MAX        4      /* 一次最多管几个子机槽 = 数量表的最大值（咲夜 = 4；`YK_OPTION_CELLS`）。
+                                     * 12 格公共池要和 71/77/116 分：本卡满配 4 ⇒ 留 8 格给那三张
+                                     *（71 一颗 / 77 一颗 / 116 季节最多 6 —— 三张同时满配就正好 12，🟡 见报告）。*/
+/* ★ 落笔（写 `+0x64/+0x68` 非聚焦、`+0x6c/+0x70` 聚焦）现在**只在** `on_option_pose_apply` 里做 ——
+ * 偏移值来自声明（`yk_option_offsets`，逐格），单位 = 像素 ⇒ 落笔时 × `YK_SUBPIXEL` 变原生定点。
+ * `ce_option_alloc` 的 off 参数只用来给**申请那一刻**的初始 y 一个值（引擎自己会算初始 pos，
+ * `th18:0x40a7f6`–`0x40a84a`），随后每帧由引擎的跟随循环按我们写的四个字段重算 ⇒ 传 0 即可。*/
+#define YK_OPTION_OFFSET_ALLOC 0
 #define YK_SUBPIXEL          (1.0f / CE_SUBPIXEL_TO_PIXEL)   /* 128.0f：像素 → 原生定点 */
 #define YK_FAM_ANM_INDEX  (-1)      /* ★ TODO(资产 §5)：使魔贴图。`NoEnemyDebug` 不跑 ECL ⇒ 不写这两格
                                      * 时会画「当前关卡敌人 anm 的 slot 0」（audit-open-items-106-109 §②）。
@@ -130,7 +126,6 @@ typedef struct {
     ce_option_t   opt[YK_OPTION_MAX];  /* 子机槽（SDK：认领 / 申请 / 收起）*/
     yk_transfer_t tr;                  /* 1/2 转嫁累加器 */
     int32_t       opt_script;          /* 手里这几个子机是用哪个 anm 脚本申请的（-1 = 没有）*/
-    int32_t       declared;            /* 已经发出去的子机声明数量（-1 = 还没声明过，需要重发）*/
     uint32_t      shot_timer;          /* 我们自己的「射击帧」计数（引擎那个松开 Z 会跳，相位不可控）*/
     uint32_t      spawns;              /* 本局建了几只使魔 */
     uint32_t      broken;              /* 本局被打死的使魔数（= 被打死的发射口槽数）*/
@@ -527,40 +522,65 @@ static void yk_transfer_tick(yk_card_t *s)
 }
 
 /* ============================== §3.3 子机 ==============================
- * 走 **SDK 的低速子机声明层**（spec §3.3.1）：本卡只声明，**只有被选举者落笔**
- *（id 最小者胜，108 < 111）。落笔 = 申请子机 + 写原生双偏移（`+0x64/+0x68` 非聚焦、`+0x6c/+0x70` 聚焦，
- * 单位 = 原生 1/128 定点）。*/
-static void yk_option_declare(ce_card_t *c, yk_card_t *s, int count)
+ * 走 **SDK 的低速子机声明层**（spec §3.3.1）：本卡只**声明**（每帧、低速才算），
+ * **只有被选举者落笔**（id 最小者胜，108 < 111）—— 落笔 = 申请子机 + **逐格**写原生双偏移
+ * （`+0x64/+0x68` 非聚焦、`+0x6c/+0x70` 聚焦，单位 = 原生 1/128 定点）。
+ * ★ 2026-09-12：落笔**只**发生在 `on_option_pose_apply` 里（SDK 每帧调一次被选举的那张卡；
+ *   被顶掉时再补叫一次「退位通知」，那时 `ce_option_pose_winner() != 我们` ⇒ 只收子机、不写字段）。
+ * ★ 逐格偏移：`count >= 2` 时每格必须摆在不同位置（否则会叠在同一点）——
+ *   表与一手依据在 `youkai_core.h` 的 §3.3（位置 = 本作零售 `pl0X.sht` 同档阵型）。*/
+
+/* 本帧读引擎的「机体号 + 火力档」：档位算式与 `th18:0x45d604`/`0x45d60a` 同款
+ * （`CURRENT_POWER / POWER_PER_LEVEL`；`yk_shot_tier()` 负责钳到 0..4）。*/
+static int yk_current_character(void)
 {
-    if (count <= 0) {
-        /* ★ 现在走的就是这条（占位）。「退出声明」= 不进选举、也**不挡住 111**
-         *（否则「赢了选举却不落笔」会把 111 的子机一起闷掉）。*/
-        ce_optpose_declare(ce_card_id(c), 0, 0, 0.0f, 0.0f, 0.0f, 0.0f);
-        if (s && !s->logged_opt) {
-            s->logged_opt = 1;
-            ce_log("youkai: option pose declaration parked (count=0): youkai option anm script / "
-                   "count are placeholders - the low-speed submarine chain stays out of the "
-                   "election layer (spec §3.3.1) until assets land");
-        }
-        return;
-    }
-    ce_optpose_declare(ce_card_id(c), count, YK_OPTION_SCRIPT_YOUKAI,
-                       YK_OPTION_OFFSET_FX, YK_OPTION_OFFSET_FY,
-                       YK_OPTION_OFFSET_UX, YK_OPTION_OFFSET_UY);
+    return *(const int32_t *)CE_ADDR_CHARACTER;
 }
 
-static void yk_option_apply(ce_card_t *c, yk_card_t *s);
-
-/* 每帧刷新声明层：只有「想声明的数量」变了才真的重发（`ce_optpose_declare` 内部要重选举，
- * 扫 255 个 id）；`force` = 刚复位过 / 池被引擎重建过 ⇒ 强制重发一次。然后交给落笔逻辑。*/
-static void yk_option_refresh(ce_card_t *c, yk_card_t *s, int focused, int force)
+static int yk_current_power_level(void)
 {
-    int count = yk_option_count(focused);
-    if (force || s->declared != count) {
-        s->declared = count;
-        yk_option_declare(c, s, count);
+    return yk_shot_tier((int)CE_CURRENT_POWER());
+}
+
+static void yk_option_declare(ce_card_t *c, yk_card_t *s, int focused)
+{
+    ce_option_pose_t pose;
+    yk_opt_off_t off;
+    const int character = yk_current_character();
+    const int level = yk_current_power_level();
+    int count = yk_option_count(focused, character, level);
+    int i;
+
+    if (count <= 0) {
+        /* 「退出声明」= 不进选举（也**不挡住 111** —— 否则「赢了选举却不落笔」会把 111 的子机一起闷掉）。
+         * 来路：高速（用户定案 5）、早苗的低火力档（TH16 档 0 = 0 个）、池被重建的那一帧。
+         * ★ 光退出还不够：手里若还攥着子机，被顶掉那一刻的「退位通知」会再叫我们一次
+         *   `on_option_pose_apply`，由那里收干净。*/
+        ce_option_pose_declare(c, NULL);
+        return;
     }
-    yk_option_apply(c, s);
+    if (count > YK_OPTION_CELLS) count = YK_OPTION_CELLS;   /* 表最大 4；层自己也会再钳一次 */
+    __builtin_memset(&pose, 0, sizeof pose);
+    pose.count = count;
+    pose.anm_script = YK_OPTION_SCRIPT_YOUKAI;
+    for (i = 0; i < count; ++i) {
+        if (!yk_option_offsets(character, count, i, &off)) continue;
+        pose.cell[i].fx = off.fx;
+        pose.cell[i].fy = off.fy;
+        pose.cell[i].ux = off.nfx;
+        pose.cell[i].uy = off.nfy;
+    }
+    if (ce_option_pose_declare(c, &pose) < count && s && !s->logged_opt) {
+        s->logged_opt = 1;                                  /* 不该发生（上面按同一个上限钳过）——留一行日志 */
+        ce_log("youkai: option pose declare clamped below %d cells (spec §3.3.1 layer cap)", count);
+    }
+}
+
+/* 每帧刷新：**每帧都声明**（层在 `BP_ce_item_frame` 每帧清集合 ⇒ 不声明 = 本帧退出）。
+ * 落笔不在这里 —— SDK 在帧界调被选举者的 `on_option_pose_apply`（见下）。*/
+static void yk_option_refresh(ce_card_t *c, yk_card_t *s, int focused)
+{
+    yk_option_declare(c, s, focused);
 }
 
 /* 收掉本卡手里所有子机。★ `ce_option_drop` 自己会**把池槽松开**（`option+0x00 = 0`，一手：
@@ -586,16 +606,21 @@ static void yk_option_release(ce_card_t *c, yk_card_t *s)
     s->opt_script = -1;
 }
 
-/* 被选举者落笔（每帧调；没赢选举就什么都不做 —— 单一写者 ⇒ 与 111 没有竞态）。*/
-static void yk_option_apply(ce_card_t *c, yk_card_t *s)
+/* ★ 被选举者落笔（SDK 每帧调**恰好一次**；spec §3.3.1 的 `on_option_pose_apply`）。
+ * 两种来路都在这里处理：
+ *   ① `ce_option_pose_winner() == 我们` ⇒ 按本帧声明申请 / 逐格摆位；
+ *   ② **退位通知**（上一帧我们是落笔者、这一帧不是：松了 Shift / 被别人盖过 / 池被重建）
+ *      ⇒ 此时 winner 不是我们 ⇒ 把手里所有子机还回去（否则高速还看得见妖侧子机 = 用户定案 5 的反面）。*/
+static int on_option_pose_apply(ce_card_t *c)
 {
-    const ce_option_pose_t *pose = ce_optpose_pose();
+    yk_card_t *s = ce_state(c, yk_card_t);
+    const ce_option_pose_t *pose = ce_option_pose_pose();
     int want, i;
-    uint8_t *o;
 
-    if (ce_optpose_winner() != (int)ce_card_id(c) || !pose || pose->count <= 0) {
-        if (s->opt_script >= 0) yk_option_release(c, s);   /* 手里还攥着子机（高速 / 被别人覆盖）⇒ 还回去 */
-        return;
+    if (!s) return 0;
+    if (ce_option_pose_winner() != (int)ce_card_id(c) || !pose || pose->count <= 0) {
+        if (s->opt_script >= 0 || s->opt[0].ptr) yk_option_release(c, s);   /* 退位：收干净 */
+        return 0;
     }
     if (yk_option_script_changed(pose->anm_script, (int)s->opt_script)) {
         /* 子机的 anm 脚本是**申请时**定死的（`Player__allocate_option` `0x40a790` 第 5 个栈参）
@@ -606,16 +631,20 @@ static void yk_option_apply(ce_card_t *c, yk_card_t *s)
     want = pose->count;
     if (want > YK_OPTION_MAX) want = YK_OPTION_MAX;
     for (i = 0; i < want; ++i) {
-        o = ce_option_get(c, &s->opt[i], YK_OPTION_OFFSET_ALLOC, pose->anm_script,
-                          YK_OPTION_RETRY, "youkai");
+        uint8_t *o = ce_option_get(c, &s->opt[i], YK_OPTION_OFFSET_ALLOC, pose->anm_script,
+                                   YK_OPTION_RETRY, "youkai");
         if (!o) continue;
         s->opt_script = pose->anm_script;
-        /* 写阵型（零售 `0x40b8c1` 也这么自己摆；单位 = 原生 1/128 定点）*/
-        *(int32_t *)(o + CE_OPT_OFF_NF_X) = (int32_t)(pose->ux * YK_SUBPIXEL);
-        *(int32_t *)(o + CE_OPT_OFF_NF_Y) = (int32_t)(pose->uy * YK_SUBPIXEL);
-        *(int32_t *)(o + CE_OPT_OFF_F_X)  = (int32_t)(pose->fx * YK_SUBPIXEL);
-        *(int32_t *)(o + CE_OPT_OFF_F_Y)  = (int32_t)(pose->fy * YK_SUBPIXEL);
+        /* 写**这一格**的阵型（零售 `0x40b8c1` 也这么自己摆；单位 = 原生 1/128 定点）。
+         * 引擎每帧自己按聚焦位取用：`pos = 自机位 + (聚焦 ? [+0x6c/+0x70] : [+0x64/+0x68])`
+         * （一手 `th18:0x45bce8`–`0x45bd08`，且**卡池 12 格与原生 4 格走同一个循环**
+         * —— `th18:0x45b8ea`/`0x45b8fa` 两处调用）⇒ 卡侧只写这四个字段就够。*/
+        *(int32_t *)(o + CE_OPT_OFF_NF_X) = (int32_t)(pose->cell[i].ux * YK_SUBPIXEL);
+        *(int32_t *)(o + CE_OPT_OFF_NF_Y) = (int32_t)(pose->cell[i].uy * YK_SUBPIXEL);
+        *(int32_t *)(o + CE_OPT_OFF_F_X)  = (int32_t)(pose->cell[i].fx * YK_SUBPIXEL);
+        *(int32_t *)(o + CE_OPT_OFF_F_Y)  = (int32_t)(pose->cell[i].fy * YK_SUBPIXEL);
     }
+    return 0;
 }
 
 /* 妖侧 shooterset 装上没有：读那一格记录的首字节 `fire_rate`（i8，`engine/sht/th18/02` §1）。
@@ -649,7 +678,6 @@ static int on_ctor(ce_card_t *c)
     yk_transfer_reset(&s->tr);
     __builtin_memset(s->opt, 0, sizeof s->opt);
     s->opt_script = -1;
-    s->declared = -1;                                  /* 强制下一帧重发一次声明 */
     s->shot_timer = 0;
     s->spawns = s->broken = s->lost = s->transferred = s->dropped = s->fam_full = 0;
     s->logged_opt = s->logged_sht = s->logged_noshot = s->logged_full = s->logged_gate = 0;
@@ -736,7 +764,7 @@ static int on_power_level_change(ce_card_t *c)
      * 照零售 / 77：不 drop（引擎已经重建过），直接清指针再去要一个。*/
     for (i = 0; i < YK_OPTION_MAX; ++i) { s->opt[i].ptr = 0; s->opt[i].retry = 0; }
     s->opt_script = -1;
-    yk_option_refresh(c, s, CE_PLAYER_FOCUSED(), 1);
+    yk_option_refresh(c, s, CE_PLAYER_FOCUSED());          /* 声明；落笔在帧界（SDK 调被选举者）*/
     return 0;
 }
 
@@ -744,8 +772,8 @@ static int on_power_level_change(ce_card_t *c)
  * ⚠ 两条前置（都是一手）：
  *   ① 膛口 = 子机：`0x40a9c0` **不读记录里的 `opt_slot`**，膛口恒取 `option+0x5c/0x60`
  *      （`0x40aa0c`／`0x40aa21`，整组只算一次）；`option == NULL` 时它 `test edx,edx / je`
- *      直接返回 ⇒ 没有子机就不发弹 —— 所以本卡现在**还发不出妖侧弹**：
- *      `YK_OPTION_COUNT_FOCUSED`（占位 0）没定之前 `yk_option_wanted()` 恒 0。
+ *      直接返回 ⇒ **妖侧弹的膛口就是妖侧子机**（本卡手里那一格）。
+ *      ⇒ 声明的数量为 0 时（高速 / 早苗档 0）这里自然不发弹。
  *   ② 那一格必须是**我们写的合法记录**：零售 0x16 是 `fire_rate = 0`，装备卡路径会整数除零
  *      （`engine/sht/th18/02` §2）⇒ 自检记录（`yk_shotset_usable`），没覆盖成功就不调。
  *      覆盖由 `assets/sht/append_shooterset.py` 的 `REPLACE` 做（`make sht`）。*/
@@ -756,7 +784,8 @@ static int on_tick_shooters(ce_card_t *c, uint32_t short_timer, uint32_t long_ti
     (void)short_timer;
     (void)long_timer;
     if (!s || !CE_PLAYER()) return 0;
-    if (!yk_option_wanted(CE_PLAYER_FOCUSED())) return 0;     /* 高速 = 原机体（原生弹照发）*/
+    /* 高速 = 原机体（原生弹照发）；早苗的档 0 = 0 个子机 ⇒ 没有膛口，也不发妖侧弹。*/
+    if (!yk_option_wanted(CE_PLAYER_FOCUSED(), yk_current_character(), yk_current_power_level())) return 0;
     if (!yk_youkai_shotset_installed()) {
         if (!s->logged_sht) {
             s->logged_sht = 1;
@@ -804,8 +833,9 @@ static int on_native_shot_suppress(ce_card_t *c)
     if (!s || s->logged_noshot) return 1;
     if (!yk_youkai_shotset_installed()) {
         why = "youkai shooterset is NOT installed (run `make sht`)";
-    } else if (!yk_option_wanted(1)) {
-        why = "there is no option to fire from (YK_OPTION_COUNT_FOCUSED is still 0, spec §3.3)";
+    } else if (!yk_option_wanted(1, yk_current_character(), yk_current_power_level())) {
+        why = "there is no option to fire from (declared option count is 0 at this power level, "
+              "spec §3.3 / §12.4)";
     } else {
         return 1;
     }
@@ -907,7 +937,7 @@ static int on_tick_2(ce_card_t *c)
         return 0;
     }
     focused = CE_PLAYER_FOCUSED();
-    yk_option_refresh(c, s, focused, 0);                  /* 声明（变了才发）+ 落笔（只有被选举者动手）*/
+    yk_option_refresh(c, s, focused);                     /* 每帧声明（低速才有货；落笔由 SDK 在帧界叫）*/
     if (!focused) {
         /* 高速 = 原机体：使魔全部撤（spec §9 实跑清单 1「松开全部还原」）。
          * 常态下这条只是两次比较。*/
@@ -924,6 +954,7 @@ CE_CARD(108, .ctor = on_ctor, .on_load = on_load, .on_power_level_change = on_po
              .on_bullet_created = on_bullet_created, .on_enemy_death = on_enemy_death,
              .on_enemy_shot_slot = yk_on_shot_slot,           /* §3.5.1 发射口精确闸（0x433ffa）*/
              .on_native_shot_suppress = on_native_shot_suppress, .on_draw = on_draw,
+             .on_option_pose_apply = on_option_pose_apply,    /* §3.3.1 低速子机声明层的落笔 */
              .on_run_reset = on_run_reset, .on_delete = on_delete);
 
 /* ============================== 编译期对账 ============================== */
@@ -931,6 +962,12 @@ CE_CARD(108, .ctor = on_ctor, .on_load = on_load, .on_power_level_change = on_po
  * 使魔表在文件级静态数组里，所以这里只查状态结构。*/
 _Static_assert(sizeof(yk_card_t) <= CE_STATE_BYTES - CE_STATE_RESERVED,
                "youkai card private state exceeds the SDK budget");
+/* ★ 逐格上限必须和声明层的上限一致（youkai_core.h 的 `YK_OPTION_CELLS` ↔ sdk_core.h 的
+ * `CE_OPTION_POSE_CELLS`，两边都是「原生子机数组 4 格」那个一手上限）。*/
+_Static_assert(YK_OPTION_CELLS == CE_OPTION_POSE_CELLS,
+               "youkai_core formation cells must match the SDK option-pose cell cap");
+/* 数量表的最大值必须塞得进本卡管的槽数（`YK_OPTION_MAX` = 本卡子机槽数组长度）。*/
+_Static_assert(YK_OPTION_MAX >= 4, "YK_OPTION_MAX must cover the biggest row of YK_OPTION_BY_CHAR");
 /* 跟随 VM 的静态表：32 × 12 B = 384 B（文件级静态，不进卡的 496 B 预算）。
  * 钉住记录的大小是为了让「加字段 = 表变大」这件事**在编译期**被看见（12 = 3 × u32/i32，无 padding）。*/
 _Static_assert(sizeof(yk_fam_vm_t) == 12, "familiar follow-VM record grew (table is 32 of these)");
@@ -943,9 +980,13 @@ _Static_assert(sizeof(yk_fam_vm_t) == 12, "familiar follow-VM record grew (table
  *        shooterset = TH08 `ply03as.sht` 满 P 档 9 行（`assets/sht/append_shooterset.py` 的 `REPLACE`
  *        覆盖零售那格，`fire_rate ∈ {3,5,6,10}`，除零风险随之消失）；**档位伤害表仍不填**
  *        （原因见 `youkai_core.c` §3.4 的注释：TH08 单发伤害随 P 下降，是配着路数设计的）。
- *        ⚠ 但它现在**还发不出来**：`0x40a9c0` 的膛口恒取子机 ⇒ 要等第 3 条的子机数量定案。
- *     3. `YK_OPTION_SCRIPT_YOUKAI` + `YK_OPTION_COUNT_FOCUSED` = 0 —— 妖侧子机脚本（借 102 占位）与数量
- *        （数量没给、且声明层只有一套偏移 ⇒ 现在整条子机链**不参与声明**）
+ *        ⚠ 膛口 = 子机（`0x40a9c0` 一手）⇒ 它能不能发弹取决于第 3 条的子机数量（现已接上）。
+ *     3. `YK_OPTION_SCRIPT_YOUKAI` —— ★ **2026-09-12 数量/阵型/落笔全部接上**（`YK_OPTION_BY_CHAR`
+ *        4×5 数量表 + `yk_option_offsets` 逐格阵型 + 声明层的 `on_option_pose_apply`，spec §3.3.1/§12.4）；
+ *        **只剩脚本号本身是占位**（借豌豆射手的子机脚本 102，`anm_ids.h` 还没有 youkai 条目）。
+ *        ⚠ 连带的两个已知缺口，实跑要盯：① `count = 0` 的档（早苗 P<100）妖侧**一发弹都没有**，
+ *        而原生弹被 `on_native_shot_suppress` 压掉 ⇒ 那一档「什么都不发」（见 `on_native_shot_suppress`
+ *        的诊断日志；口径未定，报告 §6）；② 12 格公共池与 71/77/116 共享，本卡满配 4 格。
  *     4. `YK_FAM_ANM_INDEX` / `YK_FAM_ANM_SCRIPT` = -1 —— 使魔贴图（借零售 or 复用 116/117 的做法）
  *        → ✅ 2026-09-12 **资产已到**：四色零售切图 = `ability.anm` script 206..209
  *          （TH08 `enemy.anm` script53..56，红/绿/蓝白/黄），由**跟随 VM** 画
@@ -955,7 +996,9 @@ _Static_assert(sizeof(yk_fam_vm_t) == 12, "familiar follow-VM record grew (table
  *     5. `YK_FAM_LIFE` = 1（使魔 HP；硬约束 < 1000）
  *     6. `YK_TRANSFER_CAP_PER_FRAME` = 0（单帧转嫁上限：0 = 无上限；研究 §7.5 提醒会顶掉 boss 配额）
  *     7. `YK_FAM_MAX` = 32（分配护栏；spec 没给上限）
- *     8. `YK_OPTION_OFFSET_*` = 0（妖侧子机阵型；`ce_option_alloc` 的 off 参数是 x 还是 y 两处文档不一致）
+ *     8. ~~`YK_OPTION_OFFSET_*` = 0（妖侧子机阵型）~~ —— ✅ 2026-09-12 **已接真数据**：
+ *        逐格阵型 = 零售 `pl0X.sht` 的非聚焦/聚焦位置块（`yk_option_offsets`，`youkai_core.h` §3.3
+ *        有一手出处；机体 2 的极坐标行已离线换算成像素）。单位 = 像素（引擎自己 ×128）。
  *   §3.5 缺断点
  *     9. `0x434019`（`etOn` 里 `push eax` 前）没装 —— 「打死使魔 ⇒ 真的关掉那个发射口」只能近似
  *        （不重建 + 转嫁归零），发射口**本身**还在开火

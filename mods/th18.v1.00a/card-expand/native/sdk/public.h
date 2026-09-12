@@ -108,6 +108,17 @@ typedef struct {
     /* 敌人这一槽**本帧要不要真发弹**（断点 `0x433ffa`，ECL etOn）。返回非 0 = 掐掉（不发）。
      * 108 妖机体用它做「使魔被打死 ⇒ 关掉对应的发射口」；不声明 = 完全不受影响（默认放行）。*/
     int  (*on_enemy_shot_slot)(ce_card_t *, const ce_enemy_shot_t *);
+    /* ★ 低速子机声明层的**落笔回调**（spec §3.3.1；层 = sdk_core 的 `ce_optpose_*`，分派在 sdk.c）。
+     * 每帧在 `BP_ce_item_frame` 里被调**恰好一次**，且**只有被选举的那张卡**（id 最小者胜）：
+     *   ① 它是本帧落笔者 ⇒ 申请 / 摆位 / 换图都归它（单一写者 ⇒ 与别的卡没有竞态）；
+     *   ② 或者它是**上一帧的落笔者、这一帧没赢**（自己退出声明 / 被 id 更小的卡盖过 / 池被重建）
+     *      ⇒ SDK 补叫它一次去收尾（**退位通知**）—— 此时 `ce_option_pose_winner()` 不是自己。
+     * 所以回调里一律先判：
+     *     if (ce_option_pose_winner() == (int)ce_card_id(c)) { 声明里的 count 格：ce_option_get + 写偏移 }
+     *     else                                              { 把手里所有子机 ce_option_drop 收干净 }
+     * ⚠ 不声明这个槽 = 永远进不了选举（`ce_option_pose_declare()` 每帧都要调；`count <= 0` = 本帧退出）。
+     * ⚠ 回调里可以申请子机（= 建 anm VM），它与卡自己的 tick 同一安全级（**不在死亡栈上**）。*/
+    int  (*on_option_pose_apply)(ce_card_t *);
 } ce_hooks_t;
 
 /* 改这张卡当前的自机弹伤害倍率（千分比）。只在值真的变了的时候调（古锭刀在终符沿、衔尾蛇在叠层时）。*/

@@ -358,6 +358,19 @@ uint8_t *ce_option_claim(ce_card_t *c, ce_option_t *o)
     return p;
 }
 
+/* ---- 低速子机声明层：卡侧两个入口（层本身在 sdk_core.c；落笔分派见本文件的 `ce_option_pose_frame_tick`）---- */
+int ce_option_pose_declare(ce_card_t *c, const ce_option_pose_t *p)
+{
+    if (!c) return 0;
+    return ce_optpose_declare(ce_card_id(c), p);
+}
+
+void ce_option_pose_drop(ce_card_t *c)
+{
+    if (!c) return;
+    ce_optpose_drop(ce_card_id(c));
+}
+
 uint8_t *ce_option_alloc(ce_card_t *c, ce_option_t *o, int offset, int anm_script, const char *card)
 {
     if (!o || !CE_PLAYER()) return 0;
@@ -852,11 +865,52 @@ int ce_graze_take(float *x, float *y)
     return n;
 }
 
+/* ---- 低速子机声明层的落笔分派（spec §3.3.1；层 = sdk_core 的 `ce_optpose_*`）----
+ * 每帧恰好跑一次：① 问层「本帧谁落笔、上一帧的落笔者在不在」；② **退位通知**（上一帧落笔者这一帧没赢
+ * ⇒ 叫它一次，让它把子机收干净）；③ 叫本帧落笔者一次（申请 / 逐格写偏移 / 贴图）。
+ * ⚠ 为什么退位也要叫一次：层是**每帧**声明的 —— 108 松开 Shift 就声明 0、立刻不再是落笔者；
+ *   若没人叫它，它手里那几个 zPlayerOption 会一直留在池里（高速还看得见妖侧子机 = 用户定案 5 的反面）。
+ * ⚠ 时序（一手）：卡的 tick 在 AbilityManager（优先级 **0x16**），本断点 = ItemManager tick（**0x1e**，
+ *   `th18:0x4458a0 push 0x446ec0` + `0x4458ac push 0x1e` + `0x401180` 注册）⇒ **同一帧内卡先声明、
+ *   帧界再落笔**，落笔看到的就是本帧的声明。即使某天顺序反过来，也只是「声明晚一帧生效」——
+ *   门式（每帧重写偏移、引擎每帧自己按聚焦位取用，`th18:0x45bce8`–`0x45bd08`）⇒ 无可见差异。*/
+static void optpose_call_one(uint8_t *mgr, int id)
+{
+    unsigned guard = 0;
+    for (const uint8_t *node = *(const uint8_t *const *)(mgr + CE_MGR_CARD_LIST_FIRST);
+         node && guard < 256;
+         node = *(const uint8_t *const *)(node + CE_NODE_NEXT), ++guard) {
+        uint8_t *card = *(uint8_t *const *)(node + CE_NODE_CARD);
+        if (!card || (int)ce_card_id(card) != id) continue;     /* 退位者可能已经删了 ⇒ 找不到就跳过 */
+        const ce_hooks_t *h = hooks_of(card);
+        if (h && h->on_option_pose_apply) {
+            h->on_option_pose_apply((ce_card_t *)card);
+            ce_sdk_trace((uint32_t)id, 0x90, "on_option_pose_apply");
+        }
+        return;
+    }
+}
+
+static void ce_option_pose_frame_tick(void)
+{
+    uint8_t *mgr = CE_ABILITY_MGR();
+    int prev = -1, win;
+
+    if (!mgr) return;
+    win = ce_optpose_frame(&prev);
+    if (prev >= 0 && prev != win) optpose_call_one(mgr, prev);   /* ① 退位通知（只收不写）*/
+    if (win >= 0) optpose_call_one(mgr, win);                    /* ② 本帧落笔 */
+}
+
 int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
 {
     (void)regs; (void)bp_info;
     uint8_t *mgr = CE_ABILITY_MGR();
     if (!mgr) return BP_EXEC_ORIGINAL;
+    /* ★ 帧界：低速子机声明层的落笔 + 清集合（spec §3.3.1）。顺序 **先落笔、后清**：
+     * 落笔用的是「上一次清集合以来」的全部声明（= 本帧各卡 tick 里刚发的），清完之后本帧的声明从零收集。*/
+    ce_option_pose_frame_tick();
+    ce_optpose_frame_reset();
     /* ★ 帧初：清「本帧已消过弹」闩锁（EVENTS-CONTRACT §5.2 细则 2）。这个断点每个正常游玩帧到一次，
      * 且在道具池 body 之前 ⇒ 是天然的帧边界。107 的结界灵击与 117 的霊撃同帧都触发时，
      * 只有第一个 claim 的负责全屏消弹，第二家让位（避免空池扫荡 / 重复记账）。*/

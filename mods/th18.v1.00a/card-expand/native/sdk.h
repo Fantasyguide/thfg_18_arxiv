@@ -460,6 +460,24 @@ static inline uint8_t *ce_option_get(ce_card_t *c, ce_option_t *o, int offset, i
 static inline float ce_option_x(const uint8_t *o) { return (float)*(const int32_t *)(o + CE_OPT_POS_X) * CE_SUBPIXEL_TO_PIXEL; }
 static inline float ce_option_y(const uint8_t *o) { return (float)*(const int32_t *)(o + CE_OPT_POS_Y) * CE_SUBPIXEL_TO_PIXEL; }
 
+/* ---- ★ 低速子机声明层（spec §3.3.1；纯逻辑在 sdk_core.{h,c}，落笔分派在 sdk.c 的 `BP_ce_item_frame`）----
+ * 108（妖机体）与 111（SA 子机层）会落在**同一批** zPlayerOption 的同一批字段上 ⇒ 不让两张卡各写各的：
+ * 各卡每帧只**声明**（`ce_option_pose_declare`），SDK 选举 **id 最小者落笔**，并且**只调它**的
+ * `on_option_pose_apply`（ce_hooks_t 尾槽）。⇒ 「108 覆盖 111」不再依赖帧内 tick 顺序。
+ *
+ * 卡侧三条纪律：
+ *   1. **每帧声明**（层在 `BP_ce_item_frame` 每帧清集合；不声明 = 本帧退出声明）。
+ *      门也由卡自己把 —— 108 就是「低速才声明、高速声明 0」（用户定案 5：高速互不影响）。
+ *   2. 落笔**只在 `on_option_pose_apply` 里做**：申请（`ce_option_get`）、逐格写偏移、贴图。
+ *      回调里若发现 `ce_option_pose_winner() != ce_card_id(c)`（退位通知）⇒ 只收子机、不写字段。
+ *   3. 偏移单位 = **像素**（引擎自己 ×128 变原生定点；一手 `th18:0x45d902` + `0x4b9310` = 128.0f）。
+ *      `cell[i].fx/fy` = 聚焦（低速）用，`ux/uy` = 非聚焦用；引擎每帧按 `player+0x476cc` 自己选哪一套
+ *      （一手 `th18:0x45bce8`–`0x45bd08`），所以两套都给、Shift 切换没有延迟。*/
+int  ce_option_pose_declare(ce_card_t *c, const ce_option_pose_t *p);   /* p = NULL / count <= 0 = 退出；返回记下的格数 */
+void ce_option_pose_drop(ce_card_t *c);                                  /* 删卡 / 自己退出声明 */
+static inline int ce_option_pose_winner(void) { return ce_optpose_winner(); }
+static inline const ce_option_pose_t *ce_option_pose_pose(void) { return ce_optpose_pose(); }
+
 /* ---- HUD 小卡上的一位数字（AUDIT §X）----
  * 引擎建好本卡的 HUD 图标后经 `+0x44` 把图标根 VM 的 anm id 交来（图标重建时会再交一次）；
  * 在它的实体坐标上起 `ability.anm` 的 `HUD_DIGIT` 脚本，值变了就换 sprite。
@@ -710,7 +728,7 @@ static inline void ce_layer_drop_card(uint32_t id)
     ce_invuln_request(id, 0);
     ce_score_declare(id, 0);
     ce_score_mul_declare(id, 0);   /* 乘数附加项（EVENTS-CONTRACT §3.1）*/
-    ce_optpose_declare(id, 0, 0, 0.0f, 0.0f, 0.0f, 0.0f);
+    ce_optpose_drop(id);              /* 低速子机声明层（spec §3.3.1）：删卡 = 立刻退出声明 */
     ce_drop_mult_set(id, 0);          /* 掉落乘数（EVENTS-CONTRACT §2）*/
     ce_hud_slot_release(id);
 }

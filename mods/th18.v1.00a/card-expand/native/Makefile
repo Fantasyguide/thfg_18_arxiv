@@ -130,7 +130,11 @@ LDFLAGS   := -shared -static-libgcc -s -lkernel32 -luser32 -Wl,--no-insert-times
 dll: $(DLL)
 SRCS      := dll_main.c selfcheck_core.c selfcheck.c unlocked.c text.c cards_def.c cards.c menu.c bp_trace.c sdk_core.c sdk_actions.c sdk.c shop_core.c shop.c sound.c $(wildcard cards/*.c)
 OBJS      := $(SRCS:.c=.o)
-%.o: %.c card_expand.h sites_gen.h thcrap_bp.h cards_def.h sdk.h sdk_core.h engine.h shop_core.h sound.h voice_ids.h sht_ids.h $(wildcard cards/*.h)
+## ⚠ 依赖表必须列全**被 include 的头**：漏一个就会出现「改了头、别的 .o 不重编」的静默错
+##   （2026-09-12 实际踩到：`sdk/public.h` 里的 `ce_hooks_t` 尾部加了新槽，而它不在表里
+##    ⇒ 别的卡的 .o 不会重编，新的 `sdk.c` 会去读它们那截短的旧结构 = 越界读）。
+##   `anm_ids.h` 同理（`sdk.h` include 它，`make anm` 会重写它）。`sdk/*.h` 用通配兜住。
+%.o: %.c card_expand.h sites_gen.h thcrap_bp.h cards_def.h sdk.h sdk_core.h engine.h shop_core.h sound.h voice_ids.h sht_ids.h anm_ids.h $(wildcard sdk/*.h) $(wildcard cards/*.h)
 	$(CC) $(CFLAGS) -c -o $@ $<
 $(DLL): $(OBJS) th18_card_expand.def
 	$(CC) $(CFLAGS) -o $@ $(OBJS) th18_card_expand.def $(LDFLAGS)

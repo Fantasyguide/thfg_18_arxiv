@@ -19,17 +19,96 @@ int yk_body_sprite(int focused)
 }
 
 /* ------------------------------------------------------------------ §3.3 子机 */
-int yk_option_count(int focused)
+/* 数量表的列数必须与 §3.4 的火力档数一致（两处都是「CURRENT_POWER / 100 钳位」的同一组档）。*/
+_Static_assert(YK_OPTION_TIERS == YK_SHOT_TIERS, "option tiers and shot tiers must be the same 5 power levels");
+
+/* 数量表在 youkai_core.h（用户定案 + 一手出处）。这里只做钳位与查表。*/
+int yk_option_count(int focused, int character, int power_level)
 {
-    return focused ? YK_OPTION_COUNT_FOCUSED : YK_OPTION_COUNT_UNFOCUSED;
+    if (!focused) return 0;                               /* 高速 = 原机体（用户定案 5）*/
+    if (character < 0) character = 0;
+    else if (character >= YK_OPTION_CHARS) character = YK_OPTION_CHARS - 1;
+    if (power_level < 0) power_level = 0;
+    else if (power_level >= YK_OPTION_TIERS) power_level = YK_OPTION_TIERS - 1;
+    return (int)YK_OPTION_BY_CHAR[character][power_level];
 }
 
-int yk_option_wanted(int focused) { return yk_option_count(focused) > 0; }
+int yk_option_wanted(int focused, int character, int power_level)
+{
+    return yk_option_count(focused, character, power_level) > 0;
+}
 
 int yk_option_script_changed(int want, int have)
 {
     if (have < 0) return 0;                              /* 手里没有子机 ⇒ 没什么可「换」*/
     return want != have;
+}
+
+/* ---- 逐格阵型：零售 `pl0X.sht` 的两块（非聚焦 `+0x40` / 聚焦 `+0x90`）逐格照抄 ----
+ * 一手来源（`local/th18.v1.00a/dat/pl0X.sht`，本轮用 4 行一读的脚本逐字节核过）：
+ *   · 格 `k` 的 (x, y) 就存在 `+0x40 + k*8` 与 `+0x90 + k*8`（引擎读点 `th18:0x45d902`
+ *     `movss xmm0,[ecx+edx*8+0x40]` / `th18:0x45d94c` 的 `+0x94`）；
+ *   · `k` 由 `T[档−1] + i` 给出（`th18:0x45d8fc`：`mov edx,[eax+edx*4-4]` + `add edx,edi`），
+ *     `T` = 三角序列 `{0,1,3,6,10,11,13}`（表基 `th18:0x4cdb5c`，取址用 +1 项 ⇒ 有效列见 `YK_OPT_TRI`）。
+ *   ⇒ 声明 N 个时用的就是引擎给 **N 个原生子机**准备的那 N 个位置（同一份数据，零发明）。
+ * ⚠ 机体 2（咲夜）的原始两块是 **(弧度, 半径)**、不是像素；下面表里那一行是**离线换算后的像素**
+ *   （规则与推导写在 youkai_core.h 的 §3.3 块注释里，含静止 lean = −π/2 与 `0x4b9464 = −128.0f` 两个一手常量）。
+ *   ⚠ 换算后的定点值与本卡落笔时的 `(int32_t)(px * 128.0f)` 逐格相等（离线已逐格验过，见报告）。*/
+static const float YK_OPT_BLOCK[YK_OPTION_CHARS][10][4] = {
+    /* 机体 0 = 霊夢（pl00.sht）：NF k0..9 = (0,−32) (−32,0) (32,0) (−32,−16) (32,−16) (0,−32) (−38,−16) (38,−16) (−16,−32) (16,−32)
+     *                            F  k0..9 = (0,−20) (−12,−20) (12,−20) (−20,−20) (20,−20) (0,−30) (−27,−20) (27,−20) (−9,−30) (9,−30) */
+    { {  0.0f, -32.0f,   0.0f, -20.0f }, { -32.0f,   0.0f, -12.0f, -20.0f },
+      {  32.0f,   0.0f,  12.0f, -20.0f }, { -32.0f, -16.0f, -20.0f, -20.0f },
+      {  32.0f, -16.0f,  20.0f, -20.0f }, {   0.0f, -32.0f,   0.0f, -30.0f },
+      { -38.0f, -16.0f, -27.0f, -20.0f }, {  38.0f, -16.0f,  27.0f, -20.0f },
+      { -16.0f, -32.0f,  -9.0f, -30.0f }, {  16.0f, -32.0f,   9.0f, -30.0f } },
+    /* 机体 1 = 魔理沙（pl01.sht）：NF = (0,−32) (−16,−32) (16,−32) (−32,0) (32,0) (0,−32) (−32,0) (32,0) (−16,−32) (16,−32)
+     *                              F  = (0,−32) (−6,−32) (6,−32) (−12,−28) (12,−28) (0,−32) (−18,−24) (18,−24) (−6,−32) (6,−32) */
+    { {   0.0f, -32.0f,   0.0f, -32.0f }, { -16.0f, -32.0f,  -6.0f, -32.0f },
+      {  16.0f, -32.0f,   6.0f, -32.0f }, { -32.0f,   0.0f, -12.0f, -28.0f },
+      {  32.0f,   0.0f,  12.0f, -28.0f }, {   0.0f, -32.0f,   0.0f, -32.0f },
+      { -32.0f,   0.0f, -18.0f, -24.0f }, {  32.0f,   0.0f,  18.0f, -24.0f },
+      { -16.0f, -32.0f,  -6.0f, -32.0f }, {  16.0f, -32.0f,   6.0f, -32.0f } },
+    /* 机体 2 = 咲夜（pl02.sht）：原始两块 x = 弧度、y = 半径 → 换算成像素（位移 = (r·cosθ, r·sinθ)、θ = −π/2 + 表值）：
+     *   NF 原始 (0,38) (0.34907,38) (−0.34907,38) (0,38) (0.61087,38) (−0.61087,38) (0.29671,38) (−0.29671,38) (1.0472,38) (−1.0472,38)
+     *   F  原始 (0,38) (0.34907,38) (−0.34907,38) (0,38) (0.61087,38) (−0.61087,38) (0.34907,38) (−0.34907,38) (1.0472,38) (−1.0472,38)
+     *   ⇒ 每格 = (r·sin a, −r·cos a)（离线算，定点值 = (int)(px×128) 与原式逐格一致）*/
+    { {   0.0f, -38.0f,    0.0f, -38.0f }, {  12.996765f, -35.708321f,  12.996765f, -35.708321f },
+      { -12.996765f, -35.708321f, -12.996765f, -35.708321f }, {  0.0f, -38.0f,   0.0f, -38.0f },
+      {  21.795904f, -31.127777f,  21.795904f, -31.127777f },
+      { -21.795904f, -31.127777f, -21.795904f, -31.127777f },
+      {  11.110125f, -36.339581f,  12.996765f, -35.708321f },
+      { -11.110125f, -36.339581f, -12.996765f, -35.708321f },
+      {  32.908966f, -18.999998f,  32.908966f, -18.999998f },
+      { -32.908966f, -18.999998f, -32.908966f, -18.999998f } },
+    /* 机体 3 = 早苗（pl03.sht）：NF = (0,−38) (−20,−38) (20,−38) (−32,−36) (32,−36) (0,−40) (−36,−34) (36,−34) (−16,−38) (16,−38)
+     *                             F  = (0,−28) (−24,−28) (24,−28) (−26,−24) (26,−24) (0,−32) (−28,−20) (28,−20) (−8,−32) (8,−32) */
+    { {   0.0f, -38.0f,   0.0f, -28.0f }, { -20.0f, -38.0f, -24.0f, -28.0f },
+      {  20.0f, -38.0f,  24.0f, -28.0f }, { -32.0f, -36.0f, -26.0f, -24.0f },
+      {  32.0f, -36.0f,  26.0f, -24.0f }, {   0.0f, -40.0f,   0.0f, -32.0f },
+      { -36.0f, -34.0f, -28.0f, -20.0f }, {  36.0f, -34.0f,  28.0f, -20.0f },
+      { -16.0f, -38.0f,  -8.0f, -32.0f }, {  16.0f, -38.0f,   8.0f, -32.0f } },
+};
+
+/* `T[count−1]`：三角序列的前 4 项（`th18:0x4cdb5c` 的 {0,0,1,3,6,…} 取 +1 项 ⇒ {0,1,3,6,10,…}）。
+ * 声明 N 个时第 i 格用 `T[N−1] + i`：N=1 → k0；N=2 → k1,2；N=3 → k3,4,5；N=4 → k6,7,8,9（正好覆盖 10 格块）。*/
+static const unsigned char YK_OPT_TRI[YK_OPTION_CELLS] = { 0, 1, 3, 6 };
+
+int yk_option_offsets(int character, int count, int cell, yk_opt_off_t *out)
+{
+    int k;
+
+    if (!out) return 0;
+    if (character < 0 || character >= YK_OPTION_CHARS) return 0;
+    if (count < 1 || count > YK_OPTION_CELLS) return 0;
+    if (cell < 0 || cell >= count) return 0;
+    k = (int)YK_OPT_TRI[count - 1] + cell;
+    if (k < 0 || k > 9) return 0;                        /* 块只有 10 格（`+0x40`..`+0x8f`）*/
+    out->nfx = YK_OPT_BLOCK[character][k][0];
+    out->nfy = YK_OPT_BLOCK[character][k][1];
+    out->fx  = YK_OPT_BLOCK[character][k][2];
+    out->fy  = YK_OPT_BLOCK[character][k][3];
+    return 1;
 }
 
 /* ------------------------------------------------------------------ §3.4 弹幕 */

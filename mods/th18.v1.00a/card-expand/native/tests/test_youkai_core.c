@@ -57,13 +57,92 @@ int main(void)
     CHECK(yk_body_sprite(0) < 0);                     /* 高速不抢写（设计：高速 = 原机体）*/
     CHECK(yk_body_sprite(1) < 0);                     /* ★ 占位：妖侧 sprite 资产未到 ⇒ 现在也不抢写 */
 
-    /* ============================== §3.3 子机（SDK 的低速子机声明层，spec §3.3.1）*/
-    CHECK(yk_option_count(1) == YK_OPTION_COUNT_FOCUSED);
-    CHECK(yk_option_count(0) == YK_OPTION_COUNT_UNFOCUSED);
-    CHECK(yk_option_count(0) == 0);                           /* 高速：一格槽都不占（用户定案 5）*/
-    CHECK(!yk_option_wanted(0));
-    CHECK(yk_option_wanted(1) == (YK_OPTION_COUNT_FOCUSED > 0));   /* wanted = count > 0（与占位值无关）*/
-    CHECK(YK_OPTION_COUNT_UNFOCUSED == 0);                    /* 高速永不声明（用户定案 5）*/
+    /* ============================== §3.3 子机（SDK 的低速子机声明层，spec §3.3.1 / §12.4）*/
+    /* --- 数量表：用户定案「看不同机体在永夜抄与天空璋（文文）的数量」+ 一手出处见 youkai_core.h。
+     *     行 = 机体 0..3（霊夢/魔理沙/咲夜/早苗），列 = 火力档 0..4（CURRENT_POWER/100 钳位）。*/
+    for (i = 0; i < 5; ++i) {
+        CHECK(yk_option_count(1, 0, (int)i) == 1);            /* 霊夢 → th08 pl00 妖侧（八雲紫）= 1，与 P 无关 */
+        CHECK(yk_option_count(1, 1, (int)i) == 1);            /* 魔理沙 → th08 pl01 妖侧（アリス）= 1，与 P 无关 */
+        CHECK(yk_option_count(1, 2, (int)i) == 4);            /* 咲夜 → th08 pl02 妖侧（レミリア）= 4，与 P 无关 */
+    }
+    CHECK(yk_option_count(1, 3, 0) == 0);                     /* 早苗 → th16 pl03（射命丸文）= floor(P/100) */
+    CHECK(yk_option_count(1, 3, 1) == 1);
+    CHECK(yk_option_count(1, 3, 2) == 2);
+    CHECK(yk_option_count(1, 3, 3) == 3);
+    CHECK(yk_option_count(1, 3, 4) == 4);
+    CHECK(YK_OPTION_BY_CHAR[3][4] == 4);                      /* 表本体可读（youkai_core.h）*/
+    CHECK(YK_OPTION_TIERS == YK_SHOT_TIERS);                  /* 列数 = 五档（同一组火力档）*/
+    CHECK(YK_OPTION_CHARS == 4);
+    /* 高速：一格槽都不占（用户定案 5）——与机体 / 火力无关 */
+    for (i = 0; i < 4; ++i) {
+        int lv;
+        for (lv = 0; lv < 5; ++lv) {
+            CHECK(yk_option_count(0, (int)i, lv) == 0);
+            CHECK(!yk_option_wanted(0, (int)i, lv));
+        }
+    }
+    /* wanted = count > 0（膛口 = 子机 ⇒ 它顺带就是「妖侧能不能发弹」的判据）*/
+    CHECK(yk_option_wanted(1, 2, 0));                         /* 咲夜档 0 也有 4 个 */
+    CHECK(!yk_option_wanted(1, 3, 0));                        /* 早苗档 0 = 0 个（th16:0x4444c1 的清格循环）*/
+    CHECK(yk_option_wanted(1, 3, 1));
+    /* 越界一律钳进表内（引擎读到的值不信任）：机体 < 0 / > 3、档 < 0 / > 4 */
+    CHECK(yk_option_count(1, -5, 2) == yk_option_count(1, 0, 2));
+    CHECK(yk_option_count(1, 99, 2) == yk_option_count(1, 3, 2));
+    CHECK(yk_option_count(1, 2, -3) == yk_option_count(1, 2, 0));
+    CHECK(yk_option_count(1, 3, 99) == yk_option_count(1, 3, 4));
+
+    /* --- 逐格阵型（spec §12.4 的形状缺口）：**「咲夜 = 4」必须真的是 4 个不同的位置** ---
+     * 表 = 零售 `pl0X.sht` 的位置块（一手出处见 youkai_core.h §3.3），格号 k = T[count-1] + i。*/
+    {
+        yk_opt_off_t o1, o2;
+        int c, k, j;
+
+        for (c = 0; c < YK_OPTION_CHARS; ++c) {
+            for (k = 1; k <= YK_OPTION_CELLS; ++k) {
+                for (j = 0; j < k; ++j) {
+                    CHECK(yk_option_offsets(c, k, j, &o1));           /* 每格都取得到 */
+                    /* 同一档内任意两格不重合（聚焦/非聚焦各自都不重合）*/
+                    int m;
+                    for (m = j + 1; m < k; ++m) {
+                        CHECK(yk_option_offsets(c, k, m, &o2));
+                        CHECK(!(o1.fx == o2.fx && o1.fy == o2.fy));
+                        CHECK(!(o1.nfx == o2.nfx && o1.nfy == o2.nfy));
+                    }
+                }
+                CHECK(!yk_option_offsets(c, k, k, &o1));              /* 第 count 格起 = 无此格 */
+            }
+        }
+        /* 早苗 4 格 = 引擎给 4 个原生子机准备的那 4 个位置（k = 6..9 的 `+0x90` 块）*/
+        CHECK(yk_option_offsets(3, 4, 0, &o1) && o1.fx == -28.0f && o1.fy == -20.0f);
+        CHECK(yk_option_offsets(3, 4, 1, &o1) && o1.fx == 28.0f  && o1.fy == -20.0f);
+        CHECK(yk_option_offsets(3, 4, 2, &o1) && o1.fx == -8.0f  && o1.fy == -32.0f);
+        CHECK(yk_option_offsets(3, 4, 3, &o1) && o1.fx == 8.0f   && o1.fy == -32.0f);
+        CHECK(yk_option_offsets(3, 4, 0, &o1) && o1.nfx == -36.0f && o1.nfy == -34.0f);  /* 非聚焦块 */
+        /* ★ 咲夜（机体 2）：表里的数是**离线换算后的像素**（原始 (弧度, 半径) 见 youkai_core.c 的注释）。
+         * 这 4 格（k=6..9）正好是「头顶上一圈 ±17°/±60°、半径 38」的四点 ⇒ 必须互不相同、且都在头顶上方。*/
+        for (j = 0; j < 4; ++j) {
+            CHECK(yk_option_offsets(2, 4, j, &o1));
+            CHECK(o1.fy < 0.0f);                                   /* 静止（lean = −π/2）时 4 格都在上方 */
+            CHECK(o1.fx != 0.0f);                                  /* 且左右分开（不是一条竖线） */
+            for (k = j + 1; k < 4; ++k) {
+                CHECK(yk_option_offsets(2, 4, k, &o2));
+                CHECK(o1.fx != o2.fx || o1.fy != o2.fy);
+            }
+        }
+        CHECK(yk_option_offsets(2, 4, 0, &o1) && o1.fx == 12.996765f   && o1.fy == -35.708321f);   /* 聚焦块 */
+        CHECK(yk_option_offsets(2, 4, 1, &o1) && o1.fx == -12.996765f  && o1.fy == -35.708321f);
+        CHECK(yk_option_offsets(2, 4, 2, &o1) && o1.fx == 32.908966f   && o1.fy == -18.999998f);
+        CHECK(yk_option_offsets(2, 4, 3, &o1) && o1.fx == -32.908966f  && o1.fy == -18.999998f);
+        CHECK(yk_option_offsets(2, 4, 0, &o1) && o1.nfx == 11.110125f  && o1.nfy == -36.339581f);  /* 非聚焦块 */
+        /* 越界参数：机体 / count / cell / 空指针 */
+        CHECK(!yk_option_offsets(4, 1, 0, &o1));
+        CHECK(!yk_option_offsets(-1, 1, 0, &o1));
+        CHECK(!yk_option_offsets(0, 0, 0, &o1));
+        CHECK(!yk_option_offsets(0, YK_OPTION_CELLS + 1, 0, &o1));
+        CHECK(!yk_option_offsets(0, 1, -1, &o1));
+        CHECK(!yk_option_offsets(0, 1, 0, NULL));
+    }
+
     CHECK(yk_option_script_changed(50, 50) == 0);             /* 一致 ⇒ 不用重申请 */
     CHECK(yk_option_script_changed(50, 51) == 1);             /* 声明的脚本和手里那个不一样 ⇒ 重申请 */
     CHECK(yk_option_script_changed(50, -1) == 0);             /* 手里还没有子机 ⇒ 不算「变了」 */

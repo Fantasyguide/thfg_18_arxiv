@@ -288,16 +288,67 @@ static void test_declare_layers(void)
     CHECK(ce_rescue_note_claim(999) == 0);             /* 越界 id：不记、返回 0 */
     CHECK(ce_rescue_note_owner() == -1);
 
-    /* 低速子机声明：id 最小者胜；退出后第二张顶上 */
-    ce_optpose_reset();
-    CHECK(ce_optpose_winner() == -1 && ce_optpose_pose() == NULL);
-    ce_optpose_declare(111, 2, 30, 20.0f, 0.0f, 30.0f, 0.0f);
-    CHECK(ce_optpose_winner() == 111);
-    ce_optpose_declare(108, 4, 17, 12.0f, 0.0f, 18.0f, 0.0f);
-    CHECK(ce_optpose_winner() == 108);                 /* 108 < 111 ⇒ 妖机体覆盖 SA 子机层 */
-    CHECK(ce_optpose_pose()->count == 4 && ce_optpose_pose()->anm_script == 17);
-    ce_optpose_declare(108, 0, 0, 0.0f, 0.0f, 0.0f, 0.0f);
-    CHECK(ce_optpose_winner() == 111 && ce_optpose_pose()->count == 2);
+    /* ---- 低速子机声明层（spec §3.3.1：逐格偏移 / id 最小者胜 / 每帧清集合 / 落笔权交接）----
+     * 「为什么必须逐格」在 sdk_core.h 的 `CE_OPTION_POSE_CELLS` 块注释（一手）；
+     * 这里钉**行为**：选举、逐格存储、钳位、每帧退出、退位通知。*/
+    {
+        ce_option_pose_t p;
+        int prev = 123;
+
+        ce_optpose_reset();
+        CHECK(ce_optpose_winner() == -1 && ce_optpose_pose() == NULL);
+
+        /* 111（SA 子机层）先声明 2 格 */
+        memset(&p, 0, sizeof p);
+        p.count = 2; p.anm_script = 30;
+        p.cell[0].fx = 20.0f; p.cell[0].ux = 30.0f;
+        p.cell[1].fx = -20.0f; p.cell[1].ux = -30.0f;
+        CHECK(ce_optpose_declare(111, &p) == 2);
+        CHECK(ce_optpose_winner() == 111);
+        CHECK(ce_optpose_pose()->count == 2 && ce_optpose_pose()->anm_script == 30);
+        CHECK(ce_optpose_pose()->cell[1].fx == -20.0f);        /* 逐格：第 2 格不是第 1 格的副本 */
+
+        /* 108（妖机体）声明 4 格 ⇒ 108 < 111 ⇒ 它落笔 */
+        memset(&p, 0, sizeof p);
+        p.count = 4; p.anm_script = 17;
+        for (int k = 0; k < 4; ++k) { p.cell[k].fx = (float)(k + 1); p.cell[k].ux = (float)(10 * (k + 1)); }
+        CHECK(ce_optpose_declare(108, &p) == 4);
+        CHECK(ce_optpose_winner() == 108);
+        CHECK(ce_optpose_pose()->count == 4 && ce_optpose_pose()->anm_script == 17);
+        CHECK(ce_optpose_pose()->cell[3].fx == 4.0f && ce_optpose_pose()->cell[3].ux == 40.0f);
+
+        /* 帧界落笔点（先落笔、后清集合）：第一次只记录落笔者，退位者 = -1 */
+        CHECK(ce_optpose_frame(&prev) == 108 && prev == -1);
+
+        /* 108 退出声明（松 Shift）⇒ 111 顶上；**退位通知**给出 108（SDK 要补叫它一次去收子机）*/
+        CHECK(ce_optpose_declare(108, NULL) == 0);
+        CHECK(ce_optpose_winner() == 111);
+        CHECK(ce_optpose_frame(&prev) == 111 && prev == 108);
+
+        /* 落笔者没变 ⇒ 不重复通知 */
+        CHECK(ce_optpose_frame(&prev) == 111 && prev == -1);
+
+        /* 每帧清集合：清完就没人声明（= 上一帧声明过的卡不重发就退出）*/
+        ce_optpose_frame_reset();
+        CHECK(ce_optpose_winner() == -1 && ce_optpose_pose() == NULL);
+        CHECK(ce_optpose_frame(&prev) == -1 && prev == 111);   /* 111 也退位 ⇒ 通知一次 */
+
+        /* 钳位：count > CELLS ⇒ 钳到 CELLS（返回值 = 真正记下的格数）*/
+        memset(&p, 0, sizeof p);
+        p.count = CE_OPTION_POSE_CELLS + 3; p.anm_script = 9;
+        CHECK(ce_optpose_declare(108, &p) == CE_OPTION_POSE_CELLS);
+        CHECK(ce_optpose_pose()->count == CE_OPTION_POSE_CELLS);
+        /* count <= 0 / 越界 id：都是「不参与」，且不破坏已有选举 */
+        p.count = -1;
+        CHECK(ce_optpose_declare(111, &p) == 0);
+        CHECK(ce_optpose_winner() == 108);
+        CHECK(ce_optpose_declare(999, &p) == 0);               /* 越界 id：不记 */
+        ce_optpose_drop(108);                                  /* 删卡 = 立刻退出声明 */
+        CHECK(ce_optpose_winner() == -1);
+        (void)ce_optpose_frame(&prev);
+        ce_optpose_reset();
+        CHECK(ce_optpose_winner() == -1);
+    }
 }
 
 

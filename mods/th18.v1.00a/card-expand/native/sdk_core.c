@@ -323,32 +323,65 @@ int ce_cancel_latch_claim(uint32_t id)
 int ce_cancel_latch_owner(void) { return s_cancel_latch_owner; }
 
 
-/* ---- 低速子机声明层（选举 id 最小者）---- */
+/* ---- 低速子机声明层（选举 id 最小者 + 逐格偏移 + 每帧清集合 + 落笔权交接）----
+ * 语义 / 一手依据（为什么必须逐格）全在 sdk_core.h 的块注释里。这里只写实现上的取舍：
+ *   · 声明是**每帧**的（`ce_optpose_frame_reset` 由 SDK 在每个 `BP_ce_item_frame` 里调）⇒
+ *     不声明就退出，不需要「粘性 + 显式清 0」那一套（与伤害层不同，那张表是粘性的）；
+ *   · 清集合只清 `count`（落笔者的 cells/script 只在该 id 赢时才被读，赢了必然是这一帧刚写的）；
+ *   · 交接记账 `s_optpose_current` 只在 `ce_optpose_frame()` 里推进 —— 删卡（`ce_optpose_drop`）
+ *     不改它，好让「上一帧的落笔者这一帧不在了」照走一次退位通知（对方可能已经不在了，SDK 自己会跳过）。*/
 static ce_option_pose_t s_optpose[CE_SDK_CARD_ID_MAX + 1];
 static int s_optpose_winner = -1;
+static int s_optpose_current = -1;
+
+static void optpose_recompute(void)
+{
+    s_optpose_winner = -1;
+    for (int id = 0; id <= CE_SDK_CARD_ID_MAX; ++id) {
+        if (s_optpose[id].count > 0) { s_optpose_winner = id; break; }   /* id 最小的那张 */
+    }
+}
 
 void ce_optpose_reset(void)
 {
     for (int id = 0; id <= CE_SDK_CARD_ID_MAX; ++id) {
         s_optpose[id].count = 0;
         s_optpose[id].anm_script = 0;
-        s_optpose[id].fx = s_optpose[id].fy = 0.0f;
-        s_optpose[id].ux = s_optpose[id].uy = 0.0f;
+        for (int k = 0; k < CE_OPTION_POSE_CELLS; ++k) {
+            s_optpose[id].cell[k].fx = 0.0f;
+            s_optpose[id].cell[k].fy = 0.0f;
+            s_optpose[id].cell[k].ux = 0.0f;
+            s_optpose[id].cell[k].uy = 0.0f;
+        }
     }
     s_optpose_winner = -1;
+    s_optpose_current = -1;
 }
 
-void ce_optpose_declare(uint32_t id, int count, int anm_script, float fx, float fy, float ux, float uy)
+int ce_optpose_declare(uint32_t id, const ce_option_pose_t *p)
 {
-    if (id > (uint32_t)CE_SDK_CARD_ID_MAX) return;
-    ce_option_pose_t *p = &s_optpose[id];
-    p->count = count > 0 ? count : 0;
-    p->anm_script = anm_script;
-    p->fx = fx; p->fy = fy; p->ux = ux; p->uy = uy;
-    s_optpose_winner = -1;                       /* 重新选举：id 最小且 count > 0 的那张 */
-    for (int i = 0; i <= CE_SDK_CARD_ID_MAX; ++i) {
-        if (s_optpose[i].count > 0) { s_optpose_winner = i; break; }
+    int n;
+
+    if (id > (uint32_t)CE_SDK_CARD_ID_MAX) return 0;
+    if (!p || p->count <= 0) {                 /* 退出声明（也覆盖「声明 NULL」这条）*/
+        s_optpose[id].count = 0;
+        optpose_recompute();
+        return 0;
     }
+    n = p->count > CE_OPTION_POSE_CELLS ? CE_OPTION_POSE_CELLS : p->count;
+    s_optpose[id].count = n;
+    s_optpose[id].anm_script = p->anm_script;
+    for (int k = 0; k < n; ++k) s_optpose[id].cell[k] = p->cell[k];   /* 只拷有效格 */
+    optpose_recompute();
+    return n;
+}
+
+void ce_optpose_drop(uint32_t id) { (void)ce_optpose_declare(id, NULL); }
+
+void ce_optpose_frame_reset(void)
+{
+    for (int id = 0; id <= CE_SDK_CARD_ID_MAX; ++id) s_optpose[id].count = 0;
+    s_optpose_winner = -1;
 }
 
 int ce_optpose_winner(void) { return s_optpose_winner; }
@@ -357,6 +390,16 @@ const ce_option_pose_t *ce_optpose_pose(void)
 {
     if (s_optpose_winner < 0) return NULL;
     return &s_optpose[s_optpose_winner];
+}
+
+int ce_optpose_frame(int *out_prev)
+{
+    int win = s_optpose_winner;
+    int prev = (s_optpose_current >= 0 && s_optpose_current != win) ? s_optpose_current : -1;
+
+    if (out_prev) *out_prev = prev;
+    s_optpose_current = win;
+    return win;
 }
 
 
