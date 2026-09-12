@@ -1,0 +1,44 @@
+script script214 {
+// 地灵殿（111）信号槽左下的**静态图标** —— 逐条搬 TH11 `front.anm` **script35**
+//
+// 一手原文（`thanm -l 11 local/th11.v1.00a/dat/front.anm -m …/v4.anmm`）：
+//     script35 {
+//         layer(18);
+//         sprite(sprite26);
+//         randMode(1);
+//         anchor(1, 2);
+//         pos(30.0f, 468.0f, 0.0f);
+//         resampleMode(1);
+//         alpha(0);
+//       +20: alphaTime(20, 0, 255); stop();
+//            interruptLabel(2): alphaTime(30, 0, 255); stop();
+//            interruptLabel(3): alphaTime(10, 0, 64);  stop();
+//     }
+// 贴图：@SIGNAL_GAUGE_ICON@ = `ability/signal/SIGNAL_GAUGE_ICON.png`
+//   （16×16 = 源 sprite26 (256,80,16,16) **原样切**，不缩放不补边）
+//
+// 偏差：丢 `randMode(1)`；`layer(18)` → **25**（TH18 里 18 属世界列表，HUD 必须 24/25，
+//   25 = 组 38 = 直接进后备缓冲 ⇒ 被暂停模糊罩盖住且进 P 键截图，依据
+//   `engine/anm/th18/05-snapshot-and-surfaces.md` §5/§6/§7.1）；补 `resolutionMode(2)`
+//   （`pos(30,468)` → `(60,936)`）；`anchor(1,2)` = （左，底）照抄。
+// 和 211/212 共享那两个淡出/淡入中断（2 = 淡回 255、3 = 压暗到 64），卡侧边沿触发。
+// ⚠ 时间标签：零售原文**没有 `-1:`**（起首那几条指令的时间 = 0）⇒ 本脚本也不写它。
+//   写了 `-1:` 会让后面那个 `+20:` 变成**第 19 帧**（`+N` 是相对上一条标签的），
+//   淡入就早一帧开始 —— 这是本轮自检（编出来与零售逐行 diff）抓到的，已改。
+    layer(25);
+    sprite(@SIGNAL_GAUGE_ICON@);
+    anchor(1, 2);
+    pos(60.0f, 936.0f, 0.0f);
+    resampleMode(1);
+    resolutionMode(2);
+    alpha(0);
++20: // 20
+    alphaTime(20, 0, 255);
+    stop();
+    interruptLabel(2);
+    alphaTime(30, 0, 255);
+    stop();
+    interruptLabel(3);
+    alphaTime(10, 0, 64);
+    stop();
+}

@@ -1,0 +1,33 @@
+script script207 {
+    // 由 assets/ability/make_youkai_familiar_art.py 从 TH08 v1.00d `enemy.anm` script54 生成，别手改。
+    // これは「使い魔」の見た目：TH08 の ECL opcode 90/91/92 が作る敵が自分で張る `enemy.anm` script54。
+    // 一手 opcode 号：`th08:0x418623 jmp DWORD PTR [edx*4+0x41ecbe]`（index = opcode−1）
+    //   → 90/th08:0x41af5b、91/th08:0x41b10b、92/th08:0x41b2bb → `Enemy::create_enemy_familiar_2` th08:0x41f110
+    //   / `Enemy::enemy_create_familiar` th08:0x41f280 → `EnemyManager::create_enemy` th08:0x42a680。
+    // 外观链条：sub 里 `ins_54(54)` → `AnmLoaded::load_script_into_vm` th08:0x4069f0
+    //   (this = `th08:0xf54e0c`，vm = `zEnemy+0xc primary_vm`)。
+    // 🟡 `th08:0xf54e0c` 为哪个 .anm：K 上界 95 ⇒ 只可能是 enemy.anm(101 支) 或 etama.anm(115 支)；
+    //   按「它写的是敌机本体 VM」判为 **enemy.anm**（贴图 data/stgenm/enemy.png）——见生成器文件头 ②。
+    // 指令逐条照抄（sprite/jmp/标签一字未动），只把 sprite 引用换成 ORDER 名字：
+    //   sprite77 → @YOUKAI_FAM_S54_0，sprite78 → @YOUKAI_FAM_S54_1，sprite79 → @YOUKAI_FAM_S54_2，sprite80 → @YOUKAI_FAM_S54_3，sprite81 → @YOUKAI_FAM_S54_4，sprite82 → @YOUKAI_FAM_S54_5，sprite83 → @YOUKAI_FAM_S54_6，sprite84 → @YOUKAI_FAM_S54_7
+    // 该循环 8 帧、每帧 2 帧间隔（零售 `+2:`），可见像素均值 RGB≈(171, 209, 166)。
+    // ⚠ 零售这支脚本里**没有 layer()**（敌机本体 VM 的层由引擎定）⇒ 这里也不写；挂独立 VM 时由挂它的那一方自己补 layer（世界层 3–19，别用 HUD 的 24/25）。
+offset0:
+    sprite(@YOUKAI_FAM_S54_0);
++2: // 2
+    sprite(@YOUKAI_FAM_S54_1);
++2: // 4
+    sprite(@YOUKAI_FAM_S54_2);
++2: // 6
+    sprite(@YOUKAI_FAM_S54_3);
++2: // 8
+    sprite(@YOUKAI_FAM_S54_4);
++2: // 10
+    sprite(@YOUKAI_FAM_S54_5);
++2: // 12
+    sprite(@YOUKAI_FAM_S54_6);
++2: // 14
+    sprite(@YOUKAI_FAM_S54_7);
++2: // 16
+    jmp(offset0, 0);
+}

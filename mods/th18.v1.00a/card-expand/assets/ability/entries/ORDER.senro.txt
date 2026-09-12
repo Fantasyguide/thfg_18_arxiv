@@ -1,0 +1,21 @@
+# 妖妖梦（TH07 系统卡 107）**森罗结界**的两张贴图 —— 由 assets/ability/make_senro_art.py 生成，别手改。
+# 格式同 entries/ORDER.txt：一行 `NAME  源图(相对 assets/)  WxH`。
+# ⚠️ 本文件**不参与构建**（`build_ability.py` 只读 entries/ORDER.txt）—— 合并时把下面两行并进去。
+#
+# 一手（全部在 TH07 v1.00b 零售里，逐条见生成器文件头）：
+#   FIELD = `etama.anm` entry3 的贴图 `data/etama/etama4.png` **整张**（sprite0 = 0,0,256,256）
+#           ← 脚本 = entry3 的文件内脚本 0（`thanm -l` 的 script64）
+#           ← 它是 **effect type 0x1c**：`th07:0x441aa4`（开结界）/ `th07:0x441c19`（灵击崩结界）
+#             `push 0x1c; call 0x41c610`；type→脚本表 `th07:0x49efc0` 第 28 项 = 731
+#   RING  = `etama.anm` entry1 的贴图 `data/etama/etama2.png` 的 sprite28（128,112,64,64）
+#           ← 脚本 = entry1 的文件内脚本 10（`thanm -l` 的 script35）
+#           ← 它是 **effect type 0x1d**：`th07:0x441dd9`–`0x441e38` 的 32 次循环
+#             `push 0x1d; call 0x41c1c0`；表 `th07:0x49efc0` 第 29 项 = 690
+#   id 落点：`AnmManager::loadAnm` `th07:0x44df90` → base 每 entry 前进「上一 entry 的 sprite 数」，
+#           `etama.anm` base 512 → 680（entry1）→ 730（entry2）→ **731**（entry3）✓
+#           （交叉印证：道具脚本 = `0x2c4 + type` = 708+type 落在 680+28..，见 make_sakura_art.py）
+#
+# 尺寸都是 2 的幂（256×256 / 64×64），**原样切、不重采样**；脚本里也**不加 scale**
+# （TH18 世界层 VM 的尺寸就是 640 空间的 ECL 单位，1 单位 = 2 表面 px ⇒ 原尺寸观感）。
+SENRO_FIELD  ability/senro/FIELD.png  256x256
+SENRO_RING   ability/senro/RING.png    64x64

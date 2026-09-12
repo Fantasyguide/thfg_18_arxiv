@@ -12,6 +12,42 @@
 #   16×16 直接就是 2 的幂 ⇒ **不放大、不重拼**，只做「居中进 32×32 画布」吗？不必：
 #         build_ability.py 允许源图 **小于** 声明尺寸（自动居中补透明），所以这里声明 16x16 最忠实。
 FAITH_DOT  ability/mof/FAITH_DOT.png  16x16
+#   ⚠ **这一行已经在主 `entries/ORDER.txt` 里了**（上一批已由主 agent 合并）⇒ 合并本片段时
+#     跳过它，只取下面 `MOF_FAITH_*` 那 11 行（重名会让 `read_order` 直接报错）。
 #
 # ── ★ 脚本号 ──────────────────────────────────────────────────────────────
 #   185_faith_dot.anm.txt  引用 @FAITH_DOT（上面这一行）；**不引用任何同批脚本号**。
+
+# ======================================================================================
+# 110（风神录）的**信仰读数 HUD** 零售切图 —— 由 assets/ability/make_mof_hud_art.py 生成，别手改。
+# ======================================================================================
+# 一手出处（✅ 逐条可复核，全文见 make_mof_hud_art.py 的文件头）：
+#   源图  TH10 `front.anm` **entry0** = `front/front00.png`（512×512、`format: 5`）
+#   值    `Gui::on_tick` th10:0x414a60 `mov ebp,[0x474c4c]`（信仰存储值）+ 5 次逐位 idiv →
+#         `AnmVm::set_sprite` 0x43e5a0（sprite = 数字 + 30）
+#   装载  `Gui::initialize` th10:0x413d5e–0x413d7e 对 GUI+0x8094 起 **7 个** VM 跑 front.anm script51..57
+#   几何  script51 pos(32,448) sprite29 / script52..56 pos(48+7k,450) sprite30+d / script57 pos(83,450)
+#         sprite30（**恒 '0'**：全 exe 无一处写第 7 个 VM 的 sprite ⇒ 显示值 = 存储值×10）
+#         anchor(1,1) = （左，顶）（同 front.anm 的 HUD 边框条 script2..5 一手推得）
+#   尺寸  16×16 与 8×9 → 图标原样切；数字补成 **8×16**（宽 8 已是 2 的幂 ⇒ 横向零补边、
+#         7px 字距不被破坏；字形贴最上面 9 行 ⇒ anchor(1,1) 下 VM pos = 零售 pos，逐像素同址）
+MOF_FAITH_ICON     ability/mof/FAITH_ICON.png     16x16
+MOF_FAITH_DIGIT_0  ability/mof/FAITH_DIGIT_0.png  8x16
+MOF_FAITH_DIGIT_1  ability/mof/FAITH_DIGIT_1.png  8x16
+MOF_FAITH_DIGIT_2  ability/mof/FAITH_DIGIT_2.png  8x16
+MOF_FAITH_DIGIT_3  ability/mof/FAITH_DIGIT_3.png  8x16
+MOF_FAITH_DIGIT_4  ability/mof/FAITH_DIGIT_4.png  8x16
+MOF_FAITH_DIGIT_5  ability/mof/FAITH_DIGIT_5.png  8x16
+MOF_FAITH_DIGIT_6  ability/mof/FAITH_DIGIT_6.png  8x16
+MOF_FAITH_DIGIT_7  ability/mof/FAITH_DIGIT_7.png  8x16
+MOF_FAITH_DIGIT_8  ability/mof/FAITH_DIGIT_8.png  8x16
+MOF_FAITH_DIGIT_9  ability/mof/FAITH_DIGIT_9.png  8x16
+#
+# ── ★ 脚本号 ──────────────────────────────────────────────────────────────
+#   209_mof_faith_icon.anm.txt    引用 @MOF_FAITH_ICON@（TH10 script51 逐条抄）
+#   210_mof_faith_digit.anm.txt   引用 @MOF_FAITH_DIGIT_0@（TH10 script52 逐条抄；52..57 六条**正文逐字相同**、
+#                                 只差 pos 字面量与初 sprite ⇒ 合并成一条，位置由卡侧每帧 set_pos 覆盖。
+#                                 末位恒 '0' 的那个 VM 复用本脚本、sprite 不换 ⇒ 就是零售 script57。）
+#   两条都**不引用任何同批脚本号**（叶子），合并压缩重编号时只需改文件名/编号。
+#   ⚠ 连击条（th10:0x4158b6 的两个四边形）**没有贴图**：零售是引擎 D3D 画的 ⇒ 用现成脚本 104
+#     （`stock_rect` = 1×1 drawRect，layer 25）在卡侧拼同样两个四边形，登记为「载体不同」（❓ 自定）。

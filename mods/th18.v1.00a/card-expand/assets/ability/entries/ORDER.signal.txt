@@ -1,0 +1,31 @@
+# 111（地灵殿 · 信号槽）的 HUD 零售切图
+# —— 由 assets/ability/make_signal_hud_art.py 生成，别手改。
+# 格式同 entries/ORDER.txt：一行 `NAME  源图(相对 assets/)  WxH`。
+# ⚠️ 本文件**不参与构建**（`build_ability.py` 只读 entries/ORDER.txt）—— 合并时把这几行并进去。
+#
+# ⚠ 订正：任务书把 111 写成「星莲船」，本仓 111 = **地灵殿（TH11 SA）**、112 才是星莲船（TH12 UFO）
+#   （`CARDS.md`:255）。信号槽（通信ゲージ）本来就是 SA 的系统 ⇒ 下面切的是 **TH11 `front.anm`**。
+#
+# 一手出处（✅ 逐条可复核，全文见 make_signal_hud_art.py 的文件头）：
+#   源图  TH11 `front.anm` **entry0** = `front/front00.png`（512×512）
+#   装载  `Gui::initialize` th11:0x41a764–0x41a78e：对 GUI+0x2e4c 起 **4 个** VM 跑 front.anm script32..35；
+#         `Gui::on_tick` th11:0x41b55d 每帧 `AnmVm::run` 这四个
+#   几何  script32 sprite57 (416,16,48,16) pos(42,456) anchor(1,2) layer(19) color(32,32,64)  ← 槽底
+#         script33 sprite58 (416,0,48,16)  同 pos/anchor，layer(18)                          ← 增长条
+#         script34 sprite59 (416,0,48,16)  ← **与 58 同矩形**（同一份像素的第二个编号）
+#         script35 sprite26 (256,80,16,16) pos(30,468) anchor(1,2) layer(18)                  ← 静态图标
+#   anchor(1,2) = （左，底）（同 front.anm 的 HUD 边框条 script1..4 一手推得）
+#   增长  引擎把 VM[1] 的**精灵横向尺寸**写成 `9 + 4×档`（`th11:0x41b70b`，档 = pct/10 ∈ 0..10）
+#         ⇒ 信号每 +10 点亮一根 4px 宽的条；VM[2] 每帧被写成零宽（`th11:0x41b71f` `fldz`）⇒ 正常不可见
+#   尺寸  48×16 的宽不是 2 的幂 ⇒ 补到 **64×16**、内容**靠左**（要横向缩放，左缘必须钉住）
+SIGNAL_GAUGE_BG    ability/signal/SIGNAL_GAUGE_BG.png    64x16
+SIGNAL_GAUGE_BAR   ability/signal/SIGNAL_GAUGE_BAR.png   64x16
+SIGNAL_GAUGE_ICON  ability/signal/SIGNAL_GAUGE_ICON.png  16x16
+#
+# ── ★ 脚本号 ──────────────────────────────────────────────────────────────
+#   211_signal_gauge_bg.anm.txt       引用 @SIGNAL_GAUGE_BG@   （TH11 script32 逐条抄）
+#   212_signal_gauge_reticle.anm.txt  引用 @SIGNAL_GAUGE_BAR@  （TH11 script33 逐条抄，含 7/8/9/10/11 号中断闪色）
+#   213_signal_gauge_icon.anm.txt     引用 @SIGNAL_GAUGE_ICON@ （TH11 script35 逐条抄）
+#   三条都**不引用任何同批脚本号**（叶子）。
+#   ⚠ sprite59 / script34（VM[2] 那一层）**不出贴图、不出脚本、卡侧不起 VM**：与 58 同像素，
+#     且零售每帧把它的宽度写成 0（`th11:0x41b71f`）⇒ 正常游玩不可见。见报告「❓/未接」。

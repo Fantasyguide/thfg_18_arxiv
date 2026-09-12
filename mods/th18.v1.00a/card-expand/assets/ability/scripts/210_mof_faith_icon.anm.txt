@@ -1,0 +1,66 @@
+script script210 {
+// 风神录（110）信仰读数的**静态图标** —— 逐条搬 TH10 `front.anm` **script51**
+//
+// 一手原文（`local/vendor/thtk/build/thanm/thanm -l 10 local/th10.v1.00a/dat/front.anm
+//   -m local/vendor/thpages/static/mapfile/v4.anmm`；v4 mapfile 自己写明
+//   「for version 4: StB, Mof」⇒ TH10 用的就是它）：
+//     script51 {
+//         sprite(sprite29);
+//         ins_85(1);
+//         randMode(1);
+//         pos(32.0f, 448.0f, 0.0f);
+//         resampleMode(1);
+//         anchor(1, 1);
+//         layer(15);
+//         alpha(0);
+//       +20: alphaTime(20, 0, 255);
+//            stop();
+//            interruptLabel(3): alphaTime(8, 1, 32); stop();
+//            interruptLabel(2): alphaTime(8, 1, 255); stop();
+//     }
+// 贴图：@MOF_FAITH_ICON = `ability/mof/FAITH_ICON.png`（16×16 = 源 sprite29 (256,80,16,16) 原样切）
+//
+// ── 逐条对应与三处偏差（都要在报告里登记）─────────────────────────────────────
+//   · `sprite(29)` → @MOF_FAITH_ICON（**同一个 sprite**，只是本仓按名字引用）。
+//   · `ins_85(1)` **没搬**：v4 的 85 在 mapfile 里是 `# 85: unknown flag`（无名）；
+//     v4→v8 的 opcode **号不通用**（v8 的 85 是别的指令）⇒ 按号搬会静默指错，按名又没有名字。
+//     旁证（🟡）：这条 flag 在 TH11（v7）的同族脚本里**根本不出现**（`front.anm` script32 起首就是
+//     `layer(19); sprite(57); randMode(1); …`）⇒ 后来的版本默认就是这个行为，丢掉无害。
+//   · `randMode(1)` **没搬**：v4 的 87 = `randMode`（mapfile 有名）↔ v8 的 307 = `randMode`
+//     （v8 mapfile 原话「no known effect in v8 but games still use it」）。同名但**效果未知**，
+//     本卡不需要它 ⇒ 不搬（本仓既有先例：`make_trance_art.py` 搬 TH13 脚本时也略掉了 randMode/ins_431）。
+//   · `layer(15)` → **25**：15 属 TH18 的**世界列表**（走相机 3 视口、永远全分辨率 ⇒ HUD 用它会被
+//     相机裁剪且暂停时不被模糊罩盖住）。25 = UI 列表 → 组 38 → 桩 `th18:0x4878e0`（**直接画进后备缓冲**）
+//     ⇒ 既被暂停模糊罩（`text.anm` script59 = 同组、后画）盖住，又进得了 P 键截图（层 24 会折到组 37、
+//     画进离屏面 B，`0x3a` 那次整面清屏把它挡在截图外）。依据
+//     `engine/anm/th18/05-snapshot-and-surfaces.md` §5/§6/§7.1 + `HUD-LAYOUT.md` §4.1。
+//   · 补 `resolutionMode(2)`（TH10 没有这条）：TH18 的 25 层要显式写才按**表面 px** 定位
+//     ⇒ `pos(32,448)` 写成 2× 的 `(64, 896)`（表面 = 640 空间的 2 倍）。
+//   · `anchor(1,1)` **照抄**：v4/v7 的取值表 = 「0 中 / 1 左 / 2 右；0 中 / 1 顶 / 2 底」
+//     （`engine/anm/OVERVIEW.md` §「锚点的跨版本演化」），v8 的 421 同表。
+//     一手证法：TH10 `front.anm` 的 HUD 边框条 script2..5（sprite0/1/2/3 分别 pos(0,0)/(416,0)/
+//     (32,0)/(32,464)）只有「pos = 矩形左上角」才正好铺满 640×480 的四条边。
+//   · 末段的三个 `interruptLabel` 是**整块 HUD 的淡出/淡入**（零售在 `Gui::on_tick` th10:0x4149a1–0x414a5a
+//     按自机位置发 3 = 压暗 / 2 = 淡回）⇒ 逐字照抄；卡侧只在这些**边沿**发中断（`mof.c` 的 `mof_hud_dim`）。
+// ⚠ 位置（`pos`）最终由卡侧 `ce_anm_set_pos` 每帧写 —— 零售的 `pos(32,448)` 是**绝对屏幕坐标**，
+//   而本仓 HUD 一律「货架锚点 + 偏移」（`HUD-LAYOUT.md` §0）；这里保留零售字面量当初始值。
+// ⚠ 时间标签：零售原文**没有 `-1:`**（起首那几条指令的时间 = 0）⇒ 本脚本也不写它。
+//   写了 `-1:` 会让后面那个 `+20:` 变成**第 19 帧**（`+N` 是相对上一条标签的），
+//   淡入就早一帧开始 —— 这是本轮自检（编出来与零售逐行 diff）抓到的，已改。
+    sprite(@MOF_FAITH_ICON@);
+    pos(64.0f, 896.0f, 0.0f);
+    resampleMode(1);
+    anchor(1, 1);
+    layer(25);
+    resolutionMode(2);
+    alpha(0);
++20: // 20
+    alphaTime(20, 0, 255);
+    stop();
+    interruptLabel(3);
+    alphaTime(8, 1, 32);
+    stop();
+    interruptLabel(2);
+    alphaTime(8, 1, 255);
+    stop();
+}

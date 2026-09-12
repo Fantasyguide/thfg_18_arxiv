@@ -1,0 +1,50 @@
+script script205 {
+    // ★妖妖梦（TH07 系统卡 107）**灵击崩结界时飞出去的那 32 颗**（一颗一份）——
+    //   正文逐条照抄零售 TH07 `data/etama.anm` **entry1**（贴图 `data/etama/etama2.png`）的
+    //   **文件内脚本 10**（`thanm -l` 里的 **script35**），**只**把 `sprite(sprite28)` 换成
+    //   `@SENRO_RING`（见文件尾的一手原文 diff）。
+    //
+    // 一手 ✅（三链交叉；逐条见 assets/ability/make_senro_art.py 文件头）
+    //   · 这是 **effect type 0x1d**：`th07:0x441dd9`–`0x441e38` 的循环（`cmp i,0x20` = **32 次**）
+    //     每轮 `push 0x1d; call 0x41c1c0`（位置 = 自机坐标）⇒ 崩结界那一帧起 **32 个 VM**。
+    //   · 角度/速度**是 C 侧算的、不是脚本**（一手 `th07:0x441dc9`–`0x441e38`）：
+    //       起始角 `0xC0490FDB` = **-π**；每轮 `ang += [0x498cfc]` = **0.19634954 rad = 2π/32 = 11.25°**
+    //       `[vm+0x294] = cos(ang)`（`call 0x48bbf0` = **fcos**）
+    //       `[vm+0x298] = sin(ang)`（`call 0x48bb40` = **fsin**）
+    //     而 type 0x1d 的 update（`th07:0x41ad10`）每帧做
+    //       `pos = [vm+0x288](起点) + ([vm+0x294..])(方向) × 帧×256/30`
+    //     ⇒ **线性外扩**，30 帧走满 256 单位（640 空间；游玩区宽 384）—— 卡侧照抄这一条。
+    //   · type → 脚本号表 `th07:0x49efc0` 第 **0x1d** 项 = **690** = `etama.anm` base 680 + 文件内 id 10 ✓
+    //     （base 512 + entry0 的 168 sprites = 680，见 204 那份的推导；交叉印证 = 道具脚本
+    //      `0x2c4+type` = 708+type 正好落在这同一段 base 上）。
+    //
+    // 行为（脚本层面，逐条）：随机初始朝向（`%F0` ∈ [-π,π)）；随机 ±**36°/帧**自转
+    //   （`0.62831855` = 2π/10；`ijne` 让其中一半走负向；正向那条后面还留了一段
+    //   **永不执行**的 `angleVel(-0.62831855)`，零售原文如此，照抄）；`zWriteDisable(1)`；
+    //   第 10 帧起 `alphaTimeLinear(0, 20)`（20 帧线性淡出）；**第 30 帧 `delete()`**
+    //   （`+20: // 30` 是绝对时间 30 ⇒ 与 C 侧 256/30 的分母同一个 30 ✓）。
+    //
+    // ⚠️ **随机数**：零售原文有 `fsetRand` / `isetRand`（引擎的 anm RNG）。照抄 ——
+    //   同仓先例 = 116 季节卡的 `%RANDRAD` / `%RANDF2`（`113–135_season_*.anm.txt`）。
+    //   ⚠️ **层：零售脚本不写 `layer()`** ⇒ 这里不加，由 `senro.c` 的 `ce_anm_spawn` 补世界层。
+    //
+    // 一手原文 diff（`sprite(...)` → `@...` 是**唯一**差异）：
+    //   -    sprite(sprite28);
+    //   +    sprite(@SENRO_RING);
+    sprite(@SENRO_RING);
+    zWriteDisable(1);
+    fsetRand(%F0, 6.2831855f);
+    fsetSub(%F0, %F0, 3.1415927f);
+    rotate(0.0f, 0.0f, %F0);
+    isetRand($I0, 2);
+    ijne($I0, 0, offset140, 0);
+    angleVel(0.0f, 0.0f, 0.62831855f);
+offset140:
+    jmp(offset176, 0);
+    angleVel(0.0f, 0.0f, -0.62831855f);
++10: // 10
+offset176:
+    alphaTimeLinear(0, 20);
++20: // 30
+    delete();
+}

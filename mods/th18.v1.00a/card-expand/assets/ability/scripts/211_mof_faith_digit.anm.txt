@@ -1,0 +1,45 @@
+script script211 {
+// 风神录（110）信仰读数的**数字位**（5 个动态位 + 1 个恒 '0' 的末位共用本脚本）
+// —— 逐条搬 TH10 `front.anm` **script52**（= script52..57 那六条）
+//
+// 一手原文（`thanm -l 10 local/th10.v1.00a/dat/front.anm -m …/v4.anmm`）：
+//     script52 { sprite(sprite30); ins_85(1); randMode(1); pos(48.0f, 450.0f, 0.0f);
+//                resampleMode(1); anchor(1, 1); layer(15); alpha(0);
+//              +20: alphaTime(20, 0, 255); stop();
+//                interruptLabel(3): alphaTime(8, 1, 32); stop();
+//                interruptLabel(2): alphaTime(8, 1, 255); stop(); }
+//     script53 pos(55,450) / script54 pos(62,450) / script55 pos(69,450) / script56 pos(76,450)
+//     script57 pos(83,450)  ← 末位那个 **恒 '0'** 的 VM（全 exe 无一处改它的 sprite）
+//   ⇒ **六条正文逐字相同**，只差 `pos` 的 x（= 48 + 7k，7px 字距）与初 sprite（都是 sprite30 = '0'，
+//     动态那 5 个随后由引擎 `AnmVm::set_sprite` th10:0x43e5a0 换成 sprite30+数字）。
+//   ⇒ 本仓合并成**一条**脚本：`pos` 由卡侧每帧 `ce_anm_set_pos` 写（零售 6 个固定位置逐条照抄在
+//     `mof.c` 的 `MOF_HUD_DIGIT_X0/DX` 与 `MOF_HUD_ZERO_X` 里），sprite 由卡侧按数字换。
+//
+// 贴图：@MOF_FAITH_DIGIT_0@ = `ability/mof/FAITH_DIGIT_0.png`（**8×16** = 源 sprite30 (272,80,8,9)
+//   贴在画布最上面 9 行；下面 7 行透明）。为什么补成 8×16 而不是 16×16：见 make_mof_hud_art.py —
+//   宽 8 已是 2 的幂 ⇒ 横向**零补边**，`anchor(1,1)` 下字形左上角 = VM pos = 零售 pos，逐像素同址。
+//   其余 9 个数字是 @MOF_FAITH_DIGIT_1@ … @MOF_FAITH_DIGIT_9@（同一 sprite 表里连续的 sprite31..39）。
+//
+// 偏差与 209 完全同源（同一段零售正文）：丢 `ins_85(1)`/`randMode(1)`、`layer(15)`→**25**、
+//   补 `resolutionMode(2)`（`pos(48,450)` → `(96,900)`）、`anchor(1,1)` 照抄。理由逐条写在
+//   `209_mof_faith_icon.anm.txt` 的注释里，此处不重复。
+// ⚠ 时间标签：零售原文**没有 `-1:`**（起首那几条指令的时间 = 0）⇒ 本脚本也不写它。
+//   写了 `-1:` 会让后面那个 `+20:` 变成**第 19 帧**（`+N` 是相对上一条标签的），
+//   淡入就早一帧开始 —— 这是本轮自检（编出来与零售逐行 diff）抓到的，已改。
+    sprite(@MOF_FAITH_DIGIT_0@);
+    pos(96.0f, 900.0f, 0.0f);
+    resampleMode(1);
+    anchor(1, 1);
+    layer(25);
+    resolutionMode(2);
+    alpha(0);
++20: // 20
+    alphaTime(20, 0, 255);
+    stop();
+    interruptLabel(3);
+    alphaTime(8, 1, 32);
+    stop();
+    interruptLabel(2);
+    alphaTime(8, 1, 255);
+    stop();
+}

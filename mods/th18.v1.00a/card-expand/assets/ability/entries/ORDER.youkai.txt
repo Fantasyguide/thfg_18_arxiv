@@ -1,0 +1,38 @@
+# 永夜抄（系统卡 108）妖侧机体本体 —— TH08 v1.00d `player00/01/02.anm` 的 script5..9 + `playerNN.png` 切图。
+# 本片段由 assets/ability/make_youkai_art.py 生成（幂等，整段重写）；合并时把下面这些行追加进 ORDER.txt 即可。
+# 每行 `NAME  源图(相对 assets/)  WxH`；WxH 都是 2 的幂 ⇒ 整张贴图一个 sprite。
+# ★ 一手：妖侧在 `playerNN.png` 的**后半** sprite（人侧是前半），**不是** `playerNNb.png`
+#   （`playerNNb.png` 是符卡/炸弹特效图，见生成器文件头「一手结论 ②」）。
+# 选择依据一手：`th08:0x44b672 movzx ecx,[player+0x3]`（低速位）→ script6/7/8/9 走妖侧那支。
+# 三队 ↔ 妖侧角色：player00 = 八雲紫 / player01 = アリス / player02 = レミリア（pl03 幽々子 对应 TH18 没有的妖夢 ⇒ 未切）。
+YOUKAI_YUKARI_S11  ability/youkai/YOUKAI_YUKARI_S11.png  32x64
+YOUKAI_YUKARI_S12  ability/youkai/YOUKAI_YUKARI_S12.png  32x64
+YOUKAI_YUKARI_S13  ability/youkai/YOUKAI_YUKARI_S13.png  32x64
+YOUKAI_YUKARI_S14  ability/youkai/YOUKAI_YUKARI_S14.png  32x64
+YOUKAI_YUKARI_S15  ability/youkai/YOUKAI_YUKARI_S15.png  32x64
+YOUKAI_YUKARI_S16  ability/youkai/YOUKAI_YUKARI_S16.png  32x64
+YOUKAI_YUKARI_S17  ability/youkai/YOUKAI_YUKARI_S17.png  32x64
+YOUKAI_YUKARI_S18  ability/youkai/YOUKAI_YUKARI_S18.png  32x64
+YOUKAI_YUKARI_S19  ability/youkai/YOUKAI_YUKARI_S19.png  32x64
+YOUKAI_YUKARI_S20  ability/youkai/YOUKAI_YUKARI_S20.png  32x64
+YOUKAI_YUKARI_S21  ability/youkai/YOUKAI_YUKARI_S21.png  32x64
+YOUKAI_ALICE_S11  ability/youkai/YOUKAI_ALICE_S11.png  32x64
+YOUKAI_ALICE_S12  ability/youkai/YOUKAI_ALICE_S12.png  32x64
+YOUKAI_ALICE_S13  ability/youkai/YOUKAI_ALICE_S13.png  32x64
+YOUKAI_ALICE_S14  ability/youkai/YOUKAI_ALICE_S14.png  32x64
+YOUKAI_ALICE_S15  ability/youkai/YOUKAI_ALICE_S15.png  32x64
+YOUKAI_ALICE_S16  ability/youkai/YOUKAI_ALICE_S16.png  32x64
+YOUKAI_ALICE_S17  ability/youkai/YOUKAI_ALICE_S17.png  32x64
+YOUKAI_ALICE_S18  ability/youkai/YOUKAI_ALICE_S18.png  32x64
+YOUKAI_ALICE_S19  ability/youkai/YOUKAI_ALICE_S19.png  32x64
+YOUKAI_ALICE_S20  ability/youkai/YOUKAI_ALICE_S20.png  32x64
+YOUKAI_ALICE_S21  ability/youkai/YOUKAI_ALICE_S21.png  32x64
+YOUKAI_REMILIA_S11  ability/youkai/YOUKAI_REMILIA_S11.png  64x64
+YOUKAI_REMILIA_S12  ability/youkai/YOUKAI_REMILIA_S12.png  64x64
+YOUKAI_REMILIA_S13  ability/youkai/YOUKAI_REMILIA_S13.png  64x64
+YOUKAI_REMILIA_S14  ability/youkai/YOUKAI_REMILIA_S14.png  64x64
+YOUKAI_REMILIA_S15  ability/youkai/YOUKAI_REMILIA_S15.png  64x64
+YOUKAI_REMILIA_S16  ability/youkai/YOUKAI_REMILIA_S16.png  64x64
+YOUKAI_REMILIA_S17  ability/youkai/YOUKAI_REMILIA_S17.png  64x64
+YOUKAI_REMILIA_S18  ability/youkai/YOUKAI_REMILIA_S18.png  64x64
+YOUKAI_REMILIA_S19  ability/youkai/YOUKAI_REMILIA_S19.png  64x64

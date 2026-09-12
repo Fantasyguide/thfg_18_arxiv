@@ -1,0 +1,59 @@
+script script212 {
+// 地灵殿（111）信号槽的**槽底** —— 逐条搬 TH11 `front.anm` **script32**
+//
+// 一手原文（`thanm -l 11 local/th11.v1.00a/dat/front.anm -m …/v4.anmm`；
+//   v4 mapfile 自注「and version 7: SA, UFO, DS, GFW」而 TH11 `front.anm` 的 entry `version: 7`）：
+//     script32 {
+//         layer(19);
+//         sprite(sprite57);
+//         randMode(1);
+//         anchor(1, 2);
+//         pos(42.0f, 456.0f, 0.0f);
+//         resampleMode(1);
+//         alpha(0);
+//         color(32, 32, 64);
+//       +20: alphaTime(20, 0, 255); stop();
+//            interruptLabel(2): alphaTime(30, 0, 255); stop();
+//            interruptLabel(3): alphaTime(10, 0, 64);  stop();
+//     }
+// 贴图：@SIGNAL_GAUGE_BG@ = `ability/signal/SIGNAL_GAUGE_BG.png`
+//   （**64×16**，内容 = 源 sprite57 (416,16,48,16) **靠左**；右边 16 px 透明 —— 靠左是为了
+//    与增长条共用同一套 UV 逻辑，见 make_signal_hud_art.py 的「靠左补边」一节）
+//
+// 这个 VM 是谁（✅ 一手）：`Gui::initialize` th11:0x41a764 对 GUI+0x2e4c 起 4 个 VM 跑 front.anm 32..35，
+//   `Gui::on_tick` th11:0x41b55d 每帧 tick 这四个 —— 就是 SA 画面左下角那条信号槽。
+//
+// ── 偏差（逐条登记）────────────────────────────────────────────────────────
+//   · `randMode(1)` **没搬**（v4/v7 的 87 ↔ v8 的 307，v8 mapfile 注「no known effect」）——
+//     与 209/210 同一个取舍。
+//   · `layer(19)` → **25**：19 属 TH18 的**世界列表**（相机 3 视口 + 全分辨率）⇒ HUD 不能用。
+//     25 = UI 列表 → 组 38 → 桩 `th18:0x4878e0`（直接进后备缓冲）⇒ 被暂停模糊罩（同组后画）盖住、
+//     且进得了 P 键截图（层 24 折到组 37、画进离屏面 B，被 `0x3a` 的整面清屏挡在截图外）。
+//     依据 `engine/anm/th18/05-snapshot-and-surfaces.md` §5/§6/§7.1 + `HUD-LAYOUT.md` §4.1。
+//   · 补 `resolutionMode(2)`：TH18 的 25 层要显式写才按表面 px 定位 ⇒ `pos(42,456)` → `(84,912)`。
+//   · `anchor(1,2)` **照抄** = （左，底）（取值表 `engine/anm/OVERVIEW.md`；一手证法：TH11 `front.anm`
+//     script1..4 的边框条 sprite0/1/2/3 在 pos(0,0)/(416,0)/(32,0)/(32,464) 正好铺满屏幕四边）。
+//   · ⚠️ 零售那一层**槽底与三根条之间的前后关系**靠 layer 18/19 排；本仓四件都在 25 层
+//     ⇒ 前后关系改由 **VM 的起用顺序**决定，卡侧先起槽底、再起条、最后起图标（顺序写在 `signal.c`）。
+//   · `pos` 最终由卡侧每帧 `ce_anm_set_pos` 覆盖（本仓 HUD 走货架锚点 + 偏移，不用零售的绝对坐标）。
+// ⚠ 时间标签：零售原文**没有 `-1:`**（起首那几条指令的时间 = 0）⇒ 本脚本也不写它。
+//   写了 `-1:` 会让后面那个 `+20:` 变成**第 19 帧**（`+N` 是相对上一条标签的），
+//   淡入就早一帧开始 —— 这是本轮自检（编出来与零售逐行 diff）抓到的，已改。
+    layer(25);
+    sprite(@SIGNAL_GAUGE_BG@);
+    anchor(1, 2);
+    pos(84.0f, 912.0f, 0.0f);
+    resampleMode(1);
+    resolutionMode(2);
+    alpha(0);
+    color(32, 32, 64);
++20: // 20
+    alphaTime(20, 0, 255);
+    stop();
+    interruptLabel(2);
+    alphaTime(30, 0, 255);
+    stop();
+    interruptLabel(3);
+    alphaTime(10, 0, 64);
+    stop();
+}

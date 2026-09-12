@@ -1,0 +1,42 @@
+# 永夜抄（系统卡 108）**使い魔（使魔）本体** —— TH08 v1.00d `enemy.anm` script53..56 + `data/stgenm/enemy.png` 切图。
+# 本片段由 assets/ability/make_youkai_familiar_art.py 生成（幂等，整段重写）；合并时把下面这些行追加进 ORDER.txt 即可。
+# 每行 `NAME  源图(相对 assets/)  WxH`；WxH 都是 2 的幂 ⇒ 整张贴图一个 sprite。
+# ★ 一手：TH08 的使い魔不是专用贴图 —— ECL opcode 90/91/92（`th08:0x41ecbe` 分发表 index=opcode−1）
+#   生成一个普通敌人（`EnemyManager::create_enemy` th08:0x42a680），外观 = 该 sub 自己 `ins_54(K)` 设的脚本。
+#   12 关 ECL 全部调用点只出现 6 个 K（53..58）；这里做的是其中的 53/54/55/56（8 帧循环）。
+#   K 的上界是 95（ecldata5）⇒ 那个 anm 只能是 `enemy.anm`（101 支脚本；各关 stgNenm 只有 6–26）。
+#   🟡 etama.anm(115 支) 也满足上界；判 enemy.anm 的依据 = `ins_54` 写的是敌机本体 VM（zEnemy+0xc）。
+# 四套对应最多 4 个发射口槽，卡侧按槽位挑一套即可（见生成器文件头「产出定位」）。
+# 每条脚本的正文逐条照抄零售，只把 sprite 引用换成这里的 @NAME；零售没有 layer()，故这里也不写。
+YOUKAI_FAM_S53_0  ability/youkai_familiar/YOUKAI_FAM_S53_0.png  32x32
+YOUKAI_FAM_S53_1  ability/youkai_familiar/YOUKAI_FAM_S53_1.png  32x32
+YOUKAI_FAM_S53_2  ability/youkai_familiar/YOUKAI_FAM_S53_2.png  32x32
+YOUKAI_FAM_S53_3  ability/youkai_familiar/YOUKAI_FAM_S53_3.png  32x32
+YOUKAI_FAM_S53_4  ability/youkai_familiar/YOUKAI_FAM_S53_4.png  32x32
+YOUKAI_FAM_S53_5  ability/youkai_familiar/YOUKAI_FAM_S53_5.png  32x32
+YOUKAI_FAM_S53_6  ability/youkai_familiar/YOUKAI_FAM_S53_6.png  32x32
+YOUKAI_FAM_S53_7  ability/youkai_familiar/YOUKAI_FAM_S53_7.png  32x32
+YOUKAI_FAM_S54_0  ability/youkai_familiar/YOUKAI_FAM_S54_0.png  32x32
+YOUKAI_FAM_S54_1  ability/youkai_familiar/YOUKAI_FAM_S54_1.png  32x32
+YOUKAI_FAM_S54_2  ability/youkai_familiar/YOUKAI_FAM_S54_2.png  32x32
+YOUKAI_FAM_S54_3  ability/youkai_familiar/YOUKAI_FAM_S54_3.png  32x32
+YOUKAI_FAM_S54_4  ability/youkai_familiar/YOUKAI_FAM_S54_4.png  32x32
+YOUKAI_FAM_S54_5  ability/youkai_familiar/YOUKAI_FAM_S54_5.png  32x32
+YOUKAI_FAM_S54_6  ability/youkai_familiar/YOUKAI_FAM_S54_6.png  32x32
+YOUKAI_FAM_S54_7  ability/youkai_familiar/YOUKAI_FAM_S54_7.png  32x32
+YOUKAI_FAM_S55_0  ability/youkai_familiar/YOUKAI_FAM_S55_0.png  32x32
+YOUKAI_FAM_S55_1  ability/youkai_familiar/YOUKAI_FAM_S55_1.png  32x32
+YOUKAI_FAM_S55_2  ability/youkai_familiar/YOUKAI_FAM_S55_2.png  32x32
+YOUKAI_FAM_S55_3  ability/youkai_familiar/YOUKAI_FAM_S55_3.png  32x32
+YOUKAI_FAM_S55_4  ability/youkai_familiar/YOUKAI_FAM_S55_4.png  32x32
+YOUKAI_FAM_S55_5  ability/youkai_familiar/YOUKAI_FAM_S55_5.png  32x32
+YOUKAI_FAM_S55_6  ability/youkai_familiar/YOUKAI_FAM_S55_6.png  32x32
+YOUKAI_FAM_S55_7  ability/youkai_familiar/YOUKAI_FAM_S55_7.png  32x32
+YOUKAI_FAM_S56_0  ability/youkai_familiar/YOUKAI_FAM_S56_0.png  32x32
+YOUKAI_FAM_S56_1  ability/youkai_familiar/YOUKAI_FAM_S56_1.png  32x32
+YOUKAI_FAM_S56_2  ability/youkai_familiar/YOUKAI_FAM_S56_2.png  32x32
+YOUKAI_FAM_S56_3  ability/youkai_familiar/YOUKAI_FAM_S56_3.png  32x32
+YOUKAI_FAM_S56_4  ability/youkai_familiar/YOUKAI_FAM_S56_4.png  32x32
+YOUKAI_FAM_S56_5  ability/youkai_familiar/YOUKAI_FAM_S56_5.png  32x32
+YOUKAI_FAM_S56_6  ability/youkai_familiar/YOUKAI_FAM_S56_6.png  32x32
+YOUKAI_FAM_S56_7  ability/youkai_familiar/YOUKAI_FAM_S56_7.png  32x32

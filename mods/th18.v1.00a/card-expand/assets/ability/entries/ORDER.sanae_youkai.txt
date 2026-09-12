@@ -1,0 +1,37 @@
+# 永夜抄（系统卡 108）**妖侧本体：早苗 → 射命丸文** —— TH16 v1.00a `pl03.anm`（anm version 8）
+#   的 script0..4（本体 24 格 30×46，entry `player/pl03/pl03.png`）切图 + 脚本 222..226。
+# 本片段由 assets/ability/make_sanae_youkai_art.py 生成（幂等，整段重写）；合并时把下面这些行追加进 ORDER.txt 即可。
+# 每行 `NAME  源图(相对 assets/)  WxH`；WxH 都是 2 的幂 ⇒ 整张贴图一个 sprite。
+# ★ 身份判据（一手，色相/主色，生成器每次运行重算）：
+#   脸（`face_pl0Xno.png`）主色实算： pl00 [黑/暗 61%、白/灰 16%、红 15%] → 霊夢；pl01 [黑/暗 39%、金(黄) 26%、白/灰 23%] → 魔理沙；pl02 [蓝 62%、橙/褐(肤/棕) 20%、黑/暗 7%] → チルノ；pl03 [黑/暗 64%、白/灰 21%、红 8%] → 射命丸文
+#   ⇒ `pl03` = 射命丸文（黑发 + 红发带 + 白衬黑裙）；**TH16 里没有早苗**（四张脸一张绿发都没有，
+#     而同一次运行拿来对照的 TH18 `pl03` = 早苗 脸是 48% 绿）⇒「早苗 → 文」是跨作品置换。
+#   ⚠ 别按「第 3 个自机」直觉把 `pl02` 当早苗：`pl02` 是チルノ（蓝发蓝裙白围裙，蓝 62%/54%）。
+# ★ 为什么居中：零售 sprite 以 VM 位置为中心画（anchor 位 0），本仓构建期也是居中补
+#   （assets/build_ability.py:119-120）⇒ 30×46 居中放进 32×64，可见像素一个不动。
+# 脚本：assets/ability/scripts/222..226_youkai_aya_s0..4.anm.txt（正文照抄零售 script0..4，只换 sprite 引用）。
+# ⚠ 本片段**不动** entries/ORDER.txt（多人并发，主 agent 统一合并）。
+YOUKAI_AYA_S0  ability/sanae_youkai/YOUKAI_AYA_S0.png  32x64
+YOUKAI_AYA_S1  ability/sanae_youkai/YOUKAI_AYA_S1.png  32x64
+YOUKAI_AYA_S2  ability/sanae_youkai/YOUKAI_AYA_S2.png  32x64
+YOUKAI_AYA_S3  ability/sanae_youkai/YOUKAI_AYA_S3.png  32x64
+YOUKAI_AYA_S4  ability/sanae_youkai/YOUKAI_AYA_S4.png  32x64
+YOUKAI_AYA_S5  ability/sanae_youkai/YOUKAI_AYA_S5.png  32x64
+YOUKAI_AYA_S6  ability/sanae_youkai/YOUKAI_AYA_S6.png  32x64
+YOUKAI_AYA_S7  ability/sanae_youkai/YOUKAI_AYA_S7.png  32x64
+YOUKAI_AYA_S8  ability/sanae_youkai/YOUKAI_AYA_S8.png  32x64
+YOUKAI_AYA_S9  ability/sanae_youkai/YOUKAI_AYA_S9.png  32x64
+YOUKAI_AYA_S10  ability/sanae_youkai/YOUKAI_AYA_S10.png  32x64
+YOUKAI_AYA_S11  ability/sanae_youkai/YOUKAI_AYA_S11.png  32x64
+YOUKAI_AYA_S12  ability/sanae_youkai/YOUKAI_AYA_S12.png  32x64
+YOUKAI_AYA_S13  ability/sanae_youkai/YOUKAI_AYA_S13.png  32x64
+YOUKAI_AYA_S14  ability/sanae_youkai/YOUKAI_AYA_S14.png  32x64
+YOUKAI_AYA_S15  ability/sanae_youkai/YOUKAI_AYA_S15.png  32x64
+YOUKAI_AYA_S16  ability/sanae_youkai/YOUKAI_AYA_S16.png  32x64
+YOUKAI_AYA_S17  ability/sanae_youkai/YOUKAI_AYA_S17.png  32x64
+YOUKAI_AYA_S18  ability/sanae_youkai/YOUKAI_AYA_S18.png  32x64
+YOUKAI_AYA_S19  ability/sanae_youkai/YOUKAI_AYA_S19.png  32x64
+YOUKAI_AYA_S20  ability/sanae_youkai/YOUKAI_AYA_S20.png  32x64
+YOUKAI_AYA_S21  ability/sanae_youkai/YOUKAI_AYA_S21.png  32x64
+YOUKAI_AYA_S22  ability/sanae_youkai/YOUKAI_AYA_S22.png  32x64
+YOUKAI_AYA_S23  ability/sanae_youkai/YOUKAI_AYA_S23.png  32x64

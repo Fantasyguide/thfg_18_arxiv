@@ -219,3 +219,118 @@ FAITH_DOT  ability/mof/FAITH_DOT.png  16x16
 SAKURA_POINT  ability/sakura/POINT.png  16x16
 SAKURA_SMALL  ability/sakura/SMALL.png  16x16
 TPOINT  ability/tpoint/TPOINT.png  16x16
+
+# ── 来自 ORDER.youkai.txt（本轮合并；原片段保留作记录）
+YOUKAI_YUKARI_S11  ability/youkai/YOUKAI_YUKARI_S11.png  32x64
+YOUKAI_YUKARI_S12  ability/youkai/YOUKAI_YUKARI_S12.png  32x64
+YOUKAI_YUKARI_S13  ability/youkai/YOUKAI_YUKARI_S13.png  32x64
+YOUKAI_YUKARI_S14  ability/youkai/YOUKAI_YUKARI_S14.png  32x64
+YOUKAI_YUKARI_S15  ability/youkai/YOUKAI_YUKARI_S15.png  32x64
+YOUKAI_YUKARI_S16  ability/youkai/YOUKAI_YUKARI_S16.png  32x64
+YOUKAI_YUKARI_S17  ability/youkai/YOUKAI_YUKARI_S17.png  32x64
+YOUKAI_YUKARI_S18  ability/youkai/YOUKAI_YUKARI_S18.png  32x64
+YOUKAI_YUKARI_S19  ability/youkai/YOUKAI_YUKARI_S19.png  32x64
+YOUKAI_YUKARI_S20  ability/youkai/YOUKAI_YUKARI_S20.png  32x64
+YOUKAI_YUKARI_S21  ability/youkai/YOUKAI_YUKARI_S21.png  32x64
+YOUKAI_ALICE_S11  ability/youkai/YOUKAI_ALICE_S11.png  32x64
+YOUKAI_ALICE_S12  ability/youkai/YOUKAI_ALICE_S12.png  32x64
+YOUKAI_ALICE_S13  ability/youkai/YOUKAI_ALICE_S13.png  32x64
+YOUKAI_ALICE_S14  ability/youkai/YOUKAI_ALICE_S14.png  32x64
+YOUKAI_ALICE_S15  ability/youkai/YOUKAI_ALICE_S15.png  32x64
+YOUKAI_ALICE_S16  ability/youkai/YOUKAI_ALICE_S16.png  32x64
+YOUKAI_ALICE_S17  ability/youkai/YOUKAI_ALICE_S17.png  32x64
+YOUKAI_ALICE_S18  ability/youkai/YOUKAI_ALICE_S18.png  32x64
+YOUKAI_ALICE_S19  ability/youkai/YOUKAI_ALICE_S19.png  32x64
+YOUKAI_ALICE_S20  ability/youkai/YOUKAI_ALICE_S20.png  32x64
+YOUKAI_ALICE_S21  ability/youkai/YOUKAI_ALICE_S21.png  32x64
+YOUKAI_REMILIA_S11  ability/youkai/YOUKAI_REMILIA_S11.png  64x64
+YOUKAI_REMILIA_S12  ability/youkai/YOUKAI_REMILIA_S12.png  64x64
+YOUKAI_REMILIA_S13  ability/youkai/YOUKAI_REMILIA_S13.png  64x64
+YOUKAI_REMILIA_S14  ability/youkai/YOUKAI_REMILIA_S14.png  64x64
+YOUKAI_REMILIA_S15  ability/youkai/YOUKAI_REMILIA_S15.png  64x64
+YOUKAI_REMILIA_S16  ability/youkai/YOUKAI_REMILIA_S16.png  64x64
+YOUKAI_REMILIA_S17  ability/youkai/YOUKAI_REMILIA_S17.png  64x64
+YOUKAI_REMILIA_S18  ability/youkai/YOUKAI_REMILIA_S18.png  64x64
+YOUKAI_REMILIA_S19  ability/youkai/YOUKAI_REMILIA_S19.png  64x64
+
+# ── 来自 ORDER.youkai_familiar.txt（本轮合并；原片段保留作记录）
+YOUKAI_FAM_S53_0  ability/youkai_familiar/YOUKAI_FAM_S53_0.png  32x32
+YOUKAI_FAM_S53_1  ability/youkai_familiar/YOUKAI_FAM_S53_1.png  32x32
+YOUKAI_FAM_S53_2  ability/youkai_familiar/YOUKAI_FAM_S53_2.png  32x32
+YOUKAI_FAM_S53_3  ability/youkai_familiar/YOUKAI_FAM_S53_3.png  32x32
+YOUKAI_FAM_S53_4  ability/youkai_familiar/YOUKAI_FAM_S53_4.png  32x32
+YOUKAI_FAM_S53_5  ability/youkai_familiar/YOUKAI_FAM_S53_5.png  32x32
+YOUKAI_FAM_S53_6  ability/youkai_familiar/YOUKAI_FAM_S53_6.png  32x32
+YOUKAI_FAM_S53_7  ability/youkai_familiar/YOUKAI_FAM_S53_7.png  32x32
+YOUKAI_FAM_S54_0  ability/youkai_familiar/YOUKAI_FAM_S54_0.png  32x32
+YOUKAI_FAM_S54_1  ability/youkai_familiar/YOUKAI_FAM_S54_1.png  32x32
+YOUKAI_FAM_S54_2  ability/youkai_familiar/YOUKAI_FAM_S54_2.png  32x32
+YOUKAI_FAM_S54_3  ability/youkai_familiar/YOUKAI_FAM_S54_3.png  32x32
+YOUKAI_FAM_S54_4  ability/youkai_familiar/YOUKAI_FAM_S54_4.png  32x32
+YOUKAI_FAM_S54_5  ability/youkai_familiar/YOUKAI_FAM_S54_5.png  32x32
+YOUKAI_FAM_S54_6  ability/youkai_familiar/YOUKAI_FAM_S54_6.png  32x32
+YOUKAI_FAM_S54_7  ability/youkai_familiar/YOUKAI_FAM_S54_7.png  32x32
+YOUKAI_FAM_S55_0  ability/youkai_familiar/YOUKAI_FAM_S55_0.png  32x32
+YOUKAI_FAM_S55_1  ability/youkai_familiar/YOUKAI_FAM_S55_1.png  32x32
+YOUKAI_FAM_S55_2  ability/youkai_familiar/YOUKAI_FAM_S55_2.png  32x32
+YOUKAI_FAM_S55_3  ability/youkai_familiar/YOUKAI_FAM_S55_3.png  32x32
+YOUKAI_FAM_S55_4  ability/youkai_familiar/YOUKAI_FAM_S55_4.png  32x32
+YOUKAI_FAM_S55_5  ability/youkai_familiar/YOUKAI_FAM_S55_5.png  32x32
+YOUKAI_FAM_S55_6  ability/youkai_familiar/YOUKAI_FAM_S55_6.png  32x32
+YOUKAI_FAM_S55_7  ability/youkai_familiar/YOUKAI_FAM_S55_7.png  32x32
+YOUKAI_FAM_S56_0  ability/youkai_familiar/YOUKAI_FAM_S56_0.png  32x32
+YOUKAI_FAM_S56_1  ability/youkai_familiar/YOUKAI_FAM_S56_1.png  32x32
+YOUKAI_FAM_S56_2  ability/youkai_familiar/YOUKAI_FAM_S56_2.png  32x32
+YOUKAI_FAM_S56_3  ability/youkai_familiar/YOUKAI_FAM_S56_3.png  32x32
+YOUKAI_FAM_S56_4  ability/youkai_familiar/YOUKAI_FAM_S56_4.png  32x32
+YOUKAI_FAM_S56_5  ability/youkai_familiar/YOUKAI_FAM_S56_5.png  32x32
+YOUKAI_FAM_S56_6  ability/youkai_familiar/YOUKAI_FAM_S56_6.png  32x32
+YOUKAI_FAM_S56_7  ability/youkai_familiar/YOUKAI_FAM_S56_7.png  32x32
+
+# ── 来自 ORDER.senro.txt（本轮合并；原片段保留作记录）
+SENRO_FIELD  ability/senro/FIELD.png  256x256
+SENRO_RING   ability/senro/RING.png    64x64
+
+# ── 来自 ORDER.mof.txt（本轮合并；原片段保留作记录）
+MOF_FAITH_ICON     ability/mof/FAITH_ICON.png     16x16
+MOF_FAITH_DIGIT_0  ability/mof/FAITH_DIGIT_0.png  8x16
+MOF_FAITH_DIGIT_1  ability/mof/FAITH_DIGIT_1.png  8x16
+MOF_FAITH_DIGIT_2  ability/mof/FAITH_DIGIT_2.png  8x16
+MOF_FAITH_DIGIT_3  ability/mof/FAITH_DIGIT_3.png  8x16
+MOF_FAITH_DIGIT_4  ability/mof/FAITH_DIGIT_4.png  8x16
+MOF_FAITH_DIGIT_5  ability/mof/FAITH_DIGIT_5.png  8x16
+MOF_FAITH_DIGIT_6  ability/mof/FAITH_DIGIT_6.png  8x16
+MOF_FAITH_DIGIT_7  ability/mof/FAITH_DIGIT_7.png  8x16
+MOF_FAITH_DIGIT_8  ability/mof/FAITH_DIGIT_8.png  8x16
+MOF_FAITH_DIGIT_9  ability/mof/FAITH_DIGIT_9.png  8x16
+
+# ── 来自 ORDER.signal.txt（本轮合并；原片段保留作记录）
+SIGNAL_GAUGE_BG    ability/signal/SIGNAL_GAUGE_BG.png    64x16
+SIGNAL_GAUGE_BAR   ability/signal/SIGNAL_GAUGE_BAR.png   64x16
+SIGNAL_GAUGE_ICON  ability/signal/SIGNAL_GAUGE_ICON.png  16x16
+
+# ── 来自 ORDER.sanae_youkai.txt（本轮合并；原片段保留作记录）
+YOUKAI_AYA_S0  ability/sanae_youkai/YOUKAI_AYA_S0.png  32x64
+YOUKAI_AYA_S1  ability/sanae_youkai/YOUKAI_AYA_S1.png  32x64
+YOUKAI_AYA_S2  ability/sanae_youkai/YOUKAI_AYA_S2.png  32x64
+YOUKAI_AYA_S3  ability/sanae_youkai/YOUKAI_AYA_S3.png  32x64
+YOUKAI_AYA_S4  ability/sanae_youkai/YOUKAI_AYA_S4.png  32x64
+YOUKAI_AYA_S5  ability/sanae_youkai/YOUKAI_AYA_S5.png  32x64
+YOUKAI_AYA_S6  ability/sanae_youkai/YOUKAI_AYA_S6.png  32x64
+YOUKAI_AYA_S7  ability/sanae_youkai/YOUKAI_AYA_S7.png  32x64
+YOUKAI_AYA_S8  ability/sanae_youkai/YOUKAI_AYA_S8.png  32x64
+YOUKAI_AYA_S9  ability/sanae_youkai/YOUKAI_AYA_S9.png  32x64
+YOUKAI_AYA_S10  ability/sanae_youkai/YOUKAI_AYA_S10.png  32x64
+YOUKAI_AYA_S11  ability/sanae_youkai/YOUKAI_AYA_S11.png  32x64
+YOUKAI_AYA_S12  ability/sanae_youkai/YOUKAI_AYA_S12.png  32x64
+YOUKAI_AYA_S13  ability/sanae_youkai/YOUKAI_AYA_S13.png  32x64
+YOUKAI_AYA_S14  ability/sanae_youkai/YOUKAI_AYA_S14.png  32x64
+YOUKAI_AYA_S15  ability/sanae_youkai/YOUKAI_AYA_S15.png  32x64
+YOUKAI_AYA_S16  ability/sanae_youkai/YOUKAI_AYA_S16.png  32x64
+YOUKAI_AYA_S17  ability/sanae_youkai/YOUKAI_AYA_S17.png  32x64
+YOUKAI_AYA_S18  ability/sanae_youkai/YOUKAI_AYA_S18.png  32x64
+YOUKAI_AYA_S19  ability/sanae_youkai/YOUKAI_AYA_S19.png  32x64
+YOUKAI_AYA_S20  ability/sanae_youkai/YOUKAI_AYA_S20.png  32x64
+YOUKAI_AYA_S21  ability/sanae_youkai/YOUKAI_AYA_S21.png  32x64
+YOUKAI_AYA_S22  ability/sanae_youkai/YOUKAI_AYA_S22.png  32x64
+YOUKAI_AYA_S23  ability/sanae_youkai/YOUKAI_AYA_S23.png  32x64

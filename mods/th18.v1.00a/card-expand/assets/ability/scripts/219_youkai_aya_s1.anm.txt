@@ -1,0 +1,35 @@
+script script219 {
+    // 由 assets/ability/make_sanae_youkai_art.py 从 TH16 v1.00a `pl03.anm` script1 生成，别手改。
+    // 这是**妖侧本体**（早苗 → 射命丸文）的第 1 支：零售 script0..4 = 本体的 24 格 30×46，
+    //   一手：只有它们引用 `player/pl03/pl03.png` 的 30×46 格子（生成器文件头 ③）。
+    // 身份一手：主色/色相判据把 `pl03.anm` 定成 射命丸文（黑发 + 红发带 + 白衬黑裙；四张里唯一无绿发、
+    //   且蓝/金都不占主导）—— 生成器文件头 ②，每次运行重算。
+    // 指令逐条照抄（jmp/标签/`layer(14)`/`type(0)`/`resampleMode(1)` 一字未动），只把 sprite 引用换名：
+    //   sprite8 → @YOUKAI_AYA_S8，sprite9 → @YOUKAI_AYA_S9，sprite10 → @YOUKAI_AYA_S10，sprite11 → @YOUKAI_AYA_S11，sprite12 → @YOUKAI_AYA_S12，sprite13 → @YOUKAI_AYA_S13，sprite14 → @YOUKAI_AYA_S14，sprite15 → @YOUKAI_AYA_S15
+    // ⚠ `layer(14)` 是**零售自己写的**（TH16 本体脚本本来就有），不是我们编的：
+    //   TH18 的世界层 = 3–19（别用 HUD 的 24/25，见 assets/ability/README.md 与 `HUD-LAYOUT.md` §4.1），
+    //   14 落在世界层里 ⇒ 原样搬过来合法；若将来挂到别的层由挂它的那一方改，别在这里改。
+-1:
+    type(0);
+    layer(14);
+    resampleMode(1);
+0:
+    sprite(@YOUKAI_AYA_S8);
++1: // 1
+    sprite(@YOUKAI_AYA_S9);
++1: // 2
+    sprite(@YOUKAI_AYA_S10);
++1: // 3
+    sprite(@YOUKAI_AYA_S11);
++1: // 4
+offset84:
+    sprite(@YOUKAI_AYA_S12);
++5: // 9
+    sprite(@YOUKAI_AYA_S13);
++5: // 14
+    sprite(@YOUKAI_AYA_S14);
++5: // 19
+    sprite(@YOUKAI_AYA_S15);
++4: // 23
+    jmp(offset84, 3);
+}

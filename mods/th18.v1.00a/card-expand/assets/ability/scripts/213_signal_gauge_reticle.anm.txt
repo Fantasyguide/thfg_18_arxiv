@@ -1,0 +1,111 @@
+script script213 {
+// 地灵殿（111）信号槽的**增长条**（= 信号强度本身）—— 逐条搬 TH11 `front.anm` **script33**
+//
+// 一手原文（`thanm -l 11 local/th11.v1.00a/dat/front.anm -m …/v4.anmm`）：
+//     script33 {
+//         layer(18);
+//         sprite(sprite58);
+//         randMode(1);
+//         anchor(1, 2);
+//         pos(42.0f, 456.0f, 0.0f);
+//         resampleMode(1);
+//         alpha(0);
+//       +20: alphaTime(20, 0, 255); stop();
+//            interruptLabel(8);
+//       offset132: color(255, 255, 0);
+//            +5: color(255, 0, 0);
+//            +5: jmp(offset132, 20);
+//            interruptLabel(9);
+//       offset200: color(255, 255, 0);
+//            +3: color(255, 0, 0);
+//            +3: jmp(offset200, 30);
+//            interruptLabel(10);
+//       offset268: color(255, 255, 0);
+//            +2: color(255, 0, 0);
+//            +2: jmp(offset268, 36);
+//            interruptLabel(11);
+//       offset336: color(0, 0, 255);
+//            +2: color(255, 0, 255);
+//            +2: jmp(offset336, 40);
+//            interruptLabel(7): color(255, 255, 255); stop();
+//            interruptLabel(2): alphaTime(30, 0, 255); caseReturn();
+//            interruptLabel(3): alphaTime(10, 0, 64);  caseReturn();
+//     }
+//   ⚠ `jmp(dest, t)` 的两参是「目标字节偏移 + 把脚本时间设成 t」（`engine/anm/th16/03-math-jumps.md` §
+//     「200 jmp」：`instr_offset = dest; script_time = t`）—— **不是循环次数** ⇒ 上面四条都是
+//     「回到本段开头、时间拨回同一刻度」的**无限闪**，闪的间隔 = 5/3/2/2 帧 ⇒ 槽越满闪得越快。
+//
+// 贴图：@SIGNAL_GAUGE_BAR@ = `ability/signal/SIGNAL_GAUGE_BAR.png`（**64×16**，内容 = 源
+//   sprite58 (416,0,48,16) **靠左**；右边 16 px 透明 ⇒ 横向缩放时内容左缘钉在 VM pos 上）。
+//
+// ▣ 谁给它发中断（✅ 一手：`Gui::on_tick` th11:0x41b593–0x41b66e，直接写 `[vm+0x37c]`，那就是
+//   `AnmVm::run` th11:0x44b4f9 读的**待处理中断**字段）：
+//       pct < 100  → 7（常态白）        pct < 110 → 8（5 帧闪）
+//       pct < 120  → 9（3 帧闪）        pct >= 120 → 10（2 帧闪）
+//     其中 `pct = min(sig,10000) 时取 100，否则 sig*100/1000`（sig = `[GLOBALS+0x14]` 的信号值）。
+//     中断 **11**（蓝↔品红）在全 exe 里**只有这条 interruptLabel 定义、没有找到发它的地方** ❓
+//     ⇒ 照抄保留（卡侧不发），报告里登记。
+//   中断 2/3 = 整块淡入/压暗，由同一函数按自机位置发（`th11:0x41b4a1`–`0x41b55a`）：
+//     显示态遇到「自机 y > 416 且 x < −64」→ 发 3（压暗到 alpha 64）；
+//     压暗态遇到「自机 y < 400 或 x > −64」→ 发 2（淡回 255）。卡侧按同样的门限发（`signal.c`）。
+//
+// ▣ 宽度怎么长（✅ 一手：`Gui::on_tick` th11:0x41b679–0x41b720）：引擎每帧把 **VM[1] 的精灵横向尺寸**
+//   写成 `9 + 4×档`（`[vm1+0x4c]`；档 = `pct/10` ∈ 0..10，`lea edx,[eax*4]` 就是那个 4），
+//   并标脏 `[vm1+0x404] |= 8`（TH16 字段图里 bit3 = scale 脏位）。
+//   ⇒ 信号每 +10 点亮**一根 4 px 宽的条**（条距正好 4 px），起点 9 px。
+//   本仓的等价写法：`ce_anm_set_scale(id, (9 + 4*档)/48, 1.0)`（`anchor(1,2)` ⇒ 左端钉住），
+//   见 `signal.c` 的 `signal_hud_draw()`。**脚本里不写 scale** ⇒ 不会被插值器覆盖。
+//
+// 偏差与 211 同源：丢 `randMode(1)`、`layer(18)` → **25**、补 `resolutionMode(2)`
+//   （`pos(42,456)` → `(84,912)`）、`anchor(1,2)` 照抄、`pos` 由卡侧每帧覆盖。
+// ⚠ 时间标签：零售原文**没有 `-1:`**（起首那几条指令的时间 = 0）⇒ 本脚本也不写它。
+//   写了 `-1:` 会让后面那个 `+20:` 变成**第 19 帧**（`+N` 是相对上一条标签的），
+//   淡入就早一帧开始 —— 这是本轮自检（编出来与零售逐行 diff）抓到的，已改。
+    layer(25);
+    sprite(@SIGNAL_GAUGE_BAR@);
+    anchor(1, 2);
+    pos(84.0f, 912.0f, 0.0f);
+    resampleMode(1);
+    resolutionMode(2);
+    alpha(0);
++20: // 20
+    alphaTime(20, 0, 255);
+    stop();
+    interruptLabel(8);
+offset132:
+    color(255, 255, 0);
++5: // 25
+    color(255, 0, 0);
++5: // 30
+    jmp(offset132, 20);
+    interruptLabel(9);
+offset200:
+    color(255, 255, 0);
++3: // 33
+    color(255, 0, 0);
++3: // 36
+    jmp(offset200, 30);
+    interruptLabel(10);
+offset268:
+    color(255, 255, 0);
++2: // 38
+    color(255, 0, 0);
++2: // 40
+    jmp(offset268, 36);
+    interruptLabel(11);
+offset336:
+    color(0, 0, 255);
++2: // 42
+    color(255, 0, 255);
++2: // 44
+    jmp(offset336, 40);
+    interruptLabel(7);
+    color(255, 255, 255);
+    stop();
+    interruptLabel(2);
+    alphaTime(30, 0, 255);
+    caseReturn();
+    interruptLabel(3);
+    alphaTime(10, 0, 64);
+    caseReturn();
+}
