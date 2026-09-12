@@ -20,6 +20,10 @@
 >
 > **本页不许出现没有出处的断言。** 从某作借到另一作的判断一律 🟡，在该版本 exe 上验过才能改 ✅（[`METHOD.md`](../../METHOD.md)）。
 
+## TH06NC 入口
+
+TH06NC 的菜单/结果页尚未纳入上面的跨版本断言矩阵。当前已定位结果页 chain 的状态 tick、初始化和 `score.dat` 写回；**结果页全开秘籍已一手反出**——口令 `classiclager` 与一条 XInput 手柄序列，挂在 Lunatic 成绩页（`th06nc:0x14006e190` / `th06nc:0x14006e020`），见 [th06nc/02-classiclager-unlock-cheat.md](th06nc/02-classiclager-unlock-cheat.md)；调查过程见 [th06nc/01](th06nc/01-result-screen-unlock-cheat-recon.md)。
+
 ## 备注
 
 尚未做完的部分见 [th16/PLAN.md](th16/PLAN.md)。

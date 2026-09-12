@@ -10,3 +10,5 @@
 | --- | --- |
 | [`th16.v1.00a/`](th16.v1.00a/INDEX.md) | 主力：自机 / 弹幕 / ECL / SHT / MSG / 菜单 均已深入 |
 | [`th18.v1.00a/`](th18.v1.00a/INDEX.md) | 卡牌主线已一手反出；共通引擎子系统待验证 |
+| [`th06nc/`](th06nc/INDEX.md) | Steam New Classic；ECL 基线与差异已建立，菜单/解锁机制勘探中 |
+| [`th06.v1.02h/`](th06.v1.02h/INDEX.md) | 原版红魔郷；当 TH06NC 的对照基线，符号覆盖 90.8%（两层社区来源重放） |

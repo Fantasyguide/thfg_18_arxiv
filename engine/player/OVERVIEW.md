@@ -11,6 +11,46 @@
 季节释放（C 键）消耗季节槽——它们走同一个 `Bomb` 对象但计费不同。这个区分在别的作品里
 未必成立（TH18 用卡牌取代了季节系统），是矩阵里最需要逐版本重验的一行。
 
+## TH06NC 入口
+
+TH06NC 的玩家主循环 `th06nc:0x140068820`（chain 回调，无直接 xref）、
+弹幕 tick `th06nc:0x140010870`、被弹判定 `th06nc:0x14006a980`、
+激光判定 `th06nc:0x14006aba0`、射击伤害 `th06nc:0x140069d00`、
+敌人 tick `th06nc:0x1400373b0` 已定位；`Die()` / `SpawnBullets` /
+`UpdatePlayerBullets` 三段被内联，只登记区间。
+
+### TH06 → TH06NC 的已验差异
+
+底本是 CC0 的 [`th06-decomp`](https://github.com/GensokyoClub/th06)，逐条一手比对。
+详见 [th06nc/01-main-loop-and-collision.md](th06nc/01-main-loop-and-collision.md)。
+
+| 断言 | TH06 | TH06NC | 出处 |
+| --- | --- | --- | --- |
+| 被弹判定形状 | 轴对齐盒（三字段） | **圆**（半径 1.25，`player+0x774c`） | [01 §2.7](th06nc/01-main-loop-and-collision.md) |
+| 擦弹判定形状 | 轴对齐盒 | **圆**，复用同一半径字段 | [01 §2.9](th06nc/01-main-loop-and-collision.md) |
+| 每关擦弹上限 | 9999 | **99999** | [01 §2.9](th06nc/01-main-loop-and-collision.md) |
+| `ZunTimer` | 12 字节 `{previous, subFrame, current}` | **8 字节 `{previous, current}`** | [01 §2.13](th06nc/01-main-loop-and-collision.md) |
+| 关卡区在窗口里的位置 | 左边界固定 `x=32`，右侧留 HUD | **水平居中**，虚拟屏高固定 480、宽随宽高比 | [01 §2.11](th06nc/01-main-loop-and-collision.md) |
+| 自机坐标系 / 可动区 | 关卡区局部，可动区 `(8,16)+(368,416)` | **相同** | [01 §2.11](th06nc/01-main-loop-and-collision.md) |
+| 移动速度与角色数据 | `CharacterData` 32 字节 | **相同**（灵梦 4.0/2.0、魔理沙 5.0/2.5） | [01 §2.10](th06nc/01-main-loop-and-collision.md) |
+| `PlayerBullet` | `AnmVm` 打头 | **重排**：小标量提前（`bulletState +0x10`、`sprite +0x18`），大小 `0x170`、80 发 | [01 §2.12](th06nc/01-main-loop-and-collision.md) |
+| `SpawnBullets` / `UpdatePlayerBullets` | 独立函数 | **内联进 `Player__OnUpdate`**，只能登记区间 | [01 §2.12](th06nc/01-main-loop-and-collision.md) |
+| 射击→敌人的伤害链（钳 70、体术 -10、`(dmg/5)*10` 计分、符卡 ÷7/÷3） | — | **逐条同构** | [01 §2.16](th06nc/01-main-loop-and-collision.md) |
+| 玩法数值常量（两轮共 13 个：0.5 / 0.3 / -100 / 10 / 14 / 0.25 / 1.5 / 0.125 / 0.1 / 32 / 42 / 48 …） | — | **零偏差全中** | [01 §2.14](th06nc/01-main-loop-and-collision.md)、[§2.16](th06nc/01-main-loop-and-collision.md) |
+| `Player` 前 0x400 字节 | `playerSprite` 打头 | **重排**：四张炸弹区域平行数组排到最前 | [01 §2.16](th06nc/01-main-loop-and-collision.md) |
+| **决死窗口** | 首命 8 帧，之后每次复活变 **6** 帧 | **恒为 8 帧**（`Die()` 每次重写 `respawnTimer = 8`） | [01 §2.18](th06nc/01-main-loop-and-collision.md) 🟡 未实机 |
+| `deaths++` 的时机 | 被弹当场（`Die()` 内，`th06:0x004277ff`） | **挪到死亡结算**（决死窗口耗尽才算）→ 决死成功不计死亡 | [01 §2.20](th06nc/01-main-loop-and-collision.md) 🟡 |
+| 死亡结算（6 道具 / 5 道具、扣 16 火力） | — | **逐项相同** | [01 §2.19](th06nc/01-main-loop-and-collision.md) |
+| **挑战模式**：不扣命 / 死亡火力下限 8 / 1UP 改抵扣死亡数 / 死 >5 次拿不到满记录 | **无对应物** | ✅ 机制一手；名称与意图由用户告知 | [01 §2.20](th06nc/01-main-loop-and-collision.md) |
+
+半径与半宽同为 1.25，所以圆内接于方，判定面积小约 21%。
+
+> **两条反复出现的教训**（不只对 TH06NC 成立）：
+> ① **结构体顺序不能跨版本照抄**——`Enemy` 与 `PlayerBullet` 都被 NC 重排过；
+> 偏移必须靠访问模式或数组步长这类硬证据。
+> ② **NC 内联得比 TH06 多**，被内联的函数在 NC 侧根本没有地址可命名
+> （[`../ecl/th06nc/03`](../ecl/th06nc/03-opcode-crossmatch.md) §4）。
+
 ## 断言 × 版本矩阵
 
 | 断言 | th15 | th16 | th18 | 证据 |

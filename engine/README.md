@@ -24,9 +24,11 @@ engine/<子系统>/
 
 | 子系统 | 已覆盖版本 | 状态 |
 | --- | --- | --- |
-| [`player/`](player/OVERVIEW.md) | th15、th16、th18 | th16 三大子系统已反；th18 已定位自机位置与状态计时器；th15 擦弹已反 |
-| [`bullet/`](bullet/OVERVIEW.md) | th16 | 核心引擎 + 运动 VM + 激光 |
-| [`ecl/`](ecl/OVERVIEW.md) | th16 | VM 核心已基本反完 |
+| [`player/`](player/OVERVIEW.md) | th06nc、th15、th16、th18 | th06nc 主循环与碰撞/擦弹已定位；th16 三大子系统已反；th18 已定位自机位置与状态计时器；th15 擦弹已反 |
+| [`bullet/`](bullet/OVERVIEW.md) | th06nc、th16 | th06nc 两个池与 Bullet/Laser 结构体已定位；th16 核心引擎 + 运动 VM + 激光 |
+| [`enemy/`](enemy/OVERVIEW.md) | th06nc | 池与生成路径已定位；发现 NC 独有的 ECL 变量继承 |
+| [`ecl/`](ecl/OVERVIEW.md) | th06nc、th16、th18 | th06nc 已完成 TH06 基线与新增 opcode 勘探；th16 VM 核心已基本反完 |
+| [`std/`](std/OVERVIEW.md) | th06nc | 解释器与六条 opcode 已反完；**发现 NC 独有的背景循环 opcode**（op3 的 -1/-2） |
 | [`sht/`](sht/OVERVIEW.md) | th16 | 运行时语义已攻下（社区此前无公开破解） |
 | [`msg/`](msg/OVERVIEW.md) | th16 | 两套指令集全反，已告一段落 |
 | [`menu/`](menu/OVERVIEW.md) | th16 | 状态机 + 选择链 |
@@ -37,4 +39,4 @@ engine/<子系统>/
 | [`ufo/`](ufo/OVERVIEW.md) | th12 | 飞碟（UFO）：令牌槽 → 召唤 → 吸收道具 → 击破奖励全链一手 |
 | [`spirit/`](spirit/OVERVIEW.md) | th13 | 神灵 / 灵界（Trance）：六条生成通道 + 槽 + 灵界两道「中弹不死」闸门 |
 | [`input/`](input/th18/01-key-mapping.md) | th18 | 输入装配线：键盘配置表 / 掩码位 / 哪些键空着（A、S 空着，D 被切卡占用）|
-| [`anm/`](anm/OVERVIEW.md) | th16、th18 | th18 已反 VM 实例化 / 渲染阶段 / **ASCII 文字系统**；th16 仍只有旁敲锚点 |
+| [`anm/`](anm/OVERVIEW.md) | th06nc、th16、th18 | th06nc VM 已定位、新增 opcode 32–35 已反完；th18 已反 VM 实例化 / 渲染阶段 / **ASCII 文字系统**；th16 仍只有旁敲锚点 |
