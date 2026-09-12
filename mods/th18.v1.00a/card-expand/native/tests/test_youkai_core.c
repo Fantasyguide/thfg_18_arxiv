@@ -9,9 +9,13 @@
  *     `ply03as.sht` 满 P 档逐字段翻译；槽号/行数会与本文件的断言对账）
  *   `docs/superpowers/plans/2026-09-10-ufo-card-feasibility.md` §1.1（spawn 参数 +0x14 = life）
  *
- * 覆盖：低速判定 / 子机取得与聚焦边沿 / 档位与妖侧弹识别 / shooterset 自检（槽号·行数·fire_rate）/
+ * 覆盖：**止射闸的三条门（含 ❓用户口径「子机 0 ⇒ 不压原生弹」）** / 低速判定 / 子机取得与聚焦边沿 /
+ *       档位与妖侧弹识别 / shooterset 自检（槽号·行数·fire_rate）/
  *       发射点世界坐标（相对 vs 绝对）/ 1:1 发射口映射 / 状态差分（建·撤·退休·打破·重新武装）/
  *       表满 / 使魔计数 / 全撤 / 伤害转交的取整与上限 / life 采样 / 自伤保护盒 / spawn life 硬约束。
+ *
+ * ⚠ §3.1 的判据里**第三条**（子机数 > 0）是**用户口径**（2026-09-12），不是一手复刻 ——
+ *   断言里那一段逐格与 `yk_option_count` 对账，钉的就是「门与数量表同源」这件事。
  *
  * ⚠ 档位伤害表是**故意不填**（全 `YK_SHOT_DMG_NOT_SET` = 不覆盖；TH08 的单发伤害随 P 下降，
  *   只搬数字会让「P 越高越弱」，理由见 `cards/youkai_core.c` §3.4）
@@ -46,10 +50,53 @@ int main(void)
     p1[0] = 10.0f; p1[1] = 20.0f;
 
     /* ============================== §3.1 止射闸 */
-    CHECK(yk_suppress_native_shot(1, 1) == 1);        /* 有自机 + 聚焦 = 妖机体 ⇒ 压原生弹 */
-    CHECK(yk_suppress_native_shot(1, 0) == 0);        /* 高速 = 原机体 ⇒ 不压 */
-    CHECK(yk_suppress_native_shot(0, 1) == 0);        /* 标题 / 过场（没有自机）⇒ 不压 */
-    CHECK(yk_suppress_native_shot(0, 0) == 0);
+    CHECK(yk_suppress_native_shot_spec31_legacy(1, 1) == 1);        /* ★ legacy（§3.1 字面）：只说明「有自机 + 聚焦」，不含「0 子机放行」那条用户口径 */
+    CHECK(yk_suppress_native_shot_spec31_legacy(1, 0) == 0);        /* 高速 = 原机体 ⇒ 不压 */
+    CHECK(yk_suppress_native_shot_spec31_legacy(0, 1) == 0);        /* 标题 / 过场（没有自机）⇒ 不压 */
+    CHECK(yk_suppress_native_shot_spec31_legacy(0, 0) == 0);
+
+    /* --- ★★ 新门（2026-09-12）：第三条 = 「本帧妖侧子机数 > 0」-------------------------------
+     * ❓**口径（用户 2026-09-12 定）：子机数为 0 ⇒ 放行原生弹**（`count == 0` 时不压）。
+     *   **不是一手复刻**：TH08 妖侧不看 P、一按低速就有子机 ⇒ 原作没有「没子机」的档；
+     *   本作的约束是「妖侧弹的膛口恒取子机（`0x40a9c0`）」⇒ 没有子机就一发都发不出来，
+     *   此时再压原生弹 = 那一档「什么都不发」。
+     * 判据顺序（短路）= ① 有自机 ② 聚焦（= spec §3.1 原文）③ 子机数 > 0（= 用户口径）。*/
+    {
+        int c, lv;
+        /* ① 早苗（机体 3）档 0 ⇒ 数量 0 ⇒ **不压**（这条就是用户口径本身）*/
+        CHECK(yk_option_count(1, 3, 0) == 0);
+        CHECK(yk_should_suppress_native(1, 1, 3, 0) == 0);
+        /* ①' 早苗档 1..4（数量 1..4）⇒ **压**（口径只放行「一发都出不来」的那一档）*/
+        for (lv = 1; lv < 5; ++lv) {
+            CHECK(yk_option_count(1, 3, lv) == lv);
+            CHECK(yk_should_suppress_native(1, 1, 3, lv) == 1);
+        }
+        /* ③ 霊夢 / 魔理沙 / 咲夜（常数 1 / 1 / 4）⇒ **任何档都压**（含档 0；与早苗档 0 的对照）*/
+        for (c = 0; c < 3; ++c) {
+            for (lv = 0; lv < YK_OPTION_TIERS; ++lv) {
+                CHECK(yk_option_count(1, c, lv) > 0);
+                CHECK(yk_should_suppress_native(1, 1, c, lv) == 1);
+            }
+        }
+        /* ④ 高速 ⇒ 不压（既有行为不变）：与机体 / 档无关 */
+        for (c = 0; c < YK_OPTION_CHARS; ++c) {
+            for (lv = 0; lv < YK_OPTION_TIERS; ++lv) {
+                CHECK(yk_should_suppress_native(1, 0, c, lv) == 0);
+                CHECK(yk_should_suppress_native(0, 1, c, lv) == 0);   /* 没有自机（标题 / 过场）*/
+            }
+        }
+        /* ★ 门与数量表**同源**：判据逐格等于「那张表算出来的数量 > 0」——
+         * 这一条断言是防「有人回头往门里塞第二份判断」（例如按机体号枚举）的护栏。*/
+        for (c = -2; c < YK_OPTION_CHARS + 2; ++c) {
+            for (lv = -2; lv < YK_OPTION_TIERS + 2; ++lv) {
+                CHECK(yk_should_suppress_native(1, 1, c, lv)
+                      == (yk_option_count(1, c, lv) > 0));
+            }
+        }
+        /* 越界钳位（引擎读到的值不信任）：档 99 ⇒ 钳到档 4 ⇒ 早苗压；机体 99 ⇒ 钳到早苗 ⇒ 档 0 不压 */
+        CHECK(yk_option_count(1, 99, 0) == 0);
+        CHECK(yk_should_suppress_native(1, 1, 3, 99) == 1);
+    }
 
     /* ============================== §3.2 本体贴图 */
     CHECK(yk_body_sprite(1) == YK_BODY_SPRITE_FOCUSED);

@@ -3,11 +3,30 @@
 #include "youkai_core.h"
 
 /* ------------------------------------------------------------------ §3.1 止射闸 */
-int yk_suppress_native_shot(int player_present, int focused)
+int yk_should_suppress_native(int player_present, int focused, int character, int power_level)
 {
-    /* spec §3.1：108 active && 聚焦 ⇒ 本帧不发原生弹。没有自机（标题 / 过场）时**不抑制**：
-     * 那时原生行循环本来也不会跑，抑制只会让 `retaddr` 改控制流多一次（少一次风险）。*/
-    return player_present && focused ? 1 : 0;
+    /* ① 没有自机（标题 / 过场）⇒ **不抑制**：那时原生行循环本来也不会跑，抑制只是让 `retaddr`
+     *    改一次控制流（spec §3.1 原文，少一次风险）。② 高速 ⇒ 不抑制（高速 = 原机体，spec §0）。*/
+    if (!player_present || !focused) return 0;
+    /* ③ ❓**口径（用户 2026-09-12 定）：子机数为 0 ⇒ 不压原生弹。**
+     *   **不是一手复刻** —— TH08 妖侧不看 P、一按低速就有子机，原作里没有「低火力 ⇒ 没子机 ⇒ 一发弹都没有」
+     *   这个问题；这条门是照着本作的实现约束补的：
+     *     妖侧弹的膛口**恒取子机**（`0x40a9c0` 一手，AUDIT §BO-5）⇒ `count == 0` 时妖侧一发都发不出来；
+     *     此时若照 spec §3.1 原文（只看「有自机 + 聚焦」）压掉原生弹，那一档就是**什么都不发**。
+     *   数量事实来源**只有一处**：`yk_option_wanted` → `yk_option_count` → `YK_OPTION_BY_CHAR`，
+     *   与子机声明层（youkai.c `yk_option_declare`）同表同帧 ⇒ 不会出现「声明了却没压 / 压了却没子机」。
+     *   `character` / `power_level` 的越界钳位在 `yk_option_count` 里做（引擎读到的值不信任）。
+     *   ⇒ 今天只有「早苗（机体 3）+ 火力档 0（P < 100）」会走到这一支（表里 `{0,1,2,3,4}` 的第一格）；
+     *     霊夢/魔理沙/咲夜三行恒 1/1/4 ⇒ 任何档（含档 0）都压。*/
+    return yk_option_wanted(focused, character, power_level) ? 1 : 0;
+}
+
+int yk_suppress_native_shot_spec31_legacy(int player_present, int focused)
+{
+    /* 旧形状（只看「有自机 + 聚焦」）——**引擎侧不要再用**，真实判据走上面那条四参函数。
+     * 保留它是为了让「没有子机数信息」的调用点与既有单测有个明确的入口：默认机体 = 0（霊夢，数量恒 1），
+     * 档 = 0 ⇒ 判据退化回 spec §3.1 原文。*/
+    return yk_should_suppress_native(player_present, focused, 0, 0);
 }
 
 /* --------------------------------------------------------------- §3.2 本体贴图 */

@@ -9,7 +9,8 @@
  * 低速子机 = 选举覆盖；1/2 转嫁 = 单一落笔）。
  *
  * **一句话**：低速（聚焦）= 整个人换成妖侧机体（外观 + 子机 + 弹幕同时切、原生弹被压掉），
- * 高速 = 原机体；低速时身边的**使魔** = 敌人发射口实体化出来的**真敌人**（`NoEnemyDebug` 惰性空壳），
+ * 高速 = 原机体；**低速但没有妖侧子机时例外** —— ❓**口径（用户 2026-09-12 定）**：
+ * 那一刻**不压**原生弹（否则膛口没有子机、妖侧又发不出弹 ⇒ 一发都没有），见 `on_native_shot_suppress`；低速时身边的**使魔** = 敌人发射口实体化出来的**真敌人**（`NoEnemyDebug` 惰性空壳），
  * 使魔可打、被打死 ⇒ 那个槽不再重建、并按 **1/2** 把伤害转嫁给本体。
  *
  * 纯逻辑（低速判定 / 档位 / 1:1 映射与状态差分 / 取整与上限）在 `youkai_core.c`，
@@ -176,9 +177,10 @@ typedef struct {
     uint8_t       logged_opt;          /* 「子机声明停用（资产未到）」只记一次 */
     uint8_t       logged_sht;          /* 「妖侧 shooterset 没装」只记一次 */
     uint8_t       logged_noshot;       /* 「压了原生弹但自己也没弹」只记一次 */
+    uint8_t       logged_pass0;        /* ★ 2026-09-12：「子机 0 ⇒ 放行原生弹（用户口径）」只记一次 */
     uint8_t       logged_full;         /* 「使魔表满 / 堆拒绝」只记一次 */
     uint8_t       logged_gate;         /* 「发射口精确闸生效（使魔没了 ⇒ 该槽哑火）」只记一次 */
-    uint8_t       _pad[3];             /* 对齐（保持结构布局稳定）*/
+    uint8_t       _pad[2];             /* 对齐（保持结构布局稳定；新增位一律从 `_pad` 里拿）*/
 } yk_card_t;
 
 static yk_map_t s_map;              /* 使魔表（(enemy_id, 发射口槽) → 使魔）*/
@@ -724,6 +726,7 @@ static int on_ctor(ce_card_t *c)
     s->shot_timer = 0;
     s->spawns = s->broken = s->lost = s->transferred = s->dropped = s->fam_full = 0;
     s->logged_opt = s->logged_sht = s->logged_noshot = s->logged_full = s->logged_gate = 0;
+    s->logged_pass0 = 0;
     return 0;
 }
 
@@ -827,7 +830,9 @@ static int on_tick_shooters(ce_card_t *c, uint32_t short_timer, uint32_t long_ti
     (void)short_timer;
     (void)long_timer;
     if (!s || !CE_PLAYER()) return 0;
-    /* 高速 = 原机体（原生弹照发）；早苗的档 0 = 0 个子机 ⇒ 没有膛口，也不发妖侧弹。*/
+    /* 高速 = 原机体（原生弹照发）；早苗的档 0 = 0 个子机 ⇒ 没有膛口，也不发妖侧弹。
+     * ★ 这一条 = 止射闸第三条门的**同一张表、同一个函数**（`yk_option_wanted`）：两边同帧同源
+     *   ⇒ 「不压原生弹」的那一帧，这里也恰好不出妖侧弹（不会出现两边都发或两边都不发）。*/
     if (!yk_option_wanted(CE_PLAYER_FOCUSED(), yk_current_character(), yk_current_power_level())) return 0;
     if (!yk_youkai_shotset_installed()) {
         if (!s->logged_sht) {
@@ -861,30 +866,46 @@ static int on_bullet_created(ce_card_t *c, void *bullet)
     return 0;
 }
 
-/* ★ 核心：止射闸（spec §3.1）。返回非 0 ⇒ SDK 让本帧跳过原生行循环（`retaddr = 0x45eca0`），
- * `0x45eca0` 起的**卡广播照跑**（77 / 116 的卡子机不受影响）；117 咆哮生效时 SDK 根本不问这一条
- *（sdk.c：先问 `on_shot_set_index`，有卡覆盖了就不抑制）。*/
+/* ★ 核心：止射闸（spec §3.1 + 一条**用户口径**）。返回非 0 ⇒ SDK 让本帧跳过原生行循环
+ * （`retaddr = 0x45eca0`），`0x45eca0` 起的**卡广播照跑**（77 / 116 的卡子机不受影响）；117 咆哮生效时
+ * SDK 根本不问这一条（sdk.c：先问 `on_shot_set_index`，有卡覆盖了就不抑制）。
+ *
+ * 判据 = `yk_should_suppress_native(有自机, 聚焦, 机体号, 火力档)`（纯逻辑在 core、单测覆盖）：
+ *   ① 有自机 ② 聚焦 —— 这两条 = **spec §3.1 原文**；
+ *   ③ **本帧妖侧子机数 > 0** —— ❓**口径：`count == 0` 放行原生弹（用户 2026-09-12 定）**。
+ *   取数与子机声明层**同源同帧**（`yk_option_declare`：`CE_ADDR_CHARACTER` + `yk_shot_tier(CE_CURRENT_POWER())`
+ *   → `yk_option_count` → `YK_OPTION_BY_CHAR`）—— 这里调的是**同一个** `yk_option_wanted`，没有第二份判断。
+ *   ⚠ 这一条**不是一手复刻**：原版永夜抄的妖侧不看火力、一按低速就有子机（TH08 那张固定表），
+ *     原作里不存在「低火力 ⇒ 没子机 ⇒ 一发都没有」这个档；这条门是本实现的约束（膛口恒取子机）
+ *     逼出来的，用户 2026-09-12 拍了「宁可打原生弹，也别一发都没有」。 */
 static int on_native_shot_suppress(ce_card_t *c)
 {
     yk_card_t *s = ce_state(c, yk_card_t);
-    const char *why;
-    if (!yk_suppress_native_shot(CE_PLAYER() != 0, CE_PLAYER_FOCUSED())) return 0;
-    /* ⚠ 这对是**一体**的：闸把原生弹压掉了，而妖侧弹要**先有子机**（`0x40a9c0` 的膛口，
-     * 见 `on_tick_shooters` 前置①）⇒ 下面两种情况下低速**一发弹都没有**。
-     * 第一次命中时把原因记下来（实跑诊断用），但不改行为
-     *（行为 = spec §3.1 的原文：只看「有自机 + 聚焦」）。*/
-    if (!s || s->logged_noshot) return 1;
-    if (!yk_youkai_shotset_installed()) {
-        why = "youkai shooterset is NOT installed (run `make sht`)";
-    } else if (!yk_option_wanted(1, yk_current_character(), yk_current_power_level())) {
-        why = "there is no option to fire from (declared option count is 0 at this power level, "
-              "spec §3.3 / §12.4)";
-    } else {
-        return 1;
+    const int focused = CE_PLAYER_FOCUSED() ? 1 : 0;
+    const int character = yk_current_character();
+    const int level = yk_current_power_level();
+
+    if (!yk_should_suppress_native(CE_PLAYER() != 0, focused, character, level)) {
+        /* 走到这里的三条来路，只有第三条要记日志（前两条每关都会出现，记了就是噪音）：
+         *   ① 没有自机（标题 / 过场）；② 高速（= 原机体，设计）；
+         *   ③ ❓口径生效：低速 + **本帧子机数 0**（今天只有「早苗 + P < 100」这一档）⇒ 放行原生弹。
+         *      ⚠ 这一行的用途：实跑时一眼看出**那一刻是原生弹在打**，而不是「什么都没打」。*/
+        if (!s || s->logged_pass0 || !focused) return 0;
+        s->logged_pass0 = 1;
+        ce_log("youkai: focused with 0 youkai options at this power level "
+               "(char %d, tier %d) - NOT suppressing native shots (user ruling 2026-09-12): "
+               "the native shot line is what fires now; the youkai side has no muzzle because "
+               "0x40a9c0 fires from an option slot only",
+               character, level);
+        return 0;
     }
+    /* 压了原生弹。❓口径改掉之后，还剩一种情况会让本帧真的**一发都没有** = 妖侧 shooterset 没装
+     * （子机 0 那条已经在上面放行了）⇒ 第一次命中时记下原因（实跑诊断用），但不改行为。*/
+    if (!s || s->logged_noshot || yk_youkai_shotset_installed()) return 1;
     s->logged_noshot = 1;
-    ce_log("youkai: native shots suppressed at focus but %s -> NO bullets at all "
-           "(spec §3.1 + §3.4.1)", why);
+    ce_log("youkai: native shots suppressed at focus but youkai shooterset 0x%02x is NOT installed "
+           "(record fire_rate is 0; run `make sht`) -> NO bullets at all (spec §3.1 + §3.4.1)",
+           YK_SHOT_SET_YOUKAI);
     return 1;
 }
 
@@ -1029,9 +1050,11 @@ _Static_assert(sizeof(yk_fam_vm_t) == 12, "familiar follow-VM record grew (table
  *        由 `assets/ability/make_youkai_option_art.py` 逐条照抄零售；一手落点写在那一节的注释里）。
  *        数量 / 阵型 / 落笔早在同一天接上（`YK_OPTION_BY_CHAR` 4×5 表 + `yk_option_offsets` 逐格阵型 +
  *        声明层 `on_option_pose_apply`，spec §3.3.1/§12.4）⇒ 这一项**不再是占位**。
- *        ⚠ 两个已知缺口，实跑要盯：① `count = 0` 的档（早苗 P<100）妖侧**一发弹都没有**，
- *        而原生弹被 `on_native_shot_suppress` 压掉 ⇒ 那一档「什么都不发」（见 `on_native_shot_suppress`
- *        的诊断日志；口径未定，报告 §6）；② 12 格公共池与 71/77/116 共享，本卡满配 4 格。
+ *        ⚠ 两个已知缺口，实跑要盯：① ~~`count = 0` 的档（早苗 P<100）妖侧**一发弹都没有**，
+ *        而原生弹被 `on_native_shot_suppress` 压掉 ⇒ 那一档「什么都不发」~~ —— ✅ 2026-09-12 **按用户口径关掉**：
+ *        止射闸加了第三条「本帧子机数 > 0」⇒ `count == 0` 时**放行原生弹**（见 `on_native_shot_suppress`
+ *        与 `yk_should_suppress_native`；❓ 口径、非复刻），实跑会看到一行 `NOT suppressing native shots`；
+ *        ② 12 格公共池与 71/77/116 共享，本卡满配 4 格。
  *        ❓ ③ TH08 那三支脚本的**中断标签**是 TH08 的约定（1/2 = 循环、3/4 = 起爆、5 = 散场），
  *        与 TH18 引擎发给子机 VM 的 2 出场 / 3 收起 / 1 销毁**不同** —— 逐条照抄零售的必然结果，
  *        要不要改标签是设计决定（见生成器文件头与报告 ❓）。
@@ -1053,7 +1076,11 @@ _Static_assert(sizeof(yk_fam_vm_t) == 12, "familiar follow-VM record grew (table
  *   🟡 待实跑
  *    10. 文件头的 `abs_pos` 双写（spec §3.5 只写 final_pos）
  *    11. `YK_TRANSFER_BOX_W/H` = 16×16、`YK_FAM_HURTBOX_HALF` = 12（默认 hurtbox 24.0 的一半）
- *    12. 止射闸（A 路线 = `retaddr` 改控制流）本身未实跑；与 117 咆哮 / 77 / 116 同装的验收见 spec §9
+ *    12. 止射闸（A 路线 = `retaddr` 改控制流）本身未实跑；与 117 咆哮 / 77 / 116 同装的验收见 spec §9。
+ *        ⚠ 判据已按**用户口径**改成三条（多加「本帧子机数 > 0」⇒ `count == 0` 放行原生弹，
+ *        2026-09-12）⇒ 与 spec §3.1 的字面**有意不同**，实跑要验的正是这一条：早苗 P<100 低速时
+ *        屏幕上应当是**原生弹**在打（日志 `NOT suppressing native shots`），换机体 / 升到 P>=100
+ *        之后立刻切回「原生弹被压 + 妖侧弹出膛」。
  *    13. 「聚焦态变了 ⇒ 先收子机再重申请」（脚本是申请时定死的）只在资产到位、脚本真的会变时
  *        才走到 —— 未实跑。★ 附带一手：`ce_option_drop` 现在**自己会把池槽松开**（`option+0x00 = 0`，
  *        见 sdk.c 的实现注释 + `0x40a790` 的空位判据）⇒ **不需要** `ce_repopulate_options()` 回收

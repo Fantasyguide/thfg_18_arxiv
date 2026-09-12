@@ -4572,3 +4572,37 @@ C 侧：占位 `CE_ANM_ABILITY_SCRIPT_PEASHOOTER_OPT`（卡 77 的豌豆射手�
    8 帧同图但 `blendMode(1)` + `type(3)` + 不同帧序）。要接得**按火力档切脚本**（会触发「先收再要」的重申请）。
    一手数据已在上面，可随时补一支 228。
 3. 子机外观的**观感未实跑**（三队子机 sprite 都是半透明：meanA pl00 120 / pl01 96 / pl02 81，本体 200+）。
+
+### BO-10 108 止射闸的用户口径追加：`count == 0` ⇒ 放行原生弹（2026-09-12 用户定）
+
+**用户原话**：「**0 子机得不压原生弹**」。
+
+**为什么需要**：108 的机制是「低速 ⇒ 压掉原生弹、改由妖侧 shooterset 出弹」，而妖侧弹的膛口**恒取子机**
+（`0x40a9c0`，见 §BO-5）⇒ 子机数为 0 时**妖侧一发都发不出来**；若同时压掉原生弹就**完全没有输出**。
+按刚落地的一手数量表（`YK_OPTION_BY_CHAR`，§BO-8），**只有「早苗 + 火力 < 100」**会落到 `count == 0`
+（第 3 行 = `{0,1,2,3,4}`；灵梦/魔理沙/咲夜三行恒 1/1/4，任何档都 ≥1）。
+
+**实现**：新增纯函数 `yk_should_suppress_native(int present, int focused, int character, int power_level)`
+（`youkai_core.c`），判断顺序短路：① 无自机 ⇒ 不压（= §3.1 原文）② 非聚焦（高速）⇒ 不压（= §3.1 原文）
+③ ❓**口径**：`yk_option_wanted(focused, character, power_level)` —— 数量的事实来源**只有**
+`YK_OPTION_BY_CHAR` + `yk_option_count(...)`，与子机声明层**同表同帧**，**没有第二份判断**。
+引擎侧唯一调用点 `on_native_shot_suppress` 已改调四参版（传 `CE_PLAYER() != 0` / `CE_PLAYER_FOCUSED()` /
+`CE_ADDR_CHARACTER` / `yk_shot_tier(CE_CURRENT_POWER())`，与 `on_tick_shooters` 的取法一致）。
+旧的两参 `yk_suppress_native_shot` **改名为 `yk_suppress_native_shot_spec31_legacy`**（只给单测用；
+改名是为了**不让名字误导**——它返回的是**旧判据**，不含这条口径）。
+新增日志 `logged_pass0`（**从原 `_pad[3]` 里拿，`_pad` 3→2，`sizeof(yk_card_t)` 112 → 112 不变**）：
+`"youkai: focused with 0 youkai options at this power level (char %d, tier %d) - NOT suppressing native shots
+(user ruling 2026-09-12): the native shot line is what fires now ..."`；
+原来「压了但一发都没有」的日志收窄到只剩「shooterset 没装」一种来路。
+
+⚠ **这是用户口径、不是一手复刻**（原版永夜抄妖侧不看 P、一按低速就有子机，**原作没有这个档**）——
+注释、`youkai_core.h` 文件头与 spec §3.1 三处都按此标明，**不许包装成「复刻」**。
+
+**回归**：`test_youkai_core` 556 → **710 checks / 0 failed**（新增 154 条，展开自 11 条 `CHECK`：
+早苗档 0 不压 / 档 1..4 压 / 三行常数 1/1/4 **全档**都压 / 高速与无自机全表不压；
+外加「门 == 数量表 > 0」逐格护栏，含越界钳位与档 99 钳到 4）。`make check` / `make verify` 均 **exit 0**、
+`test-host` 20 组全 0 failed、x87 = 0、`-fsyntax-only` 零告警。
+
+**❓ 未定**：① 止射闸与声明层是否在**同一帧的同一时刻**读机体号/火力档（换机体、松 Shift、升档那一帧的边界）
+**无一手证据** ⇒ 理论上存在「声明 1 个却按 0 判、放行原生弹」的**单帧窗口**（最坏 = 一帧多打一发原生弹，可接受），
+🟡 待实跑；② 口径本身只跑过纯逻辑层，实跑验收未做；③ `logged_pass0` 只记一次（非边沿触发）。

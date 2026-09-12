@@ -57,6 +57,15 @@
   `CE_SHT_SET_WOLF_0 0x1e` / `EAGLE_0 0x23` + 火力档）就**本帧不抑制**；没有覆盖时才问 108 的新询问。
 - **新 SDK 面**（②已拍板）：`ce_hooks_t` 尾部加 `int (*on_native_shot_suppress)(ce_card_t *)`，
   返回非 0 = 请求跳过本帧原生行循环。
+- ★ **2026-09-12 用户口径追加（与本节上面的字面判据有一处偏离，读代码时别以为写错了）**：
+  **`count == 0` 时放行原生弹**。原因：妖侧弹的膛口**恒取子机**（`0x40a9c0`，见 `AUDIT` §BO-5）
+  ⇒ 子机数为 0 时妖侧**一发都发不出来**，若同时压掉原生弹就**完全没有输出**。
+  这条只在「**早苗 + 火力 < 100**」出现（`YK_OPTION_BY_CHAR` 第 3 行 = `{0,1,2,3,4}`；另三支恒 1/1/4）。
+  ⚠ 这是**用户口径、不是一手复刻**（原版永夜抄妖侧不看 P、一按低速就有子机，原作没有这个档）。
+  实现 = 纯函数 `yk_should_suppress_native(present, focused, character, power_level)`，
+  数量的事实来源**只有** `YK_OPTION_BY_CHAR` + `yk_option_count(...)`（与子机声明层同表同帧）；
+  `yk_suppress_native_shot_spec31_legacy(present, focused)` 是**旧判据的薄包装**，只给单测用，
+  **引擎侧不要再用**。详见 `AUDIT` §BO-10。
 - **不做什么**：❌ 清 `0x4ca428` bit `0x001`；❌ 动 `player+0x4779c` bit `0x200`；❌ 碰总门 `+0x476ac`（POC 线在用）；
   ❌ 重定向 `sht+0xe0+idx*4` 指针（在飞弹每帧回查行指针 ⇒ 会把野行喂给在飞弹）；
   ❌ hook `0x45e930` / `0x45e320`（卡也走那里）。
