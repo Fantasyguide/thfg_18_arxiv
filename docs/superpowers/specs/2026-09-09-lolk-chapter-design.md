@@ -1,10 +1,10 @@
-# 绀珠传（card-expand id 118）—— 章节系统 + 擦弹减速 设计
+# 绀珠传（card-expand id 115）—— 章节系统 + 擦弹减速 设计
 
 > **版本**：TH18 v1.00a（`th18.exe`，imagebase `0x400000`）。本文裸地址默认属该版本；引用其他版本须写成 `th15:0x…`。
 > 日期：2026-09-09。状态：**实现完成、待实跑**（§9 接缝已一手定案）。归属：`mods/th18.v1.00a/card-expand/`。
 > 引擎一手：[`engine/chapter/th15/01-chapter-and-bonus.md`](../../../engine/chapter/th15/01-chapter-and-bonus.md)（章节系统）、
 > [`engine/player/th15/01-graze-and-item-slowdown.md`](../../../engine/player/th15/01-graze-and-item-slowdown.md)（擦弹 + 道具减速）。
-> 排队来源：[`IDEAS.md`](../../../mods/th18.v1.00a/card-expand/IDEAS.md) 的 **118 章节奖（th15）**。
+> 排队来源：[`IDEAS.md`](../../../mods/th18.v1.00a/card-expand/IDEAS.md) 的 **115 章节奖（th15）**。
 
 ## 0. 一句话 + 用户定案
 
@@ -85,10 +85,19 @@
 
 ```
 rate  = 分母 ? min(100, 分子 × 100 / 分母) : 100
-bonus = (graze × rate × 50 / 10) × 10          # 整数，TH15 原式
+bonus = (graze × rate × 50 / 10) × 10          # 整数，TH15 原式（= 擦弹 × 击破率% × 5000，取整到十位）
 score += bonus / 10                             # TH15 的分数增量
-bonus ≥ 1_000_000 → 额外给 1 个碎片：符卡碎（type 6）为主，每 5 波改成命碎（type 4）
+bonus ≥ 1_000_000 → 额外给 1 个碎片：★ 固定「残机碎片」（type 0x10 = 零售 EXTEND2 卡道具）
 ```
+
+**★ 碎片口径（用户 2026-09-12 定案，覆盖原文的「每 5 波循环」）**：本卡对应的是**绀珠传「传统 / legacy」模式**的掉残
+⇒ **固定掉残机碎片、没有循环**（原写成「4 符卡碎 : 1 命碎」是错的；代码一直就是恒命碎，属文档错、代码对）。
+TH15 原作规则（用户一手口径）：
+- `bonus ≥ 100 万`（⇔ **擦弹数 × 击破率 ≥ 200**，注意「等于也可以」）给资源奖励：
+  **完美模式 = bomb 碎片 / 传统模式 = 残机碎片** ⇒ 本卡取**传统模式**。
+- **bomb 碎片 5 个 = 1 bomb；残机碎片 3 个 = 1 残机（Extra 5 个）**
+  —— ⚠ 与 TH18 原生「3 碎 = 1 残机」**同制** ⇒ 直接撒零售卡道具让引擎自己进位。
+- ★ **残机上限 8**：已有 8 残机时，之后拿到的残机碎片**要变成 bomb 碎片**（TH15 原规则；**本卡要实装**）。
 
 碎片走 `ce_spawn_item(type, pos, angle, speed)` 从自机上方弹出（辉针城同款；
 type `0x10` = EXTEND2 卡道具 → 命碎、`0x11` = BOMB2 → 符卡碎，AUDIT §Z12），
@@ -182,8 +191,9 @@ x = 300 / **308** / 300 / 300 / 300、y = 226 / 246 / 266 / 286 / **296**、font
 | 减速因子 | 0.3 → +0.1/帧 | TH15 原值 |
 | 章节奖系数 | 50 | TH15 原值 |
 | 分数增量 | `bonus / 10` | TH15 原值 |
-| 碎片阈值 | `bonus ≥ 1,000,000` | TH15 原值 |
-| 碎片循环 | 每 5 波第 5 波给命碎（type 0x10），其余给符卡碎（type 0x11） | 本卡新定（TH15 是 MODEFLAGS 分流，TH18 没有那个开关） |
+| 碎片阈值 | `bonus ≥ 1,000,000`（⇔ 擦弹 × 击破率 ≥ 200；等于也算）| TH15 原值 |
+| 碎片种类 | ★ **固定残机碎片**（type `0x10`）| 用户 2026-09-12：本卡 = **传统 / legacy 模式**口径 |
+| 8 残机以上 | ★ 残机碎片**改给 bomb 碎片**（type `0x11`）| TH15 原规则（**待实装**）|
 
 参考量级：一波擦弹 200、击破率 100％ → `bonus = 1,000,000` → 分数 +100,000。
 TH18 零售分数在百万量级，这个量级不会破坏体感；要更保守就把系数降到 20。
@@ -193,7 +203,7 @@ TH18 零售分数在百万量级，这个量级不会破坏体感；要更保守
 ```
 native/cards/lolk.c         行为（+0x2c tick / on_draw / on_stage_start / on_run_reset）
 native/cards/lolk_core.c    纯逻辑：波状态机 + 公式（主机单测）
-patch/th18/cards.js         "118": { … category 2, price_tier 10, weight 2 }
+patch/th18/cards.js         "115": { … category 2, price_tier 10, weight 2 }
 assets/ability/…            面板贴图 + 脚本
 ```
 

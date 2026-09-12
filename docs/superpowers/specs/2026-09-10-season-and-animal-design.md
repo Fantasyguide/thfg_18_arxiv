@@ -24,7 +24,7 @@
 
 → 复刻只能**自建**，而且接缝都在卡侧（SDK 已有）。
 
-## 1. 季节卡（id 119，`native/cards/season.c` + `cards/season_core.c`）—— 已实现（**装备卡**）
+## 1. 季节卡（id 116，`native/cards/season.c` + `cards/season_core.c`）—— 已实现（**装备卡**）
 
 用户 2026-09-10 定案：**这是装备卡**，且「季节解放」要绑游戏不用的键（A/S）。
 2026-09-09 拿到 TH16 脱壳版 exe 后（[`engine/season/th16/01`](../../../engine/season/th16/01-season-data-and-tables.md)），
@@ -66,24 +66,32 @@
 4. 土用「消弹圈向后移动并缩小」没做（本卡清弹圈钉在自机身上，秋的"随自机移动"因此等效）。
 5. 子机按档位换弹型（现在只提速）。
 
-## 2. 动物灵卡（id 120，**未实现**，设计先行）
+## 2. 动物灵卡（id **117 鬼形兽**，2026-09-10 **Stage 2 已实现**）
 
-TH18 没有残骸，全部自建；机制拆成四块，全部有现成接缝：
+TH18 没有残骸，全部自建；机制拆成四块，全部有现成接缝。**2026-09-10 Stage 2 已实现**
+（`native/cards/animal.c` + `animal_core.c`，审计 AUDIT §AL，实跑清单 NEXT.md §1v；
+动物灵本体已是自建 VM 池 + TH17 零售切图，不再是原生道具载体）：
 
-| 部件 | 设计 | 接缝 |
+| 部件 | Stage 1 实现 | 接缝 / 一手 |
 | --- | --- | --- |
-| 出现动物灵 | 击杀时从**敌人坐标**撒一颗占位「动物灵」（`on_shot_damage(c, dmg, pos)` 给的是敌世界坐标，用它记住最后击杀点）| `on_shot_damage` / `ce_spawn_item` |
-| 收集槽 | `on_item_collect` 计数（只认自己撒的）→ 5 类计数可选（先做单一槽）| `on_item_collect` |
-| 咆哮模式 | 槽满 → 自动进咆哮（或 C 键）：`HYPER_TIME` 用卡私有状态计帧；期间抬自机弹伤害倍率 | `ce_set_bullet_damage_permille`（SDK §AA）|
-| 中弹只退出咆哮 | `on_death_before_deathbomb`：咆哮中 → `Player::cancel_impending_death`(`th18:0x45d590`) + 清咆哮 + 播个音，**不扣命** | SDK 死亡三钩子 |
+| 出现动物灵 | 敌人死亡时按确定性节奏撒一只**自建 VM**（40 只池，贴图 = TH17 零售 `beast1.png`；DVD 式弹跳 / 24 px 吸收 / 60 px 减速 / 变色 / 版边消失）| `on_enemy_drop_pre` + `ce_anm_spawn` 一族 |
+| 收集槽 | 自建实体的 24 px 判定 → `animal_core` 的 5 格队列（存 type）；鱼灵（4..7）咆哮中收到立刻换道具、结束时把队列里的也换掉 | `animal_core` + `ce_spawn_item`（TH17 `th17:0x40f980` / `th17:0x410640`）|
+| 咆哮 | 队列满 → 就绪判定（多数 ≥3 → 单一类型 + 时长表 840/1140/1500，== 自机兽灵 +480；否则混合 1140）；C 键发动 40 帧霊撃：半径 `(1−f⁴)×200` 消弹 + 伤害源 + 60 帧无敌；就绪窗口超时 → 按释放等级爆散 | 主动卡 `on_activate` + `on_tick_2`；纯逻辑 `animal_core.c` |
+| 中弹只退出咆哮 | `on_death_before_deathbomb`：就绪且未霊撃 → 开霊撃（`by_hit=1`）+ `Player::cancel_impending_death`（`th18:0x45d590`），**不扣命** | SDK 死亡三钩子（AUDIT §AL3）|
 
-**风险 / 待验**：
-- `on_death_before_deathbomb` 里调 `cancel_impending_death` 是否足够「不死」（要不要连 `CURRENT_LIVES`
-  一起回滚？零售 death-save 卡是怎么做的 → 读 `CardEirin`/`CardMamizou` 的 `on_player_death_after_deathbomb`）；
-- 咆哮期间的自机弹伤害倍率会与伤害层聚合（`bullet_damage_permille`）叠加，量级要定。
+**已验证 / 已定**：
+
+- `+0x10` 槽里调 `cancel_impending_death` 是安全的：`Player__die` `th18:0x45d3a0` 先置 state 4、最后才广播 `+0x10`，
+  返回后不再写 state（一手反编译，AUDIT §AL3）。不需要回滚 `CURRENT_LIVES`（它还没被扣）。
+- 不抬自机弹伤害倍率（原设计的「期间抬伤害」砍掉）：霊撃的伤害源已按 TH17 一手给 40/帧；
+  倍率层与它叠加的量级没一手依据，留待实跑后再定。
+
+**Stage 2 边界（❓自定 / 待实装）**：暴走咆哮的射击强化（狼 = 低速、鹫 = 高速）未做；水獭 3 个旋转消弹体
+只有消弹判定、视觉未接；稀有动物灵（8..14）不做；**+480 凭依加成 2026-09-10 二次定案已接**（TH18 无凭依选择 ⇒ 用自机序号 %3，与光环颜色同一口径）；灵槽几何待实跑调。
+清单见 NEXT.md §1v。
 
 ## 3. 测试与验收
 
 - 季节卡：`make dll` 通过；实机看 ① 敌人死时掉点 ② 收 10 颗进一档 ③ C 键清弹+无敌+扣档 ④ HUD 行。
-- 动物灵卡：待实现。
+- 动物灵卡（117 鬼形兽）：Stage 1 已实现（`make dll` / 主机单测 113 断言通过），待实跑（NEXT.md §1v）。
 - 主机单测：两张卡的纯逻辑（槽/档/计时）如果超过几十行就抽 `*_core.c` + 单测；占位版逻辑留在卡里。
