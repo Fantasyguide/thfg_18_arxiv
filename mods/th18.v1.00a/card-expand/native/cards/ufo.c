@@ -24,9 +24,11 @@
  * ② **「两同一异」= 一手会删掉第一个 token** ⇒ `ufo_group_put` 改成**照抄一手 KEEP2**
  *    （`th12:0x422e80` 的 `cnt1c = 4` 那条路）：第三格填上时不成组就**当场丢最旧、保留最近两个**，
  *    丢完**重判合成**。一手指令原文与 6 种排列的期望见 `ufo_group_put` 的注释 + 单测。
- * ③ **五边形框**（手上 2 枚、再来一枚即成组时框住场上「这类令牌」）⇒ 本次**只落触发条件 + 预留钩子**
- *    （`ufo_pentagon_hint_for_color()` / `ufo_pentagon_hint_update()`），**不画**（缺 anm 脚本，
- *    不许用 `drawRect` 硬凑假的五边形）。
+ * ③ **五边形框**（手上 2 枚、再来一枚即成组时框住场上「这类令牌」）⇒ ★ **2026-09-12（A7）已实装**：
+ *    框 = **零售 TH12 `bullet.anm` script211 的逐条移植**（`assets/ability/scripts/223_ufo_pentagon.anm.txt`，
+ *    `drawPolyBorder(1.0f, 5)` = 程序画的五边形、**无贴图**），触发条件 / 颜色标签 / 层号 / 生命周期
+ *    全部一手（见下面那个「★★ 五边形框」常量块）；卡侧 `ufo_pentagon_hint_update()` 每帧驱动，
+ *    **不用 `drawRect` 硬凑假的五边形**（用户明确要求）。
  * ④ **左下角飞碟槽 HUD 第一版** ⇒ 真认领货架槽（`ce_hud_slot_claim_card(112, …)`）并画
  *    三格令牌槽 + 本体血条 + 一行贴图 VM 读数，全部在 **UI 层 25**（会被暂停模糊罩盖住）。
  *
@@ -283,6 +285,92 @@ static int ufo_token_anm_script(int32_t color)
                                        *   收尾会跑 `assets/renumber_scripts.py --apply` 压紧 ⇒ 以
                                        *   `anm_ids.h` 的 `CE_ANM_ABILITY_SCRIPT_UFO_TOKEN_RAINBOW_*` 宏名为准。 */
 
+/* ==================== ★★ 五边形框：提示 UI（2026-09-12 裁决 ③ 的**实装**；资产缺口 A7）====================
+ * 用户口径（裁决 ③）：「玩家手上有**两个令牌**（= 再来一枚就能成组）时，屏幕上**这类令牌**外面
+ * 会有一圈**五边形框**作提示」。本轮把「框本身」补齐（此前只有判据 + 钩子）。
+ *
+ * **一手全在这一段里**（TH12 v1.00b，全部 `objdump -d` 逐条复核，复核命令见 §A8 常量块的尾注）：
+ *
+ * ① **框 = `bullet.anm` script211**（扁平号 `0xd3`，脚本原文 `local/th12.v1.00b/anm/bullet/bullet.anm.txt`
+ *    5511–5566 行）：
+ *      `sprite(-1); layer(12); blendMode(1); drawPolyBorder(1.0f, 5); angleVel(0,0,0.034906585f);`
+ *      `color(255,255,255); scale(0,0); scaleTime(10,4,20,20); stop();` 然后四段标签 +
+ *      一段无名（`color(255,64,64); alphaTime(4,0,0); +4: delete()`）：
+ *      `interruptLabel(7)` 红脉动 / `8` 蓝 / `9` 绿 / `10` 四色轮转。
+ *    ⇒ **不用贴图**：`drawPolyBorder(1.0f, 5)` 的第二个参是**边数**（5 = 五边形），第一个是半径，
+ *      多边形由引擎程序画（`sprite(-1)` = 不画精灵）⇒ 这项资产**没有 PNG 可切**，也没有 ORDER 条目。
+ *      TH18 零售的同款写法（v8 opcode 605 可用）：`effect.anm` script101 `sprite(-1); drawPolyBorder(1.0f, 12);`、
+ *      `ability.anm` script35 `sprite(-1); drawPolyBorder(112.0f, 64);`（都不写 `type()`，与 TH12 一致）。
+ *    ⇒ 落地 = `assets/ability/scripts/223_ufo_pentagon.anm.txt`（正文**一字未改**地照抄 script211）。
+ *
+ * ② **触发点** = `ItemManager__on_tick__body`（`th12:0x425c20`）的令牌分支（`0x42658a`–`0x426843`）：
+ *      · `0x42658a cmp dword [0x4b0c58],3 / jl 0x4265aa`（`0x4b0c58` = 已收枚数）
+ *        ⇒ **已收满 3 枚（槽满）就一个框都不画**，并把已有的框删掉（落 `0x4260af` = 本条道具收工）。
+ *      · `0x4265aa mov eax,[edi+0x9b4]`（道具类型）`add eax,-10 / cmp eax,5 / ja 0x4260af`
+ *        ⇒ **只对令牌道具（类型 10..15）跑**。
+ *      · `0x4265bc jmp dword [eax*4+0x426fc4]` —— 跳表（一手读出 `0x426fc4` 起的 6 个 dword）：
+ *        `type10→0x4265c3`、`type11→0x426696`、`type12→0x426766`、
+ *        **`type13→0x4265c3`（同红）、`type14→0x426696`（同蓝）、`type15→0x426766`（同绿）**。
+ *        每条 case 的正文（三个 dword：`0x4b0c4c`、`0x4b0c50` = `COLLECTED_UFOS[0]/[1]`，颜色 1/2/3 = 红/蓝/绿）：
+ *          `case 红(10/13)`：`slots[0]==1 && slots[1]==1` ⇒ 建框 + 标签 **7**；
+ *                           否则 `{slots[0],slots[1]} == {2,3}`（两种顺序都算）⇒ 建框 + 标签 **10**；
+ *                           其余 ⇒ 删框。`case 蓝(11/14)`：`2,2` ⇒ 8、`{1,3}` ⇒ 10。
+ *                          `case 绿(12/15)`：`3,3` ⇒ 9、`{1,2}` ⇒ 10。
+ *      ⇒ 一句话：**框的颜色 = 收了这一枚会得到的那只 UFO 的颜色**
+ *        （同色补全 ⇒ 该色 7/8/9；三色各一 ⇒ 彩虹 10）。★ 这与本卡纯逻辑层的
+ *        `ufo_group_peek_color()`（= `ufo_group_classify()`）**同一个含义**，所以标签直接由它算（见下）。
+ *      ⇒ 零售彩虹令牌（type 13/14/15）走的是「**它当前显示的那一色**」那一条 case ——
+ *        我们的令牌颜色模型里彩虹是**通配**（`ufo_core.h` 的凑组规则）⇒ 判据用 `t->color`
+ *        （既有钩子 `ufo_pentagon_hint_for_color()`，已有单测），**有意不跟「当前态」那条**：
+ *        否则会出现「框不亮、收下去却成了组」。⏳ 待用户看一眼（要改成零售字面口径 = 把这里的
+ *        `t->color` 换成 `rb_state` 对应的色，一处）。
+ *
+ * ③ **生命周期**（`item+0x968` 存框的 VM id）：
+ *      · 建框六处（`0x4265f0` / `0x426673` / `0x4266c3` / `0x426746` / `0x426792` / `0x426814`），
+ *        每处都是 `push 0x0; push 0xd3; push &pos; push bullet_anm; mov eax,0x17; xor ecx,ecx;
+ *        call 0x4615a0`（`AnmManager__create_vm`；`eax` = 层参数，`0x17` = 23 = **道具自己的层**，
+ *        见 `spawn_item` `0x42771f lea eax,[edi+0x18]`（edi = −1）—— 脚本里的 `layer(12)` 随后覆盖它）
+ *        + `mov [edi+0x968],id` + `call 0x461970`（发中断：标签在 **EBX**，函数体 `movsx edx,bx`
+ *        → 写 `vm+0x3c4` = pending interrupt，并递归子树）。
+ *      · **每帧只查 `cmp dword [edi+0x968],0 / jne`（`0x4265d5` 一族）⇒ 已经有框就什么都不做
+ *        （不重建、也不重发标签）**。
+ *      · 条件不成立 ⇒ `push [edi+0x968]; call 0x461a70`（`AnmManager__delete_vm`：置
+ *        `vm+0x47c |= 0x10000000`，一手 `0x461a89`）+ `mov [edi+0x968],0`。
+ *   ⚠ 「建完**立刻**发中断」不会跳掉脚本开头的初始化：一手 `AnmLoaded__load_script_into_vm`
+ *     （`th12:0x454d10`）在末尾 `push vm; call 0x455630`（VM 的 update）**自己先跑了一帧**
+ *     （`0x454db9`/`0x454dba`）⇒ `drawPolyBorder` / `layer(12)` 那时已经落地，下一帧 pending 中断
+ *     才跳到标签段。TH18 侧同构：`AnmLoaded__instantiate_vm_to_world_list_back` `0x405bf0`
+ *     的说明里也写着「**跑一帧**」（`engine/anm/th18/01-vm-instantiate.md` §0）
+ *     ⇒ 本卡照抄「spawn → 立刻 interrupt」这个次序（先例：本文件 A8 的彩虹三段中断）。
+ *
+ * **本卡与零售的差别**（都是「载体不同」逼出来的，逐条登记）：
+ *   ① 零售的框挂在**道具**上：位置在建框那一刻抄一次（`0x4615a0` 内部把 pos 拷进 VM），**之后不跟随**；
+ *      我们的令牌是**敌机实体** + 跟随 VM（`ufo_tok_vm_spawn`）⇒ 框也每帧跟到实体坐标
+ *      （`ufo_tok_penta_follow`）。令牌实体不动时两者等价；真 ECL 到位后会飘（`moveLimit` 活动框）、
+ *      不跟随就会「框留在原地、令牌飘走」。
+ *   ② 金在零售里不存在 ⇒ 金的框落在蓝那一格（`ufo_group_classify()` 内部过 `ufo_color_norm()`）——
+ *      与用户裁决 ①（金 = 蓝的调色版）一致。
+ *   ③ 零售的框在**框住的道具所在的那只 VM 之外另起一个 VM**（句柄存 `item+0x968`），我们也是：
+ *      贴图那只在 `ufo_tok_t.anm_id`（卡私状态），框那只在 `s_penta_id[槽号]`（**文件静态** —— 私状态
+ *      只剩 28 B，16 个槽 × 4 B = 64 B 放不下；理由与被 `_Static_assert` 拦下的过程写在那个数组的注里）。
+ *
+ * **层号**（★ 照抄零售）：脚本自己写 `layer(12)` —— 零售原值，且 12 落在世界层区间（3–19）里，所以
+ *   **不是**「别作的层号」⇒ 照抄不改（对照先例：本体脚本 `164_ufo_red` 的 `layer(7)` 也是从 TH12
+ *   `enemy.anm` script135 原样搬的）。我们的令牌跟随 VM 在 `UFO_TOKEN_ANM_LAYER` = **13** ⇒ 框正好
+ *   在令牌**下面一层**，与零售「框 12 / 道具 VM 23」的相对关系同向。
+ *   ⚠ 这不是 HUD：**场上实体的框**用世界层，**不**走 HUD 的 25（层 25 是「会被暂停模糊罩住」那一组，
+ *   见 `HUD-LAYOUT.md` §4.1；框要跟着令牌在游玩区里动，进了 25 反而会被当 HUD 折到别组）。
+ * ⚠ 待实跑：框的观感（2°/帧自转 + 10 帧从 0 胀到 20）与层 12 的压叠关系都没在实机上验过
+ *   （文件尾 §未做/待跑 29d）。 */
+#define UFO_PENTAGON_ANM_SCRIPT CE_ANM_ABILITY_SCRIPT_UFO_PENTAGON   /* 同号同名；`make anm` 生成（已重跑，= 223）*/
+/* 框颜色 → 中断标签（一手：脚本 211 的 `interruptLabel(7/8/9/10)`；发送点 `mov ebx,7` 一族）。 */
+#define UFO_PENTAGON_INT_RED     7
+#define UFO_PENTAGON_INT_BLUE    8
+#define UFO_PENTAGON_INT_GREEN   9
+#define UFO_PENTAGON_INT_RAINBOW 10
+/* 层（一手：脚本 211 自己写 `layer(12)`；理由见上面「层号」段）。 */
+#define UFO_PENTAGON_ANM_LAYER   12
+
 /* 彩虹令牌的态 → 脚本号。一手顺序 = `(type − 0xc) % 3`：13→14→15→13（`th12:0x4264a2`），
  * 脚本 = `178 + 余数`（`0x4264bc` 的 `+0xa5`）。
  * ⚠ **必须**用带 `interruptLabel` 的全文版（219..221，`make_ufo_token_art.py` 生成）：
@@ -381,12 +469,15 @@ typedef struct {
      * 令牌的贴图由本文件起一个跟随 VM 画在实体位置上（见 `ufo_token_anm_script()` 上面的注释块）。
      * ⚠ 铁律：句柄非 0 ⇒ 必须有一条删除路径（`ufo_tok_kill()` / 退休分支 / `ufo_withdraw_all()`）。*/
     uint32_t anm_id;
-    /* ★ 用户 2026-09-12 裁决 ③ 的**预留位**：这一枚令牌够不够格被画一圈**五边形框**
+    /* ---- 下面四个字节字段（★ 全是 uint8，为的是 `ufo_tok_t` 不长胖；`ufo_tok_t` = 20 B）---- */
+    /* ★ 用户 2026-09-12 裁决 ③：这一枚令牌够不够格被画一圈**五边形框**
      *（= 槽里正好 2 枚、收了它就能成组）。判据在纯逻辑层 `ufo_pentagon_hint_for_color()`，
-     * 每帧由 `ufo_pentagon_hint_update()` 刷新。⚠ **本卡不画**（缺 anm 脚本，见那个函数的注）。 */
+     * 每帧由 `ufo_pentagon_hint_update()` 刷新；**框本身自 2026-09-12（A7）起已实装**（脚本 223）。
+     * ⚠ 框的 **VM 句柄不在这个结构体里**（16 个令牌槽各要 4 B = 64 B，私状态放不下）⇒
+     *   在 `s_penta_id[]`（文件静态），理由与收尾路径见那个数组的注。 */
     uint8_t  pentagon_hint;
-    /* ★ 2026-09-12（A8）彩虹令牌的三段中断 + 换色（一手见上面的常量块）。**三个字段都塞进
-     *   `pentagon_hint` 后面的 3 字节尾巴里**（`ufo_tok_t` 仍是 20 B ⇒ `sizeof(ufo_card_t)` 不变）：
+    /* ★ 2026-09-12（A8）彩虹令牌的三段中断 + 换色（一手见上面的常量块）。**三个字段与
+     *   `pentagon_hint` 挤在同一段尾巴里**（`ufo_tok_t` 一直是 20 B）：
      *   `rb_state` = 当前态 0/1/2 ⇒ 脚本 219/220/221（TH12 的道具类型 13/14/15，`th12:0x4264b6`）；
      *   `rb_cycle` = 换色计时器（TH12 的 `item+0x9a0`）—— 一手只在 0..150 之间取值（到 150 就换色并
      *                清 0）⇒ **uint8 够**（断言在下面）；
@@ -421,7 +512,7 @@ typedef struct {
     uint8_t     pending_break;                         /* 1 = 帧末要按「击破」收尾开奖 */
     uint8_t     logged_no_hud;                         /* 保留名：HUD 第一版「画起来了」日志只报一次 */
     uint8_t     logged_lifetime;                       /* 存活上限日志每局只报一次 */
-    uint8_t     pentagon_any;                          /* 本帧有没有令牌够格画五边形框（预留钩子）*/
+    uint8_t     pentagon_any;                          /* 本帧有没有令牌够格画五边形框（= 场上真有框）*/
     uint8_t     pentagon_logged;                       /* 五边形框条件第一次成立时只报一条日志 */
     /* —— 统计（只用于日志，不参与判定）—— */
     uint32_t    spawned_tokens;
@@ -446,6 +537,18 @@ static uint32_t s_cell_id[UFO_SLOT_COUNT];   /* 三格令牌槽（脚本 104 矩
 static uint32_t s_bar_bg_id;                 /* 血条底 */
 static uint32_t s_bar_fill_id;               /* 血条填充（宽度 = 本体 HP 千分比）*/
 static ce_hud_vm_text_t s_hud_text;          /* 一行读数（脚本 136 字形，层 25）*/
+
+/* ---- ★ A7（2026-09-12）：五边形框的**每个令牌槽一个** VM 句柄，同样放**文件静态** ----------------
+ * 为什么不像别的跟随 VM 那样放卡私状态（`ufo_tok_t.anm_id` 就在那里）：**放不下** ——
+ *   `sizeof(ufo_card_t)` 现在 **468 B**，上限 `CE_STATE_BYTES − CE_STATE_RESERVED` = **496 B**
+ *   只剩 28 B，而 16 个令牌槽各要一个句柄 = 64 B。第一版正是塞进 `ufo_tok_t` 的，当场被
+ *   本文件尾那条 `_Static_assert` 拦下（clang 的原话：`532 <= 496`）⇒ 换到这里，**零私状态开销**。
+ * 代价与 HUD 那一组**完全相同**，所以处理方式也照抄：
+ *   `on_ctor` 的 `memset` 清不掉它 ⇒ 必须有**显式**收尾路径。这一条已经就位 ——
+ *   `ufo_tok_vm_kill_all()` 是**只看句柄、不看 `color`** 的（帧内还配合 `ce_anm_get_vm` 自愈），
+ *   而 `on_load` 的防御支 / `ufo_withdraw_all`（`on_stage_start` / `on_run_reset` / `on_delete` 都汇到它）
+ *   都调它 ⇒ 句柄不会漏。⚠ 与 HUD 的区别：框是**世界层** VM（跟着令牌在游玩区动），不是 UI VM。 */
+static uint32_t s_penta_id[UFO_TOKEN_SLOTS];
 
 /* ============================== 小工具 ============================== */
 static uint8_t *ufo_enemy_by_id(uint32_t id)
@@ -506,21 +609,42 @@ static int ufo_tok_live_count(const ufo_card_t *s)
     return n;
 }
 
-/* 收掉一枚令牌的**跟随 VM**（句柄清零 ⇒ 幂等；`ce_anm_delete` 内部有 ANM 管理器门槛）。
- * ★ 铁律：令牌实体消失的**每一条路**都要过这里（撤实体 / 超时退休 / 静默消失 / 删卡），
- *   否则 VM 会留在场上画一个**看不见实体的幽灵令牌**。 */
-static void ufo_tok_vm_kill(ufo_tok_t *t)
+/* 收掉**某个令牌槽**的**五边形框 VM**（句柄清零 ⇒ 幂等）。★ 2026-09-12（A7）新增。
+ * 一手对应物 = 零售条件不成立那一支 `push [edi+0x968]; call 0x461a70` + `mov [edi+0x968],0`
+ *（`AnmManager__delete_vm`：只**标删**，真正的析构由 AnmManager 自己的 update 走 ⇒ 在死亡栈上叫也安全）。*/
+static void ufo_tok_penta_kill(int slot)
+{
+    if (s_penta_id[slot]) { ce_anm_delete(s_penta_id[slot]); s_penta_id[slot] = 0; }
+}
+
+/* 收掉一枚令牌的**贴图跟随 VM**（只这一个句柄）。
+ * ★ 为什么要与框分开：彩虹令牌每 150 帧换色时走「删旧 VM + 起新 VM」（`ufo_tok_rainbow_recolor`），
+ *   而零售换色只重指**令牌自己的那只 VM**（`0x4061e0(vm = item, …)`），**不动**框那只
+ *   （框在 `item+0x968`，是另一个 VM）。⇒ 换色不该把框也删掉 —— 否则每 150 帧框会重新
+ *   `scaleTime(10,4,20,20)` 胀一次（零售没有这个动作）。 */
+static void ufo_tok_art_vm_kill(ufo_tok_t *t)
 {
     if (t->anm_id) { ce_anm_delete(t->anm_id); t->anm_id = 0; }
 }
 
+/* 收掉一个令牌槽的**两个跟随 VM**（贴图 `anm_id` + 五边形框 `s_penta_id[slot]`；句柄清零 ⇒ 幂等；
+ * `ce_anm_delete` 内部有 ANM 管理器门槛）。
+ * ★ 铁律：令牌实体消失的**每一条路**都要过这里（撤实体 / 超时退休 / 静默消失 / 删卡），
+ *   否则 VM 会留在场上画一个**看不见实体的幽灵令牌**（框也一样：一个没有令牌的空五边形）。 */
+static void ufo_tok_vm_kill(int slot, ufo_tok_t *t)
+{
+    ufo_tok_art_vm_kill(t);
+    ufo_tok_penta_kill(slot);
+}
+
 /* 收掉**整张表**的令牌跟随 VM。⚠ **只看句柄、不看 `color`**：`on_ctor` 的 `memset` 与
  * `ufo_withdraw_all` 都需要这一支 —— 句柄一旦被 memset 掉，那些 VM 就永远留在场上了
- * （删卡那一刻 tick 回调全停，没有任何「顺手收」的机会）。 */
+ * （删卡那一刻 tick 回调全停，没有任何「顺手收」的机会）。
+ * ★ 框那 16 个句柄是**文件静态**（理由见它的定义处）⇒ 这一支**不依赖令牌表**，memset 之后照样收得掉。 */
 static void ufo_tok_vm_kill_all(ufo_card_t *s)
 {
     int i;
-    for (i = 0; i < UFO_TOKEN_SLOTS; ++i) ufo_tok_vm_kill(&s->tok[i]);
+    for (i = 0; i < UFO_TOKEN_SLOTS; ++i) ufo_tok_vm_kill(i, &s->tok[i]);
 }
 
 /* 撤一个令牌实体：置「本帧删」位 ⇒ 同帧 sweep 静默析构（不掉落、不跑死亡处理）+ 收跟随 VM。
@@ -531,11 +655,11 @@ static void ufo_tok_vm_kill_all(ufo_card_t *s)
  *   AnmManager 自己的 update 走；引擎在敌人析构那条路上也同样标自己的 `anm_vm_ids` 槽。
  *   ⚠❓ 但「从共享死亡断点直接进 AnmManager」这条组合**实跑没验过**（本卡第一次这么写）。
  *   对比：**建** VM 是绝对不行的（要分配）—— 本卡所有 `ce_anm_spawn` 都在 tick / 帧末，不在死亡栈。 */
-static void ufo_tok_kill(ufo_tok_t *t)
+static void ufo_tok_kill(int slot, ufo_tok_t *t)
 {
     uint8_t *e = ufo_enemy_by_id(t->enemy_id);
     if (e) *(uint32_t *)(e + CE_ENEMY_FLAGS) |= UFO_FLAGS_DELETE_NOW;
-    ufo_tok_vm_kill(t);
+    ufo_tok_vm_kill(slot, t);
     t->color = UFO_COLOR_NONE;
     t->enemy_id = 0;
     t->ttl = 0;
@@ -577,6 +701,77 @@ static void ufo_tok_vm_follow(ufo_tok_t *t, const uint8_t *e)
                               *(const float *)(e + CE_ENEMY_POS_Y), 0.0f);
 }
 
+/* ============================ ★★ 五边形框（提示 UI）的建 / 跟随 / 收（2026-09-12 A7）============================
+ * 一手（触发条件 + 六处建框点 + 删框点 + 层号）全部写在文件头那个常量块里，这里只有接法与理由。 */
+
+/* 这一枚令牌（颜色 `color`）此刻该拿哪个标签建框 —— 返回 0 = **不该建框**。
+ * 一手：标签 = **收了这一枚会得到的那只 UFO 的颜色**（`0x4265c3`/`0x426696`/`0x426766` 三条 case 的结果）：
+ *   同色补全 ⇒ 红/蓝/绿 ⇒ 标签 `7/8/9`；三色各一 ⇒ 彩虹 ⇒ 标签 `10`。
+ * 判据直接用纯逻辑层的两个**纯函数**（不改状态、已有单测）：
+ *   `ufo_pentagon_hint_for_color()`（收了它成不成组）+ `ufo_group_peek_color()`（成了组会得到哪只）。
+ * ⚠ `ufo_group_classify()` 内部会过 `ufo_color_norm()` ⇒ **金落在蓝那一格**（裁决 ①：金 = 蓝的调色版）。 */
+static int ufo_pentagon_label_for_color(const ufo_group_t *g, int32_t color)
+{
+    ufo_group_t probe;
+    int32_t made;
+
+    if (!ufo_pentagon_hint_for_color(g, color)) return 0;
+    probe = *g;
+    if (!ufo_slot_set(&probe, color)) return 0;        /* 理论到不了（判据先过了一遍）*/
+    made = ufo_group_peek_color(&probe);
+    switch (made) {
+    case UFO_COLOR_RED:     return UFO_PENTAGON_INT_RED;
+    case UFO_COLOR_BLUE:    return UFO_PENTAGON_INT_BLUE;
+    case UFO_COLOR_GREEN:   return UFO_PENTAGON_INT_GREEN;
+    case UFO_COLOR_RAINBOW: return UFO_PENTAGON_INT_RAINBOW;
+    default:                return 0;                  /* 不成组 / 坏色 ⇒ 不画（防御）*/
+    }
+}
+
+/* 建框（**只在还没有框时建**：零售每帧只查 `cmp dword [edi+0x968],0 / jne`（`th12:0x4265d5`）
+ * ⇒ 条件成立的后续帧既不重建、也不重发标签）；建完**立刻发标签**（零售六处建框点都是
+ * `create_vm` 之后马上 `call 0x461970`，标签在 EBX）。
+ * ⚠ 次序不必担心「中断跳掉脚本初始化」：`ce_anm_spawn` 走的那条引擎通路
+ *   （`AnmLoaded__instantiate_vm_to_world_list_back` `0x405bf0`）**自己先跑一帧**，
+ *   脚本开头的 `sprite(-1)/layer(12)/drawPolyBorder(1.0f,5)/scaleTime(...)` 那时已经落地，
+ *   下一帧才轮到 pending 中断跳到标签段（TH12 侧同构：`0x454db9` 的 `call 0x455630`）。
+ * ⚠ 本函数会**建 VM** ⇒ 只能从 tick / 帧末调（本卡的调用点 = `ufo_pentagon_hint_update()`，
+ *   而它在 `ufo_tokens_tick()` 里 ⇒ 每游玩帧的门卫位次，不是死亡栈）。 */
+static void ufo_tok_penta_spawn(int slot, const uint8_t *e, int label)
+{
+    uint32_t id;
+
+    if (s_penta_id[slot] || !label || !CE_ABILITY_ANM()) return;
+    id = ce_anm_spawn(CE_ABILITY_ANM(), UFO_PENTAGON_ANM_SCRIPT, UFO_PENTAGON_ANM_LAYER);
+    if (!id) {
+        ce_log("ufo: pentagon hint-VM spawn FAILED (script %d, layer %d) - the frame around the "
+               "completing token will NOT be drawn", UFO_PENTAGON_ANM_SCRIPT, UFO_PENTAGON_ANM_LAYER);
+        return;
+    }
+    s_penta_id[slot] = id;
+    if (e) ce_anm_set_pos(id, *(const float *)(e + CE_ENEMY_POS_X),
+                              *(const float *)(e + CE_ENEMY_POS_Y), 0.0f);
+    /* 标签 = 框的颜色。SDK 面 = 既有的 `ce_anm_interrupt`（`AnmManager__interrupt_tree` `th18:0x488be0`，
+     * 写 pending interrupt 并递归子树；TH12 侧是 `0x461970`）—— A8 的彩虹三段中断用的就是它，零新 SDK 面。 */
+    ce_anm_interrupt(id, label);
+}
+
+/* 每帧跟随（框）：与令牌贴图 VM 同一支写法（自愈 + 抄实体 `abs_pos`）。
+ * ⚠ 零售**不跟随**（框的位置在 `create_vm` 那一刻被拷进 VM，之后道具飘走它也不动）——
+ *   我们的令牌是**敌机实体**，真 ECL 到位后会飘（`moveLimit(0,128,280,128)`）⇒ 不跟随就会
+ *   「框留在原地、令牌飘走」。实体不动时两者等价（占位期 `NoEnemyDebug` 就是不动）。
+ * ⚠ 句柄被引擎在别处销毁过 ⇒ 只**丢掉句柄**，重建交给紧接着的 `ufo_tok_penta_spawn()`
+ *   （它带着本帧算出来的标签；这里自己重建就会造出一个「没有标签 = 停在白色」的框）。 */
+static void ufo_tok_penta_follow(int slot, const uint8_t *e)
+{
+    if (!s_penta_id[slot] || !ce_anm_get_vm(s_penta_id[slot])) {
+        s_penta_id[slot] = 0;
+        return;
+    }
+    ce_anm_set_pos(s_penta_id[slot], *(const float *)(e + CE_ENEMY_POS_X),
+                                      *(const float *)(e + CE_ENEMY_POS_Y), 0.0f);
+}
+
 /* ---- ★ 彩虹令牌的换色（= TH12 的「重指脚本」，`th12:0x4061e0`；一手见常量块 ⑤）----
  * TH12 在**同一个 VM** 上 `AnmVm__wipe` + `load_script_into_vm`；SDK 没有这条通路
  * （`ce_anm_set_sprite` 只会被脚本下一帧的 `sprite()` 覆盖）⇒ 用**删旧 + 起新**等价达成，
@@ -592,7 +787,9 @@ static void ufo_tok_rainbow_recolor(ufo_tok_t *t, const uint8_t *e)
 {
     t->rb_state = (uint8_t)((t->rb_state + 1) % UFO_TOK_RB_STATES);
     t->rb_cycle = 0;
-    ufo_tok_vm_kill(t);                                /* 句柄清零（幂等）*/
+    /* ★ 只收**贴图**那只（`ufo_tok_art_vm_kill`），**不碰五边形框**（A7）：零售换色重指的是
+     *   令牌自己那只 VM，框在另一个槽（`item+0x968`）里、不受影响 ⇒ 框不该跟着重播胀开动画。 */
+    ufo_tok_art_vm_kill(t);                            /* 句柄清零（幂等）*/
     ufo_tok_vm_spawn(t, e);                            /* 新脚本 + 当场摆位置；失败只报日志 */
 }
 
@@ -684,6 +881,10 @@ static uint8_t *ufo_tok_spawn(ufo_card_t *s, float x, float y)
         t->ttl = UFO_TOKEN_TTL_FRAMES;
         t->pentagon_hint = 0;
         t->anm_id = 0;                                 /* ★ 新槽先清句柄（`ufo_tok_free` 只查 `color`）*/
+        /* ★ A7：同一个槽的**五边形框**句柄一起清（防御性对账 —— 正常路径上 `ufo_tok_kill()` /
+         *   退休分支已经把它收成 0 了；句柄在文件静态数组里，所以这里按**槽号**清）。
+         *   ⚠ `t` 一定来自 `s->tok[]`（`ufo_tok_free(s)` 返回的指针）⇒ 指针相减就是槽号。 */
+        s_penta_id[(int)(t - s->tok)] = 0;
         /* ★ A8：彩虹令牌的初始态。一手：`spawn_item` 把闩清 0（`0x427595`）⇒ 出生算「圈外」、
          * 第一帧不发中断；计时器从 0 起（换色后 `Timer__set_current(0)`）。起始**态**取 0 = 红那一态
          * （= TH12 的道具类型 13 ⇒ 脚本 178）。⚠❓ 一手里真正的起始态由「哪个 UFO 掉的」决定
@@ -985,10 +1186,10 @@ static int32_t ufo_pending_take(ufo_card_t *s)
 
 /* 读走并撤掉一个令牌实体（**先取值再清条目** —— 顺序反了就把颜色读成 NONE）。
  * 死亡栈里也能安全调（只置 `flags_lo` 位 25 + 改我们自己的表，不析构任何东西）。 */
-static int32_t ufo_tok_take_and_kill(ufo_tok_t *t)
+static int32_t ufo_tok_take_and_kill(int slot, ufo_tok_t *t)
 {
     int32_t color = t->color;
-    ufo_tok_kill(t);
+    ufo_tok_kill(slot, t);
     return color;
 }
 
@@ -1044,7 +1245,7 @@ static void ufo_try_summon(ufo_card_t *s)
 }
 
 /* 帧末跑一遍令牌表：① 实体还在不在 ② 死亡事件解到的颜色 ③ TTL ④ 自机接触。 */
-static void ufo_pentagon_hint_update(ufo_card_t *s);   /* 定义在下面（预留钩子，见它的注释块）*/
+static void ufo_pentagon_hint_update(ufo_card_t *s);   /* 定义在下面（算判据 + 驱动框 VM，见它的注释块）*/
 static void ufo_tokens_tick(ufo_card_t *s)
 {
     float px, py;
@@ -1061,7 +1262,7 @@ static void ufo_tokens_tick(ufo_card_t *s)
             /* 实体没了，却没走过死亡事件 ⇒ 过场全清 / 重开（`DEATH` §1.4 的「静默消失」那三类）
              * ⇒ 直接退休，**不入槽**。★ 这条分支**绕过了 `ufo_tok_kill()`**（直接清 `color`）
              * ⇒ 跟随 VM 必须在这里**显式**收掉，否则场上来一个没有实体的幽灵令牌。 */
-            ufo_tok_vm_kill(t);
+            ufo_tok_vm_kill(i, t);
             ++s->lost_tokens;
             t->color = UFO_COLOR_NONE;
             t->enemy_id = 0;
@@ -1076,7 +1277,7 @@ static void ufo_tokens_tick(ufo_card_t *s)
         ufo_tok_rainbow_tick(t, e, px, py);
         if (t->ttl) --t->ttl;
         if (!t->ttl) {                                 /* 占位期惰性壳不会自己消失 ⇒ TTL 兜底 */
-            ufo_tok_kill(t);
+            ufo_tok_kill(i, t);
             ++s->lost_tokens;
             continue;
         }
@@ -1088,7 +1289,7 @@ static void ufo_tokens_tick(ufo_card_t *s)
         if (!ufo_tok_pick(s, *(float *)(e + CE_ENEMY_POS_X), *(float *)(e + CE_ENEMY_POS_Y), px, py))
             continue;
         /* 接触即入槽（spec §3.2 ⏳① 取这支）：**先取值、再撤实体**（顺序见 `ufo_tok_take_and_kill`）*/
-        color = ufo_tok_take_and_kill(t);
+        color = ufo_tok_take_and_kill(i, t);
         /* ⚠ 这里不是死亡栈（`on_item_frame` 是每游玩帧的门卫位次）⇒ 可以立刻建本体；
          *   死亡事件那条路只登记、由 `on_tick_2` 兑现。 */
         if (ufo_token_to_slot(s, color) == UFO_PUT_READY) ufo_try_summon(s);
@@ -1096,43 +1297,61 @@ static void ufo_tokens_tick(ufo_card_t *s)
     ufo_pentagon_hint_update(s);
 }
 
-/* ★★ **预留钩子**（用户 2026-09-12 裁决 ③）—— 五边形框：**只算条件、不画** ----------------
+/* ★★ **五边形框**（用户 2026-09-12 裁决 ③）—— 每帧算条件 **并驱动框 VM**（2026-09-12 A7 实装）----
  * 触发条件（用户原话）：「玩家手上有**两个令牌**（= 再来一枚就能成组）时，屏幕上**这类令牌**外面
  * 会有一圈五边形框作提示」。⇒ 两级判据（都在纯逻辑层、有单测）：
  *   ① `ufo_group_pentagon_hint(&s->grp)`：槽里此刻是不是「差一枚就成组」（便宜的早停；
  *      当前规则下等价于「槽里正好 2 枚」—— 4 个颜色桶里任意两枚都补得出组，见 ufo_core.h 的注）。
- *   ② `ufo_pentagon_hint_for_color(&s->grp, t->color)`：**场上的这一枚**收了就能成组 ⇒ 它才该被画框。
- * 本函数把②的结果逐令牌记进 `ufo_tok_t.pentagon_hint`（这就是「卡侧预留钩子」：位置、颜色、
- * 生命周期都已经就位），**然后什么都不画**。
- * ⚠⚠ **不许用 `drawRect` 硬凑一个假的五边形**（用户明确要求）—— 缺的是
- *   `assets/ability/scripts/` 下那个五边形框 anm 脚本（必须写 `layer(25)`，
- *   见 spec §5 资产清单里新加的那一条）。脚本到位后的接法：
- *     · 每个 `pentagon_hint` 的令牌起一个框 VM（UI VM 位置 = 令牌实体坐标 ×2，照 `animal.c` 的 2× 口径）；
- *     · 令牌消失 / 入槽 / `ufo_finish` / `on_delete` 时把框 VM 一起收掉（挂进 `ufo_hud_kill()` 一份）。
- * ⏳ TODO(资产)：五边形框脚本 + 上面那两处挂接。 */
+ *      ★ 这一条同时**涵盖了零售那条「已收满 3 枚就不提示」**（`th12:0x42658a cmp [0x4b0c58],3`）：
+ *      判据要求 `filled == 2`，槽满 3 枚必然为假。
+ *   ② `ufo_pentagon_hint_for_color(&s->grp, t->color)`：**场上的这一枚**收了就能成组 ⇒ 它才该被画框
+ *      （框的颜色 = 收了它会得到的那只 UFO 的颜色，见 `ufo_pentagon_label_for_color()`）。
+ * 本函数把②的结果逐令牌记进 `ufo_tok_t.pentagon_hint`，并**照零售的生命周期**驱动框 VM：
+ *   · 条件成立 + 还没有框 ⇒ **建框 + 发一次标签**（`ufo_tok_penta_spawn`）；
+ *   · 条件成立 + 已经有框 ⇒ **什么都不做**（零售 `0x4265d5` 的 `jne`：不重建、不重发标签）；
+ *   · 条件不成立 ⇒ **删框**（零售那六处 case 的 else 支：`call 0x461a70` + 句柄清 0）；
+ *   · 每一帧都把框移到令牌实体坐标上（`ufo_tok_penta_follow`；零售不跟随，见它的注）。
+ * ✅ 美术来源 = **零售**（`bullet.anm` script211 逐条照抄 ⇒ 脚本 223，程序画的五边形、无贴图）；
+ *    **不用 `drawRect` 硬凑**（用户明确要求）。
+ * ⚠ 调用点必须**不是死亡栈**（本函数会 `ce_anm_spawn`）—— 现在只有 `ufo_tokens_tick()` 一处，
+ *   那是 `on_item_frame` 的门卫位次（每游玩帧），合规。 */
 static void ufo_pentagon_hint_update(ufo_card_t *s)
 {
     int i, any = 0;
 
     if (!ufo_group_pentagon_hint(&s->grp)) {
-        /* 早停：槽里不是 2 枚（或某种颜色都补不出组）⇒ 全部清零 */
-        for (i = 0; i < UFO_TOKEN_SLOTS; ++i) s->tok[i].pentagon_hint = 0;
+        /* 早停：槽里不是 2 枚（或某种颜色都补不出组）⇒ 全部清零 + **把框全收了**
+         * （零售：条件一不成立就删框，不留一个孤零零的五边形在场上）。 */
+        for (i = 0; i < UFO_TOKEN_SLOTS; ++i) {
+            s->tok[i].pentagon_hint = 0;
+            ufo_tok_penta_kill(i);
+        }
         s->pentagon_any = 0;
         s->pentagon_logged = 0;                        /* 条件消失后允许再报一次 */
         return;
     }
     for (i = 0; i < UFO_TOKEN_SLOTS; ++i) {
         ufo_tok_t *t = &s->tok[i];
-        if (t->color == UFO_COLOR_NONE) { t->pentagon_hint = 0; continue; }
-        t->pentagon_hint = (uint8_t)(ufo_pentagon_hint_for_color(&s->grp, t->color) ? 1 : 0);
-        if (t->pentagon_hint) any = 1;
+        uint8_t *e;
+        int label;
+
+        if (t->color == UFO_COLOR_NONE) { t->pentagon_hint = 0; ufo_tok_penta_kill(i); continue; }
+        label = ufo_pentagon_label_for_color(&s->grp, t->color);
+        t->pentagon_hint = (uint8_t)(label ? 1 : 0);
+        if (!label) { ufo_tok_penta_kill(i); continue; }
+        e = ufo_enemy_by_id(t->enemy_id);
+        /* 实体没了：**不建框**（实体退休那两条路在上一趟已经 `ufo_tok_vm_kill()` 收过句柄了）*/
+        if (!e) continue;
+        ufo_tok_penta_follow(i, e);                    /* 先跟随（顺带自愈掉死句柄）*/
+        ufo_tok_penta_spawn(i, e, label);              /* 没框才建；有框则原样留着*/
+        any = 1;
     }
     s->pentagon_any = (uint8_t)any;
     if (any && !s->pentagon_logged) {
         s->pentagon_logged = 1;
-        ce_log("ufo: PENTAGON HINT condition met (2 tokens in the slots and at least one field token "
-               "would complete the group) - the frame itself is NOT drawn: it needs a pentagon anm "
-               "script (layer 25) in ability.anm (spec §5 asset list, user ruling 3)");
+        ce_log("ufo: PENTAGON HINT ON (2 tokens in the slots and at least one field token would "
+               "complete the group) - frame = ability.anm script %d layer %d (TH12 bullet.anm "
+               "script211, ported verbatim)", UFO_PENTAGON_ANM_SCRIPT, UFO_PENTAGON_ANM_LAYER);
     }
 }
 
@@ -1386,7 +1605,7 @@ static void ufo_withdraw_all(ufo_card_t *s, const char *why)
     ufo_body_vm_kill(s);
     ufo_tok_vm_kill_all(s);                            /* ★ 只看句柄（`color` 还没清）*/
     for (i = 0; i < UFO_TOKEN_SLOTS; ++i)
-        if (s->tok[i].color != UFO_COLOR_NONE) { ufo_tok_kill(&s->tok[i]); ++n; }
+        if (s->tok[i].color != UFO_COLOR_NONE) { ufo_tok_kill(i, &s->tok[i]); ++n; }
     if (ufo_present(&s->u)) {
         uint8_t *e = ufo_enemy_by_id(s->u.ufo_id);
         if (e) *(uint32_t *)(e + CE_ENEMY_FLAGS) |= UFO_FLAGS_DELETE_NOW;
@@ -1427,8 +1646,10 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
     t = ufo_tok_slot(s, ev->id);
     if (t && ufo_token_kill_counts(ev->kind)) {
         /* **只登记**：出槽这件事本身是纯逻辑（改我们的表），可以当场做；
-         * 但「出槽后要不要召唤」必须先登记、帧末才动手 —— 死亡栈里**禁止新建敌人**（重入）。 */
-        if (!ufo_pending_put(s, ufo_tok_take_and_kill(t))) {
+         * 但「出槽后要不要召唤」必须先登记、帧末才动手 —— 死亡栈里**禁止新建敌人**（重入）。
+         * ⚠ `t` 来自 `s->tok[]` ⇒ 槽号 = 指针相减（五边形框句柄在**文件静态数组**里、按槽号存，
+         *   所以这里要多带一个槽号 —— A7；收 VM 只标删、不析构，死亡栈上做是安全的）。 */
+        if (!ufo_pending_put(s, ufo_tok_take_and_kill((int)(t - s->tok), t))) {
             ++s->pending_drop;
             ce_log("ufo: pending token ring full (cap %d) - a token colour was dropped "
                    "(expected never to happen: at most UFO_TOKEN_MAX = %d tokens are alive at once, "
@@ -1678,10 +1899,22 @@ _Static_assert(UFO_TOK_RB_STATES == 3,
  *        `make anm` 会直接 raise（这跟本卡无关，是抢号协议）；收尾压号 = `assets/renumber_scripts.py --apply`：
  *        它按文件名 + 首行改号、**不会**改生成器那张表 ⇒ 压完**要回头把 `SCRIPT_FULL_PORTS` 的三个号改掉**
  *        （C 侧不受影响：只认宏名）。
- *    9b. ★★ **五边形框 anm 脚本**（用户 2026-09-12 裁决 ③；spec §5 资产清单新加的那一条）：
- *        触发条件「槽里 2 枚、且再来一枚即可成组」已经落成纯逻辑判据 + 卡侧预留钩子
- *        （`ufo_pentagon_hint_for_color()` / `ufo_pentagon_hint_update()`），**框本身没画**
- *        （不许用 `drawRect` 硬凑一个假的五边形）。脚本必须 `layer(25)`。
+ *    9b. ★★ **五边形框 —— ✅ 2026-09-12（A7）本轮实装**（用户 2026-09-12 裁决 ③；`TUNING.md` 资产缺口 A7）：
+ *        框 = `ability.anm` **script223**（= 零售 TH12 `bullet.anm` **script211** 的逐条移植：
+ *        `sprite(-1); layer(12); blendMode(1); drawPolyBorder(1.0f, 5); angleVel(0,0,0.034906585f);`
+ *        `scaleTime(10,4,20,20)` + 四个颜色标签 7/8/9/10），触发条件 / 颜色 / 层号 / 生命周期的一手
+ *        全部写在文件头「★★ 五边形框」常量块里；卡侧驱动 = `ufo_pentagon_hint_update()`
+ *        （算判据 + 建框 / 每帧跟随 / 条件不成立就收）。**没有用 `drawRect` 硬凑** ✓。
+ *        ⚠ **这项资产没有贴图可切**：`drawPolyBorder` 是引擎程序画的多边形（`sprite(-1)`）⇒
+ *        无 PNG、无 ORDER 片段（TH18 零售同款写法见 `effect.anm` script101 / `ability.anm` script35）。
+ *        ⚠ 三处与零售的差别（都是「我们的令牌是敌机实体」逼出来的，常量块里逐条写了理由）：
+ *        ① 框**每帧跟随**实体坐标（零售建完就不动）；② 金走 `ufo_color_norm()` 落蓝那一格；
+ *        ③ 判据用**卡自己的「彩虹 = 通配」**模型（零售的彩虹令牌按**当前显示态**算）——
+ *        ⏳ **这一格待用户拍板**（要改成零售字面口径 = `ufo_pentagon_hint_update()` 里把 `t->color`
+ *        换成 `rb_state` 对应的色，就一处）。
+ *        ⚠ 脚本号 223 在本文件里是**字面量**（`UFO_PENTAGON_ANM_SCRIPT`）：`native/anm_ids.h` 是
+ *        `make anm` 的生成物、本轮的写入范围不含它 ⇒ 先字面量 + 这条注释；`make anm` 跑过之后
+ *        它会多出 `CE_ANM_ABILITY_SCRIPT_UFO_PENTAGON 223`（同号同名），届时换成那个宏即可。
  *   §9 待用户拍板（本实装取「不做」这一支，全部集中在 ufo_core.h 的对应常量注里）
  *    10. #1 金 UFO —— ★ **已按用户 2026-09-12 裁决 ① 落地**：金是合法色（`UFO_COLOR_GOLD` = 4），
  *        **全部行为与蓝逐项相同**（吸收链 / 吸满不吐 / 击破无额外 / HP / 飘行参数都照蓝），
@@ -1725,6 +1958,15 @@ _Static_assert(UFO_TOK_RB_STATES == 3,
  *           在同一帧更晚的位次）—— 敌机本体是隐形的，肉眼看不到这一帧差，但「吸收判定」用的坐标
  *           与画面若差一帧，贴脸时可能有 1 px 级的观感错位；③ 自愈重建（VM 被引擎在别处销毁时）
  *           会从头播一遍淡入（`alphaTime(60,0,255)`）⇒ 若实跑看到飞碟周期性闪一下，就是它。
+ *    29d. ★ **五边形框（A7）的待实跑**（三条，全是❓）：① 观感 —— 2°/帧自转 + 10 帧从 0 胀到 20
+ *        （`drawPolyBorder(1.0f, 5)` 的第一个参 = 半径 1.0，乘 `scaleTime` 到 20；世界层 1 单位 = 2 表面 px
+ *        ⇒ 成品半径约 40 表面 px）与令牌（32×32 画布）的大小关系是**照零售数值推的**，没在实机上看过；
+ *        ② 层号 `UFO_PENTAGON_ANM_LAYER` = 12（零售原值）压在令牌的 13 下面 —— 「框在令牌后面」这个
+ *        相对关系照抄了零售（零售：框 12 / 道具自己的 VM 23），但 **TH12↔TH18 的层轴是否逐档等价没实测**；
+ *        ③ 「建完立刻发标签」这一步在 TH18 侧的**中断语义没实跑过**（判定依据是一手的装载器「跑一帧」
+ *        + `th18:0x488be0` 写 pending interrupt；若实跑看到框**根本不出现**、或出现却一直不换色，
+ *        第一个要查的就是这里 —— 退路是把标签改成**脚本自己的默认段**（不带标签也有颜色），但那样就
+ *        偏离零售的「一个 VM + 四种标签」结构了）。
  *   🟡 待实跑
  *    25. 扫池成本（没有任何实测帧耗；口径见文件尾 §性能）
  *    26. 槽泄漏量（口径见文件尾 §槽泄漏）

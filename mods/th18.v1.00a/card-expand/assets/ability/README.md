@@ -83,6 +83,12 @@ ORDER 里按 `16x32` 声明（构建脚本把 16×20 居中补透明），脚本
 60 px 圈常量 `0x4a4410` = `3600.0`、150 帧出处 `0x426483 cmp eax,0x96`。
 一手：[`engine/ufo/th12/01-ufo-system.md`](../../../../../engine/ufo/th12/01-ufo-system.md) §9。
 
+`223_ufo_pentagon.anm.txt`：**112 的五边形提示框** —— TH12 v1.00b `bullet.anm` **script211** 逐条照抄
+（`sprite(-1)` + `drawPolyBorder(1.0f, 5)` ⇒ **引擎程序画的多边形，本条目不需要贴图、也没有生成器**）。
+⚠ 层号照抄零售 **`layer(12)`**（**不是** HUD 的 25 —— 框是跟着令牌在游玩区动的**场上实体**；
+见 `AUDIT.md` §BO-7）。触发条件一手 = `th12:0x425c20` 的令牌分支（已收 < 3 枚 + 当前令牌「再来一枚即能成组」），
+**框的颜色 = 收了这一枚会得到的那只 UFO 的颜色**。
+
 `make anm` 跑 `build_ability.py`：重编 → `native/build/ability.anm`，自检零售部分没变，
 并生成 `native/anm_ids.h`（`CE_ANM_ABILITY_SPRITE_<NAME>` / `CE_ANM_ABILITY_SCRIPT_<name>`），C 里用它起脚本：
 

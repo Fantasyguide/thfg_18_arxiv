@@ -1,0 +1,77 @@
+script script223 {
+    // 星莲船（系统卡 112）**五边形提示框** —— 零售 TH12 v1.00b `bullet.anm` **script211** 的逐条移植
+    // （`local/th12.v1.00b/anm/bullet/bullet.anm.txt` 5511-5566 行；原文正文**一字未改**，一行不多一行不少）。
+    //
+    // 一手：用户 2026-09-12 裁决 ③「手上有两个令牌（再来一枚即可成组）时，屏幕上这类令牌外面会有一圈
+    // 五边形框作提示」⇒ 那个框就是本脚本。触发条件 / 生命周期 / 层号的一手出处全部写在
+    // `native/cards/ufo.c` 的常量块「★★ 五边形框」里（`th12:0x42658a` 起的令牌分支 + `0x426fc4` 的
+    // 6 条 case 跳表 + 六处 `push 0xd3` 建框点 + `0x461a70` 删框点），这里只留三句本脚本自己的事：
+    //
+    //   ① **不用贴图**：`sprite(-1)` + `drawPolyBorder(1.0f, 5)` = 引擎**程序画**的 5 边形描边
+    //      （第二个参 = 边数，5 = 五边形）⇒ 没有 PNG 要切、也没有 ORDER 条目（TH18 零售同款写法：
+    //      `effect.anm` script101 `sprite(-1); drawPolyBorder(1.0f, 12);`、`ability.anm` script35
+    //      `sprite(-1); drawPolyBorder(112.0f, 64);`）。
+    //   ② **层号 `layer(12)` 是零售原值，照抄不改**：框画在**场上令牌**（世界层）外面，而我们的令牌
+    //      跟随 VM 在 `UFO_TOKEN_ANM_LAYER` = **13** ⇒ 框正好在令牌**下面一层** —— 与零售的相对关系
+    //      一致（零售：框 `layer(12)`、道具自己的 VM 建在层 23）。零售层 12 落在 TH18 的世界层区间
+    //      （3-19）里，所以**不是**「别作的层号」；对照先例 = 本体脚本 `164_ufo_red` 的 `layer(7)`
+    //      也是从 TH12 `enemy.anm` script135 原样搬过来的。⚠ 与 HUD 的层 25 无关（这不是 HUD）。
+    //   ③ 四个 `interruptLabel` 段（7 红 / 8 蓝 / 9 绿 / 10 彩虹四色轮转）由卡侧在**建框那一刻**
+    //      用 `ce_anm_interrupt(id, n)` 发一次，颜色 = 收了这一枚会得到的那只 UFO 的颜色（一手：
+    //      零售 `mov ebx,7` 一族 + `call 0x461970`）—— 所以本脚本里那些段的颜色**不许改**。
+    //      ⚠ 零售**不重发**（条件成立的后续帧只查 `item+0x968 != 0` 就跳过）⇒ 卡侧也照抄「不重发」。
+    sprite(-1);
+    layer(12);
+    blendMode(1);
+    drawPolyBorder(1.0f, 5);
+    angleVel(0.0f, 0.0f, 0.034906585f);
+    color(255, 255, 255);
+    scale(0.0f, 0.0f);
+    scaleTime(10, 4, 20.0f, 20.0f);
+    stop();
+    interruptLabel(7);
+    color(255, 0, 0);
+offset172:
+    colorTime(20, 9, 224, 0, 0);
++20: // 20
+    colorTime(20, 9, 255, 0, 0);
++20: // 40
+    jmp(offset172, 0);
+    stop();
+    interruptLabel(8);
+    color(64, 64, 255);
+offset284:
+    colorTime(20, 9, 0, 0, 224);
++20: // 60
+    colorTime(20, 9, 64, 64, 255);
++20: // 80
+    jmp(offset284, 40);
+    stop();
+    interruptLabel(9);
+    color(0, 255, 0);
+offset396:
+    colorTime(20, 9, 0, 224, 0);
++20: // 100
+    colorTime(20, 9, 0, 255, 0);
++20: // 120
+    jmp(offset396, 80);
+    stop();
+    interruptLabel(10);
+    color(255, 255, 0);
+offset508:
+    colorTime(10, 9, 0, 255, 0);
++10: // 130
+    colorTime(10, 9, 255, 0, 0);
++10: // 140
+    colorTime(10, 9, 0, 0, 255);
++10: // 150
+    colorTime(10, 9, 255, 255, 0);
++10: // 160
+    jmp(offset508, 120);
+    stop();
+    color(255, 64, 64);
+    interruptLabel(1);
+    alphaTime(4, 0, 0);
++4: // 164
+    delete();
+}
