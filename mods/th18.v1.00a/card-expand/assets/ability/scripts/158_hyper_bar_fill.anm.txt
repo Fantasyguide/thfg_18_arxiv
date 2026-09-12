@@ -1,0 +1,34 @@
+script script158 {
+    // 咆哮就绪条的**填充**。逐条搬 TH17 `beast.anm` script31（= 0x1f，`0x40fc74` 建）：
+    // · TH17 是 `drawRectGrad(1.0f, 8.0f)`，但 `color`/`color2` 每处都同色 ⇒ 就是实心条，
+    //   这里用 1×1 模板 + C 每帧写 scale = `(ANIMAL_BAR_W − 2) × 剩余比`、高 `ANIMAL_BAR_H − 2`。
+    // · **闪烁**照 TH17 的 `+6:` 循环：暗红 (224,0,0) ↔ 黄 (255,192,128) 每 6 帧一换，
+    //   `jmp` 回环 20 次后定格（TH17 就是 20 次）。
+    // · 淡入同脚本 157（TH17 在 t=+20 才开始 alphaTime）。
+-1:
+    sprite(-1);
+    layer(25);
+    type(1);
+    anchor(0, 0);          /* ★ 锚心（与 157 一致）*/
+    resolutionMode(2);
+    zWriteDisable(1);
+    blendMode(0);
+    drawRect(1.0f, 1.0f);
+    color(224, 0, 0);
+    alpha(0);
++20: // 20
+    alphaTime(20, 0, 255);     /* ★ 2026-09-10 漏了这句 ⇒ alpha 恒 0、填充整条看不见（实跑纠偏）*/
+    color(224, 0, 0);
+blink:
+    color(224, 0, 0);
++6: // 26
+    color(255, 192, 128);
++6: // 32
+    jmp(blink, 20);
+    stop();
+    interruptLabel(1);
+    alpha(0);
+    alphaTime(20, 0, 0);
++20: // 40
+    delete();
+}

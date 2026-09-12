@@ -1,0 +1,25 @@
+script script149 {
+    // 鬼形兽（117）水獭暴走的 3 个旋转消弹体。外观/轨道照 TH17 `beast.anm` script37
+    // （`beastot.png` sprite70，80×64 → ORDER 居中补到 128×64）。
+    // ★ 2026-09-11 用户实跑：贴图初始角度不对。TH17 原脚本用 `anchorOffset(48,64)` 把
+    //   转轴放在 80×64 图的右下角附近，VM 本体在自机位置（见 animal.c 的一手注释）。
+    //   本作画布从 80×64 居中补到 128×64，中心右移 24 px，锚点数值保持 (48,64) 即等价：
+    //   转轴仍在原图 (88,96)（= padding 后 (112,96)），VM 在自机位置，图挂左上、自转成轨。
+    //   三个 VM 的初始 rotate 0 / -120° / +120° 由 C 侧 `ce_anm_set_rotation` 写入，
+    //   之后 `angleVel` 继续累加（见 animal.c 的 orb_ensure/orb_tick）。
+    sprite(@OTTER_ORB);
+    originMode(1);
+    layer(13);
+    type(1);
+    anchorOffset(48.0f, 64.0f);
+    alpha(0);
+    alphaTime(10, 0, 255);
+0:
+    rotate(0.0f, 0.0f, 0.0f);
+    angleVel(-0.06981317f, 0.0f, -0.06981317f);
+    stop();
+    interruptLabel(1);
+    scaleTime(10, 0, 0.0f, 0.0f);
++10: // 10
+    stop();
+}

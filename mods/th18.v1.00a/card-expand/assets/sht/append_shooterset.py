@@ -102,6 +102,136 @@ APPEND = [
 ]
 
 
+# ---- TH17「咆哮」shooterset 数据（来源：local/th17.v1.00b/dat/pl00a.sht / pl01a.sht）----
+# 狼 = TH17 set 10..14、鹫 = set 15..19；本块存的是有实体记录的 11..14/16..19。
+# set 10/15 只有 4 字节终止符，由 _hyper_sets 生成空组 WOLF_0 / EAGLE_0。
+# 解码器证据：engine/sht/th17/01-file-layout-and-shooterset-index.md、02-hyper-shot-groups.md。
+# 每个 dict 的 +0x00..+0x27 字段与 TH18 同构；func_* 是 TH17 索引；tail 是 TH17 +0x38..+0x57
+# 的原始 0x20 字节，会按「TH18 +0x28..+0x2b 插入 4 字节」的映射搬到 TH18 +0x3c..+0x5b。
+
+HYPER_TEMPLATE_PL00A_WOLF = [
+    dict(fire_rate=3, start_delay=0, damage=40, spawn_dx=0.0, spawn_dy=0.0, hit_w=112.0, hit_h=32.0, angle=-1.5707963705062866, speed=25.0, opt_slot=0, mode=0, anm=5, sfx=1, func_on_init=0, func_on_tick=0, func_on_draw=0, func_on_hit=1, tail=bytes.fromhex("0000000000000000000000000000000000000000000000000000000000000000")),
+    dict(fire_rate=3, start_delay=0, damage=30, spawn_dx=20.0, spawn_dy=20.0, hit_w=112.0, hit_h=32.0, angle=-1.5707963705062866, speed=25.0, opt_slot=0, mode=0, anm=5, sfx=-1, func_on_init=0, func_on_tick=0, func_on_draw=0, func_on_hit=1, tail=bytes.fromhex("0000000000000000000000000000000000000000000000000000000000000000")),
+    dict(fire_rate=3, start_delay=0, damage=30, spawn_dx=-20.0, spawn_dy=20.0, hit_w=112.0, hit_h=32.0, angle=-1.5707963705062866, speed=25.0, opt_slot=0, mode=0, anm=5, sfx=-1, func_on_init=0, func_on_tick=0, func_on_draw=0, func_on_hit=1, tail=bytes.fromhex("0000000000000000000000000000000000000000000000000000000000000000")),
+    dict(fire_rate=3, start_delay=0, damage=25, spawn_dx=40.0, spawn_dy=30.0, hit_w=112.0, hit_h=32.0, angle=-1.5707963705062866, speed=25.0, opt_slot=0, mode=0, anm=5, sfx=-1, func_on_init=0, func_on_tick=0, func_on_draw=0, func_on_hit=1, tail=bytes.fromhex("0000000000000000000000000000000000000000000000000000000000000000")),
+    dict(fire_rate=3, start_delay=0, damage=25, spawn_dx=-40.0, spawn_dy=30.0, hit_w=112.0, hit_h=32.0, angle=-1.5707963705062866, speed=25.0, opt_slot=0, mode=0, anm=5, sfx=-1, func_on_init=0, func_on_tick=0, func_on_draw=0, func_on_hit=1, tail=bytes.fromhex("0000000000000000000000000000000000000000000000000000000000000000")),
+    dict(fire_rate=3, start_delay=0, damage=20, spawn_dx=60.0, spawn_dy=30.0, hit_w=112.0, hit_h=32.0, angle=-1.5707963705062866, speed=25.0, opt_slot=0, mode=0, anm=5, sfx=-1, func_on_init=0, func_on_tick=0, func_on_draw=0, func_on_hit=1, tail=bytes.fromhex("0000000000000000000000000000000000000000000000000000000000000000")),
+    dict(fire_rate=3, start_delay=0, damage=20, spawn_dx=-60.0, spawn_dy=30.0, hit_w=112.0, hit_h=32.0, angle=-1.5707963705062866, speed=25.0, opt_slot=0, mode=0, anm=5, sfx=-1, func_on_init=0, func_on_tick=0, func_on_draw=0, func_on_hit=1, tail=bytes.fromhex("0000000000000000000000000000000000000000000000000000000000000000")),
+]
+HYPER_TEMPLATE_PL01A_WOLF = [
+    dict(fire_rate=8, start_delay=0, damage=18, spawn_dx=0.0, spawn_dy=0.0, hit_w=48.0, hit_h=18.0, angle=-1.5707963705062866, speed=0.0, opt_slot=0, mode=0, anm=8, sfx=64, func_on_init=0, func_on_tick=3, func_on_draw=0, func_on_hit=6, tail=bytes.fromhex("320000000f000000000000000000000000000000000000000000000000000000")),
+    dict(fire_rate=8, start_delay=3, damage=15, spawn_dx=20.0, spawn_dy=0.0, hit_w=48.0, hit_h=18.0, angle=-1.5707963705062866, speed=0.0, opt_slot=0, mode=0, anm=8, sfx=64, func_on_init=0, func_on_tick=3, func_on_draw=0, func_on_hit=6, tail=bytes.fromhex("320000000f000000000000000000000000000000000000000000000000000000")),
+    dict(fire_rate=8, start_delay=3, damage=15, spawn_dx=-20.0, spawn_dy=0.0, hit_w=48.0, hit_h=18.0, angle=-1.5707963705062866, speed=0.0, opt_slot=0, mode=0, anm=8, sfx=64, func_on_init=0, func_on_tick=3, func_on_draw=0, func_on_hit=6, tail=bytes.fromhex("320000000f000000000000000000000000000000000000000000000000000000")),
+    dict(fire_rate=8, start_delay=6, damage=8, spawn_dx=40.0, spawn_dy=0.0, hit_w=48.0, hit_h=18.0, angle=-1.5707963705062866, speed=0.0, opt_slot=0, mode=0, anm=8, sfx=64, func_on_init=0, func_on_tick=3, func_on_draw=0, func_on_hit=6, tail=bytes.fromhex("320000000f000000000000000000000000000000000000000000000000000000")),
+    dict(fire_rate=8, start_delay=6, damage=8, spawn_dx=-40.0, spawn_dy=0.0, hit_w=48.0, hit_h=18.0, angle=-1.5707963705062866, speed=0.0, opt_slot=0, mode=0, anm=8, sfx=64, func_on_init=0, func_on_tick=3, func_on_draw=0, func_on_hit=6, tail=bytes.fromhex("320000000f000000000000000000000000000000000000000000000000000000")),
+]
+HYPER_TEMPLATE_PL00A_EAGLE = [
+    dict(fire_rate=3, start_delay=0, damage=20, spawn_dx=0.0, spawn_dy=0.0, hit_w=16.0, hit_h=16.0, angle=-1.5707963705062866, speed=10.0, opt_slot=0, mode=1, anm=6, sfx=1, func_on_init=1, func_on_tick=1, func_on_draw=0, func_on_hit=0, tail=bytes.fromhex("0000000000000000000000000000000000000000000000000000000000000000")),
+    dict(fire_rate=3, start_delay=0, damage=20, spawn_dx=0.0, spawn_dy=0.0, hit_w=16.0, hit_h=16.0, angle=-1.0471975803375244, speed=10.0, opt_slot=0, mode=1, anm=6, sfx=-1, func_on_init=1, func_on_tick=1, func_on_draw=0, func_on_hit=0, tail=bytes.fromhex("0000000000000000000000000000000000000000000000000000000000000000")),
+    dict(fire_rate=3, start_delay=0, damage=20, spawn_dx=0.0, spawn_dy=0.0, hit_w=16.0, hit_h=16.0, angle=-2.094395160675049, speed=10.0, opt_slot=0, mode=1, anm=6, sfx=-1, func_on_init=1, func_on_tick=1, func_on_draw=0, func_on_hit=0, tail=bytes.fromhex("0000000000000000000000000000000000000000000000000000000000000000")),
+    dict(fire_rate=3, start_delay=0, damage=20, spawn_dx=0.0, spawn_dy=0.0, hit_w=16.0, hit_h=16.0, angle=-0.5235987901687622, speed=10.0, opt_slot=0, mode=1, anm=6, sfx=-1, func_on_init=1, func_on_tick=1, func_on_draw=0, func_on_hit=0, tail=bytes.fromhex("0000000000000000000000000000000000000000000000000000000000000000")),
+    dict(fire_rate=3, start_delay=0, damage=20, spawn_dx=0.0, spawn_dy=0.0, hit_w=16.0, hit_h=16.0, angle=-2.6179938316345215, speed=10.0, opt_slot=0, mode=1, anm=6, sfx=-1, func_on_init=1, func_on_tick=1, func_on_draw=0, func_on_hit=0, tail=bytes.fromhex("0000000000000000000000000000000000000000000000000000000000000000")),
+]
+HYPER_TEMPLATE_PL01A_EAGLE = [
+    dict(fire_rate=15, start_delay=0, damage=80, spawn_dx=0.0, spawn_dy=0.0, hit_w=0.0, hit_h=34.0, angle=-1.5707963705062866, speed=0.0, opt_slot=0, mode=2, anm=11, sfx=-1, func_on_init=4, func_on_tick=5, func_on_draw=0, func_on_hit=5, tail=bytes.fromhex("0000000000000000000000000000000000000000000000000000000000000000")),
+    dict(fire_rate=15, start_delay=0, damage=60, spawn_dx=0.0, spawn_dy=0.0, hit_w=0.0, hit_h=34.0, angle=-1.3089969158172607, speed=0.0, opt_slot=16, mode=2, anm=11, sfx=-1, func_on_init=4, func_on_tick=5, func_on_draw=0, func_on_hit=5, tail=bytes.fromhex("0000000000000000000000000000000000000000000000000000000000000000")),
+    dict(fire_rate=15, start_delay=0, damage=60, spawn_dx=0.0, spawn_dy=0.0, hit_w=0.0, hit_h=34.0, angle=-1.832595705986023, speed=0.0, opt_slot=32, mode=2, anm=11, sfx=-1, func_on_init=4, func_on_tick=5, func_on_draw=0, func_on_hit=5, tail=bytes.fromhex("0000000000000000000000000000000000000000000000000000000000000000")),
+    dict(fire_rate=15, start_delay=0, damage=50, spawn_dx=0.0, spawn_dy=0.0, hit_w=0.0, hit_h=34.0, angle=-1.0471975803375244, speed=0.0, opt_slot=48, mode=2, anm=11, sfx=-1, func_on_init=4, func_on_tick=5, func_on_draw=0, func_on_hit=5, tail=bytes.fromhex("0000000000000000000000000000000000000000000000000000000000000000")),
+    dict(fire_rate=15, start_delay=0, damage=50, spawn_dx=0.0, spawn_dy=0.0, hit_w=0.0, hit_h=34.0, angle=-2.094395160675049, speed=0.0, opt_slot=64, mode=2, anm=11, sfx=-1, func_on_init=4, func_on_tick=5, func_on_draw=0, func_on_hit=5, tail=bytes.fromhex("0000000000000000000000000000000000000000000000000000000000000000")),
+]
+
+# ★ 2026-09-11 七修 / 2026-09-11 八修（AUDIT §AL38）：魔理沙（pl01）EAGLE 的
+# “从身体发射”的安全激光组。**九修后已不再使用**（AUDIT §AL39）；保留定义是为了让
+# 后续实跑/对照能看到上一版安全组长什么样，真正入口见 HYPER_CUSTOM 的空列表。
+# TH17 `pl01a.sht` EAGLE row0 是 `opt_slot=0 / mode=2`
+# （自机体激光）；TH18 主炮路径会把这些指标压成非空的子机槽，但**没有真正分配到子机**时
+# `tick2`/`hit2` 仍会去读空的 option 坐标，低火力/无 option 下看不到激光。
+# 现在由 C 侧 `cards/animal.c` 的 `on_bullet_created` 给本卡 EAGLE set 的 `mode=2` 弹挂一个
+# 伪 option（只填 +0x5c/+0x60 = 自机坐标 ×128）；`tick2` 0x45fcce/0x45fcd3 与
+# `hit2` 0x460b9e/0x460ba3 都只读这两格，所以子弹既从身体出现、也随身体移动。
+# 这里的 `opt_slot` 仍保留 TH18 零售激光形状：
+#   · 五条 row 全保留 TH17 的 `damage / hit_h / angle`（80/60/60/50/50、34、-90°±）；
+#   · 低半字节 = TH18 主炮路径的 option 槽位；高半字节 = `mode==2` 的
+#     `player+0x476fc` 状态槽（`0x45e48d` / `0x46025c` 都取它）。
+#     五行必须用不同高半字节（1..5），否则 `Player__shoot_one_bullet` `0x45e96e`
+#     见槽非 0 会整行跳过；低半字节只影响伪 option 被覆盖前的槽位，不再决定是否空指针。
+#   · TH18 字段取零售激光值：`mode=2`、`anm=6`（pl01.anm script6 = 激光束）、`hit_fx=8`、
+#     `hit_w=0`、`hit_h=34`、func init/tick/hit = 2/2/2。
+# 这是纯数据 + 一个已有 on_bullet_created 钩子的组合，不碰 `player+0xc` / `player+0x10`。
+HYPER_TEMPLATE_PL01A_EAGLE_SAFE = [
+    dict(fire_rate=15, start_delay=0, damage=80, spawn_dx=0.0, spawn_dy=0.0, hit_w=0.0, hit_h=34.0, angle=-1.5707963705062866, speed=0.0, opt_slot=0x11, mode=2, anm=6, sfx=-1, hit_fx=8, func_on_init=2, func_on_tick=2, func_on_draw=0, func_on_hit=2),
+    dict(fire_rate=15, start_delay=0, damage=60, spawn_dx=0.0, spawn_dy=0.0, hit_w=0.0, hit_h=34.0, angle=-1.3089969158172607, speed=0.0, opt_slot=0x21, mode=2, anm=6, sfx=-1, hit_fx=8, func_on_init=2, func_on_tick=2, func_on_draw=0, func_on_hit=2),
+    dict(fire_rate=15, start_delay=0, damage=60, spawn_dx=0.0, spawn_dy=0.0, hit_w=0.0, hit_h=34.0, angle=-1.832595705986023, speed=0.0, opt_slot=0x32, mode=2, anm=6, sfx=-1, hit_fx=8, func_on_init=2, func_on_tick=2, func_on_draw=0, func_on_hit=2),
+    dict(fire_rate=15, start_delay=0, damage=50, spawn_dx=0.0, spawn_dy=0.0, hit_w=0.0, hit_h=34.0, angle=-1.0471975803375244, speed=0.0, opt_slot=0x43, mode=2, anm=6, sfx=-1, hit_fx=8, func_on_init=2, func_on_tick=2, func_on_draw=0, func_on_hit=2),
+    dict(fire_rate=15, start_delay=0, damage=50, spawn_dx=0.0, spawn_dy=0.0, hit_w=0.0, hit_h=34.0, angle=-2.094395160675049, speed=0.0, opt_slot=0x54, mode=2, anm=6, sfx=-1, hit_fx=8, func_on_init=2, func_on_tick=2, func_on_draw=0, func_on_hit=2),
+]
+
+
+HYPER_FUNC_MAP = {
+    "init": {0: 0, 1: 1, 4: 2},          # 3/5 无等价；TH18 init 表没有「发射时生成 4 个伤害源」
+    "tick": {0: 0, 1: 1, 3: 3, 5: 2},    # 6 无等价；TH18 tick 表没有「每帧 +damage」
+    "hit":  {0: 0, 1: 1, 5: 2, 6: 4},    # 4 无等价；6 → 4 见 02 的 🟡 表
+}
+
+# 目标文件 -> TH17 sht `anm` 字段值 -> 目标 pl0X.anm 脚本号。
+#
+# ★ 2026-09-11（四修，AUDIT §AL33）：不再追加任何 entry / 脚本。
+# TH17 `PlayerBullet__fire`（`th17:0x44a180`）在 `0x44a535` 做
+# `movsx eax, word [shooter+0x22]; add eax, 5`，实际读 **`pl0X.anm script(anm+5)`**；
+# TH18 同字段直接读 `pl0X.anm script(anm)`。TH18 零售 `pl00.anm` / `pl01.anm` 里
+# **已经逐字节含有**这几支 TH17 兽灵脚本（entry0 贴图/sprite 表也与 TH17 同名自机一致），
+# 所以直接指过去即可：5→10 狼、6→11 鹫、8→13 狼、11→16 鹫、7→8 是 hit5 硬编码的束端。
+# `build_player_anm.py` 现在只把零售 pl0X.anm 原样拷贝 + 硬校验，绝不再追加。
+#
+# pl02 / pl03 没有 TH17 对应自机，零售文件里没有兽灵脚本/贴图 ⇒ **安全回退**：
+# identity 指回各自零售普通自机弹脚本（不会崩、不会出自机图），视觉目标暂未达成。
+HYPER_ANM_MAP = {
+    "pl00.sht": {5: 10, 6: 11, 7: 8, 8: 13, 11: 16},   # pl00.anm 零售兽灵脚本（TH17 逐字节同）
+    # ★ 2026-09-11 九修（AUDIT §AL39）：pl01 WOLF 仍按 TH17 行直指零售脚本；
+    #   EAGLE 改走 `HYPER_CUSTOM` 的空列表（主炮留空、卡侧矩形束），本 map 的 6/11
+    #   两项仅保留给仍要翻译的模板，pl01 EAGLE 不再使用。
+    "pl01.sht": {5: 10, 6: 11, 7: 8, 8: 13, 11: 16},
+    "pl02.sht": {5: 5, 6: 6, 7: 7, 8: 8, 11: 11},      # 咲夜：安全回退 identity（普通自机弹）
+    "pl03.sht": {5: 5, 6: 6, 7: 7, 8: 8, 11: 11},      # 早苗：安全回退 identity（普通自机弹）
+}
+
+# ★ 2026-09-11 七修（AUDIT §AL37）：**已翻译成 TH18 形状**的覆盖组。
+# 与下面的 `HYPER_FALLBACK` 是两套不同的东西：
+#   · HYPER_CUSTOM 的行已经是 TH18 字段/函数索引/零售 pl0X.anm 脚本号，直接 pack，不再过
+#     `_map_hyper_row`；
+#   · HYPER_FALLBACK 仍按「零售 set 索引」逐字节拷整组，用于还没翻译好、或实跑未坐实的兽灵组。
+HYPER_CUSTOM = {
+    # ★ 2026-09-11 九修（AUDIT §AL39）：pl01 EAGLE 不再走主炮 shooter 行。
+    # 用户实跑确认 TH17 `mode=2` 主炮路径会变成「带激光贴图的移动弹」，且
+    # 「松开 Z 进入咆哮再按 Z 无事」与「按住 Z 进入咆哮」两条路都不稳。按用户
+    # 已批准的 end state，EAGLE 的 main set 留空：由 `animal.c` 的卡侧矩形束负责
+    # 视觉 + 伤害 + 消弹。0x23..0x27 仍是合法空组（与 WOLF_0 同形，只有终止符），
+    # `on_shot_set_index` 返回这些索引时引擎不会创建 bullet。
+    ("pl01.sht", "EAGLE"): [],
+}
+
+# ★ 2026-09-11 七修（§AL37）：Task2 的反汇编把「主炮路径会拿 ability.anm」证伪后，
+# pl01 不再需要任何整组零售回退。WOLF 回到 TH17 行 → `HYPER_ANM_MAP` 直指零售
+# `pl00/pl01.anm` 里逐字节存在的 `script(anm+5)`；EAGLE 走 `HYPER_CUSTOM`。
+# 保留空 dict 是为了让 `_hyper_sets` 的两条安全网（custom / fallback）都在代码里可查：
+# 以后任何 group 只要实跑还没坐实，填一条 set 索引回退即可，不必改生成器。
+HYPER_FALLBACK = {}
+
+HYPER_SOURCE = {
+    "pl00.sht": {"WOLF": "pl00a.sht", "EAGLE": "pl00a.sht"},
+    "pl01.sht": {"WOLF": "pl01a.sht", "EAGLE": "pl01a.sht"},
+    "pl02.sht": {"WOLF": "pl00a.sht", "EAGLE": "pl00a.sht"},
+    "pl03.sht": {"WOLF": "pl01a.sht", "EAGLE": "pl01a.sht"},
+}
+
+HYPER_TEMPLATES = {
+    ("pl00a.sht", "WOLF"):  HYPER_TEMPLATE_PL00A_WOLF,
+    ("pl00a.sht", "EAGLE"): HYPER_TEMPLATE_PL00A_EAGLE,
+    ("pl01a.sht", "WOLF"):  HYPER_TEMPLATE_PL01A_WOLF,
+    ("pl01a.sht", "EAGLE"): HYPER_TEMPLATE_PL01A_EAGLE,
+}
+
+
 def pack_shooter(s: dict, anm_ids: dict) -> bytes:
     rate = s["fire_rate"]
     if not 1 <= rate <= 127:
@@ -122,7 +252,96 @@ def pack_shooter(s: dict, anm_ids: dict) -> bytes:
     struct.pack_into("<bb", b, 0x2A, s.get("fire_rate2", 0), s.get("start_delay2", 0))
     struct.pack_into("<4i", b, 0x2C, s["func_on_init"], s.get("func_on_tick", 0),
                      s.get("func_on_draw", 0), s.get("func_on_hit", 0))
+    # tail = TH17 +0x38..+0x57 原样搬到 TH18 +0x3c..+0x5b（TH18 在 +0x28 插了 4 字节）。
+    tail = s.get("tail", b"")
+    if isinstance(tail, str):
+        tail = bytes.fromhex(tail)
+    if len(tail) > 0x20:
+        raise SystemExit(f"tail 长度 {len(tail)} > 0x20")
+    b[0x3C:0x3C + len(tail)] = tail
     return bytes(b)
+
+
+def _map_hyper_row(row: dict, target_file: str) -> dict:
+    out = dict(row)
+    anm_map = HYPER_ANM_MAP[target_file]
+    try:
+        out["anm"] = anm_map[row["anm"]]
+    except KeyError as e:
+        raise SystemExit(f"{target_file}: 没有 TH17 anm={row['anm']} 的映射") from e
+    for slot, key in (("init", "func_on_init"), ("tick", "func_on_tick"), ("hit", "func_on_hit")):
+        src = row.get(key, 0)
+        try:
+            out[key] = HYPER_FUNC_MAP[slot][src]
+        except KeyError as e:
+            raise SystemExit(f"{target_file}: 没有 TH17 {slot} idx={src} 的映射") from e
+    out["func_on_draw"] = 0
+    if row.get("func_on_hit", 0) == 5:
+        # TH17 hit5 内部硬编码 pl0X.anm script8 当束端特效（`th17:0x44c462` 同样取
+        # PLAYER_PTR+0xc）；TH18 hit2 改读 shooter+0x26。我们对应该 slot7 的
+        # TH18 原生一次性脚本（不是 slot8/11 的子弹本体脚本）。
+        out["hit_fx"] = anm_map.get(7, 0)
+    else:
+        out["hit_fx"] = 0
+    return out
+
+
+def _common_sets(anm_ids: dict) -> list:
+    return [(nm, b"".join(pack_shooter(s, anm_ids) for s in rows) + TERMINATOR)
+            for nm, rows in APPEND]
+
+
+def _retail_set_blob(data: bytes, off: int) -> bytes:
+    """按文件相对偏移 off 拷一段零售 shooterset 原始字节（含终止符）。"""
+    p = DATA_BASE + off
+    while struct.unpack_from("<i", data, p)[0] != -1:
+        p += STRIDE
+        if p > len(data):
+            raise SystemExit("零售 shooterset 没有终止符")
+    return data[DATA_BASE + off:p + 4]
+
+
+def _hyper_sets(target_file: str, anm_ids: dict) -> list:
+    """按文件/家族生成 5 个追加组。三种来源，优先级：
+       1. HYPER_CUSTOM —— 已经是 TH18 形状的行；pl01 EAGLE 现在登记为空列表（空组）；
+       2. HYPER_FALLBACK —— 逐字节拷零售 shooterset（当前为空；留给实跑未坐实的组）；
+       3. HYPER_TEMPLATES —— TH17 行经 `_map_hyper_row` 翻译（pl00、pl01 WOLF、pl02、pl03）。
+       每个 family 仍生成 5 组、索引连续：*_0 = 空组（只有终止符），*_1..*_4 = 实际行。
+    """
+    out = []
+    for family in ("WOLF", "EAGLE"):
+        custom = HYPER_CUSTOM.get((target_file, family))
+        if custom is not None:
+            blob = b"".join(pack_shooter(r, anm_ids) for r in custom) + TERMINATOR
+            for power in range(5):
+                out.append((f"{family}_{power}", TERMINATOR if power == 0 else blob))
+            print(f"  {target_file}: {family} = TH18 形状自定义组 "
+                  f"({len(custom)} shooter/组，索引 0x1e+ 起)")
+            continue
+
+        fallback = HYPER_FALLBACK.get((target_file, family))
+        if fallback is not None:
+            data = (RETAIL / target_file).read_bytes()
+            offs = offsets(data)
+            for power, src_idx in enumerate(fallback):
+                off = offs[src_idx]
+                if off == 0:
+                    raise SystemExit(f"{target_file}: 回退目标 set {src_idx:#x} 为空")
+                out.append((f"{family}_{power}", _retail_set_blob(data, off)))
+            print("  " + target_file + f": {family} 安全回退 -> 零售行 " +
+                  ", ".join(f"{family}_{i}=set{si:#x}" for i, si in enumerate(fallback)))
+            continue
+
+        src = HYPER_SOURCE[target_file][family]
+        rows = [_map_hyper_row(r, target_file) for r in HYPER_TEMPLATES[(src, family)]]
+        blob = b"".join(pack_shooter(r, anm_ids) for r in rows) + TERMINATOR
+        for power in range(5):
+            out.append((f"{family}_{power}", TERMINATOR if power == 0 else blob))
+    return out
+
+
+def sets_for_file(target_file: str, anm_ids: dict) -> list:
+    return _common_sets(anm_ids) + _hyper_sets(target_file, anm_ids)
 
 
 def read_anm_ids() -> dict:
@@ -221,13 +440,14 @@ def main():
     a = ap.parse_args()
 
     anm_ids = read_anm_ids()
-    sets = [(nm, b"".join(pack_shooter(s, anm_ids) for s in rows) + TERMINATOR) for nm, rows in APPEND]
+    sets_by_file = {name: sets_for_file(name, anm_ids) for name in FILES}
+    canonical = sets_by_file[FILES[0]]
 
-    if not sets:                                   # 没有要追加的：不产出（别发一份和零售一模一样的 .sht）
+    if not canonical:                               # 没有要追加的：不产出（别发一份和零售一模一样的 .sht）
         if not a.verify_only:
             for name in FILES:
                 (OUT / name).unlink(missing_ok=True)
-            write_ids_h(sets)
+            write_ids_h(canonical)
         print("  没有登记任何 shooterset：不产出 .sht（build/sht/ 已清空）")
         return 0
 
@@ -237,6 +457,7 @@ def main():
         if not src.is_file():
             raise SystemExit(f"缺零售样本 {src}（用户放进 local/，见 local/README.md）")
         retail = src.read_bytes()
+        sets = sets_by_file[name]
         dst = OUT / name
         if a.verify_only:
             if not dst.is_file():
@@ -250,9 +471,9 @@ def main():
               f"（索引 {N_RETAIL:#04x}..{N_RETAIL + len(sets) - 1:#04x}）")
 
     if not a.verify_only:
-        write_ids_h(sets)
+        write_ids_h(canonical)
         print(f"wrote {IDS_H.relative_to(MOD)}")
-    for k, (nm, blob) in enumerate(sets):
+    for k, (nm, blob) in enumerate(canonical):
         print(f"  CE_SHT_SET_{nm} = {N_RETAIL + k:#04x}  ({len(blob) // STRIDE} shooter)")
     return 0
 

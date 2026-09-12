@@ -1,0 +1,43 @@
+# 113（神灵庙 · 灵界）的贴图 —— 由 assets/ability/make_trance_art.py 生成，别手改。
+# 格式同 entries/ORDER.txt：一行 `NAME  源图(相对 assets/)  WxH`。
+# ⚠️ 本文件**不参与构建**（`build_ability.py` 只读 entries/ORDER.txt）—— 合并时把这些行并进去。
+#
+# 尺寸为什么是 2 的幂：`build_ability.py` 的硬门（写死尺寸的 entry 必须 2 的幂）。
+#   · 神灵精灵一手是 30×30（带 1px 边距）⇒ 单独出 32×32、30×30 居中（= 与零售同心）。
+#   · HUD 的 agauge1 是 64×64、agauge2 是 16×128 ⇒ 单独一张 64×64 装一个 sprite。
+#
+# ── 神灵实体（脚本 179–184 引用）─────────────────────────────────────────
+# 一手：TH13 `astral.anm` entry1 `enemy/littlegods.png`（256×64，10 个 30×30）
+#   sprite1 (1,1) / sprite2 (1,33)  = 普通态外环 / 内芯（**四型共用**，靠 color() 区分）
+#   sprite3..6 (33/65/97/129, 1)    = 灵界态白环（type 0..3）
+#   sprite7..10 (33/65/97/129, 33)  = 灵界态彩色 glow（type 0..3，3°/帧 自转）
+SPIRIT_PLAIN_0   ability/trance/SPIRIT_PLAIN_CELL_C0R0.png  32x32
+SPIRIT_PLAIN_1   ability/trance/SPIRIT_PLAIN_CELL_C0R1.png  32x32
+SPIRIT_TRANCE_0  ability/trance/SPIRIT_TRANCE_CELL_C0R0.png  32x32
+SPIRIT_TRANCE_1  ability/trance/SPIRIT_TRANCE_CELL_C0R1.png  32x32
+SPIRIT_TRANCE_2  ability/trance/SPIRIT_TRANCE_CELL_C1R0.png  32x32
+SPIRIT_TRANCE_3  ability/trance/SPIRIT_TRANCE_CELL_C1R1.png  32x32
+# 两型的第二组（type 2 / type 3 的灵界态）：文件已生成，本批**没进 ORDER**（脚本还没用到，
+# 113 卡侧定了要哪几型再补这两行即可 —— 生成器已经把它们写出来了）：
+# SPIRIT_TRANCE_4  ability/trance/SPIRIT_TRANCE_CELL_C2R0.png  32x32
+# SPIRIT_TRANCE_5  ability/trance/SPIRIT_TRANCE_CELL_C2R1.png  32x32
+# SPIRIT_TRANCE_6  ability/trance/SPIRIT_TRANCE_CELL_C3R0.png  32x32
+# SPIRIT_TRANCE_7  ability/trance/SPIRIT_TRANCE_CELL_C3R1.png  32x32
+#
+# ── 灵界槽 HUD（脚本 174–178 引用）──────────────────────────────────────
+# 一手：TH13 `front.anm` entry6 `front/agauge1.png`（sprite121/122，各 32×48）、
+#       entry7 `front/agauge2.png`（sprite123/124 各 48×32、sprite125 16×32）
+TRANCE_GAUGE_TOP   ability/trance/GAUGE_AC.png  64x64
+TRANCE_GAUGE_BAR   ability/trance/GAUGE_BAR.png  64x64
+TRANCE_GAUGE_BAR2  ability/trance/GAUGE_BAR2.png  64x64
+TRANCE_GAUGE_MARK  ability/trance/GAUGE_MARK.png  64x64
+#
+# ── ★ 脚本号占位（**不是 ORDER 条目**；合并压缩重编号时按最终号替换）────────
+#   174_trance_gauge.anm.txt      → 引用 @SCRIPT_GAUGE_FRAME@ / @SCRIPT_GAUGE_FILL@ /
+#                                          @SCRIPT_GAUGE_FRAME_B@ / @SCRIPT_GAUGE_MARK@
+#                                      = 175 / 176 / 177 / 178
+#   179_spirit_plain.anm.txt      → 引用 @SCRIPT_SPIRIT_PLAIN_RING@ / @SCRIPT_SPIRIT_PLAIN_CORE@
+#                                      = 180 / 181
+#   182_spirit_trance.anm.txt     → 引用 @SCRIPT_SPIRIT_TRANCE_RING@ / @SCRIPT_SPIRIT_TRANCE_GLOW@
+#                                      = 183 / 184
+#   175–178、180、181、183、184、185 都是**叶子**（不引用任何同批脚本号）。

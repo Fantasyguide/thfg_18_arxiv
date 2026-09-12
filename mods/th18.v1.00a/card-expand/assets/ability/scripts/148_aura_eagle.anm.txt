@@ -1,0 +1,32 @@
+script script148 {
+    // 由 assets/ability/make_animal_art.py 从 TH17 `beast.anm` script43 生成，别手改。
+    // 一手：engine/animal/th17/01-animal-spirits.md §4 / §7；贴图 = 零售 beast*.png 切图（见 ORDER.txt）。
+    layer(13);
+    type(0);
+    resampleMode(1);
+    pos(0.0f, -20.0f, 0.0f);
+    scale(0.0f, 0.0f);
+    scaleTime(10, 0, 1.5f, 1.5f);
+offset96:
+    sprite(@AURA_EAGLE_0);
++3: // 3
+    sprite(@AURA_EAGLE_1);
++3: // 6
+    sprite(@AURA_EAGLE_2);
++3: // 9
+    sprite(@AURA_EAGLE_3);
++3: // 12
+    sprite(@AURA_EAGLE_4);
++3: // 15
+    sprite(@AURA_EAGLE_5);
++3: // 18
+    sprite(@AURA_EAGLE_6);
++3: // 21
+    sprite(@AURA_EAGLE_7);
++3: // 24
+    jmp(offset96, 0);
+    interruptLabel(1);
+    scaleTime(10, 0, 0.0f, 0.0f);
++10: // 34
+    delete();
+}

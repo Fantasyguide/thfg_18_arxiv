@@ -1,0 +1,19 @@
+script script150 {
+    // 由 assets/ability/make_animal_art.py 从 TH17 `beast.anm` script33 生成，别手改。
+    // 一手：engine/animal/th17/01-animal-spirits.md §4 / §7；贴图 = 零售 beast*.png 切图（见 ORDER.txt）。
+-1:
+    alpha(0);
+    layer(13);
+0:
+    scriptNew(script151);
++3: // 3
+    scriptNew(script152);
++3: // 6
+    scriptNew(script153);
++3: // 9
+    scriptNew(script151);
++3: // 12
+    scriptNew(script152);
++80: // 92
+    delete();
+}

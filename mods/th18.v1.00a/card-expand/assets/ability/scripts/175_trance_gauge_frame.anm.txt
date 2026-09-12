@@ -1,0 +1,52 @@
+script script175 {
+// 灵界槽的**外框**（两态）—— 逐条搬 TH13 `front.anm` **script172**
+//   一手原文（`thanm -l 13 local/th13.v1.00c/dat/front.anm`）：
+//     -1: sprite(sprite121); layer(17); resampleMode(1); anchor(1,2); alpha(0); pos(0,4);
+//      0: interruptLabel(2); alphaTime(20,0,255); sprite(sprite121);
+//   offset124: colorTime(30,9,192,192,255); +30: colorTime(30,9,255,255,255); +30: jmp(offset124,0); stop();
+//         interruptLabel(3): sprite(sprite122); stop();
+//         interruptLabel(4): alphaTime(30,0,255); caseReturn(); interruptLabel(5): alphaTime(10,0,32); caseReturn();
+//
+// 贴图：@TRANCE_GAUGE_TOP = `ability/trance/GAUGE_AC.png` **64×64**，
+//   内容 = 源 `front/agauge1.png` 的两个 32×48 横向拼在一起、纵向居中 8px。
+//   ⚠️ **没进 ORDER 的第二张**（TH13 的 sprite122 = 右半，引擎在槽 <200 时发 interrupt 3 切过去）：
+//   `build_ability.py` 是「一个 entry 一个 sprite」，要在同一张图上取右半只能靠 `scaleUV`，
+//   而**本仓没有任何一处用过 `scaleUV`**（`local/th18.v1.00a/anm/ability/ability.anm.txt` 里
+//   也搜不到）⇒ 不押注未实测的 opcode。**本次交付只做 sprite121（槽够放灵界的那一态）**，
+//   第二个 sprite 的取法列在报告的「未做到」里（要么加一行 ORDER 出 `GAUGE_AC2.png`，
+//   要么先实测 `scaleUV` 再拼图）。
+//
+// 偏差①：`layer(17)` → **24**（依据 HUD-LAYOUT §4.1：TH18 暂停模糊罩只盖 24/25）。
+// 偏差②：补 `resolutionMode(2)`（TH13 没有这条；TH18 的层 24 要显式写才按表面 px 定位）。
+// 偏差③：`pos(0,4)` 的 y 写成 **8**（2× 表面空间）—— 父 VM 174 已是 2× 坐标。
+-1:
+    sprite(@TRANCE_GAUGE_TOP);
+    layer(24);
+    resolutionMode(2);
+    resampleMode(1);
+    anchor(1, 2);
+    alpha(0);
+    pos(0.0f, 8.0f, 0.0f);
+0:
+    interruptLabel(2);
+    alphaTime(20, 0, 255);
+    sprite(@TRANCE_GAUGE_TOP);
+offset124:
+    colorTime(30, 9, 192, 192, 255);
++30: // 30
+    colorTime(30, 9, 255, 255, 255);
++30: // 60
+    jmp(offset124, 0);
+    stop();
+    interruptLabel(3);
+    // ★ 一手这里切 sprite122（槽 <200 的另一态）；本次没切图 ⇒ 只重放一次淡入，外观不换。
+    //   见文件头的「未做到」。
+    sprite(@TRANCE_GAUGE_TOP);
+    stop();
+    interruptLabel(4);
+    alphaTime(30, 0, 255);
+    caseReturn();
+    interruptLabel(5);
+    alphaTime(10, 0, 32);
+    caseReturn();
+}

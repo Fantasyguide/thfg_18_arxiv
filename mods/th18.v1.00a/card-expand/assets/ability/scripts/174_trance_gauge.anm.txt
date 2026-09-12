@@ -1,0 +1,28 @@
+script script174 {
+// 灵界槽（113）根 —— 逐条搬 TH13 `front.anm` **script171**
+//   （一手 `thanm -l 13 local/th13.v1.00c/dat/front.anm`，原文：
+//    `script171 { layer(17); pos(-196.0f, 448.0f, 0.0f); scriptNew(172..175); stop(); }`）
+// 子脚本 = 本批 175 / 176 / 177 / 178（下面的 `SCRIPT_*` 占位（对照 entries/ORDER.trance.txt），合并重编号时一起替换）
+//   —— 引擎每帧写它们（`Gui__sub_42b030_spirit_related` `th13:0x42b030`）：
+//     172: interrupt 3=槽<200 切 sprite122 / 2=槽≥200      （本脚本的 frame 子）
+//     173: scale.x = uv_scale.x = (槽/200)/3.0              （三段式总条）
+//     175: scale.x = uv_scale.x = (槽%200)/200, entity_pos.x = 比例×16.0
+// 偏差（必须声明）：一手 `layer(17)` ⇒ 本脚本**改成 24**。
+//   依据 mods/th18.v1.00a/card-expand/HUD-LAYOUT.md §4.1（一手 `AnmManager__render_layer` th18:0x4882b8
+//   的 0x4882f1）：TH18 的暂停模糊罩只盖 UI 层 24/25；层 17 属**世界列表**，
+//   永远全分辨率、过相机 3 视口 ⇒ HUD 用它会在暂停时清晰、且被相机裁剪。
+// 偏差：`pos(-196,448)` 是 **640×480 字面量空间**；本脚本 `resolutionMode(2)`（表面 px，= 2×）
+//   ⇒ 写成 (-392, 896)（HUD-LAYOUT §1.1 的两套坐标空间）。
+//   ⚠️ 最终落位由卡侧 `ce_hud_slot_*` 决定：卡侧用 `ce_anm_set_pos` 覆盖这里的初值，
+//      本脚本给的是「照抄 TH13 的裸坐标」，不是 shelf 布局后的位置。
+-1:
+    layer(24);
+    resolutionMode(2);
+    pos(-392.0f, 896.0f, 0.0f);
+0:
+    scriptNew(@SCRIPT_TRANCE_GAUGE_FRAME@);
+    scriptNew(@SCRIPT_TRANCE_GAUGE_FILL@);
+    scriptNew(@SCRIPT_TRANCE_GAUGE_FRAME_B@);
+    scriptNew(@SCRIPT_TRANCE_GAUGE_MARK@);
+    stop();
+}

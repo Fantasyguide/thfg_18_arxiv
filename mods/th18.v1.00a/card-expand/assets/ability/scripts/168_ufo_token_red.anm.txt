@@ -1,0 +1,45 @@
+script script168 {
+    // 由 assets/ability/make_ufo_token_art.py 从 TH12 v1.00b `bullet.anm` script175 生成，别手改。
+    // 一手：engine/ufo/th12/01-ufo-system.md §9（令牌 = 道具类型 10..15，道具自身 anm 脚本 = 类型 + 0xa5）。
+    // 指令逐条照抄，只把 sprite 引用换成 ORDER 名字。
+    type(3);
+    scale(0.0f, 0.0f);
+    scaleTime(8, 1, 1.0f, 1.0f);
+offset52:
+    rotateTime(32, 9, 0.0f, 0.0f, 0.20943952f);
+    sprite(@TOKEN_RED_0);
++4: // 4
+    sprite(@TOKEN_RED_1);
++4: // 8
+    sprite(@TOKEN_RED_0);
++4: // 12
+    sprite(@TOKEN_RED_1);
++4: // 16
+    sprite(@TOKEN_RED_0);
++4: // 20
+    sprite(@TOKEN_RED_1);
++4: // 24
+    sprite(@TOKEN_RED_0);
++4: // 28
+    sprite(@TOKEN_RED_1);
++4: // 32
+    sprite(@TOKEN_RED_0);
+    rotateTime(32, 9, 0.0f, 0.0f, -0.20943952f);
++4: // 36
+    sprite(@TOKEN_RED_1);
++4: // 40
+    sprite(@TOKEN_RED_0);
++4: // 44
+    sprite(@TOKEN_RED_1);
++4: // 48
+    sprite(@TOKEN_RED_0);
++4: // 52
+    sprite(@TOKEN_RED_1);
++4: // 56
+    sprite(@TOKEN_RED_0);
++4: // 60
+    sprite(@TOKEN_RED_1);
++4: // 64
+    jmp(offset52, 0);
+    stop();
+}

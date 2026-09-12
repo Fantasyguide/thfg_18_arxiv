@@ -1,0 +1,12 @@
+script script145 {
+    // 鬼形兽（117）灵槽里的图标：默认 sprite 是狼，C 侧按槽内 token 的 type `ce_anm_set_sprite` 换
+    // （狼/獭/鹫 = beast1.png 的 0/3/6 号单元，鱼灵 = 9/10/11/12 号单元）。
+    sprite(@WOLF_0);
+    originMode(1);
+    layer(25);
+    resolutionMode(2);
+    type(1);
+    alpha(255);
+0:
+    stop();
+}

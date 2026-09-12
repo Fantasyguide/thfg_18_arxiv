@@ -1,0 +1,39 @@
+script script176 {
+// 灵界槽的**三段式总条** —— 逐条搬 TH13 `front.anm` **script173**
+//   一手原文：`-1: sprite(sprite123); pos(24,0); resampleMode(1); anchor(1,2); layer(17); alpha(0);`
+//             ` 0: alphaTime(20,0,255); interruptLabel(2); sprite(sprite123);`
+//             `offset124: colorTime(30,9,192,192,255); +30: colorTime(30,9,255,255,255); +30: jmp(offset124,0); stop();`
+//             `    interruptLabel(4): alphaTime(30,0,255); caseReturn(); interruptLabel(5): alphaTime(10,0,32); caseReturn();`
+//   贴图：@TRANCE_GAUGE_BAR（64×64，内容 = `front/agauge2.png` sprite123 (0,0,48,32) 居中）
+//   引擎每帧写 `scale.x = uv_scale.x = (槽/200)/3.0`（`Gui__sub_42b030_spirit_related` `th13:0x42b030`）
+//   ⇒ **三段式**充能条（满 600 才 = 1.0）。本条**不引用 entity_pos**（那是 178 的活）。
+//
+// 偏差①：layer 17 → **24**；偏差②：补 resolutionMode(2)；
+// 偏差③：`pos(24,0)` 在 2× 表面空间里写成 `pos(48,0)`（`anchor(1,2)` = 右中锚 ⇒
+//   右缘落在 x=48，左缘 -48，正好以父 VM 为中心，与 TH13 的 640 空间几何同形）。
+-1:
+    sprite(@TRANCE_GAUGE_BAR);
+    layer(24);
+    resolutionMode(2);
+    resampleMode(1);
+    anchor(1, 2);
+    alpha(0);
+    pos(48.0f, 0.0f, 0.0f);
+0:
+    alphaTime(20, 0, 255);
+    interruptLabel(2);
+    sprite(@TRANCE_GAUGE_BAR);
+offset124:
+    colorTime(30, 9, 192, 192, 255);
++30: // 30
+    colorTime(30, 9, 255, 255, 255);
++30: // 60
+    jmp(offset124, 0);
+    stop();
+    interruptLabel(4);
+    alphaTime(30, 0, 255);
+    caseReturn();
+    interruptLabel(5);
+    alphaTime(10, 0, 32);
+    caseReturn();
+}

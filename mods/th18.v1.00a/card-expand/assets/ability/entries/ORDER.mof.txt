@@ -1,0 +1,17 @@
+# 110（风神录 · 信仰）/ 111（地灵殿 · 信号）共用的**绿点信仰实体**贴图
+# —— 由 assets/ability/make_mof_art.py 生成，别手改。
+# 格式同 entries/ORDER.txt：一行 `NAME  源图(相对 assets/)  WxH`。
+# ⚠️ 本文件**不参与构建**（`build_ability.py` 只读 entries/ORDER.txt）—— 合并时把这一行并进去。
+#
+# 一手出处（✅ 定位链逐条见 make_mof_art.py 文件头）：
+#   源图  TH10 `bullet.anm` **entry2** `bullet/etama2.png`（256×256，`format: 5`）
+#   矩形  **sprite351 = (112, 208, 16, 16)**（其上一行 y=177/145 是 30×30 的大件，不是它）
+#   用法  `ItemManager::spawn_item` th10:0x41bcb5 → `script = type + 374`，
+#         其中 **script382 = 绿点**（`thanm -l 10` 一手正文：`stop(sprite351); ins_51(16);
+#         ins_53(0,0,π/4); ins_50(0,0); ins_60(16,0,1,1); +32: ins_53(0,0,0); ins_63();`）
+#   16×16 直接就是 2 的幂 ⇒ **不放大、不重拼**，只做「居中进 32×32 画布」吗？不必：
+#         build_ability.py 允许源图 **小于** 声明尺寸（自动居中补透明），所以这里声明 16x16 最忠实。
+FAITH_DOT  ability/mof/FAITH_DOT.png  16x16
+#
+# ── ★ 脚本号 ──────────────────────────────────────────────────────────────
+#   185_faith_dot.anm.txt  引用 @FAITH_DOT（上面这一行）；**不引用任何同批脚本号**。

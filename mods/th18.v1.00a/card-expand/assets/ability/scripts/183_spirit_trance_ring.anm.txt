@@ -1,0 +1,24 @@
+script script183 {
+// 神灵（灵界态）的**白环** —— TH13 `astral.anm` **script5** 逐条抄
+//     -1: type(1); sprite(sprite3); blendMode(1); layer(13);
+//      0: offset48: scaleTime(20,9,0.95f,0.95f); +20: scaleTime(20,9,1.0f,1.0f); +20: jmp(offset48,0);
+//         stop();
+//   ★ 与普通态（180）的差别，全是一手原文：
+//     · **没有 `color()`**（贴图自带白）；· 呼吸幅度是 **0.95↔1.0**（普通态是 1.5↔1.6）；
+//     · **没有 `alpha`**；· **没有 `interruptLabel(1)` 淡出段**（灵界态不缩不淡）；
+//     · 循环起点 label = `offset48`（普通态是 offset68）。
+//   贴图：@SPIRIT_TRANCE_0 = **SPIRIT_TRANCE.png 第 0 列、行 0**（源 sprite3 (33,1,30,30)）。
+-1:
+    type(1);
+    sprite(@SPIRIT_TRANCE_0);
+    blendMode(1);
+    layer(13);
+0:
+offset48:
+    scaleTime(20, 9, 0.95f, 0.95f);
++20: // 20
+    scaleTime(20, 9, 1.0f, 1.0f);
++20: // 40
+    jmp(offset48, 0);
+    stop();
+}

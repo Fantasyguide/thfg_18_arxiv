@@ -1,0 +1,419 @@
+// =====================================================================================
+// 星莲船 UFO（card-expand id 112）—— UFO 本体 ECL，**从 TH12 移植**
+//
+// 出处（一手，可复核）：
+//   · 原文件 = TH12 v1.00b 的 `default.ecl`（`thdat -l 12 th12.dat` 顶层），**不在** st0X.ecl 里
+//   · 解出 = `thdat -x 12 th12.dat default.ecl` → `thecl -d 12 -m th12.eclm`（见 local/_scratch/th12ecl/）
+//   · 真名表 = `th12:0x4b33e0` = {UFO_Red, UFO_Blue, UFO_Green, UFO_Rainbow}（`th12:0x44a909` 索引）
+//   · 往返验证 = `thecl -c 12` 重编 → 与零售 default.ecl **字节一致**（7900 B）
+//
+// 一个子程序 = 一个颜色；四个主体除 `anmSetSprite` 的脚本号外**逐条相同**（现在那 4 个数**全都一样** =
+// `-1`，见 Δ2：本体在 ECL 侧只当**隐形载体** = 原版「拆槽」，画面由卡侧的跟随 VM 画）。
+//
+// ── 移植时的改动（只有 2 条，其余逐条照抄）─────────────────────────────────────────
+//   Δ1 `flagSet(1090);`  → **删除**。TH12 侧 `flags |= 0x442`（位 1/6/10），
+//      一手证据（engine/ufo/th12/01-ufo-system.md:175）：**全 exe 无消费者**（残留）。
+//      TH18 的 `flags_lo & 0x21` = **伤害免疫**（spec §7），照搬位号会做出打不死的 UFO
+//      ⇒ 按 spec §7「严禁把 TH12 的位号照搬」删除。
+//   Δ2 `anmSetSprite(0, 135..138)` → **`anmSetSprite(0, -1)`**（= **拆槽**，本体在 ECL 侧隐形），
+//      画面改由卡侧的**跟随 VM** 画。
+//      ⚠️ 该 opcode（th12 op 259 / th18 op 303，独立函数 `th18:0x436bb0`）的 arg1 是 **anm 脚本号**，
+//      不是 sprite 号（一手：TH12 `enemy.anm` 的 script135/136/137/138 正是 4 套飞碟动画，
+//        取自 `enemy/ufo_anim.png` 的 4 组同形异色 64×64；script138 混用 4 组 = 彩虹）。
+//      ★ 2026-09-12 结论订正（原来这里写的是「需先把 TH12 的 anm 脚本一并移植」）：
+//        ① **`S < 0` 是 `anmSetSprite` 的显式分支 = 拆掉该槽、不建 VM**（一手 `th18:0x436bf6`：
+//           `test esi,esi; js → 收工`，且之前先 `call 0x488cf0` 把旧 VM 标删、槽写 0）。
+//           零售真的这么用：**14 处 `anmSetSprite(K, -1)` 全在 boss 死亡 / 符卡收尾**
+//           （`st02mbs:179 anmSetSprite(1,-1)`、`st07bs:2390 anmSetSprite(2,-1)`、
+//            `st07mbs:407/408` …）⇒ 这就是原版「让这个槽不画东西」的**官方手法**。
+//           一手全文：`engine/anm/th18/04-anm-slot-selection.md` §4（`K`/`S`/`N` 三个参数都在那里钉死了）。
+//           ⚠ 附带好处：`S<0` 时**根本不解析文件** ⇒ 与 `anmSelect(N)` 选到哪个文件**无关**，
+//             不必依赖「`effect.anm` 的 script0 恰好是空的」那条（那条也对：script0 = `alpha(0); stop();`，
+//             一手 `local/th18.v1.00a/anm/effect/effect.anm.txt:20`）。
+//        ② 为什么**不能**由 ECL 直接画我们那 4 套：TH12 的动画已移植进 `ability.anm`（script 164..167），
+//           而 **ECL 的 anm 索引表里根本没有 `ability.anm`** —— 一手 `th18:0x438d40`：
+//             `N==0 → bullet.anm`、`N==1 → effect.anm`、`N==7 → 本关 st0Xwl.anm`、
+//             `N >= 2 → 本关 ECL 头 anim{} 的第 (N-2) 条`（七关实测只有 enemy.anm / st0Xenm.anm /
+//             st05enm2.anm / st04enm.anm 这几个，**没有任何一关带 ability.anm**）；
+//             `anmSetSprite` 里的内联副本与此**逐字节相同**（全 exe 14 处同编码）。
+//           ⇒ 照旧写 135..138 的话，本体去播的是 **`effect.anm` 的 135..138 号脚本**
+//             （那是 30 帧就 `delete()` 的真特效 ⇒ 敌机位置出现看得见的杂图）。**必须改掉**。
+//        ③ ⇒ **画面由卡侧的「跟随 VM」画**：`native/cards/ufo.c` 用
+//           `ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_UFO_*, layer 7)` 起一个 world VM
+//           （脚本 164..167；`layer(7)` 写在脚本里），每帧把位置抄成该敌机的 `abs_pos`
+//           （`CE_ENEMY_POS_X/Y`），敌机没了 / 卡收了就 `ce_anm_delete()`。
+//           ⇒ 敌机本体只当**隐形载体**：移动 / 消弹 / 判定 / 死亡全照旧，一个像素都不画。
+//      🟡 若上面那条映射复核再翻案，改回本文件里那**一个数** + `ufo.c` 的
+//         `UFO_ECL_HIDDEN_BODY_SCRIPT` 即可（两处都留了注）。
+//      ⚠️ 卡侧那个宏与这段结论必须同步（一手链在 `ufo.c` 的 `UFO_ECL_HIDDEN_BODY_SCRIPT` 注里）。
+//
+// ── 两组子程序，卡侧二选一（见 native/cards/ufo.c 的 UFO_ECL_BODY）──────────────
+//   A 组 `UFO_Red/Blue/Green/Rainbow`        = **原样移植**，离场靠引擎每帧写 `$I0`
+//   B 组 `UFO_Red_TTL/...`（后缀 _TTL）      = **等价改写**，离场靠脚本自带的 420 帧计时
+//   ⚠️ 选 A 的前提是卡侧能写 UFO 敌机的 `int_vars[0]` —— 该偏移**尚未提炼进 engine.h**
+//      （spec §9 #10b 的 ⏳）⇒ **在它落地之前只能用 B 组**，否则 UFO 永远不飞走。
+//
+// 编译（资产管线照 assets/ecl/make_dev_ecl.py 的风格，改的是 default.ecl 而不是 stNN）：
+//   1. thecl -d 18 -m th18.eclm local/th18.v1.00a/dat/default.ecl  → retail 文本
+//   2. 把本文件的内容**追加**在 retail 文本后面
+//   3. thecl -c 18 -m th18.eclm → native/build/ecl/default.ecl
+//   4. release.py 加一行把它映射进 thcrap（见文件尾部注释）
+// =====================================================================================
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 共用：召唤瞬间的扩圈消弹（原样；半径 16→112，每帧 +6）
+// ─────────────────────────────────────────────────────────────────────────────
+
+void UFO_EtBreak()
+{
+    var A;
+    %A = 16.0f;
+    goto UFO_EtBreak_196 @ 1;
+UFO_EtBreak_100:
+    etCancel(%A);
+    %A;
++1: //1
+    6;
+    addf();
+    setf(%A);
+UFO_EtBreak_196:
+    if (%A < 112.0f) goto UFO_EtBreak_100 @ 0;
+    return;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A 组：原样移植（离场由引擎写 `$I0 = 999` 驱动，TH12 侧是 th12:0x44a3af）
+// ─────────────────────────────────────────────────────────────────────────────
+
+void UFO_Red()
+{
+    var A, B, C, D;
+    anmSelect(1);
+    anmSetSprite(0, -1);  // ★ 隐形载体 = 原版「拆槽」分支（S<0，一手 th18:0x436bf6）；画面由卡侧的跟随 VM 画（ability.anm 164..167，见文件头 Δ2）
+    @UFO_EtBreak() async;
+    moveLimit(0.0f, 128.0f, 280.0f, 128.0f);
+    setHurtbox(48.0f, 24.0f);
+    setHitbox(16.0f, 16.0f);
+    flagSet(15);
++60: //60
+    flagClear(15);
+    moveCircleRel(%RANDRAD, 0.034906585f, 0.0f, 0.0f);
+    moveCircleRelTime(60, 0, 0.034906585f, 16.0f, 0.0f);
+    moveLimit(0.0f, 128.0f, 280.0f, 128.0f);
+UFO_Red_352:
+    $B = 400;
+    goto UFO_Red_876 @ 60;
+UFO_Red_416:
+    $C = 200;
+    goto UFO_Red_604 @ 60;
+UFO_Red_480:
+    wait(1);
+    unless ($I0 == 999) goto UFO_Red_604 @ 60;
+    goto UFO_Red_648 @ 60;
+UFO_Red_604:
+    if ($C--) goto UFO_Red_480 @ 60;
+UFO_Red_648:
+    unless ($I0 == 999) goto UFO_Red_752 @ 60;
+    goto UFO_Red_920 @ 60;
+UFO_Red_752:
+    movePosTime(60, 9, %PLAYER_X2, (%RANDF2 * _f(32)) + %FINAL_Y);
+UFO_Red_876:
+    if ($B--) goto UFO_Red_416 @ 60;
+UFO_Red_920:
+    moveLimitReset();
+    movePosTime(300, 1, (%RANDF2 * _f(32)) + %PLAYER_X2, -64.0f);
+    $D = 300;
+    goto UFO_Red_1280 @ 60;
+UFO_Red_1124:
+    wait(1);
+    unless ($I0 == -999) goto UFO_Red_1280 @ 60;
+    movePosTime(60, 9, %PLAYER_X2, 128.0f);
+    goto UFO_Red_352 @ 60;
+UFO_Red_1280:
+    if ($D--) goto UFO_Red_1124 @ 60;
+    delete();
+    return;
+}
+
+void UFO_Blue()
+{
+    var A, B, C, D;
+    anmSelect(1);
+    anmSetSprite(0, -1);  // ★ 隐形载体 = 原版「拆槽」分支（S<0，一手 th18:0x436bf6）；画面由卡侧的跟随 VM 画（ability.anm 164..167，见文件头 Δ2）
+    @UFO_EtBreak() async;
+    moveLimit(0.0f, 128.0f, 280.0f, 128.0f);
+    setHurtbox(48.0f, 24.0f);
+    setHitbox(16.0f, 16.0f);
+    flagSet(15);
++60: //60
+    flagClear(15);
+    moveCircleRel(%RANDRAD, 0.034906585f, 0.0f, 0.0f);
+    moveCircleRelTime(60, 0, 0.034906585f, 16.0f, 0.0f);
+    moveLimit(0.0f, 128.0f, 280.0f, 128.0f);
+UFO_Blue_352:
+    $B = 400;
+    goto UFO_Blue_876 @ 60;
+UFO_Blue_416:
+    $C = 200;
+    goto UFO_Blue_604 @ 60;
+UFO_Blue_480:
+    wait(1);
+    unless ($I0 == 999) goto UFO_Blue_604 @ 60;
+    goto UFO_Blue_648 @ 60;
+UFO_Blue_604:
+    if ($C--) goto UFO_Blue_480 @ 60;
+UFO_Blue_648:
+    unless ($I0 == 999) goto UFO_Blue_752 @ 60;
+    goto UFO_Blue_920 @ 60;
+UFO_Blue_752:
+    movePosTime(60, 9, %PLAYER_X2, (%RANDF2 * _f(32)) + %FINAL_Y);
+UFO_Blue_876:
+    if ($B--) goto UFO_Blue_416 @ 60;
+UFO_Blue_920:
+    moveLimitReset();
+    movePosTime(300, 1, (%RANDF2 * _f(32)) + %PLAYER_X2, -64.0f);
+    $D = 300;
+    goto UFO_Blue_1280 @ 60;
+UFO_Blue_1124:
+    wait(1);
+    unless ($I0 == -999) goto UFO_Blue_1280 @ 60;
+    movePosTime(60, 9, %PLAYER_X2, 128.0f);
+    goto UFO_Blue_352 @ 60;
+UFO_Blue_1280:
+    if ($D--) goto UFO_Blue_1124 @ 60;
+    delete();
+    return;
+}
+
+void UFO_Green()
+{
+    var A, B, C, D;
+    anmSelect(1);
+    anmSetSprite(0, -1);  // ★ 隐形载体 = 原版「拆槽」分支（S<0，一手 th18:0x436bf6）；画面由卡侧的跟随 VM 画（ability.anm 164..167，见文件头 Δ2）
+    @UFO_EtBreak() async;
+    moveLimit(0.0f, 128.0f, 280.0f, 128.0f);
+    setHurtbox(48.0f, 24.0f);
+    setHitbox(16.0f, 16.0f);
+    flagSet(15);
++60: //60
+    flagClear(15);
+    moveCircleRel(%RANDRAD, 0.034906585f, 0.0f, 0.0f);
+    moveCircleRelTime(60, 0, 0.034906585f, 16.0f, 0.0f);
+    moveLimit(0.0f, 128.0f, 280.0f, 128.0f);
+UFO_Green_352:
+    $B = 400;
+    goto UFO_Green_876 @ 60;
+UFO_Green_416:
+    $C = 200;
+    goto UFO_Green_604 @ 60;
+UFO_Green_480:
+    wait(1);
+    unless ($I0 == 999) goto UFO_Green_604 @ 60;
+    goto UFO_Green_648 @ 60;
+UFO_Green_604:
+    if ($C--) goto UFO_Green_480 @ 60;
+UFO_Green_648:
+    unless ($I0 == 999) goto UFO_Green_752 @ 60;
+    goto UFO_Green_920 @ 60;
+UFO_Green_752:
+    movePosTime(60, 9, %PLAYER_X2, (%RANDF2 * _f(32)) + %FINAL_Y);
+UFO_Green_876:
+    if ($B--) goto UFO_Green_416 @ 60;
+UFO_Green_920:
+    moveLimitReset();
+    movePosTime(300, 1, (%RANDF2 * _f(32)) + %PLAYER_X2, -64.0f);
+    $D = 300;
+    goto UFO_Green_1280 @ 60;
+UFO_Green_1124:
+    wait(1);
+    unless ($I0 == -999) goto UFO_Green_1280 @ 60;
+    movePosTime(60, 9, %PLAYER_X2, 128.0f);
+    goto UFO_Green_352 @ 60;
+UFO_Green_1280:
+    if ($D--) goto UFO_Green_1124 @ 60;
+    delete();
+    return;
+}
+
+void UFO_Rainbow()
+{
+    var A, B, C, D;
+    anmSelect(1);
+    anmSetSprite(0, -1);  // ★ 隐形载体 = 原版「拆槽」分支（S<0，一手 th18:0x436bf6）；画面由卡侧的跟随 VM 画（ability.anm 164..167，见文件头 Δ2）
+    @UFO_EtBreak() async;
+    moveLimit(0.0f, 128.0f, 280.0f, 128.0f);
+    setHurtbox(48.0f, 24.0f);
+    setHitbox(16.0f, 16.0f);
+    flagSet(15);
++60: //60
+    flagClear(15);
+    moveCircleRel(%RANDRAD, 0.034906585f, 0.0f, 0.0f);
+    moveCircleRelTime(60, 0, 0.034906585f, 16.0f, 0.0f);
+    moveLimit(0.0f, 128.0f, 280.0f, 128.0f);
+UFO_Rainbow_352:
+    $B = 400;
+    goto UFO_Rainbow_876 @ 60;
+UFO_Rainbow_416:
+    $C = 200;
+    goto UFO_Rainbow_604 @ 60;
+UFO_Rainbow_480:
+    wait(1);
+    unless ($I0 == 999) goto UFO_Rainbow_604 @ 60;
+    goto UFO_Rainbow_648 @ 60;
+UFO_Rainbow_604:
+    if ($C--) goto UFO_Rainbow_480 @ 60;
+UFO_Rainbow_648:
+    unless ($I0 == 999) goto UFO_Rainbow_752 @ 60;
+    goto UFO_Rainbow_920 @ 60;
+UFO_Rainbow_752:
+    movePosTime(60, 9, %PLAYER_X2, (%RANDF2 * _f(32)) + %FINAL_Y);
+UFO_Rainbow_876:
+    if ($B--) goto UFO_Rainbow_416 @ 60;
+UFO_Rainbow_920:
+    moveLimitReset();
+    movePosTime(300, 1, (%RANDF2 * _f(32)) + %PLAYER_X2, -64.0f);
+    $D = 300;
+    goto UFO_Rainbow_1280 @ 60;
+UFO_Rainbow_1124:
+    wait(1);
+    unless ($I0 == -999) goto UFO_Rainbow_1280 @ 60;
+    movePosTime(60, 9, %PLAYER_X2, 128.0f);
+    goto UFO_Rainbow_352 @ 60;
+UFO_Rainbow_1280:
+    if ($D--) goto UFO_Rainbow_1124 @ 60;
+    delete();
+    return;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// B 组：等价改写（自计时 TTL，不依赖 $I0）—— 卡侧在 int_vars 通道打通前用这组
+//   Δ3 = 打开 `$E = 420` + 每帧轮询。原版每轮轮询隔 60 帧（`@ 60`），
+//        420 帧的引擎计时器只能被看到约 4~7 次 ⇒ 自计时版把内层改成每帧，TTL 精确 420 帧。
+//        代价：`movePosTime` 的漂移节奏比原版快（原版约 120×200≈24000 帧一轮）⇒ 手感待实跑标定。
+// ─────────────────────────────────────────────────────────────────────────────
+
+void UFO_Red_TTL()
+{
+    var A, B, C, D;
+    anmSelect(1);
+    anmSetSprite(0, -1);  // ★ 隐形载体 = 原版「拆槽」分支（S<0，一手 th18:0x436bf6）；画面由卡侧的跟随 VM 画（ability.anm 164..167，见文件头 Δ2）
+    @UFO_EtBreak() async;
+    moveLimit(0.0f, 128.0f, 280.0f, 128.0f);
+    setHurtbox(48.0f, 24.0f);
+    setHitbox(16.0f, 16.0f);
+    flagSet(15);
++60: //60
+    flagClear(15);
+    moveCircleRel(%RANDRAD, 0.034906585f, 0.0f, 0.0f);
+    moveCircleRelTime(60, 0, 0.034906585f, 16.0f, 0.0f);
+    moveLimit(0.0f, 128.0f, 280.0f, 128.0f);
++360: //420    // Δ3 原版：引擎在 timer==420 时写 $I0=999（th12:0x44a3af，420 = 720-300）
+    moveLimitReset();
+    movePosTime(300, 1, (%RANDF2 * _f(32)) + %PLAYER_X2, -64.0f);
++300: //720    // Δ3 与 zUfo+0x28 = 存活上限 720 一致；到点自删（不走 death，不发奖）
+    delete();
+    return;
+}
+
+void UFO_Blue_TTL()
+{
+    var A, B, C, D;
+    anmSelect(1);
+    anmSetSprite(0, -1);  // ★ 隐形载体 = 原版「拆槽」分支（S<0，一手 th18:0x436bf6）；画面由卡侧的跟随 VM 画（ability.anm 164..167，见文件头 Δ2）
+    @UFO_EtBreak() async;
+    moveLimit(0.0f, 128.0f, 280.0f, 128.0f);
+    setHurtbox(48.0f, 24.0f);
+    setHitbox(16.0f, 16.0f);
+    flagSet(15);
++60: //60
+    flagClear(15);
+    moveCircleRel(%RANDRAD, 0.034906585f, 0.0f, 0.0f);
+    moveCircleRelTime(60, 0, 0.034906585f, 16.0f, 0.0f);
+    moveLimit(0.0f, 128.0f, 280.0f, 128.0f);
++360: //420    // Δ3 原版：引擎在 timer==420 时写 $I0=999（th12:0x44a3af，420 = 720-300）
+    moveLimitReset();
+    movePosTime(300, 1, (%RANDF2 * _f(32)) + %PLAYER_X2, -64.0f);
++300: //720    // Δ3 与 zUfo+0x28 = 存活上限 720 一致；到点自删（不走 death，不发奖）
+    delete();
+    return;
+}
+
+void UFO_Green_TTL()
+{
+    var A, B, C, D;
+    anmSelect(1);
+    anmSetSprite(0, -1);  // ★ 隐形载体 = 原版「拆槽」分支（S<0，一手 th18:0x436bf6）；画面由卡侧的跟随 VM 画（ability.anm 164..167，见文件头 Δ2）
+    @UFO_EtBreak() async;
+    moveLimit(0.0f, 128.0f, 280.0f, 128.0f);
+    setHurtbox(48.0f, 24.0f);
+    setHitbox(16.0f, 16.0f);
+    flagSet(15);
++60: //60
+    flagClear(15);
+    moveCircleRel(%RANDRAD, 0.034906585f, 0.0f, 0.0f);
+    moveCircleRelTime(60, 0, 0.034906585f, 16.0f, 0.0f);
+    moveLimit(0.0f, 128.0f, 280.0f, 128.0f);
++360: //420    // Δ3 原版：引擎在 timer==420 时写 $I0=999（th12:0x44a3af，420 = 720-300）
+    moveLimitReset();
+    movePosTime(300, 1, (%RANDF2 * _f(32)) + %PLAYER_X2, -64.0f);
++300: //720    // Δ3 与 zUfo+0x28 = 存活上限 720 一致；到点自删（不走 death，不发奖）
+    delete();
+    return;
+}
+
+void UFO_Rainbow_TTL()
+{
+    var A, B, C, D;
+    anmSelect(1);
+    anmSetSprite(0, -1);  // ★ 隐形载体 = 原版「拆槽」分支（S<0，一手 th18:0x436bf6）；画面由卡侧的跟随 VM 画（ability.anm 164..167，见文件头 Δ2）
+    @UFO_EtBreak() async;
+    moveLimit(0.0f, 128.0f, 280.0f, 128.0f);
+    setHurtbox(48.0f, 24.0f);
+    setHitbox(16.0f, 16.0f);
+    flagSet(15);
++60: //60
+    flagClear(15);
+    moveCircleRel(%RANDRAD, 0.034906585f, 0.0f, 0.0f);
+    moveCircleRelTime(60, 0, 0.034906585f, 16.0f, 0.0f);
+    moveLimit(0.0f, 128.0f, 280.0f, 128.0f);
++360: //420    // Δ3 原版：引擎在 timer==420 时写 $I0=999（th12:0x44a3af，420 = 720-300）
+    moveLimitReset();
+    movePosTime(300, 1, (%RANDF2 * _f(32)) + %PLAYER_X2, -64.0f);
++300: //720    // Δ3 与 zUfo+0x28 = 存活上限 720 一致；到点自删（不走 death，不发奖）
+    delete();
+    return;
+}
+
+
+// =====================================================================================
+// 落地清单（3 件；★ ① ② **已做完**，③ 于 2026-09-12 改为走卡侧的跟随 VM —— 见下）
+//
+// ① 进 default.ecl（照 assets/ecl/make_dev_ecl.py 的「反编译零售 → 改 → 编回」风格）：
+//    ✅ **已做**：`make ecl-ufo`（= `assets/ecl/make_ufo_ecl.py`）产 `native/build/ecl/default.ecl`。
+//    下面这几行是它内部做的事：
+//      thecl -d 18 -m th18.eclm local/th18.v1.00a/dat/default.ecl  > build/ecl/default.retail.txt
+//      cat build/ecl/default.retail.txt <本文件>                     > build/ecl/default.dev.txt
+//      thecl -c 18 -m th18.eclm build/ecl/default.dev.txt            > native/build/ecl/default.ecl
+//    ⚠ 为什么必须是 default.ecl：TH18 的每一关 `st0X.ecl` 头里都有 `ecli { "default.ecl"; … }`
+//      ⇒ default.ecl 是**所有关卡共用**的父 ECL，子程序放这里才对每一关都可见（TH12 同款）。
+//    ✅ 已实测：retail(30 子程序) + 本文件(9 子程序) = 39 个，**无重名**；编出的 20028 B
+//       再 `-d 18` → `-c 18` **字节一致**。
+//
+// ② thcrap 文件映射（`native/release.py` 的 MAP，**加一行**）：
+//      ✅ **已做，落在常开那个 patch**：`native/release.py:33` 已有
+//      "patch-step3/th18/default.ecl": "thcrap/repos/Renko_1055/th18_card_expand_255/th18/default.ecl"
+//      （原先候选的 `_devstage` 那一行没采用 —— 可选勾选的 patch 映射到那里的话「不勾就没有 UFO」）。
+//    ⚠ 为什么这一行的形状就是这样：thcrap 的仓库路径 `th18/<名>` 直接对应**游戏数据根**，
+//      而 `default.ecl` 就在零售 `th18.dat` 的**顶层**（`thdat -l 18` 可查，12236 B），
+//      和 `st01.ecl` / `abcard.anm` 同级 —— `abcard.anm` **已经在用同一招**（release.py:31），
+//      所以「能不能替换 default.ecl」这个 PLAN §4.5 的 ❓ **答案是可以**。
+//    ⏳ 若以后改落点（例如想改成只在排障时开），改的就是 release.py 那一行的值，本文件不用动。
+//
+// ③ 贴图：★ **已不再走 ECL**（2026-09-12 订正，见文件头 Δ2）。
+//      TH12 `enemy.anm` 的 script135..138 + `enemy/ufo_anim.png` 已经移植进 **`ability.anm`**
+//      （script 164..167 = 四色本体，168..173 = 六态令牌；生成器 `assets/ability/make_ufo*_art.py`），
+//      由 **卡侧的跟随 VM** 画在敌机位置上（`native/cards/ufo.c`）。
+//      为什么不能由 ECL 画：ECL 的 anm 索引表（一手 `th18:0x438d40`）里**没有** `ability.anm`
+//      ⇒ 本文件只能把本体刷成**隐形载体**（`anmSetSprite(0, -1)` = 原版「拆槽」分支，
+//        一手 `th18:0x436bf6`；零售 14 处同款用法全在 boss 死亡 / 符卡收尾）。
+// =====================================================================================

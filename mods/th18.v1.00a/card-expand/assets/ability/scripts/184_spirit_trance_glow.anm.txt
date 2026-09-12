@@ -1,0 +1,24 @@
+script script184 {
+// 神灵（灵界态）的**彩色 glow** —— TH13 `astral.anm` **script6** 逐条抄
+//     -1: type(1); sprite(sprite7); blendMode(1); angleVel(0.0f, 0.0f, 0.05235988f); layer(13);
+//      0: offset68: scaleTime(20,9,0.95f,0.95f); +20: scaleTime(20,9,1.0f,1.0f); +20: jmp(offset68,0);
+//         stop();
+//   ★ 与白环（183）的唯一差别：**多一条 `angleVel(0, 0, 0.05235988f)`** = **3°/帧 自转**
+//     （0.05235988 rad = 3π/180；换算：2π rad = 360° ⇒ 0.05235988 × 180/π = 3.0）。
+//     循环起点 label = `offset68`（白环是 offset48）。blendMode(1) 蓄光、无 color()。
+//   贴图：@SPIRIT_TRANCE_1 = **SPIRIT_TRANCE.png 第 0 列、行 1**（源 sprite7 (33,33,30,30)）。
+-1:
+    type(1);
+    sprite(@SPIRIT_TRANCE_1);
+    blendMode(1);
+    layer(13);
+    angleVel(0.0f, 0.0f, 0.05235988f);
+0:
+offset68:
+    scaleTime(20, 9, 0.95f, 0.95f);
++20: // 20
+    scaleTime(20, 9, 1.0f, 1.0f);
++20: // 40
+    jmp(offset68, 0);
+    stop();
+}

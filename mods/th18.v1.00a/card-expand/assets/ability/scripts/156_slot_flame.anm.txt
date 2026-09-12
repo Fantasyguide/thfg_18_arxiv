@@ -1,0 +1,114 @@
+script script156 {
+    // 由 assets/ability/make_animal_art.py 从 TH17 `beast.anm` script24 生成，别手改。
+    // 一手：engine/animal/th17/01-animal-spirits.md §4 / §7；贴图 = 零售 beast*.png 切图（见 ORDER.txt）。
+-1:
+    layer(25);
+    randMode(1);
+    iset($I0, 255);
+    resolutionMode(2);
+    sprite(@FLAME_0);
+    anchor(0, 2);
+    resampleMode(1);
+    alpha(0);
+    alphaTime(20, 0, 255);
+0:
+    ijne(0, 1, offset196, 0);
+    wait(1);
+    jmp(offset456, 20);
+    jmp(offset384, 0);
+offset196:
+    ijne(0, 2, offset264, 0);
+    wait(2);
+    jmp(offset420, 8);
+    jmp(offset384, 0);
+offset264:
+    ijne(0, 3, offset332, 0);
+    wait(3);
+    jmp(offset504, 36);
+    jmp(offset384, 0);
+offset332:
+    ijne(0, 4, offset384, 0);
+    wait(1);
+    jmp(offset480, 28);
+offset384:
+    sprite(@FLAME_0);
++4: // 4
+    sprite(@FLAME_1);
++4: // 8
+    sprite(@FLAME_2);
++4: // 12
+offset420:
+    sprite(@FLAME_3);
++4: // 16
+    sprite(@FLAME_4);
++4: // 20
+    sprite(@FLAME_5);
++4: // 24
+offset456:
+    sprite(@FLAME_6);
++4: // 28
+    sprite(@FLAME_7);
++4: // 32
+offset480:
+    sprite(@FLAME_8);
++4: // 36
+    sprite(@FLAME_9);
++4: // 40
+offset504:
+    sprite(@FLAME_10);
++4: // 44
+    sprite(@FLAME_11);
++4: // 48
+    jmp(offset384, 0);
+    interruptLabel(28);
+    scale(1.5f, 1.5f);
+    iset($I0, 255);
+    alpha($I0);
+    alphaTime(2, 0, $I0);
+    color(255, 192, 192);
+    caseReturn();
+    interruptLabel(29);
+    scale(1.5f, 1.5f);
+    iset($I0, 255);
+    alpha($I0);
+    alphaTime(2, 0, $I0);
+    color(192, 255, 192);
+    caseReturn();
+    interruptLabel(30);
+    scale(1.5f, 1.5f);
+    iset($I0, 255);
+    alpha($I0);
+    alphaTime(2, 0, $I0);
+    color(192, 192, 255);
+    caseReturn();
+    interruptLabel(31);
+    scale(1.5f, 1.5f);
+    iset($I0, 255);
+    alpha($I0);
+    alphaTime(2, 0, $I0);
+    color(255, 255, 255);
+    caseReturn();
+    interruptLabel(27);
+    scale(1.0f, 1.0f);
+    iset($I0, 128);
+    alpha($I0);
+    alphaTime(2, 0, $I0);
+    color(255, 255, 255);
+    caseReturn();
+    interruptLabel(2);
+    alphaTime(30, 0, $I0);
+    caseReturn();
+    interruptLabel(3);
+    isetDiv($I1, $I0, 4);
+    alphaTime(10, 0, $I1);
+    caseReturn();
+    interruptLabel(5);
+    iset($I0, 0);
+    alphaTime(2, 0, 0);
+    caseReturn();
+    interruptLabel(4);
+    iset($I0, 128);
+    alphaTime(2, 0, $I0);
+    color(255, 255, 255);
+    caseReturn();
+}

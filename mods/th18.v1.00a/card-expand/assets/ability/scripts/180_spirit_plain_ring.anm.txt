@@ -1,0 +1,35 @@
+script script180 {
+// 神灵（普通态）的**外环** —— TH13 `astral.anm` **script2** 逐条抄
+//   一手原文（`local/th13.v1.00c/anm/astral/astral.anm.txt` 79-98 行）：
+//     -1: type(1); sprite(sprite1); color(0,127,0); blendMode(2); layer(6);
+//      0: offset68: scaleTime(20,9,1.5f,1.5f); +20: scaleTime(20,9,1.6f,1.6f); +20: jmp(offset68,0);
+//         stop(); interruptLabel(1): scaleTime(40,1,0.0f,0.0f); +40: delete();
+//   贴图：@SPIRIT_PLAIN_0 = **SPIRIT_PLAIN.png 第 0 列、行 0**（源 sprite1 (1,1,30,30) 居中在 32 格内）。
+//     ★ 普通态**四型共用 sprite1/sprite2**，靠 `color()` 区分 ⇒ 本批四个 cell 内容相同，
+//       卡侧换型要**同时**换 `@` 与 `color()`：
+//         type0 绿     (0,127,0)    ← 本文件
+//         type1 橄榄   (63,63,0)
+//         type2 紫     (63,0,63)
+//         type3 灰     (63,63,63)
+//       （一手配色 `color()` 值见 engine/spirit/th13/01-spirit-and-trance.md §2.3）
+//   `type(1)` 照抄 —— 原脚本的 `-1:` 段里就有它（与 117 动物灵「父写 type(1)、子不写」的写法**不同**，
+//   这里是原作原文，不动）。层：一手 `layer(6)` 照抄（见 179 文件头的层说明）。
+-1:
+    type(1);
+    sprite(@SPIRIT_PLAIN_0);
+    color(0, 127, 0);
+    blendMode(2);
+    layer(6);
+0:
+offset68:
+    scaleTime(20, 9, 1.5f, 1.5f);
++20: // 20
+    scaleTime(20, 9, 1.6f, 1.6f);
++20: // 40
+    jmp(offset68, 0);
+    stop();
+    interruptLabel(1);
+    scaleTime(40, 1, 0.0f, 0.0f);
++40: // 80
+    delete();
+}

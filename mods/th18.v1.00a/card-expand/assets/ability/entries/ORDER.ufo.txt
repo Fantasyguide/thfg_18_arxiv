@@ -1,0 +1,20 @@
+# 星莲船（系统卡 112）飞碟本体 —— TH12 v1.00b `enemy.anm` script135..138 + `enemy/ufo_anim.png` 切图。
+# 本片段由 assets/ability/make_ufo_art.py 生成（幂等，整段重写）；合并时把下面 16 行追加进 ORDER.txt 即可。
+# 每行 `NAME  源图(相对 assets/)  WxH`；64×64 是 2 的幂 ⇒ 整张贴图一个 sprite（不写尺寸会被当成 256×320 卡图）。
+# 色 ↔ TH12 脚本：红=script135 / 蓝=script136 / 绿=script137 / 彩虹=script138（= sprite205,210,215,220 各取一帧）。
+UFO_RED_0  ability/ufo/UFO_RED_0.png  64x64
+UFO_RED_1  ability/ufo/UFO_RED_1.png  64x64
+UFO_RED_2  ability/ufo/UFO_RED_2.png  64x64
+UFO_RED_3  ability/ufo/UFO_RED_3.png  64x64
+UFO_BLUE_0  ability/ufo/UFO_BLUE_0.png  64x64
+UFO_BLUE_1  ability/ufo/UFO_BLUE_1.png  64x64
+UFO_BLUE_2  ability/ufo/UFO_BLUE_2.png  64x64
+UFO_BLUE_3  ability/ufo/UFO_BLUE_3.png  64x64
+UFO_GREEN_0  ability/ufo/UFO_GREEN_0.png  64x64
+UFO_GREEN_1  ability/ufo/UFO_GREEN_1.png  64x64
+UFO_GREEN_2  ability/ufo/UFO_GREEN_2.png  64x64
+UFO_GREEN_3  ability/ufo/UFO_GREEN_3.png  64x64
+UFO_RAINBOW_0  ability/ufo/UFO_RAINBOW_0.png  64x64
+UFO_RAINBOW_1  ability/ufo/UFO_RAINBOW_1.png  64x64
+UFO_RAINBOW_2  ability/ufo/UFO_RAINBOW_2.png  64x64
+UFO_RAINBOW_3  ability/ufo/UFO_RAINBOW_3.png  64x64

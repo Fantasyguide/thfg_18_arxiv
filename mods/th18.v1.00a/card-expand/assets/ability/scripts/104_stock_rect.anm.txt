@@ -1,6 +1,6 @@
 script script104 {
     sprite(-1);
-    layer(26);
+    layer(25);
     resolutionMode(2);
     zWriteDisable(1);
     blendMode(0);

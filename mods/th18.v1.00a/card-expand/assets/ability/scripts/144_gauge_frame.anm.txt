@@ -1,0 +1,12 @@
+script script144 {
+    // 鬼形兽（117）左下角灵槽的槽框：TH17 `beast.anm` entry8 sprite34（48×48）的零售切图，
+    // 放进 64×64 画布居中（ORDER 的 WxH 必须是 2 的幂）。坐标由 C 侧 `ce_anm_set_pos` 给。
+    sprite(@GAUGE_FRAME);
+    originMode(1);
+    layer(25);
+    resolutionMode(2);
+    type(1);
+    alpha(255);
+0:
+    stop();
+}

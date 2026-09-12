@@ -1,0 +1,40 @@
+script script179 {
+// ★ 这是**普通态神灵的父脚本 + 两个子**（@SCRIPT_SPIRIT_PLAIN_RING@ / @SCRIPT_SPIRIT_PLAIN_CORE@）。
+//   父脚本内容**四型完全相同**（一手原文如此）—— 四型的差别全落在两个子脚本上：
+//     ① **贴图**：普通态四型**共用 sprite1/sprite2**（一手：script2/8/14/20 都用 sprite(sprite1)，
+//        script3/9/15/21 都用 sprite(sprite2)）
+//        ⇒ 卡侧不用为四型换图，**换 `color()` 就够了**（或实跑时用 `ce_anm_set_color`）；
+//     ② **`color()`**：外环 type0 绿 (0,127,0) / type1 橄榄 (63,63,0) / type2 紫 (63,0,63) / type3 灰 (63,63,63)；
+//        内芯 type0 品红 (255,32,255) / type1 蓝 (80,80,255) / type2 绿 (32,255,32) / type3 灰 (128,128,128)
+//        —— 一手值见 engine/spirit/th13/01-spirit-and-trance.md §2.3。
+//   ⇒ 本文件组（179/180/181）实现的是 **type 0 的配色**（子脚本里写死的 `color()` = 绿外环 / 品红内芯）。
+//     要另外三型：改子脚本里的 `color()`（或实跑时 `ce_anm_set_color`），**贴图不用动**。
+//
+// 一手：TH13 `astral.anm` **script1** 逐条抄（`local/th13.v1.00c/anm/astral/astral.anm.txt` 63-77 行）：
+//     script1 { -1: alpha(0); scale(1.5f,1.5f); layer(6);
+//                0: scriptNew(script2); scriptNew(script3);
+//             +200: scaleTime(200,0,0.4f,0.4f); stop(); interruptLabel(1);
+//             +240: delete(); }
+//   `scriptNew(script2/3)` → 本批 @SCRIPT_SPIRIT_PLAIN_RING@ / @SCRIPT_SPIRIT_PLAIN_CORE@（**同批脚本号**）。
+// 层：一手 `layer(6)` = **世界层**，TH18 侧也属世界列表（层 3–19）⇒ **原值照抄，没改成 25**
+//   （依据 engine/anm/th18/02-render-stages.md §1 的层表：层 6 走相机 3，`0x4876b0` 那一趟）。
+// 生命周期（一手，逐条）：**第 200 帧开始 `scaleTime(200, 0, 0.4, 0.4)` 缩小淡出，
+//   同时 `interruptLabel(1)` 让两个子也各自 scaleTime(40,1,0,0) 并在 +40 帧 delete；
+//   父在第 240 帧 delete()。** 这就是用户口径的「会随着时间不断变小而消失」。
+// ⚠️ 引擎侧 `SpiritItem__on_tick` `th13:0x438a61` 另有一个 **timer_1 == 480 帧** 的计时
+//   （发 anm 中断 1 + 清 flag bit1）—— 与 anm 侧第 240 帧的 delete **不是同一条**。
+//   本文件只复刻 anm；480 那一路归卡侧 C（`engine/spirit/th13/01` §4 与报告都已标出）。
+-1:
+    alpha(0);
+    scale(1.5f, 1.5f);
+    layer(6);
+0:
+    scriptNew(@SCRIPT_SPIRIT_PLAIN_RING@);
+    scriptNew(@SCRIPT_SPIRIT_PLAIN_CORE@);
++200: // 200
+    scaleTime(200, 0, 0.4f, 0.4f);
+    stop();
+    interruptLabel(1);
++40: // 240
+    delete();
+}

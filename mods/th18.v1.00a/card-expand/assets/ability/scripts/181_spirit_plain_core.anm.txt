@@ -1,0 +1,28 @@
+script script181 {
+// 神灵（普通态）的**内芯** —— TH13 `astral.anm` **script3** 逐条抄
+//     -1: type(1); sprite(sprite2); color(255,32,255); blendMode(1); layer(6); alpha(255);
+//      0: offset80: scaleTime(20,9,0.7f,0.7f); +20: scaleTime(20,9,0.9f,0.9f); +20: jmp(offset80,0);
+//         stop(); interruptLabel(1): scaleTime(40,1,0.0f,0.0f); +40: delete();
+//   贴图：@SPIRIT_PLAIN_1 = **SPIRIT_PLAIN.png 的左列**（行 1 = 源 sprite2 (1,33,30,30)）
+//   `color(255,32,255)` = type 0 的品红内芯（一手；type1 蓝 (80,80,255) / type2 绿 (32,255,32) /
+//   type3 灰 (128,128,128)）。`alpha(255)`、`blendMode(1)`、`alpha` 都在 -1 段，照抄。
+-1:
+    type(1);
+    sprite(@SPIRIT_PLAIN_1);
+    color(255, 32, 255);
+    blendMode(1);
+    layer(6);
+    alpha(255);
+0:
+offset80:
+    scaleTime(20, 9, 0.7f, 0.7f);
++20: // 20
+    scaleTime(20, 9, 0.9f, 0.9f);
++20: // 40
+    jmp(offset80, 0);
+    stop();
+    interruptLabel(1);
+    scaleTime(40, 1, 0.0f, 0.0f);
++40: // 80
+    delete();
+}

@@ -1,0 +1,22 @@
+script script155 {
+    // 由 assets/ability/make_animal_art.py 从 TH17 `beast.anm` script32 生成，别手改。
+    // 一手：engine/animal/th17/01-animal-spirits.md §4 / §7；贴图 = 零售 beast*.png 切图（见 ORDER.txt）。
+    sprite(-1);
+    layer(6);
+    drawPoly(1.0f, 32);
+    blendMode(2);
+    color(0, 128, 128);
+    color2(255, 128, 0);
+    alpha(255);
+    alpha2(255);
+    scaleTime(60, 1, 600.0f, 600.0f);
+    stop();
+    interruptLabel(1);
+    scaleTime(30, 4, 0.0f, 0.0f);
+    stop();
+    interruptLabel(2);
+    scaleTime(20, 4, 200.0f, 200.0f);
++40: // 40
+    scaleTime(10, 1, 0.0f, 0.0f);
+    stop();
+}

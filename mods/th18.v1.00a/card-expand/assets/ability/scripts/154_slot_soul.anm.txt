@@ -1,0 +1,47 @@
+script script154 {
+    // 由 assets/ability/make_animal_art.py 从 TH17 `beast.anm` script19 生成，别手改。
+    // 一手：engine/animal/th17/01-animal-spirits.md §4 / §7；贴图 = 零售 beast*.png 切图（见 ORDER.txt）。
+-1:
+    layer(25);
+    randMode(1);
+0:
+    resolutionMode(2);
+    sprite(@SOUL_0);
+    resampleMode(1);
+    alpha(0);
+    wait(0);
++20: // 20
+    alphaTime(20, 0, 255);
+offset124:
+    sprite(@SOUL_0);
++4: // 24
+    sprite(@SOUL_1);
++4: // 28
+    sprite(@SOUL_2);
++4: // 32
+    sprite(@SOUL_3);
++4: // 36
+    sprite(@SOUL_4);
++4: // 40
+    sprite(@SOUL_5);
++4: // 44
+    sprite(@SOUL_6);
++4: // 48
+    sprite(@SOUL_7);
++4: // 52
+    sprite(@SOUL_8);
++4: // 56
+    sprite(@SOUL_9);
++4: // 60
+    sprite(@SOUL_10);
++4: // 64
+    jmp(offset124, 20);
+    interruptLabel(2);
+    alphaTime(30, 0, 255);
+    caseReturn();
+    interruptLabel(3);
+    alphaTime(10, 0, 64);
+    caseReturn();
+    angleVel(0.05235988f, 0.0f, 0.05235988f);
+    stop();
+}

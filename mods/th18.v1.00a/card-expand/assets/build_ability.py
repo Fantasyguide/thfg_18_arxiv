@@ -88,6 +88,17 @@ def main():
     tpl = {e["name"]: e for e in L.parse_entries(L.retail(TEMPLATE[0])[1])}[TEMPLATE[1]]
     entries, scripts = plan(retail_text)
     mapping = {name: f"sprite{sidx}" for name, _, _, sidx, _sz in entries}
+    # ★ 2026-09-12 追加：脚本**按名字**互相引用 —— `scriptNew(@SCRIPT_<ID>@)`。
+    #   `<ID>` = 脚本文件名 `NN_<id>.anm.txt` 的 `<id>` 大写，与 `anm_ids.h` 的
+    #   `CE_ANM_ABILITY_SCRIPT_<ID>` **同号同名**（同一份 plan 算出来的 idx）。
+    #   为什么要有：今天一天之内同类脚本已经重编号两次（174→…、200→186），
+    #   父脚本里的 `scriptNew(175)` 这种字面量会**静默指错**（子脚本不再生成、只在画面上少一块，不报错）。
+    #   纯追加：`mapping` 只是多了 `SCRIPT_*` 这些键；既有脚本一个都没用这个前缀 ⇒ 对其它卡零影响。
+    for _n, _p, _i in scripts:
+        _k = f"SCRIPT_{_n.upper()}"
+        if _k in mapping:
+            raise SystemExit(f"脚本名 {_k} 与 ORDER 里的贴图名撞名：{mapping[_k]}")
+        mapping[_k] = str(_i)
     tpl_of = {name: (template_for(sz, tpl) if sz else tpl) for name, _, _, _, sz in entries}
 
     if not a.verify_only:

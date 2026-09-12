@@ -1,0 +1,34 @@
+script script187 {
+    // ★妖妖梦**小樱点**道具本体（TH07 item type 8）—— 正文逐条照抄零售 TH07 `data/etama.anm`
+    //   **entry1**（贴图 `data/etama/etama2.png`）的 **script61**，只把 `sprite(sprite12)`
+    //   换成 `@SAKURA_SMALL`（见文件尾的一手原文 diff）。
+    // 一手 ✅：与 script200（樱点）同一条链——道具脚本号 = 0x2c4 + type（`th07:0x433bed`），
+    //   entry1 的 script53..62 与 TH08 的 script61..70 逐条同形（块内第 6 条两边都是
+    //   `alpha(192)`、第 10 条两边都是 `color(0xC0C0C0) + alpha(192) + static()`）
+    //   ⇒ type t ↔ script(53+t)；type 8 的收集处理 `th07:0x433742` 给樱点 `+30`
+    //   （`0x42f5a2`）与 `+70`（`0x42f69f`，该函数在满值时触发事件，
+    //   `th07:0x42f6f4..0x42f72d`），而 ECL 批量掉落
+    //   `th07:0x4247a7..0x4247e3`（amount ≥ 3）**只掉 type 8** ⇒ 场上成片掉的那种。
+    // ⚠️ 与 TH08 的同位脚本（script69）的**唯一**差别：TH08 那支在 `sprite(...)` 后多一条
+    //   `static();`，TH07 这条**没有** ⇒ 小樱点在第 0 帧就会执行到 `angleVel(0,0,0.3926991f)`
+    //   （**0.3926991 rad/帧 ≈ 22.5°/帧 自转**）。零售如此，照抄，不补 `static()`。
+    // ⚠️ **层：零售脚本不设 layer**（同 script200 的说明）⇒ 这里不加，保持零偏差。
+    // 一手原文 diff（`sprite(...)` → `@...` 是**唯一**差异）：
+    //   -    sprite(sprite12);
+    //   +    sprite(@SAKURA_SMALL);
+    //        fsetSub(%F0, 0.0f, 3.1415927f);
+    //        …（以下一字不动）
+    sprite(@SAKURA_SMALL);
+    fsetSub(%F0, 0.0f, 3.1415927f);
+    rotate(0.0f, 0.0f, %F0);
+    iset($I0, 0);
+    ijne($I0, 0, offset112, 0);
+    angleVel(0.0f, 0.0f, 0.3926991f);
+offset112:
+    jmp(offset148, 0);
+    angleVel(0.0f, 0.0f, -0.3926991f);
+offset148:
+    nop();
++30000: // 30000
+    jmp(offset148, 0);
+}

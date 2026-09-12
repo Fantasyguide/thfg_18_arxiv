@@ -1,0 +1,16 @@
+script script182 {
+// ★ 灵界态神灵（type 0）—— 父 + 两个子（@SCRIPT_SPIRIT_TRANCE_RING@ / @SCRIPT_SPIRIT_TRANCE_GLOW@）。
+//   一手：TH13 `astral.anm` **script4** 逐条抄（`astral.anm.txt` 122-127 行）：
+//     script4 { layer(13); scriptNew(script5); scriptNew(script6); stop(); }
+//   ★ 与普通态（179）的三点不同，都是一手原文：
+//     ① 父**没有** `-1:` 段、**没有** alpha/scale，也**没有**淡出段 —— 灵界态神灵不缩不淡，
+//        直接由引擎在灵界结束时收掉；
+//     ② 父直接 `layer(13)`（不进 -1 段）；
+//     ③ 子不带 `color()` —— 灵界态是**贴图自带的白环 + 彩色 glow**（一手配色见 SPIRIT:99-104）。
+//   层：一手 `layer(13)` = **世界层**（TH18 层 12–19 走相机 3，见 engine/anm/th18/02-render-stages.md §1
+//        的层表）⇒ **原值照抄，没改成 25**（113 的神灵是世界实体，不是 HUD）。
+    layer(13);
+    scriptNew(@SCRIPT_SPIRIT_TRANCE_RING@);
+    scriptNew(@SCRIPT_SPIRIT_TRANCE_GLOW@);
+    stop();
+}

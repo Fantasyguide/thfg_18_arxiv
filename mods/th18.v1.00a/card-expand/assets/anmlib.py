@@ -27,7 +27,11 @@ _SCRIPT = re.compile(r"^script script(\d+) \{\n(.*?)^\}\n?", re.S | re.M)
 _FIELD = re.compile(r"^\s{4}(\w+): (.+),$", re.M)
 _SPRITE = re.compile(r"sprite(\d+): \{ x: (\S+), y: (\S+), w: (\S+), h: (\S+) \}")
 _SPRITE_ID = re.compile(r"^\s+sprite(\d+):", re.M)
-_TOKEN = re.compile(r"@([A-Za-z_][A-Za-z0-9_]*)")
+# 占位写法：`@NAME`（推荐）或 `@NAME@`（收尾那个 `@` 也一起吃掉）。
+# ★ 2026-09-12 真踩过：写成 `scriptNew(@SCRIPT_X@)` 而正则不吃收尾 `@` 时，替换后会在 `)` 前
+#   留一个裸 `@`，`thanm -c` 直接报 `illegal token: @` 并整条构建失败。
+#   多消费一个可选 `@` 对老写法（纯 `@NAME`）零影响。
+_TOKEN = re.compile(r"@([A-Za-z_][A-Za-z0-9_]*)@?")
 
 
 # ── 解析 ──────────────────────────────────────────────────────────────

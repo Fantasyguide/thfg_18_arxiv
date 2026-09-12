@@ -1,0 +1,36 @@
+script script167 {
+    // 由 assets/ability/make_ufo_art.py 从 TH12 v1.00b `enemy.anm` script138 生成，别手改。
+    // 指令逐条照抄（layer(7) 是世界层，保持 7），只把 sprite 引用换成 ORDER 名字：
+    //   sprite205 → @UFO_RAINBOW_0，sprite210 → @UFO_RAINBOW_1，sprite215 → @UFO_RAINBOW_2，sprite220 → @UFO_RAINBOW_3
+    layer(7);
+    type(1);
+    alpha(0);
+    alphaTime(60, 0, 255);
+offset56:
+    rotateTime(96, 9, 0.0f, 0.0f, 0.2617994f);
+    isetDiv($I0, 96, 24);
+offset104:
+    sprite(@UFO_RAINBOW_0);
++6: // 6
+    sprite(@UFO_RAINBOW_1);
++6: // 12
+    sprite(@UFO_RAINBOW_2);
++6: // 18
+    sprite(@UFO_RAINBOW_3);
++6: // 24
+    jmpDec($I0, offset104, 0);
+    rotateTime(96, 9, 0.0f, 0.0f, -0.2617994f);
+    isetDiv($I0, 96, 24);
+offset220:
+    sprite(@UFO_RAINBOW_0);
++6: // 30
+    sprite(@UFO_RAINBOW_1);
++6: // 36
+    sprite(@UFO_RAINBOW_2);
++6: // 42
+    sprite(@UFO_RAINBOW_3);
++6: // 48
+    jmpDec($I0, offset220, 24);
+    jmp(offset56, 0);
+    stop();
+}

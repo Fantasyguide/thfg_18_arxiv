@@ -1,0 +1,50 @@
+script script185 {
+// 绿点信仰实体（110 / 111 共用）的出生动画 —— TH10 `bullet.anm` **script382** 转写。
+//
+// 一手原文（`thanm -l 10 local/th10.v1.00a/dat/bullet.anm`，TH10 没 anmmap 别名所以打的是 raw 名）：
+//     script script382 {
+//         stop(sprite351);            // = bullet/etama2.png @(112,208) 16×16
+//         ins_66(1);
+//         ins_67(1);
+//         ins_51(16);                 // alpha(16)
+//         ins_53(0.0f, 0.0f, 0.7853982f);  // rotate(0, 0, π/4) —— **定角 45°**，不是动画
+//         ins_50(0.0f, 0.0f);         // scale(0, 0)  —— 从 0 起
+//         ins_60(16, 0, 1.0f, 1.0f);  // scaleTime(16, 0, 1, 1)
+//     +32: ins_53(0.0f, 0.0f, 0.0f);  // rotate(0, 0, 0)  —— 第 32 帧**瞬间**转正
+//          ins_67(0);
+//          ins_63();                 // delete()
+//     }
+//
+// 逐条对应（`ins_N` 是 TH10 的 raw opcode，TH13+ 的别名见 `local/vendor/thpages/static/mapfile/v8.anmm`）：
+//     ins_51 → alpha      ✅ 同一 opcode 在 TH13 `astral.anm` script3 是 `alpha(255)`
+//     ins_50 → scale      ✅（`astral.anm` script2 的 `scale(1.5f,1.5f)`）
+//     ins_60 → scaleTime  ✅（同上 script2 的 `scaleTime(20,9,…)`）
+//     ins_53 → rotate     ✅（入参 3 个 float = (rx, ry, rz)，与 `rotate(0,0,π/4)` 同形）
+//     ins_63 → delete     ✅
+//     ins_66 / ins_67     ❓ **没对上**：不可靠的对应关系一律不写死 ⇒ **本脚本不含这两条**，
+//                            见文件末尾的「未做到」。
+//   ⚠️ ins_63 出现在 `+32:` 段末尾 ⇒ 它是**隐式 delete**（TH10 没有 `delete` 的显式名）。
+//
+// 层：TH10 的这条脚本**原文里没有 `layer()`** ⇒ 本脚本也不写（TH18 用默认层；
+//   绿点实体由卡侧 `ce_anm_spawn(..., layer)` 或后续 `ce_anm_set_*` 决定实际层，
+//   本脚本只负责动画，不替卡侧定层）。
+// 贴图：@FAITH_DOT = `ability/mof/FAITH_DOT.png`（32×32；内容 = 源 16×16 @(112,208) 居中）。
+//   16×16 的精灵被 `scale(0→1)` 从 0 放大到原尺寸；原文里它就是**很小的一颗**。
+//
+// ── 未做到（不许包装成「复刻」）──────────────────────────────────────────────
+//   `ins_66(1)` / `ins_67(1)` / `ins_67(0)` 三条**没有搬**：TH10 的 opcode→语义表没有官方
+//   anmmap，我只有「同 opcode 在 TH13 的已知语义」这一条间接证据，而 TH13 的
+//   ins_66/ins_67 在本仓已解出的原文里**找不到可直接对上的同名指令**（可能是 TH10 时代的
+//   旧渲染开关）。要补齐必须先定 TH10 的 opcode 表（`engine/anm/` 下没有 TH10 篇）。
+//   影响：出生动画的「淡入起始态」可能与本卡实装后的观感差一点（alpha 从 16 起、不是 0）；
+//   缩放/旋转/删除三条核心都在，所以「出生 16 帧放大、45° 定角、32 帧转正消失」是**照抄**的。
+-1:
+    sprite(@FAITH_DOT);
+    alpha(16);
+    rotate(0.0f, 0.0f, 0.7853982f);
+    scale(0.0f, 0.0f);
+    scaleTime(16, 0, 1.0f, 1.0f);
++32: // 32
+    rotate(0.0f, 0.0f, 0.0f);
+    delete();
+}

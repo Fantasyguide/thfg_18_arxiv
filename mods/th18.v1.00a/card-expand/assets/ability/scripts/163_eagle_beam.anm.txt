@@ -1,0 +1,19 @@
+script script163 {
+    // ★ 2026-09-11 九修（AUDIT §AL39）：魔理沙 EAGLE 卡侧矩形束的视觉。
+    //   sprite29 = TH17 pl01.anm entry0 的 512×32 激光条（抽取物与 TH18 同名贴图逐字节一致）；
+    //   anchor(1,0) + rotate(-90°)、C 每帧把 VM 钉在自机位置并保持 scale=(1,1)，
+    //   束从自机沿画面正上方拉出 512 px（与蓝眼 script80 同款画法）。
+    layer(13);
+    sprite(@EAGLE_BEAM);
+    type(1);
+    anchor(1, 0);
+    blendMode(1);
+    alpha(176);
+    rotate(0.0f, 0.0f, -1.5707964f);
+    scale(1.0f, 1.0f);
+    stop();
+    interruptLabel(1);
+    scaleTime(6, 1, 0.0f, 1.0f);
++6: // 6
+    delete();
+}

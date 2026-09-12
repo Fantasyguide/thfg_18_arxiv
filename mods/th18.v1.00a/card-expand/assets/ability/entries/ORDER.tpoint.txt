@@ -1,0 +1,6 @@
+# 追加进 ability.anm 的贴图（TH08 系统卡 108「永夜抄」的时点 / 刻符道具）。
+# 由 assets/ability/make_tpoint_art.py 生成并打印；这里只是留档，合并进 entries/ORDER.txt 时照抄即可。
+# 一行 `NAME  源图(相对 assets/)  [WxH]`；源图 16×16 = 从 TH08 零售 etama.anm 切的原始像素（不重采样）。
+# 一手：etama.anm entry1 = data/etama/etama2.png
+#   sprite179: { x: 112, y: 64, w: 16, h: 16 } ← script68 = item type 7 = 时点
+TPOINT  ability/tpoint/TPOINT.png  16x16

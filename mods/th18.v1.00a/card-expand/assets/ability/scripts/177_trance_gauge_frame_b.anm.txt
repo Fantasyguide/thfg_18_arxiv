@@ -1,0 +1,28 @@
+script script177 {
+// 灵界槽的**当前格底衬** —— 逐条搬 TH13 `front.anm` **script174**
+//   一手原文：`-1: sprite(sprite124); pos(24,0); resampleMode(1); anchor(1,2); layer(17); alpha(0);`
+//             `60: alphaTime(20,0,255); stop();`
+//             `    interruptLabel(4): alphaTime(30,0,255); caseReturn(); interruptLabel(5): alphaTime(10,0,32); caseReturn();`
+//   ★ 与 175/176 不同：**`0:` 段是空的 —— 第 60 帧才开始淡入**（延迟出场），原文如此，照抄。
+//   贴图：@TRANCE_GAUGE_BAR2（64×64，`front/agauge2.png` sprite124 (0,32,48,32) 居中）。
+//   ⚠️ 引擎**不写**这个 VM 的 scale（`SPIRIT:371` 一手：174（0xae）引擎不写）
+//   ⇒ 它是静态底衬，只靠 interruptLabel 4/5 淡入淡出。
+// 偏差：同 175/176（layer 24 + resolutionMode(2) + pos.x 24→48）。
+-1:
+    sprite(@TRANCE_GAUGE_BAR2);
+    layer(24);
+    resolutionMode(2);
+    resampleMode(1);
+    anchor(1, 2);
+    alpha(0);
+    pos(48.0f, 0.0f, 0.0f);
+60:
+    alphaTime(20, 0, 255);
+    stop();
+    interruptLabel(4);
+    alphaTime(30, 0, 255);
+    caseReturn();
+    interruptLabel(5);
+    alphaTime(10, 0, 32);
+    caseReturn();
+}

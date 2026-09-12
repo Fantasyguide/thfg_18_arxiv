@@ -1,0 +1,59 @@
+script script137 {
+    // 由 assets/ability/make_animal_art.py 从 TH17 `beast.anm` script0 生成，别手改。
+    // 一手：engine/animal/th17/01-animal-spirits.md §4 / §7；贴图 = 零售 beast*.png 切图（见 ORDER.txt）。
+-1:
+    sprite(@WOLF_0);
+    originMode(1);
+    layer(16);
+    type(1);
+    iset($I1, 255);
+0:
+    interruptLabel(3);
+offset76:
+    rotateTime(30, 9, 0.17453292f, 0.0f, 0.17453292f);
++30: // 30
+    rotateTime(30, 9, -0.17453292f, 0.0f, -0.17453292f);
++30: // 60
+    jmp(offset76, 0);
+    stop();
+    interruptLabel(2);
+offset168:
+    rotateTime(16, 9, 0.17453292f, 0.0f, 0.17453292f);
+    iset($I0, 4);
+offset212:
+    sprite(@WOLF_0);
++2: // 62
+    sprite(@WOLF_1);
++2: // 64
+    jmpDec($I0, offset212, 60);
+    rotateTime(16, 9, -0.17453292f, 0.0f, -0.17453292f);
+    iset($I0, 4);
+offset300:
+    sprite(@WOLF_0);
++2: // 66
+    sprite(@WOLF_1);
++2: // 68
+    jmpDec($I0, offset300, 64);
+    jmp(offset168, 60);
+    interruptLabel(8);
+    sprite(@WOLF_0);
+offset384:
+    rotateTime(10, 9, 0.17453292f, 0.0f, 0.17453292f);
++10: // 78
+    rotateTime(10, 9, -0.17453292f, 0.0f, -0.17453292f);
++10: // 88
+    jmp(offset384, 68);
+    stop();
+    interruptLabel(9);
+    iset($I1, 192);
+    color($I1, $I1, $I1);
+    alpha($I1);
+    caseReturn();
+    interruptLabel(7);
+    sprite(@WOLF_2);
+    caseReturn();
+    interruptLabel(1);
+    scaleTime(10, 1, 0.1f, 0.1f);
++10: // 98
+    delete();
+}

@@ -1,0 +1,39 @@
+script script157 {
+    // 咆哮**就绪窗口**的倒计时条 —— **外框**。逐条搬 TH17 `beast.anm` script30（= 0x1e）：
+    //   `AnimalManager__on_ready` `th17:0x40fb60` 的 `0x40fc6a` 建，`do_hyper_cancel` `th17:0x40f6d0` 清
+    //   ⇒ 只在「槽满、还没按 C」的那段窗口里显示。剩余时间写在 scale.x 上 ⇒ 两头朝中点收。
+    // · TH17 是 `drawRectBorder(1.0f, 10.0f)`（1 单位描边 + 高 10）；TH18 的 opcode 612 一用就崩
+    //   （实测 C0000005，见 `engine/anm/th18/01-vm-instantiate.md` §2b）⇒ 改成**同尺寸实心**的
+    //   1×1 模板（尺寸全由 C 每帧写 scale = `ANIMAL_BAR_W × ANIMAL_BAR_H`），填充条 158 盖上去
+    //   露出来的就是 1 px 边框 —— 季节槽外框（脚本 123）同款画法。
+    // · `anchor(0, 0)` = **锚心**：矩形以 VM 位置为中心 ⇒ scale.x 缩短时两端同时朝中点收。
+    //   ★ 2026-09-10 实跑纠偏：**不写 anchor 时默认是左上角**（用户看到条从自机往右长出去、
+    //   左边一半不见了）—— 必须显式写出来。
+    // · `sprite(-1)` 必须有（没有可画的矩形 → 整条不可见，2026-09-10 用户反馈的根因）。
+    // · 颜色 (192,192,192) 与 alpha 0→255 的 20 帧淡入照 TH17；4/5/1 三个 interrupt 也照搬
+    //   （4/5 = 暂停变暗/恢复，本卡不发，留着不碍事）。
+-1:
+    sprite(-1);
+    layer(25);
+    type(1);
+    anchor(0, 0);          /* ★ 锚心（不写 = 左上角，条会从自机往右长）*/
+    resolutionMode(2);
+    zWriteDisable(1);
+    blendMode(0);
+    drawRect(1.0f, 1.0f);
+    color(192, 192, 192);
+    alpha(0);
++20: // 20
+    alphaTime(20, 0, 255);
+    stop();
+    interruptLabel(4);
+    alphaTime(5, 0, 255);
+    caseReturn();
+    interruptLabel(5);
+    alphaTime(5, 0, 64);
+    caseReturn();
+    interruptLabel(1);
+    alphaTime(20, 0, 0);
++20: // 40
+    delete();
+}

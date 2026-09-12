@@ -1,0 +1,30 @@
+script script178 {
+// 灵界槽的**当前格细分滑块** —— 逐条搬 TH13 `front.anm` **script175**
+//   一手原文：`-1: sprite(sprite125); pos(24,0); resampleMode(1); anchor(1,2); layer(17); alpha(0);`
+//             `60: alphaTime(20,0,255); stop();`
+//             `    interruptLabel(4): alphaTime(30,0,255); caseReturn(); interruptLabel(5): alphaTime(10,0,32); caseReturn();`
+//   贴图：@TRANCE_GAUGE_MARK（64×64，`front/agauge2.png` sprite125 (0,64,16,32) 居中）。
+//   引擎每帧写（`th13:0x42b030`）：
+//       `scale.x = uv_scale.x = (槽 % 200) / 200`
+//       `entity_pos.x = 比例 × 16.0`（常量 `0x4ae8e0`）
+//   ⇒ **格内细分条 + 0..16px 滑块**。`16.0` 是 640 空间的 16 ⇒ 本脚本在 2× 空间里
+//   由卡侧写 `32.0`（⚠️ 这里只写死「脚本本身不写 entity_pos」，实际值归卡侧 C）。
+// 偏差：同 175/176（layer 24 + resolutionMode(2) + pos.x 24→48）。
+-1:
+    sprite(@TRANCE_GAUGE_MARK);
+    layer(24);
+    resolutionMode(2);
+    resampleMode(1);
+    anchor(1, 2);
+    alpha(0);
+    pos(48.0f, 0.0f, 0.0f);
+60:
+    alphaTime(20, 0, 255);
+    stop();
+    interruptLabel(4);
+    alphaTime(30, 0, 255);
+    caseReturn();
+    interruptLabel(5);
+    alphaTime(10, 0, 32);
+    caseReturn();
+}
