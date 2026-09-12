@@ -89,12 +89,52 @@
 /* 妖侧 shooterset 的行指针（`sht + 0xe0 + idx*4`，与 `0x40a9c0` / `0x45ebfb` 同一张表）*/
 #define YK_SHT_SET_ROW      0xe0
 
-/* ---- ★ 资产占位（每条都要资产/用户才能定案；取值一律是「不做」这个语义）---- */
-#define YK_OPTION_SCRIPT_YOUKAI  CE_ANM_ABILITY_SCRIPT_PEASHOOTER_OPT
-                                     /* ★ TODO(资产 §5)：妖侧子机的 anm 脚本 —— **占位 = 借**豌豆射手的
-                                      * 子机脚本 102（先例做法：116 借零售贴图）。真值要往 `ability.anm`
-                                      * 追加妖侧子机脚本（`assets/build_ability.py` 的 ORDER）。
-                                      * ⚠ 数量/阵型/落笔都已接上（spec §3.3.1）⇒ 这一项**现在真的**会被声明出去。*/
+/* ---- ★ 低速子机的贴图脚本（2026-09-12 **已换成零售切图**，不再借豌豆射手的 102）----
+ * 四支机体**各一支**零售子机脚本（不是「一个共享图集里的一格」，也不是机体本体图）：
+ *   TH08 妖侧：子机 = `zPlayerOption`（`player+0x40c`×4、stride `0x2f4`、每格头 0x2a4 就是 AnmVm），
+ *     进低速那一帧按机体把脚本装进 `option+0x0` 那个 VM ——
+ *     `th08:0x44e3d7 push 0x12`（pl00 八雲紫）/ `th08:0x44ea6f push 0x1d`（pl01 アリス）/
+ *     `th08:0x44eba7 push 0x18`（pl02 レミリア），经 `AnmLoaded::load_script_into_vm` `th08:0x4069f0`
+ *     （`ecx = [player+0xc]` = 本机体的 anm、`arg1 = option`、`arg2 = 脚本号`）。
+ *   TH16：本体子机脚本号 = `th16:0x492c00[CHARACTER]` = {8,7,11,11}（**菜单序** ⇒ `CHARACTER`=2 = 文），
+ *     `th16:0x4443ad` 取值 + `AnmLoaded::copy_vm th16:0x407b20` ⇒ **pl03 script 11**。
+ * 资产：`assets/ability/scripts/224..227`（由 `assets/ability/make_youkai_option_art.py` 逐条照抄零售 +
+ *   `assets/ability/youkai_option/` 下的切图；ORDER 片段 `entries/ORDER.youkai_option.txt` 待主 agent 合并）。
+ * ⚠ 号是 **224..227**：`make anm` 之前 `native/anm_ids.h` 里还没有这四条宏 ⇒ 下面走**字面量**；
+ *   `make anm` 之后宏就存在了，`#ifdef` 会自动切到宏（**这一步不用手改**）。*/
+#ifdef CE_ANM_ABILITY_SCRIPT_YOUKAI_OPT_YUKARI
+#define YK_OPT_SCRIPT_YUKARI   CE_ANM_ABILITY_SCRIPT_YOUKAI_OPT_YUKARI
+#else
+#define YK_OPT_SCRIPT_YUKARI   224      /* `make anm` 后换宏（本行会被上面的 #ifdef 取代）*/
+#endif
+#ifdef CE_ANM_ABILITY_SCRIPT_YOUKAI_OPT_ALICE
+#define YK_OPT_SCRIPT_ALICE    CE_ANM_ABILITY_SCRIPT_YOUKAI_OPT_ALICE
+#else
+#define YK_OPT_SCRIPT_ALICE    225      /* `make anm` 后换宏 */
+#endif
+#ifdef CE_ANM_ABILITY_SCRIPT_YOUKAI_OPT_REMILIA
+#define YK_OPT_SCRIPT_REMILIA  CE_ANM_ABILITY_SCRIPT_YOUKAI_OPT_REMILIA
+#else
+#define YK_OPT_SCRIPT_REMILIA  226      /* `make anm` 后换宏 */
+#endif
+#ifdef CE_ANM_ABILITY_SCRIPT_YOUKAI_OPT_AYA
+#define YK_OPT_SCRIPT_AYA      CE_ANM_ABILITY_SCRIPT_YOUKAI_OPT_AYA
+#else
+#define YK_OPT_SCRIPT_AYA      227      /* `make anm` 后换宏 */
+#endif
+
+/* TH18 机体号（`CE_ADDR_CHARACTER`：0 霊夢 / 1 魔理沙 / 2 咲夜 / 3 早苗；与 `youkai_core.h` 的
+ * `YK_OPTION_BY_CHAR` **同一顺序**）→ 该机体的低速子机脚本。
+ * 四条逐一列（不假设号连续 —— 万一资产重排，这里会**编译期/边界**就对不上而不是静默画错）。*/
+static int yk_option_script(int character)
+{
+    switch (character) {
+    case 0:  return YK_OPT_SCRIPT_YUKARI;   /* 霊夢   → TH08 pl00 妖侧 = 八雲紫   （script18）*/
+    case 1:  return YK_OPT_SCRIPT_ALICE;    /* 魔理沙 → TH08 pl01 妖侧 = アリス   （script29）*/
+    case 2:  return YK_OPT_SCRIPT_REMILIA;  /* 咲夜   → TH08 pl02 妖侧 = レミリア （script24）*/
+    default: return YK_OPT_SCRIPT_AYA;      /* 早苗   → TH16 pl03        = 射命丸文（script11）*/
+    }
+}
 #define YK_OPTION_RETRY      60     /* 没拿到子机时的重试间隔（槽满 / 关卡中途买到），照 77 */
 #define YK_OPTION_MAX        4      /* 一次最多管几个子机槽 = 数量表的最大值（咲夜 = 4；`YK_OPTION_CELLS`）。
                                      * 12 格公共池要和 71/77/116 分：本卡满配 4 ⇒ 留 8 格给那三张
@@ -562,7 +602,10 @@ static void yk_option_declare(ce_card_t *c, yk_card_t *s, int focused)
     if (count > YK_OPTION_CELLS) count = YK_OPTION_CELLS;   /* 表最大 4；层自己也会再钳一次 */
     __builtin_memset(&pose, 0, sizeof pose);
     pose.count = count;
-    pose.anm_script = YK_OPTION_SCRIPT_YOUKAI;
+    /* ★ 子机贴图脚本 = **按机体**选（2026-09-12 换掉占位的 102）：四支机体各一支零售子机脚本，
+     * 号在 `YK_OPT_SCRIPT_*` 那一节（224..227，出处见那里的注释）。脚本是**申请时定死的**
+     * （`Player__allocate_option` `0x40a790` 第 5 个栈参）⇒ `on_option_pose_apply` 里换了号会先收再要。*/
+    pose.anm_script = yk_option_script(character);
     for (i = 0; i < count; ++i) {
         if (!yk_option_offsets(character, count, i, &off)) continue;
         pose.cell[i].fx = off.fx;
@@ -981,12 +1024,17 @@ _Static_assert(sizeof(yk_fam_vm_t) == 12, "familiar follow-VM record grew (table
  *        覆盖零售那格，`fire_rate ∈ {3,5,6,10}`，除零风险随之消失）；**档位伤害表仍不填**
  *        （原因见 `youkai_core.c` §3.4 的注释：TH08 单发伤害随 P 下降，是配着路数设计的）。
  *        ⚠ 膛口 = 子机（`0x40a9c0` 一手）⇒ 它能不能发弹取决于第 3 条的子机数量（现已接上）。
- *     3. `YK_OPTION_SCRIPT_YOUKAI` —— ★ **2026-09-12 数量/阵型/落笔全部接上**（`YK_OPTION_BY_CHAR`
- *        4×5 数量表 + `yk_option_offsets` 逐格阵型 + 声明层的 `on_option_pose_apply`，spec §3.3.1/§12.4）；
- *        **只剩脚本号本身是占位**（借豌豆射手的子机脚本 102，`anm_ids.h` 还没有 youkai 条目）。
- *        ⚠ 连带的两个已知缺口，实跑要盯：① `count = 0` 的档（早苗 P<100）妖侧**一发弹都没有**，
+ *     3. ~~`YK_OPTION_SCRIPT_YOUKAI`（借豌豆射手 102）~~ —— ✅ 2026-09-12 **已换成零售切图**：
+ *        四支机体各一支子机脚本（`YK_OPT_SCRIPT_{YUKARI,ALICE,REMILIA,AYA}` = `ability.anm` 224..227，
+ *        由 `assets/ability/make_youkai_option_art.py` 逐条照抄零售；一手落点写在那一节的注释里）。
+ *        数量 / 阵型 / 落笔早在同一天接上（`YK_OPTION_BY_CHAR` 4×5 表 + `yk_option_offsets` 逐格阵型 +
+ *        声明层 `on_option_pose_apply`，spec §3.3.1/§12.4）⇒ 这一项**不再是占位**。
+ *        ⚠ 两个已知缺口，实跑要盯：① `count = 0` 的档（早苗 P<100）妖侧**一发弹都没有**，
  *        而原生弹被 `on_native_shot_suppress` 压掉 ⇒ 那一档「什么都不发」（见 `on_native_shot_suppress`
  *        的诊断日志；口径未定，报告 §6）；② 12 格公共池与 71/77/116 共享，本卡满配 4 格。
+ *        ❓ ③ TH08 那三支脚本的**中断标签**是 TH08 的约定（1/2 = 循环、3/4 = 起爆、5 = 散场），
+ *        与 TH18 引擎发给子机 VM 的 2 出场 / 3 收起 / 1 销毁**不同** —— 逐条照抄零售的必然结果，
+ *        要不要改标签是设计决定（见生成器文件头与报告 ❓）。
  *     4. `YK_FAM_ANM_INDEX` / `YK_FAM_ANM_SCRIPT` = -1 —— 使魔贴图（借零售 or 复用 116/117 的做法）
  *        → ✅ 2026-09-12 **资产已到**：四色零售切图 = `ability.anm` script 206..209
  *          （TH08 `enemy.anm` script53..56，红/绿/蓝白/黄），由**跟随 VM** 画

@@ -4519,3 +4519,56 @@ GUI 的 per-boss 列表与 `ENM_CNT` 看不到它。⇒ 实跑清单里要专门
 6. **妖侧子机贴图仍是占位**（借豌豆射手脚本 102 —— `anm_ids.h` 里还没有 youkai 的条目）。
 7. **整条链未实跑**（每帧声明 → 帧界落笔 → 引擎跟随 `0x45bc90` 摆位）：实跑可用
    「**咲夜 = 4 格不重叠**」与「**松开 Shift 后子机消失**」这两条直接验。
+
+### BO-9 108 低速子机的零售切图（换掉豌豆射手占位）+ 一条「层由引擎定死」的一手
+
+**一手结论：子机外观既不是共享图集的一格、也不是机体本体图 —— 四支机体各有一支子机脚本。**
+
+| TH18 机体 | 零售子机脚本 | sprite（矩形从 anm 的 sprites 表读）|
+| --- | --- | --- |
+| 霊夢 → TH08 `pl00` 妖侧 八雲紫 | `player00.anm` **script 18**（`th08:0x44e3d7 push 0x12`）| 22–29 = 30×46 + **30 = 46×46** |
+| 魔理沙 → `pl01` アリス | `player01.anm` **script 29**（`th08:0x44ea6f push 0x1d`）| 22–25 = 30×30 |
+| 咲夜 → `pl02` レミリア | `player02.anm` **script 24**（`th08:0x44eba7 push 0x18`）| 20 = 30×30 |
+| 早苗 → TH16 `pl03` 射命丸文 | `pl03.anm` **script 11**（`th16:0x492c00[CHARACTER]` = `{8,7,11,11}`）| 32–39 = 16×16（8 帧拍翅）|
+
+- **自机子机 = `zPlayerOption`**（`player+0x40c` ×4、stride `0x2f4`、**每格头 `0x2a4` 就是一个 AnmVm**），
+  三条装载点都在**进低速那一帧**（`th08:0x44b0e5`），经 `AnmLoaded::load_script_into_vm` `th08:0x4069f0`
+  装进 `option+0x0`。**三支脚本与本体 script5..9 不共用任何 sprite**（本体 = 11..21）⇒ 两条 all-clear：
+  不是「共享图集一格」（三队矩形/坐标/尺寸都不同）、不是本体图；也与**敌人使い魔**（ECL opcode 90/91/92）无关。
+- ⚠ **TH16 的 `CHARACTER` 是「菜单序」不是文件号** `{0 霊夢, 1 チルノ, 2 文, 3 魔理沙}`
+  （一手：`Bomb__operator_new` 的 switch + `.rdata` 的 anm 名表 `pl00/pl02/pl03/pl01.anm`）
+  ⇒ **文 = `CHARACTER` 2 → `pl03.anm`**，与 spec §11.1 的文件号判定一致（两套编号别混）。
+- ★ **层号不用我们管（一手）**：TH16 那支脚本**自带 `layer(13)`**（照抄）；TH08 那三支**零售一行 layer 都没有**，
+  而 TH18 引擎在 `Player__allocate_option` 里 **`th18:0x40a8bc mov DWORD PTR [esi+0x18],0xe` 无条件把子机 VM 的层设成 14**
+  （`zAnmVmPrefix+0x18` = layer）⇒ 不写 layer 即用 **14（世界层）**，**C 侧不需要补**。
+- ⚠ **唯一抄不了的指令**：TH08 那三支各有一行 **`ins_83(2)`** —— TH08 v3 的**无名 opcode 83**
+  （handler `th08:0x460314`，`vm+0x200 = 指令 dword`），`thanm -c 18` 实测报
+  `opcode 83 is not known to exist in version 8` ⇒ **TH18 没有这个 opcode**。
+  全 exe 只有两个读者（`th08:0x45e96c` 的 `draw_vm__player_bullet__state_2` 跳表、`th08:0x430efa` 敌人链），
+  **都不在子机 VM 的绘制路径** ⇒ 省略对画面无影响（🟡 读码结论，未实跑）。
+  它与 v8 `type(N)` **是否同义未证实**（v8 的 `type` handler `th18:0x47b12c` 是打包进 `vm+0x534` 的 5 位字段，
+  机制不同）⇒ **没敢改写成 `type(2)`**。
+
+**落地**：`make_youkai_option_art.py` + `assets/ability/youkai_option/` **22 张 PNG**（2 的幂、非空、
+与 ORDER 声明逐张尺寸相等、留白左右对称；连跑 3 次产物 md5 恒定 `32ec39e1…`）+ 脚本 **224–227**
+（`224/225/226/227_youkai_opt_{yukari,alice,remilia,aya}`）+ ORDER 片段 22 行（已并入主表）。
+C 侧：占位 `CE_ANM_ABILITY_SCRIPT_PEASHOOTER_OPT`（卡 77 的豌豆射手子机）换成
+`YK_OPT_SCRIPT_{YUKARI,ALICE,REMILIA,AYA}` + `yk_option_script(character)`；
+写法用 `#ifdef CE_ANM_ABILITY_SCRIPT_YOUKAI_OPT_*` → 宏、`#else` → 字面量 ⇒ **`make anm` 后自动切宏、不用手改**
+（本轮已重跑，`anm_ids.h` 现在有那四条）。数量表/阵型/落笔一行未动；`youkai_core.*` 没碰；
+`on_delete` 路径不变（子机 VM 仍由 `ce_option_drop` 收）。
+
+**❓ 两条要用户拍板 / 待实跑**：
+
+1. ★ **中断标签口径不一致（照抄零售的必然后果）**：TH18 零售本体子机脚本（`pl00.anm` s15/16）与
+   TH16 `pl03` s11 用的是 TH18 约定（**2 出场 / 3 进店收起 / 1 销毁**），而 TH08 那三支是 **TH08 约定**
+   （s18：1/2 循环、3/4 起爆、5 散场；s29/s24 只有 1/2/5）。
+   一手：TH18 清子机槽时发的是**标签 1**（`th18:0x45d310` 12 格卡池循环、`th18:0x45d2d0` 原生 4 格、
+   `th18:0x45dbf0` repopulate 尾；零售装备卡同样，如 `CardTenshi::__on_tick_2` `0x40e9b8`）
+   ⇒ TH08 系脚本收到 1 只是「切到另一段循环」（无 delete，随后 SDK 删 VM）＝无害；
+   **但若引擎还会发 3**（本轮**没找到** 2/3 的一手发送点），s18 会切到 46×46 旋转的「隙间」形态并 `stop()`
+   ⇒ 收起动画会丢。要不要把标签改写成 TH18 口径＝设计决定，本轮**没擅自改**。
+2. **TH16 满火力另一形态没接**：`th16:0x492c10 = {9,8,12,13}`（文的那支 = `pl03.anm` **script 12**，
+   8 帧同图但 `blendMode(1)` + `type(3)` + 不同帧序）。要接得**按火力档切脚本**（会触发「先收再要」的重申请）。
+   一手数据已在上面，可随时补一支 228。
+3. 子机外观的**观感未实跑**（三队子机 sprite 都是半透明：meanA pl00 120 / pl01 96 / pl02 81，本体 200+）。

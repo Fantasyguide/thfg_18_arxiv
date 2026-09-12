@@ -51,7 +51,7 @@
 | # | 缺什么 | 影响 | 已有线索 |
 | --- | --- | --- | --- |
 | A1 | ~~TH12 `enemy.anm` script135–138 + `enemy/ufo_anim.png`~~ **✅ 已落地**：16 张切图 + `ability.anm` script 164–167；112 用**卡侧跟随 VM** 画（ECL 侧改 `anmSetSprite(0,-1)` 当隐形载体）⇒ 见 §3.1 | 实跑未验（❓ 跟随可能晚一帧）| `make_ufo_art.py`；第 4 组贴图**是黄的**（不是彩虹色），彩虹脚本 138 = 205/210/215/220 各取一帧 |
-| A2 | ~~妖侧 shooterset `0x16`~~ **✅** + ~~使魔贴图~~ **✅**（四色，跟随 VM 已接）+ ~~子机数量~~ **✅**（`YK_OPTION_BY_CHAR` 表 + 声明层，见 `AUDIT` §BO-8）；**仅剩妖机体本体 sprite 的路由待用户拍板** | 108 **低速一发弹都打不出来**（止射闸与 shooterset 是一对）| TH08 提取已工具化：`tooling/thtk/extract_th08.py`（`ply*.sht` 要绕过 thdat bug）+ TH16 `pl03` 切图 |
+| A2 | 108 的资产：妖侧 shooterset `0x16` / 使魔四色 / 子机数量表 / 妖侧子机贴图 **全部 ✅**（详见 `AUDIT` §BO-8 与 §BO-9）；**仅剩「妖机体本体 sprite」的路由待用户拍板** | 108 低速弹幕的整条链已通（止射闸 + shooterset + 子机层） | TH08 提取已工具化：`tooling/thtk/extract_th08.py`（`ply*.sht` 要绕过 thdat bug）+ TH16 `pl03` 切图 |
 | A3 | 111 信号槽 / 110 绿点 / 109 活化灵 / 113 神灵槽的**零售切图** | 现在都是 `drawRect` 或借图染色 | 各自的 spec §5；112 那一半**已落地**（见 A1/A5） |
 | A4 | ~~107 结界特效 VM~~ **✅ 已落地**（脚本 **204** 甲 / **205** 乙×32，层 `19` ❓自定）—— 做法、一手依据与 ❓ 见 `AUDIT.md` §BO-6 | ✅ | th07 **已解包**：`local/th07.v1.00b/dat/` + `anm/<stem>/`，平坦反汇编 `local/_scratch/th07_full.asm` |
 | A5 | ~~令牌贴图~~ **✅ 已落地**：12 张 + `ability.anm` script 168–173，同样由卡侧跟随 VM 画；令牌**继续用 `NoEnemyDebug`**（零售死循环空壳 = 正好是我们要的惰性载体，**不需要新 ECL**）| 实跑未验；彩虹三段与换色**已落地**（见 A8）| 一手 = TH12 `bullet.anm` script175..180 / sprite 444..449·453..458 |

@@ -334,3 +334,27 @@ YOUKAI_AYA_S20  ability/sanae_youkai/YOUKAI_AYA_S20.png  32x64
 YOUKAI_AYA_S21  ability/sanae_youkai/YOUKAI_AYA_S21.png  32x64
 YOUKAI_AYA_S22  ability/sanae_youkai/YOUKAI_AYA_S22.png  32x64
 YOUKAI_AYA_S23  ability/sanae_youkai/YOUKAI_AYA_S23.png  32x64
+
+# ── 来自 ORDER.youkai_option.txt（本轮合并；原片段保留作记录）
+YOUKAI_OPT_YUKARI_S22  ability/youkai_option/YOUKAI_OPT_YUKARI_S22.png  32x64
+YOUKAI_OPT_YUKARI_S23  ability/youkai_option/YOUKAI_OPT_YUKARI_S23.png  32x64
+YOUKAI_OPT_YUKARI_S24  ability/youkai_option/YOUKAI_OPT_YUKARI_S24.png  32x64
+YOUKAI_OPT_YUKARI_S25  ability/youkai_option/YOUKAI_OPT_YUKARI_S25.png  32x64
+YOUKAI_OPT_YUKARI_S26  ability/youkai_option/YOUKAI_OPT_YUKARI_S26.png  32x64
+YOUKAI_OPT_YUKARI_S27  ability/youkai_option/YOUKAI_OPT_YUKARI_S27.png  32x64
+YOUKAI_OPT_YUKARI_S28  ability/youkai_option/YOUKAI_OPT_YUKARI_S28.png  32x64
+YOUKAI_OPT_YUKARI_S29  ability/youkai_option/YOUKAI_OPT_YUKARI_S29.png  32x64
+YOUKAI_OPT_YUKARI_S30  ability/youkai_option/YOUKAI_OPT_YUKARI_S30.png  64x64
+YOUKAI_OPT_ALICE_S22  ability/youkai_option/YOUKAI_OPT_ALICE_S22.png  32x32
+YOUKAI_OPT_ALICE_S23  ability/youkai_option/YOUKAI_OPT_ALICE_S23.png  32x32
+YOUKAI_OPT_ALICE_S24  ability/youkai_option/YOUKAI_OPT_ALICE_S24.png  32x32
+YOUKAI_OPT_ALICE_S25  ability/youkai_option/YOUKAI_OPT_ALICE_S25.png  32x32
+YOUKAI_OPT_REMILIA_S20  ability/youkai_option/YOUKAI_OPT_REMILIA_S20.png  32x32
+YOUKAI_OPT_AYA_S32  ability/youkai_option/YOUKAI_OPT_AYA_S32.png  16x16
+YOUKAI_OPT_AYA_S33  ability/youkai_option/YOUKAI_OPT_AYA_S33.png  16x16
+YOUKAI_OPT_AYA_S34  ability/youkai_option/YOUKAI_OPT_AYA_S34.png  16x16
+YOUKAI_OPT_AYA_S35  ability/youkai_option/YOUKAI_OPT_AYA_S35.png  16x16
+YOUKAI_OPT_AYA_S36  ability/youkai_option/YOUKAI_OPT_AYA_S36.png  16x16
+YOUKAI_OPT_AYA_S37  ability/youkai_option/YOUKAI_OPT_AYA_S37.png  16x16
+YOUKAI_OPT_AYA_S38  ability/youkai_option/YOUKAI_OPT_AYA_S38.png  16x16
+YOUKAI_OPT_AYA_S39  ability/youkai_option/YOUKAI_OPT_AYA_S39.png  16x16
