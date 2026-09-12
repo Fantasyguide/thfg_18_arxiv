@@ -34,16 +34,28 @@
 | 0x2e | Anm `0x487940` | **切相机 1**；`ZWRITEENABLE=0`、`ZFUNC=ALWAYS`；层 **20** | 1 |
 | 0x2f / 0x36 | Anm | 层 21 / 22 | 1 |
 | 0x38 | Anm `0x487a10` | 切相机 1；层 23 | 1 |
-| 0x3a / 0x3b | Supervisor `0x455cf0` / `0x455c90` | 回后备缓冲等 | — |
-| 0x3c | Anm `0x487ae0` | **切相机 2**，并把 `AnmManager+0xd0/+0xd4` 清零；层 24 | 2 |
+| 0x3a / 0x3b | Supervisor `0x455cf0` / `0x455c90` | RT → **后备缓冲** `th18:0x4ccfa4`（`th18:0x455d0b`）+ **Clear 整面成 `0xff000000`**（`th18:0x455d2e`）/ 画「屏幕四边形」`th18:0x4ccfb8` 把离屏面搬回来（`th18:0x455cb7`）| — |
+| 0x3c | Anm `0x487ae0` | **切相机 2**，并把 `AnmManager+0xd0/+0xd4` 清零；**组 24 = 世界列表 layer 24**（`th18:0x487ba0 push 0x18`，**不是** UI layer 24）；RT = 后备缓冲（`0x3a` 已切回）| 2 |
 | 0x3d / 0x3e / 0x40 / 0x41 / 0x42 / 0x43 | Anm | 层 25 / 38 / 26 / 39 / 27 / 40 | 2 |
 | 0x44 / 0x45 / 0x46 / 0x47 | Anm `0x487db0/bc0/e40/c50` | 层 41 / 28 / 41 或 42（🟡 字节未逐条对）/ 29，各自随后再切相机 2 | 2 |
-| 0x39 | Anm `0x487ce0` | 切相机 2；层 37 | 2 |
+| 0x39 | Anm `0x487ce0` | 切相机 2；**组 37 = UI 列表 layer 24**（`th18:0x487d99 push 0x25`）；RT = **surface 1**（`0x2c` 切的，中间没人切回来）| 2 |
 | 0x54 / 0x55 / 0x56 / 0x57 / 0x59 / 0x5a | Anm | 层 30 / 43 / 31 / 44 / 32 / 45 | 2 |
 | 0x5c | Supervisor `0x455d40` | 收尾 | — |
 
 `render_layer` `0x488260` 的层号折叠：world 列表 VM 层 37–45 → 减 13 后比对；UI 列表 VM 层 24–32 → 加 13，不在 37–45 内的一律当 39。
 即 **UI 列表的 VM 实际都画在 37–45 那组桩里**，world 列表的按原层号。
+
+> **★ 2026-09-xx 复核订正 + RT 实值**（一手过程与证据见 [05-snapshot-and-surfaces.md](05-snapshot-and-surfaces.md)；本表按优先级升序）：
+> 1. 本表的「RT → surface 0 / surface 1」实体已查明：**surface 0 = `th18:0x4ccf9c`（supervisor+0x1ac）**、
+>    **surface 1 = `th18:0x4ccfa0`（supervisor+0x1b0）**，两者都是 **`text.anm` 第 12 / 第 18 张贴图的 level-0 面**
+>    （`th18:0x455ef6`–`th18:0x455f29` 的 `GetSurfaceLevel(0)` 写入），**都不是后备缓冲**；
+>    后备缓冲是 `th18:0x4ccfa4`（supervisor+0x1b4，`th18:0x453f21` 的 `GetBackBuffer(0,0,…)` 写的）。
+> 2. **`0x39` 与 `0x3c` 两行的「层 N」不是同一张列表的层号**：`0x39` 压 `37`（组 37 ⇒ **UI 列表 layer 24**）、
+>    `0x3c` 压 `24`（组 24 ⇒ **世界列表 layer 24**）。即「UI layer 24」归 `0x39` 那一趟，
+>    `0x3c` 那一趟只吃世界列表 layer 24（原文按「层 24」并排容易读错，`0x25`/`0x18` 都是压栈立即数）。
+> 3. `0x3a` 不是「顺手回个 RT」：它先 `SetRenderTarget(0, 后备缓冲)` 再 **Clear 整面成 `0xff000000`**，
+>    屏幕内容靠 `0x3b` 的合成四边形搬回来 ⇒ **`0x3a` 是「进不进得了 P 键截图」的分水岭**
+>    （`0x39` 那一侧画进 surface 1，`0x3e` 起这一侧直接画进后备缓冲）。
 
 ## 2. 相机（`zSupervisor+0x25c` 起四台，各 0x164；`FUN_00454b20` `0x454b20` 初始化）
 
