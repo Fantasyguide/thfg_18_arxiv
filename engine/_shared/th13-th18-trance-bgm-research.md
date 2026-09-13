@@ -130,7 +130,7 @@ TH13 确实有淡入淡出，但对象**只有那 1 条 BGM 流**：
 | 停旧 | `th13:0x476ece`：`MOV EDX,[ECX+0x48]; CALL EDX` | DirectSound `Stop`（旧 buffer） |
 | 按时间算新位置 | `th13:0x476ed9` 读 `fmt+0x24`（nAvgBytesPerSec）→ `th13:0x476ee9 FMUL [EBP+0x8]`（×当前时间）→ `th13:0x476f09 SUB ESI,ECX`（− block align） | 得到新轨的字节偏移 |
 | 重装/seek | `th13:0x476f0b CALL 0x475a60`（重装 buffer）；`th13:0x476f13 CALL 0x4768c0`（内部 `FUN_00476bf0` seek） | `FUN_00476bf0` 用 `fmt+0x10`(track_offset)、`th13:0x4e4750`(base)、`fmt+0x18`(intro_size) 把文件指针 seek 到该位置 |
-| 填充 + 起播 | `th13:0x476f3a CALL 0x475d40`（按位置填 buffer）；`th13:0x476f4a CALL 0x476170` | `FUN_00476170`：清 fade 计数（`th13:0x4761d3`–`0x4761d9`）、`th13:0x4761e0 CALL 0x476230`（**传 0 = 用户满音量，不是斜坡**）、`th13:0x47621f` `Play` |
+| 填充 + 起播 | `th13:0x476f3a CALL 0x475d40`（按位置填 buffer）；`th13:0x476f4a CALL 0x476170` | `FUN_00476170`：清 fade 计数（`th13:0x4761d3`–`th13:0x4761d9`）、`th13:0x4761e0 CALL 0x476230`（**传 0 = 用户满音量，不是斜坡**）、`th13:0x47621f` `Play` |
 
 ⇒ 整条路径**没有任何 `cmd 5` / `SoundManager__sub_43d0c0` fade 状态调用**；唯一一次 `FUN_00476230` 是把音量设到正常满值，不是淡入。旧 buffer 先 `Stop`，新 buffer 后 `Play`，没有重叠。
 
@@ -173,9 +173,9 @@ TH13 确实有淡入淡出，但对象**只有那 1 条 BGM 流**：
   - 证据（一手数据）：stage 1 的表 `th13:0x4bb4f0` 第 0 dword = `1`，`+0xc/+0x10` 指向 BGM 名 `th13_01`/`th13_03`；Extra/第 7 关的表 `th13:0x4bb854` 第 0 dword = `7`，BGM 名 `th13_20`/`th13_22`。所以 `CMP [EAX],0x6` 就是“stage 6（主线最后一关）”。
 - `th13:0x4be824` = 一个未命名 dword，紧跟在 `CUR_STAGE_NUM`（`th13:0x4be81c`）与 `__CUR_STAGE_NUM__COPY`（`th13:0x4be820`）之后。
   - trance 里 `CMP [th13:0x4be824],0x6`；`FUN_00413270` 用它 `< 6` 选择一套 enemy anm。语义像“当前stage/area 选择位”。
-  - **目前只找到一处直接写点**：`GameThread__thread_start` `th13:0x42bf47` 写 `0`。没有其它直接写者；全 exe 里对 `[0x4be824]` 的引用只有 `th13:0x4019d0`/`0x4028e0`/`0x405afc`/`0x405c96`/`0x41381e`/`0x429a94`/`0x42b206`/`0x42bf34`，其中 `th13:0x4028e0` 只是一个 `MOV EAX,[0x4be824]; RET` 的 getter 且**零调用者**。若它真恒为 0，则 trance 里 `(*stage_data != 6) || (0x4be824 < 6)` 的第二个条件恒真，**stage 6 的跳过分支在这个 build 里实际是死的**（永远会切 b）。
-  - 🟡 语义和是否有间接写者（块拷贝/`rep movs`）没有完全钉死。证伪方法：在 TH13 的 stage 1 与 stage 6/Extra 各开一次灵界，看 BGM 是否都切到 b；或对 `th13:0x4be81c`–`0x4be828` 这 12 字节下写断点，看谁写 `0x4be824`。
-  - **这个条件本该干什么（结合 stage 数据看）**：stage data 表给出各关 BGM：stage1=`01/03`、stage2=`04/06`、stage3=`07/08`、stage4=`10/11`、stage5=`12/15`、stage6=`16/17`、Extra=`20/22`。其中**只有 `th13_17` 没有 b 变体**（fmt 里没有 `th13_17b`）。所以 `(*stage_data == 6) && (0x4be824 >= 6) ⇒ 跳过换 b` 从设计上像是**专门保护 stage 6（避免去找不存在的 th13_17b）**。如果 `0x4be824` 在本 build 真恒 0，这个保护就是死的——stage 6 在 `th13_17` 段开灵界会去查 `th13_17b`（查不到：`FUN_004603c0` 返回终止记录）。这可能是 v1.00c 的边角残留/bug，或说明 `0x4be824` 有我没找到的间接写者。🟡 实战验证：stage 6 放 `th13_17` 时开灵界，看 BGM 是否静音/异常。
+  - **目前只找到一处直接写点**：`GameThread__thread_start` `th13:0x42bf47` 写 `0`。没有其它直接写者；全 exe 里对 `[0x4be824]` 的引用只有 `th13:0x4019d0`/`th13:0x4028e0`/`th13:0x405afc`/`th13:0x405c96`/`th13:0x41381e`/`th13:0x429a94`/`th13:0x42b206`/`th13:0x42bf34`，其中 `th13:0x4028e0` 只是一个 `MOV EAX,[0x4be824]; RET` 的 getter 且**零调用者**。若它真恒为 0，则 trance 里 `(*stage_data != 6) || (0x4be824 < 6)` 的第二个条件恒真，**stage 6 的跳过分支在这个 build 里实际是死的**（永远会切 b）。
+  - 🟡 语义和是否有间接写者（块拷贝/`rep movs`）没有完全钉死。证伪方法：在 TH13 的 stage 1 与 stage 6/Extra 各开一次灵界，看 BGM 是否都切到 b；或对 `th13:0x4be81c`–`th13:0x4be828` 这 12 字节下写断点，看谁写 `th13:0x4be824`。
+  - **这个条件本该干什么（结合 stage 数据看）**：stage data 表给出各关 BGM：stage1=`01/03`、stage2=`04/06`、stage3=`07/08`、stage4=`10/11`、stage5=`12/15`、stage6=`16/17`、Extra=`20/22`。其中**只有 `th13_17` 没有 b 变体**（fmt 里没有 `th13_17b`）。所以 `(*stage_data == 6) && (0x4be824 >= 6) ⇒ 跳过换 b` 从设计上像是**专门保护 stage 6（避免去找不存在的 th13_17b）**。如果 `th13:0x4be824` 在本 build 真恒 0，这个保护就是死的——stage 6 在 `th13_17` 段开灵界会去查 `th13_17b`（查不到：`FUN_004603c0` 返回终止记录）。这可能是 v1.00c 的边角残留/bug，或说明 `th13:0x4be824` 有我没找到的间接写者。🟡 实战验证：stage 6 放 `th13_17` 时开灵界，看 BGM 是否静音/异常。
 
 ---
 
@@ -219,7 +219,7 @@ b 变体在 fmt 里拥有**自己的 `track_offset / preload_size / intro_size /
 | 文件流创建 | `FUN_004895a0` `th18:0x4895a0`，**只被 `th18:0x452ee4` 调一次** | Ghidra xrefs |
 | 内存流创建 | `FUN_004898f0` `th18:0x4898f0`，只被 `th18:0x476f40`（case 2 preload 路径）调 | Ghidra xrefs |
 | CSound 初始化 | `FUN_00489c00` `th18:0x489c00` 里 **`th18:0x489c3a MOV dword ptr [EBX+0x14],0x1` = 1 条 buffer** | 反汇编 |
-| 命令队列 | `FUN_00477a50` `th18:0x477a50`（入队，基址 `0x56d204` = `[th18:0x56ad80]+0x2484`）；处理 `FUN_00476d20` `th18:0x476d20`（跳表 `th18:0x4776cc`） | 反汇编 |
+| 命令队列 | `FUN_00477a50` `th18:0x477a50`（入队，基址 `th18:0x56d204` = `[th18:0x56ad80]+0x2484`）；处理 `FUN_00476d20` `th18:0x476d20`（跳表 `th18:0x4776cc`） | 反汇编 |
 | 当前 BGM 名 | `th18:0x56d104`（写点：`th18:0x477415`（case 2）、`th18:0x443762`、`th18:0x4650ca`；**没有 b 改写**） | Ghidra xrefs |
 
 **结论：TH18 的 BGM 也是单路。** 没有第二个 `DAT_00570484`、没有第二个 `FUN_004895a0` 调用、没有第二条 BGM buffer；CSound 的 buffer 数明确是 1。
@@ -304,7 +304,7 @@ b 轨的 fmt 是 **22050 Hz**、正常轨是 **44100 Hz**。如果你把两段�
 4. **观察点**：对比灵界前后录音的**音高（采样率）**、**起始位置/节拍相位**、**音量包络**。若差异只在“换了一首/换了一个位置”，是 (a)；若同一段素材上出现 pitch/音量/音色变化，是 (b)。
 
 **如果 (b) 成立，TH18 的同类挂点在哪？**
-- TH18 的 BGM 流同样只用到 Play/Stop/SetCurrentPosition/SetVolume/Lock/Unlock/切轨 seek；BGM 区没有 SetFrequency/SetPan/DSFX（可用与 §1.5-B 相同的方法扫 `th18:0x489000`–`0x48b500`）。
+- TH18 的 BGM 流同样只用到 Play/Stop/SetCurrentPosition/SetVolume/Lock/Unlock/切轨 seek；BGM 区没有 SetFrequency/SetPan/DSFX（可用与 §1.5-B 相同的方法扫 `th18:0x489000`–`th18:0x48b500`）。
 - 真要加运行期效果，能碰的只有：`th18:0x48a440`(Play)、`th18:0x48a5a0`(SetVolume)、`th18:0x48a620`(Stop)、`th18:0x48af10`(切轨/seek)、`th18:0x48a1a0`(buffer 填充)。没有现成的 DSP/变调遗留可直接复活。
 
 ---
@@ -432,7 +432,7 @@ b 轨的 fmt 是 **22050 Hz**、正常轨是 **44100 Hz**。如果你把两段�
 | # | 事项 | 现状 | 证伪/补法 |
 | --- | --- | --- | --- |
 | 1 | TH13 `thbgm.dat` 的 b 变体字节内容 | 🟡 本机没有 `th13.thbgm.dat`；**已由 fmt 证明** 13 对 track 的 intro/loop 秒数严格相等、正常轨字节数正好 2×b 轨；但音频内容（同一演奏降采样 vs 独立 remix）未听/未解 | 放入 `th13.thbgm.dat` 后解 PCM 对比；或实跑录 normal/b 两版 |
-| 2 | TH13 灵界切换条件里的 `CUR_STAGE_DATA` / `th13:0x4be824` | ✅ `[th13:0x4c22dc]`=`CUR_STAGE_DATA`、`*(ptr+0)`=stage number（stage1=1、Extra=7）；🟡 `th13:0x4be824` 只找到一处直接写 0（`th13:0x42bf47`），疑为 12 字节 stage 块的间接写入，stage 6 跳过分支在本 build 可能实际是死的 | 在 stage 1 / stage 6(Extra) 各开一次灵界看切不切 b；对 `th13:0x4be81c`–`0x4be828` 下写断点找间接写者 |
+| 2 | TH13 灵界切换条件里的 `CUR_STAGE_DATA` / `th13:0x4be824` | ✅ `[th13:0x4c22dc]`=`CUR_STAGE_DATA`、`*(ptr+0)`=stage number（stage1=1、Extra=7）；🟡 `th13:0x4be824` 只找到一处直接写 0（`th13:0x42bf47`），疑为 12 字节 stage 块的间接写入，stage 6 跳过分支在本 build 可能实际是死的 | 在 stage 1 / stage 6(Extra) 各开一次灵界看切不切 b；对 `th13:0x4be81c`–`th13:0x4be828` 下写断点找间接写者 |
 | 8 | TH13 是否存在 trance 运行期音频 effect/计算 (b) | ❌ 代码层未找到：BGM 区无 SetFrequency/SetPan/DSFX，`GAME_FLAGS` 读点无音频函数；唯一“计算”是换文件名 + 同时间点 seek。🟡 要完全排除仍需 §5.0 的用户判别实验 | 做 §5.0；若控制组仍变，再查 `th13:0x476ea0`/`FUN_00476bf0` 的 seek 数学与任何 `FUN_00476230` 调用点 |
 | 3 | TH18 `case 9`（`th18:0x477276`）死代码是否仍 100% 可用 | 🟡 静态看完整，无调用者 | 做 §5.2 实验；检查 `FUN_0048af10` 的 loop/位置计算是否依赖 case 2 才有的字段 |
 | 4 | `FUN_004898f0` 从卡 tick 调用的安全性（锁/重入/死亡栈） | 🟡 引擎自己在 case 2 调，但不是在 card tick 里 | 做 §5.3 实验；在 `on_item_frame`（正常帧）而不是 `+0x0c` 死亡栈里起流 |

@@ -167,7 +167,7 @@
  * (ECL 坐标 x=0, y=224) 召唤一只随机**动物灵**（type 1..3，长寿命/变色版）。
  * `ce_key_down` 走 `GetKeyboardState`（user32）—— 空格不在游戏配置里、也不进 replay 输入流，
  * 所以只作调试用。发布前把 ANIMAL_DEBUG_KEY 改成 0 即可关掉。*/
-#define ANIMAL_DEBUG_KEY      1
+#define ANIMAL_DEBUG_KEY      0   /* ★ 2026-09-13 用户口径：发布版关闭调试键（Space/Shift+Space/Ctrl+Space 全部停用）*/
 /* ★ 2026-09-12 十一修：正常咆哮退出 SE 试听探针已停用（用户已从 6 候选中回报
  * **第 5 声 = id 0x42**；见下方 ANIMAL_SE_ROAR_END）。代码保留，但默认 0：
  * 不设置试听序列、不打印任何探针日志，正常咆哮退出照常播 ANIMAL_SE_ROAR_END。*/
