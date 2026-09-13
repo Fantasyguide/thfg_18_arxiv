@@ -7,7 +7,7 @@
 **想加一张卡：读 [`DATA.md`](DATA.md)**（登记，JSON）和 **[`SDK.md`](SDK.md)**（行为，C）；已有的卡在 [`CARDS.md`](CARDS.md)。
 踩过的坑与方法论总结在 [`../../LESSONS.md`](../../LESSONS.md)。
 **★ 铁律：UI / 动画一律先从原代码找** —— 动手写任何 UI、动画、特效前，先在原游戏的 anm 脚本 +
-引擎函数里找到它**原本怎么做**（脚本号 / 地址 / 数值 / 触发条件）并照抄；贴图走零售切图。
+引擎函数里找到它**原本怎么做**（脚本号 / 地址 / 数值 / 触发条件）并照抄；贴图走原生切图。
 完整版与反面教材见 [`../../../METHOD.md`](../../../METHOD.md)。
 方案全貌见 [`../card-rework/PLAN-255-ids.md`](../card-rework/PLAN-255-ids.md)，
 边界依据见 [`engine/card/th18/11-sentinels-56-57.md`](../../../engine/card/th18/11-sentinels-56-57.md)。
@@ -134,8 +134,8 @@ DLL 的 `check_grow` 按运行时 rows 现算这 12 处的改后字节逐一核�
   每处短 1 字节 nop 补齐。⚠️ `[base+index]` 里存档指针放哪一格是随机的（3/9 在 index），
   生成器从站点前面那条 `mov r32,[SCOREFILE_PTR]` 决定丢哪个寄存器，对账器独立再算一遍（AUDIT §K2）。
 - **写**（`mark_obtained` `0x418e04`）改成断点 `BP_ce_unlock_write`：影子[id]=1；**id<57 放行原指令**
-  （零售数组照常写，`scoreth18.dat` 逐字节与香草一致）；id≥57 跳过原指令、立刻写 side-car。
-- **初始化**：断点 `BP_ce_save_loaded`（`ScoreFile__load` 尾段）把零售 57 项拷进影子，再从 side-car 读 57..254。
+  （原生数组照常写，`scoreth18.dat` 逐字节与香草一致）；id≥57 跳过原指令、立刻写 side-car。
+- **初始化**：断点 `BP_ce_save_loaded`（`ScoreFile__load` 尾段）把原生 57 项拷进影子，再从 side-car 读 57..254。
 - **作弊解锁** `unlock_all` 多一个断点镜像到影子（否则读写分家到重启）。
 
 side-car：`%APPDATA%\ShanghaiAlice\th18\th18_card_expand.sav`（路径取自游戏自己的存档目录缓冲，
@@ -151,7 +151,7 @@ side-car：`%APPDATA%\ShanghaiAlice\th18\th18_card_expand.sav`（路径取自游
    存档目录出现 `th18_card_expand.sav`。
 2. **退出再进**：日志 `side-car (1 new ids set)`；进局后卡列表里那张不再是「まだ手に入れてない」，
    名字是「**测试卡牌 58**」，说明栏三行占位文案（获得通知里也是这个名字）。
-3. `scoreth18.dat` 的 md5 与打补丁前**相同**（除非这局解锁了零售卡）。
+3. `scoreth18.dat` 的 md5 与打补丁前**相同**（除非这局解锁了原生卡）。
 4. 结论行变成 `OK: … allocator relocated, manager grown, unlocked shadowed, 100/100 sites verified`，
    前面多一行 `unlocked: shadow @ …, 9 read sites + 3 breakpoints verified; side-car = <路径>`。
 
@@ -169,7 +169,7 @@ side-car：`%APPDATA%\ShanghaiAlice\th18\th18_card_expand.sav`（路径取自游
 「可见且已解锁」动态收集，收进 `zAbilityMenu.__card_ids[56]`。所以：
 
 - 顺序表搬进 codecave `th18_card_order`（255 项）；DLL 在门里重排成
-  `[零售 0..55, 已注册新 id…, 56(空槽), 其余 57(BACK，两处都不可见)]`。
+  `[原生 0..55, 已注册新 id…, 56(空槽), 其余 57(BACK，两处都不可见)]`。
 - `zAbilityMenu` 从 `0x13fc` 扩到 `0x17f8`，`__card_ids` 搬到 `+0x13fc`（16 处，含两处游标相对寻址）。
 - 图鉴条目数 7 处立即数由 DLL **按 56 + N 现写**（N = 注册表 `cards.c` 里的新卡数），
   两处是 `cmp r,imm8` → 条目数 ≤ 127。PLAN 里「→0xff」是错的（符号扩展成 −1）。
@@ -276,7 +276,7 @@ OK: table filled (255 rows @ 0x…), allocator relocated, … , 100/100 sites ve
 | --- | --- |
 | `FAIL: func_get unavailable` | thcrap 太老，拿不到 codecave 地址；表**没填** |
 | `FAIL: codecave:th18_card_table not found` | patch 没进栈，只放了 DLL |
-| `FAIL: table sanity …` | 零售表地址错了（换 build？）|
+| `FAIL: table sanity …` | 原生表地址错了（换 build？）|
 | `FAIL: N/100 sites verified … partial application, DO NOT PLAY` | 有 binhack 没打上（`expected` 不匹配被跳过），第一处的实际字节已打出来 |
 
 第 1 步（`ROWS=58`，已退役）的判据是同一行的 58 行版，外加进游戏后**商店、图鉴、卡组编成、
@@ -304,7 +304,7 @@ card-expand/
 │   ├── release.py     dist → 发布仓库 th18_modkit
 │   ├── sites_gen.h    生成物:DLL 用的站点表
 │   ├── card_expand.h  DLL 内部共用声明
-│   ├── dll_main.c     入口 / 日志 / thcrap API / 自检①(零售表签名)
+│   ├── dll_main.c     入口 / 日志 / thcrap API / 自检①(原生表签名)
 │   ├── selfcheck.c    ★ 自检②:BP_ce_gate 填表(+跳转表) + 回读站点
 │   ├── unlocked.c     ★ 战线 D:影子数组 + side-car + 三个断点
 │   ├── text.c         战线 E 第一块:id≥57 文案重定向(三个断点)

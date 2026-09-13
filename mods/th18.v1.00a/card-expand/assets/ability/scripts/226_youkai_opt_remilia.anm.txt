@@ -4,10 +4,10 @@ script script226 {
     // 指令逐条照抄（段序/时序/数值一字未动），只做两件事：① sprite 引用换成 ORDER 名字；
     //   ② 中断标签按 TH18 口径重编号（见下面 ★★，这是唯一一处语义偏离）。sprite 换名表：
     //   sprite20 → @YOUKAI_OPT_REMILIA_S20@
-    // ★ 零售这支**没有 `layer()`**（TH08 的 anm v3 那代由 VM 自带层）⇒ 这里也不写：TH18 的
+    // ★ 原版这支**没有 `layer()`**（TH08 的 anm v3 那代由 VM 自带层）⇒ 这里也不写：TH18 的
     //   引擎在 `Player__allocate_option` `th18:0x40a8bc mov DWORD PTR [esi+0x18],0xe` 里把子机 VM
     //   的层设成 **14**（世界层）⇒ 不写 layer 就用引擎给的 14，不需要 C 侧补、也不自己编层号。
-    // ★ 零售这一行是 `ins_83(2);`（TH08 v3 的**无名 opcode 83**，写 `vm+0x200`，handler
+    // ★ 原版这一行是 `ins_83(2);`（TH08 v3 的**无名 opcode 83**，写 `vm+0x200`，handler
     //   `th08:0x460314`）—— **TH18 的 anm v8 里 opcode 83 不存在**（`thanm -c 18` 实测报
     //   "opcode 83 is not known to exist in version 8"）⇒ 逐条照抄做不到，**这一行省略**
     //   （全 exe 只有两处读 `vm+0x200`：`th08:0x45e96c` player-bullet 专用 draw 分派、
@@ -15,7 +15,7 @@ script script226 {
     // ★★ **中断标签按 TH18 口径重编号**（唯一一处语义偏离；用户 2026-09-12 定：这种情况肯定得
     //   映射）——TH08 的号在 TH18 引擎下含义完全不同。TH18 发给子机 VM 的只有 1/2/3：
     //     `1` = 销毁（清槽）、`2` = 出场（+待机循环）、`3` = 进商店收起；
-    //   零售同库 `ability.anm` 的子机脚本 s2/s6/s7/s14/s16/s18/s20/s22 就是这三个号（一手：
+    //   原生同库 `ability.anm` 的子机脚本 s2/s6/s7/s14/s16/s18/s20/s22 就是这三个号（一手：
     //   `Player__allocate_option` `th18:0x40a845` 取 `[0x4cf298]+0xc` = ability.anm 的句柄，
     //   `ds:0x4cf298` 由 AbilityManager ctor `th18:0x40833d` 写、`th18:0x40834d push 0x4b4c10`
     //   = 字符串 "ability.anm"；发送点 2=`th18:0x416d70`/`0x416dae`、3=`th18:0x416cf0`/`0x416d2e`、
@@ -34,8 +34,8 @@ script script226 {
     alphaTime(8, 0, 255);
     scale(0.0f, 0.0f);
     scaleTime(8, 0, 1.0f, 1.0f);
-    // ★ 零售原文此处为 `ins_83(2);` —— 见文件头：TH18 的 anm v8 无此 opcode ⇒ 省略
-    interruptLabel(2);   // ★ 零售原文 `interruptLabel(1)` —— TH18 口径见文件头映射表
+    // ★ 原生原文此处为 `ins_83(2);` —— 见文件头：TH18 的 anm v8 无此 opcode ⇒ 省略
+    interruptLabel(2);   // ★ 原生原文 `interruptLabel(1)` —— TH18 口径见文件头映射表
     blendMode(0);
 +8: // 8
     angleVel(0.0f, 0.0f, 0.0f);
@@ -43,13 +43,13 @@ script script226 {
 +400: // 408
 offset196:
     jmp(offset196, 8);
-    interruptLabel(4);   // ★ 零售原文 `interruptLabel(2)` —— TH18 口径见文件头映射表
+    interruptLabel(4);   // ★ 原生原文 `interruptLabel(2)` —— TH18 口径见文件头映射表
     blendMode(1);
     scaleTime(15, 0, 2.0f, 2.0f);
 +400: // 808
 offset260:
     jmp(offset260, 408);
-    interruptLabel(1);   // ★ 零售原文 `interruptLabel(5)` —— TH18 口径见文件头映射表
+    interruptLabel(1);   // ★ 原生原文 `interruptLabel(5)` —— TH18 口径见文件头映射表
     blendMode(1);
     alpha(96);
     alphaTime(8, 0, 0);

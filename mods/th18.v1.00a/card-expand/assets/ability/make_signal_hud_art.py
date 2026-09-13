@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""地灵殿（id 111）HUD —— **信号槽**的零售切图（TH11 `front.anm` entry0 的槽底 / 增长条 / 图标）。
+"""地灵殿（id 111）HUD —— **信号槽**的原版切图（TH11 `front.anm` entry0 的槽底 / 增长条 / 图标）。
 
     python3 make_signal_hud_art.py          # 出图
     python3 make_signal_hud_art.py --dump   # 附带把每个 sprite 打成 ASCII（核证据用）
@@ -26,7 +26,7 @@
   | 2 | 34 | **sprite59** | (416, 0, 48, 16) ← **与 58 同矩形** | (42, 456) | (1,2) | 18 | 第二层（同像素的另一份编号）|
   | 3 | 35 | **sprite26** | (256, 80, 16, 16) | (30, 468) | (1,2) | 18 | **静态图标**（槽左下方）|
 
-  ⇒ 零售贴图里**没有**「数字读数」：SA 的信号就是用这排小竖条表示的。
+  ⇒ 原生贴图里**没有**「数字读数」：SA 的信号就是用这排小竖条表示的。
 
 ■ `anchor(1,2)` = （左，底）（✅ 一手，同 TH10 那条的证法）
 
@@ -46,11 +46,11 @@
       [vm2+0x4c] = 0.0                                           ; ← VM[2] 每帧被写成**零宽**
 
   `AnmVm::write_sprite_corners__without_rot` `th11:0x44fe33` 里 `[vm+0x4c] × [vm+0x3c]` 就是
-  「精灵宽 × scale.x」⇒ **+0x4c 是精灵的横向尺寸**：零售把 48 px 的条压到 **9 + 4×档** px
+  「精灵宽 × scale.x」⇒ **+0x4c 是精灵的横向尺寸**：原生把 48 px 的条压到 **9 + 4×档** px
   （4 px = 条纹上一条竖线的间距 ⇒ **信号每 +10 点亮一根条**，起点 9 px 是首块的宽度）。
   ⇒ 我们的等价写法 = `ce_anm_set_scale(bar, (9 + 4*档)/48, 1.0)`（同 `anchor(1,2)` ⇒ 左端钉住）。
 
-  ⚠️ **VM[2] 被零宽这件事照抄**：零售每帧 `fldz; fst [vm2+0x4c]` ⇒ 它正常游玩里不可见。
+  ⚠️ **VM[2] 被零宽这件事照抄**：原生每帧 `fldz; fst [vm2+0x4c]` ⇒ 它正常游玩里不可见。
   我们的实装**不出这个 VM**（省一个不可见 VM），但贴图只出一份（58/59 同矩形）—— 报告里登记。
 
 ■ 档位闪色（✅ 一手：`Gui::on_tick` `th11:0x41b593`–`0x41b66e`，直接写 `[vm+0x37c]`）
@@ -113,7 +113,7 @@ CANVAS_W = 64                         # 48 → 64（2 的幂），内容靠左
 def _load():
     if not SRC.is_file():
         raise SystemExit(
-            f"缺零售贴图 {SRC}\n（TH11 的资产是本次手工解的："
+            f"缺原版贴图 {SRC}\n（TH11 的资产是本次手工解的："
             "`thdat -x 11 th11.dat front.anm -C dat` + `thanm -l/-x 11 dat/front.anm`）"
         )
     im = Image.open(SRC).convert("RGBA")

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""神灵庙（id 113）的**神灵实体**与**灵界槽**贴图 —— 全部从 TH13 零售图切。
+"""神灵庙（id 113）的**神灵实体**与**灵界槽**贴图 —— 全部从 TH13 原版图切。
 
     python3 make_trance_art.py
 
@@ -47,7 +47,7 @@
   ⇒ **寿命 200 帧后开始淡出（scale 1.5→0.4 用 200 帧，模式 0），第 240 帧 delete()**。
   ⚠️ 这里有个**与引擎文档的一手差异，以 anm 原文为准**：`SPIRIT:59` 把 `timer_1 == 480` 记成
   「寿命 → 发中断 1」，但 anm 侧的中断 1 在 **第 240 帧**就已经 `delete()`；480 更像是引擎侧
-  的一个独立计时（发中断 + 清 flag bit1）。**本次只做零售切图 + anm 脚本，不碰引擎计时**，
+  的一个独立计时（发中断 + 清 flag bit1）。**本次只做原生切图 + anm 脚本，不碰引擎计时**，
   所以脚本按 anm 原文的 200/240 写；480 那一路留给卡侧 C 决定（见 §5 未做到）。
   另外脚本 7/19 的父是 `scale(1.0)`、脚本 13 是 `scale(1.5)`、脚本 1 是 `scale(1.5)`
   —— 父的初缩放**逐型不同**（一手逐条读出），本文件的脚本照抄不统一。
@@ -63,7 +63,7 @@
   | 175 | **sprite125** | `front/agauge2.png` (0,64,16,32) | `anchor(1,2); pos(24,0)` | `scale.x = uv_scale.x = (槽%200)/200`；`entity_pos.x = 比例 × 16.0` |
 
   `front/agauge2.png` **不是 16×16**：文件是 **16 宽 × 128 高**、`THTXHeight: 96`，
-  三个 sprite 的 w 比文件宽 —— 这是「sprite 矩形可越界取到相邻像素」的零售写法，**照抄**。
+  三个 sprite 的 w 比文件宽 —— 这是「sprite 矩形可越界取到相邻像素」的原生写法，**照抄**。
   172/173 的 `colorTime(30, 9, 192,192,255)` ↔ `(255,255,255)` = 蓝↔白呼吸，照抄。
 
   ⚠️ **层**：一手是 `layer(17)`。本仓 `HUD-LAYOUT.md` §4.1 实测：TH18 的暂停模糊罩只盖
@@ -75,7 +75,7 @@
 ■ 产物尺寸为什么这么切
 
   `build_ability.py` 的硬门：ORDER 里写死尺寸的 entry **必须是 2 的幂**。30×30 不是 ⇒
-  **30×30 居中进 32×32**（上下左右各 1px 透明，正好等于零售图自带的 1px 边距 ⇒ 视觉同心）。
+  **30×30 居中进 32×32**（上下左右各 1px 透明，正好等于原生图自带的 1px 边距 ⇒ 视觉同心）。
   ❌ **不能只用「一张拼图 + `scaleUV` 选格」**：本仓实测 `build_ability.py` 是
   **「一个 entry 一个 sprite」**（`L.make_entry` 的 `sprite_idx` 是整张图一个 sprite），
   而 `scaleUV` 在本仓**一处都没用过**（`local/th18.v1.00a/anm/ability/ability.anm.txt` 里也没有），
@@ -137,7 +137,7 @@ AGA2 = {"sprite123": (0, 0, 48, 32), "sprite124": (0, 32, 48, 32), "sprite125": 
 def _load(p):
     if not p.is_file():
         raise SystemExit(
-            f"缺零售贴图 {p}\n（先 `python3 tooling/thtk/unpack.py th13.v1.00c`；"
+            f"缺原版贴图 {p}\n（先 `python3 tooling/thtk/unpack.py th13.v1.00c`；"
             "本地已切过的话检查 local/th13.v1.00c/anm/ 是否被清过）"
         )
     return Image.open(p).convert("RGBA")
@@ -148,7 +148,7 @@ def _paste(dst, tile, xy):
 
     ⚠️ 只能用**不带 mask** 的 `dst.paste(tile, xy)`。
     用 `dst.paste(tile, xy, tile)`（拿自身 alpha 当 mask）时 PIL 做的是 **alpha 合成**，
-    会把「alpha 小、RGB 有值」的像素**预乘**成暗色 —— 实测零售图里的 `(255,255,255,68)`
+    会把「alpha 小、RGB 有值」的像素**预乘**成暗色 —— 实测原生图里的 `(255,255,255,68)`
     被写成 `(68,68,68,18)`，边缘一圈 alpha 渐变全被改色，切图就不再是原样。
     （`littlegods.png` 的 `colorKey` 是 0x00000000、`format: 5`，这种像素很多。）
     """

@@ -189,9 +189,9 @@ C ECL `spec0`（type 任意）· D item 10–14 · E 玩家死亡（type 3）· 
 ## 5. 资产
 
 - ⚠ **现状：`assets/ability/` 下没有 113 目录**（`audit` §113④）⇒ 全部待做。
-- **零售源**：`local/th13.v1.00c/th13.dat`（`thdat -x 13`；`thanm -l 13 -o -m …/v8.anmm`，`SPIRIT:36`）。
+- **原版源**：`local/th13.v1.00c/th13.dat`（`thdat -x 13`；`thanm -l 13 -o -m …/v8.anmm`，`SPIRIT:36`）。
 
-| 件 | 零售出处（一手脚本 / sprite 号）| 状态 |
+| 件 | 原生出处（一手脚本 / sprite 号）| 状态 |
 | --- | --- | --- |
 | 神灵本体 4 型 × 普通/灵界 | `astral.anm` 脚本 `type*6+1`（普通）/ `type*6+4`（灵界），贴图 `enemy/littlegods.png`（256×64 = 10 个 30×30）| ⏳ 切图 |
 | 神灵配色 | 一手 `color()` 值已在 `SPIRIT:99-104`（普通 4 型 + 灵界的白环 / glow 4 型）**可直接照做** | ✅ 表在 |
@@ -199,7 +199,7 @@ C ECL `spec0`（type 任意）· D item 10–14 · E 玩家死亡（type 3）· 
 | 灵界槽 HUD | `front.anm` script **171**（`layer(17)`、`pos(-196,448)`）+ 子脚本 172/173/175；`front/agauge1.png`（sprite121/122 32×48）、`front/agauge2.png`（123/124 48×32、125 16×32）| ⏳ 切图 + 自建 VM |
 | 剩余秒数 | ASCII 字体 7 的 `"%.2fs"`（`th13:0x405940`）；末尾闪烁（槽 <30 奇数 / 30..89 被 8 整除 → 蓝）| ⏳ 自建（`ce_hud_vm_text_*` 是贴图版数字）|
 | 淡出触发 | 自机 `x < -64 && y > 384` ⇒ `interrupt 5`；恢复 ⇒ `4`（`SPIRIT:375-377`）| ✅ 常量照抄 |
-| 音效 | 收集音 `0x3f`、升格音 `0x44`、灵界进入 `0x34`、结束 `0x46`、出生音 `type + 0x3b` | ⚠ TH13 的 id 在 TH18 无意义 ⇒ ⏳ 只能用零售 id 或扩容的 `0x54+`（`SDKMD:179`）|
+| 音效 | 收集音 `0x3f`、升格音 `0x44`、灵界进入 `0x34`、结束 `0x46`、出生音 `type + 0x3b` | ⚠ TH13 的 id 在 TH18 无意义 ⇒ ⏳ 只能用原生 id 或扩容的 `0x54+`（`SDKMD:179`）|
 
 - ⏳ **待用户**：切图 → `ability.anm` 的落地方式（`assets/ability/README.md` 的 `build_ability.py`），或复用现有 UI 层。
   按 `METHOD.md` 铁律：**UI / 动画先从原代码找**，找不到的标 `❓ 自定`，不许包装成「复刻」。
@@ -298,7 +298,7 @@ C ECL `spec0`（type 任意）· D item 10–14 · E 玩家死亡（type 3）· 
 | --- | --- | --- |
 | `Player__die` `th18:0x45d3a0` 广播 `+0x10`（`0x45d574`）| **113 什么都不做**（这是 107/117 的位置）| 同一广播、卡表顺序不可控 ⇒ 113 不参与 |
 | 决死窗口内（`state4_timer < 8`）| **什么都不做**（机会留给决死 B）| `0x45c100` `jl 0x45c2a9` |
-| ★ 窗口走完的**同一帧**（卡虚表 `+0x0c`，`0x45c114`）| 让位检查 → 槽门 → `Player__cancel_impending_death` `0x45d590` → ★ **`return 1`** | 引擎在 `0x45c12d` 用 `+0x0c` 的返回值决定扣不扣命；零售先例 `CardEirin` `0x40a544 mov eax,1` |
+| ★ 窗口走完的**同一帧**（卡虚表 `+0x0c`，`0x45c114`）| 让位检查 → 槽门 → `Player__cancel_impending_death` `0x45d590` → ★ **`return 1`** | 引擎在 `0x45c12d` 用 `+0x0c` 的返回值决定扣不扣命；原生先例 `CardEirin` `0x40a544 mov eax,1` |
 | 窗口结束（`trance_tick` 报 `re_die`）| 补一次 `Player__die`（只在自机 `state 1` 时调）| 一手 `th13:0x405c3e` |
 
 ### 12.4 §9 实跑清单的订正

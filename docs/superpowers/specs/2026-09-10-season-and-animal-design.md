@@ -32,13 +32,13 @@
 
 | 部件 | 做法 | 一手 / 备注 |
 | --- | --- | --- |
-| 季节点来源 ① | **擦弹**：读原生擦弹计数 `th18:0x4ccd0c` 的每帧增量撒点（TH16 `Player__do_graze` `th16:0x444cf0` 每颗擦到的弹都撒一颗）| 每帧上限 4 颗 |
+| 季节点来源 ① | **擦弹**：读原版擦弹计数 `th18:0x4ccd0c` 的每帧增量撒点（TH16 `Player__do_graze` `th16:0x444cf0` 每颗擦到的弹都撒一颗）| 每帧上限 4 颗 |
 | 季节点来源 ② | **敌人掉落**：`on_enemy_drop_pre`，有掉落就补一颗 | 钩子不给敌人坐标 → 撒在自机周围 |
 | 季节点来源 ③ | **解放消弹**：`ce_cancel_radius` 的返回值每 8 颗给 1 点（TH16 `gen_items_from_cancel` `th16:0x416a00`）| 每帧上限 4 颗 |
-| **季节点外观** | 本卡 anm VM（script 115）+ **TH16 零售切图**：`bullet/item.png` 右上 2×2 = 春/夏/秋/冬 + `(224,32)` = 土用，各 16×16（与 P 点同尺寸），按副季节换 sprite；动画照 script129 | [`season/th16/01`](../../../engine/season/th16/01-season-data-and-tables.md) §4 |
+| **季节点外观** | 本卡 anm VM（script 115）+ **TH16 原版切图**：`bullet/item.png` 右上 2×2 = 春/夏/秋/冬 + `(224,32)` = 土用，各 16×16（与 P 点同尺寸），按副季节换 sprite；动画照 script129 | [`season/th16/01`](../../../engine/season/th16/01-season-data-and-tables.md) §4 |
 | 季节点运动/收集 | 落体 0.75 px/帧；进 96 px 被吸（每帧走 18% 剩余距离）；16 px 内算捡到 → 加 1 点 + `interruptLabel(1)` 放大淡出 | 本卡自建（TH16 里它们是真道具，会 PoC）|
 | 分档 | **TH16 阈值 100/230/390/590/840/1140 → 档位 0..6** | `Player__init_season_level_deltas` `th16:0x43deb0` + seed 字节 |
-| **季节子机** | 档 1..3 各多一颗；**阵位照 TH16 副 sht 的 `option_pos`**（每档一套独立阵型：秋 ±48 最宽、冬竖线、其余小扇），写 option 记录的 `+0x64/+0x68/+0x6c/+0x70`（零售卡 `th18:0x40b8c1` 同款写法）；shooterset `SEASON`，弹贴图 `SEASON_SEED` | 表值一手来自 `local/th16.v1.00a/dat/pl0Xsub.sht` +0x40 |
+| **季节子机** | 档 1..3 各多一颗；**阵位照 TH16 副 sht 的 `option_pos`**（每档一套独立阵型：秋 ±48 最宽、冬竖线、其余小扇），写 option 记录的 `+0x64/+0x68/+0x6c/+0x70`（原版卡 `th18:0x40b8c1` 同款写法）；shooterset `SEASON`，弹贴图 `SEASON_SEED` | 表值一手来自 `local/th16.v1.00a/dat/pl0Xsub.sht` +0x40 |
 | **子机升级** | 档位 → 子机数 + 射速：`short_timer = 帧数 × 档位`、`fire_rate = 120` ⇒ 间隔 120/60/40/30/24 帧 | 换弹型留作下一步 |
 | **副季节** | **S 键**循环 春→夏→秋→冬→土用（TH16 是菜单里选；本卡给个运行时开关）| HUD 显示当前副季节 |
 | **季节解放** | **A 键**；按副季节查 TH16 表出「半径 / 持续帧 / 每帧伤害 / 无敌帧」，持续期间**每帧**半径清弹 + 一个伤害源 | 表见 [`season/th16/01`](../../../engine/season/th16/01-season-data-and-tables.md) §3 |
@@ -70,11 +70,11 @@
 
 TH18 没有残骸，全部自建；机制拆成四块，全部有现成接缝。**2026-09-10 Stage 2 已实现**
 （`native/cards/animal.c` + `animal_core.c`，审计 AUDIT §AL，实跑清单 NEXT.md §1v；
-动物灵本体已是自建 VM 池 + TH17 零售切图，不再是原生道具载体）：
+动物灵本体已是自建 VM 池 + TH17 原版切图，不再是原版道具载体）：
 
 | 部件 | Stage 1 实现 | 接缝 / 一手 |
 | --- | --- | --- |
-| 出现动物灵 | 敌人死亡时按确定性节奏撒一只**自建 VM**（40 只池，贴图 = TH17 零售 `beast1.png`；DVD 式弹跳 / 24 px 吸收 / 60 px 减速 / 变色 / 版边消失）| `on_enemy_drop_pre` + `ce_anm_spawn` 一族 |
+| 出现动物灵 | 敌人死亡时按确定性节奏撒一只**自建 VM**（40 只池，贴图 = TH17 原版 `beast1.png`；DVD 式弹跳 / 24 px 吸收 / 60 px 减速 / 变色 / 版边消失）| `on_enemy_drop_pre` + `ce_anm_spawn` 一族 |
 | 收集槽 | 自建实体的 24 px 判定 → `animal_core` 的 5 格队列（存 type）；鱼灵（4..7）咆哮中收到立刻换道具、结束时把队列里的也换掉 | `animal_core` + `ce_spawn_item`（TH17 `th17:0x40f980` / `th17:0x410640`）|
 | 咆哮 | 队列满 → 就绪判定（多数 ≥3 → 单一类型 + 时长表 840/1140/1500，== 自机兽灵 +480；否则混合 1140）；C 键发动 40 帧霊撃：半径 `(1−f⁴)×200` 消弹 + 伤害源 + 60 帧无敌；就绪窗口超时 → 按释放等级爆散 | 主动卡 `on_activate` + `on_tick_2`；纯逻辑 `animal_core.c` |
 | 中弹只退出咆哮 | `on_death_before_deathbomb`：就绪且未霊撃 → 开霊撃（`by_hit=1`）+ `Player::cancel_impending_death`（`th18:0x45d590`），**不扣命** | SDK 死亡三钩子（AUDIT §AL3）|

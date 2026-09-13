@@ -5,7 +5,7 @@
 static int s_fail, s_pass;
 #define CHECK(cond) do { if (cond) ++s_pass; else { ++s_fail; printf("  FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); } } while (0)
 
-/* 零售流程：MSG 开店 → 买 → 30 帧后关店 → 同一帧 GameThread 看到指针为 0 → 重开一次；第二次买完不再开 */
+/* 原生流程：MSG 开店 → 买 → 30 帧后关店 → 同一帧 GameThread 看到指针为 0 → 重开一次；第二次买完不再开 */
 static void test_two_visits(void)
 {
     ce_shop_state_t s; ce_shop_reset(&s, 2);
@@ -85,7 +85,7 @@ static void test_blocked(void)
     CHECK(!ce_shop_on_gamethread(&s, 0, 0, 1, 141, 1));
 }
 
-/* visits = 1 就是零售 */
+/* visits = 1 就是原生 */
 static void test_one_visit_is_retail(void)
 {
     ce_shop_state_t s; ce_shop_reset(&s, 1);

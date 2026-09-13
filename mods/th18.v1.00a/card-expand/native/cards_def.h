@@ -12,7 +12,7 @@
 #include <stdint.h>
 
 #define CE_ROW_BYTES        0x34
-#define CE_CARD_ID_MIN      58        /* 56 = NULL 空槽、57 = BACK 卡背，零售哨兵 */
+#define CE_CARD_ID_MIN      58        /* 56 = NULL 空槽、57 = BACK 卡背，原生哨兵 */
 #define CE_CARD_ID_MAX      254
 #define CE_CARD_MAX_NEW     71        /* 图鉴条目 56+N 进两处 cmp r,imm8 → ≤ 127（AUDIT §M）*/
 #define CE_CARD_TEXT_LINE   0x40      /* 文案一行 0x40 字节，含 NUL → 内容 ≤ 63 */
@@ -20,7 +20,7 @@
 #define CE_CARD_UNSET       0xffffffffu   /* 必填字段的「没给」*/
 
 /* 商店（AUDIT §N2、边界 #34） */
-#define CE_SHOP_POOL_SLOTS  8192      /* 池子已搬进 codecave（AUDIT §AH）。零售只有 560：
+#define CE_SHOP_POOL_SLOTS  8192      /* 池子已搬进 codecave（AUDIT §AH）。原生只有 560：
                                        * pick_weighted_random_offer 的 0x8c0 栈缓冲 / 4，且末尾紧贴栈金丝雀、填池无越界检查。
                                        * 必须与 sites_gen.h 的 CE_POOL_SLOTS 一致 —— cards.c 里有 _Static_assert 钉着。*/
 #define CE_SHOP_OFFER_SLOTS 57        /* AbilityShop__initialize 的 [ebp-0xe4] */
@@ -58,11 +58,11 @@ int  ce_card_validate(const ce_card_def_t *d, char *err, unsigned cap);
 /* 编成 0x34 字节表行；name_ptr 是写进 +0x00 的指针值（调用方负责它的生存期）*/
 void ce_card_encode_row(const ce_card_def_t *d, uint32_t name_ptr, uint8_t row[CE_ROW_BYTES]);
 
-/* 商店容量：扫整张表（零售 + 新卡），忽略 id 56/57 的行。
+/* 商店容量：扫整张表（原生 + 新卡），忽略 id 56/57 的行。
  *   pool       = Σ_{weight∉{0,6}} (weight + 5)              ≤ CE_SHOP_POOL_SLOTS
  *   guaranteed = count(weight==0) + count(dmode∈1..5) + 6   ≤ CE_SHOP_OFFER_SLOTS
  * 返回 1；0 时 err 里说明哪条超了。pool / guaranteed 可为 NULL。*/
-/* 开发用权重覆盖（cards_dev.js 的 retail_weight / new_weight）：零售行 1..55 里 weight ∉ {0,6} 的改成 retail_weight，
+/* 开发用权重覆盖（cards_dev.js 的 retail_weight / new_weight）：原生行 1..55 里 weight ∉ {0,6} 的改成 retail_weight，
  * new_ids 里的行改成 new_weight；传 -1 表示不动。返回改了几行。6 = 永不进随机池，0 = 保底资源卡（不动）。*/
 unsigned ce_weight_override(uint8_t *table, unsigned nrows, int retail_weight, int new_weight,
                             const uint32_t *new_ids, unsigned n_new);
@@ -79,11 +79,11 @@ int ce_weight_override_fit(uint8_t *table, unsigned nrows, int retail_weight, in
 int  ce_shop_capacity_check(const uint8_t *table, unsigned nrows, unsigned *pool, unsigned *guaranteed,
                             char *err, unsigned cap);
 
-/* 显示顺序表（图鉴 / 编成共用）：零售 56 项原序不动，**新卡按类别插进对应区段末尾**——零售表本身按类别分块
+/* 显示顺序表（图鉴 / 编成共用）：原生 56 项原序不动，**新卡按类别插进对应区段末尾**——原生表本身按类别分块
  * （0 主动 / 1 子机装备 / 2 被动能力 / 3 资源），但有两张掉队的：BLANK(2) 在最前、MAGATAMA2(2) 在最后。
  * 所以「区段」取该类别**最长的一段连续区**（被动 = ITEM_CATCH…MUKADE 那 22 张，而不是孤零零的 BLANK 或 MAGATAMA2），
- * 每个新 id 排在那一段的最后一张之后，同类别新卡之间保持注册顺序；类别在零售表里不存在的新卡排在所有零售卡之后。
- * 然后 null_row（编成空槽），余下填 back_row。返回可见条目数（零售 + 新卡）= 图鉴条目数；nretail + nnew + 1 > cap 时返回 0。*/
+ * 每个新 id 排在那一段的最后一张之后，同类别新卡之间保持注册顺序；类别在原生表里不存在的新卡排在所有原生卡之后。
+ * 然后 null_row（编成空槽），余下填 back_row。返回可见条目数（原生 + 新卡）= 图鉴条目数；nretail + nnew + 1 > cap 时返回 0。*/
 unsigned ce_build_order(uint32_t *out, unsigned cap,
                         const uint32_t *retail, const uint32_t *retail_cat, unsigned nretail,
                         const uint32_t *new_ids, const uint32_t *new_cat, unsigned nnew,

@@ -288,7 +288,7 @@ int trance_force_on_death(trance_state_t *s);
  *      要么当场 `commit_death`。⇒ **「帧点（`on_item_frame`）等 9 帧」那条路不可达**
  *      （`+0x0c` 广播在 Player 线 `0x17` 里，`on_item_frame` 在 ItemManager 线 `0x1e` 里，
  *      后者跑到时 state 已经不是 4）—— 这是本文件**第一版**的错误，已在 `AUDIT` §BN7 留痕。
- *   ③ **返回 1 是实质动作**：一手零售先例 `CardEirin__on_player_death_after_deathbomb` `0x40a4f0`
+ *   ③ **返回 1 是实质动作**：一手原生先例 `CardEirin__on_player_death_after_deathbomb` `0x40a4f0`
  *      （尾段 `0x40a534 call 0x40a2a0` → `0x40a539 mov ecx,[0x4cf410]` → `0x40a53f call 0x45d590`
  *      → **`0x40a544 mov eax,1`** → `0x40a54a ret 4`）⇒ **调 `cancel_impending_death` 与
  *      `return 1` 两件都要做**：只调不返回 1，`0x45c12d` 会继续走到 `0x45c135` 把命扣掉。

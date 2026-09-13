@@ -20,7 +20,7 @@
 - idx4 重指**全部细节坐实**:`sht_func_tick_table @0x4919a0`,idx4 = `0x4919b0` → `0x4470f0`;
   原字节 `f0 70 44 00`(`expected` 正确);解析器 `0x443790` **无边界检查**;派发经 shooter+0x2c。
 - init=3(`0x4470e0`)确认清 `+0x90` 目标槽 + flag&0x3c,正是 tick 前置,安全。
-- tick idx4 零售确不用(重指只牺牲 lock-dash 实验产物);**注**:Agent 指出零售 tick 其实也用 idx3(加速),
+- tick idx4 原版确不用(重指只牺牲 lock-dash 实验产物);**注**:Agent 指出原版 tick 其实也用 idx3(加速),
   我们 PLAN 早先写的 "tick∈{0,1,2,5}" 漏了 idx3,但与 idx4 安全无关。
 - **★ 待验项已解**:`func_on_hit=0` 空指针安全 —— 命中派发 `playershot_hit_dispatch @0x445d40`
   **明确 `if(*(shooter+0x34)!=0) call; else playershot_launch_shared`**,hit=0 走 else(消弹),**不会 call 0**。✅

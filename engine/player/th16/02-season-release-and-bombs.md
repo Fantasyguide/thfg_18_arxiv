@@ -329,7 +329,7 @@ vm->color_1 = 状态色;
 - 每帧建一个 ⇒ 玩家移动时留下一串淡出的自机影子（`alphaTime(30,0,0)`）。
   只有秋/冬会走到这两支（它们才写速度字段），且**无敌结束后**才建（无敌期是闪色）。
 - TH18：`Player__on_tick__body` **把建 VM 那段删了**（`0x45c6e4` 直接跳 `0x45c702`），
-  但零售 `pl0X.anm` 的残像脚本还在（`sprite(sprite0)` + `color(60,0,192)` + `alphaTime(20,0,0)`，
+  但原版 `pl0X.anm` 的残像脚本还在（`sprite(sprite0)` + `color(60,0,192)` + `alphaTime(20,0,0)`，
   脚本号按角色 **pl00 17 / pl01 19 / pl02 14 / pl03 14**）⇒ 要复刻得自己每帧起一个
   （card-expand 的 `season.c` `afterimage_tick` 就是这么做的）。
 

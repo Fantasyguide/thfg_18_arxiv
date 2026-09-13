@@ -141,7 +141,7 @@ static const ce_grow_t CE_GROW[] = {
 #define CE_BP_UNLOCK_ALL_RVA   0x0648fe
 #define CE_ABILITY_TXT_PTR_RVA 0x0cf29c
 #define CE_TEXT_ENTRY     0x1c0
-#define CE_TEXT_ENTRIES   57      /* 零售 zAbilityText 装 57 张；第 57 张的位置已是尾部字段 */
+#define CE_TEXT_ENTRIES   57      /* 原生 zAbilityText 装 57 张；第 57 张的位置已是尾部字段 */
 #define CE_BP_TEXT_NAME_RVA   0x016694
 #define CE_BP_TEXT_DESC_RVA   0x016779
 #define CE_BP_TEXT_NOTIFY_RVA 0x01926a
@@ -156,6 +156,7 @@ static const ce_grow_t CE_GROW[] = {
 #define CE_BP_SHOT_DAMAGE_RVA 0x05f2a2
 #define CE_BP_BOMB_GATE_RVA 0x05c048
 #define CE_BP_SHOT_SET_INDEX_RVA 0x05ebfb
+#define CE_BP_OPTION_SHOT_GATE_RVA 0x00a9c3
 #define CE_BP_ENEMY_DEATH_RVA 0x030240
 #define CE_BP_ENEMY_SHOT_SLOT_RVA 0x033ffa
 #define CE_BP_ITEM_SCORE_BELOW_RVA 0x046caa
@@ -246,12 +247,12 @@ static const ce_unlock_t CE_UNLOCK[] = {
 #define CE_NUNLOCK (sizeof(CE_UNLOCK)/sizeof(CE_UNLOCK[0]))
 
 /* ---- 音效表扩容（sound_sites.py）---- */
-#define CE_SND_CFG_ROWS    84      /* 零售 84 行 */
+#define CE_SND_CFG_ROWS    84      /* 原生 84 行 */
 #define CE_SND_NEW_N       32      /* 新 id 0x54..0x73 */
 #define CE_SND_ROWS_TOTAL  116
 #define CE_SND_CFG_ROW     0x14
 #define CE_SND_SLOT_SIZE   0x18
-#define CE_SND_NAMES_N     72      /* 零售 wav 名 / blob 槽数 */
+#define CE_SND_NAMES_N     72      /* 原生 wav 名 / blob 槽数 */
 #define CE_SND_NAMES_TOTAL 104
 #define CE_SND_FIRST_ID    0x54
 #define CE_SND_LAZER2_SLOT 20     /* 0x45ff38 硬编码引用的槽；wav 下标应为 0x26 */

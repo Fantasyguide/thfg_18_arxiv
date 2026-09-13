@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""绀珠传（id 118）的擦弹圈：从 TH15 的零售贴图里抠出那个环。
+"""绀珠传（id 118）的擦弹圈：从 TH15 的原版贴图里抠出那个环。
 
-来源（零售字节只在 local/，不入库；构建时取）：
+来源（原生字节只在 local/，不入库；构建时取）：
   `local/th15.v1.00b/anm/effect/effect/eff_sloweffect.png`（128×64）
   它在 TH15 的 `effect.anm` entry3 里是两个 64×64 sprite：
     sprite23 = 左半（实心小爆点）、sprite24 = **右半（空心环，半径 ~22 px）**。
@@ -37,7 +37,7 @@ OUT = HERE / "lolk"
 
 def main():
     if not SRC.is_file():
-        raise SystemExit(f"缺零售贴图 {SRC}\n（先 python3 tooling/thtk/unpack.py th15.v1.00b）")
+        raise SystemExit(f"缺原版贴图 {SRC}\n（先 python3 tooling/thtk/unpack.py th15.v1.00b）")
     im = Image.open(SRC).convert("RGBA")
     if im.size != (128, 64):
         raise SystemExit(f"{SRC} 是 {im.size}，预期 (128, 64)")
@@ -48,7 +48,7 @@ def main():
     # 面板：TH15 front.anm script241 的五条 —— **切开各存一张**（TH15 也是五个独立 VM）
     p_src = REPO / "local/th15.v1.00b/anm/front/front/front02.png"
     if not p_src.is_file():
-        raise SystemExit(f"缺零售贴图 {p_src}")
+        raise SystemExit(f"缺原生贴图 {p_src}")
     src = Image.open(p_src).convert("RGBA")
     # PANEL_1..5 = 五条标签；PANEL_6 = 绿色（符卡碎片）、PANEL_7 = 粉色（残机碎片）
     rows = [(145, 0), (146, 32), (147, 64), (149, 128), (148, 96), (150, 160), (151, 192)]

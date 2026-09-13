@@ -29,7 +29,7 @@ static int on_activate(ce_card_t *c)
     ce_play_sound(0x4d, ce_player_x());                            /* 0x4d = Tenshi 发动音 */
     /* 亮牌：ability.anm 追加的 script68（assets/ability/scripts/68_reverse_flash.anm.txt），卡图副本 sprite109，
      * 场地中央（脚本 pos(0,224,0)：ECL y 从区域顶部起算）绕 Y 轴转一圈后自灭。层 20：type(8) 走 D3D WORLD 矩阵，不加相机 2 的区域原点偏移，放世界层会偏位；
-     * 零售的 type(8) 全在层 20 / 2 / 6（engine/anm/th18/01-vm-instantiate.md §3）。脚本里的 layer() 会覆盖这个参数。*/
+     * 原生的 type(8) 全在层 20 / 2 / 6（engine/anm/th18/01-vm-instantiate.md §3）。脚本里的 layer() 会覆盖这个参数。*/
     uint32_t fx = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_REVERSE_FLASH, 20);
     ce_log("reverse: %u bullets reversed; flash anm id %08x", n, fx);
     return 0;

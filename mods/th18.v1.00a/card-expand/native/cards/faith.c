@@ -31,7 +31,7 @@
  *
  * ## ❓ 自定（原版确实没有 / 我们没找到）
  *
- *   · **贴图**：TH18 没有绿点 item type、我们也没有绿点图 ⇒ 借季节点那张 16×16 零售切图
+ *   · **贴图**：TH18 没有绿点 item type、我们也没有绿点图 ⇒ 借季节点那张 16×16 原生切图
  *     （`CE_ANM_ABILITY_SPRITE_PT_*`）+ `ce_anm_set_color` 染色。见 `faith_sprite_for()`。
  *   · **微档不建实体**：§2.2 的微信仰点有 4 个来源（道中/boss 非符消弹、击破消弹、全避消弹、
  *     登场消弹），其中只有「我们自己放灵击」这条我们现在接得到；消弹每颗 +10 走
@@ -58,7 +58,7 @@
 #define FAITH_MAG_SPEED_DEF   5.0f
 
 /* ❓ 自定染色（原版绿点贴图未找到；TH18 的 `bullet/item.png` 蓝点那一格现被金钱用）。
- * 三个档给三个色，也方便实跑时一眼看出是哪一档在掉。拿到零售绿点贴图后整段删掉。*/
+ * 三个档给三个色，也方便实跑时一眼看出是哪一档在掉。拿到原生绿点贴图后整段删掉。*/
 #define FAITH_TINT_BIG    0xff40e060u   /* ❓ 自定：大 = 亮绿 */
 #define FAITH_TINT_SMALL  0xff80ffa0u   /* ❓ 自定：小 = 浅绿 */
 #define FAITH_TINT_MICRO  0xffffffffu   /* ❓ 自定：微（不建实体，占位）*/
@@ -177,7 +177,7 @@ void faith_clear_entities_mask(int slot_mask)
     }
 }
 
-/* 贴图：❓ 自定占位 —— 借季节点那张 16×16 零售切图（TH16 `bullet/item.png` 右上 2×2），
+/* 贴图：❓ 自定占位 —— 借季节点那张 16×16 原版切图（TH16 `bullet/item.png` 右上 2×2），
  * 按档选一格；真正的绿点贴图到位后只改这里。*/
 static int faith_sprite_for(faith_tier_t tier)
 {

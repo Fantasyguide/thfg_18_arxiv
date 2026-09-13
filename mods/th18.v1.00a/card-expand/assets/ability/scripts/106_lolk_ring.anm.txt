@@ -1,6 +1,6 @@
 script script106 {
     // 绀珠传（id 118）的擦弹圈 —— TH15 `effect.anm` script27 的 1:1 复刻
-    //（sprite24 = 零售 eff_sloweffect.png 右半那个空心环；见 assets/ability/make_lolk_ring_art.py）。
+    //（sprite24 = 原生 eff_sloweffect.png 右半那个空心环；见 assets/ability/make_lolk_ring_art.py）。
     // 叠法 blendMode(2) = 反向减算：TH15 `AnmManager__setup_render_state_for_vm` th15:0x47d840
     //   case 2 → SRCBLEND=SRCALPHA(5)、DESTBLEND=ONE(2)、BLENDOP=REVSUBTRACT(3)
     //   ⇒ 结果 = dst − src×alpha（把背后的画面压暗，不发光）。

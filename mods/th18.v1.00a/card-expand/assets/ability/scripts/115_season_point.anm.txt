@@ -4,7 +4,7 @@ script script115 {
     //     加算混合、10 帧淡入、16 帧从 2 倍缩到 1 倍、**随机自转**（第 0 帧 `rotate(%RANDRAD)`
     //     + `fsetMul(%F0,%RANDF2,0.08726646)` + `angleVel(%F0)` = 0..5°/帧、方向随机）、
     //     第 16 帧起 300 帧缩到 0.7 并淡到 alpha128、第 36 帧关掉加算并 stop。
-    //   贴图 = 从 TH16 零售 `bullet/item.png` 切的 5 张 16×16（春/夏/秋/冬/土用，右上 2×2 + (224,32)），
+    //   贴图 = 从 TH16 原版 `bullet/item.png` 切的 5 张 16×16（春/夏/秋/冬/土用，右上 2×2 + (224,32)），
     //   卡按副季节 `ce_anm_set_sprite` 换（脚本里的 @PT_SPRING 只是默认值）。
     //   收集时卡发 interruptLabel(1) → 放大淡出后 delete。
 -1:

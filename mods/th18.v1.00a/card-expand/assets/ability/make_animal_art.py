@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""鬼形兽（id 117）的零售切图 + 脚本生成。
+"""鬼形兽（id 117）的原生切图 + 脚本生成。
 
 源（都在 gitignored 的 `local/`，构建时取）：
   local/th17.v1.00b/anm/beast/bullet/beast1@beast@0.png     —— 160×96，13 个 32×32 单元（token）
@@ -73,7 +73,7 @@ ITEM_CELLS = {          # 名 → (x, y, 源 w, h)：源取自 bullet/item.png�
 # ---- 资源卡的**卡面**（★ 用户 2026-09-10 口径：道具灵在**槽里**要显示「咆哮结束后拿到的东西」）----
 #   咆哮结束的兑换：4(B鱼)→BOMB2 卡、5(残鱼)→EXTEND2 卡、7(金钱鱼)→PENDULUM 卡（道具 type 0x11/0x10/0x12）。
 #   卡道具在场上**画的就是那张卡本身**（一手 `th18:0x447089` 段：卡类 type 不走 bullet 图集，而是
-#   `0x409310` 建一个 UI VM、再用卡 id 取 `abcard.anm` 的卡面）⇒ 槽里也用零售卡面，两边一致。
+#   `0x409310` 建一个 UI VM、再用卡 id 取 `abcard.anm` 的卡面）⇒ 槽里也用原生卡面，两边一致。
 ABILITY_CARDS = REPO / "local" / "th18.v1.00a" / "anm" / "abcard" / "ability"
 CARD_ITEM = {
     "CARD_BOMB":  "BOMB2_min.png",      # 符卡碎片卡（item type 0x11）
@@ -125,8 +125,8 @@ SCRIPTS = [
     (140, "fish_bomb",    3,  {9: "FISH_BOMB"}),
     (141, "fish_life",    4,  {10: "FISH_LIFE"}),
     (142, "fish_power",   5,  {11: "FISH_POWER"}),
-    # ★ 用户 2026-09-10 手绘：金钱鱼灵（零售蓝点鱼改金）= `assets/ability/animal_custom/FISH_MONEY.png`
-    #   （**手绘源**放在 animal_custom/ 不进本生成器的产出目录，ORDER 直接指向它；生成器只管零售切图）
+    # ★ 用户 2026-09-10 手绘：金钱鱼灵（原生蓝点鱼改金）= `assets/ability/animal_custom/FISH_MONEY.png`
+    #   （**手绘源**放在 animal_custom/ 不进本生成器的产出目录，ORDER 直接指向它；生成器只管原生切图）
     (143, "fish_point",   6,  {12: "FISH_MONEY"}),
     (146, "aura_wolf",    41, {79: "AURA_WOLF_0", 80: "AURA_WOLF_1", 81: "AURA_WOLF_2", 82: "AURA_WOLF_3",
                                83: "AURA_WOLF_4", 84: "AURA_WOLF_5", 85: "AURA_WOLF_6", 86: "AURA_WOLF_7"}),
@@ -158,7 +158,7 @@ SCRIPTS = [
 def _sheet(fn):
     p = BEAST / "bullet" / fn
     if not p.exists():
-        sys.exit(f"缺零售贴图 {p}（先 source tooling/env.sh 并 thanp/thdat 解包）")
+        sys.exit(f"缺原生贴图 {p}（先 source tooling/env.sh 并 thanp/thdat 解包）")
     return Image.open(p).convert("RGBA")
 
 
@@ -201,9 +201,9 @@ def crop_sheets():
     for name, fn in CARD_ITEM.items():
         p = ABILITY_CARDS / fn
         if not p.exists():
-            sys.exit(f"缺零售卡面 {p}（先 python3 tooling/thtk/unpack.py th18.v1.00a）")
+            sys.exit(f"缺原生卡面 {p}（先 python3 tooling/thtk/unpack.py th18.v1.00a）")
         art = Image.open(p).convert("RGBA")
-        bb = art.getchannel("A").getbbox()               # 零售 _min.png 是 64×128 画布，卡面只占上半 64×80
+        bb = art.getchannel("A").getbbox()               # 原生 _min.png 是 64×128 画布，卡面只占上半 64×80
         if bb is None:
             sys.exit(f"{p}: 整张透明，切不出卡面")
         art = art.crop(bb)
@@ -229,7 +229,7 @@ def crop_sheets():
     pad.paste(strip, (256, 0))
     pad.save(OUT_ART / "EAGLE_BEAM.png")
     print("[eagle_beam] TH17 pl01.anm sprite29 → 512×32 → {OUT_ART / 'EAGLE_BEAM.png'}")
-    print(f"[card] {len(CARD_ITEM)} 张资源卡面（零售 _min 64×80 → 64×64）→ {OUT_ART}")
+    print(f"[card] {len(CARD_ITEM)} 张资源卡面（原生 _min 64×80 → 64×64）→ {OUT_ART}")
     print(f"[extra] {len(EXTRA)} 张 → {OUT_ART}")
 
 
@@ -250,7 +250,7 @@ def gen_scripts():
             f"script script{src_num} {{",
             f"script script{num} {{\n"
             f"    // 由 assets/ability/make_animal_art.py 从 TH17 `beast.anm` script{src_num} 生成，别手改。\n"
-            f"    // 一手：engine/animal/th17/01-animal-spirits.md §4 / §7；贴图 = 零售 beast*.png 切图（见 ORDER.txt）。", 1)
+            f"    // 一手：engine/animal/th17/01-animal-spirits.md §4 / §7；贴图 = 原版 beast*.png 切图（见 ORDER.txt）。", 1)
         for sidx, sprite_name in mapping.items():
             body = body.replace(f"sprite(sprite{sidx})", f"sprite(@{sprite_name})")
         if out_name == "slot_flame":

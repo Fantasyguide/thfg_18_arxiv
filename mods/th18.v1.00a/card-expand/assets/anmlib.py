@@ -1,7 +1,7 @@
 """thanm spec 的读写与重建（build_abcard.py / build_ability.py 共用）。
 
-零售 spec / 贴图来自 tooling/thtk/unpack.py 解出的 local/th18.v1.00a/anm/<名>/。
-约定：只**追加** entry / 脚本，绝不改零售的；重建后逐项校验零售部分没变。
+原生 spec / 贴图来自 tooling/thtk/unpack.py 解出的 local/th18.v1.00a/anm/<名>/。
+约定：只**追加** entry / 脚本，绝不改原生的；重建后逐项校验原生部分没变。
 """
 import filecmp
 import os
@@ -138,11 +138,11 @@ def retail(name: str):
 
 
 def link_retail_textures(tex_dir: Path, retail_dir: Path, retail_entries):
-    """thanm -c 的贴图路径相对 cwd：把零售贴图软链进 tex_dir（按 entry name 的相对路径）。"""
+    """thanm -c 的贴图路径相对 cwd：把原生贴图软链进 tex_dir（按 entry name 的相对路径）。"""
     for e in retail_entries:
         src, dst = retail_dir / e["name"], tex_dir / e["name"]
         if not src.is_file():
-            raise SystemExit(f"零售贴图缺 {src}：先 python3 tooling/thtk/unpack.py th18.v1.00a")
+            raise SystemExit(f"原生贴图缺 {src}：先 python3 tooling/thtk/unpack.py th18.v1.00a")
         if not dst.exists():
             dst.parent.mkdir(parents=True, exist_ok=True)
             os.symlink(src, dst)
@@ -156,25 +156,25 @@ def compile_anm(spec_text: str, tex_dir: Path, out_anm: Path, tools, anmmap: Pat
 
 
 def verify_rebuilt(out_anm: Path, retail_text: str, retail_dir: Path, tools, anmmap: Path):
-    """重建文件自检：零售 entry / 脚本块逐个一致、零售贴图逐张一致。→ (rebuilt_text, entries, scripts)。"""
+    """重建文件自检：原生 entry / 脚本块逐个一致、原生贴图逐张一致。→ (rebuilt_text, entries, scripts)。"""
     if not out_anm.is_file():
         raise SystemExit(f"没有 {out_anm}：先 make anm")
     text = thanm(["-l", VERSION, out_anm, "-m", anmmap], out_anm.parent, tools)
     r_e, r_s = parse_entries(retail_text), parse_scripts(retail_text)
     n_e, n_s = parse_entries(text), parse_scripts(text)
     if len(n_e) < len(r_e) or len(n_s) < len(r_s):
-        raise SystemExit(f"{out_anm.name}: entry {len(n_e)}/{len(r_e)}、script {len(n_s)}/{len(r_s)}，比零售还少")
+        raise SystemExit(f"{out_anm.name}: entry {len(n_e)}/{len(r_e)}、script {len(n_s)}/{len(r_s)}，比原生还少")
     for i, (a, b) in enumerate(zip(r_e, n_e)):
         if a["block"] != b["block"]:
-            raise SystemExit(f"{out_anm.name}: 零售 entry{i} 的 spec 变了")
+            raise SystemExit(f"{out_anm.name}: 原生 entry{i} 的 spec 变了")
     for i, (a, b) in enumerate(zip(r_s, n_s)):
         if a["block"] != b["block"]:
-            raise SystemExit(f"{out_anm.name}: 零售 script{i} 的 spec 变了")
+            raise SystemExit(f"{out_anm.name}: 原生 script{i} 的 spec 变了")
     with tempfile.TemporaryDirectory(dir=out_anm.parent) as td:
         thanm(["-x", VERSION, out_anm], td, tools)
         bad = [e["name"] for e in r_e if not filecmp.cmp(Path(td) / e["name"], retail_dir / e["name"], shallow=False)]
         if bad:
-            raise SystemExit(f"{out_anm.name}: 零售贴图被改动：{bad[:5]}{' …' if len(bad) > 5 else ''}")
+            raise SystemExit(f"{out_anm.name}: 原生贴图被改动：{bad[:5]}{' …' if len(bad) > 5 else ''}")
     return text, n_e, n_s
 
 

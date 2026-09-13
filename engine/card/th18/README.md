@@ -19,7 +19,7 @@
 | 07 | [`07-registry.md`](07-registry.md) | `zTableCardData[]` 58 项 dump + 字段语义 |
 | 08 | [`08-catalog.md`](08-catalog.md) | 逐卡效果目录（56 张可获得卡）|
 | 09 | [`09-community-crosscheck.md`](09-community-crosscheck.md) | 与 THBWiki 的逐项对账 |
-| 10 | [`10-extensibility-limits.md`](10-extensibility-limits.md) | ★ **新增卡牌的硬边界**：被零售卡集合写死的地方（本篇 12 处 + 11 篇 21 处）|
+| 10 | [`10-extensibility-limits.md`](10-extensibility-limits.md) | ★ **新增卡牌的硬边界**：被原生卡集合写死的地方（本篇 12 处 + 11 篇 21 处）|
 | 11 | [`11-sentinels-56-57.md`](11-sentinels-56-57.md) | ★ **两个哨兵 id 56/57 的真身**：查表回退行 / 存档里的空槽值 / 卡背；含**为什么写死**的全二进制穷举 |
 | — | [`OPEN-questions.md`](OPEN-questions.md) | 开放问题与验法 |
 

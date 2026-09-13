@@ -2,7 +2,7 @@ script script172 {
     // 由 assets/ability/make_ufo_token_art.py 从 TH12 v1.00b `bullet.anm` script179 生成，别手改。
     // 一手：engine/ufo/th12/01-ufo-system.md §9（令牌 = 道具类型 10..15，道具自身 anm 脚本 = 类型 + 0xa5）。
     // 指令逐条照抄，只把 sprite 引用换成 ORDER 名字。
-    // ⚠ 只移植**主循环**那一段：零售的 interruptLabel(3)/(2)/(7) 三段要靠引擎送中断切过去，本卡没有这条通路 ⇒ 不抄。登记见 make_ufo_token_art.py 文件头差异 1。
+    // ⚠ 只移植**主循环**那一段：原生的 interruptLabel(3)/(2)/(7) 三段要靠引擎送中断切过去，本卡没有这条通路 ⇒ 不抄。登记见 make_ufo_token_art.py 文件头差异 1。
     type(3);
     scale(0.0f, 0.0f);
     scaleTime(8, 1, 1.0f, 1.0f);

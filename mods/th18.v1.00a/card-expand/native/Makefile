@@ -41,30 +41,37 @@ voice_ids.h: ../assets/voice/ORDER.txt $(wildcard ../assets/voice/*.wav) ../patc
 	python3 ../assets/build_voice.py
 
 ## anm    —— abcard.anm（../assets/cards/ 新卡图）+ ability.anm（../assets/ability/ 贴图副本 + 特效脚本）
-##           + pl0X.anm（../assets/build_player_anm.py 拷零售 pl0X.anm + 硬校验；不再追加 entry/脚本）→ build/
+##           + pl0X.anm（../assets/build_player_anm.py：pl00/pl01/pl02 原生拷贝 + 硬校验；pl03 追加兽灵脚本，
+##             见 AL59 / pl_anm_ids.h）→ build/
 anm:
 	python3 ../assets/build_abcard.py
+	python3 ../assets/player_art_src/make_player_art.py   # AL62：玩家兽灵弹源图（补默认 + 切到 18/art-src 供用户改）
 	python3 ../assets/build_ability.py
+	python3 ../assets/build_player_anm.py
+
+## pl_anm_ids.h 是生成物：pl02/pl03 追加脚本号（append_shooterset.py 会交叉核对）
+pl_anm_ids.h: ../assets/build_player_anm.py
 	python3 ../assets/build_player_anm.py
 
 ## ecl    —— 开发辅助：st01–st06 空壳（道中删除、boss 血量 ÷100、死时多掉钱）→ build/ecl/，单独一个可勾选的 patch（_devstage）
 ecl:
 	python3 ../assets/ecl/make_dev_ecl.py
 
-## sht    —— 往零售 pl00–03.sht 追加新卡子机的 shooterset → build/sht/；生成 sht_ids.h（APPEND 为空时不产出 .sht）
-sht:
+## sht    —— 往原生 pl00–03.sht 追加新卡子机的 shooterset → build/sht/；生成 sht_ids.h（APPEND 为空时不产出 .sht）
+sht: pl_anm_ids.h
 	python3 ../assets/sht/append_shooterset.py
 
 ## ecl-ufo —— 112 星莲船的 UFO 本体 ECL（**从 TH12 原样移植** 4 色 + 4 个自计时等价改写 + EtBreak）：
-##           把 9 个子程序合进零售 default.ecl → build/ecl/default.ecl（合并后 39 子、二进制往返回验）
+##           把 9 个子程序合进原生 default.ecl → build/ecl/default.ecl（合并后 39 子、二进制往返回验）
 ##           ⚠ **本目标只产出文件，不发布**：要真生效还需 ① release.py 加一行（映射进 patch-step3）
 ##             ② TH12 的 `enemy.anm` script135–138 + `enemy/ufo_anim.png` 移植（否则本体能飘/能飞走/能消弹但没贴图）
 ##           依据与三步原文见 assets/ecl/ufo.ecl.txt 的文件头/文件尾
 ecl-ufo:
 	python3 ../assets/ecl/make_ufo_ecl.py
 
-## sht_ids.h 是生成物（依赖 anm_ids.h：shooter 的 anm 字段指 ability.anm 的脚本）
-sht_ids.h: anm_ids.h ../assets/sht/append_shooterset.py
+## sht_ids.h 是生成物（依赖 anm_ids.h：shooter 的 anm 字段指 ability.anm 的脚本；
+## 依赖 pl_anm_ids.h：pl02/pl03 的 anm 字段指 pl0X.anm 追加脚本，两边交叉核对）
+sht_ids.h: anm_ids.h pl_anm_ids.h ../assets/sht/append_shooterset.py
 	python3 ../assets/sht/append_shooterset.py
 
 ## sht-verify —— 只校验 build/sht/*.sht：解析不变式 + 前 23 组逐字节不变
@@ -73,10 +80,11 @@ sht-verify:
 	python3 ../assets/sht/append_shooterset.py --verify-only
 	python3 ../assets/check_player_anm_bounds.py
 
-## anm-verify —— 只校验：entry 数 / 原贴图逐张一致 / 新 entry 字段 / JSON 索引 / pl0X.anm 与零售逐字节一致 + sprite/script 硬校验
+## anm-verify —— 只校验：entry 数 / 原贴图逐张一致 / 新 entry 字段 / JSON 索引 / pl0X.anm 与原生逐字节一致 + sprite/script 硬校验
 anm-verify:
 	python3 ../assets/build_abcard.py --verify-only
 	python3 ../assets/build_ability.py --verify-only
+	python3 ../assets/check_ability_anm_bounds.py
 	python3 ../assets/build_player_anm.py --verify-only
 
 ## cards-check —— cards.js 静态校验（desc<=6 行 / 每行<64 字节 / 无 ASCII %）。
@@ -214,15 +222,15 @@ dllverify: $(DLL)
 	@awk '/^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]+@[0-9]+/{gsub("@", "", $$2); print $$1, $$2}' th18_card_expand.def | tr -d '\r' | while read sym ordinal; do \
 		grep -Eq "^[[:space:]]+$$ordinal[[:space:]]+0x[0-9a-f]+[[:space:]]+$$sym$$" tests/build/dll-headers.txt || exit 1; \
 	done
-	@test "$$(grep -Ec '^[[:space:]]+[0-9]+[[:space:]]+0x[0-9a-f]+[[:space:]]+[A-Za-z_]' tests/build/dll-headers.txt)" = 27
+	@test "$$(grep -Ec '^[[:space:]]+[0-9]+[[:space:]]+0x[0-9a-f]+[[:space:]]+[A-Za-z_]' tests/build/dll-headers.txt)" = 28
 	@test "$$(grep -c 'DLL Name:' tests/build/dll-headers.txt)" = 3
 	@grep -q 'DLL Name: KERNEL32.dll' tests/build/dll-headers.txt
 	@grep -q 'DLL Name: msvcrt.dll' tests/build/dll-headers.txt
 	@grep -q 'DLL Name: USER32.dll' tests/build/dll-headers.txt
-	@echo "DLL ABI: 27 exports, PE32/i386, dependencies KERNEL32.dll + msvcrt.dll + USER32.dll"
+	@echo "DLL ABI: 28 exports, PE32/i386, dependencies KERNEL32.dll + msvcrt.dll + USER32.dll"
 
 ## dist   —— 三个 patch + DLL + zip；_255（patch-step3）里带重建的 th18/abcard.anm（≈22 MB）、th18/ability.anm（≈1.7 MB）
-##         与四个 th18/pl0X.anm（= 零售文件；build_player_anm.py 只拷不改）
+##         与四个 th18/pl0X.anm（= 原生文件；build_player_anm.py 只拷不改）
 ## dist —— 在 ../dist/ 摆出可直接安装的整套：一个 DLL + patch-step3 / patch-test / patch-devstage
 ##         （dist/ 已 gitignore：DLL 是构建产物，不入库；随时 make dist 重建）
 DIST := ../dist
@@ -233,7 +241,7 @@ dist: anm sht ecl ecl-ufo
 	cp -r ../patch/. $(DIST)/patch-step3/
 	cp build/abcard.anm build/ability.anm build/pl00.anm build/pl01.anm build/pl02.anm build/pl03.anm $(DIST)/patch-step3/th18/
 	for f in build/sht/pl0[0-3].sht; do [ -f "$$f" ] && cp "$$f" $(DIST)/patch-step3/th18/; done; true
-	cp build/ecl/default.ecl $(DIST)/patch-step3/th18/    # 112 的 UFO ECL（TH12 移植；零售 30 子原样保留）
+	cp build/ecl/default.ecl $(DIST)/patch-step3/th18/    # 112 的 UFO ECL（TH12 移植；原版 30 子原样保留）
 	python3 mkfiles.py $(DIST)/patch-step3 >/dev/null
 	cp ../patch-devstage/patch.js $(DIST)/patch-devstage/ && cp build/ecl/st0[1-6].ecl build/ecl/st0[1-6]bs.ecl $(DIST)/patch-devstage/th18/ && python3 mkfiles.py $(DIST)/patch-devstage >/dev/null
 	cp ../DIST-README.txt $(DIST)/README.txt

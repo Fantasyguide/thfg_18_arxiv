@@ -2,7 +2,7 @@
 """把 TH15 章节面板的**原样**拼成一张预览图（给人和文档看，不进游戏）。
 
 为什么要它：TH15 的面板是**美术里印好的标签**（`front.anm` / `front02.png` 六条），
-标签文字不在任何字符串表里，所以「原来长什么样」只能把零售贴图按 TH15 的坐标摆回去看。
+标签文字不在任何字符串表里，所以「原来长什么样」只能把原版贴图按 TH15 的坐标摆回去看。
 坐标与字号全部来自一手（`engine/chapter/th15/01-chapter-and-bonus.md`）：
 
     面板父 VM   pos(448,402)、resolutionMode(2)（640×480 下 ×0.5）
@@ -15,7 +15,7 @@
     标题        面板出现时另用 font 4（16 px）在 (224,200) **居中**画一个整数（章号）
 
 产物：`local/_scratch/th15_chapter_ui_preview.png`（640×480）与 `…_2x.png`（1280×960，看得清标签）。
-⚠️ 零售贴图只在 `local/`，所以产物也落在 `local/`（gitignored），不进仓库。
+⚠️ 原版贴图只在 `local/`，所以产物也落在 `local/`（gitignored），不进仓库。
 """
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
@@ -91,7 +91,7 @@ def compose(zoom):
 
 def main():
     if not SRC.is_file():
-        raise SystemExit(f"缺零售贴图 {SRC}\n（先 python3 tooling/thtk/unpack.py th15.v1.00b）")
+        raise SystemExit(f"缺原版贴图 {SRC}\n（先 python3 tooling/thtk/unpack.py th15.v1.00b）")
     OUT.mkdir(parents=True, exist_ok=True)
     for zoom, name in ((1, "th15_chapter_ui_preview.png"),
                        (2, "th15_chapter_ui_preview_2x.png")):

@@ -6,7 +6,7 @@
  * ★ 但每关开始引擎会对卡组里每张卡再调一次 ctor（实跑：买齐后每关又触发一次，共 6 次）——用 ce_fresh_acquire 挡掉。
  *
  * 演出音乐：ROYAL_RAGTIME 从第 0 帧起（见 ctor 里的注释）。
- * 命 / bomb 照零售 CardLife / CardBomb 的 dtor：先把上限 +1（钳 7），再调引擎的加法（钳上限、放音效、起特效）。
+ * 命 / bomb 照原生 CardLife / CardBomb 的 dtor：先把上限 +1（钳 7），再调引擎的加法（钳上限、放音效、起特效）。
  * 返回 0：黑桃是正常卡，要入卡组。 */
 #include "royal.h"
 

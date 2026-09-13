@@ -1,6 +1,6 @@
 """sound_sites.py —— TH18 音效表扩容的站点表与扫描器。
 
-四张零售表要整体搬进 codecave，`.text` 里 52 处引用它们。本模块只回答两件事：
+四张原生表要整体搬进 codecave，`.text` 里 52 处引用它们。本模块只回答两件事：
   ① 这 52 处每一处在 exe 里长什么样、该换成什么（scan）
   ② 除了这 52 处，还有没有别的地方撞上这些地址（audit）
 
@@ -20,7 +20,7 @@ from x86imm import _decode, classify, UnknownEncoding, Ambiguous   # noqa: F401
 
 IMAGEBASE = 0x400000
 
-# ---- 零售形状（一手：engine/_shared/th18-sound-table.md）--------------------
+# ---- 原生形状（一手：engine/_shared/th18-sound-table.md）--------------------
 CFG_BASE   = 0x4c9b80
 CFG_ROW    = 0x14
 CFG_ROWS   = 84
@@ -60,7 +60,7 @@ CAVE_SIZE = {
     CAVE_BLOBS: NAMES_N_N * 4,                 # 0x1a0
 }
 
-# 完整性审计要扫的四段零售地址（半开区间，尾界本身也要扫到）
+# 完整性审计要扫的四段原生地址（半开区间，尾界本身也要扫到）
 TABLE_RANGES = {
     CAVE_CFG:   (CFG_BASE,   CFG_END + 1),
     CAVE_NAMES: (NAMES_BASE, NAMES_BASE + (NAMES_N + 1) * 4),
@@ -119,9 +119,9 @@ SND_REFS = (
     (0x47791f, CAVE_BLOBS, 0x0, "0x4776f0 清 blob"),
     (0x477956, CAVE_BLOBS, 0x0, "0x4776f0 取 blob"),
     (0x477970, CAVE_BLOBS, 0x0, "0x4776f0 清 blob"),
-    # ★ 释放尾界刻意只到零售 72：语音 blob 来自 thcrap 的堆，交给游戏的 free 会崩。
+    # ★ 释放尾界刻意只到原生 72：语音 blob 来自 thcrap 的堆，交给游戏的 free 会崩。
     #   进程此刻正在退出，不释放到此为止。见 spec §3.3 E。
-    (0x4713d8, CAVE_BLOBS, BLOB_N * 4, "WinMain 释放尾界（★ 只到零售 72）"),
+    (0x4713d8, CAVE_BLOBS, BLOB_N * 4, "WinMain 释放尾界（★ 只到原生 72）"),
     # ---- wav 名表：4 引用（界是计数，见 SND_UNTOUCHED）----
     (0x4766d3, CAVE_NAMES, 0x0, "init 加载取名"),
     (0x47671d, CAVE_NAMES, 0x0, "init 错误路径取名"),
@@ -138,7 +138,7 @@ SND_COUNTS = (
 
 # ---- 1 处刻意不改 ---------------------------------------------------------
 SND_UNTOUCHED = (
-    (0x4767d8, NAMES_N, "预加载 wav 数：仍只从 dat 读零售 72 个，语音 blob 由 DLL 填"),
+    (0x4767d8, NAMES_N, "预加载 wav 数：仍只从 dat 读原生 72 个，语音 blob 由 DLL 填"),
 )
 
 
@@ -213,7 +213,7 @@ def scan(text, text_va):
 
 
 def audit(text, text_va, covered):
-    """扫四段零售地址区间里所有 4 字节出现处，列出不在已覆盖站点内的。
+    """扫四段原生地址区间里所有 4 字节出现处，列出不在已覆盖站点内的。
 
     这些**不该被改** —— 要么是同值的热全局（`0x4ca214` 本身就是一个被
     `0x401e0e` / `0x474b45` 读写的普通 int 全局），要么是别的表。

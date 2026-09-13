@@ -5,7 +5,7 @@
 
   blue_eyes/DRAGON.png  256×256 RGBA：从 _src/BLUE_EYES_TOPDOWN.png（用户原创，黑底俯视图，头朝上）抠掉黑底，
                         等比缩到 256 高、居中（脚本里再 scale 到场上尺寸）
-  光束不在这里：用零售魔理沙的 Master Spark 贴图（pl01b / pl01b2，ORDER.txt 里 `local/` 源），脚本 79–85。
+  光束不在这里：用原生魔理沙的 Master Spark 贴图（pl01b / pl01b2，ORDER.txt 里 `local/` 源），脚本 79–85。
 
 抠图：黑底纯黑（噪声 ≤ 8）。从四角泛洪（阈值 24）得到背景掩码 → 掩码外扩 2 px 的环里按亮度做 alpha 斜坡（8..56），
 龙体内部的暗部（不与背景连通）保持不透明。

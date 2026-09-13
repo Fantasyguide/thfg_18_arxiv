@@ -1,6 +1,6 @@
 script script113 {
     // 季节（id 119）的季节子机本体 —— 由 `Player__allocate_option` 起（脚本号当它最后一个栈参）。
-    // 骨架照零售子机脚本 script2 / script16 与本 mod 的 script102（豌豆射手）：
+    // 骨架照原生子机脚本 script2 / script16 与本 mod 的 script102（豌豆射手）：
     // interruptLabel(2) 出场、(3) 进店收起、(1) 销毁 —— 这三个都是引擎发的，我们不自己发。
     // 贴图是实心的，落定后切回普通混合（照 script2），只留很慢的呼吸。
 -1:

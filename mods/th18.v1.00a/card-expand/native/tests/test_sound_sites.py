@@ -46,14 +46,14 @@ check(S.CAVE_SIZE[S.CAVE_SLOTS] == 0xae0, "slot cave 尺寸应 0xae0，实际 0x
 check(S.CAVE_SIZE[S.CAVE_NAMES] == 0x1a4, "names cave 尺寸应 0x1a4")
 check(S.CAVE_SIZE[S.CAVE_BLOBS] == 0x1a0, "blob cave 尺寸应 0x1a0")
 
-# ⑥ 零售尾界的算术必须与 exe 里的立即数一致
+# ⑥ 原生尾界的算术必须与 exe 里的立即数一致
 check(S.CFG_END == 0x4ca214, "cfg 尾界（+4 游标）应 0x4ca214，实际 0x%x" % S.CFG_END)
 check(S.SLOT_END == 0x56cfe4, "slot 尾界应 0x56cfe4")
 check(S.BLOB_END == 0x56d104, "blob 尾界应 0x56d104")
 for va, want in ((0x4766ef, S.CFG_END), (0x444dbf, S.SLOT_END),
                  (0x4713ad, S.SLOT_END), (0x45a4c5, S.SLOT_END + 8), (0x4713d8, S.BLOB_END)):
     got = [r["old"] for r in rec if r["va"] == va][0]
-    check(got == want, "0x%06x 的零售尾界是 0x%x，算出来的是 0x%x" % (va, got, want))
+    check(got == want, "0x%06x 的原生尾界是 0x%x，算出来的是 0x%x" % (va, got, want))
 
 # ⑦ 完整性审计：未覆盖的必须全在白名单里
 covered = set()

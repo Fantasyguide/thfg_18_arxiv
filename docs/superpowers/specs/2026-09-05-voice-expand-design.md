@@ -102,7 +102,7 @@ ce_play_sound(id, x)
 `0x45a4a0` 遍历 slot 数组调 Play（vt`+0x30`）—— **设备丢失 / 暂停后的统一重播**。
 `0x444d80` 遍历 slot 数组调 Stop —— stop-all。新槽住在同一数组里，这两条路自动照顾到。
 
-零售 71 个 wav 全是 PCM（`fmt` tag 1，chunk 16 字节），44.1k/22.05k × 8/16 bit × 单/双声道混用，
+原生 71 个 wav 全是 PCM（`fmt` tag 1，chunk 16 字节），44.1k/22.05k × 8/16 bit × 单/双声道混用，
 共 5.8 MB —— **引擎的 RIFF 解析不挑格式**。
 
 ## 2. 方案选择
@@ -116,14 +116,14 @@ ce_play_sound(id, x)
 - **C 出局**：`+0x2388` 起被占，slot 数组原地最多只能长 `0x120 / 0x18 = 12` 槽，顶不住 10–30 条语音。
 - **A 出局**：省下的 15 个站点要拿一坨自维护的 DirectSound COM 代码 + 设备丢失处理来换。
 - **B 选定**：多出的 15 个站点全是同一种机械改写（一个 dword 立即数），可被 `make check` 的站点扫描覆盖；
-  换来的是**新语音与零售 SE 在引擎眼里完全同构** —— RIFF 解析、buffer 去重、stop-all、设备丢失重播、
+  换来的是**新语音与原生 SE 在引擎眼里完全同构** —— RIFF 解析、buffer 去重、stop-all、设备丢失重播、
   音量滑条，一行都不用自己写。
 
 ## 3. 设计
 
 ### 3.1 新表形状（N = 32）
 
-| 表 | 零售 | 新 | codecave 名 | 字节 |
+| 表 | 原生 | 新 | codecave 名 | 字节 |
 | --- | --- | --- | --- | --- |
 | cfg | 84 行 × 0x14 | **116 行** | `ce_snd_cfg` | `0x910` |
 | slot | 84 × 0x18 | **116** | `ce_snd_slots` | `0xae0` |
@@ -191,7 +191,7 @@ ce_play_sound(id, x)
 `0x477956` `0x477970`（`0x4776f0` 内）→ `<ce_snd_blobs>`。
 
 尾界 `0x4713d8` `CMP ESI,0x56d104` → **`<ce_snd_blobs>+72*4`，刻意只扩基址不扩界**：
-WinMain 的释放循环因此只回收零售那 72 个 blob，语音的 32 个谁都不释放。它们的字节来自
+WinMain 的释放循环因此只回收原生那 72 个 blob，语音的 32 个谁都不释放。它们的字节来自
 thcrap 的 `stack_game_file_resolve`（thcrap 的堆），而引擎用 `0x491a3f`（游戏的 free）——
 **跨堆释放必崩**。进程此刻正在退出，这个「泄漏」到此为止，换掉了一整类崩溃。
 
@@ -199,7 +199,7 @@ thcrap 的 `stack_game_file_resolve`（thcrap 的堆），而引擎用 `0x491a3f
 
 `0x4766d3` `0x47671d` `0x4767bc` `0x476803` → `<ce_snd_names>`。
 
-`0x4767d8` `CMP ESI,0x48` **保持 0x48 不变** —— 预加载线程仍只从 dat 读零售 72 个；
+`0x4767d8` `CMP ESI,0x48` **保持 0x48 不变** —— 预加载线程仍只从 dat 读原生 72 个；
 新音的 blob 由 DLL 填。改了它会让引擎去 dat 里找不存在的语音文件而走错误路径。
 
 ### 3.4 填表时序（★ 走 `*_patch_init`，不走 `*_mod_init`）
@@ -214,7 +214,7 @@ card-expand 的卡表搬迁（`th18_card_table_patch_init`）就是这么做的�
 
 | 时点 | 谁 | 做什么 |
 | --- | --- | --- |
-| `codecaves_apply` 末尾 | **patch asm** `ce_snd_patch_init` | ① 零售 84 行 cfg → `ce_snd_cfg`（`rep movsd`，从模块基址 + RVA 取）；② 零售 72 个 wav 名指针 + NULL → `ce_snd_names`；③ 32 个新行写**结构骨架**：`+0 = 84+k`、`+4 = 0`、`+8 = 0`、`+0xc = 0`、`+0x10 = 0` |
+| `codecaves_apply` 末尾 | **patch asm** `ce_snd_patch_init` | ① 原生 84 行 cfg → `ce_snd_cfg`（`rep movsd`，从模块基址 + RVA 取）；② 原生 72 个 wav 名指针 + NULL → `ce_snd_names`；③ 32 个新行写**结构骨架**：`+0 = 84+k`、`+4 = 0`、`+8 = 0`、`+0xc = 0`、`+0x10 = 0` |
 | `binhacks_apply` | thcrap | 打 51 处 binhack |
 | 断点 `ce_snd_gate` @ `0x476410` 入口 | **DLL** | 按 `voice.js`：每条已登记语音 k → `blob[72+k] = 读进内存的 RIFF 字节`、`cfg[84+k].+4 = 72+k`、`.+8 = 声像 \| 音量<<16`、`.+0x10 = 1`；`names[72+k] = "ce_voice_<NAME>"`；自检后放行 |
 | 紧接着（同一次调用） | 引擎 | `0x476410` 循环 1 初始化 116 个 slot、循环 2 逐行建 buffer |
@@ -230,10 +230,10 @@ card-expand 的卡表搬迁（`th18_card_table_patch_init`）就是这么做的�
 | **I1** | 116 行的 `+0` 必须**两两不同**且恰好覆盖 `0..0x73` | 循环 1 的扫描 `CMP [EAX],EDX / ADD EAX,0x14 / JNZ` **没有上界** —— 找不到就一直往后扫，直接跑飞 |
 | **I2** | 116 行的 `+4` 指向的 blob 槽**都不能是 NULL** | `0x4776f0` 在 blob 为 NULL 时进 `0x477768` 的 `Sleep(10)` 等待循环，只有 `[0x5704a4] == 2` 才脱身 —— 正常流程里等不到，**挂死** |
 
-所以 `ce_snd_patch_init` 给新行写的骨架是 `+4 = 0`（指向零售 wav 0 `se_plst00`），
-**没被 `voice.js` 登记的新 id 只是重复一个零售音，既不 NULL 也不越界**；DLL 只改登记过的那几行。
+所以 `ce_snd_patch_init` 给新行写的骨架是 `+4 = 0`（指向原生 wav 0 `se_plst00`），
+**没被 `voice.js` 登记的新 id 只是重复一个原生音，既不 NULL 也不越界**；DLL 只改登记过的那几行。
 
-🟡 `+0x10` 的语义未验：零售里为 0 的六个 id 是 `0x00` `0x01` `0x07` `0x08` `0x09` `0x0a`
+🟡 `+0x10` 的语义未验：原生里为 0 的六个 id 是 `0x00` `0x01` `0x07` `0x08` `0x09` `0x0a`
 （`se_plst00`×2 / `se_ok00`×2 / `se_cancel00` / `se_select00`，全是菜单音），其余为 1。新行取 1（跟游戏内 SE 一致）。
 
 🟡 `+0xc` 只有 id `0x14`（`se_lazer02`）与 `0x37`（`se_ch03`）为 1 —— 两个持续音，大概率是循环标志。
@@ -259,7 +259,7 @@ assets/voice/
 { "SPADE_10_ACTIVATE": { "wav": "spade10_act", "volume": 100, "pan": 0 } }
 ```
 
-`volume` 0–100、`pan` 为 DirectSound 单位（零售用到 `0xfe0c` = −500 一档）。
+`volume` 0–100、`pan` 为 DirectSound 单位（原生用到 `0xfe0c` = −500 一档）。
 
 ### 3.6 SDK 接口
 
@@ -273,7 +273,7 @@ ce_play_sound(CE_VOICE_SPADE_10_ACTIVATE, player_x());
 ## 4. 不做什么（YAGNI）
 
 - **不做语音独占通道 / 打断 / 队列**（用户 2026-09-05 明确否决）—— 语音就是可叠加的 SE。
-- **不做按需加载 / 卸载**：32 条 × 2 秒 × 44.1 kHz × 16 bit 单声道 ≈ 5.6 MB，与零售 5.8 MB 同量级，全量预加载。
+- **不做按需加载 / 卸载**：32 条 × 2 秒 × 44.1 kHz × 16 bit 单声道 ≈ 5.6 MB，与原生 5.8 MB 同量级，全量预加载。
 - **不做独立语音音量**：跟随引擎 SE 音量（`+0x5730`）。
 - **不改 `0x4767d8`**：语音不走 dat。
 - **不动图鉴 / 存档 / replay 格式**：`play_sound` 不碰 RNG，replay 决定性不受影响。
@@ -285,10 +285,10 @@ ce_play_sound(CE_VOICE_SPADE_10_ACTIVATE, player_x());
 | --- | --- | --- |
 | R1 | `ce_snd_patch_init` 的时点（早于 binhack、早于游戏入口） | 已有一手（`binhack.cpp:1724` / `runconfig.cpp:655-656`）+ card-expand 卡表现网验证；再在 `ce_snd_gate` 里回读 cave 首行确认拷贝生效 |
 | R2 | codecave 内存是否可写、地址是否在 apply 时已定 | `ce_snd_gate` 打印四块 cave 的地址与首尾字节；DLL 用 `func_get("codecave:ce_snd_cfg")` 取址 |
-| R3 | 52 处站点是否漏 / 是否有假阳性 | `sites.py check` 加审计：全 `.text` 重扫 cfg / wav 名 / slot / blob 四个零售地址区间，未被覆盖的必须逐条列出并人工确认 |
+| R3 | 52 处站点是否漏 / 是否有假阳性 | `sites.py check` 加审计：全 `.text` 重扫 cfg / wav 名 / slot / blob 四个原生地址区间，未被覆盖的必须逐条列出并人工确认 |
 | **R4** | **I1 被违反**（新行 `+0` 重号或缺号） | `ce_snd_gate` 里遍历 116 行，断言 `+0` 是 `0..0x73` 的置换；不满足直接 `FAIL:` 并还原 |
 | **R5** | **I2 被违反**（某行 blob 为 NULL） | 同上，断言 116 行的 `+4` 对应的 `blob[]` 全非 NULL |
-| R6 | 语音 wav 格式是否被 `0x4776f0` 接受 | 先拿一个零售 wav 的字节当语音跑通，再换真语音 |
+| R6 | 语音 wav 格式是否被 `0x4776f0` 接受 | 先拿一个原生 wav 的字节当语音跑通，再换真语音 |
 | R7 | 硬编码槽 20（`0x45ff38`）改写后是否仍指 `se_lazer02` | 日志打印 `slot[20].+8` 指向的行的 `+4`，应为 `0x26` |
 | R8 | 新 slot 的 `+4` 未被初始化成 −1（`0x401139` 界没改对） | `ce_snd_gate` 之后的检查点里断言 slot[84..115] 的 `+4` 全为 `0xFFFFFFFF` |
 | R9 | 12 槽播放队列溢出 | 同帧最多 12 个**不同** id；语音叠加数远小于 12 |

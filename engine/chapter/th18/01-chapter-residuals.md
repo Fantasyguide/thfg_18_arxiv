@@ -3,12 +3,12 @@
 > **版本**：TH18 v1.00a（`th18.exe`，md5 `9969cac756098c1da05a81de45437a70`，imagebase `0x400000`）。
 > 本文裸地址默认属该版本；引用其他版本须写成 `th15:0x…`。
 > **方法**：一手反汇编 `local/_scratch/th18_full.asm` + pyghidra 反编译 + ExpHP `th-re-data`；
-> ECL 侧用 `thecl -d 18` 解零售 `st*.ecl`。
+> ECL 侧用 `thecl -d 18` 解原生 `st*.ecl`。
 > **可信度**：524 链路与脚本用法 ✅；「没有结算端」🟡（是「没找到」，不是「证明不存在」）。
 
 ## 0. 一句话结论
 
-TH18 **仍然保留 TH15 的 ECL opcode 524 `setChapter`**，而且**零售脚本还在调它**——
+TH18 **仍然保留 TH15 的 ECL opcode 524 `setChapter`**，而且**原版脚本还在调它**——
 但引擎只剩「记下章号」这一半：没有 TH15 的延迟标志位、没有每章结算、没有章节奖。
 配套的 `GRAZE_IN_CHAPTER` 也只写不读。**这套东西在 TH18 是死代码，正是 TH15 章节系统被阉割后的残骸。**
 
@@ -67,7 +67,7 @@ TH18 同偏移（`inner` 基址 `0x4cccdc`）：
 见 `docs/superpowers/specs/2026-09-09-lolk-chapter-design.md` §3.2）：**原生没有在数**。
 跨版本台账见 [`_shared/version-residuals.md`](../../_shared/version-residuals.md)。
 
-## 3. 零售脚本还在调 524 ✅
+## 3. 原生脚本还在调 524 ✅
 
 `thecl -d 18` 解 `local/th18.v1.00a/dat/*.ecl`（`ins_524` = opcode 524）：
 

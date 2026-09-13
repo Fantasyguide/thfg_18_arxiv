@@ -35,7 +35,7 @@ EXE_MD5 = "9969cac756098c1da05a81de45437a70"
 # ---- 死绑量（出处：engine/card/th18/11-sentinels-56-57.md 的一手穷举）----
 TABLE_BASE = 0x4c53c0     # zTableCardData[]
 ROW_SIZE   = 0x34
-ROW_COUNT  = 58           # 零售行数
+ROW_COUNT  = 58           # 原生行数
 NULL_ROW   = 56           # 查不到时的回退行 = 行 56 ("NULL")
 TABLE_END  = TABLE_BASE + ROW_COUNT * ROW_SIZE        # 0x4c5f88
 FALLBACK   = TABLE_BASE + NULL_ROW  * ROW_SIZE        # 0x4c5f20
@@ -54,7 +54,7 @@ JT_CODECAVE = "th18_card_jumptable"
 MGR_SIZE      = 0xd70     # operator_new / memset / sized delete 的实参
 OWNED_OLD     = 0xc84     # 「本局是否拥有」int[56]，止于 0xd64，对象止于 0xd70
 OWNED_NEW     = 0xd70     # 搬到对象尾部
-SHOP_RETAIL   = 56        # 零售商店三处循环只看 id 0..55（止于 +0xd64）。现在上界 = rows：
+SHOP_RETAIL   = 56        # 原生商店三处循环只看 id 0..55（止于 +0xd64）。现在上界 = rows：
                           #   幻影 id 查表回落到 NULL 行 56，装载器把 cave 里 56/57 两行的 +0x14 写成 6，
                           #   三个循环（≠0&&≠6 / ==0 / dmode 1-5）就都过不了。AUDIT §N1。
 # 测试钩子（只进 patch-test）
@@ -79,14 +79,14 @@ ORDER_COUNT = 57
 CE_MAX_ROWS = 255           # 与 sites_gen.h 的 CE_MAX_ROWS 同义
 ORDER_END   = ORDER_TABLE + ORDER_COUNT * 4          # 0x4b36e4，只有 0x414b54 的 cmp 用它当尾界
 ORDER_RVA   = ORDER_TABLE - 0x400000
-ORDER_CAVE  = "th18_card_order"                      # 255 dword；DLL 重排：[零售 0..55, 新 id…, 56, 57 填充]
+ORDER_CAVE  = "th18_card_order"                      # 255 dword；DLL 重排：[原生 0..55, 新 id…, 56, 57 填充]
 ORDER_EXCLUDE = {0x4337f7}                           # ★ 同值不同表：mov eax,[eax*4+0x4b36e4]，不许改
 # --- 商店随机池：pick_weighted_random_offer 0x416f50 的 0x8c0 栈缓冲 → codecave ---
 # 那个缓冲在 ebp-0x8c4，长 0x8c0（560 dword），**末尾紧贴 ebp-0x4 的栈金丝雀**，
 # 填池子的两处写全程无越界检查 ⇒ 超过 560 份直接踩烂金丝雀与返回地址（AUDIT §AH）。
 # 搬到 codecave 后份数上限只受 cave 大小限制；栈帧一个字节都不动（sub esp 保持 0x8d4）。
 POOL_CAVE   = "th18_card_pool"
-POOL_SLOTS  = 8192          # dword；零售最坏 362 份，255 张卡 × 权重 27 也放得下
+POOL_SLOTS  = 8192          # dword；原生最坏 362 份，255 张卡 × 权重 27 也放得下
 POOL_DISP   = 0xfffff73c    # 缓冲基址在栈上的位移（= -0x8c4），9 处站点都以它为基
 POOL_SITES  = (             # (地址, 原字节, 相对 cave 基址的偏移)  —— 全部原地等长改写
     (0x416f6e, "68c0080000", None),   # push 0x8c0            → push <cave 字节数>（memset 大小）
@@ -309,7 +309,7 @@ def emit(sites, rows):
 
 
 def emit_codecaves(rows, alloc):
-    """新表 codecave + 一段把零售 58 行**运行时**拷进去的初始化代码。
+    """新表 codecave + 一段把原生 58 行**运行时**拷进去的初始化代码。
 
     ★ 为什么不把表的内容直接写进 patch：那是 ZUN 的数据，仓库不留任何版权字节。
       改成开机时从**用户自己那份 exe**里 memcpy 过来，patch 里只有源码和地址。
@@ -332,7 +332,7 @@ def emit_codecaves(rows, alloc):
         "fc",                                        # cld
         "60",                                        # pushad
         "bf<codecave:%s>" % CODECAVE,                # mov edi, 新表
-        "be<Rx%x>" % TABLE_RVA,                      # mov esi, 零售表(相对模块基址)
+        "be<Rx%x>" % TABLE_RVA,                      # mov esi, 原生表(相对模块基址)
         "b9%s" % struct.pack("<I", copy_dwords).hex(),   # mov ecx, 754
         "f3a5",                                      # rep movsd
     ]
@@ -361,7 +361,7 @@ def emit_codecaves(rows, alloc):
         # ⚠️ 这一段**必须**有保险：跳转表若全零，任何一次 allocate 都是 jmp [0] → 崩。
         code += [
             "bf<codecave:%s>" % JT_CODECAVE,                 # mov edi, 新跳转表
-            "be<Rx%x>" % JT_RVA,                             # mov esi, 零售跳转表
+            "be<Rx%x>" % JT_RVA,                             # mov esi, 原生跳转表
             "b9%s" % struct.pack("<I", JT_COUNT).hex(),      # mov ecx, 57
             "f3a5",                                          # rep movsd
             "b8<Rx%x>" % CASE56_RVA,                         # mov eax, case56
@@ -371,11 +371,11 @@ def emit_codecaves(rows, alloc):
         out[JT_CODECAVE] = {"size": "0x%x" % (rows * 4), "access": "RW",
                             "title": "allocate_new_card 跳转表搬迁目标（%d 项）" % rows}
         # 战线 D：影子数组。thcrap 把只给 size 的 codecave 清零；内容由 DLL 在
-        # BP_ce_save_loaded 里填（零售存档 + side-car）。没有 DLL = 全部「未获取」。
+        # BP_ce_save_loaded 里填（原生存档 + side-car）。没有 DLL = 全部「未获取」。
         out[UNLOCKED_CAVE] = {"size": "0x100", "access": "RW",
                               "title": "unlocked_cards 影子数组（256 字节，下标 = card id；DLL 填）"}
         # 战线 E：显示顺序表。保险：57 项原样拷 + 其余填 57（BACK：编成里不可见、图鉴按条目数不会走到）。
-        # DLL 权威：[零售 0..55, 新 id…, 56, 57…] 并把图鉴条目数写成 56+N。
+        # DLL 权威：[原生 0..55, 新 id…, 56, 57…] 并把图鉴条目数写成 56+N。
         code += [
             "bf<codecave:%s>" % ORDER_CAVE,
             "be<Rx%x>" % ORDER_RVA,
@@ -389,7 +389,7 @@ def emit_codecaves(rows, alloc):
                            "title": "显示顺序表搬迁目标（%d 项；DLL 重排并追加新卡）" % rows}
     code += ["61", "c3"]                             # popad ; ret
     out[CAVE_INIT] = {"code": "".join(code), "export": True, "access": "RX",
-                      "title": "开机把零售表（与跳转表）拷进 codecave；BP_ce_gate 完成运行时提交与回读"}
+                      "title": "开机把原生表（与跳转表）拷进 codecave；BP_ce_gate 完成运行时提交与回读"}
     return out
 
 
@@ -585,9 +585,9 @@ def emit_unlock_breakpoints(text, text_va):
         return name, {"addr": "0x%06x" % va, "cavesize": n, "expected": raw.hex(), "title": title}
     return dict([
         bp("ce_unlock_write", UNLOCK_WRITE, 8,
-           "mark_obtained 的写 → BP_ce_unlock_write：影子[id]=1；id<57 放行原指令写零售存档，否则写 side-car"),
+           "mark_obtained 的写 → BP_ce_unlock_write：影子[id]=1；id<57 放行原指令写原生存档，否则写 side-car"),
         bp("ce_save_loaded", SAVE_LOADED, 6,
-           "ScoreFile__load 尾段 → BP_ce_save_loaded：影子[0..56] ← 零售存档，[57..] ← side-car"),
+           "ScoreFile__load 尾段 → BP_ce_save_loaded：影子[0..56] ← 原生存档，[57..] ← side-car"),
         bp("ce_unlock_all", UNLOCK_ALL, 6,
            "ScoreFile__unlock_all → BP_ce_unlock_all：影子[0..55]=1（镜像紧接着的 memset）"),
     ])
@@ -658,7 +658,7 @@ def _pool_header_row(va, exp, off):
 def emit_pool_codecave():
     """商店随机池的搬迁目标。只给 size ⇒ thcrap 清零（同 th18_card_unlocked）。"""
     return {POOL_CAVE: {"size": "0x%x" % (POOL_SLOTS * 4), "access": "RW",
-                        "title": "商店随机池搬迁目标（%d dword；零售是 ebp-0x8c4 的 560 格栈缓冲）" % POOL_SLOTS}}
+                        "title": "商店随机池搬迁目标（%d dword；原生是 ebp-0x8c4 的 560 格栈缓冲）" % POOL_SLOTS}}
 
 
 def emit_pool_binhacks(text, text_va):
@@ -816,6 +816,14 @@ SDK_SITES = [
      "edx = 本帧 fire-time set index（0..9 主炮；eax = 火力档），ebp-8 暂存同一 set index，随后 0x45ec69 会打包进 bullet+0xac。\n"
      "handler 沿卡链表问 on_shot_set_index(card, eax)：返回 >=0 时改写 edx 与 [ebp-8] 为咆哮组 base+power，放行原指令；"
      "不咆哮/无卡时返回 -1，原版主炮 0..9 一个字节都不动。"),
+    ("ce_option_shot_gate", 0x40a9c3, 6, "8b550883ec0c",
+     "Player__tick_shooters_for_ability_card 0x40a9c0 的序言后 `mov edx,[ebp+8]; sub esp,0xc`（两条完整指令，"
+     "6 字节，无相对寻址 / 无窗内跳转目标）。选 6 字节是因为 thcrap 的 sourcecave 下限是 5 字节：上一版只取 "
+     "3 字节的 `mov edx,[ebp+8]`，thcrap 直接以 `cavesize too small` 拒绝装载，SDK 门回读失败后触发 "
+     "`restore_alloc_bound` 降级路径 —— 存档/编成里已有新 id 时会踩出「卡 id 变垃圾 / HUD 槽消失」。"
+     "**不能用 `0x40a9cb` 的 6 字节 `je`**：thcrap 的 cave_fix 不重定位 `0f 84 rel32`，复制进 cave 后会跳飞。"
+     "handler 返回 1 = 执行完整两条原指令；返回 0 且 retaddr=0x40aa9e 才跳过本组（`mov esp,ebp` 重设栈顶）。"
+     "⚠ 当前 C 侧 `CE_OPTION_SHOT_GATE_ENABLE` 默认 0（不启用），只为让门回读通过并保留实现。"),
     # ★ 2026-09-10（天空璋卡）：引擎自己算完一次**子弹擦弹**之后那一条。ESI = 刚被擦到的弹
     # （0x42496f 已判过 `[esi+0x20] & 4` 没擦过、0x424984 才置位），位置在 esi+0x638。
     # 卡用它把季节点撒在**弹的位置**上（此前只能扫弹池猜「最近的已擦弹」，会撒到自机背后）。
@@ -840,6 +848,9 @@ def emit_sdk_breakpoints(text, text_va):
         raw = text[va - text_va:va - text_va + n]
         if raw.hex() != exp:
             raise ShapeError("%s @ 0x%06x：exe 里是 %s，表里写的是 %s" % (name, va, raw.hex(), exp))
+        if n < 5:
+            raise ShapeError("%s @ 0x%06x：cavesize=%d < thcrap 下限 5（短于 5 字节的站点会被拒绝装载，"
+                             "SDK 门回读失败后走降级路径）" % (name, va, n))
         out[name] = {"addr": "0x%06x" % va, "cavesize": n, "expected": exp, "title": "行为 SDK → BP_%s：%s" % (name, title)}
     return out
 
@@ -948,6 +959,8 @@ def verify_patch(path, text, text_va):
             bad.append("断点 %s：exe 里是 %s" % (name, text[off:off + len(exp)].hex()))
         if bp["cavesize"] != len(exp):
             bad.append("断点 %s：cavesize %d != expected 长度 %d" % (name, bp["cavesize"], len(exp)))
+        if int(bp["cavesize"]) < 5:
+            bad.append("断点 %s：cavesize %d < thcrap 下限 5（会被拒绝装载）" % (name, int(bp["cavesize"])))
     for name, bh in doc["binhacks"].items():
         if name.startswith("unlock_"):
             bad += verify_unlock_binhack(name, bh, text, text_va)
@@ -1122,7 +1135,7 @@ def emit_header(sites, unlock_reads, order_sites, menu_binhacks):
               "#define CE_BP_UNLOCK_ALL_RVA   0x%06x" % (UNLOCK_ALL - 0x400000),
               "#define CE_ABILITY_TXT_PTR_RVA 0x%06x" % (ABILITY_TXT_PTR - 0x400000),
               "#define CE_TEXT_ENTRY     0x%x" % TEXT_ENTRY,
-              "#define CE_TEXT_ENTRIES   57      /* 零售 zAbilityText 装 57 张；第 57 张的位置已是尾部字段 */",
+              "#define CE_TEXT_ENTRIES   57      /* 原生 zAbilityText 装 57 张；第 57 张的位置已是尾部字段 */",
               "#define CE_BP_TEXT_NAME_RVA   0x%06x" % (TEXT_SITES[0][1] - 0x400000),
               "#define CE_BP_TEXT_DESC_RVA   0x%06x" % (TEXT_SITES[1][1] - 0x400000),
               "#define CE_BP_TEXT_NOTIFY_RVA 0x%06x" % (TEXT_SITES[2][1] - 0x400000),
@@ -1137,6 +1150,7 @@ def emit_header(sites, unlock_reads, order_sites, menu_binhacks):
               "#define CE_BP_SHOT_DAMAGE_RVA 0x%06x" % (_sdk_rva("ce_shot_damage") - 0x400000),
               "#define CE_BP_BOMB_GATE_RVA 0x%06x" % (_sdk_rva("ce_bomb_gate") - 0x400000),
               "#define CE_BP_SHOT_SET_INDEX_RVA 0x%06x" % (_sdk_rva("ce_shot_set_index") - 0x400000),
+              "#define CE_BP_OPTION_SHOT_GATE_RVA 0x%06x" % (_sdk_rva("ce_option_shot_gate") - 0x400000),
               "#define CE_BP_ENEMY_DEATH_RVA 0x%06x" % (_sdk_rva("ce_enemy_death") - 0x400000),
               "#define CE_BP_ENEMY_SHOT_SLOT_RVA 0x%06x" % (_sdk_rva("ce_enemy_shot_slot") - 0x400000),
               "#define CE_BP_ITEM_SCORE_BELOW_RVA 0x%06x" % (_sdk_rva("ce_item_score_below") - 0x400000),
@@ -1182,13 +1196,13 @@ def emit_header(sites, unlock_reads, order_sites, menu_binhacks):
     lines += ["};", "#define CE_NUNLOCK (sizeof(CE_UNLOCK)/sizeof(CE_UNLOCK[0]))", ""]
     lines += [
         "/* ---- 音效表扩容（sound_sites.py）---- */",
-        "#define CE_SND_CFG_ROWS    %d      /* 零售 84 行 */" % SND.CFG_ROWS,
+        "#define CE_SND_CFG_ROWS    %d      /* 原生 84 行 */" % SND.CFG_ROWS,
         "#define CE_SND_NEW_N       %d      /* 新 id 0x%02x..0x%02x */"
         % (SND.NEW_N, SND.FIRST_ID, SND.FIRST_ID + SND.NEW_N - 1),
         "#define CE_SND_ROWS_TOTAL  %d" % SND.CFG_ROWS_N,
         "#define CE_SND_CFG_ROW     0x%x" % SND.CFG_ROW,
         "#define CE_SND_SLOT_SIZE   0x%x" % SND.SLOT_SIZE,
-        "#define CE_SND_NAMES_N     %d      /* 零售 wav 名 / blob 槽数 */" % SND.NAMES_N,
+        "#define CE_SND_NAMES_N     %d      /* 原生 wav 名 / blob 槽数 */" % SND.NAMES_N,
         "#define CE_SND_NAMES_TOTAL %d" % SND.NAMES_N_N,
         "#define CE_SND_FIRST_ID    0x%02x" % SND.FIRST_ID,
         "#define CE_SND_LAZER2_SLOT 20     /* 0x45ff38 硬编码引用的槽；wav 下标应为 0x26 */",

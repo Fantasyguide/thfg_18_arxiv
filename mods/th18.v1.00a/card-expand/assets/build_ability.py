@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""往零售 ability.anm 追加贴图 entry 与特效脚本，重编到 native/build/ability.anm，并生成 native/anm_ids.h。
+"""往原生 ability.anm 追加贴图 entry 与特效脚本，重编到 native/build/ability.anm，并生成 native/anm_ids.h。
 
     python3 build_ability.py                # 构建 + 自检 + 写 anm_ids.h
     python3 build_ability.py --verify-only  # 只自检已有的 build/ability.anm
 
 输入：
     ability/entries/ORDER.txt     一行 `NAME  源图路径(相对 assets/)  [WxH]`；只追加不重排。
-                                  第 k 行 → entry (7+k)、sprite (109+k)（数字由零售文件算出，不写死）
+                                  第 k 行 → entry (7+k)、sprite (109+k)（数字由原生文件算出，不写死）
                                   不写尺寸 = 卡图（256×320，字段抄 abcard BLANK_max）；写 WxH（2 的幂）= 整张贴图一个 sprite
     ability/scripts/NN_name.anm.txt  一个文件一个脚本，NN 从 68 起连续；正文可用 @NAME 引用 ORDER 里的 sprite 号
 输出：
@@ -32,7 +32,7 @@ _FILE = re.compile(r"^(\d+)_([A-Za-z_][A-Za-z0-9_]*)\.anm\.txt$")
 
 
 def src_path(rel: str):
-    """ORDER 里的源图路径：默认相对 assets/；`local/` 开头的相对仓库根（零售贴图搬用——版权字节只在 local/，构建时取，不入库）。"""
+    """ORDER 里的源图路径：默认相对 assets/；`local/` 开头的相对仓库根（原生贴图搬用——版权字节只在 local/，构建时取，不入库）。"""
     return (L.REPO / rel) if rel.startswith("local/") else (HERE / rel)
 
 
@@ -51,7 +51,7 @@ def plan(retail_text: str):
             raise SystemExit(f"{p.name}：文件名要像 68_reverse_flash.anm.txt")
         want = n_script + k
         if int(m.group(1)) != want:
-            raise SystemExit(f"{p.name}：编号应为 {want}（零售 {n_script} 个脚本，按文件名顺序连续追加）")
+            raise SystemExit(f"{p.name}：编号应为 {want}（原生 {n_script} 个脚本，按文件名顺序连续追加）")
         scripts.append((m.group(2), p, want))
     return entries, scripts
 
@@ -111,12 +111,12 @@ def main():
             t = tpl_of[name]
             want = (int(t["fields"]["THTXWidth"]), int(t["fields"]["THTXHeight"]))
             if not src.is_file():
-                raise SystemExit(f"缺 {src}" + ("（零售贴图：先 python3 tooling/thtk/unpack.py th18.v1.00a 解包到 local/）" if "local/" in str(src) else ""))
+                raise SystemExit(f"缺 {src}" + ("（原生贴图：先 python3 tooling/thtk/unpack.py th18.v1.00a 解包到 local/）" if "local/" in str(src) else ""))
             im = Image.open(src).convert("RGBA")
             if im.size != want:
                 if im.width > want[0] or im.height > want[1]:
                     raise SystemExit(f"{src.name} 是 {im.size}，要 ≤ {want}")
-                pad = Image.new("RGBA", want, (0, 0, 0, 0))            # 小图居中补到声明的 2 的幂尺寸（零售 pl01b2 是 96×256）
+                pad = Image.new("RGBA", want, (0, 0, 0, 0))            # 小图居中补到声明的 2 的幂尺寸（原生 pl01b2 是 96×256）
                 pad.paste(im, ((want[0] - im.width) // 2, (want[1] - im.height) // 2))
                 im = pad
             im.save(TEX / "ability" / f"{name}.png")
@@ -131,7 +131,7 @@ def main():
         if sblocks:
             text = L.append_scripts(text, sblocks)
         L.compile_anm(text, TEX, OUT_ANM, tools, anmmap)
-        print(f"build: {OUT_ANM.relative_to(MOD)}（{OUT_ANM.stat().st_size:,} B）；零售 entry {len(retail_entries)} + {len(entries)}，"
+        print(f"build: {OUT_ANM.relative_to(MOD)}（{OUT_ANM.stat().st_size:,} B）；原生 entry {len(retail_entries)} + {len(entries)}，"
               f"script {len(L.parse_scripts(retail_text))} + {len(scripts)}")
 
     _, n_e, n_s = L.verify_rebuilt(OUT_ANM, retail_text, retail_dir, tools, anmmap)
@@ -143,7 +143,7 @@ def main():
                 or f"sprite{sidx}:" not in e["block"]:
             raise SystemExit(f"新 entry{eidx}（{name}）字段与模板不一致")
     write_ids_h(entries, scripts)
-    print(f"verify: entry {len(n_e)}、script {len(n_s)}；零售 spec/贴图逐项一致；写 {IDS_H.relative_to(MOD)}\n")
+    print(f"verify: entry {len(n_e)}、script {len(n_s)}；原生 spec/贴图逐项一致；写 {IDS_H.relative_to(MOD)}\n")
     for name, _, eidx, sidx, sz in entries:
         print(f"  entry{eidx:<4} sprite{sidx:<5} {name}{'  ' + sz if sz else ''}")
     for name, _, idx in scripts:

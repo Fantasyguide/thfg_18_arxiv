@@ -10,8 +10,8 @@ script script206 {
     //   按「它写的是敌机本体 VM」判为 **enemy.anm**（贴图 data/stgenm/enemy.png）——见生成器文件头 ②。
     // 指令逐条照抄（sprite/jmp/标签一字未动），只把 sprite 引用换成 ORDER 名字：
     //   sprite69 → @YOUKAI_FAM_S53_0，sprite70 → @YOUKAI_FAM_S53_1，sprite71 → @YOUKAI_FAM_S53_2，sprite72 → @YOUKAI_FAM_S53_3，sprite73 → @YOUKAI_FAM_S53_4，sprite74 → @YOUKAI_FAM_S53_5，sprite75 → @YOUKAI_FAM_S53_6，sprite76 → @YOUKAI_FAM_S53_7
-    // 该循环 8 帧、每帧 2 帧间隔（零售 `+2:`），可见像素均值 RGB≈(219, 164, 164)。
-    // ⚠ 零售这支脚本里**没有 layer()**（敌机本体 VM 的层由引擎定）⇒ 这里也不写；挂独立 VM 时由挂它的那一方自己补 layer（世界层 3–19，别用 HUD 的 24/25）。
+    // 该循环 8 帧、每帧 2 帧间隔（原生 `+2:`），可见像素均值 RGB≈(219, 164, 164)。
+    // ⚠ 原生这支脚本里**没有 layer()**（敌机本体 VM 的层由引擎定）⇒ 这里也不写；挂独立 VM 时由挂它的那一方自己补 layer（世界层 3–19，别用 HUD 的 24/25）。
 offset0:
     sprite(@YOUKAI_FAM_S53_0);
 +2: // 2

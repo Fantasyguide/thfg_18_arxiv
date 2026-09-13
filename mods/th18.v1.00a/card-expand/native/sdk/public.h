@@ -34,8 +34,11 @@ void *ce_state_user(const void *card, unsigned size);
 
 typedef struct {
     uint32_t id;          /* enemy+0x6830（单调递增；记账 / 去重用，别缓存指针）*/
-    uint32_t kind;        /* CE_EDEATH_* */
+    uint32_t kind;        /* CE_EDEATH_*；按**栈扫描匹配到的调用点返回地址**解码（见 sdk.c）*/
     uint32_t flags;       /* CE_EDEATH_F_* */
+    uint32_t retaddr;     /* 匹配到的调用点返回地址（0 = 前 12 格都没命中）*/
+    uint32_t esp;         /* BP 入口的原始 regs->esp（可证伪日志用）*/
+    int32_t  ret_slot;    /* retaddr 命中第几格：0..11；未命中 = -1 */
     float    x, y;        /* enemy+0x1270 / +0x1274（世界坐标）*/
     int32_t  drop_main;   /* enemy+0x623c 当前值（**尚未消费**；改了会影响随后的撒落）*/
     void    *enemy;       /* ★ 只在本次回调内有效（同帧 sweep 会删）；禁止缓存 */
@@ -95,7 +98,26 @@ typedef struct {
     /* 本帧是否跳过「原生主炮行循环」（= 本帧不发原生弹）。108（低速妖机体）与 109（蓄力拦 Z）用。
      * 与 on_shot_set_index 同一个断点（0x45ebfb）：**先问 set index；有卡覆盖了（= 117 咆哮）本帧就不抑制**。
      * ⚠ 只压「原生行循环」，`0x45eca0` 起的**卡广播照跑**（77 / 116 的卡子机不受影响）。*/
+/* ★ 2026-09-13 十七修：**装备子机路径**（`Player__tick_shooters_for_ability_card`）会拿
+ * `sht set` 去开火，而 set 不只原生装备子机组 —— 咆哮期间它会是**咆哮组**：
+ *   0x1e..0x22 = 117 的 WOLF 组（非空 ⇒ 看得见子弹；用户实跑「按 Z 进魔理沙狼咆哮，子机还发射激光」）
+ *   0x23..0x27 = EAGLE 组（空组 ⇒ 看不出问题，所以之前只测鹫时以为修好了）。
+ * 数值必须与 `assets/sht/append_shooterset.py` 的分配 / `native/sht_ids.h` 一致
+ * （`CE_SHT_SET_WOLF_0` / `CE_SHT_SET_EAGLE_4`）。*/
+#define CE_SHT_SET_OPTION_MIN   0x0a    /* 原生装备子机组下限 */
+#define CE_SHT_SET_OPTION_MAX   0x15    /* 原生装备子机组上限 */
+#define CE_SHT_SET_BEAST_MIN    0x1e    /* = CE_SHT_SET_WOLF_0  */
+#define CE_SHT_SET_BEAST_MAX    0x27    /* = CE_SHT_SET_EAGLE_4 */
+
     int  (*on_native_shot_suppress)(ce_card_t *);
+    /* BP_ce_option_shot_gate 0x40a9c3：Player__tick_shooters_for_ability_card 0x40a9c0 的
+     * 序言后 `mov edx,[ebp+8]; sub esp,0xc`（6 字节，两条完整指令、无相对寻址）。只对
+     * **原生装备子机组** sht set 0x0a..0x15 询问。返回 1 = 本帧这一组装备子机弹不发；
+     * SDK 跳到该函数自己的收尾 0x40aa9e（mov esp,ebp / pop ebp / ret 0x10）。
+     * ★ 2026-09-12 十三修：上一版站点取 3 字节被 thcrap 拒绝装载，门回读失败后触发降级；
+     * 现在站点长度修到 6 字节，但功能仍由 `CE_OPTION_SHOT_GATE_ENABLE` **默认关**（sdk.c）。
+     * 117 若需要拦装备子机普通弹，等实机验证后再打开；不开时此回调不会被调用。*/
+    int  (*on_option_shot_gate)(ce_card_t *, int sht_set);
     /* ★ BP_ce_shot_damage 0x45f2a2 的**同一个断点、同一份实参**，但**不按聚焦过滤**：
      *   on_shot_damage 的策略门是「非聚焦 + 非 bomb」（114 辉针城「非聚焦命中掉 P」的原义），
      *   而 107 森罗结界需要**高速 / 低速两条通道都要**（`REVIEW` §9 / `IDEAS` 的「高速约 3 倍」）。

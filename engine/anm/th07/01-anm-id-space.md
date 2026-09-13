@@ -20,7 +20,7 @@ TH07 的 anm 不是「每文件一套脚本号」，而是**一个全局 id 空�
 | 全局 id 从哪来 | `base + 文件内 id`（sprite 与 script **共用同一个 base**，两个数组各自按 id 索引） | 写：`th07:0x44e47f`（script）· 读：`th07:0x450e7b`（sprite） |
 | entry 之间 base 怎么前进 | 下一 entry 的 base = 本 entry base + **max(全部 sprite id, 全部 script id) + 1**（有符号比较，下限 0） | `th07:0x44e05e`（加）· `th07:0x44e4c6`–`th07:0x44e4c9`（+1） |
 | 常见说法「= 上一 entry 的 sprite 数」 | **只是特例**：该 entry 的 id 恰为 `0..n−1` 连续、且 script id 不超过时才成立 | §3.1 |
-| 能不能当通则用 | ❌ 不能：63 个零售 `.anm`、101 个 entry 里 **25 个**前进量 ≠ sprite 数 | §3.1 表 |
+| 能不能当通则用 | ❌ 不能：63 个原版 `.anm`、101 个 entry 里 **25 个**前进量 ≠ sprite 数 | §3.1 表 |
 | 引擎侧怎么消费 | `EffectManager` 的 type→id 表 `th07:0x49efc0` → id → `AnmManager+0x28ef0+id*4` = 脚本指针 | §4 |
 
 ## 1. 规则的一手地址与指令
@@ -85,7 +85,7 @@ AnmManager::loadAnm(index /*[ebp+8]*/, filename /*[ebp+0xc]*/, base /*[ebp+0x10]
 | entry 有 **0 sprite / 0 script** | 无特判：两个循环直接不进 | 累加器保持初值 0 ⇒ **前进量 = 1**（base 下界每 entry +1） |
 
 **空 entry 没有专门分支** ✅：`num_sprites = num_scripts = 0` 的 entry 也会正常走完、并让 base 前进 1。
-零售确实存在这种 entry（如 `face_01_00.anm` entry0：5 sprites / 0 scripts；`ascii.anm` entry1：108 sprites / 0 scripts）。
+原版确实存在这种 entry（如 `face_01_00.anm` entry0：5 sprites / 0 scripts；`ascii.anm` entry1：108 sprites / 0 scripts）。
 
 ## 2. 三处交叉印证
 
@@ -124,7 +124,7 @@ AnmManager::loadAnm(index /*[ebp+8]*/, filename /*[ebp+0xc]*/, base /*[ebp+0x10]
 - 自解析 + `thanm -l 7` 双向确认：这 10 支就是十连发道具脚本 —— `script53`…`script62` =
   `ins_3(sprite4)` … `ins_3(sprite12)` 各配一条 `ins_2()`（thanm 编号 = entry0 的 25 支 + entry1 的 0..37 ⇒ `53..62` = entry1 的 28..37）✅
 
-## 3. 全量扫描：这条规则在零售文件里长什么样
+## 3. 全量扫描：这条规则在原版文件里长什么样
 
 ### 3.1 前进量 ≠ sprite 数的 entry（自解析 63 个 `.anm` / 101 个 entry ⇒ **25 个**）
 
@@ -158,7 +158,7 @@ AnmManager::loadAnm(index /*[ebp+8]*/, filename /*[ebp+0xc]*/, base /*[ebp+0x10]
 | `face_rm00.anm` | **8 / 5** | entry1 的 base 高 3 |
 | `face_sk00.anm` | **8 / 5** | entry1 的 base 高 3 |
 
-⇒ 把规则简写成「= sprite 数」在**零售文件上就会算错 base**（哪怕只差 1）。本文的两个实例（731 / 690）与
+⇒ 把规则简写成「= sprite 数」在**原版文件上就会算错 base**（哪怕只差 1）。本文的两个实例（731 / 690）与
 §2.3 的道具链**不受影响**，因为 `etama.anm` 的 4 个 entry 都在特例里。
 
 ### 3.3 每个 `.anm` 的载入 base 与 index（🟡 批量提取，仅 4 处逐指令复核）
@@ -233,7 +233,7 @@ sprite「local `5 + type` / `15 + type`」。以本文的一手读法：
 这就是本节这条规则的实际用途：把一个整数还原成「哪个 `.anm` 的第几支脚本」。
 
 ⚠ 另一半要小心：`0x10` 的 732 与 `0x17` 的 772 指向**当前关的 `eff0X.anm` 段**（载入 base 732/733/734，§3.3），
-而零售各 `eff0X.anm` 只有 **1–2 支**脚本（`thanm -l` 实测：eff01/02/03/04 = 1、eff05/06/07/08 = 2）⇒ **772 在实际载入的文件里没有对应脚本**。
+而原版各 `eff0X.anm` 只有 **1–2 支**脚本（`thanm -l` 实测：eff01/02/03/04 = 1、eff05/06/07/08 = 2）⇒ **772 在实际载入的文件里没有对应脚本**。
 type `0x22` 起该字段读出 31632 / 33040 这类**像文件偏移的值**，不是 id ⇒ 那一段可能不是同一张表。两者都进 §6 ❓。
 
 ### 4.2 三个 spawn 函数怎么用这张表
@@ -341,7 +341,7 @@ pos = home[effect+0x288] + v[effect+0x294 / +0x298 / +0x29c] × t
 - ❓ 未查：type `0x22`–`0x2f` 在 `th07:0x49efc0` 上的读法 —— 那几个 `+0x0` 读出的是 31632 / 33040 这类像**文件偏移**的值，
   与 `0x00`–`0x21` 的 id 语义不同（可能是另一张表的开头，或另有一条 spawn 路径）。
 - ❓ 未查：type `0x17` 的 id 772 超出当前关 `eff0X.anm` 的脚本数（各文件 1–2 支），
-  它到底有没有在零售里被生成、以及被生成时会怎样（读到 `0x28ef0` 表里的垃圾指针？）—— 没查。
+  它到底有没有在原版里被生成、以及被生成时会怎样（读到 `0x28ef0` 表里的垃圾指针？）—— 没查。
 - ❓ 未查：index 空间里哪些槽是空的（本文只扫了 60 个 `loadAnm` 调用点，没扫「谁按 index 取载入记录」）。
 
 ## 附录 A：复现命令

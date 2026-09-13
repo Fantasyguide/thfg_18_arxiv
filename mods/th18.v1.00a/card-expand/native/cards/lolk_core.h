@@ -21,19 +21,24 @@
  *
  * TH18 的道中**不切章**（全 8 关 `st*.ecl` 只有开场 0、进 boss 前 41 与 boss 段 43/81/2，
  * 道中一个 524 都没有），但**脚本结构一模一样**：`main → MainFront/MainLatter → MainSubNN`。
- * 于是本卡用「关卡脚本主上下文当前 ECL 子程序号」当等价信号：
  *
- * - 接线层每帧报 `stage_sub`（关卡脚本 = 引擎建的 `main` 敌人，见 lolk.c 接缝注释）
- *   与 `spawn_delta`（本帧新建敌人数）；
- * - 纯逻辑侧：**子程序号变了 + 该子程序内第一次刷出（且在进入后 LOLK_MID_SUB_WINDOW
- *   帧内）** = 新一波；同一个子程序里再刷（异步子程序 `MainSubNNb` 的后续刷出）不再切波；
- * - **同一子程序内**静默 ≥ LOLK_MID_BURST_GAP 帧后又刷出 = 新一波（一个 MainSub 里常排几波，
- *   例如 st01 `MainSub00` 的三波阴阳玉）；
- * - 认不出关卡脚本时（`stage_sub < 0`）退到「静默 ≥ LOLK_MID_QUIET_GAP 帧后再刷出」。
+ * **2026-09-13 用户洞察（本卡现行口径）**：自然键就是 **`MainSub` 编号本身** ——
+ * `MainSub00 / MainSub01 / MainSub01b / MainSub02 …` 里，**去掉尾部字母的数字**是一章。
+ * 字母后缀是基号的**异步子程序**（`@MainSub01b() async` 等），与基号同章：
+ * `01` + `01b`（+ `01c`）= 一章。接线层每帧从关卡脚本的**主上下文子程序名**解析出
+ * `stage_chapter`（= MainSub 数字，见 lolk.c 的 `stage_ecl_read()`），纯逻辑侧只用它切章：
  *
- * 阈值来源（零售 ECL 静态实测，🟡 见 th18/03 §4）：块内「进入子程序 → 首次刷出」
- * 最长 240 帧（st05 `MainSub09`）；块内相邻刷出的静态间隔最长 500 帧（st06 `MainSub07`）
- * ——所以**不能**只靠静默间隔切波，子程序边界才是主信号。
+ * - **主信号**：`stage_chapter` 变了（或当前没开波）+ 本帧有刷出 = 新章；
+ *   同一个编号里的多段 burst / 异步子程序**不切**（旧实现靠 `LOLK_MID_BURST_GAP`
+ *   静默窗口猜「一个 MainSub 里排了几波」，已被本条取代并删除）。
+ * - `main` / `MainFront` / `MainLatter` 段（`stage_chapter < 0` 但 `stage_sub >= 0`）不是道中章：
+ *   这些段里的刷出（例如开场 `MapleEnemy`）不开波，避免多出一个空章。
+ * - 认不出关卡脚本（`stage_sub < 0`）才退到「静默 ≥ `LOLK_MID_QUIET_GAP` 帧后再刷出」。
+ *
+ * 一手静态复核（`thecl -d 18`，8 关全量，2026-09-13）：所有字母后缀 `MainSubNNx` 都是
+ * 基号的 `@…() async` 子程序（st01 `MainSub01b/01c`、`MainSub02b`、`MainSub06b`；
+ * st02 `MainSub00b/06b`；st03 `MainSub02b/06b`；st05 `MainSub02b`），
+ * 所以关卡脚本**主上下文**的子程序名天然就是基号。
  *
  * ## 击破率（用户 2026-09-09 定案，三种来源）
  *
@@ -74,12 +79,13 @@
 #define LOLK_DEBOUNCE        5        /* 波边沿去抖帧数（相位切换时槽清空 + 符卡位翻转会连报）*/
 
 /* 道中波边界（TH18 等价信号，见头注与 engine/chapter/th18/03）*/
-#define LOLK_MID_SUB_WINDOW  256      /* 进入新子程序后多少帧内出现刷出算「新波」（零售块内首刷最长 240 帧）*/
-#define LOLK_MID_QUIET_GAP   240      /* 退路（stage_sub < 0）：静默 ≥ 此帧数后再刷出算「新波」*/
-#define LOLK_MID_BURST_GAP   100      /* 同一子程序内：静默 ≥ 此帧数后再刷出 = **新的一波**。
-                                       * 依据：st01 `MainSub00` 的三波阴阳玉 burst 间 `wait(120)`、
-                                       * burst 内 `wait(10)`；st07 `MainSub07/08` 的刷出间隔 100–400。
-                                       * 🟡 静态读 ECL 定的，实机看日志校准。*/
+#define LOLK_MID_QUIET_GAP   240      /* 退路（stage_sub < 0）：静默 ≥ 此帧数后再刷出算「新章」*/
+
+/* 开道中/ boss 波时用的规则（日志里说明用的是哪条；见 lolk_tick 的 mid_rule）*/
+#define LOLK_MID_RULE_NONE     (-1)   /* 还没开过波 */
+#define LOLK_MID_RULE_MAINSUB  0      /* 主信号：章 = MainSub 编号（去掉尾部字母）*/
+#define LOLK_MID_RULE_QUIET    1      /* 回退：认不出关卡脚本 → 静默间隔 */
+#define LOLK_MID_RULE_BOSS     2      /* boss 相位（非道中）*/
 
 /* 事件返回值（位掩码：一次 tick 可以同时「结一波 + 开一波」）*/
 #define LOLK_EV_NONE         0
@@ -105,8 +111,10 @@ typedef struct {
     int32_t phase_broken;    /* 本帧 `life.current <= 中断槽.hp_value`（击破条件成立）*/
     int32_t phase_timeout_flag; /* 引擎持续位：zEnemy flags_lo bit24（超时置 1 / 击破清 0）*/
     int32_t phase_sig;       /* 当前相位指纹（0 = 没有活动中断槽）*/
-    int32_t chapter;         /* GLOBALS.inner+0x24：ECL 524 写下的章号 */
-    int32_t stage_sub;       /* 关卡脚本 ECL 主上下文当前子程序号；< 0 = 没认出来（道中波退路）*/
+    int32_t chapter;         /* GLOBALS.inner+0x24：ECL 524 写下的章号（TH18 道中不切，只当 boss 兜底）*/
+    int32_t stage_sub;       /* 关卡脚本 ECL 主上下文当前子程序号；< 0 = 没认出来（退路判据）*/
+    int32_t stage_chapter;   /* ★ 关卡脚本当前 MainSub 编号（去掉尾部字母；01 与 01b 都 = 1）。
+                              *   < 0 = 当前不在 MainSub（main/MainFront/MainLatter，或没认出来）*/
     int32_t spawn_delta;     /* 本帧新建敌人数（zEnemyManager.next_enemy_id 差分，< 0 当 0）*/
 } lolk_in_t;
 
@@ -128,10 +136,10 @@ typedef struct {
     int32_t waves_done;            /* 已结算波数（碎片循环游标）*/
     int32_t debounce;              /* 边沿去抖倒计时 */
     int32_t last_phase_sig;        /* 上一帧相位指纹 */
-    int32_t last_chapter;          /* 上一帧章号（初值 -1，让首帧能开波）*/
-    int32_t last_stage_sub;        /* 上一帧关卡脚本子程序号（初值 -1，让首帧能开波）*/
-    int32_t sub_age;               /* 当前子程序已持续帧数 */
-    int32_t sub_fired;             /* 本子程序内是否已经报过波边界（异步子程序再刷不再切）*/
+    int32_t last_chapter;          /* 上一帧 ECL 524 章号（boss 兜底用）*/
+    int32_t last_stage_sub;        /* 上一帧关卡脚本子程序号（诊断/日志用）*/
+    int32_t wave_chapter;          /* ★ 当前开着的道中波的 MainSub 编号；-1 = 无 / 未知 / boss */
+    int32_t mid_rule;              /* 最近一次开波用的规则 LOLK_MID_RULE_*（日志用）*/
     int32_t quiet;                 /* 连续无刷出帧数（stage_sub < 0 时的退路用）*/
     int32_t slow;                  /* 减速因子 ×100，恒 ∈ [LOLK_SLOW_START, LOLK_SLOW_FULL] */
     int32_t grazed_this_frame;     /* 本帧是否擦到（接线层每帧置，lolk_slowdown_step 消费）*/
@@ -151,7 +159,8 @@ typedef struct {
     int32_t frag_type;    /* 0 = 不发；否则 LOLK_FRAG_BOMB / LOLK_FRAG_LIFE */
 } lolk_settle_t;
 
-/* 每帧调一次，`in` 是本帧采样到的相位信号 + 道中信号（`stage_sub` / `spawn_delta`）。
+/* 每帧调一次，`in` 是本帧采样到的相位信号 + 道中信号
+ * （`stage_chapter` = MainSub 编号 / `stage_sub` / `spawn_delta`）。
  * 返回 LOLK_EV_* 位掩码；带 LOLK_EV_WAVE_END 位时填 out（空波不产事件）。*/
 int lolk_tick(lolk_state_t *s, const lolk_in_t *in, lolk_settle_t *out);
 
@@ -176,6 +185,9 @@ int32_t lolk_rate_phase(int32_t is_survival, int32_t outcome);
 
 /* 纯函数：章节奖（TH15 原式，向下取整到 10）。*/
 int32_t lolk_bonus(int32_t graze, int32_t rate);
+
+/* 规则名（日志用）：LOLK_MID_RULE_* → "mainsub" / "quiet-fallback" / "boss" / "none"。*/
+const char *lolk_mid_rule_name(int32_t rule);
 
 /* 局末 / 开局重置。*/
 void lolk_reset(lolk_state_t *s);

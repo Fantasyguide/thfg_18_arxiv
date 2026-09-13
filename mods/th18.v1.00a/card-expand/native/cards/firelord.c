@@ -4,7 +4,7 @@
  * 然后连续 FL_BLAST_FRAMES 帧、每帧一个 FL_BLAST_W×H 的矩形伤害源，且每帧把每敌每帧伤害上限抬到 FL_BLAST_CAP（Remilia 同款，否则被自机弹吃满）。
  * 生命归零 → 死亡动画、结束；过关 / 局末消失。火力 < FL_POWER_GATE 拒绝（引擎永远保留 1.00，成本 + 一档才扣得实）。
  *
- * 零售原型：扣火力三步 = CardTsukasa__c_press（0x410e60：门槛 → spend_power → repopulate）；挡弹 = Tenshi 要石；
+ * 原生原型：扣火力三步 = CardTsukasa__c_press（0x410e60：门槛 → spend_power → repopulate）；挡弹 = Tenshi 要石；
  * 伤害源 = Remilia 脉冲 / 青眼 / 破损核心同一个原语。随机 = 游戏自己的 REPLAY_SAFE_RNG。
  * 纯逻辑在 firelord_core.c（主机单测）；引擎调用是 sdk.h 的薄包装（AUDIT §V）。
  * 设计：docs/superpowers/specs/2026-09-06-firelord-design.md */

@@ -254,7 +254,7 @@ entry1（etama2.png）base **`0x2A7`**，max id 62 ⇒ entry2/3 base `0x2E5`。
 > **`下一个 entry 的 base = 本 entry base + max(全部 sprite id ∪ 全部 script id, 下限 0) + 1`**
 > （`+1` 在 `` `th07:0x44e4c6` ``–`` `th07:0x44e4c9` ``；两个取大点在 `` `th07:0x44e3b8` ``/`` `th07:0x44e459` ``；
 > base 相加在 `` `th07:0x44e05e` `` —— 本节原先写的 `` `th07:0x44e05b` `` 是它上一条 `mov`）。
-> 63 个零售 `.anm` / 101 个 entry 里 **25 个**「前进量 ≠ sprite 数」（最极端 `stg6enm.anm` entry0 前进 **147** 而只有 79 个 sprite）。
+> 63 个原版 `.anm` / 101 个 entry 里 **25 个**「前进量 ≠ sprite 数」（最极端 `stg6enm.anm` entry0 前进 **147** 而只有 79 个 sprite）。
 > ⇒ **本节的 base 与**派生的 raw / local 号**整体差 1**：
 > `etama.anm` 的 base 真值是 **512 / 680（`0x2A8`）/ 730（`0x2DA`）/ 731（`0x2DB`）**（sprite 数 168 / 50 / 1 / 1），
 > 两条独立佐证：① 道具那 10 支 = 全局 708..717 必须是 entry1 的 id **28**..37（按 679 计要 id 38）；

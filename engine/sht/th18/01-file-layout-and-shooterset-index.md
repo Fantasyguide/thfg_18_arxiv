@@ -123,7 +123,7 @@ row = *(char**)(sht + 0xe0 + idx*4);
 
 ## 6. 开放
 
-- ❓ **索引 `0x16` 没有任何一张零售卡对得上**：组内 1 条，`fire_rate = 0`（真被 `% fire_rate`
+- ❓ **索引 `0x16` 没有任何一张原生卡对得上**：组内 1 条，`fire_rate = 0`（真被 `% fire_rate`
   除会崩）、`speed = 0`、`angle = 0`、`dmg = 16`、`func_on_init = 7`。像是留着没用完的槽，
   或由某条不走 `tick_shooters_for_ability_card` 的路径使用。**别碰它。**
   *验法*：`get_xrefs_to` 四张 func 表的第 7 项（`0x4613b0`），看谁引用。

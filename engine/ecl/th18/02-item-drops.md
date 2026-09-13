@@ -1,11 +1,11 @@
-# TH18 原版敌机/Boss 掉落道具 ECL 全量审计
+# TH18 原生敌机/Boss 掉落道具 ECL 全量审计
 
 > **版本**：TH18 v1.00a（`th18.exe`，imagebase `0x400000`）。本文裸地址默认属该版本；引用其他版本须写成 `th16:0x…`。
 > **方法**：`thecl -d 18 -x -m local/vendor/eclmap/eclmap/th18.eclm` 全量反编译 `local/th18.v1.00a/dat/*.ecl`（22 个文件），
 > 逐指令统计 `dropMain` / `dropExtra` / `unknown573` / `ins_574` / `dropItems` / `enmCreate*` 第 6 参；
 > item type 语义由 `ItemManager__spawn_item` `0x446f40`、`Enemy__drop_items_and_notify_cards` `0x430510`、
 > opcode handler `0x433a14`（dropClear）/`0x433a24`（dropExtra）/`0x433ae9`（dropMain）一手反汇编交叉核对。
-> **可信度**：ECL 掉落清单 ✅ 一手（零售 `.ecl` 字节 + thecl）；type 5/7 的「没有」是**全量枚举**（22 个 ECL 无一处写 5/7）✅；
+> **可信度**：ECL 掉落清单 ✅ 一手（原生 `.ecl` 字节 + thecl）；type 5/7 的「没有」是**全量枚举**（22 个 ECL 无一处写 5/7）✅；
 > 引擎侧旁路 ✅；TH17 对照 🟡。
 > **产物**：[`02-item-drops.tsv`](02-item-drops.tsv) = 843 行数据（逐站点；含 type 0 与不可达/debug 行，用 `reachability`/`item_type` 列过滤）。
 
@@ -339,7 +339,7 @@ TH18 的 ECL 游戏 opcode 在 `FUN_00430d30` `0x430d30` 里用两级表分发�
 ## 7. 复现方法（命令 + 原始结果）
 
 ```bash
-# 1) 反编译全部 22 个零售 ECL（-x 带偏移注释，-m 用 Priw8 eclmap 命名）
+# 1) 反编译全部 22 个原生 ECL（-x 带偏移注释，-m 用 Priw8 eclmap 命名）
 cd /home/nipporita/renkolab
 mkdir -p /tmp/th18ecl/x
 for f in local/th18.v1.00a/dat/*.ecl; do
@@ -402,4 +402,4 @@ TH18 的 `dropMain(19)` = `0x13` DANGO 卡道具，而不是 TH17 的残机碎�
 
 - 🟡 「正常可用可达性」是静态 call/字符串图推断；`debug22` 与零引用子程序已单列，但 `$SPELL_ID`（符卡练习）分支按可达计。
 - 🟡 type `0x14`：`st02bs BossCard1` 写两次，但 spawner 拒收；ZUN 原意（TH17 残留？）未考。
-- 🟡 `BossItemPhase2/3` 在 TH18 零引用：是 TH17/早期版本残留，未在零售 TH18 起效。
+- 🟡 `BossItemPhase2/3` 在 TH18 零引用：是 TH17/早期版本残留，未在原版 TH18 起效。

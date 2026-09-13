@@ -2,7 +2,7 @@
 """build_voice.py —— 语音资源的校验与索引生成。
 
   assets/voice/ORDER.txt   一行一个 NAME，**只追加**。行号 k → 音效 id 0x54+k、wav 下标 72+k
-  assets/voice/<NAME>.wav  PCM（fmt tag 1）。零售 71 个 se 就是 44.1k/22.05k × 8/16 bit ×
+  assets/voice/<NAME>.wav  PCM（fmt tag 1）。原生 71 个 se 就是 44.1k/22.05k × 8/16 bit ×
                            单/双声道混用，引擎的 RIFF 解析不挑格式；建议 16-bit 单声道
                            （声像对单声道才有意义）。
 
@@ -39,19 +39,19 @@ class VoiceError(Exception):
     pass
 
 
-# ★ 响度基准（2026-09-05 实测零售 dat 的 71 个 se_*.wav，
+# ★ 响度基准（2026-09-05 实测原生 dat 的 71 个 se_*.wav，
 #   见 engine/_shared/th18-sound-table.md §9）：
-#   零售 wav 一律 peak 归一化（peak 中位 -0.06 dBFS），响度差异全压在 cfg 行的 dB 衰减上，
+#   原生 wav 一律 peak 归一化（peak 中位 -0.06 dBFS），响度差异全压在 cfg 行的 dB 衰减上，
 #   而那个字段只能衰减不能增益 —— 所以响度必须由 wav 本身承载。
 RETAIL_PEAK_MEDIAN = -0.06
-RETAIL_RMS_MEDIAN = -13.1        # 零售 wav 的 RMS 中位数
+RETAIL_RMS_MEDIAN = -13.1        # 原生 wav 的 RMS 中位数
 RETAIL_RMS_LOUDEST = -5.1        # se_release（Tenshi 发动音；与卡牌语音同帧一起响）
 VOICE_RMS_TARGET = -10.0         # 语音目标：比最响的低 5 dB、比中位高 3 dB
 VOICE_RMS_BAND = 4.0             # 超出 ±4 dB 就提醒
 
 
 def loudness(b, ch, bits):
-    """峰值与方均振幅（dBFS）。这是与零售音效对齐响度的唯一口径。"""
+    """峰值与方均振幅（dBFS）。这是与原生音效对齐响度的唯一口径。"""
     i = 12
     data = b""
     while i + 8 <= len(b):
@@ -194,7 +194,7 @@ def main():
               % (x["name"], x["id"], x["wav_index"], fmt, x["peak_db"], x["rms_db"]))
         d = x["rms_db"] - VOICE_RMS_TARGET
         if abs(d) > VOICE_RMS_BAND:
-            print("   ⚠ %s 的 rms 偏离基准 %+.1f dB（目标 %.1f，零售中位 %.1f、最响 %.1f）"
+            print("   ⚠ %s 的 rms 偏离基准 %+.1f dB（目标 %.1f，原生中位 %.1f、最响 %.1f）"
                   % (x["name"], d, VOICE_RMS_TARGET, RETAIL_RMS_MEDIAN, RETAIL_RMS_LOUDEST))
     if a.check:
         return

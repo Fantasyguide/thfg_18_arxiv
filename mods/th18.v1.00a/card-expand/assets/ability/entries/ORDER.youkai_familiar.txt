@@ -7,7 +7,7 @@
 #   K 的上界是 95（ecldata5）⇒ 那个 anm 只能是 `enemy.anm`（101 支脚本；各关 stgNenm 只有 6–26）。
 #   🟡 etama.anm(115 支) 也满足上界；判 enemy.anm 的依据 = `ins_54` 写的是敌机本体 VM（zEnemy+0xc）。
 # 四套对应最多 4 个发射口槽，卡侧按槽位挑一套即可（见生成器文件头「产出定位」）。
-# 每条脚本的正文逐条照抄零售，只把 sprite 引用换成这里的 @NAME；零售没有 layer()，故这里也不写。
+# 每条脚本的正文逐条照抄原生，只把 sprite 引用换成这里的 @NAME；原生没有 layer()，故这里也不写。
 YOUKAI_FAM_S53_0  ability/youkai_familiar/YOUKAI_FAM_S53_0.png  32x32
 YOUKAI_FAM_S53_1  ability/youkai_familiar/YOUKAI_FAM_S53_1.png  32x32
 YOUKAI_FAM_S53_2  ability/youkai_familiar/YOUKAI_FAM_S53_2.png  32x32

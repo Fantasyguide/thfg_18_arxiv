@@ -7,7 +7,7 @@
  *   boss 的每段攻击是 zEnemyData.interrupts[i]{hp_value, time, sub_life, sub_timeout}；
  *   步进 0x42ed40 每帧取第一个 hp_value > -1 && time > 0 的槽，slot.time <= time_in_ecl.cur 就走超时子程序、
  *   Spellcard 置「已超时」并清奖励。这里把 time_in_ecl 直接写成 slot.time，下一帧引擎自己按超时收场——
- *   跟真的耗完时间走的是同一条零售路径（C 键在 Player tick 0x17、判定在 EnemyManager tick 0x1b：同一帧收场）。
+ *   跟真的耗完时间走的是同一条原生路径（C 键在 Player tick 0x17、判定在 EnemyManager tick 0x1b：同一帧收场）。
  *   耐久符卡（bit3）超时本来算收符卡，所以我们额外清 bit1 + 奖励 = 0：一律算失败（限制：sub_timeout 脚本自己的掉落照旧，AUDIT O28b）。
  *   已超时（bit7）但 ECL 还没跑到 523 的窗口拒绝发动；耐久符卡自然超时不置 bit7，那段窗口只靠「活动槽已清」兜底（O28g）。
  *   boss 从 ENEMY_MANAGER.boss_ids[4] 走敌人链表按 enemy_id 找（照 get_boss_enemy_full 0x4237f0）；多 boss 一起超时。 */

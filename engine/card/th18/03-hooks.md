@@ -140,7 +140,7 @@
   的脚本号（Reimu 用 2、Alice 用 `0x10`）；`0x40A9C0` 开火期间把 `player+0x10` 换成
   `AbilityManager->ability_anm`，于是 shooter 的 `+0x22` 也按 `ability.anm` 解释，打完还原。
 - **瞄准**：把角度写进 `player+0x479cc`，并让该组 shooter 的 `func_on_init = 5`（`0x4612d0` 会用它
-  覆写 `bullet+0x64`）。这是 `CardAlice` 的做法，零售天天在跑。
+  覆写 `bullet+0x64`）。这是 `CardAlice` 的做法，原生天天在跑。
 - **`+0x1c` 只在按住射击键时广播**（`0x45EA00` 里被 `short_timer != prev` 那层门罩着）；
   想要不按射击键也定时开火，得自己在别的槽里调 `0x40A9C0` 并自带计时器。
 
@@ -162,7 +162,7 @@ equipment[i].owner   = *(int*)(card + 8);                  // 0x40a7f2 → optio
   （`find_struct_writes` 扫 `+0xb0` / `+0x00` 两处均只有 `0x40A790` 自己，2026-09-10 复核）。
   ⇒ 卡 `ce_anm_delete` 掉子机 VM **不等于**还了槽；不写 `in_use = 0` 就是每收一次漏一格，
   12 格漏完新子机再也申请不到。
-- **槽的公共性**：零售卡（`CardReimu1__on_power_level_change` `0x40AAE0`）与 mod 的装备卡共用这 12 格
+- **槽的公共性**：原生卡（`CardReimu1__on_power_level_change` `0x40AAE0`）与 mod 的装备卡共用这 12 格
   （`zPlayerOption` 步长 **0xf0**，一手 `PlayerBullet__create` `0x45e430` 的 `IMUL EAX,EAX,0xf0`
   + `[player + EAX + 0x5dc]`；日志里连续三次 `option allocated` 的指针正好差 0xf0）；
   认领时用 `option+0x00 != 0 && option+0xd0 == card+0x08` 判「这格还是我的吗」。

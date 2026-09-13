@@ -3,9 +3,11 @@
 > **版本**：TH18 v1.00a（`th18.exe`，md5 `9969cac756098c1da05a81de45437a70`，imagebase `0x400000`）。
 > 本文裸地址默认属该版本；引用其他版本写成 `th15:0x…`。
 > **方法**：TH15/TH18 全 exe 反汇编离线检索（`local/_scratch/th15_full.asm`、`th18_full.asm`，
-> 与两份 exe 的 md5/字节逐条对过）+ pyghidra 反编译 + 零售 ECL（`thecl -d 15/18 -x`，8 关全量）。
+> 与两份 exe 的 md5/字节逐条对过）+ pyghidra 反编译 + 原生 ECL（`thecl -d 15/18 -x`，8 关全量）。
 > **可信度**：TH15 的 524 链路与分布 ✅（地址级）；「TH15 道中一章 = 一个 MainSubNN 敌人组」✅；
-> TH18 关卡脚本识别与读法 ✅（引擎自己的用法）；阈值标定 🟡（静态读 ECL 推的，没跑过实机）。
+> TH18 关卡脚本识别与读法 ✅（引擎自己的用法）；**MainSub 编号 = 章（2026-09-13）✅**
+> （一手静态：8 关所有字母后缀都是基号的 `@…() async`；主上下文读法 ✅）；
+> 退路静默阈值 🟡（静态读 ECL 推的，没跑过实机）。
 
 ## 0. 一句话结论
 
@@ -15,8 +17,17 @@ setChapter(2) → MainSub02 …`，一章 = 一个敌人组。
 
 **TH18 的道中一个 524 都没有**（8 关 `st*.ecl` 里 524 只出现在开场 0、进 boss 前 41 与 boss 段
 43/81/2，全是 debug 或 boss 段）。但**脚本结构一模一样**（`main → MainFront / MainLatter →
-MainSubNN`），所以等价信号 = **关卡脚本的 ECL 主上下文子程序号**：
-**子程序换了 + 该子程序内第一次刷出 = 新的一波**。
+MainSubNN`），而且 **`MainSub` 的编号本身就是「章」的天然键**（2026-09-13 用户洞察，本节已按它改写）：
+
+> **章 = `MainSub` 编号（去掉尾部字母）。`MainSub01` 与 `MainSub01b` / `MainSub01c` 算同一章。**
+> 字母后缀是基号的 `@…() async` 子程序，关卡脚本**主上下文**的子程序名始终是基号
+> （`@MainSub01b() async` 跑在异步上下文里，不改主上下文的 `cur_location`）。
+
+所以等价信号 = **关卡脚本主上下文当前子程序名 → 解析出 MainSub 数字**：
+**数字变了（或当前没开章）+ 该段内有刷出 = 新的一章**；同一编号里的多段 burst
+（st01 `MainSub00` 的三段阴阳玉）与异步子程序**都不再切**。旧的「子程序号 + 静默窗口
+`LOLK_MID_BURST_GAP`」口径已删除（它会把 `MainSub00` 的三段 burst 切成三章、把
+`01` 与 `01b` 切成两章，正是本次要修的偏差）。
 
 ## 1. TH15 道中波的判定机制 ✅
 
@@ -45,7 +56,7 @@ MainSubNN`），所以等价信号 = **关卡脚本的 ECL 主上下文子程序
   → 「换关/重开 → 章号回 0」是对象生命周期的副作用，不是某个 tick 在推进。
 
 **所以：章节边界 = ECL 524 调用（标志位），不是章号数值的变化** ✅。
-零售脚本里章号会重复（st05 `MainLatter` 连调两次 `setChapter(7)`，st01mbs 两次 `setChapter(2)`），
+原生脚本里章号会重复（st05 `MainLatter` 连调两次 `setChapter(7)`，st01mbs 两次 `setChapter(2)`），
 靠「轮询 `CURRENT_CHAPTER` 跳变」会漏掉第二次——这是本仓以前那条口径（[`02-wave-signals.md` §4](02-wave-signals.md)）的漏洞。
 
 ### 1b. 章号是「相位 ID」：全 8 关的 524 分布 ✅
@@ -98,19 +109,22 @@ void MainFront()            /* st03.ecl */
 （开场、st05 道中 boss 段）。[`01-chapter-and-bonus.md`](../th15/01-chapter-and-bonus.md) §1
 原来写的「第 0 章是道中」应改读为「第 0 章不结算章节奖」🟡→✅（地址见上）。
 
-### 1c. 同一子程序里的多波（2026-09-09 用户实跑补充）✅→🟡
+### 1c. 一个 MainSub 里的多段 burst：**算同一章**（2026-09-13 口径修正）✅
 
-用户实跑发现：**开场那三波阴阳玉原来被并成一章**。查 ECL 对上了 —— st01 `MainSub00` 里就是
-**三段 burst**：`enmCreate` ×2 → `wait(10)` → ×2 → `wait(120)` → 下一段（见下表）。
+st01 `MainSub00` 里确实是**三段 burst**：`enmCreate` ×2 → `wait(10)` → ×2 → `wait(120)` → 下一段。
+2026-09-09 曾据此推出「同子程序内静默 ≥ 100 帧 = 新一波」（`LOLK_MID_BURST_GAP`），但
+**2026-09-13 用户洞察推翻了这个口径**：`MainSub` 的**编号**才是章键，这三段 burst 同属
+`MainSub00` 一章，中间隔多久都不切。理由：TH15 的 524 是**每段敌人组开头宣告一次**
+（§1b），一个 `MainSubNN` 就是一个敌人组；字母后缀 `01b/01c` 只是同组内并发的异步子程序，
+不是新组。
 
-| 信号 | 例子 | 结论 |
+| 信号 | 例子 | 现行结论 |
 | --- | --- | --- |
-| 子程序边界 | `MainFront` 里 `@MainSub00() … @MainSub01() …` | 一组一波（主信号）|
-| **同子程序内的 burst 间隔** | `MainSub00` burst 间 `wait(120)`、burst 内 `wait(10)` | 静默 ≥ **100 帧** 后再刷出 = 新一波 |
+| MainSub **编号**变 | `MainSub01` → `MainSub02` | 新章（唯一主信号）|
+| 同一编号里的 burst 间隔 | `MainSub00` 三段 burst、`wait(120)` | **同一章，不切** |
+| 同一编号的字母后缀 | `MainSub01` + `MainSub01b` + `MainSub01c` | **同一章，不切** |
 
-卡里落成 `LOLK_MID_BURST_GAP 100`（`lolk_core.c` 的 `mid_boundary` 规则②）。
-⚠️ 阈值只有静态读 ECL 的依据 🟡：`st06 MainSub07` 块内刷出间隔 500 帧、`st07 MainSub08` 300–400 帧
-—— 那些也会被切成多波（是否合意待实机看日志）。
+（旧的 `LOLK_MID_BURST_GAP` 宏与规则②已从 `lolk_core.c` 删除。）
 
 ## 2. TH18 的 524 分布：道中确实切不出来 ✅（旧口径证伪）
 
@@ -134,7 +148,7 @@ void MainFront()            /* st03.ecl */
 > `GameThread+0x24`），**没有 TH15 的延迟标志位**，所以就算道中切章，也只能轮询数值，
 > 遇到重复章号会漏——这条路本来就不可靠。
 
-## 3. TH18 的等价信号：关卡脚本 ECL 子程序边界 + 刷出 ✅/🟡
+## 3. TH18 的等价信号：关卡脚本 MainSub 编号 + 刷出 ✅
 
 ### 3a. 关卡脚本本身就是一个敌人 ✅
 
@@ -165,22 +179,45 @@ void MainFront()            /* st03.ecl */
 | 子程序表 / 表长 | `fm+0x8c` / `fm+8` | `0x48d920` 的二分查找；`0x436a2b` 的索引 |
 | 本帧刷出数 | `zEnemyManager+0x90` | `Enemy__constructor` `0x42e40b`：每建一个敌人 `+1`（全 exe 只有它与 manager 构造写）|
 
-### 3c. 判定规则（落在 `cards/lolk_core.c` 的 `mid_boundary()`）
+### 3c. 子程序名 → MainSub 编号（一手）
+
+`zEclSubroutinePtrs` 每项 8 字节 `{name char*, bytecode void*}`（`fm+0x8c` 表基址、
+`fm+8` 表长）。`0x48d920` 的二分查找就是按 `mov ecx,[ecx+esi*8]` 取 **`name@+0`** 逐字节比 NUL；
+`0x436a31` 取 **`bytecode@+4`**。所以接线层拿 `subs[sub*2]` 就是子程序名的 C 串。
+
+`parse_mainsub_number()` 只认字面前缀 `"MainSub"` + 十进制数字：
+`MainSub00`→0、`MainSub01`→1、`MainSub01b`→1、`MainSub01c`→1、`MainSub10`→10；
+`main` / `MainFront` / `MainLatter` / `MainBoss` 一律返回 `-1`（非 MainSub 段）。
+
+**一手静态复核（`thecl -d 18`，8 关全量，2026-09-13）**：所有字母后缀 `MainSubNNx`
+都是基号的 `@…() async`，因此主上下文子程序名天然是基号：
+
+| 关 | 基号 → 字母后缀（`@…() async`）|
+| --- | --- |
+| st01 | `MainSub01`→`01b`/`01c`、`MainSub02`→`02b`、`MainSub06`→`06b` |
+| st02 | `MainSub00`→`00b`、`MainSub06`→`06b` |
+| st03 | `MainSub02`→`02b`、`MainSub06`→`06b` |
+| st05 | `MainSub02`→`02b` |
+| 其余 | 无字母后缀 |
+
+### 3c'. 判定规则（落在 `cards/lolk_core.c` 的 `mid_boundary()`，2026-09-13 版）
 
 ```
-关卡脚本子程序号变了 → 重置窗口
 本帧有刷出(spawn_delta > 0)：
-    认出关卡脚本(stage_sub >= 0)：该子程序内**第一次**刷出且距进入 ≤ LOLK_MID_SUB_WINDOW(256) 帧 → 新波
-    没认出(stage_sub < 0)        ：静默 ≥ LOLK_MID_QUIET_GAP(240) 帧后的刷出 → 新波
-boss 在场时不走这条（boss 相位 / 符卡位信号接管）
+    stage_chapter ≥ 0（在 MainSub 里）：编号 ≠ 当前章编号（或还没开章）→ 新章
+    stage_chapter < 0 且 stage_sub ≥ 0（main/MainFront/MainLatter）→ **不开章**
+    stage_sub < 0（认不出关卡脚本）→ 静默 ≥ LOLK_MID_QUIET_GAP(240) 帧后的刷出 → 新章
 ```
 
-「**该子程序内第一次**刷出」是关键：一个 `MainSubNN` 会先自己刷一批，再启动异步子程序
-（`@MainSubNNb() async`）在后面继续刷；那些后续刷出属于**同一波**，不切。
+- **开章只由刷出触发**（避免开局/换段先弹一块 0% 空面板）；编号节点本身不结算。
+- 道中章**优先于** boss 在场判定：道中 boss（`MBoss`）与 `MainSub05/06` 并存时，
+  编号变仍照切（否则 st01 的 05/06 会被吞掉）。
+- boss 相位仍由 boss 出现 / 消失 + 相位指纹接管；ECL 524 `chapter_changed` 已**不再**用于道中
+  （它在 boss 入场 `41→43` 会多开一个空道中波，旧 §5 的 ❓ 一并删掉）。
 
 ### 3d. 为什么不用「静默间隔 / 清场」当主信号 🟡→❌
 
-零售 ECL 静态实测（`thecl -d 18`，脚本直读，🟡 因为没跑实机）：
+原生 ECL 静态实测（`thecl -d 18`，脚本直读，🟡 因为没跑实机）：
 
 | 量 | 实测范围 | 出处 |
 | --- | --- | --- |
@@ -189,44 +226,57 @@ boss 在场时不走这条（boss 相位 / 符卡位信号接管）
 | 块与块之间（`MainFront`/`MainLatter` 的 wait） | 160…500 帧 | 各关 `MainFront` / `MainLatter` |
 
 → **块内间隔（可达 500 帧）比块间间隔（可低到 160 帧）还长**，任何单一静默阈值都会
-同时「过切」和「漏切」。清场也不可靠：st01/st03/st04/st07 的 `main` 会刷一个
-`MapleEnemy`（`flagSet(32)` = `flags_lo` bit 0x20，**不会被 `enmKillAll` 清**，
-见 `0x430710` 的 `& 0xc004a0` 判定），st01 那个活 1000+2500+600 帧（≈68 s），
-场上根本不会空。所以主信号必须是**脚本结构**（子程序号），静默间隔只做认不出关卡脚本时的退路。
+同时「过切」和「漏切」（这也正是旧 `LOLK_MID_BURST_GAP` 被删的原因）。清场也不可靠：
+st01/st03/st04/st07 的 `main` 会刷一个 `MapleEnemy`（`flagSet(32)` = `flags_lo` bit 0x20，
+**不会被 `enmKillAll` 清**，见 `0x430710` 的 `& 0xc004a0` 判定），st01 那个活 1000+2500+600 帧
+（≈68 s），场上根本不会空。
+
+所以主信号只有一个：**关卡脚本主上下文的 MainSub 编号**（§3c）；静默间隔
+`LOLK_MID_QUIET_GAP(240)` 只做**认不出关卡脚本**（`stage_sub < 0`）时的退路。
 
 ## 4. 落码与接线
 
 | 层 | 文件 | 关键名字 |
 | --- | --- | --- |
-| 纯逻辑 | `mods/th18.v1.00a/card-expand/native/cards/lolk_core.c/.h` | `mid_boundary()`、`LOLK_MID_SUB_WINDOW`、`LOLK_MID_QUIET_GAP`、`lolk_in_t.stage_sub` / `.spawn_delta`、`lolk_state_t.sub_age` / `.sub_fired` / `.quiet` |
-| 接缝 | `mods/th18.v1.00a/card-expand/native/cards/lolk.c` | `stage_sub_read()`、`stage_script_find()`、`spawn_id_read()`、`CE_ENEMY_ECL_CTX` / `CE_ECL_FM_SUB_TABLE` / `CE_EM_NEXT_ENEMY_ID` |
-| 单测 | `mods/th18.v1.00a/card-expand/native/tests/test_lolk_core.c` | 子程序边界 / 同子程序再刷 / 窗口过期 / 退路 / boss 抑制 / reset |
+| 纯逻辑 | `mods/th18.v1.00a/card-expand/native/cards/lolk_core.c/.h` | `mid_boundary()`、`LOLK_MID_QUIET_GAP`、`LOLK_MID_RULE_*` / `lolk_mid_rule_name()`、`lolk_in_t.stage_chapter` / `.stage_sub` / `.spawn_delta`、`lolk_state_t.wave_chapter` / `.mid_rule` / `.quiet` |
+| 接缝 | `mods/th18.v1.00a/card-expand/native/cards/lolk.c` | `stage_ecl_read()`、`parse_mainsub_number()`、`stage_script_find()`、`enemy_sub_name()`、`spawn_id_read()`、`CE_ENEMY_ECL_CTX` / `CE_ECL_CTX_SUB` / `CE_ECL_FM_SUB_TABLE` / `CE_EM_NEXT_ENEMY_ID` |
+| 单测 | `mods/th18.v1.00a/card-expand/native/tests/test_lolk_core.c` | MainSub 编号切章 / `01`+`01b` 同章 / 同编号多 burst 不切 / `main` 段抑制 / 道中 boss 并存 / 退路 / boss 相位指纹 / reset |
 
-接缝只**读**内存（`zEnemy+0xc`、`+0x1218`、`+0x6834`、`zEnemyManager+0x90`），不加断点、不改字节。
+接缝只**读**内存（`zEnemy+0xc`、`ctx+0x4`、`zEnemy+0x1218`、`fm+0x8c`、`zEnemy+0x6834`、
+`zEnemyManager+0x90`），不加断点、不改字节、不改 ECL。
 
 ## 5. 失效场景（如实登记）
 
 | 场景 | 后果 | 可信度 / 处置 |
 | --- | --- | --- |
-| 块内某个异步子程序在前一块**返回之后**才刷出 | 会把这一刷当成新波（多切一刀） | 🟡 实测零售块内异步子程序都在块内跑完（st01 `MainSub01b/c`、`MainSub02b` 都短于父块），暂不处理 |
-| `MainSubNN` 自己一个敌人都不刷、全靠异步子程序且首个刷出晚于 256 帧 | 这一块漏切（并入上一波） | 🟡 实测最长 240 帧，窗口 256 留了余量 |
-| 认不出关卡脚本（子程序名不是 `Main*`，例如别的 build / 别的作品） | 退到静默间隔，块内长间隔会过切 | 已实现退路 + 单测覆盖 |
-| boss 入场那一帧 | 关卡脚本 `MainBoss` 里 `setChapter(43)` + 刷 boss 同时发生，旧的「切章」规则与本信号都指向同一帧 → 只切一次；但 boss 注册（`setBoss`）在 boss 自己的脚本里，那一帧 `boss_present` 可能还是 0 → 会先开一个「道中波」再被下一帧的 boss 波关掉（spawned=1、killed=0 → 0％空波） | ❓ 这是**既有**行为（原来靠 `chapter_changed` 也会这样），本次没改；要修得在 `close_wave` 里加「只含 boss 一刷」的特判 |
+| 某个 MainSub 编号**一个敌人都不刷** | 这一章不出现（不产面板） | ✅ 合意：开章只由刷出触发；空段不结算 |
+| 认不出关卡脚本（子程序名不是 `Main*`，例如别的 build / 别的作品） | 退到静默间隔，块内长间隔会过切 | 已实现退路（`LOLK_MID_RULE_QUIET`）+ 单测覆盖 |
+| 道中 boss（st01 `MBoss`）与 `MainSub05/06` 并存 | boss 出现先开一个 boss 波；`MainSub05` 一刷就把 boss 波结掉、开 05 章 | 🟡 **当前口径**：用户 2026-09-13 要「章 = MainSub 编号」，所以道中章压过 boss 抑制；boss 波可能只活很短一段。实机看日志确认是否合意 |
+| boss 入场那一帧 | 已不再用 `chapter_changed` 开道中波；boss 注册（`setBoss`）在 boss 自己的脚本里，若 `boss_present` 那一帧还是 0，最多开一个「道中波」再被下一帧 boss 波关掉 | ❓ 未实测；已去掉旧的 `chapter_changed` 误开路径（旧 §5 的 ❓ 消失）|
 
 ## 6. 与 TH15 的对照
 
 | 想要的东西 | TH15 | TH18 |
 | --- | --- | --- |
-| 道中波边界 | 关卡脚本 ECL 524（一章 = 一个 `MainSubNN`）✅ | 关卡脚本 ECL 子程序号 + 刷出 ✅（本仓接线 🟡）|
-| 边界时机 | `setChapter` 后**下一帧**结算 | 帧内立即（本卡同帧结算）|
+| 道中波边界 | 关卡脚本 ECL 524（一章 = 一个 `MainSubNN`）✅ | **MainSub 编号（`01`+`01b`+`01c` 同章）**✅（本仓接线 ✅）|
+| 边界时机 | `setChapter` 后**下一帧**结算 | 该编号内**第一次刷出**那一帧 |
 | 道中章号 0 | 不结算章节奖，但计数器清零 + 快照 ✅ | 无结算端，无所谓 |
 | 每章刷出 / 击破计数 | `ENEMIES_*_IN_CHAPTER` ✅ | 死槽 → 本卡差分 `enemy_count_real` |
 
 ## 7. 剩余 ❓
 
-- 没有实机 trace，阈值（256 / 240）只有**静态读 ECL** 的依据 🟡；上实机后应按日志
-  （`lolk: wave N start (mid …)` 里带 `sub`）校准。
-- 关卡脚本子程序号在**换关瞬间**可能短暂读到旧对象（id 复用前的空窗）——接缝按 id 复核 +
+- 没有实机 trace：退路阈值 `LOLK_MID_QUIET_GAP(240)` 只有**静态读 ECL** 的依据 🟡；
+  正常路径（MainSub 编号）已是一手静态结构，不再依赖阈值。
+- st01 实机判据：道中应恰好切成 `MainSub00 / 01(+01b+01c) / 02(含02b) / 03 / 04 / 05 / 06(含06b)`
+  七章（对照 `dump-st01/README.md` 的出怪表）；boss 战按非符/符卡切。
+- 道中 boss（`MBoss`）与 `MainSub05/06` 的时间重叠会产生一个短 boss 波 ❓ —— 实机看日志
+  （`mainsub %d [rule …]`）决定要不要把「道中 boss 波」也并进相邻 MainSub 章。
+- 关卡脚本子程序名在**换关瞬间**可能短暂读到旧对象（id 复用前的空窗）——接缝按 id 复核 +
   找不到就重认，但实机上有没有「认错对象」的窗口 ❓ 未测。
-- `zEclRunContext.async_id`（`ctx+0x1014`）能区分主/异步上下文，本卡没用它（帧末读主上下文
-  已经够用）；要做「异步子程序归属」的精细切分才需要 ❓。
+
+## 附：道中 boss 是否单独成章（用户 2026-09-13 裁决 = B 保留）
+
+> ★ **2026-09-13 用户裁决（选 B）：中boss 入场也单独开一章——保留现状。**
+> 即 st01 的 `MBoss` 与 `MainSub05/06` 时间重叠时，会先出现一个 `rule boss` 的**短 boss 章**
+> （≈260 帧 / 4.3 秒），随后 `MainSub05` 开第 5 章 ⇒ 道中实际显示 **7 个 MainSub 章 + 1 个短 boss 章**。
+> 关底 boss（`MainBoss`）不受影响，仍按非符 / 符卡切章。**代码无需改动**（现状即 B）。

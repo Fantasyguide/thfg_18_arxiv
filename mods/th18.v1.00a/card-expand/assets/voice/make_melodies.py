@@ -2,7 +2,7 @@
 """make_melodies.py —— 合成 assets/voice/ 下的钢琴曲。
 
 **纯 stdlib、完全可复现**，所以产物是我们自己的内容，可以入库 ——
-不像零售 wav 那样只能 gitignore 后靠 modkit 带过去。
+不像原生 wav 那样只能 gitignore 后靠 modkit 带过去。
 
 现有曲目（`MELODIES`）：
 
@@ -10,18 +10,18 @@
 | --- | --- | --- |
 | `ROYAL_FANFARE` | 皇家同花顺（`cards/royal.c`）的演出，从第 0 帧起 | I–IV–V–I 号角，与 script70 的 194 帧时间线对齐 |
 
-**响度基准**（2026-09-05 实测零售 dat 的 71 个 se_*.wav，见 engine/_shared/th18-sound-table.md §9）：
-零售 wav 一律 peak 归一化（peak 中位 −0.06 dBFS），响度差异全压在 cfg 行的 dB 衰减上；
+**响度基准**（2026-09-05 实测原生 dat 的 71 个 se_*.wav，见 engine/_shared/th18-sound-table.md §9）：
+原生 wav 一律 peak 归一化（peak 中位 −0.06 dBFS），响度差异全压在 cfg 行的 dB 衰减上；
 而那个字段**只能衰减不能增益**（DirectSound SetVolume 范围 −10000…0），所以响度只能由 wav 承载。
-零售 wav 的 RMS 中位 −13.1 dBFS，最响的 se_release（Tenshi 发动音，与本段同帧一起响）是 −5.1。
-本段目标 TARGET_RMS_DBFS = −10：比 se_release 低 5 dB、比零售中位高 3 dB。
+原生 wav 的 RMS 中位 −13.1 dBFS，最响的 se_release（Tenshi 发动音，与本段同帧一起响）是 −5.1。
+本段目标 TARGET_RMS_DBFS = −10：比 se_release 低 5 dB、比原生中位高 3 dB。
 
 钢琴音色是加法合成：
   · 谐波 1..10，振幅 ~1/n^1.3；高次谐波衰减更快（真钢琴的高频先掉）
   · 轻微非谐性 f_n = n*f0*sqrt(1 + B n²)（钢琴弦的刚度，B≈4e-4），让音色不「电子」
   · 3 ms 升余弦起音 + 指数衰减包络
   · 起音处叠 6 ms 的噪声瞬态当槌击声
-  · peak 归一化到 −0.5 dBFS（照零售规矩）后 tanh 软限幅顶到目标 RMS，收尾 20 ms 淡出防 click
+  · peak 归一化到 −0.5 dBFS（照原生规矩）后 tanh 软限幅顶到目标 RMS，收尾 20 ms 淡出防 click
 
 跑：python3 assets/voice/make_melodies.py [NAME…]   → 同目录 <NAME>.wav（不给参数就全出）
 """
@@ -40,7 +40,7 @@ INHARMONICITY = 4e-4
 HAMMER_MS = 6.0
 ATTACK_MS = 3.0
 FADE_MS = 20.0
-PEAK_DB = -0.5                     # 照零售的规矩 peak 归一化（它们的 peak 中位是 -0.06）
+PEAK_DB = -0.5                     # 照原生的规矩 peak 归一化（它们的 peak 中位是 -0.06）
 TARGET_RMS_DBFS = -10.0            # ★ 响度基准，见文件头
 TAIL_TRIM_DB = -40.0               # 尾巴衰到这个电平就截断：一段近似静音既拉低 RMS
                                    # （逼软限幅压得更狠 = 更多失真），也让余韵拖出演出太久

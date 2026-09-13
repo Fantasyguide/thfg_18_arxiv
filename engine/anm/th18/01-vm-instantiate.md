@@ -34,7 +34,7 @@
 1. **别在脚本里写 `pos()`**。UI 列表的 VM 位置由 C 每帧 `ce_anm_set_pos` 写；脚本里的 `pos()`
    会把它覆盖成脚本里的值。从 TH16 搬 `front.anm` 的季节槽脚本时，`pos(-377, 888)` 是 TH16 的槽坐标，
    在 TH18 的 UI 空间里等于屏幕外 → **整组 VM 消失**（数字是 ASCII 文字画的，所以还在）。
-2. **别用 opcode 612（`drawRectBorder`）**。thtk 的 `v8.anmm` 标它 `TH16+`，而 TH18 的**所有零售 anm
+2. **别用 opcode 612（`drawRectBorder`）**。thtk 的 `v8.anmm` 标它 `TH16+`，而 TH18 的**所有原生 anm
    里零使用**（`grep drawRectBorder local/th18.v1.00a/anm/*/*.anm.txt` 无命中）。用它会出问题
    （2026-09-10 实测：改用它之后游戏启动即 `C0000005`，改回 `drawRect` 正常）→ 外框用
    `drawRect(102,10)` 打底 + 内部填充盖住 1 px 即可。
@@ -53,7 +53,7 @@
 - `vm+0x54/+0x58` = scale x/y（ExpHP；HUD 充能条 `0x408a53` 写 +0x58 当 fill 比例，同时 `+0x70` uv_scale.y、`+0x80` uv 滚动）；`vm+0x524` color_1 是 D3DCOLOR `0xAARRGGBB`。
 - 实体坐标 `vm+0x5f0` 是 ECL 坐标；`originMode(1)` 下 (0,0) 是**弹幕区上边框中点**（x 居中、y 从顶部起算；2026-09-04 实跑 ✅：
   2D 配方脚本 pos(0,0,0) 出现在上边框中点）。场地正中 = **(0, 224)**（384×448 的区域）。thpages 说的「ECL (0,0)」就是这个点，不是几何中心。
-- `layer` 参数写 `vm+0x18`；脚本里的 `layer(n)` 会再覆盖。零售「场地中央展示卡」的 `abcard.anm script14` 用 `layer(16)`（子弹之上）；Tenshi 要石用 13。
+- `layer` 参数写 `vm+0x18`；脚本里的 `layer(n)` 会再覆盖。原生「场地中央展示卡」的 `abcard.anm script14` 用 `layer(16)`（子弹之上）；Tenshi 要石用 13。
 - **世界层 VM 的坐标与尺寸都是「640 空间」的 ECL 单位：1 单位 = 2 表面 px**（scale 2 时）。
   一手换算：表面 = `(640 + x × DAT_0056aca0, 32 + y × DAT_0056aca0)`（`DAT_0056acb4 = ac80/2 = 640`、
   `DAT_0056acb8 = scale × 16 = 32`，`FUN_00454b20` `0x454b20` 尾）；游玩区 = ECL x ∈ [−192,192]、y ∈ [0,448]。
@@ -79,14 +79,14 @@
 相机 2 是每帧开头 `FUN_004553b0` 与主循环 `FUN_00472fd0` 切到的默认相机——但**只管层 0–2 和 24+**；层 3–19 在优先级 0xa / 0xf / 0x1a 处切到的**相机 3**下画，
 相机 3 的 2D 偏移为 0（[02-render-stages](02-render-stages.md) §1 一手订正）。
 **订正**：原推断「模式 8 放层 16 会少加区域原点而偏位」**不成立**；层 12–19 下模式 8 与 2D 路径没有偏移差。第一轮空白的真因是 anm 槽拿错（O24′）。
-零售把 `type(8)` 放层 20（`effect.anm` 7 处）/ 2 / 6 仍是事实，照抄即可；层 12–19 放模式 8 理论可行、未实测。
+原生把 `type(8)` 放层 20（`effect.anm` 7 处）/ 2 / 6 仍是事实，照抄即可；层 12–19 放模式 8 理论可行、未实测。
 **透视**：exe 只导入 `D3DXMatrixPerspectiveFovLH`（无 Ortho），所有相机都是透视投影 ✅——绕 Y 转有近大远小。
 
 ## 4. 用法（card-expand）
 
 `mods/th18.v1.00a/card-expand/native/sdk.h` 的 `ce_anm_spawn(anm, script, layer)` 只包 `0x405bf0`；
 反转牌发动时起 `ability.anm` 追加的 `script68`（卡图副本 `sprite109`，`type(8)` 绕 Y 轴一圈），AUDIT O24。
-脚本照零售层 20 配方：`layer(20); resolutionMode(1); type(8);`，不写 `originMode`（层 20 的原点由 `layer()` 设默认，见 §3b）；`pos(0, 224, 0)` 居中。
+脚本照原生层 20 配方：`layer(20); resolutionMode(1); type(8);`，不写 `originMode`（层 20 的原点由 `layer()` 设默认，见 §3b）；`pos(0, 224, 0)` 居中。
 2026-09-04 实跑：2D 配方（`type(1)` / 层 16 / 绕 Z）在修正 `+0x0c` 后显示正常 ✅ → `ce_anm_spawn` + ability.anm 追加链路通；3D 配方待复跑。
 
 ## 5. 未答
@@ -94,5 +94,5 @@
 - ~~世界层投影是否透视~~ → 全透视 ✅（§3b）。
 - ~~层号 → 渲染阶段 → 相机的精确表~~ → [02-render-stages.md](02-render-stages.md) ✅（两个大桩的层号 41/42 🟡）。
 - 模式 8 的 9 块预制四边形已读（[02 §4](02-render-stages.md)）：几何居中；实跑顶边对齐的原因仍未定位，用 `pos` 上移半张补偿 🟡。
-- `layer(n)` 指令对 originMode / resolutionMode 的默认设置：未反，沿用零售层 20 脚本的写法。
+- `layer(n)` 指令对 originMode / resolutionMode 的默认设置：未反，沿用原生层 20 脚本的写法。
 - `AnmManager__interrupt_tree` 的 ABI 没看（未用）。

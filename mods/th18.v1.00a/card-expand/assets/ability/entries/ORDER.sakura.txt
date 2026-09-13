@@ -1,6 +1,6 @@
 # 追加进 ability.anm 的贴图（TH07 系统卡 107「妖妖梦」的樱点道具）。
 # 由 assets/ability/make_sakura_art.py 生成并打印；这里只是留档，合并进 entries/ORDER.txt 时照抄即可。
-# 一行 `NAME  源图(相对 assets/)  [WxH]`；源图 16×16 = 从 TH07 零售 etama.anm 切的原始像素（不重采样）。
+# 一行 `NAME  源图(相对 assets/)  [WxH]`；源图 16×16 = 从 TH07 原版 etama.anm 切的原始像素（不重采样）。
 # 一手：etama.anm entry1 = data/etama/etama2.png
 #   sprite11: { x: 112, y: 64, w: 16, h: 16 } ← script60 = item type 7 = 樱点
 #   sprite12: { x:   0, y: 80, w: 16, h: 16 } ← script61 = item type 8 = 小樱点

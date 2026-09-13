@@ -1,7 +1,7 @@
 /* card_expand.h —— th18_card_expand.dll 内部共用的声明。
  *
  * 这个 DLL 是 card-expand mod 的唯一 DLL。职责按文件分：
- *   dll_main.c    入口 / 日志文件 / thcrap API 解析 / 开机自检①（零售表签名）
+ *   dll_main.c    入口 / 日志文件 / thcrap API 解析 / 开机自检①（原生表签名）
  *   selfcheck.c   开机自检②：BP_ce_gate 里填表（+跳转表）+ 回读站点 + 写结论
  *   unlocked.c    战线 D：unlocked_cards 影子数组 + side-car；三个断点
  *   text.c        战线 E 第一块：id≥57 的文案重定向到 DLL 缓冲（三个断点）

@@ -136,7 +136,7 @@
 1. **唯一 TH16 一手二进制证据 = ExpHP 静态结构/函数布局**——证了数据形状(PC/time/stack+base_offset/async_id/difficulty_mask/异步链表),**未证控制流**:per-frame 派发循环、CALL(11)/CALL_ASYNC(15)/CALL_ASYNC_ID(16) 如何压栈/调度、async_list_head 如何每帧遍历、time 如何推进 PC——**全靠数据布局 + pytouhou 类比推断,须反 exe 自证**。
 2. **pytouhou = 仅 TH06 老引擎**(寄存器式、CALL=ins35);帧门控概念可借,opcode/调用机制不可外推。
 3. **Mddass rank 寄存器(-9960/-9959/-9953..)= 单一二手源**(WebFetch 418,经搜索引文,均回溯同页)→ 标 🟡 待 exe 复核。
-4. Priw8/ECLjs/ECLplus = TH17/通用现代引擎,非 TH16 专属(同代内插)。ECLjs `ins_0..93` 是其**选择实现的子集**,非真实 opcode 表大小;ECLplus `enm*` 是 mod 自加指令,非原生 opcode。
+4. Priw8/ECLjs/ECLplus = TH17/通用现代引擎,非 TH16 专属(同代内插)。ECLjs `ins_0..93` 是其**选择实现的子集**,非真实 opcode 表大小;ECLplus `enm*` 是 mod 自加指令,非原版 opcode。
 5. 被**证伪**(0-3)的一条:某 agent 臆造的 pytouhou ECLRunner 字段表——勿用。
 
 ---

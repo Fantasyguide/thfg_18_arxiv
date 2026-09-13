@@ -9,7 +9,7 @@ static int on_load(ce_card_t *c)
     (void)c;
     uint8_t *p = CE_PLAYER();
     if (!p) return 0;
-    /* 零售默认 {5, 30, 70, 70}，Nitori(21) {10, 30, 110, 110}；这里「略大」：半径 70 → 95、吸速 5 → 7，比 Nitori 弱一档 */
+    /* 原生默认 {5, 30, 70, 70}，Nitori(21) {10, 30, 110, 110}；这里「略大」：半径 70 → 95、吸速 5 → 7，比 Nitori 弱一档 */
     *(float *)(p + CE_PLAYER_ITEM_ATTRACT_SPD) = 7.0f;
     *(float *)(p + CE_PLAYER_ITEM_COLLECT_R)   = 30.0f;
     *(float *)(p + CE_PLAYER_ITEM_ATTRACT_RF)  = 95.0f;

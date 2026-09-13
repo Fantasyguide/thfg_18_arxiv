@@ -37,6 +37,16 @@ int32_t lolk_bonus(int32_t graze, int32_t rate)
     return (int32_t)((raw / 10) * 10);               /* 向下取整到 10 */
 }
 
+const char *lolk_mid_rule_name(int32_t rule)
+{
+    switch (rule) {
+    case LOLK_MID_RULE_MAINSUB: return "mainsub";
+    case LOLK_MID_RULE_QUIET:   return "quiet-fallback";
+    case LOLK_MID_RULE_BOSS:    return "boss";
+    default:                    return "none";
+    }
+}
+
 static void wave_clear(lolk_state_t *s)
 {
     s->graze = 0;
@@ -53,27 +63,44 @@ void lolk_reset(lolk_state_t *s)
 {
     memset(s, 0, sizeof *s);
     s->slow = LOLK_SLOW_FULL;
-    s->last_chapter = -1;                 /* 首帧章号 0 也算「变」→ 能开第一波 */
-    s->last_stage_sub = -1;               /* 首帧子程序号 0 也算「变」→ 能开道中第一波 */
+    s->last_chapter = -1;                 /* 首帧章号 0 也算「变」→ boss 兜底能认第一波 */
+    s->last_stage_sub = -1;
+    s->wave_chapter = -1;                 /* 还没开波 → 首个 MainSub 编号都算「变」*/
+    s->mid_rule = LOLK_MID_RULE_NONE;
 }
 
-/* 道中波边界：TH15 的「一章」= TH18 的「一个敌人组」。三条信号：
- *  ① 子程序换了 + 该子程序内第一次刷出（且在 LOLK_MID_SUB_WINDOW 帧内）→ 新波
- *     （`MainFront` 里 `@MainSubNN()` 一组一组的开头）；
- *  ② **同一子程序内，静默 ≥ LOLK_MID_BURST_GAP 帧后又刷出** → 新波。
- *     一个 MainSub 里常常排了几波，例如 st01 `MainSub00` 的三波阴阳玉：
- *     burst 之间 `wait(120)`、burst 内部 `wait(10)`（2026-09-09 用户实跑：原来这三波被并成一章）。
- *  ③ 认不出关卡脚本（stage_sub < 0）时退到更宽的 LOLK_MID_QUIET_GAP。*/
+/* 道中波边界。**2026-09-13 用户洞察：章 = MainSub 编号（去掉尾部字母）**。
+ *
+ * TH15 用 ECL 524 在每段 `MainSubNN` 开头宣告一章；TH18 道中没有 524，但
+ * `MainSub00 / 01 / 01b / 02 …` 的**编号本身**就是天然键，字母后缀是基号的异步子程序。
+ * 所以本卡只用接线层解析出的 `stage_chapter`：
+ *
+ *   ① `stage_chapter >= 0`（在 MainSub 里）：编号变了（或当前没开波）+ 本帧有刷出 → 新章。
+ *      同一编号里的多段 burst（st01 `MainSub00` 的三波阴阳玉）与异步子程序
+ *      （`MainSubNNb`）**都不切**。旧实现靠 `LOLK_MID_BURST_GAP` 静默窗口猜，已删除。
+ *   ② `stage_chapter < 0` 且 `stage_sub >= 0`（`main` / `MainFront` / `MainLatter` 段）：
+ *      不是道中章 → 这些段里的刷出（开场 `MapleEnemy`）不开波。
+ *   ③ `stage_sub < 0`（认不出关卡脚本）= 退路：静默 ≥ `LOLK_MID_QUIET_GAP` 帧后再刷出 → 新章。 */
 static int mid_boundary(const lolk_state_t *s, const lolk_in_t *in, int32_t quiet_before)
 {
     if (in->spawn_delta <= 0) {
         return 0;
     }
-    if (in->stage_sub >= 0) {
-        if (!s->sub_fired && s->sub_age <= LOLK_MID_SUB_WINDOW) return 1;      /* ① */
-        return (quiet_before >= LOLK_MID_BURST_GAP) ? 1 : 0;                    /* ② */
+    if (in->stage_chapter >= 0) {
+        return (!s->wave_open || in->stage_chapter != s->wave_chapter) ? 1 : 0;   /* ① */
     }
-    return (quiet_before >= LOLK_MID_QUIET_GAP) ? 1 : 0;
+    if (in->stage_sub >= 0) {
+        return 0;                                                              /* ② */
+    }
+    return (quiet_before >= LOLK_MID_QUIET_GAP) ? 1 : 0;                       /* ③ */
+}
+
+/* 开波时用的规则（写进 state，日志里区分「MainSub 主信号」还是退路）。*/
+static int mid_rule_of(const lolk_in_t *in)
+{
+    if (in->stage_chapter >= 0) return LOLK_MID_RULE_MAINSUB;
+    if (in->stage_sub >= 0) return LOLK_MID_RULE_NONE;   /* 非 MainSub 段：不该开波 */
+    return LOLK_MID_RULE_QUIET;
 }
 
 /* 本波击破率：道中按击破数/总数；boss 相位按击破/超时（时符恒 100）。*/
@@ -133,6 +160,7 @@ static void open_wave(lolk_state_t *s, const lolk_in_t *in, int32_t kind)
 {
     s->wave_open = 1;
     s->wave_kind = kind;
+    s->wave_chapter = (kind == LOLK_KIND_MID) ? in->stage_chapter : -1;   /* boss 波不认章 */
     wave_clear(s);
     s->debounce = LOLK_DEBOUNCE;
     s->flag_base = in->phase_timeout_flag;
@@ -151,7 +179,8 @@ int lolk_tick(lolk_state_t *s, const lolk_in_t *in, lolk_settle_t *out)
     int ev = LOLK_EV_NONE;
     int boss = in->boss_present ? 1 : 0;
     int want_new = 0;
-    int chapter_changed = (in->chapter != s->last_chapter);
+    int new_kind = LOLK_KIND_MID;
+    int new_rule = LOLK_MID_RULE_NONE;
     int32_t quiet_before = s->quiet;
     int mid_new;
 
@@ -176,54 +205,64 @@ int lolk_tick(lolk_state_t *s, const lolk_in_t *in, lolk_settle_t *out)
         }
     }
 
-    /* ② 道中信号跟踪（每帧一次，必须在边界判定之前）：
-     *    关卡脚本子程序换了 → 重置窗口；本帧有刷出 → 清静默计数。*/
-    if (in->stage_sub != s->last_stage_sub) {
-        s->sub_age = 0;
-        s->sub_fired = 0;
-    } else if (s->sub_age < 0x7fffffff) {
-        s->sub_age++;
-    }
+    /* ② 道中信号跟踪（每帧一次）：本帧有刷出 → 清静默计数（只在认不出关卡脚本的退路用）。*/
     if (in->spawn_delta > 0) {
         s->quiet = 0;
     } else if (s->quiet < 0x7fffffff) {
         s->quiet++;
     }
-    mid_new = mid_boundary(s, in, quiet_before);
 
-    /* ③ boss 消失：结算并关波（道中 boss 整场就是这一波）*/
+    /* ③ boss 消失：只有**当前开的是 boss 波**才结算并关波。
+     *    ⚠️ 2026-09-13：道中 boss（st01 `MBoss`）与 `MainSub05/06` 时间重叠 ——
+     *    若玩家在 MainSub05 刷怪途中打死道中 boss，此时开着的是**道中章 05**；
+     *    那种情况不能关 05（关了之后 MainSub05 的后续刷出会把它再开一次 → 一章裂成两章）。
+     *    道中章的边界只认下一个 MainSub 编号。*/
     if (s->boss_present && !boss) {
-        if (s->wave_open) {
+        if (s->wave_open && s->wave_kind == LOLK_KIND_BOSS) {
             ev |= close_wave(s, out);
+            s->wave_open = 0;
         }
-        s->wave_open = 0;
     }
 
     /* ④ 边界。相位指纹只在「有活动中断槽」时更新 —— 槽被清空的那一帧（0）不算边界，
-     *    于是「槽清空 → 新槽」这条链只报一次，且报到的是新相位。*/
-    if (boss != s->boss_present) {
+     *    于是「槽清空 → 新槽」这条链只报一次，且报到的是新相位。
+     *
+     * ⚠️ 2026-09-13：道中波**不再**用 ECL 524 的 `chapter_changed`（TH18 道中没有 524，
+     * 轮询它只会在 boss 入场 `setChapter(41→43)` 那一帧多开一个空道中波 —— 旧 §5 的 ❓）。
+     * 道中一律走 `mid_boundary` 的 MainSub 编号。*/
+    mid_new = mid_boundary(s, in, quiet_before);
+
+    if (mid_new) {
+        /* 道中章优先：MainSub 编号变了 / 退路静默够 → 即使道中 boss 在场也照切。*/
+        want_new = 1;
+        new_kind = LOLK_KIND_MID;
+        new_rule = mid_rule_of(in);
+    } else if (boss != s->boss_present) {
         want_new = boss;                                    /* 出现 = 新波；消失已在 ③ 处理 */
-    } else if (s->wave_open && chapter_changed) {
-        want_new = 1;                                       /* ECL 524 切章（道中 / boss 阶段）*/
+        new_kind = LOLK_KIND_BOSS;
+        new_rule = LOLK_MID_RULE_BOSS;
     } else if (boss && s->wave_open && s->debounce == 0 && in->phase_sig && s->last_phase_sig &&
                in->phase_sig != s->last_phase_sig) {
-        want_new = 1;                                       /* boss 相位换 */
-    } else if (!boss && s->debounce == 0 &&
-               (mid_new || (!s->wave_open && in->spawn_delta > 0))) {
-        /* 道中：新敌人组（见 ② 与头注）；**还没开波时，第一个刷出就开第一波**
-         * （不能靠「章号变了」开波 —— 那会在开局先开一个空波，见下面注释）*/
+        want_new = 1;                                       /* boss 相位换（指纹）*/
+        new_kind = LOLK_KIND_BOSS;
+        new_rule = LOLK_MID_RULE_BOSS;
+    } else if (!boss && !s->wave_open && in->spawn_delta > 0 && in->stage_sub < 0) {
+        /* 退路的**第一波**：认不出关卡脚本时静默计数还没攒够，第一个刷出就得开波
+         * （否则永远开不出来）。*/
         want_new = 1;
-        s->sub_fired = 1;                                   /* 这一刷已消化，同子程序内不再切 */
+        new_kind = LOLK_KIND_MID;
+        new_rule = LOLK_MID_RULE_QUIET;
     }
     /* ⚠️ 2026-09-09 用户实跑：**不要**在「章号变了但还没有任何刷出/boss」时开波。
      * 否则开局那一帧先开一个空波、下一帧第一个刷出就把它结掉 → 屏幕上一上来弹一块
-     * 「击破率 0%」的结算面板。开波只由「刷出（mid_new）」或「boss 出现」触发。*/
+     * 「击破率 0%」的结算面板。开波只由「刷出（mid_new / 退路）」或「boss 出现」触发。*/
 
     if (want_new) {
         if (s->wave_open) {
             ev |= close_wave(s, out);
         }
-        open_wave(s, in, boss ? LOLK_KIND_BOSS : LOLK_KIND_MID);
+        open_wave(s, in, new_kind);
+        s->mid_rule = new_rule;
         ev |= LOLK_EV_WAVE_START;
     }
 

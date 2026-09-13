@@ -38,7 +38,7 @@ static void fill_placeholders(void)
     for (unsigned id = CE_TEXT_ENTRIES; id < CE_MAX_ROWS; ++id) {
         char *e = (char *)s_ext[id - CE_TEXT_ENTRIES];
         if (id == CE_TEXT_ENTRIES)
-            snprintf(e, 0x40, "BACK");                          /* id 57 = 卡背，零售也没有文案 */
+            snprintf(e, 0x40, "BACK");                          /* id 57 = 卡背，原生也没有文案 */
         else
             snprintf(e, 0x40, "测试卡牌 %u", id);            /* 已注册的卡以后由数据文件覆盖 */
         snprintf(e + 0x40 * 1, 0x40, "card-expand 占位文案");

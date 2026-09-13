@@ -139,7 +139,7 @@ int main(void)
     CHECK(yk_option_count(1, 3, 99) == yk_option_count(1, 3, 4));
 
     /* --- 逐格阵型（spec §12.4 的形状缺口）：**「咲夜 = 4」必须真的是 4 个不同的位置** ---
-     * 表 = 零售 `pl0X.sht` 的位置块（一手出处见 youkai_core.h §3.3），格号 k = T[count-1] + i。*/
+     * 表 = 原生 `pl0X.sht` 的位置块（一手出处见 youkai_core.h §3.3），格号 k = T[count-1] + i。*/
     {
         yk_opt_off_t o1, o2;
         int c, k, j;
@@ -222,10 +222,10 @@ int main(void)
     CHECK(yk_bullet_damage_apply(50, ((uint32_t)YK_SHOT_SET_YOUKAI << 8) | 1, 400, 0) == 0); /* out=NULL 安全 */
 
     /* shooterset 自检：那一格必须是**我们写的合法记录**才敢调 `ce_tick_shooters_for_card`
-     *（零售原值是 `fire_rate = 0` ⇒ 装备卡路径整数除零，`0x40aa4f` 没有零分支）。
-     * 零售那格长什么样、我们写进去的 9 行长什么样、逐字段出处 —— 全在
+     *（原生原值是 `fire_rate = 0` ⇒ 装备卡路径整数除零，`0x40aa4f` 没有零分支）。
+     * 原生那格长什么样、我们写进去的 9 行长什么样、逐字段出处 —— 全在
      * `assets/sht/append_shooterset.py` 的 `REPLACE` 注释里（一手：TH08 v1.00d `ply03as.sht` 满 P 档）。*/
-    CHECK(!yk_shotset_usable(0));        /* ★ 零售那一格的值 = 自检必须拒绝（这条就是除零护栏本身）*/
+    CHECK(!yk_shotset_usable(0));        /* ★ 原生那一格的值 = 自检必须拒绝（这条就是除零护栏本身）*/
     CHECK(!yk_shotset_usable(-1));       /* 负 = 终止符 */
     CHECK(!yk_shotset_usable(128));
     CHECK(yk_shotset_usable(1));
@@ -238,8 +238,8 @@ int main(void)
     CHECK(yk_shotset_usable(10));
 
     /* 槽号与行数：生成器（`make sht`）会回来核对这两个常量，对不上就失败（防静默漂移）*/
-    CHECK(YK_SHOT_SET_YOUKAI == 0x16);          /* 零售唯一无卡映射的那一格（见 youkai_core.h 的出处）*/
-    CHECK(YK_SHOT_SET_YOUKAI < 0x17);           /* ★ 必须落在**零售区**：0x17–0x27 是本 mod 追加区，
+    CHECK(YK_SHOT_SET_YOUKAI == 0x16);          /* 原生唯一无卡映射的那一格（见 youkai_core.h 的出处）*/
+    CHECK(YK_SHOT_SET_YOUKAI < 0x17);           /* ★ 必须落在**原生区**：0x17–0x27 是本 mod 追加区，
                                                  *   动了会让别的卡（77/116/117）的索引漂移 */
     CHECK(YK_SHOT_SET_YOUKAI_ROWS == 9);        /* 9 行 = `REPLACE` 里的行数 */
     CHECK(YK_SHOT_SET_YOUKAI_ROWS <= 256);      /* 行号进 `packed_id` 低 8 位 */
@@ -474,7 +474,7 @@ int main(void)
     CHECK(yk_clamp_spawn_life(1) == 1);
     CHECK(yk_clamp_spawn_life(999) == 999);
     CHECK(yk_clamp_spawn_life(YK_LIFE_LIMIT) == YK_LIFE_MAX_ALLOWED);        /* 1000 ⇒ 999 */
-    CHECK(yk_clamp_spawn_life(4000) == YK_LIFE_MAX_ALLOWED);                /* 零售 Lily 那种 4000 会被钳 */
+    CHECK(yk_clamp_spawn_life(4000) == YK_LIFE_MAX_ALLOWED);                /* 原生 Lily 那种 4000 会被钳 */
     CHECK(yk_clamp_spawn_life(0) == 1);
     CHECK(yk_clamp_spawn_life(-5) == 1);
     CHECK(YK_FAM_LIFE < YK_LIFE_LIMIT);   /* ★ 占位（1，一发即破）；换成 >= 1000 的值这条会红 */

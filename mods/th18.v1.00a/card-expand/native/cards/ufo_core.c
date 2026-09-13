@@ -385,7 +385,7 @@ int ufo_target_on_screen(float x, float y)
 int ufo_target_clear_of_player(float x, float y, float px, float py)
 {
     float dx = x - px, dy = y - py;
-    /* 一手：`0x44625f` 的收点检查半径 = `player+0x4798c`，零售默认 **30.0f**（`0x45ae67` 起初始化；
+    /* 一手：`0x44625f` 的收点检查半径 = `player+0x4798c`，原生默认 **30.0f**（`0x45ae67` 起初始化；
      * `PLAN` §2.1 的默认 `{5,30,70,70}`）。严格 > ⇒ 命中边界不算安全（引擎用的是 `jbe` 收点）。*/
     return (dx * dx + dy * dy) > (30.0f * 30.0f);
 }

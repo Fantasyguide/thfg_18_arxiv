@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""星莲船（系统卡 112）**令牌**贴图 + 动画脚本 —— TH12 v1.00b 零售切图（资产缺口 A5 的贴图那一半）。
+"""星莲船（系统卡 112）**令牌**贴图 + 动画脚本 —— TH12 v1.00b 原版切图（资产缺口 A5 的贴图那一半）。
 
 ## 一手依据（全部可复核）
 
@@ -60,14 +60,14 @@ TH12 的「令牌」在引擎里是**道具**（不是敌机、也不在 ECL 里
   **在同一个 VM 上重指脚本**。⇒ 换色**不是**中断，是重建 VM。
 - `90` = `0x5a`（`0x426358`）：计时器走到 90 时发 2 号中断开始快闪，**闪到 150 换色**（最后 60 帧在闪）。
 
-## 与零售的差异（**逐条登记，别包装成「复刻」**）
+## 与原生的差异（**逐条登记，别包装成「复刻」**）
 
 1. **彩虹令牌的 168..173 版被截断**（只留主循环）：三段要靠引擎送中断切过去，而**当时**本卡没有
    「给 anm VM 送中断」这条通路。★ 2026-09-12（A8）：SDK 里其实**已经有** `ce_anm_interrupt(id, n)`
    （`sdk.h`，`AnmManager__interrupt_tree` `th18:0x488be0`）⇒ 本文件**新增 215..217** 三条**全文**脚本
    （三段一段不少）。168..173 **一字未改**（它们仍是「被截断的那一版」；其中 171..173 的彩虹三条现在
    没有调用者了 —— 卡侧改指 215..217）。
-2. **脚本号**：零售 175..180 → 本仓 `ability.anm` 的 168..173；彩虹全文版 = 215..217。
+2. **脚本号**：原生 175..180 → 本仓 `ability.anm` 的 168..173；彩虹全文版 = 215..217。
 3. `type(3)` / `scaleTime(8, 1, 1, 1)` / `rotateTime(32, 9, 0, 0, ±0.20943952)` / 每 4 帧切图 / `jmp` **逐条照抄**。
 
 跑法：`python3 make_ufo_token_art.py`（幂等；可重复运行，产物逐字节稳定）。
@@ -89,7 +89,7 @@ OUT = HERE / "ufo"
 SCRIPTS = HERE / "scripts"
 ORDER_FRAG = HERE / "entries" / "ORDER.ufo_token.txt"
 
-UNIT_W, UNIT_H = 30, 22                      # 零售单元尺寸
+UNIT_W, UNIT_H = 30, 22                      # 原生单元尺寸
 CANVAS = 32                                  # 输出画布（ORDER 要求 2 的幂）
 
 # (输出名, TH12 sprite 号, 期望矩形) —— 矩形从 anm 文本读出来做断言，不写死在切图里
@@ -169,7 +169,7 @@ def scripts_of(text: str) -> dict[int, list[str]]:
 
 def make_sprites() -> list[str]:
     if not SRC_PNG.is_file():
-        raise SystemExit(f"缺 TH12 零售贴图 {SRC_PNG}")
+        raise SystemExit(f"缺 TH12 原版贴图 {SRC_PNG}")
     rects = read_sprite_rects()
     src = Image.open(SRC_PNG).convert("RGBA")
     if src.size != (256, 256):
@@ -248,7 +248,7 @@ def make_scripts() -> list[tuple[int, str]]:
         ]
         if has_label:
             header.append(
-                "    // ⚠ 只移植**主循环**那一段：零售的 interruptLabel(3)/(2)/(7) 三段要靠引擎送中断切过去，"
+                "    // ⚠ 只移植**主循环**那一段：原生的 interruptLabel(3)/(2)/(7) 三段要靠引擎送中断切过去，"
                 "本卡没有这条通路 ⇒ 不抄。登记见 make_ufo_token_art.py 文件头差异 1。"
             )
         # body 已经是「花括号之间」的正文（`script scriptNN {` 那行在 `scripts_of` 里就被丢掉了）
@@ -327,7 +327,7 @@ def main() -> int:
             [
                 "# 星莲船（系统卡 112）**令牌**贴图 —— TH12 v1.00b `bullet.anm` script175..180 + `bullet/etama8.png` 切图。",
                 "# 本片段由 assets/ability/make_ufo_token_art.py 生成（幂等，整段重写）；合并时把这些行追加进 ORDER.txt。",
-                "# 一个 30×22 零售单元 → 一张 32×32 画布（居中）；不写尺寸会被当成 256×320 卡图。",
+                "# 一个 30×22 原生单元 → 一张 32×32 画布（居中）；不写尺寸会被当成 256×320 卡图。",
                 "# 矩阵（一手矩形）：444/447 红·固定色 / 445/448 蓝 / 446/449 绿（y=145）；",
                 "#                   453/456 红·彩虹 / 454/457 蓝 / 455/458 绿（y=169，亮一档）。",
             ]

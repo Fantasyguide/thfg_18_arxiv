@@ -44,7 +44,7 @@ check(S.CAVE_SIZE[S.CAVE_NAMES] == 0x1a4, "names cave 应 0x1a4")
 check(S.CAVE_SIZE[S.CAVE_BLOBS] == 0x1a0, "blob cave 应 0x1a0")
 
 code = c[S.CAVE_INIT]["code"]
-# ★ 版权红线：patch 里不许出现零售数据。零售表一律用 Rx 相对模块基址在运行时取。
+# ★ 版权红线：patch 里不许出现原生数据。原生表一律用 Rx 相对模块基址在运行时取。
 check("<Rx%x>" % S.CFG_RVA in code, "cfg 必须用 <Rx…> 取，不能写死绝对地址、更不能内联表内容")
 check("<Rx%x>" % S.NAMES_RVA in code, "wav 名表同上")
 check(code.startswith("fc60"), "开头必须是 cld; pushad")
@@ -82,7 +82,7 @@ check(bh["snd_4766ef"]["code"].endswith(
         "<codecave:%s+%x>" % (S.CAVE_CFG, S.CFG_CURSOR + S.CFG_ROWS_N * S.CFG_ROW)),
       "0x4766ef 的 cfg 尾界必须是 +4 游标（base+4+116*0x14），少 4 字节就少建一行")
 check(bh["snd_4713d8"]["code"].endswith("<codecave:%s+%x>" % (S.CAVE_BLOBS, S.BLOB_N * 4)),
-      "0x4713d8 的释放尾界必须只到零售 72（跨堆 free 会崩）")
+      "0x4713d8 的释放尾界必须只到原生 72（跨堆 free 会崩）")
 check(bh["snd_45ff38"]["code"].endswith("<codecave:%s+%x>" % (S.CAVE_SLOTS, 20 * S.SLOT_SIZE)),
       "0x45ff38 必须指向槽 20（se_lazer02 常驻激光音）")
 check(bh["snd_45a4c5"]["code"].endswith(

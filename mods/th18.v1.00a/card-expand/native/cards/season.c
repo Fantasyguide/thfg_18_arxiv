@@ -13,7 +13,7 @@
  *   · 消耗：春/秋/冬 清零，夏/土用 只扣一档（`th16:0x40db20`）
  * 纯逻辑（档位/表/消耗）在 `cards/season_core.c`，主机单测 `tests/test_season_core.c`。
  *
- *   ① 季节点 = **本卡自己的 anm VM**（`ability.anm` script 115 + 5 张零售切图，按副季节换 sprite）。
+ *   ① 季节点 = **本卡自己的 anm VM**（`ability.anm` script 115 + 5 张原生切图，按副季节换 sprite）。
  *      运动学**逐条照抄原版道具**（TH16 `ItemManager__on_tick_1d__body` `th16:0x42f4e0` /
  *      TH18 `ItemManager__on_tick__body` `0x445a80`，两作同款代码同一组常量）：
  *        · ★ **出生先「待发射」再「直线飞散」**（TH16 `item+0xc50` = 6 → 3，`0x42f54e`/`0x430c90`）：
@@ -31,7 +31,7 @@
  *          每帧 +0.2 到上限 12.0（`th16:0x4945d4`）；**过回收线**（`player+0x47998`，TH16 是 128/纱苗 224）
  *          → 朝自机飞，初速 = 磁速本身
  *        · 收集半径 / 吸引半径 / 磁速**读自机自己的字段**（`player+0x47988..0x47994`，初值 5.0/30/70/70）
- *          —— 零售卡 ITEM_CATCH(21) / ITEM_LINE(22) 改的就是它们，我们的季节点跟着一起变
+ *          —— 原生卡 ITEM_CATCH(21) / ITEM_LINE(22) 改的就是它们，我们的季节点跟着一起变
  *      ⚠️ 不用 TH18 的原生道具：季节点没有原生 type（TH18 type≥0x14 直接返回），而借分数转换点
  *      的贴图外观不对。代价：季节点不进 TH18 的得分/道具系统（它只是本卡的资源）。
  *   ② 季节槽：累计季节点按 TH16 阈值分 0..6 档（`season_core.c`）。
@@ -79,7 +79,7 @@
 /* —— 季节点：本卡自己的 VM；**运动学照原版道具逐条抄**（地址见文件头）—— */
 /* ★★ 第三十三轮：96 → **512**。池只有 96 而 boss 一次掉 200 ⇒ 多出来的 104 颗进队列、
  * 要等玩家把场上收空才一颗颗补出来（`burst_tick` 8/帧但**池满时生不出来**），实跑看着像
- * 「boss 又掉了一次」（一秒钟后又冒出一批）。TH16 的原生道具池是 4696 槽（`0x1258`），
+ * 「boss 又掉了一次」（一秒钟后又冒出一批）。TH16 的原版道具池是 4696 槽（`0x1258`），
  * 200 颗是一口气全出来的 ⇒ 池子给够，boss 那 200 颗当场全出。VM 池上限 0x7fff（`get_vm` 的
  * 掩码），512 颗点占 512 个 VM，安全。*/
 #define SEASON_POINT_POOL       512
@@ -194,7 +194,7 @@ static const struct { float dx, dy, sx, sy; } k_season_frame[SEASON_FRAME_N] = {
  * 同层内**后生成者在上**（`insert_in_ui_list_back` 尾插 + `render_layer` 表头→表尾），
  * 生成顺序照 TH16 script113 的 `scriptNew`：外框 → 实心背景 → 渐变进度 → 字 → 条。*/
 
-/* 副季节贴图：**直接从 TH16 零售 `bullet/item.png` 切的 5 个 16×16 单元**
+/* 副季节贴图：**直接从 TH16 原版 `bullet/item.png` 切的 5 个 16×16 单元**
  * （右上 2×2 = 春/夏、秋/冬，再一行 (224,32) = 土用；TH16 用「脚本号 = 129 + SUBSEASON」选，
  * 见 `th16:0x430cb7`）。切片尺寸与 P 点 / 蓝点一致，脚本 115 的 scale 也照 TH16 那张。*/
 
@@ -281,7 +281,7 @@ static int opt_dx(int i)
 
 /* ★ 子机阵位：把 TH16 副 sht 的 option_pos 写进 option 记录的位置偏移字段（定点 ×128）。
  * 一手：`Player::allocate_option` `th18:0x40a7f6`..`0x40a811` 只写 y（x 写 0），
- * 零售卡 `th18:0x40b8c1` 四个字段都写（非聚焦 x/y、聚焦 x/y）→ 卡可以自己摆 2D 阵型。*/
+ * 原生卡 `th18:0x40b8c1` 四个字段都写（非聚焦 x/y、聚焦 x/y）→ 卡可以自己摆 2D 阵型。*/
 static void set_option_offsets(uint8_t *o, const season_opt_pos_t *pos)
 {
     int32_t x, y;
@@ -347,7 +347,7 @@ static int season_opt_sprite(int subseason)
     }
 }
 
-/* 季节点本体的贴图（TH16 零售切图）*/
+/* 季节点本体的贴图（TH16 原版切图）*/
 static int season_sprite(int subseason)
 {
     switch (subseason) {
@@ -371,7 +371,7 @@ static int season_glyph_sprite(int subseason)
     }
 }
 
-/* ③ 子机申请：照零售装备卡 —— `on_power_level_change` 时池刚重建，按档位重来一遍。*/
+/* ③ 子机申请：照原生装备卡 —— `on_power_level_change` 时池刚重建，按档位重来一遍。*/
 static int alloc_options(ce_card_t *c)
 {
     season_card_t *s = st(c);
@@ -747,14 +747,14 @@ static int enemy_is_boss(const uint8_t *e)
  * （配套 `dropSeason(T,N,M)` 的 handler `th16:0x422a26`：`Timer__set_value(&bonus_timer, T)` +
  *  `extra_counts[15] = N` + `min_count = M`。）⇒ 出场后 T 帧内击破给满 N 个，拖到计时走完只剩 M 个。
  * 一手见 engine/season/th16/01 §5.2 / §5.3。
- * ★★ 第三十五轮（用户：「th16 有不同档位吗？」→ 选「原生 T + 原生计数映射到 TH16 量级」）：
+ * ★★ 第三十五轮（用户：「th16 有不同档位吗？」→ 选「原版 T + 原版计数映射到 TH16 量级」）：
  * TH18 里拿不到 TH16 那张逐敌人的 (T,N,M) 表，但 **TH18 自己有一套同形的逐敌人档位** ——
  * `zEnemyDrop.timed_ex_drop_time`（窗口 T）+ `timed_ex_drop[type]`（数量），由 ECL opcode 573/574
  * 写在每个敌人的子程序开头，字段就在敌人身上，卡侧直接读：
  *   `n = ex_drop[i] + timed_ex_drop[i] × (T − timer)/T`（`0x430510` 一手，timer 由 `FUN_0042ff80`
  *   的 `0x430161` 段每帧 +1）—— **和 TH16 的 dropSeason 同形同向**。
  * 所以这里：**T 用敌人自己的原生 `timed_ex_drop_time`**，数量用「原生 timed 计数」当档位键映射回
- * TH16 的量级（`season_drop_native_tier`），M 恒 1。没配原生窗口的敌人（T = 0，含所有 boss）
+ * TH16 的量级（`season_drop_native_tier`），M 恒 1。没配原版窗口的敌人（T = 0，含所有 boss）
  * 退回 TH16 小妖精那套 `(60,8,1)`。一手普查见 engine/season/th18/01 §1b′。
  * 计时器用引擎自己的 `zEnemyData.time_alive`（**zEnemyData+0x2d0**，`current` 在 +0x2d4 ⇒
  * 绝对偏移 `enemy+0x1500`，见 engine.h 的 `CE_ED_TIME_ALIVE`）——
@@ -770,11 +770,11 @@ static int mid_drop_count(const uint8_t *e, int32_t *out_T, int32_t *out_native)
     int32_t T = *(const int32_t *)(drop + CE_ENEMY_DROP_TIMED_TIME);
     int32_t native = 0, i;
 
-    for (i = 0; i < CE_ENEMY_DROP_TYPES; ++i) {            /* 取各 type 里的最大值（零售每次只配一种）*/
+    for (i = 0; i < CE_ENEMY_DROP_TYPES; ++i) {            /* 取各 type 里的最大值（原生每次只配一种）*/
         int32_t v = *(const int32_t *)(drop + CE_ENEMY_DROP_TIMED_COUNTS + i * 4);
         if (v > native) native = v;
     }
-    if (T <= 0 || native <= 0) {                           /* 没配原生档位 → TH16 小妖精 (60,8,1) */
+    if (T <= 0 || native <= 0) {                           /* 没配原版档位 → TH16 小妖精 (60,8,1) */
         if (out_T) *out_T = SEASON_DROP_MID_TIME;
         if (out_native) *out_native = 0;                   /* 日志里 native 0 = 这个敌人没配原生窗口 */
         return (int)season_drop_count_decay(alive, SEASON_DROP_MID_TIME,
@@ -835,7 +835,7 @@ static void on_enemy_drop_pre(ce_card_t *c, int32_t *counts)
      * 自己 `_memset(this+4, 0, 0x50)`）。*/
     ep = ce_enemy_pos(e);
     if (!ep) return;
-    /* ★ 小怪的数量按 TH16 的计时衰减结算（`mid_drop_count`，T/档位取敌人自己的原生
+    /* ★ 小怪的数量按 TH16 的计时衰减结算（`mid_drop_count`，T/档位取敌人自己的原版
      * `timed_ex_drop_time` / `timed_ex_drop`）；boss 每个相位恒 200
      *（TH16 boss ECL 每个相位各调一次 `dropSeason(1200,200,10)`，见 NEXT.md 第 29 轮）。*/
     n = is_boss ? SEASON_DROP_BOSS : mid_drop_count(e, &mt, &mn);
@@ -972,11 +972,11 @@ static void ring_tick(season_card_t *s, const float *pp)
  *     **加速态**（秋：`BombSubFall__on_tick` 每帧写 `player+0x16688 = 1.5`）→ 黄 `0xffffff00`；
  *     **速度缩放态**（冬：`BombSubWinter__on_tick` 每帧写 `player+0x2c7cc = 1.5` → `EnemyManager` 置
  *     `player+0x1664c` bit0x20）→ 蓝 `0xffff0000`。无敌中走另一支（只闪色、**不**建残像）。
- * 脚本本体（TH18 零售 `pl0X.anm`，逐条对上 TH16 的同一支）：
+ * 脚本本体（TH18 原生 `pl0X.anm`，逐条对上 TH16 的同一支）：
  *   `layer(13); type(1); sprite(sprite0); color(60,0,192); alphaTime(20,0,0); +20: delete()`
  *   —— 一张自机本体、20 帧淡出。脚本号按角色：pl00 = 17、pl01 = 19、pl02 = 14、pl03 = 14。
  * ⚠️ TH18 的引擎把这段删了（`Player__on_tick__body` `0x45c6e4` 直接跳到 `0x45c702`，没有建 VM 的调用），
- *    但零售脚本还在 ⇒ 这里补的是**天空璋的行为**，数值/条件全部照 TH16 的地址。*/
+ *    但原版脚本还在 ⇒ 这里补的是**天空璋的行为**，数值/条件全部照 TH16 的地址。*/
 static void afterimage_tick(season_card_t *s, const float *pp)
 {
     static const int32_t k_script[4] = { 17, 19, 14, 14 };   /* pl00/pl01/pl02/pl03 的残像脚本 */
@@ -1584,7 +1584,7 @@ static int on_draw(ce_card_t *c)
         /* ★★ 2026-09-10 第三十二轮：**从 ASCII 文字改成贴图 VM**（用户定案「那就改：只能把数字改成贴图 VM」）。
          * 为什么必须换：ASCII 文字**永远进不了暂停模糊罩下面**（用户实跑：改成早于罩子的 group 1
          * 之后数字全看不见 —— 那一趟 `0x419950` 跑在 surface 1 + 相机 0 上，见下面 31 轮的记录）。
-         * 现在走 `ce_hud_vm_text_set`（sdk.c）：字形 = TH18 font 2 的**零售切图**（`ascii1280` 变体，
+         * 现在走 `ce_hud_vm_text_set`（sdk.c）：字形 = TH18 font 2 的**原生切图**（`ascii1280` 变体，
          * `make_font2_art.py`），VM 挂脚本 136（UI 层 25 → 折到组 38 → 与模糊罩同桩 `0x3e`，
          * 罩子暂停时后起 ⇒ 数字被罩住、平时全分辨率）。
          * 排版与位置**与原来的 ASCII 完全一致**（同一套 640 空间坐标 + font 2 的字距/对齐）：

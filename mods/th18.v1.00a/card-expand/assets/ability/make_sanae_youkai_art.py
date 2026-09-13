@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""永夜抄（系统卡 108）**早苗侧的妖机体 = 射命丸文**：TH16 零售切图 + 脚本生成。
+"""永夜抄（系统卡 108）**早苗侧的妖机体 = 射命丸文**：TH16 原版切图 + 脚本生成。
 
     python3 make_sanae_youkai_art.py        # 生成 + 自检（幂等，重跑结果一致）
 
-来源（零售字节只在 `local/`，gitignored；构建时取，不入库）：
+来源（原生字节只在 `local/`，gitignored；构建时取，不入库）：
   贴图+脚本  `local/th16.v1.00a/dat/pl03.anm`
               —— **anm version 8**（文件头自述，本脚本每次运行都回读打印）。
               贴图在 .anm 内部，entry 名 = `player/pl03/pl03.png`（256×256，本体贴图，完整自机图）。
@@ -54,15 +54,15 @@
   script13 那种「引用本体 sprite 的特效」**不切**，但它在路由上有后果（见设计文档 §11.3 的 (a) 条）。
 
 产出（每条都不动别人的文件）：
-  ability/sanae_youkai/YOUKAI_AYA_S<n>.png —— 24 张零售切图（30×46），**居中补透明**到 **32×64**。
-    ★ 为什么居中：① 零售的 sprite 四边形以 **VM 位置为中心**画（`anchor` 位为 0 时），
-      所以「内容居中于画布」与零售落点逐像素一致；② 本仓构建期对小于声明尺寸的源图**也是居中补**
+  ability/sanae_youkai/YOUKAI_AYA_S<n>.png —— 24 张原生切图（30×46），**居中补透明**到 **32×64**。
+    ★ 为什么居中：① 原生的 sprite 四边形以 **VM 位置为中心**画（`anchor` 位为 0 时），
+      所以「内容居中于画布」与原生落点逐像素一致；② 本仓构建期对小于声明尺寸的源图**也是居中补**
       （`assets/build_ability.py:119-120`，「小图居中补到声明的 2 的幂尺寸」）⇒ 两边同一条公式，
       构建期不会再补一次。补透明只是给 30×46 套一层 2 的幂画布（1 列/9 行余量），
       **可见像素一个不动**（自检里逐像素比对源矩形）。
   ability/scripts/218..222_youkai_aya_s<0..4>.anm.txt
     —— 正文**逐条照抄** TH16 `pl03.anm` 的 script0..4，**只**把 `sprite(spriteN)` 换成 `sprite(@名字@)`；
-      **连零售自己的 `layer(14)` 一起抄**（TH16 本体脚本确实带 `layer(14)`，不是我们编的；
+      **连原版自己的 `layer(14)` 一起抄**（TH16 本体脚本确实带 `layer(14)`，不是我们编的；
       TH18 的世界层是 3–19、别用 HUD 的 24/25 ⇒ 14 合法）。注释写在 `script scriptNNN {` **里面**。
   ability/entries/ORDER.sanae_youkai.txt —— 待合并进 ORDER.txt 的片段（整段重写，幂等）。
     ⚠ **不动 `entries/ORDER.txt`**（多人并发，由主 agent 统一合并）。
@@ -93,7 +93,7 @@ TH18_VERSION = "18"
 
 ANM_STEM = "pl03"                               # 早苗 → 射命丸文 的来源文件（身份判据见文件头 ②）
 CHAR, CN = "AYA", "射命丸文"
-BODY_SCRIPTS = (0, 1, 2, 3, 4)                  # ★ 零售的本体脚本（依据见文件头 ③）
+BODY_SCRIPTS = (0, 1, 2, 3, 4)                  # ★ 原生的本体脚本（依据见文件头 ③）
 SCRIPT0 = 218                                   # 脚本文件编号从这里起连续（218..222）
 PL_FILES = ("pl00", "pl01", "pl02", "pl03")     # 身份互证要扫的四张自机图
 
@@ -102,11 +102,11 @@ _TOKEN_RE = re.compile(r"@([A-Za-z_][A-Za-z0-9_]*)")
 _FILE_RE = re.compile(r"^(\d+)_([A-Za-z_][A-Za-z0-9_]*)\.anm\.txt$")
 
 
-# ── 取源（thanm 现场解，仓里不落零售字节）──────────────────────────────
+# ── 取源（thanm 现场解，仓里不落原生字节）──────────────────────────────
 
 def _require(p, what):
     if not p.is_file():
-        sys.exit(f"缺 {what}：{p}\n（零售 `.dat` 用 thdat 解到 `local/`；"
+        sys.exit(f"缺 {what}：{p}\n（原生 `.dat` 用 thdat 解到 `local/`；"
                  f"缺 thanm 就先 `bash tooling/thtk/build.sh`）")
 
 
@@ -209,7 +209,7 @@ def crop_body(sheet_path, rects, sprite_ids, char):
         cw, ch = canvas_size(w, h)
         cell = im.crop((x, y, x + w, y + h))
         canvas = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
-        canvas.paste(cell, ((cw - w) // 2, (ch - h) // 2))   # ★ 居中 = 零售的 VM 中心锚点（见文件头）
+        canvas.paste(cell, ((cw - w) // 2, (ch - h) // 2))   # ★ 居中 = 原生的 VM 中心锚点（见文件头）
         name = f"YOUKAI_{char}_S{sid}"
         path = OUT_ART / f"{name}.png"
         canvas.save(path)
@@ -302,13 +302,13 @@ def face_note(faces):
 
 def header_comment(anm_name, src_num, mapping):
     return (f"    // 由 assets/ability/make_sanae_youkai_art.py 从 TH16 v1.00a `{anm_name}` script{src_num} 生成，别手改。\n"
-            f"    // 这是**妖侧本体**（早苗 → {CN}）的第 {src_num} 支：零售 script0..4 = 本体的 24 格 30×46，\n"
+            f"    // 这是**妖侧本体**（早苗 → {CN}）的第 {src_num} 支：原生 script0..4 = 本体的 24 格 30×46，\n"
             f"    //   一手：只有它们引用 `player/{ANM_STEM}/{ANM_STEM}.png` 的 30×46 格子（生成器文件头 ③）。\n"
             f"    // 身份一手：主色/色相判据把 `{anm_name}` 定成 {CN}（黑发 + 红发带 + 白衬黑裙；四张里唯一无绿发、\n"
             f"    //   且蓝/金都不占主导）—— 生成器文件头 ②，每次运行重算。\n"
             f"    // 指令逐条照抄（jmp/标签/`layer(14)`/`type(0)`/`resampleMode(1)` 一字未动），只把 sprite 引用换名：\n"
             f"    //   " + "，".join(f"sprite{s} → @{mapping[s]}" for s in sorted(mapping)) + "\n"
-            f"    // ⚠ `layer(14)` 是**零售自己写的**（TH16 本体脚本本来就有），不是我们编的：\n"
+            f"    // ⚠ `layer(14)` 是**原版自己写的**（TH16 本体脚本本来就有），不是我们编的：\n"
             f"    //   TH18 的世界层 = 3–19（别用 HUD 的 24/25，见 assets/ability/README.md 与 `HUD-LAYOUT.md` §4.1），\n"
             f"    //   14 落在世界层里 ⇒ 原样搬过来合法；若将来挂到别的层由挂它的那一方改，别在这里改。")
 
@@ -329,7 +329,7 @@ def gen_scripts(spec_text, originals, body, order_names):
         for sid, nm in mapping.items():
             body_txt = body_txt.replace(f"sprite(sprite{sid})", f"sprite(@{nm})")
         want = original.replace(head_old, head_new, 1)        # 只做「脚本号 + 注释头」这一处结构改动
-        left = re.findall(r"sprite\(sprite(-?\d+)\)", body_txt)   # 漏换的引用（零售出现新 sprite 号时会炸）
+        left = re.findall(r"sprite\(sprite(-?\d+)\)", body_txt)   # 漏换的引用（原生出现新 sprite 号时会炸）
         if left:
             sys.exit(f"{ANM_STEM}.anm script{src_num} 里还有没替换的 sprite 引用 {left}")
         name = f"{dst}_youkai_{CHAR.lower()}_s{src_num}.anm.txt"
@@ -360,9 +360,9 @@ def write_order(rows, body_note):
         "#   ⇒ `pl03` = 射命丸文（黑发 + 红发带 + 白衬黑裙）；**TH16 里没有早苗**（四张脸一张绿发都没有，",
         "#     而同一次运行拿来对照的 TH18 `pl03` = 早苗 脸是 48% 绿）⇒「早苗 → 文」是跨作品置换。",
         "#   ⚠ 别按「第 3 个自机」直觉把 `pl02` 当早苗：`pl02` 是チルノ（蓝发蓝裙白围裙，蓝 62%/54%）。",
-        "# ★ 为什么居中：零售 sprite 以 VM 位置为中心画（anchor 位 0），本仓构建期也是居中补",
+        "# ★ 为什么居中：原生 sprite 以 VM 位置为中心画（anchor 位 0），本仓构建期也是居中补",
         "#   （assets/build_ability.py:119-120）⇒ 30×46 居中放进 32×64，可见像素一个不动。",
-        "# 脚本：assets/ability/scripts/218..222_youkai_aya_s0..4.anm.txt（正文照抄零售 script0..4，只换 sprite 引用）。",
+        "# 脚本：assets/ability/scripts/218..222_youkai_aya_s0..4.anm.txt（正文照抄原生 script0..4，只换 sprite 引用）。",
         "# ⚠ 本片段**不动** entries/ORDER.txt（多人并发，主 agent 统一合并）。",
     ]
     lines = hdr + [f"{n}  {p}  {s}" for n, p, s, _i in rows]
@@ -375,7 +375,7 @@ def write_order(rows, body_note):
 # ── 自检 ─────────────────────────────────────────────────────────────
 
 def check_pngs(made, rects):
-    """① 每张 PNG：尺寸是 2 的幂；② 不全是透明；且可见区与该 sprite 的零售矩形逐像素一致。"""
+    """① 每张 PNG：尺寸是 2 的幂；② 不全是透明；且可见区与该 sprite 的原生矩形逐像素一致。"""
     files = sorted(OUT_ART.glob("YOUKAI_AYA_*.png"))
     assert len(files) == len(made), f"① sanae_youkai/ 下有 {len(files)} 张 PNG，预期 {len(made)}"
     vis_all, sizes = [], set()
@@ -393,7 +393,7 @@ def check_pngs(made, rects):
         vis_all.append((name, vis))
         sizes.add(size)
     print(f"① {len(files)} 张 PNG 尺寸全是 2 的幂（画布 {sorted(sizes)}），每张可见区居中、"
-          f"与 `player/pl03/pl03.png` 的 30×46 零售矩形**逐像素一致** ✓")
+          f"与 `player/pl03/pl03.png` 的 30×46 原生矩形**逐像素一致** ✓")
     print(f"② {len(files)} 张全部非空（可见像素 {min(v for _n, v in vis_all)}–{max(v for _n, v in vis_all)}，"
           f"阈值 200）✓")
 
@@ -442,7 +442,7 @@ def check_identity(bodies, faces, th18_faces):
 
 
 def check_scripts(scripts, maps, rows):
-    """④ 每个 @名字 都在 ORDER 片段里有定义；⑤ 与零售原文逐行 diff 只差 sprite 引用。"""
+    """④ 每个 @名字 都在 ORDER 片段里有定义；⑤ 与原生原文逐行 diff 只差 sprite 引用。"""
     names = {n for n, _p, _s, _i in rows}
     changed_total = 0
     for fname, (body, want, _orig, _idx, _who) in sorted(scripts.items(), key=lambda kv: kv[1][3]):
@@ -534,10 +534,10 @@ def main():
     _require(THANM, "thanm 可执行文件")
     _require(ANMMAP_V8, "anmmap v8.anmm（TH16 与 TH18 都是 anm version 8）")
     for p in PL_FILES:
-        _require(TH16_DAT / f"{p}.anm", f"TH16 零售 {p}.anm")
-    _require(TH16_DAT / f"{ANM_STEM}.anm", f"TH16 零售 {ANM_STEM}.anm（妖侧本体来源）")
+        _require(TH16_DAT / f"{p}.anm", f"TH16 原版 {p}.anm")
+    _require(TH16_DAT / f"{ANM_STEM}.anm", f"TH16 原版 {ANM_STEM}.anm（妖侧本体来源）")
     for p in PL_FILES:
-        _require(TH18_DAT / f"{p}.anm", f"TH18 零售 {p}.anm（身份互证的阳性对照用）")
+        _require(TH18_DAT / f"{p}.anm", f"TH18 原生 {p}.anm（身份互证的阳性对照用）")
 
     with tempfile.TemporaryDirectory(prefix="sanae-src-") as td:
         tmp = Path(td)

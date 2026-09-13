@@ -42,8 +42,9 @@
    同源结论见第 31 轮（ASCII 文字无法被模糊罩盖住）与第 32 轮（改成贴图 VM 的才盖得住）。
 2. **新作卡还没有卡图** —— sprite 116/117 与绀珠传临时共用（见 §1s 与 CARDS.md 的季节/绀珠传条目），
    等 PNG；`assets/cards/` 工具链已就位。
-3. **波次切分不准** —— 绀珠传（115）的「一段攻击 = 一波」仍会对不上（道中同 `MainSub` 多波、
-   boss 非符/符卡边界），第 30 轮已把 `LOLK_MID_BURST_GAP` 调过一次，仍属已知偏差。
+3. **波次切分不准** —— 绀珠传（115）的「一段攻击 = 一波」曾对不上（道中同 `MainSub` 多波）。
+   **2026-09-13 已按用户洞察改写**：章 = **MainSub 编号（去掉尾部字母，`01`+`01b` 同章）**，
+   删掉旧的 `LOLK_MID_BURST_GAP` 静默窗口；boss 非符/符卡边界不变。**待实跑**（判据见 §1t-补2）。
 
 ## 0.4 ⚠️ 卡全没了？先看 cards.js 的 desc（2026-09-09 踩坑）
 
@@ -102,13 +103,15 @@ trace: card 59 on_tick_2 (+0x2c) first hit / card 62 on_tick_2 / card 61 on_bull
 
 ## 1t. 绀珠传（id 115，2026-09-09，待实跑）—— 章节系统 + 擦弹减速
 
-被动卡，**不加断点、不改字节**：只读引擎现成字段、写一个 float。实现 `native/cards/lolk.c` +
-`lolk_core.c`（主机单测 **91 组**）；设计 `docs/superpowers/specs/2026-09-09-lolk-chapter-design.md`；
+被动卡，**不加断点、不改字节、不改 ECL**：只读引擎现成字段、写一个 float。实现 `native/cards/lolk.c` +
+`lolk_core.c`（主机单测 **136 组**）；设计 `docs/superpowers/specs/2026-09-09-lolk-chapter-design.md`；
 一手 `engine/chapter/th15/01`、`engine/player/th15/01`、`engine/chapter/th18/01`、
-**`engine/chapter/th18/02`（波次 / 相位信号，2026-09-09 新增）**、`engine/player/th18/02`。
+**`engine/chapter/th18/02`（波次 / 相位信号）**、**`engine/chapter/th18/03`（道中章 = MainSub 编号，2026-09-13 改写）**、
+`engine/player/th18/02`。
 
-**用户定案（2026-09-09，三次）**：
-① 波次 = **一段攻击 = 一波**（非符一波、符卡一波），**进关底 / 道中 boss 也算一波**，道中按 ECL 524 切章；
+**用户定案**：
+① 波次 = **一段攻击 = 一波**（非符一波、符卡一波），**进关底 / 道中 boss 也算一波**；
+   道中章 = **MainSub 编号（去掉尾部字母，`01`+`01b`+`01c` 同章）**（2026-09-13 用户洞察，替换 2026-09-09 的「按 ECL 524 切章」/ 静默窗口）；
 ② 减速 = **擦弹判定框里有敌方子弹就一直慢**（不是「擦弹那一刻」）；
 ③ 击破率三来源：道中 = 击破数/刷出总数（分母 0 → 100％）；boss 非符 / 符卡 = 击破 100％、超时 0％；
    **时符（耐久符卡）恒 100％**。
@@ -118,11 +121,14 @@ trace: card 59 on_tick_2 (+0x2c) first hit / card 62 on_tick_2 / card 61 on_bull
 进关：
 
 ```
-lolk: wave 1 start (mid nonspell, chapter 0, sig 0, graze/slow 100%)
+lolk: wave 1 start (mid nonspell, chapter 0, sub 7, mainsub 0 [rule mainsub], sig 0, graze/slow 100%)
 lolk: wave 1 (mid nonspell) settled: graze N, killed K/S = R%, bonus B, score +B/10, frag 0x11
-lolk: wave 2 start (boss nonspell, chapter 41, sig 131073, graze/slow 100%)
+lolk: wave 2 start (boss nonspell, chapter 41, sub 5, mainsub -1 [rule boss], sig 131073, graze/slow 100%)
 lolk: wave 2 (boss nonspell) settled: …
 ```
+
+`mainsub` = 接线层解析出的 MainSub 编号（-1 = 当前不在 MainSub 段）；`rule` = 这一波用的边界规则
+（`mainsub` = 主信号；`quiet-fallback` = 认不出关卡脚本的退路；`boss` = boss 相位）。
 
 **体感（六条一起看）**：
 1. **只要弹幕进入擦弹判定区，场上的掉落物就明显变慢**（×0.3），弹离开约 0.12 s 后恢复；
@@ -150,7 +156,9 @@ HUD 文字在非 `on_draw` 里调（已按 SDK §14 放对）。
 **行为怀疑**：
 - 面板位置仍偏左 / 偏右 → sprite 锚点与画布：六条贴图是 **256×32、内容居中 192**（`make_lolk_ring_art.py`），
   偏了就先确认 TH18 的 UI anm 是不是中心锚；
-- 结算从不出现 → 波边界三信号（`ENEMY_MGR+0x48` boss_ids、`zEnemy+0x6374` 中断槽、`0x4ccce4` 章号）；
+- 结算从不出现 → 波边界信号（boss：`ENEMY_MGR+0x48` boss_ids + `zEnemy+0x6374` 中断槽；
+  道中：关卡脚本主上下文 MainSub 编号 —— 日志里的 `mainsub K [rule …]`；退路才用静默间隔）。
+  道中 `mainsub -1 [rule none]` 说明接线层没认出 MainSub（查 `zEnemy+0xc`/`+0x1218` 读法）；
 - 击破率恒 100％ → 超时位没读到（`zEnemy+0x635c` bit24 / `SPELLCARD+0x78` bit7）；
 - 时符给 0％ → `SPELLCARD+0x78` bit3 判据（ECL 542 置的耐久位）。
 
@@ -182,14 +190,14 @@ HUD 文字在非 `on_draw` 里调（已按 SDK §14 放对）。
   单测 `tests/test_season_core.c`（**59 断言**）；
 - ① 季节点**三条通道**：**擦弹**（读原生计数 `th18:0x4ccd0c` 的每帧增量，上限 2/帧）、
   **敌人掉落**（`on_enemy_drop_pre`）、**解放消弹**（`ce_cancel_radius` 返回值每 8 颗 1 点）；
-  季节点是**本卡自己的 anm VM**（`ability.anm` script 115 + **TH16 零售切图** `bullet/item.png`
+  季节点是**本卡自己的 anm VM**（`ability.anm` script 115 + **TH16 原版切图** `bullet/item.png`
   右上 2×2 = 春/夏/秋/冬 + `(224,32)` = 土用，各 16×16，与 P 点/蓝点同尺寸，按副季节换 sprite；
   出场动画照 TH16 script129：加算 / 10 帧淡入 / 16 帧 2 倍→1 倍 / 随机自转 / 之后 300 帧缩到 0.7 淡到 alpha128），
   落体→靠近被吸→16 px 内收；**不再借 TH18 的分数转换点**；
 - ② 按 TH16 阈值 **100/230/390/590/840/1140** 分 0..6 档，
   满槽不收、升档才响（照 `item_collect_season` `th16:0x43de50`）；
 - ③ **季节子机**：档位 = 子机数（最多 3 颗），**阵位照 TH16 副 sht 的 option_pos**（每档一套独立阵型：
-  秋 ±48 最宽、冬竖线、其余小扇），写 option 记录的 `+0x64/+0x68/+0x6c/+0x70`（零售卡 `th18:0x40b8c1` 同款写法），
+  秋 ±48 最宽、冬竖线、其余小扇），写 option 记录的 `+0x64/+0x68/+0x6c/+0x70`（原生卡 `th18:0x40b8c1` 同款写法），
   走 shooterset `SEASON`
   （`CE_SHT_SET_SEASON = 0x19`，弹贴图 `SEASON_SEED`，脚本 113/114）；
   **越攒越快**：`帧数 × 档位` 当 short_timer，fire_rate 120 ⇒ 间隔 120/60/40/30/24 帧；
@@ -214,7 +222,7 @@ HUD 文字在非 `on_draw` 里调（已按 SDK §14 放对）。
    而引擎每次分配都会覆盖 `card+0x1c`（`th18:0x40a906`）→ 季节卡 `alloc_options` 里
    「收起没分配过的槽」把**刚分配好的那颗**删了。改成**按槽自己的 `option+0xb0`** 删
    （`th18:0x40a909`，分配器自己也用它清旧 VM）。
-2. ✅ **左下角样式**：改成 TH16 原版三件套 —— **季节字**（零售 `front00.png` sprite82+SUBSEASON，
+2. ✅ **左下角样式**：改成 TH16 原版三件套 —— **季节字**（原版 `front00.png` sprite82+SUBSEASON，
    新增 `GLYPH_*.png` 五张 + script117）+ **长方形进度条**（script118 外框 `drawRectBorder(102,10)`
    + script119 填充 `drawRect(100,8)`，宽度写 scale.x = 填充比）+ **档位数字**（游戏字体）。
 3. ✅ **掉落量**：TH16 小妖精是 `dropSeason(60,8,1)`（60 帧内杀掉 8 个）→ 卡里改成
@@ -242,12 +250,12 @@ HUD 文字在非 `on_draw` 里调（已按 SDK §14 放对）。
 3. ✅ **像 P 点/金钱一样下落** —— 运动学改成**逐条照抄原版道具**（`th16:0x42f4e0` = `th18:0x445a80`，
    两作同款代码同一组常量）：重力 0.03、下落上限 2.0、下落时水平速度清零、出界 472/200、
    出生随机方向（TH16 `[0x494510]` = 1.2f ⇒ 速度 1.2..2.2）、吸引初速 = 磁速/3 后每帧 +0.2 到 12.0。
-   收集半径 / 吸引半径 / 磁速**直接读 `player+0x47988..94`** ⇒ 零售卡 ITEM_CATCH(21) / ITEM_LINE(22)
+   收集半径 / 吸引半径 / 磁速**直接读 `player+0x47988..94`** ⇒ 原生卡 ITEM_CATCH(21) / ITEM_LINE(22)
    改参数时季节点跟着变。收集 +10 分（TH16 `case 0x10` 尾 `add_to_score(10)`）。
 4. ✅ **掉落量对齐 TH16 + boss 一大把** —— 一颗点 = **1** 点（原来 1 颗折 8 点）；小怪掉 **8** 颗、
    boss/道中 boss 掉 **200** 颗（判据 = EnemyManager 的 boss id 表 `em+0x48`）。池放到 **DLL 静态区 96 槽**
    （`ce_state` 只有 496 B 装不下），池满进队列、每帧撒 8 颗（boss 那 200 个 ≈ 0.4 s 撒完）。
-5. ✅ **过回收线会被吸** —— 每帧**读** `player+0x47998`（不写死 128）⇒ 零售卡 ITEM_LINE(22, Kanako)
+5. ✅ **过回收线会被吸** —— 每帧**读** `player+0x47998`（不写死 128）⇒ 原生卡 ITEM_LINE(22, Kanako)
    把它设成 224（`CardKanako__on_load` `0x40c270`，回收线**下移**）时我们的季节点跟着变；
    另三门照原版：放 B（`bomb+0x30 == 1 && bomb+0x38 < 0x3c`，新 `CE_BOMB_COLLECTING()`）、
    对话中、**本卡季节解放期间**（TH16 的副季节炸弹那条门是 `timer < 10000` = 整个解放期都吸）。**擦弹掉的那颗也吃这条**（原来 `pad=1` 不参与吸附，
@@ -283,7 +291,7 @@ HUD 文字在非 `on_draw` 里调（已按 SDK §14 放对）。
    （`num_season_options = season_lvl`，最多 8 槽；阵位表按 `{0,1,3,6,10,15,21,28}` 累计，
    档 6 = 第 16..21 个阵位）。`SEASON_OPTS` 改成 6，`opt_dx()` 退路也跟着排到 ±72。
 4. ✅ **进度条不显示** —— 脚本 118/119 漏了 `sprite(-1)`（VM 没有可画的矩形 → 整条不可见）。
-   现在照零售 `stock_rect` / `front.anm script20` 的写法补齐 `sprite(-1) + zWriteDisable(1) +
+   现在照原生 `stock_rect` / `front.anm script20` 的写法补齐 `sprite(-1) + zWriteDisable(1) +
    blendMode(0)`；外框用**同尺寸实心 `drawRect(102,10)` 打底**（TH18 的 anm 里没有一处用
    `drawRectBorder`，虽然 opcode 612 在 v8 表里），填充 100×8 盖上去，露出 1 px 边框。
 5. ✅ **档位数字位置** —— 贴在条右端（字面量空间 `(136, 437)`，`ce_hud_text` 不乘 2）。
@@ -465,7 +473,7 @@ HUD 文字在非 `on_draw` 里调（已按 SDK §14 放对）。
      **别只看「填充」两个字** —— 谁是进度必须看 `search_children` 的参数对到哪支脚本。
 3. **绀珠传染色「出圈不还原」** —— 我上一版加的守卫（`*p == 黄 才还原`）是元凶：弹的颜色被别处
    改过就跳过还原，下一帧再标黄时「原色」已是黄色 → 永久黄。改回**无条件写回原色**。
-4. **`drawRectBorder`（opcode 612）在 TH18 不可用** —— 零售 anm 零使用；季节槽外框已改用
+4. **`drawRectBorder`（opcode 612）在 TH18 不可用** —— 原生 anm 零使用；季节槽外框已改用
    `drawRect(102,10)`。**以后写 UI 脚本别用 opcode 612。**
 5. **UI VM 的 `pos()` 会被脚本每帧写回** —— 从 TH16 搬来的脚本里带 `pos(-377,888)`（TH16 槽坐标）
    会让 VM 跑到屏幕外、整组消失；**位置一律由卡 `ce_anm_set_pos` 写**。
@@ -639,7 +647,7 @@ HUD 文字在非 `on_draw` 里调（已按 SDK §14 放对）。
 - 产出：DLL `8a157598bd42f09bb90805b911178996`（未变）、`ability.anm`
   **`eebeb02c7fb0cb5d0a3dbdb7c20ee137`**（`mods/` 与 `thcrap/bin/` 两处已刷新）。
 
-**2026-09-10 实跑第二十八轮（★ 照零售「ミニ八卦炉」把冬的激光做出来）**：
+**2026-09-10 实跑第二十八轮（★ 照原生「ミニ八卦炉」把冬的激光做出来）**：
 - 用户点名：魔理沙的能力卡 **迷你八卦炉** 发的就是激光。查 `dat/ability.txt`：`@MARISA_OP` = ミニ八卦炉
   = 卡 **10** = `pl0X.sht` **set 0xb**（四个角色逐字节相同）：
   `rate=5 delay=0 dmg=13 ang=−π/2 **speed=0** opt=0x00 **mode=2** **anm=3** sfx=−1 **hit_fx(+0x26)=5**
@@ -648,7 +656,7 @@ HUD 文字在非 `on_draw` 里调（已按 SDK §14 放对）。
   (0,16) 512×16)` + `anchor(1,0)` + `scale(1,0)→scaleTime(4,1,1,0.5)` + `blendMode(1)` + `rotateAuto`
   + `scrollX(−1/21)`），**script5 = 命中特效**（由 hit2 每 2 帧在束端起）。`script4` = 束根光斑。
   ⇒ **激光不是「弹」，是挂在子机上每帧重画的束**；`fire_rate` 只是重新起束的节奏。
-- ★ 结论修正：上次「激光损坏内存」**不是这条路的锅**，是我们没照零售填参数（当时 `mode=0`、没有 `hit_fx`、
+- ★ 结论修正：上次「激光损坏内存」**不是这条路的锅**，是我们没照原生填参数（当时 `mode=0`、没有 `hit_fx`、
   用了别的脚本）。文档里「魔理沙 hit_fx = 8」也订正为 **5**。
 - 落地（照 TH16 `pl01sub` 的对应脚本自建，贴图用 TH16 的激光条）：
   - `132_season_laser_beam`（束，TH16 pl01sub script0）+ `133_season_laser_child`（光斑，script1）
@@ -726,7 +734,7 @@ HUD 文字在非 `on_draw` 里调（已按 SDK §14 放对）。
    **无敌中不建**（走只闪色那一支）。触发只出现在秋/冬：秋 `BombSubFall__on_tick` 每帧写
    `player+0x16688 = 1.5`，冬 `BombSubWinter__on_tick` 每帧写 `player+0x2c7cc = 1.5`（→ flag bit0x20）。
    TH18 的引擎把这段删了（`Player__on_tick__body` `0x45c6e4` 直接跳到 `0x45c702`，无建 VM 调用），
-   但**零售脚本还在**：`pl0X.anm` 的 `sprite(sprite0)` + `color(60,0,192)` + `alphaTime(20,0,0)`，
+   但**原生脚本还在**：`pl0X.anm` 的 `sprite(sprite0)` + `color(60,0,192)` + `alphaTime(20,0,0)`，
    脚本号按角色 **pl00 17 / pl01 19 / pl02 14 / pl03 14**。已在卡里补上（`afterimage_tick`）：
    秋/冬 解放中、**非无敌**时每帧起一个，颜色照 TH16（秋黄 / 冬蓝）。
    🟡 订正（同一轮内查清）：TH16 的**冬**释放写的 `player+0x2c7cc = 1.5` 不是速度，而是
@@ -818,7 +826,7 @@ HUD 文字在非 `on_draw` 里调（已按 SDK §14 放对）。
 **季节档位数字 + 绀珠传面板五行数值全部改成贴图 VM** —— 两处原来都是 ASCII 文字，而
 **ASCII 文字无法被暂停模糊罩盖住**（31 轮实跑证伪：唯一早于罩子的 group 1 趟跑在 surface 1 + 相机 0 上，
 画出来看不见）。做法：
-1. **字形用零售切图**（铁律）：`assets/ability/make_font2_art.py` 从
+1. **字形用原生切图**（铁律）：`assets/ability/make_font2_art.py` 从
    `local/th18.v1.00a/anm/ascii1280/ascii/ascii_1280.png` 按 `ascii1280.anm.txt` 的矩形切
    **TH18 font 2** 的 15 个字形（数字 = sprite 196..205，`-`/`%`/`.`/`+` = 208/210/211/212，
    一手映射 `0x41a2b0` 的 case 2/3）→ `font2/FONT2_*.png`（**16×20 整格**，`.` 的墨迹在格内第 12–17 行，
@@ -922,7 +930,7 @@ HUD 文字在非 `on_draw` 里调（已按 SDK §14 放对）。
      `boss 1` 每窗口、**没有同一结算点的两条 boss drop**（t=3820/7104/8303/12367，两两相隔 1200~3300 帧）。
      但日志里有一条关键线索：`boss drop … spawned 93, queued 107` —— **池只有 96，boss 一次 200
      装不下**，剩下的 107 颗要等玩家把场上收空才一颗颗补出来（`burst_tick` 池满时生不出来），
-     看着就像「boss 又掉了一次」。⇒ `SEASON_POINT_POOL` **96 → 512**（TH16 原生道具池是 4696 槽，
+     看着就像「boss 又掉了一次」。⇒ `SEASON_POINT_POOL` **96 → 512**（TH16 原版道具池是 4696 槽，
      200 颗本来是一口气全出）；`SEASON_DROP_CAP` 400 → 512。
 
 **2026-09-10 实跑第三十四轮（用户：「小怪是每次掉 8 点吗？我记得不是有一个什么小怪的出场时间推移打死掉得会更少？」+「这回是 boss 一次性全掉完了」）**：
@@ -950,7 +958,7 @@ HUD 文字在非 `on_draw` 里调（已按 SDK §14 放对）。
    boss **不**按计时衰减：TH16 每个相位各调一次 `dropSeason(1200,200,10)`（计时器每相位重置），
    所以每个相位的击破恒 200 颗。
 
-**2026-09-10 实跑第三十五轮（用户：「th16 有不同档位吗？」→ 选「原生 T + 原生计数映射到 TH16 量级」）**：
+**2026-09-10 实跑第三十五轮（用户：「th16 有不同档位吗？」→ 选「原版 T + 原版计数映射到 TH16 量级」）**：
 
 1. **TH16 的档位不是表，是逐敌人手写的 `dropSeason(T,N,M)`**（普查见 `engine/season/th16/01` §5.3）：
    小妖精 `(60,8,1)`、妖精 `(60,10,1)`、大妖精 `(120,13,1)`/`(120,20,1)`、大只 `(200,30,1)`、
@@ -961,12 +969,12 @@ HUD 文字在非 `on_draw` 里调（已按 SDK §14 放对）。
    - 结算（`0x430510` 一手）：`n = ex_drop[i] + timed_ex_drop[i] × (T − timer)/T`；
    - 计时器（`FUN_0042ff80` `0x430161` 段**内联**，不是 `Timer::increment` 调用）每帧 +1。
    ⇒ **和 TH16 的 `dropSeason` 同形同向**（出场 T 帧内给满、之后衰减到 `ex_drop`）。
-   零售 22 个 `*.ecl` 全扫出 **64 处 `574`**：小怪 T=40..120、大只 200..400、道中 boss 600/900，
+   原生 22 个 `*.ecl` 全扫出 **64 处 `574`**：小怪 T=40..120、大只 200..400、道中 boss 600/900，
    计数 1..20（`*bs` 里一处都没有 ⇒ boss 不走这条）。
    ⚠️ 顺手订正本仓旧结论：`engine/season/th18/01` §1b 早前写成「随时间线性补足」——**方向写反了**，
    已改（`iVar4 − iVar4×timer/T` 是递减）。
 3. **卡侧改法**：小怪掉落的 `T` 直接读敌人自己的 `timed_ex_drop_time`（`enemy+0x623c+0xa4`），
-   数量用「原生 timed 计数」当档位键映射回 TH16 量级（`season_core.c` 的 `season_drop_native_tier`：
+   数量用「原版 timed 计数」当档位键映射回 TH16 量级（`season_core.c` 的 `season_drop_native_tier`：
    1→8 / 2..4→10 / 5..10→13 / ≥11→30），`M` 恒 1；**没配原生窗口的敌人（T=0，含所有 boss）
    退回 TH16 小妖精 `(60,8,1)`**。boss 仍恒 200（每相位一次）。
    ⚠️ 映射本身是**自定**（两边的数字都一手，但跨作对应关系无原版依据）—— `season_core.h` 已标。
@@ -1014,7 +1022,7 @@ TH17 动物灵 / 咆哮的卡侧复刻。一手 [`engine/animal/th17/01`](../../
 （本次会话补反编译了 `0x410af0` token tick / `0x40f980` 收集 / `0x410640` 鱼灵换道具 / `0x4491b0` 真死）；
 TH18 无残骸审计 [`engine/animal/th18/01`](../../../engine/animal/th18/01-animal-residuals.md)。
 实现 `native/cards/animal.c` + `animal_core.c`（纯逻辑，主机单测 **116 断言**）；
-资源 `assets/ability/make_animal_art.py`（零售 `beast1.png` 13 单元 + `beastf.png` 槽框 + 脚本 137–145）；
+资源 `assets/ability/make_animal_art.py`（原生 `beast1.png` 13 单元 + `beastf.png` 槽框 + 脚本 137–145）；
 审计 AUDIT §AL。**零新断点 / binhack / codecave**，只新增 `th18:0x45d590`。
 
 **同时登记的空壳卡**（id 106–113，只有 JSON、无行为）：红魔乡 / 妖妖梦 / 永夜抄 / 花映塚 / 风神录 / 地灵殿 / 星莲船 / 神灵庙
@@ -1033,7 +1041,7 @@ wba_wc: hyper end #1 (normal; 2 fish -> items; release anim …, burst in 120 fr
 wba_wc: miss -> 2 non-cycling animals (type 1)
 ```
 
-体感：杀敌掉出会**弹跳**的动物灵 / 鱼灵（贴图 = TH17 零售切图）→ 飞过去收 → 左下角 5 格灵槽逐格亮 →
+体感：杀敌掉出会**弹跳**的动物灵 / 鱼灵（贴图 = TH17 原版切图）→ 飞过去收 → 左下角 5 格灵槽逐格亮 →
 **满 5 立刻自动起咆哮**：暴走（同类 ≥3）时**主炮当场换成兽灵专属弹幕**（狼 = 7 发散射、鹫 = 5 发诱导，
 獭 = 3 颗旋转光球），自机左下角亮咆哮条、身上挂兽灵光环；咆哮期间中弹**不扣命**（拿咆哮抵消）。
 **按 X（炸弹键，TH17 原位置；C 也行）**= 把这股咆哮**用掉**（40 帧消弹 + 伤害 + 无敌，手感 = 「中弹但只丢咆哮」）；
@@ -1075,9 +1083,9 @@ SDK 把执行从 `0x45c048` 改到 `0x45c056`，**跳过 `0x45c051` 的 `call do
 
 **咆哮期间的自机特效（2026-09-10 Stage 3 已接）**：
 
-- **类型光环**：零售 `beastAURA.png` 的 24 个 64×64 单元 + 脚本 146–148（照 TH17 script41–43 生成），
+- **类型光环**：原版 `beastAURA.png` 的 24 个 64×64 单元 + 脚本 146–148（照 TH17 script41–43 生成），
   layer 13 跟随自机；红狼 / 绿水獭 / 紫鹫。日志无关键字，看画面；
-- **水獭 3 消弹体（2026-09-11 初相/转轴修正；同日 §AL34 修 ready 消弹）**：零售
+- **水獭 3 消弹体（2026-09-11 初相/转轴修正；同日 §AL34 修 ready 消弹）**：原生
   `beastot.png` sprite70（80×64 → 128×64 补边）+ 手写脚本 149。视觉按 TH17 一手：
   **VM 留在自机位置**，脚本补 `anchorOffset(48,64)`，C 在生成时写 `rotation.z = 0 / -120° / +120°`，
   之后由 `angleVel(-0.06981317f,…)` 自转成轨。
@@ -1149,13 +1157,13 @@ SDK 把执行从 `0x45c048` 改到 `0x45c056`，**跳过 `0x45c051` 的 `call do
 
 | 机体 | 狼（set `0x1f..0x22`）| 鹫（set `0x24..0x27`）| 来源 |
 | --- | --- | --- | --- |
-| `pl00` 霊夢 | 7 发大弹扇形 dmg 20–40 / speed 25 / **anm 10**（零售兽灵 `script10`，sprite33）| 五向散 dmg 20 / speed 10 / **anm 11**（零售 `script11`，sprite38/39/40/41）| 直接用 TH18 零售脚本 ✅ |
-| `pl01` 魔理沙 | 5 条激光 dmg 8–18 / speed 0 + `tick3` / **anm 13**（零售 `script13`，sprite42/43 + 命中 `script14` 爆炸）| 5 发重弹 dmg 50–80 / `mode=2` 子机槽 16..64 / **anm 16**（零售 `script16`，sprite29 激光条）/ `hit_fx=8` | 直接用 TH18 零售脚本 ✅ |
-| `pl02` 咲夜 | **安全回退**：anm 5（零售普通自机弹；不崩、不来自机图）| **安全回退**：anm 6（零售普通自机弹）| identity 回退 ⚠️ 兽灵视觉未达成 |
-| `pl03` 早苗 | **安全回退**：anm 8（零售普通自机弹）| **安全回退**：anm 11（零售普通自机弹）/ `hit_fx=7` | identity 回退 ⚠️ 兽灵视觉未达成 |
+| `pl00` 霊夢 | 7 发大弹扇形 dmg 20–40 / speed 25 / **anm 10**（原生兽灵 `script10`，sprite33）| 五向散 dmg 20 / speed 10 / **anm 11**（原生 `script11`，sprite38/39/40/41）| 直接用 TH18 原生脚本 ✅ |
+| `pl01` 魔理沙 | 5 条激光 dmg 8–18 / speed 0 + `tick3` / **anm 13**（原生 `script13`，sprite42/43 + 命中 `script14` 爆炸）| 5 发重弹 dmg 50–80 / `mode=2` 子机槽 16..64 / **anm 16**（原生 `script16`，sprite29 激光条）/ `hit_fx=8` | 直接用 TH18 原生脚本 ✅ |
+| `pl02` 咲夜 | **安全回退**：anm 5（原生普通自机弹；不崩、不来自机图）| **安全回退**：anm 6（原生普通自机弹）| identity 回退 ⚠️ 兽灵视觉未达成 |
+| `pl03` 早苗 | **安全回退**：anm 8（原生普通自机弹）| **安全回退**：anm 11（原生普通自机弹）/ `hit_fx=7` | identity 回退 ⚠️ 兽灵视觉未达成 |
 > ★ 2026-09-11 四修（最终）：TH17 `PlayerBullet__fire`（`th17:0x44a180`）实际读
 > **`pl0X.anm script(anm+5)`**（一手 `th17:0x44a535`），不是 `bullet.anm`。而且
-> **TH18 零售 `pl00.anm`/`pl01.anm` 里逐字节就有这些 TH17 兽灵脚本**（pl00 8/10/11、
+> **TH18 原生 `pl00.anm`/`pl01.anm` 里逐字节就有这些 TH17 兽灵脚本**（pl00 8/10/11、
 > pl01 8/13/16；entry0 贴图/sprite 表也与 TH17 同名自机一致）⇒ **不再追加**任何
 > entry / 脚本，`HYPER_ANM_MAP` 直接把 `anm` 指过去即可。上一轮的「追加 + 抄简」才是
 > 魔理沙鹫闪退、狼无爆炸、命中出自机图的根因（见 AUDIT §AL33；AL27–AL31 是前三轮失败记录）。
@@ -1183,16 +1191,16 @@ SDK 把执行从 `0x45c048` 改到 `0x45c056`，**跳过 `0x45c051` 的 `call do
 > 见 AUDIT §AL31。
 
 > ★ **2026-09-11 四修（用户实跑：魔理沙大鹫灵闪退 + 狼灵无爆炸 + 命中点出自机图）**：
-> AL27–AL31 的「TH18 零售 pl0X.anm 没有 TH17 兽灵脚本/贴图，必须追加」**前提是错的**。
-> 一手逐字节对拍：TH18 零售 `pl00.anm`/`pl01.anm` 的 entry0 与 TH17 同名自机一致，且
+> AL27–AL31 的「TH18 原生 pl0X.anm 没有 TH17 兽灵脚本/贴图，必须追加」**前提是错的**。
+> 一手逐字节对拍：TH18 原生 `pl00.anm`/`pl01.anm` 的 entry0 与 TH17 同名自机一致，且
 > **兽灵脚本 pl00 8/10/11、pl01 8/13/16 与 TH17 逐字节相同**。所以正确做法是
-> **一个字节都不追加，sht 直接指零售 `script(anm+5)`**（`HYPER_ANM_MAP`：pl00/pl01 `5→10 6→11
-> 7→8 8→13 11→16`）；`build_player_anm.py` 改成「拷零售 + 硬校验（sprite 越界、脚本存在、
+> **一个字节都不追加，sht 直接指原生 `script(anm+5)`**（`HYPER_ANM_MAP`：pl00/pl01 `5→10 6→11
+> 7→8 8→13 11→16`）；`build_player_anm.py` 改成「拷原生 + 硬校验（sprite 越界、脚本存在、
 > `scriptNew` 目标、会飞脚本主路径无 `delete`、与 TH17 逐字节一致）」。上一轮的伤害是「为满足
 > 『脚本不含 scriptNew/jmp』把 TH17 脚本抄简」：pl01 鹫 `script51` 丢了 `scriptNew(script7)` +
 > 全部 `interruptLabel`（真 `script16` 是 mode=2 激光），pl01 狼 `script50` 丢了
 > `interruptLabel(1)→scriptNewPos(script14)`（爆炸）——这才对应「闪退 / 无爆炸 / 命中原图」。
-> **pl02 咲夜 / pl03 早苗**没有 TH17 对应自机，本轮**安全回退 identity**（`anm` 指各自零售普通
+> **pl02 咲夜 / pl03 早苗**没有 TH17 对应自机，本轮**安全回退 identity**（`anm` 指各自原版普通
 > 自机弹，不崩、不来自机图），**兽灵专属视觉未达成**。见 AUDIT §AL33；DLL 未改，
 > md5 `06c88611892f9e104d2b6483e16ea0b3`。
 
@@ -1200,21 +1208,21 @@ SDK 把执行从 `0x45c048` 改到 `0x45c056`，**跳过 `0x45c051` 的 `call do
 > 用户实跑仍报「魔理沙大鹫灵闪退 / 狼灵爆炸出魔理沙」。已定位大鹫闪退不是 `hit_fx=8` 或
 > `script16`，而是 TH17 EAGLE row0 的 `mode=2 + opt_slot=0` 被 TH18 主炮 `tick2`
 > 无条件解引用 NULL option（`th18:0x45fcc8`）。**先保命**：`pl01.sht` 的追加槽 0x1e..0x27
-> 不再使用 TH17 wolf/eagle row，改整组拷 TH18 零售聚焦主炮 set 5..9；`pl00` 不变。
+> 不再使用 TH17 wolf/eagle row，改整组拷 TH18 原生聚焦主炮 set 5..9；`pl00` 不变。
 > 魔理沙暂时没有兽灵专属弹幕，但不会崩、不会来自机图。狼灵爆炸 sprite 证据（script13/14 的
 > `sprite42..51` 不是角色帧，TH17/TH18 字节一致；`hit6→hit4` 也正确对应 interrupt）见 AUDIT §AL36。
 > 下一步实跑：(a) 确认 pl01 咆哮不再闪退；(b) 命中处记录 `vm+0xe0` 的 anm/entry/script，
 > 若真是角色帧再查 `player+0x10` 是否与其他 anm 串位；(c) 若要把大鹫激光做回来，需把
 > `mode=2` row 改成 opt_slot 1..4，或补 C 侧主炮自机激光分支。
 
-### 1v-补2. 鬼形兽（117）八修：shot 组不覆盖零售 + EAGLE 身体激光 + 动物灵 flicker（2026-09-11）
+### 1v-补2. 鬼形兽（117）八修：shot 组不覆盖原生 + EAGLE 身体激光 + 动物灵 flicker（2026-09-11）
 
 > 对应 AUDIT §AL38。上一版 1v 里「咆哮期间把主炮 0..9 槽的指针改指过去」的说明**已作废**。
 
 - **弹幕组**：不再改 `pl0X.sht` 的 0..9 槽。新增 SDK 断点 `BP_ce_shot_set_index`
   @ `th18:0x45ebfb`（`mov edi,[edi+edx*4+0xe0]`）。卡在 `ready || hypering` 且
   `hyper_type==1/3` 时返回 `火力档 + 0x1e/0x23`；SDK 同时改 `edx` 与 `[ebp-8]`，
-  让「本帧取哪组 row」和「弹里记哪组 set」一致。零售 0..9 一个字节不动 ⇒ 咆哮前出的弹
+  让「本帧取哪组 row」和「弹里记哪组 set」一致。原生 0..9 一个字节不动 ⇒ 咆哮前出的弹
   命中时不会变自机/特效贴图。
   日志：`wba_c: shot set -> wolf/eagle (... retail 0..9 untouched)`、
   `wba_c: shot set index -> wolf/eagle base 0x1e/0x23 + pwr N = 0x…`。
@@ -1298,7 +1306,8 @@ SDK 把执行从 `0x45c048` 改到 `0x45c056`，**跳过 `0x45c051` 的 `call do
 - **试听探针停用**：新增 `ANIMAL_SE_PROBE 0`；试听表 / `se_probe_tick()` / `hyper_end()` 分支 /
   `on_tick_2()` 调用全部改成 `#if ANIMAL_DEBUG_KEY && ANIMAL_SE_PROBE`。默认不编译、不打任何
   probe 日志；正常咆哮退出恢复播 `0x42`。
-- **撒道具 A/B（仅 debug）**：新增 `scatter_se_select()`，每段连续 `se_left` 序列（一次听得出的
+- **撒道具 A/B（仅 debug）**（★ **已由 §1v-补8 定案：`0x3e`，轮换/`se_scatter_abc` 已删**——本条是当时状态）：
+  新增 `scatter_se_select()`，每段连续 `se_left` 序列（一次听得出的
   “撒道具声”）在 `0x34` / `0x43` 间轮换，段首打
   `wba_wc: scatter SE A/B -> id 0x34 (table name se_lgods4)` 或
   `wba_wc: scatter SE A/B -> id 0x43 (table name se_release)`；release 恒 `0x34`，与改动前一致。
@@ -1315,7 +1324,7 @@ SDK 把执行从 `0x45c048` 改到 `0x45c056`，**跳过 `0x45c051` 的 `call do
 
 
 
-### 1v-补6. 鬼形兽（117）十二修：SPACE 1..7 + 撒道具 A/B/C + 咆哮拦装备子机 + 鹫按角色分派（2026-09-12）
+### 1v-补6. 鬼形兽（117）十二修：SPACE 1..7 + 撒道具 A/B/C + 咆哮拦装备子机 + 魔理沙鹫 5 连扇形激光（2026-09-12）
 
 > 对应 AUDIT §AL42。用户 2026-09-12 复听 + 实跑口径：倒数第 4 个 = 第 3 候选 `0x3e`；
 > roar-exit 仍是 `0x42`（§1v-补5 已锁）。本轮新增**一个断点** `BP_ce_option_shot_gate`。
@@ -1323,7 +1332,8 @@ SDK 把执行从 `0x45c048` 改到 `0x45c056`，**跳过 `0x45c051` 的 `call do
 - **SPACE 调试键随机 1..7**：`ANIMAL_DEBUG_TYPE_MAX` `3` → `7` ⇒ 一拍空格动物灵 1..3 + 鱼灵
   4..7 都可能出；Shift+空格（4..7 循环）/ Ctrl+空格（强制就绪）不变。日志改口径
   `wba_wc: DEBUG spawn spirit type N at (0, 224) by SPACE`。
-- **撒道具 SE A/B/C**：`scatter_se_select()` 从 A/B 扩成 A/B/C（`0x34` / `0x43` / `0x3e`，
+- **撒道具 SE A/B/C**（★ **已由 §1v-补8 定案：C = `0x3e`，轮换已删**——本条是当时状态）：
+  `scatter_se_select()` 从 A/B 扩成 A/B/C（`0x34` / `0x43` / `0x3e`，
   名表 `se_lgods4` / `se_release` / `se_tan03`），每段连续 `se_left` 序列轮换一次、段首打
   `wba_wc: scatter SE A/B/C -> id 0x.. (table name ...)`。release 恒 `0x34`。
   **要用户听 / 回报**：多撒几次道具，A / B / C 哪个才是「大量道具」的音。
@@ -1331,25 +1341,221 @@ SDK 把执行从 `0x45c048` 改到 `0x45c056`，**跳过 `0x45c051` 的 `call do
   的行循环会按 row `+0x20` 低半字节从**原生子机** `player+0x580+slot*0xf0` 出弹（咆哮换 set 时一起换）；
   但**装备 option 卡**走另一条 `Player__tick_shooters_for_ability_card` `0x40a9c0`（set `0x0a..0x15`），
   咆哮管不到 ⇒ 用户看到「灵梦 / 魔理沙子机照旧打普通激光、松 Z 才停」。新增断点
-  `BP_ce_option_shot_gate` `0x40a9c3`：`ready || hypering` 时对零售组 `0x0a..0x15` 返回 1，
+  `BP_ce_option_shot_gate` `0x40a9c3`：`ready || hypering` 时对原生组 `0x0a..0x15` 返回 1，
   SDK 跳到该函数空路径收尾 `0x40aa9e` 跳过整段（option / anm / 其它卡广播不动）。日志
   `wba_c: option shot suppressed while roaring (retail equip option set 0x.., type .., char ..)`。
   不碰 `0x16`（108）/ `0x17+`（77 / 119）。
-- **鹫按角色分派**：`eagle_beam_tick()` 只给魔理沙（pl01，卡侧 option 激光，脚本 163）；
-  灵梦 / 咲夜走数据路径的 5 颗 body 追尾弹（pl00 EAGLE `0x24..0x27`）；早苗原来借 pl01a 模板
-  的 `mode=2` body 行会在 `0x45fcc8` 空指针崩溃，已把 `HYPER_SOURCE["pl03.sht"]["EAGLE"]`
-  改成 `pl00a.sht`（安全回退，pl03.sht 已随发布同步）。
+- **鹫按角色分派（父任务补充口径）**：pl01 魔理沙的鹫 = **本体发出的 5 条扇形粗激光**
+  （TH17 `pl01a.sht` EAGLE 5 行：角度 -90°/-75°/-105°/-60°/-120°、`opt_slot` 低 4 位全 0 =
+  本体、`mode=2`）。数据路径的 func 映射核过是对的（init2/tick2/hit2），但与原生真激光行
+  逐字段比：原版用 `anm=6`/`hit_h=16`/真子机，TH17 行是 `anm=16`/`hit_h=34`/body+合成
+  option；上一轮实跑只出「贴激光图的移动弹」⇒ 按 fallback 走卡侧：`eagle_beam_tick()` 在
+  `hyper_type==3` + Z 按住 + 魔理沙时，从本体按上述 5 个角度各挂一条脚本 163 束（视觉 +
+  `ce_damage_rect` + 消弹），松 Z / 结束收掉。灵梦 / 咲夜仍走数据路径的 5 颗 body 追尾弹
+  （pl00 EAGLE `0x24..0x27`）；早苗原来借 pl01a 模板的 `mode=2` body 行会在 `0x45fcc8`
+  空指针崩溃，已把 `HYPER_SOURCE["pl03.sht"]["EAGLE"]` 改成 `pl00a.sht`（安全回退，
+  pl03.sht 已随发布同步）。
 - **ABI**：新增 `BP_ce_option_shot_gate @28`；`dllverify` 27 → **28 exports**。
 - **要用户实跑验证**：
   1. 拍空格随机出 1..7（4..7 = 鱼灵）；
   2. A/B/C 撒道具音选一个；
   3. 灵梦狼咆哮 + 装备 option 卡：普通激光停、出现 suppressed 日志；
-  4. 魔理沙狼咆哮：普通激光停；魔理沙鹫咆哮：卡侧 option 激光（pl01 样式）；
+  4. 魔理沙狼咆哮：普通激光停；魔理沙鹫咆哮：本体 5 条扇形粗激光（日志
+     `eagle beam on (5 body fan lasers, ...)`）；
   5. 灵梦鹫咆哮：5 颗 body 追尾弹，不再有 pl01 激光条。
 - **门 / 部署**：`make check`、`sites.py verify`、`assets/check_player_anm_bounds.py`、
-  `tooling/check-docs.py` 全绿；DLL md5 `12a93d8c4c8797dd98ea64322d9331fe`，四个 modkit
-  加载路径已 `sync_modkit_dll.sh` 同步。
+  `tooling/check-docs.py` 全绿；DLL md5 见部署后会话报告，四个 modkit 加载路径已
+  `sync_modkit_dll.sh` 同步。
 
+
+### 1v-补7. 鬼形兽（117）十三修：`BP_ce_option_shot_gate` 3 字节站点被拒 → 门失败降级腐化卡对象（2026-09-12）
+
+> 对应 AUDIT §AL43。用户新报告：「卡又成滚木了，撞到槽里会导致 slot 消失」；并补充与更早 id=254
+> （0xfe，有符号字节为负）同型。**不是** 224–227 那批美术造成的 sprite 漂移 —— 117 的
+> 脚本 137–163 / sprite 映射本轮一对一核过，部署文件里也没漂。
+
+- **根因**：`BP_ce_option_shot_gate` 上一版站点 `0x40a9c3` 只有 **3 字节**（`mov edx,[ebp+8]`），
+  低于 thcrap sourcecave 下限 5 ⇒ 断点被拒。部署日志有：
+  `FAIL: sdk: breakpoint ce_option_shot_gate not applied (3 bytes at +0000a9c3: 8b 55 08 )` →
+  `FAIL: sdk: 1/15 behavior breakpoints not applied` →
+  `cards_dev: start_deck disabled` → `mitigation: allocator bound restored to retail (56)`；
+  但存档 / `_test` 卡组里仍有 id 117，门失败后引擎继续 `allocate_new_card(id=117, mode=1)`，
+  新 id 被拒后在卡表 / HUD 槽侧留下垃圾 ⇒ 用户看到的「滚木 / slot 消失」。
+- **修法**：站点改到 `0x40a9c3` 的 `mov edx,[ebp+8]; sub esp,0xc`（6 字节，`8b550883ec0c`，无相对寻址），门回读能过；
+  同时新增 `CE_OPTION_SHOT_GATE_ENABLE 0`，**功能默认关**（断点挂上但 handler 直接放行原 `je`）。
+  要重开「咆哮中拦装备 option 普通弹」需另开一轮实机验证。
+- **新诊断**：`ce_integrity_check()` 每关开场在 `BP_ce_item_frame` 里 dump
+  `integrity[stage N]: card[i] id=.. flags=..` 与 `num_total/active/equip/passive + owned[128..254]`；
+  异常继续打 `BAD card` / `CARD MANAGER INTEGRITY FAILURE`。下一份日志能直接区分「id 腐烂」还是「纯美术」。
+- **新构建硬门**：`assets/check_ability_anm_bounds.py`（进 `make anm-verify`）回读最终
+  `ability.anm`，硬校验 117 的脚本 137–163、sprite 范围 / entry 归属、`scriptNew` 目标、
+  C 侧 `CE_ANM_ABILITY_SPRITE_*` 同名 entry。
+- **ORDER 幂等**：`make_youkai_option_art.py` 的 `check_names()` 修了绝对 Path / 相对主表路径的
+  比较 bug，现在主 ORDER 已合并后重跑也不误报「重名」；`make_animal_art.py` 仍只打印、不写
+  `ORDER.txt`，224–227 只写 `ORDER.youkai_option.txt`，两边不会互相改表。
+- **用户实跑验收**：
+  1. 日志不再出现 `FAIL: sdk: breakpoint ce_option_shot_gate not applied` / `mitigation: allocator bound restored`；
+  2. 每关开场出现 `integrity[stage ..]` 的逐卡 id/flags + 汇总行；
+  3. 收满 5 格 / 咆哮 / 正常结束，左下角 5 个 HUD 槽全程都在；动物灵 / 鱼灵贴图正确；
+  4. 咆哮中装备 option 子机普通激光仍会打（功能默认关，已知、非崩坏）；如果要试专项，
+     把 `native/sdk.c` 的 `CE_OPTION_SHOT_GATE_ENABLE` 改 1 后回报 `wba_c: option shot suppressed ...`。
+- **门**：`make check`（含新 `check_ability_anm_bounds.py`）、`sites.py verify`、`tooling/check-docs.py` 全绿；
+  `.def` 仍 28 exports。
+
+
+### 1v-补8. 鬼形兽（117）十四修：撒道具 SE 定案 = `0x3e`（用户耳朵锁定 C 候选，2026-09-12）
+
+> 对应 AUDIT §AL44。用户口径（原话）：「应该是这个里面的最后一个音效是对的：`…/game/th18_card_expand.log`
+> 也就是 C」。依据 = 该日志里 A/B/C 三段试听的**最后一段** `wba_wc: scatter SE C -> id 0x3e (table name se_tan03)`
+> ⇒ §1v-补6 的 A `0x34` / B `0x43` 均被否。
+
+- **定案**：`ANIMAL_SE_FISH_ITEMS` `0x34` → **`0x3e`**（试听表名 `se_tan03`）。
+  ⚠ 它与 `ANIMAL_SE_RELEASE`（咆哮自然结束放灵那一声，一手 TH17 `th17:0x40e920`）**同 id**
+  ⇒ 本卡「放灵 / 撒道具」共用同一个「释放」音（观察，非 RE 结论，与用户两次耳听的口径一致）。
+- **试听机构删除**：`s_scatter_se[]` / `ANIMAL_SE_SCATTER_N` / `se_scatter_abc` 字段与 run-reset 初始化全删；
+  `scatter_se_select()` 只剩「段首（`se_left <= 0`）认一次 `ANIMAL_SE_FISH_ITEMS`」+ 一行
+  `wba_wc: scatter SE -> id 0x3e (locked by user ear 2026-09-12; candidates were A 0x34 se_lgods4 / B 0x43 se_release / C 0x3e se_tan03)`。
+  ⇒ **没有 `#if ANIMAL_DEBUG_KEY` 分支了**：debug / release 同音，用户继续用 debug build 复跑也不会再听到被否的 A / B
+  （旧写法 release 恒 `0x34`、debug 还轮换，已不适用）。
+- **`se_volume_fix()`** 跟着改查 `0x3e` 行的 `+0x0a`（原 `0x34`）；priority 非 0 时不写、不打日志。
+- **要用户听 / 回报**：不用再听了；复跑时日志应只剩一种撒道具 SE（`id 0x3e`），耳朵听到的就是 TH17 那一声。
+- **门**：`make check` 全绿；**未新增 `BP_*`** ⇒ `.def` 仍 28 exports；部署 md5 / 四路径同步见会话报告。
+
+### 1v-补9. 鬼形兽（117）十五修：bug2 静态对账 + bug6 鹫束变宽/外流 + bug7/8 渐变圆按路径收回 & 每路播 0x42 + 鱼灵不换种类（2026-09-13）
+
+> 对应 AUDIT §AL45 / §AL46 / §AL47 / §AL48。**未新增 `BP_*`**（`on_bullet_created` 走既有 vtable `+0x28`），`.def` 仍 28 exports。
+
+- **bug2（灵梦鹫打不掉血 / 无击中动画 / 穿过去）**：静态对账结论 = **数据没坏**。
+  `native/build/sht/pl00.sht` set `0x24..0x27` 与 TH17 `pl00a.sht` set16 逐字段一致（dmg 20 / 16×16 /
+  speed 10 / mode 1 / func 1,1,0）；`hit func 0` 在 TH17 与 TH18 都是 NULL ⇒ **无额外命中特效是原生行为**；
+  伤害走引擎伤害源管线、与 `func_on_hit` 无关。新增日志
+  `wba_c: eagle body bullet created (char 0 set 0x24 row 0, dmg 20; hit data-path auto)`（封顶 3 条）。
+  **实机要看的**：① 这行有没有（= 弹真的发出来）；② 敌血条掉不掉（判伤害，别用爆炸判断）；
+  ③ 若仍追不到，下一步查追踪半径（TH18 tick1 = 256）。
+- **bug6（魔理沙鹫束）**：视觉宽 32 → **128 px**（TH17 script16 `scale y=4`；判定宽保持 34 = TH17 `hit_h`）；
+  脚本 163 加 `scrollX(-1/21)` 让贴图沿束外流；C 侧 `eagle_beam_vis_len()` 按 `TRAVEL/SHOT_FRAMES/LOOP`
+  做「每 15 帧一发」的延伸（远端往外扫）。**实机要看的**：① 束明显变粗、远端在动；② 判定/伤害与改动前一致；
+  ③ 若嫌「锯齿」太跳，把 `ANIMAL_EAGLE_BEAM_LOOP` 改 0（拉满一次保持）。
+- **bug7/8（渐变圆收回 + 0x42）**：X / 中弹起手补发渐变圆 **interrupt 2**（TH17 `0x40f7bf`），
+  咆哮结束仍发 **interrupt 1**（`0x40f508`）；`ANIMAL_SE_ROAR_END`(0x42) 提到自然 / 霊撃两路公共尾部播放。
+  **实机要看的**：① X / 中弹退出时渐变圆「先缩到半程再慢慢没」（≈70 帧，比自然结束慢）；② 自然结束时长不变；
+  ③ **三条退出路（自然 / X / 中弹）都恰好听到一次 0x42**（不再只有自然结束有）。
+- **追加（用户 2026-09-13「鱼灵从一开始就不应该换种类」）**：`token_spawn()` 对鱼灵无条件清零
+  `long_life` ⇒ 鱼灵不进 `tokens_tick` 的变色块（不 re-VM、不闪、不重置 life、不播 `0x4e`）；
+  `token_change_type()` 恢复无条件播 `0x4e`（鱼灵到不了）。一手：TH17 `spawn_token` 只有 type 15..17
+  稀有分支写 `[token+0x6c] |= 2`；type 4..7 非稀有分支保持 0 ⇒ `sub_410af0` 整块 life/变色跳过。
+  **实机判据**：SPACE 连撒鱼灵后日志**不再**出现 `wba_wc: token flicker`，耳朵**不再**听到 0x4e；
+  鱼灵只走「被收 → 换道具」；一手没有别的到期行为 ⇒ 继续游到被收或离屏。
+
+### 1v-补10. 鬼形兽（117）十六修：灵梦鹫追尾补正 / 魔理沙鹫激光整体 ×4 + 不消弹 / 对话音效不推迟 / 换面清实体 / 暴走放灵类型（2026-09-13）
+
+> 对应 AUDIT §AL49。**未新增 `BP_*`**（`on_stage_start` / `on_tick_2` 全是既有 vtable），`.def` 仍 28 exports。
+
+- **(1) 灵梦鹫追尾**：一手对账证明 TH17 tick1 ≡ TH18 tick1（半径都 256、转角 0.08、60 帧窗口、速度三档全同；
+  pl00a EAGLE tail 全 0 且 tick1 不读 shooter）⇒ func 映射 `1→1` **是对的**。缺口 = 转弯半径 125 px 太大，
+  侧翼行进极限环、60 帧后直飞。**卡侧补正**：`eagle_homing_assist()` 每帧对 EAGLE body 弹（set 0x24..0x27）
+  再叠 `ANIMAL_EAGLE_HOMING_EXTRA = 0.08f` 转角（总 ~0.16/帧）；TH17 数据一个不改。
+  **实机要看的**：侧翼行不再绕半圈直飞、命中显著改善；不想要就把该常量改 `0.0f`。
+- **(2) 魔理沙鹫激光**：`ANIMAL_EAGLE_BEAM_SCALE = 4.0` 是**唯一旋钮**，两轴共用 ⇒ 视觉 **2048×128 px**
+  （远端出屏），判定长跟视觉、判定宽仍一手 34；`MIN_FRAC=0.5` ⇒ 最短 1024 px 仍出屏。
+  **删掉** `eagle_beam_tick` 的 5 圆 `ce_cancel_radius` + `ANIMAL_EAGLE_BEAM_CANCEL_*`（TH17 不消弹）。
+  **实机要看的**：① 束远端顶出画面（还看见束尾就把 `SCALE` 往大调，日志会打实际值）；
+  ② 按住 Z 不再消弹；③ `hyper_frame` 的霊撃全屏消弹不变。
+- **(3) 对话音效**：`fish_to_items()` 入队即按 `dialogue_open()` 拦掉；`on_tick_2` 的 `paused` 分支兜底丢弃
+  （`se_left=0/se_gap=0` + 日志）。`release_tick` 释放动画**不动**（对话中照旧冻结）。
+  **实机判据**：对话期吃 P/金钱鱼灵，对话结束后**不应**再补播那串 `0x3e`。
+- **(4) 换面清实体**：挂 `on_stage_start`（`+0x34` = `GameThread__thread_start` `th18:0x442F98`），
+  `clear_card(c, keep_hud_slot=1)` 清 token 实体 + 咆哮 VM + core + HUD 绘制；`token_clear_all()` 升级成
+  「扫满 40 只 + memset + `s_n_tok=0`」。**商店走 `on_load`、不经过 `+0x34`** ⇒ 商店路径一个字节不动。
+  **实机判据**：1面→2面后旧动物灵不再在换种类时冒出来；进商店前后动物灵/槽位照旧保留。
+- **(5) 暴走放灵类型**：一手 TH17 `0x40ee03` 是 `rand()%3+15`（**随机**，不读 `hyper_type`）；
+  按用户口径覆盖成「暴走 1..3 ⇒ 2 只都 = 本咆哮类型」，混合 4 / 未知 0 ⇒ 回退一手随机（注释标明非一手）。
+  `s->burst_type` 在 `hyper_end` 清 core 前捕获（原占位字段改名）；日志打 `type X Y, roar_type Z`。
+  `long_life=1`（变色版）保持。**实机判据**：狼暴走结束后日志/画面应是 **2 只狼**（不是 2 只随机）。
+
+
+### 1v-补11. 鬼形兽（117）十七修：狼咆哮子机仍在开火 = 装备子机路径拿咆哮组当 set（2026-09-13）
+
+> 对应 AUDIT §AL50。用户 2026-09-13 实跑：「按 Z 进魔理沙狼咆哮子机还发射激光；进大鹫咆哮子机不发射激光了」。
+
+- **根因**：`BP_ce_option_shot_gate` 原来只对 `set ∈ 0x0a..0x15`（原生装备子机组）询问，但咆哮期间
+  `Player__tick_shooters_for_ability_card` 会用**咆哮组**当 set：WOLF `0x1e..0x22` 是**非空组** ⇒ 子机照旧开火；
+  EAGLE `0x23..0x27` 是空组 ⇒ 看不出问题（所以上一轮只测鹫时误判修好了）。
+- **修法**：询问区间放宽成 `0x0a..0x15 ∪ 0x1e..0x27`；常量集中到 `native/sdk/public.h`
+  （`CE_SHT_SET_OPTION_MIN/MAX` + `CE_SHT_SET_BEAST_MIN/MAX`，注释钉死与 `sht_ids.h` 同源），
+  `sdk.c` 与 `animal.c` 的二次校验同步。`0x16..0x1d`（108/77/116 的组）不进区间 ⇒ 同卡组不受影响。
+- **为什么拦而不复刻**：TH17 是**一套**射击组（本体+子机共用、换组一起换、行里 `slot` 决定从哪只子机出弹）；
+  `pl01a` WOLF 5 行 `slot` 全 0 ⇒ TH17 狼咆哮子机本来不出弹，我们拦掉后观感一致；EAGLE 行 1..4 才是子机出弹，
+  但 TH18 的 mode=2 激光在无真子机时会崩（§AL36/§AL39）⇒ 鹫改卡侧束。
+- **回退方案（用户提的纯工程解，未采用）**：咆哮期间直接吞 Z 输入 —— 副作用全局，先用窄区间精确拦。
+- **实机判据**：狼咆哮应看到 `wba_c: option shot suppressed while roaring (… set 0x1e …)`，子机不出弹。
+
+
+### 1v-补12. 鬼形兽（117）十八修（真身）：咆哮漏的是**咆哮前已经打出来的旧 `mode=2` 激光**（2026-09-13）
+
+> 对应 AUDIT §AL51，**订正 §1v-补11 / §AL50 的根因**。
+
+- **§1v-补11 错在哪**：11 个 `call 0x40a9c0`（`Player__tick_shooters_for_ability_card`）的调用点
+  全部推硬编码 set `0x0a..0x15`，**没有**「咆哮组当 set」这回事；而 dev 卡组 `[117,21,22]` 没装备子机卡，
+  所以 `8ad1a9b2` 日志里的 0 条 `option shot path set` 证明不了用户实战没走那条路。
+- **真身**：`Player__tick_shooting_state 0x45ea00` 的 set 查询只有 `0x45ebfb` 一处（聚焦/非聚焦都走它，
+  hook 已覆盖两条通道，§H1 的「第二处查询」不存在）；重定向对**新**弹生效（日志/字节 dump 都对齐），
+  但 `mode=2` 激光的存活**不跟 set**：`tick2 0x45fc80` 的 `0x4601e0 cmp [player+0x476d4],0 / jl 自杀`
+  只看射击短计时 ⇒ 咆哮前打出的普通子机激光在咆哮里**一直钉在原处**。聚焦 set 5..9 没有 `mode=2` 行，
+  所以按住 shift 进咆哮看不到 ⇒ 与用户观察逐字吻合。
+- **修法**：新增 `ce_kill_retail_option_lasers()`（`native/sdk.c`），`hyper_shot_apply()` 每咆哮帧收掉
+  `packed set ≤ 0x15` 的 `mode=2` 活动弹（state=2 + 束 VM interrupt 1）；不碰 108/77/116（0x16..0x1d）
+  与 WOLF/EAGLE（0x1e..0x27）。**无新 BP / 无新 cave / 不改 TH17 数据**；WOLF 5 发本体导弹原样。
+- **实机判据**：进狼/鹫咆哮、按住 Z ⇒ 日志出现 `wba_c: retail option lasers killed (n=…)`（n≥1 就是真身），
+  且画面不再有旧束；`roar bullet set census #N: set 0x…` 应只出现 `0x1f..0x22` / `0x24..0x27`
+  （出现 `0x00..0x09` = 主炮重定向失效；出现 `0x0a..0x15` = 装备子机路径在发，另一路）。
+- **部署**：用户退游戏后重跑 `bash local/sync_modkit_dll.sh`（本次 `thcrap/bin` 那份被占用，仍是旧的
+  `8ad1a9b2`）；四路径应统一到 `b30a42845cb469e0f1ff42b0ad323c09`。
+
+### 1v-补13. 鬼形兽（117）二十修：鹫束展开改用收回的倒放 + 中弹掉落的灵改成会变色（2026-09-13）
+
+> 对应 AUDIT §AL52。用户 2026-09-13 实跑两条：
+> ① 鹫束「应当是如收回般（倒放）展开，实测瞬间出现、收回反而正常」；
+> ② 「中弹后生成的是固定两个水獭灵、不会切换；按契约从头到尾都不该有不切换的灵」。
+
+- **鹫束展开**：新增 `eagle_beam_grow()`（每发前 **6 帧** 0→1），**两轴共用**（长 `TRAVEL×g`、宽 `SCALE×g`）；
+  6 = 脚本 163 `interruptLabel(1)` 的 `scaleTime(6,1,1→0)` 帧数 ⇒ 展开就是收回的倒放。
+  删掉 `ANIMAL_EAGLE_BEAM_MIN_FRAC`（不再半长起步）。日志 `… grow 6 frames …`。
+- **中弹掉落**：`animal_miss_burst()` 的 `token_spawn(type, 0, …)` ×2 → `(type, 1, …)` ⇒ 会变色/换种类
+  （类型仍是本机体凭依兽灵：魔理沙 = 2 獭，随后 2→3→1 循环）。日志改 `miss -> 2 cycling animals (type N, long_life=1)`。
+  ⚠ 与「鱼灵永不换种类」不冲突：那条只管 type 4..7。
+- **实机判据**：按 Z 时束从 0 展开（约 6 帧）；中弹后 2 只会闪、会换种类的獭灵；狼 5 发本体导弹不变。
+
+
+### 1v-补14. 鬼形兽（117）二十一修：灵只走四个对角线；中弹掉落类型取随机（2026-09-13）
+
+> 对应 AUDIT §AL53。用户口径：① 空格召唤的灵「似乎不是 45°」；② 「凭依灵在 TH17 里是可选的配置，
+> 我在这里设定为她们**没有被凭依**」（魔理沙 ≠ 獭）。
+
+- **出场方向**：`token_spawn()` 的 `ang` 由「8 个 45° 方向」改成**四个对角线**
+  `((rand % 4) * 2 + 1) × 45°`。理由与一手自洽：速度下限重掷是**逐轴** `±(0.5+rand×0.3)`，
+  只有对角线能一直满足 `|vx|,|vy| ≥ 0.2` ⇒ 灵永远斜着走。
+- **中弹掉落类型**：`animal_miss_burst()` 不再用 `1 + 自机序号 % 3`（那是"固定凭依"假设），
+  改 `1 + rand%3`；`long_life = 1`（会变色）不变。
+- **实机判据**：新灵只走四个对角线；中弹 2 只类型随机且会闪/换种类。
+
+### 1v-补15. 鬼形兽（117）二十三修：道中「仅大怪掉」= 大怪击破掉 1 动物灵（2026-09-13，待实机）
+
+> 对应 AUDIT §AL55。用户口径：「算了，先别动 ECL 了，按照仅大怪掉吧暂时」；触发必须是这只怪
+> **被打死掉**（不用波清空）；没有这张卡不能掉（卡侧实现天然满足）。不改 ECL。
+
+- **判据**：stage 1 一手标定后，六种 `Cir*`（README 逐项求和 = 58 只；用户口径写 68，按 dump 实际为 58）为杂鱼，其余 `GirlB/GirlD/GirlC/GirlRed/GirlBlue`、
+  Boss/MBoss 为大怪。杂鱼前缀表 = `animal_big_trash_prefixes[]`（默认 `{"Cir"}`，
+  见 `TUNING.md` §2.2 唯一旋钮）；HP / hurtbox 单独都不能分开这套名单（队长 HP 100 < 杂鱼 120）。
+- **触发**：`on_enemy_death`（`th18:0x430240`）+ `CE_EDEATH_F_REAL` + `KILLED/BOMB_KILL`；
+  死亡栈只入 `s_big_drop[32]` 标量队列，`on_tick_2` 帧首 `animal_big_drop_drain()` 建 VM、打掉落行。
+- **掉落**：`token_spawn(1 + rand%3, 1, enemy.x, enemy.y − 8)` = 1 只变色动物灵。
+- **去重**：Boss / 中 Boss 仍走既有 `on_enemy_drop_pre` 的 `*Dead → 2 资源灵(4+5)`；本路径只打
+  skip 行，不重复给动物灵。
+- **实机判据**：打 58 只 `Cir*` ⇒ `big-enemy drop` 行 **0**；打 `GirlB01`/`GirlD01`/`GirlD02`/
+  `GirlC01`/`GirlRedA01`/`GirlBlueA01`/`GirlRedA01n`/`GirlBlueA01n` ⇒ 每只各 1 行
+  `wba_wc: big-enemy drop -> 1 animal spirit (type N, hp=…/max…, drop_id …, sub …) at (x, y)`；
+  中/boss 每只各 1 行 skip；若 `Cir*` 出掉落行就往前缀表加一项。
 
 ## 1t-补. 绀珠传（115）2026-09-09 实跑修的三处
 
@@ -1363,15 +1569,15 @@ SDK 把执行从 `0x45c048` 改到 `0x45c056`，**跳过 `0x45c051` 的 `call do
 3. **开局空波**：原来「章号变了」就开波 → 开局先开一个空波、下一帧第一个刷出就把它结掉，
    屏幕上一上来弹一块「击破率 0%」的结算面板。现改为**只由刷出 / boss 出现开波**
    （`!wave_open && spawn_delta > 0` 也能开第一波，这样 `stage_sub < 0` 的退路也起得来）。
-4. **道中切波**：同一 `MainSub` 里排了几波（st01 `MainSub00` 的三波阴阳玉）原来被并成一章。
+4. ~~**道中切波**：同一 `MainSub` 里排了几波（st01 `MainSub00` 的三波阴阳玉）原来被并成一章。
    新增 `LOLK_MID_BURST_GAP 100`：同子程序内静默 ≥100 帧后再刷出 = 新一波
-   （burst 内 `wait(10)` 不切、burst 间 `wait(120)` 切）。单测 **134 断言**全过。
-   ⚠️ 用户 2026-09-09：**这块先搁置**（需要大量实机测试）——已知「三只大蝴蝶前面多切了一波」，
-   阈值待定，别在没实机数据前继续调。
+   （burst 内 `wait(10)` 不切、burst 间 `wait(120)` 切）。单测 **134 断言**全过。~~
+   ⚠️ **2026-09-13 已被 §1t-补2 取代并删除**：用户洞察「章 = MainSub 编号」，`MainSub00`
+   的三段 burst 本来就该是**同一章**，`LOLK_MID_BURST_GAP` 静默窗口不再使用。
 
 ## 1b. 商店走两遍（2026-09-04，待实跑）
 
-每关过关后商店开 **2 次**（`shop_core.h` 的 `CE_SHOP_VISITS_DEFAULT`），第二次商品重抽（已买的自动排除）、仍是零售流程（必须买一张）。
+每关过关后商店开 **2 次**（`shop_core.h` 的 `CE_SHOP_VISITS_DEFAULT`），第二次商品重抽（已买的自动排除）、仍是原生流程（必须买一张）。
 实现：`native/shop.c` 两个放行断点（`ce_shop_bought` `0x4183ea` 记成交；`ce_shop_reopen` `0x443b05` 在 GameThread 里把 `0x20000` 位加回 eax），
 状态机 `shop_core.c`（主机单测）。引擎链：[`engine/card/th18/05-shop-and-money.md`](../../../engine/card/th18/05-shop-and-money.md) §3.5；审计 AUDIT §P。
 
@@ -1381,6 +1587,29 @@ SDK 把执行从 `0x45c048` 改到 `0x45c056`，**跳过 `0x45c051` 的 `call do
 
 通过后：MAP §5 与 AUDIT §P 顶部记「实跑通过」。想改次数就改常量（以后可挂 `cards.js`）；
 **关卡中间开店**（MSG opcode 36 或 DLL 直接置 `GameThread+0xb0 |= 0x20000`）技术上可行，但 Stage / Spellcard 不冻结，只该在对话里做——见 §3.5。
+
+## 1t-补2. 绀珠传（115）道中「章 = MainSub 编号」改写（2026-09-13，待实跑）
+
+**用户洞察**：「th15 搁置的章节似乎就是 MainSub 的编号，按编号排，一个编号是一波
+（01+01b 是一波）」→ TH18 的 st ECL 里 `MainSub00 / MainSub01 / MainSub01b / MainSub02 …`
+的**编号是章/波的天然键**，去掉尾部字母的数字是一章。
+
+**一手定位**：接线层读关卡脚本**主上下文**的子程序名（`zEnemy+0xc` → `ctx+0x4` 子程序号；
+`zEnemy+0x1218` → `fm+0x8c` 子程序表，每项 8 字节 `{name, bytecode}`），
+`parse_mainsub_number()` 把 `MainSub01b` 解析成 `1`。一手结构：所有字母后缀都是基号的
+`@…() async`（8 关全量复核），主上下文名字天然是基号。
+
+**改动**（零新断点、零字节改动、零 ECL 改动）：`lolk_core.c` 的 `mid_boundary()` 改成
+「MainSub 编号变了（或没开章）+ 刷出 → 新章」；`main`/`MainFront`/`MainLatter` 段不开章；
+删掉旧的 `LOLK_MID_BURST_GAP` 静默窗口与 ECL 524 `chapter_changed` 道中路径；
+认不出关卡脚本时才退到 `LOLK_MID_QUIET_GAP`。日志加 `mainsub %d [rule %s]`
+（`mainsub` / `quiet-fallback` / `boss`）。
+
+**实机判据**：st01 道中应恰好切成 `MainSub00 / 01(+01b+01c) / 02(含02b) / 03 / 04 / 05 / 06(含06b)`
+七章（对照 `dump-st01/README.md` 的出怪表：00=Cir00p/m、01(+01b+01c)=GirlRed/BlueA+GirlC、
+02(+02b)=GirlB01+GirlRed/BlueA01n、03=GirlD01、04=Cir01a/Cir02a、05=Cir00bp/m、
+06(+06b)=GirlD02+GirlB01）；boss 战仍按非符/符卡（`rule boss`）。
+细节/证据见 [`AUDIT.md`](AUDIT.md) §AK9 与 [`engine/chapter/th18/03-midstage-waves.md`](../../../engine/chapter/th18/03-midstage-waves.md)。
 
 ## 1r. 商店随机池上限 560 → 8192（2026-09-08，待实跑）
 
@@ -1396,9 +1625,9 @@ pool: 9 sites verified, 8192 slots at XXXXXXXX (retail stack buffer was 560)
 体感应当**完全没有变化** —— 这一改只挪了池子的住处，抽卡的算法一个字没动。
 所以验收要点是「商店照常出货、权重感觉没变、多逛几家店不崩」。任何 `pool: site … NOT patched` 或
 `FAIL: shop pool relocation` 都是回归。想压力测一把：把 `cards_dev.js` 的 `new_weight` 调到 200
-（23 张 × 205 = 4715 份，远超零售的 560、仍在 8192 内），商店应当照常工作 —— 这是这次改动的直接证据。
+（23 张 × 205 = 4715 份，远超原生的 560、仍在 8192 内），商店应当照常工作 —— 这是这次改动的直接证据。
 
-**天花板不再是瓶颈**：零售 362 + 23 张新卡（权重 2）161 = 523，现在离 8192 还很远。
+**天花板不再是瓶颈**：原生 362 + 23 张新卡（权重 2）161 = 523，现在离 8192 还很远。
 
 ## 1q. 卡组编成崩溃（2026-09-08 已修，待复跑）
 
@@ -1505,16 +1734,16 @@ whirlwind: extra release #3 (do_bomb -> 0), 0 still owed, bombs 2
 
 ## 1f. 破损核心（id 71，2026-09-05，待实跑）
 
-**装备卡，本 mod 第一张走零售装备卡机制的卡**：身边一颗电球子机（`Player__allocate_option`，引擎管位置 /
+**装备卡，本 mod 第一张走原生装备卡机制的卡**：身边一颗电球子机（`Player__allocate_option`，引擎管位置 /
 聚焦位移 / 进店收起），每 1 秒朝最近的敌人（512 px 内）**瞬间**劈一道电弧，那一个敌人吃 120 伤害
-（连续 4 帧 × 30 的定点伤害源 `ce_damage_rect` 钉在目标上 + 电弧 / 火花两条特效 VM；2026-09-06 平衡：原 80 / 2 s 只有零售子机卡的三分之一）。实现 `native/cards/broken_core.c` +
+（连续 4 帧 × 30 的定点伤害源 `ce_damage_rect` 钉在目标上 + 电弧 / 火花两条特效 VM；2026-09-06 平衡：原 80 / 2 s 只有原生子机卡的三分之一）。实现 `native/cards/broken_core.c` +
 `broken_core_core.c`；设计 `docs/superpowers/specs/2026-09-05-broken-core-design.md`；审计 AUDIT §U。
-**不改任何游戏资源文件**（只多 `ability.anm` 的两个 entry + 三个脚本）。`category: 1`：图鉴 / 编成里应排在零售子机卡 REIMU_OP…MAGATAMA **那一段之后**、而不是所有新卡的末尾（2026-09-06 顺序表按类别插入，AUDIT M12；日志 `menu: new card 71 (category 1) at order[…], after id 51`）。
+**不改任何游戏资源文件**（只多 `ability.anm` 的两个 entry + 三个脚本）。`category: 1`：图鉴 / 编成里应排在原生子机卡 REIMU_OP…MAGATAMA **那一段之后**、而不是所有新卡的末尾（2026-09-06 顺序表按类别插入，AUDIT M12；日志 `menu: new card 71 (category 1) at order[…], after id 51`）。
 图鉴整体应是：第 2 行 MOKOU 后接强欲之壶、方片 2；第 4 行 MAGATAMA 后接破损核心；第 7–8 行 MUKADE 后接黑桃 ×5、黄昏、加倍、腐化；
-第 10 行 RICEBALL 后接反转牌、神之宣告、青眼白龙、炎魔之王；最后一行只有 MAGATAMA2（零售就把它放在最后）。
+第 10 行 RICEBALL 后接反转牌、神之宣告、青眼白龙、炎魔之王；最后一行只有 MAGATAMA2（原生就把它放在最后）。
 
 **顺带解决了 `engine/card/th18/OPEN-questions.md` §1**（装备卡的子机 shooter 数据存在哪）：就在四个 `pl0X.sht`
-的 `+0xe0` 偏移数组里，40 项、零售用 23 项、尾部 17 项空着。新开的 `engine/sht/th18/` 两篇是布局与字段图；
+的 `+0xe0` 偏移数组里，40 项、原生用 23 项、尾部 17 项空着。新开的 `engine/sht/th18/` 两篇是布局与字段图；
 `assets/sht/append_shooterset.py` 能往空位追加 shooterset。**这张卡的第一版用过它**（子机真开火），后来改成
 定点伤害源——自机弹天生要飞过去，与「瞬发单体」相悖。工具留着（`APPEND` 为空 = 不产出），以后真要「子机连射」的卡再用。
 
@@ -1566,7 +1795,7 @@ whirlwind: extra release #3 (do_bomb -> 0), 0 still owed, bombs 2
 （没敌人则 `firelord: no target …`）→ `firelord: hp N (blocked …)`（有挡弹的整秒）→ `firelord: died after …` 或过关 `firelord: dismissed (stage start) …`；
 火力不够 → `firelord: refused (power too low)`。
 崩溃优先怀疑：V1 / V3 的两个 `ret 4`（照 Tsukasa 抄的，但我们是从 SDK 桩里调）、V4 repopulate 在我们的 `on_activate` 里重入广播
-`on_power_level_change`（破损核心会在此重申请子机——零售装备卡同款）、`ce_rand` 的 thiscall、V17 震屏工厂的 fastcall + `ret 0x10`（第一颗火球落地那帧崩就是它）。
+`on_power_level_change`（破损核心会在此重申请子机——原生装备卡同款）、`ce_rand` 的 thiscall、V17 震屏工厂的 fastcall + `ret 0x10`（第一颗火球落地那帧崩就是它）。
 视觉怀疑：火球方向（script92 不碰 rotate，C 写 `vm+0x44`；贴图朝 +x）、本体是否被 script91 拉回原点（脚本不碰 pos，应不会）、
 拖尾是否堆在火球身后而不是身前（起在当前帧坐标、火球下一帧才前进）。
 
@@ -1628,7 +1857,7 @@ ouroboros: miss #3 -> stack 2 (bullet damage x1.40), next stack needs 3 more mis
 
 崩溃优先怀疑：`ce_tick_shooters_for_card` 的压栈序（Z2，**第一次真调用**）、`ce_allocate_option`（§U1，破损核心已走过）。
 **开局就崩 / 一按射击键就崩**：先怀疑 `pl0X.sht` 没被 patch 应用到（日志里没有 `option allocated` 却有豌豆 = 不可能；
-真没应用的话开火时会去解析零售留空的第 `0x17` 项 → 指向 set 0 → fire_rate 0 → **除零**）。
+真没应用的话开火时会去解析原生留空的第 `0x17` 项 → 指向 set 0 → fire_rate 0 → **除零**）。
 `dist/patch-step3/th18/pl0[0-3].sht` 四个文件必须在包里（`files.js` 应列出它们）。
 视觉怀疑：豌豆太大 / 太小（script100 / 101 的 `scale`）、子机位置（`PS_OPTION_OFFSET`）、
 机枪那堵墙太宽 / 太窄（`append_shooterset.py` 里 `PEA_GATLING` 的七个 `spawn_dx`）。
@@ -1640,7 +1869,7 @@ ouroboros: miss #3 -> stack 2 (bullet damage x1.40), next stack needs 3 more mis
 被动「武器」：boss 的最后一张符卡（终符）期间自机弹伤害 ×2，每敌每帧上限同步抬到 sht 基值 ×2；炸弹 / 其他卡不翻。
 不开新断点、不改字节、不调新引擎函数。判据：符卡进行中 && boss 活动中断槽子程序名含 `Dead`（ECL 一手：七关 + Extra 道中全覆盖，
 [`engine/ecl/th18/01`](../../../engine/ecl/th18/01-boss-interrupts-and-spellcard.md) §6）。审计 [`AUDIT.md`](AUDIT.md) §Y。
-`cards_dev.js` 起手卡组没带它——`_test` 商店里买，或临时把起手一格换成 76。**要在零售关看**（devstage 空壳 ECL 的 boss 只有一段攻击）。
+`cards_dev.js` 起手卡组没带它——`_test` 商店里买，或临时把起手一格换成 76。**要在原生关看**（devstage 空壳 ECL 的 boss 只有一段攻击）。
 
 应有：非终符阶段日志无 `guding:` 行；boss 进最后一张符卡的那一帧 `guding: final spell ON (boss enemy_id N, interrupt slot 0) -> bullet damage x2, cap 90 -> 180`
 （Reimu 90 / Marisa 160 / Sakuya 60 / Sanae 120），血条掉速肉眼约两倍；符卡结束（击破 / 超时 / 神之宣告）→ `guding: final spell OFF (F frames, B bullets …)`。
@@ -1657,7 +1886,7 @@ st01 Mike 第二张符卡最直观；Extra 道中 Tsukasa 只有第三张符卡�
 
 进关应有：`truesilver: stage start, durability 2` → HUD 那一行的小卡上出现数字 **2**（日志 `truesilver: hud digit spawned (icon id N at x, y, z; digit id M)` —— **把这行的坐标贴回来**，数字偏移要按它调）。
 放第一发炸弹 → `truesilver: swing #1 -> durability 1, +400 over 4 frames (cap 400); life fragments L/F -> L/F'`，右上角残机碎片 +1（满 3 进整命、残机已满则不加），
-数字变 **1**，boss 血条比单放炸弹多掉一截（devstage ÷100 一发就死，换零售关看）；第二发 → 数字 **0**；第三发 → `truesilver: bomb without durability`，无额外效果。
+数字变 **1**，boss 血条比单放炸弹多掉一截（devstage ÷100 一发就死，换原生关看）；第二发 → 数字 **0**；第三发 → `truesilver: bomb without durability`，无额外效果。
 过关 → 数字回 **2**。进店买卡后 HUD 重建 → 数字仍在（日志再来一行 `hud digit spawned`）。
 崩溃优先怀疑：X1（`0x409670` 的 `ret 0x10` 第四个哑参）、X2（`set_sprite` 的 thiscall）、X3（加碎片的 `ret 4` 哑参）。视觉怀疑：数字位置 / 大小（X5：改 script99 的 `pos` 或贴图尺寸）、数字残留（X6）。
 
@@ -1679,14 +1908,14 @@ golden: interest 20% -> money M + G = M'
 **倒吊人**（即时卡，价位档 3）：店里买它 → 日志 `destroy: card X (flags 0x..) removed; now total T = A active + E equipment + P passive`
 → `hanged: destroyed card X, money M -> M+300 (shop still deducts the price)` → 卡组 HUD 那一行少一张、图标重排、钱 = M + 300 − 价钱。
 卡组只有选中的主动卡（或空）时 → `hanged: no other card to destroy, nothing gained`。它可以再刷出（`repeatable`）；被摧毁的卡也能再刷出（`owned` 清零）。
-编成里**不该**出现它（`deck_visible: 0`）。删装备卡（破损核心 / 零售子机卡）→ 子机留到关店、出店时按剩余卡重建。
+编成里**不该**出现它（`deck_visible: 0`）。删装备卡（破损核心 / 原生子机卡）→ 子机留到关店、出店时按剩余卡重建。
 崩溃优先怀疑 W3 / W4（`+0x50` thiscall、`0x408d00` ret 4）；幽灵图标 / HUD 不重排看 W4。
 
 通过后：CARDS.md 两行 🔧 → ✅；AUDIT §W 顶部记「实跑通过」。
 
 ## 1e. 音效表扩容 / 语音（2026-09-05，待实跑）
 
-零售音效表是写死的 84 槽（`0x00`–`0x53`），**一个空闲 id 都没有**。四张表（cfg `0x4c9b80`、
+原生音效表是写死的 84 槽（`0x00`–`0x53`），**一个空闲 id 都没有**。四张表（cfg `0x4c9b80`、
 wav 名 `0x4b47a0`、slot `0x56c804`、blob `0x56cfe4`）整体搬进 codecave 加长到 116 行 / 104 个 wav 槽，
 腾出 **32 个自定义音效 id `0x54`–`0x73`**，第一批装角色语音。51 处 binhack 全是「只换常量」，
 唯一手写机器码是 `th18_snd_patch_init` 那 56 字节。引擎一手
@@ -1782,7 +2011,7 @@ TH14 Collect Point 收点系统的 1:1 复刻（占位名 = TH14 三字名，用
 **实跑要看的事（五件事 + 一个敞口）**：
 
 1. **四断点与事件**：启动日志 `sdk:` 要报 `ce_item_frame`/`ce_item_collect`/`ce_item_commit`/`ce_shot_damage` 已应用（少一条门就 `FAIL`）；`_test` trace 首次命中行应出现四个 `on_*` 各一次。`cards_dev.js` 起手卡组实跑时临时换一格进 114。
-2. **批次结算**：开局站桩吃道具 → 收点流真停后 ~8 游玩帧（0.13 s；presence 续批 §Z21，窗口 `C2X_BATCH_SETTLE_IDLE` = 8）日志 `collect2x: settle N items, batch score … -> x1.200, +… score, frag type 0x11 x1 (t=…)`（**hex type = 新 DLL 记号**：0x10 EXTEND2 命碎卡 / 0x11 BOMB2 符卡碎卡——虹龙洞原生卡道具；旧版打 `frag type 4/6` = 别作宝石残留，见 AUDIT §Z12）；**延迟 20 帧后**应另有一行 `collect2x: frag card type 0x11 x1 spawn @(px,sy) t=…`（2026-09-08 节奏变更：结算帧只出弹字/分值，卡延迟到点才从**当下**自机位弹——TH14「先结算后弹碎片」；**两行 `t=` 差 ≈ 20**，若体感不对调 `C2X_FRAG_SPAWN_DELAY_FRAMES`）。★ 2026-09-08 第二跑根因（AUDIT §Z14）：碎片延迟曾**完全不弹** + 掉 P 三轮零出现 = 帧钟选错——`card+0x20` zTimer 只被**主动卡** tick（sdk.c `ce_sdk_active_tick` 首行 `active_recharge` 门），被动卡读它是死值。已换接线层自计数（on_item_frame 分派 = `0x446ee3` 门卫 CMP，每正常游玩帧一次）→ **若此轮 t 不涨或 spawn 仍不出，回查分派与计数**。HUD 分数应出现**负补差**（×0.5/×0.8 档分数比收集前低一点）与 **×2.0 档大跳**。碎片从自机上方 ~76px 弹、1.2 速短弧（~1.4s）后被原生 swoosh 收回，**外观应是 TH18 卡**；4:1 循环：4 次 0x11 后第 5 次 0x10，≥60 批恒 0x10。★ **批边界 = TH14 原生 timer 语义 + presence 续批（§Z18 结构定案 + §Z21 收窗；Z20 的 30 帧窗已撤）**：原生重载常量 8（一手 `[0x4f5884]` @ th14 `0x43898e`/`0x439d60`、帧尾 `0x438dad` 递减归零即结）——续期门在 item state-3 飞行 body、距离判定之前 → **在飞批集道具每帧重载 timer**，批闭 = 收点流真停后 ~8 帧（DDC 同拍）。TH18 过线只吸引（POC 线 `player+0x47998` 在、不批结算）、70px 环滴入 → 波内吸收空洞 8–25 帧常态（第六跑把「一次收点」腰斩成 ≥20+≥20 双结算、20 帧 pending 窗内二次 settle 覆盖 → 基本一次碎片）；Z20 把 idle 放大到 30（0.5 s）兜空洞 → run-7 实跑拆批不再现、但「体感慢了」（0.5 s 拖拍）→ **Z21：idle 收回原生 8 + presence 续批**：环内道具在飞（TH18 state {3,4}，flip 点 `0x445f6f`/`0x445f63` 置 3、`0x446647` 置 4）每帧续期 → 空洞被在飞散布盖掉，只有「环内无在飞且无新收 ≥8 帧」的真停段才关批。TH15/LoLK 对照 census：批记账块只写不读、timer 无消费端 → 原生没有批结算可对齐（机制变了，§Z21 证据 1–2）。结构照旧：timer idle 门、**在飞残余点不挡批**、迟到拆下一批（原生原义，DDC 连锁如此断）；不再查池空（池空门实跑三症状：钟声比 TH14 急 ~7 帧 / NO BONUS 偶缺 / 躲弹幕时突然冒过期 ×0.5——全部同根，见 §Z18）。★ **批集 = {P, 钱}（2026-09-08 §Z19：TH14 官方「红点与蓝点」→ TH18 无蓝点生态位）**：碎片/卡/转换点 9–0xe 一律不入批 —— 击破转换（boss 破招强制收集的转分点潮）**不得**触发碎片/bonus（DDC 原义，TH14 `0x43898e` 计时门 type≠9/0xa/0xb）。★ **批分值 = 批内 Σ(P/钱自带小分)**（Z19 尾段订正：P 例程 `0x446870` 尾 `0x446ac0` 与钱例程 `0x446b00` 尾 `0x446d03` 都无条件 `SCORE += 身价/10`，cap 1e9）——settle 日志 `batch score` 字段与 HUD 补差应**非零**；若站桩吃一串 P 日志里 `batch score` 显示 0，回查 stash 窗。★ **第八跑焦点（run-7 = Z20 的 30 帧窗：拆批不再现但 0.5 s 拖拍「体感慢了」→ Z21 处置，AUDIT §Z21）**：a) **钟声 `0x39` = `se_pin00`**（第五跑确认；TH14 原生真值：`0x438dfe` 系 ≥20 五档弹字前 `push 0x39 → play_sound_at_position`；th14/th15/th18 的 0x39 行同 wav 同调校 −2dB/prio 100）应在收点流真停后 ~0.13 s （≈8 帧）内响 —— **不再 0.5 s 拖拍**；比 8 帧还钝 = presence 没续上（回查 `ce_item_pool_any_attracting` 谓词与接线），太急 = 结算打断收点流（钟声响起时环里还有道具在飞）。b) **一次收点 = 一次结算**：攒波上线收点 + 持续击杀补充应并成一批（单条 settle、弹字完整、碎片一枚）；若再拆 = 连续 ≥8 帧环内无在飞且无新收的真空洞（细尾到达散布），兜底 = `C2X_BATCH_SETTLE_IDLE` 16（Z21 证据残留 6）——先报日志再动。躲弹幕期（无收点动作）**不再凭空冒结算**。音/弹字都在 settle 帧，不存在挪进 `spawn_pending_frags` 的分歧。★ **第九跑焦点（run-8 = 无全屏收点事件也误弹灰 NO BONUS + 下收点线后新掉 P 仍入批拉长 → Z22 成员门处置，AUDIT §Z22；DLL 22:56 重建 md5 `f8d9496c` 已同步 mods/）**：开批/计数/续批三处全收窄到「**真空飞行（state 3）**」—— 接线层 `on_item_collect` 成员门只认**分发时 state==3** 的 {1,2} 收集（collect2x.c:220）；presence 谓词 `ce_item_pool_any_attracting` 只扫 state 3（sdk.c:426）；70px 环收 state 4 = 普通游玩磁吸，不开批也不续批。三件事：a) **非全屏收点期 collect2x 零活动**——躲弹幕/站桩时触收、环收掉落的 P 只走原生计分：不得开批、不得 settle、不得灰 NO BONUS、钟不响（掉落节流照旧，被动不受成员门影响）。b) **三种全屏收点（放 B / 上线 / 对话自动全屏收）回归**——批照开、≥20 按档结算、钟声在流真停后 ~0.13 s、弹字/碎片/批分非零都不变（Z19–Z21 成果不得被成员门误伤；一次收点 = 一次结算）。c) **下收点线瞬间（用户语义：飞过来的 P 收完再结算）**——已在飞的残余 P 继续飞到自机、分发时 state 仍 = 3 → 并入本批、续批；**最后一枚收完 ~8 帧后 settle**（钟声在残余收完时响，不是下线瞬间）；此后线下新掉落、只坠不飞的 P（state 1 坠落 → 环收 4）不开批 —— 预期日志 = 一条 `settle` 后 collect2x 静默。残余迟到分簇（到达间隙 >8 帧）= 原生拆批语义（DDC 连锁如此断）；若迟到小批 5–19 枚会再弹一次灰 NO BONUS = **真批原义、不是 run-8 的 bug**（run-8 bug = 无任何全屏事件凭空开批）——先报 settle 行与 `t=` 序列再定性。Z21 残留 6 的「idle 16 兜底」已随成员门作废，窗口与谓词都不再动。
+2. **批次结算**：开局站桩吃道具 → 收点流真停后 ~8 游玩帧（0.13 s；presence 续批 §Z21，窗口 `C2X_BATCH_SETTLE_IDLE` = 8）日志 `collect2x: settle N items, batch score … -> x1.200, +… score, frag type 0x11 x1 (t=…)`（**hex type = 新 DLL 记号**：0x10 EXTEND2 命碎卡 / 0x11 BOMB2 符卡碎卡——虹龙洞原版卡道具；旧版打 `frag type 4/6` = 别作宝石残留，见 AUDIT §Z12）；**延迟 20 帧后**应另有一行 `collect2x: frag card type 0x11 x1 spawn @(px,sy) t=…`（2026-09-08 节奏变更：结算帧只出弹字/分值，卡延迟到点才从**当下**自机位弹——TH14「先结算后弹碎片」；**两行 `t=` 差 ≈ 20**，若体感不对调 `C2X_FRAG_SPAWN_DELAY_FRAMES`）。★ 2026-09-08 第二跑根因（AUDIT §Z14）：碎片延迟曾**完全不弹** + 掉 P 三轮零出现 = 帧钟选错——`card+0x20` zTimer 只被**主动卡** tick（sdk.c `ce_sdk_active_tick` 首行 `active_recharge` 门），被动卡读它是死值。已换接线层自计数（on_item_frame 分派 = `0x446ee3` 门卫 CMP，每正常游玩帧一次）→ **若此轮 t 不涨或 spawn 仍不出，回查分派与计数**。HUD 分数应出现**负补差**（×0.5/×0.8 档分数比收集前低一点）与 **×2.0 档大跳**。碎片从自机上方 ~76px 弹、1.2 速短弧（~1.4s）后被原版 swoosh 收回，**外观应是 TH18 卡**；4:1 循环：4 次 0x11 后第 5 次 0x10，≥60 批恒 0x10。★ **批边界 = TH14 原版 timer 语义 + presence 续批（§Z18 结构定案 + §Z21 收窗；Z20 的 30 帧窗已撤）**：原版重载常量 8（一手 `[0x4f5884]` @ th14 `0x43898e`/`0x439d60`、帧尾 `0x438dad` 递减归零即结）——续期门在 item state-3 飞行 body、距离判定之前 → **在飞批集道具每帧重载 timer**，批闭 = 收点流真停后 ~8 帧（DDC 同拍）。TH18 过线只吸引（POC 线 `player+0x47998` 在、不批结算）、70px 环滴入 → 波内吸收空洞 8–25 帧常态（第六跑把「一次收点」腰斩成 ≥20+≥20 双结算、20 帧 pending 窗内二次 settle 覆盖 → 基本一次碎片）；Z20 把 idle 放大到 30（0.5 s）兜空洞 → run-7 实跑拆批不再现、但「体感慢了」（0.5 s 拖拍）→ **Z21：idle 收回原生 8 + presence 续批**：环内道具在飞（TH18 state {3,4}，flip 点 `0x445f6f`/`0x445f63` 置 3、`0x446647` 置 4）每帧续期 → 空洞被在飞散布盖掉，只有「环内无在飞且无新收 ≥8 帧」的真停段才关批。TH15/LoLK 对照 census：批记账块只写不读、timer 无消费端 → 原版没有批结算可对齐（机制变了，§Z21 证据 1–2）。结构照旧：timer idle 门、**在飞残余点不挡批**、迟到拆下一批（原版原义，DDC 连锁如此断）；不再查池空（池空门实跑三症状：钟声比 TH14 急 ~7 帧 / NO BONUS 偶缺 / 躲弹幕时突然冒过期 ×0.5——全部同根，见 §Z18）。★ **批集 = {P, 钱}（2026-09-08 §Z19：TH14 官方「红点与蓝点」→ TH18 无蓝点生态位）**：碎片/卡/转换点 9–0xe 一律不入批 —— 击破转换（boss 破招强制收集的转分点潮）**不得**触发碎片/bonus（DDC 原义，TH14 `0x43898e` 计时门 type≠9/0xa/0xb）。★ **批分值 = 批内 Σ(P/钱自带小分)**（Z19 尾段订正：P 例程 `0x446870` 尾 `0x446ac0` 与钱例程 `0x446b00` 尾 `0x446d03` 都无条件 `SCORE += 身价/10`，cap 1e9）——settle 日志 `batch score` 字段与 HUD 补差应**非零**；若站桩吃一串 P 日志里 `batch score` 显示 0，回查 stash 窗。★ **第八跑焦点（run-7 = Z20 的 30 帧窗：拆批不再现但 0.5 s 拖拍「体感慢了」→ Z21 处置，AUDIT §Z21）**：a) **钟声 `0x39` = `se_pin00`**（第五跑确认；TH14 原版真值：`0x438dfe` 系 ≥20 五档弹字前 `push 0x39 → play_sound_at_position`；th14/th15/th18 的 0x39 行同 wav 同调校 −2dB/prio 100）应在收点流真停后 ~0.13 s （≈8 帧）内响 —— **不再 0.5 s 拖拍**；比 8 帧还钝 = presence 没续上（回查 `ce_item_pool_any_attracting` 谓词与接线），太急 = 结算打断收点流（钟声响起时环里还有道具在飞）。b) **一次收点 = 一次结算**：攒波上线收点 + 持续击杀补充应并成一批（单条 settle、弹字完整、碎片一枚）；若再拆 = 连续 ≥8 帧环内无在飞且无新收的真空洞（细尾到达散布），兜底 = `C2X_BATCH_SETTLE_IDLE` 16（Z21 证据残留 6）——先报日志再动。躲弹幕期（无收点动作）**不再凭空冒结算**。音/弹字都在 settle 帧，不存在挪进 `spawn_pending_frags` 的分歧。★ **第九跑焦点（run-8 = 无全屏收点事件也误弹灰 NO BONUS + 下收点线后新掉 P 仍入批拉长 → Z22 成员门处置，AUDIT §Z22；DLL 22:56 重建 md5 `f8d9496c` 已同步 mods/）**：开批/计数/续批三处全收窄到「**真空飞行（state 3）**」—— 接线层 `on_item_collect` 成员门只认**分发时 state==3** 的 {1,2} 收集（collect2x.c:220）；presence 谓词 `ce_item_pool_any_attracting` 只扫 state 3（sdk.c:426）；70px 环收 state 4 = 普通游玩磁吸，不开批也不续批。三件事：a) **非全屏收点期 collect2x 零活动**——躲弹幕/站桩时触收、环收掉落的 P 只走原生计分：不得开批、不得 settle、不得灰 NO BONUS、钟不响（掉落节流照旧，被动不受成员门影响）。b) **三种全屏收点（放 B / 上线 / 对话自动全屏收）回归**——批照开、≥20 按档结算、钟声在流真停后 ~0.13 s、弹字/碎片/批分非零都不变（Z19–Z21 成果不得被成员门误伤；一次收点 = 一次结算）。c) **下收点线瞬间（用户语义：飞过来的 P 收完再结算）**——已在飞的残余 P 继续飞到自机、分发时 state 仍 = 3 → 并入本批、续批；**最后一枚收完 ~8 帧后 settle**（钟声在残余收完时响，不是下线瞬间）；此后线下新掉落、只坠不飞的 P（state 1 坠落 → 环收 4）不开批 —— 预期日志 = 一条 `settle` 后 collect2x 静默。残余迟到分簇（到达间隙 >8 帧）= 原生拆批语义（DDC 连锁如此断）；若迟到小批 5–19 枚会再弹一次灰 NO BONUS = **真批原义、不是 run-8 的 bug**（run-8 bug = 无任何全屏事件凭空开批）——先报 settle 行与 `t=` 序列再定性。Z21 残留 6 的「idle 16 兜底」已随成员门作废，窗口与谓词都不再动。
 3. **掉 P（被动二，2026-09-08 第三跑：落点已定案，见 §Z15）**：非聚焦射击命中 → 掉 **P 火力道具 type 1**。每发成功打一行 `collect2x: P drop (power …, t=…) @(ex,ey)`；节流 = `t` 差 ≥ 间隔（火力 4.00 → 32 帧，火力越高越密）；聚焦 / bomb 命中**不掉**。★ 落点（§Z15 定案）：`0x45f0f0` 是栈帧别名帧（`push ebx; mov esp,ebx`），handler 当年 `pos = ebx+8` 读的是**参数槽**——槽里是指针（指针值当 float ≈ 0 → 屏幕外原点）。已改**解引用**：`[ebx+8]` → 指向本帧被结算敌人（身体）的 {x,y}（callee 圆形分支以它减各源中心判重叠，arg1 全扫描期恒定 = 调用方那个敌人；调用方 `0x42ee75` 压 edi=敌结构内偏移、`0x43955b` 压自家帧缓冲）。**探针已删**（静态已定案，不再追 collect2x-dbg 行）。→ **P 应从被打中的敌人身上顶出**（初速 2.2 向上小抛 = 原生 main-drop，重力带回自机行/swoosh）——请确认外观与敌人位置贴合。★ **新增观测点（命中门控未定案）**：停火几秒（弹池未空、敌人仍在场）看**敌人身上还掉不掉 P**——award 路径（`0x45f2a2`）不读任何「本调用开火过」标志，`[player+0x47984]` 是每帧额度常量（仅 3 处引用：GameThread 从 `[[player+0x47940]+0x28]` 复位、`0x40f48e` 创建矩形源时置 300、`0x45f28b` 读），静态无法排除「没打中也掉」。掉 = 需命中门：下轮在 `0x45f171` BP 捕初始预算、ebp 键控比较剩余预算做「本调用真开火」判定。P ∈ 批集 {1,2}（§Z19；9–0xe 转换点不入批、不计数）→ 掉 P 被吃在批闭 idle 窗口（8 帧 + presence 续期，§Z21）内会并入本批（timer 门）；超窗 = 拆下一批。P 满 4.00 后引擎转分路径在例程内（§Z19 尾段），不影响批分统计。帧源 = 接线层游玩帧计数（run 内单调；**不再读 card+0x20**——被动卡没那钟，见 §2 的 Z14 注）。
 4. **stash 干净性**：批集收集后日志**不**应出现碎片提交混账（没有 `commit +N after batch closed` 行以外的入账噪声）。
 5. **早结敞口（Z7）**：留意 `collect2x: commit +… after batch closed (lagging item)` —— 出现即「收集了、分值提交滞后到批闭之后」的道具真实存在，按 AUDIT Z7 扩判定/收尾。整关结束前把批留在打开状态 → 过关日志应无残留 settle（`on_stage_start` 清批）或有一行明确说明。
@@ -1832,6 +2061,10 @@ TH14 Collect Point 收点系统的 1:1 复刻（占位名 = TH14 三字名，用
 | 111 | 地灵殿 信号槽 | `signal.c` | 🔧 已实装待实跑（233 断言；绿点来源已补、每关归零已补、乘数通道已接）|
 | 112 | 星莲船 飞碟 | `ufo.c` | 🔧 已实装待实跑（**992** 断言；金=蓝、两同一异照抄、**HUD 第一版在层 25**；**真 ECL 已从 TH12 移植**，缺贴图/anm ⇒ 暂不发布）|
 | 113 | 神灵庙 灵界 | `trance.c` | 🔧 已实装待实跑（**1103** 断言；**中弹救援 = 救援层最后一家（延时不是免死；落点 = 卡虚表 `+0x0c` + `return 1`）**；**神灵实体池已落地**：不下落/走过去才吃/越缩越小；计分载体仍搁置）|
+
+> **113 的「BGM 变体」本轮已单独做了一手可行性研究**（研究/方案，未改代码与数据）：
+> [`engine/_shared/th13-th18-trance-bgm-research.md`](../../../engine/_shared/th13-th18-trance-bgm-research.md)。
+> 结论速览：TH13 灵界 BGM **不是双轨**，是切到 `thbgm.fmt` 里独立的 `NNb` track；TH18 只有一路 BGM，但保留了单流 fade 状态机和 `cmd 9` 切轨实现（cmd 9 入口在 TH18 无调用者）。真·交叉淡化建议在 DLL 侧用 `FUN_004898f0` 建第二路内存 `CStreamingSound`（路线 A），最忠实 TH13 的硬切路线要补 `thbgm.dat` + `th18.dat` 里的 fmt（路线 B）。
 
 ### 本轮（2026-09-12 第三轮：对抗审计 + 收口）
 
@@ -1910,16 +2143,16 @@ make release PUSH=1
 
 | # | 事项 | 现状 / 一手依据 | 影响 |
 | --- | --- | --- | --- |
-| 1 | **107 结界「持续期」要不要补视觉** | ★ 已订正：原版持续期**有**视觉，只是不是环 —— ①**全屏 sprite 变暗到 37.5 %**（`th07:0x44162a`，绘制侧 `0x406b52`）②**自机红白每 2 帧闪**（`th07:0x441553`），两条覆盖整段 540 帧；环只在发动瞬间 ~33 帧 | 本轮两者**都没搬**；另零售数据自相矛盾：发动时给环设的缩放插值时间基是 **540 帧**（`th07:0x441b56`）而脚本 33 帧就收槽；详见 `engine/spirit/th07/01-barrier-visual.md` |
-| 2 | ~~108 低速子机「数量」+ 子口径~~ **✅ 全部已定并落地**：数量 = 各机体在各自作品的数（灵梦→紫 1 / 魔理沙→爱丽丝 1 / 咲夜→蕾米 4 / 早苗→文 `floor(P/100)`）；用户追加「**0 子机得不压原生弹**」也已实现 | ✅ 一手：`th08:0x4c7d40[shottype][4]` 非 0 项数 / `th16:0x444106 idiv`；口径见 `AUDIT` §BO-8 / §BO-10 | 实跑验收未做（早苗 P<100 低速应看到 `NOT suppressing native shots` + 原生弹）|
+| 1 | **107 结界「持续期」要不要补视觉** | ★ 已订正：原版持续期**有**视觉，只是不是环 —— ①**全屏 sprite 变暗到 37.5 %**（`th07:0x44162a`，绘制侧 `0x406b52`）②**自机红白每 2 帧闪**（`th07:0x441553`），两条覆盖整段 540 帧；环只在发动瞬间 ~33 帧 | 本轮两者**都没搬**；另原版数据自相矛盾：发动时给环设的缩放插值时间基是 **540 帧**（`th07:0x441b56`）而脚本 33 帧就收槽；详见 `engine/spirit/th07/01-barrier-visual.md` |
+| 2 | ~~108 低速子机「数量」+ 子口径~~ **✅ 全部已定并落地**：数量 = 各机体在各自作品的数（灵梦→紫 1 / 魔理沙→爱丽丝 1 / 咲夜→蕾米 4 / 早苗→文 `floor(P/100)`）；用户追加「**0 子机得不压原版弹**」也已实现 | ✅ 一手：`th08:0x4c7d40[shottype][4]` 非 0 项数 / `th16:0x444106 idiv`；口径见 `AUDIT` §BO-8 / §BO-10 | 实跑验收未做（早苗 P<100 低速应看到 `NOT suppressing native shots` + 原版弹）|
 | 3 | **108 妖侧本体换图走哪条路** | spec §11.3 给了四条候选 + 六条待决。已查明：(a) 注入 `pl0X.anm` 撞「一个字节都不改」铁律，且**一套 24 格要 33120px，四张 256×256 贴图页都放不下**；(b) 叠跟随 VM + 藏本体，但**藏法全无一手指实**（藏不干净＝双人叠影）；(c) 维持现状；(d) hook 跳过本体绘制（最贵） | 108 的「整个人换人」能不能落实；spec §11.3 |
 | 4 | **112 彩虹令牌收进去算哪一色** | 一手：TH12 里彩虹令牌按**当时显示的那一色**入账（`0x426c3f/0x426c4d/0x426c5e` = case 10/11/12 与 13/14/15 分别记 红/蓝/绿），**不是万能色**；本卡当独立一色 | 要改成一手语义得动 `ufo_core`；TUNING A8 |
 | 5 | **HUD 的 layer 24 → 25** | 只为「P 键截图里能看到」；**机制未坐实**（`0x3b` 合成四边形的覆盖面拿到反证 ⇒ 🟡），且用户当前不能开游戏做判决实验 | 13 个脚本（全是我们自己的卡）批量改一次；AUDIT §BD.1 |
 | 6 | **SDK 的 near-corner 门限要不要参数化** | SDK 用 **TH16** 的 400/384（`sdk_core.c:508`），而 TH10 一手是 416/400 + x −128/−112、TH11 是 416/400 + x −64 | 110/111 已按各自原作自算（共享件没动） |
-| 7 | **111 的三行数字读数** | 零售 SA **没有**数字读数 ⇒ 那是我们加的（已按老口径标 ❓自定）；块因此 208×56，会把 116/117 往右推（算过仍在同一行） | 要不要保留 / 精简 |
-| 9 | **108 子机脚本的中断标签口径** | TH18 零售本体子机是 **2 出场 / 3 进店收起 / 1 销毁**，而 TH08 那三支是 TH08 约定（1/2 循环、3/4 起爆、5 散场）。引擎清槽发的是**标签 1**（`th18:0x45d310`/`0x45d2d0`/`0x45dbf0`；零售装备卡同），而 **2/3 的发送点本轮没找到** | 现照抄零售 ⇒ 收到 1 只是「切到另一段循环」（无害，随后 SDK 删 VM）；若引擎还会发 3，紫那支会切到 46×46 的「隙间」形态并 `stop()` ⇒ 收起动画丢；AUDIT §BO-9 |
+| 7 | **111 的三行数字读数** | 原生 SA **没有**数字读数 ⇒ 那是我们加的（已按老口径标 ❓自定）；块因此 208×56，会把 116/117 往右推（算过仍在同一行） | 要不要保留 / 精简 |
+| 9 | **108 子机脚本的中断标签口径** | TH18 原生本体子机是 **2 出场 / 3 进店收起 / 1 销毁**，而 TH08 那三支是 TH08 约定（1/2 循环、3/4 起爆、5 散场）。引擎清槽发的是**标签 1**（`th18:0x45d310`/`0x45d2d0`/`0x45dbf0`；原生装备卡同），而 **2/3 的发送点本轮没找到** | 现照抄原生 ⇒ 收到 1 只是「切到另一段循环」（无害，随后 SDK 删 VM）；若引擎还会发 3，紫那支会切到 46×46 的「隙间」形态并 `stop()` ⇒ 收起动画丢；AUDIT §BO-9 |
 | 10 | **108 要不要接 TH16 满火力另一形态** | `th16:0x492c10 = {9,8,12,13}`（文 = `pl03` **script 12**，8 帧同图 + `blendMode(1)` + `type(3)` + 不同帧序）| 要接得**按火力档切脚本**（会触发「先收再要」的重申请）；一手数据已备齐，补一支 228 即可 |
-| 8 | **110 要不要进货架** | 本轮把坐标从 ❓ 自定换成**零售原值**（落在 TH10 的 (32..91,448..464)，**在货架左锚点 257 之左**，与原版「那块本来就空着」一致） | `HUD-LAYOUT` §5 的迁移清单 |
+| 8 | **110 要不要进货架** | 本轮把坐标从 ❓ 自定换成**原版原值**（落在 TH10 的 (32..91,448..464)，**在货架左锚点 257 之左**，与原版「那块本来就空着」一致） | `HUD-LAYOUT` §5 的迁移清单 |
 
 ### 9z.2 112 的载体：用户已拍板（2026-09-12）
 
@@ -1937,7 +2170,7 @@ make release PUSH=1
 
 ### 9z.1 还没做、但**不需要**用户决策的（下一轮可直接做）
 
-- ~~**108 使魔可见性**~~ **✅ 已落地**（2026-09-12）：四色零售切图 + 跟随 VM（`yk_fam_vm_spawn/follow/kill_all`，层 7），
+- ~~**108 使魔可见性**~~ **✅ 已落地**（2026-09-12）：四色原生切图 + 跟随 VM（`yk_fam_vm_spawn/follow/kill_all`，层 7），
   删卡路收得干净；句柄表在文件级静态区（不占 496 B 预算）。
 - **`youkai.c` 的本体 sprite 写法要改**：一手证明 `vm+0x24` 直写**不够**（UV/尺寸缓存由 `0x477b00` 填）
   ⇒ 正确形状是 `ce_anm_set_sprite(*(void**)(player+CE_PLAYER_ANM), player+CE_PLAYER_VM, N)`，先例 `season.c:995-1003`。
@@ -1946,3 +2179,370 @@ make release PUSH=1
 - **`185_faith_dot.anm.txt` 的注释要订正**：`ins_63` = `stop`（不是 `delete`）、`ins_53` = `angleVel`（不是 `rotate`）、
   `ins_66`/`ins_67` 可搬；订正块已写在 `make_mof_art.py` 文件头，脚本本体未动。
 - **`tooling/thtk/unpack.py` 的 `GAMES` 加 th11**（本轮 111 的资产是手工解的；`local/` 已就位）。
+
+## 1v-补16. 鬼形兽（117）二十三修补：道中「仅大怪掉」前半面 0 掉落 —— 诊断 + 正判化（2026-09-13，待实机）
+
+> 对应 `AUDIT.md` §AL55bis。用户实跑 `8ae8c449…`：中 Boss 前一个都没掉，日志有
+> `trace: card 117 on_enemy_death (+0x84) first hit` 但没有 `big-enemy drop` / skip 行。
+
+- **诊断**：`on_enemy_death` 在判据前对每关前 **16** 只死亡打一行
+  `wba_wc: death diag kind=… raw_flags=… real_bit=… id=… sub=… hp=…/… hurtbox=… main_drop=… anm_main=…`。
+  实机先看这行：`sub` 是 `(null)`、读到别族名、还是字段正常但判据返 0，一眼可证伪。
+- **判据**：通用族名前缀表 = `{"Cir", "ECir"}`（表外 = 大怪，三只 `GirlD01` 大蝴蝶因此必掉，不是特例）；
+  sub 名读不到时改用 `anm_main` / `hurtbox.x` / `main_drop` 正判，不再用 HP≥500；
+  `F_REAL` 不够时用「`KILLED/BOMB_KILL` + 具名 ECL 敌人（排除 `Main*`/`main`/`Ecl_*`）」兜底。
+- **验收表**：见 `AUDIT.md` §AL55bis 的 16 行表（1 面所有敌人类型）。实机判据：
+  `MainSub03` 三只 `GirlD01` 各 1 行；58 只 `Cir*` 0 行；前半段 `Girl*` 每只 1 行。
+- **未改**：ECL、`sdk.c` / `sdk/public.h` / `sites.py` / `.def`（无新 `BP_*`，`ce_integrity_check()` 保留）。
+
+## 1v-补17. 鬼形兽（117）二十四修：TH17 中 Boss 掉落接入（2026-09-13，待实机）
+
+> 对应 `AUDIT.md` §AL56。用户口径：「中 boss 得看 TH17 怎么掉，我们就怎么掉」。
+
+- **一手表**：主线 `st01–st06` 中 Boss 死亡 = `BossItemPhase(...)` 主 token + raw `dropMain(19)`→token4 +
+  `dropMain(20)`→token5；st05/st06 无条件追加 `dropMain(30)`→token15（长寿命狼）；
+  st01–st04 的 `BossItemPhase` 主掉落是条件稀有 item23..26；Extra `st07` 另有 `MBoss2`/`MBoss3`
+  相位边界 = item33 随机长寿命动物 + token4+token5。文件/子程序/行号见 `AUDIT.md` §AL56 表。
+- **卡侧**：`MBoss*` 不再走 `*Dead → 2 资源灵` 旧结账；中 Boss 死亡发 token4+token5（st05/06 再发 token1
+  `long_life=1` 表达 token15），相位边界发 1 随机长寿命动物+token4+token5；旧 `boss death -> …` 行不再给中 Boss。
+- **已知缺口**：稀有动物 token8..14 无 `beast2*` 贴图/脚本，卡侧只打
+  `midboss rare conditional ... not spawned`，不发错种类；这是资产缺口，不是判据回退。
+- **实机判据**：中 Boss 死亡应见 `wba_wc: midboss drop -> 2 resource spirits (4+5) … (TH17 stXXmbs: …)`，
+  st05/06 带 `+ 1 long-life wolf`；Extra 相位边界应见 `midboss phase drop -> 1 long-life animal … + 2 resource`；
+  且**不应**再看到 `wba_wc: boss death -> 2 resource spirits (4+5)`（中 Boss）。
+
+### 1v-补18. 稀有动物灵按「不存在」处理（用户口径 2026-09-13）
+
+> ★ **2026-09-13 用户口径：稀有动物灵（token8..14 / item23–29）「当不存在」** —— 不实现、不做资产、
+> 条目也不进列表；中boss 的条件稀有主掉落分支**命中时什么都不生成**（当前只留一行
+> `midboss rare conditional … not spawned` 作可证伪痕迹）。⇒ 中boss 实得掉落 =
+> **token4 + token5**（st05/06 再 +1 长寿命狼）；Extra 相位边界 = 1 随机长寿命动物 + 2 资源灵。
+
+### 1t-补3. 115 道中 boss 单独成章：用户裁决 B（保留）
+
+> ★ **2026-09-13 用户裁决（选 B）：中boss 入场也单独开一章——保留现状。**
+> 即 st01 的 `MBoss` 与 `MainSub05/06` 时间重叠时，会先出现一个 `rule boss` 的**短 boss 章**
+> （≈260 帧 / 4.3 秒），随后 `MainSub05` 开第 5 章 ⇒ 道中实际显示 **7 个 MainSub 章 + 1 个短 boss 章**。
+> 关底 boss（`MainBoss`）不受影响，仍按非符 / 符卡切章。**代码无需改动**（现状即 B）。
+
+## 1v-补18. 鬼形兽（117）二十三/二十五修补：死因 kind 解码 + 出场防重叠（2026-09-13，待实机）
+
+> 对应 `AUDIT.md` §AL55ter / §AL57。
+
+- **`kind=OTHER` 根因**：thcrap `regs->retaddr` 是断点续跑 EIP，不是调用点返回地址；改用 `[regs->esp]`
+  后实测读到 `0x430245`（断点+5 蹦床地址）也不是。`native/sdk.c` 新 `edeath_call_site()` 从
+  `regs->esp` 起**扫前 12 个 dword**，命中原七条 call-site 表（KILLED `0x42f3b7` / BOMB_KILL
+  `0x42ee90` / killAll 三兄弟 / ECL_DIE `0x430f59` / 标志驱动 OTHER `0x42f3dd`）。事件追加
+  `retaddr / esp / ret_slot` 字段（仅 DLL 内 ABI，已同步 public.h）。
+- **诊断覆盖**：前 16 只任意死亡 + **额外前 4 只 `is_big`（非 Cir/ECir 族）**各一行；
+  行内增加 `kind/retaddr/ret_slot/esp/raw_flags/big`。下一份日志应能直接看到三只 `GirlD01` 的
+  `sub/retaddr/ret_slot/kind/hp/hurtbox/anm_main`。
+- **兜底**：若扫描未命中（`retaddr=0, ret_slot=-1`）而 `real_bit=1 + hp<=0 + 非 Cir/ECir`
+  ⇒ 卡侧按 KILLED 处理并打 `death kind fallback -> KILLED`；已知 `KILL_ALL/ECL_DIE` 不走这条。
+- **防重叠**：`token_spawn_heading()` 按 TH17 一手 `0x410570` 做距离²<576 且点积≥0.96 时
+  `+3.883222 rad`、最多 10 次；初速仍四对角线（用户观感 🟡），重试允许离开对角线。
+  中弹/真死 2 只强制一左（135°）一右（45°）；日志 `token spawn ... retry N` 与
+  `miss -> 2 cycling animals (..., dir L135/R45)`。
+- **实机判据**：1 面前半段 58 只 `Cir*` 0 行；`MainSub03` 三只 `GirlD01` 各 1 行
+  `big-enemy drop`；`GirlB01/GirlC01/GirlD02/GirlRedA01/GirlBlueA01/A01n` 各 1 行。
+  中弹/真死应见方向日志一左一右且无重叠；中 Boss 仍按 §AL56 的 `midboss drop` 口径。
+
+## 1v-补19. 鬼形兽（117）二十六修：道中掉落改为「贴图体型 + 同波鹤立鸡群」（2026-09-13，待实机）
+
+> 对应 `AUDIT.md` §AL58；原 AL55 的族名黑名单主判据已退役，死因解码与 fallback 继续用。
+
+- **体型阈值**：`ANIMAL_BIG_SPRITE_MIN_W/H = 64`。来源 = 用户给的
+  `enemy.png` + `thanm -l 18 enemy.anm`：右下角最大 sprite 类 `sprite96..107` 全部 64×64，
+  `script40..44` 引用它们；ECL `GirlD01/GirlD02` 写 `anmSetMain(0,40)`。
+- **运行时取尺寸**：slot0 VM id = `enemy+0x1350`（`zEnemyData+0x124`）→ `ce_anm_get_vm()` →
+  `vm+0x74/+0x78` 原始 sprite W/H；退路 = `enemy+0x6204` 的 `final_sprite_size`。
+  `anm_main`（`enemy+0x149c`）是脚本号不是 sprite id；Cir 不写 anm_main，必须读 slot0。
+- **波键/统计**：关卡脚本主上下文 MainSub 数字（`MainSub01/01b/01c` 同键）。
+  组 = `(行为体名, anm_main 外观脚本, W×H)`；按 MainSub 波维护 **census**：
+  `on_tick_2` 每帧 + `on_enemy_death` 死亡当帧把当前可计入敌人按 `enemy_id` 去重记入本波，
+  波键变化整表清零。判定用 census 累积值，不是死亡当帧同屏数。
+  - 累积数量 ≤ `ANIMAL_ODD_GROUP_MAX(3)` ⇒ 全组掉（用户「<=3 也可以叫鹤立鸡群」）；
+  - 累积数量 >3 且存在严格过半多数派、本组不是它 ⇒ 少数派掉；
+  - 纯杂鱼波 `Cir`/`ECir` singleton guard 防首只误掉；非 Cir 不再整片放行。
+- **1 面预期**：`GirlD01`×3 / `GirlD02`×3 / `GirlC01` / Red+Blue 对 / Redn+Bluen 对 ⇒ 掉；
+  `GirlB01`×8 / `Cir00p/m` 10/10 / `Cir00bp/m` 10/10 / `Cir01a/Cir02a` 9/9 ⇒ 不掉。
+- **日志**：`death diag` 增列 `sprite=WxH big_by_size=… wave=… odd=… drop=… census=n total=m`；
+  掉落行 `reason=size` 或 `reason=odd-one-out`，带 `census/total`。
+- **待实机重点**：
+  1. `census` 表 256 项、按实际见到的 `enemy_id` 累积；实机核对 `census=n total=m` 与波内预期刷出数
+     是否对得上（未见过就离场的成员会漏计）。
+  2. `MainSub01/01b` 的 `$A=8` 循环波：census 按运行时实际成员数累积；核对 `reason=odd-one-out` 是否
+     与 `census` 一致，而不是看同屏瞬间。
+  3. 纯杂鱼波 singleton guard 是否挡住首只误掉；看 `Cir*` 是否出现 `odd=1 reason=odd-one-out`。
+- **未改**：ECL 文件、`sdk.c` / `sites.py` / `.def`（无新 `BP_*`）；`ce_integrity_check()` 保留；
+  Boss/中 Boss 既有掉落去重不变。
+
+## 1v-补20. 鬼形兽（117）二十六修补：整波否决（用户 2026-09-13 更正版，待实机）
+
+> 对应 `AUDIT.md` §AL58b。用户用自己看到的波内容定案：第二波那只上半贴图妖精掉、第三波整波不掉、
+> 第四波三只大蝴蝶都掉、道中 boss 后第二波所有大蝴蝶都掉。
+
+- **用户波名 → MainSub**：第一波 `MainSub00`；第二波 `MainSub01(+01b+01c)`；第三波
+  `MainSub02(+02b)`；第四波 `MainSub03`；第五波 `MainSub04`；道中 boss 后第一波 `MainSub05`；
+  道中 boss 后第二波 `MainSub06(+06b)`。
+- **最终规则**：
+  - 第二波：`GirlC01`（48×48、census 1）掉；红蓝队长按 census/odd。
+  - 第三波：整波 veto（`ANIMAL_WAVE_VETO_THIRD`、`ANIMAL_THIRD_WAVE_KEY=2`）⇒ 全不掉。
+  - 第四波：`GirlD01`×3 64×64 都掉（size）。
+  - 道中 boss 后第二波：`GirlD02`×3 64×64 都掉（size）；`GirlB01`×8 不掉。
+- **last-wave veto 已作废**：代码删除了 `ANIMAL_WAVE_VETO_LAST` 和自动最大 MainSub 编号查找；
+  不再打 `wave veto = MainSub<max>`。日志只保留 `veto=third|none`。
+- **日志**：`death diag`/掉落行带 `veto=third|none`、`census=/total=`。
+- **实机重点**：第二波红蓝队长在 `MainSub01/01b` 的 `$A=8` 循环下 census 分布是否符合预期；
+  第三波整波 `veto=third` 应无任何掉落行；第四波/道中 boss 后第二波大蝴蝶应 `reason=size` 掉。
+
+## 1v-补21. 鬼形兽（117）二十七修：静态组表取代运行时 census（AL58c，2026-09-13，待实机）
+
+> 实机三处误掉（第二波第一只杂鱼、道中 boss 前随机、道中 boss 后 `GirlB01`）根因 = 运行时
+> census 首杀只有 1~2，命中 `≤3 odd`。改用“这一波这个组本来总共有几只”的静态表。
+
+- **生成器**：`native/tools/gen_animal_wave_table.py` → `native/cards/animal_wave_table.h`。
+  从 `st01..st07.ecl` 反编译解析 `MainSubNN`，**展开 `$A--`/`deci`+`jmpNeq` 循环**；
+  用 `thanm -l 18 enemy.anm` 映射 `anmSetMain/anmSetSprite(0,S)` → sprite W×H。
+- **运行时**：`animal_enemy_drop_measure()` 优先查静态表取 `same/total/max`；表未命中才退 census 兜底。
+  `census=` 降级为日志；`group_total=` 是判据值。`veto=third` 保留；`last-wave` veto 已删/作废。
+- **1 面动态数**：wave0=20；wave1=红16+蓝16+GirlC1；wave2=GirlB8+红n12+蓝n12；wave3=GirlD3；
+  wave4=9+18；wave5=20+20；wave6=GirlD2+GirlB8。
+- **最终验收**：只有第二波 `GirlC01`×1、第四波 `GirlD01`×3、道中 boss 后第二波 `GirlD02`×3 掉；
+  `GirlB01`、`Cir*` 全程 0 行。
+- **日志**：`death diag`/掉落行 `veto=third|none`、`group_total=`、`census=`、`total=`。
+- **待实机**：看 `group_total` 是否命中静态表（`-1` = 未命中退回 census）；第三波应无任何掉落行。
+
+## 1v-补22. 鬼形兽（117）二十八修：波号绑定到敌机（AL58d，用户 2 面实机反馈）
+
+- 现象：2 面第二波 3 只 `anm_main 214`/48×48 中妖精没掉；日志出现 `wave=-1`，静态表与 census
+  双失效。
+- 原因：`animal_stage_mainsub()` 实时读在主上下文不是 `MainSubNN` 时返回 -1。
+- 修法：新增 `enemy_id → wave` 绑定表；每帧首次见到敌机时绑定，sticky last wave 兜底，表满环淘汰。
+  死亡优先用绑定波号；census 也按绑定波号分组；日志加 `wave_src=bound|live|sticky|none`。
+- 验收：2 面 `wave 1` 三只 48×48 中妖精各掉 1；2 面 `wave 0` 相对不掉；1 面验收不变
+  （GirlC01×1、GirlD01×3、GirlD02×3）。
+
+## 1v-补23. 鬼形兽（117）二十九修：咲夜/早苗兽灵咆哮（AL59，2026-09-13，待实机）
+
+> 设计原文 / 一手素材 / 实现细节见 [`AUDIT.md`](AUDIT.md) §AL59；旋钮见 [`TUNING.md`](TUNING.md) §2.1b。
+> 一句话：**替掉 pl02/pl03 的「安全回退」**，四套咆哮全部做实。
+
+| 角色 | 兽灵 | 实现 | 目标 DPS | 一手 / 自定 |
+| --- | --- | --- | ---: | --- |
+| 咲夜 pl02 | WOLF | 数据路径：7 行仿灵梦，角度朝自机前方 `FOCUS_DY=320` 汇聚；pl02.anm 追加 script30 | 63.33 | 参数照灵梦一手，**汇聚角度自定** |
+| 咲夜 pl02 | EAGLE | 卡侧：6 个摆动发弹点 `θ=0.6·sin(0.03t+φᵢ)` + 外射短束 | 30.00 | 全自定 |
+| 早苗 pl03 | WOLF | 数据路径：5 行大蛇（`pl03.anm` script6 放大 ×2）`func tick=4` 90° 折线 | 40.00 | 机制一手，**数值/大小自定** |
+| 早苗 pl03 | EAGLE | 数据路径：5 发扇形大青蛙（script8 放大 ×2）+ `hit4` 命中爆炸（script 内 `sprite40..43`） | 40.00 | 机制一手，**数值/大小自定** |
+
+**实跑清单（一条一句、怎么一眼验证）**
+1. 早苗 EAGLE：前方 5 只**更大的扇形青蛙**，命中时炸出 `pl03c.png` 的 128×128 四帧**早苗爆炸**（不是魔理沙碎片）。
+   日志 `eagle body bullet created … dmg 24`（set 0x24..0x27）。
+2. 早苗 WOLF：5 条**更粗的蛇**；敌人与蛇同高且横向错开时，蛇**拐 90° 水平冲**（只折一次、不追尾）。
+3. 咲夜 WOLF：7 颗**灵梦同款大弹**从自机周围发出，朝正前方一点**汇聚**。
+4. 咲夜 EAGLE：自机前方 6 个激光条根部**左右摆动**、每个点朝其 θ 方向射短束；松 Z 立即收。
+   日志 `wba_c: sakuya eagle on (6 oscillating points, theta0=0.60 omega=0.030 R=96 … DPS target 30.0)`。
+5. pl00/pl01 不变（灵梦 7 行平行大弹 + 5 发追尾；魔理沙 5 行 + 本体 5 连扇形粗束）。
+6. 掉落 / 中 boss / 水獭光球 / 霊撃 / HUD / 消弹口径全不变。
+
+**实跑要看的**
+- 青蛙爆炸是否**真的用了早苗贴图**（`pl03c.png` 的 128×128，而非 `pl01` 的三颗碎片）——若看到自机图/碎片，说明
+  pl03.anm 追加脚本或 sht 的 `anm` 指错了，回看 `check_player_anm_bounds.py`。
+- 咲夜 WOLF 是否会「汇聚后发散」过头 —— 调 `SAKUYA_WOLF_FOCUS_DY`（TUNING §2.1b）。
+- 咲夜 EAGLE 的摆动幅度/快慢/点数是否对味 —— 调 `THETA0` / `OMEGA` / `N`（改 `OMEGA` 必须同步 `OMEGA_SIN/COS`）。
+- 早苗青蛙/蛇的 2× 大小是否过大 —— 改 `build_player_anm.py` 的 `APPEND_PLAN` 缩放 k，重跑 `make anm sht`。
+- 对话中 / 松 Z / 咆哮结束，咲夜 EAGLE 的 6 个 VM 必须**立刻没有**（`sakuya eagle off …` 一行）。
+
+## 1v-补24. 鬼形兽（117）三十修：1 面 GirlD01 回归 + AL59 实机五条（AL60，2026-09-13，待实机）
+
+> 用户实机反馈（四个自机都测）后的回归 + 五条修改。细节/一手见 [`AUDIT.md`](AUDIT.md) §AL60。
+
+- **#1（回归，最优先）1 面 GirlD01×3 不掉**：日志里根本没有 GirlD01 的 `death diag`（被「非 Cir 诊断
+  要 drop=1 才打」吞了）。根因 = st01 `MainSub03` 是「spawn 3 只后立刻 return」的同步子程序 ⇒ 卡片 tick 时
+  sub 名已回到 `MainFront` ⇒ `live=-1` ⇒ AL58d 的 sticky 兜底绑到上一波 2（= veto 波）⇒ `drop=0`。
+  修法 = sticky 绑定用静态表修正到「sticky 之后第一个含 (type,w,h) 的波」；诊断放开门槛。
+  **验收**：1 面仍只有 `GirlC01×1 + GirlD01×3 + GirlD02×3` 掉；2 面 `wave 1` 三只 48×48 中妖精仍掉。
+  日志认：`wave bind sticky-fix: sticky=2 -> wave=3`（每关前 8 条）+ GirlD01 `death diag ... wave=3 drop=1`。
+- **#2 咲夜大鹫 = 她的刀（紫）且贴身**：卡侧 VM 由激光条（script163）换成紫刀（ability.anm script233，
+  源=原生 `pl02.png` sprite25 hue-shift）；`R` 96→16 px。θ 公式/出弹方向/节奏保留。
+- **#3 咲夜狼 = 她的刀（红）**：`anm` 从借灵梦狼弹改成原生 `pl02.anm` script5（sprite24 红刀）；数值/汇聚不动。
+- **#4 早苗大鹫频率 ×0.5、DPS 不变**：`rate 3→6`、`damage 24→48`；并把命中路径从 hit4 改成 **hit0**
+  （默认 handler 仍 `interrupt(1)` 播爆炸，但**不再建 20 帧每帧多判的爆炸伤害源**）。真实 DPS = **40**。
+- **#5 早苗狼出膛偏移参考灵梦狼**：`(0,0)/(±20,20)/(±40,30)`（灵梦 7 行的对称 5 个）。
+- **#6 颜色**：狼=红（咲夜用原生红刀）；大鹫=紫（咲夜紫刀）。早苗狼/鹫的蛇/青蛙本体本轮**未染色**（🟡，见 TUNING）。
+
+**实机判据（一眼验证）**
+1. 1 面三只大蝴蝶**各掉 1**（`death diag ... sub=GirlD01 wave=3 drop=1`；`wave bind sticky-fix` 可见）。
+   2 面 wave1 三只 48×48 中妖精仍掉；第三波（wave2）整波仍不掉。
+2. 咲夜大鹫：自机前方**贴身处**出现 **6 把紫色刀**左右摆动（不再是激光条），各朝其 θ 外刺。
+3. 咲夜狼：7 颗**红色刀**从周围发出、朝正前方一点汇聚。
+4. 早苗大鹫：青蛙发弹明显变慢（rate 6），命中仍炸**早苗 `pl03c` 爆炸**，但伤害不再暴涨（≈40 DPS 量级）。
+5. 早苗狼：5 条蛇的出膛位置 = 中心 + 内/中圈（和灵梦狼一样的一圈），90° 折线不变。
+6. pl00/pl01 不变；掉落/中 boss/水獭/霭撃/HUD 口径不变；未改 ECL。
+
+**待实机重点**
+- GirlD01 的 `wave bind sticky-fix` 是否出现（应 `sticky=2 -> wave=3`），以及 `death diag` 的 `wave=3 drop=1`。
+- 咲夜大鹫「紫刀」观感 / 贴身距离（`ANIMAL_SAKUYA_EAGLE_R`，TUNING §2.1b）。
+- 早苗大鹫真实 DPS 是否与灵梦/魔理沙同量级（hit4→hit0 后不再多判）。
+- 早苗狼/鹫的**颜色**目前只有咲夜侧做了紫/红；早苗侧标 🟡（蛇/青蛙本体未染色）。
+
+**AL60 构建/部署**：`make check` rc=0；`make release` → `sync_modkit_dll.sh` ⇒ **四路径同 md5
+`aabb2611b7f099606825eaecd34071ea`**；pl00/pl01 未动，pl02.anm 回退成原生。
+
+## 1v-补25. 鬼形兽（117）三十一修：咲夜大鹫真发弹 + 实机五条（AL61，2026-09-13，待实机）
+
+> 延续 AL60 实机反馈。细节/一手见 [`AUDIT.md`](AUDIT.md) §AL61。
+
+- **#1 咲夜大鹫 = 真引擎自机弹**（不再激光式远程判定）：卡侧直接调
+  `Player__shoot_one_bullet` `th18:0x45e930`（与 `ce_damage_rect` 同级，**无新 BP_*/site**），
+  每点每 4 帧发一颗 `pl02.sht` EAGLE 组的刀弹（`anm=31` 紫刀 / `func_on_init=5` 定向 / `dmg=20` / `speed=18`）。
+  `on_shot_set_index` 对咲夜 EAGLE 钉回空的 `EAGLE_0`（引擎不自动发）。
+  **退出清理**：松 Z/咆哮结束/对话/删卡 都扫弹池把在飞的该组弹收掉（state=2+interrupt 1），
+  日志 `sakuya eagle kill (path=…, in-flight_bullets=N)`。**不再有会在退出后冻结的卡侧 VM。**
+- **#2 咲夜狼发暗的根因** = 原生 script5/7/9 的 `alpha(192)`（75%）。狼/鹫改用 `alpha(255)` 的副本
+  （script30 红刀 / script31 紫刀）。
+- **#3 早苗狼出膛点往前**：`(0,0)/(±20,-20)/(±40,-30)`（灵梦那组 +y 是下方；早苗要身前）。
+- **#4 早苗也染**：script29 大青蛙注入 `color(204,0,255)`（紫）、script30 大蛇注入 `color(255,0,0)`（红）
+  （乘法染色近似；爆炸被罩成紫/暗蓝，未另做纯紫爆炸副本 🟡）。
+
+**AL61 构建/部署**：`make check` rc=0；`make release` + `sync_modkit_dll.sh` ⇒ 四路径同 md5
+`78d8435f84c6ff1865ca967c103425e7`；pl00/pl01 未写。
+
+**实机判据（一眼验证）**
+1. 咲夜大鹫：自机前方贴身处出现摆动发弹点，**真刀弹一颗颗沿 θ 飞出去**（不是原地常驻的 220 长激光条）；
+   打中敌人有正常自机弹命中/伤害；**按 X / 松 Z / 咆哮结束，在飞的刀弹全部消失**（日志 `kill(...in-flight_bullets=N)`）。
+2. 咲夜狼：红刀不再发暗（alpha 255）。
+3. 早苗狼：5 条蛇从**身前**（不是身后）发出，90° 折线不变、颜色偏红。
+4. 早苗大鹫：大青蛙偏紫、命中爆炸仍可辨认（白→紫/青→暗蓝）。
+5. pl00/pl01 不变；掉落/中boss/其它口径不变；未改 ECL。
+
+**待实机重点**
+- 真发弹是否 100% 稳定（`Player__shoot_one_bullet` 直接调用；若闪退，回退「卡侧飞行弹」近似方案）。
+- 退出后弹是否真的一条不剩（看 `sakuya eagle kill` 的 `in-flight_bullets`）。
+- 早苗狼偏移/颜色观感；早苗大鹫爆炸色（🟡 近似）。
+
+## 1v-补26. 鬼形兽（117）三十二修：正牌改色 + 源图切出/回流 + 咲夜刀放大（AL62，2026-09-13，待实机）
+
+> 细节/一手见 [`AUDIT.md`](AUDIT.md) §AL62。
+
+- **正牌颜色（构建期改像素，不再 color() 乘法）**：早苗青蛙→纯紫、蛇→纯红、爆炸→单独一份纯紫；
+  咲夜红刀=零售原样、紫刀=蓝刀色相旋转。实现在 `assets/player_art_src/player_art_lib.py`
+  （`mono` = 目标色+原亮度；`hue` = 只换色相），图作为新 entry 嵌进 pl02/pl03.anm。
+- **源图切出 + 回流**：Windows 侧 `D:\项目\幻想指南\18\art-src\`（13 张 PNG + README，原始尺寸）；
+  仓库规范输入 = `assets/player_art_src/`；改完跑 `bash assets/sync_player_art_src.sh` 再 `make anm`；
+  **缺图会自动用零售+默认色补，不红**。
+- **咲夜刀放大 ×2**：`KNIFE_SCALE=2.0`（pl02 script30/31 注入 `scale(2,2)`）；命中框跟着放大
+  （狼 128×32 / 鹫 96×16）。
+- **早苗狼出膛点再往前**：`(0,0)/(±20,-28)/(±40,-42)`（具名旋钮 `SANAE_WOLF_FORWARD_1/2`）。
+
+**实机判据**
+1. 早苗大鹫：大青蛙**纯紫**、命中爆炸**纯紫**（不再有暗蓝角）；早苗狼：蛇**纯红**。
+2. 咲夜狼/鹫：刀明显比 AL61 大一圈（×2），命中范围同步变大（狼 128×32 / 鹫 96×16）。
+3. 早苗狼出膛点比 AL61 更靠前；90° 折线/伤害/rate 不变。
+4. 改 `18/art-src/*.png` → `sync_player_art_src.sh` → `make anm` 后，改动应体现在弹上；
+   删掉某张源图再 `make anm` 应回退到默认色（不报错）。
+5. pl00/pl01 / 掉落 / 中boss / 其它咆哮口径不变；未改 ECL。
+
+**待实机重点**：纯紫/纯红的观感；咲夜刀放大后 6 摆动点是否仍贴身、弹速/间距合理；源图回流是否生效。
+
+**AL62 构建/部署**：`make check` rc=0；`make release` + `sync_modkit_dll.sh` ⇒ 四路径同 md5
+`78d8435f84c6ff1865ca967c103425e7`（只改 anm/sht，DLL 与 AL61 同）；pl00/pl01 未写。
+
+## 1v-补27. 鬼形兽（117）三十三修：源图改零售原图 + 用户图原样使用（AL63，2026-09-13）
+
+> 用户：「我看到的都是已经乘 color 的图，我要原图切出来」。细节见 [`AUDIT.md`](AUDIT.md) §AL63。
+
+- **`D:\项目\幻想指南\18\art-src\` 根目录 = 零售原图**（原样裁切、未调色、原始尺寸，12 张）；
+  **`art-src/_auto_default/` = 构建缺图兜底的已上色默认图**（README 明说不是原图）。
+- **构建语义**：`assets/player_art_src/<key>.png` 存在 ⇒ **原样使用，不再套任何 color/hue/mono**；
+  不存在 ⇒ 用「零售原图 + 默认色」在**内存里**兜底（**不再回写**规范目录，用户不会再被"默认色固化成源图"绕进去）。
+- **三步流程**：原图 → 你在 art-src 里上色 → `bash assets/sync_player_art_src.sh` → `cd native && make anm`。
+  `sync` 只动根目录 `*.png`，`_auto_default/` 不同步；脚本会提醒「构建原样使用、没上色=没上色」。
+- 没有「紫刀」原图：鹫的紫是缺图兜底把**蓝刀** hue→紫；要自定义就把蓝刀涂成紫。
+- 缺图仍能出包（实测删光 `player_art_src/*.png` 后构建 rc=0）。
+
+**实机判据**
+1. 打开 `18\art-src\` 根目录的原图，应与游戏里一致（青蛙白/肤、蛇橙/绿、爆炸白/青、刀红/蓝）——不是紫/红。
+2. 把某张原图随便涂一色 → `sync_player_art_src.sh` → `make anm`，弹上应**原样**出现你涂的色（构建不再自动调色）。
+3. 不涂、直接 `make anm`（规范目录为空）：出包仍是紫/红兜底色（= `_auto_default/`）。
+4. pl00/pl01 / 掉落 / 中boss / 其它口径不变；未改 ECL。
+
+**待实机重点**：用户按三步改图后颜色是否 100% 原样生效；`_auto_default/` 与根目录不要混用。
+
+**AL63 构建/部署**：`make check` rc=0；`make release` 写 **0 处改动**（默认输出与 AL62 逐字节同 ⇒ modkit 无需更新）；
+`sync_modkit_dll.sh` ⇒ 四路径同 md5 `78d8435f84c6ff1865ca967c103425e7`（DLL 与 AL61 同）。
+
+## 1v-补28. 鬼形兽（117）三十四修：早苗狼命中光斑接进源图流程（AL64，2026-09-13）
+
+- 一手：光斑 = `pl03.anm` 原生 **script7**（单帧 `sprite25` 16×16，scale 0→3→0）+ 父蛇 VM 的 `rotateAuto` 继承。
+- 新源图 **`sanae_wolf_glint_s25_f0.png`**（art-src 根 = 零售原图；`_auto_default/` = 兜底浅红 mono H0/S0.65）。
+- pl03.anm 新增 **script31=PL03_GLINT**（sprite25→67），script30 的 `scriptNew(script7)→scriptNew(script31)`；
+  entry16 扩成 32×16（66 青蛙闪光紫 / 67 狼光斑浅红）。
+- 改图三步：`art-src/sanae_wolf_glint_s25_f0.png` 改 → `sync_player_art_src.sh` → `make anm`。
+
+**实机判据**：早苗狼命中时那个小光斑仍正常出现/缩放（旋转由父蛇 VM 继承），默认是浅红；改源图后颜色/形状原样生效。
+
+**AL64 构建/部署**：`make check` rc=0；`make release` 写 pl03.anm + files.js；`sync_modkit_dll.sh` ⇒
+四路径同 md5 `78d8435f84c6ff1865ca967c103425e7`（DLL 与 AL61 同）。
+
+
+## 1v-补29. 鬼形兽（117）三十五修：早苗狼对齐灵梦大鹫 / 早苗鹫降频 / 咲夜狼汇聚贴板底 / 咲夜鹫加正中直射（AL65，2026-09-13，待实机）
+
+> 用户四条一句话口径；第 1 条中途订正为「对齐**灵梦大鹫**」（33.33），不是灵梦狼（63.33）。
+
+- ① **早苗狼**：`SANAE_WOLF_DMG 32→20`、`RATE 4→3` ⇒ `5×20/3 = 33.33`（对齐灵梦 EAGLE、偏差 0%）；
+  5 行 / 视觉 ×2 / `tick4` 90° 折线保留。**「蛇要不要加诱导」只报建议：不建议加** —— `tick4` 本身就是
+  零售早苗蛇的「锁敌→水平冲刺」一次性诱导，再叠逐帧追踪会覆盖折线口径 + 要新 hook，等用户拍板。
+- ② **早苗鹫**：`SANAE_EAGLE_DMG 48→96`、`RATE 6→12` ⇒ DPS 仍 40；hit0 / 纯紫四帧爆炸不变。
+- ③ **咲夜狼**：`SAKUYA_WOLF_FOCUS_DY 320→−432`（一手：自机 y `[32,432]`、弹幕区顶 y=0 ⇒ 汇聚点 = 0−432）。
+  用户希望「贴板底恰好聚焦到板头」；聚焦/低速不改本体 y，body 行 ⇒ 无像素差。
+- ④ **咲夜鹫**：新增正中正前口（1 点、`(x, y−16)`、θ=正上、无摆动、每 2 帧一颗、dmg20 ⇒ **10 DPS**）；
+  旧 6 点扫荡公式/视觉不动，只把 `_PERIOD 4→6`（dmg20）⇒ **20 DPS**；**总 30 不变**。
+
+**实机判据**：① 早苗狼 DPS 与灵梦鹫同量级、90° 折线手感不变；② 早苗鹫明显变慢但总伤害不变；
+③ 咲夜狼在板底时所有刀弹恰好收在板头一点（正中/最外行都收拢）、在高位时汇聚点在板外；
+④ 咲夜鹫正中多出一条正向直射刀弹，6 点扫荡摆动/视觉完全没变形，整体总 DPS 不变。
+
+**AL65 构建/部署**：`make check` rc=0；`MODKIT_DIR=… NO_GIT=1 make release` 写 4 处（DLL + pl02.sht + pl03.sht + files.js）；
+`sync_modkit_dll.sh` ⇒ 四路径同 md5 `279ee8e5b17dc8e4fbdd493bbdca784b`；
+sht md5：pl02 `87bd90b1b923636a254e43500328453f`、pl03 `6b8c19d5ced800566d4187ddc6ac2e12`。
+
+## 1v-补30. 鬼形兽（117）三十六修：咲夜大鹫总 DPS 30 → 40（+1/3）（AL66，2026-09-13，待实机）
+
+> 用户原话：「咲夜大鹫得加强，整体 dps 上升 1/3」。按用户建议的最省事整数方案实现。
+
+- 扫荡 6 点：`ANIMAL_SAKUYA_EAGLE_PERIOD 6→4`（回到 AL64 节奏）、`dmg 20` 不变 ⇒ `6×20/4 = **30 DPS**`。
+- 正中正面口：`_FRONT_PERIOD=2` / `dmg 20` ⇒ **10 DPS**（不动）。
+- 合计 **40**（旧 30 ⇒ +1/3，全整数 0 误差）。摆动公式/视觉/命中框/真发弹路径/退出清理不动。
+- 本轮只动 C 侧卡内计数 ⇒ **pl02.sht / pl03.sht 逐字节不变**；`animal.c` 与 `append_shooterset.py` 的镜像常量/注释同步。
+
+**实机判据**：① 咲夜鹫扫荡火力回到 AL64 的密度（不再像 AL65 那么稀）；② 正中正面直射刀弹仍在正中央、无摆动；
+③ 总伤害体感比 AL65 高 1/3，颜色/命中框/退出清理不变。
+
+**AL66 构建/部署**：`make check` rc=0；`MODKIT_DIR=… NO_GIT=1 make release` 只写 **1 处**（`mods/th18_card_expand.dll`；sht 无 diff ⇒ `files.js` 未变）；
+`sync_modkit_dll.sh` ⇒ 新 md5 `56ffd591c1331e6ce17e02a509a241e9`；4 条路径 **3 条已更新**，
+`thcrap/bin/mod_th18_card_expand.dll` 因游戏运行被占用仍是 AL65 的 `279ee8e5b17dc8e4fbdd493bbdca784b`
+⇒ **关闭游戏后重跑 `bash local/sync_modkit_dll.sh`**；
+sht 仍与 AL65 同：pl02 `87bd90b1b923636a254e43500328453f`、pl03 `6b8c19d5ced800566d4187ddc6ac2e12`。
+
+
+## 1v-补31. 鬼形兽（117）三十七修：咲夜大鹫分布改成扫荡 20 + 正面 20（AL67，2026-09-13，待实机）
+
+> 用户原话：「换成 dps 分布扫荡 20+正面 20」。总 40 不变（AL66 的 +1/3 保留），只重新分配。
+
+- 扫荡：`ANIMAL_SAKUYA_EAGLE_PERIOD 4→6`、dmg 20 ⇒ `6×20/6 = **20 DPS**`。
+- 正面：`_FRONT_PERIOD=2` 不变，改走新的 sht **row 1（dmg 40）** ⇒ `40/2 = **20 DPS**`（选方案 (b)：
+  弹流节奏与 AL65 相同、不增加弹数，只把每发伤害翻倍）。
+- 合计 **20 + 20 = 40**。摆动/视觉/命中框/真发弹路径/退出清理/贴身 R 不动；`pl02.sht` 多一行（row1），`pl03.sht` 不变。
+- 同批结案：早苗狼「一次性诱导 ≈ 完整诱导」用户接受（边界：被锁定怪中途死亡时，`tick4` 用锁定瞬间
+  写进 `bullet+0xd4` 的快照 x 决定冲刺方向、不重读敌机 ⇒ 仍朝原方向冲）；**不加逐帧追踪**。
+
+**实机判据**：① 咲夜鹫扫荡明显变稀（回到 AL65 的周期 6）；② 正中正面直射仍在正中央、无摆动，
+但每发更重（dmg 40）；③ 总 DPS 与 AL66 相同（都是 40）；④ 其它口径不回归。
+
+**AL67 构建/部署**：`make check` rc=0；`MODKIT_DIR=… NO_GIT=1 make release` 写 3 处（DLL + pl02.sht + files.js）；
+`sync_modkit_dll.sh` ⇒ **4/4 路径同 md5 `9ba315a6a04dfb1cd95e03e37d0c1c87`**（AL66 被游戏占用的
+`thcrap/bin` 本轮已一并更新）；
+sht md5：pl02 `6ed0a1fe20bdb3c4249c9b5183c32bef`、pl03 `6b8c19d5ced800566d4187ddc6ac2e12`；
+`files.js` `f135d1ab99c02fbd2caa3718e7c1c98c`。
+

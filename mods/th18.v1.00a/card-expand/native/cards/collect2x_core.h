@@ -49,7 +49,7 @@
 #define C2X_FRAG_BOMB  0x11    /* BOMB2 卡道具 → CardBombFragment(id 4)：符卡碎（碎片进位链）*/
 #define C2X_FRAG_LIFE  0x10    /* EXTEND2 卡道具 → CardLifeFragment(id 3)：命碎（LIVES 链）*/
 
-/* ★ 批闭 idle（游玩帧；§Z21 = TH14 presence 语义，值回原生 8）。
+/* ★ 批闭 idle（游玩帧；§Z21 = TH14 presence 语义，值回原版 8）。
  * TH14 v1.00b 一手（th14_full.asm，AUDIT §Z18/§Z21）：批计时 `[0x4f5884]`；**重载点在 per-item 在飞体
  * 内、距离/吸收判定之前**（0x43898e：批集 kind ≠9/0xa/0xb → 每帧重载 `edx=0x8`；accessor `0x439d60`
  * = `mov [0x4f5884],0x8`），池循环帧尾 `0x438dad` 递减、归零即走结算 → **TH14 原义 = presence 续批**：

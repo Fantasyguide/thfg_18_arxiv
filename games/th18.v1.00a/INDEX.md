@@ -29,7 +29,7 @@
 - ✅ **符号往返已跑通**:我们自己那层 **504** 条存进 [`symbols.json`](symbols.json)(含 268 条函数原型),
   全量重建后 0 漂移。见 [`tooling/ghidra/README.md`](../../tooling/ghidra/README.md) 的「两层符号」。
 - ✅ **首个实跑通过的 TH18 注入产物**:[`mods/th18.v1.00a/mouse-control`](../../mods/th18.v1.00a/mouse-control/README.md)
-- ✅ **卡表搬进 codecave、分配出非零售 id**（2026-09-02）:[`mods/th18.v1.00a/card-expand`](../../mods/th18.v1.00a/card-expand/README.md)，
+- ✅ **卡表搬进 codecave、分配出非原生 id**（2026-09-02）:[`mods/th18.v1.00a/card-expand`](../../mods/th18.v1.00a/card-expand/README.md)，
   100 处 binhack + 开机自检 DLL；`allocate_new_card(id=58)` 实跑成功。下一步存档层，见 [`NEXT.md`](../../mods/th18.v1.00a/card-expand/NEXT.md)
   (thcrap 断点 + 自建 DLL,鼠标操自机 + 左/右/中键映射,2026-09-01 实跑)。
   它同时验通了 Linux 交叉编译 → Windows 的交付链路,以及 `engine/player/th18/01` 的坐标结论在活进程上成立。

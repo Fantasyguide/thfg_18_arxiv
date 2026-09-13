@@ -1,6 +1,6 @@
 script script142 {
     // 由 assets/ability/make_animal_art.py 从 TH17 `beast.anm` script5 生成，别手改。
-    // 一手：engine/animal/th17/01-animal-spirits.md §4 / §7；贴图 = 零售 beast*.png 切图（见 ORDER.txt）。
+    // 一手：engine/animal/th17/01-animal-spirits.md §4 / §7；贴图 = 原版 beast*.png 切图（见 ORDER.txt）。
 -1:
     sprite(@FISH_POWER);
     originMode(1);

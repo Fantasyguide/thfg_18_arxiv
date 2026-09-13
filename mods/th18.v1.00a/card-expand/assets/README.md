@@ -3,7 +3,7 @@
 > **版本**：TH18 v1.00a（`th18.exe`，imagebase `0x400000`）。本文裸地址默认属该版本；引用其他版本须写成 `th16:0x…`。
 
 面向**写卡的人**：一张新卡要有自己的图，只需要放两张 PNG、在 `ORDER.txt` 加一行、把算出来的
-两个数填进 JSON。DLL 不碰 ANM；构建脚本把图追加进零售 `abcard.anm` 重编，随 `_255` patch
+两个数填进 JSON。DLL 不碰 ANM；构建脚本把图追加进原生 `abcard.anm` 重编，随 `_255` patch
 整文件替换分发（thcrap 的 `th18/abcard.anm`）。
 
 ## 放什么
@@ -22,14 +22,14 @@
 
 第三方 / 原始素材放 `cards/_src/`（原件 + 出处 README）。
 
-**边框**：零售 117 张卡共用同一个框（外 3 px 黑 → 13 px 深色斜面、边中高光 → 内 2 px 黑，画面区 220×284）。
-`cardframe.py` 按量出来的参数程序合成它（仓库里不放零售像素），`fit_card.py` 默认套上（`--no-frame` 关）；
-**零售的 `_min`（HUD 图标）不带框**，所以无框画面留在 `cards/_art/NAME.png`，`_min` 从它缩出；`python3 cardframe.py` 给 `_max` 补框、从 `_art` 重出 `_min`（PNG 里记 `renkolab-frame=1`，重复跑不会套两层）。
+**边框**：原生 117 张卡共用同一个框（外 3 px 黑 → 13 px 深色斜面、边中高光 → 内 2 px 黑，画面区 220×284）。
+`cardframe.py` 按量出来的参数程序合成它（仓库里不放原生像素），`fit_card.py` 默认套上（`--no-frame` 关）；
+**原生的 `_min`（HUD 图标）不带框**，所以无框画面留在 `cards/_art/NAME.png`，`_min` 从它缩出；`python3 cardframe.py` 给 `_max` 补框、从 `_art` 重出 `_min`（PNG 里记 `renkolab-frame=1`，重复跑不会套两层）。
 画面按等比覆盖 220×284 居中裁（宽裁 ~1.4%），不拉伸。`ability.anm` 里的卡图副本引用同一批 PNG，一起带框。
 
 ## 索引怎么来
 
-零售 `abcard.anm` 有 118 个 entry（0..117），**一个 entry 一个 sprite，sprite 号 = entry 号**，
+原生 `abcard.anm` 有 118 个 entry（0..117），**一个 entry 一个 sprite，sprite 号 = entry 号**，
 新卡从 118 起两两追加：
 
 ```
@@ -37,7 +37,7 @@ ORDER 第 k 行（0 起）  →  sprite_large = 118 + 2k,  sprite_small = 119 + 
 ```
 
 `make anm` 会打印每张卡的那一对，照抄进 `patch/th18/cards.js` 的 `sprite_large` / `sprite_small`。
-构建脚本**校验** JSON 和 ORDER 一致（不一致报错退出，不会悄悄改 JSON）；零售索引（≤ 117）照旧放行。
+构建脚本**校验** JSON 和 ORDER 一致（不一致报错退出，不会悄悄改 JSON）；原生索引（≤ 117）照旧放行。
 
 ## 跑什么
 
@@ -49,15 +49,15 @@ make dist         # 把 build/abcard.anm 放进 dist/patch-step3/th18/，files.j
 ```
 
 前置：`bash tooling/thtk/build.sh` + `python3 tooling/thtk/unpack.py th18.v1.00a`
-（脚本从 `local/th18.v1.00a/anm/abcard/` 取零售 spec 与贴图）。
+（脚本从 `local/th18.v1.00a/anm/abcard/` 取原生 spec 与贴图）。
 
 ## 边界
 
 - 一次重建 = modkit 历史多 20 MB。**只在真的加了新图时**才重建 / 发布，日常改 JSON、DLL 不碰它。
 - 运行时 sprite 数上限**未验**（格式层无上限）；目前加到 147（15 张），C 阶段在 `AnmManager__preload_anm` 坐实。
-- `ecl/`：开发辅助（独立 patch `th18_card_expand_devstage`，启动器里单独勾）。`st01`–`st06.ecl.txt` 是入库的空壳关卡源（logo → 对话 → boss）；`make_dev_ecl.py` 编它们并现场把零售 boss 血量 ÷100、死时多掉 300 金。
+- `ecl/`：开发辅助（独立 patch `th18_card_expand_devstage`，启动器里单独勾）。`st01`–`st06.ecl.txt` 是入库的空壳关卡源（logo → 对话 → boss）；`make_dev_ecl.py` 编它们并现场把原生 boss 血量 ÷100、死时多掉 300 金。
 - `ability.anm`（场上特效）的追加在 [`ability/`](ability/README.md)：卡图副本 entry + 特效脚本，`make anm` 一起重建。`abmenu.anm` 不管。
-- `sht/`：**装备卡子机的弹幕（连射）**。`append_shooterset.py` 往四个零售 `pl0X.sht` 的偏移数组空位里追加 shooterset
+- `sht/`：**装备卡子机的弹幕（连射）**。`append_shooterset.py` 往四个原生 `pl0X.sht` 的偏移数组空位里追加 shooterset
   （`make sht` → `native/build/sht/*.sht` + `native/sht_ids.h`），随 `_255` 整文件替换。**当前 `APPEND` 为空 = 不产出**
   （破损核心第一版用过，改成定点伤害源了）。
   格式与不变式见 [`engine/sht/th18/`](../../../../engine/sht/th18/README.md)，用法见 [`SDK.md`](../SDK.md) §12。

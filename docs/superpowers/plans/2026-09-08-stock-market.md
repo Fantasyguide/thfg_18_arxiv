@@ -905,12 +905,12 @@ script script104 {
     delete();
 }
 ```
-（`layer(26); resolutionMode(2)` = 零售 HUD 图标 / 真银圣剑数字 script99 同款；`drawRect + scale` = 青眼血条 script87 同款。位置 / 尺寸 / 颜色全由 C 写 VM 字段。）
+（`layer(26); resolutionMode(2)` = 原生 HUD 图标 / 真银圣剑数字 script99 同款；`drawRect + scale` = 青眼血条 script87 同款。位置 / 尺寸 / 颜色全由 C 写 VM 字段。）
 
 ```bash
 cd mods/th18.v1.00a/card-expand/native && make anm 2>&1 | tail -5 && grep STOCK_RECT anm_ids.h
 ```
-Expected: 构建通过（零售部分自检不变），`#define CE_ANM_ABILITY_SCRIPT_STOCK_RECT 104`。
+Expected: 构建通过（原生部分自检不变），`#define CE_ANM_ABILITY_SCRIPT_STOCK_RECT 104`。
 
 - [ ] **Step 2: 写 `stock.c`**
 
@@ -923,7 +923,7 @@ Expected: 构建通过（零售部分自检不变），`#define CE_ANM_ABILITY_S
  *
  * 为什么只能是这两个键：replay 只重放 INPUT_HELD 的位（射击 / 炸弹 / 低速 / 方向 / 用卡 / 切卡），别的键回放会失同步。
  * 用卡位的分派引擎已做好（选中的主动卡才收到 c_press），我们只在 on_activate 里读低速位区分买卖。
- * 随机数走 ce_rand()（REPLAY_SAFE_RNG），与弹幕 / 零售卡同源 ⇒ replay 天然同步。
+ * 随机数走 ce_rand()（REPLAY_SAFE_RNG），与弹幕 / 原生卡同源 ⇒ replay 天然同步。
  *
  * 画图：33 个 UI 层 VM（1 底板 + 16 × {实体, 影线}），脚本 stock_rect（drawRect 1×1，C 写 pos / scale / color 就地改）。
  * UI 层 VM 的坐标空间是 2× 的（HUD 图标根 VM pos(1056, 537) 对应 640×480 空间的 (528, 268)，AUDIT X5），
@@ -1274,7 +1274,7 @@ Expected: 打印 `STOCK … 168 / 169`（措辞照脚本），无 error / mismat
 
 - [ ] **Step 4: 看一眼图**
 
-用 Read 工具打开 `mods/th18.v1.00a/card-expand/assets/cards/STOCK_max.png`：应是带零售同款边框、深蓝黑底、红绿 K 线、右上角一个暖光点。
+用 Read 工具打开 `mods/th18.v1.00a/card-expand/assets/cards/STOCK_max.png`：应是带原生同款边框、深蓝黑底、红绿 K 线、右上角一个暖光点。
 
 - [ ] **Step 5: 提交**
 
@@ -1353,7 +1353,7 @@ stock: panel spawned (bg id … at 1056,862 size 432x180; candles x 848..1264 y 
 
 | # | claim | 结论 |
 | --- | --- | --- |
-| AF1 | replay 安全 | **CONFIRMED（构造）** —— 输入只用 replay 重放的位（用卡 `0x400` 走引擎分派、低速 `0x008` 读 `INPUT_HELD`，回放时二者都由 replay 写入，`04-active-cards.md` §1）；随机数 `ce_rand()` = `REPLAY_SAFE_RNG` `0x4cf288`（零售 Suwako / Yachie / Miko 同源）；步进只在 `on_tick_2`（管理器 tick，回放同样跑）。全整数 |
+| AF1 | replay 安全 | **CONFIRMED（构造）** —— 输入只用 replay 重放的位（用卡 `0x400` 走引擎分派、低速 `0x008` 读 `INPUT_HELD`，回放时二者都由 replay 写入，`04-active-cards.md` §1）；随机数 `ce_rand()` = `REPLAY_SAFE_RNG` `0x4cf288`（原生 Suwako / Yachie / Miko 同源）；步进只在 `on_tick_2`（管理器 tick，回放同样跑）。全整数 |
 | AF2 | `on_activate` 里读到的低速位与这次 C 键同帧 | **🟡 待实跑** —— `Input__compute_edges` `0x42abc0` 每帧先算好 `INPUT_HELD` / `INPUT_PRESSED`，Player tick（优先级 0x17）里 `c_press` 才被调，所以读的是同一帧的 held。风险只在「按 C 的同一帧才按下 Shift」这种人手做不到的情形 |
 | AF3 | 写 `MONEY` 的安全 | **照先例** —— 黄金小丑（§W）/ 倒吊人直接写 `0x4ccd34`，HUD 每帧重读；没有钳位（引擎自己也没有发现上限，SM §1）。买时先查 `>= 50` 再减，卖只加：单测 `test_round_trip` 钉住「现金永不为负」 |
 | AF4 | 33 个 UI 层 VM 起得出来 | **🟡 待实跑** —— `ce_anm_spawn_ui` 走 `0x409670`（真银圣剑 / 衔尾蛇各起 1 个已验）；VM 池是 fast 数组（`id & 0x7fff` 下标，`01-vm-instantiate.md`），容量未查。失败返回 0 → 整组删掉、日志一行、下一帧重试；不会半张图 |
@@ -1362,7 +1362,7 @@ stock: panel spawned (bg id … at 1056,862 size 432x180; candles x 848..1264 y 
 | AF7 | UI 层坐标空间是 2× | **推断（X5）** —— HUD 图标根 VM `pos(1056, 537)`、x 步进 80 对应 640 空间的 (528, 268) / 40 px 图标；`resolutionMode(2)` 同款。面板常量按 2× 写；`ce_hud_text` 是 640 字面量空间（AC6），两套分开 |
 | AF8 | VM 生命周期不漏 | **CONFIRMED（构造）** —— 每帧 `vms_alive` 认领（任一没了整组重建，保证底板在下）；`on_run_reset` / `on_delete` 都 `kill_vms`。`on_delete` 是本次新加的 `+0x50` 回调：先调卡再 `ce_state_free`，倒吊人摧毁（`ce_destroy_card` → `vt+0x50`）与局末 recount 都经过它 |
 | AF9 | ctor 幂等 | **CONFIRMED（构造）** —— `inited` 位；每关开场引擎再调 ctor 不会重开盘（SDK §9 ★）。不用 `owned[]`：mode 1 装载不调 ctor，状态本来就是零 |
-| AF10 | 无敌人 / 对话中不能交易 | **引擎门控** —— `04-active-cards.md` §2 四重门；充能也停。零售主动卡共性，用户已接受 |
+| AF10 | 无敌人 / 对话中不能交易 | **引擎门控** —— `04-active-cards.md` §2 四重门；充能也停。原生主动卡共性，用户已接受 |
 | AF11 | 整数不溢出 | **CONFIRMED（单测）** —— 交易 / 市值用 int64 中间量；`test_value_pnl` 1 万股 × 9999.00；价格步进 `price × r` ≤ 999900 × 2500 < 2^31 但仍走 int64 |
 | AF12 | 状态块 512 的副作用 | **CONFIRMED** —— `s_mem[256][512]` 静态 128 KB，`ce_state_alloc` 的上界检查用同一常量（单测）；`_Static_assert(sizeof(stock_card_t) <= 496)` |
 | AF13 | 与其它主动卡共存 | **引擎语义** —— 只有选中的主动卡收到 `c_press`；D 键切卡由引擎管（`0x800`）。面板常驻不随选中变 |

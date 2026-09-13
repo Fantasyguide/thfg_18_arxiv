@@ -97,7 +97,7 @@ if (iVar1 != 0 && drop->timed_ex_drop_timer.cur < iVar1   // +0xac
 （这条计时器不是 `Timer::increment` 的调用点，是内联展开的 —— 早前按「找 `Timer::increment` 调用」扫不到，
 差点误判成「计时器从不前进」。）
 
-零售普查（`thecl -d 18 -m th18.eclm`，22 个 `*.ecl` 全扫，64 处 `574`）：
+原生普查（`thecl -d 18 -m th18.eclm`，22 个 `*.ecl` 全扫，64 处 `574`）：
 
 | 敌人族 | `T` | `573` 计数 | 典型 |
 | --- | --- | --- | --- |
@@ -161,13 +161,13 @@ case 0x10..0x13 → AbilityManager__allocate_new_card（抽卡）
 `0x430960` 尾 / `0x445a80` 的 state 5→2 分支都调 `AnmManager__sub_407420(bullet_anm, vm+4, ITEM_TYPE_TABLE[type])`，
 即 VM 属于 **`bullet.anm`**，`ce_anm_set_sprite` 换的是「该文件内的 sprite 号」。
 要在道具上显示 TH16 的季节图与出场动画，只有两条路：
-(a) **补丁 `bullet.anm`**（追加 5 张 16×16 + 1 个脚本，同 `ability.anm` 的做法）——文件大、要保证零售字节不变；
+(a) **补丁 `bullet.anm`**（追加 5 张 16×16 + 1 个脚本，同 `ability.anm` 的做法）——文件大、要保证原生字节不变；
 (b) 新增一个「给 VM 重指脚本 / 贴图到别的 anm 文件」的引擎入口（`0x407420` 是普通函数，可加 SDK 封装）。
 两条都还没做。
 
 **④ 本仓现状（id 116）**：自己起 `ability.anm` script115 的 VM，但**运动学逐条照抄**原版
 （重力 0.03、上限 2.0、出界 472/200、吸引初速 = 磁速/3 后每帧 +0.2 到 12.0、回收线 = `player+0x47998`、
-半径/磁速直接读 `player+0x47988..0x47994`）⇒ 手感与原生 P/钱一致，且零售卡 ITEM_CATCH / ITEM_LINE
+半径/磁速直接读 `player+0x47988..0x47994`）⇒ 手感与原生 P/钱一致，且原生卡 ITEM_CATCH / ITEM_LINE
 改参数时季节点跟着变；代价是它不进 TH18 的得分/道具统计（卡片自己的资源），收集音是自己放的 `se_item00`。
 出场动画照 TH16 `bullet.anm` script129（含 `angleVel(%F0)` 的 0..5°/帧随机自转）。
 

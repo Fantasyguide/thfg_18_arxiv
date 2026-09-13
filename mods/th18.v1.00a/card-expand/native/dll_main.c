@@ -2,7 +2,7 @@
  *
  * thcrap 的两个回调：
  *   thcrap_plugin_init              插件加载时（早于 patch 应用）。自检①：
- *                                   零售表还在预期的地方、长预期的样子。
+ *                                   原生表还在预期的地方、长预期的样子。
  *   BP_ce_gate                      断点，ScoreFile__load 入口。全部 init stage 已应用，
  *                                   游戏还没碰卡表。自检②（selfcheck.c）。
  *
@@ -55,7 +55,7 @@ void ce_verdict(const char *fmt, ...)
     if (s_log_printf) s_log_printf("[th18_card_expand] %s\n", buf);
 }
 
-/* 自检①：零售表签名。三个字段就够把「这不是 th18 v1.00a」拦下来：
+/* 自检①：原生表签名。三个字段就够把「这不是 th18 v1.00a」拦下来：
  *   行 0  id == 0
  *   行 56 id == 56 且 internal_name 指向 "NULL"
  * 不 md5 整个 exe——那要读文件，而这三个字段就是我们要搬的东西本身。*/

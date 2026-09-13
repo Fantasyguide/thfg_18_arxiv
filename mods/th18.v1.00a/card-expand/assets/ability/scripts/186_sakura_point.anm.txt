@@ -1,9 +1,9 @@
 script script186 {
-    // ★妖妖梦**樱点**道具本体（TH07 item type 7）—— 正文逐条照抄零售 TH07 `data/etama.anm`
+    // ★妖妖梦**樱点**道具本体（TH07 item type 7）—— 正文逐条照抄原版 TH07 `data/etama.anm`
     //   **entry1**（贴图 `data/etama/etama2.png`）的 **script60**，只把 `sprite(sprite11)`
     //   换成 `@SAKURA_POINT`（见文件尾的一手原文 diff）。
     // 一手（三链交叉，✅ 详见 assets/ability/make_sakura_art.py 文件头）：
-    //   · 零售原文（`thanm -l 7 -m local/vendor/eclmap/anmmap/v2.anmm`）= `sprite(sprite11); static();`
+    //   · 原生原文（`thanm -l 7 -m local/vendor/eclmap/anmmap/v2.anmm`）= `sprite(sprite11); static();`
     //   · sprite11 = { x: 112, y: 64, w: 16, h: 16 }（entry1 的 sprite 表）
     //   · 脚本号实证：`th07:0x433bed` `mov BYTE PTR [eax+0x27c],0x7` +
     //     `mov WORD PTR [edx+0x1d8],0x2cb`（0x2cb = 0x2c4+7）+ `anmbase[0x28ef0+0x2cb*4]`
@@ -11,9 +11,9 @@ script script186 {
     //     （`th07:0x432730 mov DWORD PTR [ebp+0xc],0x7`）。
     //   · 收集语义：`th07:0x43375f` 读樱点计数对（需求 `ds:0x62f888` / 当前 `ds:0x62f88c`），
     //     调樱点加法器 `th07:0x42f5a2`（写 `[GAME_MANAGER+0x961c]`，上限 `+0x9618`）。
-    // ⚠️ **层：零售脚本不设 layer**（TH07/TH08 的道具层由生成道具的 C 侧写，脚本里没有原值可照抄）
-    //   ⇒ 这里**不加** layer，保持与零售零偏差。若 TH18 侧要显式定层，建议 `layer(16)`
-    //   （一手依据 = TH17 零售 `beast.anm` script6 的 `ins_304(16)`，同仓先例 `143_fish_point.anm.txt`）。
+    // ⚠️ **层：原版脚本不设 layer**（TH07/TH08 的道具层由生成道具的 C 侧写，脚本里没有原值可照抄）
+    //   ⇒ 这里**不加** layer，保持与原生零偏差。若 TH18 侧要显式定层，建议 `layer(16)`
+    //   （一手依据 = TH17 原版 `beast.anm` script6 的 `ins_304(16)`，同仓先例 `143_fish_point.anm.txt`）。
     // 一手原文 diff（`sprite(...)` → `@...` 是**唯一**差异）：
     //   -    sprite(sprite11);
     //   +    sprite(@SAKURA_POINT);

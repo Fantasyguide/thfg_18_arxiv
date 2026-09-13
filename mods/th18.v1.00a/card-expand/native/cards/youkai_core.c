@@ -63,7 +63,7 @@ int yk_option_script_changed(int want, int have)
     return want != have;
 }
 
-/* ---- 逐格阵型：零售 `pl0X.sht` 的两块（非聚焦 `+0x40` / 聚焦 `+0x90`）逐格照抄 ----
+/* ---- 逐格阵型：原生 `pl0X.sht` 的两块（非聚焦 `+0x40` / 聚焦 `+0x90`）逐格照抄 ----
  * 一手来源（`local/th18.v1.00a/dat/pl0X.sht`，本轮用 4 行一读的脚本逐字节核过）：
  *   · 格 `k` 的 (x, y) 就存在 `+0x40 + k*8` 与 `+0x90 + k*8`（引擎读点 `th18:0x45d902`
  *     `movss xmm0,[ecx+edx*8+0x40]` / `th18:0x45d94c` 的 `+0x94`）；
@@ -189,8 +189,8 @@ int yk_shotset_usable(int fire_rate)
 {
     /* 记录 `+0x00` 是 `fire_rate`（i8）：符号位 = shooterset 终止符，`0` 在装备卡路径上整数除零
      *（`0x40a9c0` 的 `idiv ecx`（`0x40aa4f`）没有 0 分支，engine/sht/th18/02 §2）。
-     * ⇒ 「那一格到底装的是我们的记录还是零售那条」这个事实**可以运行期自检**，不用另立开关：
-     *   · 零售 `/ build/sht 没重跑` ⇒ 那格还是 `fire_rate = 0` ⇒ 返回 0（**正确地拒绝发射**，
+     * ⇒ 「那一格到底装的是我们的记录还是原生那条」这个事实**可以运行期自检**，不用另立开关：
+     *   · 原生 `/ build/sht 没重跑` ⇒ 那格还是 `fire_rate = 0` ⇒ 返回 0（**正确地拒绝发射**，
      *     见 youkai.c 的 on_tick_shooters / on_native_shot_suppress；也正因如此，
      *     原生弹被压掉时那一句「一发弹都没有」的日志才有意义）；
      *   · 我们的记录 = TH08 满 P 档那 9 行，`fire_rate ∈ {3,5,6,10}` ⇒ 返回 1。*/

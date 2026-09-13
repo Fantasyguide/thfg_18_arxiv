@@ -7,7 +7,7 @@
 
     want = n_script + k
     if int(m.group(1)) != want:
-        raise SystemExit(f"{p.name}：编号应为 {want}（零售 {n_script} 个脚本，按文件名顺序连续追加）")
+        raise SystemExit(f"{p.name}：编号应为 {want}（原生 {n_script} 个脚本，按文件名顺序连续追加）")
 
 即脚本号的**数值**必须等于 `68 + 序号`，中间**不许有洞**。多个人（或多个子代理）同时往
 `scripts/` 里加东西时，为了不互相抢号，各自会拿一个靠后的号段（例如一人 189+、一人 199+），
@@ -42,7 +42,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 SCRIPTS = HERE / "ability" / "scripts"
 
-BASE_MIN = 68      # 零售 ability.anm 的脚本数，我们的追加区从它开始
+BASE_MIN = 68      # 原生 ability.anm 的脚本数，我们的追加区从它开始
 BASE_MAX = 188     # ★ 收口前的既有上界：本工具保证 68..188 **原样不动**
 _FILE = re.compile(r"^(\d+)_(.+)\.anm\.txt$")
 _INNER = re.compile(r"^(\s*script\s+script)(\d+)(\s*\{)", re.M)

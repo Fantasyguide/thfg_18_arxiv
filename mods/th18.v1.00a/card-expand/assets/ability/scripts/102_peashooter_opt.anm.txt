@@ -1,6 +1,6 @@
 script script102 {
     // 豌豆射手的子机本体 —— 由 `Player__allocate_option` 起（脚本号当它最后一个栈参）。
-    // 骨架照零售子机脚本 script2 / script16 与本 mod 的 script88（破损核心）：
+    // 骨架照原生子机脚本 script2 / script16 与本 mod 的 script88（破损核心）：
     // interruptLabel(2) 出场、(3) 进店收起、(1) 销毁 —— 这三个都是引擎发的，我们不自己发。
     // 「开大」的视觉不走中断（怕和引擎抢标签），另起一个一次性的 script103 光晕，见 peashooter.c。
     // 贴图是实心的，所以落定后切回普通混合（照 script2），只留一点很慢的呼吸。

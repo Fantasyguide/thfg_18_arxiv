@@ -9,7 +9,7 @@
  *
  * 由断点 BP_ce_gate（ScoreFile__load 入口，全部 init stage 已应用）调一次，做：
  *   0. 读配置：rows 由第一处 END 站点已写入的尾界反推；alloc 看跳转表 codecave 在不在。
- *   1. 填表：零售 58 行 memcpy 进 codecave，多出的行填 NULL 副本。幂等。
+ *   1. 填表：原生 58 行 memcpy 进 codecave，多出的行填 NULL 副本。幂等。
  *   2. （alloc）填跳转表：57 项原样拷，其余指向 case 56；核对两处分配器 binhack。
  *      再依次：扩容核对 → 影子数组 → 文案断点 → cards.js 装载 → 菜单 setup（各自的文件）。
  *   3. 回读 100 处搬表站点：改后 4 字节 == cave + 基偏移 + 字段，前缀 opcode 不变。
@@ -27,7 +27,7 @@ static unsigned derive_rows(const uint8_t *base, const uint8_t *cave)
         if (s->kind != CE_K_END) continue;
         uint32_t v; memcpy(&v, base + s->rva + s->prefix_len, 4);
         uint32_t d = v - (uint32_t)(uintptr_t)cave - s->field;
-        if (v < (uint32_t)(uintptr_t)cave || d % CE_ROW_SIZE) return 0;   /* 还是零售值,或不整除 */
+        if (v < (uint32_t)(uintptr_t)cave || d % CE_ROW_SIZE) return 0;   /* 还是原生值,或不整除 */
         unsigned rows = d / CE_ROW_SIZE;
         return (rows >= CE_ROW_COUNT && rows <= CE_MAX_ROWS) ? rows : 0;
     }
@@ -67,13 +67,13 @@ static int fill_table(uint8_t *base, uint8_t *cave, unsigned rows)
     return 1;
 }
 
-/* 兜底：任何 FAIL 之后把分配器上界写回零售值 0x38。
+/* 兜底：任何 FAIL 之后把分配器上界写回原生值 0x38。
  * 场景：两个不同行数的 patch 同时进栈——搬表 binhack 只有先到的那个生效（后到的
  * expected 不匹配被跳过），但分配器上界 binhack 两边都能打上（原字节没被前者动过），
  * 于是上界撑到 254 而跳转表只有 58 项 → 未注册 id 会 jmp 到 cave 之外。
  * 上界回到 56 后，只有 id 0..56 会被分派，任何行数的跳转表都放得下。*/
 /* 商店随机池搬迁（AUDIT §AH）：9 处站点逐条按 sites_gen.h 的模板重算应有字节再比对。
- * 零售那 560 格是 `pick_weighted_random_offer` 里 `ebp-0x8c4` 的栈缓冲，末尾紧贴金丝雀、
+ * 原生那 560 格是 `pick_weighted_random_offer` 里 `ebp-0x8c4` 的栈缓冲，末尾紧贴金丝雀、
  * 填池的两处写没有越界检查 —— 所以这些站点只要有一处没打上，超过 560 份就会踩返回地址。
  * 全有或全无：任何一处不符就 FAIL，别让「一半搬走一半还在栈上」跑起来。*/
 static int check_pool(uint8_t *base)

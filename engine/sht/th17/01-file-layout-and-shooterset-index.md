@@ -80,7 +80,7 @@ TH17 记录没有这 4 字节，因此 TH17 `+0x28..+0x57` 的所有字段整体
 | `+0x00`–`+0x27` | `+0x00`–`+0x27` | rate/delay/damage/偏移/命中尺寸/角度/速度/slot/mode/anm/sfx/hit_fx；一一对应 |
 | `+0x28` | `+0x2c` | `func_on_init`（索引，装载后变指针） |
 | `+0x2c` | `+0x30` | `func_on_tick` |
-| `+0x30` | `+0x34` | `func_on_draw`（零售全 0） |
+| `+0x30` | `+0x34` | `func_on_draw`（原版全 0） |
 | `+0x34` | `+0x38` | `func_on_hit` |
 | `+0x38` | `+0x3c` | 咆哮/主炮用到的额外 float/int 段（TH17 pl01 的 Marisa 主炮这里非 0） |
 | `+0x48` | `+0x4c` | **横移倾斜系数**（TH18 `init3` 唯一读的尾部字段） |

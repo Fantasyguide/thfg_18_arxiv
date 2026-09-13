@@ -14,7 +14,7 @@
 | exe md5 | `9969cac756098c1da05a81de45437a70` |
 | imagebase | `0x400000`（无 DYNAMICBASE） |
 
-⚠️ codecave 里取零售表地址用的是 thcrap 的 **`Rx` 记法**（`<Rxc53c0>`，
+⚠️ codecave 里取原生表地址用的是 thcrap 的 **`Rx` 记法**（`<Rxc53c0>`，
 `expression.h:310`：相对模块基址的十六进制），**不写死 `0x400000`**。
 
 ## 死绑量（只有五个数）
@@ -23,7 +23,7 @@
 | --- | --- | --- |
 | 注册表基址 | `0x4c53c0` | [`engine/card/th18/07-registry.md`](../../../engine/card/th18/07-registry.md) |
 | 行长 stride | `0x34` | 同上 |
-| 零售行数 | 58 | 同上 |
+| 原生行数 | 58 | 同上 |
 | 回退行号 | 56（`NULL`） | [`engine/card/th18/11-sentinels-56-57.md`](../../../engine/card/th18/11-sentinels-56-57.md) §2.1 |
 | 表的 RVA | `0xc53c0` | = 基址 − imagebase |
 
@@ -97,7 +97,7 @@
 | 名 | 地址 | 原字节 | 长 | 干什么 |
 | --- | --- | --- | --- | --- |
 | `ce_unlock_write` | `0x418e04` | `c6 84 3e 88 f5 05 00 01` | 8 | 影子[edi]=1；id<57 放行原指令，否则写 side-car 并跳过 |
-| `ce_save_loaded` | `0x46398a` | `8d b3 b8 f4 05 00` | 6 | 影子 ← 零售存档（ebx）+ side-car |
+| `ce_save_loaded` | `0x46398a` | `8d b3 b8 f4 05 00` | 6 | 影子 ← 原生存档（ebx）+ side-car |
 | `ce_unlock_all` | `0x4648fe` | `8d 83 88 f5 05 00` | 6 | 影子[0..55]=1 |
 
 ## 写入点：战线 E 第二块（图鉴 / 编成，仅 `ROWS > 58`，27 处全同长）
@@ -127,7 +127,7 @@
 | `ce_text_desc` | `0x416779` | `69 45 0c c0 01 00 00` | 7 | `imul eax,[ebp+0xc],0x1c0` → eax |
 | `ce_text_notify` | `0x41926a` | `69 c3 c0 01 00 00` | 6 | `imul eax,ebx,0x1c0` → eax |
 
-死绑量：`ABILITY_TXT_PTR` `0x4cf29c`；条目 `0x1c0`；零售 57 张。
+死绑量：`ABILITY_TXT_PTR` `0x4cf29c`；条目 `0x1c0`；原生 57 张。
 
 ## 写入点：patch-test（只在验证时进栈）
 
@@ -149,7 +149,7 @@ DLL 只有一个被 thcrap 调用的入口 `th18_card_expand_mod_post_init`
 
 | 名字 | 大小 | 权限 | 内容 |
 | --- | --- | --- | --- |
-| `th18_card_table` | 行数 × `0x34` | RW | 开机时从零售表拷贝而来 |
+| `th18_card_table` | 行数 × `0x34` | RW | 开机时从原生表拷贝而来 |
 | `th18_card_jumptable`（战线 B） | 行数 × 4 | RW | 0–56 原样拷，其余 → case 56 |
 | `th18_card_table_patch_init` | 20–66 字节 | RX + export | 保险用的拷贝代码；权威是 DLL 的 post_init |
 | `th18_ce_test_deck58`（patch-test） | 19 字节 | RX | 原 `movzx` + 空槽改 58 |
@@ -160,7 +160,7 @@ DLL 只有一个被 thcrap 调用的入口 `th18_card_expand_mod_post_init`
 ⚠️ **它跑在 `codecaves_apply` 末尾，早于 `binhacks_apply`**（`runconfig.cpp:655-656`），
 且是否被调用取决于 thcrap 版本。所以它只是保险；**填表与验证的权威是 DLL 的
 `post_init`**，见 [`README.md`](README.md)。DLL 从 `func_get("codecave:th18_card_table")`
-（`plugin.h:24`，`THCRAP_API`）取地址，从 `GetModuleHandleA(NULL) + 0xc53c0` 读零售表。
+（`plugin.h:24`，`THCRAP_API`）取地址，从 `GetModuleHandleA(NULL) + 0xc53c0` 读原生表。
 
 ## 换版本时必须重取
 

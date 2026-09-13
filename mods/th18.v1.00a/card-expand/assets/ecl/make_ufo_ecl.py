@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""把 `assets/ecl/ufo.ecl.txt` 里 112 的 9 个 UFO 子程序合进零售 `default.ecl` → `native/build/ecl/default.ecl`。
+"""把 `assets/ecl/ufo.ecl.txt` 里 112 的 9 个 UFO 子程序合进原生 `default.ecl` → `native/build/ecl/default.ecl`。
 
-    python3 make_ufo_ecl.py             # 现场解零售 default.ecl → 合入 → 编回 → 写入 build/ecl/
+    python3 make_ufo_ecl.py             # 现场解原生 default.ecl → 合入 → 编回 → 写入 build/ecl/
     python3 make_ufo_ecl.py --verify-only   # 只跑自洽验证（不写产物）
 
 为什么是 `default.ecl`：TH18 每关 `st0X.ecl` 头部都有 `ecli { "default.ecl"; … }` ⇒ 它是**全关共用的父 ECL**
@@ -85,7 +85,7 @@ def main():
         extra = sorted(set(frag) - set(OURS))
         raise SystemExit("ufo.ecl.txt 里有多余子程序：%s" % ", ".join(extra))
 
-    # 零售 default.ecl 走的是**已解包**的那份（与 make_dev_ecl.py 同一口径）
+    # 原生 default.ecl 走的是**已解包**的那份（与 make_dev_ecl.py 同一口径）
     raw = DAT / "default.ecl"
     if not raw.is_file():
         raise SystemExit("没有 %s：先 python3 tooling/thtk/unpack.py th18.v1.00a" % raw)
@@ -97,13 +97,13 @@ def main():
     retail_text = retail_txt.read_text(**ENC)
     retail = subs(retail_text)
     if not retail:
-        raise SystemExit("零售 default.ecl 反编译不出子程序 —— 口径变了？")
+        raise SystemExit("原生 default.ecl 反编译不出子程序 —— 口径变了？")
 
     clash = sorted(set(retail) & set(OURS))
     if clash:
-        raise SystemExit("子程序重名（零售里已有）：%s" % ", ".join(clash))
+        raise SystemExit("子程序重名（原生里已有）：%s" % ", ".join(clash))
 
-    # 合：零售原文 + 我们的 9 个子程序（追加在末尾，不影响零售的入口/结构）
+    # 合：原生原文 + 我们的 9 个子程序（追加在末尾，不影响原生的入口/结构）
     text = retail_text.rstrip("\n") + "\n\n" + "\n".join(frag[n] for n in OURS)
     merged_txt = tmp / "merged.ecl.txt"
     merged_txt.write_text(text, **ENC)
@@ -131,7 +131,7 @@ def main():
                              % (n, len(ops_src), len(ops_back)))
 
     n_subs = len(retail) + len(OURS)
-    print("零售 %d 子 + 我们 %d 子 = %d 子；无重名 ✓" % (len(retail), len(OURS), n_subs))
+    print("原生 %d 子 + 我们 %d 子 = %d 子；无重名 ✓" % (len(retail), len(OURS), n_subs))
     print("往返：编回 → 再编一次，二进制字节一致 ✓（%d B）；9 个子程序的指令行数不变 ✓" % built.stat().st_size)
 
     if a.verify_only:

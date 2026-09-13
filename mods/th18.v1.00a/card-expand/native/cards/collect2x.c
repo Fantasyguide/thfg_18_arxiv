@@ -1,12 +1,12 @@
 /* 辉针城（id 114，内部 COLLECT_2X）—— 被动卡，双被动（spec §3–4，逻辑 collect2x_core.h，接线本文件）：
- * id 从 254 改为 127（2026-09-08 实跑）：编成 deck 槽对 id > 0x7f 当负值剔除（零售符号扩展界），
+ * id 从 254 改为 127（2026-09-08 实跑）：编成 deck 槽对 id > 0x7f 当负值剔除（原生符号扩展界），
  * 新卡上限 → 127，后卡 126、125… 降序（AUDIT §Z11）。
  *
  *   · 收点系统（TH14 1:1 复刻）：一次性收点 = 自第一枚「飞过来的批集道具」（state 3 真空体）被收起的
  *     一批（§Z22 成员门：批成员/开批事件只认真空飞行收集 —— 触收 state 1 / 70px 环收 state 4 是普通
  *     游玩收集，不入批不开批：run-9 = 非全屏收点模式下误触发 NO BONUS）；御币式持续击杀 / 上线 /
  *     bomb / 对话自动收的连续收点会拉长同一批。批闭 = **无批集道具在真空飞行（presence）且无新收后
- *     8 游玩帧**（窗口值 = `C2X_BATCH_SETTLE_IDLE`；TH14 原生 timer `[0x4f5884]` presence 语义
+ *     8 游玩帧**（窗口值 = `C2X_BATCH_SETTLE_IDLE`；TH14 原版 timer `[0x4f5884]` presence 语义
  *     一手见 AUDIT §Z18/§Z21：0x43898e per-item 在飞体对批集 kind 每帧重载 0x8，帧尾递减归零即结）。
  *     on_item_frame 每帧扫池：有 type∈{1,2} 的道具 state==3（真空飞行；4 = 70px 环 swoosh 是普通
  *     游玩磁吸、不续批，§Z22 收窄）→ `ce_item_pool_any_attracting` → `c2x_batch_presence` 续 idle ——
@@ -63,7 +63,7 @@ static void spawn_item_at(uint32_t type, float x, float y, float speed)
         ce_log("collect2x: spawn type %u failed (pool full?)", type);
 }
 
-/* settle 档位色 = TH14 原生地面真值（plan Task 8；mult_permille 与档位一一对应，灰蓝→青→绿→黄绿→黄）*/
+/* settle 档位色 = TH14 原版地面真值（plan Task 8；mult_permille 与档位一一对应，灰蓝→青→绿→黄绿→黄）*/
 static uint32_t tier_color(int mult_permille)
 {
     switch (mult_permille) {
@@ -165,7 +165,7 @@ static void on_item_frame(ce_card_t *c)
     float pz[3] = { px, py, 0.0f };
 
     if (!out.mult_permille) {
-        /* 5–19 批 ×0 档：TH14 原生真值（0x438dfe 系）= 灰弹字、无碎片无分；<5 连弹字都没有。
+        /* 5–19 批 ×0 档：TH14 原版真值（0x438dfe 系）= 灰弹字、无碎片无分；<5 连弹字都没有。
          * value −1（int）→ draw 0x464520 cmpl 走 jl → 0x464572 只弹 "NO BONUS"（fmt 0x4b7204），
          * 不画 %d 行也不画 mult 行（×0 时 TH14 压入的正是 −1 + 0x80a0a0a0 + mult 0.0）。 */
         if (count >= 5) {
@@ -195,7 +195,7 @@ static void on_item_frame(ce_card_t *c)
     /* 倍率弹字（原生环；纯视觉）。值 = 结算分（≥0 → draw 走 "BONUS" 分支）；位置取自机位同碎片。 */
     ce_popup_mult(pz, (int)out.batch_score, tier_color(out.mult_permille), out.mult_permille / 1000.0f);
     /* ★ 收点完毕音（2026-09-08 §Z17，三跑缺音 → §Z16 曾拟 0x2e 后被一手推翻）：
-     * TH14 v1.00b 原生结算真值 = se id 0x39：on_tick__body 结算尾 0x438dfe 起，≥20 五档各自在弹字
+     * TH14 v1.00b 原版结算真值 = se id 0x39：on_tick__body 结算尾 0x438dfe 起，≥20 五档各自在弹字
      * 前 `push 0x39 → SoundManager__play_sound_at_position 0x46e470`（声像 xmm2 = 批位 x，438e03-09
      * 起系）。id 0x39 → cfg 行（0x4d61b8+0x39*0x14）+4 = wav 下标 0x2e → 名表 0x4d60b0 → se_pin00.wav，
      * 调校 −2dB/prio 100；TH18 的 0x39 行（sound-table §7）= 同 wav 同调校 → 直用 0x39。

@@ -17,7 +17,7 @@
  *
  * ⚠ 美术占位（❓ 自定，见 `METHOD.md`「铁律:UI 与动画一律先从原代码找」）：
  *   TH18 **没有「绿点」这个 item type**（只有 `1..0x13`），我们也没有绿点贴图 ⇒ 现在借
- *   季节点那张 16×16 零售切图（`CE_ANM_ABILITY_SPRITE_PT_*`）+ `ce_anm_set_color` 染绿。
+ *   季节点那张 16×16 原生切图（`CE_ANM_ABILITY_SPRITE_PT_*`）+ `ce_anm_set_color` 染绿。
  *   拿到绿点贴图后只改 `faith.c` 的 `faith_sprite_for()`，接口不动。
  */
 #pragma once

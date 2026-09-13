@@ -23,11 +23,22 @@
  *                      给需要高速/低速两条通道的卡（107）；老事件的策略门不变。
  *   BP_ce_shot_set_index 0x45ebfb 主炮查 set 前的 mov edi,[edi+edx*4+0xe0]；handler 问 on_shot_set_index(card, eax)，
  *                      返回 >=0 时同时改 edx 与 [ebp-8]（弹里也记 beast set），不碰 sht 0..9。
+ *   BP_ce_option_shot_gate 0x40a9c3 Player__tick_shooters_for_ability_card 0x40a9c0 的序言后
+ *                      `mov edx,[ebp+8]; sub esp,0xc`（6 字节，两条完整指令、无相对寻址）：
+ *                      对原生装备子机组 0x0a..0x15 **与 117 咆哮组 0x1e..0x27** 问
+ *                      on_option_shot_gate(card, set)，返回 1 ⇒
+ *                      retaddr = 0x40aa9e（该函数自己的空路径收尾）本组子机弹不发（117 咆哮用）。
+ *                      ★ **2026-09-12 十四修：已开（`CE_OPTION_SHOT_GATE_ENABLE` 1）** —— 用户 bug 5
+ *                      「魔理沙的咆哮依旧会发射子机的激光」⇒ 功能按原设计生效。六字节站点已由部署日志
+ *                      证过（门回读通过、无 `mitigation: allocator bound restored`），并新增
+ *                      `ce_integrity_check()` 每关自检卡对象 ⇒ 若再出现 id 腐烂会当场打 `BAD card`。
+ *                      不能选 `je rel32`：cave_fix 只重定位开头的 `e8/e9`，`0f 84` 复制进 cave
+ *                      后会按原位移跳飞。
  *   BP_ce_enemy_shot_slot 0x433ffa 敌人 ECL etOn(opcode 0x259) 的「发弹三步」汇聚点：沿卡链表问
  *                      on_enemy_shot_slot(ev)，返回非 0 ⇒ retaddr = 0x43402d 本帧不发射这一槽（108 使魔）。
  *   ce_sdk_on_shop_open          不是断点：shop.c 的 BP_ce_shop_reopen 在 MSG 开店那一帧调它，沿卡链表调 on_shop_open()。
  *   ce_destroy_card              局中删一张卡（倒吊人）：照 recount 0x4080e0 的删卡分支，AUDIT §W。
- *   ce_sdk_setup       门里：基类虚表 21 槽与 engine.h 的常量逐一比对（布局假设的运行时守卫）、十二个断点已挂、
+ *   ce_sdk_setup       门里：基类虚表 21 槽与 engine.h 的常量逐一比对（布局假设的运行时守卫）、全部断点已挂、
  *                      与 cards.js 对账（C 有 JSON 无 → FAIL）、每张行为卡记一行。
  */
 #include <string.h>
@@ -38,6 +49,14 @@
 #include <stdio.h>
 #include "sdk.h"
 #include "sdk_actions.h"
+
+/* ★ 2026-09-12 十三修：`ce_option_shot_gate` 因 3 字节站点被 thcrap 拒绝，门回读失败会触发
+ *   `restore_alloc_bound` 降级路径（新 id 禁用），而存档/编成里已有新 id 时 `allocate_new_card`
+ *   会返回 -1，后续卡表/HUD 槽可能被写坏。
+ *   ★ 2026-09-12 十四修：站点改成 6 字节后门回读已过（部署日志无 `FAIL` / 无 `mitigation`），
+ *   且新加的 `ce_integrity_check()` 每关自检卡对象 ⇒ **按用户 bug 5 重新打开**。
+ *   （历史：十三修期间为排障临时置 0。） */
+#define CE_OPTION_SHOT_GATE_ENABLE 1
 
 static int give_allocate(void *ctx, uint32_t id, uint32_t mode)
 {
@@ -81,8 +100,8 @@ void ce_sdk_register_or_log(const ce_behavior_t *b)
         ce_verdict("FAIL: sdk: cannot register behavior for card %u (duplicate id or > %u behaviors)", b->id, (unsigned)CE_SDK_MAX_BEHAVIORS);
 }
 
-/* ---- 主动卡机器（SDK §9；零售模板 = CardTenshi，04-active-cards.md §3–§5；AUDIT O19–O21）----
- * 对象只有 0x54 字节，零售放 +0x54 的 state 放进私有状态。引擎只看 flags bit3/bit5、+0x34 那组充能计时器、+0x48。*/
+/* ---- 主动卡机器（SDK §9；原生模板 = CardTenshi，04-active-cards.md §3–§5；AUDIT O19–O21）----
+ * 对象只有 0x54 字节，原生放 +0x54 的 state 放进私有状态。引擎只看 flags bit3/bit5、+0x34 那组充能计时器、+0x48。*/
 typedef struct { uint32_t state; } ce_active_t;             /* 0 空闲 / 1 持续 / 2 收尾 */
 _Static_assert(sizeof(ce_active_t) <= CE_STATE_RESERVED, "ce_active_t must fit in the reserved head");
 
@@ -104,7 +123,7 @@ static void active_init(uint8_t *card, const ce_hooks_t *h)
     if (a) a->state = 0;
 }
 
-/* 零售主动卡的共同门控（0x45c069..0x45c082 / 0x40ea04..0x40ea26）：没在对话（zGui.msg == 0）且场上有敌人
+/* 原生主动卡的共同门控（0x45c069..0x45c082 / 0x40ea04..0x40ea26）：没在对话（zGui.msg == 0）且场上有敌人
  * （zEnemyManager.enemy_count_real != 0）。充能递减、经过帧递增、C 键分派都受它。*/
 static int game_running(void)
 {
@@ -194,7 +213,7 @@ int __cdecl BP_ce_card_bind(x86_reg_t *regs, void *bp_info)
         int equip = 0;
         if (h && h->active_recharge) active_init(card, h);
         else {
-            /* category 1（子机装备）：case 56 给的是被动 flags（& ~0x4a | 4），改成零售装备 case 的写法（& ~0x0a | 0x44），
+            /* category 1（子机装备）：case 56 给的是被动 flags（& ~0x4a | 4），改成原生装备 case 的写法（& ~0x0a | 0x44），
              * 引擎据 bit6 把它画进 HUD 装备行、计入 num_equipment（0x408de0 / 0x412d6c）。bit0 由紧接着的原指令按 mode 写，不受影响。AUDIT X11 */
             const uint8_t *e = ce_table_entry(regs->ebx);
             if (e && *(const int32_t *)(e + 0x0c) == 1) {
@@ -216,7 +235,7 @@ int __cdecl BP_ce_card_bind(x86_reg_t *regs, void *bp_info)
  *
  * `+0x28`：`PlayerBullet__create` `0x45e320` **先**写 `bullet+0x9c = shooter+0x02`、**再**遍历卡链表调 `+0x28`
  * （一手，AUDIT Z3 的反编译里看得到顺序），所以桩看到的是引擎刚写好的值。只有落笔人乘一次 ⇒ 单次取整。
- * 就地乘而不是「从 shooter 基值重算」：零售 `CardMomoyo__on_bullet_init` `0x411010` 就是重算派
+ * 就地乘而不是「从 shooter 基值重算」：原生 `CardMomoyo__on_bullet_init` `0x411010` 就是重算派
  * （`bullet+0x9c = (1 + 擦弹/N) × shooter+0x02`），重算会把她的加成抹掉；就地乘则与她相乘（顺序依赖是既有性质）。
  *
  * `+0x2c`：每敌每帧总伤害上限 `player+0x47984` 每帧从 `sht+0x28` 复位（GameThread 0x10 早于 AbilityManager 0x16），
@@ -242,7 +261,7 @@ void ce_sdk_damage_cap_tick(uint32_t id)
     if (base > 0) ce_raise_damage_cap(ce_dmg_scale(base));
 }
 
-/* HUD 文字。零售 `CardMomoyo__on_draw` `0x4110a0` 的做法逐条复刻（AUDIT §AC）：
+/* HUD 文字。原生 `CardMomoyo__on_draw` `0x4110a0` 的做法逐条复刻（AUDIT §AC）：
  * 写 `ASCII_MANAGER_PTR + 0x19228` 的字色 → 建字符串 → 还原成白。
  * ★★ 2026-09-10 修正：**必须用 `AsciiManager__create_string` `0x419b90`**，不能用 `drawf_debug`
  * `0x41a110` —— 后者在 create_string 之后还会写 `mgr + 0xc0c + num_strings*0x138 = 1`，
@@ -390,7 +409,8 @@ uint8_t *ce_option_retry(ce_card_t *c, ce_option_t *o, int offset, int anm_scrip
 }
 
 /* 收掉挂在某个子机上的自机弹（激光）。一手：`Player__tick_bullets` `0x45edb0` 的池
- * （`PLAYER+0x1570`、512 × 0x9c）、`PlayerBullet__create` `0x45e3ae` 把子机指针写进 `bullet+0xe4`、
+ * （`PLAYER+0x1570`、512 槽 × `0xf8`；`0x45edd5 LEA EDI,[ECX+0x1570]`、`0x45f0b0 ADD EDI,0xf8`）、
+ * `PlayerBullet__create` `0x45e3ae` 把子机指针写进 `bullet+0xe4`、
  * `tick2` `0x45fc80` 尾部的自杀段（`bullet+0x8c = 2` + 对 `bullet+8` 的束 VM 发 interrupt 1）。*/
 int ce_option_kill_bullets(void *option)
 {
@@ -410,7 +430,78 @@ int ce_option_kill_bullets(void *option)
     return n;
 }
 
-/* 收起子机：删它的 ANM VM（零售 `CardReimu1__operator_delete` `0x40ab20` 同款）、清零售在同一时机清的
+/* 清 `player+0x476fc+idx*4` 的 mode=2 去重槽。引擎自己的自杀段在 `0x4602c1` 做同一件事；
+ * 不镜像它，`Player__shoot_one_bullet` `0x45e96e` 会一直看到该槽非 0，整条 mode=2 row 永久早退
+ *（用户 2026-09-13：咆哮后 2p/4p 某些子机不再发激光；重开一局才恢复）。
+ * 槽位解码逐指令对齐 `0x4602a8`：byte `shooter+0x20`，0 跳过；<0x10 取低 4 位，否则取高 4 位。*/
+static void ce_mode2_lock_clear(uint8_t *pl, const uint8_t *sr)
+{
+    int slot, idx;
+
+    if (!pl || !sr) return;
+    slot = (int)*(const int8_t *)(sr + CE_SHT_ROW_OPT_SLOT);
+    if (slot == 0) return;                                  /* 0x460227 `test al,al; je 0x46030e` */
+    if (slot < 0x10) idx = slot & 0xf; else idx = slot >> 4;
+    if (idx < 0 || idx >= CE_PLAYER_MODE2_LOCK_SLOTS) return;
+    *(int32_t *)(pl + CE_PLAYER_MODE2_LOCK_BASE + idx * 4) = 0;
+}
+
+/* ★ 2026-09-13：咆哮期间清掉「零售 / 装备子机」的 `mode=2` 激光。
+ * 真身（一手）：`mode=2` 激光的寿命**不跟 set 走** —— `tick2` `0x45fc80` 的存活分支
+ * `0x4601e0 cmp [player+0x476d4],0 / jl 自杀` 只看**射击短计时**（松开 Z 才 <0）；
+ * `fire-time set` 重定向 `0x45ebfb` 只改本条之后取哪组 row，**挡不住已经在飞的旧束**
+ * ⇒ 按住 Z 进咆哮：旧束一直钉在原 sub-machine 上（用户 2026-09-13「子机还在打普通激光」）。
+ * 过滤：packed set（`bullet+0xac >> 8`）≤ `0x15`（0..9 主炮 + 0x0a..0x15 原生装备子机组）
+ * 且 shooter row `+0x21 == 2`；`0x16..0x1d`（108 使魔 / 77 豌豆 / 116 季节）与
+ * `0x1e..0x27`（117 WOLF/EAGLE）都不碰。
+ *
+ * ★ 2026-09-13 十九修（回归真身）：上一版只写 `state=2` + interrupt 1，漏了引擎自杀段第三步
+ *   `0x4602c1 mov [player+edx*4+0x476fc],0`（`edx` 由 `shooter+0x20` 解码）。`+0x476fc`
+ *   是「该 mode=2 槽正在持有一发激光」的去重表：`Player__shoot_one_bullet` `0x45e96e`
+ *   看到非 0 就直接 `ret 0x10` 不发新弹。我们收掉了旧弹却没解锁 ⇒ 咆哮结束后那些子机永远
+ *   发不出激光，只有重开一局才清空。现在逐字段对齐引擎：state=2 → interrupt 1 → 清锁。*/
+int ce_kill_retail_option_lasers(void)
+{
+    uint8_t *pl = CE_PLAYER();
+    uint8_t *sht;
+    uint32_t by_set[CE_SHT_SET_OPTION_MAX + 1];
+    int i, s, n = 0;
+
+    for (s = 0; s <= CE_SHT_SET_OPTION_MAX; ++s) by_set[s] = 0;
+    if (!pl) return 0;
+    sht = *(uint8_t **)(pl + CE_PLAYER_SHT_PTR);   /* zPlayer+0x47940 */
+    if (!sht) return 0;
+    for (i = 0; i < CE_PB_COUNT; ++i) {
+        uint8_t *b = pl + CE_PB_POOL + i * CE_PB_STRIDE;
+        uint32_t packed, set, row;
+        uint8_t *sr;
+
+        if (*(int32_t *)(b + CE_PB_STATE) != 1) continue;     /* 只收活动弹 */
+        packed = *(uint32_t *)(b + CE_PB_PACKED_ID);
+        set = packed >> 8;
+        if (set > CE_SHT_SET_OPTION_MAX) continue;            /* ≤ 0x15：挡在 0x16..0x1d / 0x1e..0x27 之外 */
+        row = packed & 0xffu;
+        /* 引擎的 set 表在内存里是**绝对指针**（装载器已 +buf+0x180）；用旧 set 照样解到旧 row。*/
+        sr = *(uint8_t **)(sht + 0xe0 + set * 4);
+        if (!sr) continue;
+        if (*(const int8_t *)(sr + row * 0x5c + CE_SHT_ROW_MODE) != 2) continue; /* 只收 mode=2 激光 */
+        *(int32_t *)(b + CE_PB_STATE) = 2;                    /* `tick2` 自杀段：0x460296 */
+        ce_anm_interrupt(*(uint32_t *)(b + CE_PB_VM_ID), 1);  /* 束脚本 interrupt 1：0x4602a0 */
+        ce_mode2_lock_clear(pl, sr + row * 0x5c);             /* 去重槽清 0：0x4602c1 */
+        ++by_set[set];
+        ++n;
+    }
+    if (n > 0) {
+        for (s = 0; s <= CE_SHT_SET_OPTION_MAX; ++s) {
+            if (by_set[s])
+                ce_log("wba_c: retail option laser kill: set 0x%x x%u", (unsigned)s, by_set[s]);
+        }
+        ce_log("wba_c: retail option laser kill: total n=%d (state=2 + interrupt 1 + shot lock cleared)", n);
+    }
+    return n;
+}
+
+/* 收起子机：删它的 ANM VM（原生 `CardReimu1__operator_delete` `0x40ab20` 同款）、清原生在同一时机清的
  * flags bit1（`CardReimu1__method_4C` `0x40aad0`）、**收掉它发射出去的激光**，松开我们记的指针。
  * 槽本身由引擎统一回收。*/
 void ce_option_drop(ce_card_t *c, ce_option_t *o)
@@ -428,7 +519,7 @@ void ce_option_drop(ce_card_t *c, ce_option_t *o)
             uint32_t *card_vm = (uint32_t *)((uint8_t *)c + CE_CARD_OPTION_ANM_ID);
             ce_anm_delete(vm);
             *(uint32_t *)(o->ptr + CE_OPT_ANM_ID) = 0;
-            if (*card_vm == vm) *card_vm = 0;      /* 引擎那格也清掉，免得零售析构再删一次 */
+            if (*card_vm == vm) *card_vm = 0;      /* 引擎那格也清掉，免得原生析构再删一次 */
         }
         /* ★ 槽也要真的松开：`Player__allocate_option` `0x40a790` 找空位的判据就是
          * `equipment[i].in_use == 0`（`while (*(int *)pzVar11->field_0 != 0)`），**没有别的回收者**
@@ -439,7 +530,7 @@ void ce_option_drop(ce_card_t *c, ce_option_t *o)
         o->retry = 0;
     } else {
         uint32_t *vm = (uint32_t *)((uint8_t *)c + CE_CARD_OPTION_ANM_ID);
-        if (*vm) { ce_anm_delete(*vm); *vm = 0; }   /* o == NULL：零售单子机写法 */
+        if (*vm) { ce_anm_delete(*vm); *vm = 0; }   /* o == NULL：原生单子机写法 */
     }
 }
 
@@ -530,7 +621,7 @@ void ce_hud_number_set(ce_hud_number_t *n, float x, float y, float spacing,
 
 /* ============================ 贴图 VM 版文字 ============================ */
 
-/* 字符 → 零售字形 sprite。映射一手：`AsciiManager__draw_string` `0x41a2b0` 的 font 2/3 分支
+/* 字符 → 原生字形 sprite。映射一手：`AsciiManager__draw_string` `0x41a2b0` 的 font 2/3 分支
  * （数字 `char + 0x94` ⇒ '0' = 0xC4 = 196；`-` = 0xd0、`%` = 0xd2、`.` = 0xd3、`+` = 0xd4）。
  * 切图见 assets/ability/make_font2_art.py，进 ability.anm 后就是 anm_ids.h 里的 FONT2_*。*/
 static uint32_t hud_vm_glyph(char ch)
@@ -803,9 +894,72 @@ int __cdecl BP_ce_shot_set_index(x86_reg_t *regs, void *bp_info)
     return BP_EXEC_ORIGINAL;
 }
 
+/* Player__tick_shooters_for_ability_card 0x40a9c0 的序言后（0x40a9c3）：
+ *   40a9c0 push ebp / 40a9c1 mov ebp,esp /
+ *   40a9c3 mov edx,[ebp+8] / 40a9c6 sub esp,0xc / 40a9c9 test edx,edx / 40a9cb je 0x40aa9e
+ *   ← 站点 = 前两条完整指令，共 6 字节；**无相对寻址**（thcrap 的 cave_fix 不重定位 `0f 84`）。
+ * 站点处 ebp 已就位；栈参 [ebp+8]=option、[ebp+0xc]=short、[ebp+0x10]=long、[ebp+0x14]=sht set。
+ * handler 返回 1 = 执行这两条原指令（mov + sub），回到 0x40a9c9 原样继续；
+ * 返回 0 且 retaddr=0x40aa9e 才跳过整段（`mov esp,ebp` 重设栈顶）。
+ * 上一版只取 0x40a9c3 的 3 字节 `mov edx,[ebp+8]`：低于 thcrap sourcecave 下限 5，断点被拒；
+ * SDK 门回读失败后 `restore_alloc_bound` 把新 id 禁掉 —— 存档/编成里已有新 id 时就是用户看到的
+ * 「卡 id 变垃圾 / HUD 槽消失」。**2026-09-12 十四修已按用户 bug 5 打开**（站点 6 字节、门回读已过）。 */
+int __cdecl BP_ce_option_shot_gate(x86_reg_t *regs, void *bp_info)
+{
+#if !CE_OPTION_SHOT_GATE_ENABLE
+    (void)regs;
+    (void)bp_info;
+    return BP_EXEC_ORIGINAL;
+#else
+    (void)bp_info;
+    uint8_t *mgr = CE_ABILITY_MGR();
+    int32_t set;
+    unsigned guard = 0;
+
+    if (!mgr || !regs->ebp) return BP_EXEC_ORIGINAL;
+    set = *(const int32_t *)(uintptr_t)(regs->ebp + 0x14);
+    /* ★ 2026-09-13 十八修（诊断，一次运行最多记 8 个不同值）：用户报「按 Z 进魔理沙狼咆哮子机还发射激光」，
+     *   而日志里**没有** `option shot suppressed` 行 ⇒ 先证明这条路径到底跑没跑、拿的是哪些 set：
+     *   出现 `option shot path set 0x..` ⇒ 就是这条路径（再看是否被下面的区间漏掉）；
+     *   一整局一次都没有 ⇒ 那些激光**不是**这条路径出的（去查主炮路径 / 别的函数）。*/
+    {
+        static int32_t s_seen[8];
+        static int s_seen_n;
+        int i, dup = 0;
+        for (i = 0; i < s_seen_n; ++i) if (s_seen[i] == set) { dup = 1; break; }
+        if (!dup && s_seen_n < 8) {
+            s_seen[s_seen_n++] = set;
+            ce_log("wba_c: option shot path set 0x%x (#%d, %s)", (unsigned)set, s_seen_n,
+                   (set >= CE_SHT_SET_OPTION_MIN && set <= CE_SHT_SET_OPTION_MAX) ? "native option group" :
+                   (set >= CE_SHT_SET_BEAST_MIN && set <= CE_SHT_SET_BEAST_MAX)   ? "117 beast group" :
+                                                                                    "OTHER (not in range!)");
+        }
+    }
+    /* ★ 2026-09-13 十七修：原来只拦原生装备子机组 0x0a..0x15，但这条路径在咆哮期间会拿
+     *   **咆哮组**当 set 继续开火（魔理沙狼咆哮 = WOLF 组 0x1e..0x22，非空 ⇒ 用户看到的
+     *   「子机还在发射激光」；鹫的 EAGLE 组 0x23..0x27 是空组，所以那次看起来是好的）。*/
+    if (!((set >= CE_SHT_SET_OPTION_MIN && set <= CE_SHT_SET_OPTION_MAX) ||
+          (set >= CE_SHT_SET_BEAST_MIN   && set <= CE_SHT_SET_BEAST_MAX)))
+        return BP_EXEC_ORIGINAL;
+    for (const uint8_t *node = *(const uint8_t *const *)(mgr + CE_MGR_CARD_LIST_FIRST);
+         node && guard < 256;
+         node = *(const uint8_t *const *)(node + CE_NODE_NEXT), ++guard) {
+        uint8_t *card = *(uint8_t *const *)(node + CE_NODE_CARD);
+        if (!card) continue;
+        const ce_hooks_t *h = hooks_of(card);
+        if (h && h->on_option_shot_gate && h->on_option_shot_gate((ce_card_t *)card, (int)set)) {
+            ce_sdk_trace(ce_card_id(card), 0x94, "on_option_shot_gate");
+            regs->retaddr = 0x40aa9e;   /* 该函数 option==NULL 的空路径收尾 */
+            return 0;
+        }
+    }
+    return BP_EXEC_ORIGINAL;
+#endif
+}
+
 /* Enemy__drop_items_and_notify_cards 0x430510 入口（thiscall，ecx = zEnemyDrop = enemy+0x623c）：在引擎撒**附加表**之前
  * 把掉落数表交给卡改。改完引擎自己按各 type 正确的角度/速度去撒 —— 比自己调
- * ItemManager__spawn_items（8 个栈参、零售调用方还留了没填的槽）稳得多。AUDIT §S。 */
+ * ItemManager__spawn_items（8 个栈参、原生调用方还留了没填的槽）稳得多。AUDIT §S。 */
 int __cdecl BP_ce_enemy_drop(x86_reg_t *regs, void *bp_info)
 {
     (void)bp_info;
@@ -902,11 +1056,70 @@ static void ce_option_pose_frame_tick(void)
     if (win >= 0) optpose_call_one(mgr, win);                    /* ② 本帧落笔 */
 }
 
+/* ★ 2026-09-12 十三修：卡对象 / AbilityManager 完整性探针。
+ *
+ * 用户报告的「卡又成滚木 / 撞到槽里 slot 消失」与更早 id=254（0xfe，有符号字节为负）症状同型，
+ * 说明不是纯美术索引，而是卡对象或 manager 计数被写坏。这个探针在**每个正常游玩关卡开场**
+ * 沿卡链表 dump 每张卡的 id / flags，并核对 `num_total` 与 `owned[128..254]`；之后每帧只在
+ * 发现异常（id 越界、链表长度 != num_total、owned 高位非零）时再打一行。下一份用户日志可直接
+ * 证明是「id 污染 / manager 坏」还是「纯美术」。零写入、纯只读；只在 ItemManager tick 帧界跑。 */
+static int32_t s_integrity_stage = (-0x7fffffff - 1);
+static void ce_integrity_check(void)
+{
+    uint8_t *mgr = CE_ABILITY_MGR();
+    const int32_t *owned;
+    int32_t stage, total, active, equip, passive;
+    unsigned list_n = 0, guard = 0, id;
+    int bad = 0, owned_hi = 0, first;
+
+    if (!mgr) return;
+    stage = CE_CURRENT_STAGE();
+    first = (stage != s_integrity_stage);
+    if (first) s_integrity_stage = stage;
+
+    total   = *(const int32_t *)(mgr + CE_MGR_NUM_TOTAL);
+    active  = *(const int32_t *)(mgr + CE_MGR_NUM_ACTIVE);
+    equip   = *(const int32_t *)(mgr + CE_MGR_NUM_EQUIPMENT);
+    passive = *(const int32_t *)(mgr + CE_MGR_NUM_PASSIVE);
+    owned   = CE_OWNED_ARRAY();
+    for (id = 128; id <= CE_SDK_CARD_ID_MAX; ++id)
+        if (owned[id] != 0) ++owned_hi;
+
+    for (const uint8_t *node = *(const uint8_t *const *)(mgr + CE_MGR_CARD_LIST_FIRST);
+         node && guard < 256;
+         node = *(const uint8_t *const *)(node + CE_NODE_NEXT), ++guard) {
+        uint8_t *card = *(uint8_t *const *)(node + CE_NODE_CARD);
+        uint32_t cid, flags;
+        if (!card) continue;
+        cid = ce_card_id(card);
+        flags = ce_card_flags(card);
+        if (first)
+            ce_log("integrity[stage %d]: card[%u] id=%u flags=%08x", stage, list_n, cid, flags);
+        else if (cid > 127u)
+            ce_log("integrity[stage %d]: HIGH-ID card[%u] id=%u flags=%08x", stage, list_n, cid, flags);
+        if (cid == 0 || cid > CE_SDK_CARD_ID_MAX) {
+            bad = 1;
+            ce_log("integrity[stage %d]: BAD card[%u] id=%u flags=%08x", stage, list_n, cid, flags);
+        }
+        ++list_n;
+    }
+    if ((int32_t)list_n != total) {
+        bad = 1;
+        ce_log("integrity[stage %d]: list length %u != CE_MGR_NUM_TOTAL %d", stage, list_n, total);
+    }
+    if (first || owned_hi || bad)
+        ce_log("integrity[stage %d]: list=%u total=%d active=%d equip=%d passive=%d owned[128..254]=%u bad=%d",
+               stage, list_n, total, active, equip, passive, owned_hi, bad);
+    if (bad)
+        ce_log("integrity[stage %d]: CARD MANAGER INTEGRITY FAILURE — 请把以上行贴给维护者", stage);
+}
+
 int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
 {
     (void)regs; (void)bp_info;
     uint8_t *mgr = CE_ABILITY_MGR();
     if (!mgr) return BP_EXEC_ORIGINAL;
+    ce_integrity_check();
     /* ★ 帧界：低速子机声明层的落笔 + 清集合（spec §3.3.1）。顺序 **先落笔、后清**：
      * 落笔用的是「上一次清集合以来」的全部声明（= 本帧各卡 tick 里刚发的），清完之后本帧的声明从零收集。*/
     ce_option_pose_frame_tick();
@@ -1050,7 +1263,7 @@ int __cdecl BP_ce_shot_damage(x86_reg_t *regs, void *bp_info)
  * 分数转换点族（0x4471d3 = CE_FN_SPAWN_ITEM 的 9–0xe 分支），P/钱不经过 state 2/5 → 分发时
  * state==3 即引擎原生的「飞过来的收点道具」谓词（P/钱 handler 0x44699e/0x446c0a 自己也读它给全额）。
  * §Z22 收窄掉 state 4：4 = 70px 环 swoosh（0x446647）= 普通游玩磁吸，任何时刻都发生、不属全屏
- * 收点 → 不续批（run-9：普通游玩环收把批撑过 5 → 误弹灰 NO BONUS）。TH14 原生 0x43898e 也只在
+ * 收点 → 不续批（run-9：普通游玩环收把批撑过 5 → 误弹灰 NO BONUS）。TH14 原版 0x43898e 也只在
  * state-3 在飞体上重载批计时（§Z21）。state 1（抛物/坠落）不算：落地残余不挡批（TH14 原义；
  * 池空门的 {1,3,4} 把抛物/休止也算「在飞」→ 躲弹幕挂批 + 急切切批三症状，§Z18）。吸收帧自身由
  * 收集断点续期（c2x_collect_batch），两源合盖从起飞到落地的全程。早停。AUDIT §Z。*/
@@ -1089,8 +1302,8 @@ void ce_sdk_on_shop_open(void)
 }
 
 /* ---- 局中删卡（AUDIT §W）----
- * 零售只在两处删链表里的卡：局末 recount 0x4080e0（逐张：摘链 → vtable+0x50(1) → num_total−1，最后整体重算三计数并重选主动卡）
- * 和 reset_cards 0x407da0（全清）。商店空白卡就是在店里调后者，所以「店里删卡、子机等关店广播再重建」有零售先例。
+ * 原生只在两处删链表里的卡：局末 recount 0x4080e0（逐张：摘链 → vtable+0x50(1) → num_total−1，最后整体重算三计数并重选主动卡）
+ * 和 reset_cards 0x407da0（全清）。商店空白卡就是在店里调后者，所以「店里删卡、子机等关店广播再重建」有原生先例。
  * 这里做 recount 那一支的单张版：类别计数按 flags 就地减（recount 是删完重数，结果一样），HUD 用引擎自己的
  * create_all_card_lists_for_hud(mgr, 0) 重画（分配尾段 mode != 1 时调的就是它；它先按 mgr+0x58 删旧图标 VM，不留幽灵）。 */
 static int card_in_list(const uint8_t *mgr, const uint8_t *victim)
@@ -1110,7 +1323,7 @@ int ce_destroy_card(ce_card_t *victim_)
     if (!mgr || !victim) return 0;
     if (!card_in_list(mgr, victim)) { ce_log("destroy: refused, card %u not in the list", ce_card_id(victim)); return 0; }
     /* 当前选中的主动卡也能删（2026-09-09）。原先一律拒绝，于是「卡组里只剩一张主动卡」时
-     * 倒吊人会白买一次。做法照零售 recount 的收尾：先把 mgr+0x38 摘空，删完再让引擎自己重选。
+     * 倒吊人会白买一次。做法照原生 recount 的收尾：先把 mgr+0x38 摘空，删完再让引擎自己重选。
      * 顺序不能反 —— 指针留到对象被释放之后就是悬垂的。*/
     uint8_t **selected = (uint8_t **)(mgr + CE_MGR_SELECTED_ACTIVE);
     int was_selected = (*selected == victim);
@@ -1197,7 +1410,7 @@ int ce_sdk_setup(uint8_t *base, int trace)
             ce_verdict("FAIL: sdk: base vtable slot %u = %08x, expected %08x — not the layout we know", chk[i].i, vt[chk[i].i], chk[i].want);
             return 0;
         }
-    /* 2. 十四个断点已挂。聚合检查：任何一个失败都打印现场字节（判断 thcrap 没下断 vs 下错位置），
+    /* 2. 全部行为断点已挂（15 条）。聚合检查：任何一个失败都打印现场字节（判断 thcrap 没下断 vs 下错位置），
      * 全部查完再决定成败——避免第一个失败点挡住后面断点的诊断信息。 */
     struct { const char *name; uint32_t rva; unsigned len; } bps[] = {
         { "ce_card_bind",   CE_BP_CARD_BIND_RVA,   6 },
@@ -1212,6 +1425,7 @@ int ce_sdk_setup(uint8_t *base, int trace)
         { "ce_shot_damage", CE_BP_SHOT_DAMAGE_RVA, 7 },
         { "ce_bomb_gate",   CE_BP_BOMB_GATE_RVA,   7 },
         { "ce_shot_set_index", CE_BP_SHOT_SET_INDEX_RVA, 7 },
+        { "ce_option_shot_gate", CE_BP_OPTION_SHOT_GATE_RVA, 6 },
         { "ce_enemy_death", CE_BP_ENEMY_DEATH_RVA, 6 },
         { "ce_enemy_shot_slot", CE_BP_ENEMY_SHOT_SLOT_RVA, 8 },
     };
@@ -1310,6 +1524,42 @@ int __cdecl BP_ce_enemy_shot_slot(x86_reg_t *regs, void *bp_info)
  *   0x42f3b7 = life ≤ 0 的主路（= 四张卡要的「击破」）；0x42ee90 = 炸弹秒杀路；
  *   0x430f59 = ECL die opcode；0x4307f1 / 0x430a00 / 0x430c08 = killAll 三兄弟；其余 = OTHER。
  * 设计：docs/superpowers/specs/2026-09-12-shared-enemy-death-event-design.md（AUDIT 对应节）。*/
+/* ★ 2026-09-13 实跑订正①：thcrap `x86_reg_t.retaddr` 是断点后的 cave 续跑 EIP，不是调用点返回地址。
+ * ★ 实跑订正②：`[regs->esp]` 也不行 —— 实测读到 `0x430245`（= 断点站点 `0x430240`+5），是 thcrap
+ *   自己的蹦床/续跑地址。真实调用点返回地址在栈更深处 ⇒ 从 `regs->esp` 起扫前 **12 个 dword**
+ *   （`[esp]`, `[esp+4]`, … `[esp+0x2c]`），匹配已知七条 call site 就返回它，并记录命中格号。
+ *   扫描不到时返回 0 / `ret_slot=-1`，由卡侧按「HP ≤ 0 + real_bit + 非 Cir/ECir」兜底（宁可多掉）。*/
+static int edeath_is_known_call_site(uint32_t w)
+{
+    switch (w) {
+    case 0x42f3b7u:  /* KILLED（life ≤ 0 主路）*/
+    case 0x42ee90u:  /* BOMB_KILL */
+    case 0x42f3ddu:  /* OTHER（标志驱动移除）*/
+    case 0x4307f1u:  /* KILL_ALL */
+    case 0x430a00u:  /* KILL_ALL */
+    case 0x430c08u:  /* KILL_ALL */
+    case 0x430f59u:  /* ECL_DIE */
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+static uint32_t edeath_call_site(const x86_reg_t *regs, int32_t *out_slot)
+{
+    int i;
+    if (out_slot) *out_slot = -1;
+    if (!regs || !regs->esp) return 0;
+    for (i = 0; i < 12; ++i) {
+        uint32_t w = *(const uint32_t *)(uintptr_t)(regs->esp + (uint32_t)i * 4u);
+        if (edeath_is_known_call_site(w)) {
+            if (out_slot) *out_slot = i;
+            return w;
+        }
+    }
+    return 0;
+}
+
 static uint32_t edeath_kind(uint32_t retaddr)
 {
     switch (retaddr) {
@@ -1333,7 +1583,9 @@ int __cdecl BP_ce_enemy_death(x86_reg_t *regs, void *bp_info)
     ce_enemy_death_t ev;
     uint32_t flags = *(const uint32_t *)(e + CE_ENEMY_FLAGS);
     ev.id        = *(const uint32_t *)(e + CE_ENEMY_ID);
-    ev.kind      = edeath_kind(regs->retaddr);
+    ev.esp       = regs->esp;
+    ev.retaddr   = edeath_call_site(regs, &ev.ret_slot);
+    ev.kind      = edeath_kind(ev.retaddr);
     ev.flags     = ((flags & 0x31u) == 0 ? CE_EDEATH_F_REAL : 0u);   /* ★ 置位 = 被排除在真敌人之外 */
     ev.drop_main = *(const int32_t *)(e + CE_ENEMY_DROP);
     ev.x         = *(const float *)(e + CE_ENEMY_POS_X);

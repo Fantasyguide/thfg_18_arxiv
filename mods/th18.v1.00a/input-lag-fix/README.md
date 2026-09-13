@@ -32,7 +32,7 @@ python3 mods/th18.v1.00a/input-lag-fix/release.py
 python3 mods/th18.v1.00a/input-lag-fix/test_patch.py -v
 ```
 
-测试会核对零售 EXE 哈希、入口原字节、补丁内容、默认关闭状态和发布副本。
+测试会核对原生 EXE 哈希、入口原字节、补丁内容、默认关闭状态和发布副本。
 
 静态检查不能替代 Windows 上的实际设备测试。发布验收时保持会触发问题的 vJoy/手柄环境，
 分别确认：启用补丁后卡顿消失且键盘/鼠标可用；禁用补丁后手柄输入恢复；

@@ -6,7 +6,7 @@
 
 **Goal:** 把 TH18 写死 84 槽的音效表整体搬到 thcrap codecave 并加长到 116 槽，让 card-expand 能注册 32 个自定义音效 id（`0x54`–`0x73`），第一批装角色语音。
 
-**Architecture:** 四张零售表（cfg 配置表 / wav 名表 / slot 数组 / blob 指针数组）全部重定位到具名 RW codecave；51 处 `.text` 立即数由 `sites.py` 从**真 exe** 现扫现改，patch 里只有地址与源码。表的**内容**在 `th18_snd_patch_init`（`codecaves_apply` 末尾）从用户自己那份 exe `rep movsd` 拷过来 —— 仓库不留任何 ZUN 字节。DLL 在 `0x476410`（SoundManager 初始化）入口的断点里填语音 blob 与新行配置，然后放行让引擎按原生流程建 DirectSound buffer。
+**Architecture:** 四张原生表（cfg 配置表 / wav 名表 / slot 数组 / blob 指针数组）全部重定位到具名 RW codecave；51 处 `.text` 立即数由 `sites.py` 从**真 exe** 现扫现改，patch 里只有地址与源码。表的**内容**在 `th18_snd_patch_init`（`codecaves_apply` 末尾）从用户自己那份 exe `rep movsd` 拷过来 —— 仓库不留任何 ZUN 字节。DLL 在 `0x476410`（SoundManager 初始化）入口的断点里填语音 blob 与新行配置，然后放行让引擎按原生流程建 DirectSound buffer。
 
 **Tech Stack:** Python 3（`sites.py` / `x86imm.py` 站点扫描与 binhack 生成）、thcrap binhack/codecave/breakpoint、i686 mingw C（`th18_card_expand.dll`）、主机 gcc 单测、pyghidra（只在 Task 1 取证）。
 
@@ -17,13 +17,13 @@
 - **版本死绑 TH18 v1.00a**（`th18.exe`，imagebase `0x400000`）。所有裸地址属该版本。
 - **patch 里不留任何 ZUN 字节。** cfg 表的 84 行内容、72 个 wav 名字符串一律运行时从用户的 exe 拷。
 - **不认识就报错，绝不猜**（`x86imm.py` 的既定原则）：未覆盖的指令编码抛 `UnknownEncoding`，不许静默跳过。
-- **全有或全无**：任何自检 `FAIL` 都必须还原到零售行为（新 id 不可用），不能半开。
+- **全有或全无**：任何自检 `FAIL` 都必须还原到原生行为（新 id 不可用），不能半开。
 - **地址写法** `` `0x476410` ``（反引号、无 `@`）；文档改完跑 `python tooling/check-docs.py`。
 - **每一处写入点过 `mods/_template/AUDIT-checklist.md`**，追加到 `mods/th18.v1.00a/card-expand/AUDIT.md` 新的一节（§Q）。
 - **两条行不变式**（违反即挂死，见 spec §3.4.1）：
   - **I1** 116 行的 `+0` 两两不同且恰好覆盖 `0..0x73`（循环 1 的扫描无上界，找不到就跑飞）。
   - **I2** 116 行的 `+4` 指向的 blob 槽都非 NULL（`0x4776f0` 遇 NULL 进 `Sleep(10)` 死等）。
-- **不改 `0x4767d8`**（`CMP ESI,0x48`）：预加载线程仍只从 dat 读零售 72 个。
+- **不改 `0x4767d8`**（`CMP ESI,0x48`）：预加载线程仍只从 dat 读原生 72 个。
 - 新 id 空间 `0x54`–`0x73`（`CE_SND_NEW_N = 32`）。
 
 **工作目录**：除 Task 1 外，全部在 `mods/th18.v1.00a/card-expand/native/`。
@@ -57,14 +57,14 @@ for i in range(72):
     f=v2f(p); names.append(exe[f:exe.index(b'\0',f)].decode())
 rows=[struct.unpack_from('<5I',exe,v2f(0x4c9b80)+i*0x14) for i in range(0x54)]
 perm={r[0]:(names[r[1]], r[2]>>16, r[2]&0xffff, r[4]) for r in rows}
-assert sorted(perm)==list(range(0x54)), "I1 在零售就不成立？"
+assert sorted(perm)==list(range(0x54)), "I1 在原生就不成立？"
 for i in range(0x54):
     w,vol,pan,f10=perm[i]
     print(f"| `0x{i:02x}` | `{w}` | {vol} | 0x{pan:04x} | {f10} |")
 EOF
 ```
 
-预期：84 行；`0x52` = `se_trophy.wav`、`0x53` = `se_notice.wav`；`assert` 不触发（零售就满足 I1）。
+预期：84 行；`0x52` = `se_trophy.wav`、`0x53` = `se_notice.wav`；`assert` 不触发（原生就满足 I1）。
 
 - [ ] **Step 2: 重写文档**
 
@@ -127,7 +127,7 @@ git commit -m "docs(sound): th18 音效表订正为 84 行（补 id 0x52/0x53）
 ```python
 """sound_sites.py —— TH18 音效表扩容的站点表与扫描器。
 
-四张零售表要整体搬进 codecave，`.text` 里 52 处引用它们。本模块只回答两件事：
+四张原生表要整体搬进 codecave，`.text` 里 52 处引用它们。本模块只回答两件事：
   ① 这 52 处每一处在 exe 里长什么样、该换成什么（scan）
   ② 除了这 52 处，还有没有别的地方撞上这些地址（audit）
 
@@ -139,7 +139,7 @@ from x86imm import classify, UnknownEncoding, Ambiguous     # noqa: F401
 
 IMAGEBASE = 0x400000
 
-# ---- 零售形状（一手：engine/_shared/th18-sound-table.md）--------------------
+# ---- 原生形状（一手：engine/_shared/th18-sound-table.md）--------------------
 CFG_BASE   = 0x4c9b80; CFG_ROW = 0x14; CFG_ROWS = 84
 CFG_END    = CFG_BASE + CFG_ROWS * CFG_ROW            # 0x4ca214
 NAMES_BASE = 0x4b47a0; NAMES_N = 72                   # 72 项 + NULL 终止
@@ -217,9 +217,9 @@ SND_REFS = (
     (0x47791f, CAVE_BLOBS, 0x0, "0x4776f0 清 blob"),
     (0x477956, CAVE_BLOBS, 0x0, "0x4776f0 取 blob"),
     (0x477970, CAVE_BLOBS, 0x0, "0x4776f0 清 blob"),
-    # ★ 释放尾界刻意只到零售 72：语音 blob 来自 thcrap 的堆，交给游戏的 free 会崩。
+    # ★ 释放尾界刻意只到原生 72：语音 blob 来自 thcrap 的堆，交给游戏的 free 会崩。
     #   进程此刻正在退出，不释放到此为止。见 spec §3.3 E。
-    (0x4713d8, CAVE_BLOBS, BLOB_N * 4, "WinMain 释放尾界（★ 只到零售 72）"),
+    (0x4713d8, CAVE_BLOBS, BLOB_N * 4, "WinMain 释放尾界（★ 只到原生 72）"),
     # wav 名表（4 引用，无尾界——预加载的界是计数，见 SND_UNTOUCHED）
     (0x4766d3, CAVE_NAMES, 0x0, "init 加载取名"),
     (0x47671d, CAVE_NAMES, 0x0, "init 错误路径取名"),
@@ -235,10 +235,10 @@ SND_COUNTS = (
 
 # ---- 1 处刻意不改 ---------------------------------------------------------
 SND_UNTOUCHED = (
-    (0x4767d8, NAMES_N, "预加载 wav 数：仍只从 dat 读零售 72 个，语音 blob 由 DLL 填"),
+    (0x4767d8, NAMES_N, "预加载 wav 数：仍只从 dat 读原生 72 个，语音 blob 由 DLL 填"),
 )
 
-TABLE_RANGES = {          # 完整性审计要扫的四段零售地址
+TABLE_RANGES = {          # 完整性审计要扫的四段原生地址
     CAVE_CFG:   (CFG_BASE,   CFG_END + 4),
     CAVE_NAMES: (NAMES_BASE, NAMES_BASE + (NAMES_N + 1) * 4),
     CAVE_SLOTS: (SLOT_BASE,  SLOT_END + 0xc),
@@ -294,7 +294,7 @@ def scan(text, text_va):
 
 
 def audit(text, text_va, covered):
-    """扫四段零售地址区间里所有 4 字节出现处，列出不在已覆盖站点内的。
+    """扫四段原生地址区间里所有 4 字节出现处，列出不在已覆盖站点内的。
 
     输出必须由人逐条确认「漏掉的都是该漏的」：同值的热全局（如 0x4ca214 本身就是
     一个被 0x401e0e / 0x474b45 读写的普通 int 全局）不该改。
@@ -404,7 +404,7 @@ git commit -m "feat(sound): 音效表 51 处站点的站点表与完整性审计
 
 ### Task 3: codecave 声明与 `th18_snd_patch_init` 拷贝代码
 
-四块 RW 内存 + 一段在 `codecaves_apply` 末尾运行的初始化代码：从用户的 exe 拷零售内容，给 32 个新行写结构骨架（满足 I1/I2）。
+四块 RW 内存 + 一段在 `codecaves_apply` 末尾运行的初始化代码：从用户的 exe 拷原生内容，给 32 个新行写结构骨架（满足 I1/I2）。
 
 **Files:**
 - Create: `native/sound_emit.py`
@@ -439,7 +439,7 @@ def emit_sound_codecaves():
     cfg_dwords   = S.CFG_ROWS * S.CFG_ROW // 4          # 84 * 0x14 / 4 = 420
     names_dwords = S.NAMES_N + 1                        # 72 项 + NULL 终止
 
-    # 新行骨架：+0 = 84+k（满足 I1），+4/+8/+0xc/+0x10 = 0（+4 = 0 → 指向零售 wav 0，满足 I2）
+    # 新行骨架：+0 = 84+k（满足 I1），+4/+8/+0xc/+0x10 = 0（+4 = 0 → 指向原生 wav 0，满足 I2）
     #   L: ab           stosd            ; [edi] = eax(槽号); edi += 4
     #      31 d2        xor edx, edx
     #      89 17        mov [edi], edx        ; +4
@@ -457,18 +457,18 @@ def emit_sound_codecaves():
     code = "".join([
         "fc",                                                  # cld
         "60",                                                  # pushad
-        # ① 零售 84 行 cfg → cave
+        # ① 原生 84 行 cfg → cave
         "bf<codecave:%s>" % S.CAVE_CFG,                        # mov edi, cfg cave
-        "be<Rx%x>" % S.CFG_RVA,                                # mov esi, 零售 cfg 表
+        "be<Rx%x>" % S.CFG_RVA,                                # mov esi, 原生 cfg 表
         "b9%s" % struct.pack("<I", cfg_dwords).hex(),          # mov ecx, 420
         "f3a5",                                                # rep movsd
         # ② 32 个新行的结构骨架（edi 已指向 cave + 84*0x14）
         "b8%s" % struct.pack("<I", S.CFG_ROWS).hex(),          # mov eax, 84
         "bb%s" % struct.pack("<I", S.NEW_N).hex(),             # mov ebx, 32
         loop,
-        # ③ 零售 72 个 wav 名指针 + NULL → cave
+        # ③ 原生 72 个 wav 名指针 + NULL → cave
         "bf<codecave:%s>" % S.CAVE_NAMES,                      # mov edi, names cave
-        "be<Rx%x>" % S.NAMES_RVA,                              # mov esi, 零售名表
+        "be<Rx%x>" % S.NAMES_RVA,                              # mov esi, 原生名表
         "b9%s" % struct.pack("<I", names_dwords).hex(),        # mov ecx, 73
         "f3a5",                                                # rep movsd
         "61",                                                  # popad
@@ -477,7 +477,7 @@ def emit_sound_codecaves():
 
     caves = {name: {"size": "0x%x" % size} for name, size in S.CAVE_SIZE.items()}
     caves[S.CAVE_INIT] = {"code": code, "export": True,
-                          "title": "音效表：从用户的 exe 拷零售 84 行 cfg + 72 个 wav 名，"
+                          "title": "音效表：从用户的 exe 拷原生 84 行 cfg + 72 个 wav 名，"
                                    "并给 32 个新行写 +0 = 槽号 的骨架（I1/I2）"}
     return caves
 ```
@@ -501,7 +501,7 @@ check(c[S.CAVE_INIT]["export"] is True, "patch_init 必须 export")
 check(S.CAVE_INIT.endswith("_patch_init"), "名字必须以 _patch_init 结尾才会被 thcrap 调用")
 
 code = c[S.CAVE_INIT]["code"]
-# ★ 版权红线：patch 里不许出现零售数据。允许的只有：hex 字节、<codecave:…>、<Rx…>
+# ★ 版权红线：patch 里不许出现原生数据。允许的只有：hex 字节、<codecave:…>、<Rx…>
 check("<Rx%x>" % S.CFG_RVA in code,   "cfg 必须用 Rx 相对模块基址取，不能写死绝对地址")
 check("<Rx%x>" % S.NAMES_RVA in code, "wav 名表同上")
 check(code.endswith("61c3"), "结尾必须是 popad; ret（cdecl）")
@@ -556,7 +556,7 @@ mov edi,imm / mov esi,imm / mov ecx,0x49 / rep movsd / popad / ret`。
 
 ```bash
 git add native/sound_emit.py native/tests/test_sound_emit.py
-git commit -m "feat(sound): 四块 codecave + th18_snd_patch_init（从用户 exe 拷零售表 + 新行 I1/I2 骨架）"
+git commit -m "feat(sound): 四块 codecave + th18_snd_patch_init（从用户 exe 拷原生表 + 新行 I1/I2 骨架）"
 ```
 
 ---
@@ -619,9 +619,9 @@ for name, b in bh.items():
     check(code_len == len(exp), "%s：改写后长度变了（%d vs %d）" % (name, code_len, len(exp)))
     # ★ 绝对表达式必须是尖括号
     check("[codecave:" not in b["code"], "%s：用了方括号（相对），必须用尖括号" % name)
-# 尾界特判：blob 释放界只到零售 72
+# 尾界特判：blob 释放界只到原生 72
 check(bh["snd_%06x" % 0x4713d8]["code"].endswith("<codecave:%s+%x>" % (S.CAVE_BLOBS, S.BLOB_N * 4)),
-      "0x4713d8 的释放尾界必须只到零售 72（跨堆释放会崩）")
+      "0x4713d8 的释放尾界必须只到原生 72（跨堆释放会崩）")
 # 硬编码槽 20
 check(bh["snd_%06x" % 0x45ff38]["code"].endswith("<codecave:%s+%x>" % (S.CAVE_SLOTS, 20 * S.SLOT_SIZE)),
       "0x45ff38 必须指向槽 20")
@@ -747,7 +747,7 @@ git commit -m "feat(sound): 51 处 binhack 生成 + verify 对账（音效表四
 #ifndef CE_SOUND_H
 #define CE_SOUND_H
 
-/* 在 SoundManager::init 入口调一次。1 = 新 id 可用；0 = 已还原成零售行为。 */
+/* 在 SoundManager::init 入口调一次。1 = 新 id 可用；0 = 已还原成原生行为。 */
 int ce_sound_init(void);
 
 /* 已登记的语音条数（自检与日志用）。 */
@@ -762,13 +762,13 @@ int ce_sound_voice_count(void);
 /* sound.c —— 音效表扩容的 DLL 侧：填语音 blob、写新行配置、五条自检。
  *
  * 时序（spec §3.4）：
- *   codecaves_apply 末尾  th18_snd_patch_init  拷零售 84 行 cfg + 72 个 wav 名 + 新行骨架
+ *   codecaves_apply 末尾  th18_snd_patch_init  拷原生 84 行 cfg + 72 个 wav 名 + 新行骨架
  *   binhacks_apply        51 处站点改写
  *   BP_ce_snd_gate        ← 本文件。0x476410 入口，引擎还没读表
  *   放行后               循环1 初始化 116 槽、循环2 逐行建 buffer
  *
  * ★ blob 的字节直接用 thcrap stack_game_file_resolve 的返回，不拷贝、不释放：
- *   WinMain 的释放循环尾界刻意只到零售 72（binhack 0x4713d8），跨堆 free 会崩。
+ *   WinMain 的释放循环尾界刻意只到原生 72（binhack 0x4713d8），跨堆 free 会崩。
  */
 #include <stdio.h>
 #include <string.h>
@@ -822,7 +822,7 @@ static uint8_t *cave(const char *name)
     return ce_func_get ? (uint8_t *)ce_func_get(name) : NULL;
 }
 
-/* 五条自检。任何一条不过 → 把新行退回骨架（+4 = 0、+0x10 = 0），零售行为不变。 */
+/* 五条自检。任何一条不过 → 把新行退回骨架（+4 = 0、+0x10 = 0），原生行为不变。 */
 static int selfcheck(uint8_t *cfg, uint8_t *slots, uint8_t **blobs, char **names)
 {
     (void)names;
@@ -868,7 +868,7 @@ static void rollback(uint8_t *cfg)
 {
     for (int k = 0; k < CE_SND_NEW_N; ++k) {
         uint8_t *row = cfg + (CE_SND_CFG_ROWS + k) * CE_SND_CFG_ROW;
-        *(uint32_t *)(row + 4)   = 0;      /* 回到零售 wav 0，I2 仍成立 */
+        *(uint32_t *)(row + 4)   = 0;      /* 回到原生 wav 0，I2 仍成立 */
         *(uint32_t *)(row + 8)   = 0;
         *(uint32_t *)(row + 0x10) = 0;
     }
@@ -999,7 +999,7 @@ git commit -m "feat(sound): ce_snd_gate 断点 —— 填语音 blob 与新行�
 """build_voice.py —— 语音资源的校验与索引生成。
 
   assets/voice/ORDER.txt   一行一个 NAME，**只追加**。行号 k → 音效 id 0x54+k、wav 下标 72+k
-  assets/voice/<NAME>.wav  PCM（tag 1）。零售 71 个 se 就是 44.1k/22.05k × 8/16 bit × 单/双声道混用，
+  assets/voice/<NAME>.wav  PCM（tag 1）。原生 71 个 se 就是 44.1k/22.05k × 8/16 bit × 单/双声道混用，
                            引擎的 RIFF 解析不挑格式；建议 16-bit 单声道（单声道声像才有意义）。
 
 跑：python3 assets/build_voice.py          校验 + 拷进 patch/th18/voice/ + 生成 native/voice_ids.h
@@ -1146,7 +1146,7 @@ Expected: `build_voice: 0 failed`
 
 - [ ] **Step 5: 放一条真语音跑通链路**
 
-先用**零售 wav 的字节**验证格式那一环（spec R6）：
+先用**原生 wav 的字节**验证格式那一环（spec R6）：
 
 ```bash
 cd /data/sunyunbo/www/renkolab
@@ -1157,7 +1157,7 @@ cd mods/th18.v1.00a/card-expand && python3 assets/build_voice.py
 ```
 Expected: 打印 `语音 1 条`、`TEST_VOICE 0x54 72 44100 Hz ...`，生成 `patch/th18/voice/TEST_VOICE.wav` 与 `native/voice_ids.h`。
 
-⚠ `assets/voice/TEST_VOICE.wav` 是零售字节，**只用于本地验证，不许入库**。
+⚠ `assets/voice/TEST_VOICE.wav` 是原生字节，**只用于本地验证，不许入库**。
 加到 `.gitignore`：`mods/th18.v1.00a/card-expand/assets/voice/TEST_VOICE.wav`
 和 `mods/th18.v1.00a/card-expand/patch/th18/voice/*.wav`（真语音入库时再逐个 `git add -f`）。
 
@@ -1286,7 +1286,7 @@ git commit -m "feat(sound): ce_play_voice + 反转牌接一条测试语音（扩
 | Q1 | `th18_snd_patch_init` 的调用时机与 ABI（cdecl / pushad 覆盖被调方保留寄存器 / `rep movsd` 前 `cld`） |
 | Q2 | I1：新行骨架循环写的 `+0 = 84+k`；违反 = 循环 1 的无界扫描跑飞 |
 | Q3 | I2：新行 `+4 = 0`；违反 = `0x4776f0` 在 `0x477768` 的 `Sleep(10)` 死等 |
-| Q4 | `0x4713d8` 释放尾界刻意只到零售 72：跨堆 free 的规避，代价是进程退出时不回收 32 个 blob |
+| Q4 | `0x4713d8` 释放尾界刻意只到原生 72：跨堆 free 的规避，代价是进程退出时不回收 32 个 blob |
 | Q5 | `0x45ff38` 硬编码槽 20（`se_lazer02`）：改写后必须仍指槽 20，自检里有断言 |
 
 顶部照惯例留一行「实跑通过（日期）」的位置。
@@ -1332,7 +1332,7 @@ git commit -m "docs(sound): AUDIT §Q（51 处站点 + I1/I2 + 两处特例）�
 ## 附：这份计划刻意没做的事
 
 - **不做语音独占通道 / 打断 / 队列**（用户 2026-09-05 明确否决）。
-- **不做按需加载**：32 条 × 2 秒 ≈ 5.6 MB，与零售 5.8 MB 同量级。
-- **不改 `0x4767d8`**：语音不走 dat，预加载线程仍只读零售 72 个。
+- **不做按需加载**：32 条 × 2 秒 ≈ 5.6 MB，与原生 5.8 MB 同量级。
+- **不改 `0x4767d8`**：语音不走 dat，预加载线程仍只读原生 72 个。
 - **不扩 blob 释放尾界**：见 Task 4 / AUDIT Q4。
 - **不动 `engine/card/`**：这是音频子系统，结论归 `engine/_shared/th18-sound-table.md`。

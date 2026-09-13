@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""妖妖梦（TH07 系统卡 107）**森罗结界**的两张贴图：从 TH07 零售 etama.anm 里切。
+"""妖妖梦（TH07 系统卡 107）**森罗结界**的两张贴图：从 TH07 原版 etama.anm 里切。
 
 一手来源（全部在 `local/`，gitignored，构建时取；不入库）
 ────────────────────────────────────────────────────────
-* 零售 anm：`local/th07.v1.00b/dat/etama.anm`（anm **version 2**，4 个 entry）
+* 原版 anm：`local/th07.v1.00b/dat/etama.anm`（anm **version 2**，4 个 entry）
     切好的贴图：`local/th07.v1.00b/anm/etama/data/etama/etama{2,4}.png`（各 256×256）
 
 **为什么要这两张**（结界两半 = 结界展开的那个环 + 灵击崩结界时飞出去的那 32 颗）：
@@ -48,9 +48,9 @@ sprite 矩形（一手，`thanm -l`）
 
 尺寸 / 缩放
 ──────────
-* **原样切，不重采样、不补画**（纯零售切图；256×256 与 64×64 都是 2 的幂 ✅）。
+* **原样切，不重采样、不补画**（纯原生切图；256×256 与 64×64 都是 2 的幂 ✅）。
 * **不加 scale**：TH18 世界层 VM 的「坐标与尺寸都是 640 空间的 ECL 单位」、1 单位 = 2 表面 px
-  （`engine/anm/th18/01-vm-instantiate.md` §3）⇒ 零售脚本里的 `scale(1.0f, 1.0f)` 与
+  （`engine/anm/th18/01-vm-instantiate.md` §3）⇒ 原生脚本里的 `scale(1.0f, 1.0f)` 与
   不带 scale 的 64×64 就**已经是原尺寸观感**，与 `186_sakura_point.anm.txt`（TH07 道具原样搬）同口径。
 
 产物：`ability/senro/FIELD.png`（256×256）、`ability/senro/RING.png`（64×64）。

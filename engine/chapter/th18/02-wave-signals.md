@@ -3,7 +3,7 @@
 > **版本**：TH18 v1.00a（`th18.exe`，md5 `9969cac756098c1da05a81de45437a70`，imagebase `0x400000`）。
 > 本文裸地址默认属该版本；引用其他版本须写成 `th15:0x…`。
 > **方法**：Ghidra 12.1.3 反编译（`0x42eff4` / `0x430240` / `0x42a320` / `0x42a780` / `0x42d640…`）
-> + `th-re-data` 结构体（`zEnemyData` / `zEnemyLife` / `zEnemyInterrupt`）+ 零售 ECL（`thecl -d 18`）。
+> + `th-re-data` 结构体（`zEnemyData` / `zEnemyLife` / `zEnemyInterrupt`）+ 原生 ECL（`thecl -d 18`）。
 > **可信度**：三个信号（符卡位 / 相位槽 / 超时持续位）与它们的读写点 ✅ 一手；
 > 「用相位槽指纹当波边界」是**本仓的用法**，不是引擎语义 🟡。
 
@@ -106,7 +106,7 @@ if (slot->hp_value > -1 && slot->time > 0 && slot->time <= enemy->time_in_ecl) {
 - 指纹变了 = 相位换了 = 波边界。
 
 这是本仓的接线手法，不是引擎语义（引擎没有「波」这个概念，只有槽）。
-零售 boss 的实测形态（`st01bs.ecl`）：`Boss1`（非符）→ `BossCard1`（符卡）→
+原生 boss 的实测形态（`st01bs.ecl`）：`Boss1`（非符）→ `BossCard1`（符卡）→
 `Boss2`（非符）→ `BossCard2`（符卡）→ `BossDead`，每个相位各 `ins_514` 一次，
 所以指纹 + 符卡位两套信号都能切出「一个非符一波、一张符卡一波」。
 
@@ -127,7 +127,7 @@ if (slot->hp_value > -1 && slot->time > 0 && slot->time <= enemy->time_in_ecl) {
 > **已证伪**：`22` 是 `MainMBossDebug`、`81` 是 boss 对话、`41` 是 boss 入场，没有一个是道中敌人组；
 > 而且 TH18 的 `0x439e80` 没有 TH15 的延迟标志位，章号会重复（TH15 st05 就重复过 `7`），
 > 轮询数值本来就会漏。道中的等价信号见 [`03-midstage-waves.md`](03-midstage-waves.md)：
-> **关卡脚本 ECL 子程序号 + 刷出**。
+> **关卡脚本主上下文的 `MainSub` 编号（去掉尾部字母）+ 刷出**（2026-09-13 起）。
 
 ## 5. 与 TH15 的对照
 

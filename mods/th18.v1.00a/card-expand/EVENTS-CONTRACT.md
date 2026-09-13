@@ -231,9 +231,9 @@ int    ce_score_applier(void);                          /* 落笔者 = 声明者
 而 `+0x0c` 广播在 Player 线 `0x17`、`on_item_frame` 在 ItemManager 线 `0x1e`
 ⇒ 后者跑到时 `state` 早已不是 4 ⇒ 帧点救援**永远不会触发**。
 
-**一手零售先例（`return 1` 是实质动作）**：`CardEirin__on_player_death_after_deathbomb` `0x40a4f0`
+**一手原生先例（`return 1` 是实质动作）**：`CardEirin__on_player_death_after_deathbomb` `0x40a4f0`
 尾段 `0x40a53f call 0x45d590` → **`0x40a544 mov eax,1`** → `0x40a54a ret 4`（stdcall，1 个 dword）。
-⇒ 零售自己的「取消这次死亡」就是**两件一起做**：取消 + 返回 1。
+⇒ 原生自己的「取消这次死亡」就是**两件一起做**：取消 + 返回 1。
 
 **链式是允许的（用户同日定案）**：补死是一次**普通死亡** ⇒ 107/117/**113 自己**都还能再救
 （113 的前提是没人认领 + 槽又攒到 ≥ 200）。113 侧**没有任何**「禁止再救」的状态位；

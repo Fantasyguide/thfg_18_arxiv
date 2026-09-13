@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""永夜抄（系统卡 108）**低速子机（使い魔 / option）**：零售切图 + 脚本生成。
+"""永夜抄（系统卡 108）**低速子机（使い魔 / option）**：原生切图 + 脚本生成。
 
     python3 make_youkai_option_art.py        # 生成 + 自检（可重复跑，结果一致）
 
-来源（零售字节只在 `local/`，gitignored；构建时取，不入库）：
+来源（原生字节只在 `local/`，gitignored；构建时取，不入库）：
   TH08 三队  `local/th08.v1.00d/dat/playerNN.anm`（anm **version 3**；贴图在 .anm 内部）
   TH16 文    `local/th16.v1.00a/dat/pl03.anm`（anm **version 8**）
   复核命令   `local/vendor/thtk/build/thanm/thanm -l 8  -m .../v2.anmm local/th08.v1.00d/dat/player00.anm`
@@ -43,27 +43,27 @@
       `engine/player/th16/02` §1）⇒ **CHARACTER=2（文）→ pl03.anm → script 11**。
     · pl03 script11 自带 `layer(13); type(0); resampleMode(1);`，8 格 16×16 = sprite32..39（一只拍翅的鴉）。
 
-── ★ 层（`layer`）：**照抄零售**，不自己编 ──────────────────────────────────────────────
-  · TH16 那支**零售原本就写 `layer(13)`**（v8 的脚本自带）⇒ 照抄。
-  · TH08 那三支**零售一行 layer 都没有**（v3 那一代 VM 的层由引擎/创建方给）。TH18 引擎在
+── ★ 层（`layer`）：**照抄原生**，不自己编 ──────────────────────────────────────────────
+  · TH16 那支**原版原本就写 `layer(13)`**（v8 的脚本自带）⇒ 照抄。
+  · TH08 那三支**原版一行 layer 都没有**（v3 那一代 VM 的层由引擎/创建方给）。TH18 引擎在
     `Player__allocate_option` `0x40a790` 里**无条件**把子机 VM 的层设成 14：
     `th18:0x40a8bc mov DWORD PTR [esi+0x18],0xe`（`zAnmVmPrefix+0x18 = layer`）⇒
     **不需要 C 侧补、也不该在这里编一个层号**：脚本不写 layer ⇒ 保持引擎给的 14（世界层）。
-    （对照：TH18 零售本体子机脚本 `pl00.anm` script15/16 自己写 `layer(13)`；本 mod 的 102/113 同层。）
+    （对照：TH18 原生本体子机脚本 `pl00.anm` script15/16 自己写 `layer(13)`；本 mod 的 102/113 同层。）
 
 ── ★ `ins_83`：TH08 脚本里唯一**没法逐条照抄**的一行（已实测）────────────────────────────
   TH08 三支子机脚本里都有一行 `ins_83(2);`（v2.anmm 把它译成 `ins_83`，原文是
   `# 83   dword field` = **无名 opcode 83**）。它的 handler = `th08:0x460314`（`vm+0x200 = 指令的 dword 参数`）。
   实测：`thanm -c 18` 编 v8 时报 `opcode 83 is not known to exist in version 8` ⇒ **TH18 的 anm v8 里没有这个 opcode**，
-  逐条照抄在技术上做不到 ⇒ 本生成器**省略这一行**并在脚本里写明（这是与零售唯一的一处「非 sprite」差异）。
+  逐条照抄在技术上做不到 ⇒ 本生成器**省略这一行**并在脚本里写明（这是与原生唯一的一处「非 sprite」差异）。
   🟡 它写的那格 `vm+0x200` 在整份 th08.exe 里**只有两个读者**（`grep` 全反汇编）：
   `th08:0x45e96c`（`AnmManager::draw_vm__player_bullet__state_2` `0x45e960` 的 0..5 跳表）与
   `th08:0x430efa`（敌人链）—— **都不在普通 VM（含子机）的绘制路径上** ⇒ 省掉它对子机画面无影响（🟡 读码，未实跑）。
   ❓ 它与 v8 的 `type(N)` 是否同义**未证实**（v8 的 `type` handler `th18:0x47b12c` 是**打包进 flags**
   `vm+0x534` 的 5 位字段，与 TH08 写独立 dword 字段不是同一种机制）⇒ 按纪律**不猜**，不换写 `type(2)`。
 
-── ★★ 中断标签：**必须按 TH18 口径重编号**（唯一一处「偏离零售原文」的语义改动）──────────────
-  **为什么偏离零售原文**：`interruptLabel(N)` 的号是**引擎与该作品脚本之间的约定**，同一个号在不同作品里
+── ★★ 中断标签：**必须按 TH18 口径重编号**（唯一一处「偏离原生原文」的语义改动）──────────────
+  **为什么偏离原生原文**：`interruptLabel(N)` 的号是**引擎与该作品脚本之间的约定**，同一个号在不同作品里
   含义不同。TH08 那三支（script18/29/24）用的是 **TH08 的**约定（`(1)(2)` = 两段待机循环、
   `(3)(4)` = 起爆「隙间」（`sprite(30)` 旋转 + `stop()`）、`(5)` = 散场），而 TH18 引擎发给子机 VM 的
   只有 **1/2/3**，含义是 **1 = 销毁 / 2 = 出场（+待机循环）/ 3 = 进商店收起** ⇒ 逐条照抄会让
@@ -76,10 +76,10 @@
      `[ds:0x4cf298]+0xc` 当 AnmLoaded、把**第 5 个栈参**当脚本号 `copy_vm`（`th18:0x407420`）进新 VM；
      `ds:0x4cf298` 由 AbilityManager 的 ctor `th18:0x40833d` 写入，同一函数 `th18:0x40834d`
      `push 0x4b4c10` = 字符串 **`"ability.anm"`**（`.rdata`，`th18:0x4b4c10`）⇒ 这个句柄就是 ability.anm。
-     （旁证：零售装备卡 `CardReimu1::on_power_level_change` `th18:0x40aae0` 传脚本号 **2**、
+     （旁证：原生装备卡 `CardReimu1::on_power_level_change` `th18:0x40aae0` 传脚本号 **2**、
      `CardSakuya1` 传 7、`CardSanae1` 传 0xe、`CardYoumu` 传 0x40/0x41 —— pl00.anm 只有 0..40 号，
      0x40/0x41 只存在于 ability.anm（68 支）⇒ 只可能是 ability.anm。）
-  ② **零售 ability.anm 的子机脚本全是 2/3/1**：s2 / s6 / s7 / s14 / s16 / s18 / s20 / s22（都自带
+  ② **原生 ability.anm 的子机脚本全是 2/3/1**：s2 / s6 / s7 / s14 / s16 / s18 / s20 / s22（都自带
      `layer(13)`）—— 结构统一为
      `interruptLabel(2)` + 出场缩放动画 + 待机循环 → `interruptLabel(3)` + `scaleTime(20,4,0,0); stop()`
      → `interruptLabel(1)` + `blendMode(1); scaleTime(20,4,0,3.0f); +20: delete()`。
@@ -105,20 +105,20 @@
      `th18:0x478868` 清 pending、`th18:0x47889a` **原地继续**（= 找不到标签时不崩、也不跳；
      `interruptLabel(-1)` 会被当兜底段，**所以不许用 -1**）。
      ⇒ 推论（本轮的 ❓ 都出在这里）：**脚本里没有的号 = 那件事不发生**；标签在当前位置**之后**才找得到，
-     所以在无限 `jmp` 循环里收到「循环自己那个号」= 找不到 = 原地继续（零售同构，不算差异）。
+     所以在无限 `jmp` 循环里收到「循环自己那个号」= 找不到 = 原地继续（原生同构，不算差异）。
 
   映射表（`LABEL_MAP`，只重编号）：TH08/TH16 原号 → TH18 号，理由逐支写在脚本文件头里。
   TH08 里 TH18 没有对应语义的段（循环 B、隙间 A/B）**挪到引擎不发的号（4/5/6）**：正文保留，
   在 TH18 下成为不可达代码 —— 这是「不丢正文」+「不让引擎误触发」的唯一折中。
 
 产出（只动自己的文件）：
-  ability/youkai_option/YOUKAI_OPT_<角色>_S<零售 sprite 号>.png —— 零售矩形切图，**居中补透明**到 2 的幂画布。
-       ★ 居中不是随手挑的：零售的子机 VM 以**中心**为锚点画（TH08 `AnmManager::draw_std_quad_type_0`
+  ability/youkai_option/YOUKAI_OPT_<角色>_S<原生 sprite 号>.png —— 原生矩形切图，**居中补透明**到 2 的幂画布。
+       ★ 居中不是随手挑的：原版的子机 VM 以**中心**为锚点画（TH08 `AnmManager::draw_std_quad_type_0`
          `th08:0x463877`/`0x463904` 在 flags 那两位为 0 时 `left = pos.x − w*scale/2`，而 `AnmVm::reset`
          `0x406926` 把低字设成 0x7 ⇒ 两位都是 0），TH18 的 `type(0)`/`type(1)` 同为**中心锚点**
          （仓内既有结论：`make_youkai_art.py` 头 ①、`make_sanae_youkai_art.py`）；而本仓构建期
          （`assets/build_ability.py`）对「源图小于声明尺寸」也是**居中补** ⇒ 两边同一条公式、可见像素一个不动。
-  ability/scripts/224..227_youkai_opt_<角色>.anm.txt —— 正文逐条照抄零售原文，只动两处：
+  ability/scripts/224..227_youkai_opt_<角色>.anm.txt —— 正文逐条照抄原生原文，只动两处：
        ① `sprite(N)` → `sprite(@名字@)`；② 中断标签号按 TH18 口径重编号（`LABEL_MAP`，见上）。
        （+ 省略 `ins_83`，理由写在脚本里；注释写在 `script scriptNNN {` **里面**。）
   ability/entries/ORDER.youkai_option.txt —— 待合并进 ORDER.txt 的片段（整段重写，幂等）。
@@ -151,7 +151,7 @@ TH16_DAT = REPO / "local/th16.v1.00a/dat"
 SCRIPT0 = 224          # 脚本文件编号从这里起连续（`make anm` 之前 ORDER 已有的最大脚本号 = 223：UFO_PENTAGON）
 
 # TH18 机体号（= `CE_ADDR_CHARACTER` 0..3；`youkai_core.h` 的 `YK_OPTION_BY_CHAR` 同一顺序）
-# → 零售哪个作品的哪支子机脚本。一手落点见文件头。
+# → 原生哪个作品的哪支子机脚本。一手落点见文件头。
 SOURCES = [
     # (kind, anm 名, 脚本号, 角色短名, 中文名, TH18 机体号, 说明)
     ("th08", "player00", 18, "YUKARI",  "八雲紫",     0, "TH08 pl00 = 霊夢／八雲紫 队的妖侧"),
@@ -170,14 +170,14 @@ _NAME_RE = re.compile(r"@([A-Za-z_][A-Za-z0-9_]*)@")
 _INS83_RE = re.compile(r"^ins_83\((\d+)\);\s*$")
 _LABEL_RE = re.compile(r"^(\s*)interruptLabel\((-?\d+)\);(\s*)$")
 
-# ── ★★ 中断标签映射：TH08/TH16 零售号 → TH18 号（唯一一处语义偏离，理由见文件头）──────────
+# ── ★★ 中断标签映射：TH08/TH16 原版号 → TH18 号（唯一一处语义偏离，理由见文件头）──────────
 # TH18 发给子机 VM 的号只有 1/2/3：1 = 销毁、2 = 出场(+待机)、3 = 进商店收起。
 # 每支的「原号 → 新号」逐条：
 #   紫 s18  : 1→2（待机循环 A = 显示态）· 2→4（循环 B，TH18 无此语义）· 3→5（隙间 A）· 4→6（隙间 B）
 #             · 5→1（散场 = 销毁）
 #   アリスs29: 1→2（待机循环 A）· 5→1（散场 = 销毁）                       ❓ 无「收起」段
 #   レミリアs24: 1→2（待机 A）· 2→4（待机 B，脉动）· 5→1（散场 = 销毁）      ❓ 无「收起」段
-#   文 pl03 s11: None —— 零售本来就是 TH18 口径 2/3/1，**一个字都不动**。
+#   文 pl03 s11: None —— 原生本来就是 TH18 口径 2/3/1，**一个字都不动**。
 # ⚠ 4/5/6 是「引擎不会发的号」：全 exe 里发往子机槽 VM 的 `interrupt_tree` 只有 1/2/3（见文件头 ③）。
 # ⚠ 不许用 -1：两个引擎都把它当「找不到标签时的兜底段」(`th18:0x478837` / `th08:0x45f776`)。
 LABEL_MAP = {
@@ -188,7 +188,7 @@ LABEL_MAP = {
 }
 
 
-# ── 取源（thanm 现场解，仓里不落零售字节）──────────────────────────────
+# ── 取源（thanm 现场解，仓里不落原生字节）──────────────────────────────
 
 def _require(p, what):
     if not p.is_file():
@@ -272,7 +272,7 @@ def crop_option(sheet_path, rects, sprite_ids, char):
         cw, ch = canvas_size(w, h)
         cell = im.crop((x, y, x + w, y + h))
         canvas = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
-        canvas.paste(cell, ((cw - w) // 2, (ch - h) // 2))     # ★ 居中 = 零售的 VM 中心锚点（见文件头）
+        canvas.paste(cell, ((cw - w) // 2, (ch - h) // 2))     # ★ 居中 = 原生的 VM 中心锚点（见文件头）
         name = f"YOUKAI_OPT_{char}_S{sid}"
         path = OUT_ART / f"{name}.png"
         canvas.save(path)
@@ -296,10 +296,10 @@ def header_lines(char, cn, kind, anm_name, src_num, sprite_map, engine_note):
     if kind == "th08":
         pairs_label = "、".join(f"{a}→{b}" for a, b in sorted(LABEL_MAP[char].items()))
         lines += [
-            "    // ★ 零售这支**没有 `layer()`**（TH08 的 anm v3 那代由 VM 自带层）⇒ 这里也不写：TH18 的",
+            "    // ★ 原版这支**没有 `layer()`**（TH08 的 anm v3 那代由 VM 自带层）⇒ 这里也不写：TH18 的",
             "    //   引擎在 `Player__allocate_option` `th18:0x40a8bc mov DWORD PTR [esi+0x18],0xe` 里把子机 VM",
             "    //   的层设成 **14**（世界层）⇒ 不写 layer 就用引擎给的 14，不需要 C 侧补、也不自己编层号。",
-            "    // ★ 零售这一行是 `ins_83(2);`（TH08 v3 的**无名 opcode 83**，写 `vm+0x200`，handler",
+            "    // ★ 原版这一行是 `ins_83(2);`（TH08 v3 的**无名 opcode 83**，写 `vm+0x200`，handler",
             "    //   `th08:0x460314`）—— **TH18 的 anm v8 里 opcode 83 不存在**（`thanm -c 18` 实测报",
             "    //   \"opcode 83 is not known to exist in version 8\"）⇒ 逐条照抄做不到，**这一行省略**",
             "    //   （全 exe 只有两处读 `vm+0x200`：`th08:0x45e96c` player-bullet 专用 draw 分派、",
@@ -307,7 +307,7 @@ def header_lines(char, cn, kind, anm_name, src_num, sprite_map, engine_note):
             "    // ★★ **中断标签按 TH18 口径重编号**（唯一一处语义偏离；用户 2026-09-12 定：这种情况肯定得",
             "    //   映射）——TH08 的号在 TH18 引擎下含义完全不同。TH18 发给子机 VM 的只有 1/2/3：",
             "    //     `1` = 销毁（清槽）、`2` = 出场（+待机循环）、`3` = 进商店收起；",
-            "    //   零售同库 `ability.anm` 的子机脚本 s2/s6/s7/s14/s16/s18/s20/s22 就是这三个号（一手：",
+            "    //   原生同库 `ability.anm` 的子机脚本 s2/s6/s7/s14/s16/s18/s20/s22 就是这三个号（一手：",
             "    //   `Player__allocate_option` `th18:0x40a845` 取 `[0x4cf298]+0xc` = ability.anm 的句柄，",
             "    //   `ds:0x4cf298` 由 AbilityManager ctor `th18:0x40833d` 写、`th18:0x40834d push 0x4b4c10`",
             "    //   = 字符串 \"ability.anm\"；发送点 2=`th18:0x416d70`/`0x416dae`、3=`th18:0x416cf0`/`0x416d2e`、",
@@ -325,8 +325,8 @@ def header_lines(char, cn, kind, anm_name, src_num, sprite_map, engine_note):
             ]
     else:
         lines += [
-            "    // ★ `layer(13)` 是**零售自己写的**（TH16 那代 VM 的层由脚本给）⇒ 照抄，不改。",
-            "    // ★ 中断标签与 TH18 零售子机脚本**同款**、**一字未动**：`(2)` 出场、`(3)` 进商店收起、",
+            "    // ★ `layer(13)` 是**原版自己写的**（TH16 那代 VM 的层由脚本给）⇒ 照抄，不改。",
+            "    // ★ 中断标签与 TH18 原生子机脚本**同款**、**一字未动**：`(2)` 出场、`(3)` 进商店收起、",
             "    //   `(1)` 销毁 —— 天然对得上（一手：TH18 子机 VM 用 `ability.anm`，其 s2/s6/s7/s14/s16/",
             "    //   s18/s20/s22 都是这三个号；引擎的发送点见生成器文件头 ③）。",
         ]
@@ -334,7 +334,7 @@ def header_lines(char, cn, kind, anm_name, src_num, sprite_map, engine_note):
 
 
 def gen_script(src_text, src_num, new_num, char, cn, kind, anm_name, sprite_map, engine_note):
-    """→ (脚本文本, 与零售原文的 diff 行数, 省略的 ins_83 行)
+    """→ (脚本文本, 与原生原文的 diff 行数, 省略的 ins_83 行)
 
     ⚠ 只动两类行：`sprite(N)`→`sprite(@名字@)`、`interruptLabel(N)` 的**号**（`LABEL_MAP`）。
       段序/时序/数值/`jmp` 目标（都是 `offsetNN:` 段标签）一律不动。
@@ -350,24 +350,24 @@ def gen_script(src_text, src_num, new_num, char, cn, kind, anm_name, sprite_map,
         if m:
             indent = line[:len(line) - len(line.lstrip())]
             dropped.append(s)
-            body.append(f"{indent}// ★ 零售原文此处为 `{s}` —— 见文件头：TH18 的 anm v8 无此 opcode ⇒ 省略")
+            body.append(f"{indent}// ★ 原生原文此处为 `{s}` —— 见文件头：TH18 的 anm v8 无此 opcode ⇒ 省略")
             continue
         m = _LABEL_RE.match(line)
         if m and label_map is not None:
             old = int(m.group(2))
             if old not in label_map:
-                raise SystemExit(f"{char}: 零售脚本出现未登记的 `interruptLabel({old})` ⇒ 映射表要重核"
+                raise SystemExit(f"{char}: 原生脚本出现未登记的 `interruptLabel({old})` ⇒ 映射表要重核"
                                  f"（只重编号，不许照抄 TH08 的号）")
             new = label_map[old]
             relabeled.append((old, new))
             body.append(f"{m.group(1)}interruptLabel({new});{m.group(3)}"
-                        f"   // ★ 零售原文 `interruptLabel({old})` —— TH18 口径见文件头映射表")
+                        f"   // ★ 原生原文 `interruptLabel({old})` —— TH18 口径见文件头映射表")
             continue
         body.append(_SPRITE_CALL_RE.sub(lambda mm: f"sprite(@{sprite_map[int(mm.group(1))]}@)", line))
     if label_map is not None:
         missing = sorted(set(label_map) - {o for o, _ in relabeled})
         if missing:
-            raise SystemExit(f"{char}: 映射表里的 {missing} 在零售脚本里没出现 ⇒ 映射表/脚本号要重核")
+            raise SystemExit(f"{char}: 映射表里的 {missing} 在原生脚本里没出现 ⇒ 映射表/脚本号要重核")
     head = header_lines(char, cn, kind, anm_name, src_num, sprite_map, engine_note)
     text = "\n".join(body[:1] + head + body[1:]) + "\n"
     return text, dropped
@@ -381,7 +381,7 @@ def sprite_name(char, sid):
 
 def write_order(rows):
     lines = [
-        "# 永夜抄（系统卡 108）**低速子机（使い魔 / option）** —— 四支机体各自的零售子机贴图。",
+        "# 永夜抄（系统卡 108）**低速子机（使い魔 / option）** —— 四支机体各自的原生子机贴图。",
         "# 本片段由 assets/ability/make_youkai_option_art.py 生成（幂等，整段重写）；合并时把这些行追加进 ORDER.txt。",
         "# 每行 `NAME  源图(相对 assets/)  WxH`；WxH 都是 2 的幂 ⇒ 整张贴图一个 sprite。",
         "# ★ 一手（子机用哪支脚本/哪些 sprite）——**不是共享图集、也不是机体本体图**，每支机体一套：",
@@ -391,7 +391,7 @@ def write_order(rows):
         "#     经 `AnmLoaded::load_script_into_vm th08:0x4069f0` 装进 `option+0x0` 那个 AnmVm。",
         "#   TH16 `pl03.anm`（文）：本体子机脚本号 = `th16:0x492c00[CHARACTER]`（菜单序 {8,7,11,11}，",
         "#     `CHARACTER`=2 = 文，`th16:0x4443ad` 取值 + `AnmLoaded::copy_vm th16:0x407b20`）⇒ script11，sprite32..39。",
-        "# ★ 层：TH16 那支零售自带 `layer(13)`；TH08 那三支零售无 layer —— TH18 引擎在 `th18:0x40a8bc` 把子机 VM",
+        "# ★ 层：TH16 那支原版自带 `layer(13)`；TH08 那三支原版无 layer —— TH18 引擎在 `th18:0x40a8bc` 把子机 VM",
         "#   的层设成 14 ⇒ 不写 layer 即用 14（世界层），脚本里不编层号。",
     ]
     # ⚠ 数据行**严格 3 列**（`anmlib.read_order` 按空白切、只取 [0][1][2]；仓里既有片段全是 3 列）
@@ -399,7 +399,7 @@ def write_order(rows):
     last = None
     for name, path, size, sid, char, src in rows:
         if char != last:
-            lines.append(f"# —— {char}（{SOURCES_BY_CHAR[char][4]}）：零售 {src} = sprite"
+            lines.append(f"# —— {char}（{SOURCES_BY_CHAR[char][4]}）：原生 {src} = sprite"
                          f"{[r[3] for r in rows if r[4] == char]}（画布 "
                          f"{sorted({r[2] for r in rows if r[4] == char})}）——")
             last = char
@@ -431,7 +431,15 @@ def check_names(all_made):
     mine = {}
     for made in all_made.values():
         for name, (path, size, _sid, _vis, _cell) in made.items():
-            mine[name] = (path, size)
+            # ★ 主表 ORDER.txt 里的路径是相对 `assets/` 的（例如 `ability/youkai_option/…png`），
+            #   而 `crop_option()` 返回的是绝对 Path；这里必须归一成同一种字符串，否则已合并进
+            #   主表后每次重跑都会误报「重名/重路径不一致」，生成器直接退出。
+            try:
+                # ORDER.txt 的路径相对 `assets/`（= HERE.parent），不是相对 `assets/ability/`。
+                rel = path.relative_to(HERE.parent).as_posix()
+            except ValueError:
+                rel = path.as_posix()
+            mine[name] = (rel, size)
     if not MAIN_ORDER.is_file():
         print("  ⚠ 找不到 entries/ORDER.txt（主表），跳过重名检查")
         return
@@ -475,9 +483,9 @@ def check_label_maps(scripts):
         lm = LABEL_MAP[char]
         if lm is None:
             assert old == new, f"②bis {fname}: 这支不该动标签（{old} → {new}）"
-            print(f"  {fname}: 零售就是 TH18 口径 {new} ⇒ 一字未动 ✓")
+            print(f"  {fname}: 原生就是 TH18 口径 {new} ⇒ 一字未动 ✓")
             continue
-        assert sorted(lm) == sorted(old), f"②bis {fname}: 映射表的键 {sorted(lm)} != 零售标签 {sorted(old)}"
+        assert sorted(lm) == sorted(old), f"②bis {fname}: 映射表的键 {sorted(lm)} != 原生标签 {sorted(old)}"
         assert [lm[x] for x in old] == new, f"②bis {fname}: 生成结果 {new} != 映射 {[lm[x] for x in old]}"
         assert len(set(lm.values())) == len(lm), f"②bis {fname}: 映射不是双射 ⇒ 两段会撞号"
         assert not ({1, 2, 3} & (set(lm.values()) - {1, 2, 3, 4, 5, 6})), f"②bis {fname}: 越界"
@@ -489,11 +497,11 @@ def check_label_maps(scripts):
 
 
 def print_script_diffs(scripts):
-    print("\n# —— ④ diff 证据：零售原文（-）vs 生成脚本（+）—— 差异只有 sprite 引用 + 省略的 ins_83 "
+    print("\n# —— ④ diff 证据：原生原文（-）vs 生成脚本（+）—— 差异只有 sprite 引用 + 省略的 ins_83 "
           "+ 中断标签重编号 ——")
     for fname, (text, dropped, src, num, _char) in sorted(scripts.items(), key=lambda kv: kv[1][3]):
         retail_num = int(re.search(r"^script script(\d+) \{", src, re.M).group(1))
-        print(f"\n=== {fname}（新号 script{num} ← 零售 script{retail_num}；正文 {len(text.splitlines())} 行；"
+        print(f"\n=== {fname}（新号 script{num} ← 原生 script{retail_num}；正文 {len(text.splitlines())} 行；"
               f"省略 {len(dropped)} 行：{dropped or '—'}）")
         for line in difflib.unified_diff(src.splitlines(), text.splitlines(),
                                          "retail-original", "generated", lineterm="", n=0):
@@ -561,10 +569,10 @@ def main():
     _require(ANMMAP_V2, "TH08 用的 anmmap v2.anmm")
     _require(ANMMAP_V8, "TH16 / TH18 用的 anmmap v8.anmm")
     for kind, name, _n, _c, _cn, _ci, _note in SOURCES:
-        _require((TH08_DAT if kind == "th08" else TH16_DAT) / f"{name}.anm", f"{kind} 零售 {name}.anm")
+        _require((TH08_DAT if kind == "th08" else TH16_DAT) / f"{name}.anm", f"{kind} 原版 {name}.anm")
     for i, s in enumerate(SOURCES):
         SOURCES_BY_CHAR[s[3]] = s
-    # 每支子机都必须有标签映射的决定（None = 「零售本来就是 TH18 口径，一字不动」），不许漏
+    # 每支子机都必须有标签映射的决定（None = 「原生本来就是 TH18 口径，一字不动」），不许漏
     for _kind, _name, _n, _char, _cn, _ci, _note in SOURCES:
         assert _char in LABEL_MAP, f"LABEL_MAP 缺 {_char} 的决定 ⇒ 不许默默照抄 TH08 的标签号"
         if _kind == "th08":

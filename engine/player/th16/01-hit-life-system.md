@@ -24,7 +24,7 @@
 | **1** | 存活 | **吃炸弹输入**:`MAIN_BOMB_PTR`+`can_bomb`+`INPUT_RISING_EDGE&2` → 主炸;`SUBSEASON_BOMB_PTR`+
   `can_bomb`+`INPUT_RISING_EDGE&0x800` → 季节释放(见 `02`)。然后 `player_input_move`(移动/聚焦/开火,见 `03`) |
 | **2** | 死亡结算 / 复活等待 | 帧==3:**掉 power**(见 §4)+ 喷 7 个掉落物 + `repopulate_options`。帧>0x1d(29):命<0 且帧==0x1e → `FUN_0043f350`(Game Over,§6);否则**复活**(回状态 0,§5) |
-| **3** | (过场)| 帧==0xf 时 `et_clear_all_special(1)`;零售极少见,🟡 |
+| **3** | (过场)| 帧==0xf 时 `et_clear_all_special(1)`;原版极少见,🟡 |
 | **4** | **决死窗口(deathbomb)** | 帧>7 → `FUN_00443cd0`(commit 死亡,§4)然后落到状态 2 逻辑;否则按炸(`INPUT_RISING_EDGE&2`/`&0x800`)+`can_bomb` → `Bomb__activate_bomb` + `player_set_alive_after_bomb`(决死成功) |
 
 > 状态切换后,函数下半段(与状态无关)每帧还做:256 个伤害源运动/寿命更新(见 `engine/sht/th16/08`)、
@@ -159,7 +159,7 @@ player+0x628 = 0;  +0x624 = -1;                // 状态帧计数复位
 `CURRENT_BOMB_FRAGMENTS @0x4a5804`、`GLOBAL_MISS_COUNT @0x4a57cc`、`CURRENT_POWER @0x4a57e4`、
 `POWER_PER_LEVEL @0x4a57ec`。
 
-## 8. 关键数字一览(零售 TH16,一手)
+## 8. 关键数字一览(原版 TH16,一手)
 
 - **决死(deathbomb)窗口 ≈ 8 帧**(状态4,`+0x628` 0→7;帧>7 即 commit)。
 - **死亡惩罚**:命 −1、miss +1、power −半档(地板 1 档)、掉 7 个 power 道具、炸弹库存重置 3。

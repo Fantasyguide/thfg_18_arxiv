@@ -75,7 +75,7 @@
 - `build_abcard.py [--verify-only]`：读 `local/th18.v1.00a/anm/abcard/abcard.anm.txt`、`assets/cards/ORDER.txt`、`patch/th18/cards.js`；写 `native/build/abcard.anm`；stdout 打印 `NAME  large  small` 表；任何校验失败 exit 1。
 - 纯函数（供测试）：`parse_entries(spec_text) -> list[dict]`、`make_entry(template: dict, idx: int, name: str, png_rel: str) -> str`、`expected_sprites(order: list[str]) -> dict[str, tuple[int,int]]`、`check_cards_js(cards: dict, expected: dict, n_entries: int) -> list[str]`（返回错误行）。
 
-- [ ] 测试先写（不依赖 `local/`）：`expected_sprites(["A","B"]) == {"A": (118,119), "B": (120,121)}`；`check_cards_js` 对零售索引 ≤117 放行、对 ORDER 卡索引错值报错、对 ≥ n_entries 报错；`make_entry` 以内嵌的 BLANK 模板字符串生成 entry，断言 `name` 与 `sprite<idx>` 正确、其余字段原样。`python3 -m pytest native/tests/test_build_abcard.py -q` 先红。
+- [ ] 测试先写（不依赖 `local/`）：`expected_sprites(["A","B"]) == {"A": (118,119), "B": (120,121)}`；`check_cards_js` 对原生索引 ≤117 放行、对 ORDER 卡索引错值报错、对 ≥ n_entries 报错；`make_entry` 以内嵌的 BLANK 模板字符串生成 entry，断言 `name` 与 `sprite<idx>` 正确、其余字段原样。`python3 -m pytest native/tests/test_build_abcard.py -q` 先红。
 - [ ] 实现：复制 spec 文本（原 118 entry 与 18 脚本不动），在最后一个 `entry` 之后、第一个 `script` 之前插入新 entry；`_min` 用 PIL 垫到 64×128 写到 `native/build/tex/ability/<NAME>_min.png`，`_max` 校验 256×320 后拷到 `native/build/tex/ability/<NAME>_max.png`；把原 117 张贴图**软链**进 `native/build/tex/ability/`（thanm -c 在 `native/build/tex/` 里跑，spec 路径 `ability/...` 相对 cwd）；`thanm -c 18 ../abcard.anm abcard.spec -m <map>`；工具与 anmmap 沿用 Task 2 的探测逻辑（import `tooling/thtk/unpack.py` 里的 `find_tools()`）。
 - [ ] `--verify-only` / 构建后自检：`thanm -l` 重建文件 → entry 数 == 118 + 2·|ORDER|；`thanm -x` 到临时目录后原 117 张与 `local/.../anm/abcard/ability/*.png` 逐张 `filecmp`；新 entry 字段（除 name / sprite 名）== BLANK 模板；`check_cards_js` 零错误。
 - [ ] Makefile：`anm: ; python3 ../assets/build_abcard.py`；`anm-verify: ; python3 ../assets/build_abcard.py --verify-only`；`check: anm-verify`（原 `sites.py check` 保留）。`.gitignore` 加 `mods/**/native/build/`。
@@ -95,7 +95,7 @@
 ### Task 6: 文档回填
 
 **Files:**
-- Modify: `card-expand/DATA.md`（卡图一节：118 entry / sprite=entry / 118 起追加 / `assets/` 工作流；零售 sprite 表加 entry 名列，可由 `awk` 从 spec 生成后贴入）、`engine/card/th18/10-extensibility-limits.md` §5、`engine/card/th18/11-sentinels-56-57.md` 遗留问题段、`card-expand/MAP.md` 第 8 段、`card-expand/NEXT.md`、`card-expand/CARDS.md`（加「卡图」列）、`engine/anm/OVERVIEW.md`（加导航：thtk 工具链 / th18 全解包 / 三个卡牌 ANM 规模；不写引擎结论）、`mods/LESSONS.md`（开头补版本声明，清掉 check-docs 既有违规）
+- Modify: `card-expand/DATA.md`（卡图一节：118 entry / sprite=entry / 118 起追加 / `assets/` 工作流；原生 sprite 表加 entry 名列，可由 `awk` 从 spec 生成后贴入）、`engine/card/th18/10-extensibility-limits.md` §5、`engine/card/th18/11-sentinels-56-57.md` 遗留问题段、`card-expand/MAP.md` 第 8 段、`card-expand/NEXT.md`、`card-expand/CARDS.md`（加「卡图」列）、`engine/anm/OVERVIEW.md`（加导航：thtk 工具链 / th18 全解包 / 三个卡牌 ANM 规模；不写引擎结论）、`mods/LESSONS.md`（开头补版本声明，清掉 check-docs 既有违规）
 
 - [ ] 逐份改；引擎侧「运行时 sprite 上限」标 🟡 留 C 阶段。
 - [ ] `python3 tooling/check-docs.py` 零违规。

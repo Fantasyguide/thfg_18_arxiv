@@ -19,21 +19,21 @@
 #define CE_ADDR_CURRENT_BOMBS      0x4ccd58   /* = GlobalsInner+0x7c */
 #define CE_ADDR_BOMB_FRAGMENTS     0x4ccd5c   /* = GlobalsInner+0x80；HUD 炸弹行的第二个参数 */
 #define CE_ADDR_MAX_BOMBS          0x4ccd64   /* = GlobalsInner+0x88，CardBomb 每张 +1 钳 7 */
-#define CE_ADDR_GAME_THREAD_PTR    0x4cf2e4   /* 非 0 = 在游戏线程（零售即时卡 dtor 的门）*/
+#define CE_ADDR_GAME_THREAD_PTR    0x4cf2e4   /* 非 0 = 在游戏线程（原生即时卡 dtor 的门）*/
 #define CE_ADDR_CARD_PRICE_BY_TIER 0x4b35c4   /* int[15]，price_tier → 金钱（SM §「价格表」一手 dump）*/
 #define CE_ADDR_MONEY_ITEMS        0x4ccd20   /* int，吃到的金钱道具个数（collect_money_item 0x446d22 inc）*/
 #define CE_ADDR_CURRENT_POWER      0x4ccd38   /* OM §7；= GlobalsInner+0x5c（spend_power 0x457486 读写）*/
 #define CE_ADDR_MAX_POWER          0x4ccd3c
 #define CE_ADDR_POWER_PER_LEVEL    0x4ccd40   /* int（= 100）：一档火力，= GlobalsInner+0x64（spend_power 0x457489；Tsukasa 0x410e6d 门槛 = 2 档）*/
 #define CE_FN_SPEND_POWER          0x457480   /* GlobalsInner__spend_power：thiscall(GlobalsInner*; amount) ret 4。CURRENT_POWER <= 一档时拒绝（返回 0、不扣）；
-                                                 * 否则扣 amount 并钳到一档（永远保留 1.00），返回「档数是否变了」（0/1）。零售调用点：
+                                                 * 否则扣 amount 并钳到一档（永远保留 1.00），返回「档数是否变了」（0/1）。原生调用点：
                                                  * CardTsukasa__c_press 0x410f1c（push [0x4ccd40]; ecx = 0x4cccdc; call）、商店 0x418477、死亡 0x45c154。AUDIT §V */
 #define CE_FN_PLAYER_REPOPULATE_OPTIONS 0x45d5e0 /* Player__repopulate_options_and_notify_cards：thiscall(this = PLAYER+0x620; 一个从不读取的栈参) ret 4
                                                  * （尾 0x45dd0b `ret 4`；Tsukasa 0x410f27 `push ecx; lea ecx,[player+0x620]; call`）。按火力档重建自机子机、
                                                  * 尾部广播 on_power_level_change。扣火力后必须调（Tsukasa / 商店都这么做）。AUDIT §V */
 #define CE_PLAYER_INNER            0x620      /* zPlayer.inner（repopulate 的 this；首字段就是 pos，所以与 CE_PLAYER_X 同址）*/
 #define CE_FN_RNG_RAND_DWORD       0x402740   /* Rng__rand_dword：thiscall(zRng*)，无栈参，裸 ret，eax = 32 位随机（两步 16 位生成器拼起来；rng+4 计数 += 2）*/
-#define CE_ADDR_REPLAY_SAFE_RNG    0x4cf288   /* zRng REPLAY_SAFE_RNG（ExpHP）：弹幕 / 敌人 / 自机弹 / 零售卡（Suwako、Yachie、Miko）都用它；
+#define CE_ADDR_REPLAY_SAFE_RNG    0x4cf288   /* zRng REPLAY_SAFE_RNG（ExpHP）：弹幕 / 敌人 / 自机弹 / 原生卡（Suwako、Yachie、Miko）都用它；
                                                  * 0x4cf280 那个是商店 / UI 的非回放 RNG（pick_weighted_random_offer 0x41717b）。gameplay 随机一律走 0x4cf288。AUDIT §V */
 #define CE_ADDR_PLAYER_PTR         0x4cf410   /* zPlayer*（ExpHP statics；Nitori/Momoyo 都从这读）*/
 #define CE_ADDR_CHARACTER          0x4cccf4   /* int32 角色号 0..3（灵梦/魔理沙/咲夜/早苗）。一手
@@ -52,7 +52,7 @@
                                                  * → FUN_0042d040(drop, T)：写 +0xa4 并把计时器复位。
                                                  * 结算（0x430510 一手）：`n = ex_drop[i] + timed_ex_drop[i] × (T − timer)/T`
                                                  * ⇒ 出场 T 帧内给满、之后只剩 ex_drop。计时器 = +0xa8（cur 在 +0xac），
-                                                 * 由敌人每帧入口 FUN_0042ff80 的 0x430161 段内联 +1。零售普查：T=40..900、
+                                                 * 由敌人每帧入口 FUN_0042ff80 的 0x430161 段内联 +1。原生普查：T=40..900、
                                                  * 计数 1..20，越大只窗口越长、给得越多（engine/season/th18/01 §1b′）*/
 #define CE_ADDR_BOMB_MGR           0x4cf2b8   /* 炸弹管理器*；+0x30 = 「正在放炸弹」（do_bomb 置 1，Bomb__can_bomb_and_deathbomb_check 0x420420 查它；道具磁力判定 0x445bc4 也查它决定吸不吸）*/
 #define CE_ADDR_ABILITY_MGR_PTR    0x4cf298   /* zAbilityManager*（OM §4）*/
@@ -102,7 +102,7 @@
 #define CE_ED_INTERRUPT_SLOTS      8
 #define CE_FN_GUI_UPDATE_LIVES     0x441f10   /* thiscall(gui; lives, fragments, max) ret 0xc：刷 HUD 残机行（死亡 0x45c2xx、商店复原 0x4179xx 都调；一手反汇编 AUDIT O28）*/
 #define CE_SE_INVALID              0x10       /* 无效操作（商店买不起同款）*/
-#define CE_FN_BULLET_CANCEL_ALL    0x4297a0   /* thiscall(BULLET_MANAGER; 一个从不读取的栈参) ★ret 4（0x429a0e）：全屏消弹（弹 → 点道具 + 音效 0x47）。函数体自己读全局 0x4cf2bc；零售 ECL 消弹 case 0x434d48 `mov ecx,[0x4cf2bc]; push 0; call`（AUDIT O28h′）*/
+#define CE_FN_BULLET_CANCEL_ALL    0x4297a0   /* thiscall(BULLET_MANAGER; 一个从不读取的栈参) ★ret 4（0x429a0e）：全屏消弹（弹 → 点道具 + 音效 0x47）。函数体自己读全局 0x4cf2bc；原生 ECL 消弹 case 0x434d48 `mov ecx,[0x4cf2bc]; push 0; call`（AUDIT O28h′）*/
 #define CE_FN_BULLET_CANCEL_RADIUS_AS_BOMB 0x429370 /* stdcall(pos*, mode, max_count, tag) + ★XMM2 = 半径；四个出口都 ret 0x10。命中：state∈{1,2} 且 bullet+0x24==0 且 dist² ≤ (弹半径(+0x658)×0.5 + R)²；每消一发 Bullet__cancel(b, mode) 0x428e90 + counter++；消满 max_count 立即返回（Tenshi 0x40eb13..0x40eb2f，AUDIT O29a）*/
 #define CE_BM_CANCEL_COUNTER       0x7a41e8   /* int：cancel_radius_as_bomb 每消一发 ++；Tenshi 每帧调前清零、调后读（0x40eb56）。ExpHP __some_cancel_related_counter */
 #define CE_FN_PLAYER_DMGSRC_RECT   0x45dfa0   /* stdcall(center*, angle, 寿命帧, 每次伤害) + ★XMM2 = 宽、XMM3 = 高；ret 0x10；返回 1-based 槽号。矩形伤害源（flags &~6|1）：+0xc 角度、+0x14/+0x18 宽高、+0x7c 累计上限 9999999、+0x80 命中间隔 1。Remilia 0x40f4a6 调 (玩家上方, 0.0, 2, 200) 宽 32（AUDIT O29b）*/
@@ -113,7 +113,7 @@
 #define CE_ADDR_ANM_MANAGER_PTR    0x51f65c   /* zAnmManager*（ExpHP ANM_MANAGER_PTR；interrupt_tree 0x488be3 读）*/
 #define CE_FN_ANM_GET_VM_WITH_ID   0x488b40   /* thiscall(ANM_MANAGER; id) ret 4 → zAnmVm* / 0（fast 数组 0x624 步长或 world/ui 链表；AUDIT O29c）*/
 #define CE_FN_ANM_INTERRUPT_TREE   0x488be0   /* stdcall(id, n) ret 8：自取 ANM_MANAGER_PTR，找到 VM 写 +0x494 = n 并递归子树（Tenshi 到时长调 (id, 1)）*/
-/* ---- HUD 文字（zAsciiManager）。一手 2026-09-08：零售 `CardMomoyo__on_draw` `0x4110a0` 的调用点逐指令读出来的
+/* ---- HUD 文字（zAsciiManager）。一手 2026-09-08：原生 `CardMomoyo__on_draw` `0x4110a0` 的调用点逐指令读出来的
  * （AUDIT §AC）——它就是「一张卡在 HUD 上画数字」的现成先例，走的也是虚表 `+0x48 on_draw`。 */
 #define CE_ADDR_ASCII_MANAGER_PTR  0x4cf2ac   /* zAsciiManager*（th-re-data statics 同名，交叉对上）*/
 #define CE_ADDR_UI_SCALE           0x56aca0   /* float：全局 UI 缩放（`DAT_0056aca0`）。1280×960 → 2.0。
@@ -235,7 +235,7 @@
 #define CE_CARD_ARRAY_INDEX        0x08
 #define CE_CARD_LIST_NODE          0x0c
 #define CE_CARD_OPTION_ANM_ID      0x1c       /* 装备卡子机的 anm vm id —— Player__allocate_option `0x40a790` 顺手写这里；
-                                                 零售 `CardReimu1__operator_delete` `0x40ab20` 在析构时按它删 VM（ExpHP anm_id_for_ingame_effect）*/
+                                                 原生 `CardReimu1__operator_delete` `0x40ab20` 在析构时按它删 VM（ExpHP anm_id_for_ingame_effect）*/
 #define CE_CARD_ELAPSED_TIMER      0x20       /* zTimer：激活经过帧（每帧 Timer__increment；OM §3 订正）*/
 #define CE_CARD_RECHARGE_TIMER     0x34       /* zTimer：充能倒计时（空闲时 Timer__decrement；c_press 门控 +0x38 <= 0）*/
 #define CE_CARD_RECHARGE_TIME      0x48
@@ -244,11 +244,11 @@
 #define CE_FLAG_EQUIPMENT          0x40       /* flags bit6：装备卡（recount 0x408164 test al,0x40 → num_equipment）*/
 #define CE_FLAG_FIRING             0x20       /* flags bit5：正在释放（HUD 配色，method_40）*/
 #define CE_FLAG_ACTIVE_CLEAR       0x46       /* 主动卡 case 清的位（0x411d83 and ~0x46 | 8）*/
-#define CE_FLAG_EQUIPMENT_SET      0x44       /* 零售装备卡 case 的写法：flags & ~0x0a | 0x44（allocate_new_card 里 REIMU_OP…NUE_OP 那 14 个 case；case 56 走被动 & ~0x4a | 4）。SDK 绑定时对 category 1 的卡照此改（AUDIT X11）*/
+#define CE_FLAG_EQUIPMENT_SET      0x44       /* 原生装备卡 case 的写法：flags & ~0x0a | 0x44（allocate_new_card 里 REIMU_OP…NUE_OP 那 14 个 case；case 56 走被动 & ~0x4a | 4）。SDK 绑定时对 category 1 的卡照此改（AUDIT X11）*/
 #define CE_FLAG_EQUIPMENT_CLEAR    0x0a
-#define CE_FLAG_EQUIP_RESET_BIT1   0x02       /* flags bit1：🟡 语义未确认 —— 只知道零售装备卡在 `method_4C` / `____on_load__2`
+#define CE_FLAG_EQUIP_RESET_BIT1   0x02       /* flags bit1：🟡 语义未确认 —— 只知道原生装备卡在 `method_4C` / `____on_load__2`
                                                * （`CardReimu1` `0x40aad0` / `0x40aab0`）里清它，且它在 EQUIPMENT_CLEAR(0x0a) 里。
-                                               * 名字只描述「零售在收起子机时清的那一位」，不主张它是什么。SDK 的 ce_option_drop 照抄。*/
+                                               * 名字只描述「原生在收起子机时清的那一位」，不主张它是什么。SDK 的 ce_option_drop 照抄。*/
 #define CE_CARD_TABLE_ENTRY        0x4c
 #define CE_CARD_FLAGS              0x50       /* bit0 存档/replay 装载，bit3 主动，bit5 开火中，bit6 装备 */
 #define CE_CARD_OBJECT_SIZE        0x54
@@ -293,8 +293,19 @@
 #define CE_PB_STRIDE               0xf8
 #define CE_PB_VM_ID                0x08       /* 弹的 anm vm id（激光 = 束 VM；tick2 收束时对它发 interrupt 1）*/
 #define CE_PB_STATE                0x8c       /* 1 = 活动、2 = 完成（`0x45fc80` 自杀段 / `0x45f6f0` 命中段都写 2）*/
+#define CE_PB_PACKED_ID            0xac       /* `PlayerBullet__create` `0x45e35c` 写 `(set<<8)|row`；`tick2`/命中回查都用它解 shooter 行 */
 #define CE_PB_OPTION               0xe4       /* 指向发射它的子机 zPlayerOption*（`PlayerBullet__create` `0x45e3ae` 从第 5 个栈参写）*/
 #define CE_PB_DAMAGE_IDX           0xb0       /* 伤害源下标（`tick_bullets` `0x45ee6f` 用它算 `PLAYER+0x204d8+idx*0x9c`）*/
+
+/* ---- mode=2 激光的「每槽一发」去重表（`player+0x476fc`，30 项，一手）----
+ * `PlayerBullet__create` `0x45e49d` 写当前火力档；`Player__shoot_one_bullet` `0x45e96e` 见
+ * 该槽非 0 就整条 `mode=2` row 早退（`0x45e9c6 ret 0x10`）；`tick2` 自杀段 `0x4602c1` 清 0。
+ * 引擎自己的收束顺序 = 状态置 2（`0x460296`）→ VM interrupt 1（`0x4602a0`）→ 清这个槽
+ * （`0x4602c1`）。少清这一格 = 该子机之后再也发不出 mode=2 激光，直到重开。*/
+#define CE_PLAYER_MODE2_LOCK_BASE   0x476fc  /* dword[30]；初始化 `0x45ad54` memset 0x78 字节 */
+#define CE_PLAYER_MODE2_LOCK_SLOTS  30
+#define CE_SHT_ROW_OPT_SLOT        0x20      /* shooter 行低 4 位 = option 槽；>=0x10 时引擎取高 4 位为去重槽 */
+#define CE_SHT_ROW_MODE            0x21      /* 2 = mode=2 激光 */
 
 /* ---- zPlayer 的头两个 anm 指针（`Player__initialize` `0x45a7b8` / `0x45a7c3` 一手：
  * `preload_anm(9, pl0X.anm)` 的返回值同时写进 `+0x0c` 与 `+0x10`）---- */
@@ -321,7 +332,7 @@ typedef struct { int32_t prev; int32_t cur; float cur_f; } ce_timer_t;   /* zTim
 #define CE_SE_EXTEND     0x11   /* 音效 id（engine/_shared/th18-sound-table.md 一手）*/
 #define CE_SE_BOMB       0x2c
 #define CE_SE_CARDGET    0x2e
-#define CE_SE_PIN00      0x39   /* 收点结算钟声：TH14 v1.00b 原生结算同 id 同 wav 同调校（AUDIT §Z17）*/
+#define CE_SE_PIN00      0x39   /* 收点结算钟声：TH14 v1.00b 原版结算同 id 同 wav 同调校（AUDIT §Z17）*/
 #define CE_SE_RELEASE    0x4d   /* Tenshi 发动 */
 #define CE_SE_CHANGEITEM 0x4e   /* 切主动卡 */
 #define CE_SE_TROPHY     0x4f
@@ -349,7 +360,7 @@ typedef struct { int32_t prev; int32_t cur; float cur_f; } ce_timer_t;   /* zTim
                                               —— 一手：`0x42d7d6 push 0x683c` 分配 → `0x42d7ed call 0x42e100`
                                               Enemy__constructor(名字表 = `enemy+0x1218` 二分查 ECL 子程序，未命中写 -1)
                                               → 拷 spawn 字段 → `0x42d9e7` 挂 `mgr+0x190` 链表、`0x42d9ef inc [mgr+0x198]`、
-                                              `0x42d9ed mov eax,esi` **返回敌人指针**。零售调用点 `0x40ff46`（CardLilyWhite：
+                                              `0x42d9ed mov eax,esi` **返回敌人指针**。原生调用点 `0x40ff46`（CardLilyWhite：
                                               `push 垃圾 / mov ecx,mgr / push &spawn / push 名字`）。★ 死亡栈里禁止调（DEATH §2.4）。*/
 /* spawn 结构（0x54 字节；一手字段表 plans/2026-09-10-ufo-card-feasibility.md §1.1）*/
 #define CE_SPAWN_POS        0x00   /* float3 出生世界坐标 → `enemy+0x12b4`（zEnemyData.abs_pos）*/
@@ -374,7 +385,7 @@ typedef struct { int32_t prev; int32_t cur; float cur_f; } ce_timer_t;   /* zTim
 #define CE_OPT_POS_X               0x5c       /* 定点数，× 1/128 = 像素（`0x40a9c0` 出膛坐标就取这两个）*/
 #define CE_OPT_POS_Y               0x60
 #define CE_OPT_OFF_NF_X            0x64       /* 非聚焦位置偏移 x（定点 ×1/128）：`Player::allocate_option` `th18:0x40a80a` 写 0，
-                                               * 零售卡 `th18:0x40b8c1` 写它 → 卡可以自己摆阵型 */
+                                               * 原生卡 `th18:0x40b8c1` 写它 → 卡可以自己摆阵型 */
 #define CE_OPT_OFF_NF_Y            0x68       /* 非聚焦位置偏移 y（allocate_option 从第 2 个栈参 ×128 写，`th18:0x40a7fc`）*/
 #define CE_OPT_OFF_F_X             0x6c       /* 聚焦位置偏移 x（allocate_option 写 0，`th18:0x40a811`）*/
 #define CE_OPT_OFF_F_Y             0x70       /* 聚焦位置偏移 y（allocate_option 从第 5 个栈参 ×128 写，`th18:0x40a805`）*/
@@ -455,8 +466,8 @@ typedef struct { int32_t prev; int32_t cur; float cur_f; int32_t speed_src; uint
 #define CE_ITEM_TIMER             0xc84      /* int：延迟/倒计时（spawn 第 6 栈参；state 1/5 各用其一，0x445b7e / 0x445af3）*/
 #define CE_ITEM_SOUND_ID          0xc90      /* int32：**出生 intro 结束那一帧**由引擎播的 SE id（<0 = 不播）。
                                                 一手 `th18:0x447323`：`eax=[edi+0xc90]; if (eax>=0) call 0x476be0(eax,…)`
-                                                （0x476be0 = 12 通道的 SE 播放器）。零售 spawn 把它**恒写 -1**
-                                                （`th18:0x447057` / `0x447295`）⇒ 零售道具这条音是**死的**；
+                                                （0x476be0 = 12 通道的 SE 播放器）。原生 spawn 把它**恒写 -1**
+                                                （`th18:0x447057` / `0x447295`）⇒ 原生道具这条音是**死的**；
                                                 本卡拿它当「道具出现」的播音（每颗各自在自己的 intro 末尾响）。
                                                 ★ 只有 type {1,2} 的 intro-end 走这条路（`0x4472ee`），
                                                 别的 type 在 `0x4472e4` 段直接跳走 ⇒ 对它们写这个字段无效。

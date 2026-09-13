@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""TH18 **font 2** 的字形切图（零售原样，不重画）—— 给「贴图 VM 版数字」用。
+"""TH18 **font 2** 的字形切图（原生原样，不重画）—— 给「贴图 VM 版数字」用。
 
     python3 make_font2_art.py
 
 为什么要切它：卡里的数字原来是 ASCII 文字（`AsciiManager__draw_string`），而 ASCII 文字
 **永远画不到暂停模糊罩下面**（唯一的早于罩子的绘制趟 group 1 落在 surface 1 + 相机 0，
 实跑不可见，见 `cards/season.c` 的组号注释）。改成贴图 VM 才能进 UI 层 → 被罩住。
-贴图**必须用零售字形**，所以从零售 `ascii1280.anm` 的 `ascii_1280.png` 直接切。
+贴图**必须用原生字形**，所以从原生 `ascii1280.anm` 的 `ascii_1280.png` 直接切。
 
 一手依据（`local/th18.v1.00a/anm/ascii1280/ascii1280.anm.txt` + `ascii.anm.txt` 对照）：
 

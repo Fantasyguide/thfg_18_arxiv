@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""给 256×320 的卡图加零售同款边框（程序合成，不含零售像素）。
+"""给 256×320 的卡图加原生同款边框（程序合成，不含原生像素）。
 
     python3 cardframe.py                 # 给 cards/*_max.png 全部补框（已补过的跳过）；_min 一律从 cards/_art/NAME.png（无框画面）重出
     python3 cardframe.py NAME [NAME…]    # 只处理这几张
 
-零售 _min 是裸画面（64×80，无框）——HUD 卡组图标不带框；只有 _max 带框。所以无框画面要留一份：cards/_art/NAME.png（256×320）。
+原生 _min 是裸画面（64×80，无框）——HUD 卡组图标不带框；只有 _max 带框。所以无框画面要留一份：cards/_art/NAME.png（256×320）。
 
-零售 abcard 的框（117 张逐像素一致，量自 KANAME_max / ALICE_OP_max）：
+原生 abcard 的框（117 张逐像素一致，量自 KANAME_max / ALICE_OP_max）：
   外圈 3 px 纯黑 → 13 px 深色斜面 → 2 px 纯黑 → 画面区 220×284（每边内缩 18 px）。
   斜面底色 (35,24,21)；每条边中点有一道高光，沿边按 1 − (偏移/半长)² 衰减（左右半长 100，上下 64），
   越靠内越亮（左右：外 101 → 内 133；上下：外 43 → 内 80），四角斜接。
@@ -94,7 +94,7 @@ ART = CARDS / "_art"
 
 
 def save_min_from_art(name: str, art: Image.Image):
-    """_min = 无框画面缩到 64×80（零售同款：HUD 图标不带框）。"""
+    """_min = 无框画面缩到 64×80（原生同款：HUD 图标不带框）。"""
     art.convert("RGBA").resize((MIN_W, MIN_H), Image.LANCZOS).save(CARDS / f"{name}_min.png")
 
 

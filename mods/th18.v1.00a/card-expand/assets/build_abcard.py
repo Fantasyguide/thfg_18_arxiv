@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""把 cards/ 里的新卡图追加进零售 abcard.anm，重编到 native/build/abcard.anm，并校验。
+"""把 cards/ 里的新卡图追加进原生 abcard.anm，重编到 native/build/abcard.anm，并校验。
 
     python3 build_abcard.py                # 构建 + 自检 + 校验 cards.js 索引
     python3 build_abcard.py --verify-only  # 只自检已有的 build/abcard.anm
 
 索引规则：cards/ORDER.txt 第 k 行（0 起）→ sprite_large = base + 2k，sprite_small = base + 2k + 1，
-base = 零售 entry 数（th18 = 118；abcard 里 sprite 号 = entry 号）。
+base = 原生 entry 数（th18 = 118；abcard 里 sprite 号 = entry 号）。
 新 entry 的字段照抄 BLANK_max / BLANK_min（只换 name 与号）；_min 源图 64×80 垫成 64×128 透明底。
 任何校验不过 → exit 1，**不会**去改 JSON。通用部分在 anmlib.py。
 """
@@ -30,7 +30,7 @@ def expected_sprites(order, base: int):
 
 
 def check_cards_js(cards: dict, expected: dict, n_entries: int, base: int):
-    """→ 错误行列表。规则：索引都 < n_entries；ORDER 里的卡必须等于推出的对；不在 ORDER 的卡只能用零售索引（< base）。"""
+    """→ 错误行列表。规则：索引都 < n_entries；ORDER 里的卡必须等于推出的对；不在 ORDER 的卡只能用原生索引（< base）。"""
     errs = []
     for cid, c in cards.items():
         nm = c.get("internal_name", "?")
@@ -93,7 +93,7 @@ def main():
             blocks.append(make_entry(tpl_max, lg, f"ability/{name}_max.png"))
             blocks.append(make_entry(tpl_min, sm, f"ability/{name}_min.png"))
         L.compile_anm(insert_entries(retail_text, blocks), TEX, OUT_ANM, tools, anmmap)
-        print(f"build: {OUT_ANM.relative_to(MOD)}（{OUT_ANM.stat().st_size:,} B）；零售 entry {base}，追加 {2 * len(order)}")
+        print(f"build: {OUT_ANM.relative_to(MOD)}（{OUT_ANM.stat().st_size:,} B）；原生 entry {base}，追加 {2 * len(order)}")
 
     _, rebuilt, _ = L.verify_rebuilt(OUT_ANM, retail_text, retail_dir, tools, anmmap)
     if len(rebuilt) != base + 2 * len(order):
@@ -108,7 +108,7 @@ def main():
     errs = check_cards_js(json.loads(CARDS_JS.read_text(encoding="utf-8")), exp, len(rebuilt), base)
     if errs:
         raise SystemExit("cards.js 索引校验不过：\n  " + "\n  ".join(errs))
-    print(f"verify: entry {len(rebuilt)} = {base} + 2×{len(order)}；零售 spec/贴图逐项一致；cards.js 索引一致\n")
+    print(f"verify: entry {len(rebuilt)} = {base} + 2×{len(order)}；原生 spec/贴图逐项一致；cards.js 索引一致\n")
     print(f"{'NAME':<16}{'sprite_large':>13}{'sprite_small':>13}")
     for name, (lg, sm) in exp.items():
         print(f"{name:<16}{lg:>13}{sm:>13}")

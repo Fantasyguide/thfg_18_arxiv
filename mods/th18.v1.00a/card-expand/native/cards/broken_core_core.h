@@ -6,7 +6,7 @@
 #pragma once
 #include <stdint.h>
 
-#define BC_PERIOD     60        /* 帧：蓄满一发要 1 秒（2026-09-06 平衡：120 → 60，名义 DPS 40 → 120，零售子机卡中位 120–135）*/
+#define BC_PERIOD     60        /* 帧：蓄满一发要 1 秒（2026-09-06 平衡：120 → 60，名义 DPS 40 → 120，原生子机卡中位 120–135）*/
 #define BC_HIT_FRAMES 4         /* 一道闪电的伤害拆成连续 4 帧、每帧一个新伤害源（一个源对同一敌人只算一次）：单帧 30 才不撞每帧上限（Sakuya 60）*/
 #define BC_DMG_FRAME  30        /* 每帧 30 × 4 = 一道 120 */
 #define BC_RANGE      512.0f    /* 锁敌半径（抄 CardAlice 的搜索半径 `0x4b93b0`）*/

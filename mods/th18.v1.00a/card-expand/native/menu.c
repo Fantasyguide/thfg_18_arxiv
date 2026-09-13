@@ -1,12 +1,12 @@
 /* menu.c —— 战线 E 第二块：让新卡出现在图鉴与卡组编成里。
  *
- * 两个菜单（同一个 zAbilityMenu 对象，模式不同）都按**显示顺序表**（零售 0x4b3600，57 个 id）走：
+ * 两个菜单（同一个 zAbilityMenu 对象，模式不同）都按**显示顺序表**（原生 0x4b3600，57 个 id）走：
  *   图鉴   for i in 0..COUNT-1: __card_ids[i] = order[i]      COUNT 是写死的 0x38（7 处立即数）
  *   编成   for 每个 order[] 项 直到尾界: 可见(+0x20) 且已解锁 → 收进 __card_ids[n++]
  *
  * patch 已把顺序表搬进 codecave（255 项，尾界 = 255 项处）、把 __card_ids 从 +0x304
  * 搬到对象尾部 +0x13fc（255 项）、把编成前的清理循环抬到 255。这里在门里做剩下的：
- *   1. 重排顺序表：[零售 0..55 原序，新 id 按类别插进同类别区段末尾（ce_build_order）, 56(NULL=空槽), 其余填 57(BACK)]
+ *   1. 重排顺序表：[原生 0..55 原序，新 id 按类别插进同类别区段末尾（ce_build_order）, 56(NULL=空槽), 其余填 57(BACK)]
  *      57 在编成里不可见（+0x20 = 0），图鉴按条目数走不到它。
  *   2. 把图鉴条目数的 7 处立即数写成 56 + N。两处是 cmp r,imm8（符号扩展）→ 条目数 ≤ 127。
  *   3. 核对 patch 的 27 处（7 顺序表 + 20 zAbilityMenu）都打上了。
@@ -47,15 +47,15 @@ static int check_sites(uint8_t *base, uint32_t *order)
     return bad == 0;
 }
 
-/* 顺序表重排。零售表 [56] 必须是 56（NULL），否则这不是我们认识的表。
- * 新卡不再一股脑排在零售之后，而是按类别（表行 +0x0c）插进零售同类别**最长连续段**的末尾（ce_build_order，主机单测）：
+/* 顺序表重排。原生表 [56] 必须是 56（NULL），否则这不是我们认识的表。
+ * 新卡不再一股脑排在原生之后，而是按类别（表行 +0x0c）插进原生同类别**最长连续段**的末尾（ce_build_order，主机单测）：
  * 资源跟着 MOKOU、装备卡跟着 MAGATAMA、被动跟着 MUKADE（而不是掉队在最后的 MAGATAMA2）、主动跟着 RICEBALL。
  * 类别从已填好的表里读（门里此时表已装载）。类别字段在引擎里唯一的消费者是 0x416940（≠ 4 才显示说明面板），不碰玩法。*/
 typedef uint8_t *(__attribute__((fastcall)) *menu_table_get_t)(uint32_t id);
 static uint32_t card_category(uint32_t id)
 {
     const uint8_t *row = ((menu_table_get_t)CE_FN_TABLE_GET)(id);
-    return row ? *(const uint32_t *)(row + 0x0c) : 4u;         /* 4 = 哨兵类别：零售表里没有 → 排最后 */
+    return row ? *(const uint32_t *)(row + 0x0c) : 4u;         /* 4 = 哨兵类别：原生表里没有 → 排最后 */
 }
 
 static int rebuild_order(uint8_t *base, uint32_t *order)

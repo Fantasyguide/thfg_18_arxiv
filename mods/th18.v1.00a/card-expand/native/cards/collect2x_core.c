@@ -33,7 +33,7 @@ int c2x_maybe_settle(c2x_state_t *s, int32_t frame, c2x_settle_out_t *out)
     out->fragment_count = 0;
     out->batch_score = 0;
     if (!s->batch_open) return 0;
-    /* 批闭门 = TH14 timer 语义（§Z21 = presence + 原生 8）：last_event_at 由收集（absorb）和
+    /* 批闭门 = TH14 timer 语义（§Z21 = presence + 原版 8）：last_event_at 由收集（absorb）和
      * 吸附中 presence 双源续期 —— 有批集道具在飞（state 3/4）就不让 idle 走完，批闭只发生在
      * 「吸附空且无新收」的真停段 ~8 帧后；落地休止/抛物中的场道具不续（TH14 原义，0x43898e
      * 只盖在飞）。§Z20 的 8–25 帧波内空洞 = 在飞散布 → presence 盖掉，不再需要 30 帧大窗。 */

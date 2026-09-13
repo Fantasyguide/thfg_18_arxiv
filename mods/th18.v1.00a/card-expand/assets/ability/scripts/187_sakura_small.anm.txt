@@ -1,5 +1,5 @@
 script script187 {
-    // ★妖妖梦**小樱点**道具本体（TH07 item type 8）—— 正文逐条照抄零售 TH07 `data/etama.anm`
+    // ★妖妖梦**小樱点**道具本体（TH07 item type 8）—— 正文逐条照抄原版 TH07 `data/etama.anm`
     //   **entry1**（贴图 `data/etama/etama2.png`）的 **script61**，只把 `sprite(sprite12)`
     //   换成 `@SAKURA_SMALL`（见文件尾的一手原文 diff）。
     // 一手 ✅：与 script200（樱点）同一条链——道具脚本号 = 0x2c4 + type（`th07:0x433bed`），
@@ -11,8 +11,8 @@ script script187 {
     //   `th07:0x4247a7..0x4247e3`（amount ≥ 3）**只掉 type 8** ⇒ 场上成片掉的那种。
     // ⚠️ 与 TH08 的同位脚本（script69）的**唯一**差别：TH08 那支在 `sprite(...)` 后多一条
     //   `static();`，TH07 这条**没有** ⇒ 小樱点在第 0 帧就会执行到 `angleVel(0,0,0.3926991f)`
-    //   （**0.3926991 rad/帧 ≈ 22.5°/帧 自转**）。零售如此，照抄，不补 `static()`。
-    // ⚠️ **层：零售脚本不设 layer**（同 script200 的说明）⇒ 这里不加，保持零偏差。
+    //   （**0.3926991 rad/帧 ≈ 22.5°/帧 自转**）。原生如此，照抄，不补 `static()`。
+    // ⚠️ **层：原生脚本不设 layer**（同 script200 的说明）⇒ 这里不加，保持零偏差。
     // 一手原文 diff（`sprite(...)` → `@...` 是**唯一**差异）：
     //   -    sprite(sprite12);
     //   +    sprite(@SAKURA_SMALL);

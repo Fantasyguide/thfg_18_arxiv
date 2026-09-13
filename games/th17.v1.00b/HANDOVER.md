@@ -27,7 +27,7 @@
 | 函数 dump | `local/th17.v1.00b/th17-funcs.json`（1967 条）|
 
 - **样本是 Steam 包装版**，用本仓 `tooling/steamless/` 脱的壳（`local/` 全部 gitignored，换机器要自己放样本，见 `local/README.md`）。
-- **脱壳版 md5 ≠ 零售版**（只重建了 PE 容器），但代码段字节是零售的 —— 抽检：ExpHP 的 **781 个函数地址里 780 个**精确落在同名函数入口（唯一例外 `0x421120` 是 Ghidra 切分差异），动物灵 13 个函数序言 13/13 合法。记录见 [`engine/animal/th17/01`](../../engine/animal/th17/01-animal-spirits.md) §1。
+- **脱壳版 md5 ≠ 原版版**（只重建了 PE 容器），但代码段字节是原版的 —— 抽检：ExpHP 的 **781 个函数地址里 780 个**精确落在同名函数入口（唯一例外 `0x421120` 是 Ghidra 切分差异），动物灵 13 个函数序言 13/13 合法。记录见 [`engine/animal/th17/01`](../../engine/animal/th17/01-animal-spirits.md) §1。
 - 环境（缺什么先 `python3 tooling/doctor.py`）：Ghidra 12.x + JDK 21 + 带 pyghidra 的 python；`source tooling/env.sh` 导出 `GHIDRA_INSTALL_DIR` / `JAVA_HOME`。
 - ⚠️ **本机 `thanm` 没有 `spec` 子命令**：脚本文本用 `-l VERSION`，贴图用 `-x VERSION -u`。
 
@@ -170,7 +170,7 @@ python3 tooling/ghidra/scripts/find_struct_writes.py th17 0x50
 
 ## 7. 陷阱（踩过的）
 
-- **脱壳版 md5 与零售不同**：别拿 md5 去对「是不是原版」；用**代码段对齐抽检**（§1）。
+- **脱壳版 md5 与原版不同**：别拿 md5 去对「是不是原版」；用**代码段对齐抽检**（§1）。
 - **`thanm` 没有 `spec`**：脚本文本 `-l`、贴图 `-x -u`。
 - **ExpHP 名字先当 🟡**：本次实测 `GoastManager::operator new` `0x40e420` 其实是**构造函数**；
   `on_draw` `0x40f970` 是纯 stub（`mov eax,1; ret`）。
@@ -188,14 +188,14 @@ python3 tooling/ghidra/scripts/find_struct_writes.py th17 0x50
   唯一被继承的思路是 `Player::cancel_impending_death`（`th18:0x45d590`），我们的卡侧 deathbomb 钩子接在这条线上。
   **2026-09-10**：卡侧复刻已落地（card-expand id 117「鬼形兽」**Stage 2**）——
   [`mods/th18.v1.00a/card-expand/native/cards/animal.c`](../../mods/th18.v1.00a/card-expand/native/cards/animal.c) +
-  `animal_core.c`（纯逻辑 116 断言），动物灵实体 = 自建 VM 池 + 零售 `beast1.png` 切图（DVD 式弹跳 /
+  `animal_core.c`（纯逻辑 116 断言），动物灵实体 = 自建 VM 池 + 原版 `beast1.png` 切图（DVD 式弹跳 /
   24 px 吸收 / 60 px 减速 / 变色 / 版边消失），审计 `AUDIT.md` §AL、实跑清单 `NEXT.md` §1v；
   本文 §4/§5 的掉落 / 队列 / 时长表 / 霊撃 / 中弹链数值被逐条照抄。
   **咆哮的 shot 组**（狼 = `set 11..14`、鹫 = `16..19`）也已解码并追加进 TH18 的 `pl0X.sht`：布局 / 全解码 /
   func 与 anm 映射见 [`engine/sht/th17/01`](../../engine/sht/th17/01-file-layout-and-shooterset-index.md)、
   [`02`](../../engine/sht/th17/02-hyper-shot-groups.md)。⚠️ 那两组**分机体**（霊夢 / 魔理沙 / 妖夢 字节全不同）、
   **不分火力档也不分 shot type**；TH18 只有霊夢 / 魔理沙能同源，**咲夜 / 早苗 目前是替身** ——
-  待定方案（A 保持 / B 按本人原生弹幕放大 / C 借妖夢）与四个机体的原生弹幕对照写在
+  待定方案（A 保持 / B 按本人原版弹幕放大 / C 借妖夢）与四个机体的原版弹幕对照写在
   [`mods/th18.v1.00a/card-expand/NEXT.md`](../../mods/th18.v1.00a/card-expand/NEXT.md) §1v-补。
 - **跨版本台账**：[`engine/_shared/version-residuals.md`](../../engine/_shared/version-residuals.md)。
 - **本作登记与导航**：[`INDEX.md`](INDEX.md)（样本 / 符号覆盖 / 待挖图）。

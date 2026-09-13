@@ -23,7 +23,7 @@ def emit_sound_codecaves():
 
     新行骨架只写 `+0 = 84+k`（满足 I1）—— 其余四个字段要的正是 0，而
     **thcrap 把只给 size 的 codecave 清零**（同 th18_card_unlocked 的依赖）。
-    `+4 = 0` 让未登记的新 id 指向零售 wav 0（se_plst00），满足 I2：
+    `+4 = 0` 让未登记的新 id 指向原生 wav 0（se_plst00），满足 I2：
     blob 非 NULL，不会掉进 0x4776f0 的 Sleep(10) 死等。
     """
     assert S.CFG_ROWS * S.CFG_ROW % 4 == 0
@@ -42,18 +42,18 @@ def emit_sound_codecaves():
     code = "".join([
         "fc",                                                  # cld
         "60",                                                  # pushad
-        # ① 零售 84 行 cfg → cave
+        # ① 原生 84 行 cfg → cave
         "bf<codecave:%s>" % S.CAVE_CFG,                        # mov edi, cfg cave
-        "be<Rx%x>" % S.CFG_RVA,                                # mov esi, 零售 cfg 表
+        "be<Rx%x>" % S.CFG_RVA,                                # mov esi, 原生 cfg 表
         "b9%s" % struct.pack("<I", cfg_dwords).hex(),          # mov ecx, 420
         "f3a5",                                                # rep movsd
         # ② 32 个新行的骨架（edi 已停在 cave + 84*0x14）
         "b8%s" % struct.pack("<I", S.CFG_ROWS).hex(),          # mov eax, 84
         "bb%s" % struct.pack("<I", S.NEW_N).hex(),             # mov ebx, 32
         loop,
-        # ③ 零售 72 个 wav 名指针 + NULL → cave
+        # ③ 原生 72 个 wav 名指针 + NULL → cave
         "bf<codecave:%s>" % S.CAVE_NAMES,                      # mov edi, names cave
-        "be<Rx%x>" % S.NAMES_RVA,                              # mov esi, 零售名表
+        "be<Rx%x>" % S.NAMES_RVA,                              # mov esi, 原生名表
         "b9%s" % struct.pack("<I", names_dwords).hex(),        # mov ecx, 73
         "f3a5",                                                # rep movsd
         "61",                                                  # popad
@@ -70,7 +70,7 @@ def emit_sound_codecaves():
            for name, size in S.CAVE_SIZE.items()}
     out[S.CAVE_INIT] = {
         "code": code, "export": True, "access": "RX",
-        "title": "开机把零售 84 行 cfg 与 72 个 wav 名从用户的 exe 拷进 codecave，"
+        "title": "开机把原生 84 行 cfg 与 72 个 wav 名从用户的 exe 拷进 codecave，"
                  "并给 32 个新行写 +0 = 槽号 的骨架（不变式 I1 / I2）",
     }
     return out
@@ -81,7 +81,7 @@ def emit_sound_binhacks(text, text_va):
 
     · cave 引用 → <codecave:名+偏移>（**绝对**表达式用尖括号；方括号是相对偏移，
       写错会把相对量当指针用 —— mods/thcrap-platform.md §3.4）
-    · 计数界   → 新立即数，宽度与零售一致（imm8 的必须仍塞得下）
+    · 计数界   → 新立即数，宽度与原生一致（imm8 的必须仍塞得下）
     """
     B = {}
     for r in S.scan(text, text_va):

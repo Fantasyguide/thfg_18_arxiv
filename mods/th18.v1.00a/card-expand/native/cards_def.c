@@ -169,7 +169,7 @@ int ce_weight_override_fit(uint8_t *table, unsigned nrows, int retail_weight, in
             return w;
         }
     }
-    /* 压到 1 还放不下 = 撑爆的不是新卡（零售权重本身就过大）。恢复调用方要的值，让门照常 FAIL。 */
+    /* 压到 1 还放不下 = 撑爆的不是新卡（原生权重本身就过大）。恢复调用方要的值，让门照常 FAIL。 */
     n = ce_weight_override(table, nrows, retail_weight, new_weight, new_ids, n_new);
     if (changed) *changed = n;
     return new_weight;
@@ -182,7 +182,7 @@ unsigned ce_build_order(uint32_t *out, unsigned cap,
 {
     unsigned n = 0;
     if (nretail + nnew + 1 > cap) return 0;
-    /* 每张零售卡：它所在的那段同类别连续区有多长、是不是该类别最长的一段、它是不是那段的最后一张 */
+    /* 每张原生卡：它所在的那段同类别连续区有多长、是不是该类别最长的一段、它是不是那段的最后一张 */
     for (unsigned i = 0; i < nretail; ++i) {
         out[n++] = retail[i];
         uint32_t c = retail_cat[i];
@@ -204,7 +204,7 @@ unsigned ce_build_order(uint32_t *out, unsigned cap,
         for (unsigned k = 0; k < nnew; ++k)
             if (new_cat[k] == c) out[n++] = new_ids[k];
     }
-    for (unsigned k = 0; k < nnew; ++k) {                              /* 类别在零售表里不存在的：排最后 */
+    for (unsigned k = 0; k < nnew; ++k) {                              /* 类别在原生表里不存在的：排最后 */
         int seen = 0;
         for (unsigned i = 0; i < nretail; ++i) if (retail_cat[i] == new_cat[k]) { seen = 1; break; }
         if (!seen) out[n++] = new_ids[k];

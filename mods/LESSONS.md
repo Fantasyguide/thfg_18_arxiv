@@ -26,8 +26,8 @@
 
 | 现象 | 根因 | 以后 |
 | --- | --- | --- |
-| **主动卡上场即崩**，`C0000005 … could not be executed at 堆地址`，返回地址在 UpdateFunc 分派器 | `Timer__decrement/increment` 尾是 `ret 4`：thiscall + 一个从不读的栈参（零售调它前 `push ecx`）。按无参调 → 每次多弹 4 字节 → 调用方栈上移 → 下一个 UpdateFunc 的函数指针取成堆地址 | **调引擎函数前看它全部 `ret N` 出口**，再看零售怎么调它（调用点前的 `push`、后面有没有 `add esp`）。O16 的四个看了，O23 这两个只看了头 |
-| **按 C 发动即崩**，`could not be executed at 堆地址`，PC = 卡对象地址、`[ESP+8]` = 返回 `ce_sdk_c_press` | `BulletManager__cancel_all` `0x4297a0` 尾是 `ret 4`（thiscall + 一个从不读的栈参，零售 `mov ecx,[mgr]; push 0; call`）；Ghidra 反编译显示 `void(void)`。按无参调 → `on_activate` 的 `ret` 弹到卡对象指针 | **同 O23 第二次栽**：反编译签名不算数，`disassemble_function` 看全部 `ret N`，再看零售调用点前的 `push`。AUDIT O28h′ |
+| **主动卡上场即崩**，`C0000005 … could not be executed at 堆地址`，返回地址在 UpdateFunc 分派器 | `Timer__decrement/increment` 尾是 `ret 4`：thiscall + 一个从不读的栈参（原生调它前 `push ecx`）。按无参调 → 每次多弹 4 字节 → 调用方栈上移 → 下一个 UpdateFunc 的函数指针取成堆地址 | **调引擎函数前看它全部 `ret N` 出口**，再看原生怎么调它（调用点前的 `push`、后面有没有 `add esp`）。O16 的四个看了，O23 这两个只看了头 |
+| **按 C 发动即崩**，`could not be executed at 堆地址`，PC = 卡对象地址、`[ESP+8]` = 返回 `ce_sdk_c_press` | `BulletManager__cancel_all` `0x4297a0` 尾是 `ret 4`（thiscall + 一个从不读的栈参，原生 `mov ecx,[mgr]; push 0; call`）；Ghidra 反编译显示 `void(void)`。按无参调 → `on_activate` 的 `ret` 弹到卡对象指针 | **同 O23 第二次栽**：反编译签名不算数，`disassemble_function` 看全部 `ret N`，再看原生调用点前的 `push`。AUDIT O28h′ |
 | `pick_weighted_random_offer` 的参数 | fastcall：ecx=out、edx=lo，栈上 hi / exclude / n，`ret 0xc` | 反编译器的原型不可信，看寄存器的首次使用 + `ret N` |
 | `play_sound(id)` 有个隐藏参数 | 声像 x 走 xmm2，不在栈上 | 调用点前的 `movss xmm2, …` 就是参数；C 里只能内联汇编（SDK 唯一一处，O22）|
 | 战线 D 改 9 处 `[base+idx+K]` 为 `[idx+SHADOW]`，3/9 寄存器留错 | SIB 里「哪个寄存器是存档指针」由编译器随手排，`base` 和 `index` 会互换 | **凡是「编译器把什么放在哪一格」都从上下文重取**，生成器从 `mov r32,[SCOREFILE_PTR]` 反推。K′ |
@@ -38,7 +38,7 @@
 
 | 现象 | 根因 | 以后 |
 | --- | --- | --- |
-| 零售主动卡对象 0x74 字节、`state` 在 `+0x54`；我们的对象 0x54 | 每个 case 自己 `new` 自己的大小；基类只有 0x54 | 引擎读的字段（flags bit3/bit5、`+0x34` 充能、`+0x48`）都在基类内才敢复用；卡自己的状态放 DLL 侧按对象指针索引的表，销毁槽里释放。O19、§4 |
+| 原生主动卡对象 0x74 字节、`state` 在 `+0x54`；我们的对象 0x54 | 每个 case 自己 `new` 自己的大小；基类只有 0x54 | 引擎读的字段（flags bit3/bit5、`+0x34` 充能、`+0x48`）都在基类内才敢复用；卡自己的状态放 DLL 侧按对象指针索引的表，销毁槽里释放。O19、§4 |
 | ExpHP 的两个 zTimer 名字反了；`GAME_THREAD_PTR` 其实是 `GUI_PTR` | 社区符号是起点不是结论 | 每个用到的名字都用一手读写点核一次（谁递增、谁递减、谁在什么条件下读）。OM §3、O20 |
 | `zAbilityText` 第 58 张在对象外；`unlocked_cards[57]` 落在未知区 | 数组尺寸散在十几处硬编码 | 「加一项」不成立时用**重定向 / 影子数组 + side-car**，对象一个字节不扩。§K、§L |
 | HUD 往 ANM VM 写 `+0x58/+0x70`，看着像写卡对象 | 偏移撞车：`+0x534` 说明那是 zAnmVm | 判断一个写入的对象类型，看同段代码里的其他偏移（`+0x534` 只可能是 VM）|
@@ -60,7 +60,7 @@
 | 在 `on_tick`（+0x24）里写移速倍率没效果 | Player tick 末尾复位 1.0；`on_tick` 在复位之前 | UpdateFunc **优先级**决定同帧顺序：AbilityManager 0x16 < Player 0x17 < Bomb 0x19 < Bullet 0x1d…；每帧写的量放在「被读之前、被复位之后」的那个 tick 里（`on_tick_2`）。注册点全在 `0x401180` 的调用者里。O7 |
 | 想在死亡槽 `+0x14` 里放大复活无敌 | 复活置计时器在那之后 | 找「刚置好」的签名（`{prev 279, cur 280}` 只出现一帧）在下一帧识别。O8 |
 | 初始携带的卡 ctor 没被调 | mode 1（存档）/ 3（replay）不调 ctor/dtor；mode 2（购买）先 ctor 再 dtor | 「获得时生效一次」放 `on_load`；即时卡 `deck_visible: 0` 免得进初始卡组变死卡。lifecycle §2–3 |
-| 主动卡的 C 键与充能都停了 | 零售门控：不在对话 **且场上有敌人**（`enemy_count_real != 0`）| 这是零售规则，设计时知道就行 |
+| 主动卡的 C 键与充能都停了 | 原生门控：不在对话 **且场上有敌人**（`enemy_count_real != 0`）| 这是原生规则，设计时知道就行 |
 | 在 ctor 里再调 `allocate_new_card` | 外层还没动 mgr 状态；返回非 0 → 删自己 → 取当前计数返回 | 可以重入；ebx/esi/edi 靠 thiscall 桩按 ABI 保住。O17 |
 
 ## 6. 自检与失败策略

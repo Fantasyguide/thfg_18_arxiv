@@ -1,5 +1,5 @@
 script script188 {
-    // ★永夜抄**时点 / 刻符**道具本体（TH08 item type 7）—— 正文逐条照抄零售 TH08
+    // ★永夜抄**时点 / 刻符**道具本体（TH08 item type 7）—— 正文逐条照抄原版 TH08
     //   `data/etama.anm` **entry1**（贴图 `data/etama/etama2.png`）的 **script68**，
     //   只把 `sprite(sprite179)` 换成 `@TPOINT`（见文件尾的一手原文 diff）。
     // 一手 ✅：
@@ -13,8 +13,8 @@ script script188 {
     //     直接 `AnmLoaded::set_sprite`（`th08:0x4416f4 add ecx,0xac`），type 7 → sprite179，同值。
     //   · 另一支 `type+0xb6`（=182+type，道具在画面上方时的贴边指示）type 7 → **sprite189**，
     //     实测**整块全透明**（`make_tpoint_art.py` 会断言）⇒ 时点没有贴边指示图标。
-    // 行为（脚本层面）：第 30 帧起 20 帧把颜色压到 (128,128,128)、alpha 压到 192 —— 零售如此，照抄。
-    // ⚠️ **层：零售脚本不设 layer**（同 script200 的说明）⇒ 这里不加，保持零偏差。
+    // 行为（脚本层面）：第 30 帧起 20 帧把颜色压到 (128,128,128)、alpha 压到 192 —— 原生如此，照抄。
+    // ⚠️ **层：原生脚本不设 layer**（同 script200 的说明）⇒ 这里不加，保持零偏差。
     // 一手原文 diff（`sprite(...)` → `@...` 是**唯一**差异）：
     //   -    sprite(sprite179);
     //   +    sprite(@TPOINT);

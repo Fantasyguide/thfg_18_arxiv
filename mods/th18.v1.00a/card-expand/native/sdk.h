@@ -64,7 +64,7 @@ static inline void ce_play_sound(uint32_t id, float x)
 #define ce_play_voice(NAME, x)  ce_play_sound(CE_VOICE_##NAME, (x))
 
 /* HUD 炸弹行刷新（Gui 0x4420e0：thiscall(gui; bombs, fragments, max) ret 0xc，与残机那个完全对称）。
- * 改 CURRENT_BOMBS / MAX_BOMBS 后必须调，零售在 consume_bomb 与每关开场都这么做。AUDIT §T。 */
+ * 改 CURRENT_BOMBS / MAX_BOMBS 后必须调，原生在 consume_bomb 与每关开场都这么做。AUDIT §T。 */
 typedef void (__attribute__((thiscall)) *ce_fn_gui_bombs_t)(void *gui, int bombs, int fragments, int max);
 static inline void ce_gui_update_bombs(void)
 {
@@ -91,14 +91,14 @@ static inline uint32_t ce_anm_spawn(void *anm, int script, int layer)
 }
 
 /* 残机 / 炸弹：引擎自己的加法（钳上限、音效、特效）。add_bomb 是 thiscall + 一个从不读取的栈参（ret 4），
- * 所以签名里必须带一个 dummy（O23 教训）。上限想一起加照零售：`if (CE_LIVES_MAX() < 7) CE_LIVES_MAX()++`。*/
+ * 所以签名里必须带一个 dummy（O23 教训）。上限想一起加照原生：`if (CE_LIVES_MAX() < 7) CE_LIVES_MAX()++`。*/
 typedef void (__attribute__((thiscall)) *ce_fn_add_life_t)(void *globals);
 typedef void (__attribute__((thiscall)) *ce_fn_add_bomb_t)(void *globals, int unused);
 static inline void ce_add_life(void) { ((ce_fn_add_life_t)CE_FN_ADD_LIFE)((void *)CE_ADDR_GLOBALS_INNER); }
 static inline void ce_add_bomb(void) { ((ce_fn_add_bomb_t)CE_FN_ADD_BOMB)((void *)CE_ADDR_GLOBALS_INNER, 0); }
-/* +1 残机碎片（0x457570，thiscall + 哑栈参 ret 4，与 add_bomb 同形）：残机已满时引擎清零不加、满每命碎片数自动进整命、自带刷 HUD。零售碎片道具 / CardNarumi 同一入口。AUDIT §X */
+/* +1 残机碎片（0x457570，thiscall + 哑栈参 ret 4，与 add_bomb 同形）：残机已满时引擎清零不加、满每命碎片数自动进整命、自带刷 HUD。原生碎片道具 / CardNarumi 同一入口。AUDIT §X */
 static inline void ce_add_life_fragment(void) { ((ce_fn_add_bomb_t)CE_FN_ADD_LIFE_FRAGMENT)((void *)CE_ADDR_GLOBALS_INNER, 0); }
-/* HUD 残机行刷新（Gui 0x441f10：thiscall(gui; lives, fragments, max) ret 0xc，一手反汇编，AUDIT O28）。改 CURRENT_LIVES 后必须调，零售在死亡 / 商店复原处都这么做。*/
+/* HUD 残机行刷新（Gui 0x441f10：thiscall(gui; lives, fragments, max) ret 0xc，一手反汇编，AUDIT O28）。改 CURRENT_LIVES 后必须调，原生在死亡 / 商店复原处都这么做。*/
 typedef void (__attribute__((thiscall)) *ce_fn_gui_lives_t)(void *gui, int lives, int fragments, int max);
 static inline void ce_gui_update_lives(void)
 {
@@ -107,7 +107,7 @@ static inline void ce_gui_update_lives(void)
 }
 /* 全屏消弹：弹幕（→ 点道具）+ 激光，照 ECL 消弹指令的写法（AUDIT O28h）。*/
 /* ★ BulletManager__cancel_all 是 thiscall(BULLET_MANAGER; 一个从不读取的栈参) ret 4——Ghidra 反编译显示 void(void)，尾部却是 `ret 4`
- * （0x429a0e）；零售 ECL 调用现场 0x434d48 `mov ecx,[0x4cf2bc]; push 0; call`。第一版按无参调，多弹 4 字节，on_activate 的 ret 跳飞（O23 同款教训，O28h′）。*/
+ * （0x429a0e）；原生 ECL 调用现场 0x434d48 `mov ecx,[0x4cf2bc]; push 0; call`。第一版按无参调，多弹 4 字节，on_activate 的 ret 跳飞（O23 同款教训，O28h′）。*/
 typedef void (__attribute__((thiscall)) *ce_fn_bullet_cancel_all_t)(void *mgr, int unused);
 typedef int  (__attribute__((stdcall)) *ce_fn_laser_cancel_all_t)(int mode, int unused);
 static inline void ce_cancel_all_bullets(void)
@@ -166,7 +166,7 @@ static inline void ce_raise_damage_cap(int cap)
     if (p && *(int32_t *)(p + CE_PLAYER_DAMAGE_CAP) < cap) *(int32_t *)(p + CE_PLAYER_DAMAGE_CAP) = cap;
 }
 
-/* 装备卡子机（AUDIT §U）。两个函数的调用约定都从零售调用点原样抄来，**别照反编译的形参名改**：
+/* 装备卡子机（AUDIT §U）。两个函数的调用约定都从原生调用点原样抄来，**别照反编译的形参名改**：
  *
  *   Player__allocate_option —— thiscall + 五个栈参，其中第 1、3 个是 card 自己（`CardReimu1__on_power_level_change`
  *     `0x40aae0`：push script / push off / push ecx / push off / push ecx；调用后调用方不动 esp ⇒ callee ret 0x14）。
@@ -425,8 +425,8 @@ int ce_refuse(const char *card, const char *why);
 /* ---- 装备卡子机（AUDIT §U）----
  * 槽是引擎的 12 个公共池，会被回收、被别的卡拿走 —— 每次用前认领一次
  * （`option+0x00 != 0 && option+0xd0 == card+0x08`，`Player__allocate_option` `0x40a790` 写的）。
- * 指针存卡的私有状态：新卡对象只有 0x54 字节，零售存的 `card+0x54` 已在对象外。
- *   `on_power_level_change` → `ce_option_alloc`（池刚被重建，无条件再要一个，与零售装备卡一致）
+ * 指针存卡的私有状态：新卡对象只有 0x54 字节，原生存的 `card+0x54` 已在对象外。
+ *   `on_power_level_change` → `ce_option_alloc`（池刚被重建，无条件再要一个，与原生装备卡一致）
  *   `on_tick_2`            → `ce_option_get`（认领；没有就按 retry 间隔补申请一次）
  *   `on_load` / `on_run_reset` → `ce_option_drop`（删子机的 ANM VM；槽本身由
  *                                `Player__repopulate_options_and_notify_cards` 统一回收）*/
@@ -439,7 +439,7 @@ uint8_t *ce_option_claim(ce_card_t *c, ce_option_t *o);
 uint8_t *ce_option_alloc(ce_card_t *c, ce_option_t *o, int offset, int anm_script, const char *card);
 uint8_t *ce_option_retry(ce_card_t *c, ce_option_t *o, int offset, int anm_script,
                          uint32_t retry_frames, const char *card);
-/* 收起子机：删它的 ANM VM + 清 flags 的 `CE_FLAG_EQUIP_RESET_BIT1`（零售 `CardReimu1__method_4C` 两件一起做）。
+/* 收起子机：删它的 ANM VM + 清 flags 的 `CE_FLAG_EQUIP_RESET_BIT1`（原生 `CardReimu1__method_4C` 两件一起做）。
  * o 可为 NULL：`card+0x1c` 的 VM 与 flags 照样处理。**同时会收掉这个子机发射出去的激光**（见下）。*/
 void     ce_option_drop(ce_card_t *c, ce_option_t *o);
 /* 把「挂在这个子机上」的自机弹收掉 —— 一手：激光（`mode=2`）的寿命**只跟射击键走**
@@ -450,6 +450,17 @@ void     ce_option_drop(ce_card_t *c, ce_option_t *o);
  * 之后 `Player__tick_bullets` `0x45edb0` 发现束 VM 没了就回收弹槽并清伤害源。
  * 返回收掉的弹数。`ce_option_drop` 已经会调它（不用自己调）。*/
 int      ce_option_kill_bullets(void *option);
+/* ★ 2026-09-13（117 咆哮「子机还在打普通激光」真身）：把**已经在飞的零售 / 装备子机
+ * `mode=2` 激光**收掉。理由是上面同一条一手：激光寿命只跟 Z 走，**fire-time set 重定向
+ * （`0x45ebfb`）只挡新弹、挡不住旧束**。只收 `packed set <= 0x15`（0..9 主炮 + 0x0a..0x15
+ * 原生装备子机组）且 shooter row `+0x21 == 2` 的活动弹；0x16..0x1d（108/77/116）与
+ * 0x1e..0x27（WOLF/EAGLE）都不碰。
+ * 收束顺序逐字段对齐 `tick2` 自杀段：`bullet+0x8c = 2`（`0x460296`）→ 束 VM interrupt 1
+ * （`0x4602a0`）→ **清 `player+0x476fc+idx*4` 的 mode=2 去重槽**（`0x4602c1`，idx 由
+ * `shooter+0x20` 解码）。第三步不能省：`Player__shoot_one_bullet` `0x45e96e` 见该槽非 0
+ * 就整条 mode=2 row 早退，旧版漏清导致咆哮后子机永久停火（用户 2026-09-13）。
+ * 返回收掉的条数；n>0 时按 set 打证伪日志。*/
+int      ce_kill_retail_option_lasers(void);
 static inline uint8_t *ce_option_get(ce_card_t *c, ce_option_t *o, int offset, int anm_script,
                                      uint32_t retry_frames, const char *card)
 {
@@ -509,7 +520,7 @@ void ce_hud_number_set(ce_hud_number_t *n, float x, float y, float spacing,
                        int value, int digits, int right_align, const char *tag);
 void ce_hud_number_clear(ce_hud_number_t *n);
 
-/* —— 贴图 VM 版「文字」：TH18 **font 2** 的零售字形（0-9 . % + -），逐字一个 VM ——
+/* —— 贴图 VM 版「文字」：TH18 **font 2** 的原生字形（0-9 . % + -），逐字一个 VM ——
  * ★ 存在的理由：**ASCII 文字永远盖不到暂停模糊罩下面**（实跑证伪：唯一早于罩子的组 1 趟
  *   `0x419950` 跑在 surface 1 + 相机 0 上，画出来看不见），而贴图 VM 放 UI 层 25
  *   （折到组 38 → 与罩子同桩 `0x3e`、罩子后起 ⇒ 被罩住）就能做到。
@@ -546,7 +557,7 @@ void ce_hud_digit_clear(ce_hud_digit_t *d);
 #define CE_VK_SHIFT 0x10
 int ce_key_down(int vk);
 
-/* 在 HUD 上写一行字（只能在虚表 `+0x48 on_draw` 里调 —— 零售 `CardMomoyo__on_draw` 同款，AUDIT §AC）。
+/* 在 HUD 上写一行字（只能在虚表 `+0x48 on_draw` 里调 —— 原生 `CardMomoyo__on_draw` 同款，AUDIT §AC）。
  * 坐标用 Gui 自己那套字面量空间（火力在 (540, 182)）；color 是 BGRA 一个 dword，画完自动还原成白。
  * 自己先 vsnprintf 成一行再交给引擎的 `"%s"`，不转发 varargs。 */
 void ce_hud_text(float x, float y, uint32_t bgra, const char *fmt, ...);

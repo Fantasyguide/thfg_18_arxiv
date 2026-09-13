@@ -28,7 +28,7 @@ mods/**/native/__pycache__/
 mods/**/dist/
 
 # card-expand 语音：构建产物。assets/voice/*.wav 本身入库（合成的是我们自己的内容；
-# 若放零售 wav 请单独在这里加一行忽略它）
+# 若放原生 wav 请单独在这里加一行忽略它）
 mods/th18.v1.00a/card-expand/patch/th18/voice/*.wav
 mods/th18.v1.00a/card-expand/native/voice_ids.h
 
@@ -36,9 +36,9 @@ mods/th18.v1.00a/card-expand/native/voice_ids.h
 tooling/steamless/bin/
 tooling/steamless/obj/
 
-# card-expand：**零售切图**（`assets/ability/make_*_art.py` 从 local/ 现切）。
+# card-expand：**原生切图**（`assets/ability/make_*_art.py` 从 local/ 现切）。
 # 纪律：版权字节只在 local/，构建时取；这些是切出来的中间产物，别入库。
-# 程序生成的图（SEASON_OPT/SEASON_SEED 等）照常入库 —— 只有「从零售 PNG 切出来」的才在这里。
+# 程序生成的图（SEASON_OPT/SEASON_SEED 等）照常入库 —— 只有「从原生 PNG 切出来」的才在这里。
 # ⚠️ gitignore 没有行尾注释：注释必须单独成行，写在同一行会把整行变成一条匹配不到的规则。
 # TH16 bullet/item.png / front00.png / pl0X(sub).png 切出来的
 mods/th18.v1.00a/card-expand/assets/ability/season/SEASON_LASER.png

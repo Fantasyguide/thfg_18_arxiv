@@ -26,7 +26,7 @@ replay 只重放 `INPUT_HELD` `0x4ca428` 里的位：射击 `0x001`、炸弹 `0x
 于是：`CE_CARD(80, .active_recharge = 30, .on_activate = …)`，`on_activate` 里读 `INPUT_HELD & 0x008` 区分买卖。
 `active_recharge = 30`（半秒）只是节流；充能条顺便当「可下单」提示。
 
-引擎门控照旧（`04-active-cards.md` §2 的四重门）：**对话中、场上没有敌人时下不了单，充能也不走**。零售主动卡共性，不改。
+引擎门控照旧（`04-active-cards.md` §2 的四重门）：**对话中、场上没有敌人时下不了单，充能也不走**。原生主动卡共性，不改。
 
 `engine.h` 新增 `CE_ADDR_INPUT_HELD 0x4ca428`（出处同上；已有 `CE_ADDR_INPUT_PRESSED 0x4ca434`）。
 
@@ -42,7 +42,7 @@ replay 只重放 `INPUT_HELD` `0x4ca428` 里的位：射击 `0x001`、炸弹 `0x
 - **卖**（Shift + C）：`hold == 0` → `ce_refuse("stock", "no holding")`。否则 `q = min(hold, 50000000 / price)`，
   `MONEY += q × price / 1000000`（向下取整，零头等于手续费），`hold −= q`，`cost −= 所得`。
 - 现金永不为负、卖出永不超持股、一次买卖来回损耗 ≤ 1 金钱：三条都是单测。
-- 成交放零售音效（买 / 卖各一个，用现有 id；实施时挑），日志 `stock: buy 50 @ 123.45 -> hold 0.405 (money 1234)` / `stock: sell …`。
+- 成交放原生音效（买 / 卖各一个，用现有 id；实施时挑），日志 `stock: buy 50 @ 123.45 -> hold 0.405 (money 1234)` / `stock: sell …`。
 - `MONEY` 上限：引擎有钳位就照它（实施时查 `05-shop-and-money.md` §1）；没有就不钳。
 
 ## 3. 行情模型（第二版：隐藏参数 + 动量）

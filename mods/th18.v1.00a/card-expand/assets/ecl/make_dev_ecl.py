@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """开发辅助：st01–st06 全部做成「近乎空壳」——进关 = logo → 对话 → 血量缩百倍的 boss → 关底商店。单独一个可勾选的 patch（th18_card_expand_devstage），想打正常弹幕就不勾。
 
-    python3 make_dev_ecl.py                 # 编 assets/ecl/stNN.ecl.txt（空壳，入库）+ 现场改零售 stNNbs.ecl → native/build/ecl/
-    python3 make_dev_ecl.py --regen-shells  # 从零售重新生成六个空壳源（结构变了才需要；生成物入库）
+    python3 make_dev_ecl.py                 # 编 assets/ecl/stNN.ecl.txt（空壳，入库）+ 现场改原生 stNNbs.ecl → native/build/ecl/
+    python3 make_dev_ecl.py --regen-shells  # 从原生重新生成六个空壳源（结构变了才需要；生成物入库）
 
 空壳（stNN.ecl，源在仓库里）：只留头部（anim / ecli）、main、LogoEnemy、MainBoss；main 里 debug22 全删、
 `@MainFront()` 起到 `setChapter(41)` 之前（道中 + 道中 boss + 中途对话）换成 wait(30)。六关 main 同构（2026-09-04 逐关看过）。
-boss（stNNbs.ecl，满是 ZUN 的符卡脚本，不入库）：现场反编译零售文件，
+boss（stNNbs.ecl，满是 ZUN 的符卡脚本，不入库）：现场反编译原生文件，
   · 血量常数等比 ÷LIFE_DIV：lifeSet(N)、setInterrupt(槽, 血量, 超时, 子) 的血量、lifeMarker(槽, 血量, 色) 的血量（超时不动）
-  · BossDead 里零售 @BossItem(...) 之后再撒 BOSS_MONEY_DROP 个金钱道具（type 2，每个 +1 金）
+  · BossDead 里原生 @BossItem(...) 之后再撒 BOSS_MONEY_DROP 个金钱道具（type 2，每个 +1 金）
 thecl 往返（-d 再 -c）字节一致，没改的部分不会走样。反编译文本里有 Shift-JIS 字符串，读写用 surrogateescape。
 """
 import argparse
@@ -74,7 +74,7 @@ def gen_shell(text, stage):
         raise SystemExit(f"st{stage} main 的道中段落长得和预期不一样（找不到 @MainFront() … setChapter(41)）")
     main = main[:a] + "    wait(30);\n" + main[b:]
     note = (f"// 开发辅助：st{stage} 空壳 —— 只留 logo、对话、boss（血量缩百倍、死时多掉钱的 st{stage}bs.ecl 由 make_dev_ecl.py 现场生成）。\n"
-            "// 道中全部删除；结构照零售 main，零售的敌机子程序不保留。由 make_dev_ecl.py --regen-shells 生成，thecl -c 18 -m th18.eclm 编译。\n\n")
+            "// 道中全部删除；结构照原生 main，原生的敌机子程序不保留。由 make_dev_ecl.py --regen-shells 生成，thecl -c 18 -m th18.eclm 编译。\n\n")
     return header + note + main + "\n" + sub(text, "LogoEnemy") + "\n" + sub(text, "MainBoss")
 
 
@@ -114,7 +114,7 @@ def patch_boss(text, stage):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--regen-shells", action="store_true", help="从零售重新生成 assets/ecl/stNN.ecl.txt")
+    ap.add_argument("--regen-shells", action="store_true", help="从原生重新生成 assets/ecl/stNN.ecl.txt")
     a = ap.parse_args()
     t = thecl()
     OUT.mkdir(parents=True, exist_ok=True)

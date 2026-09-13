@@ -1,4 +1,4 @@
-/* shop.c —— 「商店走两遍」：每关过关后商店开 CE_SHOP_VISITS 次（默认 2），每次仍是零售流程。
+/* shop.c —— 「商店走两遍」：每关过关后商店开 CE_SHOP_VISITS 次（默认 2），每次仍是原生流程。
  *
  * 两个断点（AUDIT §P；引擎链见 engine/card/th18/05-shop-and-money.md §3.5）：
  *   BP_ce_shop_bought  0x4183ea  AbilityShop__on_tick 成交分支：状态已置 5，紧接着给背景 VM 发中断 6 与发卡扣钱。
@@ -6,7 +6,7 @@
  *   BP_ce_shop_reopen  0x443b05  GameThread__on_tick：test eax,0x20000（eax = GameThread+0xb0，esi = GameThread）。
  *                      eax 带位 = 关末 MSG opcode 36 刚要求开店 → 名额从头算；
  *                      否则若「店刚关（0x4cf2a4 == 0）且本次成交过且名额没用完」→ eax |= 0x20000，原 test 用改过的 eax 算 flags，
- *                      GameThread 这一帧就再 new 一家（0x443b10..0x443c17，与零售同一段代码）。
+ *                      GameThread 这一帧就再 new 一家（0x443b10..0x443c17，与原生同一段代码）。
  *                      flag_set 那一支（MSG 开第一家店）顺带调 ce_sdk_on_shop_open()：过关结算类的卡（黄金小丑）在这里改钱。
  *   ce_shop_setup      门里：两个断点已挂；记一行配置。
  *
@@ -48,7 +48,7 @@ int __cdecl BP_ce_shop_reopen(x86_reg_t *regs, void *bp_info)
     int blocked   = CE_PRACTICE_STAGE() >= 0 || (gt && *(int32_t *)(gt + CE_GT_REPLAY_PLAYING) != 0);
     if (ce_shop_on_gamethread(&s_shop, flag_set, shop_open, CE_CURRENT_STAGE(), CE_TIME_IN_STAGE(), blocked)) {
         regs->eax |= CE_GT_FLAG_OPEN_SHOP;
-        int gap = CE_TIME_IN_STAGE() - s_shop.last_bought_frame;          /* 零售退场 30 帧：成交帧 + 31 = 重开帧；更晚 = 中间有空档帧 */
+        int gap = CE_TIME_IN_STAGE() - s_shop.last_bought_frame;          /* 原生退场 30 帧：成交帧 + 31 = 重开帧；更晚 = 中间有空档帧 */
         ce_log("shop: reopen%s (visit %d/%d, stage %d, frame %d = bought + %d, money %d)", gap > 31 ? " (late, gap!)" : "",
                s_shop.visits - s_shop.visits_left, s_shop.visits, CE_CURRENT_STAGE(), CE_TIME_IN_STAGE(), gap, CE_MONEY());
     } else if (flag_set) {

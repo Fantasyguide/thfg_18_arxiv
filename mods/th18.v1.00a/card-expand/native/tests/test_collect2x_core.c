@@ -1,6 +1,6 @@
 /* test_collect2x_core.c —— collect2x_core.c 的主机单测（make test-host）。
  * 批闭语义（§Z18/§Z20/§Z21）：presence+timer 门 = 批集道具吸附中（接线层 c2x_batch_presence 续期）
- * 或无新收使 idle ≥ C2X_BATCH_SETTLE_IDLE（8，TH14 原生值）游玩帧才关批。批闭只发生在
+ * 或无新收使 idle ≥ C2X_BATCH_SETTLE_IDLE（8，TH14 原版值）游玩帧才关批。批闭只发生在
  * 「吸附空 + 无新收」的真停段；落地休止残余迟到 = 拆下一批（TH14 原义）。 */
 #include <stdio.h>
 #include <string.h>

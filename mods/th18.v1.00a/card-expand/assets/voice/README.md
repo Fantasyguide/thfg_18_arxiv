@@ -17,7 +17,7 @@
 
 `NAME` 只能是字母数字下划线 —— 它要变成 C 宏 `CE_VOICE_<NAME>`。
 
-**上限 32 条**（`native/sound_sites.py` 的 `NEW_N`）。零售 71 个 se 共 5.8 MB；
+**上限 32 条**（`native/sound_sites.py` 的 `NEW_N`）。原生 71 个 se 共 5.8 MB；
 32 条 × 2 秒 × 44.1 kHz × 16 bit 单声道 ≈ 5.6 MB，同量级，全量常驻内存。
 
 ## 索引怎么来
@@ -56,12 +56,12 @@ ce_play_voice(SPADE_10_ACTIVATE, player_x());
 
 ## 响度
 
-零售 71 个 wav **一律 peak 归一化**（peak 中位 −0.06 dBFS），响度差异全压在 `volume_db` 上，
+原生 71 个 wav **一律 peak 归一化**（peak 中位 −0.06 dBFS），响度差异全压在 `volume_db` 上，
 而它只能衰减 —— **所以想让一个音更响，只能改 wav 本身**。基准（`engine/_shared/th18-sound-table.md` §9）：
 
 | | dBFS |
 | --- | --- |
-| 零售 wav 的 RMS 中位 | −13.1 |
+| 原生 wav 的 RMS 中位 | −13.1 |
 | 最响的 `se_release`（Tenshi 发动音，与卡牌语音同帧一起响）| −5.1 |
 | **语音目标 `VOICE_RMS_TARGET`** | **−10.0**（peak ≤ −0.5）|
 
@@ -85,7 +85,7 @@ python3 ../assets/build_voice.py --check    # 只校验
 
 - **语音就是 SE**：可叠加、跟随游戏的 SE 音量（`0x5704ac`）、不做独占通道、不打断、
   过关不停。设计决定见 `docs/superpowers/specs/2026-09-05-voice-expand-design.md` §4。
-- 引擎的 RIFF 解析不挑格式（零售 71 个就是 44.1k/22.05k × 8/16 bit × 单/双声道混用），
+- 引擎的 RIFF 解析不挑格式（原生 71 个就是 44.1k/22.05k × 8/16 bit × 单/双声道混用），
   但 `build_voice.py` 只放行 PCM —— 别的 tag 我们没验过。
 - wav 文件随 `_255` patch 分发（`patch/th18/voice/`），`files.js` 收它们的 crc。
 现有曲目（`make_melodies.py` 的 `MELODIES`，一首一条，可单独出 `make_melodies.py NAME`）：
@@ -100,7 +100,7 @@ python3 ../assets/build_voice.py --check    # 只校验
 | NAME | id | 用在 | 长度 / 响度 |
 | --- | --- | --- | --- |
 | `FIRELORD_SUMMON` | `0x55` | 炎魔之王（72）召唤成功那帧，叠在发动音 `0x4d` 上 | 4.55 s，RMS −10.7 |
-| `FIRELORD_ATTACK` | `0x56` | 炎魔之王投火球那帧（火球落地仍是零售 `0x2c`）| 4.29 s，RMS −11.2；周期 8 s > 长度，不自叠 |
+| `FIRELORD_ATTACK` | `0x56` | 炎魔之王投火球那帧（火球落地仍是原生 `0x2c`）| 4.29 s，RMS −11.2；周期 8 s > 长度，不自叠 |
 
 `ROYAL_RAGTIME` 与 `ability.anm` script70 的对齐（帧号 = 60 fps；四分音符 30 帧 = 120 BPM 的 2/4，一小节 60 帧）：
 
@@ -122,7 +122,7 @@ Joplin 1917 年去世，作品本身也早已进入公有领域。）
 
 `patch/th18/voice/*.wav` 是构建产物（`make voice` 从 `assets/voice/` 拷过去），在**本仓**
 gitignored，所以入库的 `patch/files.js` **不会**列出语音 wav。素材本身（`assets/voice/*.wav`）入库
-—— 除非是零售 wav，那种要单独 gitignore（renkolab 不留版权字节，同 `abcard.anm` 的政策）。
+—— 除非是原生 wav，那种要单独 gitignore（renkolab 不留版权字节，同 `abcard.anm` 的政策）。
 `make dist` / `make release` 会对 `dist/patch-step3/` 重新生成 files.js，那份**会**列出它们
 —— 语音随 modkit 发布。thcrap 本地解析文件不看 files.js（那是更新/下载机制用的），
 所以本地开发时 wav 不在 files.js 里也照样能播。

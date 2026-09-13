@@ -22,7 +22,7 @@ opcode 23 的位型跟着变了但**含义仍是左上**。证据见
 TH07 的 anm 是 **v2**，编号方式与 v8 那套不同：它有一个**全局 id 空间** ——
 `loadAnm(index, 文件名, base)` 把每个 entry 按 `base + 文件内 id` 铺进 `AnmManager`（sprite / script 共用 base），
 base 在每个 entry 之后前进「`max(全部 sprite id ∪ 全部 script id) + 1`」。
-一手过程、零售 63 个 `.anm` 的适用性边界、以及 `EffectManager` type → id → (anm, 脚本) 的完整链路见
+一手过程、原生 63 个 `.anm` 的适用性边界、以及 `EffectManager` type → id → (anm, 脚本) 的完整链路见
 [th07/01-anm-id-space.md](th07/01-anm-id-space.md)（`th07:0x44df90` / `th07:0x44e05e` / `th07:0x49efc0`）。
 
 ⚠️ 这套编号是**本作特有**的，**别当跨作通则**：至少 TH18 就不是这样（那作按「每文件扁平脚本号」索引，

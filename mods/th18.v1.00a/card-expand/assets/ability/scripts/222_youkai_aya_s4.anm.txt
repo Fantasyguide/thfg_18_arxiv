@@ -1,12 +1,12 @@
 script script222 {
     // 由 assets/ability/make_sanae_youkai_art.py 从 TH16 v1.00a `pl03.anm` script4 生成，别手改。
-    // 这是**妖侧本体**（早苗 → 射命丸文）的第 4 支：零售 script0..4 = 本体的 24 格 30×46，
+    // 这是**妖侧本体**（早苗 → 射命丸文）的第 4 支：原生 script0..4 = 本体的 24 格 30×46，
     //   一手：只有它们引用 `player/pl03/pl03.png` 的 30×46 格子（生成器文件头 ③）。
     // 身份一手：主色/色相判据把 `pl03.anm` 定成 射命丸文（黑发 + 红发带 + 白衬黑裙；四张里唯一无绿发、
     //   且蓝/金都不占主导）—— 生成器文件头 ②，每次运行重算。
     // 指令逐条照抄（jmp/标签/`layer(14)`/`type(0)`/`resampleMode(1)` 一字未动），只把 sprite 引用换名：
     //   sprite0 → @YOUKAI_AYA_S0，sprite1 → @YOUKAI_AYA_S1，sprite2 → @YOUKAI_AYA_S2，sprite3 → @YOUKAI_AYA_S3，sprite4 → @YOUKAI_AYA_S4，sprite5 → @YOUKAI_AYA_S5，sprite6 → @YOUKAI_AYA_S6，sprite7 → @YOUKAI_AYA_S7，sprite16 → @YOUKAI_AYA_S16，sprite17 → @YOUKAI_AYA_S17，sprite18 → @YOUKAI_AYA_S18，sprite19 → @YOUKAI_AYA_S19
-    // ⚠ `layer(14)` 是**零售自己写的**（TH16 本体脚本本来就有），不是我们编的：
+    // ⚠ `layer(14)` 是**原版自己写的**（TH16 本体脚本本来就有），不是我们编的：
     //   TH18 的世界层 = 3–19（别用 HUD 的 24/25，见 assets/ability/README.md 与 `HUD-LAYOUT.md` §4.1），
     //   14 落在世界层里 ⇒ 原样搬过来合法；若将来挂到别的层由挂它的那一方改，别在这里改。
 -1:

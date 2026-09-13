@@ -43,13 +43,13 @@ ECL dropMain(33) / dropMain(30..32)  ──►  item type 30..33
 | 工程 | `local/th17.v1.00b/ghidra_projects/th17.exe.gpr`（函数 dump `local/th17.v1.00b/th17-funcs.json`）|
 
 - ① 发现：`objdump -h` 给出 `.text` VMA `0x401000`（0x98eba B）、`.rdata` `0x49a000`、`.data` `0x4ad000`，与 imagebase `0x400000` 的 32 位 PE 一致。
-- ② 推测：脱壳只重建 PE 容器，代码段字节应仍是零售的。
+- ② 推测：脱壳只重建 PE 容器，代码段字节应仍是原版的。
 - ③ 验证：把 ExpHP `th-re-data` v1.00b 的 **781 个函数地址**与脱壳版 Ghidra 库的函数表逐一对齐 ——
   **780/781 地址精确落在同名函数入口**（唯一例外 `0x421120 EnemyData::ecl_run_over_300`，Ghidra 切分不同）；
   再对动物灵 13 个函数手工抽检序言：`spawn_token` `0x410380` = `55 8B EC 83 EC 0C 53 8B D9`（标准帧），
   `operator new` `0x40e420` = `55 8B EC 83 EC 08 56 57 6A 54`（`push 0x54` = 管理器 0x54 B），
   `TokenList::insert_at_back` `0x4111a0` = `55 8B EC 8B 41 04 85 C0`，13/13 都是合法入口。
-- ④ 结论：**脱壳版与零售版代码段地址对齐** ✅（md5 不同只因容器重建，见 [`games/th17.v1.00b/INDEX.md`](../../../games/th17.v1.00b/INDEX.md)）。
+- ④ 结论：**脱壳版与原版版代码段地址对齐** ✅（md5 不同只因容器重建，见 [`games/th17.v1.00b/INDEX.md`](../../../games/th17.v1.00b/INDEX.md)）。
 - ⑤ 证据：`objdump -h/-d`、`local/th17.v1.00b/th17-funcs.json`、`local/vendor/th-re-data/data/th17.v1.00b/funcs.json`。
 
 ## 2. 对象模型（一手字段表）

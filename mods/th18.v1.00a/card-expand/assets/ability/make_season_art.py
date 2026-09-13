@@ -8,7 +8,7 @@
                                   由 `Player__allocate_option` 起，脚本 113 把它缩到场上约 27 px。
   season/SEASON_SEED.png  32×32   子机打出去的小种子（shooter 的 anm 字段指向的脚本 114 用它）。
   season/PT_{SPRING,SUMMER,FALL,WINTER,DOYOU}.png  16×16   ★季节点本身（脚本 115）——
-                                  直接从 TH16 零售 `bullet/item.png` 切：**右上 2×2 = 春/夏(上行)、秋/冬(下行)**，
+                                  直接从 TH16 原版 `bullet/item.png` 切：**右上 2×2 = 春/夏(上行)、秋/冬(下行)**，
                                   再加一行 (224,32) = 土用，切片 16×16 与 P 点 / 蓝点同尺寸
                                   （一手：TH16 `0x430cb7 add eax,0x81` → 脚本号 = 129 + SUBSEASON）。
 
@@ -113,7 +113,7 @@ def make_seed():
     _save("SEASON_SEED.png", rgb, body)
 
 
-# —— 季节点：从 TH16 零售道具图集切 5 个 16×16 单元（零售字节只在 local/，不入库；构建时取）——
+# —— 季节点：从 TH16 原版道具图集切 5 个 16×16 单元（原版字节只在 local/，不入库；构建时取）——
 # 对应关系（一手）：sprite519=(224,0) 春 / 520=(240,0) 夏 / 521=(224,16) 秋 / 522=(240,16) 冬 /
 # 523=(224,32) 土用；TH16 用 `脚本号 = 129 + SUBSEASON` 选（`0x430cb7 add eax,0x81`）。
 REPO = HERE.parents[4]
@@ -130,7 +130,7 @@ POINT_CELLS = (
 
 def make_points():
     if not SRC_ITEM.is_file():
-        raise SystemExit(f"缺 TH16 零售道具图集 {SRC_ITEM}（unpack 自 th16.dat，见 local/README.md）")
+        raise SystemExit(f"缺 TH16 原版道具图集 {SRC_ITEM}（unpack 自 th16.dat，见 local/README.md）")
     atlas = Image.open(SRC_ITEM).convert("RGBA")
     if atlas.size != (256, 64):
         raise SystemExit(f"道具图集尺寸变了：{atlas.size}（期望 256x64）")
@@ -158,7 +158,7 @@ def make_opts():
     for name, rel, x, y in OPT_CELLS:
         src = REPO / rel
         if not src.is_file():
-            raise SystemExit(f"缺 TH16 零售自机贴图 {src}")
+            raise SystemExit(f"缺 TH16 原版自机贴图 {src}")
         im = Image.open(src).convert("RGBA")
         im.crop((x, y, x + 16, y + 16)).save(OUT / f"{name}.png")
 
@@ -174,7 +174,7 @@ GLYPH_CELLS = (
 
 def make_glyphs():
     if not SRC_FRONT.is_file():
-        raise SystemExit(f"缺 TH16 零售 front00.png {SRC_FRONT}")
+        raise SystemExit(f"缺 TH16 原版 front00.png {SRC_FRONT}")
     im = Image.open(SRC_FRONT).convert("RGBA")
     OUT.mkdir(exist_ok=True)
     for name, x, y in GLYPH_CELLS:
@@ -190,7 +190,7 @@ def make_glyphs():
 def make_laser():
     src = REPO / "local/th16.v1.00a/anm/pl01sub/player/pl01/pl01.png"
     if not src.is_file():
-        raise SystemExit(f"缺 TH16 零售自机贴图 {src}")
+        raise SystemExit(f"缺 TH16 原版自机贴图 {src}")
     im = Image.open(src).convert("RGBA")
     # ★ entry0 的 yOffset = 176（同页多 texture），sprite0 = (0,1,512,30) ⇒ 实际在 y=177 起
     strip = im.crop((0, 177, 256, 207))
@@ -248,7 +248,7 @@ def make_sub_bullets():
     for season, (rel, (xoff, yoff), items) in SUBS.items():
         src = REPO / "local/th16.v1.00a/anm" / rel
         if not src.is_file():
-            raise SystemExit(f"缺 TH16 零售自机贴图 {src}")
+            raise SystemExit(f"缺 TH16 原版自机贴图 {src}")
         im = Image.open(src).convert("RGBA")
         for name, (x0, y0, x1, y1) in items:
             piece = im.crop((x0 + xoff, y0 + yoff, x1 + xoff, y1 + yoff))
@@ -266,7 +266,7 @@ def make_sub_bullets():
 # = `front00.png` (832,112,64,16)（一手：`front.anm` 的 sprite87 定义）。
 def make_digit_strip():
     if not SRC_FRONT.is_file():
-        raise SystemExit(f"缺 TH16 零售 front00.png {SRC_FRONT}")
+        raise SystemExit(f"缺 TH16 原版 front00.png {SRC_FRONT}")
     im = Image.open(SRC_FRONT).convert("RGBA")
     OUT.mkdir(exist_ok=True)
     im.crop((832, 112, 896, 128)).save(OUT / "SEASON_STRIP.png")

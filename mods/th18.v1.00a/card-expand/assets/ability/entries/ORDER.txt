@@ -1,6 +1,6 @@
 # 追加进 ability.anm 的贴图：一行 `NAME  源图(相对 assets/)`，源图 256×320。只追加不重排。
-# 第 k 行 → entry (零售 entry 数 + k)、sprite (零售最大 sprite 号 + 1 + k)；脚本里写 @NAME 引用。
-# 源图 `local/` 开头 = 零售贴图（gitignored，构建时取；小于声明尺寸的居中补透明）。
+# 第 k 行 → entry (原生 entry 数 + k)、sprite (原生最大 sprite 号 + 1 + k)；脚本里写 @NAME 引用。
+# 源图 `local/` 开头 = 原生贴图（gitignored，构建时取；小于声明尺寸的居中补透明）。
 REVERSE  cards/REVERSE_max.png
 ROYAL_FLUSH  ability/banner/ROYAL_FLUSH.png  512x128
 SPADE_10_FX  cards/SPADE_10_max.png

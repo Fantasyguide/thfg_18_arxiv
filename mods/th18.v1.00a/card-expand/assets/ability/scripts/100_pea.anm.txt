@@ -1,6 +1,6 @@
 script script100 {
     // 豌豆射手（id 77）平时那颗大豌豆 —— shooterset PEA_NORMAL 的 `+0x22` 指向它。
-    // 骨架照零售子机弹 script25：`stop()` 挂住，引擎命中时发 interruptLabel(1)。
+    // 骨架照原生子机弹 script25：`stop()` 挂住，引擎命中时发 interruptLabel(1)。
     // 引擎在装备卡开火期间把 `player+0x10` 换成 ability.anm，所以这张贴图必须在本文件里
     // （不碰四个 pl0X.anm）—— engine/card/th18/03-hooks.md §5。
     // 不写 rotateAuto：豌豆是圆的，转了也看不出来。

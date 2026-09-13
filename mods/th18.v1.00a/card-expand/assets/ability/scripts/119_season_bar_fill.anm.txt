@@ -1,6 +1,6 @@
 script script119 {
     // 计量槽的**填充条**（照 TH16 `front.anm` script115 的 `drawRect(100,8)`）。
-    //   宽度由卡每帧写 scale.x = 填充比（engine.h：零售 HUD 充能条同款写法，`0x408a53` 写 +0x58）；
+    //   宽度由卡每帧写 scale.x = 填充比（engine.h：原生 HUD 充能条同款写法，`0x408a53` 写 +0x58）；
     //   颜色由卡按副季节 `ce_anm_set_color` 染。
 -1:
     sprite(-1);

@@ -1,7 +1,7 @@
 /* 破损核心（id 71）—— 装备卡：身边多一颗电球子机，每 BC_PERIOD 帧朝最近的敌人劈一道闪电（一道 120 = 连续 4 帧 × 30）。
  *
- * 子机走**零售装备卡机制**：`Player__allocate_option` 的 zPlayerOption（引擎管位置 / 聚焦位移 / 开店收起），
- * 长相 = ability.anm script88。与零售装备卡的两处不同：
+ * 子机走**原生装备卡机制**：`Player__allocate_option` 的 zPlayerOption（引擎管位置 / 聚焦位移 / 开店收起），
+ * 长相 = ability.anm script88。与原生装备卡的两处不同：
  *   ① 子机指针存 `ce_state()` 而不是 card+0x54 —— 我们的对象是基类 0x54 字节，+0x54 在对象外
  *      （认领 / 申请 / 收起三件套 2026-09-08 提炼进 SDK 的 `ce_option_*`，见 sdk.h）；
  *   ② 不用 SHT shooterset 开火（那条链只在按住射击键时广播、而且弹要飞过去）。
@@ -18,7 +18,7 @@
 #include "sdk.h"
 #include "broken_core_core.h"
 
-#define BC_OPTION_OFFSET  0x18      /* 子机相对自机的横向偏移（非聚焦 / 聚焦同值）。零售：Marisa1 0x10、Alice 0x1c、Reimu1 0x30 */
+#define BC_OPTION_OFFSET  0x18      /* 子机相对自机的横向偏移（非聚焦 / 聚焦同值）。原生：Marisa1 0x10、Alice 0x1c、Reimu1 0x30 */
 #define BC_RETRY_FRAMES   60        /* 没拿到子机时的重试间隔（槽满 / 还没进关）*/
 #define BC_HIT_W          32.0f     /* 钉在目标上的判定：罩住它的中心；4 帧里目标会挪一点，比第一版 24 放宽 */
 #define BC_HIT_H          32.0f
@@ -32,7 +32,7 @@ typedef struct {
 } bc_card_t;
 
 /* +0x18：`Player__repopulate_options_and_notify_cards` `0x45d5e0` 尾部广播（开局 / 火力档变 / 关店后）。
- * 池刚被重建过，所以这里无条件重新申请一个 —— 与零售装备卡一致。*/
+ * 池刚被重建过，所以这里无条件重新申请一个 —— 与原生装备卡一致。*/
 static int on_power_level_change(ce_card_t *c)
 {
     bc_card_t *s = ce_state(c, bc_card_t);
@@ -44,7 +44,7 @@ static int on_power_level_change(ce_card_t *c)
 static void on_run_reset(ce_card_t *c)
 {
     bc_card_t *s = ce_state(c, bc_card_t);
-    ce_option_drop(c, s ? &s->opt : 0);      /* 删子机 VM + 清零售在此清的 flags bit1 */
+    ce_option_drop(c, s ? &s->opt : 0);      /* 删子机 VM + 清原生在此清的 flags bit1 */
 }
 
 /* ★ 2026-09-10：卡被局中删掉（倒吊人，商店里成交）时也要**把子机还回池子** ——

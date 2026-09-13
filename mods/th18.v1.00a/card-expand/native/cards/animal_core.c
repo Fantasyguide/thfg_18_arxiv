@@ -192,15 +192,20 @@ int animal_fish_in_queue(const animal_core_t *st, int32_t *out, int32_t cap)
     return n < cap ? (int)n : cap;
 }
 
-int animal_end_burst(int32_t *out, int32_t cap, uint32_t (*rand)(void))
+int animal_end_burst(int32_t *out, int32_t cap, int32_t roar_type, uint32_t (*rand)(void))
 {
     uint32_t seq = 0;
     int32_t n = 0, k;
+    /* 单一兽灵暴走（1..3）→ 用户口径：2 只都是**本次咆哮那一只**；
+     * 其余（混合 4 / 未知 0）→ TH17 一手回退：`1 + rand()%3`（= 15..17 的 base 型）。
+     * ⚠ 单一型这条是**用户覆盖**（一手 TH17 是随机），混合这条才是一手。 */
+    int single = (roar_type >= ANIMAL_TYPE_GOAST_MIN && roar_type <= ANIMAL_TYPE_GOAST_MAX);
 
     if (!out || cap <= 0) return 0;
     for (k = 0; k < 2; ++k) {
         uint32_t r = rand ? rand() : seq++;
-        if (n < cap) out[n] = 1 + (int32_t)(r % 3);
+        int32_t t = single ? roar_type : (int32_t)(1 + r % 3);
+        if (n < cap) out[n] = t;
         ++n;
     }
     return n < cap ? (int)n : cap;

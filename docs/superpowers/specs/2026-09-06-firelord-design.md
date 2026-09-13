@@ -14,7 +14,7 @@
 
 用户已定（2026-09-06）：设计参照青眼白龙；**火球本身要有特效渲染**；卡图与本体是用户提供的美术
 （`cards/_src/FIRELORD.png`、`ability/firelord/_src/FIRELORD_TOPDOWN.png`）；召唤 / 攻击各一条用户语音
-（`voice/_src/FIRELORD_*.ogg`），火球爆炸仍用零售 `0x2c`。
+（`voice/_src/FIRELORD_*.ogg`），火球爆炸仍用原生 `0x2c`。
 
 ## 1. 与青眼的差别
 
@@ -31,14 +31,14 @@
 
 ### 2.1 扣火力（照 Tsukasa）
 
-`CardTsukasa__c_press` `0x410e60` 是零售唯一一张「按 C 扣火力」的卡，三步照抄：
+`CardTsukasa__c_press` `0x410e60` 是原生唯一一张「按 C 扣火力」的卡，三步照抄：
 
 1. **门槛**：`CURRENT_POWER >= 成本 + 一档`。Tsukasa 成本 1 档、门槛 2 档（`0x410e6d`：`eax = [0x4ccd40] * 2; cmp [0x4ccd38], eax; jl → 0x10 无效音`）。
    我们成本 200、门槛 300。理由：`spend_power` **永远保留 1.00**（`0x45749f`：扣完 `< 一档` 就钳回一档；`<= 一档` 时直接拒绝不扣），
    只要求 ≥ 2.00 的话 2.50 时实际只扣 1.50，「消耗 2.00」就不老实。
 2. **扣**：`GlobalsInner__spend_power(&GlobalsInner, 200)`（thiscall + 1 栈参 `ret 4`，返回档数是否变了）。
 3. **重建子机**：`Player__repopulate_options_and_notify_cards`（this = `PLAYER+0x620`，一个哑栈参，`ret 4`）——Tsukasa 扣完**无条件**调，我们照做
-   （扣 2 档时档数必变）。它顺手把 `on_power_level_change` 广播给所有卡（装备卡在此重建自己的子机，与零售一致）。
+   （扣 2 档时档数必变）。它顺手把 `on_power_level_change` 广播给所有卡（装备卡在此重建自己的子机，与原生一致）。
 
 **登场序列**（2026-09-06 用户）：按 C 那帧扣火力、起召唤语音，本体**还不出现**；接下来 60 帧在目标位置每帧起 6 颗 script98 聚气粒子
 （±64 px 内随机起点、20 帧加速汇聚到中心、橙红变白热）；第 60 帧本体出现 + 血条 + 第一圈爆炸（`impact_fx`：光环 + 10 颗火星 + 震屏 14 帧）+ 发动音 `0x4d`；
@@ -64,7 +64,7 @@
   **下一帧起连续 12 帧**每帧 `ce_raise_damage_cap(300)` + `ce_damage_rect((ex, ey), 0, 寿命 2, 100, 96×96)`。
   之所以拆成 12 个源而不是一个 1200 的源：`enm_compute_damage_sources` `0x45f0f0` 的 tag 守卫让**一个源对同一敌人只结算一次**。
   ★ **上限的真相**（2026-09-06）：自机弹也是往同一个伤害源池放记录，「每个敌人每帧」的合计钳 `player+0x47984`（Reimu 90 / Marisa 160 / Sakuya 60 / Sanae 120）——
-  自机对着 boss 开火时配额已被自机弹吃满，第一版 50 × 12 名义 600 实际接近 0。解法照零售 Remilia（`0x40f48e`：`on_tick_2` 里写 300 再放源）：
+  自机对着 boss 开火时配额已被自机弹吃满，第一版 50 × 12 名义 600 实际接近 0。解法照原生 Remilia（`0x40f48e`：`on_tick_2` 里写 300 再放源）：
   GameThread `0x443d3b`（优先级 0x10）每帧复位、AbilityManager tick（0x16）写、敌人结算（0x1b）读 ⇒ 只对当帧有效，不用还原。300 − 任何角色的上限 ≥ 140 > 100 ⇒ 火球的 100 整份落在自机弹之上，12 帧实打 1200。范围内多个敌人各吃一份。
 - **震屏**：照 ECL 517 `setScreenShake(time, start, end)` 的 case `0x434d8d` 调 `ScreenEffect` 工厂 `0x476060`（fastcall：ecx = type 1、edx = time；栈 start / end / 0 / 0x5b，`ret 0x10`）。
   on_tick `0x475c70` 把强度从 start 线性降到 end，每帧用 UI RNG 抽相机偏移 —— 不进 replay 流。14 帧、5 px 起，是「小震」。
@@ -92,7 +92,7 @@ C 写 pos / scale / color），满宽 40、>50％ 橙 / >20％ 黄 / 红。归�
 
 | 资源 | 来源 / 处理 | 在哪 |
 | --- | --- | --- |
-| 卡图 sprite 146/147 | 用户提供立绘 500×654 → `fit_card.py FIRELORD … --no-detect --trim 0 --margin 0 --fill`（横向拉 4％ 到 4:5，套零售框）| `cards/FIRELORD_*.png` |
+| 卡图 sprite 146/147 | 用户提供立绘 500×654 → `fit_card.py FIRELORD … --no-detect --trim 0 --margin 0 --fill`（横向拉 4％ 到 4:5，套原生框）| `cards/FIRELORD_*.png` |
 | 本体 `FIRELORD_BODY`（entry21 / sprite123）| 用户提供正面像 1189×1323 白底 → `make_firelord_art.py` 抠白底（四角泛洪 + 边缘斜坡）→ 256×256；script91 缩放 0.25（约 64 px 高）| `ability/firelord/RAGNAROS.png` |
 | 火球 `FIRELORD_FIREBALL`（sprite124）| 程序生成 64×64：白芯 → 黄 → 橙 → 红，边缘按角度噪声抖出火舌（固定种子）| `FIREBALL.png` |
 | 爆炸 `FIRELORD_BLAST`（sprite125）| 程序生成 128×128：内圈闪光 + 外圈光环 | `BLAST.png` |

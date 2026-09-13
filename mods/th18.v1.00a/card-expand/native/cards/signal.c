@@ -95,9 +95,9 @@
 #define SIGNAL_BOMB_SHAKE_START 12        /* ❓ 自定占位：震屏起始强度 */
 #define SIGNAL_BOMB_SHAKE_END  0          /* ❓ 自定占位：震屏结束强度 */
 
-/* ---- HUD（**零售 TH11 信号槽那一块**；几何逐条给一手出处）--------------------------------
+/* ---- HUD（**原版 TH11 信号槽那一块**；几何逐条给一手出处）--------------------------------
  * ★ 2026-09-12 本轮（审计 A3 的 111 部分）：**原来的 5 个 `drawRect` 格子整段删掉**，
- *   改成 TH11 `front.anm` script32..35 那 **4 个 VM** 里的 3 个（第 4 个零售自己把它写成零宽）：
+ *   改成 TH11 `front.anm` script32..35 那 **4 个 VM** 里的 3 个（第 4 个原版自己把它写成零宽）：
  *
  *   | 元素 | 脚本 | 贴图 | 几何（640×480，`anchor(1,2)`=（左，底））| 一手 |
  *   | --- | --- | --- | --- | --- |
@@ -105,23 +105,23 @@
  *   | 增长条 | 212 | `SIGNAL_GAUGE_BAR`（sprite58）| 同 pos；宽 = `9 + 4×档` px | 引擎 `th11:0x41b70b` |
  *   | 图标 | 213 | `SIGNAL_GAUGE_ICON`（sprite26）| `pos(30,468)`，16×16 | script35 |
  *
- *   · 槽底与图标的位置**相对块左下角**（= 零售图标的左下角 (30,468)）：
+ *   · 槽底与图标的位置**相对块左下角**（= 原生图标的左下角 (30,468)）：
  *     图标 (0,0)、槽 (+12,+12)；块的**外沿** = 640 空间 `x 30..90`、`y 440..468` = **60×28**。
- *   · **增长条按档点亮**（零售：`[vm1+0x4c] = 9 + 4×档`，档 = `pct/10` ∈ 0..10）⇒ 信号每 +10
- *     点亮一根 4 px 宽的条；`pct = 信号/1000`（= 零售 `sig*100/1000` 的同量纲，`sig` 上限 12000+）。
- *   · **档位闪色**（零售 `th11:0x41b593`–`0x41b66e` 写 `[vm+0x37c]`）：`pct<100 → 中断 7`（常态白）、
+ *   · **增长条按档点亮**（原生：`[vm1+0x4c] = 9 + 4×档`，档 = `pct/10` ∈ 0..10）⇒ 信号每 +10
+ *     点亮一根 4 px 宽的条；`pct = 信号/1000`（= 原生 `sig*100/1000` 的同量纲，`sig` 上限 12000+）。
+ *   · **档位闪色**（原版 `th11:0x41b593`–`0x41b66e` 写 `[vm+0x37c]`）：`pct<100 → 中断 7`（常态白）、
  *     `<110 → 8`（5 帧闪）、`<120 → 9`（3 帧闪）、`≥120 → 10`（2 帧闪）。**只在档位变化时发**
- *     （零售那边也是靠 `gui+0x4420` 的两个状态位做边沿）。
- *   · **整块压暗**（零售 `th11:0x41b4a1`–`0x41b55a`）：显示态遇到「自机 `y > 416` 且 `x < −64`」⇒
+ *     （原生那边也是靠 `gui+0x4420` 的两个状态位做边沿）。
+ *   · **整块压暗**（原版 `th11:0x41b4a1`–`0x41b55a`）：显示态遇到「自机 `y > 416` 且 `x < −64`」⇒
  *     发中断 3（`alphaTime(10,0,64)`）；压暗态遇到「`y < 400` 或 `x > −64`」⇒ 发中断 2（淡回）。
  *     ⚠ 这套门限是 **TH11 自己的**，与 SDK 的 `ce_hud_near_corner()`（TH16 栅格 400/384）**不是同一组**
  *     ⇒ 本卡自算（共享件不动）。
- *   · ❓ **文字读数三行是我们自己加的**（零售 SA 的读数就是那排竖条，没有数字）—— 商品化成
- *     「信号 0.00–1.30 / 信仰 / 蓝点分预览」，摆在零售那一块的右边（块因此宽到 104，640 空间）。
+ *   · ❓ **文字读数三行是我们自己加的**（原生 SA 的读数就是那排竖条，没有数字）—— 商品化成
+ *     「信号 0.00–1.30 / 信仰 / 蓝点分预览」，摆在原生那一块的右边（块因此宽到 104，640 空间）。
  *     这一条 2026-09-10 起就在 `TUNING.md` §2 的 111 行登记为 ❓ 自定，本次只挪位置、不改口径。
  *
- * ⚠ 块尺寸（表面 px）= 零售外沿 + 读数列：`104 × 28`（640 空间）= **208 × 56**。
- *   块一变宽变高，货架会把它后面的块（116/117 …）往右推 —— 这是「按零售尺寸报块」的必然结果，
+ * ⚠ 块尺寸（表面 px）= 原生外沿 + 读数列：`104 × 28`（640 空间）= **208 × 56**。
+ *   块一变宽变高，货架会把它后面的块（116/117 …）往右推 —— 这是「按原生尺寸报块」的必然结果，
  *   报告里登记了影响面。*/
 
 /* 640×480 字面量空间 → 表面 px（VM 脚本里是 `resolutionMode(2)`）。*/
@@ -129,16 +129,16 @@
 #define SIGNAL_HUD_BLOCK_W     208.0f     /* 表面 px：104（640 空间）×2 */
 #define SIGNAL_HUD_BLOCK_H      56.0f     /* 表面 px：28（640 空间）×2 */
 
-/* 元素相对**块左下角**的偏移（640 空间；块左下角 = 零售图标左下角 (30,468)）
+/* 元素相对**块左下角**的偏移（640 空间；块左下角 = 原生图标左下角 (30,468)）
  * ⚠ 屏幕坐标 **y 向下增长** ⇒ 「在块底边之上 N 像素」在算式里是 **减** N（`by - N`）。
- *   零售几何：图标 (30,468) 16×16（y 452..468）、槽 (42,456) 48×16（y 440..456）
+ *   原生几何：图标 (30,468) 16×16（y 452..468）、槽 (42,456) 48×16（y 440..456）
  *   ⇒ 槽的底边比图标的底边**高 12**（468−456），块的外沿 = y 440..468 = **28 高**。*/
-#define SIGNAL_ICON_DX          0.0f      /* 零售 sprite26 `pos(30,468)` − (30,468) */
+#define SIGNAL_ICON_DX          0.0f      /* 原生 sprite26 `pos(30,468)` − (30,468) */
 #define SIGNAL_ICON_UP          0.0f      /* 图标的底边 = 块的底边 */
-#define SIGNAL_GAUGE_DX        12.0f      /* 零售 `pos(42,456)`：x +12、底边**向上** 12 */
+#define SIGNAL_GAUGE_DX        12.0f      /* 原生 `pos(42,456)`：x +12、底边**向上** 12 */
 #define SIGNAL_GAUGE_UP        12.0f
 
-/* 增长条的宽度（零售 `th11:0x41b6c3/0x41b70b`）：`9 + 4×档`，档 = `min(pct,100)/10` ∈ 0..10。
+/* 增长条的宽度（原版 `th11:0x41b6c3/0x41b70b`）：`9 + 4×档`，档 = `min(pct,100)/10` ∈ 0..10。
  * 分母 = sprite58 的**内容宽 48 px**（画布 64 px，内容靠左 48 —— 见 make_signal_hud_art.py）。*/
 #define SIGNAL_BAR_BASE_PX      9.0f      /* 0x41b70b 的 `fadd 9.0` */
 #define SIGNAL_BAR_STEP_PX      4.0f      /* `lea edx,[eax*4]` */
@@ -157,7 +157,7 @@
 #define SIGNAL_INT_L1            8        /* 100 ≤ pct < 110：5 帧闪 */
 #define SIGNAL_INT_L2            9        /* 110 ≤ pct < 120：3 帧闪 */
 #define SIGNAL_INT_L3           10        /* pct ≥ 120：2 帧闪 */
-#define SIGNAL_INT_DIM           3        /* 压暗（零售 4 个 VM 都发）*/
+#define SIGNAL_INT_DIM           3        /* 压暗（原生 4 个 VM 都发）*/
 #define SIGNAL_INT_SHOW          2        /* 淡回 */
 
 /* 压暗/淡回的门限（一手：`th11:0x41b4a1`–`0x41b55a`；[0x498010] = 416.0、
@@ -167,7 +167,7 @@
 #define SIGNAL_SHOW_Y_LO       400.0f     /* 淡回：y < 400 */
 #define SIGNAL_SHOW_X_HI      (-64.0f)    /* 淡回：x > −64 */
 
-/* 读数列（❓ 自定，见上）：x = 块左下角 +62（= 零售块右缘 60 + 2），
+/* 读数列（❓ 自定，见上）：x = 块左下角 +62（= 原生块右缘 60 + 2），
  * 三行的**中心**在块底边之上 5 / 14 / 23（行距 9，字形在 640 空间里约 10 高 ⇒ 正好填满 28 高的块）。*/
 #define SIGNAL_TEXT_DX         62.0f
 #define SIGNAL_TEXT1_UP        23.0f      /* 信号强度 0.00–1.30 */
@@ -175,8 +175,8 @@
 #define SIGNAL_TEXT3_UP         5.0f      /* 蓝点分预览 */
 
 /* 颜色（D3DCOLOR = 0xAARRGGBB）。**槽底/增长条的色不再由这里给**：它们写在脚本 211/212 的
- * `color()` 里（零售原值：槽底 `color(32,32,64)`、增长条 `color(255,255,255)` + 闪色由中断切），
- * 与零售一致 ⇒ 卡侧一个颜色都不写（只有文字读数是我们自己的配色，❓ 自定）。*/
+ * `color()` 里（原生原值：槽底 `color(32,32,64)`、增长条 `color(255,255,255)` + 闪色由中断切），
+ * 与原生一致 ⇒ 卡侧一个颜色都不写（只有文字读数是我们自己的配色，❓ 自定）。*/
 #define SIGNAL_C_TEXT          0xffffffffu
 #define SIGNAL_C_TEXT_MULT     0xff80a0ffu
 
@@ -517,26 +517,26 @@ static int on_tick_2(ce_card_t *c)
     return 0;
 }
 
-/* ============================ HUD（左下角：**零售 TH11 信号槽**）============================
+/* ============================ HUD（左下角：**原版 TH11 信号槽**）============================
  * 走 **`ce_hud_slot_claim(111, …)`**（`HUD-LAYOUT.md` §3）：底部货架按 card_id 升序排布 ⇒
  * 与季节 116 / 动物灵 117 / 信仰 110 同装也不会重叠。
  * ★ `ce_hud_slot_claim()` 给的是「认领那一刻」的坐标，同一开场批次里后来的认领会重排
  *   ⇒ 每帧用 `ce_hud_slot_get()` 取最新值，VM 每帧按它摆（`sdk_core.h` 的注释这么要求的）。
  *
- * 三个**零售 VM**（脚本 211/212/213，`layer(25)`；贴图是 TH11 `front.anm` entry0 的切图）：
+ * 三个**原版 VM**（脚本 211/212/213，`layer(25)`；贴图是 TH11 `front.anm` entry0 的切图）：
  *   槽底（sprite57）+ 增长条（sprite58）+ 图标（sprite26）—— 位置/宽度/闪色/压暗的出处见
  *   文件上半部分常量块的注释块。**我们只加了三行文字读数**（❓ 自定）。
- * ❓ 零售那第 4 个 VM（script34 / sprite59）**不出**：与 sprite58 同矩形，且零售每帧把它的
+ * ❓ 原生那第 4 个 VM（script34 / sprite59）**不出**：与 sprite58 同矩形，且原生每帧把它的
  *   宽度写 0（`th11:0x41b71f` `fldz`）⇒ 正常游玩不可见（报告里登记）。*/
 
-static uint32_t s_gauge_bg;             /* 零售 VM[0]（脚本 211）*/
-static uint32_t s_gauge_bar;            /* 零售 VM[1]（脚本 212）*/
-static uint32_t s_gauge_icon;           /* 零售 VM[3]（脚本 213）*/
-static int32_t  s_gauge_state;          /* 零售 `gui+0x4420` 的 bit6..8：0=空闲 / 1=L1 / 2=L2 / 3=L3。
-                                         * ⚠ **初值 0 = 「空闲但没发过 7」**（零售只有当这三位由非 0
+static uint32_t s_gauge_bg;             /* 原生 VM[0]（脚本 211）*/
+static uint32_t s_gauge_bar;            /* 原生 VM[1]（脚本 212）*/
+static uint32_t s_gauge_icon;           /* 原生 VM[3]（脚本 213）*/
+static int32_t  s_gauge_state;          /* 原生 `gui+0x4420` 的 bit6..8：0=空闲 / 1=L1 / 2=L2 / 3=L3。
+                                         * ⚠ **初值 0 = 「空闲但没发过 7」**（原生只有当这三位由非 0
                                          * 变 0 时才写中断 7）⇒ 起 VM 的那一刻**不发**中断 7。*/
 static int32_t  s_gauge_age;            /* VM 起用后的帧数（喂上面那个 20 帧门；`_kill` 里归零）*/
-static int32_t  s_gauge_dim;            /* 零售 `gui+0x4420` bit0：1 = 已压暗 */
+static int32_t  s_gauge_dim;            /* 原生 `gui+0x4420` bit0：1 = 已压暗 */
 static ce_hud_vm_text_t s_sig_txt;      /* 信号强度 0.00..1.30（❓ 自定）*/
 static ce_hud_vm_text_t s_faith_txt;    /* 信仰（基础 + Δ_111）（❓ 自定）*/
 static ce_hud_vm_text_t s_bonus_txt;    /* 本帧蓝点分（PV）预览（❓ 自定）*/
@@ -568,7 +568,7 @@ static void signal_hud_kill(void)
 }
 
 /* 起 VM（幂等：已有的不动）。VM 会被引擎在别处摧毁 ⇒ 每帧自愈检查（`stock.c` 同款）。
- * ⚠ 起用顺序 = 前后关系（四件都在 25 层，零售那套 layer 18/19 是 TH11 的层号，不能照搬）：
+ * ⚠ 起用顺序 = 前后关系（四件都在 25 层，原版那套 layer 18/19 是 TH11 的层号，不能照搬）：
  *   槽底 → 增长条 → 图标。*/
 static void signal_hud_ensure(void)
 {
@@ -591,9 +591,9 @@ static void signal_hud_ensure(void)
     ++s_gauge_age;
 }
 
-/* 档位（一手 `th11:0x41b593`–`0x41b66e`）：`pct = 信号/1000`（零售 `sig*100/1000` 的同量纲），
+/* 档位（一手 `th11:0x41b593`–`0x41b66e`）：`pct = 信号/1000`（原版 `sig*100/1000` 的同量纲），
  *   `pct < 100 → 空闲`、`< 110 → L1(中断 8)`、`< 120 → L2(9)`、`≥ 120 → L3(10)`。
- * 零售的实现是**两个状态位**（`gui+0x4420` 的 bit6/bit7）+ 三条「位型变了才写中断」的比较：
+ * 原生的实现是**两个状态位**（`gui+0x4420` 的 bit6/bit7）+ 三条「位型变了才写中断」的比较：
  *     · 回到空闲时**只有当位非 0** 才写中断 7（初次「空闲」不写 ⇒ 不打断淡入）；
  *     · 升到 Lk 时只有位型不等于该档才写中断 7+k。
  * 逐条照抄 ⇒ 只在**边沿**发（每帧重发会把 `jmp(…, 20/30/36/40)` 的闪色循环反复重头开始）。*/
@@ -605,7 +605,7 @@ static int signal_gauge_level_int(int32_t pct)
     return 3;
 }
 
-/* 整块压暗 / 淡回 —— 逐条照抄零售 `th11:0x41b4a1`–`0x41b55a`（门限见常量块的注释）。*/
+/* 整块压暗 / 淡回 —— 逐条照抄原版 `th11:0x41b4a1`–`0x41b55a`（门限见常量块的注释）。*/
 static void signal_gauge_dim_tick(void)
 {
     const float *pp = ce_player_pos();
@@ -634,14 +634,14 @@ static void signal_hud_draw(signal_card_t *s)
     /* ⚠ 一手（`sdk_core.c` 的 `ce_hud_slot_get()`）：它**只填 x/y/w/h/side，不填 x640/y640**
      *   （认领时填、`get` 时不填）⇒ 直接读 `slot.x640/y640` 是**未初始化的栈值**。
      *   这里自己按 SDK 给的口径换算（`CE_HUD_SURFACE_TO_640` = 0.5）—— 反过来说：
-     *   `bx/by` 就是块**左下角**在 640 空间里的坐标，零售那一块的全部几何都相对它写。*/
+     *   `bx/by` 就是块**左下角**在 640 空间里的坐标，原生那一块的全部几何都相对它写。*/
     if (!ce_hud_slot_get(SIGNAL_ID_NUM, &slot)) return;   /* 还没认领到（开场批次未跑完）*/
     bx = slot.x * CE_HUD_SURFACE_TO_640;
     by = slot.y * CE_HUD_SURFACE_TO_640;
     signal_hud_ensure();
 
-    /* ① 三个零售 VM 的落位（640 空间 → VM 用表面 px；脚本里的 `anchor(1,2)` = （左，底））
-     *    gx/gy = 槽的左下角（零售 (42,456) 相对块左下角 (30,468)：x +12、底边向上 12）。*/
+    /* ① 三个原生 VM 的落位（640 空间 → VM 用表面 px；脚本里的 `anchor(1,2)` = （左，底））
+     *    gx/gy = 槽的左下角（原生 (42,456) 相对块左下角 (30,468)：x +12、底边向上 12）。*/
     gx = bx + SIGNAL_GAUGE_DX;
     gy = by - SIGNAL_GAUGE_UP;
     if (s_gauge_bg)
@@ -650,10 +650,10 @@ static void signal_hud_draw(signal_card_t *s)
         ce_anm_set_pos(s_gauge_icon, (bx + SIGNAL_ICON_DX) * SIGNAL_U640_TO_SURF,
                        (by - SIGNAL_ICON_UP) * SIGNAL_U640_TO_SURF, 0.0f);
 
-    /* ② 增长条的宽度 = `9 + 4×档` px（零售 `th11:0x41b70b`），档 = `min(pct,100)/10`；
+    /* ② 增长条的宽度 = `9 + 4×档` px（原版 `th11:0x41b70b`），档 = `min(pct,100)/10`；
      *    贴图内容 48 px 靠左 ⇒ 写成 scale.x = 目标宽/48（左端因 `anchor(1,2)` 钉住）。
      *    ⚠ 脚本 212 里**没有 scaleTime** ⇒ `ce_anm_set_scale` 不会被插值器覆盖。*/
-    pct = s->slot.signal / 1000;                      /* 0..130（零售 `pct` 的同量纲）*/
+    pct = s->slot.signal / 1000;                      /* 0..130（原生 `pct` 的同量纲）*/
     step = (pct > 100 ? 100 : pct) / 10;              /* 0..SIGNAL_BAR_MAX_STEP */
     bar_px = SIGNAL_BAR_BASE_PX + SIGNAL_BAR_STEP_PX * (float)step;
     if (s_gauge_bar) {
@@ -661,8 +661,8 @@ static void signal_hud_draw(signal_card_t *s)
         ce_anm_set_scale(s_gauge_bar, bar_px / SIGNAL_BAR_CONTENT_PX, 1.0f);
     }
 
-    /* ③ 档位闪色：**前 20 帧不发**（零售 `th11:0x41b593` 的门；理由见常量块的注释），
-     *    之后只在档位变化时发（零售的状态位语义，逐条对应见 `signal_gauge_level_int`）。*/
+    /* ③ 档位闪色：**前 20 帧不发**（原版 `th11:0x41b593` 的门；理由见常量块的注释），
+     *    之后只在档位变化时发（原生的状态位语义，逐条对应见 `signal_gauge_level_int`）。*/
     lvl = signal_gauge_level_int(pct);
     if (s_gauge_age >= SIGNAL_WARMUP_FRAMES && lvl != s_gauge_state) {
         if (lvl == 0) {
@@ -697,7 +697,7 @@ static int on_draw(ce_card_t *c)
     signal_card_t *s = st(c);
 
     /* ★ 2026-09-12 审计：`on_draw`（虚表 `+0x48`）在**主菜单 / 标题**里也会被调，而 `on_tick_2`
-     *   （`+0x2c`）不会 ⇒ 不设门会在菜单上留下 3 个零售 VM + 3 行读数，而且 `signal_hud_ensure()`
+     *   （`+0x2c`）不会 ⇒ 不设门会在菜单上留下 3 个原生 VM + 3 行读数，而且 `signal_hud_ensure()`
      *   会在菜单里**反复重建**那些 VM（117 的 bug3 就是这个坑；115 / 116 / 117 三张卡同款门）。
      *   门关着时把 VM 收掉；HUD **槽位**不动 —— 槽位的账归 `on_load` / `on_delete`。*/
     if (!s) return 0;
@@ -744,11 +744,11 @@ static int on_load(ce_card_t *c)
     u.user = c;
     if (!faith_register(&u)) ce_log("signal: faith_register failed (table full?)");
 
-    /* ★ 2026-09-12 本轮：块尺寸从「❓ 自定 96×20」改成**按零售那一块的实际外沿报**
+    /* ★ 2026-09-12 本轮：块尺寸从「❓ 自定 96×20」改成**按原生那一块的实际外沿报**
      *   （`HUD-LAYOUT.md` §6.1 的口径）：图标左下角 (30,468) → 槽右缘 (90,440) = 60×28（640 空间）
      *   = 120×56（表面 px），再加右边那 44×28 的**我们自己的读数列** ⇒ **208×56**。
      *   ⚠ 影响面：货架按 card_id 升序排，111 变宽会把后面的块（116/117 …）往右推
-     *   （报告里登记；这是「按零售尺寸报块」的必然结果，不是回归）。*/
+     *   （报告里登记；这是「按原生尺寸报块」的必然结果，不是回归）。*/
     memset(&blk, 0, sizeof blk);
     blk.w = SIGNAL_HUD_BLOCK_W;
     blk.h = SIGNAL_HUD_BLOCK_H;
@@ -799,9 +799,9 @@ static int ctor(ce_card_t *c)
  *   单测 `tests/test_signal_core.c` §5.1 逐项钉住「归零什么 / 保留什么」。
  *
  * ⚠ 这里**不动 HUD**（`on_run_reset` 会 `signal_hud_kill()`）：`ce_hud_vm_text_set()` 自带
- *   「VM 没了就重建」的自愈（`sdk.c`），三个零售 VM 有 `signal_hud_ensure()` 每帧自愈
+ *   「VM 没了就重建」的自愈（`sdk.c`），三个原生 VM 有 `signal_hud_ensure()` 每帧自愈
  *   ⇒ 不需要像青眼 / 绀珠传那样在开场杀 VM（少一次无谓的 VM 重建）。
- *   ⚠ 但**压暗态**（`s_gauge_dim`）在开场要归零：零售的 flag 在 `zGui` 上、随局重置，
+ *   ⚠ 但**压暗态**（`s_gauge_dim`）在开场要归零：原生的 flag 在 `zGui` 上、随局重置，
  *   我们放在静态区 ⇒ 留给 `signal_hud_kill()` / `signal_hud_ensure()` 那条路
  *   （开场不杀 VM 时它不会被复位，最多是「上一关压暗着、这一关第一帧立刻淡回」，无副作用）。
  * ⚠ 也**不碰**共用绿点池（残留的点由 `faith_pool_tick()` 自然出界）。*/

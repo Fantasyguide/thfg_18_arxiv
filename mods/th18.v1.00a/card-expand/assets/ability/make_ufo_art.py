@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""星莲船（系统卡 112）的飞碟本体：TH12 零售切图 + 脚本生成。
+"""星莲船（系统卡 112）的飞碟本体：TH12 原版切图 + 脚本生成。
 
-来源（零售字节只在 `local/`，gitignored；构建时取，不入库）：
+来源（原生字节只在 `local/`，gitignored；构建时取，不入库）：
   贴图  `local/th12.v1.00b/anm/enemy/enemy/ufo_anim.png`
         —— 256×256，entry `enemy/ufo_anim.png`，16 个 64×64 = sprite205..220
   脚本  `local/th12.v1.00b/anm/enemy/enemy.anm.txt` 的 **script135..138**（TH12 v1.00b，约 3237–3371 行）

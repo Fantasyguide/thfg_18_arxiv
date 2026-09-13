@@ -2,7 +2,7 @@
 # 格式同 entries/ORDER.txt：一行 `NAME  源图(相对 assets/)  WxH`。
 # ⚠️ 本文件**不参与构建**（`build_ability.py` 只读 entries/ORDER.txt）—— 合并时把下面两行并进去。
 #
-# 一手（全部在 TH07 v1.00b 零售里，逐条见生成器文件头）：
+# 一手（全部在 TH07 v1.00b 原版里，逐条见生成器文件头）：
 #   FIELD = `etama.anm` entry3 的贴图 `data/etama/etama4.png` **整张**（sprite0 = 0,0,256,256）
 #           ← 脚本 = entry3 的文件内脚本 0（`thanm -l` 的 script64）
 #           ← 它是 **effect type 0x1c**：`th07:0x441aa4`（开结界）/ `th07:0x441c19`（灵击崩结界）

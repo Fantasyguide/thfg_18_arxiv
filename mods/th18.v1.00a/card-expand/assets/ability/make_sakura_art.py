@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""妖妖梦（TH07 系统卡 107）的**樱点 / 小樱点**道具贴图：从 TH07 零售 etama.anm 里切。
+"""妖妖梦（TH07 系统卡 107）的**樱点 / 小樱点**道具贴图：从 TH07 原版 etama.anm 里切。
 
 一手来源（全部在 `local/`，gitignored，构建时取；不入库）
 ────────────────────────────────────────────────────────
-* 零售 anm：`local/th07.v1.00b/dat/etama.anm`（anm **version 2**，4 个 entry）
+* 原版 anm：`local/th07.v1.00b/dat/etama.anm`（anm **version 2**，4 个 entry）
     切好的贴图：`local/th07.v1.00b/anm/etama/data/etama/etama*.png`（256×256）
 * **道具脚本 = entry1（贴图 `data/etama/etama2.png`）的 script53..script62**，
   即「一个 sprite + static()」那十连发（✅ 一手，见下）。
@@ -45,7 +45,7 @@ sprite 矩形（一手，thanm -l 的 entry1 段）
 
 尺寸 / 缩放
 ──────────
-* 原样 16×16（**不重采样、不补画**，纯零售切图；16×16 是 2 的幂 ✅）。
+* 原样 16×16（**不重采样、不补画**，纯原生切图；16×16 是 2 的幂 ✅）。
 * TH07 是 640×480 场地、TH18 是 2×（1280×960）⇒ 脚本里 `scale(2.0f, 2.0f)` 才是原尺寸观感
   （同仓先例：`115_season_point.anm.txt` 对 16×16 的 `PT_*.png` 用 scale 2.0→1.0）。
 
@@ -63,7 +63,7 @@ from PIL import Image
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[4]
 
-# 一手源：anm（兜底解包用）与已切好的零售贴图
+# 一手源：anm（兜底解包用）与已切好的原生贴图
 ANM = REPO / "local/th07.v1.00b/dat/etama.anm"
 THANM = REPO / "local/vendor/thtk/build/thanm/thanm"
 SRC_PNG = REPO / "local/th07.v1.00b/anm/etama/data/etama/etama2.png"

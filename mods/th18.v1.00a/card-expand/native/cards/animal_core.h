@@ -114,8 +114,15 @@ void animal_hyper_radius(int32_t time_left, int32_t total, float *out);
 int animal_fish_in_queue(const animal_core_t *st, int32_t *out, int32_t cap);
 
 /* 咆哮**正常结束**（超时、没用霊撃）的奖励：2 个「变色动物灵」的 type（1..3）。
+ * ★ 2026-09-13 bug-5 用户口径 / 一手对账：
+ *   · **一手 TH17** `sub_40e920` `0x40ee03`（release level 0）：`rand()%3 + 15` 连放 2 颗 ——
+ *     即 **随机** 15/16/17（= 1..3 的变色版），**不读 `hyper_type`**（`hyper_type` 只在
+ *     `Player__do_shooting` 的 set 索引里用；`0x40e920` 从头到尾不碰）。
+ *   · **用户口径（本轮）**：暴走咆哮（`hyper_type` 1/2/3）放出的 2 只 = **本次咆哮那一只**的
+ *     变色版（狼暴走 → 2 只狼）。⇒ 这是**用户覆盖、非 TH17 一手**。
+ *   · 混合（`hyper_type == 4`）TH17 没有「单一类型」，回退到一手行为 = `1 + rand()%3`。
  * rand 为 0 时用确定性轮转（单测）。返回写入 out 的个数（≤ 2）。 */
-int animal_end_burst(int32_t *out, int32_t cap, uint32_t (*rand)(void));
+int animal_end_burst(int32_t *out, int32_t cap, int32_t roar_type, uint32_t (*rand)(void));
 
 /* 寿命归零后的变形：TH17 §4.3 `type % 3 + 1`（1→2→3→1；4..14 不动）。 */
 int32_t animal_next_type(int32_t type);

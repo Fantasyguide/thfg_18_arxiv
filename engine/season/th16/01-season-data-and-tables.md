@@ -32,10 +32,10 @@ md5 `701a603c2afc686776ffddacbed4ee4e`，812,400 B）：`.text` 熵 **8.000**（
 → th16.exe.unpacked.exe   683,520 B   md5 70d3429444e1e6c18a72e7200a4d7ce8
 ```
 
-- 大小 **683,520 B = 零售版大小**（812,400 − 128,880 = `.bind` 原始大小，精确相等）；
+- 大小 **683,520 B = 原版版大小**（812,400 − 128,880 = `.bind` 原始大小，精确相等）；
 - `.text` 熵 **8.000 → 6.504**、入口点回到 `.text`（`0x7537b`）、`.bind` 段消失；
-- md5 与仓库记录的零售 md5 `cb9caf54ce5738f70086e783ec88fd2a` **不同** —— 因为 Steamless 重建了 PE
-  容器（零化 DOS stub、重排段头、未重算 checksum），**代码段字节是零售的**；
+- md5 与仓库记录的原版 md5 `cb9caf54ce5738f70086e783ec88fd2a` **不同** —— 因为 Steamless 重建了 PE
+  容器（零化 DOS stub、重排段头、未重算 checksum），**代码段字节是原版的**；
 - ✅ **证明**：`th-re-data` 的 v1.00a 函数地址在本文件里逐一对上序言 —— 例如
   `BombSubSpring__begin` `0x411460` = `55 8B EC 51 56 8B 35 F8 6E 4A 00`（读 `CACHED_PLAYER_SUBSEASON_SHT_FILE` 旁的 `0x4a6ef8`）、
   `item_collect_season` `0x43de50` = `8B 0D 08 58 4A 00`（读 `CURRENT_SEASON_POWER`）、
@@ -179,7 +179,7 @@ float get_season_gauge_fill_ratio(void) {           // xmm0 返回（Ghidra 因�
 
 > ★ 与 TH18 的对照（[`season/th18/01`](../th18/01-season-residuals.md) §1c）：TH18 的原生道具是**同一套代码**
 > （重力 0.03 `0x4b90a4`、上限 2.0、上限 12.0、+0.2、出界 472/200 全部一致），只是吸引半径由矩形换成
-> 「磁速/3 的圆」并多一条 `player+0x47988..0x47994` 的参数组（ITEM_CATCH / ITEM_LINE 两张零售卡改的就是它）。
+> 「磁速/3 的圆」并多一条 `player+0x47988..0x47994` 的参数组（ITEM_CATCH / ITEM_LINE 两张原版卡改的就是它）。
 > **TH16 的 state 2（放 B / 消弹产生的上抛道具）到顶点时，type 0x10 会退回 state 1 而不是飞向自机**
 > （`0x42f618`–`0x42f63e`）—— 这就是「季节点不会自动回收」那条攻略的实际含义；**敌人掉落（state 1）照常被吸引**。
 > ⚠️ **别把 state 2 和季节点自己的 state 3 混了**：state 2 是「普通道具被上抛」的态，季节点（type 0x10）

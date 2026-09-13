@@ -44,7 +44,7 @@ ECL 524 setChapter(n) ──► set_chapter(n): GameThread.chapter = n, flags |=
 - 调 `FUN_0043ab70(mode)` 结算，再调 `Globals::do_pointdevice_snapshot_and_autosave(chapter)`（§3）；
 - 最后 `and [edi+0x90],~0x8000` 清位。
 
-> 边界是**标志位**而不是章号数值：零售脚本会重复用同一个章号（st05 `MainLatter` 连调两次
+> 边界是**标志位**而不是章号数值：原版脚本会重复用同一个章号（st05 `MainLatter` 连调两次
 > `setChapter(7)`、st01mbs 两次 `setChapter(2)`），轮询 `CURRENT_CHAPTER` 的跳变会漏掉第二次。
 > 另外 `+0xb0` 只有 `0x432ec0` 一个写点（全库检索），GameThread 对象每关重建且 `memset` 到 0
 > （`0x43cb80`）——引擎不会在别处推进/重置章号 ✅。

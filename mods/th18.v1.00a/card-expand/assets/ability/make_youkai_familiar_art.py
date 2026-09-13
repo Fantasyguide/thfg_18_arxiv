@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""永夜抄（系统卡 108）**使い魔（使魔）本体**：TH08 零售切图 + 脚本生成。
+"""永夜抄（系统卡 108）**使い魔（使魔）本体**：TH08 原版切图 + 脚本生成。
 
     python3 make_youkai_familiar_art.py        # 生成 + 自检（可重复跑，结果一致）
 
-来源（零售字节只在 `local/`，gitignored；构建时取，不入库）：
+来源（原生字节只在 `local/`，gitignored；构建时取，不入库）：
   贴图+脚本  `local/th08.v1.00d/dat/enemy.anm` —— TH08 v1.00d（anm **version 3**）。
              贴图在 .anm 内部，entry 名 = `data/stgenm/enemy.png`（512×512）。
-             本脚本运行时用 thanm 现场 `-l`（读矩形/脚本）与 `-x`（取贴图）到**临时目录**，仓里不落零售字节。
+             本脚本运行时用 thanm 现场 `-l`（读矩形/脚本）与 `-x`（取贴图）到**临时目录**，仓里不落原生字节。
   复核命令   `local/vendor/thtk/build/thanm/thanm -l 8 -m local/vendor/thpages/static/mapfile/v2.anmm \
                  local/th08.v1.00d/dat/enemy.anm`
              ★ anmmap 必须用 **v2.anmm**（文件头自述「for version 2: PCB and version 3: IN, PoFV」）——
@@ -57,7 +57,7 @@ ECL opcode 54 的 handler `th08:0x419812` 取 1 个参数 K，调
     script57 = sprite 101..104 4 帧  (128..255, y=128)  ← 脚本里有 v3 专有指令 `ins_25`，见下
     script58 = sprite 105..108 4 帧  (128..255, y=160)  ← 同上
 
-★ 本生成器**只移植 53..56**（四条 8 帧循环）。理由：57/58 的零售正文里有 `ins_25(1)` ——
+★ 本生成器**只移植 53..56**（四条 8 帧循环）。理由：57/58 的原生正文里有 `ins_25(1)` ——
 一手：anm v3 解释器 `th08:0x45ea76 movsx eax,WORD PTR [edx]`（raw opcode）+1 查表 `th08:0x46206d`，
 raw 25 → `th08:0x45f8d7 mov WORD PTR [ecx+0x1fc],ax`，即写 `zAnmVm+0x1fc`
 （re-data 直接把该字段命名为 `__v3_ins_25`；thtk 的 `v2.anmm` 也在 25 号留白注释
@@ -70,12 +70,12 @@ raw 25 → `th08:0x45f8d7 mov WORD PTR [ecx+0x1fc],ax`，即写 `zAnmVm+0x1fc`
 `docs/superpowers/specs/2026-09-12-youkai-108-design.md` §3.5 把它定义成「发射口实体化的真敌人」，
 每帧按活跃发射口槽数建/撤。**一套四色正好对应最多 4 个发射口槽**，所以本生成器把
 script53/54/55/56 四套**全做**，卡侧按槽位 `ce_anm_set_sprite`（或按槽号选脚本）挑一套即可 ——
-既保住「素材是官方零售」这条硬要求，又不用挑一个「最像」的。
+既保住「素材是官方原生」这条硬要求，又不用挑一个「最像」的。
 使魔被打死按 1/2 转嫁本体是**我们的设计**（原作没有这条管线），与本生成器无关。
 
 ── 产出（每条都不动别人的文件）────────────────────────────────────────────────────
   assets/ability/youkai_familiar/YOUKAI_FAM_S<53|54|55|56>_<0..7>.png
-        —— `enemy.anm` sprite 69..100 的零售切图，每张 **32×32**（本来就是 2 的幂 ⇒ 无需补边）。
+        —— `enemy.anm` sprite 69..100 的原生切图，每张 **32×32**（本来就是 2 的幂 ⇒ 无需补边）。
         ★ 居中不变的依据（一手）：TH08 sprite 四边形以 **VM 位置为中心**画 ——
           `AnmManager::draw_std_quad_type_0` `th08:0x463877` / `th08:0x463904`：
           `flags_lo>>11 & 3 & 1` / `…&3&2` 两位为 0 时取 `pos − 半宽`（`fsub [ebp-0x4]`）；
@@ -85,7 +85,7 @@ script53/54/55/56 四套**全做**，卡侧按槽位 `ce_anm_set_sprite`（或�
   assets/ability/scripts/206..209_youkai_familiar_s<53|54|55|56>.anm.txt
         —— 正文逐条照抄 `enemy.anm` script53..56，**只**把 `sprite(spriteNN)` 换成 `sprite(@NAME)`；
           `+N:` 标签 / `jmp()` 一个不改（注释写在 `script scriptNNN {` **里面**）。
-        ★ **没有 `layer()` 可抄**：零售这 4 支脚本里**一条 `layer()` 都没有** ⇒ 本生成器不替它编层号。
+        ★ **没有 `layer()` 可抄**：原生这 4 支脚本里**一条 `layer()` 都没有** ⇒ 本生成器不替它编层号。
           ⚠ 卡侧把这几支挂在**独立 VM** 上时，那台 VM 必须**自己**补 `layer(...)` —— 世界层 3–19，
           别用 HUD 的 24/25。
   assets/ability/entries/ORDER.youkai_familiar.txt —— 待合并进 ORDER.txt 的片段（整段重写，幂等）。
@@ -130,7 +130,7 @@ _FILE_RE = re.compile(r"^(\d+)_([A-Za-z_][A-Za-z0-9_]*)\.anm\.txt$")
 _SCRIPT_SPRITE_RE = re.compile(r"sprite\(sprite(\d+)\)")
 
 
-# ── 取源（thanm 现场解，仓里不落零售字节）──────────────────────────────
+# ── 取源（thanm 现场解，仓里不落原生字节）──────────────────────────────
 
 def _require(p, what):
     if not p.is_file():
@@ -227,7 +227,7 @@ def crop_cycle(sheet_path, rects, sprite_ids, src_num):
         cw, ch = canvas_size(w, h)
         cell = im.crop((x, y, x + w, y + h))
         canvas = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
-        canvas.paste(cell, ((cw - w) // 2, (ch - h) // 2))   # ★ 居中 = 零售的 VM 中心锚点（见文件头）
+        canvas.paste(cell, ((cw - w) // 2, (ch - h) // 2))   # ★ 居中 = 原生的 VM 中心锚点（见文件头）
         name = f"YOUKAI_FAM_S{src_num}_{idx}"
         path = OUT_ART / f"{name}.png"
         canvas.save(path)
@@ -251,8 +251,8 @@ def header_comment(anm_name, src_num, mapping, nframes, mean):
             f"    //   按「它写的是敌机本体 VM」判为 **enemy.anm**（贴图 data/stgenm/enemy.png）——见生成器文件头 ②。\n"
             f"    // 指令逐条照抄（sprite/jmp/标签一字未动），只把 sprite 引用换成 ORDER 名字：\n"
             f"    //   " + "，".join(f"sprite{s} → @{mapping[s]}" for s in sorted(mapping)) + "\n"
-            f"    // 该循环 {nframes} 帧、每帧 2 帧间隔（零售 `+2:`），可见像素均值 RGB≈{mean}。\n"
-            f"    // ⚠ 零售这支脚本里**没有 layer()**（敌机本体 VM 的层由引擎定）⇒ 这里也不写；"
+            f"    // 该循环 {nframes} 帧、每帧 2 帧间隔（原生 `+2:`），可见像素均值 RGB≈{mean}。\n"
+            f"    // ⚠ 原生这支脚本里**没有 layer()**（敌机本体 VM 的层由引擎定）⇒ 这里也不写；"
             f"挂独立 VM 时由挂它的那一方自己补 layer（世界层 3–19，别用 HUD 的 24/25）。")
 
 
@@ -275,7 +275,7 @@ def gen_scripts(spec_text, cycles, order_names):
         for sid, nm in mapping.items():
             body_txt = body_txt.replace(f"sprite(sprite{sid})", f"sprite(@{nm})")
         want = original.replace(head_old, head_new, 1)     # 只做「脚本号 + 注释头」这一处结构改动
-        left = _SCRIPT_SPRITE_RE.findall(body_txt)         # 漏换的引用（零售出现新 sprite 号时会炸）
+        left = _SCRIPT_SPRITE_RE.findall(body_txt)         # 漏换的引用（原生出现新 sprite 号时会炸）
         if left:
             sys.exit(f"{SRC_ANM} script{src_num} 里还有没替换的 sprite 引用 {left}")
         name = f"{dst}_youkai_familiar_s{src_num}.anm.txt"
@@ -311,7 +311,7 @@ def write_order(rows):
         "#   K 的上界是 95（ecldata5）⇒ 那个 anm 只能是 `enemy.anm`（101 支脚本；各关 stgNenm 只有 6–26）。",
         "#   🟡 etama.anm(115 支) 也满足上界；判 enemy.anm 的依据 = `ins_54` 写的是敌机本体 VM（zEnemy+0xc）。",
         "# 四套对应最多 4 个发射口槽，卡侧按槽位挑一套即可（见生成器文件头「产出定位」）。",
-        "# 每条脚本的正文逐条照抄零售，只把 sprite 引用换成这里的 @NAME；零售没有 layer()，故这里也不写。",
+        "# 每条脚本的正文逐条照抄原生，只把 sprite 引用换成这里的 @NAME；原生没有 layer()，故这里也不写。",
     ]
     lines = hdr + [f"{n}  {p}  {s}" for n, p, s, _k, _i in rows]
     OUT_ORDER.parent.mkdir(parents=True, exist_ok=True)
@@ -350,7 +350,7 @@ def check_pngs(cycles, rects):
 
 
 def check_scripts(scripts, maps, rows):
-    """③ 每个 @名字 都在 ORDER 片段里有定义；④ 与零售原文逐行 diff 只差 sprite 引用。"""
+    """③ 每个 @名字 都在 ORDER 片段里有定义；④ 与原生原文逐行 diff 只差 sprite 引用。"""
     names = {n for n, _p, _s, _k, _i in rows}
     changed_total = 0
     for fname, (body, want, _orig, _idx, _src) in sorted(scripts.items(), key=lambda kv: kv[1][3]):
@@ -468,7 +468,7 @@ def main():
     _require(THANM, "thanm 可执行文件")
     _require(ANMMAP_TH08, "TH08 用的 anmmap v2.anmm")
     _require(ANMMAP_TH18, "TH18 构建用的 anmmap v8.anmm")
-    _require(TH08_DAT / SRC_ANM, f"TH08 零售 {SRC_ANM}")
+    _require(TH08_DAT / SRC_ANM, f"TH08 原版 {SRC_ANM}")
 
     with tempfile.TemporaryDirectory(prefix="fam-src-") as td:
         tmp = Path(td)
@@ -516,7 +516,7 @@ def main():
         for n in NOT_PORTED:
             body = script_sprites(spec_text, n)
             print(f"  enemy.anm script{n}：sprite {body}（{len(body)} 帧）。"
-                  f"零售正文首行 `ins_25(1)` —— raw opcode 25 → `th08:0x45f8d7 mov WORD PTR [ecx+0x1fc],ax`"
+                  f"原版正文首行 `ins_25(1)` —— raw opcode 25 → `th08:0x45f8d7 mov WORD PTR [ecx+0x1fc],ax`"
                   f"（zAnmVm+0x1fc，re-data 名 `__v3_ins_25`），**v8 anm 无对应助记符** ⇒ 不移植。")
 
         print_md5(sorted(OUT_ART.glob("YOUKAI_FAM_*.png"))

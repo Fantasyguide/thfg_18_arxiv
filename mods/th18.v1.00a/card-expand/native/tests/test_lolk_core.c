@@ -19,7 +19,9 @@ static void in_mid(lolk_in_t *in, int32_t chapter)
     in->chapter = chapter;
 }
 
-/* boss 相位：boss_present + 相位指纹 + 符卡位 */
+/* boss 相位：boss_present + 相位指纹 + 符卡位。
+ * `stage_chapter = -1`：真实 boss 战里关卡脚本停在 `MainBoss`（非 MainSub），
+ * 道中章判定必须不参与。*/
 static void in_boss(lolk_in_t *in, int32_t sig, int32_t spell, int32_t survival, int32_t chapter)
 {
     memset(in, 0, sizeof *in);
@@ -28,6 +30,7 @@ static void in_boss(lolk_in_t *in, int32_t sig, int32_t spell, int32_t survival,
     in->spell_active = spell;
     in->survival = survival;
     in->chapter = chapter;
+    in->stage_chapter = -1;
 }
 
 /* 静默推进 n 帧：波边沿有 LOLK_DEBOUNCE 帧去抖，换相位前先让它过期 */
@@ -62,9 +65,10 @@ int main(void)
     lolk_add_killed(&s, 3);
     CHECK(s.graze == 5 && s.spawned == 4 && s.killed == 3);
 
-    /* 道中切章（ECL 524）→ 结算旧波 + 开新波；rate = 3/4 = 75 */
+    /* 道中切章：MainSub 编号变（0 → 1）+ 刷出 → 结算旧波 + 开新波；rate = 3/4 = 75 */
     advance(&s, &in, &out, LOLK_DEBOUNCE + 1);
-    in_mid(&in, 22);
+    in.stage_chapter = 1;
+    in.spawn_delta = 1;
     memset(&out, 0xcc, sizeof out);
     CHECK(lolk_tick(&s, &in, &out) == (LOLK_EV_WAVE_END | LOLK_EV_WAVE_START));
     CHECK(out.wave_index == 1 && out.kind == LOLK_KIND_MID);
@@ -72,10 +76,11 @@ int main(void)
     CHECK(out.bonus == lolk_bonus(5, 75));
     CHECK(s.wave_open == 1 && s.graze == 0 && s.spawned == 0 && s.killed == 0);
 
-    /* 道中分母 0 → 100％（用户定的边缘情况）*/
+    /* 道中分母 0 → 100％（用户定的边缘情况）；编号 1 → 2 + 刷出 */
     lolk_add_graze(&s, 200);
     advance(&s, &in, &out, LOLK_DEBOUNCE + 1);
-    in_mid(&in, 41);
+    in.stage_chapter = 2;
+    in.spawn_delta = 1;
     memset(&out, 0, sizeof out);
     CHECK(lolk_tick(&s, &in, &out) == (LOLK_EV_WAVE_END | LOLK_EV_WAVE_START));
     CHECK(out.rate == 100);
@@ -235,134 +240,126 @@ int main(void)
     lolk_add_graze(&s, -1);
     CHECK(s.spawned == 0 && s.killed == 0 && s.graze == 0);
 
-    /* ══ 道中波次（TH18 等价信号）：关卡脚本子程序边界 + 刷出 ══════════════
-     * TH15 的「道中一章」= 关卡脚本里一个 MainSubNN 敌人组（ECL 524 在块开头宣告）；
-     * TH18 不切章，但子程序结构一样 → 子程序号换 + 该子程序内第一次刷出 = 新波。 */
+    /* ══ 道中章（2026-09-13 用户洞察）：**章 = MainSub 编号（去掉尾部字母）** ══════
+     * `MainSub00 / 01 / 01b / 02 …` 的编号是天然键；`01`+`01b`(+`01c`) 同章；
+     * 同一编号里的多段 burst 不切（旧 `LOLK_MID_BURST_GAP` 规则已删）。
+     * 一手结构：所有字母后缀都是基号的 `@…() async`，主上下文子程序名天然是基号。 */
 
-    /* 开局：章号变了但还没有刷出 / 没有 boss → **不开波**（否则一上来弹一块 0% 的结算面板）*/
+    /* ① 编号变了但还没刷出 → 不开波；第一次刷出才开第一波 */
     lolk_reset(&s);
     in_mid(&in, 0);
-    in.chapter = 5;                                      /* 章号变了，但没有刷出 */
+    in.stage_chapter = 2;                                /* 进 MainSub02，还没刷出 */
     CHECK(lolk_tick(&s, &in, &out) == LOLK_EV_NONE);
     CHECK(s.wave_open == 0 && s.waves_done == 0);
-    in.chapter = 0;
-    CHECK(lolk_tick(&s, &in, &out) == LOLK_EV_NONE);
-    CHECK(s.wave_open == 0 && s.waves_done == 0);
-    /* 第一次刷出才开第一波 */
-    in.stage_sub = 3;
     in.spawn_delta = 1;
-    CHECK(lolk_tick(&s, &in, &out) == LOLK_EV_WAVE_START);
-    CHECK(s.wave_open == 1 && s.waves_done == 0);
-
-    /* 首帧：子程序 10 + 刷出 → 开第一波（纯道中） */
-    lolk_reset(&s);
-    in_mid(&in, 0);
-    in.stage_sub = 10;
-    in.spawn_delta = 2;
     CHECK(lolk_tick(&s, &in, &out) == LOLK_EV_WAVE_START);
     CHECK(s.wave_open == 1 && s.wave_kind == LOLK_KIND_MID);
-    CHECK(s.sub_age == 0 && s.sub_fired == 1 && s.last_stage_sub == 10);
-    lolk_add_graze(&s, 10);
+    CHECK(s.wave_chapter == 2 && s.mid_rule == LOLK_MID_RULE_MAINSUB);
     lolk_add_spawned(&s, 2);
+    lolk_add_graze(&s, 10);
     lolk_add_killed(&s, 1);
 
-    /* 同一个子程序里再刷（异步子程序 MainSubNNb 的后续刷出）→ 不切波 */
+    /* ② 同一编号里换到字母后缀子程序（stage_sub 变、stage_chapter 不变）→ 不切 */
     advance(&s, &in, &out, LOLK_DEBOUNCE + 1);
     in.spawn_delta = 1;
+    in.stage_sub = 11;                                   /* MainSub01b/…：字母后缀 */
     CHECK(lolk_tick(&s, &in, &out) == LOLK_EV_NONE);
-    CHECK(s.wave_open == 1 && s.waves_done == 0);
+    CHECK(s.wave_open == 1 && s.waves_done == 0 && s.wave_chapter == 2);
 
-    /* 子程序换了但没有刷出（MainSubNN 返回 MainFront）→ 不切波 */
-    in.spawn_delta = 0;
-    in.stage_sub = 11;
-    advance(&s, &in, &out, 300);
-    CHECK(s.wave_open == 1 && s.waves_done == 0);
-    CHECK(s.sub_age == 299 && s.sub_fired == 0);     /* 换子程序那帧算第 0 帧 */
-
-    /* 再换子程序 + 刷出 → 结算旧波 + 开新波（rate = 1/2 = 50） */
-    in.stage_sub = 12;
+    /* ③ 编号变了（2 → 3）+ 刷出 → 结算旧章 + 开新章（rate = 1/2 = 50） */
     in.spawn_delta = 3;
+    in.stage_chapter = 3;
     memset(&out, 0, sizeof out);
     CHECK(lolk_tick(&s, &in, &out) == (LOLK_EV_WAVE_END | LOLK_EV_WAVE_START));
     CHECK(out.wave_index == 1 && out.kind == LOLK_KIND_MID);
     CHECK(out.graze == 10 && out.killed == 1 && out.spawned == 2 && out.rate == 50);
-    CHECK(s.last_stage_sub == 12 && s.sub_fired == 1 && s.graze == 0);
+    CHECK(s.wave_chapter == 3 && s.wave_open == 1 && s.graze == 0);
 
-    /* 子程序换过之后拖过窗口才刷出：窗口规则不认，但静默已 ≥ LOLK_MID_BURST_GAP → burst 规则切波
-     * （2026-09-09 用户实跑：st01 MainSub00 的三波阴阳玉就是「同一子程序内、间隔 120 帧」）*/
+    /* ④ 同一编号里静默很久后再刷（st01 MainSub00 的「三波」阴阳玉，burst 间 wait(120)）
+     *    → **不再切**：MainSub00 是一章（这正是 2026-09-13 要修的点）*/
     lolk_reset(&s);
     in_mid(&in, 0);
-    in.stage_sub = 20;
-    in.spawn_delta = 1;
-    CHECK(lolk_tick(&s, &in, &out) == LOLK_EV_WAVE_START);
-    lolk_add_spawned(&s, 1);                             /* 给这一波内容，否则结算是空波 */
-    advance(&s, &in, &out, LOLK_DEBOUNCE + 1);
-    in.spawn_delta = 0;
-    in.stage_sub = 21;
-    advance(&s, &in, &out, LOLK_MID_SUB_WINDOW + 2);     /* 窗口过期、静默远超 burst 阈值 */
-    in.spawn_delta = 1;
-    CHECK(lolk_tick(&s, &in, &out) == (LOLK_EV_WAVE_END | LOLK_EV_WAVE_START));
-    CHECK(s.wave_open == 1 && s.waves_done == 1);
-
-    /* burst 规则：**同一子程序内**，间隔 < LOLK_MID_BURST_GAP 的刷出不切波、
-     * ≥ LOLK_MID_BURST_GAP 的刷出切波（st01 MainSub00：burst 内 wait(10)、burst 间 wait(120)）*/
-    lolk_reset(&s);
-    in_mid(&in, 0);
-    in.stage_sub = 30;
+    in.stage_chapter = 0;
     in.spawn_delta = 2;
     CHECK(lolk_tick(&s, &in, &out) == LOLK_EV_WAVE_START);
-    lolk_add_spawned(&s, 2);                             /* 第一波（burst 1）有内容 */
-    advance(&s, &in, &out, LOLK_DEBOUNCE + 1);
-    in.spawn_delta = 0;
-    advance(&s, &in, &out, 10);                          /* burst 内：静默 10 帧 */
-    in.spawn_delta = 2;
-    CHECK(lolk_tick(&s, &in, &out) == LOLK_EV_NONE);      /* 同一 burst → 不切 */
     lolk_add_spawned(&s, 2);
-    CHECK(s.wave_open == 1 && s.waves_done == 0);
+    advance(&s, &in, &out, LOLK_DEBOUNCE + 1);
     in.spawn_delta = 0;
-    advance(&s, &in, &out, 120);                         /* burst 间：静默 120 帧 */
+    advance(&s, &in, &out, 120);                         /* burst 间 wait(120) */
     in.spawn_delta = 2;
-    CHECK(lolk_tick(&s, &in, &out) == (LOLK_EV_WAVE_END | LOLK_EV_WAVE_START));
-    CHECK(s.waves_done == 1 && out.spawned == 4 && out.killed == 0);
-
-    /* 去抖窗口内换子程序 + 刷出 → 不切波，且该子程序没被消费（窗口内还能切） */
-    lolk_reset(&s);
-    in_mid(&in, 0);
-    in.stage_sub = 40;
-    in.spawn_delta = 1;
-    CHECK(lolk_tick(&s, &in, &out) == LOLK_EV_WAVE_START);   /* 开波 → debounce = 5 */
-    in.stage_sub = 41;
-    in.spawn_delta = 1;                                      /* 立刻换子程序 + 刷出 */
-    CHECK(lolk_tick(&s, &in, &out) == LOLK_EV_NONE);         /* 去抖挡住 */
-    CHECK(s.sub_fired == 0 && s.waves_done == 0);
-    lolk_add_graze(&s, 4);
-    in.spawn_delta = 0;
-    advance(&s, &in, &out, LOLK_DEBOUNCE + 1);               /* 去抖过期（无刷出）*/
-    CHECK(s.sub_fired == 0);
-    in.spawn_delta = 1;                                      /* 仍在窗口内再刷 → 切 */
+    CHECK(lolk_tick(&s, &in, &out) == LOLK_EV_NONE);      /* MainSub00 是一章 → 不切 */
+    CHECK(s.waves_done == 0 && s.wave_chapter == 0);
+    lolk_add_spawned(&s, 2);
+    /* 编号 0 → 1 + 刷出 → 这时才切 */
+    in.spawn_delta = 2;
+    in.stage_chapter = 1;
     memset(&out, 0, sizeof out);
     CHECK(lolk_tick(&s, &in, &out) == (LOLK_EV_WAVE_END | LOLK_EV_WAVE_START));
-    CHECK(out.graze == 4 && s.sub_fired == 1);
+    CHECK(out.spawned == 4 && s.waves_done == 1 && s.wave_chapter == 1);
 
-    /* boss 在场时不吃道中边界（boss 相位信号接管） */
+    /* ⑤ `main` / `MainFront` / `MainLatter` 段（stage_chapter < 0、stage_sub >= 0）里刷出
+     *    （开场 MapleEnemy）→ 不开波，避免多出一个空章 */
+    lolk_reset(&s);
+    in_mid(&in, 0);
+    in.stage_chapter = -1;
+    in.stage_sub = 0;                                    /* sub = "main" */
+    in.spawn_delta = 1;
+    CHECK(lolk_tick(&s, &in, &out) == LOLK_EV_NONE);
+    CHECK(s.wave_open == 0 && s.waves_done == 0);
+
+    /* ⑥ 道中 boss 与 MainSub 并存：boss 出现先开 boss 波；随后 MainSub05 开刷 → 道中章照切
+     *    （这是「章 = MainSub 编号」必须压过 boss 抑制的关键场景）*/
+    lolk_reset(&s);
+    in_boss(&in, 1, 0, 0, 0);
+    in.stage_chapter = -1;                               /* boss 出现时关卡脚本在 main/MainFront */
+    in.stage_sub = 0;
+    in.spawn_delta = 1;
+    CHECK(lolk_tick(&s, &in, &out) & LOLK_EV_WAVE_START);
+    CHECK(s.wave_kind == LOLK_KIND_BOSS && s.mid_rule == LOLK_MID_RULE_BOSS);
+    lolk_add_spawned(&s, 1);                             /* boss 自己也占一刷，别当空波 */
+    advance(&s, &in, &out, LOLK_DEBOUNCE + 1);
+    in.stage_chapter = 5;                                /* MainSub05 在道中 boss 期间开始刷 */
+    in.spawn_delta = 1;
+    memset(&out, 0, sizeof out);
+    CHECK(lolk_tick(&s, &in, &out) == (LOLK_EV_WAVE_END | LOLK_EV_WAVE_START));
+    CHECK(out.kind == LOLK_KIND_BOSS);                   /* 刚结算的是 boss 波 */
+    CHECK(s.wave_kind == LOLK_KIND_MID && s.wave_chapter == 5);
+    CHECK(s.mid_rule == LOLK_MID_RULE_MAINSUB);
+
+    /* ⑥b 道中 boss 在 MainSub05 途中死掉 → **不能**关掉正开着的道中章 05 */
+    lolk_add_spawned(&s, 1);
+    advance(&s, &in, &out, LOLK_DEBOUNCE + 1);
+    in.boss_present = 0;                                 /* 道中 boss 消失 */
+    in.spawn_delta = 0;
+    CHECK(lolk_tick(&s, &in, &out) == LOLK_EV_NONE);
+    CHECK(s.wave_open == 1 && s.wave_chapter == 5);
+    in.stage_chapter = 6;                                /* 接着 MainSub06 开刷 → 才切 05 → 06 */
+    in.spawn_delta = 1;
+    memset(&out, 0, sizeof out);
+    CHECK(lolk_tick(&s, &in, &out) == (LOLK_EV_WAVE_END | LOLK_EV_WAVE_START));
+    CHECK(out.kind == LOLK_KIND_MID && s.wave_chapter == 6);
+
+    /* ⑦ boss 相位指纹换（道中不干扰）→ 仍按 boss 相位切 */
     lolk_reset(&s);
     in_boss(&in, 1, 0, 0, 41);
-    in.stage_sub = 30;
     in.spawn_delta = 1;
     CHECK(lolk_tick(&s, &in, &out) & LOLK_EV_WAVE_START);
     CHECK(s.wave_kind == LOLK_KIND_BOSS);
+    lolk_add_spawned(&s, 1);
     advance(&s, &in, &out, LOLK_DEBOUNCE + 1);
-    in.stage_sub = 31;
-    in.spawn_delta = 1;
-    CHECK(lolk_tick(&s, &in, &out) == LOLK_EV_NONE);     /* 只有相位指纹换才切 boss 波 */
+    in.phase_sig = 2;
+    in.spawn_delta = 0;
+    CHECK(lolk_tick(&s, &in, &out) == (LOLK_EV_WAVE_END | LOLK_EV_WAVE_START));
 
-    /* 退路：认不出关卡脚本（stage_sub = -1）→ 静默间隔。
-     * 静默 239 帧（差 1 帧）再刷出 → 不切波 */
+    /* ⑧ 退路：认不出关卡脚本（stage_sub = -1、stage_chapter = -1）→ 静默间隔。
+     *    第一次刷出先开第一波；静默 239 帧（差 1）再刷出不切；够 240 → 切 */
     lolk_reset(&s);
     in_mid(&in, 0);
+    in.stage_chapter = -1;
     in.stage_sub = -1;
     in.spawn_delta = 1;
-    CHECK(lolk_tick(&s, &in, &out) == LOLK_EV_WAVE_START);   /* 第一波由章号变开 */
+    CHECK(lolk_tick(&s, &in, &out) == LOLK_EV_WAVE_START);
+    CHECK(s.mid_rule == LOLK_MID_RULE_QUIET);
     lolk_add_graze(&s, 3);
     in.spawn_delta = 0;
     advance(&s, &in, &out, LOLK_DEBOUNCE + 1);
@@ -371,9 +368,10 @@ int main(void)
     in.spawn_delta = 1;
     CHECK(lolk_tick(&s, &in, &out) == LOLK_EV_NONE);
 
-    /* 静默够 LOLK_MID_QUIET_GAP 帧再刷出 → 结算旧波 + 开新波 */
+    /* ⑨ 静默够 LOLK_MID_QUIET_GAP 帧再刷出 → 结算旧波 + 开新波 */
     lolk_reset(&s);
     in_mid(&in, 0);
+    in.stage_chapter = -1;
     in.stage_sub = -1;
     in.spawn_delta = 1;
     CHECK(lolk_tick(&s, &in, &out) == LOLK_EV_WAVE_START);
@@ -388,13 +386,20 @@ int main(void)
     CHECK(out.kind == LOLK_KIND_MID && out.graze == 3);
     CHECK(s.quiet == 0);
 
+    /* 规则名（日志用）*/
+    CHECK(strcmp(lolk_mid_rule_name(LOLK_MID_RULE_MAINSUB), "mainsub") == 0);
+    CHECK(strcmp(lolk_mid_rule_name(LOLK_MID_RULE_QUIET), "quiet-fallback") == 0);
+    CHECK(strcmp(lolk_mid_rule_name(LOLK_MID_RULE_BOSS), "boss") == 0);
+    CHECK(strcmp(lolk_mid_rule_name(LOLK_MID_RULE_NONE), "none") == 0);
+
     /* reset 清干净 */
     lolk_reset(&s);
     CHECK(s.wave_open == 0 && s.spell_active == 0 && s.wave_is_spell == 0 &&
           s.graze == 0 && s.spawned == 0 && s.killed == 0 &&
           s.waves_done == 0 && s.slow == LOLK_SLOW_FULL &&
           s.last_chapter == -1 && s.saw_timeout == 0 && s.saw_broken == 0);
-    CHECK(s.last_stage_sub == -1 && s.sub_age == 0 && s.sub_fired == 0 && s.quiet == 0);
+    CHECK(s.last_stage_sub == -1 && s.wave_chapter == -1 &&
+          s.mid_rule == LOLK_MID_RULE_NONE && s.quiet == 0);
 
     printf("test_lolk_core: %d passed, %d failed\n", s_pass, s_fail);
     return s_fail ? 1 : 0;

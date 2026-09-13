@@ -32,7 +32,7 @@
 | 66 | 神之宣告 | 主动（C 键）：消耗一半残机（向上取整），让 boss 当前符卡立刻按超时结束（无奖励、失败演出）。不在符卡中 / 已超时 / 无残机时拒绝发动（无效音、充能不消耗）。充能 60 s。卡图与演出见下 | `on_activate`：写 boss 中断槽计时到阈值 + 清符卡奖励位；`ce_gui_update_lives` 刷 HUD；拒绝 = `CE_ACTIVATE_REFUSED` | `judgment.c` | 🔧 |
 | 67 | 青眼白龙 | 主动（C 键）：献祭 1 残机召唤跟随自机的龙；1500 点生命替玩家挡子弹（每发 −1，弹变点道具）；每 5 秒向上一道光束；生命归零死亡，过关消失。残机 0 拒绝。充能 10 s | `on_activate` 扣命 + 起龙 ANM；`on_active_tick` 跟随（Tenshi lerp）+ `ce_cancel_radius(max = hp)` + `ce_damage_rect`；`on_stage_start`/`on_run_reset` 删 VM | `blue_eyes.c` + `blue_eyes_core.c` | 🔧 |
 
-**青眼白龙（67）补充**：光束 = 45 帧 × 每帧请求 100 的矩形伤害源（2026-09-04 平衡：HP 2500 → 1500、光束 30 → 45 帧）（宽 32、从龙口到区域顶边），2026-09-06 起光束帧把每敌每帧伤害上限 `player+0x47984` 抬到 300（炎魔同款 `ce_raise_damage_cap`，AUDIT V20 / O29e′），一波实打 4500；此前不抬时自机开火会把配额吃满、光束几乎白打；光束不消弹、激光不挡。跟随目标自机上方 80 px（要石同款 lerp 0.04）+ 上下呼吸浮动 ±5 px / 96 帧（`be_bob_dy`，画面 / 判定 / 光束起点 / 血条共用；2026-09-06）、挡弹半径 48、有命中那帧龙染蓝 `0xff0080ff`（要石同款；D3DCOLOR ARGB）；龙下方 66 px 有血条（两个根 VM `drawRect(1,1)`，C 每帧写 `vm+0x54` scale = (56 × hp/1500, 4)，>50％ 蓝 / >20％ 黄 / 红；零售 HUD 充能条同款做法）。卡图（用户原创立绘，`fit_card.py`，sprite 136/137）；场上的龙 = 用户原创俯视图抠黑底（`assets/ability/make_blue_eyes_art.py`，ability sprite 118，script78 缩放 0.45）；光束照魔理沙 Master Spark（零售 `pl01b`/`pl01b2` 贴图 119/120，script79–85：白核 + 四层彩 + 彩光），判定宽 96。设计 `docs/superpowers/specs/2026-09-04-blue-eyes-design.md`，AUDIT O29。
+**青眼白龙（67）补充**：光束 = 45 帧 × 每帧请求 100 的矩形伤害源（2026-09-04 平衡：HP 2500 → 1500、光束 30 → 45 帧）（宽 32、从龙口到区域顶边），2026-09-06 起光束帧把每敌每帧伤害上限 `player+0x47984` 抬到 300（炎魔同款 `ce_raise_damage_cap`，AUDIT V20 / O29e′），一波实打 4500；此前不抬时自机开火会把配额吃满、光束几乎白打；光束不消弹、激光不挡。跟随目标自机上方 80 px（要石同款 lerp 0.04）+ 上下呼吸浮动 ±5 px / 96 帧（`be_bob_dy`，画面 / 判定 / 光束起点 / 血条共用；2026-09-06）、挡弹半径 48、有命中那帧龙染蓝 `0xff0080ff`（要石同款；D3DCOLOR ARGB）；龙下方 66 px 有血条（两个根 VM `drawRect(1,1)`，C 每帧写 `vm+0x54` scale = (56 × hp/1500, 4)，>50％ 蓝 / >20％ 黄 / 红；原生 HUD 充能条同款做法）。卡图（用户原创立绘，`fit_card.py`，sprite 136/137）；场上的龙 = 用户原创俯视图抠黑底（`assets/ability/make_blue_eyes_art.py`，ability sprite 118，script78 缩放 0.45）；光束照魔理沙 Master Spark（原生 `pl01b`/`pl01b2` 贴图 119/120，script79–85：白核 + 四层彩 + 彩光），判定宽 96。设计 `docs/superpowers/specs/2026-09-04-blue-eyes-design.md`，AUDIT O29。
 
 **神之宣告（66）补充**：卡图 `JUDGMENT`（sprite 134/135，用户原创）。发动同时全屏消弹（弹幕 → 点道具 + 激光，引擎 `cancel_all`，O28h）。演出：发动音 0x4d（反转牌同款）+ `ability.anm` script77——卡图副本铺满弹幕区半透明浮现（alpha 140，scale 1.25 → 1.45）、75 帧缓缓放大并上浮 24 px、45 帧后 30 帧淡出。限制：耐久符卡的超时脚本自带掉落照旧（AUDIT O28b）。
 
@@ -85,7 +85,7 @@ EVENTS-CONTRACT §2）⇒ 与卡链顺序无关、别的卡加到的那颗也一
 **辉针城（114）补充**：数值行（spec §3，`collect2x_core.h` 同名常量）：批集 = V 门真空飞行（state 3）的 {1(P)、2(钱)}（触收 1 / 环收 4 / 转换点 9–0xe 一律不入批，AUDIT §Z19/Z22）；档位 20/30/40/50/60 → 倍率 500/800/1200/1600/2000 permille，倍率**只作用分数**：`SCORE += batch_score×(mult−1000)/1000`（×0.5/×0.8 为负补差，1:1 原义；`ce_add_score_delta` 钳 0..9 亿）；碎片每批 1 枚，<60 走 `fragment_cycle` 4 符卡碎 : 1 命碎（循环按 run 计，`on_run_reset` 归零）、≥60 命碎不动游标。
 批分值捕获（stash）：collect 断点在 type 分派**前**存 SCORE、commit 断点（分值已入 SCORE）累加差量；stash 只对批集收集置位、任意提交后失效 —— 批集道具按池槽顺序「收集→提交」背靠背走完，夹在中间的碎片提交见不到活 stash。帧源 = 接线层自计数（`on_item_frame` 分派每正常游玩帧一次；`card+0x20` zTimer 只被主动卡 tick、被动卡读它是死值，Z14），节流游标同源，弃用 TIME_IN_STAGE。
 早结敞口（Z7，Task 9 实跑定案）：批闭判定 = 池内无 state-3 在飞批集道具（成员门 Z22 + 8 帧 idle/presence 续批 Z21），若存在「收集了、分值提交滞后到批闭之后」的道具，那一枚分值会漏出本批（日志会现 `commit after batch closed` 行）。
-卡图：暂无用户原图，sprite 暂填 116/117（零售 NULL 的 `empty`/`dummy` 透明占位，同黑桃五张最初做法；DATA.md §6）；画好走 ORDER.txt + `make anm` 换新索引。`price_tier` 10（300 档）、`weight` 2 —— 占位，待用户确认。设计 `docs/superpowers/specs/2026-09-08-collect-2x-design.md`。
+卡图：暂无用户原图，sprite 暂填 116/117（原生 NULL 的 `empty`/`dummy` 透明占位，同黑桃五张最初做法；DATA.md §6）；画好走 ORDER.txt + `make anm` 换新索引。`price_tier` 10（300 档）、`weight` 2 —— 占位，待用户确认。设计 `docs/superpowers/specs/2026-09-08-collect-2x-design.md`。
 
 ## 致敬・炉石传说
 
@@ -96,7 +96,7 @@ EVENTS-CONTRACT §2）⇒ 与卡链顺序无关、别的卡加到的那颗也一
 | 75 | 真银圣剑 | 装备「武器」：每关前 2 发炸弹是挥砍——附加 400 伤害（盖满弹幕区，范围内每个敌人各吃）并回 1 个残机碎片；耐久每关回满；HUD 小卡右下角画本关剩余次数 | `on_bomb_spent` 扣耐久 + `ce_add_life_fragment`（引擎 `0x457570`）；`on_tick_2` 出 4 帧 × 100 的全场矩形源并抬上限 400；`on_hud_anm`（虚表 `+0x44`，第一次被用）拿图标 id → UI 列表起 script99 数字 VM、`set_sprite` 换数字。AUDIT §X | `truesilver.c` + `truesilver_core.c` | 🔧 |
 | 79 | 旋风斩 | 被动：放一发炸弹时**额外再连放 X 发**，X = ⌊当前火力⌋ − 1，代价是 **X 点火力**（额外那几发不花炸弹数）。4.00 火力 = 一次按 B 炸四发，火力落回 1.00 | `on_bomb_spent` 算 X + `ce_spend_power(X × 100)` + `repopulate`；`on_tick_2` 每帧看「还在放吗」，不在放就调引擎自己的 `ce_do_bomb()` 接下一发（黄昏同款机制，只是接 X 发），接完把炸弹数精确补回。AUDIT §AE | `whirlwind.c` + `whirlwind_core.c` | 🔧 |
 
-**炎魔之王（72）补充**：扣火力照零售 `CardTsukasa__c_press` `0x410e60`——门槛「成本 + 一档」（引擎 `spend_power` 永远保留 1.00，
+**炎魔之王（72）补充**：扣火力照原生 `CardTsukasa__c_press` `0x410e60`——门槛「成本 + 一档」（引擎 `spend_power` 永远保留 1.00，
 不留一档实际扣的会比名义少）、`spend_power(200)`、无条件 `repopulate_options`（重建子机 + 广播 `on_power_level_change`）。
 火球 = **飞行物 + 落地 12 个定点伤害源**（2026-09-06 加强：飞行中每帧消弹 r 24，落地消弹 r 96；每帧 100 并把每敌每帧伤害上限抬到 300 —— 自机弹与卡的源共用这个上限，不抬就被自机弹吃满，Remilia 同款做法，AUDIT V20）：直线飞向开火时记下的敌人坐标（4 px/帧，非追踪；飞行中每帧 2 颗橙白粒子 script95），到点起爆炸光环 + 10 颗火星（script96）+ 小震屏（`ce_screen_shake(14, 5, 0)`，ECL setScreenShake 同一工厂 `0x476060`）、放 `0x2c`，之后
 连续 12 帧每帧一个 96×96、50 伤害的 `ce_damage_rect`——一个源对同一敌人只结算一次、50 不超四个自机的每帧上限，所以恰好 600。
@@ -105,7 +105,7 @@ EVENTS-CONTRACT §2）⇒ 与卡链顺序无关、别的卡加到的那颗也一
 火球 / 拖尾 / 爆炸贴图程序生成（同脚本，script92–94）。语音 `FIRELORD_SUMMON`（id `0x55`）/ `FIRELORD_ATTACK`（`0x56`）：用户 ogg 经 `voice/convert_voice.py` 转 wav。
 登场序列：语音 → 60 帧聚气粒子（script98，向中心汇聚）→ 本体 + 第一圈爆炸（复用火球落地的 `impact_fx`）→ 每 8 帧再一圈，共 3 圈。设计 `docs/superpowers/specs/2026-09-06-firelord-design.md`。
 
-**真银圣剑（75）补充**：`category: 1`（用户：放装备区）——图鉴 / 编成排在零售子机卡之后，且 SDK 绑定时按零售装备卡置 flags bit6 ⇒ HUD 装备行（破损核心同此，AUDIT X11）。炉石 4/2 → 400 伤害 / 2 耐久。数字贴图 `ability/truesilver/DIGIT_0..9.png`（`make_truesilver_art.py`，DejaVu Serif Bold 白字黑描边 32×32，ability.anm entry24–33 / sprite126–135）；script99 与零售 HUD 图标脚本同款 `layer(26); resolutionMode(2)`，`pos(1080, 561)` = 图标根脚本 (1056, 537) + (24, 24)，实体坐标抄图标根 VM 的 `+0x5f0`。**偏移待实跑调**。卡图用户提供的圣剑插画（`_art/Holy_Sword.png` 居中裁 4:5 后 `fit_card.py`，sprite 152/153）。
+**真银圣剑（75）补充**：`category: 1`（用户：放装备区）——图鉴 / 编成排在原生子机卡之后，且 SDK 绑定时按原生装备卡置 flags bit6 ⇒ HUD 装备行（破损核心同此，AUDIT X11）。炉石 4/2 → 400 伤害 / 2 耐久。数字贴图 `ability/truesilver/DIGIT_0..9.png`（`make_truesilver_art.py`，DejaVu Serif Bold 白字黑描边 32×32，ability.anm entry24–33 / sprite126–135）；script99 与原生 HUD 图标脚本同款 `layer(26); resolutionMode(2)`，`pos(1080, 561)` = 图标根脚本 (1056, 537) + (24, 24)，实体坐标抄图标根 VM 的 `+0x5f0`。**偏移待实跑调**。卡图用户提供的圣剑插画（`_art/Holy_Sword.png` 居中裁 4:5 后 `fit_card.py`，sprite 152/153）。
 
 **旋风斩（79）补充**：X 的定义**天然落在引擎的界内侧** —— `spend_power` `0x457480` 在火力 ≤ 一档时拒绝不扣、扣完钳一档，
 而 X = ⌊P⌋ − 1 使得 X > 0 时扣完必然剩 [1.00, 1.99]，那条拒绝分支永远碰不到（单测 `test_cost_never_refused` 枚举 0..400 钉住）。
@@ -131,23 +131,23 @@ EVENTS-CONTRACT §2）⇒ 与卡链顺序无关、别的卡加到的那颗也一
 
 | id | 名字 | 效果 | 实现（槽 / 事件） | 文件 | 状态 |
 | --- | --- | --- | --- | --- | --- |
-| 71 | 破损核心 | 装备：身边多一颗电球子机，每 1 秒朝**最近的敌人**（512 px 内）**瞬间**劈一道电弧，那一个敌人吃 120 伤害（名义 120 DPS，零售子机卡中位）| 第一张走**零售装备卡机制**的卡：`on_power_level_change` 生成子机、`on_tick_2` 计时 + 选目标 + 定点伤害源 + 电弧特效（详见下）。AUDIT §U | `broken_core.c` + `broken_core_core.c` | 🔧 |
+| 71 | 破损核心 | 装备：身边多一颗电球子机，每 1 秒朝**最近的敌人**（512 px 内）**瞬间**劈一道电弧，那一个敌人吃 120 伤害（名义 120 DPS，原生子机卡中位）| 第一张走**原生装备卡机制**的卡：`on_power_level_change` 生成子机、`on_tick_2` 计时 + 选目标 + 定点伤害源 + 电弧特效（详见下）。AUDIT §U | `broken_core.c` + `broken_core_core.c` | 🔧 |
 | 77 | 豌豆射手 | 装备：身边多一株豌豆射手子机，向**正前方**（画面上方）吐豌豆；平时 1 秒一颗、一颗 90，每 20–30 秒进入**机枪状态** 100 帧，泼出 20 排 × 7 = 140 颗小豌豆（合 980 伤害）。综合约 123 DPS，但只在按住射击键时打 | 第一张真走 **SHT shooterset** 的卡：`on_power_level_change` 生成子机、`on_tick_shooters` 自带计数器当 short_timer 调 `ce_tick_shooters_for_card`（两组 shooterset 切换）、`on_tick_2` 在豌豆在途的帧抬每帧伤害上限。AUDIT §AJ | `peashooter.c` + `peashooter_core.c` | 🔧 |
 
 **破损核心（71）补充**：子机 = `Player__allocate_option(card, 0x18, ability script88)`（指针存 `ce_state()`，
-不是零售的 `card+0x54`：我们的对象只有 `0x54` 字节）。闪电 = **定点伤害源 + 特效**两件独立的事：
+不是原生的 `card+0x54`：我们的对象只有 `0x54` 字节）。闪电 = **定点伤害源 + 特效**两件独立的事：
 一道 120 拆成连续 4 帧、每帧一个 `ce_damage_rect(目标坐标, 0, 寿命 2, 30, 32×32)` 钉在敌人身上（Remilia / 青眼同一个原语；一个伤害源对同一敌人
-只结算一次，所以每帧恰好 30；拆帧是为了单帧不撞 Sakuya 60 的每帧上限。2026-09-06 平衡：80 / 2 s → 120 / 1 s，对齐零售子机卡名义 DPS 中位 120–135），script89 电弧从电球拉到敌人（C 写 pos / rotation.z / scale.x = 距离 / 256）、
+只结算一次，所以每帧恰好 30；拆帧是为了单帧不撞 Sakuya 60 的每帧上限。2026-09-06 平衡：80 / 2 s → 120 / 1 s，对齐原生子机卡名义 DPS 中位 120–135），script89 电弧从电球拉到敌人（C 写 pos / rotation.z / scale.x = 距离 / 256）、
 script90 火花在命中点。瞄准角与距离是自己的确定性算术（不引 libm）。
 **不改任何游戏资源文件**——第一版曾追加 `pl0X.sht` 的 shooterset 让子机真开火，后来改掉：自机弹天生要飞过去，
 与「瞬发单体」相悖。那条链的研究（[`engine/sht/th18/`](../../../engine/sht/th18/README.md)）与工具
 （`assets/sht/`）留着给以后真需要「子机连射」的卡。卡图（青色裂核，白底放大居中）与场上电球（黄绿球）是用户原创，电弧（黄白闪电链）程序生成——都过 `assets/ability/make_broken_core_art.py`；卡图 sprite 144/145。
-`category: 1`（子机装备）：图鉴 / 编成里排在零售子机卡 REIMU_OP…MAGATAMA 那一段之后（2026-09-06 起顺序表按类别插入，见 DATA.md `category`）。
+`category: 1`（子机装备）：图鉴 / 编成里排在原生子机卡 REIMU_OP…MAGATAMA 那一段之后（2026-09-06 起顺序表按类别插入，见 DATA.md `category`）。
 
 **豌豆射手（77）补充**（致敬・植物大战僵尸）：子机 = `Player__allocate_option(card, 0x28, ability script102)`
-（横向偏移与破损核心的 `0x18` 错开，两张同时装不重叠）。开火走**零售装备卡的第二个槽** `+0x1c on_tick_shooters`
+（横向偏移与破损核心的 `0x18` 错开，两张同时装不重叠）。开火走**原生装备卡的第二个槽** `+0x1c on_tick_shooters`
 ——`assets/sht/append_shooterset.py` 造好之后一直没人用的那条链，本卡是第一个用户（破损核心第一版走过、后来改成定点伤害源）。
-两组追加进 `pl0X.sht` 的 shooterset（索引 `0x17` / `0x18`，落在零售留空的 17 项里）：
+两组追加进 `pl0X.sht` 的 shooterset（索引 `0x17` / `0x18`，落在原生留空的 17 项里）：
 
 | | fire_rate | 一排几颗 | damage | speed | anm |
 | --- | --- | --- | --- | --- | --- |
@@ -184,7 +184,7 @@ C 自带一个计数器当 `short_timer` 传进去（`param_2` 只进模运算�
 [`engine/player/th18/02`](../../../engine/player/th18/02-graze-and-item-slowdown.md)。
 **不加断点、不改字节**：只读三个字段、写一个 float。
 面板五行的数值（TH15 `Gui::on_draw_2e` 的 `"%d"` / `"%3.1f%%"` / `"%3d"` / `"%6d"` / `"  +%d"`）
-**2026-09-10 起从 ASCII 文字改成贴图 VM**（`ce_hud_vm_text_set` + 脚本 136 + TH18 font 2 零售字形）：
+**2026-09-10 起从 ASCII 文字改成贴图 VM**（`ce_hud_vm_text_set` + 脚本 136 + TH18 font 2 原生字形）：
 面板本体在 UI 层 24（暂停时被模糊罩盖住），数值行放层 25（与罩子同桩、罩子后起）⇒ 一起被盖住。
 卡名 / 文案 / sprite 116/117 都是**占位**，待用户确认。
 
@@ -199,7 +199,7 @@ C 自带一个计数器当 `short_timer` 传进去（`param_2` 只进模运算�
 单测 `tests/test_season_core.c`）。残骸审计见 [`engine/season/th18/01`](../../../engine/season/th18/01-season-residuals.md)：
 **TH18 里五样全无**（季节点道具 / 季节槽全局 / 季节子机数组 / 等级表 / 第二个 Bomb），所以全部自建。
 要点：
-- 季节点三条通道：**擦弹**（原生计数 `th18:0x4ccd0c` 的增量，TH16 `Player__do_graze` 同款）、
+- 季节点三条通道：**擦弹**（原版计数 `th18:0x4ccd0c` 的增量，TH16 `Player__do_graze` 同款）、
   **敌人掉落**（`on_enemy_drop_pre`，位置 = 敌人坐标；数量见下条）、
   **解放消弹**（`ce_cancel_radius` 返回值每 8 颗 1 点）；
 - **掉落量按 TH16 的计时衰减结算，档位逐敌人**（用户 2026-09-10：「小怪出场时间推移打死掉得会更少」✓
@@ -211,7 +211,7 @@ C 自带一个计数器当 `short_timer` 传进去（`param_2` 只进模运算�
   **T 与档位取敌人自己的原生配置**（TH18 有同款机制：ECL opcode 573/574 → `zEnemyDrop.timed_ex_drop_time`
   / `timed_ex_drop`，结算 `n = ex_drop + timed×(T−timer)/T`；一手见
   [`engine/season/th18/01`](../../../engine/season/th18/01-season-residuals.md) §1b′）：
-  `T` = `enemy+0x623c+0xa4`（零售 40..900），数量 = 原生 timed 计数（1..20）映射到 TH16 量级
+  `T` = `enemy+0x623c+0xa4`（原版 40..900），数量 = 原版 timed 计数（1..20）映射到 TH16 量级
   8/10/13/30（`season_drop_native_tier`，映射本身 ❓ 自定），`M` 恒 1；没配原生窗口的敌人
   （T = 0，含所有 boss）退回 TH16 小妖精 `(60,8,1)`。boss 恒 **200 颗**（每相位一次）。
   纯逻辑 = `season_core.c` 的 `season_drop_count_decay()` + `season_drop_native_tier()`（单测 31 断言）；
@@ -235,9 +235,9 @@ C 自带一个计数器当 `short_timer` 传进去（`param_2` 只进模运算�
   （一手 [`engine/input/th18/01`](../../../engine/input/th18/01-key-mapping.md)）。
   ⚠️ 原始键不进 replay 输入流 → 回放里不重现（同文档 §4a）；`C` 是引擎自己的主动卡键，进流。
 设计 [`docs/superpowers/specs/2026-09-10-season-and-animal-design.md`](../../../docs/superpowers/specs/2026-09-10-season-and-animal-design.md)。
-子机阵位写 option 记录的 `+0x64/+0x68/+0x6c/+0x70`（零售卡 `th18:0x40b8c1` 同款）；**S 键切副季节时子机的贴图与阵位一起换**（`refresh_options`）。
-季节点外观 = `ability.anm` script 115 + **TH16 零售切图**（`bullet/item.png` 右上 2×2 = 春/夏/秋/冬 + `(224,32)` = 土用，各 16×16，按副季节换 sprite；出场动画照 TH16 script129，**含 `angleVel(%F0)` 的 0..5°/帧 随机自转**）。
-档位数字（原 ASCII）**2026-09-10 起改成贴图 VM**（`ce_hud_vm_text_set` + 脚本 136 + TH18 font 2 的零售切图），
+子机阵位写 option 记录的 `+0x64/+0x68/+0x6c/+0x70`（原生卡 `th18:0x40b8c1` 同款）；**S 键切副季节时子机的贴图与阵位一起换**（`refresh_options`）。
+季节点外观 = `ability.anm` script 115 + **TH16 原版切图**（`bullet/item.png` 右上 2×2 = 春/夏/秋/冬 + `(224,32)` = 土用，各 16×16，按副季节换 sprite；出场动画照 TH16 script129，**含 `angleVel(%F0)` 的 0..5°/帧 随机自转**）。
+档位数字（原 ASCII）**2026-09-10 起改成贴图 VM**（`ce_hud_vm_text_set` + 脚本 136 + TH18 font 2 的原生切图），
 这样暂停时数字也跟槽一起被模糊罩盖住（ASCII 文字做不到，见 [`engine/anm/th18/03`](../../../engine/anm/th18/03-ascii-text.md) §2f）。
 HUD = **游玩区内的左下角**（字面量空间 x 44 起）：季节字 PNG（`front00.png` (832,80)+32k，32×32）+ 实心 `drawRect(102,10)` 打底 + `drawRect(100,8)` 填充（scale.x = 档内进度）+ 档位数字贴在条右端；**UI VM 坐标 = 640 字面量 × 2**（AUDIT AF7），`ce_hud_text` 仍是 640 空间。★ 矩形脚本必须写 `sprite(-1)`，否则整条不可见。
 **解放视觉**：两个 `drawPoly(1.0f,32)` 实心圆照 TH16 `pl00sub.anm` script3/4（外圈 layer13 减算灰→绿、内圈 layer12 加算红），前 10 帧扩到半径、之后 250 帧淡到 64、最后 20 帧淡到 0；**圆心 = 释放原点，只有秋跟着自机**（TH16 `BombSubFall__on_tick` `0x40eeb0`）。
@@ -253,14 +253,14 @@ HUD = **游玩区内的左下角**（字面量空间 x 44 起）：季节字 PNG
 | 109 | 花映塚 | **花映塚爆风**：白弹阈值筛选、X 蓄力拦 Z、气槽/CA（QCA 已放弃）、爆风队列消弹、蓝圈只吃白弹（自扫池）红圈吃一切 | `on_native_shot_suppress` + `on_enemy_death`（**只入队 O(1)**） + `on_tick_2` + `on_item_collect` + `on_draw` | `pofv.c` + `pofv_core.c` | 🔧 待实跑（493 断言；16 个占位常量已逐条标 ❓ 自定） |
 | 110 | 风神录 | **风神录信仰**：绿点实体池（与 111 共用）+ 按槽记账、连击 130f、灵击（门槛 2.00 档 / 扣 1 档 / 下限 1.05）、PV→计分只由落笔者落笔 | `on_enemy_death` + `on_enemy_drop_pre` + `on_item_collect` + `on_item_score` + `on_tick_2` + `on_draw` | `mof.c` + `mof_core.c` + `faith.c` + `faith_core.c` | 🔧 待实跑（92 断言；绿点实体池 `faith.c` 也是 111 的共用件） |
 | 111 | 地灵殿 | **地灵殿信号槽**：回收线上方 +50/f、满 100 自动全收道具、线下 −0.3/f、被弹归零（0–130）；绿点信仰（共用池，按槽记账）；蓝点分 = 信仰 ×(擦弹倍率 + 信号强度) 落在金钱道具分数上（**不改金钱数量**）；B 双选与 110 同规则 | `on_item_collect` + `on_item_score` + `on_tick_2` + `on_draw` + `on_death_after_deathbomb` | `signal.c` + `signal_core.c`（共用 `faith.c`） | 🔧 待实跑（201 断言；HUD 坐标/配色与灵击伤害是 ❓ 自定占位） |
-| 112 | 星莲船 | **飞碟**：**token = 自建 VM 池**（照 117/113；不再是敌人载体 ⇒ 打不掉、只能碰）；吸收链 = 伪磁场拉拽 type 1/2 → 置空槽 → 计数；击破走 `on_enemy_death`（排除清场）；凑组三同色 / 三色各一 / **两同一异 = 丢最旧**（一手 KEEP2）；**金 UFO = 蓝 UFO**（P 图调色）| `on_enemy_death` + `on_item_frame` + `on_tick_2` + `on_draw` | `ufo.c` + `ufo_core.c` | 🔧 待实跑（**992** 断言；HUD 第一版在层 25；token 会飞会反弹、来源=小怪击破；**真 ECL 已从 TH12 移植**（`assets/ecl/ufo.ecl.txt`）；**本体/令牌用官方零售切图**（`ability.anm` script 164–173）由**卡侧跟随 VM** 画、ECL 侧 `anmSetSprite(0,-1)` 当隐形载体 ⇒ 已可发布）|
+| 112 | 星莲船 | **飞碟**：**token = 自建 VM 池**（照 117/113；不再是敌人载体 ⇒ 打不掉、只能碰）；吸收链 = 伪磁场拉拽 type 1/2 → 置空槽 → 计数；击破走 `on_enemy_death`（排除清场）；凑组三同色 / 三色各一 / **两同一异 = 丢最旧**（一手 KEEP2）；**金 UFO = 蓝 UFO**（P 图调色）| `on_enemy_death` + `on_item_frame` + `on_tick_2` + `on_draw` | `ufo.c` + `ufo_core.c` | 🔧 待实跑（**992** 断言；HUD 第一版在层 25；token 会飞会反弹、来源=小怪击破；**真 ECL 已从 TH12 移植**（`assets/ecl/ufo.ecl.txt`）；**本体/令牌用官方原版切图**（`ability.anm` script 164–173）由**卡侧跟随 VM** 画、ECL 侧 `anmSetSprite(0,-1)` 当隐形载体 ⇒ 已可发布）|
 | 113 | 神灵庙 | **神灵庙灵界**：两条触发方式（2026-09-12 第二版）—— ① **手动**：D 切到本卡后按 C（槽满才可）；② **中弹**：**救援层最后一家**（107→117→决死 B→**113**；落点 = 卡虚表 `+0x0c`）⇒ 取消死亡 + 进灵界、窗口结束**再死一次**（**延时**不是免死）；**神灵实体池**：不下落 / 走过去才吃 / 越缩越小| `+0x0c`（**return 1**）+ `+0x14` + `on_item_frame` + `on_enemy_death` + `on_draw` | `trance.c` + `trance_core.c` | 🔧 待实跑（**1103 断言**；计分载体按 spec §9 #5 **搁置**、音效 5 个 ❓ 自定）|
 | 117 | 鬼形兽 | **主动**：收集 5 颗动物灵 → **满槽即自动起咆哮**（暴走 = 同类 ≥3 时主炮换成兽灵专属弹幕），**按 X（炸弹键）**把它用成 40 帧霊撃；中弹可用咆哮抵消死亡。细节见下「鬼形兽（117）补充」| `on_enemy_drop_pre` + `on_item_collect` + `on_death_before_deathbomb` + `on_activate` + `on_tick_2` + `on_draw` | `animal.c` + `animal_core.c` | 🔧 待实跑（Stage 1；兽灵弹 ANM 已修，见 §AL27）|
 
 **鬼形兽（117）补充**：TH17 动物灵 / 咆哮的卡侧复刻（一手 [`engine/animal/th17/01`](../../../engine/animal/th17/01-animal-spirits.md)；
 TH18 无残骸审计 [`engine/animal/th18/01`](../../../engine/animal/th18/01-animal-residuals.md)）。数值全部照 TH17：
 
-- **动物灵实体**：自己的 VM 池（40 只 = TH17 `zGoastManager` 上限 0x28），贴图 = 零售 `beast1.png` 的
+- **动物灵实体**：自己的 VM 池（40 只 = TH17 `zGoastManager` 上限 0x28），贴图 = 原版 `beast1.png` 的
   13 个 32×32 单元（狼 / 獭 / 鹫 各 3 帧 + 4 种鱼灵），脚本 137–143 由 `beast.anm` script0–6 生成
   （`assets/ability/make_animal_art.py`）。**DVD 式约 45° 弹跳**：版边 x±180 / y 128..384 翻符号 +
   速度下限 `±(0.5+rand×0.3)`（TH17 `0x410c8c` 段）；24 px 吸收（`vel=(player−token)×0.25`，约 10 帧）、
@@ -278,7 +278,7 @@ TH18 无残骸审计 [`engine/animal/th18/01`](../../../engine/animal/th18/01-an
   （照绀珠传卡的一手 `phase_read`，`zEnemy+0x6374` 起 8 槽）。
 - **5 格队列** = `TOKENS[5]`（存 type，不是 5 类计数）。满 5 → 就绪判定：狼 / 獭 / 鹫某一类 ≥3 →
   **暴走咆哮** + 时长表 **840 / 1140 / 1500**；**主凭依灵**（TH17 的自机固定兽灵）默认**不存在**
-  ⇒ 不吃 +480；卡组里带着「弱肉强食之理」(25) /「鬼杰组长的恐吓」(30, 袿姬) 时视为主凭依灵**恒存在**
+  ⇒ 不吃 +480；卡组里带着「弱肉强食之理」(25) /「鬼杰组长的恐吓」(**34**, 吉吊八千慧) 时视为主凭依灵**恒存在**（⚠ 01 段曾错写成 30；30 是袿姬的「偶像亲卫队」）
   ⇒ 任何暴走咆哮都 **+480**（用户 2026-09-11 定案，见 AUDIT §AL25）；
   都不足 3 → 混合、恒 **1140**（AUDIT §AL 的二次定案）。
 - **★ 咆哮 = 满槽自动生效**（2026-09-11 用户定案 + 一手）：TH17 `FUN_0040fb60` 在满 5 格**就绪那一刻**
@@ -299,14 +299,14 @@ TH18 无残骸审计 [`engine/animal/th18/01`](../../../engine/animal/th18/01-an
   **槽满 = 火焰** = TH17 script24 的 48×48 序列 sprite53–64，脚本 156；图标 = 槽内 token 的贴图；
   `ability.anm` script 144 / 145，**layer 25** —— 与 `ce_hud_vm_text` 同一个暂停模糊层；
   ★ 灵魂/火焰都必须 `layer(25)`（= 相机 2），`layer(20)` 是相机 1、坐标空间不同会整体偏半屏）。
-  **槽内图标**（2026-09-10 二次定案）：动物灵与**四条道具灵都**用零售 `beastf.png` 的槽位图
+  **槽内图标**（2026-09-10 二次定案）：动物灵与**四条道具灵都**用原生 `beastf.png` 的槽位图
   （`ICON_*`）——「槽里显示资源卡卡面」那版**已回退作废**（`CARD_BOMB` / `CARD_LIFE` / `CARD_MONEY`
   三张卡面贴图仍留在 ORDER 里备用，只是不再被引用）。
   ⚠️ 飞在画面上的灵永远用 `beast1.png` 的 token 单元，别和槽里的图标混用。
   **金钱鱼灵（token 7）的槽内图标也换成用户手绘的金版**：`assets/ability/animal_custom/ICON_FISH_MONEY.png`
   （32×32，`sprite_for_type()` 的 default）**；飞行贴图 = 用户 2026-09-10 手绘**：`assets/ability/animal_custom/FISH_MONEY.png`
-  （32×32，零售蓝点鱼改成金色；ORDER 里是 `FISH_MONEY`，脚本 143 的 `sprite(@FISH_MONEY)`）——
-  手绘源单独放 `animal_custom/`，不进 `make_animal_art.py` 的产出目录（生成器只管零售切图）。
+  （32×32，原生蓝点鱼改成金色；ORDER 里是 `FISH_MONEY`，脚本 143 的 `sprite(@FISH_MONEY)`）——
+  手绘源单独放 `animal_custom/`，不进 `make_animal_art.py` 的产出目录（生成器只管原生切图）。
   **鱼灵换道具**（TH17 `0x410640` 的形状）：
   6(P鱼)→type 1 火力道具 ×30；**7(金钱鱼)→type 2 金钱道具 ×30**（2026-09-10 二次定案回退，不用金钱卡）、
   **5(残鱼)→残机碎片卡 ×1**（`0x10` EXTEND2 一次性卡）、**4(B鱼)→符卡碎片卡 ×1**（`0x11` BOMB2 一次性卡）——
@@ -332,10 +332,10 @@ TH18 无残骸审计 [`engine/animal/th18/01`](../../../engine/animal/th18/01-an
   `th18/pl0X.anm`。一手、失败模式和贴图 sha256 对账见 AUDIT §AL27 + §AL28。
 - **咆哮期间的自机特效**：**全屏渐变圆**（TH17 script32 = 脚本 155：`drawPoly(1.0f,32)` + `blendMode(2)` +
   `color(青)`→`color2(橙)`、`scaleTime(60,1,600,600)`、layer 6 在弹幕区背后、跟随自机，霊撃开始按
-  TH17 `do_hyper_cancel` 清掉）+ 类型光环（零售 `beastAURA.png` 的 24 个 64×64 单元，脚本 146–148 照 TH17
+  TH17 `do_hyper_cancel` 清掉）+ 类型光环（原版 `beastAURA.png` 的 24 个 64×64 单元，脚本 146–148 照 TH17
   script41–43 生成，layer 13 跟随自机，红狼 / 绿水獭 / 紫鹫）；**霊撃本体 = 三色光圈**
-  （零售 `beastr.png`，脚本 150–153 照 TH17 script33–36 生成，父脚本每 3 帧起红 / 绿 / 紫光圈、
-  92 帧后自删）；水獭暴走额外 3 个旋转消弹体（零售 `beastot.png`，脚本 149）；**自机弹按类型染红 / 绿 / 紫**。
+  （原版 `beastr.png`，脚本 150–153 照 TH17 script33–36 生成，父脚本每 3 帧起红 / 绿 / 紫光圈、
+  92 帧后自删）；水獭暴走额外 3 个旋转消弹体（原生 `beastot.png`，脚本 149）；**自机弹按类型染红 / 绿 / 紫**。
   （狼 / 鹫原本的「染色 + ×1.5」标准版已被真正的 shot 组切换取代 —— 见上「兽灵专属效果」。）
 - 纯逻辑 `animal_core.c`，主机单测 `tests/test_animal_core.c`（**116 断言**）。
 
@@ -353,9 +353,9 @@ TH17 的 shot 组**（`pl0X.sht` +10/+15 组，脚本 `assets/sht/append_shooter
 
 ## 约定
 
-- **即时卡**（买了就生效、不进卡组）：`ctor` 或 `dtor` 施加效果后 `return 1`（零售 EXTEND / 六文钱同款，`02-lifecycle.md` §3）。
+- **即时卡**（买了就生效、不进卡组）：`ctor` 或 `dtor` 施加效果后 `return 1`（原生 EXTEND / 六文钱同款，`02-lifecycle.md` §3）。
   这种卡 `deck_visible: 0`（编成里不列，初始携带不调 ctor 会变成死卡）、`repeatable: 1`（可再刷出）、`category: 3`（图鉴里和 EXTEND / PENDULUM 那批资源卡放一起）。
 - 「随机」一律走游戏自己的 RNG 或确定性计数，不引入自己的随机源（replay）。
-- 主动卡：`category: 0`，`active_recharge` 给帧数（零售瞬发卡 20–60 s），`on_activate` 返回 0 瞬发 / 1 持续。
+- 主动卡：`category: 0`，`active_recharge` 给帧数（原生瞬发卡 20–60 s），`on_activate` 返回 0 瞬发 / 1 持续。
 - `category` 决定图鉴 / 编成里排在哪一段（同类别最长连续段之后）：0 主动（RICEBALL 之后）、1 子机装备（MAGATAMA 之后）、2 被动（MUKADE 之后）、3 资源 / 即时购买卡（MOKOU 之后；强欲之壶、方片 2 填 3）。
 - 文案不能含 ASCII `%`，用 `％`。

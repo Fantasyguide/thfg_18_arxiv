@@ -5,7 +5,7 @@
 //   · 原文件 = TH12 v1.00b 的 `default.ecl`（`thdat -l 12 th12.dat` 顶层），**不在** st0X.ecl 里
 //   · 解出 = `thdat -x 12 th12.dat default.ecl` → `thecl -d 12 -m th12.eclm`（见 local/_scratch/th12ecl/）
 //   · 真名表 = `th12:0x4b33e0` = {UFO_Red, UFO_Blue, UFO_Green, UFO_Rainbow}（`th12:0x44a909` 索引）
-//   · 往返验证 = `thecl -c 12` 重编 → 与零售 default.ecl **字节一致**（7900 B）
+//   · 往返验证 = `thecl -c 12` 重编 → 与原生 default.ecl **字节一致**（7900 B）
 //
 // 一个子程序 = 一个颜色；四个主体除 `anmSetSprite` 的脚本号外**逐条相同**（现在那 4 个数**全都一样** =
 // `-1`，见 Δ2：本体在 ECL 侧只当**隐形载体** = 原版「拆槽」，画面由卡侧的跟随 VM 画）。
@@ -23,7 +23,7 @@
 //      ★ 2026-09-12 结论订正（原来这里写的是「需先把 TH12 的 anm 脚本一并移植」）：
 //        ① **`S < 0` 是 `anmSetSprite` 的显式分支 = 拆掉该槽、不建 VM**（一手 `th18:0x436bf6`：
 //           `test esi,esi; js → 收工`，且之前先 `call 0x488cf0` 把旧 VM 标删、槽写 0）。
-//           零售真的这么用：**14 处 `anmSetSprite(K, -1)` 全在 boss 死亡 / 符卡收尾**
+//           原生真的这么用：**14 处 `anmSetSprite(K, -1)` 全在 boss 死亡 / 符卡收尾**
 //           （`st02mbs:179 anmSetSprite(1,-1)`、`st07bs:2390 anmSetSprite(2,-1)`、
 //            `st07mbs:407/408` …）⇒ 这就是原版「让这个槽不画东西」的**官方手法**。
 //           一手全文：`engine/anm/th18/04-anm-slot-selection.md` §4（`K`/`S`/`N` 三个参数都在那里钉死了）。
@@ -388,7 +388,7 @@ void UFO_Rainbow_TTL()
 // =====================================================================================
 // 落地清单（3 件；★ ① ② **已做完**，③ 于 2026-09-12 改为走卡侧的跟随 VM —— 见下）
 //
-// ① 进 default.ecl（照 assets/ecl/make_dev_ecl.py 的「反编译零售 → 改 → 编回」风格）：
+// ① 进 default.ecl（照 assets/ecl/make_dev_ecl.py 的「反编译原生 → 改 → 编回」风格）：
 //    ✅ **已做**：`make ecl-ufo`（= `assets/ecl/make_ufo_ecl.py`）产 `native/build/ecl/default.ecl`。
 //    下面这几行是它内部做的事：
 //      thecl -d 18 -m th18.eclm local/th18.v1.00a/dat/default.ecl  > build/ecl/default.retail.txt
@@ -404,7 +404,7 @@ void UFO_Rainbow_TTL()
 //      "patch-step3/th18/default.ecl": "thcrap/repos/Renko_1055/th18_card_expand_255/th18/default.ecl"
 //      （原先候选的 `_devstage` 那一行没采用 —— 可选勾选的 patch 映射到那里的话「不勾就没有 UFO」）。
 //    ⚠ 为什么这一行的形状就是这样：thcrap 的仓库路径 `th18/<名>` 直接对应**游戏数据根**，
-//      而 `default.ecl` 就在零售 `th18.dat` 的**顶层**（`thdat -l 18` 可查，12236 B），
+//      而 `default.ecl` 就在原生 `th18.dat` 的**顶层**（`thdat -l 18` 可查，12236 B），
 //      和 `st01.ecl` / `abcard.anm` 同级 —— `abcard.anm` **已经在用同一招**（release.py:31），
 //      所以「能不能替换 default.ecl」这个 PLAN §4.5 的 ❓ **答案是可以**。
 //    ⏳ 若以后改落点（例如想改成只在排障时开），改的就是 release.py 那一行的值，本文件不用动。
@@ -415,5 +415,5 @@ void UFO_Rainbow_TTL()
 //      由 **卡侧的跟随 VM** 画在敌机位置上（`native/cards/ufo.c`）。
 //      为什么不能由 ECL 画：ECL 的 anm 索引表（一手 `th18:0x438d40`）里**没有** `ability.anm`
 //      ⇒ 本文件只能把本体刷成**隐形载体**（`anmSetSprite(0, -1)` = 原版「拆槽」分支，
-//        一手 `th18:0x436bf6`；零售 14 处同款用法全在 boss 死亡 / 符卡收尾）。
+//        一手 `th18:0x436bf6`；原生 14 处同款用法全在 boss 死亡 / 符卡收尾）。
 // =====================================================================================

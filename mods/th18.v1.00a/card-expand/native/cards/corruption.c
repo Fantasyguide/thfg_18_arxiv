@@ -1,6 +1,6 @@
 /* 腐化（id 70）—— 放炸弹不再消耗炸弹数，而是消耗**上限**。
  *
- * 拿到卡时上限顶满（零售上限 7），此后每放一发上限 −1；当前数跟着上限走，
+ * 拿到卡时上限顶满（原生上限 7），此后每放一发上限 −1；当前数跟着上限走，
  * 所以 HUD 上那个数字**就是剩余预算**：一次给满七发，用一发少一发，过关也不回复。
  *
  * 【为什么挂断点而不是 on_tick_2】
@@ -22,7 +22,7 @@
  */
 #include "sdk.h"
 
-#define CORRUPTION_MAX_BOMBS 7          /* 零售上限（0x4428ed 等三处 mov [0x4ccd64],7）*/
+#define CORRUPTION_MAX_BOMBS 7          /* 原生上限（0x4428ed 等三处 mov [0x4ccd64],7）*/
 
 static void sync_hud(void) { ce_gui_update_bombs(); }
 

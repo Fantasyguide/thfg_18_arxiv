@@ -198,7 +198,7 @@ static void test_weight_override_fit(void)
     #define W(id) (*(uint32_t *)(t + (id) * CE_ROW_BYTES + 0x14))
     #define ID(id) (*(uint32_t *)(t + (id) * CE_ROW_BYTES + 0x04))
     /* 真实形状：装载器给 NULL/BACK 与所有没用的行写 weight 6（退出随机池），
-     * 零售 1..55 与 23 张新卡进池。不这么铺的话，weight 0 的空行会被算成「必出卡」而先撞另一条上限。 */
+     * 原生 1..55 与 23 张新卡进池。不这么铺的话，weight 0 的空行会被算成「必出卡」而先撞另一条上限。 */
     #define SETUP_N(n, w) do { memset(t, 0, sizeof t); \
         for (unsigned q = 0; q < 255; ++q) { ID(q) = q; W(q) = CE_SHOP_NEVER_WEIGHT; } \
         for (unsigned q = 1; q < 56; ++q) W(q) = 2; \
@@ -227,7 +227,7 @@ static void test_weight_override_fit(void)
     CHECK(ce_weight_override_fit(t, 255, -1, -1, ids, 23, &changed) == -1);
     CHECK(changed == 0 && W(58) == 2);
 
-    /* 零售自己就撑爆了（不覆盖零售）：压 new_weight 也救不回来 → 原样返回，交给门 FAIL */
+    /* 原生自己就撑爆了（不覆盖原生）：压 new_weight 也救不回来 → 原样返回，交给门 FAIL */
     SETUP();
     for (unsigned id = 1; id < 56; ++id) W(id) = 200;
     CHECK(ce_weight_override_fit(t, 255, -1, 20, ids, 23, &changed) == 20);
@@ -242,7 +242,7 @@ static void test_weight_override_fit(void)
 
 static void test_build_order(void)
 {
-    /* 零售缩影（含两张掉队的 c2：块首 BLANK、块尾 MAGATAMA2）：新卡 100(被动) 101(子机) 102(主动) 103(类别 9 不存在) 104(子机) */
+    /* 原生缩影（含两张掉队的 c2：块首 BLANK、块尾 MAGATAMA2）：新卡 100(被动) 101(子机) 102(主动) 103(类别 9 不存在) 104(子机) */
     const uint32_t retail[]     = { 0, 1, 2, 8, 9, 21, 22, 23, 41, 42, 55 };
     const uint32_t retail_cat[] = { 2, 3, 3, 1, 1, 2,  2,  2,  0,  0,  2 };
     const uint32_t new_ids[]    = { 100, 101, 102, 103, 104 };
@@ -252,7 +252,7 @@ static void test_build_order(void)
     const uint32_t want[20] = { 0, 1, 2, 8, 9, 101, 104, 21, 22, 23, 100, 41, 42, 102, 55, 103, 56, 57, 57, 57 };
     CHECK(vis == 16);
     for (unsigned i = 0; i < 20; ++i) CHECK(out[i] == want[i]);
-    /* 没有新卡：零售原序 + NULL + BACK */
+    /* 没有新卡：原生原序 + NULL + BACK */
     vis = ce_build_order(out, 20, retail, retail_cat, 11, NULL, NULL, 0, 56, 57);
     CHECK(vis == 11 && out[11] == 56 && out[12] == 57);
     /* 放不下：返回 0 */

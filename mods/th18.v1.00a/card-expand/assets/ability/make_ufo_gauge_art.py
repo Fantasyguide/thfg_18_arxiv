@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""星莲船（系统卡 112）**吸收进度环**的那一条竖条带 —— TH12 v1.00b 零售切图（**只切这一张**）。
+"""星莲船（系统卡 112）**吸收进度环**的那一条竖条带 —— TH12 v1.00b 原版切图（**只切这一张**）。
 
 ## 切什么（一手，一处矩形）
 
@@ -16,7 +16,7 @@
   见 `thanm.c` 的 `anm_stringify_instr`）。它设的是弧的**模式位** `flags_lo>>26`：
   TH18 的 handler `th18:0x47b211` 一手是 `and eax,0xb7ffffff; or eax,0x34000000`
   ⇒ `0x34000000>>26 = 13` ⇒ v8 助记符 = **`texArcEven`**（v8.anmm 的 **601**）；`602 texArc` = mode 14
-  （`or 0x38000000`）。参数 = 弧的**段数**（零售 32）。
+  （`or 0x38000000`）。参数 = 弧的**段数**（原生 32）。
 - 矩形**从 anm 文本的 sprites 表读**（下面 `read_sprite_rect()`），不写死；读不到就 `raise SystemExit`。
 
 ## 输出
@@ -87,7 +87,7 @@ def read_sprite_rect() -> tuple[int, int, int, int]:
 
 def main() -> int:
     if not SRC_PNG.is_file():
-        raise SystemExit(f"缺 TH12 零售贴图 {SRC_PNG}（retail 字节只在 local/，构建时取、不入库）")
+        raise SystemExit(f"缺 TH12 原版贴图 {SRC_PNG}（retail 字节只在 local/，构建时取、不入库）")
     rect = read_sprite_rect()
     if rect != EXPECT_RECT:
         raise SystemExit(

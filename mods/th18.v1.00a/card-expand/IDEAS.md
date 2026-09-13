@@ -77,7 +77,7 @@ SHT shooterset + HUD 文字 / 数字 / 图标 + VM 演出 + 语音 + **自建收
   ① 读 `bullet_props[16]`（`offset_final` = 相对发射点）+ `bullet_mgr_origins[16]`（世界原点）；
   ② 判「活跃」（候选 `type != 0` / `et_ex_index`，**待一手**）；
   ③ 用 `EnemyManager__allocate_new_enemy` **`th18:0x42d7d0`**（按 ECL 子程序名建**真 zEnemy**，
-     零售 `CardLilyWhite` 在用）spawn 真敌机当身体 —— 天然可打 / 有 HP / 死亡掉落；
+     原生 `CardLilyWhite` 在用）spawn 真敌机当身体 —— 天然可打 / 有 HP / 死亡掉落；
   ④ 击破 → `ce_cancel_radius` 按**位置**消弹转分（不需要 owner）。
   → 这是把 108「使魔原义」**部分救活**的一条路（需新增 `ce_spawn_enemy`，可能还要自定义 ECL 子程序）。
 - **降级方案（用户 2026-09-10）：不折腾「停发射口」，改用「比例扣血」** ——

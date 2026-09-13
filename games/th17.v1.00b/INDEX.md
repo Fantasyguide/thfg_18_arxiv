@@ -18,7 +18,7 @@
 | 函数 dump | `local/th17.v1.00b/th17-funcs.json`（1967 条：`addr`/`name`/`size`/`xrefs`）|
 
 > ✅ **Steamless 脱壳说明**：本机样本是 **Steam 包装版**（`.steamstub`），已用 Steamless 脱壳成
-> `th17.exe`（747,520 B = 零售版大小）。脱壳会重建 PE 容器 → **文件 md5 与零售版不同**，但代码段字节是零售的。
+> `th17.exe`（747,520 B = 原版版大小）。脱壳会重建 PE 容器 → **文件 md5 与原版版不同**，但代码段字节是原版的。
 > **抽检结论**：ExpHP `th-re-data` v1.00b 的 781 个函数地址里 **780 个**在脱壳版 Ghidra 库中精确落在同名函数入口；
 > 动物灵 13 个函数序言逐一手检 13/13 合法。详细抽检记录见
 > [`engine/animal/th17/01`](../../engine/animal/th17/01-animal-spirits.md) §1。

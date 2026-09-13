@@ -3,7 +3,7 @@ script script199 {
     // 妖侧 = 八雲紫/アリス/レミリア 之一（本支：REMILIA レミリア・スカーレット）；一手：低速位 `th08:0x44b672 movzx ecx,[player+0x3]` ⇒ script5..9 是妖侧、0..4 是人侧。
     // 指令逐条照抄（sprite/flipX/jmp/标签一字未动），只把 sprite 引用换成 ORDER 名字：
     //   sprite11 → @YOUKAI_REMILIA_S11，sprite12 → @YOUKAI_REMILIA_S12，sprite13 → @YOUKAI_REMILIA_S13，sprite14 → @YOUKAI_REMILIA_S14
-    // ⚠ 零售这支脚本里**没有 layer()**（自机本体 VM 的层不由它定）⇒ 这里也不写；挂独立 VM 时由挂它的那一方自己补 layer（世界层 3–19，别用 HUD 的 24/25）。
+    // ⚠ 原生这支脚本里**没有 layer()**（自机本体 VM 的层不由它定）⇒ 这里也不写；挂独立 VM 时由挂它的那一方自己补 layer（世界层 3–19，别用 HUD 的 24/25）。
 offset0:
     sprite(@YOUKAI_REMILIA_S11);
 +6: // 6

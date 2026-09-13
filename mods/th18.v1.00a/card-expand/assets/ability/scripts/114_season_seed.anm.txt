@@ -1,6 +1,6 @@
 script script114 {
     // 季节子机打出去的小种子 —— shooterset SEASON 的 `+0x22` 指向它。
-    // 骨架照零售子机弹 script25 与本 mod 的 script100（豌豆）：stop() 挂住，命中时引擎发 interruptLabel(1)。
+    // 骨架照原生子机弹 script25 与本 mod 的 script100（豌豆）：stop() 挂住，命中时引擎发 interruptLabel(1)。
 -1:
     layer(13);
     sprite(@SEASON_SEED);

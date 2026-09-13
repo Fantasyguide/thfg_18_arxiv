@@ -4,8 +4,8 @@ script script227 {
     // 指令逐条照抄（段序/时序/数值一字未动），只做两件事：① sprite 引用换成 ORDER 名字；
     //   ② 中断标签按 TH18 口径重编号（见下面 ★★，这是唯一一处语义偏离）。sprite 换名表：
     //   sprite32 → @YOUKAI_OPT_AYA_S32@，sprite33 → @YOUKAI_OPT_AYA_S33@，sprite34 → @YOUKAI_OPT_AYA_S34@，sprite35 → @YOUKAI_OPT_AYA_S35@，sprite36 → @YOUKAI_OPT_AYA_S36@，sprite37 → @YOUKAI_OPT_AYA_S37@，sprite38 → @YOUKAI_OPT_AYA_S38@，sprite39 → @YOUKAI_OPT_AYA_S39@
-    // ★ `layer(13)` 是**零售自己写的**（TH16 那代 VM 的层由脚本给）⇒ 照抄，不改。
-    // ★ 中断标签与 TH18 零售子机脚本**同款**、**一字未动**：`(2)` 出场、`(3)` 进商店收起、
+    // ★ `layer(13)` 是**原版自己写的**（TH16 那代 VM 的层由脚本给）⇒ 照抄，不改。
+    // ★ 中断标签与 TH18 原生子机脚本**同款**、**一字未动**：`(2)` 出场、`(3)` 进商店收起、
     //   `(1)` 销毁 —— 天然对得上（一手：TH18 子机 VM 用 `ability.anm`，其 s2/s6/s7/s14/s16/
     //   s18/s20/s22 都是这三个号；引擎的发送点见生成器文件头 ③）。
 -1:

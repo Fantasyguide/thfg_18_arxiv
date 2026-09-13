@@ -162,10 +162,10 @@ void ce_option_pose_declare(ce_card_t *c, const ce_option_pose_t *p);   /* 每�
 
 #### 3.4.1 妖侧弹幕的载体：用最后那一格槽 `0x16`（⚠ 槽位已满）
 
-sht 的 40 格**全部有主**（实测）：`0x00–0x16` 零售（其中 `0x0a/0x0b/0x0e–0x15` + 一个动态索引被零售代码**硬编码调用**
+sht 的 40 格**全部有主**（实测）：`0x00–0x16` 原生（其中 `0x0a/0x0b/0x0e–0x15` + 一个动态索引被原生代码**硬编码调用**
 ⇒ 回收会破坏原版装备卡）、`0x17–0x18` = 77 豌豆射手、`0x19–0x1d` = 116 季节、`0x1e–0x27` = 117 咆哮。
 
-- ⇒ **108 只能用 `0x16` 这一格**（零售唯一无卡映射的槽；它原本 `fire_rate=0`，就是文档里写「别碰它」的那格 ——
+- ⇒ **108 只能用 `0x16` 这一格**（原生唯一无卡映射的槽；它原本 `fire_rate=0`，就是文档里写「别碰它」的那格 ——
   我们改用**合法记录**（`fire_rate ≥ 1`）覆盖它，div-by-zero 的风险随之消失）。
 - **记录写法（关键）**：**全部 `opt_slot = 0`（从自机本体出膛）**。
   依据 `engine/sht/th18/02-shooter-record.md` §4：记录的 `+0x22` 是 anm 脚本号，
@@ -246,7 +246,7 @@ sht 的 40 格**全部有主**（实测）：`0x00–0x16` 零售（其中 `0x0a
 | ✅ 上限 | 同帧 `ce_raise_damage_cap(基值 + 转嫁值)` —— 否则会被每帧每敌上限吃掉 |
 | ✅ 时机 | `on_tick_2`（AbilityManager tick 优先级 `0x16` **早于**敌人结算 `0x1b`）|
 | ✅ 成本 | **不需要新断点、不需要新 SDK 面**；与自机弹**同一条伤害管线**（`ce_damage_rect` 和 `PlayerBullet::create` 都调 `0x45dfa0`）|
-| 先例可照抄 | 青眼白龙 `native/cards/blue_eyes.c:106`、炎魔 `firelord.c:208`（注释直接写「每帧一个**新**源」）、真银 `truesilver.c:60`、破损核心 `broken_core.c:84`；零售原型 `CardRemilia__on_tick_2` `0x40f478` |
+| 先例可照抄 | 青眼白龙 `native/cards/blue_eyes.c:106`、炎魔 `firelord.c:208`（注释直接写「每帧一个**新**源」）、真银 `truesilver.c:60`、破损核心 `broken_core.c:84`；原生原型 `CardRemilia__on_tick_2` `0x40f478` |
 
 **⚠ 必须遵守的三条**（都来自一手研究）：
 
@@ -303,7 +303,7 @@ sht 的 40 格**全部有主**（实测）：`0x00–0x16` 零售（其中 `0x0a
 | 妖侧贴图（灵梦 → 紫 / 魔理沙 → 爱丽丝 / 咲夜 → 蕾米）| ⏳ **来源已定 = TH08**（老画风，用户 2026-09-12 接受）|
 | ★ TH08 抽取**在同一个 anm 里**（少一个坑）| 一手：`th08:0x4c7cb0` 的 12 项表 ⇒ **人 / 妖搭档贴图都在同一个 `playerNN.anm`**，不需要找单独文件 |
 | ⚠ TH08 抽取的**工具坑**| `thdat -x 8` 对**所有**条目都失败（`incorrect entry magic`）⇒ 见下方「TH08 抽取」小节 |
-| 使魔贴图 | 借零售（`NoEnemyDebug` 无 anm 脚本 ⇒ 需卡侧指定 anm，或复用 116/117 的占位做法）|
+| 使魔贴图 | 借原生（`NoEnemyDebug` 无 anm 脚本 ⇒ 需卡侧指定 anm，或复用 116/117 的占位做法）|
 | 卡图 / 语音 | 占位（照 116/117 现状）|
 
 #### TH08 抽取（工具坑与出路）
@@ -413,18 +413,18 @@ sht 的 40 格**全部有主**（实测）：`0x00–0x16` 零售（其中 `0x0a
 | 项 | 产物 |
 | --- | --- |
 | 生成器 | `assets/ability/make_sanae_youkai_art.py`（幂等；缺源图 `raise SystemExit`；矩形**从 anm 的 sprites 表读**、不写死）|
-| 贴图 | `assets/ability/sanae_youkai/YOUKAI_AYA_S0..S23.png` ×24（零售 30×46 → 居中补到 **32×64**）|
+| 贴图 | `assets/ability/sanae_youkai/YOUKAI_AYA_S0..S23.png` ×24（原生 30×46 → 居中补到 **32×64**）|
 | ORDER 片段 | `assets/ability/entries/ORDER.sanae_youkai.txt`（24 行，等主 agent 合并；**没碰** `ORDER.txt`）|
 | anm 脚本 | `assets/ability/scripts/222_youkai_aya_s0.anm.txt` … `226_youkai_aya_s4.anm.txt`（**实际用 222–226，共 5 个号**）|
 
 - **切了哪些**：`pl03.anm` 的 **script0..4**（= 本体那 24 格 30×46，`layer(14); type(0); resampleMode(1);`；
   一手依据：只有它们引用 `player/pl03/pl03.png` 的 30×46 格子）。其余 18 支不画本体（特效 / HUD；
   其中 `script14` = 残像，见 §11.3.3(a) 的视觉后果）。
-- **为什么居中**：零售 sprite 以 VM 位置为中心画（anchor 位为 0），本仓构建期对小于声明尺寸的源图**也是居中补**
-  （`assets/build_ability.py:119-120`）⇒ 30×46 居中放进 32×64 与零售落点逐像素一致，**可见像素一个没动**。
-- **`layer(14)` 是零售自己写的**（TH16 本体脚本本来就有），不是我们编的；TH18 世界层 = 3–19（别用 HUD 的 24/25）⇒ 照抄合法。
-- **自检（生成器 stdout，可复跑）**：① 尺寸全 2 的幂、② 24 张全非空（可见像素 574–701）、③ 与零售矩形逐像素一致、
-  ④ `@名字` 全在 ORDER 片段有定义、⑤ 与零售逐行 diff **只差 66 行 sprite 引用**、⑥ 5/5 条 `thanm -c 18` 单编通过；
+- **为什么居中**：原生 sprite 以 VM 位置为中心画（anchor 位为 0），本仓构建期对小于声明尺寸的源图**也是居中补**
+  （`assets/build_ability.py:119-120`）⇒ 30×46 居中放进 32×64 与原生落点逐像素一致，**可见像素一个没动**。
+- **`layer(14)` 是原版自己写的**（TH16 本体脚本本来就有），不是我们编的；TH18 世界层 = 3–19（别用 HUD 的 24/25）⇒ 照抄合法。
+- **自检（生成器 stdout，可复跑）**：① 尺寸全 2 的幂、② 24 张全非空（可见像素 574–701）、③ 与原生矩形逐像素一致、
+  ④ `@名字` 全在 ORDER 片段有定义、⑤ 与原生逐行 diff **只差 66 行 sprite 引用**、⑥ 5/5 条 `thanm -c 18` 单编通过；
   **幂等**：连跑两次 stdout 一致、产物汇总 md5 = `5cf5a01bd3158b9d07d90fed184ce22c`。
 - ⚠ **脚本号对账**：现盘 `scripts/` 最大号 221，本卡占 **222–226**。目录里另有 206–208 / 214–218 的空缺
   （别人在改，`assets/ability/renumber_scripts.py` 在动）⇒ 合并时按当时的实际号重新对账。
@@ -456,7 +456,7 @@ sht 的 40 格**全部有主**（实测）：`0x00–0x16` 零售（其中 `0x0a
    `*(int32_t *)(player + CE_PLAYER_VM + CE_ANM_VM_SPRITE_ID) = sprite;` ⇒ **就算资产接进 `pl0X.anm`，这条也会画出上一张 sprite 的 UV 矩形**。
    正确形状 = `ce_anm_set_sprite(*(void**)(player + CE_PLAYER_ANM), player + CE_PLAYER_VM, N)`；
    先例 `native/cards/season.c:995-1003`：起残影 VM 后**读**本体 sprite 号、再 `ce_anm_set_sprite(anm, id, sprite)` 贴到残影上 —— 它传的 `anm` 正是 `player+0xc`（`pl0X.anm`）。
-2. **零售的「每帧写 sprite」其实是「每 +5 帧写」**：本体脚本 `sprite(sprite0..23)` 沿 `+5` 时间轴推进
+2. **原生的「每帧写 sprite」其实是「每 +5 帧写」**：本体脚本 `sprite(sprite0..23)` 沿 `+5` 时间轴推进
    （`pl00.anm` script0..3，`local/th18.v1.00a/anm/pl00/pl00.anm.txt`）。⇒ 卡侧每帧 on_draw 抢写通常能赢，
    但**「本体脚本的写」与「卡的写」谁先**取决于 `AnmVm__run` 的派发点：`Player__on_draw` `0x45cac0`（注册优先级 `0x1d`）
    先写 `vm+0x538` 位再 `call 0x481210`（`0x45cae6`–`0x45cb06`）⇒ 🟡 看起来脚本是在 **tick** 里跑（否则那些位会被脚本冲掉），**但未坐实** ⇒ 见 §11.3.4 ③。
@@ -465,7 +465,7 @@ sht 的 40 格**全部有主**（实测）：`0x00–0x16` 零售（其中 `0x0a
 
 原文（`mods/th18.v1.00a/card-expand/AUDIT.md:2992` 标题目与 `:3013`–`:3020` 结论）：
 
-> `### AL33. ★ 魔理沙大鹫灵闪退 + 狼灵无爆炸：兽灵脚本根本不用追加，零售 pl0X.anm 里逐字节就有（2026-09-11 四修）`
+> `### AL33. ★ 魔理沙大鹫灵闪退 + 狼灵无爆炸：兽灵脚本根本不用追加，原生 pl0X.anm 里逐字节就有（2026-09-11 四修）`
 > `- 结论：**追加 entry0 只在文件里塞了一份重复贴图**；真正的伤害来自「为了满足『脚本不含 scriptNew/jmp』的不变式，把 TH17 脚本抄简」`
 
 ⇒ **§AL33 禁的是两件事**：
@@ -477,8 +477,8 @@ sht 的 40 格**全部有主**（实测）：`0x00–0x16` 零售（其中 `0x0a
 
 - **不是 §AL33 的字面范围** 🟡：不新增 entry、也就没有「重复贴图」，脚本一行不动。
 - **但被四修后的更强规则挡住** ✅：`assets/build_player_anm.py:2` 的文件头就是「**不改 `pl0X.anm`**（2026-09-11 四修，AUDIT §AL33）」，
-  `:30`–`31` 写「⇒ 正确做法是**零售脚本直接用**…**`pl0X.anm` 一个字节都不改**」。该脚本现在只做两件事：
-  把零售 `local/th18.v1.00a/dat/pl0X.anm` **逐字节拷**到 `native/build/pl0X.anm`（`:165`，随后 `cmp` 硬校验 `:168`）+ 一组硬校验；
+  `:30`–`31` 写「⇒ 正确做法是**原生脚本直接用**…**`pl0X.anm` 一个字节都不改**」。该脚本现在只做两件事：
+  把原生 `local/th18.v1.00a/dat/pl0X.anm` **逐字节拷**到 `native/build/pl0X.anm`（`:165`，随后 `cmp` 硬校验 `:168`）+ 一组硬校验；
   `assets/check_player_anm_bounds.py` 是它的独立回读守卫（sprite 越界 / `sht` 的 `anm`·`hit_fx` 必须在本文件 / 会飞脚本主路径无 `delete`）。
   ⇒ **任何写进 `pl0X.anm` 的字节都会撞这条铁律**，要走就得同时改这两支脚本 + 按 `CLAUDE.md` 的共享件纪律在 AUDIT 单列一条。
 
@@ -501,7 +501,7 @@ sht 的 40 格**全部有主**（实测）：`0x00–0x16` 零售（其中 `0x0a
 **(a) 写 `vm+0x24` 指向注入进 `pl0X.anm` 的新 sprite（= §3.2 原路线）**
 
 - **视觉后果**：✅ 最干净 —— 换的**就是本体自己那台 VM**，位置 / 缩放 / 层 / 受击表现全跟引擎走，零接缝。
-  ⚠ 但有**一条会看见的裂缝**：`pl0X.anm` 里**别的脚本也画本体 sprite** —— 零售残像脚本
+  ⚠ 但有**一条会看见的裂缝**：`pl0X.anm` 里**别的脚本也画本体 sprite** —— 原生残像脚本
   （`local/th18.v1.00a/anm/pl03/pl03.anm.txt` script14 = `layer(13); type(1); sprite(sprite0); color(60,0,192); alphaTime(20,0,0); delete()`；
   各角色脚本号：`pl00` 17 / `pl01` 19 / `pl02` 14 / `pl03` 14，本节实测）起的是**独立 VM**、指的还是**原机体**图
   ⇒ 低速妖侧化期间触发残影时会**闪出原机体（早苗）的图**。要么接受，要么单列一轮研究。
@@ -515,11 +515,11 @@ sht 的 40 格**全部有主**（实测）：`0x00–0x16` 零售（其中 `0x0a
 **(b) 叠一个跟随本体的独立 VM（`ability.anm` 的贴图）+ 把本体 VM 藏起来**
 
 - **视觉后果**：⚠ **藏不干净就是「双人叠影」**：原机体照旧被 `Player__on_draw` 画（`0x45cafc lea eax,[ecx+0x14]` → `0x45cb06 call 0x481210`），
-  我们的 VM 只会**再叠一个人**。藏法候选**全都没有一手坐实**：① 零售自己的「不画」闸 = `0x45cac1 cmp [ecx+0x476ac],2; je 0x45cb0b`（✅ 一手，但语义属玩家状态机 ❓）；
+  我们的 VM 只会**再叠一个人**。藏法候选**全都没有一手坐实**：① 原生自己的「不画」闸 = `0x45cac1 cmp [ecx+0x476ac],2; je 0x45cb0b`（✅ 一手，但语义属玩家状态机 ❓）；
   ② `vm+0x524`（color alpha）置 0 🟡（玩家自己每帧写 `vm+0x528`，`+0x524` 归属待确认）；③ `vm+0x54/+0x58` scale 置 0 🟡（冲突：`0x45c792`/`0x45c7ad` 写 `player+0x68/0x6c` = `vm+0x54/+0x58`）；
   ④ 直写 `vm+0x24 = -1` ❌（负号只有**走 opcode** 才安全，`0x4799f7`–`0x479a07` 会转向 ascii 档案的 sprite `0x120`；直写负数会在 `0x481120` 被当索引算）；
   ⑤ `ce_anm_delete` / `0x488cf0` ❌（本体 VM 是**内嵌**在 `player+0x14` 的、没有 manager id ⇒ 找不到，删了就是野指针）。
-  另外跟随 VM 得照 `ufo_body_vm_follow` 那样每帧对齐 pos（本体 VM 的 pos 由 `Player__on_draw` 每帧从 `player+0x620/624/628` 拷进 `vm+0x5f0`，`0x45caca`–`0x45cae0`）；层用世界层 —— 我们切出来的 222–226 **原样带零售 `layer(14)`**，正好可用。
+  另外跟随 VM 得照 `ufo_body_vm_follow` 那样每帧对齐 pos（本体 VM 的 pos 由 `Player__on_draw` 每帧从 `player+0x620/624/628` 拷进 `vm+0x5f0`，`0x45caca`–`0x45cae0`）；层用世界层 —— 我们切出来的 222–226 **原样带原生 `layer(14)`**，正好可用。
 - **replay / 手感**：✅ 纯外观（不动输入 / 判定 / 伤害）——**前提是藏法不碰玩家状态机字段**；❌ 若走 ①（借 `player+0x476ac`）就是在动玩家状态 ⇒ 回放/流程风险要单独验。
 - **先例**：✅ **有，且严格照抄**：112 飞碟 `native/cards/ufo.c:749 ufo_body_vm_spawn`（`ce_anm_spawn(CE_ABILITY_ANM(), script, layer)` + 立刻 `ce_anm_set_pos`）、
   `:771 ufo_body_vm_follow`（每帧 pos + 自愈，VM 没了就重起）、`:742 ufo_body_vm_kill`；令牌同款 `:551`/`:569`。

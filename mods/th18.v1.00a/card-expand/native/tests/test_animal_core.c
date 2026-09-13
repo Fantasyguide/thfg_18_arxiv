@@ -87,7 +87,7 @@ int main(void)
         fill2(&st, t, 5, ANIMAL_GOAST_NONE);
         CHECK(st.hyper_type == 3 && st.duration == 1500);
     }
-    /* ★ 彩蛋：持有「弱肉强食之理」(25)/「鬼杰组长的恐吓」(30) ⇒ 主凭依灵恒存在 ⇒ 任何暴走都 +480 */
+    /* ★ 彩蛋：持有「弱肉强食之理」(25)/「鬼杰组长的恐吓」(34) ⇒ 主凭依灵恒存在 ⇒ 任何暴走都 +480 */
     {
         int32_t t[5] = {1, 1, 1, 2, 3};
         fill2(&st, t, 5, ANIMAL_GOAST_ANY);
@@ -243,11 +243,23 @@ int main(void)
     }
 
     /* —— 正常结束爆散：2 个变色动物灵（1..3）—— */
+    /* 单一暴走（1..3）= 用户口径：2 只都等于本次咆哮类型（不看 rand）*/
     memset(out, 0, sizeof out);
-    CHECK(animal_end_burst(out, 8, 0) == 2);
-    CHECK(out[0] == 1 && out[1] == 2);                   /* rand=NULL → 确定性轮转 */
+    CHECK(animal_end_burst(out, 8, 3, 0) == 2);
+    CHECK(out[0] == 3 && out[1] == 3);
     memset(out, 0, sizeof out);
-    CHECK(animal_end_burst(out, 1, 0) == 1);             /* cap 截断 */
+    CHECK(animal_end_burst(out, 8, 1, 0) == 2);
+    CHECK(out[0] == 1 && out[1] == 1);
+    /* 混合（4）/ 未知（0）= TH17 一手回退：1 + rand()%3（rand=NULL → 确定性轮转 1,2）*/
+    memset(out, 0, sizeof out);
+    CHECK(animal_end_burst(out, 8, 4, 0) == 2);
+    CHECK(out[0] == 1 && out[1] == 2);
+    memset(out, 0, sizeof out);
+    CHECK(animal_end_burst(out, 8, 0, 0) == 2);
+    CHECK(out[0] == 1 && out[1] == 2);
+    /* cap 截断 */
+    memset(out, 0, sizeof out);
+    CHECK(animal_end_burst(out, 1, 0, 0) == 1);
 
     /* —— 寿命变形 —— */
     CHECK(animal_next_type(1) == 2);

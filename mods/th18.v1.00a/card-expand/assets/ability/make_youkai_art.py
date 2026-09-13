@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""永夜抄（系统卡 108）**妖侧机体本体**：TH08 零售切图 + 脚本生成。
+"""永夜抄（系统卡 108）**妖侧机体本体**：TH08 原版切图 + 脚本生成。
 
     python3 make_youkai_art.py            # 生成 + 自检（可重复跑，结果一致）
 
-来源（零售字节只在 `local/`，gitignored；构建时取，不入库）：
+来源（原生字节只在 `local/`，gitignored；构建时取，不入库）：
   贴图+脚本  `local/th08.v1.00d/dat/player00.anm` / `player01.anm` / `player02.anm`
              —— TH08 v1.00d（anm **version 3**）。**贴图在 .anm 内部**，entry 名就是 `data/player00/playerNN.png`。
-             本脚本运行时用 thanm 现场 `-l`（读矩形/脚本）与 `-x`（取贴图）到**临时目录**，仓里不落零售字节。
+             本脚本运行时用 thanm 现场 `-l`（读矩形/脚本）与 `-x`（取贴图）到**临时目录**，仓里不落原生字节。
   复核命令   `local/vendor/thtk/build/thanm/thanm -l 8 -m local/vendor/thpages/static/mapfile/v2.anmm \
                  local/th08.v1.00d/dat/player00.anm`
              ★ anmmap 必须用 **v2.anmm**（文件头自述「for version 2: PCB and version 3: **IN**, PoFV」）——
@@ -58,23 +58,23 @@ TH08 有「使い魔」这个概念，但它**不是一张贴图**：
     TH08 没有任何 entry / 没有任何 anm 是「使魔专用图」（`local/th08.v1.00d/dat/*.anm` 的 entry 名逐个查过：
     `playerNN/playerNNb`、`stgenm/stgNenm`、`etama`、`eff0N`、`face_*`、`title/sl_pl*` …，没有一个叫 familiar/使い魔，
     也没有第二处「发射口实体」的小图）。
-  * ⇒ 108 的使魔是**卡侧自定**（设计文档 §3.5 已经这么定性），本仓对它**没有零售原图可借**。
+  * ⇒ 108 的使魔是**卡侧自定**（设计文档 §3.5 已经这么定性），本仓对它**没有原生原图可借**。
     任务书原文：「若查不到明确的『使魔』图 ⇒ 不要自己画、也不要用别的东西顶，如实报告『没找到』并停手」
     —— 本生成器因此**只做妖侧机体本体**，使魔一项在 stdout 里显式报 NOT FOUND。
 
 产出（每条都不动别人的文件）：
-  ability/youkai/YOUKAI_<角色>_S<零售 sprite 号>.png  —— 30×46（pl00/pl01）或 46×46（pl02）的零售切图，
+  ability/youkai/YOUKAI_<角色>_S<原生 sprite 号>.png  —— 30×46（pl00/pl01）或 46×46（pl02）的原生切图，
         **居中补透明**到 2 的幂画布（32×64 / 64×64）。
        ★ 居中不是随手挑的：TH08 的 sprite 四边形以 **VM 位置为中心**画
          （`AnmManager::draw_std_quad_type_0` `th08:0x463877`/`0x463904`：`(flags_lo>>11)&3&1`、
            `…&3&2` 两位为 0 时 `left = pos.x − w*scale/2`；而 `AnmVm::reset` `0x406926` 把 flags 低字设成 `0x7`
-           ⇒ 那两位都是 0），所以「内容居中于画布」与零售的落点**逐像素一致**。
+           ⇒ 那两位都是 0），所以「内容居中于画布」与原生的落点**逐像素一致**。
          build_ability.py 对小于声明尺寸的源图也是居中补（`assets/build_ability.py:119`），两边同一条公式；
          本脚本直接把补好的 2 的幂图写盘，构建期不会再补。
-  ability/scripts/189..203_youkai_<角色>_s<零售脚本号>.anm.txt
+  ability/scripts/189..203_youkai_<角色>_s<原生脚本号>.anm.txt
        —— 正文逐条照抄 TH08 `playerNN.anm` 的 **script5..9**，**只**把 `sprite(spriteNN)` 换成 `sprite(@NAME)`；
           `flipX()` / `jmp()` / 标签 `offsetN:` / `+N:` 一个不改（注释写在 `script scriptNN {` **里面**）。
-       ★ **没有 `layer()` 可抄**：零售这 5 支脚本里**一条 `layer()` 都没有**（自机本体 VM 的层由引擎 / 自机脚本自己定），
+       ★ **没有 `layer()` 可抄**：原生这 5 支脚本里**一条 `layer()` 都没有**（自机本体 VM 的层由引擎 / 自机脚本自己定），
          所以本脚本**不替它编一个层号**。⚠ 如果卡侧把这几支挂在**独立 VM** 上（而不是写自机本体 `player+0x14` 的 sprite id），
          那台 VM 必须**自己**补 `layer(...)` —— 世界层 3–19，别用 HUD 的 24/25。
   ability/entries/ORDER.youkai.txt  —— 待合并进 ORDER.txt 的片段（整段重写，幂等）。
@@ -115,14 +115,14 @@ TEAMS = [
 ]
 HUMAN_SCRIPTS = (0, 1, 2, 3, 4)     # 前半 = 人侧（一手：0x44b678 的「没按 Shift」支）
 YOUKAI_SCRIPTS = (5, 6, 7, 8, 9)    # 后半 = 妖侧（一手：0x44b678 jne 0x44b76f 那支）
-SCRIPT0 = 189                       # 脚本文件编号从这里起连续（零售 ability.anm 有 68 个脚本、最后一个是 188）
+SCRIPT0 = 189                       # 脚本文件编号从这里起连续（原生 ability.anm 有 68 个脚本、最后一个是 188）
 
 _SPRITE_RE = re.compile(r"sprite(\d+):\s*\{\s*x:\s*(\d+),\s*y:\s*(\d+),\s*w:\s*(\d+),\s*h:\s*(\d+)\s*\}")
 _TOKEN_RE = re.compile(r"@([A-Za-z_][A-Za-z0-9_]*)")
 _FILE_RE = re.compile(r"^(\d+)_([A-Za-z_][A-Za-z0-9_]*)\.anm\.txt$")
 
 
-# ── 取源（thanm 现场解，仓里不落零售字节）──────────────────────────────
+# ── 取源（thanm 现场解，仓里不落原生字节）──────────────────────────────
 
 def _require(p, what):
     if not p.is_file():
@@ -244,7 +244,7 @@ def crop_team(sheet_path, rects, sprite_ids, char):
         cw, ch = canvas_size(w, h)
         cell = im.crop((x, y, x + w, y + h))
         canvas = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
-        canvas.paste(cell, ((cw - w) // 2, (ch - h) // 2))   # ★ 居中 = 零售的 VM 中心锚点（见文件头 ①）
+        canvas.paste(cell, ((cw - w) // 2, (ch - h) // 2))   # ★ 居中 = 原生的 VM 中心锚点（见文件头 ①）
         name = f"YOUKAI_{char}_S{sid}"
         path = OUT_ART / f"{name}.png"
         canvas.save(path)
@@ -261,7 +261,7 @@ def header_comment(anm_name, src_num, char, cn, mapping):
             f"一手：低速位 `th08:0x44b672 movzx ecx,[player+0x3]` ⇒ script5..9 是妖侧、0..4 是人侧。\n"
             f"    // 指令逐条照抄（sprite/flipX/jmp/标签一字未动），只把 sprite 引用换成 ORDER 名字：\n"
             f"    //   " + "，".join(f"sprite{s} → @{mapping[s]}" for s in sorted(mapping)) + "\n"
-            f"    // ⚠ 零售这支脚本里**没有 layer()**（自机本体 VM 的层不由它定）⇒ 这里也不写；"
+            f"    // ⚠ 原生这支脚本里**没有 layer()**（自机本体 VM 的层不由它定）⇒ 这里也不写；"
             f"挂独立 VM 时由挂它的那一方自己补 layer（世界层 3–19，别用 HUD 的 24/25）。")
 
 
@@ -282,7 +282,7 @@ def gen_scripts(team_specs, order_names):
             for sid, nm in mapping.items():
                 body_txt = body_txt.replace(f"sprite(sprite{sid})", f"sprite(@{nm})")
             want = original.replace(head_old, head_new, 1)        # 只做「脚本号 + 注释头」这一处结构改动
-            left = re.findall(r"sprite\(sprite(-?\d+)\)", body_txt)   # 漏换的引用（零售出现新 sprite 号时会炸）
+            left = re.findall(r"sprite\(sprite(-?\d+)\)", body_txt)   # 漏换的引用（原生出现新 sprite 号时会炸）
             if left:
                 sys.exit(f"{anm_name} script{src_num} 里还有没替换的 sprite 引用 {left}")
             name = f"{dst}_youkai_{char.lower()}_s{src_num}.anm.txt"
@@ -383,7 +383,7 @@ def check_hue(team_specs):
 
 
 def check_scripts(scripts, maps, rows):
-    """③ 每个 @名字 都在 ORDER 片段里有定义；④ 与零售原文逐行 diff 只差 sprite 引用。"""
+    """③ 每个 @名字 都在 ORDER 片段里有定义；④ 与原生原文逐行 diff 只差 sprite 引用。"""
     names = {n for n, _p, _s, _a, _i in rows}
     changed_total = 0
     for fname, (body, want, _orig, _idx, _who) in sorted(scripts.items(), key=lambda kv: kv[1][3]):
@@ -476,7 +476,7 @@ def main():
     _require(ANMMAP_TH08, "TH08 用的 anmmap v2.anmm")
     _require(ANMMAP_TH18, "TH18 构建用的 anmmap v8.anmm")
     for name, _c, _cn in TEAMS:
-        _require(TH08_DAT / f"{name}.anm", f"TH08 零售 {name}.anm")
+        _require(TH08_DAT / f"{name}.anm", f"TH08 原版 {name}.anm")
 
     with tempfile.TemporaryDirectory(prefix="youkai-src-") as td:
         tmp = Path(td)

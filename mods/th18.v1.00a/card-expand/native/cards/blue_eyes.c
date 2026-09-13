@@ -2,7 +2,7 @@
  * 被挡的弹照炸弹消弹变点道具），每 BE_WAVE_PERIOD 帧向上喷一道矩形伤害光束（BE_WAVE_FRAMES 帧 × BE_WAVE_DMG）。
  * 生命归零 → 死亡动画、结束；过关 / 局末龙消失。残机 0 时拒绝（不许献祭最后一条命）。充能 BE_RECHARGE 帧。
  *
- * 零售原型：跟随 + 挡弹 + 计数 = Tenshi 要石（0x40e8c0）；光束 = Remilia 脉冲（0x40f3a0）。伤害上限 player+0x47984 不动。
+ * 原生原型：跟随 + 挡弹 + 计数 = Tenshi 要石（0x40e8c0）；光束 = Remilia 脉冲（0x40f3a0）。伤害上限 player+0x47984 不动。
  * 纯逻辑在 blue_eyes_core.c（主机单测）；引擎调用是 sdk.h 的薄包装（AUDIT O29）。
  * 设计：docs/superpowers/specs/2026-09-04-blue-eyes-design.md */
 #include "sdk.h"
@@ -19,7 +19,7 @@
 #define BE_BAR_LOW    0xffff4040u           /* 红 */
 
 /* 血条：两个根 VM（不做龙的子 VM——子会继承父的 0.45 缩放和死亡缩放）。填充条 drawRect(1,1) 由 C 写 scale = (宽, 高)，
- * 中心随宽度左对齐（不依赖 drawRect 对 anchor 的支持）。零售 HUD 充能条同款做法（0x408a53 写 vm+0x58，AUDIT O29k）。*/
+ * 中心随宽度左对齐（不依赖 drawRect 对 anchor 的支持）。原生 HUD 充能条同款做法（0x408a53 写 vm+0x58，AUDIT O29k）。*/
 static void bar_update(be_state_t *s)
 {
     float ratio = s->hp > 0 ? (float)s->hp / (float)BE_HP : 0.0f;

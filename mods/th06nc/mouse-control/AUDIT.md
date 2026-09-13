@@ -133,7 +133,7 @@ ff 25 b2 fa 01 00    jmp qword ptr [rip + 0x1fab2]    -> .data 的函数指针�
 - [x] 目标是否落在只读节 —— **CONFIRMED**。`.text` 是只读可执行；
       `VirtualProtect` 改成 `PAGE_EXECUTE_READWRITE`，写完**改回原属性**，
       再 `FlushInstructionCache`。
-- [x] 被重指的槽在零售流程中不被用到 —— **N/A**，没有重指任何指针槽。
+- [x] 被重指的槽在原生流程中不被用到 —— **N/A**，没有重指任何指针槽。
 - [x] 每个结构偏移能回指 `engine/` 一手文档 —— **CONFIRMED**，见
       [`TARGET.md`](TARGET.md) §5；`check.py` 把每个偏移与
       `th06nc_player_spec.py` / `symbols.json` 逐条对账，对不上就失败。

@@ -14,7 +14,7 @@
 #include <stdint.h>
 
 #define CE_SHOP_VISITS_DEFAULT 2      /* 每关进店次数 */
-#define CE_SHOP_REOPEN_WINDOW  300    /* 成交到关店最多隔这么多帧（零售 30 帧；留余量，防止陈旧状态跨局误开）*/
+#define CE_SHOP_REOPEN_WINDOW  300    /* 成交到关店最多隔这么多帧（原生 30 帧；留余量，防止陈旧状态跨局误开）*/
 
 typedef struct {
     int visits;          /* 每关次数（≥1）*/

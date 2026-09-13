@@ -19,9 +19,11 @@ import anmlib as L
 
 HERE, MOD = L.HERE, L.MOD
 BUILD = L.BUILD
-BEAST = {"pl00": (10, 11, 8), "pl01": (13, 16, 8)}
+BEAST = {"pl00": (10, 11, 8), "pl01": (13, 16, 8),
+         # ★ AL61：pl02 追加红刀/紫刀（30/31）；pl03 追加大青蛙/大蛇（29/30）。
+         "pl02": (30, 31), "pl03": (29, 30, 31)}
 # 只有「会飞的主弹脚本」要求主飞行路径无 delete；hit_fx(8) 是一次性特效，本来就要自删。
-FLYING = {"pl00": (10, 11), "pl01": (13, 16)}
+FLYING = {"pl00": (10, 11), "pl01": (13, 16), "pl02": (30, 31), "pl03": (29, 30)}
 FILES = ("pl00", "pl01", "pl02", "pl03")
 
 _SCRIPTS = re.compile(r"^script script(\d+) \{\n(.*?)^\}", re.M | re.S)

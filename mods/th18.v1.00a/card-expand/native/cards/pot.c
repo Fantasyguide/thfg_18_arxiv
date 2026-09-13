@@ -1,7 +1,7 @@
 /* 强欲之壶（游戏王）—— 购买时立刻获得两张随机卡牌；本身不进卡组。
  *
  * 即时卡：ctor 里施加效果后 return 1，分配尾段当场 operator_delete，不入链、不计数、不上 HUD
- * （零售 EXTEND / 六文钱同款，02-lifecycle.md §3）。mode 0（道具）与 mode 2（购买）都调 ctor；
+ * （原生 EXTEND / 六文钱同款，02-lifecycle.md §3）。mode 0（道具）与 mode 2（购买）都调 ctor；
  * mode 1（初始携带）不调——所以 cards.js 里 deck_visible: 0，编成里选不到它。
  *
  * 「随机」走商店自己的抽卡函数（游戏 RNG、未拥有、本关可用、按权重），与商店刷出来的一致。

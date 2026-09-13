@@ -1,4 +1,4 @@
-# 111（地灵殿 · 信号槽）的 HUD 零售切图
+# 111（地灵殿 · 信号槽）的 HUD 原生切图
 # —— 由 assets/ability/make_signal_hud_art.py 生成，别手改。
 # 格式同 entries/ORDER.txt：一行 `NAME  源图(相对 assets/)  WxH`。
 # ⚠️ 本文件**不参与构建**（`build_ability.py` 只读 entries/ORDER.txt）—— 合并时把这几行并进去。
@@ -28,4 +28,4 @@ SIGNAL_GAUGE_ICON  ability/signal/SIGNAL_GAUGE_ICON.png  16x16
 #   213_signal_gauge_icon.anm.txt     引用 @SIGNAL_GAUGE_ICON@ （TH11 script35 逐条抄）
 #   三条都**不引用任何同批脚本号**（叶子）。
 #   ⚠ sprite59 / script34（VM[2] 那一层）**不出贴图、不出脚本、卡侧不起 VM**：与 58 同像素，
-#     且零售每帧把它的宽度写成 0（`th11:0x41b71f`）⇒ 正常游玩不可见。见报告「❓/未接」。
+#     且原版每帧把它的宽度写成 0（`th11:0x41b71f`）⇒ 正常游玩不可见。见报告「❓/未接」。

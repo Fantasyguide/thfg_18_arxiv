@@ -36,7 +36,7 @@ ZUN 换版本时**不删旧代码**：他把「喂数端」和「消费端」拆
 | 同上 | th18 | `th18:0x45e160` 只剩「两个计数 + anm 脚本 0x18 + 音效 0x2a」 | **半死**（同号脚本 / 同号音效是同一套代码被阉割的旁证） | [player/th18/02](../player/th18/02-graze-and-item-slowdown.md) §1 |
 | **DDC 收点档位表**（×0.5/0.8/1.2/1.6/2.0） | th14 | 表在 `th14:0x4c1a78` 等 | **不存在于 th18**：TH18 全 exe 没有 `1.2` 这个 float（IEEE 位模式 3F99999AH 零命中） | 一手常量普查 |
 | **DDC 收点音** `se_pin00`（id `0x39`） | th14 | 收点结算播 `0x39` | **死**：TH18 全 exe `push 0x39` 只有 2 处、**都不在播音路径** | 一手穷举 |
-| **DDC 收点线（POC）** | th14 | 回收线 + 批结算 | **活**（只剩线）：TH18 `zPlayer+0x47998 poc_height` 被零售卡 `ITEM_LINE`(22) 抬到 224（`th18:0x40c275`） | [card/th18/08](../card/th18/08-catalog.md) §「22 ITEM_LINE」 |
+| **DDC 收点线（POC）** | th14 | 回收线 + 批结算 | **活**（只剩线）：TH18 `zPlayer+0x47998 poc_height` 被原生卡 `ITEM_LINE`(22) 抬到 224（`th18:0x40c275`） | [card/th18/08](../card/th18/08-catalog.md) §「22 ITEM_LINE」 |
 | **DDC 收点倍率弹字**（`BONUS %.1f` / `NO BONUS`） | th18 | `PopupManager__on_draw` `th18:0x464180`（串 `th18:0x4b71f8` / `th18:0x4b7204`） | **显示活 / 写入侧死**：绘制分支在，但 adder `th18:0x4645f0` 的签名是 `(pos*, int value, color)`、**没有倍率参数**，11 个原生调用点全传整数分数 → 倍率槽（`mgr+0x9cc` 起 5 个）**没有任何原生写者** | 一手（11 个调用点逐个核过） |
 | **TH14 收点批记账块**（计时 8 / 批计数 / 批分） | th14 | `th14:0x4f5884` / `th14:0x4f5880` / `th14:0x4f5878` | **不存在于 th18**：`mov [glob],8` 全 exe 只有主菜单状态那 3 处；TH14 的分档比较链（`cmp …,0x3c→0x32→0x28→0x1e→0x14`）在 TH18 **0 命中**；道具路径无全局 `dec` | 一手反证三路（`th18:0x445A80` 反编译无计数器） |
 | **TH12 UFO 计数** | th14 | `zItemManager+0xddd884 __disused__ufos_spawned_since_stage_begin` | TH14 里**就已经 disused** —— 残骸的残骸 | ExpHP 字段名 |
@@ -47,6 +47,7 @@ ZUN 换版本时**不删旧代码**：他把「喂数端」和「消费端」拆
 | **TH17 动物灵管理器 / token 链表** | th17 → th18 | `GOAST_MANAGER_PTR`(`th17:0x4b7684`) + `zGoastManager` / `zToken` | **找不到**：TH18 funcs 729 / statics 154 里零符号；item type 分派里也没有动物灵 case | [animal/th18/01](../animal/th18/01-animal-residuals.md) §1 |
 | **TH17 咆哮槽 / 计时 / 标志** | th17 → th18 | `zGlobalsInner+0x84 HYPER_FILL` / `+0x88 TOKENS[5]` / `+0xc8 HYPER_TIME` / `+0xe8 HYPER_FLAGS` | **无对应字段**：TH18 同偏移是 `+0x84` 活字段、`+0x88 MAX_BOMBS`；`+0xc8`/`+0xe8` 是死槽但与 TH17 不同血统（TH18 inner = TH15/TH16 布局）| 一手逐地址引用普查；[animal/th18/01](../animal/th18/01-animal-residuals.md) §2b |
 | **TH18 玩家全局里的死槽** | th18 | `zGlobalsInner+0x90/+0x94/+0x98`、`+0xc8`(`th18:0x4ccda4`)、`+0xe8`(`th18:0x4ccdc4`)、`0x4ccda0/da8/dac/db0/db4/db8/dc0/dc8/dcc/dd0/dd4` | **死**：全部只在 `GameThread__thread_start` 里初始化，之后没有读者（`th18:0x4ccdbc`、`th18:0x4ccdd8` 例外，是活的）| 一手逐地址引用普查（读/写分类）|
+| **TH13 灵界 BGM 切轨（cmd 9）** | th13 → th18 | `th18:0x477a50` 入队；跳表 `th18:0x4776cc[8]` → `th18:0x477276` | **入口死**：TH13 侧 cmd 9 wrapper `th13:0x43afc0` 只被 trance 调；TH18 侧 case 9 实现仍在，但 35 个入队点无 `cmd 9` ⇒ 不可达；b 变体数据/改名逻辑也不在 | [`th13-th18-trance-bgm-research.md`](th13-th18-trance-bgm-research.md) |
 
 ## 2. 怎么读这张表
 
@@ -66,3 +67,4 @@ ZUN 换版本时**不删旧代码**：他把「喂数端」和「消费端」拆
 - 复刻它的卡：`mods/th18.v1.00a/card-expand/` 的辉针城（id 114，收点）、绀珠传（id 115，章节 + 减速）
 - TH16 季节 / TH17 动物灵在 TH18 的残骸审计：[`season/th18/01`](../season/th18/01-season-residuals.md)、
   [`animal/th18/01`](../animal/th18/01-animal-residuals.md)（两个子系统都**没有可复活残骸**，只能自建）
+- BGM 跨作残骸（TH13 trance cmd 9 → TH18 死入口）：[`th13-th18-trance-bgm-research.md`](th13-th18-trance-bgm-research.md)

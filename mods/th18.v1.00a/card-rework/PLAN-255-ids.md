@@ -35,7 +35,7 @@ card_id 在存档（`initial_cards_per_shottype`，`0x407ee3  movzbl`）和 repl
 
 | 区段 | 用途 | 谁在用 |
 | --- | --- | --- |
-| 0–55 | 零售卡 | 全部现有逻辑 |
+| 0–55 | 原生卡 | 全部现有逻辑 |
 | 56 | `NULL`：查表回退行 + 空槽字面值 | 存档、菜单、三处分支 |
 | 57 | `BACK`：卡背图 | 图鉴的两处 `cmp $0x39` |
 | **58–254** | **我们的新卡** | 全新 |
@@ -137,7 +137,7 @@ card_id 在存档（`initial_cards_per_shottype`，`0x407ee3  movzbl`）和 repl
 
 > **已做**（2026-09-02，静态审计通过、待实跑）：[`../card-expand/native/unlocked.c`](../card-expand/native/unlocked.c)，
 > 审计 [`../card-expand/AUDIT.md`](../card-expand/AUDIT.md) §K。实现与下文三点不同：
-> ① 写入点走 thcrap **断点**而不是手写 cave（id<57 放行原指令写零售存档，id≥57 写 side-car）；
+> ① 写入点走 thcrap **断点**而不是手写 cave（id<57 放行原指令写原生存档，id≥57 写 side-car）；
 > ② `unlock_all` 加断点镜像到影子；③ ⚠️ **下表「改写后」一列有 3 行留错了寄存器**
 > （`0x4149ec` 应留 esi、`0x416e3d` 应留 edx、`0x417ea3` 应留 ecx——存档指针恰在 SIB 的 index 格），
 > 生成器改为从上下文反推，见 AUDIT §K2。表保留作历史记录。

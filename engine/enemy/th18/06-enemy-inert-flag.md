@@ -2,8 +2,8 @@
 
 > **版本**：TH18 v1.00a（`th18.exe`，imagebase `0x400000`，md5 `9969cac756098c1da05a81de45437a70`）。本文裸地址默认属该版本；引用其他版本须写成 `th16:0x…`。
 > **方法**：一手 —— PE 直读（跳表 / 操作码分派表）+ 线性反汇编逐指令（快照 `local/_scratch/th18.dis`，objdump 格式）+
-> ExpHP 结构体（`local/vendor/th-re-data/data/th18.v1.00a/`）+ `local/vendor/eclmap/eclmap/th18.eclm` 的 opcode/gvar 名 + 零售 `st0*.ecl` 字节扫描。
-> **可信度**：字段定位 / 类型 / xref 穷举 / 四道闸的判据 ✅（逐指令）；「零售脚本不用这个计数器」🟡（负结论，靠字节扫描）；
+> ExpHP 结构体（`local/vendor/th-re-data/data/th18.v1.00a/`）+ `local/vendor/eclmap/eclmap/th18.eclm` 的 opcode/gvar 名 + 原生 `st0*.ecl` 字节扫描。
+> **可信度**：字段定位 / 类型 / xref 穷举 / 四道闸的判据 ✅（逐指令）；「原生脚本不用这个计数器」🟡（负结论，靠字节扫描）；
 > 本文全部结论**未实跑**（只到「指令层确证」；需要实跑的是观感类，见 §7）。2026-09-12。
 
 ## 0. 一句话结论
@@ -133,7 +133,7 @@ zEnemy.data  @ +0x122c                （ExpHP zEnemy.data，engine.h CE_ENEMY_D
 | 名字 | 实现 | 谁读 |
 | --- | --- | --- |
 | `ENM_CNT`（ECL gvar id `-9908`）| `FUN_0042d440`：现算，遍历链表并**过滤** | ECL `Enemy::ecl_get_int_global` `0x437360` / `..._float_global` `0x437c90` |
-| `ENM_CNT_REAL`（ECL gvar id `-9946`）| `zEnemyManager+0x198`，`0x42d9ef` 出生 `inc` / 析构 `dec` | 同一对 getter + 零售卡 + 炸弹门（见下表）|
+| `ENM_CNT_REAL`（ECL gvar id `-9946`）| `zEnemyManager+0x198`，`0x42d9ef` 出生 `inc` / 析构 `dec` | 同一对 getter + 原生卡 + 炸弹门（见下表）|
 
 id → 实现是**独立对上的**：`0x437360` 内 `add eax,0x2710; jmp [eax*4+0x437978]`，直读 PE 跳表，
 `idx 0x5c`（= id `-9908`）落在 `0x4375b9`（`call 0x42d440`），`idx 0x36`（= id `-9946`）落在 `0x4375a8`
@@ -145,17 +145,17 @@ id → 实现是**独立对上的**：`0x437360` 内 `add eax,0x2710; jmp [eax*4
 | ECL `ENM_CNT_REAL` | `mgr+0x198`（出生 `inc`，与 flags 无关，`0x42d9ef`）| **照计**，且析构才 `dec`（`0x42d2e8`）|
 | GUI boss / 血条列表 | `Gui__on_tick` `0x43c137` | **不显示** |
 | 炸弹 / 决死门 | `Bomb__can_bomb_and_deathbomb_check` `0x420453`、`Player__on_tick__body` `0x45c07b`：`enemy_count_real != 0` 才允许 | **照计** ⇒ 空场也能放炸弹（不希望）|
-| 零售卡内部门 | `CardClownpiece::__on_tick_2` `0x40de3f` 一族、`FUN_00408bf0` `0x408c0b`：`enemy_count_real == 0` 才动作 | **照计** ⇒ 那些卡认为「还有敌人」|
+| 原生卡内部门 | `CardClownpiece::__on_tick_2` `0x40de3f` 一族、`FUN_00408bf0` `0x408c0b`：`enemy_count_real == 0` 才动作 | **照计** ⇒ 那些卡认为「还有敌人」|
 | ECL 生成上限 | `FUN_004369e0` `0x4369ec`：`enemy_count_real >= mgr+0x8c` ⇒ 拒绝生成 | 照计（但 `mgr+0x8c` 建管理器时 = `99999`，实际打不到 🟡）|
 | 掉落 | 只在 `Enemy__die` `0x430240` 里撒（`0x430469` 读 `enemy+0x623c`）| 不掉血就不死 ⇒ **不撒**（要的就是这个）|
 | 得分 | `enm_compute_damage_sources` 内 `0x45f2a2`（在忽略闸**之前**）| **照常计分**（每次命中给个位数分）|
 
-**关于「波次推进」**：零售 TH18 v1.00a 的剧本**一次都没读过这两个计数器**——
+**关于「波次推进」**：原生 TH18 v1.00a 的剧本**一次都没读过这两个计数器**——
 对 `local/th18.v1.00a/dat/*.ecl`（`st01`–`st07` + `bs`/`mbs` + `default.ecl`，共 22 个文件）
 按 `!gvar_names` 的 101 个 id 逐个做 int32-LE 字节命中统计：`ENM_CNT` **0** 次、`ENM_CNT_REAL` **0** 次
 （对照组：`TIMEOUT` 154、`CAPTURE` 81、`MISS_COUNT` 68 ⇒ 编码方式由对照组坐实）。
-⇒ 使魔污染 `ENM_CNT` 这件事**在零售剧本上没有后果** 🟡（负结论，字节扫描是代理证据）。
-真正会被使魔影响的消费者是上表里 `enemy_count_real` 那一组（炸弹门 / 零售卡门 / 生成上限）。
+⇒ 使魔污染 `ENM_CNT` 这件事**在原生剧本上没有后果** 🟡（负结论，字节扫描是代理证据）。
+真正会被使魔影响的消费者是上表里 `enemy_count_real` 那一组（炸弹门 / 原生卡门 / 生成上限）。
 
 ## 4. 可操作性：卡侧怎么写
 
@@ -219,9 +219,9 @@ t[0] = 1; t[1] = 2; *(float *)&t[2] = 2.0f; t[3] = 0; t[4] |= 1u;
 
 ### 5.3 真正的落点
 
-1. **计数侧**：不是找一个「隐身」位，而是承认「掉血的敌人一定进 `ENM_CNT`」；而 `ENM_CNT` 在零售剧本里
-   **无人使用**（§3.3），所以「不影响波次推进」这个要求在零售数据上本就成立；
-   真正要盯的是 `enemy_count_real` 那一组消费者（炸弹门 `0x420453` / 零售卡门 / GUI boss 列表）。
+1. **计数侧**：不是找一个「隐身」位，而是承认「掉血的敌人一定进 `ENM_CNT`」；而 `ENM_CNT` 在原生剧本里
+   **无人使用**（§3.3），所以「不影响波次推进」这个要求在原生数据上本就成立；
+   真正要盯的是 `enemy_count_real` 那一组消费者（炸弹门 `0x420453` / 原生卡门 / GUI boss 列表）。
 2. **信号侧**：把转嫁触发量从 `life.current`（`enemy+0x6220`）换成
    `life.total_damage_including_ignored`（`enemy+0x6234`），配合 `invuln > 0` 或 `flags_lo |= 0x10`
    ⇒ 同时拿到「不进 `ENM_CNT`、不上 boss 列表、命中仍计分出特效、被打量可读」。
@@ -244,7 +244,7 @@ t[0] = 1; t[1] = 2; *(float *)&t[2] = 2.0f; t[3] = 0; t[4] |= 1u;
 | # | 事项 | 说明 |
 | --- | --- | --- |
 | 1 | 未实跑 | 本文全部结论是**指令层**；「命中闪光确实出现」「转嫁差分等价」需要一局实测（打使魔 → 日志对账 boss 掉血）|
-| 2 | 零售剧本扫描的编码假设 | `ENM_CNT` 0 命中依赖「gvar 以 int32-LE 编码」；对照组（`MISS_COUNT` 68）支持它，但没解出读操作数的通用例程来正面证明 |
+| 2 | 原生剧本扫描的编码假设 | `ENM_CNT` 0 命中依赖「gvar 以 int32-LE 编码」；对照组（`MISS_COUNT` 68）支持它，但没解出读操作数的通用例程来正面证明 |
 | 3 | `Gui__on_tick` 那段列表的确切 UI 用途 | 已定：按 `mgr->boss_ids[4]` 逐 boss 填活力度条目；未确认它画的是血条还是符卡名条（不影响判据）|
 | 4 | `mgr+0x8c enemy_limit` 是否真的恒 `99999` | 只在 `EnemyManager__operator_new` `0x42dd9c` 找到写点；若某关会改它，「使魔吃生成上限」的后果需要重估 |
 | 5 | `flags_hi` bit2 是否真的无写点 | 全文本 `+0x6360` 仅 4 处（2 读 bit2 + 2 读写 bit0），未见 `lea ...,+0x635c/+0x5130` 形式的计算基址；理论上仍可能被别的寻址方式写入 |

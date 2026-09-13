@@ -18,4 +18,4 @@
 #define CE_SHT_SET_EAGLE_2                  0x25   /* 追加，5 shooter */
 #define CE_SHT_SET_EAGLE_3                  0x26   /* 追加，5 shooter */
 #define CE_SHT_SET_EAGLE_4                  0x27   /* 追加，5 shooter */
-#define CE_SHT_SET_YOUKAI                   0x16   /* ★ 覆盖零售空槽，9 shooter */
+#define CE_SHT_SET_YOUKAI                   0x16   /* ★ 覆盖原生空槽，9 shooter */

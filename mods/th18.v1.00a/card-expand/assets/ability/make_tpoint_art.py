@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""永夜抄（TH08 系统卡 108）的**时点 / 刻符**道具贴图：从 TH08 零售 etama.anm 里切。
+"""永夜抄（TH08 系统卡 108）的**时点 / 刻符**道具贴图：从 TH08 原版 etama.anm 里切。
 
 一手来源（全部在 `local/`，gitignored，构建时取；不入库）
 ────────────────────────────────────────────────────────
-* 零售 anm：`local/th08.v1.00d/dat/etama.anm`（anm **version 3**，6 个 entry）
+* 原版 anm：`local/th08.v1.00d/dat/etama.anm`（anm **version 3**，6 个 entry）
     ⚠️ TH08 的 anm 还没切成目录；本脚本优先读
        `local/th08.v1.00d/anm/etama/data/etama/etama2.png`，
        没有就地用 `local/vendor/thtk/build/thanm/thanm -x 8` 解到**临时目录**（不往 `local/` 写）。
@@ -32,7 +32,7 @@ sprite 矩形（一手，thanm -l 的 entry1 段）
 
 尺寸 / 缩放
 ──────────
-* 原样 16×16（**不重采样、不补画**，纯零售切图；16×16 是 2 的幂 ✅）。
+* 原样 16×16（**不重采样、不补画**，纯原生切图；16×16 是 2 的幂 ✅）。
 * TH08 是 640×480 场地、TH18 是 2×（1280×960）⇒ 脚本里 `scale(2.0f, 2.0f)` 才是原尺寸观感
   （同仓先例：`115_season_point.anm.txt` 对 16×16 的 `PT_*.png` 用 scale 2.0→1.0）。
 

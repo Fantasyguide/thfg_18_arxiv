@@ -48,7 +48,7 @@ static int32_t graze_read(void)
  *   圆形（子弹 `flags & 0x10`）：弹心 vs 自机判定圆，边距 = max(弹半径 / 2.5, **40.0**)
  *       —— TH15 `th15:0x455d00`（常量 `th15:0x4cff28`=2.5、`th15:0x4cffb8`=40.0）、
  *          TH18 `0x45cd90`（`0x4b921c`=2.5、`0x4b92c4`=40.0）——**两作完全相同**。
- *          自机判定圆半径 = `player+0x4799c`（非聚焦）/ `+0x479a0`（聚焦），零售都 3.0。
+ *          自机判定圆半径 = `player+0x4799c`（非聚焦）/ `+0x479a0`（聚焦），原生都 3.0。
  *   矩形（其余子弹）：弹**中心** vs 自机判定框外扩 **24.0**
  *       —— TH15 `th15:0x455be0`（`th15:0x4cffa0`）、TH18 `0x45cc20`（`0x4b92a4`）。
  * 选路在子弹自己的分派器 `0x4248a0`：`flags & 0x2` 才参与碰撞、`& 0x10` 走圆、`& 0x40` 先按
@@ -61,9 +61,9 @@ static int32_t graze_read(void)
 /* ★ TH15 的擦弹半径系数：`th15:0x455d00` 在「变大」态里 `r = player_scale × 3.6 × 判定半径`
  *（`Player__i_grow_bigger` `th15:0x457510` 置 `player+0x16294` bit4）。本卡取该系数。*/
 #define LOLK_GRAZE_RADIUS_SCALE  3.6f
-#define CE_PLAYER_HITBOX_HW      0x479a4    /* float：判定框半宽（零售 1.5）*/
-#define CE_PLAYER_HITBOX_HH      0x479a8    /* float：判定框半高（零售 1.5）*/
-#define CE_PLAYER_HIT_RADIUS     0x4799c    /* float：判定圆半径（零售 3.0；聚焦 +0x479a0 同值）*/
+#define CE_PLAYER_HITBOX_HW      0x479a4    /* float：判定框半宽（原生 1.5）*/
+#define CE_PLAYER_HITBOX_HH      0x479a8    /* float：判定框半高（原生 1.5）*/
+#define CE_PLAYER_HIT_RADIUS     0x4799c    /* float：判定圆半径（原生 3.0；聚焦 +0x479a0 同值）*/
 #define CE_BULLET_RADIUS         0x658      /* float hitbox_radius */
 #define CE_BULLET_VM             0x28       /* zAnmVm（颜色在它 +CE_ANM_VM_COLOR）*/
 #define CE_BULLET_FLAG_GRAZED    0x4        /* flags & 0x4：已被擦过（0x424984 置，一生一次）*/
@@ -86,9 +86,13 @@ static int32_t enemy_count_read(void)
  *
  * TH15 的道中「一章」= 关卡脚本里一段敌人组（ECL 524 在 `MainSubNN` 开头宣告，见
  * engine/chapter/th15/01 §1b）。TH18 道中不切章，但脚本结构一样（`main → MainFront /
- * MainLatter → MainSubNN`），所以等价信号 = **关卡脚本当前 ECL 子程序号**：
- * 子程序换了 + 紧接着有刷出 = 新敌人组 = 新一波（判定在 lolk_core.c）。
- * 完整论证见 engine/chapter/th18/03-midstage-waves.md。
+ * MainLatter → MainSubNN`）。
+ *
+ * **2026-09-13 用户洞察（本卡现行口径）**：`MainSub00 / 01 / 01b / 02 …` 的**编号本身就是
+ * 章/波的天然键** —— 去掉尾部字母后的数字是一章，`01` + `01b`（+ `01c`）同章。
+ * 所以本节接缝取 **关卡脚本主上下文当前子程序名 → MainSub 编号**（`parse_mainsub_number`），
+ * 交给 lolk_core.c 当道中章边界（详见 lolk_core.h 头注）。
+ * 完整论证/一手证据见 engine/chapter/th18/03-midstage-waves.md（本次改写该节）。
  *
  * 关卡脚本本身就是一个敌人：引擎在 `EnemyManager__destroy_all` 之后用
  * `allocate_new_enemy(&"main", params)` 建它（`0x444228` / `0x444471`，名字串 `0x4b6634`；
@@ -183,28 +187,63 @@ static uint8_t *stage_script_find(uint8_t *em)
     return 0;
 }
 
-/* 本帧的关卡脚本子程序号；认不出来返回 -1（核心退到静默间隔）。*/
-static int32_t stage_sub_read(void)
+/* ★ 2026-09-13：解析 ECL 子程序名里的 **MainSub 编号（去掉尾部字母）**：
+ *   "MainSub00" → 0、"MainSub01" → 1、"MainSub01b" → 1、"MainSub01c" → 1、"MainSub10" → 10；
+ *   不是 "MainSub" + 数字（例如 "main" / "MainFront" / "MainBoss"）→ -1。
+ * 名字是 ECL 文件里的 C 串（`zEclSubroutinePtrs.name`），只读到非数字 / 6 位为止，
+ * 不越读、不依赖数字后面是 NUL（`MainSub01b` 后面就是 'b'）。
+ * 大小写敏感 —— 原生 8 关的拼写全是 "MainSub"。*/
+#define LOLK_MAINSUB_PREFIX     "MainSub"
+#define LOLK_MAINSUB_DIGITS_MAX 6
+static int32_t parse_mainsub_number(const char *n)
+{
+    int32_t v = 0;
+    int i;
+
+    if (!n) return -1;
+    if (strncmp(n, LOLK_MAINSUB_PREFIX, 7) != 0) return -1;
+    n += 7;
+    if (*n < '0' || *n > '9') return -1;              /* "MainSubXxx" 不是编号段 */
+    for (i = 0; i < LOLK_MAINSUB_DIGITS_MAX && n[i] >= '0' && n[i] <= '9'; ++i) {
+        v = v * 10 + (n[i] - '0');
+        if (v > 99999) { v = 99999; break; }          /* 防溢出；原生只到 2 位 */
+    }
+    return v;
+}
+
+/* 读关卡脚本（引擎建的 "main" 敌人）**主上下文**当前子程序号 + MainSub 编号。
+ *   返回 1 = 找到关卡脚本：*out_sub 有效；*out_chapter = MainSub 编号，< 0 = 非 MainSub 段；
+ *   返回 0 = 没找到（*out_sub / *out_chapter 都置 -1）→ 核心退到静默间隔。
+ * 读数链与引擎自己一致（`0x436a14`：`zEnemy+0xc` → `ctx+0x4` 子程序号；
+ * `zEnemy+0x1218` → `fm+0x8c` 子程序表，每项 8 字节 {name, bytecode}）。*/
+static int stage_ecl_read(int32_t *out_sub, int32_t *out_chapter)
 {
     uint8_t *em = CE_ENEMY_MGR();
-    uint8_t *e = 0;
+    uint8_t *e;
     int32_t sub = -1;
 
-    if (!em) return -1;
+    *out_sub = -1;
+    *out_chapter = -1;
+    if (!em) return 0;
     if (s_stage_id) {
         e = ce_enemy_by_id(em, s_stage_id);      /* 缓存命中：按 id 复核，指针不跨帧缓存 */
         if (!e) {
-            s_stage_id = 0;                       /* 被回收（换关）→ 重新认 */
+            s_stage_id = 0;                      /* 被回收（换关）→ 重新认 */
+        } else if (enemy_ecl_sub(e, &sub)) {
+            *out_sub = sub;
+            *out_chapter = parse_mainsub_number(enemy_sub_name(e, &sub));
+            return 1;
         } else {
-            (void)enemy_ecl_sub(e, &sub);         /* 读不到就 -1 */
-            return sub;
+            return 0;                            /* 对象在但读不到上下文（换关空窗）*/
         }
     }
     e = stage_script_find(em);
-    if (!e) return -1;
+    if (!e) return 0;
     s_stage_id = *(int32_t *)(e + CE_ENEMY_ID);
-    if (!enemy_ecl_sub(e, &sub)) return -1;
-    return sub;
+    if (!enemy_ecl_sub(e, &sub)) return 0;
+    *out_sub = sub;
+    *out_chapter = parse_mainsub_number(enemy_sub_name(e, &sub));
+    return 1;
 }
 
 static int32_t spawn_id_read(void)
@@ -455,7 +494,7 @@ static void ring_sync(lolk_card_t *s, int visible)
  * ⚠️ 之前猜 -1（环境字体 = 0，14×14 小字）和 7/11 都不对；**字体 id 不是「页」**，
  * 页 = `vm+0x20`（`anm_loaded_index_2`，`create_string` 不抄、`draw_string` 现读）。
  * ★★ 2026-09-10 第三十二轮起**不再走 ASCII**：五行改成**贴图 VM**（`ce_hud_vm_text_set`），
- * 字形直接取字体 2 的零售切图（`make_font2_art.py`），所以「字体 2」这套映射现在体现在
+ * 字形直接取字体 2 的原生切图（`make_font2_art.py`），所以「字体 2」这套映射现在体现在
  * `sdk.c` 的 `hud_vm_glyph()` 里，而不是环境 `font_id`。原因见下面的行注释：
  * ASCII 文字永远盖不到暂停模糊罩下面（组 1 的趟跑在 surface 1 + 相机 0 上，实跑不可见）。*/
 /* 字号：★ **ASCII 文字空间就是 640×480 那一套**（我们的 UI VM 是它的 2×），
@@ -662,20 +701,26 @@ static int on_tick_2(ce_card_t *c)
     slow_apply(grazed || in_box);
     ring_sync(s, in_box);
 
-    /* ④ 波边沿（一段攻击 = 一波）：boss 按相位/符卡位翻转；道中按「关卡脚本子程序边界 + 刷出」 */
+    /* ④ 波边沿（一段攻击 = 一波）：boss 按相位/符卡位翻转；道中按「章 = MainSub 编号」 */
     phase_read(&in);
     in.spawn_delta = spawn_delta;
-    in.stage_sub = stage_sub_read();
+    {
+        int32_t ssub = -1, sch = -1;
+        (void)stage_ecl_read(&ssub, &sch);      /* ★ MainSub 编号（去掉尾部字母）*/
+        in.stage_sub = ssub;
+        in.stage_chapter = sch;
+    }
     ev = lolk_tick(&s->st, &in, &out);
     if (ev & LOLK_EV_WAVE_END) {
         apply_settle(c, s, &out);
     }
     if (ev & LOLK_EV_WAVE_START) {
-        ce_log("lolk: wave %d start (%s%s, chapter %d, sub %d, sig %d, graze/slow %d%%)",
+        ce_log("lolk: wave %d start (%s%s, chapter %d, sub %d, mainsub %d [rule %s], sig %d, graze/slow %d%%)",
                s->st.waves_done + 1,
                s->st.wave_kind == LOLK_KIND_BOSS ? "boss " : "mid ",
                s->st.wave_is_spell ? "spell" : "nonspell",
-               in.chapter, in.stage_sub, in.phase_sig, f);
+               in.chapter, in.stage_sub, in.stage_chapter, lolk_mid_rule_name(s->st.mid_rule),
+               in.phase_sig, f);
     }
 
     /* 数字跳动（TH15 `Gui::on_tick` th15:0x4354a0 段）：面板出现 90 帧后开始，
@@ -721,7 +766,7 @@ static int on_draw(ce_card_t *c)
     /* ★★ 2026-09-10 第三十二轮：五行从 **ASCII 文字**改成**贴图 VM**（用户定案）。
      * 理由：ASCII 永远盖不到暂停模糊罩下面（组 1 的趟 `0x419950` 跑在 surface 1 + 相机 0 上，
      * 实跑不可见；其余三趟都晚于罩子的 `0x3e`）—— 面板本体已经会被罩住，字却不会，很扎眼。
-     * 现在走 `ce_hud_vm_text_set`：字形 = TH18 font 2 的零售切图（VM 挂脚本 136，UI 层 25）。
+     * 现在走 `ce_hud_vm_text_set`：字形 = TH18 font 2 的原生切图（VM 挂脚本 136，UI 层 25）。
      * 排版仍是 TH15 `Gui::on_draw_2e` 那一套（字体 2 = 字距 7、`%3.1f%%` 的 `.` 是 4、右对齐 2）。*/
     #define LOLK_ROW(i, xx, yy, col, fmt, ...)                                      \
         do {                                                                          \
@@ -786,12 +831,12 @@ static void on_run_reset(ce_card_t *c)
         ce_log("lolk: run reset (%d waves settled, last bonus %d)", s->waves_total, s->last.bonus);
     }
     memset(s, 0, sizeof *s);
+    lolk_reset(&s->st);                 /* 补 sentinel：last_chapter=-1、wave_chapter=-1、mid_rule=NONE、slow=FULL */
     s->last_graze = -1;
     s->last_enemies = -1;
     s->last_spawn_id = -1;
     s->last_age = -1;
     s_stage_id = 0;
-    s->st.slow = LOLK_SLOW_FULL;
 }
 
 CE_CARD(115, .on_tick_2 = on_tick_2, .on_draw = on_draw,

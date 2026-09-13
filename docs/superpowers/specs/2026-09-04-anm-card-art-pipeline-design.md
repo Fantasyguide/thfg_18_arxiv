@@ -74,7 +74,7 @@ assets/
 
 - **索引规则**：`ORDER.txt` 第 k 行（从 0 数）的卡 → `sprite_large = 118 + 2k`，`sprite_small = 119 + 2k`。
   写卡的人把这对填进 `patch/th18/cards.js`。`build_abcard.py` 读 `cards.js` **校验**：每张卡的
-  sprite 对要么是零售的（≤ 117），要么正好等于 ORDER 推出的值；不一致就报错退出，不悄悄改 JSON。
+  sprite 对要么是原生的（≤ 117），要么正好等于 ORDER 推出的值；不一致就报错退出，不悄悄改 JSON。
 - **entry 模板**：复制 `BLANK_max` / `BLANK_min` 两个 entry 的字段（format / width / height / THTX*），
   只改 `name`（`ability/<NAME>_max.png`）和贴图路径；`_min` 源图 64×80 由脚本垫成 64×128 透明底
   （THTX 高度 128），`_max` 256×320 直接用。尺寸不对直接报错。
@@ -88,7 +88,7 @@ assets/
 
 ## 5. 文档回填
 
-- `DATA.md`：§「卡图」把「索引余量 ⏳ 未查」换成 §1 的事实；加「`assets/` 工作流」一段；零售 sprite 表
+- `DATA.md`：§「卡图」把「索引余量 ⏳ 未查」换成 §1 的事实；加「`assets/` 工作流」一段；原生 sprite 表
   加一列 entry 名（`SPADE_10 → 118/119` 这类新卡行由 build 脚本打印，手抄进去）。
 - `engine/card/th18/10-extensibility-limits.md` §5 与 `11-sentinels-56-57.md` 的遗留问题：
   三个 ANM 各装什么、sprite = entry、118 起可追加；运行时上限 🟡 待 C 阶段。

@@ -201,7 +201,7 @@ int main(void)
     }
 
     /* —— 逐敌人档位：TH18 原生 timed 计数 → TH16 量级（season_core.h 的注释 / engine/season/th18/01 §1b′）——
-     * 原生计数来自零售 ECL 的 opcode 573（1..20），映射：1→8 / 2..4→10 / 5..10→13 / ≥11→30。*/
+     * 原生计数来自原生 ECL 的 opcode 573（1..20），映射：1→8 / 2..4→10 / 5..10→13 / ≥11→30。*/
     {
         CHECK(season_drop_native_tier(0) == 8);          /* 没配 → 小妖精档 */
         CHECK(season_drop_native_tier(1) == 8);          /* Cir00/GirlA0x 的 `unknown573(2,1)` */

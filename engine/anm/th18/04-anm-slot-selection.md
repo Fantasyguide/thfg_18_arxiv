@@ -14,7 +14,7 @@
 | `N`（`anmSelect(N)`） | **anm 源选择器**：4 类文件（2 个硬编码 + 当前关 ECL 的 `anim{}` 列表 + `st0X.std` 里的 wl anm）。写进 `zEnemyData+0x264` | `th18:0x430dfd`；解析器 `th18:0x438d40` |
 | `K`（`anmSetSprite(K,S)` 第 1 参） | **本敌机自己的 anm 槽号**：`zEnemyData.anm_vm_ids[0x10]`（`zEnemyData+0x124 + K*4`）。合法 `0..15` | `th18:0x436be0`/`th18:0x436be8`（写槽）、`th18:0x436d50`（兄弟分派器读槽）；上限检查 `th18:0x436d47` |
 | `S`（第 2 参） | **该 anm 文件「扁平脚本表」的脚本号**（整个文件所有 entry 的脚本连续编号） | 载体 `th18:0x407476`/`th18:0x4074fc`；ECL 用到 251 > 单 entry 的 89 |
-| `S` 的范围校验 | **没有校验**（只按 `S*0x60c` 取模板）。唯一显式分支：`anmSetSprite` 里 `S < 0` = 拆掉该槽 | `th18:0x436bf6`；零售 14 处 `anmSetSprite(K,-1)` |
+| `S` 的范围校验 | **没有校验**（只按 `S*0x60c` 取模板）。唯一显式分支：`anmSetSprite` 里 `S < 0` = 拆掉该槽 | `th18:0x436bf6`；原生 14 处 `anmSetSprite(K,-1)` |
 
 **一句话可执行结论**：要让一条 **ECL 敌机**画出自定义动画 —— 把脚本**追加在 `enemy.anm` 末尾**，
 ECL 写 `anmSelect(2); anmSetSprite(0, 261);`（`261` = TH18 v1.00a `enemy.anm` 现有扁平脚本数，
@@ -71,7 +71,7 @@ else               → [0x4cf2d0]+0x168+ecx*4 ; N≥2（N≠7）
 | 3 | **当前关的 `st0Xenm.anm`**（`anim{}` 第 1 条） | `[ENEMY_MANAGER]+0x174` | ✅ |
 | 4 | `anim{}` 第 2 条：st05/st06/st07 = `st05enm2.anm`；st01–04 无（= 0） | `[ENEMY_MANAGER]+0x178` | ✅ |
 | 5 | `anim{}` 第 3 条：仅 st07 = `st04enm.anm` | `[ENEMY_MANAGER]+0x17c` | ✅ |
-| 6 | 无零售关用到（最多 4 条 ANIM） | `+0x180` | ✅ |
+| 6 | 无原生关用到（最多 4 条 ANIM） | `+0x180` | ✅ |
 | **7** | **当前关的 `st0Xwl.anm`** | `[Stage]+0x3464` ← `preload_anm(3 或 4, <st0X.std+0x10 的字符串>)`（`th18:0x41b902`） | ✅ |
 | ≥8（除 7） | `anim{}` 第 `N-2` 条；**超出条数就是 0** | `+0x168+N*4` | ✅ |
 
@@ -141,7 +141,7 @@ flags_lo & 0x20 ⇒ th18:0x488eb0(槽)
   里 `cmp ebx,0xf ; ja 默认` （`th18:0x436d47`）。
   **`anmSetSprite`/`anmSetMain` 自己不做边界检查** ⇒ `K ≥ 16` 会写穿到相邻字段（`+0x164` 区），是真实的越界口子 ✅。
 - 槽 0 特殊：除记录 `+0x268/+0x26c` 外，它的 VM 尺寸会变成敌机的 `final_sprite_size`（判定的依据）——
-  所以「主体」放槽 0 是零售约定（153/153 次 `anmSetMain` 都用 K=0；`anmSetSprite` 用 K=0..3）。
+  所以「主体」放槽 0 是原生约定（153/153 次 `anmSetMain` 都用 K=0；`anmSetSprite` 用 K=0..3）。
 - `anmSetMain`（`th18:0x431592`）与 `anmSetSprite` 几乎同构，差别只有：不处理 `S<0`；
   K==0 时额外写 `+0x270`（ExpHP `anm_main`）并置 `flags_lo |= 0x100000`。
   `+0x270` 就是 `anmReset`/`anmSelectedPlay`/`anm316` 回放用的「主脚本」记忆。
@@ -169,7 +169,7 @@ flags_lo & 0x20 ⇒ th18:0x488eb0(槽)
 | `st06wl.anm` | 7 | `st07wl.anm` | 8 |
 
 - **`S < 0` 是唯一的显式分支**（`th18:0x436bf6`，`anmSetSprite` 专有）：拆掉槽 K 的 VM、不建新的。
-  零售真的这么用 —— 14 处，全在 boss 死亡 / 符卡收尾：`st02mbs:179 anmSetSprite(1,-1)`、
+  原生真的这么用 —— 14 处，全在 boss 死亡 / 符卡收尾：`st02mbs:179 anmSetSprite(1,-1)`、
   `st07bs:2390 anmSetSprite(2,-1)`、`st07mbs:407/408 anmSetSprite(1,-1); anmSetSprite(2,-1);` 等 ✅。
 - 顺带：`N` 也不校验 —— 若 `anim{}` 没有第 `N-2` 条，槽里是 0，而 `th18:0x43a030` 第一句就是
   `inc [anm+0x134]`（引用计数），**没有 NULL 检查** ⇒ **写超范围的 N 直接崩**（`0x134` 处写入 = 访问违例）✅。
@@ -198,7 +198,7 @@ flags_lo & 0x20 ⇒ th18:0x488eb0(槽)
 
 **反面教材（我自己踩的）**：把 `anmPlay(1,96)` 当"跟着 `anmSelect(3)` 走"就会得到
 「st01enm.anm 有 19 个脚本却有 S=96」的假越界。真相是 `anmPlay` 的 `arg0` 才是 anm 索引：
-`anmPlay(1,96)` = `effect.anm` 脚本 96（195 个，合法）。全零售 ECL 里 `anmPlay*(K,S)` 只出现三类索引：
+`anmPlay(1,96)` = `effect.anm` 脚本 96（195 个，合法）。全原生 ECL 里 `anmPlay*(K,S)` 只出现三类索引：
 `K=0` → S=28（bullet.anm）、`K=1` → S=32..104（effect.anm）、`K=7` → S=3..4
 （`st01wl.anm` 只有 6 个脚本 ⇒ 合法，顺带第三次印证 `N=7 = st0Xwl.anm` ✅）。
 
@@ -209,7 +209,7 @@ flags_lo & 0x20 ⇒ th18:0x488eb0(槽)
 
 | 路线 | 脚本追加进 | ECL 写 | 代价 |
 | --- | --- | --- | --- |
-| **A. 追加到 `enemy.anm`**（推荐，零 ECL 头改动） | `enemy.anm` 末尾（新脚本 = 第 **261** 号） | `anmSelect(2); anmSetSprite(0, 261);` | patch 里多一个被替换的零售 `.anm`；**所有关通用** |
+| **A. 追加到 `enemy.anm`**（推荐，零 ECL 头改动） | `enemy.anm` 末尾（新脚本 = 第 **261** 号） | `anmSelect(2); anmSetSprite(0, 261);` | patch 里多一个被替换的原生 `.anm`；**所有关通用** |
 | B. 追加到 `effect.anm` | `effect.anm` 末尾（新脚本 = 第 **195** 号起） | `anmSelect(1); anmSetSprite(0, 195);` | 同上；`effect.anm` 常驻（EffectManager 开局预载槽 8） |
 | C. 给本关 ECL 加一条 ANIM | 新 `.anm`（自己切图），写进 SCPT 头 `anim { "enemy.anm"; "mymod.anm"; }` | `anmSelect(3); anmSetSprite(0, S);`（`S` = 该新文件里的脚本号） | 要改 ECL 头并让该 anm 进 `.dat`；只有这一关能用 |
 
@@ -235,13 +235,13 @@ flags_lo & 0x20 ⇒ th18:0x488eb0(槽)
   被 328 `anmAlphaTime` 一类的槽内指令调用。槽表在 `zEnemyData+0x124`（每条敌机一份，见 §3）。
 - 🟡 `anmSetSprite` 与 `anmSetMain` 的语义分工（"辅槽/主槽"）是从字段写法推的：
   `anmSetMain` 额外记 `+0x270`（只有它能被 `anmReset`/`anmSelectedPlay`/`anm316` 复用），
-  零售用法上 `anmSetMain` 恒 `K=0`；但"主/辅"这套命名不是零售代码里的字符串，属于命名而非机制。
+  原生用法上 `anmSetMain` 恒 `K=0`；但"主/辅"这套命名不是原生代码里的字符串，属于命名而非机制。
 - ❓ `zEnemyData+0x27c`（ExpHP `anm_layers`）由哪个 opcode 写、`layer = +0x27c + 7` 里的 `+7` 是什么分组，未追。
 - ❓ `th18:0x488eb0`（`flags_lo & 0x20` 时代替删除调用的收尾）内部语义未细看（清 `vm+0x534` 一位 + 遍历 `vm+0x598`）。
 - ❓ `zEnemyData+0x130/+0x134`、`AnmVm+0x160/+0x164` 那套「`test al,1` / `or eax,1` / 清伴随字段」的惯用法
   （MSVC 生成的两字段惰性标记）未逐点确认归属。
 - ❓ ANIM 列表若多于 12 条会写穿 `zEnemyManager`（`+0x170+11*4 = 0x19c` 是最后一项），
-  解析器本身无条数检查；零售最多 4 条，所以看不到后果。
+  解析器本身无条数检查；原生最多 4 条，所以看不到后果。
 
 ## 证据指针
 

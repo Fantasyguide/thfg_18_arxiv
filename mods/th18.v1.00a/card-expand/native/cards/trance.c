@@ -89,7 +89,7 @@
  * `+0x63c` / `+0x634` / **`+0x476ac = 1`**），**读零个计时器**；真正的不归点是
  * `commit_death_and_enter_state2` `0x45d090`（全 exe 唯一调用点 `0x45c135`，扣命）。
  * ⇒ 在 `+0x0c` 里「取消 + `return 1`」两件都做到，就一定不会扣命
- *   （★ 一手零售先例：`CardEirin__on_player_death_after_deathbomb` `0x40a4f0`
+ *   （★ 一手原生先例：`CardEirin__on_player_death_after_deathbomb` `0x40a4f0`
  *    尾段 `0x40a53f call 0x45d590` → **`0x40a544 mov eax,1`** → `0x40a54a ret 4`）。
  *
  * ## 长持续效果的自查（`METHOD.md` 铁律二 / SPEC §3.5）
@@ -216,7 +216,7 @@
 #define TRANCE_FN_PLAYER_DIE             0x45d3a0u   /* Player__die（thiscall(Player*)；广播 +0x10）*/
 
 /* ---- 音效：TH13 的 id 在 TH18 无意义 ⇒ **全部 ❓ 自定，实跑首日校准**（SPEC §5 末行）----
- * 只挑 TH18 现有表里语义最近的（SDK.md §7 的零售 se 表）。 */
+ * 只挑 TH18 现有表里语义最近的（SDK.md §7 的原生 se 表）。 */
 #define TRANCE_SE_PICK      0x3f   /* ❓ 自定（TH13 收神灵也是 0x3f，但两作表不同源）—— 收集音 */
 #define TRANCE_SE_LEVELUP   0x44   /* ❓ 自定（TH13 跨格 0x44）—— 跨格音 */
 #define TRANCE_SE_ENTER     0x34   /* ❓ 自定（TH13 灵界进入 0x34）—— 进入灵界 */
@@ -225,7 +225,7 @@
 
 /* ==================== ★ 神灵实体（自建 VM 池）：载体脚本 / 贴图 / 层 / 染色 ====================
  *
- * TH18 **没有「神灵」这个美术**（原版 `astral.anm` 是 TH13 的资产，SPEC §5 台账里是 ⏳ 未做）
+ * TH18 **没有「神灵」这个美术**（原生 `astral.anm` 是 TH13 的资产，SPEC §5 台账里是 ⏳ 未做）
  * ⇒ 按 `METHOD.md` 铁律「UI / 动画一律先从原代码找」的**退路条款**：借现成的可复用件 + 标 ❓ 自定，
  * **不包装成复刻**（这里逐条写清「借了什么、为什么借它、差在哪」）。
  *
@@ -241,8 +241,8 @@
  *   卡每帧 `ce_anm_set_sprite` 换」的既有口径）；它的 `interruptLabel(1)` 是一条
  *   「layer 15 + 加算 + 20 帧放大到 2.0 + 换 3 张贴图 + 自删」的消失段 ⇒ 正好当**吃到 / 到点**的收束。
  *
- * ### 贴图：零售 P 点（`CE_ANM_ABILITY_SPRITE_SOUL_0`）
- * 裁决把神灵定义成「≈ **P 点**、蓝点等下落道具」⇒ 用**零售切图**里的小道具样贴图（16×16），
+ * ### 贴图：原生 P 点（`CE_ANM_ABILITY_SPRITE_SOUL_0`）
+ * 裁决把神灵定义成「≈ **P 点**、蓝点等下落道具」⇒ 用**原生切图**里的小道具样贴图（16×16），
  * 不自己画（`METHOD.md`）。`SOUL_*`（TH17 `beast.anm` 的魂，16×16，**近白**）是我们手上唯一
  * 既能当「魂 / 神灵」又**能被染色染得动**的那一格（`ce_anm_set_color` 是**乘算**染色：
  * 纯红/纯金的道具贴图染成绿/蓝会变黑，近白的才染得出颜色）。
@@ -256,7 +256,7 @@
  *   必须走**相机 3 的游玩区**（世界层 3–19）。放进 UI 列表（相机 2、无 originMode(1)）会整体偏位
  *   （游玩区 32…416 与整张表面的原点不同）⇒ 那是**画错地方**，不是「更安全」。*/
 #define TRANCE_SPIRIT_ANM_SCRIPT  CE_ANM_ABILITY_SCRIPT_SEASON_BULLET_SUMMER   /* ❓ 自定：见上 */
-#define TRANCE_SPIRIT_SPRITE      CE_ANM_ABILITY_SPRITE_SOUL_0                  /* ❓ 自定：零售魂贴图 */
+#define TRANCE_SPIRIT_SPRITE      CE_ANM_ABILITY_SPRITE_SOUL_0                  /* ❓ 自定：原生魂贴图 */
 #define TRANCE_SPIRIT_LAYER       13     /* 世界列表·道具层（faith.c 的 FAITH_LAYER 同值）*/
 
 /* ---- 四类神灵的染色（**一手**：TH13 `astral.anm` 的 `color()` 值，`SPIRIT` §2.3 表）----
@@ -761,7 +761,7 @@ static int on_activate(ce_card_t *c)
  *   ④ ★ **`return 1`** —— 让引擎跳过 `0x45c135` 的扣命。**这两件缺一不可**：
  *      只调 `0x45d590` 不返回 1 ⇒ 引擎照样 `commit`（state 被拉回 1 也没用，命已经扣了）；
  *      只返回 1 不调 `0x45d590` ⇒ 引擎不扣命，但 state 仍是 4 ⇒ 下一帧照样进死亡流程。
- *      一手零售先例：`CardEirin__on_player_death_after_deathbomb` `0x40a4f0`
+ *      一手原生先例：`CardEirin__on_player_death_after_deathbomb` `0x40a4f0`
  *      （`0x40a53f call 0x45d590` → **`0x40a544 mov eax,1`** → `0x40a54a ret 4`，stdcall 1 个 dword）。
  *
  * ## 为什么不在 `+0x0c` 里判「自机 state 是否仍是 4」

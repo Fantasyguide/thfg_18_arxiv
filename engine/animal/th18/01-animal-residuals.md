@@ -98,7 +98,7 @@ TH18：`Player::die` `0x45d3a0` 里**没有**这种分支（一手反编译：�
 | 卡侧实现（动物灵掉落 + 收集槽 + 咆哮 + 死亡取消） | ✅ **Stage 2 已落地**（2026-09-10，id 117「鬼形兽」）|
 
 **卡侧 Stage 2 详情**（2026-09-10）：`mods/th18.v1.00a/card-expand/native/cards/animal.c` + `animal_core.c`
-（纯逻辑单测 116 断言）；动物灵实体 = 自建 VM 池 + TH17 零售切图（`beast1.png` 13 单元 / `beastf.png` 槽框 /
+（纯逻辑单测 116 断言）；动物灵实体 = 自建 VM 池 + TH17 原版切图（`beast1.png` 13 单元 / `beastf.png` 槽框 /
 `beast.anm` script0–6 生成的 137–143），DVD 式弹跳 / 24 px 吸收 / 60 px 减速 / 变色 / 版边消失；
 审计 `mods/th18.v1.00a/card-expand/AUDIT.md` §AL；实跑清单 `NEXT.md` §1v；
 设计 `docs/superpowers/specs/2026-09-10-season-and-animal-design.md` §2。

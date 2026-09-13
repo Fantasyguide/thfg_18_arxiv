@@ -105,12 +105,12 @@ int yk_option_count(int focused, int character, int power_level);
 int yk_option_wanted(int focused, int character, int power_level);
 
 /* ---- ★ 逐格阵型（spec §12.4 的形状缺口；为什么必须逐格，一手见 sdk_core.h 的 `CE_OPTION_POSE_CELLS`）----
- * 每格偏移取自**本作（TH18）零售 `pl0X.sht` 自己的位置块**，与引擎给原生子机摆的阵型同一份数据：
+ * 每格偏移取自**本作（TH18）原生 `pl0X.sht` 自己的位置块**，与引擎给原生子机摆的阵型同一份数据：
  *   非聚焦块 `+0x40`、聚焦块 `+0x90`，每格 `(x,y)` float、单位 = **像素**；
  *   格号 `k = T[count-1] + i`（`T = {0,1,3,6,10,11,13,...}`，一手 `th18:0x45d8fc`：
  *   `edx = TRI[档−1] + i`，`movss xmm0,[ecx+edx*8+0x40]`）⇒ 「声明 N 个」时用的就是引擎给
  *   **N 个原生子机**准备的那 N 个位置。
- * ⚠ **咲夜（机体 2）的那两块不是像素**：`x` 是**弧度**、`y` 是**半径**（一手：零售 `pl02.sht` 的
+ * ⚠ **咲夜（机体 2）的那两块不是像素**：`x` 是**弧度**、`y` 是**半径**（一手：原生 `pl02.sht` 的
  *   `(0, 38) (0.3,38) (-0.3,38) …`；引擎对机体 2 另挂 `th18:0x45dd10` 每帧把极坐标转成位置）。
  *   本表里机体 2 那一行已经**离线换算成像素**（换算规则一手：`th18:0x45dd10` 读 `option+0xa8` 的角度
  *   加 `player+0x4790c`（`Player::reset` `th18:0x45ade6` 置 **−π/2**）→ `call 0x45e300`（= `(r·cosθ, r·sinθ)`，
@@ -152,16 +152,16 @@ int yk_option_script_changed(int want, int have);
 #define YK_SHOT_TIERS            5      /* TH18 火力档 0..4（CURRENT_POWER 0..400 / 100）*/
 #define YK_SHOT_POWER_PER_LEVEL  100    /* = `CE_ADDR_POWER_PER_LEVEL`（0x4ccd40）*/
 #define YK_SHOT_DMG_NOT_SET      0      /* 档位表里这个值 = 「不覆盖 `bullet+0x9c`」*/
-/* 妖侧 shooterset 槽 = **覆盖**零售那格空槽（不是追加 —— 偏移数组 40 格已经全满）。
- * 一手：四份零售 `pl0X.sht` 的 `+0x02` 都是 40、`0x00`–`0x16` 逐项非 0、`0x17`–`0x27` 是本 mod
- * 其余四张卡（`native/sht_ids.h`）⇒ 没有「新索引」可加；而 `0x16` 是零售**唯一没有卡映射**的一格
+/* 妖侧 shooterset 槽 = **覆盖**原生那格空槽（不是追加 —— 偏移数组 40 格已经全满）。
+ * 一手：四份原生 `pl0X.sht` 的 `+0x02` 都是 40、`0x00`–`0x16` 逐项非 0、`0x17`–`0x27` 是本 mod
+ * 其余四张卡（`native/sht_ids.h`）⇒ 没有「新索引」可加；而 `0x16` 是原生**唯一没有卡映射**的一格
  * （扫全 exe，调 `Player__tick_shooters_for_ability_card` `0x40a9c0` 的 11 处压栈立即数 =
  * `{0x0a,0x0b,0x0c/0x0d,0x0e,0x0f,0x10,0x11,0x12,0x13,0x14,0x15}`，没有 `0x16`；
  * 主炮 `0x45ea00` 的公式只给 `0x00`–`0x09`）。
  * 分配／写入它的是 `assets/sht/append_shooterset.py` 的 `REPLACE` 表；那份脚本会回头核对
  * 本文件里的这两个常量，对不上就让 `make sht` 失败（防两边静默漂移）。
  * 内容 = TH08 v1.00d `ply03as.sht`（妖夢＆幽々子 的**妖侧**）第 5 档（`thr = 128` = 满 P）
- * 的 9 行逐字段翻译，`fire_rate = 3/5/10/6` ⇒ **除零风险随覆盖一起消失**（零售那格是 0，
+ * 的 9 行逐字段翻译，`fire_rate = 3/5/10/6` ⇒ **除零风险随覆盖一起消失**（原生那格是 0，
  * 而 `0x40a9c0` 的 `idiv` 在 `0x40aa4f` 没有零分支）。逐字段出处见该脚本的 `REPLACE` 注释。*/
 #define YK_SHOT_SET_YOUKAI       0x16
 #define YK_SHOT_SET_YOUKAI_ROWS  9      /* 那组有几行（行号进 `packed_id` 低 8 位；认出妖侧弹只看 set 字节）*/
@@ -196,7 +196,7 @@ int     yk_shotset_usable(int fire_rate);
 /* 槽位 → 使魔皮肤**变体**（0..3）。卡侧把变体映射到 `anm_ids.h` 的脚本宏（**不写死数字**）：
  * `CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_S53 + 变体`。
  * 语义（用户 2026-09-12 定案，spec §3.5）：**使魔数量 = 该敌当前活跃发射口槽数（1–4）
- * ⇒ 四色正好一槽一套，槽 i 用 `s53+i` 那一套**。四色零售切图 = TH08 `enemy.anm` script53..56
+ * ⇒ 四色正好一槽一套，槽 i 用 `s53+i` 那一套**。四色原版切图 = TH08 `enemy.anm` script53..56
  * （红 / 绿 / 蓝白 / 黄），已切进 `assets/ability/scripts/206_youkai_familiar_s53.anm.txt` … `209_…_s56`。
  * 槽域是 0..`YK_EMIT_SLOTS`-1 而四色只有 4 套 ⇒ 槽 >= 4 取 `slot & 3`
  * （❓ **自定兜底**：规格说实测最多 4 个活跃槽，这条理论上走不到；不是一个「第 5 种颜色」的承诺）。*/

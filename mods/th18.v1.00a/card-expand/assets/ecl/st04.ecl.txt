@@ -4,7 +4,7 @@ ecli { "default.ecl"; "st04bs.ecl"; "st04mbs.ecl"; }
 void MainBossSpell();
 
 // 开发辅助：st04 空壳 —— 只留 logo、对话、boss（血量缩百倍、死时多掉钱的 st04bs.ecl 由 make_dev_ecl.py 现场生成）。
-// 道中全部删除；结构照零售 main，零售的敌机子程序不保留。由 make_dev_ecl.py --regen-shells 生成，thecl -c 18 -m th18.eclm 编译。
+// 道中全部删除；结构照原生 main，原生的敌机子程序不保留。由 make_dev_ecl.py --regen-shells 生成，thecl -c 18 -m th18.eclm 编译。
 
 void main()
 {

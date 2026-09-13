@@ -129,7 +129,7 @@
  *      ⇒ **从自机位置线性外扩**，30 帧走满 **256 单位**（640 空间；游玩区宽 384）。本卡照抄这个公式。
  *
  * type → 脚本号的表 = `th07:0x49efc0`（`{u16 id; u16 pad; void* update; void* draw}`，stride 0xc）：
- *   **type 0x1c → id 731**、**type 0x1d → id 690**。两个 id 都落在零售 `data/etama.anm` 上
+ *   **type 0x1c → id 731**、**type 0x1d → id 690**。两个 id 都落在原生 `data/etama.anm` 上
  *   （`AnmManager::loadAnm` `th07:0x44df90` 的 base **每个 entry 前进「上一 entry 的 sprite 数」**；
  *   etama base 512 + entry0 的 168 sprites = 680（entry1）→ +50 = 730（entry2）→ +1 = **731**（entry3））：
  *     731 = entry3（`data/etama/etama4.png` 整张 256×256）的文件内脚本 0 → **本卡 `204`**
@@ -152,9 +152,9 @@
  *   中弹那一路因此晚 **1 帧**（≈16 ms）出现 —— 与既有「中弹消弹推迟一帧」同一口径，spec §9 第 3 条。 */
 #define SENRO_ANM_SCRIPT_FIELD      204    /* 本地号：anm_ids.h 由主 agent 统一压号后合并（现用 204/205）*/
 #define SENRO_ANM_SCRIPT_RING       205
-/* 层：**零售脚本不写 `layer()`**（TH07 的 effect VM 由 EffectManager 自己排）⇒ 由本文件（挂它的那一方）
+/* 层：**原版脚本不写 `layer()`**（TH07 的 effect VM 由 EffectManager 自己排）⇒ 由本文件（挂它的那一方）
  * 补世界层（3–19；HUD 那两层的 24/25 不适用）。❓ 自定：**两个都取 19**（世界列表最高的那一层，
- * `engine/anm/th18/02-render-stages.md` §1 的 0x2b 桩），理由 = 原版这两半都盖在弹幕之上：
+ * `engine/anm/th18/02-render-stages.md` §1 的 0x2b 桩），理由 = 原生这两半都盖在弹幕之上：
  *   · 甲是「结界展开 / 崩结界」的全屏闪光（全屏 ⇒ 必须在最上面）；
  *   · 乙是 32 颗（原版是「被打掉的弹变成小樱点飞出去」，看得见才有意义）。
  * 旁边的口径（都可作参照，但都不是同一个东西）：`lolk.c:425` 的擦弹圈（自机位置上的环）取 **12**、
@@ -176,7 +176,7 @@
 #define SENRO_FX_PEND_RING          2
 
 /* 32 颗的方向表：`(cos(ang), sin(ang))`，`ang = -π + i × (2π/32)` —— **编译期常量**，不在运行时算三角函数
- * （零售那两条是 C 侧 `fcos`/`fsin`；我们这边照数值抄成表 ⇒ 卡侧零 x87，`make dllx87` 的不变式不动）。
+ * （原生那两条是 C 侧 `fcos`/`fsin`；我们这边照数值抄成表 ⇒ 卡侧零 x87，`make dllx87` 的不变式不动）。
  * 逐项 = `cos(-3.1415927 + i*0.19634954)` / `sin(同上)`（i = 行号×2 + 列号）。 */
 static const float s_ring_v[SENRO_RING_UNITS][2] = {
     {-1.0f, 0.0f}, {-0.9807853f, -0.1950903f},
@@ -328,7 +328,7 @@ static void senro_fx_ring_kill(senro_card_t *s)
 }
 
 /* 乙：在 `pos` 起 32 颗（照 `th07:0x441df4` 的循环：同一个起点、32 个方向由 `s_ring_v` 给）。
- * ⚠️ 方向/速度在零售里是 C 侧写进 VM 的（`[vm+0x294] = cos(ang)`、`[vm+0x298] = sin(ang)`），
+ * ⚠️ 方向/速度在原生里是 C 侧写进 VM 的（`[vm+0x294] = cos(ang)`、`[vm+0x298] = sin(ang)`），
  *    本卡没有 effect type 那一套 ⇒ 方向留在本文件、每帧用公式摆位置（见 `senro_fx_tick`）。 */
 static void senro_fx_ring_spawn(senro_card_t *s, const float *pos)
 {
@@ -359,7 +359,7 @@ static void senro_fx_flush(senro_card_t *s)
     const float *pp;
 
     if (!s || !s->fx_pending) return;
-    pp = ce_player_pos();                       /* 一手：零售取起效那一刻的 `player+0x930` */
+    pp = ce_player_pos();                       /* 一手：原生取起效那一刻的 `player+0x930` */
     if (s->fx_pending & SENRO_FX_PEND_FIELD) senro_fx_field_spawn(s, pp);
     if (s->fx_pending & SENRO_FX_PEND_RING) senro_fx_ring_spawn(s, pp);
     s->fx_pending = 0;
@@ -411,7 +411,7 @@ static void senro_handle_events(ce_card_t *c, senro_card_t *s, int ev)
     (void)c;
     if (!ev || !s) return;
     if (ev & SENRO_EV_BORDER_OPEN) {
-        /* ★ 结界展开的视觉（零售 effect type 0x1c，`th07:0x441aa4`）——
+        /* ★ 结界展开的视觉（原版 effect type 0x1c，`th07:0x441aa4`）——
          * ⚠️ 这里只**置 pending**，真正的 `ce_anm_spawn` 在 `on_tick_2` 尾部兑现：
          *    本函数也会从断点回调（`on_item_collect` / `on_shot_damage_any`）里被调到，
          *    而「建 VM = 分配」这件事只在 tick / 帧末做（ufo.c 的死亡栈纪律）。 */
@@ -523,8 +523,8 @@ static void senro_do_libyou(ce_card_t *c, senro_card_t *s, int by_hit)
     ce_invuln_request(SENRO_ID, s->st.invuln);
     ce_invuln_apply();                                   /* 中弹路发生在 Player tick，晚于 SDK 的落笔点 ⇒ 当场补一笔 */
     senro_handle_events(c, s, senro_take_events(&s->st));
-    /* ★ 灵击的视觉（零售 effect type 0x1c「环」+ type 0x1d「32 颗」，见文件中部长注）：
-     *   零售在同一个函数里连做三件 —— `th07:0x441c19`（环）+ `th07:0x441dd9`–`0x441e38`（32 颗）
+    /* ★ 灵击的视觉（原生 effect type 0x1c「环」+ type 0x1d「32 颗」，见文件中部长注）：
+     *   原版在同一个函数里连做三件 —— `th07:0x441c19`（环）+ `th07:0x441dd9`–`0x441e38`（32 颗）
      *   + 两条 SE；本卡同款，但**只置 pending**（`by_hit` 那一路跑在死亡栈里，不许建 VM）：
      *     · 按 B 路：本帧尾部 `senro_fx_flush()` 兑现 ⇒ **同帧**看得见；
      *     · 中弹路：下一帧兑现（≈16 ms，与既有的「中弹消弹推迟一帧」同一口径，spec §9 第 3 条）。 */
@@ -605,7 +605,7 @@ static int on_tick_2(ce_card_t *c)
         }
     }
 
-    /* ⑤ 按 B（X 上升沿）⇒ 灵击（th07 的按 B 入口 `0x4419d2`）。原生炸弹照放，本卡只做结界那一半。 */
+    /* ⑤ 按 B（X 上升沿）⇒ 灵击（th07 的按 B 入口 `0x4419d2`）。原版炸弹照放，本卡只做结界那一半。 */
     if ((*(const uint32_t *)CE_ADDR_INPUT_PRESSED & SENRO_INPUT_BOMB) && senro_border_active(&s->st))
         senro_do_libyou(c, s, /*by_hit=*/0);
 
@@ -637,7 +637,7 @@ static int on_tick_2(ce_card_t *c)
     }
 
     /* ⑨ 结界特效：先推进（老的一批按公式外扩 / 到点收句柄），再兑现本帧新置的 pending——
-     *    这样「本帧起的」下一帧才开始动（与零售 effect VM 的帧计数从 0 起同形）。
+     *    这样「本帧起的」下一帧才开始动（与原生 effect VM 的帧计数从 0 起同形）。
      *    ⚠️ 位置：**必须**在 ②（开结界事件）与 ⑤（按 B 灵击）之后，否则当帧的 pending 要等下一帧。 */
     senro_fx_tick(s);
     senro_fx_flush(s);
@@ -730,7 +730,7 @@ static int on_death_frame2(ce_card_t *c)
 }
 
 /* ---- HUD（左下角三行：+C / 樱点 / 最大樱点）----
- * 用**贴图 VM 字形**（`ce_hud_vm_text_set`：TH18 font 2 的零售切图，走 UI 层 25 ⇒ 暂停时被模糊罩盖住；
+ * 用**贴图 VM 字形**（`ce_hud_vm_text_set`：TH18 font 2 的原生切图，走 UI 层 25 ⇒ 暂停时被模糊罩盖住；
  * 先例 = `cards/season.c` 的档位数字 / `cards/mof.c` 的三行）。坐标是 640×480 字面量空间，
  * 由 HUD 槽位分配器给的 `x640/y640` 推（HUD-LAYOUT.md §1.1 的两套空间）。
  * ★ 坐标**每帧取最新值**（2026-09-12 审计补）：`ce_hud_slot_claim()` 填给 `out` 的是**认领那一刻**的

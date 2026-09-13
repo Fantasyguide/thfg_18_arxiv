@@ -23,7 +23,7 @@
  * 写回出生点」的风险。双写是**保守**做法，🟡 待实跑确认哪一格才是可见位置的源头。
  *
  * ★ 使魔的**画面**：惰性空壳不跑 ECL ⇒ 谁也不会给它装 anm 脚本 ⇒ 卡侧起一个**跟随 VM**
- *   （`YK_FAM_ANM_LAYER` 那一节，范式照 112 飞碟）画四色零售切图（`ability.anm` 206..209）。
+ *   （`YK_FAM_ANM_LAYER` 那一节，范式照 112 飞碟）画四色原生切图（`ability.anm` 206..209）。
  *
  * ★ 占位清单（每条都是「需要资产 / 需要用户决策」）见文件尾 —— 取值一律是**不做**这个语义。 */
 #include <string.h>
@@ -90,8 +90,8 @@
 /* 妖侧 shooterset 的行指针（`sht + 0xe0 + idx*4`，与 `0x40a9c0` / `0x45ebfb` 同一张表）*/
 #define YK_SHT_SET_ROW      0xe0
 
-/* ---- ★ 低速子机的贴图脚本（2026-09-12 **已换成零售切图**，不再借豌豆射手的 102）----
- * 四支机体**各一支**零售子机脚本（不是「一个共享图集里的一格」，也不是机体本体图）：
+/* ---- ★ 低速子机的贴图脚本（2026-09-12 **已换成原生切图**，不再借豌豆射手的 102）----
+ * 四支机体**各一支**原生子机脚本（不是「一个共享图集里的一格」，也不是机体本体图）：
  *   TH08 妖侧：子机 = `zPlayerOption`（`player+0x40c`×4、stride `0x2f4`、每格头 0x2a4 就是 AnmVm），
  *     进低速那一帧按机体把脚本装进 `option+0x0` 那个 VM ——
  *     `th08:0x44e3d7 push 0x12`（pl00 八雲紫）/ `th08:0x44ea6f push 0x1d`（pl01 アリス）/
@@ -99,7 +99,7 @@
  *     （`ecx = [player+0xc]` = 本机体的 anm、`arg1 = option`、`arg2 = 脚本号`）。
  *   TH16：本体子机脚本号 = `th16:0x492c00[CHARACTER]` = {8,7,11,11}（**菜单序** ⇒ `CHARACTER`=2 = 文），
  *     `th16:0x4443ad` 取值 + `AnmLoaded::copy_vm th16:0x407b20` ⇒ **pl03 script 11**。
- * 资产：`assets/ability/scripts/224..227`（由 `assets/ability/make_youkai_option_art.py` 逐条照抄零售 +
+ * 资产：`assets/ability/scripts/224..227`（由 `assets/ability/make_youkai_option_art.py` 逐条照抄原生 +
  *   `assets/ability/youkai_option/` 下的切图；ORDER 片段 `entries/ORDER.youkai_option.txt` 待主 agent 合并）。
  * ⚠ 号是 **224..227**：`make anm` 之前 `native/anm_ids.h` 里还没有这四条宏 ⇒ 下面走**字面量**；
  *   `make anm` 之后宏就存在了，`#ifdef` 会自动切到宏（**这一步不用手改**）。*/
@@ -149,7 +149,7 @@ static int yk_option_script(int character)
 #define YK_FAM_ANM_INDEX  (-1)      /* ★ TODO(资产 §5)：使魔贴图。`NoEnemyDebug` 不跑 ECL ⇒ 不写这两格
                                      * 时会画「当前关卡敌人 anm 的 slot 0」（audit-open-items-106-109 §②）。
                                      * 占位 = 不写（< 0）；填真值时两格一起给。
-                                     * ★★ 2026-09-12：**画面不再走这条路** —— 四色零售切图已在 `ability.anm`
+                                     * ★★ 2026-09-12：**画面不再走这条路** —— 四色原生切图已在 `ability.anm`
                                      * 206..209，由卡侧的**跟随 VM** 画（见下面 `YK_FAM_ANM_LAYER` 那一节）。
                                      * 这两格保持占位（偏移本身仍 ❓ 未证实，别翻成真值）。*/
 #define YK_FAM_ANM_SCRIPT (-1)
@@ -291,7 +291,7 @@ static void yk_kill_familiar(uint8_t *f)
 /* ====================== ★ 使魔的跟随 VM（画面）======================
  * 为什么需要：使魔 = `NoEnemyDebug` 的**惰性空壳**（`wait(1000)` 死循环）—— 它不跑 ECL，
  * 也就**没有任何人**给它装 anm 脚本 ⇒ 引擎画不出东西（`YK_FAM_ANM_*` 那两个偏移 ❓ 未证实，
- * 而且 `etSprite` 只在 ECL 里跑）。四色零售切图已经进了 `ability.anm`
+ * 而且 `etSprite` 只在 ECL 里跑）。四色原生切图已经进了 `ability.anm`
  * （script 206..209 = TH08 `enemy.anm` script53..56；见
  * `assets/ability/scripts/206_youkai_familiar_s53.anm.txt` 的注）⇒ 由卡侧起 VM 画。
  * **范式逐条照 112 飞碟的跟随 VM**：`ufo.c` 的 `ufo_body_vm_spawn` / `ufo_body_vm_follow` /
@@ -305,7 +305,7 @@ static void yk_kill_familiar(uint8_t *f)
  *   一手：`engine/anm/th18/02-render-stages.md` §1 —— 层 6/7/8/9/10/11 = 「敌机等」，
  *         且按 §2 的相机表全在**相机 3 = 游玩区**；使魔是**场上实体**，就该落在这一档。
  *   先例：`ufo.c` 的 `UFO_BODY_ANM_LAYER 7`（同一用途：卡侧替一个场上实体起 VM）。
- *   ⚠ 使魔的脚本**没有** `layer()`（零售 enemy.anm script53..56 都没写，那几份 anm.txt 注明）
+ *   ⚠ 使魔的脚本**没有** `layer()`（原生 enemy.anm script53..56 都没写，那几份 anm.txt 注明）
  *     ⇒ 这个参数是**唯一**的层来源（飞碟本体能说「脚本自己写 layer(7)」，这里不能照抄那句话）。
  *   ❌ 不用 HUD 的 24/25：那是**相机 2 的外围 UI 列表**（§1 的 `0x3c` / `0x39` 两行专门提醒
  *     「世界列表 24」与「UI 列表 24」是两码事），与场上实体的语义无关。
@@ -570,7 +570,7 @@ static void yk_transfer_tick(yk_card_t *s)
  * ★ 2026-09-12：落笔**只**发生在 `on_option_pose_apply` 里（SDK 每帧调一次被选举的那张卡；
  *   被顶掉时再补叫一次「退位通知」，那时 `ce_option_pose_winner() != 我们` ⇒ 只收子机、不写字段）。
  * ★ 逐格偏移：`count >= 2` 时每格必须摆在不同位置（否则会叠在同一点）——
- *   表与一手依据在 `youkai_core.h` 的 §3.3（位置 = 本作零售 `pl0X.sht` 同档阵型）。*/
+ *   表与一手依据在 `youkai_core.h` 的 §3.3（位置 = 本作原生 `pl0X.sht` 同档阵型）。*/
 
 /* 本帧读引擎的「机体号 + 火力档」：档位算式与 `th18:0x45d604`/`0x45d60a` 同款
  * （`CURRENT_POWER / POWER_PER_LEVEL`；`yk_shot_tier()` 负责钳到 0..4）。*/
@@ -604,7 +604,7 @@ static void yk_option_declare(ce_card_t *c, yk_card_t *s, int focused)
     if (count > YK_OPTION_CELLS) count = YK_OPTION_CELLS;   /* 表最大 4；层自己也会再钳一次 */
     __builtin_memset(&pose, 0, sizeof pose);
     pose.count = count;
-    /* ★ 子机贴图脚本 = **按机体**选（2026-09-12 换掉占位的 102）：四支机体各一支零售子机脚本，
+    /* ★ 子机贴图脚本 = **按机体**选（2026-09-12 换掉占位的 102）：四支机体各一支原生子机脚本，
      * 号在 `YK_OPT_SCRIPT_*` 那一节（224..227，出处见那里的注释）。脚本是**申请时定死的**
      * （`Player__allocate_option` `0x40a790` 第 5 个栈参）⇒ `on_option_pose_apply` 里换了号会先收再要。*/
     pose.anm_script = yk_option_script(character);
@@ -635,7 +635,7 @@ static void yk_option_release(ce_card_t *c, yk_card_t *s)
     int i;
     for (i = 0; i < YK_OPTION_MAX; ++i) {
         /* ★ 删卡路径的漏洞补在这里（2026-09-12 审计）：`ce_option_drop(c, o)` 在 `o->ptr == 0`
-         * 时走的是**零售单子机**那一支（`sdk.c:426`）—— 它无条件删 `card+0x1c` 那个 VM。而多子机卡里
+         * 时走的是**原生单子机**那一支（`sdk.c:426`）—— 它无条件删 `card+0x1c` 那个 VM。而多子机卡里
          * 那一格只记得**最后分配**的那个（引擎每次 `Player__allocate_option` 都覆盖它，`0x40a906`）
          * ⇒ 对**空槽**调用就等于删掉**另一格**的 VM：`opt[0]` 空、`opt[1]` 在手里的组合下，
          * opt[1] 的 VM 会先被这一支删一次、再被下面 `opt[1]` 自己的那一支删一次
@@ -646,7 +646,7 @@ static void yk_option_release(ce_card_t *c, yk_card_t *s)
         s->opt[i].retry = 0;
     }
     /* 兜底：所有槽都不在我们手里、但 `card+0x1c` 还挂着 VM（引擎分配过而认领失败 / 池刚被重建）
-     * ⇒ 补一次零售的单子机收尾；上面已经清过那一格时它是 no-op。*/
+     * ⇒ 补一次原生的单子机收尾；上面已经清过那一格时它是 no-op。*/
     ce_option_drop(c, 0);
     s->opt_script = -1;
 }
@@ -680,7 +680,7 @@ static int on_option_pose_apply(ce_card_t *c)
                                    YK_OPTION_RETRY, "youkai");
         if (!o) continue;
         s->opt_script = pose->anm_script;
-        /* 写**这一格**的阵型（零售 `0x40b8c1` 也这么自己摆；单位 = 原生 1/128 定点）。
+        /* 写**这一格**的阵型（原生 `0x40b8c1` 也这么自己摆；单位 = 原生 1/128 定点）。
          * 引擎每帧自己按聚焦位取用：`pos = 自机位 + (聚焦 ? [+0x6c/+0x70] : [+0x64/+0x68])`
          * （一手 `th18:0x45bce8`–`0x45bd08`，且**卡池 12 格与原生 4 格走同一个循环**
          * —— `th18:0x45b8ea`/`0x45b8fa` 两处调用）⇒ 卡侧只写这四个字段就够。*/
@@ -694,7 +694,7 @@ static int on_option_pose_apply(ce_card_t *c)
 
 /* 妖侧 shooterset 装上没有：读那一格记录的首字节 `fire_rate`（i8，`engine/sht/th18/02` §1）。
  * 我们的记录 = TH08 `ply03as.sht` 满 P 档 9 行，`fire_rate ∈ {3,5,6,10}`（`assets/sht/append_shooterset.py`
- * 的 `REPLACE` 覆盖零售那格 0x16）；零售原值 / build/sht 没重跑时那格还是 `0`
+ * 的 `REPLACE` 覆盖原生那格 0x16）；原生原值 / build/sht 没重跑时那格还是 `0`
  * ⇒ `yk_shotset_usable` 返回 0（装备卡路径 `0x40aa4f` 的 `idiv` 没有零分支）。
  * `< 0` = 终止符 ⇒ 也不可用。**运行期自检**，不靠一个手写的「资产已装」开关。*/
 static int yk_youkai_shotset_installed(void)
@@ -799,7 +799,7 @@ static int on_draw(ce_card_t *c)
 }
 
 /* +0x18：开局 / 火力档变 / 关店后广播 —— 池刚被重建过（`Player__repopulate_options` `0x45d5e0`）
- * ⇒ 必须在这里**再申请一次**（零售装备卡同款；spec §3.3 的「火力档变化时重申请」）。*/
+ * ⇒ 必须在这里**再申请一次**（原生装备卡同款；spec §3.3 的「火力档变化时重申请」）。*/
 static int on_power_level_change(ce_card_t *c)
 {
     yk_card_t *s = ce_state(c, yk_card_t);
@@ -807,7 +807,7 @@ static int on_power_level_change(ce_card_t *c)
     if (!s) return 0;
     /* 池刚被 `Player__repopulate_options_and_notify_cards` `0x45d5e0` 整池重建：
      * 手里的槽指针全作废、重试倒计时也要清掉（否则要等 60 帧才补申请）。
-     * 照零售 / 77：不 drop（引擎已经重建过），直接清指针再去要一个。*/
+     * 照原生 / 77：不 drop（引擎已经重建过），直接清指针再去要一个。*/
     for (i = 0; i < YK_OPTION_MAX; ++i) { s->opt[i].ptr = 0; s->opt[i].retry = 0; }
     s->opt_script = -1;
     yk_option_refresh(c, s, CE_PLAYER_FOCUSED());          /* 声明；落笔在帧界（SDK 调被选举者）*/
@@ -820,7 +820,7 @@ static int on_power_level_change(ce_card_t *c)
  *      （`0x40aa0c`／`0x40aa21`，整组只算一次）；`option == NULL` 时它 `test edx,edx / je`
  *      直接返回 ⇒ **妖侧弹的膛口就是妖侧子机**（本卡手里那一格）。
  *      ⇒ 声明的数量为 0 时（高速 / 早苗档 0）这里自然不发弹。
- *   ② 那一格必须是**我们写的合法记录**：零售 0x16 是 `fire_rate = 0`，装备卡路径会整数除零
+ *   ② 那一格必须是**我们写的合法记录**：原生 0x16 是 `fire_rate = 0`，装备卡路径会整数除零
  *      （`engine/sht/th18/02` §2）⇒ 自检记录（`yk_shotset_usable`），没覆盖成功就不调。
  *      覆盖由 `assets/sht/append_shooterset.py` 的 `REPLACE` 做（`make sht`）。*/
 static int on_tick_shooters(ce_card_t *c, uint32_t short_timer, uint32_t long_timer)
@@ -1042,12 +1042,12 @@ _Static_assert(sizeof(yk_fam_vm_t) == 12, "familiar follow-VM record grew (table
  *     1. `YK_BODY_SPRITE_FOCUSED` = -1        —— 妖侧本体 sprite 号（射命丸文 / TH16 pl03.anm 未接进 pl0X.anm）
  *     2. ~~`YK_SHOT_SET_YOUKAI` = 0x16 + 档位表~~ —— ✅ 2026-09-12 **已接真数据**：
  *        shooterset = TH08 `ply03as.sht` 满 P 档 9 行（`assets/sht/append_shooterset.py` 的 `REPLACE`
- *        覆盖零售那格，`fire_rate ∈ {3,5,6,10}`，除零风险随之消失）；**档位伤害表仍不填**
+ *        覆盖原生那格，`fire_rate ∈ {3,5,6,10}`，除零风险随之消失）；**档位伤害表仍不填**
  *        （原因见 `youkai_core.c` §3.4 的注释：TH08 单发伤害随 P 下降，是配着路数设计的）。
  *        ⚠ 膛口 = 子机（`0x40a9c0` 一手）⇒ 它能不能发弹取决于第 3 条的子机数量（现已接上）。
- *     3. ~~`YK_OPTION_SCRIPT_YOUKAI`（借豌豆射手 102）~~ —— ✅ 2026-09-12 **已换成零售切图**：
+ *     3. ~~`YK_OPTION_SCRIPT_YOUKAI`（借豌豆射手 102）~~ —— ✅ 2026-09-12 **已换成原生切图**：
  *        四支机体各一支子机脚本（`YK_OPT_SCRIPT_{YUKARI,ALICE,REMILIA,AYA}` = `ability.anm` 224..227，
- *        由 `assets/ability/make_youkai_option_art.py` 逐条照抄零售；一手落点写在那一节的注释里）。
+ *        由 `assets/ability/make_youkai_option_art.py` 逐条照抄原生；一手落点写在那一节的注释里）。
  *        数量 / 阵型 / 落笔早在同一天接上（`YK_OPTION_BY_CHAR` 4×5 表 + `yk_option_offsets` 逐格阵型 +
  *        声明层 `on_option_pose_apply`，spec §3.3.1/§12.4）⇒ 这一项**不再是占位**。
  *        ⚠ 两个已知缺口，实跑要盯：① ~~`count = 0` 的档（早苗 P<100）妖侧**一发弹都没有**，
@@ -1056,10 +1056,10 @@ _Static_assert(sizeof(yk_fam_vm_t) == 12, "familiar follow-VM record grew (table
  *        与 `yk_should_suppress_native`；❓ 口径、非复刻），实跑会看到一行 `NOT suppressing native shots`；
  *        ② 12 格公共池与 71/77/116 共享，本卡满配 4 格。
  *        ❓ ③ TH08 那三支脚本的**中断标签**是 TH08 的约定（1/2 = 循环、3/4 = 起爆、5 = 散场），
- *        与 TH18 引擎发给子机 VM 的 2 出场 / 3 收起 / 1 销毁**不同** —— 逐条照抄零售的必然结果，
+ *        与 TH18 引擎发给子机 VM 的 2 出场 / 3 收起 / 1 销毁**不同** —— 逐条照抄原生的必然结果，
  *        要不要改标签是设计决定（见生成器文件头与报告 ❓）。
- *     4. `YK_FAM_ANM_INDEX` / `YK_FAM_ANM_SCRIPT` = -1 —— 使魔贴图（借零售 or 复用 116/117 的做法）
- *        → ✅ 2026-09-12 **资产已到**：四色零售切图 = `ability.anm` script 206..209
+ *     4. `YK_FAM_ANM_INDEX` / `YK_FAM_ANM_SCRIPT` = -1 —— 使魔贴图（借原生 or 复用 116/117 的做法）
+ *        → ✅ 2026-09-12 **资产已到**：四色原生切图 = `ability.anm` script 206..209
  *          （TH08 `enemy.anm` script53..56，红/绿/蓝白/黄），由**跟随 VM** 画
  *          （`YK_FAM_ANM_LAYER` 那一节；槽 i → s53+i）。上面那两个偏移保持占位（仍 ❓ 未证实）。
  *        🟡 未实跑：层号 7 与「VM 位置 = 实体 final_pos」都只在代码层对账过。
@@ -1068,7 +1068,7 @@ _Static_assert(sizeof(yk_fam_vm_t) == 12, "familiar follow-VM record grew (table
  *     6. `YK_TRANSFER_CAP_PER_FRAME` = 0（单帧转嫁上限：0 = 无上限；研究 §7.5 提醒会顶掉 boss 配额）
  *     7. `YK_FAM_MAX` = 32（分配护栏；spec 没给上限）
  *     8. ~~`YK_OPTION_OFFSET_*` = 0（妖侧子机阵型）~~ —— ✅ 2026-09-12 **已接真数据**：
- *        逐格阵型 = 零售 `pl0X.sht` 的非聚焦/聚焦位置块（`yk_option_offsets`，`youkai_core.h` §3.3
+ *        逐格阵型 = 原生 `pl0X.sht` 的非聚焦/聚焦位置块（`yk_option_offsets`，`youkai_core.h` §3.3
  *        有一手出处；机体 2 的极坐标行已离线换算成像素）。单位 = 像素（引擎自己 ×128）。
  *   §3.5 缺断点
  *     9. `0x434019`（`etOn` 里 `push eax` 前）没装 —— 「打死使魔 ⇒ 真的关掉那个发射口」只能近似

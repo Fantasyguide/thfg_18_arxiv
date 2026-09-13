@@ -91,7 +91,7 @@ int32_t season_drop_count_decay(int32_t alive_frames, int32_t time_frames,
  * TH18 里拿不到这张表 —— 但 TH18 **自己有一套同形的逐敌人档位**：`zEnemyDrop.timed_ex_drop_time`（窗口 T）
  * + `timed_ex_drop[type]`（数量），由 ECL opcode 573/574 写在每个敌人的子程序开头，
  * 一手见 [`engine/season/th18/01`](../../../../../engine/season/th18/01-season-residuals.md) §1b′。
- * 这里把「原生 timed 计数」当**档位键**映射回 TH16 的数量量级（T 直接用原生值）：
+ * 这里把「原版 timed 计数」当**档位键**映射回 TH16 的数量量级（T 直接用原版值）：
  *   1 → 8（TH16 小妖精）/ 2..4 → 10（妖精）/ 5..10 → 13（大妖精）/ ≥11 → 30（大只；含道中 boss 的 15/20）
  * ⚠️ 这个映射本身是**自定**（两边数字都一手，但跨作对应关系没有原版依据）—— 见 CARDS.md 的标注。*/
 int32_t season_drop_native_tier(int32_t native_timed_count);

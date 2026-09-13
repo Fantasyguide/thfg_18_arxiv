@@ -1,6 +1,6 @@
 script script205 {
     // ★妖妖梦（TH07 系统卡 107）**灵击崩结界时飞出去的那 32 颗**（一颗一份）——
-    //   正文逐条照抄零售 TH07 `data/etama.anm` **entry1**（贴图 `data/etama/etama2.png`）的
+    //   正文逐条照抄原版 TH07 `data/etama.anm` **entry1**（贴图 `data/etama/etama2.png`）的
     //   **文件内脚本 10**（`thanm -l` 里的 **script35**），**只**把 `sprite(sprite28)` 换成
     //   `@SENRO_RING`（见文件尾的一手原文 diff）。
     //
@@ -20,13 +20,13 @@ script script205 {
     //
     // 行为（脚本层面，逐条）：随机初始朝向（`%F0` ∈ [-π,π)）；随机 ±**36°/帧**自转
     //   （`0.62831855` = 2π/10；`ijne` 让其中一半走负向；正向那条后面还留了一段
-    //   **永不执行**的 `angleVel(-0.62831855)`，零售原文如此，照抄）；`zWriteDisable(1)`；
+    //   **永不执行**的 `angleVel(-0.62831855)`，原生原文如此，照抄）；`zWriteDisable(1)`；
     //   第 10 帧起 `alphaTimeLinear(0, 20)`（20 帧线性淡出）；**第 30 帧 `delete()`**
     //   （`+20: // 30` 是绝对时间 30 ⇒ 与 C 侧 256/30 的分母同一个 30 ✓）。
     //
-    // ⚠️ **随机数**：零售原文有 `fsetRand` / `isetRand`（引擎的 anm RNG）。照抄 ——
+    // ⚠️ **随机数**：原生原文有 `fsetRand` / `isetRand`（引擎的 anm RNG）。照抄 ——
     //   同仓先例 = 116 季节卡的 `%RANDRAD` / `%RANDF2`（`113–135_season_*.anm.txt`）。
-    //   ⚠️ **层：零售脚本不写 `layer()`** ⇒ 这里不加，由 `senro.c` 的 `ce_anm_spawn` 补世界层。
+    //   ⚠️ **层：原生脚本不写 `layer()`** ⇒ 这里不加，由 `senro.c` 的 `ce_anm_spawn` 补世界层。
     //
     // 一手原文 diff（`sprite(...)` → `@...` 是**唯一**差异）：
     //   -    sprite(sprite28);

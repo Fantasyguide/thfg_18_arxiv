@@ -7,9 +7,9 @@
 #   ⇒ `pl03` = 射命丸文（黑发 + 红发带 + 白衬黑裙）；**TH16 里没有早苗**（四张脸一张绿发都没有，
 #     而同一次运行拿来对照的 TH18 `pl03` = 早苗 脸是 48% 绿）⇒「早苗 → 文」是跨作品置换。
 #   ⚠ 别按「第 3 个自机」直觉把 `pl02` 当早苗：`pl02` 是チルノ（蓝发蓝裙白围裙，蓝 62%/54%）。
-# ★ 为什么居中：零售 sprite 以 VM 位置为中心画（anchor 位 0），本仓构建期也是居中补
+# ★ 为什么居中：原生 sprite 以 VM 位置为中心画（anchor 位 0），本仓构建期也是居中补
 #   （assets/build_ability.py:119-120）⇒ 30×46 居中放进 32×64，可见像素一个不动。
-# 脚本：assets/ability/scripts/222..226_youkai_aya_s0..4.anm.txt（正文照抄零售 script0..4，只换 sprite 引用）。
+# 脚本：assets/ability/scripts/222..226_youkai_aya_s0..4.anm.txt（正文照抄原生 script0..4，只换 sprite 引用）。
 # ⚠ 本片段**不动** entries/ORDER.txt（多人并发，主 agent 统一合并）。
 YOUKAI_AYA_S0  ability/sanae_youkai/YOUKAI_AYA_S0.png  32x64
 YOUKAI_AYA_S1  ability/sanae_youkai/YOUKAI_AYA_S1.png  32x64

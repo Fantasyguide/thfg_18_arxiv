@@ -182,5 +182,5 @@ int32_t season_drop_native_tier(int32_t native_timed_count)
     if (native_timed_count <= 1) return 8;               /* TH16 小妖精 (60,8,1) */
     if (native_timed_count <= 4) return 10;              /* TH16 妖精 (60,10,1) */
     if (native_timed_count <= 10) return 13;             /* TH16 大妖精 (120,13,1) / (120,20,1) */
-    return 30;                                           /* TH16 大只 (200,30,1)；道中 boss 的原生 15/20 也落这里 */
+    return 30;                                           /* TH16 大只 (200,30,1)；道中 boss 的原版 15/20 也落这里 */
 }

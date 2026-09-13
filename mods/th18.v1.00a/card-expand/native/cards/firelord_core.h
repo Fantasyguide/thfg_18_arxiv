@@ -6,7 +6,7 @@
 
 #define FL_HP             800
 #define FL_POWER_COST     200      /* 2.00 火力 */
-#define FL_POWER_GATE     300      /* 门槛 3.00：引擎 spend_power 永远保留 1.00，成本 + 一档才扣得实（零售 Tsukasa 同款：成本 1 档、门槛 2 档）*/
+#define FL_POWER_GATE     300      /* 门槛 3.00：引擎 spend_power 永远保留 1.00，成本 + 一档才扣得实（原生 Tsukasa 同款：成本 1 档、门槛 2 档）*/
 #define FL_RECHARGE       600      /* 10 s，与青眼同 */
 #define FL_RADIUS         33.6f    /* 挡弹半径：本体约 64 px 高；2026-09-06 用户：先减半到 28，再 +20％ */
 #define FL_PERIOD         420      /* 帧：每 7 s 一个周期（移动 → 到位开火）；2026-09-06 用户：8 s → 7 s */
@@ -36,7 +36,7 @@
 #define FL_PARTICLES      2        /* 飞行中每帧撒几颗橙白粒子（script95，各自随机飘散）*/
 #define FL_BURST          10       /* 落地那帧撒几颗火星（script96）*/
 #define FL_AURA           2        /* 常态：本体每帧撒几颗身体火焰（script97，与火球粒子同量）*/
-#define FL_SHAKE_TIME     14       /* 震屏帧数（ECL setScreenShake 同款机制；零售 boss 死亡量级更大）*/
+#define FL_SHAKE_TIME     14       /* 震屏帧数（ECL setScreenShake 同款机制；原生 boss 死亡量级更大）*/
 #define FL_SHAKE_START    5        /* 起始强度（相机像素偏移）*/
 #define FL_SHAKE_END      0
 #define FL_TRAIL_EVERY    2        /* 飞行中每 2 帧留一个拖尾 */

@@ -1,20 +1,20 @@
 /* unlocked.c —— 战线 D：unlocked_cards 的影子数组 + side-car 持久化。
  *
- * 零售 `zScoreFile.unlocked_cards` 是 uint8_t[57]，后面没有余量，而它在存档里——
+ * 原生 `zScoreFile.unlocked_cards` 是 uint8_t[57]，后面没有余量，而它在存档里——
  * 动它就动存档格式。所以 9 处读全部改成读 codecave `th18_card_unlocked`（256 字节，
  * 下标 = card id），由本文件维护它与两份真相的关系：
  *
- *   id < 57   真相在 scoreth18.dat（零售数组）。影子在存档加载后从它拷；
- *             mark_obtained 的写**放行原指令**，零售数组照常更新，存档逐字节与香草一致。
+ *   id < 57   真相在 scoreth18.dat（原生数组）。影子在存档加载后从它拷；
+ *             mark_obtained 的写**放行原指令**，原生数组照常更新，存档逐字节与香草一致。
  *   id >= 57  真相在 side-car `th18_card_expand.sav`（存档目录下）。mark_obtained 的写
- *             被断点截住（不让它写进零售数组之后的未知区），改写影子 + 立刻落盘。
+ *             被断点截住（不让它写进原生数组之后的未知区），改写影子 + 立刻落盘。
  *
  * 三个断点（都跑在游戏线程；不碰 x87；不调 thcrap API）：
  *   BP_ce_save_loaded   ScoreFile__load 尾段 0x46398a，SCOREFILE_PTR 刚写好、ebx = 存档。
- *                       影子[0..56] ← 零售，[57..254] ← side-car。
+ *                       影子[0..56] ← 原生，[57..254] ← side-car。
  *   BP_ce_unlock_write  mark_obtained 0x418e04 `mov byte [esi+edi+0x5f588], 1`。
  *                       edi = id，esi = 存档。影子[id]=1；id<57 返回 1 放行原指令，否则写 side-car 返回 0。
- *   BP_ce_unlock_all    ScoreFile__unlock_all 0x4648fe，下一条是 memset(零售,1,0x38)。镜像到影子[0..55]。
+ *   BP_ce_unlock_all    ScoreFile__unlock_all 0x4648fe，下一条是 memset(原生,1,0x38)。镜像到影子[0..55]。
  *
  * side-car 只承载 id >= 57 的位；文件里 0..56 那段只是写入时的快照，读回来**不用**。
  */
@@ -163,8 +163,8 @@ int __cdecl BP_ce_save_loaded(x86_reg_t *regs, void *bp_info)
     unsigned retail = 0;
     for (unsigned i = 0; i < CE_RETAIL_UNLOCKED; ++i) retail += s_shadow[i] != 0;
     unsigned extra = sidecar_load();
-    /* initial_unlocked 的新卡：零售的 +0x24 由新档创建循环拷进 unlocked_cards[0..57]，新 id 不在循环里；
-     * 这里每次读档直接置位。解锁单调、新档也该解禁，语义与零售等价，side-car 格式不动（DATA.md §3）。*/
+    /* initial_unlocked 的新卡：原生的 +0x24 由新档创建循环拷进 unlocked_cards[0..57]，新 id 不在循环里；
+     * 这里每次读档直接置位。解锁单调、新档也该解禁，语义与原生等价，side-car 格式不动（DATA.md §3）。*/
     unsigned init = 0;
     for (unsigned i = 0; i < ce_new_card_count(); ++i)
         if (ce_new_card_initial_unlocked(i)) {
@@ -188,7 +188,7 @@ int __cdecl BP_ce_unlock_write(x86_reg_t *regs, void *bp_info)
     s_shadow[id] = 1;
     if (id < CE_RETAIL_UNLOCKED) {
         ce_log("unlock: id=%u (retail; original write allowed)", id);
-        return BP_EXEC_ORIGINAL;                            /* 原指令写零售数组，存档照常 */
+        return BP_EXEC_ORIGINAL;                            /* 原指令写原生数组，存档照常 */
     }
     int ok = sidecar_save();
     ce_log("unlock: id=%u (NEW; shadow + side-car %s)", id, ok ? "saved" : "SAVE FAILED");
@@ -199,7 +199,7 @@ int __cdecl BP_ce_unlock_all(x86_reg_t *regs, void *bp_info)
 {
     (void)regs; (void)bp_info;
     if (s_shadow) {
-        memset(s_shadow, 1, 0x38);                          /* 与紧接着的 memset(零售,1,0x38) 同范围 */
+        memset(s_shadow, 1, 0x38);                          /* 与紧接着的 memset(原生,1,0x38) 同范围 */
         ce_log("unlock: unlock_all mirrored to shadow[0..55]");
     }
     return BP_EXEC_ORIGINAL;

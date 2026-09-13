@@ -5,7 +5,7 @@
     python3 convert_voice.py --all                # _src/ 里每个 .ogg 都转
 
   输出：44.1 kHz、16-bit、单声道（声像只对单声道有意义），data 之外不带别的 chunk。
-  响度：先整体 +GAIN_DB，再软限幅到 LIMIT（峰值 ≈ -0.5 dBFS）。零售 wav 一律 peak 归一化、
+  响度：先整体 +GAIN_DB，再软限幅到 LIMIT（峰值 ≈ -0.5 dBFS）。原生 wav 一律 peak 归一化、
   cfg 行只能衰减不能增益，所以「够响」只能靠 wav 自己（README「响度」一节）；用户给的语音素材
   峰值已近满幅但 RMS 只有 -15 dBFS，直接转会比基准 -10 轻 5 dB —— 增益 + 限幅把波峰因数压下去。
   参数写死、ffmpeg 决定性输出 ⇒ 同一份源图重跑得到同一个 wav。

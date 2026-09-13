@@ -26,7 +26,7 @@ CE_CARD(61, .on_bullet_created = on_bullet_created);
 
 ## 1. 机制：断点换虚表，跳转表不动
 
-零售分配器 `allocate_new_card` 对 id ≥ 57 全走 case 56（`0x411489`）：游戏自己 `new(0x54)` 一个基类 `zAbility`，
+原生分配器 `allocate_new_card` 对 id ≥ 57 全走 case 56（`0x411489`）：游戏自己 `new(0x54)` 一个基类 `zAbility`，
 虚表 `0x4b4c78`，然后进公共尾段。尾段第一条真正的写是 `0x412cec mov [esi+4], ebx`（**esi = 卡对象，ebx = id**）。
 
 SDK 在这里挂 thcrap 断点 `ce_card_bind`（cavesize 6：这条 + 后面的 `mov eax,[edi+0x28]`，都无相对寻址）：
@@ -39,7 +39,7 @@ return 1;   /* 放行原指令 */
 换完虚表之后尾段照常：`mode 0/2` 调 ctor 槽（`0x412d11`）、`mode 2/3` 调 dtor 槽、入链、`owned[id]=1`、`+0x4c` = 表行指针、
 建 HUD。所以：
 
-- **构造 / 析构语义与零售完全一致**（`02-lifecycle.md` §2）：ctor 返回非 0 = 当场删卡 = 即时卡。
+- **构造 / 析构语义与原生完全一致**（`02-lifecycle.md` §2）：ctor 返回非 0 = 当场删卡 = 即时卡。
 - **对象由游戏分配和释放**，大小固定 0x54；SDK 不碰堆。
 - **没有手写机器码**：桩是编译器生成的 `__thiscall` 函数。
 - 没登记行为的新卡什么也不发生（虚表仍是基类 = 全 `ret`），和现在一样。
@@ -57,7 +57,7 @@ return 1;   /* 放行原指令 */
 | +0x30、+0x44 | 位标志（case 56 清 bit0）|
 | +0x48 | 充能时长（主动卡）|
 | +0x4c | `zTableCardData*`（尾段写）|
-| +0x50 | flags：bit0 = 存档/replay 装载，bit3 = 主动，bit6 = 装备，bit5 = 开火中。绑定时 SDK 按 JSON 改：`active_recharge` → 主动写法；`category: 1` → 零售装备写法 `& ~0x0a \| 0x44`（HUD 装备行 / `num_equipment`，AUDIT X11）|
+| +0x50 | flags：bit0 = 存档/replay 装载，bit3 = 主动，bit6 = 装备，bit5 = 开火中。绑定时 SDK 按 JSON 改：`active_recharge` → 主动写法；`category: 1` → 原生装备写法 `& ~0x0a \| 0x44`（HUD 装备行 / `num_equipment`，AUDIT X11）|
 
 21 个槽（`03-hooks.md` §1 的语义；签名由基类实现的 `ret N` 定，`this` 在 ecx）：
 
@@ -156,7 +156,7 @@ CE_CARD(id, .回调 = 函数, ...);      /* 一张卡一条，放在 native/card
 | `ce_enemy_by_id(em, id)` | 按 `enemy_id` 在敌人链表里找 | `get_boss_enemy_full` `0x4237f0` 的走法 |
 | `ce_option_*` | 装备卡子机槽：认领 / 申请 / 补申请 / 收起（§12）| `Player__allocate_option` `0x40a790` |
 | `ce_hud_digit_*` | HUD 小卡上的一位数字：挂图标 / 设值 / 清除（§15）| `ce_anm_spawn_ui` + `ce_anm_set_sprite` |
-| `ce_hud_vm_text_*` | **贴图 VM 版数字/符号**（TH18 font 2 零售字形，暂停时会被模糊罩盖住）（§16）| `ce_anm_spawn_ui` + `ce_anm_set_sprite` |
+| `ce_hud_vm_text_*` | **贴图 VM 版数字/符号**（TH18 font 2 原生字形，暂停时会被模糊罩盖住）（§16）| `ce_anm_spawn_ui` + `ce_anm_set_sprite` |
 
 ### 5.1 语音
 
@@ -171,12 +171,12 @@ CE_CARD(id, .回调 = 函数, ...);      /* 一张卡一条，放在 native/card
 3. `make voice`（会与 ORDER.txt 对账，不一致直接停）→ 代码里 `ce_play_voice(NAME, player_x())`。
 
 细则见 [`assets/voice/README.md`](assets/voice/README.md)。**响度要对齐基准**：
-零售 wav 一律 peak 归一化、响度差异全靠行内 dB 衰减（且只能衰减），所以新音效的
+原生 wav 一律 peak 归一化、响度差异全靠行内 dB 衰减（且只能衰减），所以新音效的
 方均振幅要自己做到位 —— 目标 −10 dBFS，`make voice` 会检查。引擎侧的表结构与两条不变式见
 [`engine/_shared/th18-sound-table.md`](../../../engine/_shared/th18-sound-table.md)，
 站点与审计见 [`AUDIT.md`](AUDIT.md) §Q。
 
-**别用裸数字**：`0x00`–`0x53` 是零售音（一个空闲 id 都没有），`0x54` 起才是我们的。
+**别用裸数字**：`0x00`–`0x53` 是原生音（一个空闲 id 都没有），`0x54` 起才是我们的。
 `ce_play_voice` 走 `voice_ids.h` 的宏，写错 NAME 编译期就报错。
 
 ## 6. SDK 事件（虚表之外）
@@ -195,7 +195,7 @@ CE_CARD(id, .回调 = 函数, ...);      /* 一张卡一条，放在 native/card
 | `on_item_collect` | `0x44625f`（type 分派前一条 `mov edx,[edi+0xc78]`，副作用未发生）。type 用 `*(uint32_t*)(item+0xc78)` 读，别信 EDX（窗前值不可靠） | `void (ce_card_t*, uint32_t type, const void *item)` | 辉针城：批集计数 + stash SCORE |
 | `on_item_commit` | `0x44658a`（共享收尾起点 `movss xmm2,[esi]` + `push 0x25`）。本道具分值**已按 type 计入 SCORE**、公共收尾（清槽等）之前 | `void (ce_card_t*)` | 辉针城：`(SCORE − stash)` 差量入批 |
 | `on_shot_damage` | `0x45f2a2`（`enm_compute_damage_sources` `0x45f0f0` 计分路径 `mov eax,0xee666667` + `imul esi`）。每帧每敌一次可计分命中：dmg 已钳 ≥1、pos = 敌世界坐标 (x,y)；聚焦 / 炸弹 / param_6≠0 的路径被窗口前判定挡掉（handler 再门一道，纵深防御） | `void (ce_card_t*, int32_t damage, const float *pos)` | 辉针城：非聚焦射击命中按帧节流掉 P |
-| `on_enemy_death` | `0x430240`（`FUN_00430240`，SDK 名 `Enemy__die`；**在引擎撒主掉落之前**、链表仍挂着）| `void (ce_card_t*, const ce_enemy_death_t*)`；`kind` 用 retaddr 分（`0x42f3b7` = 打死主路）| 共享事件（109/110/112/113）|
+| `on_enemy_death` | `0x430240`（`FUN_00430240`，SDK 名 `Enemy__die`；**在引擎撒主掉落之前**、链表仍挂着）| `void (ce_card_t*, const ce_enemy_death_t*)`；`kind` 用**栈扫描**（`regs->esp` 起扫 12 dword 命中七条 call site；`0x42f3b7` = 打死主路）；事件带 `retaddr/esp/ret_slot` | 共享事件（109/110/112/113）|
 | `on_native_shot_suppress` | 复用 `0x45ebfb`（与 `on_shot_set_index` 同点）：**先问 set index，有覆盖则不抑制** | `int (ce_card_t*)`，非 0 = 本帧跳过原生行循环 | 108（低速妖机体）/ 109（蓄力拦 Z）|
 | `on_shot_damage_any` | **与 `on_shot_damage` 同一个断点**（`0x45f2a2`）、同一份实参，但**不按聚焦过滤**（仍排除 bomb 生效帧与 `param_6 != 0` 的路径）；`focused` 由 SDK 传 | `void (ce_card_t*, int32_t dmg, const float *pos, int focused)` | 107（森罗结界要高速/低速两条命中通道）|
 
@@ -280,7 +280,7 @@ CE_CARD(id, .回调 = 函数, ...);      /* 一张卡一条，放在 native/card
 
 ## 9. 主动卡（C 键）
 
-零售 12 张主动卡共用一套模板（`04-active-cards.md` §3–§5，样本 Tenshi）；SDK 把它做成三个回调字段（AUDIT O19–O21）：
+原生 12 张主动卡共用一套模板（`04-active-cards.md` §3–§5，样本 Tenshi）；SDK 把它做成三个回调字段（AUDIT O19–O21）：
 
 ```c
 CE_CARD(64, .active_recharge = 3600, .on_activate = f, .on_active_tick = g);
@@ -293,9 +293,9 @@ CE_CARD(64, .active_recharge = 3600, .on_activate = f, .on_active_tick = g);
 | `on_active_tick(c, elapsed)` | 持续态每帧；返回 0 = 结束进收尾 |
 
 SDK 在 `+0x2c` 桩里先跑状态机（空闲：清释放位、门控下递减充能；收尾：经过帧 > 8 回空闲；每帧门控下递增经过帧；
-门控 = 零售的：`zGui.msg == 0`（不在对话）且 `zEnemyManager.enemy_count_real != 0`——**场上没敌人时 C 键无效、充能也不走**），
-再调卡自己的 `on_tick_2`；`+0x34`（关卡开场）清状态与经过帧、不动充能，`+0x4c`（局末）连充能一起清——与零售一致。
-状态放私有状态（零售放 `+0x54`，超出 0x54 字节的基类对象）。充能存取 / HUD / replay 用的槽 `+0x38..+0x40` 透传基类。
+门控 = 原生的：`zGui.msg == 0`（不在对话）且 `zEnemyManager.enemy_count_real != 0`——**场上没敌人时 C 键无效、充能也不走**），
+再调卡自己的 `on_tick_2`；`+0x34`（关卡开场）清状态与经过帧、不动充能，`+0x4c`（局末）连充能一起清——与原生一致。
+状态放私有状态（原生放 `+0x54`，超出 0x54 字节的基类对象）。充能存取 / HUD / replay 用的槽 `+0x38..+0x40` 透传基类。
 主动卡的 JSON：`category: 0`。
 
 引擎辅助：`ce_play_sound(id, x)`（`0x476c70` stdcall + xmm2，三行内联汇编，AUDIT O22）；
@@ -303,14 +303,14 @@ SDK 在 `+0x2c` 桩里先跑状态机（空闲：清释放位、门控下递减�
 实体坐标 (0,0,0) = 场地正中，返回 anm id。特效脚本与卡图副本用 [`assets/ability/`](assets/ability/README.md) 追加进 `ability.anm`，
 脚本号 / sprite 号由 `build_ability.py` 生成到 `anm_ids.h`（`CE_ANM_ABILITY_SCRIPT_*`）。样例：反转牌 `on_activate` 起 `script68` 亮牌一圈。
 引擎侧一手：[`engine/anm/th18/01-vm-instantiate.md`](../../../engine/anm/th18/01-vm-instantiate.md)。
-`ce_add_life()` / `ce_add_bomb()`（`0x4575f0` 裸 ret / `0x457690` ret 4 带 dummy，AUDIT O26）：引擎自己的加法，钳上限、放音效、起特效；上限要一起涨照零售先 `+1` 钳 7。
+`ce_add_life()` / `ce_add_bomb()`（`0x4575f0` 裸 ret / `0x457690` ret 4 带 dummy，AUDIT O26）：引擎自己的加法，钳上限、放音效、起特效；上限要一起涨照原生先 `+1` 钳 7。
 `ce_gui_update_lives()`（`0x441f10` thiscall ret 0xc，AUDIT O28c）：改了 `CURRENT_LIVES` 之后刷 HUD 残机行。
 `ce_owned(id)`：读本 mod 搬迁后的 `owned[]`（`mgr+0xd70`）。注意 `owned[自己]` 在 ctor 之后才置 1。
 ★ **ctor 每关开始会再被调一次**（引擎对卡组里每张卡调 +0x00，实跑证实）：「获得即触发」的效果在 ctor 里先 `if (!ce_fresh_acquire(c)) return 0;`（= `owned[自己] == 0`）。即时卡（返回 1 当场销毁）不受影响。集卡判定用 `ce_royal_flush_ready(owned, self, set, n)`（sdk_core，有单测）。
 
 ## 10. 边界与不做的
 
-- 即时卡：`ctor` / `dtor` 里施加效果后 `return 1`（零售同款）；这种卡 `deck_visible: 0`（mode 1 不调 ctor，初始携带会是死卡）。ctor 里可以再调 `allocate_new_card`（AUDIT O17）。
+- 即时卡：`ctor` / `dtor` 里施加效果后 `return 1`（原生同款）；这种卡 `deck_visible: 0`（mode 1 不调 ctor，初始携带会是死卡）。ctor 里可以再调 `allocate_new_card`（AUDIT O17）。
 - 激光：`LASER_MANAGER` 另一套，反转牌不动它。
 - 对象大小固定 0x54：要更大对象的卡走第 4 节的私有状态，不改分配。
 - 事件断点每个都要过 AUDIT；本批只加一个。
@@ -341,7 +341,7 @@ CE_CARD(76, ..., .bullet_damage_permille = CE_DMG_UNIT);/* 古锭刀：初值 ×
 
 **边界写在名字里**：`bullet_damage` 只管 `bullet+0x9c`。炸弹、以及 `ce_damage_rect` 建的伤害源
 （青眼光束 / 炎魔火球 / 破损核心电弧 / 真银圣剑挥砍）走另一条管线，**不**受它影响。
-另外零售 `CardMomoyo`（54）是「从 shooter 基值重算并覆写」派，与我们谁靠后谁说了算——
+另外原生 `CardMomoyo`（54）是「从 shooter 基值重算并覆写」派，与我们谁靠后谁说了算——
 所以本层选择**就地乘**而不是重算，不然带着她时她的擦弹加成会被抹掉（AUDIT AA3）。
 
 ## 14. 在 HUD 上写字：`ce_hud_text`
@@ -350,7 +350,7 @@ CE_CARD(76, ..., .bullet_damage_permille = CE_DMG_UNIT);/* 古锭刀：初值 ×
 ce_hud_text(478.0f, 182.0f, 0xff800000u, "x%d.%02d", n, frac);
 ```
 
-零售 `CardMomoyo__on_draw` `0x4110a0` 就是「一张卡在 HUD 上画数字」的先例，这个原语照它复刻（AUDIT §AC）。三条规矩：
+原生 `CardMomoyo__on_draw` `0x4110a0` 就是「一张卡在 HUD 上画数字」的先例，这个原语照它复刻（AUDIT §AC）。三条规矩：
 
 - **只能在虚表 `+0x48 on_draw` 里调**。`AbilityManager__on_draw` `0x408ab0` 每帧遍历卡链表调它；
   在 `on_tick_2` 里调是 tick 阶段，不对。
@@ -384,7 +384,7 @@ native/
 
 ## 12. 装备卡（子机 + 自己的弹幕）
 
-零售的「子机会开火」那类卡（各角色 `*_OP`）是两个槽的事，本 mod 现在能照着写。
+原生的「子机会开火」那类卡（各角色 `*_OP`）是两个槽的事，本 mod 现在能照着写。
 **破损核心（71）**（`cards/broken_core.c`）只用了前一半（子机），后一半（SHT 连射）它第一版用过、
 后来换成定点伤害源——它要的是「瞬发单体」，自机弹天生要飞过去。
 **下面 ②–⑤ 的第一个真用户是豌豆射手（77）**（`cards/peashooter.c`，两组 shooterset 切换 + 自己数 short_timer，AUDIT §AJ）。引擎一手在
@@ -411,11 +411,11 @@ ce_option_drop(c, &s->opt);
 
 四条要点：
 
-- **子机指针别存 `card+0x54`**（零售存那儿）：新卡对象只有 `0x54` 字节，那已经在对象外。用 `ce_state()`。
+- **子机指针别存 `card+0x54`**（原生存那儿）：新卡对象只有 `0x54` 字节，那已经在对象外。用 `ce_state()`。
   槽是 12 个的公共池，每次用前认领一次（`option+0x00 != 0 && option+0xd0 == card+0x08`）——
   这套认领 / 申请 / 收起 2026-09-08 收进了 SDK 的 `ce_option_*`（AUDIT §AD），卡里不用再抄一遍。
 - **弹幕数据**要往四个 `pl0X.sht` 里加一组 shooterset：`assets/sht/append_shooterset.py` 的 `APPEND` 表加一项，
-  `make sht` 生成 `build/sht/*.sht` 与 `sht_ids.h`（`CE_SHT_SET_<NAME>`）。零售用了 23 项、总共 40 项，
+  `make sht` 生成 `build/sht/*.sht` 与 `sht_ids.h`（`CE_SHT_SET_<NAME>`）。原生用了 23 项、总共 40 项，
   **还剩 16 个空位**。脚本每次都回读校验解析不变式（AUDIT U5）。
 - **弹的贴图也在 `ability.anm`**：引擎开火期间把 `player+0x10` 换成它，所以 shooter 的 anm 字段填
   `CE_ANM_ABILITY_SCRIPT_*`。不用碰四个 `pl0X.anm`。
@@ -429,7 +429,7 @@ ce_option_drop(c, &s->opt);
   所以别用引擎自己的 `player+0x476d4`——它只在 0..14 循环、松开射击键还会跳，表达不出「85 帧一颗」这种节奏。
   自己维护一个计数器，换形态时清 0，切过去那一帧就能立刻出膛（豌豆射手 77 的做法）。
 - **每敌每帧伤害上限**：单发伤害超过 `sht+0x28`（Reimu 90 / Marisa 160 / Sakuya 60 / Sanae 120）就会被砍。
-  要么把伤害拆成多发小弹（零售子机卡都是 6–32），要么在 `on_tick_2` 里 `ce_raise_damage_cap()`
+  要么把伤害拆成多发小弹（原生子机卡都是 6–32），要么在 `on_tick_2` 里 `ce_raise_damage_cap()`
   （只在自己的弹可能命中的那几帧抬，别常开——那是对自机弹的隐形加强）。
 
 ## 15. HUD 小卡上的一位数字：`ce_hud_digit_*`
@@ -480,7 +480,7 @@ ce_hud_vm_text_clear(&s_digit);
 | 字距 | `scale_x × 7`；**`.` 特例 `× 4`** |
 | 水平对齐 `align_h` | `0` 居中（每字退半个字距）、`1` 左、`2` 右（退满整串宽）|
 | 垂直对齐 | 取 **ASCII 环境的 `align_v`**（`mgr+0x19254`）：0 居中（退半行高）、1 顶、2 底；行高 = `scale_y × 10` |
-| 字形 | TH18 **font 2** 的零售切图（`make_font2_art.py` → `ability.anm` 的 `FONT2_*`，脚本 136，16×32 entry 里 16×20 字形居中）|
+| 字形 | TH18 **font 2** 的原生切图（`make_font2_art.py` → `ability.anm` 的 `FONT2_*`，脚本 136，16×32 entry 里 16×20 字形居中）|
 
 认得的字符：`0-9 . % + -`（其余按字距跳过、不画；空格就是「跳过一个字距」）。
 ⚠️ 引擎有个怪癖：**空格紧跟 `.` 之后时字距会沿用 `.` 的 4**（`local_c` 只在画字时更新）——
@@ -504,3 +504,60 @@ ce_hud_vm_text_clear(&s_digit);
 
 **层位**：想被暂停模糊罩盖住，VM 必须放 **UI 层 25**（`AnmManager__render_layer` 折到 38 ⇒
 与模糊罩同一个绘制桩）—— 见 §16 与 [`engine/anm/th18/03`](../../../engine/anm/th18/03-ascii-text.md) §2f。
+
+## §改发弹 / 改弹道：踩过的坑与铁律（2026-09-13 总结；108 必读）
+
+> 来源：117「鬼形兽」复刻 TH17 咆哮时，为了「换整组 shot set」「咆哮期间停掉子机普通弹」
+> 「收掉换组前打出去的旧束」一共踩了三次坑。108（永夜抄使魔）与 77 / 116 也走同一条子机路径，
+> 同一类坑会原样重现 —— 动手前先读这一节。
+
+### 1. 断点站点必须 ≥ 5 字节（否则新卡全废）
+
+- thcrap 的 sourcecave 下限是 **5 字节**；窗口更小 ⇒ 断点**静默不装**。
+- 后果不是"少个功能"，而是**灾难链**：`ce_sdk_setup` 回读失败 → SDK 门 FAIL →
+  `restore_alloc_bound` 把 `allocate_new_card` 的界打回原生 56 → **所有新卡 id 都造不出卡对象**；
+  而存档 / 编成里还写着新 id ⇒ 玩家看到「卡图变垃圾（`滚木`）+ 编成槽当场消失、后槽前移、可带数 −1」。
+- 现在有构建期硬门：`native/sites.py` 对任何 `cavesize < 5` 直接报错。
+- 站点还要**不含相对寻址/跳转目标**（thcrap 的 `cave_fix` 只重定位开头的 `e8/e9`；
+  `0f 84` 之类复制进 cave 会按原位移跳飞）。
+
+### 2. 换组（shot set 重定向）管不到**已经发出去的弹**
+
+- 主炮路径 `Player__tick_shooting_state th18:0x45ea00` 的 set 查询**只有一处**：`0x45ebfb`
+  （`mov edi,[edi+edx*4+0xe0]`）；聚焦位只是在 `0x45ebf2..f8` 给 `edx` 加 `1+sht[0x20]`，
+  两条通道都落到同一个站点 ⇒ 想做「按聚焦分派」不必找第二处。
+- 但 `mode=2` 激光的**存活完全不跟 set**：`tick2`（`0x45fc80`）的自杀条件只有
+  `0x4601e0 cmp [player+0x476d4],0 / jl`（= **射击短计时 < 0**，即松开 Z），
+  而且 `0x45fcc8 mov eax,[edi+0xe4]` 每帧把束**钉在发射它的子机上**。
+  ⇒ 换组前打出去的束会一直挂着，看起来就是「子机还在打普通激光」。
+
+### 3. 手工收束一条 `mode=2` 束：必须照引擎的**三步**走
+
+引擎自己的自杀段（`tick2` `0x46026f..0x4602c1`）依次做：
+
+| 步 | 地址 | 动作 |
+|---|---|---|
+| 1 | `0x460296` | `slot+0x8c = 2`（state） |
+| 2 | `0x4602a0` | `AnmManager__interrupt_tree(vm, 1)`（束 VM 收尾） |
+| 3 | `0x4602c1` | **`player+0x476fc + idx*4 = 0`（去重/占用锁清 0）** |
+
+- **漏第 3 步的后果（我们踩过）**：`Player__shoot_one_bullet 0x45e954..0x45e976` 见到该槽非 0
+  就**整条 `mode=2` row 早退 `ret 0x10`** ⇒ 那个**子机槽永久不再发射**（用户看到「2p 只有右侧发 /
+  4p 最左不发」，`retry` 重开一局才恢复，因为只有重开才重置 `player+0x476fc`）。
+- 解码第 3 步的 idx：`0x4602a8` 同款 —— `slot == 0` 跳过；`< 0x10` 取**低 4 位**，否则取**高 4 位**。
+- 弹槽布局（一手 `Player__tick_bullets 0x45edb0`）：基址 `player+0x1570`、**512** 槽、
+  stride **0xf8**；state 在 `slot+0x8c`、VM 句柄在 `slot+0x08`。（旧注释写的「512 × 0x9c」是笔误。）
+- 现成实现：`native/sdk.c` 的 `ce_kill_retail_option_lasers()` + `ce_mode2_lock_clear()`，
+  只收 `packed set ≤ 0x15` 且 `row+0x21 == 2` 的弹，且**只在 117 咆哮期每帧调用**。
+
+### 4. 通用铁律（108 / 77 / 116 同用）
+
+1. **只写引擎自己也写的字段、按同样顺序**；能少写一格就少写一格。
+2. 处理范围要**收得足够窄**：117 只管 `0x1e..0x27`；108 的组是 `0x16`、77/116 是 `0x17..0x1d`
+   —— 别家的弹一个字节都别碰。
+3. 想去掉一条弹/一束光：优先**让引擎自己走自杀段**（哪怕只是把它的计时器推到条件成立），
+   其次才是手写那三步；手写时必须把**状态类副作用**（锁、计时器、VM 句柄）在同一条路径上复原。
+4. 任何「拦住 / 跳过」型断点（跳到函数自己的收尾，如 `0x40a9c3 → 0x40aa9e`）必须核对**栈平衡**
+   —— `ret 0x10` 的收尾是函数自己的 epilogue，用错地址会踩坏调用者。
+5. 门失败要让玩家**看得出原因**（日志 + 每关卡对象 `ce_integrity_check()` 自检），
+   而不是把新卡变成垃圾图。

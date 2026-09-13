@@ -1,5 +1,5 @@
 script script136 {
-    // HUD 字形（TH18 **font 2** 的零售字形，见 assets/ability/make_font2_art.py）——
+    // HUD 字形（TH18 **font 2** 的原生字形，见 assets/ability/make_font2_art.py）——
     // 「贴图 VM 版数字」用的模板脚本：C 侧 ce_hud_vm_text_set 逐字起一个 VM、用 ce_anm_set_sprite 换字形。
     // 为什么不继续用 ASCII 文字（ce_hud_text_ex）：ASCII 永远进不了暂停模糊罩下面 ——
     //   组 1 的绘制趟（0x419950，优先级 0x37）跑在 surface 1 + 相机 0 上（实跑不可见），

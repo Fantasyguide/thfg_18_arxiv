@@ -37,7 +37,7 @@ TH16/TH18 的全局表里还留着 `GRAZE_IN_CHAPTER` 这类字段，但没有�
 
 ## th18 现状（2026-09-09 一手，2026-09-10 复核）
 
-TH18 **保留了 opcode 524 且零售脚本还在调**（`ins_524(43)` = boss 入场、`ins_524(2)` = 道中 boss 退场、
+TH18 **保留了 opcode 524 且原生脚本还在调**（`ins_524(43)` = boss 入场、`ins_524(2)` = 道中 boss 退场、
 关卡脚本开场 `0` 与进 boss 前 `41`；`81`/`22` 在 boss 对话与 debug 子程序里），但引擎只剩「记章号」：
 没有延迟标志位、没有每章结算、`GRAZE_IN_CHAPTER` 只写不读。**这套东西在 TH18 是死代码**——
 `engine/chapter/th18/01-chapter-residuals.md`。

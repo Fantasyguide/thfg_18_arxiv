@@ -41,11 +41,11 @@ TH15 还额外 `CURRENT_PIV += 100`、弹擦弹数浮字、置道具减速因子
 | **圆形**（`flags & 0x10`） | `d² < (r + max(br/2.5, 40.0))² + br²` | `0x4b921c`=2.5、`0x4b92c4`=**40.0** | `th15:0x455d00`（`th15:0x4cff28`=2.5、`th15:0x4cffb8`=40.0） |
 | **矩形**（其余） | 弹中心 vs 自机判定框外扩 24.0 | `0x4b92a4`=24.0 | `th15:0x455be0`（`th15:0x4cffa0`=24.0） |
 
-- 自机判定圆半径 `player+0x4799c`（非聚焦）/ `+0x479a0`（聚焦）＝零售 **3.0**；
-  矩形半宽高 `player+0x479a4`/`+0x479a8` ＝零售 **1.5**。
+- 自机判定圆半径 `player+0x4799c`（非聚焦）/ `+0x479a0`（聚焦）＝原生 **3.0**；
+  矩形半宽高 `player+0x479a4`/`+0x479a8` ＝原生 **1.5**。
 - **「额外圈」= 圆形模式的 40 px 边距**（圆弹 br≈4–8 → 有效擦弹半径 ≈ 43–50 px）。
   两作常量逐项相同，**不是 TH15 独有**。
-- `flags & 0x10` 时若自机带 `inner.flags & 0x10`（DDC 残留的 player_scale 门，零售无人置位）
+- `flags & 0x10` 时若自机带 `inner.flags & 0x10`（DDC 残留的 player_scale 门，原生无人置位）
   还会再乘 `player_scale × 3.6` —— 见 [`_shared/version-residuals.md`](../../_shared/version-residuals.md)。
 
 **同一颗弹能擦几次**：TH15 有 per-bullet 计时器 `bullet+0x1464`（擦后置 30 帧，`idiv` 余数门，

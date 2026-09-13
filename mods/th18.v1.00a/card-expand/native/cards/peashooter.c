@@ -15,7 +15,7 @@
  *      填 `CE_ANM_ABILITY_SCRIPT_PEA` / `_PEA_SMALL`，四个 `pl0X.anm` 一个字节都不动。
  *
  * 每敌每帧伤害上限：平时那颗 130 装不进 Reimu 的 90，所以有豌豆在途的帧把它抬到 PEA_CAP
- * （零售 `CardRemilia__on_tick_2` `0x40f48e` 就是这么干的）。开大那排 7 × 7 = 49 反而不用抬。
+ * （原生 `CardRemilia__on_tick_2` `0x40f48e` 就是这么干的）。开大那排 7 × 7 = 49 反而不用抬。
  *
  * 纯逻辑（节奏状态机）在 peashooter_core.c，主机单测。审计 AUDIT §AJ。 */
 #include "sdk.h"
@@ -31,7 +31,7 @@ typedef struct {
     pea_state_t st;
 } ps_card_t;
 
-/* +0x18：开局 / 火力档变 / 关店后广播，池刚被重建过 —— 无条件重新申请，与零售装备卡一致。 */
+/* +0x18：开局 / 火力档变 / 关店后广播，池刚被重建过 —— 无条件重新申请，与原生装备卡一致。 */
 static int on_power_level_change(ce_card_t *c)
 {
     ps_card_t *s = ce_state(c, ps_card_t);
@@ -44,7 +44,7 @@ static int on_power_level_change(ce_card_t *c)
 static void on_run_reset(ce_card_t *c)
 {
     ps_card_t *s = ce_state(c, ps_card_t);
-    ce_option_drop(c, s ? &s->opt : 0);      /* 删子机 VM + 清零售在此清的 flags bit1 */
+    ce_option_drop(c, s ? &s->opt : 0);      /* 删子机 VM + 清原生在此清的 flags bit1 */
     if (s) pea_clear(&s->st);
 }
 

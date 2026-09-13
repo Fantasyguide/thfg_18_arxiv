@@ -7,7 +7,7 @@
 
 | 项 | 值 |
 | --- | --- |
-| exe | `local/th16.v1.00a/th16.exe`，683,520 B，md5 `70d3429444e1e6c18a72e7200a4d7ce8`（**Steamless 脱壳版**；零售 md5 `cb9caf54ce5738f70086e783ec88fd2a` 因 PE 容器重建而不同，代码段一致）|
+| exe | `local/th16.v1.00a/th16.exe`，683,520 B，md5 `70d3429444e1e6c18a72e7200a4d7ce8`（**Steamless 脱壳版**；原版 md5 `cb9caf54ce5738f70086e783ec88fd2a` 因 PE 容器重建而不同，代码段一致）|
 | imagebase | `0x400000`（32 位 PE） |
 | Ghidra 工程 | `local/th16.v1.00a/ghidra_projects/th16.exe.{gpr,rep}` |
 | MCP `database_id` | `th16` |

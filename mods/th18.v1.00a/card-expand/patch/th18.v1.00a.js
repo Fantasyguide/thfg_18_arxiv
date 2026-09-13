@@ -24,12 +24,12 @@
       "code": "fc60bf<codecave:th18_card_table>be<Rxc53c0>b9f2020000f3a5bbc5000000be<codecave:th18_card_table+b60>b90d000000f3a54b75f1bf<codecave:th18_card_jumptable>be<Rx12dac>b939000000f3a5b8<Rx11489>b9c6000000f3abbf<codecave:th18_card_order>be<Rxb3600>b939000000f3a5b839000000b9c6000000f3ab61c3",
       "export": true,
       "access": "RX",
-      "title": "开机把零售表（与跳转表）拷进 codecave；BP_ce_gate 完成运行时提交与回读"
+      "title": "开机把原生表（与跳转表）拷进 codecave；BP_ce_gate 完成运行时提交与回读"
     },
     "th18_card_pool": {
       "size": "0x8000",
       "access": "RW",
-      "title": "商店随机池搬迁目标（8192 dword；零售是 ebp-0x8c4 的 560 格栈缓冲）"
+      "title": "商店随机池搬迁目标（8192 dword；原生是 ebp-0x8c4 的 560 格栈缓冲）"
     },
     "th18_snd_cfg": {
       "size": "0x910",
@@ -55,7 +55,7 @@
       "code": "fc60bf<codecave:th18_snd_cfg>be<Rxc9b80>b9a4010000f3a5b854000000bb20000000ab83c710404b75f8bf<codecave:th18_snd_names>be<Rxb47a0>b949000000f3a561c3",
       "export": true,
       "access": "RX",
-      "title": "开机把零售 84 行 cfg 与 72 个 wav 名从用户的 exe 拷进 codecave，并给 32 个新行写 +0 = 槽号 的骨架（不变式 I1 / I2）"
+      "title": "开机把原生 84 行 cfg 与 72 个 wav 名从用户的 exe 拷进 codecave，并给 32 个新行写 +0 = 槽号 的骨架（不变式 I1 / I2）"
     }
   },
   "binhacks": {
@@ -1281,7 +1281,7 @@
       "addr": "0x4713d8",
       "code": "81fe<codecave:th18_snd_blobs+120>",
       "expected": "81fe04d15600",
-      "title": "音效表扩容：WinMain 释放尾界（★ 只到零售 72）"
+      "title": "音效表扩容：WinMain 释放尾界（★ 只到原生 72）"
     },
     "snd_4766d3": {
       "addr": "0x4766d3",
@@ -1331,13 +1331,13 @@
       "addr": "0x418e04",
       "cavesize": 8,
       "expected": "c6843e88f5050001",
-      "title": "mark_obtained 的写 → BP_ce_unlock_write：影子[id]=1；id<57 放行原指令写零售存档，否则写 side-car"
+      "title": "mark_obtained 的写 → BP_ce_unlock_write：影子[id]=1；id<57 放行原指令写原生存档，否则写 side-car"
     },
     "ce_save_loaded": {
       "addr": "0x46398a",
       "cavesize": 6,
       "expected": "8db3b8f40500",
-      "title": "ScoreFile__load 尾段 → BP_ce_save_loaded：影子[0..56] ← 零售存档，[57..] ← side-car"
+      "title": "ScoreFile__load 尾段 → BP_ce_save_loaded：影子[0..56] ← 原生存档，[57..] ← side-car"
     },
     "ce_unlock_all": {
       "addr": "0x4648fe",
@@ -1446,6 +1446,12 @@
       "cavesize": 7,
       "expected": "8bbc97e0000000",
       "title": "行为 SDK → BP_ce_shot_set_index：Player__tick_shooting_state 0x45ea00 查主炮 shooterset 前的 mov edi,[edi+edx*4+0xe0]（7 字节，无相对寻址）。edx = 本帧 fire-time set index（0..9 主炮；eax = 火力档），ebp-8 暂存同一 set index，随后 0x45ec69 会打包进 bullet+0xac。\nhandler 沿卡链表问 on_shot_set_index(card, eax)：返回 >=0 时改写 edx 与 [ebp-8] 为咆哮组 base+power，放行原指令；不咆哮/无卡时返回 -1，原版主炮 0..9 一个字节都不动。"
+    },
+    "ce_option_shot_gate": {
+      "addr": "0x40a9c3",
+      "cavesize": 6,
+      "expected": "8b550883ec0c",
+      "title": "行为 SDK → BP_ce_option_shot_gate：Player__tick_shooters_for_ability_card 0x40a9c0 的序言后 `mov edx,[ebp+8]; sub esp,0xc`（两条完整指令，6 字节，无相对寻址 / 无窗内跳转目标）。选 6 字节是因为 thcrap 的 sourcecave 下限是 5 字节：上一版只取 3 字节的 `mov edx,[ebp+8]`，thcrap 直接以 `cavesize too small` 拒绝装载，SDK 门回读失败后触发 `restore_alloc_bound` 降级路径 —— 存档/编成里已有新 id 时会踩出「卡 id 变垃圾 / HUD 槽消失」。**不能用 `0x40a9cb` 的 6 字节 `je`**：thcrap 的 cave_fix 不重定位 `0f 84 rel32`，复制进 cave 后会跳飞。handler 返回 1 = 执行完整两条原指令；返回 0 且 retaddr=0x40aa9e 才跳过本组（`mov esp,ebp` 重设栈顶）。⚠ 当前 C 侧 `CE_OPTION_SHOT_GATE_ENABLE` 默认 0（不启用），只为让门回读通过并保留实现。"
     },
     "ce_shop_bought": {
       "addr": "0x4183ea",

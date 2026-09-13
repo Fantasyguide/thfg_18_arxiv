@@ -1,8 +1,15 @@
 script script163 {
     // ★ 2026-09-11 九修（AUDIT §AL39）：魔理沙 EAGLE 卡侧矩形束的视觉。
-    //   sprite29 = TH17 pl01.anm entry0 的 512×32 激光条（抽取物与 TH18 同名贴图逐字节一致）；
-    //   anchor(1,0) + rotate(-90°)、C 每帧把 VM 钉在自机位置并保持 scale=(1,1)，
-    //   束从自机沿画面正上方拉出 512 px（与蓝眼 script80 同款画法）。
+    // ★ 2026-09-13 bug6 修正：逐条照抄 TH17 `pl01.anm` script16（= `engine/sht/th17/02` §4 的
+    //   pl01 EAGLE 实际脚本）的渲染语义：
+    //   · sprite29 = (0,288,512,32) 激光条；anchor(1,0) = **左端锚**（`engine/anm/th16/10` §2：
+    //     h=1 四角 x=0,+1,0,+1）⇒ 图左端贴 VM、本地 +x 往外伸；rotate(-90°) 后本地 +x = 屏幕上。
+    //     所以 **VM（自机）在束的近端**，512 px 远端朝外。
+    //   · `scrollX`：贴图沿束方向往外流（TH17 script16 的 `fset(%F0,%RANDF); +1: scrollX(-1/21)`），
+    //     即用户看到的「贴图真的在被发射出去」。
+    //   · 长度/宽度由 C 每帧写 scale（见 animal.c 的 `ANIMAL_EAGLE_BEAM_SCALE` / `eagle_beam_vis_len`：
+    //     两轴同一个倍数 SCALE，满长 512×4=2048 px；每发外扫只让 x 从 SCALE×MIN_FRAC 涨到 SCALE）——
+    //     脚本里**不能**再跑 scaleTime，否则插值器会覆盖 C 的写入。
     layer(13);
     sprite(@EAGLE_BEAM);
     type(1);
@@ -10,10 +17,14 @@ script script163 {
     blendMode(1);
     alpha(176);
     rotate(0.0f, 0.0f, -1.5707964f);
-    scale(1.0f, 1.0f);
+    scale(1.0f, 4.0f);
+    fset(%F0, %RANDF);
+    scrollX(%F0);
++1: // 1
+    scrollX(-0.04761905f);
     stop();
     interruptLabel(1);
-    scaleTime(6, 1, 0.0f, 1.0f);
+    scaleTime(6, 1, 1.0f, 0.0f);
 +6: // 6
     delete();
 }

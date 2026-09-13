@@ -10,7 +10,7 @@
 
 - **① 召唤实体**：`CardLilyWhite__c_press` `th18:0x40fe70` 用 `EnemyManager__allocate_new_enemy` `th18:0x42d7d0` 按**名字**创建 ECL 敌机 `ItemCarryLily`（每第 3 次为 `ItemCarryLily2`）。它是一个**普通 zEnemy**（不是 boss 注册对象）：有血量、hurtbox、被自机弹打、死亡走通用掉落。**召唤路径可复用**，但**行为不可复用**（上浮+开火+随机漂移+下坠写死在 `default.ecl`）；要 UFO 的飘行/变色必须加 ECL 子程序或 C 侧驱动。🟡→✅
 - **② 道具磁吸**：TH18 的 state 3/4 吸附目标**硬编码为 `PLAYER_PTR->inner.pos`**（`th18:0x445f79` / `th18:0x446030` 读 `player+0x620/624`），zItem **没有任何「指定目标点」字段**。让非自机实体吸引道具只能：**A. C 侧每帧扫池直写 pos（推荐 Stage 1）**；**B. patch 两处目标读点改成卡写的全局目标（Stage 2）**。两者都确定性、replay 安全；A 不碰引擎代码，风险最低。✅
-- **最推荐落地路线**：id 112 做成主动卡（充能 7200，对齐零售 Lily）→ 计数满时用新增 `ce_spawn_enemy` 复用 `th18:0x42d7d0` 召唤一个占位敌机 → `on_item_frame` `th18:0x446ee3` 里 C 侧伪磁场把 P/点道具拉向 UFO、到近处用新增 `ce_item_despawn`（复刻 `th18:0x44658a` 尾段）吸收 → UFO 死/吸满时 `ce_spawn_item` 开奖。Stage 2 再补自定义 ECL 子程序与原生目标重定向。
+- **最推荐落地路线**：id 112 做成主动卡（充能 7200，对齐原生 Lily）→ 计数满时用新增 `ce_spawn_enemy` 复用 `th18:0x42d7d0` 召唤一个占位敌机 → `on_item_frame` `th18:0x446ee3` 里 C 侧伪磁场把 P/点道具拉向 UFO、到近处用新增 `ce_item_despawn`（复刻 `th18:0x44658a` 尾段）吸收 → UFO 死/吸满时 `ce_spawn_item` 开奖。Stage 2 再补自定义 ECL 子程序与原生目标重定向。
 
 ---
 
@@ -258,7 +258,7 @@
 | 吸引 | C 侧伪磁场（方案 A）| 引擎目标重定向（方案 B）|
 | 开奖 | `ce_spawn_item` + 固定表 | 颜色/稀有度、赏金道具（对齐 TH12 `th12:0x44af00`）|
 | 死亡识别 | 扩展 `on_enemy_drop_pre` 带 enemy | 多 UFO trampoline / 原生回调 |
-| HUD | `ce_hud_digit_*` | 原生 `front.anm` 血条/横幅（对齐 TH12）|
+| HUD | `ce_hud_digit_*` | 原版 `front.anm` 血条/横幅（对齐 TH12）|
 
 **明确标 ❓自定**（原版 TH18 没有对应实现）：UFO ECL 子程序、token 道具类型、吸引半径/速度、吸满阈值、奖励表、HUD 布局、音效 id。
 

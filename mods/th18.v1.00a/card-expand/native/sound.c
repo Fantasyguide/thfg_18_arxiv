@@ -1,19 +1,19 @@
 /* sound.c —— 音效表扩容的 DLL 侧：填语音 blob、写新行配置、自检。
  *
  * 时序（docs/superpowers/specs/2026-09-05-voice-expand-design.md §3.4）：
- *   codecaves_apply 末尾  th18_snd_patch_init  拷零售 84 行 cfg + 72 个 wav 名 + 新行骨架
+ *   codecaves_apply 末尾  th18_snd_patch_init  拷原生 84 行 cfg + 72 个 wav 名 + 新行骨架
  *   binhacks_apply        51 处站点改写
  *   BP_ce_snd_gate        ← 本文件。0x476410 入口，引擎还没读表
  *   放行后                循环1 初始化 116 槽、循环2 逐行建 buffer
  *
  * ★ blob 的字节直接用 thcrap stack_game_file_resolve 的返回，不拷贝、不释放：
- *   WinMain 的释放循环尾界刻意只到零售 72（binhack snd_4713d8），跨堆 free 会崩。
+ *   WinMain 的释放循环尾界刻意只到原生 72（binhack snd_4713d8），跨堆 free 会崩。
  *   进程此刻正要退出，这个「泄漏」到此为止。
  *
  * ★ 两条不变式（engine/_shared/th18-sound-table.md §6），破了不是崩而是挂死/跑飞：
  *   I1  116 行的 +0 两两不同且恰好覆盖 0..0x73 —— 循环 1 的扫描没有上界
  *   I2  116 行的 +4 指向的 blob 槽都非 NULL —— 0x4776f0 遇 NULL 进 Sleep(10) 死等。
- *       零售 0..71 由预加载线程异步填（那个等待循环就是为它们写的）；72.. 只有 DLL 会填，
+ *       原生 0..71 由预加载线程异步填（那个等待循环就是为它们写的）；72.. 只有 DLL 会填，
  *       所以自检只对 >= 72 的下标断言。
  */
 #include <stdio.h>
@@ -76,7 +76,7 @@ static uint8_t *cfg_row(uint8_t *cfg, int j) { return cfg + j * CE_SND_CFG_ROW; 
 static uint32_t rd32(const uint8_t *p, int off) { return *(const uint32_t *)(p + off); }
 static void     wr32(uint8_t *p, int off, uint32_t v) { *(uint32_t *)(p + off) = v; }
 
-/* 把 32 个新行退回 patch_init 写的骨架：+4 = 0（指零售 wav 0，I2 仍成立）、其余清零。 */
+/* 把 32 个新行退回 patch_init 写的骨架：+4 = 0（指原生 wav 0，I2 仍成立）、其余清零。 */
 static void rollback(uint8_t *cfg, uint8_t **blobs, char **names)
 {
     for (int k = 0; k < CE_SND_NEW_N; ++k) {
@@ -119,7 +119,7 @@ static int selfcheck(uint8_t *cfg, uint8_t *slots, uint8_t **blobs)
             ce_verdict("snd: FAIL row %d wav index %u out of range", j, wav);
             return 0;
         }
-        /* I2 只对**我们负责**的槽成立：零售 0..71 由预加载线程异步填，此刻可能还没好
+        /* I2 只对**我们负责**的槽成立：原生 0..71 由预加载线程异步填，此刻可能还没好
          * —— 0x4776f0 的 Sleep(10) 等待循环正是为它们准备的。而 72.. 只有 DLL 会填，
          * 没填就永远等不到，那才是真的挂死。 */
         if (wav >= (uint32_t)CE_SND_NAMES_N && !blobs[wav]) {
@@ -223,7 +223,7 @@ int ce_sound_init(void)
     ce_log("snd: caves cfg=%p names=%p slots=%p blobs=%p",
            (void *)cfg, (void *)names, (void *)slots, (void *)blobs);
 
-    /* patch_init 生效了没有：零售第 0 行的 +0 应为 0，最后一个新行的 +0 应为 0x73。 */
+    /* patch_init 生效了没有：原生第 0 行的 +0 应为 0，最后一个新行的 +0 应为 0x73。 */
     if (rd32(cfg_row(cfg, 0), 0) != 0 ||
         rd32(cfg_row(cfg, CE_SND_ROWS_TOTAL - 1), 0) != (uint32_t)(CE_SND_ROWS_TOTAL - 1)) {
         ce_verdict("snd: FAIL patch_init did not fill the cave (row0.+0=%u last.+0=%u)",
