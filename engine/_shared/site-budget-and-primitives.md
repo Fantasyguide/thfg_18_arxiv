@@ -191,3 +191,33 @@
 - TH08 使魔的行结构与六个回调：`engine/player/th08/01-youkai-familiars-first-hand.md`；
 - 更新链（谁在什么时候 tick）：`engine/_shared/frame-loop.md`（§4 = TH18 逐条对照）；
 - 工具：`tooling/xref.py`、`tooling/crashdump/dmp.py`（+ README）。
+
+## 4. 验证批次台账（每个原语的第 ④ 件）
+
+**一键入口**：`mods/th18.v1.00a/card-expand/native/tools/verify.py`（发布仍**只有** `tools/deploy.py` 一条路，
+本脚本只是调用它）。三种用法：
+
+```bash
+python3 native/tools/verify.py --list                  # 看台账
+python3 native/tools/verify.py storm-chain --deploy    # 先发布、再打印操作单
+python3 native/tools/verify.py all --check             # 用户实跑后，读日志判读（退出码 1 = 未通过）
+```
+
+**为什么不是"按键触发"**：用户 2026-09-13 口径 = **发布版关闭调试键**（`ANIMAL_DEBUG_KEY 0`）
+⇒ 判读改走**日志**：`--check` 只取日志**本次启动段**（分界线 `=== th18_card_expand … ===` 之后），
+逐条比对「必需判据 / 旁证 / 反例」。
+
+| 原语 | 卡 | 必需判据（日志）| 缺口 |
+| --- | --- | --- | --- |
+| 拦截 Z (09) | 109 | `pofv: ctor (T = …` + `pofv: CA L…` | 拦 Z 本身无逐帧日志（靠 CA 行间接证明），可接受 |
+| 蓄力 (09) | 109 | `pofv: CA L…`（档位/半径）| 档位数值仍是 `❓ 自定` 占位 |
+| 暴风连锁 (09) | 109 | `pofv: blast chain N r …`（N 递增 = 经真小怪传播）| 反例 `blast queue full` 需一起判读 |
+| 创建灵魂 (09) | 109 | ⚠ **无正向日志**（只有 `pofv: guzei activated N spirits` 旁证）| **下一轮给 109 补一行收尾计数日志** |
+| 创建使魔 (08) | 108 | `youkai: run done - N familiars spawned` | 无 |
+| 关闭发弹口 (08) | 108 | `youkai: emitter gate ACTIVE - slot …` | 无 |
+| 创建敌人 (12) | 112 | `ufo: ce_spawn_enemy(` | 无 |
+| 收点 (12) | 112 | `ufo: BREAK color … P + … money absorbed` | 无 |
+
+**总验收（106–117 全装）**：`verify.py all --check` 一次跑完八个原语的判据；另外要确认
+**每张卡自己都在场**（装载自检行：`pofv: ctor …`、`trance: load — …` 等）——
+少一张卡的判据全绿是**假绿**，所以矩阵里每个原语都要记「哪张卡提供判据」。
