@@ -13600,3 +13600,10 @@ Player / Stage / AsciiManager / Bomb*（运行期动态）…）；摘链者 = �
 先跟本批次对口径。**没有**改 `sdk.h` / `sdk.c` / `sites.py` / `Makefile` / `cards_def.c`；
 **没有**新增站点；**没有**触碰存档（`ce_give_card` 只发卡，不改卡组容量 —— 见 `COMPAT-MATRIX.md` §7.1 的更正）。
 
+**★ 附带修掉的流程漏洞（2026-09-17，导致过一次闪退）**：`native/tools/deploy.py` 原来**只发 patch 入口 + DLL**，
+`patch/**` 里的**数据文件**（`th18/cards.js` 等）从来不同步进 modkit。加卡 118 时踩到：DLL 里注册了行为、
+归档里的数据行没有 ⇒ SDK 自检 `FAIL: card 118 has a behavior in the DLL but no entry in cards.js`
+⇒ **新 id 全体停用**（回落零售 56，日志 `mitigation: allocator bound restored to retail`）
+⇒ 存档/卡组仍指着新 id ⇒ **编成闪退**。修法：deploy.py 新增「数据文件同步」（`patch/**` → 归档，跳过已覆盖的
+patch 入口）并把回读校验改成**按来源各自比 md5**（旧写法「`.js` 一律比 patch」会把正常发布判成失败）。
+验证：`MODKIT_DIR=… python3 tools/deploy.py` ⇒ `✅ 全部回读一致：patch（1 份）、DLL（3 份）、数据文件 8 份`。

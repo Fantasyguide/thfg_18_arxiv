@@ -61,6 +61,22 @@ def main():
             (DLL,   os.path.join(a.modkit, "thcrap", "repos", "Renko_1055", PKG, "th18_card_expand.dll")),
         ]
 
+    # ★ 数据文件同步（2026-09-17 补）：deploy 原来只发 patch 入口 + DLL ⇒ `th18/cards.js` 这类
+    # **数据**永远进不了 modkit。加卡 118 时踩到：DLL 里有行为、归档里没有数据行 ⇒ SDK 自检
+    # `FAIL: card N has a behavior in the DLL but no entry in cards.js` ⇒ **新 id 全体停用**
+    # （回落零售 56）⇒ 存档/卡组还指着新 id ⇒ 编成闪退。发布路径必须连数据一起发。
+    if a.modkit:
+        patch_root = os.path.abspath(os.path.join(NATIVE, "..", "patch"))
+        if os.path.isdir(patch_root):
+            arch_root = os.path.join(a.modkit, "thcrap", "repos", "Renko_1055", PKG)
+            for dirpath, _dirs, names in os.walk(patch_root):
+                for n in names:
+                    src = os.path.join(dirpath, n)
+                    rel = os.path.relpath(src, patch_root)
+                    if rel == os.path.basename(PATCH):      # 已由 PATCH 那条覆盖
+                        continue
+                    targets.append((src, os.path.join(arch_root, rel)))
+
     print("① 构建（任一步失败即中止，什么都不发）")
     if not a.skip_build:
         for cmd in (["make", "gen"], ["rm", "-f", DLL], ["make", "dll"]):
@@ -94,8 +110,10 @@ def main():
         print("④ 回读校验（同源 + 站点集合一致）")
         if not a.dry_run:
             bad = []
-            for _, dst in targets:
-                want = pmd5 if dst.endswith(".js") else dmd5
+            # ★ 2026-09-17：回读必须**按来源各自**比 md5 —— 数据文件（`th18/cards.js` 等）与
+            # patch 入口的 md5 本来就不同，旧写法「.js 一律比 patch」会把正常发布判成失败。
+            for src, dst in targets:
+                want = md5(src)
                 got = md5(dst) if os.path.exists(dst) else "(缺失)"
                 if got != want:
                     bad.append("%s: %s != %s" % (dst, got, want))
@@ -104,7 +122,10 @@ def main():
                 for b in bad:
                     print("   " + b)
                 return 1
-            print("  ✅ patch md5 = %s（1 份）；DLL md5 = %s（3 份，四路径同值）" % (pmd5, dmd5))
+            n_dll = sum(1 for s2, _ in targets if s2 == DLL)
+            n_pat = sum(1 for s2, _ in targets if s2 == PATCH)
+            print("  ✅ 全部回读一致：patch %s（%d 份）、DLL %s（%d 份）、数据文件 %d 份" %
+                  (pmd5, n_pat, dmd5, n_dll, len(targets) - n_pat - n_dll))
         local = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(MOD)))),
                              "local", "sync_modkit_dll.sh")
         if os.path.exists(local):
