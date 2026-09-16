@@ -155,6 +155,31 @@ PRIMS = {
 }
 
 
+# ---------------------------------------------------------------- 前置行（判"未触发 vs 失效"）
+# 判据没中时，看**这条路的迹象**在不在：
+#   有迹象 ⇒ 前置齐、判据没中 ⇒ **失效**（做了但没效果）
+#   没迹象 ⇒ **未触发**（本局压根没走到那条路：没装那张卡 / 没做那个动作 / 没跑到收尾）
+# 这些正则都取自已实的卡日志前缀（一手），不引入新假设。
+PRE = {
+    "familiar":      [r"youkai:", r"native option"],
+    "emitter-close": [r"youkai:", r"emitter"],
+    "z-intercept":   [r"pofv:"],
+    "charge":        [r"pofv:"],
+    "storm-chain":   [r"pofv:"],
+    "spirit":        [r"pofv:"],
+    "spawn-enemy":   [r"ufo:"],
+    "collect":       [r"ufo:"],
+}
+
+
+def classify(lines, rx_list):
+    """→ (分类, 命中数)。分类：'失效' / '未触发' / '无迹象'。"""
+    n = sum(1 for rx in rx_list if any(re.search(rx, l) for l in lines))
+    if n:
+        return "失效（前置迹象在、判据没中 ⇒ 做了但没效果）", n
+    return "未触发（本局没有这条路的迹象 ⇒ 没装那张卡 / 没做那个动作 / 没跑到收尾）", 0
+
+
 def find_log(args):
     if args.log:
         return args.log
@@ -209,7 +234,10 @@ def do_check(names, args):
                 for h in hits[:2]:
                     print(f"      > {h.strip()[:150]}")
         if missing:
-            print(f"  ⇒ 缺必需判据：{len(missing)} 条（批次未通过）")
+            cls, nhit = classify(lines, PRE.get(name, []))
+            print(f"  ⇒ 缺必需判据：{len(missing)} 条（批次未通过）—— 分类：**{cls}**（前置行命中 {nhit} 条）")
+            for rx in missing:
+                print(f"      没中的判据 /{rx}/")
         elif nfail:
             print(f"  ⇒ 必需判据齐，但有 {nfail} 条反例命中 —— 判读时按上面两条一起看")
         else:
