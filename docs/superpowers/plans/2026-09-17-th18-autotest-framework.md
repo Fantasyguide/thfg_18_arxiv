@@ -63,3 +63,30 @@ python3 <harness>/run_test.py --scenario z-intercept --deck all12 --seconds 60
 2. **判读合并**：`verify.py` 加 `--scenario`（把场景 → 判据 + 期望动作映射）与"未触发"分支。
 3. **CI 化**：`run_test.py --scenario all` 串起八原语 + 全装（12 张）两条验收，出退出码。
 4. 若要更强的（无窗口/进进程内/训练侧），再上契约仓那条路。
+
+## 5. ★ WSL → Windows 桥（2026-09-17 实测通过）
+
+**事实（一手）**
+- 本环境是 WSL2（`/proc/version` 带 `microsoft-standard-WSL2`），**`WSLInterop` 已注册**（`interpreter /init`、enabled）；
+  `cmd.exe` / `powershell.exe` **不在 PATH**，但**用绝对路径可用**：
+  `/mnt/c/Windows/System32/cmd.exe`、`/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe`。
+- **Windows 侧有 Python 3.11**：`C:\Users\Nipporita\AppData\Local\Programs\Python\Python311\python.exe`。
+
+**踩过的两个坑（都已解）**
+1. **引号过 `cmd /c` 会被吃**（`\"…\"` 变成字面量 ⇒ 命令名被当成整串）⇒ 改成**写一支 ASCII 的 `.bat`** 再调它，
+   路径里无空格时不需要引号。
+2. **中文路径过 cmd 有编码风险** ⇒ 参数**走 JSON 文件**（Python 侧按 UTF-8 读，实测 `launcher_exists`/`game_exe_exists` 都为 true）；
+   脚本与 bat 放**纯 ASCII 的 Windows 目录**（`%TEMP%\renkolab\`）。
+
+**已验证的调用链**（`--smoke` 不需要游戏）
+```
+/mnt/c/Windows/System32/cmd.exe /c C:\Users\Nipporita\AppData\Local\Temp\renkolab\run_autoplay.bat --smoke
+  → {"ok": true, "platform": "win32", "python": "3.11.5",
+     "launcher_exists": true, "game_exe_exists": true, "window": null}
+```
+⇒ **WSL 侧（我）能编排，Windows 侧（游戏/按键/日志/dump）真的在 Windows 上跑** —— 这正是用户要求的分工。
+
+**分工定案**
+- Windows 侧：`native/tools/autoplay_win.py`（启动游戏 / 找 `th18.exe` 窗口 / `keybd_event` 注入 / 收日志段与新 dump）。
+- WSL 侧：`native/tools/autoplay.py`（场景与时间轴 → job JSON → 经上面的桥调 Windows runner → 本地 `verify.py` 判读）。
+- 人只在"第一次真跑"时要看一眼（窗口标题/焦点/注入是否生效）——之后都能无人化。
