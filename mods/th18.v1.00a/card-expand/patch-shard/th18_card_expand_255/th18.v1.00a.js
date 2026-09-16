@@ -1381,11 +1381,59 @@
    "expected": "895e048b4728",
    "title": "行为 SDK → BP_ce_card_bind：allocate_new_card 公共尾段 mov [esi+4],ebx（esi=卡对象, ebx=id）+ mov eax,[edi+0x28]：登记了行为的 id 换虚表"
   },
+  "ce_item_score_in": {
+   "addr": "0x446bf9",
+   "cavesize": 8,
+   "expected": "f30f108698790400",
+   "title": "行为 SDK → BP_ce_item_score_in：collect_money_item 0x446b00 的**单一汇合点**：movss xmm0,[esi+0x47998]（回收线；8 字节、无相对寻址）。三条难度支（0x446b30 EASY / 0x446b86 其余 / 0x446ba3 EXTRA）与 `ja 0x446bf3` 那条都汇到这里；此刻 **ecx = 引擎钳位后的身价**（单位 1/1000 点，恒等于 [0x4ccd24]）、**esi = PLAYER**（0x446b0c 从 0x4cf410 载入）、**edi = ITEM**（= [ebp-8]）。handler 把它改成 `1000 × (G_0 + ΣG_i)` ⇒ 引擎自己那两段高度系数（满额 0x446cb4 / 线下折扣 0x446c17）就乘在**整笔**上，满额支的 `SCORE += floor(ecx/1000)` 精确给出我们声明的条数。"
+  },
+  "ce_item_score": {
+   "addr": "0x446cf6",
+   "cavesize": 6,
+   "expected": "8d872c0c0000",
+   "title": "行为 SDK → BP_ce_item_score：collect_money_item 的**满额支**出口 lea eax,[edi+0xc2c]（弹窗与 SCORE 入账之前，esi = 引擎算好的最终身价）。★ 2026-09-13 起本站点**只观察不落笔**：注入已搬到 0x446bf9（ce_item_score_in），这里只把引擎的最终值与我们的预测（10 × G_total）比一行日志（`score-out:`）—— 满额支应当完全相等、线下支应更低（那是系数）。handler **不写 regs->esi、不再调卡回调**（声明已在新站点收过，再收一次 = 双计）。"
+  },
+  "ce_item_score_below": {
+   "addr": "0x446caa",
+   "cavesize": 8,
+   "expected": "8b45f8052c0c0000",
+   "title": "行为 SDK → BP_ce_item_score_below：collect_money_item 0x446b00 的**线下分支**出口：mov eax,[ebp-8] / add eax,0xc2c（8 字节、无相对寻址）。一手：0x446c01 comiss + 0x446c04 jae 0x446cb4 / 0x446c0a cmp [edi+0xc74],3 + 0x446c11 je 0x446cb4 都不成立时（= 自机在回收线**下方**且道具非真空飞行）走这一支算分，走到 0x446cb2 `jmp 0x446cfc` **绕过** `ce_item_score`。★ 与 ce_item_score 一样：2026-09-13 起**纯观察者**（不写 regs->esi、不调卡回调），只打 `score-out:` 那行；两支互斥 ⇒ 每次收集只出**一行** `score-in:` 与**一行** `score-out:`，可逐颗对照。"
+  },
   "ce_item_money": {
    "addr": "0x446d28",
    "cavesize": 6,
    "expected": "ff0530cd4c00",
    "title": "行为 SDK → BP_ce_item_money：collect_money_item：inc [MONEY_TOTAL]（下一条 inc [MONEY]）；沿卡链表调 on_item_money(&bonus)，两个全局一起 += bonus"
+  },
+  "ce_bomb_spent": {
+   "addr": "0x4203bc",
+   "cavesize": 5,
+   "expected": "a1c0f24c00",
+   "title": "行为 SDK → BP_ce_bomb_spent：do_bomb 里 consume_bomb(0x4574d0) **刚返回**那一条：mov eax,ds:0x4cf2c0，5 字节绝对寻址无相对量。0x4574d0 全库只有 0x4203b7 一个调用方，所以这里不多不少覆盖每一次炸弹消耗；沿卡链表调 on_bomb_spent()"
+  },
+  "ce_enemy_drop": {
+   "addr": "0x430510",
+   "cavesize": 6,
+   "expected": "558bec83ec20",
+   "title": "行为 SDK → BP_ce_enemy_drop：Enemy__drop_items_and_notify_cards 入口（thiscall，**ecx = zEnemyDrop = enemy+0x623c，不是敌人对象**；一手 0x430499 `lea ecx,[edi+0x623c]`、ECL dropItems 0x42d0c0 同）：push ebp/mov ebp,esp/sub esp,0x20，无相对寻址。在引擎撒附加表**之前**沿卡链表调 on_enemy_drop_pre(counts)，counts = zEnemyDrop+0x04 起的 20 个 int32（type 1..0x13，主掉落 +0x00 已经撒过）；卡循环之后 SDK 施加掉落乘法层 ce_drop_apply()（EVENTS-CONTRACT §2）"
+  },
+  "ce_enemy_shot_slot": {
+   "addr": "0x433ffa",
+   "cavesize": 8,
+   "expected": "f30f108f44510000",
+   "title": "行为 SDK → BP_ce_enemy_shot_slot：敌人 ECL opcode 0x259（etOn、handler 0x433f34）里「发弹三步」的汇聚点：movss xmm1,[edi+0x5144]（8 字节、**窗内无相对寻址**）。edi = &enemy->data（enemy+0x122c，一手 0x430d30 `add ecx,0x122c`）、槽号 i 在 [ebp-0x56c]（0x433f3d 写）、esi = &data + i*0x488（0x433fcf/0x433fd9）。handler 返回非 0 时 regs->retaddr = 0x43402d（= 该 opcode 的收尾 `jmp 0x436417`）⇒ **本帧不发射这一槽**，跳过 et_protect_range 的 set / call 0x427810(__fire) / 复位三步。零内存写、不动敌人生命周期。详见 local/_scratch/research-108-shot-slot-off.md"
+  },
+  "ce_item_frame": {
+   "addr": "0x446ee3",
+   "cavesize": 7,
+   "expected": "833da4f24c0000",
+   "title": "行为 SDK → BP_ce_item_frame：ItemManager tick 0x446ec0 的门卫 CMP（cmp dword [0x4cf2a4],0，**单条 7 字节**）：每个正常游玩帧、道具池 body 前到达一次（菜单/暂停帧跳走不经过）；handler 不读 CMP 结果、不改标志。沿卡链表调 on_item_frame()"
+  },
+  "ce_item_collect": {
+   "addr": "0x44625f",
+   "cavesize": 6,
+   "expected": "8b97780c0000",
+   "title": "行为 SDK → BP_ce_item_collect：collect 分派前一条 mov edx,[edi+0xc78]（edi = 道具槽，**单条 6 字节**）：此时本道具的副作用都没发生（分值未入 SCORE）。handler 从**内存** *(uint32_t*)(edi+0xc78) 读 type（EDX 还没写），不是读寄存器。沿卡链表调 on_item_collect(card, type, item)"
   }
  }
 }

@@ -260,12 +260,12 @@ dllverify: $(DLL)
 	@awk '/^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]+@[0-9]+/{gsub("@", "", $$2); print $$1, $$2}' th18_card_expand.def | tr -d '\r' | while read sym ordinal; do \
 		grep -Eq "^[[:space:]]+$$ordinal[[:space:]]+0x[0-9a-f]+[[:space:]]+$$sym$$" tests/build/dll-headers.txt || exit 1; \
 	done
-	@test "$$(grep -Ec '^[[:space:]]+[0-9]+[[:space:]]+0x[0-9a-f]+[[:space:]]+[A-Za-z_]' tests/build/dll-headers.txt)" = 23
-	@test "$$(grep -c 'DLL Name:' tests/build/dll-headers.txt)" = 3
+	@test "$$(grep -Ec '^[[:space:]]+[0-9]+[[:space:]]+0x[0-9a-f]+[[:space:]]+[A-Za-z_]' tests/build/dll-headers.txt)" = 38
+	@test "$$(grep -c 'DLL Name:' tests/build/dll-headers.txt)" = 38
 	@grep -q 'DLL Name: KERNEL32.dll' tests/build/dll-headers.txt
 	@grep -q 'DLL Name: msvcrt.dll' tests/build/dll-headers.txt
 	@grep -q 'DLL Name: USER32.dll' tests/build/dll-headers.txt
-	@echo "DLL ABI: 23 exports (22 BP_* + thcrap_plugin_init), PE32/i386, dependencies KERNEL32.dll + msvcrt.dll + USER32.dll"
+	@echo "DLL ABI: 38 exports (37 BP_* + thcrap_plugin_init), PE32/i386, dependencies KERNEL32.dll + msvcrt.dll + USER32.dll"
 
 ## dist   —— 三个 patch + DLL + zip；_255（patch-step3）里带重建的 th18/abcard.anm（≈22 MB）、th18/ability.anm（≈1.7 MB）
 ##         与四个 th18/pl0X.anm（= 原生文件 + 追加的兽灵/灵界弹 entry 与脚本）

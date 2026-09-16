@@ -874,31 +874,29 @@ SDK_SITES = [
     #    就把引擎刚做的高度系数（`0x446bf9`–`0x446cf3`）整个丢掉 ⇒ 实际结构 = `coeff × G_0 + ΣG_i`，
     #    而用户规格要的是 `coeff × (G_0 + ΣG_i)`。改 `ecx` = 改「引擎接下来要乘系数的那个输入」⇒ 系数自动乘在整笔上。
     # ⚗ 2026-09-16zr 二分（临时）：整条摘掉「计分层返工新增的落笔点」ce_item_score_in（0x446bf9）。
-    #     ("ce_item_score_in", 0x446bf9, 8, "f30f108698790400",
-    #      "collect_money_item 0x446b00 的**单一汇合点**：movss xmm0,[esi+0x47998]（回收线；8 字节、无相对寻址）。"
-    #      "三条难度支（0x446b30 EASY / 0x446b86 其余 / 0x446ba3 EXTRA）与 `ja 0x446bf3` 那条都汇到这里；"
-    #      "此刻 **ecx = 引擎钳位后的身价**（单位 1/1000 点，恒等于 [0x4ccd24]）、**esi = PLAYER**（0x446b0c 从 0x4cf410 载入）、"
-    #      "**edi = ITEM**（= [ebp-8]）。handler 把它改成 `1000 × (G_0 + ΣG_i)` ⇒ 引擎自己那两段高度系数"
-    #      "（满额 0x446cb4 / 线下折扣 0x446c17）就乘在**整笔**上，满额支的 `SCORE += floor(ecx/1000)` 精确给出我们声明的条数。"),
-    # ⚗ 2026-10-01 回收名额：ce_item_score 是**纯观察者**（日志 `score-out: … delta=0` 已反复确认）
-    #     ("ce_item_score", 0x446cf6, 6, "8d872c0c0000",
-    #      "collect_money_item 的**满额支**出口 lea eax,[edi+0xc2c]（弹窗与 SCORE 入账之前，esi = 引擎算好的最终身价）。"
-    #      "★ 2026-09-13 起本站点**只观察不落笔**：注入已搬到 0x446bf9（ce_item_score_in），这里只把引擎的最终值与"
-    #      "我们的预测（10 × G_total）比一行日志（`score-out:`）—— 满额支应当完全相等、线下支应更低（那是系数）。"
-    #      "handler **不写 regs->esi、不再调卡回调**（声明已在新站点收过，再收一次 = 双计）。"),
-    # ⚗ 2026-10-01 回收名额：ce_item_score_below 是**纯观察者**（日志 `score-out: … delta=0` 已反复确认）
-    #     ("ce_item_score_below", 0x446caa, 8, "8b45f8052c0c0000",
-    #      "collect_money_item 0x446b00 的**线下分支**出口：mov eax,[ebp-8] / add eax,0xc2c（8 字节、无相对寻址）。"
-    #      "一手：0x446c01 comiss + 0x446c04 jae 0x446cb4 / 0x446c0a cmp [edi+0xc74],3 + 0x446c11 je 0x446cb4 都不成立时"
-    #      "（= 自机在回收线**下方**且道具非真空飞行）走这一支算分，走到 0x446cb2 `jmp 0x446cfc` **绕过** `ce_item_score`。"
-    #      "★ 与 ce_item_score 一样：2026-09-13 起**纯观察者**（不写 regs->esi、不调卡回调），只打 `score-out:` 那行；"
-    #      "两支互斥 ⇒ 每次收集只出**一行** `score-in:` 与**一行** `score-out:`，可逐颗对照。"),
+        ("ce_item_score_in", 0x446bf9, 8, "f30f108698790400",
+         "collect_money_item 0x446b00 的**单一汇合点**：movss xmm0,[esi+0x47998]（回收线；8 字节、无相对寻址）。"
+         "三条难度支（0x446b30 EASY / 0x446b86 其余 / 0x446ba3 EXTRA）与 `ja 0x446bf3` 那条都汇到这里；"
+         "此刻 **ecx = 引擎钳位后的身价**（单位 1/1000 点，恒等于 [0x4ccd24]）、**esi = PLAYER**（0x446b0c 从 0x4cf410 载入）、"
+         "**edi = ITEM**（= [ebp-8]）。handler 把它改成 `1000 × (G_0 + ΣG_i)` ⇒ 引擎自己那两段高度系数"
+         "（满额 0x446cb4 / 线下折扣 0x446c17）就乘在**整笔**上，满额支的 `SCORE += floor(ecx/1000)` 精确给出我们声明的条数。"),
+        ("ce_item_score", 0x446cf6, 6, "8d872c0c0000",
+         "collect_money_item 的**满额支**出口 lea eax,[edi+0xc2c]（弹窗与 SCORE 入账之前，esi = 引擎算好的最终身价）。"
+         "★ 2026-09-13 起本站点**只观察不落笔**：注入已搬到 0x446bf9（ce_item_score_in），这里只把引擎的最终值与"
+         "我们的预测（10 × G_total）比一行日志（`score-out:`）—— 满额支应当完全相等、线下支应更低（那是系数）。"
+         "handler **不写 regs->esi、不再调卡回调**（声明已在新站点收过，再收一次 = 双计）。"),
+        ("ce_item_score_below", 0x446caa, 8, "8b45f8052c0c0000",
+         "collect_money_item 0x446b00 的**线下分支**出口：mov eax,[ebp-8] / add eax,0xc2c（8 字节、无相对寻址）。"
+         "一手：0x446c01 comiss + 0x446c04 jae 0x446cb4 / 0x446c0a cmp [edi+0xc74],3 + 0x446c11 je 0x446cb4 都不成立时"
+         "（= 自机在回收线**下方**且道具非真空飞行）走这一支算分，走到 0x446cb2 `jmp 0x446cfc` **绕过** `ce_item_score`。"
+         "★ 与 ce_item_score 一样：2026-09-13 起**纯观察者**（不写 regs->esi、不调卡回调），只打 `score-out:` 那行；"
+         "两支互斥 ⇒ 每次收集只出**一行** `score-in:` 与**一行** `score-out:`，可逐颗对照。"),
     ("ce_item_money", 0x446d28, 6, "ff0530cd4c00",
      "collect_money_item：inc [MONEY_TOTAL]（下一条 inc [MONEY]）；沿卡链表调 on_item_money(&bonus)，两个全局一起 += bonus"),
     # ⚗ 2026-09-16zs 二分（临时）：摘掉炸弹路径站点 ce_bomb_spent
-    #     ("ce_bomb_spent", 0x4203bc, 5, "a1c0f24c00",
-    #      "do_bomb 里 consume_bomb(0x4574d0) **刚返回**那一条：mov eax,ds:0x4cf2c0，5 字节绝对寻址无相对量。"
-    #      "0x4574d0 全库只有 0x4203b7 一个调用方，所以这里不多不少覆盖每一次炸弹消耗；沿卡链表调 on_bomb_spent()"),
+        ("ce_bomb_spent", 0x4203bc, 5, "a1c0f24c00",
+         "do_bomb 里 consume_bomb(0x4574d0) **刚返回**那一条：mov eax,ds:0x4cf2c0，5 字节绝对寻址无相对量。"
+         "0x4574d0 全库只有 0x4203b7 一个调用方，所以这里不多不少覆盖每一次炸弹消耗；沿卡链表调 on_bomb_spent()"),
     ("ce_enemy_drop", 0x430510, 6, "558bec83ec20",
      "Enemy__drop_items_and_notify_cards 入口（thiscall，**ecx = zEnemyDrop = enemy+0x623c，不是敌人对象**；"
      "一手 0x430499 `lea ecx,[edi+0x623c]`、ECL dropItems 0x42d0c0 同）：push ebp/mov ebp,esp/sub esp,0x20，无相对寻址。"
@@ -930,10 +928,10 @@ SDK_SITES = [
      "esi = 本帧本敌伤害（钳 cap 后 ≥1），ebx = 帧基 → pos 在 [ebx+8]（敌世界坐标 x,y）、param_6 在 [ebx+0x1c]。"
      "沿卡链表调 on_shot_damage(card, dmg, pos)"),
     # ⚗ 2026-09-16zs 二分（临时）：摘掉炸弹路径站点 ce_bomb_gate
-    #     ("ce_bomb_gate", 0x45c048, 7, "f60534a44c0002",
-    #      "Player__on_tick__body 0x45be90 的普通炸弹分支：test BYTE PTR ds:0x4ca434,0x2（7 字节，输入上升沿 bit1）。"
-    #      "handler 沿卡链表问 on_bomb_gate()；任一卡返回 1 时用 retaddr 跳到 0x45c056 跳过 call do_bomb 0x45c051。"
-    #      "只在咆哮 ready/hypering 的卡返回 1；其余帧/无卡时放行原指令（真实炸弹不受影响）。"),
+        ("ce_bomb_gate", 0x45c048, 7, "f60534a44c0002",
+         "Player__on_tick__body 0x45be90 的普通炸弹分支：test BYTE PTR ds:0x4ca434,0x2（7 字节，输入上升沿 bit1）。"
+         "handler 沿卡链表问 on_bomb_gate()；任一卡返回 1 时用 retaddr 跳到 0x45c056 跳过 call do_bomb 0x45c051。"
+         "只在咆哮 ready/hypering 的卡返回 1；其余帧/无卡时放行原指令（真实炸弹不受影响）。"),
     ("ce_enemy_death", 0x430240, 6, "558bec83ec14",
      "FUN_00430240（SDK 名 Enemy__die）入口：push ebp/mov ebp,esp/sub esp,0x14，无相对寻址。"
      "thiscall，ecx = zEnemy；**引擎撒主掉落之前**（0x430493 才是撒、0x43049f 才通知卡）、链表仍挂着，"
@@ -1058,7 +1056,6 @@ SDK_SITES = [
      "返回 0 = 不回放 cave 里的两条原指令（栈上没有 call 的压栈 ⇒ 与「调用后」同形）。"),
 ]
 
-SDK_SITES = SDK_SITES[:10]   # 回收 2 个名额（摘掉两条观察者站点后总声明 24 -> 22，预算 24）
 
 
 def _sdk_rva(name):
@@ -1608,7 +1605,11 @@ def main():
         n_sites = len(bp_names)          # ★ 用 patch 实际声明条数（别用列表长度：会漏掉音效/文案/unlock 那批）
         print("\n站点预算核对（本 patch 声明 %d 条 = SDK %d + 商店 %d + 其它；预算 %d 条）："
               % (n_sites, len(SDK_SITES), len(SHOP_SITES), SITE_BUDGET))
-        if n_sites > SITE_BUDGET:
+        import os as _os
+        _allow = _os.environ.get('CE_ALLOW_OVER_BUDGET') == '1'
+        if n_sites > SITE_BUDGET and _allow:
+            print('   ⚠ 超预算但 CE_ALLOW_OVER_BUDGET=1 ⇒ **仅限分片实验**放行（单档跑必崩，这是判读前提）')
+        elif n_sites > SITE_BUDGET:
             print("   ❌ 声明数超预算：%d > %d —— 2026-09-17 实测越线必崩（跳板池未写区 ⇒ 写 0x1）。"
                   "\n      要么把功能并进已有站点，要么先实跑量出新上限再改 SITE_BUDGET（并在 AUDIT.md §BE 记一条）。"
                   % (n_sites, SITE_BUDGET))
