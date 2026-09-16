@@ -30,10 +30,10 @@
 | **关闭发弹口 (08)** | 闸链一手（见 §2.1）：`th08:0x451500` 里四道闸之后才 `call th08:0x450f60` | **优先 0 条**：使魔弹是**我们的行数据**，把 `rate` 设计成永不命中即可；要「随时按住/放开」才需要 **1 条**每帧家务 | ✅ 闸链一手 |
 | **创建敌人 (12)** | `th12:0x412990 EnemyManager::allocate_new_enemy`（见 §2.2）：`operator new(0x27b8)` 造敌人对象；调用者 = `EnemyData__run_ecl_256_plus`（ECL opcode 256+，3 处）+ 调试视图 | **0 条**（从每帧家务里直接调用即可；ECL 本来就是它的常规入口）| ✅ 调用链 + 对象尺寸一手；参数语义待核 |
 | **收点 (12)** | `th12:0x425c20 ItemManager::on_tick__body`（+ `ItemManager::initialize 0x425940`、`operator new 0x425b10`）| **1 条**（与 TH18 的 `ce_item_frame` 同一形态：一条每帧家务站点承载所有道具事件）| 🟡 落点已定位，道具结构/字段未核 |
-| **拦截Z (09)** | `th09:0x415cd0 InputManager::is_rising_edge`（边沿检测；调用者 `GuiMsgVm::run`、`Player::draw_bullets`）；`th09:0x415cb0 is_active` | 待算：若拦"射击键是否被按下"的判定，**1 条**；若只需**读输入**，则可零站点（每帧读同一份输入状态）| 🟡 锚点已定位 |
-| **创建灵魂 (09)** | **缺口** —— `th09` 的社区 `funcs.json` 只有 247 条，霊/弾 相关未被命名 | 未定 | ❌ 需自反（先做缺口清单 + 反汇编计划）|
+| **拦截Z (09)** | 锚点：`th09:0x415cd0 InputManager::is_rising_edge`（调用者 `GuiMsgVm::run`、`Player::draw_bullets`）+ **`th09:0x403c20 Player::__set_some_state_enum`**（玩家状态机 = 拦截/强制的落点候选）| 待算：拦「射击键是否按下」的判定 ⇒ **1 条**；只**读**输入则 0 条（每帧读同一份状态）| 🟡 两个锚点已定位 |
+| **创建灵魂 (09)** | 候选：`th09:0x412960 BulletManager::shoot_one_bullet`、`th09:0x4130f0 shoot_fairy_bullets_array`、`th09:0x4131c0 shoot_rival_bullets_array` ——即「妖精/对手弹阵」两条数组发射（PoFV 里被打掉的妖精会掉霊）| 待算：若走 `BulletManager` 的常规发射，**0 条**（同 TH12 的 ECL 路线：直接调用）| 🟡 候选已定位，霊的对象身份待核 |
 | **蓄力 (09)** | **缺口**（同上）| 未定 | ❌ 需自反 |
-| **暴风连锁 (09)** | **缺口**（同上；`Spellcard::*` 有名字但不是这条）| 未定 | ❌ 需自反 |
+| **暴风连锁 (09)** | 候选：`th09:0x4157a0 ExAttackManagerItem::constructor`（EX 攻击系统；`Spellcard::*` 8 个函数是符卡/攻击面）| 待算 | 🟡 候选已定位；⚠「暴风连锁」这个说法需要用户确认对应哪个机制 |
 
 ### 2.1 关闭发弹口：`th08:0x451500` 的四道闸（一手逐行）
 
@@ -74,6 +74,25 @@
 
 **待核（下一轮）**：那 3 处调用点怎么构造参数（在 `EnemyData__run_ecl_256_plus` 里逐行读），
 以及 `type-structs-own.json` 里 `Enemy` 的字段表（这次按名字搜没搜到，需要换搜法）。
+
+### 2.3 TH09 的缺口清单与反汇编计划（Round 3 已做第一步）
+
+**TH09 的骨架（社区命名，247 条）**：`Supervisor`(20) / `AnmManager`(15) / **`Timer`(14)** / `BulletManager`(13) /
+`Bullet`(11) / `Player`(10) / `EnemyManager`(9) / `Spellcard`(8) / `EffectSys`(8) / `GuiSide`(8) / `AsciiManager`(8) /
+`Stage`(7) / `Gui`(7) / `ReplayManager`(7) / `MainMenu`(7)。
+
+**三个缺口的候选锚点（本轮定位）**
+
+| 缺口 | 候选 | 下一步要核什么 |
+| --- | --- | --- |
+| 创建灵魂 | `th09:0x412960 shoot_one_bullet`、`th09:0x4130f0 shoot_fairy_bullets_array`、`th09:0x4131c0 shoot_rival_bullets_array` | 「霊」到底是哪类对象（`Bullet` 池里的一种类型？还是独立对象？）——先读这三条函数的参数与它们填的池 |
+| 蓄力 | `th09:0x403c20 Player::__set_some_state_enum`（状态机）+ `Timer` 一族（`is_ge`/`is_gt`/`is_eq`/`subframe`）| 状态枚举里哪个值 = 蓄力中；蓄力量存在哪个 timer/字段 |
+| 暴风连锁 | `th09:0x4157a0 ExAttackManagerItem::constructor` + `Spellcard::*`(8) | ⚠ **需要用户确认「暴风连锁」指哪个机制**（PoFV 的 EX 攻击？符卡攻击？还是对手弹阵的连锁）——在那之前只登记候选，不猜 |
+
+**计划**：① 先读 `Player::__set_some_state_enum` 的调用者与枚举常量（一把梳出「拦截Z / 蓄力」两条）；
+② 再读 `BulletManager::shoot_*` 三条的参数与写入的池（定「霊」的对象身份）；
+③ 最后按用户确认的口径核 `ExAttackManagerItem`/`Spellcard`。每步都要一手（地址 + 字段 + 调用链），
+并顺手核算站点（能调用就不拦）。
 
 ## 3. 兼容契约（草案，待 106–117 全装验收）
 
