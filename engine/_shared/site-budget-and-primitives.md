@@ -89,7 +89,20 @@
 | 蓄力 | `th09:0x403c20 Player::__set_some_state_enum`（状态机）+ `Timer` 一族（`is_ge`/`is_gt`/`is_eq`/`subframe`）| 状态枚举里哪个值 = 蓄力中；蓄力量存在哪个 timer/字段 |
 | 暴风连锁 | `th09:0x4157a0 ExAttackManagerItem::constructor` + `Spellcard::*`(8) | ⚠ **需要用户确认「暴风连锁」指哪个机制**（PoFV 的 EX 攻击？符卡攻击？还是对手弹阵的连锁）——在那之前只登记候选，不猜 |
 
-**计划**：① 先读 `Player::__set_some_state_enum` 的调用者与枚举常量（一把梳出「拦截Z / 蓄力」两条）；
+**Round 4 追加的一手（TH09 玩家侧骨架）**
+
+- `th09:0x403c20 Player::__set_some_state_enum` 是**一行 setter**：`mov [ecx], eax` ⇒ **`player+0x00` = 状态枚举**
+  （⇒ 拦截/强制状态的最省实现 = 写这个字段，**0 条站点**；要拦"是谁改的"才需要站点）；
+- 它的调用者有 7 处：`th09:0x403c64`/`th09:0x403cc4`/`th09:0x403d2a`（玩家初始化段）、`th09:0x404ac8`、`th09:0x411335 EnemyManager::on_tick`、
+  `th09:0x416635 GuiMsgVm::run`（脚本事件）、`th09:0x41cc34 GameManager::initialize`；
+- **`th09:0x404ac8` 的形态**（一手）：`call th09:0x403c20`（置状态）→ `mov ecx,[esi+0x78]` + `add ecx,0x303c8` → `push 2`
+  → `call 0x401500`（Timer 设置）⇒ **每个状态配一个 Timer**，蓄力计时很可能就在这条线上；
+- 玩家侧其余锚点：**`th09:0x41e900 Player::on_tick`**（枚举 switch 在此）、`th09:0x41f030 PlayerBullet::constructor`
+  （TH09 自机弹是独立类，与"霊"不是一回事，别混）、`th09:0x41f010 PlayerOption::constructor`、
+  `th09:0x41f680 Player::draw_bullets`。
+
+**计划**：① 读 `th09:0x41e900 Player::on_tick` 对 `[player+0x00]` 的 switch ⇒ 枚举取值表（拦截Z / 蓄力 都在这张表上）；
+② 读 `BulletManager::shoot_*` 三条的参数与写入的池（定「霊」的对象身份）；
 ② 再读 `BulletManager::shoot_*` 三条的参数与写入的池（定「霊」的对象身份）；
 ③ 最后按用户确认的口径核 `ExAttackManagerItem`/`Spellcard`。每步都要一手（地址 + 字段 + 调用链），
 并顺手核算站点（能调用就不拦）。
