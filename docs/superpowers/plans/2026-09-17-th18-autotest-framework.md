@@ -125,6 +125,10 @@ python3 $T/autoplay.py --all --check-only --log <日志>    # 离线彩排：判
 - 确认生效后，`--all --deck sys12` 就能无人化跑完整轮验收（八原语 + 12 张全装）。
 
 ### 6.4 已经离线验证过的部分（不需要人）
+
+**一条命令跑全套自检**：`bash mods/th18.v1.00a/card-expand/native/tools/autotest_selftest.sh [MODKIT_DIR]`
+—— 验四件事：① 10 场景编排合法；② WSL→Windows 桥（uv 启 Windows Python，拿回环境表）；
+③ 判读分类（判据齐 / 失效 / 未触发 三例）；④ 报告链（明细 + 汇总落盘）。退出码 0 = 全绿。
 - 场景编排自检（`--selftest`，10 场景 0 问题）；桥自检（`--win-smoke`，`ok: true`）；
 - 判读分类（失效 / 未触发）+ 明细报告 + 汇总报告（`--all --check-only` 彩排，语义正确）；
 - 代码页/路径编码两个坑的修法（§5）。
