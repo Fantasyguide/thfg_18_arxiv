@@ -29,7 +29,7 @@
 | **创建使魔 (08)** | `th08:0x450f60 Player::shoot_bullet(s?)`，**唯一调用者** `th08:0x451595`（`Player::tick_shooting_state` 区内）。序言：`byte [arg+3]` 闸 → `[arg+0xe2a74]` 行表指针 + `0x38` 步长；逐行 `call [row+0x28]`；返回 1 ⇒ 武装该 VM（`flags \|= 0x2000`、`state=1`、`vm+0x480=row`、`vm+0x474/+0x478/+0x47c ← row+0x2c/+0x30/+0x34`）| **0 条**（数据驱动：我们只提供行数据 + 六个回调；回调经 `row+0x28..0x34` 数据引用，不占站点）| ✅ 一手（沿用 `engine/player/th08/01-youkai-familiars-first-hand.md`）|
 | **关闭发弹口 (08)** | 闸链一手（见 §2.1）：`th08:0x451500` 里四道闸之后才 `call th08:0x450f60` | **优先 0 条**：使魔弹是**我们的行数据**，把 `rate` 设计成永不命中即可；要「随时按住/放开」才需要 **1 条**每帧家务 | ✅ 闸链一手 |
 | **创建敌人 (12)** | `th12:0x412990 EnemyManager::allocate_new_enemy`（见 §2.2）：`operator new(0x27b8)` 造敌人对象；调用者 = `EnemyData__run_ecl_256_plus`（ECL opcode 256+，3 处）+ 调试视图 | **0 条**（从每帧家务里直接调用即可；ECL 本来就是它的常规入口）| ✅ 调用链 + 对象尺寸一手；参数语义待核 |
-| **收点 (12)** | 上游 = `th12:0x4273f0 ItemManager::spawn_item`（调用者见 §2.4）；下游 = `th12:0x425c20 ItemManager::on_tick__body` | **1 条**（与 TH18 的 `ce_item_frame` 同一形态：一条每帧家务站点承载所有道具事件）| 🟡 链路一手（§2.4）；道具格位/类型枚举未核 |
+| **收点 (12)** | 上游 = `th12:0x4273f0 ItemManager::spawn_item`（7 处调用者，§2.4）；下游 = `th12:0x425c20 ItemManager::on_tick__body`；**三个池的布局三条算术自证**（§2.6）| **1 条**（并进 `ce_item_frame`）| 🟡 链路 + 池布局一手；`zItem` **内部字段**仍未核 |
 | **拦截Z (09)** | ✅ 一手：输入块 P1 `th09:0x4ace18` / P2 `th09:0x4acf34`（stride `0x11c` 双人），按住位图 `+0x2c`；**掩码 1 = Z**（明细见 §2.3 Round 6）| **0 条**（TH18 侧走既有共享站点 `th18:0x45ebfb` 的拦 Z 回调；TH09 侧只读输入位）| ✅ 一手（输入块 + 掩码表）|
 | **创建灵魂 (09)** | 候选：`th09:0x412960 BulletManager::shoot_one_bullet`、`th09:0x4130f0 shoot_fairy_bullets_array`、`th09:0x4131c0 shoot_rival_bullets_array` ——即「妖精/对手弹阵」两条数组发射（PoFV 里被打掉的妖精会掉霊）| 待算：若走 `BulletManager` 的常规发射，**0 条**（同 TH12 的 ECL 路线：直接调用）| 🟡 候选已定位，霊的对象身份待核 |
 | **蓄力 (09)** | 🟡 **进入条件一手**（见 §2.5）：`Z 按住（掩码 1）+ 状态字节 == 1 + 掩码 4` 三项同真后去查 `player+0x303b0` / `player+0x303a4`；状态计时器 `player+0x303c8`、计数域 `player+0x30334`（60 帧）| 待算（预期 **0–1 条**：读状态即可；要拦「不可蓄力」才需 1 条）| 🟡 进入条件 + 计时器一手在手，攻/防的量仍未核 |
@@ -232,6 +232,34 @@
 ② 蓄力**量**（几帧到一档、档数与半径）——卡 109 现在这些全是 `❓ 自定`；
 ③ 状态 2 / 4 / 5 是谁写的（setter `th09:0x403c20` 的直接调用点只出现 `0`/`1`/`3`，
 说明 2/4/5 是**别处直接写** `player+0x00` 或走了另一条路径）。
+
+### 2.6 收点：TH12 的三个道具池（一手，Round 9）
+
+管理器全局：**`ITEM_MANAGER_PTR th12:0x4b44f0`**（社区 `statics.json`；与 §2.4 里 `on_tick__body` 的用法一致）。
+池布局来自社区结构表 `type-structs-own.json` 的 `zItemManager`，并**用三条算术自证**（每格 `zItem` = **`0x9d8`** 字节，
+该值同时写在结构的 `__exact_size_known` 里，与我读到的字段 `+0x9ac` 自洽）：
+
+| 池 | 起始偏移 | 槽数 | 末尾 = 下一段起点 |
+| --- | --- | --- | --- |
+| `normal_items` | `+0x14` | **600**（`0x258`）| `+0x171254` ✅ 相等 |
+| `token_items`（星莲船的令牌）| `+0x171254` | **16**（`0x10`）| `+0x17afd4` ✅ 相等 |
+| `cancel_items`（消弹转道具）| `+0x17afd4` | **2048**（`0x800`）| `+0x666fd4` ✅ 相等 |
+
+**每帧计数器**（结构表，一手）：`+0x666fd4 num_items_alive`、`+0x666fd8 next_cancel_item_index`、
+`+0x666fdc num_cancel_items_spawned_this_frame`、`+0x666fe0 ufos_spawned_since_stage_begin`；
+对象总大小 `+0x666fe4`。
+**交叉验证**：`th12:0x425c20 ItemManager::on_tick__body` 一手里这两个域每帧被清 0
+（`[manager+0x666fdc]` / `[manager+0x666fd4]`）⇒ 反汇编与结构表**互相印证**。
+
+**架构含义（写给自己）**：`cancel_items` 是**环形的"消弹转道具"池**，`next_cancel_item_index` 是环指针、
+`num_cancel_items_spawned_this_frame` 是**每帧预算** ⇒ **原版自己就有"每帧消弹转道具配额"这个概念**
+（与卡 109 的 `POFV_BLASTS_PER_FRAME` 是同一设计思路）⇒ 我们对原语做限流不是发明，是复刻。
+
+**站点核算**：仍是 **1 条**（并进 `ce_item_frame`）。三个池各有自己的索引 ⇒ 我们**只读/只记账，不动引擎的池指针**
+（动了会让原版掉落错位）。
+
+**仍缺**：`zItem` 的**内部字段表**（社区只给了大小 `0x9d8`，没给字段）⇒ 下一步从 `on_tick__body`（0x1600 字节）
+里的遍历读出来（类型字节 / 位置 / 状态 / 计时）。
 
 ## 3. 兼容契约（草案，待 106–117 全装验收）
 
