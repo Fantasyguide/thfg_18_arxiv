@@ -312,6 +312,7 @@ def main():
         names = [n for n in SCENARIOS if n != "all12"] + ["all12"]
         print("== 全场景串跑：%d 个（八原语 + all12 全装）==" % len(names))
         rc_all = 0
+        summary = []
         for i, n in enumerate(names, 1):
             print("\n---- [%d/%d] %s ----" % (i, len(names), n))
             sub = [sys.executable, os.path.abspath(__file__), "--scenario", n]
@@ -322,6 +323,23 @@ def main():
             if a.win_tmp: sub += ["--win-tmp", a.win_tmp]
             r = subprocess.run(sub)
             rc_all |= r.returncode
+            summary.append((n, r.returncode))
+        mk = find_modkit(a.modkit)
+        if mk:
+            sd = os.path.join(mk, "autotest")
+            os.makedirs(sd, exist_ok=True)
+            mp = os.path.join(sd, "summary.md")
+            with open(mp, "w", encoding="utf-8") as f:
+                f.write("# TH18 自动验收 —— 全场景汇总\n\n")
+                f.write("| # | 场景 | 退出码 | 明细报告 |\n| --- | --- | --- | --- |\n")
+                for i, (n, rc) in enumerate(summary, 1):
+                    f.write("| %d | %s | %s | `report_%s.md` |\n" % (i, n, "通过" if rc == 0 else "未过", n))
+                f.write("\n**合计 %d 个场景：%d 通过 / %d 未过**\n" %
+                        (len(summary), sum(1 for _, rc in summary if rc == 0),
+                         sum(1 for _, rc in summary if rc)))
+                f.write("\n> 判据没中时看每份明细的「分类」列：**失效** = 做了但没效果；**未触发** = 本局没走到那条路"
+                        "（表头下方的 ↳ 行写了该原语为什么可能要等条件）。\n")
+            print("\n汇总报告：%s" % mp)
         print("\n== 全场景结束：%s ==" % ("全部通过" if rc_all == 0 else "有未过（退出码 %d）" % rc_all))
         return rc_all
 

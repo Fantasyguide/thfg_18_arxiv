@@ -172,6 +172,16 @@ PRE = {
 }
 
 
+# 判据的"为什么可能没中"说明（写进报告，避免把"未触发"读成失败）
+NOTES = {
+    "familiar": "必需判据要**一局收尾**才打（`run done`）；代打场景需跑完一关或删卡才会出现。",
+    "emitter-close": "需要**打掉某只敌机的发弹口**（gate 才会出声）；场景要跑到敌机群。",
+    "spawn-enemy": "需要**令牌走到 `ce_spawn_enemy`**（112 的令牌路径被触发）。",
+    "collect": "需要**令牌落地/爆开**。",
+    "spirit": "灵魂账在三处打印（过关/删卡/重开）—— 有值才出声。",
+}
+
+
 def classify(lines, rx_list):
     """→ (分类, 命中数)。分类：'失效' / '未触发' / '无迹象'。"""
     n = sum(1 for rx in rx_list if any(re.search(rx, l) for l in lines))
@@ -210,6 +220,8 @@ def write_report(path, rows, log, boot):
            "| --- | --- | --- | --- | --- |"]
     for r in rows:
         out.append("| %s | %s | %s | %s | %s |" % (r["name"], r["verdict"], r["cls"], r["pre"], r["fail"]))
+        if r.get("note"):
+            out.append("| ↳ %s | | | | |" % r["note"])
     n_bad = sum(1 for r in rows if not r["verdict"].startswith("通过"))
     out += ["", "**合计 %d 个原语：%d 通过 / %d 未过**" % (len(rows), len(rows) - n_bad, n_bad), ""]
     open(path, "w", encoding="utf-8").write("\n".join(out))
@@ -250,7 +262,8 @@ def do_check(names, args):
                 print(f"  ⚠ 反例命中：{why}（{len(hits)} 行）")
                 for h in hits[:2]:
                     print(f"      > {h.strip()[:150]}")
-        row = {"name": f"{name}（{p['title']}）", "verdict": "通过", "cls": "—", "pre": "—", "fail": "—"}
+        row = {"name": f"{name}（{p['title']}）", "verdict": "通过", "cls": "—", "pre": "—", "fail": "—",
+               "note": NOTES.get(name, "")}
         nfail = 0
         npre = sum(1 for rx in PRE.get(name, []) if any(re.search(rx, l) for l in lines))
         if missing:
