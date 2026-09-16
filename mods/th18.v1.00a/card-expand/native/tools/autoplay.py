@@ -58,7 +58,8 @@ SCENARIOS = {
                                   (42.0, "release SHOT")]),
     "familiar": dict(deck="sys12", seconds=120, why="使魔随 power 出现；**一局收尾**才会打 run done",
                      timeline=[(1.0, "hold SHOT"), (10.0, "hold SLOW"), (30.0, "release SLOW"),
-                               (60.0, "hold BOMB"), (61.0, "release BOMB")]),
+                               (60.0, "hold BOMB"), (61.0, "release BOMB"),
+                               (100.0, "release SHOT")]),
     "emitter-close": dict(deck="sys12", seconds=120, why="打掉某只敌机的发弹口（gate 生效）",
                           timeline=[(1.0, "hold SHOT"), (20.0, "hold SLOW"), (50.0, "release SLOW"),
                                     (60.0, "release SHOT")]),
@@ -68,7 +69,8 @@ SCENARIOS = {
     "all12": dict(deck="sys12", seconds=180, why="全装混沌跑：12 张同时在编成，看有没有崩 + 各原语判据",
                   timeline=[(1.0, "hold SHOT"), (6.0, "hold SLOW"), (20.0, "release SLOW"),
                             (25.0, "hold UP"), (45.0, "release UP"), (60.0, "hold BOMB"),
-                            (61.0, "release BOMB"), (90.0, "hold CARD_USE"), (90.5, "release CARD_USE")]),
+                            (61.0, "release BOMB"), (90.0, "hold CARD_USE"), (90.5, "release CARD_USE"),
+                            (150.0, "release SHOT")]),
 }
 
 
@@ -91,6 +93,16 @@ def to_win_path(p):
     m = re.match(r"^/mnt/([a-zA-Z])/(.*)$", p)
     if m:
         return m.group(1).upper() + ":\\" + m.group(2).replace("/", "\\")
+    return p
+
+
+def to_wsl_path(p):
+    """"D:\\… ⇒ /mnt/d/…；已是 WSL 路径则原样返回。"""
+    if not p:
+        return p
+    m = re.match(r"^([a-zA-Z]):[\\/](.*)$", p)
+    if m:
+        return "/mnt/%s/%s" % (m.group(1).lower(), m.group(2).replace("\\", "/"))
     return p
 
 
@@ -128,6 +140,59 @@ def win_bridge(extra_args, tmp, verbose=True):
         return 2, "cmd.exe 不可用（%s）—— 不在 WSL？" % CMD_EXE
     except subprocess.TimeoutExpired:
         return 2, "Windows runner 超时"
+
+
+
+DECKS = {
+    # 卡组道具（写 modkit 的 mods/start_deck.js —— 官方机制；cap 是 opt-in，只在需要 >3 张时写）
+    "sys12": dict(mode="exact", cap=12, deck=list(range(106, 118))),
+    "one118": dict(mode="exact", cap=0, deck=[118]),
+    "off":   dict(mode="off", cap=0, deck=[]),
+}
+
+
+def write_deck(mk, name, dry):
+    """按场景写起手卡组（写失败不影响代打 —— 只是卡组可能不是你要的那副）。"""
+    d = DECKS[name]
+    path = os.path.join(mk, "mods", "start_deck.js")
+    obj = {"note": "由 native/tools/autoplay.py --deck %s 写入（临时测试卡组；复原=改成 mode off 或删本文件）" % name,
+           "mode": d["mode"], "deck": d["deck"]}
+    if d["cap"]:
+        obj["cap"] = d["cap"]
+    txt = json.dumps(obj, ensure_ascii=False, indent=2)
+    if dry:
+        print("   [dry] 卡组 %s → %s\n%s" % (name, path, txt))
+        return True
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(txt)
+        print("   卡组 %s 已写入 %s" % (name, path))
+        return True
+    except OSError as e:
+        print("   ⚠ 卡组写入失败（%s）—— 用当前卡组继续" % e)
+        return False
+
+
+def attribute_dumps(mk, dumps):
+    """有新 dump 就调 tooling/crashdump/dmp.py 出签名（自动归因）。"""
+    if not dumps:
+        return
+    dmp = os.path.join(HERE, "..", "..", "..", "..", "..", "tooling", "crashdump", "dmp.py")
+    dmp = os.path.normpath(dmp)
+    for d in dumps:
+        path = os.path.join(mk, "crashdumps", d)
+        print("   ★ 新 dump：%s" % d)
+        if not os.path.exists(dmp):
+            print("     （找不到 %s，跳过归因）" % dmp)
+            continue
+        try:
+            r = subprocess.run([sys.executable, dmp, path, "--frames", "3"],
+                               capture_output=True, timeout=600)
+            for line in r.stdout.decode("utf-8", "replace").splitlines():
+                if line.startswith(("异常", "寄存器", "EIP 在", "访问")):
+                    print("     " + line.strip())
+        except Exception as e:
+            print("     归因失败：%s" % e)
 
 
 def find_modkit(explicit):
@@ -217,10 +282,21 @@ def main():
     ap.add_argument("--modkit", default="", help="modkit 根目录（也可用 MODKIT_DIR）")
     ap.add_argument("--seconds", type=float, default=0, help="覆盖场景时长")
     ap.add_argument("--win-smoke", action="store_true", help="只验 WSL→Windows 桥（不需要游戏）")
+    ap.add_argument("--all", action="store_true", help="把全部场景跑一遍（串起八原语 + all12）")
+    ap.add_argument("--selftest", action="store_true", help="离线自检：全部场景的编排（不需要游戏）")
+    ap.add_argument("--deck", default="", choices=[""] + list(DECKS), help="起手卡组（写 mods/start_deck.js）")
+    ap.add_argument("--launch", action="store_true", help="让 Windows runner 自己启动游戏")
     ap.add_argument("--win-tmp", default="", help="Windows 暂存目录（默认 %%TEMP%%\\renkolab）")
     ap.add_argument("--scale", type=float, default=1.0,
                     help="时间轴整体缩放（<1 = 加速跑；调试编排时用）")
     a = ap.parse_args()
+
+    if a.selftest:
+        bad = [(n, e) for n, scn in SCENARIOS.items() for e in plan(scn)[1]]
+        print("场景编排自检（离线）：%d 个场景，问题 %d 条" % (len(SCENARIOS), len(bad)))
+        for n, e in bad:
+            print("  ✗ %s：%s" % (n, e))
+        return 1 if bad else 0
 
     if a.win_smoke:
         print("WSL→Windows 桥自检（uv 启动 Windows 侧 runner，不需要游戏）")
@@ -231,6 +307,23 @@ def main():
         rc, out = win_bridge(["--smoke"], win_tmp(a.win_tmp))
         print(out.strip())
         return rc
+
+    if a.all and not a.dry_run and not a.check_only:
+        names = [n for n in SCENARIOS if n != "all12"] + ["all12"]
+        print("== 全场景串跑：%d 个（八原语 + all12 全装）==" % len(names))
+        rc_all = 0
+        for i, n in enumerate(names, 1):
+            print("\n---- [%d/%d] %s ----" % (i, len(names), n))
+            sub = [sys.executable, os.path.abspath(__file__), "--scenario", n]
+            if a.modkit: sub += ["--modkit", a.modkit]
+            if a.deck: sub += ["--deck", a.deck]
+            if a.launch: sub += ["--launch"]
+            if a.scale != 1.0: sub += ["--scale", str(a.scale)]
+            if a.win_tmp: sub += ["--win-tmp", a.win_tmp]
+            r = subprocess.run(sub)
+            rc_all |= r.returncode
+        print("\n== 全场景结束：%s ==" % ("全部通过" if rc_all == 0 else "有未过（退出码 %d）" % rc_all))
+        return rc_all
 
     if a.list or a.scenario not in SCENARIOS:
         print("场景台账（deck / 秒数 / 触发什么）：")
@@ -269,22 +362,40 @@ def main():
         if r.returncode:
             print("✗ 发布失败 ⇒ 中止（不要让代打跑在旧产物上）")
             return r.returncode
-        print("② 请先手动启动游戏（本版不自动启动 —— 启动器是 Windows 批处理），窗口前台后回车")
+        if a.deck:
+            print("② 卡组：")
+            write_deck(mk, a.deck, a.dry_run)
+        print("③ 代打（经 WSL→Windows 桥；Windows 侧 uv 启动 runner）")
+        job = {"scenario": a.scenario, "seconds": dur, "scale": a.scale, "launch": bool(a.launch),
+               "steps": [{"t": t, "act": act, "key": key, "down": down} for t, act, key, down in steps]}
+        tmp = win_tmp(a.win_tmp)
+        job_path = os.path.join(tmp, "job.json")
+        os.makedirs(tmp, exist_ok=True)
+        with open(job_path, "w", encoding="utf-8") as f:
+            json.dump(job, f, ensure_ascii=False)
+        cfg = os.path.join(tmp, "autoplay_cfg.json")
+        with open(cfg, "w", encoding="utf-8") as f:
+            json.dump({"modkit": to_win_path(mk)}, f, ensure_ascii=False)
+        win_job = to_win_path(job_path)
+        rc, out = win_bridge(["--job", win_job.replace("/", "\\")], tmp)
+        print("   runner 退出码 %d" % rc)
+        res = {}
         try:
-            input()
-        except EOFError:
-            print("   （非交互环境 ⇒ 直接开始注入；请确保游戏已在前台）")
-        print("③ 代打：按时间轴注入")
-        t0 = time.time()
-        for t, act, key, down in steps:
-            want = t * a.scale
-            while time.time() - t0 < want:
-                time.sleep(0.02)
-            print("   t=%5.2fs %s" % (time.time() - t0, act))
-            focus_and_send(key, down, False)
-        while time.time() - t0 < dur * a.scale:
-            time.sleep(0.1)
-        print("④ 代打结束（%.0fs）" % (time.time() - t0))
+            res = json.loads(out[out.index("{"):out.rindex("}") + 1])
+        except Exception:
+            print("   ⚠ 读不出 runner 的 JSON，原样输出：\n" + out[-1500:])
+        if res:
+            print("   窗口 %s，日志段 %s 行，新 dump %d 个" %
+                  (res.get("window"), res.get("log_lines"), len(res.get("new_dumps") or [])))
+            if res.get("notes"):
+                for n in res["notes"]:
+                    print("   · %s" % n)
+            attribute_dumps(mk, res.get("new_dumps") or [])
+            sec = res.get("log_section_path")
+            if sec:
+                a.log = to_wsl_path(sec)
+        if rc:
+            print("⚠ runner 非零退出 ⇒ 后面的判读仅供参考")
 
     print("⑤ 判读（verify.py all --check）")
     if not os.path.exists(log):
