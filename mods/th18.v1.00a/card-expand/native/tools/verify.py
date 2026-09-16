@@ -43,7 +43,8 @@ PRIMS = {
             "通关或删卡，看收尾是否干净（run done 那行）",
         ],
         expect=[
-            (r"youkai: run done - \d+ familiars spawned", "使魔**创建过**（本局计数汇总）", True),
+            (r"youkai: (run done|ledger) - \d+ familiars spawned|youkai: ledger - \d+ spawned",
+              "使魔**创建过**（本局计数汇总；`ledger` = 108 补的定期账，见计划 §6.2）", True),
             (r"youkai: withdrew \d+ familiar\(s\)", "使魔按规则**撤回**（不是凭空消失）", False),
         ],
         fail=[(r"youkai: familiar spawn FAILED", "创建失败（池满 / 坐标非法）"),
