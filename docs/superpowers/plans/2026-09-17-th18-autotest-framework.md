@@ -90,3 +90,41 @@ python3 <harness>/run_test.py --scenario z-intercept --deck all12 --seconds 60
 - Windows 侧：`native/tools/autoplay_win.py`（启动游戏 / 找 `th18.exe` 窗口 / `keybd_event` 注入 / 收日志段与新 dump）。
 - WSL 侧：`native/tools/autoplay.py`（场景与时间轴 → job JSON → 经上面的桥调 Windows runner → 本地 `verify.py` 判读）。
 - 人只在"第一次真跑"时要看一眼（窗口标题/焦点/注入是否生效）——之后都能无人化。
+
+## 6. 交接：下一步与"必须人来做"的那一件（2026-09-17 夜）
+
+### 6.1 一键入口（现在就能用）
+```bash
+T=mods/th18.v1.00a/card-expand/native/tools
+python3 $T/autoplay.py --selftest                       # 离线：10 场景编排自检（0 问题）
+python3 $T/autoplay.py --win-smoke --modkit /mnt/d/项目/幻想指南/18/th18_modkit   # 离线：验 WSL→Windows 桥
+python3 $T/autoplay.py --scenario z-intercept --launch   # ★ 真跑（首次需人在场，见 §6.3）
+python3 $T/autoplay.py --all --deck sys12 --launch       # 全场景 + 全装（12 张）
+python3 $T/autoplay.py --all --check-only --log <日志>    # 离线彩排：判读→明细报告→汇总
+```
+产物：`<modkit>/autotest/report_<场景>.md`（一行一原语 + 分类 + ↳ 说明）与 `summary.md`（场景 × 退出码）。
+
+### 6.2 下一件（不需要人，纯代码）：给 108 补「使魔账」
+**为什么**：`familiar` 的必需判据现在是 `youkai: run done - N familiars spawned`，而它**只在收尾**
+（过关重挂 / 一局重开 / 删卡）才打 ⇒ 代打场景经常判"未触发"，噪音大。
+**照谁做**：卡 109 的**灵魂账**（`cards/pofv.c`：文件级 4 个计数 + `clear_card()` 里"先打后清"，
+收尾行 `pofv: run done - N spirits spawned, …`）。
+**改哪**：
+1. `native/cards/youkai.c`：把已有的 spawned/killed/withdrew 计数（`run done` 那行用的就是它们）
+   加一个**定期输出**（有值时每 ~600 帧或每关一次）⇒ 行如 `youkai: ledger - %u spawned, %u killed, %u withdrew`；
+2. `native/tools/verify.py` 的 `PRIMS["familiar"].expect[0]` 改成 `youkai: (run done|ledger) - \d+ … spawned`；
+3. `AUDIT.md` §BE 登记（动我们自己的卡 + 共享的 verify.py）；
+4. 走 `deploy.py` 发布（唯一路径），并更新 `local/DLL-SYNC.md` 的 md5。
+
+### 6.3 ★ 必须由人做的那一件（唯一）
+**第一次真跑，确认注入的按键生效**：`autoplay.py --scenario z-intercept --launch` ⇒ 看自机是否开火。
+- 若**不生效**（th18 可能走 DirectInput，忽略 `keybd_event`）：
+  ① 换 `SendInput` + **扫描码**（更接近真实键盘，先试这条）；
+  ② 仍不行 ⇒ 走"进程内写输入位"：**要加 1 条站点**（当前 22/24，余量 2 —— 加之前先在
+  `COMPAT-MATRIX.md` §1 记账，并按 `AUDIT-checklist` 做对抗审计）。
+- 确认生效后，`--all --deck sys12` 就能无人化跑完整轮验收（八原语 + 12 张全装）。
+
+### 6.4 已经离线验证过的部分（不需要人）
+- 场景编排自检（`--selftest`，10 场景 0 问题）；桥自检（`--win-smoke`，`ok: true`）；
+- 判读分类（失效 / 未触发）+ 明细报告 + 汇总报告（`--all --check-only` 彩排，语义正确）；
+- 代码页/路径编码两个坑的修法（§5）。
