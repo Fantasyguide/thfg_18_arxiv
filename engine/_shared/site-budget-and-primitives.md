@@ -236,6 +236,9 @@
   `th09:0x401540` = `eax = (*(int*)(this+8) < arg)` ⇒ **`Timer::is_lt`**。
   ⇒ 与 TH08 的 `Timer::get_current = *(int*)(this+8)`（`th08:0x40d3b0`）**同形** ⇒
   **「Timer 当前值在 `+8`」这条跨版本规律在 TH09 也成立**（补齐了 TH09 那一列）。
+  另两个 Timer 入口（Round 22 一手）：`th09:0x4014f0` = `fld dword [ecx+4]; ret`（**取 `+4` 的 float**）、
+  `th09:0x401500` = 三行 thunk（`jmp th09:0x4014d0`，设置器）⇒ TH09 的 Timer 至少三域：
+  `+4` float、`+8` int（`is_eq`/`is_lt`/`get_current` 都读它）。
   蓄力进入条件链末端问的正是这两问（`== 0` / `< arg`）⇒ **蓄力量 = 这两个 Timer 之一**，
   下一步读它们的赋值点（谁在按 Z 时往上加）。
 - **`player+0x30334` 是 60 帧倒计时（Round 18 一手）**：全镜像只有 **3 处**引用该位移（`34 03 03 00`）：
