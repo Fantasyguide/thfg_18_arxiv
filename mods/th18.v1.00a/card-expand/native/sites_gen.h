@@ -146,7 +146,6 @@ static const ce_grow_t CE_GROW[] = {
 #define CE_BP_TEXT_DESC_RVA   0x016779
 #define CE_BP_TEXT_NOTIFY_RVA 0x01926a
 #define CE_BP_CARD_BIND_RVA 0x012cec
-#define CE_BP_ITEM_SCORE_RVA 0x046cf6
 #define CE_BP_ITEM_MONEY_RVA 0x046d28
 #define CE_BP_ENEMY_DROP_RVA 0x030510
 #define CE_BP_ITEM_FRAME_RVA 0x046ee3
@@ -167,7 +166,6 @@ static const ce_grow_t CE_GROW[] = {
 #define CE_BP_POC_GATE_B_RVA 0x-400000
 #define CE_BP_CHAIN_NODE_GUARD_RVA 0x-400000
 #define CE_BH_SHT_DBASE_RVA 0x05a830   /* lea eax,[edx+0x180→0x4e0]，AUDIT §CQ */
-#define CE_BP_ITEM_SCORE_BELOW_RVA 0x046caa
 #define CE_BP_SHOP_BOUGHT_RVA 0x0183ea
 #define CE_BP_SHOP_REOPEN_RVA 0x043b05
 #define CE_TEST_DECK_SAVE_OFF 0x5f608   /* reset_cards：byte [eax+esi+0x5f608] 初始卡组一格 */

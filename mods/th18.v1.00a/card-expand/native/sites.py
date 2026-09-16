@@ -104,6 +104,16 @@ TEXT_ENTRY      = 0x1c0     # 7 行 × 0x40
 ORDER_TABLE = 0x4b3600      # 显示顺序表：57 dword（id），.rdata；紧接着 0x4b36e4 是另一张表（0x4337f7 用）
 ORDER_COUNT = 57
 CE_MAX_ROWS = 255           # 与 sites_gen.h 的 CE_MAX_ROWS 同义
+
+# ---- ★ 站点（thcrap 断点入场时刻）预算：2026-09-17 实测 ----
+# 声明数 = 本 patch 送进 thcrap 的 `breakpoints` **总条数**（SDK_SITES + SHOP_SITES + 音效/文案/unlock 那批；
+# 不含 base_tsa 自己声明的那些）。判据用「实际条数」而不是「某几个列表的长度」—— 2026-09-17 我第一版就数错了。
+# 实测（`local/MEMORY.md` §1.3h–§1.3l，按**本 patch 的 breakpoints 总条数**量）：**24 条安全 / 26 条必崩**；
+# 崩法是 thcrap 把某次跳转引到
+# 跳板池未写区 ⇒ 执行 `00 00`（`add [eax],al`），当时 `eax=1` ⇒ **写地址 0x1**（0xC0000005 写 0x1）。
+# ⇒ 新功能不要再各占一格：能并进已有每帧/每敌/家务站点的就并进去（见 METHOD.md 的铁律）。
+# 想提高这个数：必须先实跑验证新上限，并把结论补进 AUDIT.md §BE 再改这里。
+SITE_BUDGET = 24
 ORDER_END   = ORDER_TABLE + ORDER_COUNT * 4          # 0x4b36e4，只有 0x414b54 的 cmp 用它当尾界
 ORDER_RVA   = ORDER_TABLE - 0x400000
 ORDER_CAVE  = "th18_card_order"                      # 255 dword；DLL 重排：[原生 0..55, 新 id…, 56, 57 填充]
@@ -870,17 +880,19 @@ SDK_SITES = [
     #      "此刻 **ecx = 引擎钳位后的身价**（单位 1/1000 点，恒等于 [0x4ccd24]）、**esi = PLAYER**（0x446b0c 从 0x4cf410 载入）、"
     #      "**edi = ITEM**（= [ebp-8]）。handler 把它改成 `1000 × (G_0 + ΣG_i)` ⇒ 引擎自己那两段高度系数"
     #      "（满额 0x446cb4 / 线下折扣 0x446c17）就乘在**整笔**上，满额支的 `SCORE += floor(ecx/1000)` 精确给出我们声明的条数。"),
-    ("ce_item_score", 0x446cf6, 6, "8d872c0c0000",
-     "collect_money_item 的**满额支**出口 lea eax,[edi+0xc2c]（弹窗与 SCORE 入账之前，esi = 引擎算好的最终身价）。"
-     "★ 2026-09-13 起本站点**只观察不落笔**：注入已搬到 0x446bf9（ce_item_score_in），这里只把引擎的最终值与"
-     "我们的预测（10 × G_total）比一行日志（`score-out:`）—— 满额支应当完全相等、线下支应更低（那是系数）。"
-     "handler **不写 regs->esi、不再调卡回调**（声明已在新站点收过，再收一次 = 双计）。"),
-    ("ce_item_score_below", 0x446caa, 8, "8b45f8052c0c0000",
-     "collect_money_item 0x446b00 的**线下分支**出口：mov eax,[ebp-8] / add eax,0xc2c（8 字节、无相对寻址）。"
-     "一手：0x446c01 comiss + 0x446c04 jae 0x446cb4 / 0x446c0a cmp [edi+0xc74],3 + 0x446c11 je 0x446cb4 都不成立时"
-     "（= 自机在回收线**下方**且道具非真空飞行）走这一支算分，走到 0x446cb2 `jmp 0x446cfc` **绕过** `ce_item_score`。"
-     "★ 与 ce_item_score 一样：2026-09-13 起**纯观察者**（不写 regs->esi、不调卡回调），只打 `score-out:` 那行；"
-     "两支互斥 ⇒ 每次收集只出**一行** `score-in:` 与**一行** `score-out:`，可逐颗对照。"),
+    # ⚗ 2026-10-01 回收名额：ce_item_score 是**纯观察者**（日志 `score-out: … delta=0` 已反复确认）
+    #     ("ce_item_score", 0x446cf6, 6, "8d872c0c0000",
+    #      "collect_money_item 的**满额支**出口 lea eax,[edi+0xc2c]（弹窗与 SCORE 入账之前，esi = 引擎算好的最终身价）。"
+    #      "★ 2026-09-13 起本站点**只观察不落笔**：注入已搬到 0x446bf9（ce_item_score_in），这里只把引擎的最终值与"
+    #      "我们的预测（10 × G_total）比一行日志（`score-out:`）—— 满额支应当完全相等、线下支应更低（那是系数）。"
+    #      "handler **不写 regs->esi、不再调卡回调**（声明已在新站点收过，再收一次 = 双计）。"),
+    # ⚗ 2026-10-01 回收名额：ce_item_score_below 是**纯观察者**（日志 `score-out: … delta=0` 已反复确认）
+    #     ("ce_item_score_below", 0x446caa, 8, "8b45f8052c0c0000",
+    #      "collect_money_item 0x446b00 的**线下分支**出口：mov eax,[ebp-8] / add eax,0xc2c（8 字节、无相对寻址）。"
+    #      "一手：0x446c01 comiss + 0x446c04 jae 0x446cb4 / 0x446c0a cmp [edi+0xc74],3 + 0x446c11 je 0x446cb4 都不成立时"
+    #      "（= 自机在回收线**下方**且道具非真空飞行）走这一支算分，走到 0x446cb2 `jmp 0x446cfc` **绕过** `ce_item_score`。"
+    #      "★ 与 ce_item_score 一样：2026-09-13 起**纯观察者**（不写 regs->esi、不调卡回调），只打 `score-out:` 那行；"
+    #      "两支互斥 ⇒ 每次收集只出**一行** `score-in:` 与**一行** `score-out:`，可逐颗对照。"),
     ("ce_item_money", 0x446d28, 6, "ff0530cd4c00",
      "collect_money_item：inc [MONEY_TOTAL]（下一条 inc [MONEY]）；沿卡链表调 on_item_money(&bonus)，两个全局一起 += bonus"),
     # ⚗ 2026-09-16zs 二分（临时）：摘掉炸弹路径站点 ce_bomb_spent
@@ -1046,7 +1058,7 @@ SDK_SITES = [
      "返回 0 = 不回放 cave 里的两条原指令（栈上没有 call 的压栈 ⇒ 与「调用后」同形）。"),
 ]
 
-SDK_SITES = SDK_SITES[:12]   # 已知安全区上限（12 不崩 / 14、16、22 崩）
+SDK_SITES = SDK_SITES[:10]   # 回收 2 个名额（摘掉两条观察者站点后总声明 24 -> 22，预算 24）
 
 
 def _sdk_rva(name):
@@ -1364,7 +1376,6 @@ def emit_header(sites, unlock_reads, order_sites, menu_binhacks):
               "#define CE_BP_CARD_BIND_RVA 0x%06x" % (_sdk_rva("ce_card_bind") - 0x400000),
               # ⚗ 二分临时：摘掉 ce_item_score_in
               # "#define CE_BP_ITEM_SCORE_IN_RVA ...
-              "#define CE_BP_ITEM_SCORE_RVA 0x%06x" % (_sdk_rva("ce_item_score") - 0x400000),
               "#define CE_BP_ITEM_MONEY_RVA 0x%06x" % (_sdk_rva("ce_item_money") - 0x400000),
               # ⚗ 二分临时：摘掉 ce_bomb_spent
               "#define CE_BP_ENEMY_DROP_RVA 0x%06x" % (_sdk_rva("ce_enemy_drop") - 0x400000),
@@ -1393,7 +1404,6 @@ def emit_header(sites, unlock_reads, order_sites, menu_binhacks):
               # （binhack 的 expected 不匹配时 thcrap **只打一行日志就跳过** ⇒ 没有回读就等于没护栏）。
               "#define CE_BH_SHT_DBASE_RVA 0x%06x   /* lea eax,[edx+0x%x→0x%x]，AUDIT §CQ */"
               % (SHT_DBASE_VA - 0x400000, SHT_DBASE_OLD, SHT_DBASE_NEW),
-              "#define CE_BP_ITEM_SCORE_BELOW_RVA 0x%06x" % (_sdk_rva("ce_item_score_below") - 0x400000),
               "#define CE_BP_SHOP_BOUGHT_RVA 0x%06x" % (SHOP_SITES[0][1] - 0x400000),
               "#define CE_BP_SHOP_REOPEN_RVA 0x%06x" % (SHOP_SITES[1][1] - 0x400000),
               "#define CE_TEST_DECK_SAVE_OFF 0x5f608   /* reset_cards：byte [eax+esi+0x5f608] 初始卡组一格 */",
@@ -1595,6 +1605,16 @@ def main():
                 print("   " + b)
             return 1
         bp_names = emitted_breakpoint_names(text, text_va)
+        n_sites = len(bp_names)          # ★ 用 patch 实际声明条数（别用列表长度：会漏掉音效/文案/unlock 那批）
+        print("\n站点预算核对（本 patch 声明 %d 条 = SDK %d + 商店 %d + 其它；预算 %d 条）："
+              % (n_sites, len(SDK_SITES), len(SHOP_SITES), SITE_BUDGET))
+        if n_sites > SITE_BUDGET:
+            print("   ❌ 声明数超预算：%d > %d —— 2026-09-17 实测越线必崩（跳板池未写区 ⇒ 写 0x1）。"
+                  "\n      要么把功能并进已有站点，要么先实跑量出新上限再改 SITE_BUDGET（并在 AUDIT.md §BE 记一条）。"
+                  % (n_sites, SITE_BUDGET))
+            bad.append("站点数 %d 超预算 %d" % (n_sites, SITE_BUDGET))
+        else:
+            print("   ✅ 在预算内（余量 %d 条）" % (SITE_BUDGET - n_sites))
         missing, stale = check_def_exports(bp_names)
         print("\n断点导出对账（patch 声明 %d 个 ↔ th18_card_expand.def 的 BP_*）：" % len(bp_names))
         if missing:

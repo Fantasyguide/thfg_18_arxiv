@@ -2173,8 +2173,8 @@ int ce_sdk_setup(uint8_t *base, int trace)
     struct { const char *name; uint32_t rva; unsigned len; } bps[] = {
         { "ce_card_bind",   CE_BP_CARD_BIND_RVA,   6 },
         /* ⚗ 2026-09-16zr 二分临时：本站点已从 patch 摘掉，对账行同步注释 */
-        { "ce_item_score",  CE_BP_ITEM_SCORE_RVA,  6 },
-        { "ce_item_score_below", CE_BP_ITEM_SCORE_BELOW_RVA, 8 },
+        /* 名额回收：本行停用（站点已从 patch 摘除，功能=纯观察者）*/
+        /* 名额回收：本行停用（站点已从 patch 摘除，功能=纯观察者）*/
         { "ce_item_money",  CE_BP_ITEM_MONEY_RVA,  6 },
         /* 二分临时停用: { "ce_bomb_spent", ... } */
         { "ce_enemy_drop",  CE_BP_ENEMY_DROP_RVA,  6 },

@@ -1369,23 +1369,17 @@
       "expected": "69c3c0010000",
       "title": "文案重定向 → BP_ce_text_notify：id<57 照算 id*0x1c0，否则指向 DLL 的扩展文案缓冲（获得通知：imul eax, ebx, 0x1c0）"
     },
+    "ce_enemy_damage": {
+      "addr": "0x42f2cb",
+      "cavesize": 6,
+      "expected": "01b308500000",
+      "title": "行为 SDK → BP_ce_enemy_damage：EnemyData::step_game_logic 0x42ed40 里 `add [ebx+0x5008],esi`（ebx = zEnemyData* = zEnemy*+0x122c；esi = 本帧最终伤害，已过自机倍率/ECL 扩展/炸弹倍率）。6 字节、无相对寻址、窗内无跳转靶；0x42ed40 每敌每帧恰好一次（唯一调用方 0x42fff0）。站点在两道免伤闸（0x42f2b9 `test byte [ebx+0x5130],0x10` / 0x42f2c2 `cmp [ebx+0x50f4],0`）**之后** ⇒ 语义 = 「HP 即将减少」；handler **必须返回 BP_EXEC_ORIGINAL**（那条 add 是引擎记账）。用途 = 113 的「Boss 随血量掉灵」（TH13 通道 A）。一手全链见 REPORT-BOSS-SPIRIT-DROP.md。"
+    },
     "ce_card_bind": {
       "addr": "0x412cec",
       "cavesize": 6,
       "expected": "895e048b4728",
       "title": "行为 SDK → BP_ce_card_bind：allocate_new_card 公共尾段 mov [esi+4],ebx（esi=卡对象, ebx=id）+ mov eax,[edi+0x28]：登记了行为的 id 换虚表"
-    },
-    "ce_item_score": {
-      "addr": "0x446cf6",
-      "cavesize": 6,
-      "expected": "8d872c0c0000",
-      "title": "行为 SDK → BP_ce_item_score：collect_money_item 的**满额支**出口 lea eax,[edi+0xc2c]（弹窗与 SCORE 入账之前，esi = 引擎算好的最终身价）。★ 2026-09-13 起本站点**只观察不落笔**：注入已搬到 0x446bf9（ce_item_score_in），这里只把引擎的最终值与我们的预测（10 × G_total）比一行日志（`score-out:`）—— 满额支应当完全相等、线下支应更低（那是系数）。handler **不写 regs->esi、不再调卡回调**（声明已在新站点收过，再收一次 = 双计）。"
-    },
-    "ce_item_score_below": {
-      "addr": "0x446caa",
-      "cavesize": 8,
-      "expected": "8b45f8052c0c0000",
-      "title": "行为 SDK → BP_ce_item_score_below：collect_money_item 0x446b00 的**线下分支**出口：mov eax,[ebp-8] / add eax,0xc2c（8 字节、无相对寻址）。一手：0x446c01 comiss + 0x446c04 jae 0x446cb4 / 0x446c0a cmp [edi+0xc74],3 + 0x446c11 je 0x446cb4 都不成立时（= 自机在回收线**下方**且道具非真空飞行）走这一支算分，走到 0x446cb2 `jmp 0x446cfc` **绕过** `ce_item_score`。★ 与 ce_item_score 一样：2026-09-13 起**纯观察者**（不写 regs->esi、不调卡回调），只打 `score-out:` 那行；两支互斥 ⇒ 每次收集只出**一行** `score-in:` 与**一行** `score-out:`，可逐颗对照。"
     },
     "ce_item_money": {
       "addr": "0x446d28",
