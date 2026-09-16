@@ -104,7 +104,15 @@ python3 $T/autoplay.py --all --check-only --log <日志>    # 离线彩排：判
 ```
 产物：`<modkit>/autotest/report_<场景>.md`（一行一原语 + 分类 + ↳ 说明）与 `summary.md`（场景 × 退出码）。
 
-### 6.2 下一件（不需要人，纯代码）：给 108 补「使魔账」
+### 6.2 ✅ 已完成（2026-09-17）：给 108 补「使魔账」
+
+**结果**：`native/cards/youkai.c` 的 `on_tick_2` 加**定期账**（文件级 `s_ledger_frame`，有值时每 600 帧一行
+`youkai: ledger - N spawned, N killed, N withdrew, N dropped`，复用同一批计数）；`verify.py` 的 `familiar` 判据
+接受 `run done|ledger` 两形态 ⇒ 两边闭合。门全绿、`sites.py check` 22/24、`deploy.py` 发布
+**DLL `5639fd13e8c903dc4b0d6a5b5a4d1161`**（3 处同值），patch `fadd5ac7…` 未变。提交 `d054b27`。
+
+<details><summary>当时的任务拆解（存档）</summary>
+
 **为什么**：`familiar` 的必需判据现在是 `youkai: run done - N familiars spawned`，而它**只在收尾**
 （过关重挂 / 一局重开 / 删卡）才打 ⇒ 代打场景经常判"未触发"，噪音大。
 **照谁做**：卡 109 的**灵魂账**（`cards/pofv.c`：文件级 4 个计数 + `clear_card()` 里"先打后清"，
@@ -115,6 +123,8 @@ python3 $T/autoplay.py --all --check-only --log <日志>    # 离线彩排：判
 2. `native/tools/verify.py` 的 `PRIMS["familiar"].expect[0]` 改成 `youkai: (run done|ledger) - \d+ … spawned`；
 3. `AUDIT.md` §BE 登记（动我们自己的卡 + 共享的 verify.py）；
 4. 走 `deploy.py` 发布（唯一路径），并更新 `local/DLL-SYNC.md` 的 md5。
+
+</details>
 
 ### 6.3 ★ 必须由人做的那一件（唯一）
 **第一次真跑，确认注入的按键生效**：`autoplay.py --scenario z-intercept --launch` ⇒ 看自机是否开火。
