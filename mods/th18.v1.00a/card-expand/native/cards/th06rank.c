@@ -100,6 +100,7 @@ typedef struct {
     uint32_t off_counted;                 /* 累计记过的出屏道具数（调试 / 日志用）*/
     uint16_t off_used;                    /* 环形窗里的有效槽号数（帧初清零）*/
     uint16_t off_slot[T06R_OFF_RING];     /* 本帧已记过的道具池槽号 */
+    int32_t poc_gate;     /* ★ 2026-09-16za 诊断：本帧有没有声明「未满 P」（1 = 声明了）*/
 } t06r_state_t;
 
 /* 卡私有状态只有 496 字节（CE_STATE_BYTES 512 − 块头 16）；超出 `ce_state_user` 直接返回 NULL
@@ -262,7 +263,10 @@ static void on_item_collect(ce_card_t *c, uint32_t type, const void *item)
         const uint8_t *it = (const uint8_t *)item;
         int at_poc = 0;
         if (p) {
-            const float poc = *(const float *)(p + CE_PLAYER_POC_HEIGHT);
+            /* ★ 2026-09-15：改读**共享件的访问器**（`sdk.h` 的 `ce_poc_height()`），不再直读
+             * `*(float*)(p+CE_PLAYER_POC_HEIGHT)` —— 卡的 PoC 高度层落笔后，字段与访问器同值，
+             * 但访问器是唯一真值来源（空指针安全，且将来加夹取/诊断只改一处）。*/
+            const float poc = ce_poc_height();
             at_poc = (*(const float *)(p + CE_PLAYER_Y) <= poc);
             if (!at_poc && it && *(const int32_t *)(it + CE_ITEM_STATE) == CE_ITEM_STATE_VACUUM)
                 at_poc = 1;                                     /* 引擎同款兜底：真空飞行 = 满额 */
@@ -308,6 +312,29 @@ static int on_tick_2(ce_card_t *c)
     t06r_state_t *s = st(c);
     resync_difficulty(s);
 
+    /* ★★ 2026-09-16za（**用户口径**，两条新设计共用一个来源）：
+     *   「红魔乡卡再加一条设计：**上线收点当且仅当满P**」+「**协同效应：除非满P，不加信号强度**」。
+     *   一手（TH06 反编译 `ItemManager.cpp` 的道具 tick）：
+     *     `if (curItem->state == 1 || (128 <= g_GameManager.currentPower && g_Player.positionCenter.y < 128.0f))`
+     *     → 进吸引态（`state = 1`）⇒ **「满 P（128）+ 在回收线（y = 128.0）以上」才是过线收点的充要条件**。
+     *   ⇒ 本卡每帧只做一件事：把「现在不是满 P」这个**事实**声明给共享层（`ce_full_p_gate_*`），
+     *     两个消费者各自去查：① 过线收点的两条 `ja`（`th18:0x445bb9` / `0x446003`，声明开着就不让道具进真空态）
+     *     ② 111 的信号推进（关掉「线上未满 ⇒ 补满并钳到 100.00」那一支；擦弹/衰减不受影响）。
+     *   ⚠ 声明是**粘性**的（照 `ce_no_hit_declare`）⇒ 每帧都要写一次；删卡 / 局末显式归 0（下面两个收尾函数）。
+     *   ⚠ 「满 P」判据 = `CE_CURRENT_POWER() >= [0x4ccd3c]`（`MAX_POWER`，随 sht 变；写死 400 是错的）。*/
+    {
+        const int32_t pw   = CE_CURRENT_POWER();
+        const int32_t pmax = *(volatile const int32_t *)CE_ADDR_MAX_POWER;
+        const int     gate = (pmax > 0 && pw < pmax) ? 1 : 0;
+        ce_full_p_gate_declare((uint32_t)ce_card_id(c), gate);
+        if (gate != s->poc_gate) {
+            s->poc_gate = gate;
+            ce_log("T06R: 上线收点闸 %s（power %d/%d）—— 不满 P ⇒ 过线不吸道具（th06 ItemManager.cpp 的"
+                   " `currentPower >= 128 && player.y < 128.0f`），且 111 的「线上补满信号」同时关掉",
+                   gate ? "**开**" : "关", (int)pw, (int)pmax);
+        }
+    }
+
     /* 擦弹 +0.06（th06:Player.cpp:1394 `IncreaseSubrank(6)` = +0.06，用户 2026-09-11 定「不除」）。
      * 用 0x4ccd0c 的逐帧差分（含 Bomb 状态擦弹 —— th06 那条路也是同一条 `Player::Graze`）。
      * 归零 / 回退（换 run、进练习）时只重设基准，不把负增量当擦弹。 */
@@ -350,8 +377,16 @@ static void on_bomb_spent(ce_card_t *c)
  * on_bomb_spent 记过（th06 里决死 B 与普通 B 走同一条 `DecreaseSubrank(200)`）。 */
 static int on_death_after_deathbomb(ce_card_t *c, uint32_t acc)
 {
-    (void)acc;
     t06r_state_t *s = st(c);
+    /* ★★ 2026-09-13（原生卡冲突审计 A 通道）：`acc` = 引擎的累加器（`acc |= 前一张卡的返回值`，
+     *   一手 `th18:0x45c116 push edi` / `0x45c121 or edi,eax`）⇒ **非 0 = 这次死亡已被前面的卡取消**，
+     *   那就不是真 Miss，不能扣 −16.00 rank。样板 = 原生 `CardEirin__on_player_death_after_deathbomb`
+     *   `th18:0x40a4f3`（第 1 条指令就是 `cmp [ebp+8],0; jnz 让位`）。
+     *   ⚠ 残余：排在 106 后面的救援者救下时我们仍会记一笔（原生 35 不看 acc）⇒ 见待拍表「死亡结果闩锁」。*/
+    if (acc != 0) {
+        ce_log("T06R: +0x0c 死亡已被前面的卡救下（acc=%u）⇒ 不算 Miss、不扣 rank", (unsigned)acc);
+        return 0;
+    }
     t06_decrease(&s->r.rank, T06_DEC_MISS);
     note(s, "miss");
     return 0;
@@ -427,12 +462,14 @@ static int on_load(ce_card_t *c)
 static void on_delete(ce_card_t *c)
 {
     t06r_state_t *s = st(c);
+    ce_full_p_gate_declare((uint32_t)ce_card_id(c), 0);   /* ★ 撤「未满 P」声明（别把闸留在场上）*/
     if (s) __builtin_memset(s, 0, sizeof *s);
 }
 
 static void on_run_reset(ce_card_t *c)
 {
     t06r_state_t *s = st(c);
+    ce_full_p_gate_declare((uint32_t)ce_card_id(c), 0);   /* ★ 撤「未满 P」声明（局末）*/
     if (s) __builtin_memset(s, 0, sizeof *s);   /* 局末：差分基准 / 位图 / 帧计数全清 */
 }
 

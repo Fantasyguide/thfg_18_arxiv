@@ -216,10 +216,12 @@ int32_t senro_item_cherry(senro_state_t *s, uint32_t type)
 
     if (!s) return 0;
     if (type == SENRO_TH18_ITEM_MONEY) {
-        /* th07 type 2（`0x433886`）= 1000 + 100 × 符卡奖励次数，走樱点加法器（+C 同加）。 */
+        /* th07 **type 7**（`0x433886`，落在 type 7 块 `0x43375f` 内）= 1000 + 100 × 符卡奖励次数，
+         * 走樱点加法器（+C 同加）。⚠ 原注写作 type 2，2026-09-15 按跳表块归属订正（见 `senro_core.h`）。*/
         d = SENRO_ITEM_BIG_BASE + SENRO_ITEM_BIG_PER_BONUS * s->spell_bonuses;
     } else if (type >= SENRO_TH18_ITEM_SCORE_LO && type <= SENRO_TH18_ITEM_SCORE_HI) {
-        /* th07 type 7（★，`0x43370b`/`0x433712`）= 樱点 / +C 各 +20。 */
+        /* th07 **type 6**（★，`0x43370b`/`0x433712`，落在 type 6 块 `0x433691` 内）= 樱点 / +C 各 +20。
+         * ⚠ 原注写作 type 7，2026-09-15 按跳表块归属订正（见 `senro_core.h`）。*/
         d = SENRO_STAR_CHERRY;
     } else {
         return 0;                          /* 其余 type 在 th07 都不给樱点（P / 命碎 / 符卡碎 / 残机 …）*/

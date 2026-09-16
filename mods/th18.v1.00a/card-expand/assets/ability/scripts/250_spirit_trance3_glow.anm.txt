@@ -1,0 +1,21 @@
+script script250 {
+// 自动生成：assets/ability/make_trance_spirit_scripts.py（别手改，改表再重跑）
+// 神灵（113）type 3 的灵界态 glow —— 逐条照抄 TH13 `astral.anm` script6（一手：engine/spirit/th13/01 §2.3）
+//   glow：呼吸 0.95↔1.0、blendMode 1、`angleVel(0,0,3°/帧)` 自转、**不染色**
+-1:
+    type(1);
+    sprite(@SPIRIT_TRANCE_7);
+    blendMode(1);
+    layer(13);
+    color(255, 255, 255);
+    alpha(255);
+    angleVel(0.0f, 0.0f, 0.05235988f);
+0:
+offset68:
+    scaleTime(20, 9, 0.95f, 0.95f);
++20:
+    scaleTime(20, 9, 1.0f, 1.0f);
++20:
+    jmp(offset68, 0);
+    stop();
+}

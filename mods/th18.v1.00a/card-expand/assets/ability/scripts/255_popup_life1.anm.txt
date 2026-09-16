@@ -1,0 +1,42 @@
+script script255 {
+// 吃到**type 0（命碎，普通态）**神灵的数字弹窗（113）—— 逐条抄 TH13 `front.anm` **script96**。
+//   一手 `local/th13.v1.00c/anm/front/front.anm.txt`；引擎入口 = `SpiritItem__on_tick` 的收集分支
+//   （type 跳转表 `th13:0x438e3c`：每个 type 两条 —— 普通态 / 灵界态），起 VM 的调用是
+//   `FUN_0046f820(&slot, <脚本号>, spirit, 0, -1, 0)`：位置取**神灵自己的坐标**（第 3 参是 `spirit`，
+//   函数内部读 `spirit+0x44` 那三个 float）。
+//   原文：`sprite(sprite66); ins_431(1); randMode(1); resampleMode(1); anchor(0,2); layer(11);
+//          scale(1.0,0.0); scaleTime(4,0,1.0,1.0); posTime(50,1,0,-16,0);
+//          0: wait(46); scaleTime(4,0,1.0,0.0); +4: delete();`
+// ⇒ **寿命 54 帧**（50 帧上浮 + 4 帧收平）、上浮 16 px、纵向从 0 撑开到 1。
+// 偏差：`layer(11)` → **13**（TH18 自己那份同形脚本用的就是 13；两者都是世界层）。
+// 贴图：TH13 `front00.png` sprite66 = 命碎图标 + `1`（原矩形，**未缩放未重画**）。
+// ★ 尺寸（2026-09-13 第三轮订正 → 第四轮改回 1.0）：用户实跑「大了至少 3 倍」⇒ 贴图还是 TH13 原矩形，
+//   `scale` 回到一手的 1.0。**下面那段 2 倍的推导作废**（它基于"TH18 自己的弹窗贴图是 TH13 的 2 倍"这个
+//   读图结论，而那份 TH18 脚本的 sprite 引用已经和贴图错位、不足以当尺子）。原文备注：TH18 自己那份同形脚本的贴图是
+//   TH13 的 2 倍**（TH13 `front.anm` 的弹窗 sprite 是 24×8；TH18 `front.anm` script85..99 的等价 sprite
+//   是 48×16 / 64×16 —— 同一个 50 帧上浮配方、同一个世界层）。用户口径是「像 TH14 的卡 bonus 那样」的
+//   观感 ⇒ 我们**不重画贴图**（还是 TH13 的原矩形），只把 `scale` 改成 2.0 把画面尺寸对上 TH18 的同类弹窗。
+//   `posTime` 的 16 px 上浮**不动**（一手世界单位，TH18 自己那份也是 -16）。
+-1:
+    sprite(@TRANCE_POPUP_LIFE1);
+    ins_431(1);
+    randMode(1);
+    resampleMode(1);
+    // ★ 2026-09-13 第五轮：**必须显式给颜色** —— TH18 的 VM 模板默认色不是 0xffffffff
+    //   （用户实跑「吃灵没有那个 +几 的 UI」= 弹窗 VM 建起来了、sprite 也对，但整支是透明的）。
+    //   本仓既有的 TH18 做法就是"建完显式写色/在脚本里写死白"（例：`cards/season.c` 起 VM 后立刻
+    //   `ce_anm_set_color(id, 0xffffffffu)`）。一手 TH13 那份没有这一句 —— TH13 的模板默认是白的，
+    //   照抄到 TH18 就丢了可见性 ⇒ 这里按**偏差**登记（`AUDIT.md` §CB 段）。
+    color(255, 255, 255);
+    alpha(255);
+    anchor(0, 2);
+    layer(13);
+    scale(1.0f, 0.0f);
+    scaleTime(4, 0, 1.0f, 1.0f);
+    posTime(50, 1, 0.0f, -16.0f, 0.0f);
+0:
+    wait(46);
+    scaleTime(4, 0, 1.0f, 0.0f);
++4:
+    delete();
+}

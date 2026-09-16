@@ -5,7 +5,7 @@
      `spriteN` 的 N 必须 < 该文件 sprite 总数、且 N 确实存在；
   2. 对 `native/build/sht/pl0X.sht` 回读：每一条 shooter 的 `anm`(+0x22) 与
      `hit_fx`(+0x26) 都必须是同编号 `pl0X.anm` 里存在的 script；
-  3. 兽灵脚本（pl00 10/11/8，pl01 13/16/8）的**主飞行路径**不得 `delete()`
+  3. 追加脚本（兽灵 / 灵界）的**主飞行路径**不得 `delete()`
      （delete 只允许在 `interruptLabel` 之后）—— 这是「弹不会提前消失」的硬条件。
 
     python3 assets/check_player_anm_bounds.py
@@ -19,11 +19,13 @@ import anmlib as L
 
 HERE, MOD = L.HERE, L.MOD
 BUILD = L.BUILD
-BEAST = {"pl00": (10, 11, 8), "pl01": (13, 16, 8),
+BEAST = {"pl00": (10, 11, 8, 41, 42), "pl01": (13, 16, 8, 47, 48),
          # ★ AL61：pl02 追加红刀/紫刀（30/31）；pl03 追加大青蛙/大蛇（29/30）。
-         "pl02": (30, 31), "pl03": (29, 30, 31)}
-# 只有「会飞的主弹脚本」要求主飞行路径无 delete；hit_fx(8) 是一次性特效，本来就要自删。
-FLYING = {"pl00": (10, 11), "pl01": (13, 16), "pl02": (30, 31), "pl03": (29, 30)}
+         # ★ 113：pl00/pl01/pl03 追加 TH13 灵界主弹 + 闪光（41/42 · 47/48 · 32/33）。
+         "pl02": (30, 31), "pl03": (29, 30, 31, 32, 33)}
+# 只有「会飞的主弹脚本」要求主飞行路径无 delete；hit_fx(8) 与灵界闪光(*_GLINT) 是一次性特效，
+# 本来就要自删。
+FLYING = {"pl00": (10, 11, 41), "pl01": (13, 16, 47), "pl02": (30, 31), "pl03": (29, 30, 32)}
 FILES = ("pl00", "pl01", "pl02", "pl03")
 
 _SCRIPTS = re.compile(r"^script script(\d+) \{\n(.*?)^\}", re.M | re.S)
@@ -32,14 +34,29 @@ _SPRITE_DEF = re.compile(r"\bsprite(\d+):")
 
 
 def _read_sht(path: Path):
-    """-> {set_idx: [(anm, hit_fx), …]}（40 项偏移数组，数据区 +0x180，stride 0x5c）。"""
+    """-> {set_idx: [(anm, hit_fx), …]}
+
+    ★ 2026-09-14（`AUDIT.md` §CQ 扩容）：数组区现在是 **预留 256 格**（`[0xe0,0x4e0)`），
+      其中**宣布可用 96 格**（= 头 `+0x02`）、数据区起点 `0x4e0`。这些常量必须与
+      `assets/sht/append_shooterset.py` 的 `N_SLOTS` / `N_SLOTS_RESERVED` / `DATA_BASE` 一致
+      —— 这里刻意**不 import 生成器**（本脚本的定位是「不依赖生成器内部状态」的独立回读），
+      代价是常量有两处；`make check` 里生成器自己的 `verify()` 与 `capcheck` 的三方对账是另外两边。
+    """
     b = path.read_bytes()
-    offs = list(struct.unpack_from("<40I", b, 0xE0))
+    slots, reserved, base = 96, 256, 0x4E0
+    # 结构性自检：**预留**数组区末尾必须正好顶到数据区（与生成器同一条恒等式）
+    if 0xE0 + reserved * 4 != base:
+        raise SystemExit("check_player_anm_bounds: 扩容常量自相矛盾（数组区末尾 != 数据区起点）")
+    n = struct.unpack_from("<H", b, 0x02)[0]
+    if n != slots:
+        raise SystemExit(f"check_player_anm_bounds: {path.name} 头 +0x02 = {n}，期望 {slots}"
+                         f"（生成物没重跑？`make sht`）")
+    offs = list(struct.unpack_from(f"<{reserved}I", b, 0xE0))
     out = {}
     for idx, o in enumerate(offs):
         if o == 0:
             continue
-        q = 0x180 + o
+        q = base + o
         rows = []
         while struct.unpack_from("<i", b, q)[0] != -1:
             anm = struct.unpack_from("<h", b, q + 0x22)[0]
@@ -92,6 +109,11 @@ def main():
         for idx, rows in _read_sht(sht_path).items():
             if not (0x1E <= idx <= 0x27):
                 continue   # 0x17..0x1d 是 PEA/SEASON，anm 指 ability.anm，不归本文件
+            # ⚠ 113 的灵界组**不在这里查**：它借用原生槽 0x0e，但槽里的 40 项偏移数组**没变**
+            #   （运行时才指向孤儿段）⇒ 照偏移读出来的是原生早苗子机组，不是灵界行。
+            #   灵界行的 anm 号由 `append_shooterset.py` 的 `check_pl_anm_ids()`（宏 ↔ 数交叉核对）
+            #   与它自己的 `verify()`（孤儿段逐字节回读）把关；本文件用 `BEAST`/`FLYING`/`PINNED`
+            #   三个表管 anm 侧。
             for anm, hfx in rows:
                 n_ref += 1
                 if anm not in scripts:
@@ -105,7 +127,7 @@ def main():
         for b in bad:
             print("  " + b)
         return 1
-    print("OK: sprite 全在界内；sht 的 anm/hit_fx 全部存在；兽灵脚本主路径无 delete()。")
+    print("OK: sprite 全在界内；sht 的 anm/hit_fx 全部存在；追加脚本（兽灵/灵界）主路径无 delete()。")
     return 0
 
 

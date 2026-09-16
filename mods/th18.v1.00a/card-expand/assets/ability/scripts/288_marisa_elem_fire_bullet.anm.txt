@@ -1,0 +1,65 @@
+script script288 {
+// 地灵殿（id 111）**魔理沙的元素子机弹 · 火** —— TH11 `pl01.anm` **script11** 的逐条移植。
+//
+// 用户口径：「**你得用 th11 的魔理沙子机贴图和弹幕样式呀**」。
+//
+// ══ 一手出处 ═══════════════════════════════════════════════════════════════════════════
+//   TH11 的子机弹：`Player::shoot_one_bullet` `th11:0x433f90` 的
+//   `0x4341fb movsx eax,WORD [edi+0x1e]`（shooter 的 anm 字段）→ `0x4341ff add eax,5`
+//   → `0x434203 push ecx`（`player+0x10` = **pl0X.anm**）→ `0x434204 call 0x455a00`（层 0x16）。
+//   ⇒ 每档的脚本 = `shooter[+0x1e] + 5`：**火 6→11 / 水 4→9 / 木 0→5 / 金 8→13 / 土 10→15**，
+//     而 `pl01.anm` 的这五支正文**逐项相同、只差 `sprite()`**：
+//     火 `sprite(sprite49)`（{0,208,32,16}）/ 水 `sprite(sprite45)`（{0,192}）/
+//     木 `sprite(sprite24)`（{0,144}）/ 金 `sprite(sprite53)`（{0,224}）/ 土 `sprite(sprite57)`（{0,240}）。
+//   ⚠ `ins_82(1)` = v4/v7 的未命名 opcode 82，🟡 判定为 **`rotateAuto(1)`**（v8 的 424）：
+//     判据 = TH11 的 script5 与 TH18 的 `pl01.anm` script5 **属性列表逐项同位**
+//     （`layer/sprite/type/alpha/zWriteDisable/ins_82(1)` ↔ `layer/sprite/type/alpha/zWriteDisable/rotateAuto(1)`），
+//     旁证 = 子机弹判定盒 16×32 而贴图 32×8（**只有贴图跟着速度方向转才自洽**）。
+//     ⇒ 本脚本写 `rotateAuto(1)`（**不写它就宽高反了**）。
+//
+// ══ 改了什么 ═══════════════════════════════════════════════════════════════════════════
+//   · 贴图 = `@MARISA_ELEM_BULLET_FIRE@`（TH11 sprite49 的 1:1 切图）。
+//   ★★ 2026-09-16u：**`layer(10)` 改成 `layer(13)`**（用户实跑「魔理沙子机没有发弹」的排查）：
+//     一手 TH11 的弹层是 10；**TH18 的号不一样**，而本仓**实跑确认可见**的弹脚本（`282_marisa_bullet`，
+//     = TH18 原生 `pl01.anm` script5 的逐条移植）写的是 **`layer(13)`** ⇒ 这里对齐它。
+//     ⚠ 原来那一版**完全没有 `layer()`** ⇒ VM 用的是实例化时的默认层，是否画得出来没有实证。
+//   · ⚠ TH11 的 `+10000: static()` **没有抄**（2026-09-16z）：TH18 的原生弹脚本（`pl01.anm` script5）
+//     都没有它，弹的位置由引擎按 bullet 结构逐帧写 ⇒ 留它只会让时间线多一个无用的绝对标签。
+//   · 其余（`type(1)` / `alpha(128)` / `zWriteDisable(1)` / `rotateAuto(1)`）**一字未改**。*/
+//   ★★ 2026-09-16z：**补命中链**（用户：「碰撞之后没有碰撞动画，失去效果」）—— 一手结论同 AUDIT §AL31：
+//     命中动画由 shooter 行**之外的** anm 脚本承担（`interruptLabel(1)`）⇒ 本脚本末尾那一段
+//     = TH18 原生 `pl01.anm` script5 的命中三帧（同本仓 282）；TH11 原脚本没有这一段（诚实边界见下）。
+//     同时去掉 TH11 的 `+10000: static()`（TH18 的原生弹脚本都没有它；位置由引擎按 bullet 结构逐帧写）。
+    layer(13);                              // ★ TH11 是 layer(10)；TH18 的自机弹层 = 13（零售 pl01.anm script5 / 本仓 282）
+    sprite(@MARISA_ELEM_BULLET_FIRE@);   // ← TH11 `sprite(...)` 的 1:1 切图
+    type(1);
+    alpha(128);
+    zWriteDisable(1);
+    rotateAuto(1);                          // ← TH11 `ins_82(1)`（🟡 等价判定见文件头）
+0:
+    stop();                                 // 常态只有第 0 帧那几条（同 TH18 原生 pl01.anm script5 / 本仓 282）
+    // ══ ★★ 2026-09-16z **命中链**（用户：「和 th17 改咆哮当时一样的问题，发的弹幕碰撞之后没有碰撞动画」）══
+    // 一手（AUDIT §AL31 的同一条结论）：**命中动画不在 shooter 行里，而在 anm 脚本的 `interruptLabel(1)`**
+    //   —— 引擎在弹命中时给它的 VM 发 `interrupt 1`（`AnmManager` 把 `vm+0x494` 写 1，VM 下一帧跳到该标签）。
+    //   底本 = **TH18 原生 `pl01.anm` script5**（魔理沙主炮的弹）的命中三帧，与本仓 282 逐条同形：
+    //     `interruptLabel(1): layer(15); alpha(192); alphaTime(30,0,0); blendMode(1); type(1);`
+    //     `sprite(25); +10: sprite(26); +10: sprite(27); +10: delete();`
+    //   ⇒ 贴图借**同一作同一自机的命中三帧**（本仓 `MARISA_BULLET_1..3` = sprite 437..439，
+    //     即原生 sprite25/26/27 的 1:1 切图）。
+    //   ⚠ ❓ 诚实边界：**TH11 的五支子机弹脚本正文没有命中链**（只有 `+10000: static()`），
+    //     所以「命中动画长什么样」在 TH11 里**没有可抄的东西** ⇒ 这里借的是 TH18 自己的命中图，
+    //     不是 TH11 的一手（登记 `TUNING.md` §2.1i）。
+    interruptLabel(1);
+    layer(15);
+    alpha(192);
+    alphaTime(30, 0, 0);
+    blendMode(1);
+    type(1);
+    sprite(@MARISA_BULLET_1@);
++10: // 10
+    sprite(@MARISA_BULLET_2@);
++10: // 20
+    sprite(@MARISA_BULLET_3@);
++10: // 30
+    delete();
+}

@@ -42,7 +42,7 @@ script script212 {
     layer(25);
     sprite(@SIGNAL_GAUGE_BG@);
     anchor(1, 2);
-    pos(84.0f, 912.0f, 0.0f);
+    pos(0.0f, 0.0f, 0.0f);
     resampleMode(1);
     resolutionMode(2);
     alpha(0);
@@ -53,7 +53,11 @@ script script212 {
     interruptLabel(2);
     alphaTime(30, 0, 255);
     stop();
+    // ★★ 2026-09-15f「组合 UI」：**压暗已改由 C 驱动**（`cards/faith_hud.c` 的 `fh_dim_tick()` ——
+    //   ❓ 用户口径「UI 统一，不能复刻」：终点 **32**、每帧 **±51**、门 **进 x<−64 ∧ y>400 / 出 y<384 ∨ x>−64**）
+    //   ⇒ **本行（中断 3）不再被触发**，保留它只是把**源脚本的一手值**留档：TH11 `front.anm` script32 是 64、TH10 `front.anm` script52 是 32。
+    //   ⚠ 别再发中断 3；两个一手值（TH10 32 / TH11 64）与口径见 `TUNING.md` §2.6f-3 与 `AUDIT` §DC-5。
     interruptLabel(3);
-    alphaTime(10, 0, 64);
+    alphaTime(10, 0, 64);    // ★ 一手值留档（**本行已不被触发** —— 压暗改由 C 驱动，见上）
     stop();
 }

@@ -4,28 +4,77 @@
     python3 append_shooterset.py                # 构建 + 自检 + 写 sht_ids.h
     python3 append_shooterset.py --verify-only  # 只自检已有的 build/sht/*.sht
 
-## 为什么能纯追加
+## 为什么会重排文件（★ 2026-09-14 扩容到 96 格，`AUDIT.md` §CQ）
 
-`pl0X.sht` 的 `+0xe0` 是一张 **40 项**的 shooterset 偏移数组（数据区起点 `+0x180` 是解析器里的硬编码
-常量），原生只用了 23 项（`0x00`–`0x09` 主炮、`0x0a`–`0x16` 装备卡子机），**尾部 17 项是 0**。
-所以「填一项 + 文件尾接一段」不动前面任何一个字节。
+零售文件的原样是：头 `[0,0xe0)` + **40 项**偏移数组 `[0xe0,0x180)` + 数据区 `0x180` 起
+（`0x180` 是解析器里硬编码的重定位基址 `th18:0x45a830` `lea eax,[edx+0x180]`）。
+原生只用了 23 项（`0x00`–`0x09` 主炮、`0x0a`–`0x16` 装备卡子机），尾部 17 项是 0 —— 本 mod 到
+2026-09-13 把 `0x17`–`0x27` 也占满（豌豆 2 + 116 季节 5 + 117 兽灵 10）⇒ **40/40，余量 0**。
+
+扩容的写法是「**数组区原地长到预留格数、数据区跟着后移**」：
+
+    [0,0xe0)     头（不动）
+    [0xe0,0x4e0) 数组区 = **预留 256 格**（宣布可用 96 格 = 头 `+0x02`；原 40 项的值一个不改）
+    [0x4e0,…)    数据区（每一条记录的字节原样，只是整体后移 0x360）
+
+★ **为什么预留到 256 格**：数据区起点是 exe 里的硬编码立即数（`0x45a830`）⇒ 必须一次让够。
+预留之后**以后再加格子只需改文件**（抬 `N_SLOTS` + 写槽位 + 接行数据），**exe 补丁与 DLL 常量都不用动**。
+⚠ 用到 `N_SLOTS`（= 头 `+0x02`）之外的预留槽时，**必须同时把 `N_SLOTS` 抬到那个槽之上**：
+计数外的槽不会被重定位（值仍是 0），谁读它谁拿到空指针。
+
+- **数据区的偏移项是相对的**（`stored = 文件内偏移 − 数据区起点`），记录与基址**同时后移**
+  ⇒ 40 个零售偏移项的值**一个字节都不用改**，记录的字节也一个都不用改。
+- exe 侧只有**一处**要改：`th18:0x45a830` 的 `lea eax,[edx+0x180]` → `[edx+0x4e0]`
+  （6 字节等长 binhack，见 `native/sites.py` 的 `SHT_DATA_BASE`）。
+- ★ **13 个读者的位移 `[sht + 0xe0 + set*4]` 一个字节都不用动** —— 数组起点还是 `0xe0`。
+  这是本次扩容与 `NEXT.md` §1w 最早那版计划（把数组搬文件尾、改 13 个读者）的**关键差别**：
+  搬数组要改 14 处、漏一处就是静默错位（`CAPACITY.md` §4 的普查就是为那条路做的）；
+  原地长大只需证明「数据区基址常量在全 exe 只出现一次」（已证：`.text` 里 `0x180` 的
+  memory disp 只有 `0x45a830` 一处与 pl0X 有关，见 `AUDIT.md` §CQ 的取证）。
+- 结构恒等式（`assert` 在模块级）：`DATA_BASE == OFF_ARRAY + N_SLOTS_RESERVED*4`
+  —— 它同时保证了「第 `i` 项在 `0xe0 + i*4 < DATA_BASE`（对任何 `i < N_SLOTS_RESERVED`）」
+  ⇒ 读者永远读在数组区里、踩不到数据区。
+- 文件变大是**安全**的：影像内存是 `malloc(GetFileSize())`（`th18:0x491a34` ← `0x4ad088`
+  GetFileSize ← `0x402140` 一带），缓冲区随文件大小；不是定长结构体内嵌数组。
+
 一手：`engine/sht/th18/01-file-layout-and-shooterset-index.md`。
 
-## 两条路：**追加**新索引（`APPEND`）/ **覆盖**原生空槽（`REPLACE`）
+## 三条路：**追加**新索引（`APPEND`）/ **覆盖**原生空槽（`REPLACE`）/ **孤儿段**（`TRANSIENT`）
 
-- 偏移数组只有 40 格，`0x00`–`0x16` 原生、`0x17`–`0x27` 本 mod 已用满 ⇒ 再要一格只能
-  **复用原生里没有卡映射的那一格**（`REPLACE`，现在只有 108 的妖侧 set 用 0x16）。
+- 扩容后可用的是 `0x28`–`0x5f`（**56 格**，见 `sht_ids.h` 的分配表）；`0x00`–`0x27` 已满。
+  再要一格只能 **复用原生里没有卡映射的那一格**（`REPLACE`，现在只有 108 的妖侧 set 用 0x16）。
   覆盖的写法是「新记录接在文件尾 + 把该槽的偏移指过去」，原生原来的 96 字节原地留着（死数据）。
 - `APPEND` 分配 `0x17` 起；`REPLACE` 不新增索引、也**不挪动任何既有索引**。
+- ★ 2026-09-13（卡 113 的灵界组）：**原生 0x0a–0x15 十二格全是活的原生装备卡子机组、0x16 已被 108 占**
+  ⇒ 「抢一格」会永久毁掉某张原生卡、「加一格」要改解析器的硬编码基址 ⇒ 走第三条路：
+  **行数据落在文件尾的孤儿段（没有任何偏移项指向它），运行时由 `cards/trance.c` 在灵界窗口内
+  把借用格 `CE_SHT_SET_TRANCE`（0x0e）临时指向它，退出时还原原生指针**。
+  普查与理由的全文在下面 `TRANSIENT_SLOT` 段的注释里（唯一出处）。
 
-## 四条必须守住的不变式（脚本每次都回读校验）
+## 不变式（脚本每次都回读校验）
 
-1. 头部 `+0x02` 仍是 40 —— 它是解析循环的上界。
+1. 产物头部 `+0x02` = **`N_SLOTS`（96）**（= 解析循环的上界）；**零售文件**仍是 40，两边分别核。
+   数组区本身是 `N_SLOTS_RESERVED`（256）格。
 2. **shooterset 0 的四个 func 字段仍全是 0**。剩下的空位仍指向 set 0，会被重复解析；
    靠 `0 → 表[0] = NULL → 0` 幂等才不炸。改坏它 = 开局崩。
-3. **除 `REPLACE` 点名的槽外**，前 23 组 shooterset 的字节逐字节不变，偏移也不变。
+   （扩容后计数内的空位多了 ⇒ set 0 被重复解析的次数从 17 涨到 73，更依赖这条。）
+   ⚠ 计数**外**的预留槽不会被重定位（值仍是 0）：谁要用它，必须同时把文件头 `+0x02` 抬上去。
+3. **除 `REPLACE` 点名的槽外**，前 23 组 shooterset 的字节逐字节不变，偏移项的值也不变
+   （记录整体后移 0x360，偏移是相对的 ⇒ 值不变；比较时用 `DATA_BASE_RETAIL` / `DATA_BASE` 两侧基址）。
 4. 被 `REPLACE` 覆盖的槽：原生原记录**原地原样**、新记录落在**追加区**（文件尾），
    且除该槽的偏移项外偏移数组一个字节不动。
+5. **孤儿段（`TRANSIENT`）四条**：① 四个文件的孤儿段起点**同一个偏移**（短文件补 0 对齐）；
+   ② **没有任何偏移项**（预留 256 个全查）指进孤儿段 —— 否则别的卡会拿到灵界行；
+   ③ 孤儿段之前的补零段确实全是 0；④ 每文件的行数与登记的 `TRANCE_ROWS` 一致
+   （咲夜 = 空组，只有终止符）。
+6. **数组区与数据区不重叠**（★ 扩容新增）：`OFF_ARRAY + N_SLOTS_RESERVED*4 == DATA_BASE` —— 这是
+   「读者位移 `0xe0` 不用改」的充要条件；数组区少算一格 ⇒ 数据区头 4 字节被当成数组最后一格，
+   多算一格 ⇒ 数据区第 1 项被压在数组下面。两种都是静默错位。
+7. **没分配的槽 + 全部预留槽（`N_RETAIL+len(sets)` 到 `N_SLOTS_RESERVED-1`）必须是 0**
+   （脚本按分配表自动核）。计数内的空槽重定位后别名 set 0（幂等），计数外的保持 0。
+8. **数据区起点与数组区长大严格同步**：
+   `DATA_BASE == DATA_BASE_RETAIL + (N_SLOTS_RESERVED - N_SLOTS_RETAIL)*4`，
+   且 exe 侧那一处 binhack 写的就是 `DATA_BASE`（`sites.py` ↔ 本文件 ↔ `capcheck.py` 三方对账）。
 
 另外 `fire_rate` 必须 1–127：`0` 在装备卡路径上会整数除零（`0x40a9c0` 没有零分支），
 `< 0` 是 shooterset 的终止符。
@@ -47,9 +96,20 @@ PL_IDS_H = MOD / "native" / "pl_anm_ids.h"       # 由 assets/build_player_anm.p
 YOUKAI_CORE_H = MOD / "native" / "cards" / "youkai_core.h"
 FILES = ("pl00.sht", "pl01.sht", "pl02.sht", "pl03.sht")
 
-OFF_ARRAY = 0xE0        # 偏移数组
-DATA_BASE = 0x180       # 解析器里的硬编码常量
-N_SLOTS = 40            # 偏移数组长度（= 头部 +0x02）
+OFF_ARRAY = 0xE0        # 偏移数组在影像内的起点（**14 个读者指令里的位移就是这个值，扩容不动它**）
+N_SLOTS_RETAIL = 40     # 零售文件的格数（= 零售头 `+0x02`）
+# ── 两个「格数」：**宣布可用的**（= 影像头 `+0x02` = 加载器解析循环上界）与**预留的数组区**──
+N_SLOTS = 96            # ★ 宣布可用：用户 2026-09-13 拍板的目标（本 mod 现在用到 0x5f）
+N_SLOTS_RESERVED = 256  # ★ 数组区一次留够：以后用到 0x60+ 只需**改文件**（抬 N_SLOTS + 写槽位
+                        #   + 接行数据），exe 补丁与 DLL 常量都不用动（数据区起点已让开）
+DATA_BASE_RETAIL = 0x180  # 零售的数据区起点（= `th18:0x45a830` 的原始立即数）
+# ★ 数据区起点必须**正好接在预留数组区的末尾**：[0xe0, 0xe0+N_SLOTS_RESERVED*4)，
+#   于是「第 i 项恒在 0xe0+i*4 < DATA_BASE」对**任何** i < N_SLOTS_RESERVED 都成立
+#   ⇒ 读者（位移 0xe0）永远踩不到数据区。两条等价写法给出同一个数（0x4e0），互为对账：
+DATA_BASE = OFF_ARRAY + N_SLOTS_RESERVED * 4              # = 0x4e0
+assert DATA_BASE == DATA_BASE_RETAIL + (N_SLOTS_RESERVED - N_SLOTS_RETAIL) * 4, \
+    "数据区起点必须 = 零售基址 + 数组区预留字节数（否则会与数组重叠 / 留缝）"
+assert N_SLOTS_RETAIL <= N_SLOTS <= N_SLOTS_RESERVED, "宣布可用格数必须落在 [零售格数, 预留格数] 内"
 N_RETAIL = 23           # 原生用掉的项（0x00–0x16）
 STRIDE = 0x5C
 TERMINATOR = b"\xff\xff\xff\xff"
@@ -110,7 +170,14 @@ APPEND = [
                             func_on_init=2, func_on_tick=2, func_on_hit=2)]),
     ("SEASON_DOYOU",  [dict(fire_rate=3, start_delay=0, damage=15, hit_w=48.0, hit_h=18.0,
                             angle=1.5707964, speed=24.0, opt_slot=0, mode=0,
-                            anm="CE_ANM_ABILITY_SCRIPT_SEASON_BULLET_DOYOU", sfx=-1, func_on_init=0)]),  # 向后 24/帧
+                            # ★★ 2026-09-16m：`+0x22` 从 116 的「季节点」弹（`SEASON_BULLET_DOYOU`）
+                     #   换成**魔理沙自己的弹**（脚本 282 = TH18 原生 `pl01.anm` script5 的移植，
+                     #   贴图 = `pl01.anm` entry0 sprite24/25/26/27 的 1:1 切图）。
+                     #   一手：装备卡子机的弹贴图来自 `ability.anm`（`th18:0x40aa03` 换 `player+0x10`）
+                     #   ⇒ 号段必须是 ability.anm 的；用户实跑「**弹的贴图**」不对 = 这条指错了。
+                     #   生成器 `assets/ability/make_marisa_bullet_art.py`（entry 55 / sprite 436..439）。
+                     anm="CE_ANM_ABILITY_SCRIPT_MARISA_BULLET", sfx=-1, func_on_init=0)]),  # 向后 24/帧
+
 ]
 
 
@@ -122,6 +189,8 @@ APPEND = [
 #   · 偏移数组 40 格**全满**：四份原生 `pl0X.sht` 的 `+0x02` 都是 40，`0x00`–`0x16` 逐项非 0；
 #     本 mod 的 `APPEND` 又占掉 `0x17`–`0x27`（见 `native/sht_ids.h`）⇒ `build_one()` 的
 #     `N_RETAIL + len(sets) > N_SLOTS` 会直接拦住「再加一格」。
+#     ★ 2026-09-14 起 `N_SLOTS` = 96（AUDIT §CQ 扩容）⇒ 又空出 `0x28`–`0x5f`，本覆盖写法**继续保留**
+#       （108 已经发出去、槽号写进存档与卡定义，不动它），但**新卡请从 `0x28` 起拿号**。
 #   · 槽 `0x16` 是原生**唯一没有卡映射**的一格：扫全 exe 的 `E8 rel32`，调用
 #     `Player__tick_shooters_for_ability_card` `0x40a9c0` 共 11 处，压栈的 set 立即数
 #     = {0x0a,0x0b,0x0c/0x0d,0x0e,0x0f,0x10,0x11,0x12,0x13,0x14,0x15}，**没有 0x16**；
@@ -516,6 +585,134 @@ HYPER_TEMPLATES = {
 }
 
 
+# =====================================================================
+# ★ 2026-09-13（卡 113「灵界」）：TH13 灵界主炮组（`pl0Xa.sht` set **10**）的 TH18 落点
+#
+# ## 一、为什么是「孤儿段 + 运行时借用一格」而不是又一个 `APPEND` / `REPLACE`
+#
+# 一手普查（本会话在本机 `th18.exe` 上重跑，不是抄文档）：
+#   · 偏移数组 **40 格全满**：原生 `0x00`–`0x16`（23 格）+ 本 mod 的 `APPEND` `0x17`–`0x27`
+#     （17 格）= 40 = 头部 `+0x02`。`build_one()` 的 `N_RETAIL + len(sets) > N_SLOTS` 直接拦死，
+#     **再没有 `APPEND` 的余地**。
+#     ★ 2026-09-14：容量已扩到 96 格（AUDIT §CQ）⇒ 现在**有** `0x28` 起 56 格空位，
+#       本卡的正式收尾（换成永久专属槽 `0x28`、删掉借格/还原/账本）是 `NEXT.md` §1w 第 5 步，
+#       排在 113 这轮实跑验收之后。**在那之前本节的三条路推理与实现都照旧生效**。
+#   · 原生那 23 格**一格都不空**：扫全 exe 的 `E8 rel32`，`Player__tick_shooters_for_ability_card`
+#     `0x40a9c0` 共 **11 个调用点**，压栈的 set 立即数逐点读出来是
+#     `0x40ab00→0xa` / `0x40ac10→0x12` / `0x40ad20→0xb` / `0x40ae30→0x13` /
+#     `0x40af60→0xc+(聚焦?1:0)`（= `0xc`/`0xd` 两格）/ `0x40b080→0x14` / `0x40b190→0xe` /
+#     `0x40b2a0→0x15` / `0x40b3ce→0x11` / `0x40b5f2 push 0xf` / `0x40bb30→0x10`
+#     ⇒ **`0x0a`–`0x15` 十二格全部是活的原生装备卡子机组**（11 张卡，咲夜那张占两格，
+#     与 `engine/card/th18/08-catalog.md` §D 的表逐行对得上）。
+#     `0x16` 早被 108 的妖侧 set 用掉了（`REPLACE`）⇒ **REPLACE 也没有干净的槽可抢**：
+#     抢任何一格 = 那张原生装备卡（任选角色都能装）在**非灵界时**也打灵界弹。
+#   · 主炮 `0x00`–`0x09` 同理：平时每帧都在用，不能动。
+#   ⇒ 结论：**「抢一格」和「加一格」都做不到零代价**，于是本块采取第三条路 ——
+#     **数据落在文件尾的「孤儿段」（没有任何偏移项指向它），运行时由 `cards/trance.c`
+#     只在灵界窗口内把借用格临时指向它，退出/删卡时还原原生指针。**
+#
+# ## 二、借用的那一格为什么在窗口内是安全的（同一份普查）
+#
+#   借用格 = `CE_SHT_SET_TRANCE` = **`0x0e`**（原生 = `SANAE_OP` 装备卡的子机组）。
+#   灵界窗口内它的**唯一**读者是「装备卡子机路径」`0x40a9c0`，而那条路被本卡自己的
+#   `on_option_shot_gate` 掐掉（TH13 灵界组**一条子机 row 都没有** ⇒ 复刻要求它停火），
+#   主炮路径用的又是 `on_shot_set_index` 返回的**本卡**索引 ⇒ 窗口内 `0x0e` **无人读**。
+#   窗口外本卡把该格**还原成解析器算出来的原生指针**（保存的是进入窗口那一刻读到的值，
+#   ⇒ 不需要在 C 侧硬编码原生偏移，也就不会随数据改动而失配）。
+#   ★ 失败方向：如果还原逻辑漏了，最坏结果是「装 SANAE_OP 的玩家打出灵界弹」——
+#     看得见、不崩、日志里能查到；**不会**像"文件里直接覆盖"那样留下永久回归。
+#
+# ## 三、行数据：TH13 一手逐字节（`thdat -x 13` 的 `pl0Xa.sht` set 10）→ TH18 字段
+#
+#   一手读法：`local/th13.v1.00c/dat/pl0Xa.sht`，头部 `+0x02 = 11`、数组 `+0xc8`、
+#   重定位基址 `+0xf4`、row stride `0x38`（见 `engine/spirit/th13/05-trance-attack.md` §1.2）。
+#   实测三行（本会话重跑的字节解析，与那篇 §2 的表**多出一个字段 `dy`**，见下）：
+#     灵梦  set10 = (rate2 dmg22 dx∓16 dy−8 wh64/24 spd24 anm4 sfx21) ×2
+#     魔理沙 set10 = (rate2 dmg22 dx∓16) (rate2 dmg22 dx∓16) (rate2 dmg11 dx∓30) ×2, wh48/18, anm1
+#     早苗  set10 = (rate2 dmg22 dx∓16 dy−8 wh48/18 spd24 anm1 sfx21) ×2
+#     妖梦  set10 = rate30 dmg25 dy−48/−60（**TH18 没有妖梦，丢弃**，见 `REPORT-TRANCE-ATTACK-FEASIBILITY.md` §4.3）
+#   全部：`delay=0`、`ang=−π/2`、`slot=0`、`mode=0`、四个 func 全 0（⇒ **没有诱导**、**没有子机 row**）、
+#   `+0x1c = 0`。
+#
+#   逐字段映射（左 = TH13 `pl0Xa.sht`，右 = TH18 `pl0X.sht`；字段图见 `engine/sht/th18/02` §1）：
+#     `+0x00` rate → `+0x00` fire_rate（两侧判据同形：`timer % rate == delay`）✅
+#     `+0x01` delay → `+0x01` start_delay ✅（两作灵界组都是 0）
+#     `+0x02` dmg → `+0x02` damage ✅（**TH13 没有伤害倍率**，增伤就在这两个数里）
+#     `+0x04/+0x08` → `+0x04/+0x08` 出膛偏移 x/y ✅（**`dy = −8.0` 是本次逐字节新读到的**：
+#         TH13 set10 三条自机都有，上一版文档表只列了 `dx`）
+#     `+0x0c/+0x10` → `+0x0c/+0x10` 🟡 **语义不同名**：TH13 这两个 float 进 `bullet+0x88/+0x8c`
+#         （那篇标 🟡「尺寸」），TH18 进 `bullet+0xa0/+0xa4`（判定框宽/高）。
+#         取值**照抄 TH13 的数**（灵梦 64/24、魔理沙与早苗 48/18）—— 它们是同一量级、
+#         与弹贴图（78×30 / 62×30）成比例，是对得上的一手数字；**不自己发明**。
+#     `+0x14` ang → `+0x14` angle ✅（−π/2 = 正上）
+#     `+0x18` spd → `+0x18` speed ✅
+#     `+0x1c` → TH18 `+0x1c..+0x1f`（原生 268 条全 0）✅ 填 0
+#     `+0x20` slot → `+0x20` opt_slot ✅（0 = 自机本体）
+#     `+0x21` mode → `+0x21` mode ✅（0）
+#     `+0x22` anm → `+0x22` anm ⚠ **数字空间不同**：TH13 实际读 `pl0X.anm script(row->anm + 10)`
+#         （`th13:0x445e0c`/`0x445e10`），TH18 直接读 `script(row->anm)`。
+#         ⇒ 这里填的是**我们往 TH18 `pl0X.anm` 追加的脚本号**（见 `build_player_anm.py` 的
+#         `PL00_TRANCE=41` / `PL01_TRANCE=47` / `PL03_TRANCE=32`，`check_pl_anm_ids()` 会交叉核对）。
+#     `+0x24` sfx → `+0x24` sfx ✅（首行 21、其余 −1；TH18 的 `0x15 = se_tan00` 是自机弹音 ⇒ 同族）
+#     `+0x28/+0x2c/+0x30/+0x34` func → `+0x2c..+0x38` func ✅ 全 0（平弹；TH13 灵界组也没有诱导）
+#     TH18 有、TH13 没有的：`+0x26 hit_fx` / `+0x2a fire_rate2` / `+0x2b start_delay2` / `+0x4c tilt`
+#         ⇒ 全 0（只有激光/倾斜路径读它们，本组是平弹）
+#
+# ## 四、咲夜（TH18 `pl02`）为什么是空组
+#
+#   TH13 没有咲夜（四机体是 灵梦/魔理沙/早苗/妖梦）⇒ 用户 2026-09-13 定案「咲夜不变」。
+#   这里仍然**产出**一份空组（只有终止符）把四个文件的孤儿段对齐：即使哪天有人误把
+#   `CE_SHT_SET_TRANCE` 返回给咲夜，引擎的 row 循环见终止符就直接不发弹（安全回退）。
+TRANSIENT_SLOT = 0x0E              # 借用的原生格（= SANAE_OP 的装备子机组），见上面 §二
+_TRANCE_ANGLE = -1.5707963705062866  # = −π/2（float32 的 −π/2），TH13 三条都是这个值
+
+
+def _tr_row(rate, dmg, dx, hit_w, hit_h, anm, sfx):
+    """TH13 `pl0Xa.sht` set10 的一行 → TH18 shooter dict（映射表见上面注释 §三）。"""
+    return dict(fire_rate=rate, start_delay=0, damage=dmg,
+                spawn_dx=dx, spawn_dy=-8.0,          # −8.0 = TH13 逐字节读到的 dy
+                hit_w=hit_w, hit_h=hit_h,
+                angle=_TRANCE_ANGLE, speed=24.0,
+                opt_slot=0, mode=0,
+                anm=anm, sfx=sfx,
+                func_on_init=0, func_on_tick=0, func_on_draw=0, func_on_hit=0)
+
+
+# 追加脚本号必须与 `assets/build_player_anm.py` 的计划一致（`check_pl_anm_ids()` 交叉核对）。
+# 数字空间：TH13 的 `pl00.anm script14` / `pl01.anm script11` / `pl02.anm script11`（= anm+10）
+# 在 TH18 这边对应**新追加**的脚本（TH18 的 pl00/pl01 没有对应脚本，pl03 的原生 script11 是别的东西）。
+PL00_SCRIPT_TRANCE = 41
+PL01_SCRIPT_TRANCE = 47
+PL03_SCRIPT_TRANCE = 32
+
+TRANCE_ROWS = {
+    # 灵梦（TH13 `pl00a.sht`，CHARACTER 0）：2 row，dmg 22，dx ±16，rate 2，速 24
+    "pl00.sht": [_tr_row(2, 22, -16.0, 64.0, 24.0, PL00_SCRIPT_TRANCE, 21),
+                 _tr_row(2, 22,  16.0, 64.0, 24.0, PL00_SCRIPT_TRANCE, -1)],
+    # 魔理沙（TH13 `pl01a.sht`，CHARACTER 1）：4 row/轮 —— dx ±16 是 22、dx ±30 是 11，全 rate 2
+    "pl01.sht": [_tr_row(2, 22, -16.0, 48.0, 18.0, PL01_SCRIPT_TRANCE, 21),
+                 _tr_row(2, 22,  16.0, 48.0, 18.0, PL01_SCRIPT_TRANCE, -1),
+                 _tr_row(2, 11, -30.0, 48.0, 18.0, PL01_SCRIPT_TRANCE, -1),
+                 _tr_row(2, 11,  30.0, 48.0, 18.0, PL01_SCRIPT_TRANCE, -1)],
+    # 咲夜（TH18 pl02）：TH13 没有这个自机 ⇒ **用户 2026-09-16 新定案**：
+    #   数值**照抄灵梦那一份**（2 row、rate 2、dmg 22、dx ±16、dy −8、判定 64×24、速 24 ⇒ DPS 22），
+    #   **贴图用她自己的刀弹** —— row 的 `anm` 填 **7** = TH18 `pl02.anm` 的刀弹脚本
+    #   （一手：零售 `pl02.sht` 主炮行的 `anm` 字段就是 7/9；切图见 anm_compare/咲夜_刀弹_script7.png）。
+    #   ⚠ 覆盖了 2026-09-13 的「咲夜不变」旧口径（那份已随本条作废）。
+    "pl02.sht": [_tr_row(2, 22, -16.0, 64.0, 24.0, 7, 21),
+                 _tr_row(2, 22,  16.0, 64.0, 24.0, 7, -1)],
+    # 早苗（TH13 `pl02a.sht`，CHARACTER 2 → TH18 pl03）：2 row，dmg 22，dx ±16
+    # ⚠ TH13 的「4 way」是**视觉**（一张 `pl02c.png` 里两条横条），数据上只有 2 row —— 照抄 2 row
+    "pl03.sht": [_tr_row(2, 22, -16.0, 48.0, 18.0, PL03_SCRIPT_TRANCE, 21),
+                 _tr_row(2, 22,  16.0, 48.0, 18.0, PL03_SCRIPT_TRANCE, -1)],
+}
+
+
+def trance_blob(target_file: str, anm_ids: dict) -> bytes:
+    """该文件的灵界组字节（含终止符）。空列表 = 只有终止符的空组。"""
+    return b"".join(pack_shooter(r, anm_ids) for r in TRANCE_ROWS[target_file]) + TERMINATOR
+
+
 def pack_shooter(s: dict, anm_ids: dict) -> bytes:
     rate = s["fire_rate"]
     if not 1 <= rate <= 127:
@@ -580,14 +777,316 @@ def _common_sets(anm_ids: dict) -> list:
             for nm, rows in APPEND]
 
 
+# ---- 111 地灵殿：魔理沙×帕秋莉「子机配置切换」五档（**本轮新占**）-----------------------
+#
+# ★★ **必须接在 `_hyper_sets()` 之后**（= `APPEND` + WOLF/EAGLE 两组之后），不能插进 `APPEND` 中间：
+#   槽号 = `N_RETAIL + 在生成序列里的序号`，**插在中间会把 117 的 WOLF/EAGLE 十个槽全部顶掉一格**
+#   （`animal_core.h` 的 `ANIMAL_SHOT_SET_*` 写死旧号 ⇒ 静默错弹）。这是本轮实际踩到并改回的一条。
+#   现在这五组落在 **0x28–0x2c**（见 next_free_slot 的断言）。
+#
+# ## 一手：这件事在原版是「换一组子机的角/距 + 贴图」，**不换子弹**
+#   `th11:0x4308fe`：`if (INPUT_B & 0x400) formation = (formation + 1) % 5`（`th11:0x43090a`–`0x430921`）；
+#   随后 `th11:0x430929` 把 **ANM script = `0x22 + formation`**（`th11:0x430949`）写进每个子机的
+#   `zPlayerOption+0xb0`，并把 `zPlayerOption+0x74` 的
+#   `marisa_b_preferred_offsets_by_formation[formation]`（5 档 × zInt2）拷进目标角/距字段
+#   （`th11:0x430970` 的 `[ebp+eax*8+0x75e4]`；`0x75e4 = 0x7570 + 0x74` ✓，步长 `0xe4`）。
+#   ⇒ **原版五档的差别全在几何/贴图，弹种是同一条**（TH11 的 option 弹由 `pl01b.sht` 的 `+0x28`
+#     专用发射函数驱动，那套函数在 TH18 没有对应物）。
+#
+# ## 那这五组为什么要建
+#   ① 用户拍板的落点是「卡侧走 `ce_allocate_option()` + `ce_tick_shooters_for_card(opt, timer, 0, set)`」
+#      —— 这条路径要**五格真实存在的 shooterset**；
+#   ② TH18 侧的对应物取**原生「迷你八卦炉」那一行的族**：`mode=0`、`func_*` 全 0（平弹）、
+#      `opt_slot=0`（用传进来的子机坐标）、出膛音 −1；
+#   ③ 五档只让「方向 / 速度」微差，**五档的每帧伤害完全相等** ——
+#      原版切换配置**不改变输出**，所以这里也**不拿它当强度来源**。
+#
+# ## ❓ 自定（登记 TUNING.md）
+#   原版五档的**具体角/距表没能取到**（全 exe 对 `th11:0x75e4` 只有 `0x430970`/`0x43098a` 两处**读**、
+#   没有任何写点，也没有 `75 e4 00 00` 的数据镜像）⇒ 阵型几何在 `native/cards/signal_core.c`
+#   的 `s_formation[][]` 里自定，这里的五组**数值也是自定**（取了原生同形行的取值范围）。
+#
+# ## ★★ 2026-09-16：**每发伤害按「18/13 的 DPS 比例」重新定过（20，不再 144）**
+#   用户口径（逐字）：「火力随 P 完全依赖原生关系，但是，得根据这一作的具体 dps 进行调整。
+#   保证平均 dps 一致即可，比如可以相邻两次发射的弹幕攻击力不一样，以符合平均 dps 关系。
+#   大概是 18魔理沙/13魔理沙 = 18灵梦/13灵梦」。
+#   口径、一手表、算式、残留偏差的唯一出处 = `native/cards/signal_core.h` 的
+#   「原生子机抑制 + 子机格数随 P + DPS 归一」那一段（**别在这里重复推理**）。落到这五组上只有一句：
+#     · **格数**由卡侧按原生火力档声明（档 N ⇒ N 格，`signal_power_cells()`）⇒ 本组会被 tick **N 次**；
+#     · **单发伤害** `D` 要满足「满档 4 格合计 = 本作原生子机层的每帧输出」：
+#       `4 × D / fire_rate = V18_opt(4) = 6.667` ⇒ **D = 6.667 × 12 / 4 = 20**（`fire_rate` 保持 12）；
+#     · 「平均 dps 一致」逐档核对：原生 `1.867/2.400/5.600/6.667` vs 我们 `1.667/3.333/5.000/6.667`
+#       ⇒ 四档均值 `4.133` vs `4.167` = **+0.8%**（档 2 的 +39% 是原生自己非单调，见 core.h 的残留偏差一节）。
+#   ⚠ **交替**（用户允许「相邻两发伤害不同」）在这一版**用不上**：D 是整数 ⇒ `(lo, hi) = (20, 20)`。
+#     将来若要逐档拟合原生那条非单调曲线（`D(档) = 12 × V18_opt(档) / 档` = 22.4 / 14.4 / 22.4 / 20.0），
+#     就把 `MARISA_FORMATION_ROW_DMG` 换成 `(lo, hi)` 对并按档拆组 —— 写法与代价见 TUNING.md 的 111 行。
+#
+# ## 不超模（每帧伤害横向对照；本仓既有口径 = Σdmg/rate）
+#   满档（4 格）时每帧 `4 格 × 1 行 × 5 / 3 = 6.667` —— **逐值等于**原生魔理沙满档子机层的 6.667
+#   （本卡把原生那 4 格子机整层关掉，所以这是**替换**、不是叠加）。对照：117 灵梦 WOLF 63.33（7 行）、
+#   116 春/夏/秋 各 3.0/行、原生「迷你八卦炉」（set 0x0b，rate5/dmg13）2.6/行。
+# ★★ 2026-09-16n **整套改成 TH11 的款式**（用户口径：「**你得用 th11 的魔理沙子机贴图和弹幕样式呀**」）。
+#   一手（`local/th11.v1.00a/th11.exe`，逐字节实读）：
+#     · TH11 的子机弹**永远走 `pl0X.anm`、脚本号 = `shooter[+0x1e] + 5`**（`th11:0x4341fb` / `0x4341ff`），
+#       而 TH18 的卡子机走 **`ability.anm`**（`th18:0x40aa03` 换 `player+0x10`）⇒ 把那五格 1:1 搬过来（脚本 288..292）。
+#     · **五档 = MarisaB（帕秋莉）的五元素**：`th11:0x433465 mov ecx,[ebx+0x8bac]` / `0x433470 add ecx,0x22`
+#       ⇒ `pl01.anm` script34..38（五个纯色球）⇒ **子机贴图也按 formation 选**（卡侧 `signal_option_script_for()`）。
+#   ★★ 2026-09-16zb **发弹数重核 + 改正一处旧误读**（用户口径：「**发弹数得大致对上，然后再考虑怎么调 dps**」）
+#     · ❌ 旧注释写的「每格 4 行 stagger（0/2/4/6）、`fire_rate = 60`、判定盒 **16x32**」是**误读**：
+#       那几条取自 **`pl01a.sht`**（TH11 魔理沙的**另一个**机体/配置，它的子机行才是 16–20 行、rate 60、
+#       盒 16x32、speed 12、`anm=2`）。**元素弹在 `pl01b.sht`**（`anm` 6/4/0/8/10 → `pl0X.anm` 脚本 11/9/5/13/15
+#       = 火/水/木/金/土），骨相完全不同 ⇒ 本轮按 **pl01b** 重写（旧版把 pl01b 的 speed 24 与 pl01a 的行数/盒混在了一起）。
+#     · 一手（`local/th11.v1.00a` 的 `pl01b.sht`，逐字节实读；set 4/9/14/19/24 = 五档满档）：
+#       `slot>=1`、`sfx=-1`、`dx=dy=0`、`speed = 24`、**`start_delay = 0`**、
+#       判定盒 **16x48**、`fire_rate` 逐元素不同（火 3 / 水 6 / 木 3 / 金 3 / 土 3）：
+#         | 元素 | 每格行数 | rate | dmg | 角度（一手） | 我们本轮 |
+#         | 火(anm6) | 1 | 3 | 5 | -1.669 / -1.473 交替 | rate3 / dmg5 / 盒16x48 |
+#         | 水(anm4) | 2 | 6 | 15 | 每格两个角 | 同上（1 行，密度等价） |
+#         | 木(anm0) | 1 | 3 | 18 | -2.356 / -0.785 | 同上 |
+#         | 金(anm8) | 2 | 3 | 12 | 0 与 pi（正右/正左） | 同上（**只有 TH11 的一半**） |
+#         | 土(anm10)| 1 | 3 | 12..20 | +1.571（正下） | 同上 |
+#       ⇒ 每格**发弹数**：火/木/土 = 1/3 发/帧、水 = 2/6 = 1/3、金 = 2/3（TH11 的金是两倍）。
+#     · **本轮五档一律取「1 行 / 格、`rate = 3`」**（= 火/木/土的骨相，也是水档同密度的等价写法）：
+#       满档 4 格 ⇒ **20 发 / 15 帧 = 1.3333 发/帧**，逐值等于 TH11 的主密度（火/木/土一手同值）。
+#       ⚠ 与 TH11 的**已知差异**（留给「调 dps」那一轮，别当成复刻）：① 金档少一半弹（少了 `ang 0/pi` 那一行）；
+#       ② 木/土的斜角、火档的角度交替没抄（本轮统一 -pi/2）；③ 水档的「两发齐射」变成均匀流（同密度、不同手感）。
+#     · ★ 喂给行判定的**计时器也必须是一手的**（0..14、周期 15）：`signal.c` 的 `on_tick_shooters` 现在把
+#       引擎给的那一个（`th18:0x45ecb8` 推的 `player+0x476d4`）原样转给 `ce_tick_shooters_for_card()` ——
+#       与 TH11 的开火循环同源（`th11:0x4342f0` 拿 `[edi+0x934]`、`0x459270` increment、`0x4343f2` 用
+#       `0x498300 = -14.0f` 回绕）⇒ `timer % 3 == 0` 在 15 帧里正好 5 次。
+#     · **伤害**仍是反解出来的（5，不是 TH11 的原值）：TH11 五档自己的子机层输出 = 6.667 / 20.0 / 24.0 / 32.0 / 21.333
+#       （差 5 倍），而用户 2026-09-16 拍板过「**保证平均 dps 一致**（满档 = 本作原生子机层 6.667/帧）」
+#       ⇒ 火档连 `(rate, dmg) = (3, 5)` 都逐值等于 TH11，其余四档 =「TH11 的节奏 + 归一的伤害」：
+#       `4 格 × 1 行 × 5 / 3 = 6.6667` 精确等于目标。「五档不等强（照抄 TH11 的 dmg）」是另一条路，
+#       要改断言与那条用户口径 —— 没拍板前不动。
+# ★★★ 2026-09-16zb：**整套改成 TH11 `pl01b.sht` 的逐字段复刻**（用户口径：「尽可能完全对齐」
+#     +「一次性落，但是主炮别换弹幕了」）。旧版的「五档 = 每组 1 行、伤害归一成同一个数」**已作废**。
+#
+# ## 一、一手（本仓自己逐字节读 `local/th11.v1.00a` 解出的 `pl01b.sht`；`thdat -x 11`）
+#   · **25 组 = 5 元素 × 5 档**（档 0 = 零子机），组索引 = `档 + (档数+1) × 元素`
+#     （`th11:0x434333`–`0x43433b`：`index = level + ([shooter+0x20]+1) * [player+0x8bac]`；
+#      pl01b 头 `+0x20 = 4`（档数）、`+0x24 = 20`（每档火力单位）⇒ 步长 5）。
+#   · **每组同时含主炮行与子机行**（同一个开火循环 `th11:0x4342f0` 全发；
+#     `Player__shoot_one_bullet` 侧 `slot ≥ 1` 的行若找不到活子机直接 `return 0` 不发）。
+#   · **主炮行**：2 行、`rate 3`、`delay 0`、`dx = ∓10`、`dy = −8`、判定盒 **18×48**、
+#     `angle −π/2`、`speed 24`、`slot 0`、anm 0、两个回调全 0 ⇒ 每 3 帧 2 发 = 0.667 发/帧。
+#     每发伤害**逐元素逐档**不同（表 `MARISA_TH11_MAIN_DMG`，档 0 一律 16）。
+#   · **子机行**：`rate` 逐元素（火/木/金/土 3、水 6）、`delay 0`、判定盒 **16×48**、`speed 24`、
+#     角度**逐格**不同（火 ±0.098 交替、水每格一对、木 ±45°、金 {π, 0} 两发、土一律 +π/2）。
+#
+# ## 二、我们怎么复刻（**组的形状与 TH11 不同，但发出去的行逐字段相同**）
+#   · TH11 是「一组里**平铺**列出该档每一格的行」；我们的机制是「**一组被 tick N 次**」
+#     （卡侧按自己承认的子机格数逐格调 `ce_tick_shooters_for_card`，行用 `opt_slot = 0`
+#       ⇒ 用传进来的那一格的坐标）。所以这里把 TH11 的「(元素,档,格) 行组」**去重成组**：
+#     同一个行组（逐字段相同）只占一格 ⇒ **23 个子机组**。
+#   · 主炮另立一组（TH11 的主炮行就长在同一组里，但我们的主炮是由引擎的原生行循环发的
+#     ⇒ 由卡侧的 `on_shot_set_index` 覆盖整组）：**8 个主炮组**（= 8 个不同的单发伤害值）。
+#   · 合计 **31 组**（0x29–0x47），占用仍落在 `write_ids_h` 算出来的空槽里，不用抬 `CE_SHT_SLOTS`。
+#   · ⚠ **主炮行沿用本作原生的弹**（anm 5 / mode 7 / sfx 首行 0 次行 −1，与 TH18 `pl01.sht`
+#     set 0x04 的主炮行同形）—— 用户 2026-09-16zb 口径「**主炮别换弹幕了**」⇒ 只抄 TH11 的数值。
+#   · ⚠ 已知差异（明写）：TH11 的**阵型几何**（子机站位）我们取不到（`th11:0x75e4` 无写点）
+#     ⇒ 站位仍是本仓自定（`signal_core.c` 的 `s_formation[][]`）；TH11 也**没有聚焦维度**
+#     （25 组不含聚焦）⇒ 我们的覆盖对聚焦/非聚焦**给同一组**。
+#
+# ## 三、对账（`marisa_th11_check()` 是**硬断言**）
+#   · 逐 (元素,档) 复算「主炮/帧 / 子机/帧」，必须**逐值等于** `MARISA_TH11_DPS`（从一手行算出来的表）；
+#   · 改了任何一行数值而没重新对账 ⇒ `make sht` 直接停。
+MARISA_ELEMS = ("FIRE", "WATER", "WOOD", "METAL", "EARTH")
+MARISA_ELEM_CN = {"FIRE": "\u706b", "WATER": "\u6c34", "WOOD": "\u6728",
+                  "METAL": "\u91d1", "EARTH": "\u571f"}
+# 子机弹脚本（288..292）：TH11 用 `shooter[+0x1e] + 5` 去 `pl0X.anm` 取（火 6→11 / 水 4→9 /
+# 木 0→5 / 金 8→13 / 土 10→15），五支正文只差 `sprite()`；我们把五格 1:1 切进 `ability.anm`。
+MARISA_ELEM_ANM = {
+    "FIRE":  "CE_ANM_ABILITY_SCRIPT_MARISA_ELEM_FIRE_BULLET",
+    "WATER": "CE_ANM_ABILITY_SCRIPT_MARISA_ELEM_WATER_BULLET",
+    "WOOD":  "CE_ANM_ABILITY_SCRIPT_MARISA_ELEM_WOOD_BULLET",
+    "METAL": "CE_ANM_ABILITY_SCRIPT_MARISA_ELEM_METAL_BULLET",
+    "EARTH": "CE_ANM_ABILITY_SCRIPT_MARISA_ELEM_EARTH_BULLET",
+}
+MARISA_MAIN_DMG = {                       # 一手：主炮每发伤害（[元素][档 0..4]）
+    "FIRE":  [16, 14, 13, 12, 12],
+    "WATER": [16, 14, 13, 12, 11],
+    "WOOD":  [16, 16, 16, 16, 16],
+    "METAL": [16, 10, 10,  8,  8],
+    "EARTH": [16, 15, 15, 15, 15],
+}
+MARISA_OPT_ROWS = {                       # 一手：子机行（[元素][档 1..4][格] = [(rate, dmg, angle), …]）
+    "FIRE": {
+        1: [[(3, 9, -1.5707964)]],
+        2: [[(3, 7, -1.6689711)], [(3, 7, -1.4726216)]],
+        3: [[(3, 6, -1.5707964)], [(3, 5, -1.6689711)], [(3, 5, -1.4726216)]],
+        4: [[(3, 5, -1.6689711)], [(3, 5, -1.4726216)],
+            [(3, 5, -1.6689711)], [(3, 5, -1.4726216)]],
+    },
+    "WATER": {
+        1: [[(6, 15, -1.7671459), (6, 15, -1.3744467)]],
+        2: [[(6, 15, -1.7671459), (6, 15, -1.6689711)],
+            [(6, 15, -1.3744467), (6, 15, -1.4726216)]],
+        3: [[(6, 15, -1.7016960), (6, 15, -1.4398966)],
+            [(6, 15, -1.8325957), (6, 15, -1.7278760)],
+            [(6, 15, -1.3089969), (6, 15, -1.4137167)]],
+        4: [[(6, 15, -1.8849556), (6, 15, -1.7802359)],
+            [(6, 15, -1.2566371), (6, 15, -1.3613569)],
+            [(6, 15, -1.7671459), (6, 15, -1.6689711)],
+            [(6, 15, -1.3744467), (6, 15, -1.4726216)]],
+    },
+    "WOOD": {
+        1: [[(5, 18, -2.3561945), (5, 18, -0.7853982)]],
+        2: [[(3, 18, -2.3561945)], [(3, 18, -0.7853982)]],
+        3: [[(5, 18, -2.3561945), (5, 18, -0.7853982)],
+            [(3, 18, -2.3561945)], [(3, 18, -0.7853982)]],
+        4: [[(3, 18, -2.3561945)], [(3, 18, -0.7853982)],
+            [(3, 18, -2.3561945)], [(3, 18, -0.7853982)]],
+    },
+    "METAL": {
+        1: [[(3, 12, 3.1415927), (3, 12, 0.0)]],
+        2: [[(3, 12, 3.1415927), (3, 12, 0.0)], [(3, 12, 3.1415927), (3, 12, 0.0)]],
+        3: [[(3, 12, 3.1415927), (3, 12, 0.0)], [(3, 12, 3.1415927), (3, 12, 0.0)],
+            [(3, 12, 3.1415927), (3, 12, 0.0)]],
+        4: [[(3, 12, 3.1415927), (3, 12, 0.0)], [(3, 12, 3.1415927), (3, 12, 0.0)],
+            [(3, 12, 3.1415927), (3, 12, 0.0)], [(3, 12, 3.1415927), (3, 12, 0.0)]],
+    },
+    "EARTH": {
+        1: [[(3, 28, 1.5707964)]],
+        2: [[(3, 21, 1.5707964)], [(3, 21, 1.5707964)]],
+        3: [[(3, 14, 1.5707964)], [(3, 21, 1.5707964)], [(3, 14, 1.5707964)]],
+        4: [[(3, 12, 1.5707964)], [(3, 20, 1.5707964)],
+            [(3, 20, 1.5707964)], [(3, 12, 1.5707964)]],
+    },
+}
+# 一手算出来的期望值（[元素][档] = (主炮/帧, 子机/帧)）—— 断言用；别再手算。
+MARISA_TH11_DPS = {
+    "FIRE":  [(10.666667, 0.0), (9.333333, 3.0), (8.666667, 4.666667), (8.0, 5.333333), (8.0, 6.666667)],
+    "WATER": [(10.666667, 0.0), (9.333333, 5.0), (8.666667, 10.0), (8.0, 15.0), (7.333333, 20.0)],
+    "WOOD":  [(10.666667, 0.0), (10.666667, 7.2), (10.666667, 12.0), (10.666667, 19.2), (10.666667, 24.0)],
+    "METAL": [(10.666667, 0.0), (6.666667, 8.0), (6.666667, 16.0), (5.333333, 24.0), (5.333333, 32.0)],
+    "EARTH": [(10.666667, 0.0), (10.0, 9.333333), (10.0, 14.0), (10.0, 16.333333), (10.0, 21.333333)],
+}
+# 行形状常量（一手 pl01b.sht；主炮的弹/音效按用户口径**用本作原生**，见上）
+MARISA_MAIN_RATE, MARISA_MAIN_DELAY = 3, 0
+MARISA_MAIN_DX, MARISA_MAIN_DY = 10.0, -8.0
+MARISA_MAIN_BOX = (48.0, 18.0)            # TH18 原生 `pl01.sht` set 0x04 主炮行的盒（本作口径）
+MARISA_MAIN_ANGLE, MARISA_MAIN_SPEED = -1.5707964, 24.0
+MARISA_MAIN_ANM, MARISA_MAIN_MODE = 5, 7  # anm 5 = `pl0X.anm` script5（原生主炮弹）；mode 7 = 原生主炮的档位
+MARISA_OPT_DELAY, MARISA_OPT_SPEED = 0, 24.0
+MARISA_OPT_BOX = (16.0, 48.0)
+MARISA_FORMATION_CELLS = 4                # = 原生满档子机格数 / 卡侧 `SIGNAL_OPTION_MAX`
+MARISA_LEVELS = 5                         # ★ TH11 的档数 = 5（档 0..4；`pl01b` 头 `+0x20 = 4` + 1）
+# ★★ **`0x28` = 113 的永久专属槽**（NEXT.md §1w 第 5 步，2026-09-15 落地）。
+#    此前那一格是「洞」（序列里占位、偏移项 0）+ 文件尾的**孤儿段**，靠卡侧临时把偏移项指过去；
+#    现在它是一格**正常的追加组**（名字 `TRANCE`），行数据 = TH13 灵界 set10 的复刻行
+#    ⇒ 卡侧只返回槽号、不写任何 sht 内存（删掉约 120 行借用/还原/账本），
+#      而且失去"孤儿指针算到影像之外"这一整类失败模式（AUDIT §CV）。
+#    111 的 31 组落在 **0x29 起**（第 6 步）：序列里那一格本来就占着位，改成有数据不会让谁移位。
+RESERVED_113_SLOT = 0x28               # 断言用：113 的槽必须落在这一格
+MARISA_FORMATION_SET_BASE = 0x29       # ★ 断言用：111 的第一组必须落在 0x29 起（NEXT.md §1w 第 6 步）
+
+
+def _marisa_layout() -> tuple:
+    """把 TH11 的 `(元素, 档, 格)` 行组**去重**成「组」，并算出卡侧要的映射。
+
+    返回 `(opt_specs, main_specs, opt_map, main_map)`：
+      · `opt_specs`  = [((元素, 行组), [row dict 的原料]), …]（顺序 = 组号顺序）
+      · `main_specs` = [(伤害值, 元素), …]
+      · `opt_map[元素][档][格]` / `main_map[元素][档]` = **绝对槽号**（`MARISA_FORMATION_SET_BASE + i`）
+        或 `-1`（该档没有这一格）。"""
+    opt_specs, opt_index = [], {}
+    opt_map = [[[-1] * MARISA_FORMATION_CELLS for _ in range(MARISA_LEVELS)]
+               for _ in MARISA_ELEMS]
+    for e, elem in enumerate(MARISA_ELEMS):
+        for lv in range(1, MARISA_LEVELS):
+            cells = MARISA_OPT_ROWS[elem][lv]
+            assert len(cells) == lv, f"{elem} 档 {lv} 的格数 {len(cells)} != {lv}（一手 pl01b 是逐档加一格）"
+            for c, rows in enumerate(cells):
+                key = (elem, tuple(rows))
+                if key not in opt_index:
+                    opt_index[key] = len(opt_specs)
+                    opt_specs.append((key, rows))
+                opt_map[e][lv][c] = MARISA_FORMATION_SET_BASE + opt_index[key]
+    main_specs, main_index = [], {}
+    main_map = [[-1] * MARISA_LEVELS for _ in MARISA_ELEMS]
+    base_after_opt = MARISA_FORMATION_SET_BASE + len(opt_specs)
+    for e, elem in enumerate(MARISA_ELEMS):
+        for lv in range(MARISA_LEVELS):
+            dmg = MARISA_MAIN_DMG[elem][lv]
+            if dmg not in main_index:
+                main_index[dmg] = len(main_specs)
+                main_specs.append((dmg, elem))
+            main_map[e][lv] = base_after_opt + main_index[dmg]
+    return opt_specs, main_specs, opt_map, main_map
+
+
+def _marisa_opt_row(elem: str, rate: int, dmg: int, angle: float) -> dict:
+    return dict(fire_rate=rate, start_delay=MARISA_OPT_DELAY, damage=dmg,
+                hit_w=MARISA_OPT_BOX[0], hit_h=MARISA_OPT_BOX[1],
+                angle=angle, speed=MARISA_OPT_SPEED, opt_slot=0, mode=0,
+                anm=MARISA_ELEM_ANM[elem], sfx=-1, func_on_init=0)
+
+
+def _marisa_main_rows(dmg: int) -> list:
+    """主炮 2 行（左右各一发）。弹/音效**用本作原生**（`anm 5` / `mode 7` / sfx 首 0 次 −1）。"""
+    return [dict(fire_rate=MARISA_MAIN_RATE, start_delay=MARISA_MAIN_DELAY, damage=dmg,
+                 spawn_dx=dx, spawn_dy=MARISA_MAIN_DY,
+                 hit_w=MARISA_MAIN_BOX[0], hit_h=MARISA_MAIN_BOX[1],
+                 angle=MARISA_MAIN_ANGLE, speed=MARISA_MAIN_SPEED,
+                 opt_slot=0, mode=MARISA_MAIN_MODE, anm=MARISA_MAIN_ANM,
+                 sfx=(0 if dx < 0 else -1), func_on_init=0)
+            for dx in (-MARISA_MAIN_DX, MARISA_MAIN_DX)]
+
+
+def marisa_dps_table() -> dict:
+    """按**生成出来的行**复算 `[元素][档] = (主炮/帧, 子机/帧)` —— 对账用（与一手表比）。"""
+    opt_specs, main_specs, opt_map, main_map = _marisa_layout()
+    out = {}
+    for elem in MARISA_ELEMS:
+        out[elem] = []
+        for lv in range(MARISA_LEVELS):
+            main = sum(r["damage"] / r["fire_rate"] for r in _marisa_main_rows(MARISA_MAIN_DMG[elem][lv]))
+            sub = 0.0
+            for c in range(MARISA_FORMATION_CELLS):
+                idx = opt_map[MARISA_ELEMS.index(elem)][lv][c]
+                if idx < 0:
+                    continue
+                rows = opt_specs[idx - MARISA_FORMATION_SET_BASE][1]
+                sub += sum(dmg / rate for rate, dmg, _ang in rows)
+            out[elem].append((round(main, 6), round(sub, 6)))
+    return out
+
+
+def marisa_formation_dps(elem: str = "FIRE") -> float:
+    """满档（档 4）子机层的每帧输出（一手 TH11 表；保留这个名字给打印/断言用）。"""
+    return MARISA_TH11_DPS[elem][MARISA_LEVELS - 1][1]
+
+
+def _marisa_formation_sets(anm_ids: dict) -> list:
+    """→ 31 组：23 个子机组（`MARISA_OPT_*`）+ 8 个主炮组（`MARISA_MAIN_*`），顺序 = 槽号顺序。"""
+    opt_specs, main_specs, _om, _mm = _marisa_layout()
+    out = []
+    for i, (_key, rows) in enumerate(opt_specs):
+        rs = [_marisa_opt_row(_key[0], rate, dmg, ang) for rate, dmg, ang in rows]
+        out.append((f"MARISA_OPT_{i:02d}",
+                    b"".join(pack_shooter(r, anm_ids) for r in rs) + TERMINATOR))
+    for i, (dmg, _elem) in enumerate(main_specs):
+        rs = _marisa_main_rows(dmg)
+        out.append((f"MARISA_MAIN_{i:02d}",
+                    b"".join(pack_shooter(r, anm_ids) for r in rs) + TERMINATOR))
+    return out
+
+
+def marisa_layout_maps() -> tuple:
+    """给 `write_ids_h` 用的 `(opt_map, main_map)`（绝对槽号 / −1）。"""
+    _o, _m, opt_map, main_map = _marisa_layout()
+    return opt_map, main_map
+
+
 def _retail_set_blob(data: bytes, off: int) -> bytes:
-    """按文件相对偏移 off 拷一段原生 shooterset 原始字节（含终止符）。"""
-    p = DATA_BASE + off
+    """按文件相对偏移 off 拷一段**零售** shooterset 原始字节（含终止符）⇒ 用零售基址。"""
+    p = DATA_BASE_RETAIL + off
     while struct.unpack_from("<i", data, p)[0] != -1:
         p += STRIDE
         if p > len(data):
             raise SystemExit("原生 shooterset 没有终止符")
-    return data[DATA_BASE + off:p + 4]
+    return data[DATA_BASE_RETAIL + off:p + 4]
 
 
 def _hyper_sets(target_file: str, anm_ids: dict) -> list:
@@ -611,7 +1110,7 @@ def _hyper_sets(target_file: str, anm_ids: dict) -> list:
         fallback = HYPER_FALLBACK.get((target_file, family))
         if fallback is not None:
             data = (RETAIL / target_file).read_bytes()
-            offs = offsets(data)
+            offs = offsets(data, N_SLOTS_RETAIL)
             for power, src_idx in enumerate(fallback):
                 off = offs[src_idx]
                 if off == 0:
@@ -629,8 +1128,73 @@ def _hyper_sets(target_file: str, anm_ids: dict) -> list:
     return out
 
 
+def check_bullet_scripts_have_layer(anm_ids: dict) -> None:
+    """★ 2026-09-16w **硬门**：凡是 shooter 行的 `+0x22`（anm 脚本号）指向的脚本，正文**必须写
+    `layer(12..19)`**；不写就**直接停构建**。
+
+    ## 为什么这条门是必须的（一手，出处 `native/engine.h` 的 `CE_ANM_VM_LAYER`）
+    · 弹的 VM 进的是**世界列表**，绘制时按 **`vm+0x18`（层）**分桶：`AnmManager__render_layer`
+      `0x488260` 只在「本趟桶号 == `vm+0x18`」时才画（`0x4882a1` / `0x4882b0`）。
+    · 游玩区的桶 = **层 12–19**；**层 0–2 = 3D 背景那一趟**（相机 2，在游玩区之前）。
+    · **没人替弹设层**：卡子机弹的 VM 走 `AnmManager__instantiate` `0x407420`（**两参、无层参数**，
+      而且显式保留 `vm+0x18`），空闲池是 `memset` 0 ⇒ 不写 `layer()` 的弹**层 = 0**
+      ⇒ **画在背景那一趟 = 弹幕区里一颗都看不见**（弹对象、伤害源都正常，只是不画）。
+      对照：**子机本体**那条路由引擎强设层 14（`Player__allocate_option` `0x40a8bc`），
+      所以子机脚本可以不写 —— 「子机不写、弹也不用写」这个推广是**错的**。
+    · 写层的唯一入口 = 脚本的 `layer()`：opcode 304 → handler `0x47b67b` → `AnmManager__set_layer`
+      `0x4066b0`（`mov [ecx+0x18],edx`）。
+    · TH11 的引擎**自己传层**（`th11:0x4341e3 push 0x16` → `th11:0x455a00`）⇒ 从 TH11 移植弹脚本时
+      这条信息会**静默丢掉** —— 本门就是为这一档踩过的坑立的（用户实跑：「魔理沙子机没有发弹」，
+      根因 = 288..292 五支都没有 `layer()`）。
+
+    ★ 2026-09-16zb：本门只查**卡侧 tick 的**弹（子机组）。111 的**主炮组**（`MARISA_MAIN_*`）豁免 ——
+    它的 `+0x22` 写的是**本作原生 `pl0X.anm` 的脚本 5**（用户口径「主炮别换弹幕了」），
+    而那一组由**原生行循环**发（`on_shot_set_index` 覆盖，`th18:0x45ebfb`），
+    原生的自机弹一直是看得见的 ⇒ 不适用本门（本门是为"卡自己 tick 的弹"立的）。
+    """
+    scripts_dir = HERE.parent / "ability" / "scripts"
+    bad = []
+    seen = set()
+    for name, blob in (*_common_sets(anm_ids), *_marisa_formation_sets(anm_ids)):
+        if blob is None or name.startswith("MARISA_MAIN_"):
+            continue                                    # 主炮组：原生 pl0X.anm 脚本，见 docstring
+        for off in range(0, len(blob) - STRIDE + 1, STRIDE):
+            rate = struct.unpack_from("<b", blob, off)[0]
+            if rate < 0:
+                break                                   # 终止符
+            anm = struct.unpack_from("<h", blob, off + 0x22)[0]
+            if anm in seen or anm <= 0:
+                continue
+            seen.add(anm)
+            hit = sorted(scripts_dir.glob(f"{anm}_*.anm.txt"))
+            if not hit:
+                bad.append(f"脚本 {anm}：{scripts_dir} 下找不到 {anm}_*.anm.txt")
+                continue
+            body = hit[0].read_text(encoding="utf-8")
+            m = re.search(r"^\s*layer\(\s*(\d+)\s*\)", body, re.M)
+            if not m:
+                bad.append(f"{hit[0].name}：正文没有 `layer(...)` ⇒ 弹的 VM 层 = 0 = 画在 3D 背景那一趟"
+                           f"（弹幕区里一颗都看不见；见本函数注释）")
+            elif not 12 <= int(m.group(1)) <= 19:
+                bad.append(f"{hit[0].name}：`layer({m.group(1)})` 不在游玩区桶 12..19 里")
+    if bad:
+        raise SystemExit("★ 子弹脚本的层自检失败（shooter 行 +0x22 指向的脚本必须自带 layer(12..19)）：\n  "
+                         + "\n  ".join(bad))
+
+
 def sets_for_file(target_file: str, anm_ids: dict) -> list:
-    return _common_sets(anm_ids) + _hyper_sets(target_file, anm_ids)
+    # ★ **顺序即槽号**（`N_RETAIL + 序号`）⇒ 111 的五组必须排在最后：插在中间会让
+    #   117 的 WOLF/EAGLE 十个槽整体移位（`animal_core.h` 的槽号是写死的 ⇒ 静默错弹）。
+    # ★ 2026-09-15（§1w 第 5 步落地）：`0x28` = **113 的灵界主炮组**，正常追加（带行数据）。
+    #   名字取 `TRANCE` ⇒ `write_ids_h` 产出 `CE_SHT_SET_TRANCE`（卡侧只认这一个常量）。
+    return (_common_sets(anm_ids) + _hyper_sets(target_file, anm_ids)
+            + [("TRANCE", trance_blob(target_file, anm_ids))]
+            + _marisa_formation_sets(anm_ids))
+
+
+def _alloc_names(sets: list) -> list:
+    """生成序列里**真的分配了槽**的名字（洞不算）。"""
+    return [nm for nm, blob in sets if blob is not None]
 
 
 def repl_sets(anm_ids: dict) -> list:
@@ -692,7 +1256,11 @@ def check_pl_anm_ids():
     want = {"CE_PL_ANM_SCRIPT_PL02_WOLF": PL02_SCRIPT_WOLF,
             "CE_PL_ANM_SCRIPT_PL02_EAGLE": PL02_SCRIPT_EAGLE,
             "CE_PL_ANM_SCRIPT_PL03_FROG": PL03_SCRIPT_FROG,
-            "CE_PL_ANM_SCRIPT_PL03_SNAKE": PL03_SCRIPT_SNAKE}
+            "CE_PL_ANM_SCRIPT_PL03_SNAKE": PL03_SCRIPT_SNAKE,
+            # ★ 卡 113 灵界弹（TH13 灵界组的三支主弹脚本）
+            "CE_PL_ANM_SCRIPT_PL00_TRANCE": PL00_SCRIPT_TRANCE,
+            "CE_PL_ANM_SCRIPT_PL01_TRANCE": PL01_SCRIPT_TRANCE,
+            "CE_PL_ANM_SCRIPT_PL03_TRANCE": PL03_SCRIPT_TRANCE}
     if not PL_IDS_H.is_file():
         print(f"  {PL_IDS_H.name}: 不存在（还没跑 make anm）—— 跳过 pl0X 脚本号交叉核对")
         return
@@ -708,29 +1276,30 @@ def check_pl_anm_ids():
     print(f"  {PL_IDS_H.name}: pl0X 追加脚本号与 append_shooterset.py 一致")
 
 
-def offsets(data: bytes) -> list:
-    return list(struct.unpack_from(f"<{N_SLOTS}I", data, OFF_ARRAY))
+def offsets(data: bytes, n: int = N_SLOTS) -> list:
+    return list(struct.unpack_from(f"<{n}I", data, OFF_ARRAY))
 
 
-def walk_set(data: bytes, off: int) -> int:
-    """→ 该 shooterset 的字节长度（含 4 字节终止符）。"""
-    p = DATA_BASE + off
+def walk_set(data: bytes, off: int, base: int = DATA_BASE) -> int:
+    """→ 该 shooterset 的字节长度（含 4 字节终止符）。`base` 按文件类型给（零售 / 产物不同）。"""
+    p = base + off
     while struct.unpack_from("<i", data, p)[0] != -1:
         p += STRIDE
         if p > len(data):
             raise SystemExit("shooterset 没有终止符，文件坏了")
-    return p + 4 - (DATA_BASE + off)
+    return p + 4 - (base + off)
 
 
-def check_retail_shape(name: str, data: bytes):
+def check_shape(name: str, data: bytes, n_slots: int, base: int):
+    """头部计数 / 第 0 项 / set 0 的 func 字段。零售与产物分别调用（格数与基址都不同）。"""
     n = struct.unpack_from("<H", data, 0x02)[0]
-    if n != N_SLOTS:
-        raise SystemExit(f"{name}: 头部 +0x02 = {n}，期望 {N_SLOTS}")
-    offs = offsets(data)
+    if n != n_slots:
+        raise SystemExit(f"{name}: 头部 +0x02 = {n}，期望 {n_slots}")
+    offs = offsets(data, n_slots)
     if offs[0] != 0:
         raise SystemExit(f"{name}: 第 0 项偏移不是 0")
     # set 0 的 func 字段必须全 0（空位重复解析靠它幂等）
-    p = DATA_BASE
+    p = base
     while struct.unpack_from("<i", data, p)[0] != -1:
         if any(struct.unpack_from("<4i", data, p + 0x2C)):
             raise SystemExit(f"{name}: shooterset 0 的 func 字段不全为 0 —— 空位会被二次解析成野指针")
@@ -739,15 +1308,25 @@ def check_retail_shape(name: str, data: bytes):
 
 
 def build_one(name: str, retail: bytes, sets: list, repl: list) -> bytes:
-    offs = check_retail_shape(name, retail)
+    offs = check_shape(name, retail, N_SLOTS_RETAIL, DATA_BASE_RETAIL)
     used = sum(1 for i, o in enumerate(offs) if i == 0 or o != 0)
     if used != N_RETAIL:
         raise SystemExit(f"{name}: 原生用了 {used} 项，期望 {N_RETAIL}")
     if N_RETAIL + len(sets) > N_SLOTS:
         raise SystemExit(f"偏移数组只有 {N_SLOTS} 项，原生占 {N_RETAIL}，放不下 {len(sets)} 组")
 
-    out = bytearray(retail)
+    # ---- 重排（AUDIT §CQ）：头 + 96 格数组 + 数据区（数据整体后移 0xE0 = 新长的 56 格 × 4）----
+    out = bytearray(retail[:OFF_ARRAY])                       # 头 [0,0xe0) 原样
+    out += bytes(N_SLOTS_RESERVED * 4)                        # 数组区 [0xe0,0x4e0)：0x28 起先留 0
+    struct.pack_into("<H", out, 0x02, N_SLOTS)                # 计数：零售 40 → 产物 96（预留的不计）
+    struct.pack_into(f"<{N_SLOTS_RETAIL}I", out, OFF_ARRAY, *offs)   # 零售 40 项的**值一个不改**
+    out += retail[DATA_BASE_RETAIL:]                          # 数据区：偏移是相对的 ⇒ 值不用改
+    # ⚠ 预留空槽（0x28–0xff）的值必须保持 0：它们在计数内时会被重定位成「set 0」的别名（幂等），
+    #   计数外时原样留着 0（谁要用它，必须同时把文件头 `+0x02` 抬到它之上 —— 只改文件）。
+
     for k, (_, blob) in enumerate(sets):
+        if blob is None:                       # 洞：偏移项保持 0（未分配，读者拿到 set 0 别名）
+            continue
         idx = N_RETAIL + k
         struct.pack_into("<I", out, OFF_ARRAY + idx * 4, len(out) - DATA_BASE)
         out += blob
@@ -762,19 +1341,41 @@ def build_one(name: str, retail: bytes, sets: list, repl: list) -> bytes:
 
 def verify(name: str, retail: bytes, built: bytes, sets: list, repl: list):
     repl_by_idx = {idx: (nm, blob) for idx, nm, blob in repl}
-    offs_r, offs_b = offsets(retail), offsets(built)
-    check_retail_shape(name, built)
-    retail_data_end = len(retail) - DATA_BASE
+    offs_r = offsets(retail, N_SLOTS_RETAIL)
+    # 数组区按**预留**格数读（计数外的预留槽也要核「必须为 0」）
+    offs_b = offsets(built, N_SLOTS_RESERVED)
+    check_shape(name, built, N_SLOTS, DATA_BASE)
+    # ★ 不变式 6/8（扩容新增）：数组必须**正好**顶到数据区起点
+    if OFF_ARRAY + N_SLOTS_RESERVED * 4 != DATA_BASE:
+        raise SystemExit(f"{name}: 预留数组末尾 {OFF_ARRAY + N_SLOTS_RESERVED * 4:#x} "
+                         f"!= 数据区起点 {DATA_BASE:#x}")
+    if DATA_BASE != DATA_BASE_RETAIL + (N_SLOTS_RESERVED - N_SLOTS_RETAIL) * 4:
+        raise SystemExit(f"{name}: 数据区起点 {DATA_BASE:#x} 与数组区长大不同步")
+    n_new = N_SLOTS_RESERVED - N_SLOTS_RETAIL
+    # ★ 2026-09-15（111 五组落地）：原判据是「零售 40 格之后的**全部**新增格在追加前必须是 0」，
+    #   它隐含了「本 mod 恰好用满 0x17–0x27」这个当时的事实（`APPEND` 17 组 ⇒
+    #   `N_RETAIL + len(sets) - 1 == 0x27`）⇒ 一旦按 NEXT.md §1w 第 5/6 步把新卡放进
+    #   `0x28` 起的空位，`0x17`–`0x27` 里就有**我们自己的**数据，那条断言必然假失败
+    #   （111 的五组 0x28–0x2c 就是这样撞上的）。改成**按实际 allocated 数量**判：
+    #   零售 40 格之后、到已分配的最后一项末尾为止都可以有数据，**之后的预留格必须全 0**。
+    alloc_last = N_RETAIL + len(sets)          # 已分配的最后一格（开区间）
+    if alloc_last > N_SLOTS_RESERVED:
+        raise SystemExit(f"{name}: 分配的 {alloc_last} 格超过数组区容量 {N_SLOTS_RESERVED}")
+    untouched = OFF_ARRAY + alloc_last * 4
+    if built[untouched:OFF_ARRAY + N_SLOTS_RESERVED * 4] != bytes((n_new - (alloc_last - N_SLOTS_RETAIL)) * 4):
+        raise SystemExit(f"{name}: 未分配的预留格（{alloc_last:#x}..{N_SLOTS_RESERVED - 1:#x}）不是 0")
+    retail_data_end = len(retail) - DATA_BASE_RETAIL    # 追加区起点（相对基址，两侧同值）
     for i in range(N_RETAIL):
-        n = walk_set(retail, offs_r[i])
-        a, b = DATA_BASE + offs_r[i], DATA_BASE + offs_b[i]
+        n = walk_set(retail, offs_r[i], DATA_BASE_RETAIL)
+        # 同一条记录的两侧位置：零售在旧基址下、产物在新基址下（记录后移 0xE0，偏移值不变）
+        a, b = DATA_BASE_RETAIL + offs_r[i], DATA_BASE + offs_r[i]
         if i in repl_by_idx:
             # 被覆盖的槽：偏移被改指追加区，但**原生原记录必须原地原样**（死数据，不动）
-            if retail[a:a + n] != built[a:a + n]:
+            if retail[a:a + n] != built[b:b + n]:
                 raise SystemExit(f"{name}: 覆盖槽 {i:#x} 把原生原记录的字节改了")
             continue
         if offs_b[i] != offs_r[i]:
-            raise SystemExit(f"{name}: 第 {i:#x} 项偏移被动过")
+            raise SystemExit(f"{name}: 第 {i:#x} 项偏移被动过（数据区整体后移 ⇒ 值应当不变）")
         if retail[a:a + n] != built[b:b + n]:
             raise SystemExit(f"{name}: shooterset {i:#x} 的字节变了")
     for idx, (nm, blob) in repl_by_idx.items():
@@ -791,6 +1392,11 @@ def verify(name: str, retail: bytes, built: bytes, sets: list, repl: list):
             raise SystemExit(f"{name}: 覆盖槽 {idx:#x}（{nm}）的终止符位置不对")
     for k, (nm, blob) in enumerate(sets):
         idx = N_RETAIL + k
+        if blob is None:                        # 洞（例：0x28 留给 113）：偏移项必须是 0
+            if offs_b[idx] != 0:
+                raise SystemExit(f"{name}: 【洞】{nm}（第 {idx:#x} 项）的偏移不是 0"
+                                 f"（={offs_b[idx]:#x}）—— 洞必须**没分配**")
+            continue
         o = offs_b[idx]
         if o == 0:
             raise SystemExit(f"{name}: 第 {idx:#x} 项没写偏移")
@@ -798,21 +1404,165 @@ def verify(name: str, retail: bytes, built: bytes, sets: list, repl: list):
             raise SystemExit(f"{name}: {nm} 的数据对不上")
         if walk_set(built, o) != len(blob):
             raise SystemExit(f"{name}: {nm} 的终止符位置不对")
-    for i in range(N_RETAIL + len(sets), N_SLOTS):
+    for i in range(N_RETAIL + len(sets), N_SLOTS_RESERVED):
         if offs_b[i] != 0:
-            raise SystemExit(f"{name}: 第 {i:#x} 项本该留空")
+            raise SystemExit(f"{name}: 第 {i:#x} 项本该留空（预留区里没分配的槽必须为 0）")
+
+def _c_nested(obj) -> str:
+    """把嵌套 list 打成 C 初始化器（`{ { 1, 2 }, … }`）—— `write_ids_h` 里给映射表用。"""
+    if isinstance(obj, (list, tuple)):
+        return "{ " + ", ".join(_c_nested(x) for x in obj) + " }"
+    return str(obj)
 
 
 def write_ids_h(sets: list, repl: list):
+    # ★ 2026-09-15 修：`first_free` / `last_alloc` 原来在本函数里**根本没定义**
+    #   （上一轮把它们从某处删掉后没补 ⇒ `write_ids_h` 一跑就 NameError，`make sht` 直接停）。
+    #   现在**由生成序列算**（别再手写数字）：
+    #     · `last_alloc` = 生成序列的最后一格（含洞；洞也算「序列里占了一格」）；
+    #     · `first_free` = `last_alloc + 1`（下一个真正没人碰的槽）。
+    #   ⚠ 洞（0x28）**不算**「本 mod 已占」⇒ 下面 CE_SHT_FREE_FIRST 的注释也改了口径。
+    last_alloc = N_RETAIL + len(sets) - 1
+    first_free = last_alloc + 1
+    opt_map, main_map = marisa_layout_maps()      # ★ 111 的映射表（与组的顺序同源 ⇒ 不会错位）
+    names_all = [nm for nm, _ in sets]
+    form_first = N_RETAIL + names_all.index("MARISA_OPT_00")
+    n_opt = len([n for n in names_all if n.startswith("MARISA_OPT_")])
+    n_main = len([n for n in names_all if n.startswith("MARISA_MAIN_")])
+    form_last = form_first + n_opt + n_main - 1
+    assert form_first == MARISA_FORMATION_SET_BASE, "write_ids_h 里算出来的 111 起点与常量不符"
     lines = ["/* 由 assets/sht/append_shooterset.py 生成 —— 追加进 pl0X.sht 的 shooterset 索引。别手改。 */",
              "#pragma once", ""]
     for k, (nm, blob) in enumerate(sets):
+        if blob is None:
+            continue
         lines.append(f"#define CE_SHT_SET_{nm:<24} {N_RETAIL + k:#04x}   "
                      f"/* 追加，{len(blob) // STRIDE} shooter */")
     for idx, nm, blob in repl:
         lines.append(f"#define CE_SHT_SET_{nm:<24} {idx:#04x}   "
                      f"/* ★ 覆盖原生空槽，{len(blob) // STRIDE} shooter */")
+    lines += [
+        "",
+        f"/* ---- 组数扩容：宣布可用 {N_SLOTS} 格 / 数组区预留 {N_SLOTS_RESERVED} 格"
+        "（2026-09-14；AUDIT.md §CQ、NEXT.md §1w）----",
+        f" * 零售影像 = 头 [0,{OFF_ARRAY:#x}) + **{N_SLOTS_RETAIL} 格**偏移数组 [{OFF_ARRAY:#x},{DATA_BASE_RETAIL:#x})"
+        f" + 数据区 {DATA_BASE_RETAIL:#x} 起。",
+        " * 零售的 `0x00`–`0x16` 原生、`0x17`–`0x27`（17 格）本 mod 用满 ⇒ 40/40、余量 0。",
+        f" * **扩容写法**：数组区原地长到 **{N_SLOTS_RESERVED} 格（预留）**"
+        f"（[{OFF_ARRAY:#x},{DATA_BASE:#x})），数据区整体后移",
+        f" *   {DATA_BASE - DATA_BASE_RETAIL:#x} 字节（= 预留长大 {N_SLOTS_RESERVED - N_SLOTS_RETAIL} 格 × 4）"
+        f"⇒ 数据区起点 {DATA_BASE_RETAIL:#x} → **{DATA_BASE:#x}**。",
+        f" *   宣布可用 **{N_SLOTS} 格**（= 影像头 `+0x02`）；要用 `{N_SLOTS:#x}` 起的预留槽，"
+        f"把 `CE_SHT_SLOTS` 抬上去即可",
+        f" *   （**只改文件**：计数是纯数据，加载器每轮现读）⇒ 从 {N_SLOTS} 到 {N_SLOTS_RESERVED} 之间"
+        f"再加格子**不用再发补丁**。",
+        " *   · 偏移项是**相对**数据区的 ⇒ 零售 40 项的值与每条记录的字节**一个都不用改**；",
+        f" *   · exe 侧唯一改动 = `th18:0x45a830` 的 `lea eax,[edx+{DATA_BASE_RETAIL:#x}]` → `[edx+{DATA_BASE:#x}]`"
+        "（`native/sites.py` 的",
+        " *     `sht_dbase_45a830`，6 字节等长，只换立即数）；",
+        f" *   · **14 个读者的位移 `+{OFF_ARRAY:#x}` 一个字节都不用动**（数组起点没变）—— 这与 §1w 最早那版",
+        " *     「把数组搬文件尾、改 14 处引用」是两条路，本实现走的是**改动面最小**的这条"
+        "（折叠位移读者 `0x410609` 也不用改）；",
+        " *   · 影像内存 = `malloc(GetFileSize())` ⇒ 文件长大安全（一手：`0x402140` 一带 `0x4ad088`/`0x491a34`）。",
+        " * ★ 恒等式（生成器每次回读校验）：`"
+        + f"{OFF_ARRAY:#x} + {N_SLOTS_RESERVED}×4 == {DATA_BASE:#x}" + "`",
+        f" *   ⇒ 第 `i` 项永远落在 `[0xe0,{DATA_BASE:#x})` 内，读者（位移 0xe0）永远踩不到数据区。",
+        " * ------------------------------------------------------------------------------------ */",
+        f"#define CE_SHT_ARRAY_OFF           {OFF_ARRAY:#06x}   /* 偏移数组起点 = 14 个读者指令里的位移（未改）*/",
+        f"#define CE_SHT_SLOTS               {N_SLOTS}          /* 宣布可用格数 = 影像头 +0x02 = 加载器解析循环上界 */",
+        f"#define CE_SHT_SLOTS_RESERVED      {N_SLOTS_RESERVED}         /* 数组区容量（预留）：用 `{N_SLOTS:#x}`+ 的槽时抬 CE_SHT_SLOTS，**exe 不用动** */",
+        f"#define CE_SHT_DATA_BASE           {DATA_BASE:#06x}   /* 数据区起点（原 {DATA_BASE_RETAIL:#06x}）= `th18:0x45a830` 的立即数 */",
+        f"#define CE_SHT_FREE_FIRST          {first_free:#04x}   /* 第一个空槽（0x00–{last_alloc:#04x} 已分配）*/",
+        f"#define CE_SHT_FREE_LAST           {N_SLOTS - 1:#04x}   /* 计数内最后一个空槽 */",
+        f"#define CE_SHT_FREE_LAST_RESERVED  {N_SLOTS_RESERVED - 1:#04x}   /* 预留区最后一格（抬计数后可用，不用改 exe）*/",
+        "/* 分配表（**由生成序列算出来，别再手写数字**）：",
+        f" *   0x{RESERVED_113_SLOT:02x}            113 灵界主炮（1 格，四角色共用）= `CE_SHT_SET_TRANCE`（2026-09-15 §1w 第 5 步落地，正常追加组）",
+        f" *   0x{form_first:02x}–0x{form_first + n_opt - 1:02x}      111 魔理沙B **子机组**（{n_opt} 格，"
+        "TH11 `pl01b.sht` 逐字段复刻 ⇒ `MARISA_OPT_*` / 卡侧按「元素×档×格」选组）",
+        f" *   0x{form_first + n_opt:02x}–0x{form_last:02x}      111 魔理沙B **主炮组**（{n_main} 格 = {n_main} 个不同的单发伤害；"
+        "`MARISA_MAIN_*`，由卡侧 `on_shot_set_index` 整组覆盖）",
+        f" *   0x{last_alloc + 1:02x}–…         108 使魔 / 106·107·109·110·112·114·115 各自子系统 / 58–80 那批的备用",
+        " * ------------------------------------------------------------------------------------ */",
+        "",
+        "/* ---- 卡 113「灵界」的主炮弹组（TH13 灵界 set10 复刻）------------------------------------",
+        f" * `CE_SHT_SET_TRANCE` = **{RESERVED_113_SLOT:#04x}** = 113 的**永久专属槽**（NEXT.md §1w 第 5 步，2026-09-15 落地）——",
+        " * 它是一格**正常的追加组**：行数据 = TH13 `pl0Xa.sht` 的灵界 set10 行（每文件：灵梦 2 / 魔理沙 4 /",
+        " * 咲夜 2 row（★ 2026-09-16 参与：数值照抄灵梦、贴图用她的刀弹 `anm=7`）/ 早苗 2 row），由偏移项指着，**引擎自己解析**。",
+        " * ★ 历史：在这一格拿到之前，113 借的是原生槽 `0x0e`（SANAE_OP 的子机组）并把偏移项**临时**改指",
+        " *   文件尾的孤儿段（卡侧还要记 4 格账本、退出时还原）。两个毛病都在收尾时消失了：",
+        " *   ① 卡侧不再写任何 sht 内存（`on_shot_set_index` 只返回槽号）；",
+        " *   ② 没有「孤儿指针算到影像之外」这一整类失败模式（老 sht + 新 DLL 下会越界读崩，",
+        " *      见 AUDIT §CV；现在最坏只是读到未分配的 set 0 别名 ⇒ 主炮没变，不崩）。",
+        f" * ★ 为什么之前不能直接占一格：零售数组只有 {N_SLOTS_RETAIL} 格（原生 23 + 本 mod 17，全满）⇒",
+        f" *   扩容到 {N_SLOTS} 格（数组区预留 {N_SLOTS_RESERVED} 格）后 `0x28` 起才有空位（AUDIT §CQ）。",
+        " * ------------------------------------------------------------------------------------ */",
+        f"#define CE_SHT_TRANCE_DBASE        {DATA_BASE:#06x}   /* 解析器的重定位基址（th18:0x45a830 的 imm）*/",
+        "",
+        "/* ---- 111 魔理沙B：TH11 `pl01b.sht` 的**逐字段复刻映射**（生成物；卡侧 `cards/signal.c` 直接用）----",
+        " * `CE_SHT_MARISA_OPT_INIT`  = `[元素 0..4][档 0..4][格 0..3]` ⇒ **子机组号**（`-1` = 该档没有这一格）",
+        " * `CE_SHT_MARISA_MAIN_INIT` = `[元素 0..4][档 0..4]`      ⇒ **主炮组号**（恒 ≥ 0）",
+        " * 元素顺序 = 火/水/木/金/土（= TH11 的 formation 0..4）；档 0..4（档 0 = 零子机）。",
+        " * 一手、组的形状（为什么 23+8 而不是 25）、以及**主炮只抄数值不换弹**的用户口径：",
+        " * `assets/sht/append_shooterset.py` 的 `MARISA_*` 那一段（唯一出处）。",
+        " * ⚠ 主炮组由 `on_shot_set_index` **整组覆盖**（`th18:0x45ebfb`）⇒ 覆盖生效时引擎只发这 2 行主炮，",
+        " *   原生子机行（`slot ≥ 1`）本来就没有活子机可挂（`Player__shoot_one_bullet` 找不到就 `return 0`）。",
+        " * ------------------------------------------------------------------------------------ */",
+        f"#define CE_SHT_MARISA_SET_BASE     {MARISA_FORMATION_SET_BASE:#04x}   /* 111 的第一格 */",
+        f"#define CE_SHT_MARISA_LEVELS       {MARISA_LEVELS}          /* TH11 的档数（档 0..4）*/",
+        f"#define CE_SHT_MARISA_CELLS        {MARISA_FORMATION_CELLS}          /* 满档子机格数 */",
+        f"#define CE_SHT_MARISA_OPT_INIT     {_c_nested(opt_map)}",
+        f"#define CE_SHT_MARISA_MAIN_INIT    {_c_nested(main_map)}",
+    ]
     IDS_H.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def check_new_slot_placement(canonical: list):
+    """★ 防漂移（2026-09-15，本轮踩过一次）：**已有的槽号一个都不许动**。
+
+    槽号 = `N_RETAIL + 在生成序列里的序号`，所以「往 `APPEND` 中间插一项」会让它后面**所有**的
+    追加组整体移位 —— 117 的 WOLF/EAGLE 十个槽就是这么被顶掉的（`animal_core.h` 的
+    `ANIMAL_SHOT_SET_*` 写死旧号 ⇒ 弹照发、伤害表认错组 = 静默错弹）。
+    这里把两个**已经发出去**的锚点钉住，并把 111 的新组钉在 NEXT.md §1w 第 6 步指定的 `0x29` 起
+    （`0x28` = §1w 第 5 步留给 113 的永久槽 ⇒ 生成序列里用**洞**占位）。"""
+    names = [nm for nm, _ in canonical]
+    anchors = (("WOLF_0", 0x1e), ("WOLF_4", 0x22), ("EAGLE_0", 0x23), ("EAGLE_4", 0x27))
+    for nm, want in anchors:
+        if nm not in names:
+            raise SystemExit(f"shooterset 生成序列里没有 {nm}（117 的锚点）—— 它被改名/删掉了")
+        got = N_RETAIL + names.index(nm)
+        if got != want:
+            raise SystemExit(f"★ {nm} 的槽号从 {want:#04x} 变成 {got:#04x}："
+                             f"有人在生成序列**中间**插了组（往 APPEND 里插会把后面的全部顶掉）。"
+                             f"新组请接在 `sets_for_file()` 的最后。")
+    # 113 的槽必须落在约定的一格、且**带数据**（§1w 第 5 步后它是一格正常追加组）
+    if names[RESERVED_113_SLOT - N_RETAIL] != "TRANCE":
+        raise SystemExit(f"★ 0x{RESERVED_113_SLOT:02x} 不是 113 的灵界组"
+                         f"（生成序列第 {RESERVED_113_SLOT - N_RETAIL} 项 = "
+                         f"{names[RESERVED_113_SLOT - N_RETAIL]}）—— §1w 第 5 步把它钉在这一格")
+    if canonical[RESERVED_113_SLOT - N_RETAIL][1] is None:
+        raise SystemExit(f"★ 0x{RESERVED_113_SLOT:02x} 的灵界组没有行数据")
+    # ★ 2026-09-16zb：111 现在是 **23 子机组 + 8 主炮组 = 31 格**（TH11 pl01b 逐字段复刻）。
+    #   起点仍钉在 §1w 第 6 步的 `0x29`；顺序也钉住（子机组在前、主炮组在后）——
+    #   组的顺序 = 槽号，错位就会让卡侧映射表指错组（`sht_ids.h` 里那张表是同一函数算的 ⇒ 会一起错，
+    #   所以这里再独立核一遍"第一格/最后一格"）。
+    first = N_RETAIL + names.index("MARISA_OPT_00")
+    if first != MARISA_FORMATION_SET_BASE:
+        raise SystemExit(f"111 的第一组落在 {first:#04x}，约定是 {MARISA_FORMATION_SET_BASE:#04x}"
+                         f"（NEXT.md §1w 第 6 步）")
+    opt_specs, main_specs, opt_map, main_map = _marisa_layout()
+    want = [f"MARISA_OPT_{i:02d}" for i in range(len(opt_specs))] + \
+           [f"MARISA_MAIN_{i:02d}" for i in range(len(main_specs))]
+    for k, nm in enumerate(want):
+        if nm not in names or N_RETAIL + names.index(nm) != first + k:
+            raise SystemExit(f"{nm} 不连续（期望 {first + k:#04x}）")
+    last = first + len(want) - 1
+    if last >= N_SLOTS:
+        raise SystemExit(f"111 的 31 组用到 {last:#04x}，超出宣布可用的 {N_SLOTS:#x} 格"
+                         f"（要更多格就把 CE_SHT_SLOTS 抬到预留区，见 sht_ids.h）")
+    print(f"  槽位锚点：WOLF 0x1e–0x22 / EAGLE 0x23–0x27 未动；"
+          f"0x{RESERVED_113_SLOT:02x} = 113 的灵界组（正常追加）；"
+          f"111 = 子机 {first:#04x}–{first + len(opt_specs) - 1:#04x} + "
+          f"主炮 {first + len(opt_specs):#04x}–{last:#04x}（共 {len(want)} 格）")
 
 
 def main():
@@ -826,12 +1576,14 @@ def main():
     repl = repl_sets(anm_ids)
     check_card_constants(repl)
     check_pl_anm_ids()
+    check_new_slot_placement(canonical)
+    check_bullet_scripts_have_layer(anm_ids)      # ★ 2026-09-16w：弹脚本必须自带 layer(12..19)
 
     if not canonical and not repl:                  # 没有要追加的：不产出（别发一份和原生一模一样的 .sht）
         if not a.verify_only:
             for name in FILES:
                 (OUT / name).unlink(missing_ok=True)
-            write_ids_h(canonical, repl)
+            write_ids_h(canonical, repl, 0)
         print("  没有登记任何 shooterset：不产出 .sht（build/sht/ 已清空）")
         return 0
 
@@ -842,26 +1594,35 @@ def main():
             raise SystemExit(f"缺原生样本 {src}（用户放进 local/，见 local/README.md）")
         retail = src.read_bytes()
         sets = sets_by_file[name]
+        expect = build_one(name, retail, sets, repl)
         dst = OUT / name
         if a.verify_only:
             if not dst.is_file():
                 raise SystemExit(f"缺 {dst}：先跑 make sht")
             built = dst.read_bytes()
         else:
-            built = build_one(name, retail, sets, repl)
+            built = expect
             dst.write_bytes(built)
         verify(name, retail, built, sets, repl)
         print(f"  {name}: {len(retail)} → {len(built)} 字节，追加 {len(sets)} 组"
               f"（索引 {N_RETAIL:#04x}..{N_RETAIL + len(sets) - 1:#04x}）"
-              f"，覆盖 {len(repl)} 个原生槽")
+              f"，覆盖 {len(repl)} 个原生槽"
+              f"，灵界组 {RESERVED_113_SLOT:#x}（{len(TRANCE_ROWS[name])} row）")
 
     if not a.verify_only:
         write_ids_h(canonical, repl)
         print(f"wrote {IDS_H.relative_to(MOD)}")
     for k, (nm, blob) in enumerate(canonical):
+        if blob is None:
+            print(f"  0x{N_RETAIL + k:02x}  预留洞（{nm}，偏移项 0 = 未分配）")
+            continue
         print(f"  CE_SHT_SET_{nm} = {N_RETAIL + k:#04x}  ({len(blob) // STRIDE} shooter)")
     for idx, nm, blob in repl:
         print(f"  CE_SHT_SET_{nm} = {idx:#04x}  (★ 覆盖原生空槽，{len(blob) // STRIDE} shooter)")
+    print(f"  CE_SHT_SET_TRANCE = {RESERVED_113_SLOT:#04x}  "
+          f"(★ 永久专属槽；"
+          f"灵梦 {len(TRANCE_ROWS['pl00.sht'])} / 魔理沙 {len(TRANCE_ROWS['pl01.sht'])} / "
+          f"咲夜 {len(TRANCE_ROWS['pl02.sht'])} / 早苗 {len(TRANCE_ROWS['pl03.sht'])} row)")
     print_dps_table()
     return 0
 
@@ -884,12 +1645,40 @@ def print_dps_table():
            ("咲夜 EAGLE 扫荡", SAKUYA_EAGLE_SWEEP_DPS, "6 点 rate6 dmg20（卡侧真弹·紫刀）", SAKUYA_EAGLE_SWEEP_DPS),
            ("咲夜 EAGLE 正面", SAKUYA_EAGLE_FRONT_DPS, "正中 1 点 rate2 dmg40（θ=0 正前）", SAKUYA_EAGLE_FRONT_DPS),
            ("咲夜 EAGLE 合计", SAKUYA_EAGLE_DPS_TARGET, "扫荡 20 + 正面 20（★AL67 总 40 不变）", SAKUYA_EAGLE_DPS_TARGET),
-           ("早苗 EAGLE(新)", _dps(_sanae_eagle_rows()), "大青蛙·紫（★AL65 rate12 dmg96）", SANAE_EAGLE_DPS_TARGET)]
+           ("早苗 EAGLE(新)", _dps(_sanae_eagle_rows()), "大青蛙·紫（★AL65 rate12 dmg96）", SANAE_EAGLE_DPS_TARGET),
+           # ★ 卡 113：TH13 灵界组的一手 DPS（Σdmg/rate，与 `engine/spirit/th13/05` §2 的简算同法）
+           ("灵梦 灵界 113", _dps(TRANCE_ROWS["pl00.sht"]), "TH13 set10 一手（2×22/2）", 22.0),
+           ("魔理沙 灵界 113", _dps(TRANCE_ROWS["pl01.sht"]), "TH13 set10 一手（(22+22+11+11)/2）", 33.0),
+           ("早苗 灵界 113", _dps(TRANCE_ROWS["pl03.sht"]), "TH13 set10 一手（2×22/2）", 22.0),
+           ("咲夜 灵界 113", _dps(TRANCE_ROWS["pl02.sht"]),
+            "灵梦数值 + 咲夜刀弹（用户 2026-09-16 定案；anm=7，非 TH13 一手）", 22.0),
+           # ★★ 2026-09-16zb（111 魔理沙B）：**逐字段照抄 TH11 `pl01b.sht`** —— 硬断言在下面，
+           #   这里只打印满档的两个极端（火最弱 / 金最强，与一手一致）。
+           ("111 火 满档 主炮+子机", MARISA_TH11_DPS["FIRE"][4][0] + MARISA_TH11_DPS["FIRE"][4][1],
+            "TH11 pl01b 一手：主炮 8.00 + 子机 6.67（子机/主炮 = 0.83×）", None),
+           ("111 金 满档 主炮+子机", MARISA_TH11_DPS["METAL"][4][0] + MARISA_TH11_DPS["METAL"][4][1],
+            "TH11 pl01b 一手：主炮 5.33 + 子机 32.00（子机/主炮 = 6.00×）", None)]
+    # ★★ 2026-09-16zb：111 现在是**逐字段复刻**（不再"归一"）⇒ 断言改成**逐 (元素, 档) 对账**：
+    #   把生成出来的行复算一遍，必须逐值等于从 TH11 `pl01b.sht` 一手算出来的 `MARISA_TH11_DPS`。
+    #   改了任何一行数值 / 率 / 角度 / 组映射而没重新对账 ⇒ 这里直接停构建（这是"照抄"的守卫）。
+    _got = marisa_dps_table()
+    for _e in MARISA_ELEMS:
+        for _lv in range(MARISA_LEVELS):
+            _wm, _ws = MARISA_TH11_DPS[_e][_lv]
+            _gm, _gs = _got[_e][_lv]
+            if abs(_gm - _wm) > 1e-4 or abs(_gs - _ws) > 1e-4:
+                raise SystemExit(
+                    f"★ 111 {MARISA_ELEM_CN[_e]} 档{_lv}：生成出来 主炮 {_gm:.6f} / 子机 {_gs:.6f}，"
+                    f"与 TH11 `pl01b.sht` 一手值 主炮 {_wm:.6f} / 子机 {_ws:.6f} 不等"
+                    f"（改了 `MARISA_*` 任一张表就必须重新对账；一手出处见那段注释）")
     print("  DPS 对照（每帧伤害；新卡参数在 append_shooterset.py / animal.c）:")
     for nm, v in refs:
         print(f"    {nm:<18} {v:7.2f}  (一手)")
     for nm, v, note, tgt in new:
-        print(f"    {nm:<18} {v:7.2f}  ({note}；目标 {tgt:.2f}，偏差 {(v - tgt) / tgt * 100:+.1f}%)")
+        if tgt is None:                     # ★ 111 那两行：值就是 TH11 一手值本身（无"目标"可比）
+            print(f"    {nm:<18} {v:7.2f}  ({note})")
+        else:
+            print(f"    {nm:<18} {v:7.2f}  ({note}；目标 {tgt:.2f}，偏差 {(v - tgt) / tgt * 100:+.1f}%)")
     print("    注（AL64c）：早苗 EAGLE 的命中路径 = hit0（默认 handler）⇒ 上表 40 是**真实**DPS；")
     print("      旧 hit4 会在命中点建一个 20 帧、每帧结算的爆炸源（+最多 24×20/发）⇒ 实际远超名义值。")
     print("    注（AL65）：早苗 WOLF 对齐**灵梦大鹫** 100/3=33.33（不是灵梦狼 63.33）；")

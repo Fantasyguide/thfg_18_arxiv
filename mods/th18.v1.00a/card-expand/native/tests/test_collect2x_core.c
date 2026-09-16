@@ -194,6 +194,49 @@ int main(void)
           && c2x_drop_interval(200) > c2x_drop_interval(300)
           && c2x_drop_interval(300) > c2x_drop_interval(400));
 
+    /* ==================== ★★ 2026-09-15（`NEXT.md` §1x.2 成员通道）：自建实体入批 ====================
+     * 110/111 的大 / 中绿点是自建 VM（`cards/faith.c` 的池），成员门（type{1,2}+state 3）进不来
+     * ⇒ 走 `c2x_collect_virtual()`：**只加 count、不碰 batch_score**（用户口径「只 +1」，绿点走信仰、
+     * 不进 SCORE ⇒ 也不进批分）。接线级的合成（层 + core 对跑）在 `tests/test_vitem_batch.c`。*/
+    memset(&s, 0, sizeof s);
+    CHECK(c2x_collect_virtual(&s, 0, 1000) == 0);            /* n <= 0：不做事、不开批 */
+    CHECK(c2x_collect_virtual(NULL, 3, 1000) == 0);          /* 空状态指针：不崩 */
+    CHECK(s.batch_open == 0 && s.batch_count == 0 && s.batch_score == 0);
+    CHECK(c2x_collect_virtual(&s, 1, 1000) == 1);
+    CHECK(s.batch_open == 1 && s.batch_count == 1 && s.last_event_at == 1000);
+    CHECK(s.batch_score == 0);                               /* ★ 不碰批分 */
+    CHECK(c2x_collect_virtual(&s, 24, 1002) == 1);           /* 同一批里继续累加，并续 idle */
+    CHECK(s.batch_count == 25 && s.last_event_at == 1002 && s.batch_score == 0);
+    /* 纯绿点批（25 颗）到 20 档 ⇒ ×0.5；**批分 0 ⇒ 补差 0**（档位 / 碎片逻辑一字未改）*/
+    CHECK(c2x_maybe_settle(&s, 1002 + C2X_BATCH_SETTLE_IDLE - 1, &out) == 0);
+    CHECK(c2x_maybe_settle(&s, 1002 + C2X_BATCH_SETTLE_IDLE, &out) == 1);
+    CHECK(out.mult_permille == C2X_TABLE_M1 && out.batch_score == 0);
+    CHECK(out.batch_score * (int64_t)(out.mult_permille - 1000) / 1000 == 0);   /* 补差 = 0 */
+    CHECK(out.fragment_type == C2X_FRAG_BOMB && out.fragment_count == 1);
+    CHECK(s.batch_open == 0 && s.batch_count == 0 && s.batch_score == 0);
+    /* 绿点自己**能开批**（第一颗就开）—— 接线层把它放在 `batch_open` 门之前 */
+    memset(&s, 0, sizeof s);
+    CHECK(c2x_maybe_settle(&s, 5000, &out) == 0);            /* 空批不动 */
+    CHECK(c2x_collect_virtual(&s, 3, 5000) == 1 && s.batch_open == 1 && s.batch_count == 3);
+    /* 混批：原生（P/钱）与自建实体并进同一批 ⇒ count 相加，**批分只含原生的那些小分** */
+    memset(&s, 0, sizeof s);
+    collect_n(&s, 1, 10, 1000);
+    s.batch_score = 700;                                     /* 原生 10 枚的小分（stash 差量累加）*/
+    CHECK(c2x_collect_virtual(&s, 15, 1005) == 1);
+    CHECK(s.batch_count == 25 && s.batch_score == 700);      /* 只加 count：绿点不进批分 */
+    CHECK(c2x_maybe_settle(&s, 1005 + C2X_BATCH_SETTLE_IDLE, &out) == 1);
+    CHECK(out.mult_permille == C2X_TABLE_M1 && out.batch_score == 700);
+    CHECK(out.batch_score * (int64_t)(out.mult_permille - 1000) / 1000 == -350);  /* 补差只按原生小分算 */
+    /* 自建实体与 presence 同一条 idle 门：收完绿点后（生产者不再声明在飞）idle 满才结 */
+    memset(&s, 0, sizeof s);
+    CHECK(c2x_collect_virtual(&s, 4, 2000) == 1);
+    presence_n(&s, 1, 2000 + C2X_BATCH_SETTLE_IDLE);         /* 绿点还在飞 ⇒ 续 idle */
+    CHECK(c2x_maybe_settle(&s, 2000 + C2X_BATCH_SETTLE_IDLE, &out) == 0);
+    CHECK(s.batch_open == 1 && s.batch_count == 4);
+    CHECK(c2x_maybe_settle(&s, 2000 + C2X_BATCH_SETTLE_IDLE + C2X_BATCH_SETTLE_IDLE - 1, &out) == 0);
+    CHECK(c2x_maybe_settle(&s, 2000 + C2X_BATCH_SETTLE_IDLE + C2X_BATCH_SETTLE_IDLE, &out) == 1);
+    CHECK(out.mult_permille == 0 && out.batch_score == 0);   /* 4 颗 < 20：关批无奖（绿点不改档位门）*/
+
     printf("test_collect2x_core: %d passed, %d failed\n", s_pass, s_fail);
     return s_fail ? 1 : 0;
 }

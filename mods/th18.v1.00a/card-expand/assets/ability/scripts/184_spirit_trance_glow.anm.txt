@@ -12,6 +12,8 @@ script script184 {
     sprite(@SPIRIT_TRANCE_1);
     blendMode(1);
     layer(13);
+    color(255, 255, 255);
+    alpha(255);
     angleVel(0.0f, 0.0f, 0.05235988f);
 0:
 offset68:

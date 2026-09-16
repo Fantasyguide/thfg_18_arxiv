@@ -56,7 +56,10 @@ MAP = {                                   # dist 里的 → modkit 里的
 # 整目录镜像（多出来的文件会被删掉）：语音 wav 是按 ORDER.txt 增删的，逐个写进 MAP 会漏
 MAP_DIRS = {
     "patch-step3/th18/voice": ("thcrap/repos/Renko_1055/th18_card_expand_255/th18/voice", (".wav",)),
-    # 子机弹幕的 pl0X.sht：有则同步、没有则把 modkit 里的删掉（目前没有卡在用，见 assets/sht/append_shooterset.py）
+    # 子机弹幕的 pl0X.sht：有则同步、没有则把 modkit 里的删掉。**必须与 DLL 同批发布**：
+    #   108/117/77/119 的子机组、以及 113 的灵界组（文件尾孤儿段 —— 卡侧按
+    #   `CE_SHT_TRANCE_DBASE + CE_SHT_TRANCE_ROW_OFF` 直接算行指针）都在这个文件里，
+    #   旧 .sht + 新 DLL 会让灵界那一下指到影像之外。见 assets/sht/append_shooterset.py / AUDIT §CJ。
     "patch-step3/th18": ("thcrap/repos/Renko_1055/th18_card_expand_255/th18", (".sht",)),
 }
 PATCH_DIRS = ("th18_card_expand_255", "th18_card_expand_test", "th18_card_expand_devstage")

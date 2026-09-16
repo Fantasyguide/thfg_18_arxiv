@@ -1,350 +1,760 @@
 /* 由 assets/build_ability.py 生成 —— ability.anm 里追加的 sprite / 脚本号。别手改。 */
+/* 图集（一个 entry 多个 sprite）里：成员名 → 自己的 sprite 号；`图集名_k` → 段内第 k 个成员；
+   `图集名` → 第 0 个成员（兼容老的单图写法）；`CE_ANM_ABILITY_ATLAS_*` = entry 号（调试用）。*/
 #pragma once
 
-#define CE_ANM_ABILITY_SPRITE_REVERSE               109   /* entry7 */
-#define CE_ANM_ABILITY_SPRITE_ROYAL_FLUSH           110   /* entry8 */
-#define CE_ANM_ABILITY_SPRITE_SPADE_10_FX           111   /* entry9 */
-#define CE_ANM_ABILITY_SPRITE_SPADE_J_FX            112   /* entry10 */
-#define CE_ANM_ABILITY_SPRITE_SPADE_Q_FX            113   /* entry11 */
-#define CE_ANM_ABILITY_SPRITE_SPADE_K_FX            114   /* entry12 */
-#define CE_ANM_ABILITY_SPRITE_SPADE_A_FX            115   /* entry13 */
-#define CE_ANM_ABILITY_SPRITE_GOLD_888              116   /* entry14 */
-#define CE_ANM_ABILITY_SPRITE_JUDGMENT_FX           117   /* entry15 */
-#define CE_ANM_ABILITY_SPRITE_BLUE_EYES_DRAGON      118   /* entry16 */
-#define CE_ANM_ABILITY_SPRITE_BLUE_EYES_BEAM        119   /* entry17 */
-#define CE_ANM_ABILITY_SPRITE_BLUE_EYES_FLARE       120   /* entry18 */
-#define CE_ANM_ABILITY_SPRITE_BROKEN_CORE_ORB       121   /* entry19 */
-#define CE_ANM_ABILITY_SPRITE_BROKEN_CORE_BOLT      122   /* entry20 */
-#define CE_ANM_ABILITY_SPRITE_FIRELORD_BODY         123   /* entry21 */
-#define CE_ANM_ABILITY_SPRITE_FIRELORD_FIREBALL     124   /* entry22 */
-#define CE_ANM_ABILITY_SPRITE_FIRELORD_BLAST        125   /* entry23 */
-#define CE_ANM_ABILITY_SPRITE_TS_DIGIT_0            126   /* entry24 */
-#define CE_ANM_ABILITY_SPRITE_TS_DIGIT_1            127   /* entry25 */
-#define CE_ANM_ABILITY_SPRITE_TS_DIGIT_2            128   /* entry26 */
-#define CE_ANM_ABILITY_SPRITE_TS_DIGIT_3            129   /* entry27 */
-#define CE_ANM_ABILITY_SPRITE_TS_DIGIT_4            130   /* entry28 */
-#define CE_ANM_ABILITY_SPRITE_TS_DIGIT_5            131   /* entry29 */
-#define CE_ANM_ABILITY_SPRITE_TS_DIGIT_6            132   /* entry30 */
-#define CE_ANM_ABILITY_SPRITE_TS_DIGIT_7            133   /* entry31 */
-#define CE_ANM_ABILITY_SPRITE_TS_DIGIT_8            134   /* entry32 */
-#define CE_ANM_ABILITY_SPRITE_TS_DIGIT_9            135   /* entry33 */
-#define CE_ANM_ABILITY_SPRITE_PEA                   136   /* entry34 */
-#define CE_ANM_ABILITY_SPRITE_PEASHOOTER_OPT        137   /* entry35 */
-#define CE_ANM_ABILITY_SPRITE_LOLK_RING             138   /* entry36 */
-#define CE_ANM_ABILITY_SPRITE_LOLK_PANEL_1          139   /* entry37 */
-#define CE_ANM_ABILITY_SPRITE_LOLK_PANEL_2          140   /* entry38 */
-#define CE_ANM_ABILITY_SPRITE_LOLK_PANEL_3          141   /* entry39 */
-#define CE_ANM_ABILITY_SPRITE_LOLK_PANEL_4          142   /* entry40 */
-#define CE_ANM_ABILITY_SPRITE_LOLK_PANEL_5          143   /* entry41 */
-#define CE_ANM_ABILITY_SPRITE_LOLK_PANEL_6          144   /* entry42 */
-#define CE_ANM_ABILITY_SPRITE_LOLK_PANEL_7          145   /* entry43 */
-#define CE_ANM_ABILITY_SPRITE_SEASON_OPT            146   /* entry44 */
-#define CE_ANM_ABILITY_SPRITE_SEASON_SEED           147   /* entry45 */
-#define CE_ANM_ABILITY_SPRITE_PT_SPRING             148   /* entry46 */
-#define CE_ANM_ABILITY_SPRITE_PT_SUMMER             149   /* entry47 */
-#define CE_ANM_ABILITY_SPRITE_PT_FALL               150   /* entry48 */
-#define CE_ANM_ABILITY_SPRITE_PT_WINTER             151   /* entry49 */
-#define CE_ANM_ABILITY_SPRITE_PT_DOYOU              152   /* entry50 */
-#define CE_ANM_ABILITY_SPRITE_GLYPH_SPRING          153   /* entry51 */
-#define CE_ANM_ABILITY_SPRITE_GLYPH_SUMMER          154   /* entry52 */
-#define CE_ANM_ABILITY_SPRITE_GLYPH_FALL            155   /* entry53 */
-#define CE_ANM_ABILITY_SPRITE_GLYPH_WINTER          156   /* entry54 */
-#define CE_ANM_ABILITY_SPRITE_GLYPH_DOYOU           157   /* entry55 */
-#define CE_ANM_ABILITY_SPRITE_OPT_SPRING            158   /* entry56 */
-#define CE_ANM_ABILITY_SPRITE_OPT_SUMMER            159   /* entry57 */
-#define CE_ANM_ABILITY_SPRITE_OPT_FALL              160   /* entry58 */
-#define CE_ANM_ABILITY_SPRITE_OPT_WINTER            161   /* entry59 */
-#define CE_ANM_ABILITY_SPRITE_OPT_DOYOU             162   /* entry60 */
-#define CE_ANM_ABILITY_SPRITE_SEASON_LASER          163   /* entry61 */
-#define CE_ANM_ABILITY_SPRITE_SEASON_STRIP          164   /* entry62 */
-#define CE_ANM_ABILITY_SPRITE_BULLET_SPRING_A       165   /* entry63 */
-#define CE_ANM_ABILITY_SPRITE_BULLET_SPRING_B       166   /* entry64 */
-#define CE_ANM_ABILITY_SPRITE_HIT_SPRING_1          167   /* entry65 */
-#define CE_ANM_ABILITY_SPRITE_HIT_SPRING_2          168   /* entry66 */
-#define CE_ANM_ABILITY_SPRITE_HIT_SPRING_3          169   /* entry67 */
-#define CE_ANM_ABILITY_SPRITE_HIT_SPRING_4          170   /* entry68 */
-#define CE_ANM_ABILITY_SPRITE_HIT_SPRING_5          171   /* entry69 */
-#define CE_ANM_ABILITY_SPRITE_HIT_SPRING_6          172   /* entry70 */
-#define CE_ANM_ABILITY_SPRITE_HIT_SPRING_7          173   /* entry71 */
-#define CE_ANM_ABILITY_SPRITE_HIT_SPRING_8          174   /* entry72 */
-#define CE_ANM_ABILITY_SPRITE_BULLET_SUMMER         175   /* entry73 */
-#define CE_ANM_ABILITY_SPRITE_HIT_SUMMER_1          176   /* entry74 */
-#define CE_ANM_ABILITY_SPRITE_HIT_SUMMER_2          177   /* entry75 */
-#define CE_ANM_ABILITY_SPRITE_HIT_SUMMER_3          178   /* entry76 */
-#define CE_ANM_ABILITY_SPRITE_BULLET_FALL           179   /* entry77 */
-#define CE_ANM_ABILITY_SPRITE_HIT_FALL_1            180   /* entry78 */
-#define CE_ANM_ABILITY_SPRITE_HIT_FALL_2            181   /* entry79 */
-#define CE_ANM_ABILITY_SPRITE_HIT_FALL_3            182   /* entry80 */
-#define CE_ANM_ABILITY_SPRITE_BULLET_DOYOU          183   /* entry81 */
-#define CE_ANM_ABILITY_SPRITE_HIT_DOYOU_1           184   /* entry82 */
-#define CE_ANM_ABILITY_SPRITE_HIT_DOYOU_2           185   /* entry83 */
-#define CE_ANM_ABILITY_SPRITE_HIT_DOYOU_3           186   /* entry84 */
-#define CE_ANM_ABILITY_SPRITE_LASER_CHILD           187   /* entry85 */
-#define CE_ANM_ABILITY_SPRITE_LASER_HIT             188   /* entry86 */
-#define CE_ANM_ABILITY_SPRITE_FONT2_0               189   /* entry87 */
-#define CE_ANM_ABILITY_SPRITE_FONT2_1               190   /* entry88 */
-#define CE_ANM_ABILITY_SPRITE_FONT2_2               191   /* entry89 */
-#define CE_ANM_ABILITY_SPRITE_FONT2_3               192   /* entry90 */
-#define CE_ANM_ABILITY_SPRITE_FONT2_4               193   /* entry91 */
-#define CE_ANM_ABILITY_SPRITE_FONT2_5               194   /* entry92 */
-#define CE_ANM_ABILITY_SPRITE_FONT2_6               195   /* entry93 */
-#define CE_ANM_ABILITY_SPRITE_FONT2_7               196   /* entry94 */
-#define CE_ANM_ABILITY_SPRITE_FONT2_8               197   /* entry95 */
-#define CE_ANM_ABILITY_SPRITE_FONT2_9               198   /* entry96 */
-#define CE_ANM_ABILITY_SPRITE_FONT2_MINUS           199   /* entry97 */
-#define CE_ANM_ABILITY_SPRITE_FONT2_PERCENT         200   /* entry98 */
-#define CE_ANM_ABILITY_SPRITE_FONT2_DOT             201   /* entry99 */
-#define CE_ANM_ABILITY_SPRITE_FONT2_PLUS            202   /* entry100 */
-#define CE_ANM_ABILITY_SPRITE_WOLF_0                203   /* entry101 */
-#define CE_ANM_ABILITY_SPRITE_WOLF_1                204   /* entry102 */
-#define CE_ANM_ABILITY_SPRITE_WOLF_2                205   /* entry103 */
-#define CE_ANM_ABILITY_SPRITE_OTTER_0               206   /* entry104 */
-#define CE_ANM_ABILITY_SPRITE_OTTER_1               207   /* entry105 */
-#define CE_ANM_ABILITY_SPRITE_OTTER_2               208   /* entry106 */
-#define CE_ANM_ABILITY_SPRITE_EAGLE_0               209   /* entry107 */
-#define CE_ANM_ABILITY_SPRITE_EAGLE_1               210   /* entry108 */
-#define CE_ANM_ABILITY_SPRITE_EAGLE_2               211   /* entry109 */
-#define CE_ANM_ABILITY_SPRITE_FISH_BOMB             212   /* entry110 */
-#define CE_ANM_ABILITY_SPRITE_FISH_LIFE             213   /* entry111 */
-#define CE_ANM_ABILITY_SPRITE_FISH_POWER            214   /* entry112 */
-#define CE_ANM_ABILITY_SPRITE_FISH_POINT            215   /* entry113 */
-#define CE_ANM_ABILITY_SPRITE_GAUGE_FRAME           216   /* entry114 */
-#define CE_ANM_ABILITY_SPRITE_AURA_EAGLE_0          217   /* entry115 */
-#define CE_ANM_ABILITY_SPRITE_AURA_EAGLE_1          218   /* entry116 */
-#define CE_ANM_ABILITY_SPRITE_AURA_EAGLE_2          219   /* entry117 */
-#define CE_ANM_ABILITY_SPRITE_AURA_EAGLE_3          220   /* entry118 */
-#define CE_ANM_ABILITY_SPRITE_AURA_EAGLE_4          221   /* entry119 */
-#define CE_ANM_ABILITY_SPRITE_AURA_EAGLE_5          222   /* entry120 */
-#define CE_ANM_ABILITY_SPRITE_AURA_EAGLE_6          223   /* entry121 */
-#define CE_ANM_ABILITY_SPRITE_AURA_EAGLE_7          224   /* entry122 */
-#define CE_ANM_ABILITY_SPRITE_AURA_WOLF_0           225   /* entry123 */
-#define CE_ANM_ABILITY_SPRITE_AURA_WOLF_1           226   /* entry124 */
-#define CE_ANM_ABILITY_SPRITE_AURA_WOLF_2           227   /* entry125 */
-#define CE_ANM_ABILITY_SPRITE_AURA_WOLF_3           228   /* entry126 */
-#define CE_ANM_ABILITY_SPRITE_AURA_WOLF_4           229   /* entry127 */
-#define CE_ANM_ABILITY_SPRITE_AURA_WOLF_5           230   /* entry128 */
-#define CE_ANM_ABILITY_SPRITE_AURA_WOLF_6           231   /* entry129 */
-#define CE_ANM_ABILITY_SPRITE_AURA_WOLF_7           232   /* entry130 */
-#define CE_ANM_ABILITY_SPRITE_AURA_OTTER_0          233   /* entry131 */
-#define CE_ANM_ABILITY_SPRITE_AURA_OTTER_1          234   /* entry132 */
-#define CE_ANM_ABILITY_SPRITE_AURA_OTTER_2          235   /* entry133 */
-#define CE_ANM_ABILITY_SPRITE_AURA_OTTER_3          236   /* entry134 */
-#define CE_ANM_ABILITY_SPRITE_AURA_OTTER_4          237   /* entry135 */
-#define CE_ANM_ABILITY_SPRITE_AURA_OTTER_5          238   /* entry136 */
-#define CE_ANM_ABILITY_SPRITE_AURA_OTTER_6          239   /* entry137 */
-#define CE_ANM_ABILITY_SPRITE_AURA_OTTER_7          240   /* entry138 */
-#define CE_ANM_ABILITY_SPRITE_OTTER_ORB             241   /* entry139 */
-#define CE_ANM_ABILITY_SPRITE_STRIKE_RING           242   /* entry140 */
-#define CE_ANM_ABILITY_SPRITE_SOUL_0                243   /* entry141 */
-#define CE_ANM_ABILITY_SPRITE_SOUL_1                244   /* entry142 */
-#define CE_ANM_ABILITY_SPRITE_SOUL_2                245   /* entry143 */
-#define CE_ANM_ABILITY_SPRITE_SOUL_3                246   /* entry144 */
-#define CE_ANM_ABILITY_SPRITE_SOUL_4                247   /* entry145 */
-#define CE_ANM_ABILITY_SPRITE_SOUL_5                248   /* entry146 */
-#define CE_ANM_ABILITY_SPRITE_SOUL_6                249   /* entry147 */
-#define CE_ANM_ABILITY_SPRITE_SOUL_7                250   /* entry148 */
-#define CE_ANM_ABILITY_SPRITE_SOUL_8                251   /* entry149 */
-#define CE_ANM_ABILITY_SPRITE_SOUL_9                252   /* entry150 */
-#define CE_ANM_ABILITY_SPRITE_SOUL_10               253   /* entry151 */
-#define CE_ANM_ABILITY_SPRITE_ITEM_P                254   /* entry152 */
-#define CE_ANM_ABILITY_SPRITE_ITEM_MONEY            255   /* entry153 */
-#define CE_ANM_ABILITY_SPRITE_ITEM_LIFE             256   /* entry154 */
-#define CE_ANM_ABILITY_SPRITE_ITEM_BOMB             257   /* entry155 */
-#define CE_ANM_ABILITY_SPRITE_FLAME_0               258   /* entry156 */
-#define CE_ANM_ABILITY_SPRITE_FLAME_1               259   /* entry157 */
-#define CE_ANM_ABILITY_SPRITE_FLAME_2               260   /* entry158 */
-#define CE_ANM_ABILITY_SPRITE_FLAME_3               261   /* entry159 */
-#define CE_ANM_ABILITY_SPRITE_FLAME_4               262   /* entry160 */
-#define CE_ANM_ABILITY_SPRITE_FLAME_5               263   /* entry161 */
-#define CE_ANM_ABILITY_SPRITE_FLAME_6               264   /* entry162 */
-#define CE_ANM_ABILITY_SPRITE_FLAME_7               265   /* entry163 */
-#define CE_ANM_ABILITY_SPRITE_FLAME_8               266   /* entry164 */
-#define CE_ANM_ABILITY_SPRITE_FLAME_9               267   /* entry165 */
-#define CE_ANM_ABILITY_SPRITE_FLAME_10              268   /* entry166 */
-#define CE_ANM_ABILITY_SPRITE_FLAME_11              269   /* entry167 */
-#define CE_ANM_ABILITY_SPRITE_ICON_WOLF             270   /* entry168 */
-#define CE_ANM_ABILITY_SPRITE_ICON_OTTER            271   /* entry169 */
-#define CE_ANM_ABILITY_SPRITE_ICON_EAGLE            272   /* entry170 */
-#define CE_ANM_ABILITY_SPRITE_ICON_FISH_BOMB        273   /* entry171 */
-#define CE_ANM_ABILITY_SPRITE_ICON_FISH_LIFE        274   /* entry172 */
-#define CE_ANM_ABILITY_SPRITE_ICON_FISH_POWER       275   /* entry173 */
-#define CE_ANM_ABILITY_SPRITE_ICON_FISH_POINT       276   /* entry174 */
-#define CE_ANM_ABILITY_SPRITE_CARD_BOMB             277   /* entry175 */
-#define CE_ANM_ABILITY_SPRITE_CARD_LIFE             278   /* entry176 */
-#define CE_ANM_ABILITY_SPRITE_CARD_MONEY            279   /* entry177 */
-#define CE_ANM_ABILITY_SPRITE_FISH_MONEY            280   /* entry178 */
-#define CE_ANM_ABILITY_SPRITE_ICON_FISH_MONEY       281   /* entry179 */
-#define CE_ANM_ABILITY_SPRITE_BEASTAP_A             282   /* entry180 */
-#define CE_ANM_ABILITY_SPRITE_BEASTAP_B             283   /* entry181 */
-#define CE_ANM_ABILITY_SPRITE_EAGLE_BEAM            284   /* entry182 */
-#define CE_ANM_ABILITY_SPRITE_UFO_RED_0             285   /* entry183 */
-#define CE_ANM_ABILITY_SPRITE_UFO_RED_1             286   /* entry184 */
-#define CE_ANM_ABILITY_SPRITE_UFO_RED_2             287   /* entry185 */
-#define CE_ANM_ABILITY_SPRITE_UFO_RED_3             288   /* entry186 */
-#define CE_ANM_ABILITY_SPRITE_UFO_BLUE_0            289   /* entry187 */
-#define CE_ANM_ABILITY_SPRITE_UFO_BLUE_1            290   /* entry188 */
-#define CE_ANM_ABILITY_SPRITE_UFO_BLUE_2            291   /* entry189 */
-#define CE_ANM_ABILITY_SPRITE_UFO_BLUE_3            292   /* entry190 */
-#define CE_ANM_ABILITY_SPRITE_UFO_GREEN_0           293   /* entry191 */
-#define CE_ANM_ABILITY_SPRITE_UFO_GREEN_1           294   /* entry192 */
-#define CE_ANM_ABILITY_SPRITE_UFO_GREEN_2           295   /* entry193 */
-#define CE_ANM_ABILITY_SPRITE_UFO_GREEN_3           296   /* entry194 */
-#define CE_ANM_ABILITY_SPRITE_UFO_RAINBOW_0         297   /* entry195 */
-#define CE_ANM_ABILITY_SPRITE_UFO_RAINBOW_1         298   /* entry196 */
-#define CE_ANM_ABILITY_SPRITE_UFO_RAINBOW_2         299   /* entry197 */
-#define CE_ANM_ABILITY_SPRITE_UFO_RAINBOW_3         300   /* entry198 */
-#define CE_ANM_ABILITY_SPRITE_TOKEN_RED_0           301   /* entry199 */
-#define CE_ANM_ABILITY_SPRITE_TOKEN_RED_1           302   /* entry200 */
-#define CE_ANM_ABILITY_SPRITE_TOKEN_BLUE_0          303   /* entry201 */
-#define CE_ANM_ABILITY_SPRITE_TOKEN_BLUE_1          304   /* entry202 */
-#define CE_ANM_ABILITY_SPRITE_TOKEN_GREEN_0         305   /* entry203 */
-#define CE_ANM_ABILITY_SPRITE_TOKEN_GREEN_1         306   /* entry204 */
-#define CE_ANM_ABILITY_SPRITE_TOKEN_RBRED_0         307   /* entry205 */
-#define CE_ANM_ABILITY_SPRITE_TOKEN_RBRED_1         308   /* entry206 */
-#define CE_ANM_ABILITY_SPRITE_TOKEN_RBBLUE_0        309   /* entry207 */
-#define CE_ANM_ABILITY_SPRITE_TOKEN_RBBLUE_1        310   /* entry208 */
-#define CE_ANM_ABILITY_SPRITE_TOKEN_RBGREEN_0       311   /* entry209 */
-#define CE_ANM_ABILITY_SPRITE_TOKEN_RBGREEN_1       312   /* entry210 */
-#define CE_ANM_ABILITY_SPRITE_SPIRIT_PLAIN_0        313   /* entry211 */
-#define CE_ANM_ABILITY_SPRITE_SPIRIT_PLAIN_1        314   /* entry212 */
-#define CE_ANM_ABILITY_SPRITE_SPIRIT_TRANCE_0       315   /* entry213 */
-#define CE_ANM_ABILITY_SPRITE_SPIRIT_TRANCE_1       316   /* entry214 */
-#define CE_ANM_ABILITY_SPRITE_SPIRIT_TRANCE_2       317   /* entry215 */
-#define CE_ANM_ABILITY_SPRITE_SPIRIT_TRANCE_3       318   /* entry216 */
-#define CE_ANM_ABILITY_SPRITE_TRANCE_GAUGE_TOP      319   /* entry217 */
-#define CE_ANM_ABILITY_SPRITE_TRANCE_GAUGE_BAR      320   /* entry218 */
-#define CE_ANM_ABILITY_SPRITE_TRANCE_GAUGE_BAR2     321   /* entry219 */
-#define CE_ANM_ABILITY_SPRITE_TRANCE_GAUGE_MARK     322   /* entry220 */
-#define CE_ANM_ABILITY_SPRITE_FAITH_DOT             323   /* entry221 */
-#define CE_ANM_ABILITY_SPRITE_SAKURA_POINT          324   /* entry222 */
-#define CE_ANM_ABILITY_SPRITE_SAKURA_SMALL          325   /* entry223 */
-#define CE_ANM_ABILITY_SPRITE_TPOINT                326   /* entry224 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_YUKARI_S11     327   /* entry225 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_YUKARI_S12     328   /* entry226 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_YUKARI_S13     329   /* entry227 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_YUKARI_S14     330   /* entry228 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_YUKARI_S15     331   /* entry229 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_YUKARI_S16     332   /* entry230 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_YUKARI_S17     333   /* entry231 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_YUKARI_S18     334   /* entry232 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_YUKARI_S19     335   /* entry233 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_YUKARI_S20     336   /* entry234 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_YUKARI_S21     337   /* entry235 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_ALICE_S11      338   /* entry236 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_ALICE_S12      339   /* entry237 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_ALICE_S13      340   /* entry238 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_ALICE_S14      341   /* entry239 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_ALICE_S15      342   /* entry240 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_ALICE_S16      343   /* entry241 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_ALICE_S17      344   /* entry242 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_ALICE_S18      345   /* entry243 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_ALICE_S19      346   /* entry244 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_ALICE_S20      347   /* entry245 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_ALICE_S21      348   /* entry246 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_REMILIA_S11    349   /* entry247 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_REMILIA_S12    350   /* entry248 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_REMILIA_S13    351   /* entry249 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_REMILIA_S14    352   /* entry250 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_REMILIA_S15    353   /* entry251 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_REMILIA_S16    354   /* entry252 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_REMILIA_S17    355   /* entry253 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_REMILIA_S18    356   /* entry254 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_REMILIA_S19    357   /* entry255 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S53_0      358   /* entry256 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S53_1      359   /* entry257 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S53_2      360   /* entry258 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S53_3      361   /* entry259 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S53_4      362   /* entry260 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S53_5      363   /* entry261 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S53_6      364   /* entry262 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S53_7      365   /* entry263 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S54_0      366   /* entry264 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S54_1      367   /* entry265 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S54_2      368   /* entry266 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S54_3      369   /* entry267 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S54_4      370   /* entry268 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S54_5      371   /* entry269 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S54_6      372   /* entry270 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S54_7      373   /* entry271 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S55_0      374   /* entry272 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S55_1      375   /* entry273 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S55_2      376   /* entry274 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S55_3      377   /* entry275 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S55_4      378   /* entry276 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S55_5      379   /* entry277 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S55_6      380   /* entry278 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S55_7      381   /* entry279 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S56_0      382   /* entry280 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S56_1      383   /* entry281 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S56_2      384   /* entry282 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S56_3      385   /* entry283 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S56_4      386   /* entry284 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S56_5      387   /* entry285 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S56_6      388   /* entry286 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S56_7      389   /* entry287 */
-#define CE_ANM_ABILITY_SPRITE_SENRO_FIELD           390   /* entry288 */
-#define CE_ANM_ABILITY_SPRITE_SENRO_RING            391   /* entry289 */
-#define CE_ANM_ABILITY_SPRITE_MOF_FAITH_ICON        392   /* entry290 */
-#define CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_0     393   /* entry291 */
-#define CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_1     394   /* entry292 */
-#define CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_2     395   /* entry293 */
-#define CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_3     396   /* entry294 */
-#define CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_4     397   /* entry295 */
-#define CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_5     398   /* entry296 */
-#define CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_6     399   /* entry297 */
-#define CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_7     400   /* entry298 */
-#define CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_8     401   /* entry299 */
-#define CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_9     402   /* entry300 */
-#define CE_ANM_ABILITY_SPRITE_SIGNAL_GAUGE_BG       403   /* entry301 */
-#define CE_ANM_ABILITY_SPRITE_SIGNAL_GAUGE_BAR      404   /* entry302 */
-#define CE_ANM_ABILITY_SPRITE_SIGNAL_GAUGE_ICON     405   /* entry303 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S0         406   /* entry304 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S1         407   /* entry305 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S2         408   /* entry306 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S3         409   /* entry307 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S4         410   /* entry308 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S5         411   /* entry309 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S6         412   /* entry310 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S7         413   /* entry311 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S8         414   /* entry312 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S9         415   /* entry313 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S10        416   /* entry314 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S11        417   /* entry315 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S12        418   /* entry316 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S13        419   /* entry317 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S14        420   /* entry318 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S15        421   /* entry319 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S16        422   /* entry320 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S17        423   /* entry321 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S18        424   /* entry322 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S19        425   /* entry323 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S20        426   /* entry324 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S21        427   /* entry325 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S22        428   /* entry326 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S23        429   /* entry327 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_YUKARI_S22  430   /* entry328 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_YUKARI_S23  431   /* entry329 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_YUKARI_S24  432   /* entry330 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_YUKARI_S25  433   /* entry331 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_YUKARI_S26  434   /* entry332 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_YUKARI_S27  435   /* entry333 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_YUKARI_S28  436   /* entry334 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_YUKARI_S29  437   /* entry335 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_YUKARI_S30  438   /* entry336 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_ALICE_S22  439   /* entry337 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_ALICE_S23  440   /* entry338 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_ALICE_S24  441   /* entry339 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_ALICE_S25  442   /* entry340 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_REMILIA_S20  443   /* entry341 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_AYA_S32    444   /* entry342 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_AYA_S33    445   /* entry343 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_AYA_S34    446   /* entry344 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_AYA_S35    447   /* entry345 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_AYA_S36    448   /* entry346 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_AYA_S37    449   /* entry347 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_AYA_S38    450   /* entry348 */
-#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_AYA_S39    451   /* entry349 */
-#define CE_ANM_ABILITY_SPRITE_UFO_ARC_STRIP         452   /* entry350 */
+#define CE_ANM_ABILITY_ATLAS_ATLAS_HUD_DIGIT          7   /* 画布 128x96，10 个 sprite */
+#define CE_ANM_ABILITY_SPRITE_TS_DIGIT_0            109   /* entry7 ATLAS_HUD_DIGIT[0] */
+#define CE_ANM_ABILITY_SPRITE_TS_DIGIT_1            110   /* entry7 ATLAS_HUD_DIGIT[1] */
+#define CE_ANM_ABILITY_SPRITE_TS_DIGIT_2            111   /* entry7 ATLAS_HUD_DIGIT[2] */
+#define CE_ANM_ABILITY_SPRITE_TS_DIGIT_3            112   /* entry7 ATLAS_HUD_DIGIT[3] */
+#define CE_ANM_ABILITY_SPRITE_TS_DIGIT_4            113   /* entry7 ATLAS_HUD_DIGIT[4] */
+#define CE_ANM_ABILITY_SPRITE_TS_DIGIT_5            114   /* entry7 ATLAS_HUD_DIGIT[5] */
+#define CE_ANM_ABILITY_SPRITE_TS_DIGIT_6            115   /* entry7 ATLAS_HUD_DIGIT[6] */
+#define CE_ANM_ABILITY_SPRITE_TS_DIGIT_7            116   /* entry7 ATLAS_HUD_DIGIT[7] */
+#define CE_ANM_ABILITY_SPRITE_TS_DIGIT_8            117   /* entry7 ATLAS_HUD_DIGIT[8] */
+#define CE_ANM_ABILITY_SPRITE_TS_DIGIT_9            118   /* entry7 ATLAS_HUD_DIGIT[9] */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_HUD_DIGIT_0     109   /* = TS_DIGIT_0 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_HUD_DIGIT_1     110   /* = TS_DIGIT_1 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_HUD_DIGIT_2     111   /* = TS_DIGIT_2 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_HUD_DIGIT_3     112   /* = TS_DIGIT_3 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_HUD_DIGIT_4     113   /* = TS_DIGIT_4 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_HUD_DIGIT_5     114   /* = TS_DIGIT_5 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_HUD_DIGIT_6     115   /* = TS_DIGIT_6 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_HUD_DIGIT_7     116   /* = TS_DIGIT_7 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_HUD_DIGIT_8     117   /* = TS_DIGIT_8 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_HUD_DIGIT_9     118   /* = TS_DIGIT_9 */
+#define CE_ANM_ABILITY_ATLAS_ATLAS_FONT2              8   /* 画布 128x64，14 个 sprite */
+#define CE_ANM_ABILITY_SPRITE_FONT2_0               119   /* entry8 ATLAS_FONT2[0] */
+#define CE_ANM_ABILITY_SPRITE_FONT2_1               120   /* entry8 ATLAS_FONT2[1] */
+#define CE_ANM_ABILITY_SPRITE_FONT2_2               121   /* entry8 ATLAS_FONT2[2] */
+#define CE_ANM_ABILITY_SPRITE_FONT2_3               122   /* entry8 ATLAS_FONT2[3] */
+#define CE_ANM_ABILITY_SPRITE_FONT2_4               123   /* entry8 ATLAS_FONT2[4] */
+#define CE_ANM_ABILITY_SPRITE_FONT2_5               124   /* entry8 ATLAS_FONT2[5] */
+#define CE_ANM_ABILITY_SPRITE_FONT2_6               125   /* entry8 ATLAS_FONT2[6] */
+#define CE_ANM_ABILITY_SPRITE_FONT2_7               126   /* entry8 ATLAS_FONT2[7] */
+#define CE_ANM_ABILITY_SPRITE_FONT2_8               127   /* entry8 ATLAS_FONT2[8] */
+#define CE_ANM_ABILITY_SPRITE_FONT2_9               128   /* entry8 ATLAS_FONT2[9] */
+#define CE_ANM_ABILITY_SPRITE_FONT2_MINUS           129   /* entry8 ATLAS_FONT2[10] */
+#define CE_ANM_ABILITY_SPRITE_FONT2_PERCENT         130   /* entry8 ATLAS_FONT2[11] */
+#define CE_ANM_ABILITY_SPRITE_FONT2_DOT             131   /* entry8 ATLAS_FONT2[12] */
+#define CE_ANM_ABILITY_SPRITE_FONT2_PLUS            132   /* entry8 ATLAS_FONT2[13] */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_FONT2_0         119   /* = FONT2_0 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_FONT2_1         120   /* = FONT2_1 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_FONT2_2         121   /* = FONT2_2 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_FONT2_3         122   /* = FONT2_3 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_FONT2_4         123   /* = FONT2_4 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_FONT2_5         124   /* = FONT2_5 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_FONT2_6         125   /* = FONT2_6 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_FONT2_7         126   /* = FONT2_7 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_FONT2_8         127   /* = FONT2_8 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_FONT2_9         128   /* = FONT2_9 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_FONT2_10        129   /* = FONT2_MINUS */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_FONT2_11        130   /* = FONT2_PERCENT */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_FONT2_12        131   /* = FONT2_DOT */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_FONT2_13        132   /* = FONT2_PLUS */
+#define CE_ANM_ABILITY_SPRITE_REVERSE               133   /* entry9 */
+#define CE_ANM_ABILITY_SPRITE_ROYAL_FLUSH           134   /* entry10 */
+#define CE_ANM_ABILITY_SPRITE_SPADE_10_FX           135   /* entry11 */
+#define CE_ANM_ABILITY_SPRITE_SPADE_J_FX            136   /* entry12 */
+#define CE_ANM_ABILITY_SPRITE_SPADE_Q_FX            137   /* entry13 */
+#define CE_ANM_ABILITY_SPRITE_SPADE_K_FX            138   /* entry14 */
+#define CE_ANM_ABILITY_SPRITE_SPADE_A_FX            139   /* entry15 */
+#define CE_ANM_ABILITY_SPRITE_GOLD_888              140   /* entry16 */
+#define CE_ANM_ABILITY_SPRITE_JUDGMENT_FX           141   /* entry17 */
+#define CE_ANM_ABILITY_SPRITE_BLUE_EYES_DRAGON      142   /* entry18 */
+#define CE_ANM_ABILITY_SPRITE_BLUE_EYES_BEAM        143   /* entry19 */
+#define CE_ANM_ABILITY_SPRITE_BLUE_EYES_FLARE       144   /* entry20 */
+#define CE_ANM_ABILITY_SPRITE_BROKEN_CORE_ORB       145   /* entry21 */
+#define CE_ANM_ABILITY_SPRITE_BROKEN_CORE_BOLT      146   /* entry22 */
+#define CE_ANM_ABILITY_SPRITE_FIRELORD_BODY         147   /* entry23 */
+#define CE_ANM_ABILITY_SPRITE_FIRELORD_FIREBALL     148   /* entry24 */
+#define CE_ANM_ABILITY_SPRITE_FIRELORD_BLAST        149   /* entry25 */
+#define CE_ANM_ABILITY_SPRITE_PEA                   150   /* entry26 */
+#define CE_ANM_ABILITY_SPRITE_PEASHOOTER_OPT        151   /* entry27 */
+#define CE_ANM_ABILITY_ATLAS_ATLAS_LOLK              28   /* 画布 256x352，8 个 sprite */
+#define CE_ANM_ABILITY_SPRITE_LOLK_RING             152   /* entry28 ATLAS_LOLK[0] */
+#define CE_ANM_ABILITY_SPRITE_LOLK_PANEL_1          153   /* entry28 ATLAS_LOLK[1] */
+#define CE_ANM_ABILITY_SPRITE_LOLK_PANEL_2          154   /* entry28 ATLAS_LOLK[2] */
+#define CE_ANM_ABILITY_SPRITE_LOLK_PANEL_3          155   /* entry28 ATLAS_LOLK[3] */
+#define CE_ANM_ABILITY_SPRITE_LOLK_PANEL_4          156   /* entry28 ATLAS_LOLK[4] */
+#define CE_ANM_ABILITY_SPRITE_LOLK_PANEL_5          157   /* entry28 ATLAS_LOLK[5] */
+#define CE_ANM_ABILITY_SPRITE_LOLK_PANEL_6          158   /* entry28 ATLAS_LOLK[6] */
+#define CE_ANM_ABILITY_SPRITE_LOLK_PANEL_7          159   /* entry28 ATLAS_LOLK[7] */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_LOLK_0          152   /* = LOLK_RING */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_LOLK_1          153   /* = LOLK_PANEL_1 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_LOLK_2          154   /* = LOLK_PANEL_2 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_LOLK_3          155   /* = LOLK_PANEL_3 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_LOLK_4          156   /* = LOLK_PANEL_4 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_LOLK_5          157   /* = LOLK_PANEL_5 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_LOLK_6          158   /* = LOLK_PANEL_6 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_LOLK_7          159   /* = LOLK_PANEL_7 */
+#define CE_ANM_ABILITY_ATLAS_ATLAS_SEASON_BULLET     29   /* 画布 192x208，23 个 sprite */
+#define CE_ANM_ABILITY_SPRITE_SEASON_SEED           160   /* entry29 ATLAS_SEASON_BULLET[0] */
+#define CE_ANM_ABILITY_SPRITE_BULLET_SPRING_A       161   /* entry29 ATLAS_SEASON_BULLET[1] */
+#define CE_ANM_ABILITY_SPRITE_BULLET_SPRING_B       162   /* entry29 ATLAS_SEASON_BULLET[2] */
+#define CE_ANM_ABILITY_SPRITE_HIT_SPRING_1          163   /* entry29 ATLAS_SEASON_BULLET[3] */
+#define CE_ANM_ABILITY_SPRITE_HIT_SPRING_2          164   /* entry29 ATLAS_SEASON_BULLET[4] */
+#define CE_ANM_ABILITY_SPRITE_HIT_SPRING_3          165   /* entry29 ATLAS_SEASON_BULLET[5] */
+#define CE_ANM_ABILITY_SPRITE_HIT_SPRING_4          166   /* entry29 ATLAS_SEASON_BULLET[6] */
+#define CE_ANM_ABILITY_SPRITE_HIT_SPRING_5          167   /* entry29 ATLAS_SEASON_BULLET[7] */
+#define CE_ANM_ABILITY_SPRITE_HIT_SPRING_6          168   /* entry29 ATLAS_SEASON_BULLET[8] */
+#define CE_ANM_ABILITY_SPRITE_HIT_SPRING_7          169   /* entry29 ATLAS_SEASON_BULLET[9] */
+#define CE_ANM_ABILITY_SPRITE_HIT_SPRING_8          170   /* entry29 ATLAS_SEASON_BULLET[10] */
+#define CE_ANM_ABILITY_SPRITE_BULLET_SUMMER         171   /* entry29 ATLAS_SEASON_BULLET[11] */
+#define CE_ANM_ABILITY_SPRITE_HIT_SUMMER_1          172   /* entry29 ATLAS_SEASON_BULLET[12] */
+#define CE_ANM_ABILITY_SPRITE_HIT_SUMMER_2          173   /* entry29 ATLAS_SEASON_BULLET[13] */
+#define CE_ANM_ABILITY_SPRITE_HIT_SUMMER_3          174   /* entry29 ATLAS_SEASON_BULLET[14] */
+#define CE_ANM_ABILITY_SPRITE_BULLET_FALL           175   /* entry29 ATLAS_SEASON_BULLET[15] */
+#define CE_ANM_ABILITY_SPRITE_HIT_FALL_1            176   /* entry29 ATLAS_SEASON_BULLET[16] */
+#define CE_ANM_ABILITY_SPRITE_HIT_FALL_2            177   /* entry29 ATLAS_SEASON_BULLET[17] */
+#define CE_ANM_ABILITY_SPRITE_HIT_FALL_3            178   /* entry29 ATLAS_SEASON_BULLET[18] */
+#define CE_ANM_ABILITY_SPRITE_BULLET_DOYOU          179   /* entry29 ATLAS_SEASON_BULLET[19] */
+#define CE_ANM_ABILITY_SPRITE_HIT_DOYOU_1           180   /* entry29 ATLAS_SEASON_BULLET[20] */
+#define CE_ANM_ABILITY_SPRITE_HIT_DOYOU_2           181   /* entry29 ATLAS_SEASON_BULLET[21] */
+#define CE_ANM_ABILITY_SPRITE_HIT_DOYOU_3           182   /* entry29 ATLAS_SEASON_BULLET[22] */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_BULLET_0  160   /* = SEASON_SEED */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_BULLET_1  161   /* = BULLET_SPRING_A */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_BULLET_2  162   /* = BULLET_SPRING_B */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_BULLET_3  163   /* = HIT_SPRING_1 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_BULLET_4  164   /* = HIT_SPRING_2 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_BULLET_5  165   /* = HIT_SPRING_3 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_BULLET_6  166   /* = HIT_SPRING_4 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_BULLET_7  167   /* = HIT_SPRING_5 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_BULLET_8  168   /* = HIT_SPRING_6 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_BULLET_9  169   /* = HIT_SPRING_7 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_BULLET_10  170   /* = HIT_SPRING_8 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_BULLET_11  171   /* = BULLET_SUMMER */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_BULLET_12  172   /* = HIT_SUMMER_1 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_BULLET_13  173   /* = HIT_SUMMER_2 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_BULLET_14  174   /* = HIT_SUMMER_3 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_BULLET_15  175   /* = BULLET_FALL */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_BULLET_16  176   /* = HIT_FALL_1 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_BULLET_17  177   /* = HIT_FALL_2 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_BULLET_18  178   /* = HIT_FALL_3 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_BULLET_19  179   /* = BULLET_DOYOU */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_BULLET_20  180   /* = HIT_DOYOU_1 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_BULLET_21  181   /* = HIT_DOYOU_2 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_BULLET_22  182   /* = HIT_DOYOU_3 */
+#define CE_ANM_ABILITY_ATLAS_ATLAS_SEASON_UI         30   /* 画布 256x160，20 个 sprite */
+#define CE_ANM_ABILITY_SPRITE_SEASON_OPT            183   /* entry30 ATLAS_SEASON_UI[0] */
+#define CE_ANM_ABILITY_SPRITE_PT_SPRING             184   /* entry30 ATLAS_SEASON_UI[1] */
+#define CE_ANM_ABILITY_SPRITE_PT_SUMMER             185   /* entry30 ATLAS_SEASON_UI[2] */
+#define CE_ANM_ABILITY_SPRITE_PT_FALL               186   /* entry30 ATLAS_SEASON_UI[3] */
+#define CE_ANM_ABILITY_SPRITE_PT_WINTER             187   /* entry30 ATLAS_SEASON_UI[4] */
+#define CE_ANM_ABILITY_SPRITE_PT_DOYOU              188   /* entry30 ATLAS_SEASON_UI[5] */
+#define CE_ANM_ABILITY_SPRITE_GLYPH_SPRING          189   /* entry30 ATLAS_SEASON_UI[6] */
+#define CE_ANM_ABILITY_SPRITE_GLYPH_SUMMER          190   /* entry30 ATLAS_SEASON_UI[7] */
+#define CE_ANM_ABILITY_SPRITE_GLYPH_FALL            191   /* entry30 ATLAS_SEASON_UI[8] */
+#define CE_ANM_ABILITY_SPRITE_GLYPH_WINTER          192   /* entry30 ATLAS_SEASON_UI[9] */
+#define CE_ANM_ABILITY_SPRITE_GLYPH_DOYOU           193   /* entry30 ATLAS_SEASON_UI[10] */
+#define CE_ANM_ABILITY_SPRITE_OPT_SPRING            194   /* entry30 ATLAS_SEASON_UI[11] */
+#define CE_ANM_ABILITY_SPRITE_OPT_SUMMER            195   /* entry30 ATLAS_SEASON_UI[12] */
+#define CE_ANM_ABILITY_SPRITE_OPT_FALL              196   /* entry30 ATLAS_SEASON_UI[13] */
+#define CE_ANM_ABILITY_SPRITE_OPT_WINTER            197   /* entry30 ATLAS_SEASON_UI[14] */
+#define CE_ANM_ABILITY_SPRITE_OPT_DOYOU             198   /* entry30 ATLAS_SEASON_UI[15] */
+#define CE_ANM_ABILITY_SPRITE_SEASON_LASER          199   /* entry30 ATLAS_SEASON_UI[16] */
+#define CE_ANM_ABILITY_SPRITE_SEASON_STRIP          200   /* entry30 ATLAS_SEASON_UI[17] */
+#define CE_ANM_ABILITY_SPRITE_LASER_CHILD           201   /* entry30 ATLAS_SEASON_UI[18] */
+#define CE_ANM_ABILITY_SPRITE_LASER_HIT             202   /* entry30 ATLAS_SEASON_UI[19] */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_UI_0     183   /* = SEASON_OPT */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_UI_1     184   /* = PT_SPRING */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_UI_2     185   /* = PT_SUMMER */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_UI_3     186   /* = PT_FALL */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_UI_4     187   /* = PT_WINTER */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_UI_5     188   /* = PT_DOYOU */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_UI_6     189   /* = GLYPH_SPRING */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_UI_7     190   /* = GLYPH_SUMMER */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_UI_8     191   /* = GLYPH_FALL */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_UI_9     192   /* = GLYPH_WINTER */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_UI_10    193   /* = GLYPH_DOYOU */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_UI_11    194   /* = OPT_SPRING */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_UI_12    195   /* = OPT_SUMMER */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_UI_13    196   /* = OPT_FALL */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_UI_14    197   /* = OPT_WINTER */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_UI_15    198   /* = OPT_DOYOU */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_UI_16    199   /* = SEASON_LASER */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_UI_17    200   /* = SEASON_STRIP */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_UI_18    201   /* = LASER_CHILD */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SEASON_UI_19    202   /* = LASER_HIT */
+#define CE_ANM_ABILITY_ATLAS_ATLAS_ANIMAL_TOKEN      31   /* 画布 128x160，19 个 sprite */
+#define CE_ANM_ABILITY_SPRITE_WOLF_0                203   /* entry31 ATLAS_ANIMAL_TOKEN[0] */
+#define CE_ANM_ABILITY_SPRITE_WOLF_1                204   /* entry31 ATLAS_ANIMAL_TOKEN[1] */
+#define CE_ANM_ABILITY_SPRITE_WOLF_2                205   /* entry31 ATLAS_ANIMAL_TOKEN[2] */
+#define CE_ANM_ABILITY_SPRITE_OTTER_0               206   /* entry31 ATLAS_ANIMAL_TOKEN[3] */
+#define CE_ANM_ABILITY_SPRITE_OTTER_1               207   /* entry31 ATLAS_ANIMAL_TOKEN[4] */
+#define CE_ANM_ABILITY_SPRITE_OTTER_2               208   /* entry31 ATLAS_ANIMAL_TOKEN[5] */
+#define CE_ANM_ABILITY_SPRITE_EAGLE_0               209   /* entry31 ATLAS_ANIMAL_TOKEN[6] */
+#define CE_ANM_ABILITY_SPRITE_EAGLE_1               210   /* entry31 ATLAS_ANIMAL_TOKEN[7] */
+#define CE_ANM_ABILITY_SPRITE_EAGLE_2               211   /* entry31 ATLAS_ANIMAL_TOKEN[8] */
+#define CE_ANM_ABILITY_SPRITE_FISH_BOMB             212   /* entry31 ATLAS_ANIMAL_TOKEN[9] */
+#define CE_ANM_ABILITY_SPRITE_FISH_LIFE             213   /* entry31 ATLAS_ANIMAL_TOKEN[10] */
+#define CE_ANM_ABILITY_SPRITE_FISH_POWER            214   /* entry31 ATLAS_ANIMAL_TOKEN[11] */
+#define CE_ANM_ABILITY_SPRITE_FISH_POINT            215   /* entry31 ATLAS_ANIMAL_TOKEN[12] */
+#define CE_ANM_ABILITY_SPRITE_FISH_MONEY            216   /* entry31 ATLAS_ANIMAL_TOKEN[13] */
+#define CE_ANM_ABILITY_SPRITE_ICON_FISH_BOMB        217   /* entry31 ATLAS_ANIMAL_TOKEN[14] */
+#define CE_ANM_ABILITY_SPRITE_ICON_FISH_LIFE        218   /* entry31 ATLAS_ANIMAL_TOKEN[15] */
+#define CE_ANM_ABILITY_SPRITE_ICON_FISH_POWER       219   /* entry31 ATLAS_ANIMAL_TOKEN[16] */
+#define CE_ANM_ABILITY_SPRITE_ICON_FISH_POINT       220   /* entry31 ATLAS_ANIMAL_TOKEN[17] */
+#define CE_ANM_ABILITY_SPRITE_ICON_FISH_MONEY       221   /* entry31 ATLAS_ANIMAL_TOKEN[18] */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_TOKEN_0  203   /* = WOLF_0 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_TOKEN_1  204   /* = WOLF_1 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_TOKEN_2  205   /* = WOLF_2 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_TOKEN_3  206   /* = OTTER_0 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_TOKEN_4  207   /* = OTTER_1 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_TOKEN_5  208   /* = OTTER_2 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_TOKEN_6  209   /* = EAGLE_0 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_TOKEN_7  210   /* = EAGLE_1 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_TOKEN_8  211   /* = EAGLE_2 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_TOKEN_9  212   /* = FISH_BOMB */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_TOKEN_10  213   /* = FISH_LIFE */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_TOKEN_11  214   /* = FISH_POWER */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_TOKEN_12  215   /* = FISH_POINT */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_TOKEN_13  216   /* = FISH_MONEY */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_TOKEN_14  217   /* = ICON_FISH_BOMB */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_TOKEN_15  218   /* = ICON_FISH_LIFE */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_TOKEN_16  219   /* = ICON_FISH_POWER */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_TOKEN_17  220   /* = ICON_FISH_POINT */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_TOKEN_18  221   /* = ICON_FISH_MONEY */
+#define CE_ANM_ABILITY_ATLAS_ATLAS_ANIMAL_64         32   /* 画布 320x576，43 个 sprite */
+#define CE_ANM_ABILITY_SPRITE_AURA_WOLF_0           222   /* entry32 ATLAS_ANIMAL_64[0] */
+#define CE_ANM_ABILITY_SPRITE_AURA_WOLF_1           223   /* entry32 ATLAS_ANIMAL_64[1] */
+#define CE_ANM_ABILITY_SPRITE_AURA_WOLF_2           224   /* entry32 ATLAS_ANIMAL_64[2] */
+#define CE_ANM_ABILITY_SPRITE_AURA_WOLF_3           225   /* entry32 ATLAS_ANIMAL_64[3] */
+#define CE_ANM_ABILITY_SPRITE_AURA_WOLF_4           226   /* entry32 ATLAS_ANIMAL_64[4] */
+#define CE_ANM_ABILITY_SPRITE_AURA_WOLF_5           227   /* entry32 ATLAS_ANIMAL_64[5] */
+#define CE_ANM_ABILITY_SPRITE_AURA_WOLF_6           228   /* entry32 ATLAS_ANIMAL_64[6] */
+#define CE_ANM_ABILITY_SPRITE_AURA_WOLF_7           229   /* entry32 ATLAS_ANIMAL_64[7] */
+#define CE_ANM_ABILITY_SPRITE_AURA_OTTER_0          230   /* entry32 ATLAS_ANIMAL_64[8] */
+#define CE_ANM_ABILITY_SPRITE_AURA_OTTER_1          231   /* entry32 ATLAS_ANIMAL_64[9] */
+#define CE_ANM_ABILITY_SPRITE_AURA_OTTER_2          232   /* entry32 ATLAS_ANIMAL_64[10] */
+#define CE_ANM_ABILITY_SPRITE_AURA_OTTER_3          233   /* entry32 ATLAS_ANIMAL_64[11] */
+#define CE_ANM_ABILITY_SPRITE_AURA_OTTER_4          234   /* entry32 ATLAS_ANIMAL_64[12] */
+#define CE_ANM_ABILITY_SPRITE_AURA_OTTER_5          235   /* entry32 ATLAS_ANIMAL_64[13] */
+#define CE_ANM_ABILITY_SPRITE_AURA_OTTER_6          236   /* entry32 ATLAS_ANIMAL_64[14] */
+#define CE_ANM_ABILITY_SPRITE_AURA_OTTER_7          237   /* entry32 ATLAS_ANIMAL_64[15] */
+#define CE_ANM_ABILITY_SPRITE_AURA_EAGLE_0          238   /* entry32 ATLAS_ANIMAL_64[16] */
+#define CE_ANM_ABILITY_SPRITE_AURA_EAGLE_1          239   /* entry32 ATLAS_ANIMAL_64[17] */
+#define CE_ANM_ABILITY_SPRITE_AURA_EAGLE_2          240   /* entry32 ATLAS_ANIMAL_64[18] */
+#define CE_ANM_ABILITY_SPRITE_AURA_EAGLE_3          241   /* entry32 ATLAS_ANIMAL_64[19] */
+#define CE_ANM_ABILITY_SPRITE_AURA_EAGLE_4          242   /* entry32 ATLAS_ANIMAL_64[20] */
+#define CE_ANM_ABILITY_SPRITE_AURA_EAGLE_5          243   /* entry32 ATLAS_ANIMAL_64[21] */
+#define CE_ANM_ABILITY_SPRITE_AURA_EAGLE_6          244   /* entry32 ATLAS_ANIMAL_64[22] */
+#define CE_ANM_ABILITY_SPRITE_AURA_EAGLE_7          245   /* entry32 ATLAS_ANIMAL_64[23] */
+#define CE_ANM_ABILITY_SPRITE_FLAME_0               246   /* entry32 ATLAS_ANIMAL_64[24] */
+#define CE_ANM_ABILITY_SPRITE_FLAME_1               247   /* entry32 ATLAS_ANIMAL_64[25] */
+#define CE_ANM_ABILITY_SPRITE_FLAME_2               248   /* entry32 ATLAS_ANIMAL_64[26] */
+#define CE_ANM_ABILITY_SPRITE_FLAME_3               249   /* entry32 ATLAS_ANIMAL_64[27] */
+#define CE_ANM_ABILITY_SPRITE_FLAME_4               250   /* entry32 ATLAS_ANIMAL_64[28] */
+#define CE_ANM_ABILITY_SPRITE_FLAME_5               251   /* entry32 ATLAS_ANIMAL_64[29] */
+#define CE_ANM_ABILITY_SPRITE_FLAME_6               252   /* entry32 ATLAS_ANIMAL_64[30] */
+#define CE_ANM_ABILITY_SPRITE_FLAME_7               253   /* entry32 ATLAS_ANIMAL_64[31] */
+#define CE_ANM_ABILITY_SPRITE_FLAME_8               254   /* entry32 ATLAS_ANIMAL_64[32] */
+#define CE_ANM_ABILITY_SPRITE_FLAME_9               255   /* entry32 ATLAS_ANIMAL_64[33] */
+#define CE_ANM_ABILITY_SPRITE_FLAME_10              256   /* entry32 ATLAS_ANIMAL_64[34] */
+#define CE_ANM_ABILITY_SPRITE_FLAME_11              257   /* entry32 ATLAS_ANIMAL_64[35] */
+#define CE_ANM_ABILITY_SPRITE_ICON_WOLF             258   /* entry32 ATLAS_ANIMAL_64[36] */
+#define CE_ANM_ABILITY_SPRITE_ICON_OTTER            259   /* entry32 ATLAS_ANIMAL_64[37] */
+#define CE_ANM_ABILITY_SPRITE_ICON_EAGLE            260   /* entry32 ATLAS_ANIMAL_64[38] */
+#define CE_ANM_ABILITY_SPRITE_GAUGE_FRAME           261   /* entry32 ATLAS_ANIMAL_64[39] */
+#define CE_ANM_ABILITY_SPRITE_CARD_BOMB             262   /* entry32 ATLAS_ANIMAL_64[40] */
+#define CE_ANM_ABILITY_SPRITE_CARD_LIFE             263   /* entry32 ATLAS_ANIMAL_64[41] */
+#define CE_ANM_ABILITY_SPRITE_CARD_MONEY            264   /* entry32 ATLAS_ANIMAL_64[42] */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_0     222   /* = AURA_WOLF_0 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_1     223   /* = AURA_WOLF_1 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_2     224   /* = AURA_WOLF_2 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_3     225   /* = AURA_WOLF_3 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_4     226   /* = AURA_WOLF_4 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_5     227   /* = AURA_WOLF_5 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_6     228   /* = AURA_WOLF_6 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_7     229   /* = AURA_WOLF_7 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_8     230   /* = AURA_OTTER_0 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_9     231   /* = AURA_OTTER_1 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_10    232   /* = AURA_OTTER_2 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_11    233   /* = AURA_OTTER_3 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_12    234   /* = AURA_OTTER_4 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_13    235   /* = AURA_OTTER_5 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_14    236   /* = AURA_OTTER_6 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_15    237   /* = AURA_OTTER_7 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_16    238   /* = AURA_EAGLE_0 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_17    239   /* = AURA_EAGLE_1 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_18    240   /* = AURA_EAGLE_2 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_19    241   /* = AURA_EAGLE_3 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_20    242   /* = AURA_EAGLE_4 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_21    243   /* = AURA_EAGLE_5 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_22    244   /* = AURA_EAGLE_6 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_23    245   /* = AURA_EAGLE_7 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_24    246   /* = FLAME_0 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_25    247   /* = FLAME_1 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_26    248   /* = FLAME_2 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_27    249   /* = FLAME_3 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_28    250   /* = FLAME_4 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_29    251   /* = FLAME_5 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_30    252   /* = FLAME_6 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_31    253   /* = FLAME_7 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_32    254   /* = FLAME_8 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_33    255   /* = FLAME_9 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_34    256   /* = FLAME_10 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_35    257   /* = FLAME_11 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_36    258   /* = ICON_WOLF */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_37    259   /* = ICON_OTTER */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_38    260   /* = ICON_EAGLE */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_39    261   /* = GAUGE_FRAME */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_40    262   /* = CARD_BOMB */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_41    263   /* = CARD_LIFE */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_64_42    264   /* = CARD_MONEY */
+#define CE_ANM_ABILITY_ATLAS_ATLAS_ANIMAL_SMALL      33   /* 画布 128x32，15 个 sprite */
+#define CE_ANM_ABILITY_SPRITE_SOUL_0                265   /* entry33 ATLAS_ANIMAL_SMALL[0] */
+#define CE_ANM_ABILITY_SPRITE_SOUL_1                266   /* entry33 ATLAS_ANIMAL_SMALL[1] */
+#define CE_ANM_ABILITY_SPRITE_SOUL_2                267   /* entry33 ATLAS_ANIMAL_SMALL[2] */
+#define CE_ANM_ABILITY_SPRITE_SOUL_3                268   /* entry33 ATLAS_ANIMAL_SMALL[3] */
+#define CE_ANM_ABILITY_SPRITE_SOUL_4                269   /* entry33 ATLAS_ANIMAL_SMALL[4] */
+#define CE_ANM_ABILITY_SPRITE_SOUL_5                270   /* entry33 ATLAS_ANIMAL_SMALL[5] */
+#define CE_ANM_ABILITY_SPRITE_SOUL_6                271   /* entry33 ATLAS_ANIMAL_SMALL[6] */
+#define CE_ANM_ABILITY_SPRITE_SOUL_7                272   /* entry33 ATLAS_ANIMAL_SMALL[7] */
+#define CE_ANM_ABILITY_SPRITE_SOUL_8                273   /* entry33 ATLAS_ANIMAL_SMALL[8] */
+#define CE_ANM_ABILITY_SPRITE_SOUL_9                274   /* entry33 ATLAS_ANIMAL_SMALL[9] */
+#define CE_ANM_ABILITY_SPRITE_SOUL_10               275   /* entry33 ATLAS_ANIMAL_SMALL[10] */
+#define CE_ANM_ABILITY_SPRITE_ITEM_P                276   /* entry33 ATLAS_ANIMAL_SMALL[11] */
+#define CE_ANM_ABILITY_SPRITE_ITEM_MONEY            277   /* entry33 ATLAS_ANIMAL_SMALL[12] */
+#define CE_ANM_ABILITY_SPRITE_ITEM_LIFE             278   /* entry33 ATLAS_ANIMAL_SMALL[13] */
+#define CE_ANM_ABILITY_SPRITE_ITEM_BOMB             279   /* entry33 ATLAS_ANIMAL_SMALL[14] */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_SMALL_0  265   /* = SOUL_0 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_SMALL_1  266   /* = SOUL_1 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_SMALL_2  267   /* = SOUL_2 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_SMALL_3  268   /* = SOUL_3 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_SMALL_4  269   /* = SOUL_4 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_SMALL_5  270   /* = SOUL_5 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_SMALL_6  271   /* = SOUL_6 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_SMALL_7  272   /* = SOUL_7 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_SMALL_8  273   /* = SOUL_8 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_SMALL_9  274   /* = SOUL_9 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_SMALL_10  275   /* = SOUL_10 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_SMALL_11  276   /* = ITEM_P */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_SMALL_12  277   /* = ITEM_MONEY */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_SMALL_13  278   /* = ITEM_LIFE */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_SMALL_14  279   /* = ITEM_BOMB */
+#define CE_ANM_ABILITY_ATLAS_ATLAS_ANIMAL_FX         34   /* 画布 128x192，2 个 sprite */
+#define CE_ANM_ABILITY_SPRITE_STRIKE_RING           280   /* entry34 ATLAS_ANIMAL_FX[0] */
+#define CE_ANM_ABILITY_SPRITE_OTTER_ORB             281   /* entry34 ATLAS_ANIMAL_FX[1] */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_FX_0     280   /* = STRIKE_RING */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_FX_1     281   /* = OTTER_ORB */
+#define CE_ANM_ABILITY_ATLAS_ATLAS_ANIMAL_BEAM       35   /* 画布 512x96，3 个 sprite */
+#define CE_ANM_ABILITY_SPRITE_BEASTAP_A             282   /* entry35 ATLAS_ANIMAL_BEAM[0] */
+#define CE_ANM_ABILITY_SPRITE_BEASTAP_B             283   /* entry35 ATLAS_ANIMAL_BEAM[1] */
+#define CE_ANM_ABILITY_SPRITE_EAGLE_BEAM            284   /* entry35 ATLAS_ANIMAL_BEAM[2] */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_BEAM_0   282   /* = BEASTAP_A */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_BEAM_1   283   /* = BEASTAP_B */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_ANIMAL_BEAM_2   284   /* = EAGLE_BEAM */
+#define CE_ANM_ABILITY_ATLAS_ATLAS_SENRO             36   /* 画布 256x320，4 个 sprite */
+#define CE_ANM_ABILITY_SPRITE_SENRO_FIELD           285   /* entry36 ATLAS_SENRO[0] */
+#define CE_ANM_ABILITY_SPRITE_SENRO_RING            286   /* entry36 ATLAS_SENRO[1] */
+#define CE_ANM_ABILITY_SPRITE_SAKURA_POINT          287   /* entry36 ATLAS_SENRO[2] */
+#define CE_ANM_ABILITY_SPRITE_SAKURA_SMALL          288   /* entry36 ATLAS_SENRO[3] */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SENRO_0         285   /* = SENRO_FIELD */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SENRO_1         286   /* = SENRO_RING */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SENRO_2         287   /* = SAKURA_POINT */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SENRO_3         288   /* = SAKURA_SMALL */
+#define CE_ANM_ABILITY_ATLAS_ATLAS_YK_FAM            37   /* 画布 128x256，32 个 sprite */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S53_0      289   /* entry37 ATLAS_YK_FAM[0] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S53_1      290   /* entry37 ATLAS_YK_FAM[1] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S53_2      291   /* entry37 ATLAS_YK_FAM[2] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S53_3      292   /* entry37 ATLAS_YK_FAM[3] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S53_4      293   /* entry37 ATLAS_YK_FAM[4] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S53_5      294   /* entry37 ATLAS_YK_FAM[5] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S53_6      295   /* entry37 ATLAS_YK_FAM[6] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S53_7      296   /* entry37 ATLAS_YK_FAM[7] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S54_0      297   /* entry37 ATLAS_YK_FAM[8] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S54_1      298   /* entry37 ATLAS_YK_FAM[9] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S54_2      299   /* entry37 ATLAS_YK_FAM[10] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S54_3      300   /* entry37 ATLAS_YK_FAM[11] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S54_4      301   /* entry37 ATLAS_YK_FAM[12] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S54_5      302   /* entry37 ATLAS_YK_FAM[13] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S54_6      303   /* entry37 ATLAS_YK_FAM[14] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S54_7      304   /* entry37 ATLAS_YK_FAM[15] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S55_0      305   /* entry37 ATLAS_YK_FAM[16] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S55_1      306   /* entry37 ATLAS_YK_FAM[17] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S55_2      307   /* entry37 ATLAS_YK_FAM[18] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S55_3      308   /* entry37 ATLAS_YK_FAM[19] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S55_4      309   /* entry37 ATLAS_YK_FAM[20] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S55_5      310   /* entry37 ATLAS_YK_FAM[21] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S55_6      311   /* entry37 ATLAS_YK_FAM[22] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S55_7      312   /* entry37 ATLAS_YK_FAM[23] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S56_0      313   /* entry37 ATLAS_YK_FAM[24] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S56_1      314   /* entry37 ATLAS_YK_FAM[25] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S56_2      315   /* entry37 ATLAS_YK_FAM[26] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S56_3      316   /* entry37 ATLAS_YK_FAM[27] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S56_4      317   /* entry37 ATLAS_YK_FAM[28] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S56_5      318   /* entry37 ATLAS_YK_FAM[29] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S56_6      319   /* entry37 ATLAS_YK_FAM[30] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_S56_7      320   /* entry37 ATLAS_YK_FAM[31] */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_FAM_0        289   /* = YOUKAI_FAM_S53_0 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_FAM_1        290   /* = YOUKAI_FAM_S53_1 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_FAM_2        291   /* = YOUKAI_FAM_S53_2 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_FAM_3        292   /* = YOUKAI_FAM_S53_3 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_FAM_4        293   /* = YOUKAI_FAM_S53_4 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_FAM_5        294   /* = YOUKAI_FAM_S53_5 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_FAM_6        295   /* = YOUKAI_FAM_S53_6 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_FAM_7        296   /* = YOUKAI_FAM_S53_7 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_FAM_8        297   /* = YOUKAI_FAM_S54_0 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_FAM_9        298   /* = YOUKAI_FAM_S54_1 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_FAM_10       299   /* = YOUKAI_FAM_S54_2 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_FAM_11       300   /* = YOUKAI_FAM_S54_3 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_FAM_12       301   /* = YOUKAI_FAM_S54_4 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_FAM_13       302   /* = YOUKAI_FAM_S54_5 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_FAM_14       303   /* = YOUKAI_FAM_S54_6 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_FAM_15       304   /* = YOUKAI_FAM_S54_7 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_FAM_16       305   /* = YOUKAI_FAM_S55_0 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_FAM_17       306   /* = YOUKAI_FAM_S55_1 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_FAM_18       307   /* = YOUKAI_FAM_S55_2 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_FAM_19       308   /* = YOUKAI_FAM_S55_3 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_FAM_20       309   /* = YOUKAI_FAM_S55_4 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_FAM_21       310   /* = YOUKAI_FAM_S55_5 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_FAM_22       311   /* = YOUKAI_FAM_S55_6 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_FAM_23       312   /* = YOUKAI_FAM_S55_7 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_FAM_24       313   /* = YOUKAI_FAM_S56_0 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_FAM_25       314   /* = YOUKAI_FAM_S56_1 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_FAM_26       315   /* = YOUKAI_FAM_S56_2 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_FAM_27       316   /* = YOUKAI_FAM_S56_3 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_FAM_28       317   /* = YOUKAI_FAM_S56_4 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_FAM_29       318   /* = YOUKAI_FAM_S56_5 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_FAM_30       319   /* = YOUKAI_FAM_S56_6 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_FAM_31       320   /* = YOUKAI_FAM_S56_7 */
+#define CE_ANM_ABILITY_ATLAS_ATLAS_YK_OPT            38   /* 画布 160x176，22 个 sprite */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_YUKARI_S22  321   /* entry38 ATLAS_YK_OPT[0] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_YUKARI_S23  322   /* entry38 ATLAS_YK_OPT[1] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_YUKARI_S24  323   /* entry38 ATLAS_YK_OPT[2] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_YUKARI_S25  324   /* entry38 ATLAS_YK_OPT[3] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_YUKARI_S26  325   /* entry38 ATLAS_YK_OPT[4] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_YUKARI_S27  326   /* entry38 ATLAS_YK_OPT[5] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_YUKARI_S28  327   /* entry38 ATLAS_YK_OPT[6] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_YUKARI_S29  328   /* entry38 ATLAS_YK_OPT[7] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_YUKARI_S30  329   /* entry38 ATLAS_YK_OPT[8] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_ALICE_S22  330   /* entry38 ATLAS_YK_OPT[9] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_ALICE_S23  331   /* entry38 ATLAS_YK_OPT[10] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_ALICE_S24  332   /* entry38 ATLAS_YK_OPT[11] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_ALICE_S25  333   /* entry38 ATLAS_YK_OPT[12] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_REMILIA_S20  334   /* entry38 ATLAS_YK_OPT[13] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_AYA_S32    335   /* entry38 ATLAS_YK_OPT[14] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_AYA_S33    336   /* entry38 ATLAS_YK_OPT[15] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_AYA_S34    337   /* entry38 ATLAS_YK_OPT[16] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_AYA_S35    338   /* entry38 ATLAS_YK_OPT[17] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_AYA_S36    339   /* entry38 ATLAS_YK_OPT[18] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_AYA_S37    340   /* entry38 ATLAS_YK_OPT[19] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_AYA_S38    341   /* entry38 ATLAS_YK_OPT[20] */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_OPT_AYA_S39    342   /* entry38 ATLAS_YK_OPT[21] */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_OPT_0        321   /* = YOUKAI_OPT_YUKARI_S22 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_OPT_1        322   /* = YOUKAI_OPT_YUKARI_S23 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_OPT_2        323   /* = YOUKAI_OPT_YUKARI_S24 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_OPT_3        324   /* = YOUKAI_OPT_YUKARI_S25 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_OPT_4        325   /* = YOUKAI_OPT_YUKARI_S26 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_OPT_5        326   /* = YOUKAI_OPT_YUKARI_S27 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_OPT_6        327   /* = YOUKAI_OPT_YUKARI_S28 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_OPT_7        328   /* = YOUKAI_OPT_YUKARI_S29 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_OPT_8        329   /* = YOUKAI_OPT_YUKARI_S30 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_OPT_9        330   /* = YOUKAI_OPT_ALICE_S22 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_OPT_10       331   /* = YOUKAI_OPT_ALICE_S23 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_OPT_11       332   /* = YOUKAI_OPT_ALICE_S24 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_OPT_12       333   /* = YOUKAI_OPT_ALICE_S25 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_OPT_13       334   /* = YOUKAI_OPT_REMILIA_S20 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_OPT_14       335   /* = YOUKAI_OPT_AYA_S32 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_OPT_15       336   /* = YOUKAI_OPT_AYA_S33 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_OPT_16       337   /* = YOUKAI_OPT_AYA_S34 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_OPT_17       338   /* = YOUKAI_OPT_AYA_S35 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_OPT_18       339   /* = YOUKAI_OPT_AYA_S36 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_OPT_19       340   /* = YOUKAI_OPT_AYA_S37 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_OPT_20       341   /* = YOUKAI_OPT_AYA_S38 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_YK_OPT_21       342   /* = YOUKAI_OPT_AYA_S39 */
+#define CE_ANM_ABILITY_ATLAS_ATLAS_MOF_FAITH         39   /* 画布 128x16，12 个 sprite */
+#define CE_ANM_ABILITY_SPRITE_MOF_FAITH_ICON        343   /* entry39 ATLAS_MOF_FAITH[0] */
+#define CE_ANM_ABILITY_SPRITE_FAITH_DOT             344   /* entry39 ATLAS_MOF_FAITH[1] */
+#define CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_0     345   /* entry39 ATLAS_MOF_FAITH[2] */
+#define CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_1     346   /* entry39 ATLAS_MOF_FAITH[3] */
+#define CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_2     347   /* entry39 ATLAS_MOF_FAITH[4] */
+#define CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_3     348   /* entry39 ATLAS_MOF_FAITH[5] */
+#define CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_4     349   /* entry39 ATLAS_MOF_FAITH[6] */
+#define CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_5     350   /* entry39 ATLAS_MOF_FAITH[7] */
+#define CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_6     351   /* entry39 ATLAS_MOF_FAITH[8] */
+#define CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_7     352   /* entry39 ATLAS_MOF_FAITH[9] */
+#define CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_8     353   /* entry39 ATLAS_MOF_FAITH[10] */
+#define CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_9     354   /* entry39 ATLAS_MOF_FAITH[11] */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_MOF_FAITH_0     343   /* = MOF_FAITH_ICON */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_MOF_FAITH_1     344   /* = FAITH_DOT */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_MOF_FAITH_2     345   /* = MOF_FAITH_DIGIT_0 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_MOF_FAITH_3     346   /* = MOF_FAITH_DIGIT_1 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_MOF_FAITH_4     347   /* = MOF_FAITH_DIGIT_2 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_MOF_FAITH_5     348   /* = MOF_FAITH_DIGIT_3 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_MOF_FAITH_6     349   /* = MOF_FAITH_DIGIT_4 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_MOF_FAITH_7     350   /* = MOF_FAITH_DIGIT_5 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_MOF_FAITH_8     351   /* = MOF_FAITH_DIGIT_6 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_MOF_FAITH_9     352   /* = MOF_FAITH_DIGIT_7 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_MOF_FAITH_10    353   /* = MOF_FAITH_DIGIT_8 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_MOF_FAITH_11    354   /* = MOF_FAITH_DIGIT_9 */
+#define CE_ANM_ABILITY_ATLAS_ATLAS_SIGNAL            40   /* 画布 128x32，3 个 sprite */
+#define CE_ANM_ABILITY_SPRITE_SIGNAL_GAUGE_BG       355   /* entry40 ATLAS_SIGNAL[0] */
+#define CE_ANM_ABILITY_SPRITE_SIGNAL_GAUGE_BAR      356   /* entry40 ATLAS_SIGNAL[1] */
+#define CE_ANM_ABILITY_SPRITE_SIGNAL_GAUGE_ICON     357   /* entry40 ATLAS_SIGNAL[2] */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SIGNAL_0        355   /* = SIGNAL_GAUGE_BG */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SIGNAL_1        356   /* = SIGNAL_GAUGE_BAR */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_SIGNAL_2        357   /* = SIGNAL_GAUGE_ICON */
+#define CE_ANM_ABILITY_ATLAS_ATLAS_UFO_BODY          41   /* 画布 256x256，16 个 sprite */
+#define CE_ANM_ABILITY_SPRITE_UFO_RED_0             358   /* entry41 ATLAS_UFO_BODY[0] */
+#define CE_ANM_ABILITY_SPRITE_UFO_RED_1             359   /* entry41 ATLAS_UFO_BODY[1] */
+#define CE_ANM_ABILITY_SPRITE_UFO_RED_2             360   /* entry41 ATLAS_UFO_BODY[2] */
+#define CE_ANM_ABILITY_SPRITE_UFO_RED_3             361   /* entry41 ATLAS_UFO_BODY[3] */
+#define CE_ANM_ABILITY_SPRITE_UFO_BLUE_0            362   /* entry41 ATLAS_UFO_BODY[4] */
+#define CE_ANM_ABILITY_SPRITE_UFO_BLUE_1            363   /* entry41 ATLAS_UFO_BODY[5] */
+#define CE_ANM_ABILITY_SPRITE_UFO_BLUE_2            364   /* entry41 ATLAS_UFO_BODY[6] */
+#define CE_ANM_ABILITY_SPRITE_UFO_BLUE_3            365   /* entry41 ATLAS_UFO_BODY[7] */
+#define CE_ANM_ABILITY_SPRITE_UFO_GREEN_0           366   /* entry41 ATLAS_UFO_BODY[8] */
+#define CE_ANM_ABILITY_SPRITE_UFO_GREEN_1           367   /* entry41 ATLAS_UFO_BODY[9] */
+#define CE_ANM_ABILITY_SPRITE_UFO_GREEN_2           368   /* entry41 ATLAS_UFO_BODY[10] */
+#define CE_ANM_ABILITY_SPRITE_UFO_GREEN_3           369   /* entry41 ATLAS_UFO_BODY[11] */
+#define CE_ANM_ABILITY_SPRITE_UFO_RAINBOW_0         370   /* entry41 ATLAS_UFO_BODY[12] */
+#define CE_ANM_ABILITY_SPRITE_UFO_RAINBOW_1         371   /* entry41 ATLAS_UFO_BODY[13] */
+#define CE_ANM_ABILITY_SPRITE_UFO_RAINBOW_2         372   /* entry41 ATLAS_UFO_BODY[14] */
+#define CE_ANM_ABILITY_SPRITE_UFO_RAINBOW_3         373   /* entry41 ATLAS_UFO_BODY[15] */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_UFO_BODY_0      358   /* = UFO_RED_0 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_UFO_BODY_1      359   /* = UFO_RED_1 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_UFO_BODY_2      360   /* = UFO_RED_2 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_UFO_BODY_3      361   /* = UFO_RED_3 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_UFO_BODY_4      362   /* = UFO_BLUE_0 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_UFO_BODY_5      363   /* = UFO_BLUE_1 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_UFO_BODY_6      364   /* = UFO_BLUE_2 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_UFO_BODY_7      365   /* = UFO_BLUE_3 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_UFO_BODY_8      366   /* = UFO_GREEN_0 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_UFO_BODY_9      367   /* = UFO_GREEN_1 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_UFO_BODY_10     368   /* = UFO_GREEN_2 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_UFO_BODY_11     369   /* = UFO_GREEN_3 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_UFO_BODY_12     370   /* = UFO_RAINBOW_0 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_UFO_BODY_13     371   /* = UFO_RAINBOW_1 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_UFO_BODY_14     372   /* = UFO_RAINBOW_2 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_UFO_BODY_15     373   /* = UFO_RAINBOW_3 */
+#define CE_ANM_ABILITY_ATLAS_ATLAS_UFO_TOKEN         42   /* 画布 128x224，13 个 sprite */
+#define CE_ANM_ABILITY_SPRITE_TOKEN_RED_0           374   /* entry42 ATLAS_UFO_TOKEN[0] */
+#define CE_ANM_ABILITY_SPRITE_TOKEN_RED_1           375   /* entry42 ATLAS_UFO_TOKEN[1] */
+#define CE_ANM_ABILITY_SPRITE_TOKEN_BLUE_0          376   /* entry42 ATLAS_UFO_TOKEN[2] */
+#define CE_ANM_ABILITY_SPRITE_TOKEN_BLUE_1          377   /* entry42 ATLAS_UFO_TOKEN[3] */
+#define CE_ANM_ABILITY_SPRITE_TOKEN_GREEN_0         378   /* entry42 ATLAS_UFO_TOKEN[4] */
+#define CE_ANM_ABILITY_SPRITE_TOKEN_GREEN_1         379   /* entry42 ATLAS_UFO_TOKEN[5] */
+#define CE_ANM_ABILITY_SPRITE_TOKEN_RBRED_0         380   /* entry42 ATLAS_UFO_TOKEN[6] */
+#define CE_ANM_ABILITY_SPRITE_TOKEN_RBRED_1         381   /* entry42 ATLAS_UFO_TOKEN[7] */
+#define CE_ANM_ABILITY_SPRITE_TOKEN_RBBLUE_0        382   /* entry42 ATLAS_UFO_TOKEN[8] */
+#define CE_ANM_ABILITY_SPRITE_TOKEN_RBBLUE_1        383   /* entry42 ATLAS_UFO_TOKEN[9] */
+#define CE_ANM_ABILITY_SPRITE_TOKEN_RBGREEN_0       384   /* entry42 ATLAS_UFO_TOKEN[10] */
+#define CE_ANM_ABILITY_SPRITE_TOKEN_RBGREEN_1       385   /* entry42 ATLAS_UFO_TOKEN[11] */
+#define CE_ANM_ABILITY_SPRITE_UFO_ARC_STRIP         386   /* entry42 ATLAS_UFO_TOKEN[12] */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_UFO_TOKEN_0     374   /* = TOKEN_RED_0 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_UFO_TOKEN_1     375   /* = TOKEN_RED_1 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_UFO_TOKEN_2     376   /* = TOKEN_BLUE_0 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_UFO_TOKEN_3     377   /* = TOKEN_BLUE_1 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_UFO_TOKEN_4     378   /* = TOKEN_GREEN_0 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_UFO_TOKEN_5     379   /* = TOKEN_GREEN_1 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_UFO_TOKEN_6     380   /* = TOKEN_RBRED_0 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_UFO_TOKEN_7     381   /* = TOKEN_RBRED_1 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_UFO_TOKEN_8     382   /* = TOKEN_RBBLUE_0 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_UFO_TOKEN_9     383   /* = TOKEN_RBBLUE_1 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_UFO_TOKEN_10    384   /* = TOKEN_RBGREEN_0 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_UFO_TOKEN_11    385   /* = TOKEN_RBGREEN_1 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_UFO_TOKEN_12    386   /* = UFO_ARC_STRIP */
+#define CE_ANM_ABILITY_ATLAS_ATLAS_TRANCE_SPIRIT     43   /* 画布 128x96，11 个 sprite */
+#define CE_ANM_ABILITY_SPRITE_SPIRIT_PLAIN_0        387   /* entry43 ATLAS_TRANCE_SPIRIT[0] */
+#define CE_ANM_ABILITY_SPRITE_SPIRIT_PLAIN_1        388   /* entry43 ATLAS_TRANCE_SPIRIT[1] */
+#define CE_ANM_ABILITY_SPRITE_SPIRIT_TRANCE_0       389   /* entry43 ATLAS_TRANCE_SPIRIT[2] */
+#define CE_ANM_ABILITY_SPRITE_SPIRIT_TRANCE_1       390   /* entry43 ATLAS_TRANCE_SPIRIT[3] */
+#define CE_ANM_ABILITY_SPRITE_SPIRIT_TRANCE_2       391   /* entry43 ATLAS_TRANCE_SPIRIT[4] */
+#define CE_ANM_ABILITY_SPRITE_SPIRIT_TRANCE_3       392   /* entry43 ATLAS_TRANCE_SPIRIT[5] */
+#define CE_ANM_ABILITY_SPRITE_SPIRIT_TRANCE_4       393   /* entry43 ATLAS_TRANCE_SPIRIT[6] */
+#define CE_ANM_ABILITY_SPRITE_SPIRIT_TRANCE_5       394   /* entry43 ATLAS_TRANCE_SPIRIT[7] */
+#define CE_ANM_ABILITY_SPRITE_SPIRIT_TRANCE_6       395   /* entry43 ATLAS_TRANCE_SPIRIT[8] */
+#define CE_ANM_ABILITY_SPRITE_SPIRIT_TRANCE_7       396   /* entry43 ATLAS_TRANCE_SPIRIT[9] */
+#define CE_ANM_ABILITY_SPRITE_TPOINT                397   /* entry43 ATLAS_TRANCE_SPIRIT[10] */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_TRANCE_SPIRIT_0  387   /* = SPIRIT_PLAIN_0 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_TRANCE_SPIRIT_1  388   /* = SPIRIT_PLAIN_1 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_TRANCE_SPIRIT_2  389   /* = SPIRIT_TRANCE_0 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_TRANCE_SPIRIT_3  390   /* = SPIRIT_TRANCE_1 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_TRANCE_SPIRIT_4  391   /* = SPIRIT_TRANCE_2 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_TRANCE_SPIRIT_5  392   /* = SPIRIT_TRANCE_3 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_TRANCE_SPIRIT_6  393   /* = SPIRIT_TRANCE_4 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_TRANCE_SPIRIT_7  394   /* = SPIRIT_TRANCE_5 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_TRANCE_SPIRIT_8  395   /* = SPIRIT_TRANCE_6 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_TRANCE_SPIRIT_9  396   /* = SPIRIT_TRANCE_7 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_TRANCE_SPIRIT_10  397   /* = TPOINT */
+#define CE_ANM_ABILITY_ATLAS_ATLAS_TRANCE_GAUGE      44   /* 画布 128x128，9 个 sprite */
+#define CE_ANM_ABILITY_SPRITE_TRANCE_GAUGE_TOP      398   /* entry44 ATLAS_TRANCE_GAUGE[0] */
+#define CE_ANM_ABILITY_SPRITE_TRANCE_GAUGE_BAR      399   /* entry44 ATLAS_TRANCE_GAUGE[1] */
+#define CE_ANM_ABILITY_SPRITE_TRANCE_GAUGE_BAR2     400   /* entry44 ATLAS_TRANCE_GAUGE[2] */
+#define CE_ANM_ABILITY_SPRITE_TRANCE_GAUGE_MARK     401   /* entry44 ATLAS_TRANCE_GAUGE[3] */
+#define CE_ANM_ABILITY_SPRITE_TRANCE_GAUGE_FRAME_A  402   /* entry44 ATLAS_TRANCE_GAUGE[4] */
+#define CE_ANM_ABILITY_SPRITE_TRANCE_GAUGE_FRAME_B  403   /* entry44 ATLAS_TRANCE_GAUGE[5] */
+#define CE_ANM_ABILITY_SPRITE_TRANCE_TIERUP_1       404   /* entry44 ATLAS_TRANCE_GAUGE[6] */
+#define CE_ANM_ABILITY_SPRITE_TRANCE_TIERUP_2       405   /* entry44 ATLAS_TRANCE_GAUGE[7] */
+#define CE_ANM_ABILITY_SPRITE_TRANCE_TIERUP_MAX     406   /* entry44 ATLAS_TRANCE_GAUGE[8] */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_TRANCE_GAUGE_0  398   /* = TRANCE_GAUGE_TOP */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_TRANCE_GAUGE_1  399   /* = TRANCE_GAUGE_BAR */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_TRANCE_GAUGE_2  400   /* = TRANCE_GAUGE_BAR2 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_TRANCE_GAUGE_3  401   /* = TRANCE_GAUGE_MARK */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_TRANCE_GAUGE_4  402   /* = TRANCE_GAUGE_FRAME_A */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_TRANCE_GAUGE_5  403   /* = TRANCE_GAUGE_FRAME_B */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_TRANCE_GAUGE_6  404   /* = TRANCE_TIERUP_1 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_TRANCE_GAUGE_7  405   /* = TRANCE_TIERUP_2 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_TRANCE_GAUGE_8  406   /* = TRANCE_TIERUP_MAX */
+#define CE_ANM_ABILITY_ATLAS_ATLAS_TRANCE_POPUP      45   /* 画布 128x16，6 个 sprite */
+#define CE_ANM_ABILITY_SPRITE_TRANCE_POPUP_LIFE1    407   /* entry45 ATLAS_TRANCE_POPUP[0] */
+#define CE_ANM_ABILITY_SPRITE_TRANCE_POPUP_LIFE2    408   /* entry45 ATLAS_TRANCE_POPUP[1] */
+#define CE_ANM_ABILITY_SPRITE_TRANCE_POPUP_SPELL1   409   /* entry45 ATLAS_TRANCE_POPUP[2] */
+#define CE_ANM_ABILITY_SPRITE_TRANCE_POPUP_SPELL2   410   /* entry45 ATLAS_TRANCE_POPUP[3] */
+#define CE_ANM_ABILITY_SPRITE_TRANCE_POPUP_POINT10  411   /* entry45 ATLAS_TRANCE_POPUP[4] */
+#define CE_ANM_ABILITY_SPRITE_TRANCE_POPUP_POINT100  412   /* entry45 ATLAS_TRANCE_POPUP[5] */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_TRANCE_POPUP_0  407   /* = TRANCE_POPUP_LIFE1 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_TRANCE_POPUP_1  408   /* = TRANCE_POPUP_LIFE2 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_TRANCE_POPUP_2  409   /* = TRANCE_POPUP_SPELL1 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_TRANCE_POPUP_3  410   /* = TRANCE_POPUP_SPELL2 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_TRANCE_POPUP_4  411   /* = TRANCE_POPUP_POINT10 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_TRANCE_POPUP_5  412   /* = TRANCE_POPUP_POINT100 */
+#define CE_ANM_ABILITY_ATLAS_ATLAS_TRANCE_ASTRAL     46   /* 画布 512x512，1 个 sprite */
+#define CE_ANM_ABILITY_SPRITE_TRANCE_ASTRAL         413   /* entry46 ATLAS_TRANCE_ASTRAL[0] */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_TRANCE_ASTRAL_0  413   /* = TRANCE_ASTRAL */
+#define CE_ANM_ABILITY_ATLAS_ATLAS_TRANCE_SWITCH     47   /* 画布 128x128，1 个 sprite */
+#define CE_ANM_ABILITY_SPRITE_TRANCE_SWITCH         414   /* entry47 ATLAS_TRANCE_SWITCH[0] */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_TRANCE_SWITCH_0  414   /* = TRANCE_SWITCH */
+#define CE_ANM_ABILITY_ATLAS_ATLAS_RETIRED           48   /* 画布 1x1，1 个 sprite */
+#define CE_ANM_ABILITY_SPRITE_RETIRED_BLANK         415   /* entry48 ATLAS_RETIRED[0] */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_RETIRED_0       415   /* = RETIRED_BLANK */
+#define CE_ANM_ABILITY_SPRITE_FAITH_DOT_BIG         416   /* entry49 */
+#define CE_ANM_ABILITY_SPRITE_FAITH_DOT_MICRO       417   /* entry50 */
+#define CE_ANM_ABILITY_ATLAS_ATLAS_TH13ASCII         51   /* 画布 128x120，12 个 sprite */
+#define CE_ANM_ABILITY_SPRITE_TH13ASCII_D0          418   /* entry51 ATLAS_TH13ASCII[0] */
+#define CE_ANM_ABILITY_SPRITE_TH13ASCII_D1          419   /* entry51 ATLAS_TH13ASCII[1] */
+#define CE_ANM_ABILITY_SPRITE_TH13ASCII_D2          420   /* entry51 ATLAS_TH13ASCII[2] */
+#define CE_ANM_ABILITY_SPRITE_TH13ASCII_D3          421   /* entry51 ATLAS_TH13ASCII[3] */
+#define CE_ANM_ABILITY_SPRITE_TH13ASCII_D4          422   /* entry51 ATLAS_TH13ASCII[4] */
+#define CE_ANM_ABILITY_SPRITE_TH13ASCII_D5          423   /* entry51 ATLAS_TH13ASCII[5] */
+#define CE_ANM_ABILITY_SPRITE_TH13ASCII_D6          424   /* entry51 ATLAS_TH13ASCII[6] */
+#define CE_ANM_ABILITY_SPRITE_TH13ASCII_D7          425   /* entry51 ATLAS_TH13ASCII[7] */
+#define CE_ANM_ABILITY_SPRITE_TH13ASCII_D8          426   /* entry51 ATLAS_TH13ASCII[8] */
+#define CE_ANM_ABILITY_SPRITE_TH13ASCII_D9          427   /* entry51 ATLAS_TH13ASCII[9] */
+#define CE_ANM_ABILITY_SPRITE_TH13ASCII_DOT         428   /* entry51 ATLAS_TH13ASCII[10] */
+#define CE_ANM_ABILITY_SPRITE_TH13ASCII_S           429   /* entry51 ATLAS_TH13ASCII[11] */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_TH13ASCII_0     418   /* = TH13ASCII_D0 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_TH13ASCII_1     419   /* = TH13ASCII_D1 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_TH13ASCII_2     420   /* = TH13ASCII_D2 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_TH13ASCII_3     421   /* = TH13ASCII_D3 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_TH13ASCII_4     422   /* = TH13ASCII_D4 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_TH13ASCII_5     423   /* = TH13ASCII_D5 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_TH13ASCII_6     424   /* = TH13ASCII_D6 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_TH13ASCII_7     425   /* = TH13ASCII_D7 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_TH13ASCII_8     426   /* = TH13ASCII_D8 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_TH13ASCII_9     427   /* = TH13ASCII_D9 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_TH13ASCII_10    428   /* = TH13ASCII_DOT */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_TH13ASCII_11    429   /* = TH13ASCII_S */
+#define CE_ANM_ABILITY_ATLAS_ATLAS_FAITH_HUD         52   /* 画布 16x32，1 个 sprite */
+#define CE_ANM_ABILITY_SPRITE_SIGNAL_MUL            430   /* entry52 ATLAS_FAITH_HUD[0] */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_FAITH_HUD_0     430   /* = SIGNAL_MUL */
+#define CE_ANM_ABILITY_ATLAS_ATLAS_FLAN              53   /* 画布 144x64，4 个 sprite */
+#define CE_ANM_ABILITY_SPRITE_FLAN_MALLET_IDLE      431   /* entry53 ATLAS_FLAN[0] */
+#define CE_ANM_ABILITY_SPRITE_FLAN_MALLET_SWING_0   432   /* entry53 ATLAS_FLAN[1] */
+#define CE_ANM_ABILITY_SPRITE_FLAN_MALLET_SWING_1   433   /* entry53 ATLAS_FLAN[2] */
+#define CE_ANM_ABILITY_SPRITE_FLAN_MALLET_SWING_2   434   /* entry53 ATLAS_FLAN[3] */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_FLAN_0          431   /* = FLAN_MALLET_IDLE */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_FLAN_1          432   /* = FLAN_MALLET_SWING_0 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_FLAN_2          433   /* = FLAN_MALLET_SWING_1 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_FLAN_3          434   /* = FLAN_MALLET_SWING_2 */
+#define CE_ANM_ABILITY_ATLAS_ATLAS_MOF_BOMB          54   /* 画布 32x32，1 个 sprite */
+#define CE_ANM_ABILITY_SPRITE_MOF_BOMB_SPARK        435   /* entry54 ATLAS_MOF_BOMB[0] */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_MOF_BOMB_0      435   /* = MOF_BOMB_SPARK */
+#define CE_ANM_ABILITY_ATLAS_ATLAS_MARISA_BULLET     55   /* 画布 120x14，4 个 sprite */
+#define CE_ANM_ABILITY_SPRITE_MARISA_BULLET_0       436   /* entry55 ATLAS_MARISA_BULLET[0] */
+#define CE_ANM_ABILITY_SPRITE_MARISA_BULLET_1       437   /* entry55 ATLAS_MARISA_BULLET[1] */
+#define CE_ANM_ABILITY_SPRITE_MARISA_BULLET_2       438   /* entry55 ATLAS_MARISA_BULLET[2] */
+#define CE_ANM_ABILITY_SPRITE_MARISA_BULLET_3       439   /* entry55 ATLAS_MARISA_BULLET[3] */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_MARISA_BULLET_0  436   /* = MARISA_BULLET_0 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_MARISA_BULLET_1  437   /* = MARISA_BULLET_1 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_MARISA_BULLET_2  438   /* = MARISA_BULLET_2 */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_MARISA_BULLET_3  439   /* = MARISA_BULLET_3 */
+#define CE_ANM_ABILITY_ATLAS_ATLAS_MARISA_ELEM       56   /* 画布 80x16，5 个 sprite */
+#define CE_ANM_ABILITY_SPRITE_MARISA_ELEM_FIRE      440   /* entry56 ATLAS_MARISA_ELEM[0] */
+#define CE_ANM_ABILITY_SPRITE_MARISA_ELEM_WATER     441   /* entry56 ATLAS_MARISA_ELEM[1] */
+#define CE_ANM_ABILITY_SPRITE_MARISA_ELEM_WOOD      442   /* entry56 ATLAS_MARISA_ELEM[2] */
+#define CE_ANM_ABILITY_SPRITE_MARISA_ELEM_METAL     443   /* entry56 ATLAS_MARISA_ELEM[3] */
+#define CE_ANM_ABILITY_SPRITE_MARISA_ELEM_EARTH     444   /* entry56 ATLAS_MARISA_ELEM[4] */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_MARISA_ELEM_0   440   /* = MARISA_ELEM_FIRE */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_MARISA_ELEM_1   441   /* = MARISA_ELEM_WATER */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_MARISA_ELEM_2   442   /* = MARISA_ELEM_WOOD */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_MARISA_ELEM_3   443   /* = MARISA_ELEM_METAL */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_MARISA_ELEM_4   444   /* = MARISA_ELEM_EARTH */
+#define CE_ANM_ABILITY_ATLAS_ATLAS_MARISA_ELEM_BULLET   57   /* 画布 160x16，5 个 sprite */
+#define CE_ANM_ABILITY_SPRITE_MARISA_ELEM_BULLET_FIRE  445   /* entry57 ATLAS_MARISA_ELEM_BULLET[0] */
+#define CE_ANM_ABILITY_SPRITE_MARISA_ELEM_BULLET_WATER  446   /* entry57 ATLAS_MARISA_ELEM_BULLET[1] */
+#define CE_ANM_ABILITY_SPRITE_MARISA_ELEM_BULLET_WOOD  447   /* entry57 ATLAS_MARISA_ELEM_BULLET[2] */
+#define CE_ANM_ABILITY_SPRITE_MARISA_ELEM_BULLET_METAL  448   /* entry57 ATLAS_MARISA_ELEM_BULLET[3] */
+#define CE_ANM_ABILITY_SPRITE_MARISA_ELEM_BULLET_EARTH  449   /* entry57 ATLAS_MARISA_ELEM_BULLET[4] */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_MARISA_ELEM_BULLET_0  445   /* = MARISA_ELEM_BULLET_FIRE */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_MARISA_ELEM_BULLET_1  446   /* = MARISA_ELEM_BULLET_WATER */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_MARISA_ELEM_BULLET_2  447   /* = MARISA_ELEM_BULLET_WOOD */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_MARISA_ELEM_BULLET_3  448   /* = MARISA_ELEM_BULLET_METAL */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_MARISA_ELEM_BULLET_4  449   /* = MARISA_ELEM_BULLET_EARTH */
+#define CE_ANM_ABILITY_ATLAS_ATLAS_MOF_BOMB_RING     58   /* 画布 14x128，1 个 sprite */
+#define CE_ANM_ABILITY_SPRITE_MOF_BOMB_RING_STRIP   450   /* entry58 ATLAS_MOF_BOMB_RING[0] */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_MOF_BOMB_RING_0  450   /* = MOF_BOMB_RING_STRIP */
+#define CE_ANM_ABILITY_ATLAS_ATLAS_NITORI_BUBBLE     59   /* 画布 254x254，1 个 sprite */
+#define CE_ANM_ABILITY_SPRITE_NITORI_BUBBLE         451   /* entry59 ATLAS_NITORI_BUBBLE[0] */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_NITORI_BUBBLE_0  451   /* = NITORI_BUBBLE */
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_ALICE_S11      415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_ALICE_S12      415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_ALICE_S13      415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_ALICE_S14      415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_ALICE_S15      415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_ALICE_S16      415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_ALICE_S17      415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_ALICE_S18      415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_ALICE_S19      415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_ALICE_S20      415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_ALICE_S21      415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S0         415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S1         415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S10        415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S11        415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S12        415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S13        415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S14        415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S15        415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S16        415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S17        415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S18        415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S19        415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S2         415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S20        415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S21        415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S22        415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S23        415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S3         415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S4         415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S5         415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S6         415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S7         415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S8         415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_AYA_S9         415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_REMILIA_S11    415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_REMILIA_S12    415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_REMILIA_S13    415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_REMILIA_S14    415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_REMILIA_S15    415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_REMILIA_S16    415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_REMILIA_S17    415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_REMILIA_S18    415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_REMILIA_S19    415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_YUKARI_S11     415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_YUKARI_S12     415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_YUKARI_S13     415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_YUKARI_S14     415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_YUKARI_S15     415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_YUKARI_S16     415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_YUKARI_S17     415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_YUKARI_S18     415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_YUKARI_S19     415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_YUKARI_S20     415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
+#define CE_ANM_ABILITY_SPRITE_YOUKAI_YUKARI_S21     415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
 #define CE_ANM_ABILITY_SCRIPT_REVERSE_FLASH          68
 #define CE_ANM_ABILITY_SCRIPT_ROYAL_FLUSH            69
 #define CE_ANM_ABILITY_SCRIPT_ROYAL_SHOW             70
@@ -510,3 +920,65 @@
 #define CE_ANM_ABILITY_SCRIPT_UFO_GAUGE_ARC_BORDER_IN  230
 #define CE_ANM_ABILITY_SCRIPT_UFO_GAUGE_BAR         231
 #define CE_ANM_ABILITY_SCRIPT_UFO_GAUGE_BAR_SHADOW  232
+#define CE_ANM_ABILITY_SCRIPT_SPIRIT_PLAIN1         233
+#define CE_ANM_ABILITY_SCRIPT_SPIRIT_PLAIN1_RING    234
+#define CE_ANM_ABILITY_SCRIPT_SPIRIT_PLAIN1_CORE    235
+#define CE_ANM_ABILITY_SCRIPT_SPIRIT_TRANCE1        236
+#define CE_ANM_ABILITY_SCRIPT_SPIRIT_TRANCE1_RING   237
+#define CE_ANM_ABILITY_SCRIPT_SPIRIT_TRANCE1_GLOW   238
+#define CE_ANM_ABILITY_SCRIPT_SPIRIT_PLAIN2         239
+#define CE_ANM_ABILITY_SCRIPT_SPIRIT_PLAIN2_RING    240
+#define CE_ANM_ABILITY_SCRIPT_SPIRIT_PLAIN2_CORE    241
+#define CE_ANM_ABILITY_SCRIPT_SPIRIT_TRANCE2        242
+#define CE_ANM_ABILITY_SCRIPT_SPIRIT_TRANCE2_RING   243
+#define CE_ANM_ABILITY_SCRIPT_SPIRIT_TRANCE2_GLOW   244
+#define CE_ANM_ABILITY_SCRIPT_SPIRIT_PLAIN3         245
+#define CE_ANM_ABILITY_SCRIPT_SPIRIT_PLAIN3_RING    246
+#define CE_ANM_ABILITY_SCRIPT_SPIRIT_PLAIN3_CORE    247
+#define CE_ANM_ABILITY_SCRIPT_SPIRIT_TRANCE3        248
+#define CE_ANM_ABILITY_SCRIPT_SPIRIT_TRANCE3_RING   249
+#define CE_ANM_ABILITY_SCRIPT_SPIRIT_TRANCE3_GLOW   250
+#define CE_ANM_ABILITY_SCRIPT_TRANCE_ASTRAL         251
+#define CE_ANM_ABILITY_SCRIPT_TRANCE_TIERUP1        252
+#define CE_ANM_ABILITY_SCRIPT_TRANCE_TIERUP2        253
+#define CE_ANM_ABILITY_SCRIPT_TRANCE_TIERUP_MAX     254
+#define CE_ANM_ABILITY_SCRIPT_POPUP_LIFE1           255
+#define CE_ANM_ABILITY_SCRIPT_POPUP_LIFE2           256
+#define CE_ANM_ABILITY_SCRIPT_POPUP_SPELL1          257
+#define CE_ANM_ABILITY_SCRIPT_POPUP_SPELL2          258
+#define CE_ANM_ABILITY_SCRIPT_POPUP_POINT10         259
+#define CE_ANM_ABILITY_SCRIPT_POPUP_POINT100        260
+#define CE_ANM_ABILITY_SCRIPT_TRANCE_MASK           261
+#define CE_ANM_ABILITY_SCRIPT_TRANCE_WIPE1          262
+#define CE_ANM_ABILITY_SCRIPT_TRANCE_WIPE2          263
+#define CE_ANM_ABILITY_SCRIPT_TRANCE_WIPE3          264
+#define CE_ANM_ABILITY_SCRIPT_TRANCE_WIPE4          265
+#define CE_ANM_ABILITY_SCRIPT_TRANCE_WIPE_IN1       266
+#define CE_ANM_ABILITY_SCRIPT_TRANCE_WIPE_IN2       267
+#define CE_ANM_ABILITY_SCRIPT_TRANCE_WIPE_IN3       268
+#define CE_ANM_ABILITY_SCRIPT_TRANCE_WIPE_IN4       269
+#define CE_ANM_ABILITY_SCRIPT_TRANCE_WIPE_COVER     270
+#define CE_ANM_ABILITY_SCRIPT_TRANCE_ALPHA_ZERO     271
+#define CE_ANM_ABILITY_SCRIPT_MOF_FAITH_DOT         272
+#define CE_ANM_ABILITY_SCRIPT_MOF_FAITH_DOT_MICRO   273
+#define CE_ANM_ABILITY_SCRIPT_TH13_BIG_GLYPH        274
+#define CE_ANM_ABILITY_SCRIPT_FAITH_HUD_MUL         275
+#define CE_ANM_ABILITY_SCRIPT_FAITH_HUD_MULT        276
+#define CE_ANM_ABILITY_SCRIPT_FLAN_CHARGE_RING      277
+#define CE_ANM_ABILITY_SCRIPT_FLAN_CLEAR_BURST      278
+#define CE_ANM_ABILITY_SCRIPT_BOMB_CLEAR_RING       279
+#define CE_ANM_ABILITY_SCRIPT_MOF_BOMB_SPARK        280
+#define CE_ANM_ABILITY_SCRIPT_MOF_BOMB_SPARK_BLUE   281
+#define CE_ANM_ABILITY_SCRIPT_MARISA_BULLET         282
+#define CE_ANM_ABILITY_SCRIPT_MARISA_ELEM_FIRE_OPT  283
+#define CE_ANM_ABILITY_SCRIPT_MARISA_ELEM_WATER_OPT  284
+#define CE_ANM_ABILITY_SCRIPT_MARISA_ELEM_WOOD_OPT  285
+#define CE_ANM_ABILITY_SCRIPT_MARISA_ELEM_METAL_OPT  286
+#define CE_ANM_ABILITY_SCRIPT_MARISA_ELEM_EARTH_OPT  287
+#define CE_ANM_ABILITY_SCRIPT_MARISA_ELEM_FIRE_BULLET  288
+#define CE_ANM_ABILITY_SCRIPT_MARISA_ELEM_WATER_BULLET  289
+#define CE_ANM_ABILITY_SCRIPT_MARISA_ELEM_WOOD_BULLET  290
+#define CE_ANM_ABILITY_SCRIPT_MARISA_ELEM_METAL_BULLET  291
+#define CE_ANM_ABILITY_SCRIPT_MARISA_ELEM_EARTH_BULLET  292
+#define CE_ANM_ABILITY_SCRIPT_MOF_BOMB_RING_STRIP   293
+#define CE_ANM_ABILITY_SCRIPT_NITORI_BUBBLE         294

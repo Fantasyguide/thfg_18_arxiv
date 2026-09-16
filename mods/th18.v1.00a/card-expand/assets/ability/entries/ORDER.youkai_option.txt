@@ -10,7 +10,7 @@
 #     `CHARACTER`=2 = 文，`th16:0x4443ad` 取值 + `AnmLoaded::copy_vm th16:0x407b20`）⇒ script11，sprite32..39。
 # ★ 层：TH16 那支原版自带 `layer(13)`；TH08 那三支原版无 layer —— TH18 引擎在 `th18:0x40a8bc` 把子机 VM
 #   的层设成 14 ⇒ 不写 layer 即用 14（世界层），脚本里不编层号。
-# —— YUKARI（八雲紫）：原版 th08 player00.anm script18 = sprite[22, 23, 24, 25, 26, 27, 28, 29, 30]（画布 ['32x64', '64x64']）——
+# —— YUKARI（八雲紫）：原生 th08 player00.anm script18 = sprite[22, 23, 24, 25, 26, 27, 28, 29, 30]（画布 ['32x64', '64x64']）——
 YOUKAI_OPT_YUKARI_S22  ability/youkai_option/YOUKAI_OPT_YUKARI_S22.png  32x64
 YOUKAI_OPT_YUKARI_S23  ability/youkai_option/YOUKAI_OPT_YUKARI_S23.png  32x64
 YOUKAI_OPT_YUKARI_S24  ability/youkai_option/YOUKAI_OPT_YUKARI_S24.png  32x64
@@ -20,14 +20,14 @@ YOUKAI_OPT_YUKARI_S27  ability/youkai_option/YOUKAI_OPT_YUKARI_S27.png  32x64
 YOUKAI_OPT_YUKARI_S28  ability/youkai_option/YOUKAI_OPT_YUKARI_S28.png  32x64
 YOUKAI_OPT_YUKARI_S29  ability/youkai_option/YOUKAI_OPT_YUKARI_S29.png  32x64
 YOUKAI_OPT_YUKARI_S30  ability/youkai_option/YOUKAI_OPT_YUKARI_S30.png  64x64
-# —— ALICE（アリス）：原版 th08 player01.anm script29 = sprite[22, 23, 24, 25]（画布 ['32x32']）——
+# —— ALICE（アリス）：原生 th08 player01.anm script29 = sprite[22, 23, 24, 25]（画布 ['32x32']）——
 YOUKAI_OPT_ALICE_S22  ability/youkai_option/YOUKAI_OPT_ALICE_S22.png  32x32
 YOUKAI_OPT_ALICE_S23  ability/youkai_option/YOUKAI_OPT_ALICE_S23.png  32x32
 YOUKAI_OPT_ALICE_S24  ability/youkai_option/YOUKAI_OPT_ALICE_S24.png  32x32
 YOUKAI_OPT_ALICE_S25  ability/youkai_option/YOUKAI_OPT_ALICE_S25.png  32x32
-# —— REMILIA（レミリア）：原版 th08 player02.anm script24 = sprite[20]（画布 ['32x32']）——
+# —— REMILIA（レミリア）：原生 th08 player02.anm script24 = sprite[20]（画布 ['32x32']）——
 YOUKAI_OPT_REMILIA_S20  ability/youkai_option/YOUKAI_OPT_REMILIA_S20.png  32x32
-# —— AYA（射命丸文）：原版 th16 pl03.anm script11 = sprite[32, 33, 34, 35, 36, 37, 38, 39]（画布 ['16x16']）——
+# —— AYA（射命丸文）：原生 th16 pl03.anm script11 = sprite[32, 33, 34, 35, 36, 37, 38, 39]（画布 ['16x16']）——
 YOUKAI_OPT_AYA_S32  ability/youkai_option/YOUKAI_OPT_AYA_S32.png  16x16
 YOUKAI_OPT_AYA_S33  ability/youkai_option/YOUKAI_OPT_AYA_S33.png  16x16
 YOUKAI_OPT_AYA_S34  ability/youkai_option/YOUKAI_OPT_AYA_S34.png  16x16

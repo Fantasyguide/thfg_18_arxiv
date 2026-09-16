@@ -54,6 +54,7 @@
 #include "sdk.h"
 #include "season_core.h"
 #include "broken_core_core.h"          /* bc_atan2f：纯 SSE 的确定性 atan2（擦弹点的飞散角）*/
+#include "hud_dim.h"                    /* ★ 跨卡统一件：左下角 HUD 压暗（❓ 用户口径，见文件头）*/
 
 #include <string.h>
 #include <stdio.h>      /* snprintf：档位数字的字符串 */
@@ -69,8 +70,15 @@
 #define SEASON_SE_SWITCH     0x4e     /* se_changeitem（切副季节）*/
 #define SEASON_GRAZE_ADDR    0x4ccd0c /* 原生擦弹计数（GLOBALS.inner+0x30）；与 lolk.c 同址 */
 #define SEASON_GRAZE_PER_FRAME 2      /* 一帧最多因擦弹撒几颗 */
-#define SEASON_CANCEL_PER_POINT 8     /* 消弹 → 季节点：每 8 颗消掉的弹给 1 点 */
-#define SEASON_CANCEL_POINT_MAX 4     /* 每帧最多因消弹撒几颗 */
+#define SEASON_CANCEL_PER_POINT 1     /* 消弹 → 季节点：**每 1 颗消掉的弹给 1 点**
+                                       * ★ 2026-09-15 用户裁决改成 1（复刻 TH16）。
+                                       * 一手 `th16:0x416a00` 的 mode 4 = 季节道具（type 0x10）
+                                       * **每颗弹 1 个**（mode 5 才是每 3 颗 1 个，那是主炸弹）；
+                                       * 我们照 mode 4 的档，所以比例 = 1。原值 8 是 ❓ 自定（已撤销）。*/
+#define SEASON_CANCEL_POINT_MAX 4     /* 每帧最多因消弹撒几颗 —— ❓ 自定闸（TH16 没有这个闸：
+                                       * 它是每颗弹各自在**弹的位置**掉 1 个，我们没有那个位置通道）。
+                                       * 保留它是为了不让一屏 200 颗弹在单帧生成 200 个实体
+                                       * （实体数是逐帧排空的：`rel_acc` 跨帧保留，按 4/帧发放）。*/
 #define SEASON_CANCEL_MAX    9999     /* 半径清弹的数量上限（不限）*/
 #define SEASON_DMG_CAP       300      /* 释放帧把每敌每帧伤害上限抬到它（Remilia / 火主同款值）*/
 #define SEASON_DMG_WINTER    1500     /* 冬：释放期间自机弹伤害 ×1.5（TH16 `player+0x2c7cc=1.5f`）*/
@@ -181,11 +189,39 @@ static const struct { float dx, dy, sx, sy; } k_season_frame[SEASON_FRAME_N] = {
     { -44.5f,  -0.5f,   1.0f, 9.0f },   /* 左边：1×9   ⇒ 像素 x 263 / y 911..919 */
     { +57.5f,  -0.5f,   1.0f, 9.0f },   /* 右边：1×9   ⇒ 像素 x 365 / y 911..919 */
 };
-#define SEASON_HUD_DIM      64        /* 淡出后的 alpha（TH16 `interruptLabel(5)` = alphaTime(5,0,64)）*/
-#define SEASON_HUD_STEP     51        /* 每帧步长：255→64 约 4 帧（TH16 是 5 帧 alphaTime）*/
-#define SEASON_HUD_HIDE_X   (-64.0f)  /* TH16 `th16:0x427f41`：x < -64 且 y > 400 → 淡出 */
-#define SEASON_HUD_HIDE_Y   400.0f
-#define SEASON_HUD_SHOW_Y   384.0f    /* `th16:0x427f6c`：y < 384 或 x > -64 → 淡回 */
+/* ★★ 2026-09-15g：**压暗这一路改走跨卡统一件 `cards/hud_dim.{h,c}`**（唯一实现）。
+ * 性质 = ❓ **用户口径（UI 统一），不是复刻**（用户 2026-09-15：「压暗这个涉及到 UI 统一，
+ * 这个不能复刻。是那个靠近透明吧」）⇒ **动态**统一成：终点 alpha **32**（原 64）、起始 255、
+ * 每帧 **±56**（= 4 帧，与脚本侧 `alphaTime(4,0,·)` 同帧数）、滞回带 **16 px**；**区域**则按**本卡自己那块 HUD 的矩形**推（见下）。
+ *
+ * ★★ 2026-09-15h：**进/出的口径订正**（父 agent：2026-09-15g 那版「进 = 矩形**之内**」裁错了）——
+ *   **进 = 自机落在「块矩形外扩 `HUD_DIM_MARGIN`(28)」之内**、**出 = 离开「矩形 + 44」（28 + 滞回 16）之外**。
+ *   理由：本块的**下沿 446 在自机 y 钳位 432 之下** ⇒ 「站进矩形」只剩 **4 px 高**的一条（几乎点不亮）；
+ *   一手各作的门本来就落在它们自己那块上沿之上 24–32 px（TH16 的 `400` 在它那块沿之上 28）⇒ 边距是**原本就有的语义**。
+ *
+ * 本卡的块矩形 → 门限（**全部自机坐标**；换算见 `hud_dim.h` 的「表面 px → 自机坐标」定式：
+ * `自机 = 表面/2 − (320, 16)`）：
+ *   · 块 = 货架槽（`s_slot`，**每帧现取**）：表面 `(s_slot.x, s_slot.y)` 起 **104 × 36**
+ *     （`SEASON_HUD_BLOCK_W/H`；实测元素 x 263..365 / y 888..920 ⇒ 块 x 257..361、y 888..924）
+ *   · ⇒ 自机坐标矩形 = x ∈ [−191.5, −139.5]、y ∈ [428, 446]（= 上沿 428 / 下沿 446）
+ *   · ⇒ **进** = 自机落在「矩形 + 28」之内：x ∈ [−219.5, −111.5] ∧ y ∈ [400, 474]
+ *        ⚠ 自机钳位是 x ∈ [−184, 184]、y ∈ [32, **432**]，而块底在 446 ⇒ 实际可触发区
+ *          x ∈ [−184, −111.5]、y ∈ [400, 432]（≈ 72 × 32 px）
+ *   · ⇒ **出** = 离开「矩形 + 44」：x < −235.5 ∨ x > −95.5 ∨ y < 384 ∨ y > 490（**16 px 滞回带**）
+ *   ⚠ 旧值 `x < −64 ∧ y > 400` / 淡回 `y < 384` 是**照抄 TH16 `th16:0x427f41` / `0x427f6c`**
+ *     （本卡注释原话）——那是 TH16 自己那块槽的几何推出来的，**不是**我们的块；统一后按本卡几何重推
+ *     ⇒ 门限数字与旧值不同（y 上沿 412 而不是 400、x 也从"左三分之一"收成"块宽"+16），这是**几何差异**，
+ *     不是新的不统一。原一手值留档如下：
+ *       `SEASON_HUD_DIM  64`      —— TH16 `interruptLabel(5)` 的 `alphaTime(5,0,64)`（脚本 123–127；C 侧原来也写 64）
+ *       `SEASON_HUD_STEP 51`      —— 步长（照 TH16 那套时间序列）
+ *       `SEASON_HUD_HIDE_X (-64) / HIDE_Y 400 / SHOW_Y 384` —— `th16:0x427f41`（进）/ `th16:0x427f6c`（迟滞）
+ * ★★ 2026-09-15i：**脚本侧的 64 已经改掉**（脚本 123–127 的 `interruptLabel(5): alphaTime(4,0,32)`、
+ *   `interruptLabel(4): alphaTime(4,0,255)`；父 agent 裁定「过渡帧根治 = 改脚本」）⇒ 上一轮那段
+ *   C 侧 `min(脚本态, 统一 alpha)` 的**上限钳制已删**（不留两套同时生效）。
+ *   现在这块 HUD 的 alpha 分两路、但**深度与时长都统一**：
+ *     · 外框 ×4 / 进度 / 背景 / 档位数字 —— **C 每帧写** `s->hud.alpha`（255↔32、±56/帧 = **4 帧**）；
+ *     · 季节字 / 可解放指示条 —— **脚本的 `alphaTime`**（4 帧 → 32 / 255）。
+ *   不变式与机器判据见 `native/tools/anm_hud_alpha_check.py`（`make check` 里跑）。*/
 
 /* ★ 层号 = **24**（UI 表面，绘制组 37，优先级 `0x39`）——理由一手（`engine/anm/th18/02` §1 的桩表）：
  *   - 组 37（`0x39`）在**暂停模糊罩之前**（罩在组 38 = `0x3e`）⇒ 暂停时被罩住；
@@ -245,8 +281,9 @@ typedef struct {
     int32_t     rel_sub;                   /* 释放时的副季节（快照）*/
     int32_t     rel_cancelled;             /* 本次消弹总数 */
     int32_t     rel_acc;                   /* 消弹 → 季节点 的累加器 */
-    int32_t     hud_dim;                   /* 1 = 玩家贴近左下角，HUD 淡出中（闩锁，同 TH16 gui+0x1ac bit0）*/
-    int32_t     hud_alpha;                 /* 当前 alpha 0..255 */
+    hud_dim_t   hud;                       /* ★ 2026-09-15g：压暗状态（闩锁 + alpha）—— 跨卡统一件
+                                            * `cards/hud_dim.{h,c}`（原来这里是 `hud_dim`/`hud_alpha`
+                                            * 两个 int32：闩锁同 `TH16 gui+0x1ac bit0`，值 **64**；现在统一 32）*/
     int32_t     hud_frame[4];              /* ★ 外框 = 四条 1px 矩形（上/下/左/右），见 k_season_frame[] */
     int32_t     hud_grad;                  /* script115 渐变**进度条**（宽 = 档内进度；蓝 / 黄→白）*/
     int32_t     hud_solid;                 /* script116 实心**背景条**（全长，档位亮度；档 0 透明）*/
@@ -1106,16 +1143,13 @@ static void release_tick(ce_card_t *c, season_card_t *s)
     pos[1] = s->rel_y;
     pos[2] = pp[2];
 
-    /* ★ mode 必须 **0**：引擎的 `Bullet__cancel` 末尾调 `gen_items_from_et_cancel(pos, mode)`
-     *（一手 `0x428e90`），而那个函数（`0x4290e0`）：
-     *   mode==1 → 撒 **type 9**（分数转换点）
-     *   mode==4 → 撒 **type 2（金钱）**（或 type 9）
-     *   mode==0 → 直接返回、**什么都不撒**
-     * 我们原来传 4 → 消掉的弹全变金钱（用户 2026-09-10 实测）。TH16 是变成**季节点**，
-     * 所以这里改成 0（引擎不撒），季节点由本卡自己按消弹数撒。*/
-/* mode = **4**：用户定案（2026-09-10）——「相当于一个耦合：同时掉落季节点和钱」。
-     * 引擎会按 mode 4 撒 type 2（金钱），本卡再按消弹数自己撒季节点 ⇒ 两者同时掉。
-     * （TH16 的 mode 4 = 季节点，TH18 的 mode 4 = 钱，语义不同；这是**刻意的耦合**，不是复刻。）*/
+    /* mode = **4**：用户定案（2026-09-10）——「相当于一个耦合：同时掉落季节点和钱」。
+     * 引擎的 `Bullet__cancel` 末尾调 `gen_items_from_et_cancel(pos, mode)`（一手 `th18:0x428e90`
+     * → `th18:0x4290e0`）：`1` → type 9、`4` → 多数 type 9 + 少数 type 2（金钱）、`0` → 直接 return；
+     * 所以传 4 ⇒ 引擎撒钱，本卡再按消弹数自己撒季节点 ⇒ 两者同时掉。
+     * ⚠ **TH16 的 mode 4 = 季节道具（type 0x10）**（一手 `th16:0x416a00`），
+     *   TH18 里没有 type 0x10 这个道具 ⇒ 无法 1:1，「引擎撒钱 + 自制季节点」是**刻意的耦合，不是复刻**
+     *   （2026-09-15 六作消弹口径一手核查后仍保留此取舍）。*/
     n = ce_cancel_radius(pos, s->rel_radius, SEASON_CANCEL_MAX, 4);
     if (n > 0) {
         s->rel_cancelled += n;
@@ -1243,7 +1277,9 @@ static int on_tick_2(ce_card_t *c)
      *   「用 D 键切换到该卡，然后按 C」触发（实现在下面的 `on_activate()`）。
      *   ⚠ 原来这里是 `ce_key_down(CE_VK_A)` 的边沿。 */
 
-    sub_down = ce_key_down(CE_VK_S) ? 1 : 0;
+    /* ★ 2026-09-13 用户口径：季节切换键 **S → 同时按 Shift+C**（两个键都按下才算"按下"，
+     *   边沿仍由 `s->sub_prev` 处理 ⇒ 按一次只切一档）。`CE_VK_C` 见 sdk.h。*/
+    sub_down = (ce_key_down(CE_VK_SHIFT) && ce_key_down(CE_VK_C)) ? 1 : 0;
     if (sub_down && !s->sub_prev) {
         s->subseason = season_next(s->subseason);
         ce_play_sound(SEASON_SE_SWITCH, ce_player_x());
@@ -1254,25 +1290,10 @@ static int on_tick_2(ce_card_t *c)
 
     release_tick(c, s);
 
-    /* HUD 淡出（照 TH16 `Gui::on_tick_20` `th16:0x427cf0` 的闩锁 + 迟滞）*/
-    {
-        const float *pp = ce_player_pos();
-        if (!s->hud_dim) {
-            if (pp && pp[1] > SEASON_HUD_HIDE_Y && pp[0] < SEASON_HUD_HIDE_X) s->hud_dim = 1;
-        } else if (!pp || pp[1] < SEASON_HUD_SHOW_Y || pp[0] > SEASON_HUD_HIDE_X) {
-            s->hud_dim = 0;
-        }
-        {
-            int32_t target = s->hud_dim ? SEASON_HUD_DIM : 255;
-            if (s->hud_alpha < target) {
-                s->hud_alpha += SEASON_HUD_STEP;
-                if (s->hud_alpha > target) s->hud_alpha = target;
-            } else if (s->hud_alpha > target) {
-                s->hud_alpha -= SEASON_HUD_STEP;
-                if (s->hud_alpha < target) s->hud_alpha = target;
-            }
-        }
-    }
+    /* ★ 2026-09-15g：HUD 压暗的每帧推进**移到 `on_draw`**（`hud_slot_sync()` 之后）——
+     * 门限现在由**本卡的块矩形**推，而块锚点是每帧从货架取的（`s_slot`）⇒ 必须在取完锚点之后算，
+     * 用上一帧的锚点会晚一帧。原来这里那一份（TH16 `Gui::on_tick_20` `th16:0x427cf0` 的闩锁 + 迟滞 +
+     * C 侧 64/±51）已按用户口径「UI 统一」收进共享件，原一手值见上面常量区的留档注释。*/
 
     for (i = 0; i < SEASON_OPTS; ++i) {
         if (i < opts_for(level_of(s))) {
@@ -1469,6 +1490,16 @@ static int on_draw(ce_card_t *c)
 
     hud_slot_sync(s);                    /* ★ 每帧取最新锚点（同批后来的认领会按 id 重排）*/
 
+    /* ★★ 2026-09-15g：压暗 = 「自机的体量碰到本卡 HUD 块」——**每帧现算块矩形**（锚点会重排）。
+     * 矩形/门限的推法与依据见文件上部那段常量注（块 104×36 @ s_slot ⇒ 矩形 x∈[−191.5,−139.5] ∧ y∈[428,446]；
+     * **进 = 矩形 + 28**（外扩）⇒ x∈[−219.5,−111.5] ∧ y∈[400,474]、**出 = 矩形 + 44**）。
+     * 每帧只调一次（这里已经过了主菜单/自机两道门）。*/
+    {
+        hud_dim_rect_t r;
+        hud_dim_rect_surface(&r, s_slot.x, s_slot.y, SEASON_HUD_BLOCK_W, SEASON_HUD_BLOCK_H);
+        (void)hud_dim_tick(&s->hud, &r, ce_player_pos());
+    }
+
     level = level_of(s);
     next = (int)season_points_for_level(level + 1);
     /* 填充比 = 当档内的进度（照 TH16 `get_season_gauge_fill_ratio` 的口径）*/
@@ -1494,7 +1525,7 @@ static int on_draw(ce_card_t *c)
         int lvl_up = (level >= 1);                          /* 档 ≥1 = 进度黄白 + 背景上色 */
         int can_release = (lvl_up && s->rel_frames <= 0);   /* 可解放指示（script118）*/
         int st = (lvl_up ? 2 : 3) | ((lvl_up ? level + 7 : 3) << 4)
-               | ((s->hud_dim ? 5 : 4) << 8) | (can_release << 12);
+               | ((s->hud.dim ? 5 : 4) << 8) | (can_release << 12);
         if (st != s->hud_last_state) {
             int diff = st ^ s->hud_last_state;
             s->hud_last_state = st;
@@ -1508,7 +1539,7 @@ static int on_draw(ce_card_t *c)
                 if (s->hud_strip) ce_anm_interrupt((uint32_t)s->hud_strip, can_release ? 2 : 3);
             }
             if (diff & 0xf00) {                     /* 淡出 / 淡回（TH16 是 interrupt_tree 整棵树）*/
-                int dim = s->hud_dim ? 5 : 4;
+                int dim = s->hud.dim ? 5 : 4;      /* 闩锁读共享件（`hud_dim.h`）*/
                 for (fi = 0; fi < SEASON_FRAME_N; ++fi)
                     if (s->hud_frame[fi]) ce_anm_interrupt((uint32_t)s->hud_frame[fi], dim);
                 if (s->hud_glyph) ce_anm_interrupt((uint32_t)s->hud_glyph, dim);
@@ -1528,7 +1559,10 @@ static int on_draw(ce_card_t *c)
      *   **不会动的背景矩形**：蓝随档位变白（TH16 interrupt 8..13：64/96/128/144/192/224 的 (v,v,255)）；
      *   档 0 → **透明**（TH16 那一段连档位中断都不发）。*/
     {
-        uint32_t A = (uint32_t)(s->hud_alpha & 0xff) << 24;
+        /* ★ 2026-09-15g：alpha 取**跨卡统一件**那一份（255 ↔ 32，每帧 ±56 = 4 帧；原来这里写 64）。
+         * 这四支（外框 ×4 / 进度 / 背景）的 alpha **由卡每帧写**（见 123 脚本头：「脚本里的 alphaTime
+         * 只是初始态」）⇒ 用户看到的压暗深度就是这里这个值。*/
+        uint32_t A = (uint32_t)(s->hud.alpha & 0xff) << 24;
         int lvl_up = (level >= 1);
         uint32_t c1 = lvl_up ? 0x00ffff00u : 0x004040ffu;
         uint32_t c2 = lvl_up ? 0x00ffffffu : 0x004040ffu;
@@ -1541,6 +1575,22 @@ static int on_draw(ce_card_t *c)
         if (s->hud_solid) ce_anm_set_color((uint32_t)s->hud_solid, (lvl_up ? A : 0u) | lvl_c[level]);
         for (fi = 0; fi < SEASON_FRAME_N; ++fi)
             if (s->hud_frame[fi]) ce_anm_set_color((uint32_t)s->hud_frame[fi], A | 0x00505050u);
+        /* ★★ 2026-09-15i：**C 侧那层 `min(脚本 α, 32)` 兜底已撤**（脚本已统一，见下）。
+         *   · 2026-09-15g 那一轮这里做过一段「上限钳制」：只对**由脚本管 alpha 的两支**
+         *     （季节字 `hud_glyph` = 脚本 126 / 可解放指示条 `hud_strip` = 脚本 127）写
+         *     `min(脚本当前 alpha, 统一 alpha)`，用来把脚本里的 **64** 压到 **32**；
+         *     理由当时成立：脚本是**一手值**（TH16 `alphaTime(5,0,64)`），而 assets 归另一会话。
+         *   · 2026-09-15i 起脚本侧已经**统一**（`AUDIT.md` §DD-9 / `TUNING.md` §7.1）：
+         *     两支的 `interruptLabel(5): alphaTime(4, 0, 32)`（压暗）、
+         *     `interruptLabel(4): alphaTime(4, 0, 255)`（淡回）⇒ 脚本给的就是统一值，
+         *     这一层再留着就是**同一件事的两套实现**（父 agent 明令撤掉）⇒ 代码删除，只留本注。
+         *   · **不变式（这就是那段代码的替身）**：126/127 的 label 4/5 `alphaTime` 必须保持
+         *     `(4,0,255)` / `(4,0,32)`；`interruptLabel(2/3)` 那两条（淡入 4 帧 / 隐藏 0）
+         *     是**另一条路**、不许被这次统一波及。谁把脚本改回 64，症状 = 这两支只淡到 64、
+         *     而外框/进度/背景（下面那段 C 每帧写 `A`）淡到 32 ⇒ 一块 HUD 两种深度。
+         *     ⇒ `native/tools/anm_hud_alpha_check.py`（`make check` 里）把这条不变式做成机器判据。
+         *   · 这两支的 alpha **仍然只由脚本管**（C 不写它们的 color）—— 这是刻意的：
+         *     脚本的 `alpha(0)` / `alphaTime` 负责「不可解放时条不该在场」的隐藏态。*/
     }
     /* ★ 2026-09-10 定案（用户口径 + TH16 `0x42c600` 一手复核）：
      *   **渐变条（drawRectGrad）= 进度**：TH16 每帧把 `get_season_gauge_fill_ratio() × 100`
@@ -1571,7 +1621,7 @@ static int on_draw(ce_card_t *c)
      *   group 0 的趟（`on_draw_58`）在卡之后 ⇒ 用 0。
      *   颜色取 7 档表 `local_60[]`（0x60606060 / 0xa0b0b080 / 0xb0b8b880 / 0xc0c0c080 /
      *   0xd0d0d080 / 0xe0e0e080 / 0xffffff30，D3DCOLOR = 0xAARRGGBB），
-     *   玩家贴近左下角时把 alpha 字节改 **0x40**（= 64，和槽的 `alphaTime(…,64)` 同一档）；
+     *   玩家贴近左下角时把 alpha 字节压到 **0x40**（= 64，一手值；2026-09-15g 起按用户口径统一成 32）。
      *   数字本身走 `FUN_004082b0` = `create_string("%d")`。
      * ⇒ 照抄：字体 2 + group 1 + 对齐 (0,2) + 该档位色（缩放不动 = 环境 1.0）。*/
     {
@@ -1580,7 +1630,14 @@ static int on_draw(ce_card_t *c)
             0xd0d0d080u, 0xe0e0e080u, 0xffffff30u,
         };
         uint32_t col = lvl_digit_c[level];
-        uint32_t alpha = s->hud_dim ? 0x40u : (col >> 24);
+        /* ★★ 2026-09-15g（跨卡统一）：原来是「压暗时**硬切**到 0x40」，现在改成
+         *   **`min(档位色自带的 alpha, 统一件 alpha)`** —— 理由两条：
+         *   ① 深度按用户口径统一成 **32**（`HUD_DIM_ALPHA_DIM`），不再各写各的 0x40；
+         *   ② 让数字跟**同一块**的外框/进度/背景**同步渐变**（原来条在 255↔64 逐帧走、数字一帧跳过去）。
+         *   亮着时是恒等（统一 alpha = 255 ⇒ min 取档位色自带的那一档），所以「档位越高的数字越实」
+         *   这条一手行为一个字节没变。*/
+        uint32_t lvl_a = col >> 24;
+        uint32_t alpha = lvl_a < (uint32_t)s->hud.alpha ? lvl_a : (uint32_t)s->hud.alpha;
         /* ★★ 2026-09-10 第三十二轮：**从 ASCII 文字改成贴图 VM**（用户定案「那就改：只能把数字改成贴图 VM」）。
          * 为什么必须换：ASCII 文字**永远进不了暂停模糊罩下面**（用户实跑：改成早于罩子的 group 1
          * 之后数字全看不见 —— 那一趟 `0x419950` 跑在 surface 1 + 相机 0 上，见下面 31 轮的记录）。
@@ -1636,6 +1693,7 @@ static void clear_card(ce_card_t *c)
     memset(s, 0, sizeof *s);
     s->last_graze = -1;
     s->hud_last_state = -1;
+    hud_dim_init(&s->hud);                     /* ★ 2026-09-15g：压暗状态复位 = **满亮 255**（不是 0）*/
 }
 
 /* ★ 2026-09-10 第二十六轮（用户实跑：切关后面板/子机被打回春）：

@@ -1,6 +1,81 @@
-# 追加进 ability.anm 的贴图：一行 `NAME  源图(相对 assets/)`，源图 256×320。只追加不重排。
-# 第 k 行 → entry (原生 entry 数 + k)、sprite (原生最大 sprite 号 + 1 + k)；脚本里写 @NAME 引用。
-# 源图 `local/` 开头 = 原生贴图（gitignored，构建时取；小于声明尺寸的居中补透明）。
+# 追加进 ability.anm 的贴图与图集。**只许追加**：行序 = 编号（entry = 原生 7 + 行序，sprite = 原生 109 + 行序）。
+# 第 k 个数据行 → entry (7+k)、sprite (109+k)；脚本里写 `@NAME` 引用（收尾 `@` 可省）。
+# 源图 `local/` 开头 = 原生贴图（gitignored，构建时取）。
+#
+# ★★ 2026-09-13「图集合并」（最后一次重排；此后**只许 append**）—— 完整方案见 `ATLAS-MERGE-AUDIT.md`
+#   起因：贴图键 = `(anm 槽号 << 8) | entry 下标`，绑贴图时只取**低 8 位**（`th18:0x486d38` 打包 /
+#   `th18:0x47e1a4` 解包）⇒ **一个 anm 最多 256 个 entry**，我们已经有 367 ⇒ 后 111 个 entry 全画错图。
+#   （sprite 号**不受限**：原生 `bullet.anm entry0` 一个 entry 就有 368 个 sprite。）
+#   做法：把同一张卡的几十张小图并进**少数几个 entry**（引擎原生支持一个 entry 多个 sprite）。
+#   结果：追加 entry 从 360 压到 41，**总 entry 48 / 上限 256**，给以后的新卡美术留了 208 个 entry。
+#
+# ■ 语法（v2，本文件是唯一事实来源；由 `assets/build_ability.py` 解析）
+#   ① 单图行：  `NAME 源图(相对 assets/) [WxH]`   —— 一行 = 一个 entry = 一个 sprite。
+#        不写尺寸 = 卡图（256×320，字段抄 abcard BLANK_max）；写 `WxH` = 整张贴图一个 sprite。
+#   ② 图集段：  `ATLAS <图集名> <画布WxH[@列x行]>`   —— 段头，本身不是成员；段内一行一个成员：
+#        · 网格段（段头带 `@列x行`）：`成员名 源图 WxH`    —— 矩形 = 画布等分后**行优先**的第 k 格
+#        · 显式段（段头不带 `@`）：  `成员名 源图 @x,y,WxH` —— 矩形直接写死（画布坐标，左上角起）
+#        整段编译成**一个 entry**：name = `ability/atlas/<图集名>.png`（画布由构建脚本按成员贴出来），
+#        成员按**段内顺序**拿**连续** sprite 号。
+#   ③ 退役行：  `REF <退役名> <目标名>`   —— 只保 `@退役名` 能解析成目标名的 sprite，**不占 entry**。
+#   ④ 成员命名：成员名 → 自己的 sprite 号；`图集名_k` → 段内第 k 个成员；`图集名` → **第 0 个成员**
+#        （向后兼容"一行一个 entry"的老写法；`anm_ids.h` 里逐名生成 `CE_ANM_ABILITY_SPRITE_*`）。
+#   ⑤ 成员矩形 = **成员原图自己的像素尺寸**（不补边、不缩放、不重采样）。
+#        依据：VM 的 `scale.x` 乘的是 **sprite 矩形宽**（`th18:0x481703`：`[vm+0x74] × [vm+0x54]`），
+#        矩形一改，脚本里的 `scale()` 与 C 侧的 `ce_anm_set_scale` 就跟着变
+#        （旧方案把 48×32 补进 64×64 ⇒ 用户实跑看到"一边横向伸缩一边位移"）。
+#
+# ■ 四段排布（`ATLAS-MERGE-AUDIT.md` §4.5）
+#   A 共享 HUD（`sdk.c`）     entry7…8    ← 算术族 `TS_DIGIT_0+v`、`FONT2_0+(ch-'0')` 要求**连续升序**
+#   B 别人的卡（58–80）       entry9…27   ← 19 行**原样搬**，一个字都没改（他们的美术还在长，不混编）
+#   C 系统卡已定稿 114–117    entry28…35
+#   D 系统卡待定 106–113      entry36…47  ← 还会改的都在这一段
+#
+# ■ 「重排检测」硬门
+#   `entries/ORDER.frozen.txt` 记下了 A/B/C 三段的**逐行 sha256**（= 已定稿的行不许挪动 / 删改）；
+#   `make anm` 每次都会逐行核对，动了就报错退出。**新美术一律 append 到本文件末尾**；
+#   真要重排：`python3 assets/build_ability.py --allow-reorder` + 重新 `--freeze-order N`，并在 `AUDIT.md` §BE 登记。
+#   ⚠ 号一变，**DLL 与 ability.anm 必须同时发布**（DLL 里烘着宏值；旧 DLL + 新 anm = 全部贴图错位）。
+#
+# ■ 现在的用量（2026-09-13 合并后）
+#   追加 entry 41（21 个图集 + 19 张单图 + 1 个退役容器）、追加 sprite 306、脚本 262（一个没动）。
+#   总 entry **48 / 256 ⇒ 余量 208**；总 sprite 415。
+
+# ══ A 段：共享 HUD（`sdk.c` 的 `ce_hud_digit` / `ce_hud_number` / `ce_hud_vm_text`）══
+#   两个图集各自**内部连续升序**（`TS_DIGIT_0..9`、`FONT2_0..9`）：C 侧用 `CE_ANM_ABILITY_SPRITE_TS_DIGIT_0 + v`（`sdk.c:581/617`）与
+#   `CE_ANM_ABILITY_SPRITE_FONT2_0 + (ch - '0')`（`sdk.c:629`）算术取号 ⇒ 必须连续。
+#   `FONT2_*` 的矩形保持 **16×32**（不是字形的 16×20）——`native/sdk.c:690` 的 `+5.0f * sy * dat` 就是按
+#   「32 高的矩形里 20 行字形居中」标定的；`make_font2_art.py` 已经把 16×20 居中补进 16×32 的 PNG，
+#   所以这里「矩形 = 原图尺寸」依然成立（贴图与合并前逐字节相同）。
+ATLAS ATLAS_HUD_DIGIT 128x96@4x3
+TS_DIGIT_0             ability/truesilver/DIGIT_0.png                       32x32
+TS_DIGIT_1             ability/truesilver/DIGIT_1.png                       32x32
+TS_DIGIT_2             ability/truesilver/DIGIT_2.png                       32x32
+TS_DIGIT_3             ability/truesilver/DIGIT_3.png                       32x32
+TS_DIGIT_4             ability/truesilver/DIGIT_4.png                       32x32
+TS_DIGIT_5             ability/truesilver/DIGIT_5.png                       32x32
+TS_DIGIT_6             ability/truesilver/DIGIT_6.png                       32x32
+TS_DIGIT_7             ability/truesilver/DIGIT_7.png                       32x32
+TS_DIGIT_8             ability/truesilver/DIGIT_8.png                       32x32
+TS_DIGIT_9             ability/truesilver/DIGIT_9.png                       32x32
+
+ATLAS ATLAS_FONT2 128x64@8x2
+FONT2_0                ability/font2/FONT2_0.png                            16x32
+FONT2_1                ability/font2/FONT2_1.png                            16x32
+FONT2_2                ability/font2/FONT2_2.png                            16x32
+FONT2_3                ability/font2/FONT2_3.png                            16x32
+FONT2_4                ability/font2/FONT2_4.png                            16x32
+FONT2_5                ability/font2/FONT2_5.png                            16x32
+FONT2_6                ability/font2/FONT2_6.png                            16x32
+FONT2_7                ability/font2/FONT2_7.png                            16x32
+FONT2_8                ability/font2/FONT2_8.png                            16x32
+FONT2_9                ability/font2/FONT2_9.png                            16x32
+FONT2_MINUS            ability/font2/FONT2_MINUS.png                        16x32
+FONT2_PERCENT          ability/font2/FONT2_PERCENT.png                      16x32
+FONT2_DOT              ability/font2/FONT2_DOT.png                          16x32
+FONT2_PLUS             ability/font2/FONT2_PLUS.png                         16x32
+
+# ══ B 段：别人的卡（58–80）19 行**原样搬**（不评价、不改、不重排；见 CLAUDE.md 协作纪律）══
 REVERSE  cards/REVERSE_max.png
 ROYAL_FLUSH  ability/banner/ROYAL_FLUSH.png  512x128
 SPADE_10_FX  cards/SPADE_10_max.png
@@ -18,346 +93,583 @@ BROKEN_CORE_BOLT  ability/broken_core/BOLT.png  256x64
 FIRELORD_BODY  ability/firelord/RAGNAROS.png  256x256
 FIRELORD_FIREBALL  ability/firelord/FIREBALL.png  64x64
 FIRELORD_BLAST  ability/firelord/BLAST.png  128x128
-TS_DIGIT_0  ability/truesilver/DIGIT_0.png  32x32
-TS_DIGIT_1  ability/truesilver/DIGIT_1.png  32x32
-TS_DIGIT_2  ability/truesilver/DIGIT_2.png  32x32
-TS_DIGIT_3  ability/truesilver/DIGIT_3.png  32x32
-TS_DIGIT_4  ability/truesilver/DIGIT_4.png  32x32
-TS_DIGIT_5  ability/truesilver/DIGIT_5.png  32x32
-TS_DIGIT_6  ability/truesilver/DIGIT_6.png  32x32
-TS_DIGIT_7  ability/truesilver/DIGIT_7.png  32x32
-TS_DIGIT_8  ability/truesilver/DIGIT_8.png  32x32
-TS_DIGIT_9  ability/truesilver/DIGIT_9.png  32x32
 PEA  ability/peashooter/PEA.png  32x32
 PEASHOOTER_OPT  ability/peashooter/PEASHOOTER.png  64x64
-LOLK_RING  ability/lolk/RING.png  128x128
-LOLK_PANEL_1  ability/lolk/PANEL_1.png  256x32
-LOLK_PANEL_2  ability/lolk/PANEL_2.png  256x32
-LOLK_PANEL_3  ability/lolk/PANEL_3.png  256x32
-LOLK_PANEL_4  ability/lolk/PANEL_4.png  256x32
-LOLK_PANEL_5  ability/lolk/PANEL_5.png  256x32
-LOLK_PANEL_6  ability/lolk/PANEL_6.png  256x32
-LOLK_PANEL_7  ability/lolk/PANEL_7.png  256x32
-SEASON_OPT  ability/season/SEASON_OPT.png  64x64
-SEASON_SEED  ability/season/SEASON_SEED.png  32x32
-PT_SPRING  ability/season/PT_SPRING.png  16x16
-PT_SUMMER  ability/season/PT_SUMMER.png  16x16
-PT_FALL  ability/season/PT_FALL.png  16x16
-PT_WINTER  ability/season/PT_WINTER.png  16x16
-PT_DOYOU  ability/season/PT_DOYOU.png  16x16
-GLYPH_SPRING  ability/season/GLYPH_SPRING.png  32x32
-GLYPH_SUMMER  ability/season/GLYPH_SUMMER.png  32x32
-GLYPH_FALL  ability/season/GLYPH_FALL.png  32x32
-GLYPH_WINTER  ability/season/GLYPH_WINTER.png  32x32
-GLYPH_DOYOU  ability/season/GLYPH_DOYOU.png  32x32
-OPT_SPRING  ability/season/OPT_SPRING.png  16x16
-OPT_SUMMER  ability/season/OPT_SUMMER.png  16x16
-OPT_FALL  ability/season/OPT_FALL.png  16x16
-OPT_WINTER  ability/season/OPT_WINTER.png  16x16
-OPT_DOYOU  ability/season/OPT_DOYOU.png  16x16
-SEASON_LASER  ability/season/SEASON_LASER.png  256x32
-SEASON_STRIP  ability/season/SEASON_STRIP.png  64x16
-BULLET_SPRING_A  ability/season/BULLET_SPRING_A.png  32x32
-BULLET_SPRING_B  ability/season/BULLET_SPRING_B.png  32x32
-HIT_SPRING_1  ability/season/HIT_SPRING_1.png  32x32
-HIT_SPRING_2  ability/season/HIT_SPRING_2.png  32x32
-HIT_SPRING_3  ability/season/HIT_SPRING_3.png  32x32
-HIT_SPRING_4  ability/season/HIT_SPRING_4.png  32x32
-HIT_SPRING_5  ability/season/HIT_SPRING_5.png  32x32
-HIT_SPRING_6  ability/season/HIT_SPRING_6.png  32x32
-HIT_SPRING_7  ability/season/HIT_SPRING_7.png  32x32
-HIT_SPRING_8  ability/season/HIT_SPRING_8.png  32x32
-BULLET_SUMMER  ability/season/BULLET_SUMMER.png  16x16
-HIT_SUMMER_1  ability/season/HIT_SUMMER_1.png  16x16
-HIT_SUMMER_2  ability/season/HIT_SUMMER_2.png  16x16
-HIT_SUMMER_3  ability/season/HIT_SUMMER_3.png  16x16
-BULLET_FALL  ability/season/BULLET_FALL.png  64x64
-HIT_FALL_1  ability/season/HIT_FALL_1.png  64x64
-HIT_FALL_2  ability/season/HIT_FALL_2.png  64x64
-HIT_FALL_3  ability/season/HIT_FALL_3.png  64x64
-BULLET_DOYOU  ability/season/BULLET_DOYOU.png  32x16
-HIT_DOYOU_1  ability/season/HIT_DOYOU_1.png  32x16
-HIT_DOYOU_2  ability/season/HIT_DOYOU_2.png  32x16
-HIT_DOYOU_3  ability/season/HIT_DOYOU_3.png  32x16
-LASER_CHILD  ability/season/LASER_CHILD.png  32x32
-LASER_HIT  ability/season/LASER_HIT.png  32x32
-FONT2_0  ability/font2/FONT2_0.png  16x32
-FONT2_1  ability/font2/FONT2_1.png  16x32
-FONT2_2  ability/font2/FONT2_2.png  16x32
-FONT2_3  ability/font2/FONT2_3.png  16x32
-FONT2_4  ability/font2/FONT2_4.png  16x32
-FONT2_5  ability/font2/FONT2_5.png  16x32
-FONT2_6  ability/font2/FONT2_6.png  16x32
-FONT2_7  ability/font2/FONT2_7.png  16x32
-FONT2_8  ability/font2/FONT2_8.png  16x32
-FONT2_9  ability/font2/FONT2_9.png  16x32
-FONT2_MINUS  ability/font2/FONT2_MINUS.png  16x32
-FONT2_PERCENT  ability/font2/FONT2_PERCENT.png  16x32
-FONT2_DOT  ability/font2/FONT2_DOT.png  16x32
-FONT2_PLUS  ability/font2/FONT2_PLUS.png  16x32
-WOLF_0  ability/animal/WOLF_0.png  32x32
-WOLF_1  ability/animal/WOLF_1.png  32x32
-WOLF_2  ability/animal/WOLF_2.png  32x32
-OTTER_0  ability/animal/OTTER_0.png  32x32
-OTTER_1  ability/animal/OTTER_1.png  32x32
-OTTER_2  ability/animal/OTTER_2.png  32x32
-EAGLE_0  ability/animal/EAGLE_0.png  32x32
-EAGLE_1  ability/animal/EAGLE_1.png  32x32
-EAGLE_2  ability/animal/EAGLE_2.png  32x32
-FISH_BOMB  ability/animal/FISH_BOMB.png  32x32
-FISH_LIFE  ability/animal/FISH_LIFE.png  32x32
-FISH_POWER  ability/animal/FISH_POWER.png  32x32
-FISH_POINT  ability/animal/FISH_POINT.png  32x32
-GAUGE_FRAME  ability/animal/GAUGE_FRAME.png  64x64
-AURA_EAGLE_0  ability/animal/AURA_EAGLE_0.png  64x64
-AURA_EAGLE_1  ability/animal/AURA_EAGLE_1.png  64x64
-AURA_EAGLE_2  ability/animal/AURA_EAGLE_2.png  64x64
-AURA_EAGLE_3  ability/animal/AURA_EAGLE_3.png  64x64
-AURA_EAGLE_4  ability/animal/AURA_EAGLE_4.png  64x64
-AURA_EAGLE_5  ability/animal/AURA_EAGLE_5.png  64x64
-AURA_EAGLE_6  ability/animal/AURA_EAGLE_6.png  64x64
-AURA_EAGLE_7  ability/animal/AURA_EAGLE_7.png  64x64
-AURA_WOLF_0  ability/animal/AURA_WOLF_0.png  64x64
-AURA_WOLF_1  ability/animal/AURA_WOLF_1.png  64x64
-AURA_WOLF_2  ability/animal/AURA_WOLF_2.png  64x64
-AURA_WOLF_3  ability/animal/AURA_WOLF_3.png  64x64
-AURA_WOLF_4  ability/animal/AURA_WOLF_4.png  64x64
-AURA_WOLF_5  ability/animal/AURA_WOLF_5.png  64x64
-AURA_WOLF_6  ability/animal/AURA_WOLF_6.png  64x64
-AURA_WOLF_7  ability/animal/AURA_WOLF_7.png  64x64
-AURA_OTTER_0  ability/animal/AURA_OTTER_0.png  64x64
-AURA_OTTER_1  ability/animal/AURA_OTTER_1.png  64x64
-AURA_OTTER_2  ability/animal/AURA_OTTER_2.png  64x64
-AURA_OTTER_3  ability/animal/AURA_OTTER_3.png  64x64
-AURA_OTTER_4  ability/animal/AURA_OTTER_4.png  64x64
-AURA_OTTER_5  ability/animal/AURA_OTTER_5.png  64x64
-AURA_OTTER_6  ability/animal/AURA_OTTER_6.png  64x64
-AURA_OTTER_7  ability/animal/AURA_OTTER_7.png  64x64
-OTTER_ORB  ability/animal/OTTER_ORB.png  128x64
-STRIKE_RING  ability/animal/STRIKE_RING.png  128x128
-SOUL_0  ability/animal/SOUL_0.png  16x16
-SOUL_1  ability/animal/SOUL_1.png  16x16
-SOUL_2  ability/animal/SOUL_2.png  16x16
-SOUL_3  ability/animal/SOUL_3.png  16x16
-SOUL_4  ability/animal/SOUL_4.png  16x16
-SOUL_5  ability/animal/SOUL_5.png  16x16
-SOUL_6  ability/animal/SOUL_6.png  16x16
-SOUL_7  ability/animal/SOUL_7.png  16x16
-SOUL_8  ability/animal/SOUL_8.png  16x16
-SOUL_9  ability/animal/SOUL_9.png  16x16
-SOUL_10  ability/animal/SOUL_10.png  16x16
-ITEM_P  ability/animal/ITEM_P.png  16x16
-ITEM_MONEY  ability/animal/ITEM_MONEY.png  16x16
-ITEM_LIFE  ability/animal/ITEM_LIFE.png  16x16
-ITEM_BOMB  ability/animal/ITEM_BOMB.png  16x16
-FLAME_0  ability/animal/FLAME_0.png  64x64
-FLAME_1  ability/animal/FLAME_1.png  64x64
-FLAME_2  ability/animal/FLAME_2.png  64x64
-FLAME_3  ability/animal/FLAME_3.png  64x64
-FLAME_4  ability/animal/FLAME_4.png  64x64
-FLAME_5  ability/animal/FLAME_5.png  64x64
-FLAME_6  ability/animal/FLAME_6.png  64x64
-FLAME_7  ability/animal/FLAME_7.png  64x64
-FLAME_8  ability/animal/FLAME_8.png  64x64
-FLAME_9  ability/animal/FLAME_9.png  64x64
-FLAME_10  ability/animal/FLAME_10.png  64x64
-FLAME_11  ability/animal/FLAME_11.png  64x64
-ICON_WOLF  ability/animal/ICON_WOLF.png  64x64
-ICON_OTTER  ability/animal/ICON_OTTER.png  64x64
-ICON_EAGLE  ability/animal/ICON_EAGLE.png  64x64
-ICON_FISH_BOMB  ability/animal/ICON_FISH_BOMB.png  32x32
-ICON_FISH_LIFE  ability/animal/ICON_FISH_LIFE.png  32x32
-ICON_FISH_POWER  ability/animal/ICON_FISH_POWER.png  32x32
-ICON_FISH_POINT  ability/animal/ICON_FISH_POINT.png  32x32
-CARD_BOMB  ability/animal/CARD_BOMB.png  64x64
-CARD_LIFE  ability/animal/CARD_LIFE.png  64x64
-CARD_MONEY  ability/animal/CARD_MONEY.png  64x64
-FISH_MONEY  ability/animal_custom/FISH_MONEY.png  32x32
-ICON_FISH_MONEY  ability/animal_custom/ICON_FISH_MONEY.png  32x32
-BEASTAP_A  ability/animal/BEASTAP_A.png  512x32
-BEASTAP_B  ability/animal/BEASTAP_B.png  512x32
-EAGLE_BEAM  ability/animal/EAGLE_BEAM.png  512x32
-UFO_RED_0  ability/ufo/UFO_RED_0.png  64x64
-UFO_RED_1  ability/ufo/UFO_RED_1.png  64x64
-UFO_RED_2  ability/ufo/UFO_RED_2.png  64x64
-UFO_RED_3  ability/ufo/UFO_RED_3.png  64x64
-UFO_BLUE_0  ability/ufo/UFO_BLUE_0.png  64x64
-UFO_BLUE_1  ability/ufo/UFO_BLUE_1.png  64x64
-UFO_BLUE_2  ability/ufo/UFO_BLUE_2.png  64x64
-UFO_BLUE_3  ability/ufo/UFO_BLUE_3.png  64x64
-UFO_GREEN_0  ability/ufo/UFO_GREEN_0.png  64x64
-UFO_GREEN_1  ability/ufo/UFO_GREEN_1.png  64x64
-UFO_GREEN_2  ability/ufo/UFO_GREEN_2.png  64x64
-UFO_GREEN_3  ability/ufo/UFO_GREEN_3.png  64x64
-UFO_RAINBOW_0  ability/ufo/UFO_RAINBOW_0.png  64x64
-UFO_RAINBOW_1  ability/ufo/UFO_RAINBOW_1.png  64x64
-UFO_RAINBOW_2  ability/ufo/UFO_RAINBOW_2.png  64x64
-UFO_RAINBOW_3  ability/ufo/UFO_RAINBOW_3.png  64x64
-TOKEN_RED_0  ability/ufo/TOKEN_RED_0.png  32x32
-TOKEN_RED_1  ability/ufo/TOKEN_RED_1.png  32x32
-TOKEN_BLUE_0  ability/ufo/TOKEN_BLUE_0.png  32x32
-TOKEN_BLUE_1  ability/ufo/TOKEN_BLUE_1.png  32x32
-TOKEN_GREEN_0  ability/ufo/TOKEN_GREEN_0.png  32x32
-TOKEN_GREEN_1  ability/ufo/TOKEN_GREEN_1.png  32x32
-TOKEN_RBRED_0  ability/ufo/TOKEN_RBRED_0.png  32x32
-TOKEN_RBRED_1  ability/ufo/TOKEN_RBRED_1.png  32x32
-TOKEN_RBBLUE_0  ability/ufo/TOKEN_RBBLUE_0.png  32x32
-TOKEN_RBBLUE_1  ability/ufo/TOKEN_RBBLUE_1.png  32x32
-TOKEN_RBGREEN_0  ability/ufo/TOKEN_RBGREEN_0.png  32x32
-TOKEN_RBGREEN_1  ability/ufo/TOKEN_RBGREEN_1.png  32x32
-SPIRIT_PLAIN_0   ability/trance/SPIRIT_PLAIN_CELL_C0R0.png  32x32
-SPIRIT_PLAIN_1   ability/trance/SPIRIT_PLAIN_CELL_C0R1.png  32x32
-SPIRIT_TRANCE_0  ability/trance/SPIRIT_TRANCE_CELL_C0R0.png  32x32
-SPIRIT_TRANCE_1  ability/trance/SPIRIT_TRANCE_CELL_C0R1.png  32x32
-SPIRIT_TRANCE_2  ability/trance/SPIRIT_TRANCE_CELL_C1R0.png  32x32
-SPIRIT_TRANCE_3  ability/trance/SPIRIT_TRANCE_CELL_C1R1.png  32x32
-TRANCE_GAUGE_TOP   ability/trance/GAUGE_AC.png  64x64
-TRANCE_GAUGE_BAR   ability/trance/GAUGE_BAR.png  64x64
-TRANCE_GAUGE_BAR2  ability/trance/GAUGE_BAR2.png  64x64
-TRANCE_GAUGE_MARK  ability/trance/GAUGE_MARK.png  64x64
-FAITH_DOT  ability/mof/FAITH_DOT.png  16x16
-SAKURA_POINT  ability/sakura/POINT.png  16x16
-SAKURA_SMALL  ability/sakura/SMALL.png  16x16
-TPOINT  ability/tpoint/TPOINT.png  16x16
 
-# ── 来自 ORDER.youkai.txt（本轮合并；原片段保留作记录）
-YOUKAI_YUKARI_S11  ability/youkai/YOUKAI_YUKARI_S11.png  32x64
-YOUKAI_YUKARI_S12  ability/youkai/YOUKAI_YUKARI_S12.png  32x64
-YOUKAI_YUKARI_S13  ability/youkai/YOUKAI_YUKARI_S13.png  32x64
-YOUKAI_YUKARI_S14  ability/youkai/YOUKAI_YUKARI_S14.png  32x64
-YOUKAI_YUKARI_S15  ability/youkai/YOUKAI_YUKARI_S15.png  32x64
-YOUKAI_YUKARI_S16  ability/youkai/YOUKAI_YUKARI_S16.png  32x64
-YOUKAI_YUKARI_S17  ability/youkai/YOUKAI_YUKARI_S17.png  32x64
-YOUKAI_YUKARI_S18  ability/youkai/YOUKAI_YUKARI_S18.png  32x64
-YOUKAI_YUKARI_S19  ability/youkai/YOUKAI_YUKARI_S19.png  32x64
-YOUKAI_YUKARI_S20  ability/youkai/YOUKAI_YUKARI_S20.png  32x64
-YOUKAI_YUKARI_S21  ability/youkai/YOUKAI_YUKARI_S21.png  32x64
-YOUKAI_ALICE_S11  ability/youkai/YOUKAI_ALICE_S11.png  32x64
-YOUKAI_ALICE_S12  ability/youkai/YOUKAI_ALICE_S12.png  32x64
-YOUKAI_ALICE_S13  ability/youkai/YOUKAI_ALICE_S13.png  32x64
-YOUKAI_ALICE_S14  ability/youkai/YOUKAI_ALICE_S14.png  32x64
-YOUKAI_ALICE_S15  ability/youkai/YOUKAI_ALICE_S15.png  32x64
-YOUKAI_ALICE_S16  ability/youkai/YOUKAI_ALICE_S16.png  32x64
-YOUKAI_ALICE_S17  ability/youkai/YOUKAI_ALICE_S17.png  32x64
-YOUKAI_ALICE_S18  ability/youkai/YOUKAI_ALICE_S18.png  32x64
-YOUKAI_ALICE_S19  ability/youkai/YOUKAI_ALICE_S19.png  32x64
-YOUKAI_ALICE_S20  ability/youkai/YOUKAI_ALICE_S20.png  32x64
-YOUKAI_ALICE_S21  ability/youkai/YOUKAI_ALICE_S21.png  32x64
-YOUKAI_REMILIA_S11  ability/youkai/YOUKAI_REMILIA_S11.png  64x64
-YOUKAI_REMILIA_S12  ability/youkai/YOUKAI_REMILIA_S12.png  64x64
-YOUKAI_REMILIA_S13  ability/youkai/YOUKAI_REMILIA_S13.png  64x64
-YOUKAI_REMILIA_S14  ability/youkai/YOUKAI_REMILIA_S14.png  64x64
-YOUKAI_REMILIA_S15  ability/youkai/YOUKAI_REMILIA_S15.png  64x64
-YOUKAI_REMILIA_S16  ability/youkai/YOUKAI_REMILIA_S16.png  64x64
-YOUKAI_REMILIA_S17  ability/youkai/YOUKAI_REMILIA_S17.png  64x64
-YOUKAI_REMILIA_S18  ability/youkai/YOUKAI_REMILIA_S18.png  64x64
-YOUKAI_REMILIA_S19  ability/youkai/YOUKAI_REMILIA_S19.png  64x64
+# ══ C 段：系统卡**已定稿** 114–117（辉针城 / 绀珠传 / 天空璋 / 鬼形兽）══
+ATLAS ATLAS_LOLK 256x352
+LOLK_RING              ability/lolk/RING.png                                @0,0,128x128
+LOLK_PANEL_1           ability/lolk/PANEL_1.png                             @0,128,256x32
+LOLK_PANEL_2           ability/lolk/PANEL_2.png                             @0,160,256x32
+LOLK_PANEL_3           ability/lolk/PANEL_3.png                             @0,192,256x32
+LOLK_PANEL_4           ability/lolk/PANEL_4.png                             @0,224,256x32
+LOLK_PANEL_5           ability/lolk/PANEL_5.png                             @0,256,256x32
+LOLK_PANEL_6           ability/lolk/PANEL_6.png                             @0,288,256x32
+LOLK_PANEL_7           ability/lolk/PANEL_7.png                             @0,320,256x32
 
-# ── 来自 ORDER.youkai_familiar.txt（本轮合并；原片段保留作记录）
-YOUKAI_FAM_S53_0  ability/youkai_familiar/YOUKAI_FAM_S53_0.png  32x32
-YOUKAI_FAM_S53_1  ability/youkai_familiar/YOUKAI_FAM_S53_1.png  32x32
-YOUKAI_FAM_S53_2  ability/youkai_familiar/YOUKAI_FAM_S53_2.png  32x32
-YOUKAI_FAM_S53_3  ability/youkai_familiar/YOUKAI_FAM_S53_3.png  32x32
-YOUKAI_FAM_S53_4  ability/youkai_familiar/YOUKAI_FAM_S53_4.png  32x32
-YOUKAI_FAM_S53_5  ability/youkai_familiar/YOUKAI_FAM_S53_5.png  32x32
-YOUKAI_FAM_S53_6  ability/youkai_familiar/YOUKAI_FAM_S53_6.png  32x32
-YOUKAI_FAM_S53_7  ability/youkai_familiar/YOUKAI_FAM_S53_7.png  32x32
-YOUKAI_FAM_S54_0  ability/youkai_familiar/YOUKAI_FAM_S54_0.png  32x32
-YOUKAI_FAM_S54_1  ability/youkai_familiar/YOUKAI_FAM_S54_1.png  32x32
-YOUKAI_FAM_S54_2  ability/youkai_familiar/YOUKAI_FAM_S54_2.png  32x32
-YOUKAI_FAM_S54_3  ability/youkai_familiar/YOUKAI_FAM_S54_3.png  32x32
-YOUKAI_FAM_S54_4  ability/youkai_familiar/YOUKAI_FAM_S54_4.png  32x32
-YOUKAI_FAM_S54_5  ability/youkai_familiar/YOUKAI_FAM_S54_5.png  32x32
-YOUKAI_FAM_S54_6  ability/youkai_familiar/YOUKAI_FAM_S54_6.png  32x32
-YOUKAI_FAM_S54_7  ability/youkai_familiar/YOUKAI_FAM_S54_7.png  32x32
-YOUKAI_FAM_S55_0  ability/youkai_familiar/YOUKAI_FAM_S55_0.png  32x32
-YOUKAI_FAM_S55_1  ability/youkai_familiar/YOUKAI_FAM_S55_1.png  32x32
-YOUKAI_FAM_S55_2  ability/youkai_familiar/YOUKAI_FAM_S55_2.png  32x32
-YOUKAI_FAM_S55_3  ability/youkai_familiar/YOUKAI_FAM_S55_3.png  32x32
-YOUKAI_FAM_S55_4  ability/youkai_familiar/YOUKAI_FAM_S55_4.png  32x32
-YOUKAI_FAM_S55_5  ability/youkai_familiar/YOUKAI_FAM_S55_5.png  32x32
-YOUKAI_FAM_S55_6  ability/youkai_familiar/YOUKAI_FAM_S55_6.png  32x32
-YOUKAI_FAM_S55_7  ability/youkai_familiar/YOUKAI_FAM_S55_7.png  32x32
-YOUKAI_FAM_S56_0  ability/youkai_familiar/YOUKAI_FAM_S56_0.png  32x32
-YOUKAI_FAM_S56_1  ability/youkai_familiar/YOUKAI_FAM_S56_1.png  32x32
-YOUKAI_FAM_S56_2  ability/youkai_familiar/YOUKAI_FAM_S56_2.png  32x32
-YOUKAI_FAM_S56_3  ability/youkai_familiar/YOUKAI_FAM_S56_3.png  32x32
-YOUKAI_FAM_S56_4  ability/youkai_familiar/YOUKAI_FAM_S56_4.png  32x32
-YOUKAI_FAM_S56_5  ability/youkai_familiar/YOUKAI_FAM_S56_5.png  32x32
-YOUKAI_FAM_S56_6  ability/youkai_familiar/YOUKAI_FAM_S56_6.png  32x32
-YOUKAI_FAM_S56_7  ability/youkai_familiar/YOUKAI_FAM_S56_7.png  32x32
+ATLAS ATLAS_SEASON_BULLET 192x208
+SEASON_SEED            ability/season/SEASON_SEED.png                       @0,0,32x32
+BULLET_SPRING_A        ability/season/BULLET_SPRING_A.png                   @32,0,32x32
+BULLET_SPRING_B        ability/season/BULLET_SPRING_B.png                   @64,0,32x32
+HIT_SPRING_1           ability/season/HIT_SPRING_1.png                      @96,0,32x32
+HIT_SPRING_2           ability/season/HIT_SPRING_2.png                      @128,0,32x32
+HIT_SPRING_3           ability/season/HIT_SPRING_3.png                      @160,0,32x32
+HIT_SPRING_4           ability/season/HIT_SPRING_4.png                      @0,32,32x32
+HIT_SPRING_5           ability/season/HIT_SPRING_5.png                      @32,32,32x32
+HIT_SPRING_6           ability/season/HIT_SPRING_6.png                      @64,32,32x32
+HIT_SPRING_7           ability/season/HIT_SPRING_7.png                      @96,32,32x32
+HIT_SPRING_8           ability/season/HIT_SPRING_8.png                      @128,32,32x32
+BULLET_SUMMER          ability/season/BULLET_SUMMER.png                     @160,32,16x16
+HIT_SUMMER_1           ability/season/HIT_SUMMER_1.png                      @176,32,16x16
+HIT_SUMMER_2           ability/season/HIT_SUMMER_2.png                      @0,64,16x16
+HIT_SUMMER_3           ability/season/HIT_SUMMER_3.png                      @16,64,16x16
+BULLET_FALL            ability/season/BULLET_FALL.png                       @32,64,64x64
+HIT_FALL_1             ability/season/HIT_FALL_1.png                        @96,64,64x64
+HIT_FALL_2             ability/season/HIT_FALL_2.png                        @0,128,64x64
+HIT_FALL_3             ability/season/HIT_FALL_3.png                        @64,128,64x64
+BULLET_DOYOU           ability/season/BULLET_DOYOU.png                      @128,128,32x16
+HIT_DOYOU_1            ability/season/HIT_DOYOU_1.png                       @160,128,32x16
+HIT_DOYOU_2            ability/season/HIT_DOYOU_2.png                       @0,192,32x16
+HIT_DOYOU_3            ability/season/HIT_DOYOU_3.png                       @32,192,32x16
 
-# ── 来自 ORDER.senro.txt（本轮合并；原片段保留作记录）
-SENRO_FIELD  ability/senro/FIELD.png  256x256
-SENRO_RING   ability/senro/RING.png    64x64
+ATLAS ATLAS_SEASON_UI 256x160
+SEASON_OPT             ability/season/SEASON_OPT.png                        @0,0,64x64
+PT_SPRING              ability/season/PT_SPRING.png                         @64,0,16x16
+PT_SUMMER              ability/season/PT_SUMMER.png                         @80,0,16x16
+PT_FALL                ability/season/PT_FALL.png                           @96,0,16x16
+PT_WINTER              ability/season/PT_WINTER.png                         @112,0,16x16
+PT_DOYOU               ability/season/PT_DOYOU.png                          @128,0,16x16
+GLYPH_SPRING           ability/season/GLYPH_SPRING.png                      @144,0,32x32
+GLYPH_SUMMER           ability/season/GLYPH_SUMMER.png                      @176,0,32x32
+GLYPH_FALL             ability/season/GLYPH_FALL.png                        @208,0,32x32
+GLYPH_WINTER           ability/season/GLYPH_WINTER.png                      @0,64,32x32
+GLYPH_DOYOU            ability/season/GLYPH_DOYOU.png                       @32,64,32x32
+OPT_SPRING             ability/season/OPT_SPRING.png                        @64,64,16x16
+OPT_SUMMER             ability/season/OPT_SUMMER.png                        @80,64,16x16
+OPT_FALL               ability/season/OPT_FALL.png                          @96,64,16x16
+OPT_WINTER             ability/season/OPT_WINTER.png                        @112,64,16x16
+OPT_DOYOU              ability/season/OPT_DOYOU.png                         @128,64,16x16
+SEASON_LASER           ability/season/SEASON_LASER.png                      @0,96,256x32
+SEASON_STRIP           ability/season/SEASON_STRIP.png                      @0,128,64x16
+LASER_CHILD            ability/season/LASER_CHILD.png                       @64,128,32x32
+LASER_HIT              ability/season/LASER_HIT.png                         @96,128,32x32
 
-# ── 来自 ORDER.mof.txt（本轮合并；原片段保留作记录）
-MOF_FAITH_ICON     ability/mof/FAITH_ICON.png     16x16
-MOF_FAITH_DIGIT_0  ability/mof/FAITH_DIGIT_0.png  8x16
-MOF_FAITH_DIGIT_1  ability/mof/FAITH_DIGIT_1.png  8x16
-MOF_FAITH_DIGIT_2  ability/mof/FAITH_DIGIT_2.png  8x16
-MOF_FAITH_DIGIT_3  ability/mof/FAITH_DIGIT_3.png  8x16
-MOF_FAITH_DIGIT_4  ability/mof/FAITH_DIGIT_4.png  8x16
-MOF_FAITH_DIGIT_5  ability/mof/FAITH_DIGIT_5.png  8x16
-MOF_FAITH_DIGIT_6  ability/mof/FAITH_DIGIT_6.png  8x16
-MOF_FAITH_DIGIT_7  ability/mof/FAITH_DIGIT_7.png  8x16
-MOF_FAITH_DIGIT_8  ability/mof/FAITH_DIGIT_8.png  8x16
-MOF_FAITH_DIGIT_9  ability/mof/FAITH_DIGIT_9.png  8x16
+ATLAS ATLAS_ANIMAL_TOKEN 128x160@4x5
+WOLF_0                 ability/animal/WOLF_0.png                            32x32
+WOLF_1                 ability/animal/WOLF_1.png                            32x32
+WOLF_2                 ability/animal/WOLF_2.png                            32x32
+OTTER_0                ability/animal/OTTER_0.png                           32x32
+OTTER_1                ability/animal/OTTER_1.png                           32x32
+OTTER_2                ability/animal/OTTER_2.png                           32x32
+EAGLE_0                ability/animal/EAGLE_0.png                           32x32
+EAGLE_1                ability/animal/EAGLE_1.png                           32x32
+EAGLE_2                ability/animal/EAGLE_2.png                           32x32
+FISH_BOMB              ability/animal/FISH_BOMB.png                         32x32
+FISH_LIFE              ability/animal/FISH_LIFE.png                         32x32
+FISH_POWER             ability/animal/FISH_POWER.png                        32x32
+FISH_POINT             ability/animal/FISH_POINT.png                        32x32
+FISH_MONEY             ability/animal_custom/FISH_MONEY.png                 32x32
+ICON_FISH_BOMB         ability/animal/ICON_FISH_BOMB.png                    32x32
+ICON_FISH_LIFE         ability/animal/ICON_FISH_LIFE.png                    32x32
+ICON_FISH_POWER        ability/animal/ICON_FISH_POWER.png                   32x32
+ICON_FISH_POINT        ability/animal/ICON_FISH_POINT.png                   32x32
+ICON_FISH_MONEY        ability/animal_custom/ICON_FISH_MONEY.png            32x32
 
-# ── 来自 ORDER.signal.txt（本轮合并；原片段保留作记录）
-SIGNAL_GAUGE_BG    ability/signal/SIGNAL_GAUGE_BG.png    64x16
-SIGNAL_GAUGE_BAR   ability/signal/SIGNAL_GAUGE_BAR.png   64x16
-SIGNAL_GAUGE_ICON  ability/signal/SIGNAL_GAUGE_ICON.png  16x16
+ATLAS ATLAS_ANIMAL_64 320x576@5x9
+AURA_WOLF_0            ability/animal/AURA_WOLF_0.png                       64x64
+AURA_WOLF_1            ability/animal/AURA_WOLF_1.png                       64x64
+AURA_WOLF_2            ability/animal/AURA_WOLF_2.png                       64x64
+AURA_WOLF_3            ability/animal/AURA_WOLF_3.png                       64x64
+AURA_WOLF_4            ability/animal/AURA_WOLF_4.png                       64x64
+AURA_WOLF_5            ability/animal/AURA_WOLF_5.png                       64x64
+AURA_WOLF_6            ability/animal/AURA_WOLF_6.png                       64x64
+AURA_WOLF_7            ability/animal/AURA_WOLF_7.png                       64x64
+AURA_OTTER_0           ability/animal/AURA_OTTER_0.png                      64x64
+AURA_OTTER_1           ability/animal/AURA_OTTER_1.png                      64x64
+AURA_OTTER_2           ability/animal/AURA_OTTER_2.png                      64x64
+AURA_OTTER_3           ability/animal/AURA_OTTER_3.png                      64x64
+AURA_OTTER_4           ability/animal/AURA_OTTER_4.png                      64x64
+AURA_OTTER_5           ability/animal/AURA_OTTER_5.png                      64x64
+AURA_OTTER_6           ability/animal/AURA_OTTER_6.png                      64x64
+AURA_OTTER_7           ability/animal/AURA_OTTER_7.png                      64x64
+AURA_EAGLE_0           ability/animal/AURA_EAGLE_0.png                      64x64
+AURA_EAGLE_1           ability/animal/AURA_EAGLE_1.png                      64x64
+AURA_EAGLE_2           ability/animal/AURA_EAGLE_2.png                      64x64
+AURA_EAGLE_3           ability/animal/AURA_EAGLE_3.png                      64x64
+AURA_EAGLE_4           ability/animal/AURA_EAGLE_4.png                      64x64
+AURA_EAGLE_5           ability/animal/AURA_EAGLE_5.png                      64x64
+AURA_EAGLE_6           ability/animal/AURA_EAGLE_6.png                      64x64
+AURA_EAGLE_7           ability/animal/AURA_EAGLE_7.png                      64x64
+FLAME_0                ability/animal/FLAME_0.png                           64x64
+FLAME_1                ability/animal/FLAME_1.png                           64x64
+FLAME_2                ability/animal/FLAME_2.png                           64x64
+FLAME_3                ability/animal/FLAME_3.png                           64x64
+FLAME_4                ability/animal/FLAME_4.png                           64x64
+FLAME_5                ability/animal/FLAME_5.png                           64x64
+FLAME_6                ability/animal/FLAME_6.png                           64x64
+FLAME_7                ability/animal/FLAME_7.png                           64x64
+FLAME_8                ability/animal/FLAME_8.png                           64x64
+FLAME_9                ability/animal/FLAME_9.png                           64x64
+FLAME_10               ability/animal/FLAME_10.png                          64x64
+FLAME_11               ability/animal/FLAME_11.png                          64x64
+ICON_WOLF              ability/animal/ICON_WOLF.png                         64x64
+ICON_OTTER             ability/animal/ICON_OTTER.png                        64x64
+ICON_EAGLE             ability/animal/ICON_EAGLE.png                        64x64
+GAUGE_FRAME            ability/animal/GAUGE_FRAME.png                       64x64
+CARD_BOMB              ability/animal/CARD_BOMB.png                         64x64
+CARD_LIFE              ability/animal/CARD_LIFE.png                         64x64
+CARD_MONEY             ability/animal/CARD_MONEY.png                        64x64
 
-# ── 来自 ORDER.sanae_youkai.txt（本轮合并；原片段保留作记录）
-YOUKAI_AYA_S0  ability/sanae_youkai/YOUKAI_AYA_S0.png  32x64
-YOUKAI_AYA_S1  ability/sanae_youkai/YOUKAI_AYA_S1.png  32x64
-YOUKAI_AYA_S2  ability/sanae_youkai/YOUKAI_AYA_S2.png  32x64
-YOUKAI_AYA_S3  ability/sanae_youkai/YOUKAI_AYA_S3.png  32x64
-YOUKAI_AYA_S4  ability/sanae_youkai/YOUKAI_AYA_S4.png  32x64
-YOUKAI_AYA_S5  ability/sanae_youkai/YOUKAI_AYA_S5.png  32x64
-YOUKAI_AYA_S6  ability/sanae_youkai/YOUKAI_AYA_S6.png  32x64
-YOUKAI_AYA_S7  ability/sanae_youkai/YOUKAI_AYA_S7.png  32x64
-YOUKAI_AYA_S8  ability/sanae_youkai/YOUKAI_AYA_S8.png  32x64
-YOUKAI_AYA_S9  ability/sanae_youkai/YOUKAI_AYA_S9.png  32x64
-YOUKAI_AYA_S10  ability/sanae_youkai/YOUKAI_AYA_S10.png  32x64
-YOUKAI_AYA_S11  ability/sanae_youkai/YOUKAI_AYA_S11.png  32x64
-YOUKAI_AYA_S12  ability/sanae_youkai/YOUKAI_AYA_S12.png  32x64
-YOUKAI_AYA_S13  ability/sanae_youkai/YOUKAI_AYA_S13.png  32x64
-YOUKAI_AYA_S14  ability/sanae_youkai/YOUKAI_AYA_S14.png  32x64
-YOUKAI_AYA_S15  ability/sanae_youkai/YOUKAI_AYA_S15.png  32x64
-YOUKAI_AYA_S16  ability/sanae_youkai/YOUKAI_AYA_S16.png  32x64
-YOUKAI_AYA_S17  ability/sanae_youkai/YOUKAI_AYA_S17.png  32x64
-YOUKAI_AYA_S18  ability/sanae_youkai/YOUKAI_AYA_S18.png  32x64
-YOUKAI_AYA_S19  ability/sanae_youkai/YOUKAI_AYA_S19.png  32x64
-YOUKAI_AYA_S20  ability/sanae_youkai/YOUKAI_AYA_S20.png  32x64
-YOUKAI_AYA_S21  ability/sanae_youkai/YOUKAI_AYA_S21.png  32x64
-YOUKAI_AYA_S22  ability/sanae_youkai/YOUKAI_AYA_S22.png  32x64
-YOUKAI_AYA_S23  ability/sanae_youkai/YOUKAI_AYA_S23.png  32x64
+ATLAS ATLAS_ANIMAL_SMALL 128x32@8x2
+SOUL_0                 ability/animal/SOUL_0.png                            16x16
+SOUL_1                 ability/animal/SOUL_1.png                            16x16
+SOUL_2                 ability/animal/SOUL_2.png                            16x16
+SOUL_3                 ability/animal/SOUL_3.png                            16x16
+SOUL_4                 ability/animal/SOUL_4.png                            16x16
+SOUL_5                 ability/animal/SOUL_5.png                            16x16
+SOUL_6                 ability/animal/SOUL_6.png                            16x16
+SOUL_7                 ability/animal/SOUL_7.png                            16x16
+SOUL_8                 ability/animal/SOUL_8.png                            16x16
+SOUL_9                 ability/animal/SOUL_9.png                            16x16
+SOUL_10                ability/animal/SOUL_10.png                           16x16
+ITEM_P                 ability/animal/ITEM_P.png                            16x16
+ITEM_MONEY             ability/animal/ITEM_MONEY.png                        16x16
+ITEM_LIFE              ability/animal/ITEM_LIFE.png                         16x16
+ITEM_BOMB              ability/animal/ITEM_BOMB.png                         16x16
 
-# ── 来自 ORDER.youkai_option.txt（本轮合并；原片段保留作记录）
-YOUKAI_OPT_YUKARI_S22  ability/youkai_option/YOUKAI_OPT_YUKARI_S22.png  32x64
-YOUKAI_OPT_YUKARI_S23  ability/youkai_option/YOUKAI_OPT_YUKARI_S23.png  32x64
-YOUKAI_OPT_YUKARI_S24  ability/youkai_option/YOUKAI_OPT_YUKARI_S24.png  32x64
-YOUKAI_OPT_YUKARI_S25  ability/youkai_option/YOUKAI_OPT_YUKARI_S25.png  32x64
-YOUKAI_OPT_YUKARI_S26  ability/youkai_option/YOUKAI_OPT_YUKARI_S26.png  32x64
-YOUKAI_OPT_YUKARI_S27  ability/youkai_option/YOUKAI_OPT_YUKARI_S27.png  32x64
-YOUKAI_OPT_YUKARI_S28  ability/youkai_option/YOUKAI_OPT_YUKARI_S28.png  32x64
-YOUKAI_OPT_YUKARI_S29  ability/youkai_option/YOUKAI_OPT_YUKARI_S29.png  32x64
-YOUKAI_OPT_YUKARI_S30  ability/youkai_option/YOUKAI_OPT_YUKARI_S30.png  64x64
-YOUKAI_OPT_ALICE_S22  ability/youkai_option/YOUKAI_OPT_ALICE_S22.png  32x32
-YOUKAI_OPT_ALICE_S23  ability/youkai_option/YOUKAI_OPT_ALICE_S23.png  32x32
-YOUKAI_OPT_ALICE_S24  ability/youkai_option/YOUKAI_OPT_ALICE_S24.png  32x32
-YOUKAI_OPT_ALICE_S25  ability/youkai_option/YOUKAI_OPT_ALICE_S25.png  32x32
-YOUKAI_OPT_REMILIA_S20  ability/youkai_option/YOUKAI_OPT_REMILIA_S20.png  32x32
-YOUKAI_OPT_AYA_S32  ability/youkai_option/YOUKAI_OPT_AYA_S32.png  16x16
-YOUKAI_OPT_AYA_S33  ability/youkai_option/YOUKAI_OPT_AYA_S33.png  16x16
-YOUKAI_OPT_AYA_S34  ability/youkai_option/YOUKAI_OPT_AYA_S34.png  16x16
-YOUKAI_OPT_AYA_S35  ability/youkai_option/YOUKAI_OPT_AYA_S35.png  16x16
-YOUKAI_OPT_AYA_S36  ability/youkai_option/YOUKAI_OPT_AYA_S36.png  16x16
-YOUKAI_OPT_AYA_S37  ability/youkai_option/YOUKAI_OPT_AYA_S37.png  16x16
-YOUKAI_OPT_AYA_S38  ability/youkai_option/YOUKAI_OPT_AYA_S38.png  16x16
-YOUKAI_OPT_AYA_S39  ability/youkai_option/YOUKAI_OPT_AYA_S39.png  16x16
+ATLAS ATLAS_ANIMAL_FX 128x192
+STRIKE_RING            ability/animal/STRIKE_RING.png                       @0,0,128x128
+OTTER_ORB              ability/animal/OTTER_ORB.png                         @0,128,128x64
 
-# ── 来自 ORDER.ufo_gauge.txt（本轮合并；原片段保留作记录）
-UFO_ARC_STRIP  ability/ufo_gauge/UFO_ARC_STRIP.png  16x128
+ATLAS ATLAS_ANIMAL_BEAM 512x96@1x3
+BEASTAP_A              ability/animal/BEASTAP_A.png                         512x32
+BEASTAP_B              ability/animal/BEASTAP_B.png                         512x32
+EAGLE_BEAM             ability/animal/EAGLE_BEAM.png                        512x32
+
+# ══ D 段：系统卡**待定** 106–113（红魔乡…神灵庙；还会改的都在这段）══
+ATLAS ATLAS_SENRO 256x320
+SENRO_FIELD            ability/senro/FIELD.png                              @0,0,256x256
+SENRO_RING             ability/senro/RING.png                               @0,256,64x64
+SAKURA_POINT           ability/sakura/POINT.png                             @64,256,16x16
+SAKURA_SMALL           ability/sakura/SMALL.png                             @80,256,16x16
+
+ATLAS ATLAS_YK_FAM 128x256@4x8
+YOUKAI_FAM_S53_0       ability/youkai_familiar/YOUKAI_FAM_S53_0.png         32x32
+YOUKAI_FAM_S53_1       ability/youkai_familiar/YOUKAI_FAM_S53_1.png         32x32
+YOUKAI_FAM_S53_2       ability/youkai_familiar/YOUKAI_FAM_S53_2.png         32x32
+YOUKAI_FAM_S53_3       ability/youkai_familiar/YOUKAI_FAM_S53_3.png         32x32
+YOUKAI_FAM_S53_4       ability/youkai_familiar/YOUKAI_FAM_S53_4.png         32x32
+YOUKAI_FAM_S53_5       ability/youkai_familiar/YOUKAI_FAM_S53_5.png         32x32
+YOUKAI_FAM_S53_6       ability/youkai_familiar/YOUKAI_FAM_S53_6.png         32x32
+YOUKAI_FAM_S53_7       ability/youkai_familiar/YOUKAI_FAM_S53_7.png         32x32
+YOUKAI_FAM_S54_0       ability/youkai_familiar/YOUKAI_FAM_S54_0.png         32x32
+YOUKAI_FAM_S54_1       ability/youkai_familiar/YOUKAI_FAM_S54_1.png         32x32
+YOUKAI_FAM_S54_2       ability/youkai_familiar/YOUKAI_FAM_S54_2.png         32x32
+YOUKAI_FAM_S54_3       ability/youkai_familiar/YOUKAI_FAM_S54_3.png         32x32
+YOUKAI_FAM_S54_4       ability/youkai_familiar/YOUKAI_FAM_S54_4.png         32x32
+YOUKAI_FAM_S54_5       ability/youkai_familiar/YOUKAI_FAM_S54_5.png         32x32
+YOUKAI_FAM_S54_6       ability/youkai_familiar/YOUKAI_FAM_S54_6.png         32x32
+YOUKAI_FAM_S54_7       ability/youkai_familiar/YOUKAI_FAM_S54_7.png         32x32
+YOUKAI_FAM_S55_0       ability/youkai_familiar/YOUKAI_FAM_S55_0.png         32x32
+YOUKAI_FAM_S55_1       ability/youkai_familiar/YOUKAI_FAM_S55_1.png         32x32
+YOUKAI_FAM_S55_2       ability/youkai_familiar/YOUKAI_FAM_S55_2.png         32x32
+YOUKAI_FAM_S55_3       ability/youkai_familiar/YOUKAI_FAM_S55_3.png         32x32
+YOUKAI_FAM_S55_4       ability/youkai_familiar/YOUKAI_FAM_S55_4.png         32x32
+YOUKAI_FAM_S55_5       ability/youkai_familiar/YOUKAI_FAM_S55_5.png         32x32
+YOUKAI_FAM_S55_6       ability/youkai_familiar/YOUKAI_FAM_S55_6.png         32x32
+YOUKAI_FAM_S55_7       ability/youkai_familiar/YOUKAI_FAM_S55_7.png         32x32
+YOUKAI_FAM_S56_0       ability/youkai_familiar/YOUKAI_FAM_S56_0.png         32x32
+YOUKAI_FAM_S56_1       ability/youkai_familiar/YOUKAI_FAM_S56_1.png         32x32
+YOUKAI_FAM_S56_2       ability/youkai_familiar/YOUKAI_FAM_S56_2.png         32x32
+YOUKAI_FAM_S56_3       ability/youkai_familiar/YOUKAI_FAM_S56_3.png         32x32
+YOUKAI_FAM_S56_4       ability/youkai_familiar/YOUKAI_FAM_S56_4.png         32x32
+YOUKAI_FAM_S56_5       ability/youkai_familiar/YOUKAI_FAM_S56_5.png         32x32
+YOUKAI_FAM_S56_6       ability/youkai_familiar/YOUKAI_FAM_S56_6.png         32x32
+YOUKAI_FAM_S56_7       ability/youkai_familiar/YOUKAI_FAM_S56_7.png         32x32
+
+ATLAS ATLAS_YK_OPT 160x176
+YOUKAI_OPT_YUKARI_S22  ability/youkai_option/YOUKAI_OPT_YUKARI_S22.png      @0,0,32x64
+YOUKAI_OPT_YUKARI_S23  ability/youkai_option/YOUKAI_OPT_YUKARI_S23.png      @32,0,32x64
+YOUKAI_OPT_YUKARI_S24  ability/youkai_option/YOUKAI_OPT_YUKARI_S24.png      @64,0,32x64
+YOUKAI_OPT_YUKARI_S25  ability/youkai_option/YOUKAI_OPT_YUKARI_S25.png      @96,0,32x64
+YOUKAI_OPT_YUKARI_S26  ability/youkai_option/YOUKAI_OPT_YUKARI_S26.png      @128,0,32x64
+YOUKAI_OPT_YUKARI_S27  ability/youkai_option/YOUKAI_OPT_YUKARI_S27.png      @0,64,32x64
+YOUKAI_OPT_YUKARI_S28  ability/youkai_option/YOUKAI_OPT_YUKARI_S28.png      @32,64,32x64
+YOUKAI_OPT_YUKARI_S29  ability/youkai_option/YOUKAI_OPT_YUKARI_S29.png      @64,64,32x64
+YOUKAI_OPT_YUKARI_S30  ability/youkai_option/YOUKAI_OPT_YUKARI_S30.png      @96,64,64x64
+YOUKAI_OPT_ALICE_S22   ability/youkai_option/YOUKAI_OPT_ALICE_S22.png       @0,128,32x32
+YOUKAI_OPT_ALICE_S23   ability/youkai_option/YOUKAI_OPT_ALICE_S23.png       @32,128,32x32
+YOUKAI_OPT_ALICE_S24   ability/youkai_option/YOUKAI_OPT_ALICE_S24.png       @64,128,32x32
+YOUKAI_OPT_ALICE_S25   ability/youkai_option/YOUKAI_OPT_ALICE_S25.png       @96,128,32x32
+YOUKAI_OPT_REMILIA_S20 ability/youkai_option/YOUKAI_OPT_REMILIA_S20.png     @128,128,32x32
+YOUKAI_OPT_AYA_S32     ability/youkai_option/YOUKAI_OPT_AYA_S32.png         @0,160,16x16
+YOUKAI_OPT_AYA_S33     ability/youkai_option/YOUKAI_OPT_AYA_S33.png         @16,160,16x16
+YOUKAI_OPT_AYA_S34     ability/youkai_option/YOUKAI_OPT_AYA_S34.png         @32,160,16x16
+YOUKAI_OPT_AYA_S35     ability/youkai_option/YOUKAI_OPT_AYA_S35.png         @48,160,16x16
+YOUKAI_OPT_AYA_S36     ability/youkai_option/YOUKAI_OPT_AYA_S36.png         @64,160,16x16
+YOUKAI_OPT_AYA_S37     ability/youkai_option/YOUKAI_OPT_AYA_S37.png         @80,160,16x16
+YOUKAI_OPT_AYA_S38     ability/youkai_option/YOUKAI_OPT_AYA_S38.png         @96,160,16x16
+YOUKAI_OPT_AYA_S39     ability/youkai_option/YOUKAI_OPT_AYA_S39.png         @112,160,16x16
+
+ATLAS ATLAS_MOF_FAITH 128x16
+MOF_FAITH_ICON         ability/mof/FAITH_ICON.png                           @0,0,16x16
+FAITH_DOT              ability/mof/FAITH_DOT.png                            @16,0,16x16
+MOF_FAITH_DIGIT_0      ability/mof/FAITH_DIGIT_0.png                        @32,0,8x16
+MOF_FAITH_DIGIT_1      ability/mof/FAITH_DIGIT_1.png                        @40,0,8x16
+MOF_FAITH_DIGIT_2      ability/mof/FAITH_DIGIT_2.png                        @48,0,8x16
+MOF_FAITH_DIGIT_3      ability/mof/FAITH_DIGIT_3.png                        @56,0,8x16
+MOF_FAITH_DIGIT_4      ability/mof/FAITH_DIGIT_4.png                        @64,0,8x16
+MOF_FAITH_DIGIT_5      ability/mof/FAITH_DIGIT_5.png                        @72,0,8x16
+MOF_FAITH_DIGIT_6      ability/mof/FAITH_DIGIT_6.png                        @80,0,8x16
+MOF_FAITH_DIGIT_7      ability/mof/FAITH_DIGIT_7.png                        @88,0,8x16
+MOF_FAITH_DIGIT_8      ability/mof/FAITH_DIGIT_8.png                        @96,0,8x16
+MOF_FAITH_DIGIT_9      ability/mof/FAITH_DIGIT_9.png                        @104,0,8x16
+
+ATLAS ATLAS_SIGNAL 128x32
+SIGNAL_GAUGE_BG        ability/signal/SIGNAL_GAUGE_BG.png                   @0,0,64x16
+SIGNAL_GAUGE_BAR       ability/signal/SIGNAL_GAUGE_BAR.png                  @64,0,64x16
+SIGNAL_GAUGE_ICON      ability/signal/SIGNAL_GAUGE_ICON.png                 @0,16,16x16
+
+ATLAS ATLAS_UFO_BODY 256x256@4x4
+UFO_RED_0              ability/ufo/UFO_RED_0.png                            64x64
+UFO_RED_1              ability/ufo/UFO_RED_1.png                            64x64
+UFO_RED_2              ability/ufo/UFO_RED_2.png                            64x64
+UFO_RED_3              ability/ufo/UFO_RED_3.png                            64x64
+UFO_BLUE_0             ability/ufo/UFO_BLUE_0.png                           64x64
+UFO_BLUE_1             ability/ufo/UFO_BLUE_1.png                           64x64
+UFO_BLUE_2             ability/ufo/UFO_BLUE_2.png                           64x64
+UFO_BLUE_3             ability/ufo/UFO_BLUE_3.png                           64x64
+UFO_GREEN_0            ability/ufo/UFO_GREEN_0.png                          64x64
+UFO_GREEN_1            ability/ufo/UFO_GREEN_1.png                          64x64
+UFO_GREEN_2            ability/ufo/UFO_GREEN_2.png                          64x64
+UFO_GREEN_3            ability/ufo/UFO_GREEN_3.png                          64x64
+UFO_RAINBOW_0          ability/ufo/UFO_RAINBOW_0.png                        64x64
+UFO_RAINBOW_1          ability/ufo/UFO_RAINBOW_1.png                        64x64
+UFO_RAINBOW_2          ability/ufo/UFO_RAINBOW_2.png                        64x64
+UFO_RAINBOW_3          ability/ufo/UFO_RAINBOW_3.png                        64x64
+
+ATLAS ATLAS_UFO_TOKEN 128x224
+TOKEN_RED_0            ability/ufo/TOKEN_RED_0.png                          @0,0,32x32
+TOKEN_RED_1            ability/ufo/TOKEN_RED_1.png                          @32,0,32x32
+TOKEN_BLUE_0           ability/ufo/TOKEN_BLUE_0.png                         @64,0,32x32
+TOKEN_BLUE_1           ability/ufo/TOKEN_BLUE_1.png                         @96,0,32x32
+TOKEN_GREEN_0          ability/ufo/TOKEN_GREEN_0.png                        @0,32,32x32
+TOKEN_GREEN_1          ability/ufo/TOKEN_GREEN_1.png                        @32,32,32x32
+TOKEN_RBRED_0          ability/ufo/TOKEN_RBRED_0.png                        @64,32,32x32
+TOKEN_RBRED_1          ability/ufo/TOKEN_RBRED_1.png                        @96,32,32x32
+TOKEN_RBBLUE_0         ability/ufo/TOKEN_RBBLUE_0.png                       @0,64,32x32
+TOKEN_RBBLUE_1         ability/ufo/TOKEN_RBBLUE_1.png                       @32,64,32x32
+TOKEN_RBGREEN_0        ability/ufo/TOKEN_RBGREEN_0.png                      @64,64,32x32
+TOKEN_RBGREEN_1        ability/ufo/TOKEN_RBGREEN_1.png                      @96,64,32x32
+UFO_ARC_STRIP          ability/ufo_gauge/UFO_ARC_STRIP.png                  @0,96,16x128
+
+ATLAS ATLAS_TRANCE_SPIRIT 128x96
+SPIRIT_PLAIN_0         ability/trance/SPIRIT_PLAIN_CELL_C0R0.png            @0,0,32x32
+SPIRIT_PLAIN_1         ability/trance/SPIRIT_PLAIN_CELL_C0R1.png            @32,0,32x32
+SPIRIT_TRANCE_0        ability/trance/SPIRIT_TRANCE_CELL_C0R0.png           @64,0,32x32
+SPIRIT_TRANCE_1        ability/trance/SPIRIT_TRANCE_CELL_C0R1.png           @96,0,32x32
+SPIRIT_TRANCE_2        ability/trance/SPIRIT_TRANCE_CELL_C1R0.png           @0,32,32x32
+SPIRIT_TRANCE_3        ability/trance/SPIRIT_TRANCE_CELL_C1R1.png           @32,32,32x32
+SPIRIT_TRANCE_4        ability/trance/SPIRIT_TRANCE_CELL_C2R0.png           @64,32,32x32
+SPIRIT_TRANCE_5        ability/trance/SPIRIT_TRANCE_CELL_C2R1.png           @96,32,32x32
+SPIRIT_TRANCE_6        ability/trance/SPIRIT_TRANCE_CELL_C3R0.png           @0,64,32x32
+SPIRIT_TRANCE_7        ability/trance/SPIRIT_TRANCE_CELL_C3R1.png           @32,64,32x32
+TPOINT                 ability/tpoint/TPOINT.png                            @64,64,16x16
+
+ATLAS ATLAS_TRANCE_GAUGE 128x128
+TRANCE_GAUGE_TOP       ability/trance/GAUGE_AC.png                          @0,0,64x64
+TRANCE_GAUGE_BAR       ability/trance/GAUGE_BAR.png                         @64,0,48x32
+TRANCE_GAUGE_BAR2      ability/trance/GAUGE_BAR2.png                        @0,64,48x32
+TRANCE_GAUGE_MARK      ability/trance/GAUGE_MARK.png                        @48,64,16x32
+TRANCE_GAUGE_FRAME_A   ability/trance/GAUGE_FRAME_A.png                     @64,64,32x48
+TRANCE_GAUGE_FRAME_B   ability/trance/GAUGE_FRAME_B.png                     @96,64,32x48
+TRANCE_TIERUP_1        ability/trance/TIERUP_1.png                          @0,112,32x16
+TRANCE_TIERUP_2        ability/trance/TIERUP_2.png                          @32,112,32x16
+TRANCE_TIERUP_MAX      ability/trance/TIERUP_MAX.png                        @64,112,32x16
+
+ATLAS ATLAS_TRANCE_POPUP 128x16
+TRANCE_POPUP_LIFE1     ability/trance/POPUP_LIFE1.png                       @0,0,24x8
+TRANCE_POPUP_LIFE2     ability/trance/POPUP_LIFE2.png                       @24,0,24x8
+TRANCE_POPUP_SPELL1    ability/trance/POPUP_SPELL1.png                      @48,0,24x8
+TRANCE_POPUP_SPELL2    ability/trance/POPUP_SPELL2.png                      @72,0,24x8
+TRANCE_POPUP_POINT10   ability/trance/POPUP_POINT10.png                     @96,0,32x8
+TRANCE_POPUP_POINT100  ability/trance/POPUP_POINT100.png                    @0,8,32x8
+
+ATLAS ATLAS_TRANCE_ASTRAL 512x512@1x1
+TRANCE_ASTRAL          ability/trance/ASTRAL.png                            512x512
+
+# ★ 2026-09-13 第六轮追加：灵界**进出幕布**的「有形状遮罩」贴图（113）。
+#   一手 = TH13 `effect.anm` entry0 `effect/eff_switch.png`（**64×64**，纯 alpha 笔触形状），
+#   消费它的 4 支脚本声明 `sprite0 = {0,1,128,128}` + `scrollMode(0,1)`
+#   （U=WRAP 平铺 2 次 / V 从第 1 行起、越过第 63 行 CLAMP）⇒
+#   `make_trance_art.py::make_switch()` 把这套寻址**逐像素烘成 128×128**（图集不能越界 UV）。
+#   ✅ 追加段：**只往后加**，不挪任何既有行 ⇒ 既有 entry/sprite 号一个都不动（本轮实跑核对过）。
+ATLAS ATLAS_TRANCE_SWITCH 128x128@1x1
+TRANCE_SWITCH          ability/trance/SWITCH.png                            128x128
+
+# ══ 退役段：只保 token 能解析，**不占 entry、不出美术** ══
+#   108「妖侧本体」55 张（紫 / 爱丽丝各 11 + 文 24 + 蕾米莉亚 9）**本次不进图集** ——
+#   用户 2026-09-13 裁决：「妖侧本体的"连接"暂时删除，但是其本身不要删除，
+#   没人引用是因为 108 还没开始真做」。源 PNG **一个都没删**：
+#   `assets/ability/youkai/YOUKAI_{YUKARI,ALICE,REMILIA}_S*.png`、`assets/ability/sanae_youkai/YOUKAI_AYA_S*.png`。
+#   为什么还要留这 55 行 REF：它们**不是完全没人引用** —— 脚本 189–203 / 218–222（"死脚本"：
+#   没有任何 C 代码起它们）里仍然写着 `@YOUKAI_YUKARI_S11` 这类占位；名字从 ORDER 消失会让
+#   整个构建抛「脚本里有未定义的占位」。⇒ 统一指向 `RETIRED_BLANK`（1×1 全透明）：
+#   死脚本照旧编得进去、画不出东西（它们本来就不会被调用）。
+#   ⇒ 108 真做的时候：把这批源图排成图集**追加到本文件末尾**（老行一行不动），再把下面这段 REF 删掉。
+#   依据：`ATLAS-MERGE-AUDIT.md` §3.2（死图清单）+ §7-①（这 55 张的出路建议）。
+ATLAS ATLAS_RETIRED 1x1@1x1
+RETIRED_BLANK          ability/retired/BLANK_1x1.png                    1x1
+
+REF YOUKAI_YUKARI_S11 RETIRED_BLANK
+REF YOUKAI_YUKARI_S12 RETIRED_BLANK
+REF YOUKAI_YUKARI_S13 RETIRED_BLANK
+REF YOUKAI_YUKARI_S14 RETIRED_BLANK
+REF YOUKAI_YUKARI_S15 RETIRED_BLANK
+REF YOUKAI_YUKARI_S16 RETIRED_BLANK
+REF YOUKAI_YUKARI_S17 RETIRED_BLANK
+REF YOUKAI_YUKARI_S18 RETIRED_BLANK
+REF YOUKAI_YUKARI_S19 RETIRED_BLANK
+REF YOUKAI_YUKARI_S20 RETIRED_BLANK
+REF YOUKAI_YUKARI_S21 RETIRED_BLANK
+REF YOUKAI_ALICE_S11 RETIRED_BLANK
+REF YOUKAI_ALICE_S12 RETIRED_BLANK
+REF YOUKAI_ALICE_S13 RETIRED_BLANK
+REF YOUKAI_ALICE_S14 RETIRED_BLANK
+REF YOUKAI_ALICE_S15 RETIRED_BLANK
+REF YOUKAI_ALICE_S16 RETIRED_BLANK
+REF YOUKAI_ALICE_S17 RETIRED_BLANK
+REF YOUKAI_ALICE_S18 RETIRED_BLANK
+REF YOUKAI_ALICE_S19 RETIRED_BLANK
+REF YOUKAI_ALICE_S20 RETIRED_BLANK
+REF YOUKAI_ALICE_S21 RETIRED_BLANK
+REF YOUKAI_AYA_S0 RETIRED_BLANK
+REF YOUKAI_AYA_S1 RETIRED_BLANK
+REF YOUKAI_AYA_S2 RETIRED_BLANK
+REF YOUKAI_AYA_S3 RETIRED_BLANK
+REF YOUKAI_AYA_S4 RETIRED_BLANK
+REF YOUKAI_AYA_S5 RETIRED_BLANK
+REF YOUKAI_AYA_S6 RETIRED_BLANK
+REF YOUKAI_AYA_S7 RETIRED_BLANK
+REF YOUKAI_AYA_S8 RETIRED_BLANK
+REF YOUKAI_AYA_S9 RETIRED_BLANK
+REF YOUKAI_AYA_S10 RETIRED_BLANK
+REF YOUKAI_AYA_S11 RETIRED_BLANK
+REF YOUKAI_AYA_S12 RETIRED_BLANK
+REF YOUKAI_AYA_S13 RETIRED_BLANK
+REF YOUKAI_AYA_S14 RETIRED_BLANK
+REF YOUKAI_AYA_S15 RETIRED_BLANK
+REF YOUKAI_AYA_S16 RETIRED_BLANK
+REF YOUKAI_AYA_S17 RETIRED_BLANK
+REF YOUKAI_AYA_S18 RETIRED_BLANK
+REF YOUKAI_AYA_S19 RETIRED_BLANK
+REF YOUKAI_AYA_S20 RETIRED_BLANK
+REF YOUKAI_AYA_S21 RETIRED_BLANK
+REF YOUKAI_AYA_S22 RETIRED_BLANK
+REF YOUKAI_AYA_S23 RETIRED_BLANK
+REF YOUKAI_REMILIA_S11 RETIRED_BLANK
+REF YOUKAI_REMILIA_S12 RETIRED_BLANK
+REF YOUKAI_REMILIA_S13 RETIRED_BLANK
+REF YOUKAI_REMILIA_S14 RETIRED_BLANK
+REF YOUKAI_REMILIA_S15 RETIRED_BLANK
+REF YOUKAI_REMILIA_S16 RETIRED_BLANK
+REF YOUKAI_REMILIA_S17 RETIRED_BLANK
+REF YOUKAI_REMILIA_S18 RETIRED_BLANK
+REF YOUKAI_REMILIA_S19 RETIRED_BLANK
+
+#
+# ★★ 2026-09-15 追加（110 风神录 · TH10「信仰点」原生美术；**只在文件末尾 append，未动任何既有行**）
+#   大信仰点 = TH10 道具类型 3（分数表 `th10:0x41b57f`：+5000/8000/10000、弹窗色 0xff00ff00）
+#              → `bullet.anm` script377 → **sprite346 `(32,208,16,16)`**
+#   小信仰点 = 类型 9（`th10:0x41b5fc`：+100）→ script383 → sprite352 `(112,208,16,16)`
+#   微信仰点 = 类型 8（`th10:0x41b5d6`：+10 ）→ script382 → sprite351 `(112,208,16,16)`
+#   ⚠ 小 / 微 在 TH10 里**共用同一个矩形**（sprite352 与 sprite351 字面同值，ZUN 自己的重号）
+#     ⇒ 小/微 用已有的 `FAITH_DOT`（本文件第 316 行那个 ATLAS_MOF_FAITH 成员），这里只补「大」。
+#   三条一手链（类型→信仰值 / 类型→脚本号 / 脚本→sprite）与像素校验见
+#   `assets/ability/make_mof_art.py` 文件头 §2026-09-15 定案。
+FAITH_DOT_BIG          ability/mof/FAITH_DOT_BIG.png                 16x16
+
+#
+# ★★ 2026-09-15b 追加（110 风神录 · **微信仰点**的独立贴图；同样只在**文件末尾** append）
+#   为什么：三档信仰点的外观要互相可区分，而 TH10 / TH11 的**小档与微档共用同一个矩形**
+#     （TH10 `script383`→`sprite352`、`script382`→`sprite351`，两个号字面同值 `(112,208,16,16)`）。
+#   取哪一格：TH10 `ItemManager::on_draw__body` `th10:0x41b8e0` 对新出的 sprite 有**两族** ——
+#     `vtype+343`（画用 y ≥ 8.0 的可见档）与 `vtype+352`（画用 y < 8.0 那一支）。
+#     后者里 **vtype 8 / 9（微 / 小信仰点的视觉类型）= `sprite360` / `sprite361` = `(240,208,16,16)`**；
+#     同族 vtype 3（大信仰点）那格 `sprite355` `(160,208)` 与它**逐像素只差 2 个像素**（同一张素色绿点）。
+#   性质：**像素 100% 原版切图**（零自绘）；❓**自定**的只是「把这一格指给微档」——
+#     原版可见分支给 type 8 的仍是 `(112,208)`。用户 2026-09-15 已授权自造，这里连自造都不必。
+#   一手链 / 逐条反汇编 / 三格像素差：`assets/ability/make_mof_art.py` 文件头 §2026-09-15b；
+#   登记：`TUNING.md` §2.6。
+FAITH_DOT_MICRO        ability/mof/FAITH_DOT_MICRO.png               16x16
+
+# ============================================================================================
+# TH13 大字体的 HUD 字形（卡 113 灵界剩余时间 `%.2fs` 用）—— **原版切图，零自绘**
+#   源：TH13 的 `ascii/ascii.png`（256×512）里**唯二 39 像素高**的两行 = 大字体（TH13 HUD 用，
+#   `TranceManager__on_draw__body` 把字体 id 设成 7）。切图脚本 `assets/ability/make_th13_ascii_art.py`。
+#   为什么不用 TH18 遗留的 font 2：用户 2026-09-15 口径「得是 ascii 那张图的 anm，图像已经不遗留在
+#   th18 里面了，得走 th15 卡 UI 的那条路」⇒ 走"原版贴图 → ability.anm 图集 → UI 层 VM"。
+#   ⚠ 追加**在最末尾**：图集条目按顺序分配 sprite 号，追加不会移动任何已有号（已验证，见 AUDIT §CZ）。
+# ============================================================================================
+ATLAS ATLAS_TH13ASCII 128x120@4x3
+TH13ASCII_D0          ability/th13ascii/D0.png                            32x40
+TH13ASCII_D1          ability/th13ascii/D1.png                            32x40
+TH13ASCII_D2          ability/th13ascii/D2.png                            32x40
+TH13ASCII_D3          ability/th13ascii/D3.png                            32x40
+TH13ASCII_D4          ability/th13ascii/D4.png                            32x40
+TH13ASCII_D5          ability/th13ascii/D5.png                            32x40
+TH13ASCII_D6          ability/th13ascii/D6.png                            32x40
+TH13ASCII_D7          ability/th13ascii/D7.png                            32x40
+TH13ASCII_D8           ability/th13ascii/D8.png                            32x40
+TH13ASCII_D9           ability/th13ascii/D9.png                            32x40
+TH13ASCII_DOT          ability/th13ascii/DOT.png                           32x40
+TH13ASCII_S            ability/th13ascii/S.png                             32x40
+
+# ============================================================================================
+# ★★ 2026-09-15 追加（110 风神录 × 111 地灵殿 的**组合 UI**）—— 「×」字形
+#
+#   为什么：组合 UI 的行 2 = `6 位最大得点` + `×` + `倍率`（用户 2026-09-15 口径 ①②，`NEXT.md` §2A）。
+#   本仓 `FONT2_*`（TH18 font 2 的 15 个字形）**没有 `'*'`**（`native/sdk.c` 的 `hud_vm_glyph()`
+#   只有 `0-9 . % + -` ⇒ 写 `"*"` 会被当空格跳过），TH10 `front.anm` 的 sprite40/41/42 也不是乘号。
+#
+#   ★★★ **2026-09-15f 第二轮（用户实跑口径）改过这一格**，两次都记在这里：
+#     · 第一版借 **TH11 `ascii.anm` entry0 的 sprite10**（`(140,0,14,14)`，墨迹 7×8）——
+#       它的形状是**四角菱形（✦）**，用户原话「**乘号是叉子不是 × 号**」⇒ 否掉。
+#     · 现在用 **TH18 自己 `ascii_1280.png` 的 sprite209** = **font 2 的 `'*'`**，
+#       它本来就画成一个 **X 形（两条粗斜线交叉）** ⇒ 既是一手（同一个字符）、又是用户要的外观，
+#       而且与同一行倍率的数字**同一套 font 2**（同尺寸、同基线）。
+#   一手三条（逐条见 `assets/ability/make_faith_hud_art.py` 的文件头）：
+#     ① 字符→字形号：font 2/3 的 `'*'` 走固定号（`engine/anm/th18/03-ascii-text.md` §0b）；
+#     ② 那一排特殊符号逐格量像素：`208='-' / 209=X 形 / 210='%' / 211='.' / 212='+'`
+#        （与 `make_font2_art.py` 的表逐格对上）⇒ **209 只能是 `'*'`**；
+#     ③ TH11 的一手格式串 `"%.6d*%1.2f"`（`th11:0x494198`）用的就是星号字符 ⇒ 没有口径替换。
+#
+#   切图：**16×20 的单元连留白一起切、居中补进 16×32 画布**（与 `ATLAS_FONT2`/`make_font2_art.py`
+#   同一套约定）—— 于是「精灵中心 = 单元水平中线」，C 侧定位算式与 `ce_hud_vm_text_set` 完全一致。
+#   ⚠ 矩形必须保持 16×32（别按墨迹裁）：`scale.x` 乘的是 sprite 矩形宽（`th18:0x481703`）。
+#   生成器：`assets/ability/make_faith_hud_art.py`（`--dump` 可复核字形）。
+#   ⚠ 追加在**最末尾**：图集条目按顺序分配 sprite 号，追加不会移动任何已有号
+#     （本轮只改了这两行自己 —— 它们不在 `ORDER.frozen.txt` 的冻结段里，**sprite 号 430 不变**）。
+# ============================================================================================
+ATLAS ATLAS_FAITH_HUD 16x32
+SIGNAL_MUL             ability/faith_hud/MUL.png                      @0,0,16x32
+
+# ============================================================================================
+# ★★ 2026-09-16 追加（111 地灵殿 · 咲夜×二小姐「蓄力清屏」）—— **爆闪**那 4 张图
+#
+#   为什么：用户口径「二小姐特技的蓄力得有音效和动画」。这条特技要两发特效 = **蓄力光环** +
+#   **松手清屏那一下的爆闪**；光环走 `drawPoly`（**不消耗 sprite**：TH17 `pl02.anm` script30 与
+#   TH18 原生 `ability.anm` script49 都写 `sprite(-1)`）⇒ 本段只为爆闪出图，光环一个 sprite 都不要。
+#
+#   一手出处（逐条；全链见 `engine/card/th18/13-mallet-clear-and-th17-charge.md` §1.4 / §3.2）：
+#     · anm = TH18 原生 `ability.anm` **entry0**（`name: "player/option/op00.png"`，256×512）；
+#     · **script28**（= 原生卡 42「小槌」挥击那支 VM 的脚本，卡侧状态机 `th18:0x40eed0`）正文里
+#       `sprite85/86/87` = (0,160,48,47) / (48,160,48,47) / (96,160,48,47)（三帧循环，每 6 帧换一张）；
+#     · 卡 42 建 VM 时卡侧 `set_sprite(0x29)` = **sprite41** = (32,80,32,16)（`th18:0x40f161` 立即数）。
+#     ⇒ 4 张**逐像素照切**（生成器 `assets/ability/make_flan_art.py`，`--dump` 可复核；源文件
+#       `local/th18.v1.00a/anm/ability/player/option/op00.png` = 原生贴图，只在 local/，不入库）。
+#
+#   ⚠ 已排除「这张图会按机体被换掉」：TH18 整包 .dat 里**只有一张** `player/option/op00.png`，
+#     而 entry0 同时供 8 支 option 脚本取图（`th18:0x40a790` 的 15 个调用点传的脚本号 =
+#     2/6/7/14/16/18/20/22/23，各取 sprite 0 / 7 / 21..28+35..30 / 52 / 59..61 / 64..67 /
+#     68..71 / 76..78 —— 全在 entry0 的 sprite0..99 段内）⇒ 它是「所有 option 图的总表」。
+#     抠图的实际理由只是**跟本仓既有管线一致**：`assets/ability/scripts/` 里没有任何一条追加脚本
+#     直接写原生 sprite 号（全部 `@NAME@` 或 `sprite(-1)`），抠了还能给 C 侧留
+#     `CE_ANM_ABILITY_SPRITE_FLAN_MALLET_*` 宏。
+#
+#   ⚠ 追加在**最末尾**：图集条目按顺序分配 sprite 号 ⇒ append 不会移动任何已有号
+#     （新增 entry **53** / sprite **431..434**；`ORDER.frozen.txt` 的冻结段一行未动）。
+# ============================================================================================
+ATLAS ATLAS_FLAN 144x64
+FLAN_MALLET_IDLE       ability/flan/FLAN_MALLET_IDLE.png              @0,0,32x16
+FLAN_MALLET_SWING_0    ability/flan/FLAN_MALLET_SWING_0.png           @0,16,48x47
+FLAN_MALLET_SWING_1    ability/flan/FLAN_MALLET_SWING_1.png           @48,16,48x47
+FLAN_MALLET_SWING_2    ability/flan/FLAN_MALLET_SWING_2.png           @96,16,48x47
+# ============================================================================================
+# 2026-09-16k 追加：卡 110（风神录）**灵击的火星** —— TH10 `bullet.anm` entry2 的 `sprite330` 1:1 切图
+#   · 用户口径：「灵击依然没有特效」⇒ 给 110/111 的灵击补视觉（110 用 TH10 原版的火星）。
+#   · 源 = `local/th10.v1.00a/anm/bullet/bullet/etama2.png`（TH10 `bullet.anm` **entry2**，256×256；
+#     贴图**内嵌在 .anm 里**，用 `thanm -x 10 bullet.anm` 解出来 —— 命令写在
+#     `assets/ability/make_mof_bomb_art.py` 的报错信息里）。
+#   · 矩形 = `sprite330` = **(0, 224, 32, 32)**（`local/th10.v1.00a/anm/bullet/bullet.anm.txt` 第 15480 行）。
+#     ⚠ 读 TH10 必须 `-m local/vendor/thpages/static/mapfile/v4.anmm`（TH10 = anm v4；用 v8 的表会打出
+#       「名字是 v8、号码是 v4」的错文本，例：`3` 在 v4 是 `sprite`、在 v8 是 `stop`）。
+#   · 一手用法 = TH10 `bullet.anm` **script398 / script399**（灵击本体的两支火星子脚本，正文第一行
+#     就是 `sprite(sprite330)`）；它们的全文与逐条解读见 `assets/ability/scripts/280_mof_bomb_spark.anm.txt`。
+#   · ⚠ **必须抠图**：330 是 **TH10** 那张表的号，我们编的是 **TH18 `ability.anm`**，
+#     两个文件的 sprite 表毫无关系（TH18 的 330 号是另一张图）⇒ 脚本里只能走 `@MOF_BOMB_SPARK@`。
+#   · 新增 entry **54** / sprite **435**（append 在最末尾 ⇒ 一个既有号都没动）。
+# ============================================================================================
+ATLAS ATLAS_MOF_BOMB 32x32
+MOF_BOMB_SPARK         ability/mof_bomb/MOF_BOMB_SPARK.png         @0,0,32x32
+# ============================================================================================
+# 2026-09-16m 追加：卡 111（地灵殿）**魔理沙子机的弹** —— TH18 原生 `pl01.anm` entry0 的
+#   `sprite24/25/26/27` 1:1 切图（用户实跑「魔理沙发弹样式不对」→「**弹的贴图**」）
+#   · 一手（`engine/sht/th18/02-shooter-record.md` §4）：**装备卡子机的弹，贴图来自 `ability.anm`** ——
+#     卡侧开火期间引擎把 `player+0x10` 换成 `ABILITY_MANAGER->ability_anm`（`th18:0x40aa03`），
+#     所以 shooter 记录 `+0x22`（ANM 脚本号）在卡子机这条路上**必须是 ability.anm 的号段**。
+#     111 的魔理沙五组（槽 `0x29`–`0x2d`）原来指到 116 的「季节点」弹 ⇒ 打出来是季节点 ✗。
+#   · 源 = `local/th18.v1.00a/anm/pl01/player/pl01/pl01.png`（entry0 画布 256×512、内嵌图像 256×320）。
+#   · 矩形 = `pl01.anm.txt` 的 sprite 表：sprite24/25/26/27 = (1/33/65/97, 145, 30, 14)；
+#     一手用法 = 同文件 **script5** 正文（`sprite(sprite24)` + 命中链 25→26→27 → `delete()`）。
+#   · 新增 entry **55** / sprite **436..439**（append 在最末尾 ⇒ 一个既有号都没动）。
+# ============================================================================================
+ATLAS ATLAS_MARISA_BULLET 120x14
+MARISA_BULLET_0        ability/marisa_bullet/MARISA_BULLET_0.png       @0,0,30x14
+MARISA_BULLET_1        ability/marisa_bullet/MARISA_BULLET_1.png       @30,0,30x14
+MARISA_BULLET_2        ability/marisa_bullet/MARISA_BULLET_2.png       @60,0,30x14
+MARISA_BULLET_3        ability/marisa_bullet/MARISA_BULLET_3.png       @90,0,30x14
+# ============================================================================================
+# 2026-09-16n 追加：卡 111（地灵殿）**魔理沙的元素子机 + 元素子机弹** —— TH11 `pl01.anm` entry0 的
+#   1:1 切图（用户口径：「**你得用 th11 的魔理沙子机贴图和弹幕样式呀**」+「**切换子机的部分是帕秋莉的特效啊！**」）
+#
+#   · 一手链：TH11 的子机 VM 由 `Player::repopulate_options` `th11:0x432cc0` 建，脚本号按组合号
+#     （`3*CHARACTER + SUBSHOT`）选；**只有组合 4（MarisaB）是「五档 = 五种脚本」**
+#     （`th11:0x433465 mov ecx,[ebx+0x8bac]` / `0x433470 add ecx,0x22` ⇒ 脚本 34..38），
+#     而脚本 34..38 画的正是**五个 16×16 纯色球**（红蓝绿黄褐 = 火水木金土）
+#     ⇒ 「切换子机」＝帕秋莉那条特技的真身（用户纠正的就是这一点）。
+#   · 子机弹：`Player::shoot_one_bullet` `th11:0x433f90` 的 `0x4341fb movsx eax,WORD [edi+0x1e]`
+#     → `0x4341ff add eax,5` → `create(pl0X.anm, 号, layer 22)`：**TH11 的子机弹永远走 pl0X.anm、
+#     号 = shooter[+0x1e] + 5**；TH18 相反（卡子机走 ability.anm、`+0x22` 直接给号）
+#     ⇒ 我们**必须**把这五格搬进 ability.anm。
+#   · 球 / 弹的逐格矩形见 `assets/ability/make_marisa_elem_art.py` 的文件头（含球色↔弹色的交叉核对）。
+#   · 新增 entry **56 / 57**、sprite **440..444**（球）与 **445..449**（弹）；
+#     同批新脚本 = **283..292**。append 在最末尾 ⇒ 一个既有号都没动。
+# ============================================================================================
+ATLAS ATLAS_MARISA_ELEM 80x16
+MARISA_ELEM_FIRE       ability/marisa_elem/MARISA_ELEM_FIRE.png                  @0,0,16x16
+MARISA_ELEM_WATER      ability/marisa_elem/MARISA_ELEM_WATER.png                 @16,0,16x16
+MARISA_ELEM_WOOD       ability/marisa_elem/MARISA_ELEM_WOOD.png                  @32,0,16x16
+MARISA_ELEM_METAL      ability/marisa_elem/MARISA_ELEM_METAL.png                 @48,0,16x16
+MARISA_ELEM_EARTH      ability/marisa_elem/MARISA_ELEM_EARTH.png                 @64,0,16x16
+ATLAS ATLAS_MARISA_ELEM_BULLET 160x16
+MARISA_ELEM_BULLET_FIRE      ability/marisa_elem/MARISA_ELEM_BULLET_FIRE.png           @0,0,32x16
+MARISA_ELEM_BULLET_WATER     ability/marisa_elem/MARISA_ELEM_BULLET_WATER.png          @32,0,32x16
+MARISA_ELEM_BULLET_WOOD      ability/marisa_elem/MARISA_ELEM_BULLET_WOOD.png           @64,0,32x16
+MARISA_ELEM_BULLET_METAL     ability/marisa_elem/MARISA_ELEM_BULLET_METAL.png          @96,0,32x16
+MARISA_ELEM_BULLET_EARTH     ability/marisa_elem/MARISA_ELEM_BULLET_EARTH.png          @128,0,32x16
+# ============================================================================================
+# 2026-09-16p 追加：卡 110/111 **灵击环的「电流边」竖条** —— TH10 `bullet.anm` entry3 的
+#   `sprite362` 1:1 切图（用户实跑：「th10 的灵击…**边缘有类似于电流的特效**」）
+#   · 一手：TH10 的四支柱环 `bullet.anm` **script394..397** 正文第一行 = `sprite(sprite362)`，
+#     配 `texCircle(32)` —— **把一条 14×128 的竖条弯成圈**；竖条自带的分段 alpha 带
+#     （逐行剖面见 `make_mof_bomb_art.py` 的 `--dump`）就是那种「电流边」。
+#   · 源 = `local/th10.v1.00a/anm/bullet/bullet/etama3.png`（TH10 `bullet.anm` entry3，128×128，
+#     贴图内嵌在 .anm 里）；矩形 = `sprite362` = **(65, 0, 14, 128)**。
+#   · 新增 entry **58** / sprite **450**；同批新脚本 = **293**。append 在最末尾 ⇒ 一个既有号都没动。
+# ============================================================================================
+ATLAS ATLAS_MOF_BOMB_RING 14x128
+MOF_BOMB_RING_STRIP    ability/mof_bomb/MOF_BOMB_RING_STRIP.png    @0,0,14x128
+# ============================================================================================
+# 2026-09-16q 追加：卡 111 的**荷取（河童）罩子水泡** —— TH11 `pl01.anm` entry3 的 1:1 切图
+#   （用户口径：「放B是消弹，给一个防护罩（**有贴图特效**）…对于原生的B，河童特效也会引入…一个罩子」）
+#   · 一手：TH11 `Bomb::start__marisa_c` `th11:0x4076e7` / `th11:0x4076ec`（`push 0x16` 层 22 +
+#     `push 0x3a` 脚本 58）→ `th11:0x407705 call 0x455b10` 起的就是 **pl01.anm script58**
+#     （`player+0x10` = 已加载的角色 anm，`th11:0x42f8c9`）；该脚本的实体行 = `sprite(sprite76)`
+#     = entry3 `player/pl01/pl01c.png` 的 **(1, 1, 254, 254)**。
+#   · 源 = `local/th11.v1.00a/anm/pl01/player/pl01/pl01c.png`（entry3，256×256，贴图内嵌在 .anm 里）；
+#     生成器 = `assets/ability/make_nitori_bubble_art.py`（`--dump` 打出形状与平均色，可复核）。
+#   · 新增 entry **59** / sprite **451**；同批新脚本 = **294**。append 在最末尾 ⇒ 一个既有号都没动。
+# ============================================================================================
+ATLAS ATLAS_NITORI_BUBBLE 254x254
+NITORI_BUBBLE          ability/signal/NITORI_BUBBLE.png           @0,0,254x254

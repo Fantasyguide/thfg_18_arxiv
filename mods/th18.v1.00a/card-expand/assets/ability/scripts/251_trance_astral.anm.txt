@@ -1,0 +1,69 @@
+script script251 {
+// 灵界背景（113）—— TH13 `astral.anm` **script0** 的逐条抄写
+//   （一手 `thanm -l 13 local/th13.v1.00c/dat/astral.anm`，原文：
+//     script0 { -1: type(1); anchor(0,0); sprite(sprite0); angleVel(0,0,0.010471975f);
+//                 pos(320.0f,224.0f,0.0f); scale(1.15f,1.15f); alpha(1); blendMode(7);
+//               0: stop(); }
+//    `angleVel(0,0,0.010471975f)` = **0.6°/帧**（0.010471975 rad）⇒ 360° 用 600 帧 = **10 s/圈**。
+//    贴图 = `effect/eff_astral.png` **512×512 整张**（`ATLAS_TRANCE_ASTRAL` 的成员）。
+//
+// ## ★★ 2026-09-13 第六轮：三处**订正**（旧注释里有两处写反了）
+//
+//  ① **驱动路径**（旧注释说「原版这张图不是按普通 anm sprite 画的，是 EffectManager 回调里的
+//     自定义 D3D 全屏四边形」——**错**）。一手重读 `engine/spirit/th13/02-trance-hud-and-popup.md` §2.4：
+//     那个自定义 `DrawPrimitiveUP` 四边形画的是 **`color = 0x00000000` 的"只写 alpha"块**
+//     （RGB 保留、alpha 归 0），**astral 这张图是紧随其后用 `AnmManager__draw_vm` 正常画的**
+//     （`th13:0x403591`–`0x40359e`，仅当状态字 `+0x1c34 == 2` = 灵界中）。
+//     ⇒ **普通 VM 就是原版的画法**，不是近似 ⇒ 本卡不再把它标成"近似"。
+//  ② **位置**（旧脚本靠 `originMode(1)` + 出生点 `entity_pos(0,0,0)`，注释写「= 游玩区正中」——**错**）：
+//     `originMode(1)` 的 (0,0) 是**弹幕区上边框中点**，正中是 **(0,224)**
+//     （`engine/anm/th18/01-vm-instantiate.md` §3）。一手 script0 的 `pos(320,224)` 正是
+//     TH13 640×480 屏的**正中** ⇒ 换算到世界层 = `pos(0, 224)`。**照抄这个数**，
+//     不再依赖出生点（`layer()` 会覆盖 originMode/resolutionMode 的默认值，所以 `layer` 写在前）。
+//  ③ **blendMode / alpha**（★★ 2026-09-13 **第八轮**回改：恢复**严格一手**）：
+//     一手是 `blendMode(7)`（DESTALPHA/INVDESTALPHA）+ `alpha(1)`。mode 7 的颜色闭式
+//     `S·Da + D(1−Da)` **完全不看源 alpha**，而 `eff_astral.png` 逐像素查过是**全不透明**
+//     （512×512 全 alpha=255）。
+//     · 第六轮曾把它改成 mode 0 + `alpha(255)`：理由是"TH18 目标 alpha 不确定，mode 7 可能整块消失"。
+//       **那条担心的前提是"Da 不受我们控制"——本轮已经不成立**：`Da` 由本卡自己的三支 VM 写
+//       （脚本 271 清零 → 266–269/262–265 写笔触 → 270 第 45 帧填满，全在**同一个** surface 0、同一层 3）
+//       ⇒ mode 7 变成**确定**的、而且是**唯一**能表达"会动的 alpha 遮罩"的写法。
+//     · 用户口径（2026-09-13 实跑后）：「正确地退出灵界 = 有一个**会动的透明度遮罩（转场）**
+//       罩在了那张 astral 图上；进来也是一模一样的反向转场」。那正是 mode 7 + 幕布的 alpha 写入。
+//     · ⚠ 回滚：把 `blendMode(7)` 改回 `blendMode(0)` 并把 `native/cards/trance.c` 的
+//       `TRANCE_ALPHA_MASK` 置 0，就回到第六轮那套"astral 常显 + 幕布扫过"的观感（`TUNING.md` §2.0）。
+//     · 一手的 `alpha(1)`（源 alpha≈0）在 mode 7 下**同样不参与颜色**，本机取 `alpha(255)` 与它
+//       **逐像素同画面**，但让"万一 mode 7 被绕开"时 astral 仍可见 ⇒ 保留 255（如实登记，非等价改写）。
+//
+// 位置/尺寸的几何（一手 + 本作坐标系）：
+//   `scale(1.15)` × 512 = **588.8** 世界单位 = 588.8 TH13 屏 px（1 世界单位 = 1 屏 px，
+//   `engine/anm/th18/01-vm-instantiate.md` §3b）；游玩区只有 384×448 ⇒ 四边各溢出 100+ px，
+//   视口（游玩区 + 12 px 边）**全被盖住**，不会露出贴图边缘 ✅（一手原版 588 < 640 是**留边**的，
+//   因为 640×480 的屏比游玩区大；TH18 这边反而更保险）。
+// 层：**3**（世界列表 3–5 = "背景组"，画进 surface 0、由 `0xf` 那一趟 `arcade_vm` 拷进游玩区，
+//   一手 `engine/anm/th18/02-render-stages.md` §1）—— 一手原版也是画在**世界层**（不是 UI 层），
+//   `engine/spirit/th13/02` §2.6。⚠ 用 3 而不是 5：`st0Xwl` 的背景美术用 2/3/5，
+//   本卡只要求"盖住**背景**"；实跑若发现被 5 层的东西压住，改 `layer(5)` 即可（见 `TUNING.md`）。
+// ★★★ 2026-09-13 第十轮：**层 3 → 5**（`AUDIT` §CT-8）。
+//   TH18 的 boss 符卡背景 = `st0Xenm.anm` script10–14（`stgenm/stageXX/cardbg0/1.png`），
+//   它们全部写 **`layer(4)`**（一手：`thanm -l 18 st01enm.anm`，script10/11/12/13/14 的 `ins_304(4)`）
+//   ⇒ 层 4 那一趟（优先级 `0xb`）画在层 3（`0xa`）**之后** ⇒ 会把我们的灵界幕布整块盖掉
+//   ＝ 用户口径「**灵界幕布被 boss 符卡幕布取代**」。
+//   **一手的相对关系**：TH13 自己的符卡背景是 **`layer(3)`**（`thanm -l 13 st01enm.anm` script11–14
+//   的 `ins_304(3)`），而 TH13 的灵界 astral 由 effect 宿主画在 **层 6**（`0x4035e0` case 9）
+//   ⇒ **原版里 astral 在符卡背景之上（灵界幕布赢）** ✓。
+//   TH18 把符卡背景从 3 挪到了 4 ⇒ 我们要保持同一相对关系就得挪到 **5**（= 世界层背景组 3–5 的顶，
+//   仍在子弹/敌机层 6–19 之下；层 3–5 同相机 3、同 surface 0 ⇒ 几何/尺寸不变）。
+-1:
+    type(1);
+    layer(5);
+    anchor(0, 0);
+    sprite(@TRANCE_ASTRAL);
+    angleVel(0.0f, 0.0f, 0.010471975f);
+    pos(0.0f, 224.0f, 0.0f);
+    scale(1.15f, 1.15f);
+    alpha(255);
+    blendMode(7);
+0:
+    stop();
+}

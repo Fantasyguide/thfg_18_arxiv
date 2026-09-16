@@ -1,0 +1,11 @@
+script script242 {
+// 自动生成：assets/ability/make_trance_spirit_scripts.py（别手改，改表再重跑）
+// 神灵（113）type 2 的灵界态 —— 逐条照抄 TH13 `astral.anm` script4（一手：engine/spirit/th13/01 §2.3）
+//   父（灵界态）：layer(13); scriptNew(白环); scriptNew(glow); stop();
+//   ★ 与普通态三点不同（都是一手原文）：**没有** -1 段 / **没有** alpha+scale / **没有**淡出段
+//     ⇒ 灵界态神灵不缩不淡，收尾由卡侧负责（`ce_anm_delete`，不是 interrupt —— 本组**没有** interruptLabel）
+    layer(13);
+    scriptNew(@SCRIPT_SPIRIT_TRANCE2_RING@);
+    scriptNew(@SCRIPT_SPIRIT_TRANCE2_GLOW@);
+    stop();
+}

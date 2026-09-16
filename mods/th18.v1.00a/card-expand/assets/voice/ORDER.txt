@@ -3,3 +3,6 @@
 ROYAL_RAGTIME
 FIRELORD_SUMMON
 FIRELORD_ATTACK
+# ★ TH13 原版 se_astralup.wav（灵界槽跨格的升格音）——
+#   由 assets/voice/derive_astralup.py 在构建期从 local/th13.v1.00c/dat/ 现取（版权资产不入库）
+ASTRALUP

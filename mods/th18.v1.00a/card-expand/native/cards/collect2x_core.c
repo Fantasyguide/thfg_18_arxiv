@@ -26,6 +26,19 @@ int c2x_batch_presence(c2x_state_t *s, int32_t frame)
     return 1;
 }
 
+int c2x_collect_virtual(c2x_state_t *s, int32_t n, int32_t frame)
+{
+    /* 见 collect2x_core.h：与 c2x_collect_batch 只差 type 门（自建实体没有引擎 type），
+     * 且**不碰 batch_score**（绿点不进 SCORE ⇒ 也不进批分；用户口径「只 +1」）。
+     * 第一颗自建实体就能**开批**（§Z22 的成员门只针对**原生**道具的真空谓词；自建实体的
+     * 「算不算收点」由生产者自己的收集判定给出）。*/
+    if (!s || n <= 0) return 0;
+    s->batch_open = 1;
+    s->batch_count += n;
+    s->last_event_at = frame;
+    return 1;
+}
+
 int c2x_maybe_settle(c2x_state_t *s, int32_t frame, c2x_settle_out_t *out)
 {
     out->mult_permille = 0;

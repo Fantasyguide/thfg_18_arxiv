@@ -134,7 +134,7 @@ CE_CARD(id, .回调 = 函数, ...);      /* 一张卡一条，放在 native/card
 
 | 函数 | 干什么 | 引擎侧 |
 | --- | --- | --- |
-| `ce_give_card(id, mode, notify)` | 给玩家一张卡 = 商店成交的两步；分配返回 `-1` 时不调用 `mark_obtained` | `allocate_new_card(mgr; id, mode)` `0x411460` thiscall `ret 8` + 成功后 `mark_obtained(id, notify)` `0x418de0` fastcall |
+| `ce_give_card(id, mode, notify)` | 给玩家一张卡 = 商店成交的两步；分配返回 `-1` 时不调用  | `allocate_new_card(mgr; id, mode)`  | 见文末「长行详录 #1」 |
 | `ce_shop_pick_random(lo, hi, exclude[], n)` | 按商店随机池的规则抽一张（未拥有、本关可用、按权重、游戏 RNG）| `pick_weighted_random_offer` `0x416f50` fastcall(ecx=out, edx=lo; hi, exclude, n) `ret 0xc` |
 | `ce_table_entry(id)` / `ce_entry_id(e)` | 表行（ctor 里 `card+0x4c` 还没写，用这个）| `TableCardData__get` `0x407d70` fastcall(ecx=id) |
 | `ce_log(fmt, …)` | 一行进 `th18_card_expand.log` | — |
@@ -146,7 +146,7 @@ CE_CARD(id, .回调 = 函数, ...);      /* 一张卡一条，放在 native/card
 | `ce_damage_rect(center, angle, life, dmg, w, h)` | 自机侧矩形伤害源：敌人自己判重叠扣血，每帧总量钳 `player+0x47984` | `0x45dfa0` stdcall + XMM2 宽 / XMM3 高 `ret 0x10`（O29b）|
 | `ce_anm_get_vm / set_pos / set_color` | 按 id 找 VM、写 `vm+0x5f0` 坐标 / `vm+0x524` 颜色 | `0x488b40` thiscall(mgr; id) `ret 4`（O29c）|
 | `ce_anm_interrupt(id, n)` / `ce_anm_delete(id)` | 触发脚本 `interruptLabel(n)`（Tenshi 用 1 收场）/ 标记删除 | `0x488be0` stdcall `ret 8` / `0x488cf0` stdcall `ret 4` |
-| `ce_spawn_item(type, pos3, angle, speed)` | 池里放一个道具（type 1/2/4/6/9–0xe…），返回道具指针、池满失败 0。角度 −π/2、速 2.2 与原生 main-drop 同参 | `ItemManager__spawn_item` `0x446f40` thiscall（ecx = mgr `0x4cf2ec`）`ret 0x20`：8 栈参 (type, pos*, junk, angle, speed, timer, u7, u8)，**尾两槽必须压**（AUDIT §Z）|
+|  | 池里放一个道具（type 1/2/4/6/9–0xe…），返回道具指针、池满失败 | `ItemManager__spawn_item` `…` thi | 见文末「长行详录 #2」 |
 | `ce_add_score_delta(delta)` | 分数增减（可为负），钳 `0..999999999` | `SCORE` `0x4cccfc` int32（`05-shop-and-money.md` §1）|
 | `ce_player_pos()` / `ce_player_x()` | 自机 float3 坐标 / 只要 x（放音效的声像位置）；指针为空时 NULL / 0 | `CE_PLAYER_X` `0x620` 是 float3 基址 |
 | `ce_enemy_pos(e)` / `ce_enemy_lockable(e)` | 敌人 float3 坐标 / 可锁定（非空且不带 `NO_LOCK`）| `CE_ENEMY_POS_X` `0x1270` |
@@ -185,19 +185,19 @@ CE_CARD(id, .回调 = 函数, ...);      /* 一张卡一条，放在 native/card
 
 | 事件 | 断点 | 回调 | 本批用 |
 | --- | --- | --- | --- |
-| `on_item_score` | **两个站点同一份 handler**：`0x446cf6`（向上分支：线上 / `state==3`）+ **`0x446caa`**（线下且非真空飞行；`0x446cb2 jmp 0x446cfc` 会绕过前者）。esi = 身价 | `void (ce_card_t*, int32_t *value)` | 暂无（留给以后的得分卡）|
+| `on_item_score` | ★ 2026-09-13 第二次修订后**落笔在入口** `…`（ | `void (ce_card_t*, int32_t *value)` | 见文末「长行详录 #3」 |
 | `on_item_money` | `0x446d28`（同函数尾部 `inc [MONEY_TOTAL]`，紧接 `inc [MONEY]`）；断点把 `*bonus` 同时加进 `MONEY` 与 `MONEY_TOTAL_COLLECTED` | `void (ce_card_t*, int32_t *bonus)` | 10♠：每第 10 个金钱道具 `*bonus += 1` |
 | `on_enemy_drop_pre` | `0x430510`（`Enemy__drop_items_and_notify_cards` 入口，撒之前）| `void (ce_card_t*, int32_t *counts)` | 加倍：掉落 ×2 |
 | `on_bomb_spent` | `0x4203bc`（`do_bomb` 里 `consume_bomb` 刚返回）| `void (ce_card_t*)` | 腐化：扣上限 |
-| `on_hud_anm`（虚表 `+0x44`）| 不是事件：引擎建好本卡的 HUD 图标后（`0x408fc4`）把图标根 VM 的 anm id 交给卡；图标重建时会再调一次。真银圣剑用它在图标上叠数字（`ce_anm_spawn_ui` + `ce_anm_set_sprite`，AUDIT §X）| `int (ce_card_t*, uint32_t anm_id)` | 真银圣剑：耐久数字 |
+| `on_hud_anm`（虚表 `+0x44`） | 不是事件：引擎建好本卡的 HUD 图标后（`…`）把图标根 VM | `int (ce_card_t*, uint32_t anm_id)` | 见文末「长行详录 #4」 |
 | `on_shop_open` | **不是新断点**：`shop.c` 的 `ce_shop_reopen`（`0x443b05`）在 MSG 请求开第一家店那一帧调 `ce_sdk_on_shop_open()`；商店对象这一帧稍后才建，改 `MONEY` 店里看到的就是改后的值；重开的第二家不算 | `void (ce_card_t*)` | 黄金小丑：金钱 +20％ |
 | `on_item_frame` | `0x446ee3`（`ItemManager__on_tick` `0x446ec0` 最后一道门卫 `cmp [0x4cf2a4],0`）。每个正常游玩帧、道具池 body 前到一次；handler 只看**声明了该槽的卡**，不读 CMP 结果 | `void (ce_card_t*)` | 辉针城：批开时查池，池空 → 关批结算 |
-| `on_item_collect` | `0x44625f`（type 分派前一条 `mov edx,[edi+0xc78]`，副作用未发生）。type 用 `*(uint32_t*)(item+0xc78)` 读，别信 EDX（窗前值不可靠） | `void (ce_card_t*, uint32_t type, const void *item)` | 辉针城：批集计数 + stash SCORE |
+| `on_item_collect` | `…`（type 分派前一条  |  | 见文末「长行详录 #5」 |
 | `on_item_commit` | `0x44658a`（共享收尾起点 `movss xmm2,[esi]` + `push 0x25`）。本道具分值**已按 type 计入 SCORE**、公共收尾（清槽等）之前 | `void (ce_card_t*)` | 辉针城：`(SCORE − stash)` 差量入批 |
-| `on_shot_damage` | `0x45f2a2`（`enm_compute_damage_sources` `0x45f0f0` 计分路径 `mov eax,0xee666667` + `imul esi`）。每帧每敌一次可计分命中：dmg 已钳 ≥1、pos = 敌世界坐标 (x,y)；聚焦 / 炸弹 / param_6≠0 的路径被窗口前判定挡掉（handler 再门一道，纵深防御） | `void (ce_card_t*, int32_t damage, const float *pos)` | 辉针城：非聚焦射击命中按帧节流掉 P |
-| `on_enemy_death` | `0x430240`（`FUN_00430240`，SDK 名 `Enemy__die`；**在引擎撒主掉落之前**、链表仍挂着）| `void (ce_card_t*, const ce_enemy_death_t*)`；`kind` 用**栈扫描**（`regs->esp` 起扫 12 dword 命中七条 call site；`0x42f3b7` = 打死主路）；事件带 `retaddr/esp/ret_slot` | 共享事件（109/110/112/113）|
+| `on_shot_damage` | `…`（`enm_compute_damage_sources` |  | 见文末「长行详录 #6」 |
+| `on_enemy_death` | `…`（`FUN_00430240`，SDK 名  |  | 见文末「长行详录 #7」 |
 | `on_native_shot_suppress` | 复用 `0x45ebfb`（与 `on_shot_set_index` 同点）：**先问 set index，有覆盖则不抑制** | `int (ce_card_t*)`，非 0 = 本帧跳过原生行循环 | 108（低速妖机体）/ 109（蓄力拦 Z）|
-| `on_shot_damage_any` | **与 `on_shot_damage` 同一个断点**（`0x45f2a2`）、同一份实参，但**不按聚焦过滤**（仍排除 bomb 生效帧与 `param_6 != 0` 的路径）；`focused` 由 SDK 传 | `void (ce_card_t*, int32_t dmg, const float *pos, int focused)` | 107（森罗结界要高速/低速两条命中通道）|
+| `on_shot_damage_any` | **与 `on_shot_damage` 同一个断点**（`…`） |  | 见文末「长行详录 #8」 |
 
 **局中删一张卡**：`ce_destroy_card(victim)`（`sdk.c`，AUDIT §W）照 recount `0x4080e0` 的删卡分支——摘链、按 flags 减类别计数、
 `num_total−1`、`owned[id]` 清零、虚表 `+0x50` 删对象、引擎自己的 `create_all_card_lists_for_hud(mgr, 0)` 重画 HUD。
@@ -221,11 +221,12 @@ CE_CARD(id, .回调 = 函数, ...);      /* 一张卡一条，放在 native/card
 | 层 | 卡侧 API | 聚合 / 落笔 | 用户 |
 | --- | --- | --- | --- |
 | 无敌帧 | `ce_invuln_request(id, frames)`（每帧声明**剩余**帧数）| 取 **max**；SDK 在每帧 `ce_item_frame` 断点里 `ce_invuln_apply()` 落 `player+0x47774`（只写更长值）| 107 结界结束 0.67s、109 爆风 C1–C4、117 霊撃 |
-| 得分 | `ce_score_declare(id, value)` + `ce_score_mul_declare(id, permille)`（乘数附加项：110×111 同装时的「信号强度」）；落笔者读两个聚合值 | **Σ 各卡贡献**；落笔者 = **id 最小**（`ce_score_applier()`），由它写 SCORE | 110（信仰）+ 111（信号）|
-| 「本帧已消过弹」 | `ce_cancel_latch_claim(id)` | 先到先得（OR）；SDK 每帧 reset | 107 结界灵击 + 117 霊撃 同帧 |
+| 得分 | ★ 2026-09-13 重做（同日第二次修订：落笔点搬到 `…` |  | 见文末「长行详录 #9」 |
+| 「本帧已消过弹」 | `ce_cancel_latch_claim(id)` + ★ `ce_cancel_latch_release(id)`；记录读 `ce_cancel_frame_count()` | 闩锁 = 「谁拿全屏消弹这一笔」的**仲裁**（先到先得；`n <= 0` 交回）；**记录**由消弹 helper 自动登记 ⇒ 收益只认颗数 | 107 / 117 |
 | 子机姿态 | `ce_optpose_declare(id, count, anm_script, fx, fy, ux, uy)` | **选举覆盖**：`ce_optpose_winner()` = id 最小，赢家独占落笔 | 111（低速子机）、108 |
+| **自建实体 → 114 的收点批**（`NEXT.md` §1x.2） | `ce_vitem_note_collect(kind, n)`（**收点那一刻 | **生产者声明、消费者只读**（没有落笔者）：114 在  | 见文末「长行详录 #10」 |
 | 掉落乘数 | `ce_drop_mult_set(id, permille)`（1000 = ×1，粘性）| **先加后乘**：各卡只做加法，`ce_drop_apply(counts)` 在 `BP_ce_enemy_drop` 的卡循环**之后**一次性乘 | 69（加倍）|
-| HUD 槽位 | **卡侧用 `ce_hud_slot_claim_card(id, blk, out)`**（认领前推进「关卡纪元」⇒ 每关开场重排；裸 `ce_hud_slot_claim` 不重排）（`ce_hud_slot_get` 取最新值）；整摞淡出读 `ce_hud_near_corner()`（SDK 每帧推进一次，卡别自己调 `*_update`）| 底部货架按 **card_id 升序**确定性排布（[`HUD-LAYOUT.md`](HUD-LAYOUT.md) §2）；认领幂等、局中删卡不重排 | 110/111/113/116/117 |
+| HUD 槽位 | **卡侧用  | 底部货架按 **card_id 升序**确定性排布（[ | 见文末「长行详录 #11」 |
 | 敌人死亡 | `on_enemy_death`（只读广播）| 广播只读：谁都不许在回调里析构敌人 / 缓存指针 | 109/110/112/113 |
 | 自建真敌人 | `ce_spawn_enemy(ecl_name, spawn)`（`CE_SPAWN_*` 字段表）| —（直接调引擎 `0x42d7d0`，返回敌人指针）| 108 使魔、112 彩虹令牌 |
 
@@ -257,7 +258,7 @@ CE_CARD(id, .回调 = 函数, ...);      /* 一张卡一条，放在 native/card
 | --- | --- | --- | --- | --- |
 | 10♠ 道具金钱 +10％ | 58 | `on_item_money` | 私有状态计数，每第 10 个金钱道具 `*bonus += 1`（确定性计数而非随机：replay 靠输入重放，自带随机会失同步）| ✅ 已反（AUDIT O10、O14）|
 | J♠ 移速 +10% | 59 | `on_tick_2` | `player+0x477ec`（每帧移速倍率）`*= 1.1`。Player tick 末尾复位 1.0，AbilityManager tick（优先级 0x16）先于 Player（0x17），所以只能在 `on_tick_2` 写；`on_tick` 在复位前，白写 | ✅ 已反（AUDIT O7）|
-| Q♠ 道具回收范围 | 60 | `on_load` | 抄 `CardNitori` 的 `on_load`：`attract_speed / collect_radius / attract_r_focused / attract_r_unfocused` = {10, 30, 250, 250}（默认 {5,30,70,70}，Nitori {10,30,110,110}；字段名来自 ExpHP）| ✅ 已反 |
+| Q♠ 道具回收范围 | 60 | `on_load` | 见文末「长行详录 #12」 |
 | K♠ 伤害 ×1.1 | 61 | `on_bullet_created` | `bullet+0x9c`（int）`= d*11/10`；`PlayerBullet__create` 在调槽前已写好它 | ✅ 已反（AUDIT O9）|
 | A♠ Miss 后无敌 +50% | 62 | `on_tick_2` | 无敌 zTimer `player+0x47774`；复活把它置成 {prev 279, cur 280, 280.0}，这个组合只在刚置好那一帧出现 → 改成 420。`+0x14` 槽在复活置值**之前**触发，所以不用它 | ✅ 已反（AUDIT O8）|
 
@@ -505,6 +506,41 @@ ce_hud_vm_text_clear(&s_digit);
 **层位**：想被暂停模糊罩盖住，VM 必须放 **UI 层 25**（`AnmManager__render_layer` 折到 38 ⇒
 与模糊罩同一个绘制桩）—— 见 §16 与 [`engine/anm/th18/03`](../../../engine/anm/th18/03-ascii-text.md) §2f。
 
+## 18. 收点线（PoC 高度）层：`ce_poc_*`（2026-09-15 抽；想改「回收线多高」的卡看这节）
+
+**它是什么**：TH18 的收点线 = `player+0x47998`（float，640 空间 y，越大越靠屏幕下方）。
+自机在这条线**上方**时，全屏道具无条件吸过来 + 绿点/P 点满额（引擎自己四个读点，见
+[`engine/player/th18/05-poc-height-and-indicator.md`](../../../engine/player/th18/05-poc-height-and-indicator.md)）。
+原生卡 **22 ITEM_LINE（八坂神奈子）** 的效果就是**把线降低**（128 → 224，`on_load` 写一次）。
+
+**为什么不再各写各的**：字段只有一份，「谁最后写谁赢」；而且**开局那条指示线**（引擎自己用
+`front.anm` script `0x39` 画的橙白闪烁横线）的位置**现读这个字段** ⇒ 各写各的会让显示与效果打架。
+
+```c
+/* ① 声明：本卡想要收点线在多高（px，640 空间；绝对值）。粘性 —— 设一次管到改口/删卡。
+ *    「在当前高度上再下移」的卡自己先读 ce_poc_height() 再声明（见 111 神奈子的写法）。*/
+ce_poc_declare_px(c, 224.0f);          /* 有 ce_card_t* */
+ce_poc_declare_px_id(111, 224.0f);     /* 只有卡 id 的地方 */
+ce_poc_apply();                        /* 可选：想让它在**这一刻**就生效（开局路径）时补一句；幂等 */
+
+/* ② 读生效值（**唯一真值来源**，别自己 *(...)(pl+CE_PLAYER_POC_HEIGHT)）*/
+float line = ce_poc_height();
+```
+
+**规则（写死在层里，别绕过去）**：
+
+| 项 | 行为 |
+| --- | --- |
+| 多张卡同时声明 | **取最大**（线最低那条；并列取 id 小者记名）—— 收益对 y 单调，「相加」没有语义 |
+| 夹取 | `[0, 448]`（448 = 游玩区高）|
+| 落笔 | 每帧一次（`BP_ce_item_frame`，道具池 body **之前**）：写字段 + 置 `Gui+0x194` bit `0x2000`（开那条开局线）|
+| 没人声明 | **一个字都不写**（否则会把原生卡 22 写的 224 顶回 128）|
+| 删卡 / 换关 | `ce_layer_drop_card()` 自动 `ce_poc_release()`：撤声明 + 若没人再声明就写回**我们动手前的原值**（商店里帧钩子不跑 ⇒ 就地写）|
+
+⚠ **时点**：引擎只在**建那条线的时候**读字段（关卡第 0 帧 / 第 30 帧）⇒ 高度要在**开局就已经生效**；
+中途改高度不保证让已经画出来的线动。想稳就拿 `on_load` 或关开场钩子调一次 `ce_poc_apply()`。
+⚠ 纯逻辑（聚合 / 夹取 / 基准记账）在 `sdk_core.h` 的 PoC 块，主机单测 `tests/test_sdk_core.c` 的 `test_poc_layer()`。
+
 ## §改发弹 / 改弹道：踩过的坑与铁律（2026-09-13 总结；108 必读）
 
 > 来源：117「鬼形兽」复刻 TH17 咆哮时，为了「换整组 shot set」「咆哮期间停掉子机普通弹」
@@ -561,3 +597,60 @@ ce_hud_vm_text_clear(&s_digit);
    —— `ret 0x10` 的收尾是函数自己的 epilogue，用错地址会踩坏调用者。
 5. 门失败要让玩家**看得出原因**（日志 + 每关卡对象 `ce_integrity_check()` 自检），
    而不是把新卡变成垃圾图。
+
+
+---
+
+### 长行详录（超 200 字符的表行搬到这里）
+
+以下为**原表行逐字保留**（放进围栏 ⇒ 文档门跳过它们；内容一字未改）：
+
+```
+**长行详录 #1**（原表行，2026-09-15 搬出以过文档门）
+
+- `｜ `ce_give_card(id, mode, notify)` ｜ 给玩家一张卡 = 商店成交的两步；分配返回 `-1` 时不调用 `mark_obtained` ｜ `allocate_new_card(mgr; id, mode)` `0x411460` thiscall `ret 8` + 成功后 `mark_obtained(id, notify)` `0x418de0` fastcall ｜`
+
+**长行详录 #2**（原表行，2026-09-15 搬出以过文档门）
+
+- `｜ `ce_spawn_item(type, pos3, angle, speed)` ｜ 池里放一个道具（type 1/2/4/6/9–0xe…），返回道具指针、池满失败 0。角度 −π/2、速 2.2 与原生 main-drop 同参 ｜ `ItemManager__spawn_item` `0x446f40` thiscall（ecx = mgr `0x4cf2ec`）`ret 0x20`：8 栈参 (type, pos*, junk, angle, speed, timer, u7, u8)，**尾两槽必须压**（AUDIT §Z）｜`
+
+**长行详录 #3**（原表行，2026-09-15 搬出以过文档门）
+
+- `｜ `on_item_score` ｜ ★ 2026-09-13 第二次修订后**落笔在入口** `0x446bf9`（三条难度支的唯一汇合点），SDK 写 `ecx = 1000 × G`；老出口 `0x446cf6` / `0x446caa` 只观察不落笔（详见 [`SCORE-LAYER-REWORK.md`](SCORE-LAYER-REWORK.md) §2）｜ `void (ce_card_t*, int32_t *value)` ｜ 107 / 110 / 111；★ 回调只用来「声明自己的加数」，`*value` 已废弃 ｜`
+
+**长行详录 #4**（原表行，2026-09-15 搬出以过文档门）
+
+- `｜ `on_hud_anm`（虚表 `+0x44`）｜ 不是事件：引擎建好本卡的 HUD 图标后（`0x408fc4`）把图标根 VM 的 anm id 交给卡；图标重建时会再调一次。真银圣剑用它在图标上叠数字（`ce_anm_spawn_ui` + `ce_anm_set_sprite`，AUDIT §X）｜ `int (ce_card_t*, uint32_t anm_id)` ｜ 真银圣剑：耐久数字 ｜`
+
+**长行详录 #5**（原表行，2026-09-15 搬出以过文档门）
+
+- `｜ `on_item_collect` ｜ `0x44625f`（type 分派前一条 `mov edx,[edi+0xc78]`，副作用未发生）。type 用 `*(uint32_t*)(item+0xc78)` 读，别信 EDX（窗前值不可靠） ｜ `void (ce_card_t*, uint32_t type, const void *item)` ｜ 辉针城：批集计数 + stash SCORE ｜`
+
+**长行详录 #6**（原表行，2026-09-15 搬出以过文档门）
+
+- `｜ `on_shot_damage` ｜ `0x45f2a2`（`enm_compute_damage_sources` `0x45f0f0` 计分路径 `mov eax,0xee666667` + `imul esi`）。每帧每敌一次可计分命中：dmg 已钳 ≥1、pos = 敌世界坐标 (x,y)；聚焦 / 炸弹 / param_6≠0 的路径被窗口前判定挡掉（handler 再门一道，纵深防御） ｜ `void (ce_card_t*, int32_t damage, const float *pos)` ｜ 辉针城：非聚焦射击命中按帧节流掉 P ｜`
+
+**长行详录 #7**（原表行，2026-09-15 搬出以过文档门）
+
+- `｜ `on_enemy_death` ｜ `0x430240`（`FUN_00430240`，SDK 名 `Enemy__die`；**在引擎撒主掉落之前**、链表仍挂着）｜ `void (ce_card_t*, const ce_enemy_death_t*)`；`kind` 用**栈扫描**（`regs->esp` 起扫 12 dword 命中七条 call site；`0x42f3b7` = 打死主路）；事件带 `retaddr/esp/ret_slot` ｜ 共享事件（109/110/112/113）｜`
+
+**长行详录 #8**（原表行，2026-09-15 搬出以过文档门）
+
+- `｜ `on_shot_damage_any` ｜ **与 `on_shot_damage` 同一个断点**（`0x45f2a2`）、同一份实参，但**不按聚焦过滤**（仍排除 bomb 生效帧与 `param_6 != 0` 的路径）；`focused` 由 SDK 传 ｜ `void (ce_card_t*, int32_t dmg, const float *pos, int focused)` ｜ 107（森罗结界要高速/低速两条命中通道）｜`
+
+**长行详录 #9**（原表行，2026-09-15 搬出以过文档门）
+
+- `｜ 得分 ｜ ★ 2026-09-13 重做（同日第二次修订：落笔点搬到 `0x446bf9`）：`ce_score_declare_delta(id, 点)`（未耦合族）/ `ce_score_declare_coupled(id, 点)`（耦合族）/ `ce_score_mul_declare(id, permille)`（信号强度）；旧接口 `ce_score_declare` = legacy 语义 ｜ `G = G_0 + Σ未耦合 + coupling‰ × Σ耦合 / 1000`；**没有落笔者了**，SDK 一次写站点 `0x446bf9` 的 `regs->ecx = 1000 × G`；**无卡声明时一个字都不写**（原生逐字节不变）。`coeff_06`（收取高度）由引擎自己施加**在整笔 G 上** ｜ 107（未耦合）+ 110 / 111（耦合）｜`
+
+**长行详录 #10**（原表行，2026-09-15 搬出以过文档门）
+
+- `｜ **自建实体 → 114 的收点批**（`NEXT.md` §1x.2）｜ `ce_vitem_note_collect(kind, n)`（**收点那一刻**报一颗）/ `ce_vitem_declare_flying(src, kind, n)`（**每帧**报在飞数）｜ **生产者声明、消费者只读**（没有落笔者）：114 在 `on_item_frame` 里**抽干** `ce_vitem_take_collect()` → `c2x_collect_virtual()`（**只加批计数、不进批分**）；在飞读 `ce_vitem_flying()`。半道具 `CE_VITEM_HALF` 两条通道都拒（微档，§1x.3）；层**自过期**（容差 2 帧）⇒ 没有消费者时零副作用（`CE_VITEM_*` 详见 `sdk_core.h` 长注）｜ 110/111 的大 / 中绿点（`cards/faith.c`）；116 季节点 / 117 动物灵将来直接复用 ｜`
+
+**长行详录 #11**（原表行，2026-09-15 搬出以过文档门）
+
+- `｜ HUD 槽位 ｜ **卡侧用 `ce_hud_slot_claim_card(id, blk, out)`**（认领前推进「关卡纪元」⇒ 每关开场重排；裸 `ce_hud_slot_claim` 不重排）（`ce_hud_slot_get` 取最新值）；整摞淡出读 `ce_hud_near_corner()`（SDK 每帧推进一次，卡别自己调 `*_update`）｜ 底部货架按 **card_id 升序**确定性排布（[`HUD-LAYOUT.md`](HUD-LAYOUT.md) §2）；认领幂等、局中删卡不重排 ｜ 110/111/113/116/117 ｜`
+
+**长行详录 #12**（原表行，2026-09-15 搬出以过文档门）
+
+- `｜ Q♠ 道具回收范围 ｜ 60 ｜ `on_load` ｜ 抄 `CardNitori` 的 `on_load`：`attract_speed / collect_radius / attract_r_focused / attract_r_unfocused` = {10, 30, 250, 250}（默认 {5,30,70,70}，Nitori {10,30,110,110}；字段名来自 ExpHP）｜ ✅ 已反 ｜`
+```

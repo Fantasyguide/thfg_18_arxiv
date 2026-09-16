@@ -24,8 +24,8 @@ engine/<子系统>/
 
 | 子系统 | 已覆盖版本 | 状态 |
 | --- | --- | --- |
-| [`player/`](player/OVERVIEW.md) | th06nc、th15、th16、th18 | th06nc 主循环与碰撞/擦弹已定位；th16 三大子系统已反；th18 已定位自机位置与状态计时器；th15 擦弹已反 |
-| [`bullet/`](bullet/OVERVIEW.md) | th06nc、th16 | th06nc 两个池与 Bullet/Laser 结构体已定位；th16 核心引擎 + 运动 VM + 激光 |
+| [`player/`](player/OVERVIEW.md) | th06nc、th10、th11、th15、th16、th18 | th06nc 主循环与碰撞/擦弹已定位；th16 三大子系统已反；th18 已定位自机位置与状态计时器；th15 擦弹已反；**th10 灵击全链（伤害/半径/震屏否定）与 th11 灵击+命碎、六个支援特技已反** |
+| [`bullet/`](bullet/OVERVIEW.md) | th06nc、th16、th18 | th06nc 两个池与 Bullet/Laser 结构体已定位；th16 核心引擎 + 运动 VM + 激光；**th18 消弹→撒道具全链（五个入口 + mode 真值表）已反** |
 | [`enemy/`](enemy/OVERVIEW.md) | th06nc | 池与生成路径已定位；发现 NC 独有的 ECL 变量继承 |
 | [`ecl/`](ecl/OVERVIEW.md) | th06nc、th16、th18 | th06nc 已完成 TH06 基线与新增 opcode 勘探；th16 VM 核心已基本反完 |
 | [`std/`](std/OVERVIEW.md) | th06nc | 解释器与六条 opcode 已反完；**发现 NC 独有的背景循环 opcode**（op3 的 -1/-2） |
@@ -38,6 +38,7 @@ engine/<子系统>/
 | [`animal/`](animal/OVERVIEW.md) | th17 | 动物灵 / 咆哮（HYPER）；**th18 侧残骸审计 = 六样全无（只剩一串无名死槽）** |
 | [`ufo/`](ufo/OVERVIEW.md) | th12 | 飞碟（UFO）：令牌槽 → 召唤 → 吸收道具 → 击破奖励全链一手 |
 | [`spirit/`](spirit/OVERVIEW.md) | th13 | 神灵 / 灵界（Trance）：六条生成通道 + 槽 + 灵界两道「中弹不死」闸门 |
-| [`input/`](input/th18/01-key-mapping.md) | th18 | 输入装配线：键盘配置表 / 掩码位 / 哪些键空着（A、S 空着，D 被切卡占用）|
+| [`input/`](input/OVERVIEW.md) | th10、th11、th18 | 输入装配线：键盘配置表 / 掩码位 / 哪些键空着（A、S 空着，D 被切卡占用）；th10·th11 的位掩码与「按键 N 帧 → 派生位」已反（**th10 无双击方向键**）|
+| [`faith/`](faith/OVERVIEW.md) | th10、th11 | 信仰 / 最大得点及其倍率：th10 的信仰量纲与蓝点分、th11 的绿点三档 + (交信度 + 擦弹倍率)；**TH10 无擦弹倍率、无擦弹计数器的否定结论** |
 | [`anm/`](anm/OVERVIEW.md) | th06nc、th16、th18 | th06nc VM 已定位、新增 opcode 32–35 已反完；th18 已反 VM 实例化 / 渲染阶段 / **ASCII 文字系统**；th16 仍只有旁敲锚点 |
-| [`item/`](item/OVERVIEW.md) | th07、th08 | 道具池 + `spawn_item` + 掉落 opcode；th07 樱点三档的来源与数量、th08 时点 |
+| [`item/`](item/OVERVIEW.md) | th07、th08、th11 | 道具池 + `spawn_item` + 掉落 opcode；th07 樱点三档的来源与数量、th08 时点；**th11 的 11 项类型跳表、命碎（5 片 = 1 命）与收集 `+N` 弹窗** |

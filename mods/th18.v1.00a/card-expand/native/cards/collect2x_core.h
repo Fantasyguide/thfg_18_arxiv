@@ -16,6 +16,11 @@
  *    无蓝点生态位，玩家收点道具 = P 与钱。type 9–0xe 是引擎分数转换点族 —— 分派映射表 0x44685c
  *    六 type 共指加分 handler 0x446547，只由强制收集（击破转换）产生；DDC 原生转换蓝点不计收点
  *    批（0x43898e type 9/0xa 不重载批计时）→ 不入。卡道具 0x10–0x13 等不入、不回喂）。
+ *    ★ 2026-09-15 追加（`NEXT.md` §1x.2）：**自建实体**（110/111 的大 / 中绿点，`cards/faith.c`
+ *    的 VM 池）**也入批**——它们是自建 VM、不入引擎道具池，成员门与 presence 门都扫不到
+ *    （见 `sdk_core.h` 的「虚拟收集 / 虚拟在飞」层）。它们在 core 这一侧的入口 =
+ *    `c2x_collect_virtual()`：**只加 count、不碰 batch_score**（绿点走信仰、不进 SCORE）；
+ *    微档（消弹那档的半道具）不入批（§1x.3），由 SDK 层的 `CE_VITEM_HALF` 挡在门外。
  *  - 批闭（c2x_maybe_settle：批开且 idle 满足时才关）按 batch_count 走档位：
  *    <20 无奖；20/30/40/50/60 → ×0.5/0.8/1.2/1.6/2.0（mult_permille）。
  *    奖 1 枚碎片：<60 走 4:1 循环（cycle 0..3 → 符卡碎，cycle=4 → 命碎并归零）；≥60 命碎（不动循环）。
@@ -94,6 +99,16 @@ typedef struct {
 
 /* 批集判定 + 计数：type ∈ {1(P), 2(钱)} → count++、开批、记 last_event_at=frame，返回 1；其余 type → 0。*/
 int c2x_collect_batch(c2x_state_t *s, uint32_t type, int32_t frame);
+
+/* ★★ 2026-09-15（`NEXT.md` §1x.2 **成员通道**）：**自建实体**（110/111 的大 / 中绿点）被收 ⇒ 入批。
+ * 语义与 `c2x_collect_batch` **只差 type 门**：自建实体没有引擎 type / state（它是我们自己的 VM），
+ * 「算不算收点」由生产者自己的收集判定给出（`cards/faith.c` 的 `dot_collect()`，微档不进，
+ * 见 §1x.3）⇒ 这里只负责「开批 + count += n + 记 last_event_at」。
+ * ★ **不碰 `batch_score`**：绿点不进 SCORE（走信仰槽），也就不进批分 ⇒ 结算补差
+ *   `batch_score × (mult − 1000) / 1000` 对纯绿点批恒 0（用户口径「只 +1」）。
+ *   `batch_score` 里只有**原生**批集道具的小分（P/钱身价/10）—— 两条账不混。
+ * n <= 0 / s 为空 → 0（不做事、不返回「已计数」）。 */
+int c2x_collect_virtual(c2x_state_t *s, int32_t n, int32_t frame);
 
 /* presence 续批（§Z21，TH14 0x43898e 原义）：批开时每帧由接线层在有批集道具吸附中（TH18 state 3/4）
  * 调它 → 记 last_event_at=frame，返回 1；批未开 → 0（无事可续）。只续 idle 不计数。*/

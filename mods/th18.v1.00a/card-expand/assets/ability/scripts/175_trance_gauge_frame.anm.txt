@@ -7,20 +7,18 @@ script script175 {
 //         interruptLabel(3): sprite(sprite122); stop();
 //         interruptLabel(4): alphaTime(30,0,255); caseReturn(); interruptLabel(5): alphaTime(10,0,32); caseReturn();
 //
-// 贴图：@TRANCE_GAUGE_TOP = `ability/trance/GAUGE_AC.png` **64×64**，
-//   内容 = 源 `front/agauge1.png` 的两个 32×48 横向拼在一起、纵向居中 8px。
-//   ⚠️ **没进 ORDER 的第二张**（TH13 的 sprite122 = 右半，引擎在槽 <200 时发 interrupt 3 切过去）：
-//   `build_ability.py` 是「一个 entry 一个 sprite」，要在同一张图上取右半只能靠 `scaleUV`，
-//   而**本仓没有任何一处用过 `scaleUV`**（`local/th18.v1.00a/anm/ability/ability.anm.txt` 里
-//   也搜不到）⇒ 不押注未实测的 opcode。**本次交付只做 sprite121（槽够放灵界的那一态）**，
-//   第二个 sprite 的取法列在报告的「未做到」里（要么加一行 ORDER 出 `GAUGE_AC2.png`，
-//   要么先实测 `scaleUV` 再拼图）。
+// 贴图：**`@TRANCE_GAUGE_FRAME_A/B` = 各 32×48**（源 `front/agauge1.png` sprite121 亮 / sprite122 暗，
+//   按原生矩形各出一张）。
+//   ⚠️ 旧注释写「sprite122 没进 ORDER、只做 sprite121、要靠 `scaleUV` 取右半」——**已过期**：
+//   `TRANCE_GAUGE_FRAME_B` 现在就在 ORDER 里（`ATLAS_TRANCE_GAUGE`），卡侧用
+//   `ce_anm_set_sprite()` 在两态之间**换 sprite 号**（= 复刻引擎的 `中断 3`），全库依然零处 `scaleUV`。
 //
 // 偏差①：`layer(17)` → **24**（依据 HUD-LAYOUT §4.1：TH18 暂停模糊罩只盖 24/25）。
 // 偏差②：补 `resolutionMode(2)`（TH13 没有这条；TH18 的层 24 要显式写才按表面 px 定位）。
 // 偏差③：`pos(0,4)` 的 y 写成 **8**（2× 表面空间）—— 父 VM 174 已是 2× 坐标。
+//   ⚠ `anchor(1,2)` = **左·下** ⇒ 左缘 = pos.x（0，即基点那一列），底边 = pos.y（8）。
 -1:
-    sprite(@TRANCE_GAUGE_TOP);
+    sprite(@TRANCE_GAUGE_FRAME_A);
     layer(24);
     resolutionMode(2);
     resampleMode(1);
@@ -30,7 +28,7 @@ script script175 {
 0:
     interruptLabel(2);
     alphaTime(20, 0, 255);
-    sprite(@TRANCE_GAUGE_TOP);
+    sprite(@TRANCE_GAUGE_FRAME_A);
 offset124:
     colorTime(30, 9, 192, 192, 255);
 +30: // 30
@@ -41,12 +39,12 @@ offset124:
     interruptLabel(3);
     // ★ 一手这里切 sprite122（槽 <200 的另一态）；本次没切图 ⇒ 只重放一次淡入，外观不换。
     //   见文件头的「未做到」。
-    sprite(@TRANCE_GAUGE_TOP);
+    sprite(@TRANCE_GAUGE_FRAME_A);
     stop();
     interruptLabel(4);
-    alphaTime(30, 0, 255);
+    alphaTime(4, 0, 255);
     caseReturn();
     interruptLabel(5);
-    alphaTime(10, 0, 32);
+    alphaTime(4, 0, 32);
     caseReturn();
 }

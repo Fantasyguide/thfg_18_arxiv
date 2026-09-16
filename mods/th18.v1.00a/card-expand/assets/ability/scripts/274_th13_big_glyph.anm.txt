@@ -1,0 +1,23 @@
+script script274 {
+    // 274_th13_big_glyph —— 卡 113 的灵界剩余时间字形（TH13 大字体，拼 `%.2fs`）
+    //
+    // 字形的贴图入口由下面那行 sprite 占位符绑定：TH13 那套字形住在自己的图集条目
+    // `ATLAS_TH13ASCII`（128×120@4x3，成员 TH13ASCII_D0..D9/DOT/S，见 ORDER.txt 末尾）。
+    // C 侧 `ce_hud_vm_text_set_font(..., CE_HUD_FONT_TH13_BIG)` 生成本脚本的 VM，再按字符把
+    // sprite 号改成对应字形（同一 entry 内改号 ⇒ 贴图不变）。
+    //
+    // 与 `105_hud_number.anm.txt`（TH18 的 HUD 数字）同形，只有绑定图集与字号不同：
+    //   · layer(25) = 会被暂停模糊罩盖住的那一层（一手见 AUDIT §BD）；
+    //   · resolutionMode(2) = 1280 档按 DAT×0.5 缩放 ⇒ 32×40 的字格在 640 空间是 16×20；
+    //   · stop() + interruptLabel(1) + delete()：常驻到被显式删除（`ce_anm_delete`）。
+    sprite(@TH13ASCII_D0);
+    ins_431(1);
+    type(1);
+    layer(25);
+    resolutionMode(2);
+    pos(0.0f, 0.0f, 0.0f);
+    alpha(255);
+    stop();
+    interruptLabel(1);
+    delete();
+}

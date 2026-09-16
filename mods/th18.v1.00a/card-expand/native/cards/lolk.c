@@ -22,6 +22,7 @@
  * **不加断点、不改字节**。 */
 #include "sdk.h"
 #include "lolk_core.h"
+#include "hud_dim.h"     /* ★ 跨卡统一件：HUD/面板压暗（❓ 用户口径，见文件头）*/
 #include <string.h>
 #include <stdio.h>      /* snprintf：五行数值的字符串 */
 
@@ -340,7 +341,8 @@ typedef struct {
     int32_t        last_spawn_id;   /* 上一帧 zEnemyManager.next_enemy_id；-1 = 未初始化 */
     lolk_settle_t  last;            /* 最近一次结算（HUD 用）*/
     int32_t        last_age;        /* 结算后经过帧；-1 = 还没结算过 */
-    int32_t        panel_alpha;     /* 面板淡出用的 alpha（255 / 76）；数字文字同用 */
+    hud_dim_t      hud;             /* ★ 2026-09-15g：面板压暗状态（闩锁 + alpha）—— 跨卡统一件。
+                                     * 原来是 `int32_t panel_alpha`（255 / **76**、每帧 ±8）*/
     int32_t        waves_total;     /* 本 run 已结算波数（日志用）*/
     uint32_t       ring_id;         /* 擦弹圈的 VM（钉在自机上；0 = 还没起）*/
     uint32_t       panel_id[6];     /* 波次面板 UI VM（TH15 script241 的五个标签条 + 碎片标签）*/
@@ -609,32 +611,44 @@ static void panel_show(lolk_card_t *s)
 }
 
 /* ★ 面板「玩家贴近就淡」—— 本卡自定行为（TH15 原版没有）：绀珠传把波次拉长，面板会长时间挡在
- * 游玩区左侧，玩家贴上去看不清弹。α = 0.3（76/255）。
- * 面板几何：UI (448,402) 起、六条 256×32、偏移见 LOLK_PANEL_DX/DY ⇒
- * UI x 384..704 / y 402..674 → 字面量 x 192..352 / y 201..337 →
- * 世界坐标（游玩区 x 中心 224、y 从 16 起）x −32..128 / y 185..321，再各放 32 px 余量。
- * ★ 2026-09-10 第二十三轮：面板整体上移 47 UI px = 23.5 世界 px ⇒ 淡出框的 y 也 −23.5；
- *   第二十五轮又下移 16 UI px = 8 世界 px ⇒ 净 −15.5（153/353 → 137.5/337.5）。*/
-#define LOLK_PANEL_FADE_ALPHA  76
-#define LOLK_PANEL_FADE_X0    (-64.0f)
-#define LOLK_PANEL_FADE_X1     160.0f
-#define LOLK_PANEL_FADE_Y0     137.5f
-#define LOLK_PANEL_FADE_Y1     337.5f
+ * 游玩区左侧，玩家贴上去看不清弹。
+ *
+ * ★★ 2026-09-15g：这一路按用户口径「UI 统一」改造，**动态统一、区域按本卡自己的几何**：
+ *   · 性质 = ❓ **用户口径（UI 统一），不是复刻**（用户 2026-09-15：「压暗这个涉及到 UI 统一，
+ *     这个不能复刻。是那个靠近透明吧」；父 agent 2026-09-15g 的读法：「压暗的本质 = 别让 HUD 挡住自机；
+ *     HUD 画在哪，判据就跟着哪」）。
+ *   · **动态**（统一）：终点 alpha **32**（原 76）、起始 255、每帧 **±56**（原 8）、滞回带 **16 px**。
+ *   · **区域**（本卡几何）：面板自己的矩形 —— 面板 VM 走 UI 空间（1 单位 = 1 表面 px），
+ *     六条 256×32、x 偏移 `LOLK_PANEL_DX` ∈ {0, −64}、y 偏移 `LOLK_PANEL_DY` ∈ {0, 50, 90, 130, 170, 240}
+ *     ⇒ 表面 x 575.5..895.5、y 401.5..673.5（= 320 × 272）
+ *     ⇒ 自机坐标（`自机 = 表面/2 − (320, 16)`，见 `hud_dim.h`）= x ∈ [−32.25, 127.75]、y ∈ [184.75, 320.75]
+ *   · ★★ 2026-09-15h：**进/出的口径订正**（父 agent：15g 那版「进 = 矩形**之内**」裁错了）——
+ *     **进 = 自机落在「矩形 + `HUD_DIM_MARGIN`(28)」之内**、**出 = 离开「矩形 + 44」（28 + 滞回 16）之外**；
+ *     理由：一手各作的门本来就落在它们自己那块上沿之上 24–32 px（TH16 的 `400` 在它那块沿之上 28、
+ *     TH11 的 `416` = 它那块沿 + 24）⇒ 边距是**原本就有的语义**（本卡这块整片都在自机够得着的范围内，
+ *     所以边距只让「靠近」更早成立，不再出现"站不进去"的问题）。
+ *     ⇒ **进**：x ∈ [−60.25, 155.75] ∧ y ∈ [156.75, 348.75]（自机钳位 x ∈ [−184, 184]、y ∈ [32, 432] ⇒ 全在范围内 ✓）
+ *     ⇒ **出**：x < −76.25 ∨ x > 171.75 ∨ y < 140.75 ∨ y > 364.75（**16 px 滞回带**）
+ *   · **面板几何一个字节没动**（`LOLK_PANEL_AX/AY/DX/DY` 与 `panel_show()` 的摆位照旧）。
+ *   ⚠️ 父 agent 先前那条「115 判定用左下角那套、与面板画在哪无关」**已作废**（2026-09-15g 撤回）。
+ *   ⚠️ 原来的那一套（= **本卡原实现**，TH15 原版没有它、它连一手都不是；留档，不再生效）：
+ *     终点 `LOLK_PANEL_FADE_ALPHA 76`（≈0.3）、步长每帧 8、淡出带 `x ∈ (−64, 160)`、
+ *     `y ∈ (137.5, 337.5)`（= 面板矩形各放 32 px 余量后跟着面板上下移动改过：153/353 → 137.5/337.5）。*/
+#define LOLK_PANEL_RECT_X   (LOLK_PANEL_AX - 64.0f)               /* 最左那条的 DX = −64 */
+#define LOLK_PANEL_RECT_Y   (LOLK_PANEL_AY + 240.0f + 32.0f)      /* 最下那条的 DY + 条高 = 面板下沿 */
+#define LOLK_PANEL_RECT_W   320.0f                                 /* 面板宽：256 + 左移的 64 */
+#define LOLK_PANEL_RECT_H   272.0f                                 /* 面板高：240 + 32 */
 
 static void panel_fade(lolk_card_t *s)
 {
-    const float *pp = ce_player_pos();
-    uint32_t a = 255;
+    hud_dim_rect_t r;
+    uint32_t a;
     unsigned i;
 
-    if (pp && pp[0] > LOLK_PANEL_FADE_X0 && pp[0] < LOLK_PANEL_FADE_X1 &&
-        pp[1] > LOLK_PANEL_FADE_Y0 && pp[1] < LOLK_PANEL_FADE_Y1) {
-        a = LOLK_PANEL_FADE_ALPHA;
-    }
-    /* ★ 渐隐渐显（用户 2026-09-10：进出区域要有过渡）：每帧朝目标走 8，别硬切 */
-    if (s->panel_alpha < (int32_t)a) { s->panel_alpha += 8; if (s->panel_alpha > (int32_t)a) s->panel_alpha = (int32_t)a; }
-    else if (s->panel_alpha > (int32_t)a) { s->panel_alpha -= 8; if (s->panel_alpha < (int32_t)a) s->panel_alpha = (int32_t)a; }
-    a = (uint32_t)s->panel_alpha;
+    /* ★ 每帧推进一次（`on_draw` 里过完主菜单门 + 「面板在场」门之后 ⇒ 每帧正好一次）*/
+    hud_dim_rect_surface(&r, LOLK_PANEL_RECT_X, LOLK_PANEL_RECT_Y,
+                         LOLK_PANEL_RECT_W, LOLK_PANEL_RECT_H);
+    a = (uint32_t)hud_dim_tick(&s->hud, &r, ce_player_pos()) & 0xffu;
     for (i = 0; i < LOLK_PANEL_N; ++i) {
         if (s->panel_id[i]) ce_anm_set_color(s->panel_id[i], (a << 24) | 0x00ffffffu);
     }
@@ -761,7 +775,7 @@ static int on_draw(ce_card_t *c)
      * `Gui::on_draw_2e`：`"%d"` / `"%3.1f%%"` / `"%3d"` / `"%6d"` / `"  +%d"`。*/
     int32_t shown = s->roll_active ? s->roll_shown : s->last.bonus;
     char buf[16];
-    uint32_t A = (uint32_t)(s->panel_alpha & 0xff) << 24;
+    uint32_t A = (uint32_t)(s->hud.alpha & 0xff) << 24;      /* ★ 2026-09-15g：读跨卡统一件 */
 
     /* ★★ 2026-09-10 第三十二轮：五行从 **ASCII 文字**改成**贴图 VM**（用户定案）。
      * 理由：ASCII 永远盖不到暂停模糊罩下面（组 1 的趟 `0x419950` 跑在 surface 1 + 相机 0 上，
@@ -831,6 +845,7 @@ static void on_run_reset(ce_card_t *c)
         ce_log("lolk: run reset (%d waves settled, last bonus %d)", s->waves_total, s->last.bonus);
     }
     memset(s, 0, sizeof *s);
+    hud_dim_init(&s->hud);              /* ★ 2026-09-15g：压暗状态复位 = **满亮 255**（共享件）*/
     lolk_reset(&s->st);                 /* 补 sentinel：last_chapter=-1、wave_chapter=-1、mid_rule=NONE、slow=FULL */
     s->last_graze = -1;
     s->last_enemies = -1;

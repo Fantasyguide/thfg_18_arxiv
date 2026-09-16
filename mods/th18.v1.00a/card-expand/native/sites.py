@@ -57,6 +57,33 @@ OWNED_NEW     = 0xd70     # 搬到对象尾部
 SHOP_RETAIL   = 56        # 原生商店三处循环只看 id 0..55（止于 +0xd64）。现在上界 = rows：
                           #   幻影 id 查表回落到 NULL 行 56，装载器把 cave 里 56/57 两行的 +0x14 写成 6，
                           #   三个循环（≠0&&≠6 / ==0 / dmode 1-5）就都过不了。AUDIT §N1。
+# ---- 战线 F：pl0X.sht 组数扩容到 96（2026-09-14；AUDIT.md §CQ、NEXT.md §1w、CAPACITY.md §3.3）----
+#
+# 零售 `pl0X.sht` 的偏移数组只有 40 格（`[0xe0,0x180)`），本 mod 到 2026-09-13 已用满
+# （原生 23 + APPEND 17）⇒ 扩容写法：**数组区原地长到 256 格（预留）**，数据区整体后移
+# `(256-40)*4 = 0x360` 字节 ⇒ 数据区起点（= 解析器里硬编码的**重定位基址**）`0x180 → 0x4e0`。
+# 宣布可用的是 96 格（= 影像头 `+0x02`，加载器上界）；计数是纯数据，以后加格子只改文件。
+#
+# ★ 为什么只需改这一处（与 §1w 最早那版「数组搬文件尾」的 14 条 binhack 是两条路）：
+#   · 偏移项存的是**相对数据区**的偏移（`stored = 文件内偏移 − 数据区起点`）；装载器
+#     `0x45a836 add [esi+edx],eax` 把 `eax = 影像 + 基点` 加上去 ⇒ 记录与基点**同时 +0xe0**
+#     ⇒ 40 个零售偏移项的值、每条记录的字节**都不用改**；
+#   · 13 个读者指令里的位移是 `sht + 0xe0 + set*4`，**数组起点没变** ⇒ 一条都不用改；
+#   · 全 exe 里 `0x180` 的 memory disp 只有 6 处（`0x41b7fc` / `0x429988` / `0x4299a5` /
+#     `0x43e2c0` / `0x45a830` / `0x4855f3`；字节级扫 `80 01 00 00` 再逐条反汇编分类），
+#     与 pl0X 有关的**只有 `0x45a830` 这一处**（另 5 处的基址寄存器都不是 sht 影像）；
+#   · 文件长大是安全的：影像内存 = `malloc(GetFileSize())`（`0x40217e` 一带：
+#     `0x4ad088` GetFileSize → `0x491a34` 分配 → `0x4ad090` ReadFile），不是定长内嵌数组。
+#   · 结构性恒等式（下面 `emit_sht_binhacks()` 每次生成都核）：新基点 == 老基点 + (96-40)*4。
+SHT_DBASE_VA     = 0x45A830   # Player__initialize 的解析循环：lea eax,[edx+0x180]（6 字节）
+SHT_DBASE_OLD    = 0x180      # 零售立即数（= 数据区起点，也是重定位加数）
+SHT_SLOTS_RETAIL = 40         # 零售格数（影像头 +0x02）
+SHT_SLOTS_NEW    = 96         # ★ 宣布可用格数（用户 2026-09-13 拍板）；= 影像头 +0x02
+SHT_SLOTS_RESERVED = 256      # ★ 数组区容量（**预留**）：数据区起点按它算 ⇒ 以后加格子只改文件、exe 不动
+SHT_ARRAY_OFF    = 0xE0       # 偏移数组起点 = 14 个读者指令里的位移（**本次一个都不改**）
+# 数据区起点 = **预留**数组区的末尾；两条等价算法给同一个数（0x4e0），互为对账
+SHT_DBASE_NEW    = SHT_DBASE_OLD + (SHT_SLOTS_RESERVED - SHT_SLOTS_RETAIL) * 4     # = 0x4e0
+SHT_DBASE_EXPECT = "8d8280010000"      # lea eax,[edx+0x180] = 8d 82 + imm32
 # 测试钩子（只进 patch-test）
 TEST_MOVZX  = 0x407ee3    # reset_cards 读初始卡组：movzx eax, byte [eax+esi+0x5f608]（8 字节）
 TEST_TRACE  = 0x411469    # allocate_new_card 序言：cmp [edi+0x28], 0x100（7 字节）
@@ -706,6 +733,73 @@ def emit_menu_binhacks(text, text_va):
     return B
 
 
+def emit_sht_binhacks(text, text_va):
+    """pl0X.sht 组数扩容 —— **只有 1 条**：把解析器的数据区基址 `0x180` 换成 `0x4e0`。
+
+    （`0x4e0 = 0xe0 + 256×4`：数组区**预留 256 格**，宣布可用 96 格；预留之后再加格子只改文件。）
+
+    只换 `lea eax,[edx+imm32]` 的最后 4 字节（opcode+modrm = `8d 82` 原样），长度 6 → 6。
+    ⚠ 三条结构性自检（缺一条就是「扩容只成功一半」那种静默错位）：
+      ① exe 里那 6 字节必须还是 `8d8280010000`（`ShapeError` 而不是静默跳过 —— thcrap 的
+         `expected` 对不上时**只打一行日志就跳过**，binhack.cpp:398，等于没打）；
+      ② `SHT_ARRAY_OFF + SHT_SLOTS_RESERVED*4 == SHT_DBASE_NEW`（**预留**数组区必须**正好**顶到
+         数据区，否则读者读出去 / 数据区第一项被压在数组下）；
+      ③ `SHT_DBASE_NEW == SHT_DBASE_OLD + (SHT_SLOTS_RESERVED-SHT_SLOTS_RETAIL)*4`（与生成器同式）；
+      ⑤ `SHT_SLOTS_NEW <= SHT_SLOTS_RESERVED`（宣布可用不能超过预留）。
+    ④ 与生成物的交叉对账（`sht_ids.h` 的 `CE_SHT_DATA_BASE` / `CE_SHT_SLOTS`）在 `capcheck.py`，
+       因为在 `gen` 之前 sht_ids.h 不一定存在（新 clone 上 `make gen` 不许依赖产物）。
+    """
+    if SHT_ARRAY_OFF + SHT_SLOTS_RESERVED * 4 != SHT_DBASE_NEW:
+        raise ShapeError("shooterset 扩容：预留数组末尾 %#x != 数据区起点 %#x"
+                         % (SHT_ARRAY_OFF + SHT_SLOTS_RESERVED * 4, SHT_DBASE_NEW))
+    if SHT_DBASE_NEW != SHT_DBASE_OLD + (SHT_SLOTS_RESERVED - SHT_SLOTS_RETAIL) * 4:
+        raise ShapeError("shooterset 扩容：数据区起点与数组区长大不同步（%#x vs %#x）"
+                         % (SHT_DBASE_NEW, SHT_DBASE_OLD + (SHT_SLOTS_RESERVED - SHT_SLOTS_RETAIL) * 4))
+    if not SHT_SLOTS_RETAIL <= SHT_SLOTS_NEW <= SHT_SLOTS_RESERVED:
+        raise ShapeError("shooterset 扩容：宣布可用格数 %d 不在 [%d, %d] 内"
+                         % (SHT_SLOTS_NEW, SHT_SLOTS_RETAIL, SHT_SLOTS_RESERVED))
+    off = SHT_DBASE_VA - text_va
+    raw = text[off:off + 6]
+    if raw.hex() != SHT_DBASE_EXPECT:
+        raise ShapeError("0x%06x 是 %s，应为 %s（数据区基址那处 LEA）"
+                         % (SHT_DBASE_VA, raw.hex(), SHT_DBASE_EXPECT))
+    code = raw[:2].hex() + struct.pack("<I", SHT_DBASE_NEW).hex()
+    return {"sht_dbase_%06x" % SHT_DBASE_VA: {
+        "addr": "0x%06x" % SHT_DBASE_VA, "code": code, "expected": SHT_DBASE_EXPECT,
+        "title": "pl0X.sht 组数 40 → %d（数组区预留 %d 格）：数据区基址 0x%x → 0x%x"
+                 "（数组 [0x%x,0x%x)，14 个读者的位移不改）"
+                 % (SHT_SLOTS_NEW, SHT_SLOTS_RESERVED, SHT_DBASE_OLD, SHT_DBASE_NEW,
+                    SHT_ARRAY_OFF, SHT_DBASE_NEW)}}
+
+
+def verify_sht_binhack(name, bh, text, text_va):
+    """对账一条 `sht_*`：expected 与磁盘原版 exe 逐字节一致；code 只换立即数、长度不变、前缀不动。
+
+    这批是**纯 hex 的 code**（没有 `<…>` 表达式）⇒ `verify_patch()` 的通用分支会在
+    `code.index("<")` 上抛 ValueError，所以单独一条分支（不是放行）。
+    """
+    bad = []
+    va = int(bh["addr"], 16)
+    off = va - text_va
+    exp = bytes.fromhex(bh["expected"])
+    if text[off:off + len(exp)] != exp:
+        bad.append("%s：exe 里是 %s，expected 写的是 %s"
+                   % (name, text[off:off + len(exp)].hex(), bh["expected"]))
+        return bad
+    code = bytes.fromhex(bh["code"])
+    if len(code) != len(exp):
+        bad.append("%s：code %d 字节 != expected %d 字节（thcrap 会静默跳过校验）"
+                   % (name, len(code), len(exp)))
+        return bad
+    if code[:2] != exp[:2]:
+        bad.append("%s：code 换掉了 opcode/modrm（只许换立即数）" % name)
+    want = struct.pack("<I", SHT_DBASE_NEW)
+    if code[2:6] != want:
+        bad.append("%s：立即数是 %s，应为 %s（数据区基址必须 = SHT_DBASE_NEW）"
+                   % (name, code[2:6].hex(), want.hex()))
+    return bad
+
+
 def emit_text_breakpoints(text, text_va):
     """战线 E 第一块：三处 imul 挂断点。expected 写死在表里，这里再与 exe 核对一遍。"""
     out = {}
@@ -756,21 +850,43 @@ def verify_unlock_binhack(name, bh, text, text_va):
 
 # ---- 行为 SDK（SDK.md §1、§6）：两个断点 ----
 SDK_SITES = [
+    ("ce_enemy_damage", 0x42f2cb, 6, "01b308500000",
+     "EnemyData::step_game_logic 0x42ed40 里 `add [ebx+0x5008],esi`（ebx = zEnemyData* = zEnemy*+0x122c；"
+     "esi = 本帧最终伤害，已过自机倍率/ECL 扩展/炸弹倍率）。"
+     "6 字节、无相对寻址、窗内无跳转靶；0x42ed40 每敌每帧恰好一次（唯一调用方 0x42fff0）。"
+     "站点在两道免伤闸（0x42f2b9 `test byte [ebx+0x5130],0x10` / 0x42f2c2 `cmp [ebx+0x50f4],0`）**之后** "
+     "⇒ 语义 = 「HP 即将减少」；handler **必须返回 BP_EXEC_ORIGINAL**（那条 add 是引擎记账）。"
+     "用途 = 113 的「Boss 随血量掉灵」（TH13 通道 A）。一手全链见 REPORT-BOSS-SPIRIT-DROP.md。"),
     ("ce_card_bind",  0x412cec, 6, "895e048b4728",
      "allocate_new_card 公共尾段 mov [esi+4],ebx（esi=卡对象, ebx=id）+ mov eax,[edi+0x28]：登记了行为的 id 换虚表"),
+    # ★★ 2026-09-13 第二次修订：计分层的**注入点搬到入口**（原 `ce_item_score` 那两个站点改成纯观察者）。
+    #    为什么搬：那两个站点都在**引擎算完身价之后**（`esi` = 引擎自己的最终值），handler 一写 `regs->esi`
+    #    就把引擎刚做的高度系数（`0x446bf9`–`0x446cf3`）整个丢掉 ⇒ 实际结构 = `coeff × G_0 + ΣG_i`，
+    #    而用户规格要的是 `coeff × (G_0 + ΣG_i)`。改 `ecx` = 改「引擎接下来要乘系数的那个输入」⇒ 系数自动乘在整笔上。
+    # ⚗ 2026-09-16zr 二分（临时）：整条摘掉「计分层返工新增的落笔点」ce_item_score_in（0x446bf9）。
+    #     ("ce_item_score_in", 0x446bf9, 8, "f30f108698790400",
+    #      "collect_money_item 0x446b00 的**单一汇合点**：movss xmm0,[esi+0x47998]（回收线；8 字节、无相对寻址）。"
+    #      "三条难度支（0x446b30 EASY / 0x446b86 其余 / 0x446ba3 EXTRA）与 `ja 0x446bf3` 那条都汇到这里；"
+    #      "此刻 **ecx = 引擎钳位后的身价**（单位 1/1000 点，恒等于 [0x4ccd24]）、**esi = PLAYER**（0x446b0c 从 0x4cf410 载入）、"
+    #      "**edi = ITEM**（= [ebp-8]）。handler 把它改成 `1000 × (G_0 + ΣG_i)` ⇒ 引擎自己那两段高度系数"
+    #      "（满额 0x446cb4 / 线下折扣 0x446c17）就乘在**整笔**上，满额支的 `SCORE += floor(ecx/1000)` 精确给出我们声明的条数。"),
     ("ce_item_score", 0x446cf6, 6, "8d872c0c0000",
-     "collect_money_item：esi=道具身价，弹窗与计分之前；沿卡链表调 on_item_score(&esi)"),
+     "collect_money_item 的**满额支**出口 lea eax,[edi+0xc2c]（弹窗与 SCORE 入账之前，esi = 引擎算好的最终身价）。"
+     "★ 2026-09-13 起本站点**只观察不落笔**：注入已搬到 0x446bf9（ce_item_score_in），这里只把引擎的最终值与"
+     "我们的预测（10 × G_total）比一行日志（`score-out:`）—— 满额支应当完全相等、线下支应更低（那是系数）。"
+     "handler **不写 regs->esi、不再调卡回调**（声明已在新站点收过，再收一次 = 双计）。"),
     ("ce_item_score_below", 0x446caa, 8, "8b45f8052c0c0000",
-     "collect_money_item 0x446b00 的**线下分支**计分汇合点：mov eax,[ebp-8] / add eax,0xc2c（8 字节、无相对寻址）。"
+     "collect_money_item 0x446b00 的**线下分支**出口：mov eax,[ebp-8] / add eax,0xc2c（8 字节、无相对寻址）。"
      "一手：0x446c01 comiss + 0x446c04 jae 0x446cb4 / 0x446c0a cmp [edi+0xc74],3 + 0x446c11 je 0x446cb4 都不成立时"
-     "（= 自机在回收线**下方**且道具非真空飞行）走这一支算分，esi 已算好最终身价，走到 0x446cb2 `jmp 0x446cfc` "
-     "**绕过** `ce_item_score` 那个断点 ⇒ 只挂 0x446cf6 会漏掉线下收的金钱（110/111 的 PV 注入对它完全不生效）。"
-     "handler = 与 ce_item_score 同一份（两个站点互斥、每次收集只走一支 ⇒ 事件仍是一颗道具一次）。"),
+     "（= 自机在回收线**下方**且道具非真空飞行）走这一支算分，走到 0x446cb2 `jmp 0x446cfc` **绕过** `ce_item_score`。"
+     "★ 与 ce_item_score 一样：2026-09-13 起**纯观察者**（不写 regs->esi、不调卡回调），只打 `score-out:` 那行；"
+     "两支互斥 ⇒ 每次收集只出**一行** `score-in:` 与**一行** `score-out:`，可逐颗对照。"),
     ("ce_item_money", 0x446d28, 6, "ff0530cd4c00",
      "collect_money_item：inc [MONEY_TOTAL]（下一条 inc [MONEY]）；沿卡链表调 on_item_money(&bonus)，两个全局一起 += bonus"),
-    ("ce_bomb_spent", 0x4203bc, 5, "a1c0f24c00",
-     "do_bomb 里 consume_bomb(0x4574d0) **刚返回**那一条：mov eax,ds:0x4cf2c0，5 字节绝对寻址无相对量。"
-     "0x4574d0 全库只有 0x4203b7 一个调用方，所以这里不多不少覆盖每一次炸弹消耗；沿卡链表调 on_bomb_spent()"),
+    # ⚗ 2026-09-16zs 二分（临时）：摘掉炸弹路径站点 ce_bomb_spent
+    #     ("ce_bomb_spent", 0x4203bc, 5, "a1c0f24c00",
+    #      "do_bomb 里 consume_bomb(0x4574d0) **刚返回**那一条：mov eax,ds:0x4cf2c0，5 字节绝对寻址无相对量。"
+    #      "0x4574d0 全库只有 0x4203b7 一个调用方，所以这里不多不少覆盖每一次炸弹消耗；沿卡链表调 on_bomb_spent()"),
     ("ce_enemy_drop", 0x430510, 6, "558bec83ec20",
      "Enemy__drop_items_and_notify_cards 入口（thiscall，**ecx = zEnemyDrop = enemy+0x623c，不是敌人对象**；"
      "一手 0x430499 `lea ecx,[edi+0x623c]`、ECL dropItems 0x42d0c0 同）：push ebp/mov ebp,esp/sub esp,0x20，无相对寻址。"
@@ -801,21 +917,60 @@ SDK_SITES = [
      "0x45f2dc 因 guard-fail 路 0x45f14e jmp 0x45f2de 落在窗内而**被否**，此窗已对齐 objdump 确认无窗内跳转目标）。"
      "esi = 本帧本敌伤害（钳 cap 后 ≥1），ebx = 帧基 → pos 在 [ebx+8]（敌世界坐标 x,y）、param_6 在 [ebx+0x1c]。"
      "沿卡链表调 on_shot_damage(card, dmg, pos)"),
-    ("ce_bomb_gate", 0x45c048, 7, "f60534a44c0002",
-     "Player__on_tick__body 0x45be90 的普通炸弹分支：test BYTE PTR ds:0x4ca434,0x2（7 字节，输入上升沿 bit1）。"
-     "handler 沿卡链表问 on_bomb_gate()；任一卡返回 1 时用 retaddr 跳到 0x45c056 跳过 call do_bomb 0x45c051。"
-     "只在咆哮 ready/hypering 的卡返回 1；其余帧/无卡时放行原指令（真实炸弹不受影响）。"),
+    # ⚗ 2026-09-16zs 二分（临时）：摘掉炸弹路径站点 ce_bomb_gate
+    #     ("ce_bomb_gate", 0x45c048, 7, "f60534a44c0002",
+    #      "Player__on_tick__body 0x45be90 的普通炸弹分支：test BYTE PTR ds:0x4ca434,0x2（7 字节，输入上升沿 bit1）。"
+    #      "handler 沿卡链表问 on_bomb_gate()；任一卡返回 1 时用 retaddr 跳到 0x45c056 跳过 call do_bomb 0x45c051。"
+    #      "只在咆哮 ready/hypering 的卡返回 1；其余帧/无卡时放行原指令（真实炸弹不受影响）。"),
     ("ce_enemy_death", 0x430240, 6, "558bec83ec14",
      "FUN_00430240（SDK 名 Enemy__die）入口：push ebp/mov ebp,esp/sub esp,0x14，无相对寻址。"
      "thiscall，ecx = zEnemy；**引擎撒主掉落之前**（0x430493 才是撒、0x43049f 才通知卡）、链表仍挂着，"
      "恒定 mov eax,1 返回 ⇒ 一敌一生正好一次。handler 用 regs->retaddr 分死因"
      "（0x42f3b7 = 打死主路 / 0x42ee90 = 炸弹秒杀 / 0x430f59 = ECL die / killAll 三兄弟），"
      "沿卡链表调 on_enemy_death(&ev)。详见 docs/superpowers/specs/2026-09-12-shared-enemy-death-event-design.md"),
+    ("ce_poc_gate_a", 0x445bb9, 6, "0f87a4030000",
+     "ItemManager__on_tick__body 的『过线 ⇒ 道具无条件真空』分支 A：`445baa movss xmm0,[esi+0x47998]`（收点线）"
+     "→ `445bb2 comiss xmm0,[esi+0x624]`（自机 y）→ **本站点 `ja 0x445f63`**（0x445f63 = `mov [item+0xc74],3` 真空态）。"
+     "6 字节、无相对寻址。handler 读声明层 `ce_full_p_gate_active()`：开着 ⇒ **返回 0（不执行这条 ja）**"
+     "= 条件不成立 = 落空到 0x445bbf（道具继续下落）。一手依据 = TH06 `ItemManager.cpp` 的道具 tick"
+     "`state==1 || (128 <= currentPower && player.y < 128.0f)` ⇒ 『满 P + 在线上』才是过线收点的充要条件。"),
+    ("ce_poc_gate_b", 0x446003, 6, "0f875affffff",
+     "同上，**第二条** `ja 0x445f63`（向后跳；0x446003 处、6 字节）。落空到 0x446009。"
+     "两条都要挂：只挂一条 = 另一条支路照旧把道具拉进真空态（静默半失效）。"),
+    ("ce_player_die", 0x45d3a0, 6, "558bec83ec14",
+     "Player__die 0x45d3a0 入口：push ebp/mov ebp,esp/sub esp,0x14（6 字节，无反/相对寻址、无窗内跳转目标）。"
+     "thiscall，ecx = zPlayer；全 exe 只有 3 处 call（0x45cd27/0x45ce81/0x45d060，全在中弹判定链上）、"
+     "0 处 jmp、0 处数据表引用 ⇒ 一个站点覆盖子弹/敌本体/三种激光**全部**命中路径。"
+     "handler 读声明层 ce_no_hit_active()：开着就 **返回 0 并把 regs->retaddr 改成 0x45d584**"
+     "（该函数唯一的 c3；此刻栈上只有调用者返回地址 ⇒ 栈干净），等于整段 die 体不执行"
+     "= 一手 TH13 的「撞了但不算撞弹」（弹照样被吃掉、擦弹不受影响）。"
+     "⚠ 尾部的卡虚表 +0x10 救援广播也一并被跳过 ⇒ 要靠本闸门自救的那张卡必须先撤声明再调 die。"
+     "一手链见 engine/player/th18/03-player-hit-gate.md"),
     ("ce_shot_set_index", 0x45ebfb, 7, "8bbc97e0000000",
      "Player__tick_shooting_state 0x45ea00 查主炮 shooterset 前的 mov edi,[edi+edx*4+0xe0]（7 字节，无相对寻址）。"
      "edx = 本帧 fire-time set index（0..9 主炮；eax = 火力档），ebp-8 暂存同一 set index，随后 0x45ec69 会打包进 bullet+0xac。\n"
      "handler 沿卡链表问 on_shot_set_index(card, eax)：返回 >=0 时改写 edx 与 [ebp-8] 为咆哮组 base+power，放行原指令；"
      "不咆哮/无卡时返回 -1，原版主炮 0..9 一个字节都不动。"),
+    # ★★ 2026-09-16（111 的魔理沙侧：**原生那 4 格子机不许出现**；`sdk.c` 顶部的长注释是唯一出处）
+    ("ce_repopulate_native_option", 0x45d610, 7, "538981dc710400",
+     "Player__repopulate_options_and_notify_cards 0x45d5e0 里**算完火力档之后那一条**："
+     "`push ebx` + `mov [ecx+0x471dc],eax`（7 字节；该 mov 的 imm32 = 0x471dc，**不是相对寻址**）。"
+     "此刻 ecx = &zPlayer.inner（thiscall this = PLAYER+0x620；一手 0x45d5fc）、"
+     "eax = `CURRENT_POWER / POWER_PER_LEVEL`（一手 0x45d604–0x45d60a 的 idiv）。"
+     "handler 把 eax 改成 0 后**放行原字节**：后面两段（满火力形子机 VM 的建/清、普通形 4 格的建/清）"
+     "读到的档位都是 0 ⇒ 不建新子机、并走引擎自己的「清空 4 格」那条路；handler 另外自己 interrupt 掉"
+     "4 格 × 2 支（+0xb0 普通形 / +0xb4 满火力形，照 0x45d823 那段同款写法）。"
+     "只在 `ce_native_option_hidden(当前机体)` 为真时动手 ⇒ 其余机体 / 没装卡时逐字节不变。"),
+    ("ce_native_option_muzzle", 0x45e930, 5, "558bec5153",
+     "Player__shoot_one_bullet 0x45e930 的**函数入口**（5 字节 = push ebp / mov ebp,esp / push ecx / push ebx，"
+     "恰好在指令边界上；无相对寻址、窗内无跳转靶。⚠ 取 6 字节会**从 `mov ebx,[ebp+8]` 中间切开**"
+     "（那条是 3 字节、落在 0x45e935）⇒ cave 会回放半条指令，必须取 5 或 8）。"
+     "thiscall ⇒ ecx = zPlayer*；栈（低→高）= 返回地址、packed id、timer、pos*、"
+     "**option*（膛口）**（调用方压栈序一手：0x45ec5f push 膛口 / 0x45ec68 push pos / 0x45ec71 push timer / 0x45ec72 push id）。"
+     "handler 读第 5 个栈参：落在**原生子机数组区间** `[PLAYER+0x670, PLAYER+0xa30)` 时**整发跳过**"
+     "（`regs->retaddr = [esp]` + `regs->esp += 0x14` = 等价一条 `ret 0x10`；thcrap 的 esp 机制见 breakpoint.cpp 的 esp_diff；"
+     "返回值调用方不检查，一手 0x45ec78）。卡申请的池 = `PLAYER+0xa30` 起（一手 0x40a7a4 `add edi,0xa30`）"
+     "⇒ 区间不相交，117 / 116 / 108 的卡子机零影响。"),
     ("ce_option_shot_gate", 0x40a9c3, 6, "8b550883ec0c",
      "Player__tick_shooters_for_ability_card 0x40a9c0 的序言后 `mov edx,[ebp+8]; sub esp,0xc`（两条完整指令，"
      "6 字节，无相对寻址 / 无窗内跳转目标）。选 6 字节是因为 thcrap 的 sourcecave 下限是 5 字节：上一版只取 "
@@ -824,13 +979,75 @@ SDK_SITES = [
      "**不能用 `0x40a9cb` 的 6 字节 `je`**：thcrap 的 cave_fix 不重定位 `0f 84 rel32`，复制进 cave 后会跳飞。"
      "handler 返回 1 = 执行完整两条原指令；返回 0 且 retaddr=0x40aa9e 才跳过本组（`mov esp,ebp` 重设栈顶）。"
      "⚠ 当前 C 侧 `CE_OPTION_SHOT_GATE_ENABLE` 默认 0（不启用），只为让门回读通过并保留实现。"),
+    # ★★ 2026-09-13（原生卡冲突审计 §B-1；用户已拍「按语义叠加」）：卡链遍历**之后**重施我们的伤害倍率。
+    ("ce_bullet_damage_final", 0x45e7ff, 9, "ff77088b0d5cf65100",
+     "PlayerBullet__create 0x45e320 的**卡链遍历出口**：0x45e7dc mov eax,[0x4cf298]（ABILITY_MGR）→ "
+     "0x45e7e4 mov esi,[eax+0x1c]（卡链头）→ 0x45e7e9 je 0x45e7ff（**没卡也跳这里**）→ "
+     "0x45e7f0 mov ecx,[esi] / 0x45e7f2 push edi（bullet）/ 0x45e7f5 call [eax+0x28] / "
+     "0x45e7f8 mov esi,[esi+4] / 0x45e7fb test esi,esi / 0x45e7fd jne 0x45e7f0 "
+     "—— **五家（含原生 25 Saki 0x40c310 / 54 Momoyo 0x411010）全跑完**。"
+     "覆盖字节 = `ff 77 08`（push [edi+8]）+ `8b 0d 5c f6 51 00`（mov ecx,[0x51f65c] = ANM_MANAGER_PTR，"
+     "下一条 0x45e808 call 0x488b40 = AnmManager__get_vm_with_id），两条都无相对寻址；"
+     "窗内无跳转靶（0x45e7e9 的 je 落在**站点本身** ⇒ 跳到站点 = 走断点，合法）；"
+     "EDI 此刻仍是 bullet（0x45e837 才 push [edi+0x9c] 把它交给伤害源 0x45dfa0），ESI/EDX 已换用 ⇒ **只信 EDI**。\n"
+     "为什么在这里：我们的倍率原来落在**同槽** `+0x28` 的桩里，而原生 25/54 是**从 shooter 重算**派 "
+     "⇒ 谁在链里靠后谁说了算，我们的 ×1.25 会被**静默抹掉**（卡链顺序 = 获得/存档顺序，不可控）。"
+     "搬到遍历出口 = 永远乘在**别人的最终值**上（语义 = 乘法叠加，×1.25 × 1.4 = ×1.75，不是覆盖）。\n"
+     "★ **不重复施加**：本站点是**唯一**落笔点 —— `CE_CARD` 的 `+0x28` 桩不再缩放（普查：全 exe `call [reg+0x28]` 8 处，"
+     "只有 0x45e7f5 在卡链上，其余 7 处是别的对象类型）⇒ 不需要「本帧是否已施加」的标记，也就没有标记失效这一档。"
+     "详见 BP30-IMPLEMENTATION.md §1"),
+    # ★★ 2026-09-13（原生卡冲突审计 §A-2）：死亡结果闩锁 —— 引擎判完「五家 OR」之后那一条。
+    ("ce_death_result", 0x45c127, 6, "85ff8b7c2414",
+     "Player__on_tick__body 0x45be90 的 case 4（决死窗口走完那一帧）里**唯一的那次判定**："
+     "0x45c106 mov eax,[0x4cf298] → 0x45c10b mov esi,[eax+0x1c] → 0x45c110 je 0x45c133（没卡 ⇒ 没人取消）；"
+     "0x45c112 xor edi,edi（acc=0）→ 0x45c116 push edi（当参数）→ 0x45c11c call [eax+0xc] → 0x45c121 or edi,eax → "
+     "0x45c123/0x45c125 循环把**五家全跑完** → **0x45c127 test edi,edi（★ 本站点）** → "
+     "0x45c129 mov edi,[esp+0x14]（还原 EDI = player）→ 0x45c12d jne 0x45c3d1（acc≠0 ⇒ 取消死亡）→ "
+     "0x45c135 call 0x45d090（acc=0 ⇒ 扣命）。handler 读 **EDI = acc**：1 = 这次死亡已被取消、0 = 会扣命，"
+     "写进 sdk_core 的**死亡结果闩锁**（只读 getter 供卡侧在 `+0x0c`/`+0x14`/记账回调里查）。\n"
+     "窗口 = `85 ff`（test edi,edi）+ `8b 7c 24 14`（mov edi,[esp+0x14]）共 **6 字节**：两条都无相对寻址、"
+     "窗内无跳转靶（0x45c110 的 je 落 0x45c133、0x45c12d 的 jne 落窗后），且**两条指令在两条臂上都要执行**"
+     "（直线码、分支在窗后）⇒ **一个站点就看得到两种结果**。\n"
+     "★ 为什么不是 0x45c3d1（取消臂）/ 0x45c135（扣命臂）：0x45c3d1 是 case 3 与 case 4 的**共用尾**"
+     "（一手不止字节：Ghidra 反编译把这个尾部直接标成 `LAB_0045c3d1`，`case 3` 与 `case 4` 都 `goto` 它；"
+     "汇编侧 0x45c0db 的 je / 0x45c0ef 的 jmp 也跳它）⇒ 会把非死亡帧记成「取消」；0x45c135 是 `call rel32`"
+     "（窗内相对寻址，纪律禁止）。\n"
+     "★ `[esp+0x14]` 在 cave 里读的是**同一个栈**：一手 thcrap/src/bp_entry.asm（pusha/pushf → handler → "
+     "popf/popa → 回放原指令 → jmp 站点+len ⇒ cave 里 ESP = 站点处 ESP），与已实跑的 `ce_option_shot_gate`"
+     "（窗内含 `sub esp,0xc`）、`ce_shop_bought`（窗内三条 push）同机制。\n"
+     "本站点**只记事实、不改控制流**：返回 BP_EXEC_ORIGINAL，原两条指令原样回放，`test` 设的 ZF 正好给 0x45c12d 用。"),
     # ★ 2026-09-10（天空璋卡）：引擎自己算完一次**子弹擦弹**之后那一条。ESI = 刚被擦到的弹
     # （0x42496f 已判过 `[esi+0x20] & 4` 没擦过、0x424984 才置位），位置在 esi+0x638。
     # 卡用它把季节点撒在**弹的位置**上（此前只能扫弹池猜「最近的已擦弹」，会撒到自机背后）。
     # ⚠️ 2026-09-10 临时摘掉（二分「游戏打不开」）：先确认它是不是元凶，确认后再放回。
     # ("ce_graze", 0x42497f, 5, "a1bcf24c00",
      # "FUN_004248a0 的子弹擦弹路径 …"),
+    # ★★ 2026-09-16ze（头号崩溃的止血点 + 取证；机制全文 = `sdk.c` 的 `BP_ce_chain_node_guard`，唯一出处）：
+    # ⚗ 2026-09-16zn 二分：站点从 0x401352（`mov eax,[edi+8]; call eax`，**在 call 之前**）挪到
+    # `0x401357`（`cmp byte [0x5217be],0`，7 字节、esp 中性、**在 call 之后**）—— 这样 handler
+    # 能读到**回调的返回值**（`regs->eax`）与节点字段，用来判断「返回值选了哪一支派发」。
+    # ⚠ 副作用：站点点在 call 之后 ⇒ **再也拦不住那次 call**（闸的止血能力暂时关闭，闸的代码仍在）。
+    ("ce_chain_node_guard", 0x401357, 7, "803dbe17520000",
+     "UpdateFuncRegistry__run_all_on_tick 0x4012e0 的**派发**上：0x40131f mov edi,[ecx]（更新链节点）→ "
+     "0x401323 cmp [edi+8],0 / je（没 on_tick 就跳过）→ 0x401329 test byte [edi+4],2（暂停位）→ "
+     "0x40134f mov ecx,[edi+0x24]（this）→ **本站点 0x401352 mov eax,[edi+8]** → 0x401355 call eax（下一条 0x401357）。"
+     "窗口 = `8b 47 08` + `ff d0`：两条都无相对寻址、窗内无跳转靶（分派在 0x401373 之后）。\n"
+     "节点 = `UpdateFunc__operator_new` 0x401530 的 0x28 字节对象（布局一手见 sdk.c）："
+     "+0x00 排序键 / +0x04 flags / +0x08 **on_tick** / +0x0c 注册期回调 / +0x10 第二回调 / "
+     "+0x14 链格（自指；+0x18 next、+0x1c prev，register__on_tick 0x401180 按 +0x00 升序插入）/ +0x24 **this**。"
+     "注册者 = Supervisor/AbilityManager/ItemManager/EnemyManager/BulletManager/EffectManager/Player/Stage/"
+     "AsciiManager/Bomb*（运行期动态）等；摘链者 = 各管理器自己的析构（0x4015a0 的调用者）。\n"
+     "崩溃签名（crashdumps 5 次全同）：0xC0000005 **写 0x1** + Eax=1 + EIP 在堆（无 DEP ⇒ 堆数据当指令执行）"
+     "⇒ `[edi+8]` 悬垂。触发器（用户实测）= 射击中 + 上线收点那一刻。\n"
+     "handler 三件事：① 首见每个节点打一行「链地图」（node/order/flags/on_tick/this/vt + 各自模块名）；"
+     "② 已知节点的 +8/+0x24 变了就打 ★ CHANGED（启动期一次分配、正常永不改变 ⇒ 直接抓到改写者）；"
+     "③ on_tick 不是可执行地址（VirtualQuery 判页保护）⇒ **跳过这次 call**：eax=1、retaddr=0x401357 "
+     "= 跳转表 0x4013f8[1]=0x4013b7 的纯空转路径（不碰 edi、不摘链；[0]=0x401397 会去 0x4015a0 摘链，对垃圾节点更危险）。"
+     "返回 0 = 不回放 cave 里的两条原指令（栈上没有 call 的压栈 ⇒ 与「调用后」同形）。"),
 ]
+
+SDK_SITES = SDK_SITES[:12]   # 已知安全区上限（12 不崩 / 14、16、22 崩）
+
 
 def _sdk_rva(name):
     """按**名字**取 SDK 断点地址 —— 别再用 `SDK_SITES[i]` 下标：插一条就全体错位
@@ -838,6 +1055,7 @@ def _sdk_rva(name):
     for site in SDK_SITES:
         if site[0] == name:
             return site[1]
+    return 0   # 容忍缺失（配合下面的切片过滤）
     raise KeyError("SDK_SITES 里没有断点 %r（sites_gen.h 生成时才发现 = 太晚）" % name)
 
 
@@ -974,6 +1192,10 @@ def verify_patch(path, text, text_va):
             # 以及把 modrm 的 mod 从 10 改成 00（去掉 ebp 基址）后接 disp32 —— 通用分支的
             # 「只许换常量、常量收尾」两条都对不上，单独核。
             bad += verify_pool_binhack(name, bh, text, text_va)
+            continue
+        if name.startswith("sht_"):
+            # pl0X.sht 扩容：纯 hex code（无 `<…>` 表达式），通用分支会抛 ValueError
+            bad += verify_sht_binhack(name, bh, text, text_va)
             continue
         if name.startswith(("alloc_", "grow_", "menu_")):
             va = int(bh["addr"], 16); off = va - text_va
@@ -1140,19 +1362,37 @@ def emit_header(sites, unlock_reads, order_sites, menu_binhacks):
               "#define CE_BP_TEXT_DESC_RVA   0x%06x" % (TEXT_SITES[1][1] - 0x400000),
               "#define CE_BP_TEXT_NOTIFY_RVA 0x%06x" % (TEXT_SITES[2][1] - 0x400000),
               "#define CE_BP_CARD_BIND_RVA 0x%06x" % (_sdk_rva("ce_card_bind") - 0x400000),
+              # ⚗ 二分临时：摘掉 ce_item_score_in
+              # "#define CE_BP_ITEM_SCORE_IN_RVA ...
               "#define CE_BP_ITEM_SCORE_RVA 0x%06x" % (_sdk_rva("ce_item_score") - 0x400000),
               "#define CE_BP_ITEM_MONEY_RVA 0x%06x" % (_sdk_rva("ce_item_money") - 0x400000),
-              "#define CE_BP_BOMB_SPENT_RVA 0x%06x" % (_sdk_rva("ce_bomb_spent") - 0x400000),
+              # ⚗ 二分临时：摘掉 ce_bomb_spent
               "#define CE_BP_ENEMY_DROP_RVA 0x%06x" % (_sdk_rva("ce_enemy_drop") - 0x400000),
               "#define CE_BP_ITEM_FRAME_RVA 0x%06x" % (_sdk_rva("ce_item_frame") - 0x400000),
               "#define CE_BP_ITEM_COLLECT_RVA 0x%06x" % (_sdk_rva("ce_item_collect") - 0x400000),
               "#define CE_BP_ITEM_COMMIT_RVA 0x%06x" % (_sdk_rva("ce_item_commit") - 0x400000),
               "#define CE_BP_SHOT_DAMAGE_RVA 0x%06x" % (_sdk_rva("ce_shot_damage") - 0x400000),
-              "#define CE_BP_BOMB_GATE_RVA 0x%06x" % (_sdk_rva("ce_bomb_gate") - 0x400000),
+              # ⚗ 二分临时：摘掉 ce_bomb_gate
+              "#define CE_BP_PLAYER_DIE_RVA 0x%06x" % (_sdk_rva("ce_player_die") - 0x400000),
               "#define CE_BP_SHOT_SET_INDEX_RVA 0x%06x" % (_sdk_rva("ce_shot_set_index") - 0x400000),
               "#define CE_BP_OPTION_SHOT_GATE_RVA 0x%06x" % (_sdk_rva("ce_option_shot_gate") - 0x400000),
+              "#define CE_BP_ENEMY_DAMAGE_RVA 0x%06x" % (_sdk_rva("ce_enemy_damage") - 0x400000),
               "#define CE_BP_ENEMY_DEATH_RVA 0x%06x" % (_sdk_rva("ce_enemy_death") - 0x400000),
               "#define CE_BP_ENEMY_SHOT_SLOT_RVA 0x%06x" % (_sdk_rva("ce_enemy_shot_slot") - 0x400000),
+              "#define CE_BP_BULLET_DAMAGE_FINAL_RVA 0x%06x" % (_sdk_rva("ce_bullet_damage_final") - 0x400000),
+              "#define CE_BP_DEATH_RESULT_RVA 0x%06x" % (_sdk_rva("ce_death_result") - 0x400000),
+              # ★ 2026-09-16：111 魔理沙侧「原生子机不许出现」的两条（sdk.c 的长注释 = 唯一出处）
+              "#define CE_BP_REPOP_NATIVE_OPT_RVA 0x%06x" % (_sdk_rva("ce_repopulate_native_option") - 0x400000),
+              "#define CE_BP_NATIVE_OPT_MUZZLE_RVA 0x%06x" % (_sdk_rva("ce_native_option_muzzle") - 0x400000),
+              # ★ 2026-09-16za：106 的「上线收点当且仅当满 P」两条（sdk.c 的 BP_ce_poc_gate_a/b = 唯一出处）
+              "#define CE_BP_POC_GATE_A_RVA 0x%06x" % (_sdk_rva("ce_poc_gate_a") - 0x400000),
+              "#define CE_BP_POC_GATE_B_RVA 0x%06x" % (_sdk_rva("ce_poc_gate_b") - 0x400000),
+              # ★ 2026-09-16ze：更新链节点闸（头号崩溃的止血点；sdk.c 的 BP_ce_chain_node_guard = 唯一出处）
+              "#define CE_BP_CHAIN_NODE_GUARD_RVA 0x%06x" % (_sdk_rva("ce_chain_node_guard") - 0x400000),
+              # 战线 F：pl0X.sht 组数扩容那处 binhack 的落点。DLL 在门里回读它
+              # （binhack 的 expected 不匹配时 thcrap **只打一行日志就跳过** ⇒ 没有回读就等于没护栏）。
+              "#define CE_BH_SHT_DBASE_RVA 0x%06x   /* lea eax,[edx+0x%x→0x%x]，AUDIT §CQ */"
+              % (SHT_DBASE_VA - 0x400000, SHT_DBASE_OLD, SHT_DBASE_NEW),
               "#define CE_BP_ITEM_SCORE_BELOW_RVA 0x%06x" % (_sdk_rva("ce_item_score_below") - 0x400000),
               "#define CE_BP_SHOP_BOUGHT_RVA 0x%06x" % (SHOP_SITES[0][1] - 0x400000),
               "#define CE_BP_SHOP_REOPEN_RVA 0x%06x" % (SHOP_SITES[1][1] - 0x400000),
@@ -1298,7 +1538,7 @@ def main():
         path = a.out or os.path.join(HERE, "..", "patch", "%s.js" % VERSION)
         n, bad = verify_patch(path, text, text_va)
         print("对账 %s：%d 条 binhack" % (os.path.relpath(path, REPO), n))
-        n_alloc = sum(1 for k in json.load(open(path, encoding="utf-8"))["binhacks"] if k.startswith(("alloc_", "grow_", "unlock_", "order_", "menu_", "pool_", "snd_")))
+        n_alloc = sum(1 for k in json.load(open(path, encoding="utf-8"))["binhacks"] if k.startswith(("alloc_", "grow_", "unlock_", "order_", "menu_", "pool_", "snd_", "sht_")))
         if n - n_alloc != len(sites):
             bad.append("patch 里 %d 条搬表 binhack，扫描器认为应有 %d 条" % (n - n_alloc, len(sites)))
         for b in bad:
@@ -1388,6 +1628,11 @@ def main():
            "breakpoints": {"ce_gate": {
                "addr": "0x%06x" % GATE_ADDR, "cavesize": 5, "expected": "558bec6aff",
                "title": "自检门：ScoreFile__load 入口 → BP_ce_gate（填表 + 回读验证 + 写日志）"}}}
+    # ---- pl0X.sht 组数扩容（AUDIT §CQ）----
+    # ★ **无条件**加：发出去的 `pl0X.sht` 永远是 96 格（生成器不看行数），而这条 binhack 是
+    #   「数组 → 数据区」那 0xe0 字节错位的唯一解药。只挂在 `alloc` 下面的话，
+    #   `make ROWS=58`（step1 回归对分）会发出一份「96 格影像 + 老基点」的 patch = 主炮读垃圾。
+    doc["binhacks"].update(emit_sht_binhacks(text, text_va))
     if alloc:
         doc["binhacks"].update(emit_alloc_binhacks(a.rows))
         doc["binhacks"].update(emit_grow_binhacks(a.rows))

@@ -4,6 +4,8 @@
 约定：只**追加** entry / 脚本，绝不改原生的；重建后逐项校验原生部分没变。
 """
 import filecmp
+import hashlib
+import json
 import os
 import re
 import shutil
@@ -36,8 +38,11 @@ _TOKEN = re.compile(r"@([A-Za-z_][A-Za-z0-9_]*)@?")
 
 # ── 解析 ──────────────────────────────────────────────────────────────
 def parse_entries(spec_text: str):
-    """→ [{idx, name, keys, fields, sprite, block, span}]；fields 不含 name，keys 记字段顺序（含 name）。
-    只处理一 entry 一 sprite 的文件（abcard 全是；ability 的多 sprite entry 用 parse_entries_loose）。"""
+    """→ [{idx, name, keys, fields, sprite, n_sprites, block, span}]；fields 不含 name，keys 记字段顺序（含 name）。
+
+    `sprite` 只在**恰好一个** sprite 时给矩形（多 sprite entry 时为 None，用 `parse_sprite_rects(block)`
+    逐个取；`n_sprites` 两种情况都有）。
+    """
     out = []
     for m in _ENTRY.finditer(spec_text):
         body = m.group(2)
@@ -68,20 +73,67 @@ def max_sprite_id(spec_text: str) -> int:
 
 
 # ── 生成 ──────────────────────────────────────────────────────────────
-def make_entry(template: dict, idx: int, png_rel: str, sprite_idx: int = None) -> str:
-    """照抄模板字段，只换 name、entry 号与 sprite 号（sprite 号默认 = entry 号，abcard 的约定）。"""
-    if template["sprite"] is None:
+def make_entry(template: dict, idx: int, png_rel: str, sprite_idx: int = None, sprites=None) -> str:
+    """照抄模板字段，只换 name、entry 号与 sprite 号（sprite 号默认 = entry 号，abcard 的约定）。
+
+    `sprites` = `[(sprite 号, x, y, w, h), …]`：**一个 entry 多个 sprite**（图集）。
+    引擎完全支持（贴图键挂在 entry 上、sprite 表是**全文件扁平**的，见
+    `engine/anm/th18/06-entry-limit-and-multi-sprite.md` §2）；给 `sprites` 时忽略 `sprite_idx`。
+    """
+    if template["sprite"] is None and sprites is None:
         raise SystemExit(f"模板 entry{template['idx']} 不是单 sprite，不能当模板")
-    sid = idx if sprite_idx is None else sprite_idx
     lines = [f"entry entry{idx} {{"]
     for k in template["keys"]:
         v = f'"{png_rel}"' if k == "name" else template["fields"][k]
         lines.append(f"    {k}: {v},")
-    s = template["sprite"]
-    lines += ["    sprites: {",
-              f"        sprite{sid}: {{ x: {s['x']}, y: {s['y']}, w: {s['w']}, h: {s['h']} }}",
-              "    }", "}", ""]
+    if sprites is None:
+        s = template["sprite"]
+        sid = idx if sprite_idx is None else sprite_idx
+        sprites = [(sid, s["x"], s["y"], s["w"], s["h"])]
+    lines.append("    sprites: {")
+    for k, (sid, x, y, w, h) in enumerate(sprites):
+        # 尾逗号：thanm 的 spec 解析器要求列表项之间有 `,`（只有一项时才能省）
+        lines.append(f"        sprite{sid}: {{ x: {x}, y: {y}, w: {w}, h: {h} }}"
+                     + ("," if k + 1 < len(sprites) else ""))
+    lines += ["    }", "}", ""]
     return "\n".join(lines)
+
+
+def parse_sprite_rects(block: str):
+    """entry 块 → {sprite 号: (x, y, w, h)}（整数，用于多 sprite entry 的逐条核对）。"""
+    return {int(m.group(1)): tuple(int(m.group(i)) for i in (2, 3, 4, 5))
+            for m in _SPRITE.finditer(block)}
+
+
+def read_order_names(path: Path):
+    """一列名字的 ORDER（abcard 的 `assets/cards/ORDER.txt`）：一行一个 `NAME`，跳过 `#` 与空行。
+    行序就是编号（abcard：第 k 行 → sprite 118+2k / 119+2k）。名字不许重复。"""
+    if not path.is_file():
+        raise SystemExit(f"没有 {path}")
+    names = [l.strip() for l in path.read_text(encoding="utf-8").splitlines()
+             if l.strip() and not l.lstrip().startswith("#")]
+    dup = sorted({n for n in names if names.count(n) > 1})
+    if dup:
+        raise SystemExit(f"{path.name} 有重复：{dup}")
+    return names
+
+
+def order_signature(items) -> str:
+    """`items` 的**结构指纹**（sha256）—— 给「重排检测」用：逐行哈希只看字面，
+    它另外锁住"这些行**被解释成什么**"（例如有人往图集段里插了一个空行 ⇒ 段被截断、
+    后面的成员变成单图 entry：数据行一个字没变，但结构变了）。"""
+    norm = []
+    for it in items:
+        if it["kind"] == "single":
+            norm.append(["single", it["name"], it["src"], it["size"]])
+        elif it["kind"] == "ref":
+            norm.append(["ref", it["name"], it["target"]])
+        else:
+            norm.append(["atlas", it["name"], list(it["canvas"]),
+                         list(it["grid"]) if it["grid"] else None,
+                         [[m["name"], m["src"], list(m["rect"])] for m in it["members"]]])
+    blob = json.dumps(norm, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
 def insert_entries(spec_text: str, blocks) -> str:
@@ -108,16 +160,140 @@ def substitute(text: str, mapping: dict) -> str:
     return _TOKEN.sub(rep, text)
 
 
+_ATLAS_HEAD = re.compile(r"^ATLAS\s+(\S+)\s+(\d+)x(\d+)(?:@(\d+)x(\d+))?$", re.I)
+_RECT = re.compile(r"^@(\d+),(\d+),(\d+)x(\d+)$", re.I)
+_SIZE = re.compile(r"^(\d+)x(\d+)$", re.I)
+
+
 def read_order(path: Path):
-    """ORDER.txt：一行一个条目（空白分隔），跳过 # 与空行；名字（首列）不许重复。"""
+    """ORDER.txt（v2）→ `(items, lines)`。
+
+    `lines` = `[(行号, 原文)]`（**只含数据行**，注释与空行不算）—— 给「重排检测」硬门做逐行比对。
+    `items` 逐项：
+
+    | 写法 | 解析成 |
+    | --- | --- |
+    | `NAME 源图 [WxH]` | `{"kind":"single", name, src, size=(w,h)\|None}` |
+    | `ATLAS NAME WxH[@CxR]` + 成员行 | `{"kind":"atlas", name, canvas, grid, members}` |
+    | `REF 名字 目标` | `{"kind":"ref", name, target}` |
+
+    成员行两种矩形写法（§4.1 规则①：**矩形 = 成员自己那张图的像素尺寸**，不补边）：
+
+    * 网格段（段头带 `@CxR`）：成员行 `成员名 源图 [WxH]`；矩形 = 画布按 C×R 等分后的**第 k 格**
+      （k = 段内第几个成员，**行优先**）；写了 `WxH` 就必须等于单格尺寸。
+    * 显式段（段头不带 `@`）：成员行 `成员名 源图 @x,y,WxH`；矩形直接写死。
+
+    名字（token）解析约定：成员名 → 自己的 sprite 号；`图集名_k` → 段内第 k 个成员；
+    `图集名` → 第 0 个成员（向后兼容「一行一个 entry」的老写法）。
+
+    ⚠ **段在空行处结束**：图集段头之后、直到下一个空行，都是它的成员行。所以段内**不要**夹空行
+    （夹了就"段被截断、后面的成员变成单图行"）；`ORDER.frozen.txt` 里另存了一份**结构指纹**
+    （`order_signature()`），这种结构性改动同样会被重排检测逮住。
+    """
     if not path.is_file():
         raise SystemExit(f"没有 {path}")
-    rows = [l.split() for l in path.read_text().splitlines() if l.strip() and not l.lstrip().startswith("#")]
-    names = [r[0] for r in rows]
-    dup = {n for n in names if names.count(n) > 1}
-    if dup:
-        raise SystemExit(f"{path.name} 有重复：{sorted(dup)}")
-    return rows
+    items, lines = [], []
+    seen_names = {}
+    cur = None                                            # 当前图集段
+    for no, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        s = raw.strip()
+        if not s:
+            cur = None                                    # 空行 = 段结束
+            continue
+        if s.startswith("#"):
+            continue
+        lines.append((no, s))
+        cols = s.split()
+
+        def _dup(name):
+            if name in seen_names:
+                raise SystemExit(f"{path.name}:{no} 名字 {name} 重复（{path.name}:{seen_names[name]} 已用过）")
+            seen_names[name] = no
+
+        if cols[0].upper() == "ATLAS":
+            if len(cols) != 3:
+                raise SystemExit(f"{path.name}:{no} 图集段头应为 `ATLAS <名字> <画布WxH[@列x行]>`：{s}")
+            m = _ATLAS_HEAD.match(s)
+            if not m:
+                raise SystemExit(f"{path.name}:{no} 图集段头尺寸写不对（例：`256x160` 或 `128x64@8x2`）：{s}")
+            _dup(m.group(1))
+            grid = (int(m.group(4)), int(m.group(5))) if m.group(4) else None
+            cur = {"kind": "atlas", "line_no": no, "name": m.group(1),
+                   "canvas": (int(m.group(2)), int(m.group(3))), "grid": grid, "members": []}
+            items.append(cur)
+            continue
+        if cols[0].upper() == "REF":
+            if len(cols) != 3:
+                raise SystemExit(f"{path.name}:{no} REF 行应为 `REF <退役名> <目标名>`：{s}")
+            _dup(cols[1])
+            items.append({"kind": "ref", "line_no": no, "name": cols[1], "target": cols[2]})
+            cur = None
+            continue
+        if cur is None:                                   # ── 单图行（老写法）
+            if len(cols) < 2:
+                raise SystemExit(f"{path.name}:{no} 一行要至少 2 列（`NAME 源图`）：{s}\n"
+                                 f"  （一列名字的 ORDER 用 `anmlib.read_order_names()`，如 abcard）")
+            if len(cols) > 3:
+                raise SystemExit(f"{path.name}:{no} 单图行最多 3 列（`NAME 源图 [WxH]`）：{s}")
+            _dup(cols[0])
+            size = None
+            if len(cols) > 2:
+                mm = _SIZE.match(cols[2])
+                if not mm:
+                    raise SystemExit(f"{path.name}:{no} 尺寸列应为 `WxH`（图集成员请先写 `ATLAS …` 段头）：{s}")
+                size = (int(mm.group(1)), int(mm.group(2)))
+            items.append({"kind": "single", "line_no": no, "name": cols[0],
+                          "src": cols[1], "size": size})
+            continue
+        # ── 图集成员行
+        if len(cols) > 3:
+            raise SystemExit(f"{path.name}:{no} 成员行最多 3 列：{s}")
+        name, src = cols[0], cols[1]
+        _dup(name)
+        size = rect = None
+        if len(cols) > 2:
+            rm = _RECT.match(cols[2])
+            if rm:
+                x, y, w, h = (int(rm.group(i)) for i in (1, 2, 3, 4))
+                rect, size = (x, y, w, h), (w, h)
+            else:
+                mm = _SIZE.match(cols[2])
+                if not mm:
+                    raise SystemExit(f"{path.name}:{no} 成员第 3 列应为 `WxH`（网格段）或 `@x,y,WxH`（显式段）：{s}")
+                size = (int(mm.group(1)), int(mm.group(2)))
+        if (rect is not None) and (cur["grid"] is not None):
+            raise SystemExit(f"{path.name}:{no} 网格段（段头带 `@列x行`）里不许再写 `@x,y,WxH`：{s}")
+        cur["members"].append({"line_no": no, "name": name, "src": src, "rect": rect, "size": size})
+    # 收尾：补全网格段的矩形 + 段内计数校验
+    for it in items:
+        if it["kind"] != "atlas":
+            continue
+        colsn, rowsn = it["grid"] if it["grid"] else (None, None)
+        if colsn is not None:
+            cell = (it["canvas"][0] // colsn, it["canvas"][1] // rowsn)
+            if cell[0] * colsn != it["canvas"][0] or cell[1] * rowsn != it["canvas"][1]:
+                raise SystemExit(f"{path.name}:{it['line_no']} 网格 {colsn}x{rowsn} 除不尽画布 "
+                                 f"{it['canvas'][0]}x{it['canvas'][1]}")
+            if len(it["members"]) > colsn * rowsn:
+                raise SystemExit(f"{path.name}:{it['line_no']} 图集 {it['name']} 有 {len(it['members'])} 个成员，"
+                                 f"超过网格 {colsn}x{rowsn} 的 {colsn * rowsn} 格")
+        for k, mem in enumerate(it["members"]):
+            if mem["rect"] is None:
+                if colsn is None:
+                    raise SystemExit(f"{path.name}:{mem['line_no']} 显式段 {it['name']} 的成员要写 `@x,y,WxH`")
+                cx, cy = (k % colsn) * cell[0], (k // colsn) * cell[1]
+                mem["rect"] = (cx, cy, cell[0], cell[1])
+                if mem["size"] is not None and mem["size"] != cell:
+                    raise SystemExit(f"{path.name}:{mem['line_no']} 声明 {mem['size'][0]}x{mem['size'][1]} "
+                                     f"≠ 单格 {cell[0]}x{cell[1]}")
+                mem["size"] = cell
+        # 矩形必须落在画布内（图上不允许越界；原生有越界写法，但我们的图集是货架式打包）
+        for mem in it["members"]:
+            x, y, w, h = mem["rect"]
+            if x < 0 or y < 0 or x + w > it["canvas"][0] or y + h > it["canvas"][1]:
+                raise SystemExit(f"{path.name}:{mem['line_no']} 成员 {mem['name']} 的矩形 "
+                                 f"{x},{y},{w},{h} 超出画布 {it['canvas'][0]}x{it['canvas'][1]}")
+    return items, lines
 
 
 # ── 外部工具 ──────────────────────────────────────────────────────────
@@ -155,8 +331,13 @@ def compile_anm(spec_text: str, tex_dir: Path, out_anm: Path, tools, anmmap: Pat
     thanm(["-c", VERSION, out_anm, "spec.txt", "-m", anmmap], tex_dir, tools)
 
 
-def verify_rebuilt(out_anm: Path, retail_text: str, retail_dir: Path, tools, anmmap: Path):
-    """重建文件自检：原生 entry / 脚本块逐个一致、原生贴图逐张一致。→ (rebuilt_text, entries, scripts)。"""
+def verify_rebuilt(out_anm: Path, retail_text: str, retail_dir: Path, tools, anmmap: Path,
+                   on_extract=None):
+    """重建文件自检：原生 entry / 脚本块逐个一致、原生贴图逐张一致。→ (rebuilt_text, entries, scripts)。
+
+    `on_extract(dir)`：`thanm -x` 解包出来的临时目录（含**我们追加的** entry 贴图）会被回调一次 ——
+    给「图集成员逐像素比对」用（比对**从 anm 里回读出来的**画布，而不是我们刚写下的那张，才叫端到端）。
+    """
     if not out_anm.is_file():
         raise SystemExit(f"没有 {out_anm}：先 make anm")
     text = thanm(["-l", VERSION, out_anm, "-m", anmmap], out_anm.parent, tools)
@@ -175,6 +356,8 @@ def verify_rebuilt(out_anm: Path, retail_text: str, retail_dir: Path, tools, anm
         bad = [e["name"] for e in r_e if not filecmp.cmp(Path(td) / e["name"], retail_dir / e["name"], shallow=False)]
         if bad:
             raise SystemExit(f"{out_anm.name}: 原生贴图被改动：{bad[:5]}{' …' if len(bad) > 5 else ''}")
+        if on_extract is not None:
+            on_extract(Path(td))
     return text, n_e, n_s
 
 

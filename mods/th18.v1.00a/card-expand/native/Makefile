@@ -2,7 +2,7 @@
 ROWS ?= 255
 PATCH := ../patch/th18.v1.00a.js
 
-.PHONY: all quick check package gen verify files clean test-host anm anm-verify sht sht-verify ecl ecl-ufo snd-check voice dll dllx87 dllverify
+.PHONY: all quick check package gen verify files clean test-host anm anm-verify atlas-check sht sht-verify ecl ecl-ufo snd-check voice dll dllx87 dllverify
 
 all: quick dll
 
@@ -18,8 +18,15 @@ step3: anm sht
 	$(MAKE) ROWS=255 gen verify test-host voice dll dllx87 files
 
 ## check —— 提交前完整只读门：代码、资源、站点、文档和 DLL ABI。
+##          ★ `tools/engine_abi_check.py`（2026-09-14 加）：对账「我们声明的调用约定」与
+##            「真 exe 里那个函数的 `ret N`」。加它的缘由是一次真事故：`0x48a730` 是 `ret 4`
+##            而我们按 `fastcall(void*)` 调 ⇒ 每调一次少吃 4 字节栈 ⇒ 进灵界几秒后 `ret` 跳飞
+##            （AUDIT.md §CR-5）。无样本/无 capstone 时它自己跳过并 exit 0。
 check: quick cards-check anm-verify sht-verify snd-check dllx87 dllverify
 	python3 sites.py check
+	python3 tools/capcheck.py
+	python3 tools/engine_abi_check.py
+	python3 tools/anm_hud_alpha_check.py
 	python3 ../../../../tooling/check-docs.py
 
 ## package —— 生成可安装的完整发布包。
@@ -33,7 +40,9 @@ snd-check:
 	python3 ../assets/build_voice.py --check
 
 ## voice  —— 语音资源校验（含 voice.js ↔ ORDER.txt 对账）+ 拷进 patch/th18/voice/ + 生成 voice_ids.h
+##           ⚠ 先跑 derive_astralup.py：把 TH13 的 se_astralup.wav 从 local/ 现取到 assets/voice/
 voice:
+	python3 ../assets/voice/derive_astralup.py
 	python3 ../assets/build_voice.py
 
 ## voice_ids.h 是生成物：裸 make dll 也要能把它做出来（否则新 clone 缺文件直接停）
@@ -41,15 +50,16 @@ voice_ids.h: ../assets/voice/ORDER.txt $(wildcard ../assets/voice/*.wav) ../patc
 	python3 ../assets/build_voice.py
 
 ## anm    —— abcard.anm（../assets/cards/ 新卡图）+ ability.anm（../assets/ability/ 贴图副本 + 特效脚本）
-##           + pl0X.anm（../assets/build_player_anm.py：pl00/pl01/pl02 原生拷贝 + 硬校验；pl03 追加兽灵脚本，
-##             见 AL59 / pl_anm_ids.h）→ build/
+##           + pl0X.anm（../assets/build_player_anm.py：四个文件都是「原生部分逐块不变 + 纯追加」
+##             —— pl02/pl03 追加兽灵脚本（AL59）、pl00/pl01/pl03 追加灵界弹（113，AUDIT §CJ），
+##             见 pl_anm_ids.h）→ build/
 anm:
 	python3 ../assets/build_abcard.py
 	python3 ../assets/player_art_src/make_player_art.py   # AL62：玩家兽灵弹源图（补默认 + 切到 18/art-src 供用户改）
 	python3 ../assets/build_ability.py
 	python3 ../assets/build_player_anm.py
 
-## pl_anm_ids.h 是生成物：pl02/pl03 追加脚本号（append_shooterset.py 会交叉核对）
+## pl_anm_ids.h 是生成物：pl0X 追加脚本号（append_shooterset.py 会交叉核对灵界那三个）
 pl_anm_ids.h: ../assets/build_player_anm.py
 	python3 ../assets/build_player_anm.py
 
@@ -80,12 +90,21 @@ sht-verify:
 	python3 ../assets/sht/append_shooterset.py --verify-only
 	python3 ../assets/check_player_anm_bounds.py
 
-## anm-verify —— 只校验：entry 数 / 原贴图逐张一致 / 新 entry 字段 / JSON 索引 / pl0X.anm 与原生逐字节一致 + sprite/script 硬校验
+## anm-verify —— 只校验：entry 数 / 原贴图逐张一致 / 新 entry 字段 / JSON 索引 / pl0X.anm 的原生部分逐字节一致 + sprite/script 硬校验
 anm-verify:
 	python3 ../assets/build_abcard.py --verify-only
 	python3 ../assets/build_ability.py --verify-only
 	python3 ../assets/check_ability_anm_bounds.py
 	python3 ../assets/build_player_anm.py --verify-only
+
+## atlas-check —— 图集的**独立**对账（只读，人工/CI 可选，**故意不进 `check`**）：
+##   ① ORDER.txt 的图集段 vs `ATLAS-MERGE-AUDIT.md` §4.3 的成员明细**逐格**比；
+##   ② 自己画一遍画布（与 build_ability.py 是两条独立代码路径）再按矩形裁出来 `tobytes()` 比；
+##   ③ 预览图落到 build/atlas-preview/。
+##   为什么不进 `check`：它读一份**文档**（审计报告）⇒ 文档一改就红；而"图集逐像素自检"这条
+##   更硬的检查已经在 `anm-verify` 里（`build_ability.py --verify-only`，从编译好的 anm 回读再比）。
+atlas-check:
+	python3 ../assets/ability/make_atlas.py
 
 ## cards-check —— cards.js 静态校验（desc<=6 行 / 每行<64 字节 / 无 ASCII %）。
 ## ★ 为什么要有：DLL 的自检在**运行时**逐卡查，任何一张不合规就「整批新卡禁用」（玩家看到「卡全没了」）。
@@ -136,7 +155,7 @@ LDFLAGS   := -shared -static-libgcc -s -lkernel32 -luser32 -Wl,--no-insert-times
 
 ## dll    —— 编 DLL（依赖 gen 出的 sites_gen.h）
 dll: $(DLL)
-SRCS      := dll_main.c selfcheck_core.c selfcheck.c unlocked.c text.c cards_def.c cards.c menu.c bp_trace.c sdk_core.c sdk_actions.c sdk.c shop_core.c shop.c sound.c $(wildcard cards/*.c)
+SRCS      := dll_main.c selfcheck_core.c selfcheck.c unlocked.c text.c cards_def.c cards.c menu.c start_deck.c bp_trace.c sdk_core.c sdk_actions.c sdk.c shop_core.c shop.c sound.c $(wildcard cards/*.c)
 OBJS      := $(SRCS:.c=.o)
 ## ⚠ 依赖表必须列全**被 include 的头**：漏一个就会出现「改了头、别的 .o 不重编」的静默错
 ##   （2026-09-12 实际踩到：`sdk/public.h` 里的 `ce_hooks_t` 尾部加了新槽，而它不在表里
@@ -175,6 +194,12 @@ test-host:
 	./tests/build/test_guding_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_collect2x_core tests/test_collect2x_core.c cards/collect2x_core.c
 	./tests/build/test_collect2x_core
+## test_vitem_batch —— ★★ 2026-09-15（NEXT.md §1x.2）：自建实体（110/111 绿点）→ 114 收点批 的
+##   **接线级**单测。它**同时**链 sdk_core.c 与 cards/collect2x_core.c（两个模块各自那份单测只链自己），
+##   按 cards/faith.c 与 cards/collect2x.c 里同一段代码的形状一帧一帧对跑（成员 +1 / 不进批分 /
+##   在飞 presence / 微档不入批 / 114 不在场零副作用 / 帧内顺序无关）。见测试文件头。
+	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_vitem_batch tests/test_vitem_batch.c sdk_core.c cards/collect2x_core.c
+	./tests/build/test_vitem_batch
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_peashooter_core tests/test_peashooter_core.c cards/peashooter_core.c
 	./tests/build/test_peashooter_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_season_core tests/test_season_core.c cards/season_core.c
@@ -201,12 +226,25 @@ test-host:
 	./tests/build/test_pofv_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_signal_core tests/test_signal_core.c cards/signal_core.c cards/faith_core.c cards/mof_core.c
 	./tests/build/test_signal_core
+## test_faith_hud_core —— ★★ 组合 UI（110/111 共用那一块）的纯逻辑 + **与 111 自己那份实现的逐值对账**
+##   （行 1 的档/条宽/强度在两边是同一个一手式子；这里链上 signal_core.c 断言恒等）。
+##   ★ 2026-09-15h：本块的压暗并进共享件 ⇒ 这条也链 `cards/hud_dim.c`（§H 钉「换算 320」+ 门限）。
+	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_faith_hud_core tests/test_faith_hud_core.c cards/faith_hud_core.c cards/signal_core.c cards/faith_core.c cards/mof_core.c cards/hud_dim.c
+	./tests/build/test_faith_hud_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_trance_core tests/test_trance_core.c cards/trance_core.c
 	./tests/build/test_trance_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_ufo_core tests/test_ufo_core.c cards/ufo_core.c
 	./tests/build/test_ufo_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_senro_core tests/test_senro_core.c cards/senro_core.c
 	./tests/build/test_senro_core
+	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_trance_bgm_core tests/test_trance_bgm_core.c cards/trance_bgm_core.c
+	./tests/build/test_trance_bgm_core
+## test_hud_dim_core —— ★★ 跨卡统一件 `cards/hud_dim.c`（HUD 压暗的唯一实现；动态统一、区域按各卡块矩形）：
+##   表面→自机坐标换算（320）/ 进 = 矩形 + 28 的四条边 / 16 px 滞回带（出 = 矩形 + 44）/ 步长与钳位
+##   （255↔32、±51）/ pp == NULL / 逐帧连续 / **六块真块的可触发区不变式**。
+##   取值 = ❓ 用户口径（UI 统一，**不是复刻**），见 `cards/hud_dim.h` 文件头与 `TUNING.md` §7。
+	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_hud_dim_core tests/test_hud_dim_core.c cards/hud_dim.c
+	./tests/build/test_hud_dim_core
 
 ## x87 自检 —— 只看我们自己的目标文件
 dllx87: $(OBJS)
@@ -222,15 +260,15 @@ dllverify: $(DLL)
 	@awk '/^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]+@[0-9]+/{gsub("@", "", $$2); print $$1, $$2}' th18_card_expand.def | tr -d '\r' | while read sym ordinal; do \
 		grep -Eq "^[[:space:]]+$$ordinal[[:space:]]+0x[0-9a-f]+[[:space:]]+$$sym$$" tests/build/dll-headers.txt || exit 1; \
 	done
-	@test "$$(grep -Ec '^[[:space:]]+[0-9]+[[:space:]]+0x[0-9a-f]+[[:space:]]+[A-Za-z_]' tests/build/dll-headers.txt)" = 28
+	@test "$$(grep -Ec '^[[:space:]]+[0-9]+[[:space:]]+0x[0-9a-f]+[[:space:]]+[A-Za-z_]' tests/build/dll-headers.txt)" = 37
 	@test "$$(grep -c 'DLL Name:' tests/build/dll-headers.txt)" = 3
 	@grep -q 'DLL Name: KERNEL32.dll' tests/build/dll-headers.txt
 	@grep -q 'DLL Name: msvcrt.dll' tests/build/dll-headers.txt
 	@grep -q 'DLL Name: USER32.dll' tests/build/dll-headers.txt
-	@echo "DLL ABI: 28 exports, PE32/i386, dependencies KERNEL32.dll + msvcrt.dll + USER32.dll"
+	@echo "DLL ABI: 37 exports (36 BP_* + thcrap_plugin_init), PE32/i386, dependencies KERNEL32.dll + msvcrt.dll + USER32.dll"
 
 ## dist   —— 三个 patch + DLL + zip；_255（patch-step3）里带重建的 th18/abcard.anm（≈22 MB）、th18/ability.anm（≈1.7 MB）
-##         与四个 th18/pl0X.anm（= 原生文件；build_player_anm.py 只拷不改）
+##         与四个 th18/pl0X.anm（= 原生文件 + 追加的兽灵/灵界弹 entry 与脚本）
 ## dist —— 在 ../dist/ 摆出可直接安装的整套：一个 DLL + patch-step3 / patch-test / patch-devstage
 ##         （dist/ 已 gitignore：DLL 是构建产物，不入库；随时 make dist 重建）
 DIST := ../dist

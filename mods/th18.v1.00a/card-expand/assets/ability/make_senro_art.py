@@ -48,7 +48,8 @@ sprite 矩形（一手，`thanm -l`）
 
 尺寸 / 缩放
 ──────────
-* **原样切，不重采样、不补画**（纯原生切图；256×256 与 64×64 都是 2 的幂 ✅）。
+* **原样切，不重采样、不补画**（纯原生切图）。256×256 / 64×64 = 原生矩形尺寸
+  （`ATLAS-MERGE-AUDIT.md` §4.1 规则①）；「必须 2 的幂」那条门 2026-09-13 已取消。
 * **不加 scale**：TH18 世界层 VM 的「坐标与尺寸都是 640 空间的 ECL 单位」、1 单位 = 2 表面 px
   （`engine/anm/th18/01-vm-instantiate.md` §3）⇒ 原生脚本里的 `scale(1.0f, 1.0f)` 与
   不带 scale 的 64×64 就**已经是原尺寸观感**，与 `186_sakura_point.anm.txt`（TH07 道具原样搬）同口径。
@@ -108,7 +109,7 @@ def main():
         if src.size != (256, 256):
             raise SystemExit(f"{tex} 是 {src.size}，预期 (256, 256)")
         x, y, w, h = rect
-        assert w & (w - 1) == 0 and h & (h - 1) == 0, "尺寸要是 2 的幂"
+        # 尺寸 = 原生矩形尺寸（「必须 2 的幂」那条门 2026-09-13 已取消）
         tile = src.crop((x, y, x + w, y + h))
         if tile.getbbox() is None:
             raise SystemExit(f"{fname}（sprite{sidx}）切出来全透明，矩形抄错了：{rect}")

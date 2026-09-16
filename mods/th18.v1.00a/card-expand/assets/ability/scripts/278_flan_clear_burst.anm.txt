@@ -1,0 +1,81 @@
+script script278 {
+// 地灵殿（id 111 · 咲夜×二小姐）**松手清屏那一帧**的爆闪 —— 原生卡 42（小槌）「挥击」那一下的复刻压缩版。
+//
+// ══ 配方出处（一手，逐条）════════════════════════════════════════════════════════════════
+//   底本 = **TH18 原生卡 42（KOZUCHI 小槌）的挥击特效**：`ability.anm` **script28** 原文
+//   （`local/th18.v1.00a/anm/ability/ability.anm.txt`；卡侧状态机 `th18:0x40eed0`、
+//     建 VM 时 `set_sprite(0x29)` @ `th18:0x40f161`）：
+//       script28 {
+//           layer(13); blendMode(0); type(1); alpha(255); zWriteDisable(1);
+//           scale(0.0f, 2.8f);
+//           scaleTime(20, 4, 1.0f, 1.0f);          // 20 帧：小槌从玩家头上「落」到位（对应卡侧 state 1）
+//         offset100:
+//           sprite(sprite85);
+//         +6: sprite(sprite86);
+//         +6: sprite(sprite87);
+//         +6: jmp(offset100, 0);                 // 三帧循环，每 6 帧换一张
+//           stop();
+//           interruptLabel(2):                     // 「蓄力完成」那一下：闪一下青
+//               color(0, 255, 255); +3: color(255, 255, 255); caseReturn();
+//           interruptLabel(1):                     // ★「挥击」那一下（卡侧 state 3 开始时触发）
+//               scaleTime(8, 4, 2.0f, 2.0f);
+//               alphaTime(8, 0, 0);
+//             +8: delete();
+//       }
+//   一手过程（四段状态机 / 每帧量 / 层 13 / SE）见
+//   `engine/card/th18/13-mallet-clear-and-th17-charge.md` §1.2–§1.4、切图建议表 §3.2。
+//
+// ══ 贴图（**原生 sprite 的 1:1 切图，不自己画**）════════════════════════════════════════
+//   `@FLAN_MALLET_IDLE@`      = 原生 **sprite41** (32,80,32,16) —— 卡 42 建 VM 时 `set_sprite(0x29)` 那一格
+//   `@FLAN_MALLET_SWING_0/1/2@` = 原生 **sprite85/86/87** (0/48/96,160,48,47) —— script28 的三帧循环
+//   切图 = `assets/ability/make_flan_art.py`（源 = 原生 `ability.anm` entry0 `player/option/op00.png`；
+//   新增 entry 53 / sprite 431..434，登记在 `entries/ORDER.txt` 末尾与 `AUDIT.md` §BE）。
+//   ⚠ 为什么不直接写 `sprite(85)`：**两者都能跑**（sprite 号是整份 anm 的全局表，TH18 整包只有一张
+//     `op00.png` ⇒ 没有「按机体换贴图」的错位风险，见 `make_flan_art.py` 文件头两条证据）。
+//     选抠图只为**跟本仓既有管线一致**：`assets/ability/scripts/` 里没有任何一条追加脚本引原生 sprite 号，
+//     并且能在 `anm_ids.h` 里留下 `CE_ANM_ABILITY_SPRITE_FLAN_MALLET_*` 供 C 侧换帧用。
+//     真要省掉这 4 个 sprite：把下面四个 `sprite(@…@)` 换成 `sprite(41)/sprite(85)/sprite(86)/sprite(87)`、
+//     并把 `ORDER.txt` 那段删掉即可，**时序一字不动**。
+//
+// ══ 逐条抄了什么、改了什么 ═══════════════════════════════════════════════════════════════
+//   · 静态属性**逐条照抄 script28**：`layer(13)`（世界列表——卡 42 的小槌就在这一层）、`blendMode(0)`、
+//     `type(1)`、`alpha(255)`、`zWriteDisable(1)`。
+//   · **丢掉的**：`scale(0.0f, 2.8f)` + `scaleTime(20, 4, 1.0f, 1.0f)`（那是「小槌从玩家头上落到弹幕区顶」
+//     的 20 帧下降段，对应卡侧 state 1）与 `jmp(offset100, 0)` 的**无限**三帧循环 ——
+//     我们的清屏是**一次性结算**（松手那一帧就消完了），没有下降段、也不该无限循环。
+//     ⇒ 改成「4 格各停 2 帧（含起手格 1 帧）的一次性推进」。**帧长 = ❓ 自定**（原生循环是每 6 帧一张）。
+//   · 淡出**逐条照抄** script28 的 `interruptLabel(1)`：`scaleTime(8, 4, 2.0f, 2.0f)` + `alphaTime(8, 0, 0)`
+//     + `+8: delete()` —— **一手值，没有压缩**（这就是原生「挥击那一下」的 8 帧放大淡出）。
+//   · **不用** `interruptLabel(2)` 那支（原生是「蓄力完成」的闪青）：清屏是一次性的，不搬它。
+//   · 时序：起手格 1 帧（`+1`）→ 三帧各 2 帧（`+2`/`+2`/`+2`）→ 一手 8 帧淡出（`+8` 到 `delete()`）
+//     ⇒ **VM 存活 15 帧**：推进段 **7 帧**（任务书写的「三段推进 ≈10 帧」指的就是这一段）+ 淡出段 8 帧。
+//
+// ══ 卡侧契约 ═════════════════════════════════════════════════════════════════════════════
+//   · 出生：**松手清屏那一帧** `ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_FLAN_CLEAR_BURST, 13)`
+//     （第 3 参 layer 与脚本里的 `layer(13)` 一致；卡侧 `signal_support_flandre()` 里
+//      `ce_cancel_radius(...)` 那一块的前后就是落点）。
+//   · 位置：出生后**写一次** `ce_anm_set_pos(id, 玩家/清屏中心 x, y, z)` 就够
+//     （原生卡 42 是每帧写：`vm+0x5f0 = card+0x58`、`th18:0x40ef37`；我们这 15 帧里位置不动）。
+//   · **不要**对它调 `ce_anm_set_scale()`：脚本自己在跑两段 scale 插值（`scaleTime`），卡侧写的会被覆盖
+//     （`native/sdk.h:330`）。想改大小 ⇒ 改脚本里的 `scale`。
+//   · **不用记 id、不用在 on_delete 里收**：脚本自己 `delete()`。
+    layer(13);
+    blendMode(0);
+    type(1);
+    alpha(255);
+    zWriteDisable(1);
+    pos(0.0f, 0.0f, 0.0f);              // 归零：出生点由卡侧 entity_pos 给（见契约）
+    sprite(@FLAN_MALLET_IDLE@);          // 一手：原生 sprite41（卡 42 建 VM 时那一格）
+    scale(1.0f, 1.0f);
++1: // 1
+    sprite(@FLAN_MALLET_SWING_0@);       // 一手：原生 sprite85
++2: // 3
+    sprite(@FLAN_MALLET_SWING_1@);       // 一手：原生 sprite86
++2: // 5
+    sprite(@FLAN_MALLET_SWING_2@);       // 一手：原生 sprite87
++2: // 7
+    scaleTime(8, 4, 2.0f, 2.0f);         // ★ 一手：script28 的 interruptLabel(1)
+    alphaTime(8, 0, 0);                  // ★ 一手
++8: // 15
+    delete();
+}

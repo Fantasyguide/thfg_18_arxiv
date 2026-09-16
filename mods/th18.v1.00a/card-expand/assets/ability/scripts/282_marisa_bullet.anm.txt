@@ -1,0 +1,54 @@
+script script282 {
+// 地灵殿（id 111）**魔理沙子机的弹** —— TH18 原生 `pl01.anm` **script5** 的逐条移植（只换 sprite 引用）。
+//
+// 用户口径（2026-09-16）：「**魔理沙发弹样式不对**」→ 追问后：「**弹的贴图**」。
+//
+// ══ 为什么需要单独一条脚本（一手，`engine/sht/th18/02-shooter-record.md` §4）════════════════
+//   **装备卡子机的弹，贴图来自 `ability.anm`**：卡侧开火期间引擎把 `player+0x10` 换成
+//   `ABILITY_MANAGER->ability_anm`（`th18:0x40aa03`，`0x4cf298` = `zAbilityManager*`），循环后才还原
+//   成 `pl0X.anm` ⇒ shooter 记录 `+0x22`（ANM 脚本号）在**卡子机**这条路上是 `ability.anm` 的号段，
+//   而同一份表在**主炮**那条路上是 `pl0X.anm` 的号段（数字空间不同）。
+//   ⇒ 111 的魔理沙五组（槽 `0x29`–`0x2d`）原来把 `+0x22` 指到 116 的「季节点」弹脚本，
+//     打出来是一颗季节点 —— 所以本脚本把**魔理沙自己的弹**搬进 `ability.anm`。
+//
+// ══ 配方出处（一手）════════════════════════════════════════════════════════════════════
+//   底本 = **TH18 原生 `pl01.anm` script5**（原文见 `local/th18.v1.00a/anm/pl01/pl01.anm.txt`）：
+//       script5 { -1: layer(13); sprite(sprite24); type(1); alpha(128); zWriteDisable(1); rotateAuto(1);
+//                 0: stop();
+//                    interruptLabel(1): layer(15); alpha(192); alphaTime(30, 0, 0); blendMode(1); type(1);
+//                                       sprite(sprite25); +10: sprite(sprite26); +10: sprite(sprite27);
+//                                     +10: delete(); }
+//   ⇒ **逐条照抄**：`layer` / `type` / `alpha` / `zWriteDisable` / `rotateAuto` / `blendMode` / 三档
+//     命中链的时序（10 帧一档）全部是原值，一行没改。
+//   · `rotateAuto(1)` = **贴图跟着弹的速度方向转**（原生主炮弹就是这么用的）⇒ 我们那条 30×14 的横弹
+//     在任何发射角下都朝前，不需要卡侧写角度。
+//   · 贴图 = `ATLAS_MARISA_BULLET`（`sprite24/25/26/27` 的 1:1 切图，
+//     生成器 `assets/ability/make_marisa_bullet_art.py`；entry **55** / sprite **436..439**）。
+//
+// ══ 卡侧契约 ═══════════════════════════════════════════════════════════════════════════
+//   · 本脚本**只给 shooter 记录用**：`assets/sht/append_shooterset.py` 把 111 的五组
+//     （`MARISA_FORMATION_*`）的 `+0x22` 指向本脚本号；**卡侧不 spawn 它**。
+//   · 脚本自己 `stop()`（常态只有第 0 帧那条），命中链靠引擎发 `interrupt 1` ⇒ 不需要卡侧管。
+    -1:
+    layer(13);
+    sprite(@MARISA_BULLET_0@);
+    type(1);
+    alpha(128);
+    zWriteDisable(1);
+    rotateAuto(1);
+0:
+    stop();
+    interruptLabel(1);
+    layer(15);
+    alpha(192);
+    alphaTime(30, 0, 0);
+    blendMode(1);
+    type(1);
+    sprite(@MARISA_BULLET_1@);
++10: // 10
+    sprite(@MARISA_BULLET_2@);
++10: // 20
+    sprite(@MARISA_BULLET_3@);
++10: // 30
+    delete();
+}

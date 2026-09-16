@@ -1,6 +1,11 @@
 /* 永夜抄（id 108）—— 妖机体 / 使魔（th08 系）。
  *
  * 设计唯一真源：`docs/superpowers/specs/2026-09-12-youkai-108-design.md`。
+ * ★ TH08 的**社区反编译**（用户 2026-09-16 提供，MIT）：<https://github.com/Patchouli-CN/th08_dec>，
+ *   本地克隆 `local/vendor/th08_dec`（`src/*.cpp` + `config/reccmp-functions.csv` 的 2221 条名字↔地址）。
+ *   本作此前没有源码级来源 ⇒ **本卡进一步查证先翻它**；⚠ 它记的 sha256 与我们样本不同（另一个 1.00d 构建），
+ *   本轮抽样核过布局一致（vtable 6/6、函数入口 400/400），但每条结论仍要落到 `th08:0x…` + 我们自己的样本上。
+ *   出处与用法见 `engine/_shared/community-sources.md` 的「TH08 专用」一节。
  * 一手：`local/_scratch/research-108-shooter-tick.md`（止射闸）、
  *       `local/_scratch/research-108-damage-transfer.md`（伤害转交）、
  *       `local/_scratch/research-death-signal-survey.md`（敌人移除点全集）、

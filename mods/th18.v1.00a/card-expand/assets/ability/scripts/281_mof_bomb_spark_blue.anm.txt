@@ -1,0 +1,43 @@
+script script281 {
+// 风神录（id 110）灵击的**蓝火星** —— TH10 `bullet.anm` **script399** 的逐条移植（v4 → v8）。
+//
+// 与 `280_mof_bomb_spark.anm.txt`（script398 = 红）**成对**：TH10 的灵击本体 script400 在那一趟循环里
+// 一次起 4 颗 = **红 蓝 红 蓝**（`scriptNew(398); scriptNew(399); scriptNew(398); scriptNew(399);`），
+// 循环 3 趟 = 12 颗。两支**只有两处不同**：
+//   ① `color(0,0,255)`（蓝）
+//   ② 末尾两步由 `fadd(%F1,%F3)` / `fadd(%F2,%F0)` 换成 **`fsetSub(%F1,%F3,%F1)` / `fsetSub(%F2,%F0,%F2)`**
+//      ⇒ 终点半径 = `160 − 48 = **112** px`：**蓝火星是往里收的**，红火星是往外飞的（一手原值，不是笔误）。
+// 其余（`layer(13)` / `type(1)` / `blendMode(1)` / `alpha(255)` / 随机寿命 20–35 帧 / 随机初速方向与自转 /
+// `posTime` + `scaleTime` + `wait` + `+8: delete()`）**与 280 逐条相同**，全文解读见 280 的文件头。
+//
+// 卡侧契约同 280：一次性 VM、不记 id、不碰 scale、自己 delete。
+    sprite(@MOF_BOMB_SPARK@);
+    layer(13);
+    type(1);
+    blendMode(1);
+    alpha(255);
+    color(0, 0, 255);
+    isetRand($I0, 15);
+    iadd($I0, 20);
+    fsetMul(%F0, %RANDF, 1.5f);
+    fadd(%F0, 0.5f);
+    scale(%F0, %F0);
+    rotate(0.0f, 0.0f, %RANDRAD);
+    fsetDiv(%F0, %RANDRAD, 20.0f);
+    angleVel(0.0f, 0.0f, %F0);
+    fset(%F0, %RANDRAD);
+    fcos(%F1, %F0);
+    fsin(%F2, %F0);
+    fsetMul(%F3, %F1, 160.0f);
+    fsetMul(%F0, %F2, 160.0f);
+    fmul(%F1, 48.0f);
+    fmul(%F2, 48.0f);
+    fsetSub(%F1, %F3, %F1);          // ★ 一手：往里收 ⇒ 终点 112 px（红那支是往外飞 208）
+    fsetSub(%F2, %F0, %F2);
+    pos(%F3, %F0, 0.0f);
+    posTime($I0, 4, %F1, %F2, 0.0f);
+    scaleTime($I0, 4, 0.0f, 0.0f);
+    wait($I0);
++8: // 8
+    delete();
+}

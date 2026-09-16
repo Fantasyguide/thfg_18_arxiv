@@ -4,13 +4,20 @@ script script176 {
 //             ` 0: alphaTime(20,0,255); interruptLabel(2); sprite(sprite123);`
 //             `offset124: colorTime(30,9,192,192,255); +30: colorTime(30,9,255,255,255); +30: jmp(offset124,0); stop();`
 //             `    interruptLabel(4): alphaTime(30,0,255); caseReturn(); interruptLabel(5): alphaTime(10,0,32); caseReturn();`
-//   贴图：@TRANCE_GAUGE_BAR（64×64，内容 = `front/agauge2.png` sprite123 (0,0,48,32) 居中）
+//   贴图：@TRANCE_GAUGE_BAR（**48×32**）= `front/agauge2.png` 的 sprite123 声明矩形 (0,0,48,32)。
+//   ★★ 2026-09-13 第六轮：源贴图只有 **16 宽**，48 宽这个声明 = 「**靠采样器 WRAP 把 16 宽的格子
+//      平铺 3 次**」（= 一条上 3 个槽；一手 `scrollMode` 缺省 + `U1 = 48/16 = 3.0`，无 clamp）。
+//      本仓贴图并了图集、不能越界 UV ⇒ 由 `make_trance_art.py` 的 `_tile_cols` **把平铺烘进 PNG**
+//      （内容 = 16 宽 cell ×3，画布仍是 48×32）⇒ 脚本与卡侧**零改动**，而
+//      `scale.x`（槽位比例）与 `uv_scale.u`（裁切量）与原版同量纲。
 //   引擎每帧写 `scale.x = uv_scale.x = (槽/200)/3.0`（`Gui__sub_42b030_spirit_related` `th13:0x42b030`）
 //   ⇒ **三段式**充能条（满 600 才 = 1.0）。本条**不引用 entity_pos**（那是 178 的活）。
 //
 // 偏差①：layer 17 → **24**；偏差②：补 resolutionMode(2)；
-// 偏差③：`pos(24,0)` 在 2× 表面空间里写成 `pos(48,0)`（`anchor(1,2)` = 右中锚 ⇒
-//   右缘落在 x=48，左缘 -48，正好以父 VM 为中心，与 TH13 的 640 空间几何同形）。
+// 偏差③：`pos(24,0)` 在 2× 表面空间里写成 `pos(48,0)`。
+//   ⚠ `anchor(1,2)` = **左·下**（0=中 / 1=左·上 / 2=右·下，见 `210_mof_faith_icon` 的注）
+//     ⇒ **左缘**落在 pos.x = 48、底边落在 pos.y = 0，条向**右**长。
+//     （旧注释写「右中锚 ⇒ 右缘落在 x=48、左缘 -48」是**错的**：那是 anchor(2,2)。）
 -1:
     sprite(@TRANCE_GAUGE_BAR);
     layer(24);
@@ -31,9 +38,9 @@ offset124:
     jmp(offset124, 0);
     stop();
     interruptLabel(4);
-    alphaTime(30, 0, 255);
+    alphaTime(4, 0, 255);
     caseReturn();
     interruptLabel(5);
-    alphaTime(10, 0, 32);
+    alphaTime(4, 0, 32);
     caseReturn();
 }

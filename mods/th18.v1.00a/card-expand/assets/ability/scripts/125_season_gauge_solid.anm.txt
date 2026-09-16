@@ -35,10 +35,10 @@ script script125 {
     color(224, 224, 255);
     caseReturn();
     interruptLabel(4);
-    alphaTime(5, 0, 255);
+    alphaTime(4, 0, 255);
     caseReturn();
     interruptLabel(5);
-    alphaTime(5, 0, 64);
+    alphaTime(4, 0, 32);
     caseReturn();
     interruptLabel(1);
     alphaTime(20, 0, 0);

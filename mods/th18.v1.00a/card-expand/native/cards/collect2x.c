@@ -20,6 +20,19 @@
  *   · 高速射击掉 P（2026-09-08 设计变更：原「掉金钱」实跑未出现，用户拍板改掉 P）：非聚焦射击
  *     命中敌人（断点 ce_shot_damage 已按聚焦位 / bomb / param_6 门控）→ 按当前火力节流掉火力道具
  *     type 1（命中点）：间隔 = 96 − power×16/100 帧（core 节流，帧源见 frame_now）。
+ *   · ★★ 2026-09-15（`NEXT.md` §1x.2）：**自建实体（110/111 的大 / 中绿点）也入批**（用户口径
+ *     「大、中绿点会计入 th14 收卡的计数」+「绿点也得当作正在飞行的道具」）。它们是自建 VM
+ *     （`cards/faith.c` 的池），成员门（`on_item_collect` 的 type{1,2}+state 3）与 presence 谓词
+ *     （`ce_item_pool_any_attracting()` 扫原生池）**都碰不到** ⇒ 批会偏小、而且可能在绿点还在飞时
+ *     就结算。两条通道都接在 SDK 的声明式层上（`sdk_core.h` 的「虚拟收集 / 虚拟在飞」，
+ *     生产者只声明、本卡只读）：
+ *       ① **成员**：`on_item_frame` 开头抽干 `ce_vitem_take_collect()` → `c2x_collect_virtual()`
+ *          —— **在 `batch_open` 门之前**（第一颗绿点就能开批）、**只加 count、不碰 batch_score**
+ *          （绿点走信仰、不进 SCORE ⇒ 也不进批分，结算补差对纯绿点批恒 0。用户：「只 +1」）；
+ *       ② **presence**：`ce_vitem_flying() > 0`（绿点还在飘/被吸）与原生谓词**或**起来 ⇒ 续 idle
+ *          —— 修「我们这些点还在飞的时候就提前结算」。
+ *     **批的档位 / 倍率 / 碎片 / 批分算法一个字没改**；微档（消弹那档的半道具）不入批（§1x.3），
+ *     由 SDK 层的 `CE_VITEM_HALF` 挡在生产者一侧（`faith.c`）。诊断两行新日志见 `on_item_frame`。
  *
  * 断点（sdk.c 头表字节一手 + AUDIT §Z）：ce_item_frame 0x446ee3（每帧、池 body 前）/
  * ce_item_collect 0x44625f（type 分派前，分值副作用未发生）/ ce_item_commit 0x44658a（分值已入 SCORE、
@@ -42,6 +55,14 @@
 
 static int32_t s_stash;             /* 批集收集断点存的 SCORE（提交断点差量用）*/
 static int     s_stash_valid;       /* stash 只对「批集收集后、下一次提交前」有效（见文件头）*/
+
+/* ★★ 2026-09-15（`NEXT.md` §1x.2）：**自建实体**（110/111 的大 / 中绿点）的两个诊断计数。
+ * 都与批的算法无关（批的档位 / 倍率 / 碎片一个字没改）—— 只为实跑时能在日志里看见两件事：
+ *   ① 批里**有几个成员是自建实体**（成员通道在动）；
+ *   ② 批有没有被**自建实体续过命**（presence 通道在动；原生池空的时候才记，避免与原生重复计数）。*/
+static int32_t s_batch_virtual;     /* 本批累计的自建实体成员数（批闭时清零）*/
+static int32_t s_batch_vhold;       /* 本批有没有「只靠自建实体在飞」续过 idle（批闭时清零）*/
+static int32_t s_virtual_total;     /* 本 run 累计（`on_run_reset` 清零）*/
 
 /* 帧源（2026-09-08 §Z14 订正）：card+0x20 的 zTimer.cur 只在**主动卡**释放模板的 __on_tick_2 末尾递增
  * （engine/card/th18/01-object-model.md §3 一手证据全在主动卡路径；状态切换还清零）——本卡 0x54 纯被动，
@@ -143,21 +164,66 @@ static void on_item_frame(ce_card_t *c)
     const int32_t now = s_play_frame;
     if (s->pending_frag_count && now >= s->pending_frag_at)
         spawn_pending_frags(c, s);                      /* 延迟到点：从当下自机位弹卡（批闭与否无关）*/
+
+    /* ★★ 2026-09-15（`NEXT.md` §1x.2 **成员通道**）：自建实体（110/111 的大 / 中绿点）被收 ⇒ 入批计一员。
+     * 来源 = SDK 的「虚拟收集」声明层（`sdk_core.h`）：`cards/faith.c` 在它**自己的收集判定**
+     * 命中的那一刻报一颗（`ce_vitem_note_collect`），这里抽干、按颗数计入本批。
+     *   · **在 `batch_open` 门之前**：第一颗绿点自己就能开批（§Z22 的成员门只针对**引擎原生**道具的
+     *     真空谓词 —— 自建实体没有 type / state，「算不算收点」由生产者的收集判定给出）；
+     *   · **不进批分**：`c2x_collect_virtual()` 只动 count、不碰 batch_score ⇒ 结算补差对纯绿点批
+     *     恒 0（绿点走信仰槽，不进 SCORE —— 用户口径「只 +1」）；
+     *   · 微档不进（§1x.3 的半道具）：由 SDK 层的 `CE_VITEM_HALF` 挡在生产者那一侧。
+     * 顺序：与卡 tick（生产者）同帧谁先谁后都读得到（层带 2 帧容差，见 `sdk_core.h` 契约 ④）。*/
+    {
+        const int vn = ce_vitem_take_collect();
+        if (vn > 0) {
+            c2x_collect_virtual(s, vn, now);
+            s_batch_virtual += vn;
+            s_virtual_total += vn;
+        }
+    }
     if (!s->batch_open) return;
 
     /* §Z21/§Z22 presence 续批：本帧有批集道具在真空飞行（state == 3）→ 续 idle。TH18 波内吸收空洞
      * （8–25 帧，§Z20）= 真空在飞散布 → 空洞被续批盖住，idle 窗（C2X_BATCH_SETTLE_IDLE=8，原生值）
      * 只兜「真空空 + 无新收」的真停尾段（用户 run-9 语义：下收点线后残余在飞的 P 继续算、收完即结）。
      * §Z22 收窄 state 4：70px 环 swoosh 是普通游玩磁吸（任何时刻都发生），不属全屏收点 → 不续批
-     * （run-9 症状根因之一）。扫池成本：每游玩帧 ≤4696 槽 × 2 dword，批开期才扫；早停。 */
-    if (ce_item_pool_any_attracting()) {
+     * （run-9 症状根因之一）。扫池成本：每游玩帧 ≤4696 槽 × 2 dword，批开期才扫；早停。
+     * ★★ 2026-09-15（§1x.2）：**自建实体在飞也算 presence** —— `ce_vitem_flying() > 0`（110/111 的
+     *   大 / 中绿点还飘着/被吸着）⇒ 同样续 idle。没有它，一批会在我们这些点**还在飞的时候**被判
+     *   「收点流停了」而提前结算（用户点名的毛病；批偏小 + 边界错）。这一路只**续命**、不计数
+     *   （计数走上面的成员通道）⇒ 与原生谓词是**或**关系，不改变原生那一支的语义。*/
+    const int native_flying  = ce_item_pool_any_attracting();
+    const int virtual_flying = native_flying ? 0 : ce_vitem_flying();   /* 原生那一路命中就不必再问自建 */
+    if (native_flying || virtual_flying > 0) {
+        if (!native_flying && !s_batch_vhold) {
+            /* 只靠自建实体续着（原生池里一颗真空在飞的都没有）—— 记一次，实跑能看见这条路在动。
+             * 每批只记一次（`s_batch_vhold` 在批闭 / 开新关时清零）。*/
+            s_batch_vhold = 1;
+            ce_log("collect2x: batch held by virtual items in flight (%d flying, count %d, t=%d)",
+                   virtual_flying, s->batch_count, now);
+        }
         c2x_batch_presence(s, now);
-        return;                                         /* 有真空在飞：本帧必然不结（idle 刚续）*/
+        return;                                         /* 有真空在飞 / 自建在飞：本帧必然不结（idle 刚续）*/
     }
 
     const int32_t count = s->batch_count;               /* 关批前留档（settle 后 count 已清零，日志用）*/
     c2x_settle_out_t out;
     if (!c2x_maybe_settle(s, now, &out)) return;        /* 批开但 idle 未满：等（presence+timer 批闭门）*/
+
+    /* ★ 2026-09-15（§1x.2）：本批的自建实体成员数 / 有没有被自建实体续过命 —— 批闭即清零，
+     * 并在批里真的含自建实体时补一行日志（**不改 settle 那一行的格式**：它是 NEXT/AUDIT 里的对账标记）。
+     * 判据（实跑读法）：`virtual 0` = 110/111 没在场或没收到绿点；`virtual N` 且 `batch score` 为 0
+     * ⇒ 纯绿点批（不进批分、补差 0）的签名。*/
+    {
+        const int32_t vmembers = s_batch_virtual;
+        const int32_t vheld = s_batch_vhold;
+        s_batch_virtual = 0;
+        s_batch_vhold = 0;
+        if (vmembers > 0)
+            ce_log("collect2x: batch had %d virtual (green-dot) members of %d, virtual-presence=%d (t=%d)",
+                   vmembers, count, vheld, now);
+    }
 
     uint8_t *p = CE_PLAYER();
     const float px = p ? *(float *)(p + CE_PLAYER_X) : 0.0f;
@@ -259,6 +325,7 @@ static void on_stage_start(ce_card_t *c)
     s->batch_open = 0; s->batch_count = 0; s->batch_score = 0;  /* 上一关末帧的收点批不带进新关 */
     s->pending_frag_count = 0; s->pending_frag_type = 0;        /* 未到点的待弹碎片也丢（跨关无意义）*/
     s_stash_valid = 0;
+    s_batch_virtual = 0; s_batch_vhold = 0;             /* ★ §1x.2 的自建实体诊断计数：与批同生命周期 */
     s->next_drop_at = 0;                                /* 新关第一发命中即可掉（计数不归零：0 ≤ 任何游玩帧）*/
 }
 
@@ -267,8 +334,11 @@ static void on_run_reset(ce_card_t *c)
     c2x_state_t *s = ce_state(c, c2x_state_t);
     if (s->batch_count || s->fragment_cycle)
         ce_log("collect2x: run reset (open batch of %d, fragment cycle %d)", s->batch_count, s->fragment_cycle);
+    if (s_virtual_total)                                /* ★ §1x.2：本 run 一共收了多少自建实体成员 */
+        ce_log("collect2x: run reset (virtual green-dot members this run: %d)", s_virtual_total);
     memset(s, 0, sizeof *s);                            /* 4:1 循环游标也归零：循环按 run 计 */
     s_stash_valid = 0;
+    s_batch_virtual = 0; s_batch_vhold = 0; s_virtual_total = 0;
     s_play_frame = 0;                                   /* run 游玩帧计数同归零 */
 }
 

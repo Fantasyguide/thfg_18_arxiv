@@ -12,6 +12,7 @@
  *
  * 跑在游戏线程上下文里：不碰 x87（-mfpmath=sse），不调 thcrap API。
  */
+#include <stdio.h>
 #include "engine.h"
 #include "card_expand.h"
 #include "thcrap_bp.h"
@@ -39,43 +40,36 @@ int __cdecl BP_ce_trace_alloc(x86_reg_t *regs, void *bp_info)
     return BP_EXEC_ORIGINAL;
 }
 
-/* 初始卡组钩子（patch-test 的 ce_test_deck，0x407ee3，盖住整条 movzx eax, byte [eax+esi+0x5f608]）。
- * 语义复刻：eax = 那一格的 id。
- *
- * dev 卡组（cards_dev.js start_deck）把槽值**换掉**（只改 eax、不写内存——2026-09-08 写容量域
- * [0x5f678] 触发开局卡死，已回滚）：esi < dev 张数的槽无条件 = dev 卡组 id（档里预装默认卡被顶掉，
- * 引擎 alloc 的是 dev 卡）；reset_cards 循环按容量域走（编成档位 1–3，引擎封顶 3 = CE_DECK_CAP_MAX，
- * 0x4449d4 无 3→4 分支），容量不足时只发前几张——日志可读出发了几张。
- * 返回 0 = 跳过原指令（eax 已经是结果）。原 movzx 不设 flags；紧接着 push eax; call —— 无人读 flags。
- * 无 dev 卡组（cards_dev.js 缺失）= 原语义放行。 */
+/* 初始卡组钩子（patch-test 的 ce_test_deck，`0x407ee3`，盖住整条 `movzx eax, byte [eax+esi+0x5f608]`）。
+ * 现在它只做两件事（起手卡组的**注入**搬到 `\mods\start_deck.js` + start_deck.c 了）：
+ *   ① `esi == 0` 时给 `start_deck.c` 一次机会（显式、只改一次地改存档里的初手卡组）；
+ *   ② 打一行诊断：引擎此刻真正读到的卡组 + 该机体的编成容量。
+ * `regs->eax` 在这一格 = 「本机体初手第 0 格」地址（`scorefile + 0x5f608 + shot*0x10`）。*/
 int __cdecl BP_ce_test_deck(x86_reg_t *regs, void *bp_info)
 {
     (void)bp_info;
-    const unsigned n = ce_dev_deck_count();
-    if (n == 0) return BP_EXEC_ORIGINAL;
-    /* ★ 2026-09-10：新档的编成容量只有 1 槽（游戏自己的递增链 1→2→3，靠通关解锁），
-     * 于是 dev 卡组只会装第 1 张。这里的循环**每轮都重读上界**
-     * （`0x407ecb` / `0x407efe`：`CMP [scorefile + shottype*4 + 0x5f678], esi`），
-     * 所以顺手把容量写成 dev 张数即可让三个槽都生效（只写内存，不碰盘上的存档）。*/
+    if (regs->esi != 0) return BP_EXEC_ORIGINAL;       /* 只在每次 reset_cards 的第一格干活 */
     {
-        uint8_t *sf = *(uint8_t **)(uintptr_t)CE_ADDR_SCOREFILE_PTR;
-        if (sf) {
-            int shot = *(const int32_t *)(uintptr_t)(regs->ebx + CE_DECK_SHOTTYPE_OFF);
-            int32_t *cnt = (int32_t *)(sf + shot * 4 + CE_DECK_CAP_OFF);
-            if (*cnt < (int32_t)n) {
-                ce_log("test: deck capacity %d -> %u (shot type %d)", (int)*cnt, n, shot);
-                *cnt = (int32_t)n;
+        int shot = *(const int32_t *)(uintptr_t)(regs->ebx + CE_DECK_SHOTTYPE_OFF);
+        uint8_t *deck0 = (uint8_t *)(uintptr_t)regs->eax;
+
+        /* ★ 显式起手卡组（\mods\start_deck.js）：**只改一次**，见 start_deck.c。放最前面，
+         *   这样紧接着的诊断行读到的就是改过之后的存档（实跑一眼能看出这次到底改没改）。*/
+        ce_start_deck_tick(deck0, shot);
+
+        /* 每次 reset_cards 都打一行「引擎此刻真正读到」的卡组与编成容量 —— 用来区分
+         * 「编成里改的没进存档」(`deck` 与编成设的不一致) 与「编成容量只有 N 格」(`cap` < 3)。*/
+        {
+            uint8_t *sf = *(uint8_t **)(uintptr_t)CE_ADDR_SCOREFILE_PTR;
+            char buf[64];
+            int len = 0;
+            for (int i = 0; i < CE_DECK_CAP_MAX; ++i) {
+                unsigned v = *(const uint8_t *)(uintptr_t)(deck0 + i + CE_TEST_DECK_SAVE_OFF);
+                len += snprintf(buf + len, sizeof buf - (size_t)len, i ? ", %u" : "%u", v);
             }
+            ce_log("test: reset_cards — shot %d cap %d deck [%s]", shot,
+                   sf ? *(const int32_t *)(sf + shot * 4 + CE_DECK_CAP_OFF) : -1, buf);
         }
     }
-    uint32_t id = *(const uint8_t *)(uintptr_t)(regs->eax + regs->esi + CE_TEST_DECK_SAVE_OFF);
-    if (regs->esi < n) {
-        uint32_t nid = ce_dev_deck_id(regs->esi);
-        if (id != nid)
-            ce_log("test: deck slot %u: %u -> dev id %u", regs->esi, id, nid);
-        regs->eax = nid;
-        return 0;
-    }
-    regs->eax = id;
-    return 0;
+    return BP_EXEC_ORIGINAL;
 }

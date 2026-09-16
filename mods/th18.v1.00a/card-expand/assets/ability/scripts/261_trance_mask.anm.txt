@@ -1,0 +1,49 @@
+script script261 {
+// 灵界**遮罩层**（113）—— 全屏 drawRect 半透明底色。
+//
+// ★ 一手现状（`engine/spirit/th13/02-trance-hud-and-popup.md` §2.4、`th13:0x4032d0`）：
+//   TH13 的灵界遮罩**不是 anm 脚本**，而是 **EffectManager 的 effect 回调**：
+//   回调自己设一组 render state（0xf/0xce/0x13/0x14/0xab/0xcf/0xd0/0xd1）再用 `DrawPrimitiveUP`
+//   画一个**全屏四边形**（贴 512×512 的 `effect/eff_astral.png`，慢速自转），另外再画 4 个 astral VM
+//   （`case 7/8/9` 每帧把它们的 scale 覆写成 320/240，还有一个 26/20/6 帧的状态机）。
+//   ⇒ **原版没有"遮罩脚本"可抄**；TH18 侧要 1:1 复刻得去挂 TH18 自己的 effect 回调表
+//     （`vm+0x5d8` → `[th18:0x4b48d0 + idx*4]`，`th18:0x48123d` 一手），那是下一步的大活。
+//
+// ★ 本脚本 = **过渡用的近似**（`❓ 自定`，登记在 `TUNING.md` §2.0 / `AUDIT.md` §CB-3）：
+//   用**矩形图元**（`drawRect`，不依赖任何贴图）在游玩区上盖一层深蓝紫半透明
+//   （色值抄 TH13 `effect.anm` 幕布的 `color(32,16,96)`）。alpha 由**卡侧每帧写**
+//   （`ce_anm_set_color` 的 0xAARRGGBB 里带 alpha）⇒ 脚本只管画一张静止的矩形，
+//   淡入淡出、跟随灵界起停全部由 C 侧控制，出问题只改一处。
+//
+// ## ★★ 2026-09-13 第五轮修（用户实跑：「灵界状态**没有任何特效**」）—— 两个真根因，都在本文件
+//
+// 1. ★ **必须有 `sprite(-1)`**：TH18 的 `drawRect` 只在"VM 当前没有 sprite"时才画矩形图元
+//    —— 不写它，整块矩形**根本不画**（本仓 2026-09-10 已经踩过一次并留了记录：
+//    `157_hyper_bar_frame.anm.txt` 的注释「`sprite(-1)` 必须有（没有可画的矩形 → 整条不可见，
+//    2026-09-10 用户反馈的根因）」；原生配方也一律先 `sprite(-1)`：
+//    `effect.anm` script3 `45: sprite(-1); drawRect(640,480)`、`abmenu.anm` script12 同形）。
+// 2. ★ **不许写 `alpha(0)` 而没有 `alphaTime`**：`alpha` 指令写的是 alpha 插值器，
+//    写成 0 之后没有 `alphaTime` 把它拉起来 ⇒ 这一支**恒 alpha 0 = 永远不可见**
+//    （本仓另一处同款：`AUDIT.md` §AL10「填充脚本漏了 `alphaTime` ⇒ 填充恒 alpha 0」）。
+//    ⇒ 本脚本**不写任何 `alpha`**，alpha 全由卡侧每帧写 `ce_anm_set_color` 决定
+//    （与 `112_lolk_panel6.anm.txt`「脚本不写 alpha、C 每帧写 `A | 0x00ffffff`」同款，
+//      那条是实跑验证过的）。
+//
+// ## 几何（一手坐标空间：游玩区 x∈[−192,192] 居中、y∈[0,448]；1 世界单位 = 2 表面 px）
+//
+//   `pos(0, 224)` = **游玩区正中心**（x 中心 0、y 中心 224），`anchor(0, 0)` = **锚心**
+//   （v8 的 `anchor(h,v)`：0 中 / 1 左·顶 / 2 右·底；**drawRect 不写 anchor 时默认是左上角**，
+//    见 `AUDIT.md` §AL20）⇒ 640×480 世界单位 = 1280×960 表面 px **正好铺满整屏**。
+//   ⚠️ 旧版本这里是 `anchor(1,1)` + `pos(0,224)`：那是"左/上锚"，矩形只从场地中心往右下铺
+//      ⇒ 就算前两条修好也只有右下角一块（用户看不到任何东西的第三个原因）。
+-1:
+    sprite(-1);
+    type(1);
+    drawRect(640.0f, 480.0f);
+    layer(19);
+    anchor(0, 0);
+    pos(0.0f, 224.0f, 0.0f);
+    color(32, 16, 96);
+0:
+    stop();
+}

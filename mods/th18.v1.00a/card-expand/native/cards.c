@@ -155,55 +155,41 @@ static int parse_card(const char *key, const json_t *obj, ce_card_def_t *d, char
 }
 
 /* ---- 开发配置：th18/cards_dev.js（只放 _test）----
- *   { "start_deck": [58, 59, ...], "trace": true }
- * start_deck：BP_ce_test_deck 把开局卡组**强制**成这些 id（容量域提到 dev 张数、槽按序覆盖；
- *   **初始卡组**上限 3 = CE_DECK_CAP_MAX，超出截断（用户 2026-09-13 口径：初始卡组上限 3 张，
- *   **实战卡组可以有很多很多张** —— 3 只是"每机体的初手槽"里我们注入的上限，不是总卡组容量）。
- *   trace：桩被调时记日志。缺失 = 都关（BP 放行原语义）。*/
-static uint32_t s_dev_deck[16];
-static unsigned s_dev_deck_n;
-static int      s_dev_trace;
+ *   { "trace": true, "retail_weight": 6, "new_weight": 15 }
+ *   trace：桩被调时记日志（含 `BP_ce_test_deck` 的诊断行）。
+ *   retail_weight / new_weight：改商店池权重（见 AUDIT §O27）。
+ * ★ 起手卡组**不在这里** —— 它是 `\mods\start_deck.js`（显式、只改一次），见 `start_deck.c`。*/
+static int s_dev_trace;
 
-unsigned ce_dev_deck_count(void)      { return s_dev_deck_n; }
-void     ce_dev_deck_disable(void)    { if (s_dev_deck_n) { s_dev_deck_n = 0; ce_log("cards_dev: start_deck disabled (gate failed; new ids cannot be allocated)"); } }
-uint32_t ce_dev_deck_id(unsigned i)   { return i < s_dev_deck_n ? s_dev_deck[i] : 0; }
-int      ce_dev_trace(void)           { return s_dev_trace; }
+int ce_dev_trace(void)                { return s_dev_trace; }
+
+/* 门禁失败时调（selfcheck.c）：新卡 id 马上要被禁掉，`start_deck.c` 那边也不许再动卡组
+ * —— 否则会把分配不出来的 id 写进存档（AUDIT §AG / §DL）。*/
+void ce_dev_deck_disable(void)        { ce_start_deck_disable(); }
 
 static void load_dev_config(uint8_t *cave, unsigned rows)
 {
-    s_dev_deck_n = 0; s_dev_trace = 0;
+    s_dev_trace = 0;
     int retail_w = -1, new_w = -1;
     json_t *root = p_stack_game_json_resolve("cards_dev.js", NULL);
-    if (!root) return;
-    if (root->type == J_OBJECT) {
-        const json_t *deck = p_json_object_get(root, "start_deck");
-        if (deck && deck->type == J_ARRAY) {
-            size_t n = p_json_array_size(deck);
-            for (size_t i = 0; i < n && s_dev_deck_n < sizeof s_dev_deck / sizeof s_dev_deck[0]; ++i) {
-                const json_t *v = p_json_array_get(deck, i);
-                long long id = v && v->type == J_INTEGER ? p_json_integer_value(v) : -1;
-                if (id < 0 || id >= CE_MAX_ROWS) { ce_log("cards_dev: start_deck[%u] invalid — ignored", (unsigned)i); continue; }
-                s_dev_deck[s_dev_deck_n++] = (uint32_t)id;
-            }
-        }
-        const json_t *tr = p_json_object_get(root, "trace");
-        s_dev_trace = tr && tr->type == J_TRUE;
-        const json_t *rw = p_json_object_get(root, "retail_weight");
-        if (rw && rw->type == J_INTEGER) retail_w = (int)p_json_integer_value(rw);
-        const json_t *nw = p_json_object_get(root, "new_weight");
-        if (nw && nw->type == J_INTEGER) new_w = (int)p_json_integer_value(nw);
-    } else
-        ce_log("cards_dev: cards_dev.js root is not an object — ignored");
-    p_json_decref_safe(root);
-    if (s_dev_deck_n > CE_DECK_CAP_MAX) {
-        ce_log("cards_dev: start_deck %u ids truncated to %u (initial-deck cap; slots beyond never read)",
-               s_dev_deck_n, (unsigned)CE_DECK_CAP_MAX);
-        s_dev_deck_n = CE_DECK_CAP_MAX;
+    if (root) {
+        if (root->type == J_OBJECT) {
+            const json_t *tr = p_json_object_get(root, "trace");
+            s_dev_trace = tr && tr->type == J_TRUE;
+            const json_t *rw = p_json_object_get(root, "retail_weight");
+            if (rw && rw->type == J_INTEGER) retail_w = (int)p_json_integer_value(rw);
+            const json_t *nw = p_json_object_get(root, "new_weight");
+            if (nw && nw->type == J_INTEGER) new_w = (int)p_json_integer_value(nw);
+            if (p_json_object_get(root, "start_deck"))
+                ce_log("cards_dev: 老键 start_deck 已废弃 —— 起手卡组改用 \\mods\\start_deck.js（显式、只改一次）");
+        } else
+            ce_log("cards_dev: cards_dev.js root is not an object — ignored");
+        p_json_decref_safe(root);
     }
     unsigned changed = 0;
     int used_w = ce_weight_override_fit(cave, rows, retail_w, new_w, s_ids, s_count, &changed);
-    ce_log("cards_dev: start_deck has %u ids, trace=%d, retail_weight=%d new_weight=%d (%u rows changed)",
-           s_dev_deck_n, s_dev_trace, retail_w, used_w, changed);
+    ce_log("cards_dev: trace=%d, retail_weight=%d new_weight=%d (%u rows changed)",
+           s_dev_trace, retail_w, used_w, changed);
     if (used_w != new_w)
         ce_log("cards_dev: new_weight %d would overflow the shop pool (> %u slots) — clamped to %d",
                new_w, (unsigned)CE_SHOP_POOL_SLOTS, used_w);

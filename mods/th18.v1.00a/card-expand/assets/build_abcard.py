@@ -23,6 +23,14 @@ CARDS_JS = MOD / "patch" / "th18" / "cards.js"
 TEX = L.BUILD / "tex-abcard"
 OUT_ANM = L.BUILD / "abcard.anm"
 TEMPLATES = {"max": "ability/BLANK_max.png", "min": "ability/BLANK_min.png"}
+# 引擎硬顶：贴图键 = `(anm 槽号 << 8) | entry 下标`，绑贴图时**只取低 8 位** ⇒ 一个 anm 文件
+# 最多 256 个 entry（下标 0..255）。一手：th18:0x486d38（打包）/ th18:0x47e1a4（解包），
+# 见 engine/anm/th18/06-entry-limit-and-multi-sprite.md §1.1。与 `build_ability.py` 的 `MAX_ENTRIES` 同一口径。
+# ★ 为什么这里必须有这道门（2026-09-13 补）：abcard 每张新卡吃 **2** 条 entry，是卡侧**最先**撞的墙
+#   （比 `CE_CARD_MAX_NEW` 的 71 张更紧：118 + 2N ≤ 256 ⇒ 只能进 69 张卡）。而越限**不崩不报错** ——
+#   第 256 条之后的 entry 绑贴图时下标被截断，实跑里表现为「卡图错位」（AUDIT.md §CC 那个失败模式）。
+#   所以它必须是**构建期硬门**，而不是等实跑发现。
+MAX_ENTRIES = 256
 
 
 def expected_sprites(order, base: int):
@@ -83,8 +91,21 @@ def main():
     base = len(retail_entries)
     by_name = {e["name"]: e for e in retail_entries}
     tpl_max, tpl_min = by_name[TEMPLATES["max"]], by_name[TEMPLATES["min"]]
-    order = [r[0] for r in L.read_order(ORDER)]
+    # abcard 的 ORDER.txt 是**一列名字**（不是 ability 那套 v2 图集语法）⇒ 用 read_order_names
+    order = L.read_order_names(ORDER)
     exp = expected_sprites(order, base)
+
+    # entry 上限硬门（照 build_ability.py 的同名检查）——**先于任何写盘**，
+    # 这样越限时既不会产出坏 anm，也不会去改 cards.js。
+    n_total = base + 2 * len(order)
+    if n_total > MAX_ENTRIES:
+        raise SystemExit(
+            f"entry 总数 {n_total} > {MAX_ENTRIES}（= 原生 {base} + 2×{len(order)} 张卡）："
+            f"贴图键低 8 位放不下，≥256 的 entry 会**绑错贴图**"
+            f"（`th18:0x486d38` 打包 / `th18:0x47e1a4` 解包）。\n"
+            f"  改法：① 把大图/小图并进**一个 entry**（一个 entry 两个 sprite）⇒ 可容纳的卡数翻倍；"
+            f"② 或把新卡图拆到别的空闲 anm 槽（槽号 < 0x21）。\n"
+            f"  这一版**没有**产出文件。")
 
     if not a.verify_only:
         prepare_textures(order, tpl_max, tpl_min, retail_dir, retail_entries)
@@ -109,6 +130,10 @@ def main():
     if errs:
         raise SystemExit("cards.js 索引校验不过：\n  " + "\n  ".join(errs))
     print(f"verify: entry {len(rebuilt)} = {base} + 2×{len(order)}；原生 spec/贴图逐项一致；cards.js 索引一致\n")
+    room = MAX_ENTRIES - n_total
+    print(f"  ★ entry 余量：用到 {n_total} / 上限 {MAX_ENTRIES}（贴图键低 8 位）⇒ **还剩 {room} 个 entry**"
+          f" = **还能进 {room // 2} 张卡**"
+          f"（卡侧最先撞的就是这道墙，比 `CE_CARD_MAX_NEW` 的 71 张更紧；见 CAPACITY.md §5-①）")
     print(f"{'NAME':<16}{'sprite_large':>13}{'sprite_small':>13}")
     for name, (lg, sm) in exp.items():
         print(f"{name:<16}{lg:>13}{sm:>13}")

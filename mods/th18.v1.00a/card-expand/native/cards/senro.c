@@ -21,10 +21,12 @@
  * 结界中：**每帧全屏收点**、**擦弹同时涨樱点与最大樱点**、+C 按剩余计时比例**持续下降**。
  * **中弹或按 B ⇒ 灵击**：结界中断 + **全屏弹转小樱点**（每颗 +100 樱点 / +30 +C）+ **0.67 s 无敌**（40 帧）。
  * **自然到期** ⇒ 樱点与最大樱点各 **+10000** + **樱点分**的 Border Bonus。**Miss / Bomb 扣樱点**（不动 +C、不动最大樱点）。
- * 樱点是本卡的「最大得点」：吃一颗点道具（TH18 金钱）的得分 = 樱点（经 `on_item_score` 改写身价）。
+ * 樱点是本卡的「最大得点」：吃一颗点道具（TH18 金钱）的得分 = 樱点。
+ * ★ 2026-09-13 计分层重做后，本卡在 `on_item_score` 里只**声明**这份 `G_07`（未耦合通道），
+ *   由 SDK 一次合成（`ce_score_apply`；公式与一手见 `../SCORE-LAYER-REWORK.md`）。
  *
  * ── 长持续效果的自查（`METHOD.md` 铁律二 / `SDK.md` §6.1 尾）────────────────────────────
- * 本卡跨帧留下的东西：① 无敌声明层的一格（`ce_invuln_request`）；② 计分声明层的一格（`ce_score_declare`）；
+ * 本卡跨帧留下的东西：① 无敌声明层的一格（`ce_invuln_request`）；② 计分声明层的一格（`ce_score_declare_delta`）；
  * ③ HUD 槽位 + 三行贴图 VM 文字；④ **★ 结界特效的两个世界层 VM**（甲 = 那个环的句柄 + 乙 = 32 颗的句柄，
  * 2026-09-12 补，见文件中部长注）。①② 由 `CE_CARD` 的 `on_run_reset` / `opdelete` 自动 `ce_layer_drop_card()` 清，
  * ③ 的槽位也自动 release，但**文字 VM 是本卡自己的**，必须在 `on_delete` / `on_run_reset` 里 `ce_hud_vm_text_clear()`。
@@ -40,6 +42,8 @@
 
 #include "sdk.h"
 #include "senro_core.h"
+#include "faith.h"       /* ★ 2026-09-16：`faith_collect_all()`（结界全收也要收自建绿点）*/
+#include "hud_dim.h"           /* ★ 跨卡统一件：左下角 HUD 压暗（❓ 用户口径，见文件头）*/
 
 #define SENRO_ID                    107
 
@@ -88,16 +92,54 @@
 #define SENRO_HUD_W                 200.0f
 #define SENRO_HUD_H                 40.0f
 #define SENRO_HUD_ROW_DY            12.0f   /* 行距（640×480 字面量空间；行高 = scale_y × 10）*/
-#define SENRO_HUD_DIM               0x40u    /* 自机贴近左下角时整摞的 alpha（HUD-LAYOUT §4.5：64/255）*/
+/* ★★ 2026-09-15g：**压暗这一路改走跨卡统一件 `cards/hud_dim.{h,c}`**（唯一实现）。
+ * 性质 = ❓ **用户口径（UI 统一），不是复刻**（用户 2026-09-15：「压暗这个涉及到 UI 统一，
+ * 这个不能复刻。是那个靠近透明吧」）⇒ **动态**统一：终点 alpha **32**（原 64）、起始 255、
+ * 每帧 **±56**（4 帧；原来**没有过渡**，当帧硬切）、滞回带 **16 px**；**区域**按**本卡自己那块 HUD 的矩形**推。
+ *
+ * ★★ 2026-09-15h：**进/出的口径订正**（父 agent：15g 那版「进 = 矩形**之内**」裁错了）——
+ *   **进 = 自机落在「块矩形外扩 `HUD_DIM_MARGIN`(28)」之内**、**出 = 离开「矩形 + 44」（28 + 滞回 16）之外**。
+ *   理由：本块的**下沿 446 在自机 y 钳位 432 之下** ⇒ 「站进矩形」只剩 **6 px 高**；一手各作的门本来就落在
+ *   它们自己那块上沿之上 24–32 px（TH16 的 `400` 在它那块沿之上 28）⇒ 边距是**原本就有的语义**。
+ *
+ * 本卡的块矩形 → 门限（**自机坐标**；换算 `自机 = 表面/2 − (320, 16)`，见 `hud_dim.h`）：
+ *   · 块 = 货架槽（`s->slot`，表面 (257, 924) + **200 × 40** = `SENRO_HUD_W/H`）⇒ 表面 x 257..457、y 884..924
+ *   · ⇒ 自机矩形 = x ∈ [−191.5, −91.5]、y ∈ [426, 446]（上沿 426 / 下沿 446）
+ *   · ⇒ **进** = 自机落在「矩形 + 28」之内：x ∈ [−219.5, −63.5] ∧ y ∈ [398, 474]
+ *        （自机钳位 x ∈ [−184, 184]、y ∈ [32, **432**] ⇒ 实际可触发区 x ∈ [−184, −63.5]、y ∈ [398, 432]）
+ *   · ⇒ **出** = 离开「矩形 + 44」：x < −235.5 ∨ x > −47.5 ∨ y < 382 ∨ y > 490（**16 px 滞回带**）
+ *   ⚠ 原来的样子（= **原一手值 / 原实现**，留档，不再生效）：
+ *     `SENRO_HUD_DIM 0x40u`（= 64，`HUD-LAYOUT.md` §4.5 的 64/255）；门读的是 SDK 那份
+ *     `ce_hud_player_near_corner()`（= 400/384/−64，TH16 的栅格）—— 本卡是它**唯一**的卡侧调用点，
+ *     `sdk_core.h` 也写明「卡片只读 `ce_hud_near_corner()`，别自己再推一次」⇒ 现在本卡不再调它
+ *     （SDK 那条链自己仍在 `sdk.c` 每帧推进，别人要读照样读得到）。*/
 
-/* th07 的 HUD 颜色（一手 `th07:0x4049a4`，三字节写在 `obj+0x89c..0x89e` = **RGB**）：
- *   ≥ 50000 → `(0x80,0xFF,0xFF)` 亮青；< 50000 → `(0x80,0xD0,0xFF)` 浅蓝。
- * TH18 的 `ce_hud_vm_text_set` 收 BGRA ⇒ 逐字节换序。*/
-#define SENRO_HUD_COLOR_PLUS_HOT    0xffffff80u   /* RGB(0x80,0xFF,0xFF) */
-#define SENRO_HUD_COLOR_PLUS        0xffffd080u   /* RGB(0x80,0xD0,0xFF) */
-#define SENRO_HUD_COLOR_CHERRY      0xffffffffu
-/* ❓ 自定：樱点满最大樱点时「数字变金黄」（IDEAS §107 / 用户口径）；th07 的金黄常量本轮没取到。TODO(th07)*/
-#define SENRO_HUD_COLOR_GOLD        0xff60d0ffu   /* BGRA = RGB(0xFF,0xD0,0x60) */
+/* ★★ 2026-09-16m 订正：th07 的 HUD 颜色字段是**一个 D3DCOLOR**（`obj+0x89c` 起 4 字节，
+ *   第 4 字节 `+0x89f` = alpha，原生 `th07:0x404969` 从 `+0x653` 拷过去）⇒ 三字节的**字节序是
+ *   `+0x89e = R`、`+0x89d = G`、`+0x89c = B`**，不是上一版注释写的「`0x89c..0x89e` = R,G,B」。
+ *   判据：TH18 的 anm `color` 指令写 `arg0→vm+0x526`(R) / `+0x525`(G) / `+0x524`(B)
+ *   （`sdk.h` §404 一手），而 TH18 的 `vm+0x524` color_1 与 `mgr+0x19224` 都是
+ *   **D3DCOLOR 0xAARRGGBB**（Tenshi `0xff0080ff` = 蓝、`0x19224 = 0xff8080ff` = 蓝紫，都实跑认过）
+ *   ⇒ 同一族的 th07 字段同理。旁证：用户口径「樱点满值变**金黄**」只有这个读法成立
+ *   （另一个读法会得到浅蓝）。
+ *
+ *   th07 的两处判色（`th07:0x40496f`–`0x4049eb`，画**樱点数**那个 6 位计数器，值 = `樱点 − 基准`）：
+ *     · `樱点 ≥ 最大樱点` → `(0xFF,0xD0,0x80)` **金黄**（`0x404984`–`0x4049a2`）
+ *     · 否则 `樱点 − 基准 ≥ 0xc350` → `(0xFF,0xFF,0x80)` **亮黄**（`0x4049ad`–`0x4049c9`）
+ *     · 否则 → `(0xFF,0xFF,0xFF)` 白（`0x4049cd`–`0x4049e9`）
+ *   另有一个 **+C 指示器**（`th07:0x404c00` 起，值 = `Plus − 基准`，5 位数）：
+ *     · 平时固定 `(0xC0,0x80,0xB0)` **樱粉**（`0x404cfe`/`0x404d08`/`0x404d12`）
+ *     · **结界中**：`R = 0xFF` 固定（`0x404c27`），`G = B = Plus×0xc0/50000`（两次除法 `0x404c5a`/`0x404c86`
+ *       → 写 `+0x89d`/`+0x89c`）⇒ 随剩余时间由 `(0xFF,0xC0,0xC0)` 退到 `(0xFF,0,0)`
+ *       （还叠一个 `%4000` 的三角波呼吸，`0x404c24`–`0x404c4d`）。
+ *   TH18 的 `ce_hud_vm_text_set` 收的也是**同一个 D3DCOLOR**（`sdk.c` 原样写 `mgr+0x19224`）
+ *   ⇒ 数值可以直接沿用，不用换序。*/
+#define SENRO_HUD_COLOR_CHERRY_MAXED 0xffffd080u   /* RGB(0xFF,0xD0,0x80) 金黄 */
+#define SENRO_HUD_COLOR_CHERRY_READY 0xffffff80u   /* RGB(0xFF,0xFF,0x80) 亮黄（樱点 − 基准 ≥ 50000）*/
+#define SENRO_HUD_COLOR_CHERRY       0xffffffffu   /* 白 */
+#define SENRO_HUD_COLOR_PLUS_IDLE    0xffc080b0u   /* RGB(0xC0,0x80,0xB0) 樱粉（结界外的 +C 指示器）*/
+/* 樱点满最大樱点 / 自然结束 Bonus 的飘字：用原生那个「金黄」。 */
+#define SENRO_HUD_COLOR_GOLD         0xffffd080u   /* RGB(0xFF,0xD0,0x80)（= 原生满值色）*/
 
 /* 诊断日志间隔（游玩帧）。*/
 #define SENRO_LOG_EVERY             600
@@ -150,8 +192,12 @@
  *   **死亡栈**里（本卡文件头的长注 + spec §6.3）⇒ 那里**只置 pending 位**，
  *   真正的 `ce_anm_spawn` 一律发生在 `on_tick_2` 尾部的 `senro_fx_flush()`。
  *   中弹那一路因此晚 **1 帧**（≈16 ms）出现 —— 与既有「中弹消弹推迟一帧」同一口径，spec §9 第 3 条。 */
-#define SENRO_ANM_SCRIPT_FIELD      204    /* 本地号：anm_ids.h 由主 agent 统一压号后合并（现用 204/205）*/
-#define SENRO_ANM_SCRIPT_RING       205
+/* 脚本号**一律走 `anm_ids.h` 的宏**（脚本名不变 ⇒ 号跟着构建自动走）。
+ * ★ 2026-09-13（贴图合并 PR）：这两条原来是**裸数字 204/205** —— 全库唯一一处「活的裸脚本号」
+ *   （`ATLAS-MERGE-AUDIT.md` §5.2 #1 点名）。本次合并**不动脚本号**（只动 entry/sprite），
+ *   所以值仍是 204/205、行为零变化；换成宏纯粹是防止下一个人重编号脚本时这里**静默指错**。*/
+#define SENRO_ANM_SCRIPT_FIELD      CE_ANM_ABILITY_SCRIPT_SENRO_FIELD
+#define SENRO_ANM_SCRIPT_RING       CE_ANM_ABILITY_SCRIPT_SENRO_RING
 /* 层：**原版脚本不写 `layer()`**（TH07 的 effect VM 由 EffectManager 自己排）⇒ 由本文件（挂它的那一方）
  * 补世界层（3–19；HUD 那两层的 24/25 不适用）。❓ 自定：**两个都取 19**（世界列表最高的那一层，
  * `engine/anm/th18/02-render-stages.md` §1 的 0x2b 桩），理由 = 原生这两半都盖在弹幕之上：
@@ -205,6 +251,8 @@ typedef struct {
     int32_t          slot_ok;           /* 1 = 认领成功 */
     int32_t          frame;             /* 本关游玩帧计数（节流 / 日志）*/
     int32_t          log_frame;
+    hud_dim_t        hud;               /* ★ 2026-09-15g：压暗状态（闩锁 + alpha，跨卡统一件
+                                         * `cards/hud_dim.{h,c}`；门限由本卡块矩形推）*/
     int32_t          maxed_popup_at;    /* 上次「樱点满值」飘字的帧号 */
     int32_t          spell_was;         /* 上一帧符卡进行中 */
     int32_t          spell_bonus_alive; /* 本张符卡期间奖励位还活着（= 收掉，不是超时）*/
@@ -438,30 +486,35 @@ static void senro_handle_events(ce_card_t *c, senro_card_t *s, int ev)
     }
 }
 
-/* ---- 计分层（EVENTS-CONTRACT §3：声明 → 聚合 → id 最小者落笔）----
- * 本卡声明 **自己的「最大得点」= 蓝点分值**（`th07:0x4330db`–`0x4331e5` 的一手公式）；
- * 落笔时读**聚合值**（Σ 各卡的「最大得点」载体，不读任何别的卡的状态），写成 `*value = PV × 10`
- * ⇒ 引擎随后 `SCORE += value / 10` ⇒ 精确得到 PV 分、天然不双计分（review §7.8）。
- * ⚠ 现行 `sdk.c` 的 `BP_ce_item_score`（0x446cf6）还是「逐个写指针」的旧形态：它沿卡链调每张卡的
- *   `on_item_score` 并最后写 `regs->esi`。所以落笔者在这里**直接写 `*value`**（今天就能生效）；
- *   层改成「聚合 + 单一落笔」之后这一行仍然正确（落笔者本来就该写它），**不需要**跟着改。 */
+/* ---- 计分层（★ 2026-09-13 重做：声明自己的那一份 G_i）----
+ * 本卡是 TH07 那一族：**「最大得点」= 蓝点分值**（`th07:0x4330db`–`0x4331e5` 的一手公式，
+ * `senro_point_item_value()`），对用户公式而言它就是 `G_07`，**加法族**（不与任何乘数耦合）。
+ *
+ * ★ 重做前这里的问题（`CARD-NUMERIC-INTERACTION-AUDIT.md` §1.6 / §6 第 1 条）：
+ *   107 的 id 最小 ⇒ 它**永远**是「落笔者」，而它的落笔公式是 `pv = Σ所有声明`（把聚合当最终 PV）
+ *   ⇒ 110/111 的同装公式**整条不跑**，两份 base 还被双计。
+ *   现在：卡只**声明自己的 G_i**（`ce_score_declare_delta`，未耦合通道），由 SDK 顶层
+ *   `ce_score_apply()` **一次**合成 `G = G_0 + Σ未耦合 + coupling × Σ耦合`（见 SCORE-LAYER-REWORK.md）。
+ *   ⇒ 本卡不再需要「我是不是落笔者」这一问——**没人再争落笔权**。
+ *
+ * ⚠ **coeff_06 不在本卡、也不在本层**：引擎自己按收取高度打折（一手 `th18:0x446bf9`–`0x446cf3`，
+ *   判据 = 回收线 `player+0x47998`）。所以「线上 = 满额、线下按高度递减」对**所有**声明者
+ *   （含本卡）自动成立，本卡不必、也不该自己再乘一次。
+ * ⚠ 本卡值**恒 ≥ SENRO_POINT_BASE(50000)**（`senro_point_item_value()` 的下限），
+ *   与「0 = 不参与」不冲突；删卡时由 `senro_clear()` 显式退场。*/
 static void senro_declare_score(senro_card_t *s)
 {
     if (!s) return;
-    ce_score_declare(SENRO_ID, senro_point_item_value(&s->st));
+    ce_score_declare_delta(SENRO_ID, senro_point_item_value(&s->st));
 }
 
 static void on_item_score(ce_card_t *c, int32_t *value)
 {
     senro_card_t *s = st(c);
-    int32_t pv, agg;
 
-    if (!s || !value) return;
-    if (ce_score_applier() != (int)SENRO_ID) return;      /* 不是落笔者 ⇒ 一个字都不动（契约）*/
-    agg = ce_score_aggregate();
-    pv = (agg > 0) ? agg : senro_point_item_value(&s->st);
-    if (pv < 10) pv = 10;                                /* 引擎自己的身价钳 ≥ 10（review §7.8）*/
-    *value = pv * 10;                                    /* 引擎随后 SCORE += value/10 */
+    (void)value;                       /* ★ 重做后 `*value` 由 SDK 统一写（`ce_score_apply()`）*/
+    if (!s) return;
+    senro_declare_score(s);            /* 每颗道具当场声明一次（值随樱点变，粘性但便宜）*/
 }
 
 /* ---- ③ 结界中：自动回收道具（用户口径 + `th07:0x4414xx` 段的结界行为）----
@@ -470,11 +523,16 @@ static void on_item_score(ce_card_t *c, int32_t *value)
 static void senro_border_collect(senro_card_t *s)
 {
     int n = ce_item_collect_all();
+    /* ★★ 2026-09-16：**自建的信仰点（110/111 的绿点）也一起收** —— 与 111 的两条全屏收同一个根因
+     *   （`ce_item_collect_all()` 只扫原生道具池，而绿点是自建 VM）。一手里 TH10/TH11 的绿点
+     *   **就是道具** ⇒ 「结界自动回收道具」在语义上包含它们。详见 `faith.h` 的 `faith_collect_all()`。
+     *   ⚠ 这一行是 107 的行为变更（本轮与 111 的同类 bug 一起修）；不想要就删掉它一行。*/
+    n += faith_collect_all(~0u);
     if (n) {
         s->stat_collect += n;
         if (s->frame - s->collect_log_at >= SENRO_LOG_EVERY) {
             s->collect_log_at = s->frame;
-            ce_log("senro: 结界全收 %d 个道具（累计 %d）", n, (int)s->stat_collect);
+            ce_log("senro: 结界全收 %d 个道具（含绿点；累计 %d）", n, (int)s->stat_collect);
         }
     }
 }
@@ -514,8 +572,13 @@ static void senro_do_libyou(ce_card_t *c, senro_card_t *s, int by_hit)
         /* 按 B 路：tick 上下文，直接扫弹池（先例 = mof.c 的灵击 / animal.c 的霊撃）。 */
         if (ce_cancel_latch_claim(SENRO_ID)) {
             n = ce_cancel_radius(pos, SENRO_CANCEL_R, SENRO_CANCEL_MAX, SENRO_CANCEL_MODE);
+            /* ★ 2026-09-13（原生卡冲突审计 G 通道）：**消到 0 颗 ⇒ 交回闩锁**（原生 47/19/20/51
+             *   之类先清了池、或池本来就空）。闩锁 = 「本帧有人真的消过弹」；空认领不该把同帧
+             *   后面的卡白挡一帧（见 `sdk_core.h` 的 ce_cancel_frame_* 块注释）。*/
+            if (n <= 0) (void)ce_cancel_latch_release(SENRO_ID);
         } else {
-            ce_log("senro: 本帧消弹已被别的卡认领 → 灵击只收结界（EVENTS-CONTRACT §5.2 细则 2）");
+            ce_log("senro: 本帧消弹已被别的卡认领（卡 %d；本层本帧共消 %d 颗）→ 灵击只收结界",
+                   ce_cancel_latch_owner(), ce_cancel_frame_count());
         }
         (void)senro_libyou(&s->st, n);
     }
@@ -551,9 +614,14 @@ static void senro_hit_cancel_flush(ce_card_t *c, senro_card_t *s)
     pos[0] = pp[0]; pos[1] = pp[1]; pos[2] = pp[2];
     if (ce_cancel_latch_claim(SENRO_ID)) {
         n = ce_cancel_radius(pos, SENRO_CANCEL_R, SENRO_CANCEL_MAX, SENRO_CANCEL_MODE);
+        if (n <= 0) (void)ce_cancel_latch_release(SENRO_ID);   /* ★ 空认领交回（G 通道，同上注）*/
     } else {
-        ce_log("senro: 中弹灵击的补做消弹被别的卡认领（EVENTS-CONTRACT §5.2 细则 2 的层内顺序缺口）");
-        return;
+        /* ★ 2026-09-13：让位 = **只让「这次全屏消弹由我做」**，**不是**「本帧没消过弹」。
+         *   本帧确实有人先动手（`ce_cancel_frame_count()` 是实打实的颗数）⇒ 我们的账 = 0 颗；
+         *   但**状态机（事件队列）照常推进**，不能因为没抢到闩锁就把这一笔静默丢掉
+         *   （原实现在这里 `return`，于是 `senro_handle_events()` 整段被跳过）。*/
+        ce_log("senro: 中弹灵击的补做消弹让位（本帧已由卡 %d 认领，本层本帧共消 %d 颗）",
+               ce_cancel_latch_owner(), ce_cancel_frame_count());
     }
     add = senro_small_cherry(&s->st, n);                  /* 小樱点只计进 stat_cancel，不混进道具通道 */
     senro_handle_events(c, s, senro_take_events(&s->st));
@@ -729,6 +797,21 @@ static int on_death_frame2(ce_card_t *c)
     return 0;
 }
 
+/* +C 指示器的颜色（`th07:0x404c00`–`0x404cf9`）：结界外是固定的樱粉；**结界中**退成
+ * `R = 0xFF` 固定、`G = B = Plus×0xc0/50000` ⇒ 槽越空越红（这是「槽还剩多少」的唯一视觉）。
+ * 一手：两次除法 `0x404c5a` / `0x404c86`（`imul eax,eax,0xc0` 后 `idiv 0xc350`）→
+ * 写 `+0x89d`(=G，`0x404c73`) / `+0x89c`(=B，`0x404ca2`)；`R = 0xff` 在 `0x404c27`。 */
+static uint32_t senro_hud_plus_color(const senro_state_t *s)
+{
+    int32_t v;
+
+    if (!s || !s->active) return SENRO_HUD_COLOR_PLUS_IDLE;
+    v = (int32_t)(((int64_t)s->plus * 0xc0) / SENRO_PLUS_FULL);
+    if (v < 0) v = 0;
+    if (v > 0xc0) v = 0xc0;
+    return 0xff000000u | (0xffu << 16) | ((uint32_t)v << 8) | (uint32_t)v;
+}
+
 /* ---- HUD（左下角三行：+C / 樱点 / 最大樱点）----
  * 用**贴图 VM 字形**（`ce_hud_vm_text_set`：TH18 font 2 的原生切图，走 UI 层 25 ⇒ 暂停时被模糊罩盖住；
  * 先例 = `cards/season.c` 的档位数字 / `cards/mof.c` 的三行）。坐标是 640×480 字面量空间，
@@ -760,17 +843,26 @@ static int on_draw(ce_card_t *c)
         return 0;
     }
     if (!s || !s->slot_ok) return 0;
-    a = ce_hud_player_near_corner(ce_player_x(), CE_PLAYER() ? *(float *)(CE_PLAYER() + CE_PLAYER_Y) : 0.0f)
-            ? SENRO_HUD_DIM : 0xffu;
+    /* ★★ 2026-09-15g：压暗 alpha 改由**跨卡统一件**给（本卡唯一的一处压暗路 = 这三行文字；
+     * 原来这里是 `ce_hud_player_near_corner()` 的硬切 64/255）。放在这一行 = 已经过了上面两道门
+     * （游戏线程 + `slot_ok`）⇒ 每帧正好推进一次；矩形用**本帧**的 `cur`（上面刚 `ce_hud_slot_get()`）。*/
+    {
+        hud_dim_rect_t r;
+        hud_dim_rect_surface(&r, cur.x, cur.y, SENRO_HUD_W, SENRO_HUD_H);
+        a = (uint32_t)hud_dim_tick(&s->hud, &r, ce_player_pos()) & 0xffu;
+    }
     /* ⚠ `ce_hud_slot_get()` **只填 x/y/w/h/side，不填 x640/y640**（`sdk_core.c`）⇒ 拿不到时退回认领时的
      * 缓存副本，换算一律走 `CE_HUD_SURFACE_TO_640`（= 0.5），不读那两格。*/
     cur = s->slot;
     (void)ce_hud_slot_get(SENRO_ID, &cur);
     x = cur.x * CE_HUD_SURFACE_TO_640;
     y = cur.y * CE_HUD_SURFACE_TO_640;
-    col_plus = (s->st.plus >= SENRO_PLUS_FULL) ? SENRO_HUD_COLOR_PLUS_HOT : SENRO_HUD_COLOR_PLUS;
-    /* 樱点满最大樱点 ⇒ 金黄（用户口径；th07 的常量未取到，见常量注）。 */
-    col_cherry = (s->st.cherry >= s->st.cherry_max) ? SENRO_HUD_COLOR_GOLD : SENRO_HUD_COLOR_CHERRY;
+    col_plus = senro_hud_plus_color(&s->st);
+    /* 樱点数（= 樱点 − 基准）：满最大樱点 ⇒ 金黄；否则「樱点 ≥ 50000」⇒ 亮黄；否则白。
+     * （`th07:0x40496f`–`0x4049eb`；本卡的樱点本身就是「相对基准」的读数 ⇒ 直接比 50000。）*/
+    col_cherry = (s->st.cherry >= s->st.cherry_max)  ? SENRO_HUD_COLOR_CHERRY_MAXED
+                 : (s->st.cherry >= SENRO_PLUS_FULL) ? SENRO_HUD_COLOR_CHERRY_READY
+                                                     : SENRO_HUD_COLOR_CHERRY;
 
     snprintf(buf, sizeof buf, "+%d", (int)s->st.plus);
     ce_hud_vm_text_set(&s_hud_plus, x, y - 2.0f * SENRO_HUD_ROW_DY,
@@ -792,7 +884,7 @@ static void senro_clear(ce_card_t *c, int keep_slot)
 
     /* ★ 顺序要紧：先退出两个声明层（否则被删的卡还在声明无敌 / 得分），再收 HUD 文字。 */
     ce_invuln_request(SENRO_ID, 0);
-    ce_score_declare(SENRO_ID, 0);
+    ce_score_declare_delta(SENRO_ID, 0);
     ce_hud_vm_text_clear(&s_hud_plus);
     ce_hud_vm_text_clear(&s_hud_cherry);
     ce_hud_vm_text_clear(&s_hud_max);
@@ -804,6 +896,7 @@ static void senro_clear(ce_card_t *c, int keep_slot)
     memset(s, 0, sizeof *s);
     s->st.graze_last = -1;
     s->spell_was = 0;
+    hud_dim_init(&s->hud);   /* ★ 2026-09-15g：压暗状态复位 = **满亮 255**（共享件；memset 出来是 0）*/
     (void)keep_slot;         /* 槽位由 `CE_CARD` 的 on_run_reset / opdelete 自动 release（§6.1）*/
 }
 

@@ -3,13 +3,19 @@ script script178 {
 //   一手原文：`-1: sprite(sprite125); pos(24,0); resampleMode(1); anchor(1,2); layer(17); alpha(0);`
 //             `60: alphaTime(20,0,255); stop();`
 //             `    interruptLabel(4): alphaTime(30,0,255); caseReturn(); interruptLabel(5): alphaTime(10,0,32); caseReturn();`
-//   贴图：@TRANCE_GAUGE_MARK（64×64，`front/agauge2.png` sprite125 (0,64,16,32) 居中）。
-//   引擎每帧写（`th13:0x42b030`）：
-//       `scale.x = uv_scale.x = (槽 % 200) / 200`
-//       `entity_pos.x = 比例 × 16.0`（常量 `0x4ae8e0`）
-//   ⇒ **格内细分条 + 0..16px 滑块**。`16.0` 是 640 空间的 16 ⇒ 本脚本在 2× 空间里
-//   由卡侧写 `32.0`（⚠️ 这里只写死「脚本本身不写 entity_pos」，实际值归卡侧 C）。
-// 偏差：同 175/176（layer 24 + resolutionMode(2) + pos.x 24→48）。
+//   贴图：@TRANCE_GAUGE_MARK（16×32 = `front/agauge2.png` sprite125 (0,64,16,32)，
+//     w **等于**贴图宽 16 ⇒ 这一条**没有平铺**，原样切）。
+//   引擎每帧写（`th13:0x42b030`，★ 2026-09-13 第六轮订正）：
+//       `scale.x = uv_scale.x = (槽 % 200) / 200`   ← 格内填充比例
+//       `entity_pos.x = (槽 / 200) × 16.0`（常量 `0x4ae8e0`）  ← ★ **满格数**，不是格内比例
+//   ⇒ **当前格的填充段**：起点贴当前格左缘（每满一格跳 16 px），宽度 = 格内比例。
+//   ⚠ 旧注释写「`entity_pos.x = 比例 × 16`（比例 = 格内比例）」是**误读**——两条一手判据见
+//     `native/cards/trance.c` 的 `TRANCE_HUD_MARK_SLIDE` 注释（① x87 栈收支恰好为零；
+//     ② 只有"满格×16"才让**游标右缘 ≡ 总条右缘**）。旧读法会让游标在格内一边变长一边右移 16 px
+//     = 用户实跑报的「还在左右动」。
+//   `16.0` 是 640 空间的 16 ⇒ 本脚本在 2× 表面空间里由**卡侧**按满格数写 `32.0/格`
+//   （⚠️ 脚本本身不写 entity_pos，实际值归卡侧 C）。
+// 偏差：同 175/176（layer 24 + resolutionMode(2) + pos.x 24→48；`anchor(1,2)` = 左·下）。
 -1:
     sprite(@TRANCE_GAUGE_MARK);
     layer(24);
@@ -22,9 +28,9 @@ script script178 {
     alphaTime(20, 0, 255);
     stop();
     interruptLabel(4);
-    alphaTime(30, 0, 255);
+    alphaTime(4, 0, 255);
     caseReturn();
     interruptLabel(5);
-    alphaTime(10, 0, 32);
+    alphaTime(4, 0, 32);
     caseReturn();
 }

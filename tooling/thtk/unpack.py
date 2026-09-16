@@ -93,30 +93,39 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("version", help="如 th18.v1.00a（local/ 下的目录名）")
     ap.add_argument("--force", action="store_true", help="dat/ 与 anm/ 已存在也重解")
+    ap.add_argument("--out", help="产物落这儿（默认 local/<版本>）——例：解到 Windows 侧某个目录")
+    ap.add_argument("--dat", help="直接指定 .dat（默认 local/<版本> 下的第一个）")
     a = ap.parse_args()
 
     key, (ver, mapname) = game_of(a.version)
     thanm, thdat, mapdir = find_tools()
     anmmap = mapdir / mapname
     vdir = LOCAL / a.version
-    dats = sorted(vdir.glob("*.dat"))
-    if not dats:
-        raise SystemExit(f"{vdir} 下没有 .dat——把你自己的 {key}.dat 放进去（见 local/README.md）")
-    dat = dats[0]
+    outdir = Path(a.out).expanduser().resolve() if a.out else vdir
+    if a.dat:
+        dat = Path(a.dat).expanduser().resolve()
+        if not dat.is_file():
+            raise SystemExit(f"找不到 {dat}")
+    else:
+        dats = sorted(vdir.glob("*.dat"))
+        if not dats:
+            raise SystemExit(f"{vdir} 下没有 .dat——把你自己的 {key}.dat 放进去（见 local/README.md）")
+        dat = dats[0]
+    outdir.mkdir(parents=True, exist_ok=True)
 
     # 1. dat → dat/
-    datdir = vdir / "dat"
+    datdir = outdir / "dat"
     if a.force and datdir.exists():
         shutil.rmtree(datdir)
     if datdir.exists() and any(datdir.iterdir()):
         print(f"dat/ 已有 {sum(1 for _ in datdir.iterdir())} 个文件，跳过（--force 重解）")
     else:
         datdir.mkdir(parents=True, exist_ok=True)
-        run([thdat, "-x", ver, dat.resolve()], datdir, vdir / "thdat.log")
+        run([thdat, "-x", ver, dat.resolve()], datdir, outdir / "thdat.log")
         print(f"thdat -x {ver} {dat.name} → dat/：{sum(1 for _ in datdir.iterdir())} 个文件")
 
     # 2. 每个 anm 一目录
-    anmroot = vdir / "anm"
+    anmroot = outdir / "anm"
     if a.force and anmroot.exists():
         shutil.rmtree(anmroot)
     anmroot.mkdir(exist_ok=True)
@@ -131,11 +140,15 @@ def main():
             err.write_text("")
             spec.write_text(run([thanm, "-l", ver, f.resolve(), "-m", anmmap], d, err))
             run([thanm, "-x", ver, f.resolve()], d, err)
-            if err.stat().st_size:
-                raise SystemExit(f"{name}: thanm 有告警/错误，见 {err}")
+            # anmmap 自身的关键字告警（例：`'acos' is a keyword, ignoring`）不算失败——
+            # 它每个 anm 都会打一次，是 ExpHP mapfile 与 thanm 词法的差异，不影响反汇编结果。
+            noise = [ln for ln in err.read_text(errors="replace").splitlines()
+                     if ln.strip() and "is a keyword, ignoring" not in ln]
+            if noise:
+                raise SystemExit(f"{name}: thanm 报错，见 {err}（{noise[0]}）")
         rows.append((name, count(spec, "entry"), count(spec, "script")))
 
-    print(f"\nanm/：{len(rows)} 个（anmmap = {anmmap.relative_to(REPO)}）")
+    print(f"\n产物：{outdir}\nanm/：{len(rows)} 个（anmmap = {anmmap.relative_to(REPO)}）")
     print(f"{'名':<12}{'entries':>8}{'scripts':>8}")
     for n, e, s in rows:
         print(f"{n:<12}{e:>8}{s:>8}")

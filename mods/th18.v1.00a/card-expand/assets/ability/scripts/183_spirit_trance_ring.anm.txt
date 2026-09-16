@@ -13,6 +13,8 @@ script script183 {
     sprite(@SPIRIT_TRANCE_0);
     blendMode(1);
     layer(13);
+    color(255, 255, 255);
+    alpha(255);
 0:
 offset48:
     scaleTime(20, 9, 0.95f, 0.95f);

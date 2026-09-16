@@ -1,0 +1,44 @@
+script script293 {
+// 灵击环的**电流边**（110/111 共用）—— TH10 `bullet.anm` **script394** 的竖条形零件，
+// 用户实跑：「th10 的灵击…**边缘有类似于电流的特效**」。
+//
+// ══ 一手出处 ═══════════════════════════════════════════════════════════════════════════
+//   TH10 的灵击本体 `bullet.anm` script400 自己**不画东西**，它 `scriptNew` 出四支柱环
+//   （script394..397）+ 12 颗火星。四支柱环各自的正文（原文，v4 mapfile）：
+//       script394 { blendMode(1); iset($I0,32); iset($I1,3); texCircle($I0); layer(13);
+//                   sprite(sprite362); angleVel(0,0,∓0.31415927); scale(16,16);
+//                   scaleTime(60, 6, 32.0f, 160.0f); +120: alphaTime(20,0,0); +20: delete(); }
+//   ⇒ **图元 = `sprite(sprite362)` + `texCircle(32)`**：把一条 **14×128 的竖条**弯成一个 32 段的圈。
+//     竖条本身就是渐变+分段（见 `make_mof_bomb_art.py --dump`），弯成圈后那些分段就是「电流边」。
+//   ⚠ `texCircle`（v8 opcode **600**）在 TH18 里**没有一条实跑确认可见的世界列表实例** ⇒ 本脚本是
+//     **试做**：卡侧同时保留 279（实心盘，实跑确认可见）当底衬，本脚本只是叠在它上面的那一圈边。
+//     若实跑看不见/画得很怪，把卡侧那一句 spawn 去掉即可（`TUNING.md` 记着这条取舍）。
+//
+// ══ 逐条搬了什么 ═══════════════════════════════════════════════════════════════════════
+//   · `sprite(sprite362)` → `sprite(@MOF_BOMB_RING_STRIP@)`（1:1 切图，entry 58 / sprite 450）
+//   · `texCircle(32)` / `blendMode(1)`（加算）—— **逐条照抄**
+//   · `angleVel` 不抄（那是四支柱各自的旋转，我们只有一圈）、`scaleTime` 不抄
+//     （半径由卡侧逐帧给 px ⇒ 脚本里跑 scale 插值会把卡侧的写盖掉，`native/sdk.h:330`）
+//   · `layer(13)` 照抄（与 279 同层）
+//   · 淡出沿用我们那套：`interruptLabel(1)` = 20 帧淡出后自删（TH10 是 `+120: alphaTime(20,0,0)`）
+//
+// ══ 卡侧契约 ═══════════════════════════════════════════════════════════════════════════
+//   · 与 279 **同时**出生（`ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_MOF_BOMB_RING_STRIP, 13)`），
+//     每帧同样写 `entity_pos` + `ce_anm_set_scale(id, r, r)`，半径长满那帧 `ce_anm_interrupt(id, 1)`。
+//   · 收尾同 279（删卡 / 换关 / 局末都要删）。
+    sprite(@MOF_BOMB_RING_STRIP@);
+    texCircle(32);
+    layer(13);
+    blendMode(1);
+    type(1);
+    pos(0.0f, 0.0f, 0.0f);       // 归零：位置由卡侧每帧给
+    stop();
+    interruptLabel(1);           // 20 帧淡出 → 自删
+    alphaTime(20, 0, 0);
++20: // 20
+    delete();
+    interruptLabel(2);           // 别名
+    alphaTime(20, 0, 0);
++20: // 20
+    delete();
+}

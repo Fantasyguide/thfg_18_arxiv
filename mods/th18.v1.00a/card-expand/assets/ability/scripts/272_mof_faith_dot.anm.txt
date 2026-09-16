@@ -1,0 +1,59 @@
+script script272 {
+// 风神录（110）**信仰点实体**（绿点）的出生动画 —— 逐条搬 TH10 `bullet.anm` **script377**（= 大信仰点）
+//
+// 一手原文（`local/vendor/thtk/build/thanm/thanm -l 10 local/th10.v1.00a/dat/bullet.anm
+//   -m local/vendor/thpages/static/mapfile/v4.anmm`；v4 mapfile 自注「for version 4: StB, Mof」
+//   ⇒ TH10 用的就是它，`ins_N` 名对表也在那份 mapfile 的 `!ins_names` 段）：
+//     script377 { sprite(sprite346); type(1); angleVel(0.0f, 0.0f, 0.7853982f);
+//                 scale(0.5f, 0.5f); scaleTime(16, 0, 1.0f, 1.0f);
+//               +32: angleVel(0.0f, 0.0f, 0.0f); type(0); stop(); }
+//
+// 为什么搬这条（三条一手链，逐条可复跑，完整推导见 `assets/ability/make_mof_art.py` 文件头 §定案）：
+//   ① 类型 → 信仰值：`ItemManager::on_tick__body` th10:0x41b3ce 的 11 项跳转表
+//      （`0x41b8a0`）里 **idx2 = 类型 3 → `0x41b57f`**：难度表 E/N 5000 · H 8000 · L/EX 10000、
+//      弹窗色 `0xff00ff00` ⇒ 类型 3 = **大信仰点**。
+//   ② 类型 → 脚本号：`ItemManager::spawn_item` th10:0x41bca8 `lea eax,[ebp+0x176]`
+//      ⇒ **脚本 = 类型 + 374** ⇒ 类型 3 → **script377**。
+//   ③ 脚本 → sprite：`sprite(sprite346)`，而 `on_draw__body` th10:0x41b8e0 的
+//      `lea edx,[eax+0x157]`（eax = `item+0x3e4` = 视觉类型）也落在 **343 + 类型** ⇒ 两条独立对上。
+//   ⇒ 贴图 = `@FAITH_DOT_BIG@` = `ability/mof/FAITH_DOT_BIG.png`（16×16 = 源 sprite346 `(32,208)` 原样切）。
+//
+// 逐条对应（v4 号 → 真名，`v4.anmm` 逐行可查）：
+//     ins_3  → sprite      ins_67 → type        ins_53 → angleVel    ins_50 → scale
+//     ins_60 → scaleTime   ins_63 → stop
+//   ⚠️ **`angleVel` 不是 `rotate`**：ins_53 是角速度（ωz = π/4 /帧 自转），`rotate` 是 ins_49。
+//      32 帧 × π/4 = 8π = **整整 4 圈** ⇒ 原文在 `+32:` 把角速度归零时视觉上正好回正（自带自洽）。
+//   ⚠️ `+32:` 段末尾是 **`stop()`（只停脚本，VM 与贴图留在场上）**，**不是 `delete()`**
+//      —— 信仰点在被吃到之前一直挂在场上，这条不能写错（`ins_1` 才是 delete）。
+//
+// ── 三档共用本脚本（与 TH10 逐条对照后的事实，不是偷懒）───────────────────────
+//   · 大 = 类型 3 → script377（本条）；小 = 类型 9 → `script383`：**两条正文逐字相同**，
+//     只差 `sprite()` 引用的那一格（`sprite346` vs `sprite352`）；
+//   · 微 = 类型 8 → `script382`：多 `blendMode(1)` + `alpha(16)`，且 `scale(0.0f,0.0f)`
+//     （从 0 长出来，不是 0.5）。⇒ 本仓**微档不建实体**（见 `faith.h` 的 ❓ 自定），故不另开一条。
+//   · sprite 由卡侧 `faith_sprite_for()` 按档 `ce_anm_set_sprite()` 换（脚本里的
+//     `@FAITH_DOT_BIG@` 只是**大档**的默认值，与 TH16 季节点脚本 115 同一手法）。
+//
+// ── ★★ 2026-09-16：**收集时没有任何收尾动画**（原来那段 ❓ 自定已删）──────────
+//   用户实跑：「拾取到大信仰点，吸收那一刻动画是一个放大减淡 …… 和 th18 的吸收 p 点金钱的动画不符」
+//   —— 用户是对的，而且**一手连 TH10 都是「引擎直接删 VM」**：
+//     · TH18（收集分派共享尾 `th18:0x446584`–`0x4465a5`）：`push 0x25` → `call 0x476c70`
+//       （**原位播 `se_item00`**）→ `mov [edi+0xc74],0`（state 立刻 0）→ `call 0x488cf0`（释放 anm VM）
+//       ⇒ 收下的那一帧道具就没了，**没有**任何 `scaleTime/alphaTime` 收尾；
+//     · TH10 同形：道具被吃到时引擎直接删 VM。
+//   ⇒ `faith.c:dot_collect()` 现在只做「播 0x25 + 立刻删」，本脚本也随之删掉那段
+//     `interruptLabel(1)/blendMode(1)/scaleTime(1.8)/alphaTime(0)/+8: delete()`。
+//
+// 层：TH10 的这条脚本原文里**没有 `layer()`**（层由道具实体自己给）⇒ 本脚本也不写；
+//   绿点实体由卡侧 `ce_anm_spawn(..., FAITH_LAYER)` 定层（`faith.h` 的 13 = 游玩区相机层）。
+    sprite(@FAITH_DOT_BIG@);                  // 大档默认；小/微 由卡侧按档换 sprite
+    type(1);
+    angleVel(0.0f, 0.0f, 0.7853982f);         // ωz = π/4 /帧 自转（ins_53）
+    scale(0.5f, 0.5f);                        // 从半尺寸长起（ins_50）
+    scaleTime(16, 0, 1.0f, 1.0f);             // 16 帧长到原尺寸（ins_60）
++32: // 32
+    angleVel(0.0f, 0.0f, 0.0f);               // 角速度归零（ins_53）
+    type(0);
+    stop();                                   // ins_63：**停脚本**，实体留在场上
+                                              // ★ 收集 = 卡侧 `faith.c:dot_collect()` 直接删 VM（一手形状，见上）
+}

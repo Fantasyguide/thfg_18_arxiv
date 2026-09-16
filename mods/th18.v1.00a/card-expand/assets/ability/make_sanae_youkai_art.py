@@ -55,11 +55,15 @@
 
 产出（每条都不动别人的文件）：
   ability/sanae_youkai/YOUKAI_AYA_S<n>.png —— 24 张原生切图（30×46），**居中补透明**到 **32×64**。
-    ★ 为什么居中：① 原生的 sprite 四边形以 **VM 位置为中心**画（`anchor` 位为 0 时），
-      所以「内容居中于画布」与原生落点逐像素一致；② 本仓构建期对小于声明尺寸的源图**也是居中补**
-      （`assets/build_ability.py:119-120`，「小图居中补到声明的 2 的幂尺寸」）⇒ 两边同一条公式，
-      构建期不会再补一次。补透明只是给 30×46 套一层 2 的幂画布（1 列/9 行余量），
-      **可见像素一个不动**（自检里逐像素比对源矩形）。
+    ★ 为什么居中：原生的 sprite 四边形以 **VM 位置为中心**画（`anchor` 位为 0 时），
+      所以「内容居中于画布」与原生落点逐像素一致。补透明只是给 30×46 套一层 32×64 画布
+      （1 列 / 9 行余量），**可见像素一个不动**（自检里逐像素比对源矩形）。
+    ★ 2026-09-13：**原来这里还有半条理由「构建期要求 2 的幂」，已经作废**（那条门取消了）；
+      32×64 现在只是「这批图自己的画布尺寸」。
+    ★★ 2026-09-13 用户裁决：**这 24 张（连同紫/爱丽丝/蕾米莉亚那 31 张）本次不进图集** ——
+      妖侧本体「连接暂时删除、其本身不要删除」。源 PNG 全部保留，ORDER.txt 里这 55 个名字走
+      `REF` 段指向 1×1 的 `RETIRED_BLANK`（见 `ATLAS-MERGE-AUDIT.md` §9.3 第 1 条）。
+      108 真做时：把本生成器产出的行排成图集**追加到 ORDER.txt 末尾**、删掉 REF 段。
   ability/scripts/218..222_youkai_aya_s<0..4>.anm.txt
     —— 正文**逐条照抄** TH16 `pl03.anm` 的 script0..4，**只**把 `sprite(spriteN)` 换成 `sprite(@名字@)`；
       **连原版自己的 `layer(14)` 一起抄**（TH16 本体脚本确实带 `layer(14)`，不是我们编的；
@@ -192,7 +196,11 @@ def pow2_ceil(v):
 
 
 def canvas_size(w, h):
-    """→ (W, H)：都是 2 的幂、且 ≥ 内容（写进 ORDER 的尺寸必须是 2 的幂，构建硬门）。"""
+    """→ (W, H)：把内容套一层画布（尺寸 = 2 的幂、且 ≥ 内容）。
+
+    ⚠「写进 ORDER 的尺寸必须是 2 的幂」这条**已作废**（2026-09-13 取消的构建期硬门）；
+    这里仍然向上取到 2 的幂，只是**这批图自己定下来的画布尺寸**（内容居中、可见像素不动）。
+    """
     return pow2_ceil(w), pow2_ceil(h)
 
 
@@ -354,7 +362,7 @@ def write_order(rows, body_note):
         "# 永夜抄（系统卡 108）**妖侧本体：早苗 → 射命丸文** —— TH16 v1.00a `pl03.anm`（anm version 8）",
         "#   的 script0..4（本体 24 格 30×46，entry `player/pl03/pl03.png`）切图 + 脚本 218..222。",
         "# 本片段由 assets/ability/make_sanae_youkai_art.py 生成（幂等，整段重写）；合并时把下面这些行追加进 ORDER.txt 即可。",
-        "# 每行 `NAME  源图(相对 assets/)  WxH`；WxH 都是 2 的幂 ⇒ 整张贴图一个 sprite。",
+        "# 每行 `NAME  源图(相对 assets/)  WxH`；WxH = 这批图自己的画布（内容居中）。",
         "# ★ 身份判据（一手，色相/主色，生成器每次运行重算）：",
         f"#   {body_note}",
         "#   ⇒ `pl03` = 射命丸文（黑发 + 红发带 + 白衬黑裙）；**TH16 里没有早苗**（四张脸一张绿发都没有，",
@@ -364,6 +372,8 @@ def write_order(rows, body_note):
         "#   （assets/build_ability.py:119-120）⇒ 30×46 居中放进 32×64，可见像素一个不动。",
         "# 脚本：assets/ability/scripts/218..222_youkai_aya_s0..4.anm.txt（正文照抄原生 script0..4，只换 sprite 引用）。",
         "# ⚠ 本片段**不动** entries/ORDER.txt（多人并发，主 agent 统一合并）。",
+        "# ★★ 2026-09-13 用户裁决：这批**本次不进图集**（妖侧本体「连接暂时删除、图不删」）——",
+        "#   ORDER.txt 里这 24 个名字走 REF → 1×1 RETIRED_BLANK；108 真做时再排成图集追加到末尾。",
     ]
     lines = hdr + [f"{n}  {p}  {s}" for n, p, s, _i in rows]
     OUT_ORDER.parent.mkdir(parents=True, exist_ok=True)
@@ -375,15 +385,13 @@ def write_order(rows, body_note):
 # ── 自检 ─────────────────────────────────────────────────────────────
 
 def check_pngs(made, rects):
-    """① 每张 PNG：尺寸是 2 的幂；② 不全是透明；且可见区与该 sprite 的原生矩形逐像素一致。"""
+    """① 每张 PNG 的尺寸 = 标称画布；② 不全是透明；且可见区与该 sprite 的原生矩形逐像素一致。"""
     files = sorted(OUT_ART.glob("YOUKAI_AYA_*.png"))
     assert len(files) == len(made), f"① sanae_youkai/ 下有 {len(files)} 张 PNG，预期 {len(made)}"
     vis_all, sizes = [], set()
     for name, (path, size, sid, vis, cell_bytes) in made.items():
         im = Image.open(path).convert("RGBA")
         assert im.size == size, f"① {name}.png 是 {im.size}，标称 {size}"
-        assert (size[0] & (size[0] - 1)) == 0 and (size[1] & (size[1] - 1)) == 0, \
-            f"① {name}.png 尺寸 {size} 不是 2 的幂"
         x, y, w, h = rects[sid]
         bx, by = (size[0] - w) // 2, (size[1] - h) // 2
         assert im.crop((bx, by, bx + w, by + h)).tobytes() == cell_bytes, \
@@ -392,7 +400,7 @@ def check_pngs(made, rects):
         assert vis >= 200, f"② {name}.png 只有 {vis} 个可见像素（源单元 {w}×{h}）"
         vis_all.append((name, vis))
         sizes.add(size)
-    print(f"① {len(files)} 张 PNG 尺寸全是 2 的幂（画布 {sorted(sizes)}），每张可见区居中、"
+    print(f"① {len(files)} 张 PNG 画布 {sorted(sizes)}（内容居中），每张可见区"
           f"与 `player/pl03/pl03.png` 的 30×46 原生矩形**逐像素一致** ✓")
     print(f"② {len(files)} 张全部非空（可见像素 {min(v for _n, v in vis_all)}–{max(v for _n, v in vis_all)}，"
           f"阈值 200）✓")

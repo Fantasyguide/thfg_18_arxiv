@@ -6,7 +6,7 @@
  * 与 `docs/superpowers/specs/2026-09-11-system-card-spec-review.md` §9；逐条地址见 `cards/senro_core.h` 头注）：
  *   · 樱点加法器 `0x42f5a2`（夹 ≤ 最大樱点 / +C 只在 delta>0 时涨 / 满 50000 开结界 `0x42f652`）
  *   · 只加樱点 `0x42f69f`/`0x42f736`、只加最大樱点 `0x42f789`（夹 `0x989676`）
- *   · 难度表初值 `0x42eb7a`–`0x42ec57`、结界时长 420 帧（用户 2026-09-12 定案，7 s）
+ *   · 难度表初值 `0x42eb7a`–`0x42ec57`、结界时长 540 帧（一手 `0x4419fa` 写 `[+0x16a08] = 0x21c`，9 s）
  *   · 自然结束 `0x441670`（+10000/+10000、分数 += 樱点、Plus = 基准）、打断 `0x441bd0`（40 帧无敌）
  *   · 结界中擦弹 `0x43ed5f`–`0x43eda9`（高速 80 / 低速 30，两条都加到樱点与最大樱点）
  *   · 道具三档 `0x433886` / `0x43370b` / `0x433742`+`0x43374e`；蓝点分值 `0x4330db`–`0x4331e5`
@@ -73,13 +73,13 @@ int main(void)
     CHECK(senro_plus_for_timer(0) == 0);
     CHECK(senro_plus_for_timer(-5) == 0);
     CHECK(senro_plus_for_timer(SENRO_BORDER_FRAMES) == SENRO_PLUS_FULL);   /* 满格 */
-    CHECK(senro_plus_for_timer(210) == 25000);                             /* 210×50000/420 */
-    CHECK(senro_plus_for_timer(84) == 10000);                              /* 84×50000/420 */
-    CHECK(senro_plus_for_timer(105) * 2 == senro_plus_for_timer(210));     /* 线性 */
-    CHECK(senro_plus_for_timer(419) == 49880);                             /* 419×50000/420 截断 */
-    CHECK(senro_plus_for_timer(420) == 50000);
+    CHECK(senro_plus_for_timer(270) == 25000);                             /* 270×50000/540 */
+    CHECK(senro_plus_for_timer(108) == 10000);                             /* 108×50000/540 */
+    CHECK(senro_plus_for_timer(135) * 2 == senro_plus_for_timer(270));     /* 线性 */
+    CHECK(senro_plus_for_timer(539) == 49907);                             /* 539×50000/540 截断 */
+    CHECK(senro_plus_for_timer(540) == 50000);
     CHECK(senro_plus_for_timer(1000) == 50000);                            /* 夹到总时长 */
-    CHECK(senro_plus_for_timer(1) == 119);                                 /* 1×50000/420 截断 */
+    CHECK(senro_plus_for_timer(1) == 92);                                  /* 1×50000/540 截断 */
 
     /* ==================== D. 初始化 / 每关重置 ==================== */
     memset(&st, 0x5a, sizeof st);
@@ -182,19 +182,19 @@ int main(void)
     CHECK(st.cherry == SENRO_PLUS_FULL);
     /* 开结界那一帧就算第 1 帧（±1 帧判定见本卡 spec §6.1）*/
     (void)senro_tick(&st, 0);
-    CHECK(st.timer == 419);
-    CHECK(st.plus == senro_plus_for_timer(419));
-    CHECK(st.plus == 49880);
+    CHECK(st.timer == 539);
+    CHECK(st.plus == senro_plus_for_timer(539));
+    CHECK(st.plus == 49907);
     (void)senro_tick(&st, 0);
-    CHECK(st.timer == 418);
-    CHECK(st.plus == 49761);                        /* 418×50000/420 */
+    CHECK(st.timer == 538);
+    CHECK(st.plus == 49814);                        /* 538×50000/540 */
     /* 一路跑到 1 帧剩余都还在结界里 */
-    for (i = 0; i < 417; ++i) (void)senro_tick(&st, 0);
+    for (i = 0; i < 537; ++i) (void)senro_tick(&st, 0);
     CHECK(st.timer == 1);
     CHECK(st.active == 1);
     CHECK(st.plus == senro_plus_for_timer(1));
-    CHECK(st.plus == 119);
-    /* 第 420 帧：自然结束 */
+    CHECK(st.plus == 92);
+    /* 第 540 帧：自然结束 */
     ev = senro_tick(&st, 0);
     CHECK((ev & SENRO_EV_END_NATURAL) != 0);
     CHECK(st.active == 0);
@@ -206,8 +206,8 @@ int main(void)
     CHECK(st.stat_natural == 1);
     CHECK(senro_tick(&st, 0) == SENRO_EV_NONE);     /* 结束后不再重复结算 */
     CHECK(st.cherry == 60000);
-    /* 结界帧数常量 = 7 s @60fps（用户定案）*/
-    CHECK(SENRO_BORDER_FRAMES == 420);
+    /* 结界帧数常量 = 9 s @60fps（一手 0x4419fa `[结界对象+0x16a08] = 0x21c`）*/
+    CHECK(SENRO_BORDER_FRAMES == 540);
     CHECK(SENRO_PLUS_FULL == 50000);
     CHECK(SENRO_INVULN_FRAMES == 40);
     CHECK(SENRO_BORDER_END_ADD == 10000);
@@ -226,7 +226,7 @@ int main(void)
     CHECK((ev & SENRO_EV_BORDER_OPEN) != 0);
     CHECK(st.active == 1 && st.queued == 0);
     CHECK(st.stat_open == 1);
-    CHECK(st.timer == 419);                         /* 开的那一帧就计第 1 帧 */
+    CHECK(st.timer == 539);                         /* 开的那一帧就计第 1 帧（540 − 1）*/
 
     /* ==================== G. 结界中擦弹（0x43ed5f–0x43eda9）==================== */
     senro_init(&st, SENRO_DIFF_NORMAL);

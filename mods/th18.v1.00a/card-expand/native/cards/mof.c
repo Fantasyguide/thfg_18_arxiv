@@ -9,6 +9,26 @@
  *   · ★ **一手（th10 v1.00a 逐条指令）**：`local/_scratch/research-th10-faith-and-graze.md`
  *     —— 2026-09-12 的三条订正都出自它（§3.2/§3.4 无逐帧信仰衰减、§3.1 连击表的大信仰点 = +120f、
  *     §1.1 TH10 无擦弹倍率、§4.1 灵击门槛/消耗的原版值）。**它覆盖 spec 里被证伪的说法。**
+ *   · ★★ **2026-09-15 本轮的一手（灵击全链）**：`engine/player/th10/01-bomb-full-chain.md`
+ *     （已回流的一手文档：门槛/消耗/伤害链/半径曲线/震屏否定/boss 判据）+ 底稿
+ *     `local/_scratch/research-th10-bomb-boss-residuals.md`（§1 伤害链、§2 半径曲线、§3 震屏否定、
+ *     §5 boss 判据、§7 收集弹窗全表、§9 给 TH18 的映射要点）+ `research-th10-faith-and-graze.md`
+ *     （§3 信仰增减、§4 灵击门槛/消耗）。
+ *     **本轮据此改掉的三件事**：① 「灵击不伤敌人」是错的（经 `th10:0x4059f0` 回调贡献伤害）；
+ *     ② 消弹半径是**会长到 160/112/64 的圈**（不是全屏常量）；③ 灵击**没有震屏**（`ce_screen_shake` 已删）。
+ *     另加：满 P 改写表按 TH10 的（含**大 P**）、绿点收集的绿色 `+N` 弹窗、boss 判据改用「就是 boss」的字段。
+ *  · ★★ **2026-09-15b 本轮（NEXT.md §1x.5）：大信仰点判据从「掉钱」换成「宿主表」** ——
+ *    用户实测「大绿点与金钱完全重合」+ 裁决「**金钱和绿点总之别重合**」⇒ 走「判据收窄」：
+ *    判据 = **TH18 侧「本来就是绿的那批敌人」**（表在 `mof_big_faith_table.h`，键 = 敌人的
+ *    `(anm 源, 主脚本)` = 它画的是哪一张贴图），**不再看 `drop_main`**；`on_enemy_drop_pre`
+ *    （旧判据②）整条删除。全套一手预研（TH10 逐关清单 / 计数 / 映射 / 对不上的清单）在那个头文件里。
+ *  · ★★ **2026-09-15c 本轮：「灵击 → 决死」（决死 B 形态）** —— 用户口径（逐字）
+ *    「**基本语义上灵击==B**」「**所以灵击也得决死**」⇒ 库存 == 0 且**自机在决死窗口里**
+ *    （`player+0x476ac == 4`，一手 `th18:0x45d4e4`）时按 B ⇒ 本卡灵击以**决死形态**发动：
+ *    照常扣 1 档火力 / 消弹 / 伤害源（节奏一字不改）+ 另调 `Player__cancel_impending_death`
+ *    **`th18:0x45d590`** 救命 + **不扣 −3000 信仰**（一手：TH10 决死那一支没有 `call 0x412e70`）。
+ *    全部一手依据、两个 🟡（消弹入不入账）与「为什么不做 `+0x10` 自动救人」写在 `mof_core.h`
+ *    的「灵击 → 决死」块；本文件只做「检测窗口 → 传参」+ 照答案落笔。
  *
  * ## 分工（这张卡只是「一具身体」，逻辑都在共用件里）
  *
@@ -17,20 +37,25 @@
  *   | 绿点 / 信仰**纯逻辑** | `faith_core.c` | 按槽加值、上限/下限夹取、连击、信号、擦弹倍率、单位换算 |
  *   | 绿点**实体池**（110/111 共用） | `faith.c` | 撒点、飞散/飘落/吸附、收集判定、消弹入账回调 |
  *   | 110 的**纯逻辑** | `mof_core.c` | 大信仰点判据、蓝点分值、卡内奖残、扣火力、PV 公式 |
- *   | **本文件** | — | 读引擎、调上面三层、`ce_score_declare` |
+ *   | **本文件** | — | 读引擎、调上面三层、`ce_score_declare_coupled` |
  *
- * ## 本卡在计分层里的角色（EVENTS-CONTRACT §3）
+ * ## 本卡在计分层里的角色（★ 2026-09-13 重做；见 `../SCORE-LAYER-REWORK.md`）
  *
- * `on_item_score` 的落笔者 = 声明者里 **id 最小**的那张。110 是 108–113 里最小的一批之一
- * ⇒ **110 在场时由 110 落笔**（111 只声明、不落笔；它的 `Δ_111` 与**信号强度**通过聚合值进公式）。
- * 落笔时读**两个聚合值**（`ce_score_aggregate()` 被乘数 + `ce_score_mul_aggregate()` 乘数附加项，
- * 后者是 111 声明进来的信号强度千分点；擦弹倍率是 110 自算的，**不走那条通道**，见 `on_item_score`）：
- *     `PV = (基础均值 + Δ_110 + Δ_111) × (擦弹倍率 + 信号强度)`（两张都在场）
- *     ★ 2026-09-12 一手订正（任务 ③）：这一支里的「擦弹倍率」是 **th11（SA）的机制，TH10 没有**
- *       （`local/_scratch/research-th10-faith-and-graze.md` §1.1）⇒ 只有两卡同装时才该出现。
- *     `PV = 信仰_110`（只有 110，**无乘数**；一手 th10 的蓝点线上式也是「= 信仰」）
- * 然后写 `*value = PV × 10` ⇒ 引擎随后 `SCORE += value / 10` ⇒ **精确得到 PV 分、天然不双计分**（§7.8）。
- * ⚠ 落笔者**读的是聚合值，不读别的卡的状态** —— 这是契约里的硬要求。
+ * **没有「落笔者」这个概念了**：每张卡只**声明自己那一份 `G_i`**，SDK 顶层一次合成
+ *   `G = G_0 + Σ未耦合 + coupling × Σ耦合 / 1000`，然后写 `*value = G × 10`
+ *   （引擎随后 `SCORE += value / 10` ⇒ 精确得到 G 分、天然不双计分）。
+ *
+ * 110 声明的是 **耦合族**（用户规格唯一带乘数的那一项）：
+ *     `G_10 = 信仰_110 = 50000 + Δ_110`（`faith_score_unit()`）
+ *     `coupling = (擦弹倍率 + 信号强度)`，两者都由层合成
+ *       · 擦弹倍率 = `min(原生擦弹计数 × 0.0001, 8.99)`（层从 `th18:0x4ccd0c` 读，110 不必自己算）
+ *       · 信号强度 = 111 声明的千分点（层求和）
+ *     ⇒ `Δ_110` 与 `Δ_111` **一起**被耦合系数缩放（这正是用户公式的写法：`(Δ_10+Δ_11) × (…)`）。
+ *
+ * ★ 为什么不是「基础均值」那一套（旧口径）：旧公式 `(基础均值 + Δ110 + Δ111) × …` 里那个「均值」
+ *   是为了「107 与 110 各自声明了完整值 ⇒ 得把两份 base 减掉」而发明的补丁；现在基础只由层算一次
+ *   （`G_0`），110/111 只交 Δ ⇒ **不需要减法**，也不会因为多了第三张卡就整条不跑。
+ * ⚠ 本卡**不读别的卡的状态**（只读层的耦合聚合），契约的硬要求仍然成立。
  *
  * ## 明确不做（spec §6）
  *
@@ -39,16 +64,27 @@
  * ## 长持续效果的自查（`METHOD.md` 铁律二）
  *
  * 本卡跨帧留下的东西：① 绿点 VM 池（共用件，静态区）；② HUD 的 **9 个 VM**
- * （图标 1 + 数字位 6 + 连击条 2 —— 2026-09-12 从「两行贴图字数字」换成原生那一整块）。
+ * （图标 1 + 数字位 6 + 连击条 2 —— 2026-09-12 从「两行贴图字数字」换成原生那一整块）；
+ * ③ ★ 2026-09-15 新增：**一发灵击的状态**（`s->bomb`：剩余帧数 / 中心 / 目标半径）+ 它每帧撒的
+ * **引擎伤害源**（`player+0x20574` 池，寿命 2 帧自灭）。
  * **`on_delete` 与 `on_run_reset` 都走同一个 `mof_clear()`**：收池 + 收 HUD + 从计分层撤销声明
- * （`ce_score_declare(id, 0)`）；删卡发生在**商店**里、那一刻 AbilityManager 冻住
- * ⇒ 只能靠 `on_delete`（虚表 `+0x50`），不能等下一帧。
+ * （`ce_score_declare_coupled(id, 0)`）+ 把 `s->bomb` 清零（下一帧不再续撒）；删卡发生在**商店**里、
+ * 那一刻 AbilityManager 冻住 ⇒ 只能靠 `on_delete`（虚表 `+0x50`），不能等下一帧。
+ * 伤害源的残留与「为什么不手动清池槽」见 `mof_clear()` 里的那段注释。
+ *
+ * ## 明确不做 / 未做（本轮）
+ *   · **消激光**：TH10 的灵击用同一个半径消激光（`th10:0x41c800`），TH18 没有半径消激光的原语
+ *     （`ce_cancel_all_bullets` 是全屏消激光，语义不符）⇒ 不消激光（登记）。
+ *   · **灵击的视觉**：TH10 的扩散圈是 anm 手册里的贴图（`bullet.anm` script400），TH18 无对应资产
+ *     ⇒ 本卡只有效果（消弹 + 伤害 + 音效），没有画面（登记，属资产层）。
+ *   · **微档实体**（一手的 type 8 微信仰点是可见的星形碎片）——照旧不建实体，只记 +10 信仰。
  */
 #include <stddef.h>          /* sdk.h 的 ce_item_collect_all 用了 size_t（内置 Linux 头不带）*/
 #include <string.h>
 #include <stdio.h>
 #include "sdk.h"
 #include "faith.h"
+#include "faith_hud.h"        /* ★★ 2026-09-15：110/111 共用的「组合 UI」（共享件）*/
 #include "mof_core.h"
 
 /* ---- 本卡常量 ---- */
@@ -64,56 +100,148 @@
                                           * 5 项跳转表 0x446d40；th06rank.c 同址，**只读**）*/
 #define MOF_LOG_EVERY         600        /* 每 600 帧一条汇总（实跑对账）*/
 
-/* ---- HUD（左下角的**信仰读数**；全部是原生几何，逐条给一手出处）----
- * ★ 2026-09-12 本轮：坐标**从「❓ 自定 (52,366/378)」换成原版原值** —— TH10 的信仰读数在
- *   `Gui::on_tick` th10:0x414a60 起被逐位画进 `GUI+0x8094` 的 **7 个 VM**（`Gui::initialize`
- *   th10:0x413d5e–0x413d7e 给它们跑 `front.anm` script51..57），几何 = 那 7 条脚本的 `pos`：
+/* ---- ★★ 逐帧信仰衰减的门③「关卡帧 ≥ 90」（🟡 **自定源**，不是复刻）----
+ * **一手要什么**：`th10:0x418759 cmp [edi+0x14],0x5a`，`edi` = `g_GameThread` ⇒ 一手读的是
+ *   **GameThread 里的一个关卡帧计数**（同字段上还比过 0/30/90/2940/3000，`edi` 的来源链是
+ *   `GAME_THREAD_PTR 0x477810` → `0x4179fb` 注册每帧任务 → `0x4187c0` → `0x418190`）。
+ *   ⚠ 那个字段的**起点/清零点**在 th10 侧也没查到（`research-th10-faith-units-and-drain.md` §9 的 ❓）。
  *
- *     VM[0] script51 图标 16×16  `pos(32,448)`          anchor(1,1)=（左，顶）
- *     VM[1..5] script52..56 数字 `pos(48+7k,450)` k=0..4
- *     VM[6] script57 **恒 '0'**  `pos(83,450)`（全 exe 无一处写它的 sprite ⇒ 显示值 = 存储值×10）
+ * **TH18 侧为什么不用引擎的**：本仓**没有** `zGameThread` 的字段图
+ *   （`engine/chapter/th18/01-chapter-residuals.md` §1 明写「❓ 未证，别拿 TH17 的布局当结论」）。
+ *   引擎里唯一现成的「关卡帧」是 `CE_ADDR_TIME_IN_STAGE`（`0x4ccce8`），但本轮的写点穷举证明它
+ *   **不是「每关从 0 起」**：它的 inc 在 `th18:0x443d16`（`GameThread__on_tick` 尾），三个清零点
+ *   分别在 `th18:0x4425ca`（一局初始化）、`th18:0x4441e5`（`GameThread` 启动）、`th18:0x44442f`
+ *   （**关卡拆机/换关**，同函数里紧跟 `Stage` 与三个管理器的析构）—— 换关确实归零，但同一函数里
+ *   `CURRENT_STAGE` 与另两个计数也一起清 ⇒ 它语义上是**「本局/本关的计时」**，与一手那个字段
+ *   是否同物**没有证据**（🟡）。
+ *   ⚠ **且本仓已有明令**：`CARD-NUMERIC-INTERACTION-AUDIT.md` 记过「114 刻意弃用 `TIME_IN_STAGE`、
+ *     卡一律自数帧」⇒ 跟既有口径走，别为一个门去改全仓的帧源。
+ * ⇒ **本卡的取法**：`s->stage_frames` = 自己的按帧计数（`on_tick_2` 每帧 +1），
+ *   按「关卡计时回退 / 关卡号变化」重置（`mof_stage_frames()`，用 `CE_TIME_IN_STAGE()` 与
+ *   `CE_CURRENT_STAGE()` 两个**只读**信号做重置判据 —— 计时回退只可能在换关/重开那一帧发生，
+ *   比只看关卡号更可靠：练习模式重开同一关时关卡号不变）。
  *
- *    `anchor(1,1)` = 「pos 是矩形左上角」的一手证法：TH10 `front.anm` 的 HUD 边框条
- *   script2..5（sprite0/1/2/3 分别 `pos(0,0)/(416,0)/(32,0)/(32,464)`）只有这条解释才正好
- *   铺满 640×480 的四条边（v4 的 `65 anchor` 取值表见 `engine/anm/OVERVIEW.md`）——
- *   与 TH18 的 3×3「anchor(0,0)=锚心」**不是同一套**，别按 TH18 的直觉套。
- *
- *   坐标空间 = 640×480 字面量空间（TH10 的 HUD 空间）⇒ 写进 VM 时 ×2 换成表面 px
- *   （脚本里 `resolutionMode(2)`，见 209/210 的注释）。 */
-#define MOF_HUD_ICON_X        32.0f      /* 原生 script51 `pos(32,448)` */
-#define MOF_HUD_ICON_Y        448.0f
-#define MOF_HUD_DIGIT_X0      48.0f      /* 原生 script52 `pos(48,450)` */
-#define MOF_HUD_DIGIT_DX      7.0f       /* script53..56 逐条 +7 ⇒ 55 / 62 / 69 / 76 */
-#define MOF_HUD_DIGIT_Y       450.0f
-#define MOF_HUD_ZERO_X        83.0f      /* 原生 script57 `pos(83,450)`：**恒 '0'** 的末位 */
-#define MOF_HUD_SLOTS         5          /* 动态位数（原生 `mov ebx,5` + 逐个 idiv 10000..1）*/
-#define MOF_HUD_DIGIT_MAX     99999      /* 5 位十进制上限（存储单位；超了钳住，照原生的 5 位窗口）*/
-#define MOF_HUD_U640_TO_SURF  2.0f       /* 640×480 字面量空间 → 表面 px（= `resolutionMode(2)`）*/
-#define MOF_HUD_INT_DIM       3          /* 脚本 `interruptLabel(3)` = `alphaTime(8,1,32)`（压暗）*/
-#define MOF_HUD_INT_SHOW      2          /* 脚本 `interruptLabel(2)` = `alphaTime(8,1,255)`（淡回）*/
-#define MOF_HUD_DIM_Y_HI      416.0f     /* 一手 0x470bdc：`y > 416` 才可能压暗 */
-#define MOF_HUD_DIM_X_LO     (-128.0f)   /* 一手 0x470d10（double −128.0）：`x < −128` 才可能压暗 */
-#define MOF_HUD_SHOW_Y_LO     400.0f     /* 一手 0x470d08：`y < 400` 淡回 */
-#define MOF_HUD_SHOW_X_HI    (-112.0f)   /* 一手 0x470d00（double −112.0）：`x > −112` 淡回 */
+ * 🟡 **怎么钉**：实跑看 `mof:` 每 600 帧那行的 `gate=` / `sf=` 两栏 ——
+ *   ① `sf` 应当在**每次换关后从 0 重新爬**（不是一局一路涨）；
+ *   ② 进关后 ~90 帧（1.5 s）那段，`gate=101`/`gate=111`（对应位）里「关卡帧」那一位应当是 **0**，
+ *      之后变 1，且这段时间信仰**不动**；③ `gate=` 三位依次 = `无Boss / 无对话 / 关卡帧≥90`。*/
+#define MOF_STAGE_FRAME_GATE   90        /* 一手 `th10:0x418759` 的 `0x5a`；判据 = 「≥ 90 算过」 */
 
-/* 连击条：原版**不是 anm 精灵**，是引擎自己在 `Gui::on_draw` th10:0x4158b6–0x415937 画的
- * 两个实心四边形（`call 0x43bda0` = D3D 设备画四边形；四个 float 是 (x, y, x2, y2)）：
- *     X = 51 + 连击槽 × (38/130)      （`fild [0x474c58]` × `[0x470cb8]` + `[0x470d2c]`）
- *     四边形 A = (51, 461)–(X, 463)   （`0x4158da/0x4158e2/0x4158f0`）
- *     四边形 B = (50, 460)–(X−1, 462) （`0x41591b/0x415923/0x41592f`，`[0x470afc] = 1.0f`）
- *     颜色 = `[gui+0x8393] << 24 | 0xffffff`（白）
- * ⇒ 我们只能用 `drawRect`（现成脚本 104 = 1×1 白矩形、layer 25）拼出这两个四边形，
- *   **几何/宽度/颜色逐条照抄**，但载体不同 ⇒ 报告里登记为「❓ 自定（载体差异）」。 */
-#define MOF_HUD_BAR_X_A       51.0f      /* 0x4158da = 51.0f */
-#define MOF_HUD_BAR_Y_A       461.0f     /* 0x4158e2 = 461.0f */
-#define MOF_HUD_BAR_BOT_A     463.0f     /* 0x4158f0 = 463.0f（高 = 2 px）*/
-#define MOF_HUD_BAR_X_B       50.0f      /* 0x41591b = 50.0f */
-#define MOF_HUD_BAR_Y_B       460.0f     /* 0x415923 = 460.0f */
-#define MOF_HUD_BAR_BOT_B     462.0f     /* 0x41592f = 462.0f */
-#define MOF_HUD_BAR_INSET     1.0f       /* 0x470afc = 1.0f：B 比 A 窄 1 px */
-#define MOF_HUD_BAR_W_FULL    38.0f      /* 0x470cb8 = 38/130 ⇒ 连击槽满（130）时宽 38 px */
-#define MOF_COMBO_MAX         130        /* 0x413035 `mov [esi+4],0x82`（槽上限，共用件同值）*/
-#define MOF_HUD_BAR_COLOR     0xffffffffu/* = `[gui+0x8393]<<24 | 0xffffff`；alpha 那个字节取 255（❓）*/
+/* ---- ★★ 2026-09-15：「组合 UI」把本卡的 HUD 整块搬进了**共享件**（`cards/faith_hud.{h,c}`）----
+ *
+ * 本节原来那一整批 `MOF_HUD_*` 几何常量（图标/数字位/连击条的位置与尺寸、`U640_TO_SURF`、
+ * TH10 的压暗门限 416/400 与 −128/−112、连击条两个四边形的坐标、满槽宽 38 px、`MOF_COMBO_MAX`）
+ * **全部搬到 `cards/faith_hud.c` 的常量块**，本文件一个都不留 —— 免得两处各一套几何、改一处漏一处。
+ * 它们的**一手出处与逐条判定（复刻 / ❓ 自定）**也一并搬过去（那边逐条给了 `th10:0x…` / `th11:0x…`
+ * / 脚本号）；块的尺寸与三行的堆叠见 `engine/player/th11/04-merged-hud-spec.md` 与 `NEXT.md` §2A。
+ * ⚠ 本卡侧**不再持有任何 HUD VM**（`s_hud_*` 也一起删了）：起 VM / 摆位 / 上色 / 压暗 / 回收全在共享件；
+ *   `on_delete` 那条路径由 `faith_hud_departed()` 收（见 `mof_clear()` 的注释）。
+ * ⚠ **仍然有效的一手事实**（合并块用的还是 TH10 那套数字位与连击条几何，只是执行者换了模块）：
+ *   TH10 的信仰读数在 `Gui::on_tick` th10:0x414a60 起被逐位画进 `GUI+0x8094` 的 7 个 VM
+ *   （`Gui::initialize` th10:0x413d5e–0x413d7e 跑 `front.anm` script51..57）；`anchor(1,1)` = 左上
+ *   （一手证法：`front.anm` script2..5 的边框条四条 `pos` 只有「pos = 矩形左上角」才正好铺满四边）；
+ *   连击槽 = `GLOBALS+0x14` 的 zTimer 被 `th10:0x4158b6`–0x415937` 直画的两条实心矩形
+ *   （宽 = `current × 38/130`、A 借最左数字 VM 的 `color_1.A`）。*/
+
+/* ---- ★★ 2026-09-15：灵击（按 X）整套按 TH10 一手重写（依据见 `mof_core.h` 的「灵击的收尾」块）----
+ *
+ * 与旧实现的三个差别（旧值全部作废）：
+ *   ① 消弹**不是全屏一次性**：半径 = `16.0 → 160/112/64`（120 帧线性），**逐帧推进**、中心每帧上移；
+ *   ② **有伤害**（TH10 的灵击经 `0x4059f0` 回调贡献伤害）⇒ 用 `ce_damage_rect` 近似（❓ 自定）；
+ *   ③ **没有震屏**（一手否定）⇒ `ce_screen_shake` 整段删掉。
+ *
+ * 引擎字段（一手）：
+ *   · `CE_ADDR_CHARACTER` `th18:0x4cccf4`（0 灵梦 / 1 魔理沙 / 2 咲夜 / 3 早苗）；
+ *   · `CE_ENEMY_FLAGS` `th18:0x635c` 的 bit23 = 「这敌是 boss」（ECL opcode 512 `setBoss`）；
+ *   · `CE_EM_BOSS_IDS` `th18:0x48` = boss 表（存 enemy_id，写入点 `th18:0x42d490`）；
+ *   · `CE_SPELL_BONUS` `th18:0x7c` / `CE_SPELL_FLAG_BONUS` `th18:0x78` bit1（= TH10 的 `+0x3790` / `+0x378c` bit1）；
+ *   · `CE_ADDR_RANK` —— engine.h 里**没有**这个宏（只有 106 卡自己写死过）⇒ 本卡就地定义。*/
+#define MOF_ADDR_CHARACTER    0x4cccf4   /* int32 角色号 0..3（engine.h 一手：`Player__initialize` `0x45a7a3`）*/
+#define MOF_RANK_ADDR         0x4ccd08   /* = GlobalsInner+0x2c（ExpHP `RANK`）；⚠ TH18 里是**死字段**：全程序只有 2 条读
+                                          * （`Enemy__ecl_get_int/float_global` `0x437515`/`0x438183`，即 ECL opcode 529–534
+                                          * 的 global getter），**没人写**、22 个 ECL 一次都没用过那几个 opcode
+                                          * ⇒ 写它**没有实际效果**（同结论：`IDEAS.md` §217–226、`th06rank.c` 头注）*/
+#define MOF_RANK_BOMB_DROP    0x80       /* 一手 `th10:0x40598c sub eax,0x80`（= −128）*/
+#define MOF_RANK_MIN          (-0x400)   /* 一手 `th10:0x4059b1 cmp eax,0xfffffc00` 的下钳 */
+#define MOF_RANK_MAX          0x400      /* 一手 `th10:0x40599e mov ds:0x474c98,0x400` 的上钳 */
+#define MOF_BOMB_DMG_SRC_LIFE 2          /* 伤害源寿命：2 帧只为一帧余量（`enm_compute_damage_sources` 的
+                                          * tag 守卫让**一个源对同一敌人只结算一次** ⇒ 每帧一个新源 = 每帧一笔）*/
+#define MOF_PLAYFIELD_W       384.0f     /* 游玩区宽（世界坐标 −192..192）——TH10/TH18 同量纲 */
+#define MOF_PLAYFIELD_H       448.0f     /* 游玩区高（世界坐标 0..448）*/
+#define MOF_PLAYFIELD_CX      0.0f
+#define MOF_PLAYFIELD_CY      224.0f
+#define MOF_BOMB_SE           0x2c       /* ★ 复刻（**同一 wav**）：TH10 灵击播 `se_slash.wav`（id `0x26`，
+                                          * `th10:0x405942`）↔ TH18 的 `se_slash.wav` = id `0x2c`/`0x2d`
+                                          * （`engine/_shared/th18-sound-table.md`）。❓ 两号同文件、音量不同
+                                          * （−13.8 / −19.8）⇒ 取 0x2c，登记 `TUNING.md` §2.5。*/
+/* ★★ 2026-09-16k 灵击视觉（用户：「灵击依然没有特效」）—— 两个节流/时点常量，都是 ❓ 自定：
+ *   · `MOF_BOMB_RING_FADE_AT` = **120**：环在半径长满那一帧开始淡出。一手来源 = TH10 script400 的
+ *     `scaleTime(120, 6, 16.0 → 160.0)`（`MOF_BOMB_R_GROW_FRAMES` 也是 120）⇒ 这不是随手取的数。
+ *   · `MOF_BOMB_SPARK_EVERY` = **6**：火星每 6 帧一红一蓝。一手：TH10 的灵击本体在**同一帧**里起
+ *     12 颗（`scriptNew` × 4、`jmpDec` 循环 3 趟）；我们摊到 120 帧里 ⇒ 一帧 12 颗在 TH18 太吵、
+ *     也白占 VM 池，故节流（登记 `TUNING.md` §2.5）。*/
+#define MOF_BOMB_RING_FADE_AT 120
+#define MOF_BOMB_SPARK_EVERY  6
+
+/* ---- ★★ 2026-09-15c：灵击 → **决死**（「决死 B 形态」）的救命调用 ----
+ * `Player__cancel_impending_death` **`th18:0x45d590`**：thiscall(**zPlayer***)、**无栈参**、结尾裸 `ret`。
+ * 本轮**自己在样本上复核**（`objdump -d --start-address=0x45d590 --stop-address=0x45d5d5 th18.exe`）：
+ *   体内只有 6 个「写」，逐条原文 = `mov eax,[ecx+0x644] / test al,1 / or eax,1 / mov [ecx+0x640],0 /
+ *   mov [ecx+0x644],eax` → `mov [ecx+0x638],0x3c` → `mov [ecx+0x63c],0x42700000 (60.0f)` →
+ *   `mov [ecx+0x634],0x3b` → **`mov [ecx+0x476ac],1`**（状态回存活）→ `ret`（`0x45d5d5`）。
+ * 先例（形状照抄）：`cards/senro.c` 的 `senro_cancel_impending_death()`、
+ *   `cards/trance.c` 的 `trance_cancel_impending_death()`、`cards/animal.c` 的 `cancel_impending_death()`。
+ * ⚠ 它**只取消状态机**（不写命数、不写 `+0x47908` 决死窗口帧数）⇒ 与原生 `do_bomb` 那条路（`th18:0x45c2d7`）
+ *   落在同一个函数上，语义等价（一手：`0x45c2d7 call 0x45d590`）。*/
+#define MOF_FN_CANCEL_IMPENDING_DEATH  0x45d590u
+
+/* 弹字环的数字槽（`engine.h` 的 `CE_POPUP_*` 一手；**照原生 adder `th18:0x4645f0` 的字段写序**）：
+ *   mgr+0x10 = 槽号计数器（原生 adder 读它、≥0xa 归零、写完 inc）、18 槽 @ mgr+0x624、stride 0x48、
+ *   k0..12 = 数字槽（adder 只用前 10 个 ⇒ 计数器在 10 处回卷）、k13..17 = 倍率槽（114 的 `ce_popup_mult`）。
+ *   slot：+0x00 起 = **裸 digit 字节 0..9 逆序**（负值写 0x0a）、+0x3d = 位数、+0x1c = 颜色、
+ *   +0x18 = scale 初值 1.0、+0x24 = age 0、+0x20 = −1、+0x28 = 0、+0x30 bit0 = 动画类、+0x3c = busy。
+ * 生命周期全原生：tick `th18:0x464020`（每帧 age+1、`> 0x3c` 清 busy ⇒ **寿命 60 帧**）、draw `th18:0x464180`。*/
+#define MOF_POPUP_COUNTER     0x10
+#define MOF_POPUP_SLOTS       10         /* 原生 adder 的回卷点（`th18:0x4645ff cmp eax,0xa`）*/
+#define MOF_POPUP_DIGITS      8          /* 数字串可用字节数（+0x00..+0x0b；+0x0c 起是 pos）*/
+#define MOF_POPUP_GLYPH_MINUS 0x0a       /* 负数 → `mov BYTE PTR [esi],0xa`（`th18:0x46466d`）*/
+#define MOF_POPUP_GREEN       0xff00ff00u /* ★ 复刻：大信仰点/小信仰点的弹窗色 = 绿（一手 TH10
+                                           * `th10:0x41b5ae push 0xff00ff00`（type 3 大信仰点）/
+                                           * `th10:0x41b602 push 0xff00ff00`（type 9 小信仰点），
+                                           * 两句后面各跟 `call 0x42b9c0`（PopupManager::add）；
+                                           * 与 TH11 `th11:0x423cae` 逐字节同色）*/
+#define MOF_POPUP_FIELD_SCALE 0x18
+#define MOF_POPUP_FLAG        0x30
+#define MOF_POPUP_ANIM        0x2c
+
+/* 灵击的跨帧状态（★ 2026-09-15 新增）：TH10 的灵击是**一条随时间长的曲线**（消弹圈 + 中心上移 +
+ * 每帧每敌一笔伤害），所以必须逐帧推进，不能像旧实现那样一帧做完。
+ * 全部字段都是**本卡私有**的标量 ⇒ 删卡时会被 `mof_clear()` 清零，不留任何跨帧痕迹（伤害源是引擎
+ * 池里的对象、寿命 2 帧自灭，见 `mof_clear()` 的注释）。*/
+typedef struct {
+    int32_t left;          /* 还剩几帧（0 = 没在灵击）*/
+    int32_t elapsed;       /* 已经过几帧（半径曲线的自变量）*/
+    float   x, y;          /* 消弹/伤害中心（x = 发动瞬间的自机 x，y 每帧上移）*/
+    int32_t target_centi;  /* 本发的目标半径（1/100 px）：灵梦 16000 / 魔理沙 11200 / 符卡中 6400 */
+    int32_t rise_milli;    /* 每帧上移量（1/1000 px）：0.5 / 1.0 / 1.3 */
+    int32_t reimu;         /* 发动瞬间的 `CHARACTER == 0`（伤害表的圈外档分灵梦/魔理沙）*/
+    int32_t frames;        /* 诊断：本发实际走了几帧 */
+    int32_t dmg_frames;    /* 诊断：本发实际撒出伤害源的帧数（说明伤害档没被 `/5` 归零）*/
+    mof_bomb_form_t form;  /* ★ 2026-09-15c 本发的**形态**（按 B / **决死 B**）+ 累计消弹颗数。
+                            *   语义与两条代价口径全在 `mof_core.h` 的「灵击 → 决死」块
+                            *   （状态在 core ⇒ 主机单测能钉住；卡侧只「检测窗口 → 传参」）。*/
+    /* ★★ 2026-09-16k 视觉（用户：「**灵击依然没有特效**」）：两件东西，都是 TH10 原版那一套 ——
+     *   · `ring_vm` = **消弹范围环**（脚本 279）：半径**逐帧等于** `mof_core_bomb_radius_centi()`
+     *     ⇒ 环画的就是「这一帧真被消掉的那一圈」。一手：TH10 的灵击半径**就是**它那支 VM 的
+     *     `scale.y`（`th10:0x405813`），曲线 = `bullet.anm` script400 `scaleTime(120, 6, 16→160)`。
+     *   · 火星（脚本 280/281 = TH10 `bullet.anm` script398/399 的逐条移植）：**一次性 VM**，
+     *     不记 id（脚本自己 `wait` + `delete()`），按 `spark_tick` 节流出生。*/
+    uint32_t ring_vm;      /* 范围环的 VM id（脚本 279；0 = 没起）*/
+    uint32_t strip_vm;     /* ★ 2026-09-16p：**电流边**竖条环的 VM id（脚本 293 = TH10 sprite362+texCircle32）*/
+    int32_t  ring_fading;  /* 环已发过淡出中断（不再写 scale）*/
+    int32_t  spark_tick;   /* 火星出生节流计数（每 `MOF_BOMB_SPARK_EVERY` 帧一红一蓝）*/
+    int32_t  faith_dots;   /* ★ 2026-09-16p 诊断：本发一共撒出几颗信仰点（TH10 的 type 8 对位）*/
+} mof_bomb_t;
 
 typedef struct {
     faith_slot_t slot;              /* Δ_110 / 连击槽（130f）/ 基础 50000（共用件）*/
@@ -121,7 +249,10 @@ typedef struct {
     int32_t      last_graze;        /* 上一帧原生擦弹计数；-1 = 未初始化 */
     int32_t      graze_mult;        /* 擦弹倍率（千分点定点）*/
     int32_t      last_lives;        /* 上一帧残机（miss 检测：命数减少）*/
-    mof_spell_watch_t spell_watch;  /* 符卡「全避」监视器（状态机在 mof_core.c 的 mof_core_spell_watch()）*/
+    mof_spell_watch_t spell_watch;  /* 符卡监视器（状态机在 mof_core.c 的 mof_core_spell_watch()）*/
+    int32_t      spell_frames;      /* 本次符卡已过的帧数（= TH10 `[spellcard+0x3738]` 的对位；
+                                     * 两处一手都在用它：`bomb+0x44`（≥60）与作废符卡奖励的门）*/
+    mof_bomb_t   bomb;              /* ★ 灵击（逐帧推进；见上面那个结构的注释）*/
     int32_t      spell_avoided;     /* 诊断：全避次数 */
     int32_t      frame;
     /* ★ 2026-09-12 审计（本次，任务 1 的收尾）：诊断口径拆成「**收到** / **撒出**」两分法 ——
@@ -134,68 +265,227 @@ typedef struct {
     int32_t      stat_small_spawn;  /* 诊断：**撒出**的小信仰点颗数（满 P 吃 P 点，**只此一路**）*/
     int32_t      stat_spawn_failed; /* 诊断：共用池满 ⇒ `faith_spawn()` 返回 0 的次数（大小点合计）*/
     int32_t      stat_cancel;       /* 诊断：消弹总数 */
+    int32_t      stat_p_topup;      /* 诊断：P 点火力补差成功的颗数（见 `on_item_commit`；每 MOF_LOG_EVERY 帧的诊断行走 `Ptop`）*/
     int32_t      stat_miss;         /* 诊断：miss 次数 */
     int32_t      stat_bomb;         /* 诊断：灵击次数 */
+    int32_t      stat_bomb_dbf;     /* ★ 2026-09-15c 诊断：**决死形态**发动的次数（其中一支口径，
+                                     * 与 `stat_bomb` 并列看：`dbf ≤ bomb`，且 `bomb − dbf` = 主动次数）*/
+    /* ★★ 2026-09-15：逐帧信仰衰减（装回）的诊断与状态。字段全在本卡私有块里 ⇒ 删卡随 `mof_clear()`
+     * 的 `memset` 一起归零，不留跨帧痕迹（`METHOD.md` 铁律二）。*/
+    int32_t      stage_frames;      /* ③ 门用的**关卡帧计数**（🟡 自定源，见 `MOF_STAGE_FRAME_GATE`）*/
+    int32_t      stage_frames_ref;  /* 上一帧的 `CE_TIME_IN_STAGE()`；**变小 = 换关/重开** ⇒ 重置上面那个 */
+    int32_t      stage_id_ref;      /* 上一帧的 `CE_CURRENT_STAGE()`；**变化 = 换关** ⇒ 重置。初值 -1 */
+    int32_t      drain_lost;        /* 诊断：本段（自上次日志起）**逐帧衰减**累计扣掉的定点量 */
+    int32_t      gate_no_boss;      /* 诊断：本帧三条门 */
+    int32_t      gate_no_dlg;
+    int32_t      gate_frames;
+    int32_t      gate_enemies;      /* 诊断：本帧走的是哪一档（1 = 有敌人 ⇒ 慢档 600/s）*/
+    int32_t      combo_before;      /* ★ 2026-09-15f 诊断：本帧 `mof_core_faith_tick()` 之前的连击槽 */
+    int32_t      combo_after;       /*   之后的连击槽（两手之差 = 1 ⇒ 一手「每帧 −1」；0 ⇒ 门冻结）*/
+    int32_t      stat_combo_item;   /* ★ 2026-09-16 诊断：**引擎道具**给连击槽充的帧数累计（P/钱/大P）*/
+    int32_t      stat_combo_kill;   /*   诊断：**击破非 boss** 给连击槽充的帧数累计（= 只数 × 10）*/
     int32_t      log_frame;
 } mof_card_t;
 
+/* ★ 2026-09-16r：跨关账本的**权威副本**（见 `ctor` 的说明）。`ctor` 恢复它、每帧同步它。*/
+static faith_slot_t s_slot_keep;
+static int32_t      s_slot_stage = -1;
+
 _Static_assert(sizeof(mof_card_t) <= 496, "ce_state 上限 496 字节（超了会静默返回 NULL）");
 
-/* HUD 的 9 个 VM（DLL 静态区；本卡同时只会有一张在场 —— 原来那两行文字 VM 也是这个口径）：
- *   图标 1 + 数字位 6（5 动态 + 恒 '0' 的末位）+ 连击条 2 = **原生那一块的全部元素**。
- * ⚠ `s_hud_bar[]` 用的是**现成脚本 104**（`stock_rect` = 1×1 drawRect、layer 25、左上锚）
- *   ⇒ 每帧写 `pos`+`scale`，不写 anchor（写 `anchor(0,0)` 反而会变成锚心）。*/
-static uint32_t s_hud_icon;
-static uint32_t s_hud_digit[MOF_HUD_SLOTS + 1];
-static int32_t  s_hud_digit_spr[MOF_HUD_SLOTS + 1];   /* 该 VM 当前挂的 sprite（-1 = 未知；省一次 set_sprite）*/
-static uint32_t s_hud_bar[2];
-static int32_t  s_hud_dim;                            /* 原生 `gui+0x9eb4` bit0：1 = 已压暗到 alpha 32 */
-static int      s_hud_warned;                         /* 起 VM 失败只报一次（实跑对账用，别刷日志）*/
+/* ★★ 2026-09-15：本卡**不再持有任何 HUD VM**（原来那 9 支：图标 1 + 数字位 6 + 连击条 2）。
+ * 整块 HUD 搬进共享件 `cards/faith_hud.{h,c}`（16 支 VM，含本卡原来那 9 支的全部角色）——
+ * 因为用户 2026-09-15 口径 ①② 把 110 与 111 的两块 UI 并成了**一块**，共用件才是它唯一的持有者。
+ * 于是这里的 `s_hud_icon` / `s_hud_digit[]` / `s_hud_digit_spr[]` / `s_hud_bar[]` / `s_hud_dim` /
+ * `s_hud_warned` / `s_hud_digit_tbl[]` 与整套 `mof_hud_*` 一起删掉（静态符号留着不用会 `-Wunused`）。*/
 
-/* 数字 → sprite 号（ORDER 里的 MOF_FAITH_DIGIT_0..9 是**同一个 sprite 表里连续**的 sprite，
- * 但这里**按名字逐个列**：ORDER 段一旦被重排/并入主 ORDER，连续假设就不成立）。*/
-static const int32_t s_hud_digit_tbl[10] = {
-    CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_0, CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_1,
-    CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_2, CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_3,
-    CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_4, CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_5,
-    CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_6, CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_7,
-    CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_8, CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_9,
-};
+/* ★★ 2026-09-15：P 点火力那一层的**每颗道具闩**（`on_item_collect` 置、`on_item_commit` 清）。
+ * `on_item_commit` 不带 payload ⇒ 只能靠断点对的背靠背关系记住「这一颗是不是小 P」
+ * （同 `collect2x.c` 的 `s_stash` / `s_stash_valid` 形状）。放 DLL 静态区、不进 `ce_state`。*/
+static int      s_p_item;
+
+/* ============================ HUD 诊断 / HUD 本体（★ 2026-09-15 全部搬走）============================
+ *
+ * 这一段原来是两样东西，现在**都在共享件** `cards/faith_hud.{h,c}` 里：
+ *   · `mof_hud_diag_build/row/digit/tick`（那套「起来了但看不见」逐支实况诊断，
+ *     `MOF_VM_LAYER/FLAGS_LO/MIXED/POS_SCRIPT/RECT_*` 那批字段偏移也一起搬）；
+ *   · `mof_hud_spawn/warn_once/alive/dual_color/kill/digit_of/dim_tick/draw`（9 支 VM 的整套驱动）。
+ * 现在的对应物：`faith_hud.c` 的 `fh_diag_row()`（**16 支**逐支一行，起全了打一次）+ 每 600 帧一行汇总、
+ * `fh_spawn()` / `fh_place_gauge/icon/digits/star/mult/combo()` / `fh_dim_tick()` / `fh_kill()`。
+ *
+ * ⚠ 为什么整段删而不是留着不调：静态函数/变量留着不引用会触发 `-Wunused`（`-Werror` ⇒ 直接红），
+ *   而且留着会让人以为还有第二条通往这块 UI 的路。
+ * ⚠ 那段诊断的**方法论仍然有效**、也已搬过去（`flags_lo` 的绘制门槛 / colorMode / 渲染模式三组位、
+ *   `mixed_inherited_color` 才是真正画出去的顶点色、`entity_pos + 脚本 pos` 相加）——
+ *   它是 2026-09-15 那次「110 的 HUD 看不见」排查留下的最值钱的东西，别丢。*/
 
 static mof_card_t *st(ce_card_t *c) { return ce_state(c, mof_card_t); }
+
 
 static int mof_difficulty(void) { return *(volatile int32_t *)MOF_ADDR_DIFFICULTY; }
 static int32_t mof_graze(void)  { return *(volatile int32_t *)MOF_GRAZE_ADDR; }
 
-/* 这只敌人是不是 boss / 道中 boss —— 照引擎自己的判据：EnemyManager 的 boss id 表
- * （`get_boss_enemy_full` `0x4237f0` 就是按它走链表；先例 season.c 的 `enemy_is_boss`）。
- * ⚠ §7.9 要求「boss 不掉大信仰点」，但**boss 判据本身还没定**（EDEATH flags 里没有 boss 位）
- * ⇒ 先用这条已实跑过的判据，登记为待实跑（报告「未解」第 1 条）。*/
+/* 这只敌人**是不是 boss** —— ★ 2026-09-15 换成「就是 boss」的那个字段（一手）。
+ *
+ * 一手（TH18）：`zEnemy.flags_lo`（`CE_ENEMY_FLAGS` = `th18:0x635c`）的 **bit23 `0x800000`**，
+ * 由 **ECL opcode 512 `setBoss`** 置/清：
+ *   `th18:0x433bf5: or ecx,0x800000` + `th18:0x433bfb: mov [edi+0x5130],ecx`（注册；`0x5130 + 0x122c
+ *   (zEnemyData 在 zEnemy 里的偏移) = 0x635c` ✅ 同格）
+ *   `th18:0x433be2: and ecx,0xff7fffff`（反注册）
+ *   引擎自己也读它：`th18:0x42eed0: test DWORD PTR [ecx+0x635c],0x800000`（boss 血条那一段）。
+ * ⇒ 这与 **TH10 的判据逐条同形**：TH10 是 `enemy+0x1444` 的 bit `0x8000`，同样由 `setBoss` 置/清
+ *   （`th10:0x40ffec or ecx,0x8000` / `th10:0x40ffbf and ...,0xffff7fff`）⇒ **复刻**。
+ *
+ * ⚠ 旧实现借的是 **boss id 表**（`CE_EM_BOSS_IDS`）—— 那张表**是 TH10 `bosses[]` 槽表在 TH18 的对应物**
+ *   （见 `mof_boss_alive()`），但「这敌是不是 boss」在 TH10 用的是**它自己的位**（`th10:0x40e184`），
+ *   两者在「同一个槽被后来的 boss 顶掉」时会分叉 ⇒ 各就各位：**这一问用位、有 boss 那一问用表**。
+ * ⚠ 不用 `Spellcard` 状态代替（一手明令）：boss 的非符阶段照样是 boss（`th10:0x405a53` 的
+ *   「无符卡 + 有 boss」分支就是证据）。*/
 static int mof_is_boss(const uint8_t *e)
 {
-    uint8_t *em = CE_ENEMY_MGR();
-    int32_t id;
-    int i;
-
-    if (!e || !em) return 0;
-    id = *(const int32_t *)(e + CE_ENEMY_ID);
-    for (i = 0; i < CE_EM_BOSS_SLOTS; ++i) {
-        if (*(const int32_t *)(em + CE_EM_BOSS_IDS + i * 4) == id) return 1;
-    }
-    return 0;
+    if (!e) return 0;
+    return (*(const uint32_t *)(e + CE_ENEMY_FLAGS) & CE_ENEMY_FLAG_BOSS) != 0;
 }
 
-/* ---- 计分层：声明自己的贡献（粘性；删卡时清 0 退出聚合）----
- * 声明值 = **本卡这份信仰**（基础 50000 + Δ_110），不是「增量」——
- * 因为 `mof_core_pv()` 的公式要的是「聚合出来的信仰之和」。*/
+/* 「场上有没有 boss 活着」—— ★ TH10 的判据是 `[ENEMY_MANAGER + 0x10] != 0`（`bosses[0]`，
+ * `th10:0x405a58` / `th10:0x405a95` 两处消费点），TH18 的同位表 = `EnemyManager + 0x48 + 4*slot`
+ * （**存的是 enemy_id**，一手写入点 `th18:0x42d490`：`[edx+eax*4+0x48] = [ecx+0x6830]`，由 ECL `setBoss`
+ * 在 `th18:0x433c08` 调）⇒ 「表首格非 0」与 TH10 的 `bosses[0] != 0` 逐条对位（TH18 是 id、TH10 是指针，
+ * 零/非零的语义相同）。灵击的「圈外只有有 boss 时才给伤害」就用这一条（复刻）。*/
+static int mof_boss_alive(void)
+{
+    uint8_t *em = CE_ENEMY_MGR();
+    if (!em) return 0;
+    return *(const int32_t *)(em + CE_EM_BOSS_IDS) != 0;
+}
+
+/* 「屏幕上还有没有敌人」—— ★ **只用它选衰减速率档**（用户口径 2026-09-15）。
+ *
+ * 一手（TH18）：`[[0x4cf2d0]+0x198]` = `zEnemyManager.enemy_count_real`（ExpHP 名）。
+ * ⚠ **两个 `+0x198` 长得一样、意义无关**（一手踩坑记录，见 `engine/enemy/th18/` 的那条 ⚠）：
+ *   `GUI_PTR → +0x1b0 → +0x198` 是**对话期的敌人出场计数**，不是这个；真读 count 必须走
+ *   `ENEMY_MANAGER_PTR`（`0x4cf2d0`）—— 下面这行就是那条。
+ *
+ * ⚠ **这不是「一手 th10 的门」**：th10 的门①是 `[ENEMY_MANAGER+0x10] == 0`，我在本轮逐条复核了它 ——
+ *   它是**当前 boss 的指针**（非 0 时被当对象解引用：`th10:0x414adc` 读它的 `+0x23fc` 符卡计时画奖励条、
+ *   `th10:0x41217b`/`th10:0x416142`/`th10:0x41e760` 读它的 `+0x1068` 坐标 / `+0x2480` 标志），
+ *   **不是敌人计数**。这里之所以要「敌人计数」，是因为用户口径把速率分成两档、判据是「屏幕上有没有敌人」；
+ *   它**与那三条门是两件事**（门决定「冻不冻」，这一条只决定「冻不着时用哪一档」）。🟡 见 `TUNING.md` §2.5h。*/
+static int mof_enemy_present(void)
+{
+    uint8_t *em = CE_ENEMY_MGR();
+    if (!em) return 0;
+    return *(const int32_t *)(em + CE_EM_ENEMY_COUNT) > 0;
+}
+
+/* 「本关已经过了几帧」—— ★ 🟡 **自定源**（一手那个字段在 TH18 没有对位，理由全文在
+ *   `MOF_STAGE_FRAME_GATE` 的块注里）。**两个重置判据都只用引擎的只读全局**：
+ *     · `CE_TIME_IN_STAGE()`（`0x4ccce8`）**回退** ⇒ 换关 / 练习重开（`th18:0x44442f` 那个清零点）；
+ *     · `CE_CURRENT_STAGE()`（`0x4cccdc`）**变化** ⇒ 换关（练习重开同一关时它不变 ⇒ 需要上面那条）。
+ *   ⚠ 不在 `on_stage_start` 里重置：那个回调是引擎在换关时对卡组每张卡调的（`sdk.h` 有先例），
+ *     但它**不覆盖**「练习模式重开同一关」与「中途 retry」两种路径，而这里两条都覆盖 ⇒ 单一出处。
+ *   ⚠ 每帧只推一次（`on_tick_2` 里调一次），所以 `stage_frames` 的语义 = 「本卡看到的游玩帧」；
+ *     返回的是**自增之后**的值 ⇒ 「本帧的帧号」，门③直接用它与 90 比（第 1 帧 = 1 ⇒ 90 帧后才过）。*/
+static int32_t mof_stage_frames(mof_card_t *s)
+{
+    int32_t ts, st;
+
+    if (!s) return 0;
+    ts = CE_TIME_IN_STAGE();
+    st = CE_CURRENT_STAGE();
+    if (s->stage_frames_ref < 0 || ts < s->stage_frames_ref || st != s->stage_id_ref) {
+        s->stage_frames = 0;                 /* 换关 / 重开 ⇒ 从 0 起（本帧 = 1）*/
+        s->stage_id_ref = st;
+    }
+    s->stage_frames_ref = ts;
+    return ++s->stage_frames;
+}
+
+/* ---- 计分层：声明自己的那一份 **Δ_10**（粘性；删卡时清 0 退出聚合）----
+ * 属**耦合族** ⇒ 走 `ce_score_declare_coupled()`（会被 `(擦弹倍率 + 信号强度)` 缩放）。
+ * ⚠ **不含基础**：基础项 `G_0` 由层按用户公式算一次（TH18 原生身价 `(1+资金力)×难度修正`，
+ *   下限 10000 / 上限按难度）。旧实现声明「基础 50000 + Δ」是为了配合落笔者的
+ *   「减两份 base」补丁；重做后那套补丁没了 ⇒ 这里必须减掉，否则基础被双计
+ *   （`SCORE-LAYER-REWORK.md` §5 第 1 条坑）。单卡时两者等值（有单测）。*/
 static void mof_declare_score(mof_card_t *s)
 {
+    int32_t delta;
+
     if (!s) return;
-    ce_score_declare(MOF_ID_NUM, faith_score_unit(&s->slot));
+    delta = faith_score_unit(&s->slot) - FAITH_BASE_110;      /* = Δ_110（基础由层出）*/
+    if (delta < 0) delta = 0;
+    ce_score_declare_coupled(MOF_ID_NUM, delta);
+}
+
+/* ---- 绿色 `+N` 弹窗（★ 用户要求复刻「吃绿点有绿色 +N」）----------------------------------
+ *
+ * **一手（TH10 侧）**：`th10:0x42b9c0` = `PopupManager::add(value, &pos, color)`（`esi` = 全局
+ * `0x477840`、`eax` = 数值、`edi` = &zFloat3 位置、栈 1 参 = 颜色、`ret 4`），720 槽 × stride 0x40；
+ * **寿命 60 帧**（`th10:0x42b75e cmp [esi-0x4],0x3c`）、**上飘 0.5 px/帧**（`th10:0x42b713 fsubr`）、
+ * 第 56 帧换字形组；**位置 = 道具自身坐标**（`th10:0x41b360 lea edi,[ebp-0x4]`，全 type 共用）。
+ * 绿点那两条调用点：**大信仰点** `th10:0x41b5ae`（绿 `0xff00ff00`，值 = 难度表 5000/8000/10000）、
+ * **小信仰点** `th10:0x41b602`（绿 `0xff00ff00`，值 = 100）；**微信仰点（type 8）没有弹窗**
+ * （`th10:0x41b5d6` 的 handler 全程没有 `0x42b9c0` 调用）—— 我们的微档本来就不建实体，正好一致。
+ *
+ * **TH18 侧的载体 = 引擎自己的弹字环**（不是我们自造）：写序**逐条照抄原生 adder `th18:0x4645f0`**
+ *   `mov edi,ds:0x4cf420`（POPUP_MGR）→ 读 `[edi+0x10]` 槽号、`>= 0xa` 归零 → 槽 = `edi+0x624+0x48*idx`
+ *   → busy(`+0x3c`)=1 → 逐位取十进制写 `slot+0`（**裸 digit 字节、逆序**；负值写 `0x0a`；0 写 digit 0）
+ *   → 位数(`+0x3d`)、颜色(`+0x1c`)、动画位(`+0x30` bit0 + `+0x2c`)、age(`+0x24`)=0、`+0x20`=−1、`+0x28`=0
+ *   → pos(`+0xc`)=道具坐标、scale(`+0x18`)=1.0 → `inc [edi+0x10]`。
+ *   生命周期（60 帧回收、上飘、按离自机距离取 alpha 80/208）**全原生**，我们只写一次。
+ * ⚠ 与 `cards/collect2x.c` 的 `ce_popup_mult()` 是**同一族**的第二个用户：那个写**倍率槽**（k13–17），
+ *   本函数写**数字槽**（k0–9，计数器与原生 adder 共用 ⇒ 与原生弹字一起轮转，不会互相覆盖）。
+ * ⚠ 形状照抄、**没有抽进共享件**（`sdk.h` / `faith.h` 是共享件，本轮不动；111 若也要数字弹窗，
+ *   该由 owner 决定是否提炼成 `ce_popup_number()`，见报告）。*/
+static int mof_popup_number(const float *pos, int32_t value, uint32_t color)
+{
+    uint8_t *mgr = CE_POPUP_MGR();
+    int32_t idx, v;
+    uint8_t *s;
+    int n = 0;
+
+    if (!mgr || !pos) return 0;
+    idx = *(int32_t *)(mgr + MOF_POPUP_COUNTER);
+    if (idx < 0 || idx >= MOF_POPUP_SLOTS) idx = 0;        /* 原生 adder：`cmp eax,0xa; jl` 否则归零 */
+    s = mgr + CE_POPUP_RING + (size_t)idx * CE_POPUP_STRIDE;
+
+    v = value;
+    if (v < 0) {
+        *(uint8_t *)s = (uint8_t)MOF_POPUP_GLYPH_MINUS;   /* 负数：原生写 0x0a、位数 1 */
+        n = 1;
+    } else if (v == 0) {
+        *(uint8_t *)s = 0;                                 /* 0：原生写 digit '0'、位数 1 */
+        n = 1;
+    } else {
+        while (v != 0 && n < MOF_POPUP_DIGITS) {           /* 逆序写个位（原生 `idiv 10` 同序）*/
+            *(uint8_t *)(s + n) = (uint8_t)(v % 10);
+            v /= 10;
+            ++n;
+        }
+    }
+    *(uint8_t *)(s + 0x3d) = (uint8_t)n;                   /* 位数 */
+    *(uint32_t *)(s + CE_POPUP_COLOR) = color;             /* 颜色（TH10 用的是 D3DCOLOR 0xAARRGGBB）*/
+    if (!(*(uint32_t *)(s + MOF_POPUP_FLAG) & 1u)) {       /* 动画类标志 bit0（原生 adder 同款复位）*/
+        *(uint32_t *)(s + MOF_POPUP_FLAG) |= 1u;
+        *(int32_t *)(s + MOF_POPUP_ANIM) = 0;
+    }
+    *(int32_t *)(s + CE_POPUP_AGE) = 0;                    /* age 归零（原生回收只清 busy ⇒ 必须自己复位）*/
+    *(int32_t *)(s + CE_POPUP_AGE + 4) = 0;                /* +0x28 位移动画 float */
+    *(int32_t *)(s + CE_POPUP_AGE - 4) = -1;               /* +0x20 上一帧 age */
+    *(float *)(s + CE_POPUP_POS) = pos[0];
+    *(float *)(s + CE_POPUP_POS + 4) = pos[1];
+    *(float *)(s + CE_POPUP_POS + 8) = pos[2];
+    *(float *)(s + MOF_POPUP_FIELD_SCALE) = 1.0f;          /* scale（tick 的弹出动画起点）*/
+    *(uint8_t *)(s + CE_POPUP_BUSY) = 1;                   /* busy **最后置**（防同帧别人读到半初始化槽）*/
+    *(int32_t *)(mgr + MOF_POPUP_COUNTER) = (idx + 1 >= MOF_POPUP_SLOTS) ? 0 : idx + 1;
+    return 1;
 }
 
 /* ---- 收集回调（faith.c 发出来的）----
- * 只认领 `1 << FAITH_SLOT_110` 的槽；加进自己的记账槽 + 连击槽 + 卡内计数，然后重新声明。*/
+ * ★ 2026-09-15：改成**带位置**的那一支（`faith_user_t.on_pickup_at`，本卡专属）—— TH10 的弹窗
+ *   画在**道具自己的坐标**上（`th10:0x41b360`），而旧回调签名不带位置 ⇒ 只能拿自机坐标近似
+ *   （收集半径 30 px 的误差）。带位置的那一支一到位，弹窗就与一手一致。
+ * 逻辑与 `mof_on_pickup()` 完全相同，只多一个弹窗；两处都保留（旧入口仍是 faith.c 的默认路径）。*/
 static void mof_on_pickup(void *user, int slot_mask, int tier, int32_t value)
 {
     ce_card_t *c = (ce_card_t *)user;
@@ -230,7 +520,11 @@ static void mof_on_pickup(void *user, int slot_mask, int tier, int32_t value)
      * ⚠ 高度取**收集那一刻的自机 y**：实体层的回调签名（`faith.h` 的 `faith_pickup_fn`）
      *   **不带这颗点的位置**，而收集判定本身就是「与自机的距离² ≤ 收集半径²（默认 30px）」
      *   ⇒ 收的那一帧自机 y 就是收集高度（误差 ≤ 收集半径 ≈ 30px，占 224px 跨度的 13%）。
-     *   要精确到「点自己的 y」得给那个回调签名加一个位置参数（`faith.h`/`faith.c` 本轮不在改动范围）。
+     *   ★ 2026-09-15：`faith.h` 的 `faith_user_t` 尾部加了**带位置**的回调（`on_pickup_at`），
+     *     110 现在走那一支 ⇒ 弹窗不受这一误差影响；但**高度系数仍用自机 y**
+     *     （那是 §7.6 的用户口径、不是一手的式子）。换成「点自己的 y」现在只需一行
+     *     （`mof_on_pickup_at()` 里把 `pp[1]` 换成回调给的 `y`）—— **故意留作独立小改**，
+     *     因为本轮的任务是灵击/弹窗/判据，不顺手改计分行为。登记在报告「未做」里。
      *   ⚠ 一手 th10 用的确实是**道具自己的 y**（`0x41b4aa` `fld [edx+0x3c4]` 比 144.0f）⇒ 这是已知偏差。
      * 自机指针为空时退回旧的保守档 BOTTOM（本回调从 `on_tick_2` → `faith_pool_tick()` 里发出来，
      * 那条路已经挡过 `!CE_PLAYER()`，所以这是纯防御）。*/
@@ -244,9 +538,31 @@ static void mof_on_pickup(void *user, int slot_mask, int tier, int32_t value)
     mof_declare_score(s);
 }
 
+/* ---- ★ 带位置的收集回调（`faith_user_t.on_pickup_at`）：同一套记账 **+ 绿色 `+N` 弹窗** ----
+ * 值/色 = **复刻**（TH10：大信仰点 = 本难度的 5000/8000/10000、小信仰点 = 100，都是绿 `0xff00ff00`，
+ * 见 `mof_popup_number()` 的注释）；位置 = 道具自身坐标（一手 `th10:0x41b360`）。
+ * ⚠ 微档（消弹的 +10）**不弹**：一手 TH10 的 type 8 微信仰点没有弹窗（`th10:0x41b5d6` 全程不调
+ *   `0x42b9c0`），而且它在我们这里根本不建实体（`faith_spawn()` 直接返回 0）⇒ 天然一致。*/
+static void mof_on_pickup_at(void *user, int slot_mask, int tier, int32_t value, float x, float y)
+{
+    float pos[3];
+
+    mof_on_pickup(user, slot_mask, tier, value);              /* 记账先做（弹窗失败也不影响数值）*/
+    if (!(slot_mask & (1 << FAITH_SLOT_110))) return;
+    pos[0] = x;
+    pos[1] = y;
+    pos[2] = 0.0f;
+    if (!mof_popup_number(pos, value, MOF_POPUP_GREEN))
+        ce_log("mof: green popup dropped (popup ring busy?) value %d", (int)value);
+}
+
 /* ---- 消弹回调（faith.c 在 `faith_cancel_account()` 里发）----
- * 「微信仰点：**消弹每颗 +10**」（§2.2）。颗数**直接吃 `ce_cancel_radius()` 的返回值**
- * （§5.5 订正 3：`ce_cancel_all_bullets()` 是 void，数不出来）。*/
+ * 「微信仰点：**消弹每颗 +10**」（§2.2 / §7.5）。
+ * ★ 一手（TH10）：灵击的消弹函数 `th10:0x408100` 在每颗被消掉的弹上**撒一颗 type 8 微信仰点**：
+ *   `th10:0x4081e5: push 0x8`（type）→ `th10:0x4081e7: call 0x41bb00`（`ItemManager::spawn_item`），
+ *   角度 `0xbfc90fdb`（−π/2 = 向上）、速度 `0x3f19999a`（0.6f）⇒ 本卡的「每颗 +10 信仰」照它接账
+ *   （我们**不建实体** —— 一手的微档是可见的星形碎片，这一档的实体版见 `faith.c` 头注的 ❓ 自定）。
+ * 颗数**直接吃 `ce_cancel_radius()` 的返回值**（§5.5 订正 3：`ce_cancel_all_bullets()` 是 void、数不出来）。*/
 static void mof_on_cancel(void *user, int32_t bullets)
 {
     ce_card_t *c = (ce_card_t *)user;
@@ -254,6 +570,12 @@ static void mof_on_cancel(void *user, int32_t bullets)
 
     if (!s || bullets <= 0) return;
     s->stat_cancel += bullets;
+    /* ★ E-1 硬约束（2026-09-15）：这一档是 **type 8（微）**，只许走 `FAITH_TIER_MICRO`。
+     *   ⚠ 微档今天**不建实体**（`faith_cancel_account` 只记账）⇒ 将来补实体版时，tier 必须取
+     *   `faith_core_tier_for_source(FAITH_SRC_CANCEL)`（= MICRO），不许写成 SMALL/大档
+     *   （一手：每颗被消的弹 → `th10:0x4081e7 push 8` / `th11:0x40b0a2 mov ecx,8`；
+     *    角 −π/2、速 **0.6**，撒在**弹自己的位置** —— 但 `ce_cancel_radius()` 只给颗数、给不了位置，
+     *    这是微档实体版还差的那一条一手，登记在报告与 `TUNING.md`）。*/
     faith_slot_add_cancel(&s->slot, 0, bullets, 0, 0);        /* 110：每颗 +10，落 Δ_110 */
     /* 连击槽：微信仰点 +3f/颗（§7.5）。⚠ 原作是「每颗 +3f」，没有每帧上限 —— 照抄。*/
     {
@@ -261,6 +583,30 @@ static void mof_on_cancel(void *user, int32_t bullets)
         while (k-- > 0) faith_combo_add(&s->slot, FAITH_EV_MICRO);
     }
     mof_declare_score(s);
+}
+
+/* 这只敌人**长什么样** —— ★★ 2026-09-15 新增（大信仰点判据换成宿主表后，卡侧要读它）。
+ *
+ * 一手（TH18）：`zEnemyData` 里有两个字段记着「这敌画的是哪个 anm、哪条脚本」：
+ *   · `+0x268` = **anm 源选择子 N**（= `anmSelect(N)` 写进 `+0x264` 的那个值，在这里留档）
+ *   · `+0x26c` = **主脚本号 S**（该 anm 文件的**扁平脚本号**；`S` = 画的是哪一套动画）
+ * 写入点（两处，都**只在槽号 K==0 时**执行 —— 而原生 153/153 次 `anmSetMain` 全用 K=0）：
+ *   · `th18:0x436c85 mov [edi+0x26c],eax`（`eax` = 第 2 实参 S）与
+ *     `th18:0x436c91 mov [edi+0x268],eax`（`eax` = `[edi+0x264]` = N）—— **`anmSetSprite`**（303）
+ *   · `th18:0x431659 mov [edi+0x270],eax` / `th18:0x43165f mov [edi+0x26c],eax` /
+ *     `th18:0x431675 mov [edi+0x268],eax` —— **`anmSetMain`**（306）
+ *   `edi` = `zEnemyData` = `zEnemy + 0x122c`（`engine.h` 的 `CE_ENEMY_DATA`）
+ *   ⇒ **绝对偏移 = `enemy+0x1494`（N）/ `enemy+0x1498`（S）**。
+ * ⚠ 为什么用它当判据：`ce_enemy_death_t` 里**没有**敌人类型号（`ev->id` = `enemy+0x6830`，
+ *   是**逐实例递增**的流水号，不是类型），而这一对 `(N,S)` = 「它画的是哪一张贴图」，
+ *   正是用户说的**视觉语言**（绿妖精 = 大信仰点宿主）。全套预研见 `mof_big_faith_table.h`。*/
+#define MOF_ENEMY_ANM_SRC     0x1494   /* = CE_ENEMY_DATA(0x122c) + 0x268（`anmSelect` 的选择子）*/
+#define MOF_ENEMY_ANM_SCRIPT  0x1498   /* = CE_ENEMY_DATA(0x122c) + 0x26c（槽 0 的主脚本号）*/
+
+static void mof_enemy_anm_identity(const uint8_t *e, int32_t *src, int32_t *script)
+{
+    if (src)    *src    = e ? *(const int32_t *)(e + MOF_ENEMY_ANM_SRC)    : -1;
+    if (script) *script = e ? *(const int32_t *)(e + MOF_ENEMY_ANM_SCRIPT) : -1;
 }
 
 /* ---- 击破 → 大信仰点（§7.9）★ **正式钩子 = `on_enemy_death`**（共享死亡断点 `0x430240`）----
@@ -278,213 +624,619 @@ static void mof_on_cancel(void *user, int32_t bullets)
  * 本回调的两条**硬禁令**（设计 §2.4 的重入风险）：
  *   · **禁止析构任何敌人**（断点必在敌人链表遍历栈里 ⇒ UAF：`sweep` 先存 next、同帧会删）；
  *   · **禁止缓存 `ev->enemy`**（只在本次回调内有效；要记账只用 `ev->id`）。
- *   本实现两条都遵守：只读 `ev` 的字段、只撒自建 VM、不碰任何敌人对象。
+ *   本实现两条都遵守：只读 `ev` 的字段与敌人自己的两个只读身份字段、只撒自建 VM、不碰任何敌人对象。
  *
- * 判据（§7.9「不按族挑、按这敌实际掉什么」）：先过**死亡事件的门**
- * `mof_core_death_qualifies(kind, flags)` —— **排除 `CE_EDEATH_KILL_ALL`**（过场全清会把计数刷满）/
- * 要 `CE_EDEATH_F_REAL`（真敌人）/ 要 `CE_EDEATH_F_HAS_DROP`（有掉落表）；
- * 再 `drop_main == 2`（TH18 的 type 2 = 金钱）且非 boss。 */
+ * ★★ **判据（2026-09-15 用户裁决后换掉）：从「这敌掉的是不是金钱（`drop_main == 2`）」
+ *   换成「这敌在不在**宿主表**里」**（`mof_core_wants_big_host()`）：
+ *   · 表 = `mof_big_faith_table.h`（TH18 侧实测为「绿」的那批敌人，4 个视觉身份 `(N,S)`）；
+ *   · 键 = `(enemy+0x1494, enemy+0x1498)`（见上面 `mof_enemy_anm_identity()` 的一手）；
+ *   · 门 = 非 KILL_ALL（过场全清会把计数刷满）+ 真敌人（`CE_EDEATH_F_REAL`）+ **非 boss**；
+ *     ⚠ 旧门里「必须有掉落表」那一条**去掉了**（宿主按外观定，TH18 里确有原生 item = 0 的宿主，
+ *     例如 st04 的 `Cir02/Cir03`）—— 理由与一手在 `mof_core.c` 的 `mof_core_death_is_real()`。
+ *   · **`drop_main` 不再参与判据**（旧口径下「每只掉钱的敌人」都给 ⇒ 与金钱同点同生，
+ *     正是用户观察到的问题）；它仍被打进日志，方便实跑对账「宿主 ↔ 它掉了什么」。
+ *   · 旧的**判据②**（「同时掉钱与 P」= `on_enemy_drop_pre` 的那条路）随之作废 ——
+ *     它服务的正是「掉钱的敌人都给」这个已被推翻的前提 ⇒ **本卡不再挂 `on_enemy_drop_pre`**
+ *     （2026-09-15 删；`mof_core_wants_big_dual()` 保留给回归单测）。*/
 static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
 {
     mof_card_t *s = st(c);
     int32_t v = 0;
+    int32_t anm_src = -1, anm_script = -1;
     int is_boss, want_big;
 
     if (!s || !ev) return;
-    if (!mof_core_death_qualifies(ev->kind, ev->flags)) return;
-    if (ev->drop_main != MOF_DROP_TYPE_MONEY) return;   /* 判据② 在 drop_pre 里（那里才有 ex_drop）*/
-    /* ❓ 自定 / TODO（**用户未定**）：boss 判据借用 `EnemyManager` 的 boss id 表当占位。
-     * 只在门已过、`drop_main == 2` 时才查表（避免每死一只都走一遍 boss 表）。*/
+    if (!mof_core_death_is_real(ev->kind, ev->flags)) return;
+    /* 「这是不是 boss」用 `mof_is_boss()`（= `CE_ENEMY_FLAG_BOSS`，一手：ECL opcode 512 `setBoss` 置位），
+     * 与 TH10 `enemy+0x1444` bit15 逐条同形（见那个函数的注释）。
+     * ⚠ 2026-09-15 起它**不是**「掉钱那一路的额外收窄」，而是新判据的一部分（表 + 非 boss）；
+     * `mof_core_wants_big_host()` 内部先判 `is_boss` ⇒ 这里传进去即可，别再自己加条件。
+     * 为什么必须有这道门：TH18 有 boss 的贴图**正好也发绿**（st02 `Boss*`/`MBoss` 用 `st02enm` script0，
+     * 实测 hue 134），不加门就会被表外的键挡不住（表只收 N=2，那支是 N=3，属双保险）。*/
     is_boss = mof_is_boss((const uint8_t *)ev->enemy);
-    want_big = mof_core_wants_big_death(ev->kind, ev->flags, ev->drop_main, is_boss,
+
+    /* ★★ 2026-09-16 补：**击破一只非 boss ⇒ 连击槽 +10f**（一手 `th10:0x40e681 push 0xa`，
+     *   坐标在 TH10 敌人被移除/撒落那一段里、无条件给一次；表与口径见 `mof_core.h`）。
+     *   ⚠ 位置：在 `want_big` 的早退**之前** —— 宿主表只决定「要不要撒大信仰点」，
+     *     与「这只被击破了」是两件事（普通妖精也要充能）。
+     *   ⚠ 门沿用上面那条 `mof_core_death_is_real()`（过场 KILL_ALL 全清不算击破 —— 一手那一段
+     *     在敌人**自然结算**里，不是「被脚本清场」）。boss ⇒ +0f（用户口径与一手一致）。*/
+    if (!is_boss) {
+        (void)faith_combo_set(&s->slot, s->slot.combo + MOF_COMBO_KILL);
+        s->stat_combo_kill += MOF_COMBO_KILL;
+    }
+
+    mof_enemy_anm_identity((const uint8_t *)ev->enemy, &anm_src, &anm_script);
+    want_big = mof_core_wants_big_host(ev->kind, ev->flags, anm_src, anm_script, is_boss,
                                        mof_difficulty(), &v);
     if (!want_big) return;
-    if (faith_spawn(ev->x, ev->y, FAITH_TIER_BIG, 1 << FAITH_SLOT_110, v)) {
+    if (faith_spawn(ev->x, ev->y, faith_core_tier_for_source(FAITH_SRC_BREAK),
+                    1 << FAITH_SLOT_110, v)) {
         ++s->stat_big_spawn;
-        ce_log("mof: big faith +%d via on_enemy_death @(%.0f,%.0f) (kind %u, drop_main %d, boss %d, enemy %u)",
-               (int)v, (double)ev->x, (double)ev->y, (unsigned)ev->kind, (int)ev->drop_main,
-               is_boss, (unsigned)ev->id);
+        ce_log("mof: big faith +%d via host table @(%.0f,%.0f) (anm %d/%d, kind %u, drop_main %d, boss %d, enemy %u)",
+               (int)v, (double)ev->x, (double)ev->y, (int)anm_src, (int)anm_script,
+               (unsigned)ev->kind, (int)ev->drop_main, is_boss, (unsigned)ev->id);
     } else {
         ++s->stat_spawn_failed;
     }
 }
 
-/* ---- `on_enemy_drop_pre`：**只剩一件事** —— 「同时掉钱与 P」那条大信仰点（判据②）----
- * ⚠ 为什么判据②**留在这个钩子**：`ce_enemy_death_t` **不携带 ex_drop 计数**（只有 `drop_main`），
- *   而「同时掉钱与 P」必须看 `counts`（本钩子的入参就是 `zEnemyDrop+0x04`）。
- *   两条路**互斥**：`drop_main == 2` 已由死亡钩子处理 ⇒ 这里只在 `drop_main != 2` 时判②。
- * ⚠ 主掉落那一颗在 `0x430469` **已经被引擎撒出去了**（本钩子 `0x43049f` 在它之后）
- *   ⇒ 这里**只能额外再撒**（自建 VM），不能替换（§7.9 的实现注意）。
+
+/* ---- ★★ 2026-09-15：`on_enemy_drop_pre` 整条**已删**（旧判据②随之作废）----
  *
- * ★★ 2026-09-12 审计裁决（本次任务 1）：小信仰点（满 P 的 P 点转化）**从本钩子删掉了**。
- *   理由 = **同一颗 P 点会被记两次**：本钩子看到的是「这一波**要掉**什么」（撒落前/后的一瞬），
- *   而玩家真吃到那颗 P 点时 `on_item_collect` 也会看到同一颗 ⇒ 两处都判
- *   `mof_core_pick_p_item() == MOF_PICK_ADD_SMALL` 都 `faith_spawn(..., FAITH_MOF_SMALL)`
- *   ⇒ **两颗**小信仰点实体（一颗落在敌人尸体处、一颗落在道具被吃处）⇒ 玩家两颗都吃到
- *   ⇒ `Δ_110` 与连击槽各**双份**（`§7.9` 只定义了「满 P 吃 P 点 → 一颗」，`§11 #48` 只说
- *   「自建 VM 池」没说要撒两颗）。
- *   裁决（SDK owner 定）：**只保留 `on_item_collect`**（= 玩家真吃到才产生信仰，口径最准），
- *   本钩子的这颗**纯删** —— 本卡在这里**没有**「满 P 时把 P 点换成蓝点/别的 type」那种**换种**职责
- *   （`mof_core_pick_p_item()` 的返回值里也没有「改写掉落表」这一档，本卡也从不改写 ex_drop），
- *   所以要删就整段删，不留空壳。
- *   ⚠ 判据函数 `mof_core_pick_p_item()` **没动** —— 111（`cards/signal.c:273`）用同一个函数做同一件事。*/
-static void on_enemy_drop_pre(ce_card_t *c, int32_t *counts)
-{
-    mof_card_t *s = st(c);
-    uint8_t *e;
-    const float *ep;
-    int32_t v = 0, drops = 0, p_count = 0;
-    int is_boss, want_big;
+ * 删掉的理由（一句话）：**它服务的那个前提被用户裁决推翻了**。
+ *   · 它原来的唯一职责 = 判据②「主掉落不是钱、但 ex_drop 里钱与 P 同时 > 0 ⇒ 也给一颗大信仰点」
+ *     —— 同属「**按这敌掉什么**给绿点」的旧口径（§7.9）。
+ *   · 2026-09-15 用户裁决：「**金钱和绿点总之别重合**」⇒ 走「判据收窄」：大信仰点只给
+ *     **原作（TH10）真的声明了 type 3 的那批敌人的对应物**（宿主表 `mof_big_faith_table.h`）
+ *     ⇒ 「掉什么」这个输入**整个退出判据**，判据② 没有存在余地。
+ *   · 判据① 与判据② 曾**互斥**（`drop_main == 2` 走死亡钩子、否则走本钩子）；现在只剩死亡钩子一条路，
+ *     且它连 `drop_main` 都不读 ⇒ 本钩子**零职责**（留着就是一个每只敌人死亡都要跑一遍的空函数）。
+ *   · `mof_core_wants_big_dual()` 仍在 `mof_core.c` 里（签名冻结、**回归单测还在测**），只是卡不再调。
+ *
+ * ⚠ 历史（两轮注释，删函数时保留要点，免得下一个人重犯）：
+ *   · **2026-09-12 审计裁决**：小信仰点（满 P 的 P 点转化）**从本钩子删掉了** —— 理由是同一颗 P 点
+ *     会被记两次（本钩子看到「这一波要掉什么」，`on_item_collect` 看到玩家真吃到的那一颗）
+ *     ⇒ 撒两颗实体 ⇒ `Δ_110` 与连击槽各双份。
+ *   · **2026-09-15 收口（用户定案 A）**：那条裁决的**前提**也被换掉了 —— 现在根本不会有「满 P 吃 P 点」：
+ *     共用件 `faith_convert_full_p_items()`（`on_tick_2` 每帧调）在满 P 时就把原生 P 类道具**原位删掉
+ *     并换成自建的 type 9 档点**，`on_item_collect` 只剩**同帧竞态网**。一手与译文见那个函数的长注。*/
 
-    if (!s || !counts) return;
-
-    /* counts = zEnemyDrop+0x04（CE_ENEMY_DROP_COUNTS），zEnemyDrop = enemy+0x623c */
-    e = (uint8_t *)counts - CE_ENEMY_DROP_COUNTS - CE_ENEMY_DROP;
-    is_boss = mof_is_boss(e);
-    {
-        int32_t main_drop = *ce_drop_main(counts);
-        int i;
-        for (i = 0; i < CE_ENEMY_DROP_TYPES; ++i) {
-            if (i + 1 == MOF_DROP_TYPE_MONEY) drops = counts[i];
-            if (i + 1 == MOF_DROP_TYPE_P)     p_count = counts[i];
-        }
-        ep = ce_enemy_pos(e);
-        if (!ep) return;
-
-        /* 唯一职责：大信仰点 —— 只有判据②（「同时掉钱与 P」）走这里；判据① 已由 `on_enemy_death` 处理。
-         * `p_count` 仍然是**判据② 的输入**（dual 要「钱与 P 同时 > 0」），不是「P 点转化」的输入。*/
-        want_big = (main_drop != MOF_DROP_TYPE_MONEY)
-                 && mof_core_wants_big_dual(main_drop, drops, p_count, is_boss);
-        if (want_big) {
-            v = mof_core_big_value(mof_difficulty());
-            if (faith_spawn(ep[0], ep[1], FAITH_TIER_BIG, 1 << FAITH_SLOT_110, v)) {
-                ++s->stat_big_spawn;
-                ce_log("mof: big faith +%d via drop_pre (main %d, money %d, P %d, boss %d, enemy %u)",
-                       (int)v, (int)main_drop, (int)drops, (int)p_count, is_boss,
-                       (unsigned)*(const uint32_t *)(e + CE_ENEMY_ID));
-            } else {
-                ++s->stat_spawn_failed;
-            }
-        }
-    }
-}
-
-/* ---- 满 P 后吃 P 点 → 小信仰点（`on_item_collect`；§7.9 / #48）★ **小信仰点的唯一撒点处** ----
- * ⚠ TH18 **没有「信仰点」这个 item type**（§11 #48）⇒ 只判「这颗是不是 P 点（type 1）」，
- *   撒出来的**一律是我们自建 VM**，不去改原生 type、不动分派表。
- * ★ 2026-09-12 审计裁决：`on_enemy_drop_pre` 里那条**同判据**的撒点已删（理由见那个函数的注释）
- *   ⇒ 一颗 P 点 **只撒一颗**小信仰点、**只加一次** `Δ_110`、**只加一次**连击槽。*/
+/* ---- 满 P 时 P 类道具被**替换**掉之后补的那一颗（`on_item_collect`）★ 同帧竞态网 ----
+ *
+ * ★★ 2026-09-15 收口（用户定案 A）：**主路**已经不在这个函数里了 —— 见
+ *   `faith.c` 的 `faith_convert_full_p_items()`（卡侧每帧在 `on_tick_2` 里调）：满 P 时
+ *   **扫原生道具池、把 P 类道具原位删掉、在它自己的位置撒一颗 type 9 档的点**。
+ *   一手 = `th10:0x41bbf8`（满 P 时 spawn 就把 type 1/4 改写成 9）+ `th10:0x41ba50`
+ *   （满的那一帧全场原位重生 + 上抛）⇒ 原版那份 P 点**根本不存在**（不是「P 点 + 信仰点」两份）。
+ *
+ * 那么这里还留着做什么？**同一帧的竞态网**：引擎的道具 tick（`0x445a80`）有可能在我们扫到那颗
+ * P 道具之前就把它喂给了玩家（玩家贴着敌人站，30 px 内）—— 那一颗**已经**拿过原生的满 P 身价分
+ * （`th18:0x446981` 的分支），如果不再补一颗点，「TH10 里它本来该是信仰点」这件事就丢了。
+ * ⇒ 判据 `mof_core_full_p_replace()`（满 P 且 type ∈ {小 P, 大 P}）在这里再判一次。
+ * ⚠ **正常路径下它不触发**（那颗道具已经被主路删了）⇒ 不会出现「同一颗 P 点既算 P、又加撒一颗」。
+ *
+ * 两处一手细节沿用：
+ *   · 类型号：TH18 的「P 类」= **{1 小 P, 3 大 P}**（一手 `th18:0x44625f` 分派表 + `0x446981` 的满 P 分支），
+ *     对位 TH10 的 type 1 / 4（两者都在 `th10:0x41be28` 的表里 → 9）；TH18 的 type 8（补满火力）
+ *     TH10 没有对应档 ⇒ 不接（`TUNING.md` §2.5）。
+ *   · 档位：**只许 type 9 档**（E-1 硬约束）—— 走 `faith_core_tier_for_source(FAITH_SRC_FULL_P)`，
+ *     不再手写 `FAITH_TIER_*`。
+ * ⚠ 撒出来的**一律是我们自建 VM**（TH18 没有信仰点 type）—— 我们不去改原生 type（改不出绿点，
+ *   只会变成引擎自己的「分数转换点」），而是把原道具删掉（主路）+ 自建点顶上来。
+ * ★ 2026-09-12 审计裁决：`on_enemy_drop_pre` 里那条**同判据**的撒点已删（理由见那个函数的注释）。*/
 static void on_item_collect(ce_card_t *c, uint32_t type, const void *item)
 {
     mof_card_t *s = st(c);
     const float *ip;
-    mof_pick_t pick;
 
+    /* ★★ 2026-09-15：**先无条件记下本颗道具的身份**（P 点火力那一层要它，见下面的 `on_item_commit`）。
+     * `on_item_commit`（`0x44658a`）**不带 payload**，所以只能靠「collect → handler → commit」
+     * 这对断点背靠背的关系自己闩一下（**同 `collect2x.c` 的 `s_stash` 形状**）。
+     * ⚠ 必须写在**任何 return 之前**：早退就等于让上一颗道具的身份漏到这一颗的 commit 上。 */
+    s_p_item = (type == (uint32_t)MOF_P_ITEM_TYPE18);
     if (!s || !item) return;
-    if (CE_CURRENT_POWER() < CE_MAX_POWER_VAL()) return;     /* 不满 P 不转化 */
-    if (type != (uint32_t)MOF_DROP_TYPE_P) return;       /* 只有 P 点（type 1）*/
-    pick = mof_core_pick_p_item((int32_t)MOF_DROP_TYPE_P, 1, CE_CURRENT_POWER(), CE_MAX_POWER_VAL(), 0);
-    if (pick != MOF_PICK_ADD_SMALL) return;
+
+    /* ★★ 2026-09-16 补：**引擎道具也充连击槽**（原来这条通道一条都没接 —— 用户实跑
+     *   「连击值一点也不涨，击破妖精是涨连击值的啊」）。
+     *   表与一手（th10 的 `push` 立即数）全在 `mof_core.h`；这里只接线。
+     *   ⚠ 必须写在下面那个 `mof_core_full_p_replace()` 的早退**之前** —— 满 P 时吃到的
+     *     P 点同样要充能（一手那颗 P 点已经被改写转档，但「收到一颗」这件事仍然发生）。
+     *   ⚠ 不设任何门：一手那 9 个充能点都不看 boss/对话/关卡帧（那三条门只挡**衰减**）。*/
+    {
+        int32_t add = mof_core_item_combo((int32_t)type);
+        if (add > 0) {
+            (void)faith_combo_set(&s->slot, s->slot.combo + add);
+            s->stat_combo_item += add;
+        }
+    }
+    /* 判据全在 core（`mof_core_full_p_replace`）：满 P 且 type ∈ {小 P, 大 P} ⇒ 补一颗。
+     * （`power < max_power` 时它自己返回 0 ⇒ 这里不必再挡一次。）*/
+    if (!mof_core_full_p_replace((int32_t)type, CE_CURRENT_POWER(), CE_MAX_POWER_VAL())) return;
     ip = (const float *)((const uint8_t *)item + CE_ITEM_POS);
-    if (faith_spawn(ip[0], ip[1], FAITH_TIER_SMALL, 1 << FAITH_SLOT_110, FAITH_MOF_SMALL)) {
+    if (faith_spawn(ip[0], ip[1], faith_core_tier_for_source(FAITH_SRC_FULL_P),
+                    1 << FAITH_SLOT_110, FAITH_MOF_SMALL)) {
         ++s->stat_small_spawn;
+        ce_log("mof: 满 P 吃 P 类道具 (type %u) → 小信仰点 +%d（同帧竞态网：主路没来得及删）",
+               (unsigned)type, (int)FAITH_MOF_SMALL);
     } else {
         ++s->stat_spawn_failed;
     }
 }
 
-/* ---- 计分层落笔（§7.8）----
- * ⚠ 只在**自己是被选举的落笔者**时动手（`ce_score_applier() == 110`），
- *   且只读**聚合值**（不读任何别的卡的状态）。写 `*value = PV × 10`，
- *   引擎随后 `SCORE += value / 10` ⇒ 精确得到 PV 分、天然不双计分。
+/* ==================== ★★ 装了 110（或 111）⇒ 一颗 P 点 = +0.05 档火力 ====================
+ * 用户 2026-09-15：「装了 110 或 111，P 点变成 +0.05」。全部推导（一手链、替换 vs 补差、
+ * 为什么落在这个断点、满火力怎么夹、谁落笔）在 `mof_core.h` 的 §P 点火力 那一大段，这里只接线。
  *
- * ★★ 2026-09-12：**第二条通道（乘数附加项）已接**（`sdk_core.h:105-112` / `EVENTS-CONTRACT §3.1`）。
- *   起因：110 与 111 同装时落笔者**永远是 110**（id 最小），而 111 的信号强度只在 111 自己手里；
- *   契约又禁止落笔者读别的卡的状态 ⇒ 110 原来只能把 `signal_value` 写死 0 ⇒
- *   **两卡同装时信号强度整条丢失**（`PV = (基础均值 + ΣΔ) × 擦弹倍率`，少了 `+ 信号强度`）。
- *   现在的链路（**谁声明什么 / 落笔者读哪两个聚合值**，一眼看全）：
- *     · 加数通道 `ce_score_declare(id, …)`：110 声明「基础 50000 + Δ_110」；
- *       111 声明「基础(难度) + Δ_111」⇒ 落笔者读 `ce_score_aggregate()`（Σ）作**被乘数**。
- *     · 乘数通道 `ce_score_mul_declare(id, permille)`：**111 声明自己的信号强度（千分点）**，
- *       110 **不声明**（它没有乘数附加项）⇒ 落笔者读 `ce_score_mul_aggregate()`（Σ 千分点）作**乘数的一部分**。
- *     · **擦弹倍率不进这个通道** —— 它是全局擦弹计数算出来的（`GLOBALS.inner+0x30`），
- *       由 110 自己算（`mof_core_graze_mult()`，本文件 `on_tick_2` ①）、**落笔者自己加**；
- *       若也声明进去就是**同一份擦弹倍率被加两次**（`sdk_core.h:109-110` 的原话）。
- *       ★ 2026-09-12 一手订正（任务 ③）：**这一项是 th11（SA）的机制，TH10 没有擦弹倍率**
- *       （`research-th10-faith-and-graze.md` §1.1）⇒ 它**只在「110 与 111 同装」这一支里**才该出现
- *       （那时它是 111 的一半），110 单装时整项不参与（下面那一支）。
- *   ⇒ 最终式（两张都装）：`PV = (基础均值 + Δ_110 + Δ_111) × (擦弹倍率 + Σ信号强度‰) / 1000`，
- *     由 `mof_core_pv(1, have111, ce_score_aggregate(), s->graze_mult, ce_score_mul_aggregate())` 落笔
- *     （两个乘数在 `mof_core_pv()` 内部相加、再整体 `/1000`，所以这里传的是**千分点**，不是倍数）。
- *   ⚠ 只有 110 单装时 `mof_core_pv()` 走「只装 110」那一支 ⇒ `PV = 信仰_110`、**乘数整项不用**
- *     （MoF 里信仰**就是**最大得点，§7.4；一手 th10 的蓝点线上式 `0x41b4bd`→`0x41b569` 也是
- *     「线上 = 信仰、无乘数」）⇒ 111 不在场时这条通道有没有值都不影响结果。*/
+ * 一句话版：**落点 = `on_item_commit`（`th18:0x44658a`），不是 `on_item_collect`（`0x44625f`）** ——
+ * 原生那一发 `add_power(1)`（`th18:0x446a7b` → `0x4573f0`）发生在两个断点之间，且在 collect 里
+ * 先写会**打乱原生自己的跨档判定**（它拿被改过的值做 `idiv [0x4ccd40]` 比较）⇒ 先写会让升级静默
+ * （子机不按新档重建）。在 commit 里补差：原生那一步逐字节不变，我们这 4 单位的跨档由 core 的
+ * `repop` 标志点名、补一次 `ce_repopulate_options()`（与灵击扣火力同款收尾）。
+ *
+ * ⚠ 两张卡同装只算一次：`mof_core_p_owner()` = **id 最小者落笔** ⇒ 110 恒落笔、111 让位
+ *   （111 侧读 `ce_owned(110)`；本卡自己就是在场的那张 110）。**不是**按帧闩锁：
+ *   `ce_cancel_latch_*` 那种闩锁每帧 reset，而同帧收一撮 P 点是常态 ⇒ 会漏掉同帧的第 2 颗以后。
+ * ⚠ 只碰火力：不写 `MONEY`、不动道具数值 / 不删道具 / 不改分派表。
+ *
+ * ## ★★ 2026-09-15h：补多少 = **共享策略**（`faith_p_topup_take()`），本卡不再自己算
+ *   为什么：111 的支援特技「爱丽丝」按用户口径把 P 点收益改成**平均 +0.025 档**，而**落笔者恒为 110**
+ *   ⇒ 那条减益若只写在 111 的卡侧就会被绕过。现在两张卡都只做「**问策略 → 用它当补值**」：
+ *     · 策略判据 = `faith_registered_mask()` 的 111 位（在场）+ `CE_ADDR_CHARACTER == 魔理沙(1)`（机体门）
+ *       ⇒ 常态 5 单位（+0.05 档）、爱丽丝生效时 **2 / 3 交替**（平均 2.5 单位 = +0.025 档）；
+ *     · 相位只有**一份**（共享件静态区），**只有落笔者推进** ⇒ 本卡在下面 `owner` 检查之后才调它，
+ *       「同一颗道具只推进一次」是既有选举保证的（双卡同装时 111 早退、一个字节都不写）。
+ *   ⚠ 纪律：**本卡不许自己实现 2/3 交替**（两处实现必然漂移）；要改数值就改 `faith_core.h` 的那三个常量。*/
+static void on_item_commit(ce_card_t *c)
+{
+    mof_card_t *s = st(c);
+    const int is_p = s_p_item;
+    int32_t total;
+    mof_p_topup_t t;
+
+    s_p_item = 0;                                  /* 本卡自己的闩：一颗道具只认一次 */
+    if (!is_p) return;                             /* 不是小 P（type 1）⇒ 本层不管 */
+    if (mof_core_p_owner(1, ce_owned(111)) != 110) return;   /* id 最小者落笔（111 在场也归 110）*/
+
+    /* ★★ 问共享策略（**会推进共享相位** ⇒ 只有落笔者可以调，见上面的纪律）。*/
+    total = faith_p_topup_take();                   /* 常态 5 / 爱丽丝生效时 2、3 交替 */
+    /* 此刻原生那 +1 已经落地（handler 跑完了）⇒ 读到的就是 `power_after_native`。*/
+    t = mof_core_p_topup_units(CE_CURRENT_POWER(), CE_MAX_POWER_VAL(), total);
+    if (t.delta <= 0) return;                      /* 满火力 / 引擎没初始化 ⇒ 一个字节都不写 */
+
+    CE_CURRENT_POWER() = CE_CURRENT_POWER() + t.delta;
+    if (t.repop) {
+        /* 原生那一步没报的那次跨档 —— 我们自己补收尾（子机按新火力档重建 + `on_power_level_change` 广播）。
+         * 一手先例：原生 P 例程自己就是「跨档 ⇒ `0x45d5e0`」= `th18:0x446a90`。*/
+        ce_repopulate_options();
+        ce_log("mof: P 点补差跨档 → 火力 %d 单位（%d 档）· ce_repopulate_options()",
+               (int)CE_CURRENT_POWER(), (int)(CE_CURRENT_POWER() / 100));
+    }
+    if (s) ++s->stat_p_topup;                      /* 诊断：补差成功的颗数（不逐颗刷日志；随每 MOF_LOG_EVERY 帧的 `Ptop` 一行）*/
+}
+
+/* ---- ★ 计分层（2026-09-13 重做：声明自己的那一份 G_i）----
+ * 本卡是 TH10 那一族：**信仰**（`mof_core.h` 的信仰槽）。对用户公式而言
+ *   `G_10 = 基础(50000) + Δ_10`（`faith_score_unit(&s->slot)`），
+ * 而且它是**耦合族**——用户规格里唯一带乘数的那一项：
+ *   `(Δ_10 + Δ_11) × (擦弹倍率 + 信号强度)`。
+ *
+ * ★ 重做前这里的问题（`CARD-NUMERIC-INTERACTION-AUDIT.md` §1.6）：
+ *   110 与 111 各自把「**基础 + Δ**」一起声明，而落笔者（id 最小）再用 `mof_core_pv()` 的
+ *   「两卡同装」那一支把两份 base 减掉 —— 那套减法是为了绕开「谁声明了什么」的不确定性，
+ *   一旦 107（id 更小）在场就整条不跑。
+ *   现在通道本身带语义，不需要减法：
+ *     · `ce_score_declare_coupled(id, Δ)` —— **交出去的只是 Δ，基础 G_0 由层出**
+ *       （用户公式 `G = G_0 + Σ G_i`：基础只算一次，落在层里，谁也 dupe 不了）；
+ *     · 耦合系数 `ce_score_coupling_permille()` 由层合成（擦弹倍率来自原生擦弹计数、
+ *       信号强度来自 111 的声明），110 **不读别人的卡状态**。
+ *   ⇒ 本卡不再自守 `ce_score_applier()`，也不再写 `*value`。
+ *
+ * ⚠ `coeff_06`（收取高度）不在这里：引擎自己乘（一手 `th18:0x446bf9`–`0x446cf3`）。
+ * ⚠ `mof_core_pv()` 仍然在，但**本卡不再用它算分**（它的「两卡同装」支是旧口径的补丁）；
+ *   主机单测仍测它，避免删函数把别人的回归面拆了。*/
 static void on_item_score(ce_card_t *c, int32_t *value)
 {
     mof_card_t *s = st(c);
-    int have111;
-    int32_t pv;
 
-    if (!s || !value) return;
-    if (ce_score_applier() != (int)MOF_ID_NUM) return;       /* 不是落笔者 ⇒ 什么都不做 */
-    have111 = ce_owned(111) ? 1 : 0;
-    /* 被乘数 = 聚合的信仰；乘数 = **110 自算的擦弹倍率 + 111 声明的信号强度**（两个都是千分点）。
-     * ⚠ 顺序照 `mof_core_pv()` 的形参：`(have110, have111, aggregate, graze_permille, signal_permille)`。*/
-    pv = mof_core_pv(1, have111, ce_score_aggregate(), s->graze_mult, ce_score_mul_aggregate());
-    /* ⚠ 2026-09-12 审计：先钳到 int32/10 以内再乘 10 —— `mof_core_pv()` 自己只钳到
-     * `0x7fffffff`，直接 `pv * 10` 会**有符号溢出（UB）**。111 侧一直有这个钳（`signal.c`
-     * 的 `if (pv > 200000000)`），110 侧漏了 ⇒ 补齐，口径与 111 一致。*/
-    if (pv > 200000000) pv = 200000000;
-    if (pv <= 0) return;
-    *value = pv * 10;                                    /* 引擎会 /10 ⇒ 精确 PV 分 */
-    (void)c;
+    (void)value;                       /* `*value` 由 SDK 统一写（`ce_score_apply()`）*/
+    if (!s) return;
+    mof_declare_score(s);              /* 每颗道具当场声明一次（值随信仰变，粘性但便宜）*/
 }
 
-/* ---- 灵击（§2.1 / §3.2.1）----
+
+/* ============================ 灵击（★ 2026-09-15 按 TH10 一手重写）============================
+ *
  * 触发：`on_tick_2` 读炸弹键**上升沿**（`INPUT_PRESSED & 0x2`）—— **不是 `on_bomb_spent`**
  * （它在 `0x4203bc`，炸弹**成功花掉之后**才触发，承载不了「库存 == 0」这条分支，§5.5 订正 2）。
- * 库存 == 0 → 本卡自干：自写扣火力（≥2 档、扣 1 档、下限 1.05）+ 全屏消弹 + 伤害源 + 震屏；
- * 库存 > 0 → 交给原生 `do_bomb`（本卡不动）。
- * ⚠ 扣完**必须** `ce_repopulate_options()`（Tsukasa / 商店先例）。*/
-static void mof_bomb(ce_card_t *c, mof_card_t *s)
+ * 库存 == 0 → 本卡自干；库存 > 0 → 交给原生 `do_bomb`（本卡不动）。
+ * ⚠ 扣完**必须** `ce_repopulate_options()`（Tsukasa / 商店先例）。
+ *
+ * ## ★★ 2026-09-15c **决死形态**（「决死 B」；用户口径「灵击==B」「所以灵击也得决死」）
+ *   库存 == 0 且**自机在决死窗口里**（`player+0x476ac == 4`，一手 `th18:0x45d4e4`）时按 B
+ *   ⇒ 本发灵击走**决死形态**：**照常发动**（扣 1 档火力 / 消弹 / 伤害源 / 节奏一字不改）+
+ *   **调 `Player__cancel_impending_death` `th18:0x45d590` 救命**（`mof_cancel_impending_death()`）。
+ *   两条代价口径（一手复核 + 判定依据全部在 `mof_core.h` 的「灵击 → 决死」块，**别在这里重复推理**）：
+ *     · **不扣 −3000 信仰** ✅ 一手（TH10 决死那一支没有 `call 0x412e70`）；
+ *     · **消弹不记「每颗 +10」** 🟡/❓ 自定（引文被本轮复核推翻）—— 开关 = `MOF_BOMB_DEATHBOMB_ACCOUNT`。
+ *   ⚠ **不挂 `on_death_before_deathbomb`（卡虚表 `+0x10`）自动救人**：按 `EVENTS-CONTRACT.md`
+ *     §4.2/§5.2 的救援层顺序（**107 → 117 → 决死 B → 113**），本卡扮演的是「**决死 B**」——
+ *     语义就是**玩家在窗口内按 B**，不是 107/117 那种「中弹即自动爆」。**只做 B 键这条路。**
+ *   ⚠ 一手对照（本轮复核 `th18:0x45c2a9` 那一支）：原生自己的「决死 B」= 窗口没走完时
+ *     `can_bomb`（`0x420420`）→ `do_bomb`（`0x420360`）→ **`0x45c2d7 call 0x45d590`** ⇒
+ *     「按 B 救命」在原生就是「调同一个救命函数」；库存 == 0 时 `can_bomb` 返回 0 ⇒ 原生这条路
+ *     整条不走（`0x45c2ca je 0x45c3d9` 落到扣命）—— 这正是本卡补上的缺口。
+ *   ★ **帧内时序（一手登记号；这决定了「不会太晚」）**：卡的 tick 在 **AbilityManager = 更新线 `0x16`**，
+ *     而 `Player__on_tick`（决死窗口那条路 + `+0x0c` 广播）在 **Player 线 `0x17`** ⇒ **卡的 tick 先跑**
+ *     （两个优先级都由仓库里的一手注释登记：`sdk.c` 的 `optpose` 段与 `trance_core.h` §5.4）。
+ *     两个后果：① 中弹那一帧（Player 线里 state → 4）我们**看不到**（我们的 tick 已经跑过了）⇒
+ *     最早在**下一帧**才认得出窗口 —— 窗口有 8 帧，够用；而且两边读的是**同一个**
+ *     `INPUT_PRESSED`（`0x4ca434` = `(held ^ prev) & held` = 本帧刚按下）⇒ 原生那支要的也是
+ *     「**窗口内的新按下**」，我们的「上升沿」触发与原生**同义**（不是「按住就行」）；
+ *     ② 救命的调用**早于**同一帧 Player 线的扣命判定 ⇒ 被救的那一帧引擎走 case 1（存活），
+ *     **不会**扣命、**不会**广播 `+0x0c`（113 与 111 的 miss 记账因此天然不触发）。
+ *
+ * ## 发动时（`mof_bomb_start`）抄一手的四件事
+ *   ① 扣 1 档火力（`mof_core_power_spend`；门槛/下限是**用户裁决**，不是 TH10 原版，见 `mof_core.h`）；
+ *   ② **非决死**灵击 **信仰 −3000**（一手 `th10:0x425a15`，`FAITH_REDUCE_BOMB`）；
+ *      ★ 决死形态扣 0（`mof_bomb_form_faith_kind()` 给 `FAITH_REDUCE_NONE`，一手依据见上）；
+ *   ③ **作废当前符卡奖励**（一手 `th10:0x405500`，被 `Bomb::start` 在 `th10:0x405982` 调）：
+ *      门 = `[spellcard+0x3738] >= 60`（本次攻击已过 60 帧）⇒ 命中则
+ *      `[spellcard+0x3790] = 0`（奖励值）+ 清 `[spellcard+0x378c]` 的 **bit1**（奖励存活位）。
+ *      TH18 的同位字段/同位：`CE_SPELL_BONUS`（`th18:0x7c`）与 `CE_SPELL_FLAG_BONUS`
+ *      （`th18:0x78` bit1，一手 `th18:0x42a7ed` 收符卡时读它 + `0x42a801 mul [edi+0x7c]` 计分）
+ *      ⇒ **同一件事、同一位**，先例 = `cards/judgment.c`（神之宣告）的同一对写。**这是复刻。**
+ *   ④ **RANK −= 0x80、钳 [−0x400, 0x400]**（一手 `th10:0x405987`–`th10:0x4059b8`）。
+ *      ⚠ TH18 的 `0x4ccd08` 是**死字段**（只有 2 条读、都是 ECL global getter、没人写、没有 ECL 用它）
+ *      ⇒ **写了没有实际效果**；仍照一手写（复刻旋钮），理由与出处见常量块的注释 + `TUNING.md` §2.5。
+ *   ⑤ 音效：`se_slash.wav`（一手 `th10:0x405942` 播 id `0x26` = `se_slash.wav`）—— TH18 的同一 wav
+ *      是 id `0x2c`/`0x2d` ⇒ 取 `0x2c`（★ 复刻同一 wav；❓ 两个 id 的取舍登记 `TUNING.md` §2.5）。
+ *
+ * ## 之后每帧（`mof_bomb_tick`）：消弹圈 + 中心上移 + 每敌每帧一笔伤害
+ *   半径 = `mof_core_bomb_radius_centi(已过帧)`（16.0 → 目标、120 帧线性、其后保持）；
+ *   中心 = 发动瞬间的自机坐标，**y 每帧上移** 0.5/1.0/1.3（一手 `th10:0x4057b6`–`0x4057de`）；
+ *   消弹 = `ce_cancel_radius(中心, 半径, 不限, mode 0)`（**引擎自己就带「敌弹自身半径 × 0.5」那一条**：
+ *     `th18:0x429370` 的命中式 = `dist² ≤ (弹半径(th18:0x658)×0.5 + R)²`，与 TH10 `th10:0x40818d` 的
+ *     `fadd` 同义 ⇒ 我们**不需要**自己加 ⇒ 这一条是复刻，不是自定）；
+ *   伤害 = 每帧**新撒一个伤害源**（`ce_damage_rect`），数值 = `mof_core_bomb_damage(...)`。
+ *
+ * ## ★ 伤害为什么是「独立伤害源」而不是「自机弹增伤」（**❓ 自定，必须写清**）
+ *   · **TH10 的语义**：灵击**不加**自机弹的倍率，而是往「玩家→敌人」的伤害累加器里**加一笔数**
+ *     （`th10:0x428891` 回调 `0x4059f0` → `th10:0x42889a add`），**每敌每帧一次**、**按位置分档**
+ *     （圈内/圈外）、且**不开火也照样掉血**。⇒ 它是「每敌每帧的额外伤害」，不是倍率、也不是独立源。
+ *   · **TH18 侧两个候选通道**：
+ *       ① `bullet_damage_permille`（自机弹伤害层）：**全局连乘、不区分位置、且只在开火时有效**
+ *          ⇒ 表达不了「圈内/圈外」、更表达不了「不开火也掉血」（一手最显眼的那半边）。
+ *       ② `ce_damage_rect`（`th18:0x45dfa0` 的**独立伤害源**池）：**每帧每敌一笔、按位置（OBB）命中**、
+ *          与开火无关 ⇒ **形状上更接近**一手的「每敌每帧一笔额外伤害」。
+ *     ⇒ 选 ②。**但它不是复刻**，三处差异逐条登记（`TUNING.md` §2.5）：
+ *       (a) 载体不同：TH10 是「加进伤害累加器的一笔」，TH18 是**独立伤害源**（走伤害源池 →
+ *           每帧每敌 OBB 命中 ⇒ 与自机弹**共用**每帧上限 `player+0x47984`，TH10 不共用）；
+ *       (b) 形状：TH10 的圈是**圆**（`d² < r²`），TH18 的伤害源是**矩形** ⇒ 我们用边长 `2r` 的外接方形，
+ *           角落最多多覆盖 41%（消弹那一侧仍是引擎的真圆，不受影响）；
+ *       (c) 数值：TH10 的 raw 表经 `/5`（+符卡 `/5`）后是 **1..7/帧**（见 `mof_core_bomb_damage()`），
+ *           我们**原样搬**（两作的 boss 阶段 HP 同量级：TH18 `st06bs.ecl` 的非符 2300–3100、
+ *           符卡 13300–17800；游玩区同为 384×448）—— 但两作的伤害量纲没有逐条对账 ⇒ 🟡。
+ *       (d) 「圈外」那一档在 TH10 是**互斥**的（圈内 38 / 圈外 20），而两个伤害源叠加是**相加**的
+ *           ⇒ 我们把内圈源的数值写成 `内圈 − 圈外`，于是「圈内 = 内 + (内−外 = 0 时靠外圈)」……
+ *           精确说：**圈内总伤害 = 内圈档、圈外总伤害 = 圈外档**（见 `mof_bomb_tick()` 的实现），
+ *           从而**逐条复现互斥分档**（当圈外档为 0 时只撒内圈源）。
+ *       (e) 激光：TH10 的 `sub_405ac0` 用**同一个半径**消激光（`th10:0x41c800`）——TH18 侧**没有**
+ *           半径消激光的原语（`ce_cancel_all_bullets` 是「全屏消激光」`th18:0x449090`，语义不符）
+ *           ⇒ **本卡不消激光**（未做，登记）。
+ *       (f) 视觉：TH10 的灵击 VM 自己有贴图（`bullet.anm` script400 的扩散圈），本卡**没有**视觉
+ *           （TH18 无对应贴图；要做需要资产层，登记为未做）。
+ *   · 频率与寿命：一手 = 「灵击 anm VM 存活期」🟡（脚本 time 累加 296 帧，尾部还有 80×30 帧的计数循环）
+ *     ⇒ `MOF_BOMB_FRAMES` = 296（🟡，登记）。*/
+
+/* 取消本次死亡（`Player__cancel_impending_death` `th18:0x45d590`）。
+ * 形状照 `cards/senro.c` 的 `senro_cancel_impending_death()`（判空后 thiscall 调用）。
+ * ⚠ 它只写玩家状态机（状态 → 1 + 无敌 60 帧），**不碰命数 / 不碰 `+0x47908` 决死窗口帧数**。*/
+static void mof_cancel_impending_death(void)
+{
+    void *p = CE_PLAYER();
+    if (p) ((void (__attribute__((thiscall)) *)(void *))(uintptr_t)MOF_FN_CANCEL_IMPENDING_DEATH)(p);
+}
+
+/* 发动：抄一手的四件事 + 记录本发的曲线参数（半径目标 / 上移量 / 角色档）。
+ * ★ `by_hit` = 形态（`MOF_BOMB_BY_PRESS` / `MOF_BOMB_BY_HIT`）—— 由 `on_tick_2` **检测决死窗口**
+ *   之后传进来（卡侧只做「检测 → 传参」，口径全在 `mof_core.h`）。*/
+static void mof_bomb_fx_dump(const char *tag, mof_bomb_t *b);   /* 定义在下面（诊断用）*/
+
+static void mof_bomb_start(ce_card_t *c, mof_card_t *s, int32_t by_hit)
 {
     const float *pp = ce_player_pos();
-    float pos[3];
     mof_power_t pw = mof_core_power_spend(CE_CURRENT_POWER());
-    int n = 0;
+    int reimu = (*(volatile int32_t *)MOF_ADDR_CHARACTER == 0);
+    int spell_now = ce_spell_active();
 
     (void)c;                                             /* 本函数不用卡对象（回调签名统一）*/
 
-    if (!pp || !pw.ok) return;                           /* 火力不够 ⇒ 什么都不做（照原作）*/
+    /* ★ TH10 的两道前置门（一手 `th10:0x425964`/`th10:0x425971`/`th10:0x425992`）：
+     *   · `[bomb+0x28] != 0`（**灵击进行中**）⇒ 不再发动 —— 我们的对位 = `bomb.left > 0`
+     *     （少了这一条，连按 X 会在同一发里反复扣火力、反复重算曲线）；
+     *   · `[gui+0x9eb8] != 0`（**对话 VM 忙**）⇒ 不发动（`CE_GUI_MSG_ACTIVE()`，engine.h 一手）。
+     * 剩下的那道「无 GUI 不干」在 TH18 里由 `on_tick_2` 的调用条件天然满足（没有 GUI 就没有卡机器）。
+     * ⚠ **决死形态也走这三道门** —— 一手 TH10 的决死支同样有这三道门 + 同样的火力门槛
+     *   （决死支的 `idiv` 门槛在 `th10:0x425bfe`/`0x425c0d`）；门槛不过 ⇒ **不发动、也不救命**
+     *   （即「照常死」），下面给一行日志说明为什么没救。*/
+    if (s->bomb.left > 0) return;
+    if (CE_GUI_MSG_ACTIVE()) return;
+    if (!pp || !pw.ok) {                                 /* 火力不够 ⇒ 什么都不做（照原作）*/
+        if (by_hit) ce_log("mof: 灵击发动（决死）**没发动**：火力 %d 不够门槛（power_ok=0）⇒ 本次不救命",
+                           (int)CE_CURRENT_POWER());
+        return;
+    }
+
+    mof_bomb_form_start(&s->bomb.form, by_hit);          /* ★ 记形态（by_hit + 消弹颗数归零）*/
 
     *(int32_t *)CE_ADDR_CURRENT_POWER = pw.new_power;    /* ★ 自写扣法（原生会拒绝、且只能整档扣）*/
     ce_repopulate_options();                             /* 子机按新档重建（必须）*/
 
-    pos[0] = pp[0]; pos[1] = pp[1]; pos[2] = pp[2];
-    /* 全屏消弹：**用 `ce_cancel_radius` 的返回值**（`ce_cancel_all_bullets()` 是 void、数不出来，
-     * §5.5 订正 3）。本照「本帧已消过弹」的闩锁（EVENTS-CONTRACT §5.2 细则 2）。*/
-    if (ce_shoot_cancel_claim((uint32_t)MOF_ID_NUM)) {
-        n = ce_cancel_radius(pos, MOF_BOMB_CANCEL_R, MOF_BOMB_CANCEL_MAX, 0);
-        if (n > 0) {
-            faith_cancel_account(n);                     /* → 微信仰点每颗 +10（进 Δ_110）*/
-            mof_declare_score(s);
+    /* ③ 作废当前符卡奖励（复刻一手 `th10:0x405500`，`Bomb::start` 在 `th10:0x405982` **无条件**调它）。
+     *   一手的门只有一条：`cmp [spellcard+0x3738],0x3c` ⇒ **本次攻击已过 ≥60 帧**（函数体内**没有**
+     *   符卡进行位的测试）。我们额外要求「符卡进行中」—— 差别只在「非符攻击里也去清一遍奖励」，
+     *   而那时奖励本来就是 0 ⇒ **无可观察差异**（更保守：绝不会在非符阶段动奖励位）。*/
+    if (spell_now && s->spell_frames >= (int32_t)MOF_BOMB_BIG_BOMB_FRAMES) {
+        uint8_t *sp = CE_SPELLCARD();
+        if (sp) {
+            *(uint32_t *)(sp + CE_SPELL_FLAGS) &= ~(uint32_t)CE_SPELL_FLAG_BONUS;   /* 清 bit1（奖励存活）*/
+            *(int32_t *)(sp + CE_SPELL_BONUS) = 0;                                  /* 奖励值归零 */
         }
     }
-    /* 全场伤害 + 震屏。❓ 参数是占位常量（`mof_core.h` 的 MOF_BOMB_DMG*），TODO 抄 th10 灵击 */
+    /* ④ RANK −= 0x80（复刻一手；⚠ TH18 是死字段 ⇒ 无效果，见常量块注释）*/
     {
-        float d = MOF_BOMB_CANCEL_R;
-        ce_raise_damage_cap(MOF_BOMB_DMG);
-        ce_damage_rect(pos, 0.0f, MOF_BOMB_DMG_LIFE, MOF_BOMB_DMG, d, d);
+        int32_t r = *(volatile int32_t *)MOF_RANK_ADDR - MOF_RANK_BOMB_DROP;
+        if (r > MOF_RANK_MAX) r = MOF_RANK_MAX;
+        if (r < MOF_RANK_MIN) r = MOF_RANK_MIN;
+        *(volatile int32_t *)MOF_RANK_ADDR = r;
     }
-    ce_screen_shake(MOF_BOMB_SHAKE_TIME, MOF_BOMB_SHAKE_START, MOF_BOMB_SHAKE_END);
+
+    /* ⑤ 音效（TH10 `se_slash.wav` ↔ TH18 同 wav，id 0x2c）*/
+    ce_play_sound(MOF_BOMB_SE, pp[0]);
+
+    /* 本发的曲线参数（一手 `Bomb::start` `th10:0x4058d9`–`0x405917` 选脚本：
+     * 符卡中 → 64.0；否则灵梦 → 160.0、魔理沙 → 112.0。
+     * ⚠ TH10 的「符卡中」还要求 `[spellcard+0x3788] ∈ 0x5d..0x60 ∪ {0x6d}`（**具体哪几个攻击**）
+     *   ——TH18 没有这个字段的对位 ⇒ 我们只用「符卡进行中」这一半（近似，登记 `TUNING.md` §2.5）。*/
+    s->bomb.target_centi = spell_now ? MOF_BOMB_R_SPELL_CENTI
+                                     : (reimu ? MOF_BOMB_R_REIMU_CENTI : MOF_BOMB_R_MARISA_CENTI);
+    s->bomb.rise_milli  = mof_core_bomb_rise_milli(spell_now, reimu);
+    s->bomb.reimu       = reimu;
+    s->bomb.x           = pp[0];
+    s->bomb.y           = pp[1];
+    s->bomb.left        = MOF_BOMB_FRAMES;
+    s->bomb.elapsed     = 0;
+    s->bomb.frames      = 0;
+    s->bomb.dmg_frames  = 0;
+    s->bomb.ring_fading = 0;
+    s->bomb.spark_tick  = 0;
+
+    /* ★★ 2026-09-16k 视觉①：**消弹范围环**（脚本 279 = TH18 原生 `ability.anm` script35 的配方，
+     *   半径由卡侧逐帧给 px ⇒ 「可见半径 = 参数 × scale」，一手 `th16:0x4626eb`）。
+     *   位置在 `mof_bomb_tick()` 里每帧跟着灵击中心走（中心每帧上移）。*/
+    {
+        float c0[3];
+        c0[0] = s->bomb.x; c0[1] = s->bomb.y; c0[2] = 0.0f;
+        s->bomb.ring_vm = ce_anm_spawn(CE_ABILITY_ANM(),
+                                       CE_ANM_ABILITY_SCRIPT_BOMB_CLEAR_RING, 13);
+        if (s->bomb.ring_vm) {
+            ce_anm_set_pos(s->bomb.ring_vm, c0[0], c0[1], c0[2]);
+            ce_anm_set_scale(s->bomb.ring_vm, MOF_BOMB_R_START_CENTI * 0.01f,
+                             MOF_BOMB_R_START_CENTI * 0.01f);
+        }
+        /* ★ 2026-09-16p：**电流边**（脚本 293 = TH10 `sprite(sprite362)` + `texCircle(32)` 的竖条环）。
+         *   用户口径：「th10 的灵击…**边缘有类似于电流的特效**」。与 279 同层、同半径、同淡出
+         *   ⇒ 叠在实心盘上就是「一圈带分段的边」。⚠ `texCircle` 在世界列表里没有先例 🟡
+         *   ⇒ 看不见/画得怪就把下面这三行删掉（实体盘仍然在）。*/
+        s->bomb.strip_vm = ce_anm_spawn(CE_ABILITY_ANM(),
+                                        CE_ANM_ABILITY_SCRIPT_MOF_BOMB_RING_STRIP, 13);
+        if (s->bomb.strip_vm) {
+            ce_anm_set_pos(s->bomb.strip_vm, c0[0], c0[1], c0[2]);
+            ce_anm_set_scale(s->bomb.strip_vm, MOF_BOMB_R_START_CENTI * 0.01f,
+                             MOF_BOMB_R_START_CENTI * 0.01f);
+        }
+        ce_log("mof: 灵击范围环起 VM（id %u，脚本 %d，层 13，起点半径 %.2f px）",
+               (unsigned)s->bomb.ring_vm, (int)CE_ANM_ABILITY_SCRIPT_BOMB_CLEAR_RING,
+               (double)(MOF_BOMB_R_START_CENTI * 0.01f));
+        mof_bomb_fx_dump("起", &s->bomb);
+    }
 
     s->spell_watch.bombed = 1;                           /* 本张符卡期间放过灵击 ⇒ 不算全避 */
     ++s->stat_bomb;
-    faith_slot_reduce(&s->slot, FAITH_REDUCE_BOMB);       /* 非决死灵击 −3000（§7.5）*/
+    /* ★★ 决死形态：**救命**（`th18:0x45d590`）。位置选在这里（自带门都过了、火力也扣了）——
+     *   「照常发动 + 救命」是一个动作；门槛不过时上面已经 return（不救命，照常死）。
+     *   ⚠ 放在消弹闩锁**之前**（第 ① 步在 `mof_bomb_tick` 里）：同帧若别的卡已经认领了消弹闩锁，
+     *   我们这发**照样要救命** —— 救命与「本帧谁消弹」是两件事。*/
+    if (by_hit) {
+        mof_cancel_impending_death();
+        ++s->stat_bomb_dbf;
+    }
+    /* ② 信仰：主动 −3000（一手 `th10:0x425a15`）；**决死 = 0**（一手：决死那一支没有 `call 0x412e70`）。
+     *   `faith_slot_reduce(s, FAITH_REDUCE_NONE)` 恒返回 0 ⇒ 这里不必分支。*/
+    faith_slot_reduce(&s->slot, mof_bomb_form_faith_kind(&s->bomb.form));
     mof_declare_score(s);
-    ce_log("mof: 灵击 -1 档 (power %d -> %d), cancelled %d, faith %d, combo %d",
-           (int)CE_CURRENT_POWER(), (int)pw.new_power, n, (int)faith_slot_total(&s->slot),
-           (int)s->slot.combo);
+    ce_log("mof: 灵击发动%s (power %d -> %d, %s, target r=%.1f, rise=%.2f/f, frames %d, faith %d)",
+           mof_bomb_form_is_deathbomb(&s->bomb.form) ? "（决死）" : "",
+           (int)CE_CURRENT_POWER(), (int)pw.new_power, spell_now ? "spell" : (reimu ? "reimu" : "marisa"),
+           (double)((float)s->bomb.target_centi * 0.01f), (double)((float)s->bomb.rise_milli * 0.001f),
+           (int)s->bomb.left, (int)faith_slot_total(&s->slot));
+}
+
+/* 每帧推进一发灵击：消弹圈（半径随帧长）+ 中心上移 + 每敌每帧一笔伤害。*/
+/* ★ 2026-09-16m 诊断：把范围环 VM 的关键字段打一行 —— 用户两次实跑报「起了 VM 却看不见」，
+ * 下一次一眼就能分辨「字段不对（我们的 bug）」还是「字段都对但不画（图元/层的问题）」。
+ * 对照物 = `signal/opt:` 那行（同一批字段、那支 VM 实跑看得见）。*/
+static void mof_bomb_fx_dump(const char *tag, mof_bomb_t *b)
+{
+    uint8_t *vm = b->ring_vm ? ce_anm_get_vm(b->ring_vm) : 0;
+
+    if (!vm) {
+        ce_log("mof/fx: %s ring vm=%u **alive=0**（VM 已经不在了）", tag, (unsigned)b->ring_vm);
+        return;
+    }
+    ce_log("mof/fx: %s ring vm=%u sprite=%d scale=(%.2f,%.2f) pos=(%.1f,%.1f) c1=%08x c2=%08x elapsed=%d",
+           tag, (unsigned)b->ring_vm,
+           (int)*(const int32_t *)(vm + CE_ANM_VM_SPRITE_ID),
+           (double)((const float *)(vm + CE_ANM_VM_SCALE))[0],
+           (double)((const float *)(vm + CE_ANM_VM_SCALE))[1],
+           (double)((const float *)(vm + CE_ANM_VM_POS))[0],
+           (double)((const float *)(vm + CE_ANM_VM_POS))[1],
+           *(const uint32_t *)(vm + CE_ANM_VM_COLOR1),
+           *(const uint32_t *)(vm + CE_ANM_VM_COLOR2),
+           (int)b->elapsed);
+}
+
+/* ★★ 2026-09-16k：灵击视觉的收尾（**长持续效果铁律**，`METHOD.md`）。
+ * 脚本 279 **自己不会死**（`stop()` 之后只画，寿命完全由卡侧定）⇒ 三条路都必须显式收：
+ *   ① 灵击正常走完（`mof_bomb_tick()` 末尾）；② 删卡 / 局末（`mof_clear()` 的 `memset` **之前** ——
+ *   删卡发生在**商店**里，那一刻 `on_tick_2` 不会再跑，只有 `on_delete` 跑得到）；
+ *   ③ 换关（`on_stage_start` 把 `bomb.left` 清零那条路）。
+ * 火星（280/281）是**一次性** VM（脚本自己 `wait` + `delete()`，最长 43 帧）⇒ 不用管。*/
+static void mof_bomb_fx_kill(mof_bomb_t *b)
+{
+    if (b->ring_vm) {
+        ce_anm_delete(b->ring_vm);
+        b->ring_vm = 0;
+    }
+    if (b->strip_vm) {                      /* ★ 2026-09-16p：竖条环一起收（长持续效果铁律）*/
+        ce_anm_delete(b->strip_vm);
+        b->strip_vm = 0;
+    }
+    b->ring_fading = 0;
+    b->spark_tick  = 0;
+}
+
+static void mof_bomb_tick(mof_card_t *s)
+{
+    float center[3];
+    float r;
+    int32_t r_centi, dmg_in, dmg_out, dmg_src, n;
+    int boss_alive, spell_now, big_bomb, reimu;
+
+    if (s->bomb.left <= 0) return;
+
+    /* 中心先上移，再拿它消弹/放伤害源（一手 `th10:0x4057b6`–`0x4057de` 的顺序：
+     * y -= 上升量 → `th10:0x405813` 取半径 → `th10:0x405816` 消弹）。*/
+    s->bomb.y -= (float)s->bomb.rise_milli * 0.001f;
+    r_centi = mof_core_bomb_radius_centi(s->bomb.elapsed, s->bomb.target_centi);
+    r = (float)r_centi * 0.01f;
+    center[0] = s->bomb.x;
+    center[1] = s->bomb.y;
+    center[2] = 0.0f;
+
+    /* ① 消弹（半径 = 本帧的 r；mode = **0 = 纯删除**）。
+     * 为什么是 mode 0：TH10 的消弹**不撒点道具**，而是每颗撒一颗 type 8 微信仰点（`th10:0x4081e7`），
+     * 那一颗由我们的 `mof_on_cancel()` 记 +10 信仰 ⇒ 用 mode 1 会让引擎另撒 type 9–0xe 点道具、
+     * 与本卡的 §2.2 口径**双计**（先例 `senro.c` 的 `SENRO_CANCEL_MODE` 注释同款理由）。
+     * ⚠ 「本帧已消过弹」的闩锁：每帧 claim 一次；一颗都没消就把闩锁交回（2026-09-13 的原生卡冲突审计）。
+     * ★ 2026-09-15c：**入不入信仰账**改由 `mof_bomb_form_cancel_accounts()` 回答（**决死形态**那条 🟡
+     *   开关 = `MOF_BOMB_DEATHBOMB_ACCOUNT`，全论证在 `mof_core.h`）。颗数**无论入不入账都记**在
+     *   `form.cancels` 里 ⇒ 实跑能看出「不记账」这一档到底吞了多少颗（诊断，不参与数值）。*/
+    if (ce_shoot_cancel_claim((uint32_t)MOF_ID_NUM)) {
+        /* ★★ 2026-09-16p 用户口径：「**th10 灵击消弹应当是掉落中信仰点并自动收集的**」
+         *   ⇒ **先在圈内每颗弹自己的位置撒一颗微档信仰点（值 +10 = TH10 的 type 8）并整池切成朝自机飞**，
+         *     再删弹。`faith_cancel_drop_dots()` 是共享件（110/111 同一份），一手的地址链写在它上面。
+         *   ⚠ 与旧写法的差别：**不再** `faith_cancel_account(n)` 直接进账 —— 那些信仰现在由
+         *     **被吸进来的点**在拾取回调里入账（与别的信仰点同一条路，不双计）。
+         *     `mof_declare_score()` 也随之后移：拾取回调里会自己声明（`mof_on_pickup`）。*/
+        /* ★★★ 2026-09-16q 用户口径：「**微档点可以完全认为是 th18 消弹点吧**」
+         *   ⇒ 消弹**改成 mode 1**：让**引擎自己**在每颗弹的位置撒它自己的消弹点
+         *     （一手 = `engine/bullet/th18/01-cancel-to-item.md` §2.1：**mode 1 撒 type 9**，
+         *      角 `rand×10° − π/2`、速 2.2 —— 与我们原来手工撒的那一颗**同位同量纲**）。
+         *   ⇒ 于是**撤掉两条自造件**：① 不再 `faith_cancel_drop_dots()`（那是我上一批自己扫池撒点的临时件）；
+         *     ② 不再 `faith_cancel_account(n)` 直接记账 —— 信仰改由**吸进来的那些原生消弹点**
+         *     在拾取回调里入账（我们本来就把 type 9 档当我方的「绿点·中」档，见 `mof_core.h` 的 E-1）。
+         *   ⚠ 这正是原文档（`AUDIT`/本文件旧注释）里说的「用 mode 1 会与本卡 §2.2 口径双计」那条取舍 ——
+         *     现在按用户口径**选 mode 1**、并同步去掉那一侧的记账 ⇒ 不双计。*/
+        n = ce_cancel_radius(center, r, MOF_BOMB_CANCEL_MAX, 1);
+        if (n > 0) {
+            mof_bomb_form_cancel_note(&s->bomb.form, n);
+            if (!mof_bomb_form_cancel_accounts(&s->bomb.form)) ++s->stat_cancel;
+        } else {
+            (void)ce_cancel_latch_release((uint32_t)MOF_ID_NUM);
+        }
+        if (r > 0.0f && (s->bomb.elapsed % 30) == 0) {
+            ce_log("mof: 灵击消弹圈 r=%.2f 本帧 cancelled %d（mode 1 = 引擎自己撒消弹点 type 9）",
+                   (double)r, (int)n);
+        }
+    }
+
+    /* ② 伤害：每帧一个新源（一手「每敌每帧一笔」；`enm_compute_damage_sources` `th18:0x45f0f0`
+     *    的 tag 守卫让**一个源对同一敌人只结算一次** ⇒ 每帧一个新源 = 每帧一笔，
+     *    寿命 2 帧只是给「先建后结算」留一帧余量，先例 `cards/broken_core.c` 的 AUDIT U9）。*/
+    boss_alive = mof_boss_alive();
+    spell_now  = ce_spell_active();
+    big_bomb   = spell_now && s->spell_frames >= (int32_t)MOF_BOMB_BIG_BOMB_FRAMES;
+    reimu      = s->bomb.reimu;
+
+    /* 圈内档 / 圈外档（TH10 的两档是**互斥**的：`th10:0x405a25` 的 `fcompp/test/jne` 决定走哪一支）*/
+    dmg_in  = mof_core_bomb_damage(1, boss_alive, spell_now, big_bomb, reimu);
+    /* 圈外档只在「有 boss」或「符卡中」时非 0（`th10:0x405a68`–`th10:0x405ab7`）*/
+    dmg_out = (boss_alive || spell_now) ? mof_core_bomb_damage(0, boss_alive, spell_now, big_bomb, reimu) : 0;
+
+    if (dmg_in > 0 || dmg_out > 0) ce_raise_damage_cap(MOF_BOMB_DMG_CAP);
+
+    /* 把「互斥分档」用两个源**精确**表达：外圈源覆盖全游玩区（= TH10 的「圈外」），
+     * 内圈源只补差额（`内圈档 − 圈外档`）⇒ 圈内敌机吃到的是**内圈档**（不是两档相加）。
+     * 当圈外档为 0（没有 boss、也不在符卡里）时内圈源就是内圈档本身。*/
+    dmg_src = dmg_in - dmg_out;
+    if (dmg_src > 0) {
+        float side = r * 2.0f;                    /* 外接方形（一手是圆 ⇒ 角落多覆盖，见文件头 (b)）*/
+        if (ce_damage_rect(center, 0.0f, MOF_BOMB_DMG_SRC_LIFE, dmg_src, side, side)) ++s->bomb.dmg_frames;
+    }
+    if (dmg_out > 0) {
+        float pc[3];
+        pc[0] = MOF_PLAYFIELD_CX; pc[1] = MOF_PLAYFIELD_CY; pc[2] = center[2];
+        if (ce_damage_rect(pc, 0.0f, MOF_BOMB_DMG_SRC_LIFE, dmg_out,
+                           MOF_PLAYFIELD_W, MOF_PLAYFIELD_H)) ++s->bomb.dmg_frames;
+    }
+
+    ++s->bomb.elapsed;
+    ++s->bomb.frames;
+
+    /* ★★ 2026-09-16k 视觉②：环每帧跟着「本帧的真半径」长（一手：TH10 的灵击半径就是那支 VM 的
+     *   `scale.y`，`th10:0x405813`）；半径长满那帧起淡出（= TH10 script400 的 `scaleTime(120, …)`）。
+     *   火星按 `MOF_BOMB_SPARK_EVERY` 帧一红一蓝（脚本 280/281 = TH10 script398/399 逐条移植）。*/
+    if (s->bomb.ring_vm) {
+        if (!ce_anm_get_vm(s->bomb.ring_vm)) {
+            s->bomb.ring_vm = 0;                         /* 脚本自己被删了/被打断 ⇒ 清 id */
+        } else if (s->bomb.ring_fading) {
+            /* 已发淡出：不再写 scale（写也没用，alpha 已经在走）；30 帧后还没死就硬删兜底 */
+            if (s->bomb.elapsed > MOF_BOMB_RING_FADE_AT + 30) {
+                ce_anm_delete(s->bomb.ring_vm);
+                s->bomb.ring_vm = 0;
+            }
+        } else {
+            if (s->bomb.elapsed >= MOF_BOMB_RING_FADE_AT) {
+                ce_anm_interrupt(s->bomb.ring_vm, 1);    /* 20 帧淡出 → 脚本自删 */
+                s->bomb.ring_fading = 1;
+            }
+            ce_anm_set_pos(s->bomb.ring_vm, center[0], center[1], center[2]);
+            (void)ce_anm_set_scale(s->bomb.ring_vm, r, r);
+            if (s->bomb.strip_vm && ce_anm_get_vm(s->bomb.strip_vm)) {   /* ★ 竖条环同驱 */
+                ce_anm_set_pos(s->bomb.strip_vm, center[0], center[1], center[2]);
+                (void)ce_anm_set_scale(s->bomb.strip_vm, r, r);
+            }
+            if (s->bomb.elapsed == MOF_BOMB_RING_FADE_AT + 2) mof_bomb_fx_dump("长满后", &s->bomb);
+        }
+    }
+    if (++s->bomb.spark_tick >= MOF_BOMB_SPARK_EVERY) {
+        uint32_t red  = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_MOF_BOMB_SPARK, 13);
+        uint32_t blue = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_MOF_BOMB_SPARK_BLUE, 13);
+        s->bomb.spark_tick = 0;
+        if (red)  ce_anm_set_pos(red,  center[0], center[1], center[2]);
+        if (blue) ce_anm_set_pos(blue, center[0], center[1], center[2]);
+    }
+
+    if (--s->bomb.left <= 0) {
+        mof_bomb_fx_dump("结束前", &s->bomb);
+        mof_bomb_fx_kill(&s->bomb);                      /* 环收干净（脚本自己不会死）*/
+        ce_log("mof: 灵击结束（%d 帧，伤害源 %d 帧，半径 %.1f，中心 y %.1f，撒信仰点 %d 颗）",
+               (int)s->bomb.frames, (int)s->bomb.dmg_frames,
+               (double)r, (double)s->bomb.y, (int)s->bomb.faith_dots);
+        s->bomb.left = 0;
+    }
 }
 
 /* ---- 每帧 ---- */
@@ -500,9 +1252,13 @@ static int on_tick_2(ce_card_t *c)
     /* ① 擦弹 → 擦弹倍率（§7.5：`min(graze × 0.0001, 8.99)`）
      * ★ 2026-09-12 一手订正（任务 ③）：**这是 th11（SA）的式子，TH10 没有擦弹倍率**
      *   （`research-th10-faith-and-graze.md` §1.1：`0.0001f` 只作 `fpatan` 的 epsilon、
-     *   全 exe 无 `8.99f`、13 个计分口无一处读擦弹）⇒ 这里算出来的值**只服务「110 与 111 同装」
-     *   那一支**（那时乘数 = 擦弹倍率 + 111 声明进来的信号强度，是契约 §7.4 的式子）；
-     *   **110 单装时它整项不参与**（`mof_core_pv()` 的「只装 110」那一支 = `aggregate`）。
+     *   全 exe 无 `8.99f`、13 个计分口无一处读擦弹；§6 更进一步：TH10 **连擦弹计数器都不存在**）。
+     * ⇒ 这里算出来的值**只服务「110 与 111 同装」那一支**（那时乘数 = 擦弹倍率 + 111 声明进来的
+     *   信号强度，是契约 §7.4 的式子）；**110 单装时它整项不参与**
+     *   （`mof_core_pv()` 的「只装 110」那一支 = `aggregate`，单测钉着：`test_mof_core.c` 的
+     *   `mof_core_pv(1, 0, 55000, 8990, 130000) == 55000`）。
+     * ★ 2026-09-15 核对（本轮）：`s->graze_mult` 在**本文件里唯一的读点**就是下面⑧的诊断日志
+     *   ⇒ 它**不参与任何计分/PRV**（计分走 SDK 的耦合层，见 `on_item_score()`）。
      *   实跑对账时看日志里的这条：它代表**111 那一半**，不是 110 的机制。*/
     g = mof_graze();
     if (s->last_graze < 0 || g < s->last_graze) s->last_graze = g;
@@ -511,18 +1267,42 @@ static int on_tick_2(ce_card_t *c)
     s->graze_mult = mof_core_graze_mult(g);
     if (dg > 0) faith_combo_add(&s->slot, FAITH_EV_MICRO);   /* ❓ 口径待核：擦弹是否续连击（见报告）*/
 
-    /* ② 连击槽推进（★ 2026-09-12 一手订正：**槽空不再扣信仰** —— TH10 没有逐帧信仰衰减，
-     *   见 `mof_core.h` 的 `mof_core_combo_tick()` 注释与 `research-th10-faith-and-graze.md` §3.2/§3.4）。*/
+    /* ② 连击槽推进 + ★★ **逐帧信仰衰减**（2026-09-15 **装回**；2026-09-12 那次删除是误判）。
+     *
+     * **误删的原因（必须留痕，否则会再删一次）**：当时的结论是「TH10 没有逐帧信仰衰减」，
+     *   依据是对**绝对地址** `0x474c4c` 的写入点穷举 —— 而真正的衰减全在 `eax`（= `0x474c40`）
+     *   **相对寻址**里（`[eax+0xc]` / `[eax+0x10]` / `[eax+0x18]`）⇒ grep 抓不到 ⇒ 被误判成「没有」。
+     *   一手见 `local/_scratch/research-th10-faith-units-and-drain.md` §3 / §5 第 9 条。
+     *
+     * **门（`th10:0x418740`–`0x41875d`，三条全满足才走衰减；任一不满足跳到 skip）**：
+     *   ① 无 Boss   `th10:0x418746` `[ENEMY_MANAGER+0x10] == 0`（那个字段是**当前 boss 指针**，
+     *      本轮逐条复核：`th10:0x414adc` 拿它读符卡计时画奖励条、`th10:0x41217b` 拿它读 `+0x1068` 坐标）
+     *   ② 无对话   `th10:0x418751` `[GUI+0x9eb8] == 0`      → `CE_GUI_MSG_ACTIVE()`
+     *   ③ 关卡帧 ≥ 90 `th10:0x418759` `[g_GameThread+0x14] >= 0x5a` → `mof_stage_frames()`（🟡 **自定**，
+     *      见那个函数的注释：TH18 的 `zGameThread` 字段图未反 ⇒ 用卡自己的按帧计数）
+     * **用户口径（2026-09-15）**把「连击槽为空」也点名为前提 —— 那一条**已经在**本函数里：
+     *   `mof_core_faith_tick()` 的分叉（一手 `th10:0x418a06 jle`）= 「槽 > 0 只 −1、槽 ≤ 0 才扣信仰」，
+     *   所以「槽空」是**分叉**不是门；`enemies_present` 只用来**选速率档**（无敌人 10800/s、有敌人 600/s）。
+     * **两档选择与一手的冲突**（🟡）写在 `mof_core.h` 的「衰减速率：两档」块里 —— 结论：一手证据只支持
+     *   10800 那一档（`th10:0x418a30` 把速率字段读完抬到下限 18），600 那一档按用户口径保留、待实跑钉。*/
     {
-        int boss_fight = 0;
-        uint8_t *em = CE_ENEMY_MGR();
-        int i;
-        if (em) {
-            for (i = 0; i < CE_EM_BOSS_SLOTS; ++i) {
-                if (*(const int32_t *)(em + CE_EM_BOSS_IDS + i * 4) != 0) { boss_fight = 1; break; }
-            }
-        }
-        (void)mof_core_combo_tick(&s->slot, boss_fight);
+        mof_faith_gate_t gate;
+        gate.no_boss         = !mof_boss_alive();       /* ①  */
+        gate.no_dialogue     = !CE_GUI_MSG_ACTIVE();    /* ②  */
+        gate.stage_frames_ok = (mof_stage_frames(s) >= MOF_STAGE_FRAME_GATE);   /* ③ 🟡 自定源 */
+        gate.enemies_present = mof_enemy_present();     /* 只选速率档，不当门用 */
+        /* ★★ 2026-09-15f：**连击槽的前后值**（用户实跑「击破条的衰减速度肯定有问题」的对账依据）——
+         *   一手是「槽 > 0 ⇒ 每帧只 −1」（`th10:0x418a10`），所以**在没有道具补槽的帧里**，
+         *   `combo_before - combo_after` 应当恰好 = 1（门全成立）或 = 0（任一不成立 ⇒ 冻结）。
+         *   日志把它打进 `mof/faith:` 那行（每 600 帧），见下面 ⑨。*/
+        s->combo_before = s->slot.combo;
+        s->drain_lost += mof_core_faith_tick(&s->slot, &gate, 1);
+        s->combo_after = s->slot.combo;
+        /* 诊断用的门快照（每 600 帧那条日志要打「门/boss/关卡帧」）*/
+        s->gate_no_boss = gate.no_boss;
+        s->gate_no_dlg  = gate.no_dialogue;
+        s->gate_frames  = gate.stage_frames_ok;
+        s->gate_enemies = gate.enemies_present;
     }
 
     /* ③ miss 检测（命数减少）→ `−(信仰−50000)/3`（§7.5）。
@@ -536,21 +1316,26 @@ static int on_tick_2(ce_card_t *c)
     }
     s->last_lives = lives;
 
-    /* ④ 全避（boss 非符 / 符卡）−30000（§2.2 / §7.5）
-     * ★ 2026-09-12 审计修：「全避」= 这一张**拖到超时**（没打掉、时间到了）⇒ 才扣原版的 −30000；
-     *   **打掉的（收了符卡）不扣**。判据三条同时成立才算：
-     *     ① 本次符卡期间读到过 `CE_SPELL_FLAG_TIMED_OUT`（`0x80`，engine.h:79）——
-     *        引擎在 `0x42efc0` `or [sp+0x78],0x80` 置位（= 计时器走完那一路）；
-     *        **耐久符卡不算**：那条在 `0x42efb3 test cl,0x8 / jne 0x42f016` 走「按收符卡算」，
-     *        引擎**不置**超时位 ⇒ 只要认这一位，「时符必减 / 耐久符卡按收符卡算」自动成立。
-     *     ② 本卡**没在这一张里放过灵击**（放了灵击就不是「靠避」过的，§2.2）。
-     *     ③ 只在符卡 active 的**下降沿**结算（= 这一张结束了）。
-     *   ⚠ 状态机本身在 `mof_core_spell_watch()`（`mof_core.c`）——**故意搬进 core**，因为
-     *     卡侧代码在主机上编不出来（`sdk.h` 的 inline asm）⇒ 留在 tick 里就一条断言都写不了，
-     *     而这次修的正是这段判据。锁存语义与「新符卡第一帧不读残留位」的理由见那个函数的注释。
+    /* ④ 符卡监视 + **本次符卡已过帧数**（★ 2026-09-15 新增计数器）
+     * `spell_now` 是「符卡进行中」（`[spellcard+0x378c] bit0`，一手 `th10:0x405798` 那一支用的同一字段）。
+     * `s->spell_frames` = TH10 `[spellcard+0x3738]`（**本次攻击已过帧数**）的对位 —— 一手有两处读它：
+     *   · `bomb+0x44` = 1 iff（符卡中 且 该计数 ≥ 60）（`th10:0x4059ca`）⇒ 内圈 3 vs 38 等分档；
+     *   · 作废符卡奖励的门（`th10:0x405500` 的第一条 `cmp [eax+0x3738],0x3c`）。
+     * ⚠ 一手那个计数器是**引擎的字段**（按攻击走）；我们只能自己数「连续 active 的帧数」——两者在
+     *   「符卡刚开始就炸弹」与「符卡中途炸弹」这两种情形下等价（差异只可能出现在引擎把计时器
+     *   提前重置的怪情况）⇒ 记为近似，登记 `TUNING.md` §2.5。
+     *
+     * 「全避 −30000」的判据（§2.2 / §7.5，★ 2026-09-12 审计修）：= 这一张**拖到超时**（没打掉、时间到了）
+     *   **且本卡没在这一张里放过灵击** ⇒ 才扣；**打掉的（收了符卡）不扣**。
+     *   · 超时 = `CE_SPELL_FLAG_TIMED_OUT`（`0x80`）——引擎在 `0x42efc0` 置位；**耐久符卡不置**
+     *     （那条走 `0x42efb3 test cl,0x8` 的「按收符卡算」）⇒ 「时符必减 / 耐久按收符卡算」自动成立；
+     *   · 只在 active 的**下降沿**结算一次；
+     *   · 状态机在 `mof_core_spell_watch()`（`mof_core.c`）——**故意搬进 core**：卡侧代码在主机上
+     *     编不出来（`sdk.h` 的 inline asm）⇒ 留在 tick 里一条断言都写不了，而这次修的正是这段判据。
      *   ⚠ 旧实现只判「没放灵击」⇒ **每张符卡正常收掉也扣 30000**（一局 boss 战就能把 Δ_110
      *     打到下限 0、信仰永久钉在 50000）。这是审计发现并修掉的行为差异。*/
     spell_now = ce_spell_active();
+    if (spell_now) ++s->spell_frames; else s->spell_frames = 0;
     if (mof_core_spell_watch(&s->spell_watch, spell_now,
                              (ce_spell_flags() & CE_SPELL_FLAG_TIMED_OUT) != 0)) {
         faith_slot_reduce(&s->slot, FAITH_REDUCE_AVOID);
@@ -558,15 +1343,35 @@ static int on_tick_2(ce_card_t *c)
         mof_declare_score(s);
     }
 
-    /* ⑤ 灵击（库存 == 0 且炸弹键上升沿）*/
+    /* ⑤ 灵击（库存 == 0 且炸弹键上升沿）→ 发动（`mof_bomb_start`）；
+     *    然后**每帧推进**已经发动的那一发（`mof_bomb_tick`：消弹圈 / 中心上移 / 伤害源）。
+     * ★ 2026-09-15c：**决死窗口内**按 B ⇒ 同一支路走**决死形态**（发动 + 救命 + 不扣信仰）。
+     *   窗口判据 = `player+0x476ac == 4`（一手 `th18:0x45d4e4`，全 exe 唯一写 4 的点），
+     *   判据本体在 core（`mof_core_deathbomb_window()`）⇒ 主机单测钉得住；
+     *   卡侧在这里只做「检测窗口 → 传参」这一件事（本仓硬要求：状态/语义进 core）。
+     * ⚠ **不做**别的救人事（不挂 `+0x10`）—— 见上面「决死形态」那段与 `EVENTS-CONTRACT.md` §5.2。*/
     if (CE_CURRENT_BOMBS() <= 0 && (*(uint32_t *)CE_ADDR_INPUT_PRESSED & 0x002u)) {
-        mof_bomb(c, s);
+        uint8_t *pl = CE_PLAYER();
+        int32_t pstate = pl ? *(int32_t *)(pl + CE_PLAYER_STATE) : -1;
+        int32_t by_hit = mof_core_deathbomb_window(pstate);
+        if (by_hit)
+            ce_log("mof: 决死窗口内按 B（state %d == 4，库存 0）⇒ 本发走决死形态", (int)pstate);
+        mof_bomb_start(c, s, by_hit);
     }
+    mof_bomb_tick(s);
 
-    /* ⑥ 绿点池推进（共用件：撒点 / 吸附 / 收集 → 回调 `mof_on_pickup`）*/
+    /* ⑥ 满 P 全场转换（★★ 2026-09-15，A + B 的主路；**必须在池推进之前**）——
+     *    满 P 时把原生 P 类道具原位删掉、在它自己的位置撒一颗 type 9 档的点（角 −π/2、速 2.2）。
+     *    一手 `th10:0x41bbf8`（出生即改写 type）+ `th10:0x41ba50`（满的那一帧全场原位重生），
+     *    全文与「为什么落点不是改 type」见 `faith.h` 的 `faith_convert_full_p_items()`。
+     *    ⚠ 顺序：放在 `faith_pool_tick()` **之前** ⇒ 本帧转换出来的点当帧就建 VM、就受物理/收集判定
+     *    （用户验收「线上生成即被吃 / 满 P 那刻原地变绿点」都靠这个顺序）。*/
+    faith_convert_full_p_items();
+
+    /* ⑦ 绿点池推进（共用件：撒点 / 吸附 / 收集 → 回调 `mof_on_pickup`）*/
     faith_pool_tick();
 
-    /* ⑦ 卡内奖残（§2.6：20m / 40m / 80m / 150m → `ce_add_life()`）*/
+    /* ⑧ 卡内奖残（§2.6：20m / 40m / 80m / 150m → `ce_add_life()`）*/
     {
         int n = mof_bonus_take(&s->bonus);
         while (n-- > 0) {
@@ -576,210 +1381,138 @@ static int on_tick_2(ce_card_t *c)
         }
     }
 
-    /* ⑧ 诊断汇总 */
+    /* ⑨ 诊断汇总 */
     if (s->frame - s->log_frame >= MOF_LOG_EVERY) {
         s->log_frame = s->frame;
         /* ★ 「收到 / 撒出」两两并排（照 `cards/signal.c:437-438` 的口径）：
          *   big/small = 玩家真吃到的，bigSp/smallSp = 撒出去的。实跑时前者 ≤ 后者；
          *   满 P 吃一颗 P 点 ⇒ `smallSp +1`，吃到后 `small +1`（**各一次**，不再像旧实现那样一颗点两边都 +1）。
-         * ⚠ `x%d` 那项 = **th11 的擦弹倍率**（110 单装时不参与 PV，见 `on_item_score` 的注释）。*/
+         *   ★ 2026-09-15 收口后：满 P 的这一颗**主路**是「原生 P 道具被删 + 池里原地撒点」
+         *   （共用件那条 `faith: 满 P 转换 N 颗…` 的日志），本行只在**同帧竞态**里才会多一次 `smallSp`。
+         * ⚠ `x%d` 那项 = **th11 的擦弹倍率**（110 单装时不参与 PV，见 `on_item_score` 的注释）。
+         * ★ `Ptop` = **本卡落笔的 P 点补差颗数**（本卡在场即由它落笔，见 `on_item_commit`）：
+         *   它与「吃到的 P 点颗数」对照着看 —— 本卡在场时 `Ptop` 应当**颗颗不落**（每颗 +4 单位）；
+         *   111 单装时这里是 0（那颗由 111 落笔，见 `cards/signal.c` 的同一行）。*/
         ce_log("mof: faith %d (Δ %d), combo %d, graze %d (th11 x%d), bonus %d, "
-               "big %d/%d small %d/%d (got/spawn), cancel %d miss %d bomb %d avoid %d",
+               "big %d/%d small %d/%d (got/spawn), Ptop %d, cancel %d miss %d bomb %d (dbf %d) avoid %d, "
+               "bomb_left %d (target r %.0f), comboIn %d (pickup %d + item %d + kill %d + cancel %d)",
                (int)faith_slot_total(&s->slot), (int)(s->slot.delta / FAITH_FIXED),
                (int)s->slot.combo, (int)s->last_graze, (int)s->graze_mult,
                (int)s->bonus.bonus,
                (int)s->stat_big, (int)s->stat_big_spawn,
                (int)s->stat_small, (int)s->stat_small_spawn,
-               (int)s->stat_cancel, (int)s->stat_miss, (int)s->stat_bomb, (int)s->spell_avoided);
+               (int)s->stat_p_topup,
+               /* ★ 2026-09-15c：`dbf` = **决死形态**发动的次数（`bomb − dbf` = 主动次数）； */
+               (int)s->stat_cancel, (int)s->stat_miss, (int)s->stat_bomb, (int)s->stat_bomb_dbf,
+               (int)s->spell_avoided,
+               (int)s->bomb.left, (double)((float)s->bomb.target_centi * 0.01f),
+               /* ★ 2026-09-16：「连击槽**进账**」的四条通道对账（未夹取；某一项恒 0 ⇒ 那条断了）。
+                * `pickup` = **自建信仰点**被收（大 +120 / 小 +60，`mof_core_pickup_combo()`）——
+                *   用 `stat_big/stat_small`×值**算**出来，不另开累计字段（省 `ce_state` 的 496 字节上限）；
+                * `cancel` = 消弹微档每颗 +3（`FAITH_EV_MICRO`）同理由 `stat_cancel`×3 算；
+                * `item` / `kill` = 本轮新接的引擎道具与击破（各自有累计字段）。*/
+               (int)(120 * s->stat_big + 60 * s->stat_small
+                     + s->stat_combo_item + s->stat_combo_kill + 3 * s->stat_cancel),
+               (int)(120 * s->stat_big + 60 * s->stat_small),
+               (int)s->stat_combo_item, (int)s->stat_combo_kill,
+               (int)(3 * s->stat_cancel));
+        /* ★ 决死形态的「不记账」那一档要看得见：本发的颗数记在 `form.cancels`（诊断，不入数值）。*/
+        if (s->bomb.left > 0 && mof_bomb_form_is_deathbomb(&s->bomb.form))
+            ce_log("mof: 决死形态进行中（已消 %d 颗，本形态入账=%d）",
+                   (int)s->bomb.form.cancels, (int)mof_bomb_form_cancel_accounts(&s->bomb.form));
         if (s->stat_spawn_failed)
             ce_log("mof: %d faith point(s) dropped (pool full)", (int)s->stat_spawn_failed);
+        /* ★★ 2026-09-15 逐帧衰减的对账行（`TUNING.md` §2.5h 的「怎么钉」就靠它）。
+         *   `gate=` 三位依次 = **无Boss / 无对话 / 关卡帧≥90**（1 = 该门成立）；
+         *   `boss` = `mof_boss_alive()` 的原值、`sf` = 本卡自数的关卡帧（🟡 自定源）、
+         *   `near` = 场上敌人计数是否 > 0（**只选速率档**）、`rate` = 本段实际用的档（定点/帧）、
+         *   `drain` = 本段（600 帧）累计被逐帧衰减扣掉的**显示**单位。
+         *   对账口径：`drain / 600 × 60` 应当 ≈ 10800（无敌人档）或 600（有敌人档），
+         *   且 miss / 灵击 / 关卡结算**都不算在 `drain` 里**（那些走 `faith_slot_reduce`，另有日志行）。*/
+        ce_log("mof/faith: gate=%d%d%d boss=%d dlg=%d sf=%d/%d near=%d rate=%d drain=%d (display, %d frames) combo=%d",
+               s->gate_no_boss ? 1 : 0, s->gate_no_dlg ? 1 : 0, s->gate_frames ? 1 : 0,
+               mof_boss_alive(), CE_GUI_MSG_ACTIVE() ? 1 : 0,
+               (int)s->stage_frames, (int)MOF_STAGE_FRAME_GATE, s->gate_enemies ? 1 : 0,
+               (int)mof_faith_rate_fixed(s->gate_enemies),
+               (int)(s->drain_lost / FAITH_FIXED),
+               (int)MOF_LOG_EVERY, (int)s->slot.combo);
+        /* ★★ 2026-09-15f（用户「击破条衰减速度肯定有问题」的对账行）：把**本帧连击槽的前后值**与
+         *   「这一帧门全不全」并排打出来。判读口径（一手 `th10:0x418a10`「每帧 −1」）：
+         *     · `cstep=1`（`before − after` = 1）= 门全成立、照一手 −1 ✓ 正常；
+         *     · `cstep=0` = 三条门任一不成立（boss 战 / 对话中 / 关卡前 90 帧）⇒ **槽冻结** ✓ 正常；
+         *     · `cstep>1` = 有别的路径在减（如 miss 清槽 `faith_combo_set(0)`、或批量补跑）⇒ 要查；
+         *     · `cstep<0` = 本帧有**补槽**（吃道具）比 −1 多 ⇒ 正常（补槽在 `mof_on_pickup`）。
+         *   ⚠ 这条只覆盖 `on_tick_2` 的**最后一帧**（不是 600 帧的累计）—— 它是「稳态取一帧」的抽样；
+         *     要看累计请对照 600 帧的 `drain`（信仰）与 combo 的绝对值。*/
+        ce_log("mof/combo: before=%d after=%d cstep=%d gates=%d%d%d (boss=%d dlg=%d sfOK=%d) → HUD 行3 画的是 %s",
+               (int)s->combo_before, (int)s->combo_after,
+               (int)(s->combo_before - s->combo_after),
+               s->gate_no_boss ? 1 : 0, s->gate_no_dlg ? 1 : 0, s->gate_frames ? 1 : 0,
+               mof_boss_alive(), CE_GUI_MSG_ACTIVE() ? 1 : 0, s->gate_frames ? 1 : 0,
+               (faith_registered_mask() & (1 << FAITH_SLOT_110)) ? "真值（110 在场）" : "中性满格（110 不在场）");
+        s->drain_lost = 0;
     }
+
+    /* ⑩ ★★ 2026-09-15：向**共享的组合 UI**声明本卡这一槽的读数（`cards/faith_hud.{h,c}`）。
+     *   为什么要「声明」而不是让那块 UI 读本卡状态：卡之间**不许读对方状态**（`EVENTS-CONTRACT.md` §3），
+     *   而这块 UI 两卡共用、行 2 要画 `Δ_10 + Δ_11`（用户 ④）⇒ 只能由**各自**把自己那一份交出来，
+     *   由共享件相加（与计分层的「声明 → 聚合」是同一个形状）。
+     *   ⚠ 交出去的是**本槽的三个数**（Δ 定点 / 连击槽 / 信号槽），**不含基础值** ——
+     *     「基础不进这块 UI」是用户 ④ 的原话（别把 `faith_slot_total()` 那种「基础 + Δ」送进来）。
+     *   ⚠ 它**不代表在场**：在场判据是 `faith_registered_mask()`（`faith.h`）⇒ 本卡被删掉之后，
+     *     共享件立刻改走「只有 111」的显示（连击条填满），而**不是**因为「连击槽恰好是 0」——
+     *     用户明令不许拿槽值当判据。*/
+    {
+        faith_hud_slot_t v;
+
+        v.delta_fixed = s->slot.delta;
+        v.combo       = s->slot.combo;      /* 连击槽（TH10 的 zTimer 对位，0..130）—— 行 3 */
+        v.signal      = 0;                  /* 110 侧**没有**信号槽（th11 的量），行 1 由 111 声明 */
+        faith_hud_declare(FAITH_SLOT_110, &v);
+    }
+    s_slot_keep = s->slot;   /* ★ 2026-09-16r：账本同步进静态（跨关 / 卡对象重建都不丢）*/
     return 0;
 }
 
-/* ============================ HUD（左下角的原生「信仰读数」）============================
+/* ============================ HUD（★ 2026-09-15 已搬到共享件）============================
  *
- * ★★ 2026-09-12 本轮（审计 A3 的 110 部分）：**原来的两行贴图字数字（`ce_hud_vm_text_set`，
- *    ❓ 自定坐标 52/366/378）整段换掉**，改成**原生那一块本身** —— 图标 + 6 位数字 + 连击条：
+ * 这一段原来就是**「原生那一整块」**的驱动：9 支 VM（图标 1 + 6 位数字 + 连击条 2），
+ * 几何全在 TH10 一手（`front.anm` script51..57 + `Gui::on_draw` th10:0x4158b6 的两个四边形），
+ * 层 25（`resolutionMode(2)` ⇒ 组 38 ⇒ 被暂停模糊罩盖住 + 进 P 键截图）。
+ * 现在它连同 `mof_hud_spawn/warn_once/alive/dual_color/kill/digit_of/dim_tick/draw` 一起**删掉**，
+ * 由 `cards/faith_hud.{h,c}` 接管 —— 因为用户 2026-09-15 口径 ①② 把 110 与 111 的两块 UI
+ * 并成了**一块**（一个蓝点 + 信号强度槽 / 最大得点×信号强度 / 连击槽），共用块只能有一个持有者。
  *
- *  | 元素 | 谁 | 几何（640×480 字面量空间）| 一手 |
- *  | --- | --- | --- | --- |
- *  | 图标 16×16 | `MOF_FAITH_ICON`（TH10 front.anm sprite29）| `pos(32,448)` | `front.anm` script51 |
- *  | 5 个动态位 | `MOF_FAITH_DIGIT_0..9`（sprite30..39，8×9）| `pos(48+7k,450)` | script52..56 |
- *  | 末位恒 '0' | `MOF_FAITH_DIGIT_0` | `pos(83,450)` | script57（全 exe 无一处改它的 sprite）|
- *  | 连击条 | 两个 `drawRect` 四边形（脚本 104）| (51,461)–(X,463) 与 (50,460)–(X−1,462) | `Gui::on_draw` 0x4158b6 |
+ * 逐项去向（要改这块 UI 请直接改 `faith_hud.c`，别再往本文件加）：
+ *   · 图标 / 数字位 / 连击条的位置与缩放 ⇒ `faith_hud.c` 的 `FH_*` 常量块 + `fh_place_*()`；
+ *   · 两路顶点色镜像 ⇒ 共享件对**全部 16 支**每帧 `ce_anm_mirror_color()`（那里有完整的一手注）；
+ *   · 整块压暗 / 淡回 ⇒ `fh_dim_tick()`（❓ 用户口径 = UI 统一：**门限每帧由本块矩形推**
+ *     （进 = 自机落在块内 / 出 = 出到外扩 16 px 之外）+ 终点 32 + C 每帧 ±56（4 帧）；TH10 那套
+ *     416/400 与 −128/−112、TH11 那套 416/400 与 −64 都是**各自块的沿**，已不再被使用、
+ *     只在脚本注释里留档 —— 详见 `faith_hud.c` 常量块的长注与 `TUNING.md` §2.6f-3）；
+ *   · 收尾 ⇒ `fh_kill()`，由 `faith_hud_departed()` 调（`on_delete` / `on_run_reset` 都走它）。
  *
- *  · **显示的是「存储值 ×10」**：5 个动态位取 `显示值/10`（= 原生 `0x414a60` 读的 `0x474c4c`）的各位，
- *    末位永远是字面 '0' ⇒ 画面 = `50000`（初值）… `999990`（上限）。**这就是原生的读数**，
- *    不是排版巧合（初值 5000 存储 ⇒ `05000` + `0` = 50000，正是 `0x417931 push 0xc350` 喂进去的数）。
- *  · 位置、字距（7 px）、连击条宽度公式（`连击槽 × 38/130`）**全部照抄**，一个数都不自己定。
- *  · 层：脚本里 `layer(25)` + `resolutionMode(2)` ⇒ 组 38、桩 `th18:0x4878e0`（直接进后备缓冲）：
- *    被暂停模糊罩（同组、后画）盖住，且进得了 P 键截图。依据
- *    `engine/anm/th18/05-snapshot-and-surfaces.md` §5/§6/§7.1。
- *  · ❓ 只有两处「载体/版本差异」（都登记在报告里）：
- *    ① 连击条原生是**引擎 D3D 四边形**（`0x43bda0`，全 exe 没有对应的 anm 精灵/脚本）
- *       ⇒ 我们用 `drawRect` 拼，几何/宽度/颜色逐条照抄；四边形色里的 alpha 取自 `[gui+0x8393]`，
- *       我们写死 255。
- *    ② 原版的 `layer(15)`（TH10 的世界层号）改成 25，见 `209_…`/`210_…` 的脚本注释。
- *
- * 长持续效果（`METHOD.md` 铁律二）：这 9 个 VM 全是**跨帧留下**的东西 ⇒ `mof_clear()` 里统一收
- *   （`on_run_reset` / `on_delete` 都走它）；`on_delete` 那条尤其重要 —— 删卡发生在商店里、
- *   那一刻 `on_draw` 不会再来，只有 `on_delete`（虚表 `+0x50`）收得到。*/
-
-/* 起一个 HUD VM：`pos` 用 640×480 字面量空间写，内部 ×2 换成表面 px（脚本 `resolutionMode(2)`）。*/
-static uint32_t mof_hud_spawn(int script, float x640, float y640)
-{
-    float pos[3];
-
-    pos[0] = x640 * MOF_HUD_U640_TO_SURF;
-    pos[1] = y640 * MOF_HUD_U640_TO_SURF;
-    pos[2] = 0.0f;
-    return ce_anm_spawn_ui(CE_ABILITY_ANM(), script, pos);
-}
-
-/* 起 VM 失败只报一次（VM 池满之类；不然每帧一条日志）。*/
-static void mof_hud_warn_once(const char *what)
-{
-    if (s_hud_warned) return;
-    s_hud_warned = 1;
-    ce_log("mof: HUD VM spawn failed (%s) -- 这一块 HUD 会缺", what);
-}
-
-/* VM 还活着吗（引擎会在别处摧毁 VM ⇒ 每帧自愈检查，`signal.c` / `stock.c` 同款）。*/
-static int mof_hud_alive(uint32_t id) { return id != 0 && ce_anm_get_vm(id) != 0; }
-
-/* 收掉全部 9 个 VM + 复位「当前挂的 sprite / 压暗态」。删卡、局末、菜单门关闭时都走它。*/
-static void mof_hud_kill(void)
-{
-    int i;
-
-    if (s_hud_icon) { ce_anm_delete(s_hud_icon); s_hud_icon = 0; }
-    for (i = 0; i <= MOF_HUD_SLOTS; ++i) {
-        if (s_hud_digit[i]) { ce_anm_delete(s_hud_digit[i]); s_hud_digit[i] = 0; }
-        s_hud_digit_spr[i] = -1;
-    }
-    for (i = 0; i < 2; ++i) {
-        if (s_hud_bar[i]) { ce_anm_delete(s_hud_bar[i]); s_hud_bar[i] = 0; }
-    }
-    s_hud_dim = 0;
-    s_hud_warned = 0;
-}
-
-/* 数字第 i 位（i = 0 是最左 = 万位）。纯整数除法 ⇒ 与原生逐个 `idiv 10000…1` 同序、确定性。*/
-static int mof_hud_digit_of(int32_t v, int i)
-{
-    static const int32_t div_tbl[MOF_HUD_SLOTS] = { 10000, 1000, 100, 10, 1 };
-
-    if (i < 0 || i >= MOF_HUD_SLOTS) return 0;
-    return (int)((v / div_tbl[i]) % 10);
-}
-
-/* 整块淡出 / 淡回 —— 逐条照抄原版 `Gui::on_tick` th10:0x41499f–0x414a5a：
- *   flag（原生 `gui+0x9eb4` bit0）为 0（显示中）：`y > 416 且 x < −128` ⇒ 发中断 3（压暗）+ 置位；
- *   flag 为 1（已压暗）       ：`y < 400 或 x > −112` ⇒ 发中断 2（淡回）+ 清位。
- * ⚠ 门限是 **TH10 自己的**（416/400、−128/−112），与 SDK 的 `ce_hud_near_corner()`
- *   （TH16 栅格 400/384，`sdk_core.c`）**不是同一组** ⇒ 本卡自算（共享件不动）。
- * ⚠ 只在**边沿**发中断（原生也是靠那个 flag 位做边沿触发）—— 每帧重发会把 alphaTime 反复重头开始。
- * ⚠ 自机坐标用 `ce_player_pos()`（游玩区空间，与上面那两条门限同一空间）。*/
-static void mof_hud_dim_tick(void)
-{
-    const float *pp = ce_player_pos();
-    int i, intno = 0;
-
-    if (!pp) return;
-    if (!s_hud_dim) {
-        if (pp[1] > MOF_HUD_DIM_Y_HI && pp[0] < MOF_HUD_DIM_X_LO) { intno = MOF_HUD_INT_DIM; s_hud_dim = 1; }
-    } else {
-        if (pp[1] < MOF_HUD_SHOW_Y_LO || pp[0] > MOF_HUD_SHOW_X_HI) { intno = MOF_HUD_INT_SHOW; s_hud_dim = 0; }
-    }
-    if (!intno) return;
-    /* 原生把中断写给**同一组的全部 7 个 VM**（`0x4149e0` / `0x414a32` 那条循环，stride 0x3ac）*/
-    if (s_hud_icon) ce_anm_interrupt(s_hud_icon, intno);
-    for (i = 0; i <= MOF_HUD_SLOTS; ++i) if (s_hud_digit[i]) ce_anm_interrupt(s_hud_digit[i], intno);
-}
-
-static void mof_hud_draw(mof_card_t *s)
-{
-    void *anm = CE_ABILITY_ANM();
-    int32_t v, stored, sp;
-    float bar_w;
-    int i;
-
-    if (!anm) return;
-
-    /* ① 图标（原生 VM[0]）*/
-    if (!mof_hud_alive(s_hud_icon)) {
-        s_hud_icon = mof_hud_spawn(CE_ANM_ABILITY_SCRIPT_MOF_FAITH_ICON, MOF_HUD_ICON_X, MOF_HUD_ICON_Y);
-        if (!s_hud_icon) mof_hud_warn_once("icon");
-    }
-    if (s_hud_icon)
-        ce_anm_set_pos(s_hud_icon, MOF_HUD_ICON_X * MOF_HUD_U640_TO_SURF,
-                       MOF_HUD_ICON_Y * MOF_HUD_U640_TO_SURF, 0.0f);
-
-    /* ② 6 个数字位（原生 VM[1..6]）：先 /10 拿「存储值」，再逐位取（末位恒 '0'）。*/
-    v = faith_slot_total(&s->slot);                  /* 显示单位（= 存储 ×10，spec §7.4 / 研究 §2）*/
-    stored = v / 10;
-    if (stored < 0) stored = 0;
-    if (stored > MOF_HUD_DIGIT_MAX) stored = MOF_HUD_DIGIT_MAX;
-    for (i = 0; i <= MOF_HUD_SLOTS; ++i) {
-        /* 前 5 位 = 原生 script52..56 的 x（48 + 7k）；第 6 位 = 原生 script57 的 x(83) 且恒 sprite30。*/
-        float x640 = (i < MOF_HUD_SLOTS) ? MOF_HUD_DIGIT_X0 + MOF_HUD_DIGIT_DX * (float)i : MOF_HUD_ZERO_X;
-
-        if (!mof_hud_alive(s_hud_digit[i])) {
-            s_hud_digit[i] = mof_hud_spawn(CE_ANM_ABILITY_SCRIPT_MOF_FAITH_DIGIT, x640, MOF_HUD_DIGIT_Y);
-            s_hud_digit_spr[i] = -1;
-        }
-        if (!s_hud_digit[i]) { mof_hud_warn_once("digit"); continue; }
-        ce_anm_set_pos(s_hud_digit[i], x640 * MOF_HUD_U640_TO_SURF,
-                       MOF_HUD_DIGIT_Y * MOF_HUD_U640_TO_SURF, 0.0f);
-        sp = (i < MOF_HUD_SLOTS) ? s_hud_digit_tbl[mof_hud_digit_of(stored, i)]
-                                 : (int32_t)CE_ANM_ABILITY_SPRITE_MOF_FAITH_DIGIT_0;
-        if (s_hud_digit_spr[i] != sp && ce_anm_set_sprite(anm, s_hud_digit[i], sp))
-            s_hud_digit_spr[i] = sp;
-    }
-
-    /* ③ 连击条：原生那两个四边形（几何/颜色逐条照抄，见常量块的注释）。
-     * 宽度 = `连击槽 × 38/130`（`0x470cb8`）⇒ 130 帧时 38 px（640 空间）；A 在 (51,461)、
-     * B 在 (50,460) 且**窄 1 px**（`0x470afc` = 1.0f），两者都 2 px 高。
-     * `drawRect`（脚本 104）的默认锚点 = 左上角（`AUDIT.md` §AL20 两次实跑）⇒ `pos` 就是左上角，
-     * 脚本里**不写 anchor**（写了 `anchor(0,0)` 会变成锚心，见 157 的注释）。*/
-    bar_w = (float)s->slot.combo * (MOF_HUD_BAR_W_FULL / (float)MOF_COMBO_MAX);
-    if (bar_w < 0.0f) bar_w = 0.0f;
-    for (i = 0; i < 2; ++i) {
-        float x = (i == 0) ? MOF_HUD_BAR_X_A : MOF_HUD_BAR_X_B;
-        float y = (i == 0) ? MOF_HUD_BAR_Y_A : MOF_HUD_BAR_Y_B;
-        float h = (i == 0) ? (MOF_HUD_BAR_BOT_A - MOF_HUD_BAR_Y_A) : (MOF_HUD_BAR_BOT_B - MOF_HUD_BAR_Y_B);
-        float w = (i == 0) ? bar_w : (bar_w - MOF_HUD_BAR_INSET);
-
-        if (w < 0.0f) w = 0.0f;
-        if (!mof_hud_alive(s_hud_bar[i]))
-            s_hud_bar[i] = mof_hud_spawn(CE_ANM_ABILITY_SCRIPT_STOCK_RECT, x, y);
-        if (!s_hud_bar[i]) { mof_hud_warn_once("combo bar"); continue; }
-        ce_anm_set_pos(s_hud_bar[i], x * MOF_HUD_U640_TO_SURF, y * MOF_HUD_U640_TO_SURF, 0.0f);
-        ce_anm_set_scale(s_hud_bar[i], w * MOF_HUD_U640_TO_SURF, h * MOF_HUD_U640_TO_SURF);
-        ce_anm_set_color(s_hud_bar[i], MOF_HUD_BAR_COLOR);
-    }
-
-    /* ④ 整块淡出 / 淡回（自机贴到左下角的 HUD 上时压暗；门限是一手的 TH10 值）*/
-    mof_hud_dim_tick();
-}
+ * ⚠ 仍然有效、值得记住的两条（合并块照旧受它们约束）：
+ *   ① **层只能是 24/25**（`HUD-LAYOUT.md` §4.1 的硬规则：别的层折不到模糊罩那一组）；
+ *   ② 连击条原生**不是 anm 精灵**（引擎直画 D3D 四边形 `0x43bda0`）⇒ 我们只能用 `drawRect`
+ *      脚本近似（`❓ 自定（载体差异）`）；**alpha 借最左数字 VM 的 `color_1.A`** 那条一手
+ *      （`Gui+0x8393`）在共享件里**照抄了**（`fh_place_combo()` 还顺带把影条画成黑色 ——
+ *      旧实现在这里两条都是白的）。*/
 
 static int on_draw(ce_card_t *c)
 {
-    mof_card_t *s = st(c);
-
-    if (!s) return 0;
-    /* ★ 2026-09-12 审计：`on_draw`（虚表 `+0x48`）在**主菜单 / 标题**里也会被调，而 `on_tick_2`
-     *   （`+0x2c`）不会 ⇒ 不设门就会把整块 HUD 画到菜单上（117 的 bug3 就是这个坑；
-     *   115 `lolk.c` / 116 `season.c` / 117 `animal.c` 三张卡都用同款门）。
-     *   门关着时**把 VM 收掉**，别只是不画（VM 会留着被别处按旧坐标重画）。*/
-    if (!CE_PLAYER() || !CE_GAME_THREAD()) {
-        mof_hud_kill();
-        return 0;
-    }
-    mof_hud_draw(s);
-    /* ★ 2026-09-12：这里原来有一行 111 信号槽的占位（`"sig 0"`）。111 现在有自己的 HUD 与信号实现
-     * ⇒ 110 **不再替它画**（两张卡各画各的，避免同一份状态两处显示、也避免跨卡读状态）。*/
+    /* ★★ 2026-09-15：整块 HUD 搬到共享件（`cards/faith_hud.{h,c}`）⇒ 本卡只剩这一行转发。
+     * 三件原来由本卡自己做的事现在都在共享件里（行为一字不改）：
+     *   ① **菜单 / 标题门**（`on_draw` 虚表 `+0x48` 在**主菜单 / 标题**里也会被调，而 `on_tick_2`
+     *      不会 ⇒ 不设门就会把整块 HUD 画到菜单上；门关着时要把 VM 收掉、别只是不画）——
+     *      这是 `faith_hud_draw()` 的第一句（117 的 bug3 就是这个坑，115/116/117 同款门）；
+     *   ② **一帧只画一遍** —— 110 与 111 都会调它（共享件用 `ce_sdk_frame()` 做帧守卫；
+     *      16 支 VM 是**共享件的静态状态**，只有一份 ⇒ 两边不会各自 spawn 一套）；
+     *   ③ 起 VM / 摆位 / 上色 / 压暗 / 回收 —— 全在共享件。
+     * ⚠ 本函数**不吃 `c`**（在场判据 = `faith_registered_mask()`，读数来自 `faith_hud_declare()`）
+     *   ⇒ 不留未使用的局部变量。HUD 的**槽位**账也归共享件（认领在 `faith_hud_on_load()`）。*/
+    (void)c;
+    faith_hud_draw();
     return 0;
 }
 
@@ -789,22 +1522,45 @@ static void mof_clear(ce_card_t *c)
     mof_card_t *s = st(c);
 
     /* ★ 顺序要紧：先退出计分层（否则删掉的卡还在往聚合里声明），再收实体与 HUD。*/
-    ce_score_declare(MOF_ID_NUM, 0);
+    ce_score_declare_coupled(MOF_ID_NUM, 0);
     faith_unregister(MOF_ID_NUM);
     /* ★ 只收**自己槽**的绿点（`1 << FAITH_SLOT_110`）。这里原来是 `faith_clear_entities()`
      * （清整个共用池）⇒ 110 在商店里被倒吊人删掉时，**111 同行还飘着的绿点会跟着凭空消失**
      * （两张卡共用一个实体池，`faith.h` 头注）。按 `slot_mask` 筛的那一支是 2026-09-12 审计补的，
      * 下面这一行就是「删卡路径漏在哪」的补丁。*/
     faith_clear_entities_mask(1 << FAITH_SLOT_110);
-    /* ★ 2026-09-12 本轮：HUD 从「两行贴图字数字」换成原生那一整块（图标+6 位数字+连击条）
-     * ⇒ 收尾从两条 `ce_hud_vm_text_clear` 换成 `mof_hud_kill()`（9 个 VM + 压暗态一起复位）。
+    /* ★★ 2026-09-15：HUD 搬到共享件 ⇒ 收尾从 `mof_hud_kill()`（本卡那 9 支 VM）换成
+     * `faith_hud_departed()`（共享件那 16 支 VM）。
+     * ⚠ **顺序是硬的**：必须在 `faith_unregister(MOF_ID_NUM)`（上面那一行）**之后** —— 共享件的
+     *   「还有没有卡在场」判据就是那张注册表（`faith_registered_mask()`）⇒ 先退注册它才知道
+     *   「110 走了」；若 111 还在场，它**只清 110 那一槽的声明**、块与 VM 一个都不动（用户 ③
+     *   「只有 111 也显示这一套 UI，只是对应的那部分不起作用」）。
      * ⚠ 这里**必须**收干净：删卡（倒吊人 / 原版空白卡）发生在商店里，那一刻 `on_draw` 不会再来
-     *   —— 只有 `on_delete`（虚表 `+0x50`）跑得到。*/
-    mof_hud_kill();
+     *   —— 只有 `on_delete`（虚表 `+0x50`）跑得到；最后一张卡走时共享件在同一支里收 VM + 放占位。*/
+    faith_hud_departed();
+    /* ★ 2026-09-15：P 点火力那一层的「每颗道具闩」也退掉。它是**同一颗道具内**的瞬时状态
+     * （`on_item_collect` 置、`on_item_commit` 清），不是跨帧效果；这里清只是为了
+     * 「删卡后又以同一个 id 回来」时状态绝对干净（ctor 也清一次，两条路都堵）。*/
+    s_p_item = 0;
     if (!s) return;
+    /* ★★ 2026-09-16k：灵击的**范围环**要先删掉再 `memset` —— 它的 VM 是**跨帧**留下的东西
+     *   （脚本 279 自己不会死）⇒ 不显式删就会「删了卡还挂一圈在场上」。火星不用管（一次性自删）。*/
+    mof_bomb_fx_kill(&s->bomb);
+    /* ★ 2026-09-15（灵击改成跨帧之后）自查一遍「删卡会留下什么」（`METHOD.md` 铁律二）：
+     *   · `s->bomb`（剩余帧数 / 中心 / 目标半径）**随这次 `memset` 一起清零** ⇒ 下一帧不再续撒消弹圈
+     *     与伤害源（`mof_bomb_tick()` 的首行 `if (bomb.left <= 0) return`）；删卡发生在商店里、
+     *     `on_tick_2` 本来也不再跑，两条路都断得干净。
+     *   · **伤害源**是引擎池（`player+0x20574`）里的对象、寿命只有 `MOF_BOMB_DMG_SRC_LIFE` 帧 ⇒
+     *     最多再存活 1–2 帧自己回收。引擎**没有**「按键删一条伤害源」的接口，而按槽位去清
+     *     `flags` 会在池槽已被别人复用时误伤别人的源 ⇒ **故意不碰它**（残留 ≤2 帧、无副作用）。
+     *   · 绿点实体 / HUD VM 在上面两行收；计分声明在上面第三行退。*/
     memset(s, 0, sizeof *s);
     s->last_graze = -1;
     s->last_lives = -1;
+    /* ★ 2026-09-15：门③的两个「参照帧」也要复位成 -1（0 是**合法值**⇒ 不复位就会把
+     * 重新装卡后的第一帧误判成「没换关」而带着旧计数走）。`mof_stage_frames()` 首帧见 -1 ⇒ 归零。*/
+    s->stage_frames_ref = -1;
+    s->stage_id_ref = -1;
 }
 
 static int on_load(ce_card_t *c)
@@ -815,13 +1571,27 @@ static int on_load(ce_card_t *c)
     if (!s) return 0;
     s->last_graze = -1;
     s->last_lives = -1;
+    s->stage_frames_ref = -1;             /* ★ 见 `mof_stage_frames()` 的初值语义 */
+    s->stage_id_ref = -1;
     memset(&u, 0, sizeof u);
     u.card_id = MOF_ID_NUM;
     u.slot_mask = 1 << FAITH_SLOT_110;       /* 只消费 110 槽 */
+    /* ★ 2026-09-15：改走**带位置**的收集回调（`on_pickup_at`）—— 弹窗要画在道具自己的坐标上
+     * （一手 `th10:0x41b360`）。`on_pickup` 仍设着（**兜底**：万一 `on_pickup_at` 那一支将来被
+     * 摘掉/改名，faith.c 的默认路径还能把账记上；faith.c 的语义是**二选一**，不会双计）。*/
     u.on_pickup = mof_on_pickup;
+    u.on_pickup_at = mof_on_pickup_at;
     u.on_cancel = mof_on_cancel;
+    /* ★★ 2026-09-15：满 P 转换通道的单颗值（主路 `faith_convert_full_p_items()` 用它）——
+     * 110 的小信仰点 = 100（`FAITH_MOF_SMALL`）。不设（0）= 不参与转换。*/
+    u.conv_value = FAITH_MOF_SMALL;
     u.user = c;
     if (!faith_register(&u)) ce_log("mof: faith_register failed (table full?)");
+    /* ★★ 2026-09-15：**块的认领搬到共享件**（`faith_hud_on_load()`）—— 110/111 现在共用**一块**
+     * 组合 UI（用户 2026-09-15 口径 ①②），由共享件按「在场的、id 较小的那张」认领（110 优先；
+     * 两张都不在就不认领），块 = **188×60 表面 px**（640 空间 94×30）。
+     * ⚠ 顺序：必须在 `faith_register()` **之后** —— 共享件的在场判据就是这张注册表。*/
+    faith_hud_on_load();
     mof_declare_score(s);
     return 0;
 }
@@ -831,37 +1601,76 @@ static int ctor(ce_card_t *c)
     mof_card_t *s = st(c);
 
     if (!s) return 0;
-    faith_slot_init_110(&s->slot);            /* 基础恒 50000、Δ 从 0 起算、下限 0 */
+    /* ★★★ 2026-09-16r **跨关保留**（用户实跑：「切换面数的时候最大得点会被清空」→「**是 Delta 变 0 了**」）。
+     * 一手口径（本仓已有先例 = 卡 113 的同一条 bug 与同一条修法，`AUDIT.md` §DK-2）：
+     *   **PIV / 最大得点在一局里是一直升、跨关不清**，只有「一局开始」才归零。
+     * 机制：`on_run_reset` / 卡对象重建在**关卡切换**时也会跑（`mof_clear()` 那个 `memset` 会把
+     *   Δ / 连击 / 信号一起抹掉）⇒ 账本**搬进文件静态**（卡是单例；与 `s_opt[]` / `s_tint_*` 同一层做法），
+     *   `ctor` 从这里**恢复**，只有「关卡号变小」（回到第 1 关 / 重开一局 / 练习重选关）才重新初始化。*/
+    if (s_slot_stage > 0 && (int32_t)CE_CURRENT_STAGE() < s_slot_stage) {
+        ce_log("mof: 新一局（stage %d -> %d）⇒ 信仰账本归零（原 Δ %d）",
+               (int)s_slot_stage, (int)CE_CURRENT_STAGE(), (int)(s_slot_keep.delta / FAITH_FIXED));
+        faith_slot_init_110(&s->slot);        /* 基础恒 50000、Δ 从 0 起算、下限 0 */
+    } else {
+        s->slot = s_slot_keep;                /* ★ 一面→二面：**不清**（跨关保留 Δ 与连击）
+                                               * ⚠ 「信号槽每关归零」那条只归 111（110 没有信号槽，
+                                               *   见 `faith_hud.c` 的声明：110 的 `v.signal` 恒 0）*/
+    }
+    s_slot_stage = (int32_t)CE_CURRENT_STAGE();
     mof_bonus_init(&s->bonus);
     s->last_graze = -1;
     s->last_lives = -1;
+    s->stage_frames_ref = -1;             /* ★ 门③的关卡帧计数：首帧起算（见 `mof_stage_frames()`）*/
+    s->stage_id_ref = -1;
     s->log_frame = 0;
+    s_p_item = 0;                             /* ★ 2026-09-15：P 点火力那层的每颗道具闩（见 `on_item_commit`）*/
     mof_declare_score(s);
     return 0;
 }
 
-static void on_run_reset(ce_card_t *c) { mof_clear(c); }
+static void on_run_reset(ce_card_t *c) { mof_clear(c); }   /* ⚠ 不再清账本：`ctor` 会从 s_slot_keep 恢复 */
 static void on_delete(ce_card_t *c)    { mof_clear(c); }
 
-/* 钩子分工（两条路都留，互斥）：
- *   · `on_enemy_death`（断点 `0x430240`，**撒落之前**）→ 大信仰点**判据①**：`drop_main == 2`
- *     且过死亡事件的门（非 KILL_ALL / 真敌人 / 有掉落表）/ 非 boss。这是 §7.9 的主路。
- *   · `on_enemy_drop_pre`（`0x430510`，撒落之后）→ **只剩**大信仰点**判据②**「同时掉钱与 P」
- *     （需要 ex_drop 计数，只有这个钩子有）。
- *     ★ 小信仰点（满 P 时 P 点转化）**已从这里删掉**（2026-09-12 裁决）：它与 `on_item_collect`
- *       判的是**同一颗 P 点** ⇒ 撒两颗实体 ⇒ Δ_110 与连击槽各双份。现在小信仰点**只有**
- *       `on_item_collect` 一处撒点。理由全文见 `on_enemy_drop_pre` 的注释。
- *   · 本卡**不改写掉落表**：两路都是「额外加撒自建 VM」⇒ 不需要死亡钩子「在撒之前」的那个特权，
- *     但那仍是拿到**未消费 `drop_main`** 的唯一位置，所以判据① 放那里是最干净的。
+/* ★ 2026-09-15：换关时把**灵击**收掉（一手：TH10 的灵击是一个 per-stage 的对象 ——
+ *   `Bomb` 的 anm VM 归关卡所有，换关时 bullet.anm 的 VM 被清 ⇒ VM 没了 `Bomb::on_tick` 就把
+ *   `[bomb+0x28]` 置 0（`th10:0x405781`–`th10:0x405786`），半径查询随即返回 0）。
+ *   不做这一步的话，一发 296 帧的灵击会**跨关**继续消弹/撒伤害源（打到下一关刚出场的敌人）。
+ *   顺带把「本次符卡帧数」与符卡监视器归零（换关本来也不该带着上一关的符卡状态）。*/
+static void on_stage_start(ce_card_t *c)
+{
+    mof_card_t *s = st(c);
+
+    if (!s) return;
+    mof_bomb_fx_kill(&s->bomb);      /* ★ 2026-09-16k：跨关也不许把范围环带过去（见该函数的注释）*/
+    s->bomb.left = 0;
+    s->spell_frames = 0;
+    s->spell_watch.was = 0;
+    s->spell_watch.bombed = 0;
+    s->spell_watch.timed_out = 0;
+}
+
+/* 钩子分工（★ 2026-09-15：**只剩一条路**）：
+ *   · `on_enemy_death`（断点 `0x430240`，**撒落之前**）→ 大信仰点的**唯一**入口：过死亡事件的门
+ *     （非 KILL_ALL / 真敌人）+ **宿主表**（`mof_big_faith_table.h`，键 = `(anm 源, 主脚本)`）
+ *     + 非 boss。旧判据「`drop_main == 2` 就给」已被用户 2026-09-15 的裁决取代
+ *     （「金钱和绿点总之别重合」）。
+ *   · `on_enemy_drop_pre`（`0x430510`，撒落之后）★ **已不挂**（2026-09-15 删）：它原来的唯一职责
+ *     是旧判据②「同时掉钱与 P」，而「这敌掉什么」已整个退出判据 ⇒ 零职责。历史见那个函数位置的长注。
+ *   · 本卡**不改写掉落表**：撒的是自建 VM ⇒ 不需要死亡钩子「在撒之前」的那个特权，
+ *     但那里仍是**唯一**能拿到「未经消费的 `drop_main`」的位置（现在只用它记日志）。
+ *   · **满 P 转换**（A/B）改的**不是掉落表、也不是原生 type**，而是**已在场**的原生 P 道具本身
+ *     （共用件扫池 → 原位删 + 原位撒）—— 落点选它的理由是「一手讲的是**不变式**（满 P 期间场上
+ *     没有 P 类道具），只有看场上的那条路做得到」，全文见 `faith.h`。
  * 「不做」清单（spec §6）与长持续效果自查（METHOD 铁律二）见文件头。*/
 CE_CARD(110,
         .ctor = ctor,
         .on_load = on_load,
         .on_tick_2 = on_tick_2,
         .on_draw = on_draw,
+        .on_stage_start = on_stage_start,
         .on_enemy_death = on_enemy_death,
-        .on_enemy_drop_pre = on_enemy_drop_pre,
         .on_item_collect = on_item_collect,
+        .on_item_commit = on_item_commit,        /* ★ 2026-09-15 P 点 +0.05 档（补差 4 单位；见该函数）*/
         .on_item_score = on_item_score,
         .on_run_reset = on_run_reset,
         .on_delete = on_delete);

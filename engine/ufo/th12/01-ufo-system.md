@@ -152,7 +152,11 @@ play_sound_centered(0x34);  play_sound_at_position(0x36, enemy->x);   // 0x36 �
 | `UFO_Green` | `anmSetSprite(0, 137)` | 绿（sprite 137） |
 | `UFO_Rainbow` | `anmSetSprite(0, 138)` | 彩虹（sprite 138） |
 | `UFO_EtBreak` | `etCancel(%A)`，`%A` 从 16 每帧 +6 到 112 | 召唤瞬间的**扩圈消弹**（半径 16→112） |
-| `UFO_EtBreak2` | `etCancel(%B)`，`%B` 从 16 每帧 +6 到 640 | 击破时的大消弹（半径 16→640） |
+| `UFO_EtBreak2` | `etCancel(%B)`，`%B` 从 16 每帧 **+16** 到 640 | 击破时的大消弹（半径 16→640） |
+
+> **2026-09-15 订正**：`UFO_EtBreak2` 的步长原写作 +6，**错**。`dat/default.ecl` 反编译原文
+> （`thecl -d 12 -m eclmap/th12.eclm default.ecl`）：`UFO_EtBreak` 用 `+1: //1 / 6`、比较 `< 112.0f`；
+> **`UFO_EtBreak2` 用 `+1: //1 / 16`、比较 `< 640.0f`** ⇒ 步长是 **+16**。两处一字之差，逐条对过脚本原文。
 
 四个主体的脚本**逐字节相同**，只有 sprite 号不同：
 

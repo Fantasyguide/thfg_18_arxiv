@@ -4,10 +4,13 @@ script script177 {
 //             `60: alphaTime(20,0,255); stop();`
 //             `    interruptLabel(4): alphaTime(30,0,255); caseReturn(); interruptLabel(5): alphaTime(10,0,32); caseReturn();`
 //   ★ 与 175/176 不同：**`0:` 段是空的 —— 第 60 帧才开始淡入**（延迟出场），原文如此，照抄。
-//   贴图：@TRANCE_GAUGE_BAR2（64×64，`front/agauge2.png` sprite124 (0,32,48,32) 居中）。
-//   ⚠️ 引擎**不写**这个 VM 的 scale（`SPIRIT:371` 一手：174（0xae）引擎不写）
+//   贴图：@TRANCE_GAUGE_BAR2（**48×32** = `front/agauge2.png` sprite124 声明矩形 (0,32,48,32)）
+//   —— ★★ 与 176 同款：源贴图只有 **16 宽**，48 宽靠采样器 **WRAP 平铺 3 次**
+//      ⇒ 本仓由 `make_trance_art.py` 的 `_tile_cols` 把平铺烘进 PNG（画布仍 48×32）。
+//      ⚠️ 引擎**不写**这个 VM 的 scale（`SPIRIT:371` 一手：174（0xae）引擎不写）
+//      ⇒ 它恒为满宽 48 px = **三个空槽**（用户口径「空槽很淡」：贴图本身 alpha 最高只到 0x66）。
 //   ⇒ 它是静态底衬，只靠 interruptLabel 4/5 淡入淡出。
-// 偏差：同 175/176（layer 24 + resolutionMode(2) + pos.x 24→48）。
+// 偏差：同 175/176（layer 24 + resolutionMode(2) + pos.x 24→48；`anchor(1,2)` = 左·下）。
 -1:
     sprite(@TRANCE_GAUGE_BAR2);
     layer(24);
@@ -20,9 +23,9 @@ script script177 {
     alphaTime(20, 0, 255);
     stop();
     interruptLabel(4);
-    alphaTime(30, 0, 255);
+    alphaTime(4, 0, 255);
     caseReturn();
     interruptLabel(5);
-    alphaTime(10, 0, 32);
+    alphaTime(4, 0, 32);
     caseReturn();
 }

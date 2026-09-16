@@ -96,6 +96,7 @@ TH06NC 的 3 位字段里 6/7 无 opcode 可达。
 | ANM 绘制路径的 render state：全局重置 8 项（`ALPHAREF=1`/`ALPHAFUNC=7`/`ZFUNC=8`/alpha test 与 blend 均 enable）；**`COLORARG1`/`ALPHAARG1` 从不设 ⇒ 恒 `D3DTA_TEXTURE`**；blend mode 共 10 种，唯 mode 3 关 `ALPHATESTENABLE` | ✅ | 🟡 | [th16/09-drawing](th16/09-drawing.md) §4（`th16:0x45ba80` / `th16:0x465254`） |
 | Drawing 组只**置状态**不发 draw call；真正的绘制在 `draw_vm` 按 `render_mode` 分派（28 个 mode，索引表 `th16:0x468bac` / 跳表 `th16:0x468b70`） | ✅ | 🟡 | [th16/09-drawing](th16/09-drawing.md) §1/§3 |
 | 渲染阶段 × 相机 × 层：层 0–2 相机 2、3–19 相机 3、20–23 相机 1、24+ 相机 2；四台相机全透视（LookAt + PerspectiveFov，无 Ortho） | — | ✅ | [th18/02-render-stages](th18/02-render-stages.md) |
+| **`blendMode` 只决定 RGB**：TH18 的 anm 绘制恒开分离 alpha 混合（`0xce←1`、`0xcf←ONE`、`0xd0←ZERO`、`0xd1←ADD`）⇒ 顶点色 alpha 恒为 `Aa' := Sa`；顶点色有两路寄存器（`colorMode` 决定哪路生效，`color()` 只写 color_1.RGB、`alpha()` 只写 color_2.A）| TH13 相反（画幕布时 `0xce←0` ⇒ `Sa² + Da(1−Sa)`）| ✅ | [th18/07-blendmode-rgb-only-alpha-is-sa](th18/07-blendmode-rgb-only-alpha-is-sa.md) |
 | 渲染模式 8 = D3D WORLD 矩阵 + 单位四边形；2D 路径自算顶点并加相机 2D 偏移（只有相机 2 非零） | — | ✅ | [th18/01 §3b](th18/01-vm-instantiate.md) |
 | `blendMode(n)` = VM `+0x18` bit 5..8 → D3D9 SRCBLEND/DESTBLEND/BLENDOP；**2 = 反向减算** `dst − src×alpha` | ✅ | 🟡 | [th15/01-blend-modes](th15/01-blend-modes.md) |
 | ASCII 文字：字形集 = **页（`vm+0x20` → `preloaded[页]`）+ 字体 id（`+0x19244` → 精灵表字形块）** 两段 | ✅ | ✅ | [th18/03-ascii-text](th18/03-ascii-text.md) |

@@ -7,16 +7,47 @@
 
 | 放什么 | 在哪 | 规则 |
 | --- | --- | --- |
-| 贴图 | `entries/ORDER.txt`：`NAME  源图(相对 assets/)  [WxH]` | 不写尺寸 = 卡图 256×320；写 `WxH`（2 的幂）= 整张贴图一个 sprite（横幅等）；源图小于 WxH 时居中补透明。**源图 `local/` 开头 = 原生贴图**（gitignored，构建时取，不入库；青眼的光束用魔理沙 `pl01b` / `pl01b2`）。只追加不重排。第 k 行 → entry 7+k / sprite 109+k |
-| 脚本 | `scripts/NN_name.anm.txt`，`NN` 从 68 起连续 | 一个文件一个 `script scriptNN { … }`；正文用 `@NAME` 引用上面的 sprite |
+| 贴图 | `entries/ORDER.txt`（**v2 语法**，三种行 —— 见下）| 语法与规则写在 ORDER.txt 的文件头；**成员矩形 = 原图自己的像素尺寸**，第 k 个数据行 → entry 7+k / sprite 109+k。源图 `local/` 开头 = 原生贴图（gitignored，构建时取，不入库）|
+| 脚本 | `scripts/NN_name.anm.txt`，`NN` 从 68 起连续 | 一个文件一个 `script scriptNN { … }`；正文用 `@NAME` 引用上面的 sprite（图集成员还能按序号写成 `@图集名_k@`，`@图集名@` = 第 0 个成员）|
 
-**ORDER / id 的并发纪律（2026-09-12 十三修补充）**：`entries/ORDER.txt` 是**只追加**表，第 k 行决定
-`entry 7+k` / `sprite 109+k`，因此任何插入 / 重排都会移动后面所有 sprite。各批生成器**不许改主表**：
+**`ORDER.txt` 的三种行（v2）**：
+
+1. **单图行** `NAME 源图(相对 assets/) [WxH]` —— 一行 = 一个 entry = 一个 sprite。不写尺寸 = 卡图 256×320；
+   写 `WxH` = 整张贴图一个 sprite；源图小于 `WxH` 时**居中补透明**。
+2. **图集段** `ATLAS <名字> <画布WxH[@列x行]>`，段内一行一个成员：网格段 `成员名 源图 WxH`、
+   显式段 `成员名 源图 @x,y,WxH` ⇒ **整段是一个 entry、里面多个 sprite**（成员按段内顺序拿连续 sprite 号）。
+3. **退役行** `REF 名字 目标名` —— 只保 `@名字` 能解析成目标名的 sprite，**不占 entry**。
+
+**★ 2026-09-13 图集合并（现行做法，细节见 [`../../ATLAS-MERGE-AUDIT.md`](../../ATLAS-MERGE-AUDIT.md)）**：
+
+- **为什么**：贴图键 = `(anm 槽号 << 8) | entry 下标`（`th18:0x486d38` / `th18:0x47e1a4`）⇒ **一个 anm 最多 256 entry**。
+  我们原来 367 entry（后 111 个画错图）⇒ 把同一张卡的几十张小图并进**一个** entry（引擎原生支持：
+  `bullet.anm entry0` 一个 entry 有 368 个 sprite）。现在 **48 entry / 上限 256 ⇒ 余量 208**。
+- **成员矩形 = 成员原图自己的像素尺寸**（不补边、不缩放）：VM 的 `scale.x` 乘的是 **sprite 矩形宽**
+  （`th18:0x481703`），补边会让缩放"既缩又移"。`build_ability.py` 会硬校验，尺寸不匹配直接报错。
+- **只许追加**：`entries/ORDER.frozen.txt` 记下了已定稿的 A/B/C 段（共享 HUD / 别人的卡 / 114–117）的逐行 sha256
+  + 结构指纹，`make anm` 每次逐行核对，**挪动 / 删改就报错退出**。新美术一律 **append 到 ORDER.txt 末尾**；
+  换图请追加新图集，别改老行的号（`entry = 原生 7 + 行序`）。真要重排得
+  `python3 build_ability.py --allow-reorder` + 重新 `--freeze-order N`，并在 `AUDIT.md` §BE 登记。
+- ⚠ **DLL 与 `ability.anm` 必须同时发布**（DLL 里烘着 `anm_ids.h` 的宏值）。
+
+**ORDER / id 的并发纪律（2026-09-12 十三修补充；2026-09-13 图集合并后更新）**：`entries/ORDER.txt` 是**只追加**表，
+第 k 个数据行决定 `entry 7+k` / `sprite 109+k`，因此任何插入 / 重排都会移动后面所有 sprite。各批生成器**不许改主表**：
 `make_animal_art.py` 只 stdout 打印待追加行，`make_youkai_option_art.py` 只整段重写自己的
-`entries/ORDER.youkai_option.txt`；主 agent 按追加顺序合并。脚本号由 `scripts/NN_*.anm.txt` 的数值连续
+`entries/ORDER.youkai_option.txt`；主 agent 按追加顺序合并（**图集合并后这批片段文件已并进主表**，
+`ORDER.trance.txt` 等只作历史记录，别再往上加东西）。脚本号由 `scripts/NN_*.anm.txt` 的数值连续
 编号决定，两批各自占自己的号段（当前 117 = 137–163、108 option = 224–227），互不共享计数器。
 `assets/check_ability_anm_bounds.py`（`make anm-verify`）会在最终 `ability.anm` 上复核 117 的脚本 / sprite /
-entry 对应关系；`sites.py` 现在也会在断点 `cavesize < 5` 时硬失败。
+entry（**以及矩形**）对应关系；`sites.py` 现在也会在断点 `cavesize < 5` 时硬失败。
+
+`make_faith_hud_art.py`：110/111 的**组合 UI**（`NEXT.md` §2A）行 2 里那个「×」字形 ——
+从 **TH11 `ascii.anm` entry0 的 sprite10**（`(140,0,14,14)`，墨迹 `(4,0,11,8)`）**原样切**成
+`faith_hud/MUL.png`（14×14，不裁墨迹、不补边）；ORDER 里是 `ATLAS_FAITH_HUD`（16×16 画布 + 显式矩形
+`@0,0,14x14`）的唯一成员，脚本 **275**（「×」VM）/ **276**（倍率 `M.MM` 的字形模板 VM，用 TH18 font 2）。
+★ 为什么要借：本仓 `FONT2_*` **没有 `'*'`**（`native/sdk.c` 的 `hud_vm_glyph()` 只有 `0-9 . % + -`），
+TH10 `front.anm` 的 sprite40/41/42 也不是乘号 ⇒ 原版只有 TH11 那一行有它。
+合并块的块尺寸 / 三行坐标 / 逐项「复刻 vs ❓ 自定」见 `engine/player/th11/04-merged-hud-spec.md`
+与 `AUDIT.md` §DB；`--dump` 可把字形打成 ASCII 复核（邻居 11=`+` / 12=`,` / 13=`-` 交叉对名）。
 
 `make_blue_eyes_art.py`：青眼白龙的场上贴图——从 `blue_eyes/_src/` 的黑底俯视图抠底出 256×256 `DRAGON.png`（泛洪掩码 + 边缘亮度斜坡）。光束照魔理沙 Master Spark（`pl01.anm` script22–28）：父脚本 79 起白核 80（blendMode 9）+ 四层彩 81–84（additive、±2.8° 摆动）+ 每 8 帧一颗沿光束飞的彩光 85；**父不转、子各自 `rotate −90°`、彩光直接沿 −y 飞**——不押注子 VM 是否继承父旋转。
 `make_broken_core_art.py`：破损核心的三张图 —— `CORE.png`（128×128 电球子机，用户原创 `broken_core/_src/LightningOrb.png`
@@ -61,7 +92,9 @@ script33–36 生成（`beastr.png` sprite69）、水獭消弹体 149 手写（`
 （数字 = sprite 196..205，`-`/`%`/`.`/`+` = 208/210/211/212，一手映射见
 [`engine/anm/th18/03-ascii-text.md`](../../../../../engine/anm/th18/03-ascii-text.md) §2f）。
 **连 16×20 的单元一起切**（`.` 的墨迹在单元第 12–17 行，按墨迹裁会把它抬到基线上方）。
-ORDER 里按 `16x32` 声明（构建脚本把 16×20 居中补透明），脚本 `136_hud_glyph` 逐字起 VM ——
+ORDER 里是 `ATLAS_FONT2` 的成员、按 `16x32` 声明（**生成器**已把 16×20 居中补成 16×32 的 PNG，
+所以「矩形 = 原图尺寸」成立；补边的理由见 `make_font2_art.py`：`sdk.c:690` 的 `+5.0f * sy * dat`
+是按「32 高矩形里 20 行字形居中」标定的），脚本 `136_hud_glyph` 逐字起 VM ——
 这是「数字也要被暂停模糊罩盖住」的唯一出路（ASCII 文字做不到，见同一篇 §2f 末尾）。
 `gen_banner.py "ROYAL FLUSH"`：金色金属光泽 + 黑描边的大字横幅（512×128，`banner/`），皇家同花顺的亮字用它。
 

@@ -68,9 +68,11 @@ int main(void)
     CHECK(TRANCE_COOLDOWN_FRAMES == 30);
     CHECK(TRANCE_CHAIN_WINDOW == 60);
     CHECK(TRANCE_CHAIN_THRESHOLD == 10);
-    /* 击破 → 神灵的映射常量（SPEC §2.2：击破走通道 B ⇒ type 1；颗数 ❓ 自定 = 1，§9 #4）*/
+    /* 击破 → 神灵的映射常量（SPEC §2.2：击破走通道 B ⇒ type 1；
+     * ★ 2026-09-13：颗数**不再是** ❓ 自定 = 1 —— 走 TH13 通道 B 的衰减公式（见第 12b 节）*/
     CHECK(TRANCE_KILL_SPIRIT_TYPE == 1);
-    CHECK(TRANCE_KILL_SPIRITS_PER_KILL == 1);
+    CHECK(TRANCE_KILL_SPIRIT_MIN == 1);
+    CHECK(TRANCE_KILL_SPIRIT_MAX == 64);
     CHECK(TRANCE_DURATION_FRAMES_MAX == 600);    /* 满槽 600 帧 = 10.00 s */
     CHECK(TRANCE_TYPE_COUNT == 4);
     CHECK(TRANCE_ID != TRANCE_RESCUE_107 && TRANCE_ID != TRANCE_RESCUE_117);
@@ -310,26 +312,34 @@ int main(void)
     CHECK(r.life_frag == 0 && r.max_point == 0 && r.spell_frag == 0 && r.gauge == 0 && r.gauge_type3 == 0);
     r = trance_reward(5, 1, 0);
     CHECK(r.life_frag == 0 && r.max_point == 0 && r.gauge == 0);
-    /* 早苗特例默认关（SPEC §9 #8 ⏳）*/
+    /* 早苗特例（`th13:0x438bea`）：★ 2026-09-13 用户口径「其他三个人原样进去就行」⇒ **已打开**。
+     * 一手语义：TH13 的 `CHARACTER == 2`（= 早苗）收 type 1 时**额外 +1 槽**；灵界中不加槽 ⇒ 也不加这一笔。*/
+    CHECK(TRANCE_ENABLE_SANAE_TYPE1_BONUS == 1);
     r = trance_reward(1, 0, 1);
-    CHECK(r.gauge == (TRANCE_ENABLE_SANAE_TYPE1_BONUS ? 3 : 2));
-    CHECK(TRANCE_ENABLE_SANAE_TYPE1_BONUS == 0);
+    CHECK(r.gauge == 2 + TRANCE_GAUGE_SANAE_TYPE1);
+    r = trance_reward(1, 0, 0);                            /* 非早苗：不带这一笔 */
+    CHECK(r.gauge == 2);
+    r = trance_reward(0, 0, 1);                            /* 早苗但**不是 type 1**：不带 */
+    CHECK(r.gauge == 2);
+    r = trance_reward(1, 1, 1);                            /* 灵界中：一分槽都不加 */
+    CHECK(r.gauge == 0);
 
     /* ================= 8. 收集：槽账 + 按 type 计数 + 连锁 ================= */
     memset(&s, 0, sizeof s);
     trance_gauge_reset(&s.gauge);
     CHECK(trance_collect(&s, 0, &col) == 1);
-    CHECK(col.gauge_add == 2 && col.tier_crossed == 0 && col.chain_extra == 0);
+    CHECK(col.gauge_add == 2 && col.tier_crossed == 0);
     CHECK(s.spirits_seen[0] == 1 && s.spirits_seen[1] == 0);
-    CHECK(s.chain_count == 1 && s.chain_timer == TRANCE_CHAIN_WINDOW);
+    /* ★★ 2026-09-14：**收集不再推进连锁**（一手连锁长在 `spawn_spirit` 尾部 `th13:0x4391a0`，
+     *   见 `trance_core.h` 的粒度订正段）⇒ 收多少颗，`chain_count` 都必须纹丝不动。*/
+    CHECK(s.chain_count == 0 && s.chain_timer == 0);
 
     CHECK(trance_collect(&s, 9, &col) == 0);               /* 越界 type：不动任何东西 */
     CHECK(col.gauge_add == 0 && s.gauge.gauge == 2);
     CHECK(trance_collect(NULL, 0, &col) == 0);
-    CHECK(col.chain_extra == 0);
 
     trance_collect(&s, 1, NULL);                            /* out 可为 NULL */
-    CHECK(s.spirits_seen[1] == 1 && s.gauge.gauge == 4 && s.chain_count == 2);
+    CHECK(s.spirits_seen[1] == 1 && s.gauge.gauge == 4 && s.chain_count == 0);
 
     /* type 3 收一颗：槽 +2 +1 = 3；灵界中 0 */
     trance_collect(&s, 3, &col);
@@ -341,20 +351,23 @@ int main(void)
     CHECK(s.spirits_seen[3] == 2);
     s.phase = TRANCE_PHASE_IDLE;
 
-    /* 连锁：窗口内数到 **第 10 颗** 就额外送 type 3（一手 `th13:0x4391a0` 尾段逐条：
+    /* 连锁：**在"掉出一颗灵"的那一刻**数到第 10 颗就额外送 type 3
+     * （一手 `th13:0x4391a0` 尾段逐条，长在 `spawn_spirit` 里：
      *     `+0x8828 = 60; +0x8838++ ; if (+0x8838 > 9) spawn_spirit(this, 3, pos, 0.5, 1);`
      *   ⇒ 判据是「加完之后 ≥ 10」= 本次这颗就是窗口内第 10 颗。
-     *   ★ 2026-09-12 修的就是这里：旧实现写 `> 10`（等于第 11 颗才触发），比一手晚一颗。*/
+     *   ★ 2026-09-12 修的是比较符（旧 `> 10` = 第 11 颗才触发）；
+     *   ★★ 2026-09-14 修的是**粒度**（旧版挂在"收集"上 ⇒ 玩家连续吸灵时窗口永不过期 ⇒ 白灵刷屏）
+     *     ⇒ 本节改成直接驱动 `trance_chain_note()`（= 卡侧 `trance_spirit_spawn()` 的调用形状）。*/
     memset(&s, 0, sizeof s);
     trance_gauge_reset(&s.gauge);
     for (i = 1; i < TRANCE_CHAIN_THRESHOLD; ++i) {          /* 第 1..9 颗 */
         CHECK(trance_collect(&s, 1, &col) == 1);
-        CHECK(col.chain_extra == 0);            /* 前 9 颗都不触发 */
-        CHECK(s.chain_count == i);
+        CHECK(trance_chain_note(&s, 1) == 0);   /* 前 9 颗都不触发 */
+        CHECK(s.chain_count == i && s.chain_timer == TRANCE_CHAIN_WINDOW);
     }
     CHECK(i == 10);                             /* 手算：循环跑完 i = 10 = TRANCE_CHAIN_THRESHOLD */
-    CHECK(trance_collect(&s, 1, &col) == 1);    /* 第 10 颗 */
-    CHECK(col.chain_extra == 1);                /* ★ 第 10 颗 ⇒ 触发（那一份额外的 type 3 就是场上的第 11 颗）*/
+    CHECK(trance_collect(&s, 1, &col) == 1);    /* 第 10 颗照样只有"收集"效果 */
+    CHECK(trance_chain_note(&s, 1) == 1);       /* ★ 第 10 颗 ⇒ 触发（那份额外的 type 3 就是场上的第 11 颗）*/
     CHECK(s.chain_count == 10 && s.chain_bonus_spawned == 1);
     CHECK(trance_chain_note(&s, 1) == 1);       /* 第 11 颗继续触发（一手：计数 > 9 之后每颗都触发）*/
     CHECK(s.chain_bonus_spawned == 2);
@@ -473,55 +486,209 @@ int main(void)
 
     /* ================= 12. 击破队列（事件钩子 → O(1) 入队 → 帧末 take）=================
      * 一手：`on_enemy_death` 由断点 `0x430240` 沿卡链表派发（**不经 21 槽虚表**），
-     * 清场帧一次 100–300 次（`DEATH` §1.7）⇒ 只入队、只存标量（`ev->enemy` 禁止缓存）。*/
+     * 清场帧一次 100–300 次（`DEATH` §1.7）⇒ 只入队、只存标量（`ev->enemy` 禁止缓存）。
+     * ★ 2026-09-13：**每条再带一个颗数**（TH13 通道 B 的衰减结果）——
+     *   ⚠ 一次击破 = **一条**（绝不按颗数展开：16 格队列 + 清场帧 100–300 次 ⇒ 展开必溢出）。*/
     {
         float ox[TRANCE_KILL_QUEUE_MAX], oy[TRANCE_KILL_QUEUE_MAX];
+        int32_t on[TRANCE_KILL_QUEUE_MAX];
         memset(&s, 0, sizeof s);
         trance_gauge_reset(&s.gauge);
-        CHECK(trance_kill_take(&s, 0, ox, oy, TRANCE_KILL_QUEUE_MAX) == 0);
+        CHECK(trance_kill_take(&s, 0, ox, oy, on, TRANCE_KILL_QUEUE_MAX) == 0);
 
-        trance_kill_note(&s, 10, 100.5f, -20.25f);
+        trance_kill_note(&s, 10, 100.5f, -20.25f, 6);
         CHECK(s.kill_pending == 1 && s.kill_last_frame == 10);
         CHECK(s.kill_x[0] == 100.5f && s.kill_y[0] == -20.25f);      /* 位置快照进队 */
-        trance_kill_note(&s, 11, -3.0f, 444.0f);
+        CHECK(s.kill_n[0] == 6);                                     /* 颗数进队 */
+        trance_kill_note(&s, 11, -3.0f, 444.0f, 1);
         CHECK(s.kill_pending == 2 && s.kill_last_frame == 11);
         CHECK(s.kill_x[1] == -3.0f && s.kill_y[1] == 444.0f);
+        /* 脏数据保底：n ≤ 0 按 1 记（正常路径不会出现；见 trance_kill_note 的注释）*/
+        trance_kill_note(&s, 11, 5.0f, 5.0f, 0);
+        CHECK(s.kill_n[2] == TRANCE_KILL_SPIRIT_MIN);
+        CHECK(trance_kill_take(&s, 11, NULL, NULL, NULL, 0) == 3);   /* 清干净，别影响下面 */
 
-        /* 帧末取走：返回颗数 + 按入队顺序抄位置；取走即清零 */
-        CHECK(trance_kill_take(&s, 12, ox, oy, TRANCE_KILL_QUEUE_MAX) == 2);
-        CHECK(ox[0] == 100.5f && oy[0] == -20.25f);
-        CHECK(ox[1] == -3.0f && oy[1] == 444.0f);
+        /* 帧末取走：返回**击破次数** + 按入队顺序抄位置/颗数；取走即清零 */
+        trance_kill_note(&s, 10, 100.5f, -20.25f, 6);
+        trance_kill_note(&s, 11, -3.0f, 444.0f, 1);
+        CHECK(trance_kill_take(&s, 12, ox, oy, on, TRANCE_KILL_QUEUE_MAX) == 2);
+        CHECK(ox[0] == 100.5f && oy[0] == -20.25f && on[0] == 6);
+        CHECK(ox[1] == -3.0f && oy[1] == 444.0f && on[1] == 1);
         CHECK(s.kill_pending == 0);
-        CHECK(trance_kill_take(&s, 13, ox, oy, TRANCE_KILL_QUEUE_MAX) == 0);
+        CHECK(trance_kill_take(&s, 13, ox, oy, on, TRANCE_KILL_QUEUE_MAX) == 0);
 
-        /* 只要颗数、不要位置（out 传 NULL / cap = 0 都可以）*/
-        trance_kill_note(&s, 14, 1.0f, 2.0f);
-        CHECK(trance_kill_take(&s, 15, NULL, NULL, 0) == 1);
+        /* 只要次数、不要位置/颗数（out 传 NULL / cap = 0 都可以）*/
+        trance_kill_note(&s, 14, 1.0f, 2.0f, 3);
+        CHECK(trance_kill_take(&s, 15, NULL, NULL, NULL, 0) == 1);
         CHECK(s.kill_pending == 0);
-        trance_kill_note(&s, 16, 3.0f, 4.0f);
-        CHECK(trance_kill_take(&s, 17, ox, oy, 0) == 1);            /* cap = 0：不抄位置但报颗数 */
+        trance_kill_note(&s, 16, 3.0f, 4.0f, 3);
+        CHECK(trance_kill_take(&s, 17, ox, oy, on, 0) == 1);        /* cap = 0：不抄但报次数 */
         CHECK(ox[0] == 100.5f);                                      /* 缓冲没被写（还是上一次的值）*/
+        /* ★ 只给位置不给颗数（out_n = NULL）也要能跑：卡侧老调用点就是这么退化的 */
+        trance_kill_note(&s, 18, 7.0f, 8.0f, 12);
+        CHECK(trance_kill_take(&s, 19, ox, oy, NULL, TRANCE_KILL_QUEUE_MAX) == 1);
+        CHECK(ox[0] == 7.0f && oy[0] == 8.0f);
 
-        /* cap 小于颗数：只抄前 cap 个，颗数照实报 */
+        /* cap 小于次数：只抄前 cap 个，次数照实报 */
         memset(&s, 0, sizeof s);
-        trance_kill_note(&s, 20, 10.0f, 11.0f);
-        trance_kill_note(&s, 21, 12.0f, 13.0f);
-        trance_kill_note(&s, 22, 14.0f, 15.0f);
-        CHECK(trance_kill_take(&s, 23, ox, oy, 2) == 3);
-        CHECK(ox[0] == 10.0f && oy[0] == 11.0f);
-        CHECK(ox[1] == 12.0f && oy[1] == 13.0f);
+        trance_kill_note(&s, 20, 10.0f, 11.0f, 2);
+        trance_kill_note(&s, 21, 12.0f, 13.0f, 5);
+        trance_kill_note(&s, 22, 14.0f, 15.0f, 1);
+        CHECK(trance_kill_take(&s, 23, ox, oy, on, 2) == 3);
+        CHECK(ox[0] == 10.0f && oy[0] == 11.0f && on[0] == 2);
+        CHECK(ox[1] == 12.0f && oy[1] == 13.0f && on[1] == 5);
 
         /* 上限夹住 + 溢出记账；NULL 安全 */
-        trance_kill_note(NULL, 0, 0.0f, 0.0f);
-        CHECK(trance_kill_take(NULL, 0, ox, oy, 4) == 0);
+        trance_kill_note(NULL, 0, 0.0f, 0.0f, 1);
+        CHECK(trance_kill_take(NULL, 0, ox, oy, on, 4) == 0);
         {
             int32_t dropped_before = trance_kill_queue_dropped;
             for (i = 0; i < TRANCE_KILL_QUEUE_MAX + 5; ++i)
-                trance_kill_note(&s, i, (float)i, (float)(i * 2));
+                trance_kill_note(&s, i, (float)i, (float)(i * 2), i + 1);
             CHECK(s.kill_pending == TRANCE_KILL_QUEUE_MAX);          /* 上限夹住 */
-            CHECK(trance_kill_queue_dropped == dropped_before + 5);  /* 丢的颗数有记账 */
+            CHECK(trance_kill_queue_dropped == dropped_before + 5);  /* 丢的**次数**有记账 */
             CHECK(s.kill_last_frame == TRANCE_KILL_QUEUE_MAX - 1);   /* 被丢的不改 last_frame */
-            CHECK(trance_kill_take(&s, 0, ox, oy, TRANCE_KILL_QUEUE_MAX) == TRANCE_KILL_QUEUE_MAX);
+            CHECK(trance_kill_take(&s, 0, ox, oy, on, TRANCE_KILL_QUEUE_MAX) == TRANCE_KILL_QUEUE_MAX);
+            for (i = 0; i < TRANCE_KILL_QUEUE_MAX; ++i) CHECK(on[i] == i + 1);   /* 颗数跟着各自的条目 */
+        }
+    }
+
+    /* ============ 12b. ★★ 击破颗数 = TH13 通道 B 的衰减（2026-09-13 新增）============
+     *
+     * 一手（`th13:0x419f41`，`engine/spirit/th13/01-spirit-and-trance.md` §3.2）：
+     *     max = spec1(T，窗口) ; div = spec2(N，上限颗数)
+     *     if (enemy_timer <= max) { n = (max − timer)/(max/div) + 1 ;
+     *                               if (DIFFICULTY == 2 || DIFFICULTY == 3) n += 1 ; }
+     * ⇒ 瞬杀 = N+1、拖满窗口 = 1、H/L 各 +1。
+     * 期望值直接取一手普查（`thecl -d 13` 全 8 关）里的真实敌人，**不自己编数**。
+     * TH18 侧的入参来源（T/N/alive）在 `cards/trance.c` 的 `on_enemy_death()`（原生同形通道）。*/
+    {
+        /* —— 瞬杀（alive = 0）= N + 1 —— */
+        CHECK(trance_kill_spirit_count(0, 120, 5, 1) == 6);      /* st01 GirlB01 (5,120) ⇒ 6 */
+        CHECK(trance_kill_spirit_count(0, 140, 5, 1) == 6);      /* st01 GirlB02 (5,140) ⇒ 6：140/5=28 ⇒ 5+1 */
+        CHECK(trance_kill_spirit_count(0, 40, 1, 1) == 2);       /* st01 Phantom01 (1,40) ⇒ 2 */
+        CHECK(trance_kill_spirit_count(0, 120, 6, 1) == 7);      /* st02 GirlC01func (6,120) ⇒ 7 */
+        CHECK(trance_kill_spirit_count(0, 90, 3, 1) == 4);       /* st02 ECir00 (3,90) ⇒ 4 */
+        CHECK(trance_kill_spirit_count(0, 350, 16, 1) == 17);    /* st05 GirlD01 (16,350) ⇒ 17 */
+        CHECK(trance_kill_spirit_count(0, 400, 40, 1) == 41);    /* st07 GirlD02 (40,400) ⇒ 41 */
+
+        /* —— 难度（一手只在 `== 2 || == 3` 上加；EXTRA(4) 不加）—— */
+        CHECK(trance_kill_spirit_count(0, 120, 5, 0) == 6);      /* EASY */
+        CHECK(trance_kill_spirit_count(0, 120, 5, 1) == 6);      /* NORMAL */
+        CHECK(trance_kill_spirit_count(0, 120, 5, 2) == 7);      /* HARD +1 */
+        CHECK(trance_kill_spirit_count(0, 120, 5, 3) == 7);      /* LUNATIC +1 */
+        CHECK(trance_kill_spirit_count(0, 120, 5, 4) == 6);      /* EXTRA：一手没这一支 ⇒ 不加 */
+        CHECK(trance_kill_spirit_count(-7, 120, 5, 1) == 6);     /* 负存活帧当 0（入参防御）*/
+
+        /* —— 衰减：**单调不增**，且拖满窗口正好落到 1 ——
+         * 步长 = T/N = 120/5 = 24 ⇒ 每多活 24 帧少 1 颗（整数除 ⇒ 台阶每 24 帧一级）。*/
+        CHECK(trance_kill_spirit_count(1, 120, 5, 1) == 5);      /* (120−1)/24 = 4 ⇒ 5 */
+        CHECK(trance_kill_spirit_count(24, 120, 5, 1) == 5);     /* 96/24 = 4 ⇒ 5（台阶上沿）*/
+        CHECK(trance_kill_spirit_count(25, 120, 5, 1) == 4);     /* 95/24 = 3 ⇒ 4（下一级）*/
+        CHECK(trance_kill_spirit_count(48, 120, 5, 1) == 4);     /* 72/24 = 3 ⇒ 4 */
+        CHECK(trance_kill_spirit_count(96, 120, 5, 1) == 2);     /* 24/24 = 1 ⇒ 2 */
+        CHECK(trance_kill_spirit_count(97, 120, 5, 1) == 1);     /* 23/24 = 0 ⇒ 1 */
+        CHECK(trance_kill_spirit_count(119, 120, 5, 1) == 1);    /* 1/24 = 0 ⇒ 1（拖到最后）*/
+        CHECK(trance_kill_spirit_count(120, 120, 5, 1) == 1);    /* 窗口用尽 ⇒ 0 + 1 = 1 */
+        /* 逐帧扫一遍：**永远 ≥ 1，且不增**（这条是"越慢越少"的可执行表述）*/
+        {
+            int32_t alive, prev = trance_kill_spirit_count(0, 120, 5, 1);
+            CHECK(prev == 6);
+            for (alive = 1; alive <= 200; ++alive) {
+                int32_t n = trance_kill_spirit_count(alive, 120, 5, 1);
+                CHECK(n >= TRANCE_KILL_SPIRIT_MIN);
+                CHECK(n <= prev);
+                prev = n;
+            }
+            CHECK(prev == 1);                                    /* 过期之后恒 1（❓ 自定保底）*/
+        }
+
+        /* —— 窗口过期（alive > T）：一手 `if` 之外 = **0 颗**；本卡保底 1 颗（❓ 自定，见 .h）—— */
+        CHECK(trance_kill_spirit_count(121, 120, 5, 1) == 1);
+        CHECK(trance_kill_spirit_count(100000, 120, 5, 1) == 1);
+        /* 过期这一档**不加**难度奖励（一手把 `+1` 写在 `if` 里面 ⇒ 照抄控制流）*/
+        CHECK(trance_kill_spirit_count(121, 120, 5, 3) == 1);
+        CHECK(trance_kill_spirit_count(120, 120, 5, 3) == 2);    /* 还在窗口内 ⇒ +1 照给 */
+
+        /* —— 防呆：没配窗口 / 脏数据 ⇒ ≥ 1，且**不除零**（一手 `max/div` 在 div > max 时会炸）—— */
+        CHECK(trance_kill_spirit_count(0, 0, 0, 1) == TRANCE_KILL_SPIRIT_MIN);
+        CHECK(trance_kill_spirit_count(0, -5, 5, 1) == TRANCE_KILL_SPIRIT_MIN);
+        CHECK(trance_kill_spirit_count(0, 120, 0, 1) == TRANCE_KILL_SPIRIT_MIN);
+        CHECK(trance_kill_spirit_count(0, 120, -3, 1) == TRANCE_KILL_SPIRIT_MIN);
+        CHECK(trance_kill_spirit_count(0, 1, 999, 1) == 2);      /* N > T ⇒ 步长按 1（不除零），T+1 = 2 */
+
+        /* —— 上界夹取（卡侧调它 + 打日志；见 cards/trance.c 的 on_enemy_death）—— */
+        CHECK(trance_kill_spirit_clamp(0) == TRANCE_KILL_SPIRIT_MIN);
+        CHECK(trance_kill_spirit_clamp(-9) == TRANCE_KILL_SPIRIT_MIN);
+        CHECK(trance_kill_spirit_clamp(1) == 1);
+        CHECK(trance_kill_spirit_clamp(41) == 41);               /* 一手普查里最大的一笔（40+1）不被夹 */
+        CHECK(trance_kill_spirit_clamp(TRANCE_KILL_SPIRIT_MAX) == TRANCE_KILL_SPIRIT_MAX);
+        CHECK(trance_kill_spirit_clamp(TRANCE_KILL_SPIRIT_MAX + 1) == TRANCE_KILL_SPIRIT_MAX);
+        CHECK(trance_kill_spirit_clamp(100000) == TRANCE_KILL_SPIRIT_MAX);
+    }
+
+    /* ============ 12c. ★★ boss 相位击破的**灵批次**（2026-09-13 第二轮）============
+     *
+     * 用户口径（#3/#4）：「**收/击破 boss 的符卡**会掉红灵（可能带绿灵），而**非符不掉**」
+     *   ＋「道中 boss 击破符卡会掉**一大堆**灵」。
+     * 一手（TH13，本机 `thecl -d 13` 全量重跑；`engine/spirit/th13/01` §3）：
+     *   · 批次写在**符卡刚结束**的那个相位的序言里（`spellEnd();` 之后几行），且被
+     *     `unless ($TIMEOUT == 0) goto skip;` 包着 ⇒ 超时一颗不掉、**非符相位的结束一颗不掉**；
+     *   · stage boss：`dropExtra(10,1)+dropExtra(12,1)+dropExtra(13,20)` = **22 颗**（逐关 22..47）；
+     *   · 道中 boss（`MBossDead`）：**5..25 颗**。
+     * ★ 2026-09-14 起颗数**逐关查表**（不再用 TH18 的件数按比例换算），`phase_items` 只当去重判据。*/
+    {
+        /* —— 0 = 事件无效（计数全零：重复回调 / 没配掉落）—— 卡侧的去重判据就是这个 0 —— */
+        CHECK(trance_boss_phase_spirit_count(1, 0, 0) == 0);
+        CHECK(trance_boss_phase_spirit_count(4, 1, -1) == 0);
+        CHECK(trance_boss_phase_spirit_count(7, 0, -9999) == 0);
+
+        /* —— ★★ 2026-09-14：**逐关固定档**（一手 `thecl -d 13` 普查的颗数，
+         *    见 `trance_core.h` 的那张表）；`phase_items` 只当"这是一次真掉落"的去重判据 —— */
+        int32_t st;
+        for (st = 1; st <= 7; ++st) {
+            /* stage boss：一手 `Boss2` 序言那一批（22/22/22/32/37/32/47）*/
+            const int32_t boss_expect[7]    = { 22, 22, 22, 32, 37, 32, 47 };
+            /* 道中 boss：一手 `MBossDead`（5/9/24/19/19/19/25）*/
+            const int32_t midboss_expect[7] = {  5,  9, 24, 19, 19, 19, 25 };
+            CHECK(trance_boss_phase_spirit_count(st, 0, 21) == boss_expect[st - 1]);
+            CHECK(trance_boss_phase_spirit_count(st, 1, 21) == midboss_expect[st - 1]);
+            /* 件数完全不影响颗数（同一关同一类 ⇒ 同一个数），只影响"是不是一次真掉落" */
+            CHECK(trance_boss_phase_spirit_count(st, 0, 1) == boss_expect[st - 1]);
+            CHECK(trance_boss_phase_spirit_count(st, 0, 110) == boss_expect[st - 1]);
+            CHECK(trance_boss_phase_spirit_count(st, 0, 100000) == boss_expect[st - 1]);
+        }
+        /* 去重判据：计数全零 / 负数 ⇒ 0（调用方直接返回），与关卡、类型无关 */
+        CHECK(trance_boss_phase_spirit_count(1, 0, 0) == 0);
+        CHECK(trance_boss_phase_spirit_count(4, 1, -5) == 0);
+        /* 关卡号越界一律夹取（菜单/商店里 `CE_CURRENT_STAGE()` 可能是 0 或垃圾）*/
+        CHECK(trance_boss_phase_spirit_count(0, 0, 21) == 22);
+        CHECK(trance_boss_phase_spirit_count(-3, 1, 21) == 5);
+        CHECK(trance_boss_phase_spirit_count(99, 0, 21) == 47);
+        CHECK(trance_boss_phase_spirit_count(99, 1, 21) == 25);
+        /* 一手区间：stage boss 22..47、道中 boss 5..25（用户口径 #4「一大堆」的观感就靠这条）*/
+        for (st = 1; st <= 7; ++st) {
+            CHECK(trance_boss_phase_spirit_count(st, 0, 21) >= 22);
+            CHECK(trance_boss_phase_spirit_count(st, 1, 21) >= 5);
+        }
+
+        /* —— 构成（一手：1×type0 + 1×type2 + 其余 type3）—— */
+        CHECK(trance_boss_phase_spirit_type(0, 22) == TRANCE_PHASE_TYPE_A);
+        CHECK(trance_boss_phase_spirit_type(0, 22) == 0);
+        CHECK(trance_boss_phase_spirit_type(1, 22) == TRANCE_PHASE_TYPE_B);
+        CHECK(trance_boss_phase_spirit_type(1, 22) == 2);
+        CHECK(trance_boss_phase_spirit_type(2, 22) == TRANCE_PHASE_TYPE_REST);
+        CHECK(trance_boss_phase_spirit_type(2, 22) == 3);
+        CHECK(trance_boss_phase_spirit_type(21, 22) == TRANCE_PHASE_TYPE_REST);
+        CHECK(trance_boss_phase_spirit_type(0, 2) == TRANCE_PHASE_TYPE_REST);     /* 防呆：<3 颗全 type3 */
+        CHECK(trance_boss_phase_spirit_type(1, 2) == TRANCE_PHASE_TYPE_REST);
+        CHECK(trance_boss_phase_spirit_type(0, 1) == TRANCE_PHASE_TYPE_REST);
+        /* 一批 22 颗的**槽值**：1×2 + 1×2 + 20×3 = 64 —— 与一手 TH13 每个相位的槽收益逐值相同 */
+        {
+            int32_t k, gauge = 0;
+            for (k = 0; k < 22; ++k)
+                gauge += trance_spirit_gauge_value(trance_boss_phase_spirit_type(k, 22), 0);
+            CHECK(gauge == 64);
         }
     }
 
@@ -545,31 +712,39 @@ int main(void)
     CHECK(col.gauge_add == 2 && s.gauge.gauge == 2);
 
     /* ================= 14. ★ 击破 → 神灵 → 槽（2026-09-12 接通的那条链的纯逻辑一半）=================
-     * 卡侧的实际接线在 `cards/trance.c`：`on_enemy_death`（帧内 O(1) 入队）→ `on_item_frame` 帧末
-     * `trance_kill_take()` → **撒一颗神灵实体**（`trance_spirit_spawn`）→ 自机走近才
-     * `trance_on_spirit_collected()`。
+     * 卡侧的实际接线在 `cards/trance.c`：`on_enemy_death`（读敌人自己的 (T,N,alive) → 算颗数 →
+     * 帧内 O(1) 入队）→ `on_item_frame` 帧末 `trance_kill_take()` → **每条按自己的颗数撒实体**
+     * （`trance_spirit_spawn`）→ 自机走近才 `trance_on_spirit_collected()`。
      * ⚠ 本节测的是**记账那一半**（`trance_collect` 的槽账），**不是**「击破直接给槽」——
      *   2026-09-12 第二轮起击破**只撒实体**，槽要走近才涨（那条行为的不变式在下面 N.8 里钉）。
      * 本测把「收到一颗」照抄一遍（不碰引擎面）：**每颗 type 1 ⇒ 槽 +2**。
-     * 手算：300 颗 × 1 × 2 = 600 = 满槽（`TRANCE_GAUGE_MAX`）。*/
+     * ★ 2026-09-13：**被击破的敌人不是每只都掉 1 颗了** —— 这里按一手普查最典型的
+     *   「瞬杀小妖精 = 6 颗」(T=120,N=5) 走一遍，核对「一次次击破 = 6 颗 = +12 槽」这条乘法关系。
+     * 手算：50 次击破 × 6 颗 × 2 槽 = 600 = 满槽（`TRANCE_GAUGE_MAX`）。*/
     {
         float ox[TRANCE_KILL_QUEUE_MAX], oy[TRANCE_KILL_QUEUE_MAX];
+        int32_t on[TRANCE_KILL_QUEUE_MAX];
         int32_t kills = 0, spirits = 0;
         memset(&s, 0, sizeof s);
         trance_gauge_reset(&s.gauge);
         s.cooldown = TRANCE_COOLDOWN_FRAMES;
-        while (kills < 300) {
-            int32_t got, k;
-            trance_kill_note(&s, kills, (float)kills, 0.0f);          /* 一次击破（回调里只入队）*/
+        while (kills < 50) {
+            int32_t got, j, k, n;
+            /* 卡侧那一步：敌人在出场第 0 帧被打死（T=120、N=5 ⇒ 6 颗）*/
+            n = trance_kill_spirit_count(0, 120, 5, 1);
+            CHECK(n == 6);
+            trance_kill_note(&s, kills, (float)kills, 0.0f, n);       /* 一次击破（回调里只入队）*/
             ++kills;
-            got = trance_kill_take(&s, kills, ox, oy, TRANCE_KILL_QUEUE_MAX);
-            CHECK(got == 1);
-            for (k = 0; k < got * TRANCE_KILL_SPIRITS_PER_KILL; ++k) { /* 帧末：每颗 = 一次收集 */
-                CHECK(trance_collect(&s, TRANCE_KILL_SPIRIT_TYPE, &col) == 1);
-                ++spirits;
+            got = trance_kill_take(&s, kills, ox, oy, on, TRANCE_KILL_QUEUE_MAX);
+            CHECK(got == 1);                                          /* 返回的是**击破次数** */
+            for (j = 0; j < got; ++j) {
+                for (k = 0; k < on[j]; ++k) {                         /* 帧末：每条按自己的颗数撒 */
+                    CHECK(trance_collect(&s, TRANCE_KILL_SPIRIT_TYPE, &col) == 1);
+                    ++spirits;
+                }
             }
         }
-        CHECK(spirits == 300);
+        CHECK(spirits == 50 * 6);                        /* 300 颗（修复前是 50 颗：❓ 自定 1 颗/击破）*/
         CHECK(s.gauge.gauge == TRANCE_GAUGE_MAX);        /* ★ 槽真的被填满了（修复前这里恒 0）*/
         CHECK(s.gauge.tier == TRANCE_GAUGE_TIERS);
         CHECK(s.spirits_seen[TRANCE_KILL_SPIRIT_TYPE] == 300);   /* 都记在 type 1 上（不按「蓝/白」二分）*/
@@ -754,41 +929,49 @@ int main(void)
     /* ---- N.1 常量（改常量忘改曲线 ⇒ 立刻红）---- */
     CHECK(TRANCE_SPIRIT_POOL == 128);                 /* ❓ 自定（一手 TH13 是 256 槽）*/
     CHECK(TRANCE_SPIRIT_LIFE_FRAMES == 480);          /* 一手 `th13:0x438a61`：CMP [EBX+0x60],0x1e0 */
-    CHECK(TRANCE_SPIRIT_SCALE_START_PERMILLE == 1500);/* 一手 `-1: scale(1.5,1.5)` */
+    CHECK(TRANCE_SPIRIT_SCALE_START_PERMILLE == 1500);/* 一手 `-1: scale(1.5,1.5)`（脚本原文）*/
+    CHECK(TRANCE_SPIRIT_SCALE_PERMILLE_BASE == 1000); /* ❓ 我们写的基数（实跑订正 #4：不是 1.5）*/
     CHECK(TRANCE_SPIRIT_SCALE_END_PERMILLE == 400);   /* 一手 `+200: scaleTime(200, 0, 0.4, 0.4)` */
+    CHECK(TRANCE_SPIRIT_SCALE_DELAY == 200);          /* ★ 一手 `+200:`：**前 200 帧不缩** */
     CHECK(TRANCE_SPIRIT_SCALE_FRAMES == 200);
+    CHECK(TRANCE_SPIRIT_SCRIPT_TAIL_FRAMES == 40);    /* 一手 `interruptLabel(1)` → `+40: delete()` */
     CHECK(TRANCE_SPIRIT_PICK_RADIUS == 24);           /* ❓ 自定（一手 TH13 收集半径 = 20 px）*/
     CHECK(TRANCE_SPIRIT_PICK_RADIUS < 30);            /* ★ 比引擎道具的 30 px 收点半径更小 */
     CHECK(TRANCE_SPIRIT_BOB_PX == 1);
     CHECK(TRANCE_SPIRIT_BOB_PERIOD == 32);
     CHECK(TRANCE_SPIRIT_SCALE_FRAMES < TRANCE_SPIRIT_LIFE_FRAMES);  /* 缩完还有一段时间是 0.4 */
 
-    /* ---- N.2 缩小曲线（裁决 3：不断变小）----
-     * 手算：START 1500、END 400、FRAMES 200 ⇒ 每帧 −1100/200 = −5.5 千分点（向零截断）
-     *   age   1 ⇒ 1500 + (−1100×1)/200   = 1500 − 5    = 1495
-     *   age   2 ⇒ 1500 + (−2200)/200     = 1500 − 11   = 1489
-     *   age 100 ⇒ 1500 + (−110000)/200   = 1500 − 550  =  950
-     *   age 199 ⇒ 1500 + (−218900)/200   = 1500 − 1094 =  406   ← 截断 1094.5 → 1094
-     *   age 200 ⇒ 400（端点照抄一手）· age > 200 ⇒ 保持 400 */
-    CHECK(trance_spirit_scale_permille(0) == 1500);
-    CHECK(trance_spirit_scale_permille(1) == 1495);
-    CHECK(trance_spirit_scale_permille(2) == 1489);
-    CHECK(trance_spirit_scale_permille(100) == 950);
-    CHECK(trance_spirit_scale_permille(199) == 406);
-    CHECK(trance_spirit_scale_permille(200) == 400);
-    CHECK(trance_spirit_scale_permille(201) == 400);
+    /* ---- N.2 缩小曲线（裁决 3：不断变小；★ 2026-09-14 相位按一手订正）----
+     * 手算：BASE 1000、END 400、**DELAY 200**、FRAMES 200 ⇒
+     *   前 200 帧恒 1000（一手 `+200:` 之前不缩）；
+     *   之后每帧 −600/200 = −3 千分点（向零截断）：
+     *     age 200 ⇒ 1000（起点，仍最大）· age 201 ⇒ 997 · age 300 ⇒ 700 ·
+     *     age 399 ⇒ 403 · age 400 ⇒ 400（端点照抄一手）· age > 400 ⇒ 保持 400。
+     * ⚠ 上一版从 age 0 就开始缩（age 200 就已经 400）—— 那正是用户口径 #5「消失得快」的根因。*/
+    CHECK(trance_spirit_scale_permille(0) == 1000);
+    CHECK(trance_spirit_scale_permille(1) == 1000);                           /* ★ 前 200 帧不许变小 */
+    CHECK(trance_spirit_scale_permille(100) == 1000);
+    CHECK(trance_spirit_scale_permille(199) == 1000);
+    CHECK(trance_spirit_scale_permille(TRANCE_SPIRIT_SCALE_DELAY) == 1000);   /* age 200 = 一手 `+200:` */
+    CHECK(trance_spirit_scale_permille(201) == 997);
+    CHECK(trance_spirit_scale_permille(300) == 700);                          /* 走到插值中段 */
+    CHECK(trance_spirit_scale_permille(399) == 403);
+    CHECK(trance_spirit_scale_permille(400) == 400);                          /* age 400 = 一手缩完那一刻 */
+    CHECK(trance_spirit_scale_permille(401) == 400);
     CHECK(trance_spirit_scale_permille(TRANCE_SPIRIT_LIFE_FRAMES) == 400);   /* 到期那一刻仍是 0.4 */
     CHECK(trance_spirit_scale_permille(100000) == 400);
-    CHECK(trance_spirit_scale_permille(-1) == 1500);                          /* 负 age 当出生那一刻 */
-    {   /* 单调不增（裁决 3 的「不断变小」= 这条不变式）*/
+    CHECK(trance_spirit_scale_permille(-1) == 1000);                          /* 负 age 当出生那一刻 */
+    {   /* 单调不增（裁决 3 的「不断变小」= 这条不变式），且**前 200 帧持平** */
         int32_t a2, prev = trance_spirit_scale_permille(0);
-        int mono = 1;
-        for (a2 = 1; a2 <= TRANCE_SPIRIT_SCALE_FRAMES; ++a2) {
+        int mono = 1, held = 1;
+        for (a2 = 1; a2 <= TRANCE_SPIRIT_SCALE_DELAY + TRANCE_SPIRIT_SCALE_FRAMES; ++a2) {
             int32_t cur = trance_spirit_scale_permille(a2);
             if (cur > prev) mono = 0;
+            if (a2 <= TRANCE_SPIRIT_SCALE_DELAY && cur != TRANCE_SPIRIT_SCALE_PERMILLE_BASE) held = 0;
             prev = cur;
         }
         CHECK(mono == 1);
+        CHECK(held == 1);
     }
 
     /* ---- N.3 原地微动（裁决 1：不下落；微动是我们定的 ❓ 自定 ±1 px 方波）----
@@ -875,8 +1058,13 @@ int main(void)
         s.cooldown = TRANCE_COOLDOWN_FRAMES;
 
         for (k = 0; k < 4; ++k) {                       /* 四次击破（回调里只入队）*/
-            trance_kill_note(&s, k, (float)(100 + k * 100), 0.0f);
-            CHECK(trance_kill_take(&s, k, ex + alive, ey + alive, 4) == 1);
+            /* ★ 2026-09-13：这里刻意让每次击破**只掉 1 颗**（拖满窗口那一档）——
+             *   本节要钉的是「只击破不走近 ⇒ 槽不涨」，颗数那一条在第 12b 节测，
+             *   本节的池/距离模型按 1 颗跑最简单（帧末的循环形状与卡侧逐字相同）。*/
+            int32_t on1[1];
+            trance_kill_note(&s, k, (float)(100 + k * 100), 0.0f, 1);
+            CHECK(trance_kill_take(&s, k, ex + alive, ey + alive, on1, 4) == 1);
+            CHECK(on1[0] == 1);                         /* 该条自己的颗数被抄回来了 */
             CHECK(trance_spirit_pool_room(alive) > 0);  /* 撒之前先看有没有位（卡侧就是这么判的）*/
             eage[alive] = 0;
             elife[alive] = TRANCE_SPIRIT_LIFE_FRAMES;
@@ -935,6 +1123,133 @@ int main(void)
         CHECK(expired == 3);
         CHECK(picked == 1);                                     /* 到期**不等于**被收 */
         CHECK(s.gauge.gauge == TRANCE_GAUGE_PER_SPIRIT);        /* 槽没再涨 */
+    }
+
+    /* ================= ★ 神灵运动 state 机（2026-09-13 新增；一手 th13:0x438730）=================
+     * 三条边界逐条钉：96² 进 / 128² 出（迟滞）/ 112² 灵梦慢吸转快吸；灵界态只额外使能 state 4。*/
+    {
+        const int32_t IN = TRANCE_ATTRACT_IN2, OUT = TRANCE_ATTRACT_OUT2, RM = TRANCE_ATTRACT_REIMU_IN2;
+
+        /* 常量自洽：三个半径就是 96²/128²/112²，且 进 < 灵梦 < 出（迟滞区间非空）*/
+        CHECK(IN == 96 * 96 && OUT == 128 * 128 && RM == 112 * 112);
+        CHECK(IN < RM && RM < OUT);
+
+        /* 漂移 → 被吸：**严格小于** 96²；正好 96² 不吸（一手 fcomp 的方向）*/
+        CHECK(trance_spirit_state_step(TRANCE_STATE_DRIFT, IN - 1, 0, 0) == TRANCE_STATE_ATTRACT);
+        CHECK(trance_spirit_state_step(TRANCE_STATE_DRIFT, IN, 0, 0) == TRANCE_STATE_DRIFT);
+        CHECK(trance_spirit_state_step(TRANCE_STATE_DRIFT, IN + 1, 0, 0) == TRANCE_STATE_DRIFT);
+
+        /* 被吸 → 漂移：**大于等于** 128² 才脱离（迟滞：96²..128² 之间保持被吸）*/
+        CHECK(trance_spirit_state_step(TRANCE_STATE_ATTRACT, OUT - 1, 0, 0) == TRANCE_STATE_ATTRACT);
+        CHECK(trance_spirit_state_step(TRANCE_STATE_ATTRACT, OUT, 0, 0) == TRANCE_STATE_DRIFT);
+        /* ★ 迟滞的实质：把"进"的半径从 96 放宽到 128 —— 同一距离在两种 state 下结论不同 */
+        CHECK(trance_spirit_state_step(TRANCE_STATE_DRIFT, 100 * 100, 0, 0) == TRANCE_STATE_DRIFT);
+        CHECK(trance_spirit_state_step(TRANCE_STATE_ATTRACT, 100 * 100, 0, 0) == TRANCE_STATE_ATTRACT);
+
+        /* 灵梦 + 灵界态：96² 之外进 state 4（任意距离慢吸）；**缺一个条件都不行** */
+        CHECK(trance_spirit_state_step(TRANCE_STATE_DRIFT, IN + 1, 1, 1) == TRANCE_STATE_REIMU_SLOW);
+        CHECK(trance_spirit_state_step(TRANCE_STATE_DRIFT, IN + 1, 1, 0) == TRANCE_STATE_DRIFT); /* 非灵梦 */
+        CHECK(trance_spirit_state_step(TRANCE_STATE_DRIFT, IN + 1, 0, 1) == TRANCE_STATE_DRIFT); /* 非灵界态 */
+        /* 灵梦慢吸**不会**因为太远而放弃（一手：state 4 里没有"太远就退出"那条）*/
+        CHECK(trance_spirit_state_step(TRANCE_STATE_REIMU_SLOW, OUT * 4, 1, 1) == TRANCE_STATE_REIMU_SLOW);
+        CHECK(trance_spirit_state_step(TRANCE_STATE_REIMU_SLOW, RM - 1, 1, 1) == TRANCE_STATE_ATTRACT);
+        CHECK(trance_spirit_state_step(TRANCE_STATE_REIMU_SLOW, RM, 1, 1) == TRANCE_STATE_REIMU_SLOW);
+
+        /* 异常/越界 state 一律归一到漂移（我们的池不走 state 3/5）*/
+        CHECK(trance_spirit_state_step(0, IN - 1, 0, 0) == TRANCE_STATE_ATTRACT);
+        CHECK(trance_spirit_state_step(3, IN + 1, 0, 0) == TRANCE_STATE_DRIFT);
+        CHECK(trance_spirit_state_step(5, IN + 1, 0, 0) == TRANCE_STATE_DRIFT);
+        CHECK(trance_spirit_state_step(99, IN + 1, 0, 0) == TRANCE_STATE_DRIFT);
+        /* 负的平方距离（入参错误）**钳成 0** ⇒ 当"贴脸"处理（宁可吸过来，也不要卡在漂移态）*/
+        CHECK(trance_spirit_state_step(TRANCE_STATE_DRIFT, -1, 0, 0) == TRANCE_STATE_ATTRACT);
+
+        /* 出界框（一手 x∈[−224,224]、y∈[−32,480]）：边界含在界内 */
+        CHECK(trance_spirit_out_of_field(0, 224) == 0);
+        CHECK(trance_spirit_out_of_field(-224, 0) == 0);
+        CHECK(trance_spirit_out_of_field(224, 480) == 0);
+        CHECK(trance_spirit_out_of_field(0, -32) == 0);
+        CHECK(trance_spirit_out_of_field(-225, 0) == 1);
+        CHECK(trance_spirit_out_of_field(225, 0) == 1);
+        CHECK(trance_spirit_out_of_field(0, -33) == 1);
+        CHECK(trance_spirit_out_of_field(0, 481) == 1);
+    }
+
+    /* ================= ★ 机体特技（2026-09-13 用户口径）=================
+     * 三行照一手（灵梦慢吸 / 魔理沙无 / 早苗 type1 +1）、一行是**本仓合成规则**（咲夜：时间 ×2）。*/
+    {
+        trance_state_t st;
+        const trance_trait_t *t;
+
+        /* 表本身：四行、角色号 0..3、名字不空；越界回落到"全中性"那一行（不是 NULL）*/
+        t = trance_traits(0);  CHECK(t && t->character == 0 && t->reimu_slow_attract == 1);
+        t = trance_traits(1);  CHECK(t && t->character == 1 && t->reimu_slow_attract == 0);
+        t = trance_traits(2);  CHECK(t && t->character == 2 && t->drain_div == 2);
+        t = trance_traits(3);  CHECK(t && t->character == 3 && t->sanae_type1_bonus == 1);
+        t = trance_traits(99); CHECK(t && t->drain_div == 1 && t->spirit_life_permille == 1000);
+        t = trance_traits(-5); CHECK(t && t->sanae_type1_bonus == 0);
+
+        /* ★ 四行各自**只**点亮自己那一条特技（防止手抄串行 —— 这类表最容易复制粘贴错）*/
+        t = trance_traits(0); CHECK(t->reimu_slow_attract == 1 && t->marisa_trance_buff == 0 && t->drain_div == 1);
+        t = trance_traits(1); CHECK(t->marisa_trance_buff == 1 && t->reimu_slow_attract == 0 && t->drain_div == 1);
+        t = trance_traits(2); CHECK(t->drain_div == 2 && t->marisa_trance_buff == 0 && t->reimu_slow_attract == 0);
+        t = trance_traits(3); CHECK(t->sanae_type1_bonus == 1 && t->marisa_trance_buff == 0 && t->drain_div == 1);
+        /* 判定点：只有灵梦那条为 1（TH18 原生四机体统一 ⇒ 这一位是"由我们缩小"的唯一开关）*/
+        CHECK(trance_traits(0)->small_hitbox == 1);
+        CHECK(trance_traits(1)->small_hitbox == 0);
+        CHECK(trance_traits(2)->small_hitbox == 0);
+        CHECK(trance_traits(3)->small_hitbox == 0);
+        CHECK(trance_traits(99)->small_hitbox == 0);   /* 越界回落行也不许缩 */
+
+        /* 灵梦 ≠ 早苗 ≠ 咲夜：三行互不相同（防止手抄串行）*/
+        CHECK(trance_traits(0)->reimu_slow_attract == 1 && trance_traits(0)->sanae_type1_bonus == 0);
+        CHECK(trance_traits(3)->reimu_slow_attract == 0 && trance_traits(3)->drain_div == 1);
+
+        /* ★ 咲夜的时间 ×2 —— **两个后果都要成立**：灵界窗口翻倍 + 神灵寿命翻倍 */
+        memset(&st, 0, sizeof st);
+        trance_set_character(&st, 2);
+        CHECK(trance_spirit_life_frames(&st) == TRANCE_SPIRIT_LIFE_FRAMES * 2);
+        /* 槽为 0 ⇒ 剩余时间 0（空槽不是"负时间"）*/
+        CHECK(trance_remaining_centisec(&st) == 0);
+        st.gauge.gauge = TRANCE_GAUGE_MAX;                        /* 满槽 600 */
+        CHECK(trance_remaining_centisec(&st) == 2000);            /* 咲夜：1200 帧 = 20.00 s */
+        trance_set_character(&st, 0);
+        CHECK(trance_remaining_centisec(&st) == 1000);            /* 一手：600 帧 = 10.00 s */
+        /* 真跑一遍：满槽开灵界，数到"槽归零"用了多少帧 —— 灵梦 600、咲夜 1200 */
+        {
+            int32_t ch;
+            for (ch = 0; ch < 4; ++ch) {
+                int32_t frames = 0;
+                trance_state_t run;
+                trance_cond_t cond;
+                memset(&run, 0, sizeof run);
+                trance_set_character(&run, ch);
+                trance_gauge_reset(&run.gauge);
+                trance_gauge_add(&run.gauge, TRANCE_GAUGE_MAX);   /* 直接填满 */
+                memset(&cond, 0, sizeof cond);
+                cond.full = 1; cond.enemies = 1; cond.cooldown = 1; cond.game_flags_ok = 1;
+                cond.auto_mode = 1;
+                CHECK(trance_begin(&run, 0, &cond) == 1);
+                while (run.phase != TRANCE_PHASE_IDLE && frames < 5000) {
+                    (void)trance_tick(&run, frames);
+                    ++frames;
+                }
+                CHECK(frames == (ch == 2 ? TRANCE_DURATION_FRAMES_MAX * 2 : TRANCE_DURATION_FRAMES_MAX));
+            }
+        }
+        /* 一手三行：角色 0/1/3 的寿命与窗口都不许被改到 */
+        memset(&st, 0, sizeof st);
+        trance_set_character(&st, 0); CHECK(trance_spirit_life_frames(&st) == TRANCE_SPIRIT_LIFE_FRAMES);
+        trance_set_character(&st, 3); CHECK(trance_spirit_life_frames(&st) == TRANCE_SPIRIT_LIFE_FRAMES);
+        /* 幂等 + 换人会清相位累加器 */
+        st.drain_phase = 1;
+        trance_set_character(&st, 3);
+        CHECK(st.drain_phase == 1);                                 /* 同一个号：不动任何东西 */
+        trance_set_character(&st, 2);
+        CHECK(st.drain_phase == 0);
+        /* NULL 安全 */
+        trance_set_character(NULL, 2);
+        CHECK(trance_spirit_life_frames(NULL) == TRANCE_SPIRIT_LIFE_FRAMES);
+        CHECK(trance_remaining_centisec(NULL) == 0);
     }
 
     /* ================= 汇总 ================= */

@@ -41,13 +41,87 @@
 一手考证：TH10 的信仰点（绿点）贴图在哪
 ======================================================================================
 
-■ 结论（✅ 定位链一手；🟡 只有「哪一格是绿点」这一步见 §候选）
-  **`local/th10.v1.00a/anm/bullet/bullet/etama2.png`**（256×256，TH10 `bullet.anm` 的
-  **entry2**，`format: 5` = RGBA）里，y=208 那一行是 **16 个 16×16 的「道具球」单元**，
-  每个单元自带两帧：上半 10 行 = 盘/箭头主体，下半 4 行 = 内侧小星。
-  绿色（信仰点）的那一格 = **`sprite351`，矩形 `(112, 208, 16, 16)`**；
-  同像素还有一份别名 **`sprite359` `(240, 208, 16, 16)`**（🟡 见候选）。
-  产物**不缩放**：16×16 本身就是 2 的幂，`build_ability.py` 收得下（小于声明尺寸会自动居中补边）。
+■ 结论（✅ 全部一手；2026-09-15 定案，取代下面 §候选 里的 🟡 推理）
+  源图 = **`local/th10.v1.00a/anm/bullet/bullet/etama2.png`**（256×256，TH10 `bullet.anm`
+  **entry2**，`format: 5` = RGBA）；y=208 那一行是 **16 个 16×16 的「道具球」单元**
+  （sprite344..361，其中 [112,208] 与 [240,208] 各被两个 sprite 号共用）。
+  **道具类型 → 该道具的 sprite 号 = 343 + 类型**（一手链见 §2026-09-15 定案）⇒
+
+  | 档 | TH10 道具类型 | 一手地址 | sprite | 矩形 | 产物 |
+  | --- | --- | --- | --- | --- | --- |
+  | **大信仰点** | **3** | 分数表 `th10:0x41b57f`（+5000/8000/10000、弹窗色 `0xff00ff00`）| `sprite346` | `(32,208,16,16)` | `FAITH_DOT_BIG.png` |
+  | **小信仰点** | **9** | 分数表 `th10:0x41b5fc`（+100、弹窗色 `0xff00ff00`）| `sprite352` | `(112,208,16,16)` | `FAITH_DOT.png` |
+  | **微信仰点** | **8** | 分数表 `th10:0x41b5d6`（+10）| `sprite351` | `(112,208,16,16)` | `FAITH_DOT.png`（**与小同矩形**）|
+
+  ⚠️ **小 / 微 在 TH10 里共用同一个矩形**（`sprite351` 与 `sprite352` 在 `bullet.anm` 里
+  字面同值 `(112,208,16,16)`）—— 这是 ZUN 自己的重号，不是我们切的错。两者的差别只在
+  **脚本**：type 9 的 `script383` 与 type 3 的 `script377` 逐条同形（`scale(0.5→1)`、
+  `alpha` 默认 255），而 type 8 的 `script382` 是 `blendMode(1)` + `alpha(16)` + `scale(0→1)`
+  的加算淡出球（见 `engine/anm/th18/07-…` 对 TH18 加算语义的说明）。
+  产物**不缩放**：16×16 就是原生矩形尺寸 ⇒ 原样切、零补边。
+
+======================================================================================
+★★ 2026-09-15b 三档外观：**微档另切一格 `(240,208)`**（本轮新增 `FAITH_DOT_MICRO.png`）
+======================================================================================
+
+■ 第一问：原版到底有没有第三张**微档**图 —— **没有**，TH10 / TH11 都没有
+
+  | 版本 | 大档 | 中/小档 | 微档 | 一手 |
+  | --- | --- | --- | --- | --- |
+  | TH10 | type 3 → sprite346 `(32,208)` | type 9 → sprite352 `(112,208)` | type 8 → sprite351 `(112,208)` | script377 / 383 / 382 正文 |
+  | TH11 | type 3 → sprite347 `(32,208)` | type 9 → sprite353 `(112,208)` | type 8 → sprite352 `(112,208)` | script99 / 105 / 104 正文 |
+
+  · 两作的**小档与微档都是同一个矩形**（`sprite351` 与 `sprite352` 字面同值 = ZUN 自己的重号）；
+  · 复核命令（**TH11 也吃 v4 表**，用 `v8.anmm` 会把 `sprite()` 静默译成 `stop()`）：
+
+        local/vendor/thtk/build/thanm/thanm -l 10 local/th10.v1.00a/dat/bullet.anm \
+            -m local/vendor/thpages/static/mapfile/v4.anmm
+        local/vendor/thtk/build/thanm/thanm -l 11 local/th11.v1.00a/dat/bullet.anm \
+            -m local/vendor/thpages/static/mapfile/v4.anmm
+
+  · 道具类型只有 1..11（分派表 `th10:0x41b3ce` 的 11 项跳转，长度已核）⇒
+    `(160,208)` / `(240,208)` 那几格**不对应任何可达的道具类型**（要 type 12 以上才会走到）。
+  ⇒ **原版没给微档单独画图**：ZUN 自己的做法就是「同一格贴图 + 另一条脚本」。
+
+■ 第二问：那还有没有别的候选 —— **有**，`on_draw__body` 其实是**两族** sprite
+
+  `th10:0x41b8e0` 逐条读（`objdump -d -M intel --start-address=0x41b8e0
+  --stop-address=0x41ba00 local/th10.v1.00a/th10.exe`）：
+
+      41b92b: fld   DWORD PTR [esi]          ; 画用 y = 道具 y + 16.0（常量 `0x470b48`）
+      41b92d: fcomp DWORD PTR ds:0x470bd0    ; 与 **8.0** 比
+      41b938: jp    0x41b99f                 ; y ≥ 8（或 NaN）→ 「家族 A」
+      41b990: lea   edx,[eax+0x160]          ; 否则 sprite = **vtype + 352**（家族 B）
+      41b9bf: lea   edx,[eax+0x157]          ; 家族 A：sprite = **vtype + 343**
+
+  （`eax` = `[esi+0xac]` = 视觉类型 vtype；41b93a–41b96d 那支还把画用 y 夹到 `0x41c00000`=24.0f、
+  按 `(y−8) × 0.03125 × 255` 算 alpha ⇒ y<8 那一支基本是「顶出屏幕外的不可见档」。）
+  ⇒ 同一张 `etama2.png` 的 y=208 行被读成**两族**：`343+vtype`（x=0..112）与
+  `352+vtype`（x=128..240），vtype 1..9 各占一个 sprite 号。
+
+  | 族 | vtype 3（大信仰点）| vtype 8（微）| vtype 9（小）|
+  | --- | --- | --- | --- |
+  | A = `343+vtype` | sprite346 `(32,208)` 大绿花 | sprite351 `(112,208)` 12px 绿珠 | sprite352 `(112,208)` 同格 |
+  | B = `352+vtype` | sprite355 `(160,208)` 10px 素绿点 | sprite360 `(240,208)` 同款 | sprite361 `(240,208)` 同款 |
+
+  · `(160,208)` 与 `(240,208)` **逐像素只差 2 个像素**（全格 256 个像素里）⇒ 是同一张素色绿点；
+  · `(112,208)` 与 `(240,208)` 差 133 个像素（不透明像素 76 vs 66）⇒ 一眼能分的两张图
+    （`python3 make_mof_art.py --dump` 会把这三格并排算出来）。
+
+■ 本轮决定：**微档 = `(240,208)`**（= 家族 B 的 sprite360/361）
+
+  · **像素 100% 原版**：同一张 `etama2.png`、同一行 y=208、ZUN 画的素色绿点 —— **零自绘**；
+  · **号也是一手的**：`sprite360/361` 正是 `on_draw__body` 在家族 B 里给 **vtype 8/9**
+    （微/小信仰点的视觉类型）设的那个号；
+  · ❓ **自定的只有「把它指给微档」这一步**：原版在**可见分支**里给 type 8 的仍是 `(112,208)`
+    （与本仓小档同图）；原版既然没有第三张微档图，这一层映射只能我们自己定。
+    用户 2026-09-15 已授权「图我不管，自造也行」，而这里连自绘都不必（有原版图可切，按仓规优先）。
+    已登记 `TUNING.md` §2.6。
+  · ⇒ 三档**三图各不相同**：16px 大绿花 / 12px 绿珠 / 10px 素绿点；再叠一层脚本差
+    （微 = `blendMode(1)` + `alpha(16)` + `scale(0→1)`；大/小 = `alpha 255` + `scale(0.5→1)`）。
+    微档脚本逐条见 `assets/ability/scripts/273_mof_faith_dot_micro.anm.txt`。
+  · ⚠️ **暂时看不到**：本仓微档**不建实体**（`faith_spawn()` 对 `FAITH_TIER_MICRO` 直接 `return 0`，
+    见 `faith.c` 文件头）⇒ 这一档今天只存在于代码与图集里，实跑要等微档实体的 TODO 落地。
 
 ■ 怎么找到的（可复核，别信我的话，跟着跑）
 
@@ -85,7 +159,46 @@
   `ins_51` = `alpha`、`ins_50` = `scale`、`ins_60` = `scaleTime`、`ins_53` = `rotate`、
   `ins_63` = `delete`、`ins_67`/`ins_66`/`ins_82`（🟡）= 混合/开关类，本次**不搬**（见报告）。
 
-■ 候选：为什么是 `(112,208)` 这一格 🟡
+■■ 2026-09-15 定案：三档信仰点的**类型号 → sprite 矩形**（补上 §候选 缺的那一步）■■
+
+  §候选 卡住的那一步（「哪一格是信仰点」）本轮**用三条独立的一手链钉死了**，全部可在
+  `local/th10.v1.00a/th10.exe` 上复跑（Capstone，imagebase 0x400000）：
+
+  **① 类型号 → 信仰值**（`ItemManager::on_tick__body` th10:0x41afd0 里的类型分派）
+      `0x41b3c1: mov eax,[ebp+0x30]`（ebp = item+0x3b0 ⇒ 读的是 **item+0x3e0 = 道具类型**）
+      `0x41b3c4: dec eax; cmp eax,0xa; ja skip`
+      `0x41b3ce: jmp dword ptr [eax*4 + 0x41b8a0]`   ← 11 项跳转表（索引 = 类型−1）
+      表内容（本轮 hexdump 读出）：idx2(type3)→`0x41b57f`、idx7(type8)→`0x41b5d6`、idx8(type9)→`0x41b5fc`
+      · `0x41b57f`：难度表 E/N `0x1388`=5000 · H `0x1f40`=8000 · L/EX `0x2710`=10000，
+        弹窗色 **`0xff00ff00`（纯绿）**，再 `call 0x41be80`（= 加信仰）
+      · `0x41b5fc`：弹窗色 **`0xff00ff00`**、`add_faith(100)`
+      · `0x41b5d6`：`add_faith(10)`（无数值弹窗色）
+      ⇒ **type 3 = 大信仰点 · type 9 = 小信仰点 · type 8 = 微信仰点**（与本卡
+        `faith.h` 的 BIG/SMALL/MICRO 三档、`TUNING.md` §2 的 5000/100/10 逐条对上）。
+
+  **② 类型号 → 出生脚本号**（`ItemManager::spawn_item` th10:0x41bb00）
+      `0x41bca8: lea eax,[ebp+0x176]` ⇒ **脚本 = 类型 + 374**（0xA→375、0xB→378 是两条特例）
+      type 8 走 `0x41bccd` 的**轮转池**（2048 槽、state=5 + 倒计时），倒计时到点在
+      `0x41b010-0x41b045` 补跑同一支 `类型+374` 脚本 —— 所以 type 8 一样有 VM、一样有贴图。
+
+  **③ 脚本号 → sprite 号**（`thanm -l 10 bullet.anm -m v4.anmm` 的脚本正文）
+      `script377 { sprite(sprite346); … }` / `script383 { sprite(sprite352); … }` /
+      `script382 { sprite(sprite351); … }`，而 **sprite(343+类型)** 与 `on_draw__body`
+      （th10:0x41b8e0，`lea edx,[eax+0x157]` / `lea edx,[eax+0x160]`，eax = `item+0x3e4` = 视觉类型）
+      里那两处 `set_sprite` 逐条吻合。
+      ⇒ **sprite 号 = 343 + 类型**，§候选 里那个「脚本号与 sprite 号错开 30」的疑惑到此消解
+        （374+类型 ↔ 343+类型 本来就是两套编号：脚本号与 sprite 号各有一张表）。
+
+  **矩形 → 像素**：`entry2` 的 sprite 表（`thanm -l 10` 原样）：
+      `sprite346: {x:32, y:208, w:16, h:16}`（大）· `sprite351` **与** `sprite352` 都是
+      `{x:112, y:208, w:16, h:16}`（小 = 微，ZUN 自己的重号）· `sprite360`/`sprite361` 同为 `(240,208)`
+      （第二组「盘/箭头」那一族的同一重号现象）。
+
+  **交叉校验（不用信上面任何一条）**：`front.anm` 的信仰 HUD 图标 `sprite29 (256,80,16,16)`
+  = 本文件 §候选 里 x=16 那一格**逐像素相同**（同为「带纹样的珠子」），而 y=208 那一行里
+  **只有 3 格是绿系**（x=32 / x=112 / x=240，平均色见 `--dump`），与①②③ 指到的三档完全一致。
+
+■ 候选：为什么是 `(112,208)` 这一格（**🟡 已被上面 §2026-09-15 定案取代，留档**）
 
   这一节**没有排他的一手证据**，把推理链和反证都摆出来：
 
@@ -97,7 +210,7 @@
     sprite 编号**（ZUN 用同一块 UV 给两个 sprite 号是常规手法，`thanm` 也照录）。
   - 30×30 那一族（`sprite336..343`，y=145/177）是**大件**（道中 Boss 掉的 P / 点道具本体），
     不是 8×8 的绿点；绿点在本作里是**小单元**，所以取 16×16 那一族。
-  - ❓ **没有做到**：我没能把「道具类型 8（= 信仰）」钉到某一格。卡住的两步：
+  - ❓ **没有做到**（🟡→ **2026-09-15 已解决**，见上一节 §定案）：我没能把「道具类型 8（= 信仰）」钉到某一格。卡住的两步：
     ① `ItemManager::spawn_item` 里脚本号 = **类型 + 374**，而四种小件脚本（381..384）的
        `stop(spriteN)` 只差 `N`，**脚本号与 sprite 号正好错开 30**（381↔351、382↔352…），
        这个错位我没有找到一手解释（可能是 `sprite` 号在 TH10 里还有一层入口内偏移）；
@@ -141,10 +254,16 @@ REPO = HERE.parents[4]
 SRC = REPO / "local/th10.v1.00a/anm/bullet/bullet/etama2.png"
 OUT = HERE / "mof"
 
-# 一手：TH10 `bullet.anm` entry2（bullet/etama2.png）的 sprite 矩形
-SHEET = (256, 256)
-GREEN_MAIN = (112, 208, 16, 16)   # sprite351 —— script382 的 stop(sprite351)
-GREEN_ALIAS = (240, 208, 16, 16)  # sprite359 —— 与上一格逐像素相同（同图别名）
+# 一手：TH10 `bullet.anm` entry2（bullet/etama2.png）的 sprite 矩形。
+# ★ 2026-09-15 定案（三条一手链见文件头 §定案）：**sprite 号 = 343 + 道具类型**。
+SHEET      = (256, 256)
+BIG_MAIN   = (32, 208, 16, 16)    # sprite346 —— 道具类型 3 = **大信仰点**（script377 的 sprite）
+GREEN_MAIN = (112, 208, 16, 16)   # sprite352/sprite351 —— 类型 9 = **小信仰点**（script383）
+                                  #   与类型 8 = **微信仰点**（script382）**共用同一矩形**（ZUN 自己的重号）
+# ★ 2026-09-15b：**微档的独立贴图** —— 同一行里 ZUN 画的**第二套绿点**（素色圆点，见文件头 §三档外观）。
+MICRO_PLAIN = (240, 208, 16, 16)  # sprite360/361 —— `352+vtype` 家族里 vtype 8/9 的那一格
+MICRO_ALIAS = (160, 208, 16, 16)  # sprite355 —— 同家族 vtype 3 的那一格；与上一格**逐像素只差 2 个像素**
+                                  #   （= ZUN 把同一个绿点画了两处），仅留证，不做成贴图
 
 
 def _load():
@@ -176,13 +295,25 @@ def main():
     src = _load()
     OUT.mkdir(exist_ok=True)
 
-    # 只出一张 16×16：TH10 `bullet.anm` **script382 原文就只引用一格 sprite351**，
-    # 多切一格当「动画」就是编出来的（本仓铁律不允许）⇒ sprite359（x=240，与 x=112 同像素）
-    # 只作为 `--dump` 的像素统计留证，**不做成贴图**。
+    # 出**三**张 16×16（= 一手表里三档各自的矩形，一格不多切）：
+    #   · FAITH_DOT_BIG.png   ← sprite346 `(32,208)`  —— 大信仰点（类型 3，script377）
+    #   · FAITH_DOT.png       ← sprite352 `(112,208)` —— 小信仰点（类型 9，script383）
+    #   · FAITH_DOT_MICRO.png ← sprite360/361 `(240,208)` —— 微信仰点（类型 8，script382）
+    #                           ★ 原版在**可见分支**里给类型 8 的也是 `(112,208)`（与小档同格）；
+    #                             这里用的是 ZUN 同一张图上的**第二套绿点**，理由见文件头 §三档外观。
     _crop(src, GREEN_MAIN).save(OUT / "FAITH_DOT.png")
+    _crop(src, BIG_MAIN).save(OUT / "FAITH_DOT_BIG.png")
+    _crop(src, MICRO_PLAIN).save(OUT / "FAITH_DOT_MICRO.png")
 
     print("mof: FAITH_DOT.png 16x16（原始像素，未缩放）"
-          " = TH10 bullet.anm script382 的 stop(sprite351) @ bullet/etama2.png (112,208)")
+          " = TH10 道具类型 9（小信仰点）@ bullet.anm script383 的 sprite352"
+          " → bullet/etama2.png (112,208)")
+    print("mof: FAITH_DOT_BIG.png 16x16（原始像素，未缩放）"
+          " = TH10 道具类型 3（大信仰点）@ bullet.anm script377 的 sprite346"
+          " → bullet/etama2.png (32,208)")
+    print("mof: FAITH_DOT_MICRO.png 16x16（原始像素，未缩放）"
+          " = TH10 道具类型 8（微信仰点；script382）的**第二套**绿点 sprite360/361"
+          " → bullet/etama2.png (240,208)")
 
     if dump:
         print("\n--- etama2.png y=208 一行 16 格的像素统计（核色用）---")
@@ -196,8 +327,23 @@ def main():
             avg = tuple(sum(p[k] for p in px) // n for k in range(3))
             print(f"  x={i * 16:3d} n={n:3d} avg={avg}")
 
-    print("\n把下面一行追加到 entries/ORDER.txt（或合并 entries/ORDER.mof.txt）：")
-    print("FAITH_DOT   ability/mof/FAITH_DOT.png  16x16")
+        print("\n--- 三档取的三格：像素数 / 平均色 / 与 (240,208) 的逐像素差 ---")
+        ref = _crop(src, MICRO_PLAIN).tobytes()
+        for tag, box in (("大 BIG_MAIN  ", BIG_MAIN),
+                         ("小 GREEN_MAIN", GREEN_MAIN),
+                         ("微 MICRO_PLAIN", MICRO_PLAIN),
+                         ("微 MICRO_ALIAS", MICRO_ALIAS)):
+            c = _crop(src, box)
+            px = [p for p in c.getdata() if p[3] > 40]
+            n = len(px)
+            avg = tuple(sum(p[k] for p in px) // n for k in range(3)) if n else None
+            ndiff = sum(1 for a, b in zip(c.tobytes(), ref) if a != b) if c.tobytes() != ref else 0
+            print(f"  {tag} {str(box):18s} 不透明像素 {n:3d}  avg={avg}  vs(240,208) 差 {ndiff} 字节")
+
+    print("\n把下面几行追加到 entries/ORDER.txt **文件末尾**（已冻结段只能 append，别插进 ATLAS_MOF_FAITH 段里）：")
+    print("FAITH_DOT       ability/mof/FAITH_DOT.png        16x16   # 已在 ORDER.txt:316（小信仰点）")
+    print("FAITH_DOT_BIG   ability/mof/FAITH_DOT_BIG.png    16x16   # 2026-09-15 新增（大信仰点）")
+    print("FAITH_DOT_MICRO ability/mof/FAITH_DOT_MICRO.png  16x16   # ★ 2026-09-15b 新增（微信仰点）")
 
 
 if __name__ == "__main__":

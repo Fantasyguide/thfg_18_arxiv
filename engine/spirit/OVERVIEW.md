@@ -55,6 +55,7 @@ TH13《東方神霊廟》的「神灵（神霊）」是**第三条资源轴**：
 - TH13 神灵 / 灵界**全链一手**（六条生成通道 / ECL `spec0-3` 分发表 / 运动半径与速度 / 槽数值 / 灵界进出 /
   「中弹不死」地址链 / HUD 子脚本）：[`spirit/th13/01`](th13/01-spirit-and-trance.md)
 - TH13 侧 `dropItems` / `dropItemsSp` 的分发表订正：[`spirit/th13/01`](th13/01-spirit-and-trance.md) §3.3
+- ★ TH13 灵界里的**自机攻击方式改变**（主炮 shooterset 组号硬换成常量 **10**；四机体逐字节表 + 「没有伤害倍率」的证伪式结论 + 退出 70 帧无敌的订正）：[`spirit/th13/05`](th13/05-trance-attack.md)
 - TH07 森罗结界**持续期视觉**（全屏变暗 37.5 % + 自机红白闪；环只 33 帧、op1 ≡ delete）：
   [`spirit/th07/01`](th07/01-barrier-visual.md)
 - TH17 动物灵 / 咆哮（同构对照）：[`animal/OVERVIEW`](../animal/OVERVIEW.md)

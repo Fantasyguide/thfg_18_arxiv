@@ -68,3 +68,7 @@ runtime/anm/node_modules/
 # thdat-nc 的本机构建和下载缓存；Windows 发布产物单独保留在 bin/。
 tooling/thdat-nc/build/
 tooling/thdat-nc/.cache/
+
+# ★ 113 的升格音：TH13 原版 se_astralup.wav 的**构建期现取**产物（版权资产不入库；
+#   源在 local/th13.v1.00c/dat/se_astralup.wav，见 assets/voice/derive_astralup.py）
+mods/th18.v1.00a/card-expand/assets/voice/ASTRALUP.wav

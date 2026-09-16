@@ -32,7 +32,9 @@ sprite 矩形（一手，thanm -l 的 entry1 段）
 
 尺寸 / 缩放
 ──────────
-* 原样 16×16（**不重采样、不补画**，纯原生切图；16×16 是 2 的幂 ✅）。
+* 原样 16×16（**不重采样、不补画**，纯原生切图）。矩形 = 这张 PNG 的像素尺寸
+  （`ATLAS-MERGE-AUDIT.md` §4.1 规则①）；16×16 恰好是 2 的幂只是巧合 ——
+  「构建期尺寸必须是 2 的幂」那条硬门 2026-09-13 已取消。
 * TH08 是 640×480 场地、TH18 是 2×（1280×960）⇒ 脚本里 `scale(2.0f, 2.0f)` 才是原尺寸观感
   （同仓先例：`115_season_point.anm.txt` 对 16×16 的 `PT_*.png` 用 scale 2.0→1.0）。
 
@@ -81,7 +83,7 @@ def main():
         raise SystemExit(f"{SRC_PNG} 是 {src.size}，预期 (256, 256)")
 
     x, y, w, h = RECT_TPOINT
-    assert w & (w - 1) == 0 and h & (h - 1) == 0, "尺寸要是 2 的幂"
+    # 尺寸 = 原生矩形尺寸（「必须 2 的幂」那条门 2026-09-13 已取消）
     tile = src.crop((x, y, x + w, y + h))
     if tile.getbbox() is None:
         raise SystemExit(f"时点（sprite179）切出来全透明，矩形抄错了：{RECT_TPOINT}")

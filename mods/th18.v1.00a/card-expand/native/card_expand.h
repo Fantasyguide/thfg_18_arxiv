@@ -47,14 +47,13 @@ uint32_t ce_new_card_id(unsigned i);
 int      ce_new_card_initial_unlocked(unsigned i);
 /* 引擎编成上限 3（0x4449d4 容量递增链 1→2→3 封顶，无 3→4 分支）——start_deck 在此截断 */
 #define CE_DECK_CAP_MAX 3
-/* 开发配置 th18/cards_dev.js（只在 _test 里）：起手卡组与钩子追踪 */
-unsigned ce_dev_deck_count(void);
-/* 门禁失败后必须调：把 dev 起手卡组关掉。新卡 id 此时已被 restore_alloc_bound 禁掉，
- * 再往空槽里塞它们只会让 allocate_new_card 返回 -1 —— 空槽本来会分配 NullInf 卡（id 56），
- * 于是 num_total_cards 归零，卡组编成读到没填过的 +0xfec 槽，按 Z 空指针崩溃（AUDIT §AG）。*/
-void     ce_dev_deck_disable(void);
-uint32_t ce_dev_deck_id(unsigned i);
+/* 开发配置 th18/cards_dev.js（只在 _test 里）：钩子追踪 + 权重 */
+void     ce_dev_deck_disable(void);          /* 门禁失败后调：禁止 \mods\start_deck.js 动卡组 */
 int      ce_dev_trace(void);
+/* ★ 起手卡组：`\mods\start_deck.js`（显式、只改一次）—— 实现在 start_deck.c。
+ * `deck0` = 本机体初手第 0 格的地址（`BP_ce_test_deck` 的 eax），`shot` = 机体号。*/
+void     ce_start_deck_tick(uint8_t *deck0, int shot);
+void     ce_start_deck_disable(void);
 /* 行为 SDK（sdk.c）：门里核对 + 对账；返回 1 = 通过 */
 int      ce_sdk_setup(uint8_t *module_base, int trace);
 /* 战线 E 第二块（menu.c）：顺序表重排、图鉴条目数、站点核对 */

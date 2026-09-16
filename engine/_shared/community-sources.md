@@ -82,6 +82,26 @@ blob,不解析内部)。**不存在 `thsht` 这种官方工具**。网上"thsht 
   我们手上这份 exe 命中 **91.6%**,哈希与 th06-decomp README 记的不同但代码布局一致。
 - 配套还有 `local/vendor/th06-re/src/th06_102h.exe/`(逐函数 C 源码)与 `local/vendor/th06-decomp/`。
 
+## ★★ TH08(永夜抄)专用:`Patchouli-CN/th08_dec`(**MIT** 反编译源码 + 符号表)
+
+✅ **<https://github.com/Patchouli-CN/th08_dec>**（用户 2026-09-16 提供；本地克隆 `local/vendor/th08_dec`，
+**gitignored**、可重克隆）。本仓卡 **108 = TH08(永夜抄)系统卡**(妖机体 / 使魔)，而本作此前
+**没有任何源码级来源**（`th-re-data` 对 TH08 的覆盖远不如 TH06/TH10+）⇒ **TH08 侧第一个该去翻的**。
+
+| 项 | 值（本轮实测）|
+| --- | --- |
+| 目标 exe | TH08 **v1.00d**，上游记的 sha256 `330fbdbf58a710829d65277b4f312cfbb38d5448b3df523e79350b879213d924` |
+| **我们的样本** | `local/th08.v1.00d/th08.exe`，sha256 **`9d669602…`** ⇒ **哈希不同**（另一个 1.00d 构建）|
+| **布局是否对得上** | ✅ 本轮抽样核过：vtable 项 **6/6** 落在 `.text` 内、按 CSV 抽 **400/400** 个函数入口都是 `push ebp; mov ebp, esp` ⇒ **同布局**（与 TH06 那边「哈希不同但布局一致」同一情形）|
+| 内容 | `src/*.cpp|hpp`（**MIT**，2030 个函数里约 93% 已实现、平均匹配率 91.2%）、`config/reccmp-functions.csv`（**2221 条 名字↔地址**）、`reccmp-globals.csv`（含 vftable）、`reccmp-floats.csv` / `reccmp-strings.csv`、`objdiff.json` |
+| 许可证 | **MIT**（Copyright (c) 2025 KSS）⇒ 与 `th-re-data`（无 LICENSE）/`th06-re`（无 LICENSE）**不同**：**注明出处即可引用**，比那两家宽松 |
+| 可信度 | 🟡 **单源**（社区反编译，本仓尚未逐条对账）——引用它的任何断言都要落到 `th08:0x…` + 我们自己的样本上，**别直接写成「一手」**；本体是 `-Od` 反推、stub/低匹配仍多（字节大小率 14.8%）|
+
+**怎么用**（照 `th-re-data` 那一套）：① 开着源码对照读（`src/` 逐函数）；
+② 把 `reccmp-functions.csv` 的 `名字↔地址` 当**命名层**（地址空间与我们样本一致，可直接套）；
+③ 保持来源可分：导进 Ghidra / `symbols.json` 时**标明来自 th08_dec（MIT）**，
+别与「我们自己读出来的名字」混成一份无出处的清单（理由见本文「TH06NC 的库不导上游名」那一节）。
+
 ## ★★ 逆向符号金矿:ExpHP `th-re-data`(逆向时第一个去翻的)
 
 ✅ **`exphp-share/th-re-data`** —— ExpHP 从 binja 导出的**逐游戏符号数据库**,是**当前最硬的 TH16(及他作)
@@ -181,3 +201,29 @@ blob,不解析内部)。**不存在 `thsht` 这种官方工具**。网上"thsht 
     (硬编码于 exe)。可信度:统一值=✅一手;TH13–15 逐作数值=🟡(wiki 单源,绝对确认需各作反汇编)。
   - 出处:Touhou Wiki [Hitbox](https://en.touhouwiki.net/wiki/Hitbox) / [Graze](https://en.touhouwiki.net/wiki/Graze);
     一手见 `engine/sht/th16/05-*.md` §2b/§4b。
+
+## ★★ TH07 源码重建工程（`D:\项目\幻想指南\18\th07`，本机路径；社区，2026-09-16 探明）
+
+**是什么**：TH07 v1.00b 的**源码重建**（GensokyoClub th06/th08 同一路线）——目标 = 原版日文 1.00b
+（`size 650752` / `sha256 35467eaf…` / `md5 0126afce…`，见其 `config/target.toml`），验收 = **逐函数字节比对**
+（`config/functions.csv`，1527 行：`address,size,span_end,current_name,proposed_name,module,status,match_percent,source_file,evidence`）；
+`src/` 里的 `.cpp` 只在"100% 匹配"后才落地（其 `AGENTS.md` 的规矩），所以它是**可读且等价于原版**的一手级参考 ——
+但仍按本仓 `METHOD.md` 的分级当**社区证据**用，关键结论用我们自己的 `local/_scratch/th07.asm` 复核。
+
+**★ 与我们的样本的关系（本机实测，2026-09-16）**：我们的 `local/th07.v1.00b/th07.exe`
+（= 用户那份 `[th07] 东方妖妖梦 (汉化版)\th07.exe`，两者 **md5 全等** `d08774b90b821b6a2764280bb146a400`）
+与工程目标**尺寸相同、哈希不同**（汉化补丁就地改过），但**代码区逐字节相同** ——
+用账本里带 `SHA <16hex>` 的 69 条（排除 `third_party`/`runtime` 库行）对账：**60 条逐字节相同**，
+不同的 9 条**全在 `pbg`（LZSS 编/解码那一族）** = 汉化版重打包了 PBG 档案 ⇒ 只动了编解码器。
+⇒ **我们的地址/反汇编对两边都有效**；差异只影响"读档案"，与玩法逻辑无关。
+
+**怎么用**（给后续做 107 的人）：
+· 查"某个地址属于哪个函数"：用 `span_end` 列做区间查询（例：`0x441530`/`0x441553`/`0x44162a` 都在
+  **`0x441330`** 里 = 结界/樱点管理器；`0x433742`/`0x43370b`/`0x4330db` 都在 **`0x432990`** 里 = 道具/分值）；
+  ⚠ 这两个函数**尚未重建**（`status` 空）⇒ 这一段只能读我们自己的 `th07.asm`。
+· 已重建且与 107 相关的：`src/Chain.cpp`（`Chain_cut` / `Chain_add_to_calc_chain` / `Chain_run_calc_chain` … 13 个）、
+  `src/Player*.cpp`（27 个，含 `0x441960 Player_finish_deathbomb` = 我们记的"环的缩放插值 `0x441b56`"所在函数）、
+  `config/known-symbols.csv` / `known-globals.csv`（结构体与全局命名）。
+· 自检口径（想复核"某函数是否两边一致"）：取账本那一行的 `address`..`span_end` 字节，算
+  `sha256(...)[:16]`，与该行 `evidence` 里的 16 位十六进制比 —— 相等即逐字节相同（上面那条结论就是这么来的）。
+

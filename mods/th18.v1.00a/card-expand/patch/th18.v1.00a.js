@@ -659,6 +659,12 @@
       "expected": "05e4534c00",
       "title": "hit | add eax, K | +0x24"
     },
+    "sht_dbase_45a830": {
+      "addr": "0x45a830",
+      "code": "8d82e0040000",
+      "expected": "8d8280010000",
+      "title": "pl0X.sht 组数 40 → 96（数组区预留 256 格）：数据区基址 0x180 → 0x4e0（数组 [0xe0,0x4e0)，14 个读者的位移不改）"
+    },
     "alloc_bound_411479": {
       "addr": "0x411479",
       "code": "83fbfe",
@@ -1373,25 +1379,19 @@
       "addr": "0x446cf6",
       "cavesize": 6,
       "expected": "8d872c0c0000",
-      "title": "行为 SDK → BP_ce_item_score：collect_money_item：esi=道具身价，弹窗与计分之前；沿卡链表调 on_item_score(&esi)"
+      "title": "行为 SDK → BP_ce_item_score：collect_money_item 的**满额支**出口 lea eax,[edi+0xc2c]（弹窗与 SCORE 入账之前，esi = 引擎算好的最终身价）。★ 2026-09-13 起本站点**只观察不落笔**：注入已搬到 0x446bf9（ce_item_score_in），这里只把引擎的最终值与我们的预测（10 × G_total）比一行日志（`score-out:`）—— 满额支应当完全相等、线下支应更低（那是系数）。handler **不写 regs->esi、不再调卡回调**（声明已在新站点收过，再收一次 = 双计）。"
     },
     "ce_item_score_below": {
       "addr": "0x446caa",
       "cavesize": 8,
       "expected": "8b45f8052c0c0000",
-      "title": "行为 SDK → BP_ce_item_score_below：collect_money_item 0x446b00 的**线下分支**计分汇合点：mov eax,[ebp-8] / add eax,0xc2c（8 字节、无相对寻址）。一手：0x446c01 comiss + 0x446c04 jae 0x446cb4 / 0x446c0a cmp [edi+0xc74],3 + 0x446c11 je 0x446cb4 都不成立时（= 自机在回收线**下方**且道具非真空飞行）走这一支算分，esi 已算好最终身价，走到 0x446cb2 `jmp 0x446cfc` **绕过** `ce_item_score` 那个断点 ⇒ 只挂 0x446cf6 会漏掉线下收的金钱（110/111 的 PV 注入对它完全不生效）。handler = 与 ce_item_score 同一份（两个站点互斥、每次收集只走一支 ⇒ 事件仍是一颗道具一次）。"
+      "title": "行为 SDK → BP_ce_item_score_below：collect_money_item 0x446b00 的**线下分支**出口：mov eax,[ebp-8] / add eax,0xc2c（8 字节、无相对寻址）。一手：0x446c01 comiss + 0x446c04 jae 0x446cb4 / 0x446c0a cmp [edi+0xc74],3 + 0x446c11 je 0x446cb4 都不成立时（= 自机在回收线**下方**且道具非真空飞行）走这一支算分，走到 0x446cb2 `jmp 0x446cfc` **绕过** `ce_item_score`。★ 与 ce_item_score 一样：2026-09-13 起**纯观察者**（不写 regs->esi、不调卡回调），只打 `score-out:` 那行；两支互斥 ⇒ 每次收集只出**一行** `score-in:` 与**一行** `score-out:`，可逐颗对照。"
     },
     "ce_item_money": {
       "addr": "0x446d28",
       "cavesize": 6,
       "expected": "ff0530cd4c00",
       "title": "行为 SDK → BP_ce_item_money：collect_money_item：inc [MONEY_TOTAL]（下一条 inc [MONEY]）；沿卡链表调 on_item_money(&bonus)，两个全局一起 += bonus"
-    },
-    "ce_bomb_spent": {
-      "addr": "0x4203bc",
-      "cavesize": 5,
-      "expected": "a1c0f24c00",
-      "title": "行为 SDK → BP_ce_bomb_spent：do_bomb 里 consume_bomb(0x4574d0) **刚返回**那一条：mov eax,ds:0x4cf2c0，5 字节绝对寻址无相对量。0x4574d0 全库只有 0x4203b7 一个调用方，所以这里不多不少覆盖每一次炸弹消耗；沿卡链表调 on_bomb_spent()"
     },
     "ce_enemy_drop": {
       "addr": "0x430510",
@@ -1429,29 +1429,11 @@
       "expected": "b867666666f7ee",
       "title": "行为 SDK → BP_ce_shot_damage：enm_compute_damage_sources 0x45f0f0 里可计分命中路径：mov eax,0xee666667 + imul esi（两条，都无相对寻址；0x45f2dc 因 guard-fail 路 0x45f14e jmp 0x45f2de 落在窗内而**被否**，此窗已对齐 objdump 确认无窗内跳转目标）。esi = 本帧本敌伤害（钳 cap 后 ≥1），ebx = 帧基 → pos 在 [ebx+8]（敌世界坐标 x,y）、param_6 在 [ebx+0x1c]。沿卡链表调 on_shot_damage(card, dmg, pos)"
     },
-    "ce_bomb_gate": {
-      "addr": "0x45c048",
-      "cavesize": 7,
-      "expected": "f60534a44c0002",
-      "title": "行为 SDK → BP_ce_bomb_gate：Player__on_tick__body 0x45be90 的普通炸弹分支：test BYTE PTR ds:0x4ca434,0x2（7 字节，输入上升沿 bit1）。handler 沿卡链表问 on_bomb_gate()；任一卡返回 1 时用 retaddr 跳到 0x45c056 跳过 call do_bomb 0x45c051。只在咆哮 ready/hypering 的卡返回 1；其余帧/无卡时放行原指令（真实炸弹不受影响）。"
-    },
     "ce_enemy_death": {
       "addr": "0x430240",
       "cavesize": 6,
       "expected": "558bec83ec14",
       "title": "行为 SDK → BP_ce_enemy_death：FUN_00430240（SDK 名 Enemy__die）入口：push ebp/mov ebp,esp/sub esp,0x14，无相对寻址。thiscall，ecx = zEnemy；**引擎撒主掉落之前**（0x430493 才是撒、0x43049f 才通知卡）、链表仍挂着，恒定 mov eax,1 返回 ⇒ 一敌一生正好一次。handler 用 regs->retaddr 分死因（0x42f3b7 = 打死主路 / 0x42ee90 = 炸弹秒杀 / 0x430f59 = ECL die / killAll 三兄弟），沿卡链表调 on_enemy_death(&ev)。详见 docs/superpowers/specs/2026-09-12-shared-enemy-death-event-design.md"
-    },
-    "ce_shot_set_index": {
-      "addr": "0x45ebfb",
-      "cavesize": 7,
-      "expected": "8bbc97e0000000",
-      "title": "行为 SDK → BP_ce_shot_set_index：Player__tick_shooting_state 0x45ea00 查主炮 shooterset 前的 mov edi,[edi+edx*4+0xe0]（7 字节，无相对寻址）。edx = 本帧 fire-time set index（0..9 主炮；eax = 火力档），ebp-8 暂存同一 set index，随后 0x45ec69 会打包进 bullet+0xac。\nhandler 沿卡链表问 on_shot_set_index(card, eax)：返回 >=0 时改写 edx 与 [ebp-8] 为咆哮组 base+power，放行原指令；不咆哮/无卡时返回 -1，原版主炮 0..9 一个字节都不动。"
-    },
-    "ce_option_shot_gate": {
-      "addr": "0x40a9c3",
-      "cavesize": 6,
-      "expected": "8b550883ec0c",
-      "title": "行为 SDK → BP_ce_option_shot_gate：Player__tick_shooters_for_ability_card 0x40a9c0 的序言后 `mov edx,[ebp+8]; sub esp,0xc`（两条完整指令，6 字节，无相对寻址 / 无窗内跳转目标）。选 6 字节是因为 thcrap 的 sourcecave 下限是 5 字节：上一版只取 3 字节的 `mov edx,[ebp+8]`，thcrap 直接以 `cavesize too small` 拒绝装载，SDK 门回读失败后触发 `restore_alloc_bound` 降级路径 —— 存档/编成里已有新 id 时会踩出「卡 id 变垃圾 / HUD 槽消失」。**不能用 `0x40a9cb` 的 6 字节 `je`**：thcrap 的 cave_fix 不重定位 `0f 84 rel32`，复制进 cave 后会跳飞。handler 返回 1 = 执行完整两条原指令；返回 0 且 retaddr=0x40aa9e 才跳过本组（`mov esp,ebp` 重设栈顶）。⚠ 当前 C 侧 `CE_OPTION_SHOT_GATE_ENABLE` 默认 0（不启用），只为让门回读通过并保留实现。"
     },
     "ce_shop_bought": {
       "addr": "0x4183ea",

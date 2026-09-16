@@ -20,8 +20,11 @@
 
 每个字形都是 **16×20** 的单元（`y=320` 那一行），**连单元一起切、不要按墨迹裁** ——
 `.` 的墨迹在单元第 12..17 行，裁掉留白就等于把它抬到基线以上，`%`/`+` 同理。
-落到 `ability.anm` 时声明 **16×32**（2 的幂），构建脚本会把 16×20 居中补透明（上下各 6 px），
-于是「精灵中心」正好落在单元的水平中线 —— C 侧按中心定位即可（见 `ce_hud_vm_text_set`）。
+落盘时**画布 16×32、字形居中**（上下各 6 px 透明）—— 于是「精灵中心」正好落在单元的水平中线，
+C 侧按中心定位即可（见 `ce_hud_vm_text_set`）。
+★ 2026-09-13（图集合并）：居中补边从「构建期由 `build_ability.py` 补」搬到**这里**（见 `CANVAS`），
+于是 `ATLAS_FONT2` 的成员满足「矩形 = 原图自己的像素尺寸」（`ATLAS-MERGE-AUDIT.md` §4.1 规则①）；
+补出来的贴图与合并前**逐字节相同**（旧路径就是 `pad.paste(im, ((16-16)//2, (32-20)//2))` = (0, 6)）。
 
 分辨率变体：引擎按全局 UI 缩放 `DAT_0056aca0` 选 `ascii1280`(>1.6) / `ascii_960`(>1.1) / `ascii`，
 精灵号与映射**三套相同**、尺寸 16×20 / 12×15 / 8×10（`th18:0x419390`）。这里切 **ascii1280**
@@ -47,6 +50,13 @@ GLYPHS = [("FONT2_" + (str(i) if i >= 0 else ""), 196 + i, f"'{i}'") for i in ra
     ("FONT2_PLUS", 212, "'+'"),
 ]
 _SPRITE = re.compile(r"sprite(\d+): \{ x: (\d+), y: (\d+), w: (\d+), h: (\d+) \}")
+# 落盘画布：**16×32**，字形（16×20）**纵向居中**（上下各 6 行透明）。
+# ★ 2026-09-13（图集合并）：补边从「构建期由 `build_ability.py` 居中补」搬到**这里**，
+#   于是图集成员满足「矩形 = 原图自己的像素尺寸」（`ATLAS-MERGE-AUDIT.md` §4.1 规则①；
+#   `build_ability.py` 现在对图集成员**不许补边、尺寸不匹配就报错**）。
+#   为什么矩形必须是 16×32 而不是字形的 16×20：`native/sdk.c:690` 的 `+5.0f * sy * dat`
+#   是按「32 高的矩形里 20 行字形居中」标定的（§4.1 规则⑥），改了就是行为变化。
+CANVAS = (16, 32)
 
 
 def main():
@@ -59,9 +69,12 @@ def main():
             raise SystemExit(f"{SRC_TXT.name} 里没有 sprite{sid}")
         x, y, w, h = rects[sid]
         cell = im.crop((x, y, x + w, y + h))
-        cell.save(OUT / f"{name}.png")
-        print(f"{name:<14} sprite{sid:<4} ({x},{y},{w},{h})  {comment}")
-    print(f"→ {OUT.relative_to(REPO)}（{len(GLYPHS)} 张，ORDER.txt 里按 16x32 声明）")
+        pad = Image.new("RGBA", CANVAS, (0, 0, 0, 0))
+        pad.paste(cell, ((CANVAS[0] - w) // 2, (CANVAS[1] - h) // 2))   # 不带 mask：原像素 1:1
+        pad.save(OUT / f"{name}.png")
+        print(f"{name:<14} sprite{sid:<4} 源矩形 ({x},{y},{w},{h}) → 画布 {CANVAS[0]}x{CANVAS[1]}（居中）  {comment}")
+    print(f"→ {OUT.relative_to(REPO)}（{len(GLYPHS)} 张 {CANVAS[0]}×{CANVAS[1]}；"
+          f"ORDER.txt 的 ATLAS_FONT2 里按同尺寸声明）")
 
 
 if __name__ == "__main__":

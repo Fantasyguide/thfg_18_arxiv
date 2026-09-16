@@ -1,0 +1,24 @@
+script script234 {
+// 自动生成：assets/ability/make_trance_spirit_scripts.py（别手改，改表再重跑）
+// 神灵（113）type 1 的普通态外环 —— 逐条照抄 TH13 `astral.anm` script2（一手：engine/spirit/th13/01 §2.3）
+//   外环：呼吸 1.5↔1.6（20+20 帧循环）、blendMode 2、色 = 一手 type 1 外环 (63, 63, 0)
+-1:
+    type(1);
+    sprite(@SPIRIT_PLAIN_0);
+    color(63, 63, 0);
+    alpha(255);
+    blendMode(2);
+    layer(6);
+0:
+offset68:
+    scaleTime(20, 9, 1.5f, 1.5f);
++20:
+    scaleTime(20, 9, 1.6f, 1.6f);
++20:
+    jmp(offset68, 0);
+    stop();
+    interruptLabel(1);
+    scaleTime(40, 1, 0.0f, 0.0f);
++40:
+    delete();
+}

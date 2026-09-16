@@ -1,0 +1,62 @@
+script script273 {
+// 风神录（110）**微信仰点实体**（微档绿点）的出生动画 —— 逐条搬 TH10 `bullet.anm` **script382**
+//   （= 道具类型 8 = 微信仰点）。
+//
+// 一手原文（`local/vendor/thtk/build/thanm/thanm -l 10 local/th10.v1.00a/dat/bullet.anm
+//   -m local/vendor/thpages/static/mapfile/v4.anmm`；v4 mapfile 自注「for version 4: StB, Mof」
+//   ⇒ TH10 用的就是它）：
+//     script382 { sprite(sprite351); blendMode(1); type(1); alpha(16);
+//                 angleVel(0.0f, 0.0f, 0.7853982f); scale(0.0f, 0.0f);
+//                 scaleTime(16, 0, 1.0f, 1.0f);
+//               +32: angleVel(0.0f, 0.0f, 0.0f); type(0); stop(); }
+//
+// 为什么搬这条（三条一手链逐条可复跑，完整推导见 `assets/ability/make_mof_art.py` 文件头 §2026-09-15）：
+//   ① 类型 → 信仰值：`ItemManager::on_tick__body` `th10:0x41b3ce` 的 11 项跳转表 `th10:0x41b8a0`
+//      里 **idx7 = 类型 8 → `th10:0x41b5d6`**：`add_faith(10)`（无数值弹窗色）⇒ 类型 8 = **微信仰点**。
+//   ② 类型 → 脚本号：`ItemManager::spawn_item` `th10:0x41bca8` `lea eax,[ebp+0x176]`
+//      ⇒ **脚本 = 类型 + 374** ⇒ 类型 8 → **script382**。
+//   ③ 脚本 → sprite：`sprite(sprite351)`；再由卡侧 `faith_sprite_for()` 按档换成本仓的
+//      `@FAITH_DOT_MICRO@`（见下「贴图」一段，与 272 同一手法）。
+//
+// 逐条对应（v4 号 → 真名，`v4.anmm` 逐行可查）：
+//     ins_3  → sprite      ins_66 → blendMode   ins_67 → type        ins_51 → alpha
+//     ins_53 → angleVel    ins_50 → scale       ins_60 → scaleTime   ins_63 → stop
+//   ⚠️ **`angleVel` 不是 `rotate`**（ins_53 = 角速度，`rotate` 是 ins_49）：ωz = π/4 /帧，
+//      32 帧 = 8π = 整整 4 圈 ⇒ 原文在 `+32:` 归零角速度时视觉上正好回正（自带自洽）。
+//   ⚠️ 末尾是 **`stop()`（只停脚本，VM 与贴图留在场上）**，**不是 `delete()`**（那才是 ins_1）
+//      —— 微档点在被吃到之前一直挂在场上，这条不能写错。
+//
+// ── 与脚本 272（大/小档）的差别 = TH10 原文的差别，逐条搬 ─────────────────────
+//   | | 272（大 / 小档，TH10 script377 = script383 逐字相同）| **本脚本 273（微档，TH10 script382）** |
+//   | `blendMode` | 不写（TH18 模板默认 0 = 普通混合）| **`blendMode(1)` = 加算** |
+//   | `alpha` | 不写（VM 默认 255）| **`alpha(16)`**（16/255 ≈ 0.06 ⇒ 一层很淡的光）|
+//   | `scale` 起点 | `0.5` → 16 帧长到 `1.0` | **`0.0`** → 16 帧长到 `1.0`（从无到有涨出来）|
+//   ⇒ 微档 = **加算的淡光球**（小、暗、从 0 涨出来），大/小档 = **实心、从半尺寸涨出来**
+//     —— 这一层与贴图无关，是三档的**第二层**区分度。
+//
+// ── 贴图：三档三图，微档 = `(240,208)`（本轮新切）────────────────────────────
+//   TH10 / TH11 的**小档与微档在原版里共用同一个矩形**（`sprite351` 与 `sprite352` 字面同值
+//   `(112,208,16,16)`）⇒ 原版没给微档单独画图。本仓按「微档要有独立外观」取的是同一张
+//   `etama2.png` 上 ZUN 画的**第二套绿点**：`on_draw__body` `th10:0x41b8e0` 的第二族
+//   `vtype+352` 里，**vtype 8/9（微/小信仰点为视觉类型）就是 `sprite360`/`sprite361` = `(240,208)`**。
+//   像素 100% 原版切图（零自绘）；「把它指给微档」这一步是 ❓**自定**（已登记 `TUNING.md` §2.6）。
+//
+// ── ★★ 2026-09-16：**收集时没有任何收尾动画**（原来那段 ❓ 自定已删）──────────
+//   与 272 同因同改：TH18 的收集（`th18:0x446584` 共享尾）= 原位播 `0x25` + state 归 0 + 释放 VM，
+//   TH10 同样是引擎直接删 ⇒ 本脚本的 `interruptLabel(1)` 收尾段一并删除。
+//
+// 层：TH10 的脚本原文里**没有 `layer()`**（层由道具实体自己给）⇒ 本脚本也不写；
+//   绿点实体由卡侧 `ce_anm_spawn(..., FAITH_LAYER)` 定层（`faith.h` 的 13 = 游玩区相机层）。
+    sprite(@FAITH_DOT_MICRO@);                // 微档默认；仍由卡侧 faith_sprite_for() 兜底
+    blendMode(1);                             // ins_66：加算（TH10 原文就有，272 没有）
+    type(1);
+    alpha(16);                                // ins_51：16/255 ≈ 0.06 的淡光（272 默认 255）
+    angleVel(0.0f, 0.0f, 0.7853982f);         // ωz = π/4 /帧 自转（ins_53）
+    scale(0.0f, 0.0f);                        // **从 0** 长起（ins_50；272 是 0.5）
+    scaleTime(16, 0, 1.0f, 1.0f);             // 16 帧长到原尺寸（ins_60）
++32: // 32
+    angleVel(0.0f, 0.0f, 0.0f);               // 角速度归零（ins_53）→ 视觉上正好回正（4 圈）
+    type(0);
+    stop();                                   // ins_63：**停脚本**，实体留在场上
+                                              // ★ 收集 = 卡侧 `faith.c:dot_collect()` 直接删 VM（一手形状，见上）
+}

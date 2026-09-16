@@ -28,3 +28,13 @@ EXPORTS
 	BP_ce_enemy_shot_slot	@26
 	BP_ce_item_score_below	@27
 	BP_ce_option_shot_gate	@28
+	BP_ce_player_die	@29
+	BP_ce_bullet_damage_final	@30
+	BP_ce_death_result	@31
+	BP_ce_item_score_in	@32
+; ⚗ 二分临时摘掉（2026-09-17a）: BP_ce_enemy_damage	@33
+	BP_ce_repopulate_native_option	@34
+	BP_ce_native_option_muzzle	@35
+	BP_ce_poc_gate_a	@36
+	BP_ce_poc_gate_b	@37
+	BP_ce_chain_node_guard	@38

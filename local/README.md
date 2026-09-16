@@ -61,6 +61,11 @@ local/
 
 1. **游戏 exe / .dat**：用你自己合法持有的副本，按上表哈希核对后放进对应版本目录。
    **不要去下载。**
+> TH08（永夜抄）的社区反编译（**MIT**，用户 2026-09-16 提供）：`th08_dec` —— 卡 108 进一步查证时先看它：
+> `git clone --depth 1 https://github.com/Patchouli-CN/th08_dec local/vendor/th08_dec`
+> （4.5 MB；`src/*.cpp` + `config/reccmp-functions.csv` 的 2221 条 名字↔地址。⚠ 它记的 sha256 与我们样本不同，
+> 布局抽检一致 —— 细节与用法见 `engine/_shared/community-sources.md` 的「TH08 专用」一节）
+
 2. **vendor 克隆**：各仓库上游 commit 记录在
    [`../engine/_shared/community-sources.md`](../engine/_shared/community-sources.md)，按记录重新 clone。
    两个 SHT 参考仓库**均无 LICENSE 文件**，正式移植/发布前需确认授权，故不直接提交其源码。
@@ -94,3 +99,12 @@ MCP 支持多库并存，两个 `database` 可以**并排对照**同名函数（
 朋友 clone 下来放好 `th18.exe` 就能一键启动。renkolab 是开发仓库，产物往那边推：
 patch 进 `thcrap/repos/Renko_1055/<id>/`，DLL 进 `mods/`（带 `.json` 侧车）。
 它的 `thcrap/repos/nmlgc/base_tsa/th18*.js` 就是 `sites.py conflicts` 要对照的那份。
+
+## 本机专属的铁律（`local/*.md`，不入库）
+
+`local/` 下的这几个 `.md` 是**只在本机生效**的规矩（因为里面的路径是本机路径）：新会话要读。
+
+| 文件 | 管什么 |
+| --- | --- |
+| [`DLL-SYNC.md`](DLL-SYNC.md) | 每次 `make release` 之后 DLL 必须同步到 modkit 的**四处**同一个 md5 |
+| [`GAME-LOG.md`](GAME-LOG.md) | ★ **实跑日志的绝对路径**（`<modkit>/game/th18_card_expand.log`）＋「用户说实跑了就先自己读它」的规矩 |

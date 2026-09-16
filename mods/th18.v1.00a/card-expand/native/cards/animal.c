@@ -57,6 +57,7 @@
 #include "animal_core.h"
 #include "animal_wave_table.h"  /* AL58c：各关各波各组的静态动态总数（展开 $A-- 循环）*/
 #include "broken_core_core.h"   /* bc_atan2f：纯 SSE 的确定性 atan2（bug-1 的 EAGLE 追尾补正用）*/
+#include "hud_dim.h"            /* ★ 跨卡统一件：左下角 HUD 压暗（❓ 用户口径，见文件头）*/
 
 /* 本卡 id。⚠ `CE_CARD` 对 ID 做 `##` 拼接 ⇒ 那里必须写**字面量** `117`（照 mof.c / signal.c 的规矩），
  * 这个常量只给下面 `animal_cancel_claim` 的消弹闩锁用（EVENTS-CONTRACT §5.2 细则 2）。*/
@@ -115,13 +116,16 @@
  *   `ce_hud_slot_claim_pinned_card(117, &blk, ANIMAL_HUD_PIN_X, ANIMAL_HUD_PIN_Y, &slot)`：
  *   登记进表（`ce_hud_slot_get()` 取得到）、**货架不会动它**（别的块也不会为它让位），
  *   关卡纪元照样清 ⇒ 每关开场重新认领（`on_load`）。
- *   锚点 = 整排的**左下角**：(88, 924)。x 就是用户 2026-09-10 按 1280 截图量的 `ANIMAL_HUD_X0`
+ *   锚点报账为 (88, 924)。x 就是用户 2026-09-10 按 1280 截图量的 `ANIMAL_HUD_X0`
  *   （整排左移 193 px：281−193 = 88）；y 取**已量过的那条线 924**（`CE_HUD_ANCHOR_Y` 同一档），
  *   slot 的中心 y 由 `+ANIMAL_HUD_DY`（= 904−924 = −20）推回来 ⇒ 逐像素等于迁移前的 `ANIMAL_HUD_Y`。
  *   ⚠️ 实测口径：48×48 的可见框以 904 为心 ⇒ 实占 y **880..928**（比 924 还低 4 px，见 §1.4 的
  *      表）；这里按用户量过的 924 当锚点报账，只差这 4 px 的下沿（不参与任何排布计算）。
- *   块尺寸 = 5 格整排（含 24 px 的格半径余量）：x 88..449、y 880..928 ⇒ 报 **193 × 48**
- *   （与 `HUD-LAYOUT §1.4` 的「动物灵 193×48」一致）。*/
+ *   ★★ 2026-09-15i 订正（**只改注释，值一个字节没动**）：这个 (88, 924) 在**绘制**里是
+ *      **首格的格心**（`hud_sync` 的 `x = s_slot.x + 36·i`、`y = s_slot.y − 20`），**不是**整排的左下角 ⇒
+ *      可见整排 = 64..256（见下面 `ANIMAL_HUD_VIS_*` 那张表）。
+ *      报给槽位表的块尺寸 193×48 仍是「5 格整排」那一档（= 48 + 4×36 + 1，与 `HUD-LAYOUT §1.4` 的
+ *      「动物灵 193×48」对齐）—— 它跟着**声明块**走，不跟着可见整排改（换它 = 改货架/重叠账）。*/
 #define ANIMAL_HUD_X0          88.0f   /* ★ 用户 2026-09-10 按 1280 截图量的：整排**左移 193 px**（281−193）*/
 #define ANIMAL_HUD_Y          904.0f   /* ★ 同上：**下移 4 px**（900+4）*/
 #define ANIMAL_HUD_DX         36.0f
@@ -130,8 +134,46 @@
 #define ANIMAL_HUD_PIN_X      88.0f        /* = ANIMAL_HUD_X0（迁移前的硬编码值，一个像素没动）*/
 #define ANIMAL_HUD_PIN_Y     924.0f        /* 已量过的那条底线（= CE_HUD_ANCHOR_Y）*/
 #define ANIMAL_HUD_DY        (-20.0f)      /* 格中心 y = pin_y − 20（904 − 924）*/
-#define ANIMAL_HUD_BLOCK_W   193.0f        /* 5 格整排：pin_x .. pin_x+361（可见框 88..449）*/
-#define ANIMAL_HUD_BLOCK_H    48.0f        /* 可见框高 48；上沿 880（= 924 − 48 + 4，见上面的实测口径注）*/
+#define ANIMAL_HUD_BLOCK_W   193.0f        /* **声明给槽位的块宽**：pin_x .. pin_x+193 ⇒ 88..281（值不动）*/
+#define ANIMAL_HUD_BLOCK_H    48.0f        /* 同上，块高 48；上沿 876（= 924 − 48）*/
+/* ★★ 2026-09-15i：**「声明块」≠「可见整排」** —— 压暗的判据用后者（见 `hud_fade_tick`），
+ *   这里先把两份几何各自钉下来（只读推导：`hud_sync` 的 `x = s_slot.x + ANIMAL_HUD_DX·i` + 各 VM 的 sprite 盒）：
+ *
+ *   | | 表面 px | 来源 |
+ *   | --- | --- | --- |
+ *   | **声明块**（喂 `ce_hud_slot_claim_pinned_card`）| (88, 924) + 193×48 ⇒ x 88..281、y 876..924 | `ANIMAL_HUD_PIN_*` + `ANIMAL_HUD_BLOCK_W/H`；照 HUD-LAYOUT §1.4 的「动物灵 193×48」 |
+ *   | **可见整排**（5 格真的画在哪）| **(64, 928) + 192×48 ⇒ x 64..256、y 880..928** | 见下 |
+ *
+ *   ⚠ **两者相差 24 px，根子是「88 是首格的格心、不是整排的左沿」**——
+ *   `hud_sync` 里 `第 i 格中心 = (s_slot.x + 36·i, s_slot.y − 20) = (88+36i, 904)`：
+ *   锚点的 x 落成**首格格心**（`ANIMAL_HUD_PIN_X` 的注释写「整排左下角」，与代码实际用法差**半个格半径**）。
+ *   ⇒ 可见整排 = 首格盒 88±24 .. 末格盒 232±24 = **64..256**（宽 = 48 + 4×36 = 192），
+ *     下沿 = 格心 904 + 24 = **928**（不是声明块的 924）。
+ *   各 VM 的实测内容（`assets/ability/entries/ORDER.txt` 的贴图 + 脚本 145/154/156 的 `originMode(1)`，
+ *   中心锚 ⇒ 可见范围 = 格心 ± 图元半宽）：格内图标 `ICON_*` = 64×64 画布、**art bbox 40×40 居中**
+ *   ⇒ 单格 68..108（首格）.. 212..252（末格）；空槽灵魂 `SOUL_0` = 16×16（art 仅 6×9）；
+ *   满槽火焰 `FLAME_0` = 64×64 画布、`anchor(0,2)`（底边中）且就绪/咆哮时 ×1.5
+ *   ⇒ 单格 x ±24（首格 64..112、末格 208..256）、顶边最高到 y 862。
+ *   **⇒ 整排内容的实际外包 = x 62..255、y 862..928**（火焰 ×1.5 时比格盒往左 / 往上多出约 1.5 / 18 px），
+ *   取**格盒**那份（64..256 / 880..928）当「可见整排」的规范矩形 —— 那 1.5 px 落在自机够不到的一侧
+ *   （门的左沿由自机钳位决定），18 px 的顶边也不影响 y 侧的门。见 `hud_fade_tick` 的注。
+ *
+ *   ⚠ **用户 2026-09-15 口径**：「117 的显示是在游玩区的左下角没问题，**全部落在了游玩区**。它的**左边界**的位置
+ *   和 113 116 是基本一致的」—— 父 agent 由此读成「可见整排的左沿 ≈ 表面 248..257」。**本轮实测对不上**：
+ *   按上面这套代码/常量/贴图推，可见整排左沿 = **64**（= 88 − 24），右沿 = **256**。
+ *   · 与 113（声明块左沿 248）/116（257）**基本一致的其实是本排的「右沿 256」**（= 游玩区左边缘 256/257 那条线）
+ *     —— 这是「117 的整排紧贴着 113/116 那一排的左边」的几何，很可能就是那句话看的东西；
+ *   · 若用户的「左边界 = 248..257」字面成立，则本排得整个画在 256..449（= 2026-09-10「左移 193」**之前**的
+ *     名义位置 `x = 281+36i`）—— 但常量（源码 + 已编译 DLL 的立即数 88/36/−20/193/48 全查过）与绘制代码
+ *     都不支持这个读法，且 DLL 里**根本没有 281**。⇒ 已报父 agent（见 `AUDIT.md` §DD-8 与 `NEXT.md` §2D）。*/
+/* 可见整排的**尺寸常量**（左沿 / 下沿**刻意不写死** —— 它们每帧从**运行时的槽位值** `s_slot` 推，
+ *   见 `hud_fade_tick`；为什么不能从 `ANIMAL_HUD_PIN_X` 直接推，见 `hud_log_geometry` / `hud_slot_sync` 的注）*/
+#define ANIMAL_HUD_HALF       24.0f   /* 格半径 = 48/2：格心 − 它 = 格盒左沿（可见左沿）*/
+#define ANIMAL_HUD_VIS_W     192.0f   /* 可见整排宽 = 48 + 4×36（5 格 48×48、间距 36）（= 256−64）*/
+#define ANIMAL_HUD_VIS_H      48.0f   /* 可见整排高 = 格盒 48（= 928−880）*/
+/* ✏️ 对账用的**参考值**（pin = (88,924) 时，仅供文档/人眼比对 —— **不许当判据**）：
+ *   可见整排 = (64, 928) + 192×48；等价的右沿 256 / 上沿 880。
+ *   真值看日志 `wba_wc: hud geom …` 的 `vis` 那一列（2026-09-15j 起：认领当场一行 + 每 300 帧一行）。*/
 /* ★ 火焰的锚点补偿（用户 2026-09-10）：
  *   火焰贴图 = 48×48 单元放在 64×64 画布的**下沿**（脚本 156 里 `anchor(0, 2)` = 锚心 + 底边），
  *   这样 1.5 倍放大时和 TH17 一样**往上长**。C 侧要按 (32, 56) 补一下，1 倍时的画面才和原来一致。
@@ -150,18 +192,36 @@
 #define ANIMAL_HUD_DIM        0xc0ffffffu   /* 未就绪：半透明（alpha 192）*/
 #define ANIMAL_HUD_FULL       0xffffffffu   /* 就绪：实心 */
 
-/* —— HUD 渐隐（自机贴近左下角时把槽位淡下去）——
- * ★ 用户 2026-09-10 口径：**不对齐 TH17**，改用**天空璋卡（TH16）那一套时间序列**，好让两张系统卡一致：
- *     target = 64（dim，TH16 `alphaTime(5,0,64)`）/ 255，按 `step = 51` 每帧走 ⇒ 约 5 帧走完。
- * 触发条件**暂时照抄**天空璋卡（TH16 `th16:0x427f41` / `0x427f6c` 的闩锁 + 迟滞：`x < −64 且 y > 400`
- * 淡出；`y < 384 或 x > −64` 淡回）。
- * 🟡 **最终版要按「UI 此刻的位置」判**：多张左下角卡要竖直垒起来（`SDK.md` §17 / `HUD-LAYOUT.md`），
- *    那时这里改成「自机 vs HUD 可见矩形」的判据，只动 `animal_hud_player_near()`。*/
-#define ANIMAL_HUD_FADE_DIM    64
-#define ANIMAL_HUD_FADE_STEP   51
-#define ANIMAL_HUD_HIDE_X     (-64.0f)   /* 照抄天空璋卡：自机 x < 它… */
-#define ANIMAL_HUD_HIDE_Y     400.0f     /* …且 y > 它 → 淡出 */
-#define ANIMAL_HUD_SHOW_Y     384.0f     /* 迟滞：y < 它（或 x > HIDE_X）→ 淡回 */
+/* —— HUD 压暗（自机的体量碰到本卡的槽位排 → 整排淡下去）——
+ * ★★ 2026-09-15g：**改走跨卡统一件 `cards/hud_dim.{h,c}`**（唯一实现）。
+ * 性质 = ❓ **用户口径（UI 统一），不是复刻**（用户 2026-09-15：「压暗这个涉及到 UI 统一，
+ * 这个不能复刻。是那个靠近透明吧」）⇒ **动态**统一：终点 alpha **32**（原 64）、起始 255、
+ * 每帧 **±56**（= 255↔32 恰好 **4 帧**，与脚本侧 `alphaTime(4,0,·)` 同帧数）、滞回带 **16 px**；**区域**按**本卡自己那块 HUD 的矩形**推（见下）。
+ *
+ * ★★ 2026-09-15h：**进/出的口径订正**（父 agent：15g 那版「进 = 矩形**之内**」裁错了）——
+ *   **进 = 自机落在「块矩形外扩 `HUD_DIM_MARGIN`(28)」之内**、**出 = 离开「矩形 + 44」（28 + 滞回 16）之外**。
+ *   理由：本块的**下沿 446 在自机 y 钳位 432 之下** ⇒ 「站进矩形」只剩 **10 px 高**；一手各作的门本来就落在
+ *   它们自己那块上沿之上 24–32 px（TH16 的 `400` 在它那块沿之上 28）⇒ 边距是**原本就有的语义**。
+ *
+ * 本卡的**压暗矩形** → 门限（**自机坐标**；换算 `自机 = 表面/2 − (320, 16)`，见 `hud_dim.h`）：
+ *   ★★ 2026-09-15i 起 = **可见整排**那份（**不是**声明给槽位的块；两份为什么差 24 px 见上面 `ANIMAL_HUD_VIS_*`）：
+ *   · 矩形 = (64, 928) + **192 × 48**（`ANIMAL_HUD_VIS_*`）⇒ 表面 x 64..256、y 880..928
+ *   · ⇒ 自机矩形 = x ∈ [−288, −192]、y ∈ [424, 448]（上沿 424 / 下沿 448）
+ *   · ⇒ **进** = 自机落在「矩形 + 28」之内：x ∈ [−316, −164] ∧ y ∈ [396, 476]
+ *        ⚠ 自机钳位 x ∈ [−184, 184]、y ∈ [32, **432**] ⇒ 实际可触发区 = x ∈ [−184, −164]、y ∈ [396, 432]
+ *          （≈ **20 × 36 px**）
+ *   · ⇒ **出** = 离开「矩形 + 44」：x < −332 ∨ x > −148 ∨ y < 380 ∨ y > 492（**16 px 滞回带**）
+ *   ⚠ **几何事实（要拍板的）**：本排**整排画在游玩区左边缘（256/257）之外**（可见 64..256，自机中心最左只能到 272）
+ *     ⇒ 自机**碰不到**它，压暗只在「贴左墙」的那 20 px 里成立。旧口径用声明块（88..281）时是 32.5 px
+ *     —— 那个宽度有一半来自「声明块比可见整排右移 24 px」这个记账偏移，**不是**本排真的能被碰到。
+ *     要它更早亮：`HUD_DIM_MARGIN`（一个宏、全卡）或**挪本排**（摆位口径，见 `AUDIT.md` §DD-6 第 2 条）
+ *     —— 后者不归本轮（父 agent 明令「只换压暗用的矩形」）。见 `AUDIT.md` §DD-8、`TUNING.md` §7.2/§7.4。
+ *   ⚠ 旧值 `x < −64 ∧ y > 400` / 淡回 `y < 384` 是**照抄天空璋卡**（本卡注释原话），是 TH16 自己那块
+ *     槽的几何；统一后按本卡几何重推，数字因此不同 —— **几何差异，不是新的不统一**。原一手值留档：
+ *       `ANIMAL_HUD_FADE_DIM   64`   —— 用户 2026-09-10 口径 = 照抄天空璋卡（TH16 `alphaTime(5,0,64)`）
+ *       `ANIMAL_HUD_FADE_STEP  51`   —— 步长（照 TH16 那一套时间序列）
+ *       `ANIMAL_HUD_HIDE_X (-64.0f) / HIDE_Y 400.0f / SHOW_Y 384.0f` —— `th16:0x427f41` / `th16:0x427f6c`
+ *       `animal_hud_player_near()`   —— 本卡自己那份门函数（已删，改由共享件算）*/
 
 /* ★ 调试键（2026-09-10，用户要求）：拍**空格**时，如果本卡在卡组里，就从画面中央
  * (ECL 坐标 x=0, y=224) 召唤一只随机**动物灵**（type 1..3，长寿命/变色版）。
@@ -459,10 +519,13 @@ typedef struct {
     int32_t burst_type;              /* ★ 2026-09-13 bug-5：本次自然结束咆哮的兽灵类型（1..3 暴走 / 4 混合 /
                                       *   0 未知），hyper_end 在清 core 前捕获，120 帧后 release_tick 用
                                       *   （原先占位字段改名，不改结构大小）*/
-    int32_t hud_dim;                 /* 1 = 自机贴近 HUD、槽位淡出中 */
-    int32_t hud_alpha;               /* HUD 当前 alpha（255 ↔ 64，每帧 ±51，照天空璋卡）*/
+    hud_dim_t hud;                   /* ★ 2026-09-15g：压暗状态（闩锁 + alpha）—— 跨卡统一件
+                                      * `cards/hud_dim.{h,c}`（原来是 `hud_dim`/`hud_alpha`
+                                      * 两个 int32：255 ↔ **64**、每帧 ±51）*/
     int32_t hud_fade_touched;        /* 1 = 上一帧动过灵魂/火焰的 alpha（淡回时要补写一次）*/
-    int32_t hud_slot_ok;             /* ★ 2026-09-12：本关已认领到 pinned HUD 槽（`s_slot` 在静态区）*/
+    /* ★ 2026-09-15j：原来的 `int32_t hud_slot_ok` **已删** —— 它全仓没有写点（`ce_state` 被 memset 成 0）
+     * ⇒ `hud_slot_sync()` 里的 `if (!s->hud_slot_ok)` 恒真、「每帧取最新锚点」是空注释（真洞，见那里）。
+     * 现在认领/同步一律用**文件级** `s_slot_ok`（槽位表那本账），卡状态里不再放这个标志。*/
     int32_t phase_sig;               /* boss 活动中断槽的相位签名（TH17 `BossItem(33)` 的边界信号）*/
     int32_t phase_is_spell;          /* 当前 phase_sig 对应的相位是否为符卡（SPELLCARD+0x78 bit0 在本相位期间亮过）*/
     int32_t phase_is_mid;            /* 当前 phase_sig 是否属于道中 boss（新中断槽名首字母 'M'，照 AUDIT §AL）*/
@@ -1824,6 +1887,52 @@ static void fish_to_items(animal_card_t *s, int32_t type, float x, float y)
  * 槽位本体放 DLL 静态区（`ce_state` 只有 496 字节，本卡已经快满了；本卡同时只有一张在场）。*/
 static ce_hud_slot_t s_slot;             /* 认领时/每帧取到的块左下角（表面 px）*/
 static int32_t s_slot_ok;                /* 1 = 本关已登记（拿不到就退回迁移前的硬编码常量兜底）*/
+static int32_t s_last_path_table;        /* 1 = 本帧的 s_slot 来自槽位表（`ce_hud_slot_get`）、0 = 兜底常量
+                                          * —— 只给 `hud_log_geometry()` 的诊断行用（见那里）*/
+static uint32_t s_geom_log_tick;         /* 几何诊断行的节流计数（每 300 帧一行）*/
+
+/* ★★ 2026-09-15j：**运行时几何诊断**（父 agent 指令：压暗矩形**不许再靠纸面推导**）。
+ * 一行给全「可见整排到底在哪」需要的所有量（**以这一行为准**，不是以注释/常量推）：
+ *   `claim_ok`  = `ce_hud_slot_claim_pinned_card()` 的返回值（文件级 `s_slot_ok`）。
+ *                 ⚠ 卡状态里原来那个 `hud_slot_ok` **已删**（它从没被写过 ⇒ 每帧都走兜底常量，
+ *                 「每帧取最新锚点」那句注释当时是空的；2026-09-15j 改成文件级 `s_slot_ok`）
+ *   `path`      = 本帧 x/y 到底从哪来：`tbl` = `ce_hud_slot_get(117)` 的返回值、`fallback` = 兜底常量
+ *   `slot`      = 认领到的槽位 (x, y) + w×h（表面 px，槽位表里的账）
+ *   `cells`     = 逐格真的画出去的 x（`s_slot.x + 36·i`，i = 0..4）与 min..max
+ *   `vis`       = 由 cells 推的**可见整排**盒（左沿 = min − 24 格半径、右沿 = max + 24、下沿 = y + 24）
+ *   `dim`       = 本帧喂 `hud_dim_rect_surface()` 的矩形（= `ANIMAL_HUD_VIS_*`）
+ * 想让用户对账时：让他看游戏里 117 那 5 格的左右两端，与 `vis` 的两个数对一下（差 190 px 量级就说明
+ * 「用户看到的」与「代码画的」不是同一个东西 —— 那必须查实机/DLL，别再改矩形）。*/
+static void hud_log_geometry(const char *tag, int path_table)
+{
+    float c[ANIMAL_SLOT_MAX];
+    float cmin, cmax, y;
+    int i;
+
+    y = s_slot.y + ANIMAL_HUD_DY;
+    cmin = cmax = s_slot.x;
+    for (i = 0; i < ANIMAL_SLOT_MAX; ++i) {
+        c[i] = s_slot.x + ANIMAL_HUD_DX * (float)i;
+        if (c[i] < cmin) cmin = c[i];
+        if (c[i] > cmax) cmax = c[i];
+    }
+    ce_log("wba_wc: hud geom [%s] claim_ok=%d path=%s | slot (%.0f, %.0f) + %.0fx%.0f | "
+           "cells %.0f %.0f %.0f %.0f %.0f (x %.0f..%.0f) | vis(dim) (%.0f, %.0f) + %.0fx%.0f | "
+           "consts (%.0f, %.0f) + %.0fx%.0f drift=%d",
+           tag, (int)s_slot_ok, path_table ? "tbl" : "fallback",
+           (double)s_slot.x, (double)s_slot.y, (double)s_slot.w, (double)s_slot.h,
+           (double)c[0], (double)c[1], (double)c[2], (double)c[3], (double)c[4],
+           (double)cmin, (double)cmax,
+           (double)(cmin - ANIMAL_HUD_HALF), (double)(y + ANIMAL_HUD_HALF),
+           (double)(cmax - cmin + 2.0f * ANIMAL_HUD_HALF), (double)ANIMAL_HUD_VIS_H,
+           (double)(ANIMAL_HUD_PIN_X - ANIMAL_HUD_HALF),
+           (double)(ANIMAL_HUD_PIN_Y + ANIMAL_HUD_DY + ANIMAL_HUD_HALF),
+           (double)ANIMAL_HUD_VIS_W, (double)ANIMAL_HUD_VIS_H,
+           /* drift = 「按运行时槽位推出来的矩形」≠「按 PIN 常量推的矩形」——正常应当 0；
+            * 出现 1 就说明槽位表里的 x/y 与 pin 不再一致（那就是要查的事了，别再改注释）*/
+           (cmin - ANIMAL_HUD_HALF != ANIMAL_HUD_PIN_X - ANIMAL_HUD_HALF) ||
+           (y + ANIMAL_HUD_HALF != ANIMAL_HUD_PIN_Y + ANIMAL_HUD_DY + ANIMAL_HUD_HALF) ? 1 : 0);
+}
 
 /* 每关开场登记（`on_load`）。`_card` 版会先把关卡号推进纪元 ⇒ 换关后必须重认领，
  * 否则 `ce_hud_slot_get()` 取不到（本关表被清过），只能走兜底常量。
@@ -1843,19 +1952,39 @@ static void hud_slot_claim(void)
                (double)blk.w, (double)blk.h, (double)s_slot.x, (double)s_slot.y);
     } else {
         ce_log("wba_wc: ce_hud_slot_claim_pinned_card FAILED");
+        /* 认领失败 ⇒ 立刻把**兜底常量**填进 `s_slot`（SDK 失败时不会写 `out`）
+         * ⇒ 这一行诊断与后续每帧的 `hud_slot_sync()` 都不会看到垃圾值 */
+        s_slot.x = ANIMAL_HUD_PIN_X;
+        s_slot.y = ANIMAL_HUD_PIN_Y;
+        s_slot.w = ANIMAL_HUD_BLOCK_W;
+        s_slot.h = ANIMAL_HUD_BLOCK_H;
+        s_slot.side = CE_HUD_SIDE_PINNED;
     }
+    hud_log_geometry("claim", s_slot_ok);     /* 认领当场再打一遍完整几何（含逐格 x）*/
 }
 
 /* 每帧取**最新**锚点（pin 的位置不会被别人动，但关卡纪元/删卡会把这条记录清掉 ⇒ 取最新更稳）。
- * ⚠ `ce_hud_slot_get()`（`sdk_core.c` 一手）**只填 x/y/w/h/side，不填 x640/y640** ⇒ 不能读那两格。*/
+ * ⚠ `ce_hud_slot_get()`（`sdk_core.c` 一手）**只填 x/y/w/h/side，不填 x640/y640** ⇒ 不能读那两格。
+ * ★★ 2026-09-15j **修了一个洞**：这里原来读 `s->hud_slot_ok`，而认领写的是**文件级 `s_slot_ok`**
+ *   —— 卡状态那个字段（`animal_card_t.hud_slot_ok`）**全仓没有任何写点**（`ce_state` 被 memset 成 0）
+ *   ⇒ 这个 if 恒真、**`ce_hud_slot_get()` 从来没被调用过**，「每帧取最新锚点」是一句空注释。
+ *   对 117 没有可见后果（pinned 的账就是 `ANIMAL_HUD_PIN_X/Y`，兜底常量同值），但它是**真洞**：
+ *   ① 槽位表里若真有别的值（将来 SDK 改 pinned 的语义 / 有人换 pin），卡侧看不见；
+ *   ② 压暗矩形要「按**运行时槽位值**推」（父 agent 2026-09-15j 口径）⇒ 必须真的去读那张表。
+ *   现在读文件级 `s_slot_ok`，并且 `ce_hud_slot_get()` 失败时**显式**退回兜底常量（不留陈旧值）。*/
 static void hud_slot_sync(animal_card_t *s)
 {
-    if (!s->hud_slot_ok) {
+    if (!s_slot_ok || !ce_hud_slot_get(117, &s_slot)) {
         s_slot.x = ANIMAL_HUD_PIN_X;
         s_slot.y = ANIMAL_HUD_PIN_Y;
+        s_slot.w = ANIMAL_HUD_BLOCK_W;
+        s_slot.h = ANIMAL_HUD_BLOCK_H;
+        s_slot.side = CE_HUD_SIDE_PINNED;
+        s_last_path_table = 0;
     } else {
-        (void)ce_hud_slot_get(117, &s_slot);
+        s_last_path_table = 1;
     }
+    (void)s;
 }
 
 /* —— HUD：左下角 5 格灵槽 ——
@@ -1873,40 +2002,51 @@ static void hud_clear(animal_card_t *s)
     }
 }
 
-/* 自机是不是贴在 HUD 上（触发淡出）。🟡 见上面常量注：**暂时**照抄天空璋卡的阈值，
- * 最终要改成「自机 vs HUD 可见矩形」——把这张卡的槽位矩形（`ANIMAL_HUD_X0/Y/DX`）算进去就行。 */
-static int animal_hud_player_near(void)
-{
-    const float *pp = ce_player_pos();
-    if (!pp) return 0;
-    return (pp[0] < ANIMAL_HUD_HIDE_X && pp[1] > ANIMAL_HUD_HIDE_Y) ? 1 : 0;
-}
-
-/* 每帧推进 HUD 淡入淡出（闩锁 + 迟滞 + 每帧 ±51）。放在 on_draw 里跟着 hud_sync 一起跑。 */
+/* 每帧推进 HUD 淡入淡出。★ 2026-09-15g：**判据与动态**全部由跨卡统一件 `cards/hud_dim.{h,c}`
+ * 说了算（本卡原来那份 `animal_hud_player_near()` + 五个本地常量已删，原一手值见上面常量区的留档注）
+ * ⇒ 这里只剩「每帧现算本卡的块矩形 → 调一次 + 边沿打日志 + 维护 hud_fade_touched」。
+ * 放在 on_draw 里跟着 hud_sync 一起跑（`CE_PLAYER() && CE_GAME_THREAD()` 门之后 ⇒ 每帧正好一次，
+ * 且 `hud_slot_sync()` 刚取过最新锚点 ⇒ 矩形是本帧的）。
+ *
+ * ★★ 2026-09-15i：**喂进去的是「可见整排」那份矩形，不是「声明给槽位的块」**（父 agent 裁定）——
+ *   两份几何为什么不同、各自的来源，见上面 `ANIMAL_HUD_VIS_*` 那段（根子：`ANIMAL_HUD_PIN_X = 88`
+ *   被代码当成**首格格心**用，于是声明块 88..281 比可见整排 64..256 整体**右移 24 px**）。
+ *   压暗的口径是「**HUD 画在哪，判据就跟着哪**」（用户 2026-09-15）⇒ 判据必须用**可见**那份：
+ *     · 声明块 (88, 924) 193×48 仍然照旧喂 `ce_hud_slot_claim_pinned_card()`（货架/重叠账要它，
+ *       且它是「本排的左移前基准」的记账值）—— **一个字节没动**；
+ *     · 压暗 (64, 928) 192×48 = 5 格盒（`ANIMAL_HUD_VIS_*`）。
+ *   ⚠ **行为后果（要报的）**：本排右沿 256 与「自机中心能到的最左」272 只差 16 px
+ *   （自机 x 钳位 ±184 ⇒ 表面 272..1008）⇒ 自机**永远碰不到**这一排，压暗只能靠共享件那条
+ *   28 px 边距在「贴着左墙」时成立（进 `x ∈ [−184, −164]`、出 `x < −196`，即 20 px 宽的一条）。
+ *   这不是算错，是本排的几何（它整排画在游玩区左边缘之外）；要它更早亮 = 改 `HUD_DIM_MARGIN`
+ *   （一个宏、影响所有卡）或**挪本排**（摆位口径，不归本轮）。
+ *   ⚠ 满槽火焰（`FLAME_0`，×1.5、`anchor(0,2)`）顶边最高到表面 y 862 —— 比本矩形上沿 880 高 18 px；
+ *   它对**门的 y 侧**没有影响（`y0 = 424` 再外扩 28 = 396 已经在自机 y 钳位上沿之外，进区恒含自机底边 432），
+ *   所以这里不为了它把矩形加高（要加就把 `ANIMAL_HUD_VIS_H` 改 66、下沿不动）。*/
 static void hud_fade_tick(animal_card_t *s)
 {
-    const float *pp = ce_player_pos();
-    int32_t target;
+    const int32_t was_dim = s->hud.dim;
+    hud_dim_rect_t r;
 
-    if (!s->hud_dim) {
-        if (animal_hud_player_near()) {
-            s->hud_dim = 1;
-            ce_log("wba_wc: hud dim on (player near slot area)");
-        }
-    } else if (!pp || pp[1] < ANIMAL_HUD_SHOW_Y || pp[0] > ANIMAL_HUD_HIDE_X) {
-        s->hud_dim = 0;
-        ce_log("wba_wc: hud dim off");
+    /* ★★ 2026-09-15j：矩形**每帧从运行时槽位值推**（`s_slot`），左沿/下沿**不写死**：
+     *   画在哪 = `hud_sync` 的 `x = s_slot.x + 36·i` / `y = s_slot.y − 20`
+     *   ⇒ 可见整排 = x ∈ [s_slot.x − 24, s_slot.x + 4×36 + 24]、y ∈ [(s_slot.y−20) − 24, (s_slot.y−20) + 24]
+     *   ⇒ 左下角 = `(s_slot.x − ANIMAL_HUD_HALF, s_slot.y + ANIMAL_HUD_DY + ANIMAL_HUD_HALF)`、尺寸 192×48。
+     *   **为什么不许从 `ANIMAL_HUD_PIN_X` 推**：① PIN_X 是**首格的格心**、不是整排左沿（差半个格半径）；
+     *   ② 它只是**认领时交给槽位表的请求值** —— 卡真正画的 x 是槽位表还回来的 `s_slot.x`
+     *   （`path=tbl` 时 = `ce_hud_slot_get(117)`，`path=fallback` 时才是常量）。pin 的注释在历史上
+     *   写错过一次（写成「整排左下角」），所以判据只认**运行时**那一个数。
+     *   ⇒ 若哪天表里的 x 不是 88（日志 `wba_wc: hud geom … slot (…)` 会直接显示），压暗**自动跟着走**。*/
+    hud_dim_rect_surface(&r, s_slot.x - ANIMAL_HUD_HALF,
+                         s_slot.y + ANIMAL_HUD_DY + ANIMAL_HUD_HALF,
+                         ANIMAL_HUD_VIS_W, ANIMAL_HUD_VIS_H);
+    (void)hud_dim_tick(&s->hud, &r, ce_player_pos());
+    if (s->hud.dim != was_dim) {
+        ce_log(s->hud.dim ? "wba_wc: hud dim on (player body touches the slot row)"
+                          : "wba_wc: hud dim off");
     }
-    target = s->hud_dim ? ANIMAL_HUD_FADE_DIM : 255;
-    if (s->hud_alpha < target) {
-        s->hud_alpha += ANIMAL_HUD_FADE_STEP;
-        if (s->hud_alpha > target) s->hud_alpha = target;
-    } else if (s->hud_alpha > target) {
-        s->hud_alpha -= ANIMAL_HUD_FADE_STEP;
-        if (s->hud_alpha < target) s->hud_alpha = target;
-    }
-    if (s->hud_alpha == 255 && s->hud_fade_touched) s->hud_fade_touched = 0;
-    else if (s->hud_alpha < 255)                       s->hud_fade_touched = 1;
+    if (s->hud.alpha == 255 && s->hud_fade_touched) s->hud_fade_touched = 0;
+    else if (s->hud.alpha < 255)                    s->hud_fade_touched = 1;
 }
 
 static void hud_sync(animal_card_t *s)
@@ -1915,10 +2055,20 @@ static void hud_sync(animal_card_t *s)
     uint32_t A;
     int faded;
 
-    hud_fade_tick(s);
+    /* ★ 2026-09-15g：**先取锚点再推进压暗** —— 压暗的门限由本帧的块矩形推（见 `hud_fade_tick`），
+     * 顺序反了就会用上一帧的锚点（块被货架重排的那一帧会错一格）。*/
     hud_slot_sync(s);                      /* ★ 每帧取最新锚点（见 hud_slot_sync 的注释）*/
-    A = (uint32_t)(s->hud_alpha & 0xff) << 24;
-    faded = (s->hud_alpha < 255);
+    hud_fade_tick(s);
+    /* ★★ 2026-09-15j：每 300 帧（= 5 s）打一行**运行时几何**（父 agent 指令）——
+     *   压暗矩形要用「运行时的槽位值」，而这件事只能从这一行看出来（纸面推导错过一次）。
+     *   一行含：认领结果 claim_ok、x/y 来自槽位表还是兜底（path）、槽位 (x,y,w,h)、
+     *   逐格 x 与 min..max、可见整排盒、以及本帧真的喂进 `hud_dim_rect_surface()` 的矩形。*/
+    if (++s_geom_log_tick >= 300u) {
+        s_geom_log_tick = 0;
+        hud_log_geometry("tick", s_last_path_table);
+    }
+    A = (uint32_t)(s->hud.alpha & 0xff) << 24;      /* ★ 2026-09-15g：读跨卡统一件 */
+    faded = (s->hud.alpha < 255);
     for (i = 0; i < ANIMAL_SLOT_MAX; ++i) {
         /* ★★ 2026-09-12：第 i 格中心 = **槽锚点 + 36i**（表面 px）。
          * 迁移前这里是硬编码的 `ANIMAL_HUD_X0 + ANIMAL_HUD_DX * i` / `ANIMAL_HUD_Y`
@@ -1936,7 +2086,7 @@ static void hud_sync(animal_card_t *s)
                 int32_t lit = (s->core.ready || s->core.hypering) ? 1 : 0;
                 int32_t a = lit ? 255 : ANIMAL_FLAME_ALPHA_LOW;
                 uint32_t fc;
-                if (a > s->hud_alpha) a = s->hud_alpha;      /* 再叠上「自机贴近」的淡出 */
+                if (a > s->hud.alpha) a = s->hud.alpha;      /* 再叠上「自机贴近」的淡出（统一件 alpha）*/
                 fc = ((uint32_t)(a & 0xff) << 24) | 0x00ffffffu;
                 ce_anm_set_pos((uint32_t)s->hud_flame[i],
                                x + ANIMAL_FLAME_ANCHOR_DX, y + ANIMAL_FLAME_ANCHOR_DY, 0.0f);
@@ -2973,9 +3123,15 @@ static void hyper_frame(animal_card_t *s)
     if (r <= 1.0f) return;
     /* ★ 认领「本帧已消过弹」闩锁（EVENTS-CONTRACT §5.2 细则 2）：同帧 107（森罗结界灵击，按
      *   §5.2 细则 1 它先跑）或 111 已先动手时，这一圈整帧不打（本帧消 0 颗）；让位**只**跳过消弹，
-     *   下面那个每帧 40 伤害源照打（它是霊撃本体的输出，不是消弹的替代动作）。*/
-    if (animal_cancel_claim(s)) ce_cancel_radius(pp, r, 9999, s->core.by_hit ? 0 : 1);
-    else animal_cancel_yield_log(s, "wba_wc: hyper radius");
+     *   下面那个每帧 40 伤害源照打（它是霊撃本体的输出，不是消弹的替代动作）。
+     * ★ 2026-09-13（原生卡冲突审计 G 通道）：**消到 0 颗就把闩锁交回** —— 闩锁代表「本帧有人真的
+     *   消过弹」，原生 47/19/20/51 之类先清了池时我们数出来的是 0，占着闩锁会把后面的卡白挡一帧。*/
+    if (animal_cancel_claim(s)) {
+        const int cn = ce_cancel_radius(pp, r, 9999, s->core.by_hit ? 0 : 1);
+        if (cn <= 0) (void)ce_cancel_latch_release((uint32_t)ANIMAL_ID_NUM);
+    } else {
+        animal_cancel_yield_log(s, "wba_wc: hyper radius");
+    }
     ce_damage_rect(pp, 0.0f, 2, 40, r * 2.0f, r * 2.0f);
 }
 
@@ -3617,14 +3773,15 @@ static int on_death_frame2(ce_card_t *c)
 {
     animal_card_t *s = st(c);
     const float *pp;
-    int32_t type;
+    int32_t type_l = 0, type_r = 0;   /* ★ 两只**各自独立随机**（用户 2026-09-13 口径）*/
 
     if (!s) return 0;
     pp = ce_player_pos();
     /* ★ 2026-09-13 二十一修（用户口径）：TH17 的**凭依兽灵是可选配置**（像其它作的配置一样选），
      *   本卡设定为「她们**没有被凭依**」（`ANIMAL_GOAST_NONE`）⇒ 类型**不能**按自机序号推
-     *   （魔理沙 ≠ 獭）。中弹掉落取**随机**一只，与 boss 掉落的 `1 + rand%3` 同口径。*/
-    type = 1 + (int32_t)(ce_rand() % 3);
+     *   （魔理沙 ≠ 獭）。中弹掉落与 boss 掉落的 `1 + rand%3` 同口径。
+     *   ★ 2026-09-13 用户口径（本条）：**两只各自独立随机** —— 不再"掷一次、两只共用"，
+     *     所以同一拨的两只**可能**是不同种类（左/右各掷一次）。*/
     {
         /* ★ 用 `on_death_before_deathbomb` 存下的**中弹点**（不是 respawn 后的自机位），
          *   并且左右各放 32 px（> 24 px 的收取半径）—— 否则会在复活点被当场收走。*/
@@ -3638,11 +3795,14 @@ static int on_death_frame2(ce_card_t *c)
         /* ★ 用户 2026-09-13：「死亡后掉的动物灵，应当保证是走向左右两个方向」。
          *   基座相同 ⇒ 强制初速一左（135°, vx<0）一右（45°, vx>0）；去重叠重试仍按 TH17 一手
          *   （两点积 0 < 0.96，所以不会触发同向重试，也不会有重叠）。*/
-        (void)token_spawn_heading(type, 1, bx, by - ANIMAL_BURST_DY, ANIMAL_MISS_HEADING_L, 1);
-        (void)token_spawn_heading(type, 1, bx, by - ANIMAL_BURST_DY, ANIMAL_MISS_HEADING_R, 1);
+        type_l = 1 + (int32_t)(ce_rand() % 3);
+        type_r = 1 + (int32_t)(ce_rand() % 3);
+        (void)token_spawn_heading(type_l, 1, bx, by - ANIMAL_BURST_DY, ANIMAL_MISS_HEADING_L, 1);
+        (void)token_spawn_heading(type_r, 1, bx, by - ANIMAL_BURST_DY, ANIMAL_MISS_HEADING_R, 1);
         s->death_valid = 0;
     }
-    ce_log("wba_wc: miss -> 2 cycling animals (type %d, long_life=1, dir L135/R45)", (int)type);
+    ce_log("wba_wc: miss -> 2 cycling animals (types %d/%d, each independently random, long_life=1, dir L135/R45)",
+           (int)type_l, (int)type_r);
     return 0;
 }
 
@@ -3882,6 +4042,8 @@ static void clear_card(ce_card_t *c, int keep_hud_slot)
     s->orb_log_last = 0;
     s->cancel_yield_logged = 0;      /* 消弹让位日志（§5.2 细则 2）*/
     s->burst_type = 0;               /* ★ bug-5：本次释放类型也一并清 */
+    hud_dim_init(&s->hud);           /* ★ 2026-09-15g：压暗状态复位 = **满亮 255**（共享件）*/
+    s->hud_fade_touched = 0;
     s_homing_logged = 0;             /* ★ bug-1：追尾补正日志每关重打一次 */
 }
 
@@ -3925,6 +4087,11 @@ CE_CARD(117,
         .on_activate = on_activate,
         .on_bomb_gate = on_bomb_gate,
         .on_shot_set_index = on_shot_set_index,
+        /* ★★ 2026-09-16z（用户口径「改子机和改主体发弹的覆盖原则」）：「**人为规定 117 > 113**」
+         *   ⇒ 本卡优先级 = `CE_SHT_PRIO_117`（20）> 113 灵界的 `CE_SHT_PRIO_113`（10）。
+         *   落点 = `sdk/public.h` 的阶梯说明 + `sdk.c` 的 `BP_ce_shot_set_index`（同帧多张卡都要换 set 时取最大）。
+         *   ⚠ 这条是**人为规定**，不是从一手推出来的；同一面上 108/111 都不参与（它们不换主炮 set）。*/
+        .shot_set_index_priority = CE_SHT_PRIO_117,
         .on_option_shot_gate = on_option_shot_gate,
         .on_bullet_created = on_bullet_created,
         .on_tick_2 = on_tick_2,

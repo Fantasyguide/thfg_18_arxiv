@@ -78,11 +78,13 @@
   SDK 的 `ce_hud_near_corner()`（TH16 栅格 400/384）不是同一组** ⇒ 111 自己按 TH11 的值实现
   （共享件不动，报告里登记这条差异）。
 
-■ 产物尺寸（`build_ability.py` 的硬门：ORDER 里写死的尺寸必须是 2 的幂）
+■ 产物尺寸（= `ATLAS_SIGNAL` 里定稿的成员矩形，`ATLAS-MERGE-AUDIT.md` §4.3；
+  「必须 2 的幂」那条构建期硬门 2026-09-13 已取消 —— 48→64 这一下**不是**它要求的，
+  真正理由是下面那条「靠左补边」）
 
   | 产物 | 尺寸 | 为什么 |
   | --- | --- | --- |
-  | `SIGNAL_GAUGE_BG.png` | **64×16** | 源是 48×16：宽 48 不是 2 的幂 ⇒ 补到 64；**内容靠左**（x 0..47）、右边 16 px 透明 |
+  | `SIGNAL_GAUGE_BG.png` | **64×16** | 源是 48×16 ⇒ 补到 64；**内容靠左**（x 0..47）、右边 16 px 透明 |
   | `SIGNAL_GAUGE_BAR.png` | **64×16** | 同上（源 = sprite58）|
   | `SIGNAL_GAUGE_ICON.png` | **16×16** | 源矩形本身就是 16×16 ⇒ 原样切 |
 
@@ -107,7 +109,7 @@ SHEET = (512, 512)
 SP_GAUGE_BG = (416, 16, 48, 16)       # sprite57 —— 槽底（script32）
 SP_GAUGE_BAR = (416, 0, 48, 16)       # sprite58 —— 增长条（script33）；sprite59 同矩形（script34）
 SP_GAUGE_ICON = (256, 80, 16, 16)     # sprite26 —— 静态图标（script35）
-CANVAS_W = 64                         # 48 → 64（2 的幂），内容靠左
+CANVAS_W = 64                         # 源 48 → 64，内容靠左（横向缩放时左端钉住；见下）
 
 
 def _load():

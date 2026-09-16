@@ -241,60 +241,480 @@ int ce_invuln_frames(void)  { return s_invuln_frames; }
 int ce_invuln_applier(void) { return s_invuln_applier; }
 
 
-/* ---- 计分声明层（求和 + id 最小者落笔）---- */
-static int32_t s_score[CE_SDK_CARD_ID_MAX + 1];
-static int32_t s_score_sum;
-static int s_score_applier = -1;
-static int32_t s_score_mul[CE_SDK_CARD_ID_MAX + 1];   /* 乘数附加项（千分点）*/
-static int32_t s_score_mul_sum;
+/* ---- ★ PoC 高度层（收点线；语义 / 一手证据全在 sdk_core.h 的块注释里）----
+ * 存储用 **float 的位型**（`uint32_t`）：聚合与夹取在整数域做（非负有限 float 的位型序 = 数值序），
+ * 于是本文件里**一条浮点指令都没有** —— 这不是洁癖：i686 的 float 返回值走 x87 st(0)，
+ * 一旦这里出现「返回 float」的函数，`make dllx87` 的「我们的 object 里 0 条 x87」不变式当场变红。*/
+static uint32_t s_poc[CE_SDK_CARD_ID_MAX + 1];   /* 各卡声明的**绝对**高度（位型；0 = 没声明）*/
+static int      s_poc_winner = -1;               /* 线最低（y 最大）的那张卡；并列取 id 最小 */
+static int      s_poc_any;                       /* 有人在声明（落笔闸门）*/
+static uint32_t s_poc_target;                    /* 聚合 + 夹取后的落笔值 */
+static int      s_poc_base_valid;                /* 记着「我们动手之前」的字段原值 */
+static uint32_t s_poc_base;                      /* 那个原值（删卡时写回）*/
+static uint32_t s_poc_written;                   /* 我们上一次写进去的值（0 = 还没写过）*/
 
+/* 合法声明 = 非负、有限（bit31 = 0 且指数域 != 0xFF）、非 0。*/
+static int poc_ok(uint32_t bits)
+{
+    if (bits == 0u) return 0;                     /* 0.0f = 退出声明（惯例，同 ce_dmg_set(id,0)）*/
+    if (bits & 0x80000000u) return 0;             /* 负 */
+    if ((bits & 0x7f800000u) == 0x7f800000u) return 0;   /* Inf / NaN */
+    return 1;
+}
+
+static void poc_recompute(void)
+{
+    int best = -1;
+
+    s_poc_any = 0;
+    s_poc_winner = -1;
+    s_poc_target = 0;
+    for (int id = 0; id <= CE_SDK_CARD_ID_MAX; ++id) {
+        if (s_poc[id] == 0u) continue;
+        s_poc_any = 1;
+        if (best < 0 || s_poc[id] > s_poc_target) { s_poc_target = s_poc[id]; best = id; }
+    }
+    /* 夹取：上限 448（游玩区高）。下限 **不用判** —— `CE_POC_HEIGHT_MIN_BITS` = 0
+     * 同时是「退出声明」的哨兵（见 `poc_ok()`），所以进到这里的一定 > 0。*/
+    if (s_poc_target > CE_POC_HEIGHT_MAX_BITS) s_poc_target = CE_POC_HEIGHT_MAX_BITS;
+    s_poc_winner = best;
+}
+
+void ce_poc_reset(void)
+{
+    for (int id = 0; id <= CE_SDK_CARD_ID_MAX; ++id) s_poc[id] = 0u;
+    s_poc_winner = -1;
+    s_poc_any = 0;
+    s_poc_target = 0;
+    s_poc_base_valid = 0;
+    s_poc_base = 0;
+    s_poc_written = 0;
+}
+
+int ce_poc_declare(uint32_t id, uint32_t height_bits)
+{
+    if (id > (uint32_t)CE_SDK_CARD_ID_MAX) return 0;
+    if (!poc_ok(height_bits)) { s_poc[id] = 0u; poc_recompute(); return 0; }
+    s_poc[id] = height_bits;
+    poc_recompute();
+    return 1;
+}
+
+void ce_poc_drop(uint32_t id)
+{
+    if (id > (uint32_t)CE_SDK_CARD_ID_MAX) return;
+    s_poc[id] = 0u;
+    poc_recompute();
+}
+
+int ce_poc_has_declaration(void) { return s_poc_any; }
+int ce_poc_winner(void)          { return s_poc_winner; }
+
+uint32_t ce_poc_target_bits(void)
+{
+    uint32_t t = s_poc_target;
+
+    if (t > CE_POC_HEIGHT_MAX_BITS) t = CE_POC_HEIGHT_MAX_BITS;
+    return t;                                     /* 无声明 ⇒ 0（调用方必须先用 has_declaration 把门）*/
+}
+
+uint32_t ce_poc_effective_bits(uint32_t engine_bits)
+{
+    return s_poc_any ? ce_poc_target_bits() : engine_bits;
+}
+
+int ce_poc_base(uint32_t *out_bits)
+{
+    if (!s_poc_base_valid) return 0;
+    if (out_bits) *out_bits = s_poc_base;
+    return 1;
+}
+
+int ce_poc_frame(uint32_t engine_bits, uint32_t *out_bits)
+{
+    if (s_poc_any) {
+        uint32_t want = ce_poc_target_bits();
+
+        if (!s_poc_base_valid) {                  /* 第一次落笔：先把「动手之前」的值记成基准 */
+            s_poc_base = engine_bits;
+            s_poc_base_valid = 1;
+        } else if (engine_bits != s_poc_written && engine_bits != want) {
+            s_poc_base = engine_bits;             /* 别人改过（原生卡 22 / Player__reset）⇒ 基准跟着更新 */
+        }
+        s_poc_written = want;
+        if (out_bits) *out_bits = want;           /* 同值也照写：一个字的内存写，幂等 */
+        return 1;
+    }
+    s_poc_written = 0;
+    if (s_poc_base_valid) {                       /* 声明全撤：写回基准（一次），然后忘掉它 */
+        uint32_t back = s_poc_base;
+
+        s_poc_base_valid = 0;
+        if (out_bits) *out_bits = back;
+        return 1;
+    }
+    return 0;
+}
+
+int ce_poc_drop_take_base(uint32_t id, uint32_t *out_bits)
+{
+    ce_poc_drop(id);
+    if (s_poc_any || !s_poc_base_valid) return 0;
+    s_poc_base_valid = 0;                         /* 立刻写回基准（删卡在商店里，帧钩子不跑）*/
+    s_poc_written = 0;
+    if (out_bits) *out_bits = s_poc_base;
+    return 1;
+}
+
+
+/* ---- 「中弹无伤」闸门（任一声明即生效）---- */
+static uint8_t s_no_hit[CE_SDK_CARD_ID_MAX + 1];
+static int     s_no_hit_active;
+static int     s_no_hit_owner = -1;
+
+static void no_hit_recompute(void)
+{
+    int any = 0, who = -1;
+
+    for (int id = 0; id <= CE_SDK_CARD_ID_MAX; ++id) {
+        if (!s_no_hit[id]) continue;
+        any = 1;
+        if (who < 0) who = id;
+    }
+    s_no_hit_active = any;
+    s_no_hit_owner  = who;
+}
+
+void ce_no_hit_declare(uint32_t id, int on)
+{
+    if (id > (uint32_t)CE_SDK_CARD_ID_MAX) return;
+    s_no_hit[id] = on ? 1u : 0u;
+    no_hit_recompute();
+}
+
+int ce_no_hit_active(void) { return s_no_hit_active; }
+int ce_no_hit_owner(void)  { return s_no_hit_owner; }
+
+void ce_no_hit_reset(void)
+{
+    for (int id = 0; id <= CE_SDK_CARD_ID_MAX; ++id) s_no_hit[id] = 0;
+    no_hit_recompute();
+}
+
+/* ---- ★★ 「未满 P」声明层（见 `sdk_core.h`）：106 每帧声明 `power < MAX_POWER`。
+ *   消费者 = ① 过线收点的两条 `ja`（`BP_ce_poc_gate_a/b`，`th18:0x445bb9` / `0x446003`）
+ *             ② 111 的信号推进（`faith_signal_step_gated(..., allow_line_topup)` 关掉「线上补满」那一支）。*/
+static uint8_t s_full_p_gate[CE_SDK_CARD_ID_MAX + 1];
+static int     s_full_p_gate_owner = -1;
+
+/* 重算：**任一声明即生效**（active），owner = id 最小者（诊断用）。
+ * ⚠ 必须按卡记账（照 `ce_no_hit` 的形状）：只存一个 owner 的话，先声明的那张卡一撤
+ *   就会把**别人的声明**一起抹掉（111 与 106 同时声明时的静默失效）。*/
+static void full_p_gate_recompute(void)
+{
+    int id;
+    s_full_p_gate_owner = -1;
+    for (id = 0; id <= CE_SDK_CARD_ID_MAX; ++id) {
+        if (s_full_p_gate[id]) { s_full_p_gate_owner = id; break; }
+    }
+}
+
+void ce_full_p_gate_declare(uint32_t id, int on)
+{
+    if (id > (uint32_t)CE_SDK_CARD_ID_MAX) return;
+    s_full_p_gate[id] = on ? 1u : 0u;
+    full_p_gate_recompute();
+}
+
+int  ce_full_p_gate_active(void) { return s_full_p_gate_owner >= 0; }
+int  ce_full_p_gate_owner(void)  { return s_full_p_gate_owner; }
+void ce_full_p_gate_reset(void)
+{
+    int id;
+    for (id = 0; id <= CE_SDK_CARD_ID_MAX; ++id) s_full_p_gate[id] = 0;
+    full_p_gate_recompute();
+}
+
+/* ---- ★ SDK 帧号（见 sdk_core.h）：帧点 `BP_ce_item_frame` 每帧 bump 一次，
+ *      给「共用模块每帧只推进一次」的守卫用（`faith_pool_tick()` 等）。---- */
+static uint32_t s_sdk_frame;
+void     ce_sdk_frame_bump(void) { ++s_sdk_frame; }
+uint32_t ce_sdk_frame(void)      { return s_sdk_frame; }
+
+/* ---- ★★ 「隐藏原生子机」声明层（`sdk_core.h` 那一节的落地；纯逻辑，不碰引擎）----
+ * 语义只有两条：**粘性**（1 = 生效到改口为止）+ **机体门**（只在声明指定的机体上生效）。
+ * 机体门放在这里而不是留给卡，是因为**换机体发生在商店 / 编成里**（那一刻卡 tick 冻着），
+ * 卡来不及改口；而断点 handler 随时会跑 ⇒ 它必须自己按「当前机体」判。*/
+static uint8_t s_natopt_hide[CE_SDK_CARD_ID_MAX + 1];
+static int     s_natopt_char[CE_SDK_CARD_ID_MAX + 1];   /* 每条声明生效的机体号 */
+static int     s_natopt_owner = -1;                     /* 诊断：id 最小的声明者 */
+
+void ce_native_option_hide_declare(uint32_t id, int on, int character)
+{
+    if (id > (uint32_t)CE_SDK_CARD_ID_MAX) return;
+    s_natopt_hide[id] = on ? 1u : 0u;
+    s_natopt_char[id] = character;
+    s_natopt_owner = -1;
+    for (int i = 0; i <= CE_SDK_CARD_ID_MAX; ++i)
+        if (s_natopt_hide[i]) { s_natopt_owner = i; break; }
+}
+
+int ce_native_option_hidden(int character)
+{
+    for (int i = 0; i <= CE_SDK_CARD_ID_MAX; ++i)
+        if (s_natopt_hide[i] && s_natopt_char[i] == character) return 1;
+    return 0;
+}
+
+int ce_native_option_hide_owner(void) { return s_natopt_owner; }
+
+void ce_native_option_hide_reset(void)
+{
+    for (int i = 0; i <= CE_SDK_CARD_ID_MAX; ++i) { s_natopt_hide[i] = 0; s_natopt_char[i] = 0; }
+    s_natopt_owner = -1;
+}
+
+/* ============================ ★ 计分层（2026-09-13 按用户公式重做）============================
+ * 规格 / 推导 / 一手证据：`../SCORE-LAYER-REWORK.md`。一句话：
+ *     G = G_0 + Σ未耦合 + coupling‰ × Σ耦合 / 1000 ;  落笔 = 站点 `0x446bf9` 的 `ecx = 1000 × G`
+ * 单位约定（**三个，别混**；2026-09-13 第二次修订时逐条对着 exe 核过）：
+ *   · 「点」= 玩家看到的分数（SCORE 增量、卡声明值、G_0、本层对外返回的 total 都是点）。
+ *   · 「身价（引擎单位）」= 点 × 10 = 引擎的弹窗值 = 站点 `ecx` ÷ 100：满额支 `esi = 10×floor(ecx/1000)`，
+ *     它既是弹窗参数、也是 `SCORE += esi/10` 的被除数（一手 `0x446cb4`–`0x446d22`）。
+ *     `ce_score_bridge()` 收的就是它；`0x4ccd24` 存的是**它的 ×10**（「×100 定点」这个名字指的是
+ *     「点 × 100」，即身价 ×10 —— 别被名字骗了）。
+ *   · 「站点 ecx」= 1/1000 点（`0x446b53`–`0x446bf1` 钳的那一格）：`ecx = 1000 × 点 = 10 × 身价`。
+ *     SDK 落笔写它（`BP_ce_item_score_in`）。
+ *   ⇒ 上下限常数（`CE_SCORE_BASE_MIN_PTS` / `CE_SCORE_BASE_MAX_*`）是**身价**单位，
+ *     所以 `ce_score_base_points()` 先钳身价、再 ÷10 得点（引擎自己已钳过 ⇒ 现场钳恒等）。
+ * 粘性：声明写一次管到改口为止（站点可能落在两帧之间；`ce_layer_drop_card` 负责删卡时退场）。*/
+static int32_t s_score_delta[CE_SDK_CARD_ID_MAX + 1];      /* 未耦合加数（点）*/
+static int32_t s_score_coupled[CE_SDK_CARD_ID_MAX + 1];    /* 耦合加数（点）*/
+static int32_t s_score_mul[CE_SDK_CARD_ID_MAX + 1];        /* 信号强度（千分点）*/
+static int32_t s_score_legacy[CE_SDK_CARD_ID_MAX + 1];     /* 旧接口声明的值（点；-1 = 未声明）*/
+
+static int32_t s_score_raw;          /* 桥值 = 引擎的身价（= 点 × 10；站点 ecx ÷ 100）*/
+static int     s_score_diff;         /* 难度 0..4 */
+static int     s_score_coeff = CE_SCORE_COUPLING_DEFAULT;   /* 引擎已算好的高度系数（千分点，只读）*/
+
+static int32_t s_score_delta_sum, s_score_coupled_sum, s_score_mul_sum;
+static int32_t s_score_legacy_sum;
+static int     s_score_delta_n, s_score_coupled_n, s_score_mul_n, s_score_legacy_n;
+static int     s_score_applier_id = -1;      /* 声明者里 id 最小的（诊断 / HUD 归属；不再决定落笔）*/
+
+/* 三个求和通道一起重算（O(n) 只在声明时发生；读值全是 O(1)）。*/
 static void score_recompute(void)
 {
-    int32_t sum = 0;
+    int32_t d = 0, c = 0, m = 0, l = 0;
+    int nd = 0, nc = 0, nm = 0, nl = 0;
     int who = -1;
+
     for (int id = 0; id <= CE_SDK_CARD_ID_MAX; ++id) {
-        if (s_score[id] == 0) continue;
-        if (who < 0) who = id;
-        sum += s_score[id];
+        if (s_score_delta[id])   { d += s_score_delta[id];   ++nd; if (who < 0) who = id; }
+        if (s_score_coupled[id]) { c += s_score_coupled[id]; ++nc; if (who < 0) who = id; }
+        if (s_score_mul[id])     { m += s_score_mul[id];     ++nm; }
+        if (s_score_legacy[id] >= 0) {
+            /* 旧语义：声明值 = 这张卡自己的得分；老落笔公式 = `*value = max(v,10) × 10`
+             * ⇒ 折成「点」时先把 10 分下限补上，逐字节等价才有依据（单测钉死）。*/
+            int32_t v = s_score_legacy[id];
+            if (v < 10) v = 10;                      /* 负数也一并被这一行顶到 10（旧公式就是这么钳的）*/
+            l += v; ++nl; if (who < 0) who = id;
+        }
     }
-    s_score_sum = sum;
-    s_score_applier = who;
+    s_score_delta_sum   = d;  s_score_delta_n   = nd;
+    s_score_coupled_sum = c;  s_score_coupled_n = nc;
+    s_score_mul_sum     = m;  s_score_mul_n     = nm;
+    s_score_legacy_sum  = l;  s_score_legacy_n  = nl;
+    s_score_applier_id  = who;
 }
 
 void ce_score_reset(void)
 {
-    for (int id = 0; id <= CE_SDK_CARD_ID_MAX; ++id) { s_score[id] = 0; s_score_mul[id] = 0; }
-    s_score_sum = 0;
-    s_score_mul_sum = 0;
-    s_score_applier = -1;
-}
-
-void ce_score_declare(uint32_t id, int32_t value)
-{
-    if (id > (uint32_t)CE_SDK_CARD_ID_MAX) return;
-    s_score[id] = value;
+    for (int id = 0; id <= CE_SDK_CARD_ID_MAX; ++id) {
+        s_score_delta[id]  = 0;
+        s_score_coupled[id] = 0;
+        s_score_mul[id]    = 0;
+        s_score_legacy[id] = -1;
+    }
+    s_score_raw = 0;
+    s_score_diff = 0;
+    s_score_coeff = CE_SCORE_COUPLING_DEFAULT;
     score_recompute();
 }
 
-int32_t ce_score_aggregate(void) { return s_score_sum; }
-int     ce_score_applier(void)   { return s_score_applier; }
+void ce_score_bridge(uint32_t raw_value, int difficulty)
+{
+    /* `raw_value` = **身价**（点 × 10）。SDK 在新站点 0x446bf9 用 `ecx / 100` 填
+     * （`ecx` 单位 1/1000 点）⇒ `ce_score_base_points() == ecx/1000`（单测钉死）。*/
+    s_score_raw = (int32_t)raw_value;
+    s_score_diff = difficulty;
+}
+
+void ce_score_set_coeff(uint32_t permille)
+{
+    s_score_coeff = (int)permille;
+}
+
+void ce_score_declare_delta(uint32_t id, int32_t points)
+{
+    if (id > (uint32_t)CE_SDK_CARD_ID_MAX) return;
+    s_score_delta[id] = points > 0 ? points : 0;
+    score_recompute();
+}
+
+void ce_score_declare_coupled(uint32_t id, int32_t points)
+{
+    if (id > (uint32_t)CE_SDK_CARD_ID_MAX) return;
+    s_score_coupled[id] = points > 0 ? points : 0;
+    score_recompute();
+}
+
+void ce_score_declare_legacy(uint32_t id, int32_t value)
+{
+    if (id > (uint32_t)CE_SDK_CARD_ID_MAX) return;
+    /* 旧语义 `0` = 这张卡不参与 ⇒ 记 -1（**不能**记 0：0 是「声明了 0」）。*/
+    s_score_legacy[id] = (value != 0) ? value : -1;
+    score_recompute();
+}
+
+void ce_score_declare(uint32_t id, int32_t value) { ce_score_declare_legacy(id, value); }
 
 void ce_score_mul_declare(uint32_t id, int permille)
 {
     if (id > (uint32_t)CE_SDK_CARD_ID_MAX) return;
     s_score_mul[id] = permille > 0 ? permille : 0;
-    int32_t sum = 0;
-    for (int k = 0; k <= CE_SDK_CARD_ID_MAX; ++k) sum += s_score_mul[k];
-    s_score_mul_sum = sum;
+    score_recompute();
 }
 
-int ce_score_mul_aggregate(void) { return s_score_mul_sum; }
+int ce_score_graze_mult(uint32_t graze)
+{
+    /* `graze` 语义上是非负计数，但引擎给的是 int32 ⇒ 先按 int32 读回（负数按 0 夹），
+     * 免得上层把 `-1` 传成 4294967295 之后被当成上限。*/
+    int32_t g = (int32_t)graze;
+    int32_t steps;
+    if (g <= 0) return 0;
+    /* ★ 2026-09-15 一手订正：整数阶梯 —— `min(⌊graze/100⌋, 899) × 10` 千分点（见 sdk_core.h 的常量注）。*/
+    steps = g / CE_SCORE_GRAZE_STEP;
+    if (steps > CE_SCORE_GRAZE_STEP_MAX) steps = CE_SCORE_GRAZE_STEP_MAX;
+    return steps * 10;
+}
+
+int ce_score_signal_strength(void) { return s_score_mul_sum; }
+int ce_score_mul_aggregate(void)   { return s_score_mul_sum; }
+
+int ce_score_coupling_permille(void)
+{
+    /* ★ 只有这一项带乘数，而且**两边都没有贡献时必须是 1000（×1.0）**：
+     * 用户规格 `(擦弹倍率 + 信号强度) if 有 111 else 1` —— 「有 111」那一支里
+     * 擦弹倍率的基准是 1.0（th11 的擦弹倍率初值）、信号强度基准也是 1.0。
+     * 若这里返回 0，未耦合族的卡会被缩到 0，那不是公式的意思。*/
+    if (s_score_mul_n == 0) return CE_SCORE_COUPLING_DEFAULT;
+    return CE_SCORE_COUPLING_DEFAULT + s_score_mul_sum;
+}
+
+int32_t ce_score_base_points(void)
+{
+    /* ★★ 2026-09-13 第二次修订（单位订正）：**先钳身价，再 ÷10**。
+     * 旧写法是 `clamp(raw/10, 10000, 表值)` —— 把两个**身价**单位的界钳在「点」上，
+     * 严了 10 倍：身价 < 100000（= 站点 ecx < 1e7，NORMAL 资金力 ≤ 98 / EASY ≤ 198）时
+     * 会把 G_0 抬到 10000 点，而引擎原生只给 ecx/1000 ∈ [1000, 10000] 点
+     * ⇒ 落笔后 SCORE 增量比原生大最多 10 倍。
+     * 引擎自己在 0x446b53–0x446bf1 已经钳过同一个界（钳 ecx，±100 倍）⇒ 现场这次钳**恒等**：
+     *   `G_0 ≡ s_score_raw / 10 ≡ 站点 ecx / 1000`（单测 `test_score_base_unit_identity` 钉死）。
+     * 保留它只为「桥值来自别处 / 单测直接喂界外值」时兜底。*/
+    int64_t raw = (int64_t)s_score_raw;
+    int64_t hi;
+
+    switch (s_score_diff) {
+    case CE_SCORE_DIFF_EASY:    hi = CE_SCORE_BASE_MAX_EASY;    break;
+    case CE_SCORE_DIFF_HARD:    hi = CE_SCORE_BASE_MAX_HARD;    break;
+    case CE_SCORE_DIFF_LUNATIC: hi = CE_SCORE_BASE_MAX_LUNATIC; break;
+    case CE_SCORE_DIFF_EXTRA:   hi = CE_SCORE_BASE_MAX_EXTRA;   break;
+    default:                    hi = CE_SCORE_BASE_MAX_NORMAL;  break;
+    }
+    if (raw < CE_SCORE_BASE_MIN_PTS) raw = CE_SCORE_BASE_MIN_PTS;
+    else if (raw > hi) raw = hi;
+    return (int32_t)(raw / CE_SCORE_ENGINE_UNIT);
+}
+
+int32_t ce_score_total(void)
+{
+    int64_t coupled = (int64_t)s_score_coupled_sum * ce_score_coupling_permille() / 1000;
+    int64_t sum = (int64_t)s_score_legacy_sum + s_score_delta_sum + coupled;
+    int64_t total;
+
+    if (sum < 0) sum = 0;
+    if (sum > 0x7fffffff) sum = 0x7fffffff;
+    total = (int64_t)ce_score_base_points() + sum;
+    if (total > 0x7fffffff) total = 0x7fffffff;
+    return (int32_t)total;
+}
+
+int32_t ce_score_apply(void)
+{
+    return ce_score_total() * CE_SCORE_ENGINE_UNIT;      /* 引擎随后 SCORE += value / 10 */
+}
+
+int ce_score_participants(void)
+{
+    return s_score_delta_n + s_score_coupled_n + s_score_legacy_n;
+}
+
+int32_t ce_score_aggregate(void)
+{
+    return s_score_delta_sum + s_score_coupled_sum + s_score_legacy_sum;
+}
+
+int ce_score_applier(void)      { return s_score_applier_id; }
+int ce_score_legacy_count(void) { return s_score_legacy_n; }
+int32_t ce_score_legacy_sum(void) { return s_score_legacy_sum; }
+int ce_score_coeff_permille(void) { return s_score_coeff; }
 
 
-/* ---- 「本帧已消过弹」闩锁 ---- */
+
+/* ---- 「本帧已消过弹」闩锁 + 本帧消弹记录（EVENTS-CONTRACT §5.2 细则 2）----
+ * 两半分工（2026-09-13 加，原生卡冲突审计的 G 通道）：
+ *   · **闩锁**（owner）= 「本帧谁拿全屏消弹这一笔」的**仲裁**（用户 2026-09-12 定案：只有一家做）；
+ *   · **记录**（count/seen）= 「本帧本层到底消掉了几颗弹」的**事实**，由 SDK 的消弹 helper **自动**登记
+ *     （`sdk.h` 的 `ce_cancel_radius` / `ce_cancel_all_bullets`），**不靠卡自己记得调**。
+ * 为什么要记录：闩锁以前是纯 opt-in 的君子协定 ⇒ 卡会把「我没认领到」当成「本帧没消过弹」，
+ * 在有原生卡清弹（47 SUN 每帧全屏清、19/20/51 每帧 option 清…）或别的卡先动手时结算错位。
+ * 现在卡侧能拿到**真实颗数**：count == 0 才代表"真的一颗都没消"。*/
 static int s_cancel_latch_owner;
+static int s_cancel_frame_count;   /* 本帧本层消掉的弹数合计（数不出颗数的那种只置 unknown，不加这里）*/
+static int s_cancel_frame_seen;    /* 本帧有没有发生过消弹（含数不出颗数的 ce_cancel_all_bullets）*/
+static int s_cancel_frame_unknown; /* 本帧有没有「颗数数不出来」的消弹（诊断用）*/
 
-void ce_cancel_latch_reset(void) { s_cancel_latch_owner = -1; }
+void ce_cancel_latch_reset(void)
+{
+    s_cancel_latch_owner = -1;
+    s_cancel_frame_count = 0;
+    s_cancel_frame_seen = 0;
+    s_cancel_frame_unknown = 0;
+}
+
+/* 记录一次消弹。n = 颗数（>= 0）；n < 0 = 数不出来（`ce_cancel_all_bullets` 这类 void 全屏清）。*/
+void ce_cancel_frame_note(int n)
+{
+    s_cancel_frame_seen = 1;
+    if (n > 0) s_cancel_frame_count += n;
+    else if (n < 0) s_cancel_frame_unknown = 1;
+}
+
+int ce_cancel_frame_count(void) { return s_cancel_frame_count; }
+int ce_cancel_frame_seen(void)  { return s_cancel_frame_seen; }
+int ce_cancel_frame_unknown(void) { return s_cancel_frame_unknown; }
+
+/* 认领之后发现**一颗都没消**（原生卡先清了池、或池本来就空）⇒ 把闩锁交回去。
+ * 语义：闩锁代表「本帧有人真的消过弹」，不是「有人曾经想消弹」——一次空认领不该把
+ * 后面的卡整帧挡在门外（那正是「没记到 ≠ 没消」的反面）。只有认领者自己能交回。*/
+int ce_cancel_latch_release(uint32_t id)
+{
+    if (id > (uint32_t)CE_SDK_CARD_ID_MAX) return 0;
+    if (s_cancel_latch_owner != (int)id) return 0;
+    s_cancel_latch_owner = -1;
+    return 1;
+}
 
 /* ---- 「这次死亡由谁救」闩锁（用户 2026-09-12 定案：救援层顺序 107 → 117 → 决死 B → 113）----
  * 纯记账：SDK 每帧 reset；107/117 无条件报到，113 只在 owner < 0 时才动手（见 sdk_core.h）。*/
@@ -311,6 +731,37 @@ int ce_rescue_note_claim(uint32_t id)
 }
 
 int ce_rescue_note_owner(void) { return s_rescue_note_owner; }
+
+/* ---- ★★ 「这次死亡是卡自己造的」通报位（见 sdk_core.h 的说明块）----
+ * 为什么需要它：113 的补死（`Player__die` 直调）会广播 `+0x10`，与「撞弹瞬间」同形；
+ * 只有造死的卡自己知道那不是撞弹 ⇒ 由它通报，救援层据此让位。 */
+static int s_forced_death;
+
+void ce_forced_death_begin(void) { s_forced_death = 1; }
+void ce_forced_death_end(void)   { s_forced_death = 0; }
+int  ce_forced_death_active(void) { return s_forced_death; }
+void ce_forced_death_reset(void)  { s_forced_death = 0; }
+
+/* ---- ★★ 「这次死亡最终有没有被取消」结果闩锁（2026-09-13；CARD-NATIVE-CONFLICT-AUDIT §A-2）----
+ * 一手（逐指令）：case 4 里五家救援者（卡虚表 `+0x0c`）全跑完，才在 `th18:0x45c127` 判一次
+ * （`acc` = 各返回值的 OR）；非 0 ⇒ 跳 `0x45c3d1`（取消），0 ⇒ `0x45c135 call 0x45d090`（扣命）。
+ * `+0x0c` 的形参只能看见**前面**的卡 ⇒ 排在后面的原生 35（不看 acc）与别人的卡 69（无条件扣命）
+ * 需要**最终结果**才能不白记账。本层只**复述引擎那一次判定**，不参与任何控制流。
+ * 写入者只有 `sdk.c` 的两处断点；卡侧只读。语义见 sdk_core.h。*/
+static int      s_death_result = CE_DEATH_RESULT_UNKNOWN;
+static unsigned s_death_result_seq;
+
+void ce_death_result_reset(void) { s_death_result = CE_DEATH_RESULT_UNKNOWN; }
+
+void ce_death_result_note(int cancelled)
+{
+    s_death_result = cancelled ? 1 : 0;
+    ++s_death_result_seq;
+}
+
+int ce_death_result(void) { return s_death_result; }
+int ce_death_cancelled(void) { return s_death_result == 1; }
+unsigned ce_death_result_seq(void) { return s_death_result_seq; }
 
 int ce_cancel_latch_claim(uint32_t id)
 {
@@ -622,4 +1073,96 @@ void ce_drop_apply(int32_t *zdrop)
         if (f > 0x7fffffffLL) f = 0x7fffffffLL;
         zdrop[1 + CE_DROP_TYPES + i] = (int32_t)f;
     }
+}
+
+
+/* ==================== ★★ 自建实体 → 114 收点批（虚拟收集 / 虚拟在飞）====================
+ * 语义、契约、取舍（为什么是声明式而不是卡间直连）、复用意图（116 季节点 / 117 动物灵）——
+ * **全在 `sdk_core.h` 的那段长注里**（那里是唯一出处）。这里只记实现上的三条取舍：
+ *   · **自过期、无 reset 依赖**：本层不进 `ce_sdk_setup()` 的复位表（那是 `sdk.c` 的地盘），
+ *     所以两条通道都用「SDK 帧号 + 容差窗口」表达时效 —— 没有消费者 / 生产者退场时，
+ *     状态在 `CE_VITEM_HOLD_FRAMES` 帧内自然归零，跨局、跨关不会残留。
+ *   · **容差窗口是读侧的事**：写侧永远写「这一帧」的真值（不含任何衰减），读侧才比较帧号
+ *     ⇒ 单测可以只用 `ce_sdk_frame_bump()` 推进时间，不必猜生产者的调用节奏。
+ *   · **uint32 帧差**：`ce_sdk_frame()` 是单调递增的 uint32（`BP_ce_item_frame` 每游玩帧 +1）
+ *     ⇒ `now - frame` 用**无符号**减法，回绕也安全（2^32 帧 ≈ 2.2 年 @60fps）。
+ *   · **零浮点**：整层是整数运算（`make dllx87` 的「我们的 object 里 0 条 x87」不变式）。*/
+static struct {
+    int      n;          /* 该源本帧声明的在飞数（`CE_VITEM_HALF` 恒 0）*/
+    uint32_t frame;      /* 声明的 SDK 帧号（读侧按 `CE_VITEM_HOLD_FRAMES` 判时效）*/
+} s_vitem_fly[CE_SDK_CARD_ID_MAX + 1];       /* 下标 = 源号（0 = 共享模块；其余 = card_id）*/
+
+static int      s_vitem_note;                /* 成员累加器（待消费者抽干）*/
+static uint32_t s_vitem_note_frame;          /* 最后一次上报的 SDK 帧号（时效判据）*/
+
+void ce_vitem_reset(void)
+{
+    for (int i = 0; i <= CE_SDK_CARD_ID_MAX; ++i) { s_vitem_fly[i].n = 0; s_vitem_fly[i].frame = 0; }
+    s_vitem_note = 0;
+    s_vitem_note_frame = 0;
+}
+
+void ce_vitem_note_collect(int kind, int n)
+{
+    const uint32_t now = ce_sdk_frame();
+
+    if (kind != CE_VITEM_FULL) return;                   /* 半道具：不入批（§1x.3，见 sdk_core.h 契约 ①）*/
+    if (n <= 0) return;
+    /* 上一批已经过期（没有消费者）⇒ 从零重新开始，别把陈年计数算进下一次抽干。*/
+    if (s_vitem_note > 0 && now - s_vitem_note_frame > (uint32_t)CE_VITEM_HOLD_FRAMES) s_vitem_note = 0;
+    if (s_vitem_note < CE_VITEM_NOTE_MAX) {
+        s_vitem_note += n;
+        if (s_vitem_note > CE_VITEM_NOTE_MAX) s_vitem_note = CE_VITEM_NOTE_MAX;
+    }
+    s_vitem_note_frame = now;
+}
+
+static int vitem_note_fresh(void)
+{
+    if (s_vitem_note <= 0) return 0;
+    return (ce_sdk_frame() - s_vitem_note_frame) <= (uint32_t)CE_VITEM_HOLD_FRAMES;
+}
+
+int ce_vitem_collect_pending(void)
+{
+    return vitem_note_fresh() ? s_vitem_note : 0;
+}
+
+int ce_vitem_take_collect(void)
+{
+    const int n = ce_vitem_collect_pending();
+
+    s_vitem_note = 0;                                    /* 过期与否都清零：陈年计数一次性作废 */
+    return n;
+}
+
+void ce_vitem_declare_flying(uint32_t source, int kind, int n)
+{
+    if (source > (uint32_t)CE_SDK_CARD_ID_MAX) return;
+    if (kind != CE_VITEM_FULL) n = 0;                    /* 半道具不算「有东西在飞」（契约 ①）*/
+    s_vitem_fly[source].n = n > 0 ? n : 0;
+    s_vitem_fly[source].frame = ce_sdk_frame();          /* 显式声明 0 也写帧号 ⇒ 立刻生效、不再靠过期 */
+}
+
+void ce_vitem_drop(uint32_t source)
+{
+    if (source > (uint32_t)CE_SDK_CARD_ID_MAX) return;
+    s_vitem_fly[source].n = 0;
+    s_vitem_fly[source].frame = 0;
+}
+
+int ce_vitem_flying_from(uint32_t source)
+{
+    if (source > (uint32_t)CE_SDK_CARD_ID_MAX) return 0;
+    if (s_vitem_fly[source].n <= 0) return 0;
+    if ((ce_sdk_frame() - s_vitem_fly[source].frame) > (uint32_t)CE_VITEM_HOLD_FRAMES) return 0;
+    return s_vitem_fly[source].n;
+}
+
+int ce_vitem_flying(void)
+{
+    int sum = 0;
+
+    for (uint32_t src = 0; src <= (uint32_t)CE_SDK_CARD_ID_MAX; ++src) sum += ce_vitem_flying_from(src);
+    return sum;
 }

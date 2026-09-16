@@ -18,6 +18,7 @@ script script180 {
     type(1);
     sprite(@SPIRIT_PLAIN_0);
     color(0, 127, 0);
+    alpha(255);
     blendMode(2);
     layer(6);
 0:

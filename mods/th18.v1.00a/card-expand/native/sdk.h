@@ -98,6 +98,22 @@ static inline void ce_add_life(void) { ((ce_fn_add_life_t)CE_FN_ADD_LIFE)((void 
 static inline void ce_add_bomb(void) { ((ce_fn_add_bomb_t)CE_FN_ADD_BOMB)((void *)CE_ADDR_GLOBALS_INNER, 0); }
 /* +1 残机碎片（0x457570，thiscall + 哑栈参 ret 4，与 add_bomb 同形）：残机已满时引擎清零不加、满每命碎片数自动进整命、自带刷 HUD。原生碎片道具 / CardNarumi 同一入口。AUDIT §X */
 static inline void ce_add_life_fragment(void) { ((ce_fn_add_bomb_t)CE_FN_ADD_LIFE_FRAGMENT)((void *)CE_ADDR_GLOBALS_INNER, 0); }
+/* ★ +1 **炸弹碎片**（2026-09-13 新增；113 的符卡碎奖励用它 —— 用户实跑报「绿灵没有加残机碎片」）。
+ * 原生没有独立函数：这段逻辑**内联在道具拾取里**（`ItemManager__on_tick__body`，
+ * `th18:0x446460`–`0x4464d0` 一手逐条）：
+ *
+ *     炸弹已满（CURRENT_BOMBS >= MAX_BOMBS）⇒ 碎片清 0、不加；
+ *     否则 ++碎片；碎片 >= **3** ⇒ 碎片清 0 + 调原生 add_bomb（`0x457690`，自带钳上限 / 清碎片 / 音效 0x2e / 刷 HUD）；
+ *     最后再刷一次 HUD（`0x4420e0`）。
+ *
+ * ⇒ 复刻这段（**不是**自己发明一个比例）：3 个碎片 = 1 个炸弹（TH18 的规则；TH13 那边是另一套表）。
+ *   ⚠ 这是**共享件新增**（对既有卡零影响：纯新增 inline，没有卡调用过它），登记见 `AUDIT.md` §BE。*/
+static inline void ce_add_bomb_fragment(void)
+{
+    if (CE_CURRENT_BOMBS() >= CE_MAX_BOMBS()) { CE_BOMB_FRAGMENTS() = 0; return; }
+    if (++CE_BOMB_FRAGMENTS() >= 3) { CE_BOMB_FRAGMENTS() = 0; ce_add_bomb(); }
+    ce_gui_update_bombs();
+}
 /* HUD 残机行刷新（Gui 0x441f10：thiscall(gui; lives, fragments, max) ret 0xc，一手反汇编，AUDIT O28）。改 CURRENT_LIVES 后必须调，原生在死亡 / 商店复原处都这么做。*/
 typedef void (__attribute__((thiscall)) *ce_fn_gui_lives_t)(void *gui, int lives, int fragments, int max);
 static inline void ce_gui_update_lives(void)
@@ -115,13 +131,20 @@ static inline void ce_cancel_all_bullets(void)
     void *bm = CE_BULLET_MGR();
     if (bm) ((ce_fn_bullet_cancel_all_t)CE_FN_BULLET_CANCEL_ALL)(bm, 0);
     ((ce_fn_laser_cancel_all_t)CE_FN_LASER_CANCEL_ALL)(1, 0);
+    /* ★ 登记进「本帧消弹记录」（这两条是 void，颗数数不出来 ⇒ 记 -1）。见 `sdk_core.h` 的
+     *   `ce_cancel_frame_*` 块注释：记录由 **helper 自动**做，卡不必自己记得 —— 这样
+     *   「没记到」永远不会被当成「没消」（原生卡清了池时我们数出来的是 0，那才是真话）。*/
+    ce_cancel_frame_note(-1);
 }
 /* 半径消弹（照 Tenshi 要石 0x40eb0c..0x40eb6a）：stdcall 四个栈参 + 半径走 XMM2（AUDIT O29a）。
  * 调前清 BULLET_MANAGER 的计数器、调后读回 = 本次消掉的弹数；max_count 消满即停（拿剩余 HP 当它）。
- * 栈参从右往左压：tag(0)、max_count、mode、pos；被调方 ret 0x10 清栈。*/
+ * 栈参从右往左压：tag(0)、max_count、mode、pos；被调方 ret 0x10 清栈。
+ * ★ 返回值同时**自动**登记进「本帧消弹记录」（`ce_cancel_frame_count()`）⇒ 卡侧一律以**返回值**算账，
+ *   **不要**用「有没有认领到闩锁」当「本帧消过弹」的判据。*/
 static inline int ce_cancel_radius(const float *pos, float r, int max_count, int mode)
 {
     uint8_t *bm = CE_BULLET_MGR();
+    int n;
     if (!bm || max_count <= 0) return 0;
     *(int32_t *)(bm + CE_BM_CANCEL_COUNTER) = 0;
     __asm__ volatile ("movss %[r], %%xmm2\n\t"
@@ -133,7 +156,9 @@ static inline int ce_cancel_radius(const float *pos, float r, int max_count, int
                       : : [r] "m"(r), [max] "r"(max_count), [mode] "r"(mode), [pos] "r"(pos),
                           [fn] "r"((uintptr_t)CE_FN_BULLET_CANCEL_RADIUS_AS_BOMB)
                       : "eax", "ecx", "edx", "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7", "memory", "cc");
-    return *(int32_t *)(bm + CE_BM_CANCEL_COUNTER);
+    n = *(int32_t *)(bm + CE_BM_CANCEL_COUNTER);
+    ce_cancel_frame_note(n);
+    return n;
 }
 
 /* 矩形伤害源（照 Remilia 0x40f478..0x40f4a6）：stdcall(center*, angle, life, dmg) + 宽 XMM2、高 XMM3，ret 0x10（AUDIT O29b）。
@@ -271,6 +296,37 @@ static inline int ce_anm_set_color2(uint32_t id, uint32_t rgba)
     return 1;
 }
 
+/* ★ 2026-09-15c：**把 color_1 原样镜像进 color_2** —— 「两路同色」的安全写法（110 的 9 支 HUD VM、
+ * 111 的 3 支原版 VM 用它）。一手（`local/th18.v1.00a/th18.exe`，逐条反汇编复核）：
+ *
+ *   · 绘制用哪一路由脚本的 `colorMode`（opcode **423** → handler `0x47b69b`，写 `flags_lo`（`+0x534`）
+ *     bits17–19）决定，**不是**由「哪一路非零」决定：
+ *     `0x47e202: test eax,eax / jne +; mov 0x524(%edi),%eax … mov 0x528(%edi),%eax` ⇒
+ *     mode 0 → `+0x524` color_1、mode≠0 → `+0x528` color_2，取中的那一路随后写进 `+0x52c`
+ *     （`0x47e2f5 mov %eax,0x52c(%edi)`）供渲染器用。
+ *   · 脚本的 `color()`/`alpha()`/`alphaTime()` **全部落在 color_1 上**（指令分派表 `0x47ba4c`/`0x47bb98`
+ *     直读：403 `alpha` → handler `0x479efd`，其 `0x479f15` 是 `mov %al,0x527(%ebx)` = color_1.A；
+ *     404 `color` → `0x479f44`，写 `0x526/0x525/0x524` = color_1 的 R/G/B；每帧提交插值的例程
+ *     `0x47c7f2` 同样写 `+0x527`）。写 **color_2** 的是 `alpha2`（405 → `0x479fa1`，写 `+0x52b`）与
+ *     `color2`（406 → `0x479fe8`，写 `+0x528/0x529/0x52a`）。
+ *     ⚠️ `engine/anm/th18/07-blendmode-rgb-only-alpha-is-sa.md` §2 与 `AUDIT` §CT-7 把 `+0x52b`
+ *     那个 handler 记成了 **alpha**，实为 **alpha2**（本轮订正，见 `NEXT.md` §1y）。
+ *   · 早退：`0x4812e8`/`0x48129b`：`color_1.A == 0 && color_2.A == 0` ⇒ 整台 VM 不画。
+ *
+ * ⇒ **只写 color_1 的脚本（本仓绝大多数原版转写脚本都不写 `color2()`）在 colorMode≠0 时会被画成全透明**，
+ *   而 color_2 恒 0 时**看上去一切正常**（日志里 `c1=ffffffff c2=00000000` 就是这么来的）。
+ * 镜像（而不是把两路都硬写成某个常数）的理由：脚本的**淡入 / 档位闪色 / 基色**全在 color_1 上逐帧变化
+ * （本仓 210/211 = `alpha(0)`+`alphaTime(20,0,255)`；213 = 中断切的 `color(255,255,0)`↔`(255,0,0)`），
+ * 硬写会把它们覆盖掉；镜像让「两路同值」**逐帧**成立 ⇒ 与 `colorMode` 无关，又不改任何既有可见行为
+ * （color_1 一个字节都不动）。❓ 自定（`TUNING.md` §2.6c）。*/
+static inline int ce_anm_mirror_color(uint32_t id)
+{
+    uint8_t *vm = ce_anm_get_vm(id);
+    if (!vm) return 0;
+    *(uint32_t *)(vm + CE_ANM_VM_COLOR2) = *(const uint32_t *)(vm + CE_ANM_VM_COLOR1);
+    return 1;
+}
+
 static inline int ce_anm_set_scale(uint32_t id, float sx, float sy)      /* 脚本里没有在跑的 scaleTime 时写入才不被插值器覆盖 */
 {
     uint8_t *vm = ce_anm_get_vm(id);
@@ -279,6 +335,50 @@ static inline int ce_anm_set_scale(uint32_t id, float sx, float sy)      /* 脚�
     s[0] = sx; s[1] = sy;
     return 1;
 }
+
+/* ---- ★★ 进度条/充能条的「活动部分」：**截断**而不是**伸缩**（共享件，2026-09-15 从 113 提炼）----
+ * 只写 `scale.x` 是把**整张美术横向压扁/拉长**（用户实跑一眼就看出来：「在奇怪地伸缩」）；
+ * 原版的做法是**裁切贴图**，两个字段一起写（一手：原生 HUD 充能条 `th18:0x408a43`
+ * `or dword ptr [esi+0x534], 0x18`；TH13 侧写法 `scale.x = uv_scale.x = 比例`，
+ * 见 `engine/spirit/th13/01-spirit-and-trance.md` §8、`engine/anm/th16/10-sprite-geometry.md` §4）：
+ *   · `zAnmVmPrefix.uv_scale`（`+0x6c`，zFloat2）的 **u = f** ⇒ 只采样 sprite 自己 UV 矩形左边 `f` 那一段
+ *     （**收缩恒以左上角为锚**，与 `anchor` 无关；它是 sprite 矩形内的比例，与画布大小无关）；
+ *   · `flags_lo`（`+0x534`）`|= 0x18` —— 让引擎按 uv_scale 走这条采样路径。
+ * `f` = 进度 0..1（本函数自己钳）。`art_scale_x/y` = 该美术相对 TH18 UI 尺度的整体缩放
+ * （113 的美术是 TH13 原尺寸 ⇒ 2.0；111 的信号条是照 TH18 尺度做的 ⇒ 1.0）。
+ * ⚠ quad 宽度必须写成 `f × art_scale_x`（**不是** `f`），否则裁切对了、比例还是错的（113 第五轮踩过）。*/
+#define CE_ANM_VM_UV_SCALE 0x6c          /* zAnmVmPrefix.uv_scale（zFloat2 u/v；ExpHP th18 type-structs-own）*/
+#define CE_ANM_VM_FLAGS_LO 0x534         /* VM 的 flags（低半）；`|= 0x18` 与原生充能条同一套 */
+static inline int ce_anm_set_clip_x(uint32_t id, float f, float art_scale_x, float art_scale_y)
+{
+    uint8_t *vm = ce_anm_get_vm(id);
+    if (!vm) return 0;
+    if (f < 0.0f) f = 0.0f;
+    if (f > 1.0f) f = 1.0f;
+    ((float *)(vm + CE_ANM_VM_SCALE))[0] = f * art_scale_x;
+    ((float *)(vm + CE_ANM_VM_SCALE))[1] = art_scale_y;
+    *(float *)(vm + CE_ANM_VM_UV_SCALE) = f;
+    *(uint32_t *)(vm + CE_ANM_VM_FLAGS_LO) |= 0x18u;
+    return 1;
+}
+/* ★★ 2026-09-16m（共享件新增）：**调引擎自己的擦弹函数**（`Player__do_graze`，见 `engine.h` 的
+ * `CE_FN_DO_GRAZE` 那一整段：它做什么、不做什么、为什么必须门 NULL）。
+ * 语义：**一次调用 = 一次真擦弹** —— 计数 +1、`effect.anm` 火花一颗、`se_graze.wav` 一声。
+ * 返回 1 = 真的调了；0 = 门把它挡下了（玩家/EffectManager/effect.anm/AnmManager 有一个为空）。
+ * ⚠ 调用约定必须是 **stdcall**（`0x45e290` 是 `ret 4`）—— 千万不要自己再 `add esp`。
+ * ⚠ `src_pos` 直接传 `bullet + CE_BULLET_POS`（`+0x638`）即可：callee 只读前两个 float，
+ *   而且声像会自然等于子弹 x —— 与原生调用点逐位一致。*/
+typedef void (__attribute__((stdcall)) *ce_fn_do_graze_t)(const float *src_pos);
+static inline int ce_do_graze(const float *src_pos)
+{
+    uint8_t *em = *(uint8_t **)CE_ADDR_EFFECT_MGR_PTR;
+    uint8_t *an = em ? *(uint8_t **)(em + CE_OFF_EFFECT_MGR_ANM) : 0;
+
+    if (!src_pos || !CE_PLAYER() || !em || !an || !*(void **)CE_ADDR_ANM_MANAGER_PTR) return 0;
+    ((ce_fn_do_graze_t)CE_FN_DO_GRAZE)(src_pos);
+    return 1;
+}
+
 static inline void ce_anm_interrupt(uint32_t id, int n) { if (id) ((ce_fn_anm_interrupt_t)CE_FN_ANM_INTERRUPT_TREE)(id, n); }
 /* 同 ce_anm_get_vm 的门槛（M6）：调用方管理器还没起好（比如对象删除路径抢在 ANM 管理器初始化前跑）就别摸它。 */
 static inline void ce_anm_delete(uint32_t id)           { if (id && CE_ANM_MANAGER()) ((ce_fn_anm_delete_t)CE_FN_ANM_DELETE_BY_ID)(id); }
@@ -377,6 +477,51 @@ static inline float ce_player_x(void)
     const float *pp = ce_player_pos();
     return pp ? pp[0] : 0.0f;
 }
+
+/* ==================== ★ PoC 高度层（收点线 / 「回收线」；2026-09-15 抽）====================
+ * 为什么有这一层（用户 2026-09-15 口径，逐字）：「有一张**原生卡直接是降低 PoC 高度**，并且 **th14 卡也得追这个高度，
+ * 包括信号系统**……**PoC 高度有一个指示线，在开局显示，如果开局 PoC 高度变了，显示也得变**」。
+ * 一手（全 exe 穷举，见 `engine/player/th18/05-poc-height-and-indicator.md`）：
+ *   · 字段 `player+0x47998` **只有两个写点**（`Player__reset` 128.0 `0x45ae8f` / 原生卡 22 Kanako 的
+ *     `on_load` 224.0 `0x40c275`），四个引擎读点全是「自机在线上还是线下」；
+ *   · 开局那条指示线（`front.anm` script `0x39`）是**引擎 GUI 自己**建的 VM，位置**现读字段**
+ *     （`0x43afe1`：`y640 = poc×2 − 80`），可见性 = `Gui+0x194` bit `0x2000`（唯一写者 = 那张原生卡）。
+ * ⇒ 所以「改了高度，显示跟着变」**不用我们画线、也不用改资产**：把字段写对 + 把 `0x2000` 置上就行。
+ *
+ * ## 卡侧三条纪律
+ *   1. **只声明、不直写字段**：`ce_poc_declare(c, 高度)`（声明 = **绝对**高度，单位 px、640 空间）。
+ *      声明是**粘性**的（照原生卡 22：开局写一次管到改口）⇒ 每帧都声明、或只声明一次都可以，幂等。
+ *      「相对下移」的卡（把线在**当前**高度上再往下挪）自己算好绝对值再声明：先读 `ce_poc_height()`
+ *      （= 字段当下值，含原生卡 22 的 224）再声明 `读到的值 + 下移量`。
+ *   2. **读生效值一律用 `ce_poc_height()`**（不要 `*(float*)(pl+CE_PLAYER_POC_HEIGHT)`）：
+ *      它空指针安全，且是唯一的真值来源（引擎自己就是这么用的）。
+ *   3. **删卡不用自己写回**：`ce_layer_drop_card()` 会调 `ce_poc_release()` —— 撤声明 + 若没人再声明就
+ *      把「我们动手之前」的字段原值写回去（见 `sdk_core.h` 的基准记账）。删卡发生在**商店**里
+ *      （AbilityManager / ItemManager 都冻住，帧钩子不跑）⇒ 这一步必须在 `on_delete` 路径上立刻做。
+ *
+ * ⚠ **没有声明时本层一个字都不写**（否则会把原生卡 22 写进去的 224 顶回 128）。*/
+/* 声明 / 更新本卡想要的收点线高度（单位 px、640 空间；`h <= 0` / NaN / Inf = 退出声明）。返回 1 = 记下。*/
+static inline int ce_poc_declare_px(ce_card_t *c, float h)
+{
+    return ce_poc_declare(ce_card_id(c), ce_f32_bits(h));
+}
+/* 同上，给**拿不到 `ce_card_t*`** 的地方用（例：111 的支持特技函数只拿到私有状态，只有卡 id）。*/
+static inline int ce_poc_declare_px_id(uint32_t card_id, float h)
+{
+    return ce_poc_declare(card_id, ce_f32_bits(h));
+}
+/* ★ 只读访问器：**当前生效的收点线高度**（= 引擎字段当下值）。自机指针为空时返回 0。
+ *  刻意 `static inline`（float 返回值走 x87 st(0)，独立函数会让 `make dllx87` 变红 —— 同 `faith.h` 那条注）。*/
+static inline float ce_poc_height(void)
+{
+    uint8_t *pl = CE_PLAYER();
+    return pl ? *(float *)(pl + CE_PLAYER_POC_HEIGHT) : 0.0f;
+}
+/* 帧界落笔（`sdk.c` 的 `BP_ce_item_frame` 每帧调一次；卡在自己的开局路径里也可以调一次 —— 幂等）。
+ * 有声明 ⇒ 写字段 + 置 `Gui+0x194` 的 bit `0x2000`；声明全撤 ⇒ 写回基准；都没事 ⇒ 一个字都不写。*/
+void ce_poc_apply(void);
+/* 删卡 / 退出声明（`ce_layer_drop_card()` 里自动调；卡不用自己调）。*/
+void ce_poc_release(uint32_t id);
 
 /* 敌人坐标（同为 float3 基址；破损核心与炎魔在用）。*/
 static inline const float *ce_enemy_pos(const uint8_t *e) { return (const float *)(e + CE_ENEMY_POS_X); }
@@ -489,6 +634,24 @@ void ce_option_pose_drop(ce_card_t *c);                                  /* 删�
 static inline int ce_option_pose_winner(void) { return ce_optpose_winner(); }
 static inline const ce_option_pose_t *ce_option_pose_pose(void) { return ce_optpose_pose(); }
 
+/* ---- ★★ 「原生子机（自机本体那 4 格）不许出现」声明层（2026-09-16，111 的魔理沙侧）----
+ * 一手结构（两个数组互不相干）见 `engine.h` 的 `CE_NATIVE_OPT_*` 一节；整套机制的长注释在 `sdk.c`
+ * 的 `BP_ce_repopulate_native_option` / `BP_ce_native_option_muzzle` 上面（**唯一出处**）。
+ * 卡侧用法（111 就是样板）：
+ *   · **声明**：`ce_native_option_hide_declare(ce_card_id(c), 1, 机体号)`（**粘性** ⇒ 每帧声明一次也无害）。
+ *     机体门在层里：只有「当前机体 == 声明时给的那个」时才真的隐藏 ⇒ 换机体后**立刻**恢复原生行为
+ *     （换机体发生在商店/编成里、那一刻卡 tick 冻着 ⇒ 不能指望卡来改口）。
+ *   · **收干净**：`ce_layer_drop_card()`（`CE_CARD` 的 on_run_reset / opdelete 自动调）会撤声明；
+ *     换关（`on_stage_start`）**不**撤 —— 卡还在卡组里，声明应当继续生效。
+ *   · **每帧扫一遍**：`ce_native_option_sweep()` —— 把 4 格 × 2 支原生子机 VM（`+0xb0` 普通形 /
+ *     `+0xb4` 满火力形）interrupt 掉并清 id、状态写 0。断点那两条已经覆盖「不建 / 不开火」，
+ *     这一步是**自愈兜底**：卡刚装上那一刻场上可能已经有原生子机（例如玩家本来就在满火力），
+ *     而 `repopulate` 的档位短路缓存会让引擎「不重建 = 也不清」⇒ 只靠断点会留下幽灵子机。
+ *     返回清掉的 VM 数（诊断）。*/
+void ce_native_option_hide_declare(uint32_t card_id, int on, int character);
+int  ce_native_option_hidden(int character);
+int  ce_native_option_sweep(void);
+
 /* ---- HUD 小卡上的一位数字（AUDIT §X）----
  * 引擎建好本卡的 HUD 图标后经 `+0x44` 把图标根 VM 的 anm id 交来（图标重建时会再交一次）；
  * 在它的实体坐标上起 `ability.anm` 的 `HUD_DIGIT` 脚本，值变了就换 sprite。
@@ -540,6 +703,18 @@ typedef struct {
 } ce_hud_vm_text_t;
 void ce_hud_vm_text_set(ce_hud_vm_text_t *t, float x, float y, uint32_t bgra,
                         int align_h, float scale, const char *s, const char *tag);
+
+/* ★ 2026-09-15：**字形集**参数版（`font` 取下面的枚举）。为什么要它：卡 113 的灵界剩余时间
+ * 要 TH13 那张 `ascii.png` 的字形（用户口径：不用 TH18 遗留的字形），而那套字形住在自己的图集
+ * `ATLAS_TH13ASCII`（32×40 字格、16 px 步进、`s` 落在 x-height）⇒ 字距/行高/VM 偏移都与 font 2
+ * 不同 ⇒ 做成"只换字形表、不换代码"。`ce_hud_vm_text_set` = `…_font(…, CE_HUD_FONT_TH18_FONT2)`，
+ * 其它卡的行为一个字节不变。*/
+enum { CE_HUD_FONT_TH18_FONT2 = 0,   /* TH18 font 2（16×32 画布、7 px 步进、'.' 4 px）—— 默认 */
+       CE_HUD_FONT_TH13_BIG   = 1 }; /* TH13 大字体（32×40 字格、16 px 步进、's' 在 x-height）*/
+
+void ce_hud_vm_text_set_font(ce_hud_vm_text_t *t, float x, float y, uint32_t bgra,
+                             int align_h, float scale, const char *s, const char *tag, int font);
+
 void ce_hud_vm_text_clear(ce_hud_vm_text_t *t);
 void ce_hud_digit_set(ce_hud_digit_t *d, int value, const char *card);
 void ce_hud_digit_clear(ce_hud_digit_t *d);
@@ -551,6 +726,7 @@ void ce_hud_digit_clear(ce_hud_digit_t *d);
  * ⚠️ 这些键**不进 replay 输入流**（回放只录 `th18:0x4ca428` 的 16 位掩码）→ 用它触发的效果在回放里不重现。*/
 #define CE_VK_A 0x41
 #define CE_VK_S 0x53
+#define CE_VK_C 0x43
 #define CE_VK_D 0x44
 #define CE_VK_SPACE 0x20
 #define CE_VK_CONTROL 0x11   /* VK_CONTROL：调试组合键（Ctrl+空格）用 */
@@ -575,8 +751,13 @@ void ce_sdk_active_reset(void *self, const ce_hooks_t *h, int clear_recharge);
 
 /* sdk.c */
 void ce_sdk_trace(uint32_t id, unsigned slot, const char *name);   /* trace 开着才记；每张卡每槽记第一次 */
-/* 伤害层（§AA）：两个桩里各调一次。只有「落笔人」那张卡真的动手，其余是一条比较就返回。 */
-void ce_sdk_scale_bullet_damage(uint32_t id, void *bullet);
+/* 伤害层（§AA）：★ 2026-09-13 起**落笔点搬到了卡链遍历之后**（断点 `BP_ce_bullet_damage_final`，
+ * `th18:0x45e7ff`；原因与一手见 `BP30-IMPLEMENTATION.md` §1、`CARD-NATIVE-CONFLICT-AUDIT.md` §B-1）：
+ * 原来落笔在 `+0x28` 的桩里，与原生 25 Saki / 54 Momoyo（**同槽、从 shooter 重算**）抢同一条链，
+ * 谁在链里靠后谁说了算 ⇒ 我们的倍率会被静默抹掉。现在**只有那一个 handler 写** `bullet+0x9c`，
+ * 所以卡侧一个字节都不用改，`+0x28` 桩也不再缩放（不存在「同帧施加两次」）。
+ * 本函数是那一次落笔的实现：读聚合倍率、就地乘**别人算完的值**（乘 ≠ 覆盖）。*/
+void ce_sdk_bullet_damage_final(void *bullet);
 void ce_sdk_damage_cap_tick(uint32_t id);
 void ce_sdk_damage_hud_draw(uint32_t id);
 void ce_sdk_on_shop_open(void);                                   /* shop.c 在 MSG 开店那一帧调：沿链表分派 on_shop_open */
@@ -628,7 +809,9 @@ typedef void (CE_TC *ce_base_del_t)(void *, uint32_t);
     CE_STUB0(ID, on_tick, 0x24) \
     static int CE_TC ce_s_##ID##_on_bullet_created(void *self, void *b) { \
         ce_sdk_trace(ID, 0x28, "on_bullet_created"); \
-        ce_sdk_scale_bullet_damage(ID, b); \
+        /* ★ 2026-09-13：这里原来调 `ce_sdk_scale_bullet_damage(ID, b)` —— 伤害层的落笔**已搬到** \
+         * 卡链遍历之后的断点 `BP_ce_bullet_damage_final`（th18:0x45e7ff）。别在这里再加回来： \
+         * 那会与原生 25/54 的重算抢同一条链，且同帧施加两次（见 sdk.h 上方与本行出处）。*/ \
         return ce_hooks_##ID.on_bullet_created ? ce_hooks_##ID.on_bullet_created((ce_card_t *)self, b) : 0; } \
     static int CE_TC ce_s_##ID##_c_press(void *self) { \
         ce_sdk_trace(ID, 0x08, "c_press"); \
@@ -697,16 +880,33 @@ typedef void (CE_TC *ce_base_del_t)(void *, uint32_t);
 
 /* ① 全屏收点：把道具池里所有活道具的 state 置 3（真空飞行）⇒ 引擎自己把它们飞向自机、走原生收集
  * （计分 / HUD / 计数 / 磁吸全原生）。用于 **107 森罗结界「自动回收道具」** 与 **111「满槽全收」**。
- * 返回被置 3 的道具数。⚠ 只动 state，不动 pos/vel。*/
+ * 返回被置 3 的道具数。
+ *
+ * ★★ 2026-09-16 修（用户实跑：「伊吹特技的信仰点和 P 点金钱吸收动态不一致，**信仰点快了**」）：
+ *   **原来只写 state、漏了磁速字段** ⇒ 那些**本来在 state 4（70px 环吸）**的道具会带着
+ *   **环吸那一档速度（= 玩家磁速 ÷3，`th18:0x44663b`-`0x446651`）** 进入 state 3，
+ *   而我们的自建点一进去就是满磁速（`faith_collect_all()`）⇒ 同屏「绿点飞快、P/金钱慢吞吞」。
+ *   一手：引擎自己翻 state 3 的那一处**两个字段一起写** ——
+ *     `th18:0x445f63: mov eax,[player+0x47988]` → `0x445f69: mov [item+0xc80],eax` →
+ *     `0x445f6f: mov DWORD [item+0xc74],3`
+ *   （`+0xc74` = state、`+0xc80` = `CE_ITEM_MAG_SPEED`；随后每帧 `+0.2`、上限 12.0，
+ *    见 `0x44611b`/`0x446116`。）
+ *   ⇒ 这里照抄：state 与磁速**一起写**（玩家指针为空或磁速 ≤0 时只写 state）。
+ *   ⚠ 仍**不动 pos/vel**（视觉依旧是「从原地飞向自机」）。*/
 static inline int ce_item_collect_all(void)
 {
     uint8_t *mgr = CE_ITEM_MANAGER();
-    if (!mgr) return 0;
+    uint8_t *pl = CE_PLAYER();
+    float mag = 0.0f;
     int n = 0;
+
+    if (!mgr) return 0;
+    if (pl) mag = *(const float *)(pl + CE_PLAYER_ITEM_ATTRACT_SPD);   /* 一手 `0x445f63` 读的就是它 */
     for (unsigned i = 0; i < CE_ITEM_SLOTS; ++i) {
         uint8_t *it = mgr + CE_ITEM_POOL_OFF + (size_t)i * CE_ITEM_STRIDE;
         int32_t st = *(int32_t *)(it + CE_ITEM_STATE);
         if (st == 0 || st == CE_ITEM_STATE_VACUUM) continue;        /* 空槽 / 已经在飞 */
+        if (pl && mag > 0.0f) *(float *)(it + CE_ITEM_MAG_SPEED) = mag;   /* ★ 与 state 同帧写（一手）*/
         *(int32_t *)(it + CE_ITEM_STATE) = CE_ITEM_STATE_VACUUM;
         ++n;
     }
@@ -737,10 +937,27 @@ static inline void ce_layer_drop_card(uint32_t id)
 {
     ce_dmg_set(id, 0);
     ce_invuln_request(id, 0);
-    ce_score_declare(id, 0);
-    ce_score_mul_declare(id, 0);   /* 乘数附加项（EVENTS-CONTRACT §3.1）*/
+    /* ★ 2026-09-13 计分层重做：**三个加数通道 + 旧接口通道都要退**（少退一个 = 被删的卡
+     * 永远留在聚合里，见 SCORE-LAYER-REWORK.md §5「删卡的出口」）。*/
+    ce_score_declare_delta(id, 0);
+    ce_score_declare_coupled(id, 0);
+    ce_score_declare(id, 0);       /* legacy 通道（旧卡用；0 = 不参与）*/
+    ce_score_mul_declare(id, 0);   /* 信号强度（耦合通道乘数的一半）*/
     ce_optpose_drop(id);              /* 低速子机声明层（spec §3.3.1）：删卡 = 立刻退出声明 */
+    ce_poc_release(id);               /* ★ PoC 高度层（2026-09-15）：撤声明 + 需要时**立刻**把字段写回基准
+                                       *   （删卡在商店里 ⇒ 帧钩子不跑，不能等帧界；见本文件上方那一节）*/
     ce_drop_mult_set(id, 0);          /* 掉落乘数（EVENTS-CONTRACT §2）*/
+    /* ★ 2026-09-13 补（跨卡互作审计）：**「中弹无伤」声明也要在这里撤**。
+     *   `ce_no_hit_declare` 是**粘性**的（任一声明即生效、直到显式撤），
+     *   而删卡的路（「弃掉整副卡组」/ 商店里被倒吊人删）**只有 `on_delete` 跑得到** ⇒
+     *   漏撤 = 那一格声明永远挂在池里 ⇒ **整个进程的闸门永久开着**。
+     *   另一半（`ce_sdk_setup` 的复位）同日已补，见 `sdk.c:1400` 一带。*/
+    ce_no_hit_declare(id, 0);
+    ce_full_p_gate_declare(id, 0);   /* ★ 「未满 P」声明层（106）*/
+
+    /* ★ 2026-09-16（111 魔理沙侧）：「隐藏原生子机」同样是**粘性**声明 ⇒ 也必须在这里撤
+     *   （漏撤 = 那台机体的原生子机永远不出现，日志上只看得到"没出现"）。机体号一并清 0。*/
+    ce_native_option_hide_declare(id, 0, 0);
     ce_hud_slot_release(id);
 }
 

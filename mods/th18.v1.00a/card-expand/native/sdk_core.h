@@ -93,30 +93,212 @@ void ce_invuln_request(uint32_t id, int frames);
 int  ce_invuln_frames(void);      /* 本帧应给的无敌帧数（取最大）；无贡献者 = 0 */
 int  ce_invuln_applier(void);     /* 最长的那张卡的 id（并列取 id 最小）；无贡献者 = -1 */
 
-/* ---- 改值类事件的计分层（EVENTS-CONTRACT.md §3：声明 + 聚合 + 单一落笔）----
- * 起因：110 / 111 / 113 都要改 on_item_score 传出来的同一个 esi，而原来「逐个调、谁后写谁赢」。
- * 现在各卡只**声明**自己的贡献（粘性，与 ce_dmg_set 同款），SDK 求和，并由 **id 最小的那张卡落笔**
- * （= 它按 PV 公式算出最终值写 regs->esi）。卡片之间互不读对方状态。*/
-void ce_score_reset(void);
-void ce_score_declare(uint32_t id, int32_t value);   /* 粘性：设为 0 = 这张卡不参与 */
-int32_t ce_score_aggregate(void);                    /* Σ 各卡贡献（信仰总量）*/
-int  ce_score_applier(void);                         /* 落笔者 id（最小）；无贡献者 = -1 */
+/* ==================== ★ PoC 高度层（= 收点线 / 「回收线」，2026-09-15）====================
+ * 字段 = `player+0x47998`（float，640 空间 y，**越大越靠屏幕下方 = 线越低**）。
+ * 一手见 [`engine/player/th18/05-poc-height-and-indicator.md`](../../../../../engine/player/th18/05-poc-height-and-indicator.md)：
+ *   · 全 exe **只有两个写点** —— `Player__reset` `0x45ae8f` 写 **128.0f**、原生卡 **22 ITEM_LINE（CardKanako）**
+ *     的 `on_load` `0x40c275` 写 **224.0f**（外加置 `Gui+0x194` bit `0x2000` = 「画那条线」）；
+ *   · 开局那条指示线（`front.anm` script `0x39`）**每建一次都现读这个字段**算位置
+ *     （`0x43afe1`：`y = poc × 2 − 80.0`）⇒ **字段改了显示就跟着变**，不需要动资产。
+ *
+ * ## 形状（「声明 → 聚合 → 落笔」；与无敌层同形，不是子机层那种「选举落笔者」）
+ *   1. **声明**：卡声明自己想要的**绝对高度**（float 的位型）。**粘性**（照原生卡 22：开局写一次管到改口），
+ *      删卡 / 退出走 `ce_poc_drop()` / `ce_poc_release()`。
+ *   2. **聚合 = 取最大**（多条声明同时在场时取 **y 最大**的那条 = 线最低的那条）。理由：
+ *      · 「过线全屏收点」的收益对 y **单调** ⇒ 取最大 = 谁的收益都不打折，与 `ce_invuln_*`「取最大、不截短别人给的」同一条纪律；
+ *      · 「相加」在这里**没有语义**（两条线只有一个真相，128+160 不是任何一张卡想要的东西）；
+ *      · 「取最小」会让后进场的低线卡白声明（先到的 224 把 288 顶掉）。
+ *      ⚠ 反过来说：**「把线抬高」的卡（y 更小）在有人降低时会被忽略** —— 本仓没有这种卡（用户口径只有「降低」）；
+ *      真要做「难度抬线」得另开一条通道，登记 `TUNING.md`。
+ *   3. **夹取**：`[0, 448]`（448 = 游玩区高；一手：ECL y ∈ [0,448]，`engine/anm/th18/01-vm-instantiate.md` §3）。
+ *   4. **落笔**：每帧一次写字段（`sdk.h` 的 `ce_poc_apply()`，帧界 `BP_ce_item_frame`）。
+ *      ★ **没有声明时一个字都不写** —— 否则会把原生卡 22 写进去的 224 顶回 128。
+ *   5. **只读访问器** = `ce_poc_height()`（`sdk.h`）：返回**字段当下的值**（= 引擎真正拿去用的那个数，含原生卡的 224）。
+ *      有声明时因为每帧落笔，它就是声明值；万一别人（引擎 / 原生卡）中途改过，读出来的也是**改后的真值**
+ *      —— 这正是「按相对量下移」的卡需要的（见下）。
+ *   6. **基准记账（「被删掉会怎样」）**：本层在**第一次落笔之前**记下字段里的原值（= 基准），
+ *      声明**全部撤掉**时把基准写回去（`ce_poc_release()` 立刻写，不等帧界 —— 删卡发生在**商店**里，
+ *      那一刻 AbilityManager 与 ItemManager 都冻住，帧钩子不跑）。
+ *      ⚠ 基准会被**刷新**：若发现字段的值既不是我们上次写的、也不是本次目标（= 别人改过，典型是原生卡 22
+ *      或 `Player__reset`），就把新值当基准 ⇒ 删卡时写回的是**别人的**值，不是写死 128。
+ *
+ * 纯逻辑、无引擎依赖（float 一概走**位型** `uint32_t`：非负有限 float 的位型序 = 数值序，
+ * 聚合/夹取全在整数域做；真正写字段由 `sdk.h` 做）。主机单测 `tests/test_sdk_core.c`。*/
+#define CE_POC_HEIGHT_DEFAULT_BITS 0x43000000u   /* 128.0f —— 一手 `0x45ae8f`（Player__reset）*/
+#define CE_POC_HEIGHT_KANAKO_BITS  0x43600000u   /* 224.0f —— 一手 `0x40c275`（原生卡 22 on_load）*/
+#define CE_POC_HEIGHT_MAX_BITS     0x43e00000u   /* 448.0f —— 游玩区高（夹取上限）*/
+#define CE_POC_HEIGHT_MIN_BITS     0x00000000u   /* 0.0f（夹取下限；也是「退出声明」的哨兵）*/
 
-/* ★ 第二通道：**乘数附加项**（EVENTS-CONTRACT §3.1 的两卡同装公式要用）。
- * 起因（2026-09-12 审计）：110 与 111 同装时公式是 `(基础均值 + Δ110 + Δ111) × (擦弹倍率 + 信号强度)`，
- * 而**落笔者永远是 110**（id 更小）⇒ 110 拿不到 111 的信号强度；契约又禁止**读别的卡的状态**。
- * ⇒ 让 111 只**声明**「我这份信号强度（千分点）」，落笔者读**聚合值**即可，谁都不读卡状态。
- * 粘性，语义与 `ce_score_declare` 同款；`ce_layer_drop_card()` 会一并清。（擦弹倍率不在这里 —— 它来自
- * 全局擦弹计数，由落笔者自己算，两边都算会重复计入。）*/
-void ce_score_mul_declare(uint32_t id, int permille); /* 0 = 这张卡不参与 */
-int  ce_score_mul_aggregate(void);                    /* Σ 各卡的乘数附加项（千分点）*/
+/* float ↔ 位型（**只做位拷贝**，不产生任何浮点运算 ⇒ 不碰 x87）。*/
+static inline uint32_t ce_f32_bits(float f)        { union { float f; uint32_t u; } v; v.f = f; return v.u; }
+static inline float    ce_f32_from_bits(uint32_t b) { union { float f; uint32_t u; } v; v.u = b; return v.f; }
 
-/* ---- 「本帧已消过弹」闩锁（EVENTS-CONTRACT.md §5.2 细则 2）----
+void ce_poc_reset(void);                     /* 全清（`ce_sdk_setup` / 单测）：连基准一起清 */
+/* 声明一张卡想要的高度（float 位型）。**粘性**：设一次管到改口 / 撤声明。
+ * `bits == 0`（0.0f）= 退出声明（照 `ce_dmg_set(id,0)` 的惯例）；负 / NaN / Inf = 拒收。
+ * 返回 1 = 记下；0 = 拒收或退出声明。id 越界同样返回 0。*/
+int  ce_poc_declare(uint32_t id, uint32_t height_bits);
+void ce_poc_drop(uint32_t id);               /* 撤一张卡的声明（删卡 / 自己退出；不写引擎）*/
+int  ce_poc_has_declaration(void);           /* 有人在声明吗？（= 落笔的闸门）*/
+uint32_t ce_poc_target_bits(void);           /* 聚合（取最大、夹取）后该写进字段的值；无声明 = 0 */
+int  ce_poc_winner(void);                    /* 最高那条声明的卡 id（并列取 id 最小）；无声明 = -1 */
+/* 生效值：有声明 ⇒ 聚合值；无声明 ⇒ 引擎字段的实读值（**不写**任何东西）。纯函数，供单测与诊断。*/
+uint32_t ce_poc_effective_bits(uint32_t engine_bits);
+
+/* ---- 帧界落笔的**决策**（纯逻辑；真正写内存的是 `sdk.h` 的 `ce_poc_apply()`）----
+ * `engine_bits` = 调用方读到的字段当下值。返回 1 且填 `*out_bits` = 本帧该写这个值；0 = 本帧别写。*/
+int ce_poc_frame(uint32_t engine_bits, uint32_t *out_bits);
+/* 删卡 / 退出路径（`ce_layer_drop_card` 调）：撤声明；若撤完**没人声明**且记过基准 ⇒ 返回 1 并把基准填进
+ * `*out_bits`（调用方立刻写回）。返回 0 = 不用写。*/
+int ce_poc_drop_take_base(uint32_t id, uint32_t *out_bits);
+/* 基准只读（诊断 / 单测）：1 = 记着基准（`*out_bits` 填值）。*/
+int ce_poc_base(uint32_t *out_bits);
+
+/* ============================ ★ 计分层（2026-09-13 按用户公式重做）============================
+ * 规格（用户 2026-09-13；逐条推导与一手证据见 `../SCORE-LAYER-REWORK.md`）：
+ *
+ *   吃一颗点道具（TH18 = 金钱）：
+ *       SCORE += G × coeff_06 × rest ;  G = G_0 + Σ G_i
+ *
+ * `G_0` = TH18 原生「身价」换算成的**点值**（= 引擎自己给这一颗的 SCORE 增量）。一手：引擎在
+ * `th18:0x446b30`/`0x446b86` 算 `ecx = (1 + 资金力) × 难度修正 × 100`（EASY 修正 = 500，其余 = 1000）
+ * 并钳到 `[1,000,000, 难度表值 × 100]`（`0x4ccd28`/`0x4ccd2c`），满额支随后 `SCORE += floor(ecx/1000)`
+ * ⇒ **`G_0` = ecx/1000**；它在本层里的取值范围 `[1000, 难度表值/10]`。
+ * ★ 2026-09-13 订正：用户给的「下限 10000 / 上限 E 200000…」是**身价**（= 点 × 10 = 引擎弹窗值）
+ * 单位下的同一批界（引擎自己钳的就是它们），换算成点要 ÷10 —— 层里两处单位**别混**（见下）。
+ * `G_i` = **各作「额外得点」，加法族**（110 风神录的信仰、111 地灵殿的绿点、107 妖妖梦的樱点…），单位 = 点。
+ *
+ * **合成规则（本层的全部内容）**：
+ *   `G = G_0 + Σ_i uncoupled_i + coupling_permille × Σ_j coupled_j / 1000`
+ *
+ *   · **耦合只作用在它自己那一族上**（用户规格里唯一带乘数的一项）——
+ *     声明 `ce_score_declare_coupled()` 的加数会被 `ce_score_coupling_permille()` 缩放；
+ *     未声明的（`ce_score_declare_delta()`）**不缩放**。110/111 是同一个「信仰」量纲 ⇒ 走耦合通道；
+ *     107 的「最大得点」不是 ⇒ 走未耦合通道。
+ *   · **落笔点 = 站点 `th18:0x446bf9` 的 `ecx`**（`sdk.c` 的 `BP_ce_item_score_in`）：写
+ *     `ecx = 1000 × G` ⇒ 引擎满额支 `SCORE += floor(ecx/1000) = G` **精确**，且坐标必须是 1000 的倍数
+ *     （是 ⇒ 引擎「量化到 10 的倍数」那一步是恒等，不引入舍入）。没有卡声明时 SDK **一个字都不写**。
+ *     `ce_score_apply()`（= `G × 10`）保留给「引擎单位」的旧读法 / 单测，**不再是落笔路径**。
+ *   · **coeff_06 不在本层** —— 引擎自己按收取高度对身价打折（一手 `th18:0x446bf9`–`0x446cf3`，
+ *     判据 = 回收线 `player+0x47998` 与 **`player+0x624`（自机的 y）** 比较），本层只**读出来**
+ *     （`ce_score_coeff_permille()`）做诊断 / HUD。★ 因为落笔点搬到了 `0x446bf9`（那两段之前），
+ *     引擎的系数现在乘在**整笔 `G_0 + ΣG_i`** 上。⇒ **不新建、也不重复施加**
+ *     （用户规格：它「实际上是已经在运作的机制本身」）。
+ *
+ * **旧接口**：`ce_score_declare` / `ce_score_mul_declare` 保留为 **legacy** 语义（见本节末），
+ * 单卡时与新接口逐字节等价（有单测），多卡时不再「id 最小者独占落笔」。
+ * 全部纯逻辑、无引擎依赖（桥值由 `sdk.c` 填），主机单测 `tests/test_sdk_core.c`。*/
+
+/* ---- 常量（一手；出处逐条写在工程里）----
+ * ★★ 2026-09-13 单位订正（一手：`th18:0x442840`–`0x4428cd` 写界、`0x446b53`–`0x446bf1` 用界）：
+ *   下面这六个「上下限」是**身价**单位（身价 = 引擎的弹窗值 = 点 × 10 = 站点 `ecx` ÷ 100）：
+ *     · 下限 10000 = `0x4ccd28`（= 表 `0x4b666c` 值 10000 ×100 = 1,000,000）÷ 100；
+ *     · 上限 = `0x4ccd2c`（= 表 `0x4b6654` 值 ×100）÷ 100 = 表值本身。
+ *   引擎自己就把身价钳在这个区间里（钳的是 `ecx`，±100 倍），所以**在站点现场，层这次钳是恒等**；
+ *   它只在「桥值来自别处 / 单测直接喂界外值」时有意义 ⇒ `ce_score_base_points()` 必须**先钳身价再 ÷10**。*/
+#define CE_SCORE_BASE_MIN_PTS     10000      /* 身价下限（= 0x4ccd28 / 100；开局 0x4ccd24 的初值就是它）*/
+#define CE_SCORE_BASE_MAX_EASY    200000     /* 身价上限（= 0x4ccd2c / 100，逐难度；表 th18:0x4b6654）*/
+#define CE_SCORE_BASE_MAX_NORMAL  500000
+#define CE_SCORE_BASE_MAX_HARD    700000
+#define CE_SCORE_BASE_MAX_LUNATIC 1000000
+#define CE_SCORE_BASE_MAX_EXTRA   500000
+#define CE_SCORE_EASY_K           500        /* 难度修正：EASY 分支 th18:0x446b30（DAT 0x4b93ac = 500.0f）*/
+#define CE_SCORE_NORMAL_K         1000       /* 其余难度 th18:0x446b86（DAT 0x4b93d4 = 1000.0f）*/
+#define CE_SCORE_ENGINE_UNIT      10         /* 「点」→「身价/引擎单位」的倍数：身价 = 点 × 10（`SCORE += esi/10`）*/
+#define CE_SCORE_GRAZE_STEP       100        /* ★ 擦弹倍率是**整数阶梯**：每 100 擦弹 +0.01（th11 一手 ⌊graze/100⌋）*/
+#define CE_SCORE_GRAZE_STEP_MAX   899        /* 步数上限 = 8.99（一手 `th11:0x41f4e7` 的 `0x383`）*/
+#define CE_SCORE_GRAZE_MULT_MAX   8990       /* 千分点上限（**不是 graze 阈值**；阈值 = 89900 擦弹）*/
+#define CE_SCORE_COUPLING_DEFAULT 1000       /* 耦合基准 = 1000‰（「有 111 才乘」里的 ×1）*/
+
+/* ---- 难度判据（本层自带；EASY 修正表与上下限都按它选）---- */
+enum { CE_SCORE_DIFF_EASY = 0, CE_SCORE_DIFF_NORMAL = 1, CE_SCORE_DIFF_HARD = 2,
+       CE_SCORE_DIFF_LUNATIC = 3, CE_SCORE_DIFF_EXTRA = 4 };
+
+/* ---- 桥（每颗道具、在卡回调之前填；sdk.c 的 `BP_ce_item_score_in` 调）---- */
+void ce_score_reset(void);                 /* 全清（SDK 初始化 / 单测）*/
+/* `raw_value` = **身价**（单位 = 点 × 10 = 引擎的弹窗值）：`sdk.c` 在新站点 `th18:0x446bf9` 用
+ * `ecx / 100` 填（`ecx` 是引擎钳位后的身价、单位 1/1000 点）⇒ `ce_score_base_points() == ecx/1000`。
+ * ★ 2026-09-13 订正：老站点（`0x446cf6`）填的是**引擎算完的最终值**（= 10 × 点，满额支同值、
+ * 线下支已被打折），所以那时这个入参的含义虽然同量纲、却已经被系数污染过。
+ * `difficulty` = `th18:0x4ccd00`（0 EASY … 3 LUNATIC、4 EXTRA）。两个都由 sdk.c 从引擎读。*/
+void ce_score_bridge(uint32_t raw_value, int difficulty);
+/* ★★ `coeff_06`（收取高度系数）= **引擎自己的机制，本层刻意不重实现**（用户规格：「不要新建，
+ * 它实际上是已经在运作的机制本身」）。一手（`th18:0x446bf9`–`0x446cf3`，**落笔点就在这段的开头**）：
+ *   · 判据 = `player+0x47998`（回收线高度）与 **`player+0x624`（自机的 y）** 比较，
+ *     **线上**（或道具 `state == 3` 真空飞行）⇒ 系数 = 1.0（`0x446cb4` 那一支）；
+ *   · 线下 ⇒ 按到回收线的距离做一次折扣（`0x446c17`–`0x446cf3` 的整数骨架；🟡 形状见下）；
+ *   · 系数乘在**身价**上（`0x446cfe` 之后的 `mul esi` / `SCORE(0x4cccfc) += …`）。
+ * ⇒ 因为落笔点搬到了这段**之前**（写 `ecx`），它现在作用在**整笔 `G_0 + ΣG_i`** 上，
+ *   **对所有声明者一视同仁**：我们既不该、也不需要自己再乘一次（自己乘 = 双乘）。
+ * ⚠ 🟡 **仍未钉死**：那条折扣曲线的**精确形状**（本次重读得到的形状是**线性**的
+ *   `≈ 0.9 × (1 − d/163.18)`，`d` = 自机 y − 回收线，单位 px；`0.9` 来自 `9F/10` 那一项，
+ *   除数来自 `0x446c5c` 的魔数 `0x91a2b3c5` + `add edx,ecx` + `sar edx,8`）。
+ *   它不影响本层算式（引擎自己算），所以按用户口径**记 🟡 待验**，见 SCORE-LAYER-REWORK.md §4。
+ *   要读当下这一颗的系数（诊断 / HUD）就用下面这个值 —— 由 sdk.c 从站点现场判「线上 / 线下」写。*/
+void ce_score_set_coeff(uint32_t permille);
+int  ce_score_coeff_permille(void);
+
+/* ---- 加数通道（粘性：设一次管到改口为止；`ce_layer_drop_card()` 会清）---- */
+/* 未耦合加数（点）：**原样进 G**（107 的「最大得点」走这条）。0 = 这张卡不参与。*/
+void ce_score_declare_delta(uint32_t id, int32_t points);
+/* 耦合加数（点）：进 G 之前会被 `ce_score_coupling_permille()` 缩放（110/111 的信仰走这条）。*/
+void ce_score_declare_coupled(uint32_t id, int32_t points);
+
+/* ---- 耦合通道（用户规格：只有这一项带乘数）---- */
+/* 擦弹倍率（千分点）= min(⌊graze/100⌋, 899) × 10（th11 一手整数阶梯）。graze 为负按 0 夹。*/
+int  ce_score_graze_mult(uint32_t graze);
+/* 111 的「信号强度」（千分点，0..1000；`ce_score_mul_declare` 声明，粘性）。*/
+void ce_score_mul_declare(uint32_t id, int permille);
+int  ce_score_signal_strength(void);        /* Σ 各卡声明的信号强度（千分点）*/
+/* ★ 合成用的耦合系数 = 擦弹倍率 + 信号强度；**两边都没有贡献时 = 1000**（×1.0），
+ * 所以未耦合族的卡不会因为「没人声明信号」而被缩到 0。*/
+int  ce_score_coupling_permille(void);
+
+/* ---- 读值 ---- */
+/* 原生基础值 G_0（**点**）= clamp(桥值, 身价下限, 按难度身价上限) / 10
+ *   ⚠ 钳在**身价**上、除在最后（2026-09-13 订正：钳在「点」上会严 10 倍）。
+ *   引擎在站点之前已经钳过同一个界（钳 `ecx`）⇒ 现场这次钳**恒等**，`G_0 ≡ 桥值/10 ≡ ecx/1000`。*/
+int32_t ce_score_base_points(void);
+/* 最终 G（点）= G_0 + Σ未耦合 + coupling × Σ耦合 / 1000（**明确舍弃的东西：不做归一化**）。*/
+int32_t ce_score_total(void);
+/* 「引擎单位」的读法（= G × 10 = 身价 = 弹窗值）。★ 2026-09-13 起**不再是落笔路径**：
+ * 落笔是 `sdk.c` 在站点 `0x446bf9` 写 `ecx = 1000 × ce_score_total()`；本函数留给单测与旧的读法。*/
+int32_t ce_score_apply(void);
+/* 声明加数的卡有几张（两族相加）；**0 = 没有卡参与 ⇒ SDK 一个字都不写**（原生路径逐字节不变）。*/
+int  ce_score_participants(void);
+/* Σ 各卡声明的加数（**原始和**，点；两族都算进来，不乘耦合）—— 诊断 / 日志 / 旧断言用。*/
+int32_t ce_score_aggregate(void);
+/* 落笔者 id（声明者里最小的那张）—— 只用于日志 / HUD 归属，**不再决定谁写值**。*/
+int  ce_score_applier(void);
+
+/* ---- 旧接口（legacy：单卡逐字节等价；多卡时求和，不再互相吞）----
+ * `ce_score_declare(id, v)` 的 `v` 仍是**旧语义**（该卡自己的「得分值」，非增量），
+ * 层把它按 `max(v, 10)` 折成加数（= 老落笔公式 `*value = max(v,10)*10` 的 G 那一半）。*/
+void ce_score_declare(uint32_t id, int32_t value);   /* 兼容入口（= ce_score_declare_legacy）*/
+void ce_score_declare_legacy(uint32_t id, int32_t value);
+int  ce_score_legacy_count(void);                    /* 走了 legacy 通道的卡数 */
+int32_t ce_score_legacy_sum(void);                   /* Σ legacy 值（点，已按 max(v,10) 折）*/
+int  ce_score_mul_aggregate(void);                   /* = ce_score_signal_strength()（旧名）*/
+
+/* ---- 「本帧已消过弹」闩锁 + 本帧消弹记录（EVENTS-CONTRACT.md §5.2 细则 2）----
  * 107 的结界灵击与 117 的霊撃都会全屏消弹；同一帧两者都触发时，弹只能被消一次（否则第二家扫到空池、
- * 或重复记账）。每帧初 reset，各卡 claim：第一个拿到的负责消弹，其余让位。*/
+ * 或重复记账）。每帧初 reset，各卡 claim：第一个拿到的负责消弹，其余让位。
+ *
+ * ★★ 2026-09-13（原生卡冲突审计 G 通道）把「仲裁」与「事实」拆开 —— 别再用 owner 当「本帧消过弹」的判据：
+ *   · **闩锁**（`ce_cancel_latch_*`）= 谁拿全屏消弹这一笔的**仲裁**（用户 2026-09-12 定案：只有一家做）。
+ *   · **记录**（`ce_cancel_frame_*`）= 本帧**本层实际消掉了几颗**，由 SDK 的消弹 helper
+ *     （`ce_cancel_radius` / `ce_cancel_all_bullets`）**自动**登记 —— 卡不必（也不能）自己记得调。
+ *     ⇒ 原生的清弹路径（47 SUN 每帧全屏清、19/20/51/30 的 option 清…）**不在**这条记录里（我们看不到），
+ *       所以正确读法是：**count == 0 才代表"真的一颗都没消"**；owner 不是你不代表没人消过弹，
+ *       owner 是你也不代表真消到了弹（`ce_cancel_latch_release()` 就是为这一档准备的）。*/
 void ce_cancel_latch_reset(void);
 int  ce_cancel_latch_claim(uint32_t id);   /* 本帧第一个认领的返回 1（并记住 id）；已被别人认领返回 0 */
 int  ce_cancel_latch_owner(void);          /* 本帧认领者 id；没人 = -1 */
+int  ce_cancel_latch_release(uint32_t id); /* ★ 认领者发现一颗都没消（n <= 0）时交回闩锁；交回成功返回 1 */
+void ce_cancel_frame_note(int n);          /* 记录一次消弹（n = 颗数；< 0 = 数不出来）。helper 内自动调 */
+int  ce_cancel_frame_count(void);          /* 本帧本层消掉的弹数合计（未知颗数的不计进来）*/
+int  ce_cancel_frame_seen(void);           /* 本帧本层有没有发生过消弹（含数不出颗数的）*/
+int  ce_cancel_frame_unknown(void);        /* 本帧有没有「数不出颗数」的消弹（诊断用）*/
 
 /* ---- 「这次死亡由谁救」闩锁（EVENTS-CONTRACT.md §5.2；用户 2026-09-12 定案）----
  * 救援层顺序被钉死为 **107 → 117 → 决死 B → 113**。113 的语义是**延时**（取消死亡 → 进灵界 →
@@ -132,6 +314,116 @@ int  ce_cancel_latch_owner(void);          /* 本帧认领者 id；没人 = -1 *
 void ce_rescue_note_reset(void);
 int  ce_rescue_note_claim(uint32_t id);    /* 记下「这次死亡由 id 救了」；第一个返回 1，已被别人记返回 0 */
 int  ce_rescue_note_owner(void);           /* 这次死亡的救援者 id；没人 = -1 */
+
+/* ---- ★★ 「这次死亡是**卡自己造的**」通报位（2026-09-16u；第一个消费者 = 111 的河童罩子）----
+ * 语义（用户口径逐字）：「这个罩子原则上是**撞弹**的保护，所以**不应当能抵消中弹灵界的结束灵界击杀**」。
+ * 背景：113（神灵庙）的「中弹灵界」是**延时**——中弹时由 113 救下、灵界窗口结束时**补一次死亡**
+ * （`cards/trance.c` 的 `trance_player_die()` 直接调 `Player__die` `th18:0x45d3a0`）。
+ * 那次补死会照常广播卡虚表 `+0x10`，于是「中弹瞬间」类钩子（107/117 的救援、111 的罩子）会看见它，
+ * 但它是**卡造的死**、不是撞弹 ⇒ 罩子不该替玩家把它吃掉。
+ * 用法（成对、同帧）：
+ *   · 造死的卡：`ce_forced_death_begin()` → 调 `Player__die` → `ce_forced_death_end()`；
+ *   · 救援层的卡：在 `+0x10` 里查 `ce_forced_death_active()`，非 0 ⇒ **不接这一下**。
+ * ⚠ **不粘性、不跨帧**：它描述的是「这一次调用」，用完必须 `end()`（异常路径请在调用前后各写一次）。
+ * ⚠ 引擎自己的三处撞弹调用点（`th18:0x45cd27` / `0x45ce81` / `0x45d060`）不经过这里
+ *   ⇒ 真中弹一定读到 0。`ce_sdk_setup()` 会复位。*/
+void ce_forced_death_begin(void);
+void ce_forced_death_end(void);
+int  ce_forced_death_active(void);
+void ce_forced_death_reset(void);
+
+/* ---- ★ 「中弹无伤」闸门声明层（`EVENTS-CONTRACT.md` §4.1 的第 5 层；2026-09-13）----
+ * 一手依据（`engine/player/th18/03-player-hit-gate.md`）：
+ *   TH13 的「灵界中弹无伤」= `Player::on_hit` **第一行**读灵界标志直接 return（`th13:0x444ca6`）
+ *   —— **不扣命、不记 miss、不播中弹音、弹照样被吃掉**。
+ *   TH18 在那个语义槽位上**是空的**（`Player__die` `th18:0x45d3a0` 入口没有任何前导判断），
+ *   所以本仓在入口插了一个断点（`BP_ce_player_die`）：**闸门开着 ⇒ 跳过整个 die 体**。
+ * 与 `ce_invuln_*` 的分工（两者**不互相替代**）：
+ *   · `ce_invuln_*` 写的是无敌计时器 `player+0x47774` ⇒ 子弹**根本不判定**、不吞弹；
+ *   · 本层跳过 `Player__die` ⇒ 判定照跑、**弹被吃掉**（= 一手 TH13 的行为）。
+ * **粘性声明**（照 `ce_score_declare`，不是照每帧闩锁）：断点可能在任何一帧的中途落下，
+ *   而声明写在卡 tick 里 ⇒ 必须"声明一次管到改口为止"，否则两个 tick 之间的那一枪会穿过去。
+ * 仲裁：**任一声明即生效**（`ce_no_hit_active()`）；owner = id 最小者（诊断用）。
+ * ⚠ 卡被删时必须显式声明 0（`on_delete` 那一路；SDK 也会在 `ce_sdk_setup` 里 reset 一次）。*/
+void ce_no_hit_declare(uint32_t id, int on);   /* 粘性：1 = 本卡要求「中弹不算数」，0 = 撤回 */
+int  ce_no_hit_active(void);                   /* 断点 handler 读它：非 0 ⇒ 跳过 Player__die 体 */
+int  ce_no_hit_owner(void);                    /* 声明者 id（最小）；无人 = -1 */
+void ce_no_hit_reset(void);                    /* 全清（SDK 初始化用）*/
+
+/* ---- ★★ 2026-09-16za **「未满 P」声明层**（卡 106 红魔乡的两条新设计共用一个来源）----
+ * 用户口径（逐字）：「红魔乡卡再加一条设计：**上线收点当且仅当满P**」
+ *               「**协同效应：除非满P，不加信号强度**」。
+ * 一手（TH06 反编译 `ItemManager.cpp` 的道具 tick，本机 `/mnt/d/项目/幻想指南/18/th06/src/`）：
+ *     `if (curItem->state == 1 || (128 <= g_GameManager.currentPower && g_Player.positionCenter.y < 128.0f))`
+ *     → 进吸引态（`state = 1`，速度 `sincosmul(…, 8.0f)`）
+ *   ⇒ 一手意义：**「满 P（128 = TH06 的满火力）+ 自机在回收线（y = 128.0）以上」是「过线收点」的充要条件**
+ *     （`state == 1` 那条是「已经在吸引态」= 结果，不是入口）。TH06 里**没有**任何「不满 P 也收」的路径。
+ * 声明者 = **106**：每帧声明 `power < MAX_POWER`（`CE_ADDR_MAX_POWER` 0x4ccd3c）。
+ * 消费者 = 两处，各不相同（用户选的口径逐条见下）：
+ *   ① **过线收点**：`BP_ce_poc_gate_a/b`（`th18:0x445bb9` / `th18:0x446003`，两条 `ja 0x445f63`
+ *      = `ItemManager__on_tick__body` 的「过线 ⇒ 道具无条件真空」）⇒ 声明开着时那两条 `ja` **不执行**
+ *      = 道具照常下落（= TH06 里不满 P 时过线什么都不发生）✅ 精确门，**回收线本身照旧可见**。
+ *   ② **信号强度**：111 的信号推进（`faith_signal_step_gated(..., allow_line_topup)`）——用户口径
+ *      「**只停「线上补满」那一条**」：不满 P 时**不给**「在线上未满 ⇒ 补满并钳到 100.00」那一支
+ *      （擦弹独立通道 / 已满档的小额加值 / 线下衰减 **都不受影响**）。
+ * 粘性（照 `ce_no_hit_declare`）：断点可能落在任意帧，而声明写在卡 tick 里 ⇒ 声明一次管到改口为止。
+ * 仲裁：**任一声明即生效**（`ce_full_p_gate_active()`）；owner = id 最小者（诊断用）。
+ * ⚠ 卡被删时必须显式声明 0（`on_delete` 那一路；SDK 的 `ce_layer_drop_card()` 也会撤，见 `sdk.h`）。*/
+void ce_full_p_gate_declare(uint32_t id, int on);   /* 粘性：1 = 「现在不是满 P」 */
+int  ce_full_p_gate_active(void);                   /* 两个断点 handler / 111 的信号推进读它 */
+int  ce_full_p_gate_owner(void);                    /* 声明者 id（最小）；无人 = -1 */
+void ce_full_p_gate_reset(void);                    /* 全清（SDK 初始化用）*/
+
+/* ---- ★★ 「不要让自机长出**原生**那几格子机」声明层（2026-09-16；本层为卡 111 的魔理沙侧新增）----
+ * 一手：TH18 的自机子机（option）有**两个互不相干的数组**（`engine.h` 的 `CE_NATIVE_OPT_*` 一节）：
+ *   · **原生子机数组** `inner+0x50`（4 格，stride 0xf0）—— 引擎按**火力档**重建
+ *     （`Player__repopulate_options_and_notify_cards` `0x45d5e0`：`lvl = CURRENT_POWER/100` ⇒ 0..4 格），
+ *     VM 贴图脚本按机体查表（`0x4b7020` 普通形 / `0x4b7030` 满火力形）；
+ *   · **卡申请的子机池** `inner+0x410`（12 格）—— `Player__allocate_option` `0x40a790` 管，数量由卡声明。
+ * 本层管的是**前者**（后者由 `ce_optpose_*` 选举层管）。声明「隐藏」时 SDK 做两件事：
+ *   ① 断点 `BP_ce_repopulate_native_option`（站点 `0x45d610`，`repopulate` 算完 `lvl` 那条 mov 上）：
+ *      把本次的 `lvl` 压成 0 + 把该数组里两支 VM（`+0xb0`/`+0xb4`，4 格共 8 支）interrupt 掉
+ *      ⇒ **原生子机不建、已建的立刻收**（画面与「满火力形」一起消失；`lvl == 0` 也让引擎走它自己的
+ *      「清空 4 格」那条路）；
+ *   ② 断点 `BP_ce_native_option_muzzle`（站点 `0x45e930`，`Player__shoot_one_bullet` 入口）：
+ *      膛口指针落在**原生数组区间** `[PLAYER+0x670, PLAYER+0xa30)` 的那一发**整发跳过**
+ *      （主炮行循环是按行号取组的，`lvl == 0` 压不住它；不跳过就会出现「子弹从看不见的子机位置飞出来」）。
+ * ⚠ **机体门在层里**：声明要带一个机体号，只有「当前机体 == 那个机体」时②才拦、①才压
+ *   （换机体后**立刻**恢复原生行为，不依赖卡再跑一次 tick —— 换机体发生在商店里，那一刻卡 tick 冻着）。
+ * ⚠ **粘性**（照 `ce_no_hit_declare`）：声明 1 = 生效到改口为止。理由与它同：`repopulate` 可能落在
+ *   两帧之间的任意时刻，而声明写在卡 tick 里。删卡/退场时由 `ce_layer_drop_card()` 撤（见 `sdk.h`）。*/
+void ce_native_option_hide_declare(uint32_t id, int on, int character);  /* 粘性；character = 生效的机体号 */
+int  ce_native_option_hidden(int character);   /* 断点 handler 读它：非 0 ⇒ 隐藏（character = 当前机体）*/
+int  ce_native_option_hide_owner(void);        /* 声明者 id（最小）；无人 = -1 */
+void ce_native_option_hide_reset(void);        /* 全清（SDK 初始化用）*/
+
+/* ---- ★ 「这次死亡有没有被取消」结果位（2026-09-13；由**另一个会话**在 sdk_core.c 里实装，
+ *      本块是给它补的**声明**（它的 .c 引用了 `CE_DEATH_RESULT_UNKNOWN` 而头里没有 ⇒ 全仓编不过）。
+ *      语义按 .c 的用法：`-1` 未知 / `0` 照常死 / `1` 被取消；`_seq` 每次 note 自增（跨越一次死亡用）。
+ *      ⚠ 归属那一侧（谁调 note、什么时候 reset）以那边的会话为准；这里只补最小声明，不改行为。
+ *
+ *      ★ 2026-09-13 补一手依据（BP30-IMPLEMENTATION.md §2 / CARD-NATIVE-CONFLICT-AUDIT.md §A-2）：
+ *      引擎在 `Player__on_tick__body` 的 case 4 里把五家救援者（卡虚表 `+0x0c`）**全跑完**才判一次 ——
+ *      `th18:0x45c112 xor edi,edi`（acc=0）→ `0x45c116 push edi` → `0x45c11c call [eax+0xc]` →
+ *      `0x45c121 or edi,eax` → 循环 → **`0x45c127 test edi,edi`** → `0x45c12d jne 0x45c3d1`（取消死亡）
+ *      否则 `0x45c135 call 0x45d090`（扣命）。**新断点 `BP_ce_death_result` 就落在这条 `0x45c127` 上**
+ *      （6 字节 `85 ff 8b 7c 24 14`），handler 读 `EDI = acc` 后 `note(acc != 0)`；
+ *      复位点是**已有**的 `BP_ce_player_die`（`0x45d3a0` 入口 = 一次死亡开始）与 `ce_sdk_setup`。
+ *      ⇒ 读到 `-1` = 这次死亡还没判（**别当成 0 用**）；读到 `0` = 会/已经扣命；读出 `1` = 已被取消。---- */
+enum { CE_DEATH_RESULT_UNKNOWN = -1 };
+void     ce_death_result_reset(void);
+void     ce_death_result_note(int cancelled);
+int      ce_death_result(void);
+int      ce_death_cancelled(void);
+unsigned ce_death_result_seq(void);
+
+/* ---- ★ SDK 帧号（2026-09-13 加；跨卡互作审计发现 #3 的修法）----
+ * 由**每帧一次**的帧点 `BP_ce_item_frame`（`sdk.c` 的 handler，站点 `th18:0x446ee3` = ItemManager tick 门卫）递增。
+ * 用途：**共用模块的「每帧只推进一次」守卫** —— 例 `faith_pool_tick()` 被 110 与 111 各调一次（共用池），
+ * 没有守卫时同一帧推进两次（闪白不可收期 32 帧变 16、下落/磁吸翻倍、吸引与收集判定各多跑一遍）。
+ * ⚠ 只有帧点会 bump ⇒ 别在任何卡回调里手动 bump。*/
+void     ce_sdk_frame_bump(void);              /* 帧点专用（`sdk.c` 的 `BP_ce_item_frame` 里调）*/
+uint32_t ce_sdk_frame(void);                   /* 只读当前帧号 */
 
 /* ---- 低速子机声明层（EVENTS-CONTRACT.md §1「选举覆盖」；108 spec §3.3.1）----
  * 108（妖机体）与 111（SA 子机层）都要定义「低速时子机长什么样」，而最终落在同一批 zPlayerOption
@@ -294,3 +586,83 @@ int  ce_drop_mult_aggregate(void);                 /* Π 各卡乘数；无贡�
 /* 引擎侧调：传 **zEnemyDrop 基址**（不是 counts！）—— z[0] = main_drop、z[1..20] = ex_drop、
  * z[21..40] = timed_ex_drop；就地写回「最终 − 已撒」（timed 表不做补偿）。*/
 void ce_drop_apply(int32_t *z_enemy_drop);
+
+/* ==================== ★★ 自建实体 → 114（辉针城）收点批：虚拟收集 / 虚拟在飞（2026-09-15）====================
+ *
+ * ## 要解决的问题（`NEXT.md` §1x.2，用户 2026-09-15 口径）
+ *
+ * 114 的批**只看引擎原生道具**，两个门都碰不到我们自建的实体：
+ *   · **成员门** = `cards/collect2x.c` 的 `on_item_collect`：`type ∈ {1,2}`（P / 钱）**且**
+ *     `item+CE_ITEM_STATE == 3`（真空飞行收，§Z22）才入批；
+ *   · **续命门（presence）** = 同文件 `on_item_frame` 每帧扫**原生道具池**找 state 3 的道具
+ *     （`ce_item_pool_any_attracting()`）→ `c2x_batch_presence()` 续 idle。
+ * 110 / 111 的绿点是**自建 VM 池**（`cards/faith.c`，不入原生道具池，见 `faith.h` 文件头）⇒
+ * 天然不计入、也续不了批 ⇒ 批会**偏小**，而且**可能在这些点还在飞的时候就提前结算**。
+ *
+ * ## 本层给的正是那两条通道（生产者只声明，消费者只读；卡之间**不互相调用**）
+ *
+ * | 通道 | 生产者调 | 消费者（114）调 | 语义 |
+ * | --- | --- | --- | --- |
+ * | **成员** | `ce_vitem_note_collect(kind, n)` | `ce_vitem_take_collect()` | 自建实体**被收的那一刻** +n ⇒ 批计数 +1 |
+ * | **在飞** | `ce_vitem_declare_flying(src, kind, n)` | `ce_vitem_flying()` | 本帧**还有 n 个在飞** ⇒ presence 续命 |
+ *
+ * ★ **为什么不走「卡间直连」**（§1x.2 的两条候选路，本条 = 候选 1）：直连（faith.c 调 114 暴露的函数）
+ *   面窄，但要额外处理「114 不在场」「114 被删卡」两种情形，而且**下一对耦合**（116 季节点 / 117 动物灵
+ *   —— 它们同样是自建实体、同样要入批）得再写一遍；本层是**一次收口**：生产者只报事实，谁消费、
+ *   消费成什么由卡自己决定。⇒ 116 / 117 将来**只加两行声明**就能接进 114 的批，不必认识 114。
+ *   （用户 2026-09-15 的口径也点了这个意图：「别的自建实体卡也能复用」。）
+ *
+ * ## 契约（写进这里当唯一出处）
+ *
+ *   1. **半道具不入批**（§1x.3 用户定案）：`CE_VITEM_HALF` 的两条通道**都**返回 0 / 视为 0 ——
+ *      「实体只为动画」的那一档（110/111 的**微档** = 消弹每颗那一档）不算收点道具。
+ *   2. **不进 SCORE、不进批分**：本层**只写自己的静态区**（不动 SCORE / MONEY / 引擎字段）；
+ *      114 侧对应的 core 入口（`c2x_collect_virtual()`）**只动 `batch_count`**、
+ *      不碰 `batch_score` ⇒ 结算补差 `batch_score×(mult−1000)/1000` 恒 0（绿点走信仰，不走引擎分）。
+ *      档位 / 倍率 / 碎片逻辑一个字都不改（用户口径「如果不进 score 那无所谓，只 +1」）。
+ *   3. **114 不在场 / 被删卡 = 零副作用**：两条通道都是**自过期**的（下面 `CE_VITEM_HOLD_FRAMES`），
+ *      没有消费者时什么都不留下；生产者被删时用 `ce_vitem_drop(src)` 立刻撤掉自己的在飞声明。
+ *      本层**从不**写引擎内存、从不注册回调 ⇒ 没有 114 的运行与加这一层之前逐字节等价。
+ *   4. **帧内顺序无关**：消费者与生产者可能落在同一帧的不同断点上（生产者 = 卡的 `on_tick_2`，
+ *      消费者 = `ce_item_frame`）⇒ 两侧都留 `CE_VITEM_HOLD_FRAMES` 帧的容差窗口，
+ *      谁先谁后都读得到（在飞的点会连续飞很多帧，1–2 帧容差不改变批的边界）。
+ *   5. **去重归生产者**：同一颗实体被 110 与 111 共用池（`slot_mask` 分账）认领时，只许报**一次**
+ *      （`cards/faith.c` 在**收点那一次**上报，不是在各卡的回调里 ⇒ 天然一颗一次）。
+ *
+ * ⚠ 消费者必须**每帧**抽干 `ce_vitem_take_collect()`（114 在 `on_item_frame` 里、`batch_open` 门**之前**）：
+ *   否则累加器只能靠过期丢掉（那会漏计），并且自建实体**开不了批**。
+ * ⚠ 生产者必须**每帧**声明在飞数（含 0）：声明是**本帧**的语义（照 `ce_optpose_declare` 的形状），
+ *   不声明 = 该源本帧没有东西在飞（容差窗口过后即失效）。*/
+#define CE_VITEM_SRC_SHARED 0u      /* 共享模块的源号（110/111 共用的绿点池 = `cards/faith.c`）。
+                                     * 卡自己拥有的池请用**自己的 card_id** 当源号（如将来的 116 / 117）。*/
+#define CE_VITEM_HOLD_FRAMES 2      /* 两条通道的容差窗口（SDK 帧）：覆盖「生产者与消费者同帧不同序」
+                                     * 与「消费者少跑一帧」；超窗 = 生产者不再声明 / 没有消费者 ⇒ 丢弃。
+                                     * ★ 窗口是**读**的容差，不是维持时间：真值永远是「本帧声明」。*/
+#define CE_VITEM_NOTE_MAX 1024      /* 成员累加器的上限（正常每帧被抽干 ⇒ 永远看不到这个钳；
+                                     * 只有「没有消费者」时才会逼近它 —— 用来兜住 int 溢出）*/
+
+typedef enum {
+    CE_VITEM_FULL = 0,      /* **完整道具**：算批成员、算在飞（例：110/111 的**大 / 中**绿点）*/
+    CE_VITEM_HALF = 1       /* **半道具**：实体只为动画 ⇒ 两条通道都不认（例：微档，§1x.3）*/
+} ce_vitem_kind_t;
+
+void ce_vitem_reset(void);                                  /* 全清（单测 / 手动用；运行时**不需要**：自过期）*/
+
+/* ---- 生产者（自建实体池）---- */
+/* 成员通道：**被收的那一刻**报 n 颗（n <= 0 = 不做事；`kind == CE_VITEM_HALF` = 直接丢弃）。
+ * 累加跨帧，等消费者 `ce_vitem_take_collect()` 抽干；`CE_VITEM_HOLD_FRAMES` 内没人抽就整段作废。*/
+void ce_vitem_note_collect(int kind, int n);
+/* 在飞通道：**每帧**声明该源在飞的完整实体数（n <= 0 = 退出本帧声明；`kind == CE_VITEM_HALF` ⇒ 记 0）。
+ * 同一源同一帧重复声明 = 后一次覆盖前一次（别把半道具混进来）。*/
+void ce_vitem_declare_flying(uint32_t source, int kind, int n);
+/* 生产者退出（删卡 / 池被清空）：立刻撤掉该源的在飞声明（成员累加器不用管 —— 它会自过期）。*/
+void ce_vitem_drop(uint32_t source);
+
+/* ---- 消费者（114；也可用于诊断 / HUD）---- */
+/* 抽干成员累加器：返回「自上次抽干以来被收的自建实体数」（0 = 没有；过期则丢弃并返回 0）。*/
+int ce_vitem_take_collect(void);
+/* 只读当前待抽干的成员数（**不**清零；过期时为 0）——诊断 / 单测用。*/
+int ce_vitem_collect_pending(void);
+/* 在飞数合计（Σ 各源本帧声明；超窗的源不计）。0 = 本帧没有任何自建实体在飞。*/
+int ce_vitem_flying(void);
+int ce_vitem_flying_from(uint32_t source);                  /* 单个源（诊断 / 单测用）*/

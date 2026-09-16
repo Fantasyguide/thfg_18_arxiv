@@ -12,3 +12,4 @@
 | [`th18.v1.00a/`](th18.v1.00a/INDEX.md) | 卡牌主线已一手反出；共通引擎子系统待验证 |
 | [`th06nc/`](th06nc/INDEX.md) | Steam New Classic；ECL 基线与差异已建立，菜单/解锁机制勘探中 |
 | [`th06.v1.02h/`](th06.v1.02h/INDEX.md) | 原版红魔郷；当 TH06NC 的对照基线，符号覆盖 90.8%（两层社区来源重放） |
+| `th08.v1.00d/`（**尚未建 INDEX.md**）| 永夜抄；样本在 `local/th08.v1.00d/`。社区反编译源码 **`Patchouli-CN/th08_dec`（MIT）** 已登记在 [`../engine/_shared/community-sources.md`](../engine/_shared/community-sources.md) 的「TH08 专用」一节（含与本仓样本的哈希差异 + 布局对齐抽检）|

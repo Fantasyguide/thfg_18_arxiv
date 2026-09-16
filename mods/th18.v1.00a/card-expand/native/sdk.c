@@ -2,8 +2,15 @@
  *
  *   BP_ce_card_bind    0x412cec  mov [esi+4],ebx（分配公共尾段：esi = 卡对象，ebx = id）
  *                      id 有登记的行为 → 对象虚表换成 DLL 里那份；放行原指令。此时 ctor 槽还没被调。
- *   BP_ce_item_score   0x446cf6  lea eax,[edi+0xc2c]（collect_money_item：esi = 道具身价，已钳 ≥ 10；
- *                      后面 push esi 给弹窗、mul esi 进计分）。沿卡链表调 on_item_score(&esi)。
+ *   BP_ce_item_score_in 0x446bf9 movss xmm0,[esi+0x47998]（collect_money_item 的**单一汇合点**；
+ *                      三条难度支与 `ja` 那条都到这里。此刻 ecx = 引擎钳位后的身价（单位 1/1000 点）、
+ *                      esi = PLAYER、edi = ITEM）。沿卡链表**收集声明**，再把 regs->ecx 改成
+ *                      `1000 × (G_0 + ΣG_i)` ⇒ **引擎自己那两段高度系数乘在整笔上**（计分层重做，
+ *                      见 SCORE-LAYER-REWORK.md；卡侧回调仍叫 on_item_score，语义是「声明自己的 G_i」）。
+ *                      无卡声明时一个字都不写 ⇒ 与原生逐字节相同。
+ *   BP_ce_item_score   0x446cf6 / BP_ce_item_score_below 0x446caa —— 引擎算完身价的**两条出口**，
+ *                      2026-09-13 起是**纯观察者**（不写 regs->esi、不调卡回调），只打 `score-out:` 那行，
+ *                      用来在实跑日志里看见引擎的高度系数（满额支 engine == ours，线下支 engine < ours）。
  *   BP_ce_bomb_spent   0x4203bc  do_bomb 里 consume_bomb 刚返回。沿卡链表调 on_bomb_spent()。
  *   BP_ce_enemy_drop   0x430510  Enemy__drop_items_and_notify_cards 入口（ecx = zEnemyDrop = enemy+0x623c，不是敌人）。撒附加表之前
  *                                沿卡链表调 on_enemy_drop_pre(counts)，counts = zEnemyDrop+0x04 起 20 个 int32；主掉落 +0x00 已经撒过（S10）。
@@ -37,6 +44,12 @@
  *   BP_ce_enemy_shot_slot 0x433ffa 敌人 ECL etOn(opcode 0x259) 的「发弹三步」汇聚点：沿卡链表问
  *                      on_enemy_shot_slot(ev)，返回非 0 ⇒ retaddr = 0x43402d 本帧不发射这一槽（108 使魔）。
  *   ce_sdk_on_shop_open          不是断点：shop.c 的 BP_ce_shop_reopen 在 MSG 开店那一帧调它，沿卡链表调 on_shop_open()。
+ *   BP_ce_bullet_damage_final 0x45e7ff PlayerBullet__create 0x45e320 的**卡链遍历出口**（edi = bullet）：
+ *                      伤害层的**唯一**落笔点 —— 五家（含原生 25/54 的重算）跑完之后才乘我们的倍率
+ *                      ⇒ 乘法叠加、与卡链顺序无关。见 BP30-IMPLEMENTATION.md §1。
+ *   BP_ce_death_result 0x45c127 Player__on_tick__body case 4 里五家救援者跑完后的**唯一判定**（edi = acc）：
+ *                      把「这次死亡最终有没有被取消」写进 sdk_core 的结果闩锁（只读 getter 给卡侧）；
+ *                      同一站点也把结果打进日志。见 BP30-IMPLEMENTATION.md §2。
  *   ce_destroy_card              局中删一张卡（倒吊人）：照 recount 0x4080e0 的删卡分支，AUDIT §W。
  *   ce_sdk_setup       门里：基类虚表 21 槽与 engine.h 的常量逐一比对（布局假设的运行时守卫）、全部断点已挂、
  *                      与 cards.js 对账（C 有 JSON 无 → FAIL）、每张行为卡记一行。
@@ -79,6 +92,7 @@ int ce_give_card(uint32_t id, uint32_t mode, uint32_t notify)
 static int      s_trace;
 #define CE_TRACE_SLOTS 40                  /* 21 个虚表槽 + 事件 0x54..0x88（槽号/4 当数组下标 ⇒ 40 覆盖到 0x9c）*/
                                           /* 后四个 = collect-2x 事件（伪偏移，无虚表槽，仅 trace 记首次命中用）*/
+                                          /* 空槽（可继续分配）：0x98 / 0x9c —— 0x98 已给「主炮组号同帧争用」用 */
 static uint8_t  s_seen[CE_SDK_MAX_BEHAVIORS][CE_TRACE_SLOTS];
 
 void ce_sdk_set_trace(int on) { s_trace = on; }
@@ -230,23 +244,41 @@ int __cdecl BP_ce_card_bind(x86_reg_t *regs, void *bp_info)
     return BP_EXEC_ORIGINAL;
 }
 
-/* ---- 自机弹伤害倍率层（AUDIT §AA）----------------------------------------
- * 聚合与「谁落笔」在 sdk_core（纯逻辑、主机单测），这里只做两件带引擎的事。
+/* ---- 自机弹伤害倍率层（AUDIT §AA；落笔点 2026-09-13 搬到卡链之后）----------------
+ * 聚合与「谁声明」在 sdk_core（纯逻辑、主机单测）；这里只有**一个**带引擎的落笔点。
  *
- * `+0x28`：`PlayerBullet__create` `0x45e320` **先**写 `bullet+0x9c = shooter+0x02`、**再**遍历卡链表调 `+0x28`
- * （一手，AUDIT Z3 的反编译里看得到顺序），所以桩看到的是引擎刚写好的值。只有落笔人乘一次 ⇒ 单次取整。
- * 就地乘而不是「从 shooter 基值重算」：原生 `CardMomoyo__on_bullet_init` `0x411010` 就是重算派
- * （`bullet+0x9c = (1 + 擦弹/N) × shooter+0x02`），重算会把她的加成抹掉；就地乘则与她相乘（顺序依赖是既有性质）。
+ * ★★ 落笔点 = 断点 `BP_ce_bullet_damage_final`（`th18:0x45e7ff`，卡链遍历**出口**）。
+ * 一手：`PlayerBullet__create` `0x45e320` **先**写 `bullet+0x9c = shooter+0x02`（`0x45e392`/`0x45e396`）→
+ * `0x45e7dc mov eax,[0x4cf298]`（ABILITY_MGR）/ `0x45e7e4 mov esi,[eax+0x1c]`（卡链头）→
+ * 循环 `0x45e7f0`–`0x45e7fd`（`PUSH EDI`(bullet) / `CALL [vtbl+0x28]` / `ESI=[ESI+4]`）→ **本站点** →
+ * `0x45e837 push [edi+0x9c]` 才把伤害交给伤害源（`0x45e861 call 0x45dfa0`）。
  *
- * `+0x2c`：每敌每帧总伤害上限 `player+0x47984` 每帧从 `sht+0x28` 复位（GameThread 0x10 早于 AbilityManager 0x16），
- * 不按同一倍率抬起来，加的伤害在贴脸打 boss 时会被配额吃掉（§V20 / §Y5 / §AJ10 是同一件事的三次重犯）。
- * 这一层把它变成自动的：卡只要报倍率，上限跟着走。*/
-void ce_sdk_scale_bullet_damage(uint32_t id, void *bullet)
+ * **为什么必须放在遍历之后**（`CARD-NATIVE-CONFLICT-AUDIT.md` §B-1，用户 2026-09-13 拍「按语义叠加」）：
+ * 原生两张装备卡与我们**同槽**（`+0x28`），而且都是**从 shooter 基值重算**派：
+ *   · `CardMomoyo__on_bullet_init` `0x411010` = `min(1.8, 1 + 击杀/N) × shooter+0x02`（54 暴食蜈蚣，×1.0→1.8）；
+ *   · `CardSaki____on_shoot_2` `0x40c310` = `shot type7 时 shooter+0x02 × 1.4`（另把尺寸/速参 ×1.5）。
+ * ⇒ 原来落笔在桩里时是**顺序依赖**：它们在链里**之后**就从基值重算，把我们那条 ×1.25 整条抹掉（静默）；
+ *   卡链顺序 = 获得/存档顺序，玩家不可控。放到出口上 ⇒ 我们永远乘在**别人算完的最终值**上：
+ *   ×1.25 × 1.4 = ×1.75（乘法叠加，不是覆盖），与链序无关。
+ *
+ * **为什么不重复施加**（选「取代」而不是「标记去重」，理由）：本站点是全 exe**唯一**的落笔点 ——
+ * 普查（`local/_scratch/scan_bp_window.py`）显示 `call [reg+0x28]` 共 8 处，只有 `0x45e7f5` 在**卡链**上
+ * （其余 7 处是别的对象类型的虚表调用）⇒ 桩里那次缩放已删除（`sdk.h` 的 `CE_CARD`）。
+ * 因此**不需要**任何「本帧是否已施加」的状态：没有状态就没有「状态过期 / 漏清 / 嵌套创建」这一类失效模式，
+ * 而单次落笔由「直线码只执行一次」直接保证。⚠ 反过来说：**别把缩放加回桩里**，那会变成同帧施加两次。
+ * 单次取整的性质也保住了（一颗弹只乘一次）。
+ *
+ * `+0x2c`（`on_tick_2` 桩）：每敌每帧总伤害上限 `player+0x47984` 每帧从 `sht+0x28` 复位
+ * （GameThread 0x10 早于 AbilityManager 0x16），不按同一倍率抬起来，加的伤害在贴脸打 boss 时会被配额吃掉
+ * （§V20 / §Y5 / §AJ10 是同一件事的三次重犯）。这一层把它变成自动的：卡只要报倍率，上限跟着走。
+ * ⚠ 上限仍由**声明者里 id 最小那张**（`ce_dmg_applier()`）在自己的 `on_tick_2` 里抬 —— 与伤害落笔点无关。*/
+void ce_sdk_bullet_damage_final(void *bullet)
 {
     int32_t *dmg;
-    if ((int)id != ce_dmg_applier() || ce_dmg_aggregate() == CE_DMG_UNIT || !bullet) return;
+    int agg = ce_dmg_aggregate();
+    if (agg == CE_DMG_UNIT || !bullet) return;      /* 没有加伤害的卡 = 中性：一个字节都不动 */
     dmg = (int32_t *)((uint8_t *)bullet + CE_BULLET_DAMAGE);
-    *dmg = ce_dmg_scale(*dmg);
+    *dmg = ce_dmg_scale(*dmg);                      /* 就地乘「别人的最终值」= 乘法叠加 */
 }
 
 void ce_sdk_damage_cap_tick(uint32_t id)
@@ -388,6 +420,40 @@ void ce_option_pose_drop(ce_card_t *c)
 {
     if (!c) return;
     ce_optpose_drop(ce_card_id(c));
+}
+
+/* ---- ★★ 2026-09-16：「原生子机」自愈兜底（声明/断点见上面那一整段与 `sdk.h`）----
+ * 每帧把 4 格 × 2 支（`+0xb0` 普通形 / `+0xb4` 满火力形）清掉：非 0 才动，正常帧零开销。
+ * ⚠ 为什么断点之外还要这一支：`repopulate` 的档位短路缓存（`inner+0x470d8`）会让引擎在
+ *   「档位没变」时**既不重建也不清理** ⇒ 卡刚装上 / 换机体回来那一刻场上已有的原生子机
+ *   会一直留着（幽灵子机 + 出膛点仍在）。这一支把「不管谁建的、只要我在就收掉」变成硬保证。*/
+int ce_native_option_sweep(void)
+{
+    uint8_t *pl = CE_PLAYER();
+    int i, n = 0;
+
+    if (!pl) return 0;
+    for (i = 0; i < CE_NATIVE_OPT_COUNT; ++i) {
+        uint8_t *slot = pl + CE_NATIVE_OPT_PLAYER_MUZ0 + (size_t)i * CE_NATIVE_OPT_STRIDE;
+        uint32_t *vm[2];
+        int k;
+
+        vm[0] = (uint32_t *)(slot + CE_NATOPT_VM_MAIN);
+        vm[1] = (uint32_t *)(slot + CE_NATOPT_VM_MAX);
+        for (k = 0; k < 2; ++k) {
+            if (*vm[k]) { ce_anm_interrupt(*vm[k], 1); *vm[k] = 0; ++n; }
+        }
+        if (*(int32_t *)(slot + CE_NATOPT_STATE) != 0) *(int32_t *)(slot + CE_NATOPT_STATE) = 0;
+    }
+    if (n) {
+        static int s_logged;
+        if (!s_logged) {
+            s_logged = 1;
+            ce_log("sdk: 原生子机自愈清理：本帧收掉 %d 支 VM（声明者 id %d）",
+                   n, ce_native_option_hide_owner());
+        }
+    }
+    return n;
 }
 
 uint8_t *ce_option_alloc(ce_card_t *c, ce_option_t *o, int offset, int anm_script, const char *card)
@@ -621,8 +687,11 @@ void ce_hud_number_set(ce_hud_number_t *n, float x, float y, float spacing,
 
 /* ============================ 贴图 VM 版文字 ============================ */
 
-/* 字符 → 原生字形 sprite。映射一手：`AsciiManager__draw_string` `0x41a2b0` 的 font 2/3 分支
- * （数字 `char + 0x94` ⇒ '0' = 0xC4 = 196；`-` = 0xd0、`%` = 0xd2、`.` = 0xd3、`+` = 0xd4）。
+/* 字符 → 原生字形 sprite。映射一手 = **`.rdata` 里 4 张 256 字节的字符→字形表**
+ * （`th18:0x4b019c` / `0x4b029c` / `0x4b031c` / `0x4b041c`，索引 = 字符码、值 = 精灵号；
+ *  数字 `'0'..'9'` → 196..205 与下面这张表逐值相同 ⇒ 不是巧合）：
+ *   `' '`=180、`'-'`=193、`'%'`=185、`'+'`=191、`'.'`=194、**小写字母 = 245..255 + 128..142**
+ *   ⇒ `'s'` = 精灵 **135**（16×16 那一档；见 AUDIT §CY-3）。
  * 切图见 assets/ability/make_font2_art.py，进 ability.anm 后就是 anm_ids.h 里的 FONT2_*。*/
 static uint32_t hud_vm_glyph(char ch)
 {
@@ -642,6 +711,74 @@ static float hud_vm_ui_scale(void)
     return (s > 0.1f && s < 16.0f) ? s : 2.0f;
 }
 
+/* ★ 2026-09-15：第二套字形 = **TH13 大字体**（用户口径：灵界的字符要用 TH13 那张 `ascii.png`，
+ * 不用 TH18 遗留的）。字形来自 `ATLAS_TH13ASCII`（切图脚本 assets/ability/make_th13_ascii_art.py）：
+ * 图里唯二 39 px 高的两行、格距 32、行距 40 ⇒ 12 个字形 = `0`..`9` `.` `s`。
+ * 它在 640 空间是 16×20（脚本里 resolutionMode(2) ⇒ 1280→640 减半），所以步进 16、半行高 10。*/
+static uint32_t hud_vm_glyph_th13(char ch)
+{
+    if (ch >= '0' && ch <= '9') return CE_ANM_ABILITY_SPRITE_TH13ASCII_D0 + (uint32_t)(ch - '0');
+    switch (ch) {
+    case '.': return CE_ANM_ABILITY_SPRITE_TH13ASCII_DOT;
+    case 's': return CE_ANM_ABILITY_SPRITE_TH13ASCII_S;
+    default:  return 0;                      /* 空格等：按字距跳过（TH13 这套只有 12 个字形）*/
+    }
+}
+
+/* 字体描述：字形表 / 字距 / 生成脚本 / 半行高（VM 的 y 补偿）/ VM 到墨迹上沿的距离（640 空间）*/
+typedef struct {
+    uint32_t (*glyph)(char);
+    float    adv;          /* 默认步进（640 空间）*/
+    float    adv_dot;      /* '.' 的步进（TH18 font 2 是 4，TH13 那套与其它字形同宽）*/
+    uint32_t script;       /* 生成 VM 用的 anm 脚本（它绑定图集 ⇒ 决定了字形从哪个 entry 取）*/
+    float    half_line;    /* 垂直对齐用（居中退半个行高）*/
+    float    full_line;    /* 底对齐用（退一个行高）*/
+    float    vm_dy;        /* VM 中心相对"墨迹上沿"的偏移 */
+    float    size;         /* ★ 整体尺寸倍率（字形 VM 的 scale × 它；字距/行高/偏移都跟着它走）*/
+} hud_font_t;
+
+/* ★★ TH13 那行的度量 = **用户 2026-09-15 在 1280 档、屏幕缩放 100% 下逐字比对截图量出来的**
+ *   像素差反推（用户口径：「整体需要往上移 1px / `s` 向右 29px / …每往左一个字形再少 4px /
+ *   点需要 12px」）。换算：本表是 **640 空间**的字面量，最终到 1280 缓冲要 ×`size` × `dat`(=2)
+ *   ⇒ 即 ×4（size=2 时）。于是：
+ *     · 普通字形每格差 4 px(1280) ⇒ `adv` = 64/4 + 1 = **17**（1280 下 68 = 原 64 + 4）
+ *     · `.` 到下一个数字差 9 px(1280) ⇒ `adv_dot` = 32/4 + 2.25 = **10.25**（1280 下 41）
+ *     · 整体上移 1 px(1280) ⇒ `vm_dy` = 10 − 0.5 = **9.5**
+ *     · 用户给的"最左边那个只需 +8"由**居中自动重算**给出（总宽变大 ⇒ 左边距同步变大）。
+ *   ⚠ 这三个数就是"原版长啥样"的唯一可核对来源（TH13 的字符→步进表没能在 exe 里找到；
+ *     它按原生像素画、scale=1.0，见 AUDIT §CZ-7）⇒ 想再微调只动这三个数，不用重切图。*/
+static const hud_font_t HUD_FONTS[] = {
+    { hud_vm_glyph,      7.0f, 4.0f, CE_ANM_ABILITY_SCRIPT_HUD_GLYPH,      5.0f, 10.0f,  5.0f, 1.0f },
+    /* `size` = 2.0：原版按 `ascii.png` 的**原生像素**画（TH13 字符串记录 scale x=y=1.0，
+     *   `th13:0x4059cf`），而本仓美术走 `resolutionMode(2)` 会被 DAT×0.5 折半 ⇒ ×2 才等于原版
+     *   （32×40 字格在 640 空间 = 32×40 像素；字距/半行高/VM 偏移都跟着 size 走）。*/
+    /* ⚠ `adv_dot` = `adv`（**均匀步进**）：2026-09-15 用户明确「s 向右 29px、最左边向右 4」
+     *   ⇒ 各字形的位移是**均匀递增**的（点自己 12 ≈ 第 3 格、s 29 ≈ 第 7 格）⇒ 不存在"点后步进
+     *   特别大/特别小"。点的字形在 32×40 字格里**自带留白**（见 make_th13_ascii_art.py），
+     *   所以"挨着"是**美术本身**给的，不是靠砍步进。上一版把它设成 10.25 是理解错了。*/
+    /* ★★ 2026-09-15 第二轮订正（用户给了具体字形：「C 向右 33、s 向右 29、C 在 29 基础上再向右 3」）：
+     *   **相邻步进每格大了 4 px(1280)** ⇒ 步进要**收窄**：64 → 60 ⇒ `adv` = 60/4 = **15**
+     *   （上一版我按"左多右少"读成了要变宽，属理解反了）。
+     *   `adv_dot` 暂回 **8**（= 原来那个收紧值）：用户最早口径「小数点不算一个字符的大小，是挨着的」
+     *   ⇒ 点那一格**比数字窄**；它的精确值等"逐字形位移表"（见 AUDIT §CZ-8）再定，先不动。
+     *   `vm_dy` = 9.5（整体上移 1 px(1280)）保持不变。*/
+    /* ★★ 2026-09-15 第三轮：用户给出**完整逐字位移表**（`A.BCs`，1280 档 100%）：
+     *     A 53 / . 49 / B 37 / C 33 / s 29 ⇒ 相邻差 = 每段步进的修正量：
+     *       A→. −4、.→B **−12**（点的格子特别窄）、B→C −4、C→s −4。
+     *   ⇒ 普通格 64 → 60 px(1280) ⇒ `adv` = 60/4 = **15**
+     *      点那一格 32 → 20 px(1280) ⇒ `adv_dot` = 20/4 = **5**
+     *   ⇒ 剩下的 `A = 53` 是**锚点**差（整串往右 53），其中 12 来自"步进收窄后居中左缘右移"，
+     *      其余 41 = 锚点残差 ⇒ 见 `trance.c` 的 `TRANCE_HUD_X_OFFSET`（单独一个旋钮，等下一张表定）。*/
+    { hud_vm_glyph_th13, 15.0f, 5.0f, CE_ANM_ABILITY_SCRIPT_TH13_BIG_GLYPH, 10.0f, 20.0f, 9.5f, 2.0f },
+};
+
+/* 默认字形集 = TH18 font 2（所有既有调用点走这里，行为一个字节不变）。*/
+void ce_hud_vm_text_set(ce_hud_vm_text_t *t, float x, float y, uint32_t bgra,
+                        int align_h, float scale, const char *s, const char *tag)
+{
+    ce_hud_vm_text_set_font(t, x, y, bgra, align_h, scale, s, tag, CE_HUD_FONT_TH18_FONT2);
+}
+
 void ce_hud_vm_text_clear(ce_hud_vm_text_t *t)
 {
     int i;
@@ -650,9 +787,10 @@ void ce_hud_vm_text_clear(ce_hud_vm_text_t *t)
     t->n = 0;
 }
 
-void ce_hud_vm_text_set(ce_hud_vm_text_t *t, float x, float y, uint32_t bgra,
-                        int align_h, float scale, const char *s, const char *tag)
+void ce_hud_vm_text_set_font(ce_hud_vm_text_t *t, float x, float y, uint32_t bgra,
+                             int align_h, float scale, const char *s, const char *tag, int font)
 {
+    const hud_font_t *f = (font == CE_HUD_FONT_TH13_BIG) ? &HUD_FONTS[1] : &HUD_FONTS[0];
     const char *p;
     uint8_t *mgr = *(uint8_t **)CE_ADDR_ASCII_MANAGER_PTR;
     void *anm = CE_ABILITY_ANM();
@@ -671,8 +809,13 @@ void ce_hud_vm_text_set(ce_hud_vm_text_t *t, float x, float y, uint32_t bgra,
         if (!(sy > 0.01f && sy < 8.0f)) sy = 1.0f;
     }
 
+    /* ★ 2026-09-15：把字体的整体尺寸折进 sx/sy —— 之后所有度量（总宽/步进/对上沿的偏移）
+     *   都跟着它走，不用逐个字段乘。原有字形集 size = 1.0 ⇒ 既有调用点不变。*/
+    sx *= f->size;
+    sy *= f->size;
+
     /* ① 先量总宽（`.` 的字距是 4 而不是 7 —— 引擎的 `fVar11` 就是被它改掉的）*/
-    for (p = s; *p; ++p) total += (*p == '.') ? 4.0f * sx * dat : 7.0f * sx * dat;
+    for (p = s; *p; ++p) total += ((*p == '.') ? f->adv_dot : f->adv) * sx * dat;
     pen = x * dat + ((align_h == CE_ASCII_ALIGN_CENTER) ? -total * 0.5f
                    : (align_h == CE_ASCII_ALIGN_RIGHT)  ? -total
                                                         : 0.0f);
@@ -682,24 +825,24 @@ void ce_hud_vm_text_set(ce_hud_vm_text_t *t, float x, float y, uint32_t bgra,
     ytop = y * dat;
     if (mgr) {
         int av = *(int *)(mgr + CE_ASCII_ALIGN_V);
-        if (av == 0) ytop -= 5.0f * sy * dat;
-        else if (av == 2) ytop -= 10.0f * sy * dat;
+        if (av == 0) ytop -= f->half_line * sy * dat;
+        else if (av == 2) ytop -= f->full_line * sy * dat;
     }
 
     /* ③ 逐字摆：VM 位置 = (笔 x, 墨迹上沿 + 5×scale_y×DAT)。
      *    +5 来自贴图：16×32 的 entry 里 20 行字形上下各补 6 行，精灵中心 = 字形中心往下 1.5 行，
      *    折到「上沿 + 半个字形高」就是 +5（详见脚本 136 与 make_font2_art.py 的注释）。*/
     for (p = s; *p; ++p) {
-        uint32_t spr = hud_vm_glyph(*p);
-        float adv = (*p == '.') ? 4.0f * sx * dat : 7.0f * sx * dat;
+        uint32_t spr = f->glyph(*p);
+        float adv = ((*p == '.') ? f->adv_dot : f->adv) * sx * dat;
 
         if (spr && slot < CE_HUD_VM_TEXT_MAX) {
             uint32_t *id = &t->id[slot];
             float pos[3];
-            pos[0] = pen; pos[1] = ytop + 5.0f * sy * dat; pos[2] = 0.0f;
+            pos[0] = pen; pos[1] = ytop + f->vm_dy * sy * dat; pos[2] = 0.0f;
             if (*id && !ce_anm_get_vm(*id)) { *id = 0; t->shown[slot] = 0; }
             if (!*id) {
-                *id = ce_anm_spawn_ui(anm, CE_ANM_ABILITY_SCRIPT_HUD_GLYPH, pos);
+                *id = ce_anm_spawn_ui(anm, f->script, pos);
                 t->shown[slot] = 0;
                 if (!*id) { ce_log("%s: hud glyph %d FAILED to spawn", tag, slot); return; }
             } else {
@@ -736,16 +879,134 @@ static const ce_hooks_t *hooks_of(const uint8_t *card)
     return NULL;
 }
 
-/* 两个站点共用一份实现（见 sites.py 的 ce_item_score / ce_item_score_below）：
- *   0x446cf6 = 「自机在回收线上方」或「道具 state == 3（真空飞行）」那一支；
- *   0x446caa = **线下且非真空飞行**那一支（0x446cb2 `jmp 0x446cfc` 绕过前者）。
- * 两支互斥 ⇒ 每次收集仍然只派发一次事件。*/
-static int ce_item_score_common(x86_reg_t *regs)
+/* ---- Q16.16：把引擎里的 float 位模式搬成定点（**不产生 x87**）----
+ * `dllx87` 门的三个来源里有「float ↔ int 转换」，所以这里手搓 IEEE 754 拆位：
+ *   · |x| < 1 ⇒ 取 `1.m × 2^(e-127)`，右移 `16-(e-127)` 位后四舍五入到 1/65536；
+ *   · 负数（游戏里的 y 可能有）⇒ 取绝对值再变号。
+ * 用途只有一个：`ce_item_score_in_common` 判「自机在回收线线上还是线下」这个**诊断位**
+ * （★ 2026-09-13 订正：读的是**自机**的 y，不是道具的高度 —— 引擎两条例程都是
+ *  `xmm2/xmm0 = [PLAYER+0x624]`、回收线 = `[PLAYER+0x47998]`，一手见 §`BP_ce_item_score_in`）。
+ * 精度 1/65536 px，远小于引擎自己 `cvttss2si` 的整数截断误差。*/
+static int32_t ce_q16_from_bits(uint32_t bits)
+{
+    uint32_t sign = bits >> 31, exp = (bits >> 23) & 0xffu, frac = bits & 0x7fffffu;
+    uint32_t mant;
+    int e;
+
+    if (exp == 0) return 0;                       /* 0 / 非规格化：取 0（坐标不会是这种值）*/
+    mant = frac | 0x800000u;                      /* 1.m */
+    e = (int)exp - 127;
+    if (e >= 16) {
+        int32_t r = (int32_t)(mant << (e - 16));
+        return sign ? -r : r;
+    }
+    if (e >= -16) {
+        uint32_t rem = mant & ((1u << (16 - e)) - 1u);
+        uint32_t r = mant >> (16 - e);
+        if (rem >= (1u << (15 - e))) ++r;         /* 四舍五入 */
+        return sign ? -(int32_t)r : (int32_t)r;
+    }
+    return 0;                                     /* 太小 ⇒ 0 */
+}
+
+/* ★★ 2026-09-13 第二次修订：**落笔点从「出口」搬到「入口」**（推导 / 一手证据 / 单位表见
+ *   ../SCORE-LAYER-REWORK.md §2 / §4）。
+ *
+ * 旧写法（本次改掉）挂在 `0x446cf6` / `0x446caa` —— 那两条都在**引擎算完身价之后**
+ * （`esi` = 引擎自己的最终值 = 10 × 这一颗的 SCORE 增量，满额支），handler 却把 `regs->esi`
+ * 一写 ⇒ 引擎刚做的高度系数**整个被我们丢掉**：实际结构 = `coeff × G_0 + ΣG_i`，
+ * 而用户规格是 `coeff × (G_0 + ΣG_i)`。
+ *
+ * （老注释保留在这里备查：`0x446cf6` = 「自机在回收线上方」或「道具 state == 3（真空飞行）」那一支；
+ *   `0x446caa` = **线下且非真空飞行**那一支，`0x446cb2 jmp 0x446cfc` 绕过前者；两支互斥。
+ *   现在这一对身份是**纯观察者**，见下面的 `ce_item_score_out_common`。）
+ *
+ * 新站点 `0x446bf9`（= sites.py 的 `ce_item_score_in`，8 字节 `movss xmm0,[esi+0x47998]`）是**单一汇合点**：
+ *   0x446b0c  esi = PLAYER（[0x4cf410]）            ← 这一段全在用 esi 当自机
+ *   0x446b13  edi = ITEM（= ecx 参数，另存 [ebp-8]）
+ *   0x446b18  xmm2 = [PLAYER+0x624]                 ← ★ **自机的 y**（不是道具的高度！见 §2 订正）
+ *   0x446b20–0x446bf1  三条难度支算身价并钳进 [0x4ccd24]（`ja` 那条 0x446bf3 又读回来）
+ *   ---> 我们的站点：**ecx = 钳位后的身价**（恒等于 [0x4ccd24]，站点自检用它）
+ *   0x446bf9  xmm0 = [PLAYER+0x47998]（回收线）
+ *   0x446c01  comiss xmm0,xmm2 / jae 0x446cb4 ⇒ 自机在线上（或 0x446c0a 道具 state==3 真空飞行）
+ *             ⇒ 满额支：esi = 10 × floor(ecx/1000)，弹窗用它、`SCORE += esi/10`
+ *   0x446c17  线下支：同一条整数链再乘一个高度折扣（🟡 形状未钉死，我们不复制）
+ *
+ * 单位链（一手，逐条在 exe 上核过）：
+ *   ecx（1/1000 点） --满额支--> esi（弹窗值）= 10 × floor(ecx/1000) --`mul esi`+`shr edx,3`--> SCORE += floor(ecx/1000)
+ *   我们写 `ecx = 1000 × G` ⇒ 引擎精确给 G 分；且 ecx 是 1000 的倍数 ⇒ 引擎那步「量化到 10 的倍数」是恒等，
+ *   不引入任何舍入损失。
+ *   ⇒ 桥给层的**身价** = `ecx / 100`（= (ecx/1000) 点 × 10 = 引擎的弹窗值）⇒ `ce_score_base_points()` == ecx/1000。
+ *
+ * 无卡声明时**一个字都不写**（连 `regs->ecx` 都不碰）⇒ 与原生逐字节相同（原生钳位、原生系数、
+ * 原生弹窗值全保留）。*/
+#define CE_ITEM_SCORE_BASE_UNIT  1000u   /* 站点处 ecx 的单位：1 点 = 1000（一手 0x446cb4 起的 ÷100、÷10 链）*/
+
+static unsigned s_score_in_n;            /* 本次进程里到过本站点的次数（日志限流用）*/
+static int      s_score_in_log;          /* 这一颗要不要打日志（in/out 两行配对）*/
+static int      s_score_in_mismatch;     /* 层的 G_0 与引擎基础不等：只报一次 */
+static int      s_score_in_sat;          /* ecx 溢出饱和：只报一次 */
+static int32_t  s_score_in_total;        /* 这一颗我们真正落下去的 G（点；与 `regs->ecx` 同源）*/
+
+/* ★★ 2026-09-16zl：**站点命中轨迹**（头号崩溃的下一把刀）。
+ * 每次命中的站点与上一次不同就打一行 —— `ce_log` 每行都 open/write/close（必 flush），
+ * 所以**崩溃前最后一行 = 直接点名是哪条站点命中之后跳错的**，不用再靠时序夹逼。
+ * 只读、零内存写；命中的站点名是编译期字符串常量 ⇒ 指针比较就够。*/
+static const char *s_site_last;
+static unsigned  s_site_hits;
+static void ce_site_trail(const char *name)
+{
+    ++s_site_hits;
+    if (s_site_last == name) return;
+    s_site_last = name;
+    ce_log("site: %s（累计第 %u 次命中）", name, s_site_hits);
+}
+
+static int ce_item_score_in_common(x86_reg_t *regs)
 {
     uint8_t *mgr = CE_ABILITY_MGR();
-    if (!mgr) return BP_EXEC_ORIGINAL;
-    int32_t value = (int32_t)regs->esi;
+    uint8_t *item = (uint8_t *)regs->edi;          /* 道具对象（0x446b13 mov edi,ecx）*/
+    uint8_t *pl = CE_PLAYER();
+    uint32_t base = regs->ecx;                     /* 引擎钳位后的身价，单位 1/1000 点 */
+    int32_t unused = 0;                            /* 旧签名要求一个 int32_t*；卡不再读 / 写它 */
+    int32_t g0, lay, total;
     unsigned guard = 0;
+
+    s_score_in_log = 0;
+    if (!mgr) return BP_EXEC_ORIGINAL;
+
+    /* ★ 站点自检（一手不变量）：三条难度支都在本站点**之前**把钳位结果写回 [0x4ccd24]，
+     * 而 `ja` 那条更是直接把它读进 ecx ⇒ 到这里 `ecx` 必然 == [0x4ccd24]。
+     * 对不上 = 我们对站点的假设过时了 ⇒ 保守：一个字都不写（退回原生行为）。*/
+    if (base != *(volatile uint32_t *)CE_ADDR_MONEY_BASE) return BP_EXEC_ORIGINAL;
+
+    /* ① 桥：把**引擎钳位后**的身价换成层要的单位（身价 = 点 × 10）交给层。
+     *   `ecx / 1000 × 10 == ecx / 100`（两级整除与一级等价，见 §2 单位表）：ecx 是 1000 的倍数，
+     *   所以这里没有任何截断。难度一并给层（引擎自己已经钳过界，层那次钳只是兜底）。*/
+    ce_score_bridge(base / (CE_ITEM_SCORE_BASE_UNIT / CE_SCORE_ENGINE_UNIT),
+                    *(volatile int32_t *)CE_ADDR_DIFFICULTY);
+
+    /* ② coeff_06（高度门）**只判不打折**：引擎自己在 0x446bf9–0x446cf3 把它乘在（我们写进去的）ecx 上，
+     * 所以它现在作用在**整笔** `G_0 + ΣG_i` 上 —— 这正是用户规格要的结构。
+     * 我们只把「这一颗是不是线上 / 真空飞行」这个**已确认的判据**记进诊断字段
+     * （线下那条折扣曲线 🟡 未钉死，见 sdk_core.h 与 SCORE-LAYER-REWORK.md §4）。
+     * ★ 判据的两个量都从**自机**取（pl+0x624 与 pl+0x47998）—— 2026-09-13 订正：旧代码读的是道具自己的
+     *   `+0xc2c`，那是错的（引擎读的是 PLAYER+0x624）。
+     * ★ 2026-09-15：回收线改读**共享件的访问器** `ce_poc_height()`（PoC 高度层；`sdk.h`）——
+     *   本层落笔之后它与字段同值，但访问器是唯一真值来源（别在这里再直读那个偏移）。
+     * 两个 float 用整数搬运：本文件在 i686 上编，x87 门不许引入 float↔int 转换。*/
+    if (pl && item) {
+        int32_t y_q = ce_q16_from_bits(*(volatile uint32_t *)(pl + CE_PLAYER_Y));
+        int32_t poc_q = ce_q16_from_bits(ce_f32_bits(ce_poc_height()));
+        int above = (y_q >= poc_q)
+                 || (*(volatile int32_t *)(item + CE_ITEM_STATE) == CE_ITEM_STATE_VACUUM);
+        ce_score_set_coeff(above ? 1000u : 0u);        /* 0 = 线下（引擎会打折；值我们不猜）*/
+    } else {
+        ce_score_set_coeff(1000u);
+    }
+
+    /* ③ 收集声明（卡只声明自己那一份 G_i）。**每次收集只在这里收一次**
+     * （老的两个出口站点已改成观察者，不再调卡回调 ⇒ 不会双计）。*/
     for (const uint8_t *node = *(const uint8_t *const *)(mgr + CE_MGR_CARD_LIST_FIRST);
          node && guard < 256;
          node = *(const uint8_t *const *)(node + CE_NODE_NEXT), ++guard) {
@@ -753,28 +1014,96 @@ static int ce_item_score_common(x86_reg_t *regs)
         if (!card) continue;
         const ce_hooks_t *h = hooks_of(card);
         if (h && h->on_item_score) {
-            h->on_item_score((ce_card_t *)card, &value);
+            h->on_item_score((ce_card_t *)card, &unused);
             ce_sdk_trace(ce_card_id(card), 0x54, "on_item_score");
         }
     }
-    regs->esi = (uint32_t)value;
+
+    /* ④ 落笔：`ecx = 1000 × G_total`。引擎随后自己乘系数、弹窗、`SCORE += floor(ecx/1000)`。守两条：
+     *   · **没有卡声明就一个字都不写** ⇒ 原生路径逐字节不变（原生上下限与原生弹窗值都保留）；
+     *   · 层的 G_0 与引擎基础（base/1000）不一致时**以引擎的为准** —— 层那次钳是给界外桥值兜底的，
+     *     万一它漂了也不该把原生身价带偏（只报一次日志）。*/
+    g0  = (int32_t)(base / CE_ITEM_SCORE_BASE_UNIT);
+    lay = ce_score_base_points();
+    if (lay != g0) {
+        total = g0 + (ce_score_total() - lay);
+        if (!s_score_in_mismatch) {
+            s_score_in_mismatch = 1;
+            ce_log("score-in: layer G0=%d != engine base=%d (using the engine base; layer guard clamp drifted?)",
+                   (int)lay, (int)g0);
+        }
+    } else {
+        total = ce_score_total();
+    }
+    if (ce_score_participants() > 0) {
+        int64_t want = (int64_t)total * (int64_t)CE_ITEM_SCORE_BASE_UNIT;
+        if (want > 0x7fffffff) {               /* 32 位 ecx 装不下 ⇒ 饱和 + 报一次（G_total ≈ 2,147,483 点以上）*/
+            want = 0x7fffffff;
+            if (!s_score_in_sat) {
+                s_score_in_sat = 1;
+                ce_log("score-in: G_total=%d overflows the engine's ecx (saturating at 0x7fffffff)", (int)total);
+            }
+        }
+        if ((uint32_t)want != base) regs->ecx = (uint32_t)want;
+    }
+    s_score_in_total = total;              /* 给下面的 `score-out:` 用（= 我们真正落下去的那个 G）*/
+
+    /* ⑤ 实跑线索：一行把整条链摊开（同一颗道具后面还会跟一行 `score-out:`）。
+     *   限流照 `BP_ce_bullet_damage_final` 的规矩：头 30 颗 + 之后每 50 颗；
+     *   in/out 两行共用同一个判据 ⇒ 日志里永远成对、可逐颗对照。*/
+    ++s_score_in_n;
+    s_score_in_log = (s_score_in_n <= 30) || (s_score_in_n % 50 == 0);
+    if (s_trace && s_score_in_log) {
+        ce_log("score-in: base=%u G0=%d lay=%d sum=%d -> ecx=%u coeff=%d (#%u)",
+               (unsigned)base, (int)g0, (int)lay, (int)ce_score_aggregate(),
+               (unsigned)regs->ecx, (int)ce_score_coeff_permille(), s_score_in_n);
+    }
     return BP_EXEC_ORIGINAL;
+}
+
+/* 两个老出口站点：**纯观察者**（见文件头与 sites.py 的说明）。
+ *   0x446cf6 = 「自机在线上」或「道具 state == 3（真空飞行）」那一支的出口；
+ *   0x446caa = **线下且非真空飞行**那一支的出口（0x446cb2 `jmp 0x446cfc` 绕过前者）。
+ * 它们只做一件事：把引擎算好的最终值（`regs->esi` = 弹窗值 = 10 × 这一颗的 SCORE 增量）与我们的
+ * 预测（`10 × G_total`）比一行 —— 满额支应当**完全相等**，线下支应当更小（差额就是引擎的高度折扣）。
+ * 这就是「系数确实乘在整笔 `G_0 + ΣG_i` 上」的实跑证据，也是把注入点搬到入口之后**唯一**的观测手段。
+ * ⚠ 一个字都不许写：写 `regs->esi` 会把引擎的值覆盖掉（那正是本次要修的 bug），调卡回调会让声明**双计**。
+ *   实跑确认「满额支 delta == 0」之后，这一对站点连同本函数一起删。*/
+static int ce_item_score_out_common(x86_reg_t *regs, int below)
+{
+    if (s_trace && s_score_in_log) {
+        int32_t engine = (int32_t)regs->esi;
+        int32_t ours = s_score_in_total * CE_SCORE_ENGINE_UNIT;   /* = 我们落下去的 G × 10（满额支应当相等）*/
+        ce_log("score-out: engine=%d ours=%d delta=%d (%s)", (int)engine, (int)ours,
+               (int)(ours - engine), below ? "below-line => coefficient" : "at/above line => must be 0");
+    }
+    return BP_EXEC_ORIGINAL;
+}
+
+int __cdecl BP_ce_item_score_in(x86_reg_t *regs, void *bp_info)
+{
+    ce_site_trail("ce_item_score_in");
+    (void)bp_info;
+    return ce_item_score_in_common(regs);
 }
 
 int __cdecl BP_ce_item_score(x86_reg_t *regs, void *bp_info)
 {
+    ce_site_trail("ce_item_score");
     (void)bp_info;
-    return ce_item_score_common(regs);
+    return ce_item_score_out_common(regs, 0);
 }
 
 int __cdecl BP_ce_item_score_below(x86_reg_t *regs, void *bp_info)
 {
+    ce_site_trail("ce_item_score_below");
     (void)bp_info;
-    return ce_item_score_common(regs);
+    return ce_item_score_out_common(regs, 1);
 }
 
 int __cdecl BP_ce_item_money(x86_reg_t *regs, void *bp_info)
 {
+    ce_site_trail("ce_item_money");
     (void)regs; (void)bp_info;
     uint8_t *mgr = CE_ABILITY_MGR();
     if (!mgr) return BP_EXEC_ORIGINAL;
@@ -845,13 +1174,27 @@ int __cdecl BP_ce_bomb_gate(x86_reg_t *regs, void *bp_info)
  * edx = 本帧从火力/聚焦算出的 set index，eax = 火力档；同帧 0x45ebed/0x45ebf8 已把同一 set index
  * 暂存在 [ebp-8]，0x45ec69 再打包成 `(set<<8)|row` 写进 PlayerBullet+0xac、命中时再回读。
  * 只改这两个位置：edx 管本帧从哪组取 row，[ebp-8] 管弹里记哪一组；不碰 sht 的 0..9 槽。
- * 任一卡的 on_shot_set_index 返回 >=0 时覆盖，否则原版放行。*/
+ * 任一卡的 on_shot_set_index 返回 >=0 时覆盖，否则原版放行。
+ *
+ * ★ 2026-09-13（卡 113 灵界）：**从「先到先得」改成按 `shot_set_index_priority` 仲裁**。
+ * ★★ 2026-09-16z（用户口径「改子机和改主体发弹的覆盖原则」）：阶梯 **117(20) > 113(10) > 108 > 111**
+ *   —— 原则「特殊大于常态 / 专用大于通用」，其中 **117 > 113 是人为规定**；
+ *   108/111 **不参与这一层**（111 的主炮一个字都不写；108 只是「本帧不发原生弹」，见下面那段
+ *   `on_native_shot_suppress`），所以「有卡覆盖 set ⇒ 本帧不抑制」（本函数末尾那条早退）就已经
+ *   把 117/113 排在 108 前面了。完整阶梯表见 `sdk/public.h`。
+ *   起因：117 咆哮与 113 灵界都往这个断点返回组号，谁先被问到取决于卡链表顺序（拿卡/装卡顺序），
+ *   同一局里可能变 ⇒ 行为不可预期。规则（用户 2026-09-13 定）：**灵界赢**（113 的短窗口，
+ *   它把主炮整组换掉）。实现：扫完整条卡链表，取「返回 >= 0 且优先级最大」的那张；
+ *   同优先级取链表里靠前的（= 旧行为，对只声明 117 一家的现况零影响）。
+ *   两张以上同帧都要覆盖时打一条 trace（槽 `0x98`，未占用的空槽，见 sdk.c 顶部的槽表）—— 现场日志能直接看出谁赢了。*/
 int __cdecl BP_ce_shot_set_index(x86_reg_t *regs, void *bp_info)
 {
     (void)bp_info;
     uint8_t *mgr = CE_ABILITY_MGR();
     if (!mgr) return BP_EXEC_ORIGINAL;
     unsigned guard = 0;
+    uint8_t *winner = NULL;
+    int winner_idx = -1, winner_prio = 0, n_claim = 0;
     for (const uint8_t *node = *(const uint8_t *const *)(mgr + CE_MGR_CARD_LIST_FIRST);
          node && guard < 256;
          node = *(const uint8_t *const *)(node + CE_NODE_NEXT), ++guard) {
@@ -860,17 +1203,34 @@ int __cdecl BP_ce_shot_set_index(x86_reg_t *regs, void *bp_info)
         const ce_hooks_t *h = hooks_of(card);
         if (h && h->on_shot_set_index) {
             int idx = h->on_shot_set_index((ce_card_t *)card, (int)regs->eax);
-            if (idx >= 0) {
-                if (regs->edx != (uint32_t)idx) {
-                    /* 两个副本必须一起改：edx 决定本帧取出哪组 row；[ebp-8] 决定 bullet+0xac 里存的 set。*/
-                    regs->edx = (uint32_t)idx;
-                    if (regs->ebp) *(uint32_t *)(uintptr_t)(regs->ebp - 8) = (uint32_t)idx;
-                }
-                ce_sdk_trace(ce_card_id(card), 0x7c, "on_shot_set_index");
-                /* ★ 有卡覆写了 set（= 117 咆哮）⇒ **本帧不抑制**（咆哮优先：EVENTS-CONTRACT §5.2）。*/
-                return BP_EXEC_ORIGINAL;
+            if (idx < 0) continue;
+            ++n_claim;
+            /* 严格大于：同优先级保持「链表里靠前的先赢」（= 加这个字段之前的语义）。*/
+            if (!winner || h->shot_set_index_priority > winner_prio) {
+                winner = card;
+                winner_idx = idx;
+                winner_prio = h->shot_set_index_priority;
             }
         }
+    }
+    if (winner) {
+        int idx = winner_idx;
+        if (n_claim > 1) {
+            /* 同帧争用：记一条（含胜者的优先级与卡号），现场靠它区分「灵界赢」还是「咆哮赢」。*/
+            ce_sdk_trace(ce_card_id(winner), 0x98, "on_shot_set_index contested");
+            ce_log("ce: shot set contested: %d claimers, winner id=%u prio=%d set=%#x",
+                   n_claim, (unsigned)ce_card_id(winner), winner_prio, (unsigned)idx);
+        }
+        if (regs->edx != (uint32_t)idx) {
+            /* 两个副本必须一起改：edx 决定本帧取出哪组 row；[ebp-8] 决定 bullet+0xac 里存的 set。*/
+            regs->edx = (uint32_t)idx;
+            if (regs->ebp) *(uint32_t *)(uintptr_t)(regs->ebp - 8) = (uint32_t)idx;
+        }
+        ce_sdk_trace(ce_card_id(winner), 0x7c, "on_shot_set_index");
+        /* ★ 有卡覆写了 set（= 117 咆哮 / 113 灵界）⇒ **本帧不抑制**。
+         *   用户口径 2026-09-16z 的阶梯：**117 > 113 > 108 > 111** ⇒ 这一条早退同时实现了
+         *   「117 / 113 都排在 108 前面」（108 只压原生弹，不换 set）。*/
+        return BP_EXEC_ORIGINAL;
     }
     /* 没有任何卡覆写 set ⇒ 再问「本帧跳过原生行循环」。
      * 108（低速妖机体）与 109（蓄力拦 Z）挂同一个槽；两者语义都是「本帧不发原生弹」⇒ OR，无需优先序。
@@ -892,6 +1252,122 @@ int __cdecl BP_ce_shot_set_index(x86_reg_t *regs, void *bp_info)
         }
     }
     return BP_EXEC_ORIGINAL;
+}
+
+/* ======================================================================================
+ * ★★ 2026-09-16：**隐藏自机原生那 4 格子机**（两条断点；声明层在 `sdk_core.h`）
+ * ======================================================================================
+ * 背景（用户口径 2026-09-16：「魔理沙原生子机需要弄掉」——装了 111 且机体 = 魔理沙时，
+ * 自机原生那 4 格子机不许再出现）。一手结构见 `engine.h` 的 `CE_NATIVE_OPT_*` 一节：
+ * 引擎里**两个子机数组**互不相干 —— 原生的 `inner+0x50`（4 格，按火力档重建）与
+ * 卡申请的池 `inner+0x410`（12 格）。本层只动前者；后者归 `ce_optpose_*` 选举层。
+ *
+ * 为什么**必须两条**断点（少一条都会露馅，逐条给一手）：
+ *   ① `BP_ce_repopulate_native_option`（`0x45d610`）= **不建 + 收掉**：
+ *      原生子机的 VM 只在 `Player__repopulate_options_and_notify_cards` `0x45d5e0` 里建
+ *      （普通形 `+0xb0`、满火力形 `+0xb4`），而它按 `lvl = CURRENT_POWER/100` 建 ⇒ 把 `lvl` 压成 0
+ *      就"永远建不出来"；已建的两支 VM 由 handler 自己 `interrupt` 掉（照引擎自己那两段清理的写法：
+ *      `0x45d823` 的 `push 1 / push [esi] / call 0x488be0 / [esi]=0`）。
+ *   ② `BP_ce_native_option_muzzle`（`0x45e930`）= **不发弹**：
+ *      主炮行循环选组只看 `CURRENT_POWER/100`（`0x45ebcb idiv`），**不看子机存不存在** ——
+ *      `row[0x20] != 0` 的行一律拿 `PLAYER+0x580+(slot&0xf)*0xf0` 当膛口出弹（`0x45ec4c`–`0x45ec5d`）
+ *      ⇒ 只做①的话，子弹会**从看不见的子机位置**飞出来（而且那部分输出本来是要被 111 的子机层接管的）。
+ *      在 `Player__shoot_one_bullet` 入口拦「膛口指针落在原生数组区间」的那些发。
+ *      ⚠ 卡路径（`0x40aa80`）传的膛口是**卡池**指针（`inner+0x410` = `PLAYER+0xa30`）⇒ 区间不相交，
+ *        117 / 116 / 108 那些卡申请的装备子机一发都不会被误伤（实测判据 = 指针区间，不是行字段）。
+ *
+ * ⚠ 两条都只在 `ce_native_option_hidden(当前机体)` 为真时动手 ⇒ 灵梦 / 咲夜 / 早苗机体、
+ *   以及没装 111 的魔理沙，行为逐字节不变。
+ * ⚠ 站点与字节（`sites.py` 里逐条核过）：`0x45d610` 7 字节 `53 89 81 dc 71 04 00`
+ *   （`push ebx` + `mov [ecx+0x471dc],eax`；**该 mov 的 imm32 是 0x471dc，不是相对寻址**）、
+ *   `0x45e930` **5 字节** `55 8b ec 51 53`（`push ebp` / `mov ebp,esp` / `push ecx` / `push ebx` ——
+ *   恰好落在指令边界上；⚠ 取 6 会从 `mov ebx,[ebp+8]`（3 字节，0x45e935 起）中间切开 ⇒ cave 回放半条指令）。
+ * 详见 `NEXT.md` 的「111 魔理沙侧」一节与 `AUDIT.md` §BE。*/
+
+/* ---- ① repopulate：把本次的 lvl 压成 0，并收掉已建的原生子机 VM ----
+ * 站点：`0x45d610`（`push ebx` + `mov [ecx+0x471dc],eax`），此刻
+ *   · **ecx = `&zPlayer.inner`**（thiscall 的 this = `PLAYER+0x620`；一手 `0x45d5fc mov [esp+0x18],ecx`）、
+ *   · **eax = 本次算出来的 `lvl = CURRENT_POWER / POWER_PER_LEVEL`**（`0x45d604`–`0x45d60a`）。
+ * handler 把 eax 改成 0 后**放行原字节**（cave 重放那 7 字节）：于是
+ *   · `[inner+0x471dc] = 0`（该字段全 exe 只在这一处写、无人读 ⇒ 无副作用）、
+ *   · `0x45d622` 把 eax 存进 `[esp+0x10]`、`0x45d843` 再读回来当档位
+ *     ⇒ 后面两段（满火力形 VM 的建/清、普通形 4 格的建/清）拿到的都是 0：
+ *     满火力形的建循环 `if (0 < lvl)` 直接不进；普通形走 `lvl < 1` 的「清空 4 格」那条路
+ *     （interrupt `+0xb0` + 状态写 0）—— 正是我们要的。
+ * ⚠ **不改** `inner+0x470d8`（"上次建过哪一档"的短路缓存）：引擎自己会把它写成 0，
+ *   下一次带 lvl=0 进来时短路到"不用清"，而那时确实已经没有东西可清（我们每帧都收干净了）；
+ *   卡被删掉之后，真实档位 != 0 ⇒ 短路条件不成立 ⇒ 引擎自己重建，**不需要我们写回任何东西**。
+ * ⚠ 满火力形（`+0xb4`）那两支 VM 在「引擎认为 lvl == 0」时**不会**被引擎清（那条 `if` 分支
+ *   只在 `CURRENT_POWER < MAX_POWER` 时跑）⇒ handler 自己按 `0x45d818` 那段同款写法收掉 4 格的两支。*/
+int __cdecl BP_ce_repopulate_native_option(x86_reg_t *regs, void *bp_info)
+{
+    uint8_t *inner = (uint8_t *)(uintptr_t)regs->ecx;
+    int32_t character;
+    int i;
+
+    (void)bp_info;
+    if (!inner) return BP_EXEC_ORIGINAL;
+    character = *(const int32_t *)CE_ADDR_CHARACTER;
+    if (!ce_native_option_hidden(character)) return BP_EXEC_ORIGINAL;
+
+    /* 收掉 4 格 × 2 支原生子机 VM（普通形 / 满火力形）。
+     * ⚠ id 读出来就置 0 再 interrupt（引擎自己也是这个顺序：先 interrupt 再写 0 —— 顺序无所谓，
+     *   但一定要写 0，否则 `FUN_0045bc90` 每帧还会拿这个 id 去摆位置）。*/
+    for (i = 0; i < CE_NATIVE_OPT_COUNT; ++i) {
+        uint8_t *slot = inner + CE_NATIVE_OPT_INNER_BASE + (size_t)i * CE_NATIVE_OPT_STRIDE;
+        uint32_t *vm[2];
+        int k;
+
+        vm[0] = (uint32_t *)(slot + CE_NATOPT_VM_MAIN);
+        vm[1] = (uint32_t *)(slot + CE_NATOPT_VM_MAX);
+        for (k = 0; k < 2; ++k) {
+            if (*vm[k]) { ce_anm_interrupt(*vm[k], 1); *vm[k] = 0; }
+        }
+        *(int32_t *)(slot + CE_NATOPT_STATE) = 0;
+    }
+    /* 本次的档位 = 0（见上面那段：两段建的/清的都看它）*/
+    regs->eax = 0;
+    ce_sdk_trace((unsigned)ce_native_option_hide_owner(), 0x9c, "native option hidden (repopulate)");
+    return BP_EXEC_ORIGINAL;
+}
+
+/* ---- ② Player__shoot_one_bullet 0x45e930 入口：膛口落在原生子机数组里 ⇒ 整发跳过 ----
+ * 站点 = 函数**第一条**指令起的 5 字节（`55 8b ec 51 53`），此刻
+ *   · **ecx = zPlayer\***（thiscall；一手调用点 `0x45ec66 mov ecx,esi`，esi = PLAYER）、
+ *   · 栈（低 → 高）= 返回地址、packed id、timer、pos*、**option\***（四个栈参由调用方压，
+ *     一手 `0x45ec5f`–`0x45ec72`：先 push 膛口、再 push pos、push timer、push packed id）。
+ * 跳过整发的写法 = **等价一条 `ret 0x10`**：thcrap 的 `regs->esp` 是支持的
+ * （`breakpoint.cpp` 的 `esp_diff` 机制：改 esp 就 `add esp, diff`，`retaddr` 落在移位后的
+ * 返回地址槽上）⇒ 设 `retaddr = [esp]`（真正的调用者返回地址）+ `esp += 0x14`（返回地址 + 4 个栈参）。
+ * ⚠ 返回值不设（调用方 `0x45ec78` 紧接着读行字段，**不检查 eax**，一手逐指令核过）。
+ * ⚠ 判据用**指针区间**而不是行字段：卡路径同样走这个函数，但它的膛口是卡池指针
+ *   （`PLAYER+0xa30` 起）⇒ 区间不相交，天然只命中原生 4 格。*/
+int __cdecl BP_ce_native_option_muzzle(x86_reg_t *regs, void *bp_info)
+{
+    uint32_t *sp = (uint32_t *)(uintptr_t)regs->esp;
+    uint8_t *player = (uint8_t *)(uintptr_t)regs->ecx;
+    uint8_t *muzzle;
+
+    (void)bp_info;
+    if (!player || !sp) return BP_EXEC_ORIGINAL;
+    if (!ce_native_option_hidden(*(const int32_t *)CE_ADDR_CHARACTER)) return BP_EXEC_ORIGINAL;
+    muzzle = (uint8_t *)(uintptr_t)sp[4];          /* 第 5 个栈参 = 膛口（0 = 自机本体）*/
+    if (!muzzle) return BP_EXEC_ORIGINAL;
+    if (muzzle < player + CE_NATIVE_OPT_PLAYER_MUZ0 || muzzle >= player + CE_NATIVE_OPT_PLAYER_END)
+        return BP_EXEC_ORIGINAL;                   /* 不是原生子机（自机本体 / 卡池子机）⇒ 放行 */
+    /* 诊断（限流：前 3 发 + 之后每 600 发一行）：一发不发的时候**唯一**能看出「这条路在跑」的行。*/
+    {
+        static uint32_t s_n;
+        if (s_n < 3u || (s_n % 600u) == 0u)
+            ce_log("sdk: 原生子机弹已拦（第 %u 发，膛口 = PLAYER+0x%x，机体 %d）",
+                   (unsigned)(s_n + 1u),
+                   (unsigned)(muzzle - player),
+                   *(const int32_t *)CE_ADDR_CHARACTER);
+        ++s_n;
+    }
+    regs->retaddr = sp[0];                         /* 直接回到调用者 */
+    regs->esp = regs->esp + 0x14;                  /* 等价 `ret 0x10`（4 个栈参 + 返回地址）*/
+    return 0;                                      /* 不重放原字节（= 整发不发）*/
 }
 
 /* Player__tick_shooters_for_ability_card 0x40a9c0 的序言后（0x40a9c3）：
@@ -1056,6 +1532,229 @@ static void ce_option_pose_frame_tick(void)
     if (win >= 0) optpose_call_one(mgr, win);                    /* ② 本帧落笔 */
 }
 
+/* ---- ★ PoC 高度层（收点线）：落笔与删卡写回（决策全在 sdk_core.c 的 `ce_poc_frame` / `ce_poc_drop_take_base`）
+ * 语义 / 一手见 `sdk_core.h` 与 `sdk.h` 的 PoC 层块注释。这里只做两件**引擎侧**的事：
+ *   ① 写 `player+0x47998`；② 置 `Gui+0x194` 的 bit `0x2000`（=「画开局那条指示线」，照原生卡 22 的
+ *      `0x40c288`，含它的空指针检查与「只置不清」）。
+ * ⚠ **没有声明时不写字段**：原生卡 22 会在 on_load 把线写成 224，本层无权把它顶回 128。*/
+void ce_poc_apply(void)
+{
+    uint8_t *pl = CE_PLAYER();
+    uint32_t out = 0;
+
+    if (!pl) return;
+    if (!ce_poc_frame(*(volatile uint32_t *)(pl + CE_PLAYER_POC_HEIGHT), &out)) return;
+    *(float *)(pl + CE_PLAYER_POC_HEIGHT) = ce_f32_from_bits(out);
+    if (ce_poc_has_declaration()) {                 /* 只在「有人声明」时开那条线（撤声明那一次不动标志位）*/
+        uint8_t *gui = CE_GUI();
+        if (gui) *(uint32_t *)(gui + CE_GUI_FLAG_WORD) |= CE_GUI_FLAG_POC_LINE;
+    }
+}
+
+/* 删卡 / 退出声明（`sdk.h` 的 `ce_layer_drop_card()` 调）：撤声明；若撤完**没人再声明**且记过基准
+ * ⇒ **立刻**把基准写回字段（删卡发生在商店里、AbilityManager 与 ItemManager 都冻住，帧钩子不跑）。*/
+void ce_poc_release(uint32_t id)
+{
+    uint8_t *pl = CE_PLAYER();
+    uint32_t back = 0;
+
+    if (!ce_poc_drop_take_base(id, &back)) return;
+    if (pl) *(float *)(pl + CE_PLAYER_POC_HEIGHT) = ce_f32_from_bits(back);
+}
+
+/* ★★ 2026-09-16zf：**thcrap codecave 取证**（头号崩溃第二阶段：EIP 落在一张全 0 的页上）。
+ *
+ * ## 一手事实（`crashdumps/` 解析，全文见 `AUDIT.md` §DN）
+ *   · 崩溃 dump 里 **EIP = `0x03c1065a` / `0x03c2065a`**（两次运行都在 `0x03c?065a`，页基不同），
+ *     **不在任何模块内**；dump 把该页 256 字节捕了下来 ⇒ **全是 0**。
+ *   · `00 00` 解码 = `add byte ptr [eax], al` ⇒ 现场 `Eax = 1` ⇒ **写到地址 `0x1`** ⇒
+ *     这就是那条「`0xC0000005` **写** `0x1` + `Eax = 1` + EIP 在堆」的签名**逐字解释**（不是"堆数据当指令"，
+ *     是**执行一张零页**）。页是已提交且可读可执行的（否则会先取指失败），只是内容为 0。
+ *   · 第二次（`34076`）改崩在 `do_bomb+0x8c`（`th18:0x4203ec` `call [eax+4]`，`eax = 0`），
+ *     而该帧的**返回地址 = `0x03c10345`** —— 同一个 `0x03c1xxxx` 区。⇒ 这个区是**被当作代码用的**。
+ * ## 这个区是什么
+ *   `0x03c?xxxx` 页对齐、低地址、不属于任何模块 = **thcrap 的 codecave 区**（codecave 用 `VirtualAlloc`）。
+ *   本 mod 栈里用 codecave 的：**我们自己的 211 条 binhack 里那 11 个 codecave**（`th18_card_table`
+ *   0x33cc 字节的大表拷贝等），以及 **`nmlgc/base_tsa` 的 `th18_centipede_fix`**（其站点 = `th18:0x412c76`，
+ *   `cavesize 10`，正好是 `AbilityManager::allocate_new_card` 里的 `mov [0x4cf2d4],0` —— **和我们的卡表搬迁
+ *   改的是同一个函数**）。
+ * ## 于是要回答两个问题（本段代码就是回答它们的）
+ *   ① 我们每个站点的 cave 在哪、**首字节是不是 0**（thcrap 没写进去 = 一命中就执行零页）；
+ *   ② 运行期这些 cave 的头部**会不会被改写/清零**（谁在写 = 下一轮要抓的人）；外加两两重叠检测。
+ * 结论口径：`cave[名字]: 站点 -> cave 首 8 字节 = …`（首见一行/站点）；运行期变化打 `★★ CAVE CLOBBERED`。*/
+
+static int ce_addr_exec(uint32_t a);              /* 定义在下面（`VirtualQuery` 判页保护）；这里先声明 */
+
+/* `nmlgc/base_tsa` 的 `th18_centipede_fix` codecave 站点（RVA；一手 = 该 patch 的 js：
+ * `"breakpoints": { "codecave:th18_centipede_fix": {"addr": "Rx12c76", "cavesize": 10} }`）。*/
+#define CE_BS_CAVE_SITE_RVA 0x12c76u
+
+#define CE_CAVE_SLOTS 48
+#define CE_CAVE_WATCH 8
+
+typedef struct {
+    const char *name;
+    uint32_t    site, cave;
+    uint8_t     head[CE_CAVE_WATCH];
+    uint8_t     live;
+} ce_cave_t;
+
+static ce_cave_t s_caves[CE_CAVE_SLOTS];
+static unsigned  s_cave_n;
+static unsigned  s_cave_zero;       /* 首见就全 0 的 cave 数（thcrap 没写进去）*/
+static unsigned  s_cave_ovl;        /* 两两重叠的 cave 对数 */
+static unsigned  s_cave_clobber;    /* 运行期首 8 字节被改写的次数 */
+static unsigned  s_cave_ticks;      /* 看门狗跑过的帧数（日志里当帧号用）*/
+
+/* thcrap 把站点改成 `e8/e9 rel32`（跳/调到 cave）⇒ cave = site + 5 + rel32。
+ * 站点上不是 e8/e9 = 没打上或形态不同 ⇒ 返回 0（不猜）。*/
+static uint32_t ce_cave_from_site(uint32_t site_va)
+{
+    const uint8_t *p = (const uint8_t *)(uintptr_t)site_va;
+    uint32_t rel;
+
+    if (!site_va || IsBadReadPtr((const void *)p, 5)) return 0;
+    if (p[0] != 0xe8 && p[0] != 0xe9) return 0;
+    rel = (uint32_t)p[1] | ((uint32_t)p[2] << 8) | ((uint32_t)p[3] << 16) | ((uint32_t)p[4] << 24);
+    return (uint32_t)(site_va + 5u + rel);
+}
+
+static void ce_cave_note(const char *name, uint32_t site_va)
+{
+    ce_cave_t *c;
+    unsigned i, zeros = 1;
+    char hex[3 * CE_CAVE_WATCH + 1];
+    char *q = hex;
+
+    if (s_cave_n >= CE_CAVE_SLOTS) return;
+    c = &s_caves[s_cave_n++];
+    c->name = name; c->site = site_va; c->cave = ce_cave_from_site(site_va); c->live = 0;
+    if (!c->cave) {
+        ce_log("cave[%s]: 站点 %08x 上不是 e8/e9 ⇒ 没解出 cave（thcrap 没打/形态不同）", name, site_va);
+        return;
+    }
+    if (IsBadReadPtr((const void *)(uintptr_t)c->cave, CE_CAVE_WATCH)) {
+        ce_log("cave[%s]: 站点 %08x -> cave %08x ★ 首 %u 字节读不了（页没提交？）",
+               name, site_va, c->cave, CE_CAVE_WATCH);
+        return;
+    }
+    for (i = 0; i < CE_CAVE_WATCH; ++i) {
+        c->head[i] = *(const uint8_t *)(uintptr_t)(c->cave + i);
+        if (c->head[i]) zeros = 0;
+        q += sprintf(q, "%02x ", c->head[i]);
+    }
+    c->live = 1;
+    if (zeros) ++s_cave_zero;
+    ce_log("cave[%s]: 站点 %08x -> cave %08x 首 %u 字节 = %s%s%s",
+           name, site_va, c->cave, CE_CAVE_WATCH, hex,
+           zeros ? "★★★ 全 0（命中即执行零页！）" : "",
+           ce_addr_exec(c->cave) ? "" : " ★ cave 页不可执行");
+}
+
+/* 两两重叠检测。⚠ 2026-09-16zg 订正：thcrap 给每个 cave **固定 0x30 字节**（本次实测：
+ * `0x03d30540 / 570 / 5a0 / 5d0 / 600 / 630 / 660 / 690 / 6c0 / 6f0 / 720 …` 恰好 0x30 一格），
+ * 所以「相差 0x30/0x60…」是**正常紧密排布**，不是重叠 —— 判据必须比 0x30 更严。
+ * 真正要抓的只有「两个 cave 落进同一个 0x30 槽」这一种。*/
+static void ce_cave_overlap(void)
+{
+    unsigned i, k;
+    for (i = 0; i < s_cave_n; ++i)
+        for (k = i + 1; k < s_cave_n; ++k) {
+            uint32_t a = s_caves[i].cave, b = s_caves[k].cave;
+            if (!a || !b) continue;
+            if (b > a && b < a + 0x30u) {
+                ++s_cave_ovl;
+                if (s_cave_ovl <= 10)
+                    ce_log("★★ CAVE OVERLAP #%u: [%s] %08x 与 [%s] %08x 落进同一格（差 %d 字节）",
+                           s_cave_ovl, s_caves[i].name, a, s_caves[k].name, b, (int)(b - a));
+            }
+        }
+}
+
+/* 每帧看门狗（`BP_ce_item_frame` 里调）：首 8 字节与首见快照不同 ⇒ 打一行（含帧号）。*/
+static void ce_cave_watch(void)
+{
+    unsigned i, k;
+
+    ++s_cave_ticks;
+    for (i = 0; i < s_cave_n; ++i) {
+        ce_cave_t *c = &s_caves[i];
+        if (!c->live || IsBadReadPtr((const void *)(uintptr_t)c->cave, CE_CAVE_WATCH)) continue;
+        for (k = 0; k < CE_CAVE_WATCH; ++k)
+            if (*(const uint8_t *)(uintptr_t)(c->cave + k) != c->head[k]) {
+                ++s_cave_clobber;
+                if (s_cave_clobber <= 20)
+                    ce_log("★★ CAVE CLOBBERED #%u: [%s] cave %08x 第 %u 字节 %02x -> %02x（帧 %u）"
+                           "—— 这个 cave 的代码被谁改了/清零了",
+                           s_cave_clobber, c->name, c->cave, k, c->head[k],
+                           *(const uint8_t *)(uintptr_t)(c->cave + k), s_cave_ticks);
+                for (k = 0; k < CE_CAVE_WATCH; ++k)
+                    c->head[k] = *(const uint8_t *)(uintptr_t)(c->cave + k);
+                break;
+            }
+    }
+}
+
+/* `0x03c00000`..`0x03e00000` 的内存地图（一手 `VirtualQuery` 走一遍；只读、不碰任何保护）。
+ * 目的：给「EIP 落进去的那张零页」**定性** —— 三次崩溃的地址都落在这个窗口
+ * （`0x03c1065a` / `0x03c2065a` / `0x03c10345`）。判读：
+ *   · `MEM_PRIVATE` + `PAGE_EXECUTE*` ⇒ thcrap 的 codecave（那就要看它的首字节是不是 0）；
+ *   · `MEM_PRIVATE` + `RW` ⇒ 堆 / 线程栈（未用到的栈页天然是 0）；
+ *   · `MEM_FREE` ⇒ 根本没提交（那 EIP 落进去会先取指失败，与本签名不符）。*/
+static void ce_mem_map_dump(void)
+{
+    uint32_t a = 0x03c00000u;
+    const uint32_t end = 0x03e00000u;
+    MEMORY_BASIC_INFORMATION mbi;
+    unsigned n = 0;
+
+    while (a < end && n < 64) {
+        uint32_t b, sz;
+        const char *state, *type;
+        char hex[3 * 8 + 1];
+        char *q = hex;
+        unsigned i;
+
+        if (VirtualQuery((LPCVOID)(uintptr_t)a, &mbi, sizeof mbi) != sizeof mbi) break;
+        b  = (uint32_t)(uintptr_t)mbi.BaseAddress;
+        sz = (uint32_t)mbi.RegionSize;
+        if (!sz) break;
+        state = mbi.State == MEM_COMMIT ? "COMMIT" : (mbi.State == MEM_FREE ? "FREE" : "RESERVE");
+        type  = mbi.Type == MEM_IMAGE ? "IMAGE" : (mbi.Type == MEM_MAPPED ? "MAPPED" : "PRIVATE");
+        hex[0] = '\0';
+        if (mbi.State == MEM_COMMIT && !IsBadReadPtr((const void *)(uintptr_t)b, 8)) {
+            for (i = 0; i < 8; ++i) q += sprintf(q, "%02x ", *(const uint8_t *)(uintptr_t)(b + i));
+        } else {
+            strcpy(hex, "-");
+        }
+        ce_log("memmap %08x..%08x %-7s %-7s prot=%#08x 首 8 字节 = %s",
+               b, b + sz, state, type, (unsigned)mbi.Protect, hex);
+        /* ★ 2026-09-16zg：**把可执行页整段 dump 出来**。三次崩溃都落在这一带的一张
+         * `PAGE_EXECUTE` 页上、且**偏移恒为 `+0x65a`**（页基每次不同：`0x03c10000` / `0x03c20000` /
+         * `0x03d20000`）⇒ 那张页是**定长布局的代码块**，其中 `+0x65a` 处是 0（未写）。
+         * 崩溃帧的**返回地址 = 同一张页的 `+0x345`** ⇒ **是这张页里的代码 `call` 到了它自己的零尾巴**。
+         * 把页内容（前 `0x800` 字节）原样打进日志 ⇒ 离线用 capstone 反汇编就能看到 `+0x340` 那条 `call`
+         * 的 rel32 到底指向哪、以及这张页是谁生成的（首字节 `89 44 24 20 6a 2c e9 …` =
+         * `mov [esp+0x20],eax; push 0x2c; jmp …` = thcrap 的**内部钩子 thunk** 形态）。*/
+        if (mbi.State == MEM_COMMIT
+            && (mbi.Protect & 0xffu) == PAGE_EXECUTE
+            && !IsBadReadPtr((const void *)(uintptr_t)b, 16)) {
+            uint32_t lim = sz < 0x800u ? sz : 0x800u, o;
+            for (o = 0; o < lim; o += 16) {
+                char row[3 * 16 + 1];
+                char *qq = row;
+                unsigned j;
+                for (j = 0; j < 16 && o + j < lim; ++j)
+                    qq += sprintf(qq, "%02x ", *(const uint8_t *)(uintptr_t)(b + o + j));
+                ce_log("  page %08x+%03x: %s", b, o, row);
+            }
+        }
+        a = b + sz;
+        ++n;
+    }
+    ce_log("memmap: 0x03c00000..0x03e00000 走了 %u 段", n);
+}
+
 /* ★ 2026-09-12 十三修：卡对象 / AbilityManager 完整性探针。
  *
  * 用户报告的「卡又成滚木 / 撞到槽里 slot 消失」与更早 id=254（0xfe，有符号字节为负）症状同型，
@@ -1116,13 +1815,27 @@ static void ce_integrity_check(void)
 
 int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
 {
+    ce_site_trail("ce_item_frame");
+    /* ★ 2026-09-13：本帧点也是 **SDK 帧号**的唯一递增处（跨卡共用模块的「每帧只推进一次」守卫用它，
+     *   例 `faith_pool_tick()` 被 110/111 各调一次；见 `sdk_core.h` 的 `ce_sdk_frame`）。*/
+    ce_site_trail("if/ce_sdk_frame_bump");
+    ce_sdk_frame_bump();
+    ce_site_trail("if/ce_cave_watch");
+    ce_cave_watch();                          /* ★ 2026-09-16zf：codecave 看门狗（每帧一次，只读）*/
     (void)regs; (void)bp_info;
     uint8_t *mgr = CE_ABILITY_MGR();
     if (!mgr) return BP_EXEC_ORIGINAL;
+    ce_site_trail("if/ce_integrity_check");
     ce_integrity_check();
     /* ★ 帧界：低速子机声明层的落笔 + 清集合（spec §3.3.1）。顺序 **先落笔、后清**：
      * 落笔用的是「上一次清集合以来」的全部声明（= 本帧各卡 tick 里刚发的），清完之后本帧的声明从零收集。*/
-    ce_option_pose_frame_tick();
+    ce_site_trail("if/ce_option_pose_frame_tick");
+    /* ⚗ 2026-09-16zo 二分（**临时**）：把「阵型几何落笔」这一步停掉 —— 它是本 handler 里**唯一会写引擎侧字段**
+     * 的一步，而崩点被夹在「这一步之后、ItemManager tick 返回之前」。停掉后若不崩 ⇒ 就是它写坏字段；
+     * 若照旧崩 ⇒ 这一步无罪，把刀口挪到别的写点。
+     * ⚠ 副作用：111 的子机不再按 TH11 阵型几何逐帧落笔（位置不跟随阵型）——只用于定责。*/
+    ce_option_pose_frame_tick();   /* ✅ 2026-09-16zq 恢复：上一刀已证明它无罪（停用后照旧崩）*/
+    ce_site_trail("if/ce_optpose_frame_reset");
     ce_optpose_frame_reset();
     /* ★ 帧初：清「本帧已消过弹」闩锁（EVENTS-CONTRACT §5.2 细则 2）。这个断点每个正常游玩帧到一次，
      * 且在道具池 body 之前 ⇒ 是天然的帧边界。107 的结界灵击与 117 的霊撃同帧都触发时，
@@ -1135,6 +1848,11 @@ int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
      * 只在比当前计时器更长时才写 ⇒ 不截短别人给的无敌、也不动引擎自己的）。
      * 卡只需要 `ce_invuln_request(id, frames)` 声明，落笔由 SDK 统一做（单一落笔，EVENTS-CONTRACT §1）。*/
     ce_invuln_apply();
+    /* ★ 2026-09-15：把「PoC 高度层」（收点线 `player+0x47998`）的聚合值落到字段上（每帧一次）。
+     *   有声明 ⇒ 写 + 置 `Gui+0x194` bit `0x2000`（开那条开局指示线）；声明全撤 ⇒ 写回基准；都没有 ⇒ 一个字不写。
+     *   ★ 本帧点**在道具池 body 之前**（见 `sites.py` 的 `ce_item_frame`）⇒ 引擎自己那四条
+     *   「线上/线下」判据（`0x445baa` / `0x44698d` / `0x446bf9` 系）当帧读到的就是我们写进去的值。*/
+    ce_poc_apply();
     /* ★ 帧初：推进「玩家贴近左下角 → HUD 整摞淡出」的迟滞（每帧**只推一次**；
      * 卡片读 `ce_hud_near_corner()` 即可，别自己调 —— 多张卡同帧各调会反复推进状态）。*/
     {
@@ -1158,6 +1876,7 @@ int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
 
 int __cdecl BP_ce_item_collect(x86_reg_t *regs, void *bp_info)
 {
+    ce_site_trail("ce_item_collect");
     (void)bp_info;
     uint8_t *mgr = CE_ABILITY_MGR();
     uint8_t *item = (uint8_t *)(uintptr_t)regs->edi;
@@ -1180,6 +1899,7 @@ int __cdecl BP_ce_item_collect(x86_reg_t *regs, void *bp_info)
 
 int __cdecl BP_ce_item_commit(x86_reg_t *regs, void *bp_info)
 {
+    ce_site_trail("ce_item_commit");
     (void)regs; (void)bp_info;
     uint8_t *mgr = CE_ABILITY_MGR();
     if (!mgr) return BP_EXEC_ORIGINAL;
@@ -1381,16 +2101,42 @@ static int bp_applied(const uint8_t *p, unsigned len)
     return 1;
 }
 
+/* ⚗ 2026-09-17a 二分（临时）：只校验这 6 条站点；其余在 patch 里没声明 ⇒ 跳过（避免拿 RVA 0 去核对）*/
+static int ce_bp_kept(const char *name)
+{
+    static const char *k[] = { "ce_enemy_damage", "ce_card_bind", "ce_item_score", "ce_item_score_below", "ce_item_money", "ce_enemy_drop" };
+    unsigned i;
+    for (i = 0; i < sizeof k / sizeof k[0]; ++i) if (!strcmp(k[i], name)) return 1;
+    return 0;
+}
+
 int ce_sdk_setup(uint8_t *base, int trace)
 {
     ce_dmg_reset();                                   /* 伤害层：从干净的聚合开始（§AA）*/
     ce_invuln_reset();                                /* 无敌取最大层（EVENTS-CONTRACT §4）*/
     ce_score_reset();                                 /* 计分声明层（EVENTS-CONTRACT §3）*/
     ce_optpose_reset();                               /* 低速子机选举层（§1 选举覆盖）*/
+    ce_poc_reset();                                   /* ★ PoC 高度层（收点线；2026-09-15）：连基准一起清 */
     ce_cancel_latch_reset();                          /* 「本帧已消过弹」闩锁（§5.2 细则 2）*/
     ce_rescue_note_reset();                           /* 「这次死亡由谁救」闩锁（救援层顺序，§5.2）*/
+    ce_forced_death_reset();                          /* ★ 「卡自己造的死」通报位（2026-09-16u）*/
+    ce_full_p_gate_reset();                           /* ★ 「未满 P」声明层（2026-09-16za，106）*/
     ce_hud_slots_reset();                             /* HUD 槽位分配器（HUD-LAYOUT §3）*/
     ce_drop_reset();                                  /* 掉落乘法层（EVENTS-CONTRACT §2）*/
+    /* ★ 2026-09-13 补（跨卡互作审计 §「sdk_core 漏复位」）：**中弹无伤声明层漏了复位**。
+     *   `ce_no_hit_declare` 是**粘性**的（任一声明即生效、直到显式撤），
+     *   而 `ce_sdk_setup` 原来只复位了伤害/无敌/计分/子机/闩锁/HUD/掉落 —— 漏了它 ⇒
+     *   一旦开机时残留一次非 0 声明（异常退出、热重载、或某张卡在 `on_delete` 之前就崩），
+     *   **整个进程的「中弹无伤」闸门会永久开着**（每张卡的 tick 都停在那条粘性值上）。
+     *   ⇒ 与上面那批一样，从干净的聚合开始。*/
+    ce_no_hit_reset();                                /* 「中弹无伤」声明层（§CD-4）*/
+    /* ★ 2026-09-16：「隐藏原生子机」声明层（111 魔理沙侧）—— 与上面那批一样**从干净的聚合开始**：
+     *   它是粘性的，残留一次非 0 声明 = 那台机体的原生子机永远不出现（且没人能看出为什么）。*/
+    ce_native_option_hide_reset();
+    /* ★ 2026-09-13：死亡结果闩锁（`BP_ce_death_result` / `BP30-IMPLEMENTATION.md` §2）也要从这里干净起步。
+     *   它与上面那批不同：**不是**每帧闩锁，而是「一次死亡的判定结果」，正常由 `BP_ce_player_die` 复位；
+     *   这里再复位一次是防「异常退出 / 热重载」把上一次进程的 1 带进来。*/
+    ce_death_result_reset();                          /* 死亡结果闩锁（§A-2）*/
     s_trace = trace;
     memset(s_seen, 0, sizeof s_seen);
     uint32_t reg_bad = 0;
@@ -1410,27 +2156,56 @@ int ce_sdk_setup(uint8_t *base, int trace)
             ce_verdict("FAIL: sdk: base vtable slot %u = %08x, expected %08x — not the layout we know", chk[i].i, vt[chk[i].i], chk[i].want);
             return 0;
         }
-    /* 2. 全部行为断点已挂（15 条）。聚合检查：任何一个失败都打印现场字节（判断 thcrap 没下断 vs 下错位置），
-     * 全部查完再决定成败——避免第一个失败点挡住后面断点的诊断信息。 */
+    /* 2. 全部行为断点已挂（19 条）。聚合检查：任何一个失败都打印现场字节（判断 thcrap 没下断 vs 下错位置），
+     * 全部查完再决定成败——避免第一个失败点挡住后面断点的诊断信息。
+     * ⚠ 2026-09-13 夜补进 `ce_player_die`：它（2026-09-13 新增的灵界「中弹无伤」闸门）原来**不在本对账表里**
+     *   ⇒ 断点没挂上时是**静默失效**（闸门看着"在"，实际一行都没跳）。这里补上后，它和其余 15 条一样
+     *   「挂不上就直接报 FAIL」。零新增风险：本表其余 15 条与它同出一个 patch 的 `breakpoints`，
+     *   谁的前 15 条能过，它必然也已挂上。
+     * ★ 2026-09-13 再补两条（17 → 18 条，`BP30-IMPLEMENTATION.md`）：`ce_bullet_damage_final`（伤害层唯一
+     *   落笔点）与 `ce_death_result`（死亡结果闩锁）。这两条**必须**在这里：前者挂了才有伤害倍率，
+     *   后者挂了才有结果闩锁 —— 都是「不挂就静默失效」的那一类，所以一律「挂不上直接 FAIL」。
+     * ★ 2026-09-13 第四次补（19 → 20 条）：`ce_enemy_damage`（`0x42f2cb`，「Boss 随血量掉灵」的事件源；
+     *   不挂 = 113 的通道 A 静默失效）。
+     * ★ 2026-09-13 第三次补（18 → 19 条）：`ce_item_score_in`（计分层**新的**落笔点，`0x446bf9`，
+     *   `SCORE-LAYER-REWORK.md` §2）。它不挂 = 107/110/111 的声明**全部静默失效**（分值回到原生），
+     *   而两个老出口站点仍会打 `score-out:` ⇒ 日志上看起来「有一个 delta」却查不出原因，必须在这里拦。*/
     struct { const char *name; uint32_t rva; unsigned len; } bps[] = {
         { "ce_card_bind",   CE_BP_CARD_BIND_RVA,   6 },
+        /* ⚗ 2026-09-16zr 二分临时：本站点已从 patch 摘掉，对账行同步注释 */
         { "ce_item_score",  CE_BP_ITEM_SCORE_RVA,  6 },
         { "ce_item_score_below", CE_BP_ITEM_SCORE_BELOW_RVA, 8 },
         { "ce_item_money",  CE_BP_ITEM_MONEY_RVA,  6 },
-        { "ce_bomb_spent",  CE_BP_BOMB_SPENT_RVA,  5 },
+        /* 二分临时停用: { "ce_bomb_spent", ... } */
         { "ce_enemy_drop",  CE_BP_ENEMY_DROP_RVA,  6 },
-        { "ce_item_frame",  CE_BP_ITEM_FRAME_RVA,  7 },
-        { "ce_item_collect",CE_BP_ITEM_COLLECT_RVA,6 },
-        { "ce_item_commit", CE_BP_ITEM_COMMIT_RVA, 6 },
-        { "ce_shot_damage", CE_BP_SHOT_DAMAGE_RVA, 7 },
-        { "ce_bomb_gate",   CE_BP_BOMB_GATE_RVA,   7 },
-        { "ce_shot_set_index", CE_BP_SHOT_SET_INDEX_RVA, 7 },
-        { "ce_option_shot_gate", CE_BP_OPTION_SHOT_GATE_RVA, 6 },
-        { "ce_enemy_death", CE_BP_ENEMY_DEATH_RVA, 6 },
-        { "ce_enemy_shot_slot", CE_BP_ENEMY_SHOT_SLOT_RVA, 8 },
+        /* 二分临时摘掉: ce_item_frame */
+        /* 二分临时摘掉: ce_item_collect */
+        /* 二分临时摘掉: ce_item_commit */
+        /* 二分临时摘掉: ce_shot_damage */
+        /* 二分临时停用: { "ce_bomb_gate", ... } */
+        /* 二分临时摘掉: ce_shot_set_index */
+        /* 二分临时摘掉: ce_option_shot_gate */
+        /* ⚗ 二分临时摘掉（2026-09-17a）: ce_enemy_damage —— 站点已从 patch 摘掉，见 AUDIT §BE */
+        /* 二分临时摘掉: ce_enemy_death */
+        /* 二分临时摘掉: ce_enemy_shot_slot */
+        /* 二分临时摘掉: ce_player_die */
+        /* 二分临时摘掉: ce_bullet_damage_final */
+        /* 二分临时摘掉: ce_death_result */
+        /* ★ 2026-09-16（111 魔理沙侧「原生子机不许出现」）：`sdk.c` 上面那一大段。
+         *   两条都**必须**在这里：少一条 = 静默失效（①不拦 ⇒ 原生子机照建照画；②不拦 ⇒
+         *   子弹从看不见的子机位置飞出来，且那部分输出与 111 的子机层**叠加**）。*/
+        /* 二分临时摘掉: ce_repopulate_native_option */
+        /* 二分临时摘掉: ce_native_option_muzzle */
+        /* ★ 2026-09-16za（106 的「上线收点当且仅当满 P」）：两条**都要在**，少一条 = 静默半失效。*/
+        /* 二分临时摘掉: ce_poc_gate_a */
+        /* 二分临时摘掉: ce_poc_gate_b */
+        /* ★ 2026-09-16ze（头号崩溃的止血点）：这条**挂了才有意义** —— 不挂 = 悬垂节点照旧
+         * `call eax` 崩在堆里（而日志上一个字都不会说）。所以和其余一样「挂不上直接 FAIL」。*/
+        /* 二分临时摘掉: ce_chain_node_guard */
     };
     unsigned n_bp_fail = 0;
     for (unsigned i = 0; i < sizeof bps / sizeof bps[0]; ++i) {
+        if (!bps[i].rva) continue;   /* ⚗ 二分临时：被过滤掉的站点 RVA 是 0 ⇒ 跳过核对 */
         const uint8_t *p = base + bps[i].rva;
         if (bp_applied(p, bps[i].len)) continue;
         char hex[3 * 16];
@@ -1441,6 +2216,46 @@ int ce_sdk_setup(uint8_t *base, int trace)
         ++n_bp_fail;
     }
     if (n_bp_fail) { ce_verdict("FAIL: sdk: %u/%u behavior breakpoints not applied", n_bp_fail, (unsigned)(sizeof bps / sizeof bps[0])); return 0; }
+    /* 2a-bis. ★ 2026-09-16zf：**codecave 取证**（头号崩溃第二阶段；机制全文 = 本文件上面的
+     *   `ce_cave_note` 那一段）。两件事：
+     *     ① 把**我们每个站点**的 cave 解出来并记下首 8 字节（thcrap 若没把代码写进去 = 全 0 ⇒
+     *        该站点一命中就执行零页 —— 与 dump 里那个「写 0x1」的签名逐字相符）；
+     *     ② 把 **`nmlgc/base_tsa` 的 `th18_centipede_fix`** 站点（`th18:0x412c76`，它和我们的卡表搬迁
+     *        改的是同一个 `AbilityManager::allocate_new_card`）也解出来并记下首 16 字节。
+     *   之后每帧由 `ce_cave_watch()` 复查首 8 字节是否被改写。*/
+    {
+        unsigned i;
+        for (i = 0; i < sizeof bps / sizeof bps[0]; ++i)
+            ce_cave_note(bps[i].name, (uint32_t)(uintptr_t)(base + bps[i].rva));
+        ce_cave_note("base_tsa:th18_centipede_fix", (uint32_t)(uintptr_t)(base + CE_BS_CAVE_SITE_RVA));
+        ce_cave_overlap();
+        ce_log("cave: 共登记 %u 个站点（全 0 的 %u 个、重叠 %u 对）；每帧复查首 %u 字节",
+               s_cave_n, s_cave_zero, s_cave_ovl, (unsigned)CE_CAVE_WATCH);
+        ce_mem_map_dump();
+    }
+    /* 2b. **binhack 落点回读**（★ 2026-09-14 新增，AUDIT §CQ）：断点有 `bp_applied()` 兜着，
+     *     而 binhack 一条都没有 —— 它的 `expected` 对不上时 thcrap **只打一行日志就跳过**
+     *     （binhack.cpp:398，等价于没打）。目前只有一条 binhack 属于「不打就整个弹幕系统错位」：
+     *     战线 F 的 `pl0X.sht` 组数扩容（数据区基址 `0x180 → 0x260`）。它没打上 =
+     *     影像里 96 格偏移数组与数据区**错位 0xe0 字节** ⇒ 每一条零售 shooterset 都指到
+     *     别的组/垃圾上（主炮先崩），而日志上什么都不会说。
+     *     判据不是「字节相等」而是**读回来的立即数**：`lea eax,[edx+imm32]` 的 imm32 ==
+     *     `CE_SHT_DATA_BASE`（生成物 sht_ids.h，与生成器 `append_shooterset.py` 同源）。
+     *     FAIL 的后果与断点那批一致（本局禁用新卡），但这条**本来就没法玩**：
+     *     补丁没打上时装不装 DLL 主炮都是错的 —— 早 FAIL 早看见。*/
+    {
+        const uint8_t *p = base + CE_BH_SHT_DBASE_RVA;
+        uint32_t got = (uint32_t)p[2] | ((uint32_t)p[3] << 8) | ((uint32_t)p[4] << 16) | ((uint32_t)p[5] << 24);
+        if (p[0] != 0x8d || p[1] != 0x82 || got != (uint32_t)CE_SHT_DATA_BASE) {
+            ce_log("FAIL: sdk: pl0X.sht 96-slot expansion binhack not applied "
+                   "(+%08x: %02x %02x imm32=%#x, expected 8d 82 imm32=%#x) — pl0X.sht 是 %d 格影像，"
+                   "基点还是 %#x 的话主炮会按错位 0x%x 字节读组",
+                   CE_BH_SHT_DBASE_RVA, p[0], p[1], got, (unsigned)CE_SHT_DATA_BASE,
+                   CE_SHT_SLOTS, 0x180, (unsigned)(CE_SHT_DATA_BASE - 0x180));
+            ce_verdict("FAIL: sdk: pl0X.sht 96-slot expansion binhack not applied");
+            return 0;
+        }
+    }
     /* 3. 对账 */
     uint32_t ids[CE_CARD_MAX_NEW], categories[CE_CARD_MAX_NEW];
     unsigned n = ce_new_card_count();
@@ -1571,6 +2386,484 @@ static uint32_t edeath_kind(uint32_t retaddr)
     case 0x430c08u: return CE_EDEATH_KILL_ALL;
     default:        return CE_EDEATH_OTHER;
     }
+}
+
+/* ★★ `BP_ce_bullet_damage_final` —— 伤害层的**唯一**落笔点（一手：`BP30-IMPLEMENTATION.md` §1）。
+ *
+ * 站点 = `PlayerBullet__create` `th18:0x45e320` 的**卡链遍历出口**（9 字节，exe 里
+ * `ff 77 08 8b 0d 5c f6 51 00` = `push [edi+8]` / `mov ecx,[0x51f65c]`(= ANM_MANAGER_PTR)）：
+ *   `0x45e7dc mov eax,[0x4cf298]`（ABILITY_MGR）→ `0x45e7e4 mov esi,[eax+0x1c]`（卡链头）→
+ *   `0x45e7e9 je 0x45e7ff`（**没卡也落在本站点**）→ 循环 `0x45e7f0`–`0x45e7fd`
+ *   （`mov ecx,[esi]` / `push edi`(bullet) / `call [eax+0x28]` / `esi=[esi+4]` / `jne`）→ **本站点**
+ *   → `0x45e808 call 0x488b40`（AnmManager__get_vm_with_id）→ … → `0x45e837 push [edi+0x9c]`
+ *   才把伤害交给伤害源（`0x45e861 call 0x45dfa0`）。
+ * ⇒ 五家（含原生 25 Saki `0x40c310` / 54 Momoyo `0x411010` 的**重算**）全跑完之后，我们才乘一次
+ *   ⇒ 与卡链顺序无关的**乘法叠加**（×1.25 × 1.4 = ×1.75）；不放在 `+0x28` 桩里的原因见上面那一大段。
+ *
+ * 寄存器：**EDI = bullet**（`0x45e7e1 mov [edi+8],esi` 与 `0x45e837 push [edi+0x9c]` 两处独立印证）；
+ * ESI/EDX 此时已被引擎换用（esi = 卡链节点游标）⇒ **只读 EDI**，别的都不可信。
+ * 站点 9 字节 = `push imm` + 绝对寻址 mov，无相对寻址、窗内无跳转靶（`0x45e7e9` 的 je 恰好落在站点
+ * **本身**，落在站点 = 走断点，合法）；返回 BP_EXEC_ORIGINAL ⇒ 两条原指令在 cave 里原样回放
+ * （thcrap 的 cave 跑在**同一个栈**上，`push` 的效果照旧带回去）。
+ *
+ * 诊断日志：自机弹是**每发都有**的高频路径 ⇒ 只在「真的改了值」时计数，前 3 次 + 之后每 5000 次一条
+ * （照 `BP_ce_player_die` 的限流风格）。判据是 `before -> after`、不是「被调用次数」——
+ * 中性（没有加伤害的卡）时 handler 一个字都不写，也就一条日志都不打。*/
+static unsigned s_dmg_final_logs;
+
+/* ★★ 2026-09-16zd：**自机弹 `+0xe8` 回调闸**（崩溃取证 + 防"跳飞到 1"）。
+ *
+ * 一手链条 + dump 证据 = `engine.h` 的 `CE_BULLET_CALLBACK`（唯一出处）。这里只做两件事：
+ *   ① **普查**：头 8 个"非 0 的 `+0xe8`"各打一行（我们要知道引擎合法时会放什么进去）；
+ *   ② **闸**：值非 0 且 < 0x10000（32 位进程里不可能是指向模块的代码地址）⇒ 判为坏、清 0
+ *      （引擎自己就会跳过 ⇒ 不再 `call 1`），并计数打日志。
+ * ⚠ 只读 `edi`（本站点在卡链遍历出口，esi/edx 已被引擎换用，见上面那段注释）。*/
+static unsigned s_bullet_cb_census;
+static unsigned s_bullet_cb_guarded;
+
+int __cdecl BP_ce_bullet_damage_final(x86_reg_t *regs, void *bp_info)
+{
+    (void)bp_info;
+    uint8_t *bullet = (uint8_t *)(uintptr_t)regs->edi;
+    if (bullet) {
+        int32_t *cb = (int32_t *)(bullet + CE_BULLET_CALLBACK);
+        int32_t cbv = *cb;
+        if (cbv != 0 && s_bullet_cb_census < 8) {
+            ++s_bullet_cb_census;
+            ce_log("bullet +0xe8 census #%u: bullet %08x row/set %08x +0xe8 = %08x（引擎会在 0x45e8ad 读它 call）",
+                   s_bullet_cb_census, (unsigned)regs->edi,
+                   (unsigned)*(const int32_t *)(bullet + CE_BULLET_SET_ROW), (unsigned)cbv);
+        }
+        if (cbv != 0 && (cbv < 0x10000)) {
+            *cb = 0;
+            ++s_bullet_cb_guarded;
+            if (s_bullet_cb_guarded <= 5 || (s_bullet_cb_guarded % 500) == 0)
+                ce_log("★ bullet +0xe8 guard: 弹 %08x 的 +0xe8 = %08x 不是合法代码地址 ⇒ 清 0"
+                       "（否则 0x45e8c0 call eax ⇒ 0xC0000005，见 crashdumps）（#%u）",
+                       (unsigned)regs->edi, (unsigned)cbv, s_bullet_cb_guarded);
+        }
+        int32_t *dmg = (int32_t *)(bullet + CE_BULLET_DAMAGE);
+        int32_t before = *dmg;
+        ce_sdk_bullet_damage_final(bullet);
+        if (*dmg != before) {
+            ++s_dmg_final_logs;
+            if (s_dmg_final_logs <= 3 || (s_dmg_final_logs % 5000) == 0)
+                ce_log("bullet damage final: %d -> %d (agg %d permille, bullet %08x, #%u, after card chain)",
+                       (int)before, (int)*dmg, ce_dmg_aggregate(), (unsigned)regs->edi, s_dmg_final_logs);
+        }
+    }
+    return BP_EXEC_ORIGINAL;
+}
+
+/* ★★ 2026-09-16ze：**更新链节点闸 + 取证**（头号崩溃的止血点，`local/MEMORY.md` §1）。
+ *
+ * ## 一、机制（一手，`local/_scratch/th18xref.py` + `local/_scratch/thdis.py`）
+ * 站点 `th18:0x401352` 在 `UpdateFuncRegistry__run_all_on_tick` `th18:0x4012e0` 的派发上：
+ *   `0x40131f mov edi,[ecx]`（**节点**）→ `0x401323 cmp [edi+8],0 / je`（没有 on_tick 就跳过）
+ *   → `0x401329 test byte [edi+4],2 / je 0x4013ba`（暂停位）→ …→
+ *   `0x40134f mov ecx,[edi+0x24]`（**this**）→ `0x401352 mov eax,[edi+8]` → `0x401355 call eax`。
+ * 节点的类型 = `UpdateFunc__operator_new` `th18:0x401530`（`push 0x28` → `operator new`），布局一手坐实：
+ *   `+0x00` 排序键 int（`register__on_tick` `0x401180` 的 `0x4011cc mov [edi],esi` 写它）｜
+ *   `+0x04` flags（`0x401546 and [ecx+4],~1` + `0x40157d or [ecx+4],1`；bit1 = 暂停，见 `0x401329`）｜
+ *   `+0x08` **on_tick**（`0x401581 mov [ecx+8],eax`，eax = operator_new 的**唯一参数**）｜
+ *   `+0x0c` 注册期一次性回调（`0x401193` 有值就 `call`，`0x4011a1` 随后清 0）｜
+ *   `+0x10` 第二个回调（`0x4013ab` 非 0 就 `call`，与 `+8` 同一 this）｜
+ *   `+0x14` **链表格**（`0x401565 mov [ecx+0x14],ecx` 自指；格 = `+0x14` 节点自指 / `+0x18` next / `+0x1c` prev，
+ *   `register` 的 `0x4011ef`–`0x401204` 就是按 `[node+0]` **升序插入**这条双向链）｜
+ *   `+0x18/+0x1c/+0x20` 归零｜`+0x24` **this**（`0x40134f` 读它；operator_new 与 register 都不写 ⇒ 由调用者写）。
+ * 谁注册（`0x401530` 的 89 处 `call`，按所在函数归类）：`Supervisor__initialize`(11)、`AsciiManager`、
+ *   `AbilityManager`、`AbilityMenu`/`AbilityShop`、`Stage`、`Player__initialize`、`BulletManager`、
+ *   `EnemyManager`、`ItemManager`、`EffectManager`、`Bomb*`（**运行期动态注册**）、`ScreenEffect`、
+ *   `ReplayManager`、`PopupManager`、`MainMenu`、`TrophyNotice`、`CardCollection` 等。
+ * 谁**摘链**（`0x4015a0` 的调用者）= 各管理器自己的析构：`Player__operator_delete`、`Stage__destructor`、
+ *   `BulletManager__operator_delete`、`EnemyManager__operator_delete`、`Bomb__operator_delete`、
+ *   `AbilityMenu__operator_delete`、`ReplayManager__destructor`… ⇒ 「释放前先摘链」是引擎自己的规矩。
+ *
+ * ## 二、崩溃签名（`crashdumps/` 的 `*.dmp`，5 次全同）与这条闸要回答的问题
+ *   `0xC0000005` **写** `0x1`、`Eax = 1`、`Ebp/Esp` 每次同址、`EIP ≈ 0x03c?065a`（堆里、且不在任何模块）
+ *   ⇒ 进程没有 DEP ⇒ **把堆数据当指令执行**了 ⇒ `[edi+8]` 是悬垂/被改写的垃圾指针。
+ *   触发条件（用户实测）：**射击中 + 上线收点那一刻**（停枪不崩；打枪不越线不崩；换机体也崩）。
+ * 这条闸做三件事：
+ *   ① **链地图**：每个节点第一次被访问时打一行（node/order/flags/on_tick/this/vtable + 各自落在哪个模块）
+ *      ⇒ 事故现场直接点名「受害者是谁」（是我们动过的对象还是引擎子系统）。
+ *   ② **写监视**：节点的 `+8`/`+0x24` 与首次记录不同 ⇒ 打 `★ CHANGED` 行。节点是启动期一次分配的，
+ *      正常运行时**永不改变** ⇒ 这一行就是「谁在什么时候把哪个节点写坏了」的直接证据。
+ *   ③ **闸**：`on_tick` 不是可执行地址 ⇒ **跳过这次 `call`**（`eax = 1`、`retaddr = 0x401357`）：
+ *      跳转表 `0x4013f8[1] = 0x4013b7` 是「本节点本帧什么都不做、链继续」的**纯空转**路径
+ *      （不碰 edi、不摘链；对比 `[0] = 0x401397` 会去 `0x4015a0` 摘链 ⇒ 对垃圾节点更危险）。
+ *      返回 0 = 不回放被搬进 cave 的两条原指令，栈上没有 `call` 的压栈 ⇒ 与「调用后」的栈形一致。
+ * ⚠ 站点窗口 5 字节 = `8b 47 08` + `ff d0`：两条都无相对寻址、窗内无跳转靶（`0x401357` 之后才分派）。
+ * ⚠ 只读 `edi`（本站点 `eax` 还没被装载、`ecx` 已是 this）⇒ 与 `BP_ce_bullet_damage_final` 同一条纪律。*/
+
+#define CE_UF_SIZE        0x28u
+#define CE_UF_ORDER       0x00u
+#define CE_UF_FLAGS       0x04u
+#define CE_UF_TICK        0x08u
+#define CE_UF_THIS        0x24u
+#define CE_CHAIN_SLOTS    64u
+#define CE_CHAIN_RESUME   0x401357u   /* `0x401355 call eax` 的下一条 */
+#define CE_CHAIN_SKIP_EAX 1u          /* 跳转表 `0x4013f8[1] = 0x4013b7`：空转、链继续 */
+
+typedef struct {
+    uint32_t node, tick, thisp;
+    uint8_t  known, tick_ok;
+} ce_chain_slot_t;
+
+static ce_chain_slot_t s_chain[CE_CHAIN_SLOTS];
+static unsigned s_chain_nodes;        /* 见过的不同节点数（前 CE_CHAIN_SLOTS 个各打一行地图）*/
+static unsigned s_chain_visits;       /* 本站点命中次数（= Σ 每帧节点数）*/
+static unsigned s_chain_changed;      /* ② 抓到「已知节点的 +8 / +0x24 被改写」的次数 */
+static unsigned s_chain_bad;          /* ③ 抓到「on_tick 不是可执行地址 ⇒ 跳过 call」的次数 */
+
+/* 32 位 Windows 的模块表走法（自包含，不引 winternl.h；offsets 错了只会打错名字，不会崩）：
+ *   `fs:[0x30]` = PEB → `+0x0c` = PEB_LDR_DATA → `+0x0c` = InLoadOrderModuleList（嵌在 Ldr 里的头）
+ *   LDR_DATA_TABLE_ENTRY：`+0x18` DllBase、`+0x20` SizeOfImage、`+0x2c` BaseDllName（UNICODE_STRING）
+ * 用途只有一个：把 on_tick / this / vtable 三个裸地址翻成「哪个模块+偏移」。找不到就写 "?"。*/
+typedef struct { uint16_t len, maxlen; uint32_t buf; } ce_unistr_t;
+
+static void ce_mod_desc(uint32_t addr, char *out, unsigned cap)
+{
+    const uint8_t *peb = (const uint8_t *)(uintptr_t)__readfsdword(0x30);
+    uint32_t ldr, head, cur;
+    unsigned guard = 0;
+
+    if (!out || cap < 8) return;
+    out[0] = '?'; out[1] = '\0';
+    if (!peb || IsBadReadPtr(peb + 0x0c, 4)) return;
+    ldr = *(const uint32_t *)(const void *)(peb + 0x0c);
+    if (!ldr || IsBadReadPtr((const void *)(uintptr_t)ldr, 0x10)) return;
+    head = ldr + 0x0c;
+    cur  = *(const uint32_t *)(const void *)(uintptr_t)head;
+    while (cur && cur != head && guard++ < 256) {
+        uint32_t base, size, nbuf;
+        const ce_unistr_t *un;
+        unsigned i, n;
+        if (IsBadReadPtr((const void *)(uintptr_t)cur, 0x30)) return;
+        base = *(const uint32_t *)(const void *)(uintptr_t)(cur + 0x18);
+        size = *(const uint32_t *)(const void *)(uintptr_t)(cur + 0x20);
+        if (base && size && addr >= base && addr < base + size) {
+            un = (const ce_unistr_t *)(const void *)(uintptr_t)(cur + 0x2c);
+            nbuf = un->buf;
+            n = (unsigned)(un->len / 2);
+            if (nbuf && !IsBadReadPtr((const void *)(uintptr_t)nbuf, un->len ? un->len : 2)) {
+                if (n > cap - 12) n = cap - 12;
+                for (i = 0; i < n; ++i) {
+                    uint16_t ch = *(const uint16_t *)(const void *)(uintptr_t)(nbuf + i * 2);
+                    out[i] = (ch >= 0x20 && ch < 0x7f) ? (char)ch : '_';
+                }
+                out[n] = '\0';
+            } else {
+                strcpy(out, "mod");
+            }
+            sprintf(out + strlen(out), "+%x", (unsigned)(addr - base));
+            return;
+        }
+        cur = *(const uint32_t *)(const void *)(uintptr_t)cur;    /* Flink */
+    }
+}
+
+/* 目标是不是「已提交且可执行」的页。用 `VirtualQuery`（不改保护、不动内存）——
+ * 比 `cbv < 0x10000` 那种范围猜法可靠：本次的坏指针是**堆地址**（`0x03c?xxxx`），范围猜法抓不到。*/
+static int ce_addr_exec(uint32_t a)
+{
+    MEMORY_BASIC_INFORMATION mbi;
+    if (a < 0x10000) return 0;
+    if (VirtualQuery((LPCVOID)(uintptr_t)a, &mbi, sizeof mbi) != sizeof mbi) return 0;
+    if (mbi.State != MEM_COMMIT) return 0;
+    switch (mbi.Protect & 0xffu) {
+    case PAGE_EXECUTE:
+    case PAGE_EXECUTE_READ:
+    case PAGE_EXECUTE_READWRITE:
+    case PAGE_EXECUTE_WRITECOPY:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+int __cdecl BP_ce_chain_node_guard(x86_reg_t *regs, void *bp_info)
+{
+    uint32_t node = regs->edi;
+    uint32_t tick, thisp, vt = 0;
+    ce_chain_slot_t *sl = NULL;
+    char m_tick[64], m_this[64], m_vt[64];
+    unsigned i;
+    int verify = 0, is_new = 0;
+
+    (void)bp_info;
+    ++s_chain_visits;
+    /* 节点自己都读不了 ⇒ 判不了，放行（原指令照跑，行为与不装 DLL 一致）*/
+    if (!node || IsBadReadPtr((const void *)(uintptr_t)node, CE_UF_SIZE)) return BP_EXEC_ORIGINAL;
+
+    tick  = *(const uint32_t *)(const void *)(uintptr_t)(node + CE_UF_TICK);
+    thisp = *(const uint32_t *)(const void *)(uintptr_t)(node + CE_UF_THIS);
+    if (!tick) return BP_EXEC_ORIGINAL;          /* 引擎自己在 0x401323 已排除；出现就是它先坏了 */
+
+    for (i = 0; i < CE_CHAIN_SLOTS; ++i)
+        if (s_chain[i].known && s_chain[i].node == node) { sl = &s_chain[i]; break; }
+    /* ★ 2026-09-16zm：**节点派发轨迹**（与站点轨迹同法）：当前派发的节点与上次不同就打一行。
+     * 崩前最后一行 = 正在跑谁的回调 ⇒ 直接点名是哪个子系统的 tick 之后跳错的。*/
+    {
+        static uint32_t s_node_last;
+        if (node != s_node_last) {
+            s_node_last = node;
+            ce_log("node: %08x order=%d flags=%#x on_tick=%08x this=%08x ret=%08x",
+                   node, (int)*(const int32_t *)(const void *)(uintptr_t)(node + CE_UF_ORDER),
+                   *(const uint32_t *)(const void *)(uintptr_t)(node + CE_UF_FLAGS),
+                   tick, thisp, (unsigned)regs->eax);
+        }
+    }
+
+    if (!sl) {
+        for (i = 0; i < CE_CHAIN_SLOTS; ++i)
+            if (!s_chain[i].known) { sl = &s_chain[i]; break; }
+        if (sl) {
+            sl->known = 1; sl->node = node; sl->tick = tick; sl->thisp = thisp;
+            ++s_chain_nodes;
+            verify = 1; is_new = 1;
+        }
+    } else if (sl->tick != tick || sl->thisp != thisp) {
+        /* ★ ② 节点是启动期一次分配的，正常运行时这两个字段永不改变 ⇒ 走到这里 = 有人在写它。
+         * （⚠ 另一种解释：同址的旧节点**被正确摘链+释放**后，新节点复用了这个地址 —— 运行期动态注册的
+         *   只有炸弹/屏幕特效/奖杯通知那几家；对照上下文一行就能区分。）*/
+        ++s_chain_changed;
+        if (s_chain_changed <= 20)
+            ce_log("★ chain CHANGED #%u: node %08x on_tick %08x -> %08x , this %08x -> %08x",
+                   s_chain_changed, node, sl->tick, tick, sl->thisp, thisp);
+        sl->tick = tick; sl->thisp = thisp;
+        verify = 1;
+    }
+    /* ⚠ 槽位表满（>64 个不同节点：炸弹/屏幕特效等运行期动态注册的家数多时可能）⇒ 只放弃**监视**，
+     *   绝不放弃闸本身：这里判一次 NULL 再往下走，闸照旧（`sl->tick_ok` 那两行是唯一的解引用点）。*/
+    if (!sl) {
+        if (!ce_addr_exec(tick)) {
+            ++s_chain_bad;
+            if (s_chain_bad <= 10 || (s_chain_bad % 100) == 0)
+                ce_log("★★ chain guard #%u（槽位表已满、无监视）: node %08x 的 on_tick = %08x 不可执行 ⇒ 跳过 call",
+                       s_chain_bad, node, tick);
+            regs->eax = CE_CHAIN_SKIP_EAX;
+            regs->retaddr = CE_CHAIN_RESUME;
+            return 0;
+        }
+        return BP_EXEC_ORIGINAL;
+    }
+    if (verify) sl->tick_ok = (uint8_t)ce_addr_exec(tick);
+    if (!sl->tick_ok) sl->tick_ok = (uint8_t)ce_addr_exec(tick);   /* 记过坏的每次复核（页可能才提交）*/
+    /* ① 链地图：只在首见时打（≤ 64 行、一次性），四个地址各翻一次模块名 */
+    if (sl && is_new && s_chain_nodes <= CE_CHAIN_SLOTS) {
+        if (thisp && !IsBadReadPtr((const void *)(uintptr_t)thisp, 4))
+            vt = *(const uint32_t *)(const void *)(uintptr_t)thisp;
+        ce_mod_desc(tick, m_tick, sizeof m_tick);
+        ce_mod_desc(thisp, m_this, sizeof m_this);
+        ce_mod_desc(vt, m_vt, sizeof m_vt);
+        ce_log("chain node #%u: %08x order=%d flags=%#x on_tick=%08x (%s) this=%08x (%s) vt=%08x (%s)",
+               s_chain_nodes, node, (int)*(const int32_t *)(const void *)(uintptr_t)(node + CE_UF_ORDER),
+               *(const uint32_t *)(const void *)(uintptr_t)(node + CE_UF_FLAGS),
+               tick, m_tick, thisp, m_this, vt, m_vt);
+    }
+
+    /* ③ 闸：不是可执行地址 ⇒ 跳过 `call eax`（空转 = 跳转表 [1]），并把现场留一行 */
+    if (!sl->tick_ok) {
+        ++s_chain_bad;
+        if (s_chain_bad <= 10 || (s_chain_bad % 100) == 0) {
+            ce_mod_desc(tick, m_tick, sizeof m_tick);
+            ce_mod_desc(thisp, m_this, sizeof m_this);
+            ce_log("★★ chain guard #%u: node %08x 的 on_tick = %08x (%s) 不是可执行地址 ⇒ 本帧跳过这次 call"
+                   "（否则 0x401355 call eax = 0xC0000005；返回 1 走 0x4013b7 空转）"
+                   " order=%d flags=%#x this=%08x (%s) visit=%u changed=%u",
+                   s_chain_bad, node, tick, m_tick,
+                   (int)*(const int32_t *)(const void *)(uintptr_t)(node + CE_UF_ORDER),
+                   *(const uint32_t *)(const void *)(uintptr_t)(node + CE_UF_FLAGS),
+                   thisp, m_this, s_chain_visits, s_chain_changed);
+        }
+        regs->eax = CE_CHAIN_SKIP_EAX;
+        regs->retaddr = CE_CHAIN_RESUME;
+        return 0;                        /* 0 = 不回放 cave 里的两条原指令 */
+    }
+    return BP_EXEC_ORIGINAL;
+}
+
+/* ★★ `BP_ce_death_result` —— 「这次死亡**最终**有没有被取消」结果闩锁（一手：`BP30-IMPLEMENTATION.md` §2）。
+ *
+ * 站点 = `Player__on_tick__body` `th18:0x45be90` 的 case 4 里**唯一那次判定**（6 字节，
+ * exe 里 `85 ff 8b 7c 24 14` = `test edi,edi` / `mov edi,[esp+0x14]`）：
+ *   `0x45c106 mov eax,[0x4cf298]` → `0x45c10b mov esi,[eax+0x1c]` → `0x45c110 je 0x45c133`（没卡）；
+ *   `0x45c112 xor edi,edi`（acc=0）→ `0x45c116 push edi`（当参数）→ `0x45c11c call [eax+0xc]` →
+ *   `0x45c121 or edi,eax` → `0x45c123/0x45c125` 循环**把五家全跑完** → **本站点** →
+ *   `0x45c129 mov edi,[esp+0x14]`（还原 EDI = player）→ `0x45c12d jne 0x45c3d1`（acc≠0 ⇒ 取消死亡）→
+ *   `0x45c135 call 0x45d090`（acc=0 ⇒ 扣命）。
+ * ⇒ **EDI = acc**：非 0 = 这次死亡已被取消、0 = 会扣命。handler 只把结果**原样播进 sdk_core**
+ *   （`ce_death_result_note`），供排在后面的救援者（原生 35 不看 acc、别人的卡 69 无条件扣命）在
+ *   记账侧查询；**不改任何控制流** —— 返回 BP_EXEC_ORIGINAL，原两条指令回放，`test` 设的 ZF 正好给
+ *   `0x45c12d` 的 `jne` 用（所以**不要**在这里读 eflags 下结论）。
+ *
+ * ★ 为什么不是 0x45c3d1（取消臂）/ 0x45c135（扣命臂）：前者是 case 3 与 case 4 的**共用尾**
+ *   （Ghidra 反编译直接把它标成 `LAB_0045c3d1`，`case 3` 也 `goto` 它）⇒ 会把非死亡帧记成「取消」；
+ *   后者是 `call rel32`（窗内相对寻址，纪律禁止）。
+ * ⚠ 本站点**在没卡的 deck 上不执行**（`0x45c110 je 0x45c133` 绕开它）⇒ 那种情况闩锁停在
+ *   `CE_DEATH_RESULT_UNKNOWN`；而「没卡」= 没有卡能读它，所以这一档不会被人误读成 0。*/
+static unsigned s_death_result_logs;
+
+int __cdecl BP_ce_death_result(x86_reg_t *regs, void *bp_info)
+{
+    (void)bp_info;
+    int cancelled = (regs->edi != 0);
+    ce_death_result_note(cancelled);
+    ++s_death_result_logs;
+    /* 限流打印（照 BP_ce_player_die 的写法）：前 3 次 + 之后每 20 次一条。死亡本来就稀有。*/
+    if (s_death_result_logs <= 3 || (s_death_result_logs % 20) == 0)
+        ce_log("death result: %s (acc=%u, five rescuers done, #%u) - life %s",
+               cancelled ? "CANCELLED" : "not cancelled", (unsigned)regs->edi, s_death_result_logs,
+               cancelled ? "kept" : "will be lost (0x45c135 -> commit)");
+    return BP_EXEC_ORIGINAL;
+}
+
+/* ======================================================================================
+ * ★★ 2026-09-16za **「上线收点当且仅当满 P」**（卡 106 红魔乡的新设计；两条断点）
+ * ======================================================================================
+ * 用户口径（逐字）：「红魔乡卡再加一条设计：**上线收点当且仅当满P**」。
+ * 一手（TH06 反编译 `ItemManager.cpp` 的道具 tick）：
+ *     `if (curItem->state == 1 || (128 <= g_GameManager.currentPower && g_Player.positionCenter.y < 128.0f))`
+ *     → 进吸引态（`state = 1`、`sincosmul(…, 8.0f)`）
+ *   ⇒ **「满 P（128）+ 自机在回收线（y = 128.0）以上」是过线收点的充要条件**；TH06 里没有第二条路。
+ * TH18 侧的同一语义点 = `ItemManager__on_tick__body` 的两条 `ja 0x445f63`
+ * （`th18:0x445bb9` / `th18:0x446003`；0x445f63 = `mov [item+0xc74],3` = 道具进真空态）。
+ * handler 只做一件事：声明层开着（= 106 说「现在不是满 P」）⇒ **return 0（不重放那条 ja）**
+ * ⇒ 条件不成立 ⇒ 落空到站点后一条（0x445bbf / 0x446009，都是「道具继续照常下落」那一支）。
+ * ⚠ **两条都要挂**：只挂一条 = 另一条支路照旧真空（静默半失效）。
+ * ⚠ 回收线本身照旧可见（我们不碰 `player+0x47998`）——这正是用户选的「精确门」而不是「把线抬走」。*/
+static int ce_poc_gate_common(void)
+{
+    return ce_full_p_gate_active() ? 0 : BP_EXEC_ORIGINAL;
+}
+
+int __cdecl BP_ce_poc_gate_a(x86_reg_t *regs, void *bp_info)
+{
+    (void)regs;
+    (void)bp_info;
+    return ce_poc_gate_common();
+}
+
+int __cdecl BP_ce_poc_gate_b(x86_reg_t *regs, void *bp_info)
+{
+    (void)regs;
+    (void)bp_info;
+    return ce_poc_gate_common();
+}
+
+/* ★ `BP_ce_player_die` —— 「中弹无伤」闸门（一手链：engine/player/th18/03-player-hit-gate.md）。
+ *
+ * 站点 = `Player__die` `th18:0x45d3a0` 的入口序言（6 字节，exe 里 `55 8b ec 83 ec 14`）。
+ * **闸门开着 ⇒ 整段函数体不执行**：返回 0（不回放原指令）+ 把 `retaddr` 改成该函数唯一的 `c3`
+ * （`th18:0x45d584`；逐字节核过：`0x45d3a0`–`0x45d583` 区间只有这一条 `ret`，是**裸 `c3`**、
+ * 不是 `ret N`，前面就是函数自己的 `pop edi / pop esi / pop ebx / mov esp,ebp / pop ebp`）。
+ *
+ * ★ **这个站点就是 TH13 那道闸门的同一语义槽位**（`th13:0x444ca4` 的 `test dword [0x4be830],0x100`
+ *   = `Player::on_hit` 体的第一件事）⇒ 闸门行为与一手 TH13 等价。
+ *   ⚠ **别被函数名骗了**：`0x45d3a0` 在 th-re-data 里叫 `Player__die`，但**按内容它是 TH13 的 `on_hit`**
+ *   （音效 / 特效 / 状态 4 / 无敌 6 全在这一个函数里）；TH13 的 `Player::die`（扣命那半段）在 TH18 的
+ *   对应物是 `0x45d090` `Player__commit_death_and_enter_state2`。2026-09-13 就是这条命名陷阱让
+ *   `AUDIT` §CD-3 误判成「我们的闸门在 die 上、音效/miss 先发生」—— 实际反了。
+ *
+ * 一手：本站在**函数入口**，下面这些**全部在站点之后**（都在被跳过的函数体里）⇒ 开着闸门时一个字节都不发生：
+ *   ① 中弹音 `0x45d3b4`（`push 2`；`0x45d3b7 call 0x476be0`）；
+ *   ② 中弹特效 VM 脚本 `0x1d` `0x45d3f7`；
+ *   ③ 状态 → 4（决死窗口）`0x45d4e4`；无敌 6 帧 `0x45d50d`；
+ *   ④ 决死窗口帧数 `player+0x47908 = 8` `0x45d557`；卡虚表 `+0x10` 救援广播 `0x45d574`。
+ *   **记 miss / 扣命更晚、且只能从状态 4 走到**：`0x45d090` 的 `[0x4ccd18]++`（`0x45d38b`）与命数 `--`
+ *   （`0x45d19b`），而 `0x45d090` 全 exe 只有 1 个调用点 `0x45c135`（`Player__on_tick__body` 的 case 4：
+ *   `0x45c0f4` 拿窗口计数器 `player+0x638` 比 `player+0x47908`、`0x45c12d` 有卡认领就跳走）；
+ *   进 case 4 的唯一途径是状态 4，而状态 4 全 exe**只在 `0x45d4e4` 被写过**（`find_struct_writes`）。
+ *
+ * ⚠ 两个必须知道的边界：
+ *   ① **擦弹不受影响**：擦弹与击中在判定函数里是**返回值互斥**的（1 = 击中 / 2 = 擦弹），
+ *      本站在分流之后；判定函数仍返回 1 ⇒ 调用侧照原样把弹吃掉（`th18:0x4249be`，与 TH13
+ *      `th13:0x40dd0c` 逐条同形）；
+ *   ② **尾部的卡虚表 `+0x10` 救援广播（`th18:0x45d574`）也一并被跳过**
+ *      —— 靠本闸门自救的那张卡，**补死（补调 `Player__die`）之前必须先撤声明**。
+ *
+ * 声明层在 `sdk_core.c`（`ce_no_hit_declare`，粘性、任一声明即生效）。默认无人声明 ⇒ 逐字节放行。
+ *
+ * ★ 2026-09-13 追加一件**只记账**的事：本站点同时是**死亡结果闩锁的复位点**
+ *   （`ce_death_result_reset()` —— 一次死亡开始了，最终结果还不知道；判定处见 `BP_ce_death_result`）。
+ *   复位**在闸门检查之前**：闸门开着时这次「死亡」根本没发生 ⇒ 结果保持 UNKNOWN（正确），
+ *   而绝不能带着上一次死亡的 `1` 过去。除了这里，`ce_sdk_setup` 也复位一次。*/
+static int s_no_hit_gate_hits;
+
+int __cdecl BP_ce_player_die(x86_reg_t *regs, void *bp_info)
+{
+    (void)bp_info;
+    ce_death_result_reset();                   /* ★ 一次死亡开始 ⇒ 最终结果未知（见上）*/
+    if (!ce_no_hit_active()) return BP_EXEC_ORIGINAL;
+
+    regs->retaddr = CE_FN_PLAYER_DIE_RET;      /* ★ 落闸：跳到唯一的 ret，函数体一行都不跑 */
+    ++s_no_hit_gate_hits;
+    if (s_no_hit_gate_hits <= 3 || (s_no_hit_gate_hits % 60) == 0)
+        ce_log("no-hit gate: Player__die (= TH13 on_hit body) skipped (#%d, declared by card %d) - "
+               "no miss / no sound / no effect / no deathbomb window; "
+               "bullet still eaten, graze unaffected", s_no_hit_gate_hits, ce_no_hit_owner());
+    return 0;                                  /* 0 = 不回放被覆盖的原指令 */
+}
+
+/* ★★ 2026-09-13 第五轮：**敌人吃到伤害**（共享事件，113 的「Boss 随血量掉灵」= TH13 通道 A）。
+ *   站点 `0x42f2cb`（`EnemyData::step_game_logic` `0x42ed40` 内），被偷的指令 = 引擎自己的
+ *   `add [ebx+0x5008],esi`（累计受伤记账）⇒ **handler 只读、原样放行**。
+ *   一手（`REPORT-BOSS-SPIRIT-DROP.md` §2–§4）：
+ *     · `ebx` = `zEnemyData*`（= `zEnemy*+0x122c`）、`esi` = 本帧最终伤害；
+ *     · 站点在两道免伤闸之后 ⇒ "HP 即将减少"；`0x42ed40` 每敌每帧一次（唯一调用方 `0x42fff0`）；
+ *     · boss 判据 = `flags_lo`（`enemy+0x635c`）**bit23**（ECL opcode 512 `setBoss`；
+ *       22 个 .ecl 普查：只有 st0Xbs/st0Xbs 各一次 ⇒ 该位 ⟺ boss/道中 boss）。
+ *   ⚠ 卡侧纪律：回调里**只记标量**（id/damage/x/y），任何建 VM 都留到帧末。*/
+static int s_enemy_damage_selfcheck;
+int __cdecl BP_ce_enemy_damage(x86_reg_t *regs, void *bp_info)
+{
+    (void)bp_info;
+    uint8_t *mgr = CE_ABILITY_MGR();
+    uint8_t *data = (uint8_t *)(uintptr_t)regs->ebx;         /* zEnemyData* = zEnemy*+0x122c */
+    if (!mgr || !data) return BP_EXEC_ORIGINAL;
+
+    ce_enemy_damage_t ev;
+    /* ★★ 2026-09-13 第五轮修（用户实跑「掉灵和距离反相关」⇒ 查日志发现全是垃圾值）：
+     *   **`ebx` 就是 `zEnemyData*`，不是 `zEnemy*`** —— 序言 `0x42ed4f mov ebx,ecx` 收的 this 是
+     *   `zEnemy+0x122c`（调用方 `0x42fed7 lea ecx,[ebx+0x122c]` 一手）。上一版我在这里写成了
+     *   `e = data + 0x122c`（**符号写反**）⇒ 之后所有 zEnemy 口径的读都偏了 0x2458 字节，
+     *   读出来的是浮点区 ⇒ 日志里 `id 1063116254 / hp -1073990863 / pos (0,0)` 全是这个原因
+     *   （合理性闸把它全挡了 ⇒ `boss hits 0(drops 0, rejected 4)`）。
+     *   ⇒ 正确做法：**直接用 data 口径的偏移**（这些才是引擎自己在这段代码里用的那些）：
+     *     生命 `+0x4ff4`（`0x42f314 sub [ebx+0x4ff4],esi`、`0x42f39d cmp [ebx+0x4ff4],0` = 死亡判据）；
+     *     坐标 `+0x44`（`0x42ee31 lea edi,[ebx+0x44]` = 判定用的位置）；
+     *     flags `+0x5130`（序言 `0x42ed53 mov ecx,[ebx+0x5130]`）；
+     *     id `+0x5604`（= `zEnemy+0x6830`，`data = zEnemy+0x122c`）。*/
+    uint32_t flags = *(const uint32_t *)(data + 0x5130);
+    ev.id     = *(const uint32_t *)(data + 0x5604);
+    ev.damage = (int32_t)regs->esi;
+    ev.hp_cur = *(const int32_t *)(data + 0x4ff4);
+    ev.hp_max = *(const int32_t *)(data + 0x5004);
+    ev.flags  = (flags & CE_ENEMY_FLAG_BOSS) ? CE_EDAMAGE_F_BOSS : 0u;
+    ev.x      = *(const float *)(data + 0x44);
+    ev.y      = *(const float *)(data + 0x48);
+    ev.enemy  = *(void **)(data + 0x5588);                   /* zEnemyData.full 回指针（诊断用，卡侧不碰）*/
+    /* 一次性自检：回指针应当 = data − 0x122c；不等只记一行（不拦功能），留给下一次实跑判读。*/
+    if (!s_enemy_damage_selfcheck) {
+        s_enemy_damage_selfcheck = 1;
+        if (ev.enemy != (void *)(data - 0x122c))
+            ce_log("WARN: sdk: ce_enemy_damage selfcheck: full=%p data=%p (expect full = data - 0x122c)",
+                   ev.enemy, (void *)data);
+    }
+
+    unsigned guard = 0;
+    for (const uint8_t *node = *(const uint8_t *const *)(mgr + CE_MGR_CARD_LIST_FIRST);
+         node && guard < 256;
+         node = *(const uint8_t *const *)(node + CE_NODE_NEXT), ++guard) {
+        uint8_t *card = *(uint8_t *const *)(node + CE_NODE_CARD);
+        if (!card) continue;
+        const ce_hooks_t *h = hooks_of(card);
+        if (h && h->on_enemy_damage) {
+            h->on_enemy_damage((ce_card_t *)card, &ev);
+            ce_sdk_trace(ce_card_id(card), 0x85, "on_enemy_damage");
+        }
+    }
+    return BP_EXEC_ORIGINAL;                                 /* ★ 引擎的 `add` 必须照跑 */
 }
 
 int __cdecl BP_ce_enemy_death(x86_reg_t *regs, void *bp_info)

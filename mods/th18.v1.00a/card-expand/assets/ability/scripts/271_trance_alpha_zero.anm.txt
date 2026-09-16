@@ -1,0 +1,96 @@
+script script271 {
+// 灵界转场 —— **目的地 alpha 归零幕**（把 TH13 `th13:0x4032d0` 那段自定义 D3D 四边形译成 anm）
+//
+// ## 一手：TH13 的转场是一套**目的地 alpha 遮罩**，不是一个"不透明罩子"
+//   `effect.anm` 的 4 台幕布（script3..10）用的是 `effect/eff_switch.png`：
+//   **RGB 全白、只有 alpha 是斜向笔触**（64×64 逐像素核对过）。`astral.anm` script0 那台
+//   （= 我们脚本 251）写着 **`blendMode(7)` = DESTALPHA(7)/INVDESTALPHA(8)**：
+//       `rgb = astral·Da + 后台·(1−Da)` —— **源 alpha 完全不参与**，
+//   ⇒ **astral 只出现在"目的地 alpha 非 0"的地方**。这就是用户口径的
+//   「**有一个会动的透明度遮罩（转场）罩在了那张 astral 图上**」。
+//
+//   那么 Da 是谁写的？`th13:0x4032d0`（effect 0 的 on_draw，仅当状态字 `+0x1c34 == 2`）：
+//     · `0x4032f5` flush 之后设 8 条 render state（逐条一手，`0x403310`–`0x4033ae`）：
+//       `ZENABLE(0xf)←0`、`SEPARATEALPHABLENDENABLE(0xce)←1`、
+//       `SRCBLEND(0x13)←1 ZERO`、`DESTBLEND(0x14)←2 ONE`、`BLENDOP(0xab)←1 ADD`、
+//       `SRCBLENDALPHA(0xcf)←2 ONE`、`DESTBLENDALPHA(0xd0)←1 ZERO`、`BLENDOPALPHA(0xd1)←1 ADD`；
+//     · `0x4034be`–`0x4034d6`：`SetFVF(0x44)` + `DrawPrimitiveUP(5, 2, …)` 画
+//       **(128,16)-(512,464)**（= 384×448 游戏区）的 4 个顶点，**顶点色 = `0x00000000`**；
+//     · `0x4034d8`–`0x403556` 还原 `ZENABLE←1`、`SEPARATEALPHABLENDENABLE←0` 与纹理级状态。
+//   ⇒ RGB 结果 = **保留目标**（`0·S + 1·D`），alpha 结果 = **0**（`1·Sa + 0·Da`，Sa = 顶点 alpha = 0）
+//      —— 一句话：**把游戏区那一块的目的地 alpha 清零，RGB 原样不动**。
+//   （本仓早先把它读成"没有半透明遮罩可以复刻"，见 `AUDIT` §CN-8，本轮订正。）
+//
+// ## 本脚本 = 上面那段 D3D 的**逐语义 anm 译法**（TH18 的 anm 改不了 0xce 那组分离 alpha 状态）
+//   TH18 的 `blendMode(2)` = **`SRCALPHA(5) / ONE(2) / REVSUBTRACT(3)`**
+//   （一手 `th18:0x47da20`–`0x47da41`，本轮从 exe 重读；与 `engine/anm/th15/01-blend-modes.md` 同表）：
+//       `rgb = 1·D − Sa·S` 、  `a = 1·Da − Sa·Sa`（分离 alpha 关闭时 alpha 走同一组因子）
+//     · `color(0, 0, 0)` ⇒ `S.rgb = 0` ⇒ **`rgb := D`**（目标 RGB 原样保留 ✅；见下"第九轮订正"）
+//     · **`alpha(1)`**    ⇒ `Sa = 1/255 ≈ 0`（**不是 0**：0 会被绘制早退 `0x4812e8` 整台挡掉）
+//       ⇒ **`a := Sa ≈ 0`**（目的地 alpha 清零 ✅）
+//   ★ 而且这两路颜色**由卡侧每帧写死**（`trance.c` 的 `wipe_set_dual_color` + `ce_anm_set_color2`：
+//     `color_1 = 0x00000000`、`color_2 = 0x01000000`）—— 因为顶点色取自**哪一路**由 `colorMode` 决定
+//     （`th18:0x47e202`），脚本的 `color()`/`alpha()` 落在不同寄存器 ⇒ 只靠脚本定不住 alpha。
+//   ⇒ **与 TH13 那段 `0x00000000` 四边形逐语义等价**，而且不需要 DLL 改 render state。
+//   ⚠ 已知偏差（如实登记）：TH13 是"整块游戏区一次性清零"，本机是**一块 640×480 的矩形 VM**；
+//     在 TH18 里 astral 与幕布都画在世界层（层 3，画进 surface 0），可见区就是这块矩形
+//     ⇒ 覆盖范围**包含**一手那块 384×448 的游戏区，视觉上一致（`AUDIT` §CN-9）。
+//
+// ## ★★★ 2026-09-13 第九轮**订正**：这里原来写的是 `alpha(255)` —— **写反了**，是本轮
+// ##     「退出转场变成'自己和自己转场'、然后整体再消失」的真因（`AUDIT` §CT-7）
+//   **一手（`local/th18.v1.00a/th18.exe`）**：TH18 的 anm `blendMode` 落地函数
+//   `0x47d937`–`0x47d9a8` 在**每条模式分支之前**统一设了 5 条 render state：
+//     `ZENABLE(0xf)←1`、**`SEPARATEALPHABLENDENABLE(0xce)←1`**、**`SRCBLENDALPHA(0xcf)←2 ONE`**、
+//     **`DESTBLENDALPHA(0xd0)←1 ZERO`**、**`BLENDOPALPHA(0xd1)←1 ADD`**
+//   ⇒ **TH18 里任何 anm sprite 的 alpha 通道都是 `Da' := 1·Sa + 0·Da = Sa`** ——
+//      **`blendMode(n)` 只影响 RGB，alpha 只被"写入"、永远不会被"混合/相减"**。
+//   ⇒ `alpha(255)` 于是把整屏 `Da` **写成 1**（= 与"清零"**正好相反**！）⇒ 幕布无论扫到哪里，
+//      没被幕布写到的像素 `Da` 都保持 1 ⇒ astral（mode 7）**始终整块可见** ⇒ 用户看到的
+//      「**并不是转到透明，而是转到自己**」，等幕布自灭 + astral 被删 ⇒ 「**整体再消失**」。
+//   ⇒ **正确写法是 `alpha(0)`**：`Sa = 0` ⇒ `Da := 0` ✓，而且 `blendMode(2)` 的 RGB 式子
+//      `rgb = D − Sa·S` 里 `Sa = 0` ⇒ **`rgb := D`（RGB 严格保留，与染色无关）** ✓✓
+//   ⇒ 这一版与一手 TH13 `0x4032d0` 那块四边形的**两条式子完全一致**：
+//      一手：`SRCBLEND=ZERO/DESTBLEND=ONE` ⇒ `rgb := D`；`SRCBLENDALPHA=ONE/DESTBLENDALPHA=ZERO`
+//      ⇒ `a := Sa`，而顶点色 `0x00000000` 的 **A = 0** ⇒ `a := 0` ✓ —— **两边逐条对上**。
+//   （第八轮之所以写成 255，是按了"分离 alpha 混合没开、alpha 走与 RGB 同一组因子"那条**错前提**
+//     算出来的 `a = Da − Sa²`。TH18 恒开分离 alpha 混合 ⇒ 那条前提不成立。）
+//
+// ## 画序（★ 缺一不可）
+//   同一层内的叠放 = **生成顺序**（`AnmManager__insert_in_world_list_back` 尾插）
+//   ⇒ 本卡按 **[本脚本(清零)] → [4 台幕布 266–269/262–265] → [底色 270] → [astral 251]**
+//     的顺序生成（`native/cards/trance.c` 的 `on_item_frame`）。这样每帧：
+//     ① 清零：`Da := 0`（RGB 保留 = 上一帧的舞台背景）
+//     ② 幕布：`Da := Sa`（笔触形状 —— 归一化后就是那张**会动的遮罩**）
+//     ③ 底色（第 45 帧起）：`Da := 1`（一手 script3 的 t=45 那段：整屏 alpha 填满 ⇒ astral 全显）
+//     ④ astral（`blendMode(7)`）：只在 `Da > 0` 的地方盖住后台
+//   ⇒ 进灵界 = astral 被笔触遮罩**逐块揭开**；退灵界 = 底色先没、清零幕每帧把 `Da` 抹平、
+//     笔触扫出去 ⇒ **反向擦掉**（"转到透明" ✓）。
+//   ⚠ 与一手的**唯一差别**：一手幕布的 alpha = `Sa² + Da(1−Sa)`（它那一段**关着**分离 alpha 混合，
+//     `0x4034fa` 的 `0xce←0`）⇒ 遮罩权重 `Sa²`；本机被引擎固定成 `Sa` ⇒ 边缘**略宽**
+//     （同一条曲线，只是不收平方）。如实登记，`AUDIT` §CT-7-④。
+//
+// ## 层 = 3（世界层背景组；与 astral / 幕布 / 底色同层，靠生成顺序定前后）
+//   一手由 effect 回调在宿主那一趟里即时画（宿主层 6/0x14/0x1a），本作取 3 = astral 那一层。
+// ★★★ 2026-09-13 第十轮：**层 3 → 5**（`AUDIT` §CT-8）。
+//   TH18 的 boss 符卡背景 = `st0Xenm.anm` script10–14（`stgenm/stageXX/cardbg0/1.png`），
+//   它们全部写 **`layer(4)`**（一手：`thanm -l 18 st01enm.anm`，script10/11/12/13/14 的 `ins_304(4)`）
+//   ⇒ 层 4 那一趟（优先级 `0xb`）画在层 3（`0xa`）**之后** ⇒ 会把我们的灵界幕布整块盖掉
+//   ＝ 用户口径「**灵界幕布被 boss 符卡幕布取代**」。
+//   **一手的相对关系**：TH13 自己的符卡背景是 **`layer(3)`**（`thanm -l 13 st01enm.anm` script11–14
+//   的 `ins_304(3)`），而 TH13 的灵界 astral 由 effect 宿主画在 **层 6**（`0x4035e0` case 9）
+//   ⇒ **原版里 astral 在符卡背景之上（灵界幕布赢）** ✓。
+//   TH18 把符卡背景从 3 挪到了 4 ⇒ 我们要保持同一相对关系就得挪到 **5**（= 世界层背景组 3–5 的顶，
+//   仍在子弹/敌机层 6–19 之下；层 3–5 同相机 3、同 surface 0 ⇒ 几何/尺寸不变）。
+-1:
+    type(1);
+    layer(5);
+    blendMode(2);
+    color(0, 0, 0);
+    alpha(1);
+    anchor(0, 0);
+    sprite(-1);
+    drawRect(640.0f, 480.0f);
+    pos(0.0f, 224.0f, 0.0f);
+0:
+    stop();
+}

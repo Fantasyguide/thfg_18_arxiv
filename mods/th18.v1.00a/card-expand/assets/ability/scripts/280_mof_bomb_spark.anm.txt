@@ -1,0 +1,77 @@
+script script280 {
+// 风神录（id 110）灵击的**红火星** —— TH10 `bullet.anm` **script398** 的逐条移植（v4 → v8）。
+//
+// 用户口径（2026-09-16 逐字）：「**灵击依然没有特效**」⇒ 110/111 的灵击补视觉。
+//
+// ══ 一手：这是谁 ═══════════════════════════════════════════════════════════════════════
+//   TH10 的灵击本体 = `bullet.anm` **script400**（灵梦）/ **407**（魔理沙）/ **441**（符卡中）：
+//       script400 { scale(16,16); scaleTime(120, 6, 16.0f, 160.0f);
+//                   scriptNew(script394); scriptNew(script395); scriptNew(script396);   // 第 0 帧
+//                 +10: scriptNew(script397);
+//                 +10: scriptNew(script396);
+//                 +10: scriptNew(script397);
+//                   iset($I0, 80);
+//                 +1: // 31
+//                 offset128: scriptNew(script398); scriptNew(script399); scriptNew(script398); scriptNew(script399);
+//                            jmpDec($I0, offset128, 30);      // 80 → 50 → 20 ⇒ 循环 3 趟 = **12 颗火星**
+//                 +20: // 51
+//                   delete(); }
+//     ⇒ 本体自己**不画东西**（无 sprite / 无 drawPoly），它只干两件事：
+//       ① `scale` 就是灵击半径（`Bomb::on_tick` 每帧 `[bomb+0x3c] = vm.scale.y`，`th10:0x405813`）；
+//       ② `scriptNew` 出 4 支柱/环（394–397）+ 12 颗火星（398/399）。
+//   ★ 本脚本 = 那 12 颗里的**红**那一半（script398）；**蓝**那一半 = `281_mof_bomb_spark_blue.anm.txt`（script399）。
+//
+// ══ 逐条搬了什么（v4 → v8 只有**号码**变了，指令与数值一字不动）══════════════════════════
+//   TH10 的 anm 版本 = **4**，TH18 = **8**；同一个名字在两版里号不同（例：v4 `50 scale` / v8 `402 scale`、
+//   数学指令 v4 `6..27` / v8 `100..121` = **整体 +94**、v4 `3 sprite` / v8 是 `stop` 那一格）。
+//   ⇒ 这份移植**逐条对齐的是「名字」**，不是号码；号码差异见 `make_mof_bomb_art.py` 文件头的表。
+//   逐条清单（v4 原文 → 本脚本）：
+//     · `sprite(sprite330)` → `sprite(@MOF_BOMB_SPARK@)`（**必须抠图**：330 是 TH10 那张表的号，
+//       我们编的是 TH18 `ability.anm`，两表无关 ⇒ 见 `entries/ORDER.txt` 末尾的新图集）
+//     · `layer(13)` / `type(1)` / `blendMode(1)` / `alpha(255)` / `color(255,0,0)` —— 原值
+//     · `isetRand($I0,15)` + `iadd($I0,20)` ⇒ 存活 **20–35 帧**（随机）—— 原值
+//     · `fsetMul(%F0,%RANDF,1.5)` + `fadd(%F0,0.5)` ⇒ 初始 scale **0.5–2.0**（随机）—— 原值
+//     · `rotate(0,0,%RANDRAD)` + `fsetDiv(%F0,%RANDRAD,20)` + `angleVel(0,0,%F0)` ⇒ 随机朝向、
+//       自转 = 随机角/20 每帧 —— 原值
+//     · `fcos/fsin(%RANDRAD)` × 160 ⇒ 起点 = **半径 160 px** 的随机方向；
+//       `fmul 48` + `fadd` ⇒ 终点 = (160+48) = **208 px**（`posTime($I0, 4, …)` 线性外飞）—— 原值
+//       ⚠ 160 / 208 是 script398 的**字面量**，TH10 的**三档**（160/112/64）共用这两支火星脚本
+//         ⇒ 魔理沙档/符卡中档的火星会飞到圈外 —— **这是原版就有的性质**，不是我们的偏差。
+//     · `scaleTime($I0, 4, 0.0f, 0.0f)` 边飞边缩到 0；`wait($I0)` 之后 `+8: delete()` —— 原值
+//
+// ══ 卡侧契约 ═══════════════════════════════════════════════════════════════════════════
+//   · **一次性**：`ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_MOF_BOMB_SPARK, 13)`
+//     + 写一次 `ce_anm_set_pos(id, 灵击中心 x,y,z)`（脚本自己的 `pos` 是**相对**偏移 ⇒ 画在中心周围）。
+//   · **不要**记 id、**不要**调 `ce_anm_set_scale()`（脚本自己在跑 scale/scaleTime，会被插值器盖掉）；
+//     它自己 `delete()`（寿命 28–43 帧）。
+//   · 出生节奏由卡侧定（110 = 灵击期间每 6 帧各起 1 红 1 蓝 ⇒ 与 TH10「一次 12 颗」同量级但摊开）。
+    sprite(@MOF_BOMB_SPARK@);
+    layer(13);
+    type(1);
+    blendMode(1);
+    alpha(255);
+    color(255, 0, 0);
+    isetRand($I0, 15);              // 寿命 = 20..35 帧（一手）
+    iadd($I0, 20);
+    fsetMul(%F0, %RANDF, 1.5f);     // 初始大小 = 0.5..2.0 倍（一手）
+    fadd(%F0, 0.5f);
+    scale(%F0, %F0);
+    rotate(0.0f, 0.0f, %RANDRAD);   // 随机朝向（一手）
+    fsetDiv(%F0, %RANDRAD, 20.0f);  // 自转速度 = 随机角/20 每帧（一手）
+    angleVel(0.0f, 0.0f, %F0);
+    fset(%F0, %RANDRAD);
+    fcos(%F1, %F0);
+    fsin(%F2, %F0);
+    fsetMul(%F3, %F1, 160.0f);      // 起点半径 160 px（一手字面量）
+    fsetMul(%F0, %F2, 160.0f);
+    fmul(%F1, 48.0f);               // 终点 = 160 + 48 = 208 px（往外飞，一手）
+    fmul(%F2, 48.0f);
+    fadd(%F1, %F3);
+    fadd(%F2, %F0);
+    pos(%F3, %F0, 0.0f);
+    posTime($I0, 4, %F1, %F2, 0.0f);
+    scaleTime($I0, 4, 0.0f, 0.0f);
+    wait($I0);
++8: // 8
+    delete();
+}

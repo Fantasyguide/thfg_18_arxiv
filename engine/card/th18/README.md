@@ -25,6 +25,10 @@
 
 原始素材（社区 wikitext）在 [`_sources/`](_sources/thbwiki-cards.txt)，**不是结论**。
 
+> **消弹侧在别的子系统**：卡里那几支「消弹」到底撒不撒实体道具、`mode` 该给几，
+> 一手结论与本仓三处注释的订正都在 [`../../bullet/th18/01-cancel-to-item.md`](../../bullet/th18/01-cancel-to-item.md)
+> （§4.1 逐卡 mode、§7 订正 `pofv.c` / `sdk.h` / `judgment.c` 与 spec §6.4 的错）。**那几处源码本轮没动。**
+
 ## ⚠️ 代码块的约定：伪代码 ≠ Ghidra 输出
 
 各篇里的 C 代码块是**加了语义名的伪代码**，不是反编译器的原样输出。

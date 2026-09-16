@@ -1,0 +1,28 @@
+script script245 {
+// 自动生成：assets/ability/make_trance_spirit_scripts.py（别手改，改表再重跑）
+// 神灵（113）type 3 的普通态 —— 逐条照抄 TH13 `astral.anm` script1（一手：engine/spirit/th13/01 §2.3）
+//   父（普通态）：-1: alpha(255); scale(1.5,1.5); layer(6); 0: scriptNew(两个子);   ← 一手是 alpha(0)，见下面那条偏差
+//                +200: scaleTime(200,0,0.4,0.4); stop(); interruptLabel(1); +240: delete();
+//   ⇒ 「随时间不断变小而消失」是**脚本自己**在做（卡侧不许再写 scale，会被插值器盖掉）
+// ★★ 2026-09-13 第五轮（TH18 侧的**必需偏差**，用户实跑「按空格只有灵界槽涨、看不见灵」）：
+//   一手的父脚本是 `alpha(0)` —— 父是**不带 sprite 的容器**（自己什么都不画），
+//   在 TH13 上这句只影响父自己，两个子各有自己的 `color()`/`alpha(255)` ⇒ 看得见。
+//   TH18 侧的子 VM 会吃到父的颜色（父子颜色继承那一档）⇒ 父 alpha 0 会把**整支**压成透明
+//   ⇒ 神灵看不见，但收集逻辑照跑（槽照涨）= 用户看到的现象。
+//   父不画东西 ⇒ 把它写成 255 在任何语义下都不会改变观感（唯一作用是"不再拖累子"）；
+//   卡侧还额外在 spawn 之后写一次 `ce_anm_set_color(父, 0xffffffff)` 做第二道保险。
+//   🟡 追踪项：父→子到底是"乘 alpha"还是"完全覆盖"，见 AUDIT §CB-5。
+-1:
+    alpha(255);
+    scale(1.5f, 1.5f);
+    layer(6);
+0:
+    scriptNew(@SCRIPT_SPIRIT_PLAIN3_RING@);
+    scriptNew(@SCRIPT_SPIRIT_PLAIN3_CORE@);
++200:
+    scaleTime(200, 0, 0.4f, 0.4f);
+    stop();
+    interruptLabel(1);
++40:
+    delete();
+}

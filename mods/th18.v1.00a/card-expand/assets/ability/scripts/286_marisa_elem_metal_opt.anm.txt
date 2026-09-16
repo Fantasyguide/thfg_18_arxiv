@@ -1,0 +1,56 @@
+script script286 {
+// 地灵殿（id 111）**魔理沙的子机（元素球）· 金** —— TH11 `pl01.anm` **script37** 的逐条移植。
+//
+// 用户口径（2026-09-16）：①「**你得用 th11 的魔理沙子机贴图和弹幕样式呀**」
+//                       ②「**切换子机的部分是帕秋莉的特效啊！**」
+//   ⇒ 子机 = **五个元素球**，切档（帕秋莉那条特技）就是**换一颗球**。
+//
+// ══ 一手出处 ═══════════════════════════════════════════════════════════════════════════
+//   TH11 的子机 VM 由 `Player::repopulate_options` `th11:0x432cc0` 建，脚本号按组合号
+//   （`3*CHARACTER + SUBSHOT`）选；**只有组合 4（MarisaB）走「五档 = 五种脚本」**：
+//   `th11:0x433465 mov ecx,[ebx+0x8bac]`（formation）/ `0x433470 add ecx,0x22` ⇒ **脚本 34..38**，
+//   五支**只差一个 `sprite()`**（38..42 = 五个 16×16 纯色球：红蓝绿黄褐 = 火水木金土）。
+//   ⚠ TH11 里 `case(N)`（v4/v7 的 opcode 64）= 本文件的 `interruptLabel(N)`：
+//     `case(2)` = 出场（缩放 0 → 1.4 → 1.0）、`case(3)` = 收场（缩到 0）、`case(1)` = 删除。
+//     这里**逐条照抄**，只把 `case` 换成 `interruptLabel`。
+//
+// ══ 改了什么（两条，都写在这里）════════════════════════════════════════════════════════
+//   · `layer(10)` → **不写 layer**：TH18 的子机 VM 层由引擎给（`Player__allocate_option`
+//     `th18:0x40a8bc` 用的是**层 14**），写死 10 会把子机塞到别的层去（本仓 225_youkai_opt_alice
+//     的注释记着同一件事）。⇒ 只保留 TH11 的**动画**，层交给引擎。
+//   · 贴图 = `@MARISA_ELEM_METAL@`（TH11 `sprite(sprite41)` 的 1:1 切图，生成器
+//     `assets/ability/make_marisa_elem_art.py`）。
+//   其余（`blendMode(1)` / `type(1)` / 三个 case 的时序与数值）**一字未改**。
+//
+// ══ 卡侧契约 ═══════════════════════════════════════════════════════════════════════════
+//   · 由 `ce_option_pose_*` 声明层建 VM（卡侧把脚本号按**当前 formation** 选，见
+//     `native/cards/signal.c` 的 `signal_option_script_for()`）。
+//   · 出场 / 收场 / 删除 = 引擎发 `interruptLabel` 2 / 3 / 1（TH11 的 case 号同值）。
+//   · 位置由声明层给（TH11 也是 `repopulate_options` 写 option 的目标位 ⇒ 同一分工）。*/
+    blendMode(1);
+    type(1);
+    interruptLabel(2);            // ← TH11 原文 `case(2)`：出场
+    scale(0.0f, 0.0f);
+    scaleTime(10, 4, 1.4f, 1.4f);
+    sprite(@MARISA_ELEM_METAL@);  // ← TH11 `sprite(sprite41)`
++10: // 10
+    scaleTime(6, 1, 1.0f, 1.0f);
++6: // 16
+    blendMode(0);
+offset136:
+    scaleTime(15, 9, 0.8f, 0.8f);
++15: // 31
+    scaleTime(15, 9, 1.0f, 1.0f);
++15: // 46
+    jmp(offset136, 16);
+    stop();
+    interruptLabel(3);            // ← TH11 原文 `case(3)`：收场
+    scaleTime(20, 4, 0.0f, 0.0f);
++20: // 66
+    stop();
+    interruptLabel(1);            // ← TH11 原文 `case(1)`：删除
+    blendMode(1);
+    scaleTime(20, 4, 0.0f, 3.0f);
++20: // 86
+    delete();
+}

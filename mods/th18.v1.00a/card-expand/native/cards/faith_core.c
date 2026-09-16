@@ -8,6 +8,19 @@
  */
 #include "faith_core.h"
 
+/* ---- ★ E-1 档位 ↔ 来源（**硬约束：不许串档**；一手出处逐条在 faith_core.h 的表里）----
+ * 两作同一套对应关系：击破 → 大（type 3）、满 P 转换 → 中/小（type 9）、消弹 → 微（type 8）。
+ * 卡侧**只许**从这里取 tier —— 在调用点手写 `FAITH_TIER_*` 就等于把这条约束复制到每一处。*/
+faith_tier_t faith_core_tier_for_source(faith_source_t src)
+{
+    switch (src) {
+    case FAITH_SRC_BREAK:  return FAITH_TIER_BIG;     /* 一手 th10:0x41b57f / th11:0x423c82 */
+    case FAITH_SRC_CANCEL: return FAITH_TIER_MICRO;   /* 一手 th10:0x4081e7 / th11:0x40b0a2 */
+    case FAITH_SRC_FULL_P:
+    default:               return FAITH_TIER_SMALL;   /* 一手 th10:0x41bbf8 / th11:0x424578 */
+    }
+}
+
 /* ---- 难度表 ---- */
 int32_t faith_base_111(int difficulty)
 {
@@ -152,22 +165,12 @@ int32_t faith_slot_reduce(faith_slot_t *s, int kind)
     return before - s->delta;
 }
 
-int32_t faith_slot_drain_empty(faith_slot_t *s, int frames, int enemies_present)
-{
-    int32_t loss = 0, before;
-
-    if (!s || frames <= 0) return 0;
-    if (s->combo > 0) return 0;                       /* 连击槽没空 → 不衰减 */
-    loss = (frames * (enemies_present ? FAITH_EMPTY_ENEMY_PER_SEC : FAITH_EMPTY_NO_ENEMY_PER_SEC)
-            * FAITH_FIXED) / FAITH_FRAMES_PER_SEC;
-    /* 除法在最后一步 ⇒ 60 帧恰好 −10800 / −600（无余数丢失；`FAITH_EMPTY_*_EVERY` 那组常量
-     * 是这条的精确整数分解，留给需要一个结算周期的实现参考）。*/
-    if (loss <= 0) return 0;
-    before = s->delta;
-    s->delta -= loss;
-    if (s->delta < 0) s->delta = 0;
-    return before - s->delta;
-}
+/* ★ 2026-09-15 **退役** `faith_slot_drain_empty()`（原「❓ 自定（无一手出处）」）。
+ * 它按「槽空 ∧ **场上有敌人**」分两档（−10800/s / −600/s）——一手（th10）两档的**判据都不对**：
+ * 真的门是「槽空 ∧ 无 Boss ∧ 无对话 ∧ 关卡帧 ≥ 90」，而速率是**常量**（`th10:0x418a30` 把速率字段
+ * 就地抬到下限 18 ⇒ 恒 −18 存储/帧 = −180 显示/帧）。一手实现在 110 侧（TH11 连槽都没有）
+ * ⇒ 这个函数**没有第二个可能的调用者** ⇒ 按 METHOD 的规矩整条删掉，不留向后兼容壳。
+ * 现役实现 = `mof_core.h` 的 `mof_core_faith_tick()`（门 + 槽 + 衰减，返回**定点**扣减量）。*/
 
 int faith_combo_empty(const faith_slot_t *s) { return s ? (s->combo <= 0) : 0; }
 
@@ -209,22 +212,60 @@ int32_t faith_combo_add(faith_slot_t *s, faith_ev_t ev)
 
 int faith_combo_full(const faith_slot_t *s) { return s && s->combo >= FAITH_COMBO_FULL; }
 
+int32_t faith_slot_sub(faith_slot_t *s, int32_t delta)
+{
+    int32_t amount, before;
+
+    if (!s || delta <= 0) return 0;
+    before = s->delta;
+    amount = delta * FAITH_FIXED;             /* 原始单位 → 定点（×100）*/
+    if (amount > before) amount = before;     /* Δ 下限 0（111：原版 miss 的地板 = 该难度初值）*/
+    s->delta = before - amount;
+    return amount / FAITH_FIXED;
+}
+
 /* ---- 信号强度 ---- */
-int32_t faith_signal_step(int32_t signal_now, int above_line, int offline, int32_t graze)
+/* ★★ 2026-09-15 一手重写（`local/_scratch/research-th11-signal.md` §2）：
+ *   原版 `th11:0x420a70` 每帧按玩家 y 分四档（常量块里有全表）：
+ *     · 线上（y < 128）且**未满**（< 100.00）⇒ `槽 += 5000（+50.00）` 然后 `cmp 0x2710 / mov 0x2710`
+ *       = **补满并钳到 100.00**（不是「每帧 +50 直到满」）；
+ *     · 线上且**已满** ⇒ 按 y 分区 `+0x10 / +0xc / +0x9`（+0.16 / +0.12 / +0.09）；
+ *     · 线下（y ≥ 128）⇒ `+= -30`（−0.30），负则归 0；
+ *     · 我们多一个 `FAITH_SIGNAL_BAND_HOLD`（自机死亡 / 复活态：原版那两帧既不加也不减）。
+ *   擦弹是**另一条独立通道**（4 个站点，不读玩家 y）⇒ 增量由调用方按难度查表后传进来。*/
+int32_t faith_signal_step_gated(int32_t signal_now, int band, int32_t graze_gain, int allow_line_topup)
 {
     int32_t d = 0;
 
     if (signal_now < 0) signal_now = 0;
     if (signal_now > FAITH_SIGNAL_MAX) signal_now = FAITH_SIGNAL_MAX;
 
-    if (above_line && signal_now < FAITH_SIGNAL_HI_MARK) d += FAITH_SIGNAL_GAIN_LINE;
-    else if (signal_now >= FAITH_SIGNAL_HI_MARK)        d += FAITH_SIGNAL_GAIN_TRICK;
-    /* ⚠ 「线上且已超 100」这一档：§7.5 只给了「未满 100 时 +50/帧」与「超 100 后 +0.09/帧」
-     * ⇒ 超 100 之后不管是线上还是线下都走 +0.09（上面的 else-if），线下另加下面的 −0.3。*/
-
-    if (graze > 0) d += graze * FAITH_SIGNAL_GAIN_GRAZE;
-    if (offline)   d -= FAITH_SIGNAL_LOSS_OFFLINE;
+    if (band == FAITH_SIGNAL_BAND_HOLD) {
+        d = 0;                                       /* 死亡 / 复活态：这一档不看回收线 */
+    } else if (band == FAITH_SIGNAL_BAND_OFFLINE) {
+        d = -FAITH_SIGNAL_LOSS_OFFLINE;               /* 线下：−0.30/帧（下限由 faith_signal_add 夹 0）*/
+    } else if (signal_now < FAITH_SIGNAL_HI_MARK) {
+        /* 未满（任何线上档）⇒ 补满并钳到 100.00（`420a99: add eax,0x1388` + `420aa8: mov 0x2710`）
+         * ★ 2026-09-16za：`allow_line_topup == 0`（= 106 声明了「未满 P」）⇒ 这一支**不给**（d = 0）。*/
+        if (allow_line_topup) {
+            d = FAITH_SIGNAL_GAIN_LINE;
+            if (d > FAITH_SIGNAL_HI_MARK - signal_now) d = FAITH_SIGNAL_HI_MARK - signal_now;
+        }
+    } else {
+        /* 已满 ⇒ 按档位给 +0.16 / +0.12 / +0.09 */
+        switch (band) {
+        case FAITH_SIGNAL_BAND_TOP: d = FAITH_SIGNAL_GAIN_TOP;   break;
+        case FAITH_SIGNAL_BAND_MID: d = FAITH_SIGNAL_GAIN_MID;   break;
+        default:                    d = FAITH_SIGNAL_GAIN_TRICK; break;   /* BAND_LOW */
+        }
+    }
+    if (graze_gain > 0) d += graze_gain;              /* 擦弹：独立通道，任何档都照给（一手）*/
     return d;
+}
+
+int32_t faith_signal_step(int32_t signal_now, int band, int32_t graze_gain)
+{
+    return faith_signal_step_gated(signal_now, band, graze_gain, 1);
 }
 
 void faith_signal_add(faith_slot_t *s, int32_t d)
@@ -259,4 +300,22 @@ void faith_slot_view(const faith_slot_t *s, faith_view_t *out)
     out->delta = s->delta / FAITH_FIXED;
     out->base = s->base;
     out->combo = s->combo;
+}
+
+/* ============================ ★★ P 点补值的共享策略（2026-09-15h）============================
+ * 接口 / 判据 / 「相位只有一个持有者」的不变式 —— 全在 `faith_core.h` 的那一段，这里只放可执行形式。
+ * 调用方 = **落笔者**（`mof_core_p_owner()` 的胜者）：110 的 `on_item_commit` 或 111 的
+ * （见 `cards/mof.c` / `cards/signal.c`）。⚠ **非落笔者不许调**（它会推进相位）。*/
+int32_t faith_core_p_topup_total(faith_p_alt_t *alt, int alice_on, int usable)
+{
+    int32_t v;
+
+    /* 没有状态 / 爱丽丝不生效 / 这一颗**拿不到火力**（满火力 / max 未初始化）⇒ 常态 +0.05 档，
+     * 且**一个相位格都不吃**（理由见 .h：白吃一格会把真正拿到火力的那些颗拉离 2.5 的平均）。*/
+    if (!alt || !alice_on || !usable) return FAITH_P_TOPUP_NORMAL;
+    v = alt->alt ? FAITH_P_TOPUP_ALICE_HI : FAITH_P_TOPUP_ALICE_LO;
+    if (alt->alt) { alt->alt = 0; ++alt->hi; }
+    else          { alt->alt = 1; ++alt->lo; }
+    ++alt->items;
+    return v;
 }

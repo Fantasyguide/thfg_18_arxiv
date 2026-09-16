@@ -11,6 +11,11 @@
 
 /* ---- 全局 ---- */
 #define CE_ADDR_SCORE              0x4cccfc   /* int，封顶 999999999（SM §1）*/
+#define CE_ADDR_DIFFICULTY         0x4ccd00   /* int：0 EASY / 1 NORMAL / 2 HARD / 3 LUNATIC / **4 EXTRA**。
+                                                 * `GlobalsInner` 首字段区（与 `cards/mof.c` / `season.c` / `senro.c` 同址，只读）；
+                                                 * 计分层拿它选身价上下限与 EASY 修正（`0x446b20 cmp eax,4` 的跳表索引）*/
+#define CE_ADDR_GRAZE              0x4ccd0c   /* int：本 run 累计擦弹数（`GLOBALS.inner+0x30`）——
+                                                 * 计分层的「擦弹倍率」= min(graze × 0.0001, 8.99) 的输入 */
 #define CE_ADDR_MONEY              0x4ccd34   /* int（SM §1）*/
 #define CE_ADDR_MONEY_TOTAL        0x4ccd30   /* int，只记收入（SM §1）*/
 #define CE_ADDR_GLOBALS_INNER      0x4cccdc   /* zGlobalsInner（命 / bomb 的加法函数的 this）*/
@@ -22,6 +27,13 @@
 #define CE_ADDR_GAME_THREAD_PTR    0x4cf2e4   /* 非 0 = 在游戏线程（原生即时卡 dtor 的门）*/
 #define CE_ADDR_CARD_PRICE_BY_TIER 0x4b35c4   /* int[15]，price_tier → 金钱（SM §「价格表」一手 dump）*/
 #define CE_ADDR_MONEY_ITEMS        0x4ccd20   /* int，吃到的金钱道具个数（collect_money_item 0x446d22 inc）*/
+#define CE_ADDR_MONEY_BASE         0x4ccd24   /* int：本颗道具的**身价**（单位 = 点 × 100 = 显示值 × 100；
+                                                 * 一手 2026-09-13：`0x446b53`–`0x446bf1` 的三条难度支把钳位后的身价写进来，
+                                                 * `0x446bf3` 的 `ja` 支又直接读回 ⇒ **站点 `0x446bf9` 处 `ecx` 恒等于它**
+                                                 * （sdk.c 的 `BP_ce_item_score_in` 用这条做站点自检）。
+                                                 * 同一格也被大力道具 `0x446870` 走一遍（两条收集路径共用这个全局）。*/
+#define CE_ADDR_MONEY_BASE_MIN     0x4ccd28   /* int：身价下限（`0x44286e` 写 = 表 `0x4b666c` 值 ×100 ⇒ 1,000,000）*/
+#define CE_ADDR_MONEY_BASE_MAX     0x4ccd2c   /* int：身价上限（`0x442898` 写 = 表 `0x4b6654` 值 ×100，逐难度）*/
 #define CE_ADDR_CURRENT_POWER      0x4ccd38   /* OM §7；= GlobalsInner+0x5c（spend_power 0x457486 读写）*/
 #define CE_ADDR_MAX_POWER          0x4ccd3c
 #define CE_ADDR_POWER_PER_LEVEL    0x4ccd40   /* int（= 100）：一档火力，= GlobalsInner+0x64（spend_power 0x457489；Tsukasa 0x410e6d 门槛 = 2 档）*/
@@ -32,6 +44,27 @@
                                                  * （尾 0x45dd0b `ret 4`；Tsukasa 0x410f27 `push ecx; lea ecx,[player+0x620]; call`）。按火力档重建自机子机、
                                                  * 尾部广播 on_power_level_change。扣火力后必须调（Tsukasa / 商店都这么做）。AUDIT §V */
 #define CE_PLAYER_INNER            0x620      /* zPlayer.inner（repopulate 的 this；首字段就是 pos，所以与 CE_PLAYER_X 同址）*/
+/* ---- ★ 判定点几何（2026-09-13 一手；TH18 **四个机体原生统一**）----
+ * 一手：`Player__reset` `th18:0x45ae99`–`0x45aed5` 逐条写下面六个字段：
+ *   `+0x4799c` = **圆半径（非聚焦）** `0x40400000` = 3.0
+ *   `+0x479a0` = **圆半径（聚焦）**   = 3.0
+ *   `+0x479a4` / `+0x479a8` = **AABB 半宽/半高（非聚焦）** `0x3fc00000` = 1.5
+ *   `+0x479b0` / `+0x479b4` = **AABB 半宽/半高（聚焦）** = 1.5
+ * 读点（一手，穷举）：`th18:0x45cc20`（AABB 判定）`0x45cd90`（子弹圆判定）`0x45cea0`（OBB 判定）
+ *   —— 全在受击链上，见 `engine/player/th18/03-player-hit-gate.md` §2。
+ * ★★ **原生先例（这就是"能改"的证明）**：`CardAya__on_load` `th18:0x40c7b5` 直接写
+ *   `[player+0x4799c] = 1.0` / `[+0x479a4] = [+0x479a8] = 0.5` —— 原生卡把自机判定点缩小，
+ *   用的就是这几个字段（它只写**非聚焦**那三个）。
+ * ⚠ 只有 `Player__reset` 与 `CardAya__on_load` 两处写它们（穷举 xref）⇒ **不是每帧重写**，
+ *   所以卡侧写一次就留得住；但 `Player__reset`（关卡开始 / 复活）会覆盖回来 ⇒ 我们**每帧写**最稳。
+ * ⚠ 「判定点指示」（聚焦时那个红点）**不吃这些字段**（它有自己的绘制尺寸）⇒ 改判定点不会改指示。*/
+#define CE_PLAYER_HITBOX_R_NF      0x4799c    /* float：圆半径（非聚焦）原生 3.0 */
+#define CE_PLAYER_HITBOX_R_F       0x479a0    /* float：圆半径（聚焦）  原生 3.0 */
+#define CE_PLAYER_HITBOX_HW_NF     0x479a4    /* float：AABB 半宽（非聚焦）原生 1.5 */
+#define CE_PLAYER_HITBOX_HH_NF     0x479a8    /* float：AABB 半高（非聚焦）原生 1.5 */
+#define CE_PLAYER_HITBOX_HW_F      0x479b0    /* float：AABB 半宽（聚焦）  原生 1.5 */
+#define CE_PLAYER_HITBOX_HH_F      0x479b4    /* float：AABB 半高（聚焦）  原生 1.5 */
+#define CE_PLAYER_IS_FOCUSING      0x4779c    /* dword：非 0 = 聚焦（`0x45cc4x` 一带按它选上面两套）*/
 #define CE_FN_RNG_RAND_DWORD       0x402740   /* Rng__rand_dword：thiscall(zRng*)，无栈参，裸 ret，eax = 32 位随机（两步 16 位生成器拼起来；rng+4 计数 += 2）*/
 #define CE_ADDR_REPLAY_SAFE_RNG    0x4cf288   /* zRng REPLAY_SAFE_RNG（ExpHP）：弹幕 / 敌人 / 自机弹 / 原生卡（Suwako、Yachie、Miko）都用它；
                                                  * 0x4cf280 那个是商店 / UI 的非回放 RNG（pick_weighted_random_offer 0x41717b）。gameplay 随机一律走 0x4cf288。AUDIT §V */
@@ -57,7 +90,21 @@
 #define CE_ADDR_BOMB_MGR           0x4cf2b8   /* 炸弹管理器*；+0x30 = 「正在放炸弹」（do_bomb 置 1，Bomb__can_bomb_and_deathbomb_check 0x420420 查它；道具磁力判定 0x445bc4 也查它决定吸不吸）*/
 #define CE_ADDR_ABILITY_MGR_PTR    0x4cf298   /* zAbilityManager*（OM §4）*/
 #define CE_ADDR_BULLET_MGR_PTR     0x4cf2bc   /* zBulletManager*（ExpHP statics；cancel_all 0x4297a9 读）*/
+#define CE_FN_PLAYER_DIE           0x45d3a0   /* Player__die：thiscall(zPlayer*)，无栈参、裸 ret。
+                                                 * 全 exe 只有 3 处 call（0x45cd27/0x45ce81/0x45d060，全在中弹判定链上）、
+                                                 * 0 处 jmp、0 处数据表引用。它**内部**干完「状态→4 + 死亡特效 +
+                                                 * 8 帧决死窗 + 末尾广播卡虚表 +0x10」，**不扣命**（扣命在
+                                                 * commit_death_and_enter_state2 0x45d090，唯一调用点 0x45c135）。*/
+#define CE_FN_PLAYER_DIE_RET       0x45d584   /* 上者**唯一**的 `c3`：跳过整段 die 体时把 retaddr 改到这里
+                                                 * （此刻栈上只有调用者返回地址 ⇒ 栈干净）。
+                                                 * 一手全链见 engine/player/th18/03-player-hit-gate.md */
 #define CE_ADDR_GUI_PTR            0x4cf2e0   /* zGui*（ExpHP）；+0x1b0 = msg（对话 VM，非 0 = 对话中）。C 键门控 0x45c069、Tenshi state0 0x40ea0d 读它 */
+/* ★ 2026-09-15：zGui 的标志字 + 「画开局那条收点线指示线」的位（一手 `th18:0x43af0b` 读、`th18:0x40c288` 写）。
+ *   全 exe 只有原生卡 22 ITEM_LINE（CardKanako）的 on_load 置它；置上后引擎自己用 `front.anm` script 0x39
+ *   把那条线画出来，位置**现读** `player+0x47998`（`0x43afe1`：`y640 = poc×2 − 80`）。
+ *   见 engine/player/th18/05-poc-height-and-indicator.md §3。*/
+#define CE_GUI_FLAG_WORD           0x194      /* zGui+0x194：标志字（另有 bit 0x100，`0x443947` 读）*/
+#define CE_GUI_FLAG_POC_LINE       0x2000     /* bit13：画收点线指示线（原生卡 22 置；**只置不清**）*/
 #define CE_ADDR_ENEMY_MGR_PTR      0x4cf2d0   /* zEnemyManager*；+0x198 = enemy_count_real（ExpHP）。== 0 时 C 键与充能都停（0x45c07b / 0x40ea1f）*/
 #define CE_ADDR_INPUT_PRESSED      0x4ca434   /* 本帧上升沿；bit 0x400 = C 键（0x45c084）*/
 #define CE_ADDR_INPUT_HELD         0x4ca428   /* 本帧按住的位（录制时原始位、回放时 replay 写入；04-active-cards.md §1）。0x008 = 低速 / 聚焦（0x45b3fa 读它）*/
@@ -110,6 +157,9 @@
 #define CE_PLAYER_DMGSRC_STRIDE    0x9c
 #define CE_PLAYER_DMGSRC_SLOTS     0x400
 #define CE_PLAYER_DAMAGE_CAP       0x47984    /* int：敌人侧 enm_compute_damage_sources 0x45f0f0 把本帧总伤害钳到它（0x45f28b）；GameThread 0x443d3b 每帧从 sht+0x28 复位；Remilia 0x40f48e 抬到 300。本 mod 照 Remilia 在卡 tick 里抬（ce_raise_damage_cap，炎魔爆炸帧；AUDIT V20）*/
+#define CE_ADDR_EFFECT_MGR_PTR     0x4cf2c8   /* ★ 2026-09-16m：zEffectManager*（一手：`0x45e1df` 读它、
+                                              * 再取 `+0xc` 当 effect.anm 的 zAnmLoaded 传给 `0x407420`）*/
+#define CE_OFF_EFFECT_MGR_ANM      0x0c       /* ★ 同上：EffectManager + 0xc = **effect.anm 的 zAnmLoaded** */
 #define CE_ADDR_ANM_MANAGER_PTR    0x51f65c   /* zAnmManager*（ExpHP ANM_MANAGER_PTR；interrupt_tree 0x488be3 读）*/
 #define CE_FN_ANM_GET_VM_WITH_ID   0x488b40   /* thiscall(ANM_MANAGER; id) ret 4 → zAnmVm* / 0（fast 数组 0x624 步长或 world/ui 链表；AUDIT O29c）*/
 #define CE_FN_ANM_INTERRUPT_TREE   0x488be0   /* stdcall(id, n) ret 8：自取 ANM_MANAGER_PTR，找到 VM 写 +0x494 = n 并递归子树（Tenshi 到时长调 (id, 1)）*/
@@ -163,6 +213,19 @@
 #define CE_ANM_VM_POS              0x5f0      /* float3 实体坐标（Tenshi/Miko/Remilia 每帧写；engine/anm/th18/01-vm-instantiate.md）*/
 #define CE_ANM_VM_COLOR2           0x528      /* D3DCOLOR：`color2()` 写的第二个色（渐变条靠它）*/
 #define CE_ANM_VM_COLOR1           0x524      /* D3DCOLOR 0xAARRGGBB：Tenshi 0x40eb4c 无命中写 0xffffffff、0x40eb60 有命中写 0xff0080ff（= 蓝 (0,128,255)）*/
+#define CE_ANM_VM_LAYER            0x18       /* ★ int32：**绘制层**（世界列表成员按它分桶）。
+                                              * 一手（2026-09-16w，子 agent 诊断 + 本卡复核）：
+                                              *   · 写入口只有一条 = 脚本的 `layer()` 指令：opcode 304 → handler `0x47b67b`
+                                              *     → `AnmManager__set_layer` `0x4066b0`（`mov [ecx+0x18],edx`）；
+                                              *     `AnmLoaded__instantiate_vm_to_world_list_back` `0x405bf0` 也会写（`layer < 0x18` 时）。
+                                              *   · 读入口 = `AnmManager__render_layer` `0x488260`：`0x4882a1 mov edx,[edi+0x18]`
+                                              *     → `0x4882b0 cmp ecx,[ebp+8]` → `0x4882b3 jne` 跳过（只画本趟桶号）。
+                                              *   · 游玩区的桶 = **层 12–19**（相机 3）；层 0–2 = 3D 背景那一趟（相机 2）。
+                                              *   ⚠ **谁会替 VM 设层**：只有「子机本体」那条路 —— `Player__allocate_option`
+                                              *     `0x40a8bc` 无条件写 0xe(=14)；**卡子机弹那条路不会**（`AnmManager__instantiate`
+                                              *     `0x407420` 两参、无层参数，且显式保留 `vm+0x18`；空闲池是 `memset` 0）
+                                              *     ⇒ **弹脚本自己必须写 `layer()`**，否则弹被画进背景那一趟 = 看不见。
+                                              *     先例：零售 `pl01.anm` script5 的 `-1: layer(13)`、本仓 282/128/131 用 13。*/
 #define CE_ANM_VM_SPRITE_ID        0x24       /* int32：当前 sprite 号（ExpHP zAnmVmPrefix.sprite_id；残像照自机当下那帧取）*/
 #define CE_ANM_VM_FVARS            0x4b4      /* float[4] 脚本变量 %F0–%F3（ExpHP zAnmVmPrefix float_script_vars）；C 写、脚本 scale(%F0, …) 读 */
 #define CE_ANM_VM_ROTATION         0x3c       /* zFloat3 rx/ry/rz（zAnmVmPrefix；自机弹每帧更新 `0x45edb0` 写 +0x44 = rz = 弹的实时角度）*/
@@ -279,12 +342,21 @@
 #define CE_PLAYER_SPEED_BASE       0x477f0    /* float×2，每帧从 0x5217dc 复制（0x45c717）*/
 #define CE_PLAYER_SHT_PTR          0x47940    /* zPlayer.sht_file*：GameThread 0x443d32 `mov eax,[ecx+0x47940]; mov eax,[eax+0x28]` 每帧复位伤害上限 */
 #define CE_SHT_MAX_DMG             0x28       /* sht 头 i32 max_dmg：Reimu 90 / Marisa 160 / Sakuya 60 / Sanae 120（engine/sht/th18/01 §5）；古锭刀终符抬到它的 2 倍 */
+/* ★ 2026-09-13（卡 113 灵界）：`pl0X.sht` 影像里**组指针数组**的偏移（40 项，解析时已被重定位成绝对指针）。
+ *   一手：解析循环 `th18:0x45a830`–`0x45a843`（`mov esi,0xe0` / `add [esi+edx],eax` / `mov ecx,[edx+esi]`）；
+ *   主炮 `th18:0x45ebfb` 与装备子机 `th18:0x40a9e7` 都读 `[sht + 0xe0 + idx*4]`。
+ *   ⇒ 写一格的写法 = `*(uint32_t*)(sht + CE_SHT_SET_ARRAY + idx*4) = 绝对行指针`
+ *     （卡 113 的灵界组就用它 —— 见 `cards/trance.c` 的「灵界主炮组」段）。*/
+#define CE_SHT_SET_ARRAY           0xe0
 #define CE_PLAYER_DAMAGE_MULT      0x47980    /* float；EnemyManager tick 读后复位 1.0（0x42e02f）——别用，顺序不可控 */
 #define CE_PLAYER_ITEM_ATTRACT_SPD 0x47988    /* float：Player__reset {5,30,70,70}，Nitori on_load {10,30,110,110}（ExpHP 名 + SDK）*/
 #define CE_PLAYER_ITEM_COLLECT_R   0x4798c
 #define CE_PLAYER_ITEM_ATTRACT_RF  0x47990    /* focused */
 #define CE_PLAYER_ITEM_ATTRACT_RU  0x47994    /* unfocused */
-#define CE_PLAYER_POC_HEIGHT       0x47998    /* Kanako 置 224.0 */
+#define CE_PLAYER_POC_HEIGHT       0x47998    /* ★ 收点线（PoC 高度）float：`Player__reset` 写 128.0（`0x45ae8f`）、
+                                              * 原生卡 22 ITEM_LINE（Kanako）on_load 写 224.0（`0x40c275`）—— 全 exe 只有这两个写点，
+                                              * 没有每帧写点。**别直接读写它**：走共用件的 `ce_poc_declare_*()` 声明 + `ce_poc_height()` 读生效值
+                                              * （`sdk_core.h` 的 PoC 高度层；一手见 engine/player/th18/05-poc-height-and-indicator.md）*/
 
 /* ---- 自机弹池（`Player__tick_bullets` `0x45edb0` 一手：`LEA EDI,[ECX+0x1570]`、512 槽、
  * 循环尾 `ADD EDI,0xf8` ⇒ 步长 **0xf8**；循环里 `EDI = 槽+0x14`，故 `[EDI+0x78]` = 槽+0x8c = 状态）---- */
@@ -391,6 +463,47 @@ typedef struct { int32_t prev; int32_t cur; float cur_f; } ce_timer_t;   /* zTim
 #define CE_OPT_OFF_F_Y             0x70       /* 聚焦位置偏移 y（allocate_option 从第 5 个栈参 ×128 写，`th18:0x40a805`）*/
 #define CE_OPT_ANM_ID              0xb0       /* 子机的 anm vm id */
 #define CE_OPT_OWNER_INDEX         0xd0       /* = 建它那张卡的 card+0x08（array_index）；用来认领「这个槽还是我的吗」*/
+
+/* ---- ★★ 2026-09-16：**原生子机数组**（「自机本体的那 4 格子机」；与卡申请的池 `inner+0x410` 是两回事）
+ * 一手（本轮在 `th18.exe` 上逐指令核对；回流见 `engine/sht/th18/03-func-tables-timers-and-dead-fields.md` §7）：
+ *   · **数组**：`inner+0x50`（= `zPlayer*+0x670`），**4 格**，stride **0xf0**
+ *     （`Player__repopulate_options_and_notify_cards` `0x45d5e0` 的 `lea ebx,[ecx+0x50]` + `0x45d81e mov edi,4`；
+ *      每帧跟随更新 `FUN_0045bc90` 的两处调用 `0x45b8ea push 4`（原生 4 格）/ `0x45b8fa push 0xc`（卡池 12 格））；
+ *   · **每格字段**：`+0x00` 状态（2 = 已启用）、`+0x5c/+0x60` 出膛点（定点，跟随更新每帧写）、
+ *     `+0x64/+0x68` 非聚焦偏移、`+0x6c/+0x70` 聚焦偏移、`+0xb0` 子机 VM（普通形）、
+ *     `+0xb4` 子机 VM（**满火力形**）、`+0xd0` 格序号；
+ *   · 两张子机贴图脚本表（按机体）：普通形 `0x4b7020[char]` = {15,17,12,10}、
+ *     满火力形 `0x4b7030[char]` = {16,18,13,12}；
+ *   · **谁从这 4 格出弹**：主炮行循环 `0x45ec4c`–`0x45ec5d`：`slot = row[0x20]`，`slot == 0` ⇒ 膛口传 **NULL**
+ *     （自机本体），否则传 `PLAYER+0x580+(slot&0xf)*0xf0` ⇒ slot 1..4 = 这 4 格；
+ *     随后 `Player__shoot_one_bullet` `0x45e930` 拿它当膛口（读 `+0x5c/+0x60`）。
+ *   · 卡申请的池**正好接在它后面**：`inner+0x410` = `zPlayer*+0xa30`（`Player__allocate_option` `0x40a7a4`）
+ *     ⇒ **两个指针区间不相交** —— 这就是 SDK 分辨「这一发是不是原生子机的弹」的判据（见 `sdk.c` 的
+ *     `BP_ce_native_option_muzzle`）。*/
+#define CE_NATIVE_OPT_COUNT        4
+#define CE_NATIVE_OPT_STRIDE       0xf0
+#define CE_NATIVE_OPT_INNER_BASE   0x50       /* inner 口径的数组基址 */
+#define CE_NATIVE_OPT_PLAYER_MUZ0  0x670      /* zPlayer* 口径：slot 1 的膛口指针 = 0x620 + 0x50 */
+#define CE_NATIVE_OPT_PLAYER_END   0xa30      /* zPlayer* 口径：数组尾 = 0x670 + 4×0xf0 = 卡池起点 */
+#define CE_NATOPT_STATE            0x00       /* int：2 = 本格已启用（repopulate 写）*/
+#define CE_NATOPT_POS_X            0x5c       /* 定点出膛点（跟随更新每帧写）*/
+#define CE_NATOPT_POS_Y            0x60
+#define CE_NATOPT_NF_X             0x64       /* 非聚焦偏移（`0x45d902` 从 sht 的 `+0x40` 块 ×128 写）*/
+#define CE_NATOPT_NF_Y             0x68
+#define CE_NATOPT_F_X              0x6c
+#define CE_NATOPT_F_Y              0x70
+#define CE_NATOPT_VM_MAIN          0xb0       /* 普通形子机 VM id（脚本表 `0x4b7020`）*/
+#define CE_NATOPT_VM_MAX           0xb4       /* **满火力形**子机 VM id（表 `0x4b7030`；`CURRENT_POWER >= MAX_POWER` 才建）*/
+#define CE_NATOPT_INDEX            0xd0       /* 格序号 */
+#define CE_OFF_OPT_LAST_LEVEL      0x470d8    /* inner：**上次按哪一档建过子机**（repopulate 的短路缓存；
+                                               * 读点 `0x45d84d cmp [esi+0x476f8],eax`（esi = PLAYER）；
+                                               * 写 -1 ⇒ 下一次一定重走「重建 / 清空」那条路）*/
+/* ⚠ `Player__shoot_one_bullet` `0x45e930`（stdcall(player*, packed_id, timer, pos*, option*) **ret 0x10**；
+ *   packed_id = (set<<8)|行号；`option` = 膛口（NULL = 自机本体）；返回 0 = 发了 / -1 = 没发 —
+ *   **调用方不检查返回值**；一手调用点三处：主炮行循环 `0x45ec73`、卡路径 `0x40aa80`、
+ *   `0x410622`）**故意不给宏**：本 mod 不直接调它（SDK 是在它的入口下断点拦发，用 sites.py 的 RVA）；
+ *   而 117 的 `cards/animal.c` 已经有一份同地址的局部宏（`CE_FN_PLAYER_SHOOT_ONE_BULLET`），
+ *   在这里再定义一个会让那份 `-Wmacro-redefined` ⇒ **地址只在注释里**。*/
 #define CE_SUBPIXEL_TO_PIXEL       (1.0f / 128.0f)   /* `0x4b908c` */
 #define CE_PLAYER_AIM_ANGLE        0x479cc    /* float：卡把瞄准角写这里，shooter 的 func_on_init = 5（`0x4612d0`）
                                                  在建弹时用它覆写 bullet+0x64。CardAlice `0x40b5fa` 同款用法 */
@@ -406,6 +519,15 @@ typedef struct { int32_t prev; int32_t cur; float cur_f; } ce_timer_t;   /* zTim
 #define CE_ENEMY_LIST_GUARD        4096       /* 敌人链表遍历的护栏（坏链表不转死）；ce_enemy_by_id / CE_ENEMY_FOREACH 共用 */
 #define CE_ENEMY_POS_Y             0x1274
 #define CE_ENEMY_FLAGS             0x635c
+/* ★ 2026-09-13 第五轮（113 的「Boss 随血量掉灵」= TH13 通道 A 的落点）：伤害施加点在
+ *   `EnemyData::step_game_logic` `0x42ed40` 的 `0x42f2cb add [ebx+0x5008],esi`
+ *   （`ebx` = **zEnemyData\*** = `zEnemy*+0x122c`）⇒ 下面的偏移一律**换算成 zEnemy\*** 口径。
+ *   一手依据与整链见 `REPORT-BOSS-SPIRIT-DROP.md` §2–§4。*/
+#define CE_ENEMY_HP_CUR            0x6220     /* zEnemyData.life.current（`ebx+0x4ff4`；4ff4+122c=6220 ✅）*/
+#define CE_ENEMY_HP_MAX            0x6230     /* zEnemyData.life.max（`ebx+0x5004`；5004+122c=6230 ✅）*/
+#define CE_ENEMY_FLAG_BOSS         0x800000u  /* flags_lo **bit23** = ECL opcode 512 `setBoss`（`0x433bf5 or ecx,0x800000`）。
+                                               * 一手普查 22 个 .ecl：只有 st0Xbs/st0Xmbs 各一次 ⇒ 该位 ⟺ boss **或道中 boss**。
+                                               * 引擎自己也用它（`0x42eed0 test [ecx+0x635c],0x800000` 开 boss 血条段）。*/
 #define CE_ENEMY_FLAG_NO_LOCK      0x0c000021 /* 任一位置起 = 不可锁定（死亡 / 无敌 / 未登场…）*/
 
 #define CE_MODE_ITEM    0
@@ -422,6 +544,26 @@ typedef struct { int32_t prev; int32_t cur; float cur_f; int32_t speed_src; uint
 #define CE_BULLET_STRIDE           0xfa0
 #define CE_BULLET_FLAGS            0x20
 #define CE_BULLET_POS              0x638      /* float3 */
+/* ★★ 2026-09-16m（共享件新增）：**引擎自己的擦弹函数** —— `Player__do_graze`。
+ * 一手（`local/_scratch/th18.dis` 直读 + 逐条读完整个函数体）：
+ *   `0x45e160: 53 8b dc …` / `0x45e290: c2 04 00` ⇒ **`void __stdcall do_graze(const float *src_pos)`**
+ *   （1 个栈参、**无 this**、`ret 4` ⇒ callee 清栈，调用方**不要**再 `add esp`）。
+ *   `src_pos` = 「源物件的坐标 (x,y)」的指针（原生 5 个调用点：子弹传 `bullet+0x638`、
+ *   敌本体传自机坐标、激光传算出来的点）。callee **只读**它。
+ * 它做什么（全函数只有 6 个 call，逐条）：
+ *   ① `++[0x4ccd0c]`（GRAZE）与 `++[0x4ccd10]`（章节擦弹），各钳 `0x5f5e0ff`；
+ *   ② 火花位置 = `(src + 自机) × 0.5`（`0x4b9138`)；
+ *   ③ `inc [effect.anm 的 zAnmLoaded + 0x134]`（活动 VM 计数）；④ 声音线程锁；
+ *   ⑤ `AnmManager::allocate_new_vm`（freelist 空则 `malloc(0x60c)`）；⑥ 起 **`effect.anm` script 0x18**
+ *      （一颗火花，13 帧后 `delete()`）+ 加法混合 + `AnmVm::run` + 挂世界链；
+ *   ⑦ `SoundManager::play_sound_at_position(id = 0x2a = `se_graze.wav`, 声像 = src.x)`。
+ * **它不做的事**（重要）：**没有**得分/弹窗、**没有**道具生成、**没有**无敌或判定改动，
+ *   也**没有**任何「每帧一次」的守卫 ⇒ **调用即生效，调 N 次 = +N 计数 + N 颗火花 + N 次音效注册**
+ *   （同帧同 id 的音效只会响 1 次，但逐帧调用就是逐帧重播）。
+ * ⚠ **它一处都不查 NULL**：`PLAYER_PTR` / `[0x4cf2c8]`（EffectManager）/ `[0x4cf2c8]+0xc`（effect.anm）/
+ *   `[0x51f65c]`（全局 AnmManager）任一为空就是访问违例 ⇒ **调用方必须自己门住**
+ *   （封装见 `sdk.h` 的 `ce_do_graze()`）。*/
+#define CE_FN_DO_GRAZE             0x45e160
 #define CE_BULLET_VELOCITY         0x644      /* float3；普通子弹每帧 pos += velocity（0x423f1f..）*/
 #define CE_BULLET_SPEED            0x650      /* float；ex 状态改速时从 speed/angle 重算 velocity（0x429bc0）*/
 #define CE_BULLET_ANGLE            0x654      /* float；tick 里归一到 (-π, π]（0x4241b8..）*/
@@ -429,6 +571,23 @@ typedef struct { int32_t prev; int32_t cur; float cur_f; int32_t speed_src; uint
 
 /* ---- zPlayerBullet ---- */
 #define CE_BULLET_DAMAGE           0x9c       /* int；PlayerBullet__create 0x45e396 写、0x45e7f5 调槽 +0x28、0x45e837 用；Momoyo 覆写（SDK）*/
+
+/* ★★ 2026-09-16zd：**自机弹的 `+0xe8`** —— 引擎在 `PlayerBullet__create 0x45e320` 里把它当
+ * **回调指针**用：`0x45e8ad mov eax,[edi+0xe8]` → `0x45e8b9 je`（0 就跳过）→ `0x45e8c0 call eax`
+ * （`ecx = edi` = thiscall，`edi` = **本颗弹**）。
+ * 一手证据（崩溃 dump，`local` 外那台机器的 `th18_modkit/crashdumps/`）：
+ *   · `th18.exe.119420.dmp`（2026-09-15）：EIP = `0x1`，栈顶返回地址 `0x0045e8c2`（= 该 call 的下一条）
+ *     ⇒ **那一格 = 1** ⇒ `call 1` ⇒ `0xC0000005`；
+ *   · `th18.exe.87856.dmp`（2026-09-16 21:53）：`0xC0000005`、写 `0x1`、`Eax = 1`，上层调用链同型。
+ * · 全 exe 扫描：引擎自己对 `+0xe8` 只写**指针 / 0 / -1**，**从不写 1** ⇒ 那个 1 来自外部写入者或
+ *   复用槽的残留（本仓的写入者已普查：唯一一处"写 1 到 +0xe8"在 117 的**卡状态**里，与弹无关）。
+ * · 结构尺寸：社区结构表 `zPlayerBullet` = **0xf8 字节**（`0x0` … `0xf8 __end`）⇒ `+0xe8` 在弹内。
+ * 落点：`sdk.c` 的 `BP_ce_bullet_damage_final`（`0x45e7ff`，**每次造弹都过**、`edi` = 弹）里加闸 +
+ * 普查日志（见那里的注释）。*/
+#define CE_BULLET_CALLBACK         0xe8
+/* `+0xac` = **本发弹的"set<<8 | 行号"**（一手：`PlayerBullet__create 0x45e35c mov [edi+0xac],ecx`，
+ * `ecx` = `Player__shoot_one_bullet` 传进来的 `set*256|row`；117 里那份同名局部宏 = `ANIMAL_BULLET_PACKED_ID`）。*/
+#define CE_BULLET_SET_ROW          0xac
 
 /* ---- 道具池 zItem（ItemManager* = [0x4cf2ec]；2026-09-08 一手，进 AUDIT 登记）---- */
 #define CE_ADDR_ITEM_MANAGER_PTR  0x4cf2ec   /* ItemManager*：spawn 调用方从这取 ecx（0x430473 `8b 0d ec f2 4c 00`）*/

@@ -244,6 +244,25 @@ static void test_dmg_layer(void)
 static void test_declare_layers(void)
 {
     /* 无敌：取最大值；并列取 id 最小；退出声明后回落 */
+    /* ★★ 2026-09-16za：「未满 P」声明层（106 的两条新设计共用一个来源；消费方 = 两条过线断点 + 111）*/
+    {
+        ce_full_p_gate_reset();
+        CHECK(ce_full_p_gate_active() == 0 && ce_full_p_gate_owner() == -1);
+        ce_full_p_gate_declare(106, 1);
+        CHECK(ce_full_p_gate_active() == 1 && ce_full_p_gate_owner() == 106);
+        ce_full_p_gate_declare(111, 1);                       /* 第二家声明：owner = id 最小者 */
+        CHECK(ce_full_p_gate_active() == 1 && ce_full_p_gate_owner() == 106);
+        ce_full_p_gate_declare(106, 0);                       /* 先撤 106 ⇒ 111 还在 ⇒ 仍然生效 */
+        CHECK(ce_full_p_gate_active() == 1 && ce_full_p_gate_owner() == 111);
+        ce_full_p_gate_declare(111, 0);
+        CHECK(ce_full_p_gate_active() == 0 && ce_full_p_gate_owner() == -1);
+        ce_full_p_gate_declare(106, 1);
+        ce_full_p_gate_declare(106, 0);                       /* 幂等：重复撤 */
+        CHECK(ce_full_p_gate_active() == 0);
+        ce_full_p_gate_declare(CE_SDK_CARD_ID_MAX + 1, 1);    /* 越界 id：忽略 */
+        CHECK(ce_full_p_gate_active() == 0);
+    }
+
     ce_invuln_reset();
     CHECK(ce_invuln_frames() == 0 && ce_invuln_applier() == -1);
     ce_invuln_request(117, 40);
@@ -255,14 +274,14 @@ static void test_declare_layers(void)
     ce_invuln_request(117, 0);                         /* 退出 ⇒ 回落 */
     CHECK(ce_invuln_frames() == 40 && ce_invuln_applier() == 107);
 
-    /* 计分：求和 + id 最小者落笔 */
+    /* 计分：**legacy 通道**求和（旧语义：单卡逐字节等价，见 test_score_rework）*/
     ce_score_reset();
     CHECK(ce_score_aggregate() == 0 && ce_score_applier() == -1);
     ce_score_declare(111, 25000);
     ce_score_declare(110, 50000);
     CHECK(ce_score_aggregate() == 75000);
-    CHECK(ce_score_applier() == 110);                  /* 110 < 111 */
-    ce_score_declare(110, 0);                          /* 110 退出 ⇒ 111 落笔 */
+    CHECK(ce_score_applier() == 110);                  /* 110 < 111（只是归属标签，不决定落笔）*/
+    ce_score_declare(110, 0);                          /* 110 退出 */
     CHECK(ce_score_aggregate() == 25000 && ce_score_applier() == 111);
 
     /* 消弹闩锁：本帧只有第一个认领者拿得到 */
@@ -271,6 +290,31 @@ static void test_declare_layers(void)
     CHECK(ce_cancel_latch_claim(107) == 1);
     CHECK(ce_cancel_latch_claim(117) == 0);            /* 已被 107 认领 */
     CHECK(ce_cancel_latch_owner() == 107);
+
+    /* ---- ★ 本帧消弹记录（2026-09-13，原生卡冲突审计 G 通道）----
+     * 「闩锁 = 仲裁」与「记录 = 事实」拆开：记录由 SDK 的消弹 helper 自动登记（这里直接调 note 模拟），
+     * 卡侧的正确读法是 **count == 0 才代表"真的一颗都没消"**；owner 不是你不代表没人消过弹。*/
+    ce_cancel_latch_reset();
+    CHECK(ce_cancel_frame_seen() == 0 && ce_cancel_frame_count() == 0);
+    ce_cancel_frame_note(0);                           /* 消了 0 颗：发生过，但账是 0 */
+    CHECK(ce_cancel_frame_seen() == 1 && ce_cancel_frame_count() == 0);
+    ce_cancel_frame_note(12);
+    ce_cancel_frame_note(8);
+    CHECK(ce_cancel_frame_count() == 20);              /* 同帧多次消弹累加 */
+    ce_cancel_frame_note(-1);                          /* ce_cancel_all_bullets：数不出颗数 */
+    CHECK(ce_cancel_frame_unknown() == 1 && ce_cancel_frame_count() == 20);
+    ce_cancel_latch_reset();                           /* 帧界清干净 */
+    CHECK(ce_cancel_frame_seen() == 0 && ce_cancel_frame_count() == 0 && ce_cancel_frame_unknown() == 0);
+
+    /* 空认领要能交回：闩锁代表「本帧有人真的消过弹」，不是「有人曾经想消弹」 */
+    CHECK(ce_cancel_latch_claim(107) == 1);
+    CHECK(ce_cancel_latch_release(117) == 0);          /* 不是认领者 ⇒ 交不回（也不会误清别人的）*/
+    CHECK(ce_cancel_latch_owner() == 107);
+    CHECK(ce_cancel_latch_release(107) == 1);          /* ★ 自己交回 */
+    CHECK(ce_cancel_latch_owner() == -1);
+    CHECK(ce_cancel_latch_claim(117) == 1);            /* ⇒ 后面的卡这一帧还有机会 */
+    CHECK(ce_cancel_latch_release(117) == 1);
+    CHECK(ce_cancel_latch_release(999) == 0);          /* 越界 id：不动别人 */
 
     /* 「这次死亡由谁救」闩锁（用户 2026-09-12 定案：救援层顺序 107 → 117 → 决死 B → 113）。
      * 107/117 **无条件**报到（两家同时触发是定案），113 只在没人认领时才动手。*/
@@ -287,6 +331,67 @@ static void test_declare_layers(void)
     ce_rescue_note_reset();
     CHECK(ce_rescue_note_claim(999) == 0);             /* 越界 id：不记、返回 0 */
     CHECK(ce_rescue_note_owner() == -1);
+
+    /* ---- ★ 「中弹无伤」闸门声明层（2026-09-13；一手 engine/player/th18/03-player-hit-gate.md）----
+     * 语义与 `ce_invuln_*` **不同**：无敌 = 子弹不判定；本层 = 判定照跑、**弹被吃掉**
+     * （= 一手 TH13：`Player::on_hit` 第一行 return）。声明是**粘性**的（断点可能落在两个 tick 之间）。
+     * 仲裁：**任一声明即生效**（不像无敌取 max、也不像计分求和）—— 因为它是个布尔闸门。*/
+    ce_no_hit_reset();
+    CHECK(ce_no_hit_active() == 0);   /* 初始闸门必须关着（默认逐字节放行）*/
+    CHECK(ce_no_hit_owner() == -1);
+    ce_no_hit_declare(113, 1);
+    CHECK(ce_no_hit_active() == 1);
+    CHECK(ce_no_hit_owner() == 113);
+    ce_no_hit_declare(120, 1);                         /* 第二张卡也声明 ⇒ 仍然只有「开」这一种结论 */
+    CHECK(ce_no_hit_active() == 1);
+    CHECK(ce_no_hit_owner() == 113);  /* owner = id 最小者（诊断用）*/
+    ce_no_hit_declare(120, 0);                         /* 撤掉后来者 ⇒ 不影响 113 */
+    CHECK(ce_no_hit_active() == 1);
+    CHECK(ce_no_hit_owner() == 113);
+    ce_no_hit_declare(113, 0);                         /* 最后一个声明者撤了 ⇒ 闸门关 */
+    CHECK(ce_no_hit_active() == 0);
+    CHECK(ce_no_hit_owner() == -1);
+    ce_no_hit_declare(113, 1);
+    ce_no_hit_reset();                                 /* SDK 初始化路径也要能全清 */
+    CHECK(ce_no_hit_active() == 0);
+    ce_no_hit_declare(999, 1);                         /* 越界 id：不记、也不许开闸门 */
+    CHECK(ce_no_hit_active() == 0);
+    ce_no_hit_declare(113, 5);                         /* 非 0 一律当「开」（参数不是帧数）*/
+    CHECK(ce_no_hit_active() == 1);
+    ce_no_hit_declare(113, 0);
+    CHECK(ce_no_hit_active() == 0);
+
+    /* ---- ★★ 2026-09-16：「隐藏原生子机」声明层（111 的魔理沙侧；机制见 sdk_core.h / sdk.c）----
+     * 与上面那一层同形状（粘性 + 任一声明即生效 + owner = id 最小者），**多一条机体门**：
+     * 只有「当前机体 == 声明时给的那个」才算生效 —— 因为换机体发生在商店/编成里（卡 tick 冻着），
+     * 不能指望卡来改口。这里把两条语义都钉住。*/
+    ce_native_option_hide_reset();
+    CHECK(ce_native_option_hidden(0) == 0 && ce_native_option_hidden(1) == 0);
+    CHECK(ce_native_option_hide_owner() == -1);
+    ce_native_option_hide_declare(111, 1, 1);          /* 111 声明「魔理沙(1) 机上隐藏」*/
+    CHECK(ce_native_option_hidden(1) == 1);            /* 当前机体 = 魔理沙 ⇒ 生效 */
+    CHECK(ce_native_option_hidden(0) == 0);            /* 灵梦 ⇒ 不生效（★ 机体门）*/
+    CHECK(ce_native_option_hidden(2) == 0);            /* 咲夜 ⇒ 不生效 */
+    CHECK(ce_native_option_hidden(3) == 0);            /* 早苗 ⇒ 不生效 */
+    CHECK(ce_native_option_hide_owner() == 111);
+    ce_native_option_hide_declare(113, 1, 0);          /* 第二张卡声明「灵梦(0) 机上隐藏」*/
+    CHECK(ce_native_option_hidden(0) == 1 && ce_native_option_hidden(1) == 1);
+    CHECK(ce_native_option_hide_owner() == 111);       /* owner = id 最小者 */
+    ce_native_option_hide_declare(113, 0, 0);          /* 撤掉后来者 ⇒ 111 那条不受影响 */
+    CHECK(ce_native_option_hidden(0) == 0 && ce_native_option_hidden(1) == 1);
+    ce_native_option_hide_declare(111, 0, 1);          /* 最后一个声明者撤了 ⇒ 全关 */
+    CHECK(ce_native_option_hidden(0) == 0 && ce_native_option_hidden(1) == 0);
+    CHECK(ce_native_option_hide_owner() == -1);
+    ce_native_option_hide_declare(111, 1, 1);
+    ce_native_option_hide_reset();                     /* SDK 初始化路径（ce_sdk_setup）也要能全清 */
+    CHECK(ce_native_option_hidden(1) == 0 && ce_native_option_hide_owner() == -1);
+    ce_native_option_hide_declare(999, 1, 1);          /* 越界 id：不记 */
+    CHECK(ce_native_option_hidden(1) == 0);
+    ce_native_option_hide_declare(111, 1, 1);
+    CHECK(ce_native_option_hidden(1) == 1);
+    CHECK(ce_native_option_hidden(-1) == 0);           /* 机体号只做相等比较，不越界读 */
+    ce_native_option_hide_declare(111, 0, 0);
+    CHECK(ce_native_option_hidden(1) == 0);
 
     /* ---- 低速子机声明层（spec §3.3.1：逐格偏移 / id 最小者胜 / 每帧清集合 / 落笔权交接）----
      * 「为什么必须逐格」在 sdk_core.h 的 `CE_OPTION_POSE_CELLS` 块注释（一手）；
@@ -501,6 +606,23 @@ static void test_hud_slots(void)
     CHECK(!ce_hud_slot_get(CE_SDK_CARD_ID_MAX + 1u, &a));
     CHECK(!ce_hud_slot_get(107, &a));                             /* 没认领过 */
 
+    /* ★★ 2026-09-15c 回归：**111 当年的 bug 就是这一行** —— `on_load` 里
+     *   `ce_hud_slot_claim_card(111, &blk, 0)` 传了 NULL `out`（上面那条断言说明 SDK 一定会拒绝它）
+     *   ⇒ 111 的 HUD 槽从来没认领成功、3 支原版 VM 一次都没起过（用户报「看不见信号 UI」）。
+     *   这条按**卡侧真实的那一组参数**（111 的块 208×56、LEFT 列）走一遍，锁住「传了真 out 就必须成功」
+     *   与「拿到的槽能被 `_get` 读回来」两件事 —— 谁再把 out 写成 0，这里立刻红。*/
+    ce_hud_slots_reset();
+    {
+        ce_hud_block_t sig = { 208.0f, 56.0f, CE_HUD_SIDE_LEFT };   /* = SIGNAL_HUD_BLOCK_W/H */
+        ce_hud_slot_t got;
+        CHECK(ce_hud_slot_claim(111, &sig, &got));
+        CHECK(ce_hud_slot_claimed(111));
+        CHECK(ce_hud_slot_get(111, &a) && a.x == got.x && a.y == got.y);
+        CHECK(a.x == CE_HUD_ANCHOR_X && a.y == CE_HUD_ANCHOR_Y);
+        CHECK(!ce_hud_slot_claim(111, &sig, NULL));                 /* 传 NULL 就一定是「没认领」 */
+        ce_hud_slots_reset();
+    }
+
     /* 右列：从右锚点**向左**排，块右边缘贴游标（§6.2 ❓ 无先例卡） */
     ce_hud_slots_reset();
     ce_hud_block_t right  = { 100.0f, 20.0f, CE_HUD_SIDE_RIGHT };
@@ -561,6 +683,7 @@ static void test_hud_slots(void)
     CHECK(ce_score_mul_aggregate() == 0);
     ce_score_mul_declare(111, 500);                       /* 信号强度 0.50 ⇒ 500‰ */
     CHECK(ce_score_mul_aggregate() == 500);
+    CHECK(ce_score_signal_strength() == 500);             /* 重做后的正名 */
     ce_score_mul_declare(110, 250);                       /* 两张卡都声明 ⇒ 求和 */
     CHECK(ce_score_mul_aggregate() == 750);
     ce_score_mul_declare(110, 0);                         /* 退出声明 */
@@ -603,12 +726,569 @@ static void test_hud_slots(void)
     CHECK(!ce_hud_player_near_corner(-100.0f, 380.0f));  /* y < 384 ⇒ 淡回 */
 }
 
+/* ============================ 计分层（2026-09-13 重做）单测 ============================
+ * 被测规格（用户 2026-09-13，逐条见 ../SCORE-LAYER-REWORK.md）：
+ *     SCORE += G × coeff_06 × rest ;  G = G_0 + Σ G_i
+ *     G_0 = 原生身价换算成点 = 引擎自己给这一颗的 SCORE 增量
+ *     耦合项（唯一带乘数的）：(Δ_10 + Δ_11) × (擦弹倍率 + 信号强度)
+ * ★★ 单位（2026-09-13 第二次修订时逐条对着 exe 核过，**三个别混**）：
+ *     站点 ecx（1/1000 点） --满额支--> 身价（= 弹窗值 = 点 × 10） --`SCORE += esi/10`--> 点
+ *   即 `身价 = ecx / 100`、`点 = ecx / 1000`。桥值（`ce_score_bridge`）收的是**身价**，
+ *   上下限常数（`CE_SCORE_BASE_MIN_PTS` / `..._MAX_*`）也是**身价**单位。
+ * 四条要点各有一组断言：① 单卡 = 旧行为；② 两卡相加；③ 耦合项相乘；④ 上下限 / 难度表。*/
+
+/* 旧行为（重做前）的落笔值，单位 = 引擎单位（身价）。旧公式（三张卡都这么写）：
+ *     applier: *value = max(declared, 10) * 10  ;  引擎随后 SCORE += *value / 10。
+ * 这里逐字复刻它，用来断言「单卡时新旧逐字节等价」。`declared` = 那一张卡自己算出来的
+ * 「最大得点 / 信仰」（107 是它自己的数、110/111 是「基础 + Δ」——旧卡把基础一起声明了）。*/
+static int32_t legacy_value(int32_t declared)
+{
+    if (declared < 10) declared = 10;
+    return declared * 10;
+}
+/* 单卡 legacy 等价：新式（原样声明 = 旧声明值，耦合系数取 1000 = 不缩放）对上旧落笔值。
+ * `g0` = 造出来的桥值对应的 `G_0`（点）；`old_declared` = 旧代码当年声明的那个数。*/
+static void check_single_card_equivalence(int32_t g0, int32_t old_declared, int32_t new_declared)
+{
+    ce_score_reset();
+    ce_score_bridge((uint32_t)g0 * CE_SCORE_ENGINE_UNIT, CE_SCORE_DIFF_NORMAL);  /* 造出 G_0 = g0 */
+    CHECK(ce_score_base_points() == g0);
+    ce_score_declare(107, new_declared);                /* legacy 通道（用 107 那一格）*/
+    CHECK(ce_score_legacy_count() == 1);
+    CHECK(ce_score_legacy_sum() == new_declared);       /* 新式声明值 = 旧声明值 − G_0 */
+    CHECK(new_declared + g0 == old_declared);           /* 两者是同一个数（基础由层出）*/
+    CHECK(ce_score_apply() == legacy_value(old_declared));
+}
+
+/* 站点 `th18:0x446bf9` 处的 `ecx`（单位 1/1000 点；一手 0x446b30 / 0x446b86 / 0x446b53–0x446bf1）：
+ *   未钳 = `(1 + 资金力) × k × 100`（EASY k=500、其余 1000；读点在 `0x446b2e`，MONEY 还没 inc）
+ *   引擎自己把它钳到 `[表 0x4b666c 值 ×100, 表 0x4b6654 值 ×100]` = `[1,000,000, 表值 ×100]`
+ *   （`0x4ccd28` / `0x4ccd2c`，由 `0x44286e` / `0x442898` 写入）——本站点看到的就是**钳后**的值。
+ * ★ 引擎已钳 ⇒ 层的兜底钳在场上恒等，`G_0 ≡ ecx/1000`（下一条断言组钉死）。*/
+static uint32_t score_ecx(int32_t money, int difficulty)
+{
+    int32_t k = (difficulty == CE_SCORE_DIFF_EASY) ? CE_SCORE_EASY_K : CE_SCORE_NORMAL_K;
+    int64_t v = (int64_t)(money + 1) * k * 100;
+    int64_t hi;
+    switch (difficulty) {
+    case CE_SCORE_DIFF_EASY:    hi = CE_SCORE_BASE_MAX_EASY;    break;
+    case CE_SCORE_DIFF_HARD:    hi = CE_SCORE_BASE_MAX_HARD;    break;
+    case CE_SCORE_DIFF_LUNATIC: hi = CE_SCORE_BASE_MAX_LUNATIC; break;
+    case CE_SCORE_DIFF_EXTRA:   hi = CE_SCORE_BASE_MAX_EXTRA;   break;
+    default:                    hi = CE_SCORE_BASE_MAX_NORMAL;  break;
+    }
+    if (v > hi * 100) v = hi * 100;
+    else if (v < (int64_t)CE_SCORE_BASE_MIN_PTS * 100) v = (int64_t)CE_SCORE_BASE_MIN_PTS * 100;
+    return (uint32_t)v;
+}
+/* sdk.c `BP_ce_item_score_in` 填给层的桥值：**身价** = ecx / 100（= ecx/1000 点 × 10）。*/
+static uint32_t score_bridge_of(uint32_t ecx) { return ecx / 100u; }
+
+static void test_score_rework(void)
+{
+    /* ---- ④a 难度修正表（EASY 500 / 其余 1000）+ 上下限（**身价**单位）+ ★ G_0 == ecx/1000 ----
+     * 一手（th18:0x446b30 / 0x446b86 算、0x446b53–0x446bf1 钳、0x446cb4 起除）：
+     *   ecx = clamp((1+资金力) × k × 100, 1e6, 表值×100) ;  身价 = ecx/100 ;  点 = ecx/1000。*/
+    CHECK(CE_SCORE_EASY_K == 500 && CE_SCORE_NORMAL_K == 1000);
+    CHECK(score_ecx(0, CE_SCORE_DIFF_EASY) == 1000000u);              /* (0+1)×500×100 = 50000 ⇒ 引擎顶到下限 1e6 */
+    ce_score_reset();
+    ce_score_bridge(score_bridge_of(score_ecx(0, CE_SCORE_DIFF_EASY)), CE_SCORE_DIFF_EASY);
+    CHECK(ce_score_base_points() == 1000);                            /* 身价 10000 / 10；原生这一颗 SCORE +1000 */
+    CHECK(ce_score_base_points() == (int32_t)(score_ecx(0, CE_SCORE_DIFF_EASY) / 1000u));
+    CHECK(score_ecx(2, CE_SCORE_DIFF_EASY) == 1000000u);              /* (2+1)×500×100 = 150000 ⇒ 仍被下限顶到 1e6 */
+    ce_score_bridge(score_bridge_of(score_ecx(2, CE_SCORE_DIFF_EASY)), CE_SCORE_DIFF_EASY);
+    CHECK(ce_score_base_points() == 1000);                            /* 下限档 = 1000 点（原生 SCORE +1000）*/
+    CHECK(score_ecx(19, CE_SCORE_DIFF_NORMAL) == 2000000u);           /* (19+1)×1000×100 */
+    ce_score_bridge(score_bridge_of(score_ecx(19, CE_SCORE_DIFF_NORMAL)), CE_SCORE_DIFF_NORMAL);
+    CHECK(ce_score_base_points() == 2000);                            /* ★ ecx/1000 = 2000 点 */
+    /* 「1 + 资金力」里的一手锚点：MONEY = 19 ⇒ ecx = 2,000,000 ⇒ 身价 20000 ⇒ 点 2000 */
+    CHECK(score_ecx(99, CE_SCORE_DIFF_EASY) == 5000000u);             /* 100×500×100，未到 EASY 上限（2e7）*/
+    ce_score_bridge(score_bridge_of(score_ecx(99, CE_SCORE_DIFF_EASY)), CE_SCORE_DIFF_EASY);
+    CHECK(ce_score_base_points() == 5000);                            /* = min(5e6, 2e7)/1000 */
+    CHECK(score_ecx(99, CE_SCORE_DIFF_NORMAL) == 10000000u);
+    ce_score_bridge(score_bridge_of(score_ecx(99, CE_SCORE_DIFF_NORMAL)), CE_SCORE_DIFF_NORMAL);
+    CHECK(ce_score_base_points() == 10000);
+    /* 上限：身价到表值就停（引擎钳 ecx = 表值×100）——逐难度一一对应 */
+    ce_score_bridge(score_bridge_of(score_ecx(1000000, CE_SCORE_DIFF_HARD)), CE_SCORE_DIFF_HARD);
+    CHECK(ce_score_base_points() == CE_SCORE_BASE_MAX_HARD / CE_SCORE_ENGINE_UNIT);
+    ce_score_bridge(score_bridge_of(score_ecx(1000000, CE_SCORE_DIFF_LUNATIC)), CE_SCORE_DIFF_LUNATIC);
+    CHECK(ce_score_base_points() == CE_SCORE_BASE_MAX_LUNATIC / CE_SCORE_ENGINE_UNIT);
+    ce_score_bridge(score_bridge_of(score_ecx(1000000, CE_SCORE_DIFF_EXTRA)), CE_SCORE_DIFF_EXTRA);
+    CHECK(ce_score_base_points() == CE_SCORE_BASE_MAX_EXTRA / CE_SCORE_ENGINE_UNIT);   /* EXTRA 与 NORMAL 同上限 */
+    ce_score_bridge(score_bridge_of(score_ecx(1000000, CE_SCORE_DIFF_EASY)), CE_SCORE_DIFF_EASY);
+    CHECK(ce_score_base_points() == CE_SCORE_BASE_MAX_EASY / CE_SCORE_ENGINE_UNIT);
+    /* ★ 层的兜底钳（**身价**单位）：只有桥值本身越界时才看得见（场上引擎已钳过 ⇒ 恒等）*/
+    ce_score_bridge(5000u, CE_SCORE_DIFF_NORMAL);                     /* 界外小值 */
+    CHECK(ce_score_base_points() == CE_SCORE_BASE_MIN_PTS / CE_SCORE_ENGINE_UNIT);   /* ⇒ 1000 点 */
+    ce_score_bridge(99999999u, CE_SCORE_DIFF_NORMAL);                 /* 界外大值 */
+    CHECK(ce_score_base_points() == CE_SCORE_BASE_MAX_NORMAL / CE_SCORE_ENGINE_UNIT); /* ⇒ 50000 点 */
+
+    /* ---- 裸 G_0（没有卡参与）：SDK **一个字都不写** ⇒ 原生路径逐字节不变 ----
+     * 层这一侧仍要算对：桥值（身价）= ecx/100，`G_0 = 身价/10 = ecx/1000`（点）。*/
+    ce_score_reset();
+    CHECK(score_ecx(199, CE_SCORE_DIFF_NORMAL) == 20000000u);         /* (199+1)×1000×100，未越界 */
+    ce_score_bridge(score_bridge_of(score_ecx(199, CE_SCORE_DIFF_NORMAL)), CE_SCORE_DIFF_NORMAL);
+    CHECK(ce_score_base_points() == 20000);                           /* 身价 200000 / 10 */
+    CHECK(ce_score_participants() == 0 && ce_score_applier() == -1);
+    CHECK(ce_score_total() == 20000);
+    CHECK(ce_score_apply() == 20000 * CE_SCORE_ENGINE_UNIT);
+
+    /* ---- ② 加法族：G = G_0 + Σ G_i（两卡相加，谁也不吞谁）---- */
+    ce_score_reset();
+    ce_score_bridge(100000u, CE_SCORE_DIFF_NORMAL);                   /* 桥值（身价）⇒ G_0 = 10000 点 */
+    CHECK(ce_score_base_points() == 10000);
+    ce_score_declare_coupled(110, 5000);                              /* Δ_10 */
+    CHECK(ce_score_participants() == 1 && ce_score_aggregate() == 5000);
+    ce_score_declare_coupled(111, 10000);                             /* Δ_11 */
+    CHECK(ce_score_participants() == 2 && ce_score_aggregate() == 15000);
+    CHECK(ce_score_coupling_permille() == 1000);                      /* 没人声明信号 ⇒ ×1.0 */
+    CHECK(ce_score_total() == 10000 + 15000);
+    CHECK(ce_score_apply() == 25000 * CE_SCORE_ENGINE_UNIT);
+    ce_score_declare_delta(107, 105500);                              /* 未耦合族：原样进 G */
+    CHECK(ce_score_participants() == 3);
+    CHECK(ce_score_total() == 10000 + 15000 + 105500);
+    /* ★ 基础**只出现一次**：旧口径（id 最小者把 Σ 当最终 PV）会写成 G_0×2 + Σ */
+    CHECK(ce_score_total() != 2 * 10000 + 15000 + 105500);
+
+    /* ---- ③ 耦合项相乘（唯一带乘数的）：(Δ_10+Δ_11) × (擦弹倍率 + 信号强度) ---- */
+    /* ★ 2026-09-15 一手订正（research-th11-faith-and-points.md §2.3）：整数阶梯、每 100 擦弹 +0.01、
+     * 上限 8.99 的触发点 = 89900 擦弹（旧实现按 1 graze = 1‰，8990 就封顶 ⇒ 提前 10 倍且零头被计入）*/
+    CHECK(ce_score_graze_mult(0) == 0);
+    CHECK(ce_score_graze_mult(1) == 0);                               /* 不足一步 ⇒ 0 */
+    CHECK(ce_score_graze_mult(99) == 0);
+    CHECK(ce_score_graze_mult(100) == 10);                            /* 一步 = 0.01 = 10‰ */
+    CHECK(ce_score_graze_mult(5000) == 500);                          /* 0.5 */
+    CHECK(ce_score_graze_mult(89899) == 8980);
+    CHECK(ce_score_graze_mult(89900) == CE_SCORE_GRAZE_MULT_MAX);     /* 8.99 的触发点 */
+    CHECK(ce_score_graze_mult(89999) == CE_SCORE_GRAZE_MULT_MAX);
+    CHECK(ce_score_graze_mult(100000) == CE_SCORE_GRAZE_MULT_MAX);
+    CHECK(ce_score_graze_mult(0xffffffffu) == 0);                     /* −1（int32 读回）⇒ 0 */
+
+    ce_score_reset();
+    ce_score_bridge(100000u, CE_SCORE_DIFF_NORMAL);                   /* 桥值（身价）⇒ G_0 = 10000 点 */
+    ce_score_declare_coupled(110, 5000);
+    ce_score_declare_coupled(111, 10000);
+    ce_score_mul_declare(111, 1000);                                  /* 信号 1.00 ⇒ 1000‰ */
+    CHECK(ce_score_signal_strength() == 1000);
+    CHECK(ce_score_coupling_permille() == 2000);                      /* 基准 1000（= 擦弹 1.0）+ 1000 */
+    CHECK(ce_score_total() == 10000 + 15000 * 2000 / 1000);           /* = 40000 */
+    ce_score_mul_declare(111, 0);                                     /* 粘性：掉到 0 也要声明 */
+    CHECK(ce_score_coupling_permille() == 1000);
+    CHECK(ce_score_total() == 10000 + 15000);
+    ce_score_mul_declare(111, 500);
+    ce_score_mul_declare(112, 250);
+    CHECK(ce_score_signal_strength() == 750);                         /* 两张卡的信号相加 */
+    CHECK(ce_score_coupling_permille() == 1750);
+    CHECK(ce_score_total() == 10000 + (int32_t)((int64_t)15000 * 1750 / 1000));
+    ce_score_declare_delta(107, 1000);                                /* 未耦合族不受耦合系数影响 */
+    CHECK(ce_score_total() == 10000 + (int32_t)((int64_t)15000 * 1750 / 1000) + 1000);
+    CHECK(ce_score_apply() == ce_score_total() * CE_SCORE_ENGINE_UNIT);
+
+    /* ---- ① 单卡 = 旧行为（逐字节）----
+     * 三张卡各来一遍，桥值选得让 `G_0` 正好等于旧口径里那个「基础」：
+     *   NORMAL、资金力 0 ⇒ G_0 = 1000 点（ecx = 1,000,000 ⇒ 身价 10000）—— 下面 ①b 用这个档。
+     * 这里用 G_0 = 10000 点（身价 100000）那一档：
+     *   107：旧声明 = 自己的最大得点（**不含** G_0，它本来就是 TH07 的数）⇒ 新式等价；
+     *   110/111：旧声明 = 基础 + Δ ⇒ 新式声明 Δ + 层出的 G_0，两边逐字节相同。*/
+    ce_score_reset();
+    ce_score_bridge(100000u, CE_SCORE_DIFF_NORMAL);                   /* G_0 = 10000 */
+    CHECK(ce_score_base_points() == 10000);
+    ce_score_declare_delta(107, 105500);
+    CHECK(ce_score_total() == 10000 + 105500);
+    CHECK(ce_score_apply() == 115500 * CE_SCORE_ENGINE_UNIT);         /* ★ 与旧行为逐字节相同 */
+    check_single_card_equivalence(10000, 115500, 105500);              /* 旧声明 = G_0 + G_i */
+
+    ce_score_reset();
+    ce_score_bridge(100000u, CE_SCORE_DIFF_NORMAL);
+    ce_score_declare_coupled(110, 55000 - 10000);                     /* 旧声明 55000 = G_0 + Δ */
+    CHECK(ce_score_total() == 55000);
+    CHECK(ce_score_apply() == legacy_value(55000));
+
+    ce_score_reset();
+    ce_score_bridge(100000u, CE_SCORE_DIFF_NORMAL);
+    ce_score_declare_coupled(111, 60000 - 10000);
+    CHECK(ce_score_apply() == legacy_value(60000));
+
+    /* ---- ①b legacy API（`ce_score_declare`）单卡逐字节等价 ----
+     * 旧 .c 一行都不用改也能编过：`ce_score_declare(id, v)` 的 v 仍是「该卡自己的得分值」，
+     * 层按 `max(v, 10)` 折成加数（= 老落笔公式 `*value = max(v,10)*10` 的 G 那一半）。
+     * ★ NORMAL 资金力 0 这一档：ecx = 1,000,000 ⇒ 身价 10000 ⇒ `G_0 = 1000` 点（原生 SCORE +1000）。*/
+    ce_score_reset();
+    ce_score_bridge(score_bridge_of(score_ecx(0, CE_SCORE_DIFF_NORMAL)), CE_SCORE_DIFF_NORMAL);
+    CHECK(score_ecx(0, CE_SCORE_DIFF_NORMAL) == 1000000u);            /* (0+1)×1000×100，被下限顶到 1e6 */
+    CHECK(ce_score_base_points() == 1000);                            /* = ecx/1000 */
+    check_single_card_equivalence(10000, 115500, 105500);             /* ★ 旧 115500 ↔ 新 (10000 档) 105500 */
+    ce_score_reset();
+    ce_score_bridge(score_bridge_of(score_ecx(0, CE_SCORE_DIFF_NORMAL)), CE_SCORE_DIFF_NORMAL);
+    CHECK(ce_score_base_points() == 1000);
+    ce_score_declare(107, 115500);
+    CHECK(ce_score_legacy_count() == 1 && ce_score_legacy_sum() == 115500);
+    CHECK(ce_score_total() == 1000 + 115500);
+    ce_score_declare(107, 0);                                         /* 0 = 退出（旧语义）*/
+    CHECK(ce_score_legacy_count() == 0);
+    CHECK(ce_score_apply() == 1000 * CE_SCORE_ENGINE_UNIT);           /* 只剩 G_0 */
+    ce_score_declare(107, 1);                                         /* 旧公式的 10 分下限也在 */
+    CHECK(ce_score_legacy_sum() == 10);
+    CHECK(ce_score_apply() == (1000 + 10) * CE_SCORE_ENGINE_UNIT);
+    ce_score_declare(110, 50000);                                     /* 多张 legacy 卡 ⇒ 求和 */
+    CHECK(ce_score_legacy_count() == 2 && ce_score_legacy_sum() == 50010);
+    CHECK(ce_score_apply() == (1000 + 50010) * CE_SCORE_ENGINE_UNIT);
+    ce_score_declare(CE_SDK_CARD_ID_MAX + 1u, 999999);                /* 越界 id：不记、不动别人 */
+    CHECK(ce_score_legacy_count() == 2 && ce_score_legacy_sum() == 50010);
+
+    /* ---- 删卡：四个通道都要能退（`ce_layer_drop_card` 逐个调）---- */
+    ce_score_reset();
+    ce_score_bridge(99999999u, CE_SCORE_DIFF_NORMAL);                 /* 界外大值 ⇒ 兜底钳到 N 上限 */
+    ce_score_declare_delta(107, 1000);
+    ce_score_declare_coupled(110, 2000);
+    ce_score_declare_coupled(111, 3000);
+    ce_score_mul_declare(111, 500);
+    ce_score_declare(112, 4000);
+    CHECK(ce_score_participants() == 4 && ce_score_signal_strength() == 500);
+    ce_score_declare_delta(107, 0);
+    ce_score_declare_coupled(110, 0);
+    ce_score_declare_coupled(111, 0);
+    ce_score_mul_declare(111, 0);
+    ce_score_declare(112, 0);
+    CHECK(ce_score_participants() == 0);
+    CHECK(ce_score_signal_strength() == 0);
+    CHECK(ce_score_coupling_permille() == 1000);
+    CHECK(ce_score_total() == CE_SCORE_BASE_MAX_NORMAL / CE_SCORE_ENGINE_UNIT);   /* 全退掉 ⇒ 只剩 G_0 */
+
+    /* ---- ④d coeff_06：**引擎的机制，本层不重实现**（用户规格：不要新建）----
+     * 一手：系数算在**落笔点之后**、乘在**身价**上（`th18:0x446bf9`–`0x446cf3` / `0x446cfe`），
+     * 判据 = 回收线 `player+0x47998` 与 **`player+0x624`（自机的 y）**。本层只**记录**线上还是线下：
+     *   `ce_score_set_coeff(1000)` = 线上 / 真空飞行；`0` = 线下（引擎打折，值我们不猜）。
+     * 折扣曲线的精确形状 🟡 未钉死（见 SCORE-LAYER-REWORK.md §4），因此**不写断言**。*/
+    ce_score_reset();
+    ce_score_bridge(100000u, CE_SCORE_DIFF_NORMAL);
+    CHECK(ce_score_coeff_permille() == 1000);          /* reset 后 = 不打折 */
+    ce_score_set_coeff(0);
+    CHECK(ce_score_coeff_permille() == 0);             /* 线下标记 */
+
+    /* ---- 引擎系数只是**只读**：不参与本层算式（引擎自己乘） ---- */
+    ce_score_reset();
+    ce_score_bridge(100000u, CE_SCORE_DIFF_NORMAL);
+    ce_score_declare_delta(107, 1000);
+    ce_score_set_coeff(500);
+    CHECK(ce_score_coeff_permille() == 500);
+    CHECK(ce_score_total() == 11000);                                 /* 系数不改本层结果（G_0 10000 + 107 的 1000）*/
+    ce_score_set_coeff(1000);
+    CHECK(ce_score_coeff_permille() == 1000);
+}
+
+/* ★★ 2026-09-13 新增：**落笔点搬到入口之后的单位恒等式**（`SCORE-LAYER-REWORK.md` §2 单位表）。
+ * 这是本次改动的核心可执行证据：SDK 在新站点 `th18:0x446bf9` 拿到的 `ecx` 与层算出的 `G_0`
+ * 必须满足
+ *       ce_score_base_points() == ecx / 1000          （满额支 ⇒ SCORE 增量 == G_0）
+ *       10 × ce_score_base_points() == ecx / 100      （= 引擎满额支的 esi / 弹窗值）
+ * 而且要**跨难度、跨资金力**都成立（包括引擎自己那两个钳：下限 1e6 与逐难度上限表值×100）。*/
+static void test_score_base_unit_identity(void)
+{
+    static const int diffs[5] = { CE_SCORE_DIFF_EASY, CE_SCORE_DIFF_NORMAL, CE_SCORE_DIFF_HARD,
+                                  CE_SCORE_DIFF_LUNATIC, CE_SCORE_DIFF_EXTRA };
+    static const int32_t moneys[9] = { 0, 1, 8, 9, 19, 99, 199, 499, 1000000 };
+    int d, m;
+
+    /* 引擎那两个界（一手 0x44286e / 0x442898 写 0x4ccd28 / 0x4ccd2c，0x446b53–0x446bf1 用）：
+     *   ecx ∈ [1,000,000, 表值 ×100]  ⇒  点 ∈ [1000, 表值/10]。*/
+    for (d = 0; d < 5; ++d) {
+        int32_t hi_pts = 0;
+        switch (diffs[d]) {
+        case CE_SCORE_DIFF_EASY:    hi_pts = CE_SCORE_BASE_MAX_EASY;    break;
+        case CE_SCORE_DIFF_HARD:    hi_pts = CE_SCORE_BASE_MAX_HARD;    break;
+        case CE_SCORE_DIFF_LUNATIC: hi_pts = CE_SCORE_BASE_MAX_LUNATIC; break;
+        case CE_SCORE_DIFF_EXTRA:   hi_pts = CE_SCORE_BASE_MAX_EXTRA;   break;
+        default:                    hi_pts = CE_SCORE_BASE_MAX_NORMAL;  break;
+        }
+        hi_pts /= CE_SCORE_ENGINE_UNIT;
+        for (m = 0; m < 9; ++m) {
+            uint32_t ecx = score_ecx(moneys[m], diffs[d]);
+            int32_t pts = (int32_t)(ecx / 1000u);
+            ce_score_reset();
+            ce_score_bridge(score_bridge_of(ecx), diffs[d]);          /* = sdk.c 填的那个数 */
+            CHECK(ecx >= 1000000u && (int32_t)(ecx / 100u) <= hi_pts * CE_SCORE_ENGINE_UNIT);
+            CHECK(pts >= 1000 && pts <= hi_pts);
+            CHECK(ce_score_base_points() == pts);                     /* ★ G_0 == ecx/1000 */
+            CHECK(ce_score_base_points() * CE_SCORE_ENGINE_UNIT == (int32_t)(ecx / 100u));  /* = 弹窗值 */
+            /* 有卡声明时：总数 = G_0 + Σ，且落笔 `ecx' = 1000 × total` ⇒ 引擎给 total 分 */
+            ce_score_declare_delta(107, 3000);
+            CHECK(ce_score_total() == pts + 3000);
+            CHECK(ce_score_total() * 1000 == pts * 1000 + 3000 * 1000);
+        }
+    }
+    /* 无卡声明：**SDK 一个字都不写**（sdk.c 的判据就是 participants() == 0）⇒ 原生逐字节不变。*/
+    ce_score_reset();
+    ce_score_bridge(score_bridge_of(score_ecx(19, CE_SCORE_DIFF_NORMAL)), CE_SCORE_DIFF_NORMAL);
+    CHECK(ce_score_participants() == 0);                              /* ⇒ 站点处不写 regs->ecx */
+    CHECK(ce_score_total() == ce_score_base_points());                /* ⇒ total 只是原生基础 */
+    ce_score_reset();
+    CHECK(ce_score_participants() == 0);
+}
+
+/* ★★ 2026-09-13：伤害层落笔点搬到卡链遍历之后（`BP_ce_bullet_damage_final`，`th18:0x45e7ff`）
+ * + 死亡结果闩锁（`BP_ce_death_result`，`th18:0x45c127`）。层本身是纯逻辑，所以「语义」这一半
+ * 能在主机上钉死；「站点挂没挂上」由 `ce_sdk_setup` 的断点自检 + `sites.py check` 管。 */
+static void test_native_conflict_fixes(void)
+{
+    /* ---- ① 伤害：**乘**在别人算完的值上（不是覆盖）----
+     * 一手算例（CARD-NATIVE-CONFLICT-AUDIT §B）：原生 25 Saki 的 `+0x28` 把伤害重算成
+     * `shooter × 1.4`，我们的 113 声明 1250（×1.25）⇒ 最终 = 140 × 1250 / 1000 = 175（= ×1.75）。
+     * 旧写法（落笔在 `+0x28` 桩里、Saki 在链里靠后）会得到 140 —— 我们的倍率被静默抹掉。*/
+    ce_dmg_reset();
+    ce_dmg_set(113, 1250);
+    CHECK(ce_dmg_aggregate() == 1250);
+    CHECK(ce_dmg_scale(140) == 175);                   /* 140 = 别人（Saki ×1.4）算完的值 */
+    CHECK(ce_dmg_scale(100) == 125);                   /* 干净基值也一样 */
+    /* 两张原生装备卡都在我们前面 ⇒ ×1.75（而不是被任一家顶掉） */
+    CHECK(ce_dmg_scale(112) == 140);                   /* 112 = 80 × 1.4 */
+    /* 中性（没有加伤害的卡）⇒ 一个字节都不该动：`ce_sdk_bullet_damage_final` 直接 return */
+    ce_dmg_reset();
+    CHECK(ce_dmg_aggregate() == CE_DMG_UNIT);
+    CHECK(ce_dmg_scale(140) == 140);
+    /* 只乘一次（单次取整）：落笔点唯一 ⇒ 不存在「同帧施加两次」这一档。
+     * 这里把它写成算例：175 再乘一次就变 218，差额 43 —— 实跑对账时就是看这个差值。*/
+    ce_dmg_reset();
+    ce_dmg_set(113, 1250);
+    CHECK(ce_dmg_scale(ce_dmg_scale(140)) == 218);     /* ✗ 施加两次的样子（不该出现）*/
+    ce_dmg_reset();
+
+    /* ---- ② 死亡结果闩锁：引擎那一次判定的复述（-1 未知 / 0 未取消 / 1 已取消）---- */
+    ce_death_result_reset();
+    CHECK(ce_death_result() == CE_DEATH_RESULT_UNKNOWN);
+    CHECK(ce_death_cancelled() == 0);                  /* ★ 未知**不算**「被取消」*/
+    CHECK(CE_DEATH_RESULT_UNKNOWN != 0);               /* 与 0（会扣命）是两个不同的值 */
+    ce_death_result_note(0);                           /* 五家跑完 acc == 0 ⇒ 会扣命 */
+    CHECK(ce_death_result() == 0);
+    CHECK(ce_death_cancelled() == 0);
+    CHECK(ce_death_result_seq() == 1);
+    ce_death_result_note(1);                           /* 有人返回 1 ⇒ 取消 */
+    CHECK(ce_death_result() == 1);
+    CHECK(ce_death_cancelled() == 1);
+    CHECK(ce_death_result_seq() == 2);
+    /* 一次死亡开始（BP_ce_player_die）⇒ 回到未知；_seq 只数判定次数，不被复位影响 */
+    ce_death_result_reset();
+    CHECK(ce_death_result() == CE_DEATH_RESULT_UNKNOWN);
+    CHECK(ce_death_cancelled() == 0);
+    CHECK(ce_death_result_seq() == 2);
+    /* 非 0 一律当「取消」（与 acc 是 OR 累加器一致；别把参数当计数）*/
+    ce_death_result_note(7);
+    CHECK(ce_death_result() == 1 && ce_death_cancelled() == 1);
+    ce_death_result_note(-3);
+    CHECK(ce_death_result() == 1);
+    ce_death_result_note(0);
+    CHECK(ce_death_result() == 0 && ce_death_cancelled() == 0);
+    CHECK(ce_death_result_seq() == 5);
+    ce_death_result_reset();
+}
+
+/* ★★ 2026-09-15（`NEXT.md` §1x.2）：**自建实体 → 114 收点批**的两个通道（SDK 层）。
+ * 接线级的合成语义（消费者一侧真的按 `cards/collect2x.c` 的形状一帧一帧跟生产者对跑）在
+ * `tests/test_vitem_batch.c`；这里钉的是**层本身**的五条契约（唯一出处 = `sdk_core.h` 的长注）：
+ *   ① 成员通道只累加、被抽干后不重复计；
+ *   ② **半道具（`CE_VITEM_HALF`）两条通道都不认**（§1x.3：微档 = 消弹那档的半道具）；
+ *   ③ 在飞通道按源分账、带 `CE_VITEM_HOLD_FRAMES` 容差；显式声明 0 / 过期 ⇒ 立刻不在飞；
+ *   ④ **没有消费者时自过期、且不碰引擎侧任何东西**（114 不在场 = 零副作用）；
+ *   ⑤ 通道**不进计分层**（`ce_score_*` 不受影响）——用户口径「只 +1，不进 SCORE」。*/
+static void test_vitem_channel(void)
+{
+    /* ⑤ + ①：报一颗 ⇒ 抽得到一颗，SCORE / 计分层纹丝不动 */
+    ce_vitem_reset();
+    ce_score_reset();
+    ce_score_bridge(50000, 1);                       /* 身价 50000（= 点 × 10）⇒ G_0 = 5000 点 */
+    const int32_t score_before = ce_score_total();
+    CHECK(score_before == 5000);
+    CHECK(ce_vitem_take_collect() == 0);             /* 空：没有东西可抽 */
+    CHECK(ce_vitem_collect_pending() == 0);
+    ce_vitem_note_collect(CE_VITEM_FULL, 1);
+    CHECK(ce_vitem_collect_pending() == 1);
+    CHECK(ce_score_total() == score_before);         /* ★ 只 +1：SCORE 一分没动 */
+    CHECK(ce_score_participants() == 0);             /* 也没让谁「参与」计分层 */
+    CHECK(ce_vitem_take_collect() == 1);             /* 抽干 */
+    CHECK(ce_vitem_take_collect() == 0);             /* 不重复计（抽走就是抽走）*/
+    CHECK(ce_vitem_collect_pending() == 0 && ce_score_total() == score_before);
+    /* 一帧里收了一撮点：同帧多次上报累加 */
+    ce_vitem_note_collect(CE_VITEM_FULL, 3);
+    ce_vitem_note_collect(CE_VITEM_FULL, 4);
+    CHECK(ce_vitem_collect_pending() == 7);
+    CHECK(ce_vitem_take_collect() == 7);
+    /* n <= 0 = 不做事 */
+    ce_vitem_note_collect(CE_VITEM_FULL, 0);
+    ce_vitem_note_collect(CE_VITEM_FULL, -2);
+    CHECK(ce_vitem_collect_pending() == 0);
+
+    /* ② 半道具（微档）：上报被丢弃，且不会污染已累加的完整道具 */
+    ce_vitem_reset();
+    ce_vitem_note_collect(CE_VITEM_HALF, 5);
+    CHECK(ce_vitem_collect_pending() == 0);
+    CHECK(ce_vitem_take_collect() == 0);
+    ce_vitem_note_collect(CE_VITEM_FULL, 2);
+    ce_vitem_note_collect(CE_VITEM_HALF, 100);
+    CHECK(ce_vitem_take_collect() == 2);             /* 只算那 2 颗完整道具 */
+    ce_vitem_declare_flying(CE_VITEM_SRC_SHARED, CE_VITEM_HALF, 9);
+    CHECK(ce_vitem_flying() == 0);                   /* 半道具也不算「有东西在飞」 */
+    CHECK(ce_vitem_flying_from(CE_VITEM_SRC_SHARED) == 0);
+
+    /* ③ 在飞：同帧可读 → 容差窗内仍可读（生产者/消费者同帧不同序）→ 超窗 = 不在飞 */
+    ce_vitem_reset();
+    ce_vitem_declare_flying(CE_VITEM_SRC_SHARED, CE_VITEM_FULL, 3);
+    CHECK(ce_vitem_flying() == 3 && ce_vitem_flying_from(CE_VITEM_SRC_SHARED) == 3);
+    for (int i = 0; i < CE_VITEM_HOLD_FRAMES; ++i) {
+        ce_sdk_frame_bump();
+        CHECK(ce_vitem_flying() == 3);               /* 生产者这一帧还没声明也读得到（顺序无关）*/
+    }
+    ce_sdk_frame_bump();
+    CHECK(ce_vitem_flying() == 0);                   /* 超窗：生产者不再声明 ⇒ 不在飞 */
+    /* 「收完了」= 生产者显式声明 0（faith 每帧都声明，池空就报 0）⇒ **当帧**就不在飞 */
+    ce_vitem_declare_flying(CE_VITEM_SRC_SHARED, CE_VITEM_FULL, 2);
+    CHECK(ce_vitem_flying() == 2);
+    ce_vitem_declare_flying(CE_VITEM_SRC_SHARED, CE_VITEM_FULL, 0);
+    CHECK(ce_vitem_flying() == 0);
+    /* 多源求和 + 单源退出（删卡 / 池清空）：只撤自己那一份 —— 116 是「将来复用」的示意 */
+    ce_vitem_declare_flying(CE_VITEM_SRC_SHARED, CE_VITEM_FULL, 2);
+    ce_vitem_declare_flying(116, CE_VITEM_FULL, 4);
+    CHECK(ce_vitem_flying() == 6);
+    ce_vitem_drop(CE_VITEM_SRC_SHARED);
+    CHECK(ce_vitem_flying() == 4 && ce_vitem_flying_from(116) == 4);
+    ce_vitem_drop(116);
+    CHECK(ce_vitem_flying() == 0);
+    /* 越界源号：不写、不崩 */
+    ce_vitem_declare_flying((uint32_t)CE_SDK_CARD_ID_MAX + 1, CE_VITEM_FULL, 7);
+    ce_vitem_drop((uint32_t)CE_SDK_CARD_ID_MAX + 1);
+    CHECK(ce_vitem_flying() == 0 && ce_vitem_flying_from(999) == 0);
+
+    /* ④ 114 不在场（没人抽干 / 没人读）= 零副作用：两条通道都**自过期**，不留状态、不动引擎侧 */
+    ce_vitem_reset();
+    ce_score_reset();
+    ce_score_bridge(10000, 1);
+    const int32_t sc = ce_score_total();
+    ce_vitem_note_collect(CE_VITEM_FULL, 3);         /* 没有消费者 */
+    ce_vitem_declare_flying(CE_VITEM_SRC_SHARED, CE_VITEM_FULL, 2);
+    CHECK(ce_vitem_collect_pending() == 3 && ce_vitem_flying() == 2);
+    for (int i = 0; i <= CE_VITEM_HOLD_FRAMES; ++i) ce_sdk_frame_bump();
+    CHECK(ce_vitem_collect_pending() == 0);          /* 过期：陈年计数作废（不会攒到下一次抽干）*/
+    CHECK(ce_vitem_take_collect() == 0);
+    CHECK(ce_vitem_flying() == 0);
+    CHECK(ce_score_total() == sc && ce_score_participants() == 0);   /* 引擎侧的分一分没动 */
+    /* 上限钳：没人抽干时也不会溢出（钳在 CE_VITEM_NOTE_MAX）*/
+    ce_vitem_reset();
+    for (int i = 0; i < 10; ++i) ce_vitem_note_collect(CE_VITEM_FULL, 1000);
+    CHECK(ce_vitem_collect_pending() == CE_VITEM_NOTE_MAX);
+    CHECK(ce_vitem_take_collect() == CE_VITEM_NOTE_MAX);
+    ce_vitem_reset();
+    CHECK(ce_vitem_collect_pending() == 0 && ce_vitem_flying() == 0);
+}
+
+/* ---- ★ PoC 高度层（收点线；2026-09-15）--------------------------------------------
+ * 层语义 / 一手（两个写点 `0x45ae8f`=128.0 / `0x40c275`=224.0、四个读点全在「线上/线下」）
+ * 见 `sdk_core.h` 的块注释与 `engine/player/th18/05-poc-height-and-indicator.md`。*/
+static void test_poc_layer(void)
+{
+    const uint32_t D = CE_POC_HEIGHT_DEFAULT_BITS;   /* 128.0f */
+    const uint32_t K = CE_POC_HEIGHT_KANAKO_BITS;    /* 224.0f */
+    uint32_t out = 0u;
+
+    /* ① 位型常量是真的（与一手机器码里的立即数逐位相同）*/
+    CHECK(CE_POC_HEIGHT_DEFAULT_BITS == 0x43000000u);
+    CHECK(CE_POC_HEIGHT_KANAKO_BITS == 0x43600000u);
+    CHECK(ce_f32_bits(128.0f) == 0x43000000u && ce_f32_bits(224.0f) == 0x43600000u);
+    CHECK(ce_f32_from_bits(0x43600000u) == 224.0f);
+    CHECK(ce_f32_bits(448.0f) == CE_POC_HEIGHT_MAX_BITS);
+    CHECK(ce_f32_bits(0.0f) == 0u);
+    /* 非负 float 的位型序 = 数值序（本层全靠这条：聚合/夹取都在整数域做）*/
+    CHECK(CE_POC_HEIGHT_DEFAULT_BITS < CE_POC_HEIGHT_KANAKO_BITS);
+    CHECK(CE_POC_HEIGHT_KANAKO_BITS < CE_POC_HEIGHT_MAX_BITS);
+
+    /* ② 没声明：一个数都不写，访问器就读引擎字段的实读值 */
+    ce_poc_reset();
+    CHECK(!ce_poc_has_declaration());
+    CHECK(ce_poc_winner() == -1);
+    CHECK(ce_poc_target_bits() == 0u);
+    CHECK(ce_poc_effective_bits(D) == D);             /* 无人声明 ⇒ 引擎值原样（含原生卡 22 的 224）*/
+    CHECK(ce_poc_effective_bits(K) == K);
+    CHECK(!ce_poc_frame(D, &out));                    /* 帧决策：本帧别写 */
+    CHECK(!ce_poc_base(&out));
+
+    /* ③ 单卡声明：落笔 = 声明值；基准 = 动手之前的字段值 */
+    ce_poc_reset();
+    CHECK(ce_poc_declare(111, K));
+    CHECK(ce_poc_has_declaration());
+    CHECK(ce_poc_winner() == 111);
+    CHECK(ce_poc_target_bits() == K);
+    CHECK(ce_poc_effective_bits(D) == K);             /* 有声明 ⇒ 生效值 = 声明值 */
+    CHECK(ce_poc_frame(D, &out) && out == K);
+    CHECK(ce_poc_base(&out) && out == D);             /* 基准 = 128（我们动手前字段里的值）*/
+    CHECK(ce_poc_frame(K, &out) && out == K);         /* 幂等：同值照写 */
+    CHECK(ce_poc_base(&out) && out == D);             /* 基准不被自己刷新 */
+
+    /* ④ 多卡在场：**取最大**（线最低的那条），并列取 id 最小；赢家可查 */
+    CHECK(ce_poc_declare(114, ce_f32_bits(160.0f)));
+    CHECK(ce_poc_target_bits() == K && ce_poc_winner() == 111);
+    CHECK(ce_poc_frame(K, &out) && out == K);
+    CHECK(ce_poc_declare(58, ce_f32_bits(300.0f)));
+    CHECK(ce_poc_target_bits() == ce_f32_bits(300.0f) && ce_poc_winner() == 58);
+    CHECK(ce_poc_frame(K, &out) && out == ce_f32_bits(300.0f));
+    ce_poc_drop(58);
+    CHECK(ce_poc_target_bits() == K && ce_poc_winner() == 111);
+    ce_poc_reset();
+    CHECK(ce_poc_declare(111, K) && ce_poc_declare(114, K));   /* 并列：id 小者当赢家（只用于诊断）*/
+    CHECK(ce_poc_winner() == 111);
+
+    /* ⑤ 夹取与拒收：> 448 夹到 448；0 / 负 / NaN / Inf / 越界 id 一律不成立 */
+    ce_poc_reset();
+    CHECK(ce_poc_declare(111, ce_f32_bits(1000.0f)));
+    CHECK(ce_poc_target_bits() == CE_POC_HEIGHT_MAX_BITS);
+    CHECK(ce_poc_frame(D, &out) && out == CE_POC_HEIGHT_MAX_BITS);
+    CHECK(!ce_poc_declare(111, 0u));                          /* 0.0f = 退出声明 */
+    CHECK(!ce_poc_has_declaration());
+    CHECK(!ce_poc_declare(111, 0xbf800000u));                 /* -1.0f */
+    CHECK(!ce_poc_declare(111, 0x7f800000u));                 /* +Inf */
+    CHECK(!ce_poc_declare(111, 0x7fc00000u));                 /* NaN */
+    CHECK(!ce_poc_declare(255 + 1u, K));                      /* id 越界 */
+    CHECK(!ce_poc_has_declaration());
+
+    /* ⑥ 「被删掉会怎样」：声明全撤 ⇒ 写回**基准**（不是写死 128）*/
+    ce_poc_reset();
+    CHECK(ce_poc_declare(111, ce_f32_bits(256.0f)));
+    CHECK(ce_poc_frame(K, &out) && out == ce_f32_bits(256.0f));   /* 场景：原生卡 22 已把线写到 224 */
+    CHECK(ce_poc_base(&out) && out == K);
+    CHECK(ce_poc_drop_take_base(111, &out) && out == K);          /* 删卡 ⇒ 立刻写回 224（不是 128）*/
+    CHECK(!ce_poc_has_declaration());
+    CHECK(!ce_poc_drop_take_base(111, &out));                     /* 基准已消费 ⇒ 不再重复写 */
+    /* 还有人声明时删一张：不写回，剩下的那条继续生效 */
+    ce_poc_reset();
+    CHECK(ce_poc_declare(111, K) && ce_poc_declare(114, ce_f32_bits(160.0f)));
+    CHECK(ce_poc_frame(D, &out) && out == K);
+    CHECK(!ce_poc_drop_take_base(114, &out));                     /* 114 走了，111 还在 */
+    CHECK(ce_poc_has_declaration() && ce_poc_target_bits() == K);
+    CHECK(ce_poc_drop_take_base(111, &out) && out == D);          /* 最后一个走 ⇒ 写回基准 128 */
+
+    /* ⑦ 别人中途改过 ⇒ 基准跟着刷新（原生卡 22 / `Player__reset` 都可能动手）*/
+    ce_poc_reset();
+    CHECK(ce_poc_declare(111, ce_f32_bits(160.0f)));
+    CHECK(ce_poc_frame(D, &out) && out == ce_f32_bits(160.0f));
+    CHECK(ce_poc_frame(K, &out) && out == ce_f32_bits(160.0f));   /* 字段被改成 224（≠ 我们写的 160）*/
+    CHECK(ce_poc_base(&out) && out == K);                         /* ⇒ 基准跟到 224 */
+    CHECK(ce_poc_drop_take_base(111, &out) && out == K);
+
+    /* ⑧ 无声明时**一个字都不写**（帧决策返回 0）——否则会把原生卡 22 的 224 顶回 128 */
+    ce_poc_reset();
+    out = 0xdeadbeefu;
+    CHECK(!ce_poc_frame(K, &out) && out == 0xdeadbeefu);
+    CHECK(!ce_poc_frame(D, &out) && out == 0xdeadbeefu);
+    CHECK(!ce_poc_effective_bits(D) == 0);                        /* 未声明时生效值 = 引擎值（不是 0）*/
+    CHECK(ce_poc_effective_bits(12345u) == 12345u);
+    ce_poc_reset();
+}
+
 int main(void)
 {
     test_dmg_layer();
     test_declare_layers();
     test_drop_layer();
     test_hud_slots();
+    test_score_rework();
+    test_score_base_unit_identity();
     test_interest_and_pick();
     test_judgment();
     test_royal();
@@ -616,6 +1296,9 @@ int main(void)
     test_bind_check();
     test_contract_check();
     test_state();
+    test_native_conflict_fixes();
+    test_vitem_channel();
+    test_poc_layer();
     printf("test_sdk_core: %d passed, %d failed\n", s_pass, s_fail);
     return s_fail ? 1 : 0;
 }
