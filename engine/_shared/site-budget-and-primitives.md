@@ -29,7 +29,7 @@
 | **创建使魔 (08)** | `th08:0x450f60 Player::shoot_bullet(s?)`，**唯一调用者** `th08:0x451595`（`Player::tick_shooting_state` 区内）。序言：`byte [arg+3]` 闸 → `[arg+0xe2a74]` 行表指针 + `0x38` 步长；逐行 `call [row+0x28]`；返回 1 ⇒ 武装该 VM（`flags \|= 0x2000`、`state=1`、`vm+0x480=row`、`vm+0x474/+0x478/+0x47c ← row+0x2c/+0x30/+0x34`）| **0 条**（数据驱动：我们只提供行数据 + 六个回调；回调经 `row+0x28..0x34` 数据引用，不占站点）| ✅ 一手（沿用 `engine/player/th08/01-youkai-familiars-first-hand.md`）|
 | **关闭发弹口 (08)** | 闸链一手（见 §2.1）：`th08:0x451500` 里四道闸之后才 `call th08:0x450f60` | **优先 0 条**：使魔弹是**我们的行数据**，把 `rate` 设计成永不命中即可；要「随时按住/放开」才需要 **1 条**每帧家务 | ✅ 闸链一手 |
 | **创建敌人 (12)** | `th12:0x412990 EnemyManager::allocate_new_enemy`（见 §2.2）：`operator new(0x27b8)` 造敌人对象；调用者 = `EnemyData__run_ecl_256_plus`（ECL opcode 256+，3 处）+ 调试视图 | **0 条**（从每帧家务里直接调用即可；ECL 本来就是它的常规入口）| ✅ 调用链 + 对象尺寸一手；参数语义待核 |
-| **收点 (12)** | `th12:0x425c20 ItemManager::on_tick__body`（+ `ItemManager::initialize 0x425940`、`operator new 0x425b10`）| **1 条**（与 TH18 的 `ce_item_frame` 同一形态：一条每帧家务站点承载所有道具事件）| 🟡 落点已定位，道具结构/字段未核 |
+| **收点 (12)** | 上游 = `th12:0x4273f0 ItemManager::spawn_item`（调用者见 §2.4）；下游 = `th12:0x425c20 ItemManager::on_tick__body` | **1 条**（与 TH18 的 `ce_item_frame` 同一形态：一条每帧家务站点承载所有道具事件）| 🟡 链路一手（§2.4）；道具格位/类型枚举未核 |
 | **拦截Z (09)** | ✅ 一手：输入块 P1 `th09:0x4ace18` / P2 `th09:0x4acf34`（stride `0x11c` 双人），按住位图 `+0x2c`；**掩码 1 = Z**（明细见 §2.3 Round 6）| **0 条**（TH18 侧走既有共享站点 `th18:0x45ebfb` 的拦 Z 回调；TH09 侧只读输入位）| ✅ 一手（输入块 + 掩码表）|
 | **创建灵魂 (09)** | 候选：`th09:0x412960 BulletManager::shoot_one_bullet`、`th09:0x4130f0 shoot_fairy_bullets_array`、`th09:0x4131c0 shoot_rival_bullets_array` ——即「妖精/对手弹阵」两条数组发射（PoFV 里被打掉的妖精会掉霊）| 待算：若走 `BulletManager` 的常规发射，**0 条**（同 TH12 的 ECL 路线：直接调用）| 🟡 候选已定位，霊的对象身份待核 |
 | **蓄力 (09)** | 🟡 落点收窄：**状态计时器 `player+0x303c8`** + 计数域 `player+0x30334`（被置 `0x3c` = 60 帧）；状态体 `th09:0x41cb50` 做缩放渐变 ⇒ **蓄力态候选 = 状态枚举 4**（`th09:0x41e720` 按状态计时器比较）；攻击侧候选 = `ExAttackManager`（见 §2.3）| 待算（预期 **0–1 条**：读状态即可；要拦「不可蓄力」才需 1 条）| 🟡 两条一手在手，待一条反证 |
@@ -179,6 +179,34 @@
 ② 读 `BulletManager::shoot_*` 三条的参数与写入的池（定「霊」的对象身份）；
 ③ 追 `th09:0x410730 EnemyManager::on_tick` 的死亡分支 ⇒ 定暴风生成器与它的消弹调用。
 每步都要一手（地址 + 字段 + 调用链），并顺手核算站点（能调用就不拦）。
+
+### 2.4 收点：TH12 的道具链（一手，Round 8）
+
+```
+生成端（全部经 th12:0x4273f0 ItemManager::spawn_item）
+  0x40cba6  BulletManager::cancel_in_radius      ; ★ 消弹 → 转道具
+  0x40ccb9  sub_40cbe0__unused
+  0x40cde1  sub_40cd00_cancels_bullets
+  0x40cf2c / 0x40d0b9  sub_40ce20__unused
+  0x412121  EnemyDrop::drop_items                ; ★ 击破 → 掉点
+  0x41225b  EnemyDrop::spawn_ex_drops            ; ★ 击破 → 额外掉落
+  0x414c2f  Enemy::die
+
+道具对象（th12:0x4258d0 Item::constructor，一手）
+  +0x000  一个嵌进去的 ANM VM（构造调用 th12:0x4027e0）
+  +0x4b4  第二个 VM（同一构造器）
+  +0x998 / +0x9ac  两个 flags 域（构造时按 0xfffffffe 清位）
+  ⇒ **x09b0 量级的对象**（字段到 0x9ac）⇒ 道具不是"小而多的数组格"，是"带 VM 的大对象"
+
+管理器（th12:0x425940 ItemManager::initialize，一手）
+  operator new(0x24) 造节点 → 节点 +4 = flags（按 ~2 清、按 1 置）、**+8 = th12:0x427380 ItemManager::on_tick**、
+  +0xc/+0x10 = 0、+0x14 = 自身、+0x20 = manager ⇒ **它就是引擎更新链上的一个节点**
+  （与 TH18 的 UpdateFunc 链同形）⇒ 我们在 TH18 侧用一条 `ce_item_frame` 承载全部道具事件，形态是对的。
+  每帧被清零的两个计数器：manager+0x666fdc / manager+0x666fd4（对象量级 ⇒ manager 约 0x667000 字节）。
+```
+
+**仍缺（下一轮）**：`ItemManager::on_tick__body`（0x1600 字节）里的**道具池遍历**（槽位/步长/在用具位）
+与 TH12 的**道具类型枚举**（P 点 / 点 / 碎片 / 令牌…）—— 有了这两样才能把「收点」原语的原版语义钉死。
 
 ## 3. 兼容契约（草案，待 106–117 全装验收）
 
