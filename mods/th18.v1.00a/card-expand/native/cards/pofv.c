@@ -87,6 +87,10 @@
 static pofv_blast_queue_t s_blast;
 static pofv_spirit_pool_t s_spirit;
 static int32_t            s_frame;      /* 游玩帧计数（连爆窗口的帧源；只在 on_tick_2 前进）*/
+/* ★ 验证批次判据（`native/tools/verify.py` 的 «创建灵魂»）：本次段累计的**灵魂账**。
+ *   与两个池同样放文件级（`ce_state` 只有 480 字节可用），在 `clear_card()` 里清。
+ *   没有这行账，"击破 ⇒ 掉灵魂"在日志上**不可判读**（池不满就一声不响）。*/
+static int32_t            s_spawned, s_absorbed, s_blasted, s_dropped;
 
 typedef struct {
     ce_card_t  *card;
@@ -220,6 +224,7 @@ static void do_blast(pofv_card_t *s, const pofv_blast_t *bl)
             if (!s->cap_logged) { ce_log("pofv: blast queue full — chain blasts dropped"); s->cap_logged = 1; }
         }
     }
+    s_blasted += killed;
     if (n > 0)
         ce_log("pofv: blast chain %d r %d cancelled %d white (gauge %d, sp %d)",
                (int)bl->chain, (int)r, n, (int)s->st.gauge, (int)s->st.sp);
@@ -304,10 +309,16 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
     if (!pofv_blast_enqueue(&s_blast, ev->x, ev->y, chain)) {
         if (!s->cap_logged) { ce_log("pofv: blast queue full — extra blasts dropped"); s->cap_logged = 1; }
     }
-    /* 一手（用户口径）：拿卡后场上像 hyz 一样**掉灵魂**（自建池，照 116 / 117 先例）。*/
-    if (pofv_spirit_spawn(&s_spirit, ev->x, ev->y, (int32_t)ev->id) < 0 && !s->spirit_logged) {
-        ce_log("pofv: spirit pool full (%d) — spirit dropped", POFV_SPIRIT_MAX);
-        s->spirit_logged = 1;
+    /* 一手（用户口径）：拿卡后场上像 hyz 一样**掉灵魂**（自建池，照 116 / 117 先例）。
+     * ★ 两支都记账（verify.py 的 «创建灵魂» 判据就吃这行账）。*/
+    if (pofv_spirit_spawn(&s_spirit, ev->x, ev->y, (int32_t)ev->id) >= 0) {
+        ++s_spawned;
+    } else {
+        ++s_dropped;
+        if (!s->spirit_logged) {
+            ce_log("pofv: spirit pool full (%d) — spirit dropped", POFV_SPIRIT_MAX);
+            s->spirit_logged = 1;
+        }
     }
 }
 
@@ -367,8 +378,10 @@ static int on_tick_2(ce_card_t *c)
     if (focus) {
         int32_t n_act = 0;
         const float *pp = ce_player_pos();
-        if (pp && pofv_spirit_activate_in_domain(&s_spirit, pp[0], pp[1], &n_act) > 0)
+        if (pp && pofv_spirit_activate_in_domain(&s_spirit, pp[0], pp[1], &n_act) > 0) {
+            s_absorbed += n_act;
             ce_log("pofv: guzei activated %d spirits", (int)n_act);
+        }
     }
 
     /* 活化灵每帧推进 + 自爆。位置要在 tick 之前抄下来（tick 到点即清槽）。*/
@@ -400,6 +413,14 @@ static int on_tick_2(ce_card_t *c)
 static void clear_card(ce_card_t *c)
 {
     pofv_card_t *s = st(c);
+
+    /* ★ 验证批次判据（`verify.py` 的 «创建灵魂»）：**清池之前**把本次段累计打出来。
+     *   本函数同时服务三条路（每关重挂 / 一局重开 / 删卡）⇒ 这行是「本段账」，
+     *   关卡换段也会打一次（数据更多，不是错）；全部为 0 时不出声（不刷屏）。*/
+    if (s_spawned || s_absorbed || s_blasted || s_dropped)
+        ce_log("pofv: run done - %d spirits spawned, %d absorbed, %d blasted, %d dropped (pool %d)",
+               (int)s_spawned, (int)s_absorbed, (int)s_blasted, (int)s_dropped, POFV_SPIRIT_MAX);
+    s_spawned = s_absorbed = s_blasted = s_dropped = 0;
 
     pofv_blast_queue_init(&s_blast);
     pofv_spirit_pool_init(&s_spirit);

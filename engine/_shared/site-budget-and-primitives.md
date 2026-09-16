@@ -212,7 +212,7 @@ python3 native/tools/verify.py all --check             # 用户实跑后，读�
 | 拦截 Z (09) | 109 | `pofv: ctor (T = …` + `pofv: CA L…` | 拦 Z 本身无逐帧日志（靠 CA 行间接证明），可接受 |
 | 蓄力 (09) | 109 | `pofv: CA L…`（档位/半径）| 档位数值仍是 `❓ 自定` 占位 |
 | 暴风连锁 (09) | 109 | `pofv: blast chain N r …`（N 递增 = 经真小怪传播）| 反例 `blast queue full` 需一起判读 |
-| 创建灵魂 (09) | 109 | ⚠ **无正向日志**（只有 `pofv: guzei activated N spirits` 旁证）| **下一轮给 109 补一行收尾计数日志** |
+| 创建灵魂 (09) | 109 | `pofv: run done - N spirits spawned…`（本轮补的灵魂账，过关/删卡/重开都打）+ `guzei activated` 旁证 | 无（账只在有值时出声）|
 | 创建使魔 (08) | 108 | `youkai: run done - N familiars spawned` | 无 |
 | 关闭发弹口 (08) | 108 | `youkai: emitter gate ACTIVE - slot …` | 无 |
 | 创建敌人 (12) | 112 | `ufo: ce_spawn_enemy(` | 无 |

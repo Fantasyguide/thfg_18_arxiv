@@ -114,10 +114,11 @@ PRIMS = {
         steps=[
             "击破若干小怪 ⇒ 场上应出现灵魂（自建池）",
             "Shift 固灵（低速）展开吸灵领域，把灵魂吸掉",
-            "⚠ 本原语**目前没有正向判读日志**（见 architecture §4 台账）",
+            "看收尾行 `pofv: run done - N spirits spawned…`（过关 / 删卡 / 重开都会打）",
         ],
         expect=[
-            (r"pofv: guzei activated \d+ spirits", "固灵吸走了 N 颗灵魂 ⇒ **反证池里有货**（间接）", True),
+            (r"pofv: run done - [1-9]\d* spirits spawned", "灵魂账：**击破 ⇒ 掉灵魂**真的发生过（spawned ≥ 1）", True),
+            (r"pofv: guzei activated \d+ spirits", "固灵吸走 N 颗（旁证：池里确实有货）", False),
         ],
         fail=[(r"pofv: spirit pool full", "灵魂池满（32）⇒ 后面的灵魂被丢")],
     ),
