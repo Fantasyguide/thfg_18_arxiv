@@ -117,13 +117,19 @@ def main():
         raise SystemExit("没找到 exe，用 --exe 指定")
     pe = PE(exe)
     sec = pe.code_section()
-    # 符号表默认**按 exe 所在目录**找（否则会挑到别的作品的表 —— 2026-10-01 踩过）
+    # 符号表默认**按 exe 所在目录**找（否则会挑到别的作品的表 —— 2026-10-01 踩过）；
+    # 样本目录里没有就退到社区命名金矿 `local/vendor/th-re-data/data/<版本>/funcs.json`
+    # （TH08/09/12 三作的名字都在那儿；样本目录里通常不放符号表）。
     sym = a.symbols
     if not sym:
         d = os.path.dirname(os.path.abspath(exe))
         for fn in sorted(os.listdir(d)):
             if fn.endswith("-funcs.json"):
                 sym = os.path.join(d, fn); break
+        if not sym:
+            v = os.path.join(REPO, "local", "vendor", "th-re-data", "data",
+                             os.path.basename(d), "funcs.json")
+            sym = v if os.path.exists(v) else None
     addrs, names, sizes = load_symbols(sym)
     ib = pe.imagebase
 
