@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.11"
+# dependencies = []          # 只用标准库（ctypes/user32）⇒ 无需第三方依赖
+# ///
 """Windows 侧测试 runner —— 真正"跑游戏"的那一半（在 Windows 上执行，由 WSL 侧经互操作调用）。
 
 为什么要有这一半（用户 2026-09-17 口径）：**测试必须由 Windows 侧走** —— 启动游戏、把窗口拉到前台、
@@ -96,7 +100,7 @@ def main():
 
     if not mk or not os.path.isdir(mk):
         out["notes"].append("modkit 目录不存在：%r（给 --modkit 或设 MODKIT_DIR）" % mk)
-        print(json.dumps(out, ensure_ascii=False)); return 2
+        print(json.dumps(out, ensure_ascii=True)); return 2
     out["launcher"] = os.path.join(mk, "启动TH18mod.bat")
     out["launcher_exists"] = os.path.exists(out["launcher"])
     out["game_exe"] = os.path.join(mk, "game", "th18.exe")
@@ -112,7 +116,7 @@ def main():
     if a.smoke:
         out["ok"] = bool(out["launcher_exists"] and out["game_exe_exists"])
         out["notes"].append("smoke：桥通了（WSL 能调起 Windows Python 并拿到这张表）")
-        print(json.dumps(out, ensure_ascii=False, indent=2))
+        print(json.dumps(out, ensure_ascii=True, indent=2))
         return 0 if out["ok"] else 1
 
     job = json.load(open(a.job, encoding="utf-8")) if a.job else {}
@@ -134,10 +138,10 @@ def main():
         out["window"] = hex(hwnd) if hwnd else None
         if not hwnd:
             out["notes"].append("启动后 60s 内没找到窗口 ⇒ 中止注入（游戏没起来？）")
-            print(json.dumps(out, ensure_ascii=False, indent=2)); return 1
+            print(json.dumps(out, ensure_ascii=True, indent=2)); return 1
     if not hwnd:
         out["notes"].append("没有窗口可注入 ⇒ 中止（给 job.launch=true 或先手动开游戏）")
-        print(json.dumps(out, ensure_ascii=False, indent=2)); return 1
+        print(json.dumps(out, ensure_ascii=True, indent=2)); return 1
 
     log("② 窗口 %s，把它拉到前台" % out["window"])
     ctypes.windll.user32.SetForegroundWindow(hwnd)
@@ -168,7 +172,7 @@ def main():
         out["new_dumps"] = sorted(set(os.listdir(out["dumps_dir"])) - dumps_before)
     out["ok"] = True
     print(json.dumps({k: v for k, v in out.items() if k != "log_section"},
-                     ensure_ascii=False, indent=2))
+                     ensure_ascii=True, indent=2))
     return 0
 
 

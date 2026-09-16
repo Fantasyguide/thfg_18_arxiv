@@ -22,6 +22,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -69,6 +70,64 @@ SCENARIOS = {
                             (25.0, "hold UP"), (45.0, "release UP"), (60.0, "hold BOMB"),
                             (61.0, "release BOMB"), (90.0, "hold CARD_USE"), (90.5, "release CARD_USE")]),
 }
+
+
+
+# ---------------------------------------------------------------- WSL → Windows 桥
+# 分工（用户 2026-09-17 口径）：**测试动作必须由 Windows 侧走**；WSL 只做编排与判读。
+# 实测（见 docs/superpowers/plans/2026-09-17-th18-autotest-framework.md §5）：
+#   · 本环境 WSLInterop 已注册；cmd.exe / powershell.exe 不在 PATH，但**绝对路径可用**；
+#   · Windows 侧用 **uv** 管 Python（`uv run --no-project --python 3.11 <script>`）⇒ 不硬编码解释器路径；
+#   · 引号过 `cmd /c` 会被吃 ⇒ 写一支 ASCII 的 .bat 再调；中文路径过 cmd 有编码风险 ⇒ 参数走 JSON。
+CMD_EXE = "/mnt/c/Windows/System32/cmd.exe"
+WIN_RUNNER = "autoplay_win.py"
+
+
+
+def to_win_path(p):
+    """/mnt/d/… ⇒ D:\\…；已是 Windows 路径则原样返回。"""
+    if not p:
+        return p
+    m = re.match(r"^/mnt/([a-zA-Z])/(.*)$", p)
+    if m:
+        return m.group(1).upper() + ":\\" + m.group(2).replace("/", "\\")
+    return p
+
+
+def win_tmp(explicit=""):
+    """Windows 侧的暂存目录（纯 ASCII）。可用 --win-tmp 覆盖。"""
+    if explicit:
+        return explicit
+    user = os.environ.get("USER") or os.environ.get("USERNAME") or ""
+    return "/mnt/c/Users/%s/AppData/Local/Temp/renkolab" % user
+
+
+def win_bridge(extra_args, tmp, verbose=True):
+    """把 runner 拷到 Windows 暂存目录 + 写 .bat（uv 启动）→ 经 cmd.exe 调用。返回 (rc, 输出)。"""
+    os.makedirs(tmp, exist_ok=True)
+    src = os.path.join(HERE, WIN_RUNNER)
+    if not os.path.exists(src):
+        return 2, "%s 不存在" % src
+    shutil.copyfile(src, os.path.join(tmp, WIN_RUNNER))
+    bat = os.path.join(tmp, "run_autoplay.bat")
+    with open(bat, "w", newline="\r\n") as f:
+        f.write("@echo off\r\ncd /d C:\\\r\n"
+                'uv run --no-project --python 3.11 "%~dp0' + WIN_RUNNER + '" %*\r\n')
+    winbat = "C:\\Users\\%s\\AppData\\Local\\Temp\\renkolab\\run_autoplay.bat" % (
+        os.environ.get("USER") or os.environ.get("USERNAME") or "")
+    cmd = [CMD_EXE, "/c", winbat] + list(extra_args)
+    if verbose:
+        print("   桥：%s" % " ".join(cmd))
+    try:
+        # ⚠ Windows 控制台是代码页（GBK/CP936）⇒ 不能用 text=True 按 UTF-8 解；
+        #   二进制收 + 容错解码（runner 已改成 ASCII 转义输出，正常路径不会再遇到非 ASCII）。
+        r = subprocess.run(cmd, capture_output=True, timeout=900)
+        dec = lambda b: (b or b"").decode("utf-8", "replace")
+        return r.returncode, dec(r.stdout) + dec(r.stderr)
+    except FileNotFoundError:
+        return 2, "cmd.exe 不可用（%s）—— 不在 WSL？" % CMD_EXE
+    except subprocess.TimeoutExpired:
+        return 2, "Windows runner 超时"
 
 
 def find_modkit(explicit):
@@ -157,9 +216,21 @@ def main():
     ap.add_argument("--log", default="", help="日志路径（缺省 <modkit>/game/th18_card_expand.log）")
     ap.add_argument("--modkit", default="", help="modkit 根目录（也可用 MODKIT_DIR）")
     ap.add_argument("--seconds", type=float, default=0, help="覆盖场景时长")
+    ap.add_argument("--win-smoke", action="store_true", help="只验 WSL→Windows 桥（不需要游戏）")
+    ap.add_argument("--win-tmp", default="", help="Windows 暂存目录（默认 %%TEMP%%\\renkolab）")
     ap.add_argument("--scale", type=float, default=1.0,
                     help="时间轴整体缩放（<1 = 加速跑；调试编排时用）")
     a = ap.parse_args()
+
+    if a.win_smoke:
+        print("WSL→Windows 桥自检（uv 启动 Windows 侧 runner，不需要游戏）")
+        cfg = os.path.join(win_tmp(a.win_tmp), "autoplay_cfg.json")
+        os.makedirs(os.path.dirname(cfg), exist_ok=True)
+        with open(cfg, "w", encoding="utf-8") as f:
+            json.dump({"modkit": to_win_path(find_modkit(a.modkit))}, f, ensure_ascii=False)
+        rc, out = win_bridge(["--smoke"], win_tmp(a.win_tmp))
+        print(out.strip())
+        return rc
 
     if a.list or a.scenario not in SCENARIOS:
         print("场景台账（deck / 秒数 / 触发什么）：")
