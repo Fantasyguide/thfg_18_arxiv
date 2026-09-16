@@ -27,13 +27,36 @@
 | 原语（作品）| 一手落点 | 站点预算 | 状态 |
 | --- | --- | --- | --- |
 | **创建使魔 (08)** | `th08:0x450f60 Player::shoot_bullet(s?)`，**唯一调用者** `th08:0x451595`（`Player::tick_shooting_state` 区内）。序言：`byte [arg+3]` 闸 → `[arg+0xe2a74]` 行表指针 + `0x38` 步长；逐行 `call [row+0x28]`；返回 1 ⇒ 武装该 VM（`flags \|= 0x2000`、`state=1`、`vm+0x480=row`、`vm+0x474/+0x478/+0x47c ← row+0x2c/+0x30/+0x34`）| **0 条**（数据驱动：我们只提供行数据 + 六个回调；回调经 `row+0x28..0x34` 数据引用，不占站点）| ✅ 一手（沿用 `engine/player/th08/01-youkai-familiars-first-hand.md`）|
-| **关闭发弹口 (08)** | `th08:0x451500 Player::tick_shooting_state`，**唯一调用者** `th08:0x44c4ed`（玩家 tick 分派）| 待算：若只需"是否按 Shift / 本帧是否发弹"的判定点，**1 条**（或并进玩家 tick 的每帧家务）| 🟡 函数已定位，判定点未逐行核 |
+| **关闭发弹口 (08)** | 闸链一手（见 §2.1）：`th08:0x451500` 里四道闸之后才 `call th08:0x450f60` | **优先 0 条**：使魔弹是**我们的行数据**，把 `rate` 设计成永不命中即可；要「随时按住/放开」才需要 **1 条**每帧家务 | ✅ 闸链一手 |
 | **创建敌人 (12)** | `th12:0x412990 EnemyManager::allocate_new_enemy`；调用者 = **`EnemyData__run_ecl_256_plus`**（ECL opcode 256+，3 处）+ `DebugSprtView__on_tick`（调试视图）| **0 条**（从我们自己的每帧家务里**直接调用**即可；ECL 本来就是它的常规入口）| ✅ 调用链一手，参数结构未核 |
 | **收点 (12)** | `th12:0x425c20 ItemManager::on_tick__body`（+ `ItemManager::initialize 0x425940`、`operator new 0x425b10`）| **1 条**（与 TH18 的 `ce_item_frame` 同一形态：一条每帧家务站点承载所有道具事件）| 🟡 落点已定位，道具结构/字段未核 |
 | **拦截Z (09)** | `th09:0x415cd0 InputManager::is_rising_edge`（边沿检测；调用者 `GuiMsgVm::run`、`Player::draw_bullets`）；`th09:0x415cb0 is_active` | 待算：若拦"射击键是否被按下"的判定，**1 条**；若只需**读输入**，则可零站点（每帧读同一份输入状态）| 🟡 锚点已定位 |
 | **创建灵魂 (09)** | **缺口** —— `th09` 的社区 `funcs.json` 只有 247 条，霊/弾 相关未被命名 | 未定 | ❌ 需自反（先做缺口清单 + 反汇编计划）|
 | **蓄力 (09)** | **缺口**（同上）| 未定 | ❌ 需自反 |
 | **暴风连锁 (09)** | **缺口**（同上；`Spellcard::*` 有名字但不是这条）| 未定 | ❌ 需自反 |
+
+### 2.1 关闭发弹口：`th08:0x451500` 的四道闸（一手逐行）
+
+```
+0x451507  cmp dword [0x164d2c8], 0x14   ; 全局帧计数 < 20 ⇒ 本帧直接 return 0（开场保护）
+0x451517  ecx = this + 0xe2ac4          ; ★「射击计时器」子对象（Timer）
+0x451520  call th08:0x40d3b0            ;   Timer::get_current         = *(int*)(this+8)
+0x451525  test eax,eax / jge            ;   返回值 < 0 ⇒ return 0
+0x451530  call th08:0x451d50            ;   第二道闸（非 0 ⇒ return 0）
+0x45154c  call th08:0x40d3d0            ; ★ Timer::previous_ne_current = *(int*)(this+8) != *(int*)(this)
+0x451551  test eax,eax / je 0x45159a    ;   「本帧计时器没推进」⇒ **跳过生成**
+0x451555  cmp dword [0x17d6ed4], 0      ;   某模式标志；非 0 时再看下一行
+0x45155e  movzx eax, byte [0x164d0b1]   ;   状态字节 == 1 / 7 / 6 ⇒ 也跳过生成
+0x451595  call th08:0x450f60            ; ★ 生成使魔弹（行表驱动）
+```
+
+**跨版本确认**：`Timer::get_current`（`th08:0x40d3b0`）= `[this+8]`、`Timer::previous_ne_current`（`th08:0x40d3d0`）
+= `[this+8] != [this]` ⇒ **「本帧计时器是否推进」是发弹的节拍源**，与 TH11 / TH18 的「短计时器 + 每行 `rate`」
+是**同一设计**（那两作的计时器分别反过 `th11:0x4343d1` 区、`th18:0x45eccb` 区）。
+
+**站点核算**：`player+0xe2ac4` 是 Timer 子对象，其 `+8` 就是当前计数 ⇒ 「关闭发弹口」的实现优先级是
+**数据层（0 站点）→ 每帧家务（1 站点）**：前者改我们自己的行表；后者才需要一条入场时刻，
+在生成器之前把计时器/闸条件按住。
 
 ## 3. 兼容契约（草案，待 106–117 全装验收）
 
