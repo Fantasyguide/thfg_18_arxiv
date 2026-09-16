@@ -13562,3 +13562,22 @@ Player / Stage / AsciiManager / Bomb*（运行期动态）…）；摘链者 = �
 **实跑判读**：日志两行 —— `start_deck: start_deck.js → N 张 (exact|seed)，shot mask 0x…，hash …`；
 首次（或改了 js）时再加一行 `start_deck: **只改这一次** —— N 份机体存档、共 M 格已按 … 写入`。
 之后每次 `reset_cards` 的 `test: reset_cards — shot N cap C deck [a, b, c]` 就是**引擎真正读到的**卡组。
+
+---
+
+## §BE-DN（2026-10-01，护栏 round1/round2）：共享件改动 + 文档门清零
+
+**背景**：2026-09-17 头号崩溃定责为「站点（thcrap 断点入场时刻）预算越线」（实测 ≤24 条安全 / 26 条必崩）。
+本轮把这条边界变成**构建期护栏**，并把仓库文档门从 16 处违规清到 0。
+
+| 文件 | 改了什么 | 为什么 |
+| --- | --- | --- |
+| `native/sites.py` | 新增 `SITE_BUDGET = 24` + `check` 里的预算核对（口径 = **本 patch 实际声明条数**，用 `emitted_breakpoint_names()`，不用列表长度）；注释两条纯观察者站点 `ce_item_score`(0x446cf6)/`ce_item_score_below`(0x446caa)；`SDK_SITES[:10]` | 让「越线」变成**构建失败**（今天靠实跑才发现上限）；腾 2 个名额给同僚的 `ce_enemy_damage` 回家（其声明在 patch 里、handler 在 `sdk.c:2818`） |
+| `native/sdk.c` | `bps[]` 里对应两行停用 | 站点已从 patch 摘除 ⇒ 不核对（否则拿 RVA 0 去核对 → FAIL 路径） |
+| `native/th18_card_expand.def` | **改为生成物**：`new tools/gen_def.py` 从声明集反推 | 今天抓到两类事故：patch 有 def 没有（**游戏里静默不生效**）/ def 有 patch 没有（僵尸导出，启动器报 `[!] 导出了 … 但没有已选 patch 声明断点`）⇒ 让 def 由声明集生成，这类脱钩不可能再发生 |
+| `native/Makefile` | `dllverify` 导出计数按实际校准（23）；`DLL Name:` 期望值恢复 3 | 上一版正则把**两行**计数都改了（`DLL Name:` 被改成 23）⇒ dllverify 红。**两处计数语义不同，别用同一条正则改** |
+| `native/tools/gen_def.py` | 新增 | 见上；`--check` 可只对账（退出码 1 = 不一致） |
+| 文档门（16 → 0）| `engine/player/th08/01-youkai-familiars-first-hand.md`、`engine/player/th11/04-marisa-b-option-geometry.md` 加 `> **版本**：TH## …` 横幅；把超 200 字符的表格单元格搬到文末「附：表格长单元格搬出」小节（**只搬家、不改一字**）| `check-docs.py` 的 `[version]`/`[tables]` 门。同批也搬了 `engine/bullet/th10/01-cancel-to-item.md`、`engine/card/th18/13-mallet-clear-and-th17-charge.md`、`engine/card/th18/14-clear-range-barrier.md`、`mods/th18.v1.00a/card-expand/ATLAS-MERGE-AUDIT.md`、`CARD-RESOURCE-INTERACTION-AUDIT.md` 的同型违规 —— **这些是同僚/上游的文件，我按「只搬不改语义」处理并在此醒目登记**（原作者若更愿意自己重排，请直接覆盖我这版） |
+
+**验证**：`make check` **退出码 0**（320 个文件全过）；`sites.py check` ✅（声明 22 / 预算 24）；`make dllverify` ✅（23 exports）；`tools/gen_def.py --check` ✅。
+**已知**：`.def` 与 `sites_gen.h` 都不在 Makefile 的依赖表里 ⇒ 改它们后必须**强制重链**（`rm -f th18_card_expand.dll && make dll`），否则 `dllverify` 会拿旧 DLL 比对而误报。

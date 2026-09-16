@@ -1398,7 +1398,7 @@ grep -rnE '#define +[A-Z0-9_]*ANM_SCRIPT[A-Z0-9_]* +[0-9]+' $MOD/native --includ
 | --- | --- | --- |
 | 1 | `assets/ability/entries/ORDER.txt` | 换成 **v2 语法**并重排成 A/B/C/D 四段 + 退役段（**最后一次重排**）：A 共享 HUD → B 别人的卡 19 行**原样搬** → C 114–117 → D 106–113 → REF 退役段。语法写在文件头注释里 |
 | 2 | `assets/ability/entries/ORDER.frozen.txt` | **新增**：A/B/C 段 186 个数据行的逐行 `sha256` + **结构指纹**（= 重排检测的依据）|
-| 3 | `assets/anmlib.py` | `read_order()` 认 v2 语法（`ATLAS` 段 / 网格 `@列x行` / 显式 `@x,y,WxH` / `REF`）；`make_entry(sprites=[…])` 支持**一个 entry 多个 sprite**；新增 `parse_sprite_rects()` / `order_signature()` / `read_order_names()`（abcard 的一列名字 ORDER）；`verify_rebuilt(on_extract=…)` 钩子 |
+| 3 | `assets/anmlib.py` | `read_order()` 认 v2 语法（`ATLAS` 段 / 网格 `@列x行` / 显式 `@x,y,WxH` / `REF`）；`make_entry(sprites=[…])` 支持**一个 entry 多个 sprite**；新增 `parse_sprite_rects()` / ` …（明细见文末「附：表格长单元格搬出」） |`
 | 4 | `assets/build_ability.py` | 图集**合成画布**（成员按矩形贴，**不许补边**）、逐成员 sprite 号、`write_ids_h()` 逐名 + 图集别名 + 退役名、**图集逐像素自检**（从 anm 回读的画布裁矩形比对源图）、**重排检测硬门**、**256 entry 硬门 + 余量打印**、单图老路径一字未改 |
 | 5 | `assets/check_ability_anm_bounds.py` | 把「宏名后缀 == entry 名」放宽成「**宏名 → ORDER 给的 entry + 矩形**」；脚本侧的 sprite 引用也加比矩形 |
 | 6 | `assets/ability/make_atlas.py` | **新增**：独立对账工具 —— 解析审计 §4.3 的表 vs `ORDER.txt` 的图集段（逐格比），自己画一遍画布 + `tobytes()` 逐像素自检，并写预览图到 `native/build/atlas-preview/` |
@@ -1609,3 +1609,9 @@ thanm -l 18 build/ability.anm -m …/v8.anmm  # entry 48 / sprite 415 / script 2
    之后加美术**只能 append 到文件末尾**（重排检测会拦）。
 5. `ORDER.frozen.txt` 目前冻的是 **A/B/C 三段 186 行**（共享 HUD + 别人的卡 + 114–117）。
    D 段（106–113）**故意不冻** —— 那几张卡还会改；改 D 段内部不影响任何已定稿的号。
+
+## 附：表格长单元格搬出
+
+> 2026-10-01：这些内容原先塞在表格单元格里（超过文档门 200 字符上限），**只做搬家、不改一字**；表格留摘要。
+
+- **3**：`read_order()` 认 v2 语法（`ATLAS` 段 / 网格 `@列x行` / 显式 `@x,y,WxH` / `REF`）；`make_entry(sprites=[…])` 支持**一个 entry 多个 sprite**；新增 `parse_sprite_rects()` / `order_signature()` / `read_order_names()`（abcard 的一列名字 ORDER）；`verify_rebuilt(on_extract=…)` 钩子

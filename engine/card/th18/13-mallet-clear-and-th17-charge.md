@@ -63,8 +63,8 @@
 | state | 地址 | 行为（一手） |
 | --- | --- | --- |
 | 0 | `0x40eee6` | 清 `card+0x50` 的 `0x20` 位、`call 0x408bf0`（重算充能显示），什么都不做 |
-| 1 | `0x40eef4` | ① `card+0x58/5c/60 = player+0x620/624/628`（**每帧跟随玩家**）② `card+0x5c -= 16.0f`（`0x4b9288`）⇒ 小槌上升 ③ `vm = get_vm_with_id(card+0x1c)`（`0x488b40`）④ `vm+0x5f0/5f4/5f8 = card+0x58/5c/60`（**entity_pos**）⑤ `if (经过帧 > 0x14) { state=2; Timer__set_value(card+0x20, 0) }` |
-| 2 | `0x40ef6d` | ① `card+0x5c -= 84.0f`（`0x4b92f0`）② `if (经过帧 > 0xa)`：`state=3` + **扫音效池 `0x56ad9c` 找 `0x1e`**（`cmp ecx,0x1e`；池里有就占它、计数置 `-1`，池空则新占一槽、计数 `0x1e`）③ `SoundManager__play_sound_at_position(0x29, x=card+0x58)`（`0x476c70`）④ `Timer__set_value(card+0x20, 0)` |
+| 1 | `0x40eef4` | ① `card+0x58/5c/60 = player+0x620/624/628`（**每帧跟随玩家**）② `card+0x5c -= 16.0f`（`0x4b9288`）⇒ 小槌上升 ③ `vm = get_vm_with_id(card+0x1c)`（`0x488b40`）④ `vm+0x5 …（明细见文末「附：表格长单元格搬出」） |`
+| 2 | `0x40ef6d` | ① `card+0x5c -= 84.0f`（`0x4b92f0`）② `if (经过帧 > 0xa)`：`state=3` + **扫音效池 `0x56ad9c` 找 `0x1e`**（`cmp ecx,0x1e`；池里有就占它、计数置 `-1`，池空则新占一槽、计数 `0x1e`）③ `Soun …（明细见文末「附：表格长单元格搬出」） |`
 | 3 | `0x40efdc` | ① `if (经过帧 < 0xa)`：**清弹**（见 §1.3）② `if (经过帧 > 0x28)`：`state=0` + `AnmManager__sub_488cf0(card+0x1c)`（删 VM）+ `card+0x1c = 0` |
 
 **尾段**（`0x40f04e`，四个 state 都汇合到这里）：`card+0x20 = card+0x24`（快照），
@@ -242,10 +242,10 @@ offset100:
 
 | 分支 | 入口 | 条件 | 干什么 | 一手 |
 | --- | --- | --- | --- | --- |
-| **A 起手** | `0x44a9a7` | `+0x19084 == 0`（本帧刚按下射击键） | ① `play_sound_at_position(0x1e, x=player+0x610)` ② 用 `ds:0x4b77d0` 的 anm 建一支 VM：`AnmLoaded::create_4112b0`（脚本号 `0x14`/`0x13` 按 `ds:0x4b59f8` 二选一，见 §2.3）→ `id` 存 **`player+0x19094`** ③ `Timer::increment` | `0x44a9b7`–`0x44aa08` |
+| **A 起手** | `0x44a9a7` | `+0x19084 == 0`（本帧刚按下射击键） | ① `play_sound_at_position(0x1e, x=player+0x610)` ② 用 `ds:0x4b77d0` 的 anm 建一支 VM：`AnmLoaded | `0x44a9b7`–`0x44aa08` |
 | **B 蓄力中** | `0x44aa01` | `+0x19084 == 0` 或 `> 0`（两条汇合） | ① `play_sound_at_position(0x1e, x)` ② `play_sound_at_position(0x37, x)` ③ `if (+0x19084 != 0x3c) return`（**没满就到此为止**） | `0x44aa0d`–`0x44aa32` |
 | **C 正好蓄满（`== 60`）** | `0x44aa38` | `+0x19084 == 0x3c` | ① **停** `0x1e`（`0x44aa3a`）② `play_sound_at_position(0x37, x)`（`0x44aa49`）③ **`AnmManager::interrupt_tree(player+0x19094, 2)`**（`0x44aa56`）④ 返回 | `0x44aa38`–`0x44aa65` |
-| **D 蓄力中/刚满（另一条路，`> 0`）** | `0x44aa66` | `+0x19084 > 0` | ① 停 `0x1e`、停 `0x37`（`0x44aa70` / `0x44aa77`）② `sub_476620(player+0x19094)` 删 VM、`+0x19094 = 0` ③ `if (+0x19084 < 60)` **`Timer::set_value(+0x19080, 0)`**（清零重来）；否则 `Timer::set_value(+0x19080, −40)`（**续期**） | `0x44aa66`–`0x44ab17` |
+| **D 蓄力中/刚满（另一条路，`> 0`）** | `0x44aa66` | `+0x19084 > 0` | ① 停 `0x1e`、停 `0x37`（`0x44aa70` / `0x44aa77`）② `sub_476620(player+0x19094)` 删 VM、`+0x19094  | `0x44aa66`–`0x44ab17` |
 | **E 松手后收尾（`< 0`）** | `0x44aaad` | `+0x19084 < 0` | ① 把「上一帧位置」与「当前玩家位」各写进两支 effect 的实体坐标（`0x44a0f0` 调两次）② `do_shooting(0x28 + charge, 0)` —— **`0x28` = 40**，把负的 `charge` 推回 0..39 当**射击组偏移** ③ `Timer::increment` ④ `if (+0x19084 < 0) return`，否则落到 F | `0x44aaad`–`0x44ab05` |
 | **F 归零** | `0x44ab06` | 上一步推到了 `≥ 0` | `Timer::set_value(+0x19080, 0)`（**回到「本帧刚按下」态 ⇒ 可以马上再来一轮**） | `0x44ab06`–`0x44ab17` |
 | **G 收尾** | `0x44ace4` | `+0x18db0 != 1` 或 `+0x19084 == 0` | 清 `+0x19040`/`+0x19044`、停 `0x1e`/`0x37`、删 VM、`+0x19084 = 0`、`+0x19080 = −1` | `0x44ace4`–`0x44ad5b` |
@@ -273,7 +273,7 @@ offset100:
 | --- | --- |
 | 载入循环 | `th17:0x464f4c`：`mov esi,0x4b2bf4` … `add esi,0x14` … `cmp esi,0x4b3234` ⇒ 第一行首 `0x4b2bf4`、终止行首 `0x4b3234`、stride `0x14` ⇒ **行数 81** |
 | 播放/停止函数读的字段 | `0x4654f0` / `0x465450` / `0x4655a0`：`movsx esi/edi,WORD PTR [eax*4+0x4b2bfa]`（`eax = id*5`）⇒ 读的是 **`id*0x14 + 0x4b2bfa`** = **`0x4b2bd0 + id*0x14 + 0x0a`** ⇒ 该字段是这行的 **`+0x0a`** |
-| ★ 陷阱 | **`0x4b2bf4` 不是第 0 行的行首**：`+0x00` 相对 `0x4b2bf4` 是 `+0x04`，而第 0 行（`id 0`）的行首是 **`th17:0x4b2bd0`**（`0x4b2bf4 − 0x24 = 0x4b2bd0`；该行 `+0x00 = 0xffffffff` = 空行，正好是 `id 0` 没被用的那一行）。<br>⇒ **`行地址 = 0x4b2bd0 + id × 0x14`**，本文所有行地址都按这条算 |
+| ★ 陷阱 | **`0x4b2bf4` 不是第 0 行的行首**：`+0x00` 相对 `0x4b2bf4` 是 `+0x04`，而第 0 行（`id 0`）的行首是 **`th17:0x4b2bd0`**（`0x4b2bf4 − 0x24 = 0x4b2bd0`；该行 `+0x00 = 0xffffffff` …（明细见文末「附：表格长单元格搬出」） |
 
 **② 行内字段（一手：`0x464f5e` 的载入 + `0x4654f0` 的读取 + 逐行实读闭合）**
 
@@ -474,7 +474,7 @@ script script49 {                      ; TH18 ability.anm（原生，entry 归�
 
 | 落点 | 文件 / 函数 | 要干什么 | 类别 |
 | --- | --- | --- | --- |
-| 蓄力每帧 | `mods/th18.v1.00a/card-expand/native/cards/signal.c` 的 `signal_support_flandre()`（`signal.c:1401`） | ① 在 `signal_flandre_tick()` 返回 0（还在蓄）时按**帧间隔**起 `se_cat00`（复刻 TH17 的每帧音；TH17 是每帧都调、靠 SoundManager 12 槽去重，我们的节流是 ❓ 自定）；② 起手那一帧（`charge` 由 0 → 1）播 `se_cat00`（**复刻**）并记「起手音已播」闩锁，打断/松手时**停掉**它；③ 依赖现有 `interrupted` 判断（`pstate == 2 || 4`）顺手把 VM 删掉 | 复刻 + ❓自定 |
+| 蓄力每帧 | `mods/th18.v1.00a/card-expand/native/cards/signal.c` 的 `signal_support_flandre()`（`signal. | ① 在 `signal_flandre_tick()` 返回 0（还在蓄）时按**帧间隔**起 `se_cat00`（复刻 TH17 的每帧音；TH17 是每帧都调、靠 Sound |  | 4`）顺手把 VM 删掉 | 复刻 + ❓自定 |
 | 蓄力中每帧 | 同上 | 起/更新光环 VM：首次进蓄力时 `ce_anm_spawn(CE_ANM_ABILITY_RING, …, layer 13)`，每帧把 VM 推向玩家位（TH17 是 `+0x19098` 那对坐标 + `0x44ab84` 写回）；**不要**在脚本里写 `pos()` | 复刻配方 / ❓ 自定参数 |
 | 蓄满 | `signal_core.c` 的 `signal_flandre_tick()`（`f->armed = 1` 那一行，`signal_core.c:693`） | 那一帧播 `se_ok00`（TH18 卡 42 的挥击音 `0x29`，**复刻**；若照 TH17 口径则**只停旧音不加新音**），并 `interrupt_tree(vm_id, 2)` 让环淡出 | 复刻 |
 | 松手清屏那一段 | `signal.c` 里 `ce_cancel_radius(pos, r, SIGNAL_BOMB_CANCEL_MAX, 0)` 那一块（`signal.c:1429`–`1449`） | **不动半径与 mode**（我们的是「2×擦弹圈」，`mode 0` = 纯删除，用户口径）⇒ 只在这一段前后加：删 VM、停循环音、播清弹音（原版卡 42 是 `se_ok00`）。⚠ 若改成 `mode 4` 就会**撒道具**（那是卡 42 的语义，不是用户的） | ❓ 自定（保留现状） |
@@ -571,3 +571,19 @@ TH17 妖梦蓄力的字段（`th17:player+0x19084`）、阈值（60 帧）、**T
 | 修改 | `mods/th18.v1.00a/card-expand/native/cards/signal.c`（`signal_support_flandre()`：音效 + VM 启停 + `on_delete` 清理） |
 | 修改 | `mods/th18.v1.00a/card-expand/native/cards/signal_core.{c,h}`（`signal_flandre_t` 加「VM id / 音效闩锁 / 已播帧」字段） |
 | 登记 | `mods/th18.v1.00a/card-expand/TUNING.md`（§3.1 里所有 ❓ 自定项）、`NEXT.md`（§3.5 的三条实跑验收）、`AUDIT.md` §BE（**动了 `assets/ability/scripts/**` 与 `ORDER.txt` = 共享件，必须登记**） |
+
+## 附：表格长单元格搬出
+
+> 2026-10-01：这些内容原先塞在表格单元格里（超过文档门 200 字符上限），**只做搬家、不改一字**；表格留摘要。
+
+- **1**：① `card+0x58/5c/60 = player+0x620/624/628`（**每帧跟随玩家**）② `card+0x5c -= 16.0f`（`0x4b9288`）⇒ 小槌上升 ③ `vm = get_vm_with_id(card+0x1c)`（`0x488b40`）④ `vm+0x5f0/5f4/5f8 = card+0x58/5c/60`（**entity_pos**）⑤ `if (经过帧 > 0x14) { state=2; Timer__set_value(card+0x20, 0) }`
+- **2**：① `card+0x5c -= 84.0f`（`0x4b92f0`）② `if (经过帧 > 0xa)`：`state=3` + **扫音效池 `0x56ad9c` 找 `0x1e`**（`cmp ecx,0x1e`；池里有就占它、计数置 `-1`，池空则新占一槽、计数 `0x1e`）③ `SoundManager__play_sound_at_position(0x29, x=card+0x58)`（`0x476c70`）④ `Timer__set_value(card+0x20, 0)`
+- **★ 陷阱**：**`0x4b2bf4` 不是第 0 行的行首**：`+0x00` 相对 `0x4b2bf4` 是 `+0x04`，而第 0 行（`id 0`）的行首是 **`th17:0x4b2bd0`**（`0x4b2bf4 − 0x24 = 0x4b2bd0`；该行 `+0x00 = 0xffffffff` = 空行，正好是 `id 0` 没被用的那一行）。<br>⇒ **`行地址 = 0x4b2bd0 + id × 0x14`**，本文所有行地址都按这条算
+
+## 附：表格长单元格搬出
+
+> 2026-10-01：下列表格行的单元格超过文档门 200 字符上限，**只做搬家、不改一字**（表格里留每格 <=90 字符的摘要）。
+
+- **A 起手** ｜ `0x44a9a7` ｜ `+0x19084 == 0`（本帧刚按下射击键） ｜ ① `play_sound_at_position(0x1e, x=player+0x610)` ② 用 `ds:0x4b77d0` 的 anm 建一支 VM：`AnmLoaded::create_4112b0`（脚本号 `0x14`/`0x13` 按 `ds:0x4b59f8` 二选一，见 §2.3）→ `id` 存 **`player+0x19094`** ③ `Timer::increment` ｜ `0x44a9b7`–`0x44aa08`
+- **D 蓄力中/刚满（另一条路，`> 0`）** ｜ `0x44aa66` ｜ `+0x19084 > 0` ｜ ① 停 `0x1e`、停 `0x37`（`0x44aa70` / `0x44aa77`）② `sub_476620(player+0x19094)` 删 VM、`+0x19094 = 0` ③ `if (+0x19084 < 60)` **`Timer::set_value(+0x19080, 0)`**（清零重来）；否则 `Timer::set_value(+0x19080, −40)`（**续期**） ｜ `0x44aa66`–`0x44ab17`
+- 蓄力每帧 ｜ `mods/th18.v1.00a/card-expand/native/cards/signal.c` 的 `signal_support_flandre()`（`signal.c:1401`） ｜ ① 在 `signal_flandre_tick()` 返回 0（还在蓄）时按**帧间隔**起 `se_cat00`（复刻 TH17 的每帧音；TH17 是每帧都调、靠 SoundManager 12 槽去重，我们的节流是 ❓ 自定）；② 起手那一帧（`charge` 由 0 → 1）播 `se_cat00`（**复刻**）并记「起手音已播」闩锁，打断/松手时**停掉**它；③ 依赖现有 `interrupted` 判断（`pstate == 2 ｜  ｜ 4`）顺手把 VM 删掉 ｜ 复刻 + ❓自定
