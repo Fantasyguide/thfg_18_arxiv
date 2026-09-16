@@ -996,11 +996,19 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
 }
 
 /* +0x2c：AbilityManager tick（优先级 0x16），早于敌人结算（0x1b）⇒ 上限只对当帧有效、不用还原。*/
+/* ★ 自动测试用「定期使魔账」（2026-09-17）：`run done` 只在收尾（过关重挂 / 重开 / 删卡）才打
+ * ⇒ 代打场景经常判「未触发」。有值时每 ~600 帧打一行同样的计数，
+ * `verify.py` 的 familiar 判据已经同时接受 `run done` 与 `ledger` 两种形态。*/
+static uint32_t s_ledger_frame;
+
 static int on_tick_2(ce_card_t *c)
 {
     yk_card_t *s = ce_state(c, yk_card_t);
     int focused;
     if (!s) return 0;
+    if ((++s_ledger_frame % 600u) == 0u && (s->spawns || s->broken || s->lost))
+        ce_log("youkai: ledger - %u spawned, %u killed, %u withdrew, %u dropped",
+               s->spawns, s->broken, s->lost, s->dropped);
     if (!CE_PLAYER()) {
         yk_drop_all(s, "no player");
         return 0;
