@@ -15,7 +15,7 @@ python3 tooling/crashdump/dmp.py <file.dmp> [--frames 24] [--symbols <funcs.json
 
 1. **`Eip` 不在任何模块里** ⇒ 不是正常代码，多半是「跳到 thcrap 给断点站点分配的跳板池」或「已释放的代码页」；
 2. **崩点那页全 0** ⇒ 执行的是 `00 00` = `add byte ptr [eax], al`；若此时 `Eax = 1`，就正好解释
-   「`0xC0000005` **写** `0x1`」这种看起来莫名其妙的签名（那天五次 dump 全是这一个签名）；
+   「`C0000005h`（Windows 访问违例异常码） **写** `0x1`」这种看起来莫名其妙的签名（那天五次 dump 全是这一个签名）；
 3. **ebp 链** ⇒ 从哪个循环跳出去的（我们那次就靠它把范围夹到 `ItemManager::on_tick` 内部）；
 4. **偏移是不是恒定的**：换配置后偏移**按 0x10/条**平移 ⇒ 说明坏指针是「池布局相对」的（那天由此确认是站点预算问题）。
 
@@ -25,7 +25,7 @@ python3 tooling/crashdump/dmp.py <file.dmp> [--frames 24] [--symbols <funcs.json
   —— 每个 handler 入口与每个更新链节点各打一行（「与上次不同才打」），而 `ce_log` **逐行 flush**
   ⇒ **崩前最后一行就是现场**。⚠ 新加的 handler 别忘了打 `ce_site_trail()`，否则它不出现在轨迹里
   （2026-09-17 就因为同僚新加的 `BP_ce_enemy_damage` 没打，差点把它排除掉）；
-- **跳板池页 dump**：`ce_mem_map_dump()` —— 把 `0x03c00000..0x03e00000` 里 `PAGE_EXECUTE` 的页整段打 hex
+- **跳板池页 dump**：`ce_mem_map_dump()` —— 把 `th18:0x03c00000..th18:0x03e00000` 里 `PAGE_EXECUTE` 的页整段打 hex
   ⇒ 离线反汇编就能看出「池里哪些格写过、零尾巴从哪开始」。
 
 ## 另外两个好用的

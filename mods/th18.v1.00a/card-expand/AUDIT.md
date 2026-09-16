@@ -138,7 +138,7 @@ C3 是补的：C2 只扫三小段，扫不到「直接引用第 12 行」这种�
 | D1 | `58 * 0x34 = 3016`，`3016 / 4 = 754 = 0x2f2` 整除 | **CONFIRMED**（`0x34` 可被 4 整除，`rep movsd` 不会剩尾巴）|
 | D2 | 拷贝 3016 字节 = 读 `0x4c53c0`–`0x4c5f88`，**不碰**那两个热全局 | **CONFIRMED** —— 末字节是 `0x4c5f87`，`0x4c5f88` 是全局的第一个字节 |
 | D3 | rows=255 时 cave 尺寸 = 拷贝量 + 填充量，不多不少 | **CONFIRMED** —— `3016 + 197 × 52 = 13260 = 0x33cc` = 声明的 `size` |
-| D4 | 回退行偏移 `56 × 0x34 = 0xb60` | **CONFIRMED** —— 与 `0x4c5f20 − `0x4c53c0` = 0xb60` 一致 |
+| D4 | 回退行偏移 `56 × 0x34 = 0xb60` | **CONFIRMED** —— 与 `0x4c5f20 − 0x4c53c0 = 0xb60` 一致 |
 | D5 | `<codecave:NAME+OFF>` 的 OFF 是**十六进制** | **CONFIRMED** —— `expression.cpp` `GetCodecaveAddress` → `strtouz(…, 16)`。⚠️ 写成看着像十进制的 `+58` 会被当成 `0x58`。生成器一律输出裸十六进制 |
 
 ## E. thcrap 行为核对（都是从源码读的，不是记忆）
@@ -250,10 +250,10 @@ E5 已经说明它验不了 binhack；这一条说明它连「表填了没」都
 | 2026-09-13 | **所有卡（共享件）** | `assets/ability/entries/ORDER.txt`（+ 生成的 `anm_ids.h`、 | 见文末详录 |
 | K5 | 没有寄存器落在 ModRM 的 rm=100/101（esp/ebp 需要 SIB / 无 base）| **CONFIRMED** —— 留下的是 edx/esi/ebx/edx/edx/esi/ecx/edi/eax；`decode_disp32_op` 对 rm∈{4,5} 直接报错 |
 | 2026-09-15 | **所有用 shooterset 的卡（77 / 108 / 116 / 117 / 113）** | `assets/sht/append_shooterset.py`（+ 生成的 `native/sht_ids.h`、 | 见文末详录 |
-| K7 | `0x418e04` `mov byte [esi+edi+0x5f588],1` 处 edi = id、esi = 存档 | **CONFIRMED** —— `0x418de8 mov esi,[`0x4cf41c`]`；`0x418df1 mov edi,ecx`（fastcall 第一参）；同函数 `0x418df6` 的读也是 `[esi+edi]` |
+| K7 | `0x418e04` `mov byte [esi+edi+0x5f588],1` 处 edi = id、esi = 存档 | **CONFIRMED** —— `0x418de8 mov esi,[0x4cf41c]`；`0x418df1 mov edi,ecx`（fastcall 第一参）；同函数 `0x418df6` 的读也是 `[esi+edi]` |
 | K8 | id < 57 放行原指令 ⇒ 原生数组照常写、存档格式不变 | **CONFIRMED** —— 原指令在 thcrap sourcecave 里原样执行；存档序列化只读 `+0x5f4b8` 子对象（`FUN_00463b30`），我们从不写它 |
 | K9 | id ≥ 57 跳过原指令 ⇒ 不再写 `unlocked_cards[57..]` 之后的未知区 | **CONFIRMED** —— 返回 0；影子数组 256 字节，`id >= 255` 另有守卫 |
-| K10 | `0x46398a` 时 ebx = 存档且原生数组已是最终值 | **CONFIRMED** —— `0x463984 mov [`0x4cf41c`],ebx` 前一条；`FUN_004639b0(_Dst)`（解析主存档）在 `0x463965` 已跑完；断点里再与全局比对，不等则用全局并记日志 |
+| K10 | `0x46398a` 时 ebx = 存档且原生数组已是最终值 | **CONFIRMED** —— `0x463984 mov [0x4cf41c],ebx` 前一条；`FUN_004639b0(_Dst)`（解析主存档）在 `0x463965` 已跑完；断点里再与全局比对，不等则用全局并记日志 |
 | K11 | 三个断点站点无相对寻址、落在指令边界 | **CONFIRMED** —— `c6 84 3e 88 f5 05 00 01`（8）、`8d b3 b8 f4 05 00`（6）、`8d 83 88 f5 05 00`（6），Ghidra 反汇编各为一条完整指令；`expected` 由生成器从 exe 现取 |
 | K12 | `unlock_all` 只有作弊菜单调 | **CONFIRMED** —— xref 仅 `MainMenu__tick_menu_0b_score_ranking` `0x469259`、`MainMenu__tick_menu_17_achievement` `0x46d869`；断点镜像 `memset(…,1,0x38)` 的范围 = 影子[0..55] |
 | 2026-09-15 | **所有卡（共享件，**仅注释**）** | `native/sdk.c`（`hud_vm_glyph` 上方的映射注释） | 见文末详录 |
@@ -270,9 +270,9 @@ E5 已经说明它验不了 binhack；这一条说明它连「表填了没」都
 
 | 站点 | 原 | 前面那条装载 | 存档在 | 该留 | NEXT.md 表里留的 |
 | --- | --- | --- | --- | --- | --- |
-| `0x4149ec` | `[esi+eax]` | `0x4149e7 mov eax,[`0x4cf41c`]` | **index** | esi | eax ✗ |
-| `0x416e3d` | `[edx+ecx]` | `0x416e37 mov ecx,[`0x4cf41c`]` | **index** | edx | ecx ✗ |
-| `0x417ea3` | `[ecx+eax]` | `0x417e9e mov eax,[`0x4cf41c`]` | **index** | ecx | eax ✗ |
+| `0x4149ec` | `[esi+eax]` | `0x4149e7 mov eax,[0x4cf41c]` | **index** | esi | eax ✗ |
+| `0x416e3d` | `[edx+ecx]` | `0x416e37 mov ecx,[0x4cf41c]` | **index** | edx | ecx ✗ |
+| `0x417ea3` | `[ecx+eax]` | `0x417e9e mov eax,[0x4cf41c]` | **index** | ecx | eax ✗ |
 
 其余 6 处存档在 base，表是对的。生成器现在从站点前 48 字节内最近一条 `mov r32,[SCOREFILE_PTR]`
 决定丢哪个寄存器，对账器独立再算一遍；找不到装载或装载的寄存器不在 base/index 里就拒绝生成。
@@ -281,7 +281,7 @@ E5 已经说明它验不了 binhack；这一条说明它连「表填了没」都
 
 | 站点 | 留 | 装载与站点之间的指令 | 结论 |
 | --- | --- | --- | --- |
-| `0x41440b` | edx | `mov [esi],0`；`mov edx,[edx*4+`0x4b3600`]`（顺序表 → id，正是要留的值）| ✅ |
+| `0x41440b` | edx | `mov [esi],0`；`mov edx,[edx*4+0x4b3600]`（顺序表 → id，正是要留的值）| ✅ |
 | `0x4149ec` | esi | 无 | ✅ |
 | `0x416590` | ebx | `addss xmm0,xmm1` | ✅ |
 | `0x41694e` | edx | `push esi`；`mov esi,ecx` | ✅ |
@@ -303,8 +303,8 @@ E5 已经说明它验不了 binhack；这一条说明它连「表填了没」都
 | # | claim | 结论 |
 | --- | --- | --- |
 | 2026-09-13 | **所有卡（共享件）** | `assets/ability/entries/ORDER.txt` + **新增**  | 见文末详录 |
-| L2 | 三处 imul 后紧跟 `add r, 基址`，中间无人读 flags | **CONFIRMED** —— `0x41669a add ecx,edi`；`0x416780 add edi,0x40 … `0x416797` add edi,eax`（中间是 mov/movss）；`0x419270 add eax,[`0x4cf29c`]` |
-| L3 | 三处的基址都是 `ABILITY_TXT_PTR` 那个对象 | **CONFIRMED** —— `0x41655d mov edi,[`0x4cf29c`]`（FUN_00416540 全程不改 edi 直到 `0x416780`）；`0x419270` 直接读全局。所以 `ext - [`0x4cf29c`]` 这个相对偏移对三处都对 |
+| L2 | 三处 imul 后紧跟 `add r, 基址`，中间无人读 flags | **CONFIRMED** —— `0x41669a add ecx,edi`；`0x416780 add edi,0x40 … 0x416797 add edi,eax`（中间是 mov/movss）；`0x419270 add eax,[0x4cf29c]` |
+| L3 | 三处的基址都是 `ABILITY_TXT_PTR` 那个对象 | **CONFIRMED** —— `0x41655d mov edi,[0x4cf29c]`（FUN_00416540 全程不改 edi 直到 `0x416780`）；`0x419270` 直接读全局。所以 `ext - [0x4cf29c]` 这个相对偏移对三处都对 |
 | L4 | `0x416779` 时 `[ebp+0xc]` 是 id | **CONFIRMED** —— 序言 `push ebp; mov ebp,esp; and esp,-8`，`ret 0x10` 四个栈参，`0x416550 mov ebx,[ebp+0xc]` 同一个值；此时 ebx 已被 `0x4166b8` 改写，所以不能用 ebx |
 | L5 | 原生 57 张 = `0x63c0`，第 57 张的位置就是尾部字段 | **CONFIRMED** —— `0x4165ae mov eax,[edi+0x63c0]`、`0x41676b lea esi,[edi+0x63c4]`；57 × `0x1c0` = `0x63c0`。阈值取 57：id 57（BACK）也重定向，原生从不为它渲染文案，无观察差异 |
 | L6 | 名字被当作格式串 | **CONFIRMED** —— `FUN_004873f0` 先 `FUN_00404e40(param_7, …)`（vsprintf 类）再渲染；占位文案不含 `%` |
@@ -333,9 +333,9 @@ E5 已经说明它验不了 binhack；这一条说明它连「表填了没」都
 
 ### M′. M1 / M2 / M3 / M6 的证据
 
-**M1 顺序表引用**：全 `.text` 扫 `[`0x4b3600`, `0x4b36e4`]` 的 imm32，命中 8 处：
+**M1 顺序表引用**：全 `.text` 扫 `[0x4b3600, 0x4b36e4]` 的 imm32，命中 8 处：
 `0x414401` `0x4145f8` `0x414639` `0x41499f` `0x415681` `0x4156b6`（引用）、`0x414b54`（尾界）、
-**`0x4337f7 mov eax,[eax*4+`0x4b36e4`]`——紧邻的另一张表的基址，值相同，显式排除**；生成器要求它必须被扫到且不改。
+**`0x4337f7 mov eax,[eax*4+0x4b36e4]`——紧邻的另一张表的基址，值相同，显式排除**；生成器要求它必须被扫到且不改。
 
 **M2 七处 `0x38` 的语义**：
 
@@ -344,7 +344,7 @@ E5 已经说明它验不了 binhack；这一条说明它连「表填了没」都
 | `0x4137bb` | `mov [this+0x1c4],0x38` | initialize：MenuSelect 项数 |
 | `0x414394` / `0x41439e` | `mov [this+0x300],0x38` / `[this+0x1c4]` | 图鉴 fill：当前项数 |
 | `0x4145e2` | `cmp eax,0x38`（imm8） | 图鉴 fill 循环上界 |
-| `0x41570d` | `mov eax,0x38; idiv [`0x5704bc`]` | 行数 = 条目数 ÷ 列数（图鉴 7 列 / 编成 10 列） |
+| `0x41570d` | `mov eax,0x38; idiv [0x5704bc]` | 行数 = 条目数 ÷ 列数（图鉴 7 列 / 编成 10 列） |
 | `0x4157cb` | `cmp edx,0x38`（imm8） | 高亮循环上界 |
 | `0x415817` | `mov edi,0x38` | 退出时遍历 vm 数组 |
 
@@ -457,11 +457,11 @@ AbilityManager `0x16` < Player `0x17`（注册点 `0x40847f` / `0x45a8b4`，同�
 （40 / 120 / 110 …）、ECL `515 setInvuln`；zTimer `{prev,cur,float}` 布局与 `CardAya__on_tick` 的读写一致。
 置值时 prev = cur−1，之后每帧 prev = 上一帧 cur，(280, 279) 不会再现。
 
-**O14 证据**：`collect_money_item` 尾部依次 `0x446d22 inc [`0x4ccd20`]`（道具计数）、`0x446d28 inc [MONEY_TOTAL]`、
+**O14 证据**：`collect_money_item` 尾部依次 `0x446d22 inc [0x4ccd20]`（道具计数）、`0x446d28 inc [MONEY_TOTAL]`、
 `0x446d2e inc [MONEY]`、`0x446d34 mov [SCORE],eax`。断点盖 `0x446d28` 一条（6 字节，无相对寻址），在它之前把
 `MONEY` / `MONEY_TOTAL` 各 += bonus，原两条 `inc` 照常，两个全局始终同步（帝的回填与「累计收集」统计不受影响）；不碰 eax（分数）。
 
-**O16 证据**：`allocate_new_card` `0x411460`：ecx = mgr（`0x4185c1 mov ecx,[`0x4cf298`]`），`push 2; push id`，尾 `ret 8` → thiscall 两栈参。
+**O16 证据**：`allocate_new_card` `0x411460`：ecx = mgr（`0x4185c1 mov ecx,[0x4cf298]`），`push 2; push id`，尾 `ret 8` → thiscall 两栈参。
 `mark_obtained` `0x418de0`：`mov ecx,id; xor edx,edx; call`，尾裸 `ret` → fastcall 无栈参。`TableCardData__get` `0x407d70`：
 `cmp [eax],ecx` 用 ecx 当 id，裸 `ret` → fastcall。`pick_weighted_random_offer` `0x416f50`：调用点 `mov ecx,eax(out); mov edx,0xa; push 0; push eax(excl); push 0xe`，
 尾 `ret 0xc` → fastcall(ecx, edx) + 三栈参（hi, exclude, n），返回 eax 非 0 = 抽到。`pot.o` 的 objdump：ecx/edx 装法与压栈顺序逐条对上，
@@ -493,14 +493,14 @@ ExpHP `zBullet.state = +0xf68` ⇒ 第 0 张在 `mgr + 0x5a8 + 0xaac − 0xf68 =
 **O23（2026-09-03 实跑崩溃 → 根因）**：`Timer__decrement` `0x409750` 与 `Timer__increment` `0x405990` 的**两条**出口都是 `ret 4`，
 Tenshi 调它们之前都有一条 `push ecx`（`0x40ea2e`、`0x40ead3`）——thiscall + 一个从不读取的栈参。SDK 第一版按「无栈参」调，
 每次调用被调方多弹 4 字节，`AbilityManager__on_tick` 的栈随之上移，下一次 UpdateFunc 分派（`0x401355 call [eax]`）取到堆地址
-→ `C0000005 … could not be executed at `0x0717d4`58`，日志停在 `card 64 on_tick_2 first hit`。**教训写进 checklist**：
+→ `C0000005 … could not be executed at 0x0717d458`，日志停在 `card 64 on_tick_2 first hit`。**教训写进 checklist**：
 调任何引擎函数前必须看它**全部** `ret N` 出口，不能只看序言；O16 的四个函数当时看了，Timer 这两个只看了头。
 
 **O24（2026-09-04）反转牌发动亮牌：`ce_anm_spawn` 调 `AnmLoaded__instantiate_vm_to_world_list_back` `0x405bf0`**。
 一手：`mov edi, ecx`（this = `AnmLoaded*`），`[ebp+8]` out_id、`[ebp+0xc]` script、`[ebp+0x10]` layer、`[ebp+0x14]` out_vm，
 **唯一出口 `ret 0x10`**（O23 教训：全部出口都看了）。内部自己进 `DAT_00521738` 临界区，调用方不用管；实体坐标固定 (0,0,0)。
 `CardTenshi__c_press` `0x40ebf0` 内联的就是这套（层 13、脚本 `0x1c`、坐标改玩家位），证明从 c_press 时点调它安全。
-C 侧用 `__attribute__((thiscall))` 函数指针，4 个栈参；`reverse.o` objdump：`mov ecx,[`0x4cf298`+0x10]`、`push out_vm; push 0x10; push 0x44; push out_id; call`，
+C 侧用 `__attribute__((thiscall))` 函数指针，4 个栈参；`reverse.o` objdump：`mov ecx,[0x4cf298+0x10]`、`push out_vm; push 0x10; push 0x44; push out_id; call`，
 call 后直接 `mov eax,[esp]` 读 id、**无 `add esp`**——与被调方清栈一致。`ce_anm_spawn` 对 `anm == NULL` 早退返回 0。
 备查未用：`AnmLoaded__set_sprite` `0x477b00` thiscall ret 8（两出口）、`0x488cf0` stdcall(id) ret 4。
 ANM 侧：`ability.anm` 追加 entry7（`REVERSE.png`，字段抄 abcard `BLANK_max`）/ `sprite109`、`script68`（`assets/ability/scripts/68_reverse_flash.anm.txt`），
@@ -515,7 +515,7 @@ ANM 侧：`ability.anm` 追加 entry7（`REVERSE.png`，字段抄 abcard `BLANK_
 M < price 的火力补差价路径不动 MONEY（游戏随后清零）。**未实跑。**
 
 **O26（2026-09-04）皇家同花顺 `cards/royal.c`**（黑桃五张共用 ctor）。触发不开新断点：成交 `allocate_new_card(mode 2)` 调 ctor（`0x412d11`），`owned[id]=1` 在其后（`0x412d42`），ctor 里查其余四张 `owned[]`（`mgr+0xd70`，本 mod 搬迁后的数组）齐了即第五张，天然只触发一次；纯函数 `ce_royal_flush_ready` 有单测。
-两个新引擎调用：**`0x4575f0` 加命**——`mov esi,ecx`（this = GlobalsInner `0x4cccdc`），不读栈参，唯一出口裸 `ret`；`[esi+0x6c]` CURRENT_LIVES 钳 `[esi+0x78]` LIVES_MAX，内部再调 `0x405bf0` 起特效、`0x476be0` 放音效 `0x11`。**`0x457690` 加 bomb**——this = ecx，`[ecx+0x7c]` CURRENT_BOMBS 钳 `[ecx+0x88]` MAX_BOMBS，音效 `0x2e`，**唯一出口 `ret 4`** 但函数体不读任何栈参（O23 同款），C 侧签名带一个 dummy int。`royal.o` objdump：加命 `mov ecx,`0x4cccdc`; call`（无 push）；加 bomb `mov ecx; push 0; call`，call 后无 `add esp` —— 与两函数的出口一致。上限照 `CardLife__destructor` `0x409b80` / `CardBomb__destructor` `0x409c20`：先 `+1` 钳 7 再调加法。门：`GAME_THREAD_PTR` `0x4cf2e4` 非 0（原生即时卡 dtor 的门）。ctor 返回 0 保留卡。
+两个新引擎调用：**`0x4575f0` 加命**——`mov esi,ecx`（this = GlobalsInner `0x4cccdc`），不读栈参，唯一出口裸 `ret`；`[esi+0x6c]` CURRENT_LIVES 钳 `[esi+0x78]` LIVES_MAX，内部再调 `0x405bf0` 起特效、`0x476be0` 放音效 `0x11`。**`0x457690` 加 bomb**——this = ecx，`[ecx+0x7c]` CURRENT_BOMBS 钳 `[ecx+0x88]` MAX_BOMBS，音效 `0x2e`，**唯一出口 `ret 4`** 但函数体不读任何栈参（O23 同款），C 侧签名带一个 dummy int。`royal.o` objdump：加命 `mov ecx,0x4cccdc; call`（无 push）；加 bomb `mov ecx; push 0; call`，call 后无 `add esp` —— 与两函数的出口一致。上限照 `CardLife__destructor` `0x409b80` / `CardBomb__destructor` `0x409c20`：先 `+1` 钳 7 再调加法。门：`GAME_THREAD_PTR` `0x4cf2e4` 非 0（原生即时卡 dtor 的门）。ctor 返回 0 保留卡。
 实跑（2026-09-04）：购买第五张触发 ✅，但**之后每关开始又触发一次**（共 6 次）——引擎在每关开始对卡组里每张卡再调一次 +`0x00`（trace：初始携带的 64 `on_stage_start` 后紧跟 `ctor`；02-lifecycle 只记了 mode 0/2 调 ctor，漏了这条）。修：ctor 开头 `ce_fresh_acquire(c)`（= `owned[自己] == 0`；获得路径里 owned 在 ctor 之后 `0x412d42` 才置 1，关卡开始那次早已是 1）。复跑 ✅ 只触发一次。
 演出：`ability.anm` 追加 entry8–14（`ROYAL_FLUSH.png` / 五张黑桃卡图副本 / `GOLD_888.png`）+ script69–76（父脚本 70 用 `scriptNew` 起七个子脚本，时间线写死在各子脚本里，194 帧一起 `delete()`），`ce_anm_spawn`（O24 同一调用）+ `ce_play_sound(0x4f = se_trophy)`（O22 同一调用；id 表一手见 `engine/_shared/th18-sound-table.md`）。trophy 音效要在第 60 帧放，C 里没有延时：五张黑桃都挂 `on_tick_2` → `ce_royal_tick`，只有触发那张卡（`s_fx_card`）递减倒计时。无新引擎接口。**演出待实跑。**
 
@@ -542,20 +542,20 @@ M < price 的火力补差价路径不动 MONEY（游戏随后清零）。**未�
 
 **O28b 证据**：超时段对 `flags & 8` 的槽走 `(flags & 9) == 9` = 收下；我们在写计时的同一帧清 bit1、`bonus = 0`、`can_still_capture_spell = 0`，结束 `0x42A780` 看 bit1 走失败演出，ECL 523 的 Sannyo 碎片也看 bit1。**限制**：耐久符卡的 `sub_timeout` 脚本本身是「守住」分支，脚本里写的掉落照旧；`0x42ed40` 耐久路径累加的 `0x4ccd6c` 无人读
 
-**O28c 证据**：一手反汇编：`mov edx,ecx`（this = gui），读 `[ebp+8]` 命数、`[ebp+0xc]` 碎片、`[ebp+0x10]` 上限，`ret 0xc`；原生在 `0x417a10..0x417a28`（`AbilityShop__sub_417880`）与 `0x45d1aa..0x45d1bd`（`Player__commit_death_and_enter_state2`）都以 `push [`0x4ccd54`]; push [`0x4ccd4c`]; push lives` 调它
+**O28c 证据**：一手反汇编：`mov edx,ecx`（this = gui），读 `[ebp+8]` 命数、`[ebp+0xc]` 碎片、`[ebp+0x10]` 上限，`ret 0xc`；原生在 `0x417a10..0x417a28`（`AbilityShop__sub_417880`）与 `0x45d1aa..0x45d1bd`（`Player__commit_death_and_enter_state2`）都以 `push [0x4ccd54]; push [0x4ccd4c]; push lives` 调它
 
-**O28h**（订正）：第一版只看了 `0x4297a0` 的序言与 Ghidra 的 `void(void)` 签名，断言「无参裸 ret」——**错**。整函数反汇编到尾：`0x429a0e ret 4`；原生调用现场 `0x434d48 mov ecx,[`0x4cf2bc`]; push 0; call`、`0x434e01` 同款、MSG 构造 `0x43e2e2 push ecx; call`——thiscall + 一个从不读取的栈参。按无参调多弹 4 字节，`on_activate` 的 `ret` 把栈上的卡对象指针（`0x17d2e090`）当返回地址跳飞：崩溃报告 `[ESP+8]` = 返回 `ce_sdk_c_press` 的地址、PC = 卡对象地址，与 4 字节偏差完全吻合。修正：`thiscall(BULLET_MANAGER; 0)`。**与 O23 同一个坑：调引擎函数前必须看全部 `ret N` 出口，反编译签名不算数。**`LaserManager__cancel_all` `0x449090`（这条第一版就对）：`mov ecx,[`0x4cf3f4`]` 自取 this，读 `[ebp+8]` 当 mode 传给每条激光的 `vtable+0x28(mode, 0)`，`ret 8`（两个栈参，`0x4490c4`）；ECL 两处 `push 0; push 1/0; call`，玩家死亡 `0x45c3c9 push ecx; push 1; call`（第二参从不读）。我们照 ECL 写 `(1, 0)`，声明为 stdcall 两参。调用时机在写完中断槽计时之后、同一 `on_activate` 内。
+**O28h**（订正）：第一版只看了 `0x4297a0` 的序言与 Ghidra 的 `void(void)` 签名，断言「无参裸 ret」——**错**。整函数反汇编到尾：`0x429a0e ret 4`；原生调用现场 `0x434d48 mov ecx,[0x4cf2bc]; push 0; call`、`0x434e01` 同款、MSG 构造 `0x43e2e2 push ecx; call`——thiscall + 一个从不读取的栈参。按无参调多弹 4 字节，`on_activate` 的 `ret` 把栈上的卡对象指针（`0x17d2e090`）当返回地址跳飞：崩溃报告 `[ESP+8]` = 返回 `ce_sdk_c_press` 的地址、PC = 卡对象地址，与 4 字节偏差完全吻合。修正：`thiscall(BULLET_MANAGER; 0)`。**与 O23 同一个坑：调引擎函数前必须看全部 `ret N` 出口，反编译签名不算数。**`LaserManager__cancel_all` `0x449090`（这条第一版就对）：`mov ecx,[0x4cf3f4]` 自取 this，读 `[ebp+8]` 当 mode 传给每条激光的 `vtable+0x28(mode, 0)`，`ret 8`（两个栈参，`0x4490c4`）；ECL 两处 `push 0; push 1/0; call`，玩家死亡 `0x45c3c9 push ecx; push 1; call`（第二参从不读）。我们照 ECL 写 `(1, 0)`，声明为 stdcall 两参。调用时机在写完中断槽计时之后、同一 `on_activate` 内。
 
 **O28g 证据**：非耐久符卡：超时段置 bit7（`0x42a320` 每张新符卡清），卡里 `flags & 0x80` → 拒绝。耐久符卡自然超时不置 bit7、`enemy+0x635c` 的超时位也被清，只靠「活动槽已清（hp_value = -1）→ 找不到槽 → 拒绝」兜底；ECL 预装多个带超时的槽时会误伤下一段。实跑清单：符卡刚超时那几帧连按 C 看是否 refuse
 
 
 **O29（2026-09-04）青眼白龙 `cards/blue_eyes.c`**（主动卡：献祭 1 残机召唤跟随龙，2500 挡弹，每 300 帧一道矩形伤害光束）。设计 `docs/superpowers/specs/2026-09-04-blue-eyes-design.md`。
 
-**O29a** `BulletManager__cancel_radius_as_bomb` `0x429370` = stdcall 四栈参 + XMM2 半径，ret `0x10`；计数器 `mgr+0x7a41e8`。**证据**：反汇编四个出口都 `ret 0x10`；序言 `movaps xmm0,xmm2` 存 `[ebp-4]` 当半径；Tenshi `0x40eb13` `movss xmm2,[`0x4b9290`]`(18.0) 后 `push 0; push 0x1869f; push 0; push ebx; call`；`0x40eb46..0x40eb6a` 调前 `mov [ecx+`0x7a41e8`],0` 调后读。🟡 静态一致，待实跑。
+**O29a** `BulletManager__cancel_radius_as_bomb` `0x429370` = stdcall 四栈参 + XMM2 半径，ret `0x10`；计数器 `mgr+0x7a41e8`。**证据**：反汇编四个出口都 `ret 0x10`；序言 `movaps xmm0,xmm2` 存 `[ebp-4]` 当半径；Tenshi `0x40eb13` `movss xmm2,[0x4b9290]`(18.0) 后 `push 0; push 0x1869f; push 0; push ebx; call`；`0x40eb46..0x40eb6a` 调前 `mov [ecx+0x7a41e8],0` 调后读。🟡 静态一致，待实跑。
 
-**O29b** `FUN_0045dfa0` = stdcall(center*, angle, life, dmg) + XMM2 宽 / XMM3 高，ret `0x10`，返回 1-based 槽号。**证据**：反汇编 `movss [ebp-8],xmm3; movss [ebp-4],xmm2`、两个出口 `ret 0x10`、`+0x14/+0x18` 收 XMM、`[ebp+0xc]` 角度归一到 (−π, π]；Remilia `0x40f478 movaps xmm3,xmm2`(高) `0x40f480 movss xmm2,[`0x4b92b4`]`(宽 32) `push 0xc8; push 2; push 0(角度); push eax(center); call`。🟡
+**O29b** `FUN_0045dfa0` = stdcall(center*, angle, life, dmg) + XMM2 宽 / XMM3 高，ret `0x10`，返回 1-based 槽号。**证据**：反汇编 `movss [ebp-8],xmm3; movss [ebp-4],xmm2`、两个出口 `ret 0x10`、`+0x14/+0x18` 收 XMM、`[ebp+0xc]` 角度归一到 (−π, π]；Remilia `0x40f478 movaps xmm3,xmm2`(高) `0x40f480 movss xmm2,[0x4b92b4]`(宽 32) `push 0xc8; push 2; push 0(角度); push eax(center); call`。🟡
 
-**O29c** `AnmManager__get_vm_with_id` `0x488b40` thiscall(mgr; id) ret 4；`interrupt_tree` `0x488be0` stdcall(id, n) ret 8；`0x488cf0` stdcall(id) ret 4。**证据**：`0x488b47 mov esi,ecx`、三个出口 `ret 4`；`0x488be3 mov ecx,[`0x51f65c`]`（自取 this）、`0x488c4e ret 8`；三张原生卡都 `push [esi+0x1c]; mov ecx,[`0x51f65c`]; call 0x488b40` 后写 `[eax+0x5f0]`。🟡
+**O29c** `AnmManager__get_vm_with_id` `0x488b40` thiscall(mgr; id) ret 4；`interrupt_tree` `0x488be0` stdcall(id, n) ret 8；`0x488cf0` stdcall(id) ret 4。**证据**：`0x488b47 mov esi,ecx`、三个出口 `ret 4`；`0x488be3 mov ecx,[0x51f65c]`（自取 this）、`0x488c4e ret 8`；三张原生卡都 `push [esi+0x1c]; mov ecx,[0x51f65c]; call 0x488b40` 后写 `[eax+0x5f0]`。🟡
 
 **O29d** 献祭：`CURRENT_LIVES < 1` 拒绝；−1 后 `ce_gui_update_lives`——同神之宣告 O28c 的路径。✅ 复用。
 
@@ -597,11 +597,11 @@ M < price 的火力补差价路径不动 MONEY（游戏随后清零）。**未�
 **P3 证据**：`0x443aff mov eax,[esi+0xb0]`；`0x443874 mov esi,ecx`（fastcall this）；esi 在 `0x443a8e mov esi,1` 被借用后于 `0x443a96` 从 `[esp+8]`（`0x443877` 存的 this）重载，`0x443a75` 的跳过支路不碰它——两条路到 `0x443b05` 都是 this；`test eax,0x20000` 由 cave 里执行，
 `0x443b0a jz` 看它的 ZF；创建后 `0x443c17 and [esi+0xb0],~0x20000`、`0x443c21` 重读 —— 内存位我们不动，不会残留。
 
-**P4′**：`0x44387b`（`[`0x4cd624`] & 0x180` → return 0，线程注销）与 `0x4439ed`（`this+0xb0 & 4` → 置 `0x80` 后 return 1）都在 `0x443b05` 之前。
+**P4′**：`0x44387b`（`[0x4cd624] & 0x180` → return 0，线程注销）与 `0x4439ed`（`this+0xb0 & 4` → 置 `0x80` 后 return 1）都在 `0x443b05` 之前。
 前者是关闭 / 切模式，商店时段不会命中；后者的位 4 语义未钉死。真命中那一帧本断点不跑，下一帧才重开，中间敌人 `0x1b` / Gui `0x21` 各跑一帧。
 `BP_ce_shop_reopen` 把重开帧与成交帧的差记进日志（原生应为 +31），> 31 标 `(late, gap!)`；`test_pause_after_purchase` 钉住「暂停不走帧号」的前提。
 
-**P6 证据**：练习（`0x4c5f8c >= 0`）与回放（`0x417cd8` 先要 `[`0x4cf418`] != 0` 再看 `GT+0xd0`）在 `0x417cc7` 30 帧自动退、空白卡走 state 3/4，三者都不经 `0x4183ea`；
+**P6 证据**：练习（`0x4c5f8c >= 0`）与回放（`0x417cd8` 先要 `[0x4cf418] != 0` 再看 `GT+0xd0`）在 `0x417cc7` 30 帧自动退、空白卡走 state 3/4，三者都不经 `0x4183ea`；
 `blocked` 再挡一道。中途退出：`ce_shop_on_gamethread` 要求同关且距成交 ≤ 300 帧（`TIME_IN_STAGE` `0x4ccce8` 由 GameThread 尾
 `0x443d16` 递增），否则作废；MSG 下一关置位时名额重算。
 
@@ -649,7 +649,7 @@ M < price 的火力补差价路径不动 MONEY（游戏随后清零）。**未�
 循环写 `84+k`，`+4 = 0`（指原生 wav 0 `se_plst00`）——**没被登记的新 id 只是重复一个原生音**。
 违反 I1 的后果是**跑飞不是崩**：循环 1 的扫描 `0x476460`（`CMP [EAX],EDX / ADD EAX,0x14 / JNZ`）没有上界。
 违反 I2 的后果是**挂死**：`0x4776f0` 遇 NULL blob 进 `0x477768` 的 `Sleep(10)` 等待循环，
-只有 `[`0x5704a4`] == 2` 才脱身。`ce_snd_gate` 逐行断言两者，不过就还原。
+只有 `[0x5704a4] == 2` 才脱身。`ce_snd_gate` 逐行断言两者，不过就还原。
 I2 只对 `>= 72` 的下标断言 —— 原生 `0..71` 由预加载线程异步填，门里可能还没好，那个等待循环正是为它们写的。
 
 **Q4 证据**：语音 blob 的字节来自 thcrap 的 `stack_game_file_resolve`（thcrap 的堆），
@@ -669,7 +669,7 @@ binhack 换成 `<codecave:th18_snd_slots+1e0>`（`20 × 0x18`），`test_sound_e
 **Q7 证据**：用 `x86imm._decode` 从**已知指令起点正向解码**，不用 `classify` 的回溯 ——
 `b8 80 9b 4c 00`（`mov eax,imm32`）会被前一条的尾字节 `ff` 接成 `ff /7`，两种读法都自洽而 tier 判错。
 完整性审计扫四段原生地址区间，26 处未覆盖的同值引用**逐个用 Ghidra 操作数级引用交叉验证过真身**：
-`0x4ca210` 是输入状态全局（`TEST dword [`0x4ca210`],0x80103`）、`0x4ca214` 是另一个普通全局、
+`0x4ca210` 是输入状态全局（`TEST dword [0x4ca210],0x80103`）、`0x4ca214` 是另一个普通全局、
 `0x56d104` 是 SoundManager `+0x2388` 的字段、`0x4b48c0` 是 ANM 的另一张表、
 `0x56cee8` 是字节级假阳性（Ghidra 操作数级引用一条都没有）。
 
@@ -687,7 +687,7 @@ binhack 换成 `<codecave:th18_snd_slots+1e0>`（`20 × 0x18`），`test_sound_e
 取 `movsx word [cfg行+8]`（低 word），`0x47764d` `SetVolume(vt+0x3c)`：
 
 ```
-s = [`0x5704b4`]/100.0        // SE 音量设置；为 0 时直接 SetVolume(-10000) 静音
+s = [0x5704b4]/100.0        // SE 音量设置；为 0 时直接 SetVolume(-10000) 静音
 vol = (1 − (1 − s)³) × (低word + 5000) − 5000
 ```
 
@@ -723,23 +723,23 @@ Alt-Tab 切出切回后仍能放（`0x45a4a0` 的重播循环）；
 
 | # | claim | 结论 |
 | --- | --- | --- |
-| R1 | `[`0x4cf2b8`]+0x30` 是「正在放炸弹」标志 | **CONFIRMED** —— 见下「R1 证据」 |
+| R1 | `[0x4cf2b8]+0x30` 是「正在放炸弹」标志 | **CONFIRMED** —— 见下「R1 证据」 |
 | R2 | `do_bomb` = `0x420360`，无参 cdecl，plain `ret` | **CONFIRMED** —— 见下「R2 证据」 |
 | R3 | 第二发不会把炸弹数扣成负 | **CONFIRMED** —— 扣数在 `0x4574d0`：`add [edx+0x7c],-1` 后立刻 `jns` / `mov [edx+0x7c],0` **钳 0**，再 `cmovg` 钳 MAX。所以我们**完全不碰** `CURRENT_BOMBS` |
 | R4 | 从 AbilityManager tick 里调 `do_bomb` 是安全的 | **PARTIAL** —— 见下「R4」 |
 | R5 | 只接一次，不会无限连 | **CONFIRMED** —— 接出来的那一发带 `chained` 标记，它的 0→1 边沿不再武装；它结束时清标记 |
 | R6 | 失败是安全的 | **CONFIRMED** —— `do_bomb` 自己的两个守卫（`+0x30` 正在放、`+0xa0`）照常生效，被拦下只 `or eax,-1; ret`，不改任何状态；我们据此把 `chained` 退回 |
-| R7 | 自机指针为空时不调 | **CONFIRMED（防御）** —— `do_bomb` `0x4203d4` 读 `[`0x4cf410`]+0x620` 当声像，为空会崩；`on_tick_2` 里先判 `CE_PLAYER()` |
+| R7 | 自机指针为空时不调 | **CONFIRMED（防御）** —— `do_bomb` `0x4203d4` 读 `[0x4cf410]+0x620` 当声像，为空会崩；`on_tick_2` 里先判 `CE_PLAYER()` |
 | R8 | `+0x30` 由谁清零 | 🟡 **未验** —— 见下「R8」 |
 
-**R1 证据**：`do_bomb` `0x420382` `mov [esi+0x30],1`（`esi = [`0x4cf2b8`]`），且入口 `0x42036b`
+**R1 证据**：`do_bomb` `0x420382` `mov [esi+0x30],1`（`esi = [0x4cf2b8]`），且入口 `0x42036b`
 `cmp [esi+0x30],0 / jnz 失败`；`Bomb__can_bomb_and_deathbomb_check` `0x420432` 也查
 `cmp [eax+0x30],1 → 不可炸`。三处互证它就是「这一发还在进行」。
 
 **R2 证据**：`0x420360` 序言 `push ebp; mov ebp,esp; push ecx; push esi`，收尾
 `pop esi; mov esp,ebp; pop ebp; ret`（**plain ret，无栈参**）；两个出口分别 `xor eax,eax`（成功）
 与 `or eax,-1`（被拦）。引擎调用点：`Player__on_tick__body` `0x45c051`（case 1，
-先 `call 0x420420` 查可炸、再 `test byte [`0x4ca434`],2` 查炸弹键）与 `0x45c2c3`（决死窗口）。
+先 `call 0x420420` 查可炸、再 `test byte [0x4ca434],2` 查炸弹键）与 `0x45c2c3`（决死窗口）。
 
 **R4**：`on_tick_2` 的宿主是 `AbilityManager__on_tick` `0x408640`，与 `Player__on_tick__body`
 同在游戏线程、同一帧内，只是**早于**玩家 tick。`do_bomb` 只写炸弹管理器自己的字段、调
@@ -780,7 +780,7 @@ Alt-Tab 切出切回后仍能放（`0x45a4a0` 的重播循环）；
 与 `CardTewi` 在 `+0x0c` 里只记账（`0x40A720` 存 MONEY）然后 `return 0` 是同一手法。
 
 **S2 证据**：`0x45d19b` 起
-`mov eax,[`0x4ccd48`] / sub eax,1 / mov [`0x4ccd48`],eax / **js** 0x45d1c7`（< 0 就跳过刷 HUD），
+`mov eax,[0x4ccd48] / sub eax,1 / mov [0x4ccd48],eax / **js** 0x45d1c7`（< 0 就跳过刷 HUD），
 随后 `0x45d1c7 test eax,eax / **js** 0x45d21c`（< 0 就跳过重置炸弹，直奔状态 2 的 game over 路径）。
 **两处都是 `js`（判符号位）**，所以 1 → 0 → −1 会正常触发 game over；若是精确 `== -1` 就会被跳过。
 
@@ -840,7 +840,7 @@ Miss 一次 → 残机一次少 **2**，日志
 | T5 | 上限只减不增、下限 0 | **CONFIRMED** —— `if (MAX > 0) MAX -= 1`；上限 0 时 consume 的 `min(cur,max)` 会把当前数也钳成 0，`can_bomb`（`0x420420` 查 `CURRENT > 0`）随即拒绝，炸弹彻底用完 |
 | T6 | HUD 刷新用对了函数 | **CONFIRMED** —— `0x4420e0` thiscall(gui; bombs, fragments, max) `ret 0xc`，与残机的 `0x441f10` 完全对称；原生在 consume（`0x457501`）与每关开场（`0x442798`）都这么调 |
 | T7 | 与黄昏（68）同时携带不会打架 | **CONFIRMED** —— 见下「T7」 |
-| T8 | 上限顶到 7 不会越界 | **CONFIRMED** —— 7 就是原生开局值（`0x4428ed` / `0x442920` / `0x442957` 三处 `mov [`0x4ccd64`],7`），也是 `CardBomb` 加上限的钳位值，HUD 画得下 |
+| T8 | 上限顶到 7 不会越界 | **CONFIRMED** —— 7 就是原生开局值（`0x4428ed` / `0x442920` / `0x442957` 三处 `mov [0x4ccd64],7`），也是 `CardBomb` 加上限的钳位值，HUD 画得下 |
 
 **T1 证据**：全 `.text` 扫 `E8` 相对调用，目标为 `consume_bomb` `0x4574d0` 的**只有 `0x4203b7`
 一处**，而它就在 `do_bomb` 里。所以挂在它返回后的 `0x4203bc`，覆盖面 = 每一次炸弹消耗，
@@ -883,9 +883,9 @@ Miss 一次 → 残机一次少 **2**，日志
 | U2 | 子机指针不能存 `card+0x54` | **CONFIRMED** —— 见下「U2 证据」 |
 | U3 | 认领子机槽不会误用别人的 | **CONFIRMED** —— 12 个槽是公共池；用前查 `option+0x00 != 0` 且 `option+0xd0 == card+0x08`（`0x40a790` 把后者写进前者）。不成立就松手重申请 |
 | U4 | 子机的贴图来自 `ability.anm` | **CONFIRMED** —— `allocate_option` 的最后一参是脚本号，取 `AbilityManager->ability_anm`（Reimu 2、Alice `0x10`）。我们给 script88 |
-| U5 | 子机坐标的读法 | **CONFIRMED** —— `option+0x5c/+0x60` 是定点 int32，`× `0x4b908c` = 1/128` 变像素（`0x40a9c0`、`0x40b6f4` 两处一手）|
+| U5 | 子机坐标的读法 | **CONFIRMED** —— `option+0x5c/+0x60` 是定点 int32，`× 0x4b908c = 1/128` 变像素（`0x40a9c0`、`0x40b6f4` 两处一手）|
 | U6 | 开火挂 `on_tick_2` | **CONFIRMED** —— AbilityManager 每帧、菜单 / 商店不跑；节奏是 C 的计数器（`bc_tick`，主机单测）。不依赖 `+0x1c on_tick_shooters`（那个只在按住射击键时广播）|
-| U7 | 遍历敌人链表安全 | **CONFIRMED** —— 与原生最近敌人搜索 `0x438cb0` 同一套规则（`EnemyManager+0x18c`、跳过 `+0x635c & `0xc00002`1`、坐标 `+0x1270/+0x1274`）；只在 `on_tick_2` 读，不跨帧缓存 enemy 指针 |
+| U7 | 遍历敌人链表安全 | **CONFIRMED** —— 与原生最近敌人搜索 `0x438cb0` 同一套规则（`EnemyManager+0x18c`、跳过 `+0x635c & 0xc000021`、坐标 `+0x1270/+0x1274`）；只在 `on_tick_2` 读，不跨帧缓存 enemy 指针 |
 | U8 | 定点伤害源钉在目标上 = **单体** | **CONFIRMED** —— 见下「U8 证据」（2026-09-06 起判定 32×32、一道拆 4 帧 × 30）|
 | U9 | 同一敌人只结算**一次** | **CONFIRMED** —— 见下「U9 证据」 |
 | U10 | 判定框的 w / h / angle 约定 | **CONFIRMED** —— `0x45f0f0` 矩形分支：把 `敌人 − 源` 旋转 `−angle` 后，`w/2` 比沿 angle 的轴、`h/2` 比垂直轴，敌人按半径 `param_3` 的圆做圆角矩形判定。我们 angle = 0、24×24，就是轴对齐的小方块 |
@@ -950,7 +950,7 @@ Tenshi 要石是同一个原语，只是尺寸小、寿命短。
 | V8 | 火球非追踪、按开火时坐标落地 | **设计** —— `fl_launch` 记下 `(tx, ty)`，`n = ⌊d/8⌋ + 1` 帧恰好到点（每帧位移 = d / n，不过头）；敌人走开就打空。原地投（d = 0）至少飞 1 帧、不除零（单测覆盖）|
 | 2026-09-13 | **所有卡（共享件）** | `native/sdk.c` 的 `ce_sdk_setup()` | 见文末详录 |
 | V10 | 复用青眼 script86 / 87 做血条 | **CONFIRMED** —— 两个脚本是 `drawRect(1,1)` 根 VM，没有任何卡专属的东西；pos / scale / color 全由 C 每帧写（O29k）。两张卡各起自己的一对 VM，互不干扰 |
-| V11 | 敌人链表遍历 | **CONFIRMED** —— 与 U7 同一套（`+0x18c` 链表、`+0x635c & `0xc00002`1`、`+0x1270/+0x1274`），两遍都在同一个 `on_active_tick` 里、不缓存 enemy 指针 |
+| V11 | 敌人链表遍历 | **CONFIRMED** —— 与 U7 同一套（`+0x18c` 链表、`+0x635c & 0xc000021`、`+0x1270/+0x1274`），两遍都在同一个 `on_active_tick` 里、不缓存 enemy 指针 |
 | V12 | replay 安全的算术 | **CONFIRMED** —— 随机只来自游戏 RNG；smoothstep / 位移 / `bc_atan2f` / `sqrtss` 全是确定性 SSE；`make dllx87` = 0 |
 | V17 | 震屏工厂 `0x476060` 的调用约定 | **CONFIRMED** —— 见下「V17 证据」：fastcall(ecx = type, edx = time; start, end, 0, `0x5b`) `ret 0x10`；type 1 的 on_tick 用 UI RNG，不进 replay 流 |
 | 2026-09-13 | **所有卡（共享件）** | `native/sdk_core.{c,h}` + `native/sdk.h` | 见文末详录 |
@@ -970,28 +970,28 @@ tick 顺序 GameThread `0x10` → AbilityManager `0x16`（我们的 `on_active_t
 
 **V1 证据**：`0x457480`：`mov eax, ecx`（this = GlobalsInner `0x4cccdc`）、`mov edi, [eax+0x5c]`（CURRENT_POWER）、`mov ecx, [eax+0x64]`
 （POWER_PER_LEVEL）、`cmp edi, ecx; jg` 否则 `xor eax, eax; ret 4`；`mov edx, [ebp+8]`（amount）、`sub edi, edx`、写回、`< ecx` 则钳回 ecx；
-`(旧值+amount)/档 != 新值/档` → `setnz cl; mov eax, ecx`；两个出口都 **`ret 4`**。原生调用点 `0x410f1c` `push [`0x4ccd40`]; call`（ecx 早已 = `0x4cccdc`）。
+`(旧值+amount)/档 != 新值/档` → `setnz cl; mov eax, ecx`；两个出口都 **`ret 4`**。原生调用点 `0x410f1c` `push [0x4ccd40]; call`（ecx 早已 = `0x4cccdc`）。
 ⇒ `thiscall(GlobalsInner*; int amount) ret 4`，返回 0/1。`sdk.h` 的 `ce_spend_power` 照此。
 
 **V2 证据**：`spend_power` 在 `CURRENT_POWER <= 一档` 时拒绝不扣（`0x45748c..0x457494`），扣完 `< 一档` 钳回一档（`0x45749f..0x4574a6`）：
-**永远保留 1.00**。原生 Tsukasa 成本 1 档、门槛 2 档（`0x410e6d`：`eax = [`0x4ccd40`]*2; cmp [`0x4ccd38`], eax; jl → `0x476be0`(0x10)`）——
+**永远保留 1.00**。原生 Tsukasa 成本 1 档、门槛 2 档（`0x410e6d`：`eax = [0x4ccd40]*2; cmp [0x4ccd38], eax; jl → 0x476be0(0x10)`）——
 「成本 + 一档」是原生自己的规矩；我们成本 200、门槛 300。只要求 ≥ 200 的话 250 时实际只扣 150。
 
 **V5 证据**：`Rng__rand_dword` `0x402740`：`mov esi, ecx`（this = zRng*）、无栈参、裸 `ret`、`eax = (hi16 << 16) | lo16`（两步 16 位生成器，`rng+4 += 2`）。
 `0x4cf288` = ExpHP `REPLAY_SAFE_RNG`，xref 全是 gameplay：`Bullet__run_ex`、`Enemy__drop_items_and_notify_cards`、`PlayerBullet__create`、
 `CardSuwako` / `CardYachie` / `CardMiko`、`BombSanae`。`0x4cf280` 的 xref 是 `CardShop__pick_weighted_random_offer`、`ItemManager`、UI（非回放流）。
-⇒ gameplay 随机走 `0x4cf288`；`sdk.h` 的 `ce_rand` 就是 `thiscall(`0x4cf288`)`。
+⇒ gameplay 随机走 `0x4cf288`；`sdk.h` 的 `ce_rand` 就是 `thiscall(0x4cf288)`。
 
 **V17 证据**：ECL 517 `setScreenShake(time, start, end)` 的 case（派发 `0x430dd4` 跳转表第 116 项 → `0x434d8d`）：
 `push 0x5b; push 0; get_int_arg(2) → push; get_int_arg(1) → push; get_int_arg(0) → edx; mov ecx, 1; call 0x476060`。
 `0x476060`：`new(0x40)`、`memset`、`ScreenEffect__operator_new(this; type, time, start, end, p5, prio)` `0x4760b0`，尾 `0x4760a8` **`ret 0x10`**（四个栈参）。
 type 1 → 只注册 on_tick `0x475c70`（`register__on_tick(…, 0x14)`），不注册 on_draw（所以 `0x5b` 用不到）；写 `+0x18 = time`、`+0x1c = start`、`+0x20 = end`。
-`0x475c70` 每帧：强度 = start + (end − start) × 已过 / time，`Rng__rand_dword(`0x4cf280`) % 3` 决定 x / y 各取 {0, +I, −I}，写 `SUPERVISOR.camera_1/camera_3` 的偏移；
+`0x475c70` 每帧：强度 = start + (end − start) × 已过 / time，`Rng__rand_dword(0x4cf280) % 3` 决定 x / y 各取 {0, +I, −I}，写 `SUPERVISOR.camera_1/camera_3` 的偏移；
 到时返回 7（UpdateFunc 自删）。原生同一工厂的其他用法：Sanae 炸弹 `FUN_00476060(8, 4, 1, 0x3c, 10, 0x5b)`（type 8 是别的效果）。
 `sdk.h` 的 `ce_screen_shake(time, start, end)` = `fastcall(1, time; start, end, 0, 0x5b)`。
 
 **V3 证据**：`0x45d5e0` 入口 `mov [esp+0x18], ecx`（this），全程读 `ecx+0x471dc` / `ecx+0x50`… 即 `PLAYER+0x620+…`；尾 `0x45dd0b` **`ret 4`**。
-调用点 Tsukasa `0x410f27`：`push ecx; mov ecx, [`0x4cf410`]; lea ecx, [ecx+0x620]; call 0x45d5e0`，调用后不动 esp ——
+调用点 Tsukasa `0x410f27`：`push ecx; mov ecx, [0x4cf410]; lea ecx, [ecx+0x620]; call 0x45d5e0`，调用后不动 esp ——
 压的那个 `ecx` 就是被 `ret 4` 清掉的哑栈参（函数体不读 `[ebp+8]`）。⇒ `thiscall(PLAYER+0x620; 一个未读栈参) ret 4`。
 `sdk.h` 的 `ce_repopulate_options` 传 `p + CE_PLAYER_INNER` 与一个 0。
 
@@ -1028,7 +1028,7 @@ type 1 → 只注册 on_tick `0x475c70`（`register__on_tick(…, 0x14)`），�
 **W2 证据**：recount `0x408158..0x40816d`：`flags & 8` → `+0x2c`、`& 0x40` → `+0x30`、否则 `+0x34`；`0x40814c` `dec [edi+0x28]`。
 分配尾段 `0x412d5x` 按同一分法加。三计数只被这两处与 `reset_cards` 写，就地减一与整体重数结果相同。
 
-**W4 证据**：`0x408d00` `thiscall(mgr; int)` `ret 4`（`0x408dd2`）：先按 `mgr+0x58` 的 256 个 id 删旧图标 VM（`0x408d20..0x408d73`，跳过 `+0x538 & `0x100000`00` 的），
+**W4 证据**：`0x408d00` `thiscall(mgr; int)` `ret 4`（`0x408dd2`）：先按 `mgr+0x58` 的 256 个 id 删旧图标 VM（`0x408d20..0x408d73`，跳过 `+0x538 & 0x10000000` 的），
 再在 `GAME_THREAD_PTR != 0` 时按**三个类别计数**（`0x408d93` `push [ebx+0x2c]` / `0x408d9f` `+0x30` / `0x408db7` `+0x34`）画三行。
 分配尾段 `mode != 1` 时调 `(this, 0)`（商店购买 = mode 2 就在店里调它）⇒ 店里调有先例。**它不看 `num_total`**，且尾段是先调它再 `num_total++`——我们先减计数再调，顺序正确。
 
@@ -1074,7 +1074,7 @@ type 1 → 只注册 on_tick `0x475c70`（`register__on_tick(…, 0x14)`），�
 `sdk.h` 的 `ce_anm_spawn_ui` 压四个参。层不是参数（世界版 `0x405bf0` 写 `vm+0x18`，这里没有）—— 靠脚本里的 `layer(26)`。
 
 **X3 证据**：`0x457570`：`mov esi, ecx`（this = GlobalsInner `0x4cccdc`）；`CURRENT_LIVES(+0x6c) >= LIVES_MAX(+0x78)` → `+0x70 = 0; ret 4`；否则 `+0x70`（LIFE_FRAGMENTS）+1，
-按难度表（`0x4b40c8` / extra `0x4b3ff4`，下标 `+0x74`）取每命碎片数，`while (frag >= n) { frag -= n; `0x4575f0`(加整命) }`，最后 `0x441f10(GUI; lives, frag, max)` 刷 HUD；出口 `0x4575e2` **`ret 4`**。
+按难度表（`0x4b40c8` / extra `0x4b3ff4`，下标 `+0x74`）取每命碎片数，`while (frag >= n) { frag -= n; 0x4575f0(加整命) }`，最后 `0x441f10(GUI; lives, frag, max)` 刷 HUD；出口 `0x4575e2` **`ret 4`**。
 调用方 `CardLifeFragment__constructor` `0x409cc0`（先 `LIVES_MAX` +1 钳 7 再调它——那是碎片**卡**的额外效果，我们不要）、`CardNarumi` 每关、道具 type `0x10`。⇒ thiscall(GlobalsInner; 哑参) ret 4，`ce_add_life_fragment` 与 `ce_add_bomb` 同形。
 
 **实跑要看的**：见 [`NEXT.md`](NEXT.md) §1k。崩溃优先怀疑 X1 / X3 的哑参、X2 的 thiscall；视觉看 X5。
@@ -1118,7 +1118,7 @@ st07 `Boss2…Boss10 BossDead`（Card10 终符，Card9 耐久符去 `Boss10`）�
 | Z1 | 四窗字节与 sites.py 表一致、窗内无跳转目标 | **CONFIRMED（静态）** —— expected hex 逐窗对照原始 exe 相等（`emit_sdk_breakpoints` 每跑必验，gen 已过）；全图 33445 条分支目标无一落在窗内（起点命中安全：断点覆盖后跳向窗口首字节 = 跳向补丁指令） |
 | Z2 | 每窗是单条 / 两条完整指令、无相对寻址 → thcrap 可整窗搬进 cave | **CONFIRMED（静态）** —— objdump 对齐反汇编逐窗验证（各窗指令见下证据）；expected hex 与原始 exe 逐字节相等由 gen 每跑必验 |
 | Z3 | `BP_ce_item_collect` 读窗前值：type 由窗内指令装载，handler 读内存 `[edi+0xc78]` 而非 EDX | **CONFIRMED（静态）** —— 断点在原指令**前**触发（thcrap 惯例，§E）；代码照此实现 |
-| Z4 | `ce_item_frame` 每个正常游玩帧、道具池 body 前到达一次 | 🟡 **未实跑** —— `0x446ec0` 门卫链：`GAME_THREAD` 状态与 `0x400`（商店）前段已排除，`[`0x4cf2e4`]` 空或位测试失败即跳过 body（跳转细节见下证据）。trace 首命中 + 帧计数（Task 9）验「每帧恰一次」 |
+| Z4 | `ce_item_frame` 每个正常游玩帧、道具池 body 前到达一次 | 🟡 **未实跑** —— `0x446ec0` 门卫链：`GAME_THREAD` 状态与 `0x400`（商店）前段已排除，`[0x4cf2e4]` 空或位测试失败即跳过 body（跳转细节见下证据）。trace 首命中 + 帧计数（Task 9）验「每帧恰一次」 |
 | Z5 | `ce_item_commit` = 各收集路线共同收尾起点（分值已入 SCORE） | 🟡 **未实跑（覆盖风险点）** —— 反汇编看线/半径两路都汇聚 `0x44658a`；**若实跑发现某路线直通 case 不经此点，批入账点补在 commit BP**（见 plan §分数补差） |
 | native/sdk.h`：新增 `enum { CE_HUD_FONT_TH18_FONT2 = 0, CE_HUD_ | 见文末详录 |
 | Z7 ｜ ce_item_pool_any_flying 谓词 = 批未闭谓词 ｜ 🟡 **未实跑** —— state 机为 2026-0 | 见文末长行详录 |
@@ -1127,8 +1127,8 @@ st07 `Boss2…Boss10 BossDead`（Card10 终符，Card9 耐久符去 `Boss10`）�
 | Z10 ｜ 倍率弹字 = 纯视觉写：helper 只写 PopupManager 环 ｜ **CONFIRMED（静态）** —— 反汇编两 | 见文末长行详录 |
 
 **Z4 证据**：`0x446ec0` 对齐反汇编（objdump PE 直解）：
-`mov edx,[`0x4cf2e4`] / test edx,edx / je 0x446ee3`（mgr 空直落门卫）、`mov edx,[edx+0xb0]` 后
-位测试 `jne 0x446eec`（跳过门卫提前 `mov eax,1; ret`）、`0x446ee3: cmp dword [`0x4cf2a4`],0 / je 0x446ef2`（进 body）。
+`mov edx,[0x4cf2e4] / test edx,edx / je 0x446ee3`（mgr 空直落门卫）、`mov edx,[edx+0xb0]` 后
+位测试 `jne 0x446eec`（跳过门卫提前 `mov eax,1; ret`）、`0x446ee3: cmp dword [0x4cf2a4],0 / je 0x446ef2`（进 body）。
 `0x446eec` 是提前返回桩、`0x446ef2` 是 body 继续 —— `0x446ee3` 恰好是「最后一次门卫、决定 body 是否跑」的位次。
 
 **Z7 证据**：state 机写点一手：出生 `0x446fac movl $1,0xc74(esi)`（state=1）、磁力吸附 `0x445f6f` 置 3 /
@@ -1145,7 +1145,7 @@ deck 槽 = save+`0x5f608`（字节槽，reset_cards `0x407ee3 movzbl` 读）；�
 处置 = 不押注墙位，新卡 id 上限降至 127（`0x7f`，符号界内最大值），降序分配后卡 126、125…。
 **若 127 复跑仍被剔** → 墙比符号界更怪，回钉 `0x415af0` 重建链（AUDIT §G 挂账）。
 
-**Z10 证据（2026-09-08 一手 objdump）**：rate 槽生命周期 = tick `0x464020` 第二循环（`0x4640e0 lea 0x9f4(%edi)`，ecx = slot+`0x28`，busy@`0x14`）：age 字段 +`0x24` 每帧 +1（`0x46413d`）、>`0x3c`（60 帧）起 color@`-0xc` = slot+`0x1c` 的 alpha 字节 −4（`0x464145`–`0x464165`），≤0 清 busy（`0x464154`）——**原生自动回收**。draw `0x464180` 第二循环（esi = slot+`0x1c`）每槽两连 `0x419cb0`（this = `[`0x4cf2ac`]`，显式压栈）：格式串 `0x4b71f8` = `"BONUS %.1f"`（mult float@`0x28`→slot+`0x44`，cvtps2pd）、`0x4b61a4` = `"%d"`（值 int@`0x24`→slot+`0x40`）；值 <0 分支走 `0x4b7204` `"NO BONUS"`。槽色先抄进文本对象 +`0x19228`（`0x4644c2`）。adder `0x4645f0` 的字段写序 = 本 helper 的复位模板（+`0x20`=-1 / +`0x24`=0 / +`0x28`=0 / scale=1.0 / bit0 动画标志；★原生回收只清 busy，不复零的话 tick 看到残留 age>60 当帧淡出、位移 float 残留会瞬移）。
+**Z10 证据（2026-09-08 一手 objdump）**：rate 槽生命周期 = tick `0x464020` 第二循环（`0x4640e0 lea 0x9f4(%edi)`，ecx = slot+`0x28`，busy@`0x14`）：age 字段 +`0x24` 每帧 +1（`0x46413d`）、>`0x3c`（60 帧）起 color@`-0xc` = slot+`0x1c` 的 alpha 字节 −4（`0x464145`–`0x464165`），≤0 清 busy（`0x464154`）——**原生自动回收**。draw `0x464180` 第二循环（esi = slot+`0x1c`）每槽两连 `0x419cb0`（this = `[0x4cf2ac]`，显式压栈）：格式串 `0x4b71f8` = `"BONUS %.1f"`（mult float@`0x28`→slot+`0x44`，cvtps2pd）、`0x4b61a4` = `"%d"`（值 int@`0x24`→slot+`0x40`）；值 <0 分支走 `0x4b7204` `"NO BONUS"`。槽色先抄进文本对象 +`0x19228`（`0x4644c2`）。adder `0x4645f0` 的字段写序 = 本 helper 的复位模板（+`0x20`=-1 / +`0x24`=0 / +`0x28`=0 / scale=1.0 / bit0 动画标志；★原生回收只清 busy，不复零的话 tick 看到残留 age>60 当帧淡出、位移 float 残留会瞬移）。
 
 | Z12 | 碎片奖励 = TH18 原生卡道具 type `0x10`/`0x11`（非 4/6 宝石残留）| 🟡 **一手 2026-09-08（表 dump + 分派 + spawner + 半径门四路互证）+ 处置待实跑** —— 见下「Z12 证据」 |
 
@@ -1176,7 +1176,7 @@ zTimer 就完全不弹、P 依然零出现，两个症状共同指向 `frame_now
   所见）；节流 `next_drop_at` 首枪过（`0 ≥ 0`，落点 pos 垃圾不可见）后 `96` 永远够不着（钱/P 三轮零可见）。
   **先前「掉钱不掉 = pos bug」只对了一半：节流钟根本没走。**
 - 修复（collect2x.c）：帧源弃 zTimer → 接线层自计数 `s_play_frame`——`on_item_frame` 分派点 `0x446ee3`
-  是 ItemManager tick `0x446ec0` 包装的门卫 CMP：包装先查 `[`0x4cf2e4`]+0xb0` 状态位与开店 `[`0x4cf2a4`]`，
+  是 ItemManager tick `0x446ec0` 包装的门卫 CMP：包装先查 `[0x4cf2e4]+0xb0` 状态位与开店 `[0x4cf2a4]`，
   冻结帧连 CMP 都到不了（sites.py 711 一手 disasm；与 Z4 证据同款）→ **每次分派 = 一个正常游玩帧**；
   run reset 归零。碎片 pending 与掉 P 节流共用此钟（语义 = TH14 的「游玩帧」节奏）。P 落点本轮锚自机上方
   76px（碎片同锚实测可见；pos 槽真命中点由探针定位后换回、删探针）。日志 settle / spawn / P drop 行加 `t=%d`
@@ -1199,7 +1199,7 @@ pos 参数槽（`[ebx+8]`）当年被当坐标直接读 = 把**槽地址**当 fl
 - `[player+0x47984]` 语义复核（仅 3 处引用）：`0x443d3b` GameThread 每帧 `= [[player+0x47940]+0x28]`
   （当前射击模式的每帧伤害额度，**常量非累加器**）；`0x40f48e` = `create_damage_source_rect` 调用侧把额度
   置 `0x12c`=300（**不是**「Remilia 写 300」的独立写入）。→ award 是否命中门控**静态无法定案**（award 路径
-  不读任何「本调用开火过」标志；早退只有池空 `0x45f14c` / `[`0x4cf2b8`]+0x30`==0 / getter ≤0）。观测点见
+  不读任何「本调用开火过」标志；早退只有池空 `0x45f14c` / `[0x4cf2b8]+0x30`==0 / getter ≤0）。观测点见
   NEXT：**停火（弹池未空、敌人存活）时敌人身上还掉不掉 P** —— 掉 = award 与命中无关，下一步在 `0x45f171`
   BP 捕获初始预算、ebp 键控做「本调用真开火」门。
 - 修复（sdk.c）：pos = `*(float const *const *)(ebx+8)` + 可空防御；**探针（collect2x-dbg 一次性日志）删除**
@@ -1225,14 +1225,14 @@ trace 首次命中行应出现 `on_item_frame / on_item_collect / on_item_commit
 th14.v1.00b funcs.json 命名。链：**播放点** → **id** → **cfg** → **名表** → **跨作对表**：
 
 1. **播放点（一手反汇编）**：`ItemManager::on_tick__body` `0x438550` 的结算尾 `0x438dfe` 起：
-   `[`0x4f5884`]` 批次倒计时归零 → 按 `[`0x4f5880`]` 收点计数分档（`0x3c`/`0x32`/`0x28`/`0x1e`/`0x14`），
+   `[0x4f5884]` 批次倒计时归零 → 按 `[0x4f5880]` 收点计数分档（`0x3c`/`0x32`/`0x28`/`0x1e`/`0x14`），
    五档各自在弹字（`0x458000` 倍率加法器，色 `0xffffff00`/`0xe0ffff60`/`0xd0c0ff80`/`0xc0a0ffa0`/`0xb040ffff`）
    **之前**播声：`push 0x39; call 0x46e470`（SoundManager::play_sound_at_position，@ `0x438e09`/
    `0x438e60`/`0x438eb2`/`0x438f04`/`0x438f4e`；声像 xmm2 ← `[esp+0x28]` = 批位 x——438e03 起 movss）。
    5–19 = 灰字（`0x80a0a0a0`, value −1）**无音**；<5 全无。碎片 spawn（ItemManager::spawn_item
    `0x4397b0`，type `0x28`/0xc 系 @ `0x438fda`+）无声——「收点结算的音」只有这一声 `0x39`。
 2. **id → wav（一手 cfg + 名表）**：cfg 行基 `0x4d61b8`、stride `0x14`、行构 {+0 id, +4 wav 下标,
-   +8 低字音量(dB) 高字优先级, +0xc 循环, +`0x10` 游戏内标志}（play 函数 `movsx word [id×0x14+`0x4d61c2`]`
+   +8 低字音量(dB) 高字优先级, +0xc 循环, +`0x10` 游戏内标志}（play 函数 `movsx word [id×0x14+0x4d61c2]`
    即行 +8 低字对得上）。行 `0x39`（`0x4d662c`）：`39 00 00 00 | 2e 00 00 00 |
    38 ff 64 00 | …` → 下标 `0x2e` → 名表 `0x4d60b0`（65 个 char*：64 名 + NULL，与 cfg 首尾相接
    `0x4d61b4`）第 `0x2e` 项 = **`se_pin00.wav`**（非按字符串序数——序数第 46 是 pin01，以指针表为准）。
@@ -1249,7 +1249,7 @@ th14.v1.00b funcs.json 命名。链：**播放点** → **id** → **cfg** → *
 6. **处置**：collect2x.c 结算音 CE_SE_CARDGET(`0x2e`) → `CE_SE_PIN00(0x39)`；engine.h 增
    `CE_SE_PIN00 0x39`（注释引本条）。DLL 2026-09-08 19:35 重建已同步 mods/。
 7. **TH15 三方交叉（2026-09-08 一手，材料 `local/_scratch/th15_vanilla.exe` = 原版 1.00b
-   md5 同族）**：play 系两入口（`0x476360`/`0x476400`）prio 读点 `movsx word [`0x4e46aa`+id×0x14]`
+   md5 同族）**：play 系两入口（`0x476360`/`0x476400`）prio 读点 `movsx word [0x4e46aa+id×0x14]`
    = 槽+0xa（槽基 **`0x4e46b4`**，stride `0x14`，行构与 TH14 同构）；槽 `0x39` @ `0x4e4b28`：
    `39 00 00 00 | 2e 00 00 00 | 38 ff 64 00 | …` = **id `0x39` / wav 下标 `0x2e` / −2dB(`0xff38`) /
    prio 100(`0x64`) / loop 0 / 游戏内 1** —— 与 TH14 行 `0x39`、TH18 行 `0x39` 逐项全同 → ZUN
@@ -1270,11 +1270,11 @@ th14.v1.00b funcs.json 命名。链：**播放点** → **id** → **cfg** → *
 | Z22 ｜ **成员门 = 真空飞行体**（run-9）：批开/计数/续批只认**分 ｜ ✅ **整机回归实跑通过（2026-09-09）* | 见文末长行详录 |
 `local/_scratch/th14_100b.exe` 全量 disasm（th14_full.asm）。原实现门 = `ce_item_pool_any_flying()`
 池空才关批（collect2x.c），批计时来自 TH14 accessor 族：
-1. **原生计时 = `[`0x4f5884`]`**：per-item 收点分支 `0x43898e` 系对 type≠9/0xa/0xb 重载 `edx=0x8`；
-   accessor `0x439d60` = `mov [`0x4f5884`],0x8`（收点入批重载专用）；池循环帧尾 `0x438dad`
-   `dec`、`0x438dc0` 归零 jne 落空即走结算（`0x438df1` 读 `[`0x4f5880`]` count 分档）→
-   **批闭 = 最后一次收点后 ~7–8 游玩帧**。收点入批 = `0x439c90`（`inc [`0x4f5880`]` + 批分累加
-   `[`0x4f5878`]`，与计时重载分开的两个 accessor）。
+1. **原生计时 = `[0x4f5884]`**：per-item 收点分支 `0x43898e` 系对 type≠9/0xa/0xb 重载 `edx=0x8`；
+   accessor `0x439d60` = `mov [0x4f5884],0x8`（收点入批重载专用）；池循环帧尾 `0x438dad`
+   `dec`、`0x438dc0` 归零 jne 落空即走结算（`0x438df1` 读 `[0x4f5880]` count 分档）→
+   **批闭 = 最后一次收点后 ~7–8 游玩帧**。收点入批 = `0x439c90`（`inc [0x4f5880]` + 批分累加
+   `[0x4f5878]`，与计时重载分开的两个 accessor）。
 2. **原生不等池空**：计时归零无条件结算 —— 在飞残余点迟到 = 拆下一批单独计（<5 静默）。
    对照旧池空门：结算发生在「池内无批集道具」的下一帧 ≈ 最后一收 +1 帧 → 音急 ~7 帧；
    且任一残余点（掉出回收线才消失）可把批挂住数十帧 → 躲弹幕期突然冒出过期 ×0.5 + `0x39` 钟声
@@ -1295,12 +1295,12 @@ th14.v1.00b funcs.json 命名。链：**播放点** → **id** → **cfg** → *
 2. **TH18 type 分派一手**（材料 th18_full.asm）：分派点 `0x44625f` 查映射表 `0x44685c`（19 bytes）
    再跳 `0x446830` 跳表（11 handlers）。type 1 → `0x4462cc`（P/power，经 `0x446870`）；type 2 →
    `0x4463ba` = collect_money_item `0x446b00`；**type 9–0xe 六型共指加分 handler `0x446547`**
-   （`SCORE [`0x4cccfc`] += [`0x4ccd34`]/100`，cap 1e9）—— 只由击破转换（强制收集）产出，玩家正常收点
+   （`SCORE [0x4cccfc] += [0x4ccd34]/100`，cap 1e9）—— 只由击破转换（强制收集）产出，玩家正常收点
    吃不到；type `0x10`–`0x13` → `0x446531`（卡道具）。★ **尾段订正（写 Z19 当日再追一手推翻早先推断）**：
    P/钱例程**都**在分派窗内给 SCORE 加分 —— P（power 例程 `0x446870`）尾 `0x446ac0` 无条件
    `SCORE += edi/10`（cap 1e9−1；edi = `0x64`=100 → +10，或火力相关折算值，钳 ≥10）+ 前置弹窗
    `0x4645f0` 两次；钱（`0x446b00`）尾 `0x446d03` 无条件 `SCORE += esi/10`（esi = 道具身价，
-   `0x446cf3 cmovle` 钳 ≥10）+ 弹窗 `0x446cfe`，并 inc `[`0x4ccd20`]/[`0x4ccd30`]/[`0x4ccd34`]` ——
+   `0x446cf3 cmovle` 钳 ≥10）+ 弹窗 `0x446cfe`，并 inc `[0x4ccd20]/[0x4ccd30]/[0x4ccd34]` ——
    与 §O10（`0x446cf6` esi 身价同控弹窗与计分）互证。**P/钱道具各带小分** → stash delta = 该道具
    小分、批分 = 批内 Σ小分，非恒 0；「TH18 无 collect-score」推断作废（早先只看 handler stub 没读
    例程体，O10 已在案未回引）。
@@ -1330,7 +1330,7 @@ th14.v1.00b funcs.json 命名。链：**播放点** → **id** → **cfg** → *
    「基本只有一次生成碎片」——三项用户观察全对上。§Z18 的「NO BONUS 偶缺」是同一空洞的 <5 静默变体
    （急切切批）；当时归因池空门，timer 门保留 8 帧后（第六跑）症状仍在 → 根因修正为**窗口值对 TH18
    滴入物理太小**，与池空/timer 无关。
-2. **TH14 原义不矛盾**：8 = 原版重载常量（`[`0x4f5884`]` @ th14 `0x43898e`/`0x439d60`，帧尾递减归零即结）
+2. **TH14 原义不矛盾**：8 = 原版重载常量（`[0x4f5884]` @ th14 `0x43898e`/`0x439d60`，帧尾递减归零即结）
    —— 按 DDC 收集线物理校准：满火力线吸 = 道具一过线即收、到达流紧密，一波收点的吸收空洞 ≪8 帧，
    8 帧窗在 DDC 里就是「流停 ~0.13 s 即结」。TH18 复刻的批闭**结构**照搬原义（timer 语义、最后一收后
    idle 满才关、在飞残余不挡批、迟到拆下一批、结算不等在飞道具）；**窗口值是物理适配参数**：空洞 >8 帧
@@ -1358,20 +1358,20 @@ th18_full.asm（`local/_scratch`）。
 1. **TH15/LoLK 一手 census（机制确实变了，但没有「更快的批节奏」可对齐）**：批记账块 {`0x4e7464`
    score-add、`0x4e746c` count-inc、`0x4e7474` qword、`0x4e747c`/`0x4e7480`} 只被 item manager 收点例程
    （`0x4402f9`–`0x440e64` 区间）写、全 exe 无任何读取；timer `0x4e7470` 全文件仅 3 处引用 = 续期门
-   自读自写 `0x43fd12`/`0x43fd1d` + `mov [`0x4e7470`],0x8; ret 4` accessor `0x440ef0` —— **无 dec、无
+   自读自写 `0x43fd12`/`0x43fd1d` + `mov [0x4e7470],0x8; ret 4` accessor `0x440ef0` —— **无 dec、无
    cmp/test、无消费端** → LoLK 把帧尾递减 → 五档比较 → 弹字/钟声 → 清零 的整条结算链删了。
    活着的 `0x4e7484`/88（有 cmp 有读）= 点道具总数/总分，`0x43ab79`/`0x43ac50` 只是结算屏「平均分」
    显示除法（divss），不是批链。→ 收点在 LoLK 根本没有批结算事件：TH15 手感的「快」= 批奖整个
    不存在、没有任何结算延迟可感知，不是存在一个更快的原版节奏 —— 「各项对齐 TH15」无锚点。
 2. **TH15 续期门残骸与 TH14 同构 = presence 续批是 ZUN 跨作标准布局**：th15 `0x43fce3`-`0x43fcf3`
-   （state-3 置位 [edi+`0xc64`]=3 + type 装载 [edi+`0xc68`]）→ `0x43fd12` `mov eax,[`0x4e7470`]` →
+   （state-3 置位 [edi+`0xc64`]=3 + type 装载 [edi+`0xc68`]）→ `0x43fd12` `mov eax,[0x4e7470]` →
    type 豁免 {9,0xa,0xb,0xd,0xe} 跳过 + 0xf `cmovne` identity + 其余 `cmovne eax,edx` 重载
    （edx=8 @ `0x43f841`）→ `0x43fd42` 起距离判定 —— 与 TH14 `0x438974`（[edi+`0xbf0`]=3）→ `0x43898e`
    （豁免 {9,0xa}、0xb identity、其余重载）→ `0x43899e` 距离/atan2 逐位同构。结构在 DDC 活着、
    在 LoLK 是死代码 → 以 TH14 为对齐基准（非 TH15）成立。
 3. **TH14 定案（关 Z20 #5）**：续期门在 state-3 飞行 body 内每帧执行（置 3 后无条件直落到重载、
    距离判定之前）→ **在飞批集道具每帧重载 timer** → 批闭只发生在「既无在飞批集道具、又无新收」
-   的真停段后 ~8 帧（帧尾 `0x438dad` 递减、归零即结，Z18 证据 1）。重载常数 = 8 经 `mov [`0x4f5884`],0x8` accessor
+   的真停段后 ~8 帧（帧尾 `0x438dad` 递减、归零即结，Z18 证据 1）。重载常数 = 8 经 `mov [0x4f5884],0x8` accessor
    `0x439d60` 收口（门内 edx 出处为调用方，静态追不到，不臆测）。
 4. **处置**：`C2X_BATCH_SETTLE_IDLE` 30→8；core 增 `c2x_batch_presence`（批开即续
    `last_event_at`）；接线 on_item_frame 在 settle 检查前问 `ce_item_pool_any_attracting()`
@@ -1410,8 +1410,8 @@ th18_full.asm（`local/_scratch`）。
    不经过 state 2/5）。
 3. **V 门 = type {1,2} 进 state 3 的唯一入口**（state-1 case：countdown ≤ 0 → 每帧跑 `0x445b9a`）：
    (a) 上线：player state ∉ {2,4}（`0x445ba3`/`0x445ba8` je `0x445bbf` 跳过线检）且线 `[player+0x47998]`
-   > 自机 y `[player+0x624]`（`0x445bb2` comiss → ja `0x445f63`）；(b) 放 B：BombManager `[`0x4cf2b8`]`
-   +`0x30` == 1 且 +`0x38` < `0x3c`（`0x445bc4`–`0x445bce`，R1 已确认 +`0x30` = 放弹标志）；(c) `[`0x4cf2e0`]`
+   > 自机 y `[player+0x624]`（`0x445bb2` comiss → ja `0x445f63`）；(b) 放 B：BombManager `[0x4cf2b8]`
+   +`0x30` == 1 且 +`0x38` < `0x3c`（`0x445bc4`–`0x445bce`，R1 已确认 +`0x30` = 放弹标志）；(c) `[0x4cf2e0]`
    +`0x1b0` ≠ 0（对话自动收点；对象未命名 🟡）。无 V → `0x445be6` 起重力坠落体（state 保持 1）→ 逐帧
    过 `0x44620a` 共享尾（30px 触收闸 `0x44624a` / 70px 环 `0x4465da`）→ 出界 [`0x4b93a4`](y)/[`0x4b9340`](|x|)
    删 —— **普通游玩永不翻 3**。
@@ -1429,7 +1429,7 @@ th18_full.asm（`local/_scratch`）。
    矛盾）。批闭语义与用户补充完全对齐：下收点线后残余 state-3 在飞 P 继续计数、presence 续到
    收完 +8 帧即结；新掉落（无 V 不翻 3）永不开批不续批。Z21 证据尾部「谓词扩到近环抛物段」遗留
    （item 6 残留）随本行作废：谓词按 state==3 收窄而非扩集。
-   🟡 **残留**：对话 V 门 `[`0x4cf2e0`]+0x1b0` 对象未命名（邻 BombManager `0x4cf2b8`）；player state
+   🟡 **残留**：对话 V 门 `[0x4cf2e0]+0x1b0` 对象未命名（邻 BombManager `0x4cf2b8`）；player state
    2/4（`0x445ba3` 系跳过上线判定的两态）语义未追；state-1 坠落体 `0x445c85` `jl 0x445de6` 的横滚段
    （vel_x 清零/出界 [`0x4b9340`]）与 `0x44698d` 系「线下方分值分野」语义 —— 都不挡本门（本门只用
    state==3 谓词）。
@@ -1496,10 +1496,10 @@ do {
 ```
 0045EB35  cmp  [esi+0x476ac], 1        ; 玩家状态机 != 1（死亡 / 演出）→ 0045ED88 全跳过
 0045EB42  cmp  [esi+0x476d4], 0        ; short < 0（松开射击键）→ 走 0045EB4B 的「是否按住」判定
-0045EB4B  test byte [`0x4ca428`], 1      ;   没按住 → 0045ED1A，广播不发生
+0045EB4B  test byte [0x4ca428], 1      ;   没按住 → 0045ED1A，广播不发生
 0045EBB1  cmp  eax, [ebx]              ; short.current == short.previous（计时器这帧没走）→ 0045ECCB 跳过
 ...                                    ; 主炮循环
-0045ECA0  mov  eax, [`0x4cf298`]         ; AbilityManager
+0045ECA0  mov  eax, [0x4cf298]         ; AbilityManager
 0045ECA5  mov  edi, [eax+0x1c]         ; 卡链表头
 0045ECB2  mov  ecx, [edi]              ; card
 0045ECB4  push esi                     ; long_timer
@@ -1595,7 +1595,7 @@ HUD 数字走 §X 已经跑通的那套。纯逻辑 `ouroboros_core.c` 主机单
 | # | claim | 结论 |
 | --- | --- | --- |
 | AC1 | `AsciiManager__drawf_debug` `0x41a110` 的调用约定 | **CONFIRMED（一手）** —— 见下「AC1 证据」：`(mgr, pos[3], fmt, ...)`，**cdecl varargs**（调用方 `add esp, 0x14` 清 3 个 push + 一个 double）|
-| AC2 | `ASCII_MANAGER_PTR = 0x4cf2ac` | **CONFIRMED（两处交叉）** —— Momoyo 的 `mov ecx,[`0x4cf2ac`]`；th-re-data 的 `statics.json` 同名同址 |
+| AC2 | `ASCII_MANAGER_PTR = 0x4cf2ac` | **CONFIRMED（两处交叉）** —— Momoyo 的 `mov ecx,[0x4cf2ac]`；th-re-data 的 `statics.json` 同名同址 |
 | AC3 ｜ 字色在 mgr+…，BGRA 一个 dword ｜ **CONFIRMED** —— Momoyo mov [ecx+0x | 见文末长行详录 |
 | AC4 ｜ 只能在虚表 +0x48 on_draw 里调 ｜ **CONFIRMED** —— AbilityManager__on | 见文末长行详录 |
 | AC5 | 不转发 varargs | **设计** —— 我们自己 `vsnprintf` 成一行，再用固定的 `"%s"` 交给引擎 ⇒ 调用形状永远是 4 个 push、清 0x10。躲开了 cdecl 变长栈与 `float → double` 提升（Momoyo 那一路要 `sub esp,8` + `movsd`）|
@@ -1607,16 +1607,16 @@ HUD 数字走 §X 已经跑通的那套。纯逻辑 `ouroboros_core.c` 主机单
 **AC1 证据**（`CardMomoyo__on_draw` `0x41122e`–`0x411286` 逐指令）：
 
 ```
-0041122E  mov  ecx, [`0x004cf2`ac]          ; ASCII_MANAGER_PTR
+0041122E  mov  ecx, [0x004cf2ac]          ; ASCII_MANAGER_PTR
 00411234  sub  esp, 8                     ; 给 double 腾位置
 00411245  mov  [ecx+0x1922b], al          ; color[3] = 图标当前 alpha
 00411270  movsd [esp], xmm0               ; 第 4 参（%.3f 的值，float 提升成 double）
-00411275  push `0x004b4c`6c                 ; 第 3 参 fmt "%.3f"
+00411275  push 0x004b4c6c                 ; 第 3 参 fmt "%.3f"
 0041127A  push eax                        ; 第 2 参 &pos（float[3]）
 0041127B  push ecx                        ; 第 1 参 mgr
-0041127C  call `0x0041a1`10
+0041127C  call 0x0041a110
 00411286  add  esp, 0x14                  ; 调用方清 0xc + 8 ⇒ cdecl
-0041128A  mov  dword [eax+0x19228], `0xffffff`ff   ; 还原字色
+0041128A  mov  dword [eax+0x19228], 0xffffffff   ; 还原字色
 ```
 
 **实跑要看的**：见 [`NEXT.md`](NEXT.md) §1n 的 HUD 那一段。崩溃优先怀疑：`ce_hud_text` 的 cdecl 声明（AC1）、
@@ -1759,7 +1759,7 @@ X = ⌊P / per⌋ − 1 使得 X > 0 时 `P − X·per ∈ [per, 2·per)` ——
 池子只剩新卡：23 × (20 + 5) = 575 > `CE_SHOP_POOL_SLOTS` 560。
 
 **AG4 证据**：`restore_alloc_bound` 把 `0x411479` 写回 `cmp ebx,0x38`，于是 id ≥ 57 在 `0x411482`
-的 `jmp [`0x412dac`+ebx*4]` 落到 default，`allocate_new_card` 返回 `0xffffffff`：不建对象、不入链、
+的 `jmp [0x412dac+ebx*4]` 落到 default，`allocate_new_card` 返回 `0xffffffff`：不建对象、不入链、
 `mgr+0x28`（`num_total_cards`）不涨。
 
 **AG5 证据**：`BP_ce_test_deck`（`0x407ee3`，在 `AbilityManager__reset_cards` 里）把**每个**空槽换成
@@ -1884,9 +1884,9 @@ AbilityManager `0x33`）永远早于任何 UI 层图元（≥ `0x3c`），所以
 | # | 面 | 一手依据 | 结论 |
 | --- | --- | --- | --- |
 | AK1 | 读 `GRAZE` `0x4ccd0c` | `Player__do_graze` `0x45e160` 每擦弹 +1、封顶 99999999；`GameThread__thread_start` 每 run 归零 | ✅ 差分累计本波擦弹 |
-| AK2 | 读符卡位 `SPELLCARD_PTR(`0x4cf2c0`)+0x78` bit0 | `FUN_00409b10` 就这一行；收卡 / 超时 / 中断都清位 | ✅ 下降沿 = 波边界 |
-| AK3 | 读 `ENEMY_MGR_PTR(`0x4cf2d0`)+0x198` | ExpHP `enemy_count_real`；`C 键门控 0x45c07b` 也读它 | 🟡 击破率是近似（离场也算「消失」） |
-| AK4 | 写 `ITEM_MANAGER_PTR(`0x4cf2ec`)+0xe6bb14` float = 0.3 | ExpHP `lolk_item_slowdown_factor`；物理 `0x445bf4`–`0x445c7d`；恢复 `0x446807`–`0x446821`（+0.1/帧） | ✅ 见下 |
+| AK2 | 读符卡位 `SPELLCARD_PTR(0x4cf2c0)+0x78` bit0 | `FUN_00409b10` 就这一行；收卡 / 超时 / 中断都清位 | ✅ 下降沿 = 波边界 |
+| AK3 | 读 `ENEMY_MGR_PTR(0x4cf2d0)+0x198` | ExpHP `enemy_count_real`；`C 键门控 0x45c07b` 也读它 | 🟡 击破率是近似（离场也算「消失」） |
+| AK4 | 写 `ITEM_MANAGER_PTR(0x4cf2ec)+0xe6bb14` float = 0.3 | ExpHP `lolk_item_slowdown_factor`；物理 `0x445bf4`–`0x445c7d`；恢复 `0x446807`–`0x446821`（+0.1/帧） | ✅ 见下 |
 
 ### AK4b. 擦弹判定框（2026-09-09 二次定案）
 
@@ -1896,7 +1896,7 @@ AbilityManager `0x33`）永远早于任何 UI 层图元（≥ `0x3c`），所以
 | AK4b1b ｜ **圆形**判定 = d² < (r + max(br/2.5, 40 ｜ TH18 …（…=2.5、0x4b | 见文末长行详录 |
 | AK4b1c | 子弹按 `flags` 选模式 | 分派器 `0x4248a0`：`& 0x2` 才碰、`& 0x10` 走圆、`& 0x40` 按 `bullet+0xf38` 缩放半径 | 本卡两种模式都照原样判 |
 | AK4b2 | TH18 **每颗弹一生只擦一次** | `0x42496f test [esi+0x20],4` → 跳过；`0x424984 or [esi+0x20],4` 置位 | 「靠擦弹计数差分驱动减速」只在子弹**刚进框**那一帧生效 → 观感「只在擦弹那一刻」 |
-| AK4b3 | 改成**每帧扫弹池判框** | 池 `BULLET_MGR(`0x4cf2bc`)+0xec`、2000 槽、stride `0xfa0`、状态 `+0xf68`（0 空 / 3 消弹中跳过）、位置 `+0x638` | 纯读 + 一个写；每帧 2000 次读 ≈ 可忽略；时机固定 → replay 安全 |
+| AK4b3 | 改成**每帧扫弹池判框** | 池 `BULLET_MGR(0x4cf2bc)+0xec`、2000 槽、stride `0xfa0`、状态 `+0xf68`（0 空 / 3 消弹中跳过）、位置 `+0x638` | 纯读 + 一个写；每帧 2000 次读 ≈ 可忽略；时机固定 → replay 安全 |
 
 ### AK4d. 擦弹圈（VM + 原生美术）
 
@@ -2114,21 +2114,21 @@ TH18 无残骸：[`engine/animal/th18/01`](../../../engine/animal/th18/01-animal
 | 事实 | 证据 |
 | --- | --- |
 | 两条 VM 由 AnimalManager__on_ready t ｜ 反汇编 + FUN_0040fb60 段；建之前 … | 见文末长行详录 |
-| 每帧坐标 = **自机坐标 ×2**（定点取整），共 4 条 VM（`+0x28/+0x2c/+0x30/+0x38`）一起刷 | `th17:0x40ee70` 段：`esi=[`0x4b77d0`]`（Player），取 `[esi+0x610]`/`[esi+0x618]` × `0x4a3c18`（= **2.0f**）→ 写 `vm+0x5e4`/`vm+0x5ec` |
+| 每帧坐标 = **自机坐标 ×2**（定点取整），共 4 条 VM（`+0x28/+0x2c/+0x30/+0x38`）一起刷 | `th17:0x40ee70` 段：`esi=[0x4b77d0]`（Player），取 `[esi+0x610]`/`[esi+0x618]` × `0x4a3c18`（= **2.0f**）→ 写 `vm+0x5e4`/`vm+0x5ec` |
 | 就绪窗口结束时**清掉** | `GoastManager::do_hyper_cancel` `th17:0x40f6d0` 起手清 0x1e/0x1f/0x20/type+0x28 |
 | script30 = 空心外框：`drawRectBorder(1.0f, 10.0f)` + `color(192,192,192)` + alpha 0→255 淡入 20 帧 | `local/th17.v1.00b/anm/beast/beast.anm.txt` script30 原文 |
 | script31 = 填充：`drawRectGrad(1.0f, 8.0f)` + `colorMode(1)`，`color`/`color2` 每 6 帧 **(224,0,0) ↔ (255,192,128)**，`jmp` 回环 20 次后定格 | 同上 script31 原文（`offset224:` … `jmp(offset224, 20)`） |
 | 两条都 `anchor(0,2)`（锚 x 中心、y 底边）⇒ 长度缩短时**两端一起朝中间收** | script30/31 原文 |
 | **长度**（每帧刷）：`FUN_00410180` `th17:0x410180` 把 `vm+0x70` 写成「时长 × 0.125 + 2」（外框）/「剩余 × 0.125」（填充），详见下面的「长度公式」段 | 一手反汇编 `th17:0x410180`–`0x4101f0` + 常量直读 |
-| **初始时长随情况变**：多数类 == 自机凭依（`0x4b59f8`）→ `+0x1e0` = **+480 帧**（混合类那条路直接 1140 不加） | `th17:0x40fbe5` `cmp esi,[`0x4b59f8`]` / `th17:0x40fbed` `add eax,0x1e0` |
+| **初始时长随情况变**：多数类 == 自机凭依（`0x4b59f8`）→ `+0x1e0` = **+480 帧**（混合类那条路直接 1140 不加） | `th17:0x40fbe5` `cmp esi,[0x4b59f8]` / `th17:0x40fbed` `add eax,0x1e0` |
 
 **长度公式（一手）**：`th17:0x410180` 每帧取 `manager+0x28`（外框）与 `+0x2c`（填充）两条 VM，
 先 `vm+0x530 |= 8`，再写 `vm+0x70`：
-`外框 = HYPER_DURATION(`0x4b5ab8`，i32) × 0.125(th17:`0x4a3af4`) + 2.0(th17:`0x4a3c18`)`；
-`填充 = HYPER_TIME.current_f(`0x4b5aac`，f32) × 0.125`。
+`外框 = HYPER_DURATION(0x4b5ab8，i32) × 0.125(th17:0x4a3af4) + 2.0(th17:0x4a3c18)`；
+`填充 = HYPER_TIME.current_f(0x4b5aac，f32) × 0.125`。
 `+2.0` = 两侧各 1 的描边（填充满长 = 框长 − 2）⇒ **框长随初始时长变**；
 初始时长本身随情况变：多数类 == 自机凭依（`th17:0x4b59f8`）时 `th17:0x40fbed` `+0x1e0` = +480 帧
-（`th17:0x40fbe5` 的 `cmp esi,[`0x4b59f8`]`；混合类那条路 `th17:0x40fc40` 直接 1140，不加）。
+（`th17:0x40fbe5` 的 `cmp esi,[0x4b59f8]`；混合类那条路 `th17:0x40fc40` 直接 1140，不加）。
 对应本卡（表面 px）：时长 840 / 1140 / 1500 帧 → 框 **107 / 144.5 / 189.5 px**；
 「多数类 == 凭依」时 1320 / 1620 / 1980 帧 → 框 **167 / 204.5 / 249.5 px**（多 60 px）。
 
@@ -2268,7 +2268,7 @@ TH18 的子机槽为空而把弹从 (0,0) 发出 —— 若如此就把那几条
 | 每帧步长 | **51** | 天空璋卡的近似（255→64 约 5 帧；原始是 `alphaTime(5,…)`）|
 | 触发 / 迟滞 | `x < −64 且 y > 400` 淡出；`y < 384 或 x > −64` 淡回 | TH16 `th16:0x427f41` / `th16:0x427f6c`（天空璋卡 `SEASON_HUD_*`）|
 
-- 覆盖方式：图标（静态贴图）每帧写 `A | `0x00ffff`ff`；灵魂 / 火焰脚本自带 `alphaTime` 淡入 ⇒
+- 覆盖方式：图标（静态贴图）每帧写 `A | 0x00ffffff`；灵魂 / 火焰脚本自带 `alphaTime` 淡入 ⇒
   **只在淡出期间**才覆盖它们的 alpha（淡回 255 那帧补写一次，标记 `hud_fade_touched`）。
 - 🟡 **最终版**要按「UI 此刻的位置」判：多张左下角卡要竖直垒起来（[`SDK.md`](SDK.md) §17 /
   [`HUD-LAYOUT.md`](HUD-LAYOUT.md)），届时只改 `animal_hud_player_near()`（把 HUD 可见矩形算进去），
@@ -2304,7 +2304,7 @@ TH18 的子机槽为空而把弹从 (0,0) 发出 —— 若如此就把那几条
 
 **一手**：TH18 的道具实体有一个**没被原生用过**的播音字段 ——
 `item+0xc90`：`th18:0x447323`（intro 结束那一帧，`0x4472b0` 的尾段）
-`eax = [edi+0xc90]; if (eax >= 0) call `0x476be0`(eax, …)`，而 `0x476be0` = 12 通道的 SE 播放器。
+`eax = [edi+0xc90]; if (eax >= 0) call 0x476be0(eax, …)`，而 `0x476be0` = 12 通道的 SE 播放器。
 原生 spawn 把它**恒写 -1**（`th18:0x447057`、`0x447295`）⇒ 这条音在原生里是死的；
 **只有 type {1,2} 的 intro-end 走这条路**（`0x4472ee` 段），其他 type 在 `0x4472e4` 直接跳走。
 TH17 侧同构：`+0xc74` = spawn 第 8 栈参，而所有调用点（含鱼灵换道具 `0x4106bb`）都传 `-1`。
@@ -2587,8 +2587,8 @@ C 侧：`release_spawn()` 在 `hyper_end(by_hyper=0)` 建父 VM + `release_wait 
 **版面（两作同构，0x00..0x53 逐行相同）**：
 
 - 行基准 `th17:0x4b2bf0` / `th18:0x4c9b80`，stride **0x14**（20 字节）。
-  一手：初始化循环 `th18:0x476460` / 播放器 `th18:0x476bea`（`movsx esi, word[eax*4+`0x4c9b8a`]`，
-  `0x4c9b8a = `0x4c9b80` + 0x0a`）。
+  一手：初始化循环 `th18:0x476460` / 播放器 `th18:0x476bea`（`movsx esi, word[eax*4+0x4c9b8a]`，
+  `0x4c9b8a = 0x4c9b80 + 0x0a`）。
 - 行内：`+0x00 u16 = wav 文件号`（0-based）、`+0x02 u16 = 计数器`、`+0x04 u32 = 装载偏移`、
   **`+0x0a u16 = 音量`**、`+0x0e u16 = 1`。
 - wav 文件号 → 文件名：exe 里的指针数组（`th17:0xa0460` 69 项 / `th18:0xb33a0` 72 项），顺序与
@@ -2699,10 +2699,10 @@ slot7 是 hit5 的一次性束端特效：画 `sprite(base+338)`，`+28 delete()
 
 **发现（一手反汇编）**：
 
-- `th17:0x44a180` `PlayerBullet::fire` 在 `0x44a508` 取 `eax = [th17:`0x4b77d0`]`
+- `th17:0x44a180` `PlayerBullet::fire` 在 `0x44a508` 取 `eax = [th17:0x4b77d0]`
   = `PLAYER_PTR`；`0x44a512` `mov ecx,[eax+0xc]` = 玩家 loaded anm 句柄。
 - `Player__initialize` `th17:0x4463f0` 在 `0x4463fe`/`0x446409` 用
-  `[`0x4a214c` + 自机*4]` 装载 `pl00.anm`/`pl01.anm` 到 `player+0xc`；
+  `[0x4a214c + 自机*4]` 装载 `pl00.anm`/`pl01.anm` 到 `player+0xc`；
   因此句柄不是 `bullet.anm`。
 - `0x44a535`–`0x44a574`：`movsx eax, word [shooter+0x22]; add eax,5;`
   `push eax; call anm_init_copy_vm_from_loaded`（`th17:0x407230`，脚本步长 `0x600`）。
@@ -2748,13 +2748,13 @@ slot7 是 hit5 的一次性束端特效：画 `sprite(base+338)`，`+28 delete()
   slot+4（voice priority）。它不是 wav 选择器。
 - wav 选择在 loader：`th18:0x4766b8` `edi=0x56c804`（slot 数组）、
   `esi=0x4c9b84`（cfg 行 `+0x04`）；`0x4766cf` 读 `[esi]` 并用
-  `[eax*4+`0x4b47a0`]` 取 wav 文件名。即 **`id -> wav = u32[`0x4c9b80` + id*0x14 + 0x04]`**。
+  `[eax*4+0x4b47a0]` 取 wav 文件名。即 **`id -> wav = u32[0x4c9b80 + id*0x14 + 0x04]`**。
 - 行内 `+0x08` 的低 word 是音量（consumer `0x477611` `movsx eax, word [row+0x8]`），
   高 word = `+0x0a` = priority；旧代码 `se_volume_fix()` 写 `+0x0a` 只改 priority，不是音量。
 > ⚠️ **2026-09-11 订正**：下面这三行按 `+0x04` 的结论是**错的**。语义自证（`0x05/0x08/0x0d/0x16`）表明
 > **`+0x00` 才是 wav 号** ⇒ `0x38=se_pldead01`、`0x34=se_lgods4`、`0x43=se_release`、`0x3f=se_wolf`。
 > ⚠️⚠️ **2026-09-13 再订正（113 的第四轮，`AUDIT` §CP）：上面这条 `+0x00` 的订正也是错的。**
-> 正确口径 = 本节第一段的公式（`id -> wav = u32[`0x4c9b80` + id*0x14 + 0x04]` 这句**只对了一半**：
+> 正确口径 = 本节第一段的公式（`id -> wav = u32[0x4c9b80 + id*0x14 + 0x04]` 这句**只对了一半**：
 > `+0x04` 确实是名表下标，但要按 **`行(+0x00 == id)`** 去取那一行）⇒ `0x38=se_extend2`、`0x34=se_boon01`、
 > `0x43=se_heal`、`0x3f=se_lgodsget`。判据：`+0x00` 是 0..83 的**置换**（84 个值），而名表只有 72 项 ⇒
 > 它做不了名表下标；loader 侧 `th18:0x476450` 建 `slot[k].+8 = &行(+0x00 == k)`、`th18:0x4776f0` 从
@@ -2827,7 +2827,7 @@ local/vendor/thtk/build/thecl/thecl -d 17 local/th17.v1.00b/dat/default.ecl > /t
 
 #### AL30-B 符卡相位信号：`SPELLCARD+0x78` bit0 锁存
 
-`CE_SPELL_FLAGS` = `th18:`0x4cf2c0` + 0x78`；bit0 = 符卡进行中（`th18:0x42a320` 置 / `th18:0x42a780` 清，
+`CE_SPELL_FLAGS` = `th18:0x4cf2c0 + 0x78`；bit0 = 符卡进行中（`th18:0x42a320` 置 / `th18:0x42a780` 清，
 见 `engine/chapter/th18/02-wave-signals.md` §1）。`animal_phase_track` 在当前 `phase_sig` 存续期间若 `ce_spell_active()`
 为真就锁存 `phase_is_spell=1`；`phase_sig` 变化时用**旧相位**的锁存值决定掉落。边界帧不采新符卡位（新位属于新相位），
 所以符卡结束 / 普通结束不会串。**待实跑**看 `phase drop spell/normal` 日志是否与 TH18 相位顺序一致（st01bs：Boss1 非符 →
@@ -2837,9 +2837,9 @@ BossCard1 符卡 → Boss2 非符 → BossCard2 符卡 → BossDead）。
 
 **TH17 一手**：`player_is_trying_to_bomb` `th17:0x411d40` 在 `HYPER_FLAGS & 6 != 0` 时返回 0；
 `engine/animal/th17/01` §5.2 已证咆哮就绪 / 霊撃期间 X 只走 `do_hyper_cancel`。
-**TH18 一手** `objdump -d -Mintel --start-address=`0x45be90` --stop-address=`0x45caa0` local/th18.v1.00a/th18.exe`：
+**TH18 一手** `objdump -d -Mintel --start-address=0x45be90 --stop-address=0x45caa0 local/th18.v1.00a/th18.exe`：
 普通炸弹分支 `th18:0x45c03f` 调 `Bomb__can_bomb_and_deathbomb_check` `th18:0x420420`；
-`th18:0x45c048` 原指令 = `f6 05 34 a4 4c 00 02`（`test BYTE PTR ds:`0x4ca434`,0x2`）；
+`th18:0x45c048` 原指令 = `f6 05 34 a4 4c 00 02`（`test BYTE PTR ds:0x4ca434,0x2`）；
 `th18:0x45c051` = `call 0x420360`（`do_bomb`）；`th18:0x45c056` = 分支汇合点。
 
 **修法**：新增 SDK 断点 `ce_bomb_gate` @ `th18:0x45c048`（7 字节，`sites.py` 生成、`BP_ce_bomb_gate` 导出为
@@ -2892,7 +2892,7 @@ BossCard1 符卡 → Boss2 非符 → BossCard2 符卡 → BossDead）。
   - `th18:0x45f6a0` 是 damage source handler idx1。它先读 `bullet+0xf4`（shooter `+0x38` 的
     `func_on_hit` 指针）；为 0 时直接调 `th18:0x45f6f0`。所以 `hit0` 不是「无命中处理」。
   - `th18:0x45f6f0` 取 `bullet+8` 的 VM；若 `vm+0x5e0 != 0`，调用
-    `table[`0x4b4308` + vm[0x5e0]*4]`（即向 bullet 的 anm VM 发 interrupt）；随后写
+    `table[0x4b4308 + vm[0x5e0]*4]`（即向 bullet 的 anm VM 发 interrupt）；随后写
     `bullet+0x8c=2`、`bullet+0x60 *= 0.125`、关掉 `bullet+0xb0` 的 damage source，
     并返回 `bullet+0x9c`。
   - `th18:0x45f0f0` 的命中结算把上面 handler 的返回值当作本次伤害
@@ -3176,20 +3176,20 @@ OK: sprite 全在界内；sht 的 anm/hit_fx 全部存在；兽灵脚本主路�
 
 - C 侧原 `hyper_frame()` 的 orb cancel 只在 `s->core.hypering`（按 X/C 后的 40 帧霊撃）时运行；
   满槽**自动咆哮的就绪期**（`ready`）只 `orb_tick` 摆位置，从不发 cancel。
-- TH17 `GoastManager::on_tick` `th17:0x40ee70`：`0x40f0b9 test DWORD PTR ds:`0x4b5ac4`,0x4` /
+- TH17 `GoastManager::on_tick` `th17:0x40ee70`：`0x40f0b9 test DWORD PTR ds:0x4b5ac4,0x4` /
   `jne 0x40f394`，即 `HYPER_FLAGS & 4`（霊撃中）时**跳过** `0x40f0b9`–`0x40f378` 的 ready 段。
   3 光球循环在 ready 段 `0x40f200`–`0x40f372`，只在 `HYPER_FLAGS & 4 == 0` 时每帧跑。
 - `do_hyper_cancel` `th17:0x40f6d0` 在 `0x40f7f7`–`0x40f827` 对 `hyper_type==2` 立刻删掉 3 个 VM；
   所以进入 40 帧霊撃后 3 光球不应再存在。
 - 判定点：`0x40f24f movss xmm0,[ecx+0x40]`（TH17 `zAnmVmPrefix.rotation.z` 是 `+0x38..+0x40`；
-  TH18 对应 `+0x3c..+0x44`），`0x40f254 subss xmm0,[`0x4a3b1c`]`（`0.34906584f` = 20°）；
-  `0x40f26c mov DWORD PTR [esp+4],`0x42c000`00`（96.0f）后 `call 0x4113c0`（`polar=(cos,sin)*radius`）。
+  TH18 对应 `+0x3c..+0x44`），`0x40f254 subss xmm0,[0x4a3b1c]`（`0.34906584f` = 20°）；
+  `0x40f26c mov DWORD PTR [esp+4],0x42c00000`（96.0f）后 `call 0x4113c0`（`polar=(cos,sin)*radius`）。
   ⇒ 判定点 = `player + polar(vm_rotation.z − 20°, 96)`，不是 VM 位置。
-- **消弹半径**：`0x40f289 movss xmm2,[`0x4a3ce0`]` = **28.0f**；`0x40f291 push 1` 后
+- **消弹半径**：`0x40f289 movss xmm2,[0x4a3ce0]` = **28.0f**；`0x40f291 push 1` 后
   `call 0x419df0`（BulletManager 半径消弹，`mode=1`）；紧接着 `0x40f31d` 起
   `push 5; push 2; push point; call 0x449c80`（`Player::create_damage_source`，life=5、dmg=2、
   `xmm2=28`、`xmm3=0`）。
-- `th17:0x40f3a1` 是 `[`0x4b5aa8`] <= 0` 后的「咆哮超时释放」分支，不是 otter orb 消弹段。
+- `th17:0x40f3a1` 是 `[0x4b5aa8] <= 0` 后的「咆哮超时释放」分支，不是 otter orb 消弹段。
   `engine/animal/th17/01` §5.3 旧文把这段误记成霊撃中；AUDIT §AL32 又把 `0x42c00000`（96，
   只是判定点离自机的距离）误记成消弹半径。二者本轮按反汇编订正。
 
@@ -3239,10 +3239,10 @@ OK: sprite 全在界内；sht 的 anm/hit_fx 全部存在；兽灵脚本主路�
   文件偏移 `0x1610`（组相对 `0x14e0`），字段一手解码：
   `+0x20 opt_slot=0`、`+0x21 mode=2`、`+0x22 anm=11`、`+0x14 angle=-π/2`、
   `+0x0c/+0x10 hit=(0,34)`、`+0x28/+0x2c/+0x34 func=(4,5,5)`。
-  当前 `HYPER_FUNC_MAP` 把它翻成 TH18 `init2/tick2/hit2`（`th18:`0x45fc20`/`0x45fc80`/0x460320`）。
+  当前 `HYPER_FUNC_MAP` 把它翻成 TH18 `init2/tick2/hit2`（`th18:0x45fc20/0x45fc80/0x460320`）。
 - **闪退点在 `tick2` 第一段，与 `hit_fx=8` 或脚本 16 无关**：
   - 主炮路径 `Player__tick_shooting_state` `th18:0x45ec41`–`0x45ec5f` 为每行算 option 指针：
-    当 `opt_slot` 的低半字节为 0（本例 `+0x20=0`）时，`th18:`0x45ec48` xor eax,eax` ⇒
+    当 `opt_slot` 的低半字节为 0（本例 `+0x20=0`）时，`th18:0x45ec48 xor eax,eax` ⇒
     压入 **NULL** 作为 option。
   - `PlayerBullet__create` `th18:0x45e3ae` 把该指针存进 `bullet+0xe4`。
   - `tick2` `th18:0x45fcc8`–`0x45fcd3` 无条件：
@@ -3268,7 +3268,7 @@ OK: sprite 全在界内；sht 的 anm/hit_fx 全部存在；兽灵脚本主路�
 #### 用户问题 (b)：狼灵爆炸处“一个魔理沙自己” —— 证据与两个假设 🟡
 
 - `thanm -l 18 -m local/vendor/eclmap/anmmap/v8.anmm local/th18.v1.00a/dat/pl01.anm` 一手：
-  - `script13`（TH17 WOLF `anm=8` 实际播放的脚本，`th17:`0x44a535` add eax,5`）主路径
+  - `script13`（TH17 WOLF `anm=8` 实际播放的脚本，`th17:0x44a535 add eax,5`）主路径
     `sprite(sprite42); sprite(sprite43)`；`case(1)` 分支三次
     `scriptNewPos(script14, %F1, %F2)`（`case(1)` = `interruptLabel(1)`）。
   - `script14` 引用 `sprite44..sprite51`。
@@ -3363,7 +3363,7 @@ OK: sprite 全在界内；sht 的 anm/hit_fx 全部存在；兽灵脚本主路�
     按该 anm 文件 + script id 克隆脚本。
 - **中断子 VM 继承父 VM 的 anm 文件，而不是重新读 `player+0x10`**：
   - `scriptNew` 在 `0x479ab6`、`scriptNewPos` 在 `0x479c95` 做
-    `mov ecx,[ANM_MGR+edx*4+`0x312072`c]`，其中 `edx=[parent_vm+0x1c]`；
+    `mov ecx,[ANM_MGR+edx*4+0x312072c]`，其中 `edx=[parent_vm+0x1c]`；
   - 紧接着 `call 0x4888f0`（child）或 `0x488a40`（orphan），内部 `call 0x407420` 克隆脚本；
   - `AnmManager__preload_anm` `0x486a3e` 把每个脚本模板的 `+0x1c` 写成
     `[AnmLoaded+0]`（该 anm 在 manager 取表里的槽号）。
@@ -3635,7 +3635,7 @@ wba_wc: SE probe 6/6 id 0x39 (se_heal)
 `Player::repopulate_options_and_notify_cards`（`0x45d5e0`，this = `PLAYER+0x620`）维护
 **原生子机数组** `inner+0x50` = `player+0x670`，4 格、stride `0xf0`。一手：
 
-- 写点：`th18:`0x45b8ea` push 4`（每帧跟随 count=4）、`0x45dbf4` 清 `option+0x00=0`、
+- 写点：`th18:0x45b8ea push 4`（每帧跟随 count=4）、`0x45dbf4` 清 `option+0x00=0`、
   `0x45dafe mov [esi],2` 置 in_use；
 - 每帧跟随 `FUN_0045bc90`（`0x45b8ea` 调用）：`option+0x00 != 0` 才算数，把
   `player_pos + (focused ? +0x6c/+0x70 : +0x64/+0x68)` 写回 `option+0x5c/+0x60`（定点 ×1/128）；
@@ -4006,13 +4006,13 @@ wba_wc: scatter SE C -> id 0x3e (table name se_tan03)   ← 用户指「最后�
   （`engine/sht/th16/08` 一手：`PlayerBullet__create` 建伤害源、`tick_bullets` 每帧把它拷进去，
   敌人侧遍历重叠扣血）⇒ 行里 `dmg=20` 就是每命中帧 20。本卡**没有**声明 `bullet_damage_permille`
   （`grep .bullet_damage_permille cards/animal.c` 无）⇒ 不会把 20 改小。
-- **击中动画：hit func=0 是原样 ✅**。TH17 hit 表 `0x4a0f80` 逐项 = `[0]=0 [1]=`0x44b9c0` …`，
+- **击中动画：hit func=0 是原样 ✅**。TH17 hit 表 `0x4a0f80` 逐项 = `[0]=0 [1]=0x44b9c0 …`，
   TH18 hit 表 `0x4b41f0` 同样 `[0]=0` ⇒ 两边 `hit0` 都是 **NULL**（不是「我们漏了一个」）。
   TH17 `hit=0` / 我们生成 `hit=0` / `hit_fx=0` 三处一致 ⇒ **没有额外命中特效本来就是原版行为**。
   🟡 唯一没核死：pl00.anm script11 自带 `interruptLabel(1)`（sprite39/40/41 命中动画），
   由一个**通用「弹命中时对弹 VM 发 interrupt 1」**机制触发；本遍没在 TH18 侧钉到那个调用点
   （`hit1` `th17:0x44b9c0` 只建 script0x95 特效、不 interrupt 弹 VM）⇒ 标 🟡。
-- **追尾 ✅**：tick 表 `th17:`0x4a0fa0`[1] = 0x44b7d0`（TH17 寻的）；映射 `HYPER_FUNC_MAP["tick"][1] = 1`
+- **追尾 ✅**：tick 表 `th17:0x4a0fa0[1] = 0x44b7d0`（TH17 寻的）；映射 `HYPER_FUNC_MAP["tick"][1] = 1`
   → TH18 tick1 `0x45f7c0` = `find_nearest_enemy_id` 半径 256 + 逐帧转向上限 16（`engine/sht/th18/03` §5.1）。
   行里 `speed=10` / `mode=1`，不会「因为追尾而穿透」——伤害源每帧跟弹位置走。
 - **结论**：**静态上找不到「不掉血」的 bug；「无击中动画」符合原版 hit0。** 用户后一句「好像又没有了」
@@ -4410,7 +4410,7 @@ EAGLE 行 1..4 的 `slot` = 16/32/48/64（真的走子机）。TH18 的「装备
 | AN2 | 12 条增减逐条对 spec §2.2（帧数 `2400−残机×240`、擦弹 +0.06、整命 +2.00、Bomb −2.00、Miss −16.00 非决死…）| ✅ 一手（th06 反编译 `GameManager.cpp` / `EnemyManager.cpp`）| spec 表逐行 |
 | AN3 | 难度表 EASY 下限 **12**（不是 10）：EASY `16/12/20`、NORMAL/HARD/LUNATIC `16/10/32`、EXTRA `16/14/18` | ✅ 一手 | `th06rank_core.c` 常量 + 单测 |
 | AN4 | 碎片会计三边界：碎片逐颗走 `on_item_collect`；整命/整炸走库存**正向增量**；同窗口碎片**净减**时抑制 | ✅ 实现即此 | 单测三例（3 碎 = 2.1；净 0 不抑制；别处来整命照加）|
-| AN5 | `rank → 难度` **完全搁置**：未写 `0x4ccd08`、未 hook `0x42aa20`（用户 2026-09-12 拍板）| ✅ 实现即此 | `grep `0x4ccd08` cards/th06rank.c` 只有注释 |
+| AN5 | `rank → 难度` **完全搁置**：未写 `0x4ccd08`、未 hook `0x42aa20`（用户 2026-09-12 拍板）| ✅ 实现即此 | `grep 0x4ccd08 cards/th06rank.c` 只有注释 |
 | AN6 | 判定点隐藏 = `on_draw` 里 `player+0x476b0` 的 anm `color(0x00FFFFFF)`（alpha=0）、只在聚焦时写、带 `CE_ADDR_GAME_THREAD_PTR` 门 | 🟡 待实跑（anm 脚本可能每帧抢回颜色）| spec §2.1；实跑看指示点是否消失 |
 | AN7 | 出屏 −0.03 的判据 = `\|x\| >= 200.0` **含等于**（`0x445e2b` `comiss` + `jb`）、`y > 472` | ✅ 一手 | 逐指令核到实现层（`0x445e20`/`0x445e2b`/`0x445e13`）|
 | AN8 | 去重窗 = 定长 192 槽环形窗（不是 4696 槽位图：位图 587 B > `ce_state` 496 B 上限）| ✅ 编译期 | `sizeof(ce_state) <= 496` 断言，实际 452 B |
@@ -4703,7 +4703,7 @@ handler = **与 `ce_item_score` 同一份实现**（`ce_item_score_common()`）�
 | # | 断言 | 可信度 | 证据 |
 | --- | --- | --- | --- |
 | BC1 | 110 的**蓝点高度系数**改成 spec 的**线性插值**（不再是 TOP/BOTTOM 二元死代码）：线下 1px = 997‰（原 540‰）、板底 540‰、超出夹取；`mof_core_pickup_coeff()` 成了生产入口 | ✅ 实现即 spec §2.4 | `mof_core.h/.c` + `mof.c`；单测含手算值 |
-| BC2 | 小信仰点的连击改用 **+60f**（`FAITH_EV_SMALL_FAITH`），原误走绿点通道 +100f；信仰加值仍 +100 | ✅ 一手（`th10:`0x41b61d` push 0x3c`）| `mof_core_pickup_combo()` |
+| BC2 | 小信仰点的连击改用 **+60f**（`FAITH_EV_SMALL_FAITH`），原误走绿点通道 +100f；信仰加值仍 +100 | ✅ 一手（`th10:0x41b61d push 0x3c`）| `mof_core_pickup_combo()` |
 | BC3 | 大信仰点连击 **130 → 120**（130 是上限 `0x413035`，不是单次增量）；110 自带表 `MOF_COMBO_BIG`（共用件的 130 仍服务 111）| ✅ 一手（`0x41b5c5 push 0x78`）| `mof_core.h` |
 | BC4 | ❌ **删掉「连击槽空 ⇒ 逐帧扣信仰」**这条规则：TH10 信仰写点已穷举、无逐帧衰减（`0x474c54` 只被充能、只被 HUD 读）⇒ `mof_core_combo_tick()` 空槽变为 **no-op** | ✅ 一手 | research §3；`mof_core.c` |
 | BC5 | 111 的**关卡开场归零**补上（`on_stage_start`）——归零**只有信号槽**；Δ_111 / base / 上限 / 小绿点余数 / 连击**跨关保留** | ✅ spec §2.1 + 单测逐项 | `signal.c` |
@@ -4756,7 +4756,7 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 
 **一手事实**（完整过程与逐条地址见 [`engine/anm/th18/05-snapshot-and-surfaces.md`](../../../engine/anm/th18/05-snapshot-and-surfaces.md) §5/§8.1）：
 帧内顺序 = tick 整趟 → draw 整趟 → 壳 `0x472b50`（等 vblank → **输入+截图 `0x472d18`** → Present `0x472d2d`），
-截图读的是**本帧**后备缓冲；`0x3a`（`0x455cf0`）把 RT 切回后备缓冲并 `Clear(`0xff0000`00)`；
+截图读的是**本帧**后备缓冲；`0x3a`（`0x455cf0`）把 RT 切回后备缓冲并 `Clear(0xff000000)`；
 `0x3b`（`0x455c90`）关混合后把 supervisor+`0x1c8` 那个 VM 贴回来 —— 而 **UI 列表 layer 24 画在 `0x39`、layer 25 画在 `0x3e`**，
 正好被 `0x3a` 劈在两侧。
 
@@ -4881,7 +4881,7 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 >   判定盒 **16x48**、`speed 24`、`fire_rate` = 火 3 / 水 6 / 木 3 / 金 3 / 土 3。
 > · 计时器一手（两作同构，均逐条反汇编）：TH18 `player+0x476d4` 取值域 **0..14 / 周期 15**
 >   （`0x45eccb cmp cur,0xe`、`0x45a550 set`、按 Z 起手 `0x45eb9c push 0`）；
->   TH11 `[player+0x934]` 同域同周期（`0x4343d1` 取值、`0x4343f2 fld [`0x498300`] = -14.0f` 回绕）。
+>   TH11 `[player+0x934]` 同域同周期（`0x4343d1` 取值、`0x4343f2 fld [0x498300] = -14.0f` 回绕）。
 >   引擎在 `0x45ecb8 call [eax+0x1c]` 推给卡的两个参数就是 `(short, long)` ⇒ **卡拿到的就是这一个计时器**。
 >
 > **二、改了哪些共享件（逐文件 → 改了什么）**
@@ -4980,7 +4980,7 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 > · `cards/faith_core.{h,c}`：新增 `faith_signal_step_gated(signal_now, band, graze_gain, allow_line_topup)`；
 >   旧的 `faith_signal_step()` = `..._gated(..., 1)` ⇒ **既有调用方与既有单测零变化**（110 完全不受影响）。
 >
-> **卡侧**：`cards/th06rank.c` 每帧声明 `power < [`0x4ccd3c`]`（`CE_ADDR_MAX_POWER`）+ 删卡/局末撤销
+> **卡侧**：`cards/th06rank.c` 每帧声明 `power < [0x4ccd3c]`（`CE_ADDR_MAX_POWER`）+ 删卡/局末撤销
 > + 一行 `T06R: 上线收点闸 …` 诊断；`cards/signal.c` 的 `signal_step_mod_fill()` 把
 > `ce_full_p_gate_active()` 填进 `signal_step_mod_t.no_line_topup`（消费者②）。
 >
@@ -5022,7 +5022,7 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 > `AnmManager__instantiate` `0x407420` 是**两参、无层参数**，且显式保留 `vm+0x18`（空闲池是 `memset` 0）
 > ⇒ 脚本不写 `layer()` 的弹 = **层 0 = 3D 背景那一趟** = 弹幕区里**一颗都看不见**（弹对象与伤害源都正常）。
 > 对照：**子机本体**由引擎强设层 14（`Player__allocate_option` `0x40a8bc`）⇒ 子机脚本可以不写，
-> 「子机不写、弹也不用写」这个推广正是踩到的坑。TH11 的引擎自己传层（`th11:`0x4341e3` push 0x16`），
+> 「子机不写、弹也不用写」这个推广正是踩到的坑。TH11 的引擎自己传层（`th11:0x4341e3 push 0x16`），
 > 移植弹脚本时这条信息**静默丢掉**。
 >
 > **改了什么**：
@@ -5349,7 +5349,7 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 > （含 `x87 in our objects: 0`、`capcheck` 全绿、`engine_abi_check` 通过、`check-docs.py` 293 文件全过）。
 
 > **§BE 详录 #20（2026-09-15f 第二轮 / 信号强度的线下衰减是 10× 的）**：`cards/faith_core.h` 的
-> `FAITH_SIGNAL_LOSS_OFFLINE` **3000 → 300**（一手 `th11:`0x420a85` lea esi,[edx-0x1e]` = −30 存储
+> `FAITH_SIGNAL_LOSS_OFFLINE` **3000 → 300**（一手 `th11:0x420a85 lea esi,[edx-0x1e]` = −30 存储
 > = −0.30 显示 = 300 千分点；原文与同段的量纲自洽检查见 `research-th11-signal.md` §4）。
 > **影响面**：只改这个常量的**值**，`faith_signal_step()` 的分支 / 门 / 卡侧调用次序一个字节没动；
 > 受影响的行为 = 111 的信号槽在**线下**时的每帧扣量（谁读它：`cards/signal.c` 的 `on_tick_2` 一处）。
@@ -5761,7 +5761,7 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 | BN3 | 决死窗口 = **8 帧**，在 `Player__on_tick__body` case 4（入口 `0x45c0f4`）里收 | `0x45c0f4` 读 `+0x638`、`0x45c0fa` 比 `+0x47908`、`0x45c100` `jl 0x45c2a9` | ✅ |
 | BN4 | `Player__cancel_impending_death` `0x45d590` 只写 6 个字段、**读零个计时器** | 70 B：`+0x644` bit0 / `+0x640` / `+0x638` / `+0x63c` / `+0x634` / **`+0x476ac = 1`**（`0x45d5cb`）| ✅ |
 | BN5 | ★★ **`+0x0c` 的返回值决定扣不扣命，且 `commit` 与它在同一 tick** | `0x45c112` `xor edi,edi` → `0x45c114` 循链 `push edi; call [vtbl+0xc]; or edi,eax` → `0x45c12d` `jne 0x45c3d1` → `0x45c135` 否则当场 commit | ✅ |
-| BN6 | ★ **113 排在决死 B 之后**（直接证据）| 决死 B 那条路在 `0x45c2a9`（`0x45c100` 的 `jl` 目标）：B 键 `[`0x4ca434`]` bit1 → `0x420420` can_bomb → `0x420360` do_bomb → `0x45c2d7 call 0x45d590`。它早于 `+0x0c` 的 `0x45c114` | ✅ |
+| BN6 | ★ **113 排在决死 B 之后**（直接证据）| 决死 B 那条路在 `0x45c2a9`（`0x45c100` 的 `jl` 目标）：B 键 `[0x4ca434]` bit1 → `0x420420` can_bomb → `0x420360` do_bomb → `0x45c2d7 call 0x45d590`。它早于 `+0x0c` 的 `0x45c114` | ✅ |
 | BN7 ｜ ★★ **「帧点等 9 帧」不可达**（第一版的错） ｜ 窗口关掉那一帧**没有**「已关但命还没扣」的中间态（BN5：同一条分 | 见文末长行详录 |
 | BN8 ｜ 原生自己的「取消这次死亡」= **… + retur ｜ CardEirin__…after_deathbomb 0x40a | 见文末长行详录 |
 
@@ -5874,7 +5874,7 @@ GUI 的 per-boss 列表与 `ENM_CNT` 看不到它。⇒ 实跑清单里要专门
   都 `push 0x1c; push 自机坐标; push 4; push 1; push -1; ecx=EffectManager; call th07:0x41c610`；
   崩结界**先杀旧 VM**（写点 `th07:0x441bee`：把 `[player+0xb7e6c]` 的 `+0x2cc` 置 0；句柄清 0 在 `0x441bf8`）再起新的。
 - **灵击那 32 颗 = type `0x1d` → id 690**：`th07:0x441dd9`–`0x441e38` 循环（`cmp i,0x20`）；
-  起始角 `0xC0490FDB` = **−π**、步长 `[`0x498cfc`]` = **2π/32**；`[vm+0x294]=fcos`、`[vm+0x298]=fsin`。
+  起始角 `0xC0490FDB` = **−π**、步长 `[0x498cfc]` = **2π/32**；`[vm+0x294]=fcos`、`[vm+0x298]=fsin`。
 - 两个脚本**逐条照抄**成 `204_senro_field` / `205_senro_ring`（唯一差异 = `sprite(N)` → `@名字@`），
   由 `assets/ability/make_senro_art.py` 生成（源 = TH07 原版切图，`FIELD.png` 256×256 / `RING.png` 64×64）。
   **层 = `19`（世界层最高）❓自定**（原版脚本里没有 `layer()`，TH07 由 EffectManager 排；旁边口径 lolk 12 / ufo 13）。
@@ -5899,7 +5899,7 @@ GUI 的 per-boss 列表与 `ENM_CNT` 看不到它。⇒ 实跑清单里要专门
    ① **全屏 sprite 变暗到 37.5 %**（`th07:0x44162a` → `Stage::sub_406930` `0x406930`；
    绘制侧 `Stage::on_draw_03` `0x406b52`–`0x406b81` 把 `STAGE+0x52ac` 灌进 `AnmManager+0x0` 全局色乘子，
    顶点色 `0x44f485`–`0x44f509` 逐通道 `(c·b)>>7`）；
-   ② **自机贴图红/白每 2 帧闪**（`th07:0x441553`–`0x44158a`：`timer%4<2` ⇒ `player+0x1b8 = `0xffff00`00`；
+   ② **自机贴图红/白每 2 帧闪**（`th07:0x441553`–`0x44158a`：`timer%4<2` ⇒ `player+0x1b8 = 0xffff0000`；
    绘制侧 `Player::on_draw_06` `0x44225c`–`0x442296`）。
    **环（id 731）确实只在发动瞬间 ~33 帧**：脚本结尾是 **opcode 1**（`0x450df3` = `flags &= ~1` 不可见
    → 落进 opcode 2 的停指令流 → **`return 1`**），而 `EffectManager::on_tick_0b` `0x41c790` 在
@@ -5968,10 +5968,10 @@ GUI 的 per-boss 列表与 `ENM_CNT` 看不到它。⇒ 实跑清单里要专门
 
 **★ 形状缺口：为什么必须「逐格偏移」**（一手，不是取舍）：原生阵型只写**原生数组** `inner+0x50`（4 格，
 `th18:0x45d8fc`/`0x45d902` → `+0x64..+0x70`），而**卡申请的装备卡子机在另一个数组** `inner+0x410`（12 格，
-`th18:`0x40a7a4` add edi,0xa30`）。两者共用一个每帧跟随 `FUN_0045bc90`（`0x45b8f5` push 4 / `[edi+0x670]`；
+`th18:0x40a7a4 add edi,0xa30`）。两者共用一个每帧跟随 `FUN_0045bc90`（`0x45b8f5` push 4 / `[edi+0x670]`；
 `0x45b905` push `0xc` / `[edi+0xa30]`），它对每格算 `pos = 自机位 + (聚焦 ? +0x6c/+0x70 : +0x64/+0x68)`
 （`0x45bce0`–`0x45bd08`）⇒ **原生阵型永远不会落到卡池的格子上** ⇒「不写偏移、留给引擎原生阵型」**不成立**。
-上限 `4` = 原生上限（`push 4` / `th18:`0x45d81e` mov edi,4`；卡池 12 是**池子**不是上限）；单位 = 像素
+上限 `4` = 原生上限（`push 4` / `th18:0x45d81e mov edi,4`；卡池 12 是**池子**不是上限）；单位 = 像素
 （`0x4b9310 = 128.0f`）。
 
 **108 的数量表（用户口径「看不同机体在永夜抄和天空璋（文文）的数量」）**：
@@ -6022,10 +6022,10 @@ GUI 的 per-boss 列表与 `ENM_CNT` 看不到它。⇒ 实跑清单里要专门
 
 | TH18 机体 | 原生子机脚本 | sprite（矩形从 anm 的 sprites 表读）|
 | --- | --- | --- |
-| 霊夢 → TH08 `pl00` 妖侧 八雲紫 | `player00.anm` **script 18**（`th08:`0x44e3d7` push 0x12`）| 22–29 = 30×46 + **30 = 46×46** |
-| 魔理沙 → `pl01` アリス | `player01.anm` **script 29**（`th08:`0x44ea6f` push 0x1d`）| 22–25 = 30×30 |
-| 咲夜 → `pl02` レミリア | `player02.anm` **script 24**（`th08:`0x44eba7` push 0x18`）| 20 = 30×30 |
-| 早苗 → TH16 `pl03` 射命丸文 | `pl03.anm` **script 11**（`th16:`0x492c00`[CHARACTER]` = `{8,7,11,11}`）| 32–39 = 16×16（8 帧拍翅）|
+| 霊夢 → TH08 `pl00` 妖侧 八雲紫 | `player00.anm` **script 18**（`th08:0x44e3d7 push 0x12`）| 22–29 = 30×46 + **30 = 46×46** |
+| 魔理沙 → `pl01` アリス | `player01.anm` **script 29**（`th08:0x44ea6f push 0x1d`）| 22–25 = 30×30 |
+| 咲夜 → `pl02` レミリア | `player02.anm` **script 24**（`th08:0x44eba7 push 0x18`）| 20 = 30×30 |
+| 早苗 → TH16 `pl03` 射命丸文 | `pl03.anm` **script 11**（`th16:0x492c00[CHARACTER]` = `{8,7,11,11}`）| 32–39 = 16×16（8 帧拍翅）|
 
 - **自机子机 = `zPlayerOption`**（`player+0x40c` ×4、stride `0x2f4`、**每格头 `0x2a4` 就是一个 AnmVm**），
   三条装载点都在**进低速那一帧**（`th08:0x44b0e5`），经 `AnmLoaded::load_script_into_vm` `th08:0x4069f0`
@@ -6035,7 +6035,7 @@ GUI 的 per-boss 列表与 `ENM_CNT` 看不到它。⇒ 实跑清单里要专门
   （一手：`Bomb__operator_new` 的 switch + `.rdata` 的 anm 名表 `pl00/pl02/pl03/pl01.anm`）
   ⇒ **文 = `CHARACTER` 2 → `pl03.anm`**，与 spec §11.1 的文件号判定一致（两套编号别混）。
 - ★ **层号不用我们管（一手）**：TH16 那支脚本**自带 `layer(13)`**（照抄）；TH08 那三支**原版一行 layer 都没有**，
-  而 TH18 引擎在 `Player__allocate_option` 里 **`th18:`0x40a8bc` mov DWORD PTR [esi+0x18],0xe` 无条件把子机 VM 的层设成 14**
+  而 TH18 引擎在 `Player__allocate_option` 里 **`th18:0x40a8bc mov DWORD PTR [esi+0x18],0xe` 无条件把子机 VM 的层设成 14**
   （`zAnmVmPrefix+0x18` = layer）⇒ 不写 layer 即用 **14（世界层）**，**C 侧不需要补**。
 - ⚠ **唯一抄不了的指令**：TH08 那三支各有一行 **`ins_83(2)`** —— TH08 v3 的**无名 opcode 83**
   （handler `th08:0x460314`，`vm+0x200 = 指令 dword`），`thanm -c 18` 实测报
@@ -6064,7 +6064,7 @@ C 侧：占位 `CE_ANM_ABILITY_SCRIPT_PEASHOOTER_OPT`（卡 77 的豌豆射手�
    ⇒ TH08 系脚本收到 1 只是「切到另一段循环」（无 delete，随后 SDK 删 VM）＝无害；
    **但若引擎还会发 3**（本轮**没找到** 2/3 的一手发送点），s18 会切到 46×46 旋转的「隙间」形态并 `stop()`
    ⇒ 收起动画会丢。要不要把标签改写成 TH18 口径＝设计决定，本轮**没擅自改**。
-2. **TH16 满火力另一形态没接**：`th16:`0x492c10` = {9,8,12,13}`（文的那支 = `pl03.anm` **script 12**，
+2. **TH16 满火力另一形态没接**：`th16:0x492c10 = {9,8,12,13}`（文的那支 = `pl03.anm` **script 12**，
    8 帧同图但 `blendMode(1)` + `type(3)` + 不同帧序）。要接得**按火力档切脚本**（会触发「先收再要」的重申请）。
    一手数据已在上面，可随时补一支 228。
 3. 子机外观的**观感未实跑**（三队子机 sprite 都是半透明：meanA pl00 120 / pl01 96 / pl02 81，本体 200+）。
@@ -6119,10 +6119,10 @@ C 侧：占位 `CE_ANM_ABILITY_SCRIPT_PEASHOOTER_OPT`（卡 77 的豌豆射手�
    只在 UFO 击破/吸满时按色或 `COLLECTED_UFO[2]` 指定。**既没有随机也没有轮转**。
    ⚠ TH18 **没有这张掉落表** ⇒ 我们仍用「本局第 n 枚」轮转表（❓ 自定），换法待拍（P2）。
 3. **token 的运动**（我们原先完全静止，已补全）：初速 **1.5**（`0x4a4270`）、角度按
-   `[mgr+`0x666fe0`] & 1` 取 π/4（右下）/ 3π/4（左下）且计数在自增**之后**判 ⇒ **本关第 1 枚 = 左下 45°**；
+   `[mgr+0x666fe0] & 1` 取 π/4（右下）/ 3π/4（左下）且计数在自增**之后**判 ⇒ **本关第 1 枚 = 左下 45°**；
    四边反弹 ×(−1.0)：x ≤ **−176** / x ≥ **176** / y ≤ **160** / y ≥ **370**；
    **1200 帧后不再反弹**（`0x4263d1 cmp [edi+0x98c],0x4b0`）；出界即撤（外框 ±208 / −16 / 464）。
-4. ★★ **我之前答错了一格**：`th12:`0x4262bc` fcomp qword [`0x4a4410`]`（= 3600 = 60 px）**不是收取判定**，
+4. ★★ **我之前答错了一格**：`th12:0x4262bc fcomp qword [0x4a4410]`（= 3600 = 60 px）**不是收取判定**，
    是**变色/寿命计时器的冻结圈**（圈内 `Timer__decrement −1.0f` 抵消公共的 +1 ⇒ 冻结；连道具 1200 帧寿命也一起冻）。
    **真正的收取判定** = token 落进自机的**收点矩形**（`th12:0x4260af` 尾段四次比较读
    `player+0xc444/0xc448/0xc450/0xc454`；半尺寸来自玩家表 **`0x4b31b4` = {60,70,60}** × 0.5 × 0.5 = **15 单位**）。
@@ -6160,7 +6160,7 @@ C 侧：占位 `CE_ANM_ABILITY_SCRIPT_PEASHOOTER_OPT`（卡 77 的豌豆射手�
 11. ★★ **彩虹 UFO 的「转化」到底是什么**（用户自己不确定的那半句）：**打破 → 一枚彩虹 token**，
     它的**起始态 = 开碟时第 3 枚 token 的颜色**；**代码里没有任何「转化」语义**——它不改场上 token 的颜色、
     不改道具种类、不动已吸收的点数。彩虹那条路上**唯一的「反」**是：
-    ① 吸收记账时 `color == −1` ⇒ **`cntA`/`cntB` 互换**（`0x44aca0` 的 `0x44accb cmp ecx,`0xffffff`ff; jne`）；
+    ① 吸收记账时 `color == −1` ⇒ **`cntA`/`cntB` 互换**（`0x44aca0` 的 `0x44accb cmp ecx,0xffffffff; jne`）；
     ② 赏金倍率随 fill 缩放（`2·fill+2` → 3 → 4）。
     ⇒ **社区 wiki 说的「红点↔蓝点互换」在代码里就是这两件事（计数互换 + 倍率），不是把道具本身变色。**
 12. ★ **「体术判定」的方向判死**：ECL 的 `setHitbox(16,16)` = **敌人对自机的判定盒 ⇒ 它撞自机会伤自机**；
@@ -6240,7 +6240,7 @@ C 侧：占位 `CE_ANM_ABILITY_SCRIPT_PEASHOOTER_OPT`（卡 77 的豌豆射手�
   另外两条**静态描边**：子脚本 **204** = `drawPolyBorder(62.0f,48)`、**205** = `drawPolyBorder(55.0f,48)`
   （内外两圈，正好夹住填充带 56..62）。
 - **模式 = anm mode 13（居中弧）**：`ins_101` = 原始 opcode 101 → `AnmVm::run` `0x455630` 跳表
-  `0x458730[N+1]` → `0x456ee1`：`flags_lo = (flags & 0xF6FFFFFF) | `0x680000`0`；TH12 的
+  `0x458730[N+1]` → `0x456ee1`：`flags_lo = (flags & 0xF6FFFFFF) | 0x6800000`；TH12 的
   `mode = (flags_lo>>23) & 0x1f`（`draw_vm` `0x45c928`）⇒ **`0x6800000>>23 = 13`**。
   （TH18 里同一个模式叫 **`601 texArcEven`**，见下。）
 - **顶点每帧在 `AnmVm::run` 里现算**（`0x45842c` 起的 case 体，每个顶点 28 B，`malloc(56×I0)` 在 `0x456f09`）：
@@ -6296,12 +6296,12 @@ C 侧：占位 `CE_ANM_ABILITY_SCRIPT_PEASHOOTER_OPT`（卡 77 的豌豆射手�
 
 #### 五、§BO-11 ❓6 结案：`flags_lo` 位 30 是什么
 
-`flags_lo & `0xc00000`21`（**位 0 / 5 / 30 / 31**）在**三处伤害扫描**里被判为「跳过这只敌人」：
+`flags_lo & 0xc0000021`（**位 0 / 5 / 30 / 31**）在**三处伤害扫描**里被判为「跳过这只敌人」：
 `CardAlice::on_shoot+0x51` `th18:0x40b531`、`th18:0x40b7b1`（同形状：按 id 找敌人 → 掩码 → 跳过）、
 `BombReimu::on_tick+0x8c7` `th18:0x421e57`。另有 ECL 侧 `th18:0x433b38`（`ecl_run_over_300` 内某 opcode，
 **号未定 ❓**）：**若已是 boss（位 23）就置位 30**。
 ⇒ **位 30 = 「Alice 人偶 / 灵梦炸弹这类 C++ 伤害源别打到我」的黑名单位**；`spawn life ≥ 1000` 会被
-`th18:0x42d8f6` **自动置位**（`0x42d8a8` 另有 `[enemy+0x6324] = `0x400000`00`）
+`th18:0x42d8f6` **自动置位**（`0x42d8a8` 另有 `[enemy+0x6324] = 0x40000000`）
 ⇒ **照抄一手 HP `{1600..2500}` 会让 UFO 被这两条伤害路径忽略**；玩家子弹走的是**别的掩码**
 （`0x42d457 testb $0x31` = 位 0/4/5）。🟡 完整语义仍建议按伤害源逐条过一遍。
 
@@ -6338,7 +6338,7 @@ C 侧：占位 `CE_ANM_ABILITY_SCRIPT_PEASHOOTER_OPT`（卡 77 的豌豆射手�
   透明**居中**）；生成器 `make_ufo_gauge_art.py` 幂等。**血条不需要贴图**（`drawRect`）。
 - ★ **跨版本助记符**：TH12 那行 `ins_101`（指令字节 `65 00 04 00` = opcode 101）在 v8 里必须写成
   **`texArcEven($I0)`**（601 = mode 13；`602 texArc` = mode 14）；TH18 handler `th18:0x47b211`
-  （`and eax,`0xb7ffff`ff; or eax,`0x340000`00` ⇒ `>>26` = 13）/ `0x47b223`（`or `0x380000`00` = 14）。
+  （`and eax,0xb7ffffff; or eax,0x34000000` ⇒ `>>26` = 13）/ `0x47b223`（`or 0x38000000` = 14）。
   v4 文本里把 101 印成 `fset` 是**助记符表错位**、不是语义。
 - **接线**（`ufo.c`，+212 行）：`ufo_gauge_spawn`（`ufo_try_summon` 里紧跟本体 VM 起，脚本号走 `#ifdef` + 字面量，
   形状照抄 `youkai.c` 的 `YK_OPT_SCRIPT_*`）；`ufo_gauge_follow`（`on_tick_2` 末尾每帧：
@@ -6355,7 +6355,7 @@ C 侧：占位 `CE_ANM_ABILITY_SCRIPT_PEASHOOTER_OPT`（卡 77 的豌豆射手�
   `ufo_core` **992 checks / 0 failed** · `-fsyntax-only` 零告警 · **x87 = 0** · PNG 2 的幂 / 1792 可见像素 / 两次 md5 一致 ·
   与原生逐行 diff（229/230/232 **一字不差**；228 只差跨版本助记符那 3 行 + sprite 名 + 2 行 `scriptNew`）。
 - ❓ 新增 **`I1 = 2` 的语义**（TH18 侧没定位到 `$I1` 的读者，只确认了 `$I0`）与 **`dθ = rotation.x / I0` vs `/(I0−1)`**
-  （TH18 `th18:`0x47c249` divss xmm7,xmm2` 读作 `/I0`，一手是 `/(I0−1)`；**对填充方向与闭合点无影响**，且本件逐字节复刻）⇒ 都标 🟡。
+  （TH18 `th18:0x47c249 divss xmm7,xmm2` 读作 `/I0`，一手是 `/(I0−1)`；**对填充方向与闭合点无影响**，且本件逐字节复刻）⇒ 都标 🟡。
 
 ### AL54. ★ 鬼形兽（117）二十二修：咆哮后子机停火 = kill 漏清 `player+0x476fc` mode=2 去重槽；钱鱼灵 150 无原生计数/池子硬上限（2026-09-13）
 
@@ -6376,23 +6376,23 @@ C 侧：占位 `CE_ANM_ABILITY_SCRIPT_PEASHOOTER_OPT`（卡 77 的豌豆射手�
 
 2. **引擎自己的 tick2 自杀段（`0x46026f`–`0x4602c1`）写三处**：
    ```asm
-   `0x46026f`  mov eax,[edi+0xb0]          ; damage source idx
-   `0x46028e`  and dword ptr [esi],`0xffffff`fe   ; 清伤害源 active bit
-   `0x460291`  push 1
-   `0x460293`  push dword ptr [edi+8]      ; 束 VM id
-   `0x460296`  mov dword ptr [edi+0x8c],2  ; state=2
-   `0x4602a0`  call `0x488be0`               ; AnmManager__interrupt_tree(id,1)
-   `0x4602a5`  mov eax,[ebp-4]             ; shooter row
-   `0x4602a8`  movsx ecx,byte ptr [eax+0x20]
-   `0x4602b0`  and eax,0xf / sar edx,4 / cmovl edx,eax
-   `0x4602c1`  mov dword ptr [eax+edx*4+0x476fc],0
+   0x46026f  mov eax,[edi+0xb0]          ; damage source idx
+   0x46028e  and dword ptr [esi],0xfffffffe   ; 清伤害源 active bit
+   0x460291  push 1
+   0x460293  push dword ptr [edi+8]      ; 束 VM id
+   0x460296  mov dword ptr [edi+0x8c],2  ; state=2
+   0x4602a0  call 0x488be0               ; AnmManager__interrupt_tree(id,1)
+   0x4602a5  mov eax,[ebp-4]             ; shooter row
+   0x4602a8  movsx ecx,byte ptr [eax+0x20]
+   0x4602b0  and eax,0xf / sar edx,4 / cmovl edx,eax
+   0x4602c1  mov dword ptr [eax+edx*4+0x476fc],0
    ```
    第三步的清槽由 **`Player__shoot_one_bullet` `0x45e954`–`0x45e976` 的 mode=2 早退**读回：
    ```asm
-   `0x45e954`  cmp byte ptr [eax+0x21],2
-   `0x45e95a`  movsx edx,byte ptr [eax+0x20]
-   `0x45e96e`  cmp dword ptr [edi+ecx*4+0x476fc],0
-   `0x45e976`  jne `0x45e9c6`                 ; 非 0 = 整条 mode=2 row 直接 ret 0x10，不发弹
+   0x45e954  cmp byte ptr [eax+0x21],2
+   0x45e95a  movsx edx,byte ptr [eax+0x20]
+   0x45e96e  cmp dword ptr [edi+ecx*4+0x476fc],0
+   0x45e976  jne 0x45e9c6                 ; 非 0 = 整条 mode=2 row 直接 ret 0x10，不发弹
    ```
    而 `PlayerBullet__create` 的 mode=2 分支在 `0x45e49d` 写这格（当前火力档）。
    ⇒ `player+0x476fc` = **「该槽正在持有一发 mode=2 激光」的去重锁**；旧版 `ce_kill_retail_option_lasers()`
@@ -6618,7 +6618,7 @@ local/vendor/thtk/build/thecl/thecl -j -d 17 -m local/vendor/eclmap/eclmap/th17.
 - `dropItems()` = `EnemyDrop__eject_all_drops` `0x41d880`：先 spawn 一次 `main_drop`（非 0 时），
   再对 `type=1..0x21` 每张 `ex_drop[type]` 循环 spawn count 次 ⇒ **`dropMain` 一次 = 一颗**。
 - `ItemManager__spawn_item` `0x434740`：`type==0x21`（33）先 `rand%3+30`；`type 16..32` 走
-  `GoastManager__spawn_token(`0x410380`, type-15)`（`0x4348ad`–`0x4348b2`）。
+  `GoastManager__spawn_token(0x410380, type-15)`（`0x4348ad`–`0x4348b2`）。
   ⇒ item19→token4、item20→token5、item30→token15、item33→token15..17。
 - 因而中 Boss 的一手结算恒为：`BossItemPhase(...)` 的 **1 个主 token** + 随后 raw `dropMain(19)`
   与 `dropMain(20)` 的 **2 个资源 token**（19/20 在 `BossItemPhase` 里当主/额外时按参数另算）。
@@ -6713,7 +6713,7 @@ done
 **实机诊断（02:04 / 02:16 日志）**：
 - 旧版 `BP_ce_enemy_death` 用 `edeath_kind(regs->retaddr)`：thcrap 的 `x86_reg_t.retaddr` 是断点后
   cave 续跑 EIP，不是调用点返回地址 ⇒ 实战恒 `OTHER`。
-- 改用 `[regs->esp]` 后，02:16 日志读到 `retaddr=`0x004302`45`（= 断点站点 `0x430240`+5）：这是
+- 改用 `[regs->esp]` 后，02:16 日志读到 `retaddr=0x00430245`（= 断点站点 `0x430240`+5）：这是
   thcrap 自己的蹦床/续跑地址，**也不在 0 号格**；真实调用点返回地址在栈更深处。
 - 同时证明**判据本身已对**：队长 `GirlA01_at` 行 `big=1`（非 Cir/ECir ✓），`Cir00func` 行 `big=0` ✓。
   唯一堵点是 `kind` 仍卡在 `OTHER`。
@@ -7617,8 +7617,8 @@ typedef void (*trance_fn_player_t)(void *player);      /* ← 少了 __attribute
 
 | 写法 | 生成的调用序列 | 后果 |
 | --- | --- | --- |
-| 裸函数指针（**旧代码**）| `movl $`0x45d590`,%ecx` / `pushl %eax` / `calll *%ecx` / `addl $4,%esp` | 参数**走栈**、`ecx` 里是**函数地址** ⇒ 被调方把 `0x45d590` 当 `zPlayer*`，往 `0x45d590+0x644`、`+0x640`、`+0x638`… **写 .text** |
-| `__attribute__((thiscall))`（**修正后**）| `movl $`0x45d590`,%edx` / `movl %eax,%ecx` / `jmpl *%edx` | `ecx = zPlayer*` ✓ |
+| 裸函数指针（**旧代码**）| `movl $0x45d590,%ecx` / `pushl %eax` / `calll *%ecx` / `addl $4,%esp` | 参数**走栈**、`ecx` 里是**函数地址** ⇒ 被调方把 `0x45d590` 当 `zPlayer*`，往 `0x45d590+0x644`、`+0x640`、`+0x638`… **写 .text** |
+| `__attribute__((thiscall))`（**修正后**）| `movl $0x45d590,%edx` / `movl %eax,%ecx` / `jmpl *%edx` | `ecx = zPlayer*` ✓ |
 
 **结论**：旧代码在**第一次中弹救援**时就会污染 exe 的 `.text`（不是"静默失效"，是**确定性的内存破坏**）
 —— 影响的是 §BN 那条救援链（113 的核心机制），而 2026-09-12 交付时**没被任何静态门抓到**
@@ -8104,7 +8104,7 @@ TH13 侧的一手数值还没挖到（`engine/player/th13/01-character-specials.
 
 **一手（TH13 侧的数值，用户给的官方说明「自机判定点较小」）**：
 `th13:0x4c0ba8` = **`[2.0, 3.0, 3.0, 3.0]`**（灵梦 2.0、其余 3.0），
-由 `Player__initialize` `th13:0x441f77` 读出来（`FLD [EBX*4+`0x4c0ba8`]`）写进自机判定字段
+由 `Player__initialize` `th13:0x441f77` 读出来（`FLD [EBX*4+0x4c0ba8]`）写进自机判定字段
 （`+0x620/+0x624` = 半径 × 0.5 ⇒ 灵梦 **1.0** vs 他人 **1.5**）。
 
 ### BX-2 落地（把 TH13 的比例搬到 TH18 的基准上）
@@ -8444,7 +8444,7 @@ TH13 那张弹窗贴图是 **24×8 像素**（十进制数字只有 **4×8**）�
 **它被回调覆盖了**。
 
 **TH18 侧要 1:1 复刻的唯一路**：挂 TH18 自己的 effect 回调表
-（`vm+0x5d8` → `[th18:`0x4b48d0` + idx*4]`，一手 `th18:0x48123d`：`MOV EAX,[EDI+0x5d8]; MOV EAX,[EAX*4+`0x4b48d0`]; CALL EAX`）
+（`vm+0x5d8` → `[th18:0x4b48d0 + idx*4]`，一手 `th18:0x48123d`：`MOV EAX,[EDI+0x5d8]; MOV EAX,[EAX*4+0x4b48d0]; CALL EAX`）
 —— 把一个（空闲的）回调槽指向我们 DLL 里的函数，由我们自己按 TH13 那套 render state 画四边形。
 ⚠ 这是**下一步的大活**（要开 D3D 设备、还要确认哪些槽没被用）。
 
@@ -8563,7 +8563,7 @@ layer(19); pos(0,224); color(32,16,96)`），alpha 由卡侧每帧写（淡入 2
 | 语义槽位 | TH13 | TH18（一手）| 依据 |
 | --- | --- | --- | --- |
 | `on_hit` 体（音效 / 特效 / 状态 4 / 无敌 6 / 窗口 8）| `th13:0x444ca0` | `0x45d3a0`（th-re-data 误称 `Player__die`）| 四个数值 + 两处计时器写法逐条同构（`03-player-hit-gate.md` §0.1）|
-| `die`（扣命 + 记 miss）| `th13:0x444a10` | `0x45d090`（`Player__commit_death_and_enter_state2`）| `[`0x4ccd18`]++` 在 `0x45d38b`、命数 `--` 在 `0x45d19b` |
+| `die`（扣命 + 记 miss）| `th13:0x444a10` | `0x45d090`（`Player__commit_death_and_enter_state2`）| `[0x4ccd18]++` 在 `0x45d38b`、命数 `--` 在 `0x45d19b` |
 
 **站点（原样保留，未新增）**：`BP_ce_player_die` = `0x45d3a0` 入口序言 6 字节 `55 8b ec 83 ec 14`
 （无反/相对寻址、无窗内跳转目标）；落闸 = 返回 0 不回放 + `retaddr = 0x45d584`
@@ -8583,7 +8583,7 @@ layer(19); pos(0,224); color(32,16,96)`），alpha 由卡侧每帧写（淡入 2
 （= 一手 TH13 闸门 `th13:0x444ca4` 的语义）；判定函数照常返回 1 ⇒ **弹仍被吃掉**、擦弹不受影响。
 
 **怎么验的**：① `find_struct_writes.py th18 0x476ac` ⇒ 状态 4 只有 `0x45d4e4`（另两处是 `Player__reset` 与原生卡写 1）；
-② `find_imm_refs.py th18 `0x4ccd18` 0x45d090` ⇒ miss 计数只有 `0x45d38b` 一处自增、`0x45d090` 只有 `0x45c135` 一个调用者，
+② `find_imm_refs.py th18 0x4ccd18 0x45d090` ⇒ miss 计数只有 `0x45d38b` 一处自增、`0x45d090` 只有 `0x45c135` 一个调用者，
 而它前面正是 case 4 的窗口倒计时（`0x45c0f4` 比 `player+0x638` 与 `+0x47908`）与认领判定（`0x45c12d`）；
 ③ `sites.py check` 的「patch 声明 ↔ `def` 导出」双向对账仍全绿；④ 新增运行时对账（见 §BE）：断点自检表补进 `ce_player_die`；
 ⑤ 实跑日志那行现在写明 `no miss / no sound / no effect / no deathbomb window`。
@@ -8598,7 +8598,7 @@ layer(19); pos(0,224); color(32,16,96)`），alpha 由卡侧每帧写（淡入 2
 按内容它**就是 TH13 的 `Player::on_hit`**：中弹音 `0x45d3b4`、特效 VM `0x1d` `0x45d3f7`、
 状态→4 `0x45d4e4`（**全 exe 值 4 的唯一写点**）、无敌 6 `0x45d50d`、决死窗口 8 `0x45d557`、
 `+0x10` 广播 `0x45d574` 全在它体内；`ret` = `0x45d584`（该区间唯一、裸 `c3`）。
-**扣命与 miss 在更下游**：`[`0x4ccd18`]++` 只在 `0x45d38b`（位于 `0x45d090`），而 `0x45d090` 的唯一调用者
+**扣命与 miss 在更下游**：`[0x4ccd18]++` 只在 `0x45d38b`（位于 `0x45d090`），而 `0x45d090` 的唯一调用者
 `0x45c135` 的守卫是 case 4 的窗口倒计时（`0x45c0f4`）。
 
 **⇒ 结论**：现有闸门（站点 6 字节 `558bec83ec14`，落闸 = 返 0 + `retaddr = 0x45d584`）**已经在一手的
@@ -8713,17 +8713,17 @@ HUD 货架纪元漏判、108 使魔/112 UFO 被广播成"真击破"、113 缩判
 
 **口径**：`CARD-NATIVE-CONFLICT-AUDIT.md` 的两条根治（§B-1 伤害乘法被原生重算抹掉 / §A-2 死亡结果闩锁）。
 **产出报告**：[`BP30-IMPLEMENTATION.md`](BP30-IMPLEMENTATION.md)（地址 / 字节 / 语义 / 去处 / 回滚 / 实跑判据七条）。
-**一手怎么读的**：`tooling/ghidra/scripts/dump_func_asm.py` + `decompile_funcs.py th18 `0x45e320` 0x45be90`，
+**一手怎么读的**：`tooling/ghidra/scripts/dump_func_asm.py` + `decompile_funcs.py th18 0x45e320 0x45be90`，
 外加自写窗口体检 `local/_scratch/scan_bp_window.py`（Capstone 线性反汇编整段 `.text`，收集全部直接分支靶）。
 
 ### CF-1 B-1：`BP_ce_bullet_damage_final` @ `th18:0x45e7ff`
 
-- **发现**：`PlayerBullet__create` `0x45e320` 里，`0x45e7dc mov eax,[`0x4cf298`]`（ABILITY_MGR）→
+- **发现**：`PlayerBullet__create` `0x45e320` 里，`0x45e7dc mov eax,[0x4cf298]`（ABILITY_MGR）→
   `0x45e7e4 mov esi,[eax+0x1c]`（卡链头）→ 循环 `0x45e7f0`–`0x45e7fd`（`push edi`(bullet) / `call [eax+0x28]` / `esi=[esi+4]`）
   → `0x45e837 push [edi+0x9c]` 才把伤害交给伤害源（`0x45e861 call 0x45dfa0`）。
   ⇒ **五家全跑完（含原生 25 Saki `0x40c310` / 54 Momoyo `0x411010` 的重算）之后**，才是我们的落笔时机。
-- **站点字节**（9 字节，`python3 tooling/pe_read.py local/th18.v1.00a/th18.exe `0x45e7ff` --bytes 9` 复核）：
-  `ff 77 08`（`push [edi+8]`）+ `8b 0d 5c f6 51 00`（`mov ecx,[`0x51f65c`]` = ANM_MANAGER_PTR）。
+- **站点字节**（9 字节，`python3 tooling/pe_read.py local/th18.v1.00a/th18.exe 0x45e7ff --bytes 9` 复核）：
+  `ff 77 08`（`push [edi+8]`）+ `8b 0d 5c f6 51 00`（`mov ecx,[0x51f65c]` = ANM_MANAGER_PTR）。
 - **为什么跳这里**：站点纪律四问全过（≥5 字节 / 窗内无相对寻址 / 窗内无跳转靶 / 指令边界对齐）——
   其中 `0x45e7e9 je 0x45e7ff` 落在**站点本身**，落在站点 = 走断点（handler → cave → 原指令 → 回站点+9），合法。
   EDI = bullet 有两处独立印证（`0x45e7e1 mov [edi+8],esi` / `0x45e837 push [edi+0x9c]`）。
@@ -8823,7 +8823,7 @@ HUD 货架纪元漏判、108 使魔/112 UFO 被广播成"真击破"、113 缩判
 | --- | --- |
 | 名字 | `ce_item_score_in` |
 | 地址 / 长度 / 期望字节 | `th18:0x446bf9` / **8** / `f30f108698790400`（`movss xmm0,[esi+0x47998]`，无相对寻址） |
-| 站点处的寄存器 | `ecx` = 引擎钳位后的**身价**（单位 1/1000 点，**恒等于** `[`0x4ccd24`]`）；`esi` = **PLAYER**（`0x446b0c mov esi,[`0x4cf410`]`）；`edi` = **ITEM**（= `[ebp-8]`，`0x446b13 mov edi,ecx`） |
+| 站点处的寄存器 | `ecx` = 引擎钳位后的**身价**（单位 1/1000 点，**恒等于** `[0x4ccd24]`）；`esi` = **PLAYER**（`0x446b0c mov esi,[0x4cf410]`）；`edi` = **ITEM**（= `[ebp-8]`，`0x446b13 mov edi,ecx`） |
 | 为什么是它 | 三条难度支（`0x446b30` EASY / `0x446b86` 其余 / `0x446ba3` EXTRA）与 `ja 0x446bf3` 那条**都汇到这里**，是唯一汇合点；改 `ecx` = 改「引擎接下来要乘系数的那个输入」 |
 | handler 做什么 ｜ ① 站点自检（ecx == […]，不符就一个字不写） | 见文末长行详录 |
 | 老站点 | `0x446cf6` / `0x446caa` 仍挂着，但 handler 改成**纯观察者**：只读引擎的 `regs->esi` 与我们的预测 `10 × G_total` 比一行 `score-out:`，**不写寄存器、不调卡回调**（否则声明双计）|
@@ -8831,8 +8831,8 @@ HUD 货架纪元漏判、108 使魔/112 UFO 被广播成"真击破"、113 缩判
 ### CH-2 单位链（一手，逐条在 exe 上核过；也是本次修掉的三处文档错误）
 
 ```
-站点 ecx（1/1000 点） --满额支 `0x446cb4`--> esi（身价/弹窗值）= 10 × floor(ecx/1000) --`0x446d03` mul esi/10--> SCORE += floor(ecx/1000)
-线下支 `0x446c17`：同一条链再乘 0.9 × (1 − d/163.180)，d = trunc(player_y − poc_line)（≥1 像素，最少 +1 分）
+站点 ecx（1/1000 点） --满额支 0x446cb4--> esi（身价/弹窗值）= 10 × floor(ecx/1000) --0x446d03 mul esi/10--> SCORE += floor(ecx/1000)
+线下支 0x446c17：同一条链再乘 0.9 × (1 − d/163.180)，d = trunc(player_y − poc_line)（≥1 像素，最少 +1 分）
 ```
 
 - ⇒ **`G_0`（点）= `ecx/1000`**、**桥值（身价）= `ecx/100`**、层要的上下限常数就是
@@ -8846,7 +8846,7 @@ HUD 货架纪元漏判、108 使魔/112 UFO 被广播成"真击破"、113 缩判
   `float3` y，见 `engine.h` 的 `CE_PLAYER_Y`），**不是**「道具的收集高度」——
   `sdk_core.h`/`sdk.c`/`SCORE-LAYER-REWORK.md` 初稿都写错过，本次三处一起改；
   `sdk.c` 的高度诊断原来读 `item+0xc2c`（道具坐标）⇒ 诊断本身也是错的，已改成自机 y。
-  旁证：大力道具 `0x446870` 的同款机器用 `edx = [`0x4cf410`]` 读 `[edx+0x624]` / `[edx+0x47998]`。
+  旁证：大力道具 `0x446870` 的同款机器用 `edx = [0x4cf410]` 读 `[edx+0x624]` / `[edx+0x47998]`。
 
 ### CH-3 对既有卡的**影响面**（共享件，单列）
 
@@ -8917,7 +8917,7 @@ HUD 货架纪元漏判、108 使魔/112 UFO 被广播成"真击破"、113 缩判
 1. **遮罩**（`261_trance_mask.anm.txt`）：`sprite(-1)` + `anchor(0,0)`（锚心，`pos(0,224)` = 场地正中）
    + **删掉 `alpha(0)`**（alpha 全由卡侧每帧 `ce_anm_set_color` 写，与实跑验证过的 `112_lolk_panel6` 同款）；
    并加一行 `astral MASK VM … up` 日志。
-2. **+几 UI**：6 个弹窗脚本补 `color(255,255,255); alpha(255);` + C 侧 `ce_anm_set_color(`0xffffff`ff)` 双保险；
+2. **+几 UI**：6 个弹窗脚本补 `color(255,255,255); alpha(255);` + C 侧 `ce_anm_set_color(0xffffffff)` 双保险；
    诊断行改成直接打 `rect / layer / color / flags`（原来那句"`不是 32x8`"自相矛盾）。
 3. **神灵**：生成器里父 `alpha(0)` → `alpha(255)`、普通态外环补 `alpha(255)`、灵界态两个子补
    `color(255,255,255); alpha(255);`（白 = 不染色，语义与一手一致）⇒ **重生成 18 个脚本**；
@@ -8929,7 +8929,7 @@ HUD 货架纪元漏判、108 使魔/112 UFO 被广播成"真击破"、113 缩判
 5. **调试爆发半径** 96 → **200 px**（灵梦的"任意距离慢吸"会让 96 px 环一按空格就被吸光 ⇒ 看不出撒出去了）。
 6. **诊断**：前 3 颗神灵打 `spirit VM <id> (script, type, style) layer/sprite/color/rect/scale`
    —— 下次实跑若还有"看不见"，这一行直接区分 ①VM 没建起来 ②alpha=0 ③sprite 矩形不对。
-7. 🟡 **待确认的机制**：父色到底"乘"还是"覆盖"到子（`doc th16` 的 `flags_hi & `0x200000`0` 那档）——
+7. 🟡 **待确认的机制**：父色到底"乘"还是"覆盖"到子（`doc th16` 的 `flags_hi & 0x2000000` 那档）——
    本轮修法在两种语义下都正确（父改成不透明 + 脚本里给子显式色），实跑后可按日志收敛结论。
 
 ### §CI-3. ★ Boss「随血量减小掉灵」= TH13 通道 A 实装
@@ -8968,7 +8968,7 @@ HUD 货架纪元漏判、108 使魔/112 UFO 被广播成"真击破"、113 缩判
 
 一手文档 = `engine/spirit/th13/05-trance-attack.md`；TH18 可行性 = `REPORT-TRANCE-ATTACK-FEASIBILITY.md`。
 机制一句话：**灵界不改任何伤害/速度公式，只把主炮 shooterset 组号硬换成常量 10**
-（`th13:`0x446006` test dword [`0x4be830`],0x100` → `th13:`0x446036` mov eax,0xa`），
+（`th13:0x446006 test dword [0x4be830],0x100` → `th13:0x446036 mov eax,0xa`），
 增伤全在 sht 数据里（dmg 14→22 / rate 3→2）；`FUN_00445c40`（建弹）**0 处**读灵界标志 ⇒ §6.3 的
 「没有伤害倍率」那行**活下来了**（清弹 / 自动收集同样无读点）。
 
@@ -8977,7 +8977,7 @@ HUD 货架纪元漏判、108 使魔/112 UFO 被广播成"真击破"、113 缩判
 | 项 | 旧 | 新（一手） | 依据 |
 | --- | --- | --- | --- |
 | 结束无敌帧数 ｜ 60（THBWiki 的"1 秒"，🟡 没钉到） ｜ **70** | 见文末长行详录 |
-| 魔理沙灵界移速 | 1.15f（❓自定） | **1.5f（= ×3/2，向零取整）** | `th13:`0x442bcb` cmp [`0x4be7b8`],1`（只有魔理沙）+ `th13:0x442be5`（水平垂直都乘） |
+| 魔理沙灵界移速 | 1.15f（❓自定） | **1.5f（= ×3/2，向零取整）** | `th13:0x442bcb cmp [0x4be7b8],1`（只有魔理沙）+ `th13:0x442be5`（水平垂直都乘） |
 | 魔理沙灵界伤害 `1250‰` | ❓自定（"一手待补"） | **一手已否证：不该有** ⇒ 等 shot 组落地立刻撤到 1000（现在暂留，免得落地前白掉 25%） | 同上（伤害在 sht 数据里，不在倍率里） |
 
 ⇒ 代码位置：`native/cards/trance.c` 的 `TRANCE_END_INVULN_FRAMES` / `TRANCE_MARISA_SPEED_MUL` /
@@ -9588,7 +9588,7 @@ TH18 侧的件数（`counts[]` 求和，普查范围 20..110）⇒ 批次 10..48
 004306f3  push 0x50             ; size = 0x50 = 80 B = 20 个 int32
 004306f5  push 0
 004306f7  push edi
-004306f8  call `0x48f8f0`         ; memset(&ex_drop[0], 0, 0x50)
+004306f8  call 0x48f8f0         ; memset(&ex_drop[0], 0, 0x50)
 ```
 
 ⇒ 同一个掉落事件的**第二次**回调（ECL `dropItems` → `0x42d0c0` / 死亡路径）在**入口**看到的表**必然全零**
@@ -9696,10 +9696,10 @@ TH18 侧的件数（`counts[]` 求和，普查范围 20..110）⇒ 批次 10..48
 一手 `Gui__sub_42b030_spirit_related` `th13:0x42b030` 收尾那段（本机 capstone 直读）：
 
 ```
-满格 = 槽/200                    ; `0x42b144` imul `0x51eb85`1f / `0x42b146` sar edx,6 / `0x42b149` 符号修正
-格内 = 槽 − 满格×200             ; `0x42b1b7` imul esi,esi,0xc8 + `0x42b1bd` sub ecx,esi
-scale.x = uv_scale.x = 格内/200  ; `0x42b1ca` fdiv [`0x4aece8`=200.0] → `0x42b1d6` fst / `0x42b1d9` fstp
-entity_pos.x = ??? × 16          ; `0x42b1dc` fmul [`0x4ae8e0`=16.0] → `0x42b1e2` fstp [eax+0x574]
+满格 = 槽/200                    ; 0x42b144 imul 0x51eb851f / 0x42b146 sar edx,6 / 0x42b149 符号修正
+格内 = 槽 − 满格×200             ; 0x42b1b7 imul esi,esi,0xc8 + 0x42b1bd sub ecx,esi
+scale.x = uv_scale.x = 格内/200  ; 0x42b1ca fdiv [0x4aece8=200.0] → 0x42b1d6 fst / 0x42b1d9 fstp
+entity_pos.x = ??? × 16          ; 0x42b1dc fmul [0x4ae8e0=16.0] → 0x42b1e2 fstp [eax+0x574]
 ```
 
 `+0x574` = `zAnmVmSuffix.entity_pos.x`（一手：th-re-data `zAnmVmSuffix.entity_pos` @0x44 + suffix 基址 0x530）。
@@ -9707,7 +9707,7 @@ entity_pos.x = ??? × 16          ; `0x42b1dc` fmul [`0x4ae8e0`=16.0] → `0x42b
 
 1. **x87 栈收支恰好为零**（最有说服力的一条）：
    `0x42b164 fstp [ebp-4]` 之后栈空 → `0x42b167 fld [ebp-4]`(推 满格) →
-   `0x42b16a fld qword [`0x4aeca8`=3.0]`(推) → `0x42b170 d8f9 fdivr st(1)`（ST0 ← ST1/ST0 = 满格/3；
+   `0x42b16a fld qword [0x4aeca8=3.0]`(推) → `0x42b170 d8f9 fdivr st(1)`（ST0 ← ST1/ST0 = 满格/3；
    **另一读法 `3/满格` 在槽<200 时除零 ⇒ 条宽无限，物理上一眼错**）→ `0x42b172 fstp` 只弹掉商
    ⇒ **ST0 剩下的正是 `(float)(满格)`**，一路留到 `0x42b1dc fmul`、在函数出口 `0x42b1e2 fstp` 弹空。
    若是笔误，x87 每帧漏一层寄存器、几帧就溢出（8 层）⇒ **只能是故意留的**。
@@ -9892,7 +9892,7 @@ trance: 退出擦除幕布 4/4 起 (脚本 262..265, 层 19, 一手 effect.anm s
 
 - **一手**：这 4 台幕布**不是**普通世界层 VM —— 它们由 effect 回调 `th13:0x4032d0` 即时 `draw_vm`，
   而宿主在 setup 尾段 / 中断的三个 case 里把它们的 `entity_pos` **写成 (320,240,0)**
-  （`0x402ff0` 的 `0x40321x`–`0x40323e`：`fld [`0x4aea3c`]=320.0` / `fld [`0x4aea38`]=240.0` →
+  （`0x402ff0` 的 `0x40321x`–`0x40323e`：`fld [0x4aea3c]=320.0` / `fld [0x4aea38]=240.0` →
   `mov [eax+0x574]/[eax+0x578]/[eax+0x57c]`；中断路径在 `0x4035e0` 的 `0x403667`–`0x4036c9`，
   四个 VM 一起写 ✓）。⇒ **屏幕位置 = 脚本 `pos` + (320,240)**。
 - **我第一版做了什么**：只按"屏幕 → 世界层"换算（世界 = 屏幕 − (320,16)），**漏了那个 (320,240)**
@@ -10036,7 +10036,7 @@ trance: 退出擦除幕布 4/4 起 (脚本 262..265, 层 19, 一手 effect.anm s
 - **script194** 用 sprite63（`eff_switchbg`）+ **`blendMode(7)`** + `layer(31)` + `resolutionMode(0)` + `anchor(1,1)`
   —— 又一处 `blendMode(7)`（与 astral 同一条"只读目的地 alpha"的路）。
 - **这套脚本在 TH18 里由谁起**：`EffectManager__spawn_effect` `th18:0x42af70`
-  （`edi = `0x4ccbf8` + (id<<5)`；表里 `word[edi]` = anm 槽（`edx+0xc` = `effect.anm`、`edx+0x10` = `bullet.anm`）、
+  （`edi = 0x4ccbf8 + (id<<5)`；表里 `word[edi]` = anm 槽（`edx+0xc` = `effect.anm`、`edx+0x10` = `bullet.anm`）、
   `word[edi+2]` = 脚本号，负数走 `0x42b094` 那条路），调用点 = VM 的 `effectNew` 指令处理器
   `th18:0x479d19`。⚠ **TH18 里没有 trance 系统** ⇒ 这套是**遗留配方**（性质同 `front.anm` script85–99 = TH13 弹窗配方）；
   本轮**没有**继续挖"TH18 哪个 id 会调到 script1/2"（不影响本卡，见 §CN-9-6 的 🟡）。
@@ -10292,8 +10292,8 @@ astral 永远在第 5 槽"（`0x403570` 循环 + `0x403591`），而本卡 astra
 | --- | --- | --- |
 | 用什么名字 | 当前曲名扩展名前的 `.` → `b`，再补 `.wav` | TH13 `th13:0x405b1d`（覆盖 `.`）+ `th13:0x43b004`（补 `.wav`）|
 | 当前曲名从哪读 | 全局 `0x56d104`（上限 32 字节、必须 NUL 终止）| `th18:0x477406` 是 cmd 2 的 case 把**槽里存的名字**（`0x56f384 + slot*0x100`）拷进来 |
-| 名字为什么带 `.wav` | `FUN_00454620`：`push 1`（cmd 1）之前把 `.wav` 写进名字尾部 | `th18:0x454670` `mov dword [ebp+ecx-0x104], `0x766177`2e` = `".wav"` |
-| 读不到名字时 | 退到关卡表 `[`0x4cf428`]+0x0c` 的道中曲名（并记进日志：来源 = 关卡表兜底）| `th18:0x443121` 用的就是这个名字 |
+| 名字为什么带 `.wav` | `FUN_00454620`：`push 1`（cmd 1）之前把 `.wav` 写进名字尾部 | `th18:0x454670` `mov dword [ebp+ecx-0x104], 0x7661772e` = `".wav"` |
+| 读不到名字时 | 退到关卡表 `[0x4cf428]+0x0c` 的道中曲名（并记进日志：来源 = 关卡表兜底）| `th18:0x443121` 用的就是这个名字 |
 | 文件在哪 | **三条候选**（见下表）；三条都不中时把**完整路径**全打进日志 | 无（纯工程选择，① 的动机是实跑证据，见 §CO-9）|
 | 第二路怎么建 | 内存流构造成器 `0x4898f0`（13 参，见 `trance_bgm.c` 文件头 §1），分段长度 = 引擎公式 | §BP / 研究 §8.1–8.4 |
 | 循环 | `intro_size = 0` + `track_size` = PCM 全长 ⇒ 整段无缝循环 | 一手 `0x48acc0` 的 preload 分支 |
@@ -10610,11 +10610,11 @@ TH18 的 modkit 里有**四份**同名 DLL（见 `local/DLL-SYNC.md`），只有
 
 | 语义 | TH13 一手 | TH13 id → wav | TH18 id | 匹配方式 |
 | --- | --- | --- | --- | --- |
-| 收集 | `th13:`0x438b38` MOV EDI,0x3f` + `CALL th13:0x460c50` | `0x3f` → `se_lgodsget.wav` | **`0x3f`** | 名字（md5 相同）|
-| 出生 | `th13:`0x438ef0` ADD EDI,0x3b`（`play_sound` 参数 ≠ 0 才播）| `0x3b..0x3e` → `se_lgods1..4` | **`0x3b..0x3e`** | 名字 |
-| 灵界进入 | `th13:`0x40586d` MOV EDI,0x34` | `0x34` → `se_boon01.wav` | **`0x34`**（重复行还有 `0x35`）| 名字 |
-| 跨格（槽升格）| `th13:`0x43d574` MOV EDX,0x44`（无参版 `th13:0x460bc0`，**不带声像**）| `0x44` → **`se_astralup.wav`** | **无** | 名字缺失；波形见 CP-7 ⇒ ❓ 替身 |
-| 灵界结束 | 死亡触发那条：`th13:`0x405bf8` MOV EDI,0x42`；**手动那条一个 play_sound 都没有** | `0x42` → `se_pldead01.wav` | **`0x42`** | 名字 |
+| 收集 | `th13:0x438b38 MOV EDI,0x3f` + `CALL th13:0x460c50` | `0x3f` → `se_lgodsget.wav` | **`0x3f`** | 名字（md5 相同）|
+| 出生 | `th13:0x438ef0 ADD EDI,0x3b`（`play_sound` 参数 ≠ 0 才播）| `0x3b..0x3e` → `se_lgods1..4` | **`0x3b..0x3e`** | 名字 |
+| 灵界进入 | `th13:0x40586d MOV EDI,0x34` | `0x34` → `se_boon01.wav` | **`0x34`**（重复行还有 `0x35`）| 名字 |
+| 跨格（槽升格）| `th13:0x43d574 MOV EDX,0x44`（无参版 `th13:0x460bc0`，**不带声像**）| `0x44` → **`se_astralup.wav`** | **无** | 名字缺失；波形见 CP-7 ⇒ ❓ 替身 |
+| 灵界结束 | 死亡触发那条：`th13:0x405bf8 MOV EDI,0x42`；**手动那条一个 play_sound 都没有** | `0x42` → `se_pldead01.wav` | **`0x42`** | 名字 |
 | 死亡触发的进入 | **不播音**（"呜"是 `th13:0x444ca0` 自己播的 id 2）| — | — | 一手为空集，不是缺失 |
 
 ### CP-7 ❓：`se_astralup` 在 TH18 **没有**替身（唯一一个自定）
@@ -10644,10 +10644,10 @@ TH18 的 modkit 里有**四份**同名 DLL（见 `local/DLL-SYNC.md`），只有
 
 ```python
 # TH18: id -> wav = names[ row(+0x00 == id) . +0x04 ]；TH13: id -> wav = names[ cfg13[id] . +0x00 ]
-# TH18 cfg `0x4c9b80` (84x0x14) / names `0x4b47a0` (72 ptr)；TH13 cfg `0x4bad94` (71x0x14) / names `0x4bb320` (60 ptr)
+# TH18 cfg 0x4c9b80 (84x0x14) / names 0x4b47a0 (72 ptr)；TH13 cfg 0x4bad94 (71x0x14) / names 0x4bb320 (60 ptr)
 # 两者 VA→文件偏移都用 tooling/pe_read.py 的 load_sections/read_va 那 20 行（.rdata/.data 都在文件里）
-# 反汇编用 capstone：th18 `0x476450`(循环1) / `0x4766b8`(循环2) / `0x4776f0`(建 buffer) / `0x476be0`+`0x476c70`(play_sound)
-#                th13 `0x460090`(loader) / `0x460c50`(play_sound) / `0x460bc0`(无参版) / `0x438ec0`(spawn)
+# 反汇编用 capstone：th18 0x476450(循环1) / 0x4766b8(循环2) / 0x4776f0(建 buffer) / 0x476be0+0x476c70(play_sound)
+#                th13 0x460090(loader) / 0x460c50(play_sound) / 0x460bc0(无参版) / 0x438ec0(spawn)
 # wav 同源比对：hashlib.md5 over local/th13.v1.00c/dat/se_*.wav 与 local/th18.v1.00a/dat/se_*.wav
 ```
 
@@ -10699,10 +10699,10 @@ TH13 的**全 71 行** id → wav 表已回流到 `engine/spirit/th13/01-spirit-
 | --- | --- | --- | --- |
 | 落点 | `spawn_spirit` 尾部 `th13:0x4391c5`–`0x439250`（建完 VM、播完出生音之后）| `trance_collect()`（**收集**那一刻）⇒ 再由卡侧撒 | ✗ 粒度错 |
 | type 3/4 | `0x4391c5 cmp edi,3 / je 0x43925f`、`0x4391ce cmp edi,4 / je` ⇒ **完全跳过**（不重置窗口、不计数）| 同（`type == 3 \|\| type == 4` 直接 return）| ✅ |
-| 窗口 | `0x439218 mov [ecx+0x8828],0x3c`（`[`0x4aedd0`]` = 60.0f）+ `0x439222 fstp [ecx+0x882c]` ⇒ **每颗重置 60 帧** | 同（`chain_timer = 60`）| ✅ |
+| 窗口 | `0x439218 mov [ecx+0x8828],0x3c`（`[0x4aedd0]` = 60.0f）+ `0x439222 fstp [ecx+0x882c]` ⇒ **每颗重置 60 帧** | 同（`chain_timer = 60`）| ✅ |
 | 计数 | `0x439232 inc [ecx+0x8838]` ⇒ **每颗 +1**（按**颗**，不是按次击杀）| 同（`chain_count += 1`）| ✅ |
 | 阈值 | `0x439238 cmp [ecx+0x8838],0xa` / `0x43923f jl` ⇒ **加完 ≥ 10 就触发**（第 10 颗起**每一颗**都触发）| 同（`>= 10`）| ✅ |
-| 奖励 | `0x439241 fld [`0x4aedf8`]`（**0.5f**）+ `push 3` + 同一个 pos + `call 0x438ec0` | 同类型同位置，但**速度**用了出生随机速 | 🟡 → 已改（传 `0.5f`）|
+| 奖励 | `0x439241 fld [0x4aedf8]`（**0.5f**）+ `push 3` + 同一个 pos + `call 0x438ec0` | 同类型同位置，但**速度**用了出生随机速 | 🟡 → 已改（传 `0.5f`）|
 | 窗口递减 | `0x438696 cmp [esi+0x8828],0` → `jle 0x438713`（归零 ⇒ `[esi+0x8838]=0`）；中间的 `ftol(window_f)` 是 ZUN 的**帧率补偿**（乘数指针 `+0x8830` → `0x4c0a28`，本会话读到 `1.0f`）| 同（每帧 −1，归零清计数）| ✅ |
 
 **根因（为什么会"每颗都配一颗白灵"）**：窗口是"每颗重置 60 帧"。挂在**收集**上时，
@@ -10719,7 +10719,7 @@ TH13 的**全 71 行** id → wav 表已回流到 `engine/spirit/th13/01-spirit-
 （前者不是"出生事件"，后者是诊断工具，推进它会让用户按一次空格就多 25 颗白灵、把修复看反）。
 
 > 顺带钉死一条**用户口径 #2**：「boss 受击掉灵也会掉白灵」—— 一手**通道 A 撒的是 type 1**
-> （`th13:0x419de9`：`push 1; push eax(pos); push ecx([`0x4aed90`]=2.0f); push 1; call 0x438ec0`
+> （`th13:0x419de9`：`push 1; push eax(pos); push ecx([0x4aed90]=2.0f); push 1; call 0x438ec0`
 > ⇒ `spawn_spirit(type=1, speed=2.0, sound=1)`），**它自己不撒白灵**。用户看到的白灵来自**连锁**
 > ⇒ CM-1 的修复**同时**修好了 #2（boss 连打掉 ≥10 颗灵的 60 帧里，白灵会像原版那样出现）。
 
@@ -10824,7 +10824,7 @@ st07bs = `10×1+12×2+13×44` ⇒ 47；st02mbs `MBossDead` = 9；st03mbs = 24；
 ```
 trance-bgm: 素材模式取自 "…\bgm\mode.txt" ⇒ both          ← 开关本身是好的
 trance-bgm: 引擎 BGM 对象链校验没过（bgm=0c901818 → p1=19816b30 → p2=15882640
-            → vtbl=59541568，期望 vtbl 落在 [`0x400000`,`0x574000`)）⇒ 只起第二路、不去动主 BGM 的音量
+            → vtbl=59541568，期望 vtbl 落在 [0x400000,0x574000)）⇒ 只起第二路、不去动主 BGM 的音量
 trance-bgm: OK 第二路起播：素材 "th18_03b_both.wav" … 引擎 BGM 00000000
 状态行：bgm phase 0 … variant th18_03b_both.wav started 440 released 440 … swap 440
 ```
@@ -10941,7 +10941,7 @@ dsound/COM 那层，虚表出现在哪儿由系统决定。**用"与我方同类
 `0x48a5a0` 的一手形状（`th18:0x48a5a0`）：
 
 ```asm
-0048a5a3  mov eax,[`0x5704b0`]     ; 音量缩放全局（0 ⇒ 直接返回）
+0048a5a3  mov eax,[0x5704b0]     ; 音量缩放全局（0 ⇒ 直接返回）
 0048a5b3  mov eax,[ecx+8]        ; this+8 → 内层对象
 0048a5c6  mov ecx,[eax]          ; 内层对象 → 虚表
 0048a5d0  mov edx,[ecx]
@@ -10994,8 +10994,8 @@ dsound/COM 那层，虚表出现在哪儿由系统决定。**用"与我方同类
 ```asm
 00477a13  cmp dword ptr [ecx + 0x58], 0     ; 在播？
 00477a1f  push ecx                          ; ★ 压一个栈参（callee 不读，但 ret 4 会弹掉它）
-00477a20  mov ecx, dword ptr [`0x570484`]     ; this = 引擎 BGM 流
-00477a26  call `0x48a730`
+00477a20  mov ecx, dword ptr [0x570484]     ; this = 引擎 BGM 流
+00477a26  call 0x48a730
 ```
 
 ⇒ 修法：声明改成 `thiscall(void *s, int unused)` 并传 0（`bgm_refill()` 一行）。
@@ -11074,7 +11074,7 @@ trance-bgm: 读不到主曲播放位置（base=00000000 cur=05fb3c78 fmt=00096bb
 
 | 项 | 值 |
 | --- | --- |
-| 异常 | `0xC0000005`，`info = [8, `0x007cc0`20]` = **在野地址取指** |
+| 异常 | `0xC0000005`，`info = [8, 0x007cc020]` = **在野地址取指** |
 | `eip` | `0x007cc020`（不在任何模块内）|
 | **`edi`** | **`0x59541568`** = 上一轮认出来的 **dsound 虚表地址** |
 | 日志 | `trance: enter …` → `trance-bgm: 同时间点 seek（位置来源：hTYXTYIUNKx…）：主曲 10458.14 s …` → 进程没了 |
@@ -11089,7 +11089,7 @@ trance-bgm: 读不到主曲播放位置（base=00000000 cur=05fb3c78 fmt=00096bb
    只保留**写内存游标**这一条 —— 语义上就够：环里"环偏移 ↔ PCM 字节"的对应由**谁先被填**决定，
    第一次补 buffer 从 `base+so` 开始，DS 从环偏移 0 播出的就是 PCM 的 `so` 处
    （引擎自己的 preload 支也是这么定位的：`0x48acd8` / `0x48ad02` 描述符 `+0x84 = base / base+intro`）。
-2. **读也要有闸**：读引擎描述符/fmt 之前先过"指针像不像指针（`0x10000..`0x7fffff`ff`）、
+2. **读也要有闸**：读引擎描述符/fmt 之前先过"指针像不像指针（`0x10000..0x7fffffff`）、
    `track_size ≤ 64 MiB`、`remaining ≤ 64 MiB`"；写游标之前再过三条一致性校验
    （基址像指针、窗口长度 == 我们素材的 PCM 全长、目标偏移 ≤ PCM 全长），任何一条不过就**只记一笔、绝不写**。
 3. 应急开关照旧：`mode.txt` 里写 `noseek` ⇒ 整段 seek 不做（用户当场就能止血，不用等我发版）。
@@ -11475,11 +11475,11 @@ exe 侧**只改一处 6 字节常量**，**15 处引用一个都不用改**（�
 #### CQ-1a 影像内存的完整分配链（一手）
 
 ```c
-// th18:`0x45a7e4` 起（Player__initialize 的装载分支）
+// th18:0x45a7e4 起（Player__initialize 的装载分支）
 eax = DAT_4cccf8 + DAT_4cccf4;  push 0;
-ecx = name_table[eax];          // `0x4b7088`：pl00/01/02/03.sht
-buf = load_file(ecx);           // `0x402060` → 与 thcrap 的 file_size/file_load 断点链
-player[0x47940] = buf;          // `0x45a801` —— 之后所有取表都从这里出发
+ecx = name_table[eax];          // 0x4b7088：pl00/01/02/03.sht
+buf = load_file(ecx);           // 0x402060 → 与 thcrap 的 file_size/file_load 断点链
+player[0x47940] = buf;          // 0x45a801 —— 之后所有取表都从这里出发
 ```
 
 `load_file` 内部（`0x402140` 一带）：`GetFileSize`（`0x4ad088`）→ `push size; call 0x491a34`
@@ -11589,7 +11589,7 @@ player[0x47940] = buf;          // `0x45a801` —— 之后所有取表都从这
 - 常量段：`SHT_DBASE_VA=0x45a830`、`SHT_DBASE_OLD=0x180`、`SHT_DBASE_NEW=0x4e0`、
   `SHT_SLOTS_RETAIL/NEW/RESERVED=40/96/256`、`SHT_ARRAY_OFF=0xe0`、`SHT_DBASE_EXPECT="8d8280010000"`。
 - `emit_sht_binhacks()`：四条结构性自检（形态、预留数组末尾恒等式、同步式、格数区间）+ 生成
-  `{"addr":"`0x45a830`","code":"8d82e0040000","expected":"8d8280010000"}`；
+  `{"addr":"0x45a830","code":"8d82e0040000","expected":"8d8280010000"}`；
   放在 `main()` 里**无条件**加入（不在 `if alloc` 门控下 —— `make ROWS=58` 的 step1 对分态
   也必须带上它，否则会产出「96 格影像 + 老基点」的半套补丁）。
 - `verify_sht_binhack()`：专用对账分支（纯 hex `code` 走通用分支会在 `code.index("<")` 抛
@@ -11723,7 +11723,7 @@ def music_room_numbers():        # → {'th18_01': 1, 'th18_03': 2, …, 'th18_1
 
 ```
 trance: enter (C, manual), gauge 600, frame 2365
-trance: shot group -> set 0xe = TH13 set10 rows (sht 19f6d5f0 + 0x4e0 + 0x33c0); native ptr `0x19f6ee`70 saved
+trance: shot group -> set 0xe = TH13 set10 rows (sht 19f6d5f0 + 0x4e0 + 0x33c0); native ptr 0x19f6ee70 saved
 trace: card 113 on_shot_set_index (+0x7c) first hit
 ```
 
@@ -11736,7 +11736,7 @@ trace: card 113 on_shot_set_index (+0x7c) first hit
 | 异常 | `0xC0000005`，读地址 `0x1`（`info=[8, 0x1]`）|
 | eip | **`0x1`**（`eax=0x1`）⇒ 跳进了地址 1 |
 | 崩的那条指令 | **`th18:0x45e8c0` = `call eax`**（栈上 `[esp]=0x45e8c2` 正是它的返回地址）|
-| 取指针的地方 | 同函数上方 `th18:`0x45e8ad` mov eax, [edi + 0xe8]` ⇒ **子弹对象里的"类型回调"** |
+| 取指针的地方 | 同函数上方 `th18:0x45e8ad mov eax, [edi + 0xe8]` ⇒ **子弹对象里的"类型回调"** |
 | 调用链（ExpHP 符号） ｜ AbilityManager__on_tick (…) | 见文末长行详录 |
 | 前面的门 | `test eax,eax / je 0x45e8f0` —— 与 §CQ-3「空槽 func 字段必须为 0」靠的是同一条门：**0 = 合法跳过，非 0 就会被 call** |
 
@@ -12188,7 +12188,7 @@ th18_13 起点  3.49 s r=0.929 | th18_17 4.22 s r=0.934 | th18_18 4.95 s r=0.937
 
 **§BE 详录 #17**（原表行，2026-09-15 从 §BE 表移出以过文档门）
 
-- 原始登记：`｜ 2026-09-15d ｜ **110 风神录 / 111 地灵殿**（共用绿点池）｜ `native/cards/faith.{h,c}`（**卡侧 `mof.c` / `signal.c` 零改动**；`season.c` 一行没动）｜ **绀珠传（115）擦弹减速期的「三件套」**（`NEXT.md` §1x.4）：① **变慢** —— 减速因子（`ITEM_MANAGER+0xe6bb14`）除下落段外**本池的飞散（上抛）段也乘**（跟 116 季节点；原生只乘「重力在跑」那一段 `item+0xc74 == 2`，上抛段 `item+0xc74 == 1` 是裸 `vel × GAME_SPEED`）；② **变黄** —— 减速中给 VM 的 `color_1` 写黄、**只改 RGB、保留当前 alpha**，减速退出**无条件还原成白**；颜色**按用户 2026-09-15 裁决统一为 TH15 给弹的那支 `0xffffd080`**（= 116 季节点 `LOLK_GRAZED_COLOR`，一手 th15:`0x419d3d`；用户原话「肯定得统一成 th15，包括到时候 th07 的樱点」）—— 引擎自己给**原生道具**写的是 `0xffa0ffff`（一手 th18:`0x445d12`），**我们刻意不用**（已知差异，见 `TUNING.md` §2.5d #5）；③ **抖动** —— 画出来的位置 ±1 px 随机（门 = `factor < 1.0 && age > 31`，与引擎逐条同形）。三层都提炼成**共用件**（`faith_dot_slow_style()` / `faith_slowdown_permille()`），并加一行每 600 帧的诊断日志。**微档不参与**（它今天不在池里，天然不参与）；**信仰记账 / 贴图 / 出生动画 / 收点判定 / 满 P 转换一字未改**｜ 用户 2026-09-15 口径「th15 擦弹时候**大中绿点也得变黄、变慢、抖动**」。绿点是**自建 VM** ⇒ 引擎只替原生 P 点 / 金钱做这三件事，我们得自己复刻一层 ｜ `make check` rc=0（`test_faith_core` 等全绿）、`make dllx87` = **0 条 x87**（★ 中途踩到一次：`float` 返回值走 x87 ⇒ 改成「`static inline` 读 + 卡侧 `int` 千分比入口」）、`python3 tooling/check-docs.py` 全绿；⚠ 跨编译与 x87 都是本机可验，**观感（黄得对不对 / 抖得够不够）只能实跑**（判据见 `TUNING.md` §2.5d）｜`
+- 原始登记：`｜ 2026-09-15d ｜ **110 风神录 / 111 地灵殿**（共用绿点池）｜ `native/cards/faith.{h,c}`（**卡侧 `mof.c` / `signal.c` 零改动**；`season.c` 一行没动）｜ **绀珠传（115）擦弹减速期的「三件套」**（`NEXT.md` §1x.4）：① **变慢** —— 减速因子（`ITEM_MANAGER+0xe6bb14`）除下落段外**本池的飞散（上抛）段也乘**（跟 116 季节点；原生只乘「重力在跑」那一段 `item+0xc74 == 2`，上抛段 `item+0xc74 == 1` 是裸 `vel × GAME_SPEED`）；② **变黄** —— 减速中给 VM 的 `color_1` 写黄、**只改 RGB、保留当前 alpha**，减速退出**无条件还原成白**；颜色**按用户 2026-09-15 裁决统一为 TH15 给弹的那支 `0xffffd080`**（= 116 季节点 `LOLK_GRAZED_COLOR`，一手 th15:0x419d3d；用户原话「肯定得统一成 th15，包括到时候 th07 的樱点」）—— 引擎自己给**原生道具**写的是 `0xffa0ffff`（一手 th18:0x445d12），**我们刻意不用**（已知差异，见 `TUNING.md` §2.5d #5）；③ **抖动** —— 画出来的位置 ±1 px 随机（门 = `factor < 1.0 && age > 31`，与引擎逐条同形）。三层都提炼成**共用件**（`faith_dot_slow_style()` / `faith_slowdown_permille()`），并加一行每 600 帧的诊断日志。**微档不参与**（它今天不在池里，天然不参与）；**信仰记账 / 贴图 / 出生动画 / 收点判定 / 满 P 转换一字未改**｜ 用户 2026-09-15 口径「th15 擦弹时候**大中绿点也得变黄、变慢、抖动**」。绿点是**自建 VM** ⇒ 引擎只替原生 P 点 / 金钱做这三件事，我们得自己复刻一层 ｜ `make check` rc=0（`test_faith_core` 等全绿）、`make dllx87` = **0 条 x87**（★ 中途踩到一次：`float` 返回值走 x87 ⇒ 改成「`static inline` 读 + 卡侧 `int` 千分比入口」）、`python3 tooling/check-docs.py` 全绿；⚠ 跨编译与 x87 都是本机可验，**观感（黄得对不对 / 抖得够不够）只能实跑**（判据见 `TUNING.md` §2.5d）｜`
 
 **§BE 详录 #18**（原表行，2026-09-15 从 §BE 表移出以过文档门）
 
@@ -12478,7 +12478,7 @@ CRT locale 数据）⇒ 现在这个值来自用户的像素差实测，是当�
 ### DC-2 ★★ 跨文件改动：`faith_core.h` 的 `FAITH_SIGNAL_LOSS_OFFLINE` 3000 → **300**（10× 量纲错）
 
 - **一手**：`local/_scratch/research-th11-signal.md`「跌源只有一条」+ 反汇编原文
-  `th11:`0x420a85` lea esi,[edx-0x1e]`（= **−30 存储**）+ `th11:`0x420b03` add [edi+0x14],esi`；
+  `th11:0x420a85 lea esi,[edx-0x1e]`（= **−30 存储**）+ `th11:0x420b03 add [edi+0x14],esi`；
   同文件的量纲自洽检查写明「−30/帧 = −0.30/帧 ✓；+9/帧 = +0.09/帧 ✓；+0x1388 = +5000 = +50.00/帧 ✓」。
   TH11 的槽存储 = 显示 ×100 ⇒ −0.30 显示 = **−300 千分点**。
 - **为什么原来是 3000**：紧邻的注释自己写着「−0.30/帧」，而本文件其余同类常量
@@ -12951,8 +12951,8 @@ wba_wc: hud geom [claim] claim_ok=1 path=tbl | slot (88, 924) + 193x48 | cells 8
 - **★ 一处刻意偏差（同一条特技，2026-09-15 用户拍板「保持现状（不累加，安全）」）**：**原生的无敌可累加，我们不复刻这条性质**。
   一手（父 agent 亲自读的 `CardAya__on_tick`）：那两条写路**全是 `addss`（加法）**，且三个门
   （`0x40ca9e`–`0x40cab2`：方向号比较 / `last_dir == 0` / 非聚焦）之后**没有**「已在无敌中就不再累加」的闸 ——
-  `0x40cafc mulss xmm1,[`0x4b9248`]`（×4.0f，分支 A）/ `0x40cb04 addss xmm1,[ebx+0x4777c]`（+ 现有计时器）/
-  `0x40cb16 addss xmm1,[`0x4b9248`]`（+4.0f，分支 B）/ `0x40cb1e`+`0x40cb22`+`0x40cb2a`（`cvttss2si` → 写回
+  `0x40cafc mulss xmm1,[0x4b9248]`（×4.0f，分支 A）/ `0x40cb04 addss xmm1,[ebx+0x4777c]`（+ 现有计时器）/
+  `0x40cb16 addss xmm1,[0x4b9248]`（+4.0f，分支 B）/ `0x40cb1e`+`0x40cb22`+`0x40cb2a`（`cvttss2si` → 写回
   `+0x47778`(cur) / `+0x4777c`(cur_f)）⇒ 触发条件只认「方向输入出现（起步）/ 非聚焦」这一类判定
   ⇒ **只要能以 1 帧精度反复制造「起步」，就每 2 帧净增 +2 帧 ⇒ 计时器单调上升 ⇒ 实际等于永久无敌**
   （🟡 附一条只读了一部分、未逐帧验的：`last_dir` 在按住射击时被 `0x40c853` 每帧清 0 ⇒ 可能「按住 Z 边移动」也持续满足条件）。
@@ -12983,8 +12983,8 @@ wba_wc: hud geom [claim] claim_ok=1 path=tbl | slot (88, 924) + 193x48 | cells 8
 | 项 | 一手 | 我们的落点 |
 | --- | --- | --- |
 | 触发 | 死亡状态分支 `th13:0x4434d8`，进入条件 = 死亡计时 `[player+0x668] < 0x1e` | `on_death_frame2`（`+0x14`，**"补死真的发生了"的唯一回执**；救下来的那次走不到这里）里**开 30 帧窗** |
-| 每帧做什么 | `spawn_spirit(mgr, type=3, pos=player+0x5b8, speed=[`0x4aed90`], sound=0)`——**每帧一颗** | 帧末 `on_item_frame` 每帧一颗：`trance_spirit_spawn(CE_PLAYER_X/Y, 3, 灵界相位, &core, 2.0f)` |
-| 类型 / 速度 | **type 3 = 白灵**；`[`0x4aed90`]` 读出来 = **2.0f** | `TRANCE_DEATH_ECHO_TYPE 3` / `TRANCE_DEATH_ECHO_SPEED 2.0f` |
+| 每帧做什么 | `spawn_spirit(mgr, type=3, pos=player+0x5b8, speed=[0x4aed90], sound=0)`——**每帧一颗** | 帧末 `on_item_frame` 每帧一颗：`trance_spirit_spawn(CE_PLAYER_X/Y, 3, 灵界相位, &core, 2.0f)` |
+| 类型 / 速度 | **type 3 = 白灵**；`[0x4aed90]` 读出来 = **2.0f** | `TRANCE_DEATH_ECHO_TYPE 3` / `TRANCE_DEATH_ECHO_SPEED 2.0f` |
 | 时长 | 30 帧（`< 0x1e`） | `TRANCE_DEATH_ECHO_FRAMES 30`（按**游玩帧**递减 = 60 Hz 下 0.5 s）|
 
 ★ **与剩余槽值无关**（不按槽数撒）—— 用户看到的"把剩余灵界槽爆出来"是观感，不是机制（一手如此）。
@@ -13248,14 +13248,14 @@ wba_wc: hud geom [claim] claim_ok=1 path=tbl | slot (88, 924) + 193x48 | cells 8
 
 **★★ 2026-09-16h 订正 —— 它是 ✅ 复刻，不是 ❓自定（用户：「无论如何进关卡都是有一格灵界，
 你一手的核实肯定没核完全」—— 用户是对的，我核错了）：**
-初次核实只扫了**绝对地址**形式的写点（`mov [`0x4be808`], imm` / `cmp` / `sub`），漏了**寄存器相对**形式：
+初次核实只扫了**绝对地址**形式的写点（`mov [0x4be808], imm` / `cmp` / `sub`），漏了**寄存器相对**形式：
 
 | 一手 | 证据 |
 | --- | --- |
-| **进关初始化就把槽写成 200** | `th13:0x42d3c0`（`FUN_0042d3c0`）：`esi = th13:0x4be7b8`（调用侧 `th13:`0x42bb5a` mov $`0x4be7b8`, %esi`），体内 **`movl $0xc8, 0x50(%esi)`** ⇒ `[`0x4be7b8`+0x50] = [th13:`0x4be808`] = 200` |
+| **进关初始化就把槽写成 200** | `th13:0x42d3c0`（`FUN_0042d3c0`）：`esi = th13:0x4be7b8`（调用侧 `th13:0x42bb5a mov $0x4be7b8, %esi`），体内 **`movl $0xc8, 0x50(%esi)`** ⇒ `[0x4be7b8+0x50] = [th13:0x4be808] = 200` |
 | 调用点 | `GameThread__thread_start` 的 `th13:0x42bb6b`（`call 0x42d3c0`）—— 就在同一段"段初始化"里 |
-| 交叉印证 | 同函数 `movl $0x2, 0x48(%esi)` = `[th13:`0x4be800`] = 2`，与 `th13:0x42bbe0`/`th13:0x440693` 写的**是同一个字段** ⇒ 基址 `0x4be7b8` 站得住 |
-| `th13:0x42bbfd` 的"写 0" | **只走 `((GAME_FLAGS th13:`0x4be830`) >> 4) & 3 == 2` 那条分支**（`th13:0x42bbcf`/`0x42bbd2`），不是"关卡开始无条件写 0" |
+| 交叉印证 | 同函数 `movl $0x2, 0x48(%esi)` = `[th13:0x4be800] = 2`，与 `th13:0x42bbe0`/`th13:0x440693` 写的**是同一个字段** ⇒ 基址 `0x4be7b8` 站得住 |
+| `th13:0x42bbfd` 的"写 0" | **只走 `((GAME_FLAGS th13:0x4be830) >> 4) & 3 == 2` 那条分支**（`th13:0x42bbcf`/`0x42bbd2`），不是"关卡开始无条件写 0" |
 | 另一处 200 | `th13:0x4406b6`（`PauseMenu` 流程里 = 从菜单重开一局）也是 200，与本条不冲突 |
 
 ⇒ **"进关 = 一格"是一手行为**，`TRANCE_GAUGE_INITIAL = 200` 保留（注释里的"想回一手就改成 0"已删）。
@@ -13364,7 +13364,7 @@ TH18 的相位结构（`thecl -d 18`，逐关核过）：**最后一张符卡被
 | 项 | 一手（本轮逐条复核） |
 | --- | --- |
 | 初速 = **参数 + randf()×3.5**（公共尾，**所有通道**都叠） | `th13:0x43919a` `call 0x472de0`(rand) → `0x4391a4 fmull 0x4aef00`(3.5) → `0x4391b9 fadds 0x10(%ebp)`(参数) → `0x4391bc fstps 0x2c(%ebx)`。死亡通道参数 = `2.0`（`0x4aed90`）⇒ **2.0–5.5** |
-| 方向 = 出生序号 `% 4` 的**四个象限角** + 随机抖动 | `0x4390c9 movl 0xc(%ebx),%eax` → `0x4390cc andl $`0x800000`03` → `0x4390e1 jmpl *`0x43926c`(,%eax,4)`；四支各自 `call 0x472e10` 取随机、再叠 `0x4aef08`/`0x4aebd8` 两个象限常量 ⇒ **四散扇形** |
+| 方向 = 出生序号 `% 4` 的**四个象限角** + 随机抖动 | `0x4390c9 movl 0xc(%ebx),%eax` → `0x4390cc andl $0x80000003` → `0x4390e1 jmpl *0x43926c(,%eax,4)`；四支各自 `call 0x472e10` 取随机、再叠 `0x4aef08`/`0x4aebd8` 两个象限常量 ⇒ **四散扇形** |
 | **游玩区边界反弹**（所有神灵） | `0x439035 orl $0x2, 0x84(%ebx)`（flags2 bit1，生成时置位）⇒ `FUN_0040bb70(pos,0,224,384,448)` 翻分量 |
 | 漂移衰减 / 地板 / 寿命 | 每帧 −0.12666667、地板 0.13（`0x4aefc0`/`0x4aefc8`）；寿命 480 帧 + 脚本尾 40 |
 
@@ -13384,8 +13384,8 @@ TH18 的相位结构（`thecl -d 18`，逐关核过）：**最后一张符卡被
 
 | 写点 | 内容 |
 | --- | --- |
-| `call th13:0x42d3c0` | 里面 `movl $0xc8, 0x50(%esi)` ⇒ `[th13:`0x4be808`] = **200**`（**槽**）与 `[th13:`0x4be80c`] = 0`（相位）|
-| `movl `0x4be7c4`, %esi` → `0x4c0ab0/`0x4c0ac8`/0x4c0ae0` 三张表 × 金额 → `movl %eax, 0x4be7dc` | **PIV（最大得点）= 每关重算**，上一关攒的被覆盖 |
+| `call th13:0x42d3c0` | 里面 `movl $0xc8, 0x50(%esi)` ⇒ `[th13:0x4be808] = **200**`（**槽**）与 `[th13:0x4be80c] = 0`（相位）|
+| `movl 0x4be7c4, %esi` → `0x4c0ab0/0x4c0ac8/0x4c0ae0` 三张表 × 金额 → `movl %eax, 0x4be7dc` | **PIV（最大得点）= 每关重算**，上一关攒的被覆盖 |
 | `movl $0x2, 0x4be7f4` / `0x4be800`、`0x4be7f8 = 0`、`0x4be804 = 0` | 整块"进关状态初始化"|
 
 而**用户自己的观察**（"无论如何进关卡都是有一格"）正好证明这一块**每关都跑** ⇒ 槽与 PIV 都是**每关重置**。
@@ -13494,7 +13494,7 @@ dev 起手卡组又把空槽补上 113；而编成里一确认游戏会重建卡
 崩溃签名（`crashdumps/` 5 次全同）：`0xC0000005` **写** 地址 `0x1`、`Eax = 1`、`Ebp/Esp` 每次同址、
 `Eip ≈ 0x03c?065a`（堆里、不在任何已加载模块）⇒ 进程没有 DEP ⇒ **把堆数据当指令执行**。
 栈回溯 = `FUN_0048e44d` → `Window__update_window__normal_version th18:0x472e9c` →
-`UpdateFuncRegistry__run_all_on_tick th18:0x4012e0`，崩在 `th18:`0x401355` call eax`（返回地址 `0x401357` 与 dump 栈吻合）
+`UpdateFuncRegistry__run_all_on_tick th18:0x4012e0`，崩在 `th18:0x401355 call eax`（返回地址 `0x401357` 与 dump 栈吻合）
 ⇒ **某个更新链节点的 `+0x08`（`on_tick`）是悬垂/被改写的堆指针**。
 
 引擎机制（逐条反汇编 + TH16 对照，全文进 `engine/_shared/frame-loop.md` §4）：
@@ -13507,7 +13507,7 @@ Player / Stage / AsciiManager / Bomb*（运行期动态）…）；摘链者 = �
 
 | 文件 | 改了什么 | 为什么 |
 | --- | --- | --- |
-| `native/sites.py` | `SDK_SITES` 加 `("ce_chain_node_guard", `0x401352`, 5, "8b4708ffd0", …)`（长注 = 机制全文）+ `sites_gen.h` 的 `CE_BP_CHAIN_NODE_GUARD_RVA` | 站点窗口 = `8b 47 08` + `ff d0` 两条完整指令、无相对寻址、窗内无跳转靶；5 字节 = thcrap 的 sourcecave 下限 |
+| `native/sites.py` | `SDK_SITES` 加 `("ce_chain_node_guard", 0x401352, 5, "8b4708ffd0", …)`（长注 = 机制全文）+ `sites_gen.h` 的 `CE_BP_CHAIN_NODE_GUARD_RVA` | 站点窗口 = `8b 47 08` + `ff d0` 两条完整指令、无相对寻址、窗内无跳转靶；5 字节 = thcrap 的 sourcecave 下限 |
 | `native/sdk.c` | 新增 `BP_ce_chain_node_guard`（+ `ce_mod_desc` / `ce_addr_exec` 两个静态助手）；`bps[]` 对账表加一条 | ① **链地图**（每节点首见一行：order/flags/on_tick/this/vt + 各自模块名）② **写监视**（`+0x08`/`+0x24` 与首见不同即报 `★ chain CHANGED`）③ **闸**（`on_tick` 非可执行地址 ⇒ `eax=1`、`retaddr=0x401357` 跳过这次 `call`）|
 | `native/th18_card_expand.def` | `BP_ce_chain_node_guard @38` | 导出（thcrap 按名字找 BP 函数）|
 | `native/Makefile` | `dllverify` 导出计数 37 → 38；`DLL ABI:` 那行文案同步 | 任何 ABI 漂移都该失败，计数是那道门本身 |
@@ -13582,8 +13582,8 @@ Player / Stage / AsciiManager / Bomb*（运行期动态）…）；摘链者 = �
 **验证**：`make check` **退出码 0**（320 个文件全过）；`sites.py check` ✅（声明 22 / 预算 24）；`make dllverify` ✅（23 exports）；`tools/gen_def.py --check` ✅。
 **已知**：`.def` 与 `sites_gen.h` 都不在 Makefile 的依赖表里 ⇒ 改它们后必须**强制重链**（`rm -f th18_card_expand.dll && make dll`），否则 `dllverify` 会拿旧 DLL 比对而误报。
 
-## 附：表格长单元格搬出
+## 附：§BE-DN 表格长单元格搬出
 
-> 2026-10-01：下列表格行的单元格超过文档门 200 字符上限，**只做搬家、不改一字**（表格里留每格 ≤90 字符的摘要）。
+> 2026-10-01：该行单元格超过文档门 200 字符上限，**只做搬家、不改一字**。
 
 - 文档门（16 → 0） ｜ `engine/player/th08/01-youkai-familiars-first-hand.md`、`engine/player/th11/04-marisa-b-option-geometry.md` 加 `> **版本**：TH## …` 横幅；把超 200 字符的表格单元格搬到文末「附：表格长单元格搬出」小节（**只搬家、不改一字**） ｜ `check-docs.py` 的 `[version]`/`[tables]` 门。同批也搬了 `engine/bullet/th10/01-cancel-to-item.md`、`engine/card/th18/13-mallet-clear-and-th17-charge.md`、`engine/card/th18/14-clear-range-barrier.md`、`mods/th18.v1.00a/card-expand/ATLAS-MERGE-AUDIT.md`、`CARD-RESOURCE-INTERACTION-AUDIT.md` 的同型违规 —— **这些是同僚/上游的文件，我按「只搬不改语义」处理并在此醒目登记**（原作者若更愿意自己重排，请直接覆盖我这版）
