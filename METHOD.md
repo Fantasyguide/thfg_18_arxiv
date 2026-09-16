@@ -231,3 +231,23 @@ THTK-Studio 仓库的 `docs/` 时保留可信度与出处。**宁可标 🟡/❓
 ⇒ **新功能不要再各占一格**：能并进已有的「每帧 / 每敌 / 每帧家务」站点的就并进去（例：新事件回调并进敌人循环
 里已有的站点，或并进每帧家务里扫一遍链表）。`sites.py check` 应把「声明数 > 预算」当作**构建失败**；
 预算值随实测更新，实验记录见 `mods/th18.v1.00a/card-expand/AUDIT.md` §BE 与 `local/MEMORY.md` §1。
+
+## ★ 发布只有一条路：`native/tools/deploy.py`
+
+**别再手敲 `make gen` + `make dll` + `cp`**（2026-09-17 因此混源两次、还把失败构建发了出去）。
+唯一被认可的发布路径：
+
+```bash
+cd mods/th18.v1.00a/card-expand/native
+MODKIT_DIR="<你的 modkit 根>" python3 tools/deploy.py        # --dry-run 可先看计划
+```
+
+它把「构建 → 校验 → 发布 → 回读校验」串成一条链，**任何一步失败即中止（什么都不发）**：
+
+1. `make gen` → **强制 `rm -f th18_card_expand.dll`** → `make dll`
+   （⚠ 为什么强制删：`sites_gen.h` 与 `th18_card_expand.def` **都不在 Makefile 依赖表里** ⇒ 不删就会拿旧 DLL
+   比对，`dllverify` 误报、发布的 patch 与 DLL 不同源 —— 当天为此白查一轮）；
+2. `sites.py check`（含**站点预算**与 patch↔def 双向对账）+ `tools/gen_def.py --check`；
+3. **patch 与 DLL 一起发**（DLL 三个路径：`mods/`、`thcrap/bin/mod_*.dll`、`thcrap/repos/.../<patch>/`）；
+4. **回读校验**：四份 DLL 同 md5、patch js 与仓库同源；
+5. 若存在 `local/sync_modkit_dll.sh`（机器本地那一半：资产 `pl0X.sht`/`ability.anm` 等）则自动执行。
