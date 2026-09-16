@@ -139,7 +139,7 @@ thcrap 每采纳一条**声明的断点**，就在一块**可执行内存池**�
   工具：`python3 tooling/poolmap.py <日志> --declared 57`。
 - **预算不能只数自己**：`base_tsa`（随 thcrap 分发，dump 里 `thcrap_tsa.dll`）自己声明 **18 条断点**
   ⇒ 本机真实占用 = 我们 20 + 测试归档 2 + base_tsa 18 = **40**（挂分片归档时 57）。
-- 两次池崩（`th18.exe.38436/73348.dmp`）的 `Eip = 0x03c1064a` / `0x03c2064a` **落在 boot memmap 里
+- 两次池崩（`th18.exe.38436/73348.dmp`）的 `Eip = 0x03c1064a` / `th18:0x03c2064a` **落在 boot memmap 里
   标为 `RESERVE`（未提交）的 `th18:0x03c00000..0x03cdb000`** ⇒ 「格数用完」解释不成立，待验的是
   归档集合变化 / arena 提交粒度。
 
