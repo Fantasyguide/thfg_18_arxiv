@@ -45,7 +45,9 @@ int      ce_cards_load(uint8_t *module_base, uint8_t *cave, unsigned rows);
 unsigned ce_new_card_count(void);
 uint32_t ce_new_card_id(unsigned i);
 int      ce_new_card_initial_unlocked(unsigned i);
-/* 引擎编成上限 3（0x4449d4 容量递增链 1→2→3 封顶，无 3→4 分支）——start_deck 在此截断 */
+/* **初手卡组**容量递进链 1→2→3 封顶（`th18:0x4449d4` 无 3→4 分支）——start_deck 在此截断。
+ * ★ 2026-09-17 用户口径更正：**3 只是「初手卡组」那一张表的格数，卡组本身不受它限制** ⇒
+ *   不要把它当成"编成上限"（编成侧真实上限本文未验，标 ❓）。*/
 #define CE_DECK_CAP_MAX 3
 /* ★ 2026-09-17 验收用：**物理**上限 = 每机体存档卡组记录的步长（0x10 = 16 字节格）。
  *   `mods/start_deck.js` 写了 `"cap": N` 时，start_deck **会往存档里写容量字段**（默认不写，
