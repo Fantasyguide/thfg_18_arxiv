@@ -201,6 +201,17 @@ def find_modkit(explicit):
     return os.environ.get("MODKIT_DIR", "")
 
 
+
+# 场景 → 它要判的原语（`all` = 全判）。★ 修掉一个设计缺陷：以前每个场景都判**全部**原语，
+# 于是"场景退出码"反映的是全局，汇总表里连该通过的场景也显示未过。
+SCEN_PRIM = {
+    "z-intercept": "z-intercept", "charge": "charge", "storm-chain": "storm-chain",
+    "spirit": "spirit", "collect": "collect", "spawn-enemy": "spawn-enemy",
+    "familiar": "familiar", "emitter-close": "emitter-close",
+    "card118": "all", "all12": "all",
+}
+
+
 def plan(scn):
     """把场景展开成 [(绝对秒, 动作, 键, 是按下吗)]，做静态检查。"""
     out, held, errs = [], set(), []
@@ -308,7 +319,7 @@ def main():
         print(out.strip())
         return rc
 
-    if a.all and not a.dry_run and not a.check_only:
+    if a.all and not a.dry_run:
         names = [n for n in SCENARIOS if n != "all12"] + ["all12"]
         print("== 全场景串跑：%d 个（八原语 + all12 全装）==" % len(names))
         rc_all = 0
@@ -319,14 +330,17 @@ def main():
             if a.modkit: sub += ["--modkit", a.modkit]
             if a.deck: sub += ["--deck", a.deck]
             if a.launch: sub += ["--launch"]
+            if a.check_only: sub += ["--check-only"]
+            if a.log: sub += ["--log", a.log]
             if a.scale != 1.0: sub += ["--scale", str(a.scale)]
             if a.win_tmp: sub += ["--win-tmp", a.win_tmp]
             r = subprocess.run(sub)
             rc_all |= r.returncode
             summary.append((n, r.returncode))
         mk = find_modkit(a.modkit)
-        if mk:
-            sd = os.path.join(mk, "autotest")
+        sd = (os.path.join(mk, "autotest") if mk
+              else os.path.dirname(os.path.abspath(a.log or ".")))   # 兜底：放日志旁边（离线彩排用）
+        if True:
             os.makedirs(sd, exist_ok=True)
             mp = os.path.join(sd, "summary.md")
             with open(mp, "w", encoding="utf-8") as f:
@@ -369,6 +383,8 @@ def main():
 
     mk = find_modkit(a.modkit)
     log = a.log or (os.path.join(mk, "game", "th18_card_expand.log") if mk else "")
+    if not log and a.check_only:
+        print("✗ check-only 需要 --log（或 --modkit/MODKIT_DIR）"); return 2
     if not log:
         print("✗ 没有日志路径：给 --log 或 --modkit/MODKIT_DIR")
         return 2
@@ -423,10 +439,12 @@ def main():
     sec_path = os.path.join(os.path.dirname(os.path.abspath(log)), "autoplay_last_section.log")
     open(sec_path, "w", encoding="utf-8").write(text)
     print("   本次启动段已存：%s（%d 行）" % (sec_path, len(text.splitlines())))
-    rep_dir = os.path.join(mk, "autotest") if mk else os.path.dirname(sec_path)
+    rep_dir = (os.path.join(mk, "autotest") if mk else os.path.dirname(os.path.abspath(log)))
     os.makedirs(rep_dir, exist_ok=True)
     rep = os.path.join(rep_dir, "report_%s.md" % a.scenario)
-    cmd = [sys.executable, VERIFY, "all", "--check", "--log", sec_path, "--report", rep]
+    prim = SCEN_PRIM.get(a.scenario, "all")
+    cmd = [sys.executable, VERIFY, prim, "--check", "--log", sec_path, "--report", rep]
+    print("   判读：%s（%s）" % (prim, "该场景对口的原语" if prim != "all" else "全部原语"))
     rc = subprocess.run(cmd).returncode
     print("   报告：%s（退出码 %d）" % (rep, rc))
     return rc
