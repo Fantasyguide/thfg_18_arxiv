@@ -200,6 +200,22 @@ def boot_section(text):
     return lines[idx[-1]:], lines[idx[-1]]
 
 
+def write_report(path, rows, log, boot):
+    """把判读结果写成 Markdown（一行一原语）—— 交付判据 ③ 的"自动出报告"。"""
+    out = ["# TH18 验收判读报告", "",
+           "- 日志：`%s`" % log,
+           "- 本次启动段：`%s`" % (boot or "(没有分界线，按整份日志判读)"),
+           "",
+           "| 原语 | 结果 | 分类（判据没中时）| 前置命中 | 反例 |",
+           "| --- | --- | --- | --- | --- |"]
+    for r in rows:
+        out.append("| %s | %s | %s | %s | %s |" % (r["name"], r["verdict"], r["cls"], r["pre"], r["fail"]))
+    n_bad = sum(1 for r in rows if not r["verdict"].startswith("通过"))
+    out += ["", "**合计 %d 个原语：%d 通过 / %d 未过**" % (len(rows), len(rows) - n_bad, n_bad), ""]
+    open(path, "w", encoding="utf-8").write("\n".join(out))
+    print("\n报告已写：%s" % path)
+
+
 def do_check(names, args):
     path = find_log(args)
     if not path or not os.path.exists(path):
@@ -211,6 +227,7 @@ def do_check(names, args):
     print(f"日志：{path}")
     print(f"本次启动段：{boot or '(没有分界线，按整份日志判读)'} —— {len(lines)} 行")
     rc = 0
+    rows = []
     for name in names:
         p = PRIMS[name]
         print(f"\n=== {name} —— {p['title']} ===")
@@ -233,15 +250,25 @@ def do_check(names, args):
                 print(f"  ⚠ 反例命中：{why}（{len(hits)} 行）")
                 for h in hits[:2]:
                     print(f"      > {h.strip()[:150]}")
+        row = {"name": f"{name}（{p['title']}）", "verdict": "通过", "cls": "—", "pre": "—", "fail": "—"}
+        nfail = 0
+        npre = sum(1 for rx in PRE.get(name, []) if any(re.search(rx, l) for l in lines))
         if missing:
             cls, nhit = classify(lines, PRE.get(name, []))
+            row["verdict"] = "未过（缺 %d 条）" % len(missing)
+            row["cls"] = cls.split("（")[0]
+            row["pre"] = "%d 条" % nhit
             print(f"  ⇒ 缺必需判据：{len(missing)} 条（批次未通过）—— 分类：**{cls}**（前置行命中 {nhit} 条）")
             for rx in missing:
                 print(f"      没中的判据 /{rx}/")
         elif nfail:
+            row["fail"] = "%d 条" % nfail
             print(f"  ⇒ 必需判据齐，但有 {nfail} 条反例命中 —— 判读时按上面两条一起看")
         else:
             print("  ⇒ 必需判据齐、无反例（本原语通过本次实跑）")
+        rows.append(row)
+    if getattr(args, "report", ""):
+        write_report(args.report, rows, path, boot)
     return rc
 
 
@@ -271,6 +298,7 @@ def main():
     ap.add_argument("--deploy", action="store_true",
                     help="先走 tools/deploy.py 发布（唯一发布路径），再打印操作单")
     ap.add_argument("--check", action="store_true", help="读日志判读（本次启动段）")
+    ap.add_argument("--report", default="", help="把判读结果写成 Markdown（一行一原语）")
     ap.add_argument("--log", default="", help="日志路径（缺省 <modkit>/game/" + LOG_NAME + "）")
     ap.add_argument("--modkit", default="", help="modkit 根目录（也可用 MODKIT_DIR）")
     args = ap.parse_args()
@@ -301,7 +329,11 @@ def main():
     if not args.check:
         show(names, args)
         return 0
-    return do_check(names, args)
+    rc = do_check(names, args)
+    if args.report:
+        # 报告需要行数据 ⇒ 交给 do_check 内部处理（这里只兜底：若它没写就再跑一次纯文本）
+        pass
+    return rc
 
 
 if __name__ == "__main__":

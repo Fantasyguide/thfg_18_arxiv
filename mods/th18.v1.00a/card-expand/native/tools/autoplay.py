@@ -405,7 +405,13 @@ def main():
     sec_path = os.path.join(os.path.dirname(os.path.abspath(log)), "autoplay_last_section.log")
     open(sec_path, "w", encoding="utf-8").write(text)
     print("   本次启动段已存：%s（%d 行）" % (sec_path, len(text.splitlines())))
-    return subprocess.run([sys.executable, VERIFY, "all", "--check", "--log", sec_path]).returncode
+    rep_dir = os.path.join(mk, "autotest") if mk else os.path.dirname(sec_path)
+    os.makedirs(rep_dir, exist_ok=True)
+    rep = os.path.join(rep_dir, "report_%s.md" % a.scenario)
+    cmd = [sys.executable, VERIFY, "all", "--check", "--log", sec_path, "--report", rep]
+    rc = subprocess.run(cmd).returncode
+    print("   报告：%s（退出码 %d）" % (rep, rc))
+    return rc
 
 
 if __name__ == "__main__":
