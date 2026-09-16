@@ -535,4 +535,21 @@
     "sprite_large": 116,
     "sprite_small": 117
   }
-}
+,
+  "118": {
+    "name": "挑战・十二合一",
+    "desc": [
+      "主动卡：D 切到本卡后按 C 发动，",
+      "一次把 106–117 十二张系统卡发到手上",
+      "（一局只发一次）。挑战来自你自己的",
+      "编成：把哪些系统机制叠在一起打。",
+      "❓ 贴图暂借 116/117（UI 不在本目标范围）。"
+    ],
+    "internal_name": "GIVE12",
+    "category": 0,
+    "initial_unlocked": 1,
+    "price_tier": 10,
+    "weight": 1,
+    "sprite_large": 116,
+    "sprite_small": 117
+  }}

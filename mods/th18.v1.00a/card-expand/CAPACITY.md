@@ -397,10 +397,10 @@ python3 native/tools/reader_census.py --all    # 连锚点的 31 处引用一起
 
 <!-- capcheck:appendix:begin（本段由 `native/tools/capcheck.py --gen-appendix` 生成，**别手改**）-->
 
-**A1. 卡 id（`CE_CARD(` 的落点，35 张）** —— 出处 `native/cards/*.c`
+**A1. 卡 id（`CE_CARD(` 的落点，36 张）** —— 出处 `native/cards/*.c`
 
 ```
-58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 106 107 108 109 110 111 112 113 114 115 116 117
+58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 106 107 108 109 110 111 112 113 114 115 116 117 118
 ```
 
 **A2. shooterset 组（`native/sht_ids.h`，50 个宏）**
@@ -734,6 +734,7 @@ CE_ANM_ABILITY_SPRITE 宏 720 个，号 109..451
 ```
 
 <!-- capcheck:appendix:end -->
+
 
 
 

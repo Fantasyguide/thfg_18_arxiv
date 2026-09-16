@@ -13587,3 +13587,16 @@ Player / Stage / AsciiManager / Bomb*（运行期动态）…）；摘链者 = �
 > 2026-10-01：该行单元格超过文档门 200 字符上限，**只做搬家、不改一字**。
 
 - 文档门（16 → 0） ｜ `engine/player/th08/01-youkai-familiars-first-hand.md`、`engine/player/th11/04-marisa-b-option-geometry.md` 加 `> **版本**：TH## …` 横幅；把超 200 字符的表格单元格搬到文末「附：表格长单元格搬出」小节（**只搬家、不改一字**） ｜ `check-docs.py` 的 `[version]`/`[tables]` 门。同批也搬了 `engine/bullet/th10/01-cancel-to-item.md`、`engine/card/th18/13-mallet-clear-and-th17-charge.md`、`engine/card/th18/14-clear-range-barrier.md`、`mods/th18.v1.00a/card-expand/ATLAS-MERGE-AUDIT.md`、`CARD-RESOURCE-INTERACTION-AUDIT.md` 的同型违规 —— **这些是同僚/上游的文件，我按「只搬不改语义」处理并在此醒目登记**（原作者若更愿意自己重排，请直接覆盖我这版）
+
+### §BE-DO 新卡 id 118「挑战・十二合一」（系统卡批次，2026-09-17）
+
+| 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
+| --- | --- | --- | --- | --- |
+| `patch/th18/cards.js` | 追加 id **118** 一行（名字/描述/`internal_name: GIVE12`/`category 0`/`price_tier 10`/`weight 1`；贴图**暂借** 116/117） | 新增一张正式卡（用户口径：它是「挑战」卡，正式构建也带） | 系统卡批次（106–117 的负责人） | `make check`（含 capcheck）全绿；游戏内买/编成可见 |
+| `native/cards/give12.c` | **新文件**：`CE_CARD(118, .active_recharge = 1, .ctor/.on_activate/.on_run_reset/.on_delete)`；`on_activate` 里 `ce_give_card(id, CE_MODE_SHOP, 0)` × 12（106..117）+ 逐张日志 + 一局一次幂等 | 主动卡：一次把十二张系统卡发到手上（同时充当"106–117 全装"的总验收载体） | 同上 | 日志 `give12: gave card …` ×12 / `give12: 发动完成 —— 12 张成功`；站点**不新增**（22/24） |
+| `CAPACITY.md` 附录 A1 | 按 `tools/capcheck.py --gen-appendix` 重新生成 | 新卡 id 必须进容量台账（`make check` 的 capcheck 会拦） | 同上 | `capcheck：全绿 ✅` |
+
+**影响面**：新增一格**共享卡 id 空间**（118 在系统卡批次 106–117 之外）⇒ 若别的批次要用 118，
+先跟本批次对口径。**没有**改 `sdk.h` / `sdk.c` / `sites.py` / `Makefile` / `cards_def.c`；
+**没有**新增站点；**没有**触碰存档（`ce_give_card` 只发卡，不改卡组容量 —— 见 `COMPAT-MATRIX.md` §7.1 的更正）。
+
