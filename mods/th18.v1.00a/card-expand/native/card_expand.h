@@ -47,6 +47,12 @@ uint32_t ce_new_card_id(unsigned i);
 int      ce_new_card_initial_unlocked(unsigned i);
 /* 引擎编成上限 3（0x4449d4 容量递增链 1→2→3 封顶，无 3→4 分支）——start_deck 在此截断 */
 #define CE_DECK_CAP_MAX 3
+/* ★ 2026-09-17 验收用：**物理**上限 = 每机体存档卡组记录的步长（0x10 = 16 字节格）。
+ *   `mods/start_deck.js` 写了 `"cap": N` 时，start_deck **会往存档里写容量字段**（默认不写，
+ *  见 start_deck.c 的 opt-in 注释）⇒ 可以用它一次装 >3 张来做 106–117 的总验收。
+ *  ⚠ 引擎自己的**递增链**只到 3（`th18:0x4449d4` 无 3→4 分支）⇒ 这是**绕过递进**的测试手段，
+ *  不是正常玩法路径；先备份存档，出问题把 start_deck.js 的 cap 删掉再删 marker 即可复原。*/
+#define CE_DECK_CAP_HARD_MAX 16
 /* 开发配置 th18/cards_dev.js（只在 _test 里）：钩子追踪 + 权重 */
 void     ce_dev_deck_disable(void);          /* 门禁失败后调：禁止 \mods\start_deck.js 动卡组 */
 int      ce_dev_trace(void);

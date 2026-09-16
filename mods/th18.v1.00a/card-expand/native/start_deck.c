@@ -14,6 +14,7 @@
  * 文件格式（故意做成最小 JSON，手写解析，不依赖 jansson）：
  *   {
  *     "deck": [113, 110, 111],     // 按槽位顺序的卡 id；上限 3 = CE_DECK_CAP_MAX（初始卡组上限）
+ *     "cap": 12,                   // ★ opt-in：写存档的容量字段（默认不写）—— 见下
  *     "mode": "exact" | "seed",    // exact（默认）= 三个槽就是这张表；seed = 只补空槽
  *     "shot": "all" | 0..3         // 默认 all（四份机体存档的初手卡组都改）
  *   }
@@ -32,7 +33,7 @@
 #include "card_expand.h"
 #include "engine.h"        /* CE_TEST_DECK_SAVE_OFF / CE_DECK_CAP_OFF */
 
-#define SD_MAX_IDS      8
+#define SD_MAX_IDS 16
 #define SD_FILE         "start_deck.js"
 #define SD_MARKER       "start_deck.applied"
 #define SD_MARKER_MAGIC "# th18_card_expand start_deck"
@@ -46,6 +47,7 @@ static uint32_t s_ids[SD_MAX_IDS];
 static unsigned s_n;
 static int      s_mode = SD_MODE_EXACT;
 static unsigned s_shot_mask = 0xf;      /* bit0..3 = shot 0..3 */
+static int      s_cap;                  /* ★ opt-in：js 里写了 "cap": N 才动存档的容量字段；0 = 不碰 */
 static char     s_js_path[MAX_PATH + 32];
 static char     s_marker_path[MAX_PATH + 32];
 
@@ -108,6 +110,17 @@ static void sd_parse(const char *text)
             else if (!strncmp(p + 1, "exact", 5)) s_mode = SD_MODE_EXACT;
             else if (!strncmp(p + 1, "off", 3) || !strncmp(p + 1, "none", 4)) s_mode = SD_MODE_OFF;
             else ce_log("start_deck: mode 只认 exact / seed / off — 用 exact");
+        }
+    }
+    /* ★ opt-in 容量（2026-09-17）：写了 cap 才**往存档里写**容量字段 —— 引擎自己的递增链
+     * 只到 3（`th18:0x4449d4` 无 3→4 分支），要一次装 >3 张做总验收只能这样绕。
+     * 不写这个键 = 老行为（只读、不改存档的进度数据）。*/
+    if ((p = sd_key(text, "cap"))) {
+        p = sd_skip_ws(p);
+        if (*p >= '0' && *p <= '9') {
+            long v = strtol(p, (char **)&p, 10);
+            if (v > 0 && v <= CE_DECK_CAP_HARD_MAX) s_cap = (int)v;
+            else ce_log("start_deck: cap %ld 越界（1..%d）— 忽略（不改存档容量）", v, CE_DECK_CAP_HARD_MAX);
         }
     }
     if ((p = sd_key(text, "shot"))) {                   /* "all" | 0..3 */
@@ -202,8 +215,16 @@ void ce_start_deck_tick(uint8_t *deck0, int shot)
     for (int s = 0; s < 4; ++s) {
         if (!(s_shot_mask & (1u << s))) continue;
         int32_t cap = *(int32_t *)(sf + CE_DECK_CAP_OFF + s * 4);
-        if (cap <= 0) continue;
-        if (cap > CE_DECK_CAP_MAX) cap = CE_DECK_CAP_MAX;
+        if (s_cap > 0) {                       /* ★ opt-in：把容量字段本身写大（默认不做）*/
+            cap = s_cap;
+            *(int32_t *)(sf + CE_DECK_CAP_OFF + s * 4) = cap;
+            ce_log("start_deck: shot %d 容量字段被**写成 %d**（opt-in cap；引擎递进链本来只到 3）",
+                   s, (int)cap);
+        } else {
+            if (cap <= 0) continue;
+            if (cap > CE_DECK_CAP_MAX) cap = CE_DECK_CAP_MAX;
+        }
+        if (cap > CE_DECK_CAP_HARD_MAX) cap = CE_DECK_CAP_HARD_MAX;
         uint8_t *deck = sf + s * 0x10 + CE_TEST_DECK_SAVE_OFF;
         if ((unsigned)cap < s_n)
             ce_log("start_deck: shot %d 初手只有 %d 格（表要 %u 张）⇒ 只写前 %d 张；"

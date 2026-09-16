@@ -63,7 +63,7 @@ int __cdecl BP_ce_test_deck(x86_reg_t *regs, void *bp_info)
             uint8_t *sf = *(uint8_t **)(uintptr_t)CE_ADDR_SCOREFILE_PTR;
             char buf[64];
             int len = 0;
-            for (int i = 0; i < CE_DECK_CAP_MAX; ++i) {
+            for (int i = 0; i < CE_DECK_CAP_HARD_MAX; ++i) {
                 unsigned v = *(const uint8_t *)(uintptr_t)(deck0 + i + CE_TEST_DECK_SAVE_OFF);
                 len += snprintf(buf + len, sizeof buf - (size_t)len, i ? ", %u" : "%u", v);
             }
