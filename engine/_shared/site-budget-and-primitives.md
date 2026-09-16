@@ -273,6 +273,22 @@
 **站点核算**：仍是 **1 条**（并进 `ce_item_frame`）。三个池各有自己的索引 ⇒ 我们**只读/只记账，不动引擎的池指针**
 （动了会让原版掉落错位）。
 
+**`ItemManager::spawn_item` 的签名一手（Round 20，`th12:0x4273f0`）**：
+
+```
+0x4273f0  sub esp,0xc / push ebx
+0x4273fb  mov ebx,[esp+0x14]        ; ★ 参数 1 = **类型**
+0x427402  mov ebp,[esp+0x1c]        ; ★ 参数 2 = float*（fld dword [ebp] ⇒ 位置）
+0x42740e  mov edi,[0x4b44f0]        ; ★ ITEM_MANAGER_PTR（与 §2.6 的 statics 对上）
+0x427414  lea eax,[ebx-0xa] / cmp eax,5 / ja 0x4275e1   ; ★ 只有**类型 10..15** 走这条路
+0x427420  inc dword [edi+0x666fe0]  ; ★ ufos_spawned_since_stage_begin++
+0x427427  fld dword [ebp] … call th12:0x453e20           ; 取坐标
+0x42743a  lea esi,[edi+0x171254]    ; ★ 分配自 **token_items** 池（16 槽，见 §2.6）
+```
+
+⇒ **类型 10..15 = 令牌（UFO）**（正好 6 种 ⇒ 与卡 112 的 `color 0..5` 一致）；这条路的计数器
+每次 +1 ⇒ 与结构表里的 `ufos_spawned_since_stage_begin` **互相印证**。
+⇒ 四个事实（管理指针 / 令牌池基址 / 计数器 / 类型段）**全在同一段反汇编里对上**，可信度高。
 **仍缺**：`zItem` 的**内部字段表**（社区只给了大小 `0x9d8`，没给字段）⇒ 下一步从 `on_tick__body`（0x1600 字节）
 里的遍历读出来（类型字节 / 位置 / 状态 / 计时）。
 
