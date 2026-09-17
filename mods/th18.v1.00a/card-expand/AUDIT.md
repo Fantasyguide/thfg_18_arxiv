@@ -13889,7 +13889,7 @@ MODKIT_DIR="/mnt/d/项目/幻想指南/18/th18_modkit" python3 tools/deploy.py
 
 | 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
 | --- | --- | --- | --- | --- |
-| `native/engine.h` | 新增 6 个宏（**只增不改**，取值见下面「一手」一节） | 110 要按 sprite 号改贴图表项；这几个偏移原仓没有落成宏 | 系统卡批次 | 用法与断言在 `tests/test_mof_green_core.c`（229 断言）；`make dll` 0 错误 0 新警告；`make quick` 24 个主机测试全绿 |
+| `native/engine.h` | 新增 6 个宏（**只增不改**，取值见下面「一手」一节）+ 2026-09-18c 再加 3 个：`CE_ENEMY_DROP_AREA_X/Y`、`CE_ENEMY_DROP_AREA_DEFAULT`、`CE_EM_ANEMY_MAX`→`CE_EM_ENEMY_MAX`（0x8c） | 110 要按 sprite 号改贴图表项 / 按 ZUN 的爆道具公式散布落点 / 生成敌人前自己判上限；这些偏移原仓没有落成宏 | 系统卡批次 | 用法与断言在 `tests/test_mof_green_core.c`（229 断言）；`make dll` 0 错误 0 新警告；`make quick` 24 个主机测试全绿 |
 | `native/Makefile` | `test-host` 加一行 `test_mof_green_core` | 名单表的不变式（脚本差 ÷5 == 变体差、sprite 差 == 变体差 ×12）与内存原语必须可离线验 | 同上 | 同上 |
 | `native/cards/mof_green_core.{h,c}`（**新增**）| 变绿**名单表**（每行 6 字段 + `enabled`/`stage_mask` 两个开关）+ 纯逻辑（计划 / 判据 / swap / apply / restore / 同形体检）| 用户「固定几只……**看情况**」⇒ 名单必须是**一行就能改**的数据；判据（谁掉绿点）与名单**同一个来源**（「变绿 = 掉绿点，不许分开」）| 同上 | `tests/test_mof_green_core.c` 229 断言（含「表里开着 ≠ 此刻改上了」「换关必须还原」「NULL 安全」）|
 | `native/cards/mof.c` | 新增 `mof_green_tick()`（每帧幂等，**按关掩码** apply/restore）、`mof_green_restore_all()`（`mof_clear`：删卡/换局还原）、`mof_drop_wipe()`（死亡断点里清原生掉落 = 「替换」裁决）；`on_enemy_death` 多一条「**被我们变绿的**妖精也算宿主」 | 用户三句口径：跟着卡走 / 变绿 = 掉绿点（一个开关）/ 掉落**替换**而非追加 | 同上 | `make check` rc=0（站点数**未变** = 24）；`make dllx87` 0 条 x87；实跑看日志 `mof: green fairy swap` / `big faith … via GREEN fairy` |

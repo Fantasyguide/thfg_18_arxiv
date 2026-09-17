@@ -136,6 +136,11 @@
 #define CE_EM_CAN_CAPTURE          0x44       /* zEnemyManager.can_still_capture_spell（ExpHP；超时路径清 0）*/
 #define CE_EM_BOSS_IDS             0x48       /* int[4] boss enemy_id（get_boss_enemy_full 0x4237f0 按它走链表）*/
 #define CE_EM_BOSS_SLOTS           4
+#define CE_EM_ENEMY_MAX            0x8c       /* ★ zEnemyManager.enemy_max：ECL `enmCreate` 那条路的**敌人数上限门**
+                                               * （一手 `0x4369ec mov eax,[edx+0x198]` → `0x4369f5 cmp eax,[edx+0x8c]`
+                                               *   → `0x4369fb jge 0x436ba3` 跳过）—— **卡直接调
+                                               *   `EnemyManager__allocate_new_enemy` 时引擎不给这道门**，
+                                               *   调用方要自己判（见 `cards/mof.c` 的 `mof_ge_spawn_one()`）。*/
 #define CE_EM_ENEMY_LIST_HEAD      0x18c      /* zEnemyList* {entry, next, prev}（ExpHP active_enemy_list_head）*/
 /* ---- anm 源（`anmSelect(N)` 选中的那个文件）与它的 **sprite 表** —— ★★ 2026-09-18（110 变绿）----
  * 一手（`AnmLoaded__set_sprite` `0x477b00` 逐条 + `anmSetSprite` 的四分支 `0x436c16`–`0x436c4e`）：

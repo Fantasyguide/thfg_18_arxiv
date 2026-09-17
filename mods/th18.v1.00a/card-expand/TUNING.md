@@ -2724,6 +2724,7 @@ ECL 敌机的 `anmSetSprite(0, S)` 指不到它们；而**原样保留** `anmSel
 | 血量 / 击破分 / 存活 | `life = 40` / `score = 0` / 子程序约 690 帧后飞离并 `delete()`（离场不给点） | **❓ 自定** |
 | 不发弹 | 是（只当纯信仰点载体；要它像同波妖精一样发弹 = 把 `st01.ecl` 的 `GirlA01_at()` 那段抄进子程序） | **❓ 自定** |
 | 日志 | `mof: green extra fairy @(x,y) angle … (wave frame …, N obs, trigger anm N/S, wave#…, total …)` —— **触发外观**也打出来，实跑可直接对账「是妖精循环还是别的」 | 诊断 |
+| **敌人数上限门** | 生成前判 `mgr+0x198 >= mgr+0x8c` ⇒ 不刷（并记一行 `green extra fairy skipped — 敌人数到上限`）| **复刻**：ECL `enmCreate` 那条路有这道门（`0x4369ec`→`0x4369f5`→`jge`），**卡直接调生成 API 时引擎不给**（同事那份 `feat/stg-agent-proto` 的 `engine/enemy/th18/01-spawn-api-and-card-summons.md` 也点了这条）⇒ 我们自己补 |
 | 影响面 | **多一只敌人** ⇒ 章节击破数 / 117 的波次普查 / 本卡「非 boss 击破 +10f 连击」都会看到它 | 需要知道 |
 
 ### 2.0i 大信仰点的**落点分布** = ZUN 自己的「爆多个道具」分布（2026-09-18c）

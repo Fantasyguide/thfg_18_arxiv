@@ -856,7 +856,20 @@ static void mof_ge_spawn_one(float x, float y, float angle, float speed)
 {
     uint8_t sp[CE_SPAWN_SIZE];
     uint8_t *e;
+    uint8_t *mgr = CE_ENEMY_MGR();
 
+    /* ★★ 2026-09-18c：**自己判敌人数上限** —— 一手：ECL 的 `enmCreate` 那条路有这道门
+     *   （`th18:0x4369ec mov eax,[edx+0x198]` → `0x4369f5 cmp eax,[edx+0x8c]` → `jge` 跳过），
+     *   而**卡直接调 `allocate_new_enemy` 时引擎不给**（这条也写在同事那份
+     *   `engine/enemy/th18/01-spawn-api-and-card-summons.md` 里）⇒ 我们自己补上，
+     *   免得在敌机拥挤的波次上把敌人池顶爆。*/
+    if (!mgr) return;
+    if (*(const int32_t *)(mgr + CE_EM_ENEMY_COUNT) >= *(const int32_t *)(mgr + CE_EM_ENEMY_MAX)) {
+        ce_log("mof: green extra fairy skipped —— 敌人数到上限（%d >= %d；ECL 那条路同款门）",
+               (int)*(const int32_t *)(mgr + CE_EM_ENEMY_COUNT),
+               (int)*(const int32_t *)(mgr + CE_EM_ENEMY_MAX));
+        return;
+    }
     memset(sp, 0, sizeof sp);
     *(float   *)(sp + CE_SPAWN_POS + 0) = x;
     *(float   *)(sp + CE_SPAWN_POS + 4) = y;
