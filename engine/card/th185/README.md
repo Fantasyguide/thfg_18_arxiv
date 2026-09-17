@@ -218,3 +218,25 @@ th185:0x41f886  test edx, edx / cmovne eax, edx   ; **0 = 该槽无货，跳过*
 - th185 的 anm 查表惯用法（本轮一手）：`movzx eax, dl / imul r, 0x5c / sar esi,8 / [base + esi*4 + 0xe0]`
   —— **低字节 = entry 索引（步长 `0x5c`）、高字节 = 槽/文件索引**，与 th18 的 `th18:0x486d38` 一族同形
   ⇒ **anm entry 的空间结论可以两作通用**。
+
+### 8.4 th18 ↔ th185 卡名对照（纯文本工作，已算完）
+
+用两作的 `ability.txt` 做**内部名集合差**（一手，`local/` 下的两份文本）：
+
+| 项 | 数 | 说明 |
+| --- | ---: | --- |
+| th185 卡名总数（含 NULL） | 86 | 实体卡 **85** |
+| 两作**同名** | **51** | 同内部名 ⇒ 效果大概率同源（th18 侧已有复刻） |
+| **th185 独有** | **34** | = 真正需要新写的部分 |
+| th18 独有 | 5 | `BOMB` / `BOMB2` / `DBOMBEXTEND` / `EXTEND2` / `MAGATAMA2` |
+
+**th185 独有的 34 个内部名**（全部）：
+
+`TEWI`、`YOUMU_OP2`、`PENDULUM2`、`TORAMARU`、`STAR`、`LUNA`、`SUNNY`、`FLAN`、`FUTO`、`AUN`、
+`JOON`、`SHION`、`KEIKI`、`SEIRAN`、`DREMII`、`JYUNKA`、`NITORI`、`TAKANE`、`MINORIKO`、`LARVA`、
+`NEMUNO`、`WAKASAGI`、`URUMI`、`SEKIBANKI`、`KUTAKA`、`KOMACHI`、`EIKA`、`SEIJA`、`KANAME2`、`PEACE`、
+`SAKI`、`SUIKA`、`YUREIMU`、`YUMARISA`
+
+⇒ 于是"把 th185 的全部卡搬进来"这句话，**工程量可以第一次算清楚**：
+**51 张走"同源对照+移植"**（还能拿 th18 的一手实现当参照），**34 张要从零**（每张仍要读 th185 的卡类代码，
+因为金矿没有卡类命名）。卡图那侧另有 §8.8 的 entry 容量墙要一起算。
