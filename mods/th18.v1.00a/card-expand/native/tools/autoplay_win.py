@@ -132,6 +132,7 @@ def main():
     ap.add_argument("--deck", default="", help="写起手卡组：sys12 | one118 | off")
     ap.add_argument("--judge", action="store_true", help="跑完用同目录 verify.py 判读出报告")
     ap.add_argument("--seconds", type=float, default=0, help="覆盖场景时长")
+    ap.add_argument("--launch", action="store_true", help="自己启动游戏（否则要求已在跑并前台）")
     a = ap.parse_args()
 
     scns0 = load_scenarios()
