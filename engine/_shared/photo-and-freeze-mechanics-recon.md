@@ -258,3 +258,28 @@ TH09.5 有 `zPhotoManager` / `zPhotoManagerArrayItem`；TH16.5 有 `zCamera` / `
 **下一轮**：① 找 `GameThread+0x60` bit 10 的**写入端**（`tooling/xref.py` 或扫 `or dword [reg+0x60],0x400`
 形态）⇒ 那就是"冰射击"的触发点；② 读 `th128:0x408640` 的两个浮点常量（`th128:0x4a6698`/`th128:0x4a6694` 的值）
 ⇒ 判定是什么几何量；③ 若 bit 10 与冰无关，再往玩家的射击路径找冻结表。
+
+## 13. 轮 7：`GameThread+0x60` 这个**模式位域**的读写端（一手）
+
+`or dword [reg+0x60], 0x400` 字面形态**扫不到**（0 命中）⇒ 那一族 flag 不是这样写的。改成扫
+**`GAME_THREAD_PTR`（`th128:0x4b8954`）的 61 处引用**，把带 `+0x60` 的挑出来看，得到这一族：
+
+| 地址 | 形态 | 读/写 | 位 |
+| --- | --- | --- | --- |
+| `th128:0x4091a1` | `mov eax,[GAME_THREAD]` → `mov eax,[eax+0x60]` | 读 | （`BulletManager::on_tick` 的薄壳里，紧跟 `on_tick__body`）|
+| `th128:0x40d171` | `… shr eax,2 / and eax,1 / ret` | **取值器** | **bit 2** |
+| `th128:0x40d181` | `… shr eax,2 / and eax,1 / ret`（另一处）| **取值器** | **bit 2** |
+| `th128:0x41f721` | `… shr eax,1 / and eax,1` | **取值器** | **bit 1** |
+| `th128:0x41f9ff` | `test byte [ecx+0x60], 0x14` | 读（掩码 `0x14`）| bit 2 + bit 4 |
+| **`th128:0x425e7x`** | **`mov esi,[GAME_THREAD]` → `or dword [esi+0x60], 4`** | ★ **写** | **置 bit 2** |
+
+⇒ **判读（🟡 待钉）**：`GameThread+0x60` 是一排"模式位"，而且**游戏自己就有取值器**（bit 1 / bit 2 / bit 4 各一处）
+⇒ 位语义可以靠"找取值器的调用者"反推名（下一轮）。**置 bit 2 的那个写点（`th128:0x425e7x`）在整函数里
+紧邻玩家/射击路径** ⇒ 它极可能就是"进入某个模式"（冰/暂停）的开关。
+
+**注意**：`BulletManager::on_tick__body` 里那颗弹更新读的是 **bit 10**（`0x400`，§12），而这一轮找到的
+写/读端是 bit 1/2/4 ⇒ **两者不是同一个位**；bit 10 的写入端还没找到（可能用了 `bts`、或者写在别的对象上）。
+
+**下一轮**：① 找 bit 10（`0x400`）的写入端：扫 `bts dword [reg+0x60], 0xa` 与 `mov eax,[reg+0x60] / or eax,0x400 / mov [reg+0x60],eax` 两种形态；
+② 给 `th128:0x40d171` / `th128:0x41f721` 两个取值器**找调用者**（冠名 bit 2 / bit 1 各是什么模式）；
+③ 读 `th128:0x425e7x` 所在函数（看它是不是"按 Z 冻结"那一支）。
