@@ -208,12 +208,12 @@ TH09.5 有 `zPhotoManager` / `zPhotoManagerArrayItem`；TH16.5 有 `zCamera` / `
 
 | 项 | 值 |
 | --- | --- |
-| `zBulletManager` 大小 | `0x8a7fa0` |
+| `zBulletManager` 大小 | `th128:0x8a7fa0` |
 | 弹数组 | `+0x64 bullets` = `zBullet[0x7d1]` ⇒ **2001 格** |
 | 单格大小 | `0x11b8`（= `zBullet` 的大小；⚠ 该结构的**字段表是空的**，金矿只给了大小）|
 | 数组末尾 | `+0x8a7f9c` = `bullet_anm`（`zAnmLoaded*`）|
 
-**算术自证**：`0x64 + 2001 × 0x11b8 = 0x8a7f9c` ✓（与金矿给的 `bullet_anm` 偏移**完全相等**）⇒ 池布局成立，
+**算术自证**：`0x64 + 2001 × 0x11b8 = th128:0x8a7f9c` ✓（与金矿给的 `bullet_anm` 偏移**完全相等**）⇒ 池布局成立，
 2001 格是**算出来的**、不是猜的。
 
 **② 冻结该去哪读（函数清单一手，金矿 `funcs.json`）**：
