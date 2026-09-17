@@ -120,11 +120,13 @@ SITE_BUDGET = 24          # 我们自己的上限（可换：见 build_site_acco
 # 本机除我们之外还挂着 base_tsa（它自己的 th18.v1.00a.js 声明 18 条，handler 在 thcrap_tsa.dll）。
 # 只要不把它算进来，闸看到的数字就永远是假的（我们 22 / 真实 40）。
 # 覆盖方式：环境变量 CE_EXTERNAL_SITES="base_tsa=18,别的=3"；不设则用下表（已知清单）。
-EXTERNAL_SITES = [("base_tsa (nmlgc)", 18, "repos/nmlgc/base_tsa/th18.v1.00a.js")]
+# ⚠ 口径修正（2026-09-18 实测对账）：base_tsa 的 th18.v1.00a.js 有 **18 个条目**，但其中两条
+# （music_cmt / ruby_offset）是**双地址表** ⇒ 实际声明 **20 个地址**。池内实测 42 桩 = 我们 22 + 它 20 ✓
+EXTERNAL_SITES = [("base_tsa (nmlgc)", 20, "repos/nmlgc/base_tsa/th18.v1.00a.js（18 条 entry = 20 个地址）")]
 # 已知的"会崩"级别：2026-09-17 实测 total=40 崩过两次（池崩，Eip 落在 RESERVE 未提交区）。
 # ⇒ 安全线必须**低于**它；先取 38（留 2 格），并把"实测安全线"当成后续用它测出来的目标。
-SITE_TOTAL_KNOWN_BAD = 40
-SITE_TOTAL_BUDGET = 38
+SITE_TOTAL_KNOWN_BAD = 42   # 实测：该配置（我们 22 + base_tsa 20）崩过两次
+SITE_TOTAL_BUDGET = 42      # 只作告警；条数不是触发条件（同配置既崩过也跑通过）
 
 
 def external_sites():
@@ -1576,7 +1578,8 @@ def main():
             print("    %-26s %3d 条  %s" % (nm, n, src))
         print("    我们正式 patch              20 条  patch/th18.v1.00a.js")
         print("    我们测试归档（可关，免费腾 2）  2 条  patch-test/th18.v1.00a.js")
-        print("    合计（进程级）              %d 条  ← 闸的真正口径" % (20 + 2 + external_sites()[0][1]))
+        print("    合计（进程级）              %d 条  ← 闸的真正口径（池内实测「桩数」应与它相等）"
+              % (20 + 2 + sum(n for _, n, _ in external_sites())))
         print("\n【安全线】我们自己的硬线 SITE_BUDGET=%d；进程级 SITE_TOTAL_BUDGET=%d（**只作告警**）"
               % (SITE_BUDGET, SITE_TOTAL_BUDGET))
         print("    ⚠ 2026-09-17 14:33 实测修订：**同一个声明总数（40）既崩过也跑通过**（那次实测 41 格、12 张卡、无 dump）")
