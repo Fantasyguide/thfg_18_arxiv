@@ -127,6 +127,45 @@ faith_tier_t faith_core_tier_for_source(faith_source_t src);
 static inline int faith_core_is_p_item_type(int32_t type18)
 { return type18 == FAITH_TYPE18_P_SMALL || type18 == FAITH_TYPE18_P_BIG; }
 
+/* ======================================================================================
+ * ★★ 2026-09-18（B1 对齐）：本池的**道具状态**编号 ↔ 引擎道具 state（`engine.h` 的 `CE_ITEM_STATE`）
+ * ======================================================================================
+ * 本池（`cards/faith.c` 的 `faith_dot_t.state`）的编号是当初「照抄引擎道具运动学」时定下的，
+ * 与引擎的 `item+0xc74` **不可逐值对照**，只有**真空飞行那一档是语义对位**：
+ *
+ *   | 本池 state | 含义 | 引擎侧对位（`item+0xc74`）|
+ *   | --- | --- | --- |
+ *   | 0 | 待发射（还没建 VM）| 0（空槽）|
+ *   | 2 | 飞散 / 上抛（出生那一下）| 1（抛物 / 坠落体）|
+ *   | 1 | 飘落（重力在跑）| 1 的后半段 |
+ *   | **3** | **过回收线 / 放 B / 对话 ⇒ 朝自机飞** | ★ **3（真空飞行）** |
+ *   | 4 | 70px 吸引半径内 ⇒ 朝自机飞 | 4（环吸附）|
+ *
+ * ## 为什么单把 3 这一档摘出来（`NEXT.md` §1x.2 / B1；用户 2026-09-18 定的验收规格）
+ * 114（辉针城）的收点批**只认「真空飞行」**：引擎侧谓词 = `type ∈ {1,2}` **且** `item+0xc74 == 3`
+ * （成员门 `cards/collect2x.c` 的 `on_item_collect` 与 presence 谓词 `ce_item_pool_any_attracting`，
+ * 一手见 `AUDIT.md` §Z22）⇒ 坠落中的道具（state 1）与环吸中的道具（state 4）**既不计数也不续批**。
+ * 用户 2026-09-18 的规格原话要点 =「**信仰点本身得做到：① 开批 ② 计数 +1 ③ 飞行中的信仰点会组织
+ * 批次结算 —— 也就是与 P 点和金钱完全一致**」⇒ 我们的点在 114 那两条通道上必须**用同一谓词**：
+ *   · **算批成员 / 算在飞** = 只有 `state == 3`（= 引擎 state 3 的同一语义：过回收线 / 放 B / 对话）；
+ *   · 飘落 / 飞散（`state ∈ {1,2}`）与 70px 环吸（`state == 4`）**都不算** —— 引擎对 P / 钱正是这样。
+ * ★ 这一条同时把「普通游玩顺手捡绿点」与「收点」分开了：前者（触收 / 环收）根本不开批、不续批，
+ *   与引擎 §Z22 的收窄**同一条**；旧实现（2026-09-15 §1x.2，不看状态）会让普通捡点开批/续批
+ *   ⇒ 实跑症状「绿点一直触发收点」「boss 战期间 bonus 对着自己掉的 P 点触发」。
+ * ⚠ 微档（`FAITH_TIER_MICRO`）不进批是**另一条**门（`CE_VITEM_HALF`，§1x.3「半道具」），别混。*/
+typedef enum {
+    FAITH_STATE_IDLE    = 0,   /* 待发射（还没建 VM）*/
+    FAITH_STATE_FALL    = 1,   /* 飘落（重力在跑）*/
+    FAITH_STATE_SCATTER = 2,   /* 飞散 / 上抛（出生那一下）*/
+    FAITH_STATE_VACUUM  = 3,   /* ★ 过回收线 / 放 B / 对话 ⇒ 朝自机飞（= 引擎 state 3 的对位）*/
+    FAITH_STATE_RING    = 4    /* 70px 吸引半径内 ⇒ 朝自机飞（= 引擎 state 4 的对位）*/
+} faith_state_t;
+
+/* 这颗点**此刻**算不算「收点批的成员 / 在飞体」（= 引擎 state 3 的同一谓词，见上表）。
+ * ⚠ 114 那两条通道（成员 / presence）**都**必须过这一个判据；不许在别处另写一份状态比较。*/
+static inline int faith_core_state_is_vacuum_flight(int32_t state)
+{ return state == (int32_t)FAITH_STATE_VACUUM; }
+
 /* 本粒子的出生速度（E-2 一手；角度一律 `FAITH_THROW_ANGLE`）。*/
 #define FAITH_THROW_ANGLE         (-1.5707964f)   /* −π/2（`0xbfc90fdb` / `th11:0x49842c`）*/
 #define FAITH_THROW_SPEED_MAIN    2.2f            /* 击破 / 满 P 转换族（`0x400ccccd` / `th11:0x498430`）*/

@@ -16,8 +16,11 @@
  *   并每帧声明在飞数（`ce_vitem_declare_flying`）；114（辉针城）在它自己的 `on_item_frame` 里读。
  *   ⇒ 大 / 中两档**进 114 的批计数**（**不进 SCORE、不进批分**，用户口径「只 +1」）、
  *   在飞期间**续批**（不提前结算）；**微档不入批**（§1x.3，它是半道具）。
- *   层的契约与「为什么用声明式而不是卡间直连」见 `sdk_core.h`；本文件的两处落点见
- *   `faith_vitem_kind()` / `dot_collect()` / `faith_pool_tick()` 尾部的注释。
+ * ★★ 2026-09-18（B1）：两条通道**都只认「真空飞行」（本池 `state == 3`）** —— 与引擎对 P 点 /
+ *   金钱的谓词（`type ∈ {1,2}` 且 `item+0xc74 == 3`，§Z22）**同一条**，即用户 2026-09-18 的规格
+ *   「信仰点与 P 点 / 金钱完全一致：开批 / 计数 +1 / 飞行中组织批次结算」。判据全文（含两套
+ *   state 编号的对照表）在 `faith_core.h`；本文件的落点见 `dot_collect()` 与 `faith_pool_tick()` 尾部。
+ *   层的契约与「为什么用声明式而不是卡间直连」见 `sdk_core.h`。
  *
  * ## 运动学：照原生道具逐条抄（不自己发明）
  *
@@ -290,6 +293,10 @@ static int          s_n_user;
 
 /* 诊断（静态区）：每 600 帧一条汇总，实跑对账用 */
 static int32_t s_stat_pickups, s_stat_points, s_stat_frame, s_stat_dropped;
+/* ★★ 2026-09-18（B1）：被收的点里，「真空飞行中 ⇒ 报进 114 的批」与「普通游玩顺手捡 ⇒ 不报」
+ * 各有多少颗（判据 = `faith_core_state_is_vacuum_flight()`；同一 600 帧窗口内清零）。
+ * 实跑读法：两列都能读到数才说明门在动；若 `skip` 恒 0 而 `pickups` 在涨 ⇒ 门没生效。*/
+static int32_t s_stat_vitem_member, s_stat_vitem_skip;
 
 /* ★★ 2026-09-15h：P 点补值共享策略的**相位**（权威副本，只有这一份）。
  * 谁推进 / 什么时候推进 / 「被删掉会怎样」—— 全在 `faith.h` 那段；这里只放数据与三支入口。*/
@@ -740,14 +747,13 @@ static int faith_vitem_kind(faith_tier_t tier)
  *   ② 池里还有活着的点时每帧声明在飞数（presence 通道 → 114 的批不提前结算）。
  * 两条都在下面：①在 `dot_collect()`、②在 `faith_pool_tick()` 尾部。
  *
- * ❓ 自定（口径，登记 `TUNING.md` §2.5e）：**「被收即入批」不看状态** —— 用户口径是
- * 「收集时算一个批成员」（§1x.2），而我们的点在**任何**状态下被收都是「玩家收了一颗绿点」
- * （本池没有「落地静止」态：出生→飞散→飘落→朝自机飞，全程在动）。
- * ⚠ 与引擎的 §Z22 成员门有一处**口径差**：原生 P / 钱只有「state 3 真空飞行被收」才入批
- * （触收 state 1 / 70px 环收 state 4 不算，那是 run-9 误弹灰 NO BONUS 的根因）。
- * 若实跑出现「普通游玩顺手捡 5 颗绿点就弹灰 BONUS」（5–19 档 = ×0 档的灰字），
- * 把下面这个开关打成 1：只报**真空飞行中（state 3）**被收的那些（= 与原生同口径）。*/
-#define FAITH_VITEM_NOTE_VACUUM_ONLY 0
+ * ★★ 2026-09-18（B1）：**两条通道都收窄到「真空飞行」（`state == 3`）** —— 判据统一走
+ * `faith_core_state_is_vacuum_flight()`（`faith_core.h` 那张「本池 state ↔ 引擎 state」对照表 +
+ * 用户 2026-09-18 的规格：信仰点必须与 P 点 / 金钱**完全一致** = 开批 / 计数 +1 / 飞行中组织批次结算）。
+ * 引擎对 P / 钱只认 `item+0xc74 == 3`（§Z22）⇒ 飘落（本池 1）/ 飞散（本池 2）/ 70px 环吸（本池 4）
+ * 被收**不入批、也不续批** —— 那是「普通游玩顺手捡一颗」，引擎那边同样不开批。
+ * ⚠ 旧实现（2026-09-15）**不看状态**（那时的开关 `FAITH_VITEM_NOTE_VACUUM_ONLY = 0`）⇒ 实跑两症状：
+ *   「绿点一直触发收点」「boss 战期间 bonus 对着自己掉的 P 点触发」。该开关**已删**（只剩一条路）。*/
 
 /* ★★ 2026-09-16：**收尾改成「一手形状」= 原位播 `se_item00` + 立刻删 VM，没有收尾动画**。
  * 用户实跑反馈逐字：「拾取到大信仰点，吸收那一刻动画是一个放大减淡，或许 th10 原生是这个，
@@ -785,13 +791,20 @@ static void dot_collect(faith_dot_t *p)
             s_user[i].on_pickup(s_user[i].user, p->slot_mask, (int)p->tier, p->value);
         }
     }
-#if FAITH_VITEM_NOTE_VACUUM_ONLY
-    if (p->state == 3)                            /* 3 = 过回收线 / 放 B / 对话 ⇒ 朝自机飞（= 原生 state 3 的对位）*/
-#endif
-    /* ★★ 成员通道：**一台机器只报一次**（不是每个注册者各报一次）⇒ 110 与 111 同装时
-     * 同一颗共用池的点天然去重（`sdk_core.h` 契约 ⑤）。位置在「谁被回调」之外 —— 就算池里
-     * 一颗点都没被卡认领（`s_n_user == 0`），它仍然是「被收了一颗点」。*/
-    ce_vitem_note_collect(faith_vitem_kind((faith_tier_t)p->tier), 1);
+    /* ★★ 成员通道（**一台机器只报一次**：不是每个注册者各报一次 ⇒ 110 与 111 同装时同一颗共用池
+     * 的点天然去重，`sdk_core.h` 契约 ⑤。位置在「谁被回调」之外 —— 就算池里一颗点都没被卡认领
+     * （`s_n_user == 0`），它仍然是「被收了一颗点」）。
+     * ★★ 2026-09-18（B1）**门**：只有**真空飞行中被收**（`state == 3` = 过回收线 / 放 B / 对话 ⇒
+     *   朝自机飞，引擎 `item+0xc74 == 3` 的同一谓词、§Z22）才报 —— 与 P 点 / 金钱**完全一致**：
+     *   飘落 / 飞散中顺手捡（state 1/2）与 70px 环吸被收（state 4）**不开批、不计数**
+     *   （引擎那边这两条路同样不进批，见 `collect2x.c` 的成员门）。判据全文见 `faith_core.h` 的对照表。
+     *   诊断：两类各自的累计数每 600 帧随 `faith:` 汇总行打一次（实跑对账「哪些颗进了批」用）。*/
+    if (faith_core_state_is_vacuum_flight(p->state)) {
+        ce_vitem_note_collect(faith_vitem_kind((faith_tier_t)p->tier), 1);
+        ++s_stat_vitem_member;
+    } else {
+        ++s_stat_vitem_skip;
+    }
     ++s_stat_pickups;
     s_stat_points += p->value;
 }
@@ -873,6 +886,7 @@ int faith_pool_tick(void)
     float ring_r2 = FAITH_ATTRACT_R_DEF * FAITH_ATTRACT_R_DEF;
     float slow = 1.0f;
     int collected = 0, t, i;
+    int vacuum_in_flight = 0;   /* ★★ 2026-09-18（B1）：本帧处于真空飞行的点数（presence 通道的真值）*/
 
     {   /* 与季节点同一口径：引擎的道具减速因子（绀珠传卡 115 会写它）⇒ 同一屏上绿点跟着一起慢。
          * ★ 2026-09-15d（§1x.4）：读法提炼进 `faith_item_slowdown_permille()`（同一个只读函数也供
@@ -894,7 +908,8 @@ int faith_pool_tick(void)
     /* 每 600 帧一条汇总（诊断；实跑时对「哪些敌人掉了、丢了多少」用）。
      * ★ 2026-09-15 起多一项 `conv` = 满 P 转换掉的原生 P 道具颗数（A/B 的实跑对账用：
      *   满 P 打怪时它应该**颗颗不落**，而场上不该再出现 P 点）。*/
-    if (s_stat_frame % 600 == 599 && (s_stat_pickups || s_stat_dropped || s_stat_converted)) {
+    if (s_stat_frame % 600 == 599 &&
+        (s_stat_pickups || s_stat_dropped || s_stat_converted || s_stat_vitem_skip)) {
         /* ★★ 2026-09-16 加：**吸引速度对账**（用户实跑：「伊吹特技的信仰点和 P 点金钱吸收动态不一致，
          *   信仰点快了」）。我们的三个常量**已经与一手逐值相同**（`faith.c` 的
          *   `FAITH_MAG_STEP` = 0.2 = `th18:0x4b90f0`、`FAITH_MAG_MAX` = 12.0 = `th18:0x4b927c`、
@@ -916,14 +931,16 @@ int faith_pool_tick(void)
             }
         }
         ce_log("faith: pickups %d, points %d, dropped %d, conv %d (big %d / small %d alive) | "
-               "speed x10: dot_big %d dot_small %d native3 %d(state %d)",
+               "vitem member %d skip %d | speed x10: dot_big %d dot_small %d native3 %d(state %d)",
                (int)s_stat_pickups, (int)s_stat_points, (int)s_stat_dropped, (int)s_stat_converted,
                s_n_big, s_n_small,
+               (int)s_stat_vitem_member, (int)s_stat_vitem_skip,
                s_n_big   ? (int)((float)s_big[0].mag20)   : -1,
                s_n_small ? (int)((float)s_small[0].mag20) : -1,
                it_speed10, it_state);
         s_stat_pickups = s_stat_points = s_stat_dropped = 0;
         s_stat_converted = 0;
+        s_stat_vitem_member = s_stat_vitem_skip = 0;
     }
     ++s_stat_frame;
 
@@ -1050,22 +1067,26 @@ int faith_pool_tick(void)
              * ⚠ 关掉时同一支函数把颜色写回原色 + 位置写回逻辑坐标 —— 「变黄不回来」那个坑
              *   （116 在第三十三轮踩过）在这条路上不存在。*/
             faith_dot_slow_style((uint32_t)p->id, p->age, slow < 1.0f, x, y);
+            /* ★★ 2026-09-18（B1）：本帧**存活**且处于真空飞行的点 ⇒ 计入 presence（判定见函数尾）。*/
+            if (faith_core_state_is_vacuum_flight(p->state)) ++vacuum_in_flight;
             ++i;
         }
     }
 
     /* ★★ 2026-09-15（§1x.2 **presence 通道**）：本帧还有几颗大 / 中点在飞 —— 报给 SDK 的
      * 「虚拟在飞」层，由 114 在它的 `on_item_frame` 里读（`ce_vitem_flying() > 0` ⇒ 续批 idle）。
-     * **为什么「活着」就等于「在飞」**：本池的点没有「落地静止」态 —— 出生 → 飞散（state 2）
-     * → 飘落（state 1）→ 过回收线 / 放 B / 对话转真空飞行（state 3）或进 70px 环（state 4）
-     * → 朝自机飞 → 被收 / 出界。全程都在动，且都还没被收（被收的当帧就出池了）。
-     * ⚠ 口径（用户 2026-09-15：「绿点也得当作正在飞行的道具」）：**不**照 §Z22 只认真空飞行 ——
-     *   用户点名的是「还在飘落 / 吸引」，而 114 的批在这些点还飘着的时候就结算正是要修的毛病。
-     *   代价是**批会拉长**（一批会连带把期间收到的原生道具并进来）—— 那正是「批不该提前结算」的另一面。
+     * ★★ 2026-09-18（B1）：**只数「真空飞行」（`state == 3`）的那些** —— 与引擎对 P / 钱的
+     *   presence 谓词（`ce_item_pool_any_attracting`：`type ∈ {1,2}` 且 `item+0xc74 == 3`）**同一谓词**。
+     *   ⇒ 飘落（1）/ 飞散（2）中的点**不续批**（引擎那边的坠落道具同样不续批：它们多半会被
+     *     普通游玩触收/环收拿走，而那条路本来就不进批 ⇒ 让它们续批只会把批凭空吊住）。
+     *   ⚠ 旧实现（2026-09-15，用户那时口径「绿点也得当作正在飞行的道具」）报的是
+     *     `s_n_big + s_n_small` =「活着的都算在飞」⇒ 一批绿点飘着就能把批一直吊开、期间收到的
+     *     原生道具全并进来 ⇒ 实跑症状「绿点一直触发收点」。现已按用户 2026-09-18 的规格
+     *     （「与 P 点 / 金钱**完全一致**」）收窄到真空飞行那一档；判据见 `faith_core.h` 的对照表。
      * ⚠ 微档不进这个数（`faith_vitem_kind` → HALF ⇒ 层内恒 0），今天也没有微档实体。
      * ⚠ 声明是**每帧**的（层按 SDK 帧号判时效）⇒ 池空了、两卡都没在 tick 了、卡被删了，
      *   都会在 `CE_VITEM_HOLD_FRAMES` 帧内自然失效，不需要额外的收尾。*/
-    ce_vitem_declare_flying(CE_VITEM_SRC_SHARED, CE_VITEM_FULL, s_n_big + s_n_small);
+    ce_vitem_declare_flying(CE_VITEM_SRC_SHARED, CE_VITEM_FULL, vacuum_in_flight);
 
     return collected;
 }

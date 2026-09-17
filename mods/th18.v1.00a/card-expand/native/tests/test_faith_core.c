@@ -465,6 +465,45 @@ int main(void)
         CHECK(al.items == 2);
     }
 
+    /* ============ ★★ 2026-09-18（B1）：114 收点批的**成员 / 在飞谓词** =「真空飞行」============
+     * 用户规格（原话要点）：「**信仰点本身得做到：① 开批 ② 计数 +1 ③ 飞行中的信仰点会组织批次结算
+     *   —— 也就是与 P 点和金钱完全一致**」。
+     * 引擎对 P / 钱只有 `item+0xc74 == 3`（真空飞行）才算批成员 / 才算在飞（§Z22 成员门 +
+     *   `ce_item_pool_any_attracting`）⇒ 我们的点必须**同一谓词**（`faith_core_state_is_vacuum_flight`）。
+     * 这一节钉两件事：① 谓词本身「只认 3」；② `cards/faith.c` 的**两条通道都过它**（源码级不变式，
+     *   因为 `faith.c` 是引擎侧代码、上不了主机 —— 见上面那段说明）。*/
+    {
+        int st;
+        CHECK(FAITH_STATE_IDLE == 0 && FAITH_STATE_FALL == 1 && FAITH_STATE_SCATTER == 2);
+        CHECK(FAITH_STATE_VACUUM == 3 && FAITH_STATE_RING == 4);
+        CHECK(FAITH_STATE_VACUUM == 3);                 /* ★ = 引擎 `CE_ITEM_STATE_VACUUM`（同一语义）*/
+        for (st = 0; st <= 8; ++st)
+            CHECK(faith_core_state_is_vacuum_flight(st) == (st == FAITH_STATE_VACUUM ? 1 : 0));
+    }
+    {
+        char *fc = faith_slurp("cards/faith.c");
+        if (fc) {
+            int member, fly;
+            faith_strip_comments(fc);
+            /* ① 旧开关（不看状态的那条路）**必须已删** —— 它一旦回来，普通捡点又会开批。*/
+            CHECK(strstr(fc, "FAITH_VITEM_NOTE_VACUUM_ONLY") == 0);
+            /* ② 两条通道都过同一个谓词（成员 = dot_collect 里的上报；在飞 = 声明时的计数）。*/
+            member = faith_at(fc, "ce_vitem_note_collect");
+            fly    = faith_at(fc, "ce_vitem_declare_flying");
+            CHECK(member >= 0 && fly >= 0);
+            CHECK(faith_at(fc, "faith_core_state_is_vacuum_flight") >= 0);
+            CHECK(member > faith_at(fc, "faith_core_state_is_vacuum_flight"));  /* 谓词在成员上报**之前** */
+            /* ③ presence 不许再报「活着的全算」（旧实现的 `s_n_big + s_n_small` 形状）；
+             *    计数必须**在谓词之下**（`if (…is_vacuum_flight(p->state)) ++vacuum_in_flight;`）。*/
+            CHECK(strstr(fc, "s_n_big + s_n_small") == 0);
+            CHECK(strstr(fc, "faith_core_state_is_vacuum_flight(p->state)) ++vacuum_in_flight;") != 0);
+            fly = faith_at(fc, "ce_vitem_declare_flying");
+            CHECK(fly >= 0 && faith_at(fc, "vacuum_in_flight") > 0 && fly > faith_at(fc, "vacuum_in_flight"));
+        } else {
+            printf("  （跳过 B1 源码级检查：读不到 cards/faith.c —— 请从 native/ 目录跑本测试）\n");
+        }
+    }
+
     printf("test_faith_core: %d passed, %d failed\n", s_pass, s_fail);
     return s_fail ? 1 : 0;
 }

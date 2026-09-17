@@ -29,10 +29,17 @@
  *       ① **成员**：`on_item_frame` 开头抽干 `ce_vitem_take_collect()` → `c2x_collect_virtual()`
  *          —— **在 `batch_open` 门之前**（第一颗绿点就能开批）、**只加 count、不碰 batch_score**
  *          （绿点走信仰、不进 SCORE ⇒ 也不进批分，结算补差对纯绿点批恒 0。用户：「只 +1」）；
- *       ② **presence**：`ce_vitem_flying() > 0`（绿点还在飘/被吸）与原生谓词**或**起来 ⇒ 续 idle
+ *       ② **presence**：`ce_vitem_flying() > 0` 与原生谓词**或**起来 ⇒ 续 idle
  *          —— 修「我们这些点还在飞的时候就提前结算」。
+ *     ---- ★★ 2026-09-18（B1）：**两条通道的「算不算」由生产者按引擎同一谓词给出** ——
+ *     `faith.c` 只报**真空飞行中被收**（本池 `state == 3` = 过回收线 / 放 B / 对话 ⇒ 朝自机飞）
+ *     与**真空飞行中还在飞**的那些，飘落 / 飞散 / 70px 环吸**都不报**（`faith_core.h` 的对照表）。
+ *     这正是用户 2026-09-18 的规格：**信仰点必须与 P 点 / 金钱完全一致**（开批 / 计数 +1 /
+ *     飞行中组织批次结算）。⇒ 本文件这一侧**一个字没改**（它本来就只认 state 3），
+ *     变的是生产者报上来的真值；旧实现「活着的绿点都算在飞 / 任何状态被收都算成员」会造成
+ *     普通游玩顺手捡点就开批、绿点飘着就把批吊住 ⇒ 实跑症状「绿点一直触发收点」。
  *     **批的档位 / 倍率 / 碎片 / 批分算法一个字没改**；微档（消弹那档的半道具）不入批（§1x.3），
- *     由 SDK 层的 `CE_VITEM_HALF` 挡在生产者一侧（`faith.c`）。诊断两行新日志见 `on_item_frame`。
+ *     由 SDK 层的 `CE_VITEM_HALF` 挡在生产者一侧。诊断三行日志见 `on_item_frame`。
  *
  * 断点（sdk.c 头表字节一手 + AUDIT §Z）：ce_item_frame 0x446ee3（每帧、池 body 前）/
  * ce_item_collect 0x44625f（type 分派前，分值副作用未发生）/ ce_item_commit 0x44658a（分值已入 SCORE、
@@ -173,6 +180,9 @@ static void on_item_frame(ce_card_t *c)
      *   · **不进批分**：`c2x_collect_virtual()` 只动 count、不碰 batch_score ⇒ 结算补差对纯绿点批
      *     恒 0（绿点走信仰槽，不进 SCORE —— 用户口径「只 +1」）；
      *   · 微档不进（§1x.3 的半道具）：由 SDK 层的 `CE_VITEM_HALF` 挡在生产者那一侧。
+     *   · ★★ 2026-09-18（B1）：**生产者那边只报「真空飞行中被收」的**（`faith.c` 的
+     *     `dot_collect()` 过 `faith_core_state_is_vacuum_flight()`）⇒ 本卡收到的真值与原生成员门
+     *     同一个谓词，用户规格「与 P 点 / 金钱完全一致」在**接线两端**都成立。
      * 顺序：与卡 tick（生产者）同帧谁先谁后都读得到（层带 2 帧容差，见 `sdk_core.h` 契约 ④）。*/
     {
         const int vn = ce_vitem_take_collect();
@@ -192,7 +202,11 @@ static void on_item_frame(ce_card_t *c)
      * ★★ 2026-09-15（§1x.2）：**自建实体在飞也算 presence** —— `ce_vitem_flying() > 0`（110/111 的
      *   大 / 中绿点还飘着/被吸着）⇒ 同样续 idle。没有它，一批会在我们这些点**还在飞的时候**被判
      *   「收点流停了」而提前结算（用户点名的毛病；批偏小 + 边界错）。这一路只**续命**、不计数
-     *   （计数走上面的成员通道）⇒ 与原生谓词是**或**关系，不改变原生那一支的语义。*/
+     *   （计数走上面的成员通道）⇒ 与原生谓词是**或**关系，不改变原生那一支的语义。
+     *   ★★ 2026-09-18（B1）：生产者报的「在飞」也**收窄到真空飞行**（`faith.c` 只数 `state == 3`）
+     *   ⇒ 这一路与原生谓词（`ce_item_pool_any_attracting`：state 3）逐字同一条，用户规格
+     *   「与 P 点 / 金钱完全一致」成立；飘落 / 飞散中的绿点**不再把批吊住**（那正是实跑症状
+     *   「绿点一直触发收点」的一半）。*/
     const int native_flying  = ce_item_pool_any_attracting();
     const int virtual_flying = native_flying ? 0 : ce_vitem_flying();   /* 原生那一路命中就不必再问自建 */
     if (native_flying || virtual_flying > 0) {
