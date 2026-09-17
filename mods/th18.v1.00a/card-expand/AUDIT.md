@@ -13759,3 +13759,10 @@ thcrap 日志以 `Removing plug-ins...` 收尾、`crashdumps/` 没有新 dump �
 ⚠ 诚实标注：这一局编成里只有卡 **110/111/114**（日志 `reset_cards` 一手），不是十二合一全套 ——
 对本条修复够用（命中的正是 111 的站点），但**不能**当全装验收的绿灯。
 一手机制与已排除项：`engine/_shared/thcrap-breakpoint-pools.md`。
+
+**★ 2026-09-18 补：跳过点「栈中性」审计**（本会话，逐条一手反汇编）—— 六个实装跳过点（`ce_player_die` /
+`ce_bomb_gate` / `ce_shot_set_index` 的抑制支 / `ce_option_shot_gate` / `ce_enemy_shot_slot` /
+`ce_native_option_muzzle`）**全部栈中性**，判定与一手地址见 `engine/_shared/thcrap-breakpoint-pools.md` §8。
+⚠ 一条**未发布**的隐患：`ce_chain_node_guard` 现在的站点（`th18:0x401357`）与落点**同址** ⇒ 一旦启用就是
+「跳回桩自身」的无限重入，而且它在 `call eax` **之后**、拦不住它要防的那次调用 ⇒ 启用前必须挪回
+`th18:0x401352`（cs 5）并把落点设成 `th18:0x401357`。
