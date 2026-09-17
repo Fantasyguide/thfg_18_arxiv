@@ -745,6 +745,21 @@ void faith_hud_draw(void)
                        faith_hud_signal_strength(signal));                              /* 信号项（中性 1.00）*/
         faith_hud_mult_text(mult, mtxt);
 
+        /* ★★ 站点自检门 ⑥（2026-09-18，**只记账**；用户口径逐字：「收的点得符合最大得点公式算出来的那个」）
+         *   屏幕上这一对（6 位**最大得点** × **倍率**）与「收点实际入账的点数」必须同源同值。
+         *   期望值用**与 UI 同一份**函数算（上面刚算出的 `maxpoint` / `mult`，不另写一份公式）：
+         *       E = trunc10(最大得点 × 倍率/1000)          ← 一手形状 = TH11「点道具得分 = trunc10((A+B)×Y/100)」
+         *   实付值取计分层当前的总数（`ce_score_aggregate()`：`G_0 + Σ非耦合 + 耦合系数×Σ耦合/1000`）。
+         *   只在**两层都在场**时才比（UI 有槽位 + 计分层有参与者），否则两边本来就不是同一件事。
+         *   ⚠ 不等**只记一行**（不改任何数值 —— 改数值比记一行危险得多）；本门是给「公式漂了」留现场。*/
+        if ((have110 || have111) && ce_score_participants() > 0) {
+            const int32_t expect_points = faith_hud_trunc10(
+                (int32_t)(((int64_t)maxpoint * (int64_t)mult) / 1000));
+            const int32_t paid_points = ce_score_aggregate();
+            if (expect_points != paid_points)
+                ce_assume_fail("faith HUD: 收点实付 ≠ 最大得点×倍率（只记一次；见 AUDIT §BE-EA）");
+        }
+
         /* ---- 起 VM + 摆位（**顺序是行为**：后起的画在上面）---- */
         fh_place_gauge(bx, by, signal);      /* ① 槽底 → ② 增长条 */
         fh_place_icon(bx, by);               /* ③ 蓝点 */
