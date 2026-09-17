@@ -229,6 +229,42 @@ def write_report(path, rows, log, boot):
     print("\n报告已写：%s" % path)
 
 
+
+# ---------------------------------------------------------------- 环境/装配判据（总验收 §5 的四条）
+# 这些**不是**八原语，而是"这一局到底是不是我们要的那一局"：
+#   ① 防假绿：`integrity[stage N]: card[i] id=…` 必须列出全部系统卡（少一张卡的绿灯不算数）
+#   ② 闸可观测：`pool:` 行（sdk.c 的实测读数）必须在 —— 没有它，站点/池子无从判定
+#   ③ 无 SDK 自检失败：`FAIL:`（如"有行为没数据行"，2026-09-17 卡 118 那次就是它）
+#   ④ 无降档：`mitigation: allocator bound restored`（新 id 被全体停用 ⇒ 系统卡形同不存在）
+ENV_RULES = [
+    ("防假绿：12 张系统卡都在编成里", r"integrity\[stage \d+\]: card\[\d+\] id=(10[6-9]|11[0-7])", 12),
+    ("闸可观测：pool: 实测读数", r"pool: 可执行页 \d+、跳板格 \d+", 1),
+]
+ENV_FORBID = [
+    ("SDK 自检失败（FAIL:）", r"FAIL: "),
+    ("新 id 被降档（mitigation）", r"mitigation: allocator bound restored"),
+]
+
+
+def check_env(lines):
+    """→ (rows, rc)。总验收的装配判据（§5 的四条）。"""
+    rows, rc = [], 0
+    for why, rx, need in ENV_RULES:
+        hits = [l for l in lines if re.search(rx, l)]
+        uniq = set(re.findall(r"id=(10[6-9]|11[0-7])", "\n".join(hits))) if need > 1 else hits
+        n = len(uniq) if need > 1 else len(hits)
+        ok = n >= need
+        if not ok:
+            rc = 1
+        rows.append((why, ("✅" if ok else "❌") + " %d/%d" % (n, need)))
+    for why, rx in ENV_FORBID:
+        hits = [l for l in lines if re.search(rx, l)]
+        if hits:
+            rc = 1
+        rows.append((why, ("❌ 命中 %d 行" % len(hits)) if hits else "✅ 无"))
+    return rows, rc
+
+
 def do_check(names, args):
     path = find_log(args)
     if not path or not os.path.exists(path):
@@ -241,6 +277,16 @@ def do_check(names, args):
     print(f"本次启动段：{boot or '(没有分界线，按整份日志判读)'} —— {len(lines)} 行")
     rc = 0
     rows = []
+    print("\n=== 装配判据（总验收 §5：这一局是不是我们要的那一局）===")
+    env_rows, env_rc = check_env(lines)
+    for why, verdict in env_rows:
+        print("  %-34s %s" % (why, verdict))
+    print("  ⇒ 装配%s" % ("通过" if env_rc == 0 else "**未过**（下面的原语判读仅供参考）"))
+    rc |= env_rc
+    pool = [l for l in lines if "跳板格" in l]
+    if pool:
+        print("  池子读数：%s" % pool[-1].strip()[:120])
+
     for name in names:
         p = PRIMS[name]
         print(f"\n=== {name} —— {p['title']} ===")
