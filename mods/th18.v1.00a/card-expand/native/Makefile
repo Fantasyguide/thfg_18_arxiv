@@ -22,8 +22,14 @@ step3: anm sht
 ##            「真 exe 里那个函数的 `ret N`」。加它的缘由是一次真事故：`0x48a730` 是 `ret 4`
 ##            而我们按 `fastcall(void*)` 调 ⇒ 每调一次少吃 4 字节栈 ⇒ 进灵界几秒后 `ret` 跳飞
 ##            （AUDIT.md §CR-5）。无样本/无 capstone 时它自己跳过并 exit 0。
+##          ★ `tools/sitecheck.py --all`（2026-09-18 加）：**站点体检**——每个窗口查「≥5 字节 / 整指令边界 /
+##            / 窗内无 cave 修不了的近相对分支 / 与所有 binhack·站点零重叠」，并把 `sdk.c` 里所有
+##            `ce_retaddr_set()` 落点逐个验「栈中性」。加它的缘由见 AUDIT.md §BE-DW：一个窗口 = 一条
+##            `ja rel32` 的站点，进 cave 会跳到「本格 + (原目标−站点)」= 池页没写过的那一段 ⇒ 头号崩溃。
+##            **只判红「已声明」的；park 的只提示**（现在没装）。无样本/无 capstone 时自己跳过并 exit 0。
 check: quick cards-check anm-verify sht-verify snd-check dllx87 dllverify
 	python3 sites.py check
+	python3 tools/sitecheck.py --all
 	python3 tools/capcheck.py
 	python3 tools/engine_abi_check.py
 	python3 tools/anm_hud_alpha_check.py
