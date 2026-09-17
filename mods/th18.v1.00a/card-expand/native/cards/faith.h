@@ -203,7 +203,9 @@ int faith_collect_all(uint32_t slot_mask);
  *     `0x41b44b` / `0x41b6b3` 置的「刚满」标志 `[esp+0x14]`）：**满 P 那一帧全场转换** ——
  *     循环 150 槽（stride 0x3f0），对 `[item+0x3dc] != 0`（在用）且 `[item+0x3e0] ∈ {1,4}` 的道具：
  *     清在用标志 + `spawn_item(type=9, pos=**道具自己的位置**, 0xffffffff, angle=0xbfc90fdb (−π/2),
- *     speed=0x400ccccd (2.2))` + 逐颗播音（`0x448db0`，参 `0x189`）。
+ *     speed=0x400ccccd (2.2))` + 逐颗起一台**特效 VM**（`0x448db0`，参 `0x189`；
+ *     ⚠ 2026-09-18 订正：那是 **anm 脚本号**、不是 SE id —— `0x448db0` 用 `ANM_MANAGER_PTR`，
+ *     转换循环**从不**调 SE 播放器 ⇒ 原版转换**静音**；`0x189` = `bullet.anm` script393）。
  *     （`type 10/11 → 5` 那两支是**死代码**：前面的类型过滤已把它们挡在循环外。）
  *   · **TH11 同款**：`th11:0x4240f0`（同形，stride 0x478、150 槽）—— `[esi] ∈ {1,4,10,11}` ⇒ 一律
  *     `type 9`、`pos = esi−0x34`（**道具自己的位置**）、角 `th11:0x49842c` = −π/2、速 `th11:0x498430` = 2.2。

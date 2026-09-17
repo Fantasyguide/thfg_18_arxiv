@@ -106,15 +106,40 @@
 
 /* ★★ 2026-09-18（B12，用户报「满 P 的 P 点转化缺特效和音效」）：
  *
- * ## 一、转换音（`faith_convert_full_p_items()` 里逐颗播）
- * 一手：TH10 的转换循环里**每颗播一次**（`th10:0x41bad2 push 0x189` → `call 0x448db0`(SoundManager 带位置)），
- * TH11 同款（`th11:0x455b10` 参 `0x16`/`0x73`）。⇒ 语义 = **每转换一颗 P 道具响一声**、声像用该道具的 x。
- * ⚠ **id 是 ❓自定**：`0x189`(TH10) / `0x16`、`0x73`(TH11) 是**两作各自的 SE 表编号**，TH18 的表只有
- *   84 行（`engine/_shared/th18-sound-table.md` §0）⇒ 拿不到同一份音源，只能挑一支语义最近的。
- *   本轮取 **`0x0d = se_powerup.wav`**（TH18「火力上升」的音；「满 P ⇒ P 点转信仰点」正是 P 系语义）。
- *   替换 = 改这一个数字（候选：`0x1c/0x1d = se_power0/1`、`0x25 = se_item00`、`0x4c = se_item01`）。
- *   登记 `TUNING.md` §2.5g。*/
-#define FAITH_CONV_SE          0x0d
+ * ## 一、★ 订正：TH10 的转换**没有音效**，它有的是**特效**（一手，2026-09-18 复核）
+ * 我们旧注写「一手确实逐颗播音（`th10:0x448db0` 参 `0x189`）」——**那是误读**：
+ *   · `0x448db0` 用的是 **`ANM_MANAGER_PTR`**（TH10 `[0x491c10]`，th-re-data statics 命名）：
+ *     它 alloc 一个 VM（`0x449950`）、写 `+0x340` 位置 float3 / `+0x38c`+`+0x390` 脚本指针 /
+ *     `+0x35c` 标志，并用第 3 个实参去查**脚本表** `[anmgr+0x11c][id*4]`（该表 ~400 项）
+ *     ⇒ 第 3 个实参 `0x189` 是 **anm 脚本号**，不是 SE id。
+ *   · TH10 的 SE 播放器是 `0x43dc90`，`ecx = SOUND_MANAGER`（`0x492590`）—— 而**转换循环
+ *     （`0x41ba50`–`0x41baef`）与信仰道具的 spawn helper（`0x41bb00`）里一次都没调它**
+ *     （全 exe 该函数 96 个调用点，没有一个落在这两段里）。
+ *   · TH11 侧同样：转换（`th11:0x4240f0`）只调 spawn helper 与 `0x455b10`，两者函数体都**不**引用
+ *     `SOUND_MANAGER`（`0x4c3e80`）。
+ * ⇒ **原版转换静音**；我们原来借 `se_powerup`（TH18 `0x0d`）当转换音是 ❓ 自定，**已撤**。
+ *   若哪天要给它配音：本仓有「音效表扩容」通道（`assets/voice/ORDER.txt` + `build_voice.py`，
+ *   id 从 `0x54` 起），把任意一枚 wav 弄进来即可（`AUDIT` §Q / §DK-7 的先例）—— 但那会是自定。
+ *
+ * ## 二、★ 原版有的那颗特效（一手配方，逐条抄得下来）
+ * TH10 转换循环对**每一颗**被转换的 P 道具：
+ *   `0x448db0(anm_mgr_obj, &item.pos, 0x189)` ⇒ 在**该道具的位置**起一个脚本 VM。
+ * 全局脚本号 `0x189` = `bullet.anm` 的 **script393**（`local/vendor/thtk/build/thanm/thanm -l 10
+ * local/th10.v1.00a/dat/bullet.anm` 可复跑）：
+ *   ```text
+ *   script393 { ins_3(sprite332); ins_66(1); ins_68(11); ins_67(0);
+ *               ins_52(128,255,128);      ; ★ 顶点色 = 淡绿（转换出来的正是绿点）
+ *               ins_50(0.5f, 0.5f);       ; 起始 scale 0.5
+ *               ins_60(20, 4, 1.5f, 1.5f) ; 20 帧缩到 1.5（= 弹出）
+ *               +10: ins_58(10, 4, 0);    ; 再 10 帧 alpha → 0
+ *               +10: ins_1(); }           ; 删
+ *   ```
+ *   `sprite332` = `bullet/etama2.png` **(64,224,32,32)**（32×32；本仓的信仰点贴图来自**同一张**图的
+ *   y=208 行 —— 见 `assets/ability/make_mof_art.py`）。
+ * ⇒ **下一步（资产活）**：把这支脚本 + 这块 32×32 切图搬进 `ability.anm`（走 272/273 那条老流水线：
+ *   `assets/ability/ORDER.txt` + `make_mof_art.py` + `build_ability.py`），转换时按 `faith_spawn()`
+ *   成功的那几颗在 `(px,py)` 各起一台 —— 就与 TH10 逐条一致了。**今天先不硬塞**（要动 atlas 号段与
+ *   `CAPACITY.md` 台账，属于独立一步）。*/
 
 /* ## 二、「上抛」必须看得见 —— 抛完才许被真空门吸走
  * 用户实跑口径：「应该是从**当前 P 点的位置上抛**转化中信仰点」。
@@ -748,11 +773,12 @@ int faith_convert_full_p_items(void)
                 ++s_stat_conv_dropped;
             }
         }
-        /* ★★ 2026-09-18（B12）：**每转换一颗 P 道具响一声**、声像 = 该道具的 x ——
-         * 一手 TH10 `0x41bad2`（转换循环内 `push 0x189` → `call 0x448db0`）；TH11 同款。
-         * ⚠ 只播**每颗道具一次**（不是每个注册者一次）：两卡同装时是一颗道具被转一次。
-         * id 是 ❓自定，见 `FAITH_CONV_SE` 的长注。*/
-        ce_play_sound(FAITH_CONV_SE, px);
+        /* ★★ 2026-09-18（B12 订正）：**这里原来播一颗借来的 `se_powerup`，已撤** ——
+         * 一手复核（见本文件上方那段长注）：TH10 的转换**没有音效**，那颗 `0x189` 是 **anm 脚本号**
+         * （`0x448db0` 用 `ANM_MANAGER_PTR`、查的是脚本表），转换循环里**从不调 SE 播放器**。
+         * ⇒ 复刻 = 静音。原版有的那颗**特效**（`bullet.anm` script393）配方照抄在上方注里，
+         * 搬运属于下一步的资产活。*/
+        (void)px;
     }
     if (n > 0) {
         s_stat_converted += n;
