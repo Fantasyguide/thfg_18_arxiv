@@ -113,7 +113,62 @@ CE_MAX_ROWS = 255           # 与 sites_gen.h 的 CE_MAX_ROWS 同义
 # 跳板池未写区 ⇒ 执行 `00 00`（`add [eax],al`），当时 `eax=1` ⇒ **写地址 0x1**（0xC0000005 写 0x1）。
 # ⇒ 新功能不要再各占一格：能并进已有每帧/每敌/家务站点的就并进去（见 METHOD.md 的铁律）。
 # 想提高这个数：必须先实跑验证新上限，并把结论补进 AUDIT.md §BE 再改这里。
-SITE_BUDGET = 24
+SITE_BUDGET = 24          # 我们自己的上限（可换：见 build_site_accounting()）
+
+# ★ 2026-09-17 定案（用户口径：gate = 站点预算闸；细节由我决定、以实测为准）
+# 为什么要把"外部消费者"算进来：thcrap 的断点池是**进程级**的（分片实验已证 per-patch 是错的），
+# 本机除我们之外还挂着 base_tsa（它自己的 th18.v1.00a.js 声明 18 条，handler 在 thcrap_tsa.dll）。
+# 只要不把它算进来，闸看到的数字就永远是假的（我们 22 / 真实 40）。
+# 覆盖方式：环境变量 CE_EXTERNAL_SITES="base_tsa=18,别的=3"；不设则用下表（已知清单）。
+EXTERNAL_SITES = [("base_tsa (nmlgc)", 18, "repos/nmlgc/base_tsa/th18.v1.00a.js")]
+# 已知的"会崩"级别：2026-09-17 实测 total=40 崩过两次（池崩，Eip 落在 RESERVE 未提交区）。
+# ⇒ 安全线必须**低于**它；先取 38（留 2 格），并把"实测安全线"当成后续用它测出来的目标。
+SITE_TOTAL_KNOWN_BAD = 40
+SITE_TOTAL_BUDGET = 38
+
+
+def external_sites():
+    """进程里**别人**占用的断点条数（默认已知清单；可用 CE_EXTERNAL_SITES 覆盖）。"""
+    env = os.environ.get("CE_EXTERNAL_SITES", "")
+    if env:
+        out = []
+        for item in env.split(","):
+            if "=" in item:
+                nm, n = item.split("=", 1)
+                try:
+                    out.append((nm.strip(), int(n), "(来自 CE_EXTERNAL_SITES)"))
+                except ValueError:
+                    pass
+        return out
+    return list(EXTERNAL_SITES)
+
+
+def build_site_accounting(text, text_va):
+    """→ (rows, ours, external, total, verdict)
+    rows 每行 = (类别, 条数, 出处)；verdict = None(通过) / 字符串(告警)。"""
+    names = emitted_breakpoint_names(text, text_va)
+    ours = sorted(names)
+    formal = []
+    test = []
+    for n in ours:
+        # 测试归档的断点（patch-test 里声明的那两个）单独算：不想要观察者时可以关掉，等于免费腾位
+        (test if n in ("ce_test_deck", "ce_trace_alloc") else formal).append(n)
+    ext = external_sites()
+    total = len(formal) + len(test) + sum(n for _, n, _ in ext)
+    rows = [("正式 patch（我们）", len(formal), "patch/th18.v1.00a.js"),
+            ("测试归档（我们，可关）", len(test), "patch-test/th18.v1.00a.js")]
+    for nm, n, src in ext:
+        rows.append(("外部：" + nm, n, src))
+    rows.append(("合计（进程级）", total, "← 闸的真正口径"))
+    warn = None
+    if total > SITE_TOTAL_BUDGET:
+        warn = ("合计 %d > 安全线 %d —— 已知 %d 会崩过（池崩）。"
+                "先用 deploy 之外的开关减档（关测试归档腾 2；或与同僚协调 base_tsa），"
+                "或在 COMPAT-MATRIX §1 记账后再动。"
+                % (total, SITE_TOTAL_BUDGET, SITE_TOTAL_KNOWN_BAD))
+    elif len(formal) > SITE_BUDGET:
+        warn = "我们自己的正式声明 %d > SITE_BUDGET %d" % (len(formal), SITE_BUDGET)
+    return rows, len(formal), len(test), ext, total, warn
 ORDER_END   = ORDER_TABLE + ORDER_COUNT * 4          # 0x4b36e4，只有 0x414b54 的 cmp 用它当尾界
 ORDER_RVA   = ORDER_TABLE - 0x400000
 ORDER_CAVE  = "th18_card_order"                      # 255 dword；DLL 重排：[原生 0..55, 新 id…, 56, 57 填充]
@@ -1606,8 +1661,18 @@ def main():
             return 1
         bp_names = emitted_breakpoint_names(text, text_va)
         n_sites = len(bp_names)          # ★ 用 patch 实际声明条数（别用列表长度：会漏掉音效/文案/unlock 那批）
-        print("\n站点预算核对（本 patch 声明 %d 条 = SDK %d + 商店 %d + 其它；预算 %d 条）："
-              % (n_sites, len(SDK_SITES), len(SHOP_SITES), SITE_BUDGET))
+        # ★ 2026-09-17：闸改成**进程级记账**（用户口径：gate = 站点预算闸；细节由我定，以实测为准）。
+        # 原来只数我们自己的 patch ⇒ 数字永远是假的（我们 22 / 真实 40，而 40 崩过）。
+        _rows, _ours, _test, _ext, _total, _warn = build_site_accounting(text, text_va)
+        print("\n站点预算核对（**进程级**：谁都在吃同一个跳板池）：")
+        for _c, _n, _src in _rows:
+            print("   %-22s %3d 条   %s" % (_c, _n, _src))
+        print("   安全线：我们自己的 SITE_BUDGET=%d；进程级 SITE_TOTAL_BUDGET=%d"
+              "（已知 total=%d 崩过）" % (SITE_BUDGET, SITE_TOTAL_BUDGET, SITE_TOTAL_KNOWN_BAD))
+        if _warn:
+            print("   ⚠ " + _warn)
+        print("   （本 patch 声明 %d 条 = SDK %d + 商店 %d + 其它）"
+              % (n_sites, len(SDK_SITES), len(SHOP_SITES)))
         if n_sites > SITE_BUDGET:
             print("   ❌ 声明数超预算：%d > %d —— 2026-09-17 实测越线必崩（跳板池未写区 ⇒ 写 0x1）。"
                   "\n      要么把功能并进已有站点，要么先实跑量出新上限再改 SITE_BUDGET（并在 AUDIT.md §BE 记一条）。"
