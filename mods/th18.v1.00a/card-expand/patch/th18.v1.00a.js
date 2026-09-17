@@ -1440,7 +1440,7 @@
       "cavesize": 5,
       "expected": "558bec5153",
       "title": "行为 SDK → BP_ce_native_option_muzzle：Player__shoot_one_bullet 0x45e930 的**函数入口**（5 字节 = push ebp / mov ebp,esp / push ecx / push ebx，恰好在指令边界上；无相对寻址、窗内无跳转靶。⚠ 取 6 字节会**从 `mov ebx,[ebp+8]` 中间切开**（那条是 3 字节、落在 0x45e935）⇒ cave 会回放半条指令，必须取 5 或 8）。thiscall ⇒ ecx = zPlayer*；栈（低→高）= 返回地址、packed id、timer、pos*、**option*（膛口）**（调用方压栈序一手：0x45ec5f push 膛口 / 0x45ec68 push pos / 0x45ec71 push timer / 0x45ec72 push id）。handler 读第 5 个栈参：落在**原生子机数组区间** `[PLAYER+0x670, PLAYER+0xa30)` 时**整发跳过**（★ 2026-09-17 订正：本版 thcrap 的桩**没有** `esp_diff`，改 `regs->esp` 无效；改用原生 `stack_clear_size: 0x10` ⇒ 桩走 `bp_entry0s` 变体的 `ret 0x10`，handler 只设 `retaddr = sp[1]`（真正的调用者返回地址；`sp[0]` 是 thcrap 自己的蹦床返回地址 = 站点+5） —— 一手见 engine/_shared/thcrap-breakpoint-pools.md §2；返回值调用方不检查，一手 0x45ec78；返回值调用方不检查，一手 0x45ec78）。卡申请的池 = `PLAYER+0xa30` 起（一手 0x40a7a4 `add edi,0xa30`）⇒ 区间不相交，117 / 116 / 108 的卡子机零影响。",
-      "stack_clear_size": 16
+      "stack_clear_size": 20
     },
     "ce_shop_bought": {
       "addr": "0x4183ea",

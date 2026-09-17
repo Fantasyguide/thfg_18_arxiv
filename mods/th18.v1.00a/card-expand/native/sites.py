@@ -1142,8 +1142,14 @@ SDK_SITES = [s2 for i, s2 in enumerate(SDK_SITES) if i < 10 or s2[0] in _SDK_KEE
 # （一手：engine/_shared/thcrap-breakpoint-pools.md §2）。
 # `ce_native_option_muzzle`（0x45e930）是 stdcall 形态（调用点 0x45ec78 之后没有 `add esp,0x10`），
 # 4 个栈参 = 0x10 ⇒ 必须走这条机制，handler 才有办法「整发跳过」而不破坏调用方栈。
+# ⚠ 数值口径（2026-09-18 实跑订正）：`ret imm16` 弹的那个槽是**桩自己那条 `call <桩>` 压的返回地址**
+#   （比调用者压的返回地址**低一格**）⇒ 要等价「被调函数自己 `ret N`」，必须写 `imm = 4 + N`。
+#   本站点函数 = `ret 0x10`（一手：`th18:0x45e9cd` / `th18:0x45e9fd` 两条都是 `c2 10 00`）⇒ **写 0x14**。
+#   第一版误写 0x10 ⇒ 实跑「一按 Z 就崩」：调用链栈整体偏低 4 ⇒ 上层 `pop ebx` 弹出 3 ⇒ 派发器
+#   `th18:0x4013ba` 的 `mov ecx,[ebx+0x50]` 读 `0x53` 违例（dump 一手）。
+#   同源旁证：本局桩页里 thcrap 自己的站点带 `c2 08 00`（= 4 + 一个栈参 4）⇒ 规律一致。
 _SDK_SITE_FIELDS = {
-    "ce_native_option_muzzle": {"stack_clear_size": 0x10},
+    "ce_native_option_muzzle": {"stack_clear_size": 0x14},
 }
 
 

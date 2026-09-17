@@ -13728,7 +13728,7 @@ patch 入口）并把回读校验改成**按来源各自比 md5**（旧写法「
 | 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
 | --- | --- | --- | --- | --- |
 | `native/sdk.c` | 新增 `ce_retaddr_set()`（可执行页判定 + 拒绝时保持原返回值）；8 处 `regs->retaddr = …` 全改走它；`BP_ce_native_option_muzzle` 三处订正（`sp[4]`→`sp[5]`、`sp[0]`→`sp[1]`、删 `regs->esp += 0x14`）| 见下「为什么」| 系统卡批次 | `make check` rc=0（`sites.py check` 24 条双向、`dllverify`、`check-docs` 328 文件）|
-| `native/sites.py` | 新增 `_SDK_SITE_FIELDS`；`ce_native_option_muzzle` 声明 `stack_clear_size: 0x10`；该站点 title 的 `esp_diff` 老说明订正 | 该函数是 stdcall（调用点 `0x45ec78` 之后没有 `add esp,0x10`）⇒ 弹 4 个栈参只能用 thcrap 原生 `ret imm16` | 同上 | `make gen` 后 patch 里带 `"stack_clear_size": 16`；`bp_entry0s` 总长同为 `0x30` ⇒ 池尺寸口径不变 |
+| `native/sites.py` | 新增 `_SDK_SITE_FIELDS`；`ce_native_option_muzzle` 声明 `stack_clear_size: 0x14`；该站点 title 的 `esp_diff` 老说明订正 | 该函数是 stdcall（`th18:0x45e9cd` / `th18:0x45e9fd` 两条都是 `ret 0x10`）⇒ 弹 4 个栈参只能用 thcrap 原生 `ret imm16`；**数值 = 4 + 函数自己的清理量**（桩的 `ret` 弹的槽比调用者压的返回地址低一格）| 同上 | 实跑订正见下；`make gen` 后 patch 里带 `"stack_clear_size": 20`；`bp_entry0s` 总长同为 `0x30` ⇒ 池尺寸口径不变 |
 
 **为什么**（一手 = `engine/_shared/thcrap-breakpoint-pools.md` §2）：本版 thcrap 的桩**直接 `call BP_*`**，
 **没有 `breakpoint_process` / `esp_diff`** ⇒ ① 改 `regs->esp` **无人消费**；② `[regs->esp]` 不是调用者返回地址，
@@ -13742,3 +13742,12 @@ patch 入口）并把回读校验改成**按来源各自比 md5**（旧写法「
 ⇒ **这条路径现在会真跑**（111 的原生子机压制这次才可能真的生效；实跑请一起看 `GATES.md` §9 的判读）。
 其余 7 处只是多一道自检门（目标都是 exe 内的常量地址 ⇒ 行为逐字节不变）；`ce_retaddr_set` 只读判定、不写内存。
 **预算**：站点数不变（24 / 进程级 44），池布局不变（`stack_clear_size` 不改桩长 `0x30`）。
+
+**★ 实跑订正（2026-09-18 凌晨，第一版写错 0x10）**：改完首次实跑 = **一按 Z 就崩**。dump 一手：
+`Eip = th18:0x4013ba`（更新链派发器 `mov ecx,[ebx+0x50]`）、`ebx = 3`、**读** `0x53` 违例；
+日志末尾三行 = `sdk: 原生子机弹已拦（第 1 发，膛口 = PLAYER+0x670，机体 1）` ⇒ **muzzle 路径第一次真的命中了**
+（`sp[5]` 的口径由此证实 ✓，桩页里第 38 号桩末尾 = `9e 61 c2 10 00` ⇒ `stack_clear_size` 也生效了 ✓）。
+崩因 = **0x10 少了 4 字节**：`ret imm16` 弹的那个槽是桩自己那条 `call <桩>` 压的返回地址（比调用者压的
+返回地址低一格）⇒ 等价「函数自己 `ret 0x10`」必须写 **0x14**；少 4 ⇒ 调用链栈整体偏低 4 ⇒ 上层 `pop ebx`
+弹出 3 ⇒ 派发器拿 3 当 registry 指针。同源旁证：本局桩页里 thcrap 自己的站点带 `c2 08 00`（= 4 + 一栈参）
+⇒ 「`imm = 4 + 函数自身清理量`」这条规律两边一致。已改成 0x14 并重新发布。
