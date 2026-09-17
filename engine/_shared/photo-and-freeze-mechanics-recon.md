@@ -96,3 +96,28 @@ TH09.5 有 `zPhotoManager` / `zPhotoManagerArrayItem`；TH16.5 有 `zCamera` / `
 
 **汉化 exe 与本作的关系**：`th095c.exe`（700416 B）/ `th128_CN.exe`（752640 B，与日文同尺寸）是**另一版**
 （汉化改过 exe 或只是换文本）⇒ 本轮所有地址**只对日文原版**负责；要从汉化版挖东西必须另开一版登记。
+
+## 7. ★ TH18 侧「遗留代码」盘点（用户 2026-09-18 追问：有没有 th18 遗留代码可用，比如时间缓速）
+
+**结论：有，而且不止一处。** 一手 = 金矿四作的符号表对查（`th15.v1.00b` / `th165.v1.00a` /
+`th17.v1.00b` / `th18.v1.00a`），表格里只列**符号存在与否**；「是否存在活的代码路径」另标。
+
+| 遗留 | TH18 里有吗 | 证据（一手）| 对我们的用处 |
+| --- | --- | --- | --- |
+| **TH15 擦弹减速因子** `zItemManager.lolk_item_slowdown_factor`（float）| **有**（且本仓已在读）| `native/engine.h` 的 `CE_ITEM_SLOWDOWN` = `0xe6bb14`，注释就写着「TH15 擦弹减速的**残骸**」；`cards/faith.c` 的 `faith_item_slowdown_permille()` 已在用它做减速视觉 | **现成的"缓速"旋钮**（⚠ 它只作用于**道具**速度，不是全局时间）⇒ 107/116 那类"樱点/季节点减速"可直接复用同一常量（`cards/faith.c` 注释已留待办）|
+| **相机子系统**（TH17 那一套）| **有**（同名同族）| `camera_0..3` / `camera_pos_i` / `camera_fov_i` / `camera_sky_i` / `camera_facing_i` / `camera_up_i` / `current_camera` / `camera_index` / `Supervisor::set_camera_by_index` 在 `th17.v1.00b` 与 `th18.v1.00a` **都出现** | **拍照机制最值钱的遗留**：取景/相机姿态/视野可以直接驱动（做"取景框"表现或拍照判定盒的坐标系）|
+| **全局 `slowdown`**（TH16.5 的相机模式时间缓速）| **没有** | `slowdown` 只在 `th165.v1.00a` 出现 | 全局时间缓速要自建（每帧家务 / 数据层），或用上表第二行的相机近似 |
+| **拍照充能** `camera_charge_multiplier` / `zCamera` / `zCameraSky`（TH16.5 专有）| **没有** | 只在 `th165.v1.00a` | 充能拍照的**量**要从 TH16.5 一手读出来自己实现 |
+| 暂停截图 `PauseMenu::take_snapshot_for_pause` | **没有**（TH17/TH16.5 有）| `th165`/`th17` 有、`th18` 无 | 与拍照攻击无关，但说明沿用**不保证逐代保留** |
+| TH15 的 snapshot/restore 家族（`AnmManager::store_snapshot_of_vm` / `BombReimu::store_snapshot` …）| **没有** | 只在 `th15.v1.00b` | 与"拍照"无关（它是 bomb 的 VM 快照）—— 别混 |
+| TH18 独有 | `stage_gamestate_snapshots` / `zReplayGamestateSnapshot` | 只在 `th18` | 回放状态快照 ≠ 拍照 |
+
+**由此定的两条路线（下一轮按这个挖）**
+
+1. **拍照卡**：走 TH18 的**相机遗留**（第一手要先核 `Supervisor::set_camera_by_index` 与那批 camera 全局
+   在 TH18 的**每帧驱动者**是谁 ⇒ 决定是"数据层驱动"还是"每帧家务 +0 站点"）；
+   TH16.5 的 `camera_charge_multiplier` / `zCamera` 一手读出**充能量与判定盒**，TH09.5 的 `PhotoManager`
+   读出**胶卷/冷却**语义（两作对照 ⇒ 哪个更像我们要复刻的）。
+2. **冻结卡**：先确认 TH18 的 `zBullet` 是否留着 TH12.8 的冻结位（把两作的 `zBullet` 字段名**逐条对查**，
+   金矿两边都有结构体 ⇒ 可脚本化）；有遗留 ⇒ 数据层即可；没有 ⇒ 走"每帧扫弹池 + 自己记冻结表"
+   （站点 0 的成本，109 暴风连锁已是先例）。
