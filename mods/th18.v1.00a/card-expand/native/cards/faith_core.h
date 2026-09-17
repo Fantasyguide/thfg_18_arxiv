@@ -169,21 +169,23 @@ static inline int faith_core_state_is_vacuum_flight(int32_t state)
 /* 本粒子的出生速度（E-2 一手；角度一律 `FAITH_THROW_ANGLE`）。*/
 #define FAITH_THROW_ANGLE         (-1.5707964f)   /* −π/2（`0xbfc90fdb` / `th11:0x49842c`）*/
 
-/* ★★ 2026-09-18c（用户实跑口径）：「**把信仰点撒开一点**」——
- * 起因：原作的出生运动学是**恒角 −π/2 直上**（一手 `th10:0x41bb00` 角 −π/2 速 2.6；
- *   TH18 同族），所以**一整波绿阴阳玉同时死**时，十几颗大信仰点会沿**同一条竖线**叠在一起
- *   （用户实跑原话：「对于绿阴阳玉的情况，把信仰点撒开一点」）。
- * 做法：在「直上」上叠一个**左右扇形的角偏移**（纯函数、按序号循环，7 档覆盖 −3…+3 步）⇒
- *   `angle = FAITH_THROW_ANGLE + faith_core_spread_radial(seq)`。
- * ⚠ **这是对一手的刻意偏离**（原作不扇），登记 `TUNING.md` §2.0i；幅度是 `❓ 自定`。
- *   `seq < 0`（未启用扇）⇒ 返回 0（= 一手行为，供只想要原样的调用方）。*/
-#define FAITH_SPREAD_STEP         0.13f           /* 相邻两档的角差（弧度；7 档≈ ±0.39 ↔ ±22°）*/
-static inline float faith_core_spread_radial(int seq)
+/* ★★ 2026-09-18c（用户口径）：「**参考 ZUN 的爆多个道具是如何分布的那个代码**」——
+ * 一手（TH18 `0x430510` 的**附加掉落循环** = 一次爆多颗那条路，逐条）：
+ *   `0x430521 call 0x402810`（rand±）→ `0x430526 fmul [0x4b922c]`（= π）⇒ **ang = rand± × π**（整圈随机角）
+ *   `0x4305a7 call 0x43a1e0`（`polar(out, ang, rx, ry)`，rx/ry = `zEnemyDrop+0xbc/+0xc0`）
+ *   `0x4305b1 call 0x4027d0`（rand01）→ `0x4305ca fmul [0x4b9138]`（= 0.5）⇒ **k = rand01 × 0.5**
+ *   `0x4305ec mulss … ; 0x4305f1 addss xmm0,[eax]` ⇒ **pos = 敌机坐标 + polar(ang, rx, ry) × k**
+ * 面积字段的写者：`dropArea` 的 handler `0x42d090`（写 `+0xbc` / `+0xc0`）；
+ *   敌机死亡路径另有默认值 **32.0f**（`0x430766`/`0x430773` 把 `0x42000000` 写进这两个字段）。
+ * ⇒ 本函数只做「已知 cos/sin 时的缩放」：三角交给调用方的**引擎 FSINCOS**（`ce_polar_to_vel`），
+ *   免得把 libm / x87 引进 DLL（`make dllx87` 的 0 条硬线）。
+ * `rand01 ∈ [0,1)`；`cs/sn` = `cos(ang)/sin(ang)`。`rand01 = 0` ⇒ 位移 0（= 原点，一手也如此）。*/
+static inline void faith_core_scatter_off(float rx, float ry, float rand01, float cs, float sn,
+                                          float *ox, float *oy)
 {
-    int k;
-    if (seq < 0) return 0.0f;
-    k = (seq % 7) - 3;                            /* −3 … +3 */
-    return (float)k * FAITH_SPREAD_STEP;
+    float k = 0.5f * rand01;
+    if (ox) *ox = cs * rx * k;
+    if (oy) *oy = sn * ry * k;
 }
 #define FAITH_THROW_SPEED_MAIN    2.2f            /* 击破 / 满 P 转换族（`0x400ccccd` / `th11:0x498430`）*/
 #define FAITH_THROW_SPEED_CANCEL  0.6f            /* 消弹族（`th10:0x3f19999a`）*/

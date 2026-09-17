@@ -979,6 +979,41 @@ static void mof_ge_tick(int32_t frame)
 #endif
 }
 
+/* ★★ 2026-09-18c：大信仰点的**落点散布** = ZUN 自己「一次爆多颗道具」的分布（一手公式见
+ * `faith_core.h` 的 `faith_core_scatter_off()`）。三角用**引擎的 FSINCOS**（`ce_polar_to_vel`），
+ * 不用 libm ⇒ 不引 x87。
+ *
+ * 半径取这只敌人的**掉落区**（`drop+0xbc/+0xc0`；`dropArea` 的 handler `0x42d090` 写它），
+ * 为 0 时用引擎自己给敌机死亡路径的那个默认 **32.0f**（`0x430766`/`0x430773`）——
+ * 实跑里绿阴阳玉（`Cir00m` 一族）**没有调过 `dropArea`**，所以吃到的就是这个默认值。
+ *
+ * ⚠ 随机数用**我们自己的 LCG**（❓ 自定）：引擎那两支 RNG（`0x402810` / `0x4027d0`）的返回值走
+ * **x87**（`fld/fstp`），从 C 里调会让我们的目标文件带上 x87 ⇒ 撞 `make dllx87` 的 0 条硬线。
+ * 分布公式本身逐条照抄，只有随机源是我们自己的（登记 `TUNING.md` §2.0i）。*/
+static uint32_t s_scatter_seed = 0x9e3779b9u;
+static float mof_rand01(void)
+{
+    s_scatter_seed = s_scatter_seed * 1664525u + 1013904223u;      /* Numerical Recipes LCG */
+    return (float)(s_scatter_seed >> 8) * (1.0f / 16777216.0f);    /* [0, 1) */
+}
+
+static void mof_faith_scatter(const uint8_t *e, float *ox, float *oy)
+{
+    const uint8_t *d = e + CE_ENEMY_DROP;
+    float rx = *(const float *)(d + CE_ENEMY_DROP_AREA_X);
+    float ry = *(const float *)(d + CE_ENEMY_DROP_AREA_Y);
+    float ang, cs_sn[3] = { 0.0f, 0.0f, 0.0f };
+
+    if (ox) *ox = 0.0f;
+    if (oy) *oy = 0.0f;
+    if (!e) return;
+    if (!(rx > 0.5f)) rx = CE_ENEMY_DROP_AREA_DEFAULT;     /* 没调 dropArea ⇒ 引擎自己的默认 32×32 */
+    if (!(ry > 0.5f)) ry = CE_ENEMY_DROP_AREA_DEFAULT;
+    ang = (mof_rand01() * 2.0f - 1.0f) * 3.1415927f;       /* rand± × π（一手 `[0x4b922c]`）*/
+    ce_polar_to_vel(cs_sn, ang, 1.0f);                     /* 引擎 FSINCOS ⇒ (cos, sin) */
+    faith_core_scatter_off(rx, ry, mof_rand01(), cs_sn[0], cs_sn[1], ox, oy);
+}
+
 /* ---- 击破 → 大信仰点（§7.9）★ **正式钩子 = `on_enemy_death`**（共享死亡断点 `0x430240`）----
  *
  * 为什么是死亡钩子（2026-09-12 SDK owner 修完断点后的正式路径）：
@@ -1014,6 +1049,7 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
     int32_t v = 0;
     int32_t anm_src = -1, anm_script = -1;
     int is_boss, want_big, is_green;
+    float sc[2];                            /* ★ 落点散布（ZUN 的爆道具分布公式）*/
 
     if (!s || !ev) return;
     if (!mof_core_death_is_real(ev->kind, ev->flags)) return;
@@ -1048,9 +1084,13 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
         is_green = want_big;
     }
     if (!want_big) return;
-    /* ★ 2026-09-18c：击破宿主走**扇形**版本（用户实跑：一波绿阴阳玉同时死 ⇒ 点叠成一条竖线）。
-     * 其它来源（满 P 转换的小点等）保持一手角度不变。*/
-    if (faith_spawn_big_spread(ev->x, ev->y, v)) {
+    mof_faith_scatter((const uint8_t *)ev->enemy, &sc[0], &sc[1]);
+    /* ★★ 2026-09-18c：落点按 **ZUN 自己「一次爆多颗道具」的分布公式**撒开（用户口径逐字：
+     * 「不是扇形，而是**参考 zun 的爆多个道具是如何分布的那个代码**」）—— 出生角仍是**一手**的
+     * −π/2 直上，只有**落点**按那条公式偏移：`pos = 敌机坐标 + polar(rand±×π, rx, ry) × (rand01 × 0.5)`。
+     * 一手逐条与默认半径见 `cards/faith_core.h` 的 `faith_core_scatter_off()` / `engine.h` 的
+     * `CE_ENEMY_DROP_AREA_*`。⚠ 一波绿阴阳玉同时死时，它们的点就会各偏一处、不再叠成一条竖线。*/
+    if (faith_spawn_big(ev->x + sc[0], ev->y + sc[1], v)) {
         /* ★ 用户 2026-09-18 裁决：**替换**（不是追加）—— 变绿的妖精只给绿点，
          *   原生 P/金钱整体清掉（「金钱和绿点总之别重合」那条也一并满足）。
          *   顺序：先撒我们的点，成功才清原生掉落（池满时宁可保留原生掉落，不给玩家空手）。*/

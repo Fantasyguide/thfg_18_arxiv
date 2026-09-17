@@ -81,6 +81,14 @@
 #define CE_ENEMY_DROP_TIMED_COUNTS 0x54       /* +0x54 timed_ex_drop[20]：**按出场计时的加成表**，同 20 个 int32。
                                                  * ECL opcode 573（社区 eclmap 无名）→ 0x433a4a → FUN_0042d020(drop, type, count)
                                                  * 写 `drop[type*4+0x50]`（type 1 → +0x54）。结算见 CE_ENEMY_DROP_TIMED_TIME */
+#define CE_ENEMY_DROP_AREA_X       0xbc       /* +0xbc/0xc0 = **掉落区半径**（float rx / ry）：`dropArea` 的
+                                               * handler `0x42d090 movss [ecx+0xbc],xmm1 / [ecx+0xc0],xmm2` 写它们；
+                                               * 读点 = 附加掉落循环 `0x430510`（`0x430580`/`0x430591`）⇒ 一次爆
+                                               * 多颗时每颗的**落点偏移**就是按这两半径 × 随机角铺开的
+                                               * （见 `cards/faith_core.h` 的 `faith_core_scatter_off()`）。*/
+#define CE_ENEMY_DROP_AREA_Y       0xc0
+#define CE_ENEMY_DROP_AREA_DEFAULT 32.0f      /* 一手：敌机死亡路径自己把 `0x42000000`（= 32.0f）写进上面两个字段
+                                               * （`0x430766` / `0x430773`）⇒ 没调 `dropArea` 的敌人也用 32×32。*/
 #define CE_ENEMY_DROP_TIMED_TIME   0xa4       /* +0xa4 timed_ex_drop_time（窗口 T，帧）。ECL opcode 574 → 0x433a70
                                                  * → FUN_0042d040(drop, T)：写 +0xa4 并把计时器复位。
                                                  * 结算（0x430510 一手）：`n = ex_drop[i] + timed_ex_drop[i] × (T − timer)/T`

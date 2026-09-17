@@ -529,25 +529,26 @@ int main(void)
     }
 
 
-    /* ★ 2026-09-18c（用户实跑口径「把信仰点撒开一点」）：扇形角的纯函数 ——
-     * 恒角 −π/2 会让一波绿阴阳玉的十几颗点叠成一条竖线（一手就是这么抛的，TH10 `0x41bb00`）
-     * ⇒ 我们按序号左右扇开。钉住：序号 0 必须**不偏**（= 一手行为）、7 档循环、正负交替。*/
-    CHECK(faith_core_spread_radial(-1) == 0.0f);          /* seq < 0 = 关（一手原样）*/
-    CHECK(faith_core_spread_radial(3) == 0.0f);           /* 中档 = 正上 */
-    /* 档序：`k = (seq % 7) - 3` ⇒ 0 → −3（**偏左**）、3 → 0（正上）、6 → +3（偏右）。
-     * ⚠ 角度的正方向是**顺时针**（ECL：0 = +x 右、π/2 = +y 下）⇒ 加大于 −π/2 的角度 = 往右偏。*/
-    CHECK(faith_core_spread_radial(0) < faith_core_spread_radial(1));
-    CHECK(faith_core_spread_radial(1) < faith_core_spread_radial(2));
-    CHECK(faith_core_spread_radial(2) < faith_core_spread_radial(3));
-    CHECK(faith_core_spread_radial(3) < faith_core_spread_radial(4));
-    CHECK(faith_core_spread_radial(4) < faith_core_spread_radial(5));
-    CHECK(faith_core_spread_radial(5) < faith_core_spread_radial(6));
-    CHECK(faith_core_spread_radial(0) == -3.0f * FAITH_SPREAD_STEP);     /* 最左 */
-    CHECK(faith_core_spread_radial(6) ==  3.0f * FAITH_SPREAD_STEP);     /* 最右 */
-    CHECK(faith_core_spread_radial(7) == faith_core_spread_radial(0));   /* 7 档循环 */
-    CHECK(faith_core_spread_radial(10) == 0.0f);                        /* 10 % 7 = 3 ⇒ 正上 */
-    /* 幅度要小到看不出"换了运动学"：7 档全在 ±0.4 rad（≈ ±23°）以内 */
-    CHECK(faith_core_spread_radial(0) >= -0.4f && faith_core_spread_radial(6) <= 0.4f);
+    /* ★★ 2026-09-18c：ZUN 自己「一次爆多颗道具」的**落点分布**（一手 TH18 `0x430510` 的附加掉落循环）：
+     *   `ang = rand± × π`（整圈随机角）、`k = rand01 × 0.5`（半径比例）、
+     *   `off = (cos(ang)×rx×k, sin(ang)×ry×k)`（`rx/ry` = 掉落区半径，默认 32×32）。
+     * 这里钉住**缩放**那一半（三角由调用方用引擎 FSINCOS 算 ⇒ 本仓 0 条 x87 的硬线）。*/
+    {
+        float ox = 9.0f, oy = 9.0f;
+        faith_core_scatter_off(32.0f, 32.0f, 0.0f, 1.0f, 0.0f, &ox, &oy);   /* rand01=0 ⇒ 原点 */
+        CHECK(ox == 0.0f && oy == 0.0f);
+        faith_core_scatter_off(32.0f, 32.0f, 1.0f, 1.0f, 0.0f, &ox, &oy);   /* 最远 = 半径的一半 */
+        CHECK(ox == 16.0f && oy == 0.0f);
+        faith_core_scatter_off(32.0f, 32.0f, 1.0f, 0.0f, 1.0f, &ox, &oy);
+        CHECK(ox == 0.0f && oy == 16.0f);
+        faith_core_scatter_off(64.0f, 32.0f, 1.0f, 1.0f, 0.0f, &ox, &oy);   /* rx≠ry ⇒ 各按自己的半径 */
+        CHECK(ox == 32.0f && oy == 0.0f);
+        faith_core_scatter_off(32.0f, 32.0f, 0.5f, -1.0f, 0.0f, &ox, &oy);  /* 负方向也对称 */
+        CHECK(ox == -8.0f && oy == 0.0f);
+        faith_core_scatter_off(32.0f, 32.0f, 1.0f, 1.0f, 0.0f, 0, 0);       /* NULL 安全 */
+        faith_core_scatter_off(32.0f, 32.0f, 1.0f, 1.0f, 1.0f, &ox, 0);
+        CHECK(ox == 16.0f);
+    }
     printf("test_faith_core: %d passed, %d failed\n", s_pass, s_fail);
     return s_fail ? 1 : 0;
 }

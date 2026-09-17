@@ -13945,18 +13945,17 @@ MODKIT_DIR="/mnt/d/项目/幻想指南/18/th18_modkit" python3 tools/deploy.py
 `make_ufo_ecl.py` 的改动只影响它自己的合并清单；`mof.c` / `mof_green_core.*` 是 110 自己的文件。
 ⇒ 112 的 UFO 令牌行为**不变**（同名同体，只是同一次构建里多合一支）。
 
-### §BE-EC 共享件 `cards/faith.{h,c}` + `faith_core.h`：出生角拆出「显式角度」入口（2026-09-18c）
+### §BE-EC 共享件 `cards/faith_core.h` / `native/engine.h`：补 ZUN 的「爆多颗道具」落点分布（2026-09-18c）
 
-**背景**：用户实跑口径「对于**绿阴阳玉**的情况，把**信仰点撒开一点**」⇒ 大信仰点要能带**扇形出生角**
-（一手 = 恒角直上，见 `TUNING.md` §2.0i）。
+**背景**：用户实跑口径「对于**绿阴阳玉**的情况，把**信仰点撒开一点**」，并当场订正
+「**不是扇形，而是参考 zun 的爆多个道具是如何分布的那个代码**」⇒ 照抄一手公式（见 `TUNING.md` §2.0i 的逐条表）。
 
 | 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
 | --- | --- | --- | --- | --- |
-| `cards/faith_core.h` | 新增 `FAITH_SPREAD_STEP` + `faith_core_spread_radial(seq)`（**纯函数**：`(seq%7)−3` 档 × 步长；`seq < 0` ⇒ 0） | 扇形角要可离线单测，且默认 0 = 一手行为 | 系统卡批次 | `tests/test_faith_core.c` 新增 11 条断言（档序、7 档循环、幅度上界、`seq<0` = 一手）|
-| `cards/faith.h` / `faith.c` | 出生函数拆成 `faith_spawn_dir(…, float ang)`（新）+ `faith_spawn(…)`（**行为不变**：仍传 `FAITH_THROW_ANGLE`）+ 新增 `faith_spawn_big_spread()`（按序号取扇形角） | 「撒开一点」只该影响击破宿主那条路；既有调用点与既有单测必须**一模一样** | 同上 | `test_faith_core` 221→**228** 断言全绿；其余调用点一字未改 |
-| `cards/mof.c` | 击破宿主那条路的 `faith_spawn(...)` → `faith_spawn_big_spread(...)`（**唯一**调用点） | 用户口径；满 P 转换的小点保持一手角度 | 同上 | `make quick` 24 个主机测试全绿；实跑看日志里同一次爆发的点是否散开 |
+| `cards/faith_core.h` | 新增 `faith_core_scatter_off(rx, ry, rand01, cs, sn, *ox, *oy)`（`static inline` 纯算术：`off = (cs×rx×k, sn×ry×k)`、`k = rand01×0.5`）| 一手公式的最后两步要可离线单测；三角留在调用方（引擎 FSINCOS）⇒ 不引 libm/x87 | 系统卡批次 | `tests/test_faith_core.c` 新增 8 条断言（原点 / 半径一半 / rx≠ry / 负向对称 / NULL 安全）|
+| `native/engine.h` | 新增 `CE_ENEMY_DROP_AREA_X/Y`（`zEnemyDrop+0xbc/+0xc0`）与 `CE_ENEMY_DROP_AREA_DEFAULT`（32.0f）| 一手：`dropArea` handler `0x42d090` 写这两个字段；敌机死亡路径 `0x430766`/`0x430773` 自带 32.0f 默认值 | 同上 | 与 §BE-EA 同一套：只增不改；`make dll` 0 新警告 |
+| `cards/mof.c` | `mof_faith_scatter()`（读掉落区 + 我们的 LCG + `ce_polar_to_vel`）+ `on_enemy_death` 里落点加偏移 | 用户口径 | 同上 | `make dllx87` = 0 条 x87（**刻意不调引擎那两支走 x87 的 RNG**）|
+| `cards/faith.{h,c}` | **撤回**了 2026-09-18c 早先加的 `faith_spawn_dir()` / `faith_spawn_big_spread()`（扇形那套）| 用户否掉扇形 ⇒ 这两个新入口没有存在理由；`faith_spawn()` 回到**原样** | 同上 | `test_faith_core` 221 断言全绿；`faith_spawn()` 的实参/返回/运动学与改动前**逐字节相同** |
 
-**对既有卡的影响面**：`faith.h` / `faith.c` / `faith_core.h` 是 110 与 111 **共用**的池实现。
-本次只**新增**函数并让老的 `faith_spawn()` 变成一行转发 ⇒ 111（`signal.c`）的调用与行为**逐字节不变**
-（`faith_spawn()` 的实参顺序、返回语义、出生运动学都没动）；`faith_core_spread_radial()` 是新增的纯函数，
-不改变任何既有计算。⇒ 其它卡不可能受影响。
+**对既有卡的影响面**：`faith.{h,c}` 现在**没有被改动**（撤回到位）⇒ 111（`signal.c`）等共用方零影响；
+`faith_core.h` 只新增一个 `static inline`（不改变任何既有计算）；`engine.h` 只新增宏。⇒ 别的卡不可能受影响。

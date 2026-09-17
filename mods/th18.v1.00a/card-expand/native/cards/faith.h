@@ -179,11 +179,6 @@ int faith_spawn(float x, float y, faith_tier_t tier, int slot_mask, int32_t valu
 /* 大信仰点（110 的击破通道；§7.9 的判据由卡侧给，本函数只负责撒）。*/
 int faith_spawn_big(float x, float y, int32_t value_110);
 
-/* ★★ 2026-09-18c：**撒开一点**的大信仰点（用户实跑口径「对于绿阴阳玉的情况，把信仰点撒开一点」）。
- * 与 `faith_spawn_big()` 的唯一差别 = 出生角叠一个**左右扇形偏移**（`faith_core_spread_radial()`，
- * 按调用序号循环）⇒ 同一次爆发里十几颗点不再沿同一条竖线叠在一起。**刻意偏离一手**（见 TUNING §2.0i）。*/
-int faith_spawn_big_spread(float x, float y, int32_t value_110);
-
 /* ★★ 2026-09-16：**把整池活着的点切成「朝自机飞」**（本池 state 3 = 引擎道具 state 3 的对位）。
  * 用途 = 所有「全屏收点」的调用点 —— 它们原来只调 `ce_item_collect_all()`，而**那个函数只扫原生道具池**，
  * 本池的点是**自建 VM**（TH18 没有信仰点 item type）⇒ 实跑里「信仰点纹丝不动」。

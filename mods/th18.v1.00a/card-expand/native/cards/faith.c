@@ -631,12 +631,10 @@ static int dot_spawn_vm(faith_dot_t *p)
     return 1;
 }
 
-/* ★ 2026-09-18c：把「出生」拆成**带角度**的版本，供「撒开一点」用（见 `faith_core.h` 的
- * `faith_core_spread_radial()`）。`faith_spawn()` 仍走一手角度 ⇒ 既有调用点与单测**行为不变**。*/
-int faith_spawn_dir(float x, float y, faith_tier_t tier, int slot_mask, int32_t value, float ang)
+int faith_spawn(float x, float y, faith_tier_t tier, int slot_mask, int32_t value)
 {
     faith_dot_t *p;
-    float spd, vel[3];
+    float ang, spd, vel[3];
 
     if (!slot_mask || value <= 0) return 0;
     if (tier == FAITH_TIER_MICRO) return 0;      /* 微档不建实体（见文件头 ❓ 自定）*/
@@ -648,8 +646,8 @@ int faith_spawn_dir(float x, float y, faith_tier_t tier, int slot_mask, int32_t 
 
     /* ★ E-2（2026-09-15）：出生运动学 = **一手实参**，不再随机 ——
      * 角恒 −π/2（`0xbfc90fdb`，直上）、速按档（`faith_core_throw_speed()`：2.2 / 2.2 / 0.6）。
-     * 撒点位置由调用方给，**一律是实体自己的位置**（道具 / 弹原位；见 `faith_core.h` §E-2）。
-     * ⚠ 2026-09-18c：`ang` 改由调用方给（`faith_spawn()` 传一手值；「撒开一点」传扇形角）。*/
+     * 撒点位置由调用方给，**一律是实体自己的位置**（道具 / 弹原位；见 `faith_core.h` §E-2）。*/
+    ang = FAITH_THROW_ANGLE;
     spd = faith_core_throw_speed(tier);
 
     p = dot_at(tier, dot_n(tier));
@@ -677,25 +675,9 @@ int faith_spawn_dir(float x, float y, faith_tier_t tier, int slot_mask, int32_t 
     return 1;
 }
 
-int faith_spawn(float x, float y, faith_tier_t tier, int slot_mask, int32_t value)
-{
-    return faith_spawn_dir(x, y, tier, slot_mask, value, FAITH_THROW_ANGLE);
-}
-
 int faith_spawn_big(float x, float y, int32_t value_110)
 {
     return faith_spawn(x, y, FAITH_TIER_BIG, 1 << FAITH_SLOT_110, value_110);
-}
-
-/* ★★ 2026-09-18c：**撒开一点**的大信仰点（用户实跑口径，见 `faith_core.h` 的 `faith_core_spread_radial()`）。
- * 专供「击破宿主」那条路（一波绿阴阳玉同时死 ⇒ 十几颗点）：每次出生换一档扇形角。
- * 序号是**模块级**计数器 ⇒ 同一次爆发里的连续几颗会分别向左/右偏，不再叠成一条竖线。*/
-static int s_spread_seq;
-int faith_spawn_big_spread(float x, float y, int32_t value_110)
-{
-    int seq = s_spread_seq++;
-    return faith_spawn_dir(x, y, FAITH_TIER_BIG, 1 << FAITH_SLOT_110, value_110,
-                           FAITH_THROW_ANGLE + faith_core_spread_radial(seq));
 }
 
 /* ==================== ★★ 满 P 全场转换（A + B 的同一台机器；一手见 faith.h 的长注）====================
