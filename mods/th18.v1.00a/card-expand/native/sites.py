@@ -1555,7 +1555,7 @@ def check_def_exports(names):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["list", "check", "gen", "verify", "conflicts"])
+    ap.add_argument("cmd", choices=["list", "check", "gen", "verify", "conflicts", "explain"])
     ap.add_argument("others", nargs="*", help="conflicts：其它 patch 的 th18.v1.00a.js")
     ap.add_argument("--rows", type=int, default=ROW_COUNT,
                     help="新表行数（第 1 步用 58 = 行为零变化）")
@@ -1563,6 +1563,36 @@ def main():
     ap.add_argument("--alloc", action="store_true",
                     help="战线 B（跳转表搬迁）。rows > 58 时自动开")
     a = ap.parse_args()
+
+    if a.cmd == "explain":
+        # ★ 2026-09-17（用户口径：把站点预算闸定下来）：把"闸为什么这么定"写进工具本身 ——
+        # 同僚不必翻文档就能看懂依据、以及怎么把真实上限实测钉死。
+        print("站点预算闸 —— 依据与用法（不必读文档）\n")
+        print("【它是什么】thcrap 给每条声明的断点在内存里发一格跳板（`0x10` 字节/格）。")
+        print("            这些格是**全进程共用**的（分片实验已证：按 patch 分开也照样崩）⇒")
+        print("            凡是在同一进程里声明断点的 mod 都在抢同一排格子。")
+        print("\n【为什么按进程算】本机实测（2026-09-18）：")
+        for nm, n, src in external_sites():
+            print("    %-26s %3d 条  %s" % (nm, n, src))
+        print("    我们正式 patch              20 条  patch/th18.v1.00a.js")
+        print("    我们测试归档（可关，免费腾 2）  2 条  patch-test/th18.v1.00a.js")
+        print("    合计（进程级）              %d 条  ← 闸的真正口径" % (20 + 2 + external_sites()[0][1]))
+        print("\n【安全线】我们自己的硬线 SITE_BUDGET=%d；进程级 SITE_TOTAL_BUDGET=%d"
+              % (SITE_BUDGET, SITE_TOTAL_BUDGET))
+        print("    依据：已知 total=%d **崩过两次**（池崩：跳进未提交的池区，`Eip` 落 `RESERVE` 段）。"
+              % SITE_TOTAL_KNOWN_BAD)
+        print("    所以 38 是「比已知会崩的低 2 格」的**保守**值，不是实测出来的上限。")
+        print("\n【怎么把真实上限实测钉死（二分）】")
+        print("    1) 跑一局（进游戏即可，不必玩），看日志里这一行：")
+        print("         pool: 可执行页 N、跳板格 M、首个全零格 @…   ← DLL 开机实测（sdk.c 的 ce_pool_count）")
+        print("       M = 本配置**实际装了多少格**；与 `tooling/poolmap.py <日志>` 的离线解析互校。")
+        print("    2) 用两档对照改总数：关掉测试归档（−2）、必要时与 `base_tsa` 对照（−18）；")
+        print("       哪一档开始崩（看 crashdumps + 池崩签名）就是上限的所在区间，再二分收紧。")
+        print("    3) 把测出来的值写回 `SITE_TOTAL_BUDGET`，并在 COMPAT-MATRIX §1 记账。")
+        print("\n【配额（GATES.md §6）】还没真做的卡默认 **0 条新站点**（能调用/数据层/并进既有站点就不加）；")
+        print("    确需则 ≤1 条，并写明：为何不能并进既有站点 / 一手依据 / 与哪张卡共享。")
+        print("\n【提交前自查】`python3 sites.py check` ⇒ 看「合计」有没有涨过安全线。")
+        return 0
 
     if not os.path.exists(EXE):
         raise SystemExit("找不到样本：%s\n"
