@@ -104,13 +104,18 @@ TH09.5 有 `zPhotoManager` / `zPhotoManagerArrayItem`；TH16.5 有 `zCamera` / `
 
 | 遗留 | TH18 里有吗 | 证据（一手）| 对我们的用处 |
 | --- | --- | --- | --- |
-| **TH15 擦弹减速因子** `zItemManager.lolk_item_slowdown_factor`（float）| **有**（且本仓已在读）| `native/engine.h` 的 `CE_ITEM_SLOWDOWN` = `0xe6bb14`，注释就写着「TH15 擦弹减速的**残骸**」；`cards/faith.c` 的 `faith_item_slowdown_permille()` 已在用它做减速视觉 | **现成的"缓速"旋钮**（⚠ 它只作用于**道具**速度，不是全局时间）⇒ 107/116 那类"樱点/季节点减速"可直接复用同一常量（`cards/faith.c` 注释已留待办）|
-| **相机子系统**（TH17 那一套）| **有**（同名同族）| `camera_0..3` / `camera_pos_i` / `camera_fov_i` / `camera_sky_i` / `camera_facing_i` / `camera_up_i` / `current_camera` / `camera_index` / `Supervisor::set_camera_by_index` 在 `th17.v1.00b` 与 `th18.v1.00a` **都出现** | **拍照机制最值钱的遗留**：取景/相机姿态/视野可以直接驱动（做"取景框"表现或拍照判定盒的坐标系）|
+| **TH15 擦弹减速因子**（float）| **有**（本仓已在读）| `native/engine.h` 的 `CE_ITEM_SLOWDOWN` = `th18:0xe6bb14`；`cards/faith.c` 的 `faith_item_slowdown_permille()` 已在用 | 现成的"缓速"旋钮（**只作用于道具速度**，不是全局时间）|
+| **相机子系统**（TH17 那一套）| **有**（同名同族）| 见下方清单（`th17` 与 `th18` 都出现）| 拍照机制最值钱的遗留：取景/姿态/视野可直接驱动 |
 | **全局 `slowdown`**（TH16.5 的相机模式时间缓速）| **没有** | `slowdown` 只在 `th165.v1.00a` 出现 | 全局时间缓速要自建（每帧家务 / 数据层），或用上表第二行的相机近似 |
 | **拍照充能** `camera_charge_multiplier` / `zCamera` / `zCameraSky`（TH16.5 专有）| **没有** | 只在 `th165.v1.00a` | 充能拍照的**量**要从 TH16.5 一手读出来自己实现 |
 | 暂停截图 `PauseMenu::take_snapshot_for_pause` | **没有**（TH17/TH16.5 有）| `th165`/`th17` 有、`th18` 无 | 与拍照攻击无关，但说明沿用**不保证逐代保留** |
 | TH15 的 snapshot/restore 家族（`AnmManager::store_snapshot_of_vm` / `BombReimu::store_snapshot` …）| **没有** | 只在 `th15.v1.00b` | 与"拍照"无关（它是 bomb 的 VM 快照）—— 别混 |
 | TH18 独有 | `stage_gamestate_snapshots` / `zReplayGamestateSnapshot` | 只在 `th18` | 回放状态快照 ≠ 拍照 |
+
+**相机那一行的完整符号清单（一手，两作同名）**：`camera_0`…`camera_3` / `camera_pos_i` / `camera_fov_i` /
+`camera_sky_i` / `camera_facing_i` / `camera_up_i` / `current_camera` / `current_camera_index` / `camera_index` /
+`Supervisor::set_camera_by_index`（`th17.v1.00b` 与 `th18.v1.00a` 都出现）；TH16.5 另有 `zCamera`/`zCameraSky`/
+`camera_charge_multiplier`（TH18 无）。
 
 **由此定的两条路线（下一轮按这个挖）**
 
