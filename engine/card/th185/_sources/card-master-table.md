@@ -58,28 +58,28 @@
 | 75 | `KANAME2` | 要石ミサイル | 5 | 1 | 小族 | — | — | `KANAME2` | 🟡 |
 | 79 | `CYLINDER` | 霊力の標本瓶 | 5 | 1 | 小族 | — | — | `boss5b` | 🟡 |
 | 50 | `KANAME` | 忍耐の要石 | 5 | 1 | 小族 | — | — | `KANAME` | 🟡 |
-| 41 | `MOON` | 狂気の月 | 12 | 1 | 效果对 | 29 | script29 | `MOON` | 🟡 |
-| 42 | `MIKOFLASH` | やんごとなき威光 | 8 | 1 | 效果对 | 31 | script31 | `MIKOFLASH` | 🟡 |
-| 43 | `VAMPIRE` | ヴァンパイアファング | 12 | 1 | 效果对 | 30 | script30 | `VAMPIRE` | 🟡 |
-| 44 | `RICEBALL` | 大天狗の麦飯 | 13 | 1 | 效果对 | 28 | script28 | `boss5` | 🟡 |
-| 51 | `SUN` | 地底の太陽 | 9 | 1 | 效果对 | 27 | script27 | `SUN` | 🟡 |
-| 45 | `TEWI` | 詐欺うさぎの足 | 13 | 1 | 效果对 | 25 | script25 | `TEWI` | 🟡 |
-| 22 | `MANEKI` | 商売上手な招き猫 | 2 | 1 | 效果对 | 23 | script23 | `MANEKI_NEKO` | 🟡 |
-| 36 | `KOISHI` | 小石ころ帽子 | 3 | 1 | 效果对 | 16 | script16 | `KOISHI` | 🟡 |
+| 41 | `MOON` | 狂気の月 | 12 | 1 | 效果对 | 建 `script75` / 驱动 `script29` | ↑（`ability.anm` 脚本号） | `MOON` | 🟡 |
+| 42 | `MIKOFLASH` | やんごとなき威光 | 8 | 1 | 效果对 | 建 `script80` / 驱动 `script31` | ↑（`ability.anm` 脚本号） | `MIKOFLASH` | 🟡 |
+| 43 | `VAMPIRE` | ヴァンパイアファング | 12 | 1 | 效果对 | 建 `script78` / 驱动 `script30` | ↑（`ability.anm` 脚本号） | `VAMPIRE` | 🟡 |
+| 44 | `RICEBALL` | 大天狗の麦飯 | 13 | 1 | 效果对 | 建 `script73` / 驱动 `script28` | ↑（`ability.anm` 脚本号） | `boss5` | 🟡 |
+| 51 | `SUN` | 地底の太陽 | 9 | 1 | 效果对 | 建 `script71` / 驱动 `script26` | ↑（`ability.anm` 脚本号） | `SUN` | 🟡 |
+| 45 | `TEWI` | 詐欺うさぎの足 | 13 | 1 | 效果对 | 建 `script69` / 驱动 `script24` | ↑（`ability.anm` 脚本号） | `TEWI` | 🟡 |
+| 22 | `MANEKI` | 商売上手な招き猫 | 2 | 1 | 效果对 | 建 `script68` / 驱动 `script23` | ↑（`ability.anm` 脚本号） | `MANEKI_NEKO` | 🟡 |
+| 36 | `KOISHI` | 小石ころ帽子 | 3 | 1 | 效果对 | 建 `script20` / 驱动 `script16` | ↑（`ability.anm` 脚本号） | `KOISHI` | 🟡 |
 | 25 | `ITEM_LINE` | 神山への供物 | 1 | 1 | 小族 | — | — | `ITEM_LINE` | 🟡 |
-| 20 | `ITEM_CATCH` | 守銭奴の教訓 | 3 | 1 | 效果对 | 15 | script15 | `ITEM_CATCH` | 🟢 |
-| 19 | `YUYUKO` | 弾幕の亡霊 | 3 | 1 | 效果对 | 17 | script17 | `YUYUKO` | 🟢 |
-| 31 | `URUMI` | 濡れた大蛇 | 5 | 1 | 效果对 | 17 | script17 | `URUMI` | 🟡 |
-| 73 | `DEAD_SPELL` | かぐや姫の隠し箱 | 3 | 1 | 效果对 | 21 | script21 | `DEAD_SPELL` | 🟢 |
-| 29 | `MONEY` | 鬼傑組長の脅嚇 | 8 | 1 | 效果对 | 14 | script14 | `MONEY` | 🟢 |
-| 32 | `YAMAWARO` | 山童的買い物術 | 2 | 1 | 效果对 | 20 | script20 | `boss2` | 🟡 |
-| 37 | `KISERU` | ドラゴンキセル | 5 | 1 | 效果对 | — | — | `boss3` | 🟡 |
-| 38 | `MUKADE` | 暴食のムカデ | 5 | 1 | 效果对 | 33 | script33 | `boss7` | 🟡 |
-| 52 | `AUTOBOMB` | 生命爆発の薬 | 5 | 1 | 效果对 | 19 | script19 | `AUTOBOMB` | 🟢 |
-| 21 | `MINORIKO` | 生命の豊穣 | 4 | 1 | 效果对 | 11 | script11 | `MINORIKO` | 🟡 |
-| 68 | `SAKI` | 不屈の脳筋 | 3 | 1 | 效果对 | 32 | script32 | `SAKI` | 🟡 |
-| 81 | `MOKOU` | 不死鳥の尾 | 9 | 1 | 效果对 | 18 | script18 | `MOKOU` | 🟡 |
-| 5 | `TAKANE` | 百回目のブラックマーケット | 13 | 1 | 效果对 | 10 | script10 | `TAKANE` | 🟡 |
+| 20 | `ITEM_CATCH` | 守銭奴の教訓 | 3 | 1 | 效果对 | 建 `script16` / 驱动 — | ↑（`ability.anm` 脚本号） | `ITEM_CATCH` | 🟢 |
+| 19 | `YUYUKO` | 弾幕の亡霊 | 3 | 1 | 效果对 | 建 `script23` / 驱动 `script17` | ↑（`ability.anm` 脚本号） | `YUYUKO` | 🟢 |
+| 31 | `URUMI` | 濡れた大蛇 | 5 | 1 | 效果对 | 建 `script23` / 驱动 `script17` | ↑（`ability.anm` 脚本号） | `URUMI` | 🟡 |
+| 73 | `DEAD_SPELL` | かぐや姫の隠し箱 | 3 | 1 | 效果对 | 建 `script14` / 驱动 `script21` | ↑（`ability.anm` 脚本号） | `DEAD_SPELL` | 🟢 |
+| 29 | `MONEY` | 鬼傑組長の脅嚇 | 8 | 1 | 效果对 | 建 `script14` / 驱动 `script14` | ↑（`ability.anm` 脚本号） | `MONEY` | 🟢 |
+| 32 | `YAMAWARO` | 山童的買い物術 | 2 | 1 | 效果对 | 建 `script7` / 驱动 `script20` | ↑（`ability.anm` 脚本号） | `boss2` | 🟡 |
+| 37 | `KISERU` | ドラゴンキセル | 5 | 1 | 效果对 | 建 `script7` / 驱动 — | ↑（`ability.anm` 脚本号） | `boss3` | 🟡 |
+| 38 | `MUKADE` | 暴食のムカデ | 5 | 1 | 效果对 | 建 `script6` / 驱动 `script33` | ↑（`ability.anm` 脚本号） | `boss7` | 🟡 |
+| 52 | `AUTOBOMB` | 生命爆発の薬 | 5 | 1 | 效果对 | 建 `script6` / 驱动 `script19` | ↑（`ability.anm` 脚本号） | `AUTOBOMB` | 🟢 |
+| 21 | `MINORIKO` | 生命の豊穣 | 4 | 1 | 效果对 | 建 `script6` / 驱动 `script11` | ↑（`ability.anm` 脚本号） | `MINORIKO` | 🟡 |
+| 68 | `SAKI` | 不屈の脳筋 | 3 | 1 | 效果对 | 建 `script2` / 驱动 `script32` | ↑（`ability.anm` 脚本号） | `SAKI` | 🟡 |
+| 81 | `MOKOU` | 不死鳥の尾 | 9 | 1 | 效果对 | 建 `script2` / 驱动 `script18` | ↑（`ability.anm` 脚本号） | `MOKOU` | 🟡 |
+| 5 | `TAKANE` | 百回目のブラックマーケット | 13 | 1 | 效果对 | 建 `script2` / 驱动 `script10` | ↑（`ability.anm` 脚本号） | `TAKANE` | 🟡 |
 | 67 | `MAINSHOT_PU` | 弱肉強食の理 | 2 | 1 | 状态格(全) | `th185:0x4d10a0` | — | `MAINSHOT_PU` | 🟢 |
 | 23 | `MAINSHOT_SP` | はじける赤蛙 | 8 | 1 | 小族 | — | — | `MAINSHOT_SP` | 🟡 |
 | 26 | `POWERMAX` | 頼りになる弟子狸 | 8 | 1 | 小族 | — | — | `POWERMAX` | 🟢 |
