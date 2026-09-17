@@ -13662,7 +13662,7 @@ patch 入口）并把回读校验改成**按来源各自比 md5**（旧写法「
 （不下收点线 / 不放 B / 不进对话）时 collect2x 必须零活动**（不开批 / 不 settle / 不弹灰 NO BONUS / 钟不响），
 而**上线 / 放 B / 对话时收绿点照旧入批**（`faith:` 行的 `vitem member` 与 `skip` 两列都应非 0）。
 
-### §BE-DS `sdk_core.{h,c}` 的「虚拟收集」通道**带上成员面值**（B11，2026-09-18）
+### §BE-DS `sdk_core.{h,c}` 的「虚拟收集」通道**曾带成员面值 → 当天整体回退**（B11，2026-09-18）
 
 > 来源：`CARD-118-12IN1-REPORT.md` **B11**（用户实跑：「死亡时开了一个 ×1.6 的批、底下分数写 0」）。
 > 这是**共享头的签名变化**（不是纯追加）⇒ 按 `CLAUDE.md` 的协作纪律登记，方便 116 / 117 接 114 时照新签名写。
@@ -13673,11 +13673,19 @@ patch 入口）并把回读校验改成**按来源各自比 md5**（旧写法「
 | `native/sdk_core.c` | 新增 `s_vitem_note_value`（面值累加器，与计数**同生命周期**：同一处过期清零、同一处抽干清零）| 同上 | 同上 | 同上 + `make dllx87`（0 条 x87：本层刻意**零浮点**，面值走 `int32_t`）|
 | `native/cards/faith.c` | 成员上报带 `p->value`（信仰面值）；并新增 B12 的转换音 / 上抛段（同文件，不涉共享件）| 面值就是「这颗点的身价」（TH10 弹窗上那个数：大 5000…小 100）；B12 见报告 | 同上 | 源码级不变式（`test_faith_core.c`）|
 
+**★ 结局（2026-09-18 当天，用户裁决）**：**整套 `value` 通道已回退** —— 用户口径「**绿点的面值不进
+`batch_score`，它加的不是分数**」（绿点加的是信仰、不是 SCORE）。⇒ `ce_vitem_note_collect(kind, n)` /
+`ce_vitem_take_collect(void)` 恢复原签名、`c2x_collect_virtual(s, n, frame)` 恢复原签名、
+`faith.c` 只报颗数、三处单测回退。**留下这份登记是为了让 116 / 117 别照那条路再写一遍**：
+自建实体在 114 的批里**只算成员（计数 +1）**，批分里只有原生 P/钱的小分。
+⇒ 那次「×1.6 配 0 分」的真凶是**真空门的死亡分支**（`cards/faith.c` 的 `faith_vacuum_gate()` 去掉
+「自机 `state 2/4`」那一条），不是批分口径 —— 细节见 `CARD-118-12IN1-REPORT.md` §B11 与 `TUNING.md` §2.5e #11。
+
 **影响面**：两支入口的**调用点只有两处**（`cards/faith.c` 的生产者、`cards/collect2x.c` 的消费者，都是本批的卡）
-+ 主机单测；**116 / 117 将来接入时按新签名写**（多给一个 `value`；不想给就传 0 = 旧行为）。
++ 主机单测；**回退后签名与 2026-09-15 版逐字相同** ⇒ 别的卡零影响。
 `ce_vitem_declare_flying` / `ce_vitem_flying*` / `ce_vitem_drop` / `ce_vitem_reset` **签名与语义一字未动**。
 **站点账**：`sites.py check` 仍是我们 **22/24**、进程级 **42**（没有新增站点）。
 **回归**：`make quick`（主机 C 单测 + pytest）、`make dll`、`make dllx87`（0 条 x87）、
 `make check`（`sites.py check` / `capcheck` / `engine_abi_check` / `check-docs`）全部 exit 0。
-**实跑判据**：纯绿点批的 settle 行 `batch score` **不再恒为 0**（等于那批绿点的面值和），
-弹字的 `%d` 行有真实数字、补差非零（`AUDIT.md` §DA-8 第 4 条与 `TUNING.md` §2.5e #7）。
+**实跑判据**：① 纯绿点批的 settle 行 `batch score` 仍为 **0**（设计）；② **死亡 / 复活期不该再出现
+纯绿点的大批**（真空门已去掉死亡分支）⇒ 见 `AUDIT.md` §DA-8 第 4 条与 `TUNING.md` §2.5e #7 / #11。

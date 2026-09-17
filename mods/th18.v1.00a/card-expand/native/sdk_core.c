@@ -1093,35 +1093,27 @@ static struct {
 } s_vitem_fly[CE_SDK_CARD_ID_MAX + 1];       /* 下标 = 源号（0 = 共享模块；其余 = card_id）*/
 
 static int      s_vitem_note;                /* 成员累加器（待消费者抽干）*/
-static int32_t  s_vitem_note_value;          /* ★ 2026-09-18（B11）：同一批成员的**面值合计** */
 static uint32_t s_vitem_note_frame;          /* 最后一次上报的 SDK 帧号（时效判据）*/
 
 void ce_vitem_reset(void)
 {
     for (int i = 0; i <= CE_SDK_CARD_ID_MAX; ++i) { s_vitem_fly[i].n = 0; s_vitem_fly[i].frame = 0; }
     s_vitem_note = 0;
-    s_vitem_note_value = 0;
     s_vitem_note_frame = 0;
 }
 
-void ce_vitem_note_collect(int kind, int n, int32_t value)
+void ce_vitem_note_collect(int kind, int n)
 {
     const uint32_t now = ce_sdk_frame();
 
     if (kind != CE_VITEM_FULL) return;                   /* 半道具：不入批（§1x.3，见 sdk_core.h 契约 ①）*/
     if (n <= 0) return;
     /* 上一批已经过期（没有消费者）⇒ 从零重新开始，别把陈年计数算进下一次抽干。*/
-    if (s_vitem_note > 0 && now - s_vitem_note_frame > (uint32_t)CE_VITEM_HOLD_FRAMES) {
-        s_vitem_note = 0;
-        s_vitem_note_value = 0;
-    }
+    if (s_vitem_note > 0 && now - s_vitem_note_frame > (uint32_t)CE_VITEM_HOLD_FRAMES) s_vitem_note = 0;
     if (s_vitem_note < CE_VITEM_NOTE_MAX) {
         s_vitem_note += n;
         if (s_vitem_note > CE_VITEM_NOTE_MAX) s_vitem_note = CE_VITEM_NOTE_MAX;
     }
-    /* ★ 2026-09-18（B11）：面值合计**按生产者给的量累加**（可为 0/负 = 只计数）；
-     *   钳在 int32 内（正常每帧被抽干 ⇒ 看不到这个钳）。*/
-    s_vitem_note_value += value;
     s_vitem_note_frame = now;
 }
 
@@ -1136,13 +1128,11 @@ int ce_vitem_collect_pending(void)
     return vitem_note_fresh() ? s_vitem_note : 0;
 }
 
-int ce_vitem_take_collect(int32_t *value_out)
+int ce_vitem_take_collect(void)
 {
     const int n = ce_vitem_collect_pending();
 
-    if (value_out) *value_out = n > 0 ? s_vitem_note_value : 0;   /* 过期 ⇒ 累计值一并作废 */
     s_vitem_note = 0;                                    /* 过期与否都清零：陈年计数一次性作废 */
-    s_vitem_note_value = 0;
     return n;
 }
 

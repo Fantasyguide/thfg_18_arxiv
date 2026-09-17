@@ -369,6 +369,12 @@ int main(void)
             CHECK(strstr(fc, "FAITH_TOSS_FRAMES") != 0);
             CHECK(strstr(fc, "const int in_toss =") != 0);
             CHECK(strstr(fc, "&& !in_toss") != 0);        /* 豁免真的接在真空门那一句上 */
+            /* B11（2026-09-18 用户裁决）：真空门**不许**含「自机 state 2/4 ⇒ 吸」那一条
+             *   （那是 TH18 的死亡回收；实跑症状 = 一次死亡把 54 颗绿点一次吸进 114 的批）。
+             *   注意：`faith_player_above_line()` 里那条 `pstate == 2 || pstate == 4` 是**反向**用的
+             *   （死亡期不看线 ⇒ 返回 0），**必须留着**。*/
+            CHECK(strstr(fc, "if (ps == 2 || ps == 4) return 1;") == 0);
+            CHECK(strstr(fc, "if (pstate == 2 || pstate == 4) return 0;") != 0);
         } else {
             printf("  （跳过源码级检查：读不到 cards/faith.c —— 请从 native/ 目录跑本测试）\n");
         }

@@ -26,20 +26,15 @@ int c2x_batch_presence(c2x_state_t *s, int32_t frame)
     return 1;
 }
 
-int c2x_collect_virtual(c2x_state_t *s, int32_t n, int32_t value, int32_t frame)
+int c2x_collect_virtual(c2x_state_t *s, int32_t n, int32_t frame)
 {
-    /* 见 collect2x_core.h：与 c2x_collect_batch 只差 type 门（自建实体没有引擎 type）。
+    /* 见 collect2x_core.h：与 c2x_collect_batch 只差 type 门（自建实体没有引擎 type），
+     * 且**不碰 batch_score**（用户 2026-09-18 口径：「绿点的面值不进 batch_score，它加的不是分数」）。
      * 第一颗自建实体就能**开批**（§Z22 的成员门只针对**原生**道具的真空谓词；自建实体的
-     * 「算不算收点」由生产者自己的收集判定给出）。
-     * ★★ 2026-09-18（B11）：`value` 进 `batch_score` —— TH14 的成员加入点
-     * （`0x439c90` / 三处内联）就是 `count++` + `batch_score += 身价/10` 成对出现；
-     * 我们这一支的「身价」= 绿点的信仰面值（生产者 `faith.c` 从 `faith_dot_t.value` 给）。
-     * 值参与**同一个** `batch_score` 账 ⇒ 结算补差 `batch_score × (mult − 1000) / 1000`
-     * 对纯绿点批也非零、弹字的价值行不再是 0。*/
+     * 「算不算收点」由生产者自己的收集判定给出）。*/
     if (!s || n <= 0) return 0;
     s->batch_open = 1;
     s->batch_count += n;
-    s->batch_score += value;
     s->last_event_at = frame;
     return 1;
 }

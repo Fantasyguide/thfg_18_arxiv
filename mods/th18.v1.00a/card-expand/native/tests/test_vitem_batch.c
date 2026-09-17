@@ -17,11 +17,10 @@
  *      —— 原生池那一支由 `test_collect2x_core` 的既有 presence 用例覆盖（本文件只跑自建那一支）。
  *
  * ## 钉住的四条（用户验收）
- *   A. **成员 + 面值**（★ 2026-09-18 B11 改口径）：自建实体让批 **count 涨**、并把**面值**加进
- *      `batch_score`（TH14 的成员加入点 `0x439c90` 就是 `count++` 与 `batch_score += 身价` 成对）
- *      ⇒ 结算补差**非零**；`ce_add_score_delta()` 那一笔由接线层做（host 上不在本文件的范围内），
- *      但 `out.batch_score` 必须等于这些面的和 —— 旧口径「只 +1、批分恒 0」会让弹字的价值行
- *      在纯绿点批上显示 0（用户 2026-09-17 实跑报的就是这一条）；
+ *   A. **只 +1**（用户 2026-09-18 口径：「绿点的面值不进 `batch_score`，它加的不是分数」）：
+ *      自建实体让批 **count 涨**，**批分仍是 0** ⇒ 结算补差 0（纯绿点批的补差 0 是**设计**）；
+ *      「死亡时凭空冒出 54 颗纯绿点的大批」是**真空门**那条 bug，已在生产者侧修掉
+ *      （`cards/faith.c` 的 `faith_vacuum_gate()` 去掉自机 state 2/4 分支），不在本文件的范围内；
  *   B. **微档不入批**（§1x.3）：半道具两条通道都不认 ⇒ 一颗都不进批；
  *   C. **在飞期间 presence 为真、收完为假**：点在飞（声明 > 0）时批**跨过 idle 窗**都不结算；
  *      声明 0（收完 / 落地 / 出界）之后 idle 走完才结算；
@@ -50,10 +49,8 @@ static void frame_begin(void)
 /* `faith.c` 的 `faith_pool_tick()` 尾部：声明本帧还有几颗大 / 中点在飞（`kind` 恒 FULL —— 微档
  * 走 `faith_vitem_kind()` → HALF，那一条在测试 C 里单独调）。*/
 static void producer_flying(int kind, int n) { ce_vitem_declare_flying(CE_VITEM_SRC_SHARED, kind, n); }
-/* `faith.c` 的 `dot_collect()`：点被收的那一刻报一颗 + **这颗点的信仰面值**（`faith_dot_t.value`；
- * **一台机器只报一次**，110/111 共用池天然去重）。默认面值 0 的版本给「只关心计数」的用例用。*/
-static void producer_collect(int kind, int n)            { ce_vitem_note_collect(kind, n, 0); }
-static void producer_collect_value(int kind, int n, int32_t v) { ce_vitem_note_collect(kind, n, v); }
+/* `faith.c` 的 `dot_collect()`：点被收的那一刻报一颗（**一台机器只报一次**，110/111 共用池天然去重）。*/
+static void producer_collect(int kind, int n) { ce_vitem_note_collect(kind, n); }
 
 /* ---- 消费者（`cards/collect2x.c` 的 `on_item_frame` 核心段）---------------- */
 /* 逐行复刻接线层里的那一段（顺序也一致）：
@@ -63,17 +60,16 @@ static void producer_collect_value(int kind, int n, int32_t v) { ce_vitem_note_c
  * 返回 1 = 本帧结算了（与接线层的 `c2x_maybe_settle` 同返回值）。*/
 static int consumer_frame(c2x_state_t *s, c2x_settle_out_t *out)
 {
-    int32_t vval = 0;
-    const int vn = ce_vitem_take_collect(&vval);
-    if (vn > 0) c2x_collect_virtual(s, vn, vval, g_frame);   /* ★ 面值一并进批分（B11）*/
+    const int vn = ce_vitem_take_collect();
+    if (vn > 0) c2x_collect_virtual(s, vn, g_frame);
     if (!s->batch_open) return 0;
     if (ce_vitem_flying() > 0) { c2x_batch_presence(s, g_frame); return 0; }
     return c2x_maybe_settle(s, g_frame, out);
 }
 
-/* ---- A：成员 + 面值（绿点入批**并把面值算进批分**；B11 改口径），在飞期间续命、收完后 idle 满才结 ----
- * 剧情：25 颗大绿点（用户口径：大 / 中两档计入，面值 5000 = TH10 大信仰点在 N 难度的值）
- *       分 25 帧被收，每帧都还有点在飞；收完后（生产者声明 0）再等 idle 窗 ⇒ 结算。*/
+/* ---- A：只 +1（绿点入批但**不进批分**），并在飞期间续命、收完后 idle 满才结 ----------
+ * 剧情：25 颗大绿点（用户口径：大 / 中两档计入）分 25 帧被收，每帧都还有点在飞；
+ *       收完后（生产者声明 0）再等 idle 窗 ⇒ 结算。*/
 static void test_A_members_and_presence(void)
 {
     c2x_state_t s;
@@ -92,12 +88,12 @@ static void test_A_members_and_presence(void)
     for (int i = 0; i < 25; ++i) {
         frame_begin();
         producer_flying(CE_VITEM_FULL, 25 - i);
-        producer_collect_value(CE_VITEM_FULL, 1, 5000);
+        producer_collect(CE_VITEM_FULL, 1);
         CHECK(consumer_frame(&s, &out) == 0);         /* 批开着、点在飞：本帧必然不结 */
         CHECK(s.batch_open == 1 && s.batch_count == i + 1);
-        CHECK(s.batch_score == (int64_t)(i + 1) * 5000);   /* ★ 面值逐颗进批分（B11）*/
+        CHECK(s.batch_score == 0);                    /* ★ 纯绿点批：批分恒 0（用户 2026-09-18 口径）*/
     }
-    CHECK(s.batch_count == 25 && s.batch_score == 25 * 5000);
+    CHECK(s.batch_count == 25);
 
     /* 点在飞但**一颗都不收**：跨过 idle 窗（8 帧）好几倍也不许结算 —— 这条就是「在飞期间
      * presence 为真」的判据（没有它，批会在我们这些点还在飞的时候被判「收点流停了」）。*/
@@ -111,9 +107,9 @@ static void test_A_members_and_presence(void)
     /* 收完（生产者声明 0）⇒ 从**最后一次 presence** 起算 idle，窗内不许结 */
     frame_begin();
     producer_flying(CE_VITEM_FULL, 0);
-    producer_collect_value(CE_VITEM_FULL, 2, 2 * 5000);   /* 最后两颗（同帧一批：面值合计 10000）*/
+    producer_collect(CE_VITEM_FULL, 2);               /* 最后两颗 */
     CHECK(consumer_frame(&s, &out) == 0);
-    CHECK(s.batch_count == 27 && s.batch_score == 27 * 5000);
+    CHECK(s.batch_count == 27);
 
     for (int i = 0; i < C2X_BATCH_SETTLE_IDLE - 1; ++i) {
         frame_begin();
@@ -127,14 +123,12 @@ static void test_A_members_and_presence(void)
     settled_at = g_frame;
 
     CHECK(out.mult_permille == C2X_TABLE_M1);         /* 27 颗 ⇒ 20 档 ×0.5（档位逻辑一字未改）*/
-    CHECK(out.batch_score == 27 * 5000);              /* ★ 纯绿点批的批分 = Σ面值（B11）*/
-    /* ⇒ 补差非零（这就是用户抱怨的那条：「×1.6 但分数 0」不再出现）*/
-    CHECK(out.batch_score * (int64_t)(out.mult_permille - 1000) / 1000 == -(27 * 5000) / 2);
+    CHECK(out.batch_score == 0);                      /* ★ 绿点不进批分 ⇒ 补差 0（设计，不是漏算）*/
+    CHECK(out.batch_score * (int64_t)(out.mult_permille - 1000) / 1000 == 0);
     CHECK(out.fragment_type == C2X_FRAG_BOMB && out.fragment_count == 1);       /* 碎片逻辑不变 */
     CHECK(s.batch_open == 0 && s.batch_count == 0);
     CHECK(settled_at > 0);
-    /* ★ 计分层/SCORE 一分没动：**本层只声明事实**，写 SCORE 的是接线层的
-     *   `ce_add_score_delta(batch_score × (mult−1000)/1000)`（B11 之后那一笔不再恒 0）。*/
+    /* ★ 计分层/SCORE 一分没动（绿点加的是信仰、不是 SCORE —— 也不许把信仰当分数放出来）。*/
     CHECK(ce_score_total() == score0 && ce_score_participants() == 0);
 }
 

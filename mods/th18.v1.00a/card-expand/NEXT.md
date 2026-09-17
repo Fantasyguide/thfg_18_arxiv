@@ -4577,9 +4577,15 @@ FLAN_MALLET_SWING_2    ability/flan/FLAN_MALLET_SWING_2.png           @96,16,48x
   → `batch had 54 virtual (green-dot) members of 54` → `settle 54 items, batch score 0 -> x1.600, +0 score`。
 - 机制：死亡 ⇒ 真空门命中「自机 state 2/4」（一手 `th18:0x445ba0`）⇒ 全场绿点一起飞来自机、全部以
   state 3 被收 ⇒ 入批（B1 之后的正确行为）；但旧口径「只 +1」**不喂批分** ⇒ 倍率乘在 0 上。
-- 落地：**绿点的面值进 `batch_score`**（照抄 TH14 成员加入点 `count++` 与 `batch_score += 身价` 成对的做法）
-  ⇒ `sdk_core.{h,c}` 两支入口带 `value`、`c2x_collect_virtual()` 加 `value`、`faith.c` 报 `p->value`。
-  档位 / 倍率 / 碎片 / 4:1 循环**一字未改**。**实跑看**：纯绿点批的 settle 行 `batch score` 非零、补差非零。
+- **★ 用户裁决（同日订正）**：**不是**去喂批分 —— 原话「**绿点的面值不进 `batch_score`，它加的不是分数**」
+  + 「这个 bug 应当是**真空门命中的问题**，即**在那里不应该触发这个机制**」。
+  ⇒ 我第一版加的 `value` 通道（`sdk_core` / `c2x_collect_virtual` / `faith.c` / 三处单测）**已整体回退**。
+- 真修在**生产者侧**：`cards/faith.c` 的 `faith_vacuum_gate()` **删掉「自机 `state 2/4`（死亡 / 复活）
+  ⇒ 当在线上」那一条**（引擎那条在 `th18:0x445ba0`，是 TH18 自己的死亡回收，本池不采用）
+  ⇒ 死亡 / 复活期绿点照常飘落（仍可触收 / 环吸 / 被全屏收点收走），不会再被一次吸进 114 的批。
+  `faith_player_above_line()` 里 `state 2/4 ⇒ 返回 0`（死亡期不看线）**保留**，两条不是同一件事。
+- **实跑看**：死亡那一下**不再冒出纯绿点的大批**（不该再有「×1.6 配 0 分」）；纯绿点批的
+  `batch score` 仍是 0（设计）；原生 P/钱在死亡时被引擎吸走那条**不受影响**（它们的批分是真分）。
 
 ### ③ B12 满 P 转换：音 + 上抛
 - **生成点本来就是 P 点自己的位置**（一手 `th10:0x41ba50`：原位 + 角 −π/2 + 速 2.2；helper `0x41bb00`

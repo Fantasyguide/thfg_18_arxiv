@@ -185,12 +185,9 @@ static void on_item_frame(ce_card_t *c)
      *     同一个谓词，用户规格「与 P 点 / 金钱完全一致」在**接线两端**都成立。
      * 顺序：与卡 tick（生产者）同帧谁先谁后都读得到（层带 2 帧容差，见 `sdk_core.h` 契约 ④）。*/
     {
-        int32_t vvalue = 0;
-        const int vn = ce_vitem_take_collect(&vvalue);
+        const int vn = ce_vitem_take_collect();
         if (vn > 0) {
-            /* ★★ 2026-09-18（B11）：`vvalue` = 这批自建实体的**面值合计**（信仰面值）⇒ 进批分，
-             * 与原生 P/钱那一支（stash 差量）汇进**同一个** `batch_score`。*/
-            c2x_collect_virtual(s, vn, vvalue, now);
+            c2x_collect_virtual(s, vn, now);
             s_batch_virtual += vn;
             s_virtual_total += vn;
         }

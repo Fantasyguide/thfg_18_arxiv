@@ -835,11 +835,10 @@ static void dot_collect(faith_dot_t *p)
      *   （引擎那边这两条路同样不进批，见 `collect2x.c` 的成员门）。判据全文见 `faith_core.h` 的对照表。
      *   诊断：两类各自的累计数每 600 帧随 `faith:` 汇总行打一次（实跑对账「哪些颗进了批」用）。*/
     if (faith_core_state_is_vacuum_flight(p->state)) {
-        /* ★★ 2026-09-18（B11）：**带上这颗点的信仰面值** —— 114 把它加进批分（TH14 的成员加入点
-         * 就是「count++ 与 batch_score += 身价」成对；`value` = `faith_dot_t.value`，也就是
-         * 这颗点在 TH10 弹窗上显示的那个数：大 5000/8000/10000、小 100；111 侧 = 它自己的面值）。
-         * 旧口径「只 +1」不喂批分 ⇒ 纯绿点批的倍率乘在 0 上（用户实跑看到「×1.6 但分数 0」）。*/
-        ce_vitem_note_collect(faith_vitem_kind((faith_tier_t)p->tier), 1, p->value);
+        /* ★★ 2026-09-18（B11）：**只报颗数、不报值** —— 用户口径：「绿点的面值不进 `batch_score`，
+         * 它加的不是分数」（绿点加的是信仰、不是 SCORE）⇒ 114 把它算作**批成员**（计数 +1），
+         * 批分里只有原生 P/钱的小分；纯绿点批的补差恒 0 是设计。*/
+        ce_vitem_note_collect(faith_vitem_kind((faith_tier_t)p->tier), 1);
         ++s_stat_vitem_member;
     } else {
         ++s_stat_vitem_skip;
@@ -882,15 +881,21 @@ int faith_player_above_line(void)
  *   ④ 对话 VM 非 0（`Gui+0x1b0`）`0x445bd4`–`0x445be0`
  * 命中 ⇒ 道具 state → 3（`0x445f63` = 真空飞行的入口）。
  * ⚠ 本卡原来少了 ①（`faith_player_above_line()` 里那两条是**反向**用的：state 2/4 时它返回 0，
- *   也就是「不看线」—— 正是 ① 的另一半），而且只在 `state == 1` 判 ⇒ 2026-09-16 一并补全。*/
+ *   也就是「不看线」—— 正是 ① 的另一半），而且只在 `state == 1` 判 ⇒ 2026-09-16 一并补全。
+ * ★★ 2026-09-18（B11）：① **又去掉了**（用户裁决）—— 引擎含它是 TH18 的死亡回收，
+ *   而本池的点在死亡 / 复活期不该被吸走（实跑：一次死亡把 54 颗绿点一次吸进 114 的批）。
+ *   判据与理由见函数体上方那段注释。*/
+/* ★★ 2026-09-18（B11，用户裁决）：**去掉「自机 state 2/4」那一条** ——
+ *   引擎（TH18）的道具真空门确实含它（一手 `0x445ba0`/`0x445ba5`：「死亡中 / 复活中 ⇒ 当在线上」），
+ *   那是 TH18 自己的**死亡回收**机制；但用户口径是：**绿点（TH10/TH11 的信仰点）在那一刻不该被
+ *   这台机器吸走** —— 实跑症状 = 一次死亡把全场 54 颗绿点一次吸进 114 的批（`×1.6、分数 0`）。
+ *   ⇒ 本池只保留另外三条（过回收线 / 放 B 前 60 帧 / 对话管理器）；死亡与复活期**不吸**。
+ *   ⚠ 有意的**原版口径差**：TH18 原生 P/钱在死亡时照旧被引擎吸走（那是引擎自己的行为，我们不干预，
+ *     它也因此照旧入批、批分非零）；本条只作用于**本池的自建点**。
+ *   ⚠ 另外三条的**全屏收点**路径不受影响：`faith_collect_all()`（111 满槽 / 萃香 / 107 森罗结界）
+ *     是显式调用，与这道门无关。*/
 static int faith_vacuum_gate(void)
 {
-    uint8_t *pl = CE_PLAYER();
-
-    if (pl) {
-        const int32_t ps = *(const int32_t *)(pl + CE_PLAYER_STATE);
-        if (ps == 2 || ps == 4) return 1;
-    }
     return faith_player_above_line() || CE_BOMB_COLLECTING() || CE_GUI_MSG_ACTIVE();
 }
 

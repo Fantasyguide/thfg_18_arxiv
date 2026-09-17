@@ -131,16 +131,15 @@ int c2x_collect_batch(c2x_state_t *s, uint32_t type, int32_t frame);
  * 语义与 `c2x_collect_batch` **只差 type 门**：自建实体没有引擎 type / state（它是我们自己的 VM），
  * 「算不算收点」由生产者自己的收集判定给出（`cards/faith.c` 的 `dot_collect()`，微档不进，
  * 见 §1x.3）⇒ 这里负责「开批 + count += n + batch_score += value + 记 last_event_at」。
- * ★★ **2026-09-18（B11）：`value` 进 `batch_score`** —— 用户实跑看到「54 个成员的批 ×1.6、
- *   底下分数写 0」⇒ 倍率乘在 0 上 = 白弹一次。原来（2026-09-15 口径「只 +1」）不喂批分，
- *   于是**纯绿点批**的补差恒 0（那时绿点在普通游玩里大量进批、批分恒 0 也看不出来；
- *   收窄到真空飞行之后，死亡 / 全屏收点会一次性收掉几十颗 ⇒ 纯绿点的大批成了常态）。
- *   TH14 的对应物：批成员加入时 `0x439c90`（内联三处）**同时**做 `count++` 与
- *   `batch_score += 身价/10`（一手见 `collect2x_core.c` 的注释与 `AUDIT.md` §Z）⇒ 我们照抄：
- *   绿点的 `value` = 它的**信仰面值**（`faith_dot_t.value`，即 TH10 弹窗上那个数：大 5000…
- *   小 100；111 侧 = 它自己的面值）—— 「身价」语义与 P/钱那一支一致。
- * n <= 0 / s 为空 → 0（不做事、不返回「已计数」）；`value` 可为 0（等于只计数）。 */
-int c2x_collect_virtual(c2x_state_t *s, int32_t n, int32_t value, int32_t frame);
+ * ★★ **2026-09-18（B11）：`batch_score` 里只有原生 P/钱** —— 用户口径：「**绿点的面值不进
+ *   `batch_score`，它加的不是分数**」（绿点加的是信仰，不是 SCORE）⇒ 这一支**只动 count**，
+ *   不碰 `batch_score`（2026-09-18 曾加过 `value` 参数并当天回退，别再走回头路）。
+ *   ⇒ 纯绿点批的补差恒 **0 是设计**：弹字的价值行会是 0、补差 0，但档位 / 碎片照出。
+ *   ★ 那么「一批 54 颗纯绿点批」本身是怎么来的？—— 用户实跑那次是**死亡**（真空门的死亡分支
+ *   把全场绿点一次吸走）。那条属于**另一条 bug**，已在生产者侧修掉（`cards/faith.c` 的
+ *   `faith_vacuum_gate()` 去掉「自机 state 2/4」分支）⇒ 纯绿点的大批不该再出现在死亡那一刻。
+ * n <= 0 / s 为空 → 0（不做事、不返回「已计数」）。 */
+int c2x_collect_virtual(c2x_state_t *s, int32_t n, int32_t frame);
 
 /* presence 续批（§Z21，TH14 0x43898e 原义）：批开时每帧由接线层在有批集道具吸附中（TH18 state 3/4）
  * 调它 → 记 last_event_at=frame，返回 1；批未开 → 0（无事可续）。只续 idle 不计数。*/

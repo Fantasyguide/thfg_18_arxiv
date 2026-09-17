@@ -1098,33 +1098,33 @@ static void test_vitem_channel(void)
     ce_score_bridge(50000, 1);                       /* 身价 50000（= 点 × 10）⇒ G_0 = 5000 点 */
     const int32_t score_before = ce_score_total();
     CHECK(score_before == 5000);
-    CHECK(ce_vitem_take_collect(0) == 0);             /* 空：没有东西可抽 */
+    CHECK(ce_vitem_take_collect() == 0);             /* 空：没有东西可抽 */
     CHECK(ce_vitem_collect_pending() == 0);
-    ce_vitem_note_collect(CE_VITEM_FULL, 1, 0);
+    ce_vitem_note_collect(CE_VITEM_FULL, 1);
     CHECK(ce_vitem_collect_pending() == 1);
     CHECK(ce_score_total() == score_before);         /* ★ 只 +1：SCORE 一分没动 */
     CHECK(ce_score_participants() == 0);             /* 也没让谁「参与」计分层 */
-    CHECK(ce_vitem_take_collect(0) == 1);             /* 抽干 */
-    CHECK(ce_vitem_take_collect(0) == 0);             /* 不重复计（抽走就是抽走）*/
+    CHECK(ce_vitem_take_collect() == 1);             /* 抽干 */
+    CHECK(ce_vitem_take_collect() == 0);             /* 不重复计（抽走就是抽走）*/
     CHECK(ce_vitem_collect_pending() == 0 && ce_score_total() == score_before);
     /* 一帧里收了一撮点：同帧多次上报累加 */
-    ce_vitem_note_collect(CE_VITEM_FULL, 3, 0);
-    ce_vitem_note_collect(CE_VITEM_FULL, 4, 0);
+    ce_vitem_note_collect(CE_VITEM_FULL, 3);
+    ce_vitem_note_collect(CE_VITEM_FULL, 4);
     CHECK(ce_vitem_collect_pending() == 7);
-    CHECK(ce_vitem_take_collect(0) == 7);
+    CHECK(ce_vitem_take_collect() == 7);
     /* n <= 0 = 不做事 */
-    ce_vitem_note_collect(CE_VITEM_FULL, 0, 0);
-    ce_vitem_note_collect(CE_VITEM_FULL, -2, 0);
+    ce_vitem_note_collect(CE_VITEM_FULL, 0);
+    ce_vitem_note_collect(CE_VITEM_FULL, -2);
     CHECK(ce_vitem_collect_pending() == 0);
 
     /* ② 半道具（微档）：上报被丢弃，且不会污染已累加的完整道具 */
     ce_vitem_reset();
-    ce_vitem_note_collect(CE_VITEM_HALF, 5, 0);
+    ce_vitem_note_collect(CE_VITEM_HALF, 5);
     CHECK(ce_vitem_collect_pending() == 0);
-    CHECK(ce_vitem_take_collect(0) == 0);
-    ce_vitem_note_collect(CE_VITEM_FULL, 2, 0);
-    ce_vitem_note_collect(CE_VITEM_HALF, 100, 0);
-    CHECK(ce_vitem_take_collect(0) == 2);             /* 只算那 2 颗完整道具 */
+    CHECK(ce_vitem_take_collect() == 0);
+    ce_vitem_note_collect(CE_VITEM_FULL, 2);
+    ce_vitem_note_collect(CE_VITEM_HALF, 100);
+    CHECK(ce_vitem_take_collect() == 2);             /* 只算那 2 颗完整道具 */
     ce_vitem_declare_flying(CE_VITEM_SRC_SHARED, CE_VITEM_HALF, 9);
     CHECK(ce_vitem_flying() == 0);                   /* 半道具也不算「有东西在飞」 */
     CHECK(ce_vitem_flying_from(CE_VITEM_SRC_SHARED) == 0);
@@ -1162,50 +1162,22 @@ static void test_vitem_channel(void)
     ce_score_reset();
     ce_score_bridge(10000, 1);
     const int32_t sc = ce_score_total();
-    ce_vitem_note_collect(CE_VITEM_FULL, 3, 0);         /* 没有消费者 */
+    ce_vitem_note_collect(CE_VITEM_FULL, 3);         /* 没有消费者 */
     ce_vitem_declare_flying(CE_VITEM_SRC_SHARED, CE_VITEM_FULL, 2);
     CHECK(ce_vitem_collect_pending() == 3 && ce_vitem_flying() == 2);
     for (int i = 0; i <= CE_VITEM_HOLD_FRAMES; ++i) ce_sdk_frame_bump();
     CHECK(ce_vitem_collect_pending() == 0);          /* 过期：陈年计数作废（不会攒到下一次抽干）*/
-    CHECK(ce_vitem_take_collect(0) == 0);
+    CHECK(ce_vitem_take_collect() == 0);
     CHECK(ce_vitem_flying() == 0);
     CHECK(ce_score_total() == sc && ce_score_participants() == 0);   /* 引擎侧的分一分没动 */
     /* 上限钳：没人抽干时也不会溢出（钳在 CE_VITEM_NOTE_MAX）*/
     ce_vitem_reset();
-    for (int i = 0; i < 10; ++i) ce_vitem_note_collect(CE_VITEM_FULL, 1000, 0);
+    for (int i = 0; i < 10; ++i) ce_vitem_note_collect(CE_VITEM_FULL, 1000);
     CHECK(ce_vitem_collect_pending() == CE_VITEM_NOTE_MAX);
-    CHECK(ce_vitem_take_collect(0) == CE_VITEM_NOTE_MAX);
+    CHECK(ce_vitem_take_collect() == CE_VITEM_NOTE_MAX);
     ce_vitem_reset();
     CHECK(ce_vitem_collect_pending() == 0 && ce_vitem_flying() == 0);
 
-    /* ⑥ ★★ 2026-09-18（B11）：成员通道带上**面值**（114 把它加进批分 ⇒ 纯绿点批不再是 ×倍率×0）。
-     * 语义：面值**跨帧累加**、与计数**同生共死**（同一帧抽干 / 同一帧过期作废 / 半道具两边都不进）。*/
-    {
-        int32_t val = -12345;
-        ce_vitem_reset();
-        CHECK(ce_vitem_take_collect(&val) == 0 && val == 0);      /* 空：计数 0、面值也清 0 */
-        ce_vitem_note_collect(CE_VITEM_FULL, 1, 5000);            /* 大信仰点面值 5000 */
-        ce_vitem_note_collect(CE_VITEM_FULL, 2, 100);             /* 两颗小信仰点：`value` 是**这批的合计** */
-        CHECK(ce_vitem_collect_pending() == 3);
-        CHECK(ce_vitem_take_collect(&val) == 3 && val == 5100);   /* 3 颗 / 面值合计 5000+100 */
-        val = -1;
-        CHECK(ce_vitem_take_collect(&val) == 0 && val == 0);      /* 抽走就是抽走（面值也不留）*/
-        /* 半道具：连面值一起丢 */
-        ce_vitem_note_collect(CE_VITEM_HALF, 4, 999);
-        CHECK(ce_vitem_take_collect(&val) == 0 && val == 0);
-        /* 面值可为 0（只计数）/ 可为负（生产者自有口径）——本层原样累加、不解释 */
-        ce_vitem_note_collect(CE_VITEM_FULL, 1, 0);
-        ce_vitem_note_collect(CE_VITEM_FULL, 1, -50);
-        CHECK(ce_vitem_take_collect(&val) == 2 && val == -50);
-        /* 过期：计数与面值一起作废（不会攒到下一次抽干）*/
-        ce_vitem_note_collect(CE_VITEM_FULL, 2, 777);
-        for (int i = 0; i <= CE_VITEM_HOLD_FRAMES; ++i) ce_sdk_frame_bump();
-        val = -1;
-        CHECK(ce_vitem_take_collect(&val) == 0 && val == 0);
-        /* `value_out` 可空（只关心计数的调用方不用改）*/
-        ce_vitem_note_collect(CE_VITEM_FULL, 1, 42);
-        CHECK(ce_vitem_take_collect(0) == 1);
-    }
 }
 
 /* ---- ★ PoC 高度层（收点线；2026-09-15）--------------------------------------------
