@@ -248,6 +248,64 @@ static void test_swap_apply_restore(void)
     CHECK(mof_green_pair_is_green(s_tbl, 0) == 0);
 }
 
+/* ★ 「每波多刷一只绿的」的队形槽位（用户 2026-09-18：「按照几何形状，每波多一对，或者多一只」）*/
+static void test_extra_slots(void)
+{
+    float x[20] = {0}, out[4] = {0};
+    int n, i;
+
+    /* 观测不到任何点 ⇒ 不补（这一波还没开始）*/
+    CHECK(mof_green_extra_slots(x, 0, 0, out, 4) == 0);
+    CHECK(mof_green_extra_slots(0, 3, 0, out, 4) == 0);
+    CHECK(mof_green_extra_slots(x, 3, 0, 0, 4) == 0);
+    CHECK(mof_green_extra_slots(x, 3, 0, out, 0) == 0);
+
+    /* 对称队形 ±60、±120（间距 60）⇒ 多一只补在右侧 180；多一对 ⇒ ±180 */
+    x[0] = 60.0f; x[1] = -60.0f; x[2] = 120.0f; x[3] = -120.0f;
+    n = mof_green_extra_slots(x, 4, 0, out, 4);
+    CHECK(n == 1);
+    CHECK(out[0] == 180.0f);
+    n = mof_green_extra_slots(x, 4, 1, out, 4);
+    CHECK(n == 2);
+    CHECK(out[0] == -180.0f && out[1] == 180.0f);
+
+    /* 人少的那一侧优先：只有右侧两点 ⇒ 补到左侧 */
+    x[0] = 40.0f; x[1] = 80.0f;
+    n = mof_green_extra_slots(x, 2, 0, out, 4);
+    CHECK(n == 1 && out[0] == -120.0f);          /* xmax 80 + 间距 40 */
+
+    /* 只观测到一个点 ⇒ 用默认间距（40）—— 否则 `d` 会是 0，补出来的位置与原点重合。
+     * ⚠ 侧的规则照旧（右侧已有人 ⇒ 补左侧）⇒ 结果是 −140 而不是 +140。*/
+    x[0] = 100.0f;
+    n = mof_green_extra_slots(x, 1, 0, out, 4);
+    CHECK(n == 1 && out[0] == -140.0f);
+    /* 「多一对」不受侧影响：±(100+40) */
+    n = mof_green_extra_slots(x, 1, 1, out, 4);
+    CHECK(n == 2 && out[0] == -140.0f && out[1] == 140.0f);
+
+    /* 全在 x=0（例如从正中刷出）⇒ 默认间距，多一只落在 +40 */
+    x[0] = 0.0f; x[1] = 0.0f;
+    n = mof_green_extra_slots(x, 2, 0, out, 4);
+    CHECK(n == 1 && out[0] == 40.0f);
+
+    /* 非对称三点（-30 / +50 / +90）：|x| 唯一值 {30,50,90} ⇒ **最小**正间距 20（不是 40）
+     * ⇒ 补在左侧 -(90+20) = -110（左侧人少优先）*/
+    x[0] = -30.0f; x[1] = 50.0f; x[2] = 90.0f;
+    n = mof_green_extra_slots(x, 3, 0, out, 4);
+    CHECK(n == 1 && out[0] == -110.0f);
+
+    /* `out_max` 截断（多一对但只给一格 ⇒ 只写负侧那一个；`|x|` 只有一个唯一值 ⇒ d=40 默认）*/
+    x[0] = 60.0f; x[1] = -60.0f;
+    n = mof_green_extra_slots(x, 2, 1, out, 1);
+    CHECK(n == 1 && out[0] == -100.0f);
+
+    /* `n > 16` 也要安全（函数内部夹到 16；卡侧最多喂 8 个）：
+     * 20 个全正、|x| 间距 10 ⇒ xmax=200（第 16 个之前就夹住了也只是更小）⇒ 补左侧 −(xmax+10)。*/
+    for (i = 0; i < 20; ++i) x[i] = (float)(i * 10 + 10);
+    n = mof_green_extra_slots(x, 20, 0, out, 4);
+    CHECK(n == 1 && out[0] < -160.0f);
+}
+
 int main(void)
 {
     printf("test_mof_green_core —— 变绿（110）纯逻辑\n");
@@ -256,6 +314,7 @@ int main(void)
     test_lookup();
     test_sane();
     test_swap_apply_restore();
+    test_extra_slots();
     printf("test_mof_green_core: %d passed, %d failed\n", s_pass, s_fail);
     return s_fail ? 1 : 0;
 }

@@ -750,6 +750,164 @@ static void mof_drop_wipe(uint8_t *e)
     *(int32_t *)(d + CE_ENEMY_DROP_TIMED_TIME) = 0;      /* 限时窗口（不清它，下一帧还会并回来）*/
 }
 
+/* ============================================================================================
+ * ★★ 2026-09-18（同日第二版）：「**每波多刷一只（或一对）绿的**」—— 不碰原版妖精
+ *
+ * 用户原话：「**有没有可能你给循环 +1？**」+「按照**几何形状**，每波多**一对**，或者多**一只**，你懂我意思」。
+ * 为什么不是「改 ECL 循环计数 +1」：循环体只有**一处** `enmCreate("GirlBlueA01", …)`，所有迭代共用同一
+ * 调用点 ⇒ 多刷出来的是**原色**妖精，引擎里没有任何字段能区分「我是多出来的那只」（全量论证见
+ * `REPORT-110-GREEN-FAIRY.md` §1.6）⇒ 改成「**我们自己多刷一只**」：
+ *
+ *   · 载体 = **我们自己的 ECL 子程序** `CEGreenFairy`（`assets/ecl/green_extra.ecl.txt`；
+ *     `make ecl-ufo` 把它合进原生 `default.ecl`，`release.py:33` 映射进 thcrap 常开的 patch-step3）
+ *     —— 先例 = 108 使魔壳 / 112 的四个 UFO 令牌（都走 `ce_spawn_enemy()`，`sdk.h:980`）。
+ *   · 它**天生就是绿的**：子程序里 `anmSelect(2); anmSetMain(0, 10);` ⇒ `enemy.anm` 绿色变体。
+ *     ★ 顺带：`(N,S) = (2,10)` **本来就是宿主表的键** ⇒ 它死亡时自动撒一颗大信仰点，
+ *       本文件一个字都不用加；`main_drop = 0` ⇒ **纯**信仰点（原生什么都不掉）。
+ *   · **几何**：卡侧每帧扫敌人，把本波已经刷出的小妖精**出生点**记下来（最多 8 个），
+ *     隔 `MOF_GE_DELAY` 帧后用 `mof_green_extra_slots()` 算出**队形外面那一格**（左右人少的一侧优先；
+ *     一对则左右各一），**并且采样本波第一只的入场向量**（同帧位移 → 角/速）传给子程序
+ *     ⇒ 它沿着同一队形方向入场，看起来就是这一波的一员。
+ *   · **一波的边界**：用「超过 `MOF_GE_GAP` 帧没有新的小妖精」当判据（不需要读 ECL 调用栈）。
+ *   · 卡不在场 ⇒ 本函数根本不会被调（只有 `on_tick_2` 调它）；已刷出的自己会到点离场（子程序里 `delete()`）。
+ *
+ * ⚠ 影响面（写在这里免得后人踩）：**多一只敌人** ⇒ 章节击破数、117 的波次普查
+ *   （`animal_wave_group_totals`，它以**静态表**为准、运行期 census 兜底）、以及本卡
+ *   「非 boss 击破 +10f 连击」（`on_enemy_death`）都会看到它 —— 用户口径下这是**要的**
+ *   （它就该是一颗能打的信仰点），但数值口径变了要知道。*/
+#define MOF_GE_ECL_NAME  "CEGreenFairy"   /* = `assets/ecl/green_extra.ecl.txt` 里的子程序名 */
+#define MOF_GE_ENABLE    1                /* 总开关（❓自定）*/
+#define MOF_GE_PAIR      0                /* 0 = 每波多 **1 只**；1 = 每波多 **一对**（❓自定）*/
+#define MOF_GE_GAP       75               /* 帧：这么久没有新的小妖精 ⇒ 认为换了一波（❓自定）*/
+#define MOF_GE_DELAY     18               /* 帧：本波第一只出现后隔这么久再补刷（采样入场向量用）*/
+#define MOF_GE_SAMPLES   8                /* 记几个出生点（队形采样上限）*/
+#define MOF_GE_LIFE      40               /* 血量（TH18 小妖精量级；`CE_SPAWN_LIFE` 必须 < 1000）*/
+#define MOF_GE_SCORE     0                /* 击破分：给 0 ⇒ 不靠它刷分（❓自定）*/
+#define MOF_GE_TTL       690              /* 存活上限帧数（只传给 ECL 记日志；子程序自己到点 delete）*/
+#define MOF_GE_ANGLE_DOWN 1.5707964f      /* π/2：ECL 的角度（0 = +x，π/2 = 向下）*/
+
+static int32_t s_ge_frame;                /* 本波第一只出现的那一帧 */
+static int32_t s_ge_last;                 /* 上一只小妖精出现的帧（波次边界的判据）*/
+static int32_t s_ge_max_id;               /* 见过的小妖精里最大的 `enemy_id`（单调递增 ⇒ 用它认「新」）*/
+static float   s_ge_first_y;              /* 本波第一只的出生 **y**（队形的深度）*/
+static float   s_ge_x[MOF_GE_SAMPLES];
+static int32_t s_ge_n;
+static int32_t s_ge_done;                 /* 本波已补刷 */
+static int32_t s_ge_stage = -1;
+static int32_t s_ge_stat;                 /* 诊断：一共刷了几只 */
+
+/* 「小妖精」的外观（`enemy.anm` 的扁平脚本号；一手 = `native/tools/measure_enemy_variants.py`
+ * 的变体表 + `local/_scratch/th18_wave_density.py` 的波次实例普查）：
+ *   A 组 0–19（GirlRedA\* / GirlBlueA\* / GirlA0x）、GirlB/GirlC 20–39、
+ *   B 组 184–203（st02/03/07 的蓝/红妖精）；C 组 159–178 也收（ECL 零站点，收了也无害）。
+ * **不含**：大妖精 40–44 / 224–228（64×64，剪影没有绿色版）、阴阳玉 53–80（`Cir*`，本来就有绿的）、
+ *   `Phantom*` 91–110（幽灵，不是妖精）。*/
+static int mof_ge_is_fairy(int32_t src, int32_t script)
+{
+    if (src != 2) return 0;
+    if (script >= 0 && script <= 39) return 1;
+    if (script >= 159 && script <= 178) return 1;
+    if (script >= 184 && script <= 203) return 1;
+    return 0;
+}
+
+static void mof_ge_reset(int32_t stage)
+{
+    s_ge_stage = stage;
+    s_ge_frame = 0;
+    s_ge_last = 0;
+    s_ge_first_y = 0.0f;
+    s_ge_n = 0;
+    s_ge_done = 0;
+    /* ⚠ `s_ge_max_id` **不重置**：它只是「我见过哪些实例」的水位线，跨关继续单调递增。*/
+}
+
+static void mof_ge_spawn_one(float x, float y, float angle, float speed)
+{
+    uint8_t sp[CE_SPAWN_SIZE];
+    uint8_t *e;
+
+    memset(sp, 0, sizeof sp);
+    *(float   *)(sp + CE_SPAWN_POS + 0) = x;
+    *(float   *)(sp + CE_SPAWN_POS + 4) = y;
+    *(float   *)(sp + CE_SPAWN_POS + 8) = 0.0f;
+    *(int32_t *)(sp + CE_SPAWN_SCORE)     = MOF_GE_SCORE;
+    *(int32_t *)(sp + CE_SPAWN_MAIN_DROP) = 0;              /* 纯信仰点：原生什么都不掉 */
+    *(int32_t *)(sp + CE_SPAWN_LIFE)      = MOF_GE_LIFE;
+    *(int32_t *)(sp + CE_SPAWN_ECL_I + 0) = MOF_GE_TTL;     /* `$I0` = 存活上限（子程序只用来记日志）*/
+    *(float   *)(sp + CE_SPAWN_ECL_F + 0) = angle;          /* `%F0` = 入场角（与同波妖精一致）*/
+    *(float   *)(sp + CE_SPAWN_ECL_F + 4) = speed;          /* `%F1` = 入场速度 */
+    e = (uint8_t *)ce_spawn_enemy(MOF_GE_ECL_NAME, sp);
+    if (e) {
+        ++s_ge_stat;
+        ce_log("mof: green extra fairy @(%.0f,%.0f) angle %.3f speed %.3f (wave frame %d, %d obs, total %d)",
+               (double)x, (double)y, (double)angle, (double)speed,
+               (int)s_ge_frame, (int)s_ge_n, (int)s_ge_stat);
+    } else {
+        ce_log("mof: green extra fairy spawn FAILED —— `%s` 不在已加载的 default.ecl 里？"
+               "（`make ecl-ufo` + `make dist` + 发布那一步）", MOF_GE_ECL_NAME);
+    }
+}
+
+/* 每帧：认新妖精 → 划波次 → 隔 N 帧补刷（只由 `on_tick_2` 调 ⇒ 卡不在场时一次都不跑）。*/
+static void mof_ge_tick(int32_t frame)
+{
+    uint8_t *em = CE_ENEMY_MGR();
+    int32_t stage = CE_CURRENT_STAGE();
+
+#if !MOF_GE_ENABLE
+    (void)frame; (void)em; (void)stage;
+    return;
+#else
+    if (!em) return;
+    if (stage != s_ge_stage) mof_ge_reset(stage);
+
+    {
+        uint8_t *e;
+        CE_ENEMY_FOREACH(em, e) {
+            int32_t src = 0, script = 0, id;
+            mof_enemy_anm_identity(e, &src, &script);
+            if (!mof_ge_is_fairy(src, script)) continue;
+            id = *(const int32_t *)(e + CE_ENEMY_ID);
+            if (id <= s_ge_max_id) continue;                  /* 老面孔 */
+            s_ge_max_id = id;
+            if (s_ge_last != 0 && frame - s_ge_last > MOF_GE_GAP) {   /* 隔太久 ⇒ 新的一波 */
+                s_ge_n = 0;
+                s_ge_done = 0;
+            }
+            if (s_ge_n == 0) {
+                const float *p = ce_enemy_pos(e);
+                s_ge_frame = frame;
+                s_ge_first_y = p ? p[1] : 0.0f;      /* 队形的深度（补刷的那只与它同深）*/
+            }
+            if (s_ge_n < MOF_GE_SAMPLES) {
+                const float *p = ce_enemy_pos(e);
+                s_ge_x[s_ge_n] = p ? p[0] : 0.0f;
+                ++s_ge_n;
+            }
+            s_ge_last = frame;
+        }
+    }
+
+    if (s_ge_done || s_ge_n <= 0) return;
+    if (frame < s_ge_frame + MOF_GE_DELAY) return;            /* 等它动几帧，好采样入场向量 */
+
+    {
+        float slots[2];
+        int i, n;
+        /* ⚠ **不采样同波妖精的入场向量**（v1）：算角要用 `atan2f`，而 32 位目标上 float 返回走
+         * x87（`make dllx87`：本仓 0 条 x87 的硬线）⇒ 这里的入场向量就用**原生小妖精那一套**
+         * （`GirlA01` 体：`%F0 = π/2 向下`、`%F1 = 1.0`），队形一致性靠**出生点**给（见
+         * `mof_green_extra_slots()`）。要真对齐同波妖精的向量，得改用整数近似或直接读它的
+         * 速度字段（记为后续可选优化，`TUNING.md` §2.0h）。*/
+        float angle = MOF_GE_ANGLE_DOWN, speed = 1.0f;
+        n = mof_green_extra_slots(s_ge_x, s_ge_n, MOF_GE_PAIR, slots, 2);
+        for (i = 0; i < n; ++i) mof_ge_spawn_one(slots[i], s_ge_first_y, angle, speed);
+        s_ge_done = 1;
+    }
+#endif
+}
+
 /* ---- 击破 → 大信仰点（§7.9）★ **正式钩子 = `on_enemy_death`**（共享死亡断点 `0x430240`）----
  *
  * 为什么是死亡钩子（2026-09-12 SDK owner 修完断点后的正式路径）：
@@ -1412,6 +1570,7 @@ static int on_tick_2(ce_card_t *c)
     ++s->frame;
     mof_ensure_registered(c);       /* ★ 中盘拿卡（give12）时 on_load 不会被调 ⇒ 每帧补一次（幂等）*/
     mof_green_tick();               /* ★★ 2026-09-18：变绿（换 sprite 表项；按关收窄、幂等、可还原）*/
+    mof_ge_tick(s->frame);          /* ★★ 2026-09-18b：「每波多刷一只/一对绿的」（原版妖精不动）*/
 
     /* ① 擦弹 → 擦弹倍率（§7.5：`min(graze × 0.0001, 8.99)`）
      * ★ 2026-09-12 一手订正（任务 ③）：**这是 th11（SA）的式子，TH10 没有擦弹倍率**
@@ -1710,6 +1869,10 @@ static void mof_clear(ce_card_t *c)
      * sprite 表**，是彻头彻尾的「跨帧留下的东西」；`on_run_reset` 与 `on_delete` 都走本函数。
      * ⚠ 放在 `if (!s) return;` **之前**：还原不依赖卡私有状态（备份在文件静态区）。*/
     mof_green_restore_all();
+    s_ge_stage = -1;        /* ★ 2026-09-18b：下一局重新划波次（`s_ge_max_id` 是水位线，不动）*/
+    s_ge_n = 0;
+    s_ge_done = 0;
+    s_ge_last = 0;
     if (!s) return;
     /* ★★ 2026-09-16k：灵击的**范围环**要先删掉再 `memset` —— 它的 VM 是**跨帧**留下的东西
      *   （脚本 279 自己不会死）⇒ 不显式删就会「删了卡还挂一圈在场上」。火星不用管（一次性自删）。*/

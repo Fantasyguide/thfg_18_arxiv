@@ -57,6 +57,49 @@ const mof_green_pair_t mof_green_pairs[MOF_GREEN_PAIR_MAX] = {
     {   256,     244,     199,     194,     0,  ALL_STAGES,  "B 组第四色（橙）· ECL 零站点（备用行）" },
 };
 
+int mof_green_extra_slots(const float *x, int n, int want_pair, float *out_x, int out_max)
+{
+    float xmax = 0.0f, d = 0.0f;
+    int neg = 0, pos = 0, i, j, cnt = 0;
+    float uniq[16];
+    int nu = 0;
+
+    if (!x || !out_x || out_max <= 0 || n <= 0) return 0;
+    if (n > 16) n = 16;
+    for (i = 0; i < n; ++i) {
+        float a = x[i] < 0.0f ? -x[i] : x[i];
+        if (a > xmax) xmax = a;
+        if (x[i] < 0.0f) ++neg; else if (x[i] > 0.0f) ++pos;
+    }
+    /* 唯一的 |x| 值（排序后取最小正间距）—— 队形的「一格」有多宽 */
+    for (i = 0; i < n; ++i) {
+        float a = x[i] < 0.0f ? -x[i] : x[i];
+        int seen = 0;
+        for (j = 0; j < nu; ++j) if (uniq[j] == a) { seen = 1; break; }
+        if (!seen && nu < 16) uniq[nu++] = a;
+    }
+    for (i = 1; i < nu; ++i) {                 /* 插入排序（nu 很小）*/
+        float v = uniq[i];
+        for (j = i - 1; j >= 0 && uniq[j] > v; --j) uniq[j + 1] = uniq[j];
+        uniq[j + 1] = v;
+    }
+    for (i = 1; i < nu; ++i) {
+        float gap = uniq[i] - uniq[i - 1];
+        if (gap > 0.5f && (d == 0.0f || gap < d)) d = gap;
+    }
+    if (d == 0.0f) d = MOF_GREEN_EXTRA_SLOT_MIN;      /* 只观测到一个点 / 全在 x=0 ⇒ 用默认间距 */
+
+    if (want_pair) {
+        if (cnt < out_max) out_x[cnt++] = -(xmax + d);
+        if (cnt < out_max) out_x[cnt++] = xmax + d;
+    } else {
+        /* 补在人少的那一侧；左右一样多（含「都观测不到」）⇒ 右侧 */
+        float s = (neg < pos) ? -1.0f : 1.0f;
+        if (cnt < out_max) out_x[cnt++] = s * (xmax + d);
+    }
+    return cnt;
+}
+
 int mof_green_active_count(void)
 {
     int i, n = 0;

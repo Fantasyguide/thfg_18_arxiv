@@ -24,7 +24,8 @@ MOD = HERE.parents[1]
 REPO = MOD.parents[2]
 
 VERSION = "18"
-FRAGMENT = HERE / "ufo.ecl.txt"               # 我们那 9 个子程序（入库）
+FRAGMENT = HERE / "ufo.ecl.txt"               # 112 的 9 个 UFO 子程序（入库）
+GREEN_FRAGMENT = HERE / "green_extra.ecl.txt"  # ★ 110 的「绿妖精」载体 1 个子程序（入库）
 OUT = MOD / "native" / "build" / "ecl" / "default.ecl"
 DAT = REPO / "local" / "th18.v1.00a" / "dat"
 ECLMAP = REPO / "local" / "vendor" / "eclmap" / "eclmap" / "th18.eclm"
@@ -33,6 +34,10 @@ ENC = dict(encoding="utf-8", errors="surrogateescape")
 # 我们的子程序名（与 TH12 真名一致；`_TTL` 后缀那 4 个是自计时等价改写）
 OURS = ["UFO_EtBreak", "UFO_Red", "UFO_Blue", "UFO_Green", "UFO_Rainbow",
         "UFO_Red_TTL", "UFO_Blue_TTL", "UFO_Green_TTL", "UFO_Rainbow_TTL"]
+# ★ 2026-09-18：同一份 `default.ecl` 里再加 **110 的绿妖精载体**（用户「每波多刷一只绿的」）。
+#   放在同一个合并步里是**必须的**：两个脚本各写一次 `build/ecl/default.ecl` 会互相覆盖，
+#   而 `make dist` 只跑 `ecl-ufo` 这一个目标 ⇒ 漏掉谁都是「发布出去少一支子程序」。
+OURS_GREEN = ["CEGreenFairy"]
 
 _SUB_RE = re.compile(r"^void (\w+)\(\)\n\{\n.*?^\}\n", re.S | re.M)
 
@@ -85,6 +90,18 @@ def main():
         extra = sorted(set(frag) - set(OURS))
         raise SystemExit("ufo.ecl.txt 里有多余子程序：%s" % ", ".join(extra))
 
+    if not GREEN_FRAGMENT.is_file():
+        raise SystemExit("没有 %s" % GREEN_FRAGMENT)
+    green = subs(GREEN_FRAGMENT.read_text(**ENC))
+    g_missing = [n for n in OURS_GREEN if n not in green]
+    if g_missing:
+        raise SystemExit("green_extra.ecl.txt 少了子程序：%s" % ", ".join(g_missing))
+    if len(green) != len(OURS_GREEN):
+        g_extra = sorted(set(green) - set(OURS_GREEN))
+        raise SystemExit("green_extra.ecl.txt 里有多余子程序：%s" % ", ".join(g_extra))
+    frag.update(green)
+    ALL_OURS = OURS + OURS_GREEN
+
     # 原生 default.ecl 走的是**已解包**的那份（与 make_dev_ecl.py 同一口径）
     raw = DAT / "default.ecl"
     if not raw.is_file():
@@ -99,12 +116,12 @@ def main():
     if not retail:
         raise SystemExit("原生 default.ecl 反编译不出子程序 —— 口径变了？")
 
-    clash = sorted(set(retail) & set(OURS))
+    clash = sorted(set(retail) & set(ALL_OURS))
     if clash:
         raise SystemExit("子程序重名（原生里已有）：%s" % ", ".join(clash))
 
-    # 合：原生原文 + 我们的 9 个子程序（追加在末尾，不影响原生的入口/结构）
-    text = retail_text.rstrip("\n") + "\n\n" + "\n".join(frag[n] for n in OURS)
+    # 合：原生原文 + 我们的全部子程序（UFO 9 + 绿妖精 1，追加在末尾，不影响原生的入口/结构）
+    text = retail_text.rstrip("\n") + "\n\n" + "\n".join(frag[n] for n in ALL_OURS)
     merged_txt = tmp / "merged.ecl.txt"
     merged_txt.write_text(text, **ENC)
 
@@ -120,7 +137,7 @@ def main():
         raise SystemExit("往返二进制不一致（%d vs %d B）—— 说明有损"
                          % (again.stat().st_size, built.stat().st_size))
 
-    # 自洽 2：往返后我们的 9 个子程序都在，且「指令行数」与源片段一致（结构级）
+    # 自洽 2：往返后我们的全部子程序都在，且「指令行数」与源片段一致（结构级）
     back = subs(back_txt.read_text(**ENC))
     for n in OURS:
         if n not in back:
@@ -130,9 +147,11 @@ def main():
             raise SystemExit("%s 的指令行数变了：源 %d → 往返 %d"
                              % (n, len(ops_src), len(ops_back)))
 
-    n_subs = len(retail) + len(OURS)
-    print("原生 %d 子 + 我们 %d 子 = %d 子；无重名 ✓" % (len(retail), len(OURS), n_subs))
-    print("往返：编回 → 再编一次，二进制字节一致 ✓（%d B）；9 个子程序的指令行数不变 ✓" % built.stat().st_size)
+    n_subs = len(retail) + len(OURS) + len(OURS_GREEN)
+    print("原生 %d 子 + 我们 %d 子（UFO %d + 绿妖精 %d）= %d 子；无重名 ✓"
+          % (len(retail), len(OURS) + len(OURS_GREEN), len(OURS), len(OURS_GREEN), n_subs))
+    print("往返：编回 → 再编一次，二进制字节一致 ✓（%d B）；我们 %d 个子程序的指令行数不变 ✓"
+          % (built.stat().st_size, len(OURS) + len(OURS_GREEN)))
 
     if a.verify_only:
         print("--verify-only：不写产物")

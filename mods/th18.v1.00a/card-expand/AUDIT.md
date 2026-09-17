@@ -13926,3 +13926,21 @@ MODKIT_DIR="/mnt/d/项目/幻想指南/18/th18_modkit" python3 tools/deploy.py
 ⚠ **留给用户的收紧点**：`E` 的"截断位置 / 是否含高度门"目前按 TH11 的形状取；你那份「一系列最大得点公式」
 若能给一条精确式子（哪张卡、含不含 `ce_score_set_coeff()` 的高度门、怎么截），我就能把这条从"形状对"
 收紧成"逐值对"。现在它的作用是：**公式一漂，日志里先有一行**。
+
+### §BE-EB 共享资产 `assets/ecl/` 追加**一支子程序**（110 的绿妖精载体）+ 合并脚本扩容（2026-09-18b）
+
+**背景**：用户 2026-09-18「**有没有可能你给循环 +1？**」+「按照**几何形状**，每波多**一对**，或者多**一只**」
+⇒ 落地成「**我们自己多刷一只绿的**」（不碰原版妖精）。全量论证见 [`REPORT-110-GREEN-FAIRY.md`](REPORT-110-GREEN-FAIRY.md) §1.6，
+数值口径见 [`TUNING.md`](TUNING.md) §2.0h。
+
+| 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
+| --- | --- | --- | --- | --- |
+| `assets/ecl/green_extra.ecl.txt`（**新增**）| 一支 ECL 子程序 `CEGreenFairy`（`anmSelect(2); anmSetMain(0,10);` + 照抄原生小妖精 `GirlA01` 体的运动/体型；约 690 帧后飞离 `delete()`）| `ce_spawn_enemy()` 需要一个**已加载 ECL 里的子程序名**；这支就是「每波多刷的那只绿的」| 系统卡批次 | `make ecl-ufo` 通过：原生 30 子 + 我们 10 子 = **40 子**、无重名、**往返二进制字节一致**（20436 B）、指令行数不变 |
+| `assets/ecl/make_ufo_ecl.py` | 合并**两份**片段（`ufo.ecl.txt` + `green_extra.ecl.txt`）、重名检查扩到全部 10 支、汇总打印改成真实条数 | 两个脚本各写一次 `build/ecl/default.ecl` 会互相覆盖，而 `make dist` 只跑 `ecl-ufo` 一个目标 ⇒ 必须同一个合并步 | 同上 | 同上；`grep -c "^void "` 反编译回来 = **40** |
+| `native/Makefile`（`dist` 已含该步，未改）| —— | `dist` 里的 `cp build/ecl/default.ecl $(DIST)/patch-step3/th18/` 一行**本来就覆盖它** | — | `make dist` 后对账：modkit 里的 `th18/default.ecl` 与 `native/build/ecl/default.ecl` **同 md5** |
+| `native/cards/mof.c` | 新增 `mof_ge_*`（每帧扫敌认新妖精 → 划波次 → 按队形补刷一只/一对；`ce_spawn_enemy`）| 用户口径；卡不在场时一次都不跑（只由 `on_tick_2` 调）| 同上 | 纯逻辑 `mof_green_extra_slots()` 由 `tests/test_mof_green_core.c`（244 断言）钉住；`make dllx87` = 0 条 x87（**刻意不用 `atan2f`**）|
+| `native/cards/mof_green_core.{h,c}` | 新增 `mof_green_extra_slots()`（队形槽位，纯函数）+ `MOF_GREEN_EXTRA_SLOT_MIN` | 让「补在哪一格」可离线单测 | 同上 | 同上 |
+
+**对既有卡的影响面**：`assets/ecl/*` 只**新增**一支子程序（原生 30 支逐字节不变 —— 合并脚本会跑「编回后再编一次字节一致」这道自洽）；
+`make_ufo_ecl.py` 的改动只影响它自己的合并清单；`mof.c` / `mof_green_core.*` 是 110 自己的文件。
+⇒ 112 的 UFO 令牌行为**不变**（同名同体，只是同一次构建里多合一支）。

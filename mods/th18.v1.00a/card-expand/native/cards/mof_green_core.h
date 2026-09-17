@@ -91,6 +91,19 @@ int mof_green_pair_in_stage(const mof_green_pair_t *p, int32_t stage);
  * 两个输出都是**相对当前状态**的动作（apply ∩ applied == 0、restore ⊆ applied）。*/
 void mof_green_plan(int32_t stage, uint32_t applied, uint32_t *to_apply, uint32_t *to_restore);
 
+/* ============================ ★ 2026-09-18：「每波多刷一只绿的」的**队形槽位** ============================
+ * 用户口径：「按照**几何形状**，每波多**一对**，或者多**一只**」⇒ 补刷的那只（或那一对）要**接在
+ * 这一波队形外面**，而不是随便找个地方冒出来。卡侧每帧扫敌人、把**本波**已经观测到的出生点
+ * x 坐标喂进来，本函数算出「下一格」的 x（纯函数 ⇒ 主机单测）。
+ *
+ * 规则（`❓ 自定`，登记 `TUNING.md` §2.0h）：
+ *   · `xmax` = 已观测点的最大 |x|；`d` = 相邻 |x| 的最小正间距（观测不到 ⇒ `MOF_GREEN_EXTRA_SLOT_MIN`）；
+ *   · **多一只**：补在**人少的那一侧**（左右只数相等时默认右侧），位置 = `±(xmax + d)`；
+ *   · **多一对**：`−(xmax + d)` 与 `+(xmax + d)` 各一只（先负后正，顺序固定 ⇒ 可测）。
+ * 返回写进 `out_x` 的个数（`out_max` 上限）。`n <= 0` ⇒ 返回 0（这一波还没看到任何妖精）。*/
+#define MOF_GREEN_EXTRA_SLOT_MIN 40.0f
+int mof_green_extra_slots(const float *x, int n, int want_pair, float *out_x, int out_max);
+
 /* ---- 内存块原语（`tbl` = sprite 表基址；都只碰 `tbl` 与 `backup`，不认引擎地址）---- */
 
 /* 运行期同形体检：源/绿两支的第 i 项宽高必须逐条相等（不等 ⇒ 常量与真表对不上，别改）。*/
