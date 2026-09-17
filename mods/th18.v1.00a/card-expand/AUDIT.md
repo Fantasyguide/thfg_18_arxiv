@@ -13766,3 +13766,10 @@ thcrap 日志以 `Removing plug-ins...` 收尾、`crashdumps/` 没有新 dump �
 ⚠ 一条**未发布**的隐患：`ce_chain_node_guard` 现在的站点（`th18:0x401357`）与落点**同址** ⇒ 一旦启用就是
 「跳回桩自身」的无限重入，而且它在 `call eax` **之后**、拦不住它要防的那次调用 ⇒ 启用前必须挪回
 `th18:0x401352`（cs 5）并把落点设成 `th18:0x401357`。
+
+**★ 2026-09-18 追加（同一 §BE-DV 的加固）**：`ce_retaddr_set()` 的第二条判据 = **落点必须在模块映像里**
+（`MEMORY_BASIC_INFORMATION.Type == MEM_IMAGE`）。理由：thcrap 的断点池页是 `VirtualAlloc` 的
+`PAGE_EXECUTE` **私有页**，只查「可执行」挡不住头号崩溃那一族；加上这条后，真有人把池地址当落点时会
+**记一行并保持原返回地址**。合法落点（6 个 exe 内常量 + muzzle 的调用者返回地址）都是 `MEM_IMAGE`。
+覆盖面：只管我们自己写 `retaddr` 的地方；引擎自己 `ret` 弹到陈旧池地址那条路拦不住（见
+`engine/_shared/thcrap-breakpoint-pools.md` §7/§8）。门：`make check` rc=0；已 deploy（DLL `d30899b8…`，4 份同 md5）。

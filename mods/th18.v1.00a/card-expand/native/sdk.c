@@ -964,30 +964,43 @@ static void ce_site_trail(const char *name)
 
 static int ce_addr_exec(uint32_t a);              /* 定义在后面（`VirtualQuery` 判页保护）*/
 
-/* ★★ 2026-09-17（本次会话）：`regs->retaddr` 的**唯一**写入口。
- * 一手依据 = `engine/_shared/thcrap-breakpoint-pools.md` §2（thcrap 2024-11-06 源码 + 本机桩字节）：
+/* ★★ 2026-09-17/18（本次会话）：`regs->retaddr` 的**唯一**写入口。
+ * 一手依据 = `engine/_shared/thcrap-breakpoint-pools.md` §2/§8（thcrap 2024-11-06 源码 + 本机桩字节）：
  *   · 桩**直接** `call BP_*`，返回非 0 时才自己把 cave 写进 `[ebp+0x24]`；
  *     **没有 `breakpoint_process`、没有 `esp_diff`** ⇒ 改 `regs->esp` 没人消费（要弹栈参只能用声明里的
- *     `stack_clear_size`，走 `s` 变体的 `ret imm16`）；
+ *     `stack_clear_size`，走 `s` 变体的 `ret imm16`，且 `imm = 4 + 函数自身清理量`）；
  *   · `regs->retaddr` 就是桩 `ret` 的落点 ⇒ **写错一次 = 控制流跳到别处**；本仓头号崩溃就是
  *     「跳进 thcrap 池页没写过的那一段」（`00 00` + `eax=1` ⇒ 写 `0x1` 的访问违例）。
- * 所以所有落点都过这一道门：**目标不是"已提交且可执行"的页就一个字都不写**（保持原返回地址 =
- * 退回原版行为），并打一行（限 8 次）点名给了什么地址。判定只读、一次 `VirtualQuery`。*/
+ *
+ * 所以所有落点都过这一道门，**两条判据缺一不可**：
+ *   ① 页是「已提交且可执行」（`ce_addr_exec`）；
+ *   ② ★ **页必须是模块映像（`MEM_IMAGE`）** —— thcrap 给断点分的那两页池子是 `VirtualAlloc` 出来的
+ *      `MEM_PRIVATE` + `PAGE_EXECUTE`，**可执行但绝不该成为落点**。只查 ① 挡不住头号崩溃那一族
+ *      （池地址本身是可执行的✓），加上 ② 才挡得住：真有人把池地址当落点时，这里记一行并**保持原返回地址**。
+ *      合法落点都是 exe/DLL 里的地址（我们 6 个常量 + `Player__shoot_one_bullet` 的调用者返回地址）
+ *      ⇒ 都是 `MEM_IMAGE`✓。命中时只读判定，不写任何内存。*/
 static void ce_retaddr_set(x86_reg_t *regs, uint32_t target)
 {
-    if (regs && ce_addr_exec(target)) {
+    MEMORY_BASIC_INFORMATION mbi;
+    int image_exec = 0;
+    if (regs && target && ce_addr_exec(target)
+        && VirtualQuery((const void *)(uintptr_t)target, &mbi, sizeof mbi) == sizeof mbi
+        && mbi.Type == MEM_IMAGE) {
+        image_exec = 1;
         regs->retaddr = target;
-        return;
     }
+    if (image_exec) return;
     {
         static unsigned s_bad_n;
         if (s_bad_n < 8u) {
             ++s_bad_n;
-            ce_log("★ retaddr 拒绝：0x%08x 不是可执行页（第 %u 次）—— 保持原返回地址",
+            ce_log("★ retaddr 拒绝：0x%08x 不是「模块映像内的可执行页」（第 %u 次）—— 保持原返回地址"
+                   "（池页/MEM_PRIVATE 一律拒收：那是 thcrap 断点池，跳进去就是头号崩溃）",
                    (unsigned)target, s_bad_n);
         }
     }
 }
+
 
 static int ce_item_score_in_common(x86_reg_t *regs)
 {

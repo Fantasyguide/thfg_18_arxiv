@@ -2796,9 +2796,13 @@ static void signal_lifefrag_tick(signal_card_t *s)
 }
 
 /* ---- 每帧 ---- */
+/* ★ 2026-09-18：本函数每帧补调一次（见 `signal_ensure_registered()` 的注释）。*/
+static void signal_ensure_registered(ce_card_t *c);
+
 static int on_tick_2(ce_card_t *c)
 {
     signal_card_t *s = st(c);
+    signal_ensure_registered(c);   /* ★ 中盘拿卡（give12）时 on_load 不会被调 ⇒ 每帧补一次（幂等）*/
     const float *pp;
     int32_t g, dg;
     int lives, pstate, band, died_frame = 0;
@@ -3260,15 +3264,15 @@ static void signal_clear(ce_card_t *c)
     s->last_lives = -1;
 }
 
-static int on_load(ce_card_t *c)
+/* ★★ 2026-09-18：抽出「注册共享池 + 认领组合 UI 块」—— `on_load` 与 `on_tick_2` 都调它。
+ *   中盘拿卡（卡 118 的十二合一）时引擎**只调 `ctor`**（trace 里没有 `on_load`）⇒ 注册与认领都没发生
+ *   ⇒ 共享池没有消费者、组合 UI 不出现（用户实跑：「是切换面数重置才出现的」）。两者都幂等。*/
+static void signal_ensure_registered(ce_card_t *c)
 {
     signal_card_t *s = st(c);
     faith_user_t u;
 
-    if (!s) return 0;
-    s->last_graze = -1;
-    s->last_lives = -1;
-
+    if (!s) return;
     memset(&u, 0, sizeof u);
     u.card_id = SIGNAL_ID_NUM;
     u.slot_mask = 1 << FAITH_SLOT_111;    /* 只消费 111 槽（实体层零改动）*/
@@ -3290,6 +3294,18 @@ static int on_load(ce_card_t *c)
      *     （`NEXT.md` §1y.1 / `AUDIT` §… 的那次排查）。共享件那边同样传的是真 out（`&s_blk`），
      *     并且把「认领失败」打成了一行日志。*/
     faith_hud_on_load();
+}
+
+static int on_load(ce_card_t *c)
+{
+    signal_card_t *s = st(c);
+    faith_user_t u;
+
+    if (!s) return 0;
+    s->last_graze = -1;
+    s->last_lives = -1;
+
+    signal_ensure_registered(c);
 
     signal_declare_score(s);
     /* ★ 2026-09-15（PoC 高度层迁移）：**开局那一刻**就把神奈子那条收点线的声明发出去。

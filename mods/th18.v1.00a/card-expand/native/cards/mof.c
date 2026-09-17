@@ -1240,6 +1240,14 @@ static void mof_bomb_tick(mof_card_t *s)
 }
 
 /* ---- 每帧 ---- */
+/* ★★ 2026-09-18（用户实跑）：**中盘拿到卡（卡 118 的十二合一）时 `on_load` 不会被调** ——
+ *   一手：`ce_give_card(mode 0/2)` 只走 `ctor`（trace 日志里只有 `ctor (+0x00)` / `on_hud_anm (+0x44)`，
+ *   没有 `on_load`）⇒ `faith_register()` 与 `faith_hud_on_load()` 都没跑 ⇒ **共享池没人认领、
+ *   组合 UI 不出现**，要等下一次换面（`on_load`）才补上（用户原话：「是切换面数重置才出现的」）。
+ *   ⇒ 每帧补一次「注册 + 认领」：两者都幂等（`faith_register` 同 id 覆盖、`faith_hud_on_load`
+ *     只在换关时重置淡入），代价 = 一个 ≤ 4 项的循环 + 一次关卡号比较。*/
+static void mof_ensure_registered(ce_card_t *c);
+
 static int on_tick_2(ce_card_t *c)
 {
     mof_card_t *s = st(c);
@@ -1248,6 +1256,7 @@ static int on_tick_2(ce_card_t *c)
 
     if (!s || !CE_PLAYER()) return 0;
     ++s->frame;
+    mof_ensure_registered(c);       /* ★ 中盘拿卡（give12）时 on_load 不会被调 ⇒ 每帧补一次（幂等）*/
 
     /* ① 擦弹 → 擦弹倍率（§7.5：`min(graze × 0.0001, 8.99)`）
      * ★ 2026-09-12 一手订正（任务 ③）：**这是 th11（SA）的式子，TH10 没有擦弹倍率**
@@ -1563,16 +1572,16 @@ static void mof_clear(ce_card_t *c)
     s->stage_id_ref = -1;
 }
 
-static int on_load(ce_card_t *c)
+/* ★★ 2026-09-18：把「注册共享池 + 认领组合 UI 块」抽出来 —— `on_load` 与 `on_tick_2` 都调它。
+ *   为什么每帧也要调：**中盘拿到卡**（卡 118 的十二合一）时引擎**只调 `ctor`**、不调 `on_load`
+ *   （一手：trace 日志里只有 `ctor (+0x00)` / `on_hud_anm (+0x44)`）⇒ 注册与认领都没发生
+ *   ⇒ 共享池没有消费者、组合 UI 不出现，要等下一次换面才补上（用户实跑原话）。两者都幂等。*/
+static void mof_ensure_registered(ce_card_t *c)
 {
     mof_card_t *s = st(c);
     faith_user_t u;
 
-    if (!s) return 0;
-    s->last_graze = -1;
-    s->last_lives = -1;
-    s->stage_frames_ref = -1;             /* ★ 见 `mof_stage_frames()` 的初值语义 */
-    s->stage_id_ref = -1;
+    if (!s) return;
     memset(&u, 0, sizeof u);
     u.card_id = MOF_ID_NUM;
     u.slot_mask = 1 << FAITH_SLOT_110;       /* 只消费 110 槽 */
@@ -1592,6 +1601,19 @@ static int on_load(ce_card_t *c)
      * 两张都不在就不认领），块 = **188×60 表面 px**（640 空间 94×30）。
      * ⚠ 顺序：必须在 `faith_register()` **之后** —— 共享件的在场判据就是这张注册表。*/
     faith_hud_on_load();
+}
+
+static int on_load(ce_card_t *c)
+{
+    mof_card_t *s = st(c);
+    faith_user_t u;
+
+    if (!s) return 0;
+    s->last_graze = -1;
+    s->last_lives = -1;
+    s->stage_frames_ref = -1;             /* ★ 见 `mof_stage_frames()` 的初值语义 */
+    s->stage_id_ref = -1;
+    mof_ensure_registered(c);
     mof_declare_score(s);
     return 0;
 }
