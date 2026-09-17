@@ -110,6 +110,25 @@ def judge(mk, prim, log_path, rep):
     return subprocess.run(cmd).returncode
 
 
+
+MENU_PROLOGUE = [("Z", 2.0), ("Z", 2.0), ("Z", 2.0)]   # loader 之后：Game Start → 难度 → 机体
+
+
+def menu_prologue(hwnd, wait_first=3.0):
+    """进游戏的固定序章（用户 2026-09-17 实跑口径）：菜单里按三次 Z。
+
+    ⚠ loader 那个窗口需要人工点一次（自动化入口待查）⇒ 这里只处理"游戏已起来之后的菜单"。
+    场景时间轴从本函数返回之后才开始计时。"""
+    log("   菜单序章：等 %.1fs 后按 Z×%d（Game Start → 难度 → 机体）" % (wait_first, len(MENU_PROLOGUE)))
+    time.sleep(wait_first)
+    for i, (k, gap) in enumerate(MENU_PROLOGUE, 1):
+        ctypes.windll.user32.SetForegroundWindow(hwnd)
+        time.sleep(0.3)
+        key(k, True); time.sleep(0.08); key(k, False)
+        log("     第 %d 次 Z（间隔 %.1fs）" % (i, gap))
+        time.sleep(gap)
+    log("   序章结束 ⇒ 开始场景时间轴")
+
 def key(vkname, down):
     vk = VK[vkname]
     ctypes.windll.user32.keybd_event(vk, 0, 0 if down else KEYUP, 0)
@@ -133,6 +152,7 @@ def main():
     ap.add_argument("--judge", action="store_true", help="跑完用同目录 verify.py 判读出报告")
     ap.add_argument("--seconds", type=float, default=0, help="覆盖场景时长")
     ap.add_argument("--launch", action="store_true", help="自己启动游戏（否则要求已在跑并前台）")
+    ap.add_argument("--no-menu", action="store_true", help="跳过菜单序章（已在游戏里时用）")
     a = ap.parse_args()
 
     scns0 = load_scenarios()
@@ -251,6 +271,8 @@ def main():
     ctypes.windll.user32.SetForegroundWindow(hwnd)
     time.sleep(0.5)
 
+    if not a.no_menu:
+        menu_prologue(hwnd)
     log("③ 按时间轴注入 %d 步（scale %.2f）" % (len(steps), scale))
     t0 = time.time()
     for st in steps:
