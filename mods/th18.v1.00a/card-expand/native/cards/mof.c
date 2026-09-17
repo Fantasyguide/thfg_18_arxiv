@@ -777,11 +777,16 @@ static void mof_drop_wipe(uint8_t *e)
  *   （它就该是一颗能打的信仰点），但数值口径变了要知道。*/
 #define MOF_GE_ECL_NAME  "CEGreenFairy"   /* = `assets/ecl/green_extra.ecl.txt` 里的子程序名 */
 #define MOF_GE_ENABLE    1                /* 总开关（❓自定）*/
-#define MOF_GE_COUNT     1                /* 每波补刷**几只**（1 = 一只、2 = 一对、6/8 = 整群）。
-                                           * ★ TH11 实测原作是「一波要么 0 只、要么 5~80 只」的双峰
-                                           * （`engine/faith/th11/03-faith-drop-distribution.md` §3）
-                                           * ⇒ 要贴原作手感就把这里调到 5~8，并把 `MOF_GE_EVERY` 调到 2~3。*/
-#define MOF_GE_EVERY     1                /* 每**几**波补一次（1 = 每波；2 = 隔一波；0/负数 = 关）❓自定 */
+/* ★★ 两个常量 = 「一波几只 / 每几波补」，默认值照 **TH10（MoF，本卡的正牌原型）** 实测的分布定：
+ *   · TH10 全作 177 只掉大信仰点（type 3）的敌人，**每一处都只刷 1 只（177/177 = 100%）** —— ZUN 从不批量刷绿妖精；
+ *   · 逐波：54 波里 **33 波是 0 只**，非零波里 **9 个是 1–2 只**，只有 3 个是密集波（EX 36 / 五面 boss 段 21 / 四面 boss 段 18）；
+ *   · 一站点的占比 = 175/1774 = **9.9%**；一关累计 14–37 只（均值 25.3）。
+ *   一手：`engine/faith/th10/02-faith-drop-distribution.md` §3/§5（用户口径「一波改一两只」与这条**实测一致**）。
+ * ⚠ 姊妹作 TH11（卡 111）**不是**这个形状 —— 它是双峰「一波要么 0 只、要么 5~80 只」
+ *   （`engine/faith/th11/03-faith-drop-distribution.md` §3）。要让 110 走 TH11 的形状：
+ *   `MOF_GE_COUNT = 5..8` + `MOF_GE_EVERY = 2..3`（**那是另一个游戏的手感，默认不采用**）。*/
+#define MOF_GE_COUNT     1                /* 每波补刷**几只**：1 = 一只（TH10 的形状）/ 2 = 一对 / 5–8 = 整群 */
+#define MOF_GE_EVERY     2                /* 每**几**波补一次：2 = 隔一波（≈50% 的波有，TH10 是 39%）/ 1 = 每波 / 0 = 关 */
 #define MOF_GE_GAP       75               /* 帧：这么久没有新的小妖精 ⇒ 认为换了一波（❓自定）*/
 #define MOF_GE_DELAY     18               /* 帧：本波第一只出现后隔这么久再补刷（采样入场向量用）*/
 #define MOF_GE_SAMPLES   8                /* 记几个出生点（队形采样上限）*/
