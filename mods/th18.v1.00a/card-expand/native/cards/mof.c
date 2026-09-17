@@ -777,7 +777,11 @@ static void mof_drop_wipe(uint8_t *e)
  *   （它就该是一颗能打的信仰点），但数值口径变了要知道。*/
 #define MOF_GE_ECL_NAME  "CEGreenFairy"   /* = `assets/ecl/green_extra.ecl.txt` 里的子程序名 */
 #define MOF_GE_ENABLE    1                /* 总开关（❓自定）*/
-#define MOF_GE_PAIR      0                /* 0 = 每波多 **1 只**；1 = 每波多 **一对**（❓自定）*/
+#define MOF_GE_COUNT     1                /* 每波补刷**几只**（1 = 一只、2 = 一对、6/8 = 整群）。
+                                           * ★ TH11 实测原作是「一波要么 0 只、要么 5~80 只」的双峰
+                                           * （`engine/faith/th11/03-faith-drop-distribution.md` §3）
+                                           * ⇒ 要贴原作手感就把这里调到 5~8，并把 `MOF_GE_EVERY` 调到 2~3。*/
+#define MOF_GE_EVERY     1                /* 每**几**波补一次（1 = 每波；2 = 隔一波；0/负数 = 关）❓自定 */
 #define MOF_GE_GAP       75               /* 帧：这么久没有新的小妖精 ⇒ 认为换了一波（❓自定）*/
 #define MOF_GE_DELAY     18               /* 帧：本波第一只出现后隔这么久再补刷（采样入场向量用）*/
 #define MOF_GE_SAMPLES   8                /* 记几个出生点（队形采样上限）*/
@@ -794,6 +798,7 @@ static float   s_ge_x[MOF_GE_SAMPLES];
 static int32_t s_ge_n;
 static int32_t s_ge_done;                 /* 本波已补刷 */
 static int32_t s_ge_stage = -1;
+static int32_t s_ge_wave;                 /* 本关第几波（1 起；用来实现 `MOF_GE_EVERY`）*/
 static int32_t s_ge_stat;                 /* 诊断：一共刷了几只 */
 
 /* 「小妖精」的外观（`enemy.anm` 的扁平脚本号；一手 = `native/tools/measure_enemy_variants.py`
@@ -819,6 +824,7 @@ static void mof_ge_reset(int32_t stage)
     s_ge_first_y = 0.0f;
     s_ge_n = 0;
     s_ge_done = 0;
+    s_ge_wave = 0;
     /* ⚠ `s_ge_max_id` **不重置**：它只是「我见过哪些实例」的水位线，跨关继续单调递增。*/
 }
 
@@ -874,6 +880,9 @@ static void mof_ge_tick(int32_t frame)
             if (s_ge_last != 0 && frame - s_ge_last > MOF_GE_GAP) {   /* 隔太久 ⇒ 新的一波 */
                 s_ge_n = 0;
                 s_ge_done = 0;
+                ++s_ge_wave;
+            } else if (s_ge_wave == 0) {
+                s_ge_wave = 1;                                        /* 本关第一波 */
             }
             if (s_ge_n == 0) {
                 const float *p = ce_enemy_pos(e);
@@ -893,7 +902,7 @@ static void mof_ge_tick(int32_t frame)
     if (frame < s_ge_frame + MOF_GE_DELAY) return;            /* 等它动几帧，好采样入场向量 */
 
     {
-        float slots[2];
+        float slots[MOF_GREEN_EXTRA_SLOT_MAX];
         int i, n;
         /* ⚠ **不采样同波妖精的入场向量**（v1）：算角要用 `atan2f`，而 32 位目标上 float 返回走
          * x87（`make dllx87`：本仓 0 条 x87 的硬线）⇒ 这里的入场向量就用**原生小妖精那一套**
@@ -901,7 +910,11 @@ static void mof_ge_tick(int32_t frame)
          * `mof_green_extra_slots()`）。要真对齐同波妖精的向量，得改用整数近似或直接读它的
          * 速度字段（记为后续可选优化，`TUNING.md` §2.0h）。*/
         float angle = MOF_GE_ANGLE_DOWN, speed = 1.0f;
-        n = mof_green_extra_slots(s_ge_x, s_ge_n, MOF_GE_PAIR, slots, 2);
+        if (MOF_GE_EVERY > 0 && (s_ge_wave % MOF_GE_EVERY) != 0) {   /* 这一波不补（例如隔波）*/
+            s_ge_done = 1;
+            return;
+        }
+        n = mof_green_extra_slots(s_ge_x, s_ge_n, MOF_GE_COUNT, slots, MOF_GREEN_EXTRA_SLOT_MAX);
         for (i = 0; i < n; ++i) mof_ge_spawn_one(slots[i], s_ge_first_y, angle, speed);
         s_ge_done = 1;
     }

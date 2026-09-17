@@ -57,15 +57,17 @@ const mof_green_pair_t mof_green_pairs[MOF_GREEN_PAIR_MAX] = {
     {   256,     244,     199,     194,     0,  ALL_STAGES,  "B 组第四色（橙）· ECL 零站点（备用行）" },
 };
 
-int mof_green_extra_slots(const float *x, int n, int want_pair, float *out_x, int out_max)
+int mof_green_extra_slots(const float *x, int n, int count, float *out_x, int out_max)
 {
     float xmax = 0.0f, d = 0.0f;
     int neg = 0, pos = 0, i, j, cnt = 0;
     float uniq[16];
     int nu = 0;
+    float side;
 
-    if (!x || !out_x || out_max <= 0 || n <= 0) return 0;
+    if (!x || !out_x || out_max <= 0 || n <= 0 || count <= 0) return 0;
     if (n > 16) n = 16;
+    if (count > MOF_GREEN_EXTRA_SLOT_MAX) count = MOF_GREEN_EXTRA_SLOT_MAX;
     for (i = 0; i < n; ++i) {
         float a = x[i] < 0.0f ? -x[i] : x[i];
         if (a > xmax) xmax = a;
@@ -89,13 +91,16 @@ int mof_green_extra_slots(const float *x, int n, int want_pair, float *out_x, in
     }
     if (d == 0.0f) d = MOF_GREEN_EXTRA_SLOT_MIN;      /* 只观测到一个点 / 全在 x=0 ⇒ 用默认间距 */
 
-    if (want_pair) {
-        if (cnt < out_max) out_x[cnt++] = -(xmax + d);
-        if (cnt < out_max) out_x[cnt++] = xmax + d;
-    } else {
-        /* 补在人少的那一侧；左右一样多（含「都观测不到」）⇒ 右侧 */
-        float s = (neg < pos) ? -1.0f : 1.0f;
-        if (cnt < out_max) out_x[cnt++] = s * (xmax + d);
+    if (count == 1) {
+        /* 只补一只 ⇒ **人少的那一侧**（左右一样多、或都没观测到 ⇒ 右侧）*/
+        side = (neg < pos) ? -1.0f : 1.0f;
+        out_x[cnt++] = side * (xmax + d);
+        return cnt;
+    }
+    /* 一对 / 多对：由内向外一格格排（先负后正），`count` 是**总只数** */
+    for (i = 0; i < count && cnt < out_max; ++i) {
+        float r = (float)(i / 2 + 1) * d + xmax;
+        out_x[cnt++] = ((i % 2) == 0) ? -r : r;
     }
     return cnt;
 }
