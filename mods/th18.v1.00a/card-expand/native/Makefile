@@ -260,7 +260,9 @@ dllverify: $(DLL)
 	@awk '/^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]+@[0-9]+/{gsub("@", "", $$2); print $$1, $$2}' th18_card_expand.def | tr -d '\r' | while read sym ordinal; do \
 		grep -Eq "^[[:space:]]+$$ordinal[[:space:]]+0x[0-9a-f]+[[:space:]]+$$sym$$" tests/build/dll-headers.txt || exit 1; \
 	done
-	@test "$$(grep -Ec '^[[:space:]]+[0-9]+[[:space:]]+0x[0-9a-f]+[[:space:]]+[A-Za-z_]' tests/build/dll-headers.txt)" = 23
+## ★ 2026-09-18：导出条数**从 def 现算**（原来是写死的 23 —— 站点表一变就假红/假绿）。
+	@test "$$(grep -Ec '^[[:space:]]+[0-9]+[[:space:]]+0x[0-9a-f]+[[:space:]]+[A-Za-z_]' tests/build/dll-headers.txt)" = \
+	      "$$(grep -Ec '^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]+@[0-9]+' th18_card_expand.def)"
 	@test "$$(grep -c 'DLL Name:' tests/build/dll-headers.txt)" = 3
 	@grep -q 'DLL Name: KERNEL32.dll' tests/build/dll-headers.txt
 	@grep -q 'DLL Name: msvcrt.dll' tests/build/dll-headers.txt

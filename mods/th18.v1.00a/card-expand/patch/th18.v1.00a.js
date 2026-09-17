@@ -1429,6 +1429,18 @@
       "expected": "558bec83ec14",
       "title": "行为 SDK → BP_ce_enemy_death：FUN_00430240（SDK 名 Enemy__die）入口：push ebp/mov ebp,esp/sub esp,0x14，无相对寻址。thiscall，ecx = zEnemy；**引擎撒主掉落之前**（0x430493 才是撒、0x43049f 才通知卡）、链表仍挂着，恒定 mov eax,1 返回 ⇒ 一敌一生正好一次。handler 用 regs->retaddr 分死因（0x42f3b7 = 打死主路 / 0x42ee90 = 炸弹秒杀 / 0x430f59 = ECL die / killAll 三兄弟），沿卡链表调 on_enemy_death(&ev)。详见 docs/superpowers/specs/2026-09-12-shared-enemy-death-event-design.md"
     },
+    "ce_repopulate_native_option": {
+      "addr": "0x45d610",
+      "cavesize": 7,
+      "expected": "538981dc710400",
+      "title": "行为 SDK → BP_ce_repopulate_native_option：Player__repopulate_options_and_notify_cards 0x45d5e0 里**算完火力档之后那一条**：`push ebx` + `mov [ecx+0x471dc],eax`（7 字节；该 mov 的 imm32 = 0x471dc，**不是相对寻址**）。此刻 ecx = &zPlayer.inner（thiscall this = PLAYER+0x620；一手 0x45d5fc）、eax = `CURRENT_POWER / POWER_PER_LEVEL`（一手 0x45d604–0x45d60a 的 idiv）。handler 把 eax 改成 0 后**放行原字节**：后面两段（满火力形子机 VM 的建/清、普通形 4 格的建/清）读到的档位都是 0 ⇒ 不建新子机、并走引擎自己的「清空 4 格」那条路；handler 另外自己 interrupt 掉4 格 × 2 支（+0xb0 普通形 / +0xb4 满火力形，照 0x45d823 那段同款写法）。只在 `ce_native_option_hidden(当前机体)` 为真时动手 ⇒ 其余机体 / 没装卡时逐字节不变。"
+    },
+    "ce_native_option_muzzle": {
+      "addr": "0x45e930",
+      "cavesize": 5,
+      "expected": "558bec5153",
+      "title": "行为 SDK → BP_ce_native_option_muzzle：Player__shoot_one_bullet 0x45e930 的**函数入口**（5 字节 = push ebp / mov ebp,esp / push ecx / push ebx，恰好在指令边界上；无相对寻址、窗内无跳转靶。⚠ 取 6 字节会**从 `mov ebx,[ebp+8]` 中间切开**（那条是 3 字节、落在 0x45e935）⇒ cave 会回放半条指令，必须取 5 或 8）。thiscall ⇒ ecx = zPlayer*；栈（低→高）= 返回地址、packed id、timer、pos*、**option*（膛口）**（调用方压栈序一手：0x45ec5f push 膛口 / 0x45ec68 push pos / 0x45ec71 push timer / 0x45ec72 push id）。handler 读第 5 个栈参：落在**原生子机数组区间** `[PLAYER+0x670, PLAYER+0xa30)` 时**整发跳过**（`regs->retaddr = [esp]` + `regs->esp += 0x14` = 等价一条 `ret 0x10`；thcrap 的 esp 机制见 breakpoint.cpp 的 esp_diff；返回值调用方不检查，一手 0x45ec78）。卡申请的池 = `PLAYER+0xa30` 起（一手 0x40a7a4 `add edi,0xa30`）⇒ 区间不相交，117 / 116 / 108 的卡子机零影响。"
+    },
     "ce_shop_bought": {
       "addr": "0x4183ea",
       "cavesize": 12,

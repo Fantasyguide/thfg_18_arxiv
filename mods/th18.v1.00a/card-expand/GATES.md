@@ -181,3 +181,33 @@
 
 **运行时校验（已可用）**：日志里 `pool:` 行的"跳板格"应与声明数**同量级**（差 ≤1）；桩数可用
 `poolmap.py` 从桩页数出来 ⇒ 两者对不上就说明声明集与实装集不一致（比数声明可靠）。
+
+## 9. ★★★ 2026-09-18：`sites.py` 的**按下标截断**曾静默砍掉 16 条站点（含功能站点）
+
+**症状（用户实跑）**：「魔理沙原子机还有小激光，shift 还会发导弹」——111 的**原生子机压制**只做了一半：
+`ce_native_option_muzzle` / `ce_repopulate_native_option` 这两条**根本不在发布的 patch 里**。
+
+**根因**：`native/sites.py` 里那行 `SDK_SITES = SDK_SITES[:10]`（本意是「截掉最后两条观察者站点腾名额」）
+是**按列表下标**截的 —— 列表后来被插入/追加过站点 ⇒ 被砍掉的从 2 条变成 **16 条**：
+
+| 仍在 sites.py 里声明、但**没进 patch** 的站点 | 谁在用 |
+| --- | --- |
+| `ce_repopulate_native_option` / `ce_native_option_muzzle` | 111 魔理沙的「原生 4 格子机不许出现」（**本轮已恢复**）|
+| `ce_shot_set_index` | 111 主炮组覆盖（TH11 伤害表）+ 113 灵界 / 117 咆哮的主炮组 |
+| `ce_option_shot_gate` | 113 灵界的「子机不发弹」窗口 |
+| `ce_player_die` / `ce_death_result` / `ce_bomb_spent` / `ce_bomb_gate` | 113 / 117 的救援与灵击路径 |
+| `ce_bullet_damage_final` | **别的批次的伤害倍率**（`bullet_damage_permille`：61 皇家同花顺 / 加倍 / 腐化 …）|
+| `ce_poc_gate_a` / `ce_poc_gate_b` | **106 的「上线收点当且仅当满 P」**（用户 2026-09-16 定的设计）|
+| `ce_graze` / `ce_item_score` / `ce_item_score_in` / `ce_item_score_below` / `ce_chain_node_guard` | 计分层返工的几个落笔点 + 崩溃观察者 |
+
+**为什么对账一直绿**：`sites.py check` 比的是「**patch 声明集** ↔ def 导出」，而截断发生在**生成 patch 之前**
+⇒ 两头都没有它 ⇒ 对账当然一致（绿得毫无意义）。**这类「声明了但没发」的一致性必须靠「声明表 ↔ 发布物」比**。
+
+**处置（2026-09-18）**：
+1. 那行改成**按名字**保留（`_SDK_KEEP_NAMED`）：本轮先恢复 111 的两条 ⇒ 我们的声明数 **24**（= 硬线 `SITE_BUDGET`，余量 0）；
+2. 进程级合计从 42 变 **44** ⇒ 超过 `SITE_TOTAL_BUDGET = 42` 的**告警线**（只告警、不拦：§8.1 的实测结论 =
+   条数**不是**池崩的判据；真正的判据是每次开机的 `pool:` 行 + 无 `FAIL:`）。
+   ★ 实跑请把这行发我：`pool: 可执行页 N、跳板格 M、首个全零格 @…`（N/M 明显变大或出现池崩 ⇒ 立刻回退本次恢复）。
+3. 其余 14 条**仍在 park**（上表），要一条一条拿回来：每恢复一条 = 声明数 +1 ⇒ 必须**同时 park 掉一条**别的
+   （预算 24 是先前的硬线）。**推荐顺序**（按对别人的影响排）：`ce_bullet_damage_final`（别人卡的伤害倍率）→
+   `ce_poc_gate_a/b`（106）→ `ce_shot_set_index`（111/113/117 主炮组）→ `ce_player_die` + `ce_option_shot_gate`（113）。

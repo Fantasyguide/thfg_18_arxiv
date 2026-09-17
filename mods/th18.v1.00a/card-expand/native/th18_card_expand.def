@@ -11,15 +11,17 @@ EXPORTS
 	BP_ce_item_commit	@9
 	BP_ce_item_frame	@10
 	BP_ce_item_money	@11
-	BP_ce_save_loaded	@12
-	BP_ce_shop_bought	@13
-	BP_ce_shop_reopen	@14
-	BP_ce_shot_damage	@15
-	BP_ce_snd_gate	@16
-	BP_ce_test_deck	@17
-	BP_ce_text_desc	@18
-	BP_ce_text_name	@19
-	BP_ce_text_notify	@20
-	BP_ce_trace_alloc	@21
-	BP_ce_unlock_all	@22
-	BP_ce_unlock_write	@23
+	BP_ce_native_option_muzzle	@12
+	BP_ce_repopulate_native_option	@13
+	BP_ce_save_loaded	@14
+	BP_ce_shop_bought	@15
+	BP_ce_shop_reopen	@16
+	BP_ce_shot_damage	@17
+	BP_ce_snd_gate	@18
+	BP_ce_test_deck	@19
+	BP_ce_text_desc	@20
+	BP_ce_text_name	@21
+	BP_ce_text_notify	@22
+	BP_ce_trace_alloc	@23
+	BP_ce_unlock_all	@24
+	BP_ce_unlock_write	@25

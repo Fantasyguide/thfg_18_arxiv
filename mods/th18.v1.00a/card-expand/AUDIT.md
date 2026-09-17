@@ -13709,3 +13709,16 @@ patch 入口）并把回读校验改成**按来源各自比 md5**（旧写法「
 
 **卡侧接线**：`cards/faith.c` 的 `conv_burst_spawn(px, py)` —— 每转换一颗 P 道具在**原位**起一台
 （一手 TH10 就是逐颗）；层 / 颜色 / 混合模式由脚本自己写，`C` 侧只给位置（照 280/281 火星的接线口径）。
+
+### §BE-DU 共享件 `native/sites.py`：**按下标截断**改成**按名字保留**（2026-09-18）
+
+| 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
+| --- | --- | --- | --- | --- |
+| `native/sites.py` | `SDK_SITES = SDK_SITES[:10]` → `_SDK_KEEP_NAMED`（显式名字集）+ 列表推导；本轮恢复 `ce_repopulate_native_option` / `ce_native_option_muzzle` 两条 | 用户实跑「魔理沙原子机还有小激光、shift 还会发导弹」= 111 的原生子机压制只做了一半：那两条**从未进过发布的 patch** —— 根因是**按列表下标**截断，而列表后来被插过站点 ⇒ 被砍掉的是 16 条（含 106 POC 闸 / 113 / `ce_bullet_damage_final` = 别人卡的伤害倍率）| 系统卡批次 | `sites.py check`：声明 **24** 条（= 硬线，余量 0）、24 个 `BP_*` 双向对上；`gen_def.py` 重新生成 25 个导出；`make check` 全绿（含 `dllverify` —— 顺手把那句**写死的 23** 改成**从 def 现算**）；发布后回读 modkit 的 patch 里已含这两条 |
+| `native/Makefile` | `dllverify` 里写死的导出条数 `= 23` → 从 `th18_card_expand.def` 现算 | 站点表一变就假红（本次就是）；写死的数字没有任何信息量 | 同上 | 同上 |
+
+**影响面**：只影响**本 patch 声明哪些断点**；恢复的两条 handler 早就在 DLL 里（`sdk.c` 的
+`BP_ce_repopulate_native_option` / `BP_ce_native_option_muzzle`），二者都带**机体门 / 区间门**
+（只在「声明隐藏的机体」/「膛口落在原生子机数组里」时动手）⇒ 对别的卡与零售行为零影响。
+**预算**：我们 22 → **24**；进程级 42 → **44**（> 告警线 42，**只告警**：`GATES.md` §9 与 §8.1 的实测结论 =
+条数不是池崩判据，真判据是开机 `pool:` 行）。其余 14 条仍 park，清单与推荐恢复顺序见 `GATES.md` §9。
