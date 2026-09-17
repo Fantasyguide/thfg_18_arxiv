@@ -1000,11 +1000,17 @@ SDK_SITES = [
     ("ce_poc_gate_a", 0x445bb9, 6, "0f87a4030000",
      "ItemManager__on_tick__body 的『过线 ⇒ 道具无条件真空』分支 A：`445baa movss xmm0,[esi+0x47998]`（收点线）"
      "→ `445bb2 comiss xmm0,[esi+0x624]`（自机 y）→ **本站点 `ja 0x445f63`**（0x445f63 = `mov [item+0xc74],3` 真空态）。"
-     "6 字节、无相对寻址。handler 读声明层 `ce_full_p_gate_active()`：开着 ⇒ **返回 0（不执行这条 ja）**"
-     "= 条件不成立 = 落空到 0x445bbf（道具继续下落）。一手依据 = TH06 `ItemManager.cpp` 的道具 tick"
-     "`state==1 || (128 <= currentPower && player.y < 128.0f)` ⇒ 『满 P + 在线上』才是过线收点的充要条件。"),
+     "★ **窗口就是这条 `ja`（近相对分支）**：thcrap 的 cave_fix 只重定位窗口首条的 e8/e9 ⇒ **不能**靠回放它"
+     "（回放会跳到「本格 + 0x3aa」= 池页零尾巴，就是头号崩溃，AUDIT §BE-DW）。"
+     "所以 handler **恒返回 0** 并自己给落点：声明层开着（106 说「不是满 P」）⇒ 落回站点后一条 `0x445bbf`"
+     "（= 那条 ja 不成立那一支）；否则 ⇒ 落到真空态入口 `0x445f63`。落空支不看 flags（一手：0x445bbf 是 "
+     "`mov eax,[0x4cf2b8]` 起头、自带 cmp）⇒ 不回放不会踩标志位。"
+     "⚠ 也不能改挂 `0x445f63`：那里是**四条**支路的汇聚（两条 ja + 紧随的两条 jl）⇒ 分不出「过线」。"
+     "一手依据 = TH06 `ItemManager.cpp` 的道具 tick `state==1 || (128 <= currentPower && player.y < 128.0f)`"
+     " ⇒ 『满 P + 在线上』才是过线收点的充要条件。"),
     ("ce_poc_gate_b", 0x446003, 6, "0f875affffff",
-     "同上，**第二条** `ja 0x445f63`（向后跳；0x446003 处、6 字节）。落空到 0x446009。"
+     "同上，**第二条** `ja 0x445f63`（向后跳；0x446003 处、6 字节）。handler 恒返回 0 + 自己给落点："
+     "开着 ⇒ `0x446009`（不成立那一支），否则 ⇒ `0x445f63`。"
      "两条都要挂：只挂一条 = 另一条支路照旧把道具拉进真空态（静默半失效）。"),
     ("ce_player_die", 0x45d3a0, 6, "558bec83ec14",
      "Player__die 0x45d3a0 入口：push ebp/mov ebp,esp/sub esp,0x14（6 字节，无反/相对寻址、无窗内跳转目标）。"
@@ -1208,7 +1214,7 @@ def emit_test_patch():
     """
     # 初始卡组钩子改为断点（无手写机器码）：BP_ce_test_deck 执行原 movzx 的语义，读到空槽(56) 且
     # cards_dev.js 的 start_deck 还有 id 就换成下一个；返回 0 跳过原指令。esi = 槽序号（0 起）、eax = 存档偏移基。
-    return {
+    out = {
         "breakpoints": {"ce_test_deck": {
             "addr": "0x%06x" % TEST_MOVZX, "cavesize": 8,
             "expected": "0fb6843008f60500",
@@ -1218,6 +1224,18 @@ def emit_test_patch():
             "expected": "817f2800010000",
             "title": "测试：记录每次 allocate_new_card(id, mode)"}},
     }
+    # ★★★ 一次性复现闸（`CE_CANARY_POC_GATE=1`，见 AUDIT.md §BE-DW 的验证配方）：
+    #   把「窗口 = 一条 `ja rel32`」的两条站点按**原样**声明进**测试归档**，配 `BP_ce_canary_a/b`
+    #   （恒回放 ⇒ thcrap 让 cave 原样回放那条 ja ⇒ 跳到「本格 + 0x3aa」= 池页零尾巴）。
+    #   目的：验证定案的算术（预期崩点 = 首个全零格 − 0x10 + 0x3aa）。**默认关**；跑完必须复原。
+    if os.environ.get("CE_CANARY_POC_GATE"):
+        out["breakpoints"]["ce_canary_a"] = {
+            "addr": "0x445bb9", "cavesize": 6, "expected": "0f87a4030000",
+            "title": "★★ 复现实验：窗口=一条 ja（0f 8x rel32），handler 恒回放 ⇒ cave 里跳飞（§BE-DW）"}
+        out["breakpoints"]["ce_canary_b"] = {
+            "addr": "0x446003", "cavesize": 6, "expected": "0f875affffff",
+            "title": "★★ 复现实验：同上（第二条 ja）"}
+    return out
 
 
 def verify_pool_binhack(name, bh, text, text_va):

@@ -13805,3 +13805,32 @@ thcrap 日志以 `Removing plug-ins...` 收尾、`crashdumps/` 没有新 dump �
 「当时那条就是它」🟡 —— 当时那份 patch **没提交**、日志已滚动，无法回查它当时声明的站点列表。
 **决定性实验**（一局即可）：把 `ce_poc_gate_a` 按原窗口重新声明，崩点应落在
 `首个全零格 − 0x10 + 0x3aa`（例：首个全零格 `0x2d0` ⇒ 崩点 `池基 + 0x69a`）。
+
+### §BE-DX 两条 POC 闸（106）换成「handler 自己给落点」+ 复现配方（2026-09-18）
+
+| 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
+| --- | --- | --- | --- | --- |
+| `native/sdk.c` | 两条闸改成 `ce_poc_gate_common(regs, fall)`：**恒返回 0** + 自己给落点（成立 ⇒ `th18:0x445f63`；不成立 ⇒ A `0x445bbf` / B `0x446009`）；另加两个一次性复现 handler `BP_ce_canary_a/b`（恒回放，默认不声明）| 窗口是**一条 `0f 8x rel32`**，thcrap 的 `cave_fix` 不重定位它 ⇒ 「返回 1 让 cave 回放」= 跳到本格 + 0x3aa = 池页零尾巴（头号崩溃，§BE-DW）。恒 0 ⇒ cave 永不执行 ⇒ 不依赖 cave_fix | 系统卡批次 | `make check` rc=0（含 `tools/sitecheck.py --all`）；两条闸在 `sitecheck` 里是**已论证的例外**（工具会打印理由）|
+| `native/sites.py` | 两条闸的说明改写（新机制 + 为什么窗口仍保留 + 为什么不能改挂 `0x445f63`）；`emit_test_patch()` 加 `CE_CANARY_POC_GATE=1` 门控的复现站点 | 把「陷阱」写成「有理由的设计」；复现站点默认关、只进**测试归档** | 同上 | 开 env ⇒ 正式 patch 0 处 canary、测试归档 2 处；关 env ⇒ `gen_def --check` 25 导出一致 |
+| `native/tools/sitecheck.py` | `EXEMPT_W3`（已论证的例外，附理由）与 `DANGER_W3`（故意危险，只 ⚠ 不判红）；单站点模式也按地址反查站点名 | 例外必须**成文 + 带理由**，否则闸会被"顺手放行" | 同上 | `sitecheck 0x445bb9 6` ⇒ ✓ 并打印理由 |
+
+**一手依据（为什么这两条只能这么挂）**：`th18:0x445f63` 是**四条**支路的汇聚（`0x445bb9`/`0x446003` 两条 `ja`
++ 紧随的两条 `jl`）⇒ 挂在那里分不出「过线」；而落空支不看 flags（`0x445bbf`/`0x446009` 都是 `mov eax,[0x4cf2b8]` 起头、
+自带 `cmp`）⇒ 不回放那 6 字节不会踩标志位。
+
+**★ 复现配方（验证 §BE-DW 的算术；一局即可，之后立刻复原）**
+
+```bash
+cd mods/th18.v1.00a/card-expand/native
+export CE_CANARY_POC_GATE=1 CE_ALLOW_OVER_BUDGET=1     # 后者只是放行"26 > 24"那条告警线
+python3 sites.py gen --rows 255 -o ../patch/th18.v1.00a.js
+python3 tools/gen_def.py                               # .def 加 BP_ce_canary_a/b 两个导出
+MODKIT_DIR="/mnt/d/项目/幻想指南/18/th18_modkit" python3 tools/deploy.py
+# —— 跑一局：按住 Z 打枪 + 上线越过收点线（道具回收路径）——
+# 预期：崩在 **池基 + (首个全零格 − 0x10 + 0x3aa)**（例：首个全零格 0x2d0 ⇒ 池基 + 0x69a），
+#       dump 的 Eip 落在池页、写 0x1、Eax = 1 = §BE-DW 那条签名。
+# 复原（务必）：
+unset CE_CANARY_POC_GATE CE_ALLOW_OVER_BUDGET
+python3 sites.py gen --rows 255 -o ../patch/th18.v1.00a.js && python3 tools/gen_def.py
+MODKIT_DIR="/mnt/d/项目/幻想指南/18/th18_modkit" python3 tools/deploy.py
+```

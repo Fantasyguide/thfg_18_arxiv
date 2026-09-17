@@ -2828,27 +2828,59 @@ int __cdecl BP_ce_death_result(x86_reg_t *regs, void *bp_info)
  *   ⇒ **「满 P（128）+ 自机在回收线（y = 128.0）以上」是过线收点的充要条件**；TH06 里没有第二条路。
  * TH18 侧的同一语义点 = `ItemManager__on_tick__body` 的两条 `ja 0x445f63`
  * （`th18:0x445bb9` / `th18:0x446003`；0x445f63 = `mov [item+0xc74],3` = 道具进真空态）。
- * handler 只做一件事：声明层开着（= 106 说「现在不是满 P」）⇒ **return 0（不重放那条 ja）**
- * ⇒ 条件不成立 ⇒ 落空到站点后一条（0x445bbf / 0x446009，都是「道具继续照常下落」那一支）。
+ * ★★ 2026-09-18 **改法（这次不再依赖 cave 回放）**：handler **恒返回 0**，由它自己把
+ * `regs->retaddr` 设成「那条 `ja` 的两种结果」：
+ *   声明层开着（= 106 说「现在不是满 P」）⇒ 条件不成立 ⇒ 落点 = 站点后一条（A `th18:0x445bbf` /
+ *   B `th18:0x446009`）；否则 ⇒ 条件成立 ⇒ 落点 = 真空态入口 `th18:0x445f63`。
+ * **为什么不能「返回 1 让 cave 回放那条 ja」**（这就是头号崩溃，一手见 `AUDIT.md` §BE-DW）：
+ *   窗口 = **一条 `0f 8x rel32`**，而 thcrap 的 `cave_fix` **只重定位窗口首条的 `e8`/`e9`**
+ *   ⇒ 回放时那条 `ja` 会跳到「本格 + (`0x445f63` − 站点)」= 本格 **+0x3aa**（A）/ 本格 − 0xa0（B）
+ *   ⇒ 实测崩点（池基 + 0x65a/0x64a/0x62a）减 0x3aa 正好是那几局池子的**最后一格**
+ *   ⇒ 落到池页没写过的那一段 ⇒ `00 00`、写 `0x1` 的访问违例。
+ *   恒返回 0 ⇒ **cave 永不执行** ⇒ 窗口里有什么分支都无所谓（本窗口仍保留，因为它是「哪条支路」的
+ *   唯一判据：`th18:0x445f63` 是**四条**支路的汇聚点，挂在那里分不出「过线」）。
+ * ⚠ 落空支**不看 flags**（一手：A 的 `0x445bbf` / B 的 `0x446009` 都是 `mov eax,[0x4cf2b8]` 起头、自带 `cmp`）
+ *   ⇒ 不回放原指令不会踩到 `comiss` 留下的标志位；落点本身是整指令边界、且都在 exe 映像内（过 `ce_retaddr_set`）。
  * ⚠ **两条都要挂**：只挂一条 = 另一条支路照旧真空（静默半失效）。
  * ⚠ 回收线本身照旧可见（我们不碰 `player+0x47998`）——这正是用户选的「精确门」而不是「把线抬走」。*/
-static int ce_poc_gate_common(void)
+/* ★★★ 一次性**复现用** handler（默认不声明、默认不导出；只有 `CE_CANARY_POC_GATE=1` 时才由
+ * `sites.py` 的**测试归档**把两个站点声明出来，见 `emit_test_patch()` 与 `AUDIT.md` §BE-DW 的验证配方）。
+ *
+ * 用途：把「窗口 = 一条 `0f 8x rel32`」的站点按**原样**声明回去，验证 §BE-DW 的算术：
+ *   恒返回 1 ⇒ thcrap 让 cave **原样回放**窗口 ⇒ 那条 `ja` 在新位置跳到「本格 + (0x445f63 − 站点)」
+ *   ⇒ 预期崩点 = **首个全零格 − 0x10 + 0x3aa**（例：首个全零格 0x2d0 ⇒ 池基 + 0x69a）。
+ * 零副作用：不读任何状态、不写任何内存、不改 regs（`regs` 都没用）。
+ * ⚠ 跑完必须按配方复原（撤 env ⇒ gen ⇒ gen_def ⇒ deploy），别把它留在发布面。*/
+int __cdecl BP_ce_canary_a(x86_reg_t *regs, void *bp_info)
 {
-    return ce_full_p_gate_active() ? 0 : BP_EXEC_ORIGINAL;
+    (void)regs; (void)bp_info;
+    return BP_EXEC_ORIGINAL;      /* 1 = 回放窗口（正是我们要复现的那条路）*/
+}
+
+int __cdecl BP_ce_canary_b(x86_reg_t *regs, void *bp_info)
+{
+    (void)regs; (void)bp_info;
+    return BP_EXEC_ORIGINAL;
+}
+
+#define CE_POC_VACUUM   0x445f63u   /* 两条 `ja` 的共同目标 = 道具进真空态（一手：mov eax,[esi+0x47988] 起头）*/
+
+static int ce_poc_gate_common(x86_reg_t *regs, uint32_t fall_through)
+{
+    ce_retaddr_set(regs, ce_full_p_gate_active() ? fall_through : CE_POC_VACUUM);
+    return 0;                        /* 恒 0：不回放，也就不进 cave（窗口是 0f 8x，进 cave 会跳飞）*/
 }
 
 int __cdecl BP_ce_poc_gate_a(x86_reg_t *regs, void *bp_info)
 {
-    (void)regs;
     (void)bp_info;
-    return ce_poc_gate_common();
+    return ce_poc_gate_common(regs, 0x445bbfu);
 }
 
 int __cdecl BP_ce_poc_gate_b(x86_reg_t *regs, void *bp_info)
 {
-    (void)regs;
     (void)bp_info;
-    return ce_poc_gate_common();
+    return ce_poc_gate_common(regs, 0x446009u);
 }
 
 /* ★ `BP_ce_player_die` —— 「中弹无伤」闸门（一手链：engine/player/th18/03-player-hit-gate.md）。

@@ -216,6 +216,13 @@ def check_window(exe, va, cs, bps, bhs, self_name=None):
                 if not bad:
                     print(f"  ✓ W3 相对寻址：窗口首条是 `{fixable[0]}` = `e8/e9 rel32` ⇒ "
                           f"**cave_fix 会重定位**，安全（这是 thcrap 唯一会修的那种）")
+        if bad and (self_name or "") in DANGER_W3:
+            print(f"  ⚠ W3 相对寻址：{DANGER_W3[self_name]}")
+            bad = []
+        exempt = EXEMPT_W3.get(self_name or "")
+        if bad and exempt:
+            print(f"  ✓ W3 相对寻址：窗内有近相对分支 {bad}，但这是**已论证的例外** —— {exempt}")
+            bad = []
         if bad:
             print(f"  ✗ W3 相对寻址：窗内有**近**相对分支 {bad} —— thcrap 的 cave_fix 只修"
                   f"「窗口第一条就是 e8/e9」那一种 ⇒ 这些进 cave 会**跳飞**（跳到 本格 + (原目标−站点)，"
@@ -376,6 +383,22 @@ SKIP_RE = re.compile(r"ce_retaddr_set\(regs,\s*(0x[0-9a-fA-F]+|sp\[\d+\]|CE_[A-Z
 FN_RE = re.compile(r"^int\s+__cdecl\s+BP_([A-Za-z0-9_]+)\s*\(", re.M)
 
 
+# ── 已论证的例外（窗口含 cave 修不了的近相对分支，但 handler **恒返回 0** ⇒ cave 永不执行）──
+# 每一条都要写清「为什么安全」与一手落点；新增必须同样论证 + 记账（AUDIT §BE）。
+# ⚠ 「故意危险」的例外：一次性复现实验用（CE_CANARY_POC_GATE=1 才会声明），它**就是要**让 cave
+# 回放那条 ja 来验证 §BE-DW 的算术 ⇒ 这里只大声提示，不判红。
+DANGER_W3 = {
+    "ce_canary_a": "★★ 复现实验站点（CE_CANARY_POC_GATE=1）：**故意**让 cave 回放那条 ja ⇒ 预期崩在"
+                   "「首个全零格 − 0x10 + 0x3aa」。跑完必须撤 env 复原（AUDIT §BE-DW）。",
+    "ce_canary_b": "★★ 同上（第二条 ja）。",
+}
+
+EXEMPT_W3 = {
+    "ce_poc_gate_a": "handler 恒返回 0 + 自己给落点（成立 ⇒ th18:0x445f63 / 不成立 ⇒ th18:0x445bbf）；"
+                     "cave 永不执行 ⇒ 窗口里那条 ja 不会被回放（AUDIT §BE-DW / §BE-DX）",
+    "ce_poc_gate_b": "同上（成立 ⇒ th18:0x445f63 / 不成立 ⇒ th18:0x446009）",
+}
+
 MACRO_RE = re.compile(r"^#define\s+(CE_[A-Z0-9_]+)\s+(0x[0-9a-fA-F]+)u?\s*(?:/\*.*)?$", re.M)
 
 
@@ -495,7 +518,12 @@ def main():
         ap.error("要么给 `--all`，要么给 `地址 窗口字节数 [--ret …]`")
     va = int(a.addr, 16)
     bps, bhs = collect_items()
-    ok = check_window(exe, va, a.cavesize, bps, bhs)
+    # 按地址反查站点名（例外表、以及 W4 的「同址重复声明」都靠它）
+    name = next((n for _src, n, v, _cs in bps if v == va), None) \
+        or next((n for n, (v, _cs) in parked_sites().items() if v == va), None)
+    if name:
+        print(f"（站点名：{name}）")
+    ok = check_window(exe, va, a.cavesize, bps, bhs, name)
     if a.ret:
         print()
         if a.ret == "caller":
