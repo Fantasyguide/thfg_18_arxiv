@@ -126,3 +126,32 @@ TH09.5 有 `zPhotoManager` / `zPhotoManagerArrayItem`；TH16.5 有 `zCamera` / `
 2. **冻结卡**：先确认 TH18 的 `zBullet` 是否留着 TH12.8 的冻结位（把两作的 `zBullet` 字段名**逐条对查**，
    金矿两边都有结构体 ⇒ 可脚本化）；有遗留 ⇒ 数据层即可；没有 ⇒ 走"每帧扫弹池 + 自己记冻结表"
    （站点 0 的成本，109 暴风连锁已是先例）。
+
+## 8. 结构体一手的进展（轮 2）：拍照两侧的骨架已出，冻结的字段表在旧作是空的
+
+**① 金的字段表读法已用熟**（配方见 §6）。本轮真正拿到的东西：
+
+| 结构体 | 大小 | 已命名字段（一手，金矿）| 读出的含义 |
+| --- | --- | --- | --- |
+| `zPhotoManager`（TH09.5）| `0x25730` | `+0x44 __array` = `zPhotoManagerArrayItem[0xb]`（**11 项**）；`+0x1774c __vms` = `zAnmVm[0x50]`（80 个 VM）| 拍照管理器 = **11 个"照片项"数组** + 一批自用 VM ⇒ 「胶卷/张数」极可能就是这个 11 项数组（⚠ 待一手核：是每关一张还是每张照片一格）|
+| `zPhotoManagerArrayItem`（TH09.5）| `0x2214` | 只有 `__unknown` + `__end` | 内部字段**金矿没标** ⇒ 判定盒/计分要从 `PhotoManager::on_tick_08`（`th095:0x42c3e0`）反汇编读 |
+| `zCamera`（TH16.5）| `0x12c` | `position` / `facing` / `up` / `facing_normalized` / `fov_y` / `window_resolution` / `view_matrix` / `projection_matrix` / `viewport` / `camera_index` / `sky` | **一台完整的 3D 相机**（含 view/projection 矩阵、视口）⇒ TH16.5 的拍照是"**真的从相机取景**"（3D 场景），不是 StB 那种 2D 快照 ⇒ **两作不是同一套实现**（虽然都叫 `PhotoManager`）|
+| `zPhotoManager`（TH16.5）| `0xd664` | 只有 `__unknown` | 同样要反汇编 |
+
+**② TH12.8 的 `zBullet` 字段表是空的（负结果，记下来省得重查）**：`th128.v1.00a` 的 `zBullet`
+只有 `__unknown` + `__exact_size_known`（大小 `0x11b8`），**没有**逐字段命名 ⇒
+**"TH12.8 冻结位 vs TH18 遗留"这条对查路线不成立**（旧作的弹结构金矿没标）。
+⇒ 冻结只能走反汇编：从"按住射击键"那条玩家路径找**写弹池**的循环（本仓 TH12 侧已有的
+`BulletManager` 锚点在 `engine/` 里，另有 `site-budget-and-primitives.md` §2.6 的池布局笔记可借）。
+
+**③ 对"搬进 TH18"的即时含义**
+
+- **拍照**：TH16.5 是**相机取景**（TH18 恰好留了同族相机 `Supervisor::set_camera_by_index` + 那批 camera 全局 ⇒
+  取景姿态可驱动）；TH09.5 是**2D 快照 + 11 项照片数组**（更像"判定盒 + 照片槽"的简单模型）⇒
+  要做"拍照卡"，**判定/计分先照 TH09.5 的简单模型复刻**（反汇编成本低），表现用 TH18 的 HUD/anm 画取景框。
+- **冻结**：字段遗留这条路被负结果堵住 ⇒ 走"每帧扫弹池 + 自建冻结表"（站点 0，109 暴风连锁已是先例），
+  原版量（半径/持续/解冻伤害）从 TH12.8 的那个写弹循环读。
+
+**下一轮（按代价）**：① 反汇编 `PhotoManager::on_tick_08`（`th095:0x42c3e0`）读判定盒与 11 项数组的用途；
+② 取 TH16.5 的 `PhotoManager::on_tick` 地址并读 `camera_charge_multiplier`（充能拍照的量）；
+③ TH12.8：先 `xref` 找写"弹速度=0/冻结位"的地方（用 `tooling/xref.py` 对 `th128.exe`）。
