@@ -788,9 +788,10 @@ static void mof_drop_wipe(uint8_t *e)
 #define MOF_GE_COUNT     1                /* 每波补刷**几只**：1 = 一只（TH10 的形状）/ 2 = 一对 / 5–8 = 整群 */
 #define MOF_GE_EVERY     2                /* 每**几**波补一次：2 = 隔一波（≈50% 的波有，TH10 是 39%）/ 1 = 每波 / 0 = 关 */
 #define MOF_GE_GAP       75               /* 帧：这么久没有新的小妖精 ⇒ 认为换了一波（❓自定）*/
-#define MOF_GE_DELAY     18               /* 帧：本波第一只出现后隔这么久再补刷（多攒几个出生点、认队形）*/
-#define MOF_GE_WINDOW    40               /* 帧：只在「上一只妖精还是在这么久内刷出的」时才补 —— 避免
-                                           *      补刷落到**下一波**（例如阴阳玉波）的画面里（用户实跑观察）*/
+#define MOF_GE_DELAY     12               /* 帧：本波第一只出现后隔这么久再补刷（攒几个出生点认队形，
+                                           *      但**要趁妖精还在刷** —— 2026-09-18c 从 18 收到 12）*/
+#define MOF_GE_WINDOW    24               /* 帧：只在「上一只妖精还是在这么久内刷出的」时才补 —— 避免
+                                           *      补刷落到**下一波**的画面里（用户实跑：大蝴蝶/阴阳玉）*/
 #define MOF_GE_SAMPLES   8                /* 记几个出生点（队形采样上限）*/
 #define MOF_GE_LIFE      40               /* 血量（TH18 小妖精量级；`CE_SPAWN_LIFE` 必须 < 1000）*/
 #define MOF_GE_SCORE     0                /* 击破分：给 0 ⇒ 不靠它刷分（❓自定）*/
@@ -816,6 +817,9 @@ static int32_t s_ge_done;                 /* 本波已补刷 */
 static int32_t s_ge_stage = -1;
 static int32_t s_ge_wave;                 /* 本关第几波（1 起；用来实现 `MOF_GE_EVERY`）*/
 static int32_t s_ge_trig_src, s_ge_trig_script;   /* 触发这一波的那只妖精的外观（诊断用）*/
+static int32_t s_ge_wave_id;              /* 本波第一只妖精的 `enemy_id`（判「别的种类是这波之后才来的」）*/
+static int32_t s_ge_other_id;             /* 见过的「**非妖精**」外观里最大的 id（水位线）*/
+static int32_t s_ge_cancel;               /* ★ 本波出现过大妖精/阴阳玉/幽灵/boss ⇒ 撤销补刷 */
 static int32_t s_ge_stat;                 /* 诊断：一共刷了几只 */
 
 /* 「**妖精**」的外观（`enemy.anm` 的扁平脚本号；一手 = `native/tools/measure_enemy_variants.py`
@@ -832,11 +836,7 @@ static int32_t s_ge_stat;                 /* 诊断：一共刷了几只 */
  *   · `Phantom*` 91–110（幽灵）、以及所有 boss/中 boss 的脚本。*/
 static int mof_ge_is_fairy(int32_t src, int32_t script)
 {
-    if (src != 2) return 0;
-    if (script >= 0 && script <= 39) return 1;
-    if (script >= 159 && script <= 178) return 1;
-    if (script >= 184 && script <= 203) return 1;
-    return 0;
+    return mof_green_is_fairy(src, script);           /* 判据在 core（可离线单测）*/
 }
 
 static void mof_ge_reset(int32_t stage)
@@ -848,7 +848,8 @@ static void mof_ge_reset(int32_t stage)
     s_ge_n = 0;
     s_ge_done = 0;
     s_ge_wave = 0;
-    /* ⚠ `s_ge_max_id` **不重置**：它只是「我见过哪些实例」的水位线，跨关继续单调递增。*/
+    s_ge_cancel = 0;
+    /* ⚠ `s_ge_max_id` / `s_ge_other_id` **不重置**：它们只是「我见过哪些实例」的水位线，跨关继续单调递增。*/
 }
 
 static void mof_ge_spawn_one(float x, float y, float angle, float speed)
@@ -898,13 +899,24 @@ static void mof_ge_tick(int32_t frame)
         CE_ENEMY_FOREACH(em, e) {
             int32_t src = 0, script = 0, id;
             mof_enemy_anm_identity(e, &src, &script);
-            if (!mof_ge_is_fairy(src, script)) continue;
             id = *(const int32_t *)(e + CE_ENEMY_ID);
+            if (!mof_ge_is_fairy(src, script)) {
+                /* ★★ 2026-09-18c（用户：「**三只大蝴蝶那里不应该有绿妖精！**」）：
+                 * 这一波只要出现**别的种类**（大妖精 40–44/224–228、阴阳玉 `Cir*`、`Phantom*`、boss…），
+                 * 就**撤销**本波的补刷 —— 否则「上一波妖精触发、延迟十几帧才落地」的那只绿妖精
+                 * 会正好落在它们的画面上（实跑就是这么被看到的）。*/
+                if (id > s_ge_other_id) {
+                    s_ge_other_id = id;
+                    if (s_ge_n > 0 && s_ge_wave_id != 0 && id > s_ge_wave_id) s_ge_cancel = 1;
+                }
+                continue;
+            }
             if (id <= s_ge_max_id) continue;                  /* 老面孔 */
             s_ge_max_id = id;
             if (s_ge_last != 0 && frame - s_ge_last > MOF_GE_GAP) {   /* 隔太久 ⇒ 新的一波 */
                 s_ge_n = 0;
                 s_ge_done = 0;
+                s_ge_cancel = 0;
                 ++s_ge_wave;
             } else if (s_ge_wave == 0) {
                 s_ge_wave = 1;                                        /* 本关第一波 */
@@ -915,6 +927,7 @@ static void mof_ge_tick(int32_t frame)
                 s_ge_first_y = p ? p[1] : 0.0f;      /* 队形的深度（补刷的那只与它同深）*/
                 s_ge_trig_src = src;                 /* 诊断：触发这一波的外观 */
                 s_ge_trig_script = script;
+                s_ge_wave_id = id;                   /* 本波第一只的 id（判「别的种类是这波之后才来的」）*/
             }
             if (s_ge_n < MOF_GE_SAMPLES) {
                 const float *p = ce_enemy_pos(e);
@@ -929,6 +942,14 @@ static void mof_ge_tick(int32_t frame)
     if (frame < s_ge_frame + MOF_GE_DELAY) return;            /* 先攒几个出生点（认队形）*/
     /* ★ 这一波**还在刷**才补：否则画面已经是下一波了（用户实跑「绿妖精跟阴阳玉/大蝴蝶混在一起」）*/
     if (frame - s_ge_last > MOF_GE_WINDOW) { s_ge_done = 1; return; }
+    /* ★★ 这一波出现过**别的种类**（大妖精=大蝴蝶 / 阴阳玉 / 幽灵 / boss）⇒ 本波**不补**
+     *   （用户 2026-09-18c 原话：「三只大蝴蝶那里不应该有绿妖精！」）*/
+    if (s_ge_cancel) {
+        s_ge_done = 1;
+        ce_log("mof: green extra fairy CANCELLED for wave#%d —— 这一波出现了非妖精外观"
+               "（大妖精/Cir*/Phantom*/boss；见 `mof_green_is_fairy()`）", (int)s_ge_wave);
+        return;
+    }
 
     {
         float slots[MOF_GREEN_EXTRA_SLOT_MAX];

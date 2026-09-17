@@ -13938,7 +13938,7 @@ MODKIT_DIR="/mnt/d/项目/幻想指南/18/th18_modkit" python3 tools/deploy.py
 | `assets/ecl/green_extra.ecl.txt`（**新增**）| 一支 ECL 子程序 `CEGreenFairy`（`anmSelect(2); anmSetMain(0,10);` + 照抄原生小妖精 `GirlA01` 体的运动/体型；约 690 帧后飞离 `delete()`）| `ce_spawn_enemy()` 需要一个**已加载 ECL 里的子程序名**；这支就是「每波多刷的那只绿的」| 系统卡批次 | `make ecl-ufo` 通过：原生 30 子 + 我们 10 子 = **40 子**、无重名、**往返二进制字节一致**（20436 B）、指令行数不变 |
 | `assets/ecl/make_ufo_ecl.py` | 合并**两份**片段（`ufo.ecl.txt` + `green_extra.ecl.txt`）、重名检查扩到全部 10 支、汇总打印改成真实条数 | 两个脚本各写一次 `build/ecl/default.ecl` 会互相覆盖，而 `make dist` 只跑 `ecl-ufo` 一个目标 ⇒ 必须同一个合并步 | 同上 | 同上；`grep -c "^void "` 反编译回来 = **40** |
 | `native/Makefile`（`dist` 已含该步，未改）| —— | `dist` 里的 `cp build/ecl/default.ecl $(DIST)/patch-step3/th18/` 一行**本来就覆盖它** | — | `make dist` 后对账：modkit 里的 `th18/default.ecl` 与 `native/build/ecl/default.ecl` **同 md5** |
-| `native/cards/mof.c` | 新增 `mof_ge_*`（每帧扫敌认新妖精 → 划波次 → 按队形补刷一只/一对；`ce_spawn_enemy`）| 用户口径；卡不在场时一次都不跑（只由 `on_tick_2` 调）| 同上 | 纯逻辑 `mof_green_extra_slots()` 由 `tests/test_mof_green_core.c`（244 断言）钉住；`make dllx87` = 0 条 x87（**刻意不用 `atan2f`**）|
+| `native/cards/mof.c` | 新增 `mof_ge_*`（每帧扫敌认新妖精 → 划波次 → 按队形补刷；`ce_spawn_enemy`）；2026-09-18c 补：**非妖精出现即撤销**、时机收紧、出生点夹进游玩区 | 用户口径；卡不在场时一次都不跑（只由 `on_tick_2` 调）| 同上 | 纯逻辑由 `tests/test_mof_green_core.c`（**407 断言**，含 `mof_green_is_fairy()` 的妖精/非妖精全覆盖）钉住；`make dllx87` = 0 条 x87（**刻意不用 `atan2f`**）|
 | `native/cards/mof_green_core.{h,c}` | 新增 `mof_green_extra_slots()`（队形槽位，纯函数）+ `MOF_GREEN_EXTRA_SLOT_MIN` | 让「补在哪一格」可离线单测 | 同上 | 同上 |
 
 **对既有卡的影响面**：`assets/ecl/*` 只**新增**一支子程序（原生 30 支逐字节不变 —— 合并脚本会跑「编回后再编一次字节一致」这道自洽）；

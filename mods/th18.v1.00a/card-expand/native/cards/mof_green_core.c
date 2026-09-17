@@ -61,6 +61,15 @@ const mof_green_pair_t mof_green_pairs[MOF_GREEN_PAIR_MAX] = {
     {   256,     244,     199,     194,     0,  ALL_STAGES,  "B 组第四色（橙）· ECL 零站点（备用行）" },
 };
 
+int mof_green_is_fairy(int32_t anm_src, int32_t anm_script)
+{
+    if (anm_src != 2) return 0;                       /* 只认 `enemy.anm`（`anmSelect(2)`）的外观 */
+    if (anm_script >= 0 && anm_script <= 39) return 1;
+    if (anm_script >= 159 && anm_script <= 178) return 1;
+    if (anm_script >= 184 && anm_script <= 203) return 1;
+    return 0;
+}
+
 int mof_green_extra_slots(const float *x, int n, int count, float *out_x, int out_max)
 {
     float xmax = 0.0f, d = 0.0f;

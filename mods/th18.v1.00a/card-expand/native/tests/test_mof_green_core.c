@@ -263,6 +263,29 @@ static void test_swap_apply_restore(void)
     CHECK(mof_green_pair_is_green(s_tbl, 0) == 0);
 }
 
+/* ★★ 2026-09-18c：「妖精」的判据 —— 用户口径「**只有妖精循环**加绿妖精」+
+ * 「**三只大蝴蝶那里不应该有绿妖精！**」（大蝴蝶 = 大妖精 `GirlD*`，一面里正好三只）。*/
+static void test_is_fairy(void)
+{
+    int i;
+    /* 妖精：A 族 0–39（GirlBlueA/GirlRedA/GirlA0x/GirlB/GirlC）、C 族 159–178、B 族 184–203 */
+    for (i = 0; i <= 39; ++i) CHECK(mof_green_is_fairy(2, i) == 1);
+    for (i = 159; i <= 178; ++i) CHECK(mof_green_is_fairy(2, i) == 1);
+    for (i = 184; i <= 203; ++i) CHECK(mof_green_is_fairy(2, i) == 1);
+    /* **大妖精（实跑里的「大蝴蝶」）不是妖精** —— 40–44 / 224–228 一律 0 */
+    for (i = 40; i <= 44; ++i) CHECK(mof_green_is_fairy(2, i) == 0);
+    for (i = 224; i <= 228; ++i) CHECK(mof_green_is_fairy(2, i) == 0);
+    /* 阴阳玉 `Cir*`（45–80）、`Phantom*`（91–110）、以及中间那些杂项一律 0 */
+    for (i = 45; i <= 80; ++i) CHECK(mof_green_is_fairy(2, i) == 0);
+    for (i = 91; i <= 110; ++i) CHECK(mof_green_is_fairy(2, i) == 0);
+    CHECK(mof_green_is_fairy(2, 45) == 0 && mof_green_is_fairy(2, 68) == 0);   /* 阴阳玉本体/绿的都算"别的" */
+    /* 别的 anm 源 / 非法值 */
+    CHECK(mof_green_is_fairy(3, 0) == 0);
+    CHECK(mof_green_is_fairy(0, 5) == 0);
+    CHECK(mof_green_is_fairy(2, -1) == 0);
+    CHECK(mof_green_is_fairy(2, 9999) == 0);
+}
+
 /* ★ 「每波多刷一只绿的」的队形槽位（用户 2026-09-18：「按照几何形状，每波多一对，或者多一只」）*/
 static void test_extra_slots(void)
 {
@@ -347,6 +370,7 @@ int main(void)
     test_sane();
     test_swap_apply_restore();
     test_extra_slots();
+    test_is_fairy();
     printf("test_mof_green_core: %d passed, %d failed\n", s_pass, s_fail);
     return s_fail ? 1 : 0;
 }
