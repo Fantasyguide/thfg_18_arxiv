@@ -30,6 +30,8 @@ import subprocess
 import sys
 import time
 
+KEYMAP = {"SHOT": "SHOT", "BOMB": "BOMB", "SLOW": "SLOW", "CARD_USE": "CARD_USE",
+          "CARD_SWITCH": "CARD_SWITCH", "UP": "UP", "DOWN": "DOWN", "LEFT": "LEFT", "RIGHT": "RIGHT"}
 VK = {"SHOT": 0x5A, "BOMB": 0x58, "CARD_USE": 0x43, "CARD_SWITCH": 0x44, "SLOW": 0x10,
       "UP": 0x26, "DOWN": 0x28, "LEFT": 0x25, "RIGHT": 0x27, "ENTER": 0x0D, "PAUSE": 0x1B}
 KEYUP = 0x0002
@@ -71,6 +73,43 @@ def find_game_window():
     return found[0] if found else None
 
 
+
+DECKS = {"sys12": dict(mode="exact", cap=12, deck=list(range(106, 118))),
+         "one118": dict(mode="exact", cap=0, deck=[118]),
+         "off": dict(mode="off", cap=0, deck=[])}
+
+
+def here(name):
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), name)
+
+
+def load_scenarios():
+    p = here("scenarios.json")
+    return json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {}
+
+
+def write_deck(mk, name):
+    d = DECKS[name]
+    obj = {"note": "由 autotest 写入的临时测试卡组（复原：改成 mode off 或删本文件）",
+           "mode": d["mode"], "deck": d["deck"]}
+    if d["cap"]:
+        obj["cap"] = d["cap"]
+    p = os.path.join(mk, "mods", "start_deck.js")
+    with open(p, "w", encoding="utf-8") as f:
+        json.dump(obj, f, ensure_ascii=False, indent=2)
+    log("   卡组 %s → %s" % (name, p))
+
+
+def judge(mk, prim, log_path, rep):
+    """本地判读（同目录 verify.py；纯标准库，Windows 上照跑）。"""
+    v = here("verify.py")
+    if not os.path.exists(v):
+        log("   （没有 verify.py，跳过判读）"); return 0
+    cmd = [sys.executable, v, prim, "--check", "--log", log_path, "--report", rep]
+    log("   判读：%s" % " ".join(cmd[-6:]))
+    return subprocess.run(cmd).returncode
+
+
 def key(vkname, down):
     vk = VK[vkname]
     ctypes.windll.user32.keybd_event(vk, 0, 0 if down else KEYUP, 0)
@@ -87,13 +126,30 @@ def main():
     ap.add_argument("--modkit", default=os.environ.get("MODKIT_DIR", ""))
     ap.add_argument("--job", default="", help="job JSON（含 scenario/seconds/scale/steps/launch）")
     ap.add_argument("--smoke", action="store_true", help="只做环境自检（不需要游戏）")
+    ap.add_argument("--list", action="store_true", help="列出场景（读同目录 scenarios.json）")
+    ap.add_argument("--scenario", default="", help="跑指定场景")
+    ap.add_argument("--all", action="store_true", help="跑全部场景（八原语 + all12）")
+    ap.add_argument("--deck", default="", help="写起手卡组：sys12 | one118 | off")
+    ap.add_argument("--judge", action="store_true", help="跑完用同目录 verify.py 判读出报告")
+    ap.add_argument("--seconds", type=float, default=0, help="覆盖场景时长")
     a = ap.parse_args()
+
+    scns0 = load_scenarios()
+    if a.list:
+        if not scns0:
+            print("(没有 scenarios.json —— 用 --install-win 从 WSL 侧部署，或把它放到本文件旁边)"); return 2
+        for k, v in scns0.items():
+            print("%-14s %-6s %4ds  %s" % (k, v.get("deck", "?"), v.get("seconds", 0), v.get("why", "")))
+        return 0
 
     mk = a.modkit
     if not mk:                      # 参数走 JSON（避免中文路径过 cmd 的编码坑）
-        cfg = os.path.join(os.path.dirname(os.path.abspath(__file__)), "autoplay_cfg.json")
-        if os.path.exists(cfg):
-            mk = json.load(open(cfg, encoding="utf-8")).get("modkit", "")
+        for nm in ("autotest.cfg.json", "autoplay_cfg.json"):
+            cfg = os.path.join(os.path.dirname(os.path.abspath(__file__)), nm)
+            if os.path.exists(cfg):
+                mk = json.load(open(cfg, encoding="utf-8")).get("modkit", "")
+                if mk:
+                    break
     out = {"ok": False, "platform": sys.platform, "python": sys.version.split()[0],
            "modkit": mk, "steps": 0, "window": None, "log_section": "", "log_lines": 0,
            "new_dumps": [], "notes": []}
@@ -112,6 +168,53 @@ def main():
     out["window"] = hex(hwnd) if hwnd else None
     if not hwnd:
         out["notes"].append("没找到 th18.exe 的窗口（游戏没在跑 = 正常；--smoke 不启动游戏）")
+
+    scns = load_scenarios()
+
+    if a.list:
+        for k, v in scns.items():
+            print("%-14s %-6s %4ds  %s" % (k, v.get("deck", "?"), v.get("seconds", 0), v.get("why", "")))
+        return 0
+
+    if a.scenario or a.all:
+        names = list(scns) if a.all else [a.scenario]
+        bad = [n for n in names if n not in scns]
+        if bad:
+            print("✗ 未知场景：%s（--list 看台账）" % ", ".join(bad)); return 2
+        rc_all = 0
+        for i, n in enumerate(names, 1):
+            print("\n---- [%d/%d] %s ----" % (i, len(names), n))
+            scn = scns[n]
+            if a.deck:
+                write_deck(mk, a.deck)
+            steps = scn.get("timeline", [])
+            dur = a.seconds or float(scn.get("seconds", 60))
+            env = dict(os.environ)
+            sub = [sys.executable, os.path.abspath(__file__), "--modkit", mk,
+                   "--job", "", "--scenario-run", n]
+            # 直接把时间轴喂给本文件的主流程（避免递归解析）：改成写 job 再调自己
+            jobp = here("job_last.json")
+            jd = {"scenario": n, "seconds": dur, "scale": 1.0, "launch": bool(a.launch),
+                  "steps": [{"t": t, "act": act, "key": KEYMAP.get(act.split(" ", 1)[1], ""),
+                             "down": act.startswith("hold")} for t, act in steps]}
+            with open(jobp, "w", encoding="utf-8") as f:
+                json.dump(jd, f, ensure_ascii=False)
+            r = subprocess.run([sys.executable, os.path.abspath(__file__), "--modkit", mk, "--job", jobp])
+            rc = r.returncode
+            if a.judge and not rc:
+                prim = scn.get("prim", "all")
+                rp = os.path.join(mk, "autotest", "report_%s.md" % n)
+                rc |= judge(mk, prim, os.path.join(mk, "autotest", "last_section.log"), rp)
+            rc_all |= rc
+        mk_at = os.path.join(mk, "autotest")
+        os.makedirs(mk_at, exist_ok=True)
+        with open(os.path.join(mk_at, "summary.md"), "w", encoding="utf-8") as f:
+            f.write("# TH18 自动验收（Windows 侧跑）\n\n")
+            f.write("| 场景 | 结果 | 明细 |\n| --- | --- | --- |\n")
+            for n in names:
+                f.write("| %s | 见明细 | `report_%s.md` |\n" % (n, n))
+        print("\n汇总：%s" % os.path.join(mk_at, "summary.md"))
+        return rc_all
 
     if a.smoke:
         out["ok"] = bool(out["launcher_exists"] and out["game_exe_exists"])

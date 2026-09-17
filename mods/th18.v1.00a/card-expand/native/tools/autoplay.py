@@ -188,6 +188,43 @@ def write_deck(mk, name, dry):
         return False
 
 
+
+def install_win(mk, tmp, dry=False):
+    """把 autotest **部署到 Windows 侧**：<modkit>/autotest/ 里放自洽的一套，Windows 上直接跑。"""
+    if not mk:
+        print("✗ 装到 Windows 侧需要 modkit 路径：--modkit / MODKIT_DIR"); return 2
+    win_at = os.path.join(mk, "autotest")
+    if dry:
+        print("   [dry] 会装到 %s（autoplay_win.py / verify.py / scenarios.json / cfg / bat / README）" % win_at)
+        return 0
+    os.makedirs(win_at, exist_ok=True)
+    for f in ("autoplay_win.py", "verify.py"):
+        shutil.copyfile(os.path.join(HERE, f), os.path.join(win_at, f))
+    scns = {}
+    for n, scn in SCENARIOS.items():
+        scns[n] = {"deck": scn["deck"], "seconds": scn["seconds"], "why": scn["why"],
+                   "timeline": [list(x) for x in scn["timeline"]],
+                   "prim": SCEN_PRIM.get(n, "all")}
+    with open(os.path.join(win_at, "scenarios.json"), "w", encoding="utf-8") as f:
+        json.dump(scns, f, ensure_ascii=False, indent=2)
+    with open(os.path.join(win_at, "autotest.cfg.json"), "w", encoding="utf-8") as f:
+        json.dump({"modkit": to_win_path(mk)}, f, ensure_ascii=False)
+    with open(os.path.join(win_at, "run_autotest.bat"), "w", newline="\r\n") as f:
+        f.write("@echo off\r\ncd /d C:\\\r\n"
+                'uv run --no-project --python 3.11 "%~dp0autoplay_win.py" %*\r\n')
+    with open(os.path.join(win_at, "README.txt"), "w", encoding="utf-8") as f:
+        f.write("TH18 自动测试（Windows 侧自洽运行，不需要 WSL）\n"
+                "  1) 双击 run_autotest.bat --list        看场景台账\n"
+                "  2) 双击 run_autotest.bat --smoke       环境自检（不需要游戏）\n"
+                "  3) run_autotest.bat --scenario z-intercept --launch --judge   真跑一个场景并判读\n"
+                "  4) run_autotest.bat --all --deck sys12 --launch --judge       全场景 + 12 张全装\n"
+                "  报告落在本目录：report_<场景>.md 与 summary.md（last_section.log 是判读用的日志段）\n"
+                "  依赖：uv（winget 装的 astral-sh.uv）。uv 会自己取 Python 3.11，无需系统 Python。\n")
+    print("✅ 已装到 Windows 侧：%s" % win_at)
+    print("   在 Windows 上跑：%s\\run_autotest.bat --scenario z-intercept --launch --judge" % to_win_path(win_at))
+    return 0
+
+
 def attribute_dumps(mk, dumps):
     """有新 dump 就调 tooling/crashdump/dmp.py 出签名（自动归因）。"""
     if not dumps:
@@ -310,12 +347,16 @@ def main():
     ap.add_argument("--win-smoke", action="store_true", help="只验 WSL→Windows 桥（不需要游戏）")
     ap.add_argument("--all", action="store_true", help="把全部场景跑一遍（串起八原语 + all12）")
     ap.add_argument("--selftest", action="store_true", help="离线自检：全部场景的编排（不需要游戏）")
+    ap.add_argument("--install-win", action="store_true", help="把 autotest 部署到 Windows 侧（<modkit>/autotest/）")
     ap.add_argument("--deck", default="", choices=[""] + list(DECKS), help="起手卡组（写 mods/start_deck.js）")
     ap.add_argument("--launch", action="store_true", help="让 Windows runner 自己启动游戏")
     ap.add_argument("--win-tmp", default="", help="Windows 暂存目录（默认 %%TEMP%%\\renkolab）")
     ap.add_argument("--scale", type=float, default=1.0,
                     help="时间轴整体缩放（<1 = 加速跑；调试编排时用）")
     a = ap.parse_args()
+
+    if a.install_win:
+        return install_win(find_modkit(a.modkit), win_tmp(a.win_tmp), a.dry_run)
 
     if a.selftest:
         bad = [(n, e) for n, scn in SCENARIOS.items() for e in plan(scn)[1]]
