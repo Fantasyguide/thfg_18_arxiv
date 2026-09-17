@@ -13944,3 +13944,19 @@ MODKIT_DIR="/mnt/d/项目/幻想指南/18/th18_modkit" python3 tools/deploy.py
 **对既有卡的影响面**：`assets/ecl/*` 只**新增**一支子程序（原生 30 支逐字节不变 —— 合并脚本会跑「编回后再编一次字节一致」这道自洽）；
 `make_ufo_ecl.py` 的改动只影响它自己的合并清单；`mof.c` / `mof_green_core.*` 是 110 自己的文件。
 ⇒ 112 的 UFO 令牌行为**不变**（同名同体，只是同一次构建里多合一支）。
+
+### §BE-EC 共享件 `cards/faith.{h,c}` + `faith_core.h`：出生角拆出「显式角度」入口（2026-09-18c）
+
+**背景**：用户实跑口径「对于**绿阴阳玉**的情况，把**信仰点撒开一点**」⇒ 大信仰点要能带**扇形出生角**
+（一手 = 恒角直上，见 `TUNING.md` §2.0i）。
+
+| 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
+| --- | --- | --- | --- | --- |
+| `cards/faith_core.h` | 新增 `FAITH_SPREAD_STEP` + `faith_core_spread_radial(seq)`（**纯函数**：`(seq%7)−3` 档 × 步长；`seq < 0` ⇒ 0） | 扇形角要可离线单测，且默认 0 = 一手行为 | 系统卡批次 | `tests/test_faith_core.c` 新增 11 条断言（档序、7 档循环、幅度上界、`seq<0` = 一手）|
+| `cards/faith.h` / `faith.c` | 出生函数拆成 `faith_spawn_dir(…, float ang)`（新）+ `faith_spawn(…)`（**行为不变**：仍传 `FAITH_THROW_ANGLE`）+ 新增 `faith_spawn_big_spread()`（按序号取扇形角） | 「撒开一点」只该影响击破宿主那条路；既有调用点与既有单测必须**一模一样** | 同上 | `test_faith_core` 221→**228** 断言全绿；其余调用点一字未改 |
+| `cards/mof.c` | 击破宿主那条路的 `faith_spawn(...)` → `faith_spawn_big_spread(...)`（**唯一**调用点） | 用户口径；满 P 转换的小点保持一手角度 | 同上 | `make quick` 24 个主机测试全绿；实跑看日志里同一次爆发的点是否散开 |
+
+**对既有卡的影响面**：`faith.h` / `faith.c` / `faith_core.h` 是 110 与 111 **共用**的池实现。
+本次只**新增**函数并让老的 `faith_spawn()` 变成一行转发 ⇒ 111（`signal.c`）的调用与行为**逐字节不变**
+（`faith_spawn()` 的实参顺序、返回语义、出生运动学都没动）；`faith_core_spread_radial()` 是新增的纯函数，
+不改变任何既有计算。⇒ 其它卡不可能受影响。

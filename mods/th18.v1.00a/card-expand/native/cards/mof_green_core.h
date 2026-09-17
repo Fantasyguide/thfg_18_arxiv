@@ -76,6 +76,14 @@ extern const mof_green_pair_t mof_green_pairs[MOF_GREEN_PAIR_MAX];
 /* 在场（enabled）的对数。*/
 int mof_green_active_count(void);
 
+/* ★ 2026-09-18c：把「计划 / 判据」做成**带表参数**的版本 —— 默认名单已全部关掉（用户选了「不碰
+ * 原版妖精」那条路），但机制与判据仍必须可测 ⇒ 单测用一张**合成表**就能把两条路都钉住。
+ * 下面两个是卡片实际调用的入口（用全局表）。*/
+void mof_green_plan_tbl(const mof_green_pair_t *tbl, int n, int32_t stage, uint32_t applied,
+                        uint32_t *to_apply, uint32_t *to_restore);
+const mof_green_pair_t *mof_green_lookup_tbl(const mof_green_pair_t *tbl, int n, uint32_t applied,
+                                             int32_t anm_src, int32_t anm_script);
+
 /* 死亡判据：这只敌人（`anm_src`/`anm_script` = `enemy+0x1494/+0x1498` 的读数）是不是
  * 「我们**此刻真的**把它变绿了」的那一支 ⇒ 返回那一对（没有 = NULL）。
  * ★ `applied` = 卡侧维护的「已改」位掩码（bit i = 第 i 行已生效）。**判据必须用「已改」而不是

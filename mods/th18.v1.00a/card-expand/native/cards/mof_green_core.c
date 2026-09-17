@@ -47,8 +47,12 @@
 
 const mof_green_pair_t mof_green_pairs[MOF_GREEN_PAIR_MAX] = {
     /*  src_spr  dst_spr  src_scr  dst_scr   on   关掩码        who */
-    {     0,      24,       0,      10,     1,  ST1,         "A 组蓝妖精 · 只 st01（GirlBlueA01/A01n，2 站点）" },
-    {   220,     244,     184,     194,     1,  ST3,         "B 组蓝妖精 · 只 st03（GirlBlueA02，6 站点；本关原来一只绿妖精都没有）" },
+    /* ★★ 2026-09-18c（用户实跑后）：**默认全部关掉** —— 实跑看到「第一面第二波的蓝妖精全变绿妖精了」
+     *    并明确选了路线②（「我们自己多刷一只绿的」＝**不碰原版妖精**）⇒ 变色这条路留作**备用口味**：
+     *    想让某一支妖精整支变绿，把对应行的 `enabled` 改 1（机制、判据、掉落替换都已经在）。
+     *    `mof_green_swap` 那套（sprite 表项覆盖 + 按关掩码 + 删卡还原）一个字都没删。*/
+    {     0,      24,       0,      10,     0,  ST1,         "A 组蓝妖精 · 只 st01（GirlBlueA01/A01n，2 站点）" },
+    {   220,     244,     184,     194,     0,  ST3,         "B 组蓝妖精 · 只 st03（GirlBlueA02，6 站点；本关原来一只绿妖精都没有）" },
     {     0,      24,       0,      10,     0,  ST5,         "A 组蓝妖精 · 只 st05（GirlBlueA01，2 站点）" },
     {   220,     244,     184,     194,     0,  ST2 | ST7,   "B 组蓝妖精 · 只 st02+st07（GirlBlueA01/A03，4/6 站点）" },
     {    12,      24,       5,      10,     0,  ALL_STAGES,  "A 组红妖精 · 所有关（st01 2 + st06 22 站点）" },
@@ -121,31 +125,46 @@ int mof_green_pair_in_stage(const mof_green_pair_t *p, int32_t stage)
     return (p->stage_mask & (1u << (stage - 1))) != 0;
 }
 
-void mof_green_plan(int32_t stage, uint32_t applied, uint32_t *to_apply, uint32_t *to_restore)
+void mof_green_plan_tbl(const mof_green_pair_t *tbl, int n, int32_t stage, uint32_t applied,
+                        uint32_t *to_apply, uint32_t *to_restore)
 {
     uint32_t want = 0, ap = 0, rs = 0;
     int i;
-    for (i = 0; i < MOF_GREEN_PAIR_MAX; ++i)
-        if (mof_green_pair_in_stage(&mof_green_pairs[i], stage)) want |= 1u << i;
+    if (!tbl || n > 32) n = 0;
+    for (i = 0; i < n; ++i)
+        if (mof_green_pair_in_stage(&tbl[i], stage)) want |= 1u << i;
     ap = want & ~applied;                                   /* 该改还没改 ⇒ 去改 */
     rs = applied & ~want;                                   /* 改了但不该改（换关）⇒ 还原 */
     if (to_apply)   *to_apply   = ap;
     if (to_restore) *to_restore = rs;
 }
 
-const mof_green_pair_t *mof_green_lookup(uint32_t applied, int32_t anm_src, int32_t anm_script)
+void mof_green_plan(int32_t stage, uint32_t applied, uint32_t *to_apply, uint32_t *to_restore)
+{
+    mof_green_plan_tbl(mof_green_pairs, MOF_GREEN_PAIR_MAX, stage, applied, to_apply, to_restore);
+}
+
+const mof_green_pair_t *mof_green_lookup_tbl(const mof_green_pair_t *tbl, int n, uint32_t applied,
+                                             int32_t anm_src, int32_t anm_script)
 {
     int i;
     /* 变体表全部来自 `enemy.anm`（`anmSelect(2)`）⇒ 别的 anm 源一律不算。
      * 一手：`th18:0x436c49`–`0x436c4e`（`N` 取 `[0x4cf2d0]+N*4+0x168`，N=2 ⇒ `+0x170`）。*/
-    if (anm_src != 2) return 0;
-    for (i = 0; i < MOF_GREEN_PAIR_MAX; ++i) {
-        const mof_green_pair_t *p = &mof_green_pairs[i];
+    if (anm_src != 2 || !tbl || n > 32) return 0;
+    for (i = 0; i < n; ++i) {
+        const mof_green_pair_t *p = &tbl[i];
+        if (!p->enabled) continue;                          /* 关着的行**永远**不算（纵深防御：
+                                                             * 哪怕调用方递来一个全 1 的 `applied`）*/
         if (!(applied & (1u << i))) continue;               /* ★ 只认「此刻真的改上了」的行 */
         /* 一个变体占 5 个脚本（pose 0..4）—— 只要落在这 5 个里，就是「被我们变绿的那一支」。*/
         if (anm_script >= p->src_script && anm_script < p->src_script + 5) return p;
     }
     return 0;
+}
+
+const mof_green_pair_t *mof_green_lookup(uint32_t applied, int32_t anm_src, int32_t anm_script)
+{
+    return mof_green_lookup_tbl(mof_green_pairs, MOF_GREEN_PAIR_MAX, applied, anm_src, anm_script);
 }
 
 static const uint8_t *entry_at(const uint8_t *tbl, int sprite)

@@ -93,74 +93,89 @@ static void test_table_invariants(void)
 
 static void test_stage_and_plan(void)
 {
+    /* 合成表（默认名单全关 ⇒ 机制与判据要用一张"像真的一样"的表来测；见 `*_tbl` 入口）：
+     * 行 0 = 只 st01 启用、行 1 = 只 st03 启用、行 2 = 只 st05 但**关着**、行 3 = 所有关但**关着**。*/
+    static const mof_green_pair_t T[4] = {
+        {   0,  24,   0,  10, 1, (1u << 0),       "synth st01" },
+        { 220, 244, 184, 194, 1, (1u << 2),       "synth st03" },
+        {   0,  24,   0,  10, 0, (1u << 4),       "synth st05 (off)" },
+        {  12,  24,   5,  10, 0, 0u,              "synth all (off)" },
+    };
+
     /* 关掩码（`CE_CURRENT_STAGE()` 是 **1-based**）*/
-    CHECK(mof_green_pair_in_stage(&mof_green_pairs[0], 1) == 1);    /* 只 st01 */
-    CHECK(mof_green_pair_in_stage(&mof_green_pairs[0], 2) == 0);
-    CHECK(mof_green_pair_in_stage(&mof_green_pairs[1], 3) == 1);    /* 只 st03 */
-    CHECK(mof_green_pair_in_stage(&mof_green_pairs[1], 2) == 0);
-    CHECK(mof_green_pair_in_stage(&mof_green_pairs[3], 2) == 0);    /* st02|st07 但开关关着 ⇒ 不生效 */
-    CHECK(mof_green_pair_in_stage(&mof_green_pairs[0], 0) == 0);    /* 读不到关 ⇒ 不生效 */
-    CHECK(mof_green_pair_in_stage(&mof_green_pairs[0], 8) == 0);
+    CHECK(mof_green_pair_in_stage(&T[0], 1) == 1);       /* 只 st01 */
+    CHECK(mof_green_pair_in_stage(&T[0], 2) == 0);
+    CHECK(mof_green_pair_in_stage(&T[1], 3) == 1);       /* 只 st03 */
+    CHECK(mof_green_pair_in_stage(&T[1], 2) == 0);
+    CHECK(mof_green_pair_in_stage(&T[2], 5) == 0);       /* 掩码对但开关关着 ⇒ 不生效 */
+    CHECK(mof_green_pair_in_stage(&T[0], 0) == 0);       /* 读不到关 ⇒ 不生效 */
+    CHECK(mof_green_pair_in_stage(&T[0], 8) == 0);
     CHECK(mof_green_pair_in_stage(0, 1) == 0);
 
     /* 逐帧计划：st01 ⇒ 只改第 0 行；换到 st03 ⇒ 先还原第 0 行、再改第 1 行 */
     {
         uint32_t ap = 0xdeadbeef, rs = 0xdeadbeef;
-        mof_green_plan(1, 0, &ap, &rs);
+        mof_green_plan_tbl(T, 4, 1, 0, &ap, &rs);
         CHECK(ap == (1u << 0));
         CHECK(rs == 0);
-        mof_green_plan(1, (1u << 0), &ap, &rs);         /* 已改 ⇒ 无动作（幂等）*/
+        mof_green_plan_tbl(T, 4, 1, (1u << 0), &ap, &rs);   /* 已改 ⇒ 无动作（幂等）*/
         CHECK(ap == 0 && rs == 0);
-        mof_green_plan(3, (1u << 0), &ap, &rs);         /* 换关 ⇒ 还原 0、改 1 */
+        mof_green_plan_tbl(T, 4, 3, (1u << 0), &ap, &rs);   /* 换关 ⇒ 还原 0、改 1 */
         CHECK(ap == (1u << 1));
         CHECK(rs == (1u << 0));
-        mof_green_plan(3, (1u << 0) | (1u << 1), &ap, &rs);
+        mof_green_plan_tbl(T, 4, 3, (1u << 0) | (1u << 1), &ap, &rs);
         /* st03 里第 0 行（只 st01）**不该**在 ⇒ 它必须被还原，而不是「已经改了就算数」*/
         CHECK(ap == 0 && rs == (1u << 0));
-        mof_green_plan(3, (1u << 1), &ap, &rs);
+        mof_green_plan_tbl(T, 4, 3, (1u << 1), &ap, &rs);
         CHECK(ap == 0 && rs == 0);
-        mof_green_plan(4, (1u << 1), &ap, &rs);         /* st04 两支都不该在 ⇒ 全还原 */
+        mof_green_plan_tbl(T, 4, 4, (1u << 1), &ap, &rs);   /* st04 两支都不该在 ⇒ 全还原 */
         CHECK(ap == 0 && rs == (1u << 1));
-        mof_green_plan(0, 0xffffffffu, &ap, &rs);       /* 关号读不到 ⇒ 全部还原（安全侧）*/
+        mof_green_plan_tbl(T, 4, 0, 0xffffffffu, &ap, &rs); /* 关号读不到 ⇒ 全部还原（安全侧）*/
         CHECK(ap == 0);
-        mof_green_plan(1, 0, 0, 0);                     /* NULL 安全 */
-        mof_green_plan(1, 0, &ap, 0);
+        mof_green_plan_tbl(T, 4, 1, 0, 0, 0);               /* NULL 安全 */
+        mof_green_plan_tbl(T, 4, 1, 0, &ap, 0);
         CHECK(ap == (1u << 0));
+        mof_green_plan_tbl(0, 4, 1, 0, &ap, &rs);           /* 表为空 ⇒ 无动作 */
+        CHECK(ap == 0 && rs == 0);
+        mof_green_plan_tbl(T, 99, 1, 0, &ap, &rs);          /* n 越界 ⇒ 不动（护栏）*/
+        CHECK(ap == 0);
+
+        /* 判据也要能用合成表测（`applied` 位 = 第几行**真的改上了**）*/
+        CHECK(mof_green_lookup_tbl(T, 4, 0xffffffffu, 2, 0) == &T[0]);
+        CHECK(mof_green_lookup_tbl(T, 4, 0xffffffffu, 2, 4) == &T[0]);
+        CHECK(mof_green_lookup_tbl(T, 4, 0xffffffffu, 2, 5) == 0);       /* 红 ∈ 关着的行 3 */
+        CHECK(mof_green_lookup_tbl(T, 4, 0xffffffffu, 2, 184) == &T[1]);
+        CHECK(mof_green_lookup_tbl(T, 4, 0, 2, 0) == 0);                 /* 没改上 ⇒ 不算 */
+        CHECK(mof_green_lookup_tbl(T, 4, (1u << 1), 2, 0) == 0);
+        CHECK(mof_green_lookup_tbl(T, 4, 0xffffffffu, 3, 0) == 0);       /* 不是 enemy.anm */
     }
 }
 
 static void test_lookup(void)
 {
     int i;
-    const uint32_t applied = (1u << 0) | (1u << 1);     /* 默认名单的两行都「已改」*/
+    const uint32_t applied = 0xffffffffu;               /* 假装「每一行都改上了」（默认仍是全关）*/
 
-    /* 默认名单 = 蓝妖精两支（开关在 .c 里，改动这里会红 —— 那是**故意**的：
-     * 改名单要同时想清楚「谁变绿 = 谁掉绿点」这条绑定）*/
-    CHECK(mof_green_active_count() == 2);
+    /* ★★ 2026-09-18c（用户实跑后）：**默认名单全部关掉**（原话「第一面第二波的蓝妖精全变绿妖精了」
+     * ⇒ 他选的是路线②「我们自己多刷一只绿的」＝**不碰原版妖精**）。⇒ 判据必须对默认状态返回 0，
+     * 机制用下面的**合成表**继续测（`*_tbl` 入口）。谁要重新开某一支，改那行的 `enabled` 即可。*/
+    CHECK(mof_green_active_count() == 0);
+    CHECK(mof_green_lookup(0xffffffffu, 2, 0) == 0);        /* 即使认为"全改上了"，没有启用的行 ⇒ 不算 */
+    CHECK(mof_green_lookup(0xffffffffu, 2, 184) == 0);
 
-    for (i = 0; i < 5; ++i) {                   /* A 组蓝：脚本 0..4 ⇒ 命中；5..9（红）⇒ 不命中 */
-        CHECK(mof_green_lookup(applied, 2, 0 + i) == &mof_green_pairs[0]);
+    for (i = 0; i < 5; ++i) {                   /* 默认全关 ⇒ 一条都不命中 */
+        CHECK(mof_green_lookup(applied, 2, 0 + i) == 0);
         CHECK(mof_green_lookup(applied, 2, 5 + i) == 0);
-        CHECK(mof_green_lookup(applied, 2, 184 + i) == &mof_green_pairs[1]);
+        CHECK(mof_green_lookup(applied, 2, 184 + i) == 0);
         CHECK(mof_green_lookup(applied, 2, 189 + i) == 0);
-        CHECK(mof_green_lookup(applied, 2, 15 + i) == 0);       /* A 组第四色（开关关着）*/
-        CHECK(mof_green_lookup(applied, 2, 199 + i) == 0);      /* B 组第四色（开关关着）*/
+        CHECK(mof_green_lookup(applied, 2, 15 + i) == 0);
+        CHECK(mof_green_lookup(applied, 2, 199 + i) == 0);
     }
-    /* ★ 「表里开着」≠「此刻真的改了」：没抹上（applied 位为 0）就不许按宿主给点 ——
-     * 否则会出现「看着还是蓝的妖精掉绿点」，违反「变绿 = 掉绿点」这条绑定。*/
-    CHECK(mof_green_lookup(0, 2, 0) == 0);
-    CHECK(mof_green_lookup(0, 2, 184) == 0);
-    CHECK(mof_green_lookup(1u << 1, 2, 0) == 0);        /* 只改了 B 组 ⇒ A 组不算 */
-    CHECK(mof_green_lookup(1u << 0, 2, 184) == 0);
-    CHECK(mof_green_lookup(1u << 0, 2, 0) == &mof_green_pairs[0]);
-
     CHECK(mof_green_lookup(applied, 2, 10) == 0);       /* 本来就是绿的那支（宿主表管，不归这里）*/
-    CHECK(mof_green_lookup(applied, 2, 194) == 0);
     CHECK(mof_green_lookup(applied, 3, 0) == 0);        /* 不是 enemy.anm ⇒ 一律不算 */
     CHECK(mof_green_lookup(applied, 0, 0) == 0);
     CHECK(mof_green_lookup(applied, 2, -1) == 0);
     CHECK(mof_green_lookup(applied, 2, 99999) == 0);
-    CHECK(mof_green_lookup(applied, 2, 1) == &mof_green_pairs[0]);
 }
 
 static void test_sane(void)

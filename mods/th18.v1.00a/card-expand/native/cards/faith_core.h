@@ -168,6 +168,23 @@ static inline int faith_core_state_is_vacuum_flight(int32_t state)
 
 /* 本粒子的出生速度（E-2 一手；角度一律 `FAITH_THROW_ANGLE`）。*/
 #define FAITH_THROW_ANGLE         (-1.5707964f)   /* −π/2（`0xbfc90fdb` / `th11:0x49842c`）*/
+
+/* ★★ 2026-09-18c（用户实跑口径）：「**把信仰点撒开一点**」——
+ * 起因：原作的出生运动学是**恒角 −π/2 直上**（一手 `th10:0x41bb00` 角 −π/2 速 2.6；
+ *   TH18 同族），所以**一整波绿阴阳玉同时死**时，十几颗大信仰点会沿**同一条竖线**叠在一起
+ *   （用户实跑原话：「对于绿阴阳玉的情况，把信仰点撒开一点」）。
+ * 做法：在「直上」上叠一个**左右扇形的角偏移**（纯函数、按序号循环，7 档覆盖 −3…+3 步）⇒
+ *   `angle = FAITH_THROW_ANGLE + faith_core_spread_radial(seq)`。
+ * ⚠ **这是对一手的刻意偏离**（原作不扇），登记 `TUNING.md` §2.0i；幅度是 `❓ 自定`。
+ *   `seq < 0`（未启用扇）⇒ 返回 0（= 一手行为，供只想要原样的调用方）。*/
+#define FAITH_SPREAD_STEP         0.13f           /* 相邻两档的角差（弧度；7 档≈ ±0.39 ↔ ±22°）*/
+static inline float faith_core_spread_radial(int seq)
+{
+    int k;
+    if (seq < 0) return 0.0f;
+    k = (seq % 7) - 3;                            /* −3 … +3 */
+    return (float)k * FAITH_SPREAD_STEP;
+}
 #define FAITH_THROW_SPEED_MAIN    2.2f            /* 击破 / 满 P 转换族（`0x400ccccd` / `th11:0x498430`）*/
 #define FAITH_THROW_SPEED_CANCEL  0.6f            /* 消弹族（`th10:0x3f19999a`）*/
 static inline float faith_core_throw_speed(faith_tier_t tier)
