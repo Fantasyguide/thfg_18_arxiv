@@ -211,9 +211,16 @@ def boot_section(text):
     return lines[idx[-1]:], lines[idx[-1]]
 
 
-def write_report(path, rows, log, boot):
+def write_report(path, rows, log, boot, env_rows=(), pool_line=""):
     """把判读结果写成 Markdown（一行一原语）—— 交付判据 ③ 的"自动出报告"。"""
     out = ["# TH18 验收判读报告", "",
+           "## 装配判据（先看这一段：这一局是不是我们要的那一局）", "",
+           "| 判据 | 结果 |", "| --- | --- |"]
+    for why, verdict in env_rows:
+        out.append("| %s | %s |" % (why, verdict))
+    if pool_line:
+        out += ["", "池子实测读数：`%s`" % pool_line.strip()]
+    out += ["", "## 八原语判据", "",
            "- 日志：`%s`" % log,
            "- 本次启动段：`%s`" % (boot or "(没有分界线，按整份日志判读)"),
            "",
@@ -328,7 +335,8 @@ def do_check(names, args):
             print("  ⇒ 必需判据齐、无反例（本原语通过本次实跑）")
         rows.append(row)
     if getattr(args, "report", ""):
-        write_report(args.report, rows, path, boot)
+        write_report(args.report, rows, path, boot, env_rows,
+                     (pool[-1] if pool else ""))
     return rc
 
 
