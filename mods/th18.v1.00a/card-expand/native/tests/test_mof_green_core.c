@@ -70,41 +70,97 @@ static void test_table_invariants(void)
         CHECK(ds == dv);                                             /* ★ 两组必须同步 */
         /* 三组同式的一条推论：`dst − src` 只能是 ±1 / ±2 个变体（= ±5/±10 脚本、±12/±24 sprite）*/
         CHECK(dv >= -2 && dv <= 2);
-        if (p->enabled) {
-            /* 源与绿各自 12 个 sprite 不许和别的行重叠（否则两行会互相踩）*/
+        CHECK(p->stage_mask == 0 || (p->stage_mask & ~0x7fu) == 0);   /* 只有 st01..st07 七位 */
+        /* ★ 硬约束：**同一时刻会同时生效的两行**不许共用同一段 `src_sprite`
+         * （`stage_mask` 相交 = 会同时生效；0 = 所有关 = 与谁都相交）。
+         * 违反的后果：第二个 swap 把「已经变绿」的内容当原色备份 ⇒ 删卡还原时把绿写回去。*/
+        {
             int j;
             for (j = 0; j < MOF_GREEN_PAIR_MAX; ++j) {
                 const mof_green_pair_t *q = &mof_green_pairs[j];
-                if (j == i || !q->who || !q->enabled) continue;
-                CHECK(p->src_sprite + MOF_GREEN_SPRITES <= q->src_sprite ||
-                      q->src_sprite + MOF_GREEN_SPRITES <= p->src_sprite);
+                int overlap_stage;
+                if (j == i || !q->who || !q->enabled || !p->enabled) continue;
+                overlap_stage = (p->stage_mask == 0 || q->stage_mask == 0 ||
+                                 (p->stage_mask & q->stage_mask) != 0);
+                if (overlap_stage)
+                    CHECK(p->src_sprite + MOF_GREEN_SPRITES <= q->src_sprite ||
+                          q->src_sprite + MOF_GREEN_SPRITES <= p->src_sprite);
             }
         }
     }
     CHECK(n == MOF_GREEN_PAIR_MAX);             /* 表必须写满（否则 MAX 与本体漂了）*/
 }
 
+static void test_stage_and_plan(void)
+{
+    /* 关掩码（`CE_CURRENT_STAGE()` 是 **1-based**）*/
+    CHECK(mof_green_pair_in_stage(&mof_green_pairs[0], 1) == 1);    /* 只 st01 */
+    CHECK(mof_green_pair_in_stage(&mof_green_pairs[0], 2) == 0);
+    CHECK(mof_green_pair_in_stage(&mof_green_pairs[1], 3) == 1);    /* 只 st03 */
+    CHECK(mof_green_pair_in_stage(&mof_green_pairs[1], 2) == 0);
+    CHECK(mof_green_pair_in_stage(&mof_green_pairs[3], 2) == 0);    /* st02|st07 但开关关着 ⇒ 不生效 */
+    CHECK(mof_green_pair_in_stage(&mof_green_pairs[0], 0) == 0);    /* 读不到关 ⇒ 不生效 */
+    CHECK(mof_green_pair_in_stage(&mof_green_pairs[0], 8) == 0);
+    CHECK(mof_green_pair_in_stage(0, 1) == 0);
+
+    /* 逐帧计划：st01 ⇒ 只改第 0 行；换到 st03 ⇒ 先还原第 0 行、再改第 1 行 */
+    {
+        uint32_t ap = 0xdeadbeef, rs = 0xdeadbeef;
+        mof_green_plan(1, 0, &ap, &rs);
+        CHECK(ap == (1u << 0));
+        CHECK(rs == 0);
+        mof_green_plan(1, (1u << 0), &ap, &rs);         /* 已改 ⇒ 无动作（幂等）*/
+        CHECK(ap == 0 && rs == 0);
+        mof_green_plan(3, (1u << 0), &ap, &rs);         /* 换关 ⇒ 还原 0、改 1 */
+        CHECK(ap == (1u << 1));
+        CHECK(rs == (1u << 0));
+        mof_green_plan(3, (1u << 0) | (1u << 1), &ap, &rs);
+        /* st03 里第 0 行（只 st01）**不该**在 ⇒ 它必须被还原，而不是「已经改了就算数」*/
+        CHECK(ap == 0 && rs == (1u << 0));
+        mof_green_plan(3, (1u << 1), &ap, &rs);
+        CHECK(ap == 0 && rs == 0);
+        mof_green_plan(4, (1u << 1), &ap, &rs);         /* st04 两支都不该在 ⇒ 全还原 */
+        CHECK(ap == 0 && rs == (1u << 1));
+        mof_green_plan(0, 0xffffffffu, &ap, &rs);       /* 关号读不到 ⇒ 全部还原（安全侧）*/
+        CHECK(ap == 0);
+        mof_green_plan(1, 0, 0, 0);                     /* NULL 安全 */
+        mof_green_plan(1, 0, &ap, 0);
+        CHECK(ap == (1u << 0));
+    }
+}
+
 static void test_lookup(void)
 {
     int i;
+    const uint32_t applied = (1u << 0) | (1u << 1);     /* 默认名单的两行都「已改」*/
 
-    /* 默认名单 = 蓝妖精两支（开关在 .c 里，改动这里会红 —— 那是**故意**的：改名单要同时想清楚下面这些）*/
+    /* 默认名单 = 蓝妖精两支（开关在 .c 里，改动这里会红 —— 那是**故意**的：
+     * 改名单要同时想清楚「谁变绿 = 谁掉绿点」这条绑定）*/
     CHECK(mof_green_active_count() == 2);
 
     for (i = 0; i < 5; ++i) {                   /* A 组蓝：脚本 0..4 ⇒ 命中；5..9（红）⇒ 不命中 */
-        CHECK(mof_green_lookup(2, 0 + i) == &mof_green_pairs[0]);
-        CHECK(mof_green_lookup(2, 5 + i) == 0);
-        CHECK(mof_green_lookup(2, 184 + i) == &mof_green_pairs[1]);
-        CHECK(mof_green_lookup(2, 189 + i) == 0);
-        CHECK(mof_green_lookup(2, 15 + i) == 0);        /* A 组第四色（开关关着）*/
-        CHECK(mof_green_lookup(2, 199 + i) == 0);       /* B 组第四色（开关关着）*/
+        CHECK(mof_green_lookup(applied, 2, 0 + i) == &mof_green_pairs[0]);
+        CHECK(mof_green_lookup(applied, 2, 5 + i) == 0);
+        CHECK(mof_green_lookup(applied, 2, 184 + i) == &mof_green_pairs[1]);
+        CHECK(mof_green_lookup(applied, 2, 189 + i) == 0);
+        CHECK(mof_green_lookup(applied, 2, 15 + i) == 0);       /* A 组第四色（开关关着）*/
+        CHECK(mof_green_lookup(applied, 2, 199 + i) == 0);      /* B 组第四色（开关关着）*/
     }
-    CHECK(mof_green_lookup(2, 10) == 0);        /* 本来就是绿的那支（宿主表管，不归这里）*/
-    CHECK(mof_green_lookup(2, 194) == 0);
-    CHECK(mof_green_lookup(3, 0) == 0);         /* 不是 enemy.anm ⇒ 一律不算 */
-    CHECK(mof_green_lookup(0, 0) == 0);
-    CHECK(mof_green_lookup(2, -1) == 0);
-    CHECK(mof_green_lookup(2, 99999) == 0);
+    /* ★ 「表里开着」≠「此刻真的改了」：没抹上（applied 位为 0）就不许按宿主给点 ——
+     * 否则会出现「看着还是蓝的妖精掉绿点」，违反「变绿 = 掉绿点」这条绑定。*/
+    CHECK(mof_green_lookup(0, 2, 0) == 0);
+    CHECK(mof_green_lookup(0, 2, 184) == 0);
+    CHECK(mof_green_lookup(1u << 1, 2, 0) == 0);        /* 只改了 B 组 ⇒ A 组不算 */
+    CHECK(mof_green_lookup(1u << 0, 2, 184) == 0);
+    CHECK(mof_green_lookup(1u << 0, 2, 0) == &mof_green_pairs[0]);
+
+    CHECK(mof_green_lookup(applied, 2, 10) == 0);       /* 本来就是绿的那支（宿主表管，不归这里）*/
+    CHECK(mof_green_lookup(applied, 2, 194) == 0);
+    CHECK(mof_green_lookup(applied, 3, 0) == 0);        /* 不是 enemy.anm ⇒ 一律不算 */
+    CHECK(mof_green_lookup(applied, 0, 0) == 0);
+    CHECK(mof_green_lookup(applied, 2, -1) == 0);
+    CHECK(mof_green_lookup(applied, 2, 99999) == 0);
+    CHECK(mof_green_lookup(applied, 2, 1) == &mof_green_pairs[0]);
 }
 
 static void test_sane(void)
@@ -196,6 +252,7 @@ int main(void)
 {
     printf("test_mof_green_core —— 变绿（110）纯逻辑\n");
     test_table_invariants();
+    test_stage_and_plan();
     test_lookup();
     test_sane();
     test_swap_apply_restore();

@@ -129,6 +129,24 @@
 #define CE_EM_BOSS_IDS             0x48       /* int[4] boss enemy_id（get_boss_enemy_full 0x4237f0 按它走链表）*/
 #define CE_EM_BOSS_SLOTS           4
 #define CE_EM_ENEMY_LIST_HEAD      0x18c      /* zEnemyList* {entry, next, prev}（ExpHP active_enemy_list_head）*/
+/* ---- anm 源（`anmSelect(N)` 选中的那个文件）与它的 **sprite 表** —— ★★ 2026-09-18（110 变绿）----
+ * 一手（`AnmLoaded__set_sprite` `0x477b00` 逐条 + `anmSetSprite` 的四分支 `0x436c16`–`0x436c4e`）：
+ *   · `N` 存在 `zEnemyData+0x264`（绝对 `enemy+0x1490`），取文件时查
+ *     `[[0x4cf2d0] + N*4 + 0x168]` ⇒ **N=2（`enemy.anm`）在 `zEnemyManager+0x170`**
+ *     （`0x436c49 mov eax,ds:0x4cf2d0` / `0x436c4e mov ecx,[eax+ecx*4+0x168]`）。
+ *   · 选中的对象是 `zAnmLoaded*`：`+0x108` 已装载标志（0 ⇒ `set_sprite` 直接返回 −1）、
+ *     **`+0x11c` = sprite 表指针**（整文件一张，按**全局 sprite 号**索引）。
+ *   · 表项：`ecx = id*0x11`（dword）⇒ **每项 0x44 字节**；`set_sprite` 读 +0x24/+0x28/+0x2c/+0x30
+ *     （UV 矩形）与 **+0x34/+0x38（宽/高两个 float）**；`0x477b24 mov [edx+0x24],eax` 把 sprite 号
+ *     写进 `vm+0x24`（= `CE_ANM_VM_SPRITE_ID`）—— 脚本每条 `ins_300(spriteN)` 都会重写它并重取 UV。
+ * ★ 用途：**换贴图 = 换 sprite 表项**（110 的「把一部分妖精改成绿妖精」就是整项拷贝同一形状的
+ *   绿色变体 12 项；表与一手见 `cards/mof_green_core.h` 与 `REPORT-110-GREEN-FAIRY.md`）。*/
+#define CE_EM_ANM_SLOT_BASE        0x168      /* zAnmLoaded* [14]：下标 = N（0/1 被硬编码分支抢占 ⇒ 关卡 anim{} 从 N=2 起）*/
+#define CE_EM_ANM_ENEMY            0x170      /* = SLOT_BASE + 2*4 ⇒ `enemy.anm`（N=2）*/
+#define CE_ANM_LOADED_READY        0x108      /* zAnmLoaded.is_loaded（0 ⇒ 表还没建好）*/
+#define CE_ANM_LOADED_SPRITES      0x11c      /* zAnmLoaded.sprite_table（`zAnmSprite*`）*/
+#define CE_ANM_SPRITE_STRIDE       0x44       /* 一个 sprite 表项的字节数（= 0x11 个 dword）*/
+#define CE_ANM_SPRITE_WH           0x34       /* 表项里宽/高两个 float 的位移（同形判据读它）*/
 #define CE_ENEMY_ID                0x6830     /* zEnemy.enemy_id */
 #define CE_ENEMY_DDC_UNUSED        0x6838     /* ★ zEnemy 里的**死字段**（ExpHP `__only_used_in_ddc`）：
                                                * 全 exe 只有一处 `mov [esi+0x6838],0`（`0x42e427`，敌人初始化）——

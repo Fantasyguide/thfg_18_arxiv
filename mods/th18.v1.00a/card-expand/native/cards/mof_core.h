@@ -175,6 +175,14 @@ int mof_core_big_faith_host(int32_t anm_src, int32_t anm_script);
 int mof_core_wants_big_host(uint32_t kind, uint32_t flags, int32_t anm_src, int32_t anm_script,
                             int is_boss, int difficulty, int32_t *value_out);
 
+/* ★★ 2026-09-18：「**被我们变绿的**妖精」专用入口 —— 同一个门 + 非 boss，**但不查宿主表**
+ *   （判据是「这张卡把它变绿了」，由 `cards/mof_green_core.h` 的表决定；键仍然是 `(N,S)`，
+ *   只是那批妖精的 `(N,S)` 不在原始宿主表里）。
+ *   用户口径把两件事绑成一个开关：「**变绿的妖精 = 掉大绿点的妖精**，不许分开」⇒
+ *   因此这里**不做**任何「掉落类型」判断（`drop_main` 一律不参与），分值 = 本难度 5000/8000/10000。*/
+int mof_core_wants_big_green(uint32_t kind, uint32_t flags, int is_boss, int difficulty,
+                             int32_t *value_out);
+
 /* 满 P 时原生 P 点 → 小信仰点（§7.9 / #48）：**旧口径的通用入口**。
  * ⚠★ 2026-09-15 收口后**两张卡都不再调它**（110 与 111 都换成下面那个 TH18 类型版
  *   `mof_core_full_p_replace()` + 共用件 `faith_convert_full_p_items()`）—— 它按**掉落表**判

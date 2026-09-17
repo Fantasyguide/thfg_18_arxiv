@@ -202,6 +202,32 @@ thiscall(`AnmLoaded*`; `int* out_id`, `script`, `layer`, `void** out_vm`) ret 0x
    (iii) 折中：只替换**金钱（type 2）**、保留 **P（type 1）**。
    ⇒ 我倾向 **(ii) 的替代：默认 (i)，若实跑发现火力不够就退 (iii)**。
 
+## 6b. ★ 已落地（2026-09-18，机制先上，名单后调）
+
+用户裁决「**固定几只……我不知道，得看情况**」+「我预期改是**一波改一两只** —— 似乎 110 111 原作就是这样，
+纯信仰点掉落的没那么多」⇒ **机制先落地、名单做成一行开关**（改名单不碰机制）：
+
+| 件 | 落点 | 一手 / 依据 |
+| --- | --- | --- |
+| 名单表（数据） | `native/cards/mof_green_core.h` 的 `mof_green_pair_t`（每行 6 字段 + `enabled` / `stage_mask` 两个开关）| 本报告 §1.2 的色相与同形判据 |
+| 纯逻辑（可离线单测） | `cards/mof_green_core.c` 的 `mof_green_plan()`（逐帧计划）/ `mof_green_lookup()`（判据）/ `swap`·`apply`·`restore`（原语）/ 运行期**同形体检** | `tests/test_mof_green_core.c`（229 断言）|
+| 接线 | `cards/mof.c`：`mof_green_tick()`（`on_tick_2` 每帧幂等，按关掩码 apply/restore）、`mof_green_restore_all()`（`mof_clear` ⇒ 删卡/换局精确还原）、`mof_drop_wipe()`（死亡断点里清原生掉落 = **替换**）| 一手：`th18:0x477b00`（sprite 表）/ `th18:0x430240`（死亡断点在 `0x430493` 撒掉落之前）|
+| 引擎常量 | `native/engine.h`：`CE_EM_ANM_ENEMY 0x170` / `CE_ANM_LOADED_SPRITES 0x11c` / `CE_ANM_SPRITE_STRIDE 0x44` / `CE_ANM_SPRITE_WH 0x34`（共享件，已登记 `AUDIT.md` §BE-EA）| — |
+| 判据（谁掉绿点） | `on_enemy_death` 里「**被我们变绿的**妖精也算宿主」⇒ 走新增的 `mof_core_wants_big_green()`（门 + 非 boss，**不查宿主表**）| 用户口径「变绿 = 掉绿点，不许分开」|
+
+**关键安全设计**（都在单测里钉住）：
+1. **判据只看「此刻真的改上了」**（`s_green_applied` 位掩码），不看表里的开关 —— 体检没过 / 不在这一关 /
+   还没抹上 ⇒ 它仍看着是原色 ⇒ **不许按宿主给点**（否则就是「蓝妖精掉绿点」）。
+2. **按关收窄**：外观跨关共用（`S=184` 同时被 st02/st03/st07 用）⇒ 没有关掩码就会「一次改掉三关」。
+   换关时 `mof_green_plan()` 会先还原上一关的行、再改这一关的行（单测钉住）。
+3. **运行期同形体检**：改之前先比源/绿两支 12 项的宽高（两个 float）逐条相等；不等就**整行不改**并记一行日志。
+4. **删卡/换局精确还原**：备份在文件静态区（不依赖卡私有状态），`mof_clear()` 里先还原再 `memset`。
+5. **撒点失败不清掉落**：池满时保留原生 P/金钱（不给玩家空手）；成功才清。
+
+**当前默认名单**（用户「看情况」⇒ 两行，都在**单关**生效）：① A 组蓝妖精·只 st01（2 站点）；
+② B 组蓝妖精·只 st03（6 站点，补上「st03 一只绿妖精都没有」的缺口）。
+其余四行（红 / 第四色 / 其它关的蓝）都写好了、`enabled = 0`，改一个字符即生效。
+
 ## 7. 落地清单（选定之后照这个做）
 
 1. 常量与表：`engine.h` 加 `CE_ANM_SPRITE_TABLE 0x11c` / `CE_ANM_SPRITE_STRIDE 0x44` / `CE_ANM_ENEMY_FILE 0x170`；

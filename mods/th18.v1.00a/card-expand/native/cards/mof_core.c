@@ -107,6 +107,19 @@ int mof_core_wants_big_host(uint32_t kind, uint32_t flags, int32_t anm_src, int3
     return want;
 }
 
+int mof_core_wants_big_green(uint32_t kind, uint32_t flags, int is_boss, int difficulty,
+                             int32_t *value_out)
+{
+    /* 与 `mof_core_wants_big_host()` **只差最后一件事**：不查宿主表（那批妖精的键由卡侧的
+     * 「变绿表」给出）。门与非 boss 逐条相同 —— 因为「变绿」只改**外观与掉落**，
+     * 不改「什么算一次击破」这条纪律（KILL_ALL 全清不算、无敌/过场不算）。*/
+    if (value_out) *value_out = 0;
+    if (is_boss) return 0;
+    if (!mof_core_death_is_real(kind, flags)) return 0;
+    if (value_out) *value_out = mof_core_big_value(difficulty);
+    return 1;
+}
+
 mof_pick_t mof_core_pick_p_item(int32_t drop_main, int32_t p_count, int32_t power,
                                 int32_t max_power, int is_boss)
 {

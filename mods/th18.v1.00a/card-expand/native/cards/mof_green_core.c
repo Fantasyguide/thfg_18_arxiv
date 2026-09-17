@@ -46,15 +46,15 @@
 #define ALL_STAGES 0u
 
 const mof_green_pair_t mof_green_pairs[MOF_GREEN_PAIR_MAX] = {
-    /*  src_spr  dst_spr  src_scr  dst_scr  关掩码   on   who */
-    {     0,      24,       0,      10,     ST1,     1, "A 组蓝妖精 · 只 st01（GirlBlueA01/A01n，2 站点）" },
-    {   220,     244,     184,     194,     ST3,     1, "B 组蓝妖精 · 只 st03（GirlBlueA02，6 站点；本关原来一只绿妖精都没有）" },
-    {     0,      24,       0,      10,     ST5,     0, "A 组蓝妖精 · 只 st05（GirlBlueA01，2 站点）" },
-    {   220,     244,     184,     194,  ST2 | ST7,  0, "B 组蓝妖精 · 只 st02+st07（GirlBlueA01/A03，各 4/6 站点）" },
-    {    12,      24,       5,      10,  ALL_STAGES, 0, "A 组红妖精 · 所有关（st01 2 + st06 22 站点）" },
-    {   232,     244,     189,     194,  ALL_STAGES, 0, "B 组红妖精 · 所有关（st02 4 + st03 8 + st07 4 站点）" },
-    {    36,      24,      15,      10,  ALL_STAGES, 0, "A 组第四色（橄榄）· 所有关（st05 6 + st06 4 站点）" },
-    {   256,     244,     199,     194,  ALL_STAGES, 0, "B 组第四色（橙）· ECL 零站点（备用行）" },
+    /*  src_spr  dst_spr  src_scr  dst_scr   on   关掩码        who */
+    {     0,      24,       0,      10,     1,  ST1,         "A 组蓝妖精 · 只 st01（GirlBlueA01/A01n，2 站点）" },
+    {   220,     244,     184,     194,     1,  ST3,         "B 组蓝妖精 · 只 st03（GirlBlueA02，6 站点；本关原来一只绿妖精都没有）" },
+    {     0,      24,       0,      10,     0,  ST5,         "A 组蓝妖精 · 只 st05（GirlBlueA01，2 站点）" },
+    {   220,     244,     184,     194,     0,  ST2 | ST7,   "B 组蓝妖精 · 只 st02+st07（GirlBlueA01/A03，4/6 站点）" },
+    {    12,      24,       5,      10,     0,  ALL_STAGES,  "A 组红妖精 · 所有关（st01 2 + st06 22 站点）" },
+    {   232,     244,     189,     194,     0,  ALL_STAGES,  "B 组红妖精 · 所有关（st02 4 + st03 8 + st07 4 站点）" },
+    {    36,      24,      15,      10,     0,  ALL_STAGES,  "A 组第四色（橄榄）· 所有关（st05 6 + st06 4 站点）" },
+    {   256,     244,     199,     194,     0,  ALL_STAGES,  "B 组第四色（橙）· ECL 零站点（备用行）" },
 };
 
 int mof_green_active_count(void)

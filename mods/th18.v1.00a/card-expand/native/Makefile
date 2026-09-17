@@ -224,6 +224,11 @@ test-host:
 	./tests/build/test_faith_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_mof_core tests/test_mof_core.c cards/mof_core.c cards/faith_core.c
 	./tests/build/test_mof_core
+## test_mof_green_core —— ★★ 2026-09-18（110 变绿）：名单表的**不变式**（脚本差 ÷ 5 == 变体差、
+##   sprite 差 == 变体差 × 12）+ 判据（只认「此刻真的改上了」的行、只认 enemy.anm）+ 关掩码与逐帧计划 +
+##   内存原语（swap 备份 / apply 幂等 / restore 精确还原）+ 运行期同形体检。见 `cards/mof_green_core.h`。
+	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_mof_green_core tests/test_mof_green_core.c cards/mof_green_core.c
+	./tests/build/test_mof_green_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_th06rank_core tests/test_th06rank_core.c cards/th06rank_core.c
 	./tests/build/test_th06rank_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_youkai_core tests/test_youkai_core.c cards/youkai_core.c

@@ -13880,3 +13880,29 @@ MODKIT_DIR="/mnt/d/项目/幻想指南/18/th18_modkit" python3 tools/deploy.py
 **为什么先不落**：「一系列最大得点公式」是**用户的规格**，一条都不在本仓代码里 ⇒ 猜一个关系（例如
 "UI 倍率 vs 层系数"）会拿错配方的两个量对比，只会产生假警报。⇒ **要用户给出至少一条公式**（哪个卡、
 哪一项、`最大得点` 与 `倍率` 各怎么算、期望点数怎么截）后一次落死。
+
+### §BE-EA 共享件 `native/engine.h` 新增 anm **sprite 表**常量 + 新卡文件（110 的「变绿」，2026-09-18）
+
+**背景**：用户 2026-09-18 要「把**一部分妖精**改成绿妖精（**改精灵 + 改掉落物**），**跟着卡走**」。
+预研（一手色相 / 同形判据 / 三条落点路线 / 站点预算）见 [`REPORT-110-GREEN-FAIRY.md`](REPORT-110-GREEN-FAIRY.md)；
+落地走**图像层**（不新增断点）：把 `enemy.anm` 里「非绿变体」的 **12 个 sprite 表项整项覆盖**成「绿色变体」的 12 项。
+
+| 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
+| --- | --- | --- | --- | --- |
+| `native/engine.h` | 新增 6 个宏（**只增不改**，取值见下面「一手」一节） | 110 要按 sprite 号改贴图表项；这几个偏移原仓没有落成宏 | 系统卡批次 | 用法与断言在 `tests/test_mof_green_core.c`（229 断言）；`make dll` 0 错误 0 新警告；`make quick` 24 个主机测试全绿 |
+| `native/Makefile` | `test-host` 加一行 `test_mof_green_core` | 名单表的不变式（脚本差 ÷5 == 变体差、sprite 差 == 变体差 ×12）与内存原语必须可离线验 | 同上 | 同上 |
+| `native/cards/mof_green_core.{h,c}`（**新增**）| 变绿**名单表**（每行 6 字段 + `enabled`/`stage_mask` 两个开关）+ 纯逻辑（计划 / 判据 / swap / apply / restore / 同形体检）| 用户「固定几只……**看情况**」⇒ 名单必须是**一行就能改**的数据；判据（谁掉绿点）与名单**同一个来源**（「变绿 = 掉绿点，不许分开」）| 同上 | `tests/test_mof_green_core.c` 229 断言（含「表里开着 ≠ 此刻改上了」「换关必须还原」「NULL 安全」）|
+| `native/cards/mof.c` | 新增 `mof_green_tick()`（每帧幂等，**按关掩码** apply/restore）、`mof_green_restore_all()`（`mof_clear`：删卡/换局还原）、`mof_drop_wipe()`（死亡断点里清原生掉落 = 「替换」裁决）；`on_enemy_death` 多一条「**被我们变绿的**妖精也算宿主」 | 用户三句口径：跟着卡走 / 变绿 = 掉绿点（一个开关）/ 掉落**替换**而非追加 | 同上 | `make check` rc=0（站点数**未变** = 24）；`make dllx87` 0 条 x87；实跑看日志 `mof: green fairy swap` / `big faith … via GREEN fairy` |
+| `native/cards/mof_core.{h,c}` | 新增 `mof_core_wants_big_green()`（门 + 非 boss，**不查宿主表** —— 那批妖精的键由变绿表给） | 「被我们变绿的」与原宿主表是**两条来源**，但门的纪律必须一致（KILL_ALL 不算击破 / 非 boss）| 同上 | `test_mof_core.c` 仍在跑（旧口径未动）；新函数只被 `mof.c` 调用 |
+
+**一手（`engine.h` 那 6 个宏取值与依据）**：
+- `CE_EM_ANM_SLOT_BASE = 0x168` / `CE_EM_ANM_ENEMY = 0x170`（= base + 2*4，`N=2` ⇒ `enemy.anm`）——一手 `th18:0x436c49`–`0x436c4e`
+  （`mov eax,ds:0x4cf2d0` / `mov ecx,[eax+ecx*4+0x168]`，`ecx` = `anmSelect` 的 `N`）。
+- `CE_ANM_LOADED_READY = 0x108` / `CE_ANM_LOADED_SPRITES = 0x11c` / `CE_ANM_SPRITE_STRIDE = 0x44` /
+  `CE_ANM_SPRITE_WH = 0x34` ——一手 `AnmLoaded__set_sprite` `th18:0x477b00`（`cmp [esi+0x108],0` 早退；
+  `mov eax,[esi+0x11c]` 取表；`shl ecx,4 / add ecx,eax` ⇒ `ecx*4 = id*0x44`；
+  读 +0x24/+0x28/+0x2c/+0x30 是 UV 矩形、+0x34/+0x38 是宽高两个 float）。
+
+**对既有卡的影响面**：`engine.h` 只**新增**宏（不改任何既有值）⇒ 编译期零影响；
+`Makefile` 只加一条测试目标；`mof_core.c` 只**新增**函数（既有函数签名与行为未动）；
+`mof.c` 是 110 自己的文件。⇒ 其它卡的行为**不可能**被这次改动改变。

@@ -86,6 +86,7 @@
 #include "faith.h"
 #include "faith_hud.h"        /* ★★ 2026-09-15：110/111 共用的「组合 UI」（共享件）*/
 #include "mof_core.h"
+#include "mof_green_core.h"   /* ★★ 2026-09-18：变绿表（改精灵 + 改掉落，跟着卡走）*/
 
 /* ---- 本卡常量 ---- */
 #define MOF_ID_NUM            110      /* ⚠ `CE_CARD` 会对 ID 做 ## 拼接 ⇒ 这里必须给**字面量**，
@@ -609,6 +610,146 @@ static void mof_enemy_anm_identity(const uint8_t *e, int32_t *src, int32_t *scri
     if (script) *script = e ? *(const int32_t *)(e + MOF_ENEMY_ANM_SCRIPT) : -1;
 }
 
+/* ============================================================================================
+ * ★★ 2026-09-18：把「一部分妖精」改成绿妖精 —— 改精灵 + 改掉落，**跟着卡走**
+ *
+ * 用户口径（原话）：「**更改部分妖精到绿妖精**的可能性：**改其精灵和掉落物**，并且**跟着卡走**
+ *   （没有卡的时候不改）；卡只会在商店增减，可以认为**不会出现存在妖精的时候**要求这只妖精变成绿妖精」
+ *   ＋「我预期改是**一波改一两只** —— 似乎 110 111 原作就是这样，**纯信仰点掉落的没那么多**」
+ *   ＋（掉落那半）「**替换**：清掉原生 P/金钱，只撒大信仰点」。
+ * 全量预研（一手：色相 / 同形判据 / 三条落点路线 / 站点预算）见 `REPORT-110-GREEN-FAIRY.md`；
+ * 名单与纯逻辑（表 + 每行两个开关）见 `cards/mof_green_core.h`。
+ *
+ * ## 怎么改精灵（本文件的落笔）
+ *
+ * **图像层，零新增断点、零 VM 重建、与 ECL 零交互**：`enemy.anm` 的 sprite 表是**整文件一张**、
+ * 按全局 sprite 号索引（一手 `AnmLoaded__set_sprite` `th18:0x477b00`：`anm+0x11c` 是表指针、
+ * `ecx = id*0x11` 个 dword ⇒ 每项 `0x44` 字节）⇒ 把**源变体的 12 项整项覆盖**成**绿色变体的 12 项**
+ * 就等于「这一支妖精换上了绿贴图」（同形异色：逐 pose 掩码 IoU 中位 1.000、alpha 像素数逐条相等）。
+ * 因为脚本每条 `ins_300(spriteN)` 都会重写 `vm+0x24` 并重取 UV（`0x477b24`），**新生妖精从第一帧起
+ * 就是绿的**；卡不在场时一个字节都不写，删卡时按备份精确还原。
+ *
+ * ## 为什么要按关收窄
+ *
+ * 同一支妖精的外观**跨关共用**（`S=184` 同时被 st02/st03/st07 用）⇒ 不加关掩码就会「一次改掉三关」，
+ * 与「一波一两只」冲突。关号取 `CE_CURRENT_STAGE()`（**1-based**），掩码在表里（`stage_mask`）。
+ *
+ * ## 掉落那半（`mof_drop_wipe()`）
+ *
+ * 用户口径「变绿 = 掉绿点」是**同一个开关** ⇒ 判据 = 「**此刻真的改上了**（`s_green_applied` 的位）
+ * ∧ 这一敌的 `(N,S)` 落在该行的源变体里」（`mof_green_lookup()`）。看着还是蓝的（体检没过 /
+ * 不在这一关）**一律不算**，否则会出现「蓝妖精掉绿点」。
+ * 撒点成功后**清掉原生掉落**（替换语义）——落笔点是死亡断点 `0x430240`（**在引擎撒主掉落
+ * `0x430493` 之前**，同函数体内），三块一起清：主掉落 `+0x00`、附加表 `+0x04`（20 项）、
+ * 限时表 `+0x54` 与它的窗口 `+0xa4`。撒点失败（池满）时**不清**（宁可保留原生掉落，不给玩家空手）。
+ * ============================================================================================ */
+/* ★ 用户 2026-09-18 的「替换」裁决落在**谁**身上 —— 一个开关：
+ *   · 0（默认）= 只替换「**被我们变绿的**」那批（他问的就是这批：「变绿之后原本掉的 P/金钱怎么处理」）；
+ *   · 1 = 连**本来就绿**的宿主（宿主表 `(2,10)/(2,56)/(2,68)/(2,80)`，例如用户点名的
+ *     「一面开头的**绿阴阳玉** `Cir00m`」）也一并替换成「只给绿点」。
+ *   ⚠ 打开它 = 改**既有**行为（那些站点现在同时掉原生 P/金钱 + 绿点），会动火力/金钱经济 ⇒ 默认关着。*/
+#define MOF_GREEN_WIPE_HOSTS 0
+
+static uint8_t  s_green_bak[MOF_GREEN_PAIR_MAX * MOF_GREEN_PAIR_BYTES];
+static uint32_t s_green_applied;     /* ★ 「此刻真的改上了」位掩码（判据只看它，不看表里的开关）*/
+static int32_t  s_green_logged;      /* 汇总日志只打一次（应用/还原各一次）*/
+static int32_t  s_green_warned;      /* 运行期同形体检失败只报一次（免得每帧刷屏）*/
+
+/* `zAnmLoaded*`（`enemy.anm`）的 sprite 表基址；拿不到（关卡还没载入 / 没装载）返回 NULL。*/
+static uint8_t *mof_enemy_sprite_table(void)
+{
+    uint8_t *mgr = CE_ENEMY_MGR();
+    uint8_t *anm, *tbl;
+
+    if (!mgr) return 0;
+    anm = *(uint8_t **)(mgr + CE_EM_ANM_ENEMY);
+    if (!anm) return 0;
+    if (*(const uint32_t *)(anm + CE_ANM_LOADED_READY) == 0) return 0;
+    tbl = *(uint8_t **)(anm + CE_ANM_LOADED_SPRITES);
+    return tbl;
+}
+
+/* 每帧幂等：按「当前关 ⇒ 该改哪些行」逐行 apply / restore（`mof_green_plan()` 是纯函数，单测钉住）。
+ * ⚠ 只由 `on_tick_2` 调 ⇒ **卡不在场时根本不会跑**（用户「没有卡的时候不改」）。*/
+static void mof_green_tick(void)
+{
+    uint8_t *tbl = mof_enemy_sprite_table();
+    uint32_t want_apply = 0, want_restore = 0;
+    int32_t stage = CE_CURRENT_STAGE();
+    int i, applied_now = 0;
+
+    if (!tbl) return;
+    mof_green_plan(stage, s_green_applied, &want_apply, &want_restore);
+
+    for (i = 0; i < MOF_GREEN_PAIR_MAX; ++i) {
+        const mof_green_pair_t *p = &mof_green_pairs[i];
+        uint8_t *bak = s_green_bak + (size_t)i * MOF_GREEN_PAIR_BYTES;
+        uint32_t bit = 1u << i;
+
+        if (want_restore & bit) {                       /* 换关 ⇒ 这一行不该在 */
+            mof_green_pair_restore(tbl, p, bak);
+            s_green_applied &= ~bit;
+            continue;
+        }
+        if (!(want_apply & bit)) {
+            /* 已经改上的行：`anm` 若被重载（换关先还原再重载的另一条路）会把表项打回原色 ⇒ 自愈。
+             * **不重取备份**（备份里是原色，此时表里也是原色；重取只会多一次无谓写）。*/
+            if ((s_green_applied & bit) && !mof_green_pair_is_green(tbl, p))
+                mof_green_pair_apply(tbl, p);
+            continue;
+        }
+        /* 第一次接管这一行：先做运行期同形体检（源/绿两支的宽高逐条相等），不过就**不改**。*/
+        if (!mof_green_pair_sane(tbl, p)) {
+            if (!s_green_warned) {
+                s_green_warned = 1;
+                ce_log("mof: green pair %d REJECTED (sprite %d->%d 宽高不一致；常量与真表对不上，本行不改)",
+                       i, (int)p->src_sprite, (int)p->dst_sprite);
+            }
+            continue;
+        }
+        mof_green_pair_swap(tbl, p, bak);
+        s_green_applied |= bit;
+        ++applied_now;
+        if (!s_green_logged)
+            ce_log("mof: green fairy swap #%d '%s' (stage %d, sprite %d->%d, script %d->%d)",
+                   i, p->who ? p->who : "?", (int)stage,
+                   (int)p->src_sprite, (int)p->dst_sprite, (int)p->src_script, (int)p->dst_script);
+    }
+    if (applied_now) s_green_logged = 1;
+}
+
+/* 还原全部（删卡 / 换局 / 换关清场）。`mof_clear()` 调它 —— 删卡发生在商店里，那一刻只有
+ * `on_delete`（虚表 `+0x50`）跑得到（`METHOD.md` 铁律二：长持续效果必须交代「被删掉会怎样」）。*/
+static void mof_green_restore_all(void)
+{
+    uint8_t *tbl = mof_enemy_sprite_table();
+    int i, n = 0;
+
+    if (!tbl) { s_green_applied = 0; return; }
+    for (i = 0; i < MOF_GREEN_PAIR_MAX; ++i) {
+        if (!(s_green_applied & (1u << i))) continue;
+        mof_green_pair_restore(tbl, &mof_green_pairs[i],
+                               s_green_bak + (size_t)i * MOF_GREEN_PAIR_BYTES);
+        ++n;
+    }
+    if (n) ce_log("mof: green fairy restore (%d 行，sprite 表已还原)", n);
+    s_green_applied = 0;
+}
+
+/* 清掉这只敌人的**原生掉落**（用户口径「替换」）。一手：死亡断点 `0x430240` 是 `FUN_00430240`
+ * 的**函数入口**，引擎撒主掉落在同一函数体内的 `0x430469`（读 `[edi+0x623c]`）→ `0x430493`；
+ * 附加表 `ex_drop` 在更后面（`0x43049f` 才进 `0x430510`），限时表由它开头 `0x430544`–`0x430573`
+ * 并入 ⇒ 三块 + 窗口一起清才干净（`zEnemyDrop` 的字段图：`+0x00` 主掉落 / `+0x04` 起 20 项 /
+ * `+0x54` 起限时 20 项 / `+0xa4` 窗口帧数 —— 见 `engine/ecl/th18/02-item-drops.md` §5.1）。*/
+static void mof_drop_wipe(uint8_t *e)
+{
+    uint8_t *d;
+    if (!e) return;
+    d = e + CE_ENEMY_DROP;
+    memset(d, 0, CE_ENEMY_DROP_TIMED_TIME);              /* 主掉落 + ex_drop + 限时表 */
+    *(int32_t *)(d + CE_ENEMY_DROP_TIMED_TIME) = 0;      /* 限时窗口（不清它，下一帧还会并回来）*/
+}
+
 /* ---- 击破 → 大信仰点（§7.9）★ **正式钩子 = `on_enemy_death`**（共享死亡断点 `0x430240`）----
  *
  * 为什么是死亡钩子（2026-09-12 SDK owner 修完断点后的正式路径）：
@@ -643,7 +784,7 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
     mof_card_t *s = st(c);
     int32_t v = 0;
     int32_t anm_src = -1, anm_script = -1;
-    int is_boss, want_big;
+    int is_boss, want_big, is_green;
 
     if (!s || !ev) return;
     if (!mof_core_death_is_real(ev->kind, ev->flags)) return;
@@ -669,12 +810,25 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
     mof_enemy_anm_identity((const uint8_t *)ev->enemy, &anm_src, &anm_script);
     want_big = mof_core_wants_big_host(ev->kind, ev->flags, anm_src, anm_script, is_boss,
                                        mof_difficulty(), &v);
+    /* ★★ 2026-09-18：**被我们变绿的**妖精同样算宿主（用户口径「变绿 = 掉绿点」是同一个开关）。
+     * ⚠ 判据只看 `s_green_applied`（**此刻真的改上了**）—— 体检没过 / 不在这一关的妖精
+     *   看着仍是原色 ⇒ 不许按宿主给点（否则就是「蓝妖精掉绿点」）。*/
+    is_green = 0;
+    if (!want_big && mof_green_lookup(s_green_applied, anm_src, anm_script)) {
+        want_big = mof_core_wants_big_green(ev->kind, ev->flags, is_boss, mof_difficulty(), &v);
+        is_green = want_big;
+    }
     if (!want_big) return;
     if (faith_spawn(ev->x, ev->y, faith_core_tier_for_source(FAITH_SRC_BREAK),
                     1 << FAITH_SLOT_110, v)) {
+        /* ★ 用户 2026-09-18 裁决：**替换**（不是追加）—— 变绿的妖精只给绿点，
+         *   原生 P/金钱整体清掉（「金钱和绿点总之别重合」那条也一并满足）。
+         *   顺序：先撒我们的点，成功才清原生掉落（池满时宁可保留原生掉落，不给玩家空手）。*/
+        if (is_green || (MOF_GREEN_WIPE_HOSTS && !is_green)) mof_drop_wipe((uint8_t *)ev->enemy);
         ++s->stat_big_spawn;
-        ce_log("mof: big faith +%d via host table @(%.0f,%.0f) (anm %d/%d, kind %u, drop_main %d, boss %d, enemy %u)",
-               (int)v, (double)ev->x, (double)ev->y, (int)anm_src, (int)anm_script,
+        ce_log("mof: big faith +%d via %s @(%.0f,%.0f) (anm %d/%d, kind %u, drop_main %d, boss %d, enemy %u)",
+               (int)v, is_green ? "GREEN fairy" : "host table",
+               (double)ev->x, (double)ev->y, (int)anm_src, (int)anm_script,
                (unsigned)ev->kind, (int)ev->drop_main, is_boss, (unsigned)ev->id);
     } else {
         ++s->stat_spawn_failed;
@@ -1257,6 +1411,7 @@ static int on_tick_2(ce_card_t *c)
     if (!s || !CE_PLAYER()) return 0;
     ++s->frame;
     mof_ensure_registered(c);       /* ★ 中盘拿卡（give12）时 on_load 不会被调 ⇒ 每帧补一次（幂等）*/
+    mof_green_tick();               /* ★★ 2026-09-18：变绿（换 sprite 表项；按关收窄、幂等、可还原）*/
 
     /* ① 擦弹 → 擦弹倍率（§7.5：`min(graze × 0.0001, 8.99)`）
      * ★ 2026-09-12 一手订正（任务 ③）：**这是 th11（SA）的式子，TH10 没有擦弹倍率**
@@ -1551,6 +1706,10 @@ static void mof_clear(ce_card_t *c)
      * （`on_item_collect` 置、`on_item_commit` 清），不是跨帧效果；这里清只是为了
      * 「删卡后又以同一个 id 回来」时状态绝对干净（ctor 也清一次，两条路都堵）。*/
     s_p_item = 0;
+    /* ★★ 2026-09-18：变绿也要在这里交代（`METHOD.md` 铁律二）—— 它改的是**引擎内存里的
+     * sprite 表**，是彻头彻尾的「跨帧留下的东西」；`on_run_reset` 与 `on_delete` 都走本函数。
+     * ⚠ 放在 `if (!s) return;` **之前**：还原不依赖卡私有状态（备份在文件静态区）。*/
+    mof_green_restore_all();
     if (!s) return;
     /* ★★ 2026-09-16k：灵击的**范围环**要先删掉再 `memset` —— 它的 VM 是**跨帧**留下的东西
      *   （脚本 279 自己不会死）⇒ 不显式删就会「删了卡还挂一圈在场上」。火星不用管（一次性自删）。*/
