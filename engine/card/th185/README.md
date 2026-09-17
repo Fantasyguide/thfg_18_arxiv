@@ -1571,3 +1571,50 @@ th185:0x4085bb  cmp  eax, 0x55                ; ★ 上限 0x55 = 85（又是"�
 | `NARUMI`(4) / `LUNA`(54) / `KEIKI`(61) | `th185:0x4d10bc`~`c8` 那四格（存量/周期，§33） |
 | `FLAN`(24) | `th185:0x4d10b4 = 0`，另带 `cmp [card+0x24], 0x32`（= 50 帧计时） |
 | `YUMARISA`(83) | `add th185:0x4d1070` + `add th185:0x4d1074`（**钱那一对**），并清 `th185:0x4d1068`/`th185:0x4d106c` |
+
+## 38. ★ 全部 85 张按**覆盖槽签名**分组：25 族，且发现 **8 张"纯引擎侧实现"**（一手，轮 53）
+
+把"每张卡覆盖了哪些槽"当作**指纹**来分组，得到 25 个签名。这是目前**覆盖全部实体卡**的分类，
+而且成员表本身就是"这张卡的做法属于哪一族"的答案。
+
+### 38.1 五个大族（共 59 张）
+
+| 签名 | 张数 | 成员 | 做法（语义） |
+| --- | ---: | --- | --- |
+| `+0x18 +0x1c +0x34 +0x50 +0x54` | **21** | `TAKANE` `YUYUKO` `ITEM_CATCH` `MINORIKO` `MANEKI` `MONEY` `URUMI` `YAMAWARO` `KOISHI` `KISERU` `MUKADE` `MOON` `MIKOFLASH` `VAMPIRE` `RICEBALL` `TEWI` `SUN` `AUTOBOMB` `SAKI` `DEAD_SPELL` `MOKOU` | **效果"建/驱动"对**（§45）：`+0x18` 建效果（带效果号+尺寸）、`+0x1c` 驱动、`+0x34` 拆除 |
+| `+0x00 +0x04 +0x2c +0x34 +0x50 +0x54` | **11** | `NITORI` `DANGO` `BASSDRUM` `PSYCO` `NEMUNO` `SHION` `MAINSHOT_PU` `SEIRAN` `LILY` `YUMARISA` `LARVA` | **一次性写状态格**（§30 模板 ①/②a/②b）：`+0x00/+0x04` 转发到 `+0x2c` |
+| `+0x08 +0x2c +0x34 +0x50 +0x54` | **11** | `MARISA_OP2` `SAKUYA_OP` `STAR` `TORAMARU` `SEKIBANKI` `FLAN` `MAGICSCROLL` `NUE_OP` `AUN` `EXTEND` `REIMU_OP` | **每帧/子机族**（②c/③）：活动窗口 + 计时器 + anm/效果 |
+| `+0x00 +0x04 +0x2c +0x50 +0x54` | **8** | `SPEEDQUEEN` `ROKUMON` `PACHE` `SEIJA` `LUNA` `KEIKI` `SUIKA` `BLANK` | **一次性写状态格（无 `+0x34`）**：比上一族更精简 |
+| `+0x54`（**只有析构**） | **8** | `PENDULUM2` `REIMU_OP2` `ALICE_OP` `MARISA_OP` `SUNNY` `JYUNKA` `NULL` `BACK` | ★ **纯引擎侧实现**（卡类一行逻辑都没有） |
+
+### 38.2 ★ 两个要点
+
+1. ★ **8 张卡"卡类零逻辑"**：`REIMU_OP2`、`ALICE_OP`、`MARISA_OP`（都是子机系名字！）、`PENDULUM2`、`SUNNY`、
+   `JYUNKA` 以及两个哨兵 `NULL`/`BACK` ⇒ **它们的效果 100% 由引擎按卡 id/存在性实现**
+   （与 §33 的"卡发布状态、引擎消费"同源，也印证 th18 侧"空白卡实现在 `AbilityShop`"的先例）。
+   ⇒ 读这些卡时**必须去引擎侧找 id 判定**，卡类里什么都不会有。
+2. ★ **子机系名字里有两套做法**：`*_OP2` 里 `SAKUYA_OP2`/`SANAE_OP2` 有代码（7 槽），
+   而 `REIMU_OP2`/`MARISA_OP2` 一个走"零逻辑"、一个走"每帧族" ⇒
+   **不能按名字推做法，必须按签名查表**（本节的表就是为此）。
+
+### 38.3 其余 20 种签名（1–4 张的小族，逐条已在上面的表里）
+
+| 签名 | 张数 | 成员 |
+| --- | ---: | --- |
+| `+0x18 +0x24 +0x34 +0x50 +0x54` | 4 | `ITEM_LINE` `KANAME` `FUTO` `CYLINDER` |
+| `+0x08 +0x0c +0x2c +0x34 +0x50 +0x54` | 2 | `SANAE_OP2` `OKINA_OP` |
+| `+0x00 +0x50 +0x54` | 2 | `JOON` `PEACE` |
+| `+0x28 +0x34 +0x50 +0x54` | 2 | `WAKASAGI` `KUTAKA` |
+| `+0x2c +0x34 +0x50 +0x54` | 2 | `OPTION_BR` `YOUMU_OP` |
+| `+0x20 +0x34 +0x50 +0x54` | 2 | `KOMACHI` `KANAME2` |
+| 单张签名（`+0x54` 之外的 14 种） | 14 | 见 §38.4 名单（其中 4 张已在逐卡正文 🟢） |
+
+⇒ 于是**"每张卡属于哪族、关键数据是什么"对全部 85 张都已可查**：
+族 → 见本节；具体数值（状态格/效果号/尺寸） → 见 [`_sources/card-params.md`](_sources/card-params.md)；
+逐行语义段落 → 见 [`card-semantics.md`](card-semantics.md)（20 张成品）。
+
+### 38.4 单张签名的 14 张（名单，避免表格超长）
+
+`NARUMI`(4)、`SAKUYA_OP2`(10)、`SANAE_OP`(11)、`YOUMU_OP2`(14)、`MAINSHOT_SP`(23)、`POWERMAX`(26)、
+`CIRNO_OP`(27)、`WARP`(28)、`KOZUCHI`(46)、`YUREIMU`(56)、`DREMII`(62)、`EIKA`(72)、`MAGATAMA`(76)
+—— 其中 `SANAE_OP` / `WARP` / `POWERMAX` / `SAKUYA_OP2` 已在逐卡正文里 🟢。
