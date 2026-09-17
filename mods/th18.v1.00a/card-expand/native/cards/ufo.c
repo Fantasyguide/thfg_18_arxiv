@@ -110,7 +110,11 @@
 #define UFO_SE_FULL     0x2f    /* `se_bonus.wav`（+0 dB / prio 100）：吸满吐奖励 */
 #define UFO_SE_BREAK    0x38    /* `se_extend2.wav`（+0 dB / prio 100）：击破 */
 #define UFO_SE_TOKEN    0x39    /* `se_pin00.wav`：令牌入槽（与 114 的收点结算钟声同 id）*/
-#define UFO_SE_ITEM_BREAK 0x11  /* `se_extend.wav`：赏金道具落地（**占位**：TH12 的是专用音，未查）*/
+#define UFO_SE_ITEM_BREAK 0x0d  /* ★ 2026-09-18 改：原占位借用 `0x11 = se_extend.wav` ⇒ 每掉一次赏金道具
+                                 * 就放一次 **Extend 音**，用户实跑听成"一直在响的奇怪 Extend 音效"
+                                 * （`CARD-118-12IN1-REPORT.md` B9）。改借 `0x0d = se_powerup.wav`（拾取感，
+                                 * 一手 id 表见 `engine/_shared/th18-sound-table.md`）。仍是 ❓自定 占位，
+                                 * 待逆出 TH12 的专用音后替换；已登记 TUNING.md。*/
 
 /* ---- ★ 占位：ECL 子程序名（spec §6 步 3，要资产管理线）----
  * `"NoEnemyDebug"` = 原版自带的惰性壳（`wait(1000)` 死循环 ⇒ 不跑 ECL、不动、不开火、不掉落、不自删），
