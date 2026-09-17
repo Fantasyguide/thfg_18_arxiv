@@ -954,3 +954,40 @@ TH18 侧的对应物是 `+0x4c method_4C`（局末重置）与 `+0x38 set_rechar
 **`+0x50` 在两作语义完全相反**（th18 = operator delete / th185 = 主行为）。
 正确做法是按本节的"可信度分层"逐槽实证后再映射，或者干脆**只搬行为，不搬槽号**
 （把 th185 的卡效果重写成 TH18 侧自己的卡实现——§16.4 的 ②③ 本来就是这么计划的）。
+
+## 23. 第四个锚点：`+0x20` = **on_load 型 OR 累加广播**；卡链表头是 `AM+0x1c`（一手，轮 32）
+
+### 23.1 `th185:0x408fe0` = 一个**专门做 OR 累加广播**的函数（与 th18 的 `on_load` 同义）
+
+```asm
+th185:0x408fe1  mov  esi, [th185:0x4d7ab8]   ; AbilityManager
+th185:0x408fea  mov  esi, [esi + 0x1c]       ; ★ 卡**链表头**（不是数组）
+th185:0x408ff1  mov  ecx, [esi]              ; node -> 卡对象
+th185:0x408ff3  mov  edx, [ecx]              ; 虚表
+th185:0x408ff5  call dword ptr [edx + 0x20]  ; ★ 槽 +0x20
+th185:0x408ff8  mov  esi, [esi + 4]          ; next
+th185:0x408ffb  or   edi, eax                ; ★★ **返回值 OR 累加**
+th185:0x409001  mov  eax, edi / ret
+```
+
+th18 侧的一手表：[`../th18/03-hooks.md §1`](../th18/03-hooks.md) 里 `+0x20 on_load` 的语义正是
+"**OR 累加返回值**"（调用点 `AbilityManager__notify_cards_on_load`）⇒ **同槽同义，且连"OR 累加"这个细节都对上** 🟢
+⇒ 这是第 **4** 个铁锚（前三个：`+0x2c` 管理器每帧、`+0x48` 每帧绘制、`+0x40` bool 判定）。
+
+### 23.2 顺带钉死两个结构/两个工具函数
+
+- **`AbilityManager + 0x1c` = 卡链表头**（一手，§23.1 与 §21 的广播循环都用它走链表）
+  ⇒ 与 §9 的"持有卡链表 `AM+0x1c`"是同一个东西 ✅（那次是从 `th185:0x41f930` 的列卡函数看出来的）。
+- `th185:0x409040` = **按 (参数, 当前卡) 找卡对象**（`push arg; push [AM+0x7c]; call`），返回新卡或 0；
+  它的调用者都是"切换当前卡"的语义（`th185:0x409010`、`th185:0x41dd3b` 商店）。
+- `th185:0x409180` = **当前卡的 HUD/ANM 刷新**（内部 `call th185:0x48a4a0` = `get_vm_with_id`、
+  清 `AnmVm+0x534` 位、遍历 VM 链表）⇒ 属于**演出/HUD 侧**，**不是"使用卡"**。
+
+### 23.3 于是"使用卡"（c_press）**不在 AbilityManager 里**（负结果）
+
+`AM+0x7c`（当前卡）在 AbilityManager 内的所有用法都看过了：重置（`th185:0x408036` / `th185:0x408609`）、
+设置（`th185:0x408665`）、**HUD 高亮与绘制**（`th185:0x408bb9`–`th185:0x408d05`：`get_vm_with_id` + `AnmVm`
+的 `+0x4e4/+0x4ec/+0x524` 写入）、商店（`th185:0x41dd41`）—— **没有一处是"按键触发的使用"**。
+⇒ `c_press` 的派发在**玩家/USER 侧**（th18 是 `Player__on_tick__body` `th18:0x45C048`）；
+th185 的玩家代码区还没定位（金矿无 `Player::on_tick` 名），这就是**下一轮的第一件事**：
+在 0x45xxxx 一带找"读输入 → 调卡槽"的函数，钉下 `c_press` 的槽号后低位段即可对齐。
