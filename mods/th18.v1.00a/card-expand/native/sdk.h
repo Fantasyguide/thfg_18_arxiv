@@ -647,7 +647,14 @@ static inline const ce_option_pose_t *ce_option_pose_pose(void) { return ce_optp
  *     `+0xb4` 满火力形）interrupt 掉并清 id、状态写 0。断点那两条已经覆盖「不建 / 不开火」，
  *     这一步是**自愈兜底**：卡刚装上那一刻场上可能已经有原生子机（例如玩家本来就在满火力），
  *     而 `repopulate` 的档位短路缓存会让引擎「不重建 = 也不清」⇒ 只靠断点会留下幽灵子机。
- *     返回清掉的 VM 数（诊断）。*/
+ *     返回清掉的 VM 数（诊断）。
+ *   · ★★ 2026-09-18（111 实跑）：**隐藏子机 ≠ 收掉它已经在打的束** ⇒ 光靠上面这一支不够。
+ *     `mode=2` 激光的寿命**只跟射击键（Z）走**、位置每帧从**持有者**读 ⇒ 持有者被清掉之后，
+ *     束会**钉在原地**直到松手（症状：一条激光固定不动、随 Z 出没、power up 后换一处）。
+ *     ⇒ 声明隐藏的卡要在同一处**每帧**再叫一次 `ce_kill_retail_option_lasers()`
+ *     （只收 set ≤ 0x15 且 `row+0x21 == 2` 的活动弹 ⇒ **不会碰**追加组的自机弹）。
+ *     ⚠ 每帧叫是必要的：power up 会让引擎 `repopulate` 重建子机，总有一帧「子机刚复活」而
+ *     sweep 还没轮到 ⇒ 那一帧发出来的束就是新的一条。*/
 void ce_native_option_hide_declare(uint32_t card_id, int on, int character);
 int  ce_native_option_hidden(int character);
 int  ce_native_option_sweep(void);

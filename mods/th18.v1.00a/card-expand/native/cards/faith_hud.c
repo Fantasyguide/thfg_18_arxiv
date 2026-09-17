@@ -314,6 +314,12 @@ static uint32_t fh_spawn(int script)
 static inline float fh_sx(float bx640, float x)  { return (bx640 + x) * FH_U640_TO_SURF; }
 static inline float fh_sy(float by640, float up) { return (by640 - up) * FH_U640_TO_SURF; }
 
+/* ★★ 2026-09-18：本块的**自带锚点**（表面 px；见 `fh_claim()` 里的推导）。
+ * `FH_PIN_X = 64` = 640 空间 x **32** = **游玩区左边缘** = TH10 原生 HUD 的 `pos(32,448)` 那一列 ✓
+ * （原来走货架左列，拿到的是 `CE_HUD_ANCHOR_X = 257` ⇒ 比这个位置**右 193 表面 px**）。*/
+#define FH_PIN_X   64.0f
+#define FH_PIN_Y  924.0f
+
 /* ============================ 认领块（每关重来一次）============================ */
 static void fh_claim(void)
 {
@@ -333,9 +339,20 @@ static void fh_claim(void)
     memset(&blk, 0, sizeof blk);
     blk.w = FH_BLOCK_W;
     blk.h = FH_BLOCK_H;
-    blk.side = CE_HUD_SIDE_LEFT;
+    /* ★★ 2026-09-18（用户实跑报）：**位置改成「自带锚点」**，钉在**原版 HUD 的左下角** ——
+     *   原话：「110 111 复合 UI 的实际位置是**左下角向右了 1/3 个游玩区宽度**」。
+     *   实测（日志 `faith_hud: 块@(257,924)`）：货架左列锚点 `CE_HUD_ANCHOR_X = 257`（表面 px）
+     *   = 640 空间 x 128.5 —— 那是**引擎自己的卡图标列**位置，不是本 UI 该在的地方；
+     *   而本块的内部布局是照 TH10 `front.anm` 的原生 HUD 摆的（蓝点在块内 x −2.5、数字 x18 起、
+     *   槽 x18..82）⇒ 块原点就应当落在 **TH10 原生 HUD 的原点**：
+     *   `MOF_HUD_*` 的图标 `pos(32, 448)`（640）⇒ 表面 **(64, y)**。
+     *   ⚠ 只改 x（用户只报了横向）；y 沿用货架行底 **924**（表面）= 640 462（离游玩区底边 464 两像素），
+     *     要更贴原版（640 446 ⇒ 表面 892）就改 `FH_PIN_Y` 一个数。
+     *   ⚠ `blk.side` 必须是 `CE_HUD_SIDE_PINNED`（`ce_hud_slot_claim_pinned` 会拒掉别的）。
+     *   先例 = 117（`cards/animal.c` 的 `ANIMAL_HUD_PIN_*`，用户按截图量过的固定位置）。*/
+    blk.side = CE_HUD_SIDE_PINNED;
     /* ⚠ 入口必须是 `_card` 版（认领前把关卡号推进纪元 ⇒ 上一关的占位在本关开场收敛）。*/
-    if (!ce_hud_slot_claim_card(want, &blk, &got)) {
+    if (!ce_hud_slot_claim_pinned_card(want, &blk, FH_PIN_X, FH_PIN_Y, &got)) {
         s_claim_cool = 60;
         ce_log("faith_hud: 块 %.0fx%.0f 认领失败（卡 id %u；槽位表拒绝 —— 见 sdk_core.h 的 hud_register 门槛）",
                (double)blk.w, (double)blk.h, (unsigned)want);

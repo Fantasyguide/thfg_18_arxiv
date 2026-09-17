@@ -2387,6 +2387,20 @@ static void signal_support_marisa(ce_card_t *c, signal_card_t *s)
      *     所以声明里给的机体号恒等于「当前机体」；真实屏障仍是层里的机体门。*/
     ce_native_option_hide_declare((uint32_t)ce_card_id(c), 1, SIGNAL_CHAR_MARISA);
     (void)ce_native_option_sweep();
+    /* ★★ 2026-09-18（用户实跑报）：**隐藏子机 ≠ 收掉它已经在打的激光** ——
+     *   「魔理沙原子机激光没有被恰当抑制：在生成子机的那一个位置固定，之后不随自机移动，
+     *     但会随着 Z 发射/消失；尤其是 power up 的时候，会换一个位置」。
+     *   一手（`sdk.c` 的 `ce_option_kill_bullets` / `ce_kill_retail_option_lasers` 那两段注释）：
+     *   `mode=2` 激光的寿命**只跟射击短计时（Z）走**（`0x4601e0 cmp [player+0x476d4],0`），
+     *   它的位置每帧从**持有它的那个子机**读 ⇒ 我们把原生子机的 VM/状态清掉之后，束**不会自己消失**、
+     *   而且因为持有者不再更新，它会**钉在**子机被清掉时(或 power up 后重建时)的那个位置 ✓ 正是症状。
+     *   ⇒ 每帧补一刀：把 set ≤ 0x15（0..9 主炮 + 0x0a..0x15 原生装备子机组）里 `row+0x21 == 2`
+     *     的活动弹按引擎自杀段收掉（`state=2` → 束 VM `interrupt 1` → 清 `player+0x476fc` 的
+     *     mode=2 去重槽）。**不会碰我们自己的子机激光**（111 追加的组是 `0x29..0x3c`）。
+     *   ⚠ 每帧叫是**故意**的：power up 会让引擎 `repopulate` 重建子机 ⇒ 总有那么一帧
+     *     「子机刚复活」而我们的 sweep 还没轮到 ⇒ 那一帧发出来的束就是新的一条（用户看到的「换位置」）。
+     *     代价 = 128 槽扫描（无命中时不打日志）。*/
+    (void)ce_kill_retail_option_lasers();
     signal_option_declare(c, s);
 }
 

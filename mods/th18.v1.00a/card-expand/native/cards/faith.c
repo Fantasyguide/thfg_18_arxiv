@@ -747,10 +747,18 @@ static void faith_item_delete(uint8_t *it)
  * ⚠ 层 / 颜色 / 混合模式由**脚本自己**写（`layer(11)` / `color(128,255,128)` / `blendMode(1)`），
  *   C 侧只给位置（照 280/281 火星的接线口径；**不要** `ce_anm_set_scale()`）。*/
 #define FAITH_CONV_LAYER      11   /* = TH10 script393 的 `layer(11)`（数值一字未动）*/
-/* ❓ 自定（用户 2026-09-18 要「有声音」）：转换音 = TH18 `0x28` = `se_kira02.wav`
- * —— **与 TH10 的 `se_kira02.wav` 逐字节相同**（实测 md5 `f3a5ad54261b428ca80d3677f825e145`）
- * ⇒ 音色是原版那一颗，只是原版**没在转换处播**（一手：转换循环零调用 SE 播放器）。理由见文件头 §一③。*/
-#define FAITH_CONV_SE         0x28
+/* ★★ 2026-09-18（B12 第二版，按用户实跑反馈改）：**一次转换事件只响一声**（不是逐颗）。
+ *   用户原话：「原版的音效似乎是**只有满 P 转换的那一下有**，否则没有。也有可能是我跟满 P 的音效本身混了」。
+ *   一手对得上：TH10 的转换循环本身**不播音**（`0x43dc90` 零调用），那一刻能听到的是
+ *   **P 道具被吃掉时**的那一声 —— 收集 handler `0x41b43b`–`0x41b44b` 先 `mov ebx,0x1d` +
+ *   `call 0x43dd10`（SE 播放）**再**判 `cmp word [0x474c48],0x64`（满 P）⇒ 满 P 那一帧正好响的
+ *   就是「吃掉最后一颗 P」的收集音 ✓（TH10 的 `0x1d` = 它表里的 `se_graze.wav`，**不是** TH18 的 `0x1d`）。
+ *   ⇒ 本卡照「**事件**」对齐：只在**满 P 那一下**（这一次开始转换）播一声，id 取 TH18 自己的
+ *     **道具收集音 `0x25 = se_item00`**（一手：收集分派共享尾 `th18:0x44658e push 0x25`）——
+ *     它是本作里「吃到一颗道具」的那一声，与原版那一刻听到的**语义对位**。
+ *   ⇒ 性质仍是 **❓ 自定**（原版转换静音）；换音 = 改这一个数字（候选 `0x28 = se_kira02`、
+ *     `0x0d = se_powerup`、`0x1c/0x1d = se_power0/1`）。*/
+#define FAITH_CONV_SE         0x25
 
 static void conv_burst_spawn(float x, float y)
 {
@@ -766,13 +774,21 @@ int faith_convert_full_p_items(void)
 {
     static uint32_t s_last_frame;
     static int      s_have_last;
+    static int      s_was_full;         /* ★ B12 第二版：上一帧是否已经满 P（事件判据用）*/
     uint8_t *mgr;
     uint32_t now;
     int i, u, n = 0;
+    const float *pp_conv;
 
     /* ① 只在满 P 时干活（一手：`th10:0x41bbf7 cmp WORD ds:0x474c48,0x64` 的同一判据在 TH18 侧
      *    = `CURRENT_POWER >= MAX_POWER`；`max_power <= 0` = 引擎还没初始化 ⇒ 不碰）。*/
-    if (FAITH_MAX_POWER() <= 0 || CE_CURRENT_POWER() < FAITH_MAX_POWER()) return 0;
+    if (FAITH_MAX_POWER() <= 0 || CE_CURRENT_POWER() < FAITH_MAX_POWER()) {
+        s_was_full = 0;                                  /* 不在满 P ⇒ 下一次满 P 算「新事件」*/
+        return 0;
+    }
+    /* ★ 用户口径「只有满 P 转换的那一下有音」：本帧是**刚转满**的第一帧 ⇒ 允许响一声（见转换循环尾）。*/
+    const int conv_event = !s_was_full;
+    s_was_full = 1;
 
     /* ② 帧守卫（与 `faith_pool_tick()` 同款）：110 与 111 同装时各调一次 ⇒ 本函数一帧只跑一遍。*/
     now = ce_sdk_frame();
@@ -804,12 +820,15 @@ int faith_convert_full_p_items(void)
             }
         }
         /* ★★ 2026-09-18（B12）：**逐颗起一台转换特效**（TH10 `0x448db0(…, 0x189)` 的对位）——
-         * 位置 = **该 P 道具原位**（一手：`0x448db0` 的第 2 参就是道具自己的 pos float3）；
-         * 声像 x 与位置同源。⚠ 原版**只起特效、不播音**（TH10 的 SE 播放器在转换里零调用）
-         * ⇒ 这颗音是**用户要的自定**（见上方 §一 的 ③：取的是 TH10 与 TH18 逐字节同源的那颗
-         * `se_kira02`，所以「音色是原版的、时机是我们定的」）。*/
+         * 位置 = **该 P 道具原位**（一手：`0x448db0` 的第 2 参就是道具自己的 pos float3）。*/
         conv_burst_spawn(px, py);
-        ce_play_sound(FAITH_CONV_SE, px);
+    }
+    /* ★★ 2026-09-18（B12 第二版）：音是**事件**级的 —— 只在「刚满 P 的那一帧」响一声
+     * （用户口径「只有满 P 转换的那一下有」；一手见 `FAITH_CONV_SE` 的注释）。
+     * 声像取自机 x（那一刻道具散在场上，取任何一颗都不对；自机是这一事件的中心）。*/
+    if (n > 0 && conv_event) {
+        pp_conv = ce_player_pos();
+        ce_play_sound(FAITH_CONV_SE, pp_conv ? pp_conv[0] : 0.0f);
     }
     if (n > 0) {
         s_stat_converted += n;

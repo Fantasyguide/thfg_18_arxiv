@@ -367,9 +367,14 @@ int main(void)
              *   ③ **上抛段**：`state == 2` 且 `age < FAITH_TOSS_FRAMES` 时豁免真空门
              *      （一手 TH10 顶点翻 3 `0x41b185`；帧数 ❓自定）。*/
             CHECK(strstr(fc, "CE_ANM_ABILITY_SCRIPT_MOF_CONV_BURST") != 0);
-            CHECK(strstr(fc, "FAITH_CONV_SE") != 0);
-            CHECK(faith_at(fc, "ce_play_sound(FAITH_CONV_SE") > faith_at(fc, "faith_convert_full_p_items"));
             CHECK(faith_at(fc, "conv_burst_spawn(px, py)") > faith_at(fc, "faith_convert_full_p_items"));
+            /* ② 音：**事件级**（用户口径「只有满 P 转换的那一下有」）—— 判据 `conv_event`（刚满 P）
+             *    + 只在 `n > 0` 时响一次；**不许**回到「逐颗响」的写法。*/
+            CHECK(strstr(fc, "FAITH_CONV_SE") != 0);
+            CHECK(strstr(fc, "conv_event") != 0);
+            CHECK(strstr(fc, "&& conv_event") != 0);
+            CHECK(strstr(fc, "ce_play_sound(FAITH_CONV_SE, px)") == 0);   /* 逐颗那版已撤 */
+            CHECK(faith_at(fc, "ce_play_sound(FAITH_CONV_SE") > faith_at(fc, "faith_convert_full_p_items"));
             CHECK(strstr(fc, "FAITH_TOSS_FRAMES") != 0);
             CHECK(strstr(fc, "const int in_toss =") != 0);
             CHECK(strstr(fc, "&& !in_toss") != 0);        /* 豁免真的接在真空门那一句上 */
