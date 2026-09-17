@@ -4625,3 +4625,22 @@ FLAN_MALLET_SWING_2    ability/flan/FLAN_MALLET_SWING_2.png           @96,16,48x
 - **实跑请看一行**：`pool: 可执行页 N、跳板格 M、首个全零格 @…`（N/M 明显变大或出现池崩 ⇒ 立刻回退本次恢复）。
 - **预期**：按住 Z 走位 / shift / power up —— **不再有**钉住的激光、小激光、导弹（那些都是原生子机的弹）；
   魔理沙的主炮伤害仍是 TH18 的（`ce_shot_set_index` 还 park 着 ⇒ TH11 主炮表那一层未生效）。
+
+## §2X 移交桩：「bonus 显示 1.0」复现（2026-09-18，**本会话只登记、未做根因判断**）
+
+- **用户原话**（2026-09-18 凌晨）：「其他bug：又出现 bonus 1.0，我将会把这个 bug 转交给其他 agent」
+  ⇒ **由用户指派给别的 agent**，本会话**没有**动它、也没有下结论。
+- **现场坐标**（供接手的人直接 grep，不用问用户）：
+  - DLL 日志：`<modkit>/game/th18_card_expand.log`，本次启动段 `=== th18_card_expand 2026-09-18 01:21:44 ===`
+    （同一份日志里已有 `give12: 发动完成 —— 12 张成功 / 0 张失败（106..117）`，说明这局玩家手上装着 118 + 若干系统卡）；
+  - 部署态（当时的产物）：DLL `f08f1544f303136a7dd93f3903f641ba`、patch `b4e905776baeed37dd679a51445b3f75`、
+    起手卡组 `mods/start_deck.js` hash `528d2732`（deck = `[118, 113, 110]`）。
+- **候选位置（❓ 未核实，仅按名字/日志线索列出，接手的请自行证伪）**：
+  - `native/cards/signal.c`：`signal_core_bonus()` 与 HUD 行 `s_bonus_txt`（111 的 HUD 三行读数之一，
+    注释标了 `❓ 自定`）—— 最像「屏幕上那行 bonus」；
+  - `native/cards/mof.c`：`mof: faith %d (Δ %d), combo %d, graze %d (th11 x%d), bonus %d` 那行日志里的 `bonus`
+    与 `mof: bonus threshold reached`；
+  - `native/cards/lolk.c`：`roll_shown` / `last.bonus`（TH15 章节奖，`lolk: wave … bonus %d`）；
+  - `native/sdk.c` 的 `ce_item_money`（bonus 是**加的金钱**、不是倍率，别混）。
+- **判读建议**：先在上述日志里 grep `bonus`，把「1.0」与哪一行对上号（是显示值还是日志值），
+  再回 `signal_core_bonus()` 的**原版量**（TH11 口径在 `engine/player/th11/` 与 `engine/card/th18/`）。
