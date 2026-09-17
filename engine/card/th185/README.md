@@ -768,3 +768,36 @@ th18 侧 `+0x40 method_40` = `is_firing()`（读 `flags & 0x20`）⇒ 语义吻�
 判输入 `0x400` 上升沿后 `call [card+0x08]`）。做法：先定位 th185 的**输入读取与边沿判定**
 （`HARDWARE_INPUT` 一族的 th185 地址；金矿没给，需自己找），再顺藤摸到卡派发点 ⇒ 那处 `[card+disp]`
 的 disp **就是 th185 的 c_press 槽号**；有了这一个锚点 + §18.1/18.2 的两个锚点，三种读法立刻只剩一种。
+
+## 19. 卡图素材定位：**"每张卡对应哪些 entry / 贴图"全部对上了**（一手，轮 28）
+
+这是目标 (2) 里"贴图/脚本号"那半块，本轮做完了 —— 产出素材
+[`_sources/card-art-entries.md`](_sources/card-art-entries.md)（87 行：id / 内部名 / entry 基名 / `_max` entry / `_min` entry）。
+
+### 19.1 命名规律（一手，`thanm -l 185 abcard.anm`）
+
+- **绝大多数卡**：两份贴图 `ability/<内部名>_max.png` 与 `ability/<内部名>_min.png`
+  ⇒ 与 TH18 mod 侧的 `DATA.md` 约定（`<内部名>_max/_min`）**完全一致**，搬运时不用改名。
+- **boss 卡沿用 th18 的例外命名**（与 th18 `DATA.md` 里那条注记同形，✅ 两作一致）：
+  `MANEKI`→`MANEKI_NEKO`、`YAMAWARO`→`boss2`、`KISERU`→`boss3`、`MAGATAMA`→`boss4`、
+  `CYLINDER`→`boss5b`、`RICEBALL`→`boss5`、`MUKADE`→`boss7`、`MAGATAMA2`→`magatama`。
+- 另有 `YUMARISA`→`YUKKURI_MARISA`、`YUREIMU`→`YUKKURI_REIMU`（🟡 **排除法**得到，未逐图核对）。
+- **非卡 entry 6 个**：`abframe`(0)、`abitem`(1)、`abcardshadow`(2)、`BACK_max`(3)、`dummy`(4 与 184)、`empty_max`(183)。
+- 87 行里**只剩 3 个没对上**：`TEWI`、`NULL`、以及 id 86 的基类行（`?`）。其中 `NULL` 大概率用 `empty_max`(183)
+  或 `dummy`(184) 这类占位图（🟡 未核）。
+
+### 19.2 于是"卡图"这条路的素材与步骤都明确了
+
+1. **素材**：`thanm -x 185 local/th185.v1.00a/dat/abcard.anm` 直接反出同名 PNG（185 个），
+   按 §19.1 的表落到 `<内部名>_max/_min` 命名。
+2. **分配**：TH18 侧要重新算 entry 号（§14 的容量账：合并"一 entry 两 sprite"后可容纳 138 张卡）。
+3. **尺寸/坐标**：每张卡的 `_max`/`_min` 是小图/大图两档（th18 侧 mod 的 `_min` 是 64×80 垫成 64×128 透明底，
+   见 `assets/build_abcard.py` 注释）⇒ 尺寸差异要在构建脚本里按 th185 的实际像素尺寸处理（🟡 待逐图核对）。
+4. **脚本号**：卡图本身不需要脚本；若某张卡的**效果**要用 anm 演出，那属于 §18 的槽表工作（未完成）。
+
+### 19.3 与 §14 的容量账合起来看
+
+- th185 自己：185 entry = 6 个非卡 + 85 张 × 2（含 2 张用 `YUKKURI_*` 命名）✅ 算术闭合。
+- TH18 mod：现有 `164/256`；若照 th185 的"每卡 2 entry"搬，不够（差 78）；
+  按 §14 的 ①（一 entry 两 sprite）合并 ⇒ 85 张只需 85 entry ⇒ **249/256，放得下** ✅
+  ⇒ **素材（本节）+ 容量（§14）两头都通了**，"卡图"这半块不再是未知数。
