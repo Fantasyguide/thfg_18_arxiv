@@ -155,3 +155,21 @@ TH09.5 有 `zPhotoManager` / `zPhotoManagerArrayItem`；TH16.5 有 `zCamera` / `
 **下一轮（按代价）**：① 反汇编 `PhotoManager::on_tick_08`（`th095:0x42c3e0`）读判定盒与 11 项数组的用途；
 ② 取 TH16.5 的 `PhotoManager::on_tick` 地址并读 `camera_charge_multiplier`（充能拍照的量）；
 ③ TH12.8：先 `xref` 找写"弹速度=0/冻结位"的地方（用 `tooling/xref.py` 对 `th128.exe`）。
+
+## 9. 轮 3：文花帖拍照的"入口-真身"结构（一手反汇编）
+
+**薄壳 + 真身**（一手，`local/th095.v1.02a/th095.exe`）：
+
+| 地址 | 是什么 | 一手内容 |
+| --- | --- | --- |
+| `th095:0x42c3e0` | `PhotoManager::on_tick_08`（金矿名）| 只有 8 条：读**全局 `[0x4bdec8]` 的 `+0xfc`**，取 **bit 2**（`shr ecx,2 / and ecx,1`）⇒ 置位就 `return 1`（不干活），否则 `call th095:0x42ad60`（真身）|
+| `th095:0x42c410` | `PhotoManager::on_draw_1a`（金矿名）| 同样那个 bit 2 门 + `ecx = SUPERVISOR`（`th095:0x4c4670`，金矿 `statics.json`）后 `call th095:0x404b10` |
+| `th095:0x42ad60` | **拍照 tick 真身**（金矿未命名）| 序言 `sub esp,0x12c`；**双层循环 `i < 0xb` × `j < 6`**，行步长 `imul edx,edx,0x2214`（= `zPhotoManagerArrayItem` 的大小）⇒ **11 项 × 每项 6 条子记录** |
+| `th095:0x4bdec8` | 那个"拍照/暂停模式"标志的宿主（金矿未命名 ⇒ 下一轮查它是什么管理器）| 只确定：它的 `+0xfc` 的 **bit 2** = 拍照/暂停模式门 |
+
+**读出来的结构事实**：`zPhotoManager` 的 `__array[0xb]`（11 项）**每项内部还有 6 条子记录**（`0x2214` 是一个项的
+总大小，`0x2214 / 6` 不是整除 ⇒ 子记录不是等长切分，是"6 个并列的字段组/槽"，具体待下一轮读内层循环体）。
+⇒ 文花帖的"胶卷/张数"到底落在 11 还是 11×6，**下一轮读内层循环体就能定**。
+
+**下一轮**：① 继续读 `th095:0x42ad60` 的内层循环体（每项/每子记录判什么）；② 查 `th095:0x4bdec8` 是哪个管理器
+（用它 `+0xfc` 的其它位可以反推它是什么）；③ TH12.8 冻结：对 `th128.exe` 跑 `tooling/xref.py` 找写弹速度的地方。
