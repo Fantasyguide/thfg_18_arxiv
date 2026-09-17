@@ -1,5 +1,8 @@
 # th185（100th Black Market）的卡牌 / 货币系统 —— 侦察起点
 
+> **结论总表**：本文的结论已收进 [`../../_shared/porting-verdicts.md`](../../_shared/porting-verdicts.md)（一页速查 + 实现路径）。
+
+
 > **版本**：跨版本（本文主写 TH18.5 = th185 v1.00a，兼与 TH18 对照）。跨版本文档：**每个地址都带版本前缀**
 > （`th185:` / `th18:`）。
 
