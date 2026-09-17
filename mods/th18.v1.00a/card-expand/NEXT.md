@@ -4644,3 +4644,23 @@ FLAN_MALLET_SWING_2    ability/flan/FLAN_MALLET_SWING_2.png           @96,16,48x
   - `native/sdk.c` 的 `ce_item_money`（bonus 是**加的金钱**、不是倍率，别混）。
 - **判读建议**：先在上述日志里 grep `bonus`，把「1.0」与哪一行对上号（是显示值还是日志值），
   再回 `signal_core_bonus()` 的**原版量**（TH11 口径在 `engine/player/th11/` 与 `engine/card/th18/`）。
+
+## 2X. ★★ 2026-09-18：十二合一实跑两条 —— bonus 1.0（107 的飘字）+ 中盘拿卡 UI 不出现（**都已修**）
+
+### ① 「又出现 bonus 1.0」= **107 的结界奖励飘字**（不是 114）
+- 真因：`cards/senro.c` 把奖励分写进 TH18 的**倍率槽**（k13–17）并把第二行写成常数 **1.0**
+  （理由曾是「TH18 只有 `%d` + `BONUS %.1f`，表达不出 th07 的 `Border Bonus %7d`」）——
+  但倍率槽**永远画两行** ⇒ 屏幕上出现「22220 / **BONUS 1.0**」。
+- 修：改走**数字槽**（`CE_POPUP_NUM_SLOTS = 13`，一手 tick `0x464020` 第一环）⇒ 只画一行数字；
+  `SENRO_POPUP_MULT` 删掉。顺带解开 107 与 114 共用倍率槽的争用（现在 107 = 数字槽、114 = 倍率槽）。
+- 待办（❓ 自定）：th07 那行是「文字 + 数字」（`th07:0x4416dd`）⇒ 要完全复刻得把 “Border Bonus”
+  做成 anm 贴图另起一台 VM（同形先例 = 113 的弹窗脚本 255–260）。
+
+### ② 「12 in 1 主动获取时 110/111 UI 与 107 UI 不出现，切换面数才出现」
+- 一手：卡 118 的 `ce_give_card()` → `allocate_new_card(mode 2)` ⇒ 引擎**只调 `ctor`**
+  （trace 只有 `ctor (+0x00)` / `on_hud_anm (+0x44)`），**不调 `on_load`** ⇒
+  `faith_register()` / `faith_hud_on_load()`（110/111）与 `senro_claim_hud()`（107）都没跑。
+- 修：三张卡都**每帧补一次**（`mof_ensure_registered()` / `signal_ensure_registered()` /
+  `if (!s->slot_ok) senro_claim_hud(s);`），三者都幂等。
+- **实跑看**：用十二合一发牌后**当场**就该出现：110/111 组合 UI（左下角）+ 107 的结界 UI；
+  共享池同时生效（满 P 转换 / 绿点掉落立刻有）。

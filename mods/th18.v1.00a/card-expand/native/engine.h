@@ -656,6 +656,10 @@ typedef struct { int32_t prev; int32_t cur; float cur_f; int32_t speed_src; uint
  * 再 5 槽（0x4640e0 `lea 0x9f4(%edi)`）；draw 0x464180 同构。 */
 #define CE_ADDR_POPUP_MGR_PTR     0x4cf420
 #define CE_POPUP_RING             0x624      /* 18 槽环首（stride 0x48，共 0x510）；k13 起 = rate 区 */
+#define CE_POPUP_NUM_SLOTS        13       /* 数字槽个数（一手：tick `0x464020` 第一环 `mov esi,0xd` /
+                                              * `lea 0x64c(%edi)` ⇒ k0..k12；draw 同构 `0x4641c0` 起）。
+                                              * ⚠ 原生 adder `0x4645f0` 只写 k0..k9（计数器 wrap at 10），
+                                              * 另外 3 格是余量 —— 卡侧写满 13 格是安全的（环里只判 busy）。*/
 #define CE_POPUP_RING_RATE        0x9cc      /* = RING + 13×0x48：5 个倍率槽起点 */
 #define CE_POPUP_RATE_SLOTS       5
 #define CE_POPUP_STRIDE           0x48

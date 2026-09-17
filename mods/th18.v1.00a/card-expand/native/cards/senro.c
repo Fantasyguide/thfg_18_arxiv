@@ -145,10 +145,8 @@
 #define SENRO_LOG_EVERY             600
 /* 「樱点满值」飘字的最小间隔（th07 每加一次都飘，0x42f679；这里节流防刷屏）。*/
 #define SENRO_MAXED_POPUP_GAP       30
-/* 倍率弹字的第二行（`BONUS %.1f`）：TH18 只有 `%d` + `BONUS %.1f` 两种格式（engine.h 的
- * `CE_POPUP_VALUE` / `CE_POPUP_MULT` 一手），表达不出 th07 的 `Border Bonus %7d`（`th07:0x4416dd` kind=4）
- * ⇒ Bonus 分放进 `%d` 行、第二行恒 1.0（= ×1，不额外改分）。*/
-#define SENRO_POPUP_MULT            1.0f
+/* ~~倍率弹字的第二行恒 1.0~~ —— **2026-09-18 已删**：那会让屏幕出现「BONUS 1.0」
+ * （用户两次实跑都报「bonus 1.0」）。现在改走**数字槽**（只一行数字），见 `senro_popup()` 的注释。*/
 
 /* ==================== ★ 结界的「看得见的那一半」：两个世界层 VM（2026-09-12 补）====================
  *
@@ -295,16 +293,26 @@ static void senro_cancel_impending_death(void)
  * th07 的最大樱点初值按难度查表（`th07:0x42eb7a`–`0x42ec57`），本卡照搬同一张表。*/
 static int senro_difficulty(void) { return *(volatile int32_t *)SENRO_ADDR_DIFFICULTY; }
 
-/* ---- 倍率弹字（TH18 原生 PopupManager 的 rate 槽 k13–17；**逐字段照 `cards/collect2x.c` 的
- * `ce_popup_mult()` 抄**，字段语义一手见 engine.h 的 `CE_POPUP_*` 注）---- */
+/* ---- 飘字（TH18 原生 PopupManager 的**数字槽** k0–12；字段语义一手见 engine.h 的
+ * `CE_POPUP_*` 注，逐字段照 `cards/mof.c` 的 `mof_popup_number()` 同族抄）----
+ *
+ * ★★ 2026-09-18（用户实跑「又出现 bonus 1.0」）：**原来这里写的是倍率槽（k13–17）**，
+ *   理由是「TH18 只有 `%d` + `BONUS %.1f` 两种格式，表达不出 th07 的 `Border Bonus %7d`
+ *   （`th07:0x4416dd` kind=4）⇒ Bonus 分放进 `%d` 行、第二行恒 1.0」——**那是错的**：
+ *   倍率槽**永远画两行**，于是屏幕上出现「22220 / **BONUS 1.0**」这种读不通的东西
+ *   （×1.0 的 bonus = 没有 bonus），用户两次报的「bonus 1.0」都是它。
+ *   ⇒ 改用**数字槽**：只画一行数字（= 那笔奖励分），不再有第二行。
+ *   ⚠ th07 原版那一行是**文字 + 数字**（`Border Bonus %7d`）；TH18 这条弹字路径画不了文字
+ *     ⇒ 这里只保留数字（❓ 自定：要完全复刻得把 "Border Bonus" 做成 anm 贴图另起一台 VM，
+ *     登记在 `TUNING.md` §2.7 的待办里）。*/
 static int senro_popup(const float *pos, int32_t value, uint32_t color)
 {
     uint8_t *mgr = CE_POPUP_MGR();
     int k;
 
     if (!mgr || !pos) return 0;
-    for (k = 0; k < CE_POPUP_RATE_SLOTS; ++k) {
-        uint8_t *s2 = mgr + CE_POPUP_RING_RATE + (size_t)k * CE_POPUP_STRIDE;
+    for (k = 0; k < CE_POPUP_NUM_SLOTS; ++k) {
+        uint8_t *s2 = mgr + CE_POPUP_RING + (size_t)k * CE_POPUP_STRIDE;
         if (*(uint8_t *)(s2 + CE_POPUP_BUSY)) continue;              /* 占着：引擎自己会回收 */
         *(int32_t *)(s2 + CE_POPUP_AGE - 4) = -1;
         *(int32_t *)(s2 + CE_POPUP_AGE) = 0;
@@ -318,8 +326,7 @@ static int senro_popup(const float *pos, int32_t value, uint32_t color)
         *(float *)(s2 + CE_POPUP_POS + 8) = pos[2];
         *(float *)(s2 + 0x18) = 1.0f;                                 /* scale（弹出动画起点）*/
         *(uint32_t *)(s2 + CE_POPUP_COLOR) = color;
-        *(int32_t *)(s2 + CE_POPUP_VALUE) = value;
-        *(float *)(s2 + CE_POPUP_MULT) = SENRO_POPUP_MULT;
+        *(int32_t *)(s2 + CE_POPUP_VALUE) = value;   /* 数字槽：draw 只画这一行（`%d`）*/
         *(uint8_t *)(s2 + CE_POPUP_BUSY) = 1;
         return 1;
     }
@@ -630,6 +637,9 @@ static void senro_hit_cancel_flush(ce_card_t *c, senro_card_t *s)
 }
 
 /* ---- 每帧（管理器侧；菜单 / 商店里不跑）---- */
+/* ★ 2026-09-18：`on_tick_2` 每帧补调一次（中盘拿卡时 `on_load` 不会被调），定义在文件后半。*/
+static void senro_claim_hud(senro_card_t *s);
+
 static int on_tick_2(ce_card_t *c)
 {
     senro_card_t *s = st(c);
@@ -638,6 +648,10 @@ static int on_tick_2(ce_card_t *c)
 
     if (!s || !CE_PLAYER()) return 0;
     ++s->frame;
+    /* ★★ 2026-09-18（用户实跑）：**中盘拿到卡（十二合一）时引擎只调 `ctor`、不调 `on_load`**
+     *   ⇒ 这里从没认领过 HUD 槽 ⇒ 107 的 UI 不出现，要等换面（`on_load`）才补上。
+     *   `senro_claim_hud()` 幂等（`_card` 入口只在关卡号变化时重排）⇒ 每帧补一次直到成功。*/
+    if (!s->slot_ok) senro_claim_hud(s);
 
     /* ⓿ 中弹灵击的补做（上一帧在死亡栈里记下的）——必须在 tick 之前，消弹与入账同一帧完成。 */
     senro_hit_cancel_flush(c, s);
