@@ -962,6 +962,33 @@ static void ce_site_trail(const char *name)
     ce_log("site: %s（累计第 %u 次命中）", name, s_site_hits);
 }
 
+static int ce_addr_exec(uint32_t a);              /* 定义在后面（`VirtualQuery` 判页保护）*/
+
+/* ★★ 2026-09-17（本次会话）：`regs->retaddr` 的**唯一**写入口。
+ * 一手依据 = `engine/_shared/thcrap-breakpoint-pools.md` §2（thcrap 2024-11-06 源码 + 本机桩字节）：
+ *   · 桩**直接** `call BP_*`，返回非 0 时才自己把 cave 写进 `[ebp+0x24]`；
+ *     **没有 `breakpoint_process`、没有 `esp_diff`** ⇒ 改 `regs->esp` 没人消费（要弹栈参只能用声明里的
+ *     `stack_clear_size`，走 `s` 变体的 `ret imm16`）；
+ *   · `regs->retaddr` 就是桩 `ret` 的落点 ⇒ **写错一次 = 控制流跳到别处**；本仓头号崩溃就是
+ *     「跳进 thcrap 池页没写过的那一段」（`00 00` + `eax=1` ⇒ 写 `0x1` 的访问违例）。
+ * 所以所有落点都过这一道门：**目标不是"已提交且可执行"的页就一个字都不写**（保持原返回地址 =
+ * 退回原版行为），并打一行（限 8 次）点名给了什么地址。判定只读、一次 `VirtualQuery`。*/
+static void ce_retaddr_set(x86_reg_t *regs, uint32_t target)
+{
+    if (regs && ce_addr_exec(target)) {
+        regs->retaddr = target;
+        return;
+    }
+    {
+        static unsigned s_bad_n;
+        if (s_bad_n < 8u) {
+            ++s_bad_n;
+            ce_log("★ retaddr 拒绝：0x%08x 不是可执行页（第 %u 次）—— 保持原返回地址",
+                   (unsigned)target, s_bad_n);
+        }
+    }
+}
+
 static int ce_item_score_in_common(x86_reg_t *regs)
 {
     uint8_t *mgr = CE_ABILITY_MGR();
@@ -1163,7 +1190,7 @@ int __cdecl BP_ce_bomb_gate(x86_reg_t *regs, void *bp_info)
         const ce_hooks_t *h = hooks_of(card);
         if (h && h->on_bomb_gate && h->on_bomb_gate((ce_card_t *)card)) {
             ce_sdk_trace(ce_card_id(card), 0x78, "on_bomb_gate");
-            regs->retaddr = 0x45c056;   /* 原版: 0x45c048 test / 0x45c04f je / 0x45c051 call do_bomb */
+            ce_retaddr_set(regs, 0x45c056);   /* 原版: 0x45c048 test / 0x45c04f je / 0x45c051 call do_bomb */
             return 0;                    /* 不执行原 test，直接从这里继续 */
         }
     }
@@ -1247,7 +1274,7 @@ int __cdecl BP_ce_shot_set_index(x86_reg_t *regs, void *bp_info)
         const ce_hooks_t *h = hooks_of(card);
         if (h && h->on_native_shot_suppress && h->on_native_shot_suppress((ce_card_t *)card)) {
             ce_sdk_trace(ce_card_id(card), 0x80, "on_native_shot_suppress");
-            regs->retaddr = 0x45eca0;
+            ce_retaddr_set(regs, 0x45eca0);
             return 0;                    /* 不执行原行选择，直接去卡广播 */
         }
     }
@@ -1334,11 +1361,23 @@ int __cdecl BP_ce_repopulate_native_option(x86_reg_t *regs, void *bp_info)
 /* ---- ② Player__shoot_one_bullet 0x45e930 入口：膛口落在原生子机数组里 ⇒ 整发跳过 ----
  * 站点 = 函数**第一条**指令起的 5 字节（`55 8b ec 51 53`），此刻
  *   · **ecx = zPlayer\***（thiscall；一手调用点 `0x45ec66 mov ecx,esi`，esi = PLAYER）、
- *   · 栈（低 → 高）= 返回地址、packed id、timer、pos*、**option\***（四个栈参由调用方压，
- *     一手 `0x45ec5f`–`0x45ec72`：先 push 膛口、再 push pos、push timer、push packed id）。
- * 跳过整发的写法 = **等价一条 `ret 0x10`**：thcrap 的 `regs->esp` 是支持的
- * （`breakpoint.cpp` 的 `esp_diff` 机制：改 esp 就 `add esp, diff`，`retaddr` 落在移位后的
- * 返回地址槽上）⇒ 设 `retaddr = [esp]`（真正的调用者返回地址）+ `esp += 0x14`（返回地址 + 4 个栈参）。
+ *   · 栈（低 → 高）= **thcrap 蹦床返回地址（站点+5）**、调用者返回地址、packed id、timer、pos*、**option\***
+ *     （四个栈参由调用方压，一手 `0x45ec5f`–`0x45ec72`：先 push 膛口、再 push pos、push timer、push packed id）。
+ *
+ * ★★ 2026-09-17 订正（本次会话，一手 = `engine/_shared/thcrap-breakpoint-pools.md` §2）：
+ *   本版 thcrap 的桩**直接 `call BP_*`**，**没有 `breakpoint_process` / `esp_diff`** ⇒
+ *   ① `regs->esp` 写了没人消费（老注释说的 `add esp, diff` 是 2020 老源码的写法，本机桩是 `mov esp,ebp`）；
+ *   ② `regs->esp` 指的**不是**调用者返回地址，而是 thcrap 自己那条 `call <桩>` 压进去的**站点+5**
+ *      （本文件 §「实跑订正②」在 `0x430240` 处实测到 `0x430245`，同一形态）；
+ *   ③ 因此膛口也**不是** `sp[4]`（那是 pos*）⇒ 已改成 `sp[5]`。
+ *   ⇒ 上一版（`retaddr = sp[0]` + `esp += 0x14`）实际会**落到函数体内、且序言不重放、栈参不弹** ⇒
+ *     帧错位之后某个 `ret` 会弹到栈上的陈旧值（其中就有 thcrap 池地址）——正是头号崩溃那一类。
+ *
+ * 现在的写法 = **只用 thcrap 原生机制**：站点在 `sites.py` 里声明 `stack_clear_size: 0x10`
+ *   （⇒ 用 `bp_entry0s` 变体，桩末尾是 `ret imm16`），handler 只做两件事：
+ *   设 `retaddr = sp[1]`（真正的调用者返回地址）+ 返回 0（不重放原字节）⇒ 桩执行 `ret 0x10`：
+ *   **回到调用者 + 弹掉 4 个栈参**，与注释里想要的「等价 `ret 0x10`」逐字一致，且不依赖任何被忽略的字段。
+ *   （该函数的清理在**被调方**：调用点 `0x45ec78` 之后没有 `add esp,0x10`，一手核过 ⇒ stdcall 形态。）
  * ⚠ 返回值不设（调用方 `0x45ec78` 紧接着读行字段，**不检查 eax**，一手逐指令核过）。
  * ⚠ 判据用**指针区间**而不是行字段：卡路径同样走这个函数，但它的膛口是卡池指针
  *   （`PLAYER+0xa30` 起）⇒ 区间不相交，天然只命中原生 4 格。*/
@@ -1351,7 +1390,7 @@ int __cdecl BP_ce_native_option_muzzle(x86_reg_t *regs, void *bp_info)
     (void)bp_info;
     if (!player || !sp) return BP_EXEC_ORIGINAL;
     if (!ce_native_option_hidden(*(const int32_t *)CE_ADDR_CHARACTER)) return BP_EXEC_ORIGINAL;
-    muzzle = (uint8_t *)(uintptr_t)sp[4];          /* 第 5 个栈参 = 膛口（0 = 自机本体）*/
+    muzzle = (uint8_t *)(uintptr_t)sp[5];          /* 第 5 个栈参 = 膛口（0 = 自机本体）；sp[0] 是蹦床返回地址 */
     if (!muzzle) return BP_EXEC_ORIGINAL;
     if (muzzle < player + CE_NATIVE_OPT_PLAYER_MUZ0 || muzzle >= player + CE_NATIVE_OPT_PLAYER_END)
         return BP_EXEC_ORIGINAL;                   /* 不是原生子机（自机本体 / 卡池子机）⇒ 放行 */
@@ -1365,10 +1404,10 @@ int __cdecl BP_ce_native_option_muzzle(x86_reg_t *regs, void *bp_info)
                    *(const int32_t *)CE_ADDR_CHARACTER);
         ++s_n;
     }
-    regs->retaddr = sp[0];                         /* 直接回到调用者 */
-    regs->esp = regs->esp + 0x14;                  /* 等价 `ret 0x10`（4 个栈参 + 返回地址）*/
-    return 0;                                      /* 不重放原字节（= 整发不发）*/
+    ce_retaddr_set(regs, sp[1]);                   /* 回到调用者（sp[0] = thcrap 蹦床的返回地址 = 站点+5）*/
+    return 0;                                      /* 不重放原字节（= 整发不发）；栈参由 `stack_clear_size` 的 ret 0x10 弹掉 */
 }
+
 
 /* Player__tick_shooters_for_ability_card 0x40a9c0 的序言后（0x40a9c3）：
  *   40a9c0 push ebp / 40a9c1 mov ebp,esp /
@@ -1425,7 +1464,7 @@ int __cdecl BP_ce_option_shot_gate(x86_reg_t *regs, void *bp_info)
         const ce_hooks_t *h = hooks_of(card);
         if (h && h->on_option_shot_gate && h->on_option_shot_gate((ce_card_t *)card, (int)set)) {
             ce_sdk_trace(ce_card_id(card), 0x94, "on_option_shot_gate");
-            regs->retaddr = 0x40aa9e;   /* 该函数 option==NULL 的空路径收尾 */
+            ce_retaddr_set(regs, 0x40aa9e);   /* 该函数 option==NULL 的空路径收尾 */
             return 0;
         }
     }
@@ -2371,7 +2410,7 @@ int __cdecl BP_ce_enemy_shot_slot(x86_reg_t *regs, void *bp_info)
         const ce_hooks_t *h = hooks_of(card);
         if (h && h->on_enemy_shot_slot && h->on_enemy_shot_slot((ce_card_t *)card, &ev)) {
             ce_sdk_trace(ce_card_id(card), 0x8c, "on_enemy_shot_slot");
-            regs->retaddr = 0x43402du;                                       /* opcode 收尾：本帧不发射 */
+            ce_retaddr_set(regs, 0x43402du);                                 /* opcode 收尾：本帧不发射 */
             return 0;
         }
     }
@@ -2690,7 +2729,7 @@ int __cdecl BP_ce_chain_node_guard(x86_reg_t *regs, void *bp_info)
                 ce_log("★★ chain guard #%u（槽位表已满、无监视）: node %08x 的 on_tick = %08x 不可执行 ⇒ 跳过 call",
                        s_chain_bad, node, tick);
             regs->eax = CE_CHAIN_SKIP_EAX;
-            regs->retaddr = CE_CHAIN_RESUME;
+            ce_retaddr_set(regs, CE_CHAIN_RESUME);
             return 0;
         }
         return BP_EXEC_ORIGINAL;
@@ -2725,7 +2764,7 @@ int __cdecl BP_ce_chain_node_guard(x86_reg_t *regs, void *bp_info)
                    thisp, m_this, s_chain_visits, s_chain_changed);
         }
         regs->eax = CE_CHAIN_SKIP_EAX;
-        regs->retaddr = CE_CHAIN_RESUME;
+        ce_retaddr_set(regs, CE_CHAIN_RESUME);
         return 0;                        /* 0 = 不回放 cave 里的两条原指令 */
     }
     return BP_EXEC_ORIGINAL;
@@ -2844,7 +2883,7 @@ int __cdecl BP_ce_player_die(x86_reg_t *regs, void *bp_info)
     ce_death_result_reset();                   /* ★ 一次死亡开始 ⇒ 最终结果未知（见上）*/
     if (!ce_no_hit_active()) return BP_EXEC_ORIGINAL;
 
-    regs->retaddr = CE_FN_PLAYER_DIE_RET;      /* ★ 落闸：跳到唯一的 ret，函数体一行都不跑 */
+    ce_retaddr_set(regs, CE_FN_PLAYER_DIE_RET); /* ★ 落闸：跳到唯一的 ret，函数体一行都不跑 */
     ++s_no_hit_gate_hits;
     if (s_no_hit_gate_hits <= 3 || (s_no_hit_gate_hits % 60) == 0)
         ce_log("no-hit gate: Player__die (= TH13 on_hit body) skipped (#%d, declared by card %d) - "

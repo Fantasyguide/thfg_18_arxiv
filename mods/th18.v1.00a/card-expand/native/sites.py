@@ -1037,7 +1037,9 @@ SDK_SITES = [
      "thiscall ⇒ ecx = zPlayer*；栈（低→高）= 返回地址、packed id、timer、pos*、"
      "**option*（膛口）**（调用方压栈序一手：0x45ec5f push 膛口 / 0x45ec68 push pos / 0x45ec71 push timer / 0x45ec72 push id）。"
      "handler 读第 5 个栈参：落在**原生子机数组区间** `[PLAYER+0x670, PLAYER+0xa30)` 时**整发跳过**"
-     "（`regs->retaddr = [esp]` + `regs->esp += 0x14` = 等价一条 `ret 0x10`；thcrap 的 esp 机制见 breakpoint.cpp 的 esp_diff；"
+     "（★ 2026-09-17 订正：本版 thcrap 的桩**没有** `esp_diff`，改 `regs->esp` 无效；改用原生 `stack_clear_size: 0x10`"
+     " ⇒ 桩走 `bp_entry0s` 变体的 `ret 0x10`，handler 只设 `retaddr = sp[1]`（真正的调用者返回地址；`sp[0]` 是 thcrap 自己的蹦床返回地址 = 站点+5）"
+     " —— 一手见 engine/_shared/thcrap-breakpoint-pools.md §2；返回值调用方不检查，一手 0x45ec78；"
      "返回值调用方不检查，一手 0x45ec78）。卡申请的池 = `PLAYER+0xa30` 起（一手 0x40a7a4 `add edi,0xa30`）"
      "⇒ 区间不相交，117 / 116 / 108 的卡子机零影响。"),
     ("ce_option_shot_gate", 0x40a9c3, 6, "8b550883ec0c",
@@ -1133,6 +1135,17 @@ _SDK_KEEP_NAMED = {
 }
 SDK_SITES = [s2 for i, s2 in enumerate(SDK_SITES) if i < 10 or s2[0] in _SDK_KEEP_NAMED]
 
+# 站点级的**原生声明字段**（thcrap 的 `breakpoint_from_json` 认识的那些）。
+# `stack_clear_size = N` ⇒ 该站点改用 `bp_entry0s` 变体（桩末尾是 `ret imm16`），
+# handler 返回 0 时桩执行 `ret N`：**回到调用者 + 弹掉 N 字节栈参**。
+# 这是 thcrap 唯一的「弹栈参」机制 —— 本版桩没有 `esp_diff`，handler 改 `regs->esp` 是**无效**的
+# （一手：engine/_shared/thcrap-breakpoint-pools.md §2）。
+# `ce_native_option_muzzle`（0x45e930）是 stdcall 形态（调用点 0x45ec78 之后没有 `add esp,0x10`），
+# 4 个栈参 = 0x10 ⇒ 必须走这条机制，handler 才有办法「整发跳过」而不破坏调用方栈。
+_SDK_SITE_FIELDS = {
+    "ce_native_option_muzzle": {"stack_clear_size": 0x10},
+}
+
 
 def _sdk_rva(name):
     """按**名字**取 SDK 断点地址 —— 别再用 `SDK_SITES[i]` 下标：插一条就全体错位
@@ -1155,6 +1168,7 @@ def emit_sdk_breakpoints(text, text_va):
             raise ShapeError("%s @ 0x%06x：cavesize=%d < thcrap 下限 5（短于 5 字节的站点会被拒绝装载，"
                              "SDK 门回读失败后走降级路径）" % (name, va, n))
         out[name] = {"addr": "0x%06x" % va, "cavesize": n, "expected": exp, "title": "行为 SDK → BP_%s：%s" % (name, title)}
+        out[name].update(_SDK_SITE_FIELDS.get(name, {}))
     return out
 
 

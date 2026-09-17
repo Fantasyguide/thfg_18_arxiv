@@ -13722,3 +13722,23 @@ patch 入口）并把回读校验改成**按来源各自比 md5**（旧写法「
 （只在「声明隐藏的机体」/「膛口落在原生子机数组里」时动手）⇒ 对别的卡与零售行为零影响。
 **预算**：我们 22 → **24**；进程级 42 → **44**（> 告警线 42，**只告警**：`GATES.md` §9 与 §8.1 的实测结论 =
 条数不是池崩判据，真判据是开机 `pool:` 行）。其余 14 条仍 park，清单与推荐恢复顺序见 `GATES.md` §9。
+
+### §BE-DV 共享件 `native/sdk.c` + `native/sites.py`：`regs->retaddr` 全部过自检门 + muzzle handler 按 thcrap 原生机制改写（2026-09-18）
+
+| 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
+| --- | --- | --- | --- | --- |
+| `native/sdk.c` | 新增 `ce_retaddr_set()`（可执行页判定 + 拒绝时保持原返回值）；8 处 `regs->retaddr = …` 全改走它；`BP_ce_native_option_muzzle` 三处订正（`sp[4]`→`sp[5]`、`sp[0]`→`sp[1]`、删 `regs->esp += 0x14`）| 见下「为什么」| 系统卡批次 | `make check` rc=0（`sites.py check` 24 条双向、`dllverify`、`check-docs` 328 文件）|
+| `native/sites.py` | 新增 `_SDK_SITE_FIELDS`；`ce_native_option_muzzle` 声明 `stack_clear_size: 0x10`；该站点 title 的 `esp_diff` 老说明订正 | 该函数是 stdcall（调用点 `0x45ec78` 之后没有 `add esp,0x10`）⇒ 弹 4 个栈参只能用 thcrap 原生 `ret imm16` | 同上 | `make gen` 后 patch 里带 `"stack_clear_size": 16`；`bp_entry0s` 总长同为 `0x30` ⇒ 池尺寸口径不变 |
+
+**为什么**（一手 = `engine/_shared/thcrap-breakpoint-pools.md` §2）：本版 thcrap 的桩**直接 `call BP_*`**，
+**没有 `breakpoint_process` / `esp_diff`** ⇒ ① 改 `regs->esp` **无人消费**；② `[regs->esp]` 不是调用者返回地址，
+而是 thcrap 自己那条 `call <桩>` 压进去的**站点 +5**（`sdk.c` 既有的「实跑订正②」在 `0x430240` 处实测到 `0x430245`）。
+⇒ 老写法实际是「落回函数体内 + 序言不重放 + 栈参不弹」= 帧错位 ⇒ 之后某个 `ret` 弹到栈上的陈旧值
+（其中就有 thcrap 池地址）= 本仓头号崩溃那一类（`00 00` + `eax=1` ⇒ 写 `0x1` 的访问违例）。
+`regs->retaddr` 是本版**唯一**能改落点的地方 ⇒ 所有落点都过一道「目标必须是已提交且可执行页」的门。
+
+**影响面**：`ce_native_option_muzzle` 的**行为**变了 —— 老写法在本机日志里一次都没命中
+（限流行 `sdk: 原生子机弹已拦` **0 行**，因为 `sp[4]` 读到的是 `pos*`），新写法读 `sp[5]` = 真正的膛口
+⇒ **这条路径现在会真跑**（111 的原生子机压制这次才可能真的生效；实跑请一起看 `GATES.md` §9 的判读）。
+其余 7 处只是多一道自检门（目标都是 exe 内的常量地址 ⇒ 行为逐字节不变）；`ce_retaddr_set` 只读判定、不写内存。
+**预算**：站点数不变（24 / 进程级 44），池布局不变（`stack_clear_size` 不改桩长 `0x30`）。
