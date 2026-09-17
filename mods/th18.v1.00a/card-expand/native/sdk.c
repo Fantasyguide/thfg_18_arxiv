@@ -1701,6 +1701,53 @@ static void ce_cave_watch(void)
  *   · `MEM_PRIVATE` + `PAGE_EXECUTE*` ⇒ thcrap 的 codecave（那就要看它的首字节是不是 0）；
  *   · `MEM_PRIVATE` + `RW` ⇒ 堆 / 线程栈（未用到的栈页天然是 0）；
  *   · `MEM_FREE` ⇒ 根本没提交（那 EIP 落进去会先取指失败，与本签名不符）。*/
+/* ★ 2026-09-17（用户口径：把站点预算闸定下来）—— 把"闸的上限"变成**每次运行可测**：
+ * 数一遍跳板池里**实际装了多少格**。判据与 `tooling/poolmap.py` 完全一致：
+ *   · 格 = `0x10` 步长；格内含 `e9`；且 `rel32` 目标**落在游戏影像内**（回跳）。
+ * 只读、无副作用；开机自检里打一行。离线可用 poolmap.py 复核同一份日志，两边应当吻合。*/
+static void ce_pool_count(uint8_t *base)
+{
+    uint32_t a = 0x03c00000u, end = 0x03e00000u;
+    uint32_t lo = (uint32_t)(uintptr_t)base, hi = lo + 0x100000u;
+    unsigned pages = 0, used = 0, first_zero = 0;
+    MEMORY_BASIC_INFORMATION mbi;
+
+    while (a < end) {
+        uint32_t b, sz, o;
+        if (VirtualQuery((LPCVOID)(uintptr_t)a, &mbi, sizeof mbi) != sizeof mbi) break;
+        b = (uint32_t)(uintptr_t)mbi.BaseAddress;
+        sz = (uint32_t)mbi.RegionSize;
+        if (!sz) break;
+        if (mbi.State == MEM_COMMIT && (mbi.Protect & 0xffu) == PAGE_EXECUTE
+            && !IsBadReadPtr((const void *)(uintptr_t)b, 16)) {
+            ++pages;
+            for (o = 0; o + 16u <= sz; o += 16u) {
+                const uint8_t *c = (const uint8_t *)(uintptr_t)(b + o);
+                int j, hit = 0;
+                for (j = 0; j + 5 <= 16; ++j) {
+                    if (c[j] == 0xe9) {
+                        int32_t rel;
+                        uint32_t tgt;
+                        memcpy(&rel, c + j + 1, 4);
+                        tgt = (uint32_t)(b + o + (uint32_t)j + 5u) + (uint32_t)rel;
+                        if (tgt >= lo && tgt < hi) { hit = 1; break; }
+                    }
+                }
+                if (hit) ++used;
+                else if (!first_zero) {
+                    unsigned k, nz = 0;
+                    for (k = 0; k < 16u; ++k) nz |= c[k];
+                    if (!nz) first_zero = b + o;
+                }
+            }
+        }
+        a = b + sz;
+    }
+    ce_log("pool: 可执行页 %u、跳板格 %u、首个全零格 @%08x"
+           "（扫 0x03c00000..0x03e00000；判据 = 0x10/格 + e9 回跳落在影像内，与 tooling/poolmap.py 同）",
+           pages, used, first_zero);
+}
+
 static void ce_mem_map_dump(void)
 {
     uint32_t a = 0x03c00000u;
@@ -2232,6 +2279,7 @@ int ce_sdk_setup(uint8_t *base, int trace)
         ce_log("cave: 共登记 %u 个站点（全 0 的 %u 个、重叠 %u 对）；每帧复查首 %u 字节",
                s_cave_n, s_cave_zero, s_cave_ovl, (unsigned)CE_CAVE_WATCH);
         ce_mem_map_dump();
+        ce_pool_count(base);      /* ★ 闸上限的实测读数（用户口径：把闸定下来）*/
     }
     /* 2b. **binhack 落点回读**（★ 2026-09-14 新增，AUDIT §CQ）：断点有 `bp_applied()` 兜着，
      *     而 binhack 一条都没有 —— 它的 `expected` 对不上时 thcrap **只打一行日志就跳过**
