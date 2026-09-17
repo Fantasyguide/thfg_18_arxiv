@@ -658,11 +658,16 @@ typedef enum {
 void ce_vitem_reset(void);                                  /* 全清（单测 / 手动用；运行时**不需要**：自过期）*/
 
 /* ---- 生产者（自建实体池）---- */
-/* 成员通道：**被收的那一刻**报 n 颗（n <= 0 = 不做事；`kind == CE_VITEM_HALF` = 直接丢弃）。
+/* 成员通道：**被收的那一刻**报 n 颗、并给出它们的**面值合计** `value`（n <= 0 = 不做事；
+ * `kind == CE_VITEM_HALF` = 直接丢弃）。`value` = 这批实体自己的「身价」（110/111 的绿点 =
+ * 信仰面值；116 / 117 将来 = 它们各自的计分值），**可以为 0**（等于只计数）。
  * ★★ 2026-09-18（B1）：**只报「真空飞行中被收」的那些**（= 引擎道具 `item+0xc74 == 3` 的同一谓词，
  *   见上面那段）—— 普通游玩顺手捡（对应引擎 state 1 / 4）**别报**，那是引擎侧 §Z22 的收窄。
+ * ★★ 2026-09-18（B11）：`value` 现在是**要用的** —— 114 把它加进 `batch_score`（原样照抄 TH14
+ *   成员加入点 `count++` 与 `batch_score += 身价` 成对的做法）⇒ 倍率补差对自建实体也非零
+ *   （旧口径「只 +1」会让纯绿点批的弹字价值行恒 0，用户实跑已报）。
  * 累加跨帧，等消费者 `ce_vitem_take_collect()` 抽干；`CE_VITEM_HOLD_FRAMES` 内没人抽就整段作废。*/
-void ce_vitem_note_collect(int kind, int n);
+void ce_vitem_note_collect(int kind, int n, int32_t value);
 /* 在飞通道：**每帧**声明该源在飞的完整实体数（n <= 0 = 退出本帧声明；`kind == CE_VITEM_HALF` ⇒ 记 0）。
  * ★★ 2026-09-18（B1）：数字里**只算「此刻等于引擎 state 3 语义」的那些**（110/111 绿点 = 本池
  *   `state == 3`）—— 坠落 / 飘落 / 70px 环吸**不算**（引擎对 P / 钱同样不续批）。
@@ -672,8 +677,9 @@ void ce_vitem_declare_flying(uint32_t source, int kind, int n);
 void ce_vitem_drop(uint32_t source);
 
 /* ---- 消费者（114；也可用于诊断 / HUD）---- */
-/* 抽干成员累加器：返回「自上次抽干以来被收的自建实体数」（0 = 没有；过期则丢弃并返回 0）。*/
-int ce_vitem_take_collect(void);
+/* 抽干成员累加器：返回「自上次抽干以来被收的自建实体数」（0 = 没有；过期则丢弃并返回 0）；
+ * `value_out`（可空）同时收到这些实体的**面值合计**（见 `ce_vitem_note_collect` 的 `value`）。*/
+int ce_vitem_take_collect(int32_t *value_out);
 /* 只读当前待抽干的成员数（**不**清零；过期时为 0）——诊断 / 单测用。*/
 int ce_vitem_collect_pending(void);
 /* 在飞数合计（Σ 各源本帧声明；超窗的源不计）。0 = 本帧没有任何自建实体在飞。*/

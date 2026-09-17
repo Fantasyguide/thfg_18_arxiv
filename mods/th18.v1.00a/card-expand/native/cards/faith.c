@@ -104,6 +104,36 @@
  * （绀传珠卡的 `ITEM_SLOWDOWN`）。收点 / 吸入 / 物理三条路**没有**这个门。*/
 #define FAITH_SLOW_JITTER_AGE  32
 
+/* ★★ 2026-09-18（B12，用户报「满 P 的 P 点转化缺特效和音效」）：
+ *
+ * ## 一、转换音（`faith_convert_full_p_items()` 里逐颗播）
+ * 一手：TH10 的转换循环里**每颗播一次**（`th10:0x41bad2 push 0x189` → `call 0x448db0`(SoundManager 带位置)），
+ * TH11 同款（`th11:0x455b10` 参 `0x16`/`0x73`）。⇒ 语义 = **每转换一颗 P 道具响一声**、声像用该道具的 x。
+ * ⚠ **id 是 ❓自定**：`0x189`(TH10) / `0x16`、`0x73`(TH11) 是**两作各自的 SE 表编号**，TH18 的表只有
+ *   84 行（`engine/_shared/th18-sound-table.md` §0）⇒ 拿不到同一份音源，只能挑一支语义最近的。
+ *   本轮取 **`0x0d = se_powerup.wav`**（TH18「火力上升」的音；「满 P ⇒ P 点转信仰点」正是 P 系语义）。
+ *   替换 = 改这一个数字（候选：`0x1c/0x1d = se_power0/1`、`0x25 = se_item00`、`0x4c = se_item01`）。
+ *   登记 `TUNING.md` §2.5g。*/
+#define FAITH_CONV_SE          0x0d
+
+/* ## 二、「上抛」必须看得见 —— 抛完才许被真空门吸走
+ * 用户实跑口径：「应该是从**当前 P 点的位置上抛**转化中信仰点」。
+ * 一手 TH10（`th10:0x41b173`–`0x41b1a4`，state-2「上升」那一段）：
+ *   `[item+0xc] += 1.0([0x476f78]) × 0.03([0x470cdc])`（每帧 +0.03 = 我们同一支重力常量）
+ *   → `fcomp [0x470b04] = 0.0` → **一旦升到顶点（vy ≥ 0）就 `mov [item+0x2c],3`**（转「飞向自机」）。
+ *   ⇒ 原版的道具**先把自己的上抛走完**，之后才飞向自机（另见 `faith.c` 文件头对 TH10 state 机的记录）。
+ * ⚠ 我们的池是 TH18 宿主的道具运动学（飘落 → 过回收线/放 B/对话 ⇒ 真空），**出生第一帧就能被真空门
+ *   翻成 state 3**（`faith_vacuum_gate()`）⇒ 玩家满 P 且在高处时，转换出来的点在**画面上第一帧就已经
+ *   朝自机飞**，看起来像「点不是从 P 点位置出来的」（这正是用户报的观感）。
+ * ⇒ 本轮让**上抛期（`state == 2` 且 `age < FAITH_TOSS_FRAMES`）豁免真空门**：点从 P 点位置上抛、
+ *   抛完（或过了这段）才受回收线/放 B/对话那三条门支配。
+ * ⚠ 只豁免**真空门**，**不**豁免收点判定：触收（30px）/ 70px 环吸 / `faith_collect_all()`（全屏收点）
+ *   从出生第一帧就照旧生效（那三条是「出生保护已删」的既有结论，不许被这一条带回来）。
+ * ❓ 自定：`FAITH_TOSS_FRAMES = 20` —— TH10 顶点判定按 `vy: −2.2 → 0` 每帧 +0.03 算是 73 帧，
+ *   但本池的「飞散」段（`lr -= 0.03`）本来就是 73 帧、豁免整段会让「放 B / 进对话立刻吸」变钝
+ *   ⇒ 取 20 帧（0.33 s）当「看得见上抛」的下限。体感不对就改这一个数（登记 `TUNING.md` §2.5g）。*/
+#define FAITH_TOSS_FRAMES      20
+
 /* ==================== ★★ §1x.4：绀珠传（115）擦弹期「三件套」—— 变慢 / 变黄 / 抖动 ====================
  *
  * 用户 2026-09-15 口径：「th15 擦弹时候**大中绿点也得变黄、变慢、抖动**」。
@@ -718,6 +748,11 @@ int faith_convert_full_p_items(void)
                 ++s_stat_conv_dropped;
             }
         }
+        /* ★★ 2026-09-18（B12）：**每转换一颗 P 道具响一声**、声像 = 该道具的 x ——
+         * 一手 TH10 `0x41bad2`（转换循环内 `push 0x189` → `call 0x448db0`）；TH11 同款。
+         * ⚠ 只播**每颗道具一次**（不是每个注册者一次）：两卡同装时是一颗道具被转一次。
+         * id 是 ❓自定，见 `FAITH_CONV_SE` 的长注。*/
+        ce_play_sound(FAITH_CONV_SE, px);
     }
     if (n > 0) {
         s_stat_converted += n;
@@ -800,7 +835,11 @@ static void dot_collect(faith_dot_t *p)
      *   （引擎那边这两条路同样不进批，见 `collect2x.c` 的成员门）。判据全文见 `faith_core.h` 的对照表。
      *   诊断：两类各自的累计数每 600 帧随 `faith:` 汇总行打一次（实跑对账「哪些颗进了批」用）。*/
     if (faith_core_state_is_vacuum_flight(p->state)) {
-        ce_vitem_note_collect(faith_vitem_kind((faith_tier_t)p->tier), 1);
+        /* ★★ 2026-09-18（B11）：**带上这颗点的信仰面值** —— 114 把它加进批分（TH14 的成员加入点
+         * 就是「count++ 与 batch_score += 身价」成对；`value` = `faith_dot_t.value`，也就是
+         * 这颗点在 TH10 弹窗上显示的那个数：大 5000/8000/10000、小 100；111 侧 = 它自己的面值）。
+         * 旧口径「只 +1」不喂批分 ⇒ 纯绿点批的倍率乘在 0 上（用户实跑看到「×1.6 但分数 0」）。*/
+        ce_vitem_note_collect(faith_vitem_kind((faith_tier_t)p->tier), 1, p->value);
         ++s_stat_vitem_member;
     } else {
         ++s_stat_vitem_skip;
@@ -975,7 +1014,10 @@ int faith_pool_tick(void)
              *     都是「非 0 非 3 就查」，而本池的两套段号**不可逐值对照**（本池 state 2 = 引擎 state 1
              *     的「出生上抛」，见文件上方 §一）⇒ 这里改成 `state ∉ {0, 3}`（= 与 `faith_collect_all()`
              *     同一条规则），否则「刚击破撒出的点在上抛期进对话/上线」不会被吸。*/
-            if (p->state != 0 && p->state != 3 && pl) {
+            /* ★★ 2026-09-18（B12）：**上抛期豁免真空门**（见 `FAITH_TOSS_FRAMES` 的一手说明）——
+             * 让「从 P 点位置上抛」这一段在画面上真的存在，抛完才受回收线 / 放 B / 对话支配。*/
+            const int in_toss = (p->state == (uint8_t)FAITH_STATE_SCATTER && p->age < FAITH_TOSS_FRAMES);
+            if (p->state != 0 && p->state != 3 && pl && !in_toss) {
                 if (faith_vacuum_gate()) {
                     p->state = 3;
                     p->mag20 = (uint8_t)(mag_speed * 20.0f);

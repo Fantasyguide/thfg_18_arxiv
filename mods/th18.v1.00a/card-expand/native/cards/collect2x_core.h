@@ -54,6 +54,31 @@
 #define C2X_FRAG_BOMB  0x11    /* BOMB2 卡道具 → CardBombFragment(id 4)：符卡碎（碎片进位链）*/
 #define C2X_FRAG_LIFE  0x10    /* EXTEND2 卡道具 → CardLifeFragment(id 3)：命碎（LIVES 链）*/
 
+/* ★★ 结算弹字的 **y 偏移 = −48**（2026-09-18 一手补上；用户报「整个 bonus 的位置比正常的靠下了」）。
+ *
+ * ## TH14 原版逐指令（材料 `local/_scratch/th14_100b.exe`，地址即 VA）
+ *   · **结算侧**（`ItemManager::on_tick__body` 结算尾）：
+ *       `0x438dc6 movq xmm0,[0x4f5888]` + `0x438dce mov eax,[0x4f5890]` ⇒ 抄「批位」float3 进栈；
+ *       `0x438de5 subss xmm0,[0x4c1b24]` ⇒ **y −= 48.0f**（该常量的值 = `0x42400000` = 48.0f）；
+ *       同一份批位的 **x** 当声像：`0x438e03 movss xmm2,[esp+0x28]` → `push 0x39` →
+ *       `call 0x46e470`（`play_sound_at_position`）⇒ 钟声声像 = 批位 x。
+ *   · **批位是谁写的**：三个 P / 钱收集 handler 里**内联**了「加入批」三件事
+ *     （`0x4391e9`/`0x4393d3`/`0x4395d5` 三处同形，紧随其后就是本条的写点）：
+ *       `inc dword [0x4f5880]`（批计数 +1）、`add dword [0x4f5878], 身价/10`（批分累加，cap 1e9）、
+ *       `movq xmm0,[reg+0x5e0]` + `movq [0x4f5888],xmm0` + `mov [0x4f5890],z`
+ *       ⇒ ★ **批位 ← 自机坐标**（`reg+0x5e0/0x5e4/0x5e8` = TH14 自机的 float3 —— 同一个函数里
+ *         「道具到自机距离」的减数就是这一对字段；三个站点的 reg 分别是自机，道具在另一个寄存器）。
+ *   · **绘制侧没有第二处差异**：TH14 `0x457dc0` 与 TH18 `0x4644a0` 的倍率槽绘制**逐指令同形**，
+ *     连常量都逐个相同 —— x `+224.0`（`[0x4c1b80]` / `[0x4b9348]`）、BONUS 行 y `+16.0`
+ *     （`[0x4c1af4]` / `[0x4b9288]`）、数值行再 `+11.0`（`[0x4c1ae4]` / `[0x4b9278]`）。
+ *
+ * ## ⇒ 结论 / 我们的落差
+ * 原版弹字两行落在 **自机 y − 32**（`−48+16`）与 **自机 y − 37**（`−48+11`）—— 即**自机上方**；
+ * 我们从 2026-09-08 起只写自机坐标、**漏了这 −48** ⇒ 两行落在自机 y + 16 / +27 = **自机下方**，
+ * 整体比原版低 48 px（用户 2026-09-18 实跑报的就是这一条）。
+ * ⚠ 位置写的是**世界坐标 float3**（`CE_POPUP_POS`），偏移只作用在 y 上、**不要**动绘制常量。*/
+#define C2X_POPUP_Y_OFFSET  48.0f   /* ★ 一手：TH14 `[0x4c1b24]` = 48.0f（`subss`，弹字 y 减去它）*/
+
 /* ★ 批闭 idle（游玩帧；§Z21 = TH14 presence 语义，值回原版 8）。
  * TH14 v1.00b 一手（th14_full.asm，AUDIT §Z18/§Z21）：批计时 `[0x4f5884]`；**重载点在 per-item 在飞体
  * 内、距离/吸收判定之前**（0x43898e：批集 kind ≠9/0xa/0xb → 每帧重载 `edx=0x8`；accessor `0x439d60`
@@ -89,7 +114,9 @@ typedef struct {
     int32_t  pending_frag_at;     /* frame_now ≥ 此帧才从当下自机位弹（接线层在 on_item_frame 检查）*/
 } c2x_state_t;
 
-/* 结算输出。mult_permille == 0 → 无奖（<20），此时 fragment_* 无意义（为 0）。*/
+/* 结算输出。mult_permille == 0 → 无奖（<20）：此时 fragment_* 无意义（为 0），
+ * ★ 而 batch_score **仍带关批那一刻的快照**（2026-09-18 B11 之后它可能非零 —— 自建实体也进批分）
+ *   —— 接线层在 `mult == 0` 时走 ×0 分支早退、**不用**这个值（无奖 = 无补差）。*/
 typedef struct {
     int32_t  mult_permille;   /* 500/800/1200/1600/2000 */
     int32_t  fragment_type;   /* C2X_FRAG_BOMB / C2X_FRAG_LIFE / 0 */
@@ -103,12 +130,17 @@ int c2x_collect_batch(c2x_state_t *s, uint32_t type, int32_t frame);
 /* ★★ 2026-09-15（`NEXT.md` §1x.2 **成员通道**）：**自建实体**（110/111 的大 / 中绿点）被收 ⇒ 入批。
  * 语义与 `c2x_collect_batch` **只差 type 门**：自建实体没有引擎 type / state（它是我们自己的 VM），
  * 「算不算收点」由生产者自己的收集判定给出（`cards/faith.c` 的 `dot_collect()`，微档不进，
- * 见 §1x.3）⇒ 这里只负责「开批 + count += n + 记 last_event_at」。
- * ★ **不碰 `batch_score`**：绿点不进 SCORE（走信仰槽），也就不进批分 ⇒ 结算补差
- *   `batch_score × (mult − 1000) / 1000` 对纯绿点批恒 0（用户口径「只 +1」）。
- *   `batch_score` 里只有**原生**批集道具的小分（P/钱身价/10）—— 两条账不混。
- * n <= 0 / s 为空 → 0（不做事、不返回「已计数」）。 */
-int c2x_collect_virtual(c2x_state_t *s, int32_t n, int32_t frame);
+ * 见 §1x.3）⇒ 这里负责「开批 + count += n + batch_score += value + 记 last_event_at」。
+ * ★★ **2026-09-18（B11）：`value` 进 `batch_score`** —— 用户实跑看到「54 个成员的批 ×1.6、
+ *   底下分数写 0」⇒ 倍率乘在 0 上 = 白弹一次。原来（2026-09-15 口径「只 +1」）不喂批分，
+ *   于是**纯绿点批**的补差恒 0（那时绿点在普通游玩里大量进批、批分恒 0 也看不出来；
+ *   收窄到真空飞行之后，死亡 / 全屏收点会一次性收掉几十颗 ⇒ 纯绿点的大批成了常态）。
+ *   TH14 的对应物：批成员加入时 `0x439c90`（内联三处）**同时**做 `count++` 与
+ *   `batch_score += 身价/10`（一手见 `collect2x_core.c` 的注释与 `AUDIT.md` §Z）⇒ 我们照抄：
+ *   绿点的 `value` = 它的**信仰面值**（`faith_dot_t.value`，即 TH10 弹窗上那个数：大 5000…
+ *   小 100；111 侧 = 它自己的面值）—— 「身价」语义与 P/钱那一支一致。
+ * n <= 0 / s 为空 → 0（不做事、不返回「已计数」）；`value` 可为 0（等于只计数）。 */
+int c2x_collect_virtual(c2x_state_t *s, int32_t n, int32_t value, int32_t frame);
 
 /* presence 续批（§Z21，TH14 0x43898e 原义）：批开时每帧由接线层在有批集道具吸附中（TH18 state 3/4）
  * 调它 → 记 last_event_at=frame，返回 1；批未开 → 0（无事可续）。只续 idle 不计数。*/

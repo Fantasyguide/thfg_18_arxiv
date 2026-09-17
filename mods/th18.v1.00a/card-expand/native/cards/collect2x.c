@@ -185,9 +185,12 @@ static void on_item_frame(ce_card_t *c)
      *     同一个谓词，用户规格「与 P 点 / 金钱完全一致」在**接线两端**都成立。
      * 顺序：与卡 tick（生产者）同帧谁先谁后都读得到（层带 2 帧容差，见 `sdk_core.h` 契约 ④）。*/
     {
-        const int vn = ce_vitem_take_collect();
+        int32_t vvalue = 0;
+        const int vn = ce_vitem_take_collect(&vvalue);
         if (vn > 0) {
-            c2x_collect_virtual(s, vn, now);
+            /* ★★ 2026-09-18（B11）：`vvalue` = 这批自建实体的**面值合计**（信仰面值）⇒ 进批分，
+             * 与原生 P/钱那一支（stash 差量）汇进**同一个** `batch_score`。*/
+            c2x_collect_virtual(s, vn, vvalue, now);
             s_batch_virtual += vn;
             s_virtual_total += vn;
         }
@@ -242,7 +245,14 @@ static void on_item_frame(ce_card_t *c)
     uint8_t *p = CE_PLAYER();
     const float px = p ? *(float *)(p + CE_PLAYER_X) : 0.0f;
     const float py = p ? *(float *)(p + CE_PLAYER_Y) : 0.0f;
-    float pz[3] = { px, py, 0.0f };
+    /* ★★ 2026-09-18（B10）：**弹字锚点 = (自机 x, 自机 y − 48)** —— TH14 原版逐指令：
+     *   批位 float3 在成员加入批那一刻被写成**自机坐标**（三个 P/钱 handler 内联：
+     *   `movq xmm0,[reg+0x5e0]` + `movq [0x4f5888],xmm0`），结算时 `subss xmm0,[0x4c1b24]`
+     *   （= 48.0f）再进弹字；绘制侧两作同形同常量 ⇒ 原版两行落在**自机上方**（y−32 / y−37）。
+     *   我们原来只写自机坐标、漏了这 −48 ⇒ 弹字整体低 48 px（用户实跑报「比正常的靠下了」）。
+     *   完整出处（含批位写点的三个站点与绘制常量逐个对照）见 `collect2x_core.h` 的
+     *   `C2X_POPUP_Y_OFFSET` 长注。⚠ 声像用 `pz[0]` = 自机 x —— 原版声像也是批位 x（同一个值）。*/
+    float pz[3] = { px, py - C2X_POPUP_Y_OFFSET, 0.0f };
 
     if (!out.mult_permille) {
         /* 5–19 批 ×0 档：TH14 原版真值（0x438dfe 系）= 灰弹字、无碎片无分；<5 连弹字都没有。

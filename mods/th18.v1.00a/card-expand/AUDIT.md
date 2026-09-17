@@ -13661,3 +13661,23 @@ patch 入口）并把回读校验改成**按来源各自比 md5**（旧写法「
 **实跑判据**：见本文 §DA-8 第 4 条与 `TUNING.md` §2.5e —— 核心一条 = **普通游玩顺手捡绿点
 （不下收点线 / 不放 B / 不进对话）时 collect2x 必须零活动**（不开批 / 不 settle / 不弹灰 NO BONUS / 钟不响），
 而**上线 / 放 B / 对话时收绿点照旧入批**（`faith:` 行的 `vitem member` 与 `skip` 两列都应非 0）。
+
+### §BE-DS `sdk_core.{h,c}` 的「虚拟收集」通道**带上成员面值**（B11，2026-09-18）
+
+> 来源：`CARD-118-12IN1-REPORT.md` **B11**（用户实跑：「死亡时开了一个 ×1.6 的批、底下分数写 0」）。
+> 这是**共享头的签名变化**（不是纯追加）⇒ 按 `CLAUDE.md` 的协作纪律登记，方便 116 / 117 接 114 时照新签名写。
+
+| 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
+| --- | --- | --- | --- | --- |
+| `native/sdk_core.h` | 成员通道两支入口**带上 `value`**：`ce_vitem_note_collect(kind, n, value)` / `ce_vitem_take_collect(int32_t *value_out)`（可空）；并写明「`value` = 这批实体自己的身价，114 会加进 `batch_score`」 | 旧契约（2026-09-15）是「只 +1、不进批分」⇒ 纯绿点批的倍率乘在 0 上（弹字价值行 0）。TH14 的成员加入点 `0x439c90` 是 `count++` 与 `batch_score += 身价` **成对**的 ⇒ 我们照抄 | 系统卡批次（110/111/114 都是本批）| `tests/test_sdk_core.c` 新增 ⑥ 组（面值跨帧累加 / 与计数同生共死 / 半道具两边都不进 / 过期一并作废 / `value_out` 可空）；`tests/test_vitem_batch.c` 的 A 组改成「批分 = Σ面值」；`make test-host` 全绿 |
+| `native/sdk_core.c` | 新增 `s_vitem_note_value`（面值累加器，与计数**同生命周期**：同一处过期清零、同一处抽干清零）| 同上 | 同上 | 同上 + `make dllx87`（0 条 x87：本层刻意**零浮点**，面值走 `int32_t`）|
+| `native/cards/faith.c` | 成员上报带 `p->value`（信仰面值）；并新增 B12 的转换音 / 上抛段（同文件，不涉共享件）| 面值就是「这颗点的身价」（TH10 弹窗上那个数：大 5000…小 100）；B12 见报告 | 同上 | 源码级不变式（`test_faith_core.c`）|
+
+**影响面**：两支入口的**调用点只有两处**（`cards/faith.c` 的生产者、`cards/collect2x.c` 的消费者，都是本批的卡）
++ 主机单测；**116 / 117 将来接入时按新签名写**（多给一个 `value`；不想给就传 0 = 旧行为）。
+`ce_vitem_declare_flying` / `ce_vitem_flying*` / `ce_vitem_drop` / `ce_vitem_reset` **签名与语义一字未动**。
+**站点账**：`sites.py check` 仍是我们 **22/24**、进程级 **42**（没有新增站点）。
+**回归**：`make quick`（主机 C 单测 + pytest）、`make dll`、`make dllx87`（0 条 x87）、
+`make check`（`sites.py check` / `capcheck` / `engine_abi_check` / `check-docs`）全部 exit 0。
+**实跑判据**：纯绿点批的 settle 行 `batch score` **不再恒为 0**（等于那批绿点的面值和），
+弹字的 `%d` 行有真实数字、补差非零（`AUDIT.md` §DA-8 第 4 条与 `TUNING.md` §2.5e #7）。
