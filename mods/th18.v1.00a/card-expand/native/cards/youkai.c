@@ -890,6 +890,14 @@ static int on_native_shot_suppress(ce_card_t *c)
     const int character = yk_current_character();
     const int level = yk_current_power_level();
 
+    /* ▼ 站点自检门 ④（2026-09-18，**只记账**）：本卡的「使魔形态随 Shift 变」整个建立在
+     *   `CE_PLAYER_FOCUSED()`（= `player+0x476cc`，引擎每帧从输入位 3 写）这一个读法上。
+     *   这里拿**第二个独立来源**（原始输入块 `0x4ca428` 的 bit 3 = `CE_INPUT_FOCUS`）交叉核对：
+     *   两者应当**每帧一致**（一手：engine.h 第 338–339 行的写点 `0x45b414 mov [edi+0x476cc],edx`）。
+     *   不一致 = 我们读错了位 / 引擎改了写法 ⇒ 记一行（只记一次），行为不变。*/
+    if (CE_PLAYER() && (int)((CE_INPUT_HELD() & CE_INPUT_FOCUS) != 0) != focused)
+        ce_assume_fail("youkai: 聚焦位两个来源不一致（player+0x476cc vs 输入位 3）");
+
     if (!yk_should_suppress_native(CE_PLAYER() != 0, focused, character, level)) {
         /* 走到这里的三条来路，只有第三条要记日志（前两条每关都会出现，记了就是噪音）：
          *   ① 没有自机（标题 / 过场）；② 高速（= 原机体，设计）；

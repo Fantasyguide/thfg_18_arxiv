@@ -13834,3 +13834,29 @@ unset CE_CANARY_POC_GATE CE_ALLOW_OVER_BUDGET
 python3 sites.py gen --rows 255 -o ../patch/th18.v1.00a.js && python3 tools/gen_def.py
 MODKIT_DIR="/mnt/d/项目/幻想指南/18/th18_modkit" python3 tools/deploy.py
 ```
+
+### §BE-DY 四个机制各加一道「站点自检门」+ 一个通用 helper（2026-09-18）
+
+**动机**：§BE-DV（muzzle 的 esp 契约）与 §BE-DW（窗口里那条 `ja`）两次事故的共同点 =「我们以为的站点语义
+已经变了」，而代码静默跑了几周。⇒ 把各机制依赖的**一手不变量**在运行期查一遍，对不上就记一行
+（每个调用点只记一次），**默认不改行为**；只有两处顺手做成 fail-safe。
+
+| # | 机制 | 门（文件） | 判据（一手） | 不成立时 |
+| --- | --- | --- | --- | --- |
+| ① | **拦 Z（109）** 与 set 覆写（117/113）| `sdk.c` `BP_ce_shot_set_index` | 站点窗口 = `mov edi,[edi+edx*4+0xe0]` ⇒ 站点处 `edi` 必须是**本机体 sht 表基址**（`engine.h` 的 `CE_PLAYER_SHT_PTR` = `player+0x47940`，写点 `th18:0x443d32`）| 只记账（照常放行）|
+| ② | **使魔形态随 Shift（108）**| `cards/youkai.c` `on_native_shot_suppress` | 聚焦位的**两个独立来源**必须每帧一致：`player+0x476cc`（引擎写点 `th18:0x45b414`）vs 原始输入块 `th18:0x4ca428` bit 3（`CE_INPUT_FOCUS`）| 只记账 |
+| ③ | **吸收可吸收道具（112）**| `cards/ufo.c` `ufo_absorb_tick` | 被吸道具的 `+0xc74` state 必须在引擎文档域内（`engine.h` 的 `CE_ITEM_STATE` 段：0 落地 / 1 吸引 / 2 归位 / 3 真空 / 4 被吸 …）| **fail-safe**：跳过本次吸收（该道具继续走原版路径）+ 记账 |
+| ④ | **破坏 / 重建发弹点（108/111 的原生 4 格）**| `sdk.c` `BP_ce_repopulate_native_option` | 清槽要拿 `slot+0xb0/+0xb4` 的 id 去调引擎 `AnmManager::interrupt_tree`；**明显垃圾**（`< 0x10000` 或 `>= 0x80000000`）不许进引擎 | **fail-safe**：不调引擎、只把字段清 0（= 保留引擎下次重建的入口条件）+ 记账 |
+| ⑤ | **炸弹管理器指针**（历史崩点 `do_bomb+0x8c` 的待办）| `sdk.c` `BP_ce_item_frame` | 「本来非 0、这一帧变 0」就记一行（含帧号）——兑现 `local/MEMORY.md` §1.3t-u / `GATES.md` §8.2 的下一步 | 只记账 |
+
+**通用 helper**：`ce_assume_fail(const char *what)`（`sdk.c` 实现、`sdk.h` 声明；按**字符串指针**去重 ⇒
+每个调用点只记一次、零分配；日志格式 `★ assume FAIL: …（站点自检不成立；只记一次、行为不变）`）。
+
+**还没有的闸（诚实清单，留给下一轮）**：
+· ④ 现在只挡「明显垃圾」的 VM id —— **完整合法域**要一手核 `AnmManager::interrupt_tree` 的 id→VM 解析与界检查
+  （入口在 `engine/anm/th18/`，做完就能把 ④ 升级成真正的范围门）；
+· `regs->eax/ecx/edx/edi/esi` 的**每一处写**都该有「引擎下一步怎么读它」的一手依据（现在散在注释里，
+  可整理成表；表齐了就能再做成门）；
+· 引擎侧 stale 指针那一族（`do_bomb` 崩点）：⑤ 只观察「归零」，还缺「归零后引擎仍在调用它」那条链 ⇒ 等复现。
+
+**门**：`make check` rc=0；已 deploy（DLL `b0fd0903d5e52c780c9d8627b62fd93f`，4 份同 md5；patch 未变）。

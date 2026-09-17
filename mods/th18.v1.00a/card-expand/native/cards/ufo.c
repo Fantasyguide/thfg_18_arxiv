@@ -1355,6 +1355,16 @@ static void ufo_absorb_tick(ufo_card_t *s)
         if (st == 0) continue;                         /* 早停：空槽（最常见）*/
         /* 早停：先读 type（一次访存），不是 1/2 立刻走 —— 满配时全场大部分槽都在这条上出局 */
         if (ufo_absorb_type_index(*(uint32_t *)(it + CE_ITEM_TYPE)) < 0) continue;
+        /* ▼ 站点自检门 ③（2026-09-18，**fail-safe**）：吸收只对「引擎文档域里的道具状态」成立
+         *   （一手：engine.h 的 CE_ITEM_STATE 段 —— 0 落地/1 吸引/2 归位/3 真空/4 被吸 …）。
+         *   状态不在域里 ⇒ 别赌，**跳过吸收**（= 该道具继续走原版路径）+ 记一行。*/
+        {
+            const int32_t istate = *(const int32_t *)(it + CE_ITEM_STATE);
+            if (istate < 0 || istate > 6) {
+                ce_assume_fail("ufo absorb: 道具 state 不在文档域（跳过本次吸收）");
+                continue;
+            }
+        }
         if (!ufo_absorbable(*(uint32_t *)(it + CE_ITEM_TYPE), st, s->u.ufo_id, 1)) continue;
         ufo_try_item(s, it, ux, uy, px, py);
     }

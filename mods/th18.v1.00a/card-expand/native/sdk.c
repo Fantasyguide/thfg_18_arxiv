@@ -962,6 +962,22 @@ static void ce_site_trail(const char *name)
     ce_log("site: %s（累计第 %u 次命中）", name, s_site_hits);
 }
 
+/* ★★ 站点自检门（2026-09-18）：把「一手不变量」在**运行期**查一遍，对不上就记一行（每个调用点只记一次）。
+ * 它是**证据门**，不是拦截器：默认不改任何行为（少数几处另加 fail-safe，见各自注释）。
+ * 为什么要有：§BE-DV（muzzle 的 esp 契约）与 §BE-DW（窗口里那条 ja）两次事故的共同点是
+ *   「我们以为的站点语义/契约已经变了」，而代码静默跑了几周 ⇒ 之后任何一次怪现象，日志里先有现场。*/
+void ce_assume_fail(const char *what)
+{
+    static const char *s_seen[32];
+    static unsigned s_n;
+    unsigned i;
+    for (i = 0; i < s_n; ++i) if (s_seen[i] == what) return;
+    if (s_n < 32u) {
+        s_seen[s_n++] = what;
+        ce_log("★ assume FAIL: %s（站点自检不成立；只记一次、行为不变）", what);
+    }
+}
+
 static int ce_addr_exec(uint32_t a);              /* 定义在后面（`VirtualQuery` 判页保护）*/
 
 /* ★★ 2026-09-17/18（本次会话）：`regs->retaddr` 的**唯一**写入口。
@@ -1231,6 +1247,12 @@ int __cdecl BP_ce_shot_set_index(x86_reg_t *regs, void *bp_info)
 {
     (void)bp_info;
     uint8_t *mgr = CE_ABILITY_MGR();
+    /* ▼ 站点自检门 ①（2026-09-18，**只记账**）：本站点窗口 = `mov edi,[edi+edx*4+0xe0]`
+     *   ⇒ 站点处的 `edi` 必须是**本机体的 sht 表基址**（一手：engine.h `CE_PLAYER_SHT_PTR` = player+0x47940，
+     *   取自 `th18:0x443d32 mov eax,[ecx+0x47940]`）。对不上 = 我们在别的上下文里命中了这条站点
+     *   （本卡 109 的「拦 Z」与 117/113 的 set 覆写都建立在这个前提上）⇒ 记一行，**照常放行**。*/
+    if (CE_PLAYER() && regs->edi != (uint32_t)(uintptr_t)(CE_PLAYER() + CE_PLAYER_SHT_PTR))
+        ce_assume_fail("shot-set-index: 站点处 edi 不是本机体 sht 表基址（拦Z/set 覆写的前提）");
     if (!mgr) return BP_EXEC_ORIGINAL;
     unsigned guard = 0;
     uint8_t *winner = NULL;
@@ -1361,7 +1383,17 @@ int __cdecl BP_ce_repopulate_native_option(x86_reg_t *regs, void *bp_info)
         vm[0] = (uint32_t *)(slot + CE_NATOPT_VM_MAIN);
         vm[1] = (uint32_t *)(slot + CE_NATOPT_VM_MAX);
         for (k = 0; k < 2; ++k) {
-            if (*vm[k]) { ce_anm_interrupt(*vm[k], 1); *vm[k] = 0; }
+            if (*vm[k]) {
+                /* ▼ 站点自检门 ②（2026-09-18，**fail-safe**）：破坏/重建发弹点要拿这个 id 去调引擎的
+                 *   `AnmManager::interrupt_tree`。id 的合法域是「引擎给的 VM 句柄」⇒ 明显垃圾
+                 *   （小整数 / 内核段）时**不调引擎**（避免引擎往垃圾地址写），只把字段清 0 + 记账
+                 *   —— 字段清 0 = 引擎下次重建的入口条件，这一步照做。*/
+                if (*vm[k] < 0x10000u || *vm[k] >= 0x80000000u)
+                    ce_assume_fail("repopulate: 原生子机 VM id 不在合理域（拒绝调引擎，只清字段）");
+                else
+                    ce_anm_interrupt(*vm[k], 1);
+                *vm[k] = 0;
+            }
         }
         *(int32_t *)(slot + CE_NATOPT_STATE) = 0;
     }
@@ -1921,6 +1953,19 @@ int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
     ce_sdk_frame_bump();
     ce_site_trail("if/ce_cave_watch");
     ce_cave_watch();                          /* ★ 2026-09-16zf：codecave 看门狗（每帧一次，只读）*/
+    /* ★ 站点自检门 ⑤（2026-09-18，**只记账**）：炸弹管理器指针的「有 → 无」边沿。
+     *   `CE_ADDR_BOMB_MGR` = `th18:0x4cf2b8`（一手：`Bomb::operator new` @ `th18:0x41ff73` 是唯一写点、
+     *   `+0x30` = 正在放炸弹）。历史上有一次崩在 `do_bomb+0x8c` 的 `call [eax+4]`、`[BOMB_PTR]` 的虚表为 0
+     *   （`GATES.md` §8.2 / `local/MEMORY.md` §1.3t-u 的待办：**每帧窥视首 dword，变 0 就当场打行**）。
+     *   本门就是那条待办：只在「本来非 0、这一帧变 0」时记一行（含帧号），行为不变。*/
+    {
+        static uint32_t s_bomb_prev;
+        uint32_t bomb_now = *(volatile uint32_t *)(uintptr_t)CE_ADDR_BOMB_MGR;
+        if (s_bomb_prev && !bomb_now)
+            ce_log("★ bomb ptr 归零（帧 %u）：BOMB_PTR 0x%08x -> 0（历史崩点 do_bomb+0x8c 的前置条件）",
+                   (unsigned)ce_sdk_frame(), (unsigned)s_bomb_prev);
+        s_bomb_prev = bomb_now;
+    }
     (void)regs; (void)bp_info;
     uint8_t *mgr = CE_ABILITY_MGR();
     if (!mgr) return BP_EXEC_ORIGINAL;

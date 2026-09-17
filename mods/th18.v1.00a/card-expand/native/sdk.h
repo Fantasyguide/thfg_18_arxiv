@@ -379,6 +379,9 @@ static inline int ce_do_graze(const float *src_pos)
     return 1;
 }
 
+/* ★ 站点自检门（实现见 sdk.c）：不变量不成立时**只记一行**（每个调用点一次）。传字符串常量。*/
+void ce_assume_fail(const char *what);
+
 static inline void ce_anm_interrupt(uint32_t id, int n) { if (id) ((ce_fn_anm_interrupt_t)CE_FN_ANM_INTERRUPT_TREE)(id, n); }
 /* 同 ce_anm_get_vm 的门槛（M6）：调用方管理器还没起好（比如对象删除路径抢在 ANM 管理器初始化前跑）就别摸它。 */
 static inline void ce_anm_delete(uint32_t id)           { if (id && CE_ANM_MANAGER()) ((ce_fn_anm_delete_t)CE_FN_ANM_DELETE_BY_ID)(id); }
