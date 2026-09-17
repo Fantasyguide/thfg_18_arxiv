@@ -77,3 +77,22 @@ TH18 侧我们已经有的**可复用面**（一手，本仓已有）：
 2. **TH16.5 拍照**：读 `zCamera` / `PhotoManager` + `on_draw_36`，与 TH09.5 对照谱系；
 3. **TH12.8 冻结**：先扫 `zBullet` 字段找冻结位，再顺玩家 tick 找冻结/解冻的写入点；
 4. 每条结论回写本文件（或按子系统拆到 `engine/<子系统>/<版本>/`），并给 TH18 侧的落地核算（站点数 + 一手量）。
+
+## 6. 工具配方（本轮踩过的坑，下一轮直接用）
+
+**金矿 `type-structs-own.json` 的形状**（三作同形）：顶层是 **`dict`：结构体名 → 成员表**，
+成员表是 **`[[offset, 成员名, C 类型], …]`**（`offset` 是 `'0x..'` 字符串，最后一条常是 `['0x..','__end',None]`）。
+⇒ 读字段表要**按这个形状遍历**（别按 `{name, addr, members}` 那套猜，本轮猜错过一次）：
+
+```python
+d = json.load(open("local/vendor/th-re-data/data/<ver>/type-structs-own.json", encoding="utf-8"))
+for off, name, typ in d["zBullet"]:            # ← 结构体名做键
+    print(off, name, typ)
+```
+
+**已确认存在的结构体（可作下一轮起点）**：TH12.8 有 `zBullet` / `zBulletManager` / `zPlayer`（冻结要在这三个里找）；
+TH09.5 有 `zPhotoManager` / `zPhotoManagerArrayItem`；TH16.5 有 `zCamera` / `zCameraSky` / `zPhotoManager`。
+最后一条常是 `['0x..','__end',None]` ⇒ 它就是对象大小（别当字段读）。
+
+**汉化 exe 与本作的关系**：`th095c.exe`（700416 B）/ `th128_CN.exe`（752640 B，与日文同尺寸）是**另一版**
+（汉化改过 exe 或只是换文本）⇒ 本轮所有地址**只对日文原版**负责；要从汉化版挖东西必须另开一版登记。
