@@ -360,12 +360,16 @@ int main(void)
             /* 删原生道具的四步都在（state / anm VM / anm id / freelist 前插）*/
             CHECK(strstr(fc, "faith_item_delete") != 0);
             CHECK(strstr(fc, "CE_ITEM_STATE") != 0 && strstr(fc, "FAITH_ITEM_ANM_ID") != 0);
-            /* B12（2026-09-18）：满 P 转换 = **静音**（一手订正：`0x448db0` 用 ANM_MANAGER_PTR、
-             *   参 0x189 是 bullet.anm script393 的脚本号，转换循环从不调 SE 播放器）+
-             *   **上抛段**（`state == 2` 且 `age < FAITH_TOSS_FRAMES`）豁免真空门
-             *   （一手 TH10 顶点翻 3 `0x41b185`；帧数 ❓自定）。*/
-            CHECK(strstr(fc, "FAITH_CONV_SE") == 0);        /* 借来的转换音已撤 */
-            CHECK(strstr(fc, "ce_play_sound(FAITH_CONV_SE") == 0);
+            /* B12（2026-09-18）：满 P 转换三条都在 ——
+             *   ① **特效**：逐颗起一台 `CE_ANM_ABILITY_SCRIPT_MOF_CONV_BURST`
+             *      （一手 TH10 `0x448db0(…, 0x189)`；0x189 = bullet.anm script393，**不是** SE id）；
+             *   ② **音**：`FAITH_CONV_SE`（❓自定 = TH18 `0x28` = `se_kira02`，与 TH10 那颗逐字节同源）；
+             *   ③ **上抛段**：`state == 2` 且 `age < FAITH_TOSS_FRAMES` 时豁免真空门
+             *      （一手 TH10 顶点翻 3 `0x41b185`；帧数 ❓自定）。*/
+            CHECK(strstr(fc, "CE_ANM_ABILITY_SCRIPT_MOF_CONV_BURST") != 0);
+            CHECK(strstr(fc, "FAITH_CONV_SE") != 0);
+            CHECK(faith_at(fc, "ce_play_sound(FAITH_CONV_SE") > faith_at(fc, "faith_convert_full_p_items"));
+            CHECK(faith_at(fc, "conv_burst_spawn(px, py)") > faith_at(fc, "faith_convert_full_p_items"));
             CHECK(strstr(fc, "FAITH_TOSS_FRAMES") != 0);
             CHECK(strstr(fc, "const int in_toss =") != 0);
             CHECK(strstr(fc, "&& !in_toss") != 0);        /* 豁免真的接在真空门那一句上 */

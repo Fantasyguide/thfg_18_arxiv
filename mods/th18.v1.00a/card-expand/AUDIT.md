@@ -13689,3 +13689,23 @@ patch 入口）并把回读校验改成**按来源各自比 md5**（旧写法「
 `make check`（`sites.py check` / `capcheck` / `engine_abi_check` / `check-docs`）全部 exit 0。
 **实跑判据**：① 纯绿点批的 settle 行 `batch score` 仍为 **0**（设计）；② **死亡 / 复活期不该再出现
 纯绿点的大批**（真空门已去掉死亡分支）⇒ 见 `AUDIT.md` §DA-8 第 4 条与 `TUNING.md` §2.5e #7 / #11。
+
+### §BE-DT 共享资产 `ability.anm` 追加**一格贴图 + 一支脚本**（转换特效，2026-09-18，B12）
+
+> 来源：`CARD-118-12IN1-REPORT.md` **B12**（用户：「满 P 的 P 点转化还缺特效和音效」）。
+> `entries/ORDER.txt` 与 `scripts/**` 是**全库共享**的（能力贴图号 / 脚本号由行序决定）⇒ 按协作纪律登记。
+
+| 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
+| --- | --- | --- | --- | --- |
+| `assets/ability/entries/ORDER.txt` | **末尾追加**一行 `CONV_BURST … 32x32`（entry60 / sprite452）| 需要一格新贴图承载「满 P 转换」的那台特效 | 系统卡批次（110/111）| `make anm`（越界 / scriptNew / 源脚本对齐 / 主路径 delete 检查）+ `make check` 的 `capcheck` / `anm-verify` / `atlas-check` 全绿 |
+| `assets/ability/mof/CONV_BURST.png` | 新文件：32×32，从 `local/th10.v1.00a/anm/bullet/bullet/etama2.png` 的 **(64,224,32,32)** 原样切（`make_mof_art.py` 现切）| TH10 转换特效 `script393` 的 `sprite332` —— **零自绘**，与本仓信仰点贴图同一张源图 | 同上 | 同上（`make_mof_art.py` 可复跑）|
+| `assets/ability/scripts/295_mof_conv_burst.anm.txt` | 新脚本：TH10 `bullet.anm` **script393** 的逐条移植（`blendMode(1)`/`layer(11)`/`type(0)`/`color(128,255,128)`/`scale(0.5,0.5)`/`scaleTime(20,4,1.5,1.5)`/`+10: alphaTime(10,4,0)`/`+10: delete()`，数值一字未动）| 转换特效的原版配方 | 同上 | 同上 + 生产出的 `CE_ANM_ABILITY_SCRIPT_MOF_CONV_BURST = 295` / `CE_ANM_ABILITY_SPRITE_CONV_BURST = 452` 已进 `native/anm_ids.h`（生成物）|
+| `assets/ability/make_mof_art.py` | 新增 `CONV_BURST` 常量 + 一行切图 + 一行打印 | 贴图由脚本现切（与 FAITH_DOT 三档同口径）| 同上 | 同上 |
+
+**影响面**：`ORDER.txt` **只追加**（行序 = entry/sprite 号 ⇒ 既有卡的所有号**不变**）；
+新脚本号 295 在既有号段之后（现用 272–294）⇒ 既有卡零影响。**站点账不变**（我们 22/24、进程级 42）。
+**回归**：`make anm`、`make quick`、`make dll`、`make dllx87`（0 条 x87）、
+`make check`（含 `capcheck`/`anm-verify`/`sht-verify`/`snd-check`/`check-docs`）全部 exit 0。
+
+**卡侧接线**：`cards/faith.c` 的 `conv_burst_spawn(px, py)` —— 每转换一颗 P 道具在**原位**起一台
+（一手 TH10 就是逐颗）；层 / 颜色 / 混合模式由脚本自己写，`C` 侧只给位置（照 280/281 火星的接线口径）。

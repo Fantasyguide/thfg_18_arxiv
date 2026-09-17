@@ -673,3 +673,10 @@ MOF_BOMB_RING_STRIP    ability/mof_bomb/MOF_BOMB_RING_STRIP.png    @0,0,14x128
 # ============================================================================================
 ATLAS ATLAS_NITORI_BUBBLE 254x254
 NITORI_BUBBLE          ability/signal/NITORI_BUBBLE.png           @0,0,254x254
+
+# ★★ 2026-09-18（B12）：**满 P 转换特效**的贴图（TH10 `bullet.anm` script393 的 sprite332）。
+#   源图 `local/th10.v1.00a/anm/bullet/bullet/etama2.png` 的 **(64,224,32,32)** —— 由
+#   `assets/ability/make_mof_art.py` 切出（同一张 etama2.png，我们的信仰点切的是它的 y=208 行）。
+#   脚本 = `scripts/295_mof_conv_burst.anm.txt`（逐条搬 script393：淡绿 `color(128,255,128)` +
+#   `scale 0.5→1.5 / 20 帧` + `alphaTime(10,4,0)` + `delete()`）。
+CONV_BURST             ability/mof/CONV_BURST.png                     32x32

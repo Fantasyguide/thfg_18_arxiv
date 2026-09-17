@@ -262,6 +262,13 @@ GREEN_MAIN = (112, 208, 16, 16)   # sprite352/sprite351 —— 类型 9 = **小�
                                   #   与类型 8 = **微信仰点**（script382）**共用同一矩形**（ZUN 自己的重号）
 # ★ 2026-09-15b：**微档的独立贴图** —— 同一行里 ZUN 画的**第二套绿点**（素色圆点，见文件头 §三档外观）。
 MICRO_PLAIN = (240, 208, 16, 16)  # sprite360/361 —— `352+vtype` 家族里 vtype 8/9 的那一格
+# ★★ 2026-09-18（B12）：**满 P 转换特效**的贴图 —— TH10 `bullet.anm` **script393** 的 `sprite332`
+#   = `(64,224,32,32)`（32×32）。一手：转换循环 `th10:0x41bad2` 对**每一颗**被转换的 P 道具调
+#   `0x448db0(anm_obj, &item.pos, 0x189)`（该函数用 `ANM_MANAGER_PTR`、参 3 查**脚本表**
+#   ⇒ 0x189 是 anm **脚本号** = `bullet.anm` script393；`0x43dc90`（SE 播放器）在转换里零调用
+#   ⇒ **原版转换静音**，只有这台特效）。脚本正文见 `scripts/295_mof_conv_burst.anm.txt`。
+CONV_BURST = (64, 224, 32, 32)    # ★★ 2026-09-18（B12）sprite332 —— 满 P 转换特效（script393）
+                                  #   （32×32；本仓的信仰点切自同一张 etama2.png 的 y=208 行）
 MICRO_ALIAS = (160, 208, 16, 16)  # sprite355 —— 同家族 vtype 3 的那一格；与上一格**逐像素只差 2 个像素**
                                   #   （= ZUN 把同一个绿点画了两处），仅留证，不做成贴图
 
@@ -304,6 +311,7 @@ def main():
     _crop(src, GREEN_MAIN).save(OUT / "FAITH_DOT.png")
     _crop(src, BIG_MAIN).save(OUT / "FAITH_DOT_BIG.png")
     _crop(src, MICRO_PLAIN).save(OUT / "FAITH_DOT_MICRO.png")
+    _crop(src, CONV_BURST).save(OUT / "CONV_BURST.png")          # ★ 2026-09-18（B12）转换特效
 
     print("mof: FAITH_DOT.png 16x16（原始像素，未缩放）"
           " = TH10 道具类型 9（小信仰点）@ bullet.anm script383 的 sprite352"
@@ -315,6 +323,9 @@ def main():
           " = TH10 道具类型 8（微信仰点；script382）的**第二套**绿点 sprite360/361"
           " → bullet/etama2.png (240,208)")
 
+    print("mof: CONV_BURST.png 32x32（原始像素，未缩放）"
+          " = TH10 满 P 转换特效 @ bullet.anm script393 的 sprite332"
+          " → bullet/etama2.png (64,224)")
     if dump:
         print("\n--- etama2.png y=208 一行 16 格的像素统计（核色用）---")
         for i in range(16):

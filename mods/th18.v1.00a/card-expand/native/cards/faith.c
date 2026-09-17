@@ -118,8 +118,15 @@
  *   · TH11 侧同样：转换（`th11:0x4240f0`）只调 spawn helper 与 `0x455b10`，两者函数体都**不**引用
  *     `SOUND_MANAGER`（`0x4c3e80`）。
  * ⇒ **原版转换静音**；我们原来借 `se_powerup`（TH18 `0x0d`）当转换音是 ❓ 自定，**已撤**。
- *   若哪天要给它配音：本仓有「音效表扩容」通道（`assets/voice/ORDER.txt` + `build_voice.py`，
- *   id 从 `0x54` 起），把任意一枚 wav 弄进来即可（`AUDIT` §Q / §DK-7 的先例）—— 但那会是自定。
+ *   ★ 但用户要「有声音」⇒ 本轮**自定**配一颗：`FAITH_CONV_SE = 0x28`（TH18 `se_kira02.wav`）。
+ *     挑它的理由：① 这台特效本身是**绿色闪光**（见下 §二），kira = 闪光音，语义对得上；
+ *     ② **它就是 TH10 那颗原版 wav** —— `se_kira00/01/02.wav` 在 TH10 与 TH18 里**逐字节相同**
+ *     （md5 实测：`f3a5ad54…`；TH10 的 37 枚 se 与 TH18 的 71 枚，同名同波形的那一批），
+ *     ⇒ **不用走扩表导入**（导入只对「TH18 没有的 wav」才有意义，例：TH10 的 `se_powerup.wav`
+ *     在 TH18 是**另一次录音**，367 KB vs 77 KB）；
+ *     ③ TH18 表里这行调校为 −15 dB / prio 50（相对最轻的一档）⇒ 转换频繁时不吵。
+ *     ⚠ 换音 = 改这一个数字（候选：`0x26/0x27 = se_kira00/01`、`0x25 = se_item00`、
+ *     `0x0d = se_powerup`）；要换 TH18 没有的 wav 就走 `assets/voice/ORDER.txt` 扩容（`AUDIT` §Q/§DK-7）。
  *
  * ## 二、★ 原版有的那颗特效（一手配方，逐条抄得下来）
  * TH10 转换循环对**每一颗**被转换的 P 道具：
@@ -729,6 +736,29 @@ static void faith_item_delete(uint8_t *it)
     *(uint8_t **)(it + 8) = owner;
 }
 
+/* ★★ 2026-09-18（B12）：**满 P 转换特效** —— TH10 `bullet.anm` **script393** 的移植
+ * （脚本正文 = `assets/ability/scripts/295_mof_conv_burst.anm.txt`，逐条一手见那里的长注）。
+ * 一手触发点：TH10 的全场转换循环对**每一颗**被转换的 P 道具调
+ * `0x448db0(anm_obj, &item.pos, 0x189)`——`0x448db0` 用 `ANM_MANAGER_PTR`、参 3 查**脚本表**
+ * ⇒ `0x189` 是**脚本号**（**不是 SE id**；TH10 的 SE 播放器 `0x43dc90` 在转换里零调用
+ * ⇒ **原版转换静音**，只有这台特效）。
+ * 形态（逐值照抄）：贴图 = TH10 sprite332 = `etama2.png (64,224,32,32)`（本仓 `CONV_BURST`）、
+ * 顶点色 `(128,255,128)` 淡绿、起手 scale 0.5、20 帧缩到 1.5、第 10 帧起淡出 10 帧、20 帧自删。
+ * ⚠ 层 / 颜色 / 混合模式由**脚本自己**写（`layer(11)` / `color(128,255,128)` / `blendMode(1)`），
+ *   C 侧只给位置（照 280/281 火星的接线口径；**不要** `ce_anm_set_scale()`）。*/
+#define FAITH_CONV_LAYER      11   /* = TH10 script393 的 `layer(11)`（数值一字未动）*/
+/* ❓ 自定（用户 2026-09-18 要「有声音」）：转换音 = TH18 `0x28` = `se_kira02.wav`
+ * —— **与 TH10 的 `se_kira02.wav` 逐字节相同**（实测 md5 `f3a5ad54261b428ca80d3677f825e145`）
+ * ⇒ 音色是原版那一颗，只是原版**没在转换处播**（一手：转换循环零调用 SE 播放器）。理由见文件头 §一③。*/
+#define FAITH_CONV_SE         0x28
+
+static void conv_burst_spawn(float x, float y)
+{
+    uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_MOF_CONV_BURST, FAITH_CONV_LAYER);
+    if (!id) return;
+    ce_anm_set_pos(id, x, y, 0.0f);
+}
+
 /* 诊断（静态区）：累计转换过的原生道具颗数 + 撒失败（池满）次数。*/
 static int32_t s_stat_converted, s_stat_conv_dropped;
 
@@ -773,12 +803,13 @@ int faith_convert_full_p_items(void)
                 ++s_stat_conv_dropped;
             }
         }
-        /* ★★ 2026-09-18（B12 订正）：**这里原来播一颗借来的 `se_powerup`，已撤** ——
-         * 一手复核（见本文件上方那段长注）：TH10 的转换**没有音效**，那颗 `0x189` 是 **anm 脚本号**
-         * （`0x448db0` 用 `ANM_MANAGER_PTR`、查的是脚本表），转换循环里**从不调 SE 播放器**。
-         * ⇒ 复刻 = 静音。原版有的那颗**特效**（`bullet.anm` script393）配方照抄在上方注里，
-         * 搬运属于下一步的资产活。*/
-        (void)px;
+        /* ★★ 2026-09-18（B12）：**逐颗起一台转换特效**（TH10 `0x448db0(…, 0x189)` 的对位）——
+         * 位置 = **该 P 道具原位**（一手：`0x448db0` 的第 2 参就是道具自己的 pos float3）；
+         * 声像 x 与位置同源。⚠ 原版**只起特效、不播音**（TH10 的 SE 播放器在转换里零调用）
+         * ⇒ 这颗音是**用户要的自定**（见上方 §一 的 ③：取的是 TH10 与 TH18 逐字节同源的那颗
+         * `se_kira02`，所以「音色是原版的、时机是我们定的」）。*/
+        conv_burst_spawn(px, py);
+        ce_play_sound(FAITH_CONV_SE, px);
     }
     if (n > 0) {
         s_stat_converted += n;
@@ -832,6 +863,7 @@ static int faith_vitem_kind(faith_tier_t tier)
  * ⚠ 换成「立刻删」之后本池的记账不受影响：调用点 `faith_pool_tick()` 里
  *   `dot_collect(p); dot_remove(tier, i);` 本来就是**当场回收槽**（不依赖脚本 8 帧后自删）。*/
 #define FAITH_PICKUP_SE   0x25   /* TH18 道具收集音 `se_item00`（一手 `th18:0x44658e push 0x25`）*/
+
 
 static void dot_collect(faith_dot_t *p)
 {

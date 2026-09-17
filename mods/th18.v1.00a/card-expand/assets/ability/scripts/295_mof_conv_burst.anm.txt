@@ -1,0 +1,56 @@
+script script295 {
+// 风神录（110）/ 地灵殿（111）**满 P 转换特效** —— TH10 `bullet.anm` **script393** 的逐条移植（v4 → v8）。
+//
+// 用户口径（2026-09-18 逐字）：「110 111 的满 p p 点转化**还缺特效**和音效，应该是从当前 p 点的位置
+// 上抛转化中信仰点」⇒ 特效这一条照原版搬；「音效」那条复核后**原版根本没有**（见下）。
+//
+// ══ 一手：这台特效是谁 ═══════════════════════════════════════════════════════════════════
+//   · 触发点：TH10 满 P 那一帧的全场转换循环 `th10:0x41ba50`（`ItemManager::on_tick__body` 尾部
+//     `0x41b889` 调它）—— 对每个 `[item+0x3dc]!=0` 且类型 ∈ {1,4}（P 类）的道具：
+//     清在用标志 + `spawn_item(type=9, pos=道具自己的位置, 角 −π/2, 速 2.2)`（helper `0x41bb00`），
+//     然后 **`0x448db0(anm_obj, &item.pos, 0x189)`**。
+//   · `0x448db0` 是什么：它用 **`ANM_MANAGER_PTR`**（TH10 `[0x491c10]`，th-re-data `statics.json` 的
+//     命名）alloc 一台 VM（位置 float3 写 `+0x340`、脚本指针写 `+0x38c`/`+0x390`、标志写 `+0x35c`），
+//     并用**第 3 个实参查脚本表** `[anmgr+0x11c][id*4]`（该表 ~400 项）
+//     ⇒ `0x189` = **anm 脚本号**（**不是 SE id** —— 我们旧注写成「逐颗播音」是误读）。
+//   · **原版转换静音**（一手）：TH10 的 SE 播放器是 `0x43dc90`（`ecx = SOUND_MANAGER 0x492590`），
+//     而转换循环 `0x41ba50`–`0x41baef` 与 spawn helper `0x41bb00` 里**一次都没调它**
+//     （全 exe 96 个调用点，全不在这两段）；TH11 侧同理（转换只调 spawn helper 与 `0x455b10`，
+//     两者函数体都不引用 `SOUND_MANAGER 0x4c3e80`）⇒ 卡侧那颗借来的 `se_powerup` 已撤。
+//   · 脚本号 0x189 = 393 = **`bullet.anm` script393**（复跑：`local/vendor/thtk/build/thanm/thanm -l 10
+//     local/th10.v1.00a/dat/bullet.anm`）。原文：
+//       script393 { sprite(sprite332); blendMode(1); layer(11); type(0);
+//                   color(128, 255, 128); scale(0.5f, 0.5f);
+//                   scaleTime(20, 4, 1.5f, 1.5f);
+//                 +10: alphaTime(10, 4, 0);
+//                 +10: delete(); }
+//     ⇒ **淡绿的「弹出」**：起手 scale 0.5、20 帧缩到 1.5，第 10 帧起 alpha 走 10 帧到 0、第 20 帧删。
+//
+// ══ 逐条对应（v4 号 → 真名；`local/vendor/thpages/static/mapfile/v4.anmm` 的 `!ins_names` 段可查）
+//     ins_3  → sprite        ins_66 → blendMode    ins_68 → layer      ins_67 → type
+//     ins_52 → color         ins_50 → scale        ins_60 → scaleTime  ins_58 → alphaTime
+//     ins_1  → delete
+//   ⚠️ 数值一字未动（`blendMode(1)` = 加算、`layer(11)`、`color(128,255,128)`、`scale(0.5,0.5)`、
+//     `scaleTime(20,4,1.5,1.5)`、`alphaTime(10,4,0)`）；**标签也照原样**（`+10:` 是相对等待，
+//     所以淡出与缩放同时跑、20 帧后一起收）。
+//   ⚠️ 贴图是**抠图**：`sprite332` 是 TH10 那张表的号，我们编的是 TH18 `ability.anm`，两表无关
+//     ⇒ 见 `entries/ORDER.txt` 末尾那行 `CONV_BURST`（源矩形 `bullet/etama2.png (64,224,32,32)`）。
+//
+// ══ 卡侧契约（`cards/faith.c` 的 `conv_burst_spawn()`）═══════════════════════════════════
+//   · **每转换一颗 P 道具起一台**（一手就是逐颗 —— 不是每个注册者一台）。
+//   · `ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_MOF_CONV_BURST, 11)` + 一次
+//     `ce_anm_set_pos(id, 道具原位 x, y, 0)`；**不要**记 id、**不要** `ce_anm_set_scale()`。
+//   · 颜色 / 混合模式 / 层由本脚本自己写（C 侧不要覆盖 `color`，否则淡绿就没了）。
+//   · 自己 `delete()`（寿命 20 帧）。
+    sprite(@CONV_BURST@);
+    blendMode(1);
+    layer(11);
+    type(0);
+    color(128, 255, 128);
+    scale(0.5f, 0.5f);
+    scaleTime(20, 4, 1.5f, 1.5f);
++10: // 10
+    alphaTime(10, 4, 0);
++10: // 20
+    delete();
+}

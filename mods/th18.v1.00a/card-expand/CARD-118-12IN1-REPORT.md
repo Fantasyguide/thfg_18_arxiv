@@ -245,7 +245,7 @@ collect2x: settle 54 items, batch score 0 -> x1.600, +0 score, frag type 0x11 x1
   单测改成钉「转换里不许再出现播音」）。要自定配音随时可以走扩容通道（`assets/voice/ORDER.txt`,
   id 从 `0x54` 起）—— 但那会是 ❓ 自定，不是复刻。
 
-### B12 原版真正缺的那颗**特效**（配方已抄到手）
+### B12 原版真正缺的那颗**特效**（✅ 2026-09-18 已搬进 `ability.anm`）
 
 TH10 的转换对**每一颗**被转换的 P 道具，在**它自己的位置**起一台脚本 VM
 （`0x448db0(anm_obj, &item.pos, 0x189)`）—— 全局脚本号 `0x189` = `bullet.anm` **script393**
@@ -262,9 +262,25 @@ script393 {
     +10: ins_1();                ; 删
 }
 ```
-⇒ 搬运 = 把这支脚本 + 那块 32×32 切图搬进 `ability.anm`（照 272/273 那条流水线：
-`assets/ability/ORDER.txt` + `make_mof_art.py` + `build_ability.py`），转换时按 `faith_spawn()`
-成功的那几颗各起一台。**会动 atlas 号段与 `CAPACITY.md` 台账 ⇒ 单独一步做**（本轮没硬塞）。
+⇒ **搬运已落地**（照 272/273 那条流水线）：
+- 贴图：`assets/ability/make_mof_art.py` 从 `etama2.png (64,224,32,32)` 切出 `mof/CONV_BURST.png`
+  （32×32，**原始像素零自绘**），`entries/ORDER.txt` **末尾追加**一行 `CONV_BURST`；
+- 脚本：`assets/ability/scripts/295_mof_conv_burst.anm.txt`（逐条搬 script393，数值一字未动），
+  生成 `CE_ANM_ABILITY_SCRIPT_MOF_CONV_BURST = 295` / `CE_ANM_ABILITY_SPRITE_CONV_BURST = 452`；
+- 卡侧：`cards/faith.c` 的 `conv_burst_spawn(px, py)` 在**每颗**被转换的 P 道具原位起一台
+  （原版就是逐颗）；层 / 颜色 / 混合模式由脚本自己写，C 侧只给位置。
+- 门：`make anm`（anm-verify / 越界 / scriptNew / 主路径 delete 检查）+ `make check`（含 capcheck）全绿。
+
+### B12 音效那条（★ 用户要 ⇒ 自定一颗）
+
+原版静音（一手见上），但用户 2026-09-18 要「有声音」⇒ 取 **`FAITH_CONV_SE = 0x28`（`se_kira02.wav`）**：
+① 这台特效本身是**绿色闪光**，kira = 闪光音，语义对得上；
+② ★ **这枚 wav 在 TH10 与 TH18 里逐字节相同**（实测 md5 `f3a5ad54261b428ca80d3677f825e145`）
+⇒ 音色就是原版那颗，**不需要走扩表导入** ——「扩表」这条通道只对 **TH18 没有的 wav** 才有意义
+（例：TH10 的 `se_powerup.wav` 在 TH18 是**另一次录音**，367 KB vs 77 KB）；
+③ TH18 表里这行是 −15 dB / prio 50（最轻的一档）⇒ 转换频繁也不吵。
+换音 = 改一个数字（候选 `0x26/0x27 = se_kira00/01`、`0x25 = se_item00`、`0x0d = se_powerup`）；
+真要换 TH18 没有的 wav 就走 `assets/voice/ORDER.txt` 扩容（`AUDIT` §Q / §DK-7 的先例）。
 
 ### B12 已修的那一条：上抛段
 
