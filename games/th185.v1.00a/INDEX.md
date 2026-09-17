@@ -6,6 +6,9 @@
   （md5 `234b1e6eb1cc1b8b0c6e490487cf191c`；来自用户 2026-09-18 指的
   `D:\SteamLibrary\steamapps\common\th185`。同目录的 `th185.dat`（资源档）、`thbgm.dat`、
   `custom.exe`、`omake.txt`、`readme.txt` **留在原处未复制**）。
+  ⚠ **这份 Steam 版是 SteamStub 包装过的**（EP 落在 `.bind`，`.text` 加密）：**反汇编前必须先用仓内
+  `tooling/steamless` 脱壳**，产物是 `local/th185.v1.00a/th185.exe.unpacked.exe`（判据与对账过程见
+  [`engine/card/th185/README.md`](../../engine/card/th185/README.md) §5）。
 - **社区命名金矿**：`local/vendor/th-re-data/data/th185.v1.00a/`
   （funcs 58 / statics 41 / own 结构体 36 / ext 结构体 89）。
   ⚠ **比 th18 那份薄得多**：`zTableCardData` / `zCardBaseClass` / `zVTableCard` / `zAbilityMenu`
