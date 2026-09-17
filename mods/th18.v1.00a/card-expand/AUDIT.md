@@ -13860,3 +13860,23 @@ MODKIT_DIR="/mnt/d/项目/幻想指南/18/th18_modkit" python3 tools/deploy.py
 · 引擎侧 stale 指针那一族（`do_bomb` 崩点）：⑤ 只观察「归零」，还缺「归零后引擎仍在调用它」那条链 ⇒ 等复现。
 
 **门**：`make check` rc=0；已 deploy（DLL `b0fd0903d5e52c780c9d8627b62fd93f`，4 份同 md5；patch 未变）。
+
+### §BE-DZ 待定门：**收点的点数必须等于「最大得点公式」算出来的那个**（2026-09-18，等用户给公式）
+
+**用户口径（2026-09-18，逐字）**：「动收点的点数 UI，因为我有一系列**最大得点公式**，**收的点得符合最大得点公式
+算出来的那个**」⇒ 要的不是"别崩"，是**数值一致性**：UI 上那套最大得点/倍率与实际给玩家的点数必须同源同值。
+
+**两侧现在各在哪（一手，方便把门钉死）**
+
+| 侧 | 现成物 | 出处 |
+| --- | --- | --- |
+| UI（显示）| `faith_hud_maxpoint(delta_110, delta_111)` = 6 位最大得点；`faith_hud_mult_permille(graze_mult, signal_strength)` = 「×M.MM」的倍率；`faith_hud_trunc10()` | `native/cards/faith_hud_core.h`（纯函数，有主机单测 `tests/test_faith_hud_core.c`）|
+| 实付（入账）| `ce_score_declare_coupled(id, delta)` 的**耦合缩放**、`ce_score_set_coeff(permille)`（高度门）、`ce_score_base_points()`；入口站点 `ce_item_score_in` | `native/sdk.c` 计分层（AUDIT §CH 的搬点记录）|
+
+**门该长什么样（等一条公式就能落）**：在收点入账处算出**期望值** `E = 公式(最大得点, 倍率)`（用**与 UI 同一份**
+`faith_hud_*` 函数，不许各写一份），再和实际入账的点数比 ⇒ 不等就 `ce_assume_fail("收点: 实付 ≠ 最大得点公式")`
+（只记账；是否 fail-safe 由用户定：**改动数值本身比记一行危险得多**）。
+
+**为什么先不落**：「一系列最大得点公式」是**用户的规格**，一条都不在本仓代码里 ⇒ 猜一个关系（例如
+"UI 倍率 vs 层系数"）会拿错配方的两个量对比，只会产生假警报。⇒ **要用户给出至少一条公式**（哪个卡、
+哪一项、`最大得点` 与 `倍率` 各怎么算、期望点数怎么截）后一次落死。
