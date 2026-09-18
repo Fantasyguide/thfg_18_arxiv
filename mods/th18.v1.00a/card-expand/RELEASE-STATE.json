@@ -1,25 +1,46 @@
 {
-  "note": "发布状态单一来源（入库）。由 `native/tools/release_guard.py` 读写：`make release` 会先跑 `check`，冻结中直接中止；发布完成后 `record` 把「patch js / DLL / 四份 pl0X.sht / 两份 anm / cards.js / files.js」的 md5 快照写到这里，并追加一行到本机 `local/DLL-SYNC.md`。为什么入库：发布内容属于所有人的事实（协作者要能看见「部署侧现在是哪一批」），而 2026-09-18 那次事故里冻结状态只写在人读的文档（且一半在 local/ 不入库）⇒ 有人只读了文件开头就发了 3 次版（AUDIT §BE 详录 #50 / §BE-EG）。",
+  "note": "发布状态单一来源（入库）。由 `native/tools/release_guard.py` 读写：`make release` 会先跑 `check`，冻结中直接中止；发布完成后 `record` 把「patch js / DLL / 四份 pl0X.sht / 两份 anm / cards.js / files.js」的 md5 快照写到这里，并追加一行到本机 `local/DLL-SYNC.md`。为什么入库：发布内容属于所有人的事实（协作者要能看见「部署侧现在是哪一批」），而 2026-09-18 那次事故里冻结状态只写在人读的文档（且一半在 local/ 不入库）⇒ 有人只读了文件开头就发了 3 次版（AUDIT §BE 详录 #50 / §BE-EG）。\n\n★ 悬着的风险（owner 2026-09-18 口径）：**#41 仍未决、未复现** —— 站点数越线假说（实测上限 12）与 §BE-DW 定案的「窗口里一条裸 `ja rel32`」尚未裁决，只能当作**达摩克里斯之剑**挂着；进程级站点合计 44 > 42（`sites.py check` 会告警）。加/改任何站点前先读 AUDIT §BE 详录 #41 / §BE-DW。",
   "freeze": {
-    "active": true,
-    "since": "2026-09-18 21:30:00+0800",
-    "reason": "等 #41 裁决（站点预算那条假说 vs §BE-DW 定案的「窗口里一条裸 ja rel32」）＋ 并发会话在动这棵树；owner 2026-09-18 口径「暂不发布」。抬冻结要写理由：python3 tools/release_guard.py unfreeze --reason \"...\"",
-    "ref": "AUDIT §BE 详录 #41 / #49 / #50",
-    "by": "统筹会话（站点数问题 + 触发机制）"
+    "active": false,
+    "since": "2026-09-18 21:43:28+0800",
+    "reason": "发布「拆 127 墙 + id 200 测试卡 + 卡组体检 + deck-audit 误报修复」这一批（owner 2026-09-18 授权：『其他的如果你认为修完了的话…可 make release』）。★ #41 仍未决（未复现）—— 按 owner 口径当作**达摩克里斯之剑**挂着，加/改站点前先读 AUDIT §BE 详录 #41 / §BE-DW。",
+    "ref": null,
+    "by": "Nipporita@DESKTOP-H16AD78"
   },
   "last_release": {
-    "at": "2026-09-18 11:10:00+0800",
-    "agent": "统筹会话（号段/127 墙线；从 local/DLL-SYNC.md 的登记回填，backfilled）",
+    "at": "2026-09-18 21:43:59+0800",
+    "agent": "Nipporita@DESKTOP-H16AD78",
     "modkit": "/mnt/d/项目/幻想指南/18/th18_modkit",
     "patch_md5": "139957195894d98953f4ebafd82d9a9a",
-    "dll_md5": "242c512dd047b6498376b0fa8e1f126d",
-    "sht_md5": [null, null, null, null],
-    "abcard_md5": null,
-    "ability_md5": null,
-    "cards_md5": null,
-    "files_md5": null,
-    "backfilled": true,
-    "note": "这一批的三个 binhack 变化（count_4145e2/count_4157cb 拆 127 墙）+ 两个 breakpoint（ce_native_option_muzzle/ce_repopulate_native_option，来自当时树里别人的批次）；sht/anm/cards/files 的值当时没有记录 ⇒ 留 null。工作区现值见 `status` 的漂移行（本机 DLL 随后被并发会话重建过）。"
+    "dll_md5": "adfa81712f453981be5408350d5254a0",
+    "sht_md5": [
+      "e3d7e0355f2947c39dda8f580fbe6c66",
+      "c20ae9fe088c40eb9e419fa261a8d60f",
+      "d3096321b2af7b6729ffef499779b3fc",
+      "cc9229aeccc9fc700d58f1527f16b69c"
+    ],
+    "abcard_md5": "bf91a0f5c0dc4b96f2a51c27f134222e",
+    "ability_md5": "d3cd84e46b915f1f8af55e20e4572ad0",
+    "cards_md5": "2cc0fbbf8548b5fd0a4879af453b8005",
+    "files_md5": "a80eda15d9e9d4bd447ee22d29933e10"
   },
-  "history": []
+  "history": [
+    {
+      "at": "2026-09-18 21:43:59+0800",
+      "agent": "Nipporita@DESKTOP-H16AD78",
+      "modkit": "/mnt/d/项目/幻想指南/18/th18_modkit",
+      "patch_md5": "139957195894d98953f4ebafd82d9a9a",
+      "dll_md5": "adfa81712f453981be5408350d5254a0",
+      "sht_md5": [
+        "e3d7e0355f2947c39dda8f580fbe6c66",
+        "c20ae9fe088c40eb9e419fa261a8d60f",
+        "d3096321b2af7b6729ffef499779b3fc",
+        "cc9229aeccc9fc700d58f1527f16b69c"
+      ],
+      "abcard_md5": "bf91a0f5c0dc4b96f2a51c27f134222e",
+      "ability_md5": "d3cd84e46b915f1f8af55e20e4572ad0",
+      "cards_md5": "2cc0fbbf8548b5fd0a4879af453b8005",
+      "files_md5": "a80eda15d9e9d4bd447ee22d29933e10"
+    }
+  ]
 }
