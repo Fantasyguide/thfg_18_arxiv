@@ -595,6 +595,9 @@ static int trance_dialogue_active(void)
  *       `r.max_point` 的本地账）。
  *   ⇒ 三种都**不需要**改 `trance_core.*`（纯逻辑与载体无关，单测继续绿）。*/
 
+#define TRANCE_ITEM_TYPE18_POINT  2u     /* TH18 item type 2 = 金钱（= 本 mod 的「点道具/蓝点」对位）*/
+#define TRANCE_PIV_POINT_ITEM     100    /* TH13 每收一颗点道具 ⇒ 最大得点 +100 显示（一手 th13:0x42e8ca）*/
+
 typedef struct {
     trance_state_t core;
     int32_t frame;            /* 本卡的**游玩帧计数**（on_item_frame = 正常游玩帧，见下）*/
@@ -2752,6 +2755,13 @@ static void trance_phase_burst_tick(trance_card_t *s)
 
 static void on_item_frame(ce_card_t *c)
 {
+    /* ★ 2026-09-18（用户口径）：向**共享 PIV 池**声明本卡在场 + 本卡的可写上限（`cap_i − init_i`，按难度查表）。
+     *   一行、幂等（每帧重申，难度一变立刻跟上）；退场由 `ce_layer_drop_card()` 兜底。
+     *   擦弹那**一项**是**共用写入者**（用户口径：别加一张卡擦弹数的作用就 +1 次）⇒ 这里只声明「我在这一族」。
+     *   口径与表的一手出处：`engine/faith/OVERVIEW.md`「结论：th12–th17 可以共用一个 PIV」+ `sdk_core.h` 同名注释块。*/
+    ce_piv_claim_auto(ce_card_id(c), ce_difficulty());
+    ce_graze_family_claim(ce_card_id(c));
+
     trance_card_t *s = st(c);
     trance_tick_t t;
     float kx[TRANCE_KILL_QUEUE_MAX];
@@ -3507,6 +3517,18 @@ static int on_death_frame2(ce_card_t *c)
  * 它**不碰 VM**（删 VM / 回收池槽是调用方的事）⇒ 池与记账解耦，单测能单独测 core 那一半。
  * ⚠ 弹窗 VM 是**本函数自己起的**（世界列表、层 13、54 帧后自己 delete）—— 池里没它的位置，
  *   但**删卡时必须收**（`trance_clear()` 的 `s_popup_vm[]` 段，`METHOD.md` 铁律二）。*/
+/* ★ 2026-09-18（owner 口径）：TH13 的**点道具（蓝点）被收**也往共享 PIV 池写 **+100 显示/颗**
+ *   （一手 `th13:0x42e8ca` 实参 100.0 → `PIV += ftol(100×100)` = +10000 存储 = +100 显示；
+ *   见 `engine/faith/th13/01-point-item-value.md` 的四调用点表）。
+ *   TH18 侧对位 = **type 2（金钱 = 点道具）**（见 `cards/mof.c` 的满 P 转换与 `IDEAS.md` §1.5 一手表）。
+ *   接缝用**现成的**共享站点 `ce_item_collect`（`th18:0x44625f`，本来就在站点表里）⇒ 不新增断点/入場時刻。*/
+static void trance_on_item_collect(ce_card_t *c, uint32_t type, const void *item)
+{
+    (void)item;
+    if (type != TRANCE_ITEM_TYPE18_POINT) return;      /* type 2 = 金钱 / 点道具 */
+    ce_piv_add(ce_card_id(c), TRANCE_PIV_POINT_ITEM);  /* +100 显示（一手 th13:0x42e8ca）*/
+}
+
 static void trance_on_spirit_collected(ce_card_t *c, int32_t type, float x, float y,
                                         int32_t born_trance)
 {
@@ -3528,7 +3550,15 @@ static void trance_on_spirit_collected(ce_card_t *c, int32_t type, float x, floa
      *   用户 2026-09-16 的提醒「灵界中吃蓝灵是 +100」在常见情形（生在灵界、当场吃掉）与此一致，
      *   两者只在"生在灵界、出了灵界才吃"这种交叉情形不同 —— 差异登记在 `AUDIT.md` §DI。*/
     if (r.max_point > 0) {
-        s->max_point_bonus += r.max_point;
+        s->max_point_bonus += r.max_point;         /* 卡内账：HUD / 日志 / 对账继续用 */
+        /* ★★ 2026-09-18（owner 口径）：这一档**现在有了载体** —— 写进**共享 PIV 池**（`ce_piv_add`）。
+         *   语义就是「之后每颗点道具都多这么多」，与一手逐值对应：`th13:0x438baf`（神灵 type 1，+10 显示）、
+         *   `th13:0x438d5e`（灵界内，+100 显示）—— 出处 `engine/faith/th13/01-point-item-value.md`
+         *   的「第二加法器四调用点」表。池按 **th12–th17 那一族**归一（线下 ×5/6、线上 ×1），
+         *   并按本卡可写上限（`cap_i − init_i`）设闸。
+         *   ⇒ `SPEC §9 #5` 的「三条候选」里**选了第三条**（卡内计数 → 落点就在本函数），
+         *   而不是原先那句「声明给计分层」（那条会让 110/111 的聚合把它当信仰量吃进去，见上方长注）。*/
+        ce_piv_add(ce_card_id(c), r.max_point);
         if (s_stat_maxpoint_log < TRANCE_MAXPOINT_LOG_LIMIT) {
             ++s_stat_maxpoint_log;
             ce_log("trance: type 1 -> 最大得点 +%d（%s）累计 %d 点（"
@@ -4450,8 +4480,12 @@ static void on_enemy_drop_pre(ce_card_t *c, int32_t *counts)
 
 /* ★★ Boss 吃到伤害（事件钩子；落点 `0x42f2cb`，见上面那段的一手链）。
  *   ⚠ 回调纪律：**只入队标量**（x/y）、只写**卡自己的**表；不建 VM、不碰 `ev->enemy`（仅本次有效）。*/
-/* ⚗ 二分临时：退订后本函数暂无人用 —— 标 unused 保住 -Werror（行为零变化）。*/
-static void __attribute__((unused)) on_enemy_damage(ce_card_t *c, const ce_enemy_damage_t *ev)
+/* ★★ 2026-09-18（owner 口径「你改我跑」）：**恢复订阅** —— 本函数重新挂回 `CE_CARD(113, …)`。
+ *   历史（别删，它解释了为什么树上曾有"站点声明着但没人订阅"的怪状态）：2026-09-17a 做「站点总数
+ *   越线」假说的二分时把 `.on_enemy_damage` 退订、本函数暂无人用 ⇒ 当时标了 `unused` 保 `-Werror`。
+ *   2026-09-18 的结论是：**取消订阅并不改变站点声明集与跳板池布局**（声明一直在、桩一直在、handler
+ *   一直在每敌每帧跑），所以「订不订阅」与那条崩溃假说无关 —— 见 `AUDIT.md` §BE-EI 与 §BE 详录 #41。*/
+static void on_enemy_damage(ce_card_t *c, const ce_enemy_damage_t *ev)
 {
     trance_card_t *s = st(c);
     trance_boss_slot_t *b;
@@ -4531,11 +4565,17 @@ CE_CARD(113,
         .on_activate = on_activate,
         .on_load = on_load,
         .on_item_frame = on_item_frame,
+        .on_item_collect = trance_on_item_collect,   /* ★ 2026-09-18：点道具 ⇒ 共享 PIV 池 +100 显示 */
         .on_death_after_deathbomb = on_death_after_deathbomb,   /* ★★ 中弹救援（救援层最后一家）*/
         .on_death_frame2 = on_death_frame2,     /* ★ 死亡结算之后 +0x14：只记日志 */
         .on_enemy_death = on_enemy_death,       /* ★ 击破 → 神灵（事件钩子，非虚表槽）*/
-        /* ⚗ 二分临时摘掉（2026-09-17a）: .on_enemy_damage —— 「站点总数越线」假说的二分，
-         *   见 AUDIT §BE 与 local/DLL-SYNC.md。恢复 = 取消本行注释 + patch/.def/Makefile 三处回滚。*/
+        /* ★★ 2026-09-18 恢复（owner 口径「你改我跑」）：boss 吃到伤害 → 掉灵。
+         *   ⚗ 2026-09-17a 曾为「站点总数越线」假说把本行注释掉 ⇒ 那期间日志恒为
+         *     `boss hits 0(drops 0, rejected 0)`（站点在跑、卡侧没人订阅）。恢复**不需要**动
+         *     `patch`/`.def`/`Makefile`：那三处是"声明"层面的，声明现在一直在（24 条之一），
+         *     所以当时写的"三处回滚"已不适用；只改本行 + handler 的 `unused` 属性即可。
+         *   见 `AUDIT.md` §BE-EI。*/
+        .on_enemy_damage = on_enemy_damage,
         /* ★★ boss **相位击破** → 灵批次（2026-09-13 第二轮，用户口径「击破符卡/非符也掉大量灵」）。
          *   断点 `0x430510`，**与 110/111/116/117 共用**（本卡只读 counts、不改、不用共享闩锁）
          *   ⇒ 协作须知登记在 `AUDIT` §BE。*/
