@@ -2762,3 +2762,21 @@ ECL 敌机的 `anmSetSprite(0, S)` 指不到它们；而**原样保留** `anmSel
 被用户当场否掉（「不是扇形，而是参考 zun 的…那个代码」）⇒ 该函数与 `faith_spawn_dir()` /
 `faith_spawn_big_spread()` **已整块撤回**（`cards/faith.{h,c}` 回到改动前），只留 `faith_core.h` 里
 `faith_core_scatter_off()` 这一个纯函数（= 上表最后两步）。
+
+### 2.1g-2 咲夜蓄力的**范围环跟着蓄力长大**（2026-09-18，用户口径）
+
+**用户口径（逐字）**：「**咲夜蓄力最好张开一个逐渐变大的圆，这样最大了就知道满了**」。
+
+- **原来**：卡 111 的「② 咲夜×二小姐（蓄力 5 s ⇒ 松手清屏）」在蓄力期间起一支**范围环**
+  （`ability.anm` 脚本 277 = 底本 TH18 原生 script35 的 `drawPolyBorder`，层 13），但它**恒按清屏半径**画
+  —— 只告诉你"范围多大"，不告诉你"蓄了多少"。
+- **现在**：环的倍率 = `清屏半径 × signal_flandre_ring_ratio_permille(charge)/1000`
+  （`120 → 1000` 线性；**长满那一刻 = 1.000 = 松手会消掉的那一圈**）。
+  ⇒ 「最大了就知道满了」与「范围多大」**两条信息合一**；判定半径**不跟着变小**（只改画面）。
+- **下限 120‰ 是 `❓ 自定`**：不加下限的话，`charge == 1` 时环只有 0.3 px，蓄力前半秒什么都看不见。
+- ⚠ **口径纪律（这次撞出来的）**：这个函数**必须返回整数千分比，不能返回 `float`** ——
+  32 位 Windows ABI 下 `float` **返回值走 `st(0)`** ⇒ 任何返回 float 的函数都会在目标文件里留
+  `flds`/`fstp`，撞 `make dllx87` 的「0 条 x87」硬线（第一版就是 `float signal_flandre_ring_ratio()`
+  ⇒ 门报 4 条 x87）。**全仓口径：浮点只在卡里算、core 一律定点出入口。**
+- 登记：`cards/signal_core.h/.c`（`SIGNAL_FLAN_RING_MIN_PERMILLE` + `signal_flandre_ring_ratio_permille()`）、
+  `cards/signal.c`（唯一调用点）、单测 `tests/test_signal_core.c`（端点 / 单调 / 半程 560 / 差一帧 997）。

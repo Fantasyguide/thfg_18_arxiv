@@ -908,6 +908,18 @@ int32_t signal_flandre_cancel_radius_x100(int32_t player_r_x100)
     return SIGNAL_FLANDRE_RADIUS_MUL * (r + SIGNAL_FLANDRE_CIRCLE_MIN * 100);
 }
 
+int32_t signal_flandre_ring_ratio_permille(int32_t charge)
+{
+    /* 用户 2026-09-18：「张开一个逐渐变大的圆，最大了就知道满了」。
+     * 线性 + 一个可见下限（120‰）—— 下限的理由：`charge == 1` 时若按 1/300，环只有 0.3 px，
+     * 等于"蓄力前半秒什么都看不见"。**只影响观感**：判定用的半径始终是 `…_cancel_radius_x100()`。
+     * ★ 全整数（不碰浮点）：千分比 = 120 + 880 × charge / 300 —— 端点与单调性都是精确的。*/
+    if (charge <= 0) return SIGNAL_FLAN_RING_MIN_PERMILLE;
+    if (charge >= SIGNAL_FLANDRE_CHARGE_FRAMES) return 1000;
+    return SIGNAL_FLAN_RING_MIN_PERMILLE +
+           (1000 - SIGNAL_FLAN_RING_MIN_PERMILLE) * charge / SIGNAL_FLANDRE_CHARGE_FRAMES;
+}
+
 /* ---- ④ 诹访子：贴板底 --------------------------------------------------------------- */
 int signal_core_at_board_bottom(int32_t y_fixed)
 {

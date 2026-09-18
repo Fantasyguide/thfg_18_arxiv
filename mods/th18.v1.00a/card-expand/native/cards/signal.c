@@ -2467,14 +2467,22 @@ static void signal_support_flandre(signal_card_t *s)
                     if (s->flan_ring_vm && pp0) {
                         ce_anm_set_pos(s->flan_ring_vm, pp0[0], pp0[1], pp0[2]);
                     }
-                    ce_log("signal: 二小姐·范围环起 VM（id %u，脚本 %d，层 13，半径 %.2f px）",
+                    ce_log("signal: 二小姐·范围环起 VM（id %u，脚本 %d，层 13，满半径 %.2f px，"
+                           "比例 %.2f→1.00 —— 跟着蓄力长大）",
                            (unsigned)s->flan_ring_vm, (int)CE_ANM_ABILITY_SCRIPT_FLAN_CHARGE_RING,
-                           (double)ring_r);
+                           (double)ring_r,
+                           (double)((float)signal_flandre_ring_ratio_permille(s->flandre.charge) * 0.001f));
                 }
                 if (s->flan_ring_vm) {
+                    /* ★★ 2026-09-18（用户口径）：「咲夜蓄力最好张开一个**逐渐变大的圆**，
+                     *   这样**最大了就知道满了**」⇒ 半径 = 清屏半径 × `signal_flandre_ring_ratio(charge)`
+                     *   （0.12 → 1.0 线性）：长满那一刻既报"满"，又正好等于松手会消掉的那一圈。
+                     *   ⚠ 判定半径**不跟着变小**（`r_x100` 仍是满值）—— 比例只用于画。*/
                     const float *pp0 = ce_player_pos();
+                    /* 千分比 → 倍率（本仓口径：浮点**只在卡里算**，core 一律走定点）*/
+                    float k = (float)signal_flandre_ring_ratio_permille(s->flandre.charge) * 0.001f;
                     if (pp0) ce_anm_set_pos(s->flan_ring_vm, pp0[0], pp0[1], pp0[2]);
-                    (void)ce_anm_set_scale(s->flan_ring_vm, ring_r, ring_r);
+                    (void)ce_anm_set_scale(s->flan_ring_vm, ring_r * k, ring_r * k);
                 }
             } else if (s->flan_ring_vm) {
                 /* 蓄力掉了（中弹打断 / 没满就松手）⇒ 收光环（脚本 277 的中断 1 = 20 帧淡出后自删）。*/

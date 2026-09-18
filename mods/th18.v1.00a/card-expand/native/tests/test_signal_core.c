@@ -1495,6 +1495,31 @@ int main(void)
         CHECK(SIGNAL_FLANDRE_CIRCLE_MIN == 40);           /* 一手 `0x4b92c4` */
         CHECK(SIGNAL_FLANDRE_RADIUS_MUL == 2);
 
+        /* ★ 2026-09-18（用户口径「咲开一个逐渐变大的圆，最大了就知道满了」）：环的比例 ——
+         * 只用于画，判定半径不变；下限 0.12（蓄力一开始就得看得见）、满值 = 1.00（= 清屏半径本身）、
+         * 中间线性、越界/负数安全。*/
+        /* 千分比口径（120…1000）；★ 不许返回 float —— 32 位 ABI 下 float 返回值走 st(0)，
+         *   会让目标文件带 x87、撞 `make dllx87` 的 0 条硬线。*/
+        CHECK(SIGNAL_FLAN_RING_MIN_PERMILLE == 120);
+        CHECK(signal_flandre_ring_ratio_permille(0) == SIGNAL_FLAN_RING_MIN_PERMILLE);
+        CHECK(signal_flandre_ring_ratio_permille(-5) == SIGNAL_FLAN_RING_MIN_PERMILLE);
+        CHECK(signal_flandre_ring_ratio_permille(SIGNAL_FLANDRE_CHARGE_FRAMES) == 1000);
+        CHECK(signal_flandre_ring_ratio_permille(SIGNAL_FLANDRE_CHARGE_FRAMES + 999) == 1000);
+        CHECK(signal_flandre_ring_ratio_permille(1) > SIGNAL_FLAN_RING_MIN_PERMILLE);   /* 一蓄就长大 */
+        CHECK(signal_flandre_ring_ratio_permille(1) < signal_flandre_ring_ratio_permille(2));
+        CHECK(signal_flandre_ring_ratio_permille(150) == 560);                          /* 半程 = 120+440 */
+        CHECK(signal_flandre_ring_ratio_permille(299) == 997);                          /* 差一帧就没满 */
+        {   /* 单调不减 + 全程落在 [120, 1000] */
+            int q, prev = signal_flandre_ring_ratio_permille(0);
+            for (q = 1; q <= SIGNAL_FLANDRE_CHARGE_FRAMES; ++q) {
+                int r = signal_flandre_ring_ratio_permille(q);
+                CHECK(r >= prev);
+                CHECK(r >= SIGNAL_FLAN_RING_MIN_PERMILLE && r <= 1000);
+                prev = r;
+            }
+        }
+
+
         /* 半径：2 ×(自机判定半径 3.0 + 40.0) = 86.00 px；入参取不到时按原生 3.0 兜底 */
         CHECK(signal_flandre_cancel_radius_x100(300) == 8600);
         CHECK(signal_flandre_cancel_radius_x100(100) == 8200);      /* 判定点被缩到 1.0（原生 Aya）*/
