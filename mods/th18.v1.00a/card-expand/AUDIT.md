@@ -14168,3 +14168,47 @@ test: reset_cards — shot 0 cap 3 deck [200, 56, 110, …]
 > ⇒「Boss 随血量掉灵」功能是死的。**下一次加站点前先看 `sites.py check` 的预算行（余量现在是 0）。**
 >
 > **对既有卡的影响面**：本节**只写记录**（AUDIT / `local/DLL-SYNC.md`），**一个字节的代码/资产都没动**。
+
+### §BE-EG ★ 统筹批：把「发布/生成物/预算」三条协作纪律变成**机器闸**（2026-09-18，统筹会话）
+
+**背景**：2026-09-18 一天里连着出三件同源的事 —— ① 一个会话在 `local/DLL-SYNC.md` 的 ⛔ 冻结期内
+发了 3 次版（**它只读了那份文件的开头**，冻结标记在 474 / 540 两节，且 `local/` 不入库、协作者看不到）；
+② `patch/th18.v1.00a.js` 是**生成物**却被拿来手改做二分（§BE 详录 #41 的「摘掉 `ce_enemy_damage`」），
+而任何一次 `make gen` 都会把手工改动**静默抹掉** ⇒ 后来的人判成「未登记的还原」（#49），两条结论互相矛盾；
+③ 站点预算余量 **0**（24 / 24）却是绿字，而预算是**进程级共享资源**（跨会话共享跳板池）。
+
+⇒ 本批**不加功能、不动卡**，只把这三条纪律做成闸（统筹会话的口径：本会话的目标就是「站点数问题 + 触发机制」，
+这类"统筹 bug"归它改）。
+
+| 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
+| --- | --- | --- | --- | --- |
+| `native/tools/release_guard.py`（**新增**） | 发布前闸 + 记账五子命令 + 入库状态文件（细节见下节） | 冻结与「部署侧现在是哪一批」以前只在**人读的文档**里 ⇒ 脚本与协作者都看不见 | 统筹会话 | 烟测通过；冻结时 `check` **退出码 2**；`make release` 在 `release-check` 处中止 |
+| `native/tools/gen_drift.py`（**新增**） | 跑一次 `sites.py gen --rows 255`，逐字节比对三份生成物（`patch/th18.v1.00a.js`、`native/sites_gen.h`、`patch-test/th18.v1.00a.js`），不一致就红并解释两种成因；**不改工作区**（比完还原），`--fix` 才留下现算的那份 | 治 §BE 详录 #41/#49 那条"手改生成物 ⇒ 任何一次构建静默抹掉 ⇒ 实验对照组失效" | 同上 | 正反都测过：现树一致时 ✅；手工删掉一个 `breakpoints` 块 → 红且工作区不被改。**上线后第一次跑就报了红 —— 但那红是它自己的备份名碰撞造的（详见下方「首次实战」订正）** |
+| `native/Makefile` | `check` 加 `tools/gen_drift.py`；新增 `release-check` 目标（= `release_guard.py check`）；`release` 从 `release: dist` 改成 `release: release-check dist` + 收尾 `record` | 纪律必须是**闸**：冻结期 `make release` 直接中止；发布完自动记账 | 同上 | `make check` 跑到该步；`make release` 实测在冻结期于 `release-check` 中止（未构建、未发布） |
+| `RELEASE-STATE.json`（**新增，入库**） | 初始 `freeze.active = true`（理由：等 #41 裁决 + 并发会话在动树，owner「暂不发布」口径）；`last_release` 由 `local/DLL-SYNC.md` 的登记**回填**（patch `13995719…` / DLL `242c512d…`，其余字段留 null 并注明原因） | 发布内容属于所有人的事实；抬冻结 = 一次提交（有理由、有记录） | 同上 | `status` 读出冻结态、上次发布与"与工作区现状的漂移行" |
+| `native/sites.py` | 站点预算余量 0 由 `✅` 改 `⚠`（并写明"加站点前先记账 + 改 `SITE_BUDGET`；别两个人同一天各加各的"） | 余量 0 不是「没问题」，是「下一条就超线」 | 同上 | `python3 sites.py check` 现在打印 `⚠ 在预算内但**余量 0**（24 / 24）` |
+| `native/start_deck.c` | 修 `ce_deck_audit()` 的 **PE 可选头偏移**：`SizeOfImage` 在 `pe + 0x18 + 0x38`（原写成 `pe + 0x38` = 可选头 `+0x20` = `SectionAlignment` = `0x1000`）；读不出合理上界时**整条跳转表检查跳过**（宁可不报也不误报）；日志里打出 `SizeOfImage` 与影像末 | 修一次**误报**：2026-09-18 15:02 那局日志里 `deck-audit: ★ 11 个槽的跳转表项不是影像内的地址 … 影像止于 00401000` 就是它 —— 上界被算成 `base + 0x1000`，于是每条跳转表项都被判"不在影像内" | 同上 | `make dll` 0 警告；`make test-host` / `make check` 全绿（除下述外部漂移）|
+
+**`release_guard.py` 细节**：`freeze / unfreeze / check / record / status` 五个子命令；状态文件 = **入库的**
+`RELEASE-STATE.json`（`freeze.active` + 最近发布快照）。`check` 先看冻结（**冻结 ⇒ 退出码 2**，并打印
+`unfreeze --reason "<为什么现在可以发>"`），再跑既有门：`sites.py check`（patch 声明 ↔ `.def` 双向对账 +
+站点预算）与 `tools/check_deploy_pair.py`（DLL ↔ 游戏里 `pl0X.sht` 同批，需 `--modkit`）。
+`record` 写「patch js / DLL / 四份 `pl0X.sht` / `abcard.anm` / `ability.anm` / `cards.js` / `files.js`」的 md5
+快照，并追加一行到本机 `local/DLL-SYNC.md`。
+
+**★ 新闸的首次实战：它先报了一次红，而那次红是它自己造的（订正 + 教训）**：`gen_drift.py` 第一次跑
+（在 `make check` 里）报「`patch/th18.v1.00a.js` 工作区 `7d04d3a7…` ≠ 现算 `139957195894…`」。**追下去发现不是别人的
+实验，是本工具自己的 bug**：它给三份生成物做备份时只用 `basename`，而**主 patch 与测试 patch 的 basename 相同**
+（`patch/th18.v1.00a.js` vs `patch-test/th18.v1.00a.js`）⇒ 第 2 份备份把第 1 份**覆盖**了，还原时就把
+**测试 patch 的内容写进了主 patch**（主 patch 于是变成"只有 `ce_test_deck` / `ce_trace_alloc` 两个断点、0 条 binhack、
+0 个 codecave"那一份 —— 真发出去等于整个 mod 失效；`capcheck` 的 `sht_* 应为 1 条` 也同时报了红）。
+**已修**：备份名加序号前缀（`bak00_…` / `bak01_…`），并把"逐目标唯一"写成注释；恢复主 patch 后连跑 3 次
+`gen_drift` 逐字节不变（幂等）。⇒ 教训两条：① **带副作用的检查工具**（会就地重写生成物的 `sites.py gen`）
+必须先按目标逐个隔离备份；② 排到"漂移"时**先怀疑自己的工具**再看别人 —— 本仓当天已经有过一次"归因到并发
+会话"的误判（§BE 详录 #49），这次差点又来一次。
+
+**对既有卡的影响面**：零 —— 本批只加**两个新工具**、加一个**入库状态文件**、改 `Makefile` 的两个目标、
+`sites.py` 的一句打印、`start_deck.c` 的 PE 偏移。**没有改任何 binhack / 站点 / 卡行为 / 资产**；
+`patch/` 下的生成物一个字节都没动（正因如此 `gen_drift` 报的是别人那份漂移）。
+
+**未做**：抬冻结（要 owner 发话）；站点预算那条裁决（#41 假说 vs §BE-DW 定案的结果）；归属 trailer 约定。
