@@ -14247,6 +14247,10 @@ test: reset_cards — shot 0 cap 3 deck [200, 56, 110, …]
 其余新卡的显示位置不变（`ce_build_order` 的插入规则没动）。**没有代码改动、没有 binhack/站点改动。**
 **未做**：`118`（十二合一，主动）仍留在主动区段末尾、紧邻它的位置不是系统条带 —— owner 没要求，先不动。
 
+**订正（2026-09-19，§BE-EJ）**：本节的「修法（`category` 0 → 2）」**已作废** —— 它撞了 SDK 的
+JSON/行为契约（主动卡必须 `category = 0`）⇒ 实跑整局新卡禁用。修法以 §BE-EJ 为准。
+
+
 ### §BE-EI ★ 恢复 `.on_enemy_damage` 订阅（113 神灵庙「Boss 吃到伤害 → 掉灵」）—— owner 2026-09-18「你改我跑」
 
 **背景**：`§BE 详录 #41`（2026-09-17a）为「站点总数越线」假说把 113 的 `.on_enemy_damage` **退订**
@@ -14275,3 +14279,55 @@ owner 2026-09-18 口径：「**你改我跑**」⇒ 本批恢复订阅，供实�
 **风险与回滚**：风险是**行为级**（掉灵数量/位置不对），不是崩溃级；本通道自 2026-09-17a 起没跑过，
 第一次实跑就是它的验收。回滚 = 把 `.on_enemy_damage` 那行注释回去 + handler 加回 `unused`（两处）。
 **没有改任何 binhack / 站点 / 资产 / 其它卡。**
+
+### §BE-EJ ★★ 事故与订正：改 `cards.js` 的 `category` ⇒ 撞 SDK 契约 ⇒ **整局新卡禁用**（2026-09-19）
+
+**现象（owner）**：「我的有一个 slot 变成虚无了」。**病因是我上一批的改动**（§BE-EH）：
+为了让十二张系统卡在选卡界面连成一条，我把 `113`/`116`/`117` 的 `cards.js` `"category"` 由 `0` 改成 `2` ——
+而这三张是**主动卡**（`CE_CARD(...)` 里有 `active_recharge`）⇒ 实跑自检门当场：
+
+```
+FAIL: sdk: card 113 violates JSON/behavior contract (reason 2)
+start_deck: disabled（门禁失败；新 id 分配不出来）
+mitigation: allocator bound restored to retail (56) — new ids disabled
+```
+
+⇒ **分配器上界被还原成 56** ⇒ id ≥ 58 全部分配不出来 ⇒ 编成里那些格子**建不出卡对象**（表现为"虚无"／后槽前移）。
+实测日志另外两行正是这次的读数：`deck-audit: 分配器上界 = 56`、`★ 10 个槽的 id 超过分配器上界`。
+
+**两条契约（一手，`native/sdk_core.c` 的 `ce_sdk_contract_check` / `ce_sdk_bind_check`）**：
+
+| reason | 规则 |
+| --- | --- |
+| 1 `ACTIVE_BEHAVIOR_REQUIRED` | `category == 0`（主动卡）**必须**有主动行为（`active_recharge != 0`）|
+| 2 `ACTIVE_CATEGORY_REQUIRED` | **有**主动行为 ⇒ `category` **必须** = 0（← 本事故踩的就是这条）|
+| — `bind_check` | `cards/*.c` 里有 `CE_CARD(id, …)` 的 id **必须**在 `cards.js` 里登记（反方向允许）|
+
+**修法（两处，各自归位）**：
+
+| 文件 | 改了什么 | 为什么 |
+| --- | --- | --- |
+| `patch/th18/cards.js` | `113`/`116`/`117` 的 `category` **回滚成 `0`** | 契约要求主动卡 = 0（它们确实是主动卡）|
+| `native/menu.c` | **显示分组**：建顺序表时给 `CE_SYS_CARD_LO..HI`（106..117）**同一份显示类别**（`new_cat[i] = 2`），表行里的类别不动 | 连成一条本来就是**显示**需求；`ce_build_order` 按类别分段 ⇒ 在"喂给顺序表的拷贝"上分组即可，与引擎/契约无关 |
+| `native/cards_def.h` | 新增 `CE_SYS_CARD_LO/HI` 常量 + 注释（写明"**只用于显示分组**，别拿它改 `cards.js`"）| 免得后人重犯 |
+| `native/tools/contract_check.py`（**新**）| 构建期预检两条契约：扫 `cards/*.c` 的 `CE_CARD(id, …)` 与 `active_recharge`，对 `cards.js` 的 `category` 逐张对账 | **这次事故本该被构建期挡住**：两条契约本来只有"喂构造数据"的主机单测，**真数据从没在发布前对过账** |
+
+**验证**：① `tools/contract_check.py` 正反都过（现树 ✅；把 113 改回 `2` → 红并打印"要调显示顺序请改 `menu.c`"）；
+② 离线按 `ce_build_order` 复算：`106..117` 在显示序 **61..72 连续升序**；③ `make check` rc=0（新闸已挂进去）；
+④ 发布 DLL `cfc3c09e…` 四处同 md5、`cards.js` 已同步、`release_guard record` 已记账。
+
+**教训（写进纪律）**：`category` 是**引擎/契约字段**，不是排版权重；要调"显示成什么样"去 `menu.c` 的显示分组，
+并且**新加的闸要能在发布前抓住它**——本次补的 `contract_check.py` 就是这一条。
+
+**订正 §BE-EH**：那一节的"修法（`category` 0 → 2）"**已作废**，保留其病因分析（显示分段的机制没错），
+修法以本节为准。
+
+### §BE-EK ★ #41 的 owner 口径（2026-09-19）：**不再复现 ⇒ 暂按"好了"处理，记录在案，再崩再查**
+
+owner 逐字：「那么我对 #41 的判断之前失误 / 现在这个情况只能当：我不知怎么地，这个错误没再出现，
+就当它好了，先记下来，之后什么时候崩了再说」。⇒ 本节的效力：
+
+- **不做裁决**（站点预算假说 vs `§BE-DW` 的窗口定案**两个都留着**）；
+- **不再挂着"发布冻结"**（`RELEASE-STATE.json` 的 note 改成这条口径，冻结节已按 owner 授权解除）；
+- **保留的判据与工具**：`§BE-DW` 的窗口规则（`sitecheck` 的 W3）、站点预算行（余量 0 / 进程级 44>42 会告警）、
+  `local/DLL-SYNC.md` 的 ⛔ 历史节。**哪天又崩，先翻这一节 + #41 + §BE-DW**。
