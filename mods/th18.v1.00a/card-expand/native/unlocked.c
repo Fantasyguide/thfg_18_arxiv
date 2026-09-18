@@ -173,6 +173,10 @@ int __cdecl BP_ce_save_loaded(x86_reg_t *regs, void *bp_info)
         }
     ce_log("unlocked: shadow @ %p, 57 retail (%u set) + side-car (%u new ids set) + %u initial_unlocked from %s",
            s_shadow, retail, extra, init, s_path);
+    /* ★ 2026-09-19：读档后顺手体检一次卡组（AUDIT §Z11/§G7：「装高 id 的卡 ⇒ 那一格消失」）。
+     * 此刻存档已就位、表也已按 cards.js 填好 ⇒ 这一行能分清「存档/表行」与「分配器」两类病因。
+     * 只读、不动任何字段；不新增断点（挂在本来就在这儿的 ce_save_loaded 上）。*/
+    ce_deck_audit(scorefile);
     return BP_EXEC_ORIGINAL;
 }
 

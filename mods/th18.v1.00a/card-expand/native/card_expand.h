@@ -62,6 +62,9 @@ int      ce_dev_trace(void);
  * `deck0` = 本机体初手第 0 格的地址（`BP_ce_test_deck` 的 eax），`shot` = 机体号。*/
 void     ce_start_deck_tick(uint8_t *deck0, int shot);
 void     ce_start_deck_disable(void);
+/* ★ 卡组体检（AUDIT §Z11/§G7 的诊断件）：挂在既有的 `BP_ce_save_loaded` 上，读档后打一行
+ * 「容量 + 每槽 id + 该 id 在新表里查到的行」。纯只读、不写存档、不占新断点。见 start_deck.c。*/
+void     ce_deck_audit(const uint8_t *scorefile);
 /* 行为 SDK（sdk.c）：门里核对 + 对账；返回 1 = 通过 */
 int      ce_sdk_setup(uint8_t *module_base, int trace);
 /* 战线 E 第二块（menu.c）：顺序表重排、图鉴条目数、站点核对 */

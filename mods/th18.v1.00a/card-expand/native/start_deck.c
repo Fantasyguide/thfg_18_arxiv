@@ -243,3 +243,115 @@ void ce_start_deck_tick(uint8_t *deck0, int shot)
     ce_log("start_deck: **只改这一次** —— %u 份机体存档、共 %u 格已按 %s 写入（hash %08x）；"
            "之后编成菜单里怎么改就是什么", shots, cells, SD_FILE, s_hash);
 }
+
+/* ==================== 卡组体检（AUDIT §Z11 / §G7 的诊断件，2026-09-19）====================
+ *
+ * 要查的现象（用户口径，2026-09-08 那次实跑）：**把高 id 的卡装进编成槽之后，那一格当场消失、
+ * 后槽前移、可带数 −1**（3 张变 2 张）。id 58–76 都正常，254 是当时第一个越界的 id。
+ *
+ * 为什么这一行日志能把病因分开：编成里的「槽」= `zAbilityManager` 卡链表的一环，菜单那侧
+ * （`AbilityMenu__sub_415af0`，`th18:0x415af0`）只是把链表逐个拷进 `[menu+0xfec]` 并把
+ * `[menu+0x3e4]` 写成链长（一手反汇编）⇒ **槽变少只有两条路**：
+ *   ① 存档里那一格的 id 压根没进 `reset_cards` 的循环（`th18:0x407ed4` 起，`movzx` 无符号读）——
+ *      容量字段 `+0x5f678` 变小 / 槽字节被改；
+ *   ② id 进了循环，但 `allocate_new_card`（`th18:0x411460`）没给出卡对象：三道门
+ *      `cmp [mgr+0x28],0x100`（卡数上限）/ `cmp ebx, rows-1` + `ja`（**分配器上界**）/
+ *      `jmp [jt+id*4]`（跳转表，越界 = 读到代码字节）。
+ * 而「对象建出来了、但画面/槽位看不见」是第三条（**不会让后槽前移**）：表行查不到时
+ * `TableCardData__get`（`th18:0x407d70`，起点/终点都被 patch 指向新表）会回落到 **NULL 行**
+ * （`th18:0x4c5f20` = 原生第 56 行），HUD 那条路按 `row+0x28`（hud_show）过滤，NULL 行是 0。
+ *
+ * 所以本函数在**每次读档后**（`BP_ce_save_loaded`，此时 `SCOREFILE_PTR` 刚写好）把
+ * 「容量 + 每个槽的 id + 该 id 在新表里查到的行」一次打出来：
+ *   · `cap` = 循环真正用的上界；`noRow` = 该 id 在表里没有自己的行（引擎会拿 NULL 行）；
+ *   · 两者都正常而槽仍消失 ⇒ 病在 ②（分配器/跳转表），照着 `allocate_new_card` 的三道门往下查。
+ * ⚠ 纯只读、不写存档、不占新站点（挂在既有的 `BP_ce_save_loaded` 上；池子跳板格只剩个位数空位，
+ *   绝不为一条诊断再声明断点）。*/
+typedef uint8_t *(__attribute__((fastcall)) *sd_table_get_t)(uint32_t id);
+
+/* 分配器那三道门的**运行期实况**（不是 patch 里写了什么，而是内存里现在是什么）：
+ *   · 上界 = `th18:0x411479` 的 `83 fb <imm8>`，`ja` 是**无符号**比较 ⇒ 放行的最大 id 就是这个 imm8；
+ *   · 跳转表 = `th18:0x411482` 的 `ff 24 9d <jt>`（patch 换成 cave）⇒ 取第 id 项，必须是**影像内的代码地址**；
+ *   · 表行 = `TableCardData__get` 查到的行，`+0x04` 必须等于 id（否则引擎拿到 NULL 行）。*/
+static unsigned sd_alloc_bound(uint8_t *base)
+{
+    const uint8_t *p = base + CE_ALLOC_CMP_RVA;
+    if (p[0] != 0x83 || p[1] != 0xfb) return 0xffffffffu;    /* 形状不对 = 不是我们认识的补丁态 */
+    return p[2];
+}
+
+static int sd_jt_entry(uint8_t *base, unsigned id, uint32_t *out)
+{
+    const uint8_t *p = base + CE_ALLOC_JMP_RVA;
+    if (p[0] != 0xff || p[1] != 0x24 || p[2] != 0x9d) return 0;
+    uint32_t jt;
+    memcpy(&jt, p + 3, 4);
+    if (!jt) return 0;
+    uint32_t v;
+    memcpy(&v, (const void *)(uintptr_t)(jt + id * 4), 4);
+    *out = v;
+    return 1;
+}
+
+void ce_deck_audit(const uint8_t *sf)
+{
+    if (!sf) return;
+    uint8_t *base = (uint8_t *)GetModuleHandleA(NULL);
+    uint32_t img_end = 0;
+    {   /* 影像上界：跳转表项必须落在这里面，否则 `jmp [jt+id*4]` 会跳到影像外。
+         * PE32 的 `SizeOfImage` 在可选头 +0x38（+0x50 是 HeapReserve，别写错）。*/
+        const uint8_t *pe = base + *(const uint32_t *)(base + 0x3c);
+        img_end = (uint32_t)(uintptr_t)base + *(const uint32_t *)(pe + 0x38);
+    }
+    unsigned bound = sd_alloc_bound(base);
+    unsigned bad_cap = 0, no_row = 0, slots = 0, bad_jt = 0, over = 0;
+    for (int s = 0; s < 4; ++s) {
+        int32_t cap = *(const int32_t *)(sf + CE_DECK_CAP_OFF + s * 4);
+        if (cap <= 0) { ++bad_cap; continue; }
+        if (cap > CE_DECK_CAP_HARD_MAX) cap = CE_DECK_CAP_HARD_MAX;
+        char buf[256];
+        int len = snprintf(buf, sizeof buf, "deck-audit: shot %d cap %d slots [", s, (int)cap);
+        for (int i = 0; i < cap; ++i) {
+            unsigned id = *(const uint8_t *)(sf + s * 0x10 + CE_TEST_DECK_SAVE_OFF + i);
+            if (id == CE_NULL_ROW) {                       /* 原生的空槽哨兵 */
+                len += snprintf(buf + len, sizeof buf - (size_t)len, i ? ", -" : "-");
+                continue;
+            }
+            ++slots;
+            const uint8_t *row = ((sd_table_get_t)CE_FN_TABLE_GET)(id);
+            uint32_t row_id = row ? *(const uint32_t *)(row + 4) : 0xffffffffu;
+            uint32_t target = 0;
+            int jt_ok = 0;
+            int over_bound = bound != 0xffffffffu && id > bound;
+            /* ⚠ 只有「引擎真会走跳转表」的 id 才去读那一项：上界就是同一个生成器写的 `rows-1`
+             * ⇒ 读到的位置一定落在 cave 里（反过来，越界 id 去读会越出 cave，虽然多半仍在本页内）。*/
+            if (!over_bound && bound != 0xffffffffu)
+                jt_ok = sd_jt_entry(base, id, &target)
+                     && target >= (uint32_t)(uintptr_t)base && target < img_end;
+            if (over_bound) ++over;
+            if (!jt_ok) ++bad_jt;
+            int shown = id;
+            if (!row || row_id != id) { ++no_row; shown = -(int)id; }   /* 负数 = 表里没有自己的行 */
+            len += snprintf(buf + len, sizeof buf - (size_t)len, i ? ", %d" : "%d", shown);
+        }
+        snprintf(buf + len, sizeof buf - (size_t)len, "]");
+        ce_log("%s", buf);
+    }
+    ce_log("deck-audit: 分配器上界 = %u（`th18:0x%x` 的 imm8，`ja` 无符号）、影像止于 %08x",
+           bound, (unsigned)CE_ALLOC_CMP_RVA, img_end);
+    if (bad_cap) ce_log("deck-audit: ★ %u 个机体的容量字段 ≤ 0（`+0x%x`）⇒ reset_cards 一圈都不跑，那些机体的槽全没了",
+                        bad_cap, (unsigned)CE_DECK_CAP_OFF);
+    if (!slots) return;
+    if (over) ce_log("deck-audit: ★ %u 个槽的 id **超过分配器上界** ⇒ `allocate_new_card` 直接返回 −1、"
+                     "**那一格不会建出卡对象**（后槽前移的那一类）。上界由 patch 的行数决定（255 行 ⇒ 254）", over);
+    if (bad_jt) ce_log("deck-audit: ★ %u 个槽的跳转表项不是影像内的地址 ⇒ `jmp [jt+id*4]` 会跳到影像外"
+                       "（跳转表 cave 没打上 / 行数比 id 小）", bad_jt);
+    if (no_row)
+        ce_log("deck-audit: ★ %u 个槽的 id 在新表里**没有自己的行**（上面打印成负数的）⇒ 引擎按 NULL 行处理，"
+               "那一格会以空卡的样子出现（不会让后槽前移）；要么卡没登记进 cards.js，要么 id ≥ 表行数", no_row);
+    if (!over && !bad_jt && !no_row)
+        ce_log("deck-audit: %u 个非空槽：分配器上界、跳转表、表行三条全过 ⇒ 这些 id 在引擎侧"
+               "能建出正确的卡对象（若实跑里仍少一格，把日志连同「编成里看到几张」一起给我）", slots);
+}
+
+

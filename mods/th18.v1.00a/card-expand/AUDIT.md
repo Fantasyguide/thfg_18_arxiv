@@ -13999,3 +13999,27 @@ fill 循环**一圈不跑**、图鉴整表空掉（§AG 的症状链）。于是
   `python3 -m pytest -q`、`sites.py check` / `verify`、`sitecheck.py --all`、`capcheck.py`、
   `engine_abi_check.py`、`tooling/check-docs.py`（全部通过）。
 - **未做**：实跑（§8.12 的四条观察项）。⇒ 本节结论标 🟡 **静态全通 / 实跑待验**。
+
+### §BE-EE 卡组体检 `ce_deck_audit()`（AUDIT §Z11 / §G7 那条老账的诊断件，2026-09-19）
+
+**背景**：用户口径「之前的状态是，id=254 这张卡装备后会直接吞掉一个 slot，该 slot 会直接消失，
+初始卡组 3 张变成只能装 2 张」。这条 = §Z11 的原始现象，当年**墙位没钉死**（§G7 挂账）；
+现在 id 200 的测试卡正撞在同一段号段上，所以先给它一件**可复现、可判读**的诊断件。
+
+**判据（一手反汇编）**：编成里的一格 = `zAbilityManager` 卡链表的一环 ——
+`AbilityMenu__sub_415af0`（`th18:0x415af0`）只把链表拷进 `[menu+0xfec]` 并把链长写进 `[menu+0x3e4]`
+⇒ 「槽变少」只能是链长少了。链长减少只有三条路（详见
+[`engine/card/th18/10-extensibility-limits.md`](../../../engine/card/th18/10-extensibility-limits.md) §8.13）：
+① 存档那格没进 `reset_cards` 的循环；② `allocate_new_card` 的三道门没过（卡数上限 / **分配器上界** /
+跳转表）；③ 卡对象建出来了但 `TableCardData__get` 回落到 NULL 行 ⇒ HUD 过滤掉（**这条不会让后槽前移**）。
+
+| 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
+| --- | --- | --- | --- | --- |
+| `native/start_deck.c` | 新增 `ce_deck_audit(const uint8_t *scorefile)`：读档后按 shot 打 `cap` + 每格 id（**负数 = 该 id 在新表里没有自己的行**），并当场核「分配器上界（`th18:0x11479` 的 imm8）/ 跳转表项是否影像内地址（`th18:0x11482`）/ 表行 `+0x04 == id`」三条 | §Z11 的墙位要靠**内存实况**分辨，不能靠「patch 里写了什么」；三条判据与 `selfcheck.c` 的 `fill_jumptable` / `check_grow` 同一口径（同一批常量 `CE_ALLOC_CMP_RVA` / `CE_ALLOC_JMP_RVA`）| 系统卡批次 | `make dll` 0 新警告；`make check` rc=0（`check-docs` 353 全绿）；PE 的 `SizeOfImage` 偏移（可选头 `+0x38`）先用 `th18.exe` 核过 = `0x174000` ⇒ 影像末 `0x574000` |
+| `native/unlocked.c` | `BP_ce_save_loaded` 尾部加一行 `ce_deck_audit(scorefile)` | 那一刻存档已就位、表也已按 `cards.js` 填好 ⇒ 一行日志就能把「存档/表行」与「分配器」两类病因分开 | 同上 | 同上 |
+| `native/card_expand.h` | 声明 `ce_deck_audit()` | — | 同上 | — |
+
+**对既有卡的影响面**：**零**。全部是**只读**诊断（读存档字段、读跳转表项、调 `TableCardData__get` 查表），
+不写任何字段、不改任何站点/断点、不动 DLL 的既有行为；**刻意不新增断点** —— 池子跳板格只剩个位数空位
+（AUDIT §BE-DP 的实测读数），为一条诊断加站点不划算。
+**未做**：实跑（等用户跑一局，把那几行 `deck-audit:` 与「编成里看到几张」对上）。⇒ 结论标 🟡。
