@@ -154,6 +154,17 @@
  *     写进 `vm+0x24`（= `CE_ANM_VM_SPRITE_ID`）—— 脚本每条 `ins_300(spriteN)` 都会重写它并重取 UV。
  * ★ 用途：**换贴图 = 换 sprite 表项**（110 的「把一部分妖精改成绿妖精」就是整项拷贝同一形状的
  *   绿色变体 12 项；表与一手见 `cards/mof_green_core.h` 与 `REPORT-110-GREEN-FAIRY.md`）。*/
+/* ---- 敌人的 **ECL 变量槽**（卡侧可写）—— ★★ 2026-09-18c（110 的「绿妖精跟随队形」）----
+ * 一手：`Enemy__ecl_get_float_global_ptr` `0x4387e0`（`0x4387e6 add eax,0x270b` + 字节表 `0x438998`
+ * + 跳转表 `0x438934`，各分支 `lea eax,[esi+0x14xx]`；int 版同址族 `0x437b20`）
+ * ⇒ `$I0..$I3` = `+0x14b8..+0x14c4`、`%F0..%F3` = `+0x14c8..+0x14d4`（另一组四个 float 槽 `+0x14d8..+0x14e4`）。
+ * 生成时可由 `CE_SPAWN_ECL_I / CE_SPAWN_ECL_F` 填初值，**之后卡侧可以每帧改写**
+ * ⇒ 这就是「让自建敌人跟着某一波的队形走」的通道：卡侧写 `%F2/%F3`、
+ *   我们自己的 ECL 子程序每帧 `movePosTime(1,1,%F2,%F3)`（见 `assets/ecl/green_extra.ecl.txt`）。*/
+#define CE_ENEMY_ECL_I0            0x14b8
+#define CE_ENEMY_ECL_F0            0x14c8
+#define CE_ENEMY_ECL_F2            0x14d0
+#define CE_ENEMY_ECL_F3            0x14d4
 #define CE_EM_ANM_SLOT_BASE        0x168      /* zAnmLoaded* [14]：下标 = N（0/1 被硬编码分支抢占 ⇒ 关卡 anim{} 从 N=2 起）*/
 #define CE_EM_ANM_ENEMY            0x170      /* = SLOT_BASE + 2*4 ⇒ `enemy.anm`（N=2）*/
 #define CE_ANM_LOADED_READY        0x108      /* zAnmLoaded.is_loaded（0 ⇒ 表还没建好）*/

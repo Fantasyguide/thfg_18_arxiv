@@ -811,12 +811,29 @@ static int32_t s_ge_frame;                /* 本波第一只出现的那一帧 *
 static int32_t s_ge_last;                 /* 上一只小妖精出现的帧（波次边界的判据）*/
 static int32_t s_ge_max_id;               /* 见过的小妖精里最大的 `enemy_id`（单调递增 ⇒ 用它认「新」）*/
 static float   s_ge_first_y;              /* 本波第一只的出生 **y**（队形的深度）*/
+static float   s_ge_tgt_x, s_ge_tgt_y;    /* ★ 最近刷出的那只妖精的出生点（跟随偏移的基准）*/
 static float   s_ge_x[MOF_GE_SAMPLES];
 static int32_t s_ge_n;
 static int32_t s_ge_done;                 /* 本波已补刷 */
 static int32_t s_ge_stage = -1;
 static int32_t s_ge_wave;                 /* 本关第几波（1 起；用来实现 `MOF_GE_EVERY`）*/
 static int32_t s_ge_trig_src, s_ge_trig_script;   /* 触发这一波的那只妖精的外观（诊断用）*/
+/* ★★ 2026-09-18c（用户实跑口径「**妖精应当跟随那个队列才对**」）：补刷出来的绿妖精要**跟着同一波的妖精
+ * 一起动**。通道 = 它自己的 ECL float 槽 `%F2/%F3`（= `enemy+0x14d0/+0x14d4`，一手
+ * `Enemy__ecl_get_float_global_ptr 0x4387e0`）：卡侧每帧写「目标妖精坐标 + 出生时定下的队形偏移」，
+ * 我们那支子程序每帧 `movePosTime(1,1,%F2,%F3)` 走过去（它自己**不设**任何运动）。
+ * `tgt_id` = 它跟着的那只妖精（本波最近刷出的一只）；目标没了就换 `s_ge_tgt_id`，再没了就喊它走。*/
+typedef struct {
+    int32_t id;          /* 这只绿妖精的 `enemy_id`（0 = 空槽）*/
+    int32_t tgt_id;      /* 跟着的那只妖精的 `enemy_id`（0 = 还没定）*/
+    float   off_x, off_y;/* 出生时定下的队形偏移（相对目标，常数 ⇒ 与目标同轨迹）*/
+    int32_t lost;        /* 目标找不到的连续帧数 */
+} mof_ge_fol_t;
+
+#define MOF_GE_LOST_FRAMES 90        /* 目标没了这么久 ⇒ 喊它飞离自删（❓自定：1.5 s @60fps）*/
+
+static mof_ge_fol_t s_ge_fol[MOF_GREEN_EXTRA_SLOT_MAX];
+static int32_t s_ge_tgt_id;              /* 本波**最近刷出**的那只妖精（新妖精出生时更新）*/
 static int32_t s_ge_wave_id;              /* 本波第一只妖精的 `enemy_id`（判「别的种类是这波之后才来的」）*/
 static int32_t s_ge_other_id;             /* 见过的「**非妖精**」外观里最大的 id（水位线）*/
 static int32_t s_ge_cancel;               /* ★ 本波出现过大妖精/阴阳玉/幽灵/boss ⇒ 撤销补刷 */
@@ -849,14 +866,18 @@ static void mof_ge_reset(int32_t stage)
     s_ge_done = 0;
     s_ge_wave = 0;
     s_ge_cancel = 0;
+    s_ge_tgt_id = 0;
+    s_ge_tgt_x = s_ge_tgt_y = 0.0f;
+    memset(s_ge_fol, 0, sizeof s_ge_fol);      /* ★ 跟随表：换关/换局就断了跟踪（场上的自己会飞走）*/
     /* ⚠ `s_ge_max_id` / `s_ge_other_id` **不重置**：它们只是「我见过哪些实例」的水位线，跨关继续单调递增。*/
 }
 
-static void mof_ge_spawn_one(float x, float y, float angle, float speed)
+static void mof_ge_spawn_one(float x, float y, float tgt_x, float tgt_y)
 {
     uint8_t sp[CE_SPAWN_SIZE];
     uint8_t *e;
     uint8_t *mgr = CE_ENEMY_MGR();
+    float off_x = 0.0f, off_y = 0.0f;
 
     /* ★★ 2026-09-18c：**自己判敌人数上限** —— 一手：ECL 的 `enmCreate` 那条路有这道门
      *   （`th18:0x4369ec mov eax,[edx+0x198]` → `0x4369f5 cmp eax,[edx+0x8c]` → `jge` 跳过），
@@ -877,20 +898,74 @@ static void mof_ge_spawn_one(float x, float y, float angle, float speed)
     *(int32_t *)(sp + CE_SPAWN_SCORE)     = MOF_GE_SCORE;
     *(int32_t *)(sp + CE_SPAWN_MAIN_DROP) = 0;              /* 纯信仰点：原生什么都不掉 */
     *(int32_t *)(sp + CE_SPAWN_LIFE)      = MOF_GE_LIFE;
-    *(int32_t *)(sp + CE_SPAWN_ECL_I + 0) = MOF_GE_TTL;     /* `$I0` = 存活上限（子程序只用来记日志）*/
-    *(float   *)(sp + CE_SPAWN_ECL_F + 0) = angle;          /* `%F0` = 入场角（与同波妖精一致）*/
-    *(float   *)(sp + CE_SPAWN_ECL_F + 4) = speed;          /* `%F1` = 入场速度 */
+    *(int32_t *)(sp + CE_SPAWN_ECL_I + 0) = 0;              /* `$I0` = 999 时才飞离自删（卡侧喊走）*/
+    *(float   *)(sp + CE_SPAWN_ECL_F + 0) = 0.0f;           /* `%F0/%F1` 现在不用（子程序自己不设运动）*/
+    *(float   *)(sp + CE_SPAWN_ECL_F + 4) = 0.0f;
+    /* ★ 跟随通道的初值：`%F2/%F3` = 出生点（= 队形槽位）*/
+    *(float   *)(sp + CE_SPAWN_ECL_F + 8)  = x;
+    *(float   *)(sp + CE_SPAWN_ECL_F + 12) = y;
     e = (uint8_t *)ce_spawn_enemy(MOF_GE_ECL_NAME, sp);
     if (e) {
+        int32_t id = *(const int32_t *)(e + CE_ENEMY_ID);
+        int i;
         ++s_ge_stat;
-        ce_log("mof: green extra fairy @(%.0f,%.0f) angle %.3f speed %.3f (wave frame %d, %d obs,"
-               " trigger anm %d/%d, wave#%d, total %d)",
-               (double)x, (double)y, (double)angle, (double)speed,
+        /* ★ 记进跟随表：偏移 = 队形槽位 − 目标出生点（常数）⇒ 之后它与目标**同轨迹**。*/
+        mof_green_extra_follow_offset(x, y, tgt_x, tgt_y, &off_x, &off_y);
+        for (i = 0; i < MOF_GREEN_EXTRA_SLOT_MAX; ++i) {
+            if (s_ge_fol[i].id == 0) {
+                s_ge_fol[i].id = id;
+                s_ge_fol[i].tgt_id = s_ge_tgt_id;
+                s_ge_fol[i].off_x = off_x;
+                s_ge_fol[i].off_y = off_y;
+                s_ge_fol[i].lost = 0;
+                break;
+            }
+        }
+        ce_log("mof: green extra fairy @(%.0f,%.0f) 跟随 #%d 偏移 (%+.0f,%+.0f)"
+               " (wave frame %d, %d obs, trigger anm %d/%d, wave#%d, total %d)",
+               (double)x, (double)y, (int)s_ge_fol[i < MOF_GREEN_EXTRA_SLOT_MAX ? i : 0].tgt_id,
+               (double)off_x, (double)off_y,
                (int)s_ge_frame, (int)s_ge_n, (int)s_ge_trig_src, (int)s_ge_trig_script,
                (int)s_ge_wave, (int)s_ge_stat);
     } else {
         ce_log("mof: green extra fairy spawn FAILED —— `%s` 不在已加载的 default.ecl 里？"
                "（`make ecl-ufo` + `make dist` + 发布那一步）", MOF_GE_ECL_NAME);
+    }
+}
+
+/* ★★ 2026-09-18c：每帧把「目标妖精坐标 + 出生时的队形偏移」写进每只补刷妖精的 `%F2/%F3`
+ * （= `enemy+0x14d0/+0x14d4`）—— 子程序那边只是 `movePosTime(1,1,%F2,%F3)`，所以它**跟着同一波的
+ * 妖精同轨迹运动**（用户口径：「妖精应当跟随那个队列才对」）。
+ * 目标丢了的处理：先换成本波最近那只（`s_ge_tgt_id`）；再没了就累计 `lost`，超过
+ * `MOF_GE_LOST_FRAMES` 就写 `$I0 = 999` 喊它飞离自删（不留在场上当孤儿）。*/
+static void mof_ge_follow_tick(uint8_t *em)
+{
+    int i;
+    for (i = 0; i < MOF_GREEN_EXTRA_SLOT_MAX; ++i) {
+        mof_ge_fol_t *f = &s_ge_fol[i];
+        uint8_t *me, *tg;
+        const float *tp;
+
+        if (f->id == 0) continue;
+        me = ce_enemy_by_id(em, f->id);
+        if (!me) { f->id = 0; continue; }                   /* 它已经不在了（被打死/自删）*/
+        tg = f->tgt_id ? ce_enemy_by_id(em, f->tgt_id) : 0;
+        if (!tg && s_ge_tgt_id && s_ge_tgt_id != f->id) {    /* 目标没了 ⇒ 换本波最近那只 */
+            tg = ce_enemy_by_id(em, s_ge_tgt_id);
+            if (tg) f->tgt_id = s_ge_tgt_id;
+        }
+        if (!tg) {
+            if (++f->lost > MOF_GE_LOST_FRAMES) {
+                *(int32_t *)(me + CE_ENEMY_ECL_I0) = 999;   /* 喊它飞离自删 */
+                f->id = 0;
+            }
+            continue;
+        }
+        f->lost = 0;
+        tp = ce_enemy_pos(tg);
+        if (!tp) continue;
+        *(float *)(me + CE_ENEMY_ECL_F2) = tp[0] + f->off_x;
+        *(float *)(me + CE_ENEMY_ECL_F3) = tp[1] + f->off_y;
     }
 }
 
@@ -947,6 +1022,12 @@ static void mof_ge_tick(int32_t frame)
                 s_ge_x[s_ge_n] = p ? p[0] : 0.0f;
                 ++s_ge_n;
             }
+            {   /* ★ 跟随目标 = 本波**最近刷出**的那只妖精（记下它的出生点，偏移以它为基准）*/
+                const float *p = ce_enemy_pos(e);
+                s_ge_tgt_id = id;
+                s_ge_tgt_x = p ? p[0] : 0.0f;
+                s_ge_tgt_y = p ? p[1] : 0.0f;
+            }
             s_ge_last = frame;
         }
     }
@@ -963,6 +1044,8 @@ static void mof_ge_tick(int32_t frame)
                "（大妖精/Cir*/Phantom*/boss；见 `mof_green_is_fairy()`）", (int)s_ge_wave);
         return;
     }
+
+    mof_ge_follow_tick(em);
 
     {
         float slots[MOF_GREEN_EXTRA_SLOT_MAX];
@@ -985,7 +1068,7 @@ static void mof_ge_tick(int32_t frame)
             float sx = slots[i];
             if (sx >  MOF_GE_X_LIMIT) sx =  MOF_GE_X_LIMIT;      /* ★ 夹进游玩区 */
             if (sx < -MOF_GE_X_LIMIT) sx = -MOF_GE_X_LIMIT;
-            mof_ge_spawn_one(sx, ey, angle, speed);
+            mof_ge_spawn_one(sx, ey, s_ge_tgt_x, s_ge_tgt_y);
         }
         s_ge_done = 1;
     }

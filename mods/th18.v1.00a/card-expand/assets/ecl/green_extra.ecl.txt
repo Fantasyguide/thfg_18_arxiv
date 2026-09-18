@@ -43,15 +43,20 @@ void CEGreenFairy()
     anmSetMain(0, 10);
     setHurtbox(24.0f, 24.0f);
     setHitbox(16.0f, 16.0f);
-    moveVel(%F0, %F1);
-+30: //30    入场 30 帧（与 GirlA01 同款节奏）
-    moveAngleTime(120, 1, 1.5707964f);
-    moveSpeedTime(300, 1, 2.5f);
-+300: //330  转向/减速走完（照抄 GirlA01 体）
-    moveSpeedTime(180, 1, 0.0f);
-+180: //510  悬停一会儿（给玩家打它的时间）
-    movePosTime(180, 1, (%RANDF2 * _f(32)) + %PLAYER_X2, -64.0f);
-+180: //690  飞向上方离场（照 112 UFO 的离场写法）
+CEGreenFairy_100:
+    /* ★★ 2026-09-18c（用户实跑口径）：「**妖精应当跟随那个队列才对**」——
+     * 本子程序**不自己走**：位置由卡侧每帧算好写进 `%F2/%F3`（= `enemy+0x14d0/+0x14d4`；
+     * 一手 `Enemy__ecl_get_float_global_ptr` `th18:0x4387e0` 的分支表），
+     * 我们只负责「朝那个点走」⇒ 它就会**跟着同一波的妖精一起动**（卡侧给的是"目标坐标 + 出生时的队形偏移"）。
+     * `movePosTime(1, …)` = 1 帧走到目标（每帧重设 ⇒ 连续跟随，不是自己飘）。*/
+    movePosTime(1, 1, %F2, %F3);
+    unless ($I0 != 999) goto CEGreenFairy_200 @ 0;
++1: //1
+    goto CEGreenFairy_100 @ 0;
+CEGreenFairy_200:
+    /* 卡侧喊走（`$I0 = 999`）：一波的妖精都没了 / 删卡 ⇒ 飞离并自删（不算击破、不给点）。*/
+    moveVel(-1.5707964f, 3.0f);
++60: //60
     delete();
     return;
 }

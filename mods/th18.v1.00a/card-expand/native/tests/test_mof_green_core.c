@@ -286,6 +286,27 @@ static void test_is_fairy(void)
     CHECK(mof_green_is_fairy(2, 9999) == 0);
 }
 
+/* ★★ 2026-09-18c：补刷妖精的**跟随偏移**（用户口径「妖精应当跟随那个队列才对」）——
+ * 偏移 = 队形槽位 − 目标机关出生点（常数）⇒ 之后卡侧每帧写「目标坐标 + 偏移」，
+ * 它就与那一波的妖精**同轨迹**（子程序只 `movePosTime(1,1,%F2,%F3)`，自己不设运动）。*/
+static void test_follow_offset(void)
+{
+    float ox = 9.0f, oy = 9.0f;
+
+    mof_green_extra_follow_offset(176.0f, -32.0f, 136.0f, -32.0f, &ox, &oy);
+    CHECK(ox == 40.0f && oy == 0.0f);                 /* 队形外侧一格 */
+    mof_green_extra_follow_offset(-176.0f, -32.0f, -136.0f, -32.0f, &ox, &oy);
+    CHECK(ox == -40.0f && oy == 0.0f);                /* 左侧对称 */
+    mof_green_extra_follow_offset(0.0f, 0.0f, 0.0f, 0.0f, &ox, &oy);
+    CHECK(ox == 0.0f && oy == 0.0f);
+    mof_green_extra_follow_offset(176.0f, 96.0f, 136.0f, -32.0f, &ox, &oy);
+    CHECK(ox == 40.0f && oy == 128.0f);               /* y 差也照样记（用入场线时就是这一档）*/
+    mof_green_extra_follow_offset(176.0f, -32.0f, 136.0f, -32.0f, 0, &oy);   /* NULL 安全 */
+    CHECK(oy == 0.0f);
+    mof_green_extra_follow_offset(176.0f, -32.0f, 136.0f, -32.0f, &ox, 0);
+    CHECK(ox == 40.0f);
+}
+
 /* ★ 「每波多刷一只绿的」的队形槽位（用户 2026-09-18：「按照几何形状，每波多一对，或者多一只」）*/
 static void test_extra_slots(void)
 {
@@ -371,6 +392,7 @@ int main(void)
     test_swap_apply_restore();
     test_extra_slots();
     test_is_fairy();
+    test_follow_offset();
     printf("test_mof_green_core: %d passed, %d failed\n", s_pass, s_fail);
     return s_fail ? 1 : 0;
 }

@@ -115,6 +115,17 @@ void mof_green_plan(int32_t stage, uint32_t applied, uint32_t *to_apply, uint32_
 #define MOF_GREEN_EXTRA_SLOT_MAX 8
 int mof_green_extra_slots(const float *x, int n, int count, float *out_x, int out_max);
 
+/* ★★ 2026-09-18c（用户实跑口径）：「**妖精应当跟随那个队列才对**」——
+ * 补刷的那只要**跟着同一波的妖精一起动**，做法 = 卡侧每帧把「目标妖精坐标 + **出生时定下的队形偏移**」
+ * 写进它自己的 ECL float 槽（`%F2/%F3` = `enemy+0x14d0/+0x14d4`），子程序只负责 `movePosTime` 走过去。
+ * 本函数就是那个偏移（纯算术 ⇒ 可离线单测）：`off = 补刷槽位 − 目标出生点`。*/
+static inline void mof_green_extra_follow_offset(float slot_x, float slot_y, float tgt_x, float tgt_y,
+                                                 float *off_x, float *off_y)
+{
+    if (off_x) *off_x = slot_x - tgt_x;
+    if (off_y) *off_y = slot_y - tgt_y;
+}
+
 /* ============================ ★ 2026-09-18c：「妖精」的判据（用户口径，可离线单测） ============================
  * 用户原话：「不是**所有 for 循环**都加绿妖精，而是**妖精循环**加绿妖精」+「**三只大蝴蝶那里不应该有绿妖精！**」
  * ⇒ 「补刷绿妖精」只允许发生在**妖精波**里，而且**这一波只要出现别的种类**（大妖精/阴阳玉/幽灵/boss…）
