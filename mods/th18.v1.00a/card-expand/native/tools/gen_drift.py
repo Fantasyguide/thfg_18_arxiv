@@ -58,8 +58,12 @@ def main():
     with tempfile.TemporaryDirectory() as td:
         # ① 备份现场（sites.py gen 会就地在 native/ 与 patch-test/ 写文件）
         bak = {}
-        for p, _ in TARGETS:
-            b = os.path.join(td, os.path.basename(p) + ".bak")
+        for i, (p, _) in enumerate(TARGETS):
+            # ★ 备份名必须**逐目标唯一**：两个目标的 basename 都叫 `th18.v1.00a.js`
+            #   （主 patch 在 `patch/`、测试 patch 在 `patch-test/`）⇒ 只用 basename 会互相覆盖，
+            #   还原时把**测试 patch 的内容写进主 patch**（2026-09-18 本工具上线第一次跑就踩了，
+            #   见 AUDIT §BE-EG 的「首次实战」）。加序号前缀。
+            b = os.path.join(td, "bak%02d_%s" % (i, os.path.basename(p)))
             shutil.copy2(p, b)
             bak[p] = b
         before = {ln: md5(p) for p, ln in TARGETS}
