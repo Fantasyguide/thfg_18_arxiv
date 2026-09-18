@@ -14044,6 +14044,46 @@ fill 循环**一圈不跑**、图鉴整表空掉（§AG 的症状链）。于是
 - 部署对账：`native/build/abcard.anm` == modkit 里那份（md5 `bf91a0f5c0dc4b96f2a51c27f134222e`）、`cards.js`/`ability.anm` 同；
   四份 DLL md5 一致（`e72b812b302666e494b2adae5e53b632`，**本轮未重建 DLL**）；`check_deploy_pair.py` ✓ 配套。
 
+### §BE-EH 共享件 `cards/faith.{h,c}` / `faith_core.h`：**消费者自带外观** + **按外观分组的满 P 上抛角**（107 的樱点实体，2026-09-18）
+
+> **谁改的**：107（妖妖梦）这一批。**动到的别人东西**：`cards/faith.h`、`cards/faith.c`（110/111 共用的点实体池）、
+> `cards/faith_core.h`（槽位枚举），以及顺带清掉 `cards/mof.c` / `cards/signal.c` 里 3 处历史遗留的未用局部。
+
+**一、起因（用户口径逐字）**
+「**th07是有一个我叫做樱点的掉落实体…肯定有一个类似于信仰点的仅在 th07 的类 P 点掉落实体，似乎没有自建 VM 实现**」；
+「**吸附半径得统一到 th18 的吸附**」；「**大樱点就得在与 th10-11 同装的时候被同时转化出来，并且如果大樱点只有这一个来源的话，也被认为是等价于 P 点**」；
+「**由于转换成两种点，不要让两种点重合；有角度的上抛？**」。
+
+**二、改了什么**
+
+| 文件 | 改了什么 | 为什么 |
+| --- | --- | --- |
+| `cards/faith.h` / `faith.c` | `faith_user_t` 尾部新增 **`art_sprite` / `art_script`（自带外观，0 = 按档默认）**；`faith_dot_t` 加同名两字段；`dot_spawn_vm()` 用它们；`faith_spawn()` 拆成 `dot_spawn_at()` 公共体 + 两个薄入口（新增 `faith_spawn_angled()`） | 107 的樱点要 TH07 原版外观（`SAKURA_POINT` sprite 287 / 脚本 186），而 TH18 没有樱点道具类型 ⇒ 让消费者自己指定外观，池不用知道谁是谁 |
+| 同上 | 满 P 转换循环**按外观分组**给上抛角：第 0 组 = 一手 `−π/2`，之后每组 ±10°（`FAITH_CONV_SPREAD_STEP` = `0.1745329`，即 `th18:0x429168` 那枚抖动角） | 一颗 P 道具同时给每个消费者各撒一颗，位置/初速全同 ⇒ 会**完全重叠**（用户口径要求「两种点不重合」）；**同外观仍共用同角** ⇒ 110+111 那两颗同款点视觉上依旧是一颗（用户 2026-09-18 追问「不会出现两个中信仰点吧」的期望） |
+| `cards/faith_core.h` | 新增 `FAITH_SLOT_107 = 3`，`FAITH_SLOT_COUNT` 3 → 4 | 107 要一个自己的点槽 |
+| `cards/mof.c` / `cards/signal.c` | 删 3 处**未用局部**（两个 `on_load` 里的 `faith_user_t u;`、绿妖精入场块里的 `float angle/speed`） | 纯卫生：注册已搬进 `*_ensure_registered()`、入场已走 `mof_ge_spawn_one()`；`faith.h` 一改它们被重编才暴露出 `-Wunused-*` |
+
+**三、对既有卡的影响面（回归跑了什么）**
+- **110 / 111 的行为**：外观字段不设 = 0 ⇒ 走原路；**只有满 P 转换那条路**用新入口，且**第 0 组角 = 一手 −π/2**
+  ⇒ 只装 110 或只装 111 时，撒点角/速/位置**逐字节不变**；两卡同装时两颗同款点仍然完全重合（视觉一颗）。
+- 击破掉落 / 消弹（微档）那些来源**一个字节没改**（仍走 `faith_spawn()` 的一手角）。
+- 107 自己的接线（在 `cards/senro.c`，非共享件）：注册 `FAITH_SLOT_107` + `conv_value = 1`（当开关）+
+  `art_*`，加了 `senro_faith_tick()`（满 P 转换 → 池推进，顺序是硬的），`senro_clear()` / `on_stage_start`
+  里退注册 + 只收自己槽的实体（**长持续效果铁律**：删卡发生在商店里，那一刻只有 `on_delete` 跑得到）。
+- ⚠ 另发现（**不是本轮引入**）：`cards/signal.c` 的 `.on_item_*` 三条钩子在**提交里就是注释掉的**
+  （`—— 二分临时停用`）⇒ 111 当前不做道具记账；本轮只登记，不动它（那是别人的二分现场）。
+
+**四、怎么验证的**
+- 编译：`make` 0 error（本次也把 3 处历史 `-Wunused-*` 清掉了）；`make check` 全绿
+  （`check-docs` 354 文件 / `capcheck` / `anm-verify` / `sht-verify` / `engine_abi_check` / `anm_hud_alpha_check`）；
+  `make dllx87` = **0**。
+- 静态：`SAKURA_POINT` sprite **287** / 脚本 **186** 早已在 ability.anm 里（`assets/ability/entries/ORDER.txt`
+  §ATLAS_SENRO 第 3/4 格，TH07 `etama.anm` entry1 sprite11 (112,64,16,16) 的 1:1 切图）⇒ **零新资产**。
+- 部署：`make release`（MODKIT_DIR + NO_GIT=1）只写了 DLL；`check_deploy_pair.py` ✓ 配套；
+  四份 DLL 同 md5 `7b0a08be0c65db7d32e59a6b90b1ee61`。
+- 实跑判据（见 `TUNING.md` §2.0l）：满 P 时场上出现**樱点贴图**的点（与信仰点**不同角**、不重叠）飞向自机；
+  收下时樱点与 +C 各 `1000+100n`；日志 `senro: 满 P 转换 N 颗原生 P 道具 → 大樱点实体 ×N`。
+
 ### §BE-EE 卡组体检 `ce_deck_audit()`（AUDIT §Z11 / §G7 那条老账的诊断件，2026-09-19）
 
 **背景**：用户口径「之前的状态是，id=254 这张卡装备后会直接吞掉一个 slot，该 slot 会直接消失，

@@ -26,7 +26,8 @@ enum {
     FAITH_SLOT_110 = 0,     /* 风神录（信仰）*/
     FAITH_SLOT_111 = 1,     /* 地灵殿（SA 绿点）*/
     FAITH_SLOT_SIGNAL = 2,  /* 信号强度（111；0..130，不是得分）*/
-    FAITH_SLOT_COUNT = 3
+    FAITH_SLOT_107 = 3,     /* ★ 2026-09-18：妖妖梦（107）的**樱点道具实体**（大樱点走满 P 转换通道）*/
+    FAITH_SLOT_COUNT = 4
 };
 
 /* ---- 定点 ---- */

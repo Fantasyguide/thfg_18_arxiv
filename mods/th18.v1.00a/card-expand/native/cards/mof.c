@@ -1057,8 +1057,10 @@ static void mof_ge_tick(int32_t frame)
          * x87（`make dllx87`：本仓 0 条 x87 的硬线）⇒ 这里的入场向量就用**原生小妖精那一套**
          * （`GirlA01` 体：`%F0 = π/2 向下`、`%F1 = 1.0`），队形一致性靠**出生点**给（见
          * `mof_green_extra_slots()`）。要真对齐同波妖精的向量，得改用整数近似或直接读它的
-         * 速度字段（记为后续可选优化，`TUNING.md` §2.0h）。*/
-        float angle = MOF_GE_ANGLE_DOWN, speed = 1.0f;
+         * 速度字段（记为后续可选优化，`TUNING.md` §2.0h）。
+         * ★ 2026-09-18：删掉两个**未用**的局部（`angle` / `speed`）—— 出生已经走 `mof_ge_spawn_one()`
+         *   （它的入场上抛角/速度是自己的常量），这两个是搬走之后留下的壳
+         *   （`faith.h` 一改，mof.c 被重编才暴露出来）。*/
         float ey = s_ge_first_y;
         if (MOF_GE_EVERY > 0 && (s_ge_wave % MOF_GE_EVERY) != 0) {   /* 这一波不补（例如隔波）*/
             s_ge_done = 1;
@@ -2149,7 +2151,6 @@ static void mof_ensure_registered(ce_card_t *c)
 static int on_load(ce_card_t *c)
 {
     mof_card_t *s = st(c);
-    faith_user_t u;
 
     if (!s) return 0;
     s->last_graze = -1;

@@ -3307,7 +3307,6 @@ static void signal_ensure_registered(ce_card_t *c)
 static int on_load(ce_card_t *c)
 {
     signal_card_t *s = st(c);
-    faith_user_t u;
 
     if (!s) return 0;
     s->last_graze = -1;

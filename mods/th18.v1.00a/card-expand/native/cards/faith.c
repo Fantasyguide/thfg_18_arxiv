@@ -347,6 +347,10 @@ typedef struct {
     uint8_t tier;          /* faith_tier_t */
     int32_t slot_mask;     /* 落进谁的槽 */
     int32_t value;         /* 原始单位分值 */
+    /* ★★ 2026-09-18：**自带外观**（出生时从注册者抄过来；0 = 按档的默认点外观）——
+     *   见 `faith_user_t` 尾部那两个字段的注（唯一使用者 = 107 的樱点）。*/
+    int32_t art_sprite;
+    int32_t art_script;
 } faith_dot_t;
 
 /* ★ 池放 DLL 静态区（ce_state 只有 496 字节，装不下几百颗点；同 season.c 的口径）。*/
@@ -620,21 +624,28 @@ static int dot_spawn_vm(faith_dot_t *p)
      *   sprite 与顶点色同样按档给（`faith_sprite_for()` / `faith_tint_for()`）。*/
     const faith_tier_t tier = (faith_tier_t)p->tier;
     const uint32_t argb = faith_tint_for(tier);
-    uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(), faith_script_for(tier), FAITH_LAYER);
+    /* ★ 2026-09-18：自带外观优先（0 = 按档默认）—— 107 的樱点走这两个字段。*/
+    const int script = p->art_script ? (int)p->art_script : faith_script_for(tier);
+    const int sprite = p->art_sprite ? (int)p->art_sprite : faith_sprite_for(tier);
+    uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(), script, FAITH_LAYER);
 
     if (!id) return 0;
     ce_anm_set_pos(id, p->x, p->y, 0.0f);
-    ce_anm_set_sprite(CE_ABILITY_ANM(), id, faith_sprite_for(tier));
+    ce_anm_set_sprite(CE_ABILITY_ANM(), id, sprite);
     ce_anm_set_color(id, argb);          /* color_1（`+0x524`）*/
     ce_anm_set_color2(id, argb);         /* color_2（`+0x528`）—— 两路都写才与 colorMode 无关 */
     p->id = (int32_t)id;
     return 1;
 }
 
-int faith_spawn(float x, float y, faith_tier_t tier, int slot_mask, int32_t value)
+/* 公共体：`ang` = 上抛角（`faith_spawn()` 传一手的 −π/2；`faith_spawn_angled()` 传调用方给的角）。
+ * ⚠ 必须保持「只在这一支里出现一次 memset/入池」——两个入口不能各写一遍（会漂移）。*/
+static int dot_spawn_at(float x, float y, faith_tier_t tier, int slot_mask, int32_t value,
+                        float ang)
 {
     faith_dot_t *p;
-    float ang, spd, vel[3];
+    float spd, vel[3];
+    int i;
 
     if (!slot_mask || value <= 0) return 0;
     if (tier == FAITH_TIER_MICRO) return 0;      /* 微档不建实体（见文件头 ❓ 自定）*/
@@ -645,9 +656,9 @@ int faith_spawn(float x, float y, faith_tier_t tier, int slot_mask, int32_t valu
     }
 
     /* ★ E-2（2026-09-15）：出生运动学 = **一手实参**，不再随机 ——
-     * 角恒 −π/2（`0xbfc90fdb`，直上）、速按档（`faith_core_throw_speed()`：2.2 / 2.2 / 0.6）。
+     * 角见上面公共体的说明（默认 −π/2 = `0xbfc90fdb`，直上；只有满 P 转换的**第 2 组外观起**才给偏角）、
+     * 速按档（`faith_core_throw_speed()`：2.2 / 2.2 / 0.6）。
      * 撒点位置由调用方给，**一律是实体自己的位置**（道具 / 弹原位；见 `faith_core.h` §E-2）。*/
-    ang = FAITH_THROW_ANGLE;
     spd = faith_core_throw_speed(tier);
 
     p = dot_at(tier, dot_n(tier));
@@ -671,8 +682,27 @@ int faith_spawn(float x, float y, faith_tier_t tier, int slot_mask, int32_t valu
     p->tier = (uint8_t)tier;
     p->slot_mask = slot_mask;
     p->value = value;
+    /* ★ 2026-09-18：把**注册者的自带外观**抄进这一颗（0 = 默认按档外观）。
+     *   按 `slot_mask` 找回注册者 —— 「一个消费者占自己一位槽」是 `faith_register()` 的既有约定。*/
+    for (i = 0; i < s_n_user; ++i) {
+        if (s_user[i].slot_mask != slot_mask) continue;
+        p->art_sprite = (int32_t)s_user[i].art_sprite;
+        p->art_script = (int32_t)s_user[i].art_script;
+        break;
+    }
     if (tier == FAITH_TIER_BIG) ++s_n_big; else ++s_n_small;
     return 1;
+}
+
+int faith_spawn(float x, float y, faith_tier_t tier, int slot_mask, int32_t value)
+{
+    return dot_spawn_at(x, y, tier, slot_mask, value, FAITH_THROW_ANGLE);
+}
+
+int faith_spawn_angled(float x, float y, faith_tier_t tier, int slot_mask, int32_t value,
+                       float angle)
+{
+    return dot_spawn_at(x, y, tier, slot_mask, value, angle);
 }
 
 int faith_spawn_big(float x, float y, int32_t value_110)
@@ -760,6 +790,11 @@ static void faith_item_delete(uint8_t *it)
  *     `0x0d = se_powerup`、`0x1c/0x1d = se_power0/1`）。*/
 #define FAITH_CONV_SE         0x25
 
+/* ★ 2026-09-18：满 P 转换里「不同外观的消费者」之间的上抛偏角步长 = **10°** =
+ * `0.1745329`（`th18:0x429168` 那枚 —— TH18 自己消弹撒点用的抖动角，一手见
+ * `engine/bullet/th18/01-cancel-to-item.md` §2.1）。用户口径：「不要让两种点重合；有角度的上抛？」*/
+#define FAITH_CONV_SPREAD_STEP 0.1745329f
+
 static void conv_burst_spawn(float x, float y)
 {
     uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_MOF_CONV_BURST, FAITH_CONV_LAYER);
@@ -812,11 +847,42 @@ int faith_convert_full_p_items(void)
         ++n;
         /* ④ 给**每个**认领了转换通道的注册者在本槽撒一颗（E-1 硬约束：满 P 转换只许 type 9 档）。
          *    值由注册表给（110 = 100 / 111 = 10）⇒ 本模块不需要知道是谁。*/
-        for (u = 0; u < s_n_user; ++u) {
-            if (s_user[u].conv_value <= 0) continue;
-            if (!faith_spawn(px, py, faith_core_tier_for_source(FAITH_SRC_FULL_P),
-                             s_user[u].slot_mask, s_user[u].conv_value)) {
-                ++s_stat_conv_dropped;
+        /* ★★ 2026-09-18（用户口径「不要让两种点重合；有角度的上抛？」）：**按外观分组**给上抛角 ——
+         *   同外观的消费者共用同一个角（⇒ 仍然完全重合、视觉一颗，110+111 的行为不变），
+         *   不同外观的组依次 ±10°（⇒ 107 的樱点不会藏在信仰点底下）。
+         *   第 0 组 = 一手的 −π/2 ⇒ **单独装任何一张时逐字节不变**。
+         *   偏角常数 = `0.1745329`（10°）= `th18:0x429168` 那枚（TH18 自己消弹撒点用的抖动角，一手见
+         *   `engine/bullet/th18/01-cancel-to-item.md` §2.1）。**不抽随机、不推 RNG**。*/
+        {
+            uint32_t seen_spr[FAITH_MAX_USERS], seen_scr[FAITH_MAX_USERS];
+            int n_seen = 0;
+
+            for (u = 0; u < s_n_user; ++u) {
+                int g = -1, v;
+                float ang;
+
+                if (s_user[u].conv_value <= 0) continue;
+                for (v = 0; v < n_seen; ++v) {
+                    if (seen_spr[v] == s_user[u].art_sprite && seen_scr[v] == s_user[u].art_script) {
+                        g = v;
+                        break;
+                    }
+                }
+                if (g < 0) {                        /* 新外观 ⇒ 新组 */
+                    g = n_seen;
+                    seen_spr[n_seen] = s_user[u].art_sprite;
+                    seen_scr[n_seen] = s_user[u].art_script;
+                    ++n_seen;
+                }
+                ang = FAITH_THROW_ANGLE;
+                if (g > 0) {
+                    const float k = (float)((g + 1) / 2);            /* 组 1→+1、2→−1、3→+2、4→−2 …（左右分）*/
+                    ang += ((g & 1) ? k : -k) * FAITH_CONV_SPREAD_STEP;
+                }
+                if (!faith_spawn_angled(px, py, faith_core_tier_for_source(FAITH_SRC_FULL_P),
+                                        s_user[u].slot_mask, s_user[u].conv_value, ang)) {
+                    ++s_stat_conv_dropped;
+                }
             }
         }
         /* ★★ 2026-09-18（B12）：**逐颗起一台转换特效**（TH10 `0x448db0(…, 0x189)` 的对位）——

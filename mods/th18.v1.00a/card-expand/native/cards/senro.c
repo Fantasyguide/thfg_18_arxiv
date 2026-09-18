@@ -32,6 +32,8 @@
  * 2026-09-12 补，见文件中部长注）。①② 由 `CE_CARD` 的 `on_run_reset` / `opdelete` 自动 `ce_layer_drop_card()` 清，
  * ③ 的槽位也自动 release，但**文字 VM 是本卡自己的**，必须在 `on_delete` / `on_run_reset` 里 `ce_hud_vm_text_clear()`。
  * ④ 同理（`ce_layer_drop_card` 只清声明层）⇒ `senro_clear()` 里的 `senro_fx_clear()` 把 33 个句柄全 `ce_anm_delete`。
+ * ⑤ ★★ 2026-09-18 新增：**共享点池里属于本卡的樱点实体**（`1 << FAITH_SLOT_107`）——
+ *   `senro_clear()` 里 `faith_unregister(SENRO_ID)` + `faith_clear_entities_mask(…)`（顺序是硬的）。
  * ⚠ 删卡发生在**商店里**（倒吊人 / 原版空白卡清空整副牌），那一刻 AbilityManager 冻着、卡的 tick 全停
  * ⇒ 只能靠 `on_delete`（虚表 `+0x50`），不能等下一帧；`on_stage_start` 也收一次（特效不跨关）。
  * ⚠ 甲的环与乙的 32 颗都是**脚本自己 `delete()` 的一次性特效**（第 33 / 第 30 帧），但句柄仍必须记着：
@@ -87,7 +89,7 @@
                                               * ⚠ 两个已知副作用（登记在 `TUNING.md` §2.0k / 本卡设计件 `SENRO-107-CHERRY-ENTITY.md`）：
                                               *   ① 每颗弹推 1 次 `REPLAY_SAFE_RNG`（一手 §2.4）⇒ 装卡后老 replay 有必然 desync 点；
                                               *   ② 场地门（一手 §2.3：`|x| ≥ 224`、`y ≤ −32`、`y ≥ 480` 的弹零产出）
-                                              *       ⇒ 「消了 n 颗」≠「拿到 n 颗 ★」。
+                                              *       ⇒ 「消了 n 颗」≠「拿到 n 颗 ★」。*/
 
 /* 音效：两作的 SE 表 id **不同义** ⇒ 老实标 ❓ 自定（th07 用的是 0x21 与 7）。
  * TH18 侧名字与调校见 `engine/_shared/th18-sound-table.md`。*/
@@ -286,6 +288,7 @@ typedef struct {
     int32_t          stat_gain_item;    /* 诊断：道具通道加的樱点总数 */
     int32_t          stat_gain_graze;   /* 诊断：擦弹通道 */
     int32_t          stat_gain_hit;     /* 诊断：命中通道 */
+    int32_t          stat_cherry_conv;  /* 诊断：满 P 转换撒出来的**大樱点实体**颗数（★ 2026-09-18）*/
 } senro_card_t;
 
 _Static_assert(sizeof(senro_card_t) <= 496, "ce_state 上限 496 字节（超了会静默返回 NULL）");
@@ -660,6 +663,9 @@ static void senro_hit_cancel_flush(ce_card_t *c, senro_card_t *s)
 /* ---- 每帧（管理器侧；菜单 / 商店里不跑）---- */
 /* ★ 2026-09-18：`on_tick_2` 每帧补调一次（中盘拿卡时 `on_load` 不会被调），定义在文件后半。*/
 static void senro_claim_hud(senro_card_t *s);
+/* ★ 2026-09-18：樱点实体（共享点池的注册 / 满 P 转换 / 池推进）—— 定义在文件后半（`on_load` 之前）。*/
+static void senro_faith_tick(ce_card_t *c, senro_card_t *s);
+static void senro_faith_claim(ce_card_t *c);
 
 static int on_tick_2(ce_card_t *c)
 {
@@ -673,6 +679,9 @@ static int on_tick_2(ce_card_t *c)
      *   ⇒ 这里从没认领过 HUD 槽 ⇒ 107 的 UI 不出现，要等换面（`on_load`）才补上。
      *   `senro_claim_hud()` 幂等（`_card` 入口只在关卡号变化时重排）⇒ 每帧补一次直到成功。*/
     if (!s->slot_ok) senro_claim_hud(s);
+    /* ★★ 2026-09-18：共享点池（樱点实体）—— 注册是幂等的（中盘拿卡时 `on_load` 不会被调），
+     *   转换与池推进放在最前面：本帧转出来的大樱点当帧就建 VM、就受物理与收集判定。*/
+    senro_faith_tick(c, s);
 
     /* ⓿ 中弹灵击的补做（上一帧在死亡栈里记下的）——必须在 tick 之前，消弹与入账同一帧完成。 */
     senro_hit_cancel_flush(c, s);
@@ -928,6 +937,10 @@ static void senro_clear(ce_card_t *c, int keep_slot)
      *   删卡发生在**商店里**（倒吊人 / 原版空白卡清空整副牌），那一刻 tick 全停、只有 `on_delete` 跑得到
      *   —— 这条 memset 就是最后一道网（句柄一旦被 memset 掉，那些 VM 就永远留在场上了）。 */
     senro_fx_clear(s);
+    /* ★ 2026-09-18：樱点实体（共享池里**自己槽**的点）。顺序同 110/111 —— **先退注册、再收实体**，
+     *   且只收自己那一槽（`faith_clear_entities()` 会连 110/111 的点一起清掉）。*/
+    faith_unregister(SENRO_ID);
+    faith_clear_entities_mask(1 << FAITH_SLOT_107);
     memset(s, 0, sizeof *s);
     s->st.graze_last = -1;
     s->spell_was = 0;
@@ -960,12 +973,93 @@ static void senro_claim_hud(senro_card_t *s)
      * ★ 用 `_card` 入口：它会先把关卡号推进纪元 ⇒ 上一关被删卡留下的占位在**本关开场**收敛（HUD-LAYOUT §4.4）。*/
 }
 
+/* ==================== ★★ 樱点道具实体（自建 VM，挂在共享点池上，2026-09-18）====================
+ *
+ * 用户口径（逐字）：「**th07是有一个我叫做樱点的掉落实体…肯定有一个类似于信仰点的仅在 th07 的
+ *   类 P 点掉落实体，似乎没有自建 VM 实现**」＋「**吸附半径得统一到 th18 的吸附**」＋
+ *   「**大樱点就得在与 th10-11 同装的时候被同时转化出来，并且如果大樱点只有这一个来源的话，
+ *   也被认为是等价于 P 点**」。
+ *
+ * 为什么**不另写一层运动学**：共享点池 `cards/faith.c`（110/111 已在用）的飞散 / 飘落 / 吸附 / 收取
+ *   逐条都是 **TH18 自机字段**口径（收集半径 `player+0x4798c`、吸引半径 `+0x47990|94`、磁速 `+0x47988`、
+ *   回收线 `+0x47998`）⇒ 用户口径「吸附统一到 th18」直接成立，且**只有一份实现**。
+ *
+ * 三个来源（一手 `engine/item/th07/01-sakura-items.md` §2/§3.2）：
+ *   · **大樱点**（type 7 = `1000 + 100×符卡奖励次数`）⇒ 本卡的实体：**满 P 转换**那条共享通道
+ *     （`faith_convert_full_p_items()`）撒 1 颗 —— 与 110/111 的产物同帧、同源（用户口径「同时转化出来」）；
+ *   · ★（type 6，+20）⇒ **兼用 TH18 原生消弹小分道具**（`SENRO_CANCEL_MODE = 1`），本卡不建实体；
+ *   · 小樱点（type 8，+100）⇒ TH07 的真实来源是 boss 死亡那颗 `mode 0xa` 消弹，TH18 侧没有对应实体
+ *     ⇒ 本卡当前**没有**这个来源（`senro_small_cherry()` 暂留，见 `TUNING.md` §2.0k）。
+ *
+ * 外观 = TH07 原版切图（`SAKURA_POINT`：sprite 287 / 脚本 186）—— 走共享件 2026-09-18 新增的
+ *   `faith_user_t.art_sprite/art_script`（**自带外观**；老注册者不设 ⇒ 行为逐字节不变）。
+ *
+ * ⚠ 长持续效果的自查（`METHOD.md` 铁律二）：本卡跨帧留下的东西多了一项 —— **共享池里自己槽的点**
+ *   ⇒ `senro_clear()` 里 `faith_unregister(SENRO_ID)` + `faith_clear_entities_mask(1 << FAITH_SLOT_107)`
+ *   （顺序同 110/111：**先退注册、再收实体**；删卡发生在商店里，那一刻只有 `on_delete` 跑得到）。*/
+static void senro_on_cherry_pickup(void *user, int slot_mask, int tier, int32_t value,
+                                   float x, float y)
+{
+    ce_card_t *c = (ce_card_t *)user;
+    senro_card_t *s = st(c);
+    int32_t d;
+
+    (void)tier; (void)value; (void)x; (void)y;   /* 值由本卡自己算（随符卡奖励次数变）*/
+    if (!s) return;
+    if (!(slot_mask & (1 << FAITH_SLOT_107))) return;      /* 只认自己槽 */
+    /* th07 type 7（`th07:0x433886`–`0x4338d9`）：樱点与 +C **各** `1000 + 100×[globals+0x1c]`。
+     * 走 `senro_add_cherry()` ⇒ 两个计数器一起加（与既有的金钱通道同一个加法器）。*/
+    d = SENRO_ITEM_BIG_BASE + SENRO_ITEM_BIG_PER_BONUS * s->st.spell_bonuses;
+    s->stat_gain_item += d;
+    senro_add_cherry(&s->st, d);
+    senro_handle_events(c, s, senro_take_events(&s->st));
+    ce_log("senro: 收下大樱点（th07 type 7）→ 樱点与 +C 各 +%d（符卡奖励 %d 次）",
+           (int)d, (int)s->st.spell_bonuses);
+}
+
+/* 注册（幂等；同 110 的 `mof_ensure_registered()` 口径 —— 中盘拿卡时 `on_load` 不会被调）。*/
+static void senro_faith_claim(ce_card_t *c)
+{
+    senro_card_t *s = st(c);
+    faith_user_t u;
+
+    if (!s) return;
+    memset(&u, 0, sizeof u);
+    u.card_id      = SENRO_ID;
+    u.slot_mask    = 1 << FAITH_SLOT_107;
+    u.on_pickup_at = senro_on_cherry_pickup;
+    /* 满 P 转换通道的**开关**（判据 = `conv_value > 0`）。值本身不用：本卡在回调里自己算
+     * `1000 + 100×符卡奖励次数`（随符卡推进变，而池的 `value` 是每注册者一个常数）。*/
+    u.conv_value   = 1;
+    u.art_sprite   = CE_ANM_ABILITY_SPRITE_SAKURA_POINT;   /* 287 = TH07 etama2 sprite11（大樱点）*/
+    u.art_script   = CE_ANM_ABILITY_SCRIPT_SAKURA_POINT;   /* 186 = TH07 script60 的转写 */
+    u.user         = c;
+    if (!faith_register(&u)) ce_log("senro: faith_register failed (table full?)");
+}
+
+/* 满 P 转换 + 共享池推进（**顺序是硬的**：转换放在池 tick 之前 ⇒ 当帧撒的点当帧就建 VM / 受物理）。
+ * 两个函数都自带帧守卫（共享件的口径）⇒ 与 110/111 同装时**一帧只跑一遍**。*/
+static void senro_faith_tick(ce_card_t *c, senro_card_t *s)
+{
+    int n;
+
+    senro_faith_claim(c);                     /* 幂等：每帧补一次，直到注册成功 */
+    n = faith_convert_full_p_items();
+    if (n > 0) {
+        s->stat_cherry_conv += n;
+        ce_log("senro: 满 P 转换 %d 颗原生 P 道具 → 大樱点实体 ×%d（累计 %d；与 110/111 同源同帧）",
+               n, n, (int)s->stat_cherry_conv);
+    }
+    (void)faith_pool_tick();
+}
+
 static int on_load(ce_card_t *c)
 {
     senro_card_t *s = st(c);
 
     if (!s) return 0;
     senro_claim_hud(s);
+    senro_faith_claim(c);            /* ★ 2026-09-18：注册进共享点池（樱点实体）*/
     s->st.graze_last = -1;
     senro_declare_score(s);
     ce_log("senro: on_load (hud slot %s @(%.0f,%.0f) 表面px)", s->slot_ok ? "ok" : "FAIL",
@@ -980,6 +1074,7 @@ static void on_stage_start(ce_card_t *c)
     /* th07 每关重设基准（`th07:0x4043b9` 樱点 = 基准；最大樱点按难度表重取）⇒ 本卡每关从 0 起。 */
     senro_stage_reset(&s->st, senro_difficulty());
     senro_fx_clear(s);       /* ★ 上一关留下的结界特效（环 / 32 颗）不跨关 */
+    faith_clear_entities_mask(1 << FAITH_SLOT_107);   /* ★ 樱点实体同样不跨关（2026-09-18）*/
     s->frame = 0;
     s->log_frame = 0;
     s->maxed_popup_at = 0;
