@@ -183,7 +183,13 @@ def cmd_check(s, a):
         bad += 1
     if a.modkit:
         print("② DLL ↔ 游戏里的 pl0X.sht 同批（check_deploy_pair.py）")
-        if run([sys.executable, os.path.join(HERE, "check_deploy_pair.py"), DLL, a.modkit]) != 0:
+        # ⚠ 这个脚本在**模组级**的 `tools/`（不是 `native/tools/`）—— 2026-09-18 首次实跑就因为路径写错
+        #   而误报"发布闸不过"（闸本身没错，是闸里的路径错），见 AUDIT §BE-EG。
+        pair = os.path.join(MOD, "tools", "check_deploy_pair.py")
+        if not os.path.isfile(pair):
+            print("  ❌ 找不到 %s（模组级 tools/）⇒ 这条检查没法做，按不过处理" % os.path.relpath(pair, REPO))
+            bad += 1
+        elif run([sys.executable, pair, DLL, a.modkit]) != 0:
             bad += 1
     else:
         print("② DLL ↔ pl0X.sht：没给 `--modkit <dir>` ⇒ 跳过（发布前请带上）")
