@@ -31,6 +31,9 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 REPO = Path(__file__).resolve().parents[4]
+ASSETS = Path(__file__).resolve().parents[1] / "assets"
+sys.path.insert(0, str(ASSETS))          # ★ 复用仓库既有的卡框脚本（别再自己画框！）
+import cardframe  # noqa: E402
 CARDS_JS = REPO / "mods" / "th18.v1.00a" / "card-expand" / "patch" / "th18" / "cards.js"
 CJK_FONT = "/usr/share/fonts/truetype/arphic/uming.ttc"      # AR PL UMing（有简体字；系统自带）
 LAT_FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
@@ -53,7 +56,11 @@ SYSTEM = [
 ]
 
 W, H = 256, 320                 # 与 assets/cards/*_max.png 同规格
-M = 8                           # 原生空卡面的黑框厚度（实测：8×10 网格里最外一圈全是 #000000）
+# ★★ 画面区 = `assets/cardframe.py` 的一手口径：外圈 3 px 黑 → 13 px 斜面 → 2 px 黑 ⇒ 每边内缩 18，
+#    画面区 **220×284**。**框一律交给 cardframe.apply_frame()**（它逐像素量自原生 KANAME_max/ALICE_OP_max），
+#    我们不自己画框（第一版手画的 8 px 黑框被用户当场否了）。
+AW, AH = cardframe.W - 2 * cardframe.INSET, cardframe.H - 2 * cardframe.INSET
+M = cardframe.INSET             # 兼容旧命名（= 18）
 PLATE_TOP = (34, 38, 52, 255)   # 旧「深色底板」样式的渐变色（`--style plate` 用；❓ 自定）
 PLATE_BOT = (16, 18, 26, 255)
 ACCENT    = (255, 226, 120, 255)
@@ -94,20 +101,21 @@ def fit(icon: Image.Image, avail: int) -> Image.Image:
     return icon.resize((icon.width * k, icon.height * k), Image.NEAREST)
 
 
-def compose_white(icon: Image.Image | None) -> Image.Image:
-    """★ 用户 2026-09-18 口径：「**把 icon 补齐成卡面的样子，最大居中，剩下补充白色**」——
-    白底（不是透明底）+ 图标按**最大等比**放大后居中；剩下的区域一律纯白；外圈保留原生黑框（卡形）。
-    `❓ 自定`：`PAD` 是图标与黑框之间的留白（默认 6 px）；要贴满就把 PAD 调 0。"""
-    im = Image.new("RGBA", (W, H), WHITE)
+def compose_art(icon: Image.Image | None) -> Image.Image:
+    """★ 用户 2026-09-18 口径：「把 icon 补齐成卡面的样子，**最大居中，剩下补充白色**」。
+
+    产出 = **画面区那一块**（220×284，无框）：纯白底 + 图标按最大等比放大后居中，其余全白。
+    **不画框** —— 加框交给 `cardframe.apply_frame()`（原生同款，见 `assets/cardframe.py`）。
+    `❓ 自定`：`PAD` 是画面区里图标四周的留白（默认 6 px）。"""
+    im = Image.new("RGBA", (AW, AH), WHITE)
     d = ImageDraw.Draw(im)
-    avail = min(W - 2 * M - 2 * PAD, H - 2 * M - 2 * PAD)
+    avail = min(AW - 2 * PAD, AH - 2 * PAD)
     if icon is not None:
         big = fit(icon, avail)
-        im.alpha_composite(big, ((W - big.width) // 2, (H - big.height) // 2))
+        im.alpha_composite(big, ((AW - big.width) // 2, (AH - big.height) // 2))
     else:
-        f_q = load_font(LAT_FONT, 96)
-        d.text((W // 2, H // 2), "?", font=f_q, fill=(200, 200, 205, 255), anchor="mm")
-    d.rectangle([0, 0, W - 1, H - 1], outline=(0, 0, 0, 255), width=M)      # 原生黑框
+        f_q = load_font(LAT_FONT, 72)
+        d.text((AW // 2, AH // 2), "?", font=f_q, fill=(200, 200, 205, 255), anchor="mm")
     return im
 
 
@@ -140,19 +148,19 @@ def compose(icon: Image.Image | None, cn: str, tag: str, cid: str) -> Image.Imag
 
 
 def compose_min(icon: Image.Image | None) -> Image.Image:
-    """小卡面（64×80）：★ 同口径 —— **白底 + 图标最大居中**（1/4 尺寸下文字也读不出来）。
-    `❓ 自定`：黑框在 64 px 宽里取 3 px、留白 2 px。"""
-    w, h, m = 64, 80, 3
+    """小卡面（64×80）：★ **原生 `_min` 不带框**（`cardframe.py` 头注：「HUD 卡组图标不带框」）
+    ⇒ 白底 + 图标最大居中，**不画任何框**。
+    `❓ 自定`：直接按 64×80 合成（而不是把 220×284 的画面区缩下来）—— 32×32 图标正好 ×2 = 64，
+    像素级对齐；照 `save_min_from_art()` 缩会有 ~3% 形变。"""
+    w, h = cardframe.MIN_W, cardframe.MIN_H
     im = Image.new("RGBA", (w, h), WHITE)
     d = ImageDraw.Draw(im)
-    avail = min(w - 2 * m - 4, h - 2 * m - 4)
     if icon is not None:
-        big = fit(icon, avail)
+        big = fit(icon, min(w, h))
         im.alpha_composite(big, ((w - big.width) // 2, (h - big.height) // 2))
     else:
-        f_q = load_font(LAT_FONT, 32)
+        f_q = load_font(LAT_FONT, 28)
         d.text((w // 2, h // 2), "?", font=f_q, fill=(200, 200, 205, 255), anchor="mm")
-    d.rectangle([0, 0, w - 1, h - 1], outline=(0, 0, 0, 255), width=m)
     return im
 
 
@@ -173,10 +181,15 @@ def main():
     for cid, nm, tag, cn in SYSTEM:
         p = icons / f"{cid}_{tag}.png"
         icon = Image.open(p).convert("RGBA") if p.is_file() else None
-        img = compose_white(icon) if a.style == "white" else compose(icon, cn, tag, cid)
+        art = compose_art(icon)
+        (out / "art").mkdir(exist_ok=True)
+        art.save(out / "art" / f"{cid}_{tag}_art.png")          # 无框画面（留档，便于重出）
         mx = out / f"{cid}_{tag}_max.png"
         mn = out / f"{cid}_{tag}_min.png"
-        img.save(mx)
+        if a.style == "white":
+            cardframe.save_framed(cardframe.apply_frame(art), mx)   # ★ 原生同款框 + `renkolab-frame=1` 标记
+        else:
+            compose(icon, cn, tag, cid).save(mx)
         compose_min(icon).save(mn)
         rows.append((cid, cn, nm, tag, mx.name, mn.name, p.is_file()))
         print(f"  {cid} {cn:6s} {tag} 图标{'✅' if p.is_file() else '❌（缺样本）'} → {mx.name} / {mn.name}")
