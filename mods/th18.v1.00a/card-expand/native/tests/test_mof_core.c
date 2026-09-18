@@ -411,24 +411,25 @@ int main(void)
             CHECK(faith_slot_total(&t) == 50000 + 20000 - 10800);
         }
 
-        /* ②b ★ **两档速率**（用户口径 2026-09-15）：有敌人 ⇒ 慢档 −600 显示/s = 1000 定点/帧；
-         *    无敌人 ⇒ 快档 −10800 显示/s = 18000 定点/帧。选档判据 = `gate->enemies_present`
-         *    （🟡 一手证据只支持快档那一个值，见 `mof_core.h` 的「衰减速率：两档」块）。*/
-        CHECK(mof_faith_rate_fixed(1) == 1000);
+        /* ②b ★★ **单档（一手）** —— 2026-09-18 用户裁决「掉得慢：最大得点往下掉得不够狠」后
+         *    **两档撤掉**：无论有没有敌人，速率恒 = 一手 −180 显示/帧 = 18000 定点/帧。
+         *    `enemies_present` 形参保留（签名冻结 + 日志要打），但**不参与选档**。*/
+        CHECK(mof_faith_rate_fixed(1) == 18000);
         CHECK(mof_faith_rate_fixed(0) == 18000);
-        CHECK(mof_faith_rate_fixed(-1) == 1000);                  /* 非 0/1 ⇒ 按「有敌人」保守处理 */
+        CHECK(mof_faith_rate_fixed(-1) == 18000);                 /* 任何取值都一样 */
+        CHECK(mof_faith_rate_fixed(1) == MOF_FAITH_DRAIN_NO_BOSS_FIXED);
         {
             faith_slot_t e;
             mof_faith_gate_t ge = ok;
-            ge.enemies_present = 1;                               /* 场上有敌人 ⇒ 慢档 */
+            ge.enemies_present = 1;                               /* 场上有敌人 —— 以前是慢档，现在同速 */
             faith_slot_init_110(&e);
             (void)faith_slot_add(&e, FAITH_EV_BIG, 20000);
             e.combo = 0;
-            CHECK(mof_core_faith_tick(&e, &ge, 1) == 1000);
-            /* 60 帧 ⇒ 正好 −600 显示（用户口径的 600/s）*/
-            CHECK(mof_core_faith_tick(&e, &ge, 60) == FAITH_EMPTY_ENEMY_PER_SEC * FAITH_FIXED);
-            /* 两档在同帧数下的比值 = 18（10800 / 600）—— 与「18 存储/帧 vs 1 存储/帧」同源 */
-            CHECK(mof_faith_rate_fixed(0) == 18 * mof_faith_rate_fixed(1));
+            CHECK(mof_core_faith_tick(&e, &ge, 1) == 18000);
+            /* 60 帧 ⇒ 正好 −10800 显示（= 一手的 −180/帧 × 60）—— 用**速率**断言，
+             * 别连着跑两次（第二次会撞 `delta` 的下限 0，那是另一条不变式）。*/
+            CHECK(mof_faith_rate_fixed(1) * 60 == 10800 * FAITH_FIXED);
+            CHECK(mof_faith_rate_fixed(1) * 60 == FAITH_EMPTY_NO_ENEMY_PER_SEC * FAITH_FIXED);
         }
 
         /* ③ 槽 > 0：只 −1、**不扣信仰**；而门不成立时**槽也冻**（一手：同一组门）*/

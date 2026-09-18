@@ -194,6 +194,8 @@ int main(void)
      *   逻辑单测在 `tests/test_mof_core.c`；这里只钉**两个速率常量与它们的定点换算**。
      *   `10800` = ✅ 一手（−180 显示/帧 × 60）；`600` = 🟡 用户口径（一手不认，见 `faith_core.h` 长注）。*/
     CHECK(FAITH_EMPTY_NO_ENEMY_PER_SEC == 10800);
+    /* ⚠ 2026-09-18：`FAITH_EMPTY_ENEMY_PER_SEC`（−600/s 那档）已被用户裁决**撤出使用**
+     *   （见 `mof_core.h` 的「单档」块）—— 宏还留着只为历史与这个数值断言。*/
     CHECK(FAITH_EMPTY_ENEMY_PER_SEC == 600);
     CHECK(FAITH_FRAMES_PER_SEC == 60);
     CHECK((FAITH_EMPTY_NO_ENEMY_PER_SEC * FAITH_FIXED) / FAITH_FRAMES_PER_SEC == 18000);  /* −180 显示/帧 */

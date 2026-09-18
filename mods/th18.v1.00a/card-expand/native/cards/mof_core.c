@@ -298,7 +298,16 @@ mof_power_t mof_core_power_spend(int32_t power)
  * 非 0/1 的入参按「有敌人」（慢档）处理 —— 保守：判不出来时宁可少扣信仰。*/
 int32_t mof_faith_rate_fixed(int enemies_present)
 {
-    return enemies_present ? MOF_FAITH_DRAIN_ENEMY_FIXED : MOF_FAITH_DRAIN_NO_BOSS_FIXED;
+    /* ★★ 2026-09-18 **用户裁决：取消两档** —— 原话「风神录的**掉最大得点**似乎有点慢」，
+     *   追问后选的是「**掉得慢：最大得点往下掉得不够狠**」⇒ 恒用**一手**的速率。
+     *   为什么这样最对：一手（th10 v1.00a）在这一点上**只有一档** —— 速率字段 `0x474c50` 全 exe
+     *   只有 2 个写点（`0x417a00` 写 9、`0x40e26b` 写 1，都 < 18），读点 `0x418a23` 后面紧跟
+     *   `0x418a2e/0x418a30` **把它抬到下限 18** ⇒ 有效速率**恒为 −18 存储/帧 = −180 显示/帧 = −10800/s**。
+     *   （用户 2026-09-15 给过「有敌人 −600/s」那一档，我们照做了并标 🟡；今天他实跑后判定"不够狠"
+     *     ⇒ 两档整个撤掉，回到一手 —— 这条 🟡 冲突就此结案，`TUNING.md` §2.5x 留痕。）
+     * ⚠ `enemies_present` 形参**保留**（签名被单测钉着、日志里还要打）：**不再参与选档**。*/
+    (void)enemies_present;
+    return MOF_FAITH_DRAIN_NO_BOSS_FIXED;
 }
 
 int32_t mof_core_faith_tick(faith_slot_t *s, const mof_faith_gate_t *gate, int frames)

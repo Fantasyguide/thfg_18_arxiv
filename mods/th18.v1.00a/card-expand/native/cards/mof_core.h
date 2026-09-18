@@ -433,11 +433,19 @@ typedef struct {
     int no_boss;            /* ① 一手 `th10:0x418746`：`[ENEMY_MANAGER+0x10] == 0`（卡侧 `!mof_boss_alive()`）*/
     int no_dialogue;        /* ② 一手 `th10:0x418751`：`[GUI+0x9eb8] == 0`（卡侧 `!CE_GUI_MSG_ACTIVE()`）*/
     int stage_frames_ok;    /* ③ 一手 `th10:0x418759`：关卡帧 ≥ 90（卡侧自数帧，🟡 见上）*/
-    int enemies_present;    /* ④ **用户口径 2026-09-15**：屏幕上有没有敌人 —— 用来**选速率档**
-                             *   （有 ⇒ −600 显示/s、无 ⇒ −10800 显示/s）。见下面的「两档速率」块。*/
+    int enemies_present;    /* ④ 屏幕上有没有敌人。★ 2026-09-18 起**不再选档**（两档已撤，恒用一手速率）；
+                             *   仍被 `mof.c` 收进日志（`near=`）当诊断读数。*/
 } mof_faith_gate_t;
 
-/* ---- ★ 衰减速率：两档（`FAITH_EMPTY_NO_ENEMY_PER_SEC` / `FAITH_EMPTY_ENEMY_PER_SEC`）----
+/* ---- ★★ 衰减速率：**一档（一手）** —— 2026-09-18 用户裁决后取消两档 ----
+ *
+ * **用户口径（2026-09-18，逐字）**：「风神录的**掉最大得点**似乎有点慢」→ 追问后选
+ *   「**掉得慢：最大得点往下掉得不够狠**」⇒ **恒用一手速率 −180 显示/帧 = −10800 显示/s**
+ *   （`enemies_present` 不再选档；形参保留只为不动被单测钉住的签名，日志里仍打它）。
+ * ⚠ 撤回记录：2026-09-15 用户曾给「有敌人 ⇒ −600/s」那一档，我们照做了并标 🟡
+ *   （一手在这一点上只有一档，见下）—— 今天他实跑后判定不够狠 ⇒ **两档整个撤掉**，这条 🟡 结案。
+ *
+ * 以下是一手复核（保留原样，供后人核）：
  *
  * **用户口径（2026-09-15，逐字）**：「**连击槽为空时**：若屏幕上无敌人：减 **10800/s**，
  *   若屏幕上有敌人：减 **600/s**」。⇒ 两档都保留，速率由 `gate->enemies_present` 选（下一行的函数）。
@@ -461,14 +469,13 @@ typedef struct {
  * 变成编译期红。无敌人档 = 一手「−18 存储/帧 = −180 显示/帧」；有敌人档 = 用户口径的 −600 显示/s。*/
 #define MOF_FAITH_RATE_FIXED(per_sec)   (((per_sec) * FAITH_FIXED) / FAITH_FRAMES_PER_SEC)
 #define MOF_FAITH_DRAIN_NO_BOSS_FIXED   MOF_FAITH_RATE_FIXED(FAITH_EMPTY_NO_ENEMY_PER_SEC)  /* = 18000 */
-#define MOF_FAITH_DRAIN_ENEMY_FIXED     MOF_FAITH_RATE_FIXED(FAITH_EMPTY_ENEMY_PER_SEC)     /* = 1000（−10 显示/帧）*/
 _Static_assert(MOF_FAITH_DRAIN_NO_BOSS_FIXED == 18000,
-               "一手 th10 的衰减速率是 −180 显示/帧 = 18000 定点（18 存储/帧 × 10 显示 × 100 定点）");
-_Static_assert(MOF_FAITH_DRAIN_ENEMY_FIXED == 1000,
-               "用户口径的有敌人档 −600 显示/s = −10 显示/帧 = 1000 定点（🟡 一手不认，见上）");
+               "一手 th10 的衰减速率是 −180 显示/帧 = 18000 定点（18 存储/帧 × 10 显示 × 100 定点）"
+               "—— 2026-09-18 起这是**唯一**一档（`FAITH_EMPTY_ENEMY_PER_SEC` 那档已撤，宏留着仅作历史）");
 
-/* 本帧该用哪一档速率（**纯函数，可单测**）：有敌人 ⇒ 慢档（600/s），无敌人 ⇒ 快档（10800/s）。
- * `enemies_present` 为 0/1 之外的值一律按「有敌人」处理（保守：宁可少扣）。*/
+/* 本帧该用哪一档速率（**纯函数，可单测**）。
+ * ★ 2026-09-18 用户裁决后**只有一档**：无论有没有敌人都返回一手的 `MOF_FAITH_DRAIN_NO_BOSS_FIXED`。
+ * `enemies_present` 形参保留（签名冻结 + 日志要打），但**不参与选档**。*/
 int32_t mof_faith_rate_fixed(int enemies_present);
 
 /* 每帧推进（**连击槽与衰减只用这一条路**）：
@@ -476,7 +483,7 @@ int32_t mof_faith_rate_fixed(int enemies_present);
  *     槽 ≤ 0 才扣信仰 —— **用户口径的「连击槽为空时」就是这条**（不是门）；
  *   · 三条门（无 Boss / 无对话 / 关卡帧 ≥ 90）**全部**成立才推进一步；任一门不成立
  *     ⇒ **槽与衰减一起冻结**（一手：两者在同一函数、同一组门之后）；
- *   · 速率按 `gate->enemies_present` 选档（🟡 见上）。
+ *   · 速率为**一手单档** −180 显示/帧（★ 2026-09-18：原来的「有敌人 −600/s」两档已撤）。
  * `frames` 一般传 1（`on_tick_2` 每帧一次）；批量补跑时传 N —— 速率是常量，与逐帧等价。
  * 返回本帧真正扣掉的量（**定点**；被下限夹掉的、或门不成立时的 0 都如实反映）。
  * ⚠ 卡侧一律用本函数；`mof_core_combo_tick()`（旧签名）只是门 =「无 Boss」的**兼容包装**，
