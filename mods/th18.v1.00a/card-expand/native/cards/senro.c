@@ -19,7 +19,8 @@
  * ── 这张卡怎么玩（一句话）─────────────────────────────────────────────────────────────
  * 收道具 / 结界中擦弹 / 自机弹命中 → **樱点**与 **+C** 一起涨；**+C 到 50000 自动开森罗结界**（7 s）。
  * 结界中：**每帧全屏收点**、**擦弹同时涨樱点与最大樱点**、+C 按剩余计时比例**持续下降**。
- * **中弹或按 B ⇒ 灵击**：结界中断 + **全屏弹转小樱点**（每颗 +100 樱点 / +30 +C）+ **0.67 s 无敌**（40 帧）。
+ * **中弹或按 B ⇒ 灵击**：结界中断 + **全屏弹转原生小分道具**（= TH07 的 ★，每颗收下 +20 樱点/+C）
+ * + **0.67 s 无敌**（40 帧）。
  * **自然到期** ⇒ 樱点与最大樱点各 **+10000** + **樱点分**的 Border Bonus。**Miss / Bomb 扣樱点**（不动 +C、不动最大樱点）。
  * 樱点是本卡的「最大得点」：吃一颗点道具（TH18 金钱）的得分 = 樱点。
  * ★ 2026-09-13 计分层重做后，本卡在 `on_item_score` 里只**声明**这份 `G_07`（未耦合通道），
@@ -68,10 +69,25 @@
 /* 灵击的全屏消弹：半径 / 上限 / 模式。半径 4000 = 全屏量级（`sdk.h` §6.1 的示例值、`cards/mof.c:179` 同款）。*/
 #define SENRO_CANCEL_R              4000.0f
 #define SENRO_CANCEL_MAX            9999
-#define SENRO_CANCEL_MODE           0        /* 0 = 纯删除（`Bullet__cancel` 0x428e90 的 mode）
-                                              * ★ 选 0 不选 1 的理由：mode 1 会让引擎撒出 type 9–0xe 的点道具，
-                                              * 而那一族在本卡是「★ 通道」（收一颗再 +20 樱点）⇒ 与小樱点的
-                                              * +30/+70 双计。本卡 spec §4.3 偏差表里记了这条取舍。*/
+#define SENRO_CANCEL_MODE           1        /* 1 = 每颗被消的弹撒一颗 **type 9 小分道具**（`Bullet__cancel`
+                                              * 0x428e90 的 mode；一手真值表 = `engine/bullet/th18/01-cancel-to-item.md` §2.1：
+                                              * `0x4291a5 push 0x9`、角度 = rand×10° − π/2、速度 2.2）
+                                              *
+                                              * ★★ 2026-09-18 从 **0（纯删除）改成 1**，依据是**用户口径**（逐字）：
+                                              *   「**本作有消弹小点…消弹小点得兼用星星**」——
+                                              *   即 TH07 的 ★（`th07` type 6）在我们侧**不另建实体**，
+                                              *   直接**兼用 TH18 原生的消弹小分道具**（type 9–0xe 那一族，
+                                              *   在 `senro_item_cherry()` 里本来就是本卡的「★ 通道」：收一颗 +20 樱点/+C 各 +20）。
+                                              *
+                                              * ⇒ 旧注释（原样留档，**已作废**）：「选 0 不选 1 的理由：mode 1 会让引擎撒出
+                                              *   type 9–0xe 的点道具，而那一族在本卡是「★ 通道」⇒ 与小樱点的 +30/+70 双计」
+                                              *   —— 那条成立的前提是**本卡自己再按颗记一遍小樱点**；现在那一笔已经撤掉
+                                              *   （见 `senro_do_libyou`），所以不再是双计，而正是「兼用」。
+                                              *
+                                              * ⚠ 两个已知副作用（登记在 `TUNING.md` §2.0k / 本卡设计件 `SENRO-107-CHERRY-ENTITY.md`）：
+                                              *   ① 每颗弹推 1 次 `REPLAY_SAFE_RNG`（一手 §2.4）⇒ 装卡后老 replay 有必然 desync 点；
+                                              *   ② 场地门（一手 §2.3：`|x| ≥ 224`、`y ≤ −32`、`y ≥ 480` 的弹零产出）
+                                              *       ⇒ 「消了 n 颗」≠「拿到 n 颗 ★」。
 
 /* 音效：两作的 SE 表 id **不同义** ⇒ 老实标 ❓ 自定（th07 用的是 0x21 与 7）。
  * TH18 侧名字与调校见 `engine/_shared/th18-sound-table.md`。*/
@@ -587,7 +603,11 @@ static void senro_do_libyou(ce_card_t *c, senro_card_t *s, int by_hit)
             ce_log("senro: 本帧消弹已被别的卡认领（卡 %d；本层本帧共消 %d 颗）→ 灵击只收结界",
                    ce_cancel_latch_owner(), ce_cancel_frame_count());
         }
-        (void)senro_libyou(&s->st, n);
+        /* ★★ 2026-09-18：樱点那一笔**不再在这里记** —— mode 1 已经让引擎为每颗弹撒了 type 9
+         *   小分道具（= 本卡的 ★ 通道，收下时 `on_item_collect` 给 +20 樱点/+C）。这里只留下
+         *   **诊断颗数**（`stat_cancel` 原来由 `senro_small_cherry()` 顺带累加，现在自己累）。*/
+        s->st.stat_cancel += n;
+        (void)senro_libyou(&s->st, 0);
     }
 
     ce_invuln_request(SENRO_ID, s->st.invuln);
@@ -602,8 +622,8 @@ static void senro_do_libyou(ce_card_t *c, senro_card_t *s, int by_hit)
     ce_play_sound(SENRO_SE_LIBYOU, pp[0]);
     ce_screen_shake(SENRO_SHAKE_TIME, SENRO_SHAKE_START, SENRO_SHAKE_END);
     if (by_hit) senro_cancel_impending_death();           /* 救援：取消本次死亡（EVENTS-CONTRACT §4.2 ②层）*/
-    ce_log("senro: 灵击（%s）消弹 %d 颗 → 樱点 %d / 最大樱点 %d，无敌 %d 帧",
-           by_hit ? "中弹" : "按 B", n, (int)s->st.cherry, (int)s->st.cherry_max,
+    ce_log("senro: 灵击（%s）消弹 %d 颗 → 原生小分道具（★，收下每颗 +%d 樱点/+C）；当前樱点 %d / 最大樱点 %d，无敌 %d 帧",
+           by_hit ? "中弹" : "按 B", n, (int)SENRO_STAR_CHERRY, (int)s->st.cherry, (int)s->st.cherry_max,
            (int)SENRO_INVULN_FRAMES);
 }
 
@@ -613,7 +633,6 @@ static void senro_hit_cancel_flush(ce_card_t *c, senro_card_t *s)
     const float *pp = ce_player_pos();
     float pos[3];
     int n = 0;
-    int32_t add;
 
     if (!s->hit_cancel_pending) return;
     s->hit_cancel_pending = 0;
@@ -630,10 +649,12 @@ static void senro_hit_cancel_flush(ce_card_t *c, senro_card_t *s)
         ce_log("senro: 中弹灵击的补做消弹让位（本帧已由卡 %d 认领，本层本帧共消 %d 颗）",
                ce_cancel_latch_owner(), ce_cancel_frame_count());
     }
-    add = senro_small_cherry(&s->st, n);                  /* 小樱点只计进 stat_cancel，不混进道具通道 */
+    /* ★★ 2026-09-18：同按 B 路 —— 樱点由引擎撒出来的 type 9 小分道具（★）自己带，
+     *   这里只累诊断颗数（`add` 那笔小樱点入账已撤，见 `senro_do_libyou` 的注）。*/
+    s->st.stat_cancel += n;
     senro_handle_events(c, s, senro_take_events(&s->st));
-    ce_log("senro: 中弹灵击补做消弹 %d 颗 → 小樱点 +%d（樱点 %d / +C %d）",
-           n, (int)add, (int)s->st.cherry, (int)s->st.plus);
+    ce_log("senro: 中弹灵击补做消弹 %d 颗 → 原生小分道具（★，收下每颗 +%d 樱点/+C）（樱点 %d / +C %d）",
+           n, (int)SENRO_STAR_CHERRY, (int)s->st.cherry, (int)s->st.plus);
 }
 
 /* ---- 每帧（管理器侧；菜单 / 商店里不跑）---- */
