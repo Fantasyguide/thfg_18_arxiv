@@ -29,6 +29,7 @@ step3: anm sht
 ##            **只判红「已声明」的；park 的只提示**（现在没装）。无样本/无 capstone 时自己跳过并 exit 0。
 check: quick cards-check anm-verify sht-verify snd-check dllx87 dllverify
 	python3 sites.py check
+	python3 tools/contract_check.py  # JSON/行为契约（category ⟺ 主动行为；有行为必须在 cards.js 里）
 	python3 tools/gen_drift.py      # 生成物漂移：patch/*.js 与 sites_gen.h 必须是 sites.py 现算的那一份
 	python3 tools/sitecheck.py --all
 	python3 tools/capcheck.py

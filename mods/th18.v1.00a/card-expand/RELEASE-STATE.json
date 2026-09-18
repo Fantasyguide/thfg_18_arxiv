@@ -1,5 +1,5 @@
 {
-  "note": "发布状态单一来源（入库）。由 `native/tools/release_guard.py` 读写：`make release` 会先跑 `check`，冻结中直接中止；发布完成后 `record` 把「patch js / DLL / 四份 pl0X.sht / 两份 anm / cards.js / files.js」的 md5 快照写到这里，并追加一行到本机 `local/DLL-SYNC.md`。为什么入库：发布内容属于所有人的事实（协作者要能看见「部署侧现在是哪一批」），而 2026-09-18 那次事故里冻结状态只写在人读的文档（且一半在 local/ 不入库）⇒ 有人只读了文件开头就发了 3 次版（AUDIT §BE 详录 #50 / §BE-EG）。\n\n★ 悬着的风险（owner 2026-09-18 口径）：**#41 仍未决、未复现** —— 站点数越线假说（实测上限 12）与 §BE-DW 定案的「窗口里一条裸 `ja rel32`」尚未裁决，只能当作**达摩克里斯之剑**挂着；进程级站点合计 44 > 42（`sites.py check` 会告警）。加/改任何站点前先读 AUDIT §BE 详录 #41 / §BE-DW。",
+  "note": "发布状态单一来源（入库）。由 `native/tools/release_guard.py` 读写：`make release` 会先跑 `check`，冻结中直接中止；发布完成后 `record` 把「patch js / DLL / 四份 pl0X.sht / 两份 anm / cards.js / files.js」的 md5 快照写到这里，并追加一行到本机 `local/DLL-SYNC.md`。为什么入库：发布内容属于所有人的事实（协作者要能看见「部署侧现在是哪一批」），而 2026-09-18 那次事故里冻结状态只写在人读的文档（且一半在 local/ 不入库）⇒ 有人只读了文件开头就发了 3 次版（AUDIT §BE 详录 #50 / §BE-EG）。\n\n★ #41 的 owner 口径（2026-09-19）：「不知怎么地，这个错误没再出现，就当它好了，先记下来，之后什么时候崩了再说」⇒ **不做裁决、不挂冻结**；两个假说（站点预算越线 vs `§BE-DW` 的窗口定案）都留着，记录见 `AUDIT.md` §BE 详录 #41 / §BE-EK。另：进程级站点合计 44 > 42（`sites.py check` 会告警）、余量 0 —— 加/改站点前先读这两处。",
   "freeze": {
     "active": false,
     "since": "2026-09-18 21:43:28+0800",
@@ -8,11 +8,11 @@
     "by": "Nipporita@DESKTOP-H16AD78"
   },
   "last_release": {
-    "at": "2026-09-18 21:43:59+0800",
+    "at": "2026-09-19 00:27:00+0800",
     "agent": "Nipporita@DESKTOP-H16AD78",
     "modkit": "/mnt/d/项目/幻想指南/18/th18_modkit",
     "patch_md5": "139957195894d98953f4ebafd82d9a9a",
-    "dll_md5": "adfa81712f453981be5408350d5254a0",
+    "dll_md5": "cfc3c09eedaf22f75e7d0225a023f8bc",
     "sht_md5": [
       "e3d7e0355f2947c39dda8f580fbe6c66",
       "c20ae9fe088c40eb9e419fa261a8d60f",
@@ -25,6 +25,57 @@
     "files_md5": "a80eda15d9e9d4bd447ee22d29933e10"
   },
   "history": [
+    {
+      "at": "2026-09-19 00:27:00+0800",
+      "agent": "Nipporita@DESKTOP-H16AD78",
+      "modkit": "/mnt/d/项目/幻想指南/18/th18_modkit",
+      "patch_md5": "139957195894d98953f4ebafd82d9a9a",
+      "dll_md5": "cfc3c09eedaf22f75e7d0225a023f8bc",
+      "sht_md5": [
+        "e3d7e0355f2947c39dda8f580fbe6c66",
+        "c20ae9fe088c40eb9e419fa261a8d60f",
+        "d3096321b2af7b6729ffef499779b3fc",
+        "cc9229aeccc9fc700d58f1527f16b69c"
+      ],
+      "abcard_md5": "bf91a0f5c0dc4b96f2a51c27f134222e",
+      "ability_md5": "d3cd84e46b915f1f8af55e20e4572ad0",
+      "cards_md5": "2cc0fbbf8548b5fd0a4879af453b8005",
+      "files_md5": "a80eda15d9e9d4bd447ee22d29933e10"
+    },
+    {
+      "at": "2026-09-19 00:21:45+0800",
+      "agent": "Nipporita@DESKTOP-H16AD78",
+      "modkit": "/mnt/d/项目/幻想指南/18/th18_modkit",
+      "patch_md5": "139957195894d98953f4ebafd82d9a9a",
+      "dll_md5": "139bbc0a30640e3f24be77ae1740e047",
+      "sht_md5": [
+        "e3d7e0355f2947c39dda8f580fbe6c66",
+        "c20ae9fe088c40eb9e419fa261a8d60f",
+        "d3096321b2af7b6729ffef499779b3fc",
+        "cc9229aeccc9fc700d58f1527f16b69c"
+      ],
+      "abcard_md5": "bf91a0f5c0dc4b96f2a51c27f134222e",
+      "ability_md5": "d3cd84e46b915f1f8af55e20e4572ad0",
+      "cards_md5": "f4013c8bf5e1efa1b71597ca12c1bc71",
+      "files_md5": "324677e86796827bbc2f32a523b64670"
+    },
+    {
+      "at": "2026-09-19 00:19:05+0800",
+      "agent": "Nipporita@DESKTOP-H16AD78",
+      "modkit": "/mnt/d/项目/幻想指南/18/th18_modkit",
+      "patch_md5": "139957195894d98953f4ebafd82d9a9a",
+      "dll_md5": "adfa81712f453981be5408350d5254a0",
+      "sht_md5": [
+        "e3d7e0355f2947c39dda8f580fbe6c66",
+        "c20ae9fe088c40eb9e419fa261a8d60f",
+        "d3096321b2af7b6729ffef499779b3fc",
+        "cc9229aeccc9fc700d58f1527f16b69c"
+      ],
+      "abcard_md5": "bf91a0f5c0dc4b96f2a51c27f134222e",
+      "ability_md5": "d3cd84e46b915f1f8af55e20e4572ad0",
+      "cards_md5": "f4013c8bf5e1efa1b71597ca12c1bc71",
+      "files_md5": "324677e86796827bbc2f32a523b64670"
+    },
     {
       "at": "2026-09-18 21:43:59+0800",
       "agent": "Nipporita@DESKTOP-H16AD78",

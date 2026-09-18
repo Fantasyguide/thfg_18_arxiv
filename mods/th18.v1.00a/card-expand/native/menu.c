@@ -79,6 +79,14 @@ static int rebuild_order(uint8_t *base, uint32_t *order)
         if (id < CE_RETAIL_UNLOCKED || id >= CE_MAX_ROWS) { ce_verdict("FAIL: registered new card id %u out of range", id); return 0; }
         new_ids[i] = id;
         new_cat[i] = card_category(id);
+        /* ★★ 2026-09-19（owner 口径「在选卡界面 th06–th17 应当是连续的」）：**显示分组**
+         *   作品系统卡（`CE_SYS_CARD_LO..HI`）在顺序表里按**同一个显示类别**插入 ⇒ 它们在
+         *   图鉴/编成里连成一条（`ce_build_order` 按类别分段，否则 113/116/117 是主动卡、
+         *   会被排到主动段末尾，中间隔着原生主动卡与别的主动新卡 = 视觉 gap）。
+         *   ⚠ **不许拿这招去改 `cards.js` 的 `category`** —— 那张表必须与行为一致（主动卡 = 0），
+         *   SDK 的 `ce_sdk_contract_check` 会当场 FAIL（reason 2）⇒ 整局新卡禁用（2026-09-19 真踩过，
+         *   见 `AUDIT.md` §BE-EJ）。这里只动**给顺序表用的**这一份拷贝，表行里的类别一个字节没改。*/
+        if (id >= CE_SYS_CARD_LO && id <= CE_SYS_CARD_HI) new_cat[i] = 2u;
     }
     unsigned vis = ce_build_order(order, CE_MAX_ROWS, retail, retail_cat, CE_ORDER_COUNT - 1, new_ids, new_cat, N, CE_NULL_ROW, CE_ORDER_COUNT);
     if (vis != CE_ORDER_COUNT - 1 + N) { ce_verdict("FAIL: order table overflow (%u visible)", vis); return 0; }

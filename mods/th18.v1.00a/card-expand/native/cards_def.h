@@ -21,6 +21,12 @@
                                        * （`sites.py` 的 `MENU_COUNT_BCMP`）⇒ 界抬到 255。
                                        * 现实里**先撞的是资源墙**：abcard.anm entry 256（每卡 2 条）
                                        * ⇒ 还能进 46 张。见 CAPACITY.md 与 native/tools/capcheck.py。*/
+/* ★ 作品系统卡（106..117）的 id 区间：**只用于显示分组** —— `menu.c` 建顺序表时把这一段按同一个显示类别插入，让它们在选卡界面连成一条（`ce_build_order` 按类别分段）。
+ * ⚠ 别拿它去改 `cards.js` 的 `category`：那张表的 `category` 必须与行为一致
+ *   （主动卡 = 0），SDK 的 `ce_sdk_contract_check` 会拦（reason 2），见 AUDIT §BE-EJ。*/
+#define CE_SYS_CARD_LO      106
+#define CE_SYS_CARD_HI      117
+
 #define CE_CARD_TEXT_LINE   0x40      /* 文案一行 0x40 字节，含 NUL → 内容 ≤ 63 */
 #define CE_CARD_DESC_LINES  6
 #define CE_CARD_UNSET       0xffffffffu   /* 必填字段的「没给」*/
