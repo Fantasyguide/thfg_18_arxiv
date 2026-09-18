@@ -374,8 +374,9 @@ int main(void)
      *   ⇒ 槽与衰减**同一个门** ⇒ boss 战 / 对话中 / 前 90 帧内，**两者一起冻结**。*/
     {
         mof_faith_gate_t ok;
-        /* `ok` = 三条门齐 + **场上无敌人**（⇒ 快档 18000；有敌人档在下面单独钉）*/
-        ok.no_boss = 1; ok.no_dialogue = 1; ok.stage_frames_ok = 1; ok.enemies_present = 0;
+        /* `ok` = 三条门齐 + **本帧没有击破**（⇒ 快档 18000 = −180 显示/帧；有击破的慢档在下面单独钉）*/
+        ok.no_boss = 1; ok.no_dialogue = 1; ok.stage_frames_ok = 1;
+        ok.enemies_present = 0; ok.killed_since_last = 0;
 
         /* ① 一条门一条门地缺 ⇒ 一个字节都不许动（槽也冻结）*/
         faith_slot_init_110(&slot);
@@ -411,25 +412,27 @@ int main(void)
             CHECK(faith_slot_total(&t) == 50000 + 20000 - 10800);
         }
 
-        /* ②b ★★ **单档（一手）** —— 2026-09-18 用户裁决「掉得慢：最大得点往下掉得不够狠」后
-         *    **两档撤掉**：无论有没有敌人，速率恒 = 一手 −180 显示/帧 = 18000 定点/帧。
-         *    `enemies_present` 形参保留（签名冻结 + 日志要打），但**不参与选档**。*/
-        CHECK(mof_faith_rate_fixed(1) == 18000);
-        CHECK(mof_faith_rate_fixed(0) == 18000);
-        CHECK(mof_faith_rate_fixed(-1) == 18000);                 /* 任何取值都一样 */
-        CHECK(mof_faith_rate_fixed(1) == MOF_FAITH_DRAIN_NO_BOSS_FIXED);
+        /* ②b ★★ **两档，判据 = 这一帧有没有击破**（2026-09-18 逐条复核的定案）：
+         *    一手 `th10:0x40e26b`（敌机死亡路径）把速率字段 `0x474c50` 写 1，而衰减帧
+         *    `0x418a26 sub ecx,edx` 用的是**读到的原值**、之后 `0x418a30` 才抬到 18
+         *    ⇒ 有击破的帧扣 1 存储（−10 显示 = 1000 定点）、没击破的帧扣 18 存储（−180 显示 = 18000 定点）。
+         *    ⚠ 中间的两次误判（「一手只有一档」/「撤掉 600 那档」）见 `TUNING.md` §2.5j 的撤回记录。*/
+        CHECK(mof_faith_rate_fixed(1) == 1000);                   /* 本帧有击破 ⇒ 慢档 */
+        CHECK(mof_faith_rate_fixed(0) == 18000);                  /* 本帧没击破 ⇒ 快档 */
+        CHECK(mof_faith_rate_fixed(-1) == 1000);                  /* 非 0/1 ⇒ 按「有击破」保守处理 */
+        CHECK(mof_faith_rate_fixed(1) == MOF_FAITH_DRAIN_KILL_FIXED);
+        CHECK(mof_faith_rate_fixed(0) == MOF_FAITH_DRAIN_NO_BOSS_FIXED);
+        CHECK(mof_faith_rate_fixed(0) == 18 * mof_faith_rate_fixed(1));   /* 18 存储/帧 vs 1 存储/帧 */
         {
             faith_slot_t e;
             mof_faith_gate_t ge = ok;
-            ge.enemies_present = 1;                               /* 场上有敌人 —— 以前是慢档，现在同速 */
             faith_slot_init_110(&e);
             (void)faith_slot_add(&e, FAITH_EV_BIG, 20000);
             e.combo = 0;
-            CHECK(mof_core_faith_tick(&e, &ge, 1) == 18000);
-            /* 60 帧 ⇒ 正好 −10800 显示（= 一手的 −180/帧 × 60）—— 用**速率**断言，
-             * 别连着跑两次（第二次会撞 `delta` 的下限 0，那是另一条不变式）。*/
-            CHECK(mof_faith_rate_fixed(1) * 60 == 10800 * FAITH_FIXED);
-            CHECK(mof_faith_rate_fixed(1) * 60 == FAITH_EMPTY_NO_ENEMY_PER_SEC * FAITH_FIXED);
+            ge.killed_since_last = 1;                             /* 本帧击破过 ⇒ 慢档 */
+            CHECK(mof_core_faith_tick(&e, &ge, 1) == 1000);
+            CHECK(mof_faith_rate_fixed(1) * 60 == FAITH_EMPTY_ENEMY_PER_SEC * FAITH_FIXED);  /* =600/s */
+            CHECK(mof_faith_rate_fixed(0) * 60 == FAITH_EMPTY_NO_ENEMY_PER_SEC * FAITH_FIXED); /* =10800/s */
         }
 
         /* ③ 槽 > 0：只 −1、**不扣信仰**；而门不成立时**槽也冻**（一手：同一组门）*/

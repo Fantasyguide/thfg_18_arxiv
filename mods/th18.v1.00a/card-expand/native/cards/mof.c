@@ -838,6 +838,9 @@ static int32_t s_ge_wave_id;              /* 本波第一只妖精的 `enemy_id`
 static int32_t s_ge_other_id;             /* 见过的「**非妖精**」外观里最大的 id（水位线）*/
 static int32_t s_ge_cancel;               /* ★ 本波出现过大妖精/阴阳玉/幽灵/boss ⇒ 撤销补刷 */
 static int32_t s_ge_stat;                 /* 诊断：一共刷了几只 */
+/* ★★ 2026-09-18：**击破闩锁** —— 一手的衰减速率按「这一帧有没有击破」选档（见 `mof_core.h` 的
+ * 「两档，判据 = 这一帧有没有击破」）：`on_enemy_death` 里置、`on_tick_2` 里读走并清。*/
+static int32_t s_mof_killed;
 
 /* 「**妖精**」的外观（`enemy.anm` 的扁平脚本号；一手 = `native/tools/measure_enemy_variants.py`
  * 的变体表 + `local/_scratch/th18_wave_density.py` 的波次实例普查）：
@@ -1156,6 +1159,12 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
      * 为什么必须有这道门：TH18 有 boss 的贴图**正好也发绿**（st02 `Boss*`/`MBoss` 用 `st02enm` script0，
      * 实测 hue 134），不加门就会被表外的键挡不住（表只收 N=2，那支是 N=3，属双保险）。*/
     is_boss = mof_is_boss((const uint8_t *)ev->enemy);
+
+    /* ★★ 2026-09-18：**击破闩锁** —— 一手的信仰衰减速率按「这一帧有没有击破」选档
+     *   （一手 `th10:0x40e26b` 在敌机死亡路径里把速率字段写 1 ⇒ 那一帧只扣 −10 显示）。
+     *   置位点选在这里（过了 `mof_core_death_is_real()` 门）= 与一手同一语境：**真击破**才写。
+     *   `on_tick_2` 里读走并清（见 `gate.killed_since_last`）。*/
+    s_mof_killed = 1;
 
     /* ★★ 2026-09-16 补：**击破一只非 boss ⇒ 连击槽 +10f**（一手 `th10:0x40e681 push 0xa`，
      *   坐标在 TH10 敌人被移除/撒落那一段里、无条件给一次；表与口径见 `mof_core.h`）。
@@ -1814,14 +1823,18 @@ static int on_tick_2(ce_card_t *c)
      * **用户口径（2026-09-15）**把「连击槽为空」也点名为前提 —— 那一条**已经在**本函数里：
      *   `mof_core_faith_tick()` 的分叉（一手 `th10:0x418a06 jle`）= 「槽 > 0 只 −1、槽 ≤ 0 才扣信仰」，
      *   所以「槽空」是**分叉**不是门；`enemies_present` 只用来**选速率档**（无敌人 10800/s、有敌人 600/s）。
-     * **两档选择与一手的冲突**（🟡）写在 `mof_core.h` 的「衰减速率：两档」块里 —— 结论：一手证据只支持
-     *   10800 那一档（`th10:0x418a30` 把速率字段读完抬到下限 18），600 那一档按用户口径保留、待实跑钉。*/
+     * ★★ 2026-09-18 **结案**：两档都在一手里，判据 = **这一帧有没有击破**（`gate.killed_since_last`）——
+     *   一手 `th10:0x40e26b`（敌机死亡路径）把速率字段写 1，而衰减帧 `0x418a26 sub ecx,edx` 用的是
+     *   **读到的原值**、读完才抬到 18 ⇒ 有击破扣 1 存储（−10 显示）、没击破扣 18（−180 显示）。
+     *   详见 `mof_core.h` 的「衰减速率：两档，判据 = 这一帧有没有击破」。*/
     {
         mof_faith_gate_t gate;
         gate.no_boss         = !mof_boss_alive();       /* ①  */
         gate.no_dialogue     = !CE_GUI_MSG_ACTIVE();    /* ②  */
         gate.stage_frames_ok = (mof_stage_frames(s) >= MOF_STAGE_FRAME_GATE);   /* ③ 🟡 自定源 */
-        gate.enemies_present = mof_enemy_present();     /* 只选速率档，不当门用 */
+        gate.enemies_present = mof_enemy_present();     /* 只作诊断（日志 `near=`）—— 不选档 */
+        gate.killed_since_last = s_mof_killed;          /* ★★ 一手的真判据：这一帧有没有击破 */
+        s_mof_killed = 0;                               /* 读走即清（下一帧重新判定）*/
         /* ★★ 2026-09-15f：**连击槽的前后值**（用户实跑「击破条的衰减速度肯定有问题」的对账依据）——
          *   一手是「槽 > 0 ⇒ 每帧只 −1」（`th10:0x418a10`），所以**在没有道具补槽的帧里**，
          *   `combo_before - combo_after` 应当恰好 = 1（门全成立）或 = 0（任一不成立 ⇒ 冻结）。
@@ -1833,7 +1846,7 @@ static int on_tick_2(ce_card_t *c)
         s->gate_no_boss = gate.no_boss;
         s->gate_no_dlg  = gate.no_dialogue;
         s->gate_frames  = gate.stage_frames_ok;
-        s->gate_enemies = gate.enemies_present;
+        s->gate_enemies = gate.killed_since_last;       /* 日志 `near=` 改打「本帧有没有击破」（1/0）*/
     }
 
     /* ③ miss 检测（命数减少）→ `−(信仰−50000)/3`（§7.5）。

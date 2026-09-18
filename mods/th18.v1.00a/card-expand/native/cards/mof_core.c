@@ -296,18 +296,15 @@ mof_power_t mof_core_power_spend(int32_t power)
  * ⚠ 速率是常量（下限 18 恒定）⇒ 批量 `frames` 与逐帧调用**数值等价**，没有累加顺序问题。*/
 /* 本帧的速率档（用户口径 2026-09-15；🟡 一手证据只支持「无敌人」那一档，见 `mof_core.h` 的长注）。
  * 非 0/1 的入参按「有敌人」（慢档）处理 —— 保守：判不出来时宁可少扣信仰。*/
-int32_t mof_faith_rate_fixed(int enemies_present)
+int32_t mof_faith_rate_fixed(int killed_since_last)
 {
-    /* ★★ 2026-09-18 **用户裁决：取消两档** —— 原话「风神录的**掉最大得点**似乎有点慢」，
-     *   追问后选的是「**掉得慢：最大得点往下掉得不够狠**」⇒ 恒用**一手**的速率。
-     *   为什么这样最对：一手（th10 v1.00a）在这一点上**只有一档** —— 速率字段 `0x474c50` 全 exe
-     *   只有 2 个写点（`0x417a00` 写 9、`0x40e26b` 写 1，都 < 18），读点 `0x418a23` 后面紧跟
-     *   `0x418a2e/0x418a30` **把它抬到下限 18** ⇒ 有效速率**恒为 −18 存储/帧 = −180 显示/帧 = −10800/s**。
-     *   （用户 2026-09-15 给过「有敌人 −600/s」那一档，我们照做了并标 🟡；今天他实跑后判定"不够狠"
-     *     ⇒ 两档整个撤掉，回到一手 —— 这条 🟡 冲突就此结案，`TUNING.md` §2.5x 留痕。）
-     * ⚠ `enemies_present` 形参**保留**（签名被单测钉着、日志里还要打）：**不再参与选档**。*/
-    (void)enemies_present;
-    return MOF_FAITH_DRAIN_NO_BOSS_FIXED;
+    /* ★★ 定案（2026-09-18 逐条复核，用户追问「一手是不是只有有敌人分支」逼出来的）：
+     *   判据 = **这一帧有没有击破**，不是「有没有敌人」。
+     *   一手：`0x40e26b`（敌机死亡路径，紧跟 `or [enemy+0x1444],0x2000`）把速率字段 `0x474c50` 写 **1**；
+     *   衰减帧 `0x418a23` 读它、`0x418a26 sub ecx,edx` **用读到的原值**扣，之后 `0x418a30` 才抬到 18。
+     *   ⇒ 有击破的帧扣 1 存储（−10 显示 = 慢档）；没击破的帧扣 18 存储（−180 显示 = 快档）。
+     * 其它取值按「有击破」处理（保守：宁可少扣）。*/
+    return killed_since_last ? MOF_FAITH_DRAIN_KILL_FIXED : MOF_FAITH_DRAIN_NO_BOSS_FIXED;
 }
 
 int32_t mof_core_faith_tick(faith_slot_t *s, const mof_faith_gate_t *gate, int frames)
@@ -326,7 +323,7 @@ int32_t mof_core_faith_tick(faith_slot_t *s, const mof_faith_gate_t *gate, int f
 
     /* 槽空 ⇒ 衰减（一手 `th10:0x418a17`）：速率按档位取（`th10:0x418a2e`–`0x418a30` 那段）。
      * `delta` 是 ×100 定点 ⇒ 与档位常量同量纲，直接减。*/
-    rate = mof_faith_rate_fixed(gate->enemies_present);
+    rate = mof_faith_rate_fixed(gate->killed_since_last);
     loss = rate * frames;
     if (loss > s->delta) loss = s->delta;   /* 硬钳在基础（一手存储 5000 = 我们的 `delta` 0）*/
     s->delta -= loss;
@@ -349,6 +346,7 @@ int32_t mof_core_combo_tick(faith_slot_t *s, int in_boss_fight)
     gate.no_dialogue     = 1;
     gate.stage_frames_ok = 1;
     gate.enemies_present = 0;
+    gate.killed_since_last = 0;      /* ★ 旧入口没有「本帧有没有击破」这个输入 ⇒ 取快档（= 它历史上的语义）*/
     return mof_core_faith_tick(s, &gate, 1);
 }
 
