@@ -29,6 +29,7 @@ step3: anm sht
 ##            **只判红「已声明」的；park 的只提示**（现在没装）。无样本/无 capstone 时自己跳过并 exit 0。
 check: quick cards-check anm-verify sht-verify snd-check dllx87 dllverify
 	python3 sites.py check
+	python3 tools/gen_drift.py      # 生成物漂移：patch/*.js 与 sites_gen.h 必须是 sites.py 现算的那一份
 	python3 tools/sitecheck.py --all
 	python3 tools/capcheck.py
 	python3 tools/engine_abi_check.py
@@ -299,6 +300,17 @@ dist: anm sht ecl ecl-ufo
 	cd $(DIST) && rm -f th18_card_expand_bundle.zip && zip -qr th18_card_expand_bundle.zip bin patch-step3 patch-test patch-devstage README.txt
 	@echo "dist/ 就绪："; ls $(DIST)
 
+## release-check —— ★ 发布前闸（`tools/release_guard.py check`）：**冻结中直接中止**；
+##   顺带跑 sites.py check（patch 声明 ↔ .def 双向对账 + 站点预算）与 check_deploy_pair（DLL ↔ pl0X.sht）。
+##   为什么要有它：2026-09-18 那次事故里，冻结状态只写在人读的文档（`local/DLL-SYNC.md` 的两节 ⛔，
+##   其中一半还不入库），一个会话**只读了文件开头**就发了 3 次版 ⇒ 纪律必须变成闸，见 AUDIT §BE-EG。
+release-check:
+	python3 tools/release_guard.py check --modkit "$${MODKIT_DIR:-}"
+
 ## release —— 构建 dist，同步进发布仓库 local/vendor/th18_modkit 并提交；PUSH=1 再推
-release: dist
+##   ⚠ 顺序：**先过 release-check（冻结即中止）**，再 dist，然后发布，最后 record 记账
+##   （账 = patch js / DLL / 四份 pl0X.sht / 两份 anm / cards.js / files.js 的 md5 快照，写进
+##    入库的 `RELEASE-STATE.json` + 本机 `local/DLL-SYNC.md`）。
+release: release-check dist
 	python3 release.py
+	python3 tools/release_guard.py record --modkit "$${MODKIT_DIR:-未指定}"

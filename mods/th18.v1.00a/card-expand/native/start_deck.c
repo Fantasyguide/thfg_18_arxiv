@@ -297,11 +297,20 @@ void ce_deck_audit(const uint8_t *sf)
 {
     if (!sf) return;
     uint8_t *base = (uint8_t *)GetModuleHandleA(NULL);
-    uint32_t img_end = 0;
+    uint32_t img_end = 0, img_size = 0;
     {   /* 影像上界：跳转表项必须落在这里面，否则 `jmp [jt+id*4]` 会跳到影像外。
-         * PE32 的 `SizeOfImage` 在可选头 +0x38（+0x50 是 HeapReserve，别写错）。*/
+         * ★ PE32 的偏移要连**可选头**一起算：可选头在 `pe + 0x18`，`SizeOfImage` 在可选头 `+0x38`
+         *   ⇒ 合计 **`pe + 0x50`**。2026-09-18 第一版写成 `pe + 0x38`（= 可选头 `+0x20` =
+         *   `SectionAlignment` = `0x1000`）⇒ 上界算成 `base + 0x1000`，于是**每一条跳转表项都被
+         *   误判成「不在影像内」**（实跑日志里真出现过一次 11 个槽的误报，见 `AUDIT.md` §BE-EG）。
+         *   读不出合理的上界时**整条检查不做**（宁可不报，也不误报）。*/
         const uint8_t *pe = base + *(const uint32_t *)(base + 0x3c);
-        img_end = (uint32_t)(uintptr_t)base + *(const uint32_t *)(pe + 0x38);
+        img_size = *(const uint32_t *)(pe + 0x18 + 0x38);
+        img_end = (uint32_t)(uintptr_t)base + img_size;
+        if (img_size <= 0x1000) {                        /* 明显不是 SizeOfImage ⇒ 不拿它做判断 */
+            ce_log("deck-audit: ⚠ SizeOfImage 读出来是 %08x（不合理）⇒ 跳转表那条检查跳过", img_size);
+            img_end = 0;
+        }
     }
     unsigned bound = sd_alloc_bound(base);
     unsigned bad_cap = 0, no_row = 0, slots = 0, bad_jt = 0, over = 0;
@@ -325,7 +334,7 @@ void ce_deck_audit(const uint8_t *sf)
             int over_bound = bound != 0xffffffffu && id > bound;
             /* ⚠ 只有「引擎真会走跳转表」的 id 才去读那一项：上界就是同一个生成器写的 `rows-1`
              * ⇒ 读到的位置一定落在 cave 里（反过来，越界 id 去读会越出 cave，虽然多半仍在本页内）。*/
-            if (!over_bound && bound != 0xffffffffu)
+            if (!over_bound && bound != 0xffffffffu && img_end)
                 jt_ok = sd_jt_entry(base, id, &target)
                      && target >= (uint32_t)(uintptr_t)base && target < img_end;
             if (over_bound) ++over;
@@ -337,8 +346,12 @@ void ce_deck_audit(const uint8_t *sf)
         snprintf(buf + len, sizeof buf - (size_t)len, "]");
         ce_log("%s", buf);
     }
-    ce_log("deck-audit: 分配器上界 = %u（`th18:0x%x` 的 imm8，`ja` 无符号）、影像止于 %08x",
-           bound, (unsigned)CE_ALLOC_CMP_RVA, img_end);
+    if (img_end)
+        ce_log("deck-audit: 分配器上界 = %u（`th18:0x%x` 的 imm8，`ja` 无符号）、影像止于 %08x（SizeOfImage %08x）",
+               bound, (unsigned)CE_ALLOC_CMP_RVA, img_end, img_size);
+    else
+        ce_log("deck-audit: 分配器上界 = %u（`th18:0x%x` 的 imm8，`ja` 无符号）、影像上界读不出 ⇒ 跳转表检查跳过",
+               bound, (unsigned)CE_ALLOC_CMP_RVA);
     if (bad_cap) ce_log("deck-audit: ★ %u 个机体的容量字段 ≤ 0（`+0x%x`）⇒ reset_cards 一圈都不跑，那些机体的槽全没了",
                         bad_cap, (unsigned)CE_DECK_CAP_OFF);
     if (!slots) return;

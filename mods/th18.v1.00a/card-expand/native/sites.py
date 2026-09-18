@@ -1866,6 +1866,13 @@ def main():
                   "\n      要么把功能并进已有站点，要么先实跑量出新上限再改 SITE_BUDGET（并在 AUDIT.md §BE 记一条）。"
                   % (n_sites, SITE_BUDGET))
             bad.append("站点数 %d 超预算 %d" % (n_sites, SITE_BUDGET))
+        elif SITE_BUDGET - n_sites == 0:
+            # ★ 2026-09-18（AUDIT §BE-EG）：余量 0 不是「没问题」，是「下一条就超线」。
+            #   预算是**进程级共享资源**：两个会话同一天各加各的，各自的门都是绿的，合起来越线。
+            print("   ⚠ 在预算内但**余量 0**（%d / %d）：再声明任何一条站点都会超线 ⇒ 加站点前先在 "
+                  "`GATES.md` §8 记账 + 改 `SITE_BUDGET`（并在 `AUDIT.md` §BE 记一条）；"
+                  "别两个人同一天各加各的（预算跨会话共享，见 `AUDIT.md` §BE-EG）"
+                  % (n_sites, SITE_BUDGET))
         else:
             print("   ✅ 在预算内（余量 %d 条）" % (SITE_BUDGET - n_sites))
         missing, stale = check_def_exports(bp_names)
