@@ -14246,3 +14246,32 @@ test: reset_cards — shot 0 cap 3 deck [200, 56, 110, …]
 **对既有卡的影响面**：只改三张系统卡的 `category`（它们的行为、虚表、HUD 分组、商店/解锁逻辑全不受影响）；
 其余新卡的显示位置不变（`ce_build_order` 的插入规则没动）。**没有代码改动、没有 binhack/站点改动。**
 **未做**：`118`（十二合一，主动）仍留在主动区段末尾、紧邻它的位置不是系统条带 —— owner 没要求，先不动。
+
+### §BE-EI ★ 恢复 `.on_enemy_damage` 订阅（113 神灵庙「Boss 吃到伤害 → 掉灵」）—— owner 2026-09-18「你改我跑」
+
+**背景**：`§BE 详录 #41`（2026-09-17a）为「站点总数越线」假说把 113 的 `.on_enemy_damage` **退订**
+（订阅行注释 + handler 标 `__attribute__((unused))`），此后该通道**死的**：`trance:` 汇总行恒为
+`boss hits 0(drops 0, rejected 0)`（实测日志确认）—— 站点在跑、卡侧没人订阅。
+owner 2026-09-18 口径：「**你改我跑**」⇒ 本批恢复订阅，供实跑验收。
+
+**★ 本批要说清的一条（也是 #41 判据的一部分）**：**取消/恢复订阅不改变站点声明集，也不改变跳板池布局** ——
+`ce_enemy_damage`（`th18:0x42f2cb`）的声明一直在（24 条之一、`.def` 也导出），桩与跳板格一直占着，
+`BP_ce_enemy_damage` 一直每敌每帧在跑（建 `ev` → 走卡链 → 没人订阅就 `return BP_EXEC_ORIGINAL`）。
+#41 的二分改的是**声明**（摘掉 ⇒ 布局变）⇒ 「订不订阅」与那条崩溃假说**无关**；恢复订阅也不会把它带回来。
+顺带订正 #41 里写的「恢复 = 取消注释 + `patch`/`.def`/`Makefile` 三处回滚」：那三处是**声明**层面的，
+现在声明已在 ⇒ **只需改卡侧两处**。
+
+| 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
+| --- | --- | --- | --- | --- |
+| `native/cards/trance.c` | ① `CE_CARD(113, …)` 里恢复 `.on_enemy_damage = on_enemy_damage,`；② 去掉 handler 上的 `__attribute__((unused))`；③ 两处注释改成"恢复 + 为什么不需要动 patch/.def/Makefile" | 让「Boss 吃到伤害 → 掉灵」这条通道活过来（实跑验收）| 统筹会话 | `make dll` 0 新警告；`make check` rc=0；发布 DLL `139bbc0a…` **四处同 md5**（`mods/`、`thcrap/bin/`、`_255/`）；`release_guard record` 已记账 |
+
+**实跑要看什么（验收判据）**：
+1. `trance: … boss hits N(drops M, rejected K)` —— `N` 应随 boss 挨打增长；`K` 应为 **0 或极少**
+   （不为 0 ⇒ 又读到"不像活敌"的数据，回 `sdk.c` 的偏移口径查，见 §CI-7 那段的合理性闸）；
+2. 有掉落时日志会有 `trance: boss drop #n (enemy id …, dmg …, accum …, next threshold …, +d by distance)`
+   —— `d` 由**距离分档**给出，且阈值是"累加"不是"重置"（一手口径）；
+3. 掉出来的灵应出现在**那颗 boss 的位置**（不是自机脚下）。
+
+**风险与回滚**：风险是**行为级**（掉灵数量/位置不对），不是崩溃级；本通道自 2026-09-17a 起没跑过，
+第一次实跑就是它的验收。回滚 = 把 `.on_enemy_damage` 那行注释回去 + handler 加回 `unused`（两处）。
+**没有改任何 binhack / 站点 / 资产 / 其它卡。**
