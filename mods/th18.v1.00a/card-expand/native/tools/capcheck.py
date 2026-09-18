@@ -652,13 +652,82 @@ def build_rows():
 # ══════════════════════════════════════════════════════════════════════════
 # 附录 A（`CAPACITY.md` 里的名单；判「有没有新的容量消费者」就靠它）
 # ══════════════════════════════════════════════════════════════════════════
+# ── 安全用量：把每条墙的余量折算成「还能进几张卡」，取最小 = 真瓶颈 ────────────────
+#   为什么要有这一条：余量表把「格」混着写（entry / id / 条目 / slot），看表的人得自己心里换算，
+#   于是「还能加多少张卡」每次都要现场推。这里把每张卡的**成本**写死成一份口径（每项都有出处），
+#   再取最小的那个 = 安全用量；`--gen-appendix` 会把它写进 `CAPACITY.md` 的生成段，防漂移。
+#   成本口径（改这里 = 改台账里那句话）：
+#     · abcard.anm entry：**2 条/张**（`assets/build_abcard.py` 给 ORDER.txt 每行追加 2 条：`_max`/`_min`）
+#     · ability.anm entry：**3 条/张**（保守上界：36 张卡实测共追加 54 条 ≈ 1.5/张，图集卡会多吃几格，
+#       取 3 兜住；它只在极少数情况下才会成为瓶颈，所以给上界比给均值稳妥）
+#     · owned[] / unlocked_cards（用量口径 = **最高在用 id + 1**）：**1 个 id/张**，但只在
+#       「新 id 紧邻既有最高 id 往上分配」时成立（分配纪律见 `CAPACITY.md` §1）；跳号分配按跳掉的距离算
+#     · 卡 id 空间：可用 id 数（`CE_CARD_ID_MAX` − `CE_CARD_ID_MIN` + 1）− 已用张数
+#     · 图鉴条目 / 文案缓冲 / 顺序表：**1 格/张**
+#     · 商店随机池：`weight + 5` /张 ⇒ 按最小 `weight` = 1 折 **6/张**（`cards.js` 校验 weight ≥ 0，
+#       这里取 1 是一个乐观下界：weight 给得越大越费）
+CARD_COST = {
+    "abcard_entry": 2,
+    "ability_entry": 3,
+    "owned": 1,
+    "unlocked_shadow": 1,
+    "menu_rows": 1,
+    "text_buffer": 1,
+    "order_table": 1,
+    "shop_pool": 6,
+}
+
+
+def safe_quota(rows):
+    """→ (安全用量, 瓶颈行, [(张数, 标题, 每张成本)…] 升序, 最高在用 id 之上的余位)。见 `CARD_COST`。
+
+    ★ id 相关的三条（卡 id 空间 / `owned[]` / 影子数组）用同一个算法：**可用 id 数 − 已用张数**，
+    前提是「**从最小的空 id 起连续分配**」（分配纪律见 `CAPACITY.md` §1）。若把新卡分配在
+    **最高在用 id 之上**，那三条各自只剩 `CE_CARD_ID_MAX − 最高在用 id` 个位置 —— 第 4 个返回值就是它，
+    打印时会一并说明（例：id 200 的测试卡在用 ⇒ 往上分配只剩 54 个位置）。"""
+    cd = defines(NATIVE / "cards_def.h")
+    id_lo, id_hi = need(cd, "CE_CARD_ID_MIN", "cards_def.h"), need(cd, "CE_CARD_ID_MAX", "cards_def.h")
+    ids = [i for i, _, _ in ce_card_ids()]
+    free_ids = (id_hi - id_lo + 1) - len(ids)               # 从最小的空 id 起连续分配
+    above_max = (id_hi - max(ids)) if ids else 0            # 分配在最高在用 id 之上时的余位
+    out = []
+    for r in rows:
+        if r.key in ("card_ids", "owned", "unlocked_shadow"):
+            out.append((free_ids, r.title, 1))
+            continue
+        cost = CARD_COST.get(r.key)
+        if not cost or not r.gate:
+            continue
+        out.append((r.headroom // cost, r.title, cost))
+    out.sort(key=lambda x: x[0])
+    return (out[0][0] if out else 0), (out[0] if out else None), out, above_max
+
+
+def show_quota(rows):
+    n, worst, all_, above = safe_quota(rows)
+    if not worst:
+        return
+    print(f"★ 卡的安全用量：**还能进 {n} 张**（瓶颈 = {worst[1].split('（')[0]}，每张 {worst[2]} 格）")
+    detail = "、".join(f"{k.split('（')[0]} {v}" for v, k, _ in all_[1:])
+    print(f"   其余墙折算成张数（都 ≥ 瓶颈）：{detail}")
+    print("   口径：每张卡的成本写在本文件 `CARD_COST`（abcard 2 条/张、ability 3 条/张、商店 6 槽/张、"
+          "其余 1 格/张）；id 相关三条按「**从最小的空 id 起连续分配**」折算")
+    print(f"         （若把新 id 分配在最高在用 id 之上，那三条各自只剩 {above} 个位置）。")
+    print()
+
+
 def gen_appendix() -> str:
     ids = ce_card_ids()
+
     sg = sht_sets()
     atlas, scripts, n_spr, rng = anm_macros()
     L = []
     A = L.append
     A(BEGIN + "（本段由 `native/tools/capcheck.py --gen-appendix` 生成，**别手改**）-->")
+    A("")
+    q_n, q_worst, _, _ = safe_quota(build_rows())
+    A(f"**A0. 卡的安全用量：还能进 {q_n} 张**（瓶颈 = {q_worst[1].split('（')[0]}，每张 {q_worst[2]} 格；"
+      "口径 = 本文件 `CARD_COST`，见 `CAPACITY.md` §1 的「安全用量」）")
     A("")
     A(f"**A1. 卡 id（`CE_CARD(` 的落点，{len(ids)} 张）** —— 出处 `native/cards/*.c`")
     A("")
@@ -825,6 +894,7 @@ def main():
         return explain(rows, a.explain)
 
     show(rows)
+    show_quota(rows)
     bad = []
 
     # ① 余量闸
