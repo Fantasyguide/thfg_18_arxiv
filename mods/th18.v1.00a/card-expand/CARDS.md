@@ -85,7 +85,7 @@ EVENTS-CONTRACT §2）⇒ 与卡链顺序无关、别的卡加到的那颗也一
 **辉针城（114）补充**：数值行（spec §3，`collect2x_core.h` 同名常量）：批集 = V 门真空飞行（state 3）的 {1(P)、2(钱)}（触收 1 / 环收 4 / 转换点 9–0xe 一律不入批，AUDIT §Z19/Z22）；档位 20/30/40/50/60 → 倍率 500/800/1200/1600/2000 permille，倍率**只作用分数**：`SCORE += batch_score×(mult−1000)/1000`（×0.5/×0.8 为负补差，1:1 原义；`ce_add_score_delta` 钳 0..9 亿）；碎片每批 1 枚，<60 走 `fragment_cycle` 4 符卡碎 : 1 命碎（循环按 run 计，`on_run_reset` 归零）、≥60 命碎不动游标。
 批分值捕获（stash）：collect 断点在 type 分派**前**存 SCORE、commit 断点（分值已入 SCORE）累加差量；stash 只对批集收集置位、任意提交后失效 —— 批集道具按池槽顺序「收集→提交」背靠背走完，夹在中间的碎片提交见不到活 stash。帧源 = 接线层自计数（`on_item_frame` 分派每正常游玩帧一次；`card+0x20` zTimer 只被主动卡 tick、被动卡读它是死值，Z14），节流游标同源，弃用 TIME_IN_STAGE。
 早结敞口（Z7，Task 9 实跑定案）：批闭判定 = 池内无 state-3 在飞批集道具（成员门 Z22 + 8 帧 idle/presence 续批 Z21），若存在「收集了、分值提交滞后到批闭之后」的道具，那一枚分值会漏出本批（日志会现 `commit after batch closed` 行）。
-卡图：暂无用户原图，sprite 暂填 116/117（原生 NULL 的 `empty`/`dummy` 透明占位，同黑桃五张最初做法；DATA.md §6）；画好走 ORDER.txt + `make anm` 换新索引。`price_tier` 10（300 档）、`weight` 2 —— 占位，待用户确认。设计 `docs/superpowers/specs/2026-09-08-collect-2x-design.md`。
+卡图：**2026-09-18 落地** —— 白底 + 辉针城 exe 图标最大居中，sprite **180/181**（`COLLECT_2X`；此前暂填 116/117 的透明占位，做法同黑桃五张最初那版，DATA.md §6）。`price_tier` 10（300 档）、`weight` 2 —— 占位，待用户确认。设计 `docs/superpowers/specs/2026-09-08-collect-2x-design.md`。
 
 ## 致敬・炉石传说
 
@@ -186,7 +186,7 @@ C 自带一个计数器当 `short_timer` 传进去（`param_2` 只进模运算�
 面板五行的数值（TH15 `Gui::on_draw_2e` 的 `"%d"` / `"%3.1f%%"` / `"%3d"` / `"%6d"` / `"  +%d"`）
 **2026-09-10 起从 ASCII 文字改成贴图 VM**（`ce_hud_vm_text_set` + 脚本 136 + TH18 font 2 原生字形）：
 面板本体在 UI 层 24（暂停时被模糊罩盖住），数值行放层 25（与罩子同桩、罩子后起）⇒ 一起被盖住。
-卡名 / 文案 / sprite 116/117 都是**占位**，待用户确认。
+卡名 / 文案仍是**占位**，待用户确认；卡图 **2026-09-18 落地** —— 白底 + 绀珠传 exe 图标，sprite **182/183**（`LOLK_CHAPTER`）。
 
 ## 致敬・东方天空璋
 
@@ -242,7 +242,7 @@ C 自带一个计数器当 `short_timer` 传进去（`param_2` 只进模运算�
 这样暂停时数字也跟槽一起被模糊罩盖住（ASCII 文字做不到，见 [`engine/anm/th18/03`](../../../engine/anm/th18/03-ascii-text.md) §2f）。
 HUD = **游玩区内的左下角**（字面量空间 x 44 起）：季节字 PNG（`front00.png` (832,80)+32k，32×32）+ 实心 `drawRect(102,10)` 打底 + `drawRect(100,8)` 填充（scale.x = 档内进度）+ 档位数字贴在条右端；**UI VM 坐标 = 640 字面量 × 2**（AUDIT AF7），`ce_hud_text` 仍是 640 空间。★ 矩形脚本必须写 `sprite(-1)`，否则整条不可见。
 **解放视觉**：两个 `drawPoly(1.0f,32)` 实心圆照 TH16 `pl00sub.anm` script3/4（外圈 layer13 减算灰→绿、内圈 layer12 加算红），前 10 帧扩到半径、之后 250 帧淡到 64、最后 20 帧淡到 0；**圆心 = 释放原点，只有秋跟着自机**（TH16 `BombSubFall__on_tick` `0x40eeb0`）。
-卡图 sprite 116/117 是**占位**（与绀珠传共用）。
+卡图 **2026-09-18 落地** —— 白底 + 天空璋 exe 图标，sprite **184/185**（`SEASON`；占位期与绀珠传共用 116/117）。
 
 ## 致敬・东方红魔乡 / 妖妖梦 / 永夜抄 / 花映塚 / 风神录 / 地灵殿 / 星莲船 / 神灵庙 / 鬼形兽
 
