@@ -2055,7 +2055,7 @@ TH14 Collect Point 收点系统的 1:1 复刻（占位名 = TH14 三字名，用
 | ~~皇家同花顺~~ | 🔧 已做（`cards/royal.c`，五张共用 ctor，不开断点；金钱 +800 / 命 +2 / bomb +2），待实跑 | AUDIT O26；`ce_owned()` / `ce_add_life()` / `ce_add_bomb()` 进了 sdk.h |
 | ~~主动卡基类~~ | ✅ C 键 / 充能 / HUD / replay 计时器透传已进入 SDK，反转牌等主动卡已接入，待实跑 | `04-active-cards.md` §3–§6；实现与契约见 [`SDK.md`](SDK.md) §3、§9 |
 | 辅助函数提炼 | 动作出现第二次就进 `sdk.h` | 方案 3 的约定 |
-| 图鉴上限 | 新卡 > 71 时才需要：两处 `cmp r,imm8` → cave | AUDIT §M3 |
+| ~~图鉴上限~~ | ✅ 2026-09-19 已做：两处循环上界**原地换编码**成无符号字节比较（上界 255）⇒ 新卡上限 197；实跑待验 | AUDIT §BE-ED、`engine/card/th18/10-extensibility-limits.md` §8.11 |
 | ANM 特效 | 🔧 已有第一例：`ce_anm_spawn` + `assets/ability/`（反转牌 script68 亮牌），待实跑；透视真假当场看 | AUDIT O24；`engine/anm/th18/01-vm-instantiate.md` |
 | 更多事件 | 按需：击破、符卡开始 / 结束、擦弹… | 每个 = 一个断点 + AUDIT 一条 |
 | ~~`truesilver.c` / `ouroboros.c` 补 `on_delete`~~ | ✅ **已补**（2026-09-12 复核：两张卡现在都有 `on_delete`，体内各自 `ce_hud_digit_clear(&s->hud)`，HUD 数字 VM 在删卡路径上会消）| 2026-09-08 复审记录，2026-09-12 收口 |

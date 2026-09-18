@@ -198,8 +198,21 @@ MENU_SIZE     = 0x13fc      # zAbilityMenu 大小（operator new / memset / size
 CARD_IDS_OLD  = 0x304       # __card_ids int32[0x38]，后面紧跟 num_total_cards，原地扩不了
 CARD_IDS_NEW  = 0x13fc      # 搬到对象尾部，255 项
 MENU_CLEAR    = 0x41495c    # 编成前清 anm id 数组的循环：mov edi,0x38 → 0xff（数组本来就是 [0x100]）
-# 图鉴条目数 0x38 的 7 处：patch 不动，DLL 在门里按「56 + 已注册新卡数」现写。
-#   两处是 cmp r,imm8（符号扩展）→ 条目数 ≤ 127 → 新卡 ≤ 71。超了得把这两处改成断点。
+# 图鉴条目数 0x38 的 7 处：立即数一律 patch 不动，DLL 在门里按「56 + 已注册新卡数」现写。
+#   其中两处是循环上界 `cmp r,imm8`（**符号**扩展）⇒ 立即数 ≥ 0x80 就变负、上界只能到 127
+#   （旧账：条目数 128 = imm8 0x80 = −128 ⇒ 循环一圈不跑、图鉴整表空掉，AUDIT §AG 的症状链）。
+#   2026-09-19 的做法**不是**把这两处改成断点（那时要 `e9 rel32` 指向运行时才知道地址的 cave，
+#   而 thcrap 的 `code` 串只支持绝对地址占位、算不出 rel32），而是**原地换编码**：
+#   把「有符号 32 位比较 + jl」改成「**无符号 8 位**比较 + jb」，逐字节同长、立即数位置不动：
+#       0x4145e2  cmp eax,0x38 ; jl rel32  →  cmp al,0x38 ; jb rel32   （只改 2 字节）
+#       0x4157cb  cmp edx,0x38 ; jl rel8   →  cmp dl,0x38 ; jb rel8    （只改 2 字节）
+#   ⇒ 上界升到 255（= 表行数上限），DLL 写的那个立即数**还是一个字节**，写入点/宽度完全不变。
+#   等价性（一手，ABILITY menu 的 tick `AbilityMenu__on_tick` = `th18:0x413af0`）：
+#     两处比的都是**同一个循环计数器** `[ebp-0xc]`，初始化 `mov dword ptr [ebp-0xc],0`
+#     （`th18:0x414377` / `th18:0x415737`），循环体里 `inc` 后再比。计数器恒在 0..255
+#     ⇒ 低字节就是它自己，「无符号字节比较」与原来的「有符号 dword 比较」**逐值同真值**；
+#     `jb`/`jl` 的跳转目标与位移一字节不动（`0f 8c`→`0f 82`、`7c`→`72` 同长同类，位移照抄）。
+#   一手字节与反汇编、等价性论证、落地清单见 engine/card/th18/10-extensibility-limits.md §8.11。
 MENU_COUNT_SITES = (        # (地址, 原字节, 立即数偏移, 宽度)
     (0x4137bb, "c787c401000038000000", 6, 4),   # initialize: [this+0x1c4] = 0x38
     (0x414394, "c7870003000038000000", 6, 4),   # 图鉴 fill: [this+0x300] = 0x38
@@ -208,6 +221,13 @@ MENU_COUNT_SITES = (        # (地址, 原字节, 立即数偏移, 宽度)
     (0x41570d, "b838000000", 1, 4),              # 行数 = 0x38 / 列数
     (0x4157cb, "83fa38", 2, 1),                  # 高亮循环: cmp edx,0x38
     (0x415817, "bf38000000", 1, 4),              # 退出时遍历 vm: mov edi,0x38
+)
+# 上面第 4/6 两处的**编码改写**（补足上面那段理由）：整条比较+jcc 一起换，原样进 expected，
+# 立即数位置（+2）与宽度（1 字节）在两个串里完全相同 ⇒ DLL 的 7 处写入点一个都不用改。
+# (地址, 原 9/5 字节, 改后 9/5 字节, 说明)
+MENU_COUNT_BCMP = (
+    (0x4145e2, "83f8380f8cd5fdffff", "80f8380f82d5fdffff", "图鉴 fill 循环上界：cmp eax,imm8 + jl rel32 → cmp al,imm8 + jb rel32"),
+    (0x4157cb, "83fa387c80",         "80fa387280",         "高亮循环上界：cmp edx,imm8 + jl rel8 → cmp dl,imm8 + jb rel8"),
 )
 TEXT_SITES = (              # 三处 `imul r, id, 0x1c0`，后面紧跟 add 基址；断点里按 id 改写 r
     ("ce_text_name",   0x416694, 6, "69cbc0010000",   "FUN_00416540 卡名：imul ecx, ebx, 0x1c0"),
@@ -800,6 +820,69 @@ def emit_menu_binhacks(text, text_va):
     return B
 
 
+def emit_count_binhacks(text, text_va):
+    """图鉴条目数上界的编码改写（`MENU_COUNT_BCMP`）：原地换编码，不搬 cave、不加断点。
+
+    两条都**只改 2 个字节**（`83`→`80`、jcc 的第二个字节），长度与立即数位置不变：
+      · `cmp r,imm8`（有符号）→ `cmp r8,imm8`（无符号）
+      · `jl` → `jb`（同长、同位移：`0f 8c`→`0f 82` / `7c`→`72`）
+    ⇒ 上界 127 → 255。expected 取整条（比较 + jcc），exe 里现读现比，形状不对就抛。
+    """
+    B = {}
+    for va, exp, new, why in MENU_COUNT_BCMP:
+        off = va - text_va
+        raw = bytes.fromhex(exp)
+        if text[off:off + len(raw)] != raw:
+            raise ShapeError("0x%06x：exe 里是 %s（期望 %s）" % (va, text[off:off + len(raw)].hex(), exp))
+        assert len(new) == len(exp)
+        B["count_%06x" % va] = {"addr": "0x%06x" % va, "code": new, "expected": exp,
+                                "title": why}
+    return B
+
+
+def count_op_changes(exp_hex, new_hex):
+    """`MENU_COUNT_BCMP` 一行的「改了哪几字节」→ [(偏移, 改后字节)]。
+
+    只允许两处、且形状固定（其余一律抛，别让 patch 悄悄改到别的地方）：
+      · 偏移 0：`83`（cmp r,imm8）→ `80`（cmp r8,imm8）
+      · jcc 的**第二字节**：`8c`→`82`（jl rel32 → jb rel32）或 `7c`→`72`（jl rel8 → jb rel8）
+    立即数字节（偏移 2）**必须原样** —— DLL 按「偏移 2 / 宽度 1」现写。
+    """
+    exp, new = bytes.fromhex(exp_hex), bytes.fromhex(new_hex)
+    if len(exp) != len(new):
+        raise ShapeError("改后 %d 字节 != 原 %d 字节" % (len(new), len(exp)))
+    diff = [(i, new[i]) for i in range(len(exp)) if exp[i] != new[i]]
+    if len(diff) != 2 or diff[0] != (0, 0x80) or diff[1][1] not in (0x82, 0x72):
+        raise ShapeError("改动不是「cmp 首字节 + jcc 第二字节」：%s" % diff)
+    if exp[2] != new[2]:
+        raise ShapeError("立即数字节被改了")
+    return diff
+
+
+def verify_count_binhack(name, bh, text, text_va):
+    """`count_*` 的独立对账：通用分支要求「只换常量」，而这两条**就是要换 opcode**。
+
+    核四件事：地址在 `MENU_COUNT_BCMP` 表里（patch 与生成器不许漂移）、exe 里是 expected、
+    改后与改前**同长且只有那两字节动**、**立即数字节（偏移 2）一字不动**。
+    """
+    va = _addr(bh["addr"])
+    got = [row for row in MENU_COUNT_BCMP if row[0] == va]
+    if not got:
+        return ["%s：地址不在 MENU_COUNT_BCMP 表里" % name]
+    _, exp, new, _ = got[0]
+    if bh["expected"] != exp or bh["code"] != new:
+        return ["%s：patch 与 MENU_COUNT_BCMP 不一致（expected %s / code %s）" % (name, bh["expected"], bh["code"])]
+    try:
+        count_op_changes(exp, new)
+    except ShapeError as e:
+        return ["%s：%s" % (name, e)]
+    off = va - text_va
+    raw = bytes.fromhex(exp)
+    if text[off:off + len(raw)] != raw:
+        return ["%s：exe 里是 %s，expected 写的是 %s" % (name, text[off:off + len(raw)].hex(), exp)]
+    return []
+
+
 def emit_sht_binhacks(text, text_va):
     """pl0X.sht 组数扩容 —— **只有 1 条**：把解析器的数据区基址 `0x180` 换成 `0x4e0`。
 
@@ -1320,6 +1403,11 @@ def verify_patch(path, text, text_va):
             # pl0X.sht 扩容：纯 hex code（无 `<…>` 表达式），通用分支会抛 ValueError
             bad += verify_sht_binhack(name, bh, text, text_va)
             continue
+        if name.startswith("count_"):
+            # 图鉴条目数上界的编码改写（cmp r,imm8 → cmp r8,imm8 + jb）：故意换 opcode，
+            # 通用分支的「只许换常量」对不上，单独核。
+            bad += verify_count_binhack(name, bh, text, text_va)
+            continue
         if name.startswith(("alloc_", "grow_", "menu_")):
             va = int(bh["addr"], 16); off = va - text_va
             exp = bytes.fromhex(bh["expected"])
@@ -1528,11 +1616,22 @@ def emit_header(sites, unlock_reads, order_sites, menu_binhacks):
               "#define CE_MENU_SIZE      0x%x" % MENU_SIZE,
               "#define CE_CARD_IDS_NEW   0x%x" % CARD_IDS_NEW,
               "#define CE_MENU_COUNT_RETAIL 56",
-              "#define CE_MENU_COUNT_MAX 127   /* 两处 cmp r,imm8 */",
+              "#define CE_MENU_COUNT_MAX 255   /* 两处循环上界已改成无符号字节比较（见 CE_MENU_COUNT_OP）*/",
               "typedef struct { uint32_t rva; uint8_t imm_off, width; } ce_count_site_t;",
               "static const ce_count_site_t CE_MENU_COUNT[] = {",
               ] + ["    { 0x%06x, %d, %d }," % (a - 0x400000, o, w) for a, _, o, w in MENU_COUNT_SITES] + [
               "};", "#define CE_NMENU_COUNT (sizeof(CE_MENU_COUNT)/sizeof(CE_MENU_COUNT[0]))",
+              "/* 两处循环上界的编码改写（`MENU_COUNT_BCMP`）：每条恰好改 2 字节 ——",
+              "   off/want[0] = 比较指令首字节（83→80），off/want[1] = jcc 第二字节（8c→82 / 7c→72）。",
+              "   门里核对，打不上就 FAIL —— 少这两条时条目数 > 127 会**静默**按有符号比（imm8 ≥ 0x80",
+              "   变负）⇒ 循环零圈、图鉴空掉（AUDIT §AG 的症状链）。立即数字节不受影响（偏移 2）。*/",
+              "typedef struct { uint32_t rva; uint8_t off[2], want[2]; } ce_count_op_t;",
+              "static const ce_count_op_t CE_MENU_COUNT_OP[] = {",
+              ] + ["    { 0x%06x, { %d, %d }, { 0x%02x, 0x%02x } },   /* %s */"
+                   % (va - 0x400000, count_op_changes(exp, new)[0][0], count_op_changes(exp, new)[1][0],
+                      count_op_changes(exp, new)[0][1], count_op_changes(exp, new)[1][1], why.split("：")[0])
+                   for va, exp, new, why in MENU_COUNT_BCMP] + [
+              "};", "#define CE_NMENU_COUNT_OP (sizeof(CE_MENU_COUNT_OP)/sizeof(CE_MENU_COUNT_OP[0]))",
               "typedef struct { uint32_t rva; uint8_t len; uint8_t want[7]; } ce_menu_t;",
               "static const ce_menu_t CE_MENU[] = {",
               ] + ["    { 0x%06x, %d, { %s } }," % (int(b["addr"], 16) - 0x400000, len(bytes.fromhex(b["code"])),
@@ -1692,7 +1791,7 @@ def main():
         path = a.out or os.path.join(HERE, "..", "patch", "%s.js" % VERSION)
         n, bad = verify_patch(path, text, text_va)
         print("对账 %s：%d 条 binhack" % (os.path.relpath(path, REPO), n))
-        n_alloc = sum(1 for k in json.load(open(path, encoding="utf-8"))["binhacks"] if k.startswith(("alloc_", "grow_", "unlock_", "order_", "menu_", "pool_", "snd_", "sht_")))
+        n_alloc = sum(1 for k in json.load(open(path, encoding="utf-8"))["binhacks"] if k.startswith(("alloc_", "grow_", "unlock_", "order_", "menu_", "pool_", "snd_", "sht_", "count_")))
         if n - n_alloc != len(sites):
             bad.append("patch 里 %d 条搬表 binhack，扫描器认为应有 %d 条" % (n - n_alloc, len(sites)))
         for b in bad:
@@ -1813,6 +1912,7 @@ def main():
         doc["binhacks"].update(emit_unlock_binhacks(unlock_reads))
         doc["binhacks"].update(emit_order_binhacks(find_order_sites(text, text_va)))
         doc["binhacks"].update(emit_menu_binhacks(text, text_va))
+        doc["binhacks"].update(emit_count_binhacks(text, text_va))
         doc["codecaves"].update(emit_pool_codecave())
         doc["binhacks"].update(emit_pool_binhacks(text, text_va))
         doc["breakpoints"].update(emit_unlock_breakpoints(text, text_va))

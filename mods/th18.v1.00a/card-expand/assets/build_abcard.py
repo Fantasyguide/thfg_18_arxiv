@@ -27,7 +27,7 @@ TEMPLATES = {"max": "ability/BLANK_max.png", "min": "ability/BLANK_min.png"}
 # 最多 256 个 entry（下标 0..255）。一手：th18:0x486d38（打包）/ th18:0x47e1a4（解包），
 # 见 engine/anm/th18/06-entry-limit-and-multi-sprite.md §1.1。与 `build_ability.py` 的 `MAX_ENTRIES` 同一口径。
 # ★ 为什么这里必须有这道门（2026-09-13 补）：abcard 每张新卡吃 **2** 条 entry，是卡侧**最先**撞的墙
-#   （比 `CE_CARD_MAX_NEW` 的 71 张更紧：118 + 2N ≤ 256 ⇒ 只能进 69 张卡）。而越限**不崩不报错** ——
+#   （`CE_CARD_MAX_NEW` 现在是 197，比它紧得多：118 + 2N ≤ 256 ⇒ 只能进 69 张卡）。而越限**不崩不报错** ——
 #   第 256 条之后的 entry 绑贴图时下标被截断，实跑里表现为「卡图错位」（AUDIT.md §CC 那个失败模式）。
 #   所以它必须是**构建期硬门**，而不是等实跑发现。
 MAX_ENTRIES = 256
@@ -133,7 +133,7 @@ def main():
     room = MAX_ENTRIES - n_total
     print(f"  ★ entry 余量：用到 {n_total} / 上限 {MAX_ENTRIES}（贴图键低 8 位）⇒ **还剩 {room} 个 entry**"
           f" = **还能进 {room // 2} 张卡**"
-          f"（卡侧最先撞的就是这道墙，比 `CE_CARD_MAX_NEW` 的 71 张更紧；见 CAPACITY.md §5-①）")
+          f"（卡侧最先撞的就是这道墙，比 `CE_CARD_MAX_NEW` 的 197 张紧得多；见 CAPACITY.md §5-①）")
     print(f"{'NAME':<16}{'sprite_large':>13}{'sprite_small':>13}")
     for name, (lg, sm) in exp.items():
         print(f"{name:<16}{lg:>13}{sm:>13}")

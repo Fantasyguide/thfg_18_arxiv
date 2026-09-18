@@ -6,9 +6,12 @@
 #pragma once
 #include <stdint.h>
 
-#define CE_SDK_MAX_BEHAVIORS 71        /* = CE_CARD_MAX_NEW：JSON 最多登记这么多，行为不可能更多 */
 #define CE_SDK_CARD_ID_MIN   58
 #define CE_SDK_CARD_ID_MAX   254
+/* = id 空间大小（58..254 = 197）。旧值 71 是图鉴条目数那两处 `cmp r,imm8` 的符号界；
+ * 那两处 2026-09-19 已改成无符号字节比较（`sites.py` 的 `MENU_COUNT_BCMP`，上界 255），
+ * 于是这里的界回到「id 空间 / 表行」本身，与 `CE_CARD_MAX_NEW` 同步。*/
+#define CE_SDK_MAX_BEHAVIORS (CE_SDK_CARD_ID_MAX - CE_SDK_CARD_ID_MIN + 1)
 #define CE_STATE_SLOTS       256       /* 同时存在的带状态卡对象上限（一局最多 256 张卡，0x411469）*/
 #define CE_STATE_BYTES       512       /* 每张卡私有状态上限（2026-09-08 256 → 512：股市 id 80 要 430+ 字节；静态表 256 × 512 = 128 KB）*/
 

@@ -14,7 +14,7 @@
 1. **shooterset 组数组已不再是瓶颈**（2026-09-14 扩容落地）：**宣布可用 96 格、数组区预留 256 格**，
    余量 56 格（58.3%）⇒ **豁免已撤销**（`NEXT.md` §1w 的 1–4 已完成，见 `AUDIT.md` §CQ）。
    从 96 往 256 加格子**只改文件**（数据区基点已一次让够），exe 不用再动。
-2. **下一次加卡会先撞 `abcard.anm` 的 256 entry**（还能进 **46 张**），比 `CE_CARD_MAX_NEW` 给的 71 更紧。
+2. **下一次加卡会先撞 `abcard.anm` 的 256 entry**（还能进 **46 张**），比 `CE_CARD_MAX_NEW` 给的 197 更紧。
    2026-09-14 已给它补上**构建期硬门**（`build_abcard.py` 的 `MAX_ENTRIES` + 印余量，§5-①）——
    从此它是「构建期报红」而不是「实跑里看到卡图错位」。
 3. **扩容的死因从来不是「数组满了」，是「有一个读者没改」**。所以每条「长大」都配一份读者清单，
@@ -31,7 +31,7 @@
 | --- | --- | --- | --- | --- | --- | --- |
 | 卡 id 空间（行表 / 分配器 / 跳转表） | `allocate_new_card` 的 `cmp ebx,0x38`（`0x411479`）+ 57 项跳转表（`0x412dac`） | `CE_MAX_ROWS`=255：行表搬 `th18_card_table`、跳转表搬 `th18_card_jumptable` | 35 / 254，余量 219（86.2%） | `sites.py check`（100 处）+ `selfcheck` 的 `table:` / `jumptable:` 自报行 | 抬 `CE_CARD_ID_MAX` 前先过 `abcard.anm` 那道 256 墙 | ✅ |
 | `zAbilityManager.owned[]` | 原生 `int[56]`（`+0xc84`..`+0xd64`）；整个对象止于 `+0xd70` | 12 条等长 binhack：owned[] → `+0xd70`、对象 `0xd70 → 0xd70+rows*4` | 118 / 255，余量 137（53.7%） | `native/selfcheck.c` 的 `check_grow()`（`grow:` 自报行） | 跟着 `CE_MAX_ROWS` 自动走（12 处全部由 rows 现算） | ✅ |
-| 图鉴 / 编成条目数（`num_total_cards`） | 原生 56 条目 + 两处 `cmp r,imm8`（符号扩展）⇒ 上界 127 | patch **不动**那 7 处；DLL 在自检门里按「56 + 已注册数」现写 | 35 / 71，余量 36（50.7%） | `CE_MENU_COUNT`（7 处）+ `CE_MENU`（`__card_ids`，20 处） | 超 71 要把两处 `cmp r,imm8` 换成断点（8 位立即数放不下 127 以上） | 🟡 |
+| 图鉴 / 编成条目数（`num_total_cards`） | 原生 56 条目写死在 7 处立即数；两处循环上界原是 `cmp r,imm8`（符号扩展 ⇒ 上界 127） | ① patch 把那两处**原地换成**无符号字节比较（`sites.py` 的 `MENU_COUNT_BCMP`，上界 → 255）；② 其余 5 处仍由 DLL 按「56 + 已注册数」现写 | 36 / 197，余量 161（81.7%） | `CE_MENU_COUNT`（7 处）+ `CE_MENU_COUNT_OP`（2 处编码改写的**回读护栏**）+ `CE_MENU`（`__card_ids`，20 处） | 条目数 > 255 才需要再动表行（`CE_MAX_ROWS`）；见 AUDIT §BE-ED / `engine/card/th18/10-extensibility-limits.md` §8.11 | ✅ |
 | 卡文案缓冲（`zAbilityText` 重定向） | 原生 `zAbilityText` 只有 57 × `0x1c0`；末张的位置已是尾部字段，原地扩不了 | 不扩对象：`native/text.c` 自带 `s_ext[198][0x1c0]`，3 处断点现算偏移 | 35 / 198，余量 163（82.3%） | `ce_text_off()` + 3 条 `文案重定向 → BP_ce_text_*` | 抬 `CE_MAX_ROWS` 即可（缓冲按 `CE_MAX_ROWS − 57` 自动长） | ✅ |
 | 存档影子数组（`unlocked_cards`） | 原生 `zScoreFile.unlocked_cards` = `uint8_t[57]`（`+0x5f588`），其后是未知区 | codecave `th18_card_unlocked`（256 字节，下标 = card id） | 118 / 256，余量 138（53.9%） | 9 条 `unlocked_cards 读 → 影子数组`（`CE_UNLOCK` 9 项）+ 3 个断点 | 影子大小 = id 空间；抬 `CE_MAX_ROWS` 要同步 cave size 与 `sites.py` 的 `0x100` | ✅ |
 | 图鉴显示顺序表 | 原生 57 dword（`0x4b3600`）；尾界 `0x4b36e4` 只被 `0x414b54` 的比较用 | 整表搬 codecave `th18_card_order`（6 处引用 + 1 处尾界，全部只换 imm32） | 35 / 255，余量 220（86.3%） | 6 条 `显示顺序表 → codecave（引用）` + 1 条尾界 | cave = `CE_MAX_ROWS` 项；与第 1 行同步抬 | ✅ |
@@ -111,9 +111,9 @@ cards: 35 registered from cards.js; shop pool 700/8192 slots, guaranteed offers 
 - **`owned[]`**：native 的 owned[] 是 `int[56]`，id ≥ 56 时 `allocate_new_card` 会写到对象之外 ——
   这是「255 行」这条战线最早的一条硬伤。12 条 binhack 把它搬到对象尾，并且**全部由运行时 rows 现算**，
   所以 `selfcheck` 的 `check_grow()` 能在每次装载时逐条重算比对（这也是为什么它不用登记豁免）。
-- **图鉴 / 编成条目数**（🟡）：新卡的「条目数」在 `__card_ids` 与 `num_total_cards` 两处被
-  `cmp r,imm8` 卡在 127 以内（8 位立即数）。上限 71 是**算出来的**，不是引擎常量 ⇒ 归为 🟡。
-  它比 `CE_CARD_ID_MAX` 紧得多，但比 `abcard.anm` 松。
+- **图鉴 / 编成条目数**（✅，2026-09-19 拆墙）：原本「条目数」被两处循环上界 `cmp r,imm8`（**符号**立即数）
+  卡在 127 以内 ⇒ 新卡上限 71。现改成「无符号字节比较 + `jb`」（原地换 2 字节、立即数位置不变），
+  上界 → **255**，于是这条不再紧于 `CE_CARD_ID_MAX`；实跑验证见 `10-extensibility-limits.md` §8.12。
 - **存档影子数组**：native 只有 57 字节，其后紧跟别的存档字段 ⇒ **原地扩不了**，只能影子数组 + 9 处读改指。
   抬 id 空间时影子要同步（`sites.py` 里的 cave size `0x100`）。
 - **显示顺序表**：`0x4337f7` 引用了紧挨着的**另一张表**（同值不同表）——`ORDER_EXCLUDE` 里明确 **不许改**。
@@ -397,10 +397,10 @@ python3 native/tools/reader_census.py --all    # 连锚点的 31 处引用一起
 
 <!-- capcheck:appendix:begin（本段由 `native/tools/capcheck.py --gen-appendix` 生成，**别手改**）-->
 
-**A1. 卡 id（`CE_CARD(` 的落点，36 张）** —— 出处 `native/cards/*.c`
+**A1. 卡 id（`CE_CARD(` 的落点，37 张）** —— 出处 `native/cards/*.c`
 
 ```
-58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 106 107 108 109 110 111 112 113 114 115 116 117 118
+58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 106 107 108 109 110 111 112 113 114 115 116 117 118 200
 ```
 
 **A2. shooterset 组（`native/sht_ids.h`，50 个宏）**
@@ -495,7 +495,7 @@ CE_ANM_ABILITY_ATLAS_ATLAS_YK_FAM
 CE_ANM_ABILITY_ATLAS_ATLAS_YK_OPT
 ```
 
-**A4. 追加脚本（`CE_ANM_ABILITY_SCRIPT_*`，227 个）**
+**A4. 追加脚本（`CE_ANM_ABILITY_SCRIPT_*`，228 个）**
 
 ```
 CE_ANM_ABILITY_SCRIPT_ANIMAL_EAGLE
@@ -570,6 +570,7 @@ CE_ANM_ABILITY_SCRIPT_MARISA_ELEM_WOOD_OPT
 CE_ANM_ABILITY_SCRIPT_MOF_BOMB_RING_STRIP
 CE_ANM_ABILITY_SCRIPT_MOF_BOMB_SPARK
 CE_ANM_ABILITY_SCRIPT_MOF_BOMB_SPARK_BLUE
+CE_ANM_ABILITY_SCRIPT_MOF_CONV_BURST
 CE_ANM_ABILITY_SCRIPT_MOF_FAITH_DIGIT
 CE_ANM_ABILITY_SCRIPT_MOF_FAITH_DOT
 CE_ANM_ABILITY_SCRIPT_MOF_FAITH_DOT_MICRO
@@ -730,10 +731,11 @@ CE_ANM_ABILITY_SCRIPT_YOUKAI_YUKARI_S9
 **A5. sprite 汇总（`CE_ANM_ABILITY_SPRITE_*`）** —— sprite 号是 dword、**不是容量**，所以这里只登记总数与号段（加一张美术这两行就变 ⇒ 台账必须跟着刷新）
 
 ```
-CE_ANM_ABILITY_SPRITE 宏 720 个，号 109..451
+CE_ANM_ABILITY_SPRITE 宏 721 个，号 109..452
 ```
 
 <!-- capcheck:appendix:end -->
+
 
 
 

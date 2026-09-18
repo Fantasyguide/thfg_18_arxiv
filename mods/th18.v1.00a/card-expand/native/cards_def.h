@@ -14,7 +14,13 @@
 #define CE_ROW_BYTES        0x34
 #define CE_CARD_ID_MIN      58        /* 56 = NULL 空槽、57 = BACK 卡背，原生哨兵 */
 #define CE_CARD_ID_MAX      254
-#define CE_CARD_MAX_NEW     71        /* 图鉴条目 56+N 进两处 cmp r,imm8 → ≤ 127（AUDIT §M）*/
+#define CE_CARD_MAX_NEW     197       /* = id 空间大小（58..254，= `CE_CARD_ID_MAX`−`CE_CARD_ID_MIN`+1）。
+                                       * 另有两条更松的界：表行 255、图鉴条目 255 − 原生 56 = 199
+                                       * ——都不是约束。旧值 71 来自图鉴条目数那两处 `cmp r,imm8`
+                                       * 的符号界（≤127）；那两处 2026-09-19 已原地改成无符号字节比较
+                                       * （`sites.py` 的 `MENU_COUNT_BCMP`）⇒ 界抬到 255。
+                                       * 现实里**先撞的是资源墙**：abcard.anm entry 256（每卡 2 条）
+                                       * ⇒ 还能进 46 张。见 CAPACITY.md 与 native/tools/capcheck.py。*/
 #define CE_CARD_TEXT_LINE   0x40      /* 文案一行 0x40 字节，含 NUL → 内容 ≤ 63 */
 #define CE_CARD_DESC_LINES  6
 #define CE_CARD_UNSET       0xffffffffu   /* 必填字段的「没给」*/

@@ -37,12 +37,23 @@ static void test_registry(void)
     CHECK(ce_sdk_registration_error(&error_id, &error_reason));
     CHECK(error_id == 255 && error_reason == CE_SDK_REG_ID_RANGE);
 
-    /* 满：71 张 */
+    /* 满：`CE_SDK_MAX_BEHAVIORS` 张。
+     * ★ 2026-09-19：MAX_BEHAVIORS 现在是**导出量**（= id 空间 58..254 = 197。旧值 71 来自图鉴
+     *   条目数两处 `cmp r,imm8` 的符号界，那两处已改成无符号字节比较）⇒「容量」与「id 范围」
+     *   两条护栏正好重合：填满全部合法 id 之后，第 198 次登记必被其中一条拦住。
+     *   这里核的是「填满后一张也进不来」，不再区分是哪条拒的。*/
     ce_sdk_reset_for_test();
-    static ce_behavior_t many[CE_SDK_MAX_BEHAVIORS + 1];
-    for (unsigned i = 0; i <= CE_SDK_MAX_BEHAVIORS; ++i) { many[i].id = 58 + i; many[i].vtable = vt_a; many[i].slots = ""; }
+    static ce_behavior_t many[CE_SDK_MAX_BEHAVIORS];
+    static ce_behavior_t extra;
+    for (unsigned i = 0; i < CE_SDK_MAX_BEHAVIORS; ++i) {
+        many[i].id = CE_SDK_CARD_ID_MIN + i; many[i].vtable = vt_a; many[i].slots = "";
+    }
     for (unsigned i = 0; i < CE_SDK_MAX_BEHAVIORS; ++i) CHECK(ce_sdk_register(&many[i]));
-    CHECK(!ce_sdk_register(&many[CE_SDK_MAX_BEHAVIORS]));
+    CHECK(ce_sdk_behavior_count() == CE_SDK_MAX_BEHAVIORS);
+    CHECK(many[CE_SDK_MAX_BEHAVIORS - 1].id == CE_SDK_CARD_ID_MAX);   /* 最后一张正好是最大合法 id */
+    extra.id = CE_SDK_CARD_ID_MIN; extra.vtable = vt_b; extra.slots = "";
+    extra.hooks = 0; extra.is_active = 0;
+    CHECK(!ce_sdk_register(&extra));
 }
 
 static void test_bind_check(void)

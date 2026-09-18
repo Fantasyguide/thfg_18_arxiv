@@ -186,7 +186,7 @@ static const ce_order_t CE_ORDER[] = {
 #define CE_MENU_SIZE      0x13fc
 #define CE_CARD_IDS_NEW   0x13fc
 #define CE_MENU_COUNT_RETAIL 56
-#define CE_MENU_COUNT_MAX 127   /* 两处 cmp r,imm8 */
+#define CE_MENU_COUNT_MAX 255   /* 两处循环上界已改成无符号字节比较（见 CE_MENU_COUNT_OP）*/
 typedef struct { uint32_t rva; uint8_t imm_off, width; } ce_count_site_t;
 static const ce_count_site_t CE_MENU_COUNT[] = {
     { 0x0137bb, 6, 4 },
@@ -198,6 +198,16 @@ static const ce_count_site_t CE_MENU_COUNT[] = {
     { 0x015817, 1, 4 },
 };
 #define CE_NMENU_COUNT (sizeof(CE_MENU_COUNT)/sizeof(CE_MENU_COUNT[0]))
+/* 两处循环上界的编码改写（`MENU_COUNT_BCMP`）：每条恰好改 2 字节 ——
+   off/want[0] = 比较指令首字节（83→80），off/want[1] = jcc 第二字节（8c→82 / 7c→72）。
+   门里核对，打不上就 FAIL —— 少这两条时条目数 > 127 会**静默**按有符号比（imm8 ≥ 0x80
+   变负）⇒ 循环零圈、图鉴空掉（AUDIT §AG 的症状链）。立即数字节不受影响（偏移 2）。*/
+typedef struct { uint32_t rva; uint8_t off[2], want[2]; } ce_count_op_t;
+static const ce_count_op_t CE_MENU_COUNT_OP[] = {
+    { 0x0145e2, { 0, 4 }, { 0x80, 0x82 } },   /* 图鉴 fill 循环上界 */
+    { 0x0157cb, { 0, 3 }, { 0x80, 0x72 } },   /* 高亮循环上界 */
+};
+#define CE_NMENU_COUNT_OP (sizeof(CE_MENU_COUNT_OP)/sizeof(CE_MENU_COUNT_OP[0]))
 typedef struct { uint32_t rva; uint8_t len; uint8_t want[7]; } ce_menu_t;
 static const ce_menu_t CE_MENU[] = {
     { 0x013817, 5, { 0x68, 0xf8, 0x17, 0x00, 0x00, 0, 0 } },

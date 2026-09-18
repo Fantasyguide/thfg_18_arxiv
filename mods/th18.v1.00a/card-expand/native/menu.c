@@ -8,7 +8,13 @@
  * 搬到对象尾部 +0x13fc（255 项）、把编成前的清理循环抬到 255。这里在门里做剩下的：
  *   1. 重排顺序表：[原生 0..55 原序，新 id 按类别插进同类别区段末尾（ce_build_order）, 56(NULL=空槽), 其余填 57(BACK)]
  *      57 在编成里不可见（+0x20 = 0），图鉴按条目数走不到它。
- *   2. 把图鉴条目数的 7 处立即数写成 56 + N。两处是 cmp r,imm8（符号扩展）→ 条目数 ≤ 127。
+ *   2. 把图鉴条目数的 7 处立即数写成 56 + N。
+ *      ★ 2026-09-19：其中两处是**循环上界**（`cmp eax,0x38` / `cmp edx,0x38`），原来是
+ *        **有符号** imm8 ⇒ 条目数 ≥ 128 时立即数变负、循环零圈、图鉴整表空掉（AUDIT §AG 的链）。
+ *        patch 现在把这两处**原地换编码**成「无符号字节比较 + jb」（`sites.py` 的
+ *        `MENU_COUNT_BCMP`），上界 127 → 255；立即数位置与宽度不变，所以本文件那 7 处写入点
+ *        一个都不用改。下面 `check_count_ops()` 是这两条 binhack 的**回读护栏** ——
+ *        binhack 的 `expected` 对不上时 thcrap 只打一行日志就跳过，没有回读就等于没护栏。
  *   3. 核对 patch 的 27 处（7 顺序表 + 20 zAbilityMenu）都打上了。
  *
  * 只在门里跑一次，早于任何菜单对象的创建；写代码段用 VirtualProtect，与 restore_alloc_bound 同一做法。
@@ -84,11 +90,39 @@ static int rebuild_order(uint8_t *base, uint32_t *order)
     return 1;
 }
 
+/* 两处循环上界的编码改写必须真打上（`sites.py` 的 `MENU_COUNT_BCMP` / `emit_count_binhacks`）。
+ * 为什么非要回读：thcrap 对 `expected` 对不上的 binhack **只打一行日志就跳过**（binhack.cpp:1420），
+ * 而这两条一旦缺失，条目数 > 127 时那两处会**静默**按有符号比（imm8 ≥ 0x80 = 负）⇒
+ * 图鉴 fill 循环一圈不跑、整表空掉（AUDIT §AG 的症状链：条目数 0 → 菜单 +0xfec 空 → 空指针崩）。*/
+static int check_count_ops(uint8_t *base)
+{
+    unsigned bad = 0;
+    for (unsigned i = 0; i < CE_NMENU_COUNT_OP; ++i) {
+        const ce_count_op_t *o = &CE_MENU_COUNT_OP[i];
+        for (unsigned k = 0; k < 2; ++k) {
+            uint8_t got = base[o->rva + o->off[k]];
+            if (got != o->want[k]) {
+                ++bad;
+                ce_log("menu: count opcode 0x%08x+%u reads %02x, expected %02x (cmp r,imm8 → cmp r8,imm8 + jb rewrite NOT applied)",
+                       0x400000u + o->rva, o->off[k], got, o->want[k]);
+            }
+        }
+    }
+    if (bad) {
+        ce_verdict("FAIL: encyclopedia entry-count upper bound still signed at %u/%u bytes — 图鉴条目数 > 127 会空表",
+                   bad, 2u * (unsigned)CE_NMENU_COUNT_OP);
+        return 0;
+    }
+    ce_log("menu: count opcode rewrite ok (%u sites → unsigned byte compare, entries <= %u)",
+           (unsigned)CE_NMENU_COUNT_OP, (unsigned)CE_MENU_COUNT_MAX);
+    return 1;
+}
+
 /* 图鉴条目数：7 处立即数从 0x38（或上次写的值）改成 count。 */
 static int set_menu_count(uint8_t *base, unsigned count)
 {
     if (count > CE_MENU_COUNT_MAX) {
-        ce_verdict("FAIL: %u encyclopedia entries > %u (two cmp r,imm8 sites) — register fewer new cards", count, CE_MENU_COUNT_MAX);
+        ce_verdict("FAIL: %u encyclopedia entries > %u (table rows / byte-count limit) — register fewer new cards", count, CE_MENU_COUNT_MAX);
         return 0;
     }
     for (unsigned i = 0; i < CE_NMENU_COUNT; ++i) {
@@ -112,6 +146,7 @@ int ce_menu_setup(uint8_t *base)
     if (!check_sites(base, order)) return 0;
     if (!rebuild_order(base, order)) return 0;
     unsigned N = ce_new_card_count();
+    if (!check_count_ops(base)) return 0;
     if (!set_menu_count(base, CE_MENU_COUNT_RETAIL + N)) return 0;
     ce_log("menu: order table @ %p rebuilt (56 retail + %u new + NULL, rest BACK); encyclopedia entries = %u; __card_ids at +0x%x",
            order, N, CE_MENU_COUNT_RETAIL + N, (unsigned)CE_CARD_IDS_NEW);

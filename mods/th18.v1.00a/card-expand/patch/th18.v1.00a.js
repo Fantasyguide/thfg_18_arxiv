@@ -965,6 +965,18 @@
       "expected": "8d8704030000",
       "title": "zAbilityMenu 扩容 / __card_ids → +0x13fc"
     },
+    "count_4145e2": {
+      "addr": "0x4145e2",
+      "code": "80f8380f82d5fdffff",
+      "expected": "83f8380f8cd5fdffff",
+      "title": "图鉴 fill 循环上界：cmp eax,imm8 + jl rel32 → cmp al,imm8 + jb rel32"
+    },
+    "count_4157cb": {
+      "addr": "0x4157cb",
+      "code": "80fa387280",
+      "expected": "83fa387c80",
+      "title": "高亮循环上界：cmp edx,imm8 + jl rel8 → cmp dl,imm8 + jb rel8"
+    },
     "pool_416f6e": {
       "addr": "0x416f6e",
       "code": "6800800000",

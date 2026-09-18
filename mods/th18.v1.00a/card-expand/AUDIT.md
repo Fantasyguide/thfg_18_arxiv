@@ -13959,3 +13959,43 @@ MODKIT_DIR="/mnt/d/项目/幻想指南/18/th18_modkit" python3 tools/deploy.py
 
 **对既有卡的影响面**：`faith.{h,c}` 现在**没有被改动**（撤回到位）⇒ 111（`signal.c`）等共用方零影响；
 `faith_core.h` 只新增一个 `static inline`（不改变任何既有计算）；`engine.h` 只新增宏。⇒ 别的卡不可能受影响。
+
+### §BE-ED ★ 共享件 `sites.py` / `menu.c` / `cards_def.h` / `sdk_core.h`：**拆掉「图鉴条目数 ≤ 127」那道墙** + 编号 200 的测试卡（2026-09-19）
+
+**背景**：用户 2026-09-19「**实现修法，然后写一张简单效果的、编号是 200 的卡，方便测试**」。
+修的对象是 `engine/card/th18/10-extensibility-limits.md` §8.2/§8.5/§8.6 一直挂着的那道墙：
+图鉴条目数的 7 处立即数里，**两处是循环上界 `cmp r,imm8`（符号扩展）**⇒ 条目数 ≥ 128 时立即数变负、
+fill 循环**一圈不跑**、图鉴整表空掉（§AG 的症状链）。于是「新卡上限」被压到 71。
+
+**做法（与 §8.11 里最初写的 cave 方案不同）**：这两处**不需要 32 位立即数**，缺的只是「无符号」。
+**原地换编码**成「无符号字节比较 + `jb`」，每条只改 2 字节、立即数位置与宽度不变 ⇒ DLL 的 7 处写入点零改动：
+
+| 站点 | 原字节 | 改后字节 | 改后语义 |
+| --- | --- | --- | --- |
+| `th18:0x4145e2` | `83 f8 38 0f 8c d5 fd ff ff` | `80 f8 38 0f 82 d5 fd ff ff` | `cmp al,0x38` + `jb th18:0x4143c0` |
+| `th18:0x4157cb` | `83 fa 38 7c 80` | `80 fa 38 72 80` | `cmp dl,0x38` + `jb th18:0x415750` |
+
+**等价性（一手：`AbilityMenu__on_tick` = `th18:0x413af0`）**：两处比的都是同一个循环计数器
+`[ebp-0xc]`（`th18:0x414377` / `th18:0x415737` 初始化为 0，循环体 `inc` 后就地比较）⇒ 恒在 `0..255`
+⇒ `al` / `dl` 就是它本身，字节比较与原 dword 比较**逐值同真值**；jcc 只换条件码、位移照抄。
+
+| 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
+| --- | --- | --- | --- | --- |
+| `native/sites.py` | 新 `MENU_COUNT_BCMP` 表 + `emit_count_binhacks()` + `verify_count_binhack()` + `count_op_changes()`；`verify` 的搬表计数认新前缀；`sites_gen.h` 新增 `CE_MENU_COUNT_OP`，`CE_MENU_COUNT_MAX` 127 → 255 | 两条等长改写是**换 opcode**，通用对账分支（「只许换常量」）认不了 ⇒ 单独一条对账路径；`expected` 取自 exe 现读现比 | 系统卡批次 | `python3 sites.py gen --rows 255` → `sites.py verify`：**213 条 binhack 全对上**；`tools/sitecheck.py --all` 全过（两条改写落在既有窗口内、与 213 条 binhack 零重叠） |
+| `native/menu.c` | 新 `check_count_ops()`（门里回读 `CE_MENU_COUNT_OP` 的两字节，缺一条就 FAIL）；`set_menu_count` 上限文案 | thcrap 对 `expected` 对不上的 binhack **只打一行日志就跳过**（`binhack.cpp:1420`）⇒ 没有回读 = 条目数 > 127 时静默回退到「图鉴空表」 | 同上 | `make dll` 通过；`tools/engine_abi_check.py` 不变（没动调用约定） |
+| `native/cards_def.h` | `CE_CARD_MAX_NEW` 71 → **197**（= id 空间 `58..254`） | 旧值就是那道 127 的墙；现在表行 255 / 条目 255 都不是约束，id 空间才是 | 同上 | `make test-host`（`test_cards_def` 118 断言全绿） |
+| `native/sdk_core.h` | `CE_SDK_MAX_BEHAVIORS` 71 → 导出量 `CE_CARD_ID_MAX − CE_CARD_ID_MIN + 1` | 与 `CE_CARD_MAX_NEW` 同步，且**不会再漂移**（旧写法是手写常量） | 同上 | `tests/test_sdk_core.c` 的「满」用例跟着改（容量界与 id 空间重合 ⇒ 第 198 次登记必被拦）；1236 断言全绿 |
+| `native/tests/test_sdk_core.c` | 「满：71 张」→「满：197 张」+ 注释 | 见上 | 同上 | `make test-host` 全绿 |
+| `native/tools/capcheck.py` | 「图鉴 / 编成条目数」一行改口径（🟡 → ✅；abcard 那条的「比 71 更紧」改成按 `CE_CARD_MAX_NEW` 现算） | 台账要跟得上界 | 同上 | `python3 tools/capcheck.py`：该行 `37 / 197` ✅ |
+| `native/cards/test200.c`（**新增**）+ `patch/th18/cards.js` 的 `"200"` 条目 | id = 200 的测试卡：自机弹伤害 ×2（`bullet_damage_permille`，走 SDK 伤害层）+ `ctor` 一行日志；卡图借**原生** entry 4/5 | 「id > 127 全链路」的**实跑**复现件（§8.12）：图鉴 / 编成槽 / `owned[]` / 跳转表 / 文案重定向一次走通 | 同上 | `make files`（`mkfiles.py --check`：37 张卡全合规）+ `assets/build_abcard.py --verify-only`（「cards.js 索引一致」，用的是原生索引 ⇒ 不占 entry 配额）|
+
+**对既有卡的影响面（共享件）**：
+- `sites.py`：**新增** 2 条 binhack（`count_*`）与一张常量表；其余 211 条 binhack、全部 codecave、断点与站点表**逐字节不变**
+  （`sites.py verify` 逐条对账过）。两条改写的地址**只属于图鉴 UI 的循环上界**，与任何卡的行为、任何桩/断点零重叠（`sitecheck W4`）。
+- `menu.c`：只多一次**只读**回读 + 一条日志；`set_menu_count` 的写入行为、站点数、写入顺序不变。
+- `cards_def.h` / `sdk_core.h`：只抬容量常量。**唯一行为变化 = 允许登记更多新卡**（旧上限 71 现在 197）；
+  已有 36 张卡的定义、校验、编码、商店容量检查全不受影响。
+- 回归跑的：`make test-host`（含 `test_cards_def` / `test_sdk_core` / `test_hud_dim_core` 等）、
+  `python3 -m pytest -q`、`sites.py check` / `verify`、`sitecheck.py --all`、`capcheck.py`、
+  `engine_abi_check.py`、`tooling/check-docs.py`（全部通过）。
+- **未做**：实跑（§8.12 的四条观察项）。⇒ 本节结论标 🟡 **静态全通 / 实跑待验**。

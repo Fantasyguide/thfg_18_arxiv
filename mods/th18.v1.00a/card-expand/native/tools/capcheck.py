@@ -421,11 +421,12 @@ def build_rows():
     # ── A2 图鉴条目数 ────────────────────────────────────────────────────
     rows.append(Row(
         "menu_rows", "图鉴 / 编成条目数（`num_total_cards`）", len(id_set), max_new,
-        "原生条目 56 + 两处 `cmp r,imm8`（符号扩展）⇒ ≤ 127 ⇒ 新卡 ≤ `CE_CARD_MAX_NEW` = 71",
-        "patch **不动**那 7 处 `0x38`，由 DLL 在自检门里按「56 + 已注册数」现写",
-        "`sites_gen.h` 的 `CE_MENU_COUNT`（7 处）+ `CE_MENU`（`__card_ids` 20 处）",
-        "超 71 ⇒ 必须把两处 `cmp r,imm8` 换成断点（8 位立即数放不下 127 以上）",
-        "🟡", "`native/sites.py` L107-116（`MENU_COUNT_SITES`）、`sites_gen.h` L187-188",
+        "原生条目 56 写死在 7 处立即数；其中两处是**循环上界** `cmp r,imm8`（符号扩展）⇒ 旧上界 127",
+        "① patch 把那两处**原地换成**「无符号字节比较 + `jb`」（`sites.py` 的 `MENU_COUNT_BCMP`，上界 → 255）；"
+        "② 其余 5 处立即数 patch 不动，由 DLL 在自检门里按「56 + 已注册数」现写",
+        "`sites_gen.h` 的 `CE_MENU_COUNT`（7 处）+ `CE_MENU_COUNT_OP`（2 处编码改写的回读）+ `CE_MENU`（`__card_ids` 20 处）",
+        "条目数 > 127 需要那两条编码改写；> 255 就得再动表行（`CE_MAX_ROWS`）",
+        "✅", "`native/sites.py` 的 `MENU_COUNT_SITES` / `MENU_COUNT_BCMP`、`sites_gen.h` 的 `CE_MENU_COUNT*`",
     ))
 
     # ── A3 文案缓冲 ──────────────────────────────────────────────────────
@@ -542,7 +543,8 @@ def build_rows():
         "✅", f"`engine/anm/th18/06-entry-limit-and-multi-sprite.md` §1.1/§2.5；`assets/build_abcard.py`"
               f"（`MAX_ENTRIES` = {ab_cap}，2026-09-13 补的硬门）",
         note=f"原生 {ABCARD_RETAIL_ENTRIES} 条 + 已追加 {2 * len(ab)} 条（{len(ab)} 张卡）"
-             f"⇒ **还能进 {(ab_cap - ab_used) // 2} 张**（比 `CE_CARD_MAX_NEW` 的 71 更紧）",
+             f"⇒ **还能进 {(ab_cap - ab_used) // 2} 张**（比 `CE_CARD_MAX_NEW` 的 {max_new} 更紧 ——"
+             f" 卡侧**最先**撞的就是这道墙）",
     ))
 
     n_entry, n_sprite, n_ref, _ = ability_order()
