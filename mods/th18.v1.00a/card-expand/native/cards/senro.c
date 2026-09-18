@@ -91,6 +91,19 @@
                                               *   ② 场地门（一手 §2.3：`|x| ≥ 224`、`y ≤ −32`、`y ≥ 480` 的弹零产出）
                                               *       ⇒ 「消了 n 颗」≠「拿到 n 颗 ★」。*/
 
+/* ★★ 2026-09-18（用户口径：加）：TH07 的**小樱点**（type 8，樱点 +100 / +C +30）来源 ——
+ *   TH07 那一档**只**来自 boss 死亡 / 符卡结束序列里那颗 `mode 0xa` 的消弹
+ *   （一手 `th07:0x420131`，前置门 = `enemy[+0x2e2a] >> 6 & 1` + 状态机计数 `ds:0x12fe0c8`）。
+ *   TH18 在同一位置走 `etClearAll`（子弹侧 **mode 0**：一颗实体都不撒，但**计数器照加**，
+ *   见 `engine/bullet/th18/01-cancel-to-item.md` §1.4/§2.1）⇒ 判据 =「**符卡刚结束**（下降沿）
+ *   + 本帧有一大笔**无人认领**的消弹」（无人认领 = 不是任何卡自己的灵击/炸弹消的）。
+ *   ⚠ 位置：TH07 是「每颗弹在自己原位变成一颗小樱点」，TH18 在这一刻**弹已经没了**（引擎先清）
+ *     ⇒ 位置取**自机为中心的一圈**（❓ 自定 —— 唯一与一手不同的地方；**值**与**总数**照一手给足）。
+ *   ⚠ 颗数封顶 `SENRO_SMALL_MAX_SPAWN`：几百颗会撞共享池小档上限（256）且观感糊
+ *     ⇒ 每颗带**打包值**（总值不变）。*/
+#define SENRO_SMALL_TRIGGER_MIN   8      /* 本帧消弹 ≥ 这么多颗才算「boss 死亡那一大笔」（❓自定）*/
+#define SENRO_SMALL_MAX_SPAWN     24     /* 一次最多撒几颗实体（❓自定；总值按一手给足）*/
+
 /* ★★ 2026-09-18：**死敌掉 ★** 用的原生道具 type 与撒落实参。
  *   一手（TH07 §3.2，`th07:0x423144`）：死亡批处理对每只「已死且未结算」的敌机
  *   `spawn_item(enemy.pos, 6, 1)` **1 颗 ★**（樱点 / +C 各 +20）—— 撒在**敌人原位**、**无抖动**。
@@ -301,6 +314,8 @@ typedef struct {
     int32_t          stat_cherry_conv;  /* 诊断：满 P 转换撒出来的**大樱点实体**颗数（★ 2026-09-18）*/
     int32_t          stat_star;         /* 诊断：死敌掉 ★（原生小分道具）成功颗数（★ 2026-09-18）*/
     int32_t          stat_star_dropped; /* 诊断：★ 撒失败（道具池满）*/
+    int32_t          stat_small;        /* 诊断：boss 死亡消弹撒出来的**小樱点实体**颗数（★ 2026-09-18）*/
+    int32_t          stat_small_bullets;/* 诊断：那几笔消弹按一手折算的**颗数**（= 值 / 100）*/
     int32_t          star_off;          /* ★ 关断位（**0 = 开**，非 0 = 关）——「0 即默认」是刻意的：
                                          *   `senro_clear()` 的 `memset` 与 `on_run_reset` 都不会把它关掉
                                          *   （写成「1 = 开」的话每局重开就静默失效）。见 TUNING §2.0m */
@@ -681,6 +696,8 @@ static void senro_claim_hud(senro_card_t *s);
 /* ★ 2026-09-18：樱点实体（共享点池的注册 / 满 P 转换 / 池推进）—— 定义在文件后半（`on_load` 之前）。*/
 static void senro_faith_tick(ce_card_t *c, senro_card_t *s);
 static void senro_faith_claim(ce_card_t *c);
+/* ★ 2026-09-18：小樱点爆发（boss 死亡消弹），定义在文件后半。*/
+static void senro_small_burst(senro_card_t *s, int32_t bullets);
 
 static int on_tick_2(ce_card_t *c)
 {
@@ -742,6 +759,14 @@ static int on_tick_2(ce_card_t *c)
     spell_now = ce_spell_active();
     if (spell_now && !s->spell_was) s->spell_bonus_alive = 0;
     if (spell_now && (ce_spell_flags() & CE_SPELL_FLAG_BONUS)) s->spell_bonus_alive = 1;
+    /* ★★ 2026-09-18：**小樱点**的触发（见上面常量处的长注）——符卡结束的**下降沿** + 本帧有一大笔
+     *   **无人认领**的消弹（`ce_cancel_latch_owner()` = −1 ⇒ 不是任何卡自己消的）。
+     *   ⚠ 必须在下面那段符卡奖励记账**之外**判：奖励位是否活着与这一笔无关。*/
+    if (!spell_now && s->spell_was) {
+        const int32_t cn = ce_cancel_frame_count();
+        if (cn >= SENRO_SMALL_TRIGGER_MIN && ce_cancel_latch_owner() < 0)
+            senro_small_burst(s, cn);
+    }
     if (!spell_now && s->spell_was && s->spell_bonus_alive) {
         ++s->st.spell_bonuses;
         ce_log("senro: 符卡奖励第 %d 次（樱点（大）道具从此 +%d/颗）",
@@ -761,9 +786,10 @@ static int on_tick_2(ce_card_t *c)
                (int)s->st.timer, (int)s->st.stat_open, (int)s->st.stat_natural, (int)s->st.stat_libyou,
                (int)s->st.stat_cancel, (int)s->stat_gain_item, (int)s->stat_gain_graze,
                (int)s->stat_gain_hit, (int)s->stat_fx_field, (int)s->stat_fx_ring);
-        if (s->stat_star || s->stat_star_dropped || s->stat_cherry_conv)
-            ce_log("senro: ★掉落实体 %d 颗（失败 %d）、大樱点实体 %d 颗",
-                   (int)s->stat_star, (int)s->stat_star_dropped, (int)s->stat_cherry_conv);
+        if (s->stat_star || s->stat_star_dropped || s->stat_cherry_conv || s->stat_small)
+            ce_log("senro: ★掉落实体 %d 颗（失败 %d）、大樱点实体 %d 颗、小樱点实体 %d 颗（折 %d 颗弹）",
+                   (int)s->stat_star, (int)s->stat_star_dropped, (int)s->stat_cherry_conv,
+                   (int)s->stat_small, (int)s->stat_small_bullets);
     }
 
     /* ⑨ 结界特效：先推进（老的一批按公式外扩 / 到点收句柄），再兑现本帧新置的 pending——
@@ -1016,6 +1042,36 @@ static void senro_claim_hud(senro_card_t *s)
  * ⚠ 长持续效果的自查（`METHOD.md` 铁律二）：本卡跨帧留下的东西多了一项 —— **共享池里自己槽的点**
  *   ⇒ `senro_clear()` 里 `faith_unregister(SENRO_ID)` + `faith_clear_entities_mask(1 << FAITH_SLOT_107)`
  *   （顺序同 110/111：**先退注册、再收实体**；删卡发生在商店里，那一刻只有 `on_delete` 跑得到）。*/
+/* ---- ★ 小樱点（TH07 type 8）：boss 死亡 / 符卡结束那一大笔消弹 ----
+ * 值（一手 `th07:0x433742`+`0x43374e`）：樱点 +30 **且** +C +30（加法器）、再只加樱点 +70 ⇒ 每颗 **+100**；
+ * 本函数把它按「总值不变、颗数封顶」打包到 `SENRO_SMALL_MAX_SPAWN` 颗实体上（见常量处的注）。*/
+static void senro_small_burst(senro_card_t *s, int32_t bullets)
+{
+    const float *pp = ce_player_pos();
+    const int32_t per = SENRO_SMALL_CHERRY_ADD + SENRO_SMALL_CHERRY_EXTRA;   /* 100 */
+    int32_t total, bundle;
+    int k, i, made = 0;
+
+    if (!pp || bullets <= 0) return;
+    total = bullets * per;                                  /* 一手的**总**樱点量 */
+    k = (bullets > SENRO_SMALL_MAX_SPAWN) ? SENRO_SMALL_MAX_SPAWN : (int)bullets;
+    bundle = total / k;                                     /* 每颗带的打包值（余数忽略，≤ k−1 点）*/
+
+    for (i = 0; i < k; ++i) {
+        /* 自机为中心撒成一圈（❓ 自定：TH18 到这一刻弹已经没了，拿不到逐颗原位）——与灵击那 32 颗同形。*/
+        const float ang = SENRO_ITEM_SPAWN_ANGLE + (6.2831853f * (float)i) / (float)k;
+        if (faith_spawn_art(pp[0], pp[1], FAITH_TIER_SMALL, 1 << FAITH_SLOT_107, bundle, ang,
+                            CE_ANM_ABILITY_SPRITE_SAKURA_SMALL,
+                            CE_ANM_ABILITY_SCRIPT_SAKURA_SMALL)) {
+            ++made;
+        }
+    }
+    s->stat_small += made;
+    s->stat_small_bullets += bullets;
+    ce_log("senro: boss 死亡消弹 %d 颗 → 小樱点实体 %d 颗（每颗打包 %d；樱点总量 +%d）",
+           (int)bullets, made, (int)bundle, (int)(bundle * made));
+}
+
 /* ---- ★ 死敌 ×1 ★（TH07 §3.2 一手）----
  * 门 = `CE_EDEATH_F_REAL`（真敌人）—— 一手那条「`enemy[+0x2e29] >> 5 & 1` 才算掉」在我们侧的对位；
  * **不按 kind 过滤**：TH07 的死亡批处理对「被打死 / 炸弹杀 / ECL `enmKillAll`」一视同仁
@@ -1049,6 +1105,19 @@ static void senro_on_cherry_pickup(void *user, int slot_mask, int tier, int32_t 
     (void)tier; (void)value; (void)x; (void)y;   /* 值由本卡自己算（随符卡奖励次数变）*/
     if (!s) return;
     if (!(slot_mask & (1 << FAITH_SLOT_107))) return;      /* 只认自己槽 */
+
+    if (tier != (int)FAITH_TIER_BIG) {
+        /* ★ 小樱点档（TH07 type 8）：**打包值**在 `value` 里（见 `senro_small_burst`），
+         * 一手拆法是「+30 走加法器（樱点与 +C 同加）、+70 只加樱点」⇒ 按比例拆同一笔。*/
+        int32_t plus_part = value * SENRO_SMALL_CHERRY_ADD
+                          / (SENRO_SMALL_CHERRY_ADD + SENRO_SMALL_CHERRY_EXTRA);
+        s->stat_gain_item += value;
+        senro_add_cherry(&s->st, plus_part);
+        senro_add_cherry_only(&s->st, value - plus_part);
+        senro_handle_events(c, s, senro_take_events(&s->st));
+        return;
+    }
+
     /* th07 type 7（`th07:0x433886`–`0x4338d9`）：樱点与 +C **各** `1000 + 100×[globals+0x1c]`。
      * 走 `senro_add_cherry()` ⇒ 两个计数器一起加（与既有的金钱通道同一个加法器）。*/
     d = SENRO_ITEM_BIG_BASE + SENRO_ITEM_BIG_PER_BONUS * s->st.spell_bonuses;

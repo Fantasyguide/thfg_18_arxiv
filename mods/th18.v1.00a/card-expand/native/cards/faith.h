@@ -134,6 +134,12 @@ typedef struct {
 int faith_spawn_angled(float x, float y, faith_tier_t tier, int slot_mask, int32_t value,
                        float angle);
 
+/* ★★ 2026-09-18 再加：**这一颗单独指定外观**（`sprite` / `script` 为 0 时退回注册者的
+ * `art_sprite/art_script`、再退回按档默认）。用处 = 107 的**小樱点**：同一张卡要两种外观
+ * （大樱点 = `SAKURA_POINT` 287、小樱点 = `SAKURA_SMALL` 288），而槽只有一个。*/
+int faith_spawn_art(float x, float y, faith_tier_t tier, int slot_mask, int32_t value,
+                    float angle, int32_t sprite, int32_t script);
+
 /* ---- 生命周期 ---- */
 /* ⚠ `faith_module_reset()` **没有调用者，也谁都不该调它**（2026-09-12 审计订正；旧注释写「局末与
  * 删卡都调」是错的）：它内部是 `faith_clear_entities()`（清**整个池**）+ `memset` 掉**整张注册表**

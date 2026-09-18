@@ -624,7 +624,8 @@ static int dot_spawn_vm(faith_dot_t *p)
      *   sprite 与顶点色同样按档给（`faith_sprite_for()` / `faith_tint_for()`）。*/
     const faith_tier_t tier = (faith_tier_t)p->tier;
     const uint32_t argb = faith_tint_for(tier);
-    /* ★ 2026-09-18：自带外观优先（0 = 按档默认）—— 107 的樱点走这两个字段。*/
+    /* ★ 2026-09-18：自带外观优先（0 = 按档默认）—— 107 的樱点走这两个字段；
+     *   逐颗覆盖由 `faith_spawn_art()` 在**出生时**写进结构（见 `dot_spawn_at()` 尾），本函数不必知道。*/
     const int script = p->art_script ? (int)p->art_script : faith_script_for(tier);
     const int sprite = p->art_sprite ? (int)p->art_sprite : faith_sprite_for(tier);
     uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(), script, FAITH_LAYER);
@@ -641,7 +642,7 @@ static int dot_spawn_vm(faith_dot_t *p)
 /* 公共体：`ang` = 上抛角（`faith_spawn()` 传一手的 −π/2；`faith_spawn_angled()` 传调用方给的角）。
  * ⚠ 必须保持「只在这一支里出现一次 memset/入池」——两个入口不能各写一遍（会漂移）。*/
 static int dot_spawn_at(float x, float y, faith_tier_t tier, int slot_mask, int32_t value,
-                        float ang)
+                        float ang, int32_t force_sprite, int32_t force_script)
 {
     faith_dot_t *p;
     float spd, vel[3];
@@ -690,19 +691,28 @@ static int dot_spawn_at(float x, float y, faith_tier_t tier, int slot_mask, int3
         p->art_script = (int32_t)s_user[i].art_script;
         break;
     }
+    /* ★ 2026-09-18：调用方的**逐颗覆盖**（`faith_spawn_art()`；0 = 不覆盖）—— 107 的两种樱点用。*/
+    if (force_sprite) p->art_sprite = force_sprite;
+    if (force_script) p->art_script = force_script;
     if (tier == FAITH_TIER_BIG) ++s_n_big; else ++s_n_small;
     return 1;
 }
 
 int faith_spawn(float x, float y, faith_tier_t tier, int slot_mask, int32_t value)
 {
-    return dot_spawn_at(x, y, tier, slot_mask, value, FAITH_THROW_ANGLE);
+    return dot_spawn_at(x, y, tier, slot_mask, value, FAITH_THROW_ANGLE, 0, 0);
 }
 
 int faith_spawn_angled(float x, float y, faith_tier_t tier, int slot_mask, int32_t value,
                        float angle)
 {
-    return dot_spawn_at(x, y, tier, slot_mask, value, angle);
+    return dot_spawn_at(x, y, tier, slot_mask, value, angle, 0, 0);
+}
+
+int faith_spawn_art(float x, float y, faith_tier_t tier, int slot_mask, int32_t value,
+                    float angle, int32_t sprite, int32_t script)
+{
+    return dot_spawn_at(x, y, tier, slot_mask, value, angle, sprite, script);
 }
 
 int faith_spawn_big(float x, float y, int32_t value_110)
