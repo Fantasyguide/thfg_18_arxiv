@@ -45,8 +45,16 @@ GAMES = {
 }
 
 
+# ★ 本机没有样本的作可以在命令行上直接点名（**不把任何机器路径写进仓库**）：
+#   --exe th14="/mnt/d/…/[th14] 东方辉针城…/th14.exe"
+EXE_OVERRIDE: dict[str, Path] = {}
+
+
 def find_exe(tag: str) -> Path | None:
-    """`local/<tag>.v*/<tag>.exe`（tag 里带点的作如 th095 也用同名 exe）。"""
+    """`--exe` 点名优先；否则找 `local/<tag>.v*/<tag>.exe`。"""
+    if tag in EXE_OVERRIDE:
+        p = EXE_OVERRIDE[tag]
+        return p if p.is_file() else None
     for d in sorted(LOCAL.glob(f"{tag}.v*")):
         for exe in sorted(d.glob("*.exe")):
             if exe.stem == tag or exe.stem.startswith(tag):
@@ -104,7 +112,14 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--out", required=True, help="输出目录（PNG + .ico）")
     ap.add_argument("--games", default="", help="只处理这些 tag（逗号分隔，默认全部）")
+    ap.add_argument("--exe", action="append", default=[],
+                    help='给某一作直接点名 exe（可重复）：--exe th14="/path/to/th14.exe"')
     a = ap.parse_args()
+    for item in a.exe:
+        if "=" not in item:
+            sys.exit(f"--exe 需要 tag=路径 的形式：{item}")
+        tag, path = item.split("=", 1)
+        EXE_OVERRIDE[tag.strip()] = Path(path.strip().strip('"'))
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     want = [t for t in (a.games.split(",") if a.games else GAMES) if t]
