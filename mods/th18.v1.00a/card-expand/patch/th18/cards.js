@@ -460,7 +460,7 @@
       "但会先开一次灵界挨下这一击。"
     ],
     "internal_name": "TD_SPIRIT",
-    "category": 0,
+    "category": 2,
     "initial_unlocked": 1,
     "price_tier": 10,
     "weight": 2,
@@ -511,7 +511,7 @@
       "致敬・东方天空璋。"
     ],
     "internal_name": "SEASON",
-    "category": 0,
+    "category": 2,
     "initial_unlocked": 1,
     "price_tier": 10,
     "weight": 2,
@@ -529,7 +529,7 @@
     ],
     "internal_name": "WBAWC",
     "initial_unlocked": 1,
-    "category": 0,
+    "category": 2,
     "price_tier": 10,
     "weight": 2,
     "sprite_large": 186,
