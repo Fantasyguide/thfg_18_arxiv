@@ -54,9 +54,11 @@ SYSTEM = [
 
 W, H = 256, 320                 # 与 assets/cards/*_max.png 同规格
 M = 8                           # 原生空卡面的黑框厚度（实测：8×10 网格里最外一圈全是 #000000）
-PLATE_TOP = (34, 38, 52, 255)   # 底板渐变色（❓ 自定）
+PLATE_TOP = (34, 38, 52, 255)   # 旧「深色底板」样式的渐变色（`--style plate` 用；❓ 自定）
 PLATE_BOT = (16, 18, 26, 255)
 ACCENT    = (255, 226, 120, 255)
+WHITE     = (255, 255, 255, 255)
+PAD       = 6                   # 白底样式里图标与黑框之间留的空白（❓ 自定；0 = 贴着框）
 
 
 def load_font(path, size):
@@ -80,7 +82,37 @@ def plate(dst: Image.Image):
     d.rectangle([inner[0] + 2, inner[1] + 2, inner[2] - 2, inner[3] - 2], outline=(90, 96, 120, 255))
 
 
+SCALE_MODE = "nearest"          # nearest = 整数倍最近邻（像素画**不糊**，最大 224/32）；fill = 铺满内区（更big但有插值）
+
+
+def fit(icon: Image.Image, avail: int) -> Image.Image:
+    """把图标放进 `avail×avail` 的方框：`nearest` 走整数倍（默认），`fill` 铺满（插值）。"""
+    if SCALE_MODE == "fill":
+        k = avail / max(icon.width, icon.height)
+        return icon.resize((max(1, round(icon.width * k)), max(1, round(icon.height * k))), Image.LANCZOS)
+    k = max(1, avail // max(icon.width, icon.height))
+    return icon.resize((icon.width * k, icon.height * k), Image.NEAREST)
+
+
+def compose_white(icon: Image.Image | None) -> Image.Image:
+    """★ 用户 2026-09-18 口径：「**把 icon 补齐成卡面的样子，最大居中，剩下补充白色**」——
+    白底（不是透明底）+ 图标按**最大等比**放大后居中；剩下的区域一律纯白；外圈保留原生黑框（卡形）。
+    `❓ 自定`：`PAD` 是图标与黑框之间的留白（默认 6 px）；要贴满就把 PAD 调 0。"""
+    im = Image.new("RGBA", (W, H), WHITE)
+    d = ImageDraw.Draw(im)
+    avail = min(W - 2 * M - 2 * PAD, H - 2 * M - 2 * PAD)
+    if icon is not None:
+        big = fit(icon, avail)
+        im.alpha_composite(big, ((W - big.width) // 2, (H - big.height) // 2))
+    else:
+        f_q = load_font(LAT_FONT, 96)
+        d.text((W // 2, H // 2), "?", font=f_q, fill=(200, 200, 205, 255), anchor="mm")
+    d.rectangle([0, 0, W - 1, H - 1], outline=(0, 0, 0, 255), width=M)      # 原生黑框
+    return im
+
+
 def compose(icon: Image.Image | None, cn: str, tag: str, cid: str) -> Image.Image:
+    """旧样式（深色渐变底板 + 中文作名 + THxx / CARD nnn）—— `--style plate` 时用。"""
     im = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     plate(im)
     d = ImageDraw.Draw(im)
@@ -108,22 +140,18 @@ def compose(icon: Image.Image | None, cn: str, tag: str, cid: str) -> Image.Imag
 
 
 def compose_min(icon: Image.Image | None) -> Image.Image:
-    """小卡面（64×80）：1/4 尺寸下**文字读不出来**，所以只放图标（+ 原生黑框）。
-    `❓ 自定`：这是"缩略图只认图标"的取舍，实测一行中文在 64 px 宽里只剩几个像素。"""
+    """小卡面（64×80）：★ 同口径 —— **白底 + 图标最大居中**（1/4 尺寸下文字也读不出来）。
+    `❓ 自定`：黑框在 64 px 宽里取 3 px、留白 2 px。"""
     w, h, m = 64, 80, 3
-    im = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    im = Image.new("RGBA", (w, h), WHITE)
     d = ImageDraw.Draw(im)
-    for i in range(h - 2 * m):
-        t = i / max(1, h - 2 * m - 1)
-        c = tuple(int(PLATE_TOP[k] + (PLATE_BOT[k] - PLATE_TOP[k]) * t) for k in range(4))
-        d.line([m, m + i, w - m - 1, m + i], fill=c)
+    avail = min(w - 2 * m - 4, h - 2 * m - 4)
     if icon is not None:
-        side = 40
-        big = icon.resize((side, side), Image.NEAREST)
-        im.alpha_composite(big, ((w - side) // 2, (h - side) // 2))
+        big = fit(icon, avail)
+        im.alpha_composite(big, ((w - big.width) // 2, (h - big.height) // 2))
     else:
-        f_q = load_font(LAT_FONT, 28)
-        d.text((w // 2, h // 2), "?", font=f_q, fill=(150, 150, 160, 255), anchor="mm")
+        f_q = load_font(LAT_FONT, 32)
+        d.text((w // 2, h // 2), "?", font=f_q, fill=(200, 200, 205, 255), anchor="mm")
     d.rectangle([0, 0, w - 1, h - 1], outline=(0, 0, 0, 255), width=m)
     return im
 
@@ -132,6 +160,10 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--icons", required=True, help="extract_exe_icons.py 的输出目录")
     ap.add_argument("--out", required=True)
+    ap.add_argument("--scale", choices=("nearest", "fill"), default="nearest",
+                    help="nearest（默认，整数倍最近邻=像素画不糊，最大 224）/ fill（铺满内区=更大但有插值）")
+    ap.add_argument("--style", choices=("white", "plate"), default="white",
+                    help="white（默认，用户口径：白底 + 图标最大居中）/ plate（旧：深色底板 + 作名）")
     a = ap.parse_args()
     icons = Path(a.icons)
     out = Path(a.out)
@@ -141,7 +173,7 @@ def main():
     for cid, nm, tag, cn in SYSTEM:
         p = icons / f"{cid}_{tag}.png"
         icon = Image.open(p).convert("RGBA") if p.is_file() else None
-        img = compose(icon, cn, tag, cid)
+        img = compose_white(icon) if a.style == "white" else compose(icon, cn, tag, cid)
         mx = out / f"{cid}_{tag}_max.png"
         mn = out / f"{cid}_{tag}_min.png"
         img.save(mx)
