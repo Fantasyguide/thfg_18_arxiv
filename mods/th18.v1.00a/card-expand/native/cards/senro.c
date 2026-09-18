@@ -91,6 +91,16 @@
                                               *   ② 场地门（一手 §2.3：`|x| ≥ 224`、`y ≤ −32`、`y ≥ 480` 的弹零产出）
                                               *       ⇒ 「消了 n 颗」≠「拿到 n 颗 ★」。*/
 
+/* ★★ 2026-09-18：**死敌掉 ★** 用的原生道具 type 与撒落实参。
+ *   一手（TH07 §3.2，`th07:0x423144`）：死亡批处理对每只「已死且未结算」的敌机
+ *   `spawn_item(enemy.pos, 6, 1)` **1 颗 ★**（樱点 / +C 各 +20）—— 撒在**敌人原位**、**无抖动**。
+ *   本作的 ★ 已定为「兼用原生小分道具」（见 `SENRO_CANCEL_MODE` 的注）⇒ 用同一族 type 9，
+ *   角 −π/2（`0xbfc90fdb`）/ 速 2.2（`0x400ccccd`）= 本作消弹撒点的一手实参
+ *   （`engine/bullet/th18/01-cancel-to-item.md` §2.1）。*/
+#define SENRO_TH18_ITEM_STAR        SENRO_TH18_ITEM_SCORE_LO   /* 9 = 分数转换点族（★ 的载体）*/
+#define SENRO_ITEM_SPAWN_ANGLE      (-1.5707964f)              /* = 0xbfc90fdb（−π/2，直上）*/
+#define SENRO_ITEM_SPAWN_SPEED      2.2f                       /* = 0x400ccccd */
+
 /* 音效：两作的 SE 表 id **不同义** ⇒ 老实标 ❓ 自定（th07 用的是 0x21 与 7）。
  * TH18 侧名字与调校见 `engine/_shared/th18-sound-table.md`。*/
 #define SENRO_SE_BORDER_OPEN        0x2f     /* ❓ 自定：`se_bonus.wav`（th18-sound-table.md:204）——
@@ -289,6 +299,11 @@ typedef struct {
     int32_t          stat_gain_graze;   /* 诊断：擦弹通道 */
     int32_t          stat_gain_hit;     /* 诊断：命中通道 */
     int32_t          stat_cherry_conv;  /* 诊断：满 P 转换撒出来的**大樱点实体**颗数（★ 2026-09-18）*/
+    int32_t          stat_star;         /* 诊断：死敌掉 ★（原生小分道具）成功颗数（★ 2026-09-18）*/
+    int32_t          stat_star_dropped; /* 诊断：★ 撒失败（道具池满）*/
+    int32_t          star_off;          /* ★ 关断位（**0 = 开**，非 0 = 关）——「0 即默认」是刻意的：
+                                         *   `senro_clear()` 的 `memset` 与 `on_run_reset` 都不会把它关掉
+                                         *   （写成「1 = 开」的话每局重开就静默失效）。见 TUNING §2.0m */
 } senro_card_t;
 
 _Static_assert(sizeof(senro_card_t) <= 496, "ce_state 上限 496 字节（超了会静默返回 NULL）");
@@ -746,6 +761,9 @@ static int on_tick_2(ce_card_t *c)
                (int)s->st.timer, (int)s->st.stat_open, (int)s->st.stat_natural, (int)s->st.stat_libyou,
                (int)s->st.stat_cancel, (int)s->stat_gain_item, (int)s->stat_gain_graze,
                (int)s->stat_gain_hit, (int)s->stat_fx_field, (int)s->stat_fx_ring);
+        if (s->stat_star || s->stat_star_dropped || s->stat_cherry_conv)
+            ce_log("senro: ★掉落实体 %d 颗（失败 %d）、大樱点实体 %d 颗",
+                   (int)s->stat_star, (int)s->stat_star_dropped, (int)s->stat_cherry_conv);
     }
 
     /* ⑨ 结界特效：先推进（老的一批按公式外扩 / 到点收句柄），再兑现本帧新置的 pending——
@@ -958,6 +976,7 @@ static int on_ctor(ce_card_t *c)
     ce_log("senro: ctor (difficulty %d, cherry_max 初值 %d, 结界 %d 帧, 满槽 %d)",
            senro_difficulty(), (int)s->st.cherry_max, (int)SENRO_BORDER_FRAMES, (int)SENRO_PLUS_FULL);
     return 0;
+
 }
 
 /* HUD 槽认领（`on_load` 与 `on_run_reset` 共用 —— 后者刚 memset 掉整块状态，
@@ -997,6 +1016,29 @@ static void senro_claim_hud(senro_card_t *s)
  * ⚠ 长持续效果的自查（`METHOD.md` 铁律二）：本卡跨帧留下的东西多了一项 —— **共享池里自己槽的点**
  *   ⇒ `senro_clear()` 里 `faith_unregister(SENRO_ID)` + `faith_clear_entities_mask(1 << FAITH_SLOT_107)`
  *   （顺序同 110/111：**先退注册、再收实体**；删卡发生在商店里，那一刻只有 `on_delete` 跑得到）。*/
+/* ---- ★ 死敌 ×1 ★（TH07 §3.2 一手）----
+ * 门 = `CE_EDEATH_F_REAL`（真敌人）—— 一手那条「`enemy[+0x2e29] >> 5 & 1` 才算掉」在我们侧的对位；
+ * **不按 kind 过滤**：TH07 的死亡批处理对「被打死 / 炸弹杀 / ECL `enmKillAll`」一视同仁
+ * （§3.2 的四个调用者：`EnemyManager::on_tick_0a` / 符卡结束 / op94 / 关卡收尾）。
+ * ⚠ 副作用（登记在 `TUNING.md` §2.0m）：type 9 是原生「分数转换点族」⇒ 除了本卡的 +20 樱点/+C，
+ *   还会给玩家它自己那点分（原生行为，我们不改 type 分派表）。*/
+static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
+{
+    senro_card_t *s = st(c);
+    float pos[3];
+
+    if (!s || !ev) return;
+    if (s->star_off) return;
+    if (!(ev->flags & CE_EDEATH_F_REAL)) return;
+    pos[0] = ev->x; pos[1] = ev->y; pos[2] = 0.0f;         /* 敌人原位、无抖动（一手 §3.2）*/
+    if (!ce_spawn_item((uint32_t)SENRO_TH18_ITEM_STAR, pos,
+                       SENRO_ITEM_SPAWN_ANGLE, SENRO_ITEM_SPAWN_SPEED)) {
+        ++s->stat_star_dropped;                            /* 道具池满：丢弃（与原生撒落同口径）*/
+        return;
+    }
+    ++s->stat_star;
+}
+
 static void senro_on_cherry_pickup(void *user, int slot_mask, int tier, int32_t value,
                                    float x, float y)
 {
@@ -1116,6 +1158,7 @@ CE_CARD(107,
         .on_bomb_spent = on_bomb_spent,
         .on_death_before_deathbomb = on_death_before_deathbomb,
         .on_death_frame2 = on_death_frame2,
+        .on_enemy_death = on_enemy_death,      /* ★ 2026-09-18：死敌掉 ★（TH07 §3.2）*/
         .on_draw = on_draw,
         .on_run_reset = on_run_reset,
         .on_delete = on_delete);
