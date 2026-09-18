@@ -11,13 +11,13 @@
 
 ## 0. 一句话结论
 
-1. ★ **卡的安全用量 = 46 张**（2026-09-19 起由 `capcheck.py` **现算**并打印；算式与口径见 §1.0，
+1. ★ **卡的安全用量 = 33 张**（2026-09-19 起由 `capcheck.py` **现算**并打印；算式与口径见 §1.0，
    数字同时写进附录 A0）。瓶颈 = `abcard.anm` 的 256 entry（**每张卡 2 条**）；其余各墙折算成张数
    都 ≥ 46，最近的三条是 `ability.anm` entry 65、id 相关三条 160。
 2. **shooterset 组数组已不再是瓶颈**（2026-09-14 扩容落地）：**宣布可用 96 格、数组区预留 256 格**，
    余量 56 格（58.3%）⇒ **豁免已撤销**（`NEXT.md` §1w 的 1–4 已完成，见 `AUDIT.md` §CQ）。
    从 96 往 256 加格子**只改文件**（数据区基点已一次让够），exe 不用再动。
-3. **下一次加卡会先撞 `abcard.anm` 的 256 entry**（还能进 **46 张**），比 `CE_CARD_MAX_NEW` 给的 197 更紧。
+3. **下一次加卡会先撞 `abcard.anm` 的 256 entry**（还能进 **33 张**），比 `CE_CARD_MAX_NEW` 给的 197 更紧。
    2026-09-14 已给它补上**构建期硬门**（`build_abcard.py` 的 `MAX_ENTRIES` + 印余量，§5-①）——
    从此它是「构建期报红」而不是「实跑里看到卡图错位」。
 4. **扩容的死因从来不是「数组满了」，是「有一个读者没改」**。所以每条「长大」都配一份读者清单，
@@ -34,7 +34,7 @@
 
 | 墙（行 key） | 每张卡吃多少 | 出处 | 现在折算成张数 |
 | --- | --- | --- | --- |
-| `abcard.anm` entry | **2 条/张**（`_max` / `_min`）| `assets/build_abcard.py` 给 `cards/ORDER.txt` 每行追加 2 条 | **46 ← 瓶颈** |
+| `abcard.anm` entry | **2 条/张**（`_max` / `_min`）| `assets/build_abcard.py` 给 `cards/ORDER.txt` 每行追加 2 条 | **33 ← 瓶颈** |
 | `ability.anm` entry | 3 条/张（保守上界；实测 36 张共追加 54 条 ≈ 1.5）| `assets/build_ability.py` + 追加记录 | 65 |
 | 卡 id 空间 / `owned[]` / 影子数组 | 1 个 id/张（**从最小的空 id 起连续分配**）| §1 的分配纪律 + `CE_CARD_ID_MAX` = 254 | 160 |
 | 图鉴 / 编成条目数 | 1 格/张 | §1 的 `menu_rows` 行（127 那道墙 2026-09-19 已拆）| 160 |
@@ -67,7 +67,7 @@
 | wav 名表 / blob 指针数组 | 原生 72 项（`0x4b47a0` / `0x56cfe4`） | 同上（cave `th18_snd_names` / `th18_snd_blobs`） | 75 / 104，余量 29（27.9%） | `ce_snd_selfcheck()` + `make snd-check` | 抬 `NEW_N` 即可；⚠ 释尾界刻意只到原生 72（语音 blob 来自 thcrap 堆） | ✅ |
 | 每局同时持有的卡对象数（`ce_state` 槽） | 引擎 `cmp [edi+0x28],0x100`（`0x411469`）⇒ 一局最多 256 个卡对象 | 不长大：`sdk_core.h` 的静态槽表按 256 开（256 × 512 B = 128 KiB） | 运行期才知道 / 256，不进余量闸 | `ce_state_alloc()` 满时返回 NULL（调用方必须按「拿不到状态」处理） | 比 id 空间宽（256 > 255），现实中不会先撞；真撞了要改引擎立即数 | ✅ |
 | 单卡私有状态字节数（`ce_state_user`） | `CE_STATE_BYTES` 512 − `CE_STATE_RESERVED` 16（块头留给 SDK） | 2026-09-08 已从 256 抬到 512（股市 id 80 要 430+ 字节） | 每卡不同 / 496，不进余量闸 | 各卡文件尾的 `_Static_assert(sizeof(x_card_t) <= 496)`（**11 处**，编译期闸） | 抬 `CE_STATE_BYTES`（静态表 = 256 × 字节数，注意 DLL 体积） | ✅ |
-| `abcard.anm` entry（卡图：大图 + 小图各一条） | 引擎硬顶 256：贴图键 = `(槽号 << 8) \| entry 下标`，绑贴图只取低 8 位（`0x486d38` / `0x47e1a4`）；构建期门 = `build_abcard.py` 的 `MAX_ENTRIES` | 只追加（`build_abcard.py`）：每张新卡 2 条 entry | 164 / 256，余量 92（35.9%）⇒ **还能进 46 张** | `build_abcard.py` 的 `MAX_ENTRIES` 硬门（构建期 `SystemExit` + 印余量）+ `make anm-verify` | ①大小图并进一个 entry（一 entry 两 sprite）⇒ 69 → 138 张；②拆到别的空闲 anm 槽 | ✅ ★最紧 |
+| `abcard.anm` entry（卡图：大图 + 小图各一条） | 引擎硬顶 256：贴图键 = `(槽号 << 8) \| entry 下标`，绑贴图只取低 8 位（`0x486d38` / `0x47e1a4`）；构建期门 = `build_abcard.py` 的 `MAX_ENTRIES` | 只追加（`build_abcard.py`）：每张新卡 2 条 entry | 190 / 256，余量 66（25.8%）⇒ **还能进 33 张** | `build_abcard.py` 的 `MAX_ENTRIES` 硬门（构建期 `SystemExit` + 印余量）+ `make anm-verify` | ①大小图并进一个 entry（一 entry 两 sprite）⇒ 69 → 138 张；②拆到别的空闲 anm 槽 | ✅ ★最紧 |
 | `ability.anm` entry（卡特效 / HUD 图集） | 同 256（每个 anm 文件 entry 下标 0..255） | `ORDER.txt` 的图集段：多张小图并进一个 entry（只许追加，`ORDER.frozen.txt` 是硬门） | 54 / 256，余量 202（78.9%） | `build_ability.py` 的 `MAX_ENTRIES` 硬门（构建期 `SystemExit`）+ `make anm-verify` | 继续并图集（`ATLAS-MERGE-AUDIT.md`） | ✅ |
 | `ability.anm` sprite 表 | **无上限**：sprite 号是 dword（`vm+0x24`），解析器 `0x477b00` 按 `idx*0x44` 取 | 不适用（当成 255 上限是**旧的误读**） | 435 / 无上限 | `check_ability_anm_bounds.py`（脚本引用的 sprite 必须存在） | 不适用 | ✅ |
 | `ability.anm` 脚本表 | **无上限**：脚本号是 dword（`anm+0x120` 指针表 / `anm+0x10c` 脚本体） | 不适用 | 211 / 无上限 | `make anm-verify`（脚本号必须连续、`@NAME@` 必须都能解析） | 不适用 | ✅ |
@@ -90,7 +90,7 @@
 | 道具池（`ItemManager`，**我们不长大**） | 原生：构造器把 `mgr+0x14` 起 4696 个槽（stride `0xc94`）挂成双向空链表；循环 `cmp eax,0x1258`（`0x4467fc`） | **不长大**（改它会连带几十处链表/遍历假设）；卡侧只**扫**它 | 运行期才知道 / 4696，不进余量闸 | `CE_ITEM_SLOTS` 的读者：`sdk.c`、`sdk.h`、`cards/ufo.c`、`cards/th06rank.c` | 撞顶的表现是**静默 spawn 失败**（空链表返回 0）：分批撒 / 排队补撒，**别去抬这个界** | 🟡 |
 
 **余量最小的四条**（按余量% 排序）：shooterset 组数组 **0.0%**（40/40，有 §1w 计划）·
-音效 cfg 表 **25.0%**（87/116）· wav 名表 **27.9%**（75/104）· `abcard.anm` entry **35.9%**（164/256）。
+音效 cfg 表 **25.0%**（87/116）· wav 名表 **27.9%**（75/104）· `abcard.anm` entry **74.2%**（190/256）。
 前三条都是「界，但还没到」；**卡侧下一道真的墙是 `abcard.anm`** —— 它每加一张卡就吃 2 格，
 比任何一个 id 空间的界都先到（§5-①）。
 
@@ -235,9 +235,9 @@ cards: 35 registered from cards.js; shop pool 700/8192 slots, guaranteed offers 
   既有号一个没动（entry 60/256，余量 196）。生成器 `assets/ability/make_nitori_bubble_art.py`。
 
 - **`abcard.anm` 是卡侧最紧的一道墙**（★最紧）：原生 118 条 + 每张新卡 2 条（大图/小图各一 entry），
-  现在 164 条 ⇒ **只能再进 46 张**。它现在有**构建期硬门**（`MAX_ENTRIES`，与 `build_ability.py` 同名同口径）：
+  现在 190 条 ⇒ **只能再进 33 张**。它现在有**构建期硬门**（`MAX_ENTRIES`，与 `build_ability.py` 同名同口径）：
   越限直接 `SystemExit`、**先于任何写盘**，并且每次构建都印一行余量
-  （`★ entry 余量：用到 164 / 上限 256 ⇒ 还剩 92 个 entry = 还能进 46 张卡`）。
+  （`★ entry 余量：用到 190 / 上限 256 ⇒ 还剩 66 个 entry = 还能进 33 张卡`）。
   这一门是 2026-09-14 补的，缘由见 §5-①。
 - **`pl0X.anm`**：四份用量 pl00 14 / pl01 15 / pl02 13 / pl03 18（最大 18，余量 238）—— 还非常松。
   ⚠ 它**还没有**自己的 256 门（`build_player_anm.py` 里没有 `MAX_ENTRIES`）：余量 238，不着急，
@@ -377,12 +377,12 @@ python3 native/tools/reader_census.py --all    # 连锚点的 31 处引用一起
 1. `MAX_ENTRIES = 256`，与 `build_ability.py` 同名同口径，注释里写明它的一手出处（`0x486d38` / `0x47e1a4`）；
 2. 越限 ⇒ `SystemExit`，**先于任何写盘**（既不产出坏 anm，也不去改 `cards.js`），错误信息给两条改法
    （并 entry / 换 anm 槽）；
-3. 每次构建印一行余量：`★ entry 余量：用到 164 / 上限 256 ⇒ 还剩 92 个 entry = 还能进 46 张卡`；
+3. 每次构建印一行余量：`★ entry 余量：用到 190 / 上限 256 ⇒ 还剩 66 个 entry = 还能进 33 张卡`；
 4. **`capcheck.py` 的上限不再是自己写的 256**，而是**从生成器源码读 `MAX_ENTRIES`**
    （`gen_anm_caps()`）—— 门加严/被删/被放宽到 > 256，都会让 `make check` 立刻红，
    台账没法跟门各自漂移。
 
-⇒ 这条容量从「❌ 已知会撞」变成「✅ 构建期就拦」。但**墙还是这条墙**：46 张的余量是卡侧最短的，
+⇒ 这条容量从「❌ 已知会撞」变成「✅ 构建期就拦」。但**墙还是这条墙**：33 张的余量是卡侧最短的，
 加满时的配方见 §1 表与 §3.2。
 
 ### ② §1w 的站点数少了一半以上 → **该方案已被更好的方案取代（✅ 2026-09-14）**
@@ -423,7 +423,7 @@ python3 native/tools/reader_census.py --all    # 连锚点的 31 处引用一起
 
 <!-- capcheck:appendix:begin（本段由 `native/tools/capcheck.py --gen-appendix` 生成，**别手改**）-->
 
-**A0. 卡的安全用量：还能进 46 张**（瓶颈 = `abcard.anm` entry，每张 2 格；口径 = 本文件 `CARD_COST`，见 `CAPACITY.md` §1 的「安全用量」）
+**A0. 卡的安全用量：还能进 33 张**（瓶颈 = `abcard.anm` entry，每张 2 格；口径 = 本文件 `CARD_COST`，见 `CAPACITY.md` §1 的「安全用量」）
 
 **A1. 卡 id（`CE_CARD(` 的落点，37 张）** —— 出处 `native/cards/*.c`
 
@@ -763,6 +763,7 @@ CE_ANM_ABILITY_SPRITE 宏 721 个，号 109..452
 ```
 
 <!-- capcheck:appendix:end -->
+
 
 
 

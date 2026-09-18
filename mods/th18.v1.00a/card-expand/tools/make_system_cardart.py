@@ -116,14 +116,14 @@ def compose_art_mosaic(icons: list[Image.Image]) -> Image.Image:
       `3c ≤ 220−2·PAD` 且 `4c ≤ 284−2·PAD` ⇒ `c ≤ 68`（PAD=6）；
       `nearest` 模式再取整到 32 的整数倍（×2 = **64**，不糊），`fill` 模式直接 **68**（有插值）。
     """
-    im = Image.new("RGBA", (AW, AH), WHITE)
+    im = Image.new("RGBA", (W, H), WHITE)
     avail_w, avail_h = AW - 2 * PAD, AH - 2 * PAD
     cell = max(1, min(avail_w // MOSAIC_COLS, avail_h // MOSAIC_ROWS))
     if SCALE_MODE == "nearest" and icons:
         k = max(1, cell // max(icons[0].width, icons[0].height))
         cell = min(cell, icons[0].width * k, icons[0].height * k)
     gw, gh = cell * MOSAIC_COLS, cell * MOSAIC_ROWS
-    ox, oy = (AW - gw) // 2, (AH - gh) // 2
+    ox, oy = (W - gw) // 2, (H - gh) // 2
     for i, ic in enumerate(icons[:MOSAIC_COLS * MOSAIC_ROWS]):
         r, c = divmod(i, MOSAIC_COLS)
         if SCALE_MODE == "fill":
@@ -134,34 +134,22 @@ def compose_art_mosaic(icons: list[Image.Image]) -> Image.Image:
     return im
 
 
-def compose_min_mosaic(icons: list[Image.Image]) -> Image.Image:
-    """小卡面（64×80）也拼 3×4：格子 = `min(64//3, 80//4)` = 20 px（**缩图用 LANCZOS**，缩小用最近邻会糊成一团）。"""
-    w, h = cardframe.MIN_W, cardframe.MIN_H
-    im = Image.new("RGBA", (w, h), WHITE)
-    cell = max(1, min(w // MOSAIC_COLS, h // MOSAIC_ROWS))
-    gw, gh = cell * MOSAIC_COLS, cell * MOSAIC_ROWS
-    ox, oy = (w - gw) // 2, (h - gh) // 2
-    for i, ic in enumerate(icons[:MOSAIC_COLS * MOSAIC_ROWS]):
-        r, c = divmod(i, MOSAIC_COLS)
-        im.alpha_composite(ic.resize((cell, cell), Image.LANCZOS), (ox + c * cell, oy + r * cell))
-    return im
-
-
 def compose_art(icon: Image.Image | None) -> Image.Image:
     """★ 用户 2026-09-18 口径：「把 icon 补齐成卡面的样子，**最大居中，剩下补充白色**」。
 
-    产出 = **画面区那一块**（220×284，无框）：纯白底 + 图标按最大等比放大后居中，其余全白。
-    **不画框** —— 加框交给 `cardframe.apply_frame()`（原生同款，见 `assets/cardframe.py`）。
+    产出 = **256×320 无框画面**（`_art` 口径，带 `renkolab-art=area` 标记）：纯白底 + 图标按最大
+    等比放大后居中。图标尺寸照**画面区**（220×284）算 ⇒ 外圈那 18 px 会被 `cardframe.frame_card()`
+    1:1 裁掉、换成原生框，效果与设计稿逐像素一致；**不画框** —— 加框交给 `cardframe.py`。
     `❓ 自定`：`PAD` 是画面区里图标四周的留白（默认 6 px）。"""
-    im = Image.new("RGBA", (AW, AH), WHITE)
+    im = Image.new("RGBA", (W, H), WHITE)
     d = ImageDraw.Draw(im)
     avail = min(AW - 2 * PAD, AH - 2 * PAD)
     if icon is not None:
         big = fit(icon, avail)
-        im.alpha_composite(big, ((AW - big.width) // 2, (AH - big.height) // 2))
+        im.alpha_composite(big, ((W - big.width) // 2, (H - big.height) // 2))
     else:
         f_q = load_font(LAT_FONT, 72)
-        d.text((AW // 2, AH // 2), "?", font=f_q, fill=(200, 200, 205, 255), anchor="mm")
+        d.text((W // 2, H // 2), "?", font=f_q, fill=(200, 200, 205, 255), anchor="mm")
     return im
 
 
@@ -190,23 +178,6 @@ def compose(icon: Image.Image | None, cn: str, tag: str, cid: str) -> Image.Imag
     d.text((W // 2, 286), "CARD " + cid, font=f_id, fill=ACCENT, anchor="mm")
     # 原生黑框盖在最上面（保持 TH18 卡形）
     d.rectangle([0, 0, W - 1, H - 1], outline=(0, 0, 0, 255), width=M)
-    return im
-
-
-def compose_min(icon: Image.Image | None) -> Image.Image:
-    """小卡面（64×80）：★ **原生 `_min` 不带框**（`cardframe.py` 头注：「HUD 卡组图标不带框」）
-    ⇒ 白底 + 图标最大居中，**不画任何框**。
-    `❓ 自定`：直接按 64×80 合成（而不是把 220×284 的画面区缩下来）—— 32×32 图标正好 ×2 = 64，
-    像素级对齐；照 `save_min_from_art()` 缩会有 ~3% 形变。"""
-    w, h = cardframe.MIN_W, cardframe.MIN_H
-    im = Image.new("RGBA", (w, h), WHITE)
-    d = ImageDraw.Draw(im)
-    if icon is not None:
-        big = fit(icon, min(w, h))
-        im.alpha_composite(big, ((w - big.width) // 2, (h - big.height) // 2))
-    else:
-        f_q = load_font(LAT_FONT, 28)
-        d.text((w // 2, h // 2), "?", font=f_q, fill=(200, 200, 205, 255), anchor="mm")
     return im
 
 
@@ -240,14 +211,18 @@ def main():
         icon = Image.open(p).convert("RGBA") if p.is_file() else None
         art = compose_art_mosaic(mosaic_icons) if cid == "118" else compose_art(icon)
         (out / "art").mkdir(exist_ok=True)
-        art.save(out / "art" / f"{cid}_{tag}_art.png")          # 无框画面（留档，便于重出）
+        art_path = out / "art" / f"{cid}_{tag}_art.png"
+        cardframe.save_art(art, art_path)                       # ★ 无框画面（带 `renkolab-art=area` 标记）= 真源
+
         mx = out / f"{cid}_{tag}_max.png"
         mn = out / f"{cid}_{tag}_min.png"
         if a.style == "white":
-            cardframe.save_framed(cardframe.apply_frame(art), mx)   # ★ 原生同款框 + `renkolab-frame=1` 标记
+            # ★ 原生同款框，1:1 贴（`area=True` 不吃重采样 ⇒ 整数倍放大的像素画不会被缩糊）
+            cardframe.save_framed(cardframe.frame_card(art, area=True), mx)
         else:
             compose(icon, cn, tag, cid).save(mx)
-        (compose_min_mosaic(mosaic_icons) if cid == "118" else compose_min(icon)).save(mn)
+        # ★ `_min` 也走 `cardframe.py` 的同一套函数（单一真源；`area=True` = 内容外框等比缩进 64×80）
+        cardframe.min_image_from_art(art, area=True).save(mn)
         n_icons = len(mosaic_icons) if cid == "118" else (1 if p.is_file() else 0)
         rows.append((cid, cn, nm, tag, mx.name, mn.name, n_icons > 0))
         print(f"  {cid} {cn:6s} {tag} " + (f"3×4 拼图（{n_icons} 个图标）" if cid == "118"

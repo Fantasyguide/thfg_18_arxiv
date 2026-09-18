@@ -357,8 +357,8 @@
     "initial_unlocked": 1,
     "price_tier": 10,
     "weight": 2,
-    "sprite_large": 116,
-    "sprite_small": 117
+    "sprite_large": 164,
+    "sprite_small": 165
   },
   "107": {
     "name": "妖妖梦",
@@ -372,8 +372,8 @@
     "initial_unlocked": 1,
     "price_tier": 10,
     "weight": 2,
-    "sprite_large": 116,
-    "sprite_small": 117
+    "sprite_large": 166,
+    "sprite_small": 167
   },
   "108": {
     "name": "永夜抄",
@@ -387,8 +387,8 @@
     "initial_unlocked": 1,
     "price_tier": 10,
     "weight": 2,
-    "sprite_large": 116,
-    "sprite_small": 117
+    "sprite_large": 168,
+    "sprite_small": 169
   },
   "109": {
     "name": "花映塚",
@@ -402,8 +402,8 @@
     "initial_unlocked": 1,
     "price_tier": 10,
     "weight": 2,
-    "sprite_large": 116,
-    "sprite_small": 117
+    "sprite_large": 170,
+    "sprite_small": 171
   },
   "110": {
     "name": "风神录",
@@ -417,8 +417,8 @@
     "initial_unlocked": 1,
     "price_tier": 10,
     "weight": 2,
-    "sprite_large": 116,
-    "sprite_small": 117
+    "sprite_large": 172,
+    "sprite_small": 173
   },
   "111": {
     "name": "地灵殿",
@@ -432,8 +432,8 @@
     "initial_unlocked": 1,
     "price_tier": 10,
     "weight": 2,
-    "sprite_large": 116,
-    "sprite_small": 117
+    "sprite_large": 174,
+    "sprite_small": 175
   },
   "112": {
     "name": "星莲船",
@@ -447,8 +447,8 @@
     "initial_unlocked": 1,
     "price_tier": 10,
     "weight": 2,
-    "sprite_large": 116,
-    "sprite_small": 117
+    "sprite_large": 176,
+    "sprite_small": 177
   },
   "113": {
     "name": "神灵庙",
@@ -464,8 +464,8 @@
     "initial_unlocked": 1,
     "price_tier": 10,
     "weight": 2,
-    "sprite_large": 116,
-    "sprite_small": 117
+    "sprite_large": 178,
+    "sprite_small": 179
   },
   "114": {
     "name": "辉针城",
@@ -480,8 +480,8 @@
     "initial_unlocked": 1,
     "price_tier": 10,
     "weight": 2,
-    "sprite_large": 116,
-    "sprite_small": 117
+    "sprite_large": 180,
+    "sprite_small": 181
   },
   "115": {
     "name": "绀珠传",
@@ -497,8 +497,8 @@
     "initial_unlocked": 1,
     "price_tier": 10,
     "weight": 2,
-    "sprite_large": 116,
-    "sprite_small": 117
+    "sprite_large": 182,
+    "sprite_small": 183
   },
   "116": {
     "name": "天空璋",
@@ -515,8 +515,8 @@
     "initial_unlocked": 1,
     "price_tier": 10,
     "weight": 2,
-    "sprite_large": 116,
-    "sprite_small": 117
+    "sprite_large": 184,
+    "sprite_small": 185
   },
   "117": {
     "name": "鬼形兽",
@@ -532,8 +532,8 @@
     "category": 0,
     "price_tier": 10,
     "weight": 2,
-    "sprite_large": 116,
-    "sprite_small": 117
+    "sprite_large": 186,
+    "sprite_small": 187
   }
 ,
   "118": {
@@ -542,16 +542,15 @@
       "主动卡：D 切到本卡后按 C 发动，",
       "一次把 106–117 十二张系统卡发到手上",
       "（一局只发一次）。挑战来自你自己的",
-      "编成：把哪些系统机制叠在一起打。",
-      "❓ 贴图暂借 116/117（UI 不在本目标范围）。"
+      "编成：把哪些系统机制叠在一起打。"
     ],
     "internal_name": "GIVE12",
     "category": 0,
     "initial_unlocked": 1,
     "price_tier": 10,
     "weight": 1,
-    "sprite_large": 116,
-    "sprite_small": 117
+    "sprite_large": 188,
+    "sprite_small": 189
   },
   "200": {
     "name": "测试卡 200",

@@ -4828,6 +4828,7 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 | 2026-09-16za | **所有卡（共享件：`sdk_core.{h,c}` 新增「未满 P」声明层；新增两条断点（导出 35→37）；`faith_core` 新增 `faith_signal_step_gated()`；106 声明、111 消费）** | 见下方「§BE 详录 #38」 |
 | 2026-09-16zb | **所有卡（共享资源 `assets/sht/append_shooterset.py`：111 五组的**行数/射速/判定盒**按 TH11 一手重定；共享件 `native/sht_ids.h` 的组注释同步）** | 见下方「§BE 详录 #39」 |
 | 2026-09-16zc | **所有卡（共享件 `sdk/public.h` 新增 `CE_SHT_PRIO_111`（= −1，阶梯最底）；`assets/sht/append_shooterset.py` 的 111 由 5 组扩到 **31 组**（`0x29`–`0x47`）并新增**主炮组覆盖**；层自检硬门改为只管卡侧 tick 的组）** | 见下方「§BE 详录 #40」 |
+| 2026-09-18 | **106–118（共享资源 `assets/cards/` + 共享件 `assets/cardframe.py`、`patch/th18/cards.js`）** | 见下方「§BE-EG」 |
 | 2026-09-17a | **所有卡（共享件 `patch/th18.v1.00a.js` / `th18_card_expand.def` / `Makefile` / `sdk.c`：**摘掉断点 `ce_enemy_damage`**；113 退订 `.on_enemy_damage`）** | 见下方「§BE 详录 #41」 |
 
 
@@ -13999,6 +14000,49 @@ fill 循环**一圈不跑**、图鉴整表空掉（§AG 的症状链）。于是
   `python3 -m pytest -q`、`sites.py check` / `verify`、`sitecheck.py --all`、`capcheck.py`、
   `engine_abi_check.py`、`tooling/check-docs.py`（全部通过）。
 - **未做**：实跑（§8.12 的四条观察项）。⇒ 本节结论标 🟡 **静态全通 / 实跑待验**。
+
+### §BE-EG 共享资源 `assets/cards/` 追加 13 张系统卡卡面（106–118）+ 共享件 `cardframe.py` 新增「画面区原尺寸」口径（2026-09-18，106–118 卡面落地）
+
+> **谁改的**：106–118 系统卡这一批。**动到的别人东西**：共享件 `assets/cardframe.py`、共享资源 `assets/cards/ORDER.txt`（**只追加 13 行**）、
+> `assets/cards/*_{max,min}.png` 与 `_art/*.png`，以及 `patch/th18/cards.js` 里 **106–118 这 13 张自己的卡**的 `sprite_large/sprite_small`
+> （同一文件里 58–80 那批**一行未动**）。
+> ⚠ 本条排在 §BE-EE **之前**：§BE 末尾紧邻别人尚未提交的 §DO/§DP/§DQ 改动，插在末尾会让一次提交**夹带别人的段落**。
+
+**一、起因（用户口径逐字）**
+「**卡图就用这个吧，然后十二合一就拼一个 3\*4 的，然后最大居中**」＋「**这些当暂时的最终版本，因为我没想好怎么卡图整活**」
+⇒ 106–118 的卡面（原先 13 张共用原生空白 sprite `116`/`117`）正式落地：白底 + 各作 exe 图标最大居中 + 原生同款框（`cardframe.py`）。
+
+**二、改了什么**
+
+| 文件 | 改了什么 | 为什么 |
+| --- | --- | --- |
+| `assets/cardframe.py`（**共享件**） | 新增「画面区原尺寸」口径（`frame_card(art, area=True)` 等 5 个函数/常量，见下） | 老路 `apply_frame()` 会把 256×320 缩到 **0.8875 倍** ⇒ 整数倍最近邻放大的像素画**必糊** |
+| `assets/cards/ORDER.txt` | 末尾**追加 13 行**（`EOSD_PLAYRANK`…`GIVE12`，前面加一行注释） | 行号决定 sprite 号；**只追加**是这条规则的全部要点 |
+| `assets/cards/*_{max,min}.png`、`assets/cards/_art/*.png` | 新增 13×3 个文件（`_max` 256×320 带框、`_min` 64×80 无框、`_art` 256×320 无框带 `renkolab-art=area`） | 同上 |
+| `patch/th18/cards.js` | 106–118 的 `sprite_large/sprite_small`：`116`/`117` → **164/165 … 188/189**；并删掉 118 描述里那句已过期的「❓ 贴图暂借 116/117（UI 不在本目标范围）」 | 不指到新 sprite 就还是空白卡面 |
+
+`cardframe.py` 新增的具体东西（**兼容式**，见文件头 §两种口径）：`frame_card(art, area=True)`（把中央 220×284 **1:1** 贴进原生框、不重采样）、
+`min_image_from_art()` / `save_min_from_art(..., area=True)`（`_min` = **内容外框**等比缩进 64×80 居中）、`art_is_area()`、
+`save_art()`（PNG 记 `renkolab-art=area`）、`_integer_prefilter()`（缩 `_min` 前先按「能整除的最大整数倍」降采样，保住像素画硬边）。
+
+**三、对既有卡的影响面（回归跑了什么）**
+- `ORDER.txt` **只追加** ⇒ 既有 23 张卡的 sprite 号（118–163）与 `abcard.anm` 前 46 条追加 entry **逐字节未变**
+  （`build_abcard.py --verify-only` 的「原生 spec/贴图逐项一致」仍通过）。
+- `cardframe.py` 的新口径**只在 `_art` 带 `renkolab-art=area` 标记或尺寸正好 220×284 时启用**；既有 `_art` 全是满版 256×320 且无标记
+  ⇒ 走老路，**其它卡一个像素没变**（受影响的只有新加的 13 张）。
+- `ability.anm` / `pl0X.anm` / `pl0X.sht` / ECL / DLL：**本轮一行未动**（`make release` 只写了 `cards.js`、`abcard.anm`、`files.js` 三个文件）。
+- 容量：`abcard.anm` entry **164 → 190 / 256**（+26，每张卡 2 条）⇒ 余量 66 = **还能进 33 张**（`CAPACITY.md` 已同步，`capcheck` 全绿）。
+
+**四、怎么验证的**
+- `python3 assets/build_abcard.py`：`verify: entry 190 = 118 + 2×36；原生 spec/贴图逐项一致；cards.js 索引一致`，exit 0；`--verify-only` 回读通过。
+- `make quick` / `make check`（含 `anm-verify` / `sht-verify` / `sites.py check` / `capcheck` / `engine_abi_check` / `anm_hud_alpha_check` /
+  **`check-docs` 353 文件**）/ `make dllx87`（= **0**）全绿。
+- 几何逐像素校验：118 默认版图标墙 **192×256**（3×64 × 4×64、正方形格），画面区四边留白**各 14 px**；
+  12 格逐格比对 = 对应作品的 exe 图标（顺序 106→117）；13 张 `_max` 的**框环与原生同款逐像素一致**（以 117 的框环为基准）。
+- 与用户过目的草图对比：`_max` **13/13 像素级相同**；`_min` 11/13 相同，113（th13 图标顶上多一行白）与 118（拼图整体重采样一次）
+  有 ≤1 px 的摆放/边缘差（64×80 的 HUD 图标看不出来）。
+- 部署对账：`native/build/abcard.anm` == modkit 里那份（md5 `bf91a0f5c0dc4b96f2a51c27f134222e`）、`cards.js`/`ability.anm` 同；
+  四份 DLL md5 一致（`e72b812b302666e494b2adae5e53b632`，**本轮未重建 DLL**）；`check_deploy_pair.py` ✓ 配套。
 
 ### §BE-EE 卡组体检 `ce_deck_audit()`（AUDIT §Z11 / §G7 那条老账的诊断件，2026-09-19）
 
