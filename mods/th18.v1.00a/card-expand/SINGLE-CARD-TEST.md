@@ -127,7 +127,7 @@
 | 1 | chapter finish 防挡透明改成 50% | 数值件：现在是多少？改到 50%（记 `TUNING.md`） | ☐ |
 | 2 | 放挡触发框似乎比 UI 位置靠下 | 触发框 vs 绘制的坐标（一类锚点/高度问题） | ☐ |
 | 3 | chapter finish 防挡似乎没有恰当的淡入淡出过渡 | 淡入淡出（原作的曲线：找一手脚本/帧数） | ☐ |
-| 4 | **（2026-09-19 新发现，owner 实跑）** th15「**道具抖动变黄**」没了 | ❓ 先要 owner 指对象：一手只记了**弹幕**擦弹变黄（§4d），**道具**侧只有减速因子；「抖动」无一手对应项 ⇒ 见 [`WORK-PACKAGES.md`](WORK-PACKAGES.md) §P9b | ☐ |
+| 4 | **（2026-09-19 owner 实跑）** th15「**道具抖动变黄**」没了（owner：「擦弹时所有道具会变黄然后抖」） | ★ **一手已到底**：[`engine/item/th15/01`](../../../engine/item/th15/01-tick-shake-tint-and-graze-item.md)（减速期逐道具 ±1 px 抖 + 压暗；连擦 45 帧弹出 type 13 橄榄黄道具）；落笔 = [`WORK-PACKAGES.md`](WORK-PACKAGES.md) §5 P9b | ☐ |
 
 ## §th16 —— 116 天空璋（`SEASON`）
 
