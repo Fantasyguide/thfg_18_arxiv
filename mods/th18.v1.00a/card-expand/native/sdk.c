@@ -2959,6 +2959,21 @@ static int ce_poc_gate_common(x86_reg_t *regs, uint32_t fall_through)
                        "「不吸」处理（见 AUDIT §BE-EP）", (double)line, (double)py, (const void *)pl); }
         }
     }
+    /* ★★ 2026-09-19 最小差分二分的定案（owner 实跑「正常了」）——**没人声明「未满 P」闸时，
+     * 这两条站点必须完全透明**：把引擎那条 `ja` 原样回放（`BP_EXEC_ORIGINAL`），一个字都不改。
+     *
+     * 起因：owner 报「115 绀珠传擦弹时道具**变慢但不变橙、不抖**」。一手：那条橙/抖就在引擎道具 tick
+     * 的 per-item 分支里，门 = **`state == 1`（飘落）且 `item+0xc50 ≥ 32` 帧**
+     * （`th18:0x445be6` → `0x445c85 jl`；TH15 同门 `th15:0x43f9c3`），而「慢」（位移/重力 ×factor，
+     * `th18:0x445c0d`/`0x445c6d`）**在那道年纪门之前** ⇒ 道具一旦被提前放飞（state 3），
+     * 就只剩「慢」、再也回不到橙+抖。
+     * 二分：`sites.py` 里**只** park 这两条站点、DLL 一字不动（确定性构建，md5 与坏的那版相同）
+     * ⇒ 一测即恢复正常 ⇒ 副作用就出在本 handler 上（哪怕它逐行看着是 vanilla 等价：同样的
+     * `line > py`、同样的落点与 fall-through，日志里也没打过「可疑操作数」那行 WARN）。
+     * ⇒ 结论：**接管这条 `ja` 本身就是风险**，所以只在真有人要那道闸时才接管。*/
+    if (ce_full_p_gate_owner() < 0) {
+        return BP_EXEC_ORIGINAL;     /* = 1：回放引擎原指令，行为与没装站点一模一样 */
+    }
     /* ② 再叠上「上线收点当且仅当满 P」那道闸：106 声明「这一帧不满 P」⇒ 本帧不许进真空态。*/
     ce_retaddr_set(regs, (take && !ce_full_p_gate_active()) ? CE_POC_VACUUM : fall_through);
     return 0;                        /* 恒 0：不回放，也就不进 cave（窗口是 0f 8x，进 cave 会跳飞）*/

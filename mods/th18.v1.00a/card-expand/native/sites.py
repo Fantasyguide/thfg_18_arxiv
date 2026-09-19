@@ -1238,7 +1238,7 @@ _SDK_KEEP_NAMED = {
     #   窗口四项检查（W1–W4）逐条过过（`sitecheck.py <addr> <len>`）：
     "ce_shot_set_index",             # 0x45ebfb：主炮组号覆盖 ⇒ 修 th13 #5「灵界发弹更改消失」+ th17 #2「咆哮发弹更改消失」
     "ce_player_die",                 # 0x45d3a0：中弹无伤闸门 ⇒ 修 th13 #6「主动灵界中弹⇒结束后死亡」+ #3「中弹音效未屏蔽」
-    "ce_poc_gate_a",                 # 0x445bb9：106 上线收点闸 A（handler 2026-09-19 晚修好：复现 ja + 与满 P 闸）
+    "ce_poc_gate_a",                 # 0x445bb9：106 上线收点闸 A（★ 2026-09-19 二分定案后重放：handler 改成「无人声明时直接回放引擎那条 ja」）
     "ce_poc_gate_b",                 # 0x446003：同上分支 B（成对；只挂一条 = 另一条支路照旧真空）
     # ⚠ 历史（留着）：2026-09-19 晚这两条曾被**撤回**一次（owner 实跑：「同装 th14 和 15 的时候，一直在全屏吸收」）——
     #   `ce_poc_gate_a` / `ce_poc_gate_b` 两条**不能就这样放出来** —— 它们的 handler
