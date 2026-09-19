@@ -1042,6 +1042,12 @@ static int ce_item_score_in_common(x86_reg_t *regs)
     ce_score_bridge(base / (CE_ITEM_SCORE_BASE_UNIT / CE_SCORE_ENGINE_UNIT),
                     *(volatile int32_t *)CE_ADDR_DIFFICULTY);
 
+    /* ①b ★ 擦弹 ⇒ 最大得点（`ΔG_擦弹`）的输入：**普通内存读**，不是断点 ⇒ 不新增站点。
+     *   一手：th12–th17 四作同形「每 +1 擦弹 ⇒ 最大得点 +1 显示」，所以这一项 = 本局擦弹数；
+     *   层按「状态的函数」处理 ⇒ 多卡同装也只算一次（用户口径：别加一张卡擦弹数的作用就 +1 次）。
+     *   `CE_ADDR_GRAZE` 见 engine.h（与耦合通道读的是同一个全局，`0x4ccd0c`）。*/
+    ce_graze_bridge((uint32_t)*(volatile int32_t *)CE_ADDR_GRAZE);
+
     /* ② coeff_06（高度门）**只判不打折**：引擎自己在 0x446bf9–0x446cf3 把它乘在（我们写进去的）ecx 上，
      * 所以它现在作用在**整笔** `G_0 + ΣG_i` 上 —— 这正是用户规格要的结构。
      * 我们只把「这一颗是不是线上 / 真空飞行」这个**已确认的判据**记进诊断字段
@@ -1057,8 +1063,16 @@ static int ce_item_score_in_common(x86_reg_t *regs)
         int above = (y_q >= poc_q)
                  || (*(volatile int32_t *)(item + CE_ITEM_STATE) == CE_ITEM_STATE_VACUUM);
         ce_score_set_coeff(above ? 1000u : 0u);        /* 0 = 线下（引擎会打折；值我们不猜）*/
+        /* ★ 2026-09-18（计分层换版，路线 A）：把**几何**交给层 —— 层据此自算 `coeff_0`（整数、
+         *   `900·(450−d)/450`）并按「每项走自己原作的曲线」归一（`ΔG_i × coeff_i/coeff_0`）。
+         *   两个 Q16 是本段上面已经算好的（整数搬运，无浮点）。*/
+        /* 道具自己的 y 也要给层：th06/th07/th08/th10 那几族的曲线吃**道具 y**（一手口径见 sdk_core.h）。*/
+        ce_score_bridge_geom2(y_q,
+                              ce_q16_from_bits(*(volatile uint32_t *)(item + CE_ITEM_POS + 4)),
+                              poc_q);
     } else {
         ce_score_set_coeff(1000u);
+        ce_score_bridge_geom(0, 0);                    /* 没有自机 ⇒ 当成线上（满额），与上面一致 */
     }
 
     /* ③ 收集声明（卡只声明自己那一份 G_i）。**每次收集只在这里收一次**
@@ -2885,7 +2899,14 @@ int __cdecl BP_ce_death_result(x86_reg_t *regs, void *bp_info)
  *   恒返回 0 ⇒ **cave 永不执行** ⇒ 窗口里有什么分支都无所谓（本窗口仍保留，因为它是「哪条支路」的
  *   唯一判据：`th18:0x445f63` 是**四条**支路的汇聚点，挂在那里分不出「过线」）。
  * ⚠ 落空支**不看 flags**（一手：A 的 `0x445bbf` / B 的 `0x446009` 都是 `mov eax,[0x4cf2b8]` 起头、自带 `cmp`）
- *   ⇒ 不回放原指令不会踩到 `comiss` 留下的标志位；落点本身是整指令边界、且都在 exe 映像内（过 `ce_retaddr_set`）。
+ *   ⇒ 落点本身是整指令边界、且都在 exe 映像内（过 `ce_retaddr_set`）。
+ * ★★★ **2026-09-19 晚修（一次实跑事故，`AUDIT.md` §BE-EN）**：上面那版 handler **只按声明层选落点、从不复现
+ *   那条 `ja` 的比较** ⇒ 没人声明（deck 里没 106）时**恒落真空入口** ⇒ 道具**每帧无条件真空**
+ *   （owner 实跑「同装 th14 和 15 的时候，一直在全屏吸收」）。
+ *   ⇒ 现在**先按 `regs->eflags` 复现 `ja`**（`ja` = `CF==0 && ZF==0`，即 `!(eflags & 0x41)`；
+ *     前一条 `comiss xmm0,[esi+0x624]` 的结果就在那儿），**再**与「满 P 闸」与一下。
+ *   为什么 `eflags` 可用：thcrap 的桩在**任何改标志的指令之前**就 `lahf`/`seto al`/`push eax` 存了它
+ *   （一手桩模板见 `engine/_shared/thcrap-breakpoint-pools.md` §2；`x86_reg_t` 的第一个字段就是 `eflags`）。
  * ⚠ **两条都要挂**：只挂一条 = 另一条支路照旧真空（静默半失效）。
  * ⚠ 回收线本身照旧可见（我们不碰 `player+0x47998`）——这正是用户选的「精确门」而不是「把线抬走」。*/
 /* ★★★ 一次性**复现用** handler（默认不声明、默认不导出；只有 `CE_CANARY_POC_GATE=1` 时才由
@@ -2912,8 +2933,14 @@ int __cdecl BP_ce_canary_b(x86_reg_t *regs, void *bp_info)
 
 static int ce_poc_gate_common(x86_reg_t *regs, uint32_t fall_through)
 {
-    ce_retaddr_set(regs, ce_full_p_gate_active() ? fall_through : CE_POC_VACUUM);
-    return 0;                        /* 恒 0：不回放，也就不进 cave（窗口是 0f 8x，进 cave 会跳飞）*/
+    /* ① 复现窗口里那条 `ja` 的**比较结果**（`ja` = CF==0 && ZF==0；CF=0x1 / ZF=0x40）。
+     *    ⚠ `comiss` 的无序情形（NaN）会把 ZF/CF 都置 1 ⇒ `ja` 不成立 ✓ 与硬件一致。*/
+    const int native_take = (regs->eflags & 0x41u) == 0;
+    /* ② 再叠上「上线收点当且仅当满 P」那道闸：106 声明「这一帧不满 P」⇒ 本帧不许进真空态。*/
+    const int gated = ce_full_p_gate_active();
+    ce_retaddr_set(regs, (native_take && !gated) ? CE_POC_VACUUM : fall_through);
+    return 0;                        /* 恒 0：不回放，也就不进 cave（窗口是 0f 8x，进 cave 会跳飞）
+                                      *   ⇒ 那条 `ja` 只有「算出来的结果」，没有「被回放的机会」。*/
 }
 
 int __cdecl BP_ce_poc_gate_a(x86_reg_t *regs, void *bp_info)

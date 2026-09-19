@@ -1441,6 +1441,18 @@
       "expected": "558bec83ec14",
       "title": "行为 SDK → BP_ce_enemy_death：FUN_00430240（SDK 名 Enemy__die）入口：push ebp/mov ebp,esp/sub esp,0x14，无相对寻址。thiscall，ecx = zEnemy；**引擎撒主掉落之前**（0x430493 才是撒、0x43049f 才通知卡）、链表仍挂着，恒定 mov eax,1 返回 ⇒ 一敌一生正好一次。handler 用 regs->retaddr 分死因（0x42f3b7 = 打死主路 / 0x42ee90 = 炸弹秒杀 / 0x430f59 = ECL die / killAll 三兄弟），沿卡链表调 on_enemy_death(&ev)。详见 docs/superpowers/specs/2026-09-12-shared-enemy-death-event-design.md"
     },
+    "ce_poc_gate_a": {
+      "addr": "0x445bb9",
+      "cavesize": 6,
+      "expected": "0f87a4030000",
+      "title": "行为 SDK → BP_ce_poc_gate_a：ItemManager__on_tick__body 的『过线 ⇒ 道具无条件真空』分支 A：`445baa movss xmm0,[esi+0x47998]`（收点线）→ `445bb2 comiss xmm0,[esi+0x624]`（自机 y）→ **本站点 `ja 0x445f63`**（0x445f63 = `mov [item+0xc74],3` 真空态）。★ **窗口就是这条 `ja`（近相对分支）**：thcrap 的 cave_fix 只重定位窗口首条的 e8/e9 ⇒ **不能**靠回放它（回放会跳到「本格 + 0x3aa」= 池页零尾巴，就是头号崩溃，AUDIT §BE-DW）。所以 handler **恒返回 0** 并自己给落点：声明层开着（106 说「不是满 P」）⇒ 落回站点后一条 `0x445bbf`（= 那条 ja 不成立那一支）；否则 ⇒ 落到真空态入口 `0x445f63`。落空支不看 flags（一手：0x445bbf 是 `mov eax,[0x4cf2b8]` 起头、自带 cmp）⇒ 不回放不会踩标志位。⚠ 也不能改挂 `0x445f63`：那里是**四条**支路的汇聚（两条 ja + 紧随的两条 jl）⇒ 分不出「过线」。一手依据 = TH06 `ItemManager.cpp` 的道具 tick `state==1 || (128 <= currentPower && player.y < 128.0f)` ⇒ 『满 P + 在线上』才是过线收点的充要条件。"
+    },
+    "ce_poc_gate_b": {
+      "addr": "0x446003",
+      "cavesize": 6,
+      "expected": "0f875affffff",
+      "title": "行为 SDK → BP_ce_poc_gate_b：同上，**第二条** `ja 0x445f63`（向后跳；0x446003 处、6 字节）。handler 恒返回 0 + 自己给落点：开着 ⇒ `0x446009`（不成立那一支），否则 ⇒ `0x445f63`。两条都要挂：只挂一条 = 另一条支路照旧把道具拉进真空态（静默半失效）。"
+    },
     "ce_player_die": {
       "addr": "0x45d3a0",
       "cavesize": 6,

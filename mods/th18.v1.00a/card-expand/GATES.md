@@ -205,13 +205,15 @@ _SDK_KEEP_NAMED]` 是「按**下标**保留前 10 条」的截断残留 —— �
 | ② | 池子实测余格 | **待下一局实跑**读 `pool: 可执行页 N、跳板格 M、首个全零格 @…`（上一局 43 格 / 首个全零格 `0x03c202d0`，池区扫描范围 `0x03c00000..0x03e00000`）|
 | ③ | 实跑一局 | **待 owner 跑**（要看的四件事见 `AUDIT.md` §BE-EM）|
 
-**★ 当晚撤回其中两条（owner 实跑报「同装 th14 和 15 的时候，一直在全屏吸收」）**：
-`ce_poc_gate_a` / `ce_poc_gate_b` **重新 park** —— 它们的 handler（`sdk.c` 的 `ce_poc_gate_common`）
-替换掉的是一条**条件分支**（窗口 = 那条 `ja`），却只按 `ce_full_p_gate_active()` 选落点、
-**从不复现那条比较**（`comiss` 的结果仍在 `regs->eflags` 里）⇒ 没人声明闸门时**恒落真空入口**
-⇒ 道具**每帧无条件真空**。⇒ 本站点表：正式声明 27 → **25**、进程级 49 → **47**（其余三条放出保持）。
-想再装它：先把 handler 改成「读 `regs->eflags` 复现 `ja`（CF==0 && ZF==0）**再**与满 P 闸与一下」+ 实跑验收。
-**th06 #1 因此仍挂**（`SINGLE-CARD-TEST.md` §th06 #1 状态同步）。
+**★★ 当晚修好并重新放出（owner 口径「对的」）**：`ce_poc_gate_a/b` 的 handler 已改成
+**先按 `regs->eflags` 复现窗口里那条 `ja`**（`ja` = `CF==0 && ZF==0` ⇒ `!(eflags & 0x41)`），
+**再**与「满 P 闸」与一下：`take = native_take && !full_p_gate_active()`。⇒ 没人声明闸门（deck 里没 106）时
+行为**回到原生**（过线才吸），106 在场且不满 P 时才抑制。`eflags` 可用的依据：thcrap 的桩在**任何改标志的
+指令之前**就 `lahf`/`seto al`/`push eax` 存了它（`engine/_shared/thcrap-breakpoint-pools.md` §2）。
+⇒ 两条站点**重新放出**：正式声明 25 → **27**、进程级 **49**（`base_tsa` 20 + 我们 27 + 测试归档 2）。
+完整事故与修法见 `AUDIT.md` §BE-EN / §BE-EO；**th06 #1 待实跑验收**（三条判据见 §BE-EO）。
+
+（`SINGLE-CARD-TEST.md` §th06 #1 状态同步）。
 
 **`patch` 与 `.def` 同步**：`python3 native/tools/gen_def.py`（.def 由声明集生成，§BE-EF 那套）⇒ 29 个 `BP_*` 双向对账通过。
 
