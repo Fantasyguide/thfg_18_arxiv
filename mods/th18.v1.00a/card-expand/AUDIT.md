@@ -14412,3 +14412,28 @@ ce_retaddr_set(regs, ce_full_p_gate_active() ? fall_through : CE_POC_VACUUM);
 **要修 th06 #1 的正确做法（未做）**：把 `ce_poc_gate_common` 改成
 `take = (eflags 复现 ja) && !full_p_gate_active()`（`ja` = `CF==0 && ZF==0`，即 `!(eflags & 0x41)`），
 再实跑验收（不满 P 过线不吸、满 P 过线照吸、不过线永不吸）之后才能放这两条站点。
+
+### §BE-EO ✅ 修好 `ce_poc_gate_common`：**按 `regs->eflags` 复现那条 `ja`**，两条 POC 站点重新放出（owner 2026-09-19「对的」）
+
+**背景**：`§BE-EN` 的事故（放出这两条站点 ⇒ 道具每帧无条件真空 ⇒ 全屏吸收）根因是 handler
+**只按声明层选落点、从不复现窗口里那条条件分支**。owner 批准按正确语义修好后重放。
+
+| 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
+| --- | --- | --- | --- | --- |
+| `native/sdk.c` | `ce_poc_gate_common()` 改为 `native_take = !(regs->eflags & 0x41)`（复现 `ja`）→ `(native_take && !ce_full_p_gate_active()) ? CE_POC_VACUUM : fall_through`；注释补记事故与依据 | 让条件分支重新成为条件分支：**没人声明闸门时 = 原生**（过线才吸）| 统筹会话 | `make check` rc=0；发布 DLL `fd56f4a3…` 四处同 md5、部署 patch 27 条含两条 POC |
+| `native/sites.py` | `ce_poc_gate_a/b` 重新加入 `_SDK_KEEP_NAMED`（附"曾撤回一次"的历史注）| — | 同上 | 同上 |
+| `GATES.md` §8.8 | 撤回行改写为"已修 + 重新放出"（计数 25 → 27、49）| 记账同步 | 同上 | 同上 |
+| `SINGLE-CARD-TEST.md` | th06 #1 → **已修待验** | 状态同步 | 同上 | 同上 |
+
+**`eflags` 为什么可用（一手）**：thcrap 的桩在**任何会改标志的指令之前**就
+`pushad / lahf / seto al / push eax / cld / mov ebp,esp` ⇒ 那个 `eax` 就是站点时刻的标志，
+且 `x86_reg_t` 的**第一个字段**就是 `eflags`（桩末尾 `pop eax / cmp al,0x81 / sahf / popad` 负责还原）。
+`lahf` 覆盖 SF/ZF/AF/PF/CF、`seto` 补 OF ⇒ 本站点要的 CF/ZF 都在（一手桩模板：
+`engine/_shared/thcrap-breakpoint-pools.md` §2）。
+
+**owner 实跑验收三条（这一批的全部判据）**：
+1. **不满 P 过收点线** ⇒ **不吸道具**（真空态不触发；`T06R: 上线收点闸 开`）；
+2. **满 P 过线** ⇒ **照旧吸**（原生行为；`闸 关`）；
+3. **不过线** ⇒ **永不吸**（原生行为；与 deck 里有没有 106 无关）。
+另：deck 里没有 106 时，本闸不该有任何可感影响（`native_take` 原样通过）。
+**回滚**：把两条从 `_SDK_KEEP_NAMED` 删掉 + `make gen`（事故记录见 §BE-EN）。
