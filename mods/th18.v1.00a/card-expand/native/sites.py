@@ -1238,8 +1238,14 @@ _SDK_KEEP_NAMED = {
     #   窗口四项检查（W1–W4）逐条过过（`sitecheck.py <addr> <len>`）：
     "ce_shot_set_index",             # 0x45ebfb：主炮组号覆盖 ⇒ 修 th13 #5「灵界发弹更改消失」+ th17 #2「咆哮发弹更改消失」
     "ce_player_die",                 # 0x45d3a0：中弹无伤闸门 ⇒ 修 th13 #6「主动灵界中弹⇒结束后死亡」+ #3「中弹音效未屏蔽」
-    "ce_poc_gate_a",                 # 0x445bb9：106 上线收点闸 A ⇒ 修 th06 #1「非满 P 上线不该全屏收点」
-    "ce_poc_gate_b",                 # 0x446003：同上分支 B（成对）
+    # ⛔ 2026-09-19 晚**撤回**（owner 实跑：「同装 th14 和 15 的时候，一直在全屏吸收」）：
+    #   `ce_poc_gate_a` / `ce_poc_gate_b` 两条**不能就这样放出来** —— 它们的 handler
+    #   （`sdk.c` 的 `ce_poc_gate_common`）**替换掉的是一条条件分支**（窗口 = 那条 `ja`），
+    #   但它只按 `ce_full_p_gate_active()` 选落点、**从不复现那条比较的语义**（`comiss` 的结果还活在
+    #   `regs->eflags` 里，handler 没读）⇒ 没人声明闸门时它**恒落真空入口 `0x445f63`** ⇒
+    #   道具**每帧无条件真空** = 实跑看到的"一直在全屏吸收"。见 `AUDIT.md` §BE-EN。
+    #   ⇒ 想装它，先把 handler 改成「按 `regs->eflags` 复现 `ja`（CF==0 && ZF==0）**再**与满 P 闸与一下」，
+    #     并且实跑验收之后再放。th06 #1 因此**暂时仍挂**。
     "ce_bullet_damage_final",         # 0x45e7ff：**伤害层唯一起作用点**（`bullet_damage_permille`）——
                                       #   它被截掉 = 所有走伤害层的卡**静默失效**（古锭刀/衔尾蛇/季节/测试卡 200…）
 }
