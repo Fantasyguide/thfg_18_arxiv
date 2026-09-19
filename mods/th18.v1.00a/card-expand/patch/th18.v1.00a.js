@@ -1441,6 +1441,30 @@
       "expected": "558bec83ec14",
       "title": "行为 SDK → BP_ce_enemy_death：FUN_00430240（SDK 名 Enemy__die）入口：push ebp/mov ebp,esp/sub esp,0x14，无相对寻址。thiscall，ecx = zEnemy；**引擎撒主掉落之前**（0x430493 才是撒、0x43049f 才通知卡）、链表仍挂着，恒定 mov eax,1 返回 ⇒ 一敌一生正好一次。handler 用 regs->retaddr 分死因（0x42f3b7 = 打死主路 / 0x42ee90 = 炸弹秒杀 / 0x430f59 = ECL die / killAll 三兄弟），沿卡链表调 on_enemy_death(&ev)。详见 docs/superpowers/specs/2026-09-12-shared-enemy-death-event-design.md"
     },
+    "ce_poc_gate_a": {
+      "addr": "0x445bb9",
+      "cavesize": 6,
+      "expected": "0f87a4030000",
+      "title": "行为 SDK → BP_ce_poc_gate_a：ItemManager__on_tick__body 的『过线 ⇒ 道具无条件真空』分支 A：`445baa movss xmm0,[esi+0x47998]`（收点线）→ `445bb2 comiss xmm0,[esi+0x624]`（自机 y）→ **本站点 `ja 0x445f63`**（0x445f63 = `mov [item+0xc74],3` 真空态）。★ **窗口就是这条 `ja`（近相对分支）**：thcrap 的 cave_fix 只重定位窗口首条的 e8/e9 ⇒ **不能**靠回放它（回放会跳到「本格 + 0x3aa」= 池页零尾巴，就是头号崩溃，AUDIT §BE-DW）。所以 handler **恒返回 0** 并自己给落点：声明层开着（106 说「不是满 P」）⇒ 落回站点后一条 `0x445bbf`（= 那条 ja 不成立那一支）；否则 ⇒ 落到真空态入口 `0x445f63`。落空支不看 flags（一手：0x445bbf 是 `mov eax,[0x4cf2b8]` 起头、自带 cmp）⇒ 不回放不会踩标志位。⚠ 也不能改挂 `0x445f63`：那里是**四条**支路的汇聚（两条 ja + 紧随的两条 jl）⇒ 分不出「过线」。一手依据 = TH06 `ItemManager.cpp` 的道具 tick `state==1 || (128 <= currentPower && player.y < 128.0f)` ⇒ 『满 P + 在线上』才是过线收点的充要条件。"
+    },
+    "ce_poc_gate_b": {
+      "addr": "0x446003",
+      "cavesize": 6,
+      "expected": "0f875affffff",
+      "title": "行为 SDK → BP_ce_poc_gate_b：同上，**第二条** `ja 0x445f63`（向后跳；0x446003 处、6 字节）。handler 恒返回 0 + 自己给落点：开着 ⇒ `0x446009`（不成立那一支），否则 ⇒ `0x445f63`。两条都要挂：只挂一条 = 另一条支路照旧把道具拉进真空态（静默半失效）。"
+    },
+    "ce_player_die": {
+      "addr": "0x45d3a0",
+      "cavesize": 6,
+      "expected": "558bec83ec14",
+      "title": "行为 SDK → BP_ce_player_die：Player__die 0x45d3a0 入口：push ebp/mov ebp,esp/sub esp,0x14（6 字节，无反/相对寻址、无窗内跳转目标）。thiscall，ecx = zPlayer；全 exe 只有 3 处 call（0x45cd27/0x45ce81/0x45d060，全在中弹判定链上）、0 处 jmp、0 处数据表引用 ⇒ 一个站点覆盖子弹/敌本体/三种激光**全部**命中路径。handler 读声明层 ce_no_hit_active()：开着就 **返回 0 并把 regs->retaddr 改成 0x45d584**（该函数唯一的 c3；此刻栈上只有调用者返回地址 ⇒ 栈干净），等于整段 die 体不执行= 一手 TH13 的「撞了但不算撞弹」（弹照样被吃掉、擦弹不受影响）。⚠ 尾部的卡虚表 +0x10 救援广播也一并被跳过 ⇒ 要靠本闸门自救的那张卡必须先撤声明再调 die。一手链见 engine/player/th18/03-player-hit-gate.md"
+    },
+    "ce_shot_set_index": {
+      "addr": "0x45ebfb",
+      "cavesize": 7,
+      "expected": "8bbc97e0000000",
+      "title": "行为 SDK → BP_ce_shot_set_index：Player__tick_shooting_state 0x45ea00 查主炮 shooterset 前的 mov edi,[edi+edx*4+0xe0]（7 字节，无相对寻址）。edx = 本帧 fire-time set index（0..9 主炮；eax = 火力档），ebp-8 暂存同一 set index，随后 0x45ec69 会打包进 bullet+0xac。\nhandler 沿卡链表问 on_shot_set_index(card, eax)：返回 >=0 时改写 edx 与 [ebp-8] 为咆哮组 base+power，放行原指令；不咆哮/无卡时返回 -1，原版主炮 0..9 一个字节都不动。"
+    },
     "ce_repopulate_native_option": {
       "addr": "0x45d610",
       "cavesize": 7,
@@ -1453,6 +1477,12 @@
       "expected": "558bec5153",
       "title": "行为 SDK → BP_ce_native_option_muzzle：Player__shoot_one_bullet 0x45e930 的**函数入口**（5 字节 = push ebp / mov ebp,esp / push ecx / push ebx，恰好在指令边界上；无相对寻址、窗内无跳转靶。⚠ 取 6 字节会**从 `mov ebx,[ebp+8]` 中间切开**（那条是 3 字节、落在 0x45e935）⇒ cave 会回放半条指令，必须取 5 或 8）。thiscall ⇒ ecx = zPlayer*；栈（低→高）= 返回地址、packed id、timer、pos*、**option*（膛口）**（调用方压栈序一手：0x45ec5f push 膛口 / 0x45ec68 push pos / 0x45ec71 push timer / 0x45ec72 push id）。handler 读第 5 个栈参：落在**原生子机数组区间** `[PLAYER+0x670, PLAYER+0xa30)` 时**整发跳过**（★ 2026-09-17 订正：本版 thcrap 的桩**没有** `esp_diff`，改 `regs->esp` 无效；改用原生 `stack_clear_size: 0x10` ⇒ 桩走 `bp_entry0s` 变体的 `ret 0x10`，handler 只设 `retaddr = sp[1]`（真正的调用者返回地址；`sp[0]` 是 thcrap 自己的蹦床返回地址 = 站点+5） —— 一手见 engine/_shared/thcrap-breakpoint-pools.md §2；返回值调用方不检查，一手 0x45ec78；返回值调用方不检查，一手 0x45ec78）。卡申请的池 = `PLAYER+0xa30` 起（一手 0x40a7a4 `add edi,0xa30`）⇒ 区间不相交，117 / 116 / 108 的卡子机零影响。",
       "stack_clear_size": 20
+    },
+    "ce_bullet_damage_final": {
+      "addr": "0x45e7ff",
+      "cavesize": 9,
+      "expected": "ff77088b0d5cf65100",
+      "title": "行为 SDK → BP_ce_bullet_damage_final：PlayerBullet__create 0x45e320 的**卡链遍历出口**：0x45e7dc mov eax,[0x4cf298]（ABILITY_MGR）→ 0x45e7e4 mov esi,[eax+0x1c]（卡链头）→ 0x45e7e9 je 0x45e7ff（**没卡也跳这里**）→ 0x45e7f0 mov ecx,[esi] / 0x45e7f2 push edi（bullet）/ 0x45e7f5 call [eax+0x28] / 0x45e7f8 mov esi,[esi+4] / 0x45e7fb test esi,esi / 0x45e7fd jne 0x45e7f0 —— **五家（含原生 25 Saki 0x40c310 / 54 Momoyo 0x411010）全跑完**。覆盖字节 = `ff 77 08`（push [edi+8]）+ `8b 0d 5c f6 51 00`（mov ecx,[0x51f65c] = ANM_MANAGER_PTR，下一条 0x45e808 call 0x488b40 = AnmManager__get_vm_with_id），两条都无相对寻址；窗内无跳转靶（0x45e7e9 的 je 落在**站点本身** ⇒ 跳到站点 = 走断点，合法）；EDI 此刻仍是 bullet（0x45e837 才 push [edi+0x9c] 把它交给伤害源 0x45dfa0），ESI/EDX 已换用 ⇒ **只信 EDI**。\n为什么在这里：我们的倍率原来落在**同槽** `+0x28` 的桩里，而原生 25/54 是**从 shooter 重算**派 ⇒ 谁在链里靠后谁说了算，我们的 ×1.25 会被**静默抹掉**（卡链顺序 = 获得/存档顺序，不可控）。搬到遍历出口 = 永远乘在**别人的最终值**上（语义 = 乘法叠加，×1.25 × 1.4 = ×1.75，不是覆盖）。\n★ **不重复施加**：本站点是**唯一**落笔点 —— `CE_CARD` 的 `+0x28` 桩不再缩放（普查：全 exe `call [reg+0x28]` 8 处，只有 0x45e7f5 在卡链上，其余 7 处是别的对象类型）⇒ 不需要「本帧是否已施加」的标记，也就没有标记失效这一档。详见 BP30-IMPLEMENTATION.md §1"
     },
     "ce_shop_bought": {
       "addr": "0x4183ea",

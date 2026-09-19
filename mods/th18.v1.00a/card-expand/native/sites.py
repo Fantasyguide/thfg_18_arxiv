@@ -1233,6 +1233,15 @@ SDK_SITES = [
 _SDK_KEEP_NAMED = {
     "ce_repopulate_native_option",   # 111：不建原生 4 格子机（并走引擎自己的清空）
     "ce_native_option_muzzle",       # 111：原生子机膛口发出的弹**整发跳过**（激光与导弹都在这条上）
+    # ★★ 2026-09-19（owner 口径「对于明确是bug的部分，先解决吧」）：把**功能站点**从 `i < 10` 的
+    #   下标截断里放出来。下面五条每一条都对应一个**已报的 bug**（或一条静默失效的功能），
+    #   窗口四项检查（W1–W4）逐条过过（`sitecheck.py <addr> <len>`）：
+    "ce_shot_set_index",             # 0x45ebfb：主炮组号覆盖 ⇒ 修 th13 #5「灵界发弹更改消失」+ th17 #2「咆哮发弹更改消失」
+    "ce_player_die",                 # 0x45d3a0：中弹无伤闸门 ⇒ 修 th13 #6「主动灵界中弹⇒结束后死亡」+ #3「中弹音效未屏蔽」
+    "ce_poc_gate_a",                 # 0x445bb9：106 上线收点闸 A ⇒ 修 th06 #1「非满 P 上线不该全屏收点」
+    "ce_poc_gate_b",                 # 0x446003：同上分支 B（成对）
+    "ce_bullet_damage_final",         # 0x45e7ff：**伤害层唯一起作用点**（`bullet_damage_permille`）——
+                                      #   它被截掉 = 所有走伤害层的卡**静默失效**（古锭刀/衔尾蛇/季节/测试卡 200…）
 }
 SDK_SITES = [s2 for i, s2 in enumerate(SDK_SITES) if i < 10 or s2[0] in _SDK_KEEP_NAMED]
 
