@@ -312,6 +312,29 @@ static int on_tick_2(ce_card_t *c)
     t06r_state_t *s = st(c);
     resync_difficulty(s);
 
+    /* ★ 2026-09-19（owner 要求）：**测试键 = 空格 ⇒ 满 P**。
+     *   只为验下面那条「上线收点当且仅当满 P」的闸（不然得先刷满火力才能测「满 P 过线照吸」）。
+     *   · 边沿检测：`ce_key_down()` 是**电平**（按住恒真）⇒ 配一个 file-local 的 prev，
+     *     拍一下设一次、按住不连发（与 117 `cards/animal.c` / 112 `cards/ufo.c` 的调试键同一套）。
+     *   · 写的是引擎自己的两个字段：`CURRENT_POWER = [0x4ccd3c]`（`MAX_POWER`，随 sht 变 ——
+     *     写死 128 / 400 都是错的，一手见本文件下面「满 P 判据」那条注）。
+     *   · 放在**闸声明之前**：拍下空格的那一帧 `gate` 立刻变 0（= 满 P），当场就能验「过线照吸」。
+     *   · ⚠ **纯测试件**：不进任何正式数值路径，只在本卡（106）在场上时有效，每次触发打一行日志。
+     *   · ⚠ 117（`animal.c`）的调试键也用空格 —— 两张卡同时在卡组里会一起响应；要分开就用
+     *     `CE_VK_CONTROL` 做组合键（SDK 已备好那个常量）。*/
+    {
+        static int dbg_space_prev;                 /* 106 只会有一份 ⇒ file-local 足够 */
+        const int down = ce_key_down(CE_VK_SPACE) ? 1 : 0;
+        if (down && !dbg_space_prev) {
+            const int32_t pmax = *(volatile const int32_t *)CE_ADDR_MAX_POWER;
+            if (pmax > 0) {
+                CE_CURRENT_POWER() = pmax;
+                ce_log("T06R: TEST 空格 ⇒ 满 P（power %d/%d）", (int)pmax, (int)pmax);
+            }
+        }
+        dbg_space_prev = down;
+    }
+
     /* ★★ 2026-09-16za（**用户口径**，两条新设计共用一个来源）：
      *   「红魔乡卡再加一条设计：**上线收点当且仅当满P**」+「**协同效应：除非满P，不加信号强度**」。
      *   一手（TH06 反编译 `ItemManager.cpp` 的道具 tick）：
