@@ -211,7 +211,7 @@ _SDK_KEEP_NAMED]` 是「按**下标**保留前 10 条」的截断残留 —— �
 行为**回到原生**（过线才吸），106 在场且不满 P 时才抑制。`eflags` 可用的依据：thcrap 的桩在**任何改标志的
 指令之前**就 `lahf`/`seto al`/`push eax` 存了它（`engine/_shared/thcrap-breakpoint-pools.md` §2）。
 ⇒ 两条站点**重新放出**：正式声明 25 → **27**、进程级 **49**（`base_tsa` 20 + 我们 27 + 测试归档 2）。
-完整事故与修法见 `AUDIT.md` §BE-EN / §BE-EO；**th06 #1 待实跑验收**（三条判据见 §BE-EO）。
+完整事故与修法见 `AUDIT.md` §BE-EN / §BE-EO / **§BE-EP**（§BE-EO 那版读 `regs->eflags` 的写法**已作废** —— thcrap 桩的标志位布局非标准，实跑「依旧全吸」；改成**重算操作数**后才算正解）；**th06 #1 待实跑验收**（三条判据见 §BE-EP）。
 
 （`SINGLE-CARD-TEST.md` §th06 #1 状态同步）。
 

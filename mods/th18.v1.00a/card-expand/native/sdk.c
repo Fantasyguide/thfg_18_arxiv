@@ -2933,14 +2933,35 @@ int __cdecl BP_ce_canary_b(x86_reg_t *regs, void *bp_info)
 
 static int ce_poc_gate_common(x86_reg_t *regs, uint32_t fall_through)
 {
-    /* ① 复现窗口里那条 `ja` 的**比较结果**（`ja` = CF==0 && ZF==0；CF=0x1 / ZF=0x40）。
-     *    ⚠ `comiss` 的无序情形（NaN）会把 ZF/CF 都置 1 ⇒ `ja` 不成立 ✓ 与硬件一致。*/
-    const int native_take = (regs->eflags & 0x41u) == 0;
+    /* ① 复现窗口里那条 `ja`：一手指令对（两个站点同形）
+     *      `movss xmm0,[esi+0x47998]`（回收线）→ `comiss xmm0,[esi+0x624]`（自机 y）→ `ja …`
+     *    ⇒ 条件 = **回收线 > 自机 y**（`ja` = CF==0 && ZF==0；`comiss` 的无序情形两边都为 1 ⇒ 不成立，
+     *      正好与浮点比较 `>` 对 NaN 的行为一致）。
+     *    ★ **不读 `regs->eflags`**：thcrap 的桩是用 `lahf / seto al / push eax` 存标志的，位布局与标准
+     *      EFLAGS **不同**（CF 在位 8、ZF 在位 14、OF 在位 0）⇒ 按 `!(eflags & 0x41)` 去读实际读的是
+     *      OF 与 AL 的残留位 ⇒ **恒真** ⇒ 又变回"无条件真空"。本仓 §BE-EO 第一版就栽在这上面
+     *      （owner 实跑「依旧全吸」）。⇒ 改用**重算操作数**：`esi` 在桩里被 `pushad` 可靠保存。
+     *      ⚠ 站点上 `esi` = 自机对象（两个偏移都是自机字段，见上面的一手对）。*/
+    const uint8_t *pl = (const uint8_t *)(uintptr_t)regs->esi;
+    float line = 0.0f, py = 0.0f;
+    int take = 0;
+    if (pl) {
+        memcpy(&line, pl + 0x47998, sizeof line);          /* 回收线（不碰它，只读）*/
+        memcpy(&py,   pl + 0x624,   sizeof py);            /* 自机 y */
+        /* 合理性闸：两个值都在游玩区量级内才敢下结论；读不到就**不吸**（宁可回到"不吸"，
+         * 也不要重演"每帧无条件真空"那次事故）。只在第一次异常时记一行。*/
+        if (line > -2000.0f && line < 2000.0f && py > -2000.0f && py < 2000.0f) {
+            take = (line > py);
+        } else {
+            static int warned;
+            if (!warned) { warned = 1;
+                ce_log("WARN: poc-gate: 可疑操作数 (line %.1f, player.y %.1f) @esi=%p — 本次按"
+                       "「不吸」处理（见 AUDIT §BE-EP）", (double)line, (double)py, (const void *)pl); }
+        }
+    }
     /* ② 再叠上「上线收点当且仅当满 P」那道闸：106 声明「这一帧不满 P」⇒ 本帧不许进真空态。*/
-    const int gated = ce_full_p_gate_active();
-    ce_retaddr_set(regs, (native_take && !gated) ? CE_POC_VACUUM : fall_through);
-    return 0;                        /* 恒 0：不回放，也就不进 cave（窗口是 0f 8x，进 cave 会跳飞）
-                                      *   ⇒ 那条 `ja` 只有「算出来的结果」，没有「被回放的机会」。*/
+    ce_retaddr_set(regs, (take && !ce_full_p_gate_active()) ? CE_POC_VACUUM : fall_through);
+    return 0;                        /* 恒 0：不回放，也就不进 cave（窗口是 0f 8x，进 cave 会跳飞）*/
 }
 
 int __cdecl BP_ce_poc_gate_a(x86_reg_t *regs, void *bp_info)
