@@ -14437,3 +14437,35 @@ ce_retaddr_set(regs, ce_full_p_gate_active() ? fall_through : CE_POC_VACUUM);
 3. **不过线** ⇒ **永不吸**（原生行为；与 deck 里有没有 106 无关）。
 另：deck 里没有 106 时，本闸不该有任何可感影响（`native_take` 原样通过）。
 **回滚**：把两条从 `_SDK_KEEP_NAMED` 删掉 + `make gen`（事故记录见 §BE-EN）。
+
+### §BE-EP ★ 订正 §BE-EO：`regs->eflags` **不是标准 EFLAGS** ⇒ 改成**重算操作数**（owner 实跑「依旧全吸」）
+
+**现象**：§BE-EO 那版（`native_take = !(regs->eflags & 0x41)`）发出去之后，owner 实跑**依旧全吸**
+（那一局的启动块是 `跳板格 48`、会话时间 21:05:48，对应发出去的修复版）。
+
+**根因（一手：桩模板 `engine/_shared/thcrap-breakpoint-pools.md` §2）**：thcrap 的桩用
+`pushad / lahf / seto al / push eax` 存标志 ⇒ 那个 dword 的位布局是
+**`OF` 在位 0（来自 `seto al`）、`CF` 在位 8、`ZF` 在位 14（来自 `lahf` 的 AH）**，**不是**标准 EFLAGS
+（标准里 CF=0、ZF=6）。我按位 0/6 去读 ⇒ 读到的是 **OF（通常 0）+ AL 的残留位（恒 0）** ⇒
+`!(eflags & 0x41)` **恒真** ⇒ 又变回"每帧无条件真空" ✓ 与实跑吻合。
+
+| 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
+| --- | --- | --- | --- | --- |
+| `native/sdk.c` | `ce_poc_gate_common()` 改成**重算那条比较**（读 `regs->esi` 的两个浮点：回收线与自机 y），**不读 `eflags`**；另加操作数合理性闸（可疑 ⇒ 按"不吸"处理 + 记一行）| 复现条件分支要重算操作数，别依赖 thcrap 桩里那个非标准布局的标志字 | 统筹会话 | `make check` rc=0；发布 DLL `4f034340…` 四处同 md5 |
+
+**一手对（两个站点同形，逐字节核过）**：
+
+```
+th18:0x445baa  f3 0f 10 86 98 79 04 00   movss  xmm0, [esi+0x47998]   ; 回收线
+th18:0x445bb2  0f 2f 86 24 06 00 00      comiss xmm0, [esi+0x624]     ; 自机 y
+th18:0x445bb9  0f 87 a4 03 00 00         ja     0x445f63              ; ← 站点 A（窗口）
+（站点 B 同形，在 th18:0x445ff4 / 0x445ffc / 0x446003）
+```
+
+**给"下一次放这种站点"的规矩（补 §BE-EN 那条教训）**：
+「窗口 = 一条条件分支」的站点，handler 复现原分支有**三种**手段，按可靠性排序：
+① **重算操作数**（本站点采用；寄存器由 `pushad` 保证）→ ② 声明层/配置给出判据（106 的满 P 闸只能叠在 ① 之上）
+→ ③ 读 `regs->eflags` **仅在确证 thcrap 的编码之后**（本站点的桩用 `lahf/seto`，位布局非标准 ⇒ 此路不通）。
+
+**owner 实跑验收（与 §BE-EO 同三条，这次请以 `4f034340…` 为准）**：① 不满 P 过线 ⇒ 不吸；
+② 满 P 过线 ⇒ 照吸；③ 不过线 ⇒ 永不吸（与 106 在不在 deck 无关）；④ deck 装 `[114,115]` 时不再全吸。
