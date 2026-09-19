@@ -19,6 +19,13 @@ TH10 的 HUD 是 vm 数字组、没有这套弹字。
 | th07 v1.00b | [`th07/01-sakura-items.md`](th07/01-sakura-items.md) | 类型表 0–9 / `spawn_item` / 池 1100×0x288 / 三个掉落 opcode（119、124、154）/ 樱点三档的**全部**来源与数量 / etama.anm 图 |
 | th08 v1.00d | [`th08/01-time-orbs.md`](th08/01-time-orbs.md) | 时点（刻符）= type 7；符卡 100/700/1000；敌机 6..26 / 40；**state 机（0 下落 / 1 归航 / 2 撒入 / 3 时点出生态 / 5 type10 档）**；中弹停住与自动收集；贴图 = `etama.anm` sprite179 |
 | th11 v1.00a | [`th11/01-item-types-and-popup.md`](th11/01-item-types-and-popup.md) | 11 项类型跳表 `th11:0x423f00`（type 5 = 命碎、7 = 1UP 的**订正**）/ `zItem` 字段与贴图 id `type+0x60` / 满火力改写表 / **收集 `+N` 弹窗（`th11:0x438440`：11 槽、60 帧、逐帧归零）** |
+| th15 v1.00b | [`th15/01-tick-shake-tint-and-graze-item.md`](th15/01-tick-shake-tint-and-graze-item.md) | `zItem` 两 VM 槽（`+0x10` 主 / `+0x618` 压暗变体，stride `0xc88`）/ type→脚本表 `th15:0x4cb058` / **减速因子的画面副作用（±1 px 抖 + `color_1` 压暗）** / **擦弹 45 帧弹出 type 13 擦弹道具** |
+
+**TH15 侧**（2026-09-19 回流）：TH15 的道具是**两个 AnmVm 槽**（`+0x10` 主 / `+0x618` 压暗变体），
+type 1..8 两槽都有、9..15 只有主槽。引擎里唯一会「每帧改道具画法」的地方是**擦弹减速期**
+（`th15:0x43fa05`：`VM1.pos = (±1,±1)` + `color_1 = 0xFFFFA0FF`）——
+这是「擦弹时满屏道具一起抖一下」的机制，**不是**屏幕后处理。TH15 另有一条别作没有的产物：
+**弹幕在擦弹圈里连续待满 45 帧 ⇒ 在擦弹点弹出一颗 type 13 擦弹道具**（`th15:0x419de6`，橄榄黄 additive）。
 
 ## 断言 × 版本矩阵
 
