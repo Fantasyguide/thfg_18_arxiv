@@ -14382,3 +14382,33 @@ owner 逐字：「那么我对 #41 的判断之前失误 / 现在这个情况只
 4. **伤害层**：带 `bullet_damage_permille` 的卡（如测试卡 200 ×2）明显加伤。
 ⚠ 同时盯启动日志：`pool: 可执行页 N、跳板格 M、首个全零格 @…`（本是 43 格；现在声明 27 条，应当仍在池内）；
 以及有无 `FAIL` / `mitigation`。**要回滚**：把 5 个名字从 `_SDK_KEEP_NAMED` 删掉 + `make gen` 即可（`AUDIT` 记录在先）。
+
+### §BE-EN ⛔ 事故：放出 `ce_poc_gate_a/b` ⇒ **道具每帧无条件真空**（owner 实跑「同装 th14 和 15 的时候，一直在全屏吸收」）
+
+**现象**（owner 2026-09-19 晚，deck = `[114, 115, 空]`，跑在 `§BE-EM` 那一版上）：道具**一直在被全屏吸收**；
+114 的日志同步刷 `collect2x: batch of N closed below tier 20 (×0, no award)`（小批连续闭合）。
+
+**根因（一手读 handler）**：`ce_poc_gate_a/b` 的窗口**就是那条条件分支本身**（`0f 87 a4 03 00 00` = `ja 0x445f63`，
+前一条 `comiss xmm0,[esi+0x624]` 设的标志仍在 `regs->eflags` 里），而 handler
+`ce_poc_gate_common(regs, fall_through)` 只做一件事：
+
+```c
+ce_retaddr_set(regs, ce_full_p_gate_active() ? fall_through : CE_POC_VACUUM);
+```
+
+⇒ **它从不复现那条比较的语义**：没人声明"满 P 闸"时（例如 deck 里没有 106），恒落 **真空入口 `0x445f63`**
+⇒ 每帧无条件真空 ⇒ 全屏吸收。⇒ 这两条站点**本来就不该在 handler 还是这个样子的时候放出来**。
+
+| 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
+| --- | --- | --- | --- | --- |
+| `native/sites.py` | `ce_poc_gate_a/b` 从 `_SDK_KEEP_NAMED` **撤回**（连同注释写明"要修 handler 才能放"）；其余三条（`ce_shot_set_index` / `ce_player_die` / `ce_bullet_damage_final`）保持放出 | 撤回本次事故的成因；那三条各自对应别的已报 bug 且**不替换条件分支**（风险不同）| 统筹会话 | 正式声明 27 → **25**；`sites.py check` 导出对账 27 条全绿；`make check` rc=0；发布 DLL `b517cc71…` 四处同 md5；部署 patch 断点数 25 且 `ce_poc_gate_*` **不在**其中 |
+| `GATES.md` §8.8 | 补"当晚撤回两条"与计数（27→25、49→47）| 记账要跟得上 | 同上 | 同上 |
+| `SINGLE-CARD-TEST.md` | th06 #1 标 **⛔ 挂**（写明为什么、怎么才能修）；th13 #3/#5 标"站点已放出、待实跑验" | 现象与状态同步 | 同上 | 同上 |
+
+**★ 教训（写给下一次"放站点"）**：`sitecheck.py` 的 W3 例外只保证**窗口安全**（cave 不回放不会跳飞），
+**不保证 handler 的落点语义**。凡是"窗口 = 一条条件分支"的站点（本站点就是），放出来之前必须先过一问：
+**handler 凭什么复现原分支？**（读 `regs->eflags` / 重算比较 / 由声明层给出），否则就是把条件分支变成无条件分支。
+
+**要修 th06 #1 的正确做法（未做）**：把 `ce_poc_gate_common` 改成
+`take = (eflags 复现 ja) && !full_p_gate_active()`（`ja` = `CF==0 && ZF==0`，即 `!(eflags & 0x41)`），
+再实跑验收（不满 P 过线不吸、满 P 过线照吸、不过线永不吸）之后才能放这两条站点。
