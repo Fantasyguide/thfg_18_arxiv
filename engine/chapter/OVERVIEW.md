@@ -30,6 +30,8 @@ TH16/TH18 的全局表里还留着 `GRAZE_IN_CHAPTER` 这类字段，但没有�
 | 相位成败（击破 / 超时）由中断槽 `{hp_value, time}` 判定，引擎自己分两条子程序 | ✅ | ❓ | ✅ | [th15/01 §2](th15/01-chapter-and-bonus.md)、[th18/02 §2](th18/02-wave-signals.md) |
 | 「耐久符卡（时符）」有显式标记位，且超时按收卡算 | ❓ | ❓ | ✅ | [th18/02 §1](th18/02-wave-signals.md) |
 | 道中「一章 / 一波」= 关卡脚本里的一个敌人组块 | ✅ | ❓ | ❌（脚本里没有 524，用子程序边界代替）| [th15/01 §1b](th15/01-chapter-and-bonus.md)、[th18/03](th18/03-midstage-waves.md) |
+| 面板七条子 VM 用**默认锚点 = 图心**（判据矩形要按可见 192×32 的「中心 ± 半宽高」算） | ✅ | — | —（TH18 无此面板）| [th15/02 §2](th15/02-chapter-panel-geometry-and-fades.md) |
+| 关面板 = `interrupt_tree(label 1)`：标签条各淡 10 帧、五行文字跟父 VM 的 alpha 淡 20 帧 | ✅ | — | —（同上）| [th15/02 §3](th15/02-chapter-panel-geometry-and-fades.md) |
 
 > **图例**：✅ 该版本一手验过（证据列给地址/出处） · 🟡 待验（从别的版本借来的假设，或单源） · ❌ 已知不同/不存在 · ❓ 存疑 · — 未看
 >
