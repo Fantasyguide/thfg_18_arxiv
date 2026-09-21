@@ -22,5 +22,35 @@
     "id": 87,
     "volume_db": 0,
     "priority": 100
+  },
+  "UFOALERT": {
+    "wav": "UFOALERT",
+    "id": 88,
+    "volume_db": 0,
+    "priority": 100
+  },
+  "CHARGE00": {
+    "wav": "CHARGE00",
+    "id": 89,
+    "volume_db": 0,
+    "priority": 100
+  },
+  "CHARGEUP": {
+    "wav": "CHARGEUP",
+    "id": 90,
+    "volume_db": 0,
+    "priority": 100
+  },
+  "MOFPOWERUP": {
+    "wav": "MOFPOWERUP",
+    "id": 91,
+    "volume_db": 0,
+    "priority": 100
+  },
+  "PCB_BORDER": {
+    "wav": "PCB_BORDER",
+    "id": 92,
+    "volume_db": 0,
+    "priority": 100
   }
 }

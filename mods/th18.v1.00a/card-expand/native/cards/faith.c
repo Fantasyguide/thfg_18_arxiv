@@ -118,15 +118,18 @@
  *   · TH11 侧同样：转换（`th11:0x4240f0`）只调 spawn helper 与 `0x455b10`，两者函数体都**不**引用
  *     `SOUND_MANAGER`（`0x4c3e80`）。
  * ⇒ **原版转换静音**；我们原来借 `se_powerup`（TH18 `0x0d`）当转换音是 ❓ 自定，**已撤**。
- *   ★ 但用户要「有声音」⇒ 本轮**自定**配一颗：`FAITH_CONV_SE = 0x28`（TH18 `se_kira02.wav`）。
- *     挑它的理由：① 这台特效本身是**绿色闪光**（见下 §二），kira = 闪光音，语义对得上；
- *     ② **它就是 TH10 那颗原版 wav** —— `se_kira00/01/02.wav` 在 TH10 与 TH18 里**逐字节相同**
- *     （md5 实测：`f3a5ad54…`；TH10 的 37 枚 se 与 TH18 的 71 枚，同名同波形的那一批），
- *     ⇒ **不用走扩表导入**（导入只对「TH18 没有的 wav」才有意义，例：TH10 的 `se_powerup.wav`
- *     在 TH18 是**另一次录音**，367 KB vs 77 KB）；
- *     ③ TH18 表里这行调校为 −15 dB / prio 50（相对最轻的一档）⇒ 转换频繁时不吵。
- *     ⚠ 换音 = 改这一个数字（候选：`0x26/0x27 = se_kira00/01`、`0x25 = se_item00`、
- *     `0x0d = se_powerup`）；要换 TH18 没有的 wav 就走 `assets/voice/ORDER.txt` 扩容（`AUDIT` §Q/§DK-7）。
+ *   ★★★ 2026-09-20（P1 th10 #1）**第三版，也是最终版**：`FAITH_CONV_SE = CE_VOICE_MOFPOWERUP`（`0x5b`）
+ *     = **TH10 自己那一枚 `se_powerup.wav`** —— 满 P 那一刻原版真的会响的就是它
+ *     （一手 `th10:0x41b446` 小 P / `th10:0x41b68c` 大 P：`mov ebx,0x1d` + `call 0x43dd10`；
+ *     TH10 行 `0x1d` = `se_powerup.wav`）。它与 TH18 的同名文件**不是同一次录音**
+ *     （`4cb28b08…` 77278 B vs `b9e28720…` 367106 B）⇒ **走扩表导入**（源
+ *     `local/th10.v1.00a/dat/se_powerup.wav`，构建期逐字节现取，见 `assets/voice/derive_retail_se.py`）。
+ *     ⚠ 历史（别照旧稿办事）：第二版曾用 `0x25 = se_item00`（"吃到一颗道具"的语义对位），
+ *     第一版是 `0x28 = se_kira02`（闪光音，本行旧文里的 ③「−15 dB / prio 50」说的是那一版）——
+ *     两版都是 ❓ 自定替身，已被一手音色取代。
+ *     ⚠ 「只在事件那一下响一声」仍是 ❓ 自定（原版响的是「吃到 P」那一声，而本卡的转换是引擎外的
+ *     一次批量删+撒，没有对应的「吃到」事件）；判据与事件闩见 `faith_convert_full_p_items()` 头部。
+ *     换音 = 改这一个宏；要换 TH18 没有的 wav 就走 `assets/voice/ORDER.txt` 扩容（`AUDIT` §Q/§DK-7）。
  *
  * ## 二、★ 原版有的那颗特效（一手配方，逐条抄得下来）
  * TH10 转换循环对**每一颗**被转换的 P 道具：
@@ -465,6 +468,78 @@ static void dot_remove(faith_tier_t tier, int i)
     else                        s_small[i] = s_small[--s_n_small];
 }
 
+/* ============================ ★★ 声明式「外部消费者」（112 的飞碟）====================================
+ * 语义与为什么用「快照 + 坐标取回」写在 `faith.h` 那一段；这里只做实现。
+ * ⚠ 本支**不动记账**：取走的点不进 Δ / 不进 114 的批 / 不加连击 —— 一手的道具被 UFO 吸走也是
+ *   「道具消失、不进自机的账」；「算谁的账」由调用方（112）决定，见 `NEXT.md` §1x.9。 */
+int faith_absorb_list(faith_absorb_t *out, int max)
+{
+    int n = 0, t;
+    if (!out || max <= 0) return 0;
+    for (t = 0; t < 2; ++t) {
+        const faith_tier_t tier = (t == 0) ? FAITH_TIER_BIG : FAITH_TIER_SMALL;
+        int i, cnt = dot_n(tier);
+        for (i = 0; i < cnt && n < max; ++i) {
+            const faith_dot_t *p = dot_at(tier, i);
+            if (!p->id) continue;                    /* 还没建 VM（state 0 待发射）⇒ 看不见也吸不到 */
+            out[n].x = p->x;
+            out[n].y = p->y;
+            out[n].tier = (int32_t)tier;
+            out[n].slot_mask = p->slot_mask;
+            out[n].value = p->value;
+            ++n;
+        }
+    }
+    return n;
+}
+
+/* 与 `faith_absorb_take` 同一个匹配规则（坐标 + 槽）的一支**定位器** ——
+ * 两处不能各写一份匹配（迟早漂移）⇒ 抽成一个 static 帮手。 */
+static faith_dot_t *faith_absorb_find(const faith_absorb_t *e, int *out_index)
+{
+    faith_tier_t tier;
+    int i, cnt;
+    if (out_index) *out_index = -1;
+    if (!e) return 0;
+    if (e->tier != FAITH_TIER_BIG && e->tier != FAITH_TIER_SMALL) return 0;
+    tier = (faith_tier_t)e->tier;
+    cnt = dot_n(tier);
+    for (i = 0; i < cnt; ++i) {
+        faith_dot_t *p = dot_at(tier, i);
+        if (!p->id) continue;
+        if (p->x < e->x - 0.5f || p->x > e->x + 0.5f) continue;
+        if (p->y < e->y - 0.5f || p->y > e->y + 0.5f) continue;
+        if (p->slot_mask != e->slot_mask) continue;
+        if (out_index) *out_index = i;
+        return p;
+    }
+    return 0;
+}
+
+int faith_absorb_move(const faith_absorb_t *e, float nx, float ny)
+{
+    faith_dot_t *p = faith_absorb_find(e, 0);
+    if (!p) return 0;
+    p->x = nx;
+    p->y = ny;
+    /* VM 位置同步（世界层 VM 的实体坐标就是本坐标空间；照本文件别处写位置的同一支）*/
+    if (p->id) {
+        void *anm = CE_ABILITY_ANM();
+        if (anm) ce_anm_set_pos((uint32_t)p->id, nx, ny, 0.0f);
+    }
+    return 1;
+}
+
+int faith_absorb_take(const faith_absorb_t *e)
+{
+    int idx = -1;
+    faith_dot_t *p = faith_absorb_find(e, &idx);
+    if (!p || idx < 0) return 0;
+    ce_anm_delete((uint32_t)p->id);                  /* 与 dot_collect 同款：收下就删 VM */
+    dot_remove((faith_tier_t)e->tier, idx);
+    return 1;
+}
+
 void faith_clear_entities(void)
 {
     faith_clear_entities_mask(~0);          /* 所有槽（模块复位；卡侧删卡请用带 mask 的那一支）*/
@@ -789,16 +864,21 @@ static void faith_item_delete(uint8_t *it)
 #define FAITH_CONV_LAYER      11   /* = TH10 script393 的 `layer(11)`（数值一字未动）*/
 /* ★★ 2026-09-18（B12 第二版，按用户实跑反馈改）：**一次转换事件只响一声**（不是逐颗）。
  *   用户原话：「原版的音效似乎是**只有满 P 转换的那一下有**，否则没有。也有可能是我跟满 P 的音效本身混了」。
- *   一手对得上：TH10 的转换循环本身**不播音**（`0x43dc90` 零调用），那一刻能听到的是
- *   **P 道具被吃掉时**的那一声 —— 收集 handler `0x41b43b`–`0x41b44b` 先 `mov ebx,0x1d` +
- *   `call 0x43dd10`（SE 播放）**再**判 `cmp word [0x474c48],0x64`（满 P）⇒ 满 P 那一帧正好响的
- *   就是「吃掉最后一颗 P」的收集音 ✓（TH10 的 `0x1d` = 它表里的 `se_graze.wav`，**不是** TH18 的 `0x1d`）。
- *   ⇒ 本卡照「**事件**」对齐：只在**满 P 那一下**（这一次开始转换）播一声，id 取 TH18 自己的
- *     **道具收集音 `0x25 = se_item00`**（一手：收集分派共享尾 `th18:0x44658e push 0x25`）——
- *     它是本作里「吃到一颗道具」的那一声，与原版那一刻听到的**语义对位**。
- *   ⇒ 性质仍是 **❓ 自定**（原版转换静音）；换音 = 改这一个数字（候选 `0x28 = se_kira02`、
- *     `0x0d = se_powerup`、`0x1c/0x1d = se_power0/1`）。*/
-#define FAITH_CONV_SE         0x25
+ *   一手对得上：TH10 的转换循环本身**不播音**（`th10:0x41ba50` 函数体只有 2 个 call：
+ *   `0x41bb00` spawn_item / `0x448db0` 建 anm VM，**一次 `play_sound` 都没有**；
+ *   `0x41afd0–0x41be16` 全段只有 3 个 SE 站点，全在 `ItemManager::on_tick__body` 里），
+ *   那一刻能听到的是 **P 道具被吃掉时**的那两声：
+ *   · `th10:0x41b446`（小 P）/ `th10:0x41b68c`（大 P）：`mov ebx,0x1d` + `call 0x43dd10`
+ *     ⇒ **TH10 `0x1d` = `se_powerup.wav`**（⚠ 旧注写「= se_graze」**是错的**：`0x1c` 才是 se_graze）；
+ *   · `th10:0x41b72d`（所有道具收集的公共尾）：`mov ebx,0x14` ⇒ `0x14` = `se_item00.wav`。
+ *   ★★ 2026-09-20（P1 th10 #1）：**改成直接用 TH10 那一枚** —— TH10 的 `se_powerup.wav`
+ *     与 TH18 的同名文件**不是同一次录音**（77278 B vs 367106 B，md5 不同）⇒ 借 TH18 `0x0d` 听起来
+ *     就是另一个音。现在走音效表扩容通道 `CE_VOICE_MOFPOWERUP`（`0x5b`，构建期从
+ *     `local/th10.v1.00a/dat/se_powerup.wav` 逐字节现取，见 `assets/voice/derive_retail_se.py`）。
+ *   ⇒ 性质说明：**音色 = ✅ 一手（TH10 那一枚）**；**「只在事件那一下响一声」= ❓ 自定**（原版转换静音、
+ *     它响的是「吃到 P」那一声，而本卡的转换是引擎外的一次批量删+撒，没有对应的「吃到」事件）。
+ *     `TUNING.md` §4/§4.1 已登记。*/
+#define FAITH_CONV_SE         CE_VOICE_MOFPOWERUP
 
 /* ★ 2026-09-18：满 P 转换里「不同外观的消费者」之间的上抛偏角步长 = **10°** =
  * `0.1745329`（`th18:0x429168` 那枚 —— TH18 自己消弹撒点用的抖动角，一手见
@@ -831,9 +911,12 @@ int faith_convert_full_p_items(void)
         s_was_full = 0;                                  /* 不在满 P ⇒ 下一次满 P 算「新事件」*/
         return 0;
     }
-    /* ★ 用户口径「只有满 P 转换的那一下有音」：本帧是**刚转满**的第一帧 ⇒ 允许响一声（见转换循环尾）。*/
-    const int conv_event = !s_was_full;
-    s_was_full = 1;
+    /* ★★ 2026-09-20（P1「缺音效一批」th10 #1「缺少满 P 那一刻的滞留 P 点转换音效」）：
+     *   事件闩**不再在这里消费** —— 旧写法在扫描之前就 `s_was_full = 1`，于是
+     *   「**刚满 P 那一帧场上恰好没有 P 道具**（`n == 0`）」会把事件帧白白吃掉 ⇒
+     *   **此后满 P 期间的每一次转换都无声**（道具照样被转换，只是 `conv_event` 已经是 0）。
+     *   改成在拿到 `n` 之后才消费（见转换循环尾）。`s_was_full` 的语义因此精确化为
+     *   「**上一次真的转换过**、且现在仍然是满 P」。*/
 
     /* ② 帧守卫（与 `faith_pool_tick()` 同款）：110 与 111 同装时各调一次 ⇒ 本函数一帧只跑一遍。*/
     now = ce_sdk_frame();
@@ -899,14 +982,17 @@ int faith_convert_full_p_items(void)
          * 位置 = **该 P 道具原位**（一手：`0x448db0` 的第 2 参就是道具自己的 pos float3）。*/
         conv_burst_spawn(px, py);
     }
-    /* ★★ 2026-09-18（B12 第二版）：音是**事件**级的 —— 只在「刚满 P 的那一帧」响一声
-     * （用户口径「只有满 P 转换的那一下有」；一手见 `FAITH_CONV_SE` 的注释）。
+    /* ★★ 2026-09-18（B12 第二版）/ 2026-09-20（P1 修事件闩）：音是**事件**级的 ——
+     * 「满 P 之后**第一次真的转换**」那一帧响一声（用户口径「只有满 P 转换的那一下有」；
+     * 一手见 `FAITH_CONV_SE` 的注释）。⚠ 判据必须是 `n > 0 && !s_was_full`（**不是**在函数开头
+     * 就算好的 `conv_event`）—— 否则 n == 0 的那一帧会把事件吃掉，此后全程无声。
      * 声像取自机 x（那一刻道具散在场上，取任何一颗都不对；自机是这一事件的中心）。*/
-    if (n > 0 && conv_event) {
+    if (n > 0 && !s_was_full) {
         pp_conv = ce_player_pos();
         ce_play_sound(FAITH_CONV_SE, pp_conv ? pp_conv[0] : 0.0f);
     }
     if (n > 0) {
+        s_was_full = 1;                                          /* ★ 事件闩在这里消费（见函数头那条注）*/
         s_stat_converted += n;
         if (n >= 4) {                                            /* 限流：一颗一颗的转换不逐条刷日志 */
             ce_log("faith: 满 P 转换 %d 颗原生 P 道具（累计 %d，撒失败 %d）",

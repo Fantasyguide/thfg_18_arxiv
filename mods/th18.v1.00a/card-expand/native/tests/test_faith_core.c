@@ -365,16 +365,27 @@ int main(void)
             /* B12（2026-09-18）：满 P 转换三条都在 ——
              *   ① **特效**：逐颗起一台 `CE_ANM_ABILITY_SCRIPT_MOF_CONV_BURST`
              *      （一手 TH10 `0x448db0(…, 0x189)`；0x189 = bullet.anm script393，**不是** SE id）；
-             *   ② **音**：`FAITH_CONV_SE`（❓自定 = TH18 `0x28` = `se_kira02`，与 TH10 那颗逐字节同源）；
+             *   ② **音**：`FAITH_CONV_SE`（★★ 2026-09-20 P1 = **`CE_VOICE_MOFPOWERUP`**，
+             *      音色 = TH10 自己的 `se_powerup.wav`（一手 `th10:0x41b446`/`0x41b68c`；
+             *      **与 TH18 同名文件不是同一次录音**）⇒ 走扩表导入，见 `TUNING.md` §4.1）；
              *   ③ **上抛段**：`state == 2` 且 `age < FAITH_TOSS_FRAMES` 时豁免真空门
              *      （一手 TH10 顶点翻 3 `0x41b185`；帧数 ❓自定）。*/
             CHECK(strstr(fc, "CE_ANM_ABILITY_SCRIPT_MOF_CONV_BURST") != 0);
             CHECK(faith_at(fc, "conv_burst_spawn(px, py)") > faith_at(fc, "faith_convert_full_p_items"));
-            /* ② 音：**事件级**（用户口径「只有满 P 转换的那一下有」）—— 判据 `conv_event`（刚满 P）
-             *    + 只在 `n > 0` 时响一次；**不许**回到「逐颗响」的写法。*/
+            /* ② 音：**事件级**（用户口径「只有满 P 转换的那一下有」）—— 只在 `n > 0` 时响一次；
+             *    **不许**回到「逐颗响」的写法。
+             *    ★★ 2026-09-20 P1 修（th10 #1「缺少满 P 那一刻的…音效」）：判据必须是
+             *    `n > 0 && !s_was_full`，**事件闩在真的转换了那一帧才消费**。
+             *    ⚠ 旧写法（`const int conv_event = !s_was_full;` 在函数开头就算好并立刻
+             *    `s_was_full = 1;`）会把 `n == 0` 的那一帧当成「事件已用掉」⇒
+             *    **此后满 P 期间每一次转换都无声** ⇒ 这两条断言现在**反过来钉**：
+             *    旧闩必须不在（`== 0`），新闩必须在。*/
             CHECK(strstr(fc, "FAITH_CONV_SE") != 0);
-            CHECK(strstr(fc, "conv_event") != 0);
-            CHECK(strstr(fc, "&& conv_event") != 0);
+            CHECK(strstr(fc, "n > 0 && !s_was_full") != 0);
+            CHECK(strstr(fc, "const int conv_event") == 0);
+            CHECK(strstr(fc, "&& conv_event") == 0);
+            /* 事件闩必须在**播音之后**才消费（顺序 = 「先响、再置位」）*/
+            CHECK(faith_at(fc, "ce_play_sound(FAITH_CONV_SE") < faith_at(fc, "s_was_full = 1;"));
             CHECK(strstr(fc, "ce_play_sound(FAITH_CONV_SE, px)") == 0);   /* 逐颗那版已撤 */
             CHECK(faith_at(fc, "ce_play_sound(FAITH_CONV_SE") > faith_at(fc, "faith_convert_full_p_items"));
             CHECK(strstr(fc, "FAITH_TOSS_FRAMES") != 0);

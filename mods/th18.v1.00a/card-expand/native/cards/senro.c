@@ -116,14 +116,25 @@
 #define SENRO_ITEM_SPAWN_ANGLE      (-1.5707964f)              /* = 0xbfc90fdb（−π/2，直上）*/
 #define SENRO_ITEM_SPAWN_SPEED      2.2f                       /* = 0x400ccccd */
 
-/* 音效：两作的 SE 表 id **不同义** ⇒ 老实标 ❓ 自定（th07 用的是 0x21 与 7）。
- * TH18 侧名字与调校见 `engine/_shared/th18-sound-table.md`。*/
-#define SENRO_SE_BORDER_OPEN        0x2f     /* ❓ 自定：`se_bonus.wav`（th18-sound-table.md:204）——
-                                              * th07 开结界那一支（`th07:0x441960` 尾段）没找到播音调用。TODO(th07)*/
-#define SENRO_SE_BORDER_END         0x2f     /* ❓ 自定：同上。th07 自然结束播 SE 0x21（`th07:0x4416f4`）；
-                                              * TH18 的 0x21 = `se_cat00`（th18-sound-table.md:190）语义不符 ⇒ 用 bonus。TODO(th07)*/
-#define SENRO_SE_LIBYOU             0x09     /* ❓ 自定：`se_cancel00.wav`（th18-sound-table.md:166）。
-                                              * th07 灵击播 SE 7 + 0x21（`th07:0x441e43` / `th07:0x441e51`）。TODO(th07)*/
+/* ★★★ 2026-09-20（P1「缺音效一批」th07 #2/#3）：TH07 的 id → wav 表已逆出（直读 `local/th07.v1.00b/th07.exe`：
+ *   名表 `th07:0x49ebb8` 30 项、SE 配置表 `th07:0x49ea88` 行距 8 / 38 行（`+0x00` = 名表下标、`+0x04` = i16 音量）、
+ *   唯一播放入口 `th07:0x44c930`）⇒ 下面三条按 **wav 名**对回 TH18，不再是「借一个像的」。
+ *   · **结界展开**：一手**有两枚**（同一支连播）—— `th07:0x441b91 push 0x20` ⇒ TH07 `0x20` = **`se_border.wav`**
+ *     （**TH07 独有**，TH18 71 枚里没有、也无替身 ⇒ 走扩表 `CE_VOICE_PCB_BORDER` = `0x5c`，构建期从
+ *     `local/th07.v1.00b/dat/se_border.wav` 逐字节现取，见 `assets/voice/derive_retail_se.py`）
+ *     ＋ `th07:0x441b9f push 0x24` ⇒ TH07 `0x24` = `se_bonus2.wav` ⇒ TH18 同一枚 = **`0x30`**（md5 相同）。
+ *     ⚠ **旧注释「开结界那一支没找到播音调用」是错的** —— 那两条就在 `th07:0x441960` 的尾段。
+ *   · **结界自然结束（540 帧到期结算）**：`th07:0x4416fd push 0x21` ⇒ TH07 `0x21` = `se_bonus.wav`
+ *     ⇒ TH18 `0x2f` 同名同字节 ⇒ **原来就是对的**（旧注释里的「❓ 自定」作废）。
+ *   · **灵击 / 中弹时结界顶掉那一支**（同一个函数 `th07:0x441bd0`，`ret 4` 但从不读参数）：
+ *     `th07:0x441e43 push 7` ⇒ TH07 `0x07` = `se_tan00.wav`，`th07:0x441e51 push 0x21` ⇒ `se_bonus.wav`。
+ *     TH18 有三格 `se_tan00`（`0x15` −19/50、`0x18` −3/20、`0x1b` −11/50），**没有 TH07 那格 −15/50**
+ *     ⇒ 取 prio 相同的两格里较响的 **`0x1b`**（差 4 dB，登记 `TUNING.md` §4.1 #4；要更贴就换 `0x15`）。*/
+#define SENRO_SE_BORDER_OPEN        CE_VOICE_PCB_BORDER /* ✅ 一手 `th07:0x441b91` → `se_border.wav`（0x5c）*/
+#define SENRO_SE_BORDER_OPEN2       0x30     /* ✅ 一手 `th07:0x441b9f` → `se_bonus2.wav`（TH18 `0x30` 同 md5）*/
+#define SENRO_SE_BORDER_END         0x2f     /* ✅ 一手 `th07:0x4416fd` → `se_bonus.wav`（TH18 `0x2f` 同 md5）*/
+#define SENRO_SE_LIBYOU             0x1b     /* ✅ 一手 `th07:0x441e43` → `se_tan00.wav`（TH18 取 `0x1b`）*/
+#define SENRO_SE_LIBYOU2            0x2f     /* ✅ 一手 `th07:0x441e51` → `se_bonus.wav`（同帧第二声）*/
 
 /* 震屏：th07 的打断在 `th07:0x441d35`/`0x441dd9` 起 32 个环形特效单元（没有全屏震动的一手证据）
  * ⇒ 参数是**表现占位**（与 `cards/mof.c:183` 的灵击同款）。TODO(th07)*/
@@ -688,6 +699,8 @@ static void senro_handle_events(ce_card_t *c, senro_card_t *s, int ev)
          *    而「建 VM = 分配」这件事只在 tick / 帧末做（ufo.c 的死亡栈纪律）。 */
         s->fx_pending |= SENRO_FX_PEND_FIELD;
         ce_play_sound(SENRO_SE_BORDER_OPEN, ce_player_x());
+        /* ★ 2026-09-20：一手在**同一支**里连播两枚（`th07:0x441b91` 紧接着 `0x441b9f`）⇒ 这里照抄时序。*/
+        ce_play_sound(SENRO_SE_BORDER_OPEN2, ce_player_x());
         ce_log("senro: 森罗结界 OPEN (%d frames, cherry %d/%d, +C %d)",
                (int)SENRO_BORDER_FRAMES, (int)s->st.cherry, (int)s->st.cherry_max, (int)s->st.plus);
     }
@@ -825,6 +838,8 @@ static void senro_do_libyou(ce_card_t *c, senro_card_t *s, int by_hit)
      *     · 中弹路：下一帧兑现（≈16 ms，与既有的「中弹消弹推迟一帧」同一口径，spec §9 第 3 条）。 */
     s->fx_pending |= SENRO_FX_PEND_FIELD | SENRO_FX_PEND_RING;
     ce_play_sound(SENRO_SE_LIBYOU, pp[0]);
+    /* ★ 2026-09-20：一手那一支是**两枚**（`th07:0x441e43` se_tan00 紧接着 `0x441e51` se_bonus）⇒ 照抄。*/
+    ce_play_sound(SENRO_SE_LIBYOU2, pp[0]);
     ce_screen_shake(SENRO_SHAKE_TIME, SENRO_SHAKE_START, SENRO_SHAKE_END);
     if (by_hit) senro_cancel_impending_death();           /* 救援：取消本次死亡（EVENTS-CONTRACT §4.2 ②层）*/
     ce_log("senro: 灵击（%s）消弹 %d 颗 → 原生小分道具（★，收下每颗 +%d 樱点/+C）；当前樱点 %d / 最大樱点 %d，无敌 %d 帧",

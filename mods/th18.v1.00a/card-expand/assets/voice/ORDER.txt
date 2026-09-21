@@ -6,3 +6,22 @@ FIRELORD_ATTACK
 # ★ TH13 原版 se_astralup.wav（灵界槽跨格的升格音）——
 #   由 assets/voice/derive_astralup.py 在构建期从 local/th13.v1.00c/dat/ 现取（版权资产不入库）
 ASTRALUP
+# ★ TH12 原版 se_ufoalert.wav（UFO 出场时在**飞碟位置**响的那一声，一手 `th12:0x44a9fe`/`0x44aa06`；
+#   TH18 的 71 枚里没有它，也无替身）—— 112 星莲船「UFO 缺少入场音效」那一格用。
+#   同一个构建期现取路径：`assets/voice/derive_retail_se.py`（表里那一条有完整一手出处）。
+#   ⚠ 一手它是**循环音**（th12 的 cfg 行 `+8` = 1），本仓没有「停循环音」的通路 ⇒ 卡侧只放一次。
+UFOALERT
+# ★ TH09（花映塚）独有的两枚「蓄力」SE —— 全系列只有 TH09 有这套命名（`se_charge00` / `se_charge01b`
+#   / `se_chargeup`），TH18 的 71 枚里一枚都没有（md5 逐枚比过）⇒ 109（PoFV 蓄力叮）与 111
+#   （咲夜蓄力）都借这一族。一手：`th09:0x41fa5e`（起手）/ `th09:0x41fb31`（每升一级）。
+CHARGE00
+CHARGEUP
+# ★ TH10 原版 se_powerup.wav —— **与 TH18 的同名文件不是同一次录音**
+#   （TH10 77278 B / TH18 367106 B，md5 不同）⇒ 110 的「满 P 那一刻」要听起来像原作，只能发这一枚。
+#   一手：`th10:0x41b446`（小 P）/ `th10:0x41b68c`（大 P）`mov ebx,0x1d; call 0x43dd10`，
+#   而 TH10 的 `0x1d` → `se_powerup.wav`（`th10:0x4749c8` 那张 47 行表）。
+MOFPOWERUP
+# ★ TH07 原版 se_border.wav（**森罗结界的展开音**；TH07 独有，TH18 71 枚里没有它、也无替身）
+#   一手：`th07:0x441b91 push 0x20`（结界展开支，函数 `th07:0x441960`），TH07 的 id 0x20 = se_border。
+#   107 的「缺少各类音效」（用户实跑）里缺的就是这一枚 —— 原来 0x2f 借的是**结束**音。
+PCB_BORDER

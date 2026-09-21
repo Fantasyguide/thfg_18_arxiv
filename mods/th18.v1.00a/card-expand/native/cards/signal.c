@@ -2089,15 +2089,25 @@ static void signal_step_mod_fill(signal_card_t *s, signal_step_mod_t *mod)
  *      我们的子机脚本是**借** `ability.anm` 的 `CE_ANM_ABILITY_SCRIPT_SEASON_OPT`（116 的子机本体脚本，
  *      三个中断号 1/2/3 齐备）⇒ 五档在画面上靠**位置**区分，不靠贴图。要真贴图得新增 ability.anm 脚本
  *      （要动 `assets/ability/` + `ORDER.txt`）⇒ **登记进报告，不在本轮文件范围内**。*/
-/* ★★ 2026-09-16：二小姐蓄力的三条音效（**按 wav 名搬、不按 id 搬**；名表出处见
- *   `engine/card/th18/13-mallet-clear-and-th17-charge.md` 与 `engine/_shared/th18-sound-table.md`）。
- *   · `SIGNAL_SE_FLAN_CHARGE` = TH18 `0x21` = `se_cat00.wav`（TH17 那边是它的 `0x1e`）
- *   · `SIGNAL_SE_FLAN_LOOP`   = TH18 `0x4d` = `se_release.wav`（TH17 那边是 `0x37`）
- *   · `SIGNAL_SE_FLAN_FULL`   = TH18 `0x29`（**原生卡 42 的挥击音**；⚠ 名字两说，见调用点注释）
+/* ★★ 2026-09-20（P1「缺音效一批」th11 #7「咲夜应当有蓄力音效」）：三条音效**按 wav 名搬**。
+ *   ## 一手（TH11 里没有蓄力音 ⇒ 借 TH09 的 charge 族；否定结论见 `engine/_shared/th18-sound-table.md` §11.2）
+ *   · `SIGNAL_SE_FLAN_CHARGE` = **TH09 `0x2b` = `se_charge00.wav`** —— 一手 `th09:0x41fa5e push 0x2b`
+ *     + `th09:0x41fa65 call 0x43e2f0`，条件是**蓄力计时器 `player+0x30384 == 0.0f` 那一帧**（= 起手）。
+ *     TH18 的 71 枚里**没有这枚 wav** ⇒ 走音效表扩容通道（`CE_VOICE_CHARGE00` = `0x59`，
+ *     源 `local/th09.v1.50a/th09.dat` 里单抽，`assets/voice/derive_retail_se.py` 有完整一手出处）。
+ *   · `SIGNAL_SE_FLAN_FULL` = **TH09 `0x32` = `se_chargeup.wav`** —— 一手 `th09:0x41fb31 push 0x32`
+ *     + `th09:0x41fb38`，条件是 **`floor(charge/100)` 比上一帧大**（`th09:0x41fb15 cmp edi,eax` / `jge`，
+ *     即每跨 100/200/300/400 一声）= **「每升一级」的叮** ⇒ 正好对上本卡「蓄满那一下」。
+ *     同样 TH18 没有 ⇒ `CE_VOICE_CHARGEUP` = `0x5a`。（旧值 `0x29` 借的是原生卡 42 的挥击音。）
+ *   · `SIGNAL_SE_FLAN_LOOP` = TH18 `0x4d` = `se_release.wav`（**保持不动**）——
+ *     它是 TH17 妖梦蓄力的「蓄力中每帧嗡鸣」那一层（`th17:0x44a8d0`；一手见
+ *     `engine/card/th18/13-mallet-clear-and-th17-charge.md`）。**TH09 的 charge 族里没有对应物**
+ *     （TH09 只有「起手一声 + 每升一级一声」，没有持续音）⇒ 本卡这 5 秒里要一点持续反馈只能留它；
+ *     性质仍是 ❓ 自定（`TUNING.md` §2.6g + §4.1 #3）。
  *   `SIGNAL_SE_FLAN_LOOP_EVERY` = 循环音节流（❓ 自定：一手每帧一声，我们 30 帧一次）。*/
-#define SIGNAL_SE_FLAN_CHARGE       0x21u
+#define SIGNAL_SE_FLAN_CHARGE       CE_VOICE_CHARGE00
 #define SIGNAL_SE_FLAN_LOOP         0x4du
-#define SIGNAL_SE_FLAN_FULL         0x29u
+#define SIGNAL_SE_FLAN_FULL         CE_VOICE_CHARGEUP
 #define SIGNAL_SE_FLAN_LOOP_EVERY   30
 #define SIGNAL_OPTION_OFFSET_ALLOC  0   /* `ce_allocate_option` 的 off 参数：原生装备卡都用 0 */
 #define SIGNAL_OPTION_RETRY        30   /* 认领失败时的补申请间隔（帧）*/
@@ -2435,13 +2445,42 @@ static void signal_support_flandre(signal_card_t *s)
 
     {
         int interrupted;
+        int fired;
 
         if (!pl) return;
         pstate = *(const int32_t *)(pl + CE_PLAYER_STATE);
         interrupted = (pstate == 2 || pstate == 4) ? 1 : 0;
         charged_before = s->flandre.charge;
 
-        if (!signal_flandre_tick(&s->flandre, (in & SIGNAL_IN_FOCUS) != 0u, interrupted)) {
+        /* ★★ 2026-09-20（P1 th11 #7）：返回值**接住**再判分支 —— 下面那段蓄力音必须**每帧**都求值。*/
+        fired = signal_flandre_tick(&s->flandre, (in & SIGNAL_IN_FOCUS) != 0u, interrupted);
+
+        /* ★★★ 蓄力的音效（**位置就是全部**）——`signal_flandre_tick` 只在「松手且蓄满」那一帧返回 1
+         *   （`signal_core.c` 的 `fire = 1`），其余帧返回 0。
+         *   ⚠ 旧写法把本块放在 `if (!signal_flandre_tick(...)) { … return; }` **之后** ⇒
+         *     · 蓄力中（tick==0）根本走不到这里（上面 return 了）；
+         *     · 走到的那一帧 `charge` 已被 tick 清 0 ⇒ 三个条件也全假。
+         *   ⇒ **三个 `ce_play_sound` 全是死代码**，用户实跑「咲夜应当有蓄力音效」就是这条
+         *     （一次都没响过）。现在上移到分支**之前**：下面的三个判据按 `charged_before` / 当前
+         *     `charge` 逐帧求值，语义一字未改（起手那一帧 / 每 30 帧 / 蓄满那一帧）。
+         *   声像 = 自机 x（一手 `th09:0x41fa4a` 那两声的实参就是按玩家号算的 ±500，取自机 x 同量纲）。*/
+        {
+            const float *px = ce_player_pos();
+            const float sx = px ? px[0] : 0.0f;
+
+            if (charged_before == 0 && s->flandre.charge > 0) {
+                ce_play_sound(SIGNAL_SE_FLAN_CHARGE, sx);          /* 起手：TH09 se_charge00 (0x59) */
+            }
+            if (s->flandre.charge > 0 && (s->flandre.charge % SIGNAL_SE_FLAN_LOOP_EVERY) == 0) {
+                ce_play_sound(SIGNAL_SE_FLAN_LOOP, sx);            /* 循环：TH17 se_release (0x4d)，节流 ❓ 自定 */
+            }
+            if (charged_before < SIGNAL_FLANDRE_CHARGE_FRAMES &&
+                s->flandre.charge >= SIGNAL_FLANDRE_CHARGE_FRAMES) {
+                ce_play_sound(SIGNAL_SE_FLAN_FULL, sx);            /* 蓄满：TH09 se_chargeup (0x5a) */
+            }
+        }
+
+        if (!fired) {
             /* 只在**中弹**打断且真的丢掉了蓄力时打一行（「没充满就松手」是另一回事，由 core 记 aborted）。*/
             if (interrupted && charged_before > 0 && s->flandre.charge == 0) {
                 ce_log("signal: 二小姐·蓄力被中弹打断（蓄到 %d/%d 帧，state %d）",
@@ -2499,33 +2538,9 @@ static void signal_support_flandre(signal_card_t *s)
             if (ce_anm_get_vm(s->flan_ring_vm)) ce_anm_interrupt(s->flan_ring_vm, 1);
             s->flan_ring_vm = 0;
         }
-
-        /* ★★ 2026-09-16 加：**蓄力的音效**（用户口径「二小姐特技的蓄力得有音效和动画」）。
-         *   一手（子代理取到，全链见 `engine/card/th18/13-mallet-clear-and-th17-charge.md`）：
-         *   · **TH17 妖梦的蓄力**（`th17:0x44a8d0`、计时器 `player+0x19084`、阈值 60 帧）：
-         *     起手 + 每帧 `0x1e` = `se_cat00.wav`；蓄力中再叠一层 `0x37` = `se_release.wav`；
-         *     **蓄满不加新音**（只停 `se_cat00` + 重起 `se_release`）。
-         *   · **TH18 原生卡 42（小槌）的挥击音** = `0x29`（我们借它当「蓄满」那一声）。
-         *   ⚠ **按 wav 名搬、不按 id 搬**（两作的 id→wav 不是同一套）：TH18 名表里
-         *     `se_cat00` = `0x21`、`se_release` = `0x4d`。
-         *     ⚠ `0x29` 这一格有**名字分歧**：本仓音效表写 `se_kira00.wav`、子代理直接读 TH18 名表
-         *       （`0x4b47a0`）得 `se_ok00.wav` ⇒ 这里只搬 **id**（卡 42 真正播的那一格），名字待核。
-         *   ⚠ 循环音的**节流 = ❓ 自定**：一手每帧起一声，我们 30 帧一次（`TUNING.md` §2.6g）。*/
-        {
-            const float *px = ce_player_pos();
-            const float sx = px ? px[0] : 0.0f;
-
-            if (charged_before == 0 && s->flandre.charge > 0) {
-                ce_play_sound(SIGNAL_SE_FLAN_CHARGE, sx);          /* 起手：se_cat00 (0x21) */
-            }
-            if (s->flandre.charge > 0 && (s->flandre.charge % SIGNAL_SE_FLAN_LOOP_EVERY) == 0) {
-                ce_play_sound(SIGNAL_SE_FLAN_LOOP, sx);            /* 循环：se_release (0x4d)，节流 ❓ 自定 */
-            }
-            if (charged_before < SIGNAL_FLANDRE_CHARGE_FRAMES &&
-                s->flandre.charge >= SIGNAL_FLANDRE_CHARGE_FRAMES) {
-                ce_play_sound(SIGNAL_SE_FLAN_FULL, sx);            /* 蓄满：0x29（借卡 42 的挥击音）*/
-            }
-        }
+        /* ★★ 2026-09-20（P1 th11 #7）：蓄力音那一块**已经上移到本分支之前**（见那里的长注）——
+         *   它必须每帧求值；放在这里等于死代码（`fired == 1` 只在松手蓄满那一帧成立，
+         *   而那一帧 `charge` 已被清 0）。这里不再有 `ce_play_sound`。*/
     }
 
     /* ★ 松手 ⇒ 清屏。半径 = `2 × (自机判定半径 + 40.0)`（一手：擦弹圈里自机那一半 + 额外圈下限）。*/

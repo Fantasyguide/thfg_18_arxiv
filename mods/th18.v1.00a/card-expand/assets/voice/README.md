@@ -14,8 +14,20 @@
 | `_src/` | 第三方 / 原始素材（原件 + 出处 README）|
 | `make_melodies.py` | 合成本目录的钢琴曲（纯 stdlib，可复现）。`MELODIES` 里一首一条 |
 | `convert_voice.py` | 把 `_src/NAME.ogg`（用户给的压缩语音）转成上面要的 wav：`ffmpeg` 44.1 kHz 16-bit 单声道，+6 dB 再软限幅到峰值 −0.5 dBFS（把 RMS 从素材常见的 −15 拉到基准 −10 附近）。`python3 convert_voice.py NAME` 或 `--all` |
+| `derive_retail_se.py` | ★ **别作的原版 `se_*.wav`**（版权资产，不入库）：构建期从 `local/<版本>/dat/` **逐字节**拷过来。表里一行 = 一枚；`derive_astralup.py` 现在只是它的转发入口（`make voice` 调的名字没变）|
 
 `NAME` 只能是字母数字下划线 —— 它要变成 C 宏 `CE_VOICE_<NAME>`。
+
+### 两条来源，两种口径（别混）
+
+| 来源 | 例 | 响度 | 入库 | 产物 |
+| --- | --- | --- | --- | --- |
+| **我们自己做的**（合成曲 / 用户给的语音）| `ROYAL_RAGTIME`、`FIRELORD_*` | 按下面的「响度」一节拉到 −10 dBFS | ✅ 入库 | `ORDER.txt` 那一行 + `<NAME>.wav` |
+| ★ **别作原版的 SE**（构建期现取）| `ASTRALUP`（TH13）、`UFOALERT`（TH12）| **原样不动** —— 原版 wav 一律 peak 归一化，响度是它自己的事（`UFOALERT` 的 RMS −5.2 会触发 `make voice` 的提醒，这是**预期**：原版 SE 不走语音基准）| ❌ 源留 `local/`、产物写根 `.gitignore` | `derive_retail_se.py` 的 `TABLE` 一行 + `ORDER.txt` 一行 |
+
+★ 走第二条时**别重采样/别重编码**：音色必须与原作逐字节一致（`ASTRALUP` 的口径）。
+先确认 TH18 的 71 枚里**真的没有**同一枚（`md5` 逐枚比 `local/th18.v1.00a/dat/se_*.wav`）——
+同名的两作文件**不一定**同字节（TH07 那一代就与 TH18 各不相同）。
 
 **上限 32 条**（`native/sound_sites.py` 的 `NEW_N`）。原生 71 个 se 共 5.8 MB；
 32 条 × 2 秒 × 44.1 kHz × 16 bit 单声道 ≈ 5.6 MB，同量级，全量常驻内存。

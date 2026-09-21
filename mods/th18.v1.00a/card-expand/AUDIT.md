@@ -4896,7 +4896,40 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 | 2026-09-16zc | **所有卡（共享件 `sdk/public.h` 新增 `CE_SHT_PRIO_111`（= −1，阶梯最底）；`assets/sht/append_shooterset.py` 的 111 由 5 组扩到 **31 组**（`0x29`–`0x47`）并新增**主炮组覆盖**；层自检硬门改为只管卡侧 tick 的组）** | 见下方「§BE 详录 #40」 |
 | 2026-09-18 | **106–118（共享资源 `assets/cards/` + 共享件 `assets/cardframe.py`、`patch/th18/cards.js`）** | 见下方「§BE-EG」 |
 | 2026-09-17a | **所有卡（共享件 `patch/th18.v1.00a.js` / `th18_card_expand.def` / `Makefile` / `sdk.c`：**摘掉断点 `ce_enemy_damage`**；113 退订 `.on_enemy_damage`）** | 见下方「§BE 详录 #41」 |
-| 2026-09-20 | **109 花映塚 / 110 风神录 / 112 星莲船（P1「缺音效一批」；owner 裁定 A 的收窄版：这三个文件放行、只许动音效行）** | `cards/pofv.c` / `cards/ufo.c` / `patch/th18/voice.js` / `assets/voice/{ORDER.txt,derive_retail_se.py,derive_astralup.py,README.md}` / `native/sound_sites.py` / `native/voice_ids.h`（生成物）/ `.gitignore` | ① `pofv.c` 的 `POFV_SE_CHARGE_DING`：`CE_SE_EXTEND`(0x11) → `CE_VOICE_CHARGEUP`(**0x5a**)；② `ufo.c` 的 `UFO_SE_TOKEN`：`0x39`(se_pin00) → **`0x0c`**(se_timeout2)、新增 `UFO_SE_TOKEN_RECOLOR 0x4e`(se_changeitem) 与 `UFO_SE_ENTER CE_VOICE_UFOALERT`(0x58) 两个播放点、入槽音声像由屏心改成令牌自己的 x（一手 `th12:0x426d86`）；③ 音效表扩容新增 4 枚**别作原版** SE（`UFOALERT` 0x58 / `CHARGE00` 0x59 / `CHARGEUP` 0x5a / `MOFPOWERUP` 0x5b） | 用户实跑三条：「一直播放奇怪的 Extend 音效」(th09#2)、「UFO 缺少入场音效」(th12#8)、「收取 token 声音应该不是这个」(th12#3)，加「缺少 token 变色声音」(th12#2)。修法全部落在**一手**：逆出 TH12/TH10/TH09 的 id→wav 表（`engine/_shared/th18-sound-table.md` §11），按 **wav 名 + md5** 对回 TH18 的 id；TH18 没有的 4 枚走构建期现取（`derive_retail_se.py`，版权资产不入库）| `make check` rc=0（含 `snd-check` 96+188+17 项、`contract_check`、`gen_drift`、`sitecheck --all`）；`python3 tooling/check-docs.py` 全部通过；`make voice` 对账 OK（8 条语音 / `id = 0x54+行号`）；⚠ 本批**未部署**（DLL/patch 由统筹会话统一发） |
+| 2026-09-20 | **109 花映塚 / 110 风神录 / 111 地灵殿 / 112 星莲船 / 107 妖妖梦（P1「缺音效一批」；owner 裁定 A 的收窄版，随后逐个放行 signal / senro / faith）** | 见下方「§BE 详录 #42」 |
+
+
+> **§BE 详录 #42（2026-09-20 · P1「缺音效一批」8 条 + 音效表扩容新增 5 枚别作原版 SE）**
+>
+> **改到的文件**（五处 `.c` 全部**只动音效相关的 `#define` / `ce_play_sound` 行**，逻辑一字未改）：
+>
+> | 文件 | 卡 | 一手出处 | 改了什么 |
+> | --- | --- | --- | --- |
+> | `cards/pofv.c` | 109 | `th09:0x41fb31`+`0x41fb38`（`floor(charge/100)` 递增那一帧）| `POFV_SE_CHARGE_DING`：`CE_SE_EXTEND` → `CE_VOICE_CHARGEUP`(0x5a) |
+> | `cards/ufo.c` | 112 | `th12:0x426dab`(入槽公共尾) / `0x4264dd`(变色) / `0x44a9fe`(出场) | `UFO_SE_TOKEN` `0x39`→`0x0c`、入槽音声像改令牌 x；新增 `UFO_SE_TOKEN_RECOLOR 0x4e` 与 `UFO_SE_ENTER`(0x58) 两个播放点 |
+> | `cards/signal.c` | 111 | `th09:0x41fa5e`(起手) / `th09:0x41fb31`(每升一级) | ①蓄力音三连**上移**出死代码区（接住 `signal_flandre_tick` 返回值）；②`CHARGE`→`CE_VOICE_CHARGE00`、`FULL`→`CE_VOICE_CHARGEUP` |
+> | `cards/faith.c` | 110+111 共用 | `th10:0x41b446`/`th10:0x41b68c`(满 P 那一声) | ①事件闩改成「真转换那一帧才消费」；②`FAITH_CONV_SE` `0x25`→`CE_VOICE_MOFPOWERUP`(0x5b)；③订正两处错注释 |
+> | `cards/senro.c` | 107 | `th07:0x441b91`+`0x441b9f`(展开) / `th07:0x441e43`+`0x441e51`(灵击) | `BORDER_OPEN`→`CE_VOICE_PCB_BORDER`、新增 `BORDER_OPEN2 0x30`；`LIBYOU 0x09`→`0x1b`、新增 `LIBYOU2 0x2f`；两个调用点各加一行 |
+>
+> 共享件/资产：`patch/th18/voice.js`、`assets/voice/{ORDER.txt,derive_retail_se.py,derive_astralup.py,README.md}`、
+> `native/sound_sites.py`（分配表快照）、`native/voice_ids.h`（生成物）、根 `.gitignore`；文档：
+> `engine/_shared/th18-sound-table.md` §11、`TUNING.md` §4/§4.1、本表。`native/sound.c`/`sound.h`/`sound_emit.py` **未动**。
+>
+> **为什么**：用户实跑 8 条音效现象 —— 109「一直会播放奇怪的 Extend 音效」、112「UFO 缺少入场音效」、
+> 112「收取 token 声音应该不是这个」、112「缺少 token 变色声音」、107「缺森罗结界音效」+「退出音效错误」、
+> 110「缺满 P 转换音」、111「咲夜应当有蓄力音效」⇒ 全部落到**一手 id 表**上修（原来多是「借一个像的」）。
+> 逆出的四作表结构（TH07/TH09/TH10/TH12）见 `engine/_shared/th18-sound-table.md` §11；TH18 缺的 5 枚
+> （`se_ufoalert`/`se_charge00`/`se_chargeup`/TH10 版 `se_powerup`/`se_border`）走既有扩容通道、
+> **构建期从 `local/` 逐字节现取**（版权资产不入库，产物 gitignore）。
+>
+> **影响面（共享件单列）**：`cards/faith.c` 的 `faith_convert_full_p_items()` 由 **110 与 111 各自每帧调用**
+> （帧守卫保证一帧只跑一遍）⇒ 改事件闩后**同装**行为仍一致（先调的消费事件、后调的因帧守卫直接返回）。
+> `signal.c` 只有 111 用；`pofv.c`/`ufo.c`/`senro.c` 各只有一张卡用；`senro.c` 只碰音效三行 + 两处调用，
+> **未碰 P8 刚重写的 HUD 段与结界机制**。
+>
+> **怎么验**：`make check` rc=0（`snd-check` 96+188+17 项、`contract_check`、`gen_drift`、`sitecheck --all`）；
+> `check-docs.py`「全部通过」；三个改动过的 `.c` 各自 `make cards/*.o` 0 错误 0 新增警告；⚠ **本批未部署**。
+
 
 
 > **§BE 详录 #41（2026-09-17a / ⚗ 临时二分：摘掉 `ce_enemy_damage` 站点 —— 病灶 = **入場時刻总数越线**）**
@@ -15638,3 +15671,37 @@ python3 tools/sitecheck.py --all             # ✅ 全部通过（窗口 56 / �
    （日志 `T06R: 上线收点闸 **开**/**关**`）；② 111 的信号档与「没有 106」时一致；
    ③ 收点计分与「没有 106」时一致（线上满额 / 线下折额；日志里**不应**出现 `★ 折额兜底生效`）；
    ④ 115 擦弹 ⇒ 道具变橙 + 抖不退化；⑤ 开局**看不到**那条收点指示线（106 在场，§7-A4 (ii)）。
+
+---
+
+## §BE-EU（2026-09-19）：P8 工单 —— **107 的 HUD 版式与森罗结界指示**（共享资产 `ability.anm` 追加一格 + 两支脚本 + `CAPACITY.md` 台账）
+
+> 来源：`WORK-PACKAGES.md` §0 的 **P8**（现象 = `SINGLE-CARD-TEST.md` §th07 #1「HUD 样式错误」+
+> #2 的「森罗结界指示」；**音效那半归 P1，本会话不做**）。
+> `entries/ORDER.txt` 与 `scripts/**` 是**全库共享**的（贴图号 / 脚本号由行序决定）⇒ 按协作纪律登记。
+> 一手结论先落 [`engine/spirit/th07/02-cherry-counter-hud.md`](../../../engine/spirit/th07/02-cherry-counter-hud.md)。
+
+| 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
+| --- | --- | --- | --- | --- |
+| `assets/ability/entries/ORDER.txt` | **末尾追加**一段 `ATLAS ATLAS_SENRO_HUD 128x16` + 11 个成员（数字 D0..D9 = 8×12，结界板 BORDER = 48×16）⇒ entry **63** / sprite **467..477** | 承载 TH07 原版 HUD 的数字字形与「结界中才画」的那块（**原生切图**，零自绘） | P8（107）| `make anm`（图集逐像素回读比对 + 越界检查）+ `make check`（`capcheck`/`anm-verify`/`atlas-check`）全绿 |
+| `assets/ability/senro_hud/*.png`（11 张，新） | 从 `local/th07.v1.00b` 的 `ascii.anm` entry0 sprite132..141 / sprite143 **1:1 切**（源图 `anm/ascii/data/ascii/ascii.png`，兜底 `thanm -x 7`）| TH07 画樱点计数器就是逐位换这些 sprite（`sprite = 数字 + 0x84`，`th07:0x404a41`）；那块板是 VM4（`th07:0x404de1`）| 同上 | `assets/ability/make_senro_hud_art.py` 可复跑（矩形从 `thanm -l` 断死、幂等）|
+| `assets/ability/scripts/306_senro_hud_digit.anm.txt` | 新脚本：HUD 数字位模板（`@SENRO_HUD_D0@` + `layer(25)` + `resolutionMode(2)` + `scale(2.0,2.0)` + `stop()` + `interruptLabel(1)`）| 与 `136_hud_glyph` 同形，只换字形表 + 尺寸换算（TH07 是 640 原生）| 同上 | 同上 + `CE_ANM_ABILITY_SCRIPT_SENRO_HUD_DIGIT = 306` 已进 `native/anm_ids.h` |
+| `assets/ability/scripts/307_senro_hud_border.anm.txt` | 新脚本：TH07 `ascii.anm` **script5** 的逐条移植（`zWriteDisable(1)` + `scaleTime(30,4,2.4,2.4)` ↔ `(30,1,1.6,1.6)` + `jmp(offsetA8,0)` 无限循环；倍数关系 1.2/0.8 一字未改，只 ×2 换算）| **森罗结界指示**的那块脉动板（原版配方）| 同上 | 同上 + `…_SENRO_HUD_BORDER = 307` 已进 `anm_ids.h` |
+| `assets/ability/make_senro_hud_art.py`（新） | 生成器（切图 + 打印 ORDER 行 + 断死矩形/尺寸）| 与 `make_ufo_hud_art.py` / `make_th13_ascii_art.py` 同一条管线 | 同上 | 幂等（连跑两次 md5 一致）|
+| `assets/ability/entries/ORDER.senro_hud.txt`（新）| 不参与构建的同伴文件（贴一手推导 + ORDER 行）| 与 `ORDER.senro.txt` / `ORDER.ufo_hud.txt` 同惯例 | 同上 | —（构建只读 `ORDER.txt`）|
+| `CAPACITY.md` | 「图集 entry」段追加 `ATLAS_SENRO_HUD` 的登记 bullet + 附录 A3 名单加一行 | `capcheck` 硬门：新图集宏必须在台账里出现 | 同上 | `python3 native/tools/capcheck.py` 全绿 |
+
+**影响面（对既有卡）**：`ORDER.txt` **只追加**（行序 = entry/sprite 号）⇒ 既有卡的所有号**不变**；
+新脚本号 306/307 在既有号段（…305）之后 ⇒ 零影响；新图集 **entry 63/256**（余量 193）、
+sprite 到 **477**（脚本 / sprite 无上限，只是可见性登记）。**站点账不变**（本会话没碰任何声明源：
+`make gen` 的 patch md5 与改动前一致）。**卡侧只动 `cards/senro.c`**（107 独占文件），`sdk.*` /
+`sdk_core.*` / 别人的卡一个字未动；`cards/hud_dim.{h,c}`（跨卡件）**只读**、调用点未改。
+
+**回归跑了什么**：改动前后各一次 `make check`（rc=0；含 `anm-verify` 的图集逐像素回读、`capcheck`、
+`sites.py check`、`dllverify`、`dllx87` = 0 条 x87、`engine_abi_check`、`anm_hud_alpha_check`、
+`python3 tooling/check-docs.py` = 全部通过）。`make gen` 未重跑（没动声明源 ⇒ patch 不变）。
+
+**实跑验收（交给 owner，单卡）**：① 装 107 ⇒ 左下角出现**两块数字**（上一行粉色 +C、下一行「樱点 最大樱点」
+同一行；前导零留空、数字靠右）；② 樱点涨到最大樱点 ⇒ 数字变**金黄**；③ 吃道具攒满 +C ⇒ 结界开：
++C 行变**红色呼吸**、**放大**、字距变宽，数字行上多一块**脉动的板**；结界结束 ⇒ 恢复粉色；
+④ 买倒吊人删掉 107 / 通关回主菜单 ⇒ HUD 立刻**全消失**（无残留 VM）。
