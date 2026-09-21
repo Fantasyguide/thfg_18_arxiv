@@ -288,3 +288,21 @@ owner 实跑口径订正：**道具确实变慢了**（⇒ 门①state==1 / 门�
 | DLL（4 处同 md5） | `51f73825f0a9c4fa5fad75e565c0e650`（含 106 空格满 P 测试键；`.def` = 1 + 27 断点） |
 | 106 测试键 | `cards/th06rank.c`，拍空格 ⇒ 满 P，日志 `T06R: TEST 空格 ⇒ 满 P（power N/N）`，登记 `TUNING.md` §2.0l★ |
 | 回滚/二分/部署全trail | `local/DLL-SYNC.md`（本机） |
+
+## 8. 交接说明（2026-09-21 统筹会话，自动轮次跑完时的工作面）
+
+**在跑/在册的工单与各自独占文件**（一个文件一个写者，别交叉）：
+
+| 工单 | 子 agent | 独占文件 | 交付要求 | 观测到的状态 |
+| --- | --- | --- | --- | --- |
+| §7-A/A2/A3/A4：106 的闸（动 POC + 覆盖位 + 语义高度 + (ii) 关线显示）| `e5022ca4` | `sdk_core.*`、`sdk.*`、`cards/th06rank.c`、`cards/signal.*`、`engine.h` | 一次做完不可拆；`make check` rc=0 + `check-docs` 全绿；部署 md5 + 四条验收 | 读一手阶段；**另已通知它删掉 `sdk.c:2974` 那段 `return BP_EXEC_ORIGINAL` 守卫**（9-19 崩溃元凶，§BE-ER） |
+| §7-B：`no_replay` 硬规则 + `BP_EXEC_ORIGINAL` 普查 | `24879426` | `native/sites.py`、`tools/sitecheck.py`、文档 | W5/W6 判红（非警告）；普查结论写进 AUDIT；**不部署**；patch md5 不变 | ★ **已落笔且权威验收通过**：`sitecheck --all` → 「✅ 已声明的一切通过（窗口 31 / 落点 6）」；两条 park 站点已声明 `no_replay`；报告未交 |
+| P1：缺音效 7 条 | `aa4275e4` | `sound*`、`tools/sound_emit.py`、`voice_ids.h`、`assets/voice/*`（+ 已放行 `pofv/mof/ufo` 的音效行） | 一手出处逐条；**不部署**；`signal.c`/`senro.c` 改交「逐行落笔清单」 | 读一手阶段 |
+| P8：107 HUD + 森罗结界指示 | `97f08375` | `cards/senro.c` + 107 自己的脚本/条目 | 先从 TH07 一手找配方；**不部署** | 读一手阶段 |
+| P9a：114 道具生成位置 | `6e9bb1e2` | `cards/collect2x.c`、`collect2x_core.*` | 一手定坐标；**不部署** | 读一手阶段 |
+
+**当前部署面（未被半成品污染，已核）**：patch `d339b0ced4c57b9029338b1b0a33931c` + DLL `51f73825f0a9c4fa5fad75e565c0e650`（4 处同 md5）。
+
+**接手时先做的三件事**：① 收上面各工单的报告（谁先交先审：diff → 一手核对 → `make check` → `check-docs` → 部署 md5）；
+② 审完统一发一次部署（`make gen`/`gen_def.py` + 拷 patch + `DLL_SRC=… bash local/sync_modkit_dll.sh`），再请 owner 实跑；
+③ 未分配的 P2/P3/P6/P7/P12 与需要 owner 口径的 P9-116/117、P10(#41)、P11 见 §0/§1。
