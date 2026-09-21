@@ -19,12 +19,16 @@
  *   霊撃        **X（炸弹键，TH17 原位置）** 把已在跑的咆哮**用掉** = 40 帧：半径 (1−f⁴)×200 消弹
  *               + 伤害源 + 60 帧无敌（`do_hyper_cancel`）—— 玩家手感 = 「中弹但只丢咆哮」（用户 2026-09-11）。
  *               起霊撃时 TH17 会立刻删掉水獭 3 光球（`th17:0x40f7f7`）；本卡照做。
- *               C（`on_activate`）是同一个动作的 TH18 主动卡版入口；中弹抵消死亡走同一段（`by_hit=1`）。
+ *               ★ 2026-09-21 owner 口径（`WORK-PACKAGES.md` §1b：**117 改为非主动卡**）：本卡**不声明**
+ *               `.active_recharge` / `.on_activate`，**不占 C 键**；触发只剩两条，全部来自游戏状态
+ *               与**引擎掩码内**的键（无新键 ⇒ replay 安全）：满槽自动就绪（`on_ready`）+ **X** 用掉。
+ *               口径、五段链与 replay 依据见 `engine/input/th18/01-key-mapping.md` §2/§4a。
+ *               （中弹抵消死亡走的是同一段 `hyper_begin`，只是 `by_hit=1`。）
  *   水獭 3 光球  **咆哮就绪期**（非霊撃期）每帧：VM 留在自机位置，脚本 anchorOffset/angleVel 画轨道；
  *               每颗光球按 TH17 `0x40f200`–`0x40f372` 各做一次半径 28 消弹 + 伤害 2 的源。
  *   中弹不扣命  on_death_before_deathbomb：就绪且未霊撃 → 开霊撃 + cancel_impending_death。
  *   正常结束    超时未霊撃 → 队列里的鱼灵换道具 + 自机附近放出 **2 个变色动物灵**；
- *               霊撃结束（C 或中弹）→ 鱼灵照换、**不放**那 2 个（用户 2026-09-10 定案）。
+ *               霊撃结束（X 或中弹）→ 鱼灵照换、**不放**那 2 个（用户 2026-09-10 定案）。
  *   Miss        真死（on_death_frame2）→ 掉 2 个**不变色**的动物灵（与自机兽灵同种）。
  *   消弹契约    ★ 2026-09-13 bug-2(b) 后本卡有 **2 处**圈消弹（水獭 3 光球、霊撃半径圈）：
  *               霊撃半径圈先 `animal_cancel_claim()` 认领「本帧已消过弹」闩锁
@@ -253,7 +257,7 @@
  * TH17：`AnimalManager__on_ready` `th17:0x40fb60`（`0x40fc6a`/`0x40fc74`）建两条 UI VM 存
  * `manager+0x28/+0x2c`；之后每帧（`0x40f0c6` 段）把两条 VM 的坐标写成**自机坐标 ×2**，
  * 剩余时间写进 scale.x（同一族每帧刷 VM 字段）⇒ 条从**两端朝中点**收缩；
- * `do_hyper_cancel` `th17:0x40f6d0` 在霊撃起手时清掉 ⇒ 只在「槽满、还没按 C」的窗口里显示。
+ * `do_hyper_cancel` `th17:0x40f6d0` 在霊撃起手时清掉 ⇒ 只在「槽满、还没按 X」的窗口里显示。
  * 表面 px 换算：`表面 = (640 + x×2, 32 + y×2)`（`engine/anm/th18/01-vm-instantiate.md` §3）。
  * 三条 VM 的坐标全由本卡每帧写（脚本里不写 `pos()`）。*/
 #define ANIMAL_BAR_PER_FRAME   0.125f /* ★ 长度 = 帧数 × 这个常量：TH17 `th17:0x410180` 读 `th17:0x4a3af4` = 0.125 */
@@ -3806,14 +3810,23 @@ static int on_death_frame2(ce_card_t *c)
     return 0;
 }
 
-static int on_activate(ce_card_t *c)
-{
-    animal_card_t *s = st(c);
-    if (!s) return ce_refuse("wba_wc", "no state slot");
-    if (!s->core.ready) return ce_refuse("wba_wc", "queue not full");
-    hyper_begin(s, 0);
-    return 0;
-}
+/* ★★ 2026-09-21（owner 口径「117 不应该是主动卡」，`WORK-PACKAGES.md` §1b）：**`on_activate` 已删除**。
+ *
+ *   它原来做的事只有一句 `hyper_begin(s, 0)` —— 与 `on_tick_2` 里 X 那一条
+ *   （`ready && !paused && (INPUT_PRESSED & 0x002)` → `hyper_begin(s, 0)`）**逐字相同**
+ *   ⇒ 删掉 C 入口**不丢任何效果**，剩下的两条触发全是游戏状态 / 引擎掩码内的键：
+ *     ① 「咆哮就绪」= **满槽自动**（`animal_collect` → `on_ready`，一手 TH17 `AnimalManager__on_ready`
+ *        `th17:0x40fb60`：HYPER_FLAGS bit1 当场置上，`Player__do_shooting` 立刻换主炮组）；
+ *     ② 「把就绪的咆哮用掉」= **X（炸弹键，掩码 bit1）**（一手 TH17 `player_is_trying_to_bomb`
+ *        `th17:0x411d40`：`HYPER_FLAGS & 6 != 0` 时返回 0 ⇒ 炸弹键在咆哮期间被占用）。
+ *   ⇒ 本卡自此**没有任何主动行为**：不声明 `.active_recharge` ⇒ SDK 的 `ce_sdk_c_press` 第一句
+ *     `if (!h->active_recharge) return 0;` 直接返回 0（= 基类槽 `xor eax,eax; ret` 的效果，
+ *     见 `sdk.h` 顶注），绑定时也不再走 `active_init()` ⇒ **flags 里不再有 `CE_FLAG_ACTIVE`（bit3）**
+ *     ⇒ `set_selected_active_card(mgr, -1)`（`th18:0x408b00`）不会选中它、HUD 主动行也不画它。
+ *   ⚠ 随之而来的两条**下游**改动（不在本文件里，已在报告与 `AUDIT.md` §BE 登记）：
+ *     `patch/th18/cards.js` 的 `"category": 0` 必须去掉（默认 2 = 被动能力卡）—— 契约
+ *     `category == 0 ⟺ active_recharge != 0`（`native/tools/contract_check.py` 判据 1、
+ *     运行时 `ce_sdk_contract_check` reason 1）否则**整局新卡禁用**。*/
 
 /* TH17 `player_is_trying_to_bomb` `th17:0x411d40` 在 `HYPER_FLAGS & 6 != 0` 时返回 0 ⇒
  * 咆哮就绪 / 霊撃期间炸弹键只作咆哮动作。TH18 的原生门在 `Player__on_tick__body` 的
@@ -4083,8 +4096,13 @@ static void on_run_reset(ce_card_t *c) { clear_card(c, 0); }
 static void on_delete(ce_card_t *c) { clear_card(c, 0); }
 
 CE_CARD(117,
-        .active_recharge = 1,
-        .on_activate = on_activate,
+        /* ★★ 2026-09-21（owner 口径「117 不应该是主动卡」）：**这里原来有 `.active_recharge = 1,` 与
+         *   `.on_activate = on_activate,` 两行** —— 一起删掉即「改被动」的全部改动（SDK 侧判定主动卡的
+         *   唯一开关就是 `active_recharge` 非 0：`sdk.c` 的 `active_init` / `ce_sdk_c_press` /
+         *   `ce_sdk_active_tick` / `ce_sdk_active_reset` 四处的第一句都是它）。
+         *   触发改为**游戏状态驱动**：满槽自动 `on_ready`（→ 咆哮就绪）+ X 用掉（`on_tick_2` 里那条，
+         *   一手 TH17 `player_is_trying_to_bomb` `th17:0x411d40`）⇒ **不占 C 键、不引入任何新键**。
+         *   完整五段链 + 下游 `cards.js` 契约改动见 `engine/input/th18/01-key-mapping.md` §2/§4a。*/
         .on_bomb_gate = on_bomb_gate,
         .on_shot_set_index = on_shot_set_index,
         /* ★★ 2026-09-16z（用户口径「改子机和改主体发弹的覆盖原则」）：「**人为规定 117 > 113**」
