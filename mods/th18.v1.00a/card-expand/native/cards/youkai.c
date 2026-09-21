@@ -170,6 +170,11 @@ static int yk_option_script(int character)
  * 卡是单例（一个 id 只可能有一个对象），静态表在 ctor / on_load / on_run_reset 里复位。*/
 typedef struct {
     ce_option_t   opt[YK_OPTION_MAX];  /* 子机槽（SDK：认领 / 申请 / 收起）*/
+    /* ★★ 2026-09-22（th08 #1）：机体 0（霊夢・紫）的**子机弹簧**状态（TH08 `th08:0x44e770`）。
+     * 只有机体 0 需要它 —— 另两个机体的妖侧子机在原作里是**每帧直接吸附**（无速度），
+     * 静态偏移就够（`yk_option_uses_spring` 的注）。单位 = **像素（屏幕空间、+y = 下）**。*/
+    float         opt_pos[YK_OPTION_MAX][2];
+    float         opt_vel[YK_OPTION_MAX][2];
     yk_transfer_t tr;                  /* 1/2 转嫁累加器 */
     int32_t       opt_script;          /* 手里这几个子机是用哪个 anm 脚本申请的（-1 = 没有）*/
     uint32_t      shot_timer;          /* 我们自己的「射击帧」计数（引擎那个松开 Z 会跳，相位不可控）*/
@@ -185,7 +190,12 @@ typedef struct {
     uint8_t       logged_pass0;        /* ★ 2026-09-12：「子机 0 ⇒ 放行原生弹（用户口径）」只记一次 */
     uint8_t       logged_full;         /* 「使魔表满 / 堆拒绝」只记一次 */
     uint8_t       logged_gate;         /* 「发射口精确闸生效（使魔没了 ⇒ 该槽哑火）」只记一次 */
-    uint8_t       _pad[2];             /* 对齐（保持结构布局稳定；新增位一律从 `_pad` 里拿）*/
+    uint8_t       opt_spring_live;     /* ★ th08 #1：弹簧状态是否已经按「自机位置」起过步。
+                                        *   0 = 下一帧从自机位置出发（= TH08 state 1 的初值）。*/
+    uint8_t       _pad[1];             /* 对齐（保持结构布局稳定；新增位一律从 `_pad` 里拿）*/
+    uint32_t      heals_seen;          /* ★ 2026-09-22（#7）：上一帧读到的闸自愈计数（`yk_map_heals`）
+                                        *   的快照。差值 > 0 ⇒ 打一行日志 —— 实跑里「boss 不发弹」
+                                        *   到底是闸夹死（这一行在涨）还是别的原因，一眼可判。*/
 } yk_card_t;
 
 static yk_map_t s_map;              /* 使魔表（(enemy_id, 发射口槽) → 使魔）*/
@@ -654,6 +664,7 @@ static void yk_option_release(ce_card_t *c, yk_card_t *s)
      * ⇒ 补一次原生的单子机收尾；上面已经清过那一格时它是 no-op。*/
     ce_option_drop(c, 0);
     s->opt_script = -1;
+    s->opt_spring_live = 0;                /* ★ th08 #1：松手 ⇒ 下次再要子机时重新从自机位置起 */
 }
 
 /* ★ 被选举者落笔（SDK 每帧调**恰好一次**；spec §3.3.1 的 `on_option_pose_apply`）。
@@ -665,6 +676,8 @@ static int on_option_pose_apply(ce_card_t *c)
 {
     yk_card_t *s = ce_state(c, yk_card_t);
     const ce_option_pose_t *pose = ce_option_pose_pose();
+    const float *pp = ce_player_pos();                    /* 弹簧的目标基准（th08 #1）*/
+    const int character = yk_current_character();
     int want, i;
 
     if (!s) return 0;
@@ -683,18 +696,88 @@ static int on_option_pose_apply(ce_card_t *c)
     for (i = 0; i < want; ++i) {
         uint8_t *o = ce_option_get(c, &s->opt[i], YK_OPTION_OFFSET_ALLOC, pose->anm_script,
                                    YK_OPTION_RETRY, "youkai");
+        float fx = pose->cell[i].fx;
+        float fy = pose->cell[i].fy;
         if (!o) continue;
         s->opt_script = pose->anm_script;
+        /* ★★ 2026-09-22（th08 #1）：机体 0（霊夢・紫）的妖侧子机在**原作里是弹簧跟随**
+         * （`th08:0x44e3a0` → `th08:0x44e770`，逐步式与常量见 `youkai_core.h`）。
+         * 引擎只认「自机位 + 偏移」这一个形状（`th18:0x45bce8`–`0x45bd08`）⇒ 我们**自己积分**
+         * 那颗子机的位置（`s->opt_pos`）、把「位置 − 自机坐标」当偏移写下去 ⇒ 观感逐帧等于原作的滞后跟随。
+         * ⚠ 引擎每帧都会用我们写的这四个字段重算子机位置 ⇒ **必须每帧重写**（不能只在申请那一帧写）。*/
+        if (yk_option_uses_spring(character) && pp) {
+            float goal[2];
+            if (yk_option_home_from_player(character, i, pp, goal)) {
+                if (!s->opt_spring_live) {            /* TH08 state 1：从**自机位置**出发 */
+                    s->opt_pos[i][0] = pp[0];
+                    s->opt_pos[i][1] = pp[1];
+                    s->opt_vel[i][0] = 0.0f;
+                    s->opt_vel[i][1] = 0.0f;
+                }
+                yk_opt_spring_step(s->opt_pos[i], s->opt_vel[i], goal);
+                fx = s->opt_pos[i][0] - pp[0];
+                fy = s->opt_pos[i][1] - pp[1];
+            }
+        }
         /* 写**这一格**的阵型（原生 `0x40b8c1` 也这么自己摆；单位 = 原生 1/128 定点）。
          * 引擎每帧自己按聚焦位取用：`pos = 自机位 + (聚焦 ? [+0x6c/+0x70] : [+0x64/+0x68])`
          * （一手 `th18:0x45bce8`–`0x45bd08`，且**卡池 12 格与原生 4 格走同一个循环**
          * —— `th18:0x45b8ea`/`0x45b8fa` 两处调用）⇒ 卡侧只写这四个字段就够。*/
         *(int32_t *)(o + CE_OPT_OFF_NF_X) = (int32_t)(pose->cell[i].ux * YK_SUBPIXEL);
         *(int32_t *)(o + CE_OPT_OFF_NF_Y) = (int32_t)(pose->cell[i].uy * YK_SUBPIXEL);
-        *(int32_t *)(o + CE_OPT_OFF_F_X)  = (int32_t)(pose->cell[i].fx * YK_SUBPIXEL);
-        *(int32_t *)(o + CE_OPT_OFF_F_Y)  = (int32_t)(pose->cell[i].fy * YK_SUBPIXEL);
+        *(int32_t *)(o + CE_OPT_OFF_F_X)  = (int32_t)(fx * YK_SUBPIXEL);
+        *(int32_t *)(o + CE_OPT_OFF_F_Y)  = (int32_t)(fy * YK_SUBPIXEL);
     }
+    s->opt_spring_live = 1;                /* 本帧起过步 ⇒ 下一帧不再回到自机位置 */
     return 0;
+}
+
+/* ================= ★★ 2026-09-22（th08 #5）妖侧 shooterset：逐角色 × 逐火力档 =================
+ *
+ * **现象（owner 单卡实跑）**：「妖侧子机目前似乎发射的都是同一个弹幕，火力大概 4P」——
+ *   一句里有两条事实，各有一个根因：
+ *   ① 「都是同一个弹幕」：第一版只做了**一格** `YK_SHOT_SET_YOUKAI = 0x16`，内容 = TH08
+ *      `ply03as.sht` 的 slot 4（**妖夢＆幽々子**的妖侧、满 P 档）⇒ 四个机体**共用**这一套，
+ *      连角色都不分。
+ *   ② 「火力大概 4P」：TH08 的档就是「4.00」（P=128）那一档（见下），所以读数完全正确 ——
+ *      它确实一直是满 P 档的妖夢弹。
+ *
+ * **一手**（全文 `engine/sht/th08/01-youkai-shootersets.md`）：TH08 的 `.sht` 里
+ * **槽 = 火力档**（生成器 `th08:0x450f60` 的档位循环 `th08:0x451005`–`0x451020`：
+ * `get_current_power() >= [slot+4]` 就换下一档），阈值实测 `8/24/48/80/128/999`；
+ * 两作 P 的显示单位都是 x.xx、上限 4.00（TH08 `P/32`、TH18 `P/100`）
+ * ⇒ TH18 档 `k`（P=100k）折算成 TH08 的 P=32k ⇒ **正好落在 slot k** ⇒ **`档 k ↔ slot k`**。
+ *
+ * ⇒ 本卡按 **(角色, 火力档)** 取组：`pl0X.sht` **本来就是逐角色的文件**，
+ *   所以「同一槽号在不同文件里放不同角色的行」就够 —— 不需要更多槽位。
+ *   表由 `assets/sht/append_shooterset.py` 生成（`CE_SHT_SET_YOUKAI_R0..S4`，名字里的 R/M/S
+ *   = TH08 的角色 0/1/2 = 霊夢・八雲紫 / 魔理沙・アリス / 咲夜・レミリア）。
+ *
+ * ⚠ **早苗（角色 3）不在这 15 格里**：她的妖侧是 TH16 的射命丸文，而本批没有 TH16 的行数据
+ *   ⇒ 她**回落**到 `YK_SHOT_SET_YOUKAI`（0x16，那一格保留着；内容仍是 `ply03as` 满 P 档）。
+ *   这是**已知缺口**，见报告的 🔴（要补需要一轮 TH16 `pl03*.sht` 的抽取）。*/
+static const yk_sets_t s_yk_sets = {
+    YK_SHOT_SET_YOUKAI,            /* 0x16：早苗的回落格（也是「生成物没到」时的唯一格）*/
+    CE_SHT_SET_YOUKAI_R0,          /* 15 格的第一格（逐档组）*/
+    YK_YOUKAI_TIER_SETS            /* = 3 角色 × YK_SHOT_TIERS */
+};
+/* 槽号布局是**生成物**给的（`sht_ids.h`）⇒ 用编译期断言把「下标 = 槽号」钉死：
+ * 卡侧按 `first + 角色*档数 + 档` 算，生成序列一旦重排（插在中间）这里当场编译失败，
+ * 而不是静默拿错组（照 111/117 那两处 `_Static_assert` 的先例）。*/
+_Static_assert(CE_SHT_SET_YOUKAI_M0 == CE_SHT_SET_YOUKAI_R0 + YK_SHOT_TIERS,
+               "youkai tier sets must be laid out R0..R4, M0..M4, S0..S4 in this exact order");
+_Static_assert(CE_SHT_SET_YOUKAI_S0 == CE_SHT_SET_YOUKAI_M0 + YK_SHOT_TIERS,
+               "youkai tier sets must be laid out R0..R4, M0..M4, S0..S4 in this exact order");
+_Static_assert(YK_YOUKAI_TIER_SETS == 3 * YK_SHOT_TIERS,
+               "YK_YOUKAI_TIER_SETS must cover 3 characters x YK_SHOT_TIERS tiers");
+
+/* 本帧该用哪一格。**只读表，不做运行期探测**（探测在 `yk_youkai_shotset_installed` 里）。*/
+static int yk_shot_set_for(int character, int tier)
+{
+    if (character < 0 || character >= 3) return YK_SHOT_SET_YOUKAI;   /* 早苗 / 越界 ⇒ 回落格 */
+    if (tier < 0) tier = 0;
+    if (tier >= YK_SHOT_TIERS) tier = YK_SHOT_TIERS - 1;
+    return (int)s_yk_sets.tier_first + character * YK_SHOT_TIERS + tier;
 }
 
 /* 妖侧 shooterset 装上没有：读那一格记录的首字节 `fire_rate`（i8，`engine/sht/th18/02` §1）。
@@ -702,7 +785,7 @@ static int on_option_pose_apply(ce_card_t *c)
  * 的 `REPLACE` 覆盖原生那格 0x16）；原生原值 / build/sht 没重跑时那格还是 `0`
  * ⇒ `yk_shotset_usable` 返回 0（装备卡路径 `0x40aa4f` 的 `idiv` 没有零分支）。
  * `< 0` = 终止符 ⇒ 也不可用。**运行期自检**，不靠一个手写的「资产已装」开关。*/
-static int yk_youkai_shotset_installed(void)
+static int yk_youkai_shotset_installed(int set)
 {
     uint8_t *p = CE_PLAYER();
     uint8_t *sht;
@@ -710,8 +793,18 @@ static int yk_youkai_shotset_installed(void)
     if (!p) return 0;
     sht = *(uint8_t **)(p + CE_PLAYER_SHT_PTR);
     if (!sht) return 0;
-    row = *(uint8_t **)(sht + YK_SHT_SET_ROW + (size_t)YK_SHOT_SET_YOUKAI * 4);
+    row = *(uint8_t **)(sht + YK_SHT_SET_ROW + (size_t)set * 4);
+    /* 空组（只有终止符，如 pl03 上那 15 格）⇒ 首字节 = 0xFF ⇒ `-1` ⇒ 不可用 ⇒ 回落。
+     * 这一条就是「早苗自动走 0x16」的机制：不需要按角色写死分支。*/
     return row && yk_shotset_usable((int)*(const int8_t *)row);
+}
+
+/* 本帧真正要用的那一格：先按 (角色, 档) 取；那一格不可用（没装 / 是空组）就回落到 `0x16`。*/
+static int yk_youkai_shotset_pick(int character, int tier)
+{
+    int set = yk_shot_set_for(character, tier);
+    if (yk_youkai_shotset_installed(set)) return set;
+    return YK_SHOT_SET_YOUKAI;
 }
 
 /* ============================== 回调 ============================== */
@@ -732,6 +825,10 @@ static int on_ctor(ce_card_t *c)
     s->spawns = s->broken = s->lost = s->transferred = s->dropped = s->fam_full = 0;
     s->logged_opt = s->logged_sht = s->logged_noshot = s->logged_full = s->logged_gate = 0;
     s->logged_pass0 = 0;
+    s->heals_seen = 0;
+    s->opt_spring_live = 0;
+    __builtin_memset(s->opt_pos, 0, sizeof s->opt_pos);
+    __builtin_memset(s->opt_vel, 0, sizeof s->opt_vel);
     return 0;
 }
 
@@ -815,6 +912,9 @@ static int on_power_level_change(ce_card_t *c)
      * 照原生 / 77：不 drop（引擎已经重建过），直接清指针再去要一个。*/
     for (i = 0; i < YK_OPTION_MAX; ++i) { s->opt[i].ptr = 0; s->opt[i].retry = 0; }
     s->opt_script = -1;
+    /* ★ th08 #1：整池重建 ⇒ 我们手里那几格已经作废（引擎重建的子机在新位置）⇒
+     * 弹簧也从头起（否则会从**旧偏移**滑进来，看起来像"从别处飞回来"）。*/
+    s->opt_spring_live = 0;
     yk_option_refresh(c, s, CE_PLAYER_FOCUSED());          /* 声明；落笔在帧界（SDK 调被选举者）*/
     return 0;
 }
@@ -832,6 +932,7 @@ static int on_tick_shooters(ce_card_t *c, uint32_t short_timer, uint32_t long_ti
 {
     yk_card_t *s = ce_state(c, yk_card_t);
     uint8_t *o;
+    int set;
     (void)short_timer;
     (void)long_timer;
     if (!s || !CE_PLAYER()) return 0;
@@ -839,12 +940,14 @@ static int on_tick_shooters(ce_card_t *c, uint32_t short_timer, uint32_t long_ti
      * ★ 这一条 = 止射闸第三条门的**同一张表、同一个函数**（`yk_option_wanted`）：两边同帧同源
      *   ⇒ 「不压原生弹」的那一帧，这里也恰好不出妖侧弹（不会出现两边都发或两边都不发）。*/
     if (!yk_option_wanted(CE_PLAYER_FOCUSED(), yk_current_character(), yk_current_power_level())) return 0;
-    if (!yk_youkai_shotset_installed()) {
+    set = yk_youkai_shotset_pick(yk_current_character(), yk_current_power_level());
+    if (!yk_youkai_shotset_installed(set)) {
         if (!s->logged_sht) {
             s->logged_sht = 1;
-            ce_log("youkai: youkai shooterset 0x%02x not installed (record fire_rate is 0) - no "
-                   "youkai bullets until `make sht` covers that retail slot "
+            ce_log("youkai: no usable youkai shooterset for this card (tried 0x%02x, fallback "
+                   "0x%02x) - record fire_rate is 0/terminator; run `make sht` "
                    "(calling it would divide by zero, engine/sht/th18/02 §2)",
+                   yk_shot_set_for(yk_current_character(), yk_current_power_level()),
                    YK_SHOT_SET_YOUKAI);
         }
         return 0;
@@ -852,7 +955,7 @@ static int on_tick_shooters(ce_card_t *c, uint32_t short_timer, uint32_t long_ti
     o = ce_option_claim(c, &s->opt[0]);                       /* 膛口 = 子机（0x40a9c0 一手）*/
     if (!o) return 0;
     ++s->shot_timer;                                          /* 射击帧计数自己数（引擎那个松开 Z 会跳）*/
-    ce_tick_shooters_for_card(o, (int)s->shot_timer, 0, YK_SHOT_SET_YOUKAI);
+    ce_tick_shooters_for_card(o, (int)s->shot_timer, 0, set);
     return 0;
 }
 
@@ -866,7 +969,7 @@ static int on_bullet_created(ce_card_t *c, void *bullet)
     if (!bullet) return 0;
     packed = *(uint32_t *)((uint8_t *)bullet + YK_PB_PACKED_ID);
     if (yk_bullet_damage_apply(*(int32_t *)((uint8_t *)bullet + CE_BULLET_DAMAGE), packed,
-                               CE_CURRENT_POWER(), &out))
+                               CE_CURRENT_POWER(), &s_yk_sets, &out))
         *(int32_t *)((uint8_t *)bullet + CE_BULLET_DAMAGE) = out;
     return 0;
 }
@@ -914,11 +1017,13 @@ static int on_native_shot_suppress(ce_card_t *c)
     }
     /* 压了原生弹。❓口径改掉之后，还剩一种情况会让本帧真的**一发都没有** = 妖侧 shooterset 没装
      * （子机 0 那条已经在上面放行了）⇒ 第一次命中时记下原因（实跑诊断用），但不改行为。*/
-    if (!s || s->logged_noshot || yk_youkai_shotset_installed()) return 1;
+    if (!s || s->logged_noshot ||
+        yk_youkai_shotset_installed(yk_youkai_shotset_pick(character, level))) return 1;
     s->logged_noshot = 1;
-    ce_log("youkai: native shots suppressed at focus but youkai shooterset 0x%02x is NOT installed "
-           "(record fire_rate is 0; run `make sht`) -> NO bullets at all (spec §3.1 + §3.4.1)",
-           YK_SHOT_SET_YOUKAI);
+    ce_log("youkai: native shots suppressed at focus but no usable youkai shooterset "
+           "(char %d tier %d; tried 0x%02x, fallback 0x%02x; record fire_rate is 0; run `make sht`) "
+           "-> NO bullets at all (spec §3.1 + §3.4.1)",
+           character, level, yk_shot_set_for(character, level), YK_SHOT_SET_YOUKAI);
     return 1;
 }
 
@@ -998,9 +1103,10 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
     yk_fam_vm_kill_id(ev->id);
     ++s->broken;
     ce_log("youkai: familiar enemy_id %u killed (kind %u, real=%u) at (%.0f, %.0f) - "
-           "that emitter slot stays without a familiar until ECL re-arms it "
-           "(real emitter shutdown needs hook 0x434019, TODO)",
-           ev->id, ev->kind, (ev->flags & CE_EDEATH_F_REAL) ? 1u : 0u, ev->x, ev->y);
+           "that emitter slot stays silent until ECL re-arms it or the %d-frame self-heal "
+           "expires (gate = on_enemy_shot_slot 0x433ffa; see youkai_core.h YK_EMIT_BROKEN_TTL)",
+           ev->id, ev->kind, (ev->flags & CE_EDEATH_F_REAL) ? 1u : 0u, ev->x, ev->y,
+           (int)YK_EMIT_BROKEN_TTL);
 }
 
 /* +0x2c：AbilityManager tick（优先级 0x16），早于敌人结算（0x1b）⇒ 上限只对当帧有效、不用还原。*/
@@ -1031,6 +1137,18 @@ static int on_tick_2(ce_card_t *c)
     }
     yk_familiars_tick(s);
     yk_transfer_tick(s);
+    /* ★ 2026-09-22（#7）：闸的自愈记账。`YK_EMIT_BROKEN_TTL` 帧没再被 ECL 重新武装的发射口
+     * 会被无条件放开（否则 boss 的持续活跃发射口会**永久哑火**，见 `youkai_core.h`）。
+     * 这里只**记账**：涨了就说明「有格子曾经被闸夹死过 TTL 帧」——实跑诊断的关键一行。*/
+    {
+        uint32_t heals = yk_map_heals(&s_map);
+        if (heals != s->heals_seen) {
+            ce_log("youkai: emitter gate self-healed %u slot(s) after %d frames without ECL re-arm "
+                   "(total %u) - those emitters fire again", heals - s->heals_seen,
+                   (int)YK_EMIT_BROKEN_TTL, heals);
+            s->heals_seen = heals;
+        }
+    }
     return 0;
 }
 

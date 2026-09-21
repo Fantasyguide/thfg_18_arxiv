@@ -116,17 +116,83 @@ static const unsigned char YK_OPT_TRI[YK_OPTION_CELLS] = { 0, 1, 3, 6 };
 int yk_option_offsets(int character, int count, int cell, yk_opt_off_t *out)
 {
     int k;
+    float home[2];
 
     if (!out) return 0;
     if (character < 0 || character >= YK_OPTION_CHARS) return 0;
     if (count < 1 || count > YK_OPTION_CELLS) return 0;
     if (cell < 0 || cell >= count) return 0;
+    /* ★★ 2026-09-22（th08 #1）：机体 0/1/2 改用手写死的 **TH08 妖侧阵型**（`yk_option_home_xy`，
+     * 一手见 youkai_core.h）—— 原来的 TH18 原生阵型表把灵梦的子机摆在自机上方 20 px，
+     * 而原作是 **96 px**（且弹簧跟随）⇒ owner 看到的正是这一条。
+     * 机体 3（早苗）没有 TH08 一手数据 ⇒ 仍然用 TH18 原生阵型。*/
+    if (yk_option_home_xy(character, cell, home)) {
+        out->nfx = home[0]; out->nfy = home[1];
+        out->fx  = home[0]; out->fy  = home[1];   /* 我们只在低速（聚焦）手里有子机 ⇒ 两块填一样 */
+        return 1;
+    }
     k = (int)YK_OPT_TRI[count - 1] + cell;
     if (k < 0 || k > 9) return 0;                        /* 块只有 10 格（`+0x40`..`+0x8f`）*/
     out->nfx = YK_OPT_BLOCK[character][k][0];
     out->nfy = YK_OPT_BLOCK[character][k][1];
     out->fx  = YK_OPT_BLOCK[character][k][2];
     out->fy  = YK_OPT_BLOCK[character][k][3];
+    return 1;
+}
+
+/* ------------------------------------------------ ★★ th08 #1：妖侧子机的家位置与弹簧（一手见 youkai_core.h）
+ * 三张表都**逐格写死**（不假设规律）：机体 0 只有 1 格、机体 1 只有 1 格、机体 2 有 4 格。 */
+static const float YK_OPT_HOME[3][4][2] = {
+    /* 机体 0 霊夢・紫（`th08:0x44e3a0` → `th08:0x44e770`）：1 个，正上方 96 px（`0x4b42c4`）*/
+    { { 0.0f, YK_OPT_HOME_Y_REIMU }, { 0.0f, YK_OPT_HOME_Y_REIMU },
+      { 0.0f, YK_OPT_HOME_Y_REIMU }, { 0.0f, YK_OPT_HOME_Y_REIMU } },
+    /* 机体 1 魔理沙・アリス（`th08:0x44ea40`：`y -= 32.0`）：1 个，正上方 32 px */
+    { { 0.0f, YK_OPT_HOME_Y_MARISA }, { 0.0f, YK_OPT_HOME_Y_MARISA },
+      { 0.0f, YK_OPT_HOME_Y_MARISA }, { 0.0f, YK_OPT_HOME_Y_MARISA } },
+    /* 机体 2 咲夜・レミリア（`th08:0x44eb70` 的跳表 `th08:0x44ee4b` 四支）：
+     *   idx0 x-=30 y-=16 ／ idx1 x-=10 y-=32 ／ idx2 x+=10 y-=32 ／ idx3 x+=30 y-=16 */
+    { { YK_OPT_HOME_X_SAKUYA_INNER, YK_OPT_HOME_Y_SAKUYA_OUTER },
+      { YK_OPT_HOME_X_SAKUYA_OUTER, YK_OPT_HOME_Y_MARISA },
+      { -YK_OPT_HOME_X_SAKUYA_OUTER, YK_OPT_HOME_Y_MARISA },
+      { -YK_OPT_HOME_X_SAKUYA_INNER, YK_OPT_HOME_Y_SAKUYA_OUTER } },
+};
+
+int yk_option_home_xy(int character, int cell, float out[2])
+{
+    if (!out) return 0;
+    if (character < 0 || character >= 3) return 0;        /* 早苗（3）：TH16 文，本批无一手数据 */
+    if (cell < 0 || cell >= YK_OPTION_CELLS) return 0;
+    out[0] = YK_OPT_HOME[character][cell][0];
+    out[1] = YK_OPT_HOME[character][cell][1];
+    return 1;
+}
+
+int yk_option_uses_spring(int character)
+{
+    return character == 0;                                 /* 只有 `th08:0x44e3a0`（紫）有速度积分 */
+}
+
+void yk_opt_spring_step(float pos[2], float vel[2], const float goal[2])
+{
+    float dx, dy;
+    if (!pos || !vel || !goal) return;
+    /* `th08:0x44e770` 逐指令：delta = (goal − pos) × (K / 16.0)；vel += (delta − vel) × 0.2；
+     * pos += vel。K = `ds:0x4b4338` = 1.0 ⇒ 每帧把位置差折算成 1/16 的"目标速度"。*/
+    dx = (goal[0] - pos[0]) * (YK_OPT_SPRING_K / YK_OPT_SPRING_DIV);
+    dy = (goal[1] - pos[1]) * (YK_OPT_SPRING_K / YK_OPT_SPRING_DIV);
+    vel[0] += (dx - vel[0]) * YK_OPT_SPRING_DAMP;
+    vel[1] += (dy - vel[1]) * YK_OPT_SPRING_DAMP;
+    pos[0] += vel[0];
+    pos[1] += vel[1];
+}
+
+int yk_option_home_from_player(int character, int cell, const float player_xy[2], float out[2])
+{
+    if (!player_xy) return 0;
+    if (!yk_option_home_xy(character, cell, out)) return 0;
+    out[0] += player_xy[0];
+    out[1] += player_xy[1];
+    if (out[1] < YK_OPT_HOME_Y_MIN) out[1] = YK_OPT_HOME_Y_MIN;   /* `th08:0x44e770` 的 `y` 下限 */
     return 1;
 }
 
@@ -166,18 +232,30 @@ int32_t yk_shot_tier_damage(int tier)
     return yk_shot_damage[tier];
 }
 
-int yk_bullet_is_youkai(uint32_t packed_id)
+int yk_set_is_youkai(uint32_t set, const yk_sets_t *s)
+{
+    /* ★ 2026-09-22：判据 = `set` 等于 `0x16`，**或**落在逐档组那一片 `[tier_first, +tier_count)`
+     * 里。必须**精确**（不能写成一个宽区间）：`0x17..0x27` 是 77/116/117 的组、`0x28..0x47` 是
+     * 113/111 的组 —— 宽区间会把它们的弹也认成妖侧弹、套上 TH08 的伤害表（静默改别人的卡）。*/
+    if (s == 0) return 0;                                /* 没给集合 ⇒ 什么都**不是**我们的（安全侧）*/
+    if (s->tier_count == 0u) return (int)(set == s->single);
+    if (set == s->single) return 1;
+    return set >= s->tier_first && set < s->tier_first + s->tier_count;
+}
+
+int yk_bullet_is_youkai(uint32_t packed_id, const yk_sets_t *s)
 {
     /* 只看**打包 id 的 set 字节**（`(packed_id >> 8) & 0xff`）。引擎只为我们那一组里**存在的行**
      * 发弹（`0x40a9c0` 的行循环 + `0x40aa7d or eax,edi` 打包），所以行号不需要再夹
      * `YK_SHOT_SET_YOUKAI_ROWS` —— 换 index 也好、改组内行数也好，这一条判据都自洽。*/
-    return (int)((packed_id >> 8) & 0xffu) == YK_SHOT_SET_YOUKAI;
+    return yk_set_is_youkai((packed_id >> 8) & 0xffu, s);
 }
 
-int yk_bullet_damage_apply(int32_t current, uint32_t packed_id, int power, int32_t *out)
+int yk_bullet_damage_apply(int32_t current, uint32_t packed_id, int power,
+                           const yk_sets_t *s, int32_t *out)
 {
     int32_t want;
-    if (!yk_bullet_is_youkai(packed_id)) return 0;       /* 人侧弹 / 别的卡的弹一律不碰 */
+    if (!yk_bullet_is_youkai(packed_id, s)) return 0;    /* 人侧弹 / 别的卡的弹一律不碰 */
     want = yk_shot_tier_damage(yk_shot_tier(power));
     if (want == YK_SHOT_DMG_NOT_SET) return 0;           /* 占位：档位表还是空的 ⇒ 不覆盖 */
     if (want == current) return 0;
@@ -237,6 +315,7 @@ void yk_map_reset(yk_map_t *m)
         m->e[i].active = 0;
         m->e[i].broken = 0;
         m->e[i].fam_seen = 0;
+        m->e[i].no_fam_frames = 0;
     }
 }
 
@@ -246,6 +325,11 @@ unsigned yk_map_fam_count(const yk_map_t *m)
     if (!m) return 0;
     for (i = 0; i < YK_FAM_MAX; ++i) if (m->e[i].fam_id) ++n;
     return n;
+}
+
+unsigned yk_map_heals(const yk_map_t *m)
+{
+    return m ? m->heals : 0u;
 }
 
 yk_slot_t *yk_map_find(yk_map_t *m, uint32_t enemy_id, int slot)
@@ -283,6 +367,7 @@ static yk_slot_t *yk_map_alloc(yk_map_t *m, uint32_t enemy_id, int slot)
         m->e[i].slot = (uint8_t)slot;
         m->e[i].broken = 0;
         m->e[i].fam_seen = 0;
+        m->e[i].no_fam_frames = 0;
         return &m->e[i];
     }
     return 0;                                             /* 表满：放弃这个槽（卡侧记日志）*/
@@ -336,7 +421,22 @@ int yk_note_slot(yk_map_t *m, uint32_t enemy_id, int slot, int active, const flo
 
     /* 发射口被 ECL 重新武装（`etNew(i)` 清零 → `etSprite(i)` 写 type，spec §6.3）⇒ 「打破」复位。
      * 「下一波要重开」这条就是这么自动成立的（review §6.3 末）。*/
-    if (active && !was_active) { e->broken = 0; e->fam_seen = 0; }  /* ★ ECL 重新武装 ⇒ 关闸复位 */
+    if (active && !was_active) { e->broken = 0; e->fam_seen = 0; e->no_fam_frames = 0; }  /* ★ ECL 重新武装 ⇒ 关闸复位 */
+
+    /* ★★ 2026-09-22（#7）：**闸的到期自愈**（常量与三条理由见 `youkai_core.h`）。
+     * 判据 = 「记忆里有使魔、当前没有」，也就是闸夹着的那个状态本身；连续 `YK_EMIT_BROKEN_TTL`
+     * 帧都这样 ⇒ 无条件放开（清 `fam_seen` 让闸放行、清 `broken` 让 1:1 映射把它建回来）。
+     * ⚠ 放在**边沿复位之后**：真被重新武装过的那一帧按上面的边沿处理，不记年龄。*/
+    if (e->fam_seen && !e->fam_id) {
+        if (e->no_fam_frames < YK_EMIT_BROKEN_TTL) ++e->no_fam_frames;
+        if (e->no_fam_frames >= YK_EMIT_BROKEN_TTL) {
+            e->fam_seen = 0;                              /* 闸放行 */
+            e->broken = 0;                                /* 允许重建（下面那条分支本帧就建）*/
+            ++m->heals;                                   /* ★ 记账：卡侧每帧读一次打日志（#7 验收）*/
+        }
+    } else {
+        e->no_fam_frames = 0;
+    }
 
     /* 状态差分：不活跃且有使魔 → 撤。*/
     if (!active && e->fam_id) {
@@ -376,6 +476,7 @@ int yk_frame_end(yk_map_t *m, yk_action_t *out, int max)
         e->active = 0;
         e->broken = 0;
         e->fam_seen = 0;
+        e->no_fam_frames = 0;
     }
     return n;
 }
@@ -386,6 +487,7 @@ void yk_fam_created(yk_map_t *m, uint32_t enemy_id, int slot, uint32_t fam_id)
     if (!e) return;
     e->fam_id = fam_id;
     e->fam_seen = 1;                                      /* ★ 关闸的「曾经有过」记忆 */
+    e->no_fam_frames = 0;                                 /* ★ 建回来了 ⇒ 闸的年龄归零（#7）*/
     e->prev_life = YK_LIFE_UNSAMPLED;                     /* 新使魔：下一帧才允许出 delta */
 }
 
@@ -394,6 +496,7 @@ int yk_fam_broken(yk_map_t *m, uint32_t fam_id)
     yk_slot_t *e = yk_map_find_fam(m, fam_id);
     if (!e) return 0;
     e->fam_id = 0;
+    e->no_fam_frames = 0;                                 /* ★ #7：从「它没了的这一刻」开始计闸的年龄 */
     e->prev_life = YK_LIFE_UNSAMPLED;
     /* ★ 「打死使魔 ⇒ 关掉那个发射口」的**近似**：真正的关槽要 hook `0x434019`（`etOn` 里 `push eax`
      * 前，`esi = enemy + i*0x488` 可反推 `i`）—— 那是**新断点**（sites.py，本卡不能加）。
@@ -408,6 +511,7 @@ void yk_fam_gone(yk_map_t *m, uint32_t fam_id)
     yk_slot_t *e = yk_map_find_fam(m, fam_id);
     if (!e) return;
     e->fam_id = 0;
+    e->no_fam_frames = 0;                                 /* ★ #7：同上（松手那一刻重新计年龄）*/
     e->prev_life = YK_LIFE_UNSAMPLED;
     /* ★ 2026-09-12：这里**不能**置 `broken`（试过，直接把既有的「静默移除 ⇒ 下一帧补建」断言打红）。
      * 理由：`broken` 唯一的复位口是 `yk_note_slot` 的 inactive→active 边沿，而本函数处理的是
@@ -442,7 +546,9 @@ int yk_shot_slot_suppressed(const yk_map_t *m, uint32_t enemy_id, int slot, uint
      * ① 从没建过（`fam_seen == 0`，含「建被排到下一个 on_tick_2」）⇒ **放行**，
      *    否则第一帧就把槽掐死、永远建不出来。
      * ⚠ 复位口 = `yk_note_slot` 的 inactive→active 边沿（ECL 重新武装）+ `yk_map_reset`
-     *    （删卡 / 松开低速 / 局末 / 断链）—— 后者保证「删卡后敌人不哑火」。 */
+     *    （删卡 / 松开低速 / 局末 / 断链）+ ★ **`YK_EMIT_BROKEN_TTL` 帧的到期自愈**
+     *    （2026-09-22 加，见 `youkai_core.h` 那段：没有它，一个持续活跃、ECL 不再 `etNew` 的发射口
+     *    会**永久哑火** —— 那就是 th08 #7 的现象）。 */
     return e->fam_seen ? 1 : 0;
 }
 

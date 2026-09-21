@@ -249,11 +249,16 @@ APPEND = [
 #   `+0x1c..+0x1f` / `+0x3c..+0x4b` / `+0x50..+0x5b` = 0（TH18 原生 268 行全 0 的字段）。
 #   ❓ TH08 的 `rec[+0x1e]`（`side`，ply00as 是 ±20..50、ply03as 全 0）与 `rec[+0x22]`（弹种，
 #      本档全 0 = 普通命中）在 TH18 记录里**没有对应字段** ⇒ 不翻译。
-def _yk_row(rate, damage, dx, angle, sfx):
-    """一行 = 一个 TH18 shooter 记录 dict（字段名见 pack_shooter）。"""
+def _yk_row(rate, damage, dx, angle, sfx, speed=12.0, dy=0.0):
+    """一行 = 一个 TH18 shooter 记录 dict（字段名见 pack_shooter）。
+
+    ★ 2026-09-22：加了 `speed` / `dy` 两个可选参数 —— 原版 TH08 的 `plyNNas.sht` **每行有自己的
+    弹速**（`+0x18`：紫 12/10、アリス 24/10、レミリア 20/12），第一版把它们全写死成 12.0
+    只是「当时那一档恰好全是 12」的巧合。`dy` 同理（本批 4 个文件的所有行都是 0.0，
+    参数留着是为了「照抄」而不是「假设」）。既有 `REPLACE` 的调用点不传 ⇒ 行为逐字节不变。"""
     return dict(fire_rate=rate, start_delay=0, damage=damage,
-                spawn_dx=dx, spawn_dy=0.0, hit_w=16.0, hit_h=16.0,
-                angle=angle, speed=12.0, opt_slot=0, mode=0,
+                spawn_dx=dx, spawn_dy=dy, hit_w=16.0, hit_h=16.0,
+                angle=angle, speed=speed, opt_slot=0, mode=0,
                 anm=21, sfx=sfx, hit_fx=0, fire_rate2=0, start_delay2=0,
                 func_on_init=0, func_on_tick=0, func_on_draw=0, func_on_hit=0)
 
@@ -273,6 +278,145 @@ REPLACE = [
         _yk_row(rate=5,  damage=24, dx=0.0,   angle=-1.431170, sfx=-1),   # row7 anm4 子机2
         _yk_row(rate=6,  damage=22, dx=0.0,   angle=-1.291544, sfx=-1),   # row8 anm6 子机2 最外右
     ]),
+]
+
+
+# ============================================================================
+# ★★ 2026-09-22（P4 · th08 #5「妖侧子机发射的弹幕都相同」）：**逐角色 × 逐火力档**的妖侧
+#    shooterset，照抄 TH08 的 `plyNNas.sht`。
+#
+# ## 一手（怎么得到这张表的）
+#
+# 1. **TH08 的 `.sht` 是「组 = 火力档」**，一手落点（全在 `th08.exe`）：
+#    `th08:0x450f60`（唯一生成器，`Player::UpdateChargeShotTimer` `th08:0x451595` 每帧调）
+#    起手 `th08:0x450f6f movzx ecx,BYTE PTR [eax+0x3]` = **`player+0x3` = `isYoukaiMode`**
+#    ⇒ 0 取 `player+0xe2a74`（= `plyNNa.sht`，人侧）、非 0 取 `player+0xe2a78`（= `plyNNas.sht`，**妖侧**）；
+#    `th08:0x450f80/0x450f91 add eax,0x38` = 跳过 0x38 的头，落在**槽数组**首项；
+#    档位循环在 `th08:0x451005`–`0x451020`：
+#        ```
+#        451005  mov ecx,0x160f508 ; GameManager
+#        45100a  call 0x422480     ; = GameManager::get_current_power
+#        451012  cmp eax,[ecx+0x4] ; ★ 槽的第 2 个 dword = 该档的**火力阈值**
+#        451015  jl  0x451022      ; 未达阈值 ⇒ 停在这一档
+#        45101a  add edx,0x8       ; 达阈值 ⇒ 换下一档（槽 8 字节一项）
+#        ```
+#    ⇒ **槽号 = 火力档**，阈值存在槽的 `+0x4`：实测三个文件都是 `8 / 24 / 48 / 80 / 128 / 999`。
+#    （`999` 那一档在 TH08 里**够不到** —— 本作 P 上限 128 ⇒ slot 5 + 之后是死亡炸弹/别的用途，
+#      本批**不用**。）
+# 2. **行的字段**（`+0x38` 一项）：本脚本读的是 `+0x00 rate / +0x04 dx / +0x08 dy / +0x14 angle /
+#    +0x18 speed / +0x1c damage / +0x26 sfx`（字段图与读点见
+#    `engine/player/th08/01-youkai-familiars-first-hand.md` §4.2，**代码坐实**那一版）。
+#    本批是**离线一次性提取**后把数字抄进来的（照 `HYPER_TEMPLATE_*` 的先例：产物进仓、
+#    `local/` 的样本不进仓 ⇒ 别人 clone 下来也能 `make sht`）。
+#    提取命令与逐行读数见 `engine/sht/th08/01-youkai-shootersets.md`。
+# 3. **映射到 TH18 的火力档**：两作的 P 显示单位都是 x.xx、上限 4.00
+#    （TH08 `P/32`、TH18 `P/100`）⇒ TH18 的档 `k`（P = 100k）折算成 TH08 的 P = 32k，
+#    查上面的阈值 ⇒ **正好落在 slot k**（0→slot0 <8、100→32≥24 slot1、200→64≥48 slot2、
+#    300→96≥80 slot3、400→128≥128 slot4）⇒ **`TH18 档 k ↔ TH08 slot k`，一一对应**。
+#    ⇒ 本表的下标 = TH18 的 `CURRENT_POWER / 100`（= 卡侧的 `yk_shot_tier()`）。
+#
+# ## 与既有 `REPLACE(YOUKAI, 0x16)` 的关系
+#
+# `0x16` 那一格**保留**（pl03 = 早苗 的回落档：她的妖侧是 TH16 的射命丸文，
+# 本批**没有** TH16 的一手行数据 ⇒ 见报告的 🔴 待办）。三个 TH08 角色走下面的新槽。
+# 生成序列里**必须排最后**（= `N_RETAIL + 序号`，见 `sets_for_file` 的注）。
+#
+# ## 已知偏差（❓ 记账，不改数字硬凑）
+#
+# - **膛口**：TH08 的每行带 `+0x20` = 从哪一架子机出膛（紫 0/1、アリス 0/1、レミリア 0..4），
+#   而 TH18 的**卡路径恒用传进来的那颗子机的坐标**（`0x40aa0c`/`0x40aa21` 一手：膛口只算一次）
+#   ⇒ 本批照既有 `_yk_row` 的口径填 `opt_slot = 0`，一行不落地**全从同一架子机出膛**。
+#   行数 / 角度 / 速度 / 伤害 / 节奏全部照抄 ⇒ 「同角色同档的弹幕形状」对，**多子机的横向分布**不对。
+# - **贴图**：`+0x22` 填 21（= 原生 `ability.anm` 的合法弹脚本，与既有 `YOUKAI` 那一格同源）；
+#   TH08 用的是它自己 `pl0X.anm` 的 2/4/6/12/14…，数字空间不同（`0x40aa03` 一手：
+#   卡路径把 `player+0x10` 换成 `ability.anm`）⇒ 要把 TH08 的弹贴图切进 `ability.anm` 才谈得上，见报告 ❓。
+# - **`+0x0c/+0x10`（判定盒）**：TH08 有数据（18×48 / 24×16）但全 exe 只有写点、没有读点
+#   ⇒ 照原生同形组填 `(16, 16)`（与既有 `YOUKAI` 那一格同口径）。
+# ---- 霊夢 / 八雲紫（TH08 `ply00as.sht` 的 slot 0..4 = 火力档 0..4）----
+YOUKAI_TIERS_R = [
+    [   # tier 0（TH08 阈值 8）
+        _yk_row(rate=5, damage=48, dx=0.0, angle=-1.570796, sfx=0, speed=12.0, dy=0.0),
+        _yk_row(rate=5, damage=24, dx=0.0, angle=-1.570796, sfx=-1, speed=10.0, dy=0.0),
+    ],
+    [   # tier 1（TH08 阈值 24）
+        _yk_row(rate=5, damage=48, dx=0.0, angle=-1.570796, sfx=0, speed=12.0, dy=0.0),
+        _yk_row(rate=5, damage=24, dx=0.0, angle=-1.570796, sfx=-1, speed=10.0, dy=0.0),
+    ],
+    [   # tier 2（TH08 阈值 48）
+        _yk_row(rate=5, damage=30, dx=-8.0, angle=-1.570796, sfx=0, speed=12.0, dy=0.0),
+        _yk_row(rate=5, damage=30, dx=8.0, angle=-1.570796, sfx=-1, speed=12.0, dy=0.0),
+        _yk_row(rate=5, damage=24, dx=0.0, angle=-1.570796, sfx=-1, speed=10.0, dy=0.0),
+    ],
+    [   # tier 3（TH08 阈值 80）
+        _yk_row(rate=5, damage=30, dx=-8.0, angle=-1.570796, sfx=0, speed=12.0, dy=0.0),
+        _yk_row(rate=5, damage=30, dx=8.0, angle=-1.570796, sfx=-1, speed=12.0, dy=0.0),
+        _yk_row(rate=5, damage=19, dx=0.0, angle=-1.53589, sfx=-1, speed=10.0, dy=0.0),
+        _yk_row(rate=5, damage=19, dx=0.0, angle=-1.605703, sfx=-1, speed=10.0, dy=0.0),
+    ],
+    [   # tier 4（TH08 阈值 128）
+        _yk_row(rate=5, damage=22, dx=-16.0, angle=-1.570796, sfx=0, speed=12.0, dy=0.0),
+        _yk_row(rate=5, damage=24, dx=0.0, angle=-1.570796, sfx=-1, speed=12.0, dy=0.0),
+        _yk_row(rate=5, damage=22, dx=16.0, angle=-1.570796, sfx=-1, speed=12.0, dy=0.0),
+        _yk_row(rate=5, damage=19, dx=0.0, angle=-1.53589, sfx=-1, speed=10.0, dy=0.0),
+        _yk_row(rate=5, damage=19, dx=0.0, angle=-1.605703, sfx=-1, speed=10.0, dy=0.0),
+    ],
+]
+# ---- 魔理沙 / アリス（TH08 `ply01as.sht` 的 slot 0..4 = 火力档 0..4）----
+YOUKAI_TIERS_M = [
+    [   # tier 0（TH08 阈值 8）
+        _yk_row(rate=2, damage=7, dx=0.0, angle=-1.570796, sfx=-1, speed=10.0, dy=0.0),
+        _yk_row(rate=5, damage=10, dx=0.0, angle=-1.570796, sfx=0, speed=24.0, dy=0.0),
+    ],
+    [   # tier 1（TH08 阈值 24）
+        _yk_row(rate=4, damage=7, dx=0.0, angle=-1.570796, sfx=-1, speed=10.0, dy=0.0),
+        _yk_row(rate=5, damage=10, dx=0.0, angle=-1.570796, sfx=0, speed=24.0, dy=0.0),
+    ],
+    [   # tier 2（TH08 阈值 48）
+        _yk_row(rate=6, damage=7, dx=0.0, angle=-1.570796, sfx=-1, speed=10.0, dy=0.0),
+        _yk_row(rate=5, damage=10, dx=0.0, angle=-1.570796, sfx=0, speed=24.0, dy=0.0),
+    ],
+    [   # tier 3（TH08 阈值 80）
+        _yk_row(rate=8, damage=7, dx=0.0, angle=-1.570796, sfx=-1, speed=10.0, dy=0.0),
+        _yk_row(rate=5, damage=10, dx=0.0, angle=-1.570796, sfx=0, speed=24.0, dy=0.0),
+    ],
+    [   # tier 4（TH08 阈值 128）
+        _yk_row(rate=12, damage=7, dx=0.0, angle=-1.570796, sfx=-1, speed=10.0, dy=0.0),
+        _yk_row(rate=5, damage=10, dx=0.0, angle=-1.570796, sfx=0, speed=24.0, dy=0.0),
+    ],
+]
+# ---- 咲夜 / レミリア（TH08 `ply02as.sht` 的 slot 0..4 = 火力档 0..4）----
+YOUKAI_TIERS_S = [
+    [   # tier 0（TH08 阈值 8）
+        _yk_row(rate=5, damage=36, dx=0.0, angle=-1.570796, sfx=0, speed=20.0, dy=0.0),
+        _yk_row(rate=10, damage=26, dx=0.0, angle=-1.570796, sfx=-1, speed=12.0, dy=0.0),
+        _yk_row(rate=10, damage=26, dx=0.0, angle=-1.570796, sfx=-1, speed=12.0, dy=0.0),
+    ],
+    [   # tier 1（TH08 阈值 24）
+        _yk_row(rate=5, damage=36, dx=0.0, angle=-1.570796, sfx=0, speed=20.0, dy=0.0),
+        _yk_row(rate=5, damage=26, dx=0.0, angle=-1.570796, sfx=-1, speed=12.0, dy=0.0),
+        _yk_row(rate=5, damage=26, dx=0.0, angle=-1.570796, sfx=-1, speed=12.0, dy=0.0),
+    ],
+    [   # tier 2（TH08 阈值 48）
+        _yk_row(rate=3, damage=25, dx=0.0, angle=-1.570796, sfx=0, speed=20.0, dy=0.0),
+        _yk_row(rate=30, damage=30, dx=0.0, angle=-1.570796, sfx=-1, speed=12.0, dy=0.0),
+        _yk_row(rate=5, damage=20, dx=0.0, angle=-1.570796, sfx=-1, speed=12.0, dy=0.0),
+        _yk_row(rate=5, damage=20, dx=0.0, angle=-1.570796, sfx=-1, speed=12.0, dy=0.0),
+        _yk_row(rate=30, damage=30, dx=0.0, angle=-1.570796, sfx=-1, speed=12.0, dy=0.0),
+    ],
+    [   # tier 3（TH08 阈值 80）
+        _yk_row(rate=3, damage=25, dx=0.0, angle=-1.570796, sfx=0, speed=20.0, dy=0.0),
+        _yk_row(rate=15, damage=23, dx=0.0, angle=-1.570796, sfx=-1, speed=12.0, dy=0.0),
+        _yk_row(rate=5, damage=20, dx=0.0, angle=-1.570796, sfx=-1, speed=12.0, dy=0.0),
+        _yk_row(rate=5, damage=20, dx=0.0, angle=-1.570796, sfx=-1, speed=12.0, dy=0.0),
+        _yk_row(rate=15, damage=23, dx=0.0, angle=-1.570796, sfx=-1, speed=12.0, dy=0.0),
+    ],
+    [   # tier 4（TH08 阈值 128）
+        _yk_row(rate=3, damage=25, dx=0.0, angle=-1.570796, sfx=0, speed=20.0, dy=0.0),
+        _yk_row(rate=10, damage=22, dx=0.0, angle=-1.570796, sfx=-1, speed=12.0, dy=0.0),
+        _yk_row(rate=5, damage=21, dx=0.0, angle=-1.570796, sfx=-1, speed=12.0, dy=0.0),
+        _yk_row(rate=5, damage=21, dx=0.0, angle=-1.570796, sfx=-1, speed=12.0, dy=0.0),
+        _yk_row(rate=10, damage=22, dx=0.0, angle=-1.570796, sfx=-1, speed=12.0, dy=0.0),
+    ],
 ]
 
 
@@ -1182,6 +1326,37 @@ def check_bullet_scripts_have_layer(anm_ids: dict) -> None:
                          + "\n  ".join(bad))
 
 
+# ---- 生成：逐角色 × 逐火力档的妖侧组（P4 · th08 #5；数据表与一手的全文见上面那一大段注释）----
+# 名字 = `YOUKAI_<角色后缀><档>`：后缀 R/M/S 分别对应 **TH08 的角色 0/1/2**
+# （`ply00as`=霊夢・八雲紫 / `ply01as`=魔理沙・アリス / `ply02as`=咲夜・レミリア）。
+# 生成序列里的**下标即槽号**（`N_RETAIL + 序号`）⇒ 四个文件必须产出**同长度同名字**的序列，
+# 只有**行内容**按文件不同（照 `_hyper_sets` 的先例：117 的 WOLF/EAGLE 也是逐文件取内容）。
+# 卡侧按 (角色, 火力档) 选名字（`cards/youkai.c` 的 `yk_shot_set_for()`），
+# 顺序被 `_Static_assert(CE_SHT_SET_YOUKAI_M0 == CE_SHT_SET_YOUKAI_R0 + 5)` 钉死。
+YOUKAI_TIER_FILES = {                    # TH18 文件 → TH08 的哪一份（None = 本批没有一手数据）
+    "pl00.sht": "R",
+    "pl01.sht": "M",
+    "pl02.sht": "S",
+    "pl03.sht": None,                    # 早苗的妖侧是 TH16 射命丸文 ⇒ 回落 `REPLACE(YOUKAI, 0x16)`
+}
+YOUKAI_TIER_SUFFIXES = ("R", "M", "S")
+YOUKAI_TIER_TABLES = {"R": YOUKAI_TIERS_R, "M": YOUKAI_TIERS_M, "S": YOUKAI_TIERS_S}
+
+
+def _youkai_tier_sets(target_file: str, anm_ids: dict) -> list:
+    """该文件的 15 组（3 角色 × 5 档）。pl03 上全是**空组**（只有终止符）⇒
+    卡侧 `yk_shotset_usable()` 读到 −1 ⇒ 回落到 `CE_SHT_SET_YOUKAI`（0x16）。"""
+    suf = YOUKAI_TIER_FILES.get(target_file)
+    out = []
+    for k in YOUKAI_TIER_SUFFIXES:
+        tiers = YOUKAI_TIER_TABLES[k] if k == suf else None
+        for t in range(5):
+            rows = (tiers[t] if tiers is not None else [])
+            out.append((f"YOUKAI_{k}{t}",
+                        b"".join(pack_shooter(r, anm_ids) for r in rows) + TERMINATOR))
+    return out
+
+
 def sets_for_file(target_file: str, anm_ids: dict) -> list:
     # ★ **顺序即槽号**（`N_RETAIL + 序号`）⇒ 111 的五组必须排在最后：插在中间会让
     #   117 的 WOLF/EAGLE 十个槽整体移位（`animal_core.h` 的槽号是写死的 ⇒ 静默错弹）。
@@ -1189,7 +1364,10 @@ def sets_for_file(target_file: str, anm_ids: dict) -> list:
     #   名字取 `TRANCE` ⇒ `write_ids_h` 产出 `CE_SHT_SET_TRANCE`（卡侧只认这一个常量）。
     return (_common_sets(anm_ids) + _hyper_sets(target_file, anm_ids)
             + [("TRANCE", trance_blob(target_file, anm_ids))]
-            + _marisa_formation_sets(anm_ids))
+            + _marisa_formation_sets(anm_ids)
+            # ★ 2026-09-22：妖侧的 15 组**排在最末**（下标 = 槽号 ⇒ 插在中间会把 111 的
+            #   `MARISA_OPT_*` 与 117 的 WOLF/EAGLE 整体移位，那是静默错弹）。
+            + _youkai_tier_sets(target_file, anm_ids))
 
 
 def _alloc_names(sets: list) -> list:

@@ -131,6 +131,69 @@ typedef struct {
  * 返回 1 = 填好 `*out`；0 = 参数越界（`*out` 不动）。**无浮点运算**（纯查表搬运）。*/
 int yk_option_offsets(int character, int count, int cell, yk_opt_off_t *out);
 
+/* ============================================================ ★★ th08 #1：妖侧子机的**位置**
+ * >> 2026-09-22（P4）。owner 单卡实跑 #1：「灵梦机体妖子机本身应当追踪上去」。
+ *
+ * **一手（原作怎么做）**：TH08 的妖侧子机**位置是逐机体写死的代码**，不是数据表 ——
+ * 引擎在进/出低速那一帧把两个回调装进每个子机（`th08:0x44b0ac` 一带）：
+ *   生成回调 `g_OptionInitCallbacks[character][i]` @ `th08:0x4c7d40`、
+ *   每帧回调 `g_OptionUpdateCallbacks[character][i]` @ `th08:0x4c7e10`
+ *（表是 8×4，前 4 行 = 四个机体；后 4 行是「单人模式」那一半）。逐角色读出来：
+ *
+ * | 机体 | 每帧回调 | 妖侧子机的位置 | 运动 |
+ * | --- | --- | --- | --- |
+ * | 0 霊夢・紫 | `th08:0x44e3a0` | **1 个：(0, −96)**（`th08:0x4b42c4` = 96.0），`y` 夹到 `>= 32`（`th08:0x4b42cc`）| **弹簧跟随**（`th08:0x44e770`）|
+ * | 1 魔理沙・アリス | `th08:0x44ea40` | **1 个：(0, −32)**（`y -= 32.0`）| **每帧直接吸附**（无速度）|
+ * | 2 咲夜・レミリア | `th08:0x44eb70` | **4 个**：`(−30,−16) (−10,−32) (+10,−32) (+30,−16)` | 每帧直接吸附 |
+ * | 3 妖夢・幽々子 | `th08:0x44f930` | 2 个（本卡不做：早苗的妖侧是 TH16 文）| — |
+ *
+ * 咲夜那 4 格来自 `th08:0x44eb70` 的**子机序号跳表** `th08:0x44ee4b` → 四个分支：
+ * `idx0 x-=30.0 y-=16.0` / `idx1 x-=10.0 y-=32.0` / `idx2 x+=10.0 y-=32.0` / `idx3 x+=30.0 y-=16.0`
+ *（常量 `th08:0x4b4534` = 30.0 / `th08:0x4b4390` = 10.0 / `th08:0x4b42d4` = 16.0 / `0x4b42cc` = 32.0）。
+ *
+ * **弹簧的逐步式**（`th08:0x44e770`，逐指令）：
+ * ```
+ * delta = (goal − pos) * (K / 16.0)      ; K = ds:0x4b4338 = 1.0、16.0 = 0x41800000，见 th08:0x40b470
+ * vel  += (delta − vel) * 0.2            ; 0x3e4ccccd
+ * pos  += vel                            ; th08:0x410a70 两次（先累加 vel，再把 vel 加到 pos）
+ * ```
+ * 其中 `goal = 自机坐标 + 该格的家偏移`（`y` 先夹到 `>= 32`）；这是**跟随自机时**的目标。
+ *
+ * ⚠ **一条一手负结论（很重要，别把它当漏做）**：TH08 的 `0x44e3a0` 里**还有一条「追敌人」分支**
+ *   （子状态 3 → `th08:0x44e8d0`，目标 = `player+0xe2abc` 指向那只敌人的坐标），**但它在 v1.00d
+ *   里够不到**：`player+0xe2abc` 全 exe 只有两处写点、**写的都是 0**（`th08:0x44e455` /
+ *   `th08:0x44e6d3`），没有任何地方写入过目标指针（同一字段的 10 处引用逐条看过：8 读 + 2 写 0；
+ *   子机弹那道"锁定追踪"`th08:0x450240` 的 `0x450279` 也读同一个字段 ⇒ 同样够不到）。
+ *   ⇒ **Reimu 的妖侧子机在 v1.00d 不会追敌人**；「追踪」= **弹簧跟随自机**（会滞后，看得见）。
+ *   ⇒ 本卡按这条实现，**不做**追敌人（见报告 §#1）。
+ *
+ * 本卡的落点：`on_option_pose_apply` 每帧把**弹簧算出来的位置 − 自机坐标**写进聚焦偏移字段
+ *   ⇒ 引擎照旧 `pos = 自机 + 偏移`（`th18:0x45bce8`–`0x45bd08`），观感 = TH08 的滞后跟随。
+ *   只有机体 0 需要状态（`yk_opt_spring_state_t`）；另两个机体一帧内就吸附到位 ⇒ 静态偏移即可。*/
+#define YK_OPT_SPRING_K      1.0f     /* `ds:0x4b4338`（= 1.0）*/
+#define YK_OPT_SPRING_DIV    16.0f    /* `th08:0x44e770` 压的那个 16.0（`0x41800000`）*/
+#define YK_OPT_SPRING_DAMP   0.2f     /* `0x3e4ccccd` */
+#define YK_OPT_HOME_Y_MIN    32.0f    /* `0x4b42cc`：家位置的 y 下限（TH08 把子机压在屏上沿以下）*/
+#define YK_OPT_HOME_Y_REIMU  (-96.0f) /* `0x4b42c4` = 96.0，`y -= 96` */
+#define YK_OPT_HOME_Y_MARISA (-32.0f)
+#define YK_OPT_HOME_X_SAKUYA_INNER (-30.0f)  /* `0x4b4534` = 30.0 */
+#define YK_OPT_HOME_X_SAKUYA_OUTER (-10.0f)  /* `0x4b4390` = 10.0 */
+#define YK_OPT_HOME_Y_SAKUYA_OUTER (-16.0f)  /* `0x4b42d4` = 16.0 */
+
+/* 某一格的家偏移（像素，屏幕空间、+y = 下）。`character` 越界（含早苗 3）⇒ 返回 0 = 没有一手数据
+ *（调用者回落到 TH18 原生阵型表 `YK_OPT_BLOCK`）。 */
+int yk_option_home_xy(int character, int cell, float out[2]);
+
+/* 只有机体 0 走弹簧（TH08 `0x44e3a0` 的 `th08:0x44e770`）；其余机体每帧直接吸附。 */
+int yk_option_uses_spring(int character);
+
+/* 弹簧一步（**就地**更新 pos / vel；`goal` = 家位置）。逐步式与常量见上面那段。 */
+void yk_opt_spring_step(float pos[2], float vel[2], const float goal[2]);
+
+/* 家位置 = 自机坐标 + `yk_option_home_xy`，并把 `y` 夹到 `>= YK_OPT_HOME_Y_MIN`
+ *（TH08 `th08:0x44e770` 里那一步；`character` 没有一手数据 ⇒ 返回 0、`out` 不动）。*/
+int yk_option_home_from_player(int character, int cell, const float player_xy[2], float out[2]);
+
 /* 声明的脚本和手里那个子机的脚本不一样 ⇒ 必须重申请（脚本是申请时定死的）。
  * `have < 0` = 手里还没有子机 ⇒ 不算「变了」。 */
 int yk_option_script_changed(int want, int have);
@@ -165,12 +228,36 @@ int yk_option_script_changed(int want, int have);
  * 而 `0x40a9c0` 的 `idiv` 在 `0x40aa4f` 没有零分支）。逐字段出处见该脚本的 `REPLACE` 注释。*/
 #define YK_SHOT_SET_YOUKAI       0x16
 #define YK_SHOT_SET_YOUKAI_ROWS  9      /* 那组有几行（行号进 `packed_id` 低 8 位；认出妖侧弹只看 set 字节）*/
+
+/* ★★ 2026-09-22（P4 · th08 #5「妖侧子机发射的弹幕都相同、火力约 4P」）：
+ * **妖侧不再只有一格** —— 现在是「**逐角色 × 逐火力档**」的 15 格（照抄 TH08 `plyNNas.sht`
+ * 的 slot 0..4，一手见 `engine/sht/th08/01-youkai-shootersets.md`），`0x16` 那一格**保留**
+ * （早苗的妖侧是 TH16 射命丸文，本批没有一手行数据 ⇒ 她回落到 `0x16`）。
+ *
+ * 槽号由生成物 `native/sht_ids.h` 给出（`CE_SHT_SET_YOUKAI_R0..S4`），纯逻辑层**不 include
+ * 生成物**（要保持「只 <stdint.h>、能主机单测」）⇒ 把这三个数**由调用者传进来**。
+ * `YK_SETS_SINGLE_ONLY` = 只有 `0x16` 那一格（旧行为；单测与「生成物没到」的场合用）。*/
+typedef struct {
+    uint32_t single;       /* `0x16`（原生唯一无卡映射的一格；早苗回落用）*/
+    uint32_t tier_first;   /* 15 格的第一格（`CE_SHT_SET_YOUKAI_R0`）*/
+    uint32_t tier_count;   /* 15（`tier_count == 0` = 没有逐档组，只看 `single`）*/
+} yk_sets_t;
+
+#define YK_SETS_SINGLE_ONLY(single_)  { (single_), 0u, 0u }
+/* 逐档组的格数 = 3 个 TH08 角色（霊夢/魔理沙/咲夜）× YK_SHOT_TIERS 档。
+ * ⚠ 生成器（`assets/sht/append_shooterset.py` 的 `_youkai_tier_sets`）与卡侧**各自**写死
+ *   这个布局 ⇒ 两边各有一条对账：Python 侧按名字顺序生成、C 侧用 `_Static_assert` 钉槽号。*/
+#define YK_YOUKAI_TIER_SETS  (3 * YK_SHOT_TIERS)
+
+/* `set` 是不是本卡的妖侧组（`s == NULL` ⇒ 退回「只看 `single`」）。 */
+int     yk_set_is_youkai(uint32_t set, const yk_sets_t *s);
 int     yk_shot_tier(int power);
 int32_t yk_shot_tier_damage(int tier);
 /* 打包 id = `(set << 8) | 组内行号`（`0x45ec69` 打包 / `0x45ee10` 回读）。 */
-int     yk_bullet_is_youkai(uint32_t packed_id);
+int     yk_bullet_is_youkai(uint32_t packed_id, const yk_sets_t *s);
 /* 1 = 要覆盖；*out = 覆盖后的值（档位表是占位 0 时恒返回 0）。 */
-int     yk_bullet_damage_apply(int32_t current, uint32_t packed_id, int power, int32_t *out);
+int     yk_bullet_damage_apply(int32_t current, uint32_t packed_id, int power,
+                               const yk_sets_t *s, int32_t *out);
 /* 妖侧 shooterset 能不能用：记录首字节 = `fire_rate`（i8）。`0` ⇒ 资产没装（会除零）、`< 0` ⇒ 终止符。 */
 int     yk_shotset_usable(int fire_rate);
 
@@ -192,6 +279,35 @@ int     yk_shotset_usable(int fire_rate);
  *   ② 让「使魔可打 → 击破 → 关那个槽 → 1/2 转嫁」这条链在实跑里**一发就能验完**。
  *   定案后改这一行即可（`yk_clamp_spawn_life` 会拦住 >= 1000 的误填）。*/
 #define YK_FAM_LIFE       1
+
+/* ★★ 2026-09-22（P4 · th08 #7 「击破 boss 一个阶段后 boss 几乎不再发弹」的修法）：
+ * **发射口闸的自愈上限**。
+ *
+ * **发现**（代码 + 引擎事实）：闸的判据是「这一槽曾经有过我们的使魔、现在没了」，而它唯一的复位口
+ *   是 `yk_note_slot` 的 `props[i].type` **inactive→active 边沿**（= ECL 先 `etNew(i)` 清零 type、
+ *   再 `etSprite(i)` 写回；一手 `43404e` 那条 4 字节写 type）。**只要 ECL 不再走这条边沿，
+ *   那一槽就永久哑火**：闸恒返回 1（SDK 置 `retaddr = 0x43402d` ⇒ `etOn` 本帧不发射），
+ *   而且使魔也永远不重建（`broken` 挡着）。
+ *   这条路径在 boss 战里**必然发生**：boss 的发射口在整个阶段里往往**持续活跃**
+ *   （反复 `etOn`、中间不调 `etNew`），而我们的使魔（`YK_FAM_LIFE = 1` 占位值）几乎必然被打掉
+ *   （它钉在发射口上、与 boss 本体重叠 ⇒ 自机打 boss 的弹顺带就把它打死）⇒
+ *   击破一个阶段之后那些槽就再也不发弹 —— 正是 owner 报的现象。
+ *
+ * **修法（不改闸的语义，只给它加「到期」）**：一个槽进入「记忆里有使魔、当前没有」的状态后开始计数；
+ *   连续 `YK_EMIT_BROKEN_TTL` 帧都这样（既没重建成功、也没被重新武装）⇒ **无条件放开**：
+ *   清 `fam_seen`（闸放行）+ 清 `broken`（允许 1:1 映射把使魔建回来）。计数在 `yk_fam_created`
+ *   （重建成功）与「重新武装」边沿处归零。
+ *
+ * **为什么必须有**（三条独立理由，任一条成立就够）：
+ *   ① 复位口完全依赖 ECL 的写法 —— 那是**别人的数据**，不能假设它一定调 `etNew`；
+ *   ② 使魔建失败（表满 / 堆拒绝）也落在「记忆里有、当前没有」，而那**不是**「被打死」；
+ *      照旧夹着 = 一个与我们无关的运气事件让敌人永久哑火；
+ *   ③ 删卡 / 松低速 / 局末会走 `yk_map_reset` 放开，但**关卡中途**没有别的东西能放开。
+ *
+ * **代价（🟡 记账）**：原设计（spec §9.6）是「打掉使魔 ⇒ 那个发射口停火」**直到 ECL 重新武装**；
+ *   现在变成「停火至多 TTL 帧」。TTL 是本仓**自定**值（原作没有这条闸 ⇒ 没有一手可抄）⇒
+ *   已登记 `TUNING.md`。实跑若觉得「打掉使魔的收益窗口太短 / 太长」，只改这一个数。 */
+#define YK_EMIT_BROKEN_TTL 120   /* ❓ 自定：闸的自愈期限（帧，= 2 s @60fps）*/
 
 /* 槽位 → 使魔皮肤**变体**（0..3）。卡侧把变体映射到 `anm_ids.h` 的脚本宏（**不写死数字**）：
  * `CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_S53 + 变体`。
@@ -231,9 +347,21 @@ typedef struct {
                           *   与 `fam_id` 分开：`yk_fam_broken` / `yk_fam_gone` 都会清 `fam_id`，
                           *   但闸要一直夹到 ECL 重新武装（inactive→active 边沿）为止。
                           *   塞进原有 padding ⇒ `yk_slot_t` 仍是 24 B（单测有 sizeof 断言）。*/
+    uint16_t no_fam_frames; /* ★ 2026-09-22（#7）：`fam_seen == 1 && fam_id == 0` 已经连续多少帧
+                          *   （= 闸夹着、使魔又不在）。到了 `YK_EMIT_BROKEN_TTL` 就自愈
+                          *   （清 `fam_seen` + 清 `broken`）。归零口 = `yk_fam_created` /
+                          *   重新武装边沿 / 条目退休。**正好塞进 padding ⇒ 仍是 28 B**。*/
 } yk_slot_t;             /* 28 B × YK_FAM_MAX（2026-09-12 加 fam_seen 后 24→28，见该字段注）*/
 
-typedef struct { yk_slot_t e[YK_FAM_MAX]; } yk_map_t;
+typedef struct {
+    yk_slot_t e[YK_FAM_MAX];
+    uint32_t  heals;     /* ★ 2026-09-22（#7）：发射口闸自愈过几次（每自愈一格 +1，只增不清）。
+                          *   卡侧每帧读一次、与自己的快照比对后打日志 ⇒ 实跑里一眼看出
+                          *   「boss 不发弹」到底是闸夹死（heals 涨）还是别的原因。
+                          *   放在表尾（`yk_slot_t` 的布局不变）⇒ `sizeof(yk_map_t)` = 32×28+4 = 900 B。*/
+} yk_map_t;
+
+unsigned   yk_map_heals(const yk_map_t *m);      /* 自愈计数（#7 记账；NULL ⇒ 0）*/
 
 void       yk_map_reset(yk_map_t *m);
 unsigned   yk_map_fam_count(const yk_map_t *m);

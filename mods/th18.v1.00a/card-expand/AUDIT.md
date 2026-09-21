@@ -15914,3 +15914,1805 @@ sprite 到 **477**（脚本 / sprite 无上限，只是可见性登记）。**�
 7. **回放**：录一段「D 切 111 + 按 C 灵击」⇒ 重放能重现（C 在引擎掩码里）；
 8. **不崩**：连按 C（充能 1 帧 = 门槛极短）不应出现任何异常；买倒吊人删掉 111 ⇒ HUD 干净（本卡
    `on_delete` 未改，原有清理链照旧）。
+
+## §DU. ★★★ 112 的第六批：**P2 数值与实体**（#4 吸收速度 / #5 爆残碎卡 / #6 太脆 / #10 压缩包初速）（2026-09-21）
+
+> **来源**：`WORK-PACKAGES.md` §0 的 **P2** 工单 = `SINGLE-CARD-TEST.md` §th12 的 **#4 / #5 / #6 / #10**
+> （owner 单卡实跑原话）。**一手** = TH12 `local/th12.v1.00b/th12.exe`（objdump 逐条）+
+> TH18 `local/th18.v1.00a/th18.exe`。
+> **改动面** = `native/cards/ufo.c` + `ufo_core.{c,h}` + `tests/test_ufo_core.c`（112 自己的文件）；
+> **没有动任何共享件**（`sdk.*` / `sdk_core.*` / `engine.h` / `sites.py` / `Makefile` / `cards_def.c` /
+> `patch/**` / `hud_dim.*` 一字未改），**没有增删断点** ⇒ **不需要 §BE 登记**。
+> **不部署**（没跑 `make release` / `tools/deploy.py`）。
+
+### 1. #4 —— 「UFO 吸收道具的速度似乎还是慢了」：撤掉一条**一手里没有**的栅栏
+
+**一手（objdump `th12.exe`，本次逐条重读）**
+
+| 环节 | 一手 | 地址 |
+| --- | --- | --- |
+| 谁能被吸 | UFO 存活帧数 **≥ 60**（`cmp [ecx+0x14],0x3c / jl`）+ 颜色合法 + **道具 type ∈ {1,2}** ⇒ 道具 `state = 7`、`speed(+0x9bc) = 0`、`vel = 0` | `0x4271c0`–`0x42720f`（跳表 `0x427214`；索引 1 = 颜色 0 的非法分支）|
+| 每帧拉拽 | `speed += (UFO.timer/600)×0.05 + 0.02`（**只在 speed < 6.0 时加**，`fld [0x4a4250]=6.0; fcomp speed; test ah,0x41; jne 跳过`）；方向 = `atan2(UFO − 道具)`（`0x44ac00`）；`pos += polar(angle, speed) × GAME_SPEED` | `0x426879`–`0x426932` |
+| 捕获 | 到 UFO 中心 距离² **< 324**（18 px）⇒ `state = 0` + 音 `0x26` + 记账 `0x44aca0`；**否则跳到 `0x4260af`** | `0x426943`–`0x426992` |
+| ★ `0x4260af` 是什么 | **自机收点矩形判定**（`fld [player+0xc444..0xc454]` 四条比较）⇒ **一手允许自机在被吸途中把道具收走** | `0x426100`–`0x426164` |
+
+**我们的偏差（本轮修掉）**：`ufo_try_item()` 里除了「目标点在屏内」之外，还 AND 了一条
+`ufo_target_clear_of_player(nx, ny, px, py)`（"下一步不许踏进自机 `player+0x4798c` 收点圈"）。
+后果：道具的下一步只要会进圈，就**整帧不动**；下一帧速度更大、目标点仍在圈里 ⇒ **永久卡在圈边上**
+（自机不挪窝它就不动）—— 观感正是「吸收慢 / 像定住」。这条栅栏**一手里不存在**。
+
+**落笔**：`ufo_step_allowed(nx, ny)`（签名去掉自机坐标，只判屏内）；`ufo_try_item()` 不再收 `px/py`；
+`ufo_absorb_tick()` 不再取自机坐标。`ufo_target_clear_of_player()` **保留导出**（单测/文档口径用）。
+
+**验证**：`test_ufo_core` 的围栏段改成「贴脸也放行、出屏仍挡」；速度公式与累计量语义**未改**
+（2026-09-18 已按一手落地，见 `ufo.c` 的 `s_pull[]` 长注）。
+
+### 2. #5 —— 「UFO(敌人)应该爆残碎卡，而非残碎」：载体 4/6 → `0x10`/`0x11`
+
+**一手**：TH12 击破 `FUN_0044af00` 的颜色跳表（`0x44b590`，索引 = `color+1`）
+⇒ 红分支 `0x44b23a push 0xd`（令牌 13）+ **道具 4**（命碎）；绿分支 `0x44b409 push 0xf` + **道具 5**（B 碎）；
+蓝只有令牌；彩虹按 `COLLECTED_UFOS[2]` 选 13/14/15。
+
+**TH18 的对位（一手三条，仓里已有）**：承载「命碎 / B 碎」的是**卡道具**
+**`0x10` EXTEND2** / **`0x11` BOMB2**（→ `CardLifeFragment` / `CardBombFragment`），
+而 **4 / 6 是别作的遗留道具槽**（TH18 的道具分派 switch 里连 case 都没有）。
+见 `signal_core.h`「命碎的载体」段、`collect2x_core.h:54-55`、`animal.c:429-430`，
+同款实跑纠偏记在 `collect2x.c:342`。
+
+**落笔**：`UFO_REWARD_LIFE_FRAG` **4 → `0x10`**、`UFO_REWARD_BOMB_FRAG` **6 → `0x11`**
+（`ufo_spit_reward` 与 `ufo_break_color_bonus` 都读它们 ⇒ 两条路一起改对）；
+绿 UFO **吸满**那一路仍走用户裁决 P6 的**整颗 Bomb 自建实体**（`ufo.c` 里比的是宏，行为不变）。
+
+**验证**：单测新增两条常量断言 + 既有的 `ufo_spit_reward/ufo_break_color_bonus` 对照表照旧全绿。
+
+### 3. #6 —— 「感觉飞碟太脆了」：HP 用**一手原值**，绕开只在 spawn 生效的位 30 闸
+
+**一手（objdump `th18.exe`，本次复核）**：
+
+- 一手 TH12 HP 表 = `{1600,1900,2100,2300,2500}`（`th12:0x4b33f0`，索引 = `CURRENT_POWER / POWER_PER_LEVEL`）；
+- `EnemyManager__allocate_new_enemy`：`spawn+0x14` → `enemy+0x6220 / +0x6224 / +0x6228`（三格同一个数）
+  = `0x42d815`–`0x42d82a`；
+- **位 30 的黑名单闸**：`0x42d8ed cmp [edx+0x14],0x3e8` / `jl` 跳过、`0x42d8f6 or ecx,0x40000000`
+  ⇒ **只在 spawn 那一刻**按 `spawn+0x14` 置位；读点 = `test [enemy+0x635c],0xc000021` 三处
+  （`0x40b531` / `0x40b7b1` / `0x421e57`）⇒ 那些 C++ 伤害源跳过该敌；
+- 扣血走 `0x42f314 sub [ebx+0x4ff4],esi`（= `enemy+0x6220`）⇒ 回写之后一切照常。
+
+**落笔（两步）**：`hp = ufo_hp_for_power(...)`（**一手原值**，取消 999 缩放）→
+`spawn_life = ufo_clamp_spawn_life(hp)`（≤999，写进 `CE_SPAWN_LIFE`）→ 敌机建出来后
+`ufo_body_apply_real_hp(body, hp)` 回写 `enemy+0x6220/24/28`。`u->hp_max` = 真血量（血条/HUD 的分母）。
+⇒ UFO 从「639–999」变回一手的 **1600–2500**（**1.6–2.5 倍**），且**位 30 不置** ⇒ 人偶/灵梦炸弹照常打得中。
+
+**为什么这不叫"发明数值"**：数值就是一手表；被绕开的只是「引擎只在 spawn 生效的那条闸」。
+唯一旋钮 `UFO_HP_ONEHAND_SCALE_PERMILLE`（默认 1000 = 一手）留给 owner —— TH18 的每帧伤害上限
+（`sht+0x28` = 灵梦 90 / 魔理沙 160）与 TH12 不是一个量纲，而"缩几倍"**没有一手**（登记 `TUNING.md` §2.0u）。
+
+### 4. #10 —— 「压缩包应该是满速启动」：★ 一手**不是**满速启动（冲突登记）
+
+**一手（objdump `th12.exe`）**：赏金道具（type 16/17/18）在 `spawn_item` 里 `type−16 <= 2` 分支
+⇒ `0x42761d mov [esi+0x9b0],8`（**state = 8**）、`0x4276a4 fldz` → `0x4276f9 fstp [esi+0x984]`
+（**speed = 0.0**）、`0x4276ea mov [esi+0x98c],0`（**年纪 = 0**）。
+state-8 每帧：`0x426192 fld [edi+0x984]` → `0x4261ad call 0x4377a0`（朝**自机**的角）→
+`0x4261b7 call 0x427d00`（极坐标）→ `pos += vel × GAME_SPEED`（`0x4261bc`–`0x4261f3`）；
+**之后**才加速：`0x4261f6 cmp [edi+0x98c],0x3c / jl 跳过` + `0x4261ff fcomp 12.0` + `0x426212 += 0.2`。
+
+⇒ 一手的观感 = **原地站 60 帧 → 每帧 +0.2 加速到 12.0**。**与 owner 记忆（「满速启动」）矛盾**：
+按 §DQ 的同一纪律**按一手落地**，差异登记 `TUNING.md` §2.0u，并留一个**默认关**的开关
+`UFO_DROP_HOME_FULL_SPEED_START`（= 1 即"满速启动"，跳过等待、起速 12.0）。
+
+**落笔**：`ufo_drop_step()` 的 BAG 支改成「**先位移、后加速**」（与一手顺序逐条相同），
+`age > 60` 才加速（原来 `> 60` 但顺序是"先加速后位移"）；新增具名开关。
+
+### 5. 落地清单（文件 → 改了什么 → 怎么验证的）
+
+| 文件 | 改了什么 | 怎么验证的 |
+| --- | --- | --- |
+| `native/cards/ufo_core.h` | ① 奖励载体 4/6 → `0x10`/`0x11`；② HP 段重写（取消 `UFO_HP_MAX_SCALED`、加 `UFO_HP_ONEHAND_SCALE_PERMILLE`）；③ 围栏收成「只判屏内」+ 新签名 `ufo_step_allowed(nx, ny)`；④ 掉落物运动段补一手 + `UFO_DROP_HOME_FULL_SPEED_START` | `make dll` 0 错误 0 新警告 |
+| `native/cards/ufo_core.c` | `ufo_step_allowed()` 只判屏内；`ufo_hp_for_power()` 返回一手原值；`ufo_spawn()` 的 `hp_max` 存真血量；`ufo_clamp_spawn_life()` 注明「只是 spawn 值」；`ufo_drop_step()` 的 BAG 支改成先位移后加速 | `test_ufo_core` **4595 checks / 0 failed** |
+| `native/cards/ufo.c` | ① 去掉自机坐标与那条栅栏；② 新增 `UFO_ENEMY_LIFE_MAX/SNAP` + `ufo_body_apply_real_hp()`，召唤走「spawn 钳制值 → 回写真血量」两步；③ 文件尾清单订正第 13/14 条 | `make dll` rc=0；`make check` 见 §6 |
+| `native/tests/test_ufo_core.c` | 围栏段（贴脸放行 / 出屏仍挡）；奖励常量 4/6 → `0x10`/`0x11`；HP 段（真血量 = 一手逐格、`real >= spawn_life`）；BAG 用例（60 帧不动、第 61 帧先位移后加速、夹 12.0、不过冲）| 同上 |
+| 文档 | 本节 + `TUNING.md` §2.0u（+ §2.0k 的 HP 行订正）+ `SINGLE-CARD-TEST.md` §th12 的 4 条状态 | `python3 tooling/check-docs.py` |
+
+### 6. 影响面 + 回归
+
+- **对既有卡的影响面：零** —— 只动 112 自己的三个文件（`ufo.c` / `ufo_core.{c,h}`）与它自己的单测；
+  `sdk.*` / `sdk_core.*` / `engine.h` / `sites.py` / `Makefile` / `cards_def.c` / `patch/**` /
+  `hud_dim.*` / `signal.*` / `season.c` / `lolk.c` / `animal.c` **一字未改**；站点集与 `patch/*.js` 不变。
+- **回归**：`make check`（含 `test-host` / `cards-check` / `anm-verify` / `sht-verify` / `snd-check` /
+  `dllx87` / `dllverify` / `sites.py check` / `contract_check` / `gen_drift` / `sitecheck` / `capcheck` /
+  `engine_abi_check` / `anm_hud_alpha_check` / `check-docs`）全部通过（结果见本节所属提交的报告）。
+- **实跑要看的**：`TUNING.md` §2.0u 的四条判据（吸收不再卡在自机边 / 击破掉 `0x10` 残碎卡 /
+  召唤日志 `REAL HP 2500` 且仍吃炸弹 / 压缩包先停 1 s 再加速）。
+
+## §BE-EX（2026-09-22）：P4 工单 —— **108 永夜抄的 #1 / #5 / #7**（共享件：`assets/sht/append_shooterset.py` + 生成物 `native/sht_ids.h`）
+
+> **谁做的**：P4（108）子 agent。**没部署**（不改 patch、不拷 DLL）。
+> **一手全文**：`engine/player/th08/02-youkai-option-motion.md`（#1）、
+> `engine/sht/th08/01-youkai-shootersets.md`（#5）；自定值登记 `TUNING.md` §2.0w。
+
+| 文件 | 一句话 | 怎么验证 |
+| --- | --- | --- |
+| `assets/sht/append_shooterset.py` | 给 `_yk_row()` 加两个**可选**参数（默认值不变）+ 新增 TH08 的 15 组逐档表，**排在生成序列最后** | 生成器自检全绿；`sht_ids.h` 的 diff 只有末尾新增 15 行 |
+| `native/sht_ids.h`（生成物）| 新增 `CE_SHT_SET_YOUKAI_{R,M,S}0..4` = `0x48..0x56` | 由生成器写出；单测 `CHECK(CE_SHT_SET_YOUKAI_R0 == 0x48)` 对账 |
+| `native/cards/youkai_core.{h,c}` | 闸的到期自愈（#7）+ 集合判据（#5）+ 子机家位置与弹簧（#1） | 主机单测 981 checks / 0 failed |
+| `native/cards/youkai.c` | 按 (角色, 档) 取组 + 弹簧积分 + 自愈记账日志 | `make dllx87` 通过；`_Static_assert` 钉槽号布局 |
+| `native/tests/test_youkai_core.c` | 新增 3 段断言；既有调用跟着改签名 | 981/0 |
+
+**逐条明细**（表格装不下的部分）：
+
+1. `append_shooterset.py`：`_yk_row()` 的 `speed` / `dy` 是**可选**参数（不传时与原来逐字节相同）；
+   新增的 `YOUKAI_TIERS_R/M/S` 三张表 = TH08 `ply00as` / `ply01as` / `ply02as` 的 slot 0..4 逐行翻译；
+   `_youkai_tier_sets()` **追加在 `sets_for_file()` 的最后**（下标 = 槽号 ⇒ 插在中间会把 111 的
+   `MARISA_OPT_*` 与 117 的 WOLF/EAGLE 整体移位）。
+2. `youkai_core.{h,c}`：① `yk_slot_t` 加 `no_fam_frames`（塞进 padding ⇒ 仍是 28 B）、`yk_map_t` 加 `heals`；
+   ② 新增 `YK_EMIT_BROKEN_TTL`（**#7 的修法**：闸连续夹 TTL 帧就无条件放开）；
+   ③ 新增 `yk_sets_t` + `yk_set_is_youkai()`，`yk_bullet_is_youkai()` / `yk_bullet_damage_apply()` 多一个集合参数；
+   ④ 新增 `yk_option_home_xy` / `yk_option_uses_spring` / `yk_opt_spring_step` / `yk_option_home_from_player`
+   （**#1 的一手**：`th08:0x44e770` 的弹簧 + 逐机体家偏移）；
+   ⑤ `yk_option_offsets()` 对机体 0/1/2 改用 TH08 妖侧阵型（机体 3 仍用 TH18 原生表）。
+3. `youkai.c`：① `yk_shot_set_for()` / `yk_youkai_shotset_pick()`（按角色 × 档取组，**空组自动回落 `0x16`**
+   ⇒ 早苗不需要按角色写死分支）+ 两条 `_Static_assert`；② `on_option_pose_apply` 里机体 0 的弹簧积分
+   （引擎只认「自机 + 偏移」⇒ 我们积分位置、写「位置 − 自机」）；③ `on_tick_2` 里闸自愈的记账日志。
+
+**对既有卡的影响面（共享件）**：
+- `sites.py`：**新增** 2 条 binhack（`count_*`）与一张常量表；其余 211 条 binhack、全部 codecave、断点与站点表**逐字节不变**
+  （`sites.py verify` 逐条对账过）。两条改写的地址**只属于图鉴 UI 的循环上界**，与任何卡的行为、任何桩/断点零重叠（`sitecheck W4`）。
+- `menu.c`：只多一次**只读**回读 + 一条日志；`set_menu_count` 的写入行为、站点数、写入顺序不变。
+- `cards_def.h` / `sdk_core.h`：只抬容量常量。**唯一行为变化 = 允许登记更多新卡**（旧上限 71 现在 197）；
+  已有 36 张卡的定义、校验、编码、商店容量检查全不受影响。
+- 回归跑的：`make test-host`（含 `test_cards_def` / `test_sdk_core` / `test_hud_dim_core` 等）、
+  `python3 -m pytest -q`、`sites.py check` / `verify`、`sitecheck.py --all`、`capcheck.py`、
+  `engine_abi_check.py`、`tooling/check-docs.py`（全部通过）。
+- **未做**：实跑（§8.12 的四条观察项）。⇒ 本节结论标 🟡 **静态全通 / 实跑待验**。
+
+### §BE-EG 共享资源 `assets/cards/` 追加 13 张系统卡卡面（106–118）+ 共享件 `cardframe.py` 新增「画面区原尺寸」口径（2026-09-18，106–118 卡面落地）
+
+> **谁改的**：106–118 系统卡这一批。**动到的别人东西**：共享件 `assets/cardframe.py`、共享资源 `assets/cards/ORDER.txt`（**只追加 13 行**）、
+> `assets/cards/*_{max,min}.png` 与 `_art/*.png`，以及 `patch/th18/cards.js` 里 **106–118 这 13 张自己的卡**的 `sprite_large/sprite_small`
+> （同一文件里 58–80 那批**一行未动**）。
+> ⚠ 本条排在 §BE-EE **之前**：§BE 末尾紧邻别人尚未提交的 §DO/§DP/§DQ 改动，插在末尾会让一次提交**夹带别人的段落**。
+
+**一、起因（用户口径逐字）**
+「**卡图就用这个吧，然后十二合一就拼一个 3\*4 的，然后最大居中**」＋「**这些当暂时的最终版本，因为我没想好怎么卡图整活**」
+⇒ 106–118 的卡面（原先 13 张共用原生空白 sprite `116`/`117`）正式落地：白底 + 各作 exe 图标最大居中 + 原生同款框（`cardframe.py`）。
+
+**二、改了什么**
+
+| 文件 | 改了什么 | 为什么 |
+| --- | --- | --- |
+| `assets/cardframe.py`（**共享件**） | 新增「画面区原尺寸」口径（`frame_card(art, area=True)` 等 5 个函数/常量，见下） | 老路 `apply_frame()` 会把 256×320 缩到 **0.8875 倍** ⇒ 整数倍最近邻放大的像素画**必糊** |
+| `assets/cards/ORDER.txt` | 末尾**追加 13 行**（`EOSD_PLAYRANK`…`GIVE12`，前面加一行注释） | 行号决定 sprite 号；**只追加**是这条规则的全部要点 |
+| `assets/cards/*_{max,min}.png`、`assets/cards/_art/*.png` | 新增 13×3 个文件（`_max` 256×320 带框、`_min` 64×80 无框、`_art` 256×320 无框带 `renkolab-art=area`） | 同上 |
+| `patch/th18/cards.js` | 106–118 的 `sprite_large/sprite_small`：`116`/`117` → **164/165 … 188/189**；并删掉 118 描述里那句已过期的「❓ 贴图暂借 116/117（UI 不在本目标范围）」 | 不指到新 sprite 就还是空白卡面 |
+
+`cardframe.py` 新增的具体东西（**兼容式**，见文件头 §两种口径）：`frame_card(art, area=True)`（把中央 220×284 **1:1** 贴进原生框、不重采样）、
+`min_image_from_art()` / `save_min_from_art(..., area=True)`（`_min` = **内容外框**等比缩进 64×80 居中）、`art_is_area()`、
+`save_art()`（PNG 记 `renkolab-art=area`）、`_integer_prefilter()`（缩 `_min` 前先按「能整除的最大整数倍」降采样，保住像素画硬边）。
+
+**三、对既有卡的影响面（回归跑了什么）**
+- `ORDER.txt` **只追加** ⇒ 既有 23 张卡的 sprite 号（118–163）与 `abcard.anm` 前 46 条追加 entry **逐字节未变**
+  （`build_abcard.py --verify-only` 的「原生 spec/贴图逐项一致」仍通过）。
+- `cardframe.py` 的新口径**只在 `_art` 带 `renkolab-art=area` 标记或尺寸正好 220×284 时启用**；既有 `_art` 全是满版 256×320 且无标记
+  ⇒ 走老路，**其它卡一个像素没变**（受影响的只有新加的 13 张）。
+- `ability.anm` / `pl0X.anm` / `pl0X.sht` / ECL / DLL：**本轮一行未动**（`make release` 只写了 `cards.js`、`abcard.anm`、`files.js` 三个文件）。
+- 容量：`abcard.anm` entry **164 → 190 / 256**（+26，每张卡 2 条）⇒ 余量 66 = **还能进 33 张**（`CAPACITY.md` 已同步，`capcheck` 全绿）。
+
+**四、怎么验证的**
+- `python3 assets/build_abcard.py`：`verify: entry 190 = 118 + 2×36；原生 spec/贴图逐项一致；cards.js 索引一致`，exit 0；`--verify-only` 回读通过。
+- `make quick` / `make check`（含 `anm-verify` / `sht-verify` / `sites.py check` / `capcheck` / `engine_abi_check` / `anm_hud_alpha_check` /
+  **`check-docs` 353 文件**）/ `make dllx87`（= **0**）全绿。
+- 几何逐像素校验：118 默认版图标墙 **192×256**（3×64 × 4×64、正方形格），画面区四边留白**各 14 px**；
+  12 格逐格比对 = 对应作品的 exe 图标（顺序 106→117）；13 张 `_max` 的**框环与原生同款逐像素一致**（以 117 的框环为基准）。
+- 与用户过目的草图对比：`_max` **13/13 像素级相同**；`_min` 11/13 相同，113（th13 图标顶上多一行白）与 118（拼图整体重采样一次）
+  有 ≤1 px 的摆放/边缘差（64×80 的 HUD 图标看不出来）。
+- 部署对账：`native/build/abcard.anm` == modkit 里那份（md5 `bf91a0f5c0dc4b96f2a51c27f134222e`）、`cards.js`/`ability.anm` 同；
+  四份 DLL md5 一致（`e72b812b302666e494b2adae5e53b632`，**本轮未重建 DLL**）；`check_deploy_pair.py` ✓ 配套。
+
+### §BE-EH 共享件 `cards/faith.{h,c}` / `faith_core.h`：**消费者自带外观** + **按外观分组的满 P 上抛角**（107 的樱点实体，2026-09-18）
+
+> **谁改的**：107（妖妖梦）这一批。**动到的别人东西**：`cards/faith.h`、`cards/faith.c`（110/111 共用的点实体池）、
+> `cards/faith_core.h`（槽位枚举），以及顺带清掉 `cards/mof.c` / `cards/signal.c` 里 3 处历史遗留的未用局部。
+
+**一、起因（用户口径逐字）**
+「**th07是有一个我叫做樱点的掉落实体…肯定有一个类似于信仰点的仅在 th07 的类 P 点掉落实体，似乎没有自建 VM 实现**」；
+「**吸附半径得统一到 th18 的吸附**」；「**大樱点就得在与 th10-11 同装的时候被同时转化出来，并且如果大樱点只有这一个来源的话，也被认为是等价于 P 点**」；
+「**由于转换成两种点，不要让两种点重合；有角度的上抛？**」。
+
+**二、改了什么**
+
+| 文件 | 改了什么 | 为什么 |
+| --- | --- | --- |
+| `cards/faith.h` / `faith.c` | `faith_user_t` 尾部新增 **`art_sprite` / `art_script`（自带外观，0 = 按档默认）**；`faith_dot_t` 加同名两字段；`dot_spawn_vm()` 用它们；`faith_spawn()` 拆成 `dot_spawn_at()` 公共体 + 两个薄入口（新增 `faith_spawn_angled()`） | 107 的樱点要 TH07 原版外观（`SAKURA_POINT` sprite 287 / 脚本 186），而 TH18 没有樱点道具类型 ⇒ 让消费者自己指定外观，池不用知道谁是谁 |
+| 同上 | 满 P 转换循环**按外观分组**给上抛角：第 0 组 = 一手 `−π/2`，之后每组 ±10°（`FAITH_CONV_SPREAD_STEP` = `0.1745329`，即 `th18:0x429168` 那枚抖动角） | 一颗 P 道具同时给每个消费者各撒一颗，位置/初速全同 ⇒ 会**完全重叠**（用户口径要求「两种点不重合」）；**同外观仍共用同角** ⇒ 110+111 那两颗同款点视觉上依旧是一颗（用户 2026-09-18 追问「不会出现两个中信仰点吧」的期望） |
+| `cards/faith_core.h` | 新增 `FAITH_SLOT_107 = 3`，`FAITH_SLOT_COUNT` 3 → 4 | 107 要一个自己的点槽 |
+| `cards/mof.c` / `cards/signal.c` | 删 3 处**未用局部**（两个 `on_load` 里的 `faith_user_t u;`、绿妖精入场块里的 `float angle/speed`） | 纯卫生：注册已搬进 `*_ensure_registered()`、入场已走 `mof_ge_spawn_one()`；`faith.h` 一改它们被重编才暴露出 `-Wunused-*` |
+
+**三、对既有卡的影响面（回归跑了什么）**
+- **110 / 111 的行为**：外观字段不设 = 0 ⇒ 走原路；**只有满 P 转换那条路**用新入口，且**第 0 组角 = 一手 −π/2**
+  ⇒ 只装 110 或只装 111 时，撒点角/速/位置**逐字节不变**；两卡同装时两颗同款点仍然完全重合（视觉一颗）。
+- 击破掉落 / 消弹（微档）那些来源**一个字节没改**（仍走 `faith_spawn()` 的一手角）。
+- 107 自己的接线（在 `cards/senro.c`，非共享件）：注册 `FAITH_SLOT_107` + `conv_value = 1`（当开关）+
+  `art_*`，加了 `senro_faith_tick()`（满 P 转换 → 池推进，顺序是硬的），`senro_clear()` / `on_stage_start`
+  里退注册 + 只收自己槽的实体（**长持续效果铁律**：删卡发生在商店里，那一刻只有 `on_delete` 跑得到）。
+- ⚠ 另发现（**不是本轮引入**）：`cards/signal.c` 的 `.on_item_*` 三条钩子在**提交里就是注释掉的**
+  （`—— 二分临时停用`）⇒ 111 当前不做道具记账；本轮只登记，不动它（那是别人的二分现场）。
+
+**四、怎么验证的**
+- 编译：`make` 0 error（本次也把 3 处历史 `-Wunused-*` 清掉了）；`make check` 全绿
+  （`check-docs` 354 文件 / `capcheck` / `anm-verify` / `sht-verify` / `engine_abi_check` / `anm_hud_alpha_check`）；
+  `make dllx87` = **0**。
+- 静态：`SAKURA_POINT` sprite **287** / 脚本 **186** 早已在 ability.anm 里（`assets/ability/entries/ORDER.txt`
+  §ATLAS_SENRO 第 3/4 格，TH07 `etama.anm` entry1 sprite11 (112,64,16,16) 的 1:1 切图）⇒ **零新资产**。
+- 部署：`make release`（MODKIT_DIR + NO_GIT=1）只写了 DLL；`check_deploy_pair.py` ✓ 配套；
+  四份 DLL 同 md5 `7b0a08be0c65db7d32e59a6b90b1ee61`。
+- 实跑判据（见 `TUNING.md` §2.0l）：满 P 时场上出现**樱点贴图**的点（与信仰点**不同角**、不重叠）飞向自机；
+  收下时樱点与 +C 各 `1000+100n`；日志 `senro: 满 P 转换 N 颗原生 P 道具 → 大樱点实体 ×N`。
+
+### §BE-EE 卡组体检 `ce_deck_audit()`（AUDIT §Z11 / §G7 那条老账的诊断件，2026-09-19）
+
+**背景**：用户口径「之前的状态是，id=254 这张卡装备后会直接吞掉一个 slot，该 slot 会直接消失，
+初始卡组 3 张变成只能装 2 张」。这条 = §Z11 的原始现象，当年**墙位没钉死**（§G7 挂账）；
+现在 id 200 的测试卡正撞在同一段号段上，所以先给它一件**可复现、可判读**的诊断件。
+
+**判据（一手反汇编）**：编成里的一格 = `zAbilityManager` 卡链表的一环 ——
+`AbilityMenu__sub_415af0`（`th18:0x415af0`）只把链表拷进 `[menu+0xfec]` 并把链长写进 `[menu+0x3e4]`
+⇒ 「槽变少」只能是链长少了。链长减少只有三条路（详见
+[`engine/card/th18/10-extensibility-limits.md`](../../../engine/card/th18/10-extensibility-limits.md) §8.13）：
+① 存档那格没进 `reset_cards` 的循环；② `allocate_new_card` 的三道门没过（卡数上限 / **分配器上界** /
+跳转表）；③ 卡对象建出来了但 `TableCardData__get` 回落到 NULL 行 ⇒ HUD 过滤掉（**这条不会让后槽前移**）。
+
+| 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
+| --- | --- | --- | --- | --- |
+| `native/start_deck.c` | 新增 `ce_deck_audit(const uint8_t *scorefile)`：读档后按 shot 打 `cap` + 每格 id（**负数 = 该 id 在新表里没有自己的行**），并当场核「分配器上界（`th18:0x11479` 的 imm8）/ 跳转表项是否影像内地址（`th18:0x11482`）/ 表行 `+0x04 == id`」三条 | §Z11 的墙位要靠**内存实况**分辨，不能靠「patch 里写了什么」；三条判据与 `selfcheck.c` 的 `fill_jumptable` / `check_grow` 同一口径（同一批常量 `CE_ALLOC_CMP_RVA` / `CE_ALLOC_JMP_RVA`）| 系统卡批次 | `make dll` 0 新警告；`make check` rc=0（`check-docs` 353 全绿）；PE 的 `SizeOfImage` 偏移（可选头 `+0x38`）先用 `th18.exe` 核过 = `0x174000` ⇒ 影像末 `0x574000` |
+| `native/unlocked.c` | `BP_ce_save_loaded` 尾部加一行 `ce_deck_audit(scorefile)` | 那一刻存档已就位、表也已按 `cards.js` 填好 ⇒ 一行日志就能把「存档/表行」与「分配器」两类病因分开 | 同上 | 同上 |
+| `native/card_expand.h` | 声明 `ce_deck_audit()` | — | 同上 | — |
+
+**二进制零变化（上表最后一行那条）**：`make -C native anm` 重跑后
+`native/build/ability.anm` = `242e2a1d093eca18d4b94f6b14964ab5`、
+`native/anm_ids.h` = `4c285c0777a6cc8323b53808d83f3587` —— 与改注释**之前**逐字节相同
+（`//` 注释不进二进制）⇒ **本轮不需要重发 `ability.anm`**，只发 DLL。
+
+**对既有卡的影响面**：**零**。全部是**只读**诊断（读存档字段、读跳转表项、调 `TableCardData__get` 查表），
+不写任何字段、不改任何站点/断点、不动 DLL 的既有行为；**刻意不新增断点** —— 池子跳板格只剩个位数空位
+（AUDIT §BE-DP 的实测读数），为一条诊断加站点不划算。
+**未做**：实跑（等用户跑一局，把那几行 `deck-audit:` 与「编成里看到几张」对上）。⇒ 结论标 🟡。
+
+### §BE-EF ★ 卡的安全用量：从「各墙余量」折算成「还能进几张卡」（`capcheck.py` 现算，2026-09-19）
+
+**背景**：用户口径「**你写一个卡的安全用量**」—— 余量表把格混着写（`entry` / `id` / 条目 / `slot`），
+「还能加多少张卡」每次都要现场推。
+
+**做法**：`native/tools/capcheck.py` 新增 `CARD_COST`（每张卡的成本口径，逐项带出处）+
+`safe_quota()` / `show_quota()`：把每条墙的余量折算成张数、取最小 = 安全用量，并新写进附录 A0
+（`--gen-appendix` 生成段 ⇒ 数字随源码变，不许手抄进正文当常量）。`CAPACITY.md` 新增 §1.0 讲口径与分配纪律。
+
+| 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
+| --- | --- | --- | --- | --- |
+| `native/tools/capcheck.py` | 新 `CARD_COST` / `safe_quota()` / `show_quota()`；附录 +A0 | 「还能进几张卡」要一个数，且必须跟着源码自动变 | 系统卡批次 | `python3 native/tools/capcheck.py` 打印 `★ 卡的安全用量：还能进 46 张（瓶颈 = abcard.anm entry）`；`--gen-appendix` 写进 A0；`make check` rc=0 |
+| `CAPACITY.md` | §0 第 1 条改口径 + 新 §1.0「卡的安全用量」（成本表 + **id 分配纪律**）；附录 A0 重新生成 | 台账的读者要的是「几张」，不是「几格」 | 同上 | 同上；`tooling/check-docs.py` 353 全绿 |
+
+**分配纪律（本节的副产品，也是 id 200 测试卡的教训）**：新卡 id **从最小的空 id 起连续分配**（现在 = 119 起），
+**不要**贴在「最高在用 id + 1」之上 —— `owned[]` / `unlocked_cards` 的用量口径是**最高在用 id + 1**，
+贴着 200 往上分配会让那三条各自只剩 `254 − 200 = 54` 个位置（连续分配时是 160）。⇒ 跳号分配 = 白扔余量。
+
+**顺带记录：id 200 的实跑结论（2026-09-18 11:09:32 那一局，日志我自己读的）**
+```
+trace: allocate_new_card(id=200, mode=1)  <- NEW ID
+integrity[stage 1]: HIGH-ID card[0] id=200 flags=00000005
+integrity[stage 1]: list=2 total=2 active=0 equip=0 passive=2 owned[128..254]=1 bad=0
+test: reset_cards — shot 0 cap 3 deck [200, 56, 110, …]
+```
+⇒ id 200（> 127）**全链路成立**：登记 → 表行 → 从存档分配 → 进卡链表 → `owned[200]` 落位，`bad=0`，
+**槽没有被吞**（cap 3 仍是 3 格）。⇒ §BE-ED 的实跑项从 🟡 升到 ✅（第 1 条「图鉴条目数」仍待 N > 71 才算压到墙）。
+**对既有卡的影响面**：零（只动了台账工具与台账文档；DLL / patch / 卡片行为一字未改）。
+
+## §DO. ★★ 112（星莲船 UFO）三个 bug 修复：**HUD 槽认领恒失败** / **实体血条 32× 尺度** / **`on_delete` 清理顺序**（2026-09-18，用户实跑 B3+B4）
+
+> **来源**：用户 2026-09-18 口径「**先修bug**」；两条症状原文在
+> [`CARD-118-12IN1-REPORT.md`](CARD-118-12IN1-REPORT.md) **B3**（「UFO **血条显示贼长**但实际**很脆**」）
+> 与 **B4**（「**缺少 th12 UI 的飞碟槽 HUD**」）。⇒ 那份报告对 B9/B1/B10/B11/B12 都写了「已修」块，
+> B3/B4 当时**没有** ⇒ 本轮把两条的根因坐实并修掉（B3 的「很脆」那一半属 HP 口径，用户当天拍板**按火力**，
+> 见下面「仍未做」）。
+> ⚠ 两条症状原先的「下一步看哪里」都指偏了：B4 猜「功能缺失（UI 不在原目标范围）」，
+> 实际**代码在、但认领恒失败**；B3 猜「HUD 血条量程」，实际是**实体上方那条**的尺度错了。
+
+### 一、B4 的两个根因（都坐实到指令/代码形状）
+
+| # | 根因 | 证据在哪 | 后果 |
+| --- | --- | --- | --- |
+| ① | **认领时第三个实参传的是 NULL ⇒ 认领恒失败** | 见下面「① 的证据链」 | HUD **一次都没画过** |
+| ② | **中盘拿卡不调 `on_load`** ⇒ 光修 ① 不够 | 见下面「② 的证据链」 | 十二合一拿卡后 HUD 不出现 |
+
+**① 的证据链**：`ufo.c`（改前）`ce_hud_slot_claim_card(UFO_ID_NUM, &blk, 0)` → `sdk.h` 的
+`ce_hud_slot_claim_card()` → `ce_hud_slot_claim()` → `hud_register()`，而 `hud_register()` 的**第一句**就是
+`if (card_id > … || !blk || !out) return 0;`（`sdk_core.c:933`）⇒ 恒返回 0、`s_hud[112].used` 恒 0。
+⇒ `ufo_hud_draw()` 的第一句 `ce_hud_slot_get(112, &slot)` 立刻返回（失败），而它后面的
+`ufo_hud_ensure()`（起 5 个 UI VM）在那一句**之后** ⇒ 三格令牌槽 + 本体血条 + 一行读数**一个 VM 都没 spawn 过**。
+★ 同一个坑 **111 吃过一次**（`signal.c:3165-3168` 留着那次排查的一手记录：「认领从来没成功过」）⇒ 111 修了，112 没修。
+
+**② 的证据链**：一手（`NEXT.md` §2X②）：卡 118「十二合一」的 `ce_give_card()` → 引擎
+`allocate_new_card(mode 2)` ⇒ **只调 `ctor`**（trace 里没有 `on_load`）。⇒ 107（`senro.c:654`）/
+110·111（`mof.c:1788` / `signal.c:2813`）后来都补了「每帧再认领一次」，**112 当时没补**；
+那一批实跑的签名正是「切面数才出现」。
+
+**修法**：把认领抽成一支幂等函数 `ufo_hud_ensure_registered()`（`ufo.c:1889`）= **真 out** + `ce_hud_slot_claimed()` 闸，
+`on_load`（`:1939`）/ `on_stage_start`（`:1978`）/ `on_item_frame` 顶部（`:2056`）三处调它；
+成功/失败各只打一行日志（`ufo: HUD block … claimed at surface (…)` / `… FAILED`）。
+`ufo_hud_claim_forget()`（`:1880` 起）在 `on_load` / `on_stage_start` / `on_run_reset` / `on_delete` 复位闸。
+
+### 二、B3 的根因：**条宽多乘了一次脚本尺寸（32×）**
+
+- 一手（`AUDIT.md` §BO-12）：`Ufo::on_draw_16` `th12:0x44a5d0` 每帧**只写** `scale.x = life.current / life.maximum`
+  （`enemy+0x2648/+0x264c`，**比值 0..1**），`scale.y` 一个字节都不写。
+- 脚本 231 = TH12 `front.anm` script136 的逐条移植，正文是 `drawRect(32.0f, 4.0f)` —— **32/4 已经是矩形尺寸**。
+- 改前卡侧写的是 `ce_anm_set_scale(条, UFO_GAUGE_BAR_FULL_W * permille / 1000.0f, UFO_GAUGE_BAR_H)`
+  = **比值 × 32** ⇒ 满血时 `scale.x = 32` ⇒ 条宽 32×32 = **1024 世界单位（≈2048 表面 px，横穿整个游玩区）**。
+- **同仓反证（一眼可辨）**：HUD 那几条矩形走**另一个**脚本（104 = `drawRect(1.0f, 1.0f)`）⇒ 那里 scale **才是**像素尺寸；
+  两个脚本的单位不是一回事，这正是当初抄错的那一步。
+- **修法**：`ce_anm_set_scale(条, (float)permille / 1000.0f, 1.0f)`（`ufo.c:1248`）；
+  两个常量（`UFO_GAUGE_BAR_FULL_W/H`）**保留但加了警告注释**（记脚本原值，别再拿去 set_scale）。
+
+### 三、第三个 bug（静态审计点名、本轮顺手修）：`on_delete` 的清理排在 `if (!s) return;` 之后
+
+- 出处：[`CARD-RESOURCE-INTERACTION-AUDIT.md`](CARD-RESOURCE-INTERACTION-AUDIT.md) §…：「四张卡把文件级 static 的清理
+  排在 `if (!s) return;` 之后 ⇒ `ce_state` 拿不到时 VM/池永久留守；**已验证必错（代码形状）**，可达性未证」。
+- 事实：本卡**所有**长持续资源的句柄都在**文件静态区**（令牌池 / 五边形框 / 吸收环 / 血量条 / HUD 那一组），
+  唯一的收尾路径就是 `on_delete` ⇒ `ce_state()` 拿不到时那些 VM 永久留场。
+- **修法**（`ufo.c:2191`）：**与 `s` 无关的静态资源提到早退之前无条件收**
+  （`ufo_gauge_kill()` → `ufo_tok_pool_clear_all()` → `ufo_hud_kill()` → `ce_hud_slot_release(112)` → 闸复位）；
+  需要 `s` 的两件（本体跟随 VM 的句柄、真敌机的 id）留在 `if (s)` 之后。三支都幂等 ⇒ `ufo_withdraw_all()` 再调一次无害。
+
+### 四、落地清单（文件 → 改了什么 → 为什么 → 谁改的 → 怎么验证的）
+
+| 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
+| --- | --- | --- | --- | --- |
+| `native/cards/ufo.c` | 新增 `ufo_hud_ensure_registered()` / `ufo_hud_claim_forget()` + 3 个文件级闸；`on_load` / `on_stage_start` / `on_item_frame` 三处调用；`on_delete` 重排；血条 `set_scale` 改比值；`UFO_HUD_RECT_ANCHOR_CENTER` 0 → **1** | 上面三条根因 | 系统卡批次（112 owner） | `make dll` 0 错误 0 新警告（ufo.o 逐行编过）；`make check` **rc=0**；`test_ufo_core` **992 checks / 0 failed**；`check-docs` 353 文件全绿；`make anm` 重跑后 `ability.anm` / `anm_ids.h` **md5 与改前逐字节相同**（下面第 6 行那条注释改动不进二进制）|
+| `ufo.c` 常量区 | `UFO_HUD_RECT_ANCHOR_CENTER` = **1（图心锚）** + 长注 | 脚本 104 没写 `anchor`；**同脚本且实跑可见**的先例 `stock.c` 用的是 `cx/cy`（图心），`AUDIT.md` §DC-1（12478-12491）也已把口径定成「`drawRect` 一律按中心算」；★ 本卡 HUD **从未画出来过** ⇒ 没有"旧坐标已调好"的包袱 | 同上 | 同一批闸；实跑看「三格是否整排偏半格」（偏移就是锚点问题，翻回 0 即反面）|
+| `ufo.c` 文件尾「占位 / TODO 清单」 | 订正 **6 处过期条目**：`UFO_SE_ITEM_BREAK` 0x11→0x0d、本体四色 ECL 已实装（`UFO_*_TTL`）、彩虹脚本号 219..221→**215..217**、HUD 认领已修、`ufo_teardown` 那句「本卡没有光环/血条 VM」、HP 条目补上用户当天拍板 | 那份清单是"接手的下一个人"的唯一权威入口，过期条目会把人带偏（本轮就是被它误导过一次） | 同上 | `grep` 逐条对源码/资产；`check-docs` 绿 |
+| `native/cards/ufo_core.{h,c}` / `tests/test_ufo_core.c` | **只改注释**：令牌「颜色由实体携带 `$I0`」那条 TODO **作废**（令牌已不是敌人）、五边形框「美术待做 / 只有预留钩子」→ **已实装** | 同上（过期口径） | 同上 | 纯注释 ⇒ 行为零变化；`test_ufo_core` 仍 992/0 |
+| `assets/ability/scripts/231_ufo_gauge_bar.anm.txt` | **只改注释**：把「卡侧每帧 `set_scale(… × 32, 4)`」订正为「`(hp 比值, 1)`」+ 记 B3 这一格 | 该脚本头的一手记录自己写着错的配方（下一个照抄的人会再犯一次） | 同上 | `make anm` 重跑后 `ability.anm` / `anm_ids.h` 的 md5 **与改前逐字节相同**（见下面「二进制零变化」那条）|
+
+**对既有卡的影响面**：**零**。本轮**没有动任何共享件**（`sdk.*` / `sdk_core.*` / `engine.h` / `sites.py` / `Makefile` /
+`cards_def.c` / `patch/**` 一行未改），也没有增删站点；改的全是 112 自己的文件与一条 112 自己的资产注释。
+⇒ **不需要 §BE 登记**（`AUDIT.md` 4778-4783 的口径：§BE 是「动到别人的卡」的清单）。
+
+### 五、实跑要看的（验收判据）
+
+1. **B4**：进游戏后**左下角立刻**出现 112 那块 UI（3 个令牌槽 + 一条血条 + 一行 `-` 或 `NN%`），
+   并且日志里有 **`ufo: HUD block 112x30 claimed at surface (x, y)`**（改前**永远不会**出现这一行，
+   只会有一条 `FAILED`）。用十二合一（118）中盘拿卡 ⇒ **当场**出现，不必等切面数。
+2. **B3**：召唤出 UFO 后，它**正上方 28 px** 的量血条应当是一条**短条（≈64 表面 px 宽、8 px 高）**
+   且随血量**从左往右缩**（`drawRect` 是图心锚 ⇒ 左右对称收缩）；**不再是横穿屏幕的长条**。
+3. **清理顺序**：商店里删掉 112 ⇒ 场上**不留**令牌/五边形框/吸收环/血条，且 HUD 那一块消失；
+   日志最后一行是 `ufo: card deleted - …`（或私有状态拿不到时那条 `private state unavailable…`），**没有 VM 残影**。
+4. **回归**：112 的既有行为一字未改（令牌掉落/飞行/进槽/召唤/吸收/击破开奖/五边形框/彩虹换色）——
+   本轮**只碰** HUD 认领、血条尺度、清理顺序、注释。
+
+### 六、仍未做（诚实清单，别当成已修）
+
+- **B3 的「很脆」那一半**：HP 仍是 `UFO_HP_PLACEHOLDER = 100`。★ 用户 2026-09-18 已拍板
+  「**HP 一手确实是按火力**」⇒ 该用一手表 `{1600,1900,2100,2300,2500}`（`th12:0x4b33f0`，按 `POWER / PER_LEVEL` 索引）
+  **缩放后**写进 `spawn.life`（照抄 ≥1000 会触发 `th18:0x42d8f6` 的位 30 锁伤黑名单 ⇒ 必须缩）。
+  **本轮未做**（下一批）。同上：P1 / P2 / P5 / P6 / 新增 1–4 / 击破掉「压缩包」/ Boss·对话期间飞走，全在下一批。
+- **HUD 的几何**（块落点、读数的垂直对齐、配色字号）仍是 ❓ 初版，等实跑逐个对；`HUD-LAYOUT` §4.5 的
+  「整摞一起淡」仍未做。
+- `UFO_HUD_RECT_ANCHOR_CENTER` 的取值这次是按**先例**定的（不是实跑读数）⇒ 实跑若见整排偏半格，翻回 0 即可（一行）。
+
+## §DP. ★★★ 112 的第二批：**颜色模型改口径**（新增 2 / 新增 1 / P2）+ **HP 按火力**（P4）+ **收取半径按本作**（P5）（2026-09-18，用户逐条裁决）
+
+> **这批全是用户 2026-09-18 的直接裁决**（原话逐条保留在 [`NEXT.md`](NEXT.md) §1x.8），
+> **没有动任何共享件**（`sdk.*` / `sdk_core.*` / `engine.h` / `sites.py` / `Makefile` / `cards_def.c` / `patch/**` 一字未改），
+> 也没有增删断点 ⇒ **不需要 §BE 登记**。改动面 = `native/cards/ufo.c` + `ufo_core.{c,h}` + `tests/test_ufo_core.c`。
+
+### 一、这一批的**口径变化**（最要紧的一条先说）
+
+| # | 口径 | 裁决原话 | 落地成什么 |
+| --- | --- | --- | --- |
+| **新增 2** | **没有彩虹色 token** | 「没有彩虹色 token，彩虹色**当且仅当**，收了三色 token == 飞碟，开了一个彩色 UFO（敌人）」 | **令牌域 = 红/蓝/绿**（金 ≡ 蓝）；彩虹**只作为 `ufo_group_classify()` 的返回值**（= 三色各一的合成色），**不由任何令牌携带**。一手对照见下面「新增 2 的一手对照」 |
+| **新增 1** | **五边形框按色** | 「得是**按色**」 | 判据从「彩虹 = 通配」改成 **`ufo_tok_display_color()`**（变色令牌按**当前显示的那一色**）= 一手 `bullet.anm` script211 的字面口径；§BO-7 那条「有意偏离 ③」**作废**（只剩 ①②）|
+| **P2** | 令牌颜色**随机** | 「P2 随机吧」 | 一手那条（颜色写死在**敌人的 ECL 掉落表**里、无随机无轮转）在 TH18 **不可移植**（没有这张表）⇒ 小怪掉的那条路 = **随机三选一**，用**我们自己的 LCG**（`ufo_rand_next`，纯整数；引擎 RNG 走 x87，会踩 `make dllx87`）|
+| **新增 3** | 金 ≡ 蓝 | 「金==蓝，建议直接按照蓝 UFO 做，之后会 P 图把蓝色 token/UFO 放进去」 | **零代码改动**（现状本来就是：`UFO_GOLD_COUNTS_AS_BLUE` = 1、`ufo_color_art_index(GOLD)` = 蓝那一格、ECL 子程序也借蓝的）。**金只是"蓝的调色版"这个显示入口**，留给以后 P 图；行为逐项与蓝相同 |
+| **新增 4** | `BOMB_KILL` 算击破 | 「一手（未核实）应该是」 | **零代码改动**（现行为就是"算"：`ufo_body_kill_counts()` 认 `KILLED` + `BOMB_KILL`，排除 `KILL_ALL`）。注释已标「用户口径，一手未核实」 |
+| **P4** | HP 按火力 | 「HP 一手确实是按火力」 | 一手表 **`{1600,1900,2100,2300,2500}`**（`th12:0x4b33f0`，索引 = `CURRENT_POWER / POWER_PER_LEVEL`）**缩放到 `UFO_HP_MAX_SCALED` = 999**（❓ 自定缩放比）后写进 `spawn.life`；血条/HUD 的分母 = `s->u.hp_max`（同一个数）|
+| **P5** | 收取按本作 | 「令牌收取**按照本作收取走**」 | 令牌接触半径**读自机字段** `player+0x4798c`（`CE_PLAYER_ITEM_COLLECT_R`；`th18:0x44624a` 引擎自己的收集闸，原生默认 30.0f）⇒ 自定 20 px 圆**取消**；与 110 `faith.c:40` 同口径 |
+
+**新增 2 的一手对照**：TH12 的令牌 type 只有 `10/11/12`（红/蓝/绿）与 `13/14/15` ——
+后者是**同一个变色令牌的三种起始显示态**（不是第四种颜色）：`th12:0x426c3f`/`0x426c4d`/`0x426c5e`
+把 `case 10/11/12` 与 `13/14/15` **分别记成红/蓝/绿**。⇒ 「没有彩虹色 token」与一手一致。
+
+### 二、落地清单
+
+| 文件 | 改了什么 | 谁改的 | 怎么验证的 |
+| --- | --- | --- | --- |
+| `cards/ufo_core.h` / `ufo_core.c` | 颜色模型与 HP 表的**唯一真源**（逐条见下面「改了哪些符号」）| 系统卡批次（112 owner）| `test_ufo_core` **992 → 4516 断言 / 0 failed**；`make dll` 0 错误 0 新警告 |
+| `cards/ufo.c` | 卡侧接线（`cycler` 位 / 随机取色与播种 / 显示色入槽 / 收点半径 / HP 取值与对账日志 / 血条分母）| 同上 | 同上；`make check` **rc=0**（`dllverify` / `dllx87` = 0 / `capcheck` / `check-docs` 353 全绿）|
+| `cards/ufo.c` 文件尾清单 | 订正 6 处过期条目（HP 占位 / 20 px 圆 / 轮转表 / 五边形"有意偏离③" / 血条分母 / 第 39 条）| 同上 | `grep` 逐条对源码 |
+
+**改了哪些符号（逐条）**
+
+- `ufo_core.h`：**删**「占位期轮转表 + `ufo_token_color_for_serial*`」；**加**场上颜色域
+  （`k_ufo_token_field_colors` = {红,蓝,绿} / `ufo_token_color_is_field()`）、显示色
+  （`k_ufo_cycler_colors` / `ufo_token_display_color(color, is_cycler, rb_state)`）、
+  随机（`ufo_rand_next` / `ufo_token_color_for_roll` / `ufo_token_color_gold_variant`）、
+  HP（`k_ufo_hp_by_power` / `ufo_hp_for_power` / `ufo_hp_tier` / `ufo_hp_onehand_for_tier` /
+  `UFO_HP_MAX_SCALED` / `UFO_HP_MAX_ONEHAND` / `UFO_HP_TABLE_N`）与 `ufo_ufo_t.hp_max`。
+- `ufo_core.c`：上述实现；`ufo_spawn()` 多一个 `hp_max` 入参（= 血条的分母）；
+  `ufo_group_pentagon_hint()` 只遍历**令牌域三色**（原来 5 个：三色 + 彩虹 + 金）；
+  `ufo_group_classify()` 的 rainbow 分支**加注为防御支**（生产路径不可达，见那里的注）。
+- `ufo.c`：`ufo_tok_t` 加 `cycler` 位；`ufo_tok_script(color, rb_state, cycler)`；
+  `ufo_tok_spawn_ex(..., cycler)`；小怪那条路**随机取色**（`s_rng_seed`，`on_ctor` 播种）；
+  `ufo_tok_take_and_kill()` 返回**显示色**；`ufo_tok_pick()` 改读自机收点半径；
+  `ufo_try_summon()` 按火力取 HP 并打一行四数对账日志；HUD/血条分母改 `u->hp_max`。
+
+### 三、行为变化（**实跑一眼能看出来的**）
+
+1. **小怪掉的令牌颜色变成随机的红/蓝/绿**（不再是「绿/彩虹/彩虹/蓝/红/红/红」那套确定性轮转）；
+   偶尔出现的**金**令牌仍然存在（= 蓝的调色版，贴图/行为与蓝一致）。
+2. **变色令牌**（UFO 击破/吸满返还的那一枚）**按它当前显示的那一色入槽** —— 收它时屏幕上是什么色，
+   槽里就记什么色（这是「新增 2」的直接结果：以前它被当成"彩虹 = 通配"）。
+3. **UFO 的血量按召唤时的火力档**：日志 `ufo: summoned UFO (...) - HP 639 (one-hand tier 0 = 1600, scaled to <= 999; power 0, per level 100)`；
+   满火力 = 999。⚠ **手感会明显变硬**（原来固定 100）。
+4. **令牌收取半径 = 本作自己的收点半径**（`player+0x4798c`，默认 30.0f）—— 比原来的 20 px 自定圆**大**，
+   手感上「靠近就能碰到收」更宽松；若别的卡改了那个字段，我们自动跟随。
+5. 五边形框的判据按**当前显示色**（变色令牌进/出 60 px 圈会改变它"该不该亮框"的结果 —— 与一手一致）。
+
+### 四、实跑要看的（验收判据）
+
+1. 一局里掉出的令牌颜色**不重复成规律**（连续几枚应当出现混合与重复，而不是固定 7 枚一轮）。
+2. 击破/吸满返还的变色令牌：**入槽那一刻的颜色 = 它当时的显示色**（拿三种起始态各试一次）。
+3. UFO 的 HP：**满火力召唤的明显比低火力硬**；日志里 `HP` 与 `tier` 那一行四个数自洽。
+4. 令牌**靠近自机（约 30 px）就被收**（不再需要贴到 20 px）。
+5. 回归：召唤/吸收/击破开奖/五边形框/彩虹换色 都还在；`ufo_core` 4516 断言全绿。
+
+### 五、仍未做（下一批，等一手考证回来）
+
+- **P1**（UFO 在场期间槽满 + 收令牌给 PIV + 结束时清槽）、**P6**（绿 UFO 喂饱给整颗 Bomb）、
+  **击破掉「压缩包」**（有实体、被自动吸收、收集时结算）、**Boss / 对话期间开碟子直接飞走**
+  —— 四条都等两个只读 subagent 的一手结论（赏金道具 16/17/18 的行为与贴图 / UFO 生命周期与
+  `UFO_EtBreak2` 的击破全序列）。
+- 「压缩包」与 P6 的**自建掉落物实体**（VM + 我们的运动 + 自机吸引 + 接触入账）尚未动工 ——
+  用户问过"会不会小题大做"，答复写在 [`NEXT.md`](NEXT.md) §1x.8（**不小题大做，正是本卡该走的路**）。
+
+## §DQ. ★★★ 112 的第三批：**P1 槽的生命周期**（按一手）+ **Boss / 对话两条离场路**（2026-09-18）
+
+> **来源**：用户 2026-09-18 裁决「**P1 按一手**」+ 两条实玩记忆（「Boss 期间开碟子会直接飞走（道中 boss 我忘了）」/
+> 「对话期间应该也会直接飞走」）。一手由两个只读 subagent 用 objdump 逐条复核（结论与地址全在下面），
+> **含一处与用户记忆冲突**（对话那条），已按一手实现并显式登记。
+> **改动面** = 112 自己的三个文件 + 单测；**没有动共享件**、没有增删断点 ⇒ 不需要 §BE 登记。
+
+### 一、P1：槽在 **UFO 结束时**才清（一手；旧口径是"召唤即清"）
+
+| # | 一手事实 | 地址 | 落地 |
+| --- | --- | --- | --- |
+| 1 | 收满第 3 枚时写的是「该召唤了」标志（`= 3`），**槽计数仍是 3** | `0x422e80` 的 `0x422ece mov [0x4b0c5c],3`（写的是 `0x4b0c5c`，**不是**召唤时写的） | `ufo_group_take_ready()`：取走"成组"结果**但不清槽** |
+| 2 | 召唤只读颜色 + 置自己的闩，**不碰槽** | `0x44a4b2` / `0x44a8a0` | 同上 |
+| 3 | **UFO 从敌机表消失那一刻**才清 `COLLECTED_UFOS[0..2]` 与两个计数 | `0x44a326`–`0x44a344`（`Ufo::on_tick` 结束分支）| 新增 `ufo_group_clear()`，唯一调用点 = `ufo_teardown()`（四条路都汇到它）|
+| 4 | 槽满时**再收到令牌**：已填槽数 ≥ 3 ⇒ `[PIV] += 100000`（夹上限）+ 飘字 **1000** / `0xff80ff80`，**令牌被消耗** | `0x4270b5` / `0x4270d1` / `0x4270d6`+`0x4270df` / `0x4270f1` / `0x4270e5` / 消耗走 `0x426da4` | `ufo_slot_full_bonus()` + `ufo_popup_number()`（数字槽写序照抄原生 adder `0x4645f0`，与 110 同款）|
+| 5 | 槽满时把令牌的**收集圈**（凑色环）删掉 | `0x42658a cmp [0x4b0c58],3; jl` | 我们的 `ufo_pentagon_hint_update()` 本来就只在「差一枚」时画 ⇒ 槽满即全收（行为一致）|
+
+**⚠ 载体映射（❓ 自定，不是复刻）**：一手加的是 `[0x4b0c78]` = **PIV（点道具价值基数，×100 定点）**，
+一个**跨帧状态量**；而 **TH18 没有这个量**（TH18 的点道具身价 = `(MONEY+1) × K × 100`，`engine.h` 的
+`CE_ADDR_MONEY_BASE`）。⇒ 三种映射，宏 `UFO_SLOT_FULL_BONUS_MODE` 选（卡侧 `ufo_slot_full_bonus()` 的长注）：
+`0` = 只记账 + 弹字；**`1` = 给分 `1000`（与一手弹字逐值相同，默认）**；`2` = `+1 金钱档`（结构最接近一手，
+但动经济/商店/114 ⇒ **未实现**，留位置）。**默认取 1，等你拍**；改一行即可。
+
+### 二、Boss / 对话两条离场路（一手复核结果，含一条与用户记忆冲突）
+
+| 路线 | 一手行为 | 一手证据 | 本实装 |
+| --- | --- | --- | --- |
+| **Boss 在场** | 引擎每帧写 `UFO.int_vars[0] = 999` ⇒ ECL 轮询看到就 `movePosTime` 飞走 + `delete()` ⇒ **不发奖**。**道中 / 关底 Boss 完全一致** | 见下面「Boss 那行的一手证据」| 活了 `UFO_BOSS_LEAVE_FRAMES`(301) 帧且 Boss 在场 ⇒ **静默撤退**（置 `UFO_FLAGS_DELETE_NOW`，与 ECL `delete()` 同效：不跑死亡处理、不发奖）。Boss 判据 = TH18 的 `EnemyManager + CE_EM_BOSS_IDS + 4*i`（与 110 `mof_boss_alive()` 同一手对账）|
+**Boss 那行的一手证据**：`0x44a3c0 call 0x449f20`（扫 `bosses[0..7]`，任一非空即真）+
+`0x44a3df mov [eax+0x127c],0x3e7`（写 `int_vars[0] = 999`）；ECL 文本用 `thecl -d 12` 读出（首轮轮询 ≈301 帧，
+`moveCircleRelTime` 阻塞则 ≈361）；七关 ECL 里 `Boss()`/`MBoss()` **都**调 `setBoss(0)`（⇒ 道中与关底同槽）。
+「飞走不发奖」的负向证明：`0x414af0`（`Enemy::die`）全 exe 只有 2 个调用点、`on_death_callback` 只有 1 个读者
+⇒ ECL `delete()` 这条路上**不存在**通向 `0x44af00` 的边。
+
+| **对话中** | ★ **在 1 帧内原地自爆，并且走「击破」那条开奖路（全额发奖）**：`Gui.msg != 0` ⇒ `life.is_spell \|= 2` ⇒ 下一帧 `EnemyData::on_tick` 看到位 2 ⇒ `Enemy::die` ⇒ `on_death_callback` ⇒ `FUN_0044af00` | `0x44a39b cmp [gui+0x6d30],0`（`zGuiMsgVm*`）→ `0x44a3ab or [enemy+0x265c],2` → `0x413f5d test …,0x2` → `0x413f6c call 0x414af0` → `0x414c4c call [zEnemy+0x103c]` | **按一手**：`CE_GUI_MSG_ACTIVE()` ⇒ 帧末按**击破**兑现（奖励出在 UFO 当前坐标）。⚠ 与用户 2026-09-18 的记忆（「对话期间直接飞走」）**冲突** ⇒ 要改成记忆版只需换掉这一段（一行开关的位置见 `ufo.c` 的 `on_item_frame` 注释）|
+
+**⚠ 记忆 vs 一手（必须知道的差异）**：Boss 那条「飞走」在**时序上不是"直接"** —— 一手是"召唤后第 1 帧就下发离场指令，
+但 ECL 要到 ≈301 帧才轮询到、再 120 帧才发移动指令"⇒ 合计 ≈420–480 帧才**开始**离场；而**没有 Boss 时**
+引擎在 420 帧才写 999 ⇒ 离场指令在 ≈542–602 帧。⇒ **Boss 在场只让离场提早约 121 帧（2 秒）**。
+本实装取 `UFO_BOSS_LEAVE_FRAMES = 301`（一手首轮轮询帧数，🟡 两种读法的下界）。
+
+### 三、落地清单
+
+| 文件 | 改了什么 | 怎么验证的 |
+| --- | --- | --- |
+| 文件 | 改了什么 | 怎么验证的 |
+| --- | --- | --- |
+| `cards/ufo_core.{h,c}` | 槽的两支新 API（`ufo_group_take_ready` / `ufo_group_clear`）+ 三个一手常量 | `test_ufo_core` **4516 → 4542 断言 / 0 failed** |
+| `cards/ufo.c` | 满槽补偿 + 弹字 + 结束清槽 + 两条离场门（逐条见下）| `make dll` 0 错误 0 新警告；`make check` **rc=0** |
+
+**`ufo_core` 改了什么**：新增 `ufo_group_take_ready()`（取走"成组"结果**但不清槽**）与
+`ufo_group_clear()`（**唯一**清槽点）；`ufo_group_consume()` **删除**（语义被前者取代）；
+新增一手常量 `UFO_SLOT_FULL_PIV_ADD`(100000) / `UFO_SLOT_FULL_POPUP_VALUE`(1000) /
+`UFO_SLOT_FULL_POPUP_COLOR` = `0xff80ff80`。
+单测新增：取结果后 `filled` 仍 3、满格 `ufo_slot_set` 失败、`clear` 才清空并清快照、
+以及「一手两个数同源」（`PIV_ADD / 100 == POPUP`）。
+
+**`ufo.c` 改了什么**：① `ufo_slot_full_bonus()` + `ufo_popup_number()`（引擎弹字环数字槽，
+写序照抄原生 adder `0x4645f0`）；② 令牌收取的"槽满"分支改成**消耗 + 补偿**（旧写法是"不收也不撤"）；
+③ `ufo_teardown()` 里 `ufo_group_clear()`（= 一手结束分支）；④ `ufo_boss_alive()` + 两条离场门
+（`CE_GUI_MSG_ACTIVE()` / Boss）+ `UFO_BOSS_LEAVE_FRAMES`；⑤ 卡状态加
+`slot_full_tokens` / `slot_full_piv` / 两个日志闩。
+
+### 四、实跑要看的
+
+1. **P1 核心**：召唤出 UFO 后，左下角**三格应当是亮的**（= 槽满），并且**再碰令牌不会进槽**，而是
+   一声入槽音 + 一个 **`1000` 的淡紫弹字**（日志 `ufo: slots FULL …`）；UFO 结束后才出现
+   `ufo: slots cleared (UFO ended: …)`，三格才灭。
+2. **Boss**：Boss 战里召唤 ⇒ 约 5 秒后**静默消失**（`ufo: a BOSS is on the field - silent withdrawal…`），
+   **没有任何奖励**（不掉令牌、不给分）。道中 Boss 应当与关底 Boss 一样。
+3. **对话**：进对话时若有 UFO 在场 ⇒ 它**原地自爆并全额发奖**（`ufo: DIALOGUE active - …`）——
+   这是**一手行为**，与你记忆里的"飞走"不同（等你裁决）。
+4. 回归：召唤 / 吸收 / 击破开奖 / 五边形框 / 随机会色 / HP 按火力 全在。
+
+### 五、还没做（下一批）
+
+- **P6**（绿 UFO 喂饱给**整颗 Bomb**）+ **击破掉「压缩包」**（有实体、被自动吸收、收集时结算）——
+  两者共用同一套「自建掉落物实体」机制（VM + 我们的运动 + 自机吸引 + 接触入账），
+  需要切 TH12 的官方贴图（`bullet.anm` entry5 = `bullet/etama8.png`：整颗 Bomb = `script172`/`sprite432 (96,96,16,16)`；
+  赏金袋 = `script181/182/183`/`sprite459 (225,113,30,30)` + 子图标 `426/427`）。
+- **击破大扩圈消弹 `UFO_EtBreak2`**（16→640 每帧 +16，40 帧；+ 大消弹音 = TH12 se id `6` = `se_power1.wav`；
+  + `bullet.anm` script208 = **程序化 32 边形、无贴图**）—— 一手已全（`AUDIT.md` §DP 尾 + 两个 subagent 报告）。
+- **★ 用户 2026-09-18 追加：UFO 吸收 110/111 的（大/中）信仰点 + 107 的樱点** ——
+  这是**跨卡**任务（声明式通道，`NEXT.md` §1x.7 早就写过形状），待澄清一处口径后开工（见下）。
+
+### 六、调试键（2026-09-18，用户要求：「依旧仿照 th17 调试，空格给我生成 token」）
+
+**形状完全照抄 117（TH17 动物灵）`animal.c` 的 `ANIMAL_DEBUG_KEY` 那一块**：
+`ce_key_down(CE_VK_SPACE)` + 卡状态里的 `dbg_key_prev` 做**边沿检测**（拍一下出一枚、按住不连发）
++ 固定落点 + 一行日志 + **一个宏开关**。
+
+| 项 | 值 | 说明 |
+| --- | --- | --- |
+| 宏 | `UFO_DEBUG_KEY` = **1** | ★ **发布前改 0**（117 的发布版就是 0）|
+| 键 | **空格**（拍一下 = 一枚令牌）| 空格不在游戏配置里、也不进 replay 输入流 ⇒ 只作调试（117 的原话，同一只手一验过）|
+| 落点 | `UFO_DEBUG_X/Y` = **(0, 224)** | 与 117 的 `(0, 224)` 同口径（ECL 640 空间）；落在令牌活动框 x∈[−176,176] / y∈[160,370] 之内 |
+| 颜色 | 走**正常那条路**（P2 随机 + 金变体）| 顺便测「随机取色」那一格 |
+| 日志 | `ufo: DEBUG spawn token #N at (0, 224) by SPACE (color C, plain/cycler)` | 失败（池满）也有单独一行 |
+| 调用点 | `on_item_frame` 顶部（= 每个**正常游玩帧**恰好一次）| 与 117 放在它的 per-frame 分支里同一口径 |
+
+**为什么不是别的键**：`ce_key_down` 与 `CE_INPUT_*` 是两套东西 —— 后者是引擎的游戏输入（Z/Shift/方向），
+后者才进 replay；调试键一律走前者（117 的先例）⇒ 不会污染任何一手输入语义。
+
+**验收**：进游戏拍空格 ⇒ 画面中央出现一枚令牌（日志一行），三枚可召唤 UFO；按住空格不会连发。
+
+### §BE-EG 共享件 `cards/faith.{h,c}`：新增**声明式「外部消费者」**三支（112 的飞碟吸信仰点，2026-09-18）
+
+**背景**：用户 2026-09-18 追加口径（原话在 `NEXT.md` §1x.9）：「UFO 得能吸收：1、大中信仰点 2、樱点
+**进行计数**」+「**按 +1 实现**」。信仰点是 `faith.c` 的**自建 VM 池**（TH18 没有信仰点这个 item type），
+不在原生道具池里 ⇒ 112 的 `ufo_absorb_tick()` **看不见它们**（这正是 `NEXT.md` §1x.7 早就记下的那条缺口）。
+⇒ 按 §1x.7 定下的形状开一条**声明式**通道（生产者只声明、消费者只读）。
+
+| 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
+| --- | --- | --- | --- | --- |
+| `cards/faith.h` | 新增 `faith_absorb_t` + 三支声明：`faith_absorb_list()`（只读快照）/ `faith_absorb_take()`（取走一颗）/ `faith_absorb_move()`（挪一步）；**只增不改**，既有函数签名与行为一字未动 | 112 要能「看见 + 吸走 + 拉拽」信仰点；用**快照 + 按坐标取回**而不是裸指针（本池是静态紧凑数组 + swap-remove，外部持有的下标会在一次移除后指到别人身上）| 系统卡批次（112 owner；110/111 同批）| `make dll` 0 错误 0 新警告；`make check` **rc=0**（`test_faith_core` 221 / 其余主机测试全绿）；`check-docs` 353 全绿 |
+| `cards/faith.c` | 上述三支实现 + 一个 `faith_absorb_find()` 内部定位器（`take` 与 `move` 共用同一套匹配规则，避免两处各写一份）| 同上 | 同上 | 同上 |
+
+**语义（三条都要记住）**：
+1. **`take` 不动任何记账** —— 不 +Δ、不进 114 的批、不加连击。依据：一手 TH12 的道具被 UFO 吸走也是
+   「道具消失、不进自机的账」（`0x4271c0` 把 state 置 7 抢过来，最后 `state = 0` 归还槽位）。
+   ⇒ 「吸走之后算谁的账」由**调用方**决定：112 把它记进 `faith_pulled_*`，**击破时由「压缩包」带回**、
+   收集时调 `faith_spawn()` 还回去（用户 2026-09-18 口径）。
+2. **`list` 只枚举有 VM 的点**（`id != 0`）：state 0「待发射」的点还没有实体，看不见也吸不到。
+3. **`move` 只动坐标**（+ 同步 VM 位置），不碰 state / 速度 / 记账 —— 被拉拽的点仍然可以被 110/111
+   自己的收点判定收走（与一手「被吸走的道具仍可被自机碰触」同款）。
+
+**对既有卡的影响面**：`faith.h` / `faith.c` 是 110/111 的**共享件** ⇒ 按纪律登记（本节）。
+影响面 = **纯新增**：三支新函数 + 一个新 struct；110/111 的调用点、数值、语义、断言**全部未动**
+（`test_faith_core` 221 断言原样全绿）。**没有增删断点、没有动 `sdk.*` / `engine.h` / `sites.py`**。
+
+**112 侧落地（同一批）**：`ufo.c` 新增 `ufo_absorb_faith_tick()`（与道具同一套伪磁场：18 px 捕获 +
+`ufo_drag_step` 比例拉拽），计数口径 = **+1/颗、走 P 通道**（中信仰点 = 满 P 转换 ⇒ 等价 P 点；大信仰点按
+§1x.7 表 = 红 UFO 等价于 P 点；彩虹 UFO 时由 `ufo_absorb_item()` 一处做 `cntA/cntB` 互换）；
+**fill 也跟着涨**（❓ 自定：用户只说"计数"，取「吸一颗 ≈ 吸一颗道具」这个最小惊奇读法；不想要就删那一行调用）。
+被吸走的账记在卡状态 `faith_pulled_big` / `faith_pulled_mid` / `faith_pulled_mask`，
+`ufo: finish …` 与 `ufo: BREAK …` 两行日志都会打出来（实跑对账用）。
+**未做（下一批）**：击破时**由「压缩包」带回**这些信仰点（= 压缩包携带 P/money/faith 三笔账，
+收集时调 `faith_spawn()`）· 樱点（见下）。
+
+## §DR. ★★★ 112 的第四批：**掉落物实体**（击破「压缩包」+ P6 整颗 Bomb）+ **信仰点的回吐**（2026-09-18）
+
+> **来源**：用户 2026-09-18 两条口径 ——
+> 「击破还会掉落一个**被自动吸收的压缩包**（注意，**应该是有实体的**，只是被自动吸收过来）」；
+> **P6**「**整颗 Bomb 确实是得是整颗**，有没有可能额外建一个掉落 Bomb 整卡的 VM（会小题大做吗？）」；
+> 以及「**被吸走后爆出来还得按照信仰-樱点算** … 最多做一个里面包含这种东西的动画，
+> 后面**只调用收信仰樱点的函数**即可吧」。
+> **答复**：不小题大做 —— 两件东西**共用同一套「自建掉落物实体」**（VM + 我们的运动 + 自机吸引 + 接触入账），
+> 而且这套机制正是「压缩包」的载体。**改动面 = 112 自己的文件 + 一批新资产**；共享件只动了
+> `faith.{h,c}`（已单独登记 §BE-EG）。
+
+### 一、一手依据（全部逐条复核过，地址在 `AUDIT.md` §BO-11 与两个 subagent 的报告里）
+
+| 面 | 一手 | 落地 |
+| --- | --- | --- |
+| **压缩包是什么** | 一手 TH12 的**赏金道具** type 16/17/18：击破时由 `FUN_0044af00` 生成，携带 `+0x9c8` 颜色 / `+0x9cc` cntA / `+0x9d0` cntB / `+0x9d4` 倍率；**玩家吃到时才结算** | `UFO_DROP_KIND_BAG` + `ufo_drop_t` 的四个携带字段 |
+| **它的运动** | 一手 **state 8**（`th12:0x426189`–`0x426231`）：**原地 60 帧**（`0x4261f6 cmp [edi+0x98c],0x3c`）→ 每帧 `speed += 0.2`（`0x426212`）上限 **12.0**（`0x4261ff`）→ 每帧**重算朝自机的方向**并位移 | `ufo_drop_step()` 的 BAG 支（复用 `ufo_drag_step` 的比例步进 ⇒ 不过冲）|
+| **它的结算** | 一手三条式子（`0x426c9a` 彩虹 / `0x426cd2` 红 / `0x426d27` 蓝绿）| `ufo_drop_settle_value()`（纯整数，单测逐值钉死）|
+| **倍率** | 一手 `0x44b149`（红：满火力 2.0 / 否则 1.0）· `0x44b24d`（蓝：8.0 / 6.0 / 2+8·fill）· `0x44b33f`（绿恒 2.0）· `0x44b49c`（彩虹：4.0 / 3.0 / 2+2·fill）| `ufo_drop_mult_permille()` |
+| **整颗 Bomb** | 一手 = 道具 **7**（绿 UFO 喂饱那条 switch 的 `push 7`）⇒ **普通道具**的运动：出生角 −π/2、速 2.2、之后重力 +0.03/帧 | `ufo_drop_spawn_bomb()` + `ufo_drop_step()` 的 BOMB 支 |
+| **贴图** | 一手 `bullet.anm` entry5 = `bullet/etama8.png`：袋 `sprite459 (225,113,30,30)`、P 图标 `sprite426 (0,96,16,16)`、点图标 `sprite427 (16,96,16,16)`、整颗 Bomb `sprite432 (96,96,16,16)` | 4 张 1:1 切图（新生成器 `assets/ability/make_ufo_drop_art.py`，矩形从 anm 文本读 + 断死）|
+| **动画** | 一手脚本 181（袋 + 6 个随机飘的子图标 + `scaleTime` 1.8/1.4 脉动 + `interruptLabel(1)` 缩没）/ 184 / 185（子图标）/ 172（整颗 Bomb）| 逐条移植成脚本 **296..301**（只换 sprite / scriptNew 的引用）|
+
+**「它的结算」那条的逐条式子**（一手）：红 = `trunc(cntA·PV·mult) + cntB·PV`（**跳过** /10×10）；
+彩虹 / 蓝 / 绿 = `trunc(PV·cntB·mult)` 再 `/10×10`；下限 **10**（`0x426d81 mov esi,0xa`）；
+取整 = **截断向零**（`_ftol` 的快路径 `cvttsd2si`）。
+
+### 二、结算的**单位映射**（❓ 自定，必须知道）
+
+一手 `PV = round10(PIV/100)`（`0x421880`），其中 `PIV` 是 TH12 的点道具价值基数（×100 定点）。
+TH18 没有 PIV 状态量，但**有同量纲的对位物**：`engine.h` 的 `CE_ADDR_MONEY_BASE`（身价，
+单位 = **点 × 100**）⇒ 本实装取 **`PV = round10(身价 / 100)`**（同一句"取到 10 的倍数"），
+单位 = **显示的点数**；结算出来的 `esi` 直接进 `ce_add_score_delta()`（SDK 的未耦合加数，单位 = 点）。
+⚠ 一手那边 `esi` 进的是 `Globals::cap_score`，而它内部还有一次 `/10`（飘字显示 esi、计数器加 esi/10）
+⇒ 我们的"点数"口径取的是**飘字那个数**。这是**载体映射**，不是复刻 —— 登记 `TUNING.md` §2.0o。
+
+### 三、信仰点的回吐（用户：「被吸走后爆出来还得按照信仰-樱点算 … 只调用收信仰樱点的函数即可」）
+
+- 被飞碟吸走的点（`faith_pulled_big/mid` + 各自的 value 之和 + slot_mask）**记在卡状态里**；
+- 收集**压缩包**时，按**均值**（`sum / count`，保住总分）调**生产者自己的** `faith_spawn()`
+  把点还回场上（还回去的点会像正常撒出来的点一样被自机收 / 过线 / 进批 ⇒ 用户说的"按信仰算"）；
+- ⚠ **均值**是 ❓ 自定：110/111 内部同一批点的 `value` 按难度/档位各不相同，按均值还原是"总量不变"的
+  最小失真读法（更忠实的做法是逐颗记住 value，代价是多一个 64 项的小数组 —— 若要就说一声）。
+- **动画**（用户说"最多做一个里面包含这种东西的动画"）：本轮**不做**，只做了「压缩包本体 +
+  里面冒出来的 P / 点图标」（= 一手脚本 181/184/185 的原样移植）—— 已经能看出"里面装着东西"。
+
+### 四、落地清单
+
+| 文件 | 改了什么 | 怎么验证的 |
+| --- | --- | --- |
+| `assets/ability/make_ufo_drop_art.py`（**新增**）| TH12 `etama8.png` 的 4 张 1:1 切图 + ORDER 片段 + 6 条脚本 | 矩形从 anm 文本读出来并**断死**（漂了就 raise）；`--dump` 可复核可见像素 |
+| `assets/ability/ufo_drop/BOUNTY_BAG.png` 等 4 张（**新增**）| 上一条的产物 | 图集 64×32、4 个成员 |
+| `assets/ability/entries/ORDER.txt` | **末尾追加**一个图集 entry（`ATLAS_UFO_DROP`）| `make anm` 自检：图集成员从 anm 回读逐像素等于原图；`重排检测：已定稿的前 186 行逐行未变 ✅` |
+| `assets/ability/scripts/296..301`（**新增**）| 一手脚本 181/184/185/172 的逐条移植 | 同上（越界 / scriptNew / 主路径 delete 检查全过）|
+| `native/anm_ids.h`（生成物）| 新宏（脚本 296–301 / sprite 453–456 / 图集 61）| `git diff` 里既有宏一字未改 |
+| `CAPACITY.md` | 登记新图集 entry（capcheck 的硬门）| `capcheck` 全绿；**安全用量 46 → 33 张**（瓶颈仍是 abcard entry）|
+| `cards/ufo_core.{h,c}` | `ufo_drop_t` + 倍率 / 结算 / PV / 运动 / 收集判定（纯逻辑）| `ufo_core` 断言 **4542 → 4583**，0 failed |
+| `cards/ufo.c` | 掉落物池 + spawn + 每帧 tick + 结算 + 收尾；击破真掉压缩包；绿 UFO 喂饱改成起 Bomb 实体 | `make dll` 0 错误 0 新警告；`make check` rc=0 |
+
+### 五、实跑要看的
+
+1. **压缩包**：击破 UFO（且它吸过 P / 金钱）⇒ 在 UFO 位置出现**一个袋子**，**原地停约 1 秒**后
+   **自己飞向自机**（越飞越快，上限 12/帧）；碰到自机 ⇒ 一声结算音 + **加分**（日志
+   `ufo: PACKAGE opened - color … -> score N`），袋子消失。日志 `ufo: drop entity up (kind bounty PACKAGE …)`。
+2. **信仰点回吐**：若这只 UFO 吸走过 110/111 的绿点 ⇒ 收压缩包时那些绿点**在压缩包的位置重新撒出来**
+   （日志 `ufo: PACKAGE returned the pulled faith dots: N big (value …) + M mid …`），并且**能被自机收走**、
+   按 110/111 自己的规则记账。
+3. **P6**：绿 UFO **喂饱**（吸满）⇒ 掉一颗**整颗 Bomb 的图**（16×16，TH12 原版切图），它**向上抛一下再落下**；
+   碰到自机 ⇒ 直接**加一整颗 Bomb**（引擎的加法，带音效与 HUD 刷新）。
+4. 回归：令牌 / 召唤 / 吸收 / 击破返还令牌 / 五边形框 / HUD / 随机色 / HP 按火力 全在。
+
+### 六、仍未做
+
+- **樱点**：本 mod 的 **107 没有樱点实体**（纯记账；唯一的 32 颗是结界崩的视觉环）⇒ 「UFO 吸樱点」
+  需要先给 107 建池（或换口径）—— **等用户选 ①/②**（已问，见 `NEXT.md` §1x.9）。
+- **压缩包"里面装着东西"的专门动画**（用户说"最多做一个"）：本轮没做，只用了原生袋 + 图标。
+- 击破的**大扩圈消弹** `UFO_EtBreak2`（一手已全：16→640 每帧 +16、40 帧、音 = TH12 se id 6 = `se_power1.wav`、
+  `bullet.anm` script208 = 程序化 32 边形无贴图）。
+- 赏金**分**那一层（`UFO_BOUNTY_SCORE_PER_*` = 0）：现在压缩包按一手式子给分，但「击破瞬间的赏金分」
+  仍恒 0（一手那部分是在**吃到压缩包**时才结算的 ⇒ 现在这条链已经通了，占位权重可以不再需要）。
+
+### 七、补一手缺口：击破的**大扩圈消弹** `UFO_EtBreak2`（2026-09-18，同一批）
+
+**背景（文档里的一条自相矛盾，本轮收口）**：`TUNING.md` 的 A6 写「112 的扩圈消弹**已随 ECL 一起移植**
+（`UFO_EtBreak`）✅ 不用另做」，而 `NEXT.md` §1z-2 写「112 不消弹…我们**一次都没调**」——
+**两条各说对了一半**：**召唤**那一圈（`UFO_EtBreak`，16→112、每帧 +6，写在本体 ECL 里）早就通了；
+**击破**那一圈（`UFO_EtBreak2`，16→640、每帧 +16、40 帧）**从没做过**（移植时只带了 9 支子程序，漏了它）。
+
+**生成点的一手**：`FUN_0044af00` 的第一件事 —— `0x44af3d push 0x4a2168`（"UFO_EtBreak2"）+
+`0x44af56 call 0x412990`（allocate_new_enemy）；spawn 表只有 `rel_pos`（= UFO 的 `final_pos`，**无偏移**）
+与 `life(+0x14) = 3000`（`0x44af46 mov [esp+0x4c],0xbb8`），`main_drop`/`score_reward` 显式写 0、
+角度/速度 = 0（memset 后没写）⇒ **原地生成**。
+
+| 项 | 一手 | 落地 |
+| --- | --- | --- |
+| 生成点 | 见下面「生成点的一手」 | `ufo_etbreak2_spawn()` + `assets/ecl/ufo.ecl.txt` 新增 `UFO_EtBreak2` |
+| 脚本 | `%B = 16; etCancel(%B); %B += 16; while (%B < 640); delete();`（**步长 +16、上限 640** ⇒ 40 帧）| 逐条移植（`make ecl-ufo`：41 子程序、往返字节一致）|
+| 音 | `0x44af65 lea eax,[edi+6]` → `play_sound_at_position(id 6)` = **`se_power1.wav`**（id→wav 链全读过）| **TH18 的 `0x1d` 就是 `se_power1.wav`** ⇒ 逐字节同名的那一枚（不是"借一个像的"）|
+| Δ（移植改动）| 原文还有 `flagSet(32)` | **删掉**：与 Δ1 同一条纪律（TH18 的 `flags_lo/flags_hi` 位号语义与 TH12 不是一套）——本件只需要"每帧 etCancel 一圈"，不需要任何标志位 |
+| 副作用（照抄）| 它是一只**真敌人**（进 `enemy_count_real`）| 同样照抄；只活 40 帧，且一手也是真敌人 |
+
+**实跑**：击破 UFO 的那一帧 ⇒ 从 UFO 位置扫出一圈**很快扩大的消弹环**（约 40 帧内到 640），
+子弹被清掉，并播一声 `se_power1`；日志 `ufo: break-time BIG cancel ring up (UFO_EtBreak2 at (x, y) …)`。
+⚠ 与**召唤**那一圈同时存在（召唤 = 小圈 112、击破 = 大圈 640），这是**两条**一手机制。
+
+### 八、补正：满槽补偿的**载体**从「一次性给分」改成「金钱 +1」（2026-09-18，用户追问后重核）
+
+**追问**：「原生补偿是只给 1000 分吗？」⇒ 重核一手（指令写在 `TUNING.md` §2.0q）后确认：
+一手加的是 **PIV（`0x4b0c78`，点道具价值基数 ×100 定点）**，**不是分数**（分数在 `0x4b0c44`）；
+弹字那个 `1000` 是**这次增长显示值**。而且 PIV 是**跨帧状态量**（与分数/火力一起进 `0x43b0xx` 的状态快照），
+常规增长只有 **+100（显示 +1）/次**（`0x4391ed`）⇒ 这一下 ≈ **1000 次常规增长**，语义是"**之后每颗点道具都多值 1000**"。
+
+⇒ 我们原来的 `MODE = 1`（一次性给 1000 分）是**弱化近似**；本轮改成 `MODE = 2`：
+`CE_MONEY() += 1; CE_MONEY_TOTAL() += 1;` —— 依据是 TH18 的**身价 = MONEY × K** 这条一手链
+（`th18:0x446b86` → `0x446b5c`，K = 500/1000），即 TH18 里"点道具价值基数"的**唯一**驱动量就是金钱。
+⚠ 副作用（要记住）：金钱也会 +1，**商店与 114 的批会读到**；不想要就退回 `MODE = 1`（一行）。
+
+| 2026-09-18 | **所有卡（共享件 `native/sdk_core.h` 注释 + `SCORE-LAYER-REWORK.md`：线下折扣除数 **163.18 → 450**；纯注释/文档订正，零行为变化）** | 见下方「§BE 详录 #42」 |
+| 2026-09-18 | **108（永夜抄）的「PIV 线」口径登记 —— ⚠ 未改任何代码、未动 `youkai.*` 一个字节** | 见下方「§BE 详录 #43」 |
+| 2026-09-18 | **计分层总公式换版（用户定：`G = G_0×coeff_0 + Σ ΔG_i×coeff_i`）—— ⚠ 尚未改 `sdk_core.*` 的任何一个字节，仅登记口径与两条落地路线** | 见下方「§BE 详录 #44」 |
+| 2026-09-18 | **共享 PIV 池 + 擦弹族（待办 ①，已实装）**：`sdk_core.h`/`.c`、`sdk.h`、`sdk.c`、`tests/test_sdk_core.c` + 四张卡各 2 行 | 见下方「§BE 详录 #45」 |
+| 2026-09-18 | **计分层换版（待办 ②，已实装）**：`sdk_core.h`/`.c`（系数族 + 几何桥 + 路线 A 归一 + 自算 `coeff_0`）、`sdk.c`（`ce_score_bridge_geom`）、`sdk.h`（退场清族）、`tests/test_sdk_core.c`（+16 断言）、`senro.c`/`signal.c`/`mof.c` 各一行声明族 | 见下方「§BE 详录 #46」 |
+| 2026-09-18 | **四张卡的共享 PIV 涨源接线（112 / 113 / 114 / 115）**：`cards/ufo.c`、`cards/trance.c`、`cards/collect2x.c`、`cards/lolk.c` | 见下方「§BE 详录 #48」 |
+| 2026-09-18 | **所有卡（发布侧登记：本会话在 ⛔ 冻结期跑了 3 次 `make release`，把**整棵树**（含其他批次的未提交产出）发到了部署侧）** | 见下方「§BE 详录 #50」 |
+| 2026-09-21 | **六张卡（共享件 `native/cards/hud_dim.{h,c}`：终点 alpha 32 → **128**、每帧 ±56（4 帧）→ **20 帧线性**；行为级 —— 六张卡的 HUD 压暗深度与过渡都变了）** | 见下方「§BE 详录 #51」 |
+
+**§BE 详录 #51**（共享件 `hud_dim.*` 的统一动态换基准，2026-09-21）
+
+- **原始登记**：`｜ 2026-09-21 ｜ **六张卡（116 / 117 / 107 / 113 / 110+111 + 115）** ｜
+  `native/cards/hud_dim.{h,c}`（常量 + `hud_dim_t` 两个新字段 + `hud_dim_tick` 改成线性插值）、
+  `native/cards/lolk.c`（删本地覆盖 `LOLK_PANEL_DIM_ALPHA`/`LOLK_PANEL_DIM_FRAMES` + 自己那份斜坡，改回调共享件）、
+  `native/cards/faith_hud.c`（静态初值补全 4 格 + 日志打印 `HUD_DIM_FRAMES`/`t`）、
+  `assets/ability/scripts/{123,124,125,126,127,175,176,177,178}_*.anm.txt`（label 4/5 的 `alphaTime`）、
+  `native/tools/anm_hud_alpha_check.py`（判据值 + 剥行尾注释）、
+  `native/tests/test_hud_dim_core.c`（重写 §①/§④–⑧/§⑩ 的期望值与逐帧表）、`native/tests/test_faith_hud_core.c`（§H 末段） ｜
+  **改了什么**：统一动态从「终点 32 / 每帧 ±56（4 帧）」换成「**终点 128（50% 透明）/ 20 帧线性**」；
+  脚本侧 9 支的 label 4/5 同步换成 `alphaTime(20, 0, 128)` / `alphaTime(20, 0, 255)` ｜
+  **为什么**：owner 2026-09-21 口径「20 帧 / 50% 如果是 UI 的话**得统一成一个值**，你以哪个为基准都行」
+  ⇒ 父 agent 以 **115 绀珠传**那套为基准（50% 是 owner 2026-09-19 口径；20 帧有一手 = TH15 `front.anm`
+  script241 的 `alphaTime(20, 0, 0)`，见 `engine/chapter/th15/02-chapter-panel-geometry-and-fades.md` §3）｜
+  **怎么验的**：`make check` rc=0（`test_hud_dim_core` **433** 断言 / `test_faith_hud_core` 4106 /
+  `test_lolk_core` 136 全绿；`anm_hud_alpha_check` 24 项 ✅；capcheck / sitecheck / abi / 契约 / gen_drift 全绿）；
+  `python3 tooling/check-docs.py` 全部通过；DLL 交叉编译零 warning（`cards/lolk.c`）。
+  ⚠️ **资产耦合**：脚本改了 ⇒ `ability.anm` 必须与 DLL **同批发布**（本会话**没有**部署）。
+  ⚠️ **回退**：改 `HUD_DIM_ALPHA_DIM` / `HUD_DIM_FRAMES` 两个宏 + 9 支脚本 + checker 的 `LABELS`，四处一起。 ｜`
+
+
+## §DS. ★★★ 112 的第五批：**飞碟槽 HUD 改成原版切图**（用户实跑 ⑤）+ **槽的 sprite 语义订正**（2026-09-18）
+
+> **来源**：用户 2026-09-18 实跑第④条：「**飞碟槽 HUD 你没按照原版做**」。
+> 状态回顾：第一版是 `drawRect` 拼的占位（卡里自标 ❓ 自定）；第二版把**原版贴图与脚本**搬了进来
+> （`make_ufo_hud_art.py` → sprite 457..462 / script 302..305）**但卡侧一行都没接线** ⇒ 用户看到的
+> 仍然是占位。**本批 = 接线 + 顺手把两处一手订正**（槽的 sprite 语义、TH18 场地左边缘）。
+
+### 一、★ 一手订正 ①：槽的 **sprite 语义**与第二版猜的相反
+
+第二版把 `front.anm` 的 sprite59/60/61/62 记成「红/蓝/绿/彩虹四色槽」。**错了**，逐像素量原图
+（`front/front00.png`，24×16，统计 alpha>32 像素均值）之后：
+
+| sprite | 可见像素 | 平均 RGB | 是什么 |
+| --- | --- | --- | --- |
+| **59** | 68 | (0,0,0) | **空槽 = 纯黑框**（不是红色） |
+| **60** | 198 | (151,62,62) | 红槽 |
+| **61** | 198 | (65,72,112) | 蓝槽 |
+| **62** | 198 | (64,112,71) | 绿槽 |
+| **63** | 68 | (0,0,0) | 空槽·亮版（与 59 同像素） |
+| **64** | 198 | (235,123,123) | 红槽·**亮版**（暗版 1.55× 亮度） |
+| **65 / 66** | 198 | (149,134,173) / (148,173,132) | 蓝槽·亮版 / 绿槽·亮版 |
+
+三条一手互相印证：
+
+| # | 一手 | 结论 |
+| --- | --- | --- |
+| ① | `FUN_004214b0` `th12:0x4214b0`：三格各写 `pending_interrupt = COLLECTED_UFOS[i] + 10` | 中断 **10 = 空**（59）/ **11 = 红**（60）/ **12 = 蓝**（61）/ **13 = 绿**（62）；`COLLECTED_UFOS[i]` 用 1/2/3 记红/蓝/绿，**0 = 空** |
+| ② | `FUN_00421690` `th12:0x421690`：每帧**直接写 VM 的 sprite 字段**（`0x53f80`），值 = `COLLECTED_UFOS[i] + 59 + (闪烁 ? 4 : 0)` | 「UFO 在场时令牌槽闪烁」的真身 = **换到亮版那一组**（+4），不是改 alpha |
+| ③ | 槽位（哪个 VM 站哪一列）= GUI 构建时发的**中断 7/8/9**（`0x41d5f0` 一带：`lea ebp,[esi+0x596c]` → `edx=7`、`[esi+0x5e20]` → 8、`[esi+0x62d4]` → 9）| 7/8/9 → `posTime` 目标 x = **52/73/94**（脚本 302 里逐条照抄） |
+
+⇒ **槽只有「空/红/蓝/绿」四态，原版没有彩虹色的槽** —— 与用户裁决「新增 2：**没有彩虹色 token**，
+彩虹色当且仅当收了三色 token ⇒ 开彩色 UFO」**完全吻合** ✓✓。
+
+**落到我们这边**（`ufo.c`）：
+- `ufo_hud_slot_state_of(color)`：红→1、蓝→2、**金→2**（用户裁决 ①「金 = 蓝的调色版」，等 P 图）、
+  绿→3、其余（含彩虹）→0；中断 = `10 + 四态`。
+- 闪烁：`ufo_on_field && (play_frame % 16 == 1)` ⇒ `ce_anm_set_sprite(槽, SPR_SLOT_EMPTY + 四态 + 4)`。
+  ⚠ 一手那个 timer 的确切来源没钉死（🟡），但它只决定"闪在哪一帧"。
+- 新令牌落格：本格发**中断 17**（出现：alpha 0→255 + scale 0→1，30 帧）+ 起一只脚本 **303** 的闪光 VM，
+  对它发 `interrupt(7 + 格号)` 与 `interrupt(10 + 四态)`（一手 `FUN_004214b0` 的 0x20a02 段同款）。
+- **没用**的两组标签：中断 2/3（alpha 255 / 64）与 14（槽回收动画）—— 一手里**发它们的调用点没找到**
+  （2/3 在脚本 79 的横幅上确有使用）⇒ 按纪律**不发明**，留着不用并在注释里写明。
+
+### 二、★ 一手订正 ②：TH18 的场地左边缘是 640 空间 **128**，不是 32
+
+- 一手：相机 3 视口 = `((DAT_0056ac80 − 408)/2, (DAT_0056ac84 − 472)/2, 408, 472)` = **居中**的 408×472
+  （`FUN_00454b20` `th18:0x454b20`，`engine/anm/th18/02-render-stages.md` §2）⇒ 场地（384×448）
+  在 640×480 里是 **x ∈ [128, 512]**、y ∈ [16, 464]。
+- 用户 1280 截图实测同一条：「游玩区左边缘 **257** / 底边 **928**」（= 表面 px；`engine/anm/th18/01-vm-instantiate.md` §3b）。
+- ⚠ 这与 `HUD-LAYOUT.md` §1.3 里那句「表面 px 的 x < 1000、y > 850 原版什么都不画」不冲突，但与
+  **§1.1 表里"货架锚点 257 = 640 空间 128.5"的解读**有关：257 **就是**游玩区左边缘（不是"引擎自己的
+  卡图标列"——卡图标列在右列根 1056）。⇒ 110/111 从 257 移到 64 是**移到了屏幕左margin**，
+  这是用户当时的口径（"左下角"指**屏幕**左下角），本条只是把一手的数字补全，**不改任何既有卡**。
+
+### 三、落点选择（❓ 自定，两个候选都试算过）
+
+原版槽在 640 空间 x = 52/73/94、y = 456（表面 104/146/188、912）。两个候选：
+
+| 候选 | 位置（表面 px） | 撞谁（实测过的块） |
+| --- | --- | --- |
+| **A（本轮采用）** `X_SHIFT_640 = 0` = **原版原值** | x 104..236、y 912..944 | 110/111 的组合 UI 块（x 64..252 / y 864..924）⇒ **擦到 y 912..924 = 6 个 640 单位** |
+| B `X_SHIFT_640 = 96`（跟着场地左边缘 128） | x 296..428 | 116（263..365 / 910..920）**与** 117（257..449 / 876..924）⇒ 同样擦 6 个单位，但撞两张卡 |
+
+⇒ 取 **A**：(a) 用户要的就是"按原版"；(b) 用户此前把系统卡 HUD 都往**屏幕左下角**摆；
+(c) 只擦一张卡、不多占任何人的地方。生成器里 `X_SHIFT_640` 是**一个数**，两个候选都是一行。
+
+**块认领同时从货架自动排布改成自带锚点**（`CE_HUD_SIDE_PINNED`，pin = 块左下角 表面 (104, 952)）：
+槽的坐标写在脚本里，块必须与它同源 —— 走货架排布一旦被重排（别的卡先占位）就会出现
+"块在这、槽在那"，这是这类 HUD 最典型的坑（先例：117 的 `ANIMAL_HUD_PIN_*`、110/111 的 `FH_PIN_*`）。
+
+### 四、落地清单（文件 → 改了什么 → 为什么 → 谁改的 → 怎么验证的）
+
+| 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
+| --- | --- | --- | --- | --- |
+| `assets/ability/make_ufo_hud_art.py` | **重写**：槽四态改名 `SLOT_EMPTY/RED/BLUE/GREEN` + 新增 4 张**亮版**；切图改**左上角对齐**（原居中会多 4 px 偏移）；新增 Δ3（坐标 ×2）/Δ4（尺寸 ×2）/Δ5（x 位移，现行 0）；ORDER 顺序 assert | 上面第一、三节 | 系统卡批次（112 owner） | 逐像素量原图（本文件与生成器里都留了表）；生成器 assert 通过 |
+| `assets/ability/entries/ORDER.txt` / `ORDER.ufo_hud.txt` | `ATLAS_UFO_HUD` 从 6 个成员 → **10 个**（sprite 457..466，槽四态连续 + 亮版 +4） | 同上 | 同上 | `make -C native anm` 通过；`anm_ids.h` 里断死号段 |
+| `assets/ability/scripts/302..305_*.anm.txt` | 重新生成（坐标/尺寸换算 + 改名后的 sprite 引用） | 同上 | 同上 | `thanm` 汇编通过（`make anm`） |
+| `native/cards/ufo.c` | HUD 段**整段重写**（删第一版的 `drawRect` 占位 + 一组 ❓ 常量；新增 4 支函数；块认领改 `_pinned_card`；诊断行扩成三件一起打）| 用户 ⑤ | 同上 | `make dll` 0 警告 · `make check` rc=0 · `dllx87` 0 |
+| `CAPACITY.md` | 登记 `ATLAS_UFO_HUD`（entry 62 / 10 成员 / sprite 457..466 / 余量 194）+ 附录 A 补宏 | capcheck 硬门 | 同上 | `capcheck` 绿 |
+
+**对既有卡的影响面**：**零**。本批没动任何共享件（`sdk.*` / `sdk_core.*` / `engine.h` / `sites.py` /
+`Makefile` / `cards_def.c` / `patch/**`）；`assets/ability/ORDER.txt` 只在**末尾**追加（既有 sprite 号
+一个没动，`make anm` 后其它卡引用的宏逐字节相同）。⇒ 不需要 §BE 登记。
+
+### 五、实跑要看的（验收判据）
+
+1. **槽出来了**：进游戏后左下角（屏幕最左、贴底）出现**三个原版样式的令牌槽**（空槽 = 黑框），
+   而不是第一版那种 20×20 的纯色方块；日志有 `ufo: HUD block 144x64 claimed (pinned) at surface (104, 952)`
+   与 `ufo: HUD up (TH12 original art) - 3 token slot VMs …`。
+2. **四态与闪光**：吃到红/蓝/绿令牌 ⇒ 对应格变成该色并冒一下闪光（脚本 303），
+   日志有 `ufo: slot N flash (state X)`；三格凑齐/开 UFO 后槽回空（黑框）。
+3. **闪烁**：UFO 在场时槽每 16 帧闪一下亮版（sprite +4）。
+4. **不重叠**：与 110/111 的组合 UI 只擦 6 个单位（见第三节）——若嫌擦到，回报即可（一行 knob）。
+5. **回归**：令牌掉落/飞行/入槽/召唤/吸收/击破开奖/五边形框/环与条**一字未改**（本批只碰 HUD 段与注释）。
+
+## §DT. ★★★ 112「**环贼 jb 大**」的根因：**父 `scale` 把子几何乘爆**（2026-09-18，用户实跑第二轮）
+
+> **用户原话**：「**环不是偏移，是贼 jb 大，它确实是跟着飞碟动 —— 但是贼大，所以只在它快走的时候，
+> 我才看到露出的环**」（第一轮的原话是「本体的很多倍 … 在画面的最底下看到了一个很大的圆弧」）。
+> **结论**：不是坐标、不是绘制侧，是**继承**——第二版为了省事没移植原生 `script207`，把**填充弧**
+> 当父、让两条描边当它的子，而引擎**会把父的 `scale` 乘到子几何的半径上** ⇒ 描边半径被父 scale
+> 的 6 / 59 各乘一次 ⇒ 屏幕上只剩「露出的」一小段巨大圆弧，且**跟着敌人动**（父子位置继承）。
+
+### 一、一手：TH18 里「半径 ×= 父 scale」确实存在，而且有两处
+
+| # | 地址（th18） | 指令原文 | 属于哪一族 |
+| --- | --- | --- | --- |
+| ① | `0x481bcc` 一族的 mode 9/13/14 绘制器（Ghidra 反编译 `0x47bef0` 的 `case 9` / `case 0xd,0xe`）| `r_out = scale.y + scale.x×0.5; r_in = scale.y − scale.x×0.5;` 然后 `if (parent && !(flags_hi & 0x40000)) { r_out *= parent[+0x54]; r_in *= parent[+0x58]; }` | **圆 / 弧**（9 / 13 / 14）|
+| ② | `0x47b423`–`0x47b42c` 与孪生点 `0x47b774`–`0x47b779`（同一函数的两个 case）| `mov eax,[edi+0x5c0]` → `test eax,eax` → `test [edi+0x538],0x40000` → **`mulss xmm5,[eax+0x54]` / `mulss xmm4,[eax+0x58]`** | **多边形族**（`drawPoly` / `drawPolyBorder`，即我们的两条描边）|
+
+- `vm+0x5c0` = **父 VM 指针**（同一字段在别处被清零：`0x604f`/`0x1cd81`/`0x485ce` … 十余处 `mov [vm+0x5c0],0`）；
+  `+0x54/+0x58` = `scale.x/scale.y`；`flags_hi & 0x40000` = 「不继承父缩放」的开关位。
+- 交叉印证（TH16 同形同写法）：`engine/anm/th16/09-drawing.md` **§3.5 第 1 条**（`th16:0x4633c8`–`0x4633dd`
+  与 `0x46370e`–`0x463723`，两处写法一致，并特意记了「两个半径乘的是父 scale 的**不同分量**」这个 ZUN 的怪笔法）。
+- ⚠ 所以我们**不需要**去复现原生那棵树：原生树里 **`script207` 的 scale 恰好是 (1,1)**（它只写
+  `layer(0x17) / alpha(0) / scriptNew(...) / stop()`），⇒「挂在一个 scale=1 的父下面」与「谁都不当父」
+  **效果完全等价** ⇒ 摊平是正确的等价改写，不是取巧。
+
+### 二、算一遍（与用户描述逐字对上）
+
+| 件 | 脚本半径 | 第二版的实际父 scale | 屏幕上的半径 |
+| --- | --- | --- | --- |
+| 填充弧 `drawRect`… 不，是 `texArcEven` 弧（228）| `scale(6,59)` ⇒ r = 59 ± 3 | **没有父**（它是第二代里的父）| 59 单位 ✓（正常） |
+| 描边外（229）`drawPolyBorder(62,48)` | 62 | 父 = 弧 ⇒ `r_out ×= 6`、`r_in ×= 59` | **372 ～ 3658 单位**（≈744 ～ 7316 表面 px）|
+| 描边内（230）`drawPolyBorder(55,48)` | 55 | 同上 | **330 ～ 3245 单位** |
+
+- 游玩区只有 384×448 单位、可见视口 408×472 ⇒ 半径 372+ 的圆**只有一个极小的角落在视口内**
+  ⇒ 用户看到的就是「**露出的**一小段巨大圆弧」✓；
+- 父子位置继承 ⇒ 它**确实跟着飞碟动** ✓；
+- 飞走时敌人出视口、圆心移出，露出的那段扫过画面 ⇒「**只在它快走的时候**才看到」✓。
+
+### 三、修法（两处改动）
+
+| 文件 | 改了什么 | 为什么 |
+| --- | --- | --- |
+| `assets/ability/scripts/228_ufo_gauge_arc.anm.txt` | **删掉两行 `scriptNew(229/230)`**（第二版加的）+ 原地留一份长注（一手地址、算式、为什么摊平等价）| 断掉「弧当父」这条链，子几何不再被乘 |
+| `native/cards/ufo.c` | 新增 `s_ring_border_id[2]` + `ufo_gauge_flash()`；spawn 起 **4 只**（描边→弧→血条，次序照原生树 204→205→206）、follow 逐帧摆三条、kill 四条一起删、自愈四只一起查、诊断行扩成五台 VM | 树摊平后位置与生命周期全归卡侧；顺带补上「吸满闪烁」|
+
+### 四、验证
+
+- `make dll` **0 警告**；`make check` **rc=0**（capcheck / check-docs 358 文件全绿）；`make dllx87` = **0**。
+- `thanm -l 18` 回读：脚本 228 里**已经没有 `ins_500`（scriptNew）**，`ins_402(6.0f,59.0f)` / `ins_601([10000])`
+  等原样在 ⇒ 编译产物与预期一致。
+- **实跑判据**：环应当变成「**贴着敌人、半径约 59 单位（≈118 表面 px）的那一圈**」，两条描边紧贴它
+  （62 / 55 单位）；吸满那一刻三条一起**闪烁换色**。日志里 `ufo/gauge: arc … border … bar … body …`
+  每 60 帧一行，可对账「三条位置一致、scale 是 6/59 与 1/1」。
+- ⚠ 没有动任何共享件（`sdk.*` / `sdk_core.*` / `engine.h` / `Makefile` / `patch/**`）⇒ 不需要 §BE 登记。
+
+### §BE-EG ★ 统筹批：把「发布/生成物/预算」三条协作纪律变成**机器闸**（2026-09-18，统筹会话）
+
+**背景**：2026-09-18 一天里连着出三件同源的事 —— ① 一个会话在 `local/DLL-SYNC.md` 的 ⛔ 冻结期内
+发了 3 次版（**它只读了那份文件的开头**，冻结标记在 474 / 540 两节，且 `local/` 不入库、协作者看不到）；
+② `patch/th18.v1.00a.js` 是**生成物**却被拿来手改做二分（§BE 详录 #41 的「摘掉 `ce_enemy_damage`」），
+而任何一次 `make gen` 都会把手工改动**静默抹掉** ⇒ 后来的人判成「未登记的还原」（#49），两条结论互相矛盾；
+③ 站点预算余量 **0**（24 / 24）却是绿字，而预算是**进程级共享资源**（跨会话共享跳板池）。
+
+⇒ 本批**不加功能、不动卡**，只把这三条纪律做成闸（统筹会话的口径：本会话的目标就是「站点数问题 + 触发机制」，
+这类"统筹 bug"归它改）。
+
+| 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
+| --- | --- | --- | --- | --- |
+| `native/tools/release_guard.py`（**新增**） | 发布前闸 + 记账五子命令 + 入库状态文件（细节见下节） | 冻结与「部署侧现在是哪一批」以前只在**人读的文档**里 ⇒ 脚本与协作者都看不见 | 统筹会话 | 烟测通过；冻结时 `check` **退出码 2**；`make release` 在 `release-check` 处中止 |
+| `native/tools/gen_drift.py`（**新增**） | 跑一次 `sites.py gen --rows 255`，逐字节比对三份生成物（`patch/th18.v1.00a.js`、`native/sites_gen.h`、`patch-test/th18.v1.00a.js`），不一致就红并解释两种成因；**不改工作区**（比完还原），`--fix` 才留下现算的那份 | 治 §BE 详录 #41/#49 那条"手改生成物 ⇒ 任何一次构建静默抹掉 ⇒ 实验对照组失效" | 同上 | 正反都测过：现树一致时 ✅；手工删掉一个 `breakpoints` 块 → 红且工作区不被改。**上线后第一次跑就命中**：活树里 `patch/th18.v1.00a.js` 当时缺 `ce_enemy_damage`（详见下方「首次实战」） |
+| `native/Makefile` | `check` 加 `tools/gen_drift.py`；新增 `release-check` 目标（= `release_guard.py check`）；`release` 从 `release: dist` 改成 `release: release-check dist` + 收尾 `record` | 纪律必须是**闸**：冻结期 `make release` 直接中止；发布完自动记账 | 同上 | `make check` 跑到该步；`make release` 实测在冻结期于 `release-check` 中止（未构建、未发布） |
+| `RELEASE-STATE.json`（**新增，入库**） | 初始 `freeze.active = true`（理由：等 #41 裁决 + 并发会话在动树，owner「暂不发布」口径）；`last_release` 由 `local/DLL-SYNC.md` 的登记**回填**（patch `13995719…` / DLL `242c512d…`，其余字段留 null 并注明原因） | 发布内容属于所有人的事实；抬冻结 = 一次提交（有理由、有记录） | 同上 | `status` 读出冻结态、上次发布与"与工作区现状的漂移行" |
+| `native/sites.py` | 站点预算余量 0 由 `✅` 改 `⚠`（并写明"加站点前先记账 + 改 `SITE_BUDGET`；别两个人同一天各加各的"） | 余量 0 不是「没问题」，是「下一条就超线」 | 同上 | `python3 sites.py check` 现在打印 `⚠ 在预算内但**余量 0**（24 / 24）` |
+| `native/start_deck.c` | 修 `ce_deck_audit()` 的 **PE 可选头偏移**：`SizeOfImage` 在 `pe + 0x18 + 0x38`（原写成 `pe + 0x38` = 可选头 `+0x20` = `SectionAlignment` = `0x1000`）；读不出合理上界时**整条跳转表检查跳过**（宁可不报也不误报）；日志里打出 `SizeOfImage` 与影像末 | 修一次**误报**：2026-09-18 15:02 那局日志里 `deck-audit: ★ 11 个槽的跳转表项不是影像内的地址 … 影像止于 00401000` 就是它 —— 上界被算成 `base + 0x1000`，于是每条跳转表项都被判"不在影像内" | 同上 | `make dll` 0 警告；`make test-host` / `make check` 全绿（除下述外部漂移）|
+
+**`release_guard.py` 细节**：`freeze / unfreeze / check / record / status` 五个子命令；状态文件 = **入库的**
+`RELEASE-STATE.json`（`freeze.active` + 最近发布快照）。`check` 先看冻结（**冻结 ⇒ 退出码 2**，并打印
+`unfreeze --reason "<为什么现在可以发>"`），再跑既有门：`sites.py check`（patch 声明 ↔ `.def` 双向对账 +
+站点预算）与 `tools/check_deploy_pair.py`（DLL ↔ 游戏里 `pl0X.sht` 同批，需 `--modkit`）。
+`record` 写「patch js / DLL / 四份 `pl0X.sht` / `abcard.anm` / `ability.anm` / `cards.js` / `files.js`」的 md5
+快照，并追加一行到本机 `local/DLL-SYNC.md`。
+
+**★ 新闸的首次实战：它先报了一次红，而那次红是它自己造的（订正 + 教训）**：`gen_drift.py` 第一次跑
+（在 `make check` 里）报「`patch/th18.v1.00a.js` 工作区 `7d04d3a7…` ≠ 现算 `139957195894…`」。**追下去发现不是别人的
+实验，是本工具自己的 bug**：它给三份生成物做备份时只用 `basename`，而**主 patch 与测试 patch 的 basename 相同**
+（`patch/th18.v1.00a.js` vs `patch-test/th18.v1.00a.js`）⇒ 第 2 份备份把第 1 份**覆盖**了，还原时就把
+**测试 patch 的内容写进了主 patch**（主 patch 于是变成"只有 `ce_test_deck` / `ce_trace_alloc` 两个断点、0 条 binhack、
+0 个 codecave"那一份 —— 真发出去等于整个 mod 失效；`capcheck` 的 `sht_* 应为 1 条` 也同时报了红）。
+**已修**：备份名加序号前缀（`bak00_…` / `bak01_…`），并把"逐目标唯一"写成注释；恢复主 patch 后连跑 3 次
+`gen_drift` 逐字节不变（幂等）。⇒ 教训两条：① **带副作用的检查工具**（会就地重写生成物的 `sites.py gen`）
+必须先按目标逐个隔离备份；② 排到"漂移"时**先怀疑自己的工具**再看别人 —— 本仓当天已经有过一次"归因到并发
+会话"的误判（§BE 详录 #49），这次差点又来一次。
+
+**对既有卡的影响面**：零 —— 本批只加**两个新工具**、加一个**入库状态文件**、改 `Makefile` 的两个目标、
+`sites.py` 的一句打印、`start_deck.c` 的 PE 偏移。**没有改任何 binhack / 站点 / 卡行为 / 资产**；
+`patch/` 下的生成物一个字节都没动（正因如此 `gen_drift` 报的是别人那份漂移）。
+
+**未做**：抬冻结（要 owner 发话）；站点预算那条裁决（#41 假说 vs §BE-DW 定案的结果）；归属 trailer 约定。
+
+### §BE-EH ★ 十二张系统卡 106–117 在选卡界面**连成一条**（owner 2026-09-18，纯显示改动）
+
+**背景**：owner 口径「在选卡界面，**th06–th17 应当是连续的**，我的这个顺序是从后往前的选卡截面顺序，
+并且**前 4 张和后几张之间有 gap**」。
+
+**病因（一手 + 离线复算）**：显示序由 `ce_build_order`（`native/cards_def.c`）生成 —— 每个新 id 插到
+**它自己那个类别在原生顺序表里最长连续段的末尾**（原生表 `th18:0x4b3600` 按类别分块：
+资源 `3`×7 → 子机装备 `1`×14 → 被动 `2`×21（含最长段 `26..40`）→ 主动 `0`×12（`41..53`）→ …）。
+而十二张系统卡里 **`113` 神灵庙 / `116` 天空璋 / `117` 鬼形兽 的 `category` 是 `0`（主动）**，
+其余九张是 `2`（被动）⇒ 它们被劈成两段：
+
+| | 显示序位置（复算） | 内容 |
+| --- | --- | --- |
+| 被动段末尾 | 61..69 | `106 107 108 109 110 111 112 114 115` |
+| 之间的 gap | 70..87 | 测试卡 `200` + 原生主动卡 `41..53` + 别的主动新卡（`64 66 67 72 80`）|
+| 主动段末尾 | 88..90 | `113 116 117`（后面接 `118`）|
+
+**修法（数据only，不动代码/不重编 DLL）**：`patch/th18/cards.js` 里把 `113` / `116` / `117` 的
+`"category"` 由 `0` 改成 `2` ⇒ 十二张一起落在被动段末尾，复算显示序 **61..72 连续升序**
+（`th06 → th17`），前后分别是别的被动新卡与测试卡 `200`。
+
+**为什么这是安全的**：`category` 在引擎里**唯一的读取点**是菜单 `0x416940`（`≠ 4` 才显示说明面板），
+不影响玩法（`DATA.md` §2 的既有结论）；卡的「主动/被动」表现由 `active_recharge` / 行为虚表决定
+（HUD 那三行是按 `card+0x50` 的位分组的，SDK 侧只对 `category 1` 改 flags）⇒ 本改动**纯显示**。
+
+| 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
+| --- | --- | --- | --- | --- |
+| `patch/th18/cards.js`（**共享件**）| `113`/`116`/`117` 的 `category` `0 → 2` | 让十二张系统卡在选卡界面连成一条（owner 口径）| 统筹会话 | ① 离线按 `ce_build_order` 的规则复算显示序：`106..117` **连续**（位置 61..72）；② `mkfiles.py --check` 通过；③ `make check` rc=0；④ 部署侧 `cards.js` md5 与仓库一致（`f4013c8b…`），DLL 未变（`adfa8171…`）|
+| `DATA.md` | `category` 一节补记这条口径（含原因与「不影响玩法」的依据）| 免得后人把它当成填错又改回去 | 同上 | 同上 |
+
+**对既有卡的影响面**：只改三张系统卡的 `category`（它们的行为、虚表、HUD 分组、商店/解锁逻辑全不受影响）；
+其余新卡的显示位置不变（`ce_build_order` 的插入规则没动）。**没有代码改动、没有 binhack/站点改动。**
+**未做**：`118`（十二合一，主动）仍留在主动区段末尾、紧邻它的位置不是系统条带 —— owner 没要求，先不动。
+
+### §BE-EI ★ 恢复 `.on_enemy_damage` 订阅（113 神灵庙「Boss 吃到伤害 → 掉灵」）—— owner 2026-09-18「你改我跑」
+
+**背景**：`§BE 详录 #41`（2026-09-17a）为「站点总数越线」假说把 113 的 `.on_enemy_damage` **退订**
+（订阅行注释 + handler 标 `__attribute__((unused))`），此后该通道**死的**：`trance:` 汇总行恒为
+`boss hits 0(drops 0, rejected 0)`（实测日志确认）—— 站点在跑、卡侧没人订阅。
+owner 2026-09-18 口径：「**你改我跑**」⇒ 本批恢复订阅，供实跑验收。
+
+**★ 本批要说清的一条（也是 #41 判据的一部分）**：**取消/恢复订阅不改变站点声明集，也不改变跳板池布局** ——
+`ce_enemy_damage`（`th18:0x42f2cb`）的声明一直在（24 条之一、`.def` 也导出），桩与跳板格一直占着，
+`BP_ce_enemy_damage` 一直每敌每帧在跑（建 `ev` → 走卡链 → 没人订阅就 `return BP_EXEC_ORIGINAL`）。
+#41 的二分改的是**声明**（摘掉 ⇒ 布局变）⇒ 「订不订阅」与那条崩溃假说**无关**；恢复订阅也不会把它带回来。
+顺带订正 #41 里写的「恢复 = 取消注释 + `patch`/`.def`/`Makefile` 三处回滚」：那三处是**声明**层面的，
+现在声明已在 ⇒ **只需改卡侧两处**。
+
+| 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
+| --- | --- | --- | --- | --- |
+| `native/cards/trance.c` | ① `CE_CARD(113, …)` 里恢复 `.on_enemy_damage = on_enemy_damage,`；② 去掉 handler 上的 `__attribute__((unused))`；③ 两处注释改成"恢复 + 为什么不需要动 patch/.def/Makefile" | 让「Boss 吃到伤害 → 掉灵」这条通道活过来（实跑验收）| 统筹会话 | `make dll` 0 新警告；`make check` rc=0；发布 DLL `139bbc0a…` **四处同 md5**（`mods/`、`thcrap/bin/`、`_255/`）；`release_guard record` 已记账 |
+
+**实跑要看什么（验收判据）**：
+1. `trance: … boss hits N(drops M, rejected K)` —— `N` 应随 boss 挨打增长；`K` 应为 **0 或极少**
+   （不为 0 ⇒ 又读到"不像活敌"的数据，回 `sdk.c` 的偏移口径查，见 §CI-7 那段的合理性闸）；
+2. 有掉落时日志会有 `trance: boss drop #n (enemy id …, dmg …, accum …, next threshold …, +d by distance)`
+   —— `d` 由**距离分档**给出，且阈值是"累加"不是"重置"（一手口径）；
+3. 掉出来的灵应出现在**那颗 boss 的位置**（不是自机脚下）。
+
+**★ 2026-09-19 实跑验收（stage 1 打完，没崩）**：`boss hits 593(drops 27, rejected 0)` → `965/46` → `1442/68` → `1621/74`；11 条 `boss drop #n (…accum… next threshold… +d by distance)`；`rejected 0` ⇒ 合理性闸一次都没拦（说明 `sdk.c` 的字段口径是对的）。⇒ 本批**验收通过**，th13 #1/#2 两条现象（Boss 击中/击破不产灵）随之关闭。
+
+**风险与回滚**：风险是**行为级**（掉灵数量/位置不对），不是崩溃级；本通道自 2026-09-17a 起没跑过，
+第一次实跑就是它的验收。回滚 = 把 `.on_enemy_damage` 那行注释回去 + handler 加回 `unused`（两处）。
+**没有改任何 binhack / 站点 / 资产 / 其它卡。**
+
+### §BE-EJ ★★ 事故与订正：改 `cards.js` 的 `category` ⇒ 撞 SDK 契约 ⇒ **整局新卡禁用**（2026-09-19）
+
+**现象（owner）**：「我的有一个 slot 变成虚无了」。**病因是我上一批的改动**（§BE-EH）：
+为了让十二张系统卡在选卡界面连成一条，我把 `113`/`116`/`117` 的 `cards.js` `"category"` 由 `0` 改成 `2` ——
+而这三张是**主动卡**（`CE_CARD(...)` 里有 `active_recharge`）⇒ 实跑自检门当场：
+
+```
+FAIL: sdk: card 113 violates JSON/behavior contract (reason 2)
+start_deck: disabled（门禁失败；新 id 分配不出来）
+mitigation: allocator bound restored to retail (56) — new ids disabled
+```
+
+⇒ **分配器上界被还原成 56** ⇒ id ≥ 58 全部分配不出来 ⇒ 编成里那些格子**建不出卡对象**（表现为"虚无"／后槽前移）。
+实测日志另外两行正是这次的读数：`deck-audit: 分配器上界 = 56`、`★ 10 个槽的 id 超过分配器上界`。
+
+**两条契约（一手，`native/sdk_core.c` 的 `ce_sdk_contract_check` / `ce_sdk_bind_check`）**：
+
+| reason | 规则 |
+| --- | --- |
+| 1 `ACTIVE_BEHAVIOR_REQUIRED` | `category == 0`（主动卡）**必须**有主动行为（`active_recharge != 0`）|
+| 2 `ACTIVE_CATEGORY_REQUIRED` | **有**主动行为 ⇒ `category` **必须** = 0（← 本事故踩的就是这条）|
+| — `bind_check` | `cards/*.c` 里有 `CE_CARD(id, …)` 的 id **必须**在 `cards.js` 里登记（反方向允许）|
+
+**修法（两处，各自归位）**：
+
+| 文件 | 改了什么 | 为什么 |
+| --- | --- | --- |
+| `patch/th18/cards.js` | `113`/`116`/`117` 的 `category` **回滚成 `0`** | 契约要求主动卡 = 0（它们确实是主动卡）|
+| `native/menu.c` | **显示分组**：建顺序表时给 `CE_SYS_CARD_LO..HI`（106..117）**同一份显示类别**（`new_cat[i] = 2`），表行里的类别不动 | 连成一条本来就是**显示**需求；`ce_build_order` 按类别分段 ⇒ 在"喂给顺序表的拷贝"上分组即可，与引擎/契约无关 |
+| `native/cards_def.h` | 新增 `CE_SYS_CARD_LO/HI` 常量 + 注释（写明"**只用于显示分组**，别拿它改 `cards.js`"）| 免得后人重犯 |
+| `native/tools/contract_check.py`（**新**）| 构建期预检两条契约：扫 `cards/*.c` 的 `CE_CARD(id, …)` 与 `active_recharge`，对 `cards.js` 的 `category` 逐张对账 | **这次事故本该被构建期挡住**：两条契约本来只有"喂构造数据"的主机单测，**真数据从没在发布前对过账** |
+
+**验证**：① `tools/contract_check.py` 正反都过（现树 ✅；把 113 改回 `2` → 红并打印"要调显示顺序请改 `menu.c`"）；
+② 离线按 `ce_build_order` 复算：`106..117` 在显示序 **61..72 连续升序**；③ `make check` rc=0（新闸已挂进去）；
+④ 发布 DLL `cfc3c09e…` 四处同 md5、`cards.js` 已同步、`release_guard record` 已记账。
+
+**教训（写进纪律）**：`category` 是**引擎/契约字段**，不是排版权重；要调"显示成什么样"去 `menu.c` 的显示分组，
+并且**新加的闸要能在发布前抓住它**——本次补的 `contract_check.py` 就是这一条。
+
+**订正 §BE-EH**：那一节的"修法（`category` 0 → 2）"**已作废**，保留其病因分析（显示分段的机制没错），
+修法以本节为准。
+
+### §BE-EK ★ #41 的 owner 口径（2026-09-19）：**不再复现 ⇒ 暂按"好了"处理，记录在案，再崩再查**
+
+owner 逐字：「那么我对 #41 的判断之前失误 / 现在这个情况只能当：我不知怎么地，这个错误没再出现，
+就当它好了，先记下来，之后什么时候崩了再说」。⇒ 本节的效力：
+
+- **不做裁决**（站点预算假说 vs `§BE-DW` 的窗口定案**两个都留着**）；
+- **不再挂着"发布冻结"**（`RELEASE-STATE.json` 的 note 改成这条口径，冻结节已按 owner 授权解除）；
+- **保留的判据与工具**：`§BE-DW` 的窗口规则（`sitecheck` 的 W3）、站点预算行（余量 0 / 进程级 44>42 会告警）、
+  `local/DLL-SYNC.md` 的 ⛔ 历史节。**哪天又崩，先翻这一节 + #41 + §BE-DW**。
+
+### §BE-EL 站点预算口径订正：`SITE_BUDGET = 24` 降级为**记账线**（owner 2026-09-19「可以」）
+
+**背景**：owner 追问「所以预算余量是真的吗？还是人为判定」，随后指出「**可是那次二分在我看来是 #41**」——
+核过之后他说的对：`native/sites.py` 原来那句「实测（`local/MEMORY.md` §1.3h–§1.3l）：**24 条安全 / 26 条必崩**」
+的出处，就是**后来变成 `AUDIT.md` §BE 详录 #41 的那条实验线**（§1.3h 对照局 → §1.3j 只挂 patch 不崩 →
+§1.3k 栈漂移假说 → §1.3l 证伪）；而 #41 的结论**至今未复现**，机制上又已被 `§BE-DW` 的窗口定案取代
+（一条裸 `ja rel32` 的窗口 ⇒ `cave_fix` 不修 ⇒ 跳进池子未写格 ⇒ `00 00`/写 `0x1`）。
+`GATES.md` §8.1 也早就写着「**条数不是决定因素**」（同一个 40 既崩过也跑通过）⇒ **不一致的是工具，不是文档**。
+
+| 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
+| --- | --- | --- | --- | --- |
+| `native/sites.py` | ① 文件头那段预算注释重写成「记账口径 + 出处存疑 + 真判据三条」；② `check` 里「声明数 > 24」**由 ❌+`bad` 改成 ⚠ 记账提醒**（不再让 `make check` 判红）；③ 余量 0 的文案跟着改 | 把"人为阈值"当硬闸会挡掉本来可以做的功能（例如 §P12 要加的 `ce_player_die` 站点）；真正该看的是窗口与池子实测 | 统筹会话 | `python3 native/sites.py check` 现在打 `⚠ 记账线余量 0（24 / 24）…` 且不再进 `bad`；`make check` rc=0；`check-docs` 360 全绿 |
+| `GATES.md` | 新增 **§8.7**：24 的出处与存疑、判据三条（`sitecheck` 窗口 / 启动日志 `pool:` 实测余格 / 实跑）、超线时的动作（记账 + owner 拍板） | 口径要落在"以后怎么判"，不只是"这次对不对" | 同上 | 同上 |
+
+**加站点的三条真判据（此后按这个走）**：① `native/tools/sitecheck.py <addr> <len> [--ret …]`（窗口/落点/栈中性）；
+② 启动日志 `pool: 可执行页 N、跳板格 M、首个全零格 @…`（离线对账 `tooling/poolmap.py`）；
+③ 实跑一局。**「余量 0」不再等于「不能加」**（`SITE_TOTAL_BUDGET = 42` 本来就是告警线）。
+**对既有卡的影响面**：零（只改生成器注释与门禁判红口径，patch/binchack/站点/卡行为一个字节未动）。
+
+### §BE-EM ★★★ 放出 5 条被「下标截断」挡住的功能站点（owner 2026-09-19「对于明确是bug的部分，先解决吧」）
+
+**发现**：`native/sites.py` 末行那句
+`SDK_SITES = [s2 for i, s2 in enumerate(SDK_SITES) if i < 10 or s2[0] in _SDK_KEEP_NAMED]`
+是 2026-09-18「按下标截断」事故的**残留形态**（当时已改成"按名字保留观察者"，但 `i < 10` 这半句留了下来）
+⇒ 它把 **8 条**站点挡在门外，其中 **5 条是功能站点**，而 `sites.py` 的"已声明"表里还写着它们
+（对账一直是绿的 —— 绿得毫无意义）。这解释了 owner 报的一串"功能没生效"：
+
+| 放出的站点 | 地址 | 对应已报现象 / 静默失效 |
+| --- | --- | --- |
+| `ce_shot_set_index` | `th18:0x45ebfb` | th13 #5「灵界状态发弹更改消失」、th17 #2「暴走咆哮发弹更改消失」**两条** |
+| `ce_player_die` | `th18:0x45d3a0` | th13 #6「主动灵界中弹 ⇒ 灵界结束后死亡」、#3「中弹音效未屏蔽」|
+| `ce_poc_gate_a` / `ce_poc_gate_b` | `th18:0x445bb9` / `th18:0x446003` | th06 #1「非满 P 上线不应该触发全屏收点」（106 的闸门就是这两处）|
+| `ce_bullet_damage_final` | `th18:0x45e7ff` | **伤害层唯一起作用点** —— 被截掉 = 所有用 `bullet_damage_permille` 的卡（古锭刀 / 衔尾蛇 / 季节 / 测试卡 200…）**静默无加成** |
+
+| 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
+| --- | --- | --- | --- | --- |
+| `native/sites.py` | 把上面 5 个名字加进 `_SDK_KEEP_NAMED`（逐条注释"修哪个 bug"）| 功能站点不该被下标截断挡住；条数已降级为记账口径（§BE-EL）| 统筹会话 | `sitecheck.py <addr> <len>` 五条**四项全过**；`sites.py check` 打 `⚠ 超记账线：29 > 24`（不判红）+ `✅ 29 个 BP_* 双向一致`；`make check` rc=0 |
+| `native/th18_card_expand.def`（生成物）| 由 `tools/gen_def.py` 从声明集重生成（30 导出 = 1 + 29）| patch 声明与 `.def` 导出必须双向一致（否则游戏里静默不生效 / 僵尸导出）| 同上 | `sites.py check` 的导出对账全绿 |
+| `patch/th18.v1.00a.js`（生成物）| `sites.py gen --rows 255` 重生成 | 声明集变了 | 同上 | `tools/gen_drift.py` 通过 |
+| `GATES.md` | 新增 **§8.8** 记账（放站点、三条判据的读数、进程级 44 → 49）| 加站点要记账（§BE-EL 的口径）| 同上 | 同上 |
+
+**owner 实跑要看的四件事**（这是本批的验收）：
+1. **113 灵界**：发动灵界时**主炮换组**（TH13 灵界组 `0x28`）—— 不再"发弹更改消失"；灵界里中弹**不掉命**（闸门吃掉判定）；
+2. **117 咆哮**：咆哮期间主炮换组生效；
+3. **106**：**不满 P** 时过收点线**不吸道具**（满 P 照旧全收）；
+4. **伤害层**：带 `bullet_damage_permille` 的卡（如测试卡 200 ×2）明显加伤。
+⚠ 同时盯启动日志：`pool: 可执行页 N、跳板格 M、首个全零格 @…`（本是 43 格；现在声明 27 条，应当仍在池内）；
+以及有无 `FAIL` / `mitigation`。**要回滚**：把 5 个名字从 `_SDK_KEEP_NAMED` 删掉 + `make gen` 即可（`AUDIT` 记录在先）。
+
+### §BE-EN ⛔ 事故：放出 `ce_poc_gate_a/b` ⇒ **道具每帧无条件真空**（owner 实跑「同装 th14 和 15 的时候，一直在全屏吸收」）
+
+**现象**（owner 2026-09-19 晚，deck = `[114, 115, 空]`，跑在 `§BE-EM` 那一版上）：道具**一直在被全屏吸收**；
+114 的日志同步刷 `collect2x: batch of N closed below tier 20 (×0, no award)`（小批连续闭合）。
+
+**根因（一手读 handler）**：`ce_poc_gate_a/b` 的窗口**就是那条条件分支本身**（`0f 87 a4 03 00 00` = `ja 0x445f63`，
+前一条 `comiss xmm0,[esi+0x624]` 设的标志仍在 `regs->eflags` 里），而 handler
+`ce_poc_gate_common(regs, fall_through)` 只做一件事：
+
+```c
+ce_retaddr_set(regs, ce_full_p_gate_active() ? fall_through : CE_POC_VACUUM);
+```
+
+⇒ **它从不复现那条比较的语义**：没人声明"满 P 闸"时（例如 deck 里没有 106），恒落 **真空入口 `0x445f63`**
+⇒ 每帧无条件真空 ⇒ 全屏吸收。⇒ 这两条站点**本来就不该在 handler 还是这个样子的时候放出来**。
+
+| 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
+| --- | --- | --- | --- | --- |
+| `native/sites.py` | `ce_poc_gate_a/b` 从 `_SDK_KEEP_NAMED` **撤回**（连同注释写明"要修 handler 才能放"）；其余三条（`ce_shot_set_index` / `ce_player_die` / `ce_bullet_damage_final`）保持放出 | 撤回本次事故的成因；那三条各自对应别的已报 bug 且**不替换条件分支**（风险不同）| 统筹会话 | 正式声明 27 → **25**；`sites.py check` 导出对账 27 条全绿；`make check` rc=0；发布 DLL `b517cc71…` 四处同 md5；部署 patch 断点数 25 且 `ce_poc_gate_*` **不在**其中 |
+| `GATES.md` §8.8 | 补"当晚撤回两条"与计数（27→25、49→47）| 记账要跟得上 | 同上 | 同上 |
+| `SINGLE-CARD-TEST.md` | th06 #1 标 **⛔ 挂**（写明为什么、怎么才能修）；th13 #3/#5 标"站点已放出、待实跑验" | 现象与状态同步 | 同上 | 同上 |
+
+**★ 教训（写给下一次"放站点"）**：`sitecheck.py` 的 W3 例外只保证**窗口安全**（cave 不回放不会跳飞），
+**不保证 handler 的落点语义**。凡是"窗口 = 一条条件分支"的站点（本站点就是），放出来之前必须先过一问：
+**handler 凭什么复现原分支？**（读 `regs->eflags` / 重算比较 / 由声明层给出），否则就是把条件分支变成无条件分支。
+
+**要修 th06 #1 的正确做法（未做）**：把 `ce_poc_gate_common` 改成
+`take = (eflags 复现 ja) && !full_p_gate_active()`（`ja` = `CF==0 && ZF==0`，即 `!(eflags & 0x41)`），
+再实跑验收（不满 P 过线不吸、满 P 过线照吸、不过线永不吸）之后才能放这两条站点。
+
+### §BE-EO ✅ 修好 `ce_poc_gate_common`：**按 `regs->eflags` 复现那条 `ja`**，两条 POC 站点重新放出（owner 2026-09-19「对的」）
+
+**背景**：`§BE-EN` 的事故（放出这两条站点 ⇒ 道具每帧无条件真空 ⇒ 全屏吸收）根因是 handler
+**只按声明层选落点、从不复现窗口里那条条件分支**。owner 批准按正确语义修好后重放。
+
+| 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
+| --- | --- | --- | --- | --- |
+| `native/sdk.c` | `ce_poc_gate_common()` 改为 `native_take = !(regs->eflags & 0x41)`（复现 `ja`）→ `(native_take && !ce_full_p_gate_active()) ? CE_POC_VACUUM : fall_through`；注释补记事故与依据 | 让条件分支重新成为条件分支：**没人声明闸门时 = 原生**（过线才吸）| 统筹会话 | `make check` rc=0；发布 DLL `fd56f4a3…` 四处同 md5、部署 patch 27 条含两条 POC |
+| `native/sites.py` | `ce_poc_gate_a/b` 重新加入 `_SDK_KEEP_NAMED`（附"曾撤回一次"的历史注）| — | 同上 | 同上 |
+| `GATES.md` §8.8 | 撤回行改写为"已修 + 重新放出"（计数 25 → 27、49）| 记账同步 | 同上 | 同上 |
+| `SINGLE-CARD-TEST.md` | th06 #1 → **已修待验** | 状态同步 | 同上 | 同上 |
+
+**`eflags` 为什么可用（一手）**：thcrap 的桩在**任何会改标志的指令之前**就
+`pushad / lahf / seto al / push eax / cld / mov ebp,esp` ⇒ 那个 `eax` 就是站点时刻的标志，
+且 `x86_reg_t` 的**第一个字段**就是 `eflags`（桩末尾 `pop eax / cmp al,0x81 / sahf / popad` 负责还原）。
+`lahf` 覆盖 SF/ZF/AF/PF/CF、`seto` 补 OF ⇒ 本站点要的 CF/ZF 都在（一手桩模板：
+`engine/_shared/thcrap-breakpoint-pools.md` §2）。
+
+**owner 实跑验收三条（这一批的全部判据）**：
+1. **不满 P 过收点线** ⇒ **不吸道具**（真空态不触发；`T06R: 上线收点闸 开`）；
+2. **满 P 过线** ⇒ **照旧吸**（原生行为；`闸 关`）；
+3. **不过线** ⇒ **永不吸**（原生行为；与 deck 里有没有 106 无关）。
+另：deck 里没有 106 时，本闸不该有任何可感影响（`native_take` 原样通过）。
+**回滚**：把两条从 `_SDK_KEEP_NAMED` 删掉 + `make gen`（事故记录见 §BE-EN）。
+
+### §BE-EP ★ 订正 §BE-EO：`regs->eflags` **不是标准 EFLAGS** ⇒ 改成**重算操作数**（owner 实跑「依旧全吸」）
+
+**现象**：§BE-EO 那版（`native_take = !(regs->eflags & 0x41)`）发出去之后，owner 实跑**依旧全吸**
+（那一局的启动块是 `跳板格 48`、会话时间 21:05:48，对应发出去的修复版）。
+
+**根因（一手：桩模板 `engine/_shared/thcrap-breakpoint-pools.md` §2）**：thcrap 的桩用
+`pushad / lahf / seto al / push eax` 存标志 ⇒ 那个 dword 的位布局是
+**`OF` 在位 0（来自 `seto al`）、`CF` 在位 8、`ZF` 在位 14（来自 `lahf` 的 AH）**，**不是**标准 EFLAGS
+（标准里 CF=0、ZF=6）。我按位 0/6 去读 ⇒ 读到的是 **OF（通常 0）+ AL 的残留位（恒 0）** ⇒
+`!(eflags & 0x41)` **恒真** ⇒ 又变回"每帧无条件真空" ✓ 与实跑吻合。
+
+| 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
+| --- | --- | --- | --- | --- |
+| `native/sdk.c` | `ce_poc_gate_common()` 改成**重算那条比较**（读 `regs->esi` 的两个浮点：回收线与自机 y），**不读 `eflags`**；另加操作数合理性闸（可疑 ⇒ 按"不吸"处理 + 记一行）| 复现条件分支要重算操作数，别依赖 thcrap 桩里那个非标准布局的标志字 | 统筹会话 | `make check` rc=0；发布 DLL `4f034340…` 四处同 md5 |
+
+**一手对（两个站点同形，逐字节核过）**：
+
+```
+th18:0x445baa  f3 0f 10 86 98 79 04 00   movss  xmm0, [esi+0x47998]   ; 回收线
+th18:0x445bb2  0f 2f 86 24 06 00 00      comiss xmm0, [esi+0x624]     ; 自机 y
+th18:0x445bb9  0f 87 a4 03 00 00         ja     0x445f63              ; ← 站点 A（窗口）
+（站点 B 同形，在 th18:0x445ff4 / 0x445ffc / 0x446003）
+```
+
+**给"下一次放这种站点"的规矩（补 §BE-EN 那条教训）**：
+「窗口 = 一条条件分支」的站点，handler 复现原分支有**三种**手段，按可靠性排序：
+① **重算操作数**（本站点采用；寄存器由 `pushad` 保证）→ ② 声明层/配置给出判据（106 的满 P 闸只能叠在 ① 之上）
+→ ③ 读 `regs->eflags` **仅在确证 thcrap 的编码之后**（本站点的桩用 `lahf/seto`，位布局非标准 ⇒ 此路不通）。
+
+**owner 实跑验收（与 §BE-EO 同三条，这次请以 `4f034340…` 为准）**：① 不满 P 过线 ⇒ 不吸；
+② 满 P 过线 ⇒ 照吸；③ 不过线 ⇒ 永不吸（与 106 在不在 deck 无关）；④ deck 装 `[114,115]` 时不再全吸。
+
+## §BE-EQ（2026-09-19）：`ce_poc_gate_a/b` **不可接管** —— 一次 §BE-DW 类崩溃 + 「道具只减速不变橙不抖」
+
+**报障**：owner 实跑 115（绀珠传）擦弹 ⇒ 道具**变慢 ✓ 但不变橙、不抖 ✗**；106（红魔乡）在卡组时更明显；随后崩溃。
+
+**取证（`tooling/crashdump/dmp.py`，`crashdumps/th18.exe.104552.dmp`）**：与 §BE-DW **逐项同签名** ——
+`0xc0000005` 写 `0x1`；`Eip = 0x03c205fa` **不在任何模块内**（= thcrap 跳板池 `0x03c00000..0x03e00000`）；
+崩点那一页**已被捕获且 32 字节全 0** ⇒ 执行的是 `00 00` = `add byte ptr [eax],al`，而 `Eax = 1`。
+时间戳 22:03 = 106 那次实测（日志里正有 `T06R:` 那三行）⇒ 与「闸被接管」的时间线完全重合。
+
+**定责链（两次二分，均为最小差分）**：
+
+1. `sites.py` 里**只** park `ce_poc_gate_a/b`（站点声明在 patch 里，确定性构建 ⇒ **DLL md5 与坏的那版完全相同**）
+   ⇒ owner 一测「正常了」⇒ 病灶锁定这两条站点；
+2. 给 handler 加「**没人声明闸时直接 `return BP_EXEC_ORIGINAL`**（回放引擎那条 `ja`）」⇒ **没有 106 时正常**
+   （收点/变橙/抖动全对），**有 106 时（= 真接管）又只剩减速**，并伴随本次崩溃。
+
+⇒ **结论**：这两条站点（窗口 = 一条裸的 `ja rel32`，`th18:0x445bb9` / `0x446003`）**接管本身就不可用** ——
+哪怕 handler 逐行看着 vanilla 等价（同样的 `line > py`、同样的落点与 fall-through，日志里连「可疑操作数」WARN 都没打过），
+引擎道具 tick 的状态/年纪链会被破坏（橙+抖的门要 `state==1 && item+0xc50 ≥ 32`，`th18:0x445be6`；
+而「慢」在那道门之前 ⇒ 只剩慢），并会走到 §BE-DW 那条「跳进池未写区」的崩溃。
+
+**处置**：两条站点**保持 park**（`sites.py` 的 `_SDK_KEEP_NAMED` 里已移出，注释写明原因与替代方案）。
+106 的「上线收点当且仅当满 P」**改走不接管的实现**：用 SDK 已有的收点线声明 `ce_poc_declare_px()`
+（不满 P ⇒ 声明成永远不满足 `line > py` 的值 = 收点永不触发；满 P ⇒ 声明回基线值），
+观感/语义等价，**不碰那两个地址、不新增站点**。
+
+**教训（写给后来者）**：一条**条件分支**（`ja rel32`）不是可安全接管的站点形态 ——
+不能只看「语义复现得对不对」，接管这件事本身会改变引擎那段代码的执行路径与副作用；
+这类窗口**只能 park，功能另找非接管的路**。
+
+## §BE-ER（2026-09-19）：**#41 结案** —— 回放/复制「窗口里带 rel32 分支」的站点 ⇒ 分支从跳板池按原位移跳进未写区
+
+**一手复算（把 dump 与站点逐字节对上）**：
+
+| 项 | 值 |
+| --- | --- |
+| 站点 | `ce_poc_gate_a` = `th18:0x445bb9`，窗口 6 字节 = `0f 87 a4 03 00 00`（`ja 0x445f63`，rel = **+0x3a4**）|
+| 池里那一格 | `0x03c20250`（**16 字节对齐 = 格边界**，与「1 声明 = 1 格 `align16(cavesize+5)`」吻合）|
+| 从池里执行那条 `ja` | `0x03c20250 + 6 + 0x3a4` = **`0x03c205fa`** |
+| dump 的 `Eip` | **`0x03c205fa`** —— **逐字节对上** ✅ |
+| 该地址在池里的状态 | 日志 `pool: 可执行页 2、跳板格 48、**首个全零格 @03c20320**` ⇒ `0x03c205fa` 落在**未写区** |
+| 于是执行的字节 | `00 00` = `add byte ptr [eax], al`；此刻 `Eax = 1` ⇒ **写 `0x1`** ⇒ `0xc0000005` |
+
+⇒ **机制**：thcrap 给每条声明在池里留一格放**站点原始字节**；handler 返回 `BP_EXEC_ORIGINAL`(=1) 时
+**从池里回放**那几字节。窗口里若有一条 **rel32 分支**（`0f 8x` / `e9`，且不在偏移 0 的 `e8/e9` 上），
+`cave_fix` **不重定位**它 ⇒ 它按**原相对位移**从**池的地址**跳 ⇒ 落在池的内存里（未写区）⇒ 崩。
+本次 = 我上一版给 `ce_poc_gate_common()` 加的 `if (ce_full_p_gate_owner() < 0) return BP_EXEC_ORIGINAL;`
+（106 满 P 时 `gate=0` ⇒ owner=−1 ⇒ 走回放）⇒ 与日志 `/TEST 空格 ⇒ 满 P/` → `闸 关` → 崩 的时间线一致。
+
+**为什么 #41 一直像"站点数问题"**：站点数改变 ⇒ **池基址/格号改变** ⇒ 上面那个错落点（原位移 + 池地址）
+跟着平移 —— 早先观察到的「偏移按 `0x10`/条平移」正是这条机制的直接推论，
+**不是**「条数越线」。⇒ #41 的判据应从「条数」改成「**谁回放了带 rel32 分支的窗口**」。
+
+**普查（本次做，可复跑）**：
+
+- 31 条已声明站点的窗口逐条反汇编 ⇒ **只有 `ce_poc_gate_a` / `ce_poc_gate_b` 两条**含 rel32 分支（两条现已 park）；
+- 213 条 binhack 的 `expected` 窗口同法扫 ⇒ 只命中 `count_4145e2`（`0x4145e2`，`jl rel32`），
+  但它的 `code` 与原窗口**等长且 rel32 逐字节相同**（`83f8380f8cd5fdffff` → `80f8380f82d5fdffff`，原地改写）
+  ⇒ **原地分支保持有效，不是雷** ✅。
+
+**加固（2026-09-20 **已落地**，见 §BE-ES）**：把「窗口含 rel32 分支 ⇒ **禁止返回 `BP_EXEC_ORIGINAL`**」
+写成了硬规则（站点声明加 `no_replay` 字段 + `sitecheck` 的 W5/W6 判据，含判据自检）；
+这类站点同时**不许接管**（本次已证明接管也有副作用，§BE-EQ）。
+
+## §BE-ES（2026-09-20）：**§BE-ER 的加固已落地** —— `no_replay` 字段 + sitecheck W5/W6 硬判据 + `BP_EXEC_ORIGINAL` 全量普查
+
+**结论（一句话）**：本 patch 里**唯一**「窗口含 `cave_fix` 修不了的近相对分支」的站点就是
+`ce_poc_gate_a` / `ce_poc_gate_b`（各含一条 `ja rel32`）；这两条**已声明 `no_replay`**、
+其余 **33 个会返回 `BP_EXEC_ORIGINAL` 的站点窗口全部无分支 ⇒ 回放安全** ✅。
+规则本身现在是**机器判据**（判定表 + 反汇编 + handler 调用链扫描），不再是文档里的一句叮嘱。
+（⚠ `native/sdk.c` 此刻正被另一会话改 ⇒ 下表里 `文件:行` 是**本次快照**、会漂；复核一律以
+`--replay-census` 的当刻输出为准。）
+
+**改了什么**（只动两个文件 + 文档；**卡代码与 DLL/patch 部署零改动**）：
+
+| 文件 | 改了什么 | 为什么 |
+| --- | --- | --- |
+| `native/sites.py` | 站点声明加字段 **`no_replay`**（放 `_SDK_SITE_FIELDS`，与 `stack_clear_size` 同级）；两条闸声明上它；加 `_SDK_SITE_META_KEYS` 过滤 + 断言、`SDK_SITES_ALL`（过滤前的全表，含 park）、`sdk_no_replay()` 访问器 | 让「哪条站点禁止回放」成为**声明源的一部分**；park 的站点也是同一份声明，放回发布面时判据立刻生效 |
+| `native/tools/sitecheck.py` | 新判据 **W5**（含分支必须声明）/ **W6**（声明了却回放 ⇒ 判红）、判定表 `replay_verdict()`、`--replay-census` 普查模式、`--selftest` 判据自检；**删除**旧的人肉例外表 `EXEMPT_W3`；站点体检从「正则扫出的 31 条」扩成「三份 patch 声明 ∪ sites.py 全表」共 56 条 | §BE-ER 的机制只有变成机器判据才拦得住下一次「顺手加一句 `return BP_EXEC_ORIGINAL`」 |
+
+**字段语义（`native/sites.py` 里那段注释是唯一出处）**：
+`"no_replay": "<前提说明>"`（非空字符串 = 已声明）——
+**本站点窗口里含一条 `cave_fix` 修不了的近相对分支（`0f 8x` / `e9` / 非首条的 `e8`）
+⇒ handler 禁止返回 `BP_EXEC_ORIGINAL`（=1，从跳板池回放那几字节），这类站点同时也不宜接管**（§BE-EQ 实测）。
+⚠ 它是**纯元数据**：`_SDK_SITE_META_KEYS` 在 `emit_sdk_breakpoints()` 里把它挡在 patch 之外（另有断言），
+所以「补一句注释」不会改变生成物 —— **实测 patch md5 = `d339b0ced4c57b9029338b1b0a33931c`，与改动前逐字节相同** ✅。
+
+**判据（可复跑，判定的唯一出处 = `replay_verdict()` 这张表）**：
+
+| 判据 | 内容 | 判红条件 |
+| --- | --- | --- |
+| **W5** | 逐指令反汇编窗口，按**指令字节**判 rel32（`0f 8x` / `e8` / `e9`），**除「窗口第一条就是 `e8`/`e9`」**（thcrap 只修这一种）| 含这种分支**且**站点未声明 `no_replay` ⇒ **失败**（不是警告） |
+| **W6** | 站点的 `BP_<名>` handler **及其在 `native/*.c` 里能追到的被调函数**里出现 `BP_EXEC_ORIGINAL` | 已声明 `no_replay` 的站点出现它 ⇒ **失败**（live）/ ⚠ 提示（park 中） |
+
+⚠ 判据必须看**指令字节**，不能看 capstone 的 `op_str`：capstone 把 jcc/jmp 目标解析成**绝对地址**打印，
+`eb 00`（rel8 短跳）与 `e9 rel32` 长得一模一样 ⇒ 按字符串判会把短跳当成 rel32。
+**这一条是自检抓出来的**（`--selftest` 的「窗内只有 rel8 短跳」那一格先报红），现在判据用
+`rel_kind()` 读 opcode，并由自检的 **12 例**（7 个真字节窗口 + 2 个注释剥离 + 2 个**合成源码**的
+调用链可达性 + 判定表 10 组合）钉住 —— **判据自己失灵 = `make check` 判红**。
+（自检的源码用例喂的是**合成源码**：`sdk.c` 随时有人改，拿它当期望值等于让自检跟着漂 —— 这条也踩过一次。）
+
+**复跑命令与输出（本次实际跑的）**：
+
+```bash
+cd mods/th18.v1.00a/card-expand/native
+python3 tools/sitecheck.py --selftest        # ✅ 判据自检通过（12 例）              rc=0
+python3 tools/sitecheck.py --replay-census   # 37 个站点（35 会回放 + 2 条闸），违规 0 个  rc=0
+python3 tools/sitecheck.py --all             # ✅ 全部通过（窗口 56 / 落点 6 / 自检 12）rc=0
+```
+
+判红的两次**实演**（都跑完即还原，仓库里没留改动）：
+
+① **未声明**：临时删掉 `ce_poc_gate_a/b` 的 `no_replay` ⇒
+`python3 tools/sitecheck.py 0x445bb9 6` 给
+`✗ W5 回放禁令：窗口 0x445bb9+6 含 **cave_fix 修不了的近相对分支** ['ja 0x445f63@+0x0'] … 而站点**未声明** no_replay`
++ `✗ 回放禁令判定：W5：…`，**rc=1**；
+② **声明了却回放**：临时把 `ce_poc_gate_a` 放回发布面（`_SDK_KEEP_NAMED`）后 `make gen` ⇒
+`python3 tools/sitecheck.py --all` 给
+`✗ W6 回放禁令：站点已声明 no_replay，但它的 handler 会返回 BP_EXEC_ORIGINAL（sdk.c:2975 ce_poc_gate_common()）`
++ `✗ 合计 1 处必须处理`，**rc=1** —— 这正是 2026-09-19 那次崩溃的形态，现在**在生成/体检这一步就被拦住**。
+
+**普查（`--replay-census`，站点 ← handler 调用链 → 它自己窗口的判据）**：
+判据 = 窗口里有没有 `cave_fix` 修不了的近相对分支；证据 = 每处 `BP_EXEC_ORIGINAL` 的 `文件:行 \`函数()\``
+（handler 常把回放写在**公共 helper** 里 —— 2026-09-19 就是 `BP_ce_poc_gate_a/b` → `ce_poc_gate_common()`，
+所以扫描做的是**站内调用图可达性**，不是「只在 handler 函数体里 grep」）：
+
+| 站点 | 地址 | 窗口 | 窗内致命分支（rel32） | handler 会回放 | 声明 `no_replay` | 结论 |
+| --- | --- | --- | --- | :---: | :---: | --- |
+| `ce_bomb_gate`（park） | `0x45c048` | 7 | 无 | `sdk.c:1253` 等 2 处 | — | ✅ 回放安全（窗内无分支） |
+| `ce_bomb_spent`（park） | `0x4203bc` | 5 | 无 | `sdk.c:1230` 等 2 处 | — | ✅ 回放安全（窗内无分支） |
+| `ce_bullet_damage_final` | `0x45e7ff` | 9 | 无 | `sdk.c:2680` | — | ✅ 回放安全（窗内无分支） |
+| `ce_card_bind` | `0x412cec` | 6 | 无 | `sdk.c:244` | — | ✅ 回放安全（窗内无分支） |
+| `ce_chain_node_guard`（park） | `0x401357` | 7 | 无 | `sdk.c:2821` 等 4 处 | — | ✅ 回放安全（窗内无分支） |
+| `ce_death_result`（park） | `0x45c127` | 6 | 无 | `sdk.c:2943` | — | ✅ 回放安全（窗内无分支） |
+| `ce_enemy_damage` | `0x42f2cb` | 6 | 无 | `sdk.c:3124` 等 2 处 | — | ✅ 回放安全（窗内无分支） |
+| `ce_enemy_death` | `0x430240` | 6 | 无 | `sdk.c:3175` 等 2 处 | — | ✅ 回放安全（窗内无分支） |
+| `ce_enemy_drop` | `0x430510` | 6 | 无 | `sdk.c:1569` 等 2 处 | — | ✅ 回放安全（窗内无分支） |
+| `ce_enemy_shot_slot` | `0x433ffa` | 8 | 无 | `sdk.c:2529` 等 4 处 | — | ✅ 回放安全（窗内无分支） |
+| `ce_gate` | `0x4637d0` | 5 | 无 | `dll_main.c:147` | — | ✅ 回放安全（窗内无分支） |
+| `ce_graze`（park） | `0x42497f` | 5 | 无 | `sdk.c:1612` | — | ✅ 回放安全（窗内无分支） |
+| `ce_item_collect` | `0x44625f` | 6 | 无 | `sdk.c:2106` 等 2 处 | — | ✅ 回放安全（窗内无分支） |
+| `ce_item_commit` | `0x44658a` | 6 | 无 | `sdk.c:2128` 等 2 处 | — | ✅ 回放安全（窗内无分支） |
+| `ce_item_frame` | `0x446ee3` | 7 | 无 | `sdk.c:2050` 等 2 处 | — | ✅ 回放安全（窗内无分支） |
+| `ce_item_money` | `0x446d28` | 6 | 无 | `sdk.c:1206` 等 2 处 | — | ✅ 回放安全（窗内无分支） |
+| `ce_item_score`（park） | `0x446cf6` | 6 | 无 | `sdk.c:1177` | — | ✅ 回放安全（窗内无分支） |
+| `ce_item_score_below`（park） | `0x446caa` | 8 | 无 | `sdk.c:1177` | — | ✅ 回放安全（窗内无分支） |
+| `ce_item_score_in`（park） | `0x446bf9` | 8 | 无 | `sdk.c:1033` 等 3 处 | — | ✅ 回放安全（窗内无分支） |
+| `ce_native_option_muzzle` | `0x45e930` | 5 | 无 | `sdk.c:1477` 等 4 处 | — | ✅ 回放安全（窗内无分支） |
+| `ce_option_shot_gate`（park） | `0x40a9c3` | 6 | 无 | `sdk.c:1513` 等 4 处 | — | ✅ 回放安全（窗内无分支） |
+| `ce_player_die` | `0x45d3a0` | 6 | 无 | `sdk.c:3098` | — | ✅ 回放安全（窗内无分支） |
+| `ce_poc_gate_a`（park） | `0x445bb9` | 6 | **`ja 0x445f63`** | `—` | ✅ | ✅ 合法（禁令已声明 ⇒ 只许恒返 0 + 自己给落点） |
+| `ce_poc_gate_b`（park） | `0x446003` | 6 | **`ja 0x445f63`** | `—` | ✅ | ✅ 合法（禁令已声明 ⇒ 只许恒返 0 + 自己给落点） |
+| `ce_repopulate_native_option` | `0x45d610` | 7 | 无 | `sdk.c:1412` 等 3 处 | — | ✅ 回放安全（窗内无分支） |
+| `ce_save_loaded` | `0x46398a` | 6 | 无 | `unlocked.c:154` 等 2 处 | — | ✅ 回放安全（窗内无分支） |
+| `ce_shop_bought` | `0x4183ea` | 12 | 无 | `shop.c:39` | — | ✅ 回放安全（窗内无分支） |
+| `ce_shop_reopen` | `0x443b05` | 5 | 无 | `shop.c:59` | — | ✅ 回放安全（窗内无分支） |
+| `ce_shot_damage` | `0x45f2a2` | 7 | 无 | `sdk.c:2148` 等 6 处 | — | ✅ 回放安全（窗内无分支） |
+| `ce_shot_set_index` | `0x45ebfb` | 7 | 无 | `sdk.c:1297` 等 3 处 | — | ✅ 回放安全（窗内无分支） |
+| `ce_snd_gate` | `0x476410` | 5 | 无 | `dll_main.c:159` | — | ✅ 回放安全（窗内无分支） |
+| `ce_test_deck` | `0x407ee3` | 8 | 无 | `bp_trace.c:51` 等 2 处 | — | ✅ 回放安全（窗内无分支） |
+| `ce_trace_alloc` | `0x411469` | 7 | 无 | `bp_trace.c:40` | — | ✅ 回放安全（窗内无分支） |
+| `ce_unlock_all` | `0x4648fe` | 6 | 无 | `unlocked.c:209` | — | ✅ 回放安全（窗内无分支） |
+| `ce_unlock_write` | `0x418e04` | 8 | 无 | `unlocked.c:187` 等 2 处 | — | ✅ 回放安全（窗内无分支） |
+
+合计：**回放安全 33 个 / 违规 0 个 / 已声明禁令 2 个**（= 全表 35 个站点；本次快照，
+`sdk.c` 正在被另一会话改 —— 例如 `ce_poc_gate_common()` 里那句回放就是在这期间被删掉的，
+所以两条闸的「handler 会回放」列此刻是 `—`）。
+另有 `ce_canary_a/b`（`patch-test` 的一次性复现实验，`CE_CANARY_POC_GATE=1` 才声明）—— 它们**故意**回放那条
+`ja` 来验 §BE-DW 的算术，所以 sitecheck 对它们只打 ⚠（**不判红**），并在 `--replay-census` 里打印 §BE-DW 的配方。
+
+
+**两条闸的 handler 有一个会漂的前置条件（W6 每次 `make check` 重新判定）**：
+`ce_poc_gate_common()`（`sdk.c`）里曾长期留着 `if (ce_full_p_gate_owner() < 0) return BP_EXEC_ORIGINAL;`
+—— 那正是 §BE-ER 的致病代码；交付前复核时它**已被删掉**（`sdk.c` 由另一会话同期在改），
+所以现在 W6 对这两条站点不再报警；**谁要把它（或任何回放）加回去，W6 当场判红**（上面演示 ② 就是这个形态）。
+即：这个前提**不靠人记**，靠判据。
+
+**给后来者的一句话**：**写站点先跑 `sitecheck`；窗内出现 `0f 8x` / `e9` / 非首条 `e8`，就不要指望回放
+（`cave_fix` 不修它）—— 要么换窗口，要么在 `native/sites.py` 里声明 `no_replay`、让 handler 恒返回 0 +
+自己给落点；并且这类站点**不要接管**（§BE-EQ）。**
+
+## §BE-ET（2026-09-20）：**WORK-PACKAGES §7 A/A2/A3/A4 落地** —— 106 的「不满 P 过线不收点」改走「遮」声明（动 POC 字段 + 语义高度），并删掉 `ce_poc_gate_common()` 的回放守卫
+
+**一句话**：106 的闸不再靠接管那两条 `ja`（§BE-EQ 已证不可接管、§BE-ER 已证不可回放），
+改成**动 POC 字段**：不满 P 时对收点线声明一个**「遮」**（覆盖位）—— 落笔值 = `min(语义高度, 自机 y)`
+⇒ 引擎那条**严格** `ja`（`线 > y`）永不成立（**过线不吸**），而**非严格** `jae`（`线 ≥ y`）在自机过语义线时
+恰好相等（**线上满额照给**）；`y` 在语义线下方时落笔值就是语义高度 ⇒ 引擎那两个折额读点算出的 `d`
+与「没有 106」时是**同一个数** ⇒ 收点计分逐位不变。**不新增站点、不改一个字节的 exe 代码。**
+
+**谁改的**：106 闸实施会话（子 agent，2026-09-20；统筹会话指定的一次做完的四件：SDK 覆盖位 + 语义高度 +
+线显示 + 引擎折额兜底）。
+
+### 1. 改了什么（共享件 —— 动这些等于动所有人的卡）
+
+| 文件 | 改了什么 | 为什么 | 怎么验证 |
+| --- | --- | --- | --- |
+| `native/sdk_core.h` / `.c` | PoC 层加三件（见下 §1a）：**「遮」声明**、**语义高度**、**帧界落笔的遮版**；另加**线显示声明层**与**折额兜底**。`ce_poc_reset`/`ce_poc_drop` 一并清「遮」；`ce_poc_has_declaration()` 现在含「遮」；`ce_poc_declare` / `ce_poc_mask_declare` 对同一 id **互斥** | 原仲裁「取最大 y 者生效」表达不了**覆盖**（owner 口径：106 必须压过原生卡 22 / 111 / 未来任何声明者）；语义高度是「106 只做『过线不收点』，其它语义零变化」的唯一手段 | `make test-host`（新增 `test_poc_mask_layer()` = **48 条断言**）；`make check` |
+| `native/sdk.h` | 卡侧入口：**`ce_poc_height_semantic()`**（float、`static inline`，守 x87 门）+ `ce_poc_declare_mask(c,on)` / `ce_poc_declare_mask_id(id,on)` / `ce_poc_line_hide(c,on)`；PoC 块注释改写（「我们自己的读数处读语义访问器」）| 卡不该直读 `player+0x47998`；「读哪个值」必须是层给的两个具名入口，否则下次又有人读到遮值 | `make dllx87` = 0 条 x87；`make check` |
+| `native/sdk.c` | 六处（逐条见下 §1b） | 同 §1b | 见 §3 / §4 |
+| `native/cards/th06rank.c`（106，本会话负责的系统卡）| ① 不满 P ⇒ `ce_poc_declare_mask(c, 1)`（满 P 撤）；② 整局 `ce_poc_line_hide(c, 1)`（`init_all`/`on_stage_start`/`on_load` 报，`on_delete`/`on_run_reset` 撤）；③ 分档判据改读 `ce_poc_height_semantic()`；④ 日志文案 | ①② 见 `sdk_core.h` 那一节与 §7-A4 (ii)；③ rank 分档要的是「没有 106 时」那条线 | `make check` + 实跑日志（`T06R: 上线收点闸 …`）|
+| `native/cards/signal.c`（111，**只改两处读数**）| 神奈子线的**快照基准**与信号**档位**都改读 `ce_poc_height_semantic()` | 106 在场时引擎字段被压在 `min(语义高度, 自机 y)` ⇒ 照旧读字段会让 111 的档位随自机位置乱跳。改后 111 的**信号语义 = 没有 106 时** ✅（引擎侧「收点线下降」照旧被覆盖位压掉 —— §7-A2 owner 已拍：接受）| `make check`（`test_signal_core` 2182 / `test_faith_hud_core` 4106 断言全过）|
+| `native/tests/test_sdk_core.c` | 新增 `test_poc_mask_layer()`（48 条断言：极小正数的三条约束 / 声明-撤回-owner / `min(语义,y)` 四档 / 与别家声明同场 / 语义访问器 / 线显示清+基准+写回+幂等 / 折额倍率的三个分支）| 共享件新语义必须有主机单测（`make check` 的 `test-host` 跑）| `./tests/build/test_sdk_core` → `1366 passed, 0 failed` |
+
+**§1b `native/sdk.c` 的六处改动（逐条）**：
+
+1. `ce_poc_apply()` 重写：**读自机 y** 当「遮」的钳位上限（合理性闸：读不到 ⇒ 传 0 ⇒ 层退回极小正数）；
+   **线显示与高度落笔解耦**（满 P 时没有高度声明，那一 bit 也得清）。
+   理由：卡 tick 优先级 `0x16` **早于** Player `0x17` ⇒ 卡里读到的是上一帧的 y，
+   钳位必须在 `BP_ce_item_frame`（ItemManager `0x1e` 的 tick、body 之前）算。
+2. `ce_poc_release()` 一并撤「遮」与「不画线」并**立刻**写回基准。理由：删卡发生在商店里，帧钩子不跑。
+3. `ce_sdk_setup` 加 `ce_poc_line_reset()`（粘性声明必须有开机复位）。
+4. 计分层（`BP_ce_item_score_in` 的几何桥）改读 `ce_poc_height_semantic()`。理由：计分要与「没有 106」一致。
+5. 同一站点加**折额兜底** `ce_poc_fold_ratio_permille()`（正常恒 1000 = 一个字节不动；非 1000 时首打一行
+   `★ 折额兜底生效 ×N‰`，那是载荷假设被破坏的信号）。
+6. **删掉 `ce_poc_gate_common()` 里那句 `if (ce_full_p_gate_owner() < 0) return BP_EXEC_ORIGINAL;`**。
+   理由：它就是 2026-09-19 那次崩溃的**直接元凶**（返回 1 ⇒ thcrap 从跳板池回放一条裸 `ja rel32` ⇒
+   跳到池未写区 ⇒ 写 `0x1`，逐字节复算见 **§BE-ER**），也是 §7-B 新立的 `sitecheck` **W6** 硬规则要拦的形态
+   ⇒ 恢复「**恒返回 0 + 自己给落点**」。验证：`python3 tools/sitecheck.py --all` 不再有 W6 提示。
+
+**§1a 三个新概念的一句话定义**（完整语义与一手 = `native/sdk_core.h` 的「遮」声明一节）：
+
+- **「遮」声明**（= **覆盖位**）：`ce_poc_mask_declare(id, on)` + `ce_poc_mask_active()` / `ce_poc_mask_owner()`。
+  在场时**无条件生效**（忽略别家声明的**高度**），落笔值 = `min(语义高度, 自机 y)`，夹到 ≥ `CE_POC_TINY_BITS`。
+- **语义高度**：`ce_poc_semantic_bits(engine_bits)` = **不含「遮」**的生效值
+  （别家声明取最大 → 基准 → 字段实读值）。落笔走 `ce_poc_frame_masked(engine_bits, ceiling_bits, out_bits)`。
+- **线显示声明**：`ce_poc_line_hide_declare(id, on)` + `ce_poc_line_apply(bit_now, decl_exists, &out_bit)` /
+  `ce_poc_line_release(id, &out_bit)` / `ce_poc_line_reset()`。有人声明 ⇒ 清 `Gui+0x194` 的 bit `0x2000`
+  （第一次清之前把那一位记成**基准**，撤完按基准写回）。
+- **折额兜底**：`ce_poc_fold_ratio_permille(y_q16, poc_field_q16, poc_sem_q16, vacuum)`。
+
+### 2. ★ 对 `WORK-PACKAGES` §7-A 原稿的一处**订正**（数值，不是口径）：遮的值取 `min(语义高度, 自机 y)`，不是「固定极小正数」
+
+原稿写「不满 P ⇒ 声明一个永远不满足 `line > py` 的高度（取远低于自机 y 的值，例如 …）」+「④ 引擎侧折额补偿」。
+**后者（固定极小正数 + 事后用计分钩子重算）在这套数值下做不到**（一手算术）：
+
+- 固定极小正数（≈0）会让 `collect_power_item` `0x44698d` / `collect_money_item` `0x446bf9` 看到的
+  `d = ⌊y − 0⌋ = y`（自机在屏幕底部时 **448 px**）⇒ 折扣系数 `0.9·(1−d/450)` 掉到 **0.004**；
+- 想扳回语义值，倍率 = `c_语义 / c_遮`：自机 y = 448、语义线 = 224 时 = **113×**
+  ⇒ `ecx = 1000×G`（高资金力下 ~1e8）× 113 = **1.1e10 ⇒ 溢出 32 位**（只能饱和 ⇒ 反而少给分）；
+- 而且引擎那条折额链是**两次向下取整到 10 的倍数**（`floor10(B)` 再 `floor10(系数×…)`）⇒ 反推本身就带 ±1 点的量化误差。
+
+而 `min(语义高度, 自机 y)` 把**语义几何**直接喂给引擎（`d` 与「没有 106」时逐位相同）⇒ 计分**不需要**事后补偿。
+支付这份收益的支点是一手事实：**两条判据的严格/非严格之差**（收点门 = `ja`，满额门 = `jae`）。
+`ce_poc_fold_ratio_permille()` 仍然实装并在计分钩子里调用（就是 §7-A ④ 的那条），
+只是**正常情形恒返回 1000**（= 一个字节都不动）；它现在是「字段被第三方改过 / 帧内时序变过」的兜底，
+非 1000 时会在日志里打一行 `★ 折额兜底生效 ×N‰`（实跑若看到这一行 ⇒ 说明载荷假设被破坏了，回来查）。
+
+**载荷假设（唯一一条，可复核）**：帧内顺序 = AbilityManager（卡 tick `0x16`）→ **Player `0x17`**（`th18:0x45caa0`
+注册在 `0x45a8b4`）→ … → **ItemManager `0x1e`**（`th18:0x446ec0` 注册在 `0x4458ac`）；
+落笔在 `BP_ce_item_frame` = `0x446ee3`（`ItemManager__on_tick` 里、body `0x445a80` 之前），
+两条 `ja`（`0x445bb9` / `0x446003`）与两个折额读点都在同一 tick 的 body 里 ⇒ 落笔时读到的 y
+就是它们将看到的 y，中间没有任何 UpdateFunc 会动它。
+
+### 3. 对既有卡的影响面 + 回归
+
+- **106 不在卡组时**：没有「遮」声明 ⇒ `ce_poc_frame_masked()` 逐字转发 `ce_poc_frame()`（旧路径），
+  `ce_poc_line_apply()` 在没人 hide 时也照旧返回「有人声明高度 ⇒ 置 bit 0x2000」 ⇒ **行为与改动前一致** ✅。
+- **111**：只改了两处**读数**（改读语义访问器）。声明/落笔/删卡写回那三条路一字未动；
+  `test_signal_core`（2182）+ `test_faith_hud_core`（4106）全过。⚠ 106 在场时 111 的「收点线下降」
+  对**引擎**不再生效（覆盖位）—— owner §7-A2 已拍；111 自己的信号档仍按语义高度算。
+- **110（`cards/mof.c`）**：⚠ **残余泄漏（本会话不动它，跨卡纪律）** —— 它的蓝色系数走
+  `faith_player_poc_height()`（`cards/faith.h`，只是 `ce_poc_height()` 的薄包装）⇒ 106+110 同场时
+  那个系数会读到**遮值**（等于「自机贴着线」）。修法有两种、都要动别人的文件：
+  ① 把 `faith.h` 的包装改成转调 `ce_poc_height_semantic()`（一处改动同时修 110/111 的所有旧调用点）；
+  ② `mof.c` 自己改读语义访问器。**留给 110 的作者**；在此之前「106+110 同场」的观感差异是已知的。
+- **110/111 的自建点池（`cards/faith.c` 的 `faith_vacuum_gate()`）**：⚠ **跨卡后果，刻意不动** ——
+  那道门的判据是 `faith_player_above_line()`（= `faith_player_poc_height()` = **引擎字段真值**，严格 `>`），
+  形状与引擎那两条 `ja` **同形** ⇒ 106 的「遮」**同样**让它不成立 ⇒ 不满 P 时**自建绿点也不会被真空吸走**
+  （要碰才收）。**本条与「106 只做『过线不收点』」的设计是自洽的**（自建点也是点，跟着同一条闸走），
+  故**有意保留**；若 owner 要它与 106 解耦（自建点照旧按语义线吸），改法是 `faith.c` 那两行走语义访问器
+  —— 那是 110/111 的文件，按跨卡纪律留给它们的作者。
+- **115（`lolk.c`）**：一字未动；它不声明收点线（只写减速因子）⇒ 与那两条 park 的站点无关；
+  §BE-EQ 里「变橙+抖退化」的病灶是**接管**，本会话没有碰任何站点 ⇒ 不回退。
+- **回归跑了什么**：`make gen`（patch md5 **不变** = `d339b0ced4c57b9029338b1b0a33931c`，因为本次没动任何声明源）、
+  `make test-host`（全部主机单测，含新增 48 条）、`python3 tooling/check-docs.py`（`全部通过`）、
+  `make check`（见 §4；含 `dllx87` = 0 x87、`sites.py check`、`sitecheck --all`、`capcheck`、
+  `engine_abi_check`、`anm_hud_alpha_check`）。
+
+### 4. 怎么验证的（完成口径）
+
+1. **主机判据**：`./tests/build/test_sdk_core` → `1366 passed, 0 failed`（新增 `test_poc_mask_layer()` 48 条）；
+2. **静态门**：`make check` rc=0（本会话跑的那次输出见交付报告）；
+3. **实跑（交给 owner，单卡验收）**：① 106 在场 + 不满 P ⇒ 过线**不吸**；拍空格（满 P）⇒ 过线**照吸**
+   （日志 `T06R: 上线收点闸 **开**/**关**`）；② 111 的信号档与「没有 106」时一致；
+   ③ 收点计分与「没有 106」时一致（线上满额 / 线下折额；日志里**不应**出现 `★ 折额兜底生效`）；
+   ④ 115 擦弹 ⇒ 道具变橙 + 抖不退化；⑤ 开局**看不到**那条收点指示线（106 在场，§7-A4 (ii)）。
+
+---
+
+## §BE-EU（2026-09-19）：P8 工单 —— **107 的 HUD 版式与森罗结界指示**（共享资产 `ability.anm` 追加一格 + 两支脚本 + `CAPACITY.md` 台账）
+
+> 来源：`WORK-PACKAGES.md` §0 的 **P8**（现象 = `SINGLE-CARD-TEST.md` §th07 #1「HUD 样式错误」+
+> #2 的「森罗结界指示」；**音效那半归 P1，本会话不做**）。
+> `entries/ORDER.txt` 与 `scripts/**` 是**全库共享**的（贴图号 / 脚本号由行序决定）⇒ 按协作纪律登记。
+> 一手结论先落 [`engine/spirit/th07/02-cherry-counter-hud.md`](../../../engine/spirit/th07/02-cherry-counter-hud.md)。
+
+| 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
+| --- | --- | --- | --- | --- |
+| `assets/ability/entries/ORDER.txt` | **末尾追加**一段 `ATLAS ATLAS_SENRO_HUD 128x16` + 11 个成员（数字 D0..D9 = 8×12，结界板 BORDER = 48×16）⇒ entry **63** / sprite **467..477** | 承载 TH07 原版 HUD 的数字字形与「结界中才画」的那块（**原生切图**，零自绘） | P8（107）| `make anm`（图集逐像素回读比对 + 越界检查）+ `make check`（`capcheck`/`anm-verify`/`atlas-check`）全绿 |
+| `assets/ability/senro_hud/*.png`（11 张，新） | 从 `local/th07.v1.00b` 的 `ascii.anm` entry0 sprite132..141 / sprite143 **1:1 切**（源图 `anm/ascii/data/ascii/ascii.png`，兜底 `thanm -x 7`）| TH07 画樱点计数器就是逐位换这些 sprite（`sprite = 数字 + 0x84`，`th07:0x404a41`）；那块板是 VM4（`th07:0x404de1`）| 同上 | `assets/ability/make_senro_hud_art.py` 可复跑（矩形从 `thanm -l` 断死、幂等）|
+| `assets/ability/scripts/306_senro_hud_digit.anm.txt` | 新脚本：HUD 数字位模板（`@SENRO_HUD_D0@` + `layer(25)` + `resolutionMode(2)` + `scale(2.0,2.0)` + `stop()` + `interruptLabel(1)`）| 与 `136_hud_glyph` 同形，只换字形表 + 尺寸换算（TH07 是 640 原生）| 同上 | 同上 + `CE_ANM_ABILITY_SCRIPT_SENRO_HUD_DIGIT = 306` 已进 `native/anm_ids.h` |
+| `assets/ability/scripts/307_senro_hud_border.anm.txt` | 新脚本：TH07 `ascii.anm` **script5** 的逐条移植（`zWriteDisable(1)` + `scaleTime(30,4,2.4,2.4)` ↔ `(30,1,1.6,1.6)` + `jmp(offsetA8,0)` 无限循环；倍数关系 1.2/0.8 一字未改，只 ×2 换算）| **森罗结界指示**的那块脉动板（原版配方）| 同上 | 同上 + `…_SENRO_HUD_BORDER = 307` 已进 `anm_ids.h` |
+| `assets/ability/make_senro_hud_art.py`（新） | 生成器（切图 + 打印 ORDER 行 + 断死矩形/尺寸）| 与 `make_ufo_hud_art.py` / `make_th13_ascii_art.py` 同一条管线 | 同上 | 幂等（连跑两次 md5 一致）|
+| `assets/ability/entries/ORDER.senro_hud.txt`（新）| 不参与构建的同伴文件（贴一手推导 + ORDER 行）| 与 `ORDER.senro.txt` / `ORDER.ufo_hud.txt` 同惯例 | 同上 | —（构建只读 `ORDER.txt`）|
+| `CAPACITY.md` | 「图集 entry」段追加 `ATLAS_SENRO_HUD` 的登记 bullet + 附录 A3 名单加一行 | `capcheck` 硬门：新图集宏必须在台账里出现 | 同上 | `python3 native/tools/capcheck.py` 全绿 |
+
+**影响面（对既有卡）**：`ORDER.txt` **只追加**（行序 = entry/sprite 号）⇒ 既有卡的所有号**不变**；
+新脚本号 306/307 在既有号段（…305）之后 ⇒ 零影响；新图集 **entry 63/256**（余量 193）、
+sprite 到 **477**（脚本 / sprite 无上限，只是可见性登记）。**站点账不变**（本会话没碰任何声明源：
+`make gen` 的 patch md5 与改动前一致）。**卡侧只动 `cards/senro.c`**（107 独占文件），`sdk.*` /
+`sdk_core.*` / 别人的卡一个字未动；`cards/hud_dim.{h,c}`（跨卡件）**只读**、调用点未改。
+
+**回归跑了什么**：改动前后各一次 `make check`（rc=0；含 `anm-verify` 的图集逐像素回读、`capcheck`、
+`sites.py check`、`dllverify`、`dllx87` = 0 条 x87、`engine_abi_check`、`anm_hud_alpha_check`、
+`python3 tooling/check-docs.py` = 全部通过）。`make gen` 未重跑（没动声明源 ⇒ patch 不变）。
+
+**实跑验收（交给 owner，单卡）**：① 装 107 ⇒ 左下角出现**两块数字**（上一行粉色 +C、下一行「樱点 最大樱点」
+同一行；前导零留空、数字靠右）；② 樱点涨到最大樱点 ⇒ 数字变**金黄**；③ 吃道具攒满 +C ⇒ 结界开：
++C 行变**红色呼吸**、**放大**、字距变宽，数字行上多一块**脉动的板**；结界结束 ⇒ 恢复粉色；
+④ 买倒吊人删掉 107 / 通关回主菜单 ⇒ HUD 立刻**全消失**（无残留 VM）。
+
+- `｜ 2026-09-21 ｜ 共享件 `native/sdk.h`（`CE_VK_*` 注释块）｜ **只加注释**：写明「`SPACE` 是调试键（111/112/106 都在用）⇒ 玩法功能禁止占用；玩法新键走"掩码空闲位"那条路」｜ 统筹会话（owner 口径）｜ ⚠ **首发提交 `93a55a3` 有错**：那行注释被插到了 `*/` **之后**（落在注释外）⇒ `make check` rc=2、整棵树编不过（由 115 会话报出）；本提交把它并回注释块内并把 C 侧门补跑 ⇒ `make check` rc=0、`check-docs` 全绿。教训：**注释级改动也必须过 `make check`**（`check-docs` 只查文档，不查 C 能不能编）｜`
+
+- `｜ 2026-09-21 ｜ 共享件宿主单测 `native/tests/test_hud_dim_core.c`（115 那两块数据 + 一段注）｜ **数据订正**：旧值按「左上角 + 256 画布」算，是**错的口径**（正确 = 图心锚 + 可见块 192×32）⇒ 115 改对后宿主单测必须跟着改，否则变成"机器背书过的错数"（现 300 passed）｜ 115 会话（P9 之二）｜ `make check` rc=0；口径一手见 `engine/chapter/th15/02-chapter-panel-geometry-and-fades.md` §2｜`
+
+## §BE-EW（2026-09-21）：**117 改被动**（共享数据 `patch/th18/cards.js`）+ **116 的 Shift+D 与「阻断 D」**（写引擎掩码）
+
+**一句话**：两处改动都落在**别人的卡之外**：117 的 `.active_recharge` 一删，JSON 侧的
+`category` 契约必须同步（否则契约 reason 1 ⇒ **整局新卡禁用**），所以动了共享数据 `cards.js`；
+116 的 Shift+D 需要在「按住 Shift」时让 D 不切卡，落点是**卡自己的 `on_tick_2`**（抹
+`INPUT_PRESSED` 的 D 位）—— 零新站点，但要按规矩登记「mod 侧开始写 `INPUT_PRESSED` 这个引擎全局」这件事。
+
+| 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
+| --- | --- | --- | --- | --- |
+| `patch/th18/cards.js` | 只动 117 那一行：删 `"category": 0`（缺省 2 = 被动）；文案「按 C 发动」→「按 X（炸弹键）发动」| 契约真值表 ⇒ 见下面 §理由① | 117 工单（`4c331878`），owner §1b | `contract_check.py` ✅ 37 张一致；JSON 可解析；`make check` rc=0 |
+| `native/cards/season.c` | 切换键改读掩码位（`INPUT_HELD & 0x008` + `INPUT_PRESSED & 0x800`）；按住 Shift 那帧抹 `INPUT_PRESSED` 的 D 位 | ①原始键盘不进 replay；②阻断落点 ⇒ 见 §理由② | 116 工单（`4c331878`）| `make check` rc=0；season.c 单独 mingw 编译零警告；一手链 = `engine/input/th18/01-key-mapping.md` §4.4/§5 |
+
+**§理由①（为什么 `cards.js` 非改不可）**：契约是双向的（`native/tools/contract_check.py` 判据 1 =
+运行时 `ce_sdk_contract_check` reason 1）：`category == 0`（主动）但行为里没有 `active_recharge` ⇒
+实跑 `FAIL: sdk: card 117 violates JSON/behavior contract (reason 1)` ⇒ **整局新卡禁用**
+（2026-09-19 的同类事故 reason 2 见 §BE-EJ）。缺省值 `2` = 被动能力卡（`cards_def.c:11`），
+与 106–112/114/115 八张被动系统卡同写法；显示分组不受影响（由 `menu.c` 的 `CE_SYS_CARD_LO..HI` 管）。
+
+**§理由②（为什么阻断落在卡自己的 `on_tick_2`）**：D 在引擎里只有一个消费者 = Player tick 的
+`th18:0x45c09c`（`set_selected_active_card(mgr,-1)` `th18:0x408b00` + SE `0x4e`）；SDK 的主动卡机器
+（卡虚表 `+0x08` → `ce_sdk_c_press`）**只管 C**、且只管我们自己的卡 ⇒ 对 D 不成立。
+而卡侧 tick 在 AbilityManager 节点 优先级 `0x16`、消费者在 Player 节点 `0x17` ⇒ 抹掉本帧
+`INPUT_PRESSED` 的 D 位即可，**零新站点**（逐条一手见 `engine/input/th18/01-key-mapping.md` §5）。
+
+**影响面（对既有卡 / 对引擎）**：
+
+- `cards.js` **只改 117 一行**：`category` 缺省 = 2，与八张被动系统卡一致 ⇒ 显示分组仍由
+  `menu.c` 的 `CE_SYS_CARD_LO..HI` 负责（`cards_def.h` 的口径：**不许靠 `category` 调显示顺序**），
+  商店权重 / 价格档 / 图鉴条目一个字节没动。
+- `season.c` 是 116 独占文件；它对引擎全局 `INPUT_PRESSED`（`th18:0x4ca434`）的写入是**本 mod 的第二处
+  输入面写**（第一处 = `mods/th18.v1.00a/mouse-control` 写 `INPUT_HELD`）。性质：每帧由
+  `Input__compute_edges`（`th18:0x42abc0` / 回放 `0x462b55`）重算 ⇒ **改的是本帧副本、不残留**；
+  只清 `0x800`，而 `INPUT_PRESSED` 的其他读者用 `0x201` / `0x80001` / `0x2` 三个掩码 ⇒ 位不相交、零误伤。
+  **只在 116 在卡组里 + 按住 Shift 时生效**；卡被删/不在卡组 ⇒ 一个字节都不碰。
+- **replay**：录制读点在 ReplayManager 节点（优先级 `0x11`）**早于**卡 tick（`0x16`）⇒ 流里存的是真值，
+  回放时同一帧我们同样再抹一次 ⇒ 录/放逐帧一致（这也是「不能改 `INPUT_HELD` 来阻断」的原因）。
+- **卡侧读者普查**：全仓读 `INPUT_PRESSED` 的卡只有 117（bit1 = X）、111/110（bit1 = X）、109（bit1 = X）、
+  111 的 `signal_core.h` 定义过 `SIGNAL_IN_CHANGE`（`0x800`）但只进一个**无使用者**的掩码常量
+  （`SIGNAL_IN_ACTION_MASK`，`grep` 全仓零引用）⇒ 抹 D 位对既有卡的可见影响 = **0**。
+- **站点账不变**（`make gen` 的 patch md5 与改动前一致）：本会话没碰任何声明源，
+  `0x45c084` / `0x45c09c` 两个引擎侧候选窗口只做了 `sitecheck` 评估（W1–W4 + L1 全过），**未加站点**
+  —— 依据：预算现实 27/24（`SITE_BUDGET` 记账线）、进程级 47/42（42 已知崩过）。
+
+**回归跑了什么**：`make check`（含 `contract_check` / `gen_drift` / `sites.py check` / `sitecheck --all` /
+`capcheck` / `engine_abi_check` / `dllx87` / `dllverify`）+ `python3 tooling/check-docs.py`（全部通过，
+363 文件）；`cards/season.c` 用 mingw 单独编译过（`-O2 -Wall -Wextra`，零警告）。
+**未部署**（按工单要求）。
+
+**实跑验收（交给 owner）**：① 装 116，进任意一关 ⇒ **按住 Shift 再按 D** 切一档副季节（HUD 季节字 +
+子机贴图/阵位一起换，SE = `0x4e`）；② **按住 Shift 时按 D 不切主动卡**（HUD 主动行图标不变、无 `0x4e`
+切卡音）；③ 松开 Shift 按 D ⇒ 切卡照旧；④ 录一段「切两次季节 + 清弹」的回放，重放同样的两次切换
+（日志 `season: sub-season -> … (Shift+D, mask 0x008|0x800)` 应逐次重现）。
+
+---
+
+## §BE-EV（2026-09-21）：`WORK-PACKAGES.md` §9 落地 —— **111 地灵殿改成主动卡：灵击多一个 C 入口**（灵击侧规则一字未变）
+
+**owner 口径（逐字，已入档 `WORK-PACKAGES.md` §9）**：
+> 「在改动前，灵击只能由没 B 时候的 X 触发；但是改动后，**灵击还能由 C 触发**。**灵击侧的规则完全不变**。」
+
+### 1. 改了什么（逐文件）
+
+| 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
+| --- | --- | --- | --- | --- |
+| `native/cards/signal.c`（**111 自己的文件**）| 见下 **①**（主动卡形态 + `on_activate()` + 文件头一段说明）| §9 终版口径：框架上是主动卡（进主动行 / 可被 D 选中 / C 键可发动），发动动作 = 既有灵击 | 111 工单 | `make dll` rc=0；`contract_check` 绿 + 反例红；逐项见 §4 |
+| `patch/th18/cards.js`（**共享件** —— `CLAUDE.md` 的「共享件」清单里 `patch/**` 在列）| 见下 **②**（111 的 `"category": 0` + 一行 `desc`）| 契约 reason 2：有主动行为 ⇒ `category` **必须** = 0 | 同上 | `tools/contract_check.py` 绿 + 反例红；`mkfiles.py --check` 全合规 |
+| `patch/files.js`（**生成物**）| `make files` 刷 CRC：`th18/cards.js` **713721660 → 1393158464** | thcrap 的 `files.js` 是 patch 清单的 crc32 ⇒ 改了 `cards.js` 不同步刷 = 远端分发的校验对不上 | 同上 | `make files` 的输出与 `zlib.crc32(open('patch/th18/cards.js','rb').read())` **逐值一致** |
+| `native/cards/signal_core.{h,c}` | **一个字未动** | §9 明确「不新增参数、不新增闸、不改数值」⇒ 形态判据 / 消弹记账 / 退款窗那些旋钮全部复用既有的 | 同上 | `make test-host` 的 `test_signal_core` → **2182 passed, 0 failed** |
+| 文档 | `AUDIT.md`（本节 + §BE 表一行）、`CARDS.md`（111 行）、`NEXT.md`（实跑验收清单）、`WORK-PACKAGES.md` §9（落地状态）| 落笔纪律 | 同上 | `python3 tooling/check-docs.py` → **全部通过（363 个文件）**（`[links]`/`[addr]`/`[version]`/`[tables]` 全 ✓）|
+
+**① `native/cards/signal.c` 的三处**：
+
+- **(a)** `CE_CARD(111, …)` 加 **`.active_recharge = 1`** + **`.on_activate = on_activate`**（主动卡形态；
+  取值照本 mod 主动卡的先例 `= 1`，见 `season.c:1720` / `give12.c:70`）；
+- **(b)** 新增 `on_activate()` —— 里面**只调既有的 `signal_bomb10_start()`**（X 路径用的**同一个入口**，
+  不复制、不另写一套），形态判据用**同一个** `signal_core_deathbomb_window()`，返回 0 = 瞬发；
+  **没有** `ce_refuse()`、**没有**新增闸（连「库存 == 0」都没加，理由见 §3 末尾）；
+- **(c)** 文件头「灵击」段的**触发说明加一段**（第 124 行原有那一行 **一字未改**，新说明写在它**下面**）；
+- **X 路径本身（`on_tick_2` 的 ⑥，库存 == 0 + X 上升沿那一段）一个字节没动**；`signal_bomb10_start()` /
+  `signal_bomb10_tick()` / `signal_core.*` 全部逐字节未改。
+
+**② `patch/th18/cards.js` 的两处**（只动 **111 那一行**，其余 36 张卡的条目逐字节未动）：
+
+- **(a)** `"category": 0`（原为**缺省 = 2**）—— 契约 reason 2：**有**主动行为 ⇒ `category` **必须** = 0
+  （不一致 = 运行时 `FAIL: sdk: card 111 violates JSON/behavior contract (reason 2)` ⇒
+  **整局新卡禁用**，见 §BE-EJ 那次真实事故）；
+- **(b)** 加一行 `desc`「D 切到本卡后按 C 发动灵击；无残弹按 X 同效。」（62 字节 < 64 上限、总 5 行 ≤ 6 行）
+  —— 主动卡的既有文案口径就是写「D 切到本卡后按 C」（113 / 116 / 118 同款）。**纯显示件，可随时撤**。
+
+### 2. 主动卡框架的**连带面**（改 `.active_recharge` 会顺带发生什么 —— 逐条核过）
+
+| 连带面 | 会发生什么 | 一手 / 判据 |
+| --- | --- | --- |
+| `CE_FLAG_ACTIVE`（`flags` bit3）| SDK 的 `BP_ce_card_bind` 见 `active_recharge != 0` 走 `active_init()`：`flags = (flags & ~0x46) \| 0x08` + 写 `card+0x48`（充能时长）+ 按 Tenshi 初始化 `+0x34`/`+0x38` 两组 zTimer | `sdk.c` 的 `active_init`；一手主动 case `0x411d83`（`& ~0x46 \| 8`）|
+| **主动行 / D 选中** | 引擎据此把 111 归入主动卡组（HUD 主动行多一张 / `num_active` 计数）、`set_selected_active_card` 的遍历能选到它 | `engine/card/th18/04-active-cards.md` §2/§6；本 mod 已有 113/116/117/118 四张主动卡同路 |
+| **C 键分派** | `INPUT_PRESSED & 0x400` + **无对话** + **关卡在跑** + **本卡被选中**（四重门控在 `Player__on_tick__body` `0x45c048` 里）⇒ `vtable+0x08` = SDK 的 `ce_sdk_c_press`（门控：state 空闲 + 充能到底）⇒ `on_activate` | `04-active-cards.md` §2；`sdk.c` 的 `ce_sdk_c_press` |
+| **契约（`category`）** | 运行时 `ce_sdk_contract_check` reason 2 + 构建期 `tools/contract_check.py`；不一致 = **整局新卡禁用** | `sdk_core.c` / `tools/contract_check.py`；事故见 §BE-EJ |
+| **`.on_active_tick` / `+0x34` / `+0x4c` 重置** | 本卡**不声明** `on_active_tick`（瞬发：`on_activate` 返回 0 ⇒ `ce_sdk_c_press` 把 state 置 2 = 收尾 ⇒ ~9 帧后回 0）。`on_stage_start`/`on_run_reset` 里 SDK 追加的 `ce_sdk_active_reset()` 是**幂等**的，与 111 原有的「每关归零信号槽」无冲突 | `sdk.h` 的 `CE_CARD` 桩；`sdk.c` 的 `ce_sdk_active_reset` |
+| **卡片私有状态** | `ce_state` 的头部 `CE_STATE_RESERVED`(16) 字节本来就是 SDK 的（主动卡状态机 `ce_active_t` 只占 4 字节）⇒ 111 那 496 字节的私有状态**不受影响**（116/118/青眼白龙同款）| `sdk.h` §ce_state；`sdk.c` 的 `_Static_assert` |
+| **键位 / 回放** | C 是**引擎掩码里**的位（`0x400`）⇒ 回放天然安全（`§1b/§1c`）。**代价**：111 现在占用 C ⇒ 与 §1c 的「组合键登记表」相关（Shift+C 已被 116 的季节切换占用，两者不冲突：110/111 与 116 同装时 Shift 按住 + C = 116 换季节，单按 C = 111 灵击）| `engine/input/th18`、`WORK-PACKAGES.md` §1c |
+| **HUD** | 111 自己的 HUD（信号槽 / 三行读数）**一行未动**；新增的只是引擎画的「主动行里多一张图标」 | 本卡 `on_draw` / `faith_hud.*` 未改 |
+
+### 3. C 入口与 X 入口「逐项相同」核对表
+
+| 项 | X 入口（`on_tick_2` ⑥）| C 入口（`on_activate`）| 相同？ |
+| --- | --- | --- | --- |
+| 触发条件 | `CE_CURRENT_BOMBS() <= 0` + X 上升沿（`INPUT_PRESSED & 0x2`）| C 上升沿（`0x400`）+ 无对话 + 关卡在跑 + 本卡被 D 选中（引擎/SDK 的门控）| **只差触发**（口径允许）|
+| 灵击实现 | `signal_bomb10_start(s, by_hit)` | **同一个函数** | ✅ |
+| 形态判据 | `signal_core_deathbomb_window(* (player+0x476ac))` | **同一个函数、同一个入参来源**（逐字照写）| ✅ |
+| 火力门槛 / 消耗 | `signal_core_alice_power_spend()` → `mof_core_power_spend()`（≥2.00 档 / 扣 1 档 / 下限 1.05；魔理沙 = 爱丽丝 0.5 档）| 同（都在 `signal_bomb10_start()` 里）| ✅ |
+| 伤害 / 帧数 / 判定框 | TH11 原值那套（`signal_bomb10_tick()` 每帧 32.0 / 75 帧 / 20×30 的等价实现 + 消弹圈）| 同（同一个函数）| ✅ |
+| 决死（B 形态）语义 | `by_hit` ⇒ `signal_cancel_impending_death()` 救命 + 消弹照常记账 | 同 | ✅ |
+| 魔理沙的特殊灵击 | 河童罩子（`signal_shield_arm`）+「罩子没破不让放」 | 同（都在 `signal_bomb10_start()` 里，机体门原样）| ✅ |
+| 火力不足时 | **静默什么都不做**（不扣 P / 不消弹 / 不响音效）| 同（**没有**加 `ce_refuse()` —— 拒绝音/日志是 X 路径没有的行为）| ✅ |
+| 音效 / 视觉 / RANK | `signal_bomb10_start()` 里那几条 | 同 | ✅ |
+| 逐帧推进 | `on_tick_2` ⑧-4 `signal_bomb10_tick()` | 同（与入口无关）| ✅ |
+| **帧相位** | ⑥ 发动 ⇒ ⑧-4 **当帧**推进一次 | 发动发生在 **Player tick（0x17）**，而 AbilityManager tick（0x16）**已跑过** ⇒ 第一次 tick 落在**下一帧** | 🟡 **差一帧**（不是数值差异）：总帧数 296 / 每帧伤害 / 半径曲线 / 消耗 / 消弹逐项相同。一手帧序 = `engine.h` 的 `CE_PLAYER_SPEED_MULT` 注（`0x16` 先于 `0x17`）。要对齐这一帧就得动 X 路径（把 C 并进 ⑥）⇒ 按 §9 口径**不做** |
+
+**「没 B 时候」这一条为什么没有搬给 C**（三个理由，写在 `signal.c` 的 `on_activate()` 注释里）：
+① 它是 **X 键与原生炸弹的仲裁**（库存 > 0 ⇒ X 交给原生），**不是灵击的规则**；
+② §9 明写「**不新增闸**」——给 C 加一条 `bombs == 0` 就是新增闸；
+③ C 走的是**完全独立**的主动卡分派，与 X / 原生炸弹没有争用面。
+
+### 4. 影响面 + 回归
+
+- **对既有卡的影响面**：卡侧只动 `cards/signal.c`（111 独占）；共享件只动 `patch/th18/cards.js`
+  的 **111 那一行**（其余 36 张卡的条目**逐字节未动** —— `git diff` 只有 +3/−1 行）与它派生的
+  `patch/files.js` CRC。`sdk.*` / `sdk_core.*` / `sites.py` / `tooling/sitecheck.py` /
+  `hud_dim.*` / `season.c` / `animal.c` / `lolk.c` **一个字未动**（正被别的工单占）。
+  ⇒ **站点账不变**（`make gen` 的 patch md5 与改动前一致；`tools/gen_drift.py` 绿）；
+  **主动卡组的内容变了**（多一张 111）⇒ 玩家侧「HUD 主动行 / D 键遍历顺序」会多一张卡，这是本次的**目的**。
+- **回归跑了什么（最终态，逐项实跑留档）**：
+  - **`make check` → rc=0**（命令 `make check`；末次日志 `/tmp/make_check_111d.log`，且**先 `rm -f th18_card_expand.dll`** 强制整链重建 ⇒ 排除「拿旧 DLL 比对」那种假绿）。关键读数：
+    `test_faith_hud_core: 4106 passed, 0 failed`、`test_hud_dim_core: 433 passed, 0 failed`、
+    `test_signal_core: 2182 passed, 0 failed`、`cards.js: 37 张卡全部合规`、
+    `x87 in our objects: 0`、`sites.py check` 27 个 BP_* 双向一致、`sitecheck --all` 全过、
+    `capcheck` 全绿、`engine_abi_check` 通过、`anm_hud_alpha_check` 24 项一致、
+    `python3 tooling/check-docs.py` → **全部通过（363 个文件）**；
+  - `make dll` rc=0（0 error；3 条既有 `-Wunused-function` 警告来自被注释掉的道具钩子，与本改动无关）；
+  - `make cards-check` / `anm-verify` / `sht-verify` / `snd-check` / `dllx87` / `dllverify` —— **逐项 rc=0**；
+  - **反例闸（本次自己跑的证伪）**：把 `cards.js` 里 111 的 `category` 改回 2（= 与行为不一致）
+    ⇒ `tools/contract_check.py` **rc=1** 并打印
+    `卡 111（signal.c）有主动行为但 cards.js 的 category = 2 ≠ 0 ⇒ 契约 reason 2（ACTIVE_CATEGORY_REQUIRED）`。
+    ⇒ 这条契约**确实被本改动触动、也确实被闸看着**（§BE-EJ 那次事故的同一条）。
+- **会话中的一次红（已消失，留档备查）**：中途跑 `make check` 时 `test_faith_hud_core` 红 6 条
+  `hud_dim_tick` 断言 —— **不是本改动**：那条测试链的是
+  `test_faith_hud_core.c + faith_hud_core.c + signal_core.c + faith_core.c + mof_core.c + hud_dim.c`，
+  **不含 `cards/signal.c`**。当时病灶 = **另一个会话正在飞的 P9「20 帧 / 50%」**（`cards/hud_dim.{h,c}`
+  在未提交的工作树里已把终点 32→128、步长 ±56 → 20 帧线性，而两个宿主单测的期望值还没跟着改）。
+  **当时的对照实验（决定性）**：把 `cards/hud_dim.{c,h}` 换成 `HEAD` 版、其余不动 ⇒ 同一条测试
+  **4106 passed, 0 failed**；用当时工作树那版 ⇒ **6 failed**；同一时刻 `check-docs` 也只剩
+  `TUNING.md` 里他们新增的一行长单元格（`HEAD` 版那一项 = 0 条违规）。⇒ 两处红**全部由那批独占**，
+  **本工单一处都不含**。那批随后落地 ⇒ 本次末次 `make check` **rc=0**、`check-docs` **全部通过**
+  （两处红都已自然消失，本会话**没有碰**过 `hud_dim.*` / `TUNING.md` / `test_faith_hud_core.c`）。
+- **不部署**：本次不出 DLL、不同步 modkit（`make release` / `tools/deploy.py` 都没跑）。
+  产出物仅供 owner 验收；`th18_card_expand.dll` 是本机 `make dll` 的构建产物（**未发布**）。
+  工作树上那一版的 md5（**只作对账用，没有同步到任何 modkit 路径**）：
+  DLL `9e4e1f87e9b02de648715da3a0e05364`（★ 与注释级改动前的构建**同 md5** ⇒ 印证「只动注释不影响代码生成」）、`patch/th18.v1.00a.js` `d339b0ced4c57b9029338b1b0a33931c`
+  （★ **与本次改动前一致** = 站点账没动）、`patch/th18/cards.js` `29b8e169c3ccb76ea72ae6c769dffe53`、
+  `patch/files.js` `b22c5fe8ccc52e0652dab6bc1fc33f73`、`patch-test/th18.v1.00a.js` `7d04d3a7c736b1b9f06680afe3f0260b`、
+  `native/sites_gen.h` `b1c4448e36062cc87605ca9d59542676`。
+
+### 5. 给 owner 的验收清单（实跑，单卡 111）
+
+1. **编成/图鉴**：111 仍在原位（主动卡类别 → 它落在**主动段**；106–117 的**显示分组**是靠 `menu.c`
+   的 `CE_SYS_CARD_LO..HI`，与 `category` 无关 ⇒ 十二张仍然连成一条）；
+2. **D 切到 111**（HUD 主动行出现地灵殿图标）⇒ **按 C**：日志出现
+   `signal: **C（主动卡发动）** ⇒ 调 signal_bomb10_start()（与 X 路径同一入口；库存 N、state S）`
+   + 紧接着既有的 `signal: 灵击 -1.00 档 (power A -> B) …`；
+   画面：灵击圈 + 电流边 + 音效 + 消弹（与按 X 时**看起来一样**）；
+3. **火力 1.99 档以下按 C**：**什么都不发生**（不扣 P、不消弹、无音效），日志只有上面那行「C 发动」
+   —— 与按 X 时的行为逐项相同；
+4. **X 路径不退化**：**残弹 == 0** 时按 X ⇒ 与改动前逐项相同（灵击 + `signal: 灵击 …` 那行）；
+   **残弹 > 0** 时按 X ⇒ 仍是**原生炸弹**（本卡不动）；
+5. **魔理沙**：按 C 发动 ⇒ 灵击 + **河童罩子**（`signal/shield:` 那行）；罩子没破时再按 C ⇒
+   日志 `灵击**被罩子挡住**` 且**不扣火力**；**爱丽丝 0.5 档**仍是那条路（`signal: 灵击 -0.50 档`）；
+6. **决死**：残弹 == 0 时中弹、在决死窗口内**按 C 或按 X** ⇒ 都救命（日志「决死形态」+ 消弹照常记账）；
+7. **回放**：录一段「D 切 111 + 按 C 灵击」⇒ 重放能重现（C 在引擎掩码里）；
+8. **不崩**：连按 C（充能 1 帧 = 门槛极短）不应出现任何异常；买倒吊人删掉 111 ⇒ HUD 干净（本卡
+   `on_delete` 未改，原有清理链照旧）。
+
+## §DU. ★★★ 112 的第六批：**P2 数值与实体**（#4 吸收速度 / #5 爆残碎卡 / #6 太脆 / #10 压缩包初速）（2026-09-21）
+
+> **来源**：`WORK-PACKAGES.md` §0 的 **P2** 工单 = `SINGLE-CARD-TEST.md` §th12 的 **#4 / #5 / #6 / #10**
+> （owner 单卡实跑原话）。**一手** = TH12 `local/th12.v1.00b/th12.exe`（objdump 逐条）+
+> TH18 `local/th18.v1.00a/th18.exe`。
+> **改动面** = `native/cards/ufo.c` + `ufo_core.{c,h}` + `tests/test_ufo_core.c`（112 自己的文件）；
+> **没有动任何共享件**（`sdk.*` / `sdk_core.*` / `engine.h` / `sites.py` / `Makefile` / `cards_def.c` /
+> `patch/**` / `hud_dim.*` 一字未改），**没有增删断点** ⇒ **不需要 §BE 登记**。
+> **不部署**（没跑 `make release` / `tools/deploy.py`）。
+
+### 1. #4 —— 「UFO 吸收道具的速度似乎还是慢了」：撤掉一条**一手里没有**的栅栏
+
+**一手（objdump `th12.exe`，本次逐条重读）**
+
+| 环节 | 一手 | 地址 |
+| --- | --- | --- |
+| 谁能被吸 | UFO 存活帧数 **≥ 60**（`cmp [ecx+0x14],0x3c / jl`）+ 颜色合法 + **道具 type ∈ {1,2}** ⇒ 道具 `state = 7`、`speed(+0x9bc) = 0`、`vel = 0` | `0x4271c0`–`0x42720f`（跳表 `0x427214`；索引 1 = 颜色 0 的非法分支）|
+| 每帧拉拽 | `speed += (UFO.timer/600)×0.05 + 0.02`（**只在 speed < 6.0 时加**，`fld [0x4a4250]=6.0; fcomp speed; test ah,0x41; jne 跳过`）；方向 = `atan2(UFO − 道具)`（`0x44ac00`）；`pos += polar(angle, speed) × GAME_SPEED` | `0x426879`–`0x426932` |
+| 捕获 | 到 UFO 中心 距离² **< 324**（18 px）⇒ `state = 0` + 音 `0x26` + 记账 `0x44aca0`；**否则跳到 `0x4260af`** | `0x426943`–`0x426992` |
+| ★ `0x4260af` 是什么 | **自机收点矩形判定**（`fld [player+0xc444..0xc454]` 四条比较）⇒ **一手允许自机在被吸途中把道具收走** | `0x426100`–`0x426164` |
+
+**我们的偏差（本轮修掉）**：`ufo_try_item()` 里除了「目标点在屏内」之外，还 AND 了一条
+`ufo_target_clear_of_player(nx, ny, px, py)`（"下一步不许踏进自机 `player+0x4798c` 收点圈"）。
+后果：道具的下一步只要会进圈，就**整帧不动**；下一帧速度更大、目标点仍在圈里 ⇒ **永久卡在圈边上**
+（自机不挪窝它就不动）—— 观感正是「吸收慢 / 像定住」。这条栅栏**一手里不存在**。
+
+**落笔**：`ufo_step_allowed(nx, ny)`（签名去掉自机坐标，只判屏内）；`ufo_try_item()` 不再收 `px/py`；
+`ufo_absorb_tick()` 不再取自机坐标。`ufo_target_clear_of_player()` **保留导出**（单测/文档口径用）。
+
+**验证**：`test_ufo_core` 的围栏段改成「贴脸也放行、出屏仍挡」；速度公式与累计量语义**未改**
+（2026-09-18 已按一手落地，见 `ufo.c` 的 `s_pull[]` 长注）。
+
+### 2. #5 —— 「UFO(敌人)应该爆残碎卡，而非残碎」：载体 4/6 → `0x10`/`0x11`
+
+**一手**：TH12 击破 `FUN_0044af00` 的颜色跳表（`0x44b590`，索引 = `color+1`）
+⇒ 红分支 `0x44b23a push 0xd`（令牌 13）+ **道具 4**（命碎）；绿分支 `0x44b409 push 0xf` + **道具 5**（B 碎）；
+蓝只有令牌；彩虹按 `COLLECTED_UFOS[2]` 选 13/14/15。
+
+**TH18 的对位（一手三条，仓里已有）**：承载「命碎 / B 碎」的是**卡道具**
+**`0x10` EXTEND2** / **`0x11` BOMB2**（→ `CardLifeFragment` / `CardBombFragment`），
+而 **4 / 6 是别作的遗留道具槽**（TH18 的道具分派 switch 里连 case 都没有）。
+见 `signal_core.h`「命碎的载体」段、`collect2x_core.h:54-55`、`animal.c:429-430`，
+同款实跑纠偏记在 `collect2x.c:342`。
+
+**落笔**：`UFO_REWARD_LIFE_FRAG` **4 → `0x10`**、`UFO_REWARD_BOMB_FRAG` **6 → `0x11`**
+（`ufo_spit_reward` 与 `ufo_break_color_bonus` 都读它们 ⇒ 两条路一起改对）；
+绿 UFO **吸满**那一路仍走用户裁决 P6 的**整颗 Bomb 自建实体**（`ufo.c` 里比的是宏，行为不变）。
+
+**验证**：单测新增两条常量断言 + 既有的 `ufo_spit_reward/ufo_break_color_bonus` 对照表照旧全绿。
+
+### 3. #6 —— 「感觉飞碟太脆了」：HP 用**一手原值**，绕开只在 spawn 生效的位 30 闸
+
+**一手（objdump `th18.exe`，本次复核）**：
+
+- 一手 TH12 HP 表 = `{1600,1900,2100,2300,2500}`（`th12:0x4b33f0`，索引 = `CURRENT_POWER / POWER_PER_LEVEL`）；
+- `EnemyManager__allocate_new_enemy`：`spawn+0x14` → `enemy+0x6220 / +0x6224 / +0x6228`（三格同一个数）
+  = `0x42d815`–`0x42d82a`；
+- **位 30 的黑名单闸**：`0x42d8ed cmp [edx+0x14],0x3e8` / `jl` 跳过、`0x42d8f6 or ecx,0x40000000`
+  ⇒ **只在 spawn 那一刻**按 `spawn+0x14` 置位；读点 = `test [enemy+0x635c],0xc000021` 三处
+  （`0x40b531` / `0x40b7b1` / `0x421e57`）⇒ 那些 C++ 伤害源跳过该敌；
+- 扣血走 `0x42f314 sub [ebx+0x4ff4],esi`（= `enemy+0x6220`）⇒ 回写之后一切照常。
+
+**落笔（两步）**：`hp = ufo_hp_for_power(...)`（**一手原值**，取消 999 缩放）→
+`spawn_life = ufo_clamp_spawn_life(hp)`（≤999，写进 `CE_SPAWN_LIFE`）→ 敌机建出来后
+`ufo_body_apply_real_hp(body, hp)` 回写 `enemy+0x6220/24/28`。`u->hp_max` = 真血量（血条/HUD 的分母）。
+⇒ UFO 从「639–999」变回一手的 **1600–2500**（**1.6–2.5 倍**），且**位 30 不置** ⇒ 人偶/灵梦炸弹照常打得中。
+
+**为什么这不叫"发明数值"**：数值就是一手表；被绕开的只是「引擎只在 spawn 生效的那条闸」。
+唯一旋钮 `UFO_HP_ONEHAND_SCALE_PERMILLE`（默认 1000 = 一手）留给 owner —— TH18 的每帧伤害上限
+（`sht+0x28` = 灵梦 90 / 魔理沙 160）与 TH12 不是一个量纲，而"缩几倍"**没有一手**（登记 `TUNING.md` §2.0u）。
+
+### 4. #10 —— 「压缩包应该是满速启动」：★ 一手**不是**满速启动（冲突登记）
+
+**一手（objdump `th12.exe`）**：赏金道具（type 16/17/18）在 `spawn_item` 里 `type−16 <= 2` 分支
+⇒ `0x42761d mov [esi+0x9b0],8`（**state = 8**）、`0x4276a4 fldz` → `0x4276f9 fstp [esi+0x984]`
+（**speed = 0.0**）、`0x4276ea mov [esi+0x98c],0`（**年纪 = 0**）。
+state-8 每帧：`0x426192 fld [edi+0x984]` → `0x4261ad call 0x4377a0`（朝**自机**的角）→
+`0x4261b7 call 0x427d00`（极坐标）→ `pos += vel × GAME_SPEED`（`0x4261bc`–`0x4261f3`）；
+**之后**才加速：`0x4261f6 cmp [edi+0x98c],0x3c / jl 跳过` + `0x4261ff fcomp 12.0` + `0x426212 += 0.2`。
+
+⇒ 一手的观感 = **原地站 60 帧 → 每帧 +0.2 加速到 12.0**。**与 owner 记忆（「满速启动」）矛盾**：
+按 §DQ 的同一纪律**按一手落地**，差异登记 `TUNING.md` §2.0u，并留一个**默认关**的开关
+`UFO_DROP_HOME_FULL_SPEED_START`（= 1 即"满速启动"，跳过等待、起速 12.0）。
+
+**落笔**：`ufo_drop_step()` 的 BAG 支改成「**先位移、后加速**」（与一手顺序逐条相同），
+`age > 60` 才加速（原来 `> 60` 但顺序是"先加速后位移"）；新增具名开关。
+
+### 5. 落地清单（文件 → 改了什么 → 怎么验证的）
+
+| 文件 | 改了什么 | 怎么验证的 |
+| --- | --- | --- |
+| `native/cards/ufo_core.h` | ① 奖励载体 4/6 → `0x10`/`0x11`；② HP 段重写（取消 `UFO_HP_MAX_SCALED`、加 `UFO_HP_ONEHAND_SCALE_PERMILLE`）；③ 围栏收成「只判屏内」+ 新签名 `ufo_step_allowed(nx, ny)`；④ 掉落物运动段补一手 + `UFO_DROP_HOME_FULL_SPEED_START` | `make dll` 0 错误 0 新警告 |
+| `native/cards/ufo_core.c` | `ufo_step_allowed()` 只判屏内；`ufo_hp_for_power()` 返回一手原值；`ufo_spawn()` 的 `hp_max` 存真血量；`ufo_clamp_spawn_life()` 注明「只是 spawn 值」；`ufo_drop_step()` 的 BAG 支改成先位移后加速 | `test_ufo_core` **4595 checks / 0 failed** |
+| `native/cards/ufo.c` | ① 去掉自机坐标与那条栅栏；② 新增 `UFO_ENEMY_LIFE_MAX/SNAP` + `ufo_body_apply_real_hp()`，召唤走「spawn 钳制值 → 回写真血量」两步；③ 文件尾清单订正第 13/14 条 | `make dll` rc=0；`make check` 见 §6 |
+| `native/tests/test_ufo_core.c` | 围栏段（贴脸放行 / 出屏仍挡）；奖励常量 4/6 → `0x10`/`0x11`；HP 段（真血量 = 一手逐格、`real >= spawn_life`）；BAG 用例（60 帧不动、第 61 帧先位移后加速、夹 12.0、不过冲）| 同上 |
+| 文档 | 本节 + `TUNING.md` §2.0u（+ §2.0k 的 HP 行订正）+ `SINGLE-CARD-TEST.md` §th12 的 4 条状态 | `python3 tooling/check-docs.py` |
+
+### 6. 影响面 + 回归
+
+- **对既有卡的影响面：零** —— 只动 112 自己的三个文件（`ufo.c` / `ufo_core.{c,h}`）与它自己的单测；
+  `sdk.*` / `sdk_core.*` / `engine.h` / `sites.py` / `Makefile` / `cards_def.c` / `patch/**` /
+  `hud_dim.*` / `signal.*` / `season.c` / `lolk.c` / `animal.c` **一字未改**；站点集与 `patch/*.js` 不变。
+- **回归**：`make check`（含 `test-host` / `cards-check` / `anm-verify` / `sht-verify` / `snd-check` /
+  `dllx87` / `dllverify` / `sites.py check` / `contract_check` / `gen_drift` / `sitecheck` / `capcheck` /
+  `engine_abi_check` / `anm_hud_alpha_check` / `check-docs`）全部通过（结果见本节所属提交的报告）。
+- **实跑要看的**：`TUNING.md` §2.0u 的四条判据（吸收不再卡在自机边 / 击破掉 `0x10` 残碎卡 /
+  召唤日志 `REAL HP 2500` 且仍吃炸弹 / 压缩包先停 1 s 再加速）。

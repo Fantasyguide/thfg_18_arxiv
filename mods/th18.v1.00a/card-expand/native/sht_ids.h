@@ -50,6 +50,21 @@
 #define CE_SHT_SET_MARISA_MAIN_05           0x45   /* 追加，2 shooter */
 #define CE_SHT_SET_MARISA_MAIN_06           0x46   /* 追加，2 shooter */
 #define CE_SHT_SET_MARISA_MAIN_07           0x47   /* 追加，2 shooter */
+#define CE_SHT_SET_YOUKAI_R0                0x48   /* 追加，2 shooter */
+#define CE_SHT_SET_YOUKAI_R1                0x49   /* 追加，2 shooter */
+#define CE_SHT_SET_YOUKAI_R2                0x4a   /* 追加，3 shooter */
+#define CE_SHT_SET_YOUKAI_R3                0x4b   /* 追加，4 shooter */
+#define CE_SHT_SET_YOUKAI_R4                0x4c   /* 追加，5 shooter */
+#define CE_SHT_SET_YOUKAI_M0                0x4d   /* 追加，0 shooter */
+#define CE_SHT_SET_YOUKAI_M1                0x4e   /* 追加，0 shooter */
+#define CE_SHT_SET_YOUKAI_M2                0x4f   /* 追加，0 shooter */
+#define CE_SHT_SET_YOUKAI_M3                0x50   /* 追加，0 shooter */
+#define CE_SHT_SET_YOUKAI_M4                0x51   /* 追加，0 shooter */
+#define CE_SHT_SET_YOUKAI_S0                0x52   /* 追加，0 shooter */
+#define CE_SHT_SET_YOUKAI_S1                0x53   /* 追加，0 shooter */
+#define CE_SHT_SET_YOUKAI_S2                0x54   /* 追加，0 shooter */
+#define CE_SHT_SET_YOUKAI_S3                0x55   /* 追加，0 shooter */
+#define CE_SHT_SET_YOUKAI_S4                0x56   /* 追加，0 shooter */
 #define CE_SHT_SET_YOUKAI                   0x16   /* ★ 覆盖原生空槽，9 shooter */
 
 /* ---- 组数扩容：宣布可用 96 格 / 数组区预留 256 格（2026-09-14；AUDIT.md §CQ、NEXT.md §1w）----
@@ -72,14 +87,14 @@
 #define CE_SHT_SLOTS               96          /* 宣布可用格数 = 影像头 +0x02 = 加载器解析循环上界 */
 #define CE_SHT_SLOTS_RESERVED      256         /* 数组区容量（预留）：用 `0x60`+ 的槽时抬 CE_SHT_SLOTS，**exe 不用动** */
 #define CE_SHT_DATA_BASE           0x04e0   /* 数据区起点（原 0x0180）= `th18:0x45a830` 的立即数 */
-#define CE_SHT_FREE_FIRST          0x48   /* 第一个空槽（0x00–0x47 已分配）*/
+#define CE_SHT_FREE_FIRST          0x57   /* 第一个空槽（0x00–0x56 已分配）*/
 #define CE_SHT_FREE_LAST           0x5f   /* 计数内最后一个空槽 */
 #define CE_SHT_FREE_LAST_RESERVED  0xff   /* 预留区最后一格（抬计数后可用，不用改 exe）*/
 /* 分配表（**由生成序列算出来，别再手写数字**）：
  *   0x28            113 灵界主炮（1 格，四角色共用）= `CE_SHT_SET_TRANCE`（2026-09-15 §1w 第 5 步落地，正常追加组）
  *   0x29–0x3f      111 魔理沙B **子机组**（23 格，TH11 `pl01b.sht` 逐字段复刻 ⇒ `MARISA_OPT_*` / 卡侧按「元素×档×格」选组）
  *   0x40–0x47      111 魔理沙B **主炮组**（8 格 = 8 个不同的单发伤害；`MARISA_MAIN_*`，由卡侧 `on_shot_set_index` 整组覆盖）
- *   0x48–…         108 使魔 / 106·107·109·110·112·114·115 各自子系统 / 58–80 那批的备用
+ *   0x57–…         108 使魔 / 106·107·109·110·112·114·115 各自子系统 / 58–80 那批的备用
  * ------------------------------------------------------------------------------------ */
 
 /* ---- 卡 113「灵界」的主炮弹组（TH13 灵界 set10 复刻）------------------------------------

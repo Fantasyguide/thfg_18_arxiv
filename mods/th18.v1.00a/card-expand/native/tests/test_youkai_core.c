@@ -46,6 +46,11 @@ int main(void)
     float ep[2], off[3], org[3], out[2];
     int32_t carry, out_dmg;
     unsigned i;
+    /* ★ 2026-09-22（th08 #5）：妖侧组的「集合」描述。旧行为（只有 0x16 一格）= SINGLE_ONLY；
+     * 新形态 = 0x16 + 逐角色逐档那一片。两种都测，防止把单格语义改坏。*/
+    const yk_sets_t sets_single = YK_SETS_SINGLE_ONLY(YK_SHOT_SET_YOUKAI);
+    const yk_sets_t sets_tiers  = { YK_SHOT_SET_YOUKAI, 0x48u, YK_YOUKAI_TIER_SETS };
+    (void)sets_tiers;      /* 只在 `#ifdef CE_SHT_SET_YOUKAI_R0` 那一段里用（没跑 make sht 时用不到）*/
 
     p1[0] = 10.0f; p1[1] = 20.0f;
 
@@ -145,10 +150,14 @@ int main(void)
         int c, k, j;
 
         for (c = 0; c < YK_OPTION_CHARS; ++c) {
+            /* ★ 2026-09-22（th08 #1）：机体 0/1 的妖侧子机在原作里**只有 1 个**（`YK_OPTION_BY_CHAR`
+             *   的第 0/1 行全是 1）⇒ 它们那张表的 4 格是同一个值（同值的"备用格"）。
+             *   所以「同档内两格不重合」这条只能对**真的有多格**的机体（2 咲夜 / 3 早苗）断言。*/
+            const int multi = (c >= 2);
             for (k = 1; k <= YK_OPTION_CELLS; ++k) {
                 for (j = 0; j < k; ++j) {
                     CHECK(yk_option_offsets(c, k, j, &o1));           /* 每格都取得到 */
-                    /* 同一档内任意两格不重合（聚焦/非聚焦各自都不重合）*/
+                    if (!multi) continue;
                     int m;
                     for (m = j + 1; m < k; ++m) {
                         CHECK(yk_option_offsets(c, k, m, &o2));
@@ -159,28 +168,31 @@ int main(void)
                 CHECK(!yk_option_offsets(c, k, k, &o1));              /* 第 count 格起 = 无此格 */
             }
         }
+        /* ★★ 2026-09-22（th08 #1）：机体 0/1/2 改用 **TH08 妖侧阵型**（一手见 youkai_core.h）。
+         *   灵梦 = 1 个、(0, −96)；魔理沙 = 1 个、(0, −32)；咲夜 = 4 个 (±30,−16) / (±10,−32)。*/
+        CHECK(yk_option_offsets(0, 1, 0, &o1) && o1.fx == 0.0f && o1.fy == -96.0f);
+        CHECK(yk_option_offsets(1, 1, 0, &o1) && o1.fx == 0.0f && o1.fy == -32.0f);
+        CHECK(yk_option_offsets(2, 4, 0, &o1) && o1.fx == -30.0f && o1.fy == -16.0f);
+        CHECK(yk_option_offsets(2, 4, 1, &o1) && o1.fx == -10.0f && o1.fy == -32.0f);
+        CHECK(yk_option_offsets(2, 4, 2, &o1) && o1.fx ==  10.0f && o1.fy == -32.0f);
+        CHECK(yk_option_offsets(2, 4, 3, &o1) && o1.fx ==  30.0f && o1.fy == -16.0f);
         /* 早苗 4 格 = 引擎给 4 个原生子机准备的那 4 个位置（k = 6..9 的 `+0x90` 块）*/
         CHECK(yk_option_offsets(3, 4, 0, &o1) && o1.fx == -28.0f && o1.fy == -20.0f);
         CHECK(yk_option_offsets(3, 4, 1, &o1) && o1.fx == 28.0f  && o1.fy == -20.0f);
         CHECK(yk_option_offsets(3, 4, 2, &o1) && o1.fx == -8.0f  && o1.fy == -32.0f);
         CHECK(yk_option_offsets(3, 4, 3, &o1) && o1.fx == 8.0f   && o1.fy == -32.0f);
         CHECK(yk_option_offsets(3, 4, 0, &o1) && o1.nfx == -36.0f && o1.nfy == -34.0f);  /* 非聚焦块 */
-        /* ★ 咲夜（机体 2）：表里的数是**离线换算后的像素**（原始 (弧度, 半径) 见 youkai_core.c 的注释）。
-         * 这 4 格（k=6..9）正好是「头顶上一圈 ±17°/±60°、半径 38」的四点 ⇒ 必须互不相同、且都在头顶上方。*/
+        /* ★ 咲夜（机体 2）：TH08 一手 = 4 格全在自机上方（y < 0）、左右分开、且**互不相同**
+         *（具体数值在上面那组 CHECK 里逐格钉住 —— 那是 `th08:0x44eb70` 的跳表 `th08:0x44ee4b`）。*/
         for (j = 0; j < 4; ++j) {
             CHECK(yk_option_offsets(2, 4, j, &o1));
-            CHECK(o1.fy < 0.0f);                                   /* 静止（lean = −π/2）时 4 格都在上方 */
+            CHECK(o1.fy < 0.0f);                                   /* 4 格都在上方 */
             CHECK(o1.fx != 0.0f);                                  /* 且左右分开（不是一条竖线） */
             for (k = j + 1; k < 4; ++k) {
                 CHECK(yk_option_offsets(2, 4, k, &o2));
                 CHECK(o1.fx != o2.fx || o1.fy != o2.fy);
             }
         }
-        CHECK(yk_option_offsets(2, 4, 0, &o1) && o1.fx == 12.996765f   && o1.fy == -35.708321f);   /* 聚焦块 */
-        CHECK(yk_option_offsets(2, 4, 1, &o1) && o1.fx == -12.996765f  && o1.fy == -35.708321f);
-        CHECK(yk_option_offsets(2, 4, 2, &o1) && o1.fx == 32.908966f   && o1.fy == -18.999998f);
-        CHECK(yk_option_offsets(2, 4, 3, &o1) && o1.fx == -32.908966f  && o1.fy == -18.999998f);
-        CHECK(yk_option_offsets(2, 4, 0, &o1) && o1.nfx == 11.110125f  && o1.nfy == -36.339581f);  /* 非聚焦块 */
         /* 越界参数：机体 / count / cell / 空指针 */
         CHECK(!yk_option_offsets(4, 1, 0, &o1));
         CHECK(!yk_option_offsets(-1, 1, 0, &o1));
@@ -194,6 +206,65 @@ int main(void)
     CHECK(yk_option_script_changed(50, 51) == 1);             /* 声明的脚本和手里那个不一样 ⇒ 重申请 */
     CHECK(yk_option_script_changed(50, -1) == 0);             /* 手里还没有子机 ⇒ 不算「变了」 */
     CHECK(yk_option_script_changed(50, 0) == 1);
+
+    /* ===== ★★ 2026-09-22（th08 #1）：妖侧子机的**家位置**与弹簧（TH08 一手，见 youkai_core.h）=====
+     * owner 原话：「灵梦机体妖子机本身应当追踪上去」。一手 = TH08 的妖侧子机位置是逐机体写死的：
+     *   机体 0 霊夢・紫 = (0,−96) + **弹簧跟随**（`th08:0x44e770`）；机体 1 アリス = (0,−32) 吸附；
+     *   机体 2 レミリア = 4 格 (±30,−16) / (±10,−32)（`th08:0x44eb70` 的跳表 `th08:0x44ee4b`）。
+     * ⚠ 同时钉住那条**一手负结论**：追敌人的分支（`th08:0x44e8d0`）在 v1.00d 够不到
+     *   （`player+0xe2abc` 全 exe 只被写 0）⇒ 本卡**不做**追敌人，别把它当漏做。 */
+    {
+        float home[2], goal[2], pos[2], vel[2];
+        const float player[2] = { 200.0f, 300.0f };
+        /* 机体 0：1 格、正上方 96 px（`th08:0x4b42c4`）*/
+        CHECK(yk_option_home_xy(0, 0, home) && home[0] == 0.0f && home[1] == -96.0f);
+        CHECK(yk_option_home_xy(0, 1, home) && home[1] == -96.0f);       /* 只有 1 格 ⇒ 各格同值 */
+        /* 机体 1：正上方 32 px（`th08:0x44ea40` 的 `y -= 32.0`）*/
+        CHECK(yk_option_home_xy(1, 0, home) && home[0] == 0.0f && home[1] == -32.0f);
+        /* 机体 2：4 格，逐格不同（顺序 = 子机序号 0..3）*/
+        CHECK(yk_option_home_xy(2, 0, home) && home[0] == -30.0f && home[1] == -16.0f);
+        CHECK(yk_option_home_xy(2, 1, home) && home[0] == -10.0f && home[1] == -32.0f);
+        CHECK(yk_option_home_xy(2, 2, home) && home[0] ==  10.0f && home[1] == -32.0f);
+        CHECK(yk_option_home_xy(2, 3, home) && home[0] ==  30.0f && home[1] == -16.0f);
+        /* 机体 3（早苗 = TH16 文）本批**没有**一手数据 ⇒ 返回 0（调用者回落到 TH18 原生阵型）*/
+        CHECK(!yk_option_home_xy(3, 0, home));
+        CHECK(!yk_option_home_xy(-1, 0, home));
+        CHECK(!yk_option_home_xy(0, YK_OPTION_CELLS, home));
+        CHECK(!yk_option_home_xy(0, 0, 0));
+        /* 只有机体 0 走弹簧 */
+        CHECK(yk_option_uses_spring(0) == 1);
+        CHECK(yk_option_uses_spring(1) == 0);
+        CHECK(yk_option_uses_spring(2) == 0);
+        CHECK(yk_option_uses_spring(3) == 0);
+        /* 家位置 = 自机 + 偏移，且 `y` 夹到 `>= 32`（`th08:0x44e770` 那一步）*/
+        CHECK(yk_option_home_from_player(0, 0, player, goal));
+        CHECK(goal[0] == 200.0f && goal[1] == 204.0f);                    /* 300 − 96 */
+        {   /* 自机贴到屏上沿（y = 100）⇒ 300−96 那一套不成立，夹到 32 */
+            const float hi[2] = { 100.0f, 20.0f };
+            CHECK(yk_option_home_from_player(0, 0, hi, goal));
+            CHECK(goal[1] == YK_OPT_HOME_Y_MIN);                          /* 20 − 96 < 32 ⇒ 夹成 32 */
+        }
+        CHECK(!yk_option_home_from_player(3, 0, player, goal));           /* 没数据 ⇒ 不动手 */
+        CHECK(!yk_option_home_from_player(0, 0, 0, goal));
+        /* 弹簧一步（`th08:0x44e770` 逐步式）：pos/vel 都被就地更新，且**方向朝目标** */
+        pos[0] = player[0]; pos[1] = player[1]; vel[0] = 0.0f; vel[1] = 0.0f;
+        goal[0] = player[0]; goal[1] = player[1] - 96.0f;                 /* 不夹（300−96 > 32）*/
+        yk_opt_spring_step(pos, vel, goal);
+        CHECK(vel[1] < 0.0f);                                             /* 向上加速 */
+        CHECK(pos[1] < player[1] && pos[1] > goal[1]);                    /* 动了一步但没到 */
+        CHECK(pos[0] == player[0] && vel[0] == 0.0f);                     /* x 方向没有差 ⇒ 不动 */
+        /* 收敛性：连续积分 600 帧后必须停在家位置上（±0.5 px）*/
+        {
+            int f;
+            for (f = 0; f < 600; ++f) yk_opt_spring_step(pos, vel, goal);
+            CHECK(pos[0] > goal[0] - 0.5f && pos[0] < goal[0] + 0.5f);
+            CHECK(pos[1] > goal[1] - 0.5f && pos[1] < goal[1] + 0.5f);
+        }
+        /* 空指针安全 */
+        yk_opt_spring_step(0, vel, goal);
+        yk_opt_spring_step(pos, 0, goal);
+        yk_opt_spring_step(pos, vel, 0);
+    }
 
     /* ============================== §3.4 弹幕（档位 / 妖侧弹 / shooterset 自检）*/
     CHECK(yk_shot_tier(0) == 0);
@@ -209,17 +280,17 @@ int main(void)
     CHECK(yk_shot_tier_damage(4) == YK_SHOT_DMG_NOT_SET);
 
     /* 打包 id = (set << 8) | 组内行号（`0x45ec69` 打包 / `0x45ee10` 回读）*/
-    CHECK(yk_bullet_is_youkai(((uint32_t)YK_SHOT_SET_YOUKAI << 8) | 3));
-    CHECK(yk_bullet_is_youkai(((uint32_t)YK_SHOT_SET_YOUKAI << 8) | 0));
-    CHECK(!yk_bullet_is_youkai(((uint32_t)(YK_SHOT_SET_YOUKAI + 1) << 8) | 3));
-    CHECK(!yk_bullet_is_youkai((uint32_t)YK_SHOT_SET_YOUKAI));             /* 只带 row 不带 set */
-    CHECK(!yk_bullet_is_youkai(0x0503u));                                  /* 人侧 0x05 组 */
+    CHECK(yk_bullet_is_youkai(((uint32_t)YK_SHOT_SET_YOUKAI << 8) | 3, &sets_single));
+    CHECK(yk_bullet_is_youkai(((uint32_t)YK_SHOT_SET_YOUKAI << 8) | 0, &sets_single));
+    CHECK(!yk_bullet_is_youkai(((uint32_t)(YK_SHOT_SET_YOUKAI + 1) << 8) | 3, &sets_single));
+    CHECK(!yk_bullet_is_youkai((uint32_t)YK_SHOT_SET_YOUKAI, &sets_single));             /* 只带 row 不带 set */
+    CHECK(!yk_bullet_is_youkai(0x0503u, &sets_single));                                  /* 人侧 0x05 组 */
     /* 占位（表 = 全 0 = 不覆盖）⇒ 妖侧弹也原样保留 shooter 记录的 damage */
     out_dmg = -1;
-    CHECK(yk_bullet_damage_apply(50, ((uint32_t)YK_SHOT_SET_YOUKAI << 8) | 1, 400, &out_dmg) == 0);
+    CHECK(yk_bullet_damage_apply(50, ((uint32_t)YK_SHOT_SET_YOUKAI << 8) | 1, 400, &sets_single, &out_dmg) == 0);
     CHECK(out_dmg == -1);
-    CHECK(yk_bullet_damage_apply(50, 0x0501u, 400, &out_dmg) == 0);         /* 不是妖侧弹 ⇒ 不碰 */
-    CHECK(yk_bullet_damage_apply(50, ((uint32_t)YK_SHOT_SET_YOUKAI << 8) | 1, 400, 0) == 0); /* out=NULL 安全 */
+    CHECK(yk_bullet_damage_apply(50, 0x0501u, 400, &sets_single, &out_dmg) == 0);         /* 不是妖侧弹 ⇒ 不碰 */
+    CHECK(yk_bullet_damage_apply(50, ((uint32_t)YK_SHOT_SET_YOUKAI << 8) | 1, 400, &sets_single, 0) == 0); /* out=NULL 安全 */
 
     /* shooterset 自检：那一格必须是**我们写的合法记录**才敢调 `ce_tick_shooters_for_card`
      *（原生原值是 `fire_rate = 0` ⇒ 装备卡路径整数除零，`0x40aa4f` 没有零分支）。
@@ -245,19 +316,58 @@ int main(void)
     CHECK(YK_SHOT_SET_YOUKAI_ROWS <= 256);      /* 行号进 `packed_id` 低 8 位 */
     /* 打包 id 往返：9 行都在我们的 set 字节下；别的 set 一律不认（人侧 0x05 / 追加区 0x17）*/
     for (i = 0; i < (unsigned)YK_SHOT_SET_YOUKAI_ROWS; ++i)
-        CHECK(yk_bullet_is_youkai(((uint32_t)YK_SHOT_SET_YOUKAI << 8) | i));
-    CHECK(!yk_bullet_is_youkai(((uint32_t)(YK_SHOT_SET_YOUKAI - 1) << 8) | 0));
-    CHECK(!yk_bullet_is_youkai(((uint32_t)(YK_SHOT_SET_YOUKAI + 1) << 8) | 0));
-    CHECK(!yk_bullet_is_youkai(0x1700u));       /* 追加区第一格（77 的豌豆）不是妖侧弹 */
+        CHECK(yk_bullet_is_youkai(((uint32_t)YK_SHOT_SET_YOUKAI << 8) | i, &sets_single));
+    CHECK(!yk_bullet_is_youkai(((uint32_t)(YK_SHOT_SET_YOUKAI - 1) << 8) | 0, &sets_single));
+    CHECK(!yk_bullet_is_youkai(((uint32_t)(YK_SHOT_SET_YOUKAI + 1) << 8) | 0, &sets_single));
+    CHECK(!yk_bullet_is_youkai(0x1700u, &sets_single));       /* 追加区第一格（77 的豌豆）不是妖侧弹 */
     /* ★ 判据**只看 set 字节**（不夹行号）：行号越界的打包 id 也算「我们的」——
      * 因为引擎不会造出这种弹（`0x40a9c0` 的行循环在终止符处就停，`0x40aa8f`）。
      * 钉住这条语义，免得以后误以为这里有行号闸。*/
-    CHECK(yk_bullet_is_youkai(((uint32_t)YK_SHOT_SET_YOUKAI << 8) | YK_SHOT_SET_YOUKAI_ROWS));
-    CHECK(yk_bullet_is_youkai(((uint32_t)YK_SHOT_SET_YOUKAI << 8) | 0xffu));
+    CHECK(yk_bullet_is_youkai(((uint32_t)YK_SHOT_SET_YOUKAI << 8) | YK_SHOT_SET_YOUKAI_ROWS, &sets_single));
+    CHECK(yk_bullet_is_youkai(((uint32_t)YK_SHOT_SET_YOUKAI << 8) | 0xffu, &sets_single));
 #ifdef CE_SHT_SET_YOUKAI
     /* `native/sht_ids.h` 是生成物：跑过 `make sht` 之后它就会有这一条 ⇒ 两边必须相等。
      * （没跑过 `make sht` 时这个宏不存在，上面那条硬编码 0x16 仍然钉着槽号。）*/
     CHECK(CE_SHT_SET_YOUKAI == YK_SHOT_SET_YOUKAI);
+#endif
+#ifdef CE_SHT_SET_YOUKAI_R0
+    /* ===== ★★ 2026-09-22（th08 #5）：妖侧不再只有一格 =====
+     * 逐角色 × 逐火力档那 15 格**必须**是连续的、且顺序 = R0..R4, M0..M4, S0..S4
+     *（`youkai.c` 的 `_Static_assert` 钉同一件事；这里再钉一次是为了让**纯逻辑单测**也能跑）。 */
+    CHECK(CE_SHT_SET_YOUKAI_R0 == 0x48);                            /* 追加区第一格（生成器分配）*/
+    CHECK(CE_SHT_SET_YOUKAI_M0 == CE_SHT_SET_YOUKAI_R0 + YK_SHOT_TIERS);
+    CHECK(CE_SHT_SET_YOUKAI_S0 == CE_SHT_SET_YOUKAI_M0 + YK_SHOT_TIERS);
+    CHECK(YK_YOUKAI_TIER_SETS == 15);
+    {
+        const yk_sets_t real = { YK_SHOT_SET_YOUKAI, CE_SHT_SET_YOUKAI_R0, YK_YOUKAI_TIER_SETS };
+        unsigned k;
+        /* ① 保留格 + 15 格逐档格 ⇒ 全部认（判据**只看 set 字节**，与行号无关）*/
+        CHECK(yk_set_is_youkai(YK_SHOT_SET_YOUKAI, &real));
+        for (k = 0; k < YK_YOUKAI_TIER_SETS; ++k)
+            CHECK(yk_set_is_youkai(CE_SHT_SET_YOUKAI_R0 + k, &real));
+        /* ② **紧邻的两格都不认** —— 这是"必须精确、不能写宽区间"的关键断言：
+         *    0x47 = 111 的主炮组最后一格、0x57 = 下一张卡的组。写成宽区间会把它们的弹套上
+         *    TH08 的伤害表（静默改别人的卡）。*/
+        CHECK(!yk_set_is_youkai(CE_SHT_SET_YOUKAI_R0 - 1u, &real));
+        CHECK(!yk_set_is_youkai(CE_SHT_SET_YOUKAI_R0 + YK_YOUKAI_TIER_SETS, &real));
+        CHECK(!yk_set_is_youkai(0x17u, &real));                     /* 77 豌豆 */
+        CHECK(!yk_set_is_youkai(0x28u, &real));                     /* 113 灵界 */
+        CHECK(!yk_set_is_youkai(0x05u, &real));                     /* 人侧主炮 */
+        /* ③ 单格形态（旧行为）：逐档格**不**认、保留格认 */
+        CHECK(yk_set_is_youkai(YK_SHOT_SET_YOUKAI, &sets_single));
+        CHECK(!yk_set_is_youkai(CE_SHT_SET_YOUKAI_R0, &sets_single));
+        /* ④ NULL = 什么都不认（安全侧：宁可不改也不误改别人的弹）*/
+        CHECK(!yk_set_is_youkai(YK_SHOT_SET_YOUKAI, 0));
+        CHECK(!yk_set_is_youkai(CE_SHT_SET_YOUKAI_R0, 0));
+        /* ⑤ 打包 id 往返（各角色各档各取一行）*/
+        for (k = 0; k < YK_YOUKAI_TIER_SETS; ++k)
+            CHECK(yk_bullet_is_youkai(((CE_SHT_SET_YOUKAI_R0 + k) << 8) | 4u, &real));
+        CHECK(!yk_bullet_is_youkai((0x4700u), &real));
+        /* ⑥ 伤害层：档位表还是占位 ⇒ 对逐档格也**不覆盖**（与单格同口径）*/
+        out_dmg = -1;
+        CHECK(yk_bullet_damage_apply(50, ((CE_SHT_SET_YOUKAI_R0 + 3) << 8) | 1, 400, &real, &out_dmg) == 0);
+        CHECK(out_dmg == -1);
+    }
 #endif
 
     /* ============================== §3.5 发射点世界坐标（etOn 的算法）*/
@@ -530,6 +640,57 @@ int main(void)
     CHECK(s_acts[0].kind == YK_ACT_WITHDRAW);
     CHECK(yk_shot_slot_suppressed(&m, 500, 0, 0) == 0);          /* ★ 闸放开 */
     CHECK(yk_map_fam_count(&m) == 0);
+
+    /* ===== ★★ 2026-09-22（th08 #7）闸的**到期自愈**：ECL 不再重新武装时不许永久哑火 =====
+     * 现象（owner 单卡实跑）：「击破 boss 一个阶段后 boss 几乎不再发弹」——boss 的发射口在
+     * 整个阶段里**持续活跃**（反复 `etOn`、中间不调 `etNew`），而 `broken` 的唯一复位口是
+     * inactive→active 边沿 ⇒ 闸夹死 + 使魔不再重建 ⇒ 那个槽**永远**不发弹。
+     * 修法 = 连续 `YK_EMIT_BROKEN_TTL` 帧「记忆里有使魔、当前没有」⇒ 无条件放开。 */
+    CHECK(YK_EMIT_BROKEN_TTL > 0);
+    yk_map_reset(&m);
+    yk_frame_begin(&m);
+    CHECK(yk_note_slot(&m, 700, 2, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);
+    yk_fam_created(&m, 700, 2, 7001);
+    CHECK(yk_fam_broken(&m, 7001) == 1);                         /* 使魔被打死 */
+    CHECK(yk_shot_slot_suppressed(&m, 700, 2, 0) == 1);          /* 闸夹上（设计如此）*/
+    {
+        int f;
+        unsigned base = yk_map_heals(&m);
+        /* TTL−1 帧：仍然夹着（发射口**一直活跃**，没有边沿）*/
+        for (f = 1; f < YK_EMIT_BROKEN_TTL; ++f) {
+            yk_frame_begin(&m);
+            CHECK(yk_note_slot(&m, 700, 2, 1, p1, &a) == 0);     /* broken ⇒ 不重建、不撤 */
+            CHECK(yk_shot_slot_suppressed(&m, 700, 2, 0) == 1);
+        }
+        CHECK(yk_map_heals(&m) == base);                         /* 还没到期 ⇒ 没自愈 */
+        /* 第 TTL 帧：到期 ⇒ 闸放开 + 本帧就重建（CREATE 动作）*/
+        yk_frame_begin(&m);
+        CHECK(yk_note_slot(&m, 700, 2, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);
+        CHECK(yk_shot_slot_suppressed(&m, 700, 2, 0) == 0);      /* ★ 闸放开（关键断言）*/
+        CHECK(yk_map_heals(&m) == base + 1);                     /* ★ 记了一次账 */
+        yk_fam_created(&m, 700, 2, 7002);
+        CHECK(yk_shot_slot_suppressed(&m, 700, 2, 7002) == 0);   /* 使魔回来了 ⇒ 照旧放行 */
+        /* 重建之后再打死 ⇒ 年龄**重新**从 0 起算（不会立刻又自愈）*/
+        CHECK(yk_fam_broken(&m, 7002) == 1);
+        yk_frame_begin(&m);
+        CHECK(yk_note_slot(&m, 700, 2, 1, p1, &a) == 0);
+        CHECK(yk_map_heals(&m) == base + 1);                     /* 只过了 1 帧 ⇒ 没自愈 */
+        CHECK(yk_shot_slot_suppressed(&m, 700, 2, 0) == 1);
+    }
+    /* 到期之前 ECL 若重新武装过 ⇒ 立刻复位、**不计**自愈账（走的是边沿那条路）*/
+    yk_map_reset(&m);
+    yk_frame_begin(&m);
+    CHECK(yk_note_slot(&m, 701, 0, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);
+    yk_fam_created(&m, 701, 0, 7101);
+    CHECK(yk_fam_broken(&m, 7101) == 1);
+    {
+        unsigned base = yk_map_heals(&m);
+        yk_frame_begin(&m);
+        CHECK(yk_note_slot(&m, 701, 0, 0, p1, &a) == 0);         /* etNew：清零 type */
+        CHECK(yk_note_slot(&m, 701, 0, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE); /* etSprite：写回 */
+        CHECK(yk_shot_slot_suppressed(&m, 701, 0, 0) == 0);
+        CHECK(yk_map_heals(&m) == base);                         /* 边沿复位**不**记账 */
+    }
 
     printf("youkai_core: %d checks, %d failed\n", s_pass + s_fail, s_fail);
     return s_fail ? 1 : 0;
