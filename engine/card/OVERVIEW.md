@@ -69,6 +69,17 @@ TH18《虹龍洞》用**卡牌/能力系统**取代了 TH16 的季节系统。�
 （`th18:0x412dac`，57 项）各自的容量假设，都可能是断点。定位中，结论与扩展方案落地后写进
 [th18/10-extensibility-limits](th18/10-extensibility-limits.md)，侦察线索见 [`th185/README.md §4`](th185/README.md)。
 
+## 系统卡的**原作侧**一手（106–117 要复刻的机制）
+
+mod 里 id 106–117 那 12 张「系统卡」各自复刻一作的原版机制；它们的**原作侧语义**不属本页
+（本页只管 TH18 自己的卡牌系统），按版本登记在各自目录。已建的一篇：
+
+- **TH09 花映塚（109 `POFV_BLAST`）**：
+  [`th09/01-pofv-charge-and-cancel-fields.md`](th09/01-pofv-charge-and-cancel-fields.md) ——
+  消弹圈 = **锚定场**（`(圆心, r₀, dr, 寿命, kind)`，每帧 `r += dr`、寿命 `--`；建 `th09:0x41cf30` 族 /
+  推进 `th09:0x41c8e0` / 消费 `th09:0x41dff0` ⇒ 弹 state 5）；拦 Z 的闸 = **按住满 10 帧**（`th09:0x41fa1b`）；
+  气槽 = 4×100、上限 400，蓄力量被它钳上界；CA 三级半径 = **192 / 256 / 448**。
+
 ## 社区交叉验证
 
 [th18/09](th18/09-community-crosscheck.md) 记录了与 THBWiki 的逐项对账：高度一致，

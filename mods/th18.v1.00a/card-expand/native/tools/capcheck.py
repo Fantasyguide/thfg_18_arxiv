@@ -101,8 +101,9 @@ POOLS = [
      "s_tokpool.dropped", "满 → 丢新令牌并计数（汇总行 `token pool dropped`）"),
     ("pool_pofvsp", "POFV_SPIRIT_MAX", "pofv_core.h", "pofv.c",
      "spirit pool full", "满 → 丢掉这支神灵并记一行（`cap_logged` 只记一次）"),
-    ("pool_pofvbq", "POFV_BLAST_QUEUE_MAX", "pofv_core.h", "pofv.c",
-     "cap_logged", "满 → 丢爆风并计数（`blast queue full` 只记一行）"),
+    ("pool_pofvst", "POFV_STORM_MAX", "pofv_core.h", "pofv.c",
+     "cap_logged", "满 → 丢暴风并计数（`blast queue full` 只记一行）。"
+     "★ 2026-09-22 P5：池从「爆风队列」换成「暴风场池」（`POFV_BLAST_QUEUE_MAX` → `POFV_STORM_MAX`）"),
     ("pool_seasonpt", "SEASON_POINT_POOL", "season.c", "season.c",
      None, "满 → `spawn_point_at` 返回 0（调用方丢）—— **无计数** ⇒ 满了一片点到不了手"),
     ("pool_lolktint", "LOLK_TINT_MAX", "lolk.c", "lolk.c",

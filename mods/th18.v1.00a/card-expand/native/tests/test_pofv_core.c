@@ -59,12 +59,19 @@ int main(void)
     CHECK(pofv_charge_max_level(2) == 2);
     CHECK(pofv_charge_max_level(9) == POFV_GAUGE_MAX);      /* 钳到 4 级 */
 
-    /* 没气：蓄不动 ⇒ 不拦 Z（原生照发）*/
+    /* ★★ 2026-09-22（P5 #1）：**气槽空也照样蓄力、照样拦 Z** —— 一手：闸是时间（10 帧），
+     *   与等级/气槽无关（`th09:0x41fa17` push 0xa / `0x41fa1b is_gt`）。旧实现要求
+     *   「level ≥ C1 且 gauge ≥ 1」⇒ 气槽空时按住 Z 什么都不发生（用户报的「未拦截 Z」）。*/
     CHECK(pofv_charge_begin(&st) == 1);
-    for (i = 0; i < POFV_CHARGE_FRAMES_PER_LEVEL * 2; ++i) pofv_charge_hold(&st);
-    CHECK(st.level == 0);
-    CHECK(pofv_charge_suppress(&st) == 0);
-    CHECK(pofv_charge_release(&st, &lvl) == 0);
+    for (i = 1; i < POFV_SUPPRESS_AFTER_FRAMES; ++i) {
+        pofv_charge_hold(&st);
+        CHECK(pofv_charge_suppress(&st) == 0);              /* 前 10 帧：点射窗口（原生照发）*/
+    }
+    pofv_charge_hold(&st);
+    CHECK(st.hold_frames == POFV_SUPPRESS_AFTER_FRAMES);
+    CHECK(pofv_charge_suppress(&st) == 1);                  /* ★ 满 10 帧就拦（不看等级、不看气）*/
+    CHECK(st.level == 0 && st.gauge == 0);
+    CHECK(pofv_charge_release(&st, &lvl) == 0);             /* 没气 ⇒ 放不出 CA（蓄力量被气槽钳）*/
     CHECK(lvl == 0 && st.gauge == 0);
 
     /* 有 4 格气：按住 → 升级 → 拦 Z；松开 → 发动 CA */
@@ -73,8 +80,8 @@ int main(void)
     CHECK(pofv_charge_begin(&st) == 0);                     /* 已在按住态：重复无副作用 */
     CHECK(st.max_level == POFV_GAUGE_MAX);                  /* b = min(气槽, 4) */
     for (i = 1; i < POFV_CHARGE_FRAMES_PER_LEVEL; ++i) {
-        CHECK(pofv_charge_hold(&st) == 0);                  /* 还没升到 C1：这段就是「点射窗口」*/
-        CHECK(pofv_charge_suppress(&st) == 0);
+        CHECK(pofv_charge_hold(&st) == 0);                  /* 还没升到 C1（等级仍随时间涨）*/
+        CHECK(pofv_charge_suppress(&st) == (st.hold_frames >= POFV_SUPPRESS_AFTER_FRAMES));
     }
     CHECK(pofv_charge_hold(&st) == 1);                      /* ★ 升到 C1：卡侧播「叮」*/
     CHECK(st.level == 1);
@@ -88,11 +95,13 @@ int main(void)
     CHECK(lvl == 2 && st.gauge == POFV_GAUGE_MAX - 1);      /* C2 消耗 1 格 */
     CHECK(st.phase == POFV_CHARGE_IDLE && st.level == 0);
 
-    /* 上限 = 气槽：只有 2 格气就只能蓄到 C2 */
+    /* 上限 = 气槽：只有 2 格气 ⇒ 蓄力量 a 照涨（一手：蓄力量只被气槽**钳上界**），
+     * 但**放得出的档** = min(a, b) = 2（`pofv_charge_usable_level`）。*/
     st.gauge = 2;
     CHECK(pofv_charge_begin(&st) == 1);
     for (i = 0; i < POFV_CHARGE_FRAMES_PER_LEVEL * 5; ++i) pofv_charge_hold(&st);
-    CHECK(st.level == 2 && st.max_level == 2);
+    CHECK(st.level == POFV_CA_LEVEL_MAX && st.max_level == 2);
+    CHECK(pofv_charge_usable_level(&st) == 2);
 
     /* C1：1 格气、**不消耗**（一手）*/
     CHECK(pofv_charge_release(&st, &lvl) == 1);
@@ -302,52 +311,63 @@ int main(void)
     CHECK(st.any_cancelled == 5 && st.white_cancelled == 0);
     CHECK(st.sp == 5 * POFV_SP_PER_RED_CANCEL);
 
-    /* 连爆质量档：窗口内累加、窗口外回 1 档、封顶 */
-    pofv_state_init(&st);
-    CHECK(pofv_chain_register_kill(&st, 100) == 1);
-    CHECK(pofv_chain_register_kill(&st, 100 + POFV_CHAIN_WINDOW_FRAMES) == 2);
-    CHECK(pofv_chain_register_kill(&st, 100 + POFV_CHAIN_WINDOW_FRAMES * 2) == 3);
-    CHECK(pofv_chain_register_kill(&st, 100 + POFV_CHAIN_WINDOW_FRAMES * 3) == 4);
-    CHECK(pofv_chain_register_kill(&st, 100 + POFV_CHAIN_WINDOW_FRAMES * 4) == POFV_BLAST_CHAIN_MAX);
-    CHECK(pofv_chain_register_kill(&st, 10000) == 1);       /* 隔太久：回 1 档 */
-
-    /* 爆风队列：死亡回调只入队（O(1)），帧末按预算出队 */
+    /* 连爆档的来源（★★ 2026-09-22 P5 #4 重做）：**档 = 点着它的那个暴风场的档 + 1**
+     *   —— 帧窗口的节拍器已删除（用户：「暴风的连锁似乎不该这么快」）。*/
     {
-        pofv_blast_queue_t q;
-        pofv_blast_t b;
-        int32_t budget;
-        pofv_blast_queue_init(&q);
-        CHECK(pofv_blast_take(&q, &b) == 0);
-        CHECK(pofv_blast_enqueue(&q, 1.0f, 2.0f, 1) == 1);
-        CHECK(pofv_blast_enqueue(&q, 3.0f, 4.0f, 2) == 1);
-        CHECK(pofv_blast_take(&q, &b) == 1);
-        CHECK(b.x == 1.0f && b.y == 2.0f && b.chain == 1);   /* FIFO */
-        CHECK(pofv_blast_take(&q, &b) == 1);
-        CHECK(b.x == 3.0f && b.chain == 2);
-        CHECK(pofv_blast_take(&q, &b) == 0);
+        pofv_storm_pool_t p;
+        pofv_storm_t out;
+        pofv_storm_pool_init(&p);
+        CHECK(p.live == 0 && p.dropped == 0);
+        CHECK(pofv_storm_chain_at(&p, 0.0f, 0.0f) == 0);          /* 没有场 ⇒ 0（自机弹打死的）*/
 
-        /* 帧预算：一次清场帧入队 300 个（review §4.1 的最坏情形），本帧只做 POFV_BLASTS_PER_FRAME 个 */
-        for (i = 0; i < 300; ++i) pofv_blast_enqueue(&q, (float)i, 0.0f, 1);
-        CHECK(q.n == POFV_BLAST_QUEUE_MAX);                  /* 满即丢，不越界 */
-        CHECK(q.dropped == 300 - POFV_BLAST_QUEUE_MAX);
-        budget = POFV_BLASTS_PER_FRAME;
-        for (i = 0; i < POFV_BLASTS_PER_FRAME; ++i) CHECK(pofv_blast_take_budget(&q, &b, &budget) == 1);
-        CHECK(budget == 0);
-        CHECK(pofv_blast_take_budget(&q, &b, &budget) == 0); /* 预算用完：本帧不再消弹 */
-        CHECK(q.n == POFV_BLAST_QUEUE_MAX - POFV_BLASTS_PER_FRAME);
-        budget = 2;
-        CHECK(pofv_blast_take_budget(&q, &b, &budget) == 1);
-        CHECK(pofv_blast_take_budget(&q, &b, &budget) == 1);
-        CHECK(pofv_blast_take_budget(&q, &b, &budget) == 0);
+        CHECK(pofv_storm_spawn(&p, 0.0f, 0.0f, 1) == 0);
+        CHECK(p.live == 1);
+        /* 出生帧 age = 0 ⇒ 半径 = r₀ = 16（★ 一手：etama 脚本的 `pos(16.0f,…)`）*/
+        CHECK(pofv_storm_slot(&p, 0) != NULL);
+        out = *pofv_storm_slot(&p, 0);
+        pofv_storm_radius(&out, &r);
+        CHECK(r == POFV_STORM_R0);
+        CHECK(pofv_storm_chain_at(&p, 0.0f, 0.0f) == 1);          /* 圆心在圈里 */
+        CHECK(pofv_storm_chain_at(&p, 1000.0f, 0.0f) == 0);       /* 圈外 */
 
-        /* 环形回绕：填满两轮后仍按 FIFO 顺序 */
-        pofv_blast_queue_init(&q);
-        for (i = 0; i < POFV_BLAST_QUEUE_MAX; ++i) pofv_blast_enqueue(&q, (float)i, 0.0f, 1);
-        for (i = 0; i < POFV_BLAST_QUEUE_MAX; ++i) { CHECK(pofv_blast_take(&q, &b) == 1); CHECK(b.x == (float)i); }
-        pofv_blast_enqueue(&q, 42.0f, 0.0f, 4);
-        CHECK(pofv_blast_take(&q, &b) == 1 && b.x == 42.0f && b.chain == 4);
-        CHECK(q.dropped == 0);
+        /* 半径逐帧长，到寿命那一刻 = 该档终点半径（旧值 64 是「缺乏范围」的根因）*/
+        for (i = 0; i < POFV_STORM_FRAMES - 1; ++i) {
+            pofv_storm_tick(&p);
+            out = *pofv_storm_slot(&p, 0);
+            pofv_storm_radius(&out, &r);
+            CHECK(r > POFV_STORM_R0 && r <= 176.0f);
+        }
+        pofv_storm_tick(&p);                                      /* 满寿命：释放 */
+        CHECK(p.live == 0);
+        CHECK(pofv_storm_chain_at(&p, 0.0f, 0.0f) == 0);          /* 场没了 ⇒ 连锁也就断了 */
+        pofv_storm_radius(pofv_storm_slot(&p, 0), &r);
+        CHECK(r == 0.0f);                                         /* 空槽 ⇒ 0 */
+
+        /* 池满：丢（不越界、不崩），并记账 */
+        for (i = 0; i < POFV_STORM_MAX; ++i) CHECK(pofv_storm_spawn(&p, (float)i, 0.0f, 1) == i);
+        CHECK(pofv_storm_spawn(&p, 0.0f, 0.0f, 1) == -1);
+        CHECK(p.dropped == 1 && p.live == POFV_STORM_MAX);
+        CHECK(pofv_storm_slot(&p, POFV_STORM_MAX) == NULL);
+        CHECK(pofv_storm_slot(NULL, 0) == NULL);
     }
+    /* 档越高 → 终点半径越大（单调），且档 1 = 176（TH09 一手：CA 释放节点 16+20×8）*/
+    {
+        float prev = 0.0f;
+        for (i = 1; i <= POFV_BLAST_CHAIN_MAX; ++i) {
+            pofv_storm_final_radius(i, &r);
+            CHECK(r > prev);
+            prev = r;
+        }
+        pofv_storm_final_radius(1, &r);
+        CHECK(r == 176.0f);
+    }
+
+    /* 消弹的帧预算：**场模型下不再是「队列出队」，而是「每帧最多几次整池扫弹」**
+     *   （`POFV_STORM_SCANS_PER_FRAME`）。这里只钉住这个预算数存在且 > 0 ——
+     *   真正的闸在卡侧 `on_tick_2` 的 `scan_budget` 里。*/
+    CHECK(POFV_STORM_SCANS_PER_FRAME > 0);
+    CHECK(POFV_STORM_SCANS_PER_FRAME < POFV_STORM_MAX * POFV_STORM_FRAMES);
+    CHECK(POFV_BLAST_CHAIN_MAX >= 2);
 
     /* ==================== F. 活化灵 ==================== */
     {

@@ -2,6 +2,7 @@
  * 纯 C11，无引擎地址、无 libm、无 float 返回值（i386 x87 不变式）。 */
 #include "pofv_core.h"
 #include <string.h>
+#include <stddef.h>          /* NULL（`pofv_storm_slot` 的空槽判定）*/
 
 /* ---------------------------------------------------------------- A. 白弹阈值 */
 
@@ -77,38 +78,59 @@ int pofv_charge_hold(pofv_state_t *st)
     int32_t lv;
     if (!st || st->phase != POFV_CHARGE_HOLD) return 0;
     ++st->hold_frames;
-    st->max_level = pofv_charge_max_level(st->gauge);       /* 蓄力期间吃到气 ⇒ 上限抬升 */
+    st->max_level = pofv_charge_max_level(st->gauge);       /* b：可用上限（气槽）*/
+    /* ★★ 2026-09-22（P5 #3「没有任何蓄力机制」）：**蓄力量 a 只按时间涨到 4 档**，
+     *   不再被气槽夹（一手：原版每帧 `charge += k`，只在**结算/钳上界**那一步比气槽 —
+     *   `th09:0x41fab0 fcomp [player+0x30388]` / `0x41fabd` 钳；能不能放出去看 `pofv_charge_usable_level`）。
+     *   旧实现 `if (lv > max_level) lv = max_level;` 在气槽空时把 a 永远钉在 0 ⇒ 用户看到「没有任何蓄力机制」。*/
     lv = st->hold_frames / POFV_CHARGE_FRAMES_PER_LEVEL;
-    if (lv > st->max_level) lv = st->max_level;
+    if (lv > POFV_CA_LEVEL_MAX) lv = POFV_CA_LEVEL_MAX;
     if (lv > st->level) { st->level = lv; return 1; }       /* 升级：卡侧播「叮」*/
     return 0;
 }
 
 int pofv_charge_suppress(const pofv_state_t *st)
 {
-    /* ★ 拦 Z 条件（用户 2026-09-12）：按住 Z **且已升到 ≥1 级**。
-     * 还没升到 1 级的那几帧不拦 ⇒ 点一下 Z 照旧发一发（原生行循环照跑）。 */
+    /* ★★ 2026-09-22（P5 #1「花映冢未拦截 Z」）—— 一手语义，见 pofv_core.h 的注释：
+     *   TH09 的闸是**时间**（按住射击满 10 帧就停发原生弹，`th09:0x41fa17` / `0x41fa1b`），
+     *   与气槽、与蓄力等级**都无关**。
+     * ⚠ 旧实现要求「level ≥ C1 且 gauge ≥ 1 格」：气槽空（每关开局 / 刚放完 CA）时
+     *   `pofv_charge_max_level(0) = 0` ⇒ 等级永远是 0 ⇒ **永不拦 Z、也永远蓄不出东西**，
+     *   正是用户报的「未拦截 Z」+「没有任何蓄力机制」两条。*/
     if (!st) return 0;
     if (st->phase != POFV_CHARGE_HOLD) return 0;
-    if (st->level < POFV_CA_LEVEL_MIN) return 0;
-    return st->gauge >= POFV_CA_LEVEL_MIN;                  /* 没气就蓄不动 ⇒ 也不拦 */
+    return st->hold_frames >= POFV_SUPPRESS_AFTER_FRAMES;
+}
+
+int pofv_charge_usable_level(const pofv_state_t *st)
+{
+    int32_t lv;
+    if (!st) return 0;
+    /* 一手：原版蓄力量被气槽**钳上界**（`th09:0x41fab0` / `0x41fabd`）⇒
+     * 能放出的档 = min(蓄力量档 a, 气槽档 b)。 */
+    lv = st->level < st->max_level ? st->level : st->max_level;
+    if (lv < 0) lv = 0;
+    if (lv > POFV_CA_LEVEL_MAX) lv = POFV_CA_LEVEL_MAX;
+    return (int)lv;
 }
 
 int pofv_charge_release(pofv_state_t *st, int *out_level)
 {
     int32_t lv;
     if (!st || st->phase != POFV_CHARGE_HOLD) return 0;
-    lv = st->level;
+    st->max_level = pofv_charge_max_level(st->gauge);
+    lv = pofv_charge_usable_level(st);        /* ★ 可用档 = min(a, b)（一手：蓄力量被气槽钳上界）*/
     st->phase = POFV_CHARGE_IDLE;
     st->hold_frames = 0;
     st->level = 0;
-    st->max_level = pofv_charge_max_level(st->gauge);
     if (lv < POFV_CA_LEVEL_MIN || !pofv_ca_available(st, lv)) {
-        /* 等级 0（点射）或气不够：什么都不发动 —— 交回原生弹 */
+        /* 可用档 0（点射）或气不够：什么都不发动 —— 交回原生弹 */
+        st->max_level = pofv_charge_max_level(st->gauge);
         if (out_level) *out_level = 0;
         return 0;
     }
     st->gauge -= pofv_ca_cost(lv);
+    st->max_level = pofv_charge_max_level(st->gauge);
     if (out_level) *out_level = lv;
     return 1;
 }
@@ -176,35 +198,120 @@ int32_t pofv_invuln_left(const pofv_invuln_t *w)
     return w ? w->left : 0;
 }
 
-/* ------------------------------------------------- C. 爆风 / 红圈 / SP / 记账 */
+/* ------------------------------------------------- C. 暴风 / 红圈 / SP / 记账 */
 
-int pofv_chain_register_kill(pofv_state_t *st, int32_t frame)
-{
-    if (!st) return 1;
-    if (st->last_kill_frame >= 0 && (frame - st->last_kill_frame) <= POFV_CHAIN_WINDOW_FRAMES)
-        ++st->chain_kills;
-    else
-        st->chain_kills = 1;
-    st->last_kill_frame = frame;
-    if (st->chain_kills > POFV_BLAST_CHAIN_MAX) st->chain_kills = POFV_BLAST_CHAIN_MAX;
-    return st->chain_kills;
-}
+/* ★★ 2026-09-22（P5 #4 机制重做）：暴风 = **锚定场**（圆心不动、半径逐帧长、活有限帧）。
+ * 旧实现是「`pofv_chain_register_kill()` 的 30 帧窗口给档 + 队列入队后一次性消弹 2 帧」——
+ * 前者让档位靠**节拍**往上蹿（用户：「连锁似乎不该这么快」），后者让场只存在 2 帧
+ * （妖精根本来不及飞进来）。一手（TH09）两件事都不是这样：场是节点，见 pofv_core.h §C 的表。 */
 
-/* ❓ 自定占位（TODO(th09)：原版爆风半径按角色 / 连爆质量各异，未逆到）。
- * 约束：单调不减、chain 越界钳制（单测保证）。 */
-static const float s_blast_r[POFV_BLAST_CHAIN_MAX] = { 64.0f, 80.0f, 96.0f, 120.0f };
+/* 连爆档 chain 的**终点半径** R。
+ * ★ 档 1 = **176 px**（一手：TH09 的「CA 释放」那个消弹节点 r₀=16、dr=20、8 帧
+ *   ⇒ 16 + 20×8 = 176，`th09:0x41e875`–`0x41e88c`；同一族的 CA L1 终点是 192）。
+ * ⚠ 档 2..4 每档 +48 是 **❓ 自定**（TODO(th09)：原版「暴风随连锁变大」的表没逆到）——
+ *   旧值是 64/80/96/120（比 TH09 **最小的**那个圈还小一半），这就是用户报的「暴风缺乏范围」。 */
+static const float s_storm_r[POFV_BLAST_CHAIN_MAX] = { 176.0f, 224.0f, 272.0f, 320.0f };
 
 void pofv_blast_radius(int chain, float *out)
 {
     int32_t c;
     if (!out) return;
     c = clamp_i32(chain, 1, POFV_BLAST_CHAIN_MAX);
-    *out = s_blast_r[c - 1];
+    *out = s_storm_r[c - 1];
 }
 
-/* ❓ 自定占位（TODO(th09)：原版 C1–C4 的红圈半径未逆到；一手只给语义
- * 「等级越高 → 消弹圈越大；C4 = 近乎全屏」）。 240 ≈ 全屏（游戏区半宽 ≈ 208–240）。*/
-static const float s_ca_r[POFV_CA_LEVEL_MAX] = { 80.0f, 128.0f, 200.0f, 480.0f };
+void pofv_storm_pool_init(pofv_storm_pool_t *p)
+{
+    if (!p) return;
+    memset(p, 0, sizeof *p);
+}
+
+int pofv_storm_spawn(pofv_storm_pool_t *p, float x, float y, int32_t chain)
+{
+    int i;
+    if (!p) return -1;
+    for (i = 0; i < POFV_STORM_MAX; ++i) {
+        pofv_storm_t *s = &p->s[i];
+        if (s->active) continue;
+        s->x = x;
+        s->y = y;
+        s->chain = clamp_i32(chain, 1, POFV_BLAST_CHAIN_MAX);
+        s->age = 0;
+        s->life = POFV_STORM_FRAMES;
+        s->active = 1;
+        ++p->live;
+        return i;
+    }
+    ++p->dropped;
+    return -1;                                  /* 池满：丢弃（日志在卡侧）*/
+}
+
+/* 当前半径：与 TH09 画环的 `posTime` 同律（起点 16、终点 R、线性、时长 = 寿命）。
+ * ⚠ 全程 float 运算、走出参 —— 不许引入 x87 返回值（`make dllx87` 的零 x87 不变式）。*/
+void pofv_storm_radius(const pofv_storm_t *st, float *out)
+{
+    float r0 = POFV_STORM_R0, r1, t;
+    int32_t life, age;
+
+    if (!out) return;
+    if (!st || !st->active || st->life <= 0) { *out = 0.0f; return; }
+    pofv_storm_final_radius(st->chain, &r1);
+    if (r1 < r0) r1 = r0;
+    life = st->life;
+    age = st->age;
+    if (age < 0) age = 0;
+    if (age > life) age = life;
+    t = (float)age / (float)life;
+    *out = r0 + (r1 - r0) * t;
+}
+
+void pofv_storm_final_radius(int32_t chain, float *out)
+{
+    pofv_blast_radius(chain, out);
+}
+
+int pofv_storm_chain_at(const pofv_storm_pool_t *p, float x, float y)
+{
+    int i, best = 0;
+    if (!p) return 0;
+    for (i = 0; i < POFV_STORM_MAX; ++i) {
+        const pofv_storm_t *s = &p->s[i];
+        float r, dx, dy;
+        if (!s->active) continue;
+        pofv_storm_radius(s, &r);
+        dx = x - s->x;
+        dy = y - s->y;
+        if (dx * dx + dy * dy > r * r) continue;   /* 没盖住这一点 */
+        if (s->chain > best) best = s->chain;
+    }
+    return best;
+}
+
+int pofv_storm_tick(pofv_storm_pool_t *p)
+{
+    int i;
+    if (!p) return 0;
+    for (i = 0; i < POFV_STORM_MAX; ++i) {
+        pofv_storm_t *s = &p->s[i];
+        if (!s->active) continue;
+        ++s->age;
+        if (s->age >= s->life) { s->active = 0; --p->live; }
+    }
+    return p->live;
+}
+
+const pofv_storm_t *pofv_storm_slot(const pofv_storm_pool_t *p, int i)
+{
+    if (!p || i < 0 || i >= POFV_STORM_MAX) return NULL;
+    return &p->s[i];
+}
+
+/* ❓ 自定占位（TODO(th09)：原版 CA 的半径**已经逆到一手**了，见下 —— 这里只留红圈的
+ * 「C4 = 近乎全屏」这一条语义）。★ 2026-09-22：改成**一手终点半径**：
+ *   L1 = 192（r₀ 0 + dr 4.0 × 48 帧，`th09:0x403c30`）、L2 = 256（4.0 × 64，`th09:0x403c90`）、
+ *   L3 = 448（3.5 × 128，`th09:0x403cf0`）；L4 在 TH09 里是 **boss attack**（`th09:0x41f984` 的
+ *   ≥400 分支），本卡单人化后按用户口径保留成「近乎全屏」⇒ 480（❓ 自定，游戏区半宽 ≈ 208–240）。 */
+static const float s_ca_r[POFV_CA_LEVEL_MAX] = { 192.0f, 256.0f, 448.0f, 480.0f };
 
 void pofv_ca_circle_radius(int level, float *out)
 {
@@ -271,44 +378,7 @@ void pofv_account_kill(pofv_state_t *st)
     st->sp += POFV_SP_PER_KILL;
 }
 
-/* ---- 爆风队列 ---- */
-
-void pofv_blast_queue_init(pofv_blast_queue_t *q)
-{
-    if (!q) return;
-    memset(q, 0, sizeof *q);
-}
-
-int pofv_blast_enqueue(pofv_blast_queue_t *q, float x, float y, int32_t chain)
-{
-    int32_t tail;
-    if (!q) return 0;
-    if (q->n >= POFV_BLAST_QUEUE_MAX) { ++q->dropped; return 0; }
-    tail = q->head + q->n;
-    if (tail >= POFV_BLAST_QUEUE_MAX) tail -= POFV_BLAST_QUEUE_MAX;
-    q->item[tail].x = x;
-    q->item[tail].y = y;
-    q->item[tail].chain = clamp_i32(chain, 1, POFV_BLAST_CHAIN_MAX);
-    ++q->n;
-    return 1;
-}
-
-int pofv_blast_take(pofv_blast_queue_t *q, pofv_blast_t *out)
-{
-    if (!q || !out || q->n <= 0) return 0;
-    *out = q->item[q->head];
-    if (++q->head >= POFV_BLAST_QUEUE_MAX) q->head = 0;
-    --q->n;
-    return 1;
-}
-
-int pofv_blast_take_budget(pofv_blast_queue_t *q, pofv_blast_t *out, int32_t *budget)
-{
-    if (!budget || *budget <= 0) return 0;
-    if (!pofv_blast_take(q, out)) return 0;
-    --*budget;
-    return 1;
-}
+/* ---- 暴风池的实现见上面 §C 开头（`pofv_storm_*`）；旧的爆风队列已删除（场模型不需要它）---- */
 
 /* ------------------------------------------------------------- D. 活化灵 */
 

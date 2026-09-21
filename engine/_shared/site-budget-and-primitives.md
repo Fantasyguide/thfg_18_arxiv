@@ -271,7 +271,8 @@
 
 **架构含义（写给自己）**：`cancel_items` 是**环形的"消弹转道具"池**，`next_cancel_item_index` 是环指针、
 `num_cancel_items_spawned_this_frame` 是**每帧预算** ⇒ **原版自己就有"每帧消弹转道具配额"这个概念**
-（与卡 109 的 `POFV_BLASTS_PER_FRAME` 是同一设计思路）⇒ 我们对原语做限流不是发明，是复刻。
+（与卡 109 的每帧消弹预算同一条思路；那个宏 2026-09-22 由 `POFV_BLASTS_PER_FRAME` 改成
+`POFV_STORM_SCANS_PER_FRAME`，见 `AUDIT.md` §BE-EX）⇒ 我们对原语做限流不是发明，是复刻。
 
 **站点核算**：仍是 **1 条**（并进 `ce_item_frame`）。三个池各有自己的索引 ⇒ 我们**只读/只记账，不动引擎的池指针**
 （动了会让原版掉落错位）。

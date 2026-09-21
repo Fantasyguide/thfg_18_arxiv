@@ -6,6 +6,10 @@
  *   · 机制记录（用户口径一手抄录）：`mods/th18.v1.00a/card-expand/IDEAS.md` §「109 花映塚」
  *   · 白弹阈值 T = **半径 ≤ 4.0**（一手）：`docs/superpowers/specs/2026-09-11-system-card-spec-review.md` §5.4
  *   · 拦 Z / 死亡事件 / 消弹接口：同文 §11 #11 #47、§6.4；契约见 `EVENTS-CONTRACT.md`
+ *   · ★★ **TH09 一手（2026-09-22，P5 #1/#3/#4/#5 那一批）**：
+ *     `engine/card/th09/01-pofv-charge-and-cancel-fields.md`（蓄力/拦 Z 的闸 = 10 帧、
+ *     气槽 = 4×100 且蓄力量被它钳上界、消弹圈 = **锚定场**（r₀ + dr×帧、有限寿命）、
+ *     CA 三级的一手半径 192/256/448）。
  *   · 本卡 spec：`docs/superpowers/specs/2026-09-12-pofv-109-design.md`（数值表 / 未定项都在那）
  *
  * 键位（用户 2026-09-10 定，一手抄录）
@@ -20,14 +24,16 @@
  *   但保留 `0x45eca0` 起的卡广播（77 / 116 不受影响）。**绝不改 Z 输入位**（`0x4ca428` bit `0x001`）。
  *   时序：AbilityManager tick（优先级 0x16）先于 Player（0x17）⇒ `on_tick_2` 里算出的蓄力态
  *   当帧就能影响射击状态机（同 SDK.md §7 J♠ 的结论）。
+ *   ★★ 2026-09-22（P5 #1/#3）：闸从「等级 ≥ C1 且气 ≥ 1 格」换成**一手的时间闸**
+ *   （按住满 10 帧 ⇒ 拦，`th09:0x41fa17`）—— 旧闸在气槽空时永不成立（用户实跑：「未拦截 Z」）。
  *
  * ★ 性能（review §4.1 强制）：`on_enemy_death` 在**清场帧**一次被调 100–300 次，
- *   回调里扫弹池 = O(n²) ⇒ 回调**只登记**（连爆档 + 入队 + 掉一颗灵魂，全 O(1)），
- *   真正的消弹在 `on_tick_2` 帧末按 `POFV_BLASTS_PER_FRAME` 的预算做。
+ *   回调里扫弹池 = O(n²) ⇒ 回调**只登记**（定档 + 起一个暴风场 + 掉一颗灵魂，全 O(1)），
+ *   真正的消弹在 `on_tick_2` 帧末按 `POFV_STORM_SCANS_PER_FRAME` 的预算做。
  *
- * ★ 长持续效果（CLAUDE.md / METHOD.md 铁律）：本卡跨帧留下的东西 = 爆风队列 + 灵魂池 +
+ * ★ 长持续效果（CLAUDE.md / METHOD.md 铁律）：本卡跨帧留下的东西 = **暴风场池** + 灵魂池 +
  *   无敌声明层的一格。三条都在 `clear_card()`（`on_run_reset` / `on_delete` 共用）里收。
- *   ⚠ 本卡当前**不建任何 ANM VM**（活化灵的视觉需要 ability.anm 新增脚本 ⇒ 属于资产改动，
+ *   ⚠ 本卡当前**不建任何 ANM VM**（活化灵 / 暴风范围的视觉需要 ability.anm 新增脚本 ⇒ 属于资产改动，
  *   不在本次允许范围）⇒ `on_delete` 里没有 VM 要删；**一旦加上 VM 必须在这里删**（见 clear_card 注释）。
  */
 #include "sdk.h"
@@ -99,9 +105,9 @@
 /* ============================ 卡侧状态 ============================ */
 
 /* 池是**文件级**：`ce_state` 一张卡只有 496 字节（`CE_STATE_BYTES` 512 − `CE_STATE_RESERVED` 16），
- * 装不下 64 颗爆风 + 32 颗灵魂 ⇒ 照 116 / 117 的先例放文件级静态池（`animal.c` 的 `s_tok`）。
+ * 装不下 8 个暴风 + 32 颗灵魂 ⇒ 照 116 / 117 的先例放文件级静态池（`animal.c` 的 `s_tok`）。
  * ⚠ 代价：清理必须**完全不依赖 tick**（商店里 tick 停着）⇒ 两条删卡路都在 `clear_card()` 里清。*/
-static pofv_blast_queue_t s_blast;
+static pofv_storm_pool_t  s_storm;
 static pofv_spirit_pool_t s_spirit;
 static int32_t            s_frame;      /* 游玩帧计数（连爆窗口的帧源；只在 on_tick_2 前进）*/
 /* ★ 验证批次判据（`native/tools/verify.py` 的 «创建灵魂»）：本次段累计的**灵魂账**。
@@ -140,7 +146,7 @@ typedef void (__attribute__((thiscall)) *pofv_fn_bullet_cancel_t)(void *bullet, 
  * **不**替换判定式里的弹半径。⚠ 2026-09-12 审计订正：本注释原来写「把弹半径 × 0.5 换成 T」，
  * 与下面的代码不符（代码是对的、注释是错的）。
  * ⚠ 跳过 `+0x24` 的不可消位**不适用于这里**：本函数只按半径筛（红圈才需要「消一切」）。
- * 成本：2000 槽 × 1 次比较（早停于 max_count）——每帧最多 POFV_BLASTS_PER_FRAME 次。 */
+ * 成本：2000 槽 × 1 次比较（早停于 max_count）——每帧最多 POFV_STORM_SCANS_PER_FRAME 次（暴风场）。 */
 static int cancel_white_in_circle(const float *pos, float r, int max_count, int mode)
 {
     uint8_t *bm = CE_BULLET_MGR();
@@ -208,37 +214,48 @@ static void ca_invuln_grant(pofv_card_t *s, int level)
 
 /* 蓝色爆风（一手：**击破妖精 / 幽灵时产生**、**有攻击力**、消掉圈内**白弹**、按连爆质量回气）。
  * ⚠ 原版「被消的白弹以同样速度投到对手场地」在单机没有对应 ⇒ 用户口径改成**转成分**：
- *   逐弹 `Bullet__cancel(b, mode = 1)`（引擎 `0x4290e0`：加分 + 掉点道具），不另造道具。 */
-static void do_blast(pofv_card_t *s, const pofv_blast_t *bl)
+ *   逐弹 `Bullet__cancel(b, mode = 1)`（引擎 `0x4290e0`：加分 + 掉点道具），不另造道具。
+ *
+ * ★★ 2026-09-22（P5 #4）**重做成「场」**：一个暴风不是一口气消完，而是**每帧**按当前半径判一次
+ *   （`pofv_storm_radius`：16 → R_chain 线性长），活 `POFV_STORM_FRAMES` 帧 ⇒ 妖精是**飞进来**才被点着。
+ *   ⇒ 连锁由妖精的到场率决定，不再是一个 30 帧窗口的节拍器（用户：「连锁不该这么快」）。
+ *   每帧的成本闸 = `POFV_STORM_SCANS_PER_FRAME`（整池扫弹的次数；伤害源那一条很便宜，不做闸）。 */
+static void do_storm_frame(pofv_card_t *s, const pofv_storm_t *bl, int *scan_budget)
 {
     float pos[3], r;
     int32_t slots[POFV_SPIRIT_MAX];
     float sx[POFV_SPIRIT_MAX], sy[POFV_SPIRIT_MAX];
-    int n, killed, i;
+    int n = 0, killed, i;
 
-    if (!s || !bl) return;
-    pofv_blast_radius(bl->chain, &r);
+    if (!s || !bl || !bl->active) return;
+    pofv_storm_radius(bl, &r);
+    if (r <= 0.0f) return;
     pos[0] = bl->x; pos[1] = bl->y; pos[2] = 0.0f;
 
-    n = pofv_cancel_circle(pos, r, /*white_only=*/1, POFV_CANCEL_MAX, POFV_BULLET_CANCEL_MODE_BLAST);
-    pofv_account_blast(&s->st, n, bl->chain);
+    /* 一手：蓝圈只消**白弹**（半径 ≤ 4.0）。整池扫弹是 O(2000)，按帧预算出闸。 */
+    if (scan_budget && *scan_budget > 0) {
+        --*scan_budget;
+        n = pofv_cancel_circle(pos, r, /*white_only=*/1, POFV_CANCEL_MAX, POFV_BULLET_CANCEL_MODE_BLAST);
+        pofv_account_blast(&s->st, n, bl->chain);
+    }
 
-    /* 一手：蓝圈**有攻击力** ⇒ 一个覆盖圈面的矩形伤害源（照 Remilia / season.c）。*/
+    /* 一手：蓝圈**有攻击力** ⇒ 覆盖圈面的矩形伤害源（照 Remilia / season.c）。
+     * ★ 场每帧都放一个：这就是「妖精飞进来才被点着」的那只手（旧实现只放 2 帧）。*/
     ce_raise_damage_cap(POFV_DMG_CAP);
-    ce_damage_rect(pos, 0.0f, POFV_BLAST_DMG_LIFE, POFV_BLAST_DMG, r * 2.0f, r * 2.0f);
+    ce_damage_rect(pos, 0.0f, POFV_STORM_DMG_LIFE, POFV_BLAST_DMG, r * 2.0f, r * 2.0f);
 
     /* 一手：**普通幽灵很硬（3 枪打不掉）、只有被连爆波及时才爆** ⇒ 灵魂只在这里吃伤害。
-     * 击破的幽灵自己也会产生爆风（一手：击破妖精 / 幽灵时产生蓝圈）⇒ 再入队一颗（连锁）。
+     * 击破的幽灵自己也会产生爆风（一手：击破妖精 / 幽灵时产生蓝圈）⇒ 再起一个场（连锁）。
      * ⚠ 位置必须在命中判定**之前**抄下来（命中即清槽，槽会被下一颗灵魂复用）。*/
     for (i = 0; i < POFV_SPIRIT_MAX; ++i) { sx[i] = s_spirit.s[i].x; sy[i] = s_spirit.s[i].y; }
     killed = pofv_spirit_blast_hit(&s_spirit, bl->x, bl->y, r, POFV_BLAST_SPIRIT_DMG,
                                    slots, POFV_SPIRIT_MAX);
     for (i = 0; i < killed && i < POFV_SPIRIT_MAX; ++i) {
         int32_t k = slots[i];
-        int chain = pofv_chain_register_kill(&s->st, s_frame);
+        int chain = bl->chain + 1;
         pofv_account_kill(&s->st);
-        if (!pofv_blast_enqueue(&s_blast, sx[k], sy[k], chain)) {
-            if (!s->cap_logged) { ce_log("pofv: blast queue full — chain blasts dropped"); s->cap_logged = 1; }
+        if (pofv_storm_spawn(&s_storm, sx[k], sy[k], chain) < 0) {
+            if (!s->cap_logged) { ce_log("pofv: blast queue full — storm pool full, chain storm dropped"); s->cap_logged = 1; }
         }
     }
     s_blasted += killed;
@@ -310,21 +327,31 @@ static void spirit_selfdestruct(pofv_card_t *s, float x, float y)
 
 /* 敌人死亡（断点 `0x430240`，**在引擎撒主掉落之前**、链表仍挂着）。共享广播，只读。
  * 四张卡要的「击破」= `kind == CE_EDEATH_KILLED`（一手：`retaddr 0x42f3b7`，life ≤ 0 的主路）。
- * ⚠ 回调里**只做 O(1) 的事**：连爆档 + 入队 + 掉一颗灵魂（review §4.1）；
- *   不许析构敌人、不许缓存 `ev->enemy`、不改掉落表（110 才需要改）。 */
+ * ⚠ 回调里**只做 O(1) 的事**：定档 + 起一个场（≤8 次距离比较 + 一次 spawn）（review §4.1）；
+ *   不许析构敌人、不许缓存 `ev->enemy`、不改掉落表（110 才需要改）。
+ *
+ * ★★ 2026-09-22（P5 #4）：**连爆档的来源换了** —— 旧实现用「距上次击破 ≤30 帧就 +1 档」的窗口
+ *   自己往上蹿（用户：「暴风的连锁似乎不该这么快」）。现在的档 = **点着它的那个场的档 + 1**
+ *   （`pofv_storm_chain_at()`；没有场盖住它 ⇒ 自机弹打死的 ⇒ 1 档）。
+ *   ⇒ 连锁只能跟着妖精走进场，档位由**妖精的到场率**决定 —— 正是 owner 说的
+ *   「因为妖精的移动，连锁暴风实际上相对世界几乎静止」。 */
 static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
 {
     pofv_card_t *s = st(c);
-    int chain;
+    int chain, covering;
 
     if (!s || !ev) return;
     if (ev->kind != CE_EDEATH_KILLED) return;
     if (!(ev->flags & CE_EDEATH_F_REAL)) return;
 
-    chain = pofv_chain_register_kill(&s->st, s_frame);
+    covering = pofv_storm_chain_at(&s_storm, ev->x, ev->y);
+    chain = covering > 0 ? covering + 1 : 1;
+    if (chain > POFV_BLAST_CHAIN_MAX) chain = POFV_BLAST_CHAIN_MAX;
+    s->st.chain_kills = chain;
+    s->st.last_kill_frame = s_frame;
     pofv_account_kill(&s->st);
-    if (!pofv_blast_enqueue(&s_blast, ev->x, ev->y, chain)) {
-        if (!s->cap_logged) { ce_log("pofv: blast queue full — extra blasts dropped"); s->cap_logged = 1; }
+    if (pofv_storm_spawn(&s_storm, ev->x, ev->y, chain) < 0) {
+        if (!s->cap_logged) { ce_log("pofv: blast queue full — storm pool full, chain storm dropped"); s->cap_logged = 1; }
     }
     /* 一手（用户口径）：拿卡后场上像 hyz 一样**掉灵魂**（自建池，照 116 / 117 先例）。
      * ★ 两支都记账（verify.py 的 «创建灵魂» 判据就吃这行账）。*/
@@ -339,8 +366,10 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
     }
 }
 
-/* ★ 拦 Z：按住 Z 且已起码蓄到 C1 ⇒ 本帧跳过原生行循环（卡广播照跑）。
- * 还没蓄到 C1 的那几帧返回 0 ⇒ 点一下 Z 照旧发一发（原版「Z 点一下 = 发一发」）。*/
+/* ★ 拦 Z：**按住 Z 满 10 帧**就跳过原生行循环（卡广播照跑）。
+ *   一手（TH09）：`th09:0x41fa17 push 0xa` / `0x41fa1b Timer::is_gt` ⇒ 前 10 帧照发原生弹、
+ *   之后停在蓄力支不发弹。⚠ 与气槽/等级无关（旧实现挂在「等级 ≥ C1 且气 ≥ 1 格」上 ⇒
+ *   气槽空时按住 Z 什么都不发生 = 用户报的「未拦截 Z」）。*/
 static int on_native_shot_suppress(ce_card_t *c)
 {
     pofv_card_t *s = st(c);
@@ -351,10 +380,11 @@ static int on_tick_2(ce_card_t *c)
 {
     pofv_card_t *s = st(c);
     int shot, focus, lvl = 0;
-    int32_t budget, i, n_sd;
+    int32_t i, n_sd;
+    int scan_budget;
     int32_t sd_slots[POFV_SPIRIT_MAX];
     float sd_x[POFV_SPIRIT_MAX], sd_y[POFV_SPIRIT_MAX];
-    pofv_blast_t bl;
+    const pofv_storm_t *bl;
 
     if (!s) return 0;
     ++s_frame;
@@ -410,9 +440,16 @@ static int on_tick_2(ce_card_t *c)
     for (i = 0; i < n_sd && i < POFV_SPIRIT_MAX; ++i)
         spirit_selfdestruct(s, sd_x[sd_slots[i]], sd_y[sd_slots[i]]);
 
-    /* 帧末统一消弹（review §4.1）：预算内把队列里的爆风做掉。*/
-    budget = POFV_BLASTS_PER_FRAME;
-    while (pofv_blast_take_budget(&s_blast, &bl, &budget)) do_blast(s, &bl);
+    /* 帧末统一推进**暴风场**（review §4.1 的预算仍然在）：
+     * 每个活着的场**每帧**都判一次（伤害源 + 圈内灵魂），整池扫弹按 `POFV_STORM_SCANS_PER_FRAME`
+     * 出闸 —— 这就是「场」与「一次性爆风」的全部差别（妖精飞进来才被点着 ⇒ 连锁跟着妖精走）。*/
+    scan_budget = POFV_STORM_SCANS_PER_FRAME;
+    for (i = 0; i < POFV_STORM_MAX; ++i) {
+        bl = pofv_storm_slot(&s_storm, (int)i);
+        if (bl && bl->active) do_storm_frame(s, bl, &scan_budget);
+    }
+    /* 推进放在后面：本帧出生/本帧结算过的场，age 从这一帧开始算（寿命 = POFV_STORM_FRAMES 帧）。*/
+    pofv_storm_tick(&s_storm);
 
     /* SP 到档 → boss attack（一手：10 万 / 30 万 / 50 万）。*/
     if (pofv_sp_take_attack(&s->st)) do_boss_attack(s);
@@ -422,7 +459,7 @@ static int on_tick_2(ce_card_t *c)
 
 /* ============================ 生命周期 ============================ */
 
-/* 收干净：爆风队列 + 灵魂池 + 无敌声明。
+/* 收干净：**暴风场池** + 灵魂池 + 无敌声明。
  * ⚠ 删卡发生在**商店里**（倒吊人 / 原版空白卡清空整副牌），那一刻 AbilityManager 冻着、
  *   卡的 tick 全停 ⇒ 只能靠 `on_delete`（虚表 `+0x50`）收。
  * ⚠ 本卡当前**没有 ANM VM**（活化灵视觉待 ability.anm 资产）；**将来加了必须在这里删**，
@@ -439,7 +476,7 @@ static void clear_card(ce_card_t *c)
                (int)s_spawned, (int)s_absorbed, (int)s_blasted, (int)s_dropped, POFV_SPIRIT_MAX);
     s_spawned = s_absorbed = s_blasted = s_dropped = 0;
 
-    pofv_blast_queue_init(&s_blast);
+    pofv_storm_pool_init(&s_storm);
     pofv_spirit_pool_init(&s_spirit);
     s_frame = 0;
     if (!s) return;

@@ -72,7 +72,7 @@
 | `ability.anm` sprite 表 | **无上限**：sprite 号是 dword（`vm+0x24`），解析器 `0x477b00` 按 `idx*0x44` 取 | 不适用（当成 255 上限是**旧的误读**） | 435 / 无上限 | `check_ability_anm_bounds.py`（脚本引用的 sprite 必须存在） | 不适用 | ✅ |
 | `ability.anm` 脚本表 | **无上限**：脚本号是 dword（`anm+0x120` 指针表 / `anm+0x10c` 脚本体） | 不适用 | 211 / 无上限 | `make anm-verify`（脚本号必须连续、`@NAME@` 必须都能解析） | 不适用 | ✅ |
 | `pl0X.anm` entry（自机弹贴图） | 同 256 | `build_player_anm.py` 只追加（原生部分逐字节不变，`--verify-only` 回读校验） | 18 / 256，余量 238（93.0%） | `check_player_anm_bounds.py`（sprite 越界 + sht 的 anm/hit_fx 必须存在） | 同一份 anm 里继续并 entry（117 的兽灵已经这么做） | ✅ |
-| shooterset 组数组（`pl0X.sht` 影像 `+0xe0`） | **96 格宣布可用**（数组区 `[+0xe0,0x4e0)` **预留 256 格**，末尾正好顶到数据区）；计数 = 影像头 `+0x02` 的 u16 | **2026-09-14 已扩容**（`AUDIT.md` §CQ / `NEXT.md` §1w）：数组区原地长到预留格数、数据区基点 `0x180 → 0x4e0`，exe 侧 **1 条** 6 字节等长 binhack | 40 / 96，余量 56 格（58.3%） | `sht-verify` + **读者普查**（15 处引用 = 14 读者 + 1 加载器，§4）+ `capcheck` 的 `sht_ids.h ↔ patch ↔ 恒等式` 三方对账 | 再要更多格：抬 `CE_SHT_SLOTS`（到 `0xff` 为止，**只改文件**）| ✅ |
+| shooterset 组数组（`pl0X.sht` 影像 `+0xe0`） | **96 格宣布可用**（数组区 `[+0xe0,0x4e0)` **预留 256 格**，末尾正好顶到数据区）；计数 = 影像头 `+0x02` 的 u16 | **2026-09-14 已扩容**（`AUDIT.md` §CQ / `NEXT.md` §1w）：数组区原地长到预留格数、数据区基点 `0x180 → 0x4e0`，exe 侧 **1 条** 6 字节等长 binhack | **55 / 96，余量 41 格（42.7%）**（2026-09-21 起：108 妖侧逐角色×逐档占 `0x48`–`0x56` 共 **15** 格 `CE_SHT_SET_YOUKAI_{M,R,S}0..4`；名单见 `NEXT.md` 的「SHT 容量扩容计划」段）| `sht-verify` + **读者普查**（15 处引用 = 14 读者 + 1 加载器，§4）+ `capcheck` 的 `sht_ids.h ↔ patch ↔ 恒等式` 三方对账 | 再要更多格：抬 `CE_SHT_SLOTS`（到 `0xff` 为止，**只改文件**）| ✅ |
 | 卡本地池 `TRANCE_SPIRIT_POOL` | 我们自己定的（`trance_core.h`） | 改常量即可 —— `_Static_assert` 会拦住静态区超限 | 运行期才知道 / 128 | 运行时计数 `s_stat_spirit_dropped` | 满 → 丢尾并计数（汇总日志 `pool dropped`） | ✅ |
 | 卡本地池 `TRANCE_POPUP_MAX` | 我们自己定的（`trance.c`） | 同上 | 运行期才知道 / 24 | 运行时计数 `s_popup_overflow` | 满 → 顶掉最老的一支并计数（`popup overflow`） | ✅ |
 | 卡本地池 `TRANCE_KILL_QUEUE_MAX` | 我们自己定的（`trance_core.h`） | 同上 | 运行期才知道 / 16 | 运行时计数 `trance_kill_queue_dropped` | 满 → 丢尾并计数（`queue dropped`） | ✅ |
@@ -83,7 +83,7 @@
 | 卡本地池 `ANIMAL_BIG_DROP_QUEUE` | 我们自己定的（`animal.c`） | 同上 | 运行期才知道 / 32 | 运行时计数 `s_big_drop_lost` | 满 → 丢尾并计数（首次记一行 `queue full`） | ✅ |
 | 卡本地池 `UFO_TOKEN_CAP` | 我们自己定的（`ufo_core.h` = `UFO_TOKEN_MAX` 3 + `SLACK` 2） | 同上 | 运行期才知道 / 5 | 运行时计数 `s_tokpool.dropped` | 满 → 丢新令牌并计数（汇总行 `token pool dropped`） | ✅ |
 | 卡本地池 `POFV_SPIRIT_MAX` | 我们自己定的（`pofv_core.h`，❓ 自定） | 同上 | 运行期才知道 / 32 | 日志 `spirit pool full` | 满 → 丢掉这支神灵并记一行（`cap_logged` 只记一次） | ✅ |
-| 卡本地池 `POFV_BLAST_QUEUE_MAX` | 我们自己定的（`pofv_core.h`，❓ 自定） | 同上 | 运行期才知道 / 64 | 运行时计数 + 门 `cap_logged` | 满 → 丢爆风并计数（`blast queue full` 只记一行） | ✅ |
+| 卡本地池 `POFV_STORM_MAX` | 我们自己定的（`pofv_core.h`，❓ 自定） | 同上 | 运行期才知道 / 8 | 运行时计数 + 门 `cap_logged` | 满 → 丢暴风并计数（`blast queue full` 只记一行）。★ 2026-09-22 P5：池从「爆风队列」（`POFV_BLAST_QUEUE_MAX` 64）换成「暴风场池」（每帧判的锚定场，见 `AUDIT.md` §BE-EU） | ✅ |
 | 卡本地池 `SEASON_POINT_POOL` | 我们自己定的（`season.c`） | 同上 | 运行期才知道 / 512 | **无运行时余量断言** | 满 → `spawn_point_at` 返回 0（调用方丢）—— 满了一片点到不了手 | ⚠ |
 | 卡本地池 `LOLK_TINT_MAX` | 我们自己定的（`lolk.c`） | 同上 | 运行期才知道 / 256 | **无运行时余量断言** | 满 → 直接不染（注释口径「只影响观感」） | ⚠ |
 | 卡本地池 `FAITH_MAX_USERS` | 我们自己定的（`faith.h`） | 同上 | 运行期才知道 / 8 | **无运行时余量断言** | 满 → `faith_register` 返回 0（这张卡不计分） | ⚠ |
@@ -233,6 +233,44 @@ cards: 35 registered from cards.js; shop pool 700/8192 slots, guaranteed offers 
   （`NITORI_BUBBLE`；254 非 2 次幂，`build_ability.py` 已明确放开这条，一手 `th18:0x486488`）；
   **append 在最末尾** ⇒ 新 sprite = **451**、同批新脚本 = **294**（`CE_ANM_ABILITY_SCRIPT_NITORI_BUBBLE`），
   既有号一个没动（entry 60/256，余量 196）。生成器 `assets/ability/make_nitori_bubble_art.py`。
+
+- **★ 2026-09-18 新增 `ATLAS_UFO_DROP`（entry **61**，`CE_ANM_ABILITY_ATLAS_ATLAS_UFO_DROP`）**：
+  卡 112 的**掉落物实体**贴图（用户 2026-09-18：「击破还会掉落一个**被自动吸收的压缩包**（**应该是有实体的**）」
+  + P6「整颗 Bomb …有没有可能额外建一个掉落 Bomb 整卡的 VM（会小题大做吗？）」—— 答复：不小题大做，
+  两者共用同一套自建掉落物实体）= **TH12 `bullet.anm` entry5（`bullet/etama8.png` 256×256）的 4 张 1:1 切图**
+  （一手：道具自身 anm 脚本 = type+0xa5，`th12:0x4275b2`/`0x427712`）：
+  `BOUNTY_BAG` = sprite459 (225,113,30,30)、`DROP_ICON_P` = sprite426 (0,96,16,16)、
+  `DROP_ICON_POINT` = sprite427 (16,96,16,16)、`DROP_BOMB` = sprite432 (96,96,16,16)。
+  画布 **64×32**、4 个成员；**append 在最末尾** ⇒ 新 sprite = **453..456**、同批新脚本 = **296..301**
+  （`UFO_BOUNTY_BAG{,_P,_MONEY}` / `UFO_DROP_ICON_{P,POINT}` / `UFO_BOMB_ITEM`），
+  既有号一个没动（entry 61/256，余量 195）。生成器 `assets/ability/make_ufo_drop_art.py`。
+
+- **★ 2026-09-18 新增 `ATLAS_UFO_HUD`（entry **62**，`CE_ANM_ABILITY_ATLAS_ATLAS_UFO_HUD`）**：
+  卡 112 的**飞碟槽 HUD** 贴图（用户 2026-09-18 实跑 ⑤：「**飞碟槽 HUD 你没按照原版做**」）
+  = **TH12 `front.anm` 的 10 张 1:1 切图**：令牌槽四态 `front/front00.png` sprite59/60/61/62
+  = (336/360/384/408, **336**, 24×16)（逐像素量过：**59 = 纯黑框 = 空槽**，60/61/62 = 红/蓝/绿）、
+  四态的**亮版** sprite63..66 = 同 x、**y=352**、24×16（闪烁时换这一组，一手 `th12:0x421690`）、
+  以及记录面板 `front/front_ufo.png` sprite102 (0,0,96×96) / sprite103 (96,0,96×96)。
+  画布 **256×192**、**10 个成员**（8 个 32×16 槽：两行 y=0 / y=18，行间留 2 px 防线性采样竖渗色；
+  2 个 128×128 面板在 y=40）。**append 在最末尾** ⇒ 新 sprite = **457..466**、
+  同批新脚本 = **302..305**（`UFO_HUD_SLOT` / `UFO_HUD_FLASH` / `UFO_HUD_PANEL` / `_PANEL_INNER`），
+  既有号一个没动（entry 62/256，余量 194）。生成器 `assets/ability/make_ufo_hud_art.py`。
+  ⚠ **槽的四态在 ORDER 里必须连续、亮版那一组正好 +4**（卡侧 `ce_anm_set_sprite` 直接做加法，
+  与一手 `COLLECTED_UFOS[i] + 59 + (闪烁 ? 4 : 0)` 同形）⇒ 生成器里 assert 了 ORDER 顺序、
+  `ufo.c` 里另有一条 `_Static_assert` 断死号段。⚠ 面板脚本**暂未接线**（位置与原生卡组图标列冲突）。
+
+- **★ 2026-09-19 新增 `ATLAS_SENRO_HUD`（entry **63**，`CE_ANM_ABILITY_ATLAS_ATLAS_SENRO_HUD`）**：
+  卡 107（妖妖梦）的 **HUD 数字字形 + 森罗结界指示**（P8 工单；用户实跑口径见 `SINGLE-CARD-TEST.md`
+  §th07 #1/#2）= **TH07 `ascii.anm` entry0 的 11 张 1:1 切图**：数字 `sprite132..141`（各 8×12，
+  画数字时 `sprite = 数字 + 0x84`：`th07:0x404a41` / `0x404d7d`）+ **结界中才画**的那块
+  `sprite143`（48×16，VM4 = `th07:0x404de1` 判 `ds:0x4bfee5 == 1`）。
+  画布 **128×16**、**11 个成员**；**append 在最末尾** ⇒ 新 sprite = **467..477**、
+  同批新脚本 = **306 / 307**（`SENRO_HUD_DIGIT` / `SENRO_HUD_BORDER`），既有号一个没动
+  （entry 63/256，余量 193）。生成器 `assets/ability/make_senro_hud_art.py`（矩形从 `thanm -l` 断死）。
+  ⚠ 数字字形在 ORDER 里**必须连续升序**（卡侧 `ce_anm_set_sprite` 直接做 `D0 + 数字` 的加法）；
+  脚本 296/297 里另有 `scale(2.0, 2.0)`（TH07 是 640 原生、TH18 UI 层 1 texel = 1 表面 px 的换算，
+  先例 = 302 的 Δ4）。原版数字**左边**那块固定标签（sprite142）本轮**不切**，理由见 `cards/senro.c`
+  的 `SENRO_HUD_*` 注（要画得把货架块从 200 加宽到 ~340 表面 px，会挤动别人的块）。
 
 - **`abcard.anm` 是卡侧最紧的一道墙**（★最紧）：原生 118 条 + 每张新卡 2 条（大图/小图各一 entry），
   现在 190 条 ⇒ **只能再进 33 张**。它现在有**构建期硬门**（`MAX_ENTRIES`，与 `build_ability.py` 同名同口径）：
@@ -510,6 +548,7 @@ CE_ANM_ABILITY_ATLAS_ATLAS_RETIRED
 CE_ANM_ABILITY_ATLAS_ATLAS_SEASON_BULLET
 CE_ANM_ABILITY_ATLAS_ATLAS_SEASON_UI
 CE_ANM_ABILITY_ATLAS_ATLAS_SENRO
+CE_ANM_ABILITY_ATLAS_ATLAS_SENRO_HUD
 CE_ANM_ABILITY_ATLAS_ATLAS_SIGNAL
 CE_ANM_ABILITY_ATLAS_ATLAS_TH13ASCII
 CE_ANM_ABILITY_ATLAS_ATLAS_TRANCE_ASTRAL
@@ -518,6 +557,8 @@ CE_ANM_ABILITY_ATLAS_ATLAS_TRANCE_POPUP
 CE_ANM_ABILITY_ATLAS_ATLAS_TRANCE_SPIRIT
 CE_ANM_ABILITY_ATLAS_ATLAS_TRANCE_SWITCH
 CE_ANM_ABILITY_ATLAS_ATLAS_UFO_BODY
+CE_ANM_ABILITY_ATLAS_ATLAS_UFO_DROP
+CE_ANM_ABILITY_ATLAS_ATLAS_UFO_HUD
 CE_ANM_ABILITY_ATLAS_ATLAS_UFO_TOKEN
 CE_ANM_ABILITY_ATLAS_ATLAS_YK_FAM
 CE_ANM_ABILITY_ATLAS_ATLAS_YK_OPT

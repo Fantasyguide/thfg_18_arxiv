@@ -52,8 +52,21 @@ int  pofv_scan_count_white(const float *radii, int n);
 #define POFV_CA_LEVEL_MAX       POFV_GAUGE_MAX
 
 /* ❓ 自定（TODO(th09)：原版「按住射击多久升一级」的帧数未逆到）。
- * 占位语义：每按住这么多帧升一级；`a`（当前等级）上限 = `b`（当前可蓄最高等级 = min(气槽, 4)）。 */
+ * ★★ 2026-09-22（P5 #1/#3）：TH09 的一手只给了**律**，没给这个数 ——
+ *   蓄力量每帧 `+= ds:0x4b36b8 × shot_data[+0x24]`（`th09:0x41fa75`–`0x41faa4`），
+ *   **1 格 = 100 单位**（`th09:0x41fa80`–`0x41fab0` 的 `/100` 判级 + `th09:0x41bc90` 的 `/100` 通知 HUD），
+ *   每角色每火力的 `+0x24` 速率表没逆到 ⇒ 这里仍是占位帧数。
+ * 占位语义：每按住这么多帧升一级；`a`（当前等级）上限 4 档 —— ⚠ **不再被气槽夹**
+ *   （原版蓄力量只被气槽**钳上界**，见 `pofv_charge_hold` 的注释）。 */
 #define POFV_CHARGE_FRAMES_PER_LEVEL 45
+
+/* ★★ 一手：**按住射击后多久开始拦 Z（不发原生弹）** —— TH09 = **10 帧**
+ *   （`th09:0x41fa17 push 0xa` → `0x41fa1b Timer::is_gt`；未超过 ⇒ `0x41fa22 je 0x41fc16` 走
+ *   **原生射击**那一支。超过 ⇒ 停在蓄力支 `0x41fa08`，本帧不发弹）。
+ * ⇒ 「点一下 Z = 发一发」（前 10 帧照发）+「长按 Z = 蓄力且不发弹」两件事**在原版是同一条闸**，
+ *   与气槽无关。旧实现把闸挂在「等级 ≥ C1 **且** 气槽 ≥ 1 格」上 ⇒ 气槽空时按住 Z **什么都不发生**
+ *   （既不发弹也不蓄力）= 用户报的「未拦截 Z」+「没有任何蓄力机制」。 */
+#define POFV_SUPPRESS_AFTER_FRAMES  10
 
 typedef enum {
     POFV_CHARGE_IDLE = 0,          /* 没在蓄力（此时 Z 走原生行循环）*/
@@ -70,8 +83,9 @@ typedef struct {
     int32_t max_level;      /* b：当前可蓄最高等级 = min(gauge, 4) */
     int32_t sp;             /* 连击 SP（原版：击破与消弹都填）*/
     int32_t sp_stage;       /* 已触发过的 SP 档数 0..POFV_SP_STAGE_MAX */
-    int32_t chain_kills;    /* 连爆窗口内的击破数（连爆质量档的来源）*/
-    int32_t last_kill_frame;/* 上一次击破的帧号（−1 = 还没有过）*/
+    int32_t chain_kills;    /* 最近一次由暴风点着的击破所记的档（★ 2026-09-22：不再是 30 帧窗口的连击数，
+                             * 而是「上一颗被暴风点着的敌人的档位」，见 `pofv_storm_chain_at` 的用法）*/
+    int32_t last_kill_frame;/* 上一次击破的帧号（−1 = 还没有过；只做日志/调参）*/
     int32_t kills;          /* 本局击破计数（日志 / 调参用）*/
     int32_t white_cancelled;/* 本局消掉的白弹数（日志 / 调参用）*/
     int32_t any_cancelled;  /* 本局消掉的全部弹数（含不可消；红圈的账）*/
@@ -96,13 +110,20 @@ int  pofv_charge_begin(pofv_state_t *st);
  * 返回 1 = 本次升了一级（卡侧播「叮」一声），0 = 没有新等级。 */
 int  pofv_charge_hold(pofv_state_t *st);
 
-/* ★ **拦 Z 条件**（`on_native_shot_suppress` 的返回值，用户 2026-09-12：
- *   「得拦 Z，这是花映塚的魅力」）：**按住 Z 且已经升到 ≥1 级**才抑制本帧原生弹。
- *   还没升到 1 级的那几帧不拦 ⇒ **点一下 Z = 正常发一发**（原版「Z 点一下 = 发一发」）。 */
+/* ★ **拦 Z 条件**（`on_native_shot_suppress` 的返回值）—— ★★ 2026-09-22（P5 #1）改成一手语义：
+ *   **按住 Z 满 `POFV_SUPPRESS_AFTER_FRAMES`(10) 帧就拦**，与等级、气槽**无关**
+ *   （一手 `th09:0x41fa17`/`0x41fa1b`：超过 10 帧才离开原生射击支）。
+ *   前 10 帧不拦 ⇒ **点一下 Z = 正常发一发**（原版同款）。 */
 int  pofv_charge_suppress(const pofv_state_t *st);
 
+/* 本帧的**可用等级** = min(charge 等级 a, 气槽 b) —— 一手：原版蓄力量被气槽**钳上界**
+ * （`th09:0x41fab0 fcomp [player+0x30388]` / `0x41fabd` 钳到上限），
+ * 而 `气槽/100` 就是能放出的档数（`th09:0x41f92b`–`0x41fbd8` 的释放分支）。
+ * 返回 0 = 这一下放不出 CA（点射 / 气不够）。 */
+int  pofv_charge_usable_level(const pofv_state_t *st);
+
 /* Z 落下沿：结算。返回 1 = 发动 CA（`*out_level` = 1..4，气槽已按 `pofv_ca_cost` 扣掉），
- * 0 = 等级 0（没蓄到 C1）⇒ **卡侧什么都不做，交回原生弹**（这一发就是「点射」）。 */
+ * 0 = 可用等级 0（没蓄到 / 气不够）⇒ **卡侧什么都不做，交回原生弹**（这一发就是「点射」）。 */
 int  pofv_charge_release(pofv_state_t *st, int *out_level);
 
 /* 打断蓄力（对话 / 暂停 / 死亡 / 关末）：清成 IDLE，**不扣气、不发动**。 */
@@ -145,21 +166,88 @@ int32_t pofv_invuln_tick(pofv_invuln_t *w);
 /* 当前剩余量（诊断 / 单测；0 = 窗口不在）。 */
 int32_t pofv_invuln_left(const pofv_invuln_t *w);
 
-/* ==================================================================== C. 爆风 / 红圈 / SP */
+/* ==================================================================== C. 暴风 / 红圈 / SP */
 
-/* 连爆质量档：1..POFV_BLAST_CHAIN_MAX（❓ 自定：原版「连爆质量」的分档与判据未逆到，
- * 本实现 = 「距上次击破 ≤ POFV_CHAIN_WINDOW_FRAMES 帧就 +1 档」）。
- * ★ 纯算术、O(1) —— 它是**死亡回调里唯一允许做的事**（review §4.1 的性能陷阱）。 */
-#define POFV_BLAST_CHAIN_MAX        4
-#define POFV_CHAIN_WINDOW_FRAMES    30   /* ❓ 自定（TODO(th09)）*/
+/* ★★ 2026-09-22（P5 #4「机制重做」）**暴风 = 锚定在世界上的场，不是一次性命中**
+ *
+ * 一手（TH09 v1.50a，`local/th09.v1.50a/th09.exe`；全链见
+ * `engine/card/th09/01-pofv-charge-and-cancel-fields.md`）：TH09 的消弹圈**全都是"节点"**，
+ * 一个节点 = (圆心, 起始半径 r₀, 每帧增量 dr, 寿命帧)：
+ *   · 建：`th09:0x41cf30`（`+0x8 = r₀`、`+0xc = dr`、`+0x24 = 寿命`、`+0x38 = kind`），
+ *     包装 `0x41cfe0` / `0x41d0d0` / `0x41d010` / `0x41d050` / `0x41d090`（各自只改 kind 与倍率）；
+ *   · 推进：`th09:0x41c8e0` —— **每帧 `r += dr`、`寿命--`、到 0 释放**（`0x41c936`–`0x41c95e`）。
+ * 已在册的实例（全部一手）：
+ *   | 谁 | r₀ | dr | 寿命 | 终点半径 |
+ *   | --- | --- | --- | --- | --- |
+ *   | 自机弹命中 | 0 | 1.6 | 6 | ≈10（`th09:0x41fe93`–`0x41fea3`）|
+ *   | CA 释放那一下 | 16 | 20 | 8 | **176**（`th09:0x41e875`–`0x41e88c`）|
+ *   | CA L1/L2/L3 | 0 | 4.0 / 4.0 / 3.5 | 48 / 64 / 128 | **192 / 256 / 448**（`th09:0x403c30/90/f0`）|
+ *   | boss attack | 500 | 0 | 30000 | 500（`th09:0x417934`–`0x41795b`）|
+ * 画出来的环走**同一个律**：`etama.anm` script91/92/93 = `pos(16.0f)` + `posTime(48/64/128, 0, 192/256/448)`
+ * （2026-09-16 已逆，见 `engine/card/th18/14-clear-range-barrier.md` §2.4）。
+ *
+ * ⇒ **原版的暴风停在原地、按帧扩张、活几十帧**；「相对世界几乎静止」（owner 2026-09-18 原话）
+ *   是**字面意思**：圈不动，是妖精飞进来。连锁因此由**妖精的到场率**决定，
+ *   而不是一个固定窗口的节拍器 —— 旧实现（一次性 `ce_damage_rect` 2 帧 + 30 帧连爆窗口打档）
+ *   正是用户报的「暴风连锁好像不该这么快」。
+ * ⚠ 本卡**没有** VM（视觉待资产），所以这里只做**判定场**：一个每帧都判的圆。 */
+#define POFV_STORM_MAX              8    /* ❓ 自定（原版是节点池；本卡要控每帧工作量）*/
+#define POFV_STORM_FRAMES          30    /* ❓ 自定（一手只给了形：锚定 + 逐帧扩张 + 有限寿命）*/
+#define POFV_STORM_R0              16.0f /* ★ 一手：环的起始半径 16（etama script91/92/93 的 `pos(16.0f,…)`）*/
+#define POFV_STORM_SCANS_PER_FRAME  4    /* ❓ 自定：每帧最多几次**整池扫弹**（O(弹池) 的预算闸）*/
+#define POFV_STORM_DMG_LIFE         2    /* ❓ 自定（伤害源寿命；与旧 `POFV_BLAST_DMG_LIFE` 同值）*/
 
-/* 击破登记：推进连爆窗口（`frame - last_kill_frame <= 窗口` 则 +1 档，否则回 1 档），
- * 返回本次爆风应使用的档位（1..POFV_BLAST_CHAIN_MAX）。`frame` = 卡侧的游玩帧计数（单调）。 */
-int  pofv_chain_register_kill(pofv_state_t *st, int32_t frame);
+typedef struct {
+    float   x, y;        /* 圆心（世界坐标）。★ 生成后**不再移动** —— 这就是「相对世界静止」*/
+    int32_t chain;       /* 连爆档 1..POFV_BLAST_CHAIN_MAX */
+    int32_t age;         /* 已经活了几帧（0 = 出生帧）*/
+    int32_t life;        /* 寿命帧数（到点释放）*/
+    int32_t active;
+} pofv_storm_t;
 
-/* 蓝圈（爆风）半径：按连爆质量档。❓ 自定占位（TODO(th09)：原版爆风半径未逆到）。 */
+typedef struct {
+    pofv_storm_t s[POFV_STORM_MAX];
+    int32_t live;
+    int32_t dropped;     /* 池满丢掉的暴风数（日志 / 调参用；丢 = 少一次场，不崩）*/
+} pofv_storm_pool_t;
+
+void pofv_storm_pool_init(pofv_storm_pool_t *p);
+
+/* 起一个暴风（O(1)：死亡回调里只准做这个）。返回槽号，−1 = 池满（丢弃）。 */
+int  pofv_storm_spawn(pofv_storm_pool_t *p, float x, float y, int32_t chain);
+
+/* ★ 连爆档的来源（替换旧的 `pofv_chain_register_kill` 帧窗口）：
+ *   返回**覆盖 (x,y) 这一点的最高档**（0 = 没有任何暴风盖住它）。
+ *   卡侧用法：击破事件里 `c = pofv_storm_chain_at(...)` ⇒ 新暴风档 = `c ? c+1 : 1`
+ *   —— 被暴风点着的（c ≥ 1）才 +1 档，自机弹直接打死的回 1 档。
+ *   ⇒ 连锁**只能跟着妖精走进场**，不会靠一个 30 帧窗口自己往上蹿。 */
+int  pofv_storm_chain_at(const pofv_storm_pool_t *p, float x, float y);
+
+/* 每帧推进：`age++`、到寿命的槽就地释放。返回本帧**还活着**的暴风数（= `p->live`）。*/
+int  pofv_storm_tick(pofv_storm_pool_t *p);
+
+/* 第 `i` 个槽（0..POFV_STORM_MAX−1）；`active == 0` 表示空槽。 */
+const pofv_storm_t *pofv_storm_slot(const pofv_storm_pool_t *p, int i);
+
+/* 当前半径（**每帧都在长**）：`r(t) = r₀(16) + (R_chain − 16) × age / life`
+ *   —— 与 TH09 画环的 `posTime` 同律（起点 16、终点 R、线性、时长 = 寿命）。
+ * ⚠ 本卡让**判定半径与将来画出来的环共用这一个数**（比 TH09 更严：TH09 的环与消弹圈只对齐终点）。 */
+void pofv_storm_radius(const pofv_storm_t *st, float *out);
+
+/* 连爆档 chain 的**终点半径** R。★ 档 1 = **176**（一手：TH09 的 CA 释放节点 16 + 20×8 = 176，
+ * `th09:0x41e875`）—— 我们把它当最小暴风的终点半径；档 2..4 每档 +48 ❓ 自定（TODO(th09)）。 */
+void pofv_storm_final_radius(int32_t chain, float *out);
+
+/* 兼容旧名（旧实现的"爆风半径表"就叫 `pofv_blast_radius`；语义现在 = 该档暴风的终点半径）。*/
 void pofv_blast_radius(int chain, float *out);
-/* 红圈（蓄力攻击）半径：按 CA 等级 1..4（C4 = 近乎全屏）。❓ 自定占位（TODO(th09)）。 */
+
+/* 连爆档上限（1..4）。❓ 自定：原版「连爆质量」的分档数没逆到；一手的**场**只给了半径律
+ * （见上面 §C 的表），没给「档」这一层 —— 它是本卡对「暴风越连锁越大」的建模。 */
+#define POFV_BLAST_CHAIN_MAX        4
+
+/* 红圈（蓄力攻击）半径：按 CA 等级 1..4（C4 = 近乎全屏）。❓ 自定占位（TODO(th09)）。
+ * ★ 2026-09-22：TH09 的**红色消弹圈**（= CA）已经逆到一手数字了，见
+ * `pofv_ca_circle_radius()` 的注释 —— 那一支现在用的是**一手终点半径**，不再是占位。 */
 void pofv_ca_circle_radius(int level, float *out);
 
 /* ★ 一手：被消的白弹**投到对手场地**在单机没有对应（用户口径：改成**转成分**）⇒
@@ -195,28 +283,14 @@ int  pofv_sp_take_attack(pofv_state_t *st);
  *     ——★ 一手：「红色消弹圈消掉的白弹直接消失且**不回复气**」。 */
 void pofv_account_blast(pofv_state_t *st, int32_t n_white, int32_t chain);
 void pofv_account_ca(pofv_state_t *st, int32_t n_any);
-/* 击破一笔：填 SP + 充气（连爆质量由调用方在前面用 pofv_chain_register_kill 推进）。 */
+/* 击破一笔：填 SP + 充气（连爆档由调用方在**击破那一刻**用 `pofv_storm_chain_at()` 定，见 §C）。 */
 void pofv_account_kill(pofv_state_t *st);
 
-/* ---- 爆风队列（review §4.1 强制：死亡回调里**只登记**，帧末统一消弹）----
- * 清场帧一次回调 100–300 次，回调里扫弹池 = O(n²)（弹池 2000 槽 × stride 0xfa0）⇒
- * 回调只 push（O(1)），每帧只真消 `POFV_BLASTS_PER_FRAME` 次。 */
-#define POFV_BLAST_QUEUE_MAX   64   /* ❓ 自定（TODO：原版无此队列；按最坏清场帧 100–300 定的折中）*/
-#define POFV_BLASTS_PER_FRAME   8   /* ❓ 自定（每帧消弹次数上限，防 O(n²)）*/
-
-typedef struct { float x, y; int32_t chain; } pofv_blast_t;
-typedef struct {
-    pofv_blast_t item[POFV_BLAST_QUEUE_MAX];
-    int32_t head;      /* 队首下标（环形）*/
-    int32_t n;         /* 队列长度 */
-    int32_t dropped;   /* 因队满丢掉的爆风数（日志 / 调参用；丢 = 少一次消弹，不崩）*/
-} pofv_blast_queue_t;
-
-void pofv_blast_queue_init(pofv_blast_queue_t *q);
-int  pofv_blast_enqueue(pofv_blast_queue_t *q, float x, float y, int32_t chain);  /* 1 = 入队，0 = 队满丢弃 */
-int  pofv_blast_take(pofv_blast_queue_t *q, pofv_blast_t *out);                   /* FIFO；0 = 空 */
-/* 带帧预算的出队：`*budget <= 0` 直接返回 0；否则出队一颗并 `--*budget`。 */
-int  pofv_blast_take_budget(pofv_blast_queue_t *q, pofv_blast_t *out, int32_t *budget);
+/* ---- 性能纪律（review §4.1 仍然成立）----
+ * 清场帧 `on_enemy_death` 一次被调 100–300 次 ⇒ 回调里**只准 O(1)**：现在做的是
+ * 「`pofv_storm_chain_at()`（≤8 次比较）+ `pofv_storm_spawn()`（一次 memset）」，
+ * 真正的消弹 / 伤害在 `on_tick_2` 帧末按 `POFV_STORM_SCANS_PER_FRAME` 的预算做。
+ * （旧实现在这里 push 一个 64 格的爆风队列；场模型下不需要队列：场本身就活在池里。）*/
 
 /* ==================================================================== D. 活化灵 */
 
