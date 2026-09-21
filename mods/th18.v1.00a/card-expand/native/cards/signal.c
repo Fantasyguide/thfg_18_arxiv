@@ -429,6 +429,9 @@ static void signal_declare_score(signal_card_t *s)
     int32_t delta = faith_score_unit(&s->slot) - s->slot.base;
     if (delta < 0) delta = 0;
     ce_score_declare_coupled(SIGNAL_ID_NUM, delta);
+    /* ★ 2026-09-18（换版）：本卡是 **th11** 那一族 —— 最大得点在原生里**没有高度项**
+     *   （一手：蓝点两支不读 `item.y`，`piv_display()` 全 exe 只有 4 个消费点）⇒ `coeff_111 ≡ 1`。*/
+    ce_score_family_declare(SIGNAL_ID_NUM, CE_COEFF_FAMILY_1);
     ce_score_mul_declare(SIGNAL_ID_NUM, signal_core_strength(s->slot.signal));
 }
 
@@ -2588,8 +2591,15 @@ static void signal_support_kanako(signal_card_t *s)
     int32_t want;
 
     if (!CE_PLAYER()) return;
+    /* ★★ 2026-09-20：**改读语义访问器**（`ce_poc_height_semantic()`）。
+     *   理由：106 在不满 P 时把引擎字段「遮」到 `min(语义高度, 自机 y)`（那是给引擎两条判据看的），
+     *   而本卡要的基准是**没有 106 时**那条线 —— 否则「快照 + 相对下移」的快照会跟着自机 y 抖，
+     *   声明值每帧乱跳（`signal_kanako_t` 的快照刷新判据就废了）。
+     *   ⚠ 副作用（owner 已拍，`WORK-PACKAGES.md` §7-A2）：106 在场时「遮」是**覆盖位** ⇒
+     *   本卡这条「收点线下降」对**引擎**不生效（106 的语义优先）—— 111 的全屏吸收不再靠这条线；
+     *   但本卡自己的信号档仍按**语义高度**算（= 没 106 时的语义）。*/
     want = signal_kanako_tick(&s->kanako,
-                              (int32_t)(ce_poc_height() * 100.0f),
+                              (int32_t)(ce_poc_height_semantic() * 100.0f),
                               SIGNAL_KANAKO_POC_DROP_PX * 100);
     if (want <= 0) return;
     /* ★ 已迁移到共享层：只声明、不直写。落笔（写字段 + 置 `Gui+0x194` bit 0x2000 开那条开局指示线）
@@ -2847,8 +2857,14 @@ static int on_tick_2(ce_card_t *c)
     if (!pp || pstate == 2 || pstate == 4) {
         band = FAITH_SIGNAL_BAND_HOLD;
     } else {
-        /* 离回收线多少 px（**1/100 px 整数**交给纯逻辑层，浮点只在这里出现一次）。*/
-        band = signal_core_band((int32_t)((faith_player_poc_height() - pp[1]) * 100.0f));
+        /* 离回收线多少 px（**1/100 px 整数**交给纯逻辑层，浮点只在这里出现一次）。
+         * ★★ 2026-09-20：**改读 `ce_poc_height_semantic()`**（= 不含 106「遮」的生效值）——
+         *   信号档的语义必须 = **没有 106 时**（用户口径「106 只做过线不收点，其它语义零变化」）。
+         *   原来那一支是 `faith_player_poc_height()`（= `ce_poc_height()` = 引擎字段真值），
+         *   106 在场时它被压在自机 y 上 ⇒ 档位会随自机位置乱跳。
+         *   ⚠ 110（`cards/mof.c`）仍在用 `faith_player_poc_height()`：那条是 110 的活、跨卡不许动，
+         *     已登记在报告与 `AUDIT.md` §BE 的「残余」一行（106+110 同场时 110 的蓝色系数会读到遮值）。*/
+        band = signal_core_band((int32_t)((ce_poc_height_semantic() - pp[1]) * 100.0f));
     }
 
     /* ③ 信号槽推进（档位 + 擦弹，全在 `signal_core` / `faith_signal_step` 里算）

@@ -1293,6 +1293,323 @@ static void test_poc_layer(void)
     ce_poc_reset();
 }
 
+/* ============================ 共享 PIV 池 + 擦弹族（用户 2026-09-18）============================
+ * 口径：**池一份、自动相加**（谁都往它写）；**写入闸在写这一侧**（每卡可写 = `cap_i − init_i`，写满不写）；
+ * 擦弹是一个**共用写入者**（只算一次）。*/
+static void test_shared_piv_and_graze(void)
+{
+    ce_score_reset();
+    ce_graze_bridge(0);
+    ce_piv_reset();
+
+    /* ① 没人声明 ⇒ 池为 0、不参与（participants == 0 ⇒ SDK 一个字不写）。*/
+    CHECK(ce_piv_pool() == 0);
+    CHECK(ce_piv_family_points() == 0);
+    CHECK(ce_graze_points() == 0);
+    CHECK(ce_score_participants() == 0);
+
+    /* ② 单卡：claim(114, 95000)（用户举例：th13 EASY 100000 − 5000 = 95000）。*/
+    CHECK(ce_piv_claim(114, 95000) == 1);
+    CHECK(ce_piv_present_count() == 1);
+    CHECK(ce_piv_cap_of(114) == 95000);
+    CHECK(ce_piv_room(114) == 95000);
+    ce_piv_add(114, 1234);
+    CHECK(ce_piv_pool() == 1234);
+    CHECK(ce_piv_written(114) == 1234);
+    CHECK(ce_piv_family_points() == 1234);
+    CHECK(ce_score_participants() == 1);
+
+    /* ③ **写入闸**：它累计最多 95000 ⇒ 写 200000 只有 95000 进池（其余被闸掉）。*/
+    ce_piv_add(114, 200000);
+    CHECK(ce_piv_pool() == 95000);
+    CHECK(ce_piv_written(114) == 95000);
+    CHECK(ce_piv_room(114) == 0);
+    ce_piv_add(114, 5000);                              /* 闸到底，再加也不动 */
+    CHECK(ce_piv_pool() == 95000);
+
+    /* ④ 多卡同装 = **多一套系统往同一块池里写**（用户：多加了一套系统）：115 的上限 490000。
+     *    池**自动相加**，但族项仍然只进公式**一份**（= 池的值）。*/
+    CHECK(ce_piv_claim(115, 490000) == 1);
+    CHECK(ce_piv_present_count() == 2);
+    ce_piv_add(115, 100000);
+    CHECK(ce_piv_pool() == 195000);                     /* 95000 + 100000 */
+    CHECK(ce_piv_family_points() == 195000);            /* ★ 一份，不是两份 */
+    CHECK(ce_piv_reading(114) == 195000);
+    CHECK(ce_piv_reading(115) == 195000);
+    CHECK(ce_score_participants() == 2);
+
+    /* ⑤ 未 claim 的 id 写不进去（删卡之后不该继续涨）。*/
+    ce_piv_add(113, 5000);
+    CHECK(ce_piv_pool() == 195000);
+
+    /* ⑥ 退场：那张卡的账清了，池**保留**（已经写进去的是既成事实）。*/
+    ce_piv_release(114);
+    CHECK(ce_piv_present_count() == 1);
+    CHECK(ce_piv_written(114) == 0);
+    CHECK(ce_piv_family_points() == 195000);
+
+    /* ⑦ 擦弹那一个**共用写入者**：族内无卡 = 0；有卡 = 本局擦弹数；两张同族**仍是同一个数**。*/
+    ce_graze_bridge(4321);
+    CHECK(ce_graze_points() == 0);
+    CHECK(ce_graze_family_claim(114) == 1);
+    CHECK(ce_graze_points() == 4321);
+    CHECK(ce_graze_family_claim(115) == 1);
+    CHECK(ce_graze_points() == 4321);                   /* ★ 不叠加 */
+    ce_graze_family_release(114);
+    CHECK(ce_graze_points() == 4321);                   /* 还有 115 在 ⇒ 仍算一次 */
+    ce_graze_family_release(115);
+    CHECK(ce_graze_points() == 0);
+
+    /* ⑧ 新局：池归 0 + 各卡已写账清零；在场声明保留。*/
+    ce_piv_reset();
+    CHECK(ce_piv_pool() == 0);
+    CHECK(ce_piv_present_count() == 1);                 /* 115 仍在场 */
+    CHECK(ce_piv_written(115) == 0);
+    CHECK(ce_piv_room(115) == 490000);                  /* 账清干净 ⇒ 又能写满 */
+
+    /* ⑨ 进 G：G = G_0 + Σ(未耦合/legacy/耦合) + **池一份** + 擦弹一项。*/
+    ce_score_bridge(200000, CE_SCORE_DIFF_NORMAL);      /* 身价 200000 ⇒ G_0 = 20000 点 */
+    ce_piv_add(115, 300000);
+    CHECK(ce_piv_family_points() == 300000);
+    CHECK(ce_score_total() == ce_score_base_points() + 300000);
+    ce_graze_family_claim(114);
+    ce_graze_bridge(777);
+    CHECK(ce_score_total() == ce_score_base_points() + 300000 + 777);
+
+    /* ⑩ 内置表入口：112–117 × E/N/H/L/EX 的可写上限 = cap−init（一手表；抽查三档）。*/
+    CHECK(ce_piv_cap_for(113, CE_SCORE_DIFF_EASY) == 95000);      /* th13 E: 100000−5000 */
+    CHECK(ce_piv_cap_for(113, CE_SCORE_DIFF_NORMAL) == 240000);   /* th13 N: 250000−10000 */
+    CHECK(ce_piv_cap_for(112, CE_SCORE_DIFF_EXTRA) == 480000);    /* th12 EX: 500000−20000 */
+    CHECK(ce_piv_cap_for(116, CE_SCORE_DIFF_LUNATIC) == 490000);  /* th16 L: 500000−10000 */
+    CHECK(ce_piv_cap_for(111, CE_SCORE_DIFF_NORMAL) == -1);       /* 不在表里 */
+    CHECK(ce_piv_cap_for(113, 9) == -1);                          /* 难度越界 */
+    ce_piv_release(113);
+    CHECK(ce_piv_claim_auto(113, CE_SCORE_DIFF_NORMAL) == 1);
+    CHECK(ce_piv_cap_of(113) == 240000);
+    ce_piv_add(113, 500000);                                      /* 闸：只进 240000 */
+    CHECK(ce_piv_written(113) == 240000);
+    ce_piv_release(113);
+
+    /* 收尾：退干净，别影响后面的单测。*/
+    ce_graze_family_release(114);
+    ce_graze_family_release(115);
+    ce_piv_release(115);
+    ce_piv_reset();
+    CHECK(ce_piv_family_points() == 0);
+    CHECK(ce_graze_points() == 0);
+}
+
+/* ============================ 计分层换版：每项走自己原作的曲线（用户 2026-09-18，路线 A）============
+ * 写出去的 = `G_0 + Σ ΔG_i × (coeff_i/coeff_0)`；引擎随后乘 `coeff_0` ⇒ 到手 = `G_0·coeff_0 + Σ ΔG_i·coeff_i`。*/
+static void test_per_family_coeff(void)
+{
+    const int32_t Q = 65536;                    /* Q16 定点的 1.0 */
+    ce_score_reset();
+    ce_score_bridge(200000, CE_SCORE_DIFF_NORMAL);   /* 身价 200000 ⇒ G_0 = 20000 点 */
+
+    /* ① 线上（无几何 = 满额）：coeff_0 = 1000、任何族比值都是 1 ⇒ 与老行为逐字节相同。*/
+    ce_score_bridge_geom(0, 0);
+    CHECK(ce_score_coeff0_permille() == 1000);
+    CHECK(ce_score_ratio_permille(CE_COEFF_FAMILY_NONE) == 1000);
+    CHECK(ce_score_ratio_permille(CE_COEFF_FAMILY_075) == 1000);
+    CHECK(ce_score_ratio_permille(CE_COEFF_FAMILY_08) == 1000);
+    CHECK(ce_score_ratio_permille(CE_COEFF_FAMILY_1) == 1000);
+    ce_score_family_declare(117, CE_COEFF_FAMILY_075);
+    ce_score_declare_delta(117, 6000);
+    CHECK(ce_score_total() == ce_score_base_points() + 6000);
+
+    /* ② 线下 d = 100 px：coeff_0 = 900×(450−100)/450 = 700‰；0.75 族 = 750×350/450 = 583‰
+     *   ⇒ 比值 583×1000/700 = 832（≈5/6）。*/
+    ce_score_bridge_geom(100 * Q, 200 * Q);
+    CHECK(ce_score_coeff0_permille() == 700);
+    CHECK(ce_score_ratio_permille(CE_COEFF_FAMILY_075) == 832);
+    CHECK(ce_score_total() == ce_score_base_points() + 6000 * 832 / 1000);
+    /* 不吃折扣的族（th07 / th11）：反归一放大 ⇒ 1000×1000/700 = 1428‰ */
+    ce_score_family_declare(107, CE_COEFF_FAMILY_1);
+    ce_score_declare_delta(107, 5000);
+    CHECK(ce_score_ratio_permille(CE_COEFF_FAMILY_1) == 1428);
+    CHECK(ce_score_total() == ce_score_base_points() + 6000 * 832 / 1000 + 5000 * 1428 / 1000);
+    /* th08 的 0.5×(1−d/500)：`500 − d` = 400‰ ⇒ 比值 571‰ */
+    ce_score_family_declare(108, CE_COEFF_FAMILY_08);
+    ce_score_declare_delta(108, 6000);
+    CHECK(ce_score_ratio_permille(CE_COEFF_FAMILY_08) == 571);
+    /* 未声明族的卡（= 所有老卡）比值仍是 1 ⇒ 不进归一 */
+    ce_score_declare_delta(58, 7000);
+    CHECK(ce_score_total() == ce_score_base_points() + 6000 * 832 / 1000 + 5000 * 1428 / 1000
+                              + 6000 * 571 / 1000 + 7000);
+
+    /* ③ 深度 ≥ 450 px：引擎那一档只剩「下限 +1 分」⇒ coeff_0 = 0 ⇒ **不归一**（各比值回 1000）。*/
+    ce_score_bridge_geom(0, 500 * Q);
+    CHECK(ce_score_coeff0_permille() == 0);
+    CHECK(ce_score_ratio_permille(CE_COEFF_FAMILY_075) == 1000);
+    CHECK(ce_score_ratio_permille(CE_COEFF_FAMILY_1) == 1000);
+
+    /* ④ th10（110 那一族）：曲线 `0.5 − d×(F−100000)/(6080·F)`，**d 取道具 y**。
+     *   设 d_自机 = 0（线上）与 d_道具 = 100 px、F = 999990 ⇒ 千分点
+     *   `500 − 100×(999990−100000)×1000/(6080×999990)` = 500 − 14 = 486‰ ⇒ 比值 */
+    ce_score_bridge_geom2(200 * Q, 100 * Q, 300 * Q);   /* 自机线下 100px、道具线下 200px */
+    ce_score_family10_faith(999990);                     /* F = 上限档 */
+    CHECK(ce_score_coeff0_permille() == 700);            /* coeff_0 只看自机 y */
+    ce_score_family_declare(110, CE_COEFF_FAMILY_10);
+    ce_score_declare_delta(110, 10000);
+    {
+        int r075 = ce_score_ratio_permille(CE_COEFF_FAMILY_075);
+        int r1   = ce_score_ratio_permille(CE_COEFF_FAMILY_1);
+        int r08  = ce_score_ratio_permille(CE_COEFF_FAMILY_08);
+        int r10  = ce_score_ratio_permille(CE_COEFF_FAMILY_10);
+        CHECK(r10 == 672);       /* coeff_10 = 500 − 200×899990×1000/(6080×999990) = 471‰
+                                  * ⇒ 比值 471×1000/coeff_0(=700) = 672‰ */
+        /* 同几何下 08 用**道具 y**（d=200）⇒ `500−200` = 300‰ ⇒ 比值 428‰（自机 d 只有 100）*/
+        CHECK(r08 == 428);
+        CHECK(ce_score_total() == ce_score_base_points()
+                                  + 6000 * r075 / 1000 + 5000 * r1 / 1000
+                                  + 6000 * r08 / 1000 + 7000 + 10000 * r10 / 1000);
+    }
+    /* `F` 没填 / 自机在线下但道具在线上 ⇒ 不归一（回 1000） */
+    ce_score_family10_faith(0);
+    CHECK(ce_score_ratio_permille(CE_COEFF_FAMILY_10) == 1000);
+    ce_score_family_declare(110, CE_COEFF_FAMILY_NONE);
+    ce_score_declare_delta(110, 0);
+
+    /* 收尾 */
+    ce_score_family_declare(117, CE_COEFF_FAMILY_NONE);
+    ce_score_family_declare(107, CE_COEFF_FAMILY_NONE);
+    ce_score_family_declare(108, CE_COEFF_FAMILY_NONE);
+    ce_score_declare_delta(117, 0);
+    ce_score_declare_delta(107, 0);
+    ce_score_declare_delta(108, 0);
+    ce_score_declare_delta(58, 0);
+    ce_score_bridge_geom(0, 0);
+}
+
+/* ---- ★★ 2026-09-20「遮」声明 / 语义高度 / 线显示 / 折额兜底 -------------------------------
+ * 语义与全部一手（字段的 2 写 5 读、两条判据的严格/非严格之差 `ja` vs `jae`、帧内顺序
+ * Player 0x17 → ItemManager 0x1e、线显示位 `Gui+0x194` bit 0x2000）见 `sdk_core.h` 的那一节；
+ * 卡侧用法见 `sdk.h`；背景 = `AUDIT.md` §BE-EQ / §BE-ER 与 `WORK-PACKAGES.md` §7 A/A2/A3/A4。*/
+/* Q16 定点（与 `sdk.h` 的 `ce_q16_from_bits` 同式；本单测不 include `sdk.h`）。*/
+static int32_t q16(float f) { return (int32_t)(f * 65536.0f); }
+
+static void test_poc_mask_layer(void)
+{
+    const uint32_t D    = CE_POC_HEIGHT_DEFAULT_BITS;    /* 128.0f（Player__reset）*/
+    const uint32_t K    = CE_POC_HEIGHT_KANAKO_BITS;     /* 224.0f（原生卡 22 on_load）*/
+    const uint32_t Y100 = ce_f32_bits(100.0f);           /* 「自机在语义线上方」*/
+    const uint32_t Y300 = ce_f32_bits(300.0f);           /* 「自机在语义线下方」*/
+    uint32_t out = 0u;
+
+    /* ① `CE_POC_TINY_BITS` 是「极小正数」：非 0（0 是哨兵）、非负（负的位型序会翻）、远小于任何自机 y */
+    CHECK(CE_POC_TINY_BITS != 0u);
+    CHECK((CE_POC_TINY_BITS & 0x80000000u) == 0u);
+    CHECK(ce_f32_from_bits(CE_POC_TINY_BITS) > 0.0f);
+    CHECK(CE_POC_TINY_BITS < ce_f32_bits(0.001f));
+    CHECK(CE_POC_TINY_BITS < Y100);
+
+    /* ② 声明 / 撤回 / owner（粘性；`ce_poc_drop` 两个都撤）*/
+    ce_poc_reset();
+    CHECK(!ce_poc_mask_active() && ce_poc_mask_owner() == -1);
+    CHECK(ce_poc_mask_declare(106, 1));
+    CHECK(ce_poc_mask_active() && ce_poc_mask_owner() == 106);
+    CHECK(ce_poc_has_declaration());                 /* 「遮」也算声明（线显示那一路要用）*/
+    CHECK(ce_poc_mask_declare(111, 1) && ce_poc_mask_owner() == 106);   /* 并列取 id 最小（诊断用）*/
+    ce_poc_drop(111);
+    CHECK(ce_poc_mask_active() && ce_poc_mask_owner() == 106);
+    ce_poc_drop(106);
+    CHECK(!ce_poc_mask_active() && !ce_poc_has_declaration());
+
+    /* ③ 没别家声明：语义高度 = 字段实读值（= 基准 128 / 原生卡 22 的 224）*/
+    ce_poc_reset();
+    CHECK(ce_poc_semantic_bits(D) == D);
+    CHECK(ce_poc_semantic_bits(K) == K);
+
+    /* ④ 落笔值 = `min(语义高度, 自机 y)`：这正是「不吸」与「线上满额」同时成立的支点 */
+    ce_poc_reset();
+    ce_poc_mask_declare(106, 1);
+    CHECK(ce_poc_frame_masked(D, Y300, &out) && out == D);      /* y 在语义线下方 ⇒ 落笔 = 语义高度 */
+    CHECK(ce_poc_frame_masked(D, Y100, &out) && out == Y100);   /* y 在语义线上方 ⇒ 落笔 == y（严格 ja 不成立、jae 成立）*/
+    CHECK(ce_poc_frame_masked(D, 0u, &out) && out == CE_POC_TINY_BITS);   /* 读不到 y ⇒ 极小正数（永不过线）*/
+    /* 基准记账：第一次落笔之前字段里是什么，删卡时就写回什么 */
+    CHECK(ce_poc_base(&out) && out == D);
+    CHECK(ce_poc_drop_take_base(106, &out) && out == D);
+
+    /* ⑤ 与别家声明同场：**「遮」忽略别家高度**（覆盖位），但语义高度仍取别家的值 */
+    ce_poc_reset();
+    CHECK(ce_poc_declare(111, ce_f32_bits(160.0f)));
+    CHECK(ce_poc_mask_declare(106, 1));
+    CHECK(ce_poc_semantic_bits(D) == ce_f32_bits(160.0f));      /* 语义 = 111 的声明（不含「遮」）*/
+    CHECK(ce_poc_frame_masked(K, Y300, &out) && out == ce_f32_bits(160.0f));
+    CHECK(ce_poc_frame_masked(K, Y100, &out) && out == Y100);
+    CHECK(ce_poc_winner() == 111);                              /* 固定高度那条的赢家照旧可查 */
+    /* 互斥：同 id 后报的绝对高度会顶掉「遮」 */
+    CHECK(ce_poc_declare(106, K) && !ce_poc_mask_active());
+    CHECK(ce_poc_target_bits() == K && ce_poc_winner() == 106);
+    ce_poc_reset();
+
+    /* ⑥ 语义访问器的**输入**是字段实读值：遮在场时它照样给语义值（不含遮）*/
+    ce_poc_reset();
+    ce_poc_mask_declare(106, 1);
+    CHECK(ce_poc_frame_masked(K, Y300, &out) && out == K);      /* 字段被压到 224（= 语义高度）*/
+    CHECK(ce_poc_semantic_bits(out) == K);
+    CHECK(ce_poc_base(&out) && out == K);                       /* 基准 = 动手之前的 224（不是写死 128）*/
+    CHECK(ce_poc_frame_masked(K, Y100, &out) && out == Y100);   /* 字段又被压到自机 y */
+    CHECK(ce_poc_semantic_bits(out) == K);                      /* ← 语义仍是 224，不是自机 y */
+    ce_poc_reset();
+
+    /* ⑦ 线显示位（`Gui+0x194` bit 0x2000）：清 + 基准记账 + 撤完写回；没人 hide 时照旧「有人声明就打开」*/
+    ce_poc_line_reset();
+    {
+        int bit = 7;
+        CHECK(!ce_poc_line_hidden() && ce_poc_line_hide_owner() == -1);
+        /* 旧行为：没有人 hide、有人声明高度 ⇒ 把线打开（照原生卡 22）*/
+        CHECK(ce_poc_line_apply(0, 1, &bit) && bit == 1);
+        CHECK(!ce_poc_line_apply(1, 1, &bit));                  /* 已经是开的 ⇒ 一个字都不写 */
+        CHECK(!ce_poc_line_apply(0, 0, &bit));                  /* 没声明也没 hide ⇒ 不动 */
+        /* 106 声明「不画」：第一次清之前把「动手之前」的那一位记成基准（这里是 1 = 原生卡 22 已置）*/
+        ce_poc_line_hide_declare(106, 1);
+        CHECK(ce_poc_line_hidden() && ce_poc_line_hide_owner() == 106);
+        CHECK(ce_poc_line_apply(1, 1, &bit) && bit == 0);
+        CHECK(!ce_poc_line_apply(0, 1, &bit));                  /* 已经清了 ⇒ 幂等 */
+        /* 删卡（商店里帧钩子不跑）：立刻写回基准 1 */
+        CHECK(ce_poc_line_release(106, &bit) && bit == 1);
+        CHECK(!ce_poc_line_hidden() && !ce_poc_line_release(106, &bit));
+        /* 基准本来是 0（原生卡 22 没置过）⇒ 撤完不用写 */
+        ce_poc_line_reset();
+        ce_poc_line_hide_declare(106, 1);
+        CHECK(!ce_poc_line_apply(0, 1, &bit));                  /* 第一次清：基准 = 0；本来就是清的 ⇒ 不写 */
+        CHECK(ce_poc_line_release(106, &bit) && bit == 0);      /* 撤完按基准 0 写回 */
+        ce_poc_line_reset();
+        ce_poc_line_hide_declare(106, 1);
+        CHECK(ce_poc_line_apply(1, 1, &bit) && bit == 0);       /* 基准 = 1（原生卡 22 置过）*/
+        CHECK(ce_poc_line_release(106, &bit) && bit == 1);
+        /* 还有别人 hide ⇒ 不写回 */
+        ce_poc_line_reset();
+        ce_poc_line_hide_declare(106, 1);
+        ce_poc_line_hide_declare(107, 1);
+        CHECK(ce_poc_line_apply(1, 1, &bit) && bit == 0);
+        CHECK(!ce_poc_line_release(106, &bit));                 /* 107 还在声明 */
+        CHECK(ce_poc_line_hidden() && ce_poc_line_hide_owner() == 107);
+        CHECK(ce_poc_line_release(107, &bit) && bit == 1);      /* 最后一个走 ⇒ 写回基准 1 */
+        ce_poc_line_reset();
+    }
+
+    /* ⑧ 折额兜底：落笔值就是语义值时**恒 1000**（正常路径一个字节都不动）*/
+    {
+        const int32_t y300 = q16(300.0f);
+        const int32_t y100 = q16(100.0f);
+        const int32_t k    = q16(224.0f);
+
+        CHECK(ce_poc_fold_ratio_permille(y300, k, k, 0) == 1000);   /* 线下：两个 d 相同 */
+        CHECK(ce_poc_fold_ratio_permille(y100, y100, k, 0) == 1000);/* 线上：落笔 == y（满额支）*/
+        CHECK(ce_poc_fold_ratio_permille(y300, k, k, 1) == 1000);   /* 真空飞行 ⇒ 无可补偿 */
+        /* 字段被第三方改烂（这里是「固定极小正数」那种写法）：d_实际 = 300、d_语义 = 76
+         *   c_实际 = 900·150/450 = 300、c_语义 = 900·374/450 = 748 ⇒ 倍率 2493‰（≤4000 才认）*/
+        CHECK(ce_poc_fold_ratio_permille(y300, q16(0.0f), k, 0) == 2493);
+        /* 实际系数已经到底（d_实际 ≥ 450）⇒ 掰不回来 ⇒ 不动 */
+        CHECK(ce_poc_fold_ratio_permille(q16(448.0f), q16(0.0f), k, 0) == 1000);
+        /* 只往上补：语义比实际更差（d_语义 > d_实际）⇒ 不动 */
+        CHECK(ce_poc_fold_ratio_permille(y300, k, CE_POC_TINY_BITS, 0) == 1000);
+    }
+}
+
 int main(void)
 {
     test_dmg_layer();
@@ -1300,6 +1617,8 @@ int main(void)
     test_drop_layer();
     test_hud_slots();
     test_score_rework();
+    test_shared_piv_and_graze();
+    test_per_family_coeff();
     test_score_base_unit_identity();
     test_interest_and_pick();
     test_judgment();
@@ -1311,6 +1630,7 @@ int main(void)
     test_native_conflict_fixes();
     test_vitem_channel();
     test_poc_layer();
+    test_poc_mask_layer();
     printf("test_sdk_core: %d passed, %d failed\n", s_pass, s_fail);
     return s_fail ? 1 : 0;
 }

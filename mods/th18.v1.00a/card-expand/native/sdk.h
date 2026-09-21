@@ -494,10 +494,12 @@ static inline float ce_player_x(void)
  * ## 卡侧三条纪律
  *   1. **只声明、不直写字段**：`ce_poc_declare(c, 高度)`（声明 = **绝对**高度，单位 px、640 空间）。
  *      声明是**粘性**的（照原生卡 22：开局写一次管到改口）⇒ 每帧都声明、或只声明一次都可以，幂等。
- *      「相对下移」的卡（把线在**当前**高度上再往下挪）自己算好绝对值再声明：先读 `ce_poc_height()`
- *      （= 字段当下值，含原生卡 22 的 224）再声明 `读到的值 + 下移量`。
- *   2. **读生效值一律用 `ce_poc_height()`**（不要 `*(float*)(pl+CE_PLAYER_POC_HEIGHT)`）：
- *      它空指针安全，且是唯一的真值来源（引擎自己就是这么用的）。
+ *      「相对下移」的卡（把线在**当前**高度上再往下挪）自己算好绝对值再声明：先读 `ce_poc_height_semantic()`
+ *      （= 「不含**遮**」的生效值，含原生卡 22 的 224）再声明 `读到的值 + 下移量`。
+ *   2. **读生效值一律用访问器**（不要 `*(float*)(pl+CE_PLAYER_POC_HEIGHT)`）：
+ *      · 我们自己的语义（信号档、计分、卡自己的判据）读 **`ce_poc_height_semantic()`**
+ *        —— 它**不含**「遮」（见 `sdk_core.h` 的「遮」声明一节），语义 = **没有 106 时**；
+ *      · 非要引擎字段当下的真值（诊断 / 看落笔结果）才读 `ce_poc_height()`。
  *   3. **删卡不用自己写回**：`ce_layer_drop_card()` 会调 `ce_poc_release()` —— 撤声明 + 若没人再声明就
  *      把「我们动手之前」的字段原值写回去（见 `sdk_core.h` 的基准记账）。删卡发生在**商店**里
  *      （AbilityManager / ItemManager 都冻住，帧钩子不跑）⇒ 这一步必须在 `on_delete` 路径上立刻做。
@@ -513,15 +515,38 @@ static inline int ce_poc_declare_px_id(uint32_t card_id, float h)
 {
     return ce_poc_declare(card_id, ce_f32_bits(h));
 }
-/* ★ 只读访问器：**当前生效的收点线高度**（= 引擎字段当下值）。自机指针为空时返回 0。
+/* ★★ 2026-09-20（106 的「不满 P 过线不收点」非接管实现，见 `sdk_core.h` 的「遮」声明一节）：
+ * 「**遮**」声明 = **覆盖位**。在场时落笔值 = `min(语义高度, 自机 y)`（忽略别家声明的**高度**）：
+ *   · 过线收点的门是**严格** `ja`（`线 > y`）⇒ 落笔值恒 ≤ y ⇒ **永不进真空态**（= 不满 P 过线不收点）；
+ *   · 线上满额的门是**非严格** `jae`（`线 ≥ y`）⇒ 自机在语义线上方时落笔值 == y ⇒ **照给满额**。
+ * 粘性；删卡 / 换关由 `ce_poc_release()` 撤（并立刻写回基准）。*/
+static inline int ce_poc_declare_mask(ce_card_t *c, int on)        { return ce_poc_mask_declare(ce_card_id(c), on); }
+static inline int ce_poc_declare_mask_id(uint32_t card_id, int on) { return ce_poc_mask_declare(card_id, on); }
+/* ★★ 线显示（§7-A4 定案 (ii)）：声明「**不画**开局那条收点指示线」⇒ 落笔时清 `Gui+0x194` 的 bit `0x2000`，
+ * 撤完按基准写回（`ce_poc_release()` 里一起撤，删卡那一刻立刻写）。原生那一位**只置不清**
+ * （唯一写者 = 原生卡 22 `0x40c288`）⇒ 主动清是本层新增的写点（登记 `AUDIT.md` §BE）。*/
+static inline void ce_poc_line_hide(ce_card_t *c, int on)          { ce_poc_line_hide_declare(ce_card_id(c), on); }
+/* ★ 只读访问器：**当前生效的收点线高度**（= 引擎字段当下值，含我们落笔的「遮」）。自机指针为空时返回 0。
  *  刻意 `static inline`（float 返回值走 x87 st(0)，独立函数会让 `make dllx87` 变红 —— 同 `faith.h` 那条注）。*/
 static inline float ce_poc_height(void)
 {
     uint8_t *pl = CE_PLAYER();
     return pl ? *(float *)(pl + CE_PLAYER_POC_HEIGHT) : 0.0f;
 }
+/* ★★ 只读访问器：**语义高度** —— 「不含『遮』」的生效值（别家声明取最大 → 基准 → 字段实读值）。
+ *  **我们自己的读数处一律用它**（106 的分档判据 / 111 的信号档与神奈子线 / SDK 计分层）：
+ *  这样它们的语义与「**没有 106**」时逐位相同（用户口径：「106 只做『过线不收点』，其它语义零变化」）。
+ *  ⚠ 它**不**等于引擎字段：106 不满 P 时字段被压在 `min(语义高度, 自机 y)` 上（为了让引擎不吸）。*/
+static inline float ce_poc_height_semantic(void)
+{
+    uint8_t *pl = CE_PLAYER();
+    uint32_t raw = pl ? *(volatile uint32_t *)(pl + CE_PLAYER_POC_HEIGHT) : 0u;
+
+    return ce_f32_from_bits(ce_poc_semantic_bits(raw));
+}
 /* 帧界落笔（`sdk.c` 的 `BP_ce_item_frame` 每帧调一次；卡在自己的开局路径里也可以调一次 —— 幂等）。
- * 有声明 ⇒ 写字段 + 置 `Gui+0x194` 的 bit `0x2000`；声明全撤 ⇒ 写回基准；都没事 ⇒ 一个字都不写。*/
+ * 有声明 ⇒ 写字段（有「遮」⇒ `min(语义高度, 自机 y)`）+ 线显示位；声明全撤 ⇒ 写回基准；
+ * 都没事 ⇒ 一个字都不写。*/
 void ce_poc_apply(void);
 /* 删卡 / 退出声明（`ce_layer_drop_card()` 里自动调；卡不用自己调）。*/
 void ce_poc_release(uint32_t id);
@@ -942,6 +967,10 @@ static inline void ce_invuln_apply(void)
  * 返回非 0 = 本帧由你（这张卡）负责消弹。*/
 static inline int ce_shoot_cancel_claim(uint32_t card_id) { return ce_cancel_latch_claim(card_id); }
 
+/* 难度（0 EASY / 1 NORMAL / 2 HARD / 3 LUNATIC / 4 EXTRA）—— 一手 = `engine.h` 的 `CE_ADDR_DIFFICULTY`（`0x4ccd00`）。
+ * 用途（2026-09-18）：共享 PIV 池族的卡用它查自己那一档的「可写上限 = cap_i − init_i」（`ce_piv_claim_auto`）。*/
+static inline int ce_difficulty(void) { return *(volatile int32_t *)CE_ADDR_DIFFICULTY; }
+
 /* 一次性把 ID 的所有声明层退回「不参与」态（CE_CARD 的 on_run_reset / opdelete 里自动调，卡不用管）。*/
 static inline void ce_layer_drop_card(uint32_t id)
 {
@@ -964,6 +993,12 @@ static inline void ce_layer_drop_card(uint32_t id)
      *   另一半（`ce_sdk_setup` 的复位）同日已补，见 `sdk.c:1400` 一带。*/
     ce_no_hit_declare(id, 0);
     ce_full_p_gate_declare(id, 0);   /* ★ 「未满 P」声明层（106）*/
+
+    /* ★ 2026-09-18：**共享 PIV 池族 + 擦弹族**也要在这里退（用户口径「多卡同装 = 多加一套系统」，
+     *   删卡 = 那套系统退场 ⇒ 它的读数不该再进公式；漏退 = 被删的卡永久留在聚合里）。*/
+    ce_piv_release(id);
+    ce_graze_family_release(id);
+    ce_score_family_declare(id, CE_COEFF_FAMILY_NONE);   /* 系数族（2026-09-18 换版）也要退 */
 
     /* ★ 2026-09-16（111 魔理沙侧）：「隐藏原生子机」同样是**粘性**声明 ⇒ 也必须在这里撤
      *   （漏撤 = 那台机体的原生子机永远不出现，日志上只看得到"没出现"）。机体号一并清 0。*/

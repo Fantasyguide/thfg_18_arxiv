@@ -28,9 +28,11 @@
  *
  * ── 长持续效果的自查（`METHOD.md` 铁律二 / `SDK.md` §6.1 尾）────────────────────────────
  * 本卡跨帧留下的东西：① 无敌声明层的一格（`ce_invuln_request`）；② 计分声明层的一格（`ce_score_declare_delta`）；
- * ③ HUD 槽位 + 三行贴图 VM 文字；④ **★ 结界特效的两个世界层 VM**（甲 = 那个环的句柄 + 乙 = 32 颗的句柄，
+ * ③ HUD 槽位 + **17 台数字 VM + 1 台结界指示板 VM**（2026-09-19 P8 工单：原版版式，见 `SENRO_HUD_*` 长注）；
+ * ④ **★ 结界特效的两个世界层 VM**（甲 = 那个环的句柄 + 乙 = 32 颗的句柄，
  * 2026-09-12 补，见文件中部长注）。①② 由 `CE_CARD` 的 `on_run_reset` / `opdelete` 自动 `ce_layer_drop_card()` 清，
- * ③ 的槽位也自动 release，但**文字 VM 是本卡自己的**，必须在 `on_delete` / `on_run_reset` 里 `ce_hud_vm_text_clear()`。
+ * ③ 的槽位也自动 release，但**这 18 台 VM 是本卡自己的** ⇒ `on_delete` / `on_run_reset` / `on_stage_start`
+ * 与非游玩帧都要走 `senro_hud_clear()`（不收 = 永久钉在屏幕上）。
  * ④ 同理（`ce_layer_drop_card` 只清声明层）⇒ `senro_clear()` 里的 `senro_fx_clear()` 把 33 个句柄全 `ce_anm_delete`。
  * ⑤ ★★ 2026-09-18 新增：**共享点池里属于本卡的樱点实体**（`1 << FAITH_SLOT_107`）——
  *   `senro_clear()` 里 `faith_unregister(SENRO_ID)` + `faith_clear_entities_mask(…)`（顺序是硬的）。
@@ -129,10 +131,69 @@
 #define SENRO_SHAKE_START           12
 #define SENRO_SHAKE_END             0
 
-/* HUD：左下角三行（+C / 樱点 / 最大樱点）。块尺寸报给槽位分配器（表面 px，HUD-LAYOUT.md §2/§3）。*/
+/* ==================== ★★ HUD：**原版版式**（2026-09-19，P8 工单）====================
+ *
+ * 老实现是「左下角三行 ASCII 文字」（`+N` / 樱点 / 最大樱点，行距 12），那是**自定**的版式 ——
+ * 与 TH07 原作差得远（用户实跑口径见 `SINGLE-CARD-TEST.md` §th07 #1「HUD 样式错误」）。
+ * 现在的版式**逐条复刻** `AsciiManager::sub_404690`（TH07 画樱点计数器的那个函数，见
+ * `engine/spirit/th07/02-cherry-counter-hud.md`）：
+ *
+ *   ① **两行**，不是一个数字一行：
+ *        · 上：**+C（樱点 Plus）** 5 位定宽字段，锚 `T + (53, 2)`（`th07:0x404bc4`–`0x404bfa`）
+ *        · 下：**樱点** 6 位定宽字段 `T + (46, 11)`（`th07:0x404918`–`0x404945`），
+ *              紧跟 **+9 单位**（`th07:0x404ac8`，`ds:0x498c2c`）是 **最大樱点** 6 位字段
+ *              （值 ≥ 1000000 时 **7 位**：`th07:0x404ae0` 那一支）
+ *   ② **定宽右对齐 + 前导零不画**：每一位都 `x += 7`（`th07:0x404a7a`，`ds:0x498c30`），
+ *      **含被跳过的前导零位**（`th07:0x404a32` 的 `started` 闸）⇒ 字段宽固定、数字靠右。
+ *   ③ 字形 = TH07 原版 8×12 数字贴图（`ascii.anm` sprite132..141，`sprite = 数字 + 0x84`：
+ *      `th07:0x404a41` / `th07:0x404d7d`）⇒ 本卡 `assets/ability/senro_hud/D0..D9.png`
+ *      （原生切图，`make_senro_hud_art.py`）+ VM 脚本 306。
+ *   ④ **森罗结界指示**（本卡原来**完全没有**）—— 结界中（`ds:0x4bfee5 == 1`）三件：
+ *        (a) +C 行**变色**：`R = 0xFF` 固定、`G = B = plus×0xc0/50000 + 呼吸`（`th07:0x404c27`–`0x404ca2`）
+ *        (b) +C 行**放大 1.41 倍**（`0x3fb47ae1`，`th07:0x404cab`/`0x404cb8`）、字距 **7 → 10**
+ *            （`th07:0x404ccc` 的 `[ebp-0x30]` = 0xa），整体 **+2 / −2**（`th07:0x404ccc`/`0x404cea`）
+ *        (c) 数字行上盖一块**脉动板**（TH07 的 VM4 = `ascii.anm` sprite143，脚本 **307** =
+ *            TH07 script5 的逐条移植：30 帧缩到 1.2 → 30 帧缩到 0.8 → 跳回，**无限**），
+ *            位置 = `T + (24, 8)`（`th07:0x404df0`–`0x404e36`），只在结界中画（`th07:0x404de1`）
+ *      ⚠ 另两件「结界中」的全局视觉（全屏压暗 37.5 %、自机红白闪）**不是 HUD 元件**，本卡不做
+ *        （一手与理由见 `engine/spirit/th07/01-barrier-visual.md` §4.2/§4.3）。
+ *
+ * 坐标：全部以「原版的锚 **T**」为单位表达（就是 TH07 里标签 VM2 的 pos，原版 = (32,449)）。
+ *   **本卡把 T 摆在本块左下角的 `SENRO_HUD_T_OFF_X/Y` 处** ⇒ 于是
+ *     樱点字段 = 块左下角 +(4, −5)、+C 字段 = +(11, −14)、脉动板 = +(−18, −8)：
+ *   ⚠ **T 的绝对位置是本卡定的**（块位置由共享货架分配器给 `HUD-LAYOUT.md` §2）——
+ *     原版的 (32,449) 在 TH18 会撞上别的东西，且本卡的块只有 100 单位宽。
+ *   ⚠ 原版在数字**左边**还有一块固定标签（VM2 = `ascii.anm` sprite142，96×16，`script4` 滑到
+ *     (32,449) 定住）——**本卡这一轮不画**（它落在数字左侧 ~70 单位，要画得把货架块从 200 加宽到
+ *     ~340 表面 px、会挤动别人的块；且它是「6 字宽文本 + 一条 15 px 高竖条」，本模型无法目视确认
+ *     内容）⇒ 登记 `TUNING.md` §2.0u，要不要加请 owner 拍。
+ *   ⚠ 脉动板因此落在本块**左外 ~42 单位**（表面 84 px）：`HUD-LAYOUT.md` §1.3 一手表明
+ *     TH18 原版在「表面 x < 1000 ∧ y > 850」这块**什么都不画**、货架也只从锚点往右排
+ *     ⇒ 左边是空的，不会压到别人的块（登记为 ❓ 自定项）。
+ *
+ * 块尺寸报给槽位分配器（表面 px，HUD-LAYOUT.md §2/§3）—— **不变**：老实现也是 200×40，
+ * 新内容（94 单位宽 × 16 单位高的数字簇）装得下 ⇒ 不挤动别人的块。*/
 #define SENRO_HUD_W                 200.0f
 #define SENRO_HUD_H                 40.0f
-#define SENRO_HUD_ROW_DY            12.0f   /* 行距（640×480 字面量空间；行高 = scale_y × 10）*/
+/* 原版锚 T 在本块里的位置（640 字面量空间，+y = 屏幕向下 ⇒ 负 = 往上）。*/
+#define SENRO_HUD_T_OFF_X          (-42.0f)
+#define SENRO_HUD_T_OFF_Y          (-16.0f)
+/* 原版的版式常数（全部一手 = `th07:0x404690`；括号里是它读的常量地址）。*/
+#define SENRO_HUD_TX_CHERRY         46.0f   /* T.x + 40(`0x498b7c`) + 6(`0x498b54`) */
+#define SENRO_HUD_TY_CHERRY         11.0f   /* T.y + 11（`0x498c34`）*/
+#define SENRO_HUD_TX_PLUS           53.0f   /* T.x + 40 + 6 + 7（`th07:0x404bd9`）*/
+#define SENRO_HUD_TY_PLUS            2.0f   /* T.y + 2（`0x498a70`）*/
+#define SENRO_HUD_PITCH              7.0f   /* 字距（`0x498c30`）*/
+#define SENRO_HUD_PITCH_BORDER      10.0f   /* 结界中 +C 行的字距（`th07:0x404ccc` 的 0xa）*/
+#define SENRO_HUD_GAP_MAX            9.0f   /* 樱点字段与最大樱点字段之间（`0x498c2c`）*/
+#define SENRO_HUD_FIELD_CHERRY         6    /* 樱点字段位数（`th07:0x4049eb` 的 `cmp 6`）*/
+#define SENRO_HUD_FIELD_PLUS           5    /* +C 字段位数（`th07:0x404d47` 的 `cmp 5`）*/
+#define SENRO_HUD_PLUS_SCALE      1.41f     /* 结界中 +C 行放大（`0x3fb47ae1` = `th07:0x404cab`）*/
+#define SENRO_HUD_PLUS_SHIFT       2.0f     /* 结界中 +C 行整体 +2 / −2（`0x498a70`；`th07:0x404ccc` / `0x404cea`）*/
+#define SENRO_HUD_SCALE            2.0f     /* 原版 8×12 texel 在 TH18 UI 层的换算倍率（见脚本 296 头注）*/
+#define SENRO_HUD_BORDER_DX        24.0f    /* 脉动板 = T + (24, 8)（`0x498c28` / `0x498a7c`）*/
+#define SENRO_HUD_BORDER_DY         8.0f
+#define SENRO_HUD_VM_SLOTS        17        /* 5(+C) + 6(樱点) + 6(最大樱点) —— 全是定宽字段 */
 /* ★★ 2026-09-15g：**压暗这一路改走跨卡统一件 `cards/hud_dim.{h,c}`**（唯一实现）。
  * 性质 = ❓ **用户口径（UI 统一），不是复刻**（用户 2026-09-15：「压暗这个涉及到 UI 统一，
  * 这个不能复刻。是那个靠近透明吧」）⇒ **动态**统一：终点 alpha **32**（原 64）、起始 255、
@@ -170,14 +231,16 @@
  *     · 否则 → `(0xFF,0xFF,0xFF)` 白（`0x4049cd`–`0x4049e9`）
  *   另有一个 **+C 指示器**（`th07:0x404c00` 起，值 = `Plus − 基准`，5 位数）：
  *     · 平时固定 `(0xC0,0x80,0xB0)` **樱粉**（`0x404cfe`/`0x404d08`/`0x404d12`）
- *     · **结界中**：`R = 0xFF` 固定（`0x404c27`），`G = B = Plus×0xc0/50000`（两次除法 `0x404c5a`/`0x404c86`
- *       → 写 `+0x89d`/`+0x89c`）⇒ 随剩余时间由 `(0xFF,0xC0,0xC0)` 退到 `(0xFF,0,0)`
- *       （还叠一个 `%4000` 的三角波呼吸，`0x404c24`–`0x404c4d`）。
- *   TH18 的 `ce_hud_vm_text_set` 收的也是**同一个 D3DCOLOR**（`sdk.c` 原样写 `mgr+0x19224`）
- *   ⇒ 数值可以直接沿用，不用换序。*/
+ *     · **结界中**：`R = 0xFF` 固定（`0x404c27`），`G = B = Plus×0xc0/50000 + w×64/2000`
+ *       （两次除法 `0x404c5a`/`0x404c86` 各带一个呼吸项；写 `+0x89d`/`+0x89c` 时是**按字节截断**）
+ *       其中 `w = (Plus % 4000)`，`≥ 2000` 就折回 `4000 − w`（三角波，`0x404c24`–`0x404c4d`）
+ *       ⇒ 随剩余时间由 `(0xFF,0xC0,0xC0)` 退到 `(0xFF,0,0)`，叠一个 4000 周期（≈66.7 s）的呼吸。
+ *   TH18 侧收的也是**同一个 D3DCOLOR 0xAARRGGBB**（`sdk.c` 的 HUD 文字写 `mgr+0x19224`、
+ *   `ce_anm_set_color` 写 `vm+0x524` color_1）⇒ 数值可以直接沿用，不用换序。*/
 #define SENRO_HUD_COLOR_CHERRY_MAXED 0xffffd080u   /* RGB(0xFF,0xD0,0x80) 金黄 */
 #define SENRO_HUD_COLOR_CHERRY_READY 0xffffff80u   /* RGB(0xFF,0xFF,0x80) 亮黄（樱点 − 基准 ≥ 50000）*/
 #define SENRO_HUD_COLOR_CHERRY       0xffffffffu   /* 白 */
+#define SENRO_HUD_COLOR_MAX          0xfff0d0e0u   /* RGB(0xF0,0xD0,0xE0) 最大樱点那一行的色（`th07:0x404aad`–`0x404ac1`）*/
 #define SENRO_HUD_COLOR_PLUS_IDLE    0xffc080b0u   /* RGB(0xC0,0x80,0xB0) 樱粉（结界外的 +C 指示器）*/
 /* 樱点满最大樱点 / 自然结束 Bonus 的飘字：用原生那个「金黄」。 */
 #define SENRO_HUD_COLOR_GOLD         0xffffd080u   /* RGB(0xFF,0xD0,0x80)（= 原生满值色）*/
@@ -323,12 +386,116 @@ typedef struct {
 
 _Static_assert(sizeof(senro_card_t) <= 496, "ce_state 上限 496 字节（超了会静默返回 NULL）");
 
-/* HUD 的三行文字（DLL 静态区；与 season.c / mof.c 同口径 —— 一张卡同时只在场一个对象）。*/
-static ce_hud_vm_text_t s_hud_plus;
-static ce_hud_vm_text_t s_hud_cherry;
-static ce_hud_vm_text_t s_hud_max;
+/* ==================== HUD：数字 VM 池（TH07 原版字形的贴图 VM）====================
+ *
+ * 版式与出处见文件上方 `SENRO_HUD_*` 那一大段；这里只放**实现**。
+ * 生命周期的三条纪律（与旧的三行文字版相同，另见 `SENRO_HUD_*` 注）：
+ *   ① VM 是本卡自己的 ⇒ `on_delete` / `on_run_reset` / `on_stage_start` 与「不在游玩帧」
+ *      （主菜单、商店）都要收干净 —— 收不干净 = 永久钉在屏幕上（`METHOD.md` 铁律二）。
+ *   ② 句柄可能被引擎在别处删掉 ⇒ 每帧 `ce_anm_get_vm()` 自愈（先例 = `ufo.c` 的 HUD 槽）。
+ *   ③ 定宽字段 ⇒ 槽位号是**固定**的（0..4 = +C、5..10 = 樱点、11..16 = 最大樱点），
+ *      数字变了只换 sprite，不重排 VM。
+ *
+ * ⚠ 静态区、不是 `ce_state`（与旧实现同口径：一张卡同时只在场一个对象；`season.c`/`mof.c` 也这么写）。*/
+typedef struct {
+    uint32_t id[SENRO_HUD_VM_SLOTS];        /* 每个数字位一台 VM（0 = 空）*/
+    int32_t  shown[SENRO_HUD_VM_SLOTS];     /* 该 VM 当前挂的 sprite（省一次 set_sprite；-1 = 未知）*/
+    int32_t  n;                             /* 上一帧用到的槽数（本帧末尾收掉多余的）*/
+    int32_t  warned;                        /* 起不来只报一次日志（防刷屏）*/
+    uint32_t border_id;                     /* 森罗结界指示的脉动板（TH07 的 VM4）*/
+} senro_hud_t;
+static senro_hud_t s_hud;
 
 static senro_card_t *st(ce_card_t *c) { return ce_state(c, senro_card_t); }
+
+/* `DAT_0056aca0`（表面 px / 640 单位；1280×960 下 = 2.0）—— `sdk.c` 的 `hud_vm_ui_scale()` 同款守卫。
+ * 卡侧不能调那个 static，就地补一份（先例 = `cards/season.c` / `mof.c` 都自己读这个地址）。*/
+static float senro_hud_dat(void)
+{
+    float s = *(const float *)CE_ADDR_UI_SCALE;
+    return (s > 0.1f && s < 16.0f) ? s : 2.0f;
+}
+
+static void senro_hud_vm_kill(uint32_t *id)
+{
+    if (*id) { ce_anm_delete(*id); *id = 0; }
+}
+
+/* 全收（`on_delete` / `on_run_reset` / `on_stage_start` / 非游玩帧）。幂等。*/
+static void senro_hud_clear(void)
+{
+    int i;
+    for (i = 0; i < SENRO_HUD_VM_SLOTS; ++i) { senro_hud_vm_kill(&s_hud.id[i]); s_hud.shown[i] = -1; }
+    s_hud.n = 0;
+    senro_hud_vm_kill(&s_hud.border_id);
+}
+
+/* 起一台 UI 层 VM（收的是 640 字面量空间的点 ⇒ 这里 ×DAT 换表面 px，同 `sdk.c` 的做法）。*/
+static uint32_t senro_hud_spawn(int script, float x640, float y640)
+{
+    void *anm = CE_ABILITY_ANM();
+    float pos[3];
+    if (!anm || !script) return 0;
+    pos[0] = x640 * senro_hud_dat();
+    pos[1] = y640 * senro_hud_dat();
+    pos[2] = 0.0f;
+    return ce_anm_spawn_ui(anm, script, pos);
+}
+
+/* 一个数字位：放 / 摆 / 换字形 / 上色（只有变了才真动手，写法照 `sdk.c` 的 `ce_hud_number_set`）。*/
+static void senro_hud_digit(int slot, float x640, float y640, float scale, uint32_t argb, int digit)
+{
+    void *anm = CE_ABILITY_ANM();
+    float dat = senro_hud_dat();
+    uint32_t *id;
+
+    if (slot < 0 || slot >= SENRO_HUD_VM_SLOTS || digit < 0 || digit > 9 || !anm) return;
+    id = &s_hud.id[slot];
+    if (*id && !ce_anm_get_vm(*id)) { *id = 0; s_hud.shown[slot] = -1; }   /* 自愈：句柄被别处删了 */
+    if (!*id) {
+        *id = senro_hud_spawn(CE_ANM_ABILITY_SCRIPT_SENRO_HUD_DIGIT, x640, y640);
+        s_hud.shown[slot] = -1;
+        if (!*id) {
+            if (!s_hud.warned) {
+                s_hud.warned = 1;
+                ce_log("senro: HUD 数字 VM 起不来（脚本 %d）—— HUD 这一轮只画得出的那几位",
+                       CE_ANM_ABILITY_SCRIPT_SENRO_HUD_DIGIT);
+            }
+            return;
+        }
+    } else {
+        (void)ce_anm_set_pos(*id, x640 * dat, y640 * dat, 0.0f);
+    }
+    (void)ce_anm_set_scale(*id, scale, scale);        /* 脚本里没有 scaleTime ⇒ 不会被插值器覆盖 */
+    (void)ce_anm_set_color(*id, argb);
+    if (s_hud.shown[slot] != digit) {
+        if (ce_anm_set_sprite(anm, *id, (int)(CE_ANM_ABILITY_SPRITE_SENRO_HUD_D0 + (uint32_t)digit)))
+            s_hud.shown[slot] = digit;
+    }
+    if (slot + 1 > s_hud.n) s_hud.n = slot + 1;
+}
+
+/* 定宽字段（一手：`th07:0x4049eb`–`0x404a89`）——
+ * **每一位都推进 x**（`x += pitch`，含被跳过的前导零位），前导零只是**不画**
+ * ⇒ 字段宽度固定、数字靠右对齐；`divisor == 1`（个位）永远画，所以值 0 显示 "0"。
+ * `*slot` 每帧从 0 起走，返回值 = 字段结束后的 x（给下一个字段用）。*/
+static float senro_hud_field(int *slot, float x640, float y640, float pitch, float scale,
+                            uint32_t argb, int32_t value, int digits)
+{
+    int32_t div = 1;
+    int i;
+
+    if (value < 0) value = 0;
+    for (i = 1; i < digits; ++i) div *= 10;
+    for (i = 0; i < digits; ++i, div /= 10) {
+        int d = (div > 0) ? (int)((value / div) % 10) : 0;
+        if (d != 0 || div <= 1)
+            senro_hud_digit(*slot, x640, y640, scale, argb, d);
+        ++*slot;
+        x640 += pitch;
+    }
+    return x640;
+}
 
 static int32_t senro_graze_now(void) { return *(volatile int32_t *)SENRO_ADDR_GRAZE; }
 
@@ -562,6 +729,11 @@ static void senro_declare_score(senro_card_t *s)
 {
     if (!s) return;
     ce_score_declare_delta(SENRO_ID, senro_point_item_value(&s->st));
+    /* ★ 2026-09-18（计分层换版，路线 A）：本卡是 **th07** 那一族 —— 樱点项在原生里
+     *   **不吃收分高度折扣**（一手：线上整段替换 base、线下加在折扣之后，见 `engine/item/th07/01-sakura-items.md`）
+     *   ⇒ `coeff_107 ≡ 1`。声明族之后，层会把它按 `1/coeff_0` 归一，引擎再乘 `coeff_0`
+     *   ⇒ **显示与分数都不打折**（这正是路线 A 的意义）。*/
+    ce_score_family_declare(SENRO_ID, CE_COEFF_FAMILY_1);
 }
 
 static void on_item_score(ce_card_t *c, int32_t *value)
@@ -885,82 +1057,128 @@ static int on_death_frame2(ce_card_t *c)
     return 0;
 }
 
-/* +C 指示器的颜色（`th07:0x404c00`–`0x404cf9`）：结界外是固定的樱粉；**结界中**退成
- * `R = 0xFF` 固定、`G = B = Plus×0xc0/50000` ⇒ 槽越空越红（这是「槽还剩多少」的唯一视觉）。
- * 一手：两次除法 `0x404c5a` / `0x404c86`（`imul eax,eax,0xc0` 后 `idiv 0xc350`）→
- * 写 `+0x89d`(=G，`0x404c73`) / `+0x89c`(=B，`0x404ca2`)；`R = 0xff` 在 `0x404c27`。 */
-static uint32_t senro_hud_plus_color(const senro_state_t *s)
+/* +C 指示器的颜色（`th07:0x404c00`–`0x404ca2`）：结界外是固定的樱粉；**结界中**退成
+ * `R = 0xFF` 固定、`G = B = Plus×0xc0/50000 + w×64/2000` ⇒ 槽越空越红（这是「槽还剩多少」的唯一视觉），
+ * 另叠一个 4000 周期的呼吸（`w` = `Plus % 4000` 的三角波，≥2000 折回）。
+ * 一手：`R = 0xff` 在 `0x404c27`；三角波在 `0x404c2e`–`0x404c4d`（`idiv 0xfa0`，`cmp 0x7d0`）；
+ * 两个加项各一条 `imul 0xc0` + `idiv 0xc350`（G：`0x404c50`–`0x404c73`；B：`0x404c7c`–`0x404ca2`），
+ * 两处都 `shl eax,6` / `idiv 0x7d0` 加呼吸项。⚠ 原版是**按字节写**（`mov cl,[+0x89d]`）⇒ 和可能到 256
+ * 就截断成 0（`plus == 50000` 那一帧正好命中）—— 这里照抄这个截断（`& 0xff`），不做 clamp。*/
+static uint32_t senro_hud_plus_color(const senro_state_t *s, int border)
 {
-    int32_t v;
+    int32_t v, w, ch;
 
-    if (!s || !s->active) return SENRO_HUD_COLOR_PLUS_IDLE;
-    v = (int32_t)(((int64_t)s->plus * 0xc0) / SENRO_PLUS_FULL);
+    if (!s || !border) return SENRO_HUD_COLOR_PLUS_IDLE;
+    v = s->plus;
     if (v < 0) v = 0;
-    if (v > 0xc0) v = 0xc0;
-    return 0xff000000u | (0xffu << 16) | ((uint32_t)v << 8) | (uint32_t)v;
+    if (v > SENRO_PLUS_FULL) v = SENRO_PLUS_FULL;
+    w = (int32_t)(v % 4000);
+    if (w >= 2000) w = 4000 - w;
+    ch = (int32_t)(((int64_t)v * 0xc0) / SENRO_PLUS_FULL) + (w * 64) / 2000;
+    ch &= 0xff;                                   /* 原版的字节截断，见上 */
+    return 0xff000000u | (0xffu << 16) | ((uint32_t)ch << 8) | (uint32_t)ch;
 }
 
-/* ---- HUD（左下角三行：+C / 樱点 / 最大樱点）----
- * 用**贴图 VM 字形**（`ce_hud_vm_text_set`：TH18 font 2 的原生切图，走 UI 层 25 ⇒ 暂停时被模糊罩盖住；
- * 先例 = `cards/season.c` 的档位数字 / `cards/mof.c` 的三行）。坐标是 640×480 字面量空间，
- * 由 HUD 槽位分配器给的 `x640/y640` 推（HUD-LAYOUT.md §1.1 的两套空间）。
+/* ---- HUD（原版版式：上一行 +C、下一行「樱点 + 最大樱点」；版式出处见文件上方长注）----
+ * 用**贴图 VM 字形**（TH07 `ascii.anm` 的 8×12 数字，走 UI 层 25 ⇒ 暂停时被模糊罩盖住；
+ * 先例 = `cards/season.c` / `cards/mof.c` 的贴图 VM 文字）。坐标是 640×480 字面量空间，
+ * 由 HUD 槽位分配器给的 x/y 推（HUD-LAYOUT.md §1.1 的两套空间）。
  * ★ 坐标**每帧取最新值**（2026-09-12 审计补）：`ce_hud_slot_claim()` 填给 `out` 的是**认领那一刻**的
  *   排布，同一开场批次里后来的认领会按 card_id 重排（`sdk_core.c` 的 `hud_relayout`；`sdk_core.h:180`
  *   原话「卡片应…用本函数取最新值，或每帧取一次」）⇒ 只认领时取一次、之后一直用缓存的那份，会让
- *   三行画到**别人的块**上（比本卡 id 小的卡后认领时本卡的 x 会右移）。111 一直是每帧取的，本卡原来漏了。 */
+ *   数字画到**别人的块**上（比本卡 id 小的卡后认领时本卡的 x 会右移）。 */
 static int on_draw(ce_card_t *c)
 {
     senro_card_t *s = st(c);
-    char buf[32];
     uint32_t a, col_plus, col_cherry;
     ce_hud_slot_t cur;
-    float x, y;
+    float bx, by, tx, ty, x, y, scale_plus, pitch_plus;
+    int slot = 0, i, n_was, border, digits_max;
 
     /* ★★ 2026-09-12 对抗审计补的门：`on_draw`（虚表 +0x48）**在主菜单 / 标题里也会被调**
      *   （`AbilityManager__on_draw` `0x408ab0` 每帧遍历卡链表调它；`on_tick_2` 才是「菜单/商店不跑」）。
      *   实跑先例：117 `animal.c:1953`「用户在**主菜单**看到 5 个空槽灵魂」、115 `lolk.c:708` 主菜单冒出 `+0`。
      *   本卡原来的第一道门是 `if (!s || !s->slot_ok)` —— 而 `slot_ok` 一旦在 `on_load`/`on_run_reset` 置上
      *   就再也不会清 ⇒ **通关回主菜单后三行会照画**（同 lolk 那个洞）。⇒ 补 `CE_ADDR_GAME_THREAD_PTR`
-     *   那道门（与 `lolk.c:708` / `season.c:1347` / `th06rank.c` 同款）。**顺手把三行 VM 收掉**
-     *   （`ce_hud_vm_text_clear` 只 delete 已有的 VM，无 VM 时是空操作）—— 不收的话会留着上一帧的字。
-     *   ⚠ 只在「不是正常游玩帧」时收：正常帧每帧都会 `ce_hud_vm_text_set` 重画，不必每帧 delete+spawn。 */
+     *   那道门（与 `lolk.c:708` / `season.c:1347` / `th06rank.c` 同款）。**顺手把 VM 收掉**
+     *   （`senro_hud_clear()` 只 delete 已有的 VM，无 VM 时是空操作）—— 不收的话会留着上一帧的字。
+     *   ⚠ 只在「不是正常游玩帧」时收：正常帧每帧都会重画，不必每帧 delete+spawn。 */
     if (!*(volatile uint32_t *)CE_ADDR_GAME_THREAD_PTR) {
-        ce_hud_vm_text_clear(&s_hud_plus);
-        ce_hud_vm_text_clear(&s_hud_cherry);
-        ce_hud_vm_text_clear(&s_hud_max);
+        senro_hud_clear();
         return 0;
     }
-    if (!s || !s->slot_ok) return 0;
-    /* ★★ 2026-09-15g：压暗 alpha 改由**跨卡统一件**给（本卡唯一的一处压暗路 = 这三行文字；
+    if (!s || !s->slot_ok) { senro_hud_clear(); return 0; }
+    /* ⚠ `ce_hud_slot_get()` **只填 x/y/w/h/side，不填 x640/y640**（`sdk_core.c`）⇒ 拿不到时退回认领时的
+     * 缓存副本，换算一律走 `CE_HUD_SURFACE_TO_640`（= 0.5），不读那两格。*/
+    cur = s->slot;
+    (void)ce_hud_slot_get(SENRO_ID, &cur);
+    /* ★★ 2026-09-15g：压暗 alpha 改由**跨卡统一件**给（本卡唯一的一处压暗路 = 这堆 HUD 数字；
      * 原来这里是 `ce_hud_player_near_corner()` 的硬切 64/255）。放在这一行 = 已经过了上面两道门
-     * （游戏线程 + `slot_ok`）⇒ 每帧正好推进一次；矩形用**本帧**的 `cur`（上面刚 `ce_hud_slot_get()`）。*/
+     * （游戏线程 + `slot_ok`）⇒ 每帧正好推进一次。*/
     {
         hud_dim_rect_t r;
         hud_dim_rect_surface(&r, cur.x, cur.y, SENRO_HUD_W, SENRO_HUD_H);
         a = (uint32_t)hud_dim_tick(&s->hud, &r, ce_player_pos()) & 0xffu;
     }
-    /* ⚠ `ce_hud_slot_get()` **只填 x/y/w/h/side，不填 x640/y640**（`sdk_core.c`）⇒ 拿不到时退回认领时的
-     * 缓存副本，换算一律走 `CE_HUD_SURFACE_TO_640`（= 0.5），不读那两格。*/
-    cur = s->slot;
-    (void)ce_hud_slot_get(SENRO_ID, &cur);
-    x = cur.x * CE_HUD_SURFACE_TO_640;
-    y = cur.y * CE_HUD_SURFACE_TO_640;
-    col_plus = senro_hud_plus_color(&s->st);
-    /* 樱点数（= 樱点 − 基准）：满最大樱点 ⇒ 金黄；否则「樱点 ≥ 50000」⇒ 亮黄；否则白。
-     * （`th07:0x40496f`–`0x4049eb`；本卡的樱点本身就是「相对基准」的读数 ⇒ 直接比 50000。）*/
+
+    border = senro_border_active(&s->st) ? 1 : 0;
+    bx = cur.x * CE_HUD_SURFACE_TO_640;             /* 本块左下角（640 字面量空间）*/
+    by = cur.y * CE_HUD_SURFACE_TO_640;
+    tx = bx + SENRO_HUD_T_OFF_X;                    /* 原版锚 T（= 标签 VM2 的 pos）在本卡里的落点 */
+    ty = by + SENRO_HUD_T_OFF_Y;
+
+    n_was = s_hud.n;
+    s_hud.n = 0;
+
+    /* ① 下一行：**樱点**（6 位定宽，前导零留空）—— 颜色三档（`th07:0x40496f`–`0x4049eb`）：
+     *    满最大樱点 ⇒ 金黄；否则「樱点 ≥ 50000」⇒ 亮黄；否则白。
+     *    （本卡的樱点本身就是「相对基准」的读数 ⇒ 直接比 50000。）*/
     col_cherry = (s->st.cherry >= s->st.cherry_max)  ? SENRO_HUD_COLOR_CHERRY_MAXED
                  : (s->st.cherry >= SENRO_PLUS_FULL) ? SENRO_HUD_COLOR_CHERRY_READY
                                                      : SENRO_HUD_COLOR_CHERRY;
+    x = tx + SENRO_HUD_TX_CHERRY;
+    y = ty + SENRO_HUD_TY_CHERRY;
+    x = senro_hud_field(&slot, x, y, SENRO_HUD_PITCH, SENRO_HUD_SCALE,
+                        (col_cherry & 0x00ffffffu) | (a << 24), s->st.cherry, SENRO_HUD_FIELD_CHERRY);
 
-    snprintf(buf, sizeof buf, "+%d", (int)s->st.plus);
-    ce_hud_vm_text_set(&s_hud_plus, x, y - 2.0f * SENRO_HUD_ROW_DY,
-                       (col_plus & 0x00ffffffu) | (a << 24), CE_ASCII_ALIGN_LEFT, 0.0f, buf, "senro");
-    snprintf(buf, sizeof buf, "%d", (int)s->st.cherry);
-    ce_hud_vm_text_set(&s_hud_cherry, x, y - SENRO_HUD_ROW_DY,
-                       (col_cherry & 0x00ffffffu) | (a << 24), CE_ASCII_ALIGN_LEFT, 0.0f, buf, "senro");
-    snprintf(buf, sizeof buf, "%d", (int)s->st.cherry_max);
-    ce_hud_vm_text_set(&s_hud_max, x, y,
-                       (SENRO_HUD_COLOR_CHERRY & 0x00ffffffu) | (a << 24), CE_ASCII_ALIGN_LEFT, 0.0f, buf, "senro");
+    /* ② 同行的**最大樱点**：紧跟樱点字段 **+9 单位**（`th07:0x404ac8`）⇒ 字段起点固定
+     *    （樱点字段是定宽的），位数 = 6，值 ≥ 1000000 时 7（`th07:0x404ae0` 那一支）。*/
+    digits_max = (s->st.cherry_max >= 1000000) ? 7 : SENRO_HUD_FIELD_CHERRY;
+    (void)senro_hud_field(&slot, x + SENRO_HUD_GAP_MAX, y, SENRO_HUD_PITCH, SENRO_HUD_SCALE,
+                          (SENRO_HUD_COLOR_MAX & 0x00ffffffu) | (a << 24), s->st.cherry_max, digits_max);
+
+    /* ③ 上一行：**+C**（5 位定宽）。结界外的样子与结界中完全不同（这就是「森罗结界指示」的主体）：
+     *    · 结界外：樱粉、字距 7、倍率 1.0、位置 T+(53,2)
+     *    · 结界中：`R=0xFF` + 呼吸的 G/B（见 `senro_hud_plus_color`）、字距 10、倍率 1.41、
+     *      整体 +2 / −2（`th07:0x404cab`–`0x404cf9`）*/
+    col_plus = senro_hud_plus_color(&s->st, border);
+    pitch_plus = border ? SENRO_HUD_PITCH_BORDER : SENRO_HUD_PITCH;
+    scale_plus = SENRO_HUD_SCALE * (border ? SENRO_HUD_PLUS_SCALE : 1.0f);
+    x = tx + SENRO_HUD_TX_PLUS + (border ? SENRO_HUD_PLUS_SHIFT : 0.0f);
+    y = ty + SENRO_HUD_TY_PLUS - (border ? SENRO_HUD_PLUS_SHIFT : 0.0f);
+    (void)senro_hud_field(&slot, x, y, pitch_plus, scale_plus,
+                          (col_plus & 0x00ffffffu) | (a << 24), s->st.plus, SENRO_HUD_FIELD_PLUS);
+
+    /* ④ 结界指示的**脉动板**（TH07 的 VM4；`ds:0x4bfee5 == 1` 才画，脚本 307 自己无限脉动）。
+     *    位置 = T + (24, 8) ⇒ 落在本块左外 ~42 单位（原版锚在标签上；本卡不画标签，见长注）。
+     *    颜色跟着压暗 alpha 走（板子是加法混合的亮度块，脚本里没写 color ⇒ 这里每帧写一次）。*/
+    if (border) {
+        float px = tx + SENRO_HUD_BORDER_DX, py = ty + SENRO_HUD_BORDER_DY;
+        if (s_hud.border_id && !ce_anm_get_vm(s_hud.border_id)) s_hud.border_id = 0;   /* 自愈 */
+        if (!s_hud.border_id)
+            s_hud.border_id = senro_hud_spawn(CE_ANM_ABILITY_SCRIPT_SENRO_HUD_BORDER, px, py);
+        else {
+            float dat = senro_hud_dat();
+            (void)ce_anm_set_pos(s_hud.border_id, px * dat, py * dat, 0.0f);
+        }
+        if (s_hud.border_id)
+            (void)ce_anm_set_color(s_hud.border_id, 0x00ffffffu | (a << 24));
+    } else {
+        senro_hud_vm_kill(&s_hud.border_id);
+    }
+
+    /* ⑤ 收掉本帧没用到的槽（定宽字段 ⇒ 正常总是 17 个；这里是「池满 / VM 起不来」时的兜底）。*/
+    for (i = s_hud.n; i < n_was; ++i) { senro_hud_vm_kill(&s_hud.id[i]); s_hud.shown[i] = -1; }
     return 0;
 }
 
@@ -970,12 +1188,10 @@ static void senro_clear(ce_card_t *c, int keep_slot)
 {
     senro_card_t *s = st(c);
 
-    /* ★ 顺序要紧：先退出两个声明层（否则被删的卡还在声明无敌 / 得分），再收 HUD 文字。 */
+    /* ★ 顺序要紧：先退出两个声明层（否则被删的卡还在声明无敌 / 得分），再收 HUD 数字 VM。 */
     ce_invuln_request(SENRO_ID, 0);
     ce_score_declare_delta(SENRO_ID, 0);
-    ce_hud_vm_text_clear(&s_hud_plus);
-    ce_hud_vm_text_clear(&s_hud_cherry);
-    ce_hud_vm_text_clear(&s_hud_max);
+    senro_hud_clear();
     if (!s) return;
     /* ★ 世界层 VM 是本卡自己的（`ce_layer_drop_card` 只管声明层）⇒ 必须在 memset 之前收干净。
      *   删卡发生在**商店里**（倒吊人 / 原版空白卡清空整副牌），那一刻 tick 全停、只有 `on_delete` 跑得到
@@ -1006,7 +1222,7 @@ static int on_ctor(ce_card_t *c)
 }
 
 /* HUD 槽认领（`on_load` 与 `on_run_reset` 共用 —— 后者刚 memset 掉整块状态，
- * 而 `on_draw` 要靠 `slot.x640/y640` 定位，不重认领就会把三行画到屏幕左上角）。*/
+ * 而 `on_draw` 要靠槽位坐标定位，不重认领就会把数字画到屏幕左上角）。*/
 static void senro_claim_hud(senro_card_t *s)
 {
     ce_hud_block_t blk;

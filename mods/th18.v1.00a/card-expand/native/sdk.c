@@ -946,6 +946,7 @@ static unsigned s_score_in_n;            /* 本次进程里到过本站点的次
 static int      s_score_in_log;          /* 这一颗要不要打日志（in/out 两行配对）*/
 static int      s_score_in_mismatch;     /* 层的 G_0 与引擎基础不等：只报一次 */
 static int      s_score_in_sat;          /* ecx 溢出饱和：只报一次 */
+static int      s_score_fold_n;          /* ★ 折额兜底生效过几次（首次打一行诊断；正常应当恒为 0）*/
 static int32_t  s_score_in_total;        /* 这一颗我们真正落下去的 G（点；与 `regs->ecx` 同源）*/
 
 /* ★★ 2026-09-16zl：**站点命中轨迹**（头号崩溃的下一把刀）。
@@ -1056,10 +1057,13 @@ static int ce_item_score_in_common(x86_reg_t *regs)
      *   `+0xc2c`，那是错的（引擎读的是 PLAYER+0x624）。
      * ★ 2026-09-15：回收线改读**共享件的访问器** `ce_poc_height()`（PoC 高度层；`sdk.h`）——
      *   本层落笔之后它与字段同值，但访问器是唯一真值来源（别在这里再直读那个偏移）。
+     * ★★ 2026-09-20（106 的「遮」）：**改读 `ce_poc_height_semantic()`**（= 不含「遮」的生效值）——
+     *   本层的 `coeff_0` 必须与「没有 106」时一致；而引擎套在 `ecx` 上的那个系数本来也是语义系数
+     *   （落笔值 = `min(语义高度, 自机 y)` 把语义几何原样喂给了引擎，见 `sdk_core.h` 那一节）。
      * 两个 float 用整数搬运：本文件在 i686 上编，x87 门不许引入 float↔int 转换。*/
     if (pl && item) {
         int32_t y_q = ce_q16_from_bits(*(volatile uint32_t *)(pl + CE_PLAYER_Y));
-        int32_t poc_q = ce_q16_from_bits(ce_f32_bits(ce_poc_height()));
+        int32_t poc_q = ce_q16_from_bits(ce_f32_bits(ce_poc_height_semantic()));
         int above = (y_q >= poc_q)
                  || (*(volatile int32_t *)(item + CE_ITEM_STATE) == CE_ITEM_STATE_VACUUM);
         ce_score_set_coeff(above ? 1000u : 0u);        /* 0 = 线下（引擎会打折；值我们不猜）*/
@@ -1107,6 +1111,29 @@ static int ce_item_score_in_common(x86_reg_t *regs)
     }
     if (ce_score_participants() > 0) {
         int64_t want = (int64_t)total * (int64_t)CE_ITEM_SCORE_BASE_UNIT;
+        /* ★★ 2026-09-20「折额兜底」：引擎在**本站点之后**（`0x446c01`–`0x446cf3`）用
+         *   `d = ⌊自机 y − 字段⌋` 算 `0.9·(1−d/450)` 再乘到我们刚写进去的 `ecx` 上（一手逐指令）。
+         *   正常情形下这不是问题：字段就是 PoC 层「遮」的落笔值 `min(语义高度, 自机 y)`
+         *   ⇒ 那个 `d` 与「没有 106」时**同一个数** ⇒ 倍率 = 1000（一个字都不动，见 `sdk_core.h`）。
+         *   这里留一道兜底：万一字段被第三方改过 / 帧内时序变过 ⇒ 按**语义高度**把差额补回来
+         *   （倍率夹在 [1, 4000]，越界就不动 —— 宁可少给也不放大 32 倍）。钳位限制见 `sdk_core.h`。*/
+        {
+            const uint32_t poc_field_bits = pl ? *(volatile uint32_t *)(pl + CE_PLAYER_POC_HEIGHT) : 0u;
+            const int32_t  y_q   = pl ? ce_q16_from_bits(*(volatile uint32_t *)(pl + CE_PLAYER_Y)) : 0;
+            const int32_t  pf_q  = pl ? ce_q16_from_bits(poc_field_bits) : 0;
+            const int32_t  ps_q  = pl ? ce_q16_from_bits(ce_f32_bits(ce_poc_height_semantic())) : 0;
+            const int vacuum = (item && *(volatile int32_t *)(item + CE_ITEM_STATE) == CE_ITEM_STATE_VACUUM) ? 1 : 0;
+            const int ratio  = pl ? ce_poc_fold_ratio_permille(y_q, pf_q, ps_q, vacuum) : 1000;
+
+            if (ratio != 1000) {
+                want = want * (int64_t)ratio / 1000;
+                if (!s_score_fold_n) {
+                    ce_log("score-in: ★ 折额兜底生效 ×%d‰（字段 %u ≠ 语义遮值 —— 见 sdk_core.h「遮」一节）",
+                           ratio, (unsigned)poc_field_bits);
+                }
+                ++s_score_fold_n;
+            }
+        }
         if (want > 0x7fffffff) {               /* 32 位 ecx 装不下 ⇒ 饱和 + 报一次（G_total ≈ 2,147,483 点以上）*/
             want = 0x7fffffff;
             if (!s_score_in_sat) {
@@ -1630,34 +1657,72 @@ static void ce_option_pose_frame_tick(void)
     if (win >= 0) optpose_call_one(mgr, win);                    /* ② 本帧落笔 */
 }
 
-/* ---- ★ PoC 高度层（收点线）：落笔与删卡写回（决策全在 sdk_core.c 的 `ce_poc_frame` / `ce_poc_drop_take_base`）
- * 语义 / 一手见 `sdk_core.h` 与 `sdk.h` 的 PoC 层块注释。这里只做两件**引擎侧**的事：
- *   ① 写 `player+0x47998`；② 置 `Gui+0x194` 的 bit `0x2000`（=「画开局那条指示线」，照原生卡 22 的
- *      `0x40c288`，含它的空指针检查与「只置不清」）。
+/* ---- ★ PoC 高度层（收点线）：落笔与删卡写回（决策全在 sdk_core.c 的 `ce_poc_frame*` / `ce_poc_drop_take_base`）
+ * 语义 / 一手见 `sdk_core.h` 与 `sdk.h` 的 PoC 层块注释。这里只做三件**引擎侧**的事：
+ *   ① 写 `player+0x47998`；② 置/清 `Gui+0x194` 的 bit `0x2000`（=「画开局那条指示线」；置照原生卡 22 的
+ *      `0x40c288`，清是「遮」声明层新增的写点，见 §7-A4）；③ 读自机 y 当「遮」的钳位上限。
+ *
+ * ★★ 2026-09-20「遮」（106 的「不满 P 过线不收点」非接管实现）：
+ *   · **钳位上限 = 自机 y，且必须在**这里**读**（不是卡 tick 里）—— 一手帧内顺序：
+ *     AbilityManager（卡 tick，优先级 `0x16`）→ **Player `0x17`** → ItemManager **`0x1e`**，
+ *     而本函数 = `BP_ce_item_frame`（`0x446ee3`，ItemManager tick 里、body `0x445a80` 之前）
+ *     ⇒ 此刻的 y 才是引擎那两条 `ja` 与两个折额读点将看到的值（卡 tick 里读到的是**上一帧**的 y）。
+ *   · **线显示与高度落笔解耦**：满 P 时没有高度声明（`ce_poc_frame*` 返回 0），但指示线照样不许画
+ *     ⇒ 那一段必须在写字段之外**单独**跑。
  * ⚠ **没有声明时不写字段**：原生卡 22 会在 on_load 把线写成 224，本层无权把它顶回 128。*/
 void ce_poc_apply(void)
 {
     uint8_t *pl = CE_PLAYER();
+    uint8_t *gui;
     uint32_t out = 0;
+    uint32_t ceiling = 0;
 
     if (!pl) return;
-    if (!ce_poc_frame(*(volatile uint32_t *)(pl + CE_PLAYER_POC_HEIGHT), &out)) return;
-    *(float *)(pl + CE_PLAYER_POC_HEIGHT) = ce_f32_from_bits(out);
-    if (ce_poc_has_declaration()) {                 /* 只在「有人声明」时开那条线（撤声明那一次不动标志位）*/
-        uint8_t *gui = CE_GUI();
-        if (gui) *(uint32_t *)(gui + CE_GUI_FLAG_WORD) |= CE_GUI_FLAG_POC_LINE;
+    if (ce_poc_mask_active()) {
+        /* 「遮」在场 ⇒ 钳位上限 = 自机 y（合理性闸：读不到就传 0 ⇒ 层退回 `CE_POC_TINY_BITS`）。*/
+        const uint32_t ybits = *(volatile uint32_t *)(pl + CE_PLAYER_Y);
+        const float    y     = ce_f32_from_bits(ybits);
+        if (ybits != 0u && y > 0.0f && y <= 448.0f) ceiling = ybits;
+    }
+    if (ce_poc_frame_masked(*(volatile uint32_t *)(pl + CE_PLAYER_POC_HEIGHT), ceiling, &out)) {
+        *(float *)(pl + CE_PLAYER_POC_HEIGHT) = ce_f32_from_bits(out);
+    }
+    /* 线显示（`Gui+0x194` bit `0x2000`）：决策在 sdk_core（含「遮」的基准记账 + 「有人声明高度 ⇒ 照原生
+     * 卡 22 打开」那条旧行为），这里只写内存。*/
+    gui = CE_GUI();
+    if (gui) {
+        uint32_t *w = (uint32_t *)(gui + CE_GUI_FLAG_WORD);
+        int now = (*w & CE_GUI_FLAG_POC_LINE) ? 1 : 0;
+        int target = now;
+
+        if (ce_poc_line_apply(now, ce_poc_has_declaration() ? 1 : 0, &target)) {
+            if (target) *w |= CE_GUI_FLAG_POC_LINE;
+            else        *w &= ~(uint32_t)CE_GUI_FLAG_POC_LINE;
+        }
     }
 }
 
 /* 删卡 / 退出声明（`sdk.h` 的 `ce_layer_drop_card()` 调）：撤声明；若撤完**没人再声明**且记过基准
- * ⇒ **立刻**把基准写回字段（删卡发生在商店里、AbilityManager 与 ItemManager 都冻住，帧钩子不跑）。*/
+ * ⇒ **立刻**把基准写回字段（删卡发生在商店里、AbilityManager 与 ItemManager 都冻住，帧钩子不跑）。
+ * ★ 2026-09-20：这里一并撤「遮」声明与「不画线」声明（前者同属 PoC 层，后者是它的显示面）——
+ *   两条都是**粘性**的，漏撤 = 那条线在本局剩下的时间里永远不画 / 字段永远被压着。*/
 void ce_poc_release(uint32_t id)
 {
     uint8_t *pl = CE_PLAYER();
+    uint8_t *gui;
     uint32_t back = 0;
+    int bit = 0;
 
-    if (!ce_poc_drop_take_base(id, &back)) return;
-    if (pl) *(float *)(pl + CE_PLAYER_POC_HEIGHT) = ce_f32_from_bits(back);
+    if (ce_poc_drop_take_base(id, &back) && pl) {
+        *(float *)(pl + CE_PLAYER_POC_HEIGHT) = ce_f32_from_bits(back);
+    }
+    gui = CE_GUI();
+    if (gui && ce_poc_line_release(id, &bit)) {
+        uint32_t *w = (uint32_t *)(gui + CE_GUI_FLAG_WORD);
+
+        if (bit) *w |= CE_GUI_FLAG_POC_LINE;
+        else     *w &= ~(uint32_t)CE_GUI_FLAG_POC_LINE;
+    }
 }
 
 /* ★★ 2026-09-16zf：**thcrap codecave 取证**（头号崩溃第二阶段：EIP 落在一张全 0 的页上）。
@@ -2275,6 +2340,7 @@ int ce_sdk_setup(uint8_t *base, int trace)
     ce_score_reset();                                 /* 计分声明层（EVENTS-CONTRACT §3）*/
     ce_optpose_reset();                               /* 低速子机选举层（§1 选举覆盖）*/
     ce_poc_reset();                                   /* ★ PoC 高度层（收点线；2026-09-15）：连基准一起清 */
+    ce_poc_line_reset();                              /* ★ 同层的「不画那条线」声明（2026-09-20）：连基准一起清 */
     ce_cancel_latch_reset();                          /* 「本帧已消过弹」闩锁（§5.2 细则 2）*/
     ce_rescue_note_reset();                           /* 「这次死亡由谁救」闩锁（救援层顺序，§5.2）*/
     ce_forced_death_reset();                          /* ★ 「卡自己造的死」通报位（2026-09-16u）*/
@@ -2959,22 +3025,17 @@ static int ce_poc_gate_common(x86_reg_t *regs, uint32_t fall_through)
                        "「不吸」处理（见 AUDIT §BE-EP）", (double)line, (double)py, (const void *)pl); }
         }
     }
-    /* ★★ 2026-09-19 最小差分二分的定案（owner 实跑「正常了」）——**没人声明「未满 P」闸时，
-     * 这两条站点必须完全透明**：把引擎那条 `ja` 原样回放（`BP_EXEC_ORIGINAL`），一个字都不改。
-     *
-     * 起因：owner 报「115 绀珠传擦弹时道具**变慢但不变橙、不抖**」。一手：那条橙/抖就在引擎道具 tick
-     * 的 per-item 分支里，门 = **`state == 1`（飘落）且 `item+0xc50 ≥ 32` 帧**
-     * （`th18:0x445be6` → `0x445c85 jl`；TH15 同门 `th15:0x43f9c3`），而「慢」（位移/重力 ×factor，
-     * `th18:0x445c0d`/`0x445c6d`）**在那道年纪门之前** ⇒ 道具一旦被提前放飞（state 3），
-     * 就只剩「慢」、再也回不到橙+抖。
-     * 二分：`sites.py` 里**只** park 这两条站点、DLL 一字不动（确定性构建，md5 与坏的那版相同）
-     * ⇒ 一测即恢复正常 ⇒ 副作用就出在本 handler 上（哪怕它逐行看着是 vanilla 等价：同样的
-     * `line > py`、同样的落点与 fall-through，日志里也没打过「可疑操作数」那行 WARN）。
-     * ⇒ 结论：**接管这条 `ja` 本身就是风险**，所以只在真有人要那道闸时才接管。*/
-    if (ce_full_p_gate_owner() < 0) {
-        return BP_EXEC_ORIGINAL;     /* = 1：回放引擎原指令，行为与没装站点一模一样 */
-    }
-    /* ② 再叠上「上线收点当且仅当满 P」那道闸：106 声明「这一帧不满 P」⇒ 本帧不许进真空态。*/
+    /* ★★ 2026-09-20（统筹会话要求，出处 = `AUDIT.md` §BE-ER）：**删掉了原来那句
+     *     `if (ce_full_p_gate_owner() < 0) return BP_EXEC_ORIGINAL;`
+     *   它是 2026-09-19 那次崩溃的直接元凶：返回 1 ⇒ thcrap 从**跳板池**回放本站点窗口的原始字节
+     *   （`0f 87 a4 03 00 00` = 一条裸 `ja rel32`），而 `cave_fix` **只重定位窗口首条的 `e8/e9`**
+     *   ⇒ 那条 `ja` 按**原相对位移**从**池的地址**跳 ⇒ 落到池的未写区（`00 00` = `add [eax],al`，
+     *   此刻 `Eax = 1`）⇒ **写 `0x1` 的访问违例**。逐字节复算见 §BE-ER（dump 的 `Eip = 0x03c205fa`
+     *   与「池格 `0x03c20250` + 6 + 0x3a4」逐位对上）。
+     *   ⇒ 本函数的**唯一合法形态是「恒返回 0 + 自己给落点」**（与两条闸 park 的前提一致）：
+     *   `sitecheck` 的 W6（2026-09-20 立）把这条写成硬规则 —— 声明了 `no_replay` 的站点，
+     *   handler 里出现 `BP_EXEC_ORIGINAL` 就是红。
+     *   ⚠ 这两条站点**保持 park**（106 的闸走 PoC 高度 + 语义高度那条不接管的路，见 §BE-EQ / §7-A）。*/
     ce_retaddr_set(regs, (take && !ce_full_p_gate_active()) ? CE_POC_VACUUM : fall_through);
     return 0;                        /* 恒 0：不回放，也就不进 cave（窗口是 0f 8x，进 cave 会跳飞）*/
 }

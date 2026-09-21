@@ -1,5 +1,10 @@
 /* 红魔乡（card-expand id 106，内部 `EOSD_PLAYRANK`）—— **被动卡**，三件：
  *
+ *   ⓪ ★ 2026-09-20：**上线收点当且仅当满 P**（用户口径）—— 不满 P 时对**收点线**声明「遮」
+ *      （`ce_poc_declare_mask()`；落笔值 = `min(语义高度, 自机 y)` ⇒ 过线不吸，线上满额照给）
+ *      + 整局**不画**那条开局指示线（`ce_poc_line_hide()`，§7-A4 定案 (ii)）。
+ *      一手与理由全在 `sdk_core.h` 的「遮」声明一节；原实现（接管两条 `ja`）已证明不可用，
+ *      见 `AUDIT.md` §BE-EQ / §BE-ER。
  *   ① 低速不显示判定点（th06 独有：别的作聚焦都显示自机受击点）
  *   ② PlayRank（th06 `GameManager.rank/subRank` 1:1 复刻，**影响面搁置** —— 见下）
  *   ③ 冴月麟彩蛋（往一块不参与任何判定的内存里写字符串）
@@ -140,12 +145,25 @@ static void seed(ce_card_t *c)
     s->off_used = 0;
 }
 
+/* ── ★ 2026-09-20（`WORK-PACKAGES.md` §7-A4 定案 **(ii)**）：**106 在场的整局都不画那条开局收点指示线**。
+ * 理由（owner 口径）：最贴 TH06 —— 原作里根本没有这条视觉线；而且它不随火力闪烁（(i)「线随闸走、满 P 才画」已作废）。
+ * 一手：可见性 = `Gui+0x194` 的 bit `0x2000`，**唯一原生写者 = 原生卡 22 的 `on_load`**（`0x40c288`，`or`，
+ * **只置不清**），唯一读点 = `0x43af0b`（不置位 ⇒ 那条线的 VM 根本不建）⇒ **我们主动清 = 不画**。
+ * 声明是**粘性**的（照 PoC 层其余声明）⇒ 这里只报一次；落笔（清位 + 基准记账 + 撤声明的写回）全在
+ * `sdk.h` 的 `ce_poc_apply()` / `ce_poc_release()`（删卡在商店里帧钩子不跑，那条路是**立刻**写）。
+ * ⚠ 原生卡 22 每关 `on_load` 都会再置一次 ⇒ 我们每帧的落笔会把它重新清掉（幂等；见 `sdk.c` 的 apply）。*/
+static void declare_line_hide(ce_card_t *c)
+{
+    ce_poc_line_hide(c, 1);
+}
+
 static void init_all(ce_card_t *c, const char *why)
 {
     t06r_state_t *s = st(c);
     __builtin_memset(s, 0, sizeof *s);
     t06_state_init(&s->r, t06r_difficulty());
     s->last_graze = -1;                       /* -1 = 首帧只对账 */
+    declare_line_hide(c);                     /* ★ 「106 在场整局不画那条线」（§7-A4 (ii)；粘性、幂等）*/
     sakuyue_write_once();
     ce_log("th06rank: init on %s (difficulty %d, rank %d, min %d, max %d)", why,
            t06r_difficulty(), s->r.rank.rank, s->r.rank.min_rank, s->r.rank.max_rank);
@@ -263,10 +281,11 @@ static void on_item_collect(ce_card_t *c, uint32_t type, const void *item)
         const uint8_t *it = (const uint8_t *)item;
         int at_poc = 0;
         if (p) {
-            /* ★ 2026-09-15：改读**共享件的访问器**（`sdk.h` 的 `ce_poc_height()`），不再直读
-             * `*(float*)(p+CE_PLAYER_POC_HEIGHT)` —— 卡的 PoC 高度层落笔后，字段与访问器同值，
-             * 但访问器是唯一真值来源（空指针安全，且将来加夹取/诊断只改一处）。*/
-            const float poc = ce_poc_height();
+            /* ★ 2026-09-15：改读**共享件的访问器**（`sdk.h`），不再直读 `*(float*)(p+CE_PLAYER_POC_HEIGHT)`。
+             * ★★ 2026-09-20：**改成语义访问器 `ce_poc_height_semantic()`** —— 不满 P 时引擎字段被本卡的
+             *   「遮」压在 `min(语义高度, 自机 y)` 上（那是给引擎看的），本卡的 rank 分档要的是
+             *   **没有 106 时**那条线（= 别家声明 / 基准 128 / 224）⇒ 两者不能混（用户口径「其它语义零变化」）。*/
+            const float poc = ce_poc_height_semantic();
             at_poc = (*(const float *)(p + CE_PLAYER_Y) <= poc);
             if (!at_poc && it && *(const int32_t *)(it + CE_ITEM_STATE) == CE_ITEM_STATE_VACUUM)
                 at_poc = 1;                                     /* 引擎同款兜底：真空飞行 = 满额 */
@@ -340,8 +359,14 @@ static int on_tick_2(ce_card_t *c)
      *   一手（TH06 反编译 `ItemManager.cpp` 的道具 tick）：
      *     `if (curItem->state == 1 || (128 <= g_GameManager.currentPower && g_Player.positionCenter.y < 128.0f))`
      *     → 进吸引态（`state = 1`）⇒ **「满 P（128）+ 在回收线（y = 128.0）以上」才是过线收点的充要条件**。
-     *   ⇒ 本卡每帧只做一件事：把「现在不是满 P」这个**事实**声明给共享层（`ce_full_p_gate_*`），
-     *     两个消费者各自去查：① 过线收点的两条 `ja`（`th18:0x445bb9` / `0x446003`，声明开着就不让道具进真空态）
+     *   ⇒ 本卡每帧只做一件事：把「现在不是满 P」这个**事实**声明给共享层，两个消费者各自去查：
+     *     ① 过线收点 —— ★★ **2026-09-20 换了实现**（原来走两条 `ja` 站点，那两条**已证明不可接管**
+     *        也**不可回放**，见 `AUDIT.md` §BE-EQ / §BE-ER，现 park）：
+     *        改走 **`ce_poc_declare_mask()`**（PoC 高度层的「遮」声明 = 覆盖位）——
+     *        落笔值 = `min(语义高度, 自机 y)`，于是「线 > 自机 y」恒不成立 ⇒ **过线不吸**；
+     *        而「线 ≥ 自机 y」那一条（线上满额）在自机过语义线时**恰好相等** ⇒ 照给满额
+     *        ⇒ **引擎那两个折额读点看到的 `d` 与「没有 106」时是同一个数**（计分逐位不变）。
+     *        一手（字段的 2 写 5 读、两条判据的严格/非严格之差、帧内顺序）写在 `sdk_core.h` 的「遮」一节。
      *     ② 111 的信号推进（关掉「线上未满 ⇒ 补满并钳到 100.00」那一支；擦弹/衰减不受影响）。
      *   ⚠ 声明是**粘性**的（照 `ce_no_hit_declare`）⇒ 每帧都要写一次；删卡 / 局末显式归 0（下面两个收尾函数）。
      *   ⚠ 「满 P」判据 = `CE_CURRENT_POWER() >= [0x4ccd3c]`（`MAX_POWER`，随 sht 变；写死 400 是错的）。*/
@@ -350,10 +375,14 @@ static int on_tick_2(ce_card_t *c)
         const int32_t pmax = *(volatile const int32_t *)CE_ADDR_MAX_POWER;
         const int     gate = (pmax > 0 && pw < pmax) ? 1 : 0;
         ce_full_p_gate_declare((uint32_t)ce_card_id(c), gate);
+        /* ★ 2026-09-20：不满 P ⇒ 对**收点线**声明「遮」（覆盖位）—— 过线收点那一半的新实现。
+         *   满 P ⇒ 撤（`ce_poc_declare_mask(c, 0)` = 撤回；落笔那一刻层会把语义高度/基准写回去）。*/
+        ce_poc_declare_mask(c, gate);
         if (gate != s->poc_gate) {
             s->poc_gate = gate;
-            ce_log("T06R: 上线收点闸 %s（power %d/%d）—— 不满 P ⇒ 过线不吸道具（th06 ItemManager.cpp 的"
-                   " `currentPower >= 128 && player.y < 128.0f`），且 111 的「线上补满信号」同时关掉",
+            ce_log("T06R: 上线收点闸 %s（power %d/%d）—— 不满 P ⇒ 声明「遮」把收点线压到自机处"
+                   "（过线不吸；线上满额那一支靠 `≥` 与 `>` 的判据差照旧成立，见 sdk_core.h「遮」一节），"
+                   "且 111 的「线上补满信号」同时关掉",
                    gate ? "**开**" : "关", (int)pw, (int)pmax);
         }
     }
@@ -425,6 +454,7 @@ static void on_stage_start(ce_card_t *c)
     if (s->r.rank.max_rank <= 0) { init_all(c, "stage start (uninitialised)"); return; }
     t06_state_stage_reset(&s->r);            /* subRank = 0、帧计数 = 0、库存基准撤销 */
     seed(c);
+    declare_line_hide(c);                    /* ★ 「106 在场整局不画那条线」（§7-A4 (ii)；幂等）*/
 
     if (ce_owned(36)) { t06_increase(&s->r.rank, T06_INC_LIFE_FRAG); ce_log("th06rank: stage start, Narumi(36) +0.70"); }
     if (ce_owned(37)) { t06_increase(&s->r.rank, T06_INC_BOMB_FRAG); ce_log("th06rank: stage start, Patchouli(37) +0.02"); }
@@ -473,6 +503,7 @@ static int on_load(ce_card_t *c)
 {
     init_all(c, "load");
     seed(c);
+    declare_line_hide(c);                    /* ★ 「106 在场整局不画那条线」（§7-A4 (ii)；幂等）*/
     return 0;
 }
 
@@ -486,6 +517,8 @@ static void on_delete(ce_card_t *c)
 {
     t06r_state_t *s = st(c);
     ce_full_p_gate_declare((uint32_t)ce_card_id(c), 0);   /* ★ 撤「未满 P」声明（别把闸留在场上）*/
+    ce_poc_declare_mask(c, 0);                            /* ★ 撤「遮」（收点线立刻回到基准）*/
+    ce_poc_line_hide(c, 0);                               /* ★ 撤「不画线」（并按基准把那一位写回）*/
     if (s) __builtin_memset(s, 0, sizeof *s);
 }
 
@@ -493,6 +526,8 @@ static void on_run_reset(ce_card_t *c)
 {
     t06r_state_t *s = st(c);
     ce_full_p_gate_declare((uint32_t)ce_card_id(c), 0);   /* ★ 撤「未满 P」声明（局末）*/
+    ce_poc_declare_mask(c, 0);                            /* ★ 撤「遮」（换关/局末：字段回到基准）*/
+    ce_poc_line_hide(c, 0);                               /* ★ 撤「不画线」（下一关的 on_load 会重新声明）*/
     if (s) __builtin_memset(s, 0, sizeof *s);   /* 局末：差分基准 / 位图 / 帧计数全清 */
 }
 

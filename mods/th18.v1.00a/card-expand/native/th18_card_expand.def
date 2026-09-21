@@ -14,19 +14,17 @@ EXPORTS
 	BP_ce_item_money	@12
 	BP_ce_native_option_muzzle	@13
 	BP_ce_player_die	@14
-	BP_ce_poc_gate_a	@15
-	BP_ce_poc_gate_b	@16
-	BP_ce_repopulate_native_option	@17
-	BP_ce_save_loaded	@18
-	BP_ce_shop_bought	@19
-	BP_ce_shop_reopen	@20
-	BP_ce_shot_damage	@21
-	BP_ce_shot_set_index	@22
-	BP_ce_snd_gate	@23
-	BP_ce_test_deck	@24
-	BP_ce_text_desc	@25
-	BP_ce_text_name	@26
-	BP_ce_text_notify	@27
-	BP_ce_trace_alloc	@28
-	BP_ce_unlock_all	@29
-	BP_ce_unlock_write	@30
+	BP_ce_repopulate_native_option	@15
+	BP_ce_save_loaded	@16
+	BP_ce_shop_bought	@17
+	BP_ce_shop_reopen	@18
+	BP_ce_shot_damage	@19
+	BP_ce_shot_set_index	@20
+	BP_ce_snd_gate	@21
+	BP_ce_test_deck	@22
+	BP_ce_text_desc	@23
+	BP_ce_text_name	@24
+	BP_ce_text_notify	@25
+	BP_ce_trace_alloc	@26
+	BP_ce_unlock_all	@27
+	BP_ce_unlock_write	@28

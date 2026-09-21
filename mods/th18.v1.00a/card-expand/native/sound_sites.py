@@ -44,6 +44,28 @@ CFG_ROWS_N = CFG_ROWS + NEW_N                                # 116
 NAMES_N_N  = NAMES_N + NEW_N                                 # 104
 FIRST_ID   = CFG_ROWS                                        # 0x54
 
+# ★★ **新 id 的分配表**（只读快照，2026-09-20）--------------------------------------------
+# 单一事实源 = `assets/voice/ORDER.txt`：**行号 k（0 起，跳过注释与空行）→ id = 0x54+k**，
+# 并在 `patch/th18/voice.js` 里显式登记同一个 id（`assets/build_voice.py` 构建期对账，错了直接停）；
+# 本文件只管 id 空间的**宽度**（`NEW_N`）与四张表的搬迁，**不写第二份 id 表**（会漂移）。
+# 下表是给人看的：谁在用哪一格、一手出处在哪。
+#
+#   id     NAME            用在哪（一手出处见 ORDER.txt 与各处调用点注释）
+#   0x54   ROYAL_RAGTIME   58-62 皇家同花顺（自己合成的拉格泰姆）
+#   0x55   FIRELORD_SUMMON 72 炎魔之王召唤（用户语音素材）
+#   0x56   FIRELORD_ATTACK 72 炎魔之王投火球（用户语音素材）
+#   0x57   ASTRALUP        113 灵界槽跨格（TH13 `th13:0x43d574` → `se_astralup.wav`）
+#   0x58   UFOALERT        112 UFO 出场第二声（TH12 `th12:0x44a9fe` → `se_ufoalert.wav`）
+#   0x59   CHARGE00        109/111 蓄力起手（TH09 `th09:0x41fa5e` → `se_charge00.wav`）
+#   0x5a   CHARGEUP        109 蓄力每升一级（TH09 `th09:0x41fb31` → `se_chargeup.wav`）
+#   0x5b   MOFPOWERUP      110 满 P 上涨音（TH10 `th10:0x41b446`/`0x41b68c` → `se_powerup.wav`；
+#                          ★ 与 TH18 的同名文件**不是同一次录音**）
+#   0x5c   PCB_BORDER      107 森罗结界展开（TH07 `th07:0x441b91` → `se_border.wav`；TH07 独有）
+#   0x5d.. 0x73            **空闲**（23 格）
+#
+# ⚠ 每作只能加一枚、且**别作原版的 wav 不入库**：新 SE 走
+# `assets/voice/derive_retail_se.py` 的 `TABLE`（构建期从 `local/<版本>/dat` 逐字节现取）。
+
 CAVE_CFG   = "th18_snd_cfg"
 CAVE_NAMES = "th18_snd_names"
 CAVE_SLOTS = "th18_snd_slots"

@@ -66,8 +66,25 @@
 #define POFV_BLAST_DMG           40
 #define POFV_BLAST_DMG_LIFE       2
 
-/* ❓ 自定：原版 th09 的「叮」（升级音）id 未取到 id 空间也不同 ⇒ 先借 TH18 的 CE_SE_EXTEND(0x11)。*/
-#define POFV_SE_CHARGE_DING     CE_SE_EXTEND
+/* ★★ 2026-09-20 改（P1 #th09-2「一直会播放奇怪的 Extend 音效」）：
+ *   原值 = `CE_SE_EXTEND`（TH18 `0x11` = `se_extend.wav`）—— 那只是"听着像叮"的 ❓自定借用，
+ *   每升一级响一次残机奖励音，用户实跑听成"一直在响的奇怪 Extend 音效"。
+ *   **一手（已逆出 TH09 v1.50a 的音效表与播放站点，直读 `local/th09.v1.50a/th09.exe`）**：
+ *   · id 表 = `th09:0x4a1f80`（54 项 × 8 字节：`+0` = wav 名表下标、`+4` = 音量 word）、
+ *     名表 = `th09:0x4a2130`（39 项）、播放器 = `th09:0x43e2f0`（id + 裸声像）/ `th09:0x43e380`（id + 世界 x）。
+ *   · 蓄力 gauge = `player+0x30384`（float，每 100 帧一档：`th09:0x41fa88 imul 0x51eb851f; sar edx,5`）。
+ *   · **起手那一声**：`th09:0x41fa5e push 0x2b` + `0x41fa65 call 0x43e2f0`，条件 = 「gauge == 0」
+ *     ⇒ id `0x2b` = **`se_charge00.wav`**。
+ *   · **每升一级那一声**：`th09:0x41fb31 push 0x32` + `0x41fb38 call 0x43e2f0`，条件 = 「
+ *     `(int)gauge/100` 比上一帧大」（`th09:0x41fb15 cmp edi,eax` / `jge`）⇒ id `0x32` = **`se_chargeup.wav`**。
+ *   ⇒ 本卡的「升级 → 叮一声」= 一手的**每升一级**那一声 ⇒ 取 `se_chargeup`（TH18 71 枚里**没有**这枚，
+ *     走音效表扩容通道：`CE_VOICE_CHARGEUP` = `0x5a`，源 `local/th09.v1.50a/th09.dat` 里单抽，
+ *     `assets/voice/derive_retail_se.py` 的 `TABLE` 有完整一手出处）。
+ *   ⚠ 一手里这一格的音量是 `-900`（百分之一 dB），我们**不衰减**（`voice.js` 里 `volume_db: 0`）
+ *     —— 原值太轻，听不出"叮"；这是唯一一处刻意偏离一手的量（登记 `TUNING.md` §2.0t）。
+ *   ⚠ 一手还有另外两声（起手 `se_charge00`、放出去 `se_exattack` `0x2d` `th09:0x41fa5e` 附近），
+ *     本卡**没接**（用户报的只是"升级音不对"）—— 要补的话各一行，出处已记在上面的表里。*/
+#define POFV_SE_CHARGE_DING     CE_VOICE_CHARGEUP
 
 /* 自爆占位（⚠ 待定）：TH18 **没有卡侧敌弹原语** ⇒ 先按 mandate 用 `ce_damage_rect` 顶替。
  * 语义差异写在 spec §未定项：「自机狙小玉」本该打向自机；ce_damage_rect 是**自机侧**伤害源（伤敌）。

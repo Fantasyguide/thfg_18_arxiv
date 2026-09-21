@@ -246,12 +246,15 @@ int ce_invuln_applier(void) { return s_invuln_applier; }
  * 于是本文件里**一条浮点指令都没有** —— 这不是洁癖：i686 的 float 返回值走 x87 st(0)，
  * 一旦这里出现「返回 float」的函数，`make dllx87` 的「我们的 object 里 0 条 x87」不变式当场变红。*/
 static uint32_t s_poc[CE_SDK_CARD_ID_MAX + 1];   /* 各卡声明的**绝对**高度（位型；0 = 没声明）*/
+static uint8_t  s_poc_mask[CE_SDK_CARD_ID_MAX + 1];  /* ★「遮」声明（覆盖位；见 sdk_core.h 那一节）*/
 static int      s_poc_winner = -1;               /* 线最低（y 最大）的那张卡；并列取 id 最小 */
 static int      s_poc_any;                       /* 有人在声明（落笔闸门）*/
 static uint32_t s_poc_target;                    /* 聚合 + 夹取后的落笔值 */
 static int      s_poc_base_valid;                /* 记着「我们动手之前」的字段原值 */
 static uint32_t s_poc_base;                      /* 那个原值（删卡时写回）*/
 static uint32_t s_poc_written;                   /* 我们上一次写进去的值（0 = 还没写过）*/
+static int      s_poc_mask_any;                  /* ★ 有人在「遮」*/
+static int      s_poc_mask_owner = -1;           /* ★ 「遮」声明者 id（最小）；无人 = -1 */
 
 /* 合法声明 = 非负、有限（bit31 = 0 且指数域 != 0xFF）、非 0。*/
 static int poc_ok(uint32_t bits)
@@ -269,7 +272,13 @@ static void poc_recompute(void)
     s_poc_any = 0;
     s_poc_winner = -1;
     s_poc_target = 0;
+    s_poc_mask_any = 0;
+    s_poc_mask_owner = -1;
     for (int id = 0; id <= CE_SDK_CARD_ID_MAX; ++id) {
+        if (s_poc_mask[id]) {
+            s_poc_mask_any = 1;
+            if (s_poc_mask_owner < 0) s_poc_mask_owner = id;
+        }
         if (s_poc[id] == 0u) continue;
         s_poc_any = 1;
         if (best < 0 || s_poc[id] > s_poc_target) { s_poc_target = s_poc[id]; best = id; }
@@ -282,10 +291,12 @@ static void poc_recompute(void)
 
 void ce_poc_reset(void)
 {
-    for (int id = 0; id <= CE_SDK_CARD_ID_MAX; ++id) s_poc[id] = 0u;
+    for (int id = 0; id <= CE_SDK_CARD_ID_MAX; ++id) { s_poc[id] = 0u; s_poc_mask[id] = 0u; }
     s_poc_winner = -1;
     s_poc_any = 0;
     s_poc_target = 0;
+    s_poc_mask_any = 0;
+    s_poc_mask_owner = -1;
     s_poc_base_valid = 0;
     s_poc_base = 0;
     s_poc_written = 0;
@@ -294,6 +305,8 @@ void ce_poc_reset(void)
 int ce_poc_declare(uint32_t id, uint32_t height_bits)
 {
     if (id > (uint32_t)CE_SDK_CARD_ID_MAX) return 0;
+    /* 高度声明与「遮」声明互斥：一张卡要么报绝对高度、要么要求遮（同 id 后写的那条生效）。*/
+    s_poc_mask[id] = 0u;
     if (!poc_ok(height_bits)) { s_poc[id] = 0u; poc_recompute(); return 0; }
     s_poc[id] = height_bits;
     poc_recompute();
@@ -304,10 +317,11 @@ void ce_poc_drop(uint32_t id)
 {
     if (id > (uint32_t)CE_SDK_CARD_ID_MAX) return;
     s_poc[id] = 0u;
+    s_poc_mask[id] = 0u;                       /* ★ 删卡/退出：两个都撤 */
     poc_recompute();
 }
 
-int ce_poc_has_declaration(void) { return s_poc_any; }
+int ce_poc_has_declaration(void) { return s_poc_any || s_poc_mask_any; }   /* ★ 含「遮」 */
 int ce_poc_winner(void)          { return s_poc_winner; }
 
 uint32_t ce_poc_target_bits(void)
@@ -330,21 +344,28 @@ int ce_poc_base(uint32_t *out_bits)
     return 1;
 }
 
+/* ★ 落笔的**记账**（`ce_poc_frame` 与 `ce_poc_frame_masked` 共用；`want` 已经是本帧的目标值）：
+ *   ① 第一次落笔 ⇒ 把「动手之前」的字段值记成基准；
+ *   ② 之后若发现字段既不是我们上次写的、也不是本帧目标（= 别人改过，典型是原生卡 22 / `Player__reset`）
+ *      ⇒ 基准跟着刷新（删卡时写回的是**别人的**值，不是写死 128）；
+ *   ③ 同值也照写（一个字的内存写，幂等）。*/
+static int poc_commit(uint32_t engine_bits, uint32_t want, uint32_t *out_bits)
+{
+    if (!s_poc_base_valid) {
+        s_poc_base = engine_bits;
+        s_poc_base_valid = 1;
+    } else if (engine_bits != s_poc_written && engine_bits != want) {
+        s_poc_base = engine_bits;
+    }
+    s_poc_written = want;
+    if (out_bits) *out_bits = want;
+    return 1;
+}
+
 int ce_poc_frame(uint32_t engine_bits, uint32_t *out_bits)
 {
-    if (s_poc_any) {
-        uint32_t want = ce_poc_target_bits();
+    if (s_poc_any) return poc_commit(engine_bits, ce_poc_target_bits(), out_bits);
 
-        if (!s_poc_base_valid) {                  /* 第一次落笔：先把「动手之前」的值记成基准 */
-            s_poc_base = engine_bits;
-            s_poc_base_valid = 1;
-        } else if (engine_bits != s_poc_written && engine_bits != want) {
-            s_poc_base = engine_bits;             /* 别人改过（原生卡 22 / Player__reset）⇒ 基准跟着更新 */
-        }
-        s_poc_written = want;
-        if (out_bits) *out_bits = want;           /* 同值也照写：一个字的内存写，幂等 */
-        return 1;
-    }
     s_poc_written = 0;
     if (s_poc_base_valid) {                       /* 声明全撤：写回基准（一次），然后忘掉它 */
         uint32_t back = s_poc_base;
@@ -359,11 +380,181 @@ int ce_poc_frame(uint32_t engine_bits, uint32_t *out_bits)
 int ce_poc_drop_take_base(uint32_t id, uint32_t *out_bits)
 {
     ce_poc_drop(id);
-    if (s_poc_any || !s_poc_base_valid) return 0;
+    if (s_poc_any || s_poc_mask_any || !s_poc_base_valid) return 0;
     s_poc_base_valid = 0;                         /* 立刻写回基准（删卡在商店里，帧钩子不跑）*/
     s_poc_written = 0;
     if (out_bits) *out_bits = s_poc_base;
     return 1;
+}
+
+
+/* ---- ★★ 「遮」声明 / 语义高度（2026-09-20；语义与一手证据全在 sdk_core.h 那一节）----
+ * 这一节的关键是**两条判据的严格/非严格之差**（一手）：
+ *   过线收点（真空态）的门 `th18:0x445bb9` / `0x446003` = `ja`（**严格** `线 > y`）；
+ *   线上满额的门 `th18:0x446995` / `0x446c01` = `jae`（**非严格** `线 ≥ y`）。
+ * ⇒ 落笔值取 `min(语义高度, y)` 时，「等于 y」这一档同时满足「不吸」与「满额」——
+ *   这不是巧合，是两条判据的形态差，是本实现（以及 §7-A 的闸）成立的支点。*/
+int ce_poc_mask_declare(uint32_t id, int on)
+{
+    if (id > (uint32_t)CE_SDK_CARD_ID_MAX) return 0;
+    s_poc_mask[id] = on ? 1u : 0u;
+    if (on) s_poc[id] = 0u;                       /* 互斥：报了遮就不再有绝对高度声明 */
+    poc_recompute();
+    return 1;
+}
+
+int ce_poc_mask_active(void) { return s_poc_mask_any; }
+int ce_poc_mask_owner(void)  { return s_poc_mask_owner; }
+
+uint32_t ce_poc_semantic_bits(uint32_t engine_bits)
+{
+    if (s_poc_any) return ce_poc_target_bits();   /* 别家声明（不含「遮」）取最大 */
+    if (s_poc_base_valid) return s_poc_base;      /* 我们动手之前的字段值（原生卡 22 的 224 / 128）*/
+    return engine_bits;                           /* 从没动过手 ⇒ 字段实读值 */
+}
+
+int ce_poc_frame_masked(uint32_t engine_bits, uint32_t ceiling_bits, uint32_t *out_bits)
+{
+    uint32_t want;
+
+    if (!s_poc_mask_any) return ce_poc_frame(engine_bits, out_bits);
+    /* 语义高度：别家声明 → 基准 → 本帧字段实读值。落笔值 = min(它, 自机 y)。*/
+    want = ce_poc_semantic_bits(engine_bits);
+    if (ceiling_bits == 0u || ceiling_bits > CE_POC_HEIGHT_MAX_BITS) {
+        /* 读不到自机 y（空指针 / 越界）⇒ 收敛到「极小正数」：线跑到屏幕最上沿之外
+         * （**永不过线** = 106 的原设计；代价是折额走到最坏档，由 `ce_poc_fold_ratio_permille()` 兜底）。*/
+        want = CE_POC_TINY_BITS;
+    } else if (want > ceiling_bits) {
+        want = ceiling_bits;
+    }
+    if (want < CE_POC_TINY_BITS) want = CE_POC_TINY_BITS;   /* 0.0f 是哨兵；负值位型序会翻 ⇒ 只能取极小正数 */
+    if (want > CE_POC_HEIGHT_MAX_BITS) want = CE_POC_HEIGHT_MAX_BITS;
+    return poc_commit(engine_bits, want, out_bits);
+}
+
+
+/* ---- ★ 线显示（`Gui+0x194` bit `0x2000`）：声明层 + 基准记账 ----
+ * 一手：唯一原生写者 = 原生卡 22 的 `on_load` `0x40c288`（`or`，**只置不清**），唯一读点 = `0x43af0b`。
+ * ⇒「有人 hide」时我们**清**它（新增写点，登记 AUDIT §BE）；撤完按基准写回（原生那位自己不会再置回来）。*/
+static uint8_t s_poc_hide[CE_SDK_CARD_ID_MAX + 1];
+static int     s_poc_hide_any;
+static int     s_poc_hide_owner = -1;
+static int     s_poc_line_base_valid;            /* 记着「我们清之前」那一位是什么 */
+static int     s_poc_line_base;
+static int     s_poc_line_cleared;               /* 我们已经清过一次（= 欠一次写回）*/
+
+static void poc_line_recompute(void)
+{
+    s_poc_hide_any = 0;
+    s_poc_hide_owner = -1;
+    for (int id = 0; id <= CE_SDK_CARD_ID_MAX; ++id) {
+        if (!s_poc_hide[id]) continue;
+        s_poc_hide_any = 1;
+        if (s_poc_hide_owner < 0) s_poc_hide_owner = id;
+    }
+}
+
+void ce_poc_line_hide_declare(uint32_t id, int on)
+{
+    if (id > (uint32_t)CE_SDK_CARD_ID_MAX) return;
+    s_poc_hide[id] = on ? 1u : 0u;
+    poc_line_recompute();
+}
+
+int ce_poc_line_hidden(void)     { return s_poc_hide_any; }
+int ce_poc_line_hide_owner(void) { return s_poc_hide_owner; }
+
+int ce_poc_line_apply(int bit_now, int decl_exists, int *out_bit)
+{
+    int now = bit_now ? 1 : 0;
+
+    if (s_poc_hide_any) {
+        if (!s_poc_line_cleared) {                /* 第一次清：把「动手之前」的那一位记成基准 */
+            s_poc_line_base = now;
+            s_poc_line_base_valid = 1;
+            s_poc_line_cleared = 1;
+        }
+        if (now == 0) return 0;                   /* 已经是清的：一个字都不写 */
+        if (out_bit) *out_bit = 0;
+        return 1;
+    }
+    if (s_poc_line_cleared) {                     /* hide 撤完：按基准写回一次 */
+        int back = s_poc_line_base_valid ? s_poc_line_base : 0;
+
+        s_poc_line_cleared = 0;
+        s_poc_line_base_valid = 0;
+        if (now == back) return 0;
+        if (out_bit) *out_bit = back;
+        return 1;
+    }
+    if (decl_exists && now == 0) {                /* 旧行为：有人声明高度 ⇒ 照原生卡 22 把那条线打开 */
+        if (out_bit) *out_bit = 1;
+        return 1;
+    }
+    return 0;
+}
+
+int ce_poc_line_release(uint32_t id, int *out_bit)
+{
+    if (id > (uint32_t)CE_SDK_CARD_ID_MAX) return 0;
+    s_poc_hide[id] = 0u;
+    poc_line_recompute();
+    if (s_poc_hide_any || !s_poc_line_cleared) return 0;
+    s_poc_line_cleared = 0;                       /* 删卡在商店里 ⇒ 帧钩子不跑，这里立刻写回 */
+    {
+        int back = s_poc_line_base_valid ? s_poc_line_base : 0;
+
+        s_poc_line_base_valid = 0;
+        if (out_bit) *out_bit = back;
+        return 1;
+    }
+}
+
+void ce_poc_line_reset(void)
+{
+    for (int id = 0; id <= CE_SDK_CARD_ID_MAX; ++id) s_poc_hide[id] = 0u;
+    s_poc_hide_any = 0;
+    s_poc_hide_owner = -1;
+    s_poc_line_base_valid = 0;
+    s_poc_line_base = 0;
+    s_poc_line_cleared = 0;
+}
+
+
+/* ---- ★ 引擎折额的兜底补偿（倍率千分点；1000 = 不动）----
+ * 一手（`0x446c17`–`0x446cf3` 与 `0x4469a7`–`0x446a41` 两段同形，逐指令核过）：
+ *   `d = ⌊y − 字段⌋`（`cvttss2si` = 向零截断）⇒ 系数 `c(d) = 0.9·(450 − d)/450`（`d ≥ 450` 时引擎自己走
+ *   「下限 +1 分」那一档）；`d ≤ 0`（或真空飞行 `state == 3`）⇒ 满额支（系数 1）。
+ * 本函数给出 `c(d_语义) / c(d_实际)`（同一族里 `0.9` 约掉 ⇒ 只剩两个 `450 − d` 的比）。*/
+static int poc_coeff_permille(int32_t d_px)
+{
+    if (d_px <= 0) return 1000;                   /* 满额支 */
+    if (d_px >= 450) return 0;                    /* 引擎的下限档（系数被顶到 0）*/
+    return 900 * (450 - d_px) / 450;
+}
+
+/* Q16 → px（**向零截断**，与 `cvttss2si` 同向）；`d = y − poc`。*/
+static int32_t poc_d_px(int32_t y_q16, int32_t poc_q16)
+{
+    int32_t dy = (int32_t)(((int64_t)y_q16 - (int64_t)poc_q16) / 65536);
+
+    return dy;
+}
+
+int ce_poc_fold_ratio_permille(int32_t y_q16, int32_t poc_field_q16, int32_t poc_sem_q16, int vacuum)
+{
+    int c_field, c_sem;
+    int32_t ratio;
+
+    if (vacuum) return 1000;                      /* 真空飞行：两条路都是满额支 ⇒ 无可补偿 */
+    c_field = poc_coeff_permille(poc_d_px(y_q16, poc_field_q16));
+    c_sem   = poc_coeff_permille(poc_d_px(y_q16, poc_sem_q16));
+    if (c_field <= 0) return 1000;                /* 实际系数已经到底：掰不回来（宁可少给也不放大 32 倍）*/
+    if (c_sem == c_field) return 1000;            /* 常见情形：落笔值就是语义值 ⇒ 一个字节都不动 */
+    ratio = (int32_t)((int64_t)c_sem * 1000 / c_field);
+    if (ratio <= 1000) return 1000;               /* 只往上补（往下压会让"线下折额"变小，语义上没有依据）*/
+    if (ratio > 4000) return 1000;                /* 越界 = 数值不可信 ⇒ 不动 */
+    return (int)ratio;
 }
 
 
@@ -497,6 +688,25 @@ static int32_t s_score_raw;          /* 桥值 = 引擎的身价（= 点 × 10�
 static int     s_score_diff;         /* 难度 0..4 */
 static int     s_score_coeff = CE_SCORE_COUPLING_DEFAULT;   /* 引擎已算好的高度系数（千分点，只读）*/
 
+/* ---- ★★ 共享 PIV 池 + 擦弹族（用户 2026-09-18 定案；口径见 `sdk_core.h` 的同名注释块）----
+ * 池 = 「额外」最大得点（点），初值 0；六作共用一块；**每卡各报一份读数**（= 各系统各报一份）。*/
+static int32_t s_piv_pool;                                    /* 池的当前值（额外量，点）*/
+static int32_t s_piv_cap_p1[CE_SDK_CARD_ID_MAX + 1];          /* 可写上限 **+1**（0 = 不在场 ——
+                                                               *   正好等于静态零初始化值，省一次初始化）*/
+static int32_t s_piv_wrote[CE_SDK_CARD_ID_MAX + 1];           /* 本卡**已写进池**的量（写入闸的账）*/
+static uint32_t s_graze_present[CE_SDK_CARD_ID_MAX + 1];      /* 擦弹族在场标记（1/0）*/
+static unsigned s_graze_present_n;
+static uint32_t s_graze_total;                                /* 桥进来的本局擦弹总数（0x4ccd0c）*/
+
+/* ---- 计分层换版（每项走自己原作的曲线；用户 2026-09-18）---- */
+static uint8_t s_score_family[CE_SDK_CARD_ID_MAX + 1];       /* 各卡声明的系数族（0 = NONE）*/
+static int32_t s_coeff0_mille;                               /* 本颗的 coeff_0（千分点）；0 = 未知 */
+static int32_t s_geom_d_px;                                  /* 自机 y 的线下深度 d（px）；线上 = 0 */
+static int32_t s_geom_d_item_px;                             /* **道具 y** 的线下深度（th06/07/08/th10 吃这个）*/
+static int32_t s_family10_faith;                             /* th10 的显示信仰 F（110 填；0 = 未知）*/
+static int     s_geom_valid;                                 /* 本颗填过几何没有（区分「深度 ≥ 450 ⇒ coeff_0 = 0」
+                                                              *   与「没几何信息 ⇒ 回落到标记位」）*/
+
 static int32_t s_score_delta_sum, s_score_coupled_sum, s_score_mul_sum;
 static int32_t s_score_legacy_sum;
 static int     s_score_delta_n, s_score_coupled_n, s_score_mul_n, s_score_legacy_n;
@@ -539,6 +749,14 @@ void ce_score_reset(void)
     s_score_raw = 0;
     s_score_diff = 0;
     s_score_coeff = CE_SCORE_COUPLING_DEFAULT;
+    s_piv_pool = 0;
+    s_graze_total = 0;
+    s_coeff0_mille = 0;
+    s_geom_d_px = 0;
+    s_geom_valid = 0;
+    s_geom_d_item_px = 0;
+    s_family10_faith = 0;
+    for (uint32_t fid = 0; fid <= (uint32_t)CE_SDK_CARD_ID_MAX; ++fid) s_score_family[fid] = CE_COEFF_FAMILY_NONE;
     score_recompute();
 }
 
@@ -553,6 +771,264 @@ void ce_score_bridge(uint32_t raw_value, int difficulty)
 void ce_score_set_coeff(uint32_t permille)
 {
     s_score_coeff = (int)permille;
+}
+
+/* ============================ 共享 PIV 池 + 擦弹族（用户 2026-09-18）============================ */
+
+void ce_piv_reset(void)
+{
+    s_piv_pool = 0;
+    /* 在场声明与上限**保留**（由 `ce_piv_claim` / `ce_layer_drop_card` 管）；池与各卡**已写账**清零。*/
+    for (uint32_t id = 0; id <= (uint32_t)CE_SDK_CARD_ID_MAX; ++id) s_piv_wrote[id] = 0;
+}
+
+int ce_piv_claim(uint32_t id, int32_t writable_cap)
+{
+    if (id > (uint32_t)CE_SDK_CARD_ID_MAX) return 0;
+    if (writable_cap < 0) writable_cap = 0;
+    if (writable_cap > 0x7ffffffe) writable_cap = 0x7ffffffe;
+    s_piv_cap_p1[id] = writable_cap + 1;
+    return 1;
+}
+
+void ce_piv_release(uint32_t id)
+{
+    if (id > (uint32_t)CE_SDK_CARD_ID_MAX) return;
+    s_piv_cap_p1[id] = 0;
+    s_piv_wrote[id]  = 0;                 /* 退场 = 那套系统撤了，写入账一并清 */
+}
+
+void ce_piv_add(uint32_t id, int32_t points)
+{
+    /* ★ **写入闸在这一侧**（用户 2026-09-18：「大家都往 PIV 里面写相当于自动相加了，只是写的时候
+     *   自己这边有一道最大写入的闸」）：本卡累计能写进去的 = `cap_i − init_i`（claim 时记好的可写上限），
+     *   写满就再也写不进去；**池本身不做读值钳位**。
+     * 未 claim 的卡不加（删卡之后不该继续涨）。池按 int32 安全上界夹，防溢出成负数。*/
+    int64_t room, add, v;
+    if (id > (uint32_t)CE_SDK_CARD_ID_MAX) return;
+    if (s_piv_cap_p1[id] <= 0) return;
+    if (points == 0) return;
+    room = (int64_t)(s_piv_cap_p1[id] - 1) - (int64_t)s_piv_wrote[id];
+    if (room <= 0) return;                            /* 闸到底：这张卡不再往池里加 */
+    add = (points > 0) ? (int64_t)points : 0;         /* 负增量不当「倒扣池」，只当不写 */
+    if (add > room) add = room;                       /* 只写它还能写的那部分 */
+    v = (int64_t)s_piv_pool + add;
+    if (v < 0) v = 0;
+    if (v > 0x7fffffff) v = 0x7fffffff;
+    s_piv_pool     = (int32_t)v;
+    s_piv_wrote[id] = (int32_t)((int64_t)s_piv_wrote[id] + add);
+}
+
+/* ---- 112–117（th12–th17）的难度两表（**显示单位**；索引 = 难度 0..4 = E/N/H/L/EX）----
+ * 一手（各作 exe 直读原始字节；逐条出处见 `engine/faith/th12..th17/01-*.md`）：
+ *   th12: init {5000,10000,15000,20000,20000} / cap {100000,200000,300000,400000,500000}
+ *   th13: init {5000,10000,15000,20000,20000} / cap {100000,250000,500000,500000,500000}
+ *   th14: init {10000×5}                      / cap {100000,250000,500000,500000,500000}
+ *   th15: init {10000×5}                      / cap {250000,500000,500000,500000,500000}
+ *   th16: init {10000×5}                      / cap {500000×5}
+ *   th17: init {10000×5}                      / cap {500000×5}
+ * ⚠ 第 6 行（各作表里那一格）**不引用**（口径：难度只 E/N/H/L/EX，见 OVERVIEW 口径 1/2）。*/
+static const int32_t k_piv_init[6][5] = {
+    {  5000,  10000,  15000,  20000,  20000 },   /* 112 th12 */
+    {  5000,  10000,  15000,  20000,  20000 },   /* 113 th13 */
+    { 10000,  10000,  10000,  10000,  10000 },   /* 114 th14 */
+    { 10000,  10000,  10000,  10000,  10000 },   /* 115 th15 */
+    { 10000,  10000,  10000,  10000,  10000 },   /* 116 th16 */
+    { 10000,  10000,  10000,  10000,  10000 },   /* 117 th17 */
+};
+static const int32_t k_piv_cap[6][5] = {
+    { 100000, 200000, 300000, 400000, 500000 },  /* 112 th12 */
+    { 100000, 250000, 500000, 500000, 500000 },  /* 113 th13 */
+    { 100000, 250000, 500000, 500000, 500000 },  /* 114 th14 */
+    { 250000, 500000, 500000, 500000, 500000 },  /* 115 th15 */
+    { 500000, 500000, 500000, 500000, 500000 },  /* 116 th16 */
+    { 500000, 500000, 500000, 500000, 500000 },  /* 117 th17 */
+};
+
+int32_t ce_piv_cap_for(uint32_t id, int difficulty)
+{
+    int row;
+    if (id < 112u || id > 117u) return -1;           /* 表只覆盖 th12–th17 这六张 */
+    if (difficulty < 0 || difficulty > 4) return -1; /* E/N/H/L/EX */
+    row = (int)(id - 112u);
+    return k_piv_cap[row][difficulty] - k_piv_init[row][difficulty];
+}
+
+int ce_piv_claim_auto(uint32_t id, int difficulty)
+{
+    int32_t extra = ce_piv_cap_for(id, difficulty);
+    if (extra < 0) return 0;
+    return ce_piv_claim(id, extra);
+}
+
+int32_t ce_piv_written(uint32_t id)
+{
+    if (id > (uint32_t)CE_SDK_CARD_ID_MAX) return 0;
+    return s_piv_wrote[id];
+}
+
+int32_t ce_piv_room(uint32_t id)
+{
+    if (id > (uint32_t)CE_SDK_CARD_ID_MAX) return 0;
+    if (s_piv_cap_p1[id] <= 0) return 0;
+    return (s_piv_cap_p1[id] - 1) - s_piv_wrote[id];
+}
+
+int32_t ce_piv_pool(void) { return s_piv_pool; }
+
+int32_t ce_piv_reading(uint32_t id)
+{
+    /* 旧名保留：现在每张卡的「读数」就是**池的值**（一份、自动相加）—— 钳位已在**写入侧**做完。
+     * 本卡不在场 ⇒ 0。*/
+    if (id > (uint32_t)CE_SDK_CARD_ID_MAX) return 0;
+    if (s_piv_cap_p1[id] <= 0) return 0;
+    return s_piv_pool;
+}
+
+int32_t ce_piv_cap_of(uint32_t id)
+{
+    if (id > (uint32_t)CE_SDK_CARD_ID_MAX) return -1;
+    return s_piv_cap_p1[id] > 0 ? s_piv_cap_p1[id] - 1 : -1;
+}
+
+int32_t ce_piv_family_points(void)
+{
+    /* ★★ 族项 = **池的当前值**（用户 2026-09-18：「大家都往 PIV 里面写**相当于自动相加**了」）。
+     *   ⇒ 多卡同装不是把池数 N 遍，而是「**多一套系统往同一块池里写**」⇒ 值更高、但只进公式一份。
+     *   没有卡在场 ⇒ 0。*/
+    return ce_piv_present_count() > 0 ? s_piv_pool : 0;
+}
+
+int ce_piv_present_count(void)
+{
+    int n = 0;
+    for (uint32_t id = 0; id <= (uint32_t)CE_SDK_CARD_ID_MAX; ++id) if (s_piv_cap_p1[id] > 0) ++n;
+    return n;
+}
+
+void ce_graze_bridge(uint32_t graze_total) { s_graze_total = graze_total; }
+uint32_t ce_graze_total(void) { return s_graze_total; }
+
+int ce_graze_family_claim(uint32_t id)
+{
+    if (id > (uint32_t)CE_SDK_CARD_ID_MAX) return 0;
+    if (!s_graze_present[id]) { s_graze_present[id] = 1; ++s_graze_present_n; }
+    return 1;
+}
+
+void ce_graze_family_release(uint32_t id)
+{
+    if (id > (uint32_t)CE_SDK_CARD_ID_MAX) return;
+    if (s_graze_present[id]) { s_graze_present[id] = 0; if (s_graze_present_n) --s_graze_present_n; }
+}
+
+int ce_graze_family_present(void) { return s_graze_present_n > 0; }
+
+int32_t ce_graze_points(void)
+{
+    /* ★ 一手（th12–th17 四作同形）：每 +1 擦弹 ⇒ 最大得点 +1 显示 ⇒ 本项 = 本局擦弹数（点）。
+     * **只算一次**（用户口径：「别加一张卡擦弹数的作用就 +1 次」）⇒ 这是状态的函数，不是每卡一份。
+     * 族内无卡 ⇒ 0（没有这一套系统时，擦弹不该给最大得点）。*/
+    int64_t g;
+    if (s_graze_present_n == 0) return 0;
+    g = (int64_t)(int32_t)s_graze_total;         /* 引擎给的是 int32；负数按 0 夹 */
+    if (g < 0) g = 0;
+    if (g > 0x7fffffff) g = 0x7fffffff;
+    return (int32_t)g;
+}
+
+/* ---- 计分层换版：几何桥 + 系数族 + 归一（用户 2026-09-18，路线 A）---- */
+
+void ce_score_bridge_geom(int32_t y_q16, int32_t poc_q16)
+{
+    ce_score_bridge_geom2(y_q16, y_q16, poc_q16);
+}
+
+void ce_score_bridge_geom2(int32_t y_player_q16, int32_t y_item_q16, int32_t poc_q16)
+{
+    /* Q16 定点：`d_px = (poc − y) / 65536`（**截断**，与 0.75 族原作的 `(int)y − 线` 同向）。
+     * 线上（y ≥ 线）⇒ coeff_0 = 1000‰、d = 0。*/
+    int64_t dy  = (int64_t)poc_q16 - (int64_t)y_player_q16;
+    int64_t dyi = (int64_t)poc_q16 - (int64_t)y_item_q16;
+    s_geom_valid = 1;
+    s_geom_d_item_px = dyi > 0 ? (int32_t)(dyi >> 16) : 0;
+    if (dy <= 0) { s_coeff0_mille = 1000; s_geom_d_px = 0; return; }
+    s_geom_d_px = (int32_t)(dy >> 16);
+    if (s_geom_d_px >= 450) { s_coeff0_mille = 0; return; }        /* 引擎那一档只剩「下限 +1 分」 */
+    s_coeff0_mille = (int32_t)((int64_t)900 * (450 - s_geom_d_px) / 450);
+}
+
+int ce_score_coeff0_permille(void)
+{
+    /* 有几何信息就用自算值；没有（单测 / 旧路径）就回落到 `ce_score_set_coeff()` 那个标记位：
+     * 1000 = 线上（满额）、0 = 线下（值未知 ⇒ 不归一）。*/
+    if (s_geom_valid) return s_coeff0_mille;      /* 几何在场：0 也是**真值**（深度 ≥ 450 那一档）*/
+    return s_score_coeff;                         /* 没几何（单测 / 旧路径）：回落到标记位 */
+}
+
+int ce_score_ratio_permille(int family)
+{
+    int32_t c0 = ce_score_coeff0_permille();
+    int64_t r;
+    if (c0 <= 0) return 1000;                     /* 不知道该乘什么 ⇒ 不归一（= 老行为） */
+    switch (family) {
+    case CE_COEFF_FAMILY_075: {
+        /* th12–th17：`0.75×(1−d/450)` 对 `0.9×(1−d/450)` ⇒ **线下**恒 5/6；
+         * **线上两者都是满额**（1000‰）⇒ 比值 1。所以不能写死 833，要按同一个 `d` 现算。*/
+        int32_t ci = (s_geom_d_px <= 0) ? 1000 : (int32_t)((int64_t)750 * (450 - s_geom_d_px) / 450);
+        r = (int64_t)ci * 1000 / c0;
+        return (int)r;
+    }
+    case CE_COEFF_FAMILY_08: {
+        /* th08：coeff = 0.5×(1−d/500) ⇒ 千分点 `500 − d`，**d 取道具 y 那个**（一手：th08 判的是道具 `item+0x2a8`）。
+         * 线上 = 1000‰；d ≥ 500 夹 0。*/
+        int32_t di = s_geom_d_item_px;
+        int32_t ci = (s_geom_d_px <= 0) ? 1000 : (500 - di);
+        if (ci < 0) ci = 0;
+        r = (int64_t)ci * 1000 / c0;
+        return (int)r;
+    }
+    case CE_COEFF_FAMILY_10: {
+        /* th10（风神录）：一手 `value = F/2 − d×(F−100000)/6080`、线上 = `F`
+         * ⇒ 千分点 `500 − d×(F−100000)×1000/(6080·F)`，**d 取道具 y**（一手：th10 判 `item+0x3c4` 与 144）。
+         * `F` 未桥进来（≤ 0）⇒ 不归一（比值 1000，= 老行为）。*/
+        int32_t di = s_geom_d_item_px;
+        int64_t ci;
+        if (s_family10_faith <= 0) return 1000;
+        if (s_geom_d_px <= 0) return 1000;                  /* 线上满额 */
+        ci = 500 - ((int64_t)di * (int64_t)(s_family10_faith - 100000) * 1000)
+                 / ((int64_t)6080 * (int64_t)s_family10_faith);
+        if (ci < 0) ci = 0;
+        if (ci > 1000) ci = 1000;
+        r = ci * 1000 / c0;
+        return (int)r;
+    }
+    case CE_COEFF_FAMILY_1:
+        /* th07 / th11：这一项不吃折扣 ⇒ 反归一放大（线下 > 1000‰）*/
+        r = (int64_t)1000 * 1000 / c0;
+        return (int)r;
+    case CE_COEFF_FAMILY_NONE:
+    default:
+        return 1000;                              /* 10：TODO（缺 F 输入）；NONE：老行为 */
+    }
+}
+
+void ce_score_family_declare(uint32_t id, int family)
+{
+    if (id > (uint32_t)CE_SDK_CARD_ID_MAX) return;
+    if (family < 0 || family > CE_COEFF_FAMILY_10) family = CE_COEFF_FAMILY_NONE;
+    s_score_family[id] = (uint8_t)family;
+}
+
+void ce_score_family10_faith(int32_t faith_display)
+{
+    s_family10_faith = faith_display > 0 ? faith_display : 0;
+}
+
+int ce_score_family_of(uint32_t id)
+{
+    if (id > (uint32_t)CE_SDK_CARD_ID_MAX) return CE_COEFF_FAMILY_NONE;
+    return (int)s_score_family[id];
 }
 
 void ce_score_declare_delta(uint32_t id, int32_t points)
@@ -640,7 +1116,24 @@ int32_t ce_score_base_points(void)
 int32_t ce_score_total(void)
 {
     int64_t coupled = (int64_t)s_score_coupled_sum * ce_score_coupling_permille() / 1000;
-    int64_t sum = (int64_t)s_score_legacy_sum + s_score_delta_sum + coupled;
+    /* ★ 共享 PIV 池族（各卡各报一份读数）+ 擦弹那**一项**（只算一次）—— 口径见 sdk_core.h。
+     * ⚠ 现在这两项**先吃引擎的 `coeff_0`**（落笔点在系数之前）；「每项走自己原作的曲线」
+     *   （0.75 族 → 5/6·coeff_0 等）在计分层换版那一步落地（`NEXT.md` 待办 ②）。*/
+    int64_t piv = ce_piv_family_points();
+    int64_t grz = ce_graze_points();
+    /* ★ 路线 A：**逐项按自己的族归一**（`ΔG_i × coeff_i / coeff_0`）—— 引擎随后乘 `coeff_0`，
+     *   实际到手就是 `G_0·coeff_0 + Σ ΔG_i·coeff_i`。未声明族的卡比值 = 1 ⇒ **老行为逐字节不变**。
+     *   PIV 池与擦弹那一项属于 th12–th17 族 ⇒ 恒 ×5/6。*/
+    int64_t sum = (int64_t)s_score_legacy_sum + coupled;
+    uint32_t fid;
+    int64_t norm = 0;
+    for (fid = 0; fid <= (uint32_t)CE_SDK_CARD_ID_MAX; ++fid) {
+        if (!s_score_delta[fid]) continue;
+        norm += (int64_t)s_score_delta[fid] * ce_score_ratio_permille((int)s_score_family[fid]) / 1000;
+    }
+    norm += piv * ce_score_ratio_permille(CE_COEFF_FAMILY_075) / 1000;
+    norm += grz * ce_score_ratio_permille(CE_COEFF_FAMILY_075) / 1000;
+    sum += norm;
     int64_t total;
 
     if (sum < 0) sum = 0;
@@ -657,7 +1150,10 @@ int32_t ce_score_apply(void)
 
 int ce_score_participants(void)
 {
-    return s_score_delta_n + s_score_coupled_n + s_score_legacy_n;
+    /* ★ PIV 池族与擦弹族也算「有卡参与」：否则只有它们在场时 SDK 一个字都不写、那两项白算。
+     *   （PIV 族按在场卡数算、擦弹族算 1 —— 两者都是「有这套系统就参与」。）*/
+    return s_score_delta_n + s_score_coupled_n + s_score_legacy_n
+         + ce_piv_present_count() + (ce_graze_family_present() ? 1 : 0);
 }
 
 int32_t ce_score_aggregate(void)

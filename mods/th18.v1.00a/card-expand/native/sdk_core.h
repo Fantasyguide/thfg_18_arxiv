@@ -157,6 +157,95 @@ int ce_poc_drop_take_base(uint32_t id, uint32_t *out_bits);
 /* 基准只读（诊断 / 单测）：1 = 记着基准（`*out_bits` 填值）。*/
 int ce_poc_base(uint32_t *out_bits);
 
+/* ============ ★★ 2026-09-20 「遮」声明（覆盖位）/ 语义高度 / 线显示（106 的非接管闸）============
+ * 为什么有这一节（背景与一手，逐条给地址）：
+ *   · 106 的设计「**上线收点当且仅当满 P**」原本靠**接管**两条 `ja`（`th18:0x445bb9` / `0x446003`）
+ *     实现 —— 实测**不可接管**（道具只减速、不变橙不抖）且**不可回放**（窗口是一条裸 `ja rel32`，
+ *     回放会从跳板池按原位移跳进未写区 `00 00` ⇒ 写 `0x1` 违例 ⇒ 崩）⇒ 两条站点**永久 park**，
+ *     见 [`AUDIT.md`](../AUDIT.md) §BE-EQ / §BE-ER。功能改走**动 POC 字段**这条不接管的路
+ *     （[`WORK-PACKAGES.md`](../WORK-PACKAGES.md) §7 A/A2/A3/A4）。
+ *   · 字段 `player+0x47998` 的**全部消费者**（一手穷举 = 2 写 5 读，见
+ *     [`engine/player/th18/05-poc-height-and-indicator.md`](../../../../../engine/player/th18/05-poc-height-and-indicator.md)）：
+ *     两条 `ja`（`0x445baa` / `0x445ff4`，**过线 ⇒ 道具进真空态**）、
+ *     `collect_power_item` `0x44698d` 与 `collect_money_item` `0x446bf9`（**线上满额 / 线下按距离折额**）、
+ *     开局指示线的位置读点 `0x43afe1`（+ 可见性位）、以及**我们自己的**几个读数处。
+ *
+ * ## 三个概念（与前两节同形：声明 → 聚合 → 落笔；纯逻辑、无引擎依赖）
+ *   1. **「遮」声明（= 覆盖位）**：`ce_poc_mask_declare(id, on)`。它在场时**无条件生效** ——
+ *      落笔值 = `min(语义高度, 自机 y)`，忽略别家声明的**高度**（现有仲裁「取最大 y 者生效」
+ *      表达不了"覆盖"）。夹取到 ≥ `CE_POC_TINY_BITS`（0.0f 是"未声明"哨兵，负值位型按无符号比会翻）。
+ *   2. **语义高度**：`ce_poc_semantic_bits(engine_bits)` = **不含「遮」**的生效值
+ *      （别家声明取最大 → 基准 → 引擎字段实读值）。我们自己的读数处（106 / 111 / SDK 计分）一律读它
+ *      ⇒ 它们的语义 = **没有 106 时**的语义（用户口径：「106 只做『过线不收点』，其它语义零变化」）。
+ *   3. **线显示**：`ce_poc_line_hide_declare(id, on)`。有人声明时落笔（`sdk.h` 的 `ce_poc_apply()`）
+ *      **清** `Gui+0x194` 的 bit `0x2000`（= 不画开局那条指示线）；撤完按**基准**写回。
+ *      一手：那一位的**唯一写者 = 原生卡 22**（`0x40c288` 的 `or`，**只置不清**），唯一读点 `0x43af0b`
+ *      ⇒ 「主动清」是本层新增的写点（登记 `AUDIT.md` §BE）。owner 口径（§7-A4）＝ **(ii) 106 在场整局不画**。
+ *
+ * ## ★ 为什么落笔值取 `min(语义高度, 自机 y)` 而不是「固定极小正数」（对 `WORK-PACKAGES` §7-A 原稿的订正）
+ * 固定极小正数（≈ 0）确实让「线 > 自机 y」永不成立（过线不吸 ✓），但它把**另外两个引擎读点**一起改了：
+ * 那两个读点看到的 `d = y − 0 = y`（最大 448px）⇒ 折扣系数 `0.9·(1 − d/450)` 掉到 0.004…0.9。
+ *   · 语义上该给**满额**的那些颗（自机在**语义线**上方）会被打成 0.004 档；
+ *   · 想用计分钩子按语义高度反推，倍率 = `c_语义 / c_遮` 在 y→448 时高达 **113×**
+ *     ⇒ `ecx = 1000×G`（最高 ~1e8）× 113 **溢出 32 位** ⇒ 只能饱和 ⇒ 反而少给分。
+ * 而 `min(语义高度, 自机 y)` 是把**语义几何**原样喂给引擎（`ce_poc_fold_ratio_permille()` 仍留作兜底）：
+ *   · 自机在语义线上方 ⇒ 落笔值 `== y` ⇒ 引擎 `jae`（`线 ≥ y`）取**满额支**；两条 `ja`（`线 > y`，严格）
+ *     **不成立** ⇒ 不吸 ✓ —— 一条字段同时满足「不吸」与「满额」，靠的正是两条判据的**严格/非严格之差**；
+ *   · 自机在语义线下方 ⇒ 落笔值 `== 语义高度` ⇒ 引擎算出的 `d` 与「没有 106」时**同一个数** ⇒ 折额逐位相同 ✓。
+ * ⇒ 计分**不需要事后补偿**就成了；`ce_poc_fold_ratio_permille()` 只在字段被第三方改过时才非 1000。
+ *
+ * ## ★ 载荷假设（唯一的、可复核的一条）：帧内顺序
+ *   AbilityManager（优先级 `0x16`，卡 tick 在这里发声明）→ **Player `0x17`**（`th18:0x45caa0`，注册在 `0x45a8b4`）
+ *   → … → **ItemManager `0x1e`**（`th18:0x446ec0`，注册在 `0x4458ac`）。
+ *   落笔发生在 `BP_ce_item_frame` = `0x446ee3`（`ItemManager__on_tick` 里、body `0x445a80` **之前**），
+ *   两条 `ja` 与两个折额读点**都在同一个 tick 的 body 里** ⇒ 落笔时读到的自机 y 就是本帧最终值，
+ *   且中间没有任何 UpdateFunc 会动它 ⇒「`线 ≤ y`」在整个 ItemManager tick 里恒成立 ⇒ **不会漏吸**。
+ *   （若哪天顺序变了：漏吸是可见的、折额由 `ce_poc_fold_ratio_permille()` 兜底。）
+ */
+#define CE_POC_TINY_BITS 0x00800000u   /* 最小**正规**正 float（1.17549435e-38）——❓自定：一手只给了
+                                        * 「字段是一个 float」「0.0f = 未声明哨兵」「聚合按位型无符号比」三条约束
+                                        * ⇒ 表达"屏幕最上沿之外"只能用**极小正数**；取最小正规数（而不是最小
+                                        * 非正规 0x00000001）是为了不把 SSE 的非正规数处理扯进来。
+                                        * 登记 `TUNING.md` §2.0m。*/
+
+int  ce_poc_mask_declare(uint32_t id, int on);   /* 粘性：1 = 本卡要求「遮」（过线永不成立）。0 = 撤回 */
+int  ce_poc_mask_active(void);                   /* 落笔闸门：有人在遮吗？ */
+int  ce_poc_mask_owner(void);                    /* 声明者 id（最小）；无人 = -1 */
+/* **语义高度**（不含「遮」的生效值）：别家声明取最大 → 记过的基准 → `engine_bits`（字段实读值）。
+ * `bits != 0` 时返回的也是位型；绝不写任何内存。我们自己的读数处一律读它。*/
+uint32_t ce_poc_semantic_bits(uint32_t engine_bits);
+
+/* 帧界落笔的决策（`ce_poc_frame` 的「遮」版；真正写内存的是 `sdk.h` 的 `ce_poc_apply()`）。
+ * `ceiling_bits` = 本帧的钳位上限 = **自机 y 的位型**（调用方在落笔那一刻读，见上面的载荷假设）；
+ * 传 0（读不到自机）⇒ 退回 `CE_POC_TINY_BITS`（= 永远过不了线）。
+ * 返回 1 且填 `*out_bits` = 本帧该写这个值；0 = 本帧别写（没有「遮」时逐字转发 `ce_poc_frame`）。*/
+int ce_poc_frame_masked(uint32_t engine_bits, uint32_t ceiling_bits, uint32_t *out_bits);
+
+/* ---- 线显示（`Gui+0x194` bit `0x2000`；唯一原生写者 = 卡 22 `0x40c288`，只置不清）---- */
+void ce_poc_line_hide_declare(uint32_t id, int on);   /* 粘性：1 = 不画那条开局指示线 */
+int  ce_poc_line_hidden(void);                        /* 有人在声明「不画」吗？ */
+int  ce_poc_line_hide_owner(void);                    /* 声明者 id（最小）；无人 = -1 */
+/* 帧界的决策（`ce_poc_apply` 调）。`bit_now` = 那一位当下的值（0/1）、`decl_exists` = 有人声明高度。
+ * 返回 1 且填 `*out_bit` = 把这一位写成这个值；0 = 一个字都不写。规则：
+ *   ① 有人 hide ⇒ 目标 0（**第一次**清之前把 `bit_now` 记成基准）；
+ *   ② hide 撤完且记过基准 ⇒ 按基准写回一次（然后忘掉基准）；
+ *   ③ 都没事、但有高度声明 ⇒ 目标 1（= 旧行为：照原生卡 22 把那条线打开）。*/
+int ce_poc_line_apply(int bit_now, int decl_exists, int *out_bit);
+/* 删卡 / 局末路径（`ce_poc_release` 调）：撤声明；若撤完没人 hide 且记过基准 ⇒ 返回 1 并填 `*out_bit`
+ * （调用方**立刻**写回 —— 删卡发生在商店里，帧钩子不跑）。返回 0 = 不用写。*/
+int ce_poc_line_release(uint32_t id, int *out_bit);
+void ce_poc_line_reset(void);                         /* 全清（`ce_sdk_setup` / 单测）：连基准一起清 */
+
+/* ---- 引擎折额的**兜底补偿**（倍率千分点；1000 = 不动）----
+ * 一手（`th18:0x446c17`–`0x446cf3`，与 `0x4469a7`–`0x446a41` 同形）：折额系数 = `0.9·(1 − d/450)`，
+ * `d = ⌊y − 字段⌋`（`cvttss2si` = 截断）；`d ≤ 0`（或道具 `state == 3` 真空飞行）走**满额支**。
+ * 本函数返回 `c_语义 / c_实际`（都在同一族里 ⇒ `0.9` 约掉，只剩 `(450−d_语义)/(450−d_实际)`）：
+ *   · 落笔值就是本层「遮」的 `min(语义高度, y)` 时，两个 `d` 相等（或都走满额支）⇒ **1000**；
+ *   · 只有第三方改过字段 / 帧内时序被破坏时才 ≠ 1000，这时按语义高度把值掰回来；
+ *   · 倍率夹在 `[1, 4000]`（越界 = 数值不可信 ⇒ 回 1000，宁可少给也不放大 32 倍）。
+ * 输入都是 **Q16 定点**（与计分层其余部分同单位；`vacuum` = 道具 `state == 3`）。*/
+int ce_poc_fold_ratio_permille(int32_t y_q16, int32_t poc_field_q16, int32_t poc_sem_q16, int vacuum);
+
 /* ============================ ★ 计分层（2026-09-13 按用户公式重做）============================
  * 规格（用户 2026-09-13；逐条推导与一手证据见 `../SCORE-LAYER-REWORK.md`）：
  *
@@ -224,6 +313,54 @@ void ce_score_reset(void);                 /* 全清（SDK 初始化 / 单测）
  * ★ 2026-09-13 订正：老站点（`0x446cf6`）填的是**引擎算完的最终值**（= 10 × 点，满额支同值、
  * 线下支已被打折），所以那时这个入参的含义虽然同量纲、却已经被系数污染过。
  * `difficulty` = `th18:0x4ccd00`（0 EASY … 3 LUNATIC、4 EXTRA）。两个都由 sdk.c 从引擎读。*/
+/* ============================ ★★ 计分层换版：每项走自己原作的曲线（用户 2026-09-18 定案）============================
+ * 总公式：`G = G_0 × coeff_0 + Σ_i ΔG_i × coeff_i`（口径与逐作 `coeff_i` 表见
+ * `engine/faith/OVERVIEW.md` 的「★★ coeff_i 到底有几种？」一节）。
+ *
+ * **落地路线 = A（写值时就归一）**，理由是用户 2026-09-18 那句「引擎显示不能照着 G 写吗？」——
+ * 一手：`th18:0x446cfc` 把 `esi` 交给显示 `call th18:0x4645f0`，紧接着 `th18:0x446d0d` 的魔数除法拿**同一个 `esi`**
+ * 做 `SCORE += esi/10` ⇒ **显示与分数同源**；归一之后**两者都照 G 走**（路线 B 只修分数，显示仍是引擎自己那个数）。
+ *
+ * 本层写出去的 = **归一后的值** `G_norm = G_0 + Σ_i ΔG_i × (coeff_i / coeff_0)`（点），
+ * 引擎随后乘 `coeff_0` ⇒ 实际到手 = `G_0·coeff_0 + Σ ΔG_i·coeff_i` ✓。
+ *
+ * ★ **全程整数**（用户 2026-09-18 追问「中间的过程支持浮点吗？」）：`d` 用 Q16 定点（`sdk.c` 现成），
+ *   各作曲线本来就是整数魔数除法（`k_mille·(450−d)/450`），比值 0.75 族恒 `5/6` ⇒ **取整顺序照抄原作**才逐位一致。
+ *   钩子路径**不碰 xmm0–7**（thcrap 只保证 GPR），也不碰 x87（`make dllx87` 门）。
+ *
+ * 系数族（卡的「这一份 ΔG_i 属于谁」；**不声明 = 老行为逐字节不变**）：
+ *   `NONE`         → `coeff_i = coeff_0`（比值 1）＝ 今天所有卡的默认
+ *   `FAMILY_075`   → th12–th17 ⇒ 比值恒 **5/6**（同锚同 `d`；这条已在 OVERVIEW 里证过）
+ *   `FAMILY_08`    → th08 ⇒ `coeff_i = 500 − d`（千分点，`d` ≤ 500 段）⇒ 比值 `(500−d)/coeff_0`
+ *   `FAMILY_1`     → th07 / th11 ⇒ **不吃折扣** ⇒ 比值 `1000 / coeff_0`（线下会反向放大）
+ *   `FAMILY_10`    → th10 ⇒ 🟡 还缺输入（`F = 显示信仰`），暂按 `NONE` 走并在日志里报一次（TODO）。
+ */
+typedef enum {
+    CE_COEFF_FAMILY_NONE = 0,
+    CE_COEFF_FAMILY_075  = 1,
+    CE_COEFF_FAMILY_08   = 2,
+    CE_COEFF_FAMILY_1    = 3,
+    CE_COEFF_FAMILY_10   = 4
+} ce_coeff_family_t;
+
+/* 几何桥（每颗道具、在卡回调之前填）：`y_q16` = 自机 y、`poc_q16` = 回收线高度，都是 Q16 定点。
+ * ★ 有了它本层就能**自己算 `coeff_0`**（引擎那段也是整数骨架）：线上（y ≥ 线）= 1000‰、
+ *   线下 = `900·(450−d)/450`（`d` = 线 − y，px；`d ≥ 450` ⇒ 0‰ = 引擎只给「下限 +1 分」那一档）。*/
+void ce_score_bridge_geom(int32_t y_q16, int32_t poc_q16);
+/* ★★ 2026-09-18 补：**各作曲线吃谁的 y 不一样**（一手：th06/th07/th08/th10 判**道具 y**、
+ * th12/th13/th15/th18 判**自机 y**）⇒ 这个三参版本同时带上两个 y（都是 Q16）。`coeff_0` 用自机 y
+ * （引擎读的就是 `PLAYER+0x624`），族 10 / 08 用道具 y（`item+0xc2c`，`CE_ITEM_POS`）。
+ * 两参版本保留 = `y_item := y_player`（旧调用 / 单测）。*/
+void ce_score_bridge_geom2(int32_t y_player_q16, int32_t y_item_q16, int32_t poc_q16);
+/* th10（110 风神录）那一族的曲线要 `F` = **显示信仰**：`coeff = 0.5 − d×(F−100000)/(6080·F)`（一手见
+ * `engine/faith/th10/01-faith-and-points.md`）。卡每帧/每颗填一次；`F ≤ 0` ⇒ 比值回 1000（不归一）。*/
+void ce_score_family10_faith(int32_t faith_display);
+int  ce_score_coeff0_permille(void);              /* 本颗的 `coeff_0`（千分点）；无几何信息时回落到标记位 */
+int  ce_score_ratio_permille(int family);         /* `coeff_i / coeff_0`（千分点）；`coeff_0 ≤ 0` ⇒ 1000（不归一）*/
+/* 卡声明「我这一份 ΔG_i 属于哪个族」（粘性；`ce_layer_drop_card` 会清）。0 = 不声明（= NONE）。*/
+void ce_score_family_declare(uint32_t id, int family);
+int  ce_score_family_of(uint32_t id);
+
 void ce_score_bridge(uint32_t raw_value, int difficulty);
 /* ★★ `coeff_06`（收取高度系数）= **引擎自己的机制，本层刻意不重实现**（用户规格：「不要新建，
  * 它实际上是已经在运作的机制本身」）。一手（`th18:0x446bf9`–`0x446cf3`，**落笔点就在这段的开头**）：
@@ -233,10 +370,13 @@ void ce_score_bridge(uint32_t raw_value, int difficulty);
  *   · 系数乘在**身价**上（`0x446cfe` 之后的 `mul esi` / `SCORE(0x4cccfc) += …`）。
  * ⇒ 因为落笔点搬到了这段**之前**（写 `ecx`），它现在作用在**整笔 `G_0 + ΣG_i`** 上，
  *   **对所有声明者一视同仁**：我们既不该、也不需要自己再乘一次（自己乘 = 双乘）。
- * ⚠ 🟡 **仍未钉死**：那条折扣曲线的**精确形状**（本次重读得到的形状是**线性**的
- *   `≈ 0.9 × (1 − d/163.18)`，`d` = 自机 y − 回收线，单位 px；`0.9` 来自 `9F/10` 那一项，
- *   除数来自 `0x446c5c` 的魔数 `0x91a2b3c5` + `add edx,ecx` + `sar edx,8`）。
- *   它不影响本层算式（引擎自己算），所以按用户口径**记 🟡 待验**，见 SCORE-LAYER-REWORK.md §4。
+ * ★ **2026-09-18 订正（一手，三作互证）**：那条折扣曲线的精确形状 = **线性**的
+ *   `≈ 0.9 × (1 − d/450)`，`d` = 自机 y − 回收线，单位 px；`0.9` 来自 `9F/10` 那一项，
+ *   除数来自 `0x446c5c` 的魔数 **`0x91a2b3c5` = `ceil(2^40/450)`**（逐位相等；`imul` + `add edx,ecx`
+ *   + `sar edx,8` 就是有符号 **÷450**）。旧稿写的 `163.18` 是把「负魔数补正」误读成「分子 +2^32」，
+ *   `d ≥ 450` 时系数为负、被引擎顶到下限（**+1 分**）。
+ *   TH14 / TH16 / TH17 的同类例程用同一个魔数 = 同一个 ÷450（系数 0.75 那种），是旁证。
+ *   一手全链：`engine/faith/th18/01-point-item-value.md` §6、`engine/faith/th14/01-point-item-value.md` §5。
  *   要读当下这一颗的系数（诊断 / HUD）就用下面这个值 —— 由 sdk.c 从站点现场判「线上 / 线下」写。*/
 void ce_score_set_coeff(uint32_t permille);
 int  ce_score_coeff_permille(void);
@@ -256,6 +396,51 @@ int  ce_score_signal_strength(void);        /* Σ 各卡声明的信号强度（
 /* ★ 合成用的耦合系数 = 擦弹倍率 + 信号强度；**两边都没有贡献时 = 1000**（×1.0），
  * 所以未耦合族的卡不会因为「没人声明信号」而被缩到 0。*/
 int  ce_score_coupling_permille(void);
+
+/* ============================ ★★ 共享 PIV 池 + 擦弹族（用户 2026-09-18 定案）============================
+ * 口径（逐条有出处；推导与跨作证据见 `engine/faith/OVERVIEW.md` 的
+ * 「结论：th12–th17 可以共用一个 PIV」与「跨作『擦弹 ⇒ ？』全表」两节）：
+ *
+ *   · **池里装的是「额外」最大得点**（点），**初值 0** —— 只有加进去的才算「额外」
+ *     （用户逐字：「初值是 0，因为只有加进去的才是『额外』最大得点」）。
+ *   · **th12–th17 六作的 `CURRENT_PIV` 是同一个量** ⇒ 实现上**共用一块池**（不必六套）。
+ *   · ★ **写入闸在「写」这一侧**（用户 2026-09-18：「**大家都往 PIV 里面写相当于自动相加了**，
+ *     只是写的时候**自己这边有一道最大写入的闸**」）：每个写入者有自己的**可写上限 = `cap_i − init_i`**，
+ *     它累计写满就再也写不进去；池本身**不做读值钳位**。
+ *     ⇒ 同一件事的另一种说法（用户举例）：th13 EASY 初值 5000、上限 100000
+ *       ⇒「th13 路径就只能最多往里面写入 `100000 − 5000` 点 PIV」= **95000**。
+ *   · ★ **池只有一份、自动相加**：多卡同装 = 多一个**来源**涨（用户：「多加了一套系统」），
+ *     不是把池数 N 遍 ⇒ 族项 = **池的当前值**（`ce_piv_family_points()`）。
+ *   · 六作的 `coeff_i` 恰好完全相同（0.75 族，锚与 `d` 已统一 ⇒ 相对 `coeff_0` 恒为 5/6）
+ *     —— 所以「各报一份」与「先求和再乘」在这里等价（那一步在计分层换版时落地）。
+ *
+ * **擦弹 ⇒ 最大得点**是这一族里**唯一**「按状态算、不按卡算」的东西（用户口径：**别加一张卡擦弹数的作用就 +1 次**）：
+ * 一手四作（th12–th17）同形「每 +1 擦弹 ⇒ 最大得点 +1 显示」，所以本层把它做成**一个**写入者
+ * （`ce_graze_points()`，写进同一块池），只在族内有卡在场时非 0；`graze` 由 `sdk.c` 在落笔点现场从 `0x4ccd0c`
+ * 读进来（普通内存读，**不新增站点**）。*/
+void ce_piv_reset(void);                                  /* 新局 / run reset：池归 0（在场声明保留）*/
+int  ce_piv_claim(uint32_t id, int32_t writable_cap);      /* 声明在场 + 本卡可写上限（= cap_i − init_i，点）*/
+/* ★ 便利入口：112–117（th12–th17）的 `cap_i − init_i` 已按各自难度表内置（一手出处逐条在实现里），
+ *   卡侧只要 `ce_piv_claim_auto(ce_card_id(c), ce_difficulty())` 一行。
+ *   返回 1 = 认出了这张卡并 claim 成功；0 = 不在表里（id 不是 112–117 / 难度越界）。*/
+int  ce_piv_claim_auto(uint32_t id, int difficulty);
+int32_t ce_piv_cap_for(uint32_t id, int difficulty);       /* 查表：本卡该难度的可写上限（-1 = 查不到）*/
+void ce_piv_release(uint32_t id);                          /* 退场（`ce_layer_drop_card` 自动调）*/
+void ce_piv_add(uint32_t id, int32_t points);              /* 往池里加（**加值不夹**）；未 claim 的 id 不加*/
+int32_t ce_piv_pool(void);                                 /* 池的当前值（额外量，点）*/
+int32_t ce_piv_reading(uint32_t id);                       /* 本卡读数 = 池的值（一份；不在场 ⇒ 0）*/
+int32_t ce_piv_written(uint32_t id);                       /* 本卡已写进池的量（≤ 它的可写上限）*/
+int32_t ce_piv_room(uint32_t id);                          /* 本卡还剩多少可写（= cap_i − 已写）*/
+int32_t ce_piv_family_points(void);                        /* ★ 族项 = **池的当前值**（一份、自动相加）*/
+int  ce_piv_present_count(void);
+int32_t ce_piv_cap_of(uint32_t id);                        /* 诊断：本卡的可写上限（< 0 = 不在场）*/
+
+void ce_graze_bridge(uint32_t graze_total);                /* sdk.c 在落笔点读一次 `0x4ccd0c` 塞进来 */
+int  ce_graze_family_claim(uint32_t id);                   /* 112/113/114/115 声明「我是这一族」*/
+void ce_graze_family_release(uint32_t id);
+int  ce_graze_family_present(void);
+int32_t ce_graze_points(void);                             /* = 本局擦弹 × 1（点）；族内无卡 = 0（**只算一次**）*/
+uint32_t ce_graze_total(void);                             /* 诊断：桥进来的擦弹总数 */
 
 /* ---- 读值 ---- */
 /* 原生基础值 G_0（**点**）= clamp(桥值, 身价下限, 按难度身价上限) / 10
