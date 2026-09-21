@@ -123,6 +123,14 @@ static int32_t      s_slot_stage111 = -1;
 /* ---- 灵击（★ 2026-09-15 一手对齐：伤害 / 帧数 / 判定框全部换成 th11 原值）------------------
  * 触发（spec §2.4「B 双选」）：X 键上升沿 + 炸弹库存 == 0 ⇒ 本卡的灵击（库存 > 0 交给原生）。
  *
+ * ★★ **2026-09-21 追加第二个入口 = C（`WORK-PACKAGES.md` §9，owner 口径逐字）**：
+ *   「在改动前，灵击只能由没 B 时候的 X 触发；但是改动后，**灵击还能由 C 触发**。**灵击侧的规则完全不变**。」
+ *   ⇒ 本卡从被动卡改成**主动卡**（`CE_CARD` 声明 `.active_recharge = 1` + `.on_activate`）；
+ *     C 入口的实现 = `on_activate()` **直接调 `signal_bomb10_start()`** —— 与上面这条 X 路径**同一个入口、
+ *     同一份实现**（不复制、不另写一套），灵击侧（消耗 / 伤害 / 帧数 / 判定框 / 决死形态 /
+ *     魔理沙的河童罩子与爱丽丝 0.5 档）**一个字节都没变**，也**没有**新增任何参数 / 闸 / 数值。
+ *     逐项对照表见 `on_activate()` 上面那一段注释。
+ *
  * **一手（研究文档 §2，`th11:0x433a90` = 伤害源原语 `(pos, 每帧伤害, 存活帧数, 半宽, 半高)`）**：
  *
  *   | Bomb | 每帧伤害 | 存活帧数 | 半宽 × 半高 | 单目标吃满 | 一手调用点 |
@@ -3498,7 +3506,82 @@ static void on_bomb_spent(ce_card_t *c)
            (int)CE_CURRENT_BOMBS());
 }
 
+/* ============================ ★★ 主动卡入口（`on_activate` / 用户的 C 键） ============================
+ * 2026-09-21（`WORK-PACKAGES.md` §9，owner 口径逐字）：
+ *   「在改动前，灵击只能由没 B 时候的 X 触发；但是改动后，**灵击还能由 C 触发**。**灵击侧的规则完全不变**。」
+ *
+ * ## 这一层做了什么（只有「多一个入口」这一件事）
+ *   · `.active_recharge = 1` ⇒ SDK 在卡绑定时走**主动卡**那一支（`sdk.c` 的 `active_init`）：
+ *     `flags = (flags & ~0x46) | 0x08`（`CE_FLAG_ACTIVE`，一手 `th18:0x411d83` 的主动 case）
+ *     + 写 `card+0x48` = 充能时长 + 按 Tenshi 初始化 `+0x34`/`+0x38` 两组 zTimer
+ *     ⇒ **引擎**据此把本卡放进主动卡组、画进 HUD 主动行、可被 D 选中，
+ *     并在 C 键上升沿（`INPUT_PRESSED & 0x400`，一手 `th18:0x45c048`）调到 `vtable+0x08`
+ *     = SDK 的 `ce_sdk_c_press`（它做门控：state 空闲 + 充能到底 ⇒ 再调这里）。
+ *   · 本函数**只调 `signal_bomb10_start()`**（X 路径用的那一个入口 / 那一份实现）。
+ *     **不复制、不另写一套**，也不在这里做任何灵击侧的计算。
+ *
+ * ## 与 X 路径（`on_tick_2` 的 ⑥）逐项对照 —— 只差「触发条件」，灵击侧**逐项相同**
+ *   | 项 | X 路径（⑥）| C 路径（本函数）|
+ *   | --- | --- | --- |
+ *   | 触发 | `CE_CURRENT_BOMBS() <= 0` 且 `INPUT_PRESSED & 0x2`（X 上升沿）| 引擎的主动卡分派：C 上升沿 `0x400` + 无对话 + 关卡在跑 + **本卡被 D 选中**（四重门控在引擎/SDK 侧，见 `engine/card/th18/04-active-cards.md` §2）|
+ *   | 形态判据 | `signal_core_deathbomb_window(player_state)` | **同一个判据**（下面逐字照写：同一函数、同一入参来源）|
+ *   | 火力门槛 / 消耗 | `signal_core_alice_power_spend()` → `mof_core_power_spend()`（≥2.00 档 / 扣 1 档 / 下限 1.05；魔理沙 = 爱丽丝 0.5 档）| 同（都在 `signal_bomb10_start()` 里）|
+ *   | 伤害 / 帧数 / 判定框 / 消弹 / 音效 / 视觉 | `signal_bomb10_start()` + `signal_bomb10_tick()` | 同（**同一个函数**）|
+ *   | 决死（B 形态）语义 | `by_hit` ⇒ 救命 `signal_cancel_impending_death()` + 消弹照常记账 | 同 |
+ *   | 魔理沙的特殊灵击（河童罩子）/ 罩子没破不让放 | `signal_bomb10_start()` 里的机体门 | 同 |
+ *   | 火力不足时 | **静默什么都不做**（不扣 P / 不消弹 / 不响音效）| 同（这里**不**加 `ce_refuse()` —— 拒绝音 + 日志是 X 路径没有的行为）|
+ *
+ * ## 三条口径说明（为什么这样写才对得上 owner 的话）
+ *   ① **没有新增闸**：这里**不**加「库存 == 0」。「没 B 时候」描述的是**改动前 X 那条路**的必要条件
+ *      —— 它是 X 键与**原生炸弹**的仲裁（库存 > 0 ⇒ X 交给原生），**不是灵击的规则**；
+ *      C 走的是完全独立的主动卡分派 ⇒ 加这个闸就是「新增闸」，与 §9 的口径相反。
+ *   ② **不加冷却数值**：`active_recharge = 1` 与本 mod 的两张主动卡**同一个先例**
+ *      （116 `season.c` 的 `.active_recharge = 1` / 118 `give12.c` 的同款）—— 它是 SDK 主动卡机器的
+ *      **入场券**，不是我们新定的冷却；灵击的真代价仍是「扣 1 档火力」（既有的那一条）。
+ *   ③ **返回值 0 = 瞬发**：`ce_sdk_c_press` 拿到 0 会把状态置 2（收尾），本卡**不声明** `on_active_tick`
+ *      ⇒ 主动卡机器不会替我们推进任何东西；灵击的效果照旧由 `on_tick_2` 的 ⑧-4（`signal_bomb10_tick`）
+ *      推进 —— **与从哪个入口发动无关**。
+ *
+ * ## 从 `c_press` 里「扣火力 + 重建子机 + 起 ANM VM」是原生的做法（一手，不是我猜的）
+ *   · `CardTsukasa__c_press` **`th18:0x410e60`**（原生主动卡 id 52 的 `+0x08`）：门槛 → `spend_power`
+ *     → `Player__repopulate_options_and_notify_cards` 三步（`sdk.h` §火力那一段的出处）。
+ *     本函数经 `signal_bomb10_start()` 做的正是同一批事（写 `CURRENT_POWER` + `ce_repopulate_options()`）。
+ *   · `CardTenshi__c_press` `th18:0x40ebf0` 在同一个分派里起效果 ANM VM（`04-active-cards.md` §3）
+ *     ⇒ `ce_anm_spawn()` 在这条路上也是原生行为（116 的 `on_activate` 先例同）。
+ *
+ * ## 🟡 已知的一帧相位差（诚实记一笔，不是数值差异）
+ *   帧序（一手 `engine.h` 的 `CE_PLAYER_SPEED_MULT` 注）：**AbilityManager tick（`th18:0x16`）先于 Player（`0x17`）**，
+ *   而 C 的分派在 `Player__on_tick__body`（0x17）里。⇒ C 入口发动的那一帧，
+ *   `on_tick_2` 的 ⑧-4（`signal_bomb10_tick`）**已经跑过**了 ⇒ 灵击的**第一次 tick 落在下一帧**；
+ *   X 入口是「⑥ 发动 → ⑧-4 当帧推进」。**总帧数（`MOF_BOMB_FRAMES` = 296）、每帧伤害、半径曲线、
+ *   消耗、消弹全部逐项相同**，差的只是「起手那一帧要不要立刻推进一次」。
+ *   ⇒ 若 owner 要连这一帧也对齐，改法是把它并进 ⑥（X 路径）——**那要动 X 路径，按 §9 口径不做**。*/
+static int on_activate(ce_card_t *c)
+{
+    signal_card_t *s = st(c);
+    uint8_t *pl;
+    int32_t ps, by_hit;
+
+    if (!s) return 0;
+    /* 形态判据 = **逐字照 X 路径**（`on_tick_2` ⑥）：决死窗口内发动 ⇒ 决死 B 形态（救命 + 消弹照常记账）。
+     * ⚠ 这两行是**同一判据的同一写法**（不是另写一套规则）：`signal_core_deathbomb_window()` 是
+     *   `signal_core.h` 里唯一的窗口判据，两个入口共用它；一手的窗口定义（`player+0x476ac == 4`）
+     *   见那里。*/
+    pl = CE_PLAYER();
+    ps = pl ? *(int32_t *)(pl + CE_PLAYER_STATE) : -1;
+    by_hit = signal_core_deathbomb_window(ps);
+    ce_log("signal: **C（主动卡发动）** ⇒ 调 signal_bomb10_start()（与 X 路径同一入口；库存 %d、"
+           "state %d%s）", (int)CE_CURRENT_BOMBS(), (int)ps, by_hit ? " = 决死窗口" : "");
+    signal_bomb10_start(s, by_hit);
+    return 0;                      /* 瞬发：不持续、不接管 `on_active_tick`（理由见上 ③）*/
+}
+
 CE_CARD(111,
+        /* ★★ 2026-09-21（`WORK-PACKAGES.md` §9，owner 终版口径）：**主动卡** —— 灵击多一个 C 入口。
+         *   `.active_recharge = 1` = 先例取值（116 / 118 同值，理由见 `on_activate()` 上面 ②）；
+         *   `.on_activate` 里**直接调既有 `signal_bomb10_start()`**；X 路径一字未动。*/
+        .active_recharge = 1,
+        .on_activate = on_activate,
         .ctor = ctor,
         .on_load = on_load,
         .on_tick_2 = on_tick_2,
