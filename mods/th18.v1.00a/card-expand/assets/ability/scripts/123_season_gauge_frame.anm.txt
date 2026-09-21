@@ -19,10 +19,10 @@ script script123 {
     alphaTime(20, 0, 255);
     stop();
     interruptLabel(4);
-    alphaTime(4, 0, 255);
+    alphaTime(20, 0, 255);   // ★ 2026-09-21 统一动态（TUNING §7.1）：淡回 = 20 帧线性到满亮
     caseReturn();
     interruptLabel(5);
-    alphaTime(4, 0, 32);
+    alphaTime(20, 0, 128);   // ★ 2026-09-21 统一动态（TUNING §7.1）：压暗 = 20 帧线性到 128（50% 透明）
     caseReturn();
     interruptLabel(1);
     alphaTime(20, 0, 0);

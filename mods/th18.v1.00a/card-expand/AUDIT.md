@@ -15866,7 +15866,7 @@ sprite 到 **477**（脚本 / sprite 无上限，只是可见性登记）。**�
   ⇒ **站点账不变**（`make gen` 的 patch md5 与改动前一致；`tools/gen_drift.py` 绿）；
   **主动卡组的内容变了**（多一张 111）⇒ 玩家侧「HUD 主动行 / D 键遍历顺序」会多一张卡，这是本次的**目的**。
 - **回归跑了什么（最终态，逐项实跑留档）**：
-  - **`make check` → rc=0**（命令 `make check`；日志 `/tmp/make_check_111b.log`）。关键读数：
+  - **`make check` → rc=0**（命令 `make check`；本次末次日志 `/tmp/make_check_111c.log`）。关键读数：
     `test_faith_hud_core: 4106 passed, 0 failed`、`test_hud_dim_core: 433 passed, 0 failed`、
     `test_signal_core: 2182 passed, 0 failed`、`cards.js: 37 张卡全部合规`、
     `x87 in our objects: 0`、`sites.py check` 27 个 BP_* 双向一致、`sitecheck --all` 全过、
@@ -15890,6 +15890,11 @@ sprite 到 **477**（脚本 / sprite 无上限，只是可见性登记）。**�
   （两处红都已自然消失，本会话**没有碰**过 `hud_dim.*` / `TUNING.md` / `test_faith_hud_core.c`）。
 - **不部署**：本次不出 DLL、不同步 modkit（`make release` / `tools/deploy.py` 都没跑）。
   产出物仅供 owner 验收；`th18_card_expand.dll` 是本机 `make dll` 的构建产物（**未发布**）。
+  工作树上那一版的 md5（**只作对账用，没有同步到任何 modkit 路径**）：
+  DLL `9e4e1f87e9b02de648715da3a0e05364`、`patch/th18.v1.00a.js` `d339b0ced4c57b9029338b1b0a33931c`
+  （★ **与本次改动前一致** = 站点账没动）、`patch/th18/cards.js` `29b8e169c3ccb76ea72ae6c769dffe53`、
+  `patch/files.js` `b22c5fe8ccc52e0652dab6bc1fc33f73`、`patch-test/th18.v1.00a.js` `7d04d3a7c736b1b9f06680afe3f0260b`、
+  `native/sites_gen.h` `b1c4448e36062cc87605ca9d59542676`。
 
 ### 5. 给 owner 的验收清单（实跑，单卡 111）
 

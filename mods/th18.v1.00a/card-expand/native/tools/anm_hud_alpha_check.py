@@ -9,8 +9,13 @@
     interruptLabel(4): alphaTime(<帧数>, 0, 255)         ← 淡回
 
 用户 2026-09-15 口径「**过渡帧得根治**」⇒ 两边都改成**脚本侧统一**的
-`alphaTime(4, 0, 32)` / `alphaTime(4, 0, 255)`（终点 32 = 跨卡统一件的 `HUD_DIM_ALPHA_DIM`；
-4 帧 ≈ C 侧 ±51/帧 走完 255→32 的 ~4.4 帧）。
+`alphaTime(4, 0, 32)` / `alphaTime(4, 0, 255)`。
+
+★★ 2026-09-21：owner 拍定「20 帧 / 50% 是 UI ⇒ 得统一成一个值」⇒ 终点与帧数**又换了一档**，
+现在脚本侧的统一写法 = **`alphaTime(20, 0, 128)`（压暗，终点 128 = 50% 透明）/ `alphaTime(20, 0, 255)`（淡回）**，
+与共享件 `cards/hud_dim.{h,c}` 的 `HUD_DIM_ALPHA_DIM`(128) / `HUD_DIM_FRAMES`(20) **同终点同帧数**
+（一手：TH15 `front.anm` script241 的 `alphaTime(20, 0, 0)`，见
+`engine/chapter/th15/02-chapter-panel-geometry-and-fades.md` §3）。
 
 改之前，116 那两支（脚本 126/127）靠 `cards/season.c` 里一段
 **`min(脚本 α, 32)` 的上限钳制**兜住脚本里的 64 —— 那是"同一件事两套实现"，
@@ -20,10 +25,10 @@
 ## 判据（确定性；只读）
 
 对下面 `FILES` 里每个脚本：
-  ① `interruptLabel(5);` 的下一条**可执行**行必须是 `alphaTime(4, 0, 32);`
-  ② `interruptLabel(4);` 的下一条**可执行**行必须是 `alphaTime(4, 0, 255);`
+  ① `interruptLabel(5);` 的下一条**可执行**行必须是 `alphaTime(20, 0, 128);`
+  ② `interruptLabel(4);` 的下一条**可执行**行必须是 `alphaTime(20, 0, 255);`
   ③ 这两条标签各**恰好一条**（多一条 = 有人加了第二条路，判据覆盖不到 ⇒ 也算失败）
-（`//` 注释行跳过；`offsetNNN:` 之类的标签行不算可执行行。）
+（`//` 注释行跳过、行尾 `//` 注释也剥掉；`offsetNNN:` 之类的标签行不算可执行行。）
 
 ## 为什么只查这 9 支
 
@@ -43,8 +48,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 NATIVE = os.path.dirname(HERE)
 SCRIPTS = os.path.join(os.path.dirname(NATIVE), "assets", "ability", "scripts")
 
-# 压暗 → `alphaTime(4, 0, 32)`、淡回 → `alphaTime(4, 0, 255)`（`TUNING.md` §7.1 的统一动态）
-LABELS = {5: "alphaTime(4, 0, 32);", 4: "alphaTime(4, 0, 255);"}
+# 压暗 → `alphaTime(20, 0, 128)`、淡回 → `alphaTime(20, 0, 255)`（`TUNING.md` §7.1 的统一动态；
+# ★ 2026-09-21 起：20 帧线性 / 终点 128（50% 透明），与共享件 `HUD_DIM_FRAMES` / `HUD_DIM_ALPHA_DIM` 同值）
+LABELS = {5: "alphaTime(20, 0, 128);", 4: "alphaTime(20, 0, 255);"}
 
 FILES = [
     # 116 天空璋：季节字（126）/ 可解放指示条（127）—— 这两支的 alpha 归脚本
@@ -88,6 +94,11 @@ def executable_lines(text):
     return out
 
 
+def code_of(raw):
+    """剥掉行尾 `//` 注释（脚本里常用它写一手留档）。"""
+    return re.split(r"//", raw, 1)[0].strip()
+
+
 def next_exec(lines, idx):
     """`lines` 里 idx 之后第一条可执行行（跳过 `offsetNNN:` 这类标签行）。"""
     for j in range(idx + 1, len(lines)):
@@ -114,7 +125,7 @@ def main():
             if len(hits) != 1:
                 continue
             nxt = next_exec(lines, hits[0])
-            got = nxt[1].strip() if nxt else "<文件结束>"
+            got = code_of(nxt[1]) if nxt else "<文件结束>"
             check(got == want,
                   "%s:%d interruptLabel(%d) 的下一条是 `%s`，应为 `%s`"
                   % (name, lines[hits[0]][0], label, got, want))
@@ -135,10 +146,10 @@ def main():
         print("anm_hud_alpha_check: %d/%d 项不一致" % (len(fail), n_check))
         for m in fail:
             print("  FAIL " + m)
-        print("  ⇒ 压暗/淡回的过渡（脚本侧）必须停在统一值：压暗 `alphaTime(4, 0, 32)`、"
-              "淡回 `alphaTime(4, 0, 255)`（`TUNING.md` §7.1 / `AUDIT.md` §DD-9）")
+        print("  ⇒ 压暗/淡回的过渡（脚本侧）必须停在统一值：压暗 `alphaTime(20, 0, 128)`、"
+              "淡回 `alphaTime(20, 0, 255)`（`TUNING.md` §7.1 / `AUDIT.md` §DD-9）")
         return 1
-    print("anm_hud_alpha_check: %d 项一致 ✅（压暗 4 帧→32 / 淡回 4 帧→255；%d 个脚本）"
+    print("anm_hud_alpha_check: %d 项一致 ✅（压暗 20 帧→128 / 淡回 20 帧→255；%d 个脚本）"
           % (n_check, len(FILES)))
     return 0
 

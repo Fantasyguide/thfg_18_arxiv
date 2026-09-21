@@ -1,0 +1,47 @@
+script script303 {
+    // 卡 112（星莲船）飞碟槽 HUD —— TH12 v1.00b `front.anm` **script81** 的逐条移植
+    //（生成器 assets/ability/make_ufo_hud_art.py；sprite / 中断号 / 时机 / alpha 表逐条照抄）。
+    // ★ 移植改动：Δ1 层号 20/21/23/24 → **25**（TH18 里只有 24/25 会被暂停模糊罩住）；
+    //   Δ2 删 `ins_85(1)`（v4 的 `unknown flag`，TH18 无此 opcode）；
+    //   Δ3 坐标 ×2（TH12 的 640 空间 → TH18 UI 层的**表面 px**）；
+    //   Δ4 尺寸 ×2（TH18 UI 层 `resolutionMode(2)` = 1 texel 1 表面 px，TH12 = 1 texel 1 个 640 单位 = 2 表面 px）；
+    //   Δ5 x 位移 0 单位（0 = 原版原值；96 = 跟着 TH18 的场地左边缘 128）—— 本脚本适用。
+    // 逐条依据、实像素证据与中断语义见生成器文件头。
+    sprite(@SLOT_EMPTY@);
+    // Δ2：原版的 `ins_85(1)` 已删（v4 表里它叫 `unknown flag`，TH18 无此 opcode）
+    randMode(1);
+    anchor(0, 0);
+    layer(25);
+    pos(104.0f, 912.0f, 0.0f);
+    alpha(0);
++15: // 15
+    alpha(255);
+    scale(1.0f, 1.0f);
+    scaleTime(8, 4, 3.0f, 3.0f);
++8: // 23
+    scale(3.0f, 3.0f);
+    scaleTime(8, 1, 2.0f, 2.0f);
++8: // 31
+    delete();
+    interruptLabel(7);
+    posTime(8, 0, 104.0f, 912.0f, 0.0f);
+    caseReturn();
+    interruptLabel(8);
+    posTime(8, 0, 146.0f, 912.0f, 0.0f);
+    caseReturn();
+    interruptLabel(9);
+    posTime(8, 0, 188.0f, 912.0f, 0.0f);
+    caseReturn();
+    interruptLabel(10);
+    sprite(@SLOT_EMPTY@);
+    caseReturn();
+    interruptLabel(11);
+    sprite(@SLOT_RED@);
+    caseReturn();
+    interruptLabel(12);
+    sprite(@SLOT_BLUE@);
+    caseReturn();
+    interruptLabel(13);
+    sprite(@SLOT_GREEN@);
+    caseReturn();
+}

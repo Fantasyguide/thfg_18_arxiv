@@ -256,16 +256,25 @@ int main(void)
             CHECK(hud_dim_gate(1, &r, be_out) == 0);       /* 越 0.1 px ⇒ 出 */
         }
 
-        /* 与共享件的动态连起来跑一遍：255 → 32 是 **4 帧**（±56/帧；= 脚本侧 alphaTime(4,0,·) 的帧数），闩锁与 alpha 同步 */
+        /* 与共享件的动态连起来跑一遍（★ 2026-09-21 起统一值 = **终点 128 / 20 帧线性**：
+         *   255 → 128 逐帧 = `255 + (−127)·t/20` ⇒ 249,243,236,…,128，第 20 帧精确到位；
+         *   闩锁与 alpha 同步；反向同长）。旧口径是 ±56（4 帧、终点 32）—— 那套已退役。*/
         hud_dim_init(&d);
-        CHECK(hud_dim_tick(&d, &r, pp_in) == 199);
-        CHECK(hud_dim_tick(&d, &r, pp_in) == 143);
-        CHECK(hud_dim_tick(&d, &r, pp_in) == 87);
-        CHECK(hud_dim_tick(&d, &r, pp_in) == 32);
-        CHECK(hud_dim_tick(&d, &r, pp_in) == HUD_DIM_ALPHA_DIM);
+        CHECK(hud_dim_tick(&d, &r, pp_in) == 249);
+        CHECK(hud_dim_tick(&d, &r, pp_in) == 243);
+        CHECK(hud_dim_tick(&d, &r, pp_in) == 236);
+        CHECK(hud_dim_tick(&d, &r, pp_in) == 230);
+        {
+            int k;
+            for (k = 4; k < HUD_DIM_FRAMES; ++k) (void)hud_dim_tick(&d, &r, pp_in);
+            CHECK(hud_dim_tick(&d, &r, pp_in) == HUD_DIM_ALPHA_DIM);   /* 第 20 帧精确到位 */
+        }
         CHECK(d.dim == 1);
-        CHECK(hud_dim_tick(&d, &r, pp_out) == 88);
-        CHECK(d.dim == 0);
+        {
+            int32_t a = hud_dim_tick(&d, &r, pp_out);                  /* 出：当帧起淡回（不跳变）*/
+            CHECK(d.dim == 0);
+            CHECK(a > HUD_DIM_ALPHA_DIM && a < HUD_DIM_ALPHA_FULL);
+        }
     }
 
     printf("test_faith_hud_core: %d passed, %d failed\n", s_pass, s_fail);

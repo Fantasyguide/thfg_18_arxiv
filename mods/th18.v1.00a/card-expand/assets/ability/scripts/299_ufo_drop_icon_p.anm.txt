@@ -1,0 +1,23 @@
+script script299 {
+    // 卡 112（星莲船）掉落物实体 —— TH12 v1.00b `bullet.anm` **script184** 的逐条移植
+    // （`local/th12.v1.00b/anm/bullet/bullet.anm.txt`；生成器 assets/ability/make_ufo_drop_art.py）。
+    // 逐条照抄：只把 `sprite(N)` 换成我们的图集成员名、`scriptNew(N)` 换成我们的脚本名。
+    // 一手出处与用途见生成器文件头（压缩包 = 一手道具 16/17/18；整颗 Bomb = 一手道具 7）。
+    type(1);
+    sprite(@DROP_ICON_P@);
+    layer(13);
+    randMode(1);
+    angleVel(0.0f, 0.0f, 0.09817477f);
+    scale(0.8f, 0.8f);
+offset84:
+    fsetMul(%F0, %RANDF2, 12.0f);
+    fsetMul(%F1, %RANDF2, 12.0f);
+    posTime(10, 9, %F0, %F1, 0.0f);
++10: // 10
+    jmp(offset84, 0);
+    interruptLabel(1);
+    scaleTime(8, 0, 0.0f, 0.0f);
+    posTime(8, 9, 0.0f, 0.0f, 0.0f);
++8: // 18
+    delete();
+}

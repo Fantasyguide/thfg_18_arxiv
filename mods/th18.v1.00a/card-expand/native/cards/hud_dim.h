@@ -10,13 +10,23 @@
  *   父 agent 第二处订正（2026-09-15h）：「**进 = 块矩形外扩 28**、出 = 外扩 44」——
  *   2026-09-15g 那版「进 = 矩形**之内**」是**裁错的**（见下「为什么要有边距」）。
  *
+ * ★★ **2026-09-21：终点与过渡帧换了基准**（owner 拍定「20 帧 / 50% 如果是 UI 就得统一成一个值，
+ *   你以哪个为基准都行」⇒ 父 agent 选**以 115 绀珠传那套为基准**，理由见下表「一手出处」）：
+ *   旧口径 = 终点 **32**（≈12.5%）/ 每帧 ±56（**4 帧**）；新口径 = 终点 **128**（**50% 透明**）/
+ *   **20 帧线性**。**六张卡（106–117 里用本件的：116/117/107/113/110+111 + 115）都走这一套**。
+ *
  * | 项 | 口径 | 谁定 |
  * | --- | --- | --- |
- * | 起始 / 终点 alpha | **255 / 32**（32 = 用户说的「靠近透明的那一个」）| 统一（❓ 用户口径）|
- * | 过渡 | **C 侧每帧 ±56**（255↔32 = **4 帧**：255−56×3 = 87 ⇒ 第 4 帧 31 钳到 32）| 统一（❓ 用户口径）。★ 2026-09-15j：与**脚本侧**的统一写法 `alphaTime(4, 0, 32)` / `alphaTime(4, 0, 255)` 同帧数 |
+ * | 起始 / 终点 alpha | **255 / 128**（128 = 50% 透明；owner 2026-09-19「透明改成 50%」）| 统一（❓ 用户口径 2026-09-21，以 115 那套为基准）|
+ * | 过渡 | **20 帧线性**（`HUD_DIM_FRAMES`：从**当前** alpha 线性走到目标 = `alphaTime(·, 0, ·)` 的 mode 0 语义）| 统一。**一手**：TH15 `front.anm` script241（章节面板父 VM）关面板时 `alphaTime(20, 0, 0)`，见 `engine/chapter/th15/02-chapter-panel-geometry-and-fades.md` §3。★ 与**脚本侧**的统一写法 `alphaTime(20, 0, 128)` / `alphaTime(20, 0, 255)` 同帧数同终点 |
  * | **进** | 自机落在「**块矩形外扩 `HUD_DIM_MARGIN`(28)**」之内 | 统一（❓ 用户口径 2026-09-15h；**一手各作的边距是 24–32**）|
  * | **出** | 自机离开「**块矩形外扩 28 + 16 = 44**」之外（**滞回带仍是 16 px**，这一项才是"动态统一"的内容）| 同上 |
  * | **块矩形本身** | **各卡自己那块 HUD 的几何**（表面 px；换算见下）| **各卡几何**（不统一）|
+ *
+ * ⚠️ **旧值留档（不许删）**：终点 64（116/117/107/110+111 的一手值）与 76（115 的自定值）
+ *   → 2026-09-15g 统一成 **32** → 2026-09-21 换成 **128**；帧数 ±51（5 帧）→ ±56（4 帧，2026-09-15j）
+ *   → **20 帧线性**（2026-09-21）。要回退/再调：改 `HUD_DIM_FRAMES` / `HUD_DIM_ALPHA_DIM` 两个宏（全卡一起变），
+ *   并同步 `assets/ability/scripts/123–127,175–178` 的 label 4/5 与 `native/tools/anm_hud_alpha_check.py`。
  *
  * ## 为什么要有边距（`HUD_DIM_MARGIN` = 28）—— 一手的语义本来就是「块矩形 + 一个边距」
  *
@@ -97,12 +107,14 @@
 
 /* —— 统一的动态（❓ 用户口径，见文件头；改这里 = 改所有卡）—— */
 #define HUD_DIM_ALPHA_FULL  255      /* 起始 / 未压暗 */
-#define HUD_DIM_ALPHA_DIM    32      /* 终点（用户：「靠近透明的那一个」）*/
-#define HUD_DIM_STEP         56      /* 每帧步长（C 侧，两个方向同）。
-                                      * ★ 2026-09-15j：**51 → 56** —— 56 = 223/4 + 0.75 ⇒ 255↔32 恰好 **4 帧**
-                                      *   （255−56×3 = 87，第 4 帧 87−56 = 31 ⇒ 钳到 32；反向 32+56×3 = 200，
-                                      *   第 4 帧 256 ⇒ 钳到 255），与**脚本侧**统一的 `alphaTime(4, 0, ·)`
-                                      *   逐帧对齐（原来 51 是 5 帧，比脚本慢 1 帧）。❓ 用户口径（UI 统一）*/
+#define HUD_DIM_ALPHA_DIM   128      /* 终点 = **50% 透明**（owner 2026-09-19「透明改成 50%」；
+                                      *  2026-09-21 拍定以 115 那套为基准统一。旧统一值 32 = 12.5%）*/
+#define HUD_DIM_FRAMES       20      /* 过渡帧数（C 侧，两个方向同）：从**当前** alpha 线性走到目标，
+                                      * 即 `alphaTime(t, 0, target)` 的语义（第 t 帧到位 = 步长 Δ/t）。
+                                      * ★ **一手**：TH15 `front.anm` script241（章节面板父 VM）关面板时
+                                      * `alphaTime(20, 0, 0)` —— 见
+                                      * `engine/chapter/th15/02-chapter-panel-geometry-and-fades.md` §3。
+                                      * 旧口径：±51（5 帧）→ ±56（4 帧，2026-09-15j）→ 本值。*/
 #define HUD_DIM_MARGIN     28.0f     /* ★ 进的边距：块矩形**外扩**这么多就算「自机靠近」；自机坐标 px。
                                       *   ❓ 用户口径（2026-09-15h 父 agent 裁；一手各作的边距 24–32 ⇒ 取 28）*/
 #define HUD_DIM_BAND       16.0f     /* ★ 滞回带宽度：出的一侧在「矩形 + MARGIN」之外**再**外扩这么多；
@@ -119,13 +131,18 @@ typedef struct {
     float x1, y1;                    /* 右下 */
 } hud_dim_rect_t;
 
-/* 卡的私有状态（放进卡的 state 结构 / 文件级 static）。字段顺序即初始化顺序，别单独复用某个字段。*/
+/* 卡的私有状态（放进卡的 state 结构 / 文件级 static）。字段顺序即初始化顺序，别单独复用某个字段。
+ * ⚠️ 2026-09-21 起多了 `from` / `t` 两个字段（线性 20 帧要记起点与已走帧数）⇒ **静态初值必须写全 4 个**
+ *    （`= { 0, HUD_DIM_ALPHA_FULL, HUD_DIM_ALPHA_FULL, HUD_DIM_FRAMES }`），或者直接调 `hud_dim_init()`。*/
 typedef struct {
     int32_t dim;      /* 闩锁：1 = 自机在「块 + MARGIN」上（已按迟滞保持）、0 = 不在 */
-    int32_t alpha;    /* 本帧 HUD alpha：HUD_DIM_ALPHA_DIM(32) ↔ HUD_DIM_ALPHA_FULL(255) */
+    int32_t alpha;    /* 本帧 HUD alpha：HUD_DIM_ALPHA_DIM(128) ↔ HUD_DIM_ALPHA_FULL(255) */
+    int32_t from;     /* 本次过渡的起点 alpha（方向翻转当帧的 alpha）*/
+    int32_t t;        /* 本次过渡已走帧数：0..HUD_DIM_FRAMES；**= HUD_DIM_FRAMES 表示稳态**（钉在目标上）*/
 } hud_dim_t;
 
-/* 初始化：dim = 0、alpha = 255（**满亮**，不是 0）。`d == NULL` 时什么都不做。*/
+/* 初始化：dim = 0、alpha = from = 255（**满亮**，不是 0）、t = HUD_DIM_FRAMES（稳态，不会凭空起斜坡）。
+ * `d == NULL` 时什么都不做。*/
 void hud_dim_init(hud_dim_t *d);
 
 /* 表面 px 的块 → 自机坐标矩形。约定（与 `ce_hud_slot_t` 一致）：`(x, y)` = 块**左下角**，
@@ -136,6 +153,8 @@ void hud_dim_rect_surface(hud_dim_rect_t *r, float x, float y, float w, float h)
  * 给「alpha 不在 C 侧」的卡用（113 的 alpha 在 anm 脚本里，只借这一半）。*/
 int hud_dim_gate(int was_dim, const hud_dim_rect_t *r, const float *pp);
 
-/* 推进一帧（= `hud_dim_gate()` + 朝目标走一帧 ±HUD_DIM_STEP 并钳位），返回**本帧 alpha**。
+/* 推进一帧（= `hud_dim_gate()` + 朝目标走**线性 20 帧**的一帧），返回**本帧 alpha**。
+ * 语义与 `alphaTime(HUD_DIM_FRAMES, 0, target)` 同形：方向翻转当帧从**当前** alpha 起算、第 t 帧到位；
+ * 稳态（`t == HUD_DIM_FRAMES`）恒等于目标。
  * 闩锁/alpha 同时可从 `d->dim` / `d->alpha` 读。`d == NULL` ⇒ 返回 HUD_DIM_ALPHA_FULL（不崩）。*/
 int32_t hud_dim_tick(hud_dim_t *d, const hud_dim_rect_t *r, const float *pp);

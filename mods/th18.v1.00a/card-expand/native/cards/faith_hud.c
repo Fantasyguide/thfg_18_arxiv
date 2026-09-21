@@ -190,7 +190,7 @@
  *     `sh.x/sh.y`）交给 `hud_dim_rect_surface()`；② 把 `hud_dim_tick()` 返回的 alpha 写进各元素
  *     的**两路**顶点色（`fh_set_alpha()`，见下）。判据 / 边距 / 滞回 / 斜坡全在共享件里。
  *   · 原先那三个本地常量（`FH_DIM_HYST 16` / `FH_DIM_ALPHA 32` / `FH_DIM_STEP 51`）**已删** ——
- *     它们的值现在分别是 `HUD_DIM_BAND` / `HUD_DIM_ALPHA_DIM` / `HUD_DIM_STEP`，**别再在本文件里重定义**。
+ *     它们的值现在分别是 `HUD_DIM_BAND` / `HUD_DIM_ALPHA_DIM` / `HUD_DIM_FRAMES`，**别再在本文件里重定义**。
  *
  * ## ★ 换算订正：`224` → `320`（本文件原先那一份的门限因此整体偏了 96 自机 px）
  *
@@ -224,9 +224,9 @@
  * | --- | --- |
  * | 进压暗 | 自机在**本块矩形外扩 28 px**（`HUD_DIM_MARGIN`）之内 |
  * | 淡回 | 自机在**本块矩形外扩 44 px**（= 28 + `HUD_DIM_BAND` 16）之外（滞回带 16 px）|
- * | 终点 alpha | **32**（「靠近透明的那一个」）|
+ * | 终点 alpha | **128**（50% 透明；★ 2026-09-21 起统一值，旧值 32）|
  * | 起始 alpha | 255 |
- * | 过渡 | **C 侧每帧 ±56**（255−56×3 = 87 ⇒ 第 4 帧 31 钳到 32 ⇒ **4 帧**到位）|
+ * | 过渡 | **C 侧 20 帧线性**（`HUD_DIM_FRAMES`；从当前值线性走到目标，第 20 帧精确到位）|
  *
  * ## 原一手值（留档，谁也不删；脚本里那几条 `alphaTime` 就是这个记录）
  *
@@ -234,8 +234,8 @@
  *     （`th11:0x41b4a1`–`0x41b55a` + `front.anm` script32/33/35）；
  *   · TH10：触发 `x < −128 ∧ y > 416`、淡回 `y < 400 ∨ x > −112`、压暗 `alphaTime(8, 1, 32)`
  *     （`th10:0x41499f`–`0x414a5a` + `front.anm` script51..57）。
- *   ⇒ **性质 = ❓ 用户口径**（本质 + 边距 + 滞回 16 + 终点 32 + C 驱动）；只有「终点取 32」这一条与
- *     TH10 一手同值，但**理由不是「TH10 就是 32」而是「取靠近透明的那个」** ⇒ 别写成「复刻 TH11 / TH10」。
+ *   ⇒ **性质 = ❓ 用户口径**（本质 + 边距 + 滞回 16 + 终点 128 + C 驱动）；终点**不是**复刻任何一作
+ *     （TH10 一手是 `alphaTime(8, 1, 32)`、TH11 是 `alphaTime(10, 0, 64)`，都已退役）⇒ 别写成「复刻 TH11 / TH10」。
  *
  * ## 实现方式 = C 驱动（不再发脚本的中断 2/3）
  *
@@ -278,9 +278,10 @@ static uint32_t s_mult_spr[FH_MULT_N];
 
 static uint32_t s_bar[2];                            /* 0 = 亮条 / 1 = 影 */
 /* ★ 2026-09-15h：压暗状态 = 共享件 `hud_dim_t`（闩锁 + alpha）—— 原来本文件自己有两格
- * `s_dim` / `s_dim_a`（已删）。**静态初值写成满亮 255**（`hud_dim_init()` 也是这个值）：
+ * `s_dim` / `s_dim_a`（已删）。**静态初值写成满亮 255 + 稳态帧数**（= `hud_dim_init()` 的四个值；
+ * ★ 2026-09-21：共享件多了 `from` / `t` 两格，静态初值必须写全，否则 `t = 0` 会让第一帧凭空起斜坡）：
  * 本文件在第一次 `hud_dim_tick()` 之前就会读它（`fh_place_combo()` 从数字位「借 alpha」）。*/
-static hud_dim_t s_hud_dim = { 0, HUD_DIM_ALPHA_FULL };
+static hud_dim_t s_hud_dim = { 0, HUD_DIM_ALPHA_FULL, HUD_DIM_ALPHA_FULL, HUD_DIM_FRAMES };
 static int32_t  s_flash;                             /* 上一次发的档位闪色档（-1 = 还没发过）*/
 static int32_t  s_age;                               /* 块起用后的帧数（喂 20 帧门）*/
 static int32_t  s_warned;                            /* 起 VM 失败只报一次*/
@@ -617,7 +618,7 @@ static void fh_dim_tick(float sx, float sy)
     const float *pp = ce_player_pos();
     int i;
 
-    /* ① 每帧现算本块矩形（块会随货架移动）→ ② 共享件：闩锁（边距 28 + 滞回 16）+ alpha 斜坡 ±56（4 帧）*/
+    /* ① 每帧现算本块矩形（块会随货架移动）→ ② 共享件：闩锁（边距 28 + 滞回 16）+ alpha 斜坡（20 帧线性 → 128）*/
     hud_dim_rect_surface(&r, sx, sy, FH_BLOCK_W, FH_BLOCK_H);
     (void)hud_dim_tick(&s_hud_dim, &r, pp);
 
@@ -826,20 +827,22 @@ void faith_hud_draw(void)
                    (int)((faith_hud_signal_strength(signal) % 1000) / 10),
                    (int)faith_hud_signal_level(signal),
                    (int)faith_hud_signal_width_px(signal), (int)combo);
-            /* ★ 2026-09-15h：压暗淡入的实况（❓ 用户口径的统一值：**块矩形 + 边距 28**、终点 32、每帧 ±56）——
-             *   `L` = 闸锁（1 = 已进入压暗），`a` = **本帧真正写进各 VM 的 alpha**（255 ↔ 32）。
+            /* ★ 2026-09-15h：压暗淡入的实况（❓ 用户口径的统一值：**块矩形 + 边距 28**、
+             *   ★ 2026-09-21 起 终点 **128**（50%）/ **20 帧线性**）：`L` = 闸锁（1 = 已进入压暗），
+             *   `a` = **本帧真正写进各 VM 的 alpha**（255 ↔ 128）、`t` = 本次过渡已走帧数。
              *   判据：自机**靠近块**（默认锚点 = 矩形 x −191.5..−97.5 / y 416..446，**外扩 28** 之内
-             *   ⇒ 实际可触发区 x ∈ [−184, −69.5] / y ∈ [388, 432]）⇒ 4 帧内 `a` 走到 32；
-             *   **出到「矩形 + 44」之外** ⇒ 4 帧内回到 255。这一行同时打印**本帧推出来的矩形**，
+             *   ⇒ 实际可触发区 x ∈ [−184, −69.5] / y ∈ [388, 432]）⇒ 20 帧内 `a` 走到 128；
+             *   **出到「矩形 + 44」之外** ⇒ 20 帧内回到 255。这一行同时打印**本帧推出来的矩形**，
              *   所以不用去猜门限是不是变过（它随货架槽位走）。`a` 卡在 255 而人确实贴着块
              *   ⇒ 闸锁/坐标有问题（`pp` 来自 `ce_player_pos()`，自机坐标口径 = `hud_dim.h` 的 `表面/2 − (320,16)`）。*/
             {
                 hud_dim_rect_t r;
                 hud_dim_rect_surface(&r, sh.x, sh.y, FH_BLOCK_W, FH_BLOCK_H);
-                ce_log("faith_hud: 压暗 L%d a=%d（目标 %d，步进 %d/帧）| 本块矩形(自机坐标) x %.1f..%.1f / y %.1f..%.1f"
+                ce_log("faith_hud: 压暗 L%d a=%d（目标 %d，过渡 %d 帧线性、已走 %d）| 本块矩形(自机坐标) x %.1f..%.1f / y %.1f..%.1f"
                        "（进 = 落在「矩形 + %.0f」内；出 = 出到「矩形 + %.0f」之外）",
                        (int)s_hud_dim.dim, (int)s_hud_dim.alpha,
-                       (int)(s_hud_dim.dim ? HUD_DIM_ALPHA_DIM : HUD_DIM_ALPHA_FULL), (int)HUD_DIM_STEP,
+                       (int)(s_hud_dim.dim ? HUD_DIM_ALPHA_DIM : HUD_DIM_ALPHA_FULL),
+                       (int)HUD_DIM_FRAMES, (int)s_hud_dim.t,
                        (double)r.x0, (double)r.x1, (double)r.y0, (double)r.y1,
                        (double)HUD_DIM_MARGIN, (double)(HUD_DIM_MARGIN + HUD_DIM_BAND));
             }

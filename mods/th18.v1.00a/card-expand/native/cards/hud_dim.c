@@ -7,6 +7,8 @@ void hud_dim_init(hud_dim_t *d)
     if (!d) return;
     d->dim = 0;
     d->alpha = HUD_DIM_ALPHA_FULL;      /* ★ 255：不复位成 0（否则开场 5 帧从全黑淡上来）*/
+    d->from = HUD_DIM_ALPHA_FULL;       /* ★ 2026-09-21：过渡起点也置满亮 */
+    d->t = HUD_DIM_FRAMES;              /* ★ 2026-09-21：**稳态**（= FRAMES）⇒ 第一帧不会凭空起斜坡 */
 }
 
 /* 表面 px 的块（左下角 + 宽高，高往上长）→ 自机坐标矩形。
@@ -39,19 +41,36 @@ int hud_dim_gate(int was_dim, const hud_dim_rect_t *r, const float *pp)
     return 1;
 }
 
+/* ★★ 2026-09-21：斜坡从「每帧固定 ±HUD_DIM_STEP」改成「**20 帧线性**」（`HUD_DIM_FRAMES`）。
+ *
+ * 为什么改：owner 2026-09-21 拍定「20 帧 / 50% 是 UI ⇒ 得统一成一个值，以哪个为基准都行」，
+ * 父 agent 选**以 115 那套为基准**；而 20 帧本身有**一手**出处 —— TH15 `front.anm` script241
+ * （章节面板父 VM）关面板时 `alphaTime(20, 0, 0)`（见
+ * `engine/chapter/th15/02-chapter-panel-geometry-and-fades.md` §3）。
+ *
+ * 语义与 anm 的 `alphaTime(t, mode 0, target)` 一致（`engine/anm/th16/07-general.md` 的 op 409）：
+ *   · **起步**：方向翻转那一帧记下当前 alpha 作起点（`from`）、帧数清零；
+ *   · **每帧**：`alpha = from + (target − from) × t / FRAMES`（t = 1..FRAMES）⇒ 第 FRAMES 帧**精确**落到目标；
+ *   · **稳态**：`t == FRAMES` 时恒等于目标（旧实现靠「钳位到目标」达到同一个效果）。
+ * ⚠ 旧口径 4 帧（±56）的整数步进**做不到**精确 20 帧（Δ=127 ⇒ 步长 6 = 22 帧、7 = 19 帧）
+ *   ⇒ 用「起点 + 帧计数」而不是步长。这也是 `hud_dim_t` 多出 `from` / `t` 两个字段的原因。*/
 int32_t hud_dim_tick(hud_dim_t *d, const hud_dim_rect_t *r, const float *pp)
 {
-    int32_t target;
+    int32_t was, target;
 
     if (!d) return HUD_DIM_ALPHA_FULL;
-    d->dim = hud_dim_gate(d->dim, r, pp);
+    was = d->dim;
+    d->dim = hud_dim_gate(was, r, pp);
     target = d->dim ? HUD_DIM_ALPHA_DIM : HUD_DIM_ALPHA_FULL;
-    if (d->alpha < target) {
-        d->alpha += HUD_DIM_STEP;
-        if (d->alpha > target) d->alpha = target;
-    } else if (d->alpha > target) {
-        d->alpha -= HUD_DIM_STEP;
-        if (d->alpha < target) d->alpha = target;
+    if (d->dim != was) {                    /* 方向翻转：从**本帧** alpha 起算（alphaTime 语义）*/
+        d->from = d->alpha;
+        d->t = 0;
+    }
+    if (d->t < HUD_DIM_FRAMES) {
+        d->t++;
+        d->alpha = d->from + (target - d->from) * d->t / HUD_DIM_FRAMES;
+    } else {
+        d->alpha = target;                  /* 稳态：钉在目标上 */
     }
     return d->alpha;
 }

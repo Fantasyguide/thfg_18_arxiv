@@ -1,0 +1,22 @@
+script script305 {
+    // 卡 112（星莲船）飞碟槽 HUD —— TH12 v1.00b `front.anm` **script135** 的逐条移植
+    //（生成器 assets/ability/make_ufo_hud_art.py；sprite / 中断号 / 时机 / alpha 表逐条照抄）。
+    // ★ 移植改动：Δ1 层号 20/21/23/24 → **25**（TH18 里只有 24/25 会被暂停模糊罩住）；
+    //   Δ2 删 `ins_85(1)`（v4 的 `unknown flag`，TH18 无此 opcode）；
+    //   Δ3 坐标 ×2（TH12 的 640 空间 → TH18 UI 层的**表面 px**）；
+    //   Δ4 尺寸 ×2（TH18 UI 层 `resolutionMode(2)` = 1 texel 1 表面 px，TH12 = 1 texel 1 个 640 单位 = 2 表面 px）；
+    //   Δ5 x 位移 0 单位（0 = 原版原值；96 = 跟着 TH18 的场地左边缘 128）—— **本脚本不适用**（面板是屏幕右列固定位）。
+    // 逐条依据、实像素证据与中断语义见生成器文件头。
+    sprite(@PANEL_INNER@);
+    layer(25);
+    scale(0.0f, 0.0f);
+    scaleTime(20, 0, 2.0f, 2.0f);
+    alpha(255);
++60: // 60
+    alphaTime(20, 0, 255);
+    stop();
+    interruptLabel(1);
+    scaleTime(20, 0, 0.0f, 0.0f);
++20: // 80
+    delete();
+}

@@ -401,15 +401,11 @@ typedef struct {
     int32_t        last_spawn_id;   /* 上一帧 zEnemyManager.next_enemy_id；-1 = 未初始化 */
     lolk_settle_t  last;            /* 最近一次结算（HUD 用）*/
     int32_t        last_age;        /* 结算后经过帧；-1 = 还没结算过 */
-    hud_dim_t      hud;             /* ★ 2026-09-15g：面板防遮挡状态（跨卡统一件的纯判据那一半）。
-                                     * · `dim`   = 闩锁（`hud_dim_gate()`：进 = 矩形 + 28 / 出 = +44）
-                                     * · `alpha` = 本卡自己的防遮挡 alpha —— 终点 **128**、**20 帧线性**
-                                     *   （❓ owner 口径 + TH15 script241 的 `alphaTime(20,0,0)`）。
-                                     * ⚠️ **没走** `hud_dim_tick()` 的统一动态（终点 32 / ±56 = 4 帧）——
-                                     *   理由与一手依据见本文件「2026-09-21 三条重做」那段 + `TUNING.md` §7.5。
-                                     *   原来的字段是 `int32_t panel_alpha`（255 / **76**、每帧 ±8）。*/
-    int32_t        dim_t;           /* ★ 2026-09-21：本次防遮挡过渡已走帧数（0..LOLK_PANEL_DIM_FRAMES）*/
-    int32_t        dim_from;        /* ★ 2026-09-21：本次过渡的起点 alpha（方向翻转时取当时的 alpha）*/
+    hud_dim_t      hud;             /* ★ 2026-09-15g：面板防遮挡状态 —— **全部走共享件 `hud_dim_tick()`**
+                                     * （闩锁 `dim` + alpha；终点 **128（50%）**、过渡 **20 帧线性** ——
+                                     * 这两个值 2026-09-21 起是**全卡统一值**，权威口径见 `hud_dim.h` 文件头
+                                     * 与 `TUNING.md` §7.1/§7.5；本卡不再自持一份）。
+                                     * 原来是 `int32_t panel_alpha`（255 / **76**、每帧 ±8）。*/
     int32_t        fade_t;          /* ★ 2026-09-21：面板退场已走帧数；**-1 = 没在退场**（按场次复位）*/
     int32_t        fade_from;       /* ★ 2026-09-21：退场起点 alpha —— 五行数值从它线性降到 0（20 帧）*/
     int32_t        waves_total;     /* 本 run 已结算波数（日志用）*/
@@ -795,14 +791,16 @@ static void panel_show(lolk_card_t *s)
  *      `scaleTime(10, 0, 1, 1)` 的横向展开，五行从第一帧就是满 alpha）✓ 我们已照抄。
  *
  * ① **终点 50%** —— 纯数值件：终点 alpha **32 → 128**（❓ owner 口径 2026-09-19）。
- *    共享件 `hud_dim.h` 的统一终点 32 **不动**（另外五张卡还在用），本卡自持一份（见下）。*/
+ *    ★★ 2026-09-21（同日稍后）**统一收口**：owner 拍定「20 帧 / 50% 是 UI ⇒ 得**统一成一个值**，
+ *    以哪个为基准都行」⇒ 父 agent 选**以本卡这套为基准**，**共享件 `hud_dim.{h,c}` 已改成
+ *    终点 128 / 20 帧线性**，另外五张卡（116/117/107/113/110+111）跟着一起变。
+ *    ⇒ 本卡**不再自持**终点与过渡帧数（`LOLK_PANEL_DIM_ALPHA` / `LOLK_PANEL_DIM_FRAMES` 已删），
+ *      改回调共享件的 `hud_dim_tick()`。权威口径 = `hud_dim.h` 文件头 + `TUNING.md` §7.1/§7.5。*/
 
-/* ---- ① 防遮挡终点 alpha（❓ owner 口径 2026-09-19：「改成 50%」）----
- * 50% 不透明 = 50% 透明 ⇒ alpha **128**。原来是共享件的统一值 32（12.5%）。*/
-#define LOLK_PANEL_DIM_ALPHA     128
-/* ---- ③ 防遮挡过渡帧数（复刻 TH15 script241 的 `alphaTime(20, 0, 0)`，线性、两个方向同长）----*/
-#define LOLK_PANEL_DIM_FRAMES     20
-/* ---- ③ 五行数值的退场淡出帧数（复刻 TH15 **面板父 VM** 的 `alphaTime(20, 0, 0)`）----*/
+/* ---- 面板**退场**（关面板）时五行数值的淡出帧数（复刻 TH15 **面板父 VM** 的 `alphaTime(20, 0, 0)`）----
+ * ⚠ 这**不是**防遮挡那条统一动态（那条已归共享件 `HUD_DIM_FRAMES`）：它是「面板到点关闭」这条独立路径，
+ *   与共享件的 20 帧**同源**（都是 TH15 script241 的 `alphaTime(20,0,0)`）但机制不同 ⇒ 留一个本卡常量。
+ *   六条标签条的退场淡出仍归**脚本自己**（`interruptLabel(1); alphaTime(10, 0, 0)`，TH15 原样）。*/
 #define LOLK_PANEL_FADE_FRAMES    20
 
 /* 面板可见块：**原生内容的 192×32**（不是 256×32 的画布 —— 见上面 ② 的「可见尺寸」）。*/
@@ -840,45 +838,31 @@ static int panel_rect(const lolk_card_t *s, hud_dim_rect_t *r)
     return 1;
 }
 
-/* ② 一帧一次：防遮挡判据（进 = 矩形 + 28、出 = 矩形 + 44；滞回 16 px）——
- * 共享件只用它的**纯判据**那一半 `hud_dim_gate()`（`hud_dim.h` 明说这一半就是给「alpha 不按
- * 统一动态走」的卡用的）。③ 的 20 帧线性 alpha 在本卡自持（`panel_dim_tick`）。*/
-static int32_t panel_dim_tick(lolk_card_t *s, const hud_dim_rect_t *r)
-{
-    const float *pp = ce_player_pos();
-    int32_t latch = hud_dim_gate(s->hud.dim, r, pp);
-    int32_t target;
-
-    if (latch != s->hud.dim) {                 /* 方向翻转：从**本帧**的 alpha 起算（alphaTime 语义）*/
-        s->hud.dim = latch;
-        s->dim_from = s->hud.alpha;
-        s->dim_t = 0;
-        ce_log("lolk: panel dim %s (alpha %d, rect 表面 x %.1f..%.1f y %.1f..%.1f, 自机 %.1f,%.1f)",
-               latch ? "ON" : "OFF", (int)s->hud.alpha,
-               r->x0 * 2.0f + 640.0f, r->x1 * 2.0f + 640.0f,
-               r->y0 * 2.0f + 32.0f, r->y1 * 2.0f + 32.0f,
-               pp ? pp[0] : 0.0f, pp ? pp[1] : 0.0f);
-    }
-    if (s->dim_t < LOLK_PANEL_DIM_FRAMES) s->dim_t++;
-    target = s->hud.dim ? LOLK_PANEL_DIM_ALPHA : HUD_DIM_ALPHA_FULL;
-    s->hud.alpha = s->dim_from + (target - s->dim_from) * s->dim_t / LOLK_PANEL_DIM_FRAMES;
-    return s->hud.alpha;
-}
-
-/* 每帧一次（`on_draw` 过完主菜单门 + 「面板在场」门之后）：推进防遮挡 alpha 并写进六条，
- * 返回本帧 alpha（五行数值用同一个值 ⇒ 与 TH15「文字取父 VM 的 alpha」同形）。*/
+/* ② 一帧一次：防遮挡的**全部动态都归共享件** —— 判据（进 = 矩形 + 28、出 = 矩形 + 44；滞回 16 px）
+ * 与过渡（终点 128 / 20 帧线性）都在 `hud_dim_tick()` 里（`hud_dim.h` 文件头 + `TUNING.md` §7.1）。
+ * 本卡只负责：每帧现算**自己那块可见块**的矩形、把返回的 alpha 写进六条、并在闩锁翻转时打一行日志。*/
 static int32_t panel_alpha_sync(lolk_card_t *s)
 {
     hud_dim_rect_t r;
-    uint32_t a;
+    const float *pp = ce_player_pos();
+    int32_t was = s->hud.dim, a;
+    uint32_t au;
     unsigned i;
 
     if (!panel_rect(s, &r)) return s->hud.alpha;
-    a = (uint32_t)panel_dim_tick(s, &r) & 0xffu;
-    for (i = 0; i < LOLK_PANEL_N; ++i) {
-        if (s->panel_id[i]) ce_anm_set_color(s->panel_id[i], (a << 24) | 0x00ffffffu);
+    a = hud_dim_tick(&s->hud, &r, pp);
+    if (s->hud.dim != was) {                 /* 闩锁翻转（= 玩家进/出触发区）—— 日志用 */
+        ce_log("lolk: panel dim %s (alpha %d, rect 表面 x %.1f..%.1f y %.1f..%.1f, 自机 %.1f,%.1f)",
+               s->hud.dim ? "ON" : "OFF", (int)a,
+               r.x0 * 2.0f + 640.0f, r.x1 * 2.0f + 640.0f,
+               r.y0 * 2.0f + 32.0f, r.y1 * 2.0f + 32.0f,
+               pp ? pp[0] : 0.0f, pp ? pp[1] : 0.0f);
     }
-    return (int32_t)a;
+    au = (uint32_t)a & 0xffu;
+    for (i = 0; i < LOLK_PANEL_N; ++i) {
+        if (s->panel_id[i]) ce_anm_set_color(s->panel_id[i], (au << 24) | 0x00ffffffu);
+    }
+    return a;
 }
 
 /* 六条：发中断 1 ⇒ **脚本自己**淡出（244–248/242/243 的 `interruptLabel(1); alphaTime(10,0,0);
@@ -906,13 +890,11 @@ static void panel_hide(lolk_card_t *s)
 }
 
 /* 防遮挡状态复位（换关 / 局末）：闩锁归零、alpha 回**满亮 255**、过渡计数清掉。
- * 共享件的 `hud_dim_init()` 只做「dim = 0、alpha = 255」；⚠️ 不复位成 0 —— `ce_state` 是 memset
- * 出来的，alpha = 0 会让开场那几帧面板是全黑的。*/
+ * 共享件的 `hud_dim_init()` 做全部四格（dim = 0、alpha = from = 255、t = HUD_DIM_FRAMES 稳态）；
+ * ⚠️ 不复位成 0 —— `ce_state` 是 memset 出来的，alpha = 0 会让开场那几帧面板是全黑的。*/
 static void panel_dim_reset(lolk_card_t *s)
 {
     hud_dim_init(&s->hud);
-    s->dim_t = 0;
-    s->dim_from = HUD_DIM_ALPHA_FULL;
 }
 
 /* ------------------------------------------------------------------ 行为 */
