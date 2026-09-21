@@ -425,11 +425,13 @@
     "desc": [
       "地灵殿的信号槽：在回收线上方供养信号，",
       "满槽会像上线一样自动收走全部道具。",
+      "D 切到本卡后按 C 发动灵击；无残弹按 X 同效。",
       "收集绿点攒信仰，信仰越高，",
       "金钱道具的得分越高。"
     ],
     "internal_name": "SA_COMM",
     "initial_unlocked": 1,
+    "category": 0,
     "price_tier": 10,
     "weight": 2,
     "sprite_large": 174,
@@ -522,14 +524,13 @@
     "name": "鬼形兽",
     "desc": [
       "敌人掉出动物灵，收集 5 颗填满槽。",
-      "槽满后按 C 发动霊撃：消弹 + 无敌；",
+      "槽满后按 X（炸弹键）发动霊撃：消弹 + 无敌；",
       "中弹时若槽已满，会消耗咆哮抵消死亡。",
       "不发动、等它自然结束会放出 2 只动物灵。",
       "致敬・东方鬼形兽。"
     ],
     "internal_name": "WBAWC",
     "initial_unlocked": 1,
-    "category": 0,
     "price_tier": 10,
     "weight": 2,
     "sprite_large": 186,

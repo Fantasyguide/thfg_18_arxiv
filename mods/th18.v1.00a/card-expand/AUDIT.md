@@ -4897,6 +4897,8 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 | 2026-09-18 | **106–118（共享资源 `assets/cards/` + 共享件 `assets/cardframe.py`、`patch/th18/cards.js`）** | 见下方「§BE-EG」 |
 | 2026-09-17a | **所有卡（共享件 `patch/th18.v1.00a.js` / `th18_card_expand.def` / `Makefile` / `sdk.c`：**摘掉断点 `ce_enemy_damage`**；113 退订 `.on_enemy_damage`）** | 见下方「§BE 详录 #41」 |
 | 2026-09-20 | **109 花映塚 / 110 风神录 / 111 地灵殿 / 112 星莲船 / 107 妖妖梦（P1「缺音效一批」；owner 裁定 A 的收窄版，随后逐个放行 signal / senro / faith）** | 见下方「§BE 详录 #42」 |
+| 2026-09-21 | **所有卡（共享件 `patch/th18/cards.js`：111 的 `category` 由缺省 2 → **0** + 加一行 `desc`；卡侧只动 111 自己的 `cards/signal.c`）** | 见下方「§BE-EV」 |
+| 2026-09-21b | **所有卡（共享件 `patch/th18/cards.js`：117 的 `category` 由 0 → 缺省 2 = 被动；卡侧只动 116 的 `cards/season.c` 与 117 的 `cards/animal.c`）** | 见下方「§BE-EW」 |
 
 
 > **§BE 详录 #42（2026-09-20 · P1「缺音效一批」8 条 + 音效表扩容新增 5 枚别作原版 SE）**
@@ -14939,6 +14941,28 @@ TH18 没有 PIV 状态量，但**有同量纲的对位物**：`engine.h` 的 `CE
 | 2026-09-18 | **计分层换版（待办 ②，已实装）**：`sdk_core.h`/`.c`（系数族 + 几何桥 + 路线 A 归一 + 自算 `coeff_0`）、`sdk.c`（`ce_score_bridge_geom`）、`sdk.h`（退场清族）、`tests/test_sdk_core.c`（+16 断言）、`senro.c`/`signal.c`/`mof.c` 各一行声明族 | 见下方「§BE 详录 #46」 |
 | 2026-09-18 | **四张卡的共享 PIV 涨源接线（112 / 113 / 114 / 115）**：`cards/ufo.c`、`cards/trance.c`、`cards/collect2x.c`、`cards/lolk.c` | 见下方「§BE 详录 #48」 |
 | 2026-09-18 | **所有卡（发布侧登记：本会话在 ⛔ 冻结期跑了 3 次 `make release`，把**整棵树**（含其他批次的未提交产出）发到了部署侧）** | 见下方「§BE 详录 #50」 |
+| 2026-09-21 | **六张卡（共享件 `native/cards/hud_dim.{h,c}`：终点 alpha 32 → **128**、每帧 ±56（4 帧）→ **20 帧线性**；行为级 —— 六张卡的 HUD 压暗深度与过渡都变了）** | 见下方「§BE 详录 #51」 |
+
+**§BE 详录 #51**（共享件 `hud_dim.*` 的统一动态换基准，2026-09-21）
+
+- **原始登记**：`｜ 2026-09-21 ｜ **六张卡（116 / 117 / 107 / 113 / 110+111 + 115）** ｜
+  `native/cards/hud_dim.{h,c}`（常量 + `hud_dim_t` 两个新字段 + `hud_dim_tick` 改成线性插值）、
+  `native/cards/lolk.c`（删本地覆盖 `LOLK_PANEL_DIM_ALPHA`/`LOLK_PANEL_DIM_FRAMES` + 自己那份斜坡，改回调共享件）、
+  `native/cards/faith_hud.c`（静态初值补全 4 格 + 日志打印 `HUD_DIM_FRAMES`/`t`）、
+  `assets/ability/scripts/{123,124,125,126,127,175,176,177,178}_*.anm.txt`（label 4/5 的 `alphaTime`）、
+  `native/tools/anm_hud_alpha_check.py`（判据值 + 剥行尾注释）、
+  `native/tests/test_hud_dim_core.c`（重写 §①/§④–⑧/§⑩ 的期望值与逐帧表）、`native/tests/test_faith_hud_core.c`（§H 末段） ｜
+  **改了什么**：统一动态从「终点 32 / 每帧 ±56（4 帧）」换成「**终点 128（50% 透明）/ 20 帧线性**」；
+  脚本侧 9 支的 label 4/5 同步换成 `alphaTime(20, 0, 128)` / `alphaTime(20, 0, 255)` ｜
+  **为什么**：owner 2026-09-21 口径「20 帧 / 50% 如果是 UI 的话**得统一成一个值**，你以哪个为基准都行」
+  ⇒ 父 agent 以 **115 绀珠传**那套为基准（50% 是 owner 2026-09-19 口径；20 帧有一手 = TH15 `front.anm`
+  script241 的 `alphaTime(20, 0, 0)`，见 `engine/chapter/th15/02-chapter-panel-geometry-and-fades.md` §3）｜
+  **怎么验的**：`make check` rc=0（`test_hud_dim_core` **433** 断言 / `test_faith_hud_core` 4106 /
+  `test_lolk_core` 136 全绿；`anm_hud_alpha_check` 24 项 ✅；capcheck / sitecheck / abi / 契约 / gen_drift 全绿）；
+  `python3 tooling/check-docs.py` 全部通过；DLL 交叉编译零 warning（`cards/lolk.c`）。
+  ⚠️ **资产耦合**：脚本改了 ⇒ `ability.anm` 必须与 DLL **同批发布**（本会话**没有**部署）。
+  ⚠️ **回退**：改 `HUD_DIM_ALPHA_DIM` / `HUD_DIM_FRAMES` 两个宏 + 9 支脚本 + checker 的 `LABELS`，四处一起。 ｜`
+
 
 ## §DS. ★★★ 112 的第五批：**飞碟槽 HUD 改成原版切图**（用户实跑 ⑤）+ **槽的 sprite 语义订正**（2026-09-18）
 
@@ -15709,3 +15733,178 @@ sprite 到 **477**（脚本 / sprite 无上限，只是可见性登记）。**�
 - `｜ 2026-09-21 ｜ 共享件 `native/sdk.h`（`CE_VK_*` 注释块）｜ **只加注释**：写明「`SPACE` 是调试键（111/112/106 都在用）⇒ 玩法功能禁止占用；玩法新键走"掩码空闲位"那条路」｜ 统筹会话（owner 口径）｜ ⚠ **首发提交 `93a55a3` 有错**：那行注释被插到了 `*/` **之后**（落在注释外）⇒ `make check` rc=2、整棵树编不过（由 115 会话报出）；本提交把它并回注释块内并把 C 侧门补跑 ⇒ `make check` rc=0、`check-docs` 全绿。教训：**注释级改动也必须过 `make check`**（`check-docs` 只查文档，不查 C 能不能编）｜`
 
 - `｜ 2026-09-21 ｜ 共享件宿主单测 `native/tests/test_hud_dim_core.c`（115 那两块数据 + 一段注）｜ **数据订正**：旧值按「左上角 + 256 画布」算，是**错的口径**（正确 = 图心锚 + 可见块 192×32）⇒ 115 改对后宿主单测必须跟着改，否则变成"机器背书过的错数"（现 300 passed）｜ 115 会话（P9 之二）｜ `make check` rc=0；口径一手见 `engine/chapter/th15/02-chapter-panel-geometry-and-fades.md` §2｜`
+
+## §BE-EW（2026-09-21）：**117 改被动**（共享数据 `patch/th18/cards.js`）+ **116 的 Shift+D 与「阻断 D」**（写引擎掩码）
+
+**一句话**：两处改动都落在**别人的卡之外**：117 的 `.active_recharge` 一删，JSON 侧的
+`category` 契约必须同步（否则契约 reason 1 ⇒ **整局新卡禁用**），所以动了共享数据 `cards.js`；
+116 的 Shift+D 需要在「按住 Shift」时让 D 不切卡，落点是**卡自己的 `on_tick_2`**（抹
+`INPUT_PRESSED` 的 D 位）—— 零新站点，但要按规矩登记「mod 侧开始写 `INPUT_PRESSED` 这个引擎全局」这件事。
+
+| 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
+| --- | --- | --- | --- | --- |
+| `patch/th18/cards.js` | 只动 117 那一行：删 `"category": 0`（缺省 2 = 被动）；文案「按 C 发动」→「按 X（炸弹键）发动」| 契约真值表 ⇒ 见下面 §理由① | 117 工单（`4c331878`），owner §1b | `contract_check.py` ✅ 37 张一致；JSON 可解析；`make check` rc=0 |
+| `native/cards/season.c` | 切换键改读掩码位（`INPUT_HELD & 0x008` + `INPUT_PRESSED & 0x800`）；按住 Shift 那帧抹 `INPUT_PRESSED` 的 D 位 | ①原始键盘不进 replay；②阻断落点 ⇒ 见 §理由② | 116 工单（`4c331878`）| `make check` rc=0；season.c 单独 mingw 编译零警告；一手链 = `engine/input/th18/01-key-mapping.md` §4.4/§5 |
+
+**§理由①（为什么 `cards.js` 非改不可）**：契约是双向的（`native/tools/contract_check.py` 判据 1 =
+运行时 `ce_sdk_contract_check` reason 1）：`category == 0`（主动）但行为里没有 `active_recharge` ⇒
+实跑 `FAIL: sdk: card 117 violates JSON/behavior contract (reason 1)` ⇒ **整局新卡禁用**
+（2026-09-19 的同类事故 reason 2 见 §BE-EJ）。缺省值 `2` = 被动能力卡（`cards_def.c:11`），
+与 106–112/114/115 八张被动系统卡同写法；显示分组不受影响（由 `menu.c` 的 `CE_SYS_CARD_LO..HI` 管）。
+
+**§理由②（为什么阻断落在卡自己的 `on_tick_2`）**：D 在引擎里只有一个消费者 = Player tick 的
+`th18:0x45c09c`（`set_selected_active_card(mgr,-1)` `th18:0x408b00` + SE `0x4e`）；SDK 的主动卡机器
+（卡虚表 `+0x08` → `ce_sdk_c_press`）**只管 C**、且只管我们自己的卡 ⇒ 对 D 不成立。
+而卡侧 tick 在 AbilityManager 节点 优先级 `0x16`、消费者在 Player 节点 `0x17` ⇒ 抹掉本帧
+`INPUT_PRESSED` 的 D 位即可，**零新站点**（逐条一手见 `engine/input/th18/01-key-mapping.md` §5）。
+
+**影响面（对既有卡 / 对引擎）**：
+
+- `cards.js` **只改 117 一行**：`category` 缺省 = 2，与八张被动系统卡一致 ⇒ 显示分组仍由
+  `menu.c` 的 `CE_SYS_CARD_LO..HI` 负责（`cards_def.h` 的口径：**不许靠 `category` 调显示顺序**），
+  商店权重 / 价格档 / 图鉴条目一个字节没动。
+- `season.c` 是 116 独占文件；它对引擎全局 `INPUT_PRESSED`（`th18:0x4ca434`）的写入是**本 mod 的第二处
+  输入面写**（第一处 = `mods/th18.v1.00a/mouse-control` 写 `INPUT_HELD`）。性质：每帧由
+  `Input__compute_edges`（`th18:0x42abc0` / 回放 `0x462b55`）重算 ⇒ **改的是本帧副本、不残留**；
+  只清 `0x800`，而 `INPUT_PRESSED` 的其他读者用 `0x201` / `0x80001` / `0x2` 三个掩码 ⇒ 位不相交、零误伤。
+  **只在 116 在卡组里 + 按住 Shift 时生效**；卡被删/不在卡组 ⇒ 一个字节都不碰。
+- **replay**：录制读点在 ReplayManager 节点（优先级 `0x11`）**早于**卡 tick（`0x16`）⇒ 流里存的是真值，
+  回放时同一帧我们同样再抹一次 ⇒ 录/放逐帧一致（这也是「不能改 `INPUT_HELD` 来阻断」的原因）。
+- **卡侧读者普查**：全仓读 `INPUT_PRESSED` 的卡只有 117（bit1 = X）、111/110（bit1 = X）、109（bit1 = X）、
+  111 的 `signal_core.h` 定义过 `SIGNAL_IN_CHANGE`（`0x800`）但只进一个**无使用者**的掩码常量
+  （`SIGNAL_IN_ACTION_MASK`，`grep` 全仓零引用）⇒ 抹 D 位对既有卡的可见影响 = **0**。
+- **站点账不变**（`make gen` 的 patch md5 与改动前一致）：本会话没碰任何声明源，
+  `0x45c084` / `0x45c09c` 两个引擎侧候选窗口只做了 `sitecheck` 评估（W1–W4 + L1 全过），**未加站点**
+  —— 依据：预算现实 27/24（`SITE_BUDGET` 记账线）、进程级 47/42（42 已知崩过）。
+
+**回归跑了什么**：`make check`（含 `contract_check` / `gen_drift` / `sites.py check` / `sitecheck --all` /
+`capcheck` / `engine_abi_check` / `dllx87` / `dllverify`）+ `python3 tooling/check-docs.py`（全部通过，
+363 文件）；`cards/season.c` 用 mingw 单独编译过（`-O2 -Wall -Wextra`，零警告）。
+**未部署**（按工单要求）。
+
+**实跑验收（交给 owner）**：① 装 116，进任意一关 ⇒ **按住 Shift 再按 D** 切一档副季节（HUD 季节字 +
+子机贴图/阵位一起换，SE = `0x4e`）；② **按住 Shift 时按 D 不切主动卡**（HUD 主动行图标不变、无 `0x4e`
+切卡音）；③ 松开 Shift 按 D ⇒ 切卡照旧；④ 录一段「切两次季节 + 清弹」的回放，重放同样的两次切换
+（日志 `season: sub-season -> … (Shift+D, mask 0x008|0x800)` 应逐次重现）。
+
+---
+
+## §BE-EV（2026-09-21）：`WORK-PACKAGES.md` §9 落地 —— **111 地灵殿改成主动卡：灵击多一个 C 入口**（灵击侧规则一字未变）
+
+**owner 口径（逐字，已入档 `WORK-PACKAGES.md` §9）**：
+> 「在改动前，灵击只能由没 B 时候的 X 触发；但是改动后，**灵击还能由 C 触发**。**灵击侧的规则完全不变**。」
+
+### 1. 改了什么（逐文件）
+
+| 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
+| --- | --- | --- | --- | --- |
+| `native/cards/signal.c`（**111 自己的文件**）| 见下 **①**（主动卡形态 + `on_activate()` + 文件头一段说明）| §9 终版口径：框架上是主动卡（进主动行 / 可被 D 选中 / C 键可发动），发动动作 = 既有灵击 | 111 工单 | `make dll` rc=0；`contract_check` 绿 + 反例红；逐项见 §4 |
+| `patch/th18/cards.js`（**共享件** —— `CLAUDE.md` 的「共享件」清单里 `patch/**` 在列）| 见下 **②**（111 的 `"category": 0` + 一行 `desc`）| 契约 reason 2：有主动行为 ⇒ `category` **必须** = 0 | 同上 | `tools/contract_check.py` 绿 + 反例红；`mkfiles.py --check` 全合规 |
+| `patch/files.js`（**生成物**）| `make files` 刷 CRC：`th18/cards.js` **713721660 → 1393158464** | thcrap 的 `files.js` 是 patch 清单的 crc32 ⇒ 改了 `cards.js` 不同步刷 = 远端分发的校验对不上 | 同上 | `make files` 的输出与 `zlib.crc32(open('patch/th18/cards.js','rb').read())` **逐值一致** |
+| `native/cards/signal_core.{h,c}` | **一个字未动** | §9 明确「不新增参数、不新增闸、不改数值」⇒ 形态判据 / 消弹记账 / 退款窗那些旋钮全部复用既有的 | 同上 | `make test-host` 的 `test_signal_core` → **2182 passed, 0 failed** |
+| 文档 | `AUDIT.md`（本节 + §BE 表一行）、`CARDS.md`（111 行）、`NEXT.md`（实跑验收清单）、`WORK-PACKAGES.md` §9（落地状态）| 落笔纪律 | 同上 | `python3 tooling/check-docs.py`：**本批文档 0 违规**（`[addr]`/`[version]`/`[tables]` 全 ✓）；⚠ 工作树里另有 **1 处**表格违规在 `TUNING.md:2593`，属**别的会话在飞**的改动（证据见 §4 末）|
+
+**① `native/cards/signal.c` 的三处**：
+
+- **(a)** `CE_CARD(111, …)` 加 **`.active_recharge = 1`** + **`.on_activate = on_activate`**（主动卡形态；
+  取值照本 mod 主动卡的先例 `= 1`，见 `season.c:1720` / `give12.c:70`）；
+- **(b)** 新增 `on_activate()` —— 里面**只调既有的 `signal_bomb10_start()`**（X 路径用的**同一个入口**，
+  不复制、不另写一套），形态判据用**同一个** `signal_core_deathbomb_window()`，返回 0 = 瞬发；
+  **没有** `ce_refuse()`、**没有**新增闸（连「库存 == 0」都没加，理由见 §3 末尾）；
+- **(c)** 文件头「灵击」段的**触发说明加一段**（第 124 行原有那一行 **一字未改**，新说明写在它**下面**）；
+- **X 路径本身（`on_tick_2` 的 ⑥，库存 == 0 + X 上升沿那一段）一个字节没动**；`signal_bomb10_start()` /
+  `signal_bomb10_tick()` / `signal_core.*` 全部逐字节未改。
+
+**② `patch/th18/cards.js` 的两处**（只动 **111 那一行**，其余 36 张卡的条目逐字节未动）：
+
+- **(a)** `"category": 0`（原为**缺省 = 2**）—— 契约 reason 2：**有**主动行为 ⇒ `category` **必须** = 0
+  （不一致 = 运行时 `FAIL: sdk: card 111 violates JSON/behavior contract (reason 2)` ⇒
+  **整局新卡禁用**，见 §BE-EJ 那次真实事故）；
+- **(b)** 加一行 `desc`「D 切到本卡后按 C 发动灵击；无残弹按 X 同效。」（62 字节 < 64 上限、总 5 行 ≤ 6 行）
+  —— 主动卡的既有文案口径就是写「D 切到本卡后按 C」（113 / 116 / 118 同款）。**纯显示件，可随时撤**。
+
+### 2. 主动卡框架的**连带面**（改 `.active_recharge` 会顺带发生什么 —— 逐条核过）
+
+| 连带面 | 会发生什么 | 一手 / 判据 |
+| --- | --- | --- |
+| `CE_FLAG_ACTIVE`（`flags` bit3）| SDK 的 `BP_ce_card_bind` 见 `active_recharge != 0` 走 `active_init()`：`flags = (flags & ~0x46) \| 0x08` + 写 `card+0x48`（充能时长）+ 按 Tenshi 初始化 `+0x34`/`+0x38` 两组 zTimer | `sdk.c` 的 `active_init`；一手主动 case `0x411d83`（`& ~0x46 \| 8`）|
+| **主动行 / D 选中** | 引擎据此把 111 归入主动卡组（HUD 主动行多一张 / `num_active` 计数）、`set_selected_active_card` 的遍历能选到它 | `engine/card/th18/04-active-cards.md` §2/§6；本 mod 已有 113/116/117/118 四张主动卡同路 |
+| **C 键分派** | `INPUT_PRESSED & 0x400` + **无对话** + **关卡在跑** + **本卡被选中**（四重门控在 `Player__on_tick__body` `0x45c048` 里）⇒ `vtable+0x08` = SDK 的 `ce_sdk_c_press`（门控：state 空闲 + 充能到底）⇒ `on_activate` | `04-active-cards.md` §2；`sdk.c` 的 `ce_sdk_c_press` |
+| **契约（`category`）** | 运行时 `ce_sdk_contract_check` reason 2 + 构建期 `tools/contract_check.py`；不一致 = **整局新卡禁用** | `sdk_core.c` / `tools/contract_check.py`；事故见 §BE-EJ |
+| **`.on_active_tick` / `+0x34` / `+0x4c` 重置** | 本卡**不声明** `on_active_tick`（瞬发：`on_activate` 返回 0 ⇒ `ce_sdk_c_press` 把 state 置 2 = 收尾 ⇒ ~9 帧后回 0）。`on_stage_start`/`on_run_reset` 里 SDK 追加的 `ce_sdk_active_reset()` 是**幂等**的，与 111 原有的「每关归零信号槽」无冲突 | `sdk.h` 的 `CE_CARD` 桩；`sdk.c` 的 `ce_sdk_active_reset` |
+| **卡片私有状态** | `ce_state` 的头部 `CE_STATE_RESERVED`(16) 字节本来就是 SDK 的（主动卡状态机 `ce_active_t` 只占 4 字节）⇒ 111 那 496 字节的私有状态**不受影响**（116/118/青眼白龙同款）| `sdk.h` §ce_state；`sdk.c` 的 `_Static_assert` |
+| **键位 / 回放** | C 是**引擎掩码里**的位（`0x400`）⇒ 回放天然安全（`§1b/§1c`）。**代价**：111 现在占用 C ⇒ 与 §1c 的「组合键登记表」相关（Shift+C 已被 116 的季节切换占用，两者不冲突：110/111 与 116 同装时 Shift 按住 + C = 116 换季节，单按 C = 111 灵击）| `engine/input/th18`、`WORK-PACKAGES.md` §1c |
+| **HUD** | 111 自己的 HUD（信号槽 / 三行读数）**一行未动**；新增的只是引擎画的「主动行里多一张图标」 | 本卡 `on_draw` / `faith_hud.*` 未改 |
+
+### 3. C 入口与 X 入口「逐项相同」核对表
+
+| 项 | X 入口（`on_tick_2` ⑥）| C 入口（`on_activate`）| 相同？ |
+| --- | --- | --- | --- |
+| 触发条件 | `CE_CURRENT_BOMBS() <= 0` + X 上升沿（`INPUT_PRESSED & 0x2`）| C 上升沿（`0x400`）+ 无对话 + 关卡在跑 + 本卡被 D 选中（引擎/SDK 的门控）| **只差触发**（口径允许）|
+| 灵击实现 | `signal_bomb10_start(s, by_hit)` | **同一个函数** | ✅ |
+| 形态判据 | `signal_core_deathbomb_window(* (player+0x476ac))` | **同一个函数、同一个入参来源**（逐字照写）| ✅ |
+| 火力门槛 / 消耗 | `signal_core_alice_power_spend()` → `mof_core_power_spend()`（≥2.00 档 / 扣 1 档 / 下限 1.05；魔理沙 = 爱丽丝 0.5 档）| 同（都在 `signal_bomb10_start()` 里）| ✅ |
+| 伤害 / 帧数 / 判定框 | TH11 原值那套（`signal_bomb10_tick()` 每帧 32.0 / 75 帧 / 20×30 的等价实现 + 消弹圈）| 同（同一个函数）| ✅ |
+| 决死（B 形态）语义 | `by_hit` ⇒ `signal_cancel_impending_death()` 救命 + 消弹照常记账 | 同 | ✅ |
+| 魔理沙的特殊灵击 | 河童罩子（`signal_shield_arm`）+「罩子没破不让放」 | 同（都在 `signal_bomb10_start()` 里，机体门原样）| ✅ |
+| 火力不足时 | **静默什么都不做**（不扣 P / 不消弹 / 不响音效）| 同（**没有**加 `ce_refuse()` —— 拒绝音/日志是 X 路径没有的行为）| ✅ |
+| 音效 / 视觉 / RANK | `signal_bomb10_start()` 里那几条 | 同 | ✅ |
+| 逐帧推进 | `on_tick_2` ⑧-4 `signal_bomb10_tick()` | 同（与入口无关）| ✅ |
+| **帧相位** | ⑥ 发动 ⇒ ⑧-4 **当帧**推进一次 | 发动发生在 **Player tick（0x17）**，而 AbilityManager tick（0x16）**已跑过** ⇒ 第一次 tick 落在**下一帧** | 🟡 **差一帧**（不是数值差异）：总帧数 296 / 每帧伤害 / 半径曲线 / 消耗 / 消弹逐项相同。一手帧序 = `engine.h` 的 `CE_PLAYER_SPEED_MULT` 注（`0x16` 先于 `0x17`）。要对齐这一帧就得动 X 路径（把 C 并进 ⑥）⇒ 按 §9 口径**不做** |
+
+**「没 B 时候」这一条为什么没有搬给 C**（三个理由，写在 `signal.c` 的 `on_activate()` 注释里）：
+① 它是 **X 键与原生炸弹的仲裁**（库存 > 0 ⇒ X 交给原生），**不是灵击的规则**；
+② §9 明写「**不新增闸**」——给 C 加一条 `bombs == 0` 就是新增闸；
+③ C 走的是**完全独立**的主动卡分派，与 X / 原生炸弹没有争用面。
+
+### 4. 影响面 + 回归
+
+- **对既有卡的影响面**：卡侧只动 `cards/signal.c`（111 独占）；共享件只动 `patch/th18/cards.js`
+  的 **111 那一行**（其余 36 张卡的条目**逐字节未动** —— `git diff` 只有 +3/−1 行）与它派生的
+  `patch/files.js` CRC。`sdk.*` / `sdk_core.*` / `sites.py` / `tooling/sitecheck.py` /
+  `hud_dim.*` / `season.c` / `animal.c` / `lolk.c` **一个字未动**（正被别的工单占）。
+  ⇒ **站点账不变**（`make gen` 的 patch md5 与改动前一致；`tools/gen_drift.py` 绿）；
+  **主动卡组的内容变了**（多一张 111）⇒ 玩家侧「HUD 主动行 / D 键遍历顺序」会多一张卡，这是本次的**目的**。
+- **回归跑了什么**（本次逐项实跑，命令与 rc 都留档）：
+  - `make dll` rc=0（0 error；3 条既有 `-Wunused-function` 警告来自被注释掉的道具钩子，与本改动无关）；
+  - `make cards-check` / `anm-verify` / `sht-verify` / `snd-check` / `dllx87`（**0 条 x87**）/ `dllverify`
+    —— **逐项 rc=0**；
+  - `python3 sites.py check` rc=0（27 个 BP_* 双向对上）；`tools/contract_check.py` rc=0（**+ 反例红**）；
+    `tools/gen_drift.py` rc=0（三份生成物无漂移）；`tools/sitecheck.py --all` rc=0（窗口 56 / 落点 6）；
+    `tools/capcheck.py` rc=0；`tools/engine_abi_check.py` rc=0；`tools/anm_hud_alpha_check.py` rc=0；
+  - `make test-host`：其余全部单测绿（含 `test_signal_core` **2182 passed**），**唯一红** =
+    `test_faith_hud_core` 的 6 条 `hud_dim_tick` 断言 —— **不是本次改动**：那条测试链的是
+    `test_faith_hud_core.c + faith_hud_core.c + signal_core.c + faith_core.c + mof_core.c + hud_dim.c`，
+    **不含 `cards/signal.c`**；病灶是**另一个会话正在飞的 P9「20 帧 / 50%」改动**（`cards/hud_dim.{h,c}`
+    在**未提交的工作树**里已把终点 32→128、步长±56→20 帧线性，而该测试的期望值还没跟着改）。
+    **对照实验（决定性）**：把 `cards/hud_dim.{c,h}` 换成 `HEAD` 版、其余不动 ⇒ 同一条测试
+    **4106 passed, 0 failed**；用工作树那版 ⇒ **6 failed**。⇒ `make check` 的 rc≠0 由那一批独占，
+    **本工单不含任何红**。（本会话按纪律**不碰** `hud_dim.*`；等那批落地后 `make check` 自然全绿。）
+  - `python3 tooling/check-docs.py`（**同一条结论，只是另一个文件**）：本批文档 **0 违规**；
+    工作树里剩的 **1 处**（`TUNING.md:2593` 的表格单元格 238 字符 > 200）是**别的会话**的未提交改动
+    —— 证据：`git show HEAD:…/TUNING.md` 里**超 200 字符的表格行 = 0 条**，工作树里 = 1 条，
+    且那一行正是 `git diff` 里他们**新增**的 `| 终点 alpha | **128**（50% 透明）| … |` 行。
+    **对照实验**：另开一个 `git worktree`（= HEAD 全干净）+ 只把**本批 4 份文档**覆盖进去 ⇒
+    `[addr] ✓ / [version] ✓ / [tables] ✓`（那棵树里剩下的都是「`local/` 不存在 / 未跟踪新文件」造成的
+    链接噪音，与本批无关）。**修法是一行**（把那个单元格的说明拆到表下），但那是他们的文件 ⇒ 本会话不碰。
+- **不部署**：本次不出 DLL、不同步 modkit（`make release` / `tools/deploy.py` 都没跑）。
+  产出物仅供 owner 验收；`th18_card_expand.dll` 是本机 `make dll` 的构建产物（**未发布**）。
+
+### 5. 给 owner 的验收清单（实跑，单卡 111）
+
+1. **编成/图鉴**：111 仍在原位（主动卡类别 → 它落在**主动段**；106–117 的**显示分组**是靠 `menu.c`
+   的 `CE_SYS_CARD_LO..HI`，与 `category` 无关 ⇒ 十二张仍然连成一条）；
+2. **D 切到 111**（HUD 主动行出现地灵殿图标）⇒ **按 C**：日志出现
+   `signal: **C（主动卡发动）** ⇒ 调 signal_bomb10_start()（与 X 路径同一入口；库存 N、state S）`
+   + 紧接着既有的 `signal: 灵击 -1.00 档 (power A -> B) …`；
+   画面：灵击圈 + 电流边 + 音效 + 消弹（与按 X 时**看起来一样**）；
+3. **火力 1.99 档以下按 C**：**什么都不发生**（不扣 P、不消弹、无音效），日志只有上面那行「C 发动」
+   —— 与按 X 时的行为逐项相同；
+4. **X 路径不退化**：**残弹 == 0** 时按 X ⇒ 与改动前逐项相同（灵击 + `signal: 灵击 …` 那行）；
+   **残弹 > 0** 时按 X ⇒ 仍是**原生炸弹**（本卡不动）；
+5. **魔理沙**：按 C 发动 ⇒ 灵击 + **河童罩子**（`signal/shield:` 那行）；罩子没破时再按 C ⇒
+   日志 `灵击**被罩子挡住**` 且**不扣火力**；**爱丽丝 0.5 档**仍是那条路（`signal: 灵击 -0.50 档`）；
+6. **决死**：残弹 == 0 时中弹、在决死窗口内**按 C 或按 X** ⇒ 都救命（日志「决死形态」+ 消弹照常记账）；
+7. **回放**：录一段「D 切 111 + 按 C 灵击」⇒ 重放能重现（C 在引擎掩码里）；
+8. **不崩**：连按 C（充能 1 帧 = 门槛极短）不应出现任何异常；买倒吊人删掉 111 ⇒ HUD 干净（本卡
+   `on_delete` 未改，原有清理链照旧）。

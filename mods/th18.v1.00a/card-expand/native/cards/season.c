@@ -68,6 +68,15 @@
 #define SEASON_SE_LEVEL      0x3f     /* ★ TH16 `item_collect_season` 升档时播 0x3f（一手），不是 se_extend */
 #define SEASON_SE_RELEASE    0x2c     /* se_bomb（解放）*/
 #define SEASON_SE_SWITCH     0x4e     /* se_changeitem（切副季节）*/
+/* ★★ 2026-09-21 owner 口径（`WORK-PACKAGES.md` §1b/§1c）：**副季节切换 = Shift + D**，且**只读引擎掩码**。
+ *   两个位都落在 `INPUT_HELD` `th18:0x4ca428` 的**低 16 位**里 —— 那正是 replay 录的那一份
+ *   （`sdk.h:761` + `ReplayManager__on_tick__record_replay` `th18:0x46295a`/`th18:0x462961` 的 `movzx … WORD`）
+ *   ⇒ 录制录得到、回放喂得回来。一手逐位出处见 `engine/input/th18/01-key-mapping.md` §2.3（位表）/ §3（空位）/ §4.1（录制读点）：
+ *     · `0x008` = Shift / 聚焦（`th18:0x45b3fa`：`player+0x476cc = INPUT_HELD >> 3 & 1`）
+ *     · `0x800` = D（它唯一的消费者是玩家 tick 里 `th18:0x45c09c` 的 `test [0x4ca434],0x800`）
+ *   ⚠ 原来读的是 `ce_key_down()`（GetKeyboardState）⇒ **不进 replay**：回放里季节切不动，
+ *     而切换会换子机贴图/阵位、还进消弹族 ⇒ 会让回放**失同步**。这就是本次改动的唯一理由。*/
+#define SEASON_INPUT_CHANGE   0x800u          /* D：切一档副季节；同时是引擎的「切换主动卡」位（见 on_tick_2 的阻断）*/
 #define SEASON_GRAZE_ADDR    0x4ccd0c /* 原生擦弹计数（GLOBALS.inner+0x30）；与 lolk.c 同址 */
 #define SEASON_GRAZE_PER_FRAME 2      /* 一帧最多因擦弹撒几颗 */
 #define SEASON_CANCEL_PER_POINT 1     /* 消弹 → 季节点：**每 1 颗消掉的弹给 1 点**
@@ -191,8 +200,10 @@ static const struct { float dx, dy, sx, sy; } k_season_frame[SEASON_FRAME_N] = {
 };
 /* ★★ 2026-09-15g：**压暗这一路改走跨卡统一件 `cards/hud_dim.{h,c}`**（唯一实现）。
  * 性质 = ❓ **用户口径（UI 统一），不是复刻**（用户 2026-09-15：「压暗这个涉及到 UI 统一，
- * 这个不能复刻。是那个靠近透明吧」）⇒ **动态**统一成：终点 alpha **32**（原 64）、起始 255、
- * 每帧 **±56**（= 4 帧，与脚本侧 `alphaTime(4,0,·)` 同帧数）、滞回带 **16 px**；**区域**则按**本卡自己那块 HUD 的矩形**推（见下）。
+ * 这个不能复刻。是那个靠近透明吧」）⇒ **动态**统一成：终点 alpha、起始 255、过渡帧数、滞回带 **16 px**；
+ * **区域**则按**本卡自己那块 HUD 的矩形**推（见下）。
+ * ★★ 2026-09-21：**取值换基准** —— owner 拍定「20 帧 / 50% 是 UI ⇒ 统一成一个值，以 115 那套为基准」
+ * ⇒ 现在 = 终点 **128**（50% 透明）/ **20 帧线性**（旧口径 32 / ±56 = 4 帧已退役）；权威口径见 `hud_dim.h` 文件头。
  *
  * ★★ 2026-09-15h：**进/出的口径订正**（父 agent：2026-09-15g 那版「进 = 矩形**之内**」裁错了）——
  *   **进 = 自机落在「块矩形外扩 `HUD_DIM_MARGIN`(28)」之内**、**出 = 离开「矩形 + 44」（28 + 滞回 16）之外**。
@@ -219,8 +230,8 @@ static const struct { float dx, dy, sx, sy; } k_season_frame[SEASON_FRAME_N] = {
  *   `interruptLabel(4): alphaTime(4,0,255)`；父 agent 裁定「过渡帧根治 = 改脚本」）⇒ 上一轮那段
  *   C 侧 `min(脚本态, 统一 alpha)` 的**上限钳制已删**（不留两套同时生效）。
  *   现在这块 HUD 的 alpha 分两路、但**深度与时长都统一**：
- *     · 外框 ×4 / 进度 / 背景 / 档位数字 —— **C 每帧写** `s->hud.alpha`（255↔32、±56/帧 = **4 帧**）；
- *     · 季节字 / 可解放指示条 —— **脚本的 `alphaTime`**（4 帧 → 32 / 255）。
+ *     · 外框 ×4 / 进度 / 背景 / 档位数字 —— **C 每帧写** `s->hud.alpha`（`hud_dim_tick()`：255 ↔ **128**、**20 帧线性**）；
+ *     · 季节字 / 可解放指示条 —— **脚本的 `alphaTime`**（脚本 123–127 的 label 4/5 = `alphaTime(20, 0, 128)` / `alphaTime(20, 0, 255)`）。
  *   不变式与机器判据见 `native/tools/anm_hud_alpha_check.py`（`make check` 里跑）。*/
 
 /* ★ 层号 = **24**（UI 表面，绘制组 37，优先级 `0x39`）——理由一手（`engine/anm/th18/02` §1 的桩表）：
@@ -270,7 +281,10 @@ typedef struct {
     int32_t     points;                    /* 累计季节点 */
     int32_t     subseason;                 /* 副季节 0..4 */
     int32_t     frame;                     /* 射击帧计数 */
-    int32_t     sub_prev;                  /* S 键上一帧 */
+    int32_t     sub_prev;                  /* 【已退休，保留占位】历史 = 旧「Shift+C」原始键盘读法的上一帧电平；
+                                            * 2026-09-21 起边沿改由引擎的 `INPUT_PRESSED`（`th18:0x4ca434`）提供
+                                            * ⇒ 不再读写它（保留是为了不动 `season_card_t` 布局：
+                                            * 上面那条 `_Static_assert(sizeof ≤ 496)` 与存档影子都按这个大小）。*/
     int32_t     last_graze;                /* 上一帧原生擦弹计数；-1 = 未初始化 */
     int32_t     releases;                  /* 解放次数（日志）*/
     /* —— 解放进行态 —— */
@@ -1264,7 +1278,8 @@ static void graze_tick(season_card_t *s)
 static int on_tick_2(ce_card_t *c)
 {
     season_card_t *s = st(c);
-    int sub_down, i;
+    uint32_t held;
+    int i;
 
     if (!s || !CE_PLAYER()) return 0;
     ++s->frame;
@@ -1277,16 +1292,38 @@ static int on_tick_2(ce_card_t *c)
      *   「用 D 键切换到该卡，然后按 C」触发（实现在下面的 `on_activate()`）。
      *   ⚠ 原来这里是 `ce_key_down(CE_VK_A)` 的边沿。 */
 
-    /* ★ 2026-09-13 用户口径：季节切换键 **S → 同时按 Shift+C**（两个键都按下才算"按下"，
-     *   边沿仍由 `s->sub_prev` 处理 ⇒ 按一次只切一档）。`CE_VK_C` 见 sdk.h。*/
-    sub_down = (ce_key_down(CE_VK_SHIFT) && ce_key_down(CE_VK_C)) ? 1 : 0;
-    if (sub_down && !s->sub_prev) {
+    /* ★★ 2026-09-21 owner 口径：副季节切换 = **Shift + D**，**只读引擎掩码**（旧：`ce_key_down(SHIFT)&&(C)`）。
+     *   边沿直接用引擎算好的 `INPUT_PRESSED`（`CE_ADDR_INPUT_PRESSED` `th18:0x4ca434`）——
+     *   `Input__compute_edges` `th18:0x42abc0` 每帧 `pressed = (held ^ prev) & held`（`th18:0x42ac46`–`0x42ac56`）
+     *   ⇒ **按一次只切一档，不需要我们存 prev 电平**（原来的 `s->sub_prev` 就此退休）。
+     *   顺序 = owner 的读法「先按住 Shift 再按 D」：`held & 0x008` **且** `pressed & 0x800`。
+     *   掩码位的一手出处（含「为什么它进 replay」）见上面 `SEASON_INPUT_CHANGE` 的注释。*/
+    held = CE_INPUT_HELD();
+    if ((held & CE_INPUT_FOCUS) && (*(volatile uint32_t *)CE_ADDR_INPUT_PRESSED & SEASON_INPUT_CHANGE)) {
         s->subseason = season_next(s->subseason);
         ce_play_sound(SEASON_SE_SWITCH, ce_player_x());
         refresh_options(c, s);                       /* ★ 子机贴图 + 阵位跟着换 */
-        ce_log("season: sub-season -> %s", season_name(s->subseason));
+        ce_log("season: sub-season -> %s (Shift+D, mask 0x008|0x800)", season_name(s->subseason));
     }
-    s->sub_prev = sub_down;
+
+    /* ★★ 阻断（owner 口径「按住 Shift 时不要让 D 触发『切换主动卡』」）—— **纯 mod 侧、零新站点**。
+     *   D 在引擎里只有一个消费者：玩家 tick 的 `th18:0x45c09c`
+     *   （`test dword [0x4ca434],0x800` → `th18:0x45c0b0 call 0x408b00` = `set_selected_active_card(mgr,-1)`
+     *   + 成功时 `play_sound(0x4e)`）。**它不在 SDK 的主动卡机器那一段**（`vtable+0x08` 只管 C），
+     *   所以「在 SDK 侧拦」对 D 不成立；能拦住它的位置只有一个，但**不必新增站点**：
+     *   帧内顺序（一手：注册优先级，见 `engine/_shared/frame-loop.md` §4 与
+     *   `engine/input/th18/01-key-mapping.md` §4.4 的表与 §5）：
+     *     ① ReplayManager 录制/回放节点 优先级 `0x11`（注册点 `th18:0x461825` / `0x461a42`）
+     *        —— `INPUT_HELD` / `INPUT_PRESSED` 在这里写出来，**replay 也在这里录**（`0x4629f7`/`0x462a05`/`0x462a0d`）；
+     *     ② AbilityManager 节点 优先级 `0x16`（`th18:0x408475` push 0x16 → `0x408a90` → `0x408640` 的
+     *        `call [eax+0x2c]`）= **本函数**；
+     *     ③ Player 节点 优先级 `0x17`（`th18:0x45a8aa` → `0x45caa0` → `jmp 0x45be90`）= 上面那个消费者。
+     *   ⇒ 在②把 D 的**上升沿位**从 `INPUT_PRESSED` 抹掉，③ 读到的就是 0。本卡不在场 / 不按住 Shift 时一个字节都不碰。
+     *   replay 一致：抹的是**本帧内存副本**，流里已存真值（①在我们之前），回放时同一帧我们同样再抹一次
+     *   ⇒ 录/放行为一致。比「引擎侧拦 `0x45c09c`」省一条站点（站点预算现实：我们 27/24、进程 47/42 ⇒ 不建议加）。
+     *   ⚠ 只抹 D（`&= ~0x800`）：Shift 期间 C 仍照常发动主动卡 —— owner 这次只要求阻断 D。*/
+    if (held & CE_INPUT_FOCUS)
+        *(volatile uint32_t *)CE_ADDR_INPUT_PRESSED &= ~(uint32_t)SEASON_INPUT_CHANGE;
 
     release_tick(c, s);
 
@@ -1559,7 +1596,8 @@ static int on_draw(ce_card_t *c)
      *   **不会动的背景矩形**：蓝随档位变白（TH16 interrupt 8..13：64/96/128/144/192/224 的 (v,v,255)）；
      *   档 0 → **透明**（TH16 那一段连档位中断都不发）。*/
     {
-        /* ★ 2026-09-15g：alpha 取**跨卡统一件**那一份（255 ↔ 32，每帧 ±56 = 4 帧；原来这里写 64）。
+        /* ★ 2026-09-15g：alpha 取**跨卡统一件**那一份（★ 2026-09-21 起 255 ↔ **128**、**20 帧线性**；
+         * 旧口径 32 / ±56（4 帧）；更早这里写 64）。
          * 这四支（外框 ×4 / 进度 / 背景）的 alpha **由卡每帧写**（见 123 脚本头：「脚本里的 alphaTime
          * 只是初始态」）⇒ 用户看到的压暗深度就是这里这个值。*/
         uint32_t A = (uint32_t)(s->hud.alpha & 0xff) << 24;
@@ -1581,13 +1619,14 @@ static int on_draw(ce_card_t *c)
          *     `min(脚本当前 alpha, 统一 alpha)`，用来把脚本里的 **64** 压到 **32**；
          *     理由当时成立：脚本是**一手值**（TH16 `alphaTime(5,0,64)`），而 assets 归另一会话。
          *   · 2026-09-15i 起脚本侧已经**统一**（`AUDIT.md` §DD-9 / `TUNING.md` §7.1）：
-         *     两支的 `interruptLabel(5): alphaTime(4, 0, 32)`（压暗）、
-         *     `interruptLabel(4): alphaTime(4, 0, 255)`（淡回）⇒ 脚本给的就是统一值，
+         *     两支的 `interruptLabel(5): alphaTime(20, 0, 128)`（压暗）、
+         *     `interruptLabel(4): alphaTime(20, 0, 255)`（淡回）⇒ 脚本给的就是统一值，
          *     这一层再留着就是**同一件事的两套实现**（父 agent 明令撤掉）⇒ 代码删除，只留本注。
          *   · **不变式（这就是那段代码的替身）**：126/127 的 label 4/5 `alphaTime` 必须保持
-         *     `(4,0,255)` / `(4,0,32)`；`interruptLabel(2/3)` 那两条（淡入 4 帧 / 隐藏 0）
+         *     `(20,0,255)` / `(20,0,128)`（★ 2026-09-21 换基准；旧值 `(4,0,·)`/32 已退役）；
+         *     `interruptLabel(2/3)` 那两条（淡入 4 帧 / 隐藏 0）
          *     是**另一条路**、不许被这次统一波及。谁把脚本改回 64，症状 = 这两支只淡到 64、
-         *     而外框/进度/背景（下面那段 C 每帧写 `A`）淡到 32 ⇒ 一块 HUD 两种深度。
+         *     而外框/进度/背景（下面那段 C 每帧写 `A`）淡到 128 ⇒ 一块 HUD 两种深度。
          *     ⇒ `native/tools/anm_hud_alpha_check.py`（`make check` 里）把这条不变式做成机器判据。
          *   · 这两支的 alpha **仍然只由脚本管**（C 不写它们的 color）—— 这是刻意的：
          *     脚本的 `alpha(0)` / `alphaTime` 负责「不可解放时条不该在场」的隐藏态。*/
@@ -1621,7 +1660,8 @@ static int on_draw(ce_card_t *c)
      *   group 0 的趟（`on_draw_58`）在卡之后 ⇒ 用 0。
      *   颜色取 7 档表 `local_60[]`（0x60606060 / 0xa0b0b080 / 0xb0b8b880 / 0xc0c0c080 /
      *   0xd0d0d080 / 0xe0e0e080 / 0xffffff30，D3DCOLOR = 0xAARRGGBB），
-     *   玩家贴近左下角时把 alpha 字节压到 **0x40**（= 64，一手值；2026-09-15g 起按用户口径统一成 32）。
+     *   玩家贴近左下角时把 alpha 字节压到 **0x40**（= 64，一手值；2026-09-15g 起按用户口径统一，
+     *   ★ 2026-09-21 起统一值 = **128**）。
      *   数字本身走 `FUN_004082b0` = `create_string("%d")`。
      * ⇒ 照抄：字体 2 + group 1 + 对齐 (0,2) + 该档位色（缩放不动 = 环境 1.0）。*/
     {
@@ -1632,7 +1672,7 @@ static int on_draw(ce_card_t *c)
         uint32_t col = lvl_digit_c[level];
         /* ★★ 2026-09-15g（跨卡统一）：原来是「压暗时**硬切**到 0x40」，现在改成
          *   **`min(档位色自带的 alpha, 统一件 alpha)`** —— 理由两条：
-         *   ① 深度按用户口径统一成 **32**（`HUD_DIM_ALPHA_DIM`），不再各写各的 0x40；
+         *   ① 深度按用户口径统一（`HUD_DIM_ALPHA_DIM`；★ 2026-09-21 起 = **128**），不再各写各的 0x40；
          *   ② 让数字跟**同一块**的外框/进度/背景**同步渐变**（原来条在 255↔64 逐帧走、数字一帧跳过去）。
          *   亮着时是恒等（统一 alpha = 255 ⇒ min 取档位色自带的那一档），所以「档位越高的数字越实」
          *   这条一手行为一个字节没变。*/
