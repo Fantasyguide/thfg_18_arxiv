@@ -100,6 +100,21 @@
  * （一手交叉：`animal.c` 的 `ANIMAL_ENEMY_LIFE_CUR` 与 `lolk.c` 的 `CE_ENEMY_LIFE_CUR` 都写 0x6220，
  *  且 `engine.h` 的 `CE_ENEMY_DATA` 注里 0x6220 就是 `data.life`）⇒ HUD 血条第一版读它。 */
 #define UFO_ENEMY_LIFE_CUR  0x6220
+/* ★★ 2026-09-21（P2 #6「太脆」）：`data.life` 的**三格**都在这三行 —— 一手（objdump th18.exe）
+ *   `EnemyManager__allocate_new_enemy` `0x42d815`–`0x42d82a`：把 `spawn+0x14` 同一个数**写进
+ *   `+0x6220 / +0x6224 / +0x6228` 三格**（`data.life{current,…}`，基址 = `CE_ENEMY_DATA(0x122c)+0x4ff4`）。
+ *   ⇒ 我们要在 spawn 之后改血量，就必须**照这三格一起写**（只写一格是与引擎的 spawn 形状不一致）。 */
+/* ⚠ 命名刻意**不写 `MAX`/`SNAP`**：这两格的**语义没钉死**（引擎自己在 `0x42f371` 会把 `+0x6228`
+ *   当"某个时刻的快照"重写一次；`engine.h:569` 又说 `+0x6230` 是 `life.max`）——
+ *   我们**唯一**确定的是「spawn 把 `spawn+0x14` 同时写进这三格」（`0x42d815`–`0x42d82a`）
+ *   ⇒ 回写真血量时按**同一个形状**写这三格即可，不去替它们起名字。 */
+#define UFO_ENEMY_LIFE_2    0x6224   /* 一手：spawn 同写法（`0x42d81e`/`0x42d821`）*/
+#define UFO_ENEMY_LIFE_3    0x6228   /* 一手：spawn 同写法（`0x42d827`/`0x42d82a`）*/
+/* 为什么能这么写（本次一手复核）：`spawn+0x14 >= 1000` 的那条黑名单闸
+ *   `0x42d8ed cmp [edx+0x14],0x3e8 / jl` + `0x42d8f6 or ecx,0x40000000` **只在 spawn 那一刻**跑；
+ *   血量本身只是 `0x42d815` 起写的三个 int。⇒ 「先 spawn 一个 ≤999 的值，再回写真血量」=
+ *   拿到一手的真血量，而位 30 不置（人偶/灵梦炸弹照样打得中）。扣血走的是 `0x42f314
+ *   sub [ebx+0x4ff4],esi`（= `+0x6220`）⇒ 回写之后一切照常。 */
 /* 敌人「静默撤退」位：置 `flags_lo` 位 25 ⇒ 同一帧的 EnemyManager sweep 直接析构它，
  * 不跑死亡处理 / 不掉落 / 不跑死亡 ECL。一手指令：`0x42d200 or [ecx+0x635c],0x2000000`（写）、
  * `0x42dfc5 test [ecx+0x635c],0x2000000` + `0x42dfcf jne 0x42dfe8` + `0x42dff2 call [eax+0x14]`（读/析构）。
@@ -1279,7 +1294,7 @@ static void ufo_etbreak2_spawn(float x, float y)
                "is missing this file (assets/ecl/ufo.ecl.txt / make ecl-ufo)");
 }
 
-static uint8_t *ufo_body_spawn(int32_t color, int32_t hp)
+static uint8_t *ufo_body_spawn(int32_t color, int32_t spawn_life)
 {
     uint8_t spawn[CE_SPAWN_SIZE];
     float *pos;
@@ -1295,9 +1310,9 @@ static uint8_t *ufo_body_spawn(int32_t color, int32_t hp)
     *(int32_t *)(spawn + CE_SPAWN_SCORE) = 0;          /* ★ 击破分数：一手公式没有（spec §9 #5）⇒ 不给 */
     *(int32_t *)(spawn + CE_SPAWN_MAIN_DROP) = 0;      /* ★ 主掉落：奖励全走 `ce_spawn_item`，不靠它 */
     *(int32_t *)(spawn + CE_SPAWN_PARENT) = 0;
-    /* ★★ P4（用户 2026-09-18：「HP 一手确实是按火力」）：HP = 一手表 `{1600..2500}` × 火力档，
-     *   再**缩放到 <1000**（硬门，见 `UFO_HP_MAX_SCALED`）。唯一取值口 = `ufo_hp_for_power()`。 */
-    *(int32_t *)(spawn + CE_SPAWN_LIFE) = hp;
+    /* ★★ P4 + P2 #6：这里写的是 **spawn 值**（≤ `UFO_LIFE_MAX_ALLOWED`，避开位 30 黑名单）——
+     *   真血量在敌机建出来之后由 `ufo_body_apply_real_hp()` 回写（一手见那支函数的注）。 */
+    *(int32_t *)(spawn + CE_SPAWN_LIFE) = spawn_life;
     e = (uint8_t *)ce_spawn_enemy(name, spawn);
     if (!e) {
         ce_log("ufo: ce_spawn_enemy(\"%s\", color %d, art idx %d) failed - placeholder ECL name only; "
@@ -1307,6 +1322,18 @@ static uint8_t *ufo_body_spawn(int32_t color, int32_t hp)
         return 0;
     }
     return e;
+}
+
+/* ★★ 2026-09-21（P2 #6）：把**真血量**（一手表原值，可 > 999）写回敌机的三格 life。
+ * 一手形状 = `th18:0x42d815`–`0x42d82a`（spawn 那一刻引擎自己就是往这三格写同一个数）。
+ * ⚠ 时机：必须在 `ce_spawn_enemy()` **返回之后**（对象已经是活的），且**不要**回头再动
+ *   `spawn+0x14` —— 那条路才会置位 30（见 `UFO_ENEMY_LIFE_2` 上面那段一手）。 */
+static void ufo_body_apply_real_hp(uint8_t *e, int32_t hp)
+{
+    if (!e || hp < 1) return;
+    *(int32_t *)(e + UFO_ENEMY_LIFE_CUR) = hp;
+    *(int32_t *)(e + UFO_ENEMY_LIFE_2)   = hp;
+    *(int32_t *)(e + UFO_ENEMY_LIFE_3)   = hp;
 }
 
 /* ============================ ★ 本体跟随 VM（画面）============================
@@ -1662,7 +1689,8 @@ static void ufo_drop_kill_all(void);
 
 /* ================================ §3.4 伪磁场：一颗道具 ================================
  * 返回 1 = 本帧真的动了它（吸掉或拉了一步），0 = 没碰（栅栏 / 早停）。 */
-static int ufo_try_item(ufo_card_t *s, uint8_t *it, float ux, float uy, float px, float py)
+/* ⚠ 不再收自机坐标：P2 #4 把「离自机 30 px」那条栅栏撤了 ⇒ 这一路不需要它（理由见调用点注）。 */
+static int ufo_try_item(ufo_card_t *s, uint8_t *it, float ux, float uy)
 {
     float *ipos = (float *)(it + CE_ITEM_POS);
     float *ivel = (float *)(it + UFO_ITEM_VEL);
@@ -1742,7 +1770,14 @@ static int ufo_try_item(ufo_card_t *s, uint8_t *it, float ux, float uy, float px
     nx = ipos[0];
     ny = ipos[1];
     ufo_drag_step(&nx, &ny, ux, uy, speed);
-    if (!ufo_step_allowed(nx, ny, px, py)) {
+    /* ★★ 2026-09-21（P2 #4「吸收速度似乎还是慢了」）：这里原来还 AND 了一条
+     *   `ufo_target_clear_of_player(nx, ny, px, py)`（"下一步别踏进自机 30 px 收点圈"）——
+     *   **一手里没有这条栅栏**：TH12 的 state 7 每帧走完位移就落回共同尾巴 `th12:0x4260af`，
+     *   而那条尾巴正是**自机收点矩形**的判定（`0x426100`–`0x426164`）⇒ 一手允许自机半途把
+     *   被吸的道具收走。我们照抄出来的后果是：只要下一步会踏进自机 30 px 圈，就**整帧不动**；
+     *   下一帧速度更大、目标点还在圈里 ⇒ **永久卡在圈边上**（自机不挪窝它就不动）。
+     *   ⇒ 现在只判「目标点在屏内」（`ufo_step_allowed` 只剩这一条）。 */
+    if (!ufo_step_allowed(nx, ny)) {
         ++s->u.skipped_guard;
         return 0;
     }
@@ -1766,7 +1801,7 @@ static void ufo_absorb_tick(ufo_card_t *s)
     uint8_t *mgr = CE_ITEM_MANAGER();
     uint8_t *em = CE_ENEMY_MGR();
     uint8_t *e;
-    float ux, uy, px, py;
+    float ux, uy;
     unsigned i;
 
     if (!mgr || !em) return;
@@ -1774,7 +1809,8 @@ static void ufo_absorb_tick(ufo_card_t *s)
     if (!e) return;                                    /* 本体没了（飞走 / 被清）⇒ 交给 finish 分支 */
     ux = *(float *)(e + CE_ENEMY_POS_X);
     uy = *(float *)(e + CE_ENEMY_POS_Y);
-    ufo_player_xy(&px, &py);
+    /* ★ 2026-09-21（P2 #4）：这里原来还取一次自机坐标（`ufo_player_xy`）给「离自机 30 px」
+     *   那条栅栏用；栅栏撤掉之后拉拽只朝 **UFO** 走 ⇒ 自机坐标在这一路上不再需要。 */
 
     for (i = 0; i < CE_ITEM_SLOTS; ++i) {
         uint8_t *it = mgr + CE_ITEM_POOL_OFF + (size_t)i * CE_ITEM_STRIDE;
@@ -1793,7 +1829,7 @@ static void ufo_absorb_tick(ufo_card_t *s)
             }
         }
         if (!ufo_absorbable(*(uint32_t *)(it + CE_ITEM_TYPE), st, s->u.ufo_id, 1)) continue;
-        ufo_try_item(s, it, ux, uy, px, py);
+        ufo_try_item(s, it, ux, uy);
     }
     /* ★★ 自建实体（110/111 的信仰点）走同一拍：**先扫道具池、再扫声明式列表** ——
      *   两边互不影响（信仰点不在道具池里），顺序只影响日志里"谁先"的观感。 */
@@ -1944,7 +1980,7 @@ static int32_t ufo_tok_take_and_kill(int slot)
  *   `on_enemy_death` 里**只登记**（`pending_token`），由 `on_tick_2` 兑现 —— 见 `DEATH` §2.4。 */
 static void ufo_try_summon(ufo_card_t *s)
 {
-    int32_t made, hp;
+    int32_t made, hp, spawn_life;
     uint8_t *body;
 
     if (!ufo_present_group_ready(s)) return;
@@ -1958,10 +1994,13 @@ static void ufo_try_summon(ufo_card_t *s)
      *   （HUD 三格亮着、收不进新令牌）＝ 用户 2026-09-18 裁决 P1 要的那条可见行为。 */
     made = ufo_group_take_ready(&s->grp);
     if (made == UFO_COLOR_NONE) return;
-    /* ★★ P4（用户 2026-09-18「HP 一手确实是按火力」）：召唤那一刻按**当前火力档**取一手 HP，
-     *   缩放到 <1000 后写进 spawn；同一个数存进 `s->u.hp_max` 当血条/HUD 的分母。 */
+    /* ★★ P4（用户 2026-09-18「HP 一手确实是按火力」）+ P2 #6（2026-09-21「感觉飞碟太脆了」）：
+     *   `hp` = **一手真血量**（表 `{1600..2500}` × 火力档，原值不缩放）；
+     *   `spawn_life` = 写进 `spawn+0x14` 的**钳制值**（≤999，避开位 30 黑名单闸）；
+     *   敌机建出来后立刻 `ufo_body_apply_real_hp()` 把真血量写回三格 life。 */
     hp = ufo_hp_for_power(CE_CURRENT_POWER(), CE_POWER_PER_LEVEL());
-    body = ufo_body_spawn(made, hp);
+    spawn_life = ufo_clamp_spawn_life(hp);
+    body = ufo_body_spawn(made, spawn_life);
     if (!body) {
         /* 建不出来：组已经消费掉了（不还回去 —— 还回去会与「单例」打架），记账 + 让节流重试 */
         ++s->failed_summons;
@@ -1973,7 +2012,8 @@ static void ufo_try_summon(ufo_card_t *s)
     /* ⚠ 先自己读 `enemy_id` 再登记：万一 `ufo_spawn` 拒了（id == 0），刚建出来的那个敌人
      * **没有任何人记着它** ⇒ 永久孤儿（`ufo_withdraw_all` 只收 `ufo_present` 那个）。
      * 所以那一步用置「本帧删」位收掉它（**不析构**：UAF，见文件头的位 25 说明）。 */
-    /* ★ P4：spawn life 与血条分母**同一个数**（`ufo_spawn` 里存进 `u->hp_max`，血条/HUD 读它）。 */
+    /* ★ P4 / P2 #6：`u->hp_max` 记的是**真血量**（一手原值，血条/HUD 的分母读它），
+     *   而写进 `spawn+0x14` 的是它的钳制版 `spawn_life` —— 两者不再是同一个数。 */
     if (!ufo_spawn(&s->u, *(uint32_t *)(body + CE_ENEMY_ID), made, hp)) {
         uint32_t orphan = *(uint32_t *)(body + CE_ENEMY_ID);
         /* ⚠ **无条件**置位（不能写 `if (orphan)`）：`ufo_spawn` 被拒的两条路里，
@@ -1986,6 +2026,9 @@ static void ufo_try_summon(ufo_card_t *s)
     }
     ++s->ufos_spawned;
     s->logged_lifetime = 0;                            /* 新一个 UFO：存活上限日志重新允许报一次 */
+    /* ★★ P2 #6：**回写真血量**（> 999 也合法 —— 位 30 只在 spawn 那一刻按 `spawn+0x14` 置）。
+     *   放在 `ufo_spawn()` 成功之后：所有失败 / 孤儿路径都在它上面返回 ⇒ 只对**真活的**那只写。 */
+    ufo_body_apply_real_hp(body, hp);
     /* ★ 画面：起本体的**跟随 VM**（`ability.anm` 164..167；`made` 是合成色，金落蓝那一格）。
      * ⚠ 放在 `ufo_spawn()` **成功之后**：所有失败 / 孤儿路径都在它上面返回 ⇒
      *   绝不会出现「没有本体却有 VM」的幽灵。位置在 `ufo_body_vm_spawn` 里当场摆好。 */
@@ -1995,8 +2038,8 @@ static void ufo_try_summon(ufo_card_t *s)
     ufo_gauge_spawn(s, body);
     /* ★ 日志带 `art idx`：用户裁决 ① 说「金 = 蓝的调色版」，这一格就是证据 ——
      *   金（4）打出来必须是 **1**（= 蓝那一格，`ufo_color_art_index`），实跑一眼可核。 */
-    /* ★ P4 对账：把「火力 → 档位 → 一手 HP → 缩放后的 spawn life」四个数一次打全 ——
-     *   实跑里核「HP 确实按火力」只用看这一行（一手表 {1600..2500} / 缩放上界 999）。 */
+    /* ★ P4/P2 #6 对账：把「火力 → 档位 → 一手 HP → 写进 spawn 的钳制值」四个数一次打全
+     *   —— 实跑里核「HP 确实按火力 + 真血量 > 999」只用看这一行（一手表 {1600..2500}）。 */
     ce_play_sound(UFO_SE_SPAWN, 0.0f);                 /* 一手：`Ufo::spawn` 的出场音（se_lazer02，居中）*/
     /* ★★ 2026-09-20 补（P1 #th12-8「UFO 缺少入场音效」）：一手的**第二声**，在**飞碟自己的 x** 播
      *   （`th12:0x44a9f4 mov eax,[esi+0x34]` = 敌机 → `th12:0x44a9f7 fld [eax+0x1074]` = 敌机 x →
@@ -2004,12 +2047,13 @@ static void ufo_try_summon(ufo_card_t *s)
      *   （上面刚 `ufo_spawn` 成功、`body` 即那只敌机）⇒ 与一手的取法逐字对应。
      *   ⚠ 一手是循环音（th12 cfg 行 `+8` = 1），我们只放一次（没有停循环音的通路，见宏定义处的注释）。*/
     ce_play_sound(UFO_SE_ENTER, *(const float *)(body + CE_ENEMY_POS_X));
-    ce_log("ufo: summoned UFO (color %d, art idx %d%s) enemy_id %u at frame %u - HP %d "
-           "(one-hand tier %d = %d, scaled to <= %d; power %d, per level %d)", (int)made,
+    ce_log("ufo: summoned UFO (color %d, art idx %d%s) enemy_id %u at frame %u - REAL HP %d "
+           "(one-hand tier %d = %d, applied to enemy+0x6220/24/28 after spawn; spawn life was %d "
+           "to stay under the >=1000 flag-30 gate; power %d, per level %d)", (int)made,
            ufo_color_art_index(made), ufo_color_is_gold(made) ? " = gold, uses the BLUE art set" : "",
            s->u.ufo_id, s->play_frame, (int)hp, (int)ufo_hp_tier(CE_CURRENT_POWER(), CE_POWER_PER_LEVEL()),
            (int)ufo_hp_onehand_for_tier(ufo_hp_tier(CE_CURRENT_POWER(), CE_POWER_PER_LEVEL())),
-           UFO_HP_MAX_SCALED, CE_CURRENT_POWER(), CE_POWER_PER_LEVEL());
+           (int)spawn_life, CE_CURRENT_POWER(), CE_POWER_PER_LEVEL());
 }
 
 /* 每游玩帧跑一遍令牌池：① VM 还在不在 ② 走位（位移 + 反弹 + 出界）③ 摆 VM ④ 彩虹计时 ⑤ TTL ⑥ 自机接触。
@@ -3212,11 +3256,11 @@ _Static_assert(UFO_EDEATH_KILL_ALL == CE_EDEATH_KILL_ALL, "death kind table drif
  *   **连同那个常量一起删了**：令牌不是敌人 ⇒ 没有 `spawn.life` 这回事
  *   （以前那个常量 = 1 的后果正是「任何一发子弹都能收走令牌」，即用户要修掉的那条）。 */
 _Static_assert(UFO_LIFE_MAX_ALLOWED < UFO_LIFE_LIMIT, "the clamp ceiling itself must stay below 1000");
-/* ★★ P4：HP 不再是占位常量，而是一手表 × 火力档 → 缩放到 `UFO_HP_MAX_SCALED`（< 1000 的硬门）。
- * 这条守的是**缩放上界**（= 满档），逐档值由 `test_ufo_core.c` 钉。 */
-_Static_assert(UFO_HP_MAX_SCALED < UFO_LIFE_LIMIT,
-               "the scaled HP ceiling must stay below the 1000 lock blacklist bit");
-_Static_assert(UFO_HP_MAX_SCALED > 0 && UFO_HP_MAX_ONEHAND > 0 && UFO_HP_TABLE_N == 5,
+/* ★★ P4 + P2 #6（2026-09-21）：HP **不再有"缩放上界"这个量** ——
+ *   真血量 = 一手表原值（可 > 999；spawn 之后回写 `enemy+0x6220/24/28`，见 `ufo_body_apply_real_hp`）；
+ *   必须 < 1000 的只是**写进 `spawn+0x14` 的那个值**（= `ufo_clamp_spawn_life()` 的输出）⇒
+ *   守它的是下面的 `UFO_CLAMP_OUTPUT_MAX` 断言 + 单测里 `ufo_clamp_spawn_life(1600/2500) == 999`。 */
+_Static_assert(UFO_HP_ONEHAND_SCALE_PERMILLE > 0 && UFO_HP_MAX_ONEHAND > 0 && UFO_HP_TABLE_N == 5,
                "the one-hand HP table is {{1600,1900,2100,2300,2500}} - five tiers, positive");
 /* ⚠ 下面这条**单独**不够（两边都是常量，钳制函数改了它也不会红）⇒ 真正兜底的是两张网：
  *   ① `UFO_CLAMP_OUTPUT_MAX`（= `UFO_LIFE_MAX_ALLOWED`）**就是** `ufo_clamp_spawn_life` 的返回上界
@@ -3335,12 +3379,18 @@ _Static_assert(UFO_TOKEN_CAP == UFO_TOKEN_MAX + UFO_TOKEN_POOL_SLACK,
  *        （`0x422ed4`/`0x422ed6` 的 `slots[0]==color && slots[1]!=color` 也算），`{A,B,A}` 与
  *        另外两种排列一样走 KEEP2 ⇒ **「与字面一手有一格差异」这条作废**（行为本来就没变）。
  *    12. #3 蓝 UFO 吸满不吐 —— **复刻**（一手 switch 无 case 2）；★ 金**照蓝**（同样不吐）
- *    13. #4 HP 缩法 —— ★★ 2026-09-18 **已按用户裁决 P4 落地**（「HP 一手确实是按火力」）：
+ *    13. #4 HP 缩法 —— ★★ 2026-09-18 按用户裁决 P4 落地（「HP 一手确实是按火力」）；
+ *        ★★★ **2026-09-21 改口径（P2 #6「感觉飞碟太脆了」）：缩放取消** ——
  *        一手表 `{1600,1900,2100,2300,2500}`（`th12:0x4b33f0`，索引 = `CURRENT_POWER / POWER_PER_LEVEL`）
- *        **缩放到 `UFO_HP_MAX_SCALED` = 999**（❓ 自定缩放比，改它只改整体、不改档间比例）后写进 `spawn.life`；
- *        血条/HUD 的分母 = `s->u.hp_max`（同一个数，**不在显示侧另算**）。取值口 = `ufo_hp_for_power()`。
- *        ⚠ 硬界仍然成立：`spawn.life >= 1000` ⇒ `th18:0x42d8f6` 置位 30（锁定黑名单）。
- *    14. #5 击破得分公式 —— **不编**：`UFO_BOUNTY_SCORE_PER_*` = 0 ⇒ 击破加 0 分
+ *        **原值当真血量**（`ufo_hp_for_power()`），spawn 时只写钳制值（≤999），敌机建出来后
+ *        `ufo_body_apply_real_hp()` 回写 `enemy+0x6220/24/28`（一手：位 30 的黑名单闸只在 spawn
+ *        那一刻按 `spawn+0x14` 置，`th18:0x42d8ed`–`0x42d8fc`；血量三格是 `0x42d815`–`0x42d82a`）。
+ *        血条/HUD 的分母 = `s->u.hp_max`（= 真血量，**不在显示侧另算**）。
+ *        🟡 唯一旋钮 = `UFO_HP_ONEHAND_SCALE_PERMILLE`（默认 1000 = 一手原值；TH18 每帧伤害上限
+ *        比 TH12 大这一层**没有**一手 ⇒ 要缩放得 owner 拍，见 `TUNING.md` §2.0r）。
+ *    14. #5 击破得分公式 —— **不编**：`UFO_BOUNTY_SCORE_PER_*` = 0 ⇒ 击破加 0 分。
+ *        ★ 2026-09-21（P2 #5）：**碎片载体改成 `0x10`/`0x11`**（TH18 的卡道具 = 残碎卡 / 符卡碎片卡），
+ *        原来的 4/6 是别作的遗留槽（TH18 道具分派里连 case 都没有）——见 `ufo_core.h` 的奖励段。
  *    15. #6 扩圈消弹（`0x429250` vs `0x429370`）—— **不选**，一次都没调（`ce_cancel_radius` 有现成面）
  *    16. #7 吸掉金钱的经济影响 —— 照吸（用户定案 ⑦），但把 `type 2` 吸走 = 每颗少 1 金钱
  *        ⇒ **记账在日志里**（`items_pulled` / `cnt_money`），⏳ 待用户看完再决定要不要改成别种道具

@@ -7,27 +7,18 @@
 
 /* ============================================================ 颜色 / 凑组状态机 */
 
-/* 占位期令牌颜色轮转。**顺序与表长都是设计**，理由见 ufo_core.h 的注：
- * 周期 4 的 `红 蓝 绿 彩虹` 会让连续 3 个 serial 永远互不相同 ⇒ 每次召唤都是彩虹 UFO、
- * 红/绿奖励成死代码。本表周期 7（穷举：周期 ≤ 6 无解）⇒ 三条同色规则 + 彩虹 + 不成组全出现。
- * ⚠ 改这张表之前先看 `tests/test_ufo_core.c` 的「轮转表覆盖」那一段断言 —— 它会红。 */
-const int32_t k_ufo_token_color_rotation[UFO_TOKEN_COLOR_ROTATION_N] = {
-    UFO_COLOR_GREEN, UFO_COLOR_RAINBOW, UFO_COLOR_RAINBOW, UFO_COLOR_BLUE,
-    UFO_COLOR_RED,   UFO_COLOR_RED,     UFO_COLOR_RED
+/* ★★ 2026-09-18（用户裁决「新增 2」）：**令牌的场上颜色域 = 红/蓝/绿**（金 ≡ 蓝）。
+ * 彩虹**不是**令牌颜色 —— 它只是「三色各一」的合成结果（UFO 的颜色）。理由与一手对照见 ufo_core.h。 */
+const int32_t k_ufo_token_field_colors[UFO_TOKEN_FIELD_COLORS_N] = {
+    UFO_COLOR_RED, UFO_COLOR_BLUE, UFO_COLOR_GREEN
 };
 
-/* 金令牌 = 把表里轮到「蓝」的那些、每 `UFO_GOLD_CYCLE` 个周期换成金（★❓ 自定，理由见头文件）。
- * ⚠ 金进槽即归一成蓝（`ufo_color_norm`）⇒ 这条**不改变任何行为**，只决定实机上看得见哪种贴图。 */
-int32_t ufo_token_color_for_serial_gold(uint32_t serial)
-{
-    int32_t c = ufo_token_color_for_serial(serial);
-    if (c != UFO_COLOR_BLUE) return c;
-    if (UFO_GOLD_CYCLE <= 0) return c;                  /* 关掉金（也防 0 当除数）*/
-    if ((int32_t)((serial / (uint32_t)UFO_TOKEN_COLOR_ROTATION_N) % (uint32_t)UFO_GOLD_CYCLE)
-        != UFO_GOLD_CYCLE - 1)
-        return c;
-    return UFO_COLOR_GOLD;
-}
+/* 变色令牌（一手 type 13/14/15）当前显示态 → 那一色：一手 `th12:0x426c3f`/`0x426c4d`/`0x426c5e`
+ * 把 case 10/11/12 与 13/14/15 **分别记成红/蓝/绿** ⇒ 态 0/1/2 ↔ 红/蓝/绿。
+ * 脚本侧同一顺序：`ability.anm` 215/216/217 = `..._RAINBOW_{RED,BLUE,GREEN}`。 */
+const int32_t k_ufo_cycler_colors[UFO_TOK_RB_STATES_REF] = {
+    UFO_COLOR_RED, UFO_COLOR_BLUE, UFO_COLOR_GREEN
+};
 
 int ufo_color_valid(int32_t c)
 {
@@ -111,8 +102,13 @@ int32_t ufo_group_classify(const ufo_group_t *g)
         else if (fixed == UFO_COLOR_NONE) fixed = s[i];
     }
 
+    /* ★★ 2026-09-18（用户裁决「新增 2」）：下面带 `rainbow` 的两条分支**从生产路径上不可达了** ——
+     *   令牌的场上颜色域只有红/蓝/绿（`ufo_token_color_is_field()`），彩虹**只能作为本函数的
+     *   **返回值**（= 三色各一的合成结果），不可能从槽里进来。留着它们的理由只有一条：
+     *   **槽里的坏数据（外部直改 struct / 老状态）不许把这台状态机锁死** —— 这与 `ufo_group_put`
+     *   的「满格却不成组」防御支同一个口径。⇒ 单测里那几条 rainbow 输入断言是**防御支测试**，
+     *   不是「生产路径上会发生的事」。 */
     /* 规则 A（spec §0 定案 1）：**3 个互不相同** ⇒ 彩虹 UFO。
-     * 彩虹令牌在这里算「第 4 种颜色」⇒ 彩虹 + 红 + 蓝 也满足「互不相同」。
      * ⚠ 桶数不足 3（比如 红 + 红 + 彩虹）会**落在下面两条之外** ⇒ 不召唤。 */
     if (ufo_all_pairwise_diff(s, UFO_SLOT_COUNT)) return UFO_COLOR_RAINBOW;
 
@@ -197,7 +193,8 @@ int32_t ufo_group_put(ufo_group_t *g, int32_t color, int32_t *out_dropped)
     return UFO_GROUP_PUT_HELD;
 }
 
-/* ---- 五边形框的触发条件（用户裁决 ③；纯逻辑，美术待做）---- */
+/* ---- 五边形框的触发条件（用户裁决 ③；纯逻辑）----
+ * ★ 2026-09-18 订正：美术**已落地**（脚本 223，卡侧 `ufo.c` 真驱动）⇒ 本层只管判据。 */
 int ufo_pentagon_hint_for_color(const ufo_group_t *g, int32_t color)
 {
     ufo_group_t probe;
@@ -211,12 +208,13 @@ int ufo_pentagon_hint_for_color(const ufo_group_t *g, int32_t color)
 
 int ufo_group_pentagon_hint(const ufo_group_t *g)
 {
-    static const int32_t k_all[5] = { UFO_COLOR_RED, UFO_COLOR_BLUE, UFO_COLOR_GREEN,
-                                      UFO_COLOR_RAINBOW, UFO_COLOR_GOLD };
+    /* ★ 2026-09-18（新增 2）：**只遍历令牌的场上颜色域**（红/蓝/绿）—— 彩虹**不是**令牌颜色，
+     * 所以「补一枚彩虹进来」这种假设不再成立（原来是 5 个：三色 + 彩虹 + 金）。
+     * 金也不用单独列：它归一成蓝（`ufo_color_norm`）⇒ 与蓝同一格。 */
     int i;
     if (!g || g->filled != UFO_SLOT_COUNT - 1) return 0;
-    for (i = 0; i < 5; ++i)
-        if (ufo_pentagon_hint_for_color(g, k_all[i])) return 1;
+    for (i = 0; i < UFO_TOKEN_FIELD_COLORS_N; ++i)
+        if (ufo_pentagon_hint_for_color(g, k_ufo_token_field_colors[i])) return 1;
     return 0;
 }
 
@@ -225,7 +223,7 @@ int32_t ufo_group_peek_color(const ufo_group_t *g)
     return ufo_group_classify(g);
 }
 
-int32_t ufo_group_consume(ufo_group_t *g)
+int32_t ufo_group_take_ready(ufo_group_t *g)
 {
     int32_t c, s2;
     if (!g) return UFO_COLOR_NONE;
@@ -233,10 +231,17 @@ int32_t ufo_group_consume(ufo_group_t *g)
     if (c == UFO_COLOR_NONE) return UFO_COLOR_NONE;    /* 没得合：状态不动（调用方据此不召唤）*/
     s2 = g->slot[UFO_SLOT_COUNT - 1];                  /* ★ 一手 `COLLECTED_UFOS[2]`（`0x4b0c54`）*/
     g->last_group = c;
-    ufo_group_reset(g);
-    g->last_group = c;                                 /* reset 会把 last_group 清掉，放回 */
-    g->last_slot2 = s2;                                /* ★ 同理：彩虹 UFO 的掉落表要读它 */
+    g->last_slot2 = s2;                                /* ★ 快照：彩虹 UFO 的掉落表要读它 */
+    /* ★★ P1（一手）：**这里不清槽** —— 一手在 UFO 结束时才清（`0x44a326`–`0x44a344`），
+     *   召唤只置自己的闩。清了就等于「召唤即清」（旧口径），而那一版的可见后果是
+     *   「UFO 在场时槽是空的、还能继续收令牌」——与一手相反。 */
     return c;
+}
+
+void ufo_group_clear(ufo_group_t *g)
+{
+    if (!g) return;
+    ufo_group_reset(g);          /* 三格 + filled + last_group + last_slot2 一起清（一手结束分支同款）*/
 }
 
 /* ============================================================== UFO 生命周期 */
@@ -251,9 +256,10 @@ void ufo_reset(ufo_ufo_t *u)
     u->fill_millionths = 0;
     u->absorbed = 0;
     u->skipped_guard = 0;
+    u->hp_max = 0;
 }
 
-int ufo_spawn(ufo_ufo_t *u, uint32_t enemy_id, int32_t color)
+int ufo_spawn(ufo_ufo_t *u, uint32_t enemy_id, int32_t color, int32_t hp_max)
 {
     if (!u || !enemy_id) return 0;
     if (ufo_present(u)) return 0;                      /* 单例（一手管理器 = 一个 `zUfo`）*/
@@ -265,6 +271,10 @@ int ufo_spawn(ufo_ufo_t *u, uint32_t enemy_id, int32_t color)
     u->fill_millionths = 0;
     u->absorbed = 0;
     u->skipped_guard = 0;
+    u->hp_max = (hp_max > 0) ? hp_max : 1;      /* ★★ P2 #6：血条/HUD 的分母 = **真血量**
+                                                 * （一手原值，可 > 999）。写进 `spawn+0x14` 的
+                                                 * 是它的钳制版（`ufo_clamp_spawn_life`）——
+                                                 * 两步落笔在卡侧 `ufo_try_summon()` 里。 */
     return 1;
 }
 
@@ -386,13 +396,18 @@ int ufo_target_clear_of_player(float x, float y, float px, float py)
 {
     float dx = x - px, dy = y - py;
     /* 一手：`0x44625f` 的收点检查半径 = `player+0x4798c`，原生默认 **30.0f**（`0x45ae67` 起初始化；
-     * `PLAN` §2.1 的默认 `{5,30,70,70}`）。严格 > ⇒ 命中边界不算安全（引擎用的是 `jbe` 收点）。*/
+     * `PLAN` §2.1 的默认 `{5,30,70,70}`）。严格 > ⇒ 命中边界不算安全（引擎用的是 `jbe` 收点）。
+     * ★ 2026-09-21（P2 #4）：**这个判据已经从"拉拽"那一路上撤掉** —— 一手的 state-7 每帧走完
+     *   位移会落回共同尾巴 `th12:0x4260af`（= 自机收点矩形判定），也就是**一手允许自机半途把道具收走**；
+     *   照着"别让自机收"写出来的栅栏会让道具**永久卡在自机 30 px 圈边上**（见头文件那条注）。
+     *   函数保留：单测与文档口径还要用它，且将来若要"自机不吃"的口径还得回来改这里。 */
     return (dx * dx + dy * dy) > (30.0f * 30.0f);
 }
 
-int ufo_step_allowed(float nx, float ny, float px, float py)
+int ufo_step_allowed(float nx, float ny)
 {
-    return ufo_target_on_screen(nx, ny) && ufo_target_clear_of_player(nx, ny, px, py);
+    /* 只判屏内。★ 2026-09-21：自机那一条撤销（理由见 `ufo_target_clear_of_player` 与头文件 ②）。 */
+    return ufo_target_on_screen(nx, ny);
 }
 
 /* ============================================================ 填充率 / 吸满开奖
@@ -559,6 +574,8 @@ int64_t ufo_break_bounty_score(const ufo_ufo_t *u)
 }
 
 /* ==================================================================== §4 HP */
+/* 写进 `spawn+0x14` 的那个值（= 硬界下最大）。★ 2026-09-21（P2 #6）：它**只是 spawn 值** ——
+ * 敌机建出来之后卡侧会把**真血量**写回 `enemy+0x6220/24/28`（一手见头文件 §4 的长注）。 */
 int32_t ufo_clamp_spawn_life(int32_t life)
 {
     if (life >= UFO_LIFE_LIMIT) return UFO_LIFE_MAX_ALLOWED;
@@ -568,6 +585,130 @@ int32_t ufo_clamp_spawn_life(int32_t life)
 
 /* 血条用的千分比（0..1000）。整数除法 ⇒ 不碰浮点（本层零浮点的理由见 `fill_millionths` 的注）；
  * 边界：`max <= 0`（没记到上限）⇒ 0；`cur < 0` ⇒ 0；`cur >= max` ⇒ 1000。 */
+/* ============================== ★★ 掉落物实体（压缩包 / 整颗 Bomb）==============================
+ * 一手运动与结算的地址逐条写在 `ufo_core.h` 那一段；这里只做实现（**纯整数/SSE 浮点，零 x87**）。 */
+
+int32_t ufo_drop_mult_permille(int32_t ufo_color, int power_full, int32_t fill_millionths)
+{
+    if (fill_millionths < 0) fill_millionths = 0;
+    if (fill_millionths > UFO_FILL_UNIT) fill_millionths = UFO_FILL_UNIT;
+    switch (ufo_color) {
+    case UFO_COLOR_RED:
+        return power_full ? 2000 : 1000;                       /* 一手 `0x44b149`：满火力 2.0 否则 1.0 */
+    case UFO_COLOR_GREEN:
+        return 2000;                                           /* 一手 `0x44b33f`：恒 2.0 */
+    case UFO_COLOR_BLUE:
+    case UFO_COLOR_GOLD:                                       /* ★ 金 ≡ 蓝（用户裁决「新增 3」）*/
+        if (fill_millionths >= UFO_FILL_UNIT) return 8000;     /* 一手 `0x44b24d`：fill≥1.0 ⇒ 8.0 */
+        if (fill_millionths * 2 >= UFO_FILL_UNIT) return 6000; /* ≥0.5 ⇒ 6.0 */
+        return 2000 + (int32_t)((int64_t)8000 * fill_millionths / UFO_FILL_UNIT);   /* 2.0+8·fill */
+    case UFO_COLOR_RAINBOW:
+        if (fill_millionths >= UFO_FILL_UNIT) return 4000;     /* 一手 `0x44b49c`：fill≥1.0 ⇒ 4.0 */
+        if (fill_millionths * 2 >= UFO_FILL_UNIT) return 3000; /* ≥0.5 ⇒ 3.0 */
+        return 2000 + (int32_t)((int64_t)2000 * fill_millionths / UFO_FILL_UNIT);   /* 2.0+2·fill */
+    default:
+        return 1000;
+    }
+}
+
+int32_t ufo_drop_settle_value(int32_t ufo_color, int32_t cnt_p, int32_t cnt_money,
+                              int32_t mult_permille, int32_t pv)
+{
+    int64_t v;
+    int32_t esi;
+    if (cnt_p < 0) cnt_p = 0;
+    if (cnt_money < 0) cnt_money = 0;
+    if (pv < 0) pv = 0;
+    if (mult_permille < 0) mult_permille = 0;
+
+    if (ufo_color == UFO_COLOR_RED) {
+        /* 一手 `0x426cd2`：`esi = trunc(cntA·PV·mult) + cntB·PV`，**跳过** /10×10（`0x426d25 jmp`）*/
+        v = (int64_t)cnt_p * pv * mult_permille / 1000;        /* 截断向零（正数 ⇒ 与 _ftol 同）*/
+        esi = (int32_t)(v + (int64_t)cnt_money * pv);
+    } else {
+        /* 一手 `0x426c9a`（彩虹）/ `0x426d27`（蓝/绿）：`trunc(PV·cntB·mult)` 再 `/10×10` */
+        v = (int64_t)pv * cnt_money * mult_permille / 1000;
+        esi = (int32_t)v;
+        esi = (esi / 10) * 10;                                 /* `0x426d65`–`0x426d7b` 的向下取整到 10 */
+    }
+    if (esi <= 0) esi = 10;                                    /* 一手 `0x426d81 mov esi,0xa` */
+    return esi;
+}
+
+int32_t ufo_drop_pv_from_base(int32_t money_base)
+{
+    int32_t v;
+    if (money_base <= 0) return 10;                            /* 引擎还没初始化 ⇒ 一手下限 10 */
+    v = money_base / 100;                                      /* 一手：`ecx /= 100` */
+    return (v / 10) * 10;                                      /* 一手：再减 `%10`（向下取到 10 的倍数）*/
+}
+
+int ufo_drop_step(ufo_drop_t *d, float px, float py)
+{
+    if (!d || !d->alive) return 0;
+    ++d->age;
+    if (d->kind == UFO_DROP_KIND_BAG) {
+        /* ★★ 一手 state 8（`th12:0x426189`–`0x426231`）：**每帧先位移、后加速**（顺序照抄）。
+         *   ① 位移用**当前**速度（spawn 那一刻 speed 被明确写 0，`th12:0x4276f9`）
+         *      ⇒ 前 60 帧 `sp == 0` ⇒ **原地不动**（一手同款）；
+         *   ② 之后按年纪门加速：`0x4261f6 cmp [edi+0x98c],0x3c / jl 跳过` + `0x426212 += 0.2`
+         *      + `0x4261ff` 封顶 12.0。 */
+        float sp;
+#if UFO_DROP_HOME_FULL_SPEED_START
+        /* ★❓ 自定（**非一手**）：满速启动 —— 直接给 12.0、不等待、不加速（owner 记忆版）。 */
+        d->speed_milli = UFO_DROP_HOME_SPEED_MAX_MILLI;
+#endif
+        sp = (float)d->speed_milli / 1000.0f;
+        if (sp > 0.0f)
+            /* 比例步进（不过冲）**直接复用 `ufo_drag_step`**：一手那边是
+             * `vel = polar(atan2(自机−道具), speed); pos += vel`（每帧重算朝自机的方向）。
+             * 距离 ≤ 0（与自机重合）时它自己不动 ⇒ 不需要在这里另加判据。 */
+            ufo_drag_step(&d->x, &d->y, px, py, sp);
+#if !UFO_DROP_HOME_FULL_SPEED_START
+        if (d->age > UFO_DROP_HOME_DELAY_FRAMES) {     /* 一手：年纪 < 60 不加速（`0x4261f6`）*/
+            d->speed_milli += UFO_DROP_HOME_ACCEL_MILLI;
+            if (d->speed_milli > UFO_DROP_HOME_SPEED_MAX_MILLI)
+                d->speed_milli = UFO_DROP_HOME_SPEED_MAX_MILLI;
+        }
+#endif
+        return 1;
+    }
+    if (d->kind == UFO_DROP_KIND_BOMB) {
+        /* 一手普通道具：`vy += GAME_SPEED × 0.03`（本卡只在正常游玩帧跑 ⇒ GAME_SPEED = 1）*/
+        d->vy_milli += UFO_DROP_GRAVITY_MILLI;
+        d->y += (float)d->vy_milli / 1000.0f;
+        return 1;
+    }
+    return 0;
+}
+
+int ufo_drop_within_pick(const ufo_drop_t *d, float px, float py, float r)
+{
+    float dx, dy;
+    if (!d || !d->alive || !(r > 0.0f)) return 0;
+    dx = d->x - px;
+    dy = d->y - py;
+    return dx * dx + dy * dy <= r * r;
+}
+
+/* ★★ P4：一手 HP 表（`th12:0x4b33f0` = {1600,1900,2100,2300,2500}，索引 = 火力档 0..4）。
+ * ★ 2026-09-21（P2 #6「太脆」）：**这一层不再缩放** —— 返回值就是一手原值（真血量）；
+ *   「写进 `spawn+0x14` 的那个值」由 `ufo_clamp_spawn_life()` 另外算（硬界 ≤999），
+ *   卡侧在敌机建出来之后再把真血量写回 `enemy+0x6220/24/28`（一手见头文件 §4 的长注）。 */
+const int32_t k_ufo_hp_by_power[UFO_HP_TABLE_N] = { 1600, 1900, 2100, 2300, 2500 };
+
+int32_t ufo_hp_for_power(int32_t power, int32_t per_level)
+{
+    int32_t hp;
+    int32_t level = ufo_hp_tier(power, per_level);      /* 夹取只有一处（头文件的 static inline）*/
+    hp = k_ufo_hp_by_power[level];
+    if (UFO_HP_ONEHAND_SCALE_PERMILLE != 1000) {        /* 默认走原值（旋钮见头文件）*/
+        hp = (int32_t)(((int64_t)hp * UFO_HP_ONEHAND_SCALE_PERMILLE) / 1000);
+    }
+    if (hp < 1) hp = 1;
+    return hp;
+}
+
 int32_t ufo_hp_permille(int32_t cur, int32_t max)
 {
     if (max <= 0) return 0;

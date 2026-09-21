@@ -17716,3 +17716,57 @@ state-8 每帧：`0x426192 fld [edi+0x984]` → `0x4261ad call 0x4377a0`（朝**
   `engine_abi_check` / `anm_hud_alpha_check` / `check-docs`）全部通过（结果见本节所属提交的报告）。
 - **实跑要看的**：`TUNING.md` §2.0u 的四条判据（吸收不再卡在自机边 / 击破掉 `0x10` 残碎卡 /
   召唤日志 `REAL HP 2500` 且仍吃炸弹 / 压缩包先停 1 s 再加速）。
+
+## §BE-EX（2026-09-22）：P5 工单 —— **109 花映塚整卡**（拦 Z / 蓄力 / 暴风场 / 暴风范围）+ 共享工具 `capcheck.py` 的池改名
+
+**谁做的**：P5 工单会话（独占 `cards/pofv.*`）；现象出处 `SINGLE-CARD-TEST.md` §th09 #1/#3/#4/#5；
+一手全链 [`engine/card/th09/01-pofv-charge-and-cancel-fields.md`](../../../engine/card/th09/01-pofv-charge-and-cancel-fields.md)；
+数值登记 `TUNING.md` §2.0v。
+
+### 1. 共享件改动（只有一条，逐条登记）
+
+| 文件 | 改了什么 | 为什么 | 怎么验证的 |
+| --- | --- | --- | --- |
+| `native/tools/capcheck.py` | `POOLS` 表：`("pool_pofvbq", "POFV_BLAST_QUEUE_MAX", …)` → `("pool_pofvst", "POFV_STORM_MAX", …)`（描述同改） | 109 把「爆风队列」重做成「暴风场池」（§BE-EU 的池名策略）⇒ 旧符号消失，脚本直接 `SystemExit`（`make check` 的 `capcheck` 一环判红：`capcheck: `POFV_BLAST_QUEUE_MAX` 不在 … 里了 —— 池搬走了，先修脚本`）| `python3 native/tools/capcheck.py` ⇒ 该行 `✅`、**没有**「新的宏没登记」类报错 |
+| `CAPACITY.md` | 台账第 86 行（109 的卡本地池）：`POFV_BLAST_QUEUE_MAX`（64）→ `POFV_STORM_MAX`（8）+ 一句「池换成逐帧判的锚定场」 | 同上；台账是机器对账的**文档侧**，两处必须同名 | `python3 native/tools/capcheck.py` 的 D 段读的就是这两处 |
+
+- **对既有卡的影响面**：`capcheck.py` 只被 `make check` 调用、只读仓库文件、不碰 exe/站点/资产 ⇒
+  **对任何一张卡的行为零影响**（它只是把 109 的池行换个名字）。`sites.py` / `tools/sitecheck.py` /
+  `sdk.*` / `sdk_core.*` / `Makefile` / `cards_def.c` / `patch/**` / `hud_dim.*` / `signal.*` /
+  `season.c` / `ufo.c` / `youkai.c` / `animal.c` / `local/` **一字未改**；站点集与 `patch/*.js` 不变。
+- **回归**：`make gen verify dll dllx87 dllverify cards-check anm-verify sht-verify snd-check` ⇒ **rc=0**
+  （`x87 in our objects: 0`）；`python3 tooling/check-docs.py` ⇒ 全部通过。
+  ⚠ `make check` 的 `test-host` 与 `capcheck` 当前各有一条**别的工单**的红（见 §5），与本节无关。
+
+### 2. 109 自己的改动（独占文件，不算共享件）
+
+| 文件 | 改了什么 |
+| --- | --- |
+| `native/cards/pofv_core.h` | 新增「暴风 = 锚定场」一节（`pofv_storm_*` + 四个常量）；新增 `POFV_SUPPRESS_AFTER_FRAMES = 10` 与 `pofv_charge_usable_level()`；删掉爆风队列一族（队列结构 / 三个队列函数 / 两个上限宏 / 30 帧连爆窗口标记）|
+| `native/cards/pofv_core.c` | 实现场池（spawn / tick / radius / `chain_at`）；半径律 = 一手 `16 → R` 线性；`s_storm_r` 档 1 = **176**（一手）、`s_ca_r` = **192/256/448**（一手前三档）；`pofv_charge_hold` 不再把等级夹到气槽；`pofv_charge_suppress` 改 10 帧时间闸 |
+| `native/cards/pofv.c` | `on_enemy_death` 只做 O(1)（定档 + 起一个场）；`on_tick_2` 帧末遍历活场（每帧判 + 整池扫弹预算）；`clear_card()` 清场池；文件头与注释指回一手文档 |
+| `native/tests/test_pofv_core.c` | 蓄力/拦 Z 段按一手重写（气槽空也拦）；场池段（出生半径 16 / 逐帧长 / 满寿命释放 / 池满丢 / 档-半径单调）；队列段删除 |
+
+### 3. 一手依据（本文只摘结论；全链见 engine 文档）
+
+- **消弹圈 = 节点（场）**：`th09:0x41cf30`（建，`+0x8` r₀ / `+0xc` dr / `+0x24` 寿命 / `+0x38` kind）、
+  `th09:0x41c8e0`（推进：每帧 `r += dr`、寿命 `--`）、`th09:0x41dff0`（点测试）、
+  `th09:0x414a7b`（消费 ⇒ `bullet+0xdbe = 5`）。实例：CA L1/L2/L3 = `0x403c30/90/f0`（192/256/448）。
+- **拦 Z 的闸 = 10 帧**：`th09:0x41fa17 push 0xa` → `th09:0x41fa1b Timer::is_ge` → `th09:0x41fa22 je 0x41fc16`（原生射击）。
+- **气槽**：`th09:0x41bc90`（`+= arg`，上限 400，每 100 通知 HUD）；蓄力量 `player+0x30384`
+  每帧 `+= ds:0x4b36b8 × shot_data[+0x24]`（`th09:0x41fa75`），在 `th09:0x41fab0` 被气槽钳上界。
+
+### 4. 刻意保留的 🟡（别当成已复刻）
+
+1. **「暴风引爆范围内其他小怪」在 TH09 的节点系统里找不到实现** —— `th09:0x41dff0` 的全部调用点都在
+   弹幕侧（`BulletManager::on_tick` + 弹型 tick），敌人掉血只有 `th09:0x4110d9` 一处（自机弹碰撞支）。
+   ⇒ 「连锁经真小怪传播」仍是**用户口径 + 本卡的伤害源**（`ce_damage_rect`），不是复刻。
+2. **每级蓄力帧数 45** 仍是占位（原版速率 = `ds:0x4b36b8 × shot_data[+0x24]`，`0x4b36b8` 无写点）。
+3. **场的寿命 30 帧 / 档 2–4 的半径 / 伤害 40** 是 ❓ 自定（一手的实例里没有「暴风」那一档）。
+
+### 5. 当前 `make check` 的两条红（**都不是本包**，留档给统筹）
+
+| 环 | 红什么 | 归属证据 |
+| --- | --- | --- |
+| `test-host` | `test_youkai_core` 45 failed（工作树里的 `youkai_core.*` 是**未提交**改动）| 用 HEAD 版重编同一支单测 ⇒ **709 checks / 0 failed**；本包只动 `pofv*` |
+| `capcheck` | ① `sht_groups` 豁免的计划段在 `NEXT.md` 找不到；② 15 个 `CE_SHT_SET_YOUKAI_*` 没登记进台账 | 两条都是 108/117 那条线（youkai shooterset）；HEAD 上 capcheck 另有 1 条旧红（atlas entry） |
