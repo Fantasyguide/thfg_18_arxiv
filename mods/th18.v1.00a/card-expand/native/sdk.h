@@ -759,6 +759,7 @@ void ce_hud_digit_clear(ce_hud_digit_t *d);
  * 一手见 engine/input/th18/01），**A / S 没被任何动作占用**（D 是 Change）——
  * 卡要用「游戏不认识的键」时读这里。
  * ⚠️ 这些键**不进 replay 输入流**（回放只录 `th18:0x4ca428` 的 16 位掩码）→ 用它触发的效果在回放里不重现。*/
+ * ⚠️ **空格（SPACE）是调试键（owner 2026-09-21 口径）—— 111 灵界调试、112 令牌调试、106 满 P 测试键都在用它，**玩法功能禁止占用**；玩法用的新键走「掩码空闲位」那条路，见 `WORK-PACKAGES.md` §1b/§1c。
 #define CE_VK_A 0x41
 #define CE_VK_S 0x53
 #define CE_VK_C 0x43
