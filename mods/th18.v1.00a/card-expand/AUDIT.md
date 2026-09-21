@@ -15802,7 +15802,7 @@ sprite 到 **477**（脚本 / sprite 无上限，只是可见性登记）。**�
 | `patch/th18/cards.js`（**共享件** —— `CLAUDE.md` 的「共享件」清单里 `patch/**` 在列）| 见下 **②**（111 的 `"category": 0` + 一行 `desc`）| 契约 reason 2：有主动行为 ⇒ `category` **必须** = 0 | 同上 | `tools/contract_check.py` 绿 + 反例红；`mkfiles.py --check` 全合规 |
 | `patch/files.js`（**生成物**）| `make files` 刷 CRC：`th18/cards.js` **713721660 → 1393158464** | thcrap 的 `files.js` 是 patch 清单的 crc32 ⇒ 改了 `cards.js` 不同步刷 = 远端分发的校验对不上 | 同上 | `make files` 的输出与 `zlib.crc32(open('patch/th18/cards.js','rb').read())` **逐值一致** |
 | `native/cards/signal_core.{h,c}` | **一个字未动** | §9 明确「不新增参数、不新增闸、不改数值」⇒ 形态判据 / 消弹记账 / 退款窗那些旋钮全部复用既有的 | 同上 | `make test-host` 的 `test_signal_core` → **2182 passed, 0 failed** |
-| 文档 | `AUDIT.md`（本节 + §BE 表一行）、`CARDS.md`（111 行）、`NEXT.md`（实跑验收清单）、`WORK-PACKAGES.md` §9（落地状态）| 落笔纪律 | 同上 | `python3 tooling/check-docs.py`：**本批文档 0 违规**（`[addr]`/`[version]`/`[tables]` 全 ✓）；⚠ 工作树里另有 **1 处**表格违规在 `TUNING.md:2593`，属**别的会话在飞**的改动（证据见 §4 末）|
+| 文档 | `AUDIT.md`（本节 + §BE 表一行）、`CARDS.md`（111 行）、`NEXT.md`（实跑验收清单）、`WORK-PACKAGES.md` §9（落地状态）| 落笔纪律 | 同上 | `python3 tooling/check-docs.py` → **全部通过（363 个文件）**（`[links]`/`[addr]`/`[version]`/`[tables]` 全 ✓）|
 
 **① `native/cards/signal.c` 的三处**：
 
@@ -15865,28 +15865,29 @@ sprite 到 **477**（脚本 / sprite 无上限，只是可见性登记）。**�
   `hud_dim.*` / `season.c` / `animal.c` / `lolk.c` **一个字未动**（正被别的工单占）。
   ⇒ **站点账不变**（`make gen` 的 patch md5 与改动前一致；`tools/gen_drift.py` 绿）；
   **主动卡组的内容变了**（多一张 111）⇒ 玩家侧「HUD 主动行 / D 键遍历顺序」会多一张卡，这是本次的**目的**。
-- **回归跑了什么**（本次逐项实跑，命令与 rc 都留档）：
+- **回归跑了什么（最终态，逐项实跑留档）**：
+  - **`make check` → rc=0**（命令 `make check`；日志 `/tmp/make_check_111b.log`）。关键读数：
+    `test_faith_hud_core: 4106 passed, 0 failed`、`test_hud_dim_core: 433 passed, 0 failed`、
+    `test_signal_core: 2182 passed, 0 failed`、`cards.js: 37 张卡全部合规`、
+    `x87 in our objects: 0`、`sites.py check` 27 个 BP_* 双向一致、`sitecheck --all` 全过、
+    `capcheck` 全绿、`engine_abi_check` 通过、`anm_hud_alpha_check` 24 项一致、
+    `python3 tooling/check-docs.py` → **全部通过（363 个文件）**；
   - `make dll` rc=0（0 error；3 条既有 `-Wunused-function` 警告来自被注释掉的道具钩子，与本改动无关）；
-  - `make cards-check` / `anm-verify` / `sht-verify` / `snd-check` / `dllx87`（**0 条 x87**）/ `dllverify`
-    —— **逐项 rc=0**；
-  - `python3 sites.py check` rc=0（27 个 BP_* 双向对上）；`tools/contract_check.py` rc=0（**+ 反例红**）；
-    `tools/gen_drift.py` rc=0（三份生成物无漂移）；`tools/sitecheck.py --all` rc=0（窗口 56 / 落点 6）；
-    `tools/capcheck.py` rc=0；`tools/engine_abi_check.py` rc=0；`tools/anm_hud_alpha_check.py` rc=0；
-  - `make test-host`：其余全部单测绿（含 `test_signal_core` **2182 passed**），**唯一红** =
-    `test_faith_hud_core` 的 6 条 `hud_dim_tick` 断言 —— **不是本次改动**：那条测试链的是
-    `test_faith_hud_core.c + faith_hud_core.c + signal_core.c + faith_core.c + mof_core.c + hud_dim.c`，
-    **不含 `cards/signal.c`**；病灶是**另一个会话正在飞的 P9「20 帧 / 50%」改动**（`cards/hud_dim.{h,c}`
-    在**未提交的工作树**里已把终点 32→128、步长±56→20 帧线性，而该测试的期望值还没跟着改）。
-    **对照实验（决定性）**：把 `cards/hud_dim.{c,h}` 换成 `HEAD` 版、其余不动 ⇒ 同一条测试
-    **4106 passed, 0 failed**；用工作树那版 ⇒ **6 failed**。⇒ `make check` 的 rc≠0 由那一批独占，
-    **本工单不含任何红**。（本会话按纪律**不碰** `hud_dim.*`；等那批落地后 `make check` 自然全绿。）
-  - `python3 tooling/check-docs.py`（**同一条结论，只是另一个文件**）：本批文档 **0 违规**；
-    工作树里剩的 **1 处**（`TUNING.md:2593` 的表格单元格 238 字符 > 200）是**别的会话**的未提交改动
-    —— 证据：`git show HEAD:…/TUNING.md` 里**超 200 字符的表格行 = 0 条**，工作树里 = 1 条，
-    且那一行正是 `git diff` 里他们**新增**的 `| 终点 alpha | **128**（50% 透明）| … |` 行。
-    **对照实验**：另开一个 `git worktree`（= HEAD 全干净）+ 只把**本批 4 份文档**覆盖进去 ⇒
-    `[addr] ✓ / [version] ✓ / [tables] ✓`（那棵树里剩下的都是「`local/` 不存在 / 未跟踪新文件」造成的
-    链接噪音，与本批无关）。**修法是一行**（把那个单元格的说明拆到表下），但那是他们的文件 ⇒ 本会话不碰。
+  - `make cards-check` / `anm-verify` / `sht-verify` / `snd-check` / `dllx87` / `dllverify` —— **逐项 rc=0**；
+  - **反例闸（本次自己跑的证伪）**：把 `cards.js` 里 111 的 `category` 改回 2（= 与行为不一致）
+    ⇒ `tools/contract_check.py` **rc=1** 并打印
+    `卡 111（signal.c）有主动行为但 cards.js 的 category = 2 ≠ 0 ⇒ 契约 reason 2（ACTIVE_CATEGORY_REQUIRED）`。
+    ⇒ 这条契约**确实被本改动触动、也确实被闸看着**（§BE-EJ 那次事故的同一条）。
+- **会话中的一次红（已消失，留档备查）**：中途跑 `make check` 时 `test_faith_hud_core` 红 6 条
+  `hud_dim_tick` 断言 —— **不是本改动**：那条测试链的是
+  `test_faith_hud_core.c + faith_hud_core.c + signal_core.c + faith_core.c + mof_core.c + hud_dim.c`，
+  **不含 `cards/signal.c`**。当时病灶 = **另一个会话正在飞的 P9「20 帧 / 50%」**（`cards/hud_dim.{h,c}`
+  在未提交的工作树里已把终点 32→128、步长 ±56 → 20 帧线性，而两个宿主单测的期望值还没跟着改）。
+  **当时的对照实验（决定性）**：把 `cards/hud_dim.{c,h}` 换成 `HEAD` 版、其余不动 ⇒ 同一条测试
+  **4106 passed, 0 failed**；用当时工作树那版 ⇒ **6 failed**；同一时刻 `check-docs` 也只剩
+  `TUNING.md` 里他们新增的一行长单元格（`HEAD` 版那一项 = 0 条违规）。⇒ 两处红**全部由那批独占**，
+  **本工单一处都不含**。那批随后落地 ⇒ 本次末次 `make check` **rc=0**、`check-docs` **全部通过**
+  （两处红都已自然消失，本会话**没有碰**过 `hud_dim.*` / `TUNING.md` / `test_faith_hud_core.c`）。
 - **不部署**：本次不出 DLL、不同步 modkit（`make release` / `tools/deploy.py` 都没跑）。
   产出物仅供 owner 验收；`th18_card_expand.dll` 是本机 `make dll` 的构建产物（**未发布**）。
 
