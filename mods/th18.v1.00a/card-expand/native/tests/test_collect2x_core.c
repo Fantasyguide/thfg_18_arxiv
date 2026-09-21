@@ -255,10 +255,40 @@ int main(void)
             size_t n = fread(buf, 1, sizeof buf - 1, f);
             fclose(f);
             buf[n] = 0;
-            CHECK(strstr(buf, "py - C2X_POPUP_Y_OFFSET") != 0);   /* 减在 y 上，不是加 */
-            CHECK(strstr(buf, "py + C2X_POPUP_Y_OFFSET") == 0);
+            /* ★ 2026-09-21（P9 / 114 #1）：锚点从「**当下**自机位」改成**批位**（`bonus_anchor_pos()`
+             * 取出的 `ay`）⇒ 断言跟着改，语义仍是「−48 减在 y 上」。*/
+            CHECK(strstr(buf, "ay - C2X_POPUP_Y_OFFSET") != 0);   /* 减在 y 上，不是加 */
+            CHECK(strstr(buf, "+ C2X_POPUP_Y_OFFSET") == 0);
         } else {
             printf("  （跳过 B10 源码级检查：读不到 cards/collect2x.c —— 请从 native/ 目录跑本测试）\n");
+        }
+    }
+
+    /* ============ ★★ 2026-09-21（P9 / 114 #1）：**碎片道具的生成点 = bonus 位置** ============
+     * 用户：「我记得原版应该是**道具从 bonus 位置生成**，而不是自机位置」。一手（TH14 v1.00b）：
+     * 结算尾把批位 float3 抄进栈（`0x438dc6`/`0x438dce`）→ **y −= 48**（`0x438de5`/`0x438df8`）→
+     * 随后**弹字** `call 0x458000` 与**碎片 spawn** `call 0x4397b0`（`0x438fbc lea eax,[esp+0x28]`
+     * → `0x438fda`）读**同一个** `[esp+0x28]`；角度/速度 = `0xbfc90fdb`（−π/2）/ `0x400ccccd`（2.2f）。
+     * `collect2x.c` 是引擎侧代码、上不了主机 ⇒ 这里按上面的同款做法做**源码级**钉：
+     *   ① 批位偏移与弹字偏移是**同一个值**（别名，防两处字面量各写一份）；
+     *   ② 两个成员入口都写批位（`note_bonus_anchor(s);` 恰好两处）；
+     *   ③ 碎片弹点 = **批位快照 − 偏移**（`pending_frag_y - C2X_BONUS_ANCHOR_Y_OFFSET`）；
+     *   ④ 旧的「自机 y − 76」自定锚（§Z14 的可见性权宜值）**不再存在**（源码里不许有 `76.0f`）。*/
+    CHECK(C2X_BONUS_ANCHOR_Y_OFFSET == C2X_POPUP_Y_OFFSET);
+    {
+        FILE *f = fopen("cards/collect2x.c", "rb");
+        if (f) {
+            static char buf[262144];
+            size_t n = fread(buf, 1, sizeof buf - 1, f);
+            fclose(f);
+            buf[n] = 0;
+            CHECK(strstr(buf, "pending_frag_y - C2X_BONUS_ANCHOR_Y_OFFSET") != 0);
+            CHECK(strstr(buf, "76.0f") == 0);                 /* 旧自定锚已删 */
+            int anchors = 0;                                  /* 成员入口的写点计数（原生成员门 + 虚拟通道）*/
+            for (const char *q = buf; (q = strstr(q, "note_bonus_anchor(s);")) != 0; ++q) ++anchors;
+            CHECK(anchors == 2);
+        } else {
+            printf("  （跳过 P9-114#1 源码级检查：读不到 cards/collect2x.c —— 请从 native/ 目录跑本测试）\n");
         }
     }
 

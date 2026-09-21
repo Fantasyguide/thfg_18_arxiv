@@ -1092,6 +1092,11 @@ SDK_SITES = [
      "恒定 mov eax,1 返回 ⇒ 一敌一生正好一次。handler 用 regs->retaddr 分死因"
      "（0x42f3b7 = 打死主路 / 0x42ee90 = 炸弹秒杀 / 0x430f59 = ECL die / killAll 三兄弟），"
      "沿卡链表调 on_enemy_death(&ev)。详见 docs/superpowers/specs/2026-09-12-shared-enemy-death-event-design.md"),
+    # ★★★ 2026-09-20（WORK-PACKAGES §7-B）：本条与 `ce_poc_gate_b` 的声明里带 `no_replay`
+    #   —— 窗口 = **一条裸的 `ja rel32`**，是本 patch 里唯一的「cave_fix 修不了的近相对分支」窗口
+    #   （字段语义与一手依据见 `_SDK_SITE_FIELDS` 顶上那段）。两条现在 park 中；一旦放回发布面，
+    #   `tools/sitecheck.py` 的 W5/W6 会立刻拦住「handler 里还留着 `return BP_EXEC_ORIGINAL`」这一版
+    #   —— 历史上正是那句守卫 ⇒ 池里回放那条 `ja` ⇒ 跳进池的未写区 ⇒ 写 `0x1` 的访问违例（§BE-ER）。
     ("ce_poc_gate_a", 0x445bb9, 6, "0f87a4030000",
      "ItemManager__on_tick__body 的『过线 ⇒ 道具无条件真空』分支 A：`445baa movss xmm0,[esi+0x47998]`（收点线）"
      "→ `445bb2 comiss xmm0,[esi+0x624]`（自机 y）→ **本站点 `ja 0x445f63`**（0x445f63 = `mov [item+0xc74],3` 真空态）。"
@@ -1252,6 +1257,9 @@ _SDK_KEEP_NAMED = {
     "ce_bullet_damage_final",         # 0x45e7ff：**伤害层唯一起作用点**（`bullet_damage_permille`）——
                                       #   它被截掉 = 所有走伤害层的卡**静默失效**（古锭刀/衔尾蛇/季节/测试卡 200…）
 }
+# 过滤**之前**的全表（含 park 的）—— `tools/sitecheck.py` 的体检要连 park 的一起查：
+# park = 没进 patch = 现在没装，所以本身没风险；但**一旦放回发布面**，用的就是这一份声明。
+SDK_SITES_ALL = list(SDK_SITES)
 SDK_SITES = [s2 for i, s2 in enumerate(SDK_SITES) if i < 10 or s2[0] in _SDK_KEEP_NAMED]
 
 # 站点级的**原生声明字段**（thcrap 的 `breakpoint_from_json` 认识的那些）。
@@ -1269,7 +1277,53 @@ SDK_SITES = [s2 for i, s2 in enumerate(SDK_SITES) if i < 10 or s2[0] in _SDK_KEE
 #   同源旁证：本局桩页里 thcrap 自己的站点带 `c2 08 00`（= 4 + 一个栈参 4）⇒ 规律一致。
 _SDK_SITE_FIELDS = {
     "ce_native_option_muzzle": {"stack_clear_size": 0x14},
+
+    # ══ ★★★ 2026-09-20（WORK-PACKAGES §7-B）：`no_replay` —— **回放禁令** ══
+    # 语义（一句话）：**本站点的窗口里含一条 `cave_fix` 修不了的近相对分支 ⇒ handler 禁止返回
+    # `BP_EXEC_ORIGINAL`（=1，从跳板池里回放那几字节）；这类站点同时也不宜接管**（§BE-EQ 实测）。
+    #
+    # 为什么（一手机制，`AUDIT.md` §BE-ER / §BE-DW）：thcrap 给每条声明在跳板池里留一格放**站点原始字节**；
+    # handler 返回 1 ⇒ 桩从池里回放那几字节。而 `cave_fix` **只重定位「窗口第一条就是 `e8`/`e9`」**那一种
+    # ⇒ 窗口里其余 rel32 分支（`0f 8x` 的 jcc / `e9` / 非首条的 `e8`）**按原相对位移**从**池的地址**跳
+    # ⇒ 落到池的未写区 ⇒ 执行 `00 00`（`add byte ptr [eax],al`），而那一刻 `Eax = 1` ⇒ **写 `0x1` 的访问违例**
+    # ⇒ 崩点 `Eip` 落在池里（`0x03c2xxxx`）。逐字节复算：`ce_poc_gate_a` 的池副本 `0x03c20250`，
+    # `+6+0x3a4 = 0x03c205fa` **正是 dump 的 `Eip`**（§BE-ER 的表）。
+    #
+    # 字段形态：`"no_replay": "<前提说明>"`（**非空字符串** = 已声明；值就是打印出来的那句前提）。
+    # 唯一合法的「窗口含近相对分支」的站点在这里登记 —— 判据由**反汇编**产生
+    # （`tools/sitecheck.py` 逐指令看窗口），不是人肉点名：**没登记又含分支 ⇒ `make check` 判红（W5）**。
+    # 登记了以后还有第二道（W6）：**该站点的 handler（含它调用的函数）里出现 `BP_EXEC_ORIGINAL` ⇒ 判红**
+    # —— 正是 2026-09-19 那次事故的形态（有人加了一句 `return BP_EXEC_ORIGINAL` 守卫就崩了）。
+    #
+    # ⚠ 本字段是**纯元数据**（`_SDK_SITE_META_KEYS`）：它**不进 patch**，加/改它不应改变生成物
+    #   （`emit_sdk_breakpoints` 里过滤 + 断言；否则补一句注释就会换掉发出去的 patch 的 md5）。
+    "ce_poc_gate_a": {"no_replay":
+        "窗口 = 唯一一条指令 `0f 87 a4 03 00 00`（`ja th18:0x445f63`，rel=+0x3a4，§BE-ER 逐字节核过）"
+        "⇒ 回放会从池的地址跳到「本格 + 0x3a4」= dump 里的 `Eip` `0x03c205fa`（池未写区）"
+        "⇒ `00 00`/写 `0x1` 的访问违例。**唯一允许的形态 = handler 恒返回 0 + 自己给落点**"
+        "（A `th18:0x445bbf` / 真空入口 `th18:0x445f63`）；接管本身也已实测有害（§BE-EQ：道具只减速不变橙不抖）。"
+        "现 park 中（`_SDK_KEEP_NAMED` 外）；放回发布面前先过 sitecheck W5/W6（§BE-ER / §BE-EQ / WORK-PACKAGES §7-B）"},
+    "ce_poc_gate_b": {"no_replay":
+        "同 `ce_poc_gate_a`（窗口 = `0f 87 5a ff ff ff` = `ja th18:0x445f63`，rel=−0xa6）"
+        "⇒ 回放跳进池的未写区。**唯一允许的形态 = 恒返回 0 + 自己给落点**"
+        "（B `th18:0x446009` / 真空入口 `th18:0x445f63`）；两条必须成对处理（只挂一条 = 另一条支路照旧真空）。"
+        "现 park 中；放回发布面前先过 sitecheck W5/W6（§BE-ER / §BE-EQ / WORK-PACKAGES §7-B）"},
 }
+
+# `_SDK_SITE_FIELDS` 里属于**体检/记账**（不进 patch）的键。thcrap 的 `breakpoint_from_json` 不认识
+# `no_replay` —— 写进 patch 只会变成一条没人读的杂字段，且会让「纯文档性改动」改变 patch 的 md5。
+_SDK_SITE_META_KEYS = ("no_replay",)
+
+
+def sdk_site_meta(name):
+    """某站点声明的**元数据字段** `{key: value}`（去掉 `_SDK_SITE_META_KEYS` 之外的）。
+    给 `tools/sitecheck.py` 当**权威声明源**用 —— 别在工具里正则扫本文件。"""
+    return {k: v for k, v in _SDK_SITE_FIELDS.get(name, {}).items() if k in _SDK_SITE_META_KEYS}
+
+
+def sdk_no_replay():
+    """→ `{站点名: 前提说明}`：**已声明 `no_replay`** 的站点（含 park 的；判据源 = `_SDK_SITE_FIELDS`）。"""
+    return {n: f["no_replay"] for n, f in _SDK_SITE_FIELDS.items() if f.get("no_replay")}
 
 
 def _sdk_rva(name):
@@ -1293,7 +1347,14 @@ def emit_sdk_breakpoints(text, text_va):
             raise ShapeError("%s @ 0x%06x：cavesize=%d < thcrap 下限 5（短于 5 字节的站点会被拒绝装载，"
                              "SDK 门回读失败后走降级路径）" % (name, va, n))
         out[name] = {"addr": "0x%06x" % va, "cavesize": n, "expected": exp, "title": "行为 SDK → BP_%s：%s" % (name, title)}
-        out[name].update(_SDK_SITE_FIELDS.get(name, {}))
+        # 只有**原生字段**（`stack_clear_size` 这类 thcrap 认识的）进 patch；
+        # `no_replay` 之类的元数据留在 sites.py 里做体检（见 `_SDK_SITE_META_KEYS` 那段）。
+        for k, v in _SDK_SITE_FIELDS.get(name, {}).items():
+            if k in _SDK_SITE_META_KEYS:
+                continue
+            out[name][k] = v
+        assert not (set(out[name]) & set(_SDK_SITE_META_KEYS)), \
+            "%s：元数据字段泄进了 patch（它不该改变生成物）" % name
     return out
 
 

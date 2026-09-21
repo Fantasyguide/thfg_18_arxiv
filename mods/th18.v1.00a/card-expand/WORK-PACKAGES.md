@@ -170,6 +170,8 @@ owner 实跑口径订正：**道具确实变慢了**（⇒ 门①state==1 / 门�
 
 ## 7. ★★ 挂起（owner 2026-09-19：「记录一下，我等有时间再搞」）—— 106 闸的非接管实现 + 「回放禁令」
 
+> **进展（2026-09-20）**：**B 已做完**（`no_replay` 字段 + sitecheck W5/W6，见下）；A / A2–A4 / C 仍挂起。
+
 **背景（一手，全文见 [`AUDIT.md`](AUDIT.md) §BE-EQ）**：`th18:0x445bb9` / `0x446003` 这两条站点
 （各自窗口 = **一条裸的 `ja rel32`**）**接管也不可用、回放更危险**：
 
@@ -266,7 +268,28 @@ owner 实跑口径订正：**道具确实变慢了**（⇒ 门①state==1 / 门�
   弄坏 111 的信号档与收点计分 ⇒ 实施顺序：SDK（覆盖位 + 语义访问器 + 线隐藏声明）→ 106 改用它 →
   111 与 SDK 计分改读语义值 → 一起编译、一起验收。
 
-### B. 把「窗口含近相对分支 ⇒ 禁止回放」从文档升成**硬规则**
+### B. 把「窗口含近相对分支 ⇒ 禁止回放」从文档升成**硬规则** —— ✅ **已做完（2026-09-20）**
+
+> **状态**：字段 `no_replay` 已进 `native/sites.py`；`tools/sitecheck.py` 的 **W5/W6** 两条硬判据已上线
+> （含判据自检 `--selftest` 与 `--replay-census` 普查模式）；`sdk.c` 的 `BP_EXEC_ORIGINAL`（37 个站点）
+> 已全量核过；**patch md5 未变**（`d339b0ced4c57b9029338b1b0a33931c`）。全部证据与普查表见
+> [`AUDIT.md`](AUDIT.md) §BE-ES。**没动卡代码、没部署 DLL/patch。**
+
+- 旧的 `tools/sitecheck.py` 里那张 `EXEMPT_W3`「**已论证的例外**」人肉名单**已删除** ——
+  它的前提（handler 恒返回 0、cave 永不执行）正是被人肉打破才崩的 ⇒ 这种前提不许再靠人维持。
+- 字段：`no_replay = "<前提说明>"`，与 `stack_clear_size` 同放 `_SDK_SITE_FIELDS`；**纯元数据、不进 patch**
+  （`_SDK_SITE_META_KEYS` 过滤 + 断言；实测生成的 patch 与改动前 md5 相同）。
+  语义 = **窗口含 `cave_fix` 修不了的近相对分支 ⇒ handler 禁止返回 `BP_EXEC_ORIGINAL`，也不宜接管**。
+- 判据：**W5** = 窗内逐指令反汇编出 rel32 分支（`0f 8x` / `e9` / 非首条 `e8`）却没声明 `no_replay` ⇒ **失败**；
+  **W6** = 声明了 `no_replay` 的站点，其 handler（含它在 `native/*.c` 里调到的函数）出现
+  `BP_EXEC_ORIGINAL` ⇒ **失败**（park 中先给 ⚠，放回发布面即判红）。两条都由判定表 `replay_verdict()`
+  决定，表格本身被 `--selftest` 穷举自检（判据失灵 ⇒ `make check` 判红）。
+- 两条闸（`ce_poc_gate_a` / `ce_poc_gate_b`）的声明里已带上该字段，注释指向 §BE-EQ / §BE-ER。
+- 复核时的状态：`sdk.c` 由另一会话同期在改，`ce_poc_gate_common()` 里那句
+  `return BP_EXEC_ORIGINAL`（§BE-ER 的致病代码）**已被删掉** ⇒ W6 此刻不报警；
+  **谁把它加回去，W6 当场判红**（演示见 §BE-ES）。⇒ 这个前提不靠人记，靠判据（每次 `make check` 重判）。
+
+<details><summary>原工单（保留：判据的来龙去脉）</summary>
 
 - 现状：`tools/sitecheck.py` 的 W3 对这两条只给「**已论证的例外**」文字说明（前提 = handler 恒返回 0、cave 永不执行）
   ⇒ 全靠人肉保证，我上一版就是在这儿翻的车（加了 `return BP_EXEC_ORIGINAL` 的守卫）。
@@ -274,6 +297,8 @@ owner 实跑口径订正：**道具确实变慢了**（⇒ 门①state==1 / 门�
   **带该字段的站点，其 handler 里出现 `BP_EXEC_ORIGINAL` 就判红**（`make check` 里拦住）。
 - 顺带普查：`sdk.c` 里有十几处 `return BP_EXEC_ORIGINAL`（`0x244`/`0x1032`/`0x1131`/`0x1150`/`0x1179`/`0x1194`/`0x1203`/`0x1216`/`0x1226`/`0x1240`/`0x1270`…）
   ⇒ 逐条按**它自己站点的窗口**过 W3，把结论写进 §BE-EQ（目前只有这两条被标"例外"，其余预期是"窗内无分支"）。
+
+</details>
 
 ### C. #41 的账（新增一条独立证据）
 

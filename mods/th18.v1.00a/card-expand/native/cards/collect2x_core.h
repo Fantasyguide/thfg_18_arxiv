@@ -79,6 +79,21 @@
  * ⚠ 位置写的是**世界坐标 float3**（`CE_POPUP_POS`），偏移只作用在 y 上、**不要**动绘制常量。*/
 #define C2X_POPUP_Y_OFFSET  48.0f   /* ★ 一手：TH14 `[0x4c1b24]` = 48.0f（`subss`，弹字 y 减去它）*/
 
+/* ★★ 2026-09-21（P9 / `WORK-PACKAGES.md` §0 的 114 #1，用户：「原版应该是道具从 bonus 位置生成，
+ * 而不是自机位置」）：**同一个 48.0f 也作用在碎片道具的生成点上** —— 「bonus 位置」是**一个点、
+ * 两个消费者**。TH14 结算尾逐指令（材料 `local/_scratch/th14_full.asm`）：
+ *   · 批位抄进栈上 float3：`th14:0x438dc6 movq xmm0,[0x4f5888]` + `th14:0x438dce mov eax,[0x4f5890]`
+ *     → `th14:0x438dd9 movq [esp+0x28],xmm0` / `th14:0x438ded mov [esp+0x30],eax`；
+ *   · 只改 y：`th14:0x438ddf movss xmm0,[esp+0x2c]` + `th14:0x438de5 subss xmm0,[0x4c1b24]`（= 48.0f）
+ *     + `th14:0x438df8 movss [esp+0x2c],xmm0`；
+ *   · **弹字**（五档 `call 0x458000`：`th14:0x438e20`/`0x438e67`/`0x438eb9`/`0x438f0b`/`th14:0x438f55`）
+ *     与**碎片道具 spawn**（`th14:0x438fbc lea eax,[esp+0x28]` → `th14:0x438fda call 0x4397b0`，
+ *     同形另三处 `th14:0x438ffc`/`th14:0x439028`/`th14:0x439047`）读的是**同一份指针**；
+ *     连声像也取它（`th14:0x438e03 movss xmm2,[esp+0x28]`）。
+ * ⇒ 原版弹字与道具**同一个锚**（批位 − 48），我们照做：这里做成 POPUP 常量的**别名**
+ *   （一处定义、两处引用），别各写一个字面量。*/
+#define C2X_BONUS_ANCHOR_Y_OFFSET  C2X_POPUP_Y_OFFSET
+
 /* ★ 批闭 idle（游玩帧；§Z21 = TH14 presence 语义，值回原版 8）。
  * TH14 v1.00b 一手（th14_full.asm，AUDIT §Z18/§Z21）：批计时 `[0x4f5884]`；**重载点在 per-item 在飞体
  * 内、距离/吸收判定之前**（0x43898e：批集 kind ≠9/0xa/0xb → 每帧重载 `edx=0x8`；accessor `0x439d60`
@@ -111,7 +126,20 @@ typedef struct {
     int32_t  next_drop_at;  /* 被动二：下一枚掉落最早帧（0 = 立即可发；现掉 P）*/
     int32_t  pending_frag_type;   /* 0 = 无待弹碎片；结算帧只登记不 spawn（TH14 节奏：先结算后弹卡）*/
     int32_t  pending_frag_count;
-    int32_t  pending_frag_at;     /* frame_now ≥ 此帧才从当下自机位弹（接线层在 on_item_frame 检查）*/
+    int32_t  pending_frag_at;     /* frame_now ≥ 此帧才弹（接线层在 on_item_frame 检查）*/
+    /* —— ★★ 2026-09-21（P9 / 114 #1）：**bonus 锚点**（TH14 的「批位」float3 `th14:0x4f5888`）——
+     * 由**接线层**写（`cards/collect2x.c` 的 `note_bonus_anchor()`）：成员加入批那一刻记**当下自机坐标**，
+     * 与原版三个 P/钱 handler 内联写点**同一事件、同一值**（一手见 core.h 上方的
+     * `C2X_BONUS_ANCHOR_Y_OFFSET` 注）。core 这侧只当数据带着、不解释。
+     *   · `anchor_*` = 本批**最后一次**成员加入时的自机位（最后写者胜，原版同）；
+     *   · `pending_frag_*` = **结算那一刻**的锚点快照 —— 碎片是**延迟 20 帧**才弹的，
+     *     这 20 帧里下一批的成员加入会改写 `anchor_*`，快照保证弹点仍是本批的 bonus 位置。
+     * ⚠ 两个 **不预减 48**：`C2X_BONUS_ANCHOR_Y_OFFSET` 在**用时**加（弹字与道具共用，原版同）。*/
+    float    anchor_x;           /* 本批批位 x（= 最后一次成员加入时的自机 x）*/
+    float    anchor_y;           /* 本批批位 y（同上）*/
+    int32_t  anchor_valid;       /* 批位写过没有（批开 ⇒ 必为 1；防御用）*/
+    float    pending_frag_x;     /* 结算帧的批位快照 x（延迟弹碎片用）*/
+    float    pending_frag_y;     /* 结算帧的批位快照 y（同上）*/
 } c2x_state_t;
 
 /* 结算输出。mult_permille == 0 → 无奖（<20）：此时 fragment_* 无意义（为 0），

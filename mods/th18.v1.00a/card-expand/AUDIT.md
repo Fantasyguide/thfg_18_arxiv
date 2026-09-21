@@ -1268,6 +1268,7 @@ th14.v1.00b funcs.json 命名。链：**播放点** → **id** → **cfg** → *
 
 | Z21 ｜ 批闭 idle 30→8 + **presence 续批**（TH14  ｜ ✅ 已改、965 单测全过、DLL 22:04 重 | 见文末长行详录 |
 | Z22 ｜ **成员门 = 真空飞行体**（run-9）：批开/计数/续批只认**分 ｜ ✅ **整机回归实跑通过（2026-09-09）* | 见文末长行详录 |
+| Z23 | **碎片道具的生成点 = 「bonus 位置」**（P9 / 114 #1；用户：「原版应该是**道具从 bonus 位置生成**，而不是自机位置」）| 🟡 **一手定案 + 已改、主机单测过（1011）**，**待实跑**：原版 = 结算帧**当场** spawn 于「批位 − 48」（与弹字**同一个** `[esp+0x28]`）+ 角 −π/2 + 速 2.2f + y 不钳；我们原为「弹片帧的自机位 − 76」+ 1.2f ⇒ 改成**结算帧快照的批位 − 48** + 2.2f | 见文末长行详录 |
 `local/_scratch/th14_100b.exe` 全量 disasm（th14_full.asm）。原实现门 = `ce_item_pool_any_flying()`
 池空才关批（collect2x.c），批计时来自 TH14 accessor 族：
 1. **原生计时 = `[0x4f5884]`**：per-item 收点分支 `0x43898e` 系对 type≠9/0xa/0xb 重载 `edx=0x8`；
@@ -1439,6 +1440,71 @@ th18_full.asm（`local/_scratch`）。
 火力节流）→ 三笔 settle 全 `x2.000`（263 / 103 / 82 items，`t=3837/4056/4278`，各带 frag 0x10 spawn 延迟 20 帧）。
 用户验收：「有就起效、没有不起效」。遗留（未复验，想测再测）：钟声 / 弹字体感、下收点线瞬间残余 state-3 在飞
 并入本批的专项（本段 1419 行的语义已对齐）、空卡组买倒吊人（§AJ 尾）。
+
+**Z23 证据（2026-09-21，P9 / `WORK-PACKAGES.md` §0「114 #1」；现象原话见 `SINGLE-CARD-TEST.md` §th14 #1）**：
+
+- **① 发现（一手，TH14 v1.00b；材料 `local/_scratch/th14_full.asm`，段 `th14:0x438dad`–`0x439080`）**：
+  结算尾把批位 float3（`th14:0x4f5888` + `th14:0x4f5890`）抄进**栈上** `[esp+0x28]`
+  （`th14:0x438dc6`/`0x438dce`/`th14:0x438dd9`/`th14:0x438ded`）→ **只把 y −= 48.0f**
+  （`th14:0x438de5 subss xmm0,[0x4c1b24]`、`th14:0x438df8 movss [esp+0x2c],xmm0`；常量原字节
+  `0x42400000`）→ 随后
+  · **弹字**：五档各 `call 0x458000`（`th14:0x438e20`/`0x438e67`/`0x438eb9`/`0x438f0b`/`th14:0x438f55`），
+    `lea eax,[esp+0x30]`（= 同一格的地址，因压栈已偏移 8）；
+  · **碎片道具**：`th14:0x438fbc lea eax,[esp+0x28]` → `th14:0x438fda call 0x4397b0`（另三处同形
+    `th14:0x438ffc`/`0x439028`/`0x439047`）—— **同一个指针**，且压在它前面的实参逐字节固定：
+    `[esp+8] = 0x400ccccd` = **2.2f**、`[esp+4] = 0xbfc90fdb` = **−π/2**（与 main-drop 包装
+    `th14:0x4381f0` 的 `0x4381ff`/`0x438207` 相同）；第 6 栈参 = `0x28` 或 `0x00`（`th14:0x438fb6`/
+    `th14:0x439003` 按 `[[0x4db550]+0x194]` 选）—— 它只进 `[item+0xc00]`，为 0 时 `th14:0x4398dd`
+    调 `th14:0x439b50`（对 type ∈ {4,5,6,7,0xc} **在 `[item+0xbac]` = 道具自己的位置**上起特效
+    `th14:0x47ed10` + 播 se `th14:0x46e3d0`）⇒ **只管出生特效/音，不碰位置、速度**（🟡 `[0x4db550+0x194]`
+    那一位的语义本轮没追）。
+  · **类型**：`th14:0x438fb4 test edi,edi`（`edi=1` 由 ≥60 档 `th14:0x438e25` 置）⇒ ≥60 = **type 4**、
+    其余 = **type 0xc**（社区同表「残機のかけら = 最高倍率 / ボムのかけら = ×2.0 以外」，🟡 名字是社区单源）。
+  · **批位是谁**：三个 P/钱 handler 在**加入批**时内联写（`th14:0x4391f5 movq xmm0,[ebx+0x5e0]` +
+    `th14:0x4391fd movq [0x4f5888],xmm0` + `th14:0x439205`/`th14:0x43920b`；另两处 `th14:0x4393e7`/
+    `th14:0x4395e9`），`ebx = [th14:0x4db67c]` = 自机对象（同一 handler 用 `[ebx+0x5e4]` 判线上/线下：
+    `th14:0x4390d3`/`th14:0x4391da`）⇒ **批位 = 最后一次成员加入时的自机坐标**。
+  · **钳位**：spawn 体 `th14:0x4397b0` 只把 x 钳到 ±192（`th14:0x43981b`/`th14:0x43982c`，
+    `th14:0x4c1c9c`/`th14:0x4c1b74` = ∓192.0f），**y 不动**；TH18 对位 `th18:0x446f40` 同形
+    （`th18:0x446fcc`/`th18:0x446fdd`、`th18:0x4b946c`/`th18:0x4b933c`）。
+  结论可信度 **✅ 高**（逐指令 + 常量原字节 + 调用约定 `ret 0x18` 六参 + 社区表四方一致），
+  适用范围 **TH14 v1.00b**；全文复核见 [`engine/faith/th14/01-point-item-value.md`](../../../engine/faith/th14/01-point-item-value.md) §6(d)。
+
+- **② 我们差在哪**：`cards/collect2x.c` 的 `spawn_pending_frags` 锚在「**弹片那一刻**的当下自机位 − 76 px」
+  （§Z14 的可见性权宜值；76 = 70px swoosh 半径 + 6 余量）⇒ 结算到弹出之间**有 20 帧**（`C2X_FRAG_SPAWN_DELAY_FRAMES`），
+  这 20 帧里自机一移动，碎片就从**自机身上**冒出来（用户看到的就是这个）；原版没有这段延迟，
+  弹点也**不是**自机位，而是批位（结算帧的弹字锚点）。
+
+- **③ 处置（只改 `cards/collect2x.c` + `collect2x_core.{h,c}`；无新断点、不改字节）**：
+  (a) 新增 `note_bonus_anchor()` —— 在**两个成员入口**各写一次批位（原生成员门 `on_item_collect` 的
+  `c2x_collect_batch` 之后 / 虚拟收集通道 `ce_vitem_take_collect() > 0` 之后），值 = **当下自机坐标**
+  （与原版三个内联写点同一事件、同一读法 `CE_PLAYER()+CE_PLAYER_X/Y`）；
+  (b) `bonus_anchor_pos()` —— 结算时取批位（没写过则退回当下自机位并**留一行日志**，不静默）；
+  弹字 / 声像 / 碎片三者**共用**它（原版也是同一份 `[esp+0x28]`）；
+  (c) 结算登记 `pending_frag_*` 时**快照批位**（`pending_frag_x/y`）⇒ 20 帧窗口里就算开了新批也不会串锚；
+  (d) 弹点 = 快照批位 − **48**（`C2X_BONUS_ANCHOR_Y_OFFSET`，做成 `C2X_POPUP_Y_OFFSET` 的**别名**，一处定义），
+  初速 **1.2f → 2.2f**（原版实参），去掉旧的「贴顶保底 `≥40`」钳位（原版 y 不钳）；
+  (e) `on_stage_start` 里 `anchor_valid = 0`（跨关作废）。
+  **❓自定（登记 `TUNING.md` §2.9b）**：保留**20 帧延迟**（用户 2026-09-08 的节奏口径，原版是结算帧当场弹）；
+  **自建绿点成员也写批位**（原版没有这条通道；依据用户 2026-09-18 B1 口径「信仰点与 P 点/金钱完全一致」，
+  ⚠ 层带 2 帧容差 ⇒ 读到的自机位可能比绿点被收晚 ≤2 帧）。
+  🟡 **同锚的只有 x / y**：批位的 **z** 分量（原版抄的是自机 z `[+0x5e8]`）我们照旧传 `0.0f`
+  （`spawn_item_at` 里 `p3[2] = 0`）—— 道具的世界落点由 x/y 决定，z 在本作不吃（**未单独核**自机 z 是否恒 0；
+  与改动前一致，不是本轮引入的差）。
+  结构体积：`c2x_state_t` 44 → **64 字节**（+20），仍远在 `CE_STATE_BYTES`（512，扣 16 字节块头）之内。
+
+- **④ 验证**：`cc -c` 交叉编译 `cards/collect2x.c`（`-Wall -Wextra -Werror`）**零警告**；
+  主机单测 `tests/test_collect2x_core.c` **1011 passed / 0 failed**（含新增的源码级钉：批位偏移 == 弹字偏移、
+  `note_bonus_anchor(s);` 恰好两处、弹点表达式 `pending_frag_y - C2X_BONUS_ANCHOR_Y_OFFSET`、旧 `76.0f` 已删）。
+  ⚠ **改了该测试文件的两处源码级断言**（B10 那节之前钉的是字面量 `"py - C2X_POPUP_Y_OFFSET"`，
+  锚点换成批位后必然失效）—— 这是同一条改动的必然结果，测试文件属 114 自己的 host 单测。
+  **待实跑**（`NEXT.md` §1s.2 有验收步骤）：弹点应落在**弹字那个位置**（`log` 里 `spawn @(x,y) bonus(x,y)`
+  两对只差 y 的 48），且结算帧自机若在移动，碎片**不跟着自机**。
+
+- **⑤ 实跑要看的日志**：`collect2x: settle …` 一行之后 **20 帧**（`t=` 差 ≈ 20）出现
+  `collect2x: frag card type 0x11 x1 spawn @(x,y) bonus(bx,by) t=…` —— 其中 `y == by − 48`、
+  `x == bx`（n=1 时横向散开量为 0），且 `(bx,by)` ≈ **结算前最后一次收点的自机坐标**
+  （不是弹片帧的自机坐标；两者在站桩时相同、在移动中不同）。
 ## AJ. 豌豆射手（id 77）—— 第一张真走 SHT shooterset 的卡（子机连射 + 机枪爆发）
 
 **没有手写机器码、没有新断点、不改任何 exe 字节**。两处内联汇编（`ce_allocate_option` / `ce_tick_shooters_for_card`）
@@ -15345,5 +15411,223 @@ th18:0x445bb9  0f 87 a4 03 00 00         ja     0x445f63              ; ← 站�
   但它的 `code` 与原窗口**等长且 rel32 逐字节相同**（`83f8380f8cd5fdffff` → `80f8380f82d5fdffff`，原地改写）
   ⇒ **原地分支保持有效，不是雷** ✅。
 
-**加固（待做，见 `WORK-PACKAGES.md` §7-B）**：把「窗口含 rel32 分支 ⇒ **禁止返回 `BP_EXEC_ORIGINAL`**」
-写成 `sitecheck` 硬规则（站点声明加 `no_replay` 字段），并禁止这类站点接管（本次已证明接管也有副作用）。
+**加固（2026-09-20 **已落地**，见 §BE-ES）**：把「窗口含 rel32 分支 ⇒ **禁止返回 `BP_EXEC_ORIGINAL`**」
+写成了硬规则（站点声明加 `no_replay` 字段 + `sitecheck` 的 W5/W6 判据，含判据自检）；
+这类站点同时**不许接管**（本次已证明接管也有副作用，§BE-EQ）。
+
+## §BE-ES（2026-09-20）：**§BE-ER 的加固已落地** —— `no_replay` 字段 + sitecheck W5/W6 硬判据 + `BP_EXEC_ORIGINAL` 全量普查
+
+**结论（一句话）**：本 patch 里**唯一**「窗口含 `cave_fix` 修不了的近相对分支」的站点就是
+`ce_poc_gate_a` / `ce_poc_gate_b`（各含一条 `ja rel32`）；这两条**已声明 `no_replay`**、
+其余 **33 个会返回 `BP_EXEC_ORIGINAL` 的站点窗口全部无分支 ⇒ 回放安全** ✅。
+规则本身现在是**机器判据**（判定表 + 反汇编 + handler 调用链扫描），不再是文档里的一句叮嘱。
+（⚠ `native/sdk.c` 此刻正被另一会话改 ⇒ 下表里 `文件:行` 是**本次快照**、会漂；复核一律以
+`--replay-census` 的当刻输出为准。）
+
+**改了什么**（只动两个文件 + 文档；**卡代码与 DLL/patch 部署零改动**）：
+
+| 文件 | 改了什么 | 为什么 |
+| --- | --- | --- |
+| `native/sites.py` | 站点声明加字段 **`no_replay`**（放 `_SDK_SITE_FIELDS`，与 `stack_clear_size` 同级）；两条闸声明上它；加 `_SDK_SITE_META_KEYS` 过滤 + 断言、`SDK_SITES_ALL`（过滤前的全表，含 park）、`sdk_no_replay()` 访问器 | 让「哪条站点禁止回放」成为**声明源的一部分**；park 的站点也是同一份声明，放回发布面时判据立刻生效 |
+| `native/tools/sitecheck.py` | 新判据 **W5**（含分支必须声明）/ **W6**（声明了却回放 ⇒ 判红）、判定表 `replay_verdict()`、`--replay-census` 普查模式、`--selftest` 判据自检；**删除**旧的人肉例外表 `EXEMPT_W3`；站点体检从「正则扫出的 31 条」扩成「三份 patch 声明 ∪ sites.py 全表」共 56 条 | §BE-ER 的机制只有变成机器判据才拦得住下一次「顺手加一句 `return BP_EXEC_ORIGINAL`」 |
+
+**字段语义（`native/sites.py` 里那段注释是唯一出处）**：
+`"no_replay": "<前提说明>"`（非空字符串 = 已声明）——
+**本站点窗口里含一条 `cave_fix` 修不了的近相对分支（`0f 8x` / `e9` / 非首条的 `e8`）
+⇒ handler 禁止返回 `BP_EXEC_ORIGINAL`（=1，从跳板池回放那几字节），这类站点同时也不宜接管**（§BE-EQ 实测）。
+⚠ 它是**纯元数据**：`_SDK_SITE_META_KEYS` 在 `emit_sdk_breakpoints()` 里把它挡在 patch 之外（另有断言），
+所以「补一句注释」不会改变生成物 —— **实测 patch md5 = `d339b0ced4c57b9029338b1b0a33931c`，与改动前逐字节相同** ✅。
+
+**判据（可复跑，判定的唯一出处 = `replay_verdict()` 这张表）**：
+
+| 判据 | 内容 | 判红条件 |
+| --- | --- | --- |
+| **W5** | 逐指令反汇编窗口，按**指令字节**判 rel32（`0f 8x` / `e8` / `e9`），**除「窗口第一条就是 `e8`/`e9`」**（thcrap 只修这一种）| 含这种分支**且**站点未声明 `no_replay` ⇒ **失败**（不是警告） |
+| **W6** | 站点的 `BP_<名>` handler **及其在 `native/*.c` 里能追到的被调函数**里出现 `BP_EXEC_ORIGINAL` | 已声明 `no_replay` 的站点出现它 ⇒ **失败**（live）/ ⚠ 提示（park 中） |
+
+⚠ 判据必须看**指令字节**，不能看 capstone 的 `op_str`：capstone 把 jcc/jmp 目标解析成**绝对地址**打印，
+`eb 00`（rel8 短跳）与 `e9 rel32` 长得一模一样 ⇒ 按字符串判会把短跳当成 rel32。
+**这一条是自检抓出来的**（`--selftest` 的「窗内只有 rel8 短跳」那一格先报红），现在判据用
+`rel_kind()` 读 opcode，并由自检的 **12 例**（7 个真字节窗口 + 2 个注释剥离 + 2 个**合成源码**的
+调用链可达性 + 判定表 10 组合）钉住 —— **判据自己失灵 = `make check` 判红**。
+（自检的源码用例喂的是**合成源码**：`sdk.c` 随时有人改，拿它当期望值等于让自检跟着漂 —— 这条也踩过一次。）
+
+**复跑命令与输出（本次实际跑的）**：
+
+```bash
+cd mods/th18.v1.00a/card-expand/native
+python3 tools/sitecheck.py --selftest        # ✅ 判据自检通过（12 例）              rc=0
+python3 tools/sitecheck.py --replay-census   # 37 个站点（35 会回放 + 2 条闸），违规 0 个  rc=0
+python3 tools/sitecheck.py --all             # ✅ 全部通过（窗口 56 / 落点 6 / 自检 12）rc=0
+```
+
+判红的两次**实演**（都跑完即还原，仓库里没留改动）：
+
+① **未声明**：临时删掉 `ce_poc_gate_a/b` 的 `no_replay` ⇒
+`python3 tools/sitecheck.py 0x445bb9 6` 给
+`✗ W5 回放禁令：窗口 0x445bb9+6 含 **cave_fix 修不了的近相对分支** ['ja 0x445f63@+0x0'] … 而站点**未声明** no_replay`
++ `✗ 回放禁令判定：W5：…`，**rc=1**；
+② **声明了却回放**：临时把 `ce_poc_gate_a` 放回发布面（`_SDK_KEEP_NAMED`）后 `make gen` ⇒
+`python3 tools/sitecheck.py --all` 给
+`✗ W6 回放禁令：站点已声明 no_replay，但它的 handler 会返回 BP_EXEC_ORIGINAL（sdk.c:2975 ce_poc_gate_common()）`
++ `✗ 合计 1 处必须处理`，**rc=1** —— 这正是 2026-09-19 那次崩溃的形态，现在**在生成/体检这一步就被拦住**。
+
+**普查（`--replay-census`，站点 ← handler 调用链 → 它自己窗口的判据）**：
+判据 = 窗口里有没有 `cave_fix` 修不了的近相对分支；证据 = 每处 `BP_EXEC_ORIGINAL` 的 `文件:行 \`函数()\``
+（handler 常把回放写在**公共 helper** 里 —— 2026-09-19 就是 `BP_ce_poc_gate_a/b` → `ce_poc_gate_common()`，
+所以扫描做的是**站内调用图可达性**，不是「只在 handler 函数体里 grep」）：
+
+| 站点 | 地址 | 窗口 | 窗内致命分支（rel32） | handler 会回放 | 声明 `no_replay` | 结论 |
+| --- | --- | --- | --- | :---: | :---: | --- |
+| `ce_bomb_gate`（park） | `0x45c048` | 7 | 无 | `sdk.c:1253` 等 2 处 | — | ✅ 回放安全（窗内无分支） |
+| `ce_bomb_spent`（park） | `0x4203bc` | 5 | 无 | `sdk.c:1230` 等 2 处 | — | ✅ 回放安全（窗内无分支） |
+| `ce_bullet_damage_final` | `0x45e7ff` | 9 | 无 | `sdk.c:2680` | — | ✅ 回放安全（窗内无分支） |
+| `ce_card_bind` | `0x412cec` | 6 | 无 | `sdk.c:244` | — | ✅ 回放安全（窗内无分支） |
+| `ce_chain_node_guard`（park） | `0x401357` | 7 | 无 | `sdk.c:2821` 等 4 处 | — | ✅ 回放安全（窗内无分支） |
+| `ce_death_result`（park） | `0x45c127` | 6 | 无 | `sdk.c:2943` | — | ✅ 回放安全（窗内无分支） |
+| `ce_enemy_damage` | `0x42f2cb` | 6 | 无 | `sdk.c:3124` 等 2 处 | — | ✅ 回放安全（窗内无分支） |
+| `ce_enemy_death` | `0x430240` | 6 | 无 | `sdk.c:3175` 等 2 处 | — | ✅ 回放安全（窗内无分支） |
+| `ce_enemy_drop` | `0x430510` | 6 | 无 | `sdk.c:1569` 等 2 处 | — | ✅ 回放安全（窗内无分支） |
+| `ce_enemy_shot_slot` | `0x433ffa` | 8 | 无 | `sdk.c:2529` 等 4 处 | — | ✅ 回放安全（窗内无分支） |
+| `ce_gate` | `0x4637d0` | 5 | 无 | `dll_main.c:147` | — | ✅ 回放安全（窗内无分支） |
+| `ce_graze`（park） | `0x42497f` | 5 | 无 | `sdk.c:1612` | — | ✅ 回放安全（窗内无分支） |
+| `ce_item_collect` | `0x44625f` | 6 | 无 | `sdk.c:2106` 等 2 处 | — | ✅ 回放安全（窗内无分支） |
+| `ce_item_commit` | `0x44658a` | 6 | 无 | `sdk.c:2128` 等 2 处 | — | ✅ 回放安全（窗内无分支） |
+| `ce_item_frame` | `0x446ee3` | 7 | 无 | `sdk.c:2050` 等 2 处 | — | ✅ 回放安全（窗内无分支） |
+| `ce_item_money` | `0x446d28` | 6 | 无 | `sdk.c:1206` 等 2 处 | — | ✅ 回放安全（窗内无分支） |
+| `ce_item_score`（park） | `0x446cf6` | 6 | 无 | `sdk.c:1177` | — | ✅ 回放安全（窗内无分支） |
+| `ce_item_score_below`（park） | `0x446caa` | 8 | 无 | `sdk.c:1177` | — | ✅ 回放安全（窗内无分支） |
+| `ce_item_score_in`（park） | `0x446bf9` | 8 | 无 | `sdk.c:1033` 等 3 处 | — | ✅ 回放安全（窗内无分支） |
+| `ce_native_option_muzzle` | `0x45e930` | 5 | 无 | `sdk.c:1477` 等 4 处 | — | ✅ 回放安全（窗内无分支） |
+| `ce_option_shot_gate`（park） | `0x40a9c3` | 6 | 无 | `sdk.c:1513` 等 4 处 | — | ✅ 回放安全（窗内无分支） |
+| `ce_player_die` | `0x45d3a0` | 6 | 无 | `sdk.c:3098` | — | ✅ 回放安全（窗内无分支） |
+| `ce_poc_gate_a`（park） | `0x445bb9` | 6 | **`ja 0x445f63`** | `—` | ✅ | ✅ 合法（禁令已声明 ⇒ 只许恒返 0 + 自己给落点） |
+| `ce_poc_gate_b`（park） | `0x446003` | 6 | **`ja 0x445f63`** | `—` | ✅ | ✅ 合法（禁令已声明 ⇒ 只许恒返 0 + 自己给落点） |
+| `ce_repopulate_native_option` | `0x45d610` | 7 | 无 | `sdk.c:1412` 等 3 处 | — | ✅ 回放安全（窗内无分支） |
+| `ce_save_loaded` | `0x46398a` | 6 | 无 | `unlocked.c:154` 等 2 处 | — | ✅ 回放安全（窗内无分支） |
+| `ce_shop_bought` | `0x4183ea` | 12 | 无 | `shop.c:39` | — | ✅ 回放安全（窗内无分支） |
+| `ce_shop_reopen` | `0x443b05` | 5 | 无 | `shop.c:59` | — | ✅ 回放安全（窗内无分支） |
+| `ce_shot_damage` | `0x45f2a2` | 7 | 无 | `sdk.c:2148` 等 6 处 | — | ✅ 回放安全（窗内无分支） |
+| `ce_shot_set_index` | `0x45ebfb` | 7 | 无 | `sdk.c:1297` 等 3 处 | — | ✅ 回放安全（窗内无分支） |
+| `ce_snd_gate` | `0x476410` | 5 | 无 | `dll_main.c:159` | — | ✅ 回放安全（窗内无分支） |
+| `ce_test_deck` | `0x407ee3` | 8 | 无 | `bp_trace.c:51` 等 2 处 | — | ✅ 回放安全（窗内无分支） |
+| `ce_trace_alloc` | `0x411469` | 7 | 无 | `bp_trace.c:40` | — | ✅ 回放安全（窗内无分支） |
+| `ce_unlock_all` | `0x4648fe` | 6 | 无 | `unlocked.c:209` | — | ✅ 回放安全（窗内无分支） |
+| `ce_unlock_write` | `0x418e04` | 8 | 无 | `unlocked.c:187` 等 2 处 | — | ✅ 回放安全（窗内无分支） |
+
+合计：**回放安全 33 个 / 违规 0 个 / 已声明禁令 2 个**（= 全表 35 个站点；本次快照，
+`sdk.c` 正在被另一会话改 —— 例如 `ce_poc_gate_common()` 里那句回放就是在这期间被删掉的，
+所以两条闸的「handler 会回放」列此刻是 `—`）。
+另有 `ce_canary_a/b`（`patch-test` 的一次性复现实验，`CE_CANARY_POC_GATE=1` 才声明）—— 它们**故意**回放那条
+`ja` 来验 §BE-DW 的算术，所以 sitecheck 对它们只打 ⚠（**不判红**），并在 `--replay-census` 里打印 §BE-DW 的配方。
+
+
+**两条闸的 handler 有一个会漂的前置条件（W6 每次 `make check` 重新判定）**：
+`ce_poc_gate_common()`（`sdk.c`）里曾长期留着 `if (ce_full_p_gate_owner() < 0) return BP_EXEC_ORIGINAL;`
+—— 那正是 §BE-ER 的致病代码；交付前复核时它**已被删掉**（`sdk.c` 由另一会话同期在改），
+所以现在 W6 对这两条站点不再报警；**谁要把它（或任何回放）加回去，W6 当场判红**（上面演示 ② 就是这个形态）。
+即：这个前提**不靠人记**，靠判据。
+
+**给后来者的一句话**：**写站点先跑 `sitecheck`；窗内出现 `0f 8x` / `e9` / 非首条 `e8`，就不要指望回放
+（`cave_fix` 不修它）—— 要么换窗口，要么在 `native/sites.py` 里声明 `no_replay`、让 handler 恒返回 0 +
+自己给落点；并且这类站点**不要接管**（§BE-EQ）。**
+
+## §BE-ET（2026-09-20）：**WORK-PACKAGES §7 A/A2/A3/A4 落地** —— 106 的「不满 P 过线不收点」改走「遮」声明（动 POC 字段 + 语义高度），并删掉 `ce_poc_gate_common()` 的回放守卫
+
+**一句话**：106 的闸不再靠接管那两条 `ja`（§BE-EQ 已证不可接管、§BE-ER 已证不可回放），
+改成**动 POC 字段**：不满 P 时对收点线声明一个**「遮」**（覆盖位）—— 落笔值 = `min(语义高度, 自机 y)`
+⇒ 引擎那条**严格** `ja`（`线 > y`）永不成立（**过线不吸**），而**非严格** `jae`（`线 ≥ y`）在自机过语义线时
+恰好相等（**线上满额照给**）；`y` 在语义线下方时落笔值就是语义高度 ⇒ 引擎那两个折额读点算出的 `d`
+与「没有 106」时是**同一个数** ⇒ 收点计分逐位不变。**不新增站点、不改一个字节的 exe 代码。**
+
+**谁改的**：106 闸实施会话（子 agent，2026-09-20；统筹会话指定的一次做完的四件：SDK 覆盖位 + 语义高度 +
+线显示 + 引擎折额兜底）。
+
+### 1. 改了什么（共享件 —— 动这些等于动所有人的卡）
+
+| 文件 | 改了什么 | 为什么 | 怎么验证 |
+| --- | --- | --- | --- |
+| `native/sdk_core.h` / `.c` | PoC 层加三件（见下 §1a）：**「遮」声明**、**语义高度**、**帧界落笔的遮版**；另加**线显示声明层**与**折额兜底**。`ce_poc_reset`/`ce_poc_drop` 一并清「遮」；`ce_poc_has_declaration()` 现在含「遮」；`ce_poc_declare` / `ce_poc_mask_declare` 对同一 id **互斥** | 原仲裁「取最大 y 者生效」表达不了**覆盖**（owner 口径：106 必须压过原生卡 22 / 111 / 未来任何声明者）；语义高度是「106 只做『过线不收点』，其它语义零变化」的唯一手段 | `make test-host`（新增 `test_poc_mask_layer()` = **48 条断言**）；`make check` |
+| `native/sdk.h` | 卡侧入口：**`ce_poc_height_semantic()`**（float、`static inline`，守 x87 门）+ `ce_poc_declare_mask(c,on)` / `ce_poc_declare_mask_id(id,on)` / `ce_poc_line_hide(c,on)`；PoC 块注释改写（「我们自己的读数处读语义访问器」）| 卡不该直读 `player+0x47998`；「读哪个值」必须是层给的两个具名入口，否则下次又有人读到遮值 | `make dllx87` = 0 条 x87；`make check` |
+| `native/sdk.c` | 六处（逐条见下 §1b） | 同 §1b | 见 §3 / §4 |
+| `native/cards/th06rank.c`（106，本会话负责的系统卡）| ① 不满 P ⇒ `ce_poc_declare_mask(c, 1)`（满 P 撤）；② 整局 `ce_poc_line_hide(c, 1)`（`init_all`/`on_stage_start`/`on_load` 报，`on_delete`/`on_run_reset` 撤）；③ 分档判据改读 `ce_poc_height_semantic()`；④ 日志文案 | ①② 见 `sdk_core.h` 那一节与 §7-A4 (ii)；③ rank 分档要的是「没有 106 时」那条线 | `make check` + 实跑日志（`T06R: 上线收点闸 …`）|
+| `native/cards/signal.c`（111，**只改两处读数**）| 神奈子线的**快照基准**与信号**档位**都改读 `ce_poc_height_semantic()` | 106 在场时引擎字段被压在 `min(语义高度, 自机 y)` ⇒ 照旧读字段会让 111 的档位随自机位置乱跳。改后 111 的**信号语义 = 没有 106 时** ✅（引擎侧「收点线下降」照旧被覆盖位压掉 —— §7-A2 owner 已拍：接受）| `make check`（`test_signal_core` 2182 / `test_faith_hud_core` 4106 断言全过）|
+| `native/tests/test_sdk_core.c` | 新增 `test_poc_mask_layer()`（48 条断言：极小正数的三条约束 / 声明-撤回-owner / `min(语义,y)` 四档 / 与别家声明同场 / 语义访问器 / 线显示清+基准+写回+幂等 / 折额倍率的三个分支）| 共享件新语义必须有主机单测（`make check` 的 `test-host` 跑）| `./tests/build/test_sdk_core` → `1366 passed, 0 failed` |
+
+**§1b `native/sdk.c` 的六处改动（逐条）**：
+
+1. `ce_poc_apply()` 重写：**读自机 y** 当「遮」的钳位上限（合理性闸：读不到 ⇒ 传 0 ⇒ 层退回极小正数）；
+   **线显示与高度落笔解耦**（满 P 时没有高度声明，那一 bit 也得清）。
+   理由：卡 tick 优先级 `0x16` **早于** Player `0x17` ⇒ 卡里读到的是上一帧的 y，
+   钳位必须在 `BP_ce_item_frame`（ItemManager `0x1e` 的 tick、body 之前）算。
+2. `ce_poc_release()` 一并撤「遮」与「不画线」并**立刻**写回基准。理由：删卡发生在商店里，帧钩子不跑。
+3. `ce_sdk_setup` 加 `ce_poc_line_reset()`（粘性声明必须有开机复位）。
+4. 计分层（`BP_ce_item_score_in` 的几何桥）改读 `ce_poc_height_semantic()`。理由：计分要与「没有 106」一致。
+5. 同一站点加**折额兜底** `ce_poc_fold_ratio_permille()`（正常恒 1000 = 一个字节不动；非 1000 时首打一行
+   `★ 折额兜底生效 ×N‰`，那是载荷假设被破坏的信号）。
+6. **删掉 `ce_poc_gate_common()` 里那句 `if (ce_full_p_gate_owner() < 0) return BP_EXEC_ORIGINAL;`**。
+   理由：它就是 2026-09-19 那次崩溃的**直接元凶**（返回 1 ⇒ thcrap 从跳板池回放一条裸 `ja rel32` ⇒
+   跳到池未写区 ⇒ 写 `0x1`，逐字节复算见 **§BE-ER**），也是 §7-B 新立的 `sitecheck` **W6** 硬规则要拦的形态
+   ⇒ 恢复「**恒返回 0 + 自己给落点**」。验证：`python3 tools/sitecheck.py --all` 不再有 W6 提示。
+
+**§1a 三个新概念的一句话定义**（完整语义与一手 = `native/sdk_core.h` 的「遮」声明一节）：
+
+- **「遮」声明**（= **覆盖位**）：`ce_poc_mask_declare(id, on)` + `ce_poc_mask_active()` / `ce_poc_mask_owner()`。
+  在场时**无条件生效**（忽略别家声明的**高度**），落笔值 = `min(语义高度, 自机 y)`，夹到 ≥ `CE_POC_TINY_BITS`。
+- **语义高度**：`ce_poc_semantic_bits(engine_bits)` = **不含「遮」**的生效值
+  （别家声明取最大 → 基准 → 字段实读值）。落笔走 `ce_poc_frame_masked(engine_bits, ceiling_bits, out_bits)`。
+- **线显示声明**：`ce_poc_line_hide_declare(id, on)` + `ce_poc_line_apply(bit_now, decl_exists, &out_bit)` /
+  `ce_poc_line_release(id, &out_bit)` / `ce_poc_line_reset()`。有人声明 ⇒ 清 `Gui+0x194` 的 bit `0x2000`
+  （第一次清之前把那一位记成**基准**，撤完按基准写回）。
+- **折额兜底**：`ce_poc_fold_ratio_permille(y_q16, poc_field_q16, poc_sem_q16, vacuum)`。
+
+### 2. ★ 对 `WORK-PACKAGES` §7-A 原稿的一处**订正**（数值，不是口径）：遮的值取 `min(语义高度, 自机 y)`，不是「固定极小正数」
+
+原稿写「不满 P ⇒ 声明一个永远不满足 `line > py` 的高度（取远低于自机 y 的值，例如 …）」+「④ 引擎侧折额补偿」。
+**后者（固定极小正数 + 事后用计分钩子重算）在这套数值下做不到**（一手算术）：
+
+- 固定极小正数（≈0）会让 `collect_power_item` `0x44698d` / `collect_money_item` `0x446bf9` 看到的
+  `d = ⌊y − 0⌋ = y`（自机在屏幕底部时 **448 px**）⇒ 折扣系数 `0.9·(1−d/450)` 掉到 **0.004**；
+- 想扳回语义值，倍率 = `c_语义 / c_遮`：自机 y = 448、语义线 = 224 时 = **113×**
+  ⇒ `ecx = 1000×G`（高资金力下 ~1e8）× 113 = **1.1e10 ⇒ 溢出 32 位**（只能饱和 ⇒ 反而少给分）；
+- 而且引擎那条折额链是**两次向下取整到 10 的倍数**（`floor10(B)` 再 `floor10(系数×…)`）⇒ 反推本身就带 ±1 点的量化误差。
+
+而 `min(语义高度, 自机 y)` 把**语义几何**直接喂给引擎（`d` 与「没有 106」时逐位相同）⇒ 计分**不需要**事后补偿。
+支付这份收益的支点是一手事实：**两条判据的严格/非严格之差**（收点门 = `ja`，满额门 = `jae`）。
+`ce_poc_fold_ratio_permille()` 仍然实装并在计分钩子里调用（就是 §7-A ④ 的那条），
+只是**正常情形恒返回 1000**（= 一个字节都不动）；它现在是「字段被第三方改过 / 帧内时序变过」的兜底，
+非 1000 时会在日志里打一行 `★ 折额兜底生效 ×N‰`（实跑若看到这一行 ⇒ 说明载荷假设被破坏了，回来查）。
+
+**载荷假设（唯一一条，可复核）**：帧内顺序 = AbilityManager（卡 tick `0x16`）→ **Player `0x17`**（`th18:0x45caa0`
+注册在 `0x45a8b4`）→ … → **ItemManager `0x1e`**（`th18:0x446ec0` 注册在 `0x4458ac`）；
+落笔在 `BP_ce_item_frame` = `0x446ee3`（`ItemManager__on_tick` 里、body `0x445a80` 之前），
+两条 `ja`（`0x445bb9` / `0x446003`）与两个折额读点都在同一 tick 的 body 里 ⇒ 落笔时读到的 y
+就是它们将看到的 y，中间没有任何 UpdateFunc 会动它。
+
+### 3. 对既有卡的影响面 + 回归
+
+- **106 不在卡组时**：没有「遮」声明 ⇒ `ce_poc_frame_masked()` 逐字转发 `ce_poc_frame()`（旧路径），
+  `ce_poc_line_apply()` 在没人 hide 时也照旧返回「有人声明高度 ⇒ 置 bit 0x2000」 ⇒ **行为与改动前一致** ✅。
+- **111**：只改了两处**读数**（改读语义访问器）。声明/落笔/删卡写回那三条路一字未动；
+  `test_signal_core`（2182）+ `test_faith_hud_core`（4106）全过。⚠ 106 在场时 111 的「收点线下降」
+  对**引擎**不再生效（覆盖位）—— owner §7-A2 已拍；111 自己的信号档仍按语义高度算。
+- **110（`cards/mof.c`）**：⚠ **残余泄漏（本会话不动它，跨卡纪律）** —— 它的蓝色系数走
+  `faith_player_poc_height()`（`cards/faith.h`，只是 `ce_poc_height()` 的薄包装）⇒ 106+110 同场时
+  那个系数会读到**遮值**（等于「自机贴着线」）。修法有两种、都要动别人的文件：
+  ① 把 `faith.h` 的包装改成转调 `ce_poc_height_semantic()`（一处改动同时修 110/111 的所有旧调用点）；
+  ② `mof.c` 自己改读语义访问器。**留给 110 的作者**；在此之前「106+110 同场」的观感差异是已知的。
+- **115（`lolk.c`）**：一字未动；它不声明收点线（只写减速因子）⇒ 与那两条 park 的站点无关；
+  §BE-EQ 里「变橙+抖退化」的病灶是**接管**，本会话没有碰任何站点 ⇒ 不回退。
+- **回归跑了什么**：`make gen`（patch md5 **不变** = `d339b0ced4c57b9029338b1b0a33931c`，因为本次没动任何声明源）、
+  `make test-host`（全部主机单测，含新增 48 条）、`python3 tooling/check-docs.py`（`全部通过`）、
+  `make check`（见 §4；含 `dllx87` = 0 x87、`sites.py check`、`sitecheck --all`、`capcheck`、
+  `engine_abi_check`、`anm_hud_alpha_check`）。
+
+### 4. 怎么验证的（完成口径）
+
+1. **主机判据**：`./tests/build/test_sdk_core` → `1366 passed, 0 failed`（新增 `test_poc_mask_layer()` 48 条）；
+2. **静态门**：`make check` rc=0（本会话跑的那次输出见交付报告）；
+3. **实跑（交给 owner，单卡验收）**：① 106 在场 + 不满 P ⇒ 过线**不吸**；拍空格（满 P）⇒ 过线**照吸**
+   （日志 `T06R: 上线收点闸 **开**/**关**`）；② 111 的信号档与「没有 106」时一致；
+   ③ 收点计分与「没有 106」时一致（线上满额 / 线下折额；日志里**不应**出现 `★ 折额兜底生效`）；
+   ④ 115 擦弹 ⇒ 道具变橙 + 抖不退化；⑤ 开局**看不到**那条收点指示线（106 在场，§7-A4 (ii)）。
