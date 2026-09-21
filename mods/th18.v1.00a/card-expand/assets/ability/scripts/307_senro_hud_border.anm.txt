@@ -1,0 +1,59 @@
+script script307 {
+    // 妖妖梦（TH07 系统卡 107）**森罗结界指示**（结界中才出现的那块脉动板）——
+    //   逐条移植 TH07 `ascii.anm` **script5**（原文见文件尾），只换 sprite 与两处换算（见下 Δ）。
+    //
+    // ══ 一手：这台 VM 是谁、什么时候画 ══════════════════════════════════════════════════════
+    //   · 载体 = TH07 `AsciiManager` 的**第 5 台内嵌 VM（VM4，`this+0x930`）**：
+    //     `th07:0x401c23`（`AsciiManager::sub_401ba0`）给它 `vm+0x1d8 = 5` 并装 **script5**。
+    //   · 画它的地方 = 同一个画 HUD 的函数 `AsciiManager::sub_404690` 的**最末尾**（`th07:0x404de1`）：
+    //         movsx eax,BYTE PTR ds:0x4bfee5 ; test → je
+    //         cmp eax,0x1 ; jne  0x404e65          ← ★ **只有 == 1 才画**
+    //     然后 `pos = [VM2.pos] + (24, 8)`（`0x404df0`–`0x404e36`，`fadd ds:0x498c28`=24 / `0x498a7c`=8）、
+    //     `color = [this+0x650]`（`0x404e45`，= 模板 VM2 的颜色）→ `draw_vm(VM4)`。
+    //   · `ds:0x4bfee5` 是谁：**「结界中」字节**（一手两处：`th07:0x42f5f7` 用它闸住 +C 的累加 ——
+    //     结界期间 +C 是**倒计时**而不是累加；`th07:0x404c15` 用它切 +C 数字的配色/缩放）。
+    //   · 时序：结界**每帧**都画（不是一次性）—— 所以脉动是「结界全程」的指示，不是开场闪光。
+    //   · 同期的另外两件视觉（**本卡不做**，已在 `engine/spirit/th07/01-barrier-visual.md` 记档）：
+    //     全屏压暗到 37.5 %（`th07:0x44162f`）与自机贴图红白每 2 帧闪（`th07:0x441574`）——
+    //     它们是 Player/Stage 侧的全局乘法，不是 HUD 元件，属于「要不要照抄」的产品口径。
+    //
+    // ══ Δ（与 TH07 原文的**全部**差异）═════════════════════════════════════════════════════
+    //   Δ1 sprite(sprite143) → `@SENRO_HUD_BORDER@`（我们编的是 TH18 `ability.anm`，两表无关；
+    //      源矩形 / 生成器见 `assets/ability/make_senro_hud_art.py`）。
+    //   Δ2 补 `scale(2.0f, 2.0f)` 起手值 + 把两个 `scaleTime` 的目标 ×2（TH07 = 640 原生、
+    //      TH18 UI 层 1 texel = 1 表面 px ⇒ 观感尺寸要 ×2；先例 = 302 的 Δ4）。
+    //      **倍数关系一字未改**：原文 1.2 → 0.8，这边 2.4 → 1.6。
+    //   Δ3 补 `layer(25)` / `resolutionMode(2)` / `type(1)` / `ins_431(1)` / `alpha(255)` / `pos(0,0,0)`：
+    //      TH07 的 effect/VM 由 AsciiManager 自己排层与坐标（脚本里没有 layer 指令），
+    //      TH18 侧这些必须由脚本写（同 136_hud_glyph 的头部；层 25 = 与暂停模糊罩同桩）。
+    //   ⚠ 数值（30 帧、模式 4 → 模式 1、无限循环）**一字未动**。
+    //
+    // ══ 一手原文（`thanm -l 7 local/th07.v1.00b/dat/ascii.anm`，entry0 的文件内 script5）════
+    //     script5 {
+    //         ins_3(sprite143);
+    //         ins_30(1);
+    //     offset24:
+    //         ins_36(30, 4, 1.2f, 1.2f);
+    //     +30: // 30
+    //         ins_36(30, 1, 0.8f, 0.8f);
+    //     +30: // 60
+    //         ins_4(offset24, 0);
+    //     }
+    //   v2.anmm 的号名：ins_3 = sprite、ins_30 = zWriteDisable、ins_36 = scaleTime、ins_4 = jmp
+    //   ⇒ 「30 帧缩到 1.2 倍 → 30 帧缩到 0.8 倍 → 跳回开头（脚本时间拨回 0）」，**永远循环**。
+    sprite(@SENRO_HUD_BORDER@);
+    ins_431(1);
+    type(1);
+    layer(25);
+    resolutionMode(2);
+    zWriteDisable(1);
+    scale(2.0f, 2.0f);
+    pos(0.0f, 0.0f, 0.0f);
+    alpha(255);
+offsetA8: // = TH07 script5 的 offset24
+    scaleTime(30, 4, 2.4f, 2.4f);      // 原文 ins_36(30, 4, 1.2f, 1.2f) × 2
++30: // 30
+    scaleTime(30, 1, 1.6f, 1.6f);      // 原文 ins_36(30, 1, 0.8f, 0.8f) × 2
++30: // 60
+    jmp(offsetA8, 0);                  // 原文 ins_4(offset24, 0)
+}

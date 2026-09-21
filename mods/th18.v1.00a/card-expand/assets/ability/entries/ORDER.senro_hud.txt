@@ -1,0 +1,30 @@
+# 妖妖梦（TH07 系统卡 107）**HUD 数字字形 + 森罗结界指示**的贴图 —— 由
+# assets/ability/make_senro_hud_art.py 生成，别手改。
+# 格式同 entries/ORDER.txt：`ATLAS <名> <画布WxH>` + 段内 `成员名 源图 @x,y,WxH`。
+# ⚠️ 本文件**不参与构建**（`build_ability.py` 只读 entries/ORDER.txt）—— 合并时把下段并进去（**追加到文件末尾**）。
+#
+# 一手（全部在 TH07 v1.00b 原版里，逐条见生成器文件头）：
+#   D0..D9 = `ascii.anm` entry0 sprite132..141（8×12）—— TH07 画樱点计数器时的数字字形：
+#            画数字的 `sprite = digit + 0x84`（`th07:0x404a41` / `th07:0x404d7d`），
+#            而 VM3（`AsciiManager` +0x6e4）在 `th07:0x401be3` 被装上的 script3 正文 =
+#            `ins_3(sprite132); ins_30(1); ins_2();` ⇒ 一个数字一台 VM、换 sprite 出数字。
+#   BORDER = entry0 sprite143（48×16）—— **森罗结界指示**：`AsciiManager` 的 VM4（+0x930）在
+#            `th07:0x404de1` 判 `ds:0x4bfee5 == 1`（= 结界中）才画，位置 = 数字锚 +(24,8)，
+#            脚本 = `th07:0x401c23` 装上的 script5（`scaleTime(30,4,1.2,1.2)` ↔ `(30,1,0.8,0.8)` 无限脉动）。
+#   没切的一张：sprite142（96×16）= 数字簇的锚标签（VM2 / script4，滑到 (32,449) 定住）——
+#            本卡这一轮不画，理由见 `cards/senro.c` 的 `SENRO_HUD_*` 与生成器文件头。
+#
+# 尺寸：原样 1:1 切（8×12 / 48×16）。TH07 是 640×480 原生、TH18 UI 层 `resolutionMode(2)` 下
+#   1 texel = 1 表面 px ⇒ 脚本里用 `scale(2.0, 2.0)` 还原原版观感（先例 = 302 的 Δ4 同款换算）。
+ATLAS ATLAS_SENRO_HUD 128x16
+SENRO_HUD_D0           ability/senro_hud/D0.png          @0,0,8x12
+SENRO_HUD_D1           ability/senro_hud/D1.png          @8,0,8x12
+SENRO_HUD_D2           ability/senro_hud/D2.png          @16,0,8x12
+SENRO_HUD_D3           ability/senro_hud/D3.png          @24,0,8x12
+SENRO_HUD_D4           ability/senro_hud/D4.png          @32,0,8x12
+SENRO_HUD_D5           ability/senro_hud/D5.png          @40,0,8x12
+SENRO_HUD_D6           ability/senro_hud/D6.png          @48,0,8x12
+SENRO_HUD_D7           ability/senro_hud/D7.png          @56,0,8x12
+SENRO_HUD_D8           ability/senro_hud/D8.png          @64,0,8x12
+SENRO_HUD_D9           ability/senro_hud/D9.png          @72,0,8x12
+SENRO_HUD_BORDER       ability/senro_hud/BORDER.png      @80,0,48x16

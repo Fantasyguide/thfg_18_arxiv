@@ -1,0 +1,33 @@
+script script306 {
+    // 妖妖梦（TH07 系统卡 107）**HUD 数字字形** —— 「贴图 VM 版数字」用的模板脚本：
+    //   C 侧（`cards/senro.c` 的 `senro_hud_emit_number()`）起 N 个 VM、用 `ce_anm_set_sprite`
+    //   逐位换字形，字形表 = TH07 `ascii.anm` entry0 **sprite132..141**（8×12）。
+    //
+    // 一手 ✅（照 `assets/ability/make_senro_hud_art.py` 文件头，三点互证）
+    //   · TH07 的樱点计数器画法是 `AsciiManager::sub_404690`：内嵌 **VM3**（`this+0x6e4`）在
+    //     `th07:0x401be3` 被装上 **script3**（正文 = `ins_3(sprite132); ins_30(1); ins_2();`）
+    //     ⇒ 一台 VM = 一个数字位，换 sprite 出数字。
+    //   · 画每一位时 `sprite = 数字 + 0x84`（`th07:0x404a41` / `th07:0x404d7d`）⇒ 132..141。
+    //   · 字距 = **7**（`th07:0x404a7a fadd ds:0x498c30` = 7.0；+C 行在结界中是 **10**，
+    //     `th07:0x404dad fild [ebp-0x30]` = 0xa）；每位的 x 由 C 侧算好写进 VM 的 pos。
+    //
+    // ⚠ **本脚本与 136_hud_glyph 的唯一差别 = 字形表 + `scale(2.0,2.0)`**：
+    //   136 用的是 TH18 原生 font 2（贴图声明 16×32、字形本体 16×20 居中 ⇒ 一 texel = 一表面 px），
+    //   而 TH07 那张图的字形是 **8×12**、且 TH07 是 **640×480 原生**（一 texel = 一个 640 单位）
+    //   ⇒ 同一个字形要占同样的观感尺寸，得在脚本里放大 ×2（先例 = `302_ufo_hud_slot.anm.txt` 的 Δ4
+    //   「TH12 的 640 空间 → TH18 UI 层的表面 px ⇒ 尺寸 ×2」，同一条换算）。
+    //
+    // 层的选择与 136 相同（**25**）：UI 列表 → `AnmManager__render_layer` `0x4882b8` 折到 38 ⇒
+    //   与暂停模糊罩同一个桩（罩子尾插 ⇒ 我们的字被罩住）；层 24 会折到 37、与季节槽/绀路面板底板同层。
+    sprite(@SENRO_HUD_D0@);
+    ins_431(1);
+    type(1);
+    layer(25);
+    resolutionMode(2);
+    scale(2.0f, 2.0f);
+    pos(0.0f, 0.0f, 0.0f);
+    alpha(255);
+    stop();
+    interruptLabel(1);
+    delete();
+}

@@ -58,6 +58,8 @@ TH13《東方神霊廟》的「神灵（神霊）」是**第三条资源轴**：
 - ★ TH13 灵界里的**自机攻击方式改变**（主炮 shooterset 组号硬换成常量 **10**；四机体逐字节表 + 「没有伤害倍率」的证伪式结论 + 退出 70 帧无敌的订正）：[`spirit/th13/05`](th13/05-trance-attack.md)
 - TH07 森罗结界**持续期视觉**（全屏变暗 37.5 % + 自机红白闪；环只 33 帧、op1 ≡ delete）：
   [`spirit/th07/01`](th07/01-barrier-visual.md)
+- ★ TH07 **樱点计数器的 HUD 画法 + 森罗结界指示**（两行版式 / 定宽右对齐 / 逐位贴图 VM 字形 /
+  结界中的变色·放大·脉动板）：[`spirit/th07/02`](th07/02-cherry-counter-hud.md)
 - TH17 动物灵 / 咆哮（同构对照）：[`animal/OVERVIEW`](../animal/OVERVIEW.md)
 - TH16 季节系统（同款「道具 → 槽 → 按 C」+ 同款 HUD 淡出触发区）：[`season/OVERVIEW`](../season/OVERVIEW.md)、
   [`season/th16/01`](../season/th16/01-season-data-and-tables.md) §9

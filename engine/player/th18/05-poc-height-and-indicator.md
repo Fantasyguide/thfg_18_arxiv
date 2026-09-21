@@ -141,6 +141,40 @@ python3 tooling/pe_read.py local/th18.v1.00a/th18.exe 0x43afe1 --bytes 24
 python3 tooling/pe_read.py local/th18.v1.00a/th18.exe 0x4b92ec --dwords 1   # 80.0f
 ```
 
+## 7. ★★ 2026-09-20 补：这条线的**判据形态**与**帧内顺序**（「把线挪走」那一类改造的两条载荷）
+
+> 一手来源：本节的两条都是**指令级**的，复核命令在 §6 的同一套工具里（`objdump -d --start-address … -M intel`）。
+
+### 7.1 五个读点不是同一种比较：**两条严格 `ja`、两条非严格 `jae`**（差一个等号）
+
+| 读点 | 指令 | 语义 | 取**等号**（`线 == 自机 y`）时 |
+| --- | --- | --- | --- |
+| `0x445bb2`（过线 ⇒ 真空 A）| `comiss xmm0(线), [esi+0x624](自机 y)` + **`ja`**(`0x445bb9`) | 线 **>** y | **不吸**（不进真空态）|
+| `0x445ffc`（过线 ⇒ 真空 B）| 同上 + **`ja`**(`0x446003`) | 线 **>** y | **不吸** |
+| `0x446995`（P 道具折额）| `comiss xmm1(线), xmm0(y)` + **`jae`**(`0x446998`) | 线 **≥** y | **给满额** |
+| `0x446c01`（钱道具折额）| `comiss xmm0(线), xmm2(y)` + **`jae`**(`0x446c04`) | 线 **≥** y | **给满额** |
+
+⇒ 合起来是一条**可用的杠杆**：把生效值写成 `min(语义高度, 自机 y)`，则「自机在语义线上方」那一档
+**恰好等于 y** ⇒ **不吸**（严格门不成立）**且**照给**满额**（非严格门成立）。
+改造侧（106 的「不满 P 过线不收点」）就是踩在这个等号上做的：见
+[`mods/th18.v1.00a/card-expand/AUDIT.md`](../../../mods/th18.v1.00a/card-expand/AUDIT.md) §BE-ET。
+
+### 7.2 帧内顺序（**落笔那一刻读到的 y 就是那四个读点将看到的 y**）
+
+更新函数（UpdateFunc）注册点与优先级（`0x401180(mgr, prio)`，本次逐条反汇编读出）：
+
+| 管理器 | 注册处 | 优先级 | 一手 |
+| --- | --- | --- | --- |
+| AbilityManager（卡的 tick 在这里）| `0x40847f` | **0x16** = 22 | `0x408472` 一带 `push 0x16` |
+| **Player**（`Player__on_tick` 包装 → `0x45be90`）| `0x45a8b4` | **0x17** = 23 | `0x45a89e push 0x45caa0` + `0x45a8aa push 0x17` |
+| ItemManager（`ItemManager__on_tick` `0x446ec0`）| `0x4458ac` | **0x1e** = 30 | `0x4458a0 push 0x446ec0` + `0x4458ac push 0x1e` |
+
+⇒ 一帧内的顺序是 **AbilityManager → Player → … → ItemManager**，而 `ItemManager__on_tick` 的形状是
+「门卫 CMP（`0x446ee3`，SDK 的 `ce_item_frame` 断点就挂在这里）→ **`jmp 0x445a80` 进 body**」
+⇒ **在门卫那一刻写字段，body 里的两条 `ja` 与两个折额读点看到的就是同一个值**（中间没有任何 UpdateFunc 会动自机 y）。
+⚠ 反过来说：**卡自己的 tick（`0x16`）里读到的 `player+0x624` 是上一帧的 y** —— 任何要「按自机位置钳线」的
+改造都必须在帧界（ItemManager 的 tick 里）算，不能在卡 tick 里算。
+
 ## 7. 交叉链接
 
 - 卡 22 的目录条目（值、价格档）：[`../../card/th18/08-catalog.md`](../../card/th18/08-catalog.md) §A 行 `22 ITEM_LINE`。

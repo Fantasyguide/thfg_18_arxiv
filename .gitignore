@@ -70,5 +70,16 @@ tooling/thdat-nc/build/
 tooling/thdat-nc/.cache/
 
 # ★ 113 的升格音：TH13 原版 se_astralup.wav 的**构建期现取**产物（版权资产不入库；
-#   源在 local/th13.v1.00c/dat/se_astralup.wav，见 assets/voice/derive_astralup.py）
+#   源在 local/th13.v1.00c/dat/se_astralup.wav，见 assets/voice/derive_retail_se.py）
 mods/th18.v1.00a/card-expand/assets/voice/ASTRALUP.wav
+# ★ 112 的 UFO 出场音：TH12 原版 se_ufoalert.wav 的构建期现取产物（同上；
+#   源在 local/th12.v1.00b/dat/se_ufoalert.wav）
+mods/th18.v1.00a/card-expand/assets/voice/UFOALERT.wav
+# ★ 109 / 111 的蓄力音：TH09 原版 se_charge00.wav / se_chargeup.wav 的构建期现取产物
+#   （TH18 的 71 枚里没有这两枚；源在 local/th09.v1.50a/th09.dat，由 derive_retail_se.py 单抽）
+mods/th18.v1.00a/card-expand/assets/voice/CHARGE00.wav
+mods/th18.v1.00a/card-expand/assets/voice/CHARGEUP.wav
+# ★ 110 的满 P 上涨音：TH10 原版 se_powerup.wav（**与 TH18 的同名文件不是同一次录音**）
+mods/th18.v1.00a/card-expand/assets/voice/MOFPOWERUP.wav
+# ★ 107 的森罗结界展开音：TH07 原版 se_border.wav（TH18 71 枚里没有）
+mods/th18.v1.00a/card-expand/assets/voice/PCB_BORDER.wav

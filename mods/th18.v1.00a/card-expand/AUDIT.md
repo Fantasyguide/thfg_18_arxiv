@@ -4896,6 +4896,7 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 | 2026-09-16zc | **所有卡（共享件 `sdk/public.h` 新增 `CE_SHT_PRIO_111`（= −1，阶梯最底）；`assets/sht/append_shooterset.py` 的 111 由 5 组扩到 **31 组**（`0x29`–`0x47`）并新增**主炮组覆盖**；层自检硬门改为只管卡侧 tick 的组）** | 见下方「§BE 详录 #40」 |
 | 2026-09-18 | **106–118（共享资源 `assets/cards/` + 共享件 `assets/cardframe.py`、`patch/th18/cards.js`）** | 见下方「§BE-EG」 |
 | 2026-09-17a | **所有卡（共享件 `patch/th18.v1.00a.js` / `th18_card_expand.def` / `Makefile` / `sdk.c`：**摘掉断点 `ce_enemy_damage`**；113 退订 `.on_enemy_damage`）** | 见下方「§BE 详录 #41」 |
+| 2026-09-20 | **109 花映塚 / 110 风神录 / 112 星莲船（P1「缺音效一批」；owner 裁定 A 的收窄版：这三个文件放行、只许动音效行）** | `cards/pofv.c` / `cards/ufo.c` / `patch/th18/voice.js` / `assets/voice/{ORDER.txt,derive_retail_se.py,derive_astralup.py,README.md}` / `native/sound_sites.py` / `native/voice_ids.h`（生成物）/ `.gitignore` | ① `pofv.c` 的 `POFV_SE_CHARGE_DING`：`CE_SE_EXTEND`(0x11) → `CE_VOICE_CHARGEUP`(**0x5a**)；② `ufo.c` 的 `UFO_SE_TOKEN`：`0x39`(se_pin00) → **`0x0c`**(se_timeout2)、新增 `UFO_SE_TOKEN_RECOLOR 0x4e`(se_changeitem) 与 `UFO_SE_ENTER CE_VOICE_UFOALERT`(0x58) 两个播放点、入槽音声像由屏心改成令牌自己的 x（一手 `th12:0x426d86`）；③ 音效表扩容新增 4 枚**别作原版** SE（`UFOALERT` 0x58 / `CHARGE00` 0x59 / `CHARGEUP` 0x5a / `MOFPOWERUP` 0x5b） | 用户实跑三条：「一直播放奇怪的 Extend 音效」(th09#2)、「UFO 缺少入场音效」(th12#8)、「收取 token 声音应该不是这个」(th12#3)，加「缺少 token 变色声音」(th12#2)。修法全部落在**一手**：逆出 TH12/TH10/TH09 的 id→wav 表（`engine/_shared/th18-sound-table.md` §11），按 **wav 名 + md5** 对回 TH18 的 id；TH18 没有的 4 枚走构建期现取（`derive_retail_se.py`，版权资产不入库）| `make check` rc=0（含 `snd-check` 96+188+17 项、`contract_check`、`gen_drift`、`sitecheck --all`）；`python3 tooling/check-docs.py` 全部通过；`make voice` 对账 OK（8 条语音 / `id = 0x54+行号`）；⚠ 本批**未部署**（DLL/patch 由统筹会话统一发） |
 
 
 > **§BE 详录 #41（2026-09-17a / ⚗ 临时二分：摘掉 `ce_enemy_damage` 站点 —— 病灶 = **入場時刻总数越线**）**
@@ -15616,6 +15617,12 @@ python3 tools/sitecheck.py --all             # ✅ 全部通过（窗口 56 / �
   那个系数会读到**遮值**（等于「自机贴着线」）。修法有两种、都要动别人的文件：
   ① 把 `faith.h` 的包装改成转调 `ce_poc_height_semantic()`（一处改动同时修 110/111 的所有旧调用点）；
   ② `mof.c` 自己改读语义访问器。**留给 110 的作者**；在此之前「106+110 同场」的观感差异是已知的。
+- **110/111 的自建点池（`cards/faith.c` 的 `faith_vacuum_gate()`）**：⚠ **跨卡后果，刻意不动** ——
+  那道门的判据是 `faith_player_above_line()`（= `faith_player_poc_height()` = **引擎字段真值**，严格 `>`），
+  形状与引擎那两条 `ja` **同形** ⇒ 106 的「遮」**同样**让它不成立 ⇒ 不满 P 时**自建绿点也不会被真空吸走**
+  （要碰才收）。**本条与「106 只做『过线不收点』」的设计是自洽的**（自建点也是点，跟着同一条闸走），
+  故**有意保留**；若 owner 要它与 106 解耦（自建点照旧按语义线吸），改法是 `faith.c` 那两行走语义访问器
+  —— 那是 110/111 的文件，按跨卡纪律留给它们的作者。
 - **115（`lolk.c`）**：一字未动；它不声明收点线（只写减速因子）⇒ 与那两条 park 的站点无关；
   §BE-EQ 里「变橙+抖退化」的病灶是**接管**，本会话没有碰任何站点 ⇒ 不回退。
 - **回归跑了什么**：`make gen`（patch md5 **不变** = `d339b0ced4c57b9029338b1b0a33931c`，因为本次没动任何声明源）、
