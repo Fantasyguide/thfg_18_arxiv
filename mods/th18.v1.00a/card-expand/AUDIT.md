@@ -18327,9 +18327,9 @@ blue_tint −2000 / red_tint +2000`，按 `shottype`（`0x164d0b1`）分支写�
 | 文件 | 改了什么 | 为什么 | 验证 |
 | --- | --- | --- | --- |
 | `assets/build_player_anm.py`（**共享件**） | 新增 `game="th08"/"th16"` 跨版本源（含按头版本选 anmmap）+ `YOUKAI_BODY`/`YOUKAI_BODY_IDS`/`_youkai_plan`/`_body_canvas`/`_body_readback` + `_inject_body_prologue` + `_norm_labels` | 55 张要按「只追加」进 pl0X.anm，脚本要逐条抄 TH08/TH16 源 | `--verify-only` rc=0；原生 entry/script/贴图**逐块一致**；回读 55 张逐像素等于源图 |
-| `native/pl_anm_ids.h`（生成物） | +20 行 `CE_PL_ANM_SCRIPT_YKBODY_*` | C 侧要按宏取脚本号 | 生成器写出；`PINNED_NEW_SIDS` 反向钉号 |
+| `native/pl_anm_ids.h`（生成物） | +20 行 `CE_PL_ANM_SCRIPT_YKBODY_*` + 8 行 `CE_PL_ANM_YKBODY_{FIRST,LAST}_PL0X` | C 侧按宏取脚本号；FIRST/LAST 给**自愈闸**用 | 生成器写出；`PINNED_NEW_SIDS` 反向钉号 |
 | `native/cards/youkai_core.{h,c}` | §3.2 重写：删 `YK_BODY_SPRITE_*`/`yk_body_sprite`，新增 `YK_BODY_STATES`/`YK_BODY_IDLE..STOP_R`/`yk_body_state` | 旧占位（`= -1` 死代码）没有意义了 | `make test-host` 的 `test_youkai_core` **992 checks / 0 failed** |
-| `native/cards/youkai.c`（**108 自己的卡**） | `on_draw` 改成 `yk_body_sync`；新增 `YK_BODY_SCRIPT[4][5]`、`yk_body_load_script`；`yk_card_t` +4 字段；`on_ctor` 复位本体跟踪；文件尾 TODO #1 结案 | 低速要真的把妖侧本体画出来 | `make dllx87`（我的两个 .o x87 = **0**）、`make dllverify` rc=0、`_Static_assert` 状态预算过 |
+| `native/cards/youkai.c`（**108 自己的卡**） | `on_draw` 改成 `yk_body_sync`；新增 `YK_BODY_SCRIPT[4][5]`、`yk_body_load_script`、**自愈闸**（低速下 sprite 号落在 `[FIRST,LAST]` 之外 ⇒ 立刻重装，兜死亡重生那条路）；`yk_card_t` +4 字段；`on_ctor` 复位本体跟踪；文件尾 TODO #1 结案 | 低速要真的把妖侧本体画出来 | `make test-host` rc=0、我的两个 .o x87 = **0**、`make dllverify` rc=0、`_Static_assert` 状态预算过 |
 | `native/engine.h`（**共享件**） | +`CE_PLAYER_SPEED_X/Y`、`CE_ANM_VM_POST_LOAD_A/B`、`CE_FN_ANM_LOAD_SCRIPT`、`CE_FN_ANM_VM_RUN` | 都是新常量，零行为变化 | 全库编译过；`engine_abi_check` 不变 |
 | `native/tests/test_youkai_core.c` | §3.2 段换成 11 条状态机断言（含越界钳位） | 覆盖新纯逻辑 | 992/0 |
 | `engine/player/th08/03-youkai-body-and-gauge.md` | §1.4/§1.5 实装记录；**§2.4 订正**（限值写点）；新增 §2.5（TH18 侧负结论） | 旧版 §2.4 是一条**错的否定结论** | `check-docs` 该文件无违例 |
@@ -18346,12 +18346,14 @@ blue_tint −2000 / red_tint +2000`，按 `shottype`（`0x164d0b1`）分支写�
 - 回归跑的：`make anm-verify` rc=0、`make sht-verify` rc=0、`make cards-check` rc=0、
   `make test-host`（`test_youkai_core` 992/0；⚠ 见下方「本批之外的 RED」）、`make dllverify` rc=0、
   `python3 native/tools/capcheck.py`、`python3 tooling/check-docs.py`。
-- **⚠ 本批之外的 RED（与本批无关，工作树里别人的在制品）**：
-  ① `test_faith_hud_core` 4 条失败 —— 用 **HEAD 版** `cards/hud_dim.c` 同样复现（预先存在）；
-  ② `make dllx87` = 1 —— 来自工作树里**被并发修改**的 `cards/hud_dim.c`（HEAD 版编译出 **0** x87），
-     我的 `youkai.o`/`youkai_core.o` 各 0；
-  ③ `capcheck` 报 `CE_ANM_ABILITY_ATLAS_ATLAS_SENRO_HUD_LABEL` 未登记（107 的在制品）；
-  ④ `check-docs` 的 `TUNING.md` 超长单元格（别人的在制品）。
+- **⚠ 2026-09-22 收盘时工作树里别人的在制品造成的 RED（逐条已证与本批无关）**：
+  ① `make dllx87` = **2** —— 来自**被并发修改**的两个共享件：`cards/hud_dim.o` 与 `sdk_core.o`
+     各 1 条 x87（用 **HEAD 版**源码编译，两者的计数都是 **0**）；我的 `youkai.o`/`youkai_core.o` 各 **0**；
+  ② `capcheck` 报 `CE_ANM_ABILITY_ATLAS_ATLAS_SENRO_HUD_LABEL` 未登记（107 的在制品）；
+  ③ `check-docs` 5 处超长单元格，分别在 `SINGLE-CARD-TEST.md`（3）、`TUNING.md`（1）、
+     `AUDIT.md:16641`（112 的那条，1）—— **没有一处在本批改过的段落里**（本批新增段落 0 违例）。
+  ⇒ 本批自己的门（`build_player_anm.py --verify-only` / `make anm-verify` / `sht-verify` /
+  `cards-check` / `test-host` / `dllverify`）**全过**。
 
 ### 4. 未决 / 要 owner 拍的
 

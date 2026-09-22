@@ -954,6 +954,20 @@ def write_pl_ids_h():
             lines.append(f"#define CE_PL_ANM_FORM_BASE_{player.upper():<5} {first:>3}   "
                          f"/* {player}.anm 灵界形态 sprite {first}..{last}"
                          f"（{len(ent['sprites'])} 帧）= 本体帧号 0..{len(ent['sprites']) - 1} 的加数 */")
+    # ★★ 2026-09-22（108 路 A）：**妖侧本体帧的 sprite 区间**。C 侧（`cards/youkai.c` 的
+    #   `yk_body_sync`）拿它做一个**自愈闸**：我们装上去的那支脚本只可能写这个区间里的 sprite，
+    #   一旦在低速下看到区间外的号，就说明**引擎把脚本换回去了**（例：死亡重生走
+    #   `Player__initialize` 又装了人侧 script0）⇒ 立刻重装，而不是等下一次移动状态变化。
+    #   （引擎自己那套本体脚本用的是 sprite 0..23 ⇒ 两个区间天然不重叠。）
+    lines.append("")
+    for player in sorted(YOUKAI_BODY_IDS):
+        ent = _youkai_body_entries(player)[0]
+        first, last = ent["sprites"][0][0], ent["sprites"][-1][0]
+        lines.append(f"#define CE_PL_ANM_YKBODY_FIRST_{player.upper():<5} {first:>3}   "
+                     f"/* {player}.anm 妖侧本体帧 sprite {first}..{last}"
+                     f"（{len(ent['sprites'])} 帧）*/")
+        lines.append(f"#define CE_PL_ANM_YKBODY_LAST_{player.upper():<6} {last:>3}   "
+                     f"/* 区间外 = 引擎把本体脚本换回去了（自愈闸，见 youkai.c）*/")
     PL_IDS_H.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 

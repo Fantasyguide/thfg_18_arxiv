@@ -901,6 +901,18 @@ static const int32_t YK_BODY_SCRIPT[4][YK_BODY_STATES] = {
       CE_PL_ANM_SCRIPT_YKBODY_PL03_STOP_R },
 };
 
+/* 妖侧本体帧的 sprite 区间（生成物）—— 自愈闸用：我们装的那支脚本只可能写这个区间里的号，
+ * 一旦在低速下读到区间**外**的号，就说明引擎把本体脚本换回去了（死亡重生走 `Player__initialize`
+ * 会装回人侧 script0）⇒ 立刻重装，不等下一次移动状态变化。引擎自己那套用的是 0..23 ⇒ 不重叠。*/
+static const int32_t YK_BODY_SPRITE_FIRST[4] = {
+    CE_PL_ANM_YKBODY_FIRST_PL00, CE_PL_ANM_YKBODY_FIRST_PL01,
+    CE_PL_ANM_YKBODY_FIRST_PL02, CE_PL_ANM_YKBODY_FIRST_PL03,
+};
+static const int32_t YK_BODY_SPRITE_LAST[4] = {
+    CE_PL_ANM_YKBODY_LAST_PL00, CE_PL_ANM_YKBODY_LAST_PL01,
+    CE_PL_ANM_YKBODY_LAST_PL02, CE_PL_ANM_YKBODY_LAST_PL03,
+};
+
 /* 两条调用约定的本地签名（照 sdk.h 里 `ce_fn_anm_set_sprite_t` 的写法；**不动共享件 sdk.h**）。
  * 一手：`0x407420` 两个出口都 `ret 8`（`0x407580`）、`0x478580` 是裸 `ret`（`0x47b89d`）。*/
 typedef void (__attribute__((thiscall)) *ce_fn_anm_load_script_t)(void *anm, void *vm, int script);
@@ -981,7 +993,13 @@ static void yk_body_sync(yk_card_t *s)
     s->body_state = (uint8_t)st;
     if (!focused) return;                                 /* 高速：引擎自己管，我们不抢 */
     want = YK_BODY_SCRIPT[ch][st];
-    if (want == s->body_script) return;                   /* 状态没变 ⇒ 别重装（重装 = 从第 0 帧起）*/
+    if (want == s->body_script) {
+        /* 状态没变 ⇒ 一般不重装（重装 = 动画从第 0 帧起）。**但**先看一眼 VM 现在写着哪个 sprite：
+         * 我们装的脚本只可能写 [FIRST, LAST] 里的号，落在外面就是引擎把脚本换回去了
+         * （死亡重生 `Player__initialize` 会装回人侧 script0）⇒ 这一帧必须补救。*/
+        int32_t sp = *(int32_t *)(vm + CE_ANM_VM_SPRITE_ID);
+        if (sp >= YK_BODY_SPRITE_FIRST[ch] && sp <= YK_BODY_SPRITE_LAST[ch]) return;
+    }
     yk_body_load_script(anm, vm, want);
     s->body_script = want;
 }

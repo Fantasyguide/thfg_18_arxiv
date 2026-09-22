@@ -37,3 +37,12 @@
 #define CE_PL_ANM_FORM_BASE_PL01   72   /* pl01.anm 灵界形态 sprite 72..95（24 帧）= 本体帧号 0..23 的加数 */
 #define CE_PL_ANM_FORM_BASE_PL02   77   /* pl02.anm 灵界形态 sprite 77..100（24 帧）= 本体帧号 0..23 的加数 */
 #define CE_PL_ANM_FORM_BASE_PL03   73   /* pl03.anm 灵界形态 sprite 73..96（24 帧）= 本体帧号 0..23 的加数 */
+
+#define CE_PL_ANM_YKBODY_FIRST_PL00   86   /* pl00.anm 妖侧本体帧 sprite 86..96（11 帧）*/
+#define CE_PL_ANM_YKBODY_LAST_PL00    96   /* 区间外 = 引擎把本体脚本换回去了（自愈闸，见 youkai.c）*/
+#define CE_PL_ANM_YKBODY_FIRST_PL01   96   /* pl01.anm 妖侧本体帧 sprite 96..106（11 帧）*/
+#define CE_PL_ANM_YKBODY_LAST_PL01   106   /* 区间外 = 引擎把本体脚本换回去了（自愈闸，见 youkai.c）*/
+#define CE_PL_ANM_YKBODY_FIRST_PL02  101   /* pl02.anm 妖侧本体帧 sprite 101..109（9 帧）*/
+#define CE_PL_ANM_YKBODY_LAST_PL02   109   /* 区间外 = 引擎把本体脚本换回去了（自愈闸，见 youkai.c）*/
+#define CE_PL_ANM_YKBODY_FIRST_PL03   97   /* pl03.anm 妖侧本体帧 sprite 97..120（24 帧）*/
+#define CE_PL_ANM_YKBODY_LAST_PL03   120   /* 区间外 = 引擎把本体脚本换回去了（自愈闸，见 youkai.c）*/
