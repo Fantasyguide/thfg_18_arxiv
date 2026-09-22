@@ -69,8 +69,11 @@ PRIMS = {
             #   —— `th08:0x44aac9` 必给 + `:0x44aaef`（弹路径 **且** 符卡进行中）+ `:0x44ab0f`（不是「妖単独」）。
             #   本卡映射下只出现 `n=1`（平擦）/ `n=3`（符卡中）；`n=2` 那一档 = 「妖単独」机体，TH18 无对应机体。
             #   逐指令见 `youkai_core.h` §3.11c；登记 `TUNING.md` §2.0zs / `AUDIT.md` §BE 详录 #73。
-            (r"youkai: graze orbs n=[123] x\d+ bullet",
-             "擦弹给永点的**颗数**按一手那三道门算出来了（1 = 平擦 / 3 = 符卡进行中）", False),
+            # ★ 2026-09-23（统筹拍「三条场上门按一手接上 + 一行回退」）：`gate=` 直接给出**是哪道门挡的**
+            #   —— ok 全过 / boss 场上没 boss / gauge 槽没到 +8000 / shottype 人単独非妖夢 / off 开关关掉；
+            #   `n=0` = 被门挡（一手：门没过 ⇒ 这一颗弹一颗都不给）。开关 = `YK_GRAZE_FIELD_GATES`（默认 1）。
+            (r"youkai: graze orbs n=[0-3] x\d+ bullet\(s\) gate=(ok|boss|gauge|shottype|off)",
+             "擦弹给永点的**颗数**与**为什么没给**都在这一行（一手三道门 + 符卡门 + 机体门）", False),
             # ★ 同批：跳帧护栏（累计擦弹计数在一帧里跳变 ⇒ 夹到池容量）；正常应当一次都不出现
             (r"youkai: graze resync clamped",
              "擦弹计数在一帧里跳变被护栏夹掉（那一帧确实跳了帧；一手没有单帧上限）", False),

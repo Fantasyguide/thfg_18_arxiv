@@ -20560,9 +20560,7 @@ TH18 编号 = `player+0x476ac`（`switch 0..4`、移动只在 case 1 `th18:0x45c
 
 **没接的（如实登记，留给 owner 拍）**
 
-- 第 1 颗的两条**场上门**：`is_boss_active`（`th08:0x42f1f0` 扫 `ENEMY_MANAGER.bosses[0..7]`）与
-  「槽 >= +8000 极妖」仍**没接**（本卡仍「聚焦即撒」）。TH18 侧两个输入都拿得到
-  （`CE_EM_BOSS_IDS` / 卡自己的 `gauge`）⇒ 接上只需两条判据，但**平擦会变成 0 颗**、手感变化很大，故不擅动。
+- ~~第 1 颗的两条**场上门**~~ ⇒ ★★ **2026-09-23 统筹拍「按一手接上」后已接**（见本节末尾的续写段）。
 - 「妖単独」那一档（每颗弹 2 颗）在 TH18 **没有对应机体**（owner §4 的映射把每个 TH18 机体都映到
   TH08 的**组**）⇒ 本卡只会给 1 颗 / 3 颗；要让 2 颗出现得先有「单人机体」维度。
 - 弹 / 激光这条 `flag` 分不出来（TH18 的擦弹计数 `0x4ccd0c` 是一个累计量）⇒ 一律按弹算。
@@ -20580,3 +20578,61 @@ TH18 编号 = `player+0x476ac`（`switch 0..4`、移动只在 case 1 `th18:0x45c
 `engine/_shared/rosters/th06-th09.md` 的一条 ❓ 结案（**追加式**，本记录即是登记）。
 
 
+
+### §BE 详录 #73 续（2026-09-23）：第 1 颗那三条**场上门**按一手接上 + 具名开关回退（**同一工单的续写，不另开号**）
+
+> **谁做的**：同一子会话（父 agent `session-ea21e315-5763-4d2e-8148-2fd328838640`）。
+> **裁决**：统筹 2026-09-23 拍 —— 「那三条场上门：**按一手接上**（owner 对 TH08 冲突的一贯裁决就是
+> 『全部按一手』，且门 A / 门 B 我们已经接了，只接一半反而是半成品）」，并要求「具名常量 + 一行回退」。
+
+**改了什么**
+
+| 文件 | 改了什么 |
+| --- | --- |
+| `native/cards/youkai_core.h` | §3.11c 追加：五个判据码 `YK_GRAZE_GATE_{OK,SHOTTYPE,BOSS,GAUGE,OFF}`（按一手分支顺序编号）+ `yk_graze_field_gate()` 的声明；`yk_graze_orbs_per_bullet()` 换成四参（首参 = 判据码，非 OK/OFF ⇒ 0 颗）|
+| `native/cards/youkai_core.c` | 新增 `yk_graze_field_gate(enabled, boss_active, gauge, shottype)`（顺序照一手：机体 → boss → 槽极妖）；`yk_graze_orbs_per_bullet` 的「人単独」那条门**搬进** `yk_graze_field_gate`（这样开关关掉时它一并失效 = 真正回到老行为）|
+| `native/cards/youkai.c` | 新常量 `YK_GRAZE_FIELD_GATES`（1 = 一手 / 0 = 回退）；新增 `yk_boss_active()`；擦弹支按判据码算颗数 + `yk_graze_gate_name()`；日志与账尾加 `gate=`（逐条见本表下）|
+| `native/tests/test_youkai_core.c` | 新增 19 条断言：判据码取值、**机体门正/反**、**boss 门正/反**（含「两条都不过 ⇒ 报 boss」的顺序）、**槽门正/反**（7999 / 8000 / 10000 / −10000）、开关关掉恒 `OFF`、**门没过 ⇒ 0 颗**（三条门各一）、`OFF` 回到老行为（人単独也不再拦）、野值判据码按「没过」处理 ⇒ `4656 checks / 0 failed` |
+| `native/tools/verify.py` | 期望表那条正则改成 `youkai: graze orbs n=[0-3] x\d+ bullet\(s\) gate=(ok\|boss\|gauge\|shottype\|off)` |
+| `TUNING.md` | §2.0zs：「仍未接的两条场上门」→ **已接**（含三个输入来源与后果）+ 开关的翻法；❓ 表加第 2 行（开关本身 = 工程选择，默认值 = 一手）；实跑判据换成含 `gate=` 的新行 + 账尾的 `graze_gate` |
+
+**`youkai.c` 那五个点的逐条**：① 新常量 `YK_GRAZE_FIELD_GATES`（**默认 1 = 一手**；0 = 三条门整段不评 =
+「聚焦即撒」老行为，门 A/B 照算）；② 新增 `yk_boss_active()`（读 `CE_EM_BOSS_IDS` 的 `CE_EM_BOSS_SLOTS`(4)
+格 `int32`，任一非 0 即真）；③ 擦弹支先算判据码再算颗数，新增 `yk_graze_gate_name()`（码 → 日志名）；
+④ 日志改成 `youkai: graze orbs n=… x… bullet(s) gate=… (spell=… shottype=… gauge=… boss=…)`
+（`gate` 或 `n` 一变就打、都不变时最多每 60 帧一行）；⑤ 600 帧那行账尾追加
+`graze_gate ok/boss/gauge/shottype/off=…/…/…/…/…`（各道门这一局挡了多少次；`off` 那格 > 0 = 开关被关过）。
+
+**一手（三条门的逐指令、顺序就是卡侧的求值顺序；全文在 `youkai_core.h` §3.11c）**
+
+- 机体门 `th08:0x44aa94` / `:0x44aa9e`：`shottype_is_solo_human(shottype) && shottype != 0xa` ⇒ 挡
+  （`0xa` = 妖夢例外）；`shottype` = `ds:0x164d0b1` = `GM+0x3dba9`。
+- boss 门 `th08:0x44aaac`：`EnemyManager::is_boss_active`（`th08:0x42f1f0`）= 扫
+  `ENEMY_MANAGER`(`0x577f20`)+`0x9dcda0` 的 8 个指针（ExpHP 字段名 `bosses`），任一非 0 即真。
+- 槽门 `th08:0x44aaba`：`GameManager::GaugeIsExtremelyYoukai`（`th08:0x406d70`）= 槽 >= `GM+0x3ddfe`
+  （初值写点 `th08:0x44da12` = **+8000** = 80%）。
+- 三条都 `je 0x44ab14` ⇒ 跳到函数尾 ⇒ 三处 `spawn_item` 一处都走不到（**这一颗弹一颗都不给**）。
+
+**TH18 侧三个输入（哪个 SDK 符号）**
+
+- `spell_active`（门 A）= `ce_spell_active()`（`sdk.h`，读 `zSpellcard+0x78` bit0）。
+- `boss_active` = **`engine.h` 的 `CE_EM_BOSS_IDS`（`0x48`）/ `CE_EM_BOSS_SLOTS`（`4`）**：SDK **没有**
+  现成的「boss 活否」封装函数（`sdk.h:582` 只给了读法本身：「boss 用 `em + CE_EM_BOSS_IDS + i*4` 取 id
+  再问它」）⇒ 用已有常量 + 本卡 `yk_boss()` 的同一条读法 ⇒ **零新增站点、零新增断点、没动 `sites.py`**。
+  ⚠ 与 `yk_boss()` 的差别（都照一手）：那个服务追击目标、要 `ce_enemy_lockable`；这里「槽位非 0」即真。
+- `gauge` = 本卡自己的 `s->gauge`（量纲 1% = 100，阈值走 `yk_gauge_is_extremely_youkai()` =
+  `>= YK_GAUGE_YOUKAI_EFFECTS` = 8000，与 `th08:0x44da12` 同一个数）。
+- `shottype` = TH18 机体号 0..3（映射下机体门**恒通过**，照实现但注释写明恒真）。
+
+**风险与回退（统筹要求的那条）**
+
+- 接上后**不在 boss 战 / 槽没到 +8000 时擦弹一颗永点都不给**（= 原作行为，但手感变化很大）。
+- 回退 = `youkai.c` 的 **`YK_GRAZE_FIELD_GATES` 改 0**（一行）：三条门整段不评 = 「聚焦即撒」
+  （门 A / 门 B 照算），日志随即打成 `gate=off` ⇒ 实跑一眼能确认开关状态。
+
+**怎么验证的**：`make test-host` ⇒ `youkai_core: **4656 checks, 0 failed**`（上一批 4637，+19）；
+`make check` 其余各门（见本节末「验证」段的原始输出）；`check-docs` 的**孤立验证**见下段。
+
+**发布面**：同 #73 主段 —— **没改** `pl0X.sht` / `pl0X.anm` / `ability.anm` / wav / `sites.py` /
+`SITE_BUDGET` / `patch/**`，**没新增断点、没碰别人的卡**（本续写只动 108 卡自己的两个 C 文件 + 单测 +
+`tools/verify.py` + 两个文档）。

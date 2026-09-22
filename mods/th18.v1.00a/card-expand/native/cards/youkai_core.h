@@ -993,12 +993,29 @@ int yk_orb_instant_absorb(int gauge);   /* 極端人 或 極端妖 ⇒ 1（一�
  *   · `flag`（弹 / 激光）：TH18 的擦弹计数 `0x4ccd0c` 是**一个累计量**、分不出来源 ⇒ 一律按**弹**
  *     （`flag = 0`）算。⚠ 同一条累计量也读不出「被擦的是哪颗弹」（落点仍取自机，见 `TUNING.md` §2.0y #12）。
  *
- * ⚠ **本函数只覆盖「机体轴 + flag + 符卡」这三道**；第 1 颗那两条**场上门**（有 boss / 极妖 >= +8000）
- *   在卡侧仍是 ❓（现在用「聚焦即撒」代替，登记 `TUNING.md` §2.0y #6 与 `youkai.c` 的站内注）。*/
+ * ⚠ **本函数只覆盖「机体轴 + flag + 符卡」这三道**；第 1 颗前面那三条**场上门**（有 boss / 极妖 >= +8000 /
+ *   人単独且非妖夢）由下面的 `yk_graze_field_gate()` 评 —— 2026-09-23 **统筹拍「按一手接上」** + 具名开关回退。*/
 int yk_shottype_is_solo_human(int shottype);   /* `shottype >= 4 && (shottype & 1) == 0` */
 int yk_shottype_is_solo_youkai(int shottype);  /* `shottype >= 4 && (shottype & 1) != 0` */
-/* 每擦到一颗弹给几颗时点（0 / 1 / 2 / 3）。`bullet_path` = `flag == 0`（弹路径）。*/
-int yk_graze_orbs_per_bullet(int bullet_path, int spell_active, int shottype);
+
+/* ---- 第 1 颗前面那三条**场上门**的判据码（`th08:0x44aac9` 之前的三条分支）---------------------
+ * 逐指令（顺序 = 一手的分支顺序；先命中哪条就报哪条，卡侧照这个顺序打日志）：
+ *   `th08:0x44aa92 je 0x44aaa0` → `th08:0x44aa94 movzx edx,BYTE ds:0x164d0b1` → `:0x44aa9e jne 0x44ab14`
+ *     ⇒ **人単独（`>= 4 && 偶`）且不是妖夢（0xa）** ⇒ 一颗都不给；
+ *   `th08:0x44aaac je 0x44ab14` ⇒ `EnemyManager::is_boss_active()`（`th08:0x42f1f0`）假 ⇒ 一颗都不给；
+ *   `th08:0x44aaba je 0x44ab14` ⇒ `GaugeIsExtremelyYoukai()`（`th08:0x406d70`，阈值 `GM+0x3ddfe` = **+8000**）假。
+ * 返回值**只用于判定与日志**（`OK` = 三条全过 = 放行）。`OFF` 那一档 = ❓ 开关（卡侧 `YK_GRAZE_FIELD_GATES`）。*/
+#define YK_GRAZE_GATE_OK        0   /* 三条门全过 ⇒ 第 1 颗照给 */
+#define YK_GRAZE_GATE_SHOTTYPE  1   /* `th08:0x44aa9e`：人単独且不是妖夢（0xa）—— 本卡映射下**恒不成立** */
+#define YK_GRAZE_GATE_BOSS      2   /* `th08:0x44aaac`：`is_boss_active()` 假（boss 槽全 0）*/
+#define YK_GRAZE_GATE_GAUGE     3   /* `th08:0x44aaba`：槽 < +8000（极妖假）*/
+#define YK_GRAZE_GATE_OFF       4   /* ❓ 开关关掉：三条门整段不评（= 「聚焦即撒」老行为；门 A/B 照样算）*/
+
+/* 评第 1 颗前面那三条门（`enabled` = 卡侧 `YK_GRAZE_FIELD_GATES`）。返回上面五个码之一。 */
+int yk_graze_field_gate(int enabled, int boss_active, int gauge, int shottype);
+/* 每擦到一颗弹给几颗时点（0 / 1 / 2 / 3）。`field_gate` = 上一行的返回值（非 OK/OFF ⇒ **0 颗**）；
+ * `bullet_path` = `flag == 0`（弹路径）。后三道门**嵌套**（逐指令见本小节顶部）。*/
+int yk_graze_orbs_per_bullet(int field_gate, int bullet_path, int spell_active, int shottype);
 
 /* ============ ★★★ 2026-09-22（owner #26 · **风味选项**）决死窗口里全屏敌弹变红 ==================
  * owner 原话：「有 th08 的时候，**决死状态会导致画面上所有弹幕变红**」—— 这是**风味**（要一个开关）。

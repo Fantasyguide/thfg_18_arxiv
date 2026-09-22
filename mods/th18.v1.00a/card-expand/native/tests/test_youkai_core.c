@@ -1275,8 +1275,8 @@ int main(void)
             CHECK(yk_item_box_open(-1) == 0 && yk_item_box_open(99) == 0);   /* 野值一律关 */
             /* ★★★ 2026-09-22 夜（P-F · 擦弹的**颗数**）：一手 `Player::sub_44a930`（`th08:0x44a930`）
              * 三处 `spawn_item(pos, type 0xa, state 1)`（`th08:0x44aac9` / `:0x44aaef` / `:0x44ab0f`），
-             * 三道门**嵌套** ⇒ 每擦到一颗弹 **1 / 2 / 3** 颗。逐指令与门语义全文 = `youkai_core.h` §3.11c。
-             * 这里**每道门各测正 / 反两个方向**（同一个函数的三个入参正交地把门打开 / 关上）。*/
+             * 各道门**嵌套** ⇒ 每擦到一颗弹 **0 / 1 / 2 / 3** 颗。逐指令与门语义全文 = `youkai_core.h` §3.11c。
+             * 这里**每道门各测正 / 反两个方向**（入参正交地把门打开 / 关上）。*/
             /* 两条 shottype 谓词（一手 `th08:0x42f230` / `:0x42f270`：`>= 4` 才算单人，再取奇偶）。*/
             CHECK(yk_shottype_is_solo_human(0) == 0 && yk_shottype_is_solo_human(3) == 0);
             CHECK(yk_shottype_is_solo_human(4) == 1 && yk_shottype_is_solo_human(10) == 1);
@@ -1285,30 +1285,60 @@ int main(void)
             CHECK(yk_shottype_is_solo_youkai(4) == 0 && yk_shottype_is_solo_youkai(10) == 0);
             CHECK(yk_shottype_is_solo_youkai(0) == 0 && yk_shottype_is_solo_youkai(3) == 0);
             CHECK(yk_shottype_is_solo_human(4) != yk_shottype_is_solo_youkai(4));   /* 互斥 */
-            /* 门 0（`th08:0x44aa94` / `:0x44aa9e`）：**人単独且不是妖夢（0xa）** ⇒ 一颗都不给。
-             *   正：4 / 6 / 8（人単独）⇒ 0；反：3（组）、5（妖単独）、0xa（妖夢例外）⇒ 不是 0。*/
-            CHECK(yk_graze_orbs_per_bullet(1, 1, 4) == 0);
-            CHECK(yk_graze_orbs_per_bullet(1, 0, 6) == 0);
-            CHECK(yk_graze_orbs_per_bullet(0, 1, 8) == 0);
-            CHECK(yk_graze_orbs_per_bullet(1, 1, 3) == 3);          /* 组 ⇒ 照给 */
-            CHECK(yk_graze_orbs_per_bullet(1, 1, 10) == 3);         /* 妖夢例外 ⇒ 照给 */
+            /* ---- 第 1 颗前面那三条**场上门**（★ 2026-09-23 统筹拍：按一手接上，具名开关可回退）----
+             * 一手分支顺序 = 机体（`th08:0x44aa9e`）→ boss（`th08:0x44aaac`）→ 槽极妖（`th08:0x44aaba`）。*/
+            CHECK(YK_GRAZE_GATE_OK == 0 && YK_GRAZE_GATE_SHOTTYPE == 1 && YK_GRAZE_GATE_BOSS == 2 &&
+                  YK_GRAZE_GATE_GAUGE == 3 && YK_GRAZE_GATE_OFF == 4);
+            /* 门「机体」（`th08:0x44aa94` / `:0x44aa9e`）：**人単独且不是妖夢（0xa）**。
+             *   正（挡）：4 / 6 / 8；反（放）：3（组）、5（妖単独）、0xa（妖夢例外）。*/
+            CHECK(yk_graze_field_gate(1, 1, 8000, 4) == YK_GRAZE_GATE_SHOTTYPE);
+            CHECK(yk_graze_field_gate(1, 1, 8000, 8) == YK_GRAZE_GATE_SHOTTYPE);
+            CHECK(yk_graze_field_gate(1, 1, 8000, 3) == YK_GRAZE_GATE_OK);
+            CHECK(yk_graze_field_gate(1, 1, 8000, 5) == YK_GRAZE_GATE_OK);
+            CHECK(yk_graze_field_gate(1, 1, 8000, 10) == YK_GRAZE_GATE_OK);   /* 妖夢例外 */
+            /* 门「boss」（`th08:0x44aaac`）：正（放）= 场上有 boss；反（挡）= 没有。
+             *   挡住时**先于**槽门被报（一手顺序：boss 在槽之前判）。*/
+            CHECK(yk_graze_field_gate(1, 1, 8000, 0) == YK_GRAZE_GATE_OK);
+            CHECK(yk_graze_field_gate(1, 0, 8000, 0) == YK_GRAZE_GATE_BOSS);
+            CHECK(yk_graze_field_gate(1, 0, 0, 0) == YK_GRAZE_GATE_BOSS);     /* 两条都不过 ⇒ 报 boss */
+            /* 门「槽极妖」（`th08:0x44aaba`，阈值 +8000 = 80%）：正（放）= 8000 及以上；反（挡）= 7999 及以下。*/
+            CHECK(yk_graze_field_gate(1, 1, 8000, 0) == YK_GRAZE_GATE_OK);
+            CHECK(yk_graze_field_gate(1, 1, 7999, 0) == YK_GRAZE_GATE_GAUGE);
+            CHECK(yk_graze_field_gate(1, 1, 0, 0) == YK_GRAZE_GATE_GAUGE);
+            CHECK(yk_graze_field_gate(1, 1, 10000, 0) == YK_GRAZE_GATE_OK);   /* 满槽 */
+            CHECK(yk_graze_field_gate(1, 1, -10000, 0) == YK_GRAZE_GATE_GAUGE); /* 极人侧：也不算极妖 */
+            /* ❓ 开关关掉（`YK_GRAZE_FIELD_GATES = 0`）：三条门整段不评 ⇒ 恒 `OFF`
+             *   （与三个入参无关）⇒ 这就是「聚焦即撒」老行为。*/
+            CHECK(yk_graze_field_gate(0, 0, 0, 4) == YK_GRAZE_GATE_OFF);
+            CHECK(yk_graze_field_gate(0, 1, 8000, 0) == YK_GRAZE_GATE_OFF);
+            /* ---- 颗数：门没过 ⇒ **0 颗**（一手三条 `je 0x44ab14` 都跳到函数尾）---- */
+            CHECK(yk_graze_orbs_per_bullet(YK_GRAZE_GATE_BOSS, 1, 1, 0) == 0);
+            CHECK(yk_graze_orbs_per_bullet(YK_GRAZE_GATE_GAUGE, 1, 1, 0) == 0);
+            CHECK(yk_graze_orbs_per_bullet(YK_GRAZE_GATE_SHOTTYPE, 1, 1, 4) == 0);
             /* 门 A = flag（`th08:0x44aace`）**且** 符卡进行中（`th08:0x44aad9` = `SPELLCARD.flags & 1`）：
              *   正：弹路径 + 符卡中 ⇒ 第 2/3 颗；反：符卡不在 ⇒ 停在 1 颗；激光路径（flag=1）⇒ 也停在 1 颗。*/
-            CHECK(yk_graze_orbs_per_bullet(1, 1, 0) == 3);          /* 门开 */
-            CHECK(yk_graze_orbs_per_bullet(1, 0, 0) == 1);          /* 门关（没在打符卡）*/
-            CHECK(yk_graze_orbs_per_bullet(0, 1, 0) == 1);          /* 门关（激光擦弹，flag != 0）*/
+            CHECK(yk_graze_orbs_per_bullet(YK_GRAZE_GATE_OK, 1, 1, 0) == 3);   /* 门开 */
+            CHECK(yk_graze_orbs_per_bullet(YK_GRAZE_GATE_OK, 1, 0, 0) == 1);   /* 门关（没在打符卡）*/
+            CHECK(yk_graze_orbs_per_bullet(YK_GRAZE_GATE_OK, 0, 1, 0) == 1);   /* 门关（激光擦弹，flag != 0）*/
             /* 门 B（`th08:0x44ab00`）：**妖単独**机体停在第 2 颗。
              *   正：`!solo_youkai`（组 0..3）⇒ 3 颗；反：`solo_youkai`（5 / 7 / 9 / 11）⇒ 2 颗。*/
-            CHECK(yk_graze_orbs_per_bullet(1, 1, 0) == 3);
-            CHECK(yk_graze_orbs_per_bullet(1, 1, 5) == 2);
-            CHECK(yk_graze_orbs_per_bullet(1, 1, 11) == 2);
+            CHECK(yk_graze_orbs_per_bullet(YK_GRAZE_GATE_OK, 1, 1, 0) == 3);
+            CHECK(yk_graze_orbs_per_bullet(YK_GRAZE_GATE_OK, 1, 1, 5) == 2);
+            CHECK(yk_graze_orbs_per_bullet(YK_GRAZE_GATE_OK, 1, 1, 11) == 2);
             /* 门 B 只在前两颗都给出来的前提下才被求值（嵌套）：妖単独 + 没在打符卡 ⇒ 仍是 1 颗。*/
-            CHECK(yk_graze_orbs_per_bullet(1, 0, 5) == 1);
+            CHECK(yk_graze_orbs_per_bullet(YK_GRAZE_GATE_OK, 1, 0, 5) == 1);
             /* 本卡的映射（TH18 机体号 0..3 = TH08 的「组」）下能取到的两档：平擦 1 / 符卡中 3。*/
             for (i = 0; i < 4u; ++i) {
-                CHECK(yk_graze_orbs_per_bullet(1, 0, (int)i) == 1);
-                CHECK(yk_graze_orbs_per_bullet(1, 1, (int)i) == 3);
+                CHECK(yk_graze_orbs_per_bullet(YK_GRAZE_GATE_OK, 1, 0, (int)i) == 1);
+                CHECK(yk_graze_orbs_per_bullet(YK_GRAZE_GATE_OK, 1, 1, (int)i) == 3);
             }
+            /* ★ 开关关掉（`OFF`）⇒ **回到老行为**：连「人単独非妖夢」也不再拦（只会被门 A/B 影响）。*/
+            CHECK(yk_graze_orbs_per_bullet(YK_GRAZE_GATE_OFF, 1, 1, 4) == 3);
+            CHECK(yk_graze_orbs_per_bullet(YK_GRAZE_GATE_OFF, 1, 0, 4) == 1);
+            CHECK(yk_graze_orbs_per_bullet(YK_GRAZE_GATE_OFF, 1, 1, 10) == 3);
+            /* 野值（不该出现的判据码）⇒ 按「没过」处理（防御性；不崩、不给）。*/
+            CHECK(yk_graze_orbs_per_bullet(7, 1, 1, 0) == 0);
+            CHECK(yk_graze_orbs_per_bullet(-1, 1, 1, 0) == 0);
             }
             }
         }

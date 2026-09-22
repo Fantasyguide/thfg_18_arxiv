@@ -335,6 +335,25 @@ static uint8_t *yk_boss(void)
     return 0;
 }
 
+/* ★★★ 2026-09-23（擦弹第 1 颗的场上门）：TH08 `EnemyManager::is_boss_active`（`th08:0x42f1f0`）
+ * 的 TH18 对应物 = **boss id 表里任一格非 0**（一手扫 `ENEMY_MANAGER.bosses[0..7]` 那 8 个指针，
+ * 任一非 0 即真；TH18 的同位表 = `zEnemyManager+0x48` 的 **4** 格 `int32` enemy_id）。
+ * SDK 侧**没有**现成的「boss 活否」封装（`sdk.h:582` 只给了读法本身：「boss 用
+ * `em + CE_EM_BOSS_IDS + i*4` 取 id 再问它」）⇒ 这里用**已有的常量**（`engine.h` 的
+ * `CE_EM_BOSS_IDS` / `CE_EM_BOSS_SLOTS`）+ 本卡 `yk_boss()` 的**同一条读法**
+ * ⇒ **零新增站点、零新增断点**。
+ * ⚠ 与 `yk_boss()` 的两点差别（都照一手）：① 那个服务「追击目标」，要求 `ce_enemy_lockable`；
+ * 这里「槽位非 0」即真（一手不看状态位）；② 槽数取 TH18 的 4（TH08 是 8）。*/
+static int yk_boss_active(void)
+{
+    uint8_t *em = CE_ENEMY_MGR();
+    unsigned i;
+    if (!em) return 0;
+    for (i = 0; i < CE_EM_BOSS_SLOTS; ++i)
+        if (*(const int32_t *)(em + CE_EM_BOSS_IDS + (size_t)i * 4) != 0) return 1;
+    return 0;
+}
+
 /* ★★★ 2026-09-22（P3 第二批）：「射击中」的判据（TH18 侧）。
  * TH08 是 `Player::shotActive`（一个 999 帧的射击周期标志，`th08:0x17d6ed4`）；TH18 没有同一个
  * 状态量（每帧按 rate 发弹，没有周期）⇒ 本卡用**射击键按住**（`CE_INPUT_HELD` 的 bit0）。
@@ -2997,12 +3016,23 @@ static int on_death_before_deathbomb(ce_card_t *c)
  * `verify.py` 的 familiar 判据已经同时接受 `run done` 与 `ledger` 两种形态。*/
 static uint32_t s_ledger_frame;
 
-/* ★★★ 2026-09-22 夜（P-F 工单 · 擦弹颗数的保真缺口）：**擦弹那一路给几颗**的三本账。
- * 全部只进日志（实跑判据），不参与任何判定；`n` 的值域与三道门见 `youkai_core.h` §3.11c。*/
+/* ★★★ 2026-09-22 夜（P-F 工单 · 擦弹颗数的保真缺口）：**擦弹那一路给几颗**的几本账。
+ * 全部只进日志（实跑判据），不参与任何判定；`n` 的值域与那几道门见 `youkai_core.h` §3.11c。*/
 static unsigned s_graze_n[4];        /* [1]/[2]/[3] = 各档各给过几次 */
+static unsigned s_graze_gate[5];     /* 按判据码（`YK_GRAZE_GATE_*`，0..4）各遇到过几次 */
 static unsigned s_graze_clamped;     /* 被对账护栏夹掉的弹数（> 0 = 那一帧确实跳帧了） */
-static int      s_graze_log_n = -1;  /* 上一次打日志时的 n（值一变就打一行） */
-static uint32_t s_graze_log_frame;   /* 上一次打日志的帧号（值不变时最多每 60 帧一行） */
+static int      s_graze_log_gate = -1;   /* 上一次打日志时的判据码（值一变就打一行）*/
+static int      s_graze_log_n = -1;      /* 上一次打日志时的颗数 */
+static uint32_t s_graze_log_frame;       /* 上一次打日志的帧号（值不变时最多每 60 帧一行） */
+
+/* ★★★ 2026-09-23（统筹拍「三条场上门按一手接上，但必须一行可回退」）：**擦弹第 1 颗的场上门开关**。
+ *   1 = **一手**（默认）：按 `Player::sub_44a930` 的三条分支评 —— 机体 `th08:0x44aa9e` /
+ *       `EnemyManager::is_boss_active` `th08:0x44aaac` / `GaugeIsExtremelyYoukai` `th08:0x44aaba`；
+ *       ⚠ 后果：**不在 boss 战 / 槽没到 +8000 时，擦弹一颗永点都不给**（这正是原作的行为）。
+ *   0 = **回退态**：三条门整段不评 = 本批交付前的「**聚焦即撒**」（门 A 的符卡门与门 B 的机体门照算）。
+ * 手感不对时改这一行即可（判据码会打成 `gate=off`，日志一眼能看出开关是关的）。
+ * 一手逐指令与判据全文：`youkai_core.h` §3.11c；登记 `TUNING.md` §2.0zs / `AUDIT.md` §BE 详录 #73。*/
+#define YK_GRAZE_FIELD_GATES 1
 
 /* ❓ **自定（不是一手规则）**：一手对「一帧擦到几颗弹」**没有上限** —— `BulletManager::on_tick`
  * 逐弹调一次 `Player::sub_44a930`，一帧 N 颗就是 N 次（`engine/_shared/rosters/th06-th09.md` §3.2
@@ -3013,6 +3043,18 @@ static uint32_t s_graze_log_frame;   /* 上一次打日志的帧号（值不变�
  * 夹掉的部分进 `s_graze_clamped` 并**当场打一行日志**（实跑见到那行 = 那一帧确实跳帧了）。
  * （上一版这里是「单帧上限 8 颗，防一段大擦弹一次性灌满池」，既没有一手依据、也没考虑跳帧。）*/
 #define YK_GRAZE_RESYNC_MAX 64u
+
+/* 判据码 → 日志里的名字（`gate=…`）：一眼看出**这次擦弹为什么没给**。*/
+static const char *yk_graze_gate_name(int g)
+{
+    switch (g) {
+    case YK_GRAZE_GATE_OK:       return "ok";
+    case YK_GRAZE_GATE_SHOTTYPE: return "shottype";
+    case YK_GRAZE_GATE_BOSS:     return "boss";
+    case YK_GRAZE_GATE_GAUGE:    return "gauge";
+    default:                     return "off";
+    }
+}
 
 static int on_tick_2(ce_card_t *c)
 {
@@ -3039,11 +3081,14 @@ static int on_tick_2(ce_card_t *c)
             yk_orb_motion_params(ch, &sp, &rr);
             ce_log("youkai: gauge=%d piv=%d orbs=%d taken=%u live=%u full=%u hud=%u "
                    "speed=%.0f pick=%.0f shoot=%d fengma=%u fscore=%d "
-                   "graze_n 1/2/3=%u/%u/%u clamped=%u",
+                   "graze_n 1/2/3=%u/%u/%u graze_gate ok/boss/gauge/shottype/off=%u/%u/%u/%u/%u clamped=%u",
                    (int)s->gauge, (int)s->piv, (int)s->orbs, s->orb_taken, s_orb_live,
                    s->orb_full, (unsigned)s->hud_ready, sp, rr, yk_shooting(),
                    (unsigned)s->fengma, (int)s->fengma_score,
-                   s_graze_n[1], s_graze_n[2], s_graze_n[3], s_graze_clamped);
+                   s_graze_n[1], s_graze_n[2], s_graze_n[3],
+                   s_graze_gate[YK_GRAZE_GATE_OK], s_graze_gate[YK_GRAZE_GATE_BOSS],
+                   s_graze_gate[YK_GRAZE_GATE_GAUGE], s_graze_gate[YK_GRAZE_GATE_SHOTTYPE],
+                   s_graze_gate[YK_GRAZE_GATE_OFF], s_graze_clamped);
         }
     if (!CE_PLAYER()) {
         yk_drop_all(s, "no player");
@@ -3068,7 +3113,7 @@ static int on_tick_2(ce_card_t *c)
         if (graze > s->graze_seen) {
             uint32_t d = graze - s->graze_seen, i;
             unsigned k, orbs;
-            int spell, st;
+            int spell, st, gate, boss;
             float px = *(const float *)(CE_PLAYER() + CE_PLAYER_X);
             float py = *(const float *)(CE_PLAYER() + CE_PLAYER_Y);
             if (d > YK_GRAZE_RESYNC_MAX) {                 /* ❓ 自定：**对账护栏**，不是一手规则
@@ -3099,15 +3144,14 @@ static int on_tick_2(ce_card_t *c)
              *     （`th08:0x4308e5` 一族 + `ItemManager::cancel_autocollect` `th08:0x4413e0`）。
              * ⇒ 我们那句 `YK_ORB_STATE_HOMING` 改成 `YK_ORB_STATE_SPAWN`（= 我们的 state 3，
              *   运动方程与 TH08 的 state 5 同一套：上抛 → `vy > 0` 转归航，且上抛期间不收）。
-             * ⚠ 仍**未复刻**的三点（登记 TUNING §2.0y）：① 落点 —— TH08 撒在**被擦到的那颗弹**上，
+             * ⚠ 仍**未复刻**的两点（登记 TUNING §2.0y）：① 落点 —— TH08 撒在**被擦到的那颗弹**上，
              *   我们拿不到那颗弹（`ce_graze_take` 的断点 `0x42497f` 在 `sites.py` 里被注释掉 ⇒ 恒返回 0）
-             *   ⇒ 落点 = 自机（上抛之后回来才被收，至少看得见动作）；② 第 1 颗那两条**场上门**
-             *   （`is_boss_active` + 槽极妖 >= +8000）没接，用的是「聚焦即撒」；
-             *   ③ 弹 / 激光那条 `flag`（`[ebp+0xc]`）分不出来（TH18 只有一个累计计数）。
+             *   ⇒ 落点 = 自机（上抛之后回来才被收，至少看得见动作）；
+             *   ② 弹 / 激光那条 `flag`（`[ebp+0xc]`）分不出来（TH18 只有一个累计计数）。
              *
-             * ★★★ 2026-09-22 夜（P-F · **颗数**的保真缺口，本批）：一手是
-             * **每擦到一颗弹给 1 / 2 / 3 颗**（三道门**嵌套**，`je 0x44ab14` 直接跳到函数尾）：
-             *   · `th08:0x44aac9` = 第 1 颗（场上门见上面 ②）；
+             * ★★★ 2026-09-22 夜（P-F · **颗数**的保真缺口）：一手是
+             * **每擦到一颗弹给 1 / 2 / 3 颗**（几道门**嵌套**，`je 0x44ab14` 直接跳到函数尾）：
+             *   · `th08:0x44aac9` = 第 1 颗（前面还有三条场上门 —— 见下面 ★ 2026-09-23 那一段）；
              *   · `th08:0x44aaef` = 第 2 颗：门 = `[ebp+0xc] == 0`（**弹**路径；激光那条传 1）
              *     **且** `SPELLCARD.flags & 1`（`th08:0x44aad9 call 0x4178a0`）= **符卡进行中**；
              *   · `th08:0x44ab0f` = 第 3 颗：门 = `!shottype_is_solo_youkai()`（`th08:0x44aaf9`）。
@@ -3116,27 +3160,39 @@ static int on_tick_2(ce_card_t *c)
              * `spell_active = ce_spell_active()`（`zSpellcard+0x78` bit0，与 TH08 的 bit0 同义）、
              * `shottype` = TH18 机体号 0..3（owner §4 的映射把每个 TH18 机体都映到 TH08 的一个**组**
              * ⇒ 两条 solo 谓词恒假 ⇒ 本卡只会给 **1 颗**（没在打符卡）/ **3 颗**（符卡进行中）；
-             * 第 2 颗那一档 = 「妖単独」机体，TH18 没有对应机体）、`bullet_path` 恒 1。*/
+             * 第 2 颗那一档 = 「妖単独」机体，TH18 没有对应机体）、`bullet_path` 恒 1。
+             *
+             * ★★★ 2026-09-23（统筹拍「三条场上门按一手接上」）：第 1 颗前面那三条门由
+             * `yk_graze_field_gate()` 评，顺序照一手 `th08:0x44aa9e`（机体）→ `:0x44aaac`（boss）
+             * → `:0x44aaba`（槽极妖 >= +8000）；没过 ⇒ 这一颗弹**一颗都不给**。
+             * 开关 = `YK_GRAZE_FIELD_GATES`（默认 1 = 一手；0 = 整段不评 = 「聚焦即撒」老行为）。
+             * 日志 `gate=` 直接给出**是哪道门挡的**（`ok` / `boss` / `gauge` / `shottype` / `off`）。*/
             spell = ce_spell_active();
             st = yk_current_character();
             if (st < 0 || st > 3) st = 0;
-            orbs = (unsigned)yk_graze_orbs_per_bullet(1 /* 弹路径（激光分不出来，见上面 ③）*/,
+            boss = yk_boss_active();          /* 本帧读一次，保证「判据用的」与「日志打的」是同一个值 */
+            gate = yk_graze_field_gate(YK_GRAZE_FIELD_GATES, boss, (int)s->gauge, st);
+            orbs = (unsigned)yk_graze_orbs_per_bullet(gate, 1 /* 弹路径（激光分不出来，见上面 ②）*/,
                                                       spell, st);
-            if (focused && orbs) {
+            if (focused) {
                 for (i = 0; i < d; ++i)
                     for (k = 0; k < orbs; ++k)
                         yk_orb_spawn(s, px, py, YK_ORB_STATE_SPAWN);
-                /* ★ 实跑判据（父工单要的那一条）：`n=` 就是**这次擦弹每颗弹给几颗**
-                 * （1 = 平擦 / 3 = 符卡进行中 / 2 = 只可能出现在「妖単独」机体）。
-                 * 限频：值一变就打一行；值不变时最多每 60 帧一行（免得密擦时刷屏）。*/
+                /* ★ 实跑判据（统筹要的那一条）：`gate=` 一眼看出**这次擦弹为什么没给**
+                 * （`ok` 全过 / `boss` 场上没 boss / `gauge` 槽没到 +8000 / `shottype` 人単独非妖夢 /
+                 * `off` 开关关掉），`n=` 是**过了门之后每颗弹给几颗**（0 = 被门挡）。
+                 * 限频：`gate` 或 `n` 一变就打一行；都不变时最多每 60 帧一行（免得密擦时刷屏）。*/
                 if (orbs <= 3u) ++s_graze_n[orbs];
-                if (orbs != (unsigned)s_graze_log_n
+                if (gate >= 0 && gate <= 4) ++s_graze_gate[gate];
+                if (gate != s_graze_log_gate || orbs != (unsigned)s_graze_log_n
                     || (uint32_t)(s_ledger_frame - s_graze_log_frame) >= 60u) {
+                    s_graze_log_gate = gate;
                     s_graze_log_n = (int)orbs;
                     s_graze_log_frame = s_ledger_frame;
-                    ce_log("youkai: graze orbs n=%u x%u bullet(s) (spell=%d shottype=%d) "
-                           "tally 1/2/3=%u/%u/%u clamped=%u - TH08 th08:0x44aac9+aaef+ab0f",
-                           orbs, d, spell, st, s_graze_n[1], s_graze_n[2], s_graze_n[3],
+                    ce_log("youkai: graze orbs n=%u x%u bullet(s) gate=%s (spell=%d shottype=%d gauge=%d "
+                           "boss=%d) tally 1/2/3=%u/%u/%u clamped=%u - TH08 th08:0x44aac9+aaef+ab0f",
+                           orbs, d, yk_graze_gate_name(gate), spell, st, (int)s->gauge,
+                           boss, s_graze_n[1], s_graze_n[2], s_graze_n[3],
                            s_graze_clamped);
                 }
             }

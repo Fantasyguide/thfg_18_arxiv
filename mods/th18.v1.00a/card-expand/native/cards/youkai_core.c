@@ -1034,18 +1034,30 @@ int yk_shottype_is_solo_youkai(int shottype)
     return (shottype >= 4 && (shottype & 1) != 0) ? 1 : 0;
 }
 
-int yk_graze_orbs_per_bullet(int bullet_path, int spell_active, int shottype)
+int yk_graze_field_gate(int enabled, int boss_active, int gauge, int shottype)
+{
+    /* ❓ 开关关掉 ⇒ 三条门整段不评（回到「聚焦即撒」；门 A/B 仍在 `yk_graze_orbs_per_bullet` 里）。*/
+    if (!enabled) return YK_GRAZE_GATE_OFF;
+    /* 一手的分支顺序：机体（`th08:0x44aa9e`）→ boss（`:0x44aaac`）→ 槽极妖（`:0x44aaba`）。*/
+    if (yk_shottype_is_solo_human(shottype) && shottype != 0xa) return YK_GRAZE_GATE_SHOTTYPE;
+    if (!boss_active) return YK_GRAZE_GATE_BOSS;
+    if (!yk_gauge_is_extremely_youkai(gauge)) return YK_GRAZE_GATE_GAUGE;
+    return YK_GRAZE_GATE_OK;
+}
+
+int yk_graze_orbs_per_bullet(int field_gate, int bullet_path, int spell_active, int shottype)
 {
     int n;
-    /* 门 0（`th08:0x44aa94` / `:0x44aa9e`）：**人単独**且不是妖夢（0xa）⇒ 一颗都不给。*/
-    if (yk_shottype_is_solo_human(shottype) && shottype != 0xa) return 0;
-    /* 门 1（`th08:0x44aac9`）：走到这里就有 1 颗（场上的 boss / 极妖两条门在卡侧，见 .h 的注）。*/
+    /* 第 1 颗前面那三条场上门没过（且不是「开关关掉」那一档）⇒ 这一颗弹**一颗都不给**
+     * （一手：三条 `je 0x44ab14` 都跳到函数尾 ⇒ 三处 `spawn_item` 一处都走不到）。*/
+    if (field_gate != YK_GRAZE_GATE_OK && field_gate != YK_GRAZE_GATE_OFF) return 0;
+    /* 门 1（`th08:0x44aac9`）：门过到这一步就有 1 颗。*/
     n = 1;
-    /* 门 2（`th08:0x44aace` + `:0x44aae0`）：只有**弹**路径**且符卡进行中**才给第 2 颗；
-     * 注意 `je 0x44ab14` 是跳到函数尾 ⇒ 没在打符卡时**连第 3 颗也没有**（三道门是嵌套的）。*/
+    /* 门 A（`th08:0x44aace` + `:0x44aae0`）：只有**弹**路径**且符卡进行中**才给第 2 颗；
+     * 注意 `je 0x44ab14` 是跳到函数尾 ⇒ 没在打符卡时**连第 3 颗也没有**（后三道门是嵌套的）。*/
     if (bullet_path && spell_active) {
         n = 2;
-        /* 门 3（`th08:0x44ab00`）：「妖単独」机体停在第 2 颗。*/
+        /* 门 B（`th08:0x44ab00`）：「妖単独」机体停在第 2 颗。*/
         if (!yk_shottype_is_solo_youkai(shottype)) n = 3;
     }
     return n;
