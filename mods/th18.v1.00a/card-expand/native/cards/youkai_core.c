@@ -777,6 +777,31 @@ int yk_gauge_clamp(int gauge)
     return gauge;
 }
 
+/* ★★★ 2026-09-22 夜（P-E 单人反向封顶）：一手见 `youkai_core.h` 的同名小节。*/
+void yk_gauge_limits_solo(int focused, int32_t *human_limit, int32_t *youkai_limit)
+{
+    if (focused) {                                   /* 妖侧（低速）：反侧 = 人侧，封在 −2000 */
+        if (human_limit)  *human_limit  = -YK_GAUGE_SOLO_OTHER_LIMIT;
+        if (youkai_limit) *youkai_limit =  YK_GAUGE_YOUKAI_LIMIT;
+    } else {                                         /* 人侧：反侧 = 妖侧，封在 +2000 */
+        if (human_limit)  *human_limit  =  YK_GAUGE_HUMAN_LIMIT;
+        if (youkai_limit) *youkai_limit =  YK_GAUGE_SOLO_OTHER_LIMIT;
+    }
+}
+
+int yk_gauge_clamp2(int gauge, int32_t human_limit, int32_t youkai_limit)
+{
+    if (gauge < human_limit) return (int)human_limit;
+    if (gauge > youkai_limit) return (int)youkai_limit;
+    return gauge;
+}
+
+int yk_gauge_add2(int gauge, int delta, int32_t human_limit, int32_t youkai_limit)
+{
+    int32_t v = (int32_t)(int16_t)((int32_t)gauge + (int32_t)delta);   /* 先按 i16 截断（同 `yk_gauge_add`）*/
+    return yk_gauge_clamp2((int)v, human_limit, youkai_limit);
+}
+
 int yk_gauge_add(int gauge, int delta)
 {
     /* `th08:0x43c0d9`–`:0x43c0e9`：`gauge = (int16)((int)gauge + delta)`（**先按 i16 截断再夹**）。

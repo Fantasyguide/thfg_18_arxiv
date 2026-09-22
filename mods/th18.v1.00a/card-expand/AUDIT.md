@@ -20153,3 +20153,25 @@ type 1 的来路要先 grep `push 1` + `push <type>` 的调用点上下文）。
 `engine_abi_check`）；`python3 tooling/check-docs.py` 全部通过。
 
 **本批没改** `pl0X.sht` / `ability.anm` / wav / 站点。
+
+## §BE 详录 #63（2026-09-22 夜）：108 **P-E 单人模式的反向封顶**（owner「人妖逢魔 / 夜点」工单的第三批）
+
+**改了什么**
+
+| 文件 | 改了什么 |
+| --- | --- |
+| `native/cards/youkai_core.{h,c}` | 新增 `YK_GAUGE_SOLO_OTHER_LIMIT 2000`、`yk_gauge_limits_solo(focused, &hl, &yl)`、`yk_gauge_clamp2` / `yk_gauge_add2`（把夹紧泛化到「当前形态的同一对 limit」）|
+| `native/cards/youkai.c` | **所有**槽更新改走 `yk_gauge_add2(..., hl, yl)`（收刻符 / 射击推进 / 漂移 / 击破 / 死亡）；形态决定那一对 limit；反侧真的被夹住时记一行 `solo reverse cap engaged` |
+| `native/tests/test_youkai_core.c` | +12 条断言（两侧 limit、NULL 安全、反侧夹住后 `yk_fengma` 恒 0、正侧仍可逢魔、`clamp2` 与旧 `clamp` 在满量程一致）⇒ **4541 checks / 0 failed** |
+| `TUNING.md` | 新增 §2.0zh（复刻表 + `#28` 妖梦例外不落 / `#29` 「单人」按当前形态逐帧应用）|
+| `native/tools/verify.py` | expect 新增 `solo reverse cap engaged - the opposite side stops at -?\d+` |
+
+**一手**：门 `th08:0x44da99 call 0x42f230`（solo_human）/ `th08:0x44dac4 call 0x42f270`（solo_youkai）；
+反侧 limit = **±2000**（`th08:0x44daa2` = `0x7d0` / `th08:0x44dacd` = `0xf830`），哨兵 ±2001（`th08:0x44dab4` / `th08:0x44dae6`）；
+**effects（逢魔线 ±8000）不动** ⇒ 反侧永远到不了逢魔。
+
+**怎么验证的**：`make check` **rc=0**（`x87 = 0`、`test_youkai_core` 4541/0、sites 双面、`sitecheck --all`、
+`contract_check`、`gen_drift`、`capcheck`、`sht-verify`、`anm-verify`、`snd-check`、`dllx87`、`dllverify`、
+`engine_abi_check`）；`python3 tooling/check-docs.py` 全部通过。
+
+**本批没改** `pl0X.sht` / `ability.anm` / wav / 站点。

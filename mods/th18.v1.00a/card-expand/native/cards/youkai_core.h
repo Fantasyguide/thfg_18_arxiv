@@ -633,6 +633,34 @@ int     yk_in_transfer_zone(float fx, float fy, float cx, float cy, float w, flo
 #define YK_GAUGE_DEAD_ZONE            9   /* `ds:0x4b6f28` = 9.0：`|g| <= 9 ⇒ 0`（`th08:0x44bf4d`/`:0x44bf61`）*/
 #define YK_GAUGE_PER_ORB            111   /* 收一颗刻符的人妖槽增量（`th08:0x44139e`/`:0x4413b0`）—— 聚焦 = +，否则 − */
 
+/* ★★★ 2026-09-22 夜（owner 工单 **P-E 单人模式的反向封顶**）—— 本 mod 恒单人 ⇒ 必须实现。
+ *
+ * owner 口径（`HUMAN-YOUKAI-GAUGE.md` §1.8）：「人间状态的单人模式只能达到**人间逢魔 100%**，
+ *   妖怪状态的单人模式只能达到**妖怪逢魔 100%**，其相反方向的逢魔**不可达到，只能到 20%**
+ *   （单人妖梦例外，两侧都能到 50%）」。
+ *
+ * **一手（我们样本，逐指令；`Player::on_registration th08:0x44d650`）**：
+ *   · 门：`th08:0x44da99 call 0x42f230`（`solo_human` = `shottype >= 4 && (shottype & 1) == 0`）/
+ *     `th08:0x44dac4 call 0x42f270`（`solo_youkai` = `shottype >= 4 && (shottype & 1) == 1`）。
+ *   · 单人 ⇒ 把**反侧 limit** 收成 **±2000**：`th08:0x44daa2 mov WORD [0x164d302],0x7d0`（+2000，
+ *     妖侧）/ `th08:0x44dacd mov WORD [0x164d300],0xf830`（−2000，人侧）；同段还有 **±2001 的哨兵**
+ *     （`th08:0x44dab4` 写 `0x7d1` / `th08:0x44dae6` 写 `0xf82f` —— 那是「反向那一格」的极限+1，
+ *     用来保证比较取等号时也到不了）。
+ *   · 而 **effects（逢魔线 ±8000）不动** ⇒ 反侧**永远到不了 ±8000** ⇒ 反侧逢魔不可达 ✔ 与 owner 一致。
+ *   · 单人妖梦（shottype **10**，`th08:0x44da57`）：两侧 effects 都收到 ±3000、limit ±5000 ⇒ 两侧都能逢魔
+ *     —— 但 **TH18 没有妖梦这个机体** ⇒ 本卡按默认（±8000 / 单人 2000 封顶）落，**不发明例外**（规格 §4）。*/
+#define YK_GAUGE_SOLO_OTHER_LIMIT   2000   /* 一手 `th08:0x44daa2` 0x7d0 / `th08:0x44dacd` 0xf830 */
+
+/* 「当前形态」的同一对 limit（`focused` = 低速 = 妖侧）：
+ *   妖侧（focused）⇒ human_limit = **−2000**、youkai_limit = **+10000**；
+ *   人侧         ⇒ human_limit = **−10000**、youkai_limit = **+2000**。
+ * 指针一律 `NULL` 安全（任一为 NULL 就跳过那一项）。 */
+void yk_gauge_limits_solo(int focused, int32_t *human_limit, int32_t *youkai_limit);
+/* 夹到给定的一对 limit（`yk_gauge_clamp` 的一般化；一手比较口径同 `th08:0x43c0fa`/`:0x43c131`）。*/
+int  yk_gauge_clamp2(int gauge, int32_t human_limit, int32_t youkai_limit);
+/* 夹紧后的加法（用给定的一对 limit）。 */
+int  yk_gauge_add2(int gauge, int delta, int32_t human_limit, int32_t youkai_limit);
+
 int yk_gauge_clamp(int gauge);                 /* 夹到 [ HUMAN_LIMIT, YOUKAI_LIMIT ]（`th08:0x43c0fa`/`:0x43c128`）*/
 int yk_gauge_add(int gauge, int delta);        /* 夹紧后的加法（= AddToYoukaiGauge 的算术部分）*/
 int yk_gauge_dead_zone(int gauge);             /* `|g| <= 9 ⇒ 0`（`th08:0x44bf61`）*/

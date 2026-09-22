@@ -266,6 +266,7 @@ typedef struct {
      *   `focus_age` = **上一次形态切换之后过了几帧** —— 对应一手 `player+8`（人妖切换的进度计时器 0..7，
      *   `>= 7` 才置 `player+5 = is_youkai`），两下本体爆闪的门是 `>= 4`（`th08:0x44b14f` / `:0x44b3a9`）。*/
     uint8_t       night_logged;         /* ★ P-A：夜点初值只记一行 */
+    uint8_t       solo_cap_logged;      /* ★ P-E：单人反向封顶「真的夹住了」只记一行 */
     uint8_t       fengma;               /* ★ P-B：本帧在不在逢魔（极人 OR 极妖）*/
     int32_t       fengma_score;         /* ★ P-B：本局逢魔自动加分的累计（诊断）*/
     uint32_t      aura_id;
@@ -1410,12 +1411,16 @@ static int yk_orb_collect(yk_card_t *s)
      *   ② 人妖槽 ±111（`th08:0x44139e`/`:0x4413b0` → `th08:0x4413cb`，聚焦 = +111）。
      * ⚠ 另外两笔本轮**不接**（分数那一路与符卡 +8000），原因见下面那段「本轮的取舍」。*/
     if (!s) return 0;
-    yk_piv_add(&s->piv, &s->orbs, 1);
+    {
+        int32_t hl, yl;                                     /* ★ P-E：单人反向封顶（见 core 的同名小节）*/
+        yk_gauge_limits_solo(CE_PLAYER_FOCUSED() ? 1 : 0, &hl, &yl);
+        yk_piv_add(&s->piv, &s->orbs, 1);
     /* ★★★ 2026-09-22（P3 第二批）：`AddToYoukaiGauge` 的**第一道闸** —— 射击中（TH08 的
      * `shotActive != 0`）带 `param_2 == 0` 的加数**整条丢掉**（一手 `th08:0x43c0c2`/`:0x43c0cb`，
      * `0x17d6ed4` = `g_Player.shotActive`）⇒ 本卡这里照抄：射击中不收槽（PIV 那笔照记）。*/
-    if (!yk_gauge_gate_blocks(yk_shooting()))
-        s->gauge = yk_gauge_add(s->gauge, yk_gauge_orbs_delta(CE_PLAYER_FOCUSED()));
+        if (!yk_gauge_gate_blocks(yk_shooting()))
+            s->gauge = yk_gauge_add2(s->gauge, yk_gauge_orbs_delta(CE_PLAYER_FOCUSED()), hl, yl);
+    }
     ++s->orb_taken;
     return 1;
 }
@@ -1653,7 +1658,9 @@ static void yk_gauge_tick(yk_card_t *s, int focused)
 {
     int d, g2;
     int shooting;
+    int32_t hl, yl;                                     /* ★ P-E：当前形态的同一对 limit */
     if (!s) return;
+    yk_gauge_limits_solo(focused, &hl, &yl);
     shooting = yk_shooting();
     if (focused != (int)s->gauge_focus_prev) {          /* 换状态 ⇒ 两个计时器清零（❓ 简化）*/
         s->gauge_focus_prev = (uint8_t)(focused ? 1 : 0);
@@ -1661,6 +1668,19 @@ static void yk_gauge_tick(yk_card_t *s, int focused)
         s->gauge_hold = 0;
     }
     if (s->gauge_focus_run < 0xffffu) ++s->gauge_focus_run;
+    /* ★★★ 2026-09-22 夜（P-E）：**单人反向封顶真的夹住了**就记一行（实跑判据）。
+     * 一手：单人的反侧 limit = ±2000（`th08:0x44daa2` / `th08:0x44dacd`），而逢魔线仍是 ±8000
+     * ⇒ 反侧**永远到不了逢魔**（owner §1.8 的「只能到 20%」）。*/
+    if (!s->solo_cap_logged) {
+        int capped = focused ? (int)hl : (int)yl;
+        if ((focused && s->gauge <= capped) || (!focused && s->gauge >= capped)) {
+            s->solo_cap_logged = 1;
+            ce_log("youkai: solo reverse cap engaged - the opposite side stops at %d "
+                   "(TH08 `Player::on_registration` th08:0x44daa2/th08:0x44dacd: solo caps the reverse "
+                   "limit at 2000 = 20%%, while the fengma line stays at +/-8000)",
+                   capped);
+        }
+    }
     /* ★★★ 2026-09-22（P3 第二批）：**射击中每帧 ±26**（一手 `Player.cpp:445-452`：
      * `AddToYoukaiGauge(0x6590 / shotInterval(999) = 26, param_2 = 1)`，方向 = `shotType & 1`
      * = `isYoukaiMode` ⇒ 我们的口径里 = 低速位）。
@@ -1669,13 +1689,13 @@ static void yk_gauge_tick(yk_card_t *s, int focused)
      *      的 `this->shotActive == 0` 前置）；② 击破 ±200 / 收刻符 ±111 被 `AddToYoukaiGauge`
      *      的第一道闸丢掉（`th08:0x43c0c2`；见 `yk_orb_collect` / `yk_on_enemy_killed` 的注）。*/
     if (shooting) {
-        s->gauge = yk_gauge_add(s->gauge, yk_gauge_shoot_delta(focused));
+        s->gauge = yk_gauge_add2(s->gauge, yk_gauge_shoot_delta(focused), hl, yl);
         return;                                         /* ★ 漂移在射击中不跑（一手的前置门）*/
     }
     if (focused) {
         if (s->gauge_focus_run >= 4) {                  /* 一手：`unkE2ad0 >= 4` 才开始动 */
             d = (s->gauge_hold < 300) ? (int)(s->gauge_hold / 15) : 21;
-            s->gauge = yk_gauge_add(s->gauge, d);
+            s->gauge = yk_gauge_add2(s->gauge, d, hl, yl);
             if (s->gauge_hold < 300) ++s->gauge_hold;
         }
         return;
@@ -1690,7 +1710,7 @@ static void yk_gauge_tick(yk_card_t *s, int focused)
         else if (!yk_gauge_is_moderately_human(g2))  d = 2;
         else if (!yk_gauge_is_extremely_human(g2))   d = 3;
         else                                        d = 5;
-        s->gauge = yk_gauge_add(s->gauge, d);
+        s->gauge = yk_gauge_add2(s->gauge, d, hl, yl);
     } else {
         s->gauge = 0;                                   /* 一手 `th08:0x44bf61`：死区归零 */
     }
@@ -1706,12 +1726,14 @@ static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
 {
     int focused, i, n;
     float ang;
+    int32_t hl, yl;                                     /* ★ P-E：当前形态的同一对 limit */
     if (!s || !ev) return;
     focused = CE_PLAYER_FOCUSED();
+    yk_gauge_limits_solo(focused, &hl, &yl);
     /* ★★★ 2026-09-22（P3 第二批）：同刻符那一笔 —— 射击中 ±200 也被 `AddToYoukaiGauge`
      * 的第一道闸丢掉（一手 `th08:0x43c0c2`；decomp `EnemyManager.cpp:670-677` 传的正是 `param_2 = 0`）。*/
     if (!yk_gauge_gate_blocks(yk_shooting()))
-        s->gauge = yk_gauge_add(s->gauge, focused ? 200 : -200);
+        s->gauge = yk_gauge_add2(s->gauge, focused ? 200 : -200, hl, yl);
     /* ★★★ 2026-09-22 夜（P-B）：**逢魔那一颗刻符与聚焦无关** —— 一手它在死亡公共尾
      *（`EnemyManager::on_tick` 的 `th08:0x42da2a`/`th08:0x42da38` ⇒ `th08:0x42da41 push 1` /
      * `th08:0x42da54 spawn_item(type 7, state 1)`），人侧（未聚焦）一样掉。
@@ -1902,6 +1924,7 @@ static int on_ctor(ce_card_t *c)
     s->rearms_seen = 0;                 /* ★ route A：整表 reset 也清条目，但计数只增不清 ⇒ 快照回 0 */
     s->releases_seen = 0;               /* ★ P8-3：同上（route A′ 计数只增不清）*/
     s->night_logged = 0;
+    s->solo_cap_logged = 0;
     s->fengma = 0;
     s->fengma_score = 0;
     s->claimed_set = -1;                /* ★ P7：认领日志的「变化才打」闩 */

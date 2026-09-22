@@ -65,6 +65,9 @@ PRIMS = {
             # ★ 2026-09-22 夜（P-B 逢魔）：ledger 行里的逢魔位（1 = 极人 OR 极妖；加分 100/帧、对话中不涨）
             (r"fengma=[01] fscore=\d+",
              "逢魔状态与自动加分在账上可见（一手 100 分/帧、一档）", False),
+            # ★ 2026-09-22 夜（P-E 单人反向封顶）：反侧真的被夹在 ±2000（= 20%）时的一行
+            (r"youkai: solo reverse cap engaged - the opposite side stops at -?\d+",
+             "单人反向封顶生效（反侧到不了逢魔；一手 th08:0x44daa2 / :0x44dacd）", False),
         ],
         fail=[(r"youkai: familiar spawn FAILED", "创建失败（池满 / 坐标非法）"),
               (r"youkai: familiar follow-VM table full", "跟随 VM 表满（画面会少使魔）"),

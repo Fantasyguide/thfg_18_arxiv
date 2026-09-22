@@ -1149,6 +1149,34 @@ int main(void)
             CHECK(yk_fengma_kill_orbs(1, 0, 1) == 1);          /* 妖怪逢魔：自机弹也只 1 颗 */
             CHECK(yk_fengma_kill_orbs(1, 1, 0) == 1);
             CHECK(yk_fengma_kill_orbs(1, 1, 1) == 2);
+            /* ★★★ 2026-09-22 夜（P-E 单人反向封顶）：一手 `Player::on_registration`
+             * —— 单人（`th08:0x44da99` / `:0x44dac4` 的两个门）把**反侧 limit** 收成 ±2000
+             * （`th08:0x44daa2` = +0x7d0 / `th08:0x44dacd` = −0xf830），effects 不动 ⇒ 反侧逢魔不可达。*/
+            {
+                int32_t hl = 0, yl = 0;
+                yk_gauge_limits_solo(1, &hl, &yl);            /* 妖侧（低速）⇒ 人侧封在 −2000 */
+                CHECK(hl == -YK_GAUGE_SOLO_OTHER_LIMIT && hl == -2000);
+                CHECK(yl == YK_GAUGE_YOUKAI_LIMIT);
+                yk_gauge_limits_solo(0, &hl, &yl);            /* 人侧 ⇒ 妖侧封在 +2000 */
+                CHECK(hl == YK_GAUGE_HUMAN_LIMIT);
+                CHECK(yl == YK_GAUGE_SOLO_OTHER_LIMIT && yl == 2000);
+                yk_gauge_limits_solo(1, 0, 0);                /* NULL 安全 */
+                /* 反侧真的到不了逢魔线：妖侧形态下，往人侧推到底也只能到 −2000 */
+                yk_gauge_limits_solo(1, &hl, &yl);
+                CHECK(yk_gauge_add2(-1900, -200, hl, yl) == -2000);       /* 夹在反侧 limit */
+                CHECK(yk_gauge_add2(-2000, -100, hl, yl) == -2000);
+                CHECK(yk_fengma(yk_gauge_add2(-2000, -100, hl, yl),
+                                YK_GAUGE_HUMAN_EFFECTS, YK_GAUGE_YOUKAI_EFFECTS) == 0);  /* 反侧逢魔不可达 */
+                CHECK(yk_gauge_add2(9900, 500, hl, yl) == 10000);         /* 正侧仍到 100% */
+                CHECK(yk_fengma(yk_gauge_add2(7900, 200, hl, yl),
+                                YK_GAUGE_HUMAN_EFFECTS, YK_GAUGE_YOUKAI_EFFECTS) == 1);  /* 正侧可逢魔 */
+                /* `clamp2` 与旧的 `clamp` 在满量程时逐点一致（回归保护）*/
+                CHECK(yk_gauge_clamp2(-99999, YK_GAUGE_HUMAN_LIMIT, YK_GAUGE_YOUKAI_LIMIT) ==
+                      yk_gauge_clamp(-99999));
+                CHECK(yk_gauge_clamp2(99999, YK_GAUGE_HUMAN_LIMIT, YK_GAUGE_YOUKAI_LIMIT) ==
+                      yk_gauge_clamp(99999));
+                CHECK(yk_gauge_clamp2(1234, YK_GAUGE_HUMAN_LIMIT, YK_GAUGE_YOUKAI_LIMIT) == 1234);
+            }
         }
     }
 
