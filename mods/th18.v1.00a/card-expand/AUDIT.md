@@ -20307,3 +20307,38 @@ imm `0x41a80000` = `f2i` 转换上界 ⇒ **实际峰值 20**）；清零 `th08:
 
 **发布面**：**本批没改** `pl0X.sht` / `pl0X.anm` / `ability.anm` / wav / 站点（夜点用的是**已有**的字形 14 格）。
 
+## §BE 详录 #68（2026-09-22 夜）：108 **批次 1 —— 使魔两种形态都存在 + 按形态切外观**（owner 口径订正）
+
+**owner 口径**：「可被攻击的使魔**只在人侧**存在；**妖侧**存在**不可见（魔法阵）**的使魔」
+⇒ 与我们当时的实现（只在妖侧存在、只在妖侧画）冲突。
+
+**改了什么**
+
+| 文件 | 改了什么 |
+| --- | --- |
+| `native/cards/youkai.c` | ① `yk_drop_all` 拆成两支（新增 `yk_leave_youkai`）；② `!focused` 分支不再撤使魔；③ 记录加 `circle_id`（12→16 B）；④ `yk_fam_vm_follow` 按形态切外观；⑤ kill 一并收环（逐条见下）|
+| `TUNING.md` | §2.0zm（改法表 + 闸的回归口径 + `❓ #42/#43`）；`#23` 改为「**不覆盖引擎全局、自有计分层已覆盖**」+ 实跑判据 |
+
+**闸的基线行为回归**：夹持态（`fam_seen` / `broken` / `rearm_pending`）现在**跨形态保持**（不再被松 Shift 清表），
+语义上正是 owner 要的「打掉使魔 ⇒ 那一波停火」；复位口不变（route A = 下一次 `etOn`，计数 `rearms`/`releases` 可判；
+`YK_EMIT_BROKEN_TTL 120` 帧兜底）。**实跑判据**：`rearms` 涨 ⇒ `releases` 跟着涨。
+
+**怎么验证的**：`make check` **rc=0**（`x87 = 0`、`test_youkai_core` 4594/0、sites 双面、`sitecheck --all`、
+`contract_check`、`gen_drift`、`capcheck`、`sht-verify`、`anm-verify`、`snd-check`、`dllx87`、`dllverify`、
+`engine_abi_check`）；`python3 tooling/check-docs.py` 全部通过。
+
+**发布面**：**本批没改** `pl0X.sht` / `pl0X.anm` / `ability.anm` / wav / 站点（妖侧常驻魔法阵复用已有脚本 309 / sprite 479）。
+
+**批次 2/3 待办**：妖侧「不可被打」（先核 TH18 字段，查不到就给软实现）；人侧「撞到使魔 ⇒ MISS」（`ce_forced_death_begin/end` + AABB）。
+
+**#68 那行的逐条**
+
+- ① 新增 `yk_leave_youkai(s)` = 只收「妖侧才有的东西」（光环 #23 / 切换环 #27 / 染色 #26 / `tr.pending`）；
+  `yk_drop_all` 保留「撤使魔 + 收跟随 VM + 收光环（幂等）」。
+- ② `on_tick_2` 的 `!focused` 分支改成 `yk_leave_youkai(s)`，**不再撤使魔、也不再 `return 0`**
+  ⇒ 使魔的 1:1 映射（`yk_familiars_tick`）与伤害转嫁 tick 在两种形态下都继续跑。
+- ③ `yk_fam_vm_t` 加 `circle_id`（妖侧**常驻魔法阵**句柄；静态断言 12 → **16 B**，表 32×16 = 512 B）。
+- ④ `yk_fam_vm_follow` 按形态切：**人侧** ⇒ 本体 `alpha 0xff`、删环；**妖侧** ⇒ 本体 `alpha 0x00`（不删 VM）
+  + 每只一支常驻环（脚本 309、`interrupt 2` = 妖侧蓝，一手 `th08:0x41b04e`）。
+- ⑤ `yk_fam_vm_kill` 一并 `ce_anm_delete(circle_id)`；`yk_fam_vm_kill_all` 随之覆盖整表。
+

@@ -445,6 +445,9 @@ typedef struct {
     uint32_t fam_id;   /* 0 = 空槽 */
     uint32_t anm_id;   /* 0 = 没有 VM（起失败 / 已被引擎销毁）*/
     int32_t  variant;  /* 0..3：自愈重起时要按同一套脚本再起一个 */
+    /* ★★★ 2026-09-22 夜（owner：**妖侧只剩魔法阵**）：**常驻魔法阵环**的句柄（只在妖侧存在）。
+     * 与 `yk_ring_blink` 那支**切换短命环**是两件事：这支是「妖侧使魔本体不可见时**一直**看得见的那圈」。*/
+    uint32_t circle_id;/* 0 = 这一帧没有常驻魔法阵（人侧 / 起失败 / 还没起）*/
 } yk_fam_vm_t;
 static yk_fam_vm_t s_fam_vm[YK_FAM_MAX];
 
@@ -461,6 +464,7 @@ static void yk_fam_vm_kill(yk_fam_vm_t *v)
 {
     if (!v) return;
     if (v->anm_id) { ce_anm_delete(v->anm_id); v->anm_id = 0; }
+    if (v->circle_id) { ce_anm_delete(v->circle_id); v->circle_id = 0; }
     v->fam_id = 0;
     v->variant = 0;
 }
@@ -584,6 +588,30 @@ static void yk_fam_vm_follow(uint32_t fam_id, int variant, const uint8_t *f)
     if (!ce_anm_set_pos(v->anm_id, *(const float *)(f + CE_ENEMY_POS_X),
                                     *(const float *)(f + CE_ENEMY_POS_Y), 0.0f))
         v->anm_id = 0;                                     /* 句柄作废 ⇒ 下一帧自愈重起 */
+    /* ★★★ 2026-09-22 夜（owner 口径：**使魔两种形态都存在**）—— 按形态切外观：
+     *   · **人侧（高速 / 未聚焦）**：画**本体**（现有跟随 VM，四色原生切图）；
+     *   · **妖侧（低速 / 聚焦）**：**本体不可见**（alpha 置 0，VM 不删 ⇒ 切回来一帧就恢复），
+     *     改画**每只一支常驻魔法阵环**（TH08 `etama.anm` script48 / 我们的脚本 309 / sprite 479，
+     *     `SetInterrupt(2)` = 妖侧蓝 —— 一手 `th08:0x41b04e SetInterrupt(环, IsYoukai()?2:1)`）。
+     * ⚠ 与 `yk_ring_blink` 的**切换短命环**是两支 VM、两个用途（那支是「切换那一下闪一圈」）。*/
+    {
+        int youkai_side = CE_PLAYER_FOCUSED();
+        if (v->anm_id) ce_anm_set_color(v->anm_id, youkai_side ? 0x00ffffffu : 0xffffffffu);
+        if (youkai_side) {
+            if (!v->circle_id || !ce_anm_get_vm(v->circle_id)) {
+                v->circle_id = ce_anm_spawn(CE_ABILITY_ANM(),
+                                            CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_RING,
+                                            YK_FAM_ANM_LAYER);
+                if (v->circle_id) ce_anm_interrupt(v->circle_id, 2);   /* 2 = 妖侧蓝（一手）*/
+            }
+            if (v->circle_id && !ce_anm_set_pos(v->circle_id, *(const float *)(f + CE_ENEMY_POS_X),
+                                                               *(const float *)(f + CE_ENEMY_POS_Y), 0.0f))
+                v->circle_id = 0;                          /* 句柄作废 ⇒ 下一帧自愈重起 */
+        } else if (v->circle_id) {
+            ce_anm_delete(v->circle_id);                   /* 人侧不留魔法阵 */
+            v->circle_id = 0;
+        }
+    }
 }
 
 
@@ -789,12 +817,29 @@ static void yk_run_actions(yk_card_t *s, const yk_action_t *acts, int n)
  *   ⚠ 这一点是硬要求：删卡（倒吊人 / 原版空白卡）/ 松开低速 / 局末 / 断链四条路都走这里
  *   （`on_delete`、`on_run_reset`、`on_tick_2` 的 !focused 分支、`yk_familiars_tick` 的 !em 分支）——
  *   任何一条漏掉都会让**敌人永远哑火**（钩子还在返回 1，但没人再清表）。 */
+/* ★★★ 2026-09-22 夜（owner 口径：**使魔两种形态都存在**）：把「离开妖侧的收尾」与「撤使魔」
+ * **拆成两支**（原来挤在 `yk_drop_all` 里，于是松 Shift 会把使魔一起撤掉 —— 那正是 owner 说错的形态）。
+ *
+ *   · `yk_leave_youkai(s)`：**只收「妖侧才有的东西」** —— 光环（#23）、切换环（#27 的短命环）、
+ *     染色（#26 的决死红）、以及 `tr.pending`；
+ *   · `yk_drop_all(s, why)`：**撤使魔**（撤回表 + 收跟随 VM）—— 只在**真正要撤**的场合调：
+ *     删卡（`on_delete`）、换关（`on_run_reset`）、自机没了（`on_tick_2` 的 `!CE_PLAYER()`）、
+ *     世界没了（`yk_chase_target_resolve` 的 `!em` 分支）。
+ * ⚠ **松 Shift（`!focused`）不再走 `yk_drop_all`** —— 使魔在人侧也活着（owner 口径），
+ *   1:1 映射与闸（`fam_seen` / `broken` / `rearm_pending`）跨形态保持。*/
+static void yk_leave_youkai(yk_card_t *s)
+{
+    yk_aura_kill(s);                     /* ★ #23：光环只在妖侧存在 */
+    if (s) s->tr.pending = 0;
+}
+
 static void yk_drop_all(yk_card_t *s, const char *why)
 {
     yk_action_t acts[YK_FAM_MAX];
     unsigned had = yk_map_fam_count(&s_map);
-    yk_aura_kill(s);                     /* ★ #23：离开妖侧的**每一条**路都过这里 ⇒ 光环同帧开始淡出 */
-    int n = yk_withdraw_all(&s_map, acts, (int)YK_FAM_MAX);
+    int n;
+    yk_aura_kill(s);                     /* 删卡 / 换关 / 自机没了：光环也一起收（幂等）*/
+    n = yk_withdraw_all(&s_map, acts, (int)YK_FAM_MAX);
 
     yk_run_actions(s, acts, n);
     /* ★ 兜底收 VM（句柄幂等）：`acts` 装不下的条目、以及 `fam_id` 已经被清掉但 VM 还挂着的残局，
@@ -3060,8 +3105,10 @@ static int on_tick_2(ce_card_t *c)
          *   `broken == 1` / `rearm_pending == 1`，`fam_id == 0`）**不在计数里** ⇒ 松 Shift 清不掉它，
          *   下一次聚焦时那条夹持态还在（闸还会掐）。`yk_drop_all` 里的 `yk_withdraw_all`
          *   **整表 reset**，把夹持态一起清干净；`had == 0` 时它只是一个 32 次的循环 + 不做任何日志。*/
-        yk_drop_all(s, "unfocused");
-        return 0;
+        /* ★★★ 2026-09-22 夜（owner 口径订正）：**松 Shift 不撤使魔** —— 使魔在人侧也活着
+         *（人侧可见可打；妖侧不可见只留魔法阵）。这里只收「妖侧才有的东西」（光环 / 切换环 / 染色）。
+         * ⇒ 1:1 映射与闸的夹持态**跨形态保持**（闸的基线行为回归见 §BE 详录 #68）。*/
+        yk_leave_youkai(s);
     }
     yk_familiars_tick(s);
     yk_transfer_tick(s);
@@ -3157,7 +3204,9 @@ _Static_assert(YK_OPTION_MAX >= 4, "YK_OPTION_MAX must cover the biggest row of 
  * 钉住大小是为了让「加字段 = 表变大」这件事在编译期被看见。*/
 /* ★ 2026-09-22 夜（owner 二次订正）后记录 = 12 B（`fam_id`/`anm_id`/`variant`）：常驻环的两个字段
  * 随「环改成切换那一下的短命特效」一起去掉了 ⇒ 表从 32×20 B 降到 32×12 B。*/
-_Static_assert(sizeof(yk_fam_vm_t) == 12, "familiar follow-VM record changed size");
+/* ★ 2026-09-22 夜（owner：妖侧只剩魔法阵）后记录 = 16 B：加回一个**常驻魔法阵**句柄
+ * （`circle_id`）；表 = 32×16 B = 512 B，仍是文件级静态、不进卡的私有状态预算。*/
+_Static_assert(sizeof(yk_fam_vm_t) == 16, "familiar follow-VM record changed size");
 
 /* ============================== ★ 占位 / TODO 清单 ==============================
  * 每一条都「不自己发明数值」，取值一律是**不做**这个语义：
