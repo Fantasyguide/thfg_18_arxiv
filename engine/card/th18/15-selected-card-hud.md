@@ -161,7 +161,7 @@ script4:
 一手：`pos(68.0f, 924.0f, 0.0f)`、`anchor(1, 2)`、`scale(0.75, 0.75)`、`resolutionMode(2)`。
 
 - **位置与尺寸空间** ✅：同一个 `abcard.anm` 里 script5（卡组图标行）的 `pos(1056, 537)` 已被
-  实跑钉成 **表面 px**（[`../../../../mods/th18.v1.00a/card-expand/AUDIT.md`](../../../../mods/th18.v1.00a/card-expand/AUDIT.md) §X5），
+  实跑钉成 **表面 px**（[`mods/th18.v1.00a/card-expand/AUDIT.md`](../../../mods/th18.v1.00a/card-expand/AUDIT.md) §X5），
   两个脚本同为 `resolutionMode(2)` ⇒ (68, 924) 也是表面 px。
 - **矩形**：48×60（64×80 × 0.75）⇒ 若 `anchor(1,2)` = **左·底**（社区口径，本仓自己几支脚本也按 1 = 左用），
   块 = 表面 **x 68..116 / y 864..924**；若 1 = 右则 = x 20..68 / y 864..924。
