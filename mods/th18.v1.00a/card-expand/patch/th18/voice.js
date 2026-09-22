@@ -26,8 +26,8 @@
   "UFOALERT": {
     "wav": "UFOALERT",
     "id": 88,
-    "volume_db": 0,
-    "priority": 100
+    "volume_db": -1400,
+    "priority": 0
   },
   "CHARGE00": {
     "wav": "CHARGE00",

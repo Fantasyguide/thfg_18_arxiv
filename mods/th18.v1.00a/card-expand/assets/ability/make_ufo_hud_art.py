@@ -70,6 +70,19 @@ token」完全吻合 ✓）。三处一手互相印证：
    （先例：`faith_hud.c` 的 `ce_anm_set_scale(条, w640 * 2, h640 * 2)` 同一套口径）。
    ⚠ 不这么做的话槽/面板只有原版的一半大（同款踩坑记录：`AUDIT.md` 12447「resolutionMode(2) 会把
    texel 折半 ⇒ 画出来只有原版相对尺寸的一半」）。
+4b. **Δ4b 静止 scale ×2（★ 2026-09-23 补，P3 漏掉的那一半）**：Δ4 只改了脚本里**写出来的**
+   `scale` / `scaleTime`，而 TH12 的 `front.anm` script80/81 **通篇没有 `scale()`** ——
+   槽的静止尺寸吃的是 **VM 初值**。那个初值是 **1.0**（一手 `AnmVm::wipe`：整块 `memset 0` 之后
+   `scale = scale_2 = uv_scale = (1,1)`，见 `engine/anm/th16/02-vm-core.md` §3.3），
+   在 TH12 的 640 空间 = 24×16 **屏幕** px ⇒ 到 TH18 的 1280×960 表面必须是 **48×32** ⇒ 静止值要写 **2.0**。
+   **同一条脚本自证**：script80 的 `interruptLabel(17)`（新令牌入槽）目标 = `scaleTime(30,4,1.0,1.0)`
+   —— 那是把槽**放大回静止尺寸**；Δ4 已把它改成 `2.0`。⇒ 若静止值不是同一个 2.0，
+   令牌一入槽那一格就会突然**变成两倍大**（原版三格恒等大）。
+   漏了这一条的实测后果（用户 2026-09-22 实跑「星莲船缺少 hud」）：三个槽按 **24×16 表面 px**
+   （= 原版的一半线性尺寸、1/4 面积）画，而空槽贴图 sprite59 是**纯黑轮廓**（逐像素量过：
+   68 个可见像素、均值 RGB (0,0,0)，alpha 150/255）⇒ 1280×960 的画面上等于看不见；
+   且与 C 侧认领的块（132×32 = 三格 48 宽 + 两缝，见 `ufo.c` 的 `UFO_HUD_BLOCK_W`）**差一倍**。
+   ⇒ 只有 302/303（吃 VM 初值的那两支）需要补这一句；304/305 自己第一句就 `scale(0,0)`，不涉及初值。
 5. **Δ5 槽/闪光脚本的 x 位移**（面板不加）：`X_SHIFT_640` 现在 = **96**（★★ 2026-09-22 订正，
    见下）。这条位移**不是**"TH18 适配"，而是**原版自己的坐标空间换算**：
    TH12 的 `front.anm` / `bullet.anm` **世界空间**里**游玩区占 x ∈ [32,416]、y ∈ [16,464]**
@@ -89,6 +102,22 @@ token」完全吻合 ✓）。三处一手互相印证：
    与 117 的动物灵格（257..449 / 876..924）也在同一条带子上 ⇒ 本块（272..404 / 896..928）
    与它们**横向重叠**。要退回"屏幕黑边"那一版就把这个数改回 **0.0**（重跑本脚本 + `make anm`）。
 6. 脚本号从 **302** 起（196–301 已用）。
+7. **Δ6 补 `resolutionMode(2)`（★ 2026-09-23 —— 用户实跑「星莲船缺少 hud」的**真根因**）**：
+   TH18 的 UI 列表脚本**不写 `resolutionMode`** 时，坐标与尺寸按 **640×480 设计空间**解释
+   （= ×`DAT_0056aca0` = 在用户的 1280×960 下 **×2**）；写了 `(2)` 才是 **1 单位 = 1 表面 px**。
+   ⇒ 本脚本的 Δ3/Δ5 已经把坐标写成表面 px、Δ4 把尺寸写成表面 px，
+     **但一直没写 `resolutionMode(2)`** ⇒ 两者又被 ×2：槽落在表面 **(592, 1824)**，
+     而表面只有 960 高 ⇒ **整排三格全部在屏幕下方 ⇒ 用户「完全看不见」**（旧版 104/146/188 也一样：
+   208/292/376 × 1824 —— 两版都在屏外，所以 P3 改位置没解决任何事）。
+   **证据（两条独立）**：
+   ① TH18 原生 `front.anm` script20..25 = HUD 右列那几条 `drawRectGrad` 条：`layer(25)`、
+      640 空间坐标 `pos(524,58/80/128/166)`、**不写** `resolutionMode` ⇒ 实际画在表面 (1048,116…) ✓
+      （与 `HUD-LAYOUT.md` §1.3 的右列实测一致）；
+   ② 整个 TH18 原生 anm 里，**凡是用表面 px 字面量的脚本 270 支中有 266 支写了 `resolutionMode(2)`**
+      （不写的 4 支全在 `text.anm`，是 640 空间的整屏四边形）。
+   ⇒ 本仓其它已经实跑可见的 HUD 脚本（144/145/210..214/105/136/306..308）也都写了它。
+   ⚠ **Δ4b 与 Δ6 是一对**：补了 Δ6 之后 1 texel = 1 表面 px，所以静止 scale 必须同时是 2.0
+   （否则槽又只有原版的一半大 —— 而"没补 Δ6"时那个隐式 ×2 恰好把尺寸凑对了，这也是当初漏掉它的原因）。
 
 ## 输出
 
@@ -145,14 +174,17 @@ ATLAS_POS = {
 SLOT_ORDER = ["SLOT_EMPTY", "SLOT_RED", "SLOT_BLUE", "SLOT_GREEN"]
 SLOT_ORDER_B = ["SLOT_EMPTY_B", "SLOT_RED_B", "SLOT_BLUE_B", "SLOT_GREEN_B"]
 
-# (输出脚本号, 输出名, 源脚本号, x 是否要 +96 单位)
+# (输出脚本号, 输出名, 源脚本号, x 是否要 +96 单位, 是否要补 Δ4b 的静止 scale)
+#   `rest_scale` = True 只给**通篇没有 `scale()`** 的两支（TH12 的 script80/81）——
+#   它们吃 VM 初值 (1,1)，必须显式补成 (2,2)，理由见文件头 Δ4b。
 SCRIPT_PORTS = [
-    (302, "ufo_hud_slot",        80,  True),    # 令牌槽（3 个 VM 共用这一支，靠中断选槽位/四态）
-    (303, "ufo_hud_flash",       81,  True),    # 收集闪光（一次性，31 帧后自删）  ⚠ True = 受 X_SHIFT_640 影响
-    (304, "ufo_hud_panel",      134,  False),   # 吸收数记录面板（父；子 = 305）
-    (305, "ufo_hud_panel_inner", 135, False),   # 面板内容（134 的 scriptNew）
+    (302, "ufo_hud_slot",        80,  True, True),    # 令牌槽（3 个 VM 共用这一支，靠中断选槽位/四态）
+    (303, "ufo_hud_flash",       81,  True, True),    # 收集闪光（一次性，31 帧后自删）  ⚠ True = 受 X_SHIFT_640 影响
+    (304, "ufo_hud_panel",      134,  False, False),  # 吸收数记录面板（父；子 = 305）—— 自己第一句就 scale(0,0)
+    (305, "ufo_hud_panel_inner", 135, False, False),  # 面板内容（134 的 scriptNew）
 ]
 LAYER_FROM, LAYER_TO = (20, 21, 23, 24), 25   # Δ1
+REST_SCALE = 2.0                              # Δ4b：VM 初值 1.0 的 TH18 等价（= Δ4 对"没写出来的那个数"的同一刀）
 X_SHIFT_640 = 96.0                            # Δ5：原版槽在**场地左下角** ⇒ 640 空间 52/73/94 − 32(场地左内缩)
                                               #     + 128(TH18 场地左沿) = 148/169/190 单位 = 表面 296/338/380。
                                               #     ⚠ 退回旧的"屏幕黑边"版 = 改回 0.0（见文件头 Δ5 与 TUNING §2.0v）
@@ -245,7 +277,7 @@ def conv_line(line: str, x_shift: bool) -> str:
     return line
 
 
-def port(lines: list[str], name_map: dict[int, str], x_shift: bool) -> list[str]:
+def port(lines: list[str], name_map: dict[int, str], x_shift: bool, rest_scale: bool) -> list[str]:
     out = []
     for line in lines:
         if line.strip() == "}":
@@ -260,6 +292,15 @@ def port(lines: list[str], name_map: dict[int, str], x_shift: bool) -> list[str]
         m = re.match(r"\s*layer\((\d+)\);\s*$", s)
         if m and int(m.group(1)) in LAYER_FROM:            # Δ1：层号 → 25
             s = s.replace(f"layer({m.group(1)})", f"layer({LAYER_TO})")
+            out.append(conv_line(s, x_shift))
+            if rest_scale:                                 # Δ4b：显式补上 VM 初值的 ×2（原脚本没有 scale()）
+                out.append(f"    scale({REST_SCALE:.1f}f, {REST_SCALE:.1f}f);"
+                           f"   // Δ4b：静止 scale（TH12 的 VM 初值 1.0 × 2 —— 一手还把它当"
+                           f" `interruptLabel(17)` 的目标值）")
+            # Δ6：**必须显式写 resolutionMode(2)**，否则本脚本的坐标/尺寸按 640×480 设计空间解释
+            #     （×DAT = ×2 表面 px）⇒ 槽会被画到 y=1824（1280×960 的屏幕之外）= 整排看不见。
+            out.append("    resolutionMode(2);   // Δ6：1 单位 = 1 表面 px（不写 ⇒ 按 640 空间 ×2 ⇒ 整排跑到屏幕外）")
+            continue
         # Δ2：删掉 `ins_85(1)` —— v4 表里它是 `unknown flag`，TH18 没这条 opcode
         if re.match(r"\s*ins_85\([^)]*\);\s*$", s):
             out.append("    // Δ2：原版的 `ins_85(1)` 已删（v4 表里它叫 `unknown flag`，TH18 无此 opcode）")
@@ -293,11 +334,11 @@ def main() -> int:
     src_scripts = scripts_of(SRC_TXT.read_text(encoding="utf-8", errors="replace"))
     name_map = {sid: name for name, _s, _e, sid, _w, _c in SPRITES}
     made = []
-    for num, name, src_num, x_shift in SCRIPT_PORTS:
+    for num, name, src_num, x_shift, rest_scale in SCRIPT_PORTS:
         if src_num not in src_scripts:
             raise SystemExit(f"源脚本 script{src_num} 不在 {SRC_TXT}")
-        body = port(src_scripts[src_num], name_map, x_shift)
-        header = [
+        body = port(src_scripts[src_num], name_map, x_shift, rest_scale)
+        d4b_common = [
             f"script script{num} {{",
             f"    // 卡 112（星莲船）飞碟槽 HUD —— TH12 v1.00b `front.anm` **script{src_num}** 的逐条移植",
             "    //（生成器 assets/ability/make_ufo_hud_art.py；sprite / 中断号 / 时机 / alpha 表逐条照抄）。",
@@ -305,6 +346,24 @@ def main() -> int:
             "    //   Δ2 删 `ins_85(1)`（v4 的 `unknown flag`，TH18 无此 opcode）；",
             "    //   Δ3 坐标 ×2（TH12 的 640 空间 → TH18 UI 层的**表面 px**）；",
             "    //   Δ4 尺寸 ×2（TH18 UI 层 `resolutionMode(2)` = 1 texel 1 表面 px，TH12 = 1 texel 1 个 640 单位 = 2 表面 px）；",
+        ]
+        if rest_scale:
+            d4b = [
+                "    //   Δ4b 静止 scale **2.0**（★ 本脚本适用）：原脚本通篇没有 `scale()`，静止尺寸吃"
+                " **VM 初值 1.0**（一手 `AnmVm::wipe`）⇒ TH18 侧必须显式写成 2.0。",
+                "    //        ★ 漏了它的实测后果：三个槽按 24×16 表面 px 画（原版的一半线性尺寸 / 1/4 面积），"
+                "与 C 侧认领的块 132×32 差一倍",
+                "    //        ⇒ 用户 2026-09-22 实跑「星莲船缺少 hud」（空槽贴图本身又是纯黑轮廓，见文件头 Δ4b）。",
+            ]
+        else:
+            d4b = ["    //   Δ4b 静止 scale：**不适用**（本脚本自己第一句就写 `scale(0,0)`，不吃 VM 初值）。"]
+        header = d4b_common + d4b + [
+            "    //   Δ6 补 `resolutionMode(2)`（★ 2026-09-23，**修「缺少 hud」的真根因**）：",
+            "    //        UI 列表的脚本**不写它**时，坐标与尺寸按 640×480 设计空间解释（×DAT = ×2 表面 px）",
+            "    //        ⇒ 本脚本的表面 px 值会被翻倍 ⇒ 槽落到 y≈1824（1280×960 屏外）= **整排看不见**。",
+            "    //        一手/数据：TH18 原生 front.anm script20..25（layer 25、`drawRectGrad`、写 640 空间坐标",
+            "    //        `pos(524,58/80/128/166)`、**不写** resolutionMode）⇒ 画在表面 (1048,…) 的右列 ✓；",
+            "    //        而同一文件里凡是用**表面 px** 字面量的脚本（266/270 支）**全部**写了 `resolutionMode(2)`。",
             f"    //   Δ5 x 位移 {X_SHIFT_640:.0f} 单位（= 原版槽的场地相对位置 20/41/62 折到 TH18 表面；0 = 旧版屏幕黑边）"
             f"{'—— 本脚本适用' if x_shift else '—— **本脚本不适用**（面板是屏幕右列固定位）'}。",
             "    // 逐条依据、实像素证据与中断语义见生成器文件头。",
