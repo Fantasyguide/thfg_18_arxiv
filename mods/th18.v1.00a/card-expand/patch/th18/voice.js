@@ -52,5 +52,11 @@
     "id": 92,
     "volume_db": 0,
     "priority": 100
+  },
+  "YOUKAI_FAM_SHIFT": {
+    "wav": "YOUKAI_FAM_SHIFT",
+    "id": 93,
+    "volume_db": 0,
+    "priority": 100
   }
 }

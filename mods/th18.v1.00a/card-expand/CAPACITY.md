@@ -121,6 +121,15 @@
 - 一手：TH08 建使魔时 `AllocEffectSlot(0x20, …)` → 模板表 `0x4c6d30[0x20]` = `etama.anm` script48
   （`th08:0x41b003` / `:0x41e589`）；人/妖 = `SetInterrupt(环, IsYoukai() ? 2 : 1)`。
 
+#### 音效表扩容：新 SE 槽的具名登记（2026-09-22）
+
+- **`0x5d` `YOUKAI_FAM_SHIFT`**（`assets/voice/ORDER.txt` 第 9 个新行；`patch/th18/voice.js` 里 id 显式写 93）
+  —— 一手 = TH08 `se_ophide.wav`（`th08:0x42c529 push 0x27` → wav 32），**妖→人**那一支的 Shift 音；
+  TH18 71 枚里没有它 ⇒ 构建期从 `local/th08.v1.00d/dat/` 现取（`derive_retail_se.py` 的 TABLE）。
+- 同一处的**人→妖**那一枚（`th08:0x42c489 push 0x28` → wav 33 = `se_invalid.wav`）**不占新槽**：
+  它的字节与 TH18 自己的 `se_invalid.wav` 完全相同（md5 `464ff70287f1c06a030a33c50ee969a9`）⇒ 卡侧直接播 `0x0c`。
+- 余量：新 id 空间 `0x54..0x73` 共 32 格 ⇒ 已用 10 格（`0x54`–`0x5d`）、**余 22 格**。
+
 **余量最小的四条**（按余量% 排序）：shooterset 组数组 **0.0%**（40/40，有 §1w 计划）·
 音效 cfg 表 **25.0%**（87/116）· wav 名表 **27.9%**（75/104）· `abcard.anm` entry **74.2%**（190/256）。
 前三条都是「界，但还没到」；**卡侧下一道真的墙是 `abcard.anm`** —— 它每加一张卡就吃 2 格，
