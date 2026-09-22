@@ -625,7 +625,18 @@ typedef struct { int32_t prev; int32_t cur; float cur_f; } ce_timer_t;   /* zTim
  *   （`ebx` = **zEnemyData\*** = `zEnemy*+0x122c`）⇒ 下面的偏移一律**换算成 zEnemy\*** 口径。
  *   一手依据与整链见 `REPORT-BOSS-SPIRIT-DROP.md` §2–§4。*/
 #define CE_ENEMY_HP_CUR            0x6220     /* zEnemyData.life.current（`ebx+0x4ff4`；4ff4+122c=6220 ✅）*/
-#define CE_ENEMY_HP_MAX            0x6230     /* zEnemyData.life.max（`ebx+0x5004`；5004+122c=6230 ✅）*/
+/* ★★ 2026-09-23 **订正（113 的兜底档要读它才查出来）**：`life.maximum` = **`0x6224`**
+ *   （= `zEnemyData+0x4ff8`），**不是** `0x6230`。一手（同一处三条 mov，`ebx` = zEnemy\*）：
+ *     出生拷贝 `th18:0x42d818` `mov [esi+0x6220],eax` / `0x42d821` `mov [esi+0x6224],eax` /
+ *     `0x42d82a` `mov [esi+0x6228],eax` —— ECL `enmCreate` 的 `life` 实参**一次写三格**
+ *     （current / maximum / remaining）；构造函数 `0x42e468`/`0x42e472`/`0x42e47c` 把三格一起清 0。
+ *     ⇒ 全 exe 里 `+0x6224` **只有这两处写点**（出生 + 清 0）⇒ 击破那一刻读到的就是出生值 ✅
+ *     （卡侧同样口径：`cards/trance.c` 的 `TRANCE_ENEMY_LIFE_MAX` = `zEnemyData+0x4ff8`）。
+ *   ⚠ 旧值 `0x6230`（= `zEnemyData+0x5004`）是**另一个字段** —— 它在符卡扣血那段被当**除数基准**用
+ *     （`0x42f2da sub [ebx+0x5000],esi` → `0x42f2e0 mov esi,[ebx+0x5004]` → `0x42f30c mov [ebx+0x4ff4],eax`，
+ *     即用 `7×esi` 把 scaled 血量还原成 current），本仓旧注释把它当 max 是**误标**
+ *     （`AUDIT.md` §BE 详录 #71 登记；订正前全仓无消费者 —— `grep -rn CE_ENEMY_HP_MAX` 只有本行）。*/
+#define CE_ENEMY_HP_MAX            0x6224     /* zEnemyData.life.maximum（`ebx+0x4ff8`；4ff8+122c=6224 ✅）*/
 #define CE_ENEMY_FLAG_BOSS         0x800000u  /* flags_lo **bit23** = ECL opcode 512 `setBoss`（`0x433bf5 or ecx,0x800000`）。
                                                * 一手普查 22 个 .ecl：只有 st0Xbs/st0Xmbs 各一次 ⇒ 该位 ⟺ boss **或道中 boss**。
                                                * 引擎自己也用它（`0x42eed0 test [ecx+0x635c],0x800000` 开 boss 血条段）。*/

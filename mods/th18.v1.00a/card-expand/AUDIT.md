@@ -20393,3 +20393,67 @@ imm `0x41a80000` = `f2i` 转换上界 ⇒ **实际峰值 20**）；清零 `th08:
 **发布面**：**本批没改** `pl0X.sht` / `pl0X.anm` / `ability.anm` / wav / 站点。
 
 
+
+## §BE 详录 #71（2026-09-23）：**共享件 `engine.h` 的 `CE_ENEMY_HP_MAX` 偏移订正**（`0x6230` → `0x6224`）+ 113 的兜底档重做
+
+**谁改的**：113/115 工单（本会话；两条旧账：th13 #7 掉灵相对偏多 + th15 #4 抖动/变黄）。
+
+### 1. `native/engine.h`：`CE_ENEMY_HP_MAX` 的偏移是**误标**
+
+| 文件 | 改了什么 | 为什么 |
+| --- | --- | --- |
+| `native/engine.h` | `CE_ENEMY_HP_MAX` 的值 `0x6230` → **`0x6224`**（注释重写：一手出处 + 旧值的真实身份）| 113 的兜底档要按"敌人 HP 上限"分档 ⇒ 先确证哪个偏移才是 `life.maximum`（下节）|
+
+**一手（`th18.exe`，`ebx` = zEnemy\*）**：出生拷贝 `0x42d818`/`0x42d821`/`0x42d82a` 把 ECL `enmCreate` 的
+`life` 实参**一次写三格** `+0x6220`(cur) / `+0x6224`(**max**) / `+0x6228`(remaining)，
+构造函数 `0x42e468`/`0x42e472`/`0x42e47c` 三格一起清 0 ⇒ `+0x6224` 全 exe **只有这两处写点**
+（⇒ 击破那一刻读到的是出生值，兜底档才敢用它分档）。
+旧值 `0x6230`（= `zEnemyData+0x5004`）是**另一个字段** —— 它在符卡扣血那段当"除数基准"：
+`0x42f2da sub [ebx+0x5000],esi` → `0x42f2e0 mov esi,[ebx+0x5004]` → `0x42f30c mov [ebx+0x4ff4],eax`
+（用 `7×esi` 把 scaled 血量还原成 current）。
+
+**为什么值必须改而不是只改注释**：注释说"是 max"而值是别的槽 ⇒ 下一张按注释取用的卡会静默读到错字段
+（本卡就是被这个注释带去看了一眼才发现值也不对）。
+
+**影响面（对既有卡）**：订正前全仓**零消费者**（`grep -rn CE_ENEMY_HP_MAX` 只有 `engine.h` 那一行本身，
+含 `patch/`、`tools/`、`tests/`、所有卡）⇒ **不改任何行为、不改生成物**（DLL 里那段常量没人用）。
+改它是为了让下一张想读"满血"的卡不会再踩这个错槽（108 的血量判据 / 112 的 UFO 都接近这个用法）。
+
+**怎么验证的**：`make check` **rc=0**（`x87 in our objects: 0`、`dllverify`、`gen_drift` 生成物无漂移、
+`sites.py check`、`sitecheck --all` 全过、全部主机单测 0 failed）；`python3 tooling/check-docs.py` 全部通过。
+一手三条指令的字节逐条 `objdump -d --start-address=…` 复核过（见 `native/engine.h` 的注释块）。
+
+### 2. `native/cards/trance*`（113 自己的卡）：兜底档从常数改成"按 HP 上限两档"
+
+**不是共享件**（`cards/trance_core.{h,c}` / `cards/trance.c` 只服务 113），登记在这里是为了与 §1 同一批交付：
+
+| 文件 | 改了什么 | 为什么 |
+| --- | --- | --- |
+| `cards/trance_core.h` | 新增 `TRANCE_KILL_FB_HP_BIG/T_SMALL/N_SMALL/T_BIG/N_BIG` + `trance_kill_fallback(hp_max, &T, &N)` 声明（含三条一手锚的表）；删掉「旧兜底 (120,5)」那段 ❓自定注 | owner 2026-09-19 实跑「神灵掉的**相对**数量偏多」= 兜底瞬杀 6 颗 > 同卡原生档 2 颗。新档位 = **TH18 原生窗口在同一 HP 档里的众数**（<1000 ⇒ `(120,1)`；≥1000 ⇒ `(300,10)`）|
+| `cards/trance_core.c` | 实现 `trance_kill_fallback()`（纯函数）+ selfcheck 四条档位断言 | 同上；`hp_max < 1` 走小怪档（保守）|
+| `cards/trance.c` | `on_enemy_death` 读 `zEnemyData.life.maximum`（`CE_ENEMY_DATA + TRANCE_ENEMY_LIFE_MAX`）并调上面那个查表；日志加 `hp=` 与 `[fallback (T,N) by HP band]`；load 行打印分档线；文件头那段 ❓自定注重写 | 同上 |
+| `native/tests/test_trance_core.c` | 新增 §12b′（档位/边界/读不到 HP/单调不变式/夹取，共 ~40 条断言）| 让"改档位常数忘了改口径"在单测里立刻红 |
+
+**一手普查（本次重跑，两条命令可复现）**：
+
+```bash
+thecl -d 18 -m local/vendor/eclmap/eclmap/th18.eclm local/th18.v1.00a/dat/*.ecl   # 838 子程序 / 64 配窗口 / 462 创建点
+thecl -d 13 -m local/vendor/eclmap/eclmap/th13.eclm local/th13.v1.00c/dat/*.ecl   # 732 子程序 /  59 配 spec1+spec2
+```
+
+- TH18 原生窗口按**出怪点 HP** 分档的 `N` 众数：100–249 ⇒ 1（66/72）、250–499 ⇒ 1（44/52）、
+  500–999 ⇒ 1（42/65）、**≥1000 ⇒ 10（23/57）**；`T` 众数 <1000 档 = 120、≥1000 档 = 300。
+- TH13 侧：`N` 众数 = 1（12/59）/ 2（12/59），`GirlC/GirlD` 档 = 10..40；**没有**按 HP/体型/掉落件数的
+  闭式规则（`GirlD01` 在 st03 是 HP 900/`(4,120)`、st06 是 HP 500/`(16,350)`）⇒ 兜底**只能**是映射。
+- 生效面：216 个未配窗口的创建点里 178 个 HP<500、500–999 = 0、≥1000 的 38 个里 35 个是
+  `Ecl_EtBreak*`（相位辅助对象，卡侧两条过滤本来就不收）⇒ 真正走大档的只有 3 个 `GirlD01`。
+
+**结论回流**：`engine/season/th18/01-season-residuals.md` §1b‴（TH18 档位分布）、
+`engine/spirit/th13/01-spirit-and-trance.md` §3.2b（TH13 全量重跑 + "没有闭式规则"的结论）、
+`TUNING.md` §2.0c（旋钮现值 + 长行详录 #53）。
+
+**怎么验证的**：`make check` **rc=0**；`test_trance_core` **2326 断言 0 失败**（含新增 §12b′）；
+`python3 tooling/check-docs.py` 全部通过。
+
+**发布面**：**本批没改** `pl0X.sht` / `pl0X.anm` / `ability.anm` / wav / 站点
+（没新增断点、没动 `sites.py`、没动 patch 声明集）。⚠ 本批**未部署**（工单要求）。

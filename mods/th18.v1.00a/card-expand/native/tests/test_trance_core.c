@@ -627,6 +627,60 @@ int main(void)
         CHECK(trance_kill_spirit_clamp(100000) == TRANCE_KILL_SPIRIT_MAX);
     }
 
+    /* ============ 12b′. ★★ 兜底档 = 按敌人 HP 上限分两档（2026-09-23 重做）============
+     *
+     * 背景（owner 2026-09-19 实跑「神灵掉的**相对**数量偏多」）：旧兜底是写死的 `(120,5)`
+     * ⇒ 瞬杀 6 颗，而同一张卡里配了原生窗口的敌人只有 2 颗（TH18 原生 `N` 众数 = 1）
+     * ⇒ 观感上"没配窗口的反而掉得多"。新版把兜底钉在**TH18 原生窗口在同一 HP 档里的众数**上。
+     *
+     * 一手锚（全在 `cards/trance_core.h` 的 `TRANCE_KILL_FB_*` 注释里，本次重跑 `thecl -d 18`
+     * ＋ `thecl -d 13` 得出）：<1000 三档的 `N` 众数 = 1（66/72、44/52、42/65）、`T` 众数 = 120；
+     * ≥1000 档 `N` 众数 = 10（23/57）、`T` 众数 = 300（31/57）。TH13 侧同向（小妖精 1..4、GirlC/D 10..40）。*/
+    {
+        int32_t T = 0, N = 0;
+
+        /* —— 小怪档（TH18 的实战主体：216 个未配窗口的创建点里 178 个 HP<500）—— */
+        trance_kill_fallback(200, &T, &N);                       /* st04 Phantom01 那一档 */
+        CHECK(T == 120 && N == 1);
+        CHECK(trance_kill_spirit_count(0, T, N, 1) == 2);        /* 瞬杀 2 颗（= 原生小怪同档）*/
+        CHECK(trance_kill_spirit_count(0, T, N, 2) == 3);        /* Hard +1 */
+        CHECK(trance_kill_spirit_count(T + 1, T, N, 1) == 1);    /* 拖过窗口 ⇒ 保底 1 */
+
+        /* —— 大怪档（TH18 侧只有 `GirlD01` 那 3 个点落在这一档）—— */
+        trance_kill_fallback(5000, &T, &N);
+        CHECK(T == 300 && N == 10);
+        CHECK(trance_kill_spirit_count(0, T, N, 1) == 11);       /* 瞬杀 11（TH13 GirlC01 (10,400) 同量级）*/
+
+        /* —— 分档线的两条边界（`>=` 归大档）—— */
+        trance_kill_fallback(TRANCE_KILL_FB_HP_BIG - 1, &T, &N);
+        CHECK(T == TRANCE_KILL_FB_T_SMALL && N == TRANCE_KILL_FB_N_SMALL);
+        trance_kill_fallback(TRANCE_KILL_FB_HP_BIG, &T, &N);
+        CHECK(T == TRANCE_KILL_FB_T_BIG && N == TRANCE_KILL_FB_N_BIG);
+
+        /* —— 读不到 HP（`ev->enemy == NULL` / 脏数据）⇒ **小怪档**（保守：宁可少掉）—— */
+        trance_kill_fallback(0, &T, &N);
+        CHECK(T == TRANCE_KILL_FB_T_SMALL && N == TRANCE_KILL_FB_N_SMALL);
+        trance_kill_fallback(-12345, &T, &N);
+        CHECK(T == TRANCE_KILL_FB_T_SMALL && N == TRANCE_KILL_FB_N_SMALL);
+
+        /* —— 不变式：大档一定不比小档小（同 alive 下的颗数单调）—— */
+        {
+            int32_t alive;
+            CHECK(TRANCE_KILL_FB_T_BIG >= TRANCE_KILL_FB_T_SMALL);
+            CHECK(TRANCE_KILL_FB_N_BIG >= TRANCE_KILL_FB_N_SMALL);
+            for (alive = 0; alive <= 400; ++alive) {
+                const int32_t big = trance_kill_spirit_count(alive, TRANCE_KILL_FB_T_BIG,
+                                                             TRANCE_KILL_FB_N_BIG, 1);
+                const int32_t small = trance_kill_spirit_count(alive, TRANCE_KILL_FB_T_SMALL,
+                                                               TRANCE_KILL_FB_N_SMALL, 1);
+                CHECK(big >= small);
+                CHECK(small >= TRANCE_KILL_SPIRIT_MIN);
+            }
+        }
+        /* —— 新兜底档一定落在夹取上界内（不会再像旧 `(120,5)` 那样贴到 64 附近）—— */
+        CHECK(trance_kill_spirit_clamp(TRANCE_KILL_FB_N_BIG + 1) == TRANCE_KILL_FB_N_BIG + 1);
+    }
+
     /* ============ 12c. ★★ boss 相位击破的**灵批次**（2026-09-13 第二轮）============
      *
      * 用户口径（#3/#4）：「**收/击破 boss 的符卡**会掉红灵（可能带绿灵），而**非符不掉**」

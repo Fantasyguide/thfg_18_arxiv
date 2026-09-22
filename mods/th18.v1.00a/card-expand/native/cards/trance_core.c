@@ -560,6 +560,16 @@ int trance_rescue_resolve(int32_t active_mask, int32_t card_id, trance_rescue_re
 
 /* ============================ 击破 → 神灵（记账层） ============================ */
 
+/* ★★ 兜底档查表 —— 口径、三条一手锚、实际生效面全在 `trance_core.h` 的 `TRANCE_KILL_FB_*` 注释里
+ * （那里是唯一口径来源）。纯函数、不碰引擎地址；`hp_max < 1`（读不到 / 脏数据）走**小怪档** ——
+ * 保守方向是「宁可少掉」：owner 报的正是"相对偏多"。*/
+void trance_kill_fallback(int32_t hp_max, int32_t *out_T, int32_t *out_N)
+{
+    const int big = (hp_max >= TRANCE_KILL_FB_HP_BIG) ? 1 : 0;
+    if (out_T) *out_T = big ? TRANCE_KILL_FB_T_BIG : TRANCE_KILL_FB_T_SMALL;
+    if (out_N) *out_N = big ? TRANCE_KILL_FB_N_BIG : TRANCE_KILL_FB_N_SMALL;
+}
+
 /* ★★ 一次击破掉几颗 —— TH13 通道 B 的逐字复刻。一手、入参口径、以及**唯一一处 ❓ 自定**
  * （窗口过期时保底 1 颗）全部写在 `trance_core.h` 的函数注释里（那里是唯一口径来源）。*/
 int32_t trance_kill_spirit_count(int32_t alive_frames, int32_t window_T, int32_t native_count,
@@ -777,6 +787,12 @@ int trance_core_selfcheck(void)
     if (TRANCE_KILL_SPIRIT_TYPE != 1) ++bad;        /* SPEC §2.2：击破 = 通道 B ⇒ type 1 */
     if (TRANCE_KILL_SPIRIT_MIN != 1) ++bad;
     if (TRANCE_KILL_SPIRIT_MAX != 64) ++bad;        /* ❓ 自定（防脏数据；见 .h 的注释）*/
+    /* ★ 2026-09-23 兜底档：四条普查值 + 两条档位不变式（"大档一定不比小档小"）*/
+    if (TRANCE_KILL_FB_HP_BIG != 1000) ++bad;
+    if (TRANCE_KILL_FB_T_SMALL != 120 || TRANCE_KILL_FB_N_SMALL != 1) ++bad;
+    if (TRANCE_KILL_FB_T_BIG != 300 || TRANCE_KILL_FB_N_BIG != 10) ++bad;
+    if (!(TRANCE_KILL_FB_T_BIG >= TRANCE_KILL_FB_T_SMALL)) ++bad;
+    if (!(TRANCE_KILL_FB_N_BIG >= TRANCE_KILL_FB_N_SMALL)) ++bad;
     if (TRANCE_PHASE_BATCH_TYPES != 7) ++bad;
     if (TRANCE_PHASE_TYPE_A != 0 || TRANCE_PHASE_TYPE_B != 2 || TRANCE_PHASE_TYPE_REST != 3) ++bad;
     if (TRANCE_DURATION_FRAMES_MAX != 600) ++bad;

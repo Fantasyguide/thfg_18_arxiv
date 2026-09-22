@@ -325,27 +325,35 @@
  * ⚠ **实测分布（本会话重跑 `thecl -d 18`，22 个 `*.ecl` / 749 个子程序）**：
  *   只有 **64 个**子程序配了 (573, 574)。`T` 分布 = 40×4 / 60×2 / 70×5 / 80×3 / 90×7 / **120×21** /
  *   150×2 / 200×4 / 300×8 / 360×3 / 400×2 / 600×2 / 900×1；计数 1..20（type 2「金钱」60 处、type 1「P 点」4 处）；
- *   **所有 `*bs`（boss）与多数小怪一个都没有** ⇒ 「没配窗口」是常态 ⇒ 下面的兜底值是**必需的**。
+ *   **所有 `*bs`（boss）与多数小怪一个都没有** ⇒ 「没配窗口」是常态 ⇒ 兜底档是**必需的**。
  * --------------------------------------------------------------------------------------- */
-/* ❓ **自定**（**兜底值**，只对「没配原生窗口」的敌人生效）：
- *   TH13 的 `spec1/spec2` 是**逐敌人 ECL 数据**，TH18 没配窗口的敌人**没有一手数字可抄**，
- *   所以取 TH13 **第 1 关最常见的那只小妖精** `st01 GirlB01 (spec2 = 5, spec1 = 120)`
- *   ⇒ 瞬杀 **6 颗**、拖满 120 帧（2 s）退到 1 颗。两个理由：
- *     ① 它是 TH13「入门敌人」的档位，量级与本卡改动前的「1 颗/击破」同阶（不会一帧刷爆 128 的池）；
- *     ② `T = 120` 恰好也是 TH18 自己**最常见**的窗口（64 个配置站里 21 个是 120）⇒ 与原生档位不冲突。
- *   ⇒ 实跑要更密/更稀**只改这两个数**（`TUNING.md` §2.0c）。
- * ⚠ **诚实登记的后果**：TH18 里**配了窗口**的小怪（例：st01 `Cir00m (T=150, N=1)`）走原生档位
- *   ⇒ 瞬杀只掉 **2 颗**，比兜底的 6 颗**少**。这不是 bug，是映射的必然结果 ——
- *   TH18 的 `timed_ex_drop` 语义是"**额外**多掉几颗"（原生式里的加数），TH13 的 `spec2` 是"**上限颗数**"，
- *   同一个字段槽位、两个略有差异的量纲（论证与取法见 `AUDIT` §CK-4）。*/
-#define TRANCE_KILL_FALLBACK_WINDOW 120   /* ❓ 自定：TH13 st01 GirlB01 的 spec1（窗口，帧）*/
-#define TRANCE_KILL_FALLBACK_COUNT    5   /* ❓ 自定：同上那只的 spec2 ⇒ 瞬杀 6 颗 */
-/* 每帧最多往日志里写几条「这次击破的 (T,N,alive) → n」（诊断环，文件级 static，不占 `ce_state`）。
+/* ★★ 2026-09-23 重做（owner 2026-09-19 实跑：「神灵掉的**相对**数量偏多」）——
+ *   兜底档从写死的 `(T,N) = (120,5)（瞬杀 6 颗）`换成**按敌人自己的 HP 上限分两档查表**：
+ *
+ * ```c
+ * hp = enemy + CE_ENEMY_DATA + TRANCE_ENEMY_LIFE_MAX;   // zEnemyData.life.maximum
+ * if (hp >= TRANCE_KILL_FB_HP_BIG) { T = 300; N = 10; } // 大妖精档（TH18 原生 ≥1000 档的众数）
+ * else                             { T = 120; N =  1; } // 小妖精档（TH18 原生 <1000 三档的众数）
+ * ```
+ *
+ * **为什么**（完整普查与三条一手锚写在 `trance_core.h` 的 `TRANCE_KILL_FB_*` 注释里，那里是唯一口径源）：
+ *   旧兜底 6 颗 > **同一张卡**里配了窗口的敌人的 2 颗（TH18 原生 `N` 众数 = 1）⇒ 观感上
+ *   「没配窗口的敌人反而掉得多」= owner 说的「**相对**数量偏多」。新档位把 `N` 钉在
+ *   **TH18 原生窗口在同一个 HP 档里的众数**上（<1000 ⇒ 1；≥1000 ⇒ 10）⇒ 兜底与原生档**同档同量**，
+ *   TH13 侧同向（小妖精 `N` = 1..4、`GirlC/GirlD` = 10..40）。
+ *   实测生效面：216 个未配窗口的创建点里 178 个 HP<500（→ 瞬杀 2 颗）、500–999 档 **0** 个、
+ *    ≥1000 的 38 个里 35 个是 `Ecl_EtBreak*`（相位辅助对象，本卡两条过滤本来就不收）⇒ 真正走大档的只有
+ *   3 个 `GirlD01`（HP 5000/7000）。
+ * ⇒ **映射（按 HP 分档 + 抄原生众数）本身是 ❓ 自定**（TH13 没有这条规则），档位线 `1000` 与两组
+ *   `(T,N)` 全是普查值。实跑要更密/更稀**改 `trance_core.h` 的四个档位常数**（`TUNING.md` §2.0c）。
+ * ⚠ **与原生档的语义差仍在**（不是这次引入的）：TH18 的 `timed_ex_drop` 是"**额外**多掉几颗"（加数），
+ *   TH13 的 `spec2` 是"**上限颗数**"（论证与取法见 `AUDIT` §CK-4）。*/
+/* 每帧最多往日志里写几条「这次击破的 (T,N,alive,hp) → n」（诊断环，文件级 static，不占 `ce_state`）。
  * 4 条够对账（一帧通常 0~2 次击破），多出来的只进计数。*/
 #define TRANCE_KILL_DIAG_MAX 4
 
 typedef struct {
-    int32_t T, N, alive, n;   /* 这一次击破的入参与结果 */
+    int32_t T, N, alive, hp, n;   /* 这一次击破的入参与结果（`hp` = 敌人 HP 上限；走原生档时也记，便于对账）*/
     int32_t flag;             /* bit0 = 走兜底（敌人没配原生窗口）；bit1 = 被上界夹过；bit2 = 队列满丢掉了 */
 } trance_kill_diag_t;
 
@@ -409,8 +417,14 @@ static int32_t s_stat_kill_maxn;        /* 见过的单次最大颗数（诊断�
  *   一手：`BossItem` 恒 `dropArea(64.0f,64.0f)`、`BossItemPhase`（道中 boss）恒传 `48.0f`
  *   ⇒ 用 **56.0f** 当分界（两边各留 8 的余量，将来出现别的半径也不会静默串档）。*/
 #define TRANCE_ENEMY_DROP_AREA       0xbc
-/* 诊断用（**不参与判定**）：`zEnemyData.life` 的 current / maximum
+/* 诊断 + **击破兜底档**（`on_enemy_death`）用：`zEnemyData.life` 的 current / maximum
  * （`zEnemyData+0x4ff4` + `{current, maximum, …}` ⇒ 绝对 `enemy+0x6220 / +0x6224`；见 `engine/enemy` 的字段图）。
+ * ★ 2026-09-23 一手复核这两个偏移（兜底档按 HP 分档必须先确认"哪个才是 max"）：
+ *   出生拷贝 `th18:0x42d818/0x42d821/0x42d82a` 把 ECL `enmCreate` 的 `life` 实参**一次写三格**
+ *   （`+0x6220` cur / `+0x6224` **max** / `+0x6228` remaining），构造函数 `0x42e468/0x42e472/0x42e47c` 三格一起清 0
+ *   ⇒ `+0x6224` 全 exe 只有这两处写点 ⇒ 击破那一刻读到的是出生值 ✅
+ *   ⚠ `engine.h` 的 `CE_ENEMY_HP_MAX` 曾经写成 `0x6230`（= `zEnemyData+0x5004`，符卡扣血那段当除数基准的**别**字段）
+ *   —— 已订正为 `0x6224`（`AUDIT.md` §BE 详录 #71）；本文件这两个宏与它同值，别让它们漂开。
  * 打它的用途：下一次实跑就能看出「相位序言那一次 life 已经是新相位的血（>0）」还是「还是 0」——
  * 前者可以拿它当"终符 BossDead 不该掉灵"的判据（TH13 的 `BossDead` 一颗灵都不掉），
  * 后者说明 `lifeSet` 只写 next_attack 那一格、这条判据要用别的字段（见 `AUDIT` 的本轮登记）。*/
@@ -3418,9 +3432,10 @@ static void on_item_frame(ce_card_t *c)
                    "%d queued, %d shown below; n = (T-alive)/(T/N)+1 (+1 on Hard/Lunatic); difficulty %d",
                    s_kd_total, i, shown, (int)*(volatile int32_t *)(uintptr_t)CE_ADDR_DIFFICULTY);
             for (j = 0; j < shown; ++j)
-                ce_log("trance:   kill #%d: T=%d N=%d alive=%d -> n=%d%s%s%s",
-                       j, (int)s_kd[j].T, (int)s_kd[j].N, (int)s_kd[j].alive, (int)s_kd[j].n,
-                       (s_kd[j].flag & 1) ? " [fallback (T,N)]" : " [native (T,N)]",
+                ce_log("trance:   kill #%d: T=%d N=%d alive=%d hp=%d -> n=%d%s%s%s",
+                       j, (int)s_kd[j].T, (int)s_kd[j].N, (int)s_kd[j].alive, (int)s_kd[j].hp,
+                       (int)s_kd[j].n,
+                       (s_kd[j].flag & 1) ? " [fallback (T,N) by HP band]" : " [native (T,N)]",
                        (s_kd[j].flag & 2) ? " [CLAMPED to TRANCE_KILL_SPIRIT_MAX]" : "",
                        (s_kd[j].flag & 4) ? " [dropped: kill queue full]" : "");
         }
@@ -4255,7 +4270,7 @@ static int on_load(ce_card_t *c)
            "spirit ENTITY pool (%d slots, ORIGINAL TH13 scripts type*6+1/+4 = %d..%d layer %d) "
            "-> walk within %d px to collect "
            "(type %d; per-kill count = TH13 channel B decay n=(T-alive)/(T/N)+1, "
-           "+1 on Hard/Lunatic, cap %d, fallback (T,N)=(%d,%d)) -> trance_collect -> gauge; "
+           "+1 on Hard/Lunatic, cap %d, fallback (T,N) by HP band: hp<%d -> (120,1), hp>=%d -> (300,10)) -> trance_collect -> gauge; "
            "MID-HIT RESCUE (2nd revision, landing fixed): at card slot +0x0c "
            "(on_death_after_deathbomb, after the 8-frame deathbomb window and after the B path) -> "
            "no other claimer -> trance_force_on_death + cancel_impending_death 0x%x + **return 1**; "
@@ -4283,7 +4298,7 @@ static int on_load(ce_card_t *c)
            CE_ANM_ABILITY_SCRIPT_SPIRIT_PLAIN, CE_ANM_ABILITY_SCRIPT_SPIRIT_TRANCE3,
            TRANCE_SPIRIT_LAYER, TRANCE_SPIRIT_PICK_RADIUS,
            TRANCE_KILL_SPIRIT_TYPE, TRANCE_KILL_SPIRIT_MAX,
-           TRANCE_KILL_FALLBACK_WINDOW, TRANCE_KILL_FALLBACK_COUNT,
+           TRANCE_KILL_FB_HP_BIG, TRANCE_KILL_FB_HP_BIG,
            (unsigned)TRANCE_FN_CANCEL_IMPENDING_DEATH, (unsigned)TRANCE_FN_PLAYER_DIE,
            (int)trance_character(), trance_traits(trance_character())->name,
            (int)trance_traits(trance_character())->drain_div,
@@ -4405,27 +4420,30 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
 {
     trance_card_t *s = st(c);
     const uint8_t *e;
-    int32_t alive = 0, T = 0, N = 0, n, i, fallback = 0, clamped = 0, was_full;
+    int32_t alive = 0, T = 0, N = 0, hp = 0, n, i, fallback = 0, clamped = 0, was_full;
 
     if (!s || !ev) return;
     if (ev->kind != CE_EDEATH_KILLED) return;                 /* 只要「被打死的主路」*/
     if (!(ev->flags & CE_EDEATH_F_REAL)) return;              /* 只要真敌人（极性见 public.h）*/
 
-    /* ① 读敌人自己的 (T, N, alive)。`ev->enemy` 仅本次回调有效（读 21 个 int 是 O(1)，不缓存）。*/
+    /* ① 读敌人自己的 (T, N, alive, hp)。`ev->enemy` 仅本次回调有效（读 22 个 int 是 O(1)，不缓存）。*/
     e = (const uint8_t *)ev->enemy;
     if (e) {
         const uint8_t *drop = e + CE_ENEMY_DROP;
         alive = *(const int32_t *)(e + CE_ENEMY_DATA + CE_ED_TIME_ALIVE);
+        hp    = *(const int32_t *)(e + CE_ENEMY_DATA + TRANCE_ENEMY_LIFE_MAX);
         T = *(const int32_t *)(drop + CE_ENEMY_DROP_TIMED_TIME);
         for (i = 0; i < CE_ENEMY_DROP_TYPES; ++i) {            /* 取各 type 里的最大值（原生每次只配一种）*/
             const int32_t v = *(const int32_t *)(drop + CE_ENEMY_DROP_TIMED_COUNTS + i * 4);
             if (v > N) N = v;
         }
     }
-    /* ② 没配原生窗口（含 `ev->enemy` 为空这种异常）⇒ TH13 st01 小妖精那对兜底值（❓ 自定，见文件头）*/
+    /* ② 没配原生窗口（含 `ev->enemy` 为空这种异常）⇒ **按 HP 上限查兜底档**
+     *    （core 的纯函数；口径与三条一手锚见 `trance_core.h` 的 `TRANCE_KILL_FB_*`）。
+     *    ⚠ 旧版是写死的 `(120,5)`（瞬杀 6 颗）—— 与"配了窗口的敌人只掉 2 颗"形成相对落差，
+     *    就是 owner 那次「神灵掉的相对数量偏多」（见本文件上方那段与 `TUNING.md` §2.0c）。*/
     if (T <= 0 || N <= 0) {
-        T = TRANCE_KILL_FALLBACK_WINDOW;
-        N = TRANCE_KILL_FALLBACK_COUNT;
+        trance_kill_fallback(hp, &T, &N);
         fallback = 1;
     }
 
@@ -4443,7 +4461,7 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
     ++s_kd_total;
     if (s_kd_count < TRANCE_KILL_DIAG_MAX) {
         trance_kill_diag_t *d = &s_kd[s_kd_count++];
-        d->T = T; d->N = N; d->alive = alive; d->n = n;
+        d->T = T; d->N = N; d->alive = alive; d->hp = hp; d->n = n;
         d->flag = (fallback ? 1 : 0) | (clamped ? 2 : 0) | (was_full ? 4 : 0);
     }
     if (!was_full) {                                          /* 丢掉的次数不进"档位"统计（它没真的掉）*/
