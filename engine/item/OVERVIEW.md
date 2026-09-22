@@ -45,6 +45,9 @@ type 1..8 两槽都有、9..15 只有主槽。引擎里唯一会「每帧改道�
 | 道具能加成残机 | ✅ 1UP 类 | ✅ 1UP / 刻符 | ✅ type 7 = 1UP | ✅ type 5 = 命碎（**5 片 = 1 命**）、7 = 1UP | [th11/01 §1](th11/01-item-types-and-popup.md)、[player/th11/01 §4](../player/th11/01-bomb-and-lifefrags.md) |
 | 类型 → sprite 的落点 | ✅ `0x2ac+type` / `0x2b6+type`（etama2.png） | ❓ 未查 | ❓ | 🟡 `type+0x60`（未解包 `item.anm`） | th07 §3.3 |
 
+> **玩家视角清册**（这一作玩家看到哪些道具、长什么样、叫什么、擦弹产不产拾取物）见
+> [`_shared/rosters/th06-th09.md`](../_shared/rosters/th06-th09.md)（th06–th09）；另外两册是 `th10-th13` / `th14-th18`。
+
 ## 与 mod 侧的关系
 
 TH18 卡牌 mod 的**系统卡 107（妖妖梦 / 森罗结界）**要用 th07 的樱点机制：
