@@ -19666,6 +19666,63 @@ gcc -std=c11 -Wall -Wextra -Werror tests/test_youkai_core.c cards/youkai_core.c 
 youkai_core: 4473 checks, 0 failed
 ```
 
+### 3b. ★★★ P4（#12 后半：使魔随人妖切换）—— 一手闭合（2026-09-22，三只读调查之一）
+
+> **结论先说**：owner 记忆里的「使魔随 Shift 消失变成魔法阵」**不是 TH08 的行为** —— 一手（本样本逐指令）是
+> 「使魔**始终**带着一个魔法阵环；Shift 只换那个环的 **interrupt**（配色/大小），外加一次爆闪 + 音效 +
+> 绘制桶重排」，**使魔本体 sprite 全程不变**。按 `METHOD.md` 的铁律：复刻只能按一手那样做；
+> 「本体消失只剩环」若 owner 坚持，那是 **❓自定**，必须单独登记。
+
+| # | 结论 | 可信度 | 一手（地址 / 出处） |
+| --- | --- | --- | --- |
+| A | `zEnemy+0x332f`（vendor 名 **`layer`**，decomp 名 `enemyType`）= **绘制桶号 0..3**，不是外观 | ✅ | 见下「A」 |
+| A | 绘制链：背景 6/7 → 敌机桶 0/1 @8 → 自机 9/10 → 敌机桶 2/3 @11 → 特效 12 → 弹 13 | ✅ | 见下「A」 |
+| B | 魔法阵 = `zEnemy+0x53c8`（vendor 名 `familiar_circle_effect`）= `etama.anm` **script 48**（空心环、−3°/帧自转）| ✅ | 见下「B」 |
+| B | 人/妖只换那个环的 **interrupt**：1 = 紫 α255 λ0.5（人侧）、2 = 蓝 α200 λ0.8（妖侧）| ✅ | 见下「B」 |
+| C | `FUN_0042c420` = Shift 过渡例程：爆闪 + 环 interrupt + 音效 + 绘制桶 + `eclFlags`；**一处都不改 anm/sprite** | ✅ | 见下「C」 |
+| C | ⚠ 一手推翻 doc §7.1/§7.2 两处（`anmFlags` bit1 是 ECL 参数的拖尾旗标；`0x43db64/8a` 是假线索）| ✅ | 见下「C」 |
+| D | 我们的 206..209（= TH08 `enemy.anm` 53..56）**原本就没有 `interruptLabel`** ⇒ 「本体随 Shift 变形」无落点 | ✅ | 见下「D」 |
+| D | 最小一手复刻的配方（**本批未做**：要动不在本批文件清单里的两个资产文件）| ✅/— | 见下「D」 |
+
+**A（`enemyType` 的真相）**：两个读点 `0x42de11` / `0x42de2d` = 「读字节 → 当 4 字节数组下标 → 挂链表」；
+桶头 `0x9dcedc/e0/e4/e8` 每帧清零重建（`0x42c789`）；唯一消费者是绘制 `0x42e17f`
+（`OnDrawImpl 0x42e140`；`OnDrawHighPrio 0x42e120` = 桶 0/1、`OnDrawLowPrio 0x42eb90` = 桶 2/3 + 可整体染色）。
+绘制链顺序由 `Chain::AddToDrawChain 0x43c960`（升序插入）/ `RunDrawChain 0x43cb60` 定死
+⇒ **0 = 画在自机后面、2 = 画在前面**；与图集 / sprite 段 / ECL 子表**无关**（vendor 名 `layer` 与之一致，
+decomp 的「0 = youkai / 2 = human」是语义猜测）。
+
+**B（魔法阵）**：分配点 `0x41b003`（op90-92 内联）/ `0x41e589`（opcode 174 `anmFamiliar`）：
+`AllocEffectSlot(0x20, &enemy+0x2d34, 1, -1)` → 模板表 `0x4c6d30`（步长 0xc）的 `[0x20]` = **script 48**；
+随后 `SetInterrupt(ring, IsYoukai() ? 2 : 1)`（`0x407120` 只写 `+0x1fe`；`0x40bc40` = `Player::IsYoukai`）。
+这批脚本所在的 anm = **`etama.anm`**（AnmManager 槽 6：`0x433083` push `"etama.anm"`）。
+script48 正文（`thanm -l 8 -m v2.anmm`）：`sprite(197); blendAdditiveSet(1); scale(0,0); alpha(0);`
+`angleVel(0,0,-0.05235988); zWriteDisable(1)` + `interruptLabel(1)` 紫 `(192,128,255)` α255 λ0.5 /
+`interruptLabel(2)` 蓝 `(96,96,255)` α200 λ0.8 / `interruptLabel(3)` 淡出 `delete()`。
+`sprite197 = etama2.png (193,113,62,62)`，像素剖面 r≤8 与 r≥33 为 0、r≈22–31 有值 ⇒ **空心环**。
+
+**C（`FUN_0042c420`）**：只被 `0x42c98a` 调用、前置 `flags` bit8（`ECL_FLAG_BULLET_SPAWNED`，op90-92 设）
+⇒ 只对发射体/使魔跑。体内按「生成时的 bit11 与当前 `IsYoukai()` 是否一致」分两支：
+`SpawnEffect(0x1f/0x1e)`（etama script 59/60 的爆闪）+ `SetInterrupt(ring, 2/1)` + `PlaySoundByIdx(0x28/0x27)`
++ `enemyType = 0/2`；然后**无条件**刷新 `flags` bit11 与 `eclFlags(0x3330) = IsYoukai() ? 0x40 : 0x20`。
+`eclFlags` 的语义 = **ECL 指令的人/妖过滤掩码**（`0x4185c6` / `:0x4185d9`）；数据侧 36661 条指令里恰有 110 条
+只开一侧（全是 `etFanAimed/etRing/etFan` 弹幕），而 **1016 条 `anm*` 两侧全开** ⇒ ECL 也从不换敌机贴图。
+⚠ 订正两处：① `anmFlags` bit1 的唯一写点 = ECL op83 `0x41e532`（**来自 ECL 参数**的拖尾旗标），
+读点唯一 `0x42c4a2`（每 2 帧撒一颗 etama script71 粒子）⇒ **与 `IsYoukai()` 无关**
+（decomp 的枚举名 `ECL_ANM_FLAG_ISYOUKAI` 是错名；doc §7.1 的「取值来自 IsYoukai()」由此被反证）；
+② doc §7.2 的候选点 `0x43db64` / `0x43db8a` 在 `Controller::GetInput 0x43d970` 里（手柄位→按键位），与敌人无关。
+
+**D（对我们的落点）**：本卡的跟随 VM 用 `ability.anm` 206..209 = TH08 `enemy.anm` script53..56，那四支
+**原本就没有** `interruptLabel`（纯 `sprite/jmp`）⇒ 「让本体随 Shift 变形」在本体上无落点（硬加 = ❓自定）。
+**最小一手复刻的配方**：① 切 `etama.anm` entry1 `etama2.png (193,113,62,62)`；② 新增一支脚本 = script48
+逐条照抄，**只把 `blendAdditiveSet(1)` 换成 `blendMode(1)`**（TH08 两个 handler `0x45f2a5`(raw16) /
+`0x45f2d3`(raw82) 写的是**同一个字段** `vm+0x1f8` 的 bit4-5，而 v8 没有 `blendAdditiveSet`；其余助记符 v8 全有）；
+③ `yk_fam_vm_t` 加一个环句柄，spawn / follow / kill / prune 四条路与本体一起走（铁律：删卡只有 `on_delete` 跑得到）；
+④ `focused` 变化那一帧 `ce_anm_interrupt(ring, focused ? 2 : 1)`（`sdk.h:386`，本卡已在用）。
+⚠ **边界**：这条要动 `assets/ability/make_youkai_familiar_art.py` + `entries/ORDER.youkai_familiar.txt`
+（新贴图/新脚本）+ 重跑 `make anm`（`anm_ids.h` 新增宏）—— **都不在本批派给我的文件清单里**
+（清单只有 `youkai.{c}` / `youkai_core.{h,c}` / `test_youkai_core.c` / `assets/build_player_anm.py` / `pl_anm_ids.h`）
+⇒ 本批**只落一手与配方**，等统筹派发或授权再落。
+
 ### 4. 要 owner 拍 / 实跑确认的点
 
 1. **#16 / #16b 是口径问题，不是 bug**：一手说 TH08 **没有**「击中即掉」与「全屏吸收专用速度」。
