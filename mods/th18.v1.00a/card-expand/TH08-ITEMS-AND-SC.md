@@ -227,3 +227,100 @@
 - ❓ **待补的一手**：TH18 侧的 `playerState` 编号（我们只知 1 = 存活、2 = 死亡段；TH08 拦的是 {SPAWNING, DEAD} 两个）
   ⇒ 要复刻这条必须补 TH18 的「复活/无敌段」编号，否则我们的门只挡了死亡段。
 
+## 2d. ★★★ 一手核实结果（2026-09-22 夜）：**Power（红 P）** + TH18 火力面
+
+> 只读核实（未改任何仓库文件）。**并订正本工作里一条我自己的错前提**：
+> `th18:0x40d410` **不是 P 道具路径** —— 全区**没有任何 `call 0x40d410`**（grep 0 命中），它只作为**数据**
+> 被引用一次（`th18:0x4b53c4` 的 vtable 槽，紧邻 `0x4b53c0 = 0x40d400` getter）。它的语义 = 「把 `[obj+0x54]` 夹到
+> `[100, 300]` 再夹 `≤ MAX` 后写回全局」；真正的 P 道具路径是 **`th18:0x446870 collect_power_item`**（见 §2d.3）。
+
+### 2d.1 TH08：一颗 P 加多少 / API / 量纲（✅ 一手闭合）
+
+| 项 | 一手 |
+| --- | --- |
+| 分派 | 逐条见 §2d 表下「长行详录」|
+| **小 P = +1** | `th08:0x440d44 push 1` → `th08:0x440d46 mov ecx,0x160f508` → `th08:0x440d4b call 0x441850`（`add_to_power`）|
+| **大 P = +8** | `th08:0x4411bd push 8` → 同一条 `add_to_power` |
+| API | `GetPower th08:0x422480`、`add_to_power th08:0x441850`（**加法无夹取**）、`set_power th08:0x406fa0`（直写） |
+| 量纲 | 火力 = **f32 @ `*(0x160f50c)+0x98`**（`0x160f50c` = GameManager 的 globals 指针，全区唯一写点 `th08:0x470abf`）|
+| **128 = MAX** | **没有变量**，是逐处 literal `0x80`（`th08:0x4400fb` / `:0x440d03` / `:0x440d5a` / `SetPower(0x80)` 若干处）⇒ owner 口径 ✅。唯一「表里的 MAX」= `g_PowerUpThresholds th08:0x4c7a6c = {8,24,48,80,128,999}`（只用于算档位与弹窗）|
+| 满 P 道具（type 4）| `th08:0x440b49 SetPower(0x80)` + `th08:0x440b58 AddScore(1000)` |
+
+### 2d.2 「128 ⇒ 一次全屏消弹」（✅ 一手闭合；**owner 未提的一点：SC 进行中不消弹**）
+
+- **触发 = 收集到跨过 128 的那一颗 P（边沿）**：小 P 路径 `th08:0x440d50 GetPower` → `th08:0x440d5a cmp eax,0x80 / jl`
+  → `th08:0x440d61 push 0x80` + `th08:0x440d6b call 0x406fa0`（`SetPower(128)`）→ `th08:0x440d75 call 0x4178a0`（**`IsSpellcardActive`**）
+  → `th08:0x440d7c jne` ⇒ **符卡进行中跳过消弹** → `th08:0x440d83 call 0x415c60`（`BulletManager::cancel_all_1`）
+  → `th08:0x440d96`–`0x440d9f call 0x441450`（改写屏上其余 P 道具）→ `AddScore(10)`。大 P 路径 `th08:0x4411c9`–`0x441218` 同形。
+- **范围 = 全屏（无几何判定）**：`th08:0x415c60` = `push 1; call 0x430830`；`0x430830` 两个循环
+  （子弹池 `0xf6f710` = `bm+0x1A880`、stride `0x10b8`、**1536 颗**、活动判 `[b+0xdb8] != 0 && != 5`；第二个池 `[this+0x660938]` × 256）。
+- **被消的弹变成什么**：**每颗一个 `item type 6` = `ITEM_POINT_STAR`（星点）**（`[bm+0x6ba570]` 全区**只有一个写点** `th08:0x42f396 mov DWORD PTR [eax+0x6ba570],0x6`，在 `BulletManager::reset` 内）。
+- **同时屏上其余 P 道具（type 0/2）被就地改写成 type 8 = 小蓝点**：`th08:0x441450`（判 0/2 ⇒ `th08:0x4414f2 mov BYTE [item+0x2d4],0x8`、`th08:0x4414f9 push 0x45` 换 anm 脚本 0x45、速度改写 `th08:0x44149b`–`0x4414d2`）。⚠ 社区那个名字（`ConvertAllPowerItemsToTimeOrbs`）**是误导名**，实际改的是小蓝点。
+- **一次性 = 没有闩**：靠三条 —— ① 收集函数首部 `>=0x80 ⇒ return`（`th08:0x440d03` / `:0x441183`）；② 跨过即 `SetPower(0x80)` 夹回；③ 掉残机后 `power ≤ 16 ⇒ 0` / 否则 `−16`（`th08:0x44cd9d` 一族，并掉 1 大 P + 6 小 P）⇒ **一局内可以再次触发**。
+
+### 2d.3 「MAX 后击破敌人不再提供 P」—— 一手是**三处**（✅ 成立；**不是一处**）
+
+| # | 位置 | 一手 |
+| --- | --- | --- |
+| 1 | **公共兜底**（所有生成路径）| 逐条见 §2d 表下「长行详录」|
+| 2 | **ECL `dropItems`（opcode 142）** | 逐条见 §2d 表下「长行详录」|
+| 3 | **敌机死亡掉落** | `th08:0x42c064 call 0x422480` → `th08:0x42c06e cmp eax,0x80 / jge` ⇒ MAX 时 `push 0; push 1`（type 1 大蓝点），未满 `push 0; push 0`（type 0 小 P）|
+
+⇒ **三处判据同一（`get_current_power() >= 0x80`）但互不覆盖**：`spawn_item` 那条是「**结果换成小蓝点**」，
+两条掉落路径是「**掉落选择器换成大蓝点**」。owner 说「MAX 后不再提供 P」✅ —— **补充：P 没消失，是被换成了蓝点**。
+
+### 2d.4 TH18 原生一颗 P / MAX（✅；含对本工作一条前提的订正）
+
+| 项 | 一手 |
+| --- | --- |
+| 类型分派 | 逐条见 §2d 表下「长行详录」|
+| **TH18 一颗 P = +1 单位** | `th18:0x446974 mov eax,[0x4ccd38]` → `th18:0x446981 cmp eax,[0x4ccd3c]` → `jl` ⇒ **`th18:0x446a7b push 1`** + `mov edi,0x64` + `th18:0x446a87 call 0x4573f0`（`add_power`）；随后 score += 10 |
+| 整档道具（type 3）| `th18:0x446330 push [0x4ccd40]`(100) → `add_power(100)`；MAX 时改给分 |
+| 填满道具（type 8 = **补满火力**）| `th18:0x44627f push [0x4ccd3c]` → `add_power(MAX)` ⚠ 所以 **TH08 的 type 8（小蓝点）与 TH18 的 type 8（补满火力）不是一回事** |
+| `add_power th18:0x4573f0` | 满则 `xor eax,eax; ret`；未满 `[edi+0x5c] += amt`（超 max 夹取 + 满火力音效 `th18:0x45741d`–`0x45745b`）；**返回值 = 档位是否变化**（正好可当触发条件）|
+| 三个全局 | `GlobalsInner` 单例 = `0x4cccdc` ⇒ `+0x5c/+0x60/+0x64` = **`0x4ccd38`/`0x4ccd3c`/`0x4ccd40`**（算术闭合 ✅）|
+| MAX 的值 | `th18:0x45a97c mov ds:0x4ccd3c,ecx`（= `100 × [cfg+0x20]`，`th18:0x45a98b` 强制 `PER_LEVEL = 100`）⇒ **MAX 的倍数 N 不在 exe 里**（配置数据；❓ 本轮未取）|
+
+### 2d.5 影响面（**凡是动引擎原生行为的都要 owner 拍**）
+
+1. **「MAX ⇒ 全屏消弹」TH18 无原生对应**（满火力只有音效，不消弹；原生消弹入口是 `th18:0x4290e0` / `th18:0x430510`）
+   ⇒ 只能**落卡侧**：自己判边沿（`add_power` 的返回值或自比 `CURRENT >= MAX`）+ 自己消弹 + 自己决定「消掉的弹变成什么」。
+   **不碰引擎经济**，但会与原生消弹/掉落**叠加**。
+2. **「MAX 后不掉 P」TH18 无原生闸**：`ItemManager::spawn_item th18:0x446f40` 的函数头到类型归一化**没有任何 `0x4ccd38/0x4ccd3c` 比较**，
+   `th18:0x430510` 也没有 ⇒ 要复刻就得**卡侧拦 spawn/掉落通知改写 type 1/3** ⇒ **动引擎道具经济（全原生掉落共用）⇒ 必须 owner 拍**。
+3. TH18「MAX 之后」原生仍给东西：type 1 仍 `score += 10` 并走 PIV 分支；type 3 在 MAX 改给分 ⇒ 卡侧掐 P 会**连带掐掉这部分分值/PIV**，要 owner 明确是否保留。
+4. 现成钩子：`CardBaseClass::on_power_level_change th18:0x413070`（各角色卡 `0x40aae0`–`0x40cd60`）有「**档位变化**」通知，**没有「到达 MAX」通知** ⇒ 得自己比。
+5. **不要缓存 `0x4ccd3c`/`0x4ccd40`**：`th18:0x45a98b` 会强制写 100、`th18:0x45a97c` 每次读配置覆盖；要动经济走 `add_power th18:0x4573f0` / `spend_power th18:0x457480`。
+6. ❓ 未核：MAX 的倍数 N（配置数据，入口 `th18:0x4b7088` 按 stage+difficulty 索引）；原生卡改火力的其它例子（只抽到 `CardMegumu::c_press th18:0x410bd0` 一例同形）。
+
+### 2d.6 折算与**要 owner 拍的一条**
+
+TH08「**128 = MAX**、小 P **+1**、大 P **+8**」；TH18「**1 档 = 100 单位**、MAX = `100 × N`、小 P **+1 单位**、整档道具 **+100**」。
+⇒ 若 `N = 4`（社区常识，**未一手**）则 TH18 的 MAX = 400 ⇒ **TH08 的 128 ↔ TH18 的 `MAX_POWER`**；
+但 **`+1` 的语义不同**：TH08 的小 P = `1/128 MAX`，TH18 的小 P = `1/MAX` 且 `+1 ≠ 一档`（一档 = 100）。
+⇒ **卡侧要落「+1 / +8」时必须先明确单位**（TH18 单位还是「档」）—— **这条要 owner 拍**。
+
+**§2d「长行详录」（表格只留指针，细节在这里）**
+
+- **分派那一条**：`th08:0x440a63 jmp DWORD PTR [eax*4+0x440cc5]`（9 项；类型字段 `th08:0x440a43 movsx edx,BYTE [ecx+0x2d4]`、
+  越界门 `th08:0x440a50 cmp [ebp-0x88],0x8 / ja`）⇒ 跳表 `0x440a6a/77/a91/a9e/aeb/adc/b96/bf9/a84`
+  → `0x440cf0`（小 P）/`0x440e40`（大蓝点）/`0x441170`（大 P）/bomb/full/extend/POINT_STAR/TIME/`0x441020`（小蓝点）
+  = 表序与枚举序 0..8 一致（`th-re-data` 的名逐条对上）。
+- **上限/阈值那一条**：`128 = 0x80` 是**逐处字面量**（`th08:0x4400fb`、`0x440d03`、`0x440d5a`、`0x440b49`、`0x440d61`、
+  `0x4411da`、`0x441183`、`0x4411d3`、`0x41d337`、`0x42c06e`）；唯一的「表里的 MAX」= `g_PowerUpThresholds th08:0x4c7a6c`
+  = `{8,24,48,80,128,999}`（`.data`、可写，`[4]` @`0x4c7a7c` = 128），**只用于算档位与弹窗，不是判定源**。
+- **`add_power` 那一条**：`th08:0x441850` = `fild [ebp+8]; fadd [(this+8)+0x98]`（**纯加法、无夹取**）；
+  `set_power th08:0x406fa0` = 直写；`GetPower th08:0x422480` = `fld [ecx+0x98]` + `f2i`。
+- **消弹范围那一条**：`0x430830` 循环 1 = 子弹池 `0xf6f710`（= `bm+0x1A880`，`bm=0xf54e90`）、stride `0x10b8`、
+  `cmp i,0x600`（**1536 颗**）、活动判 `[b+0xdb8] != 0 && != 5`；循环 2 = `[this+0x660938]`、stride `0x59c`、`cmp i,0x100`；
+  `arg==4` ⇒ 只把 `word[b+0xdb8] = 5`（不掉道具）；`arg==1` ⇒ `push 1(state); push [bm+0x6ba570](itemType); push bm+0xd44`
+  → `call 0x4400a0`（`spawn_item`），随后 `rep stos 0x42e` 清子弹结构。
+- **「结果换成小蓝点」那一条**：`th08:0x44010e mov DWORD PTR [ebp+0xc],0x8`（type 0/2 ⇒ 8），
+  门 = `th08:0x4400f6 call 0x422480` → `th08:0x4400fb cmp eax,0x80 / jl`。
+- **ECL 掉落那一条**：派发 `th08:0x4185f1`–`0x418623`（`index = opcode − 1`）⇒ 表[141] = **opcode 142 = `dropItems`**
+  （`th08:0x41d24a` 块首；`local/vendor/eclmap/eclmap/th08.eclm:136` 同名，142/143 = dropMain/dropExtra 对上
+  `th08:0x41d183`/`:0x41d1c7` 写 `enemy+0x3304/0x3308/0x330c` ⇒ 交叉对名闭合）。
+- **TH18 的 `add_power` 那一条**：`th18:0x4573f0`：`[edi+0x5c]`=cur / `[edi+0x60]`=max / `[edi+0x64]`=per_level；
+  已满 ⇒ `xor eax,eax; ret`（false）；未满 ⇒ `[edi+0x5c] = cur+amt`（超 max 夹取并播满火力音效 `th18:0x45741d`–`0x45745b`）；
+  **返回值 = 档位是否变化**（= `new/per != (new−amt)/per`）。
+
