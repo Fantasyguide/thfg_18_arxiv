@@ -906,6 +906,9 @@ void yk_gauge_hud(int gauge, const float anchor[2], float to640, yk_gauge_hud_t 
     out->cursor_y = ay - (481.0f - 453.0f) * k;               /* 游标锚点 = 心 ⇒ 这是中心 */
     out->text_x = ax + (64.0f + g * 40.0f) * k;               /* 80 / 2 = 40；96 − 32 = 64 */
     out->text_y = ay - (481.0f - 446.0f) * k;                 /* 游标 y − 7 = 446（640 空间）*/
+    /* ★ 2026-09-22 夜（#27/#28）：**夜点**（一手：y=460、x 从 80 起；两者与百分比上下错开 14 px）。*/
+    out->night_x = ax + (80.0f - 32.0f) * k;
+    out->night_y = ay - (481.0f - 460.0f) * k;
 }
 
 /* ---------------------------------------- 人妖槽的百分比数字：逐字形布局（`th08:0x405e10`）
@@ -1164,4 +1167,25 @@ int yk_popup_digits(int32_t value, uint8_t *out, int max)
 int yk_gauge_fam_kill_delta(int32_t gauge)
 {
     return (int)(-gauge / YK_FAM_KILL_GAUGE_DIV);     /* C99 `/` 向零截断 = 一手 `idiv` */
+}
+
+/* ★★★ 2026-09-22 夜（#27/#28）：夜点数字的字形（一手 `th08:0x405d11`–`0x405e01`，左对齐 7 px/字）。*/
+int yk_night_text_glyphs(int32_t night, yk_gauge_glyph_t *out)
+{
+    uint8_t dg[YK_NIGHT_TEXT_MAX];
+    int n, i;
+    if (night < 0) night = 0;
+    n = yk_popup_digits(night, dg, (int)YK_NIGHT_TEXT_MAX);
+    if (n <= 0) {                                  /* 兜底：至少一位 '0' */
+        if (out) { out[0].glyph = 0; out[0].dx = 0.0f; out[0].dy = 0.0f; out[0].scale = 1.0f; }
+        return 1;
+    }
+    for (i = 0; i < n; ++i) {
+        if (!out) break;
+        out[i].glyph = dg[i];
+        out[i].dx = (float)i * 7.0f;               /* 一手：每画出一位 `pos.x += 7.0` */
+        out[i].dy = 0.0f;
+        out[i].scale = 1.0f;
+    }
+    return n;
 }

@@ -766,6 +766,10 @@ typedef struct {
     float youkai_x, youkai_y;       /* 妖怪图标（同上，anchorTopLeft）*/
     float cursor_x, cursor_y;       /* 游标（同上，**锚点 = 心 ⇒ 这是中心点**）*/
     float text_x, text_y;           /* 百分比数字的**基准点**（表面 px；逐字形的偏移见下）*/
+    float night_x, night_y;         /* ★ 2026-09-22 夜：#27/#28 的**夜点数字**左对齐基准点（表面 px）
+                                     *   一手：y=460（= 槽条 449 + 11）、x 从 80 起、7 px/字、
+                                     *   **前导零不画也不占位**（`th08:0x405d11`–`0x405e01`）。
+                                     *   ⚠ 与百分比（y=446）**上下错开 14 px**（640 空间）。*/
     float px;                       /* ★ 本帧的「1 个 640 空间单位 = 多少表面 px」（TH18 = `1/to640` = 2）
                                      *   —— 字形偏移、字形 scale、以及四件贴图的 scale 都要乘它：
                                      *   贴图是 TH08 的**原生尺寸**（16×16 / 128×16 / 8×12），
@@ -797,6 +801,11 @@ typedef struct {
 /* 把 `gauge`（−10000..+10000）拆成一串字形；返回字形数（1..`YK_GAUGE_TEXT_MAX`）；
  * `out` 为 NULL 或 `gauge` 越界（钳到 ±10000 后照算）都不会崩。**无浮点库调用**。*/
 int yk_gauge_text_glyphs(int gauge, yk_gauge_glyph_t *out);
+/* ★★★ 2026-09-22 夜（#27/#28）：**夜点数字的字形**（一手 `AsciiManager::OnDrawHighPriImpl th08:0x405d11`–`0x405e01`）。
+ * 布局 = **左对齐、7 px/字、前导零不画也不占位**（一手：每画出一位才 `pos.x += 7.0`）⇒ `dx = i*7`、`dy = 0`、`scale = 1.0`。
+ * 返回位数（1..`YK_NIGHT_TEXT_MAX`；`night <= 0` ⇒ 1 位 '0'）。**无浮点库调用**。*/
+#define YK_NIGHT_TEXT_MAX 8
+int yk_night_text_glyphs(int32_t night, yk_gauge_glyph_t *out);
 
 /* ============================================== §3.11 永点（刻符）→ PIV（= 额外最大得点）
  * 一手：`GameManager::sub_418220` `th08:0x418220` 与 `Item::collect_time_orb` `th08:0x4412b0`。

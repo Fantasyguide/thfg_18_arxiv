@@ -1231,6 +1231,26 @@ int main(void)
             CHECK(yk_gauge_fam_kill_delta(11) == 0);          /* 向零截断 ⇒ 11/12 = 0 */
             CHECK(yk_gauge_fam_kill_delta(-10000) == 833);    /* 人侧反向同式 */
             CHECK(yk_gauge_fam_kill_delta(0) == 0);
+            /* ★★★ 2026-09-22 夜（#27/#28）：**夜点数字的字形**（一手 `th08:0x405d11`–`0x405e01`：
+             * 左对齐、7 px/字、**前导零不画也不占位**）。*/
+            {
+                yk_gauge_glyph_t ng[YK_NIGHT_TEXT_MAX];
+                int n2;
+                CHECK(YK_NIGHT_TEXT_MAX == 8);
+                n2 = yk_night_text_glyphs(60000, ng);
+                CHECK(n2 == 5 && ng[0].glyph == 6 && ng[4].glyph == 0);   /* 60000 ⇒ 5 位 */
+                CHECK(ng[1].dx == 7.0f && ng[4].dx == 28.0f);             /* 每字 +7（一手 `pos.x += 7.0`）*/
+                CHECK(ng[0].dy == 0.0f && ng[0].scale == 1.0f);
+                n2 = yk_night_text_glyphs(300000, ng);
+                CHECK(n2 == 6 && ng[0].glyph == 3);
+                n2 = yk_night_text_glyphs(123456789, ng);                 /* 超过 8 位 ⇒ 留高位、截 8 位 */
+                CHECK(n2 == 8 && ng[0].glyph == 1 && ng[7].glyph == 8);
+                n2 = yk_night_text_glyphs(0, ng);
+                CHECK(n2 == 1 && ng[0].glyph == 0);
+                n2 = yk_night_text_glyphs(-5, ng);
+                CHECK(n2 == 1 && ng[0].glyph == 0);
+                CHECK(yk_night_text_glyphs(60000, 0) >= 1);               /* NULL 出口不崩 */
+            }
             }
         }
     }

@@ -216,6 +216,7 @@ typedef struct {
     uint32_t      hud_digit[YK_GAUGE_TEXT_MAX];  /* ★ 百分比数字的**字形 VM**（每格一个；TH08 那边是
                                                   *   同一个 VM 反复换字，TH18 一个 VM 一帧只画一次
                                                   *   ⇒ 卡侧开 7 格，逐格换 sprite，见 `yk_gauge_text_sync`）*/
+    uint32_t      hud_night[YK_NIGHT_TEXT_MAX];  /* ★ #27/#28：**夜点数字**的字形 VM（左对齐 7 px/字、前导零不占位）*/
     ce_hud_slot_t hud;                 /* HUD 货架槽（`ce_hud_slot_claim_card`，左下角）*/
     uint8_t       hud_ready;           /* 货架认领成功（0 = 这一关没抢到块，HUD 不画）*/
     uint8_t       body_focused;        /* 0/1 */
@@ -1921,6 +1922,10 @@ static void yk_gauge_hud_kill(yk_card_t *s)
         if (s->hud_digit[i]) ce_anm_delete(s->hud_digit[i]);
         s->hud_digit[i] = 0;
     }
+    for (i = 0; i < YK_NIGHT_TEXT_MAX; ++i) {          /* ★ #27/#28：夜点数字的 8 格也一起收 */
+        if (s->hud_night[i]) ce_anm_delete(s->hud_night[i]);
+        s->hud_night[i] = 0;
+    }
 }
 
 /* 生成四支 VM（UI 列表；`ce_anm_spawn_ui` 的 `pos` 传 NULL ⇒ 由脚本自己的 `pos()` 起手，
@@ -1962,6 +1967,15 @@ static void yk_gauge_hud_spawn(ce_card_t *c, yk_card_t *s)
         id = ce_anm_spawn_ui(yk_player_anm(), YK_GAUGE_SCRIPT_FONT[ch], 0);
         s->hud_digit[i] = id;
     }
+    /* ★★★ 2026-09-22 夜（#27/#28）：**夜点数字的 8 格**（一手里它与百分比共用**同一个 VM**、逐位换 sprite；
+     * TH18 一个 VM 一帧只画一次 ⇒ 照样开 8 格，见 `yk_night_text_sync`）。整块的门照抄：
+     * `hud_ready` 为 0 时这一整批（条/图标/游标/百分比/夜点）**一起不建**。*/
+    for (i = 0; i < YK_NIGHT_TEXT_MAX; ++i) {
+        uint32_t id;
+        if (s->hud_night[i] && ce_anm_get_vm(s->hud_night[i])) continue;
+        id = ce_anm_spawn_ui(yk_player_anm(), YK_GAUGE_SCRIPT_FONT[ch], 0);
+        s->hud_night[i] = id;
+    }
 }
 
 /* ★★ 人妖槽的百分比数字：按一手布局逐格写 7 个字形 VM 的 sprite / 位置 / 缩放 / 颜色。
@@ -1993,6 +2007,30 @@ static void yk_gauge_text_sync(yk_card_t *s, const yk_gauge_hud_t *h, uint32_t c
         ce_anm_set_pos(id, h->text_x + g[i].dx * h->px, h->text_y + g[i].dy * h->px, 0.0f);
         ce_anm_set_scale(id, g[i].scale * h->px, g[i].scale * h->px);  /* 小数两位 = 0.8×2 = 1.6（一手 + P2 的 ×2）*/
         ce_anm_set_color(id, 0xff000000u | col);           /* 一手：数字同吃那 5 档染色 */
+    }
+}
+
+/* ★★★ 2026-09-22 夜（#27/#28）：**夜点数字**（一手几何：y=460、x 从 80 起、左对齐 7 px/字、
+ * **前导零不画也不占位**、五档染色与槽条/百分比共用；`th08:0x405d11`–`0x405e01`）。
+ * 值 = 我们卡里的 `piv`（= TH08 的 `pointItemValue` / 夜点，P-A 已把初值按难度落好）。*/
+static void yk_night_text_sync(yk_card_t *s, const yk_gauge_hud_t *h, uint32_t col)
+{
+    yk_gauge_glyph_t g[YK_NIGHT_TEXT_MAX];
+    void *anm;
+    int n, i, ch;
+    if (!s || !h) return;
+    ch = yk_current_character();
+    if (ch < 0 || ch > 3) ch = 0;
+    anm = yk_player_anm();
+    n = yk_night_text_glyphs(s->piv, g);
+    for (i = 0; i < YK_NIGHT_TEXT_MAX; ++i) {
+        uint32_t id = s->hud_night[i];
+        if (!id) continue;
+        if (i >= n) { ce_anm_set_color(id, 0x00ffffffu); continue; }     /* 这一格不用 ⇒ 透明 */
+        if (anm) ce_anm_set_sprite(anm, id, YK_GAUGE_FONT_BASE[ch] + (int)g[i].glyph);
+        ce_anm_set_pos(id, h->night_x + g[i].dx * h->px, h->night_y + g[i].dy * h->px, 0.0f);
+        ce_anm_set_scale(id, g[i].scale * h->px, g[i].scale * h->px);
+        ce_anm_set_color(id, 0xff000000u | col);
     }
 }
 
@@ -2043,6 +2081,7 @@ static void yk_gauge_hud_update(yk_card_t *s)
      * 逐格换 sprite / 位置 / 缩放，布局 = `AsciiManager::DrawPercentage` `th08:0x405e10`
      * （纯逻辑在 `yk_gauge_text_glyphs`）。一手：数字同样吃那 5 档染色（`AsciiManager.cpp:1030-1058`）。*/
     yk_gauge_text_sync(s, &h, col);
+    yk_night_text_sync(s, &h, col);                        /* ★ #27/#28：夜点数字（左对齐 7 px/字）*/
 }
 
 static int on_ctor(ce_card_t *c)

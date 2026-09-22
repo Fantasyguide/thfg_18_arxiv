@@ -20287,3 +20287,23 @@ imm `0x41a80000` = `f2i` 转换上界 ⇒ **实际峰值 20**）；清零 `th08:
 - 既有消费者回归名单：`animal.c`(113) / `mof.c`(110) / `pofv.c`(107) / `senro.c`(109) / `trance.c`(111) / `ufo.c`(112) /
   `youkai.c`(108) —— 逐文件 grep `by_player_bullet` = **0 命中**（新字段只有 108 读）。
 
+## §BE 详录 #67（2026-09-22 夜）：108 **#27/#28 夜点 HUD**（把夜点画进左下角那块）
+
+**改了什么**
+
+| 文件 | 改了什么 |
+| --- | --- |
+| `native/cards/youkai_core.{h,c}` | `yk_gauge_hud_t` 新增 `night_x` / `night_y`（一手：y=460、x 从 80 起）；新增 `YK_NIGHT_TEXT_MAX 8` 与 `yk_night_text_glyphs()`（左对齐 7 px/字、前导零不占位、NULL 安全）|
+| `native/cards/youkai.c` | 新字段 `hud_night[8]`；`yk_gauge_hud_spawn` 里与百分比同批申请 8 格字形 VM（同脚本 `YK_GAUGE_SCRIPT_FONT`）；新增 `yk_night_text_sync()`（逐格换 sprite/位置/缩放/颜色，值 = `s->piv` = 夜点）；`yk_gauge_hud_kill` 一起收 |
+| `native/tests/test_youkai_core.c` | +9 条断言（位数、7 px 步进、8 位截断留高位、0/负数兜底、NULL）⇒ **4594 checks / 0 failed** |
+| `TUNING.md` | §2.0zl（复刻表 + `❓ #40` 门的映射 / `#41` 8 格 VM）|
+
+**一手**：`th08:0x405d18` / `:0x405d1e`（读 `globals+0x24`）、`th08:0x405d11`–`0x405e01`（8 位、7 px/字、前导零不占位）、
+`th08:0x405b4c`–`0x405b86`（百分比 y=446）、`th08:0x405bc2`–`0x405c9b`（五档染色）、`th08:0x4066e0`（`IsVisible`）。
+
+**怎么验证的**：`make check` **rc=0**（`x87 = 0`、`test_youkai_core` 4594/0、sites 双面、`sitecheck --all`、
+`contract_check`、`gen_drift`、`capcheck`、`sht-verify`、`anm-verify`、`snd-check`、`dllx87`、`dllverify`、
+`engine_abi_check`）；`python3 tooling/check-docs.py` 全部通过。
+
+**发布面**：**本批没改** `pl0X.sht` / `pl0X.anm` / `ability.anm` / wav / 站点（夜点用的是**已有**的字形 14 格）。
+
