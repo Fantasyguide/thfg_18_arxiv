@@ -100,7 +100,7 @@
 
 | 项 | 一手 |
 | --- | --- |
-| **夜点 = 哪一格** | `zGlobals.pointItemValue`（`globals+0x24`，i32；`globals` = `[0x160f508+8]`）—— 画在**左下角槽条上**（一手 `th08:0x405d11`–`0x405e01`，见 §2.7.1）|
+| **夜点 = 哪一格** | `zGlobals.pointItemValue`（`globals+0x24`，i32；`globals` = `[0x160f508+8]`）—— 画在**左下角槽条上**（一手 `th08:0x405d11`–`th08:0x405e01`，见 §2.7.1）|
 | **初值四档** | `GameManager` 新局初始化 `th08:0x43af1b`（读 difficulty `ds:0x160f538`）→ switch 0..4 写 `[globals+0x24]`；四个常量见下表 |
 **初值四档的四个立即数**（逐个地址，`mov DWORD PTR [eax+0x24], imm32`）：
 
