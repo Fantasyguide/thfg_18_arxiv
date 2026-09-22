@@ -20457,3 +20457,27 @@ thecl -d 13 -m local/vendor/eclmap/eclmap/th13.eclm local/th13.v1.00c/dat/*.ecl 
 
 **发布面**：**本批没改** `pl0X.sht` / `pl0X.anm` / `ability.anm` / wav / 站点
 （没新增断点、没动 `sites.py`、没动 patch 声明集）。⚠ 本批**未部署**（工单要求）。
+
+## §BE 详录 #71（2026-09-22 夜）：108 —— **Time 的两处一手订正**（损命打回下落的速度与范围）+ Point/奖命梯的两条 owner 裁决登记
+
+**改了什么**
+
+| 文件 | 改了什么 |
+| --- | --- |
+| `native/cards/youkai.c` | ① 新增 `YK_ORB_VY_DEAD_FRAME = −0.7f`（每帧路径）并把每帧那支改用它；② `dead` 判据扩成 `HOMING` 或 `SPAWN` 都打；③ 去掉多写的一个 `vz`（我们的 `yk_orb_t` 无此字段）|
+| `TUNING.md` | 新增 §2.0zp（奖命梯「只记录不实现」一手表 + 两条 owner 裁决 + 本批订正表 + 实跑判据）|
+
+**一手（本批）**：每帧路径 `th08:0x4408e0`（state 1 ⇒ `vy = −0.7`，位型 `0xbf333333` / `state = 0`）与 `th08:0x4406eb`–`0x44071e`
+（**state 3 连上抛中的也打**）；损命当帧批量 `ItemManager::sub_441530 th08:0x441530`（只动 state 1，`vy = −0.9`，`th08:0x441574`，位型 `0xbf666666`）；
+state 5 在上抛期间不动（`th08:0x4407a5`）。抓取盒的三态白名单 = `th08:0x44a5bc` 一族。
+
+**owner 裁决登记（只记录、不实现）**：奖命梯（表 `th08:0x4c7a84`/`th08:0x4c7a9c`、读表 `th08:0x440470`、动作 `th08:0x439b29`）
+⇒ **不实现**（会改 TH18 的续命经济）；「小蓝点 1/10 + 不记账」⇒ **做**，落点在**给分侧**、红线两条（不写 `th18:0x4ccd34`、类型号不能搬）。
+
+**怎么验证的**：`make check` **rc=0**（`x87 = 0`、`test_youkai_core` 4603/0、sites 双面、`sitecheck --all`、
+`contract_check`、`gen_drift`、`capcheck`、`sht-verify`、`anm-verify`、`snd-check`、`dllx87`、`dllverify`、
+`engine_abi_check`）；`python3 tooling/check-docs.py` 全部通过。
+
+**发布面**：**本批没改** `pl0X.sht` / `pl0X.anm` / `ability.anm` / wav / 站点（只有 DLL 里的卡代码 + 文档）。
+
+

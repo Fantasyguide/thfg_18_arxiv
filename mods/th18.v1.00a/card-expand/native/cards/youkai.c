@@ -1458,7 +1458,13 @@ static void *yk_player_anm(void)
 #define YK_ORB_GRAVITY        0.05f
 /* 一手：中弹/暴毙那一刻把**归航**的刻符打回下落态：`vx = 0`、`vy = −0.9`、state = 0
  *（`th08:0x441567`/`:0x441574` 的批量收尾 与 `th08:0x4408e0`/`:0x4408f0` 的每帧判定，两条同结果）。*/
-#define YK_ORB_VY_DEAD       (-0.9f)
+/* ★★★ 2026-09-22 夜（一手复核订正）：**两个不同的常量，别混** ——
+ *   · **每帧**路径（`ItemManager::on_tick`，玩家非存活时把 state 1/3 打回下落）用 **−0.7**
+ *     （`th08:0x4408e0` / `:0x440711`，float 位型 `0xbf333333`）；
+ *   · **损命当帧的批量收尾**（`ItemManager::sub_441530`）用 **−0.9**（`th08:0x441574`，位型 `0xbf666666`）。
+ *   我们原来只有一个 `YK_ORB_VY_DEAD = −0.9f` 被两条路共用 ⇒ 本批拆成两个。*/
+#define YK_ORB_VY_DEAD       (-0.9f) /* 损命当帧的批量值（`th08:0x441574` 0xbf666666）*/
+#define YK_ORB_VY_DEAD_FRAME (-0.7f) /* 每帧路径的值（`th08:0x4408e0` 0xbf333333）*/
 
 typedef struct {
     uint32_t anm_id;      /* 0 = 空槽 */
@@ -1767,10 +1773,16 @@ static int yk_orbs_tick(yk_card_t *s)
             if (o->anm_id) ce_anm_set_pos(o->anm_id, o->x, o->y, 0.0f);
             else if (s) ++s->orb_full;              /* 重起也失败 ⇒ 这颗只当「看不见但仍在飞」*/
         }
-        if (dead && o->state == YK_ORB_STATE_HOMING) {
+        /* ★★★ 2026-09-22 夜（Time 的一手订正）：**损命窗口内的两颗都要打回下落**，不只是归航的：
+         *   · 一手每帧路径 = `ItemManager::on_tick`：state 1（归航）⇒ `state=0 / vy = −0.7`（`th08:0x4408e0`
+         *     / `:0x4408f0`）；**state 3（上抛中）也会被打**（`th08:0x4406eb`–`0x44071e`：`state=0`、`vx=0`、
+         *     `vy=−0.7`、`vz=0`）；只有 state 5（符卡螺旋 / 擦弹）在**上抛期间不动**（`th08:0x4407a5`）。
+         *   ⇒ 我们原来是「只打 `YK_ORB_STATE_HOMING`」= 漏了 state 3 那一支（我们的 `YK_ORB_STATE_SPAWN`）。
+         *   ⚠ 损命**当帧**的批量收尾（`th08:0x441530`，只动 state 1）用 **−0.9**，与每帧的 −0.7 是两个常量。*/
+        if (dead && (o->state == YK_ORB_STATE_HOMING || o->state == YK_ORB_STATE_SPAWN)) {
             o->state = YK_ORB_STATE_FALL;
             o->vx = 0.0f;
-            o->vy = YK_ORB_VY_DEAD;                      /* `th08:0x441574` 的 −0.9（每帧版是 −0.7）*/
+            o->vy = YK_ORB_VY_DEAD_FRAME;                /* 每帧路径：一手 `th08:0x4408e0` / `:0x440711` = −0.7 */
         }
         if (o->state == YK_ORB_STATE_SPAWN) {
             /* 出生上浮：`vy += 0.05`；`vy > 0` 那一刻转归航（一手 `th08:0x4406ac` / `:0x4406e4`）。*/
