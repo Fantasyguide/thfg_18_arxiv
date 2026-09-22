@@ -20209,3 +20209,41 @@ type 1 的来路要先 grep `push 1` + `push <type>` 的调用点上下文）。
   换关（`on_run_reset`）与删卡（`on_delete`）各 `yk_popup_kill_all`。
 - **`native/cards/youkai_core.{h,c}`**：`YK_POPUP_SCORE_LIFE 60` / `YK_POPUP_TIME_LIFE 90` / `YK_POPUP_GLYPH_PLUS 13`；
   `yk_popup_alpha(dx,dy)`（一手三段整数式）；`yk_popup_digits(value,out,max)`（高位在前、容量不够留高位、NULL 安全）。
+
+## §BE 详录 #65（2026-09-22 夜）：108 **P-C 两条订正**（`shotActive` 语义 / 回中门与三档 / 擦弹 +100）
+
+**改了什么**
+
+| 文件 | 改了什么 |
+| --- | --- |
+| `native/engine.h` | 加两个宏 `CE_BOMB_MGR()` / `CE_BOMB_MGR_ACTIVE 0x30`（共享件，但不动 ABI）|
+| `native/cards/youkai_core.{h,c}` | 斜坡/回中常量与两个纯函数（`yk_gauge_ramp_delta` / `yk_gauge_center_delta`）；`YK_GAUGE_SHOOT_DELTA` 注释订正为「放符卡/炸弹期间」|
+| `native/cards/youkai.c` | 逐条见下 |
+| `native/tests/test_youkai_core.c` | +20 条断言（斜坡 12 条边界、回中三档 8 条含等号）⇒ **4576 checks / 0 failed** |
+| `TUNING.md` | §2.0zj：复刻表 + **显式作废三条旧记录** + `❓ #34/#35/#36` |
+| `native/tools/verify.py` | 三条 expect（斜坡 / 放符卡 / 死亡清零）|
+
+**`youkai.c` 的逐条**
+
+- 新增 `yk_bomb_active()`（= `[bomb_mgr+0x30]`，TH08 `shotActive` 的对应物）。
+- `yk_gauge_tick` 的推进/回中**照 `Player::move` 重写**：放符卡/炸弹 ⇒ 固定 `±26/帧`；
+  射击键按住 ⇒ **时间斜坡**（先耗预热 `gauge_idle`，再 `yk_gauge_ramp_delta(gauge_ram)` 并 `gauge_ram++`）；
+  松开 ⇒ 停火 ≥4 帧清斜坡、`gauge_idle` 涨到 30 后才按三档回中、死区 ≤9 置 0。
+- **擦弹 +100**（只妖侧；门 `focus_age >= 7` = 一手 `player+5` 的 7 帧延迟；受 `shotActive` 闸）。
+- **死亡置 0**（`CE_PLAYER_STATE == 2` 那一帧）。
+- 新字段 `gauge_ram` / `gauge_idle` / `gauge_shoot_logged`；两个 `0x43c0bb` 闸改用 `yk_bomb_active()`。
+
+**一手（本批新增）**：斜坡 `th08:0x44be67`–`0x44bea8`（`15.0f`@`th08:0x4b6e94`、`300.0f`@`th08:0x4b6f30`、
+imm `0x41a80000` = `f2i` 转换上界 ⇒ **实际峰值 20**）；清零 `th08:0x44b1ac`/`:0x44b3fe`/`th08:0x44bf04`；
+预热 `th08:0x44be40`–`0x44be5d`/`th08:0x44c007`；回中 `th08:0x44bef9`–`0x44bffb`（`9.0`@`th08:0x4b6f28`、立即数 `2/3/5`）；
+`shotActive` 门 `th08:0x44be0f`；死亡 `th08:0x44ac09`；擦弹 `th08:0x44aa6c`/`0x44aa78`–`0x44aa81`（门 `player+5`，写点 `th08:0x44b1d0`）。
+
+**作废的三条旧口径**（写在 §2.0zj 开头）：①「开火每帧 ±26」；②「漂移被 `shotActive` 门控」；
+③「射击中的判据 = 射击键按住」（只对回中成立）。
+
+**怎么验证的**：`make check` **rc=0**（`x87 = 0`、`test_youkai_core` 4576/0、sites 双面、`sitecheck --all`、
+`contract_check`、`gen_drift`、`capcheck`、`sht-verify`、`anm-verify`、`snd-check`、`dllx87`、`dllverify`、
+`engine_abi_check`）；`python3 tooling/check-docs.py` 全部通过（373 个文件）。
+
+**发布面**：**本批没改** `pl0X.sht` / `pl0X.anm` / `ability.anm` / wav / 站点（只有 DLL 里的卡代码 + `engine.h` 两个宏 + 文档）。
+

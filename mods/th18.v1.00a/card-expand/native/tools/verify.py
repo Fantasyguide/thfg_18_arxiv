@@ -68,6 +68,13 @@ PRIMS = {
             # ★ 2026-09-22 夜（P-E 单人反向封顶）：反侧真的被夹在 ±2000（= 20%）时的一行
             (r"youkai: solo reverse cap engaged - the opposite side stops at -?\d+",
              "单人反向封顶生效（反侧到不了逢魔；一手 th08:0x44daa2 / :0x44dacd）", False),
+            # ★ 2026-09-22 夜（P-C）：推进口径的两行（斜坡 / 放符卡期间 ±26）+ 死亡清零
+            (r"youkai: gauge advance = continuous-fire time ramp",
+             "推进 = 时间斜坡（一手 `th08:0x44be67`；不是恒定 ±26）", False),
+            (r"youkai: gauge advance = BOMB/spell period at [+-]\d+/frame",
+             "放符卡/炸弹期间的推进（一手 `shotActive` 的真身）", False),
+            (r"youkai: gauge reset to 0 on death",
+             "死亡时槽归零（一手 `th08:0x44ac09`）", False),
             # ★ 2026-09-22 夜（#27 弹字）：两支刻符弹字是**纯观感**，正常没有日志；
             #   实跑判据 = 收刻符时在那颗刻符上闪出分值（60 帧上浮）、击破使魔时闪「+1」（90 帧不动）。
             #   （池满/起不出来的诊断走 ledger 的计数，不单独刷屏。）

@@ -96,6 +96,8 @@
                                                  * 由敌人每帧入口 FUN_0042ff80 的 0x430161 段内联 +1。原生普查：T=40..900、
                                                  * 计数 1..20，越大只窗口越长、给得越多（engine/season/th18/01 §1b′）*/
 #define CE_ADDR_BOMB_MGR           0x4cf2b8   /* 炸弹管理器*；+0x30 = 「正在放炸弹」（do_bomb 置 1，Bomb__can_bomb_and_deathbomb_check 0x420420 查它；道具磁力判定 0x445bc4 也查它决定吸不吸）*/
+#define CE_BOMB_MGR()              (*(uint8_t **)CE_ADDR_BOMB_MGR)
+#define CE_BOMB_MGR_ACTIVE         0x30       /* ★ 2026-09-22 夜：**正在放符卡/炸弹**（TH08 `shotActive` 的对应物；本卡的人妖槽用它）*/
 #define CE_ADDR_ABILITY_MGR_PTR    0x4cf298   /* zAbilityManager*（OM §4）*/
 #define CE_ADDR_BULLET_MGR_PTR     0x4cf2bc   /* zBulletManager*（ExpHP statics；cancel_all 0x4297a9 读）*/
 #define CE_FN_PLAYER_DIE           0x45d3a0   /* Player__die：thiscall(zPlayer*)，无栈参、裸 ret。

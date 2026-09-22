@@ -828,6 +828,30 @@ int yk_gauge_orbs_delta(int focused) { return focused ? YK_GAUGE_PER_ORB : -YK_G
 
 /* ★★★ 2026-09-22（P3 第二批）：射击中每帧的槽增量（一手 `Player.cpp:445-452`，见 .h 的长注）。
  * `0x6590 / 0x3e7` 是**整数除法**（ZUN 的算式就是 `i32`）⇒ 26000/999 = 26。*/
+/* ★★★ 2026-09-22 夜（P-C 订正）：**持续开火推进 = 时间斜坡**（一手 `th08:0x44be67`–`0x44bea8`）。
+ * `adv_frames` = `player+0xe2ae8` 的对应物（换形 / 停火 ≥4 帧清零）。*/
+int yk_gauge_ramp_delta(int adv_frames)
+{
+    int f = adv_frames;
+    if (f < 0) f = 0;
+    if (f > YK_GAUGE_RAMP_FRAMES) f = YK_GAUGE_RAMP_FRAMES;   /* 一手先 fcomp 300.0f 再封顶 21 */
+    f = f / YK_GAUGE_RAMP_DIV;                                /* 一手 fdiv 15.0f 后 float→int（向零取整）*/
+    if (f > YK_GAUGE_RAMP_CAP) f = YK_GAUGE_RAMP_CAP;         /* 21 是 `f2i` 的转换上界（一手 imm `0x41a80000`）——
+                                                              * 帧数先夹到 300 ⇒ 实际最大 20，这一句只是安全界 */
+    return f;
+}
+
+/* ★★★ 2026-09-22 夜（P-C 订正）：**停火回中**的三档（一手 `th08:0x44bf70`–`0x44bfde`，带符号）。*/
+int yk_gauge_center_delta(int gauge)
+{
+    if (yk_gauge_is_extremely_youkai(gauge))    return -5;     /* `0x44bf70` */
+    if (yk_gauge_is_moderately_youkai(gauge))   return -3;     /* `0x44bf87` */
+    if (gauge > 0)                              return -2;     /* `0x44bf9e` */
+    if (!yk_gauge_is_moderately_human(gauge))   return  2;     /* `0x44bfb0` */
+    if (!yk_gauge_is_extremely_human(gauge))    return  3;     /* `0x44bfcc` */
+    return 5;                                                  /* `0x44bfde` */
+}
+
 int yk_gauge_shoot_delta(int focused)
 {
     return focused ? YK_GAUGE_SHOOT_DELTA : -YK_GAUGE_SHOOT_DELTA;

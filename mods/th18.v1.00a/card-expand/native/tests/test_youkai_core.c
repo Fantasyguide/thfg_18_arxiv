@@ -1196,6 +1196,30 @@ int main(void)
                 CHECK(yk_popup_digits(-5, g, 6) == 1 && g[0] == 0);
                 CHECK(yk_popup_digits(7, 0, 6) == 0);              /* NULL 出口：不写、不崩 */
                 CHECK(yk_popup_digits(7, g, 0) == 0);              /* 容量 0：不写 */
+            /* ★★★ 2026-09-22 夜（P-C 订正）：**时间斜坡**（一手 `th08:0x44be67`–`0x44bea8`）
+             * 与**回中三档**（一手 `th08:0x44bf70`–`0x44bfde`）。*/
+            CHECK(YK_GAUGE_RAMP_DIV == 15 && YK_GAUGE_RAMP_CAP == 21 && YK_GAUGE_RAMP_FRAMES == 300);
+            CHECK(YK_GAUGE_IDLE_MAX == 30 && YK_GAUGE_STOP_CLEAR == 4);
+            CHECK(yk_gauge_ramp_delta(0) == 0);
+            CHECK(yk_gauge_ramp_delta(14) == 0);
+            CHECK(yk_gauge_ramp_delta(15) == 1);
+            CHECK(yk_gauge_ramp_delta(29) == 1);
+            CHECK(yk_gauge_ramp_delta(30) == 2);
+            CHECK(yk_gauge_ramp_delta(300) == 20);
+            CHECK(yk_gauge_ramp_delta(301) == 20);            /* 一手：先夹到 300 再 /15 */
+            CHECK(yk_gauge_ramp_delta(315) == 20);          /* 帧数先夹 300 ⇒ 最大 20（21 那个 imm 是
+                                                              * float→int 的转换上界，实达不到）*/
+            CHECK(yk_gauge_ramp_delta(99999) == 20);          /* 帧数上限 300 ⇒ 实际峰值 20 */
+            CHECK(yk_gauge_ramp_delta(-5) == 0);              /* 负帧数按 0 */
+            /* 回中三档（带符号）：极妖 ⇒ −5、中妖 ⇒ −3、正侧 ⇒ −2、负侧 ⇒ +2/+3/+5 */
+            CHECK(yk_gauge_center_delta(9000) == -5);
+            CHECK(yk_gauge_center_delta(8000) == -5);         /* 含等号（setge）*/
+            CHECK(yk_gauge_center_delta(2500) == -3);
+            CHECK(yk_gauge_center_delta(2000) == -3);
+            CHECK(yk_gauge_center_delta(500) == -2);
+            CHECK(yk_gauge_center_delta(-500) == 2);
+            CHECK(yk_gauge_center_delta(-2500) == 3);
+            CHECK(yk_gauge_center_delta(-9000) == 5);
             }
         }
     }

@@ -688,11 +688,35 @@ int yk_gauge_orbs_delta(int focused);          /* 收刻符时该加多少（聚
  * **TH18 侧的映射（❓ 口径，登记 `TUNING.md` §2.0y）**：TH18 没有 `shotActive` 这个状态量
  *   （它的射击是每帧按 rate 发，没有 TH08 那种 999 帧的「射击周期」）⇒ 本卡用
  *   **「射击键按住」**（`CE_INPUT_HELD & 0x1`）当判据，卡侧每帧把它传给这两个纯函数。*/
-#define YK_GAUGE_SHOOT_DELTA 26     /* = 0x6590(26000) / 999（`Player.cpp:445-452` + `:541`）*/
+#define YK_GAUGE_SHOOT_DELTA 26     /* ★ **放符卡/炸弹期间**每帧的推进量（= 0x6590(26000)/999）
+                                     *   ⚠ 2026-09-22 夜订正：这条**不是「普通开火」**（见下）。*/
+/* ★★★ 2026-09-22 夜（P-C 订正，owner 裁「按一手」）：**持续开火推进 = 时间斜坡**，不是恒定 ±26。
+ *
+ * 一手（`Player::move th08:0x44aec0`，唯一写点 `th08:0x44bedf call 0x43c0bb`）：
+ *   `th08:0x44be67` 取 `player+0xe2ae8`（**连续推进帧数**）→ `fcomp 300.0f`（`th08:0x4b6f30`）
+ *   → 封顶 `21.0f`（imm `0x41a80000`）→ `fdiv 15.0f`（`th08:0x4b6e94`）→ float→int ⇒
+ *   **`delta = floor(min(帧数, 300) / 15)`：0→1→…→21，第 301 帧起恒 21**；方向 = `player+3`（人侧取负）。
+ *   清零时机：**换形**（`th08:0x44b1ac` / `:0x44b3fe`）与**停火 ≥4 帧**（`th08:0x44bf04 push 4`）。
+ *   另有 `player+0xe2ad0`（**连停火帧数，上限 30**）：> 0 时推进支**只减不加**（`th08:0x44be5d`，预热）。
+ *   ⇒ **一手没有 10%/25% 的位置门槛**（owner 那条在 v1.00d 里不存在）。
+ *
+ * ⚠ `shotActive`（`player+0xfdc`）**不是「开火」，是「正在放符卡/炸弹」**（`th08:0x44be0f` 用它跳过推进支；
+ *   我们的对应读数 = `th08` 无、**TH18 的 `[bomb_mgr+0x30]`**）。⇒ 放符卡期间只有 `YK_GAUGE_SHOOT_DELTA`
+ *   那一项在动（`th08:0x44c820` 一族），普通开火走上面的斜坡。*/
+#define YK_GAUGE_RAMP_DIV        15   /* `th08:0x4b6e94` = 15.0f */
+#define YK_GAUGE_RAMP_CAP        21   /* imm `0x41a80000` = 21.0f（封顶）*/
+#define YK_GAUGE_RAMP_FRAMES    300   /* `th08:0x4b6f30` = 300.0f（帧数上限，301 帧起恒 21）*/
+#define YK_GAUGE_IDLE_MAX        30   /* `player+0xe2ad0` 的上限（`th08:0x44c007`）*/
+#define YK_GAUGE_STOP_CLEAR       4   /* `th08:0x44bf04 push 4`：停火 ≥4 帧 ⇒ 推进帧数清零 */
 
 /* 射击中每帧的槽增量（把当前形态推得更极端）：低聚（妖侧）= +26 / 否则 −26。
  * `focused` = 本卡口径的「妖侧」（= 低速位）。*/
 int yk_gauge_shoot_delta(int focused);
+/* **持续开火推进**：`floor(min(帧数, 300)/15)`，封顶 21（一手 `th08:0x44be67`–`0x44bea8`）。*/
+int yk_gauge_ramp_delta(int adv_frames);
+/* **停火回中**的每帧量（一手 `th08:0x44bf70`–`0x44bfde`）：`|g| >= 8000 ⇒ ∓5`、`>= 2000 ⇒ ∓3`、`g > 0 ⇒ ∓2`、
+ * 反向同理 ⇒ 返回**带符号**的 delta；死区由调用方先判（一手 `th08:0x44bf5a` 直接 `set 0`）。*/
+int yk_gauge_center_delta(int gauge);
 /* `AddToYoukaiGauge` 的第一道闸：返回 1 ⇒ **本帧 `param_2 == 0` 的加数全被丢掉**
  * （击破 ±200 / 收刻符 ±111）。`shooting` = 卡侧读到的「射击中」。*/
 int yk_gauge_gate_blocks(int shooting);

@@ -267,6 +267,9 @@ typedef struct {
      *   `>= 7` 才置 `player+5 = is_youkai`），两下本体爆闪的门是 `>= 4`（`th08:0x44b14f` / `:0x44b3a9`）。*/
     uint8_t       night_logged;         /* ★ P-A：夜点初值只记一行 */
     uint8_t       solo_cap_logged;      /* ★ P-E：单人反向封顶「真的夹住了」只记一行 */
+    uint16_t      gauge_ram;            /* ★ P-C：连续推进帧数（一手 `player+0xe2ae8`）*/
+    uint16_t      gauge_idle;           /* ★ P-C：连停火帧数（一手 `player+0xe2ad0`，上限 30）*/
+    uint8_t       gauge_shoot_logged;   /* ★ P-C：推进口径只记一行（1 = 斜坡 / 2 = 放符卡）*/
     uint8_t       fengma;               /* ★ P-B：本帧在不在逢魔（极人 OR 极妖）*/
     int32_t       fengma_score;         /* ★ P-B：本局逢魔自动加分的累计（诊断）*/
     uint32_t      aura_id;
@@ -1404,6 +1407,17 @@ static void yk_orb_spawn(yk_card_t *s, float x, float y, int state)
     ++s_orb_live;
 }
 
+/* ★★★ 2026-09-22 夜（P-C 订正）：TH08 `shotActive`（`player+0xfdc`）的对应读数。
+ * 一手订正：它**不是「开火」**，而是「**正在放符卡/炸弹**」——`th08:0x44be0f` 用它跳过开火推进支，
+ *   而放符卡期间只有 `±26/帧` 那一项在动（`th08:0x44c820` 一族，`shotInterval = 999`）。
+ * TH18 的对应物 = `[bomb_mgr+0x30]`（`engine.h`：`do_bomb` 置 1、`Bomb__can_bomb_and_deathbomb_check
+ *   th18:0x420420` 查它）⇒ 两个 0x43c0bb 闸（击破 ±200 / 收刻符 ±111）与推进支都用它。*/
+static int yk_bomb_active(void)
+{
+    uint8_t *m = CE_BOMB_MGR();
+    return m && *(const int32_t *)(m + CE_BOMB_MGR_ACTIVE) != 0;
+}
+
 /* ============ ★★★ 2026-09-22 夜（owner #27）：**刻符的两支弹字**（+N 提示）====================
  * 一手与两支的分工见 `youkai_core.h` 的同名小节（`th08:0x403460` / `th08:0x403330`）。
  * ⚠ **我们卡里没有 TH08 op90-92 那种「魔使」**：一手弹「+1」的是「击破魔使」那一刻
@@ -1515,7 +1529,7 @@ static int yk_orb_collect(yk_card_t *s, float x, float y)
     /* ★★★ 2026-09-22（P3 第二批）：`AddToYoukaiGauge` 的**第一道闸** —— 射击中（TH08 的
      * `shotActive != 0`）带 `param_2 == 0` 的加数**整条丢掉**（一手 `th08:0x43c0c2`/`:0x43c0cb`，
      * `0x17d6ed4` = `g_Player.shotActive`）⇒ 本卡这里照抄：射击中不收槽（PIV 那笔照记）。*/
-        if (!yk_gauge_gate_blocks(yk_shooting()))
+        if (!yk_gauge_gate_blocks(yk_bomb_active()))
             s->gauge = yk_gauge_add2(s->gauge, yk_gauge_orbs_delta(CE_PLAYER_FOCUSED()), hl, yl);
     }
     ++s->orb_taken;
@@ -1783,38 +1797,52 @@ static void yk_gauge_tick(yk_card_t *s, int focused)
                    capped);
         }
     }
-    /* ★★★ 2026-09-22（P3 第二批）：**射击中每帧 ±26**（一手 `Player.cpp:445-452`：
-     * `AddToYoukaiGauge(0x6590 / shotInterval(999) = 26, param_2 = 1)`，方向 = `shotType & 1`
-     * = `isYoukaiMode` ⇒ 我们的口径里 = 低速位）。
-     * ⚠ **两条 TH08 语义一起照抄**（都在 `FUN` / `Player` 的一手门里）：
-     *   ① 射击中**只**有这一项在动 —— 下面的漂移整段被 `shotActive == 0` 挡住（`Player.cpp:1083`
-     *      的 `this->shotActive == 0` 前置）；② 击破 ±200 / 收刻符 ±111 被 `AddToYoukaiGauge`
-     *      的第一道闸丢掉（`th08:0x43c0c2`；见 `yk_orb_collect` / `yk_on_enemy_killed` 的注）。*/
-    if (shooting) {
-        s->gauge = yk_gauge_add2(s->gauge, yk_gauge_shoot_delta(focused), hl, yl);
-        return;                                         /* ★ 漂移在射击中不跑（一手的前置门）*/
-    }
-    if (focused) {
-        if (s->gauge_focus_run >= 4) {                  /* 一手：`unkE2ad0 >= 4` 才开始动 */
-            d = (s->gauge_hold < 300) ? (int)(s->gauge_hold / 15) : 21;
-            s->gauge = yk_gauge_add2(s->gauge, d, hl, yl);
-            if (s->gauge_hold < 300) ++s->gauge_hold;
+    /* ★★★ 2026-09-22 夜（P-C 订正，owner 裁「按一手」）：三条互斥的分支**照 `Player::move` 重写**。
+     *
+     * 一手（`th08:0x44bdf0`–`0x44bffb`，逐条）：
+     *   ① 门：`!IsMsgActive()` + `player+8 >= 30` + **`shotActive == 0`**（不在放符卡/炸弹）；
+     *   ② **`shotTimer2 >= 0`（射击键按住）⇒ 推进支**：先看 `player+0xe2ad0`（连停火帧数）
+     *      —— **> 0 时只减不加**（预热，`th08:0x44be5d`）；否则 `delta = floor(min(player+0xe2ae8, 300)/15)`
+     *      （封顶 21）向当前形态推，并把 `player+0xe2ae8` +1；
+     *   ③ **`shotTimer2 < 0`（键松开）⇒ 回中支**：`player+0xe2ad0 >= 4` ⇒ `player+0xe2ae8 = 0`；
+     *      `player+0xe2ad0 < 30` ⇒ **只是等（延迟 30 帧）**；到 30 才按三档 `±2/±3/±5` 回中，
+     *      `|g| <= 9` ⇒ **直接置 0**（`th08:0x44bf5a`）。
+     *   ④ **放符卡/炸弹期间**（`shotActive != 0`）：上面两条**都被跳过**，只有 `±26/帧` 那一项在动。*/
+    if (yk_bomb_active()) {                             /* ① 放符卡/炸弹：一手 `th08:0x44c820` 一族 */
+        int bomb_delta = (focused ? 1 : -1) * YK_GAUGE_SHOOT_DELTA;
+        s->gauge = yk_gauge_add2(s->gauge, bomb_delta, hl, yl);
+        if (s->gauge_shoot_logged != 2) {
+            s->gauge_shoot_logged = 2;
+            ce_log("youkai: gauge advance = BOMB/spell period at %+d/frame (TH08 `shotActive` = casting a "
+                   "spell or bomb, NOT ordinary shooting; th08:0x44c820 family)", bomb_delta);
         }
         return;
     }
-    s->gauge_hold = 0;
-    if (s->gauge_focus_run < 30) return;                /* 一手：`unkE2ad0 >= 0x1e` 才开始回落 */
+    if (shooting) {                                     /* ② 推进支（射击键按住）*/
+        if (s->gauge_idle > 0) {                        /* 预热：连停火帧数先减到 0（`th08:0x44be5d`）*/
+            --s->gauge_idle;
+            return;
+        }
+        d = yk_gauge_ramp_delta((int)s->gauge_ram);
+        s->gauge = yk_gauge_add2(s->gauge, focused ? d : -d, hl, yl);   /* 方向 = `player+3` */
+        if (s->gauge_ram < 0xffffu) ++s->gauge_ram;                     /* `th08:0x44bee9` */
+        if (!s->gauge_shoot_logged) {
+            s->gauge_shoot_logged = 1;
+            ce_log("youkai: gauge advance = continuous-fire time ramp, delta = floor(min(frames,300)/15) "
+                   "capped at %d (TH08 `Player::move` th08:0x44be67 - NOT the 10%%/25%% tiers the owner "
+                   "remembered; those do not exist in v1.00d)", (int)YK_GAUGE_RAMP_CAP);
+        }
+        return;
+    }
+    /* ③ 回中支（射击键松开）*/
+    if (s->gauge_idle >= YK_GAUGE_STOP_CLEAR) s->gauge_ram = 0;   /* `th08:0x44bf04 push 4`：>= 4 帧清零 */
+    if (s->gauge_idle < YK_GAUGE_IDLE_MAX) ++s->gauge_idle;       /* 上限 30（`th08:0x44c007`）*/
+    if (s->gauge_idle < YK_GAUGE_IDLE_MAX) return;                /* 延迟 30 帧：`th08:0x44bf1d` */
     g2 = s->gauge;
     if (g2 > YK_GAUGE_DEAD_ZONE || g2 < -YK_GAUGE_DEAD_ZONE) {
-        if (yk_gauge_is_extremely_youkai(g2))        d = -5;
-        else if (yk_gauge_is_moderately_youkai(g2))  d = -3;
-        else if (g2 > 0)                             d = -2;
-        else if (!yk_gauge_is_moderately_human(g2))  d = 2;
-        else if (!yk_gauge_is_extremely_human(g2))   d = 3;
-        else                                        d = 5;
-        s->gauge = yk_gauge_add2(s->gauge, d, hl, yl);
+        s->gauge = yk_gauge_add2(s->gauge, yk_gauge_center_delta(g2), hl, yl);
     } else {
-        s->gauge = 0;                                   /* 一手 `th08:0x44bf61`：死区归零 */
+        s->gauge = 0;                                   /* 一手 `th08:0x44bf5a`：死区归零 */
     }
 }
 
@@ -1834,7 +1862,7 @@ static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
     yk_gauge_limits_solo(focused, &hl, &yl);
     /* ★★★ 2026-09-22（P3 第二批）：同刻符那一笔 —— 射击中 ±200 也被 `AddToYoukaiGauge`
      * 的第一道闸丢掉（一手 `th08:0x43c0c2`；decomp `EnemyManager.cpp:670-677` 传的正是 `param_2 = 0`）。*/
-    if (!yk_gauge_gate_blocks(yk_shooting()))
+    if (!yk_gauge_gate_blocks(yk_bomb_active()))
         s->gauge = yk_gauge_add2(s->gauge, focused ? 200 : -200, hl, yl);
     /* ★★★ 2026-09-22 夜（P-B）：**逢魔那一颗刻符与聚焦无关** —— 一手它在死亡公共尾
      *（`EnemyManager::on_tick` 的 `th08:0x42da2a`/`th08:0x42da38` ⇒ `th08:0x42da41 push 1` /
@@ -2027,6 +2055,9 @@ static int on_ctor(ce_card_t *c)
     s->releases_seen = 0;               /* ★ P8-3：同上（route A′ 计数只增不清）*/
     s->night_logged = 0;
     s->solo_cap_logged = 0;
+    s->gauge_ram = 0;
+    s->gauge_idle = 0;
+    s->gauge_shoot_logged = 0;
     s->fengma = 0;
     s->fengma_score = 0;
     s->claimed_set = -1;                /* ★ P7：认领日志的「变化才打」闩 */
@@ -2811,6 +2842,19 @@ static int on_tick_2(ce_card_t *c)
              *   ⇒ 落点 = 自机（上抛之后回来才被收，至少看得见动作）；② TH08 那支的门
              *   （極端妖怪 + `is_boss_active` + 符卡/机体分支）我们没接，用的是「聚焦即撒」。*/
             if (focused) for (i = 0; i < d; ++i) yk_orb_spawn(s, px, py, YK_ORB_STATE_SPAWN);
+            /* ★★★ 2026-09-22 夜（P-C ③）：**擦弹 +100 只给妖侧**（一手 `Player::sub_44a930 th08:0x44a930`：
+             * `th08:0x44aa6c call 0x40bc40`（`IsYoukai()` = **`player+5`**）为真才
+             * `th08:0x44aa78 push 0 / th08:0x44aa7a push 0x64 / th08:0x44aa81 call 0x43c0bb`）。
+             * ⚠ 两条必须照抄的差别：① **`IsYoukai()`（`player+5`）要等换形 7 帧才置位**
+             *   （`th08:0x44b1d0 cmp [player+8],7` / `:0x44b1d9 mov BYTE [player+5],1`）⇒ 我们读 **`focus_age >= 7`**；
+             *   ② **刻符那笔用的是 `player+3`（`isYoukaiMode`，立即生效）** ⇒ 两笔**不同步**，别合成一条。
+             * 一手恒 **+100（= 1%）**、永不取负；`param_2 = 0` ⇒ 受 `shotActive` 那道闸（= 放符卡中不给）。*/
+            {
+                int32_t hl2, yl2;
+                yk_gauge_limits_solo(focused ? 1 : 0, &hl2, &yl2);
+                if (focused && s->focus_age >= 7 && !yk_gauge_gate_blocks(yk_bomb_active()))
+                    s->gauge = yk_gauge_add2(s->gauge, 100, hl2, yl2);
+            }
         }
         s->graze_seen = graze;
     }
@@ -2877,6 +2921,18 @@ static int on_tick_2(ce_card_t *c)
     yk_aura_tick(s, *(const float *)(CE_PLAYER() + CE_PLAYER_X), *(const float *)(CE_PLAYER() + CE_PLAYER_Y));
     yk_ring_tick();                       /* ★ 切换环的计时（到点自己发 interrupt 3 淡出）*/
     yk_popup_tick();                      /* ★ #27：刻符弹字（寿命 / 上浮 / 排版 / 距离 alpha）*/
+    /* ★★★ 2026-09-22 夜（P-C ②）：**死亡时人妖槽直接置 0**（一手 `Player::begin_death th08:0x44ac01 push 0` /
+     * `th08:0x44ac09 call 0x44e140` = `set_youkai_gauge(0)`）。TH18 侧读 `CE_PLAYER_STATE`：进死亡段那一帧清零。*/
+    {
+        int32_t pst = *(const int32_t *)(CE_PLAYER() + CE_PLAYER_STATE);
+        if (pst == 2 && s->gauge != 0) {
+            s->gauge = 0;
+            s->gauge_ram = 0;
+            s->gauge_idle = 0;
+            ce_log("youkai: gauge reset to 0 on death (TH08 `Player::begin_death` th08:0x44ac09 "
+                   "set_youkai_gauge(0))");
+        }
+    }
     /* ★★★ 2026-09-22 夜（owner 工单 **P-B 逢魔**）：**逢魔时分数自动加 100/帧**（一手一档）。
      * 一手：`Player::on_tick th08:0x44c390` 的 `th08:0x44c554 push 0x64` → `th08:0x44c55b add_to_score`
      *   （人侧）/ `th08:0x44c58c`+`:0x44c593`（妖侧）；门 = 极人 OR 极妖 **且 `Gui::IsMsgActive() == 0`**
