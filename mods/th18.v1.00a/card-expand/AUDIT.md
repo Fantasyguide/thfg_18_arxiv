@@ -19985,3 +19985,59 @@ type 1 的来路要先 grep `push 1` + `push <type>` 的调用点上下文）。
   `python3 tooling/check-docs.py` **全部通过（373 个文件）**。
 - **换关/删卡路径**：`on_run_reset` 与 `on_delete` 各有一处 `yk_deathbomb_tint()` / `yk_tint_restore_all()`（删卡那条另记一行日志）。
 - **本批没改**：`pl0X.sht`、`ability.anm`、任何 wav、站点（`sites.py` 双面与 `sitecheck` 均未变）。
+
+
+## §BE 详录 #59（2026-09-22 夜）：108 永夜抄 #23 —— **本体**的 Shift 光环（+ 两下本体爆闪）
+
+**改了什么**
+
+| 文件 | 改了什么 | 为什么 |
+| --- | --- | --- |
+| `assets/ability/make_youkai_familiar_art.py` | 新增 `AURA_*` / `BODY_FLASH_*` 常量、`gen_aura` / `check_aura` / `gen_body_flash`、ORDER 新行、`main()` 接线 | 光环与两下本体爆闪都是**原生切图 + 零翻译照抄**，走与环/爆闪同一条生成链 |
+| `assets/ability/entries/ORDER.txt` | **末尾追加**一行 `YOUKAI_FAM_AURA` 64×64 + 一段注释 | append-only（既有行一行没动）|
+| `assets/ability/scripts/312_youkai_familiar_aura.anm.txt`、`313_…bodyflash58…`、`314_…bodyflash57…` | 生成物（脚本 312/313/314）| 312 = script54 逐条照抄；313/314 = script58/57 逐条照抄 |
+| `assets/ability/youkai_familiar/YOUKAI_FAM_AURA.png` | 生成物（sprite **481**，entry67）| sprite218 原生切图 |
+| `native/cards/youkai.c` | `yk_aura_kill` / `yk_aura_tick` + `yk_card_t` 4 个新字段；`yk_drop_all` 最前面挂 `yk_aura_kill`；`on_tick_2` 的 Shift 边沿加两下本体爆闪（门 `focus_age >= 4`）与光环开关，每帧跟随 | #23 实装；生命周期挂在**唯一的离开妖侧路径** `yk_drop_all` 上 |
+| `native/tools/verify.py` | `familiar` 场景新增两条 expect（`body Shift aura ON` / `deathbomb window - tinted …`）与一条 fail（`body Shift aura VM spawn FAILED`）| 实跑关键词 |
+| `CAPACITY.md` | 光环 + 两下本体爆闪的**具名登记**（sprite 481 / 脚本 312–314）| 具名行规矩 |
+| `engine/player/th08/03-youkai-body-and-gauge.md` | 新增 §2.6（光环 / 两下爆闪 / `player+8` 真身 / 极端槽位光环的区分）| 结论回流 `engine/` |
+| `TUNING.md` | 新增 §2.0zd（复刻表 + `❓ 自定` #18「**不逐机体变色**」/ #19 `focus_age`）| 本仓规矩 |
+| `SINGLE-CARD-TEST.md` | #23 行状态 + 「#23 怎么落」小节 | owner 要照着实跑验收 |
+
+**一手（本批新增，全部逐指令/逐像素）**
+
+1. **光环 = TH08 `etama.anm` script54**：`Player::move`（`th08:0x44aec0`）`0x44b17d`–`0x44b194` 五参
+   `SpawnEffect(0x16, &player+0x2b4, slot 2, 1, -1)` → 模板表 `0x4c6d30[0x16]`；句柄 `player+0xbe834`；
+   init `0x426c40` 每帧把位置钉到 `g_Player+0x2b4`；妖→人 `0x44b3e3 SetInterrupt(光环, 1)`。
+2. **颜色 = 中性（`vm+0x1f0` = `-1`）**、贴图固定（sprite218，均值 RGB≈(227,133,133)）⇒
+   **TH08 不逐机体变色**（负结论：`Player::move` 范围内的 15 个 `.data` 引用全是函数指针/结构体，没有颜色表）。
+   ⇒ owner 的「机体印象色」**与一手不符**，本批按一手实现固定色，逐机体色登记为 `❓ 自定`（TUNING §2.0zd #18）。
+3. **两下本体爆闪**（`0x44b155` = `0x1d`/script58/`0x80ff8080`、`0x44b3af` = `0x1c`/script57/`0x808080ff`）
+   与使魔那对（`FUN_0042c420` 的 59/60）**不是同一对**（同贴图 sprite193、不同脚本、不同起始 alpha、起在不同对象上）。
+4. **`player+8` = 人妖切换进度计时器（0..7）**：切换帧清零、每帧 +1、`>= 7` 才置 `player+5 = is_youkai`
+   （`0x44b1d0`–`:0x44b1d9`）；两下爆闪的门是 `>= 4` ⇒ 我们映射成 `focus_age`（上一次形态持续 ≥4 帧）。
+   另：`[0x164d0b1] < 4`（`shottype` 双人模式）才换本体脚本/起光环。
+5. **`fsetRand` / `fsetAdd` 在 v8.anmm 里都有**（`fset` 101 / `fsetAdd` 113 / `fsetSub` 115 / `fsetRand` 123，
+   逐条 grep）⇒ 光环脚本**零翻译**，不需要卡侧代劳。
+
+**怎么验证的**
+
+- `make check` **rc=0**（`x87 = 0`、`test_youkai_core` 4502/0、sites 双面、`sitecheck`/`--all`、`contract_check`、
+  `gen_drift`、`capcheck`、`sht-verify`、`anm-verify`、`snd-check`、`dllx87`、`dllverify`、`engine_abi_check`）；
+  `python3 tooling/check-docs.py` 全部通过（373 个文件）。
+- 生成器自带 ⑧ 项自检（光环贴图 = 2 的幂 / 与源单元逐像素一致 / 四角透明 / 可见像素 ≥500）+
+  三条脚本「与 TH08 原文的**全部**差异」打印（应当只有脚本号 + 注释头 + sprite 名）。
+- **本批改到 `ability.anm`** ⇒ **DLL 必须与 `ability.anm` 一起发**；`pl0X.sht` 本次**未改**（只有 `ability.anm` 变）。
+
+**§2 顺带：#24「深蓝色的点」的身份查清了（只查，未实现）**
+
+- **= `ITEM_POINT_SMALL`（道具类型 8）**，一手三条：① 形状 = `etama.anm` 脚本 69 / sprite180 `(0,80,16,16)`
+  里的 **10×10 圆点**，主色 **深蓝 (0,0,102)–(85,102,187)**（而类型 1「点」是 **12×12 方块**、亮蓝 (51,51,204)，
+  脚本 62 / sprite173）；② 来路 = `SpawnItem` 的改写（`th08:0x4400f1`–`0x44010e`：`power >= 0x80` 且类型 0/2
+  ⇒ **改成 8**），另有 `CancelAutoCollect` 一族把地上的 P 点也改成它（并把 VM 脚本换成 `0x45` = 69，
+  与我们读出的「type → 脚本 61+type」完全对上）；③ 语义 = `Item::CollectPointSmall`
+  （`ItemManager.cpp:482-513`）：**只加分**（PoC 线下按距离衰减、十位取整、极端人间 ×2），
+  **不记 `pointItemsCollected`、不推进 1UP、不改 subrank**。
+- 类型全集（社区枚举 `ItemManager.hpp:8-20` 与 `thanm` 读出的脚本号逐条一致）已写进
+  `engine/item/th08/01-time-orbs.md` §2.0；**建议不做**（我们卡里没有 TH08 的 P 点/点道具体系，
+  没有可降格的对象）—— owner 答复原稿在 `SINGLE-CARD-TEST.md` 的「#24 答案」。

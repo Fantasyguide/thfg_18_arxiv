@@ -52,11 +52,20 @@ PRIMS = {
              "跟随 VM 表自愈回收过（正常为 0；见 AUDIT §BE 详录 #56 第 1 节）", False),
             (r"youkai: gauge HUD geometry \(surface px",
              "人妖槽 HUD 的几何自述（P2：用来定「写进去的数 = 屏上的像素」）", False),
+            # ★★★ 2026-09-22 夜（#23）：**本体**的 Shift 光环（TH08 `etama.anm` script54）起来了 ——
+            #   实跑判据 = 按 Shift 进低速后**自机身上**应当出现那圈淡红火花云（固定色，见 TUNING §2.0zd）。
+            (r"youkai: body Shift aura ON",
+             "本体的 Shift 光环起来了（TH08 `Player::move` 0x44b194 → etama script54）", False),
+            # ★ 2026-09-22（#26 风味）：决死窗口里全屏敌弹变红（默认开；开关见 TUNING §2.0zc）
+            (r"youkai: deathbomb window - tinted \d+ live enemy bullet\(s\) red",
+             "决死窗口染红生效（风味选项；退出窗口当帧还原）", False),
         ],
         fail=[(r"youkai: familiar spawn FAILED", "创建失败（池满 / 坐标非法）"),
               (r"youkai: familiar follow-VM table full", "跟随 VM 表满（画面会少使魔）"),
               # ★ 2026-09-22（P4）：使魔的**魔法阵环**（TH08 `etama.anm` script48）起不出来
-              (r"youkai: familiar ring VM spawn FAILED", "魔法阵环没装上（使魔少了那一圈）")],
+              (r"youkai: familiar ring VM spawn FAILED", "魔法阵环没装上（使魔少了那一圈）"),
+              # ★ 2026-09-22 夜（#23）：**本体**光环起不出来（画面少了那一圈，机制不受影响）
+              (r"youkai: body Shift aura VM spawn FAILED", "本体 Shift 光环没装上（自机身上少一圈）")],
     ),
     "emitter-close": dict(
         title="关闭发弹口（TH08 / 卡 108）",

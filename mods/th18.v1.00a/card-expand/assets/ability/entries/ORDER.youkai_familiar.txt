@@ -47,3 +47,9 @@ YOUKAI_FAM_S56_7  ability/youkai_familiar/YOUKAI_FAM_S56_7.png  32x32
 YOUKAI_FAM_RING  ability/youkai_familiar/YOUKAI_FAM_RING.png  64x64
 # ── 2026-09-22 追加：Shift 的**爆闪**（TH08 etama script59/60 共用一张 sprite193；零翻译）
 YOUKAI_FAM_FLASH  ability/youkai_familiar/YOUKAI_FAM_FLASH.png  32x32
+# ── 2026-09-22 夜追加（owner #23）：**本体**的 Shift 光环（单图；TH08 `etama.anm` script54）
+#    一手：`Player::move` `th08:0x44b194 SpawnEffect(0x16, &player+0x2b4, slot 2, color -1)`
+#    ⇒ 模板表 `0x4c6d30[0x16]` = script54，贴图 sprite218 = entry1 `data/etama/etama2.png`
+#    `(0,112,64,64)`（64×64 已经是 2 的幂，无需补边）；句柄存 `player+0xbe834`，妖→人发 interrupt 1。
+#    ⚠ 颜色参 `-1` = 中性 ⇒ **原生不逐机体变色**（一手结论，见 TUNING §2.0zd）。
+YOUKAI_FAM_AURA  ability/youkai_familiar/YOUKAI_FAM_AURA.png  64x64

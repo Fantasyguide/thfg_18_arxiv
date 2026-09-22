@@ -1,0 +1,16 @@
+script script313 {
+    // 由 assets/ability/make_youkai_familiar_art.py 从 TH08 v1.00d `etama.anm` script58 逐条照抄（**零翻译**），别手改。
+    // **本体**那一下爆闪（human->youkai, TH08 effect 0x1d, color 0x80ff8080）：`Player::move`（`th08:0x44aec0`）
+    //   `SpawnEffect(0x1d, &player+0x2b4, 1, …)` ⇒ 模板表 `0x4c6d30[同号]` = etama.anm script58。
+    // ⚠ 与使魔那对（script59/60）**不是同一对**：那两支起在**敌人**身上（`FUN_0042c420`）。
+    // 贴图复用 `YOUKAI_FAM_FLASH.png`（原生同用 sprite193 = data/etama/etama2.png (65,209,30,30)）；脚本自己 `delete()`（+10 帧）⇒ 卡侧不跟踪句柄。
+    sprite(@YOUKAI_FAM_FLASH);
+    zWriteDisable(1);
+    blendMode(1);
+    alpha(0);
+    alphaTime(10, 0, 255);
+    scale(5.0f, 5.0f);
+    scaleTime(10, 0, 0.4f, 0.4f);
++10: // 10
+    delete();
+}

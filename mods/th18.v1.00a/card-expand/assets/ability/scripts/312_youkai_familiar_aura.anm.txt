@@ -1,0 +1,25 @@
+script script312 {
+    // 由 assets/ability/make_youkai_familiar_art.py 从 TH08 v1.00d `etama.anm` script54 逐条照抄（**零翻译**），别手改。
+    // 这是**本体**（自机）人→妖那一下起的光环：`Player::move`（`th08:0x44aec0`）在进妖侧那支
+    //   `0x44b17d`–`0x44b199` `push -1 / 1 / 2 / &player+0x2b4 / 0x16` → `call 0x425870`
+    //   ⇒ 模板表 `0x4c6d30[0x16]` = etama.anm script54；句柄存 `player+0xbe834`。
+    // 生命周期全在脚本里：`alpha(0)` → 20 帧淡入到 255 → `stop()`（等着）→
+    //   `interruptLabel(1)`（妖→人：`th08:0x44b3e3 SetInterrupt(光环, 1)`）= 30 帧淡出 + `delete()`。
+    // 贴图 = entry1 `data/etama/etama2.png` sprite218 64×64（可见像素均值 RGB≈(229, 136, 136)，
+    //   淡红·粉白火花云；`%F0` 那个随机角速度 = 自转 1.5°/帧）。
+    // ⚠ 颜色参是 `-1` = `zAnmVm.color_1` **中性** ⇒ 原生**不**逐机体变色（一手负结论，见 TUNING §2.0zd）。
+    sprite(@YOUKAI_FAM_AURA);
+    zWriteDisable(1);
+    alpha(0);
+    fsetRand(%F0, 1.0f);
+    fsetAdd(%F0, %F0, 0.5f);
+    fset(%F0, 0.02617994f);
+    angleVel(0.0f, 0.0f, %F0);
+    alphaTime(20, 1, 255);
++20: // 20
+    stop();
+    interruptLabel(1);
+    alphaTime(30, 1, 0);
++30: // 50
+    delete();
+}

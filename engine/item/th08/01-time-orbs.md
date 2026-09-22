@@ -59,6 +59,44 @@ ItemManager::spawn_item(Float3 *pos /*[ebp+8]*/, int type /*[ebp+0xc]*/, int sta
 | `th08:0x440115` | `cmp DWORD PTR [ebp+0xc],0x7` → `jne`；`mov DWORD PTR [ebp+0x10],0x3` | **类型 7 ⇒ state 强制 = 3**（时点专属应收态） |
 | `th08:0x440124` | `cmp DWORD PTR [ebp+0xc],0xa` → `jne`；`mov DWORD PTR [ebp+0x10],0x5` + `mov DWORD PTR [ebp+0xc],0x7` | **类型 10 = 时点的另一种生成方式**（⇒ 类型 7 + state 5） |
 
+### 2.0 ★★★ 类型表的全部语义（2026-09-22 补齐；回答卡 108 的 owner #24「深蓝色的点」）
+
+枚举名一手来自**社区反编译**（`local/vendor/th08_dec/src/ItemManager.hpp:8-20`，MIT；与我们样本的
+类型号逐条对得上 —— 见下面「交叉印证」一栏）：
+
+| type | 枚举名 | `etama.anm` 脚本 / sprite | 贴图形状与主色（逐像素量过）| 收下时发生什么 |
+| --- | --- | --- | --- | --- |
+| 0 | `ITEM_POWER_SMALL` | 61 / s172 (0,64,16,16) | 12×12 方块，红 (215,83,83) | 火力 +1 档（满 P 时**降到 type 8**）|
+| 1 | `ITEM_POINT` | 62 / s173 (16,64,16,16) | **12×12 方块**，蓝 (51,51,204) | `CollectPoint()`：加**点**分（PoC 线以上 = `pointItemValue`）**并记 `pointItemsCollected`** ⇒ 推进 1UP 门槛；subrank +10/+3 |
+| 2 | `ITEM_POWER_BIG` | 63 / s174 (32,64,16,16) | 大块，红 (218,96,97) | 火力大档（满 P 时也**降到 type 8**）|
+| 3 | `ITEM_BOMB` | 64 / s175 | 绿 (127,191,137) | 加 bomb 碎片 |
+| 4 | `ITEM_POWER_FULL` | 65 / s176 | 黄 (206,177,95) | 火力拉满 |
+| 5 | `ITEM_EXTEND` | 66 / s177 | 紫 (201,84,219) | 加一命 |
+| 6 | `ITEM_POINT_STAR` | 67 / s178 | 灰白 (165,175,166)，脚本带 `alpha(192)` | 星星点（分会掉？见注）|
+| 7 | `ITEM_TIME` | 68 / s179 | 紫，带 `colorTime` 变色 | **时点**（刻符）＝本文件的主角 |
+| **8** | **`ITEM_POINT_SMALL`** | **69 / s180 (0,80,16,16)** | **10×10 圆点，深蓝 (0,0,102)–(85,102,187)** | `CollectPointSmall()`：**只加分**（PoC 线下按距离衰减）—— 详见下面「type 8 的作用」|
+| 9 | `ITEM_UNK9` | 70（同 s179 贴图，`color(192,192,192)` + `alpha(192)`）| 灰化的刻符 | 未钉（社区枚举名也没给出语义）|
+| 10 | `ITEM_TIME2` | —（**被 `0x440124` 当场改写成 7 + state 5**）| — | 「时点的另一种生成方式」（擦弹）|
+
+**⇒ 卡 108 的 owner #24「TH08 掉一个**深蓝色的点**，不知道干什么用的」= `type 8 / ITEM_POINT_SMALL`**：
+
+- **判据（三条都硬）**：① 形状 —— 它是**圆点**（10×10 圆），而 type 1「点道具」是 12×12 **方块**；
+  ② 颜色 —— 它的像素是**深蓝**（(0,0,102)/(0,0,119)/(85,102,187) 一档，最暗的一族），type 1 是亮蓝 (51,51,204)；
+  ③ 来路 —— `ItemManager::SpawnItem` 开头那条改写（`ItemManager.cpp:33-36`，对应 `th08:0x4400f1`–`0x44010e`）：
+  **`power >= 128` 且类型是 P 点（0/2）⇒ 当场改成 type 8**，另有 `CancelAutoCollect` 一族（`:618-636`）
+  把已经掉在地上的 P 点也改成它（并把 VM 脚本换成 `0x45` = 69 —— 与我们读出的「type 8 → 脚本 69」完全对上）。
+- **它的作用 = 满火力后的「空 P 点」**：满 P 时 P 点已经没有意义，游戏把它降格成**只给分的小点**；
+  收下只加 `pointItemValue` 档的分（極端人間 ×2），**不推进 1UP、不加 subrank**。
+
+**type 8 的作用（`Item::CollectPointSmall` `ItemManager.cpp:482-513`）**：值 = `pointItemValue`
+（自机在 PoC 线以上），否则 `pointItemValue/2 − (y − pocY) × (pointItemValue/1000)`，再**十位取整**；
+`isMaxValue` 过线后恒为满值；**極端人間（`GaugeIsExtremelyHuman`）⇒ 值 ×2**；弹分数、`AddScore`。
+与 type 1 的关键差别：**它不记 `pointItemsCollected`**（不推进 1UP 门槛）、**不调 `IncreaseSubrank`**。
+
+**交叉印证**：`thanm -l 8 -m v2.anmm` 读出的「脚本号 = 61 + type」与社区枚举的**顺序完全一致**
+（0..8 逐条）；`ItemManager.cpp:299-300` 的 `case ITEM_POINT_SMALL: item->CollectPointSmall()` 与
+我们前面读出的「state 3 在收集分派里被排除」是同一条 `switch`（`th08:0x4409xx`）。
+
 写入 item 的初值（`th08:0x440201`–`0x44024b`）：
 
 ```

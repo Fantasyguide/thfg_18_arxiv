@@ -260,6 +260,15 @@ typedef struct {
                                         *   `yk_map_releases`（第二问主动放行的次数，只增不清）*/
     uint32_t      silent;              /* ★★★ 2026-09-22（P8-6）：使魔**查不到**（过场 destroy_all /
                                         *   静默移除）而被松开的次数 —— 原来账上无痕（只有 VM 侧自愈）*/
+    /* ★★★ 2026-09-22 夜（owner #23）：**本体**的 Shift 光环（一手 `Player::move` `th08:0x44aec0`）。
+     *   `aura_id` = 光环 VM（我们的脚本 312 = TH08 `etama.anm` script54；0 = 没起来 / 已经淡完）；
+     *   `aura_on` = 「现在应当在」（低速 = 妖侧）；`aura_logged` = 「起来过」只记一行；
+     *   `focus_age` = **上一次形态切换之后过了几帧** —— 对应一手 `player+8`（人妖切换的进度计时器 0..7，
+     *   `>= 7` 才置 `player+5 = is_youkai`），两下本体爆闪的门是 `>= 4`（`th08:0x44b14f` / `:0x44b3a9`）。*/
+    uint32_t      aura_id;
+    uint16_t      focus_age;
+    uint8_t       aura_on;
+    uint8_t       aura_logged;
 } yk_card_t;
 
 static yk_map_t s_map;              /* 使魔表（(enemy_id, 发射口槽) → 使魔）*/
@@ -629,6 +638,66 @@ static void yk_flash_spawn(int script, float x, float y)
     /* 起不出来只影响观感（10 帧的一闪）⇒ 不记日志（每关都有若干次，会刷屏）。*/
 }
 
+/* ============ ★★★ 2026-09-22 夜（owner #23）：**本体**的 Shift 光环 + 两下**本体**爆闪 ==============
+ * owner 原话：「人妖切换的时候**在本体会有一个机体印象色的光环**」。
+ *
+ * 一手（`Player::move` `th08:0x44aec0`，逐指令；**进妖侧**那支 `0x44b11f` 起）：
+ *   · `0x44b171`–`0x44b19c`：若 `player+0xbe834 == 0`（光环句柄）⇒
+ *     `push -1 / 1 / 2 / &player+0x2b4 / 0x16` → `0x44b194 call 0x425870`
+ *     （`EffectManager::sub_425870_creates_indexed_effect`；re-data 名）⇒ 模板表 `0x4c6d30[0x16]`
+ *     = **`etama.anm` script54**，句柄存 `player+0xbe834`（`zPlayer.__effect_be834`）。
+ *     它的 init（`0x426c40`）每帧把位置钉到**自机**（读全局 `0x17d61ac` 一族 = `player+0x2b4`）⇒ 我们每帧 `set_pos`。
+ *   · **妖→人**那支 `0x44b3cc`–`0x44b3f0`：`0x44b3e3 call 0x407120` = `AnmVm::SetInterrupt(光环, 1)`
+ *     ⇒ 脚本走 `interruptLabel(1)`：**30 帧淡出后自己 `delete()`**；随后卡侧清句柄。
+ *   · 两下**本体**爆闪（一次性，各自 `+10: delete()`；**与使魔那对 59/60 不是同一对**）：
+ *       **人→妖** `0x44b155 SpawnEffect(0x1d, &player+0x2b4, 1, 0x80ff8080)`（我们的 **313** = TH08 script58）；
+ *       **妖→人** `0x44b3af SpawnEffect(0x1c, …, 0x808080ff)`（我们的 **314** = TH08 script57）。
+ *     两支都起在**自机**位置，且与光环同受 `player+8 >= 4` 的门（= 上一次形态至少持续了 4 帧；
+ *     我们这里就是 `s->focus_age`，在**这次**切换的边沿上读「上一次持续了多少帧」）。
+ *   · ⚠ **颜色**：一手的光环颜色参是 `-1` = `zAnmVm.color_1` **中性** ⇒ **TH08 里不逐机体变色**
+ *     （同一条函数范围内的数据引用全扫过，没有颜色表；见 `TUNING.md` §2.0zd 的 `❓ 自定` 那一行）。
+ *     本批按一手实现（固定色的淡红火花云）；「逐机体印象色」要 owner 拍。
+ *
+ * 生命周期（铁律：长持续效果必须交代「被删掉会怎样」）：
+ *   光环只在**妖侧**存在 ⇒ 每一条**离开妖侧**的路都要过 `yk_aura_kill()`，而它们**全都**经过
+ *   `yk_drop_all()`（松 Shift / miss / 局末 / 删卡 / 换关 / 敌人管理器没了）⇒ 把它挂在 `yk_drop_all` 的
+ *   最前面（与「发射口闸」同一个唯一复位口的思路）。kill = 发 `interrupt 1`（30 帧淡出后自删）+ 清句柄。*/
+#define YK_AURA_FLASH_MIN_AGE 4           /* 一手 `player+8 >= 4`（爆闪门；见上）*/
+
+static void yk_aura_kill(yk_card_t *s)
+{
+    if (!s) return;
+    if (s->aura_id) {
+        ce_anm_interrupt(s->aura_id, 1);   /* 脚本 interruptLabel(1)：30 帧淡出 + delete() */
+        s->aura_id = 0;
+    }
+    s->aura_on = 0;
+}
+
+/* 每帧跟随（一手就是每帧钉在自机）+ 自愈（句柄被引擎清过 ⇒ 重起；脚本自己 delete 了 ⇒ 清 0）。*/
+static void yk_aura_tick(yk_card_t *s, float x, float y)
+{
+    if (!s || !s->aura_on) return;
+    if (s->aura_id && !ce_anm_get_vm(s->aura_id)) s->aura_id = 0;   /* 引擎清过 VM 列表 ⇒ 自愈 */
+    if (!s->aura_id) {
+        s->aura_id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_AURA,
+                                  YK_FAM_ANM_LAYER);
+        if (!s->aura_id) {
+            ce_log("youkai: body Shift aura VM spawn FAILED (script %d) - the TH08 body halo "
+                   "(etama.anm script54) is missing this frame",
+                   (int)CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_AURA);
+            return;                                          /* 下一帧再试（脚本没起来不影响机制）*/
+        }
+        if (!s->aura_logged) {
+            s->aura_logged = 1;
+            ce_log("youkai: body Shift aura ON (TH08 `Player::move` 0x44b194 -> etama.anm script54) - "
+                   "fixed light-red spark cloud, mix colour -1 = neutral, follows the player; "
+                   "leaving low speed sends interrupt 1 (30-frame fade then delete)");
+        }
+    }
+    if (!ce_anm_set_pos(s->aura_id, x, y, 0.0f)) s->aura_id = 0;    /* 句柄作废 ⇒ 下一帧自愈重起 */
+}
+
 static void yk_run_action(yk_card_t *s, const yk_action_t *act)   /* s 可为 NULL（卡状态没了也要把敌人收干净）*/
 {
     if (act->kind == YK_ACT_CREATE) {
@@ -681,6 +750,7 @@ static void yk_drop_all(yk_card_t *s, const char *why)
 {
     yk_action_t acts[YK_FAM_MAX];
     unsigned had = yk_map_fam_count(&s_map);
+    yk_aura_kill(s);                     /* ★ #23：离开妖侧的**每一条**路都过这里 ⇒ 光环同帧开始淡出 */
     int n = yk_withdraw_all(&s_map, acts, (int)YK_FAM_MAX);
 
     yk_run_actions(s, acts, n);
@@ -1792,6 +1862,10 @@ static int on_ctor(ce_card_t *c)
     s->releases_seen = 0;               /* ★ P8-3：同上（route A′ 计数只增不清）*/
     s->claimed_set = -1;                /* ★ P7：认领日志的「变化才打」闩 */
     s->flash_pending = 0;
+    s->aura_id = 0;                     /* ★ #23：本体 Shift 光环（低速 = 妖侧才存在）*/
+    s->aura_on = 0;
+    s->aura_logged = 0;
+    s->focus_age = 0;
     s->spiral_quota = 0;                /* ★ #25：换关不开螺旋（下降沿才开）*/
     s->spiral_t = 0;
     s->spell_was = 1;                   /* 开场当作「已经在符卡外」⇒ 不会误触发一次 */
@@ -2565,10 +2639,22 @@ static int on_tick_2(ce_card_t *c)
      *   切换真的发生）时才播，免得每次按 Shift 都像超时。*/
     if (focused != (int)s->gauge_focus_prev) {
         float px = *(const float *)(CE_PLAYER() + CE_PLAYER_X);
+        float py = *(const float *)(CE_PLAYER() + CE_PLAYER_Y);
+        /* ★★★ 2026-09-22 夜（owner #23）：两下**本体**爆闪的门 = 一手 `player+8 >= 4`
+         *（= 上一次形态至少持续了 4 帧，防连按；`player+8` 是切换进度计时器 0..7，见 `yk_aura_*` 的注）。
+         * 读的是**这次边沿之前**的 `focus_age` ⇒ 语义与一手一致；读完这一帧归零。*/
+        int flash_ok = (s->focus_age >= YK_AURA_FLASH_MIN_AGE);
         if (focused) {
             if (yk_map_fam_count(&s_map)) ce_play_sound(0x0cu, px);        /* 人→妖：TH08 id 0x28 = se_invalid */
             s->flash_pending = 1;                 /* ★ #22：使魔重建时在它身上补一支爆闪（310）*/
+            /* ★ #23：本体那一下（一手 `0x44b155 SpawnEffect(0x1d, …, 0x80ff8080)` = 我们的 313）
+             * —— 一手起在**自机**坐标上（`&player+0x2b4`），不是使魔身上。*/
+            if (flash_ok) yk_flash_spawn(CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_BODYFLASH58, px, py);
+            s->aura_on = 1;                       /* ★ #23：妖侧 ⇒ 光环应当在（本帧由 yk_aura_tick 起）*/
         } else {
+            /* ★ #23：妖→人那一下（一手 `0x44b3af SpawnEffect(0x1c, …, 0x808080ff)` = 我们的 314）。*/
+            if (flash_ok) yk_flash_spawn(CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_BODYFLASH57, px, py);
+            yk_aura_kill(s);                      /* 光环收到 interrupt 1（30 帧淡出后自删）*/
             if (yk_map_fam_count(&s_map)) {
                 unsigned fi;
                 ce_play_voice(YOUKAI_FAM_SHIFT, px);   /* 妖→人：TH08 id 0x27 = se_ophide */
@@ -2582,7 +2668,12 @@ static int on_tick_2(ce_card_t *c)
                     }
             }
         }
+        s->focus_age = 0;                     /* ★ #23：一手 `player+8` 在这一帧被清零（0x44b1a5 / 0x44b3f8）*/
     }
+    /* ★★★ 2026-09-22 夜（owner #23）：本体的 Shift 光环 —— 每帧钉在自机（一手的 init `0x426c40`
+     * 就是每帧读自机坐标）+ 自愈。`focus_age` = 上一次切换之后过了几帧（一手 `player+8` 的口径）。*/
+    if (s->focus_age < 60000) ++s->focus_age;
+    yk_aura_tick(s, *(const float *)(CE_PLAYER() + CE_PLAYER_X), *(const float *)(CE_PLAYER() + CE_PLAYER_Y));
     /* ★ #26 风味选项：决死窗口里全屏敌弹变红（判据 = 既有原语 `player+0x476ac == 4`）。*/
     (void)yk_deathbomb_tint();
     yk_gauge_tick(s, focused);

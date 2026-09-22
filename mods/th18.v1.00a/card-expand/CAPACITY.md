@@ -131,6 +131,19 @@
 - 一手：`th08:0x42c44e` / `0x42c4ef` 的 `SpawnEffect(0x1f / 0x1e, &enemy+0x2d88, 1, …)` → 模板表
   `0x4c6d30[0x1f]` = script59、`[0x1e]` = script60；两支共用 `etama2.png (65,209,30,30)`。
 
+#### 108 **本体**的 Shift 光环 + 两下本体爆闪（2026-09-22 夜，#23）—— 具名登记
+
+- 资产：`ability.anm` **单图行** `YOUKAI_FAM_AURA`（`ability/youkai_familiar/YOUKAI_FAM_AURA.png` 64×64）
+  ⇒ sprite **481**；脚本 **312**（TH08 `etama.anm` script54，**零翻译**照抄）。单图行、不是图集 entry
+  ⇒ 不吃任何图集画布，`abcard.anm` entry 数不动。
+- 另外两支复用**同一张爆闪图**（`YOUKAI_FAM_FLASH`，sprite480）⇒ **不新增贴图**：
+  脚本 **313**（TH08 script58，人→妖，色 `0x80ff8080`）/ **314**（script57，妖→人，色 `0x808080ff`）。
+- 运行时：光环**常态最多 1 支**（自机身上；`yk_aura_tick` 每帧跟随 + 自愈）；爆闪是**瞬时**
+  （脚本自己 `+10: delete()`）。⇒ 常驻 VM 增量 = 1，不进上表的容量行，只在此具名。
+  实跑判据 = 低速时自机身上应当有那一圈（日志 `youkai: body Shift aura ON`）。
+- 一手：`Player::move`（`th08:0x44aec0`）`0x44b194 SpawnEffect(0x16, &player+0x2b4, slot 2, color -1)`
+  ⇒ 模板表 `0x4c6d30[0x16]` = script54；妖→人 `0x44b3e3 SetInterrupt(光环, 1)`。
+
 #### 音效表扩容：新 SE 槽的具名登记（2026-09-22）
 
 - **`0x5d` `YOUKAI_FAM_SHIFT`**（`assets/voice/ORDER.txt` 第 9 个新行；`patch/th18/voice.js` 里 id 显式写 93）

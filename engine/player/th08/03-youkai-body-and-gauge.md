@@ -316,6 +316,72 @@ solo-youkai，逐套数值见 [`research-th08-night-points.md`](https://) 的同
 ⇒ **结论**：TH18 没有「人妖槽」这个系统（它没有人类/妖怪双形态），**没有对应字段、更没有写点**；
 卡 108 若要做人妖槽，**6 个限值必须由卡自己维护**（数值抄 §2.3/§2.4，载体自建）。
 
+### 2.6 ★★★ 人妖切换那一刻：**本体**的光环 + 两下爆闪（2026-09-22 夜一手，卡 108 #23）
+
+> 起因：owner「人妖切换的时候**在本体会有一个机体印象色的光环**」。
+> 全部一手来自 `Player::move`（`th08:0x44aec0`，社区名）里的**两支**——进妖侧那支从 `0x44b11f` 起、
+> 妖→人那支从 `0x44b379` 起；两者都只做「换本体脚本 + 特效 + 计时器」，**不改弹、不改判定**。
+
+#### 2.6.1 光环（持续特效）= `etama.anm` script54
+
+| 项 | 一手 |
+| --- | --- |
+| 起 | `0x44b171` 门 `player+0xbe834 == 0` → `0x44b17d`–`0x44b194` 五次 `push` + `call 0x425870`（5 参，见下）|
+**那五个实参逐条**（`ret 0x14` ⇒ 恰好 5 参）：`push -1`（→ `vm+0x1f0` 颜色）/ `push 1`（未读，ZUN 的填充位）/
+`push 2`（**索引槽位**，`0x42587a add eax,0x280; imul eax,eax,0x360`）/ `push &player+0x2b4`（位置）/
+`push 0x16`（模板号）；`ecx = 0x4ece60`（EffectManager），callee 名 =
+`EffectManager::sub_425870_creates_indexed_effect`（re-data），它再用 manager 的 `+0x8b054`（`etama_anm`）装脚本。
+
+| 模板 | `0x4c6d30[0x16]` = **script54**（init `0x426c40`、update 0）|
+| 句柄 | `0x44b19c mov [player+0xbe834], eax`（re-data 名 `zPlayer.__effect_be834`）|
+| 位置 | init `0x426c40`：`0x426c5f mov ecx,ds:0x17d61ac` 一族 ⇒ 每帧把 VM 位置钉到 **`g_Player+0x2b4`**（`0x17d5ef8 + 0x2b4`）|
+| 颜色 | 第 5 参 `-1` → `0x425943 mov [vm+0x1f0], eax` = `zAnmVm.color_1` **中性**（`0xFFFFFFFF`）⇒ **不逐机体变色** |
+| 贴图 | `etama2.png` sprite218 `(0,112,64,64)` 64×64：可见 1380 px、均值 RGB ≈ **(227,133,133)**、色相直方图「红 940 + 白/灰 440」⇒ 淡红·粉白火花云 |
+| 脚本行为 | 淡入 20 帧 → `stop()` → `interruptLabel(1)` 淡出 30 帧 → `delete()`；自转 **1.5°/帧**（逐条见下）|
+| 销毁 | 妖→人那支 `0x44b3d8`–`0x44b3e8`：`SetInterrupt(光环, 1)`（`0x407120`）⇒ 30 帧淡出后自删；`0x44b3eb` 清句柄 |
+
+
+**script54 正文逐条**（`thanm -l 8 -m v2.anmm etama.anm`）：`sprite(sprite218)` / `zWriteDisable(1)` /
+`alpha(0)` / `fsetRand(%F0, 1.0f)` / `fsetAdd(%F0, %F0, 0.5f)` / `fset(%F0, 0.02617994f)` /
+`angleVel(0.0f, 0.0f, %F0)`（随机基准 + 每帧 +1.5°）/ `alphaTime(20, 1, 255)` / `+20: stop()` /
+`interruptLabel(1){ alphaTime(30, 1, 0); +30: delete(); }`。
+⚠ 这三个浮点助记符在 v8 anmm 里**都有**（`fset` 101 / `fsetAdd` 113 / `fsetRand` 123）⇒ 搬到 TH18 **零翻译**。
+
+**负结论（省后人白找）**：把 `Player::move`（`0x44aec0`–`0x44d000`）里所有落在 `.rdata/.data` 的引用
+全捞出来看过一遍：15 个引用**全是函数指针/结构体**，**没有逐机体颜色表**；光环的贴图来自共享的
+`etama.anm`（不是各机体自己的 `playerNN.anm`）⇒ **TH08 的这圈光环是固定色**，
+「机体印象色」在样本里**找不到出处**（owner 的口径与一手不符，如实登记在 `TUNING.md` §2.0zd）。
+
+#### 2.6.2 两下**一次性**爆闪（本体）—— 与使魔那一对**不是同一对**
+
+| 方向 | 一手 | 模板 → 脚本 | 颜色（`0x425430` 的第 4 参）|
+| --- | --- | --- | --- |
+| 人→妖 | `0x44b155 push 0x80ff8080 / push 1 / push &player+0x2b4 / push 0x1d` → `0x44b16c call 0x425430` | `[0x1d]` = script**58**（`alpha(0)→255`、`scale 5.0→0.4`，`+10: delete()`）| `0x80ff8080` |
+| 妖→人 | `0x44b3af push 0x808080ff / … / push 0x1c` → `0x44b3c7` 同函数 | `[0x1c]` = script**57**（`alpha(0)`、`scale 0.5→5.0`）| `0x808080ff` |
+
+两支都用 `sprite193`（`etama2.png (65,209,30,30)`）——**与使魔那对（`FUN_0042c420` 的 script59/60）用的
+是同一张贴图但不同的脚本**：59 = `alpha(96)→0`（起在**敌人**身上）、58 = `alpha(0)→255`（起在**自机**身上）。
+⇒ 移植时**别把这两对混成一对**。
+
+#### 2.6.3 `player+8` 的真身（re-data 名 `__maybe_time_in_focused_unfocused_state` 是**错的**）
+
+它是**人妖切换的进度计时器（0..7）**，两支共用：
+
+- 切换开始那帧清零：`0x44b1a5`（人→妖）/ `0x44b3f8`（妖→人）；
+- 之后每帧 `+1`：`0x44b1be inc ecx`（另一支同理）；
+- `>= 7` 才把 **`player+5 = is_youkai`** 置 1：`0x44b1d0 cmp [player+8],7` / `0x44b1d9 mov BYTE [player+5],1`
+  ⇒ **视觉当帧就换**（`0x44b13a push 5` 换本体脚本发生在计时器清零之前），而**标志位要等 7 帧**；
+- 两下爆闪的门是 **`>= 4`**：`0x44b14f` / `0x44b3a9`。
+
+**同区块的旁支（别与光环搞混）**：进妖侧那一支外面还有 `[0x164d0b1] < 4` 的门
+（`0x164d0b1` = `GAME_MANAGER+0x3dba9` = `shottype`）—— `>= 4` 是**单人机体**（没有妖侧搭档）
+⇒ 不换本体脚本、也不起光环（`0x44b11f` / `0x44b379` 两处同形）。
+
+**另一支「极端槽位光环」**（不是 Shift 光环）：`0x44c02e`–`0x44c051` 在
+`gauge_is_extremely_human` **或** `gauge_is_moderately_youkai`（`0x406d10` / `0x406d70`）时起
+`SpawnEffect(0x19, &player+0x2b4, slot 8, -1)` ⇒ 脚本**35**（sprite196、`blendMode(1)`、−11.25°/帧），
+句柄存 `player+0xe2b24`；`Player::on_tick`（`0x44c390`）按全局 `0x160f534` 开关它的 `vm+0x1f8` bit19。
+
 ## 3. 对卡 108 的落点（TH18 侧）
 
 | 项 | TH18 有没有现成的 | 建议 |

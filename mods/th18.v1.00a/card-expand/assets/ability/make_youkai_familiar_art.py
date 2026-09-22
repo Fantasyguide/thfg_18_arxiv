@@ -181,6 +181,32 @@ FLASH_SCRIPT_NO_0 = 310        # 人→妖（TH08 特效 0x1f）
 FLASH_SCRIPT_NO_1 = 311        # 妖→人（TH08 特效 0x1e）
 FLASH_NAME = "YOUKAI_FAM_FLASH"
 
+# ── ★★★ 2026-09-22 夜（owner #23）：**本体**的那圈 Shift 光环 + 两下**本体爆闪** ────────────────
+# 一手（`Player::move` `th08:0x44aec0`，逐指令）：
+#   · **进妖侧**（`0x44b171`–`0x44b19c`）：若 `player+0xbe834 == 0` ⇒
+#     `push -1 / 1 / 2 / &player+0x2b4 / 0x16` → `0x44b194 call 0x425870`（`EffectManager::sub_425870_creates_indexed_effect`）
+#     ⇒ 模板表 `0x4c6d30[0x16]` = **`etama.anm` script54**（init = `0x426c40` 把位置钉在自机 `0x17d61ac` 一族），
+#     句柄存 `player+0xbe834`（re-data 名 `zPlayer.__effect_be834`）；第 5 参 `-1` = `zAnmVm.color_1`（`+0x1f0`）
+#     = **中性（不改色）** ⇒ **TH08 的光环不逐机体变色**（同一条函数的 `.data` 引用全扫过，没有颜色表）。
+#   · **妖→人**（`0x44b3cc`–`0x44b3f0`）：`0x44b3e3 call 0x407120` = `AnmVm::SetInterrupt(光环, 1)` ⇒ 淡出 30 帧后自删 + 清句柄。
+#   · 同区块两下一次性爆闪（**与使魔那对 59/60 不是一对**）：
+#       **人→妖** `0x44b155 SpawnEffect(0x1d, &player+0x2b4, 1, 0x80ff8080)` ⇒ `[0x1d]` = script58；
+#       **妖→人** `0x44b3af SpawnEffect(0x1c, …, 0x808080ff)` ⇒ `[0x1c]` = script57；
+#       两支都 `push 0x1` 起在**自机**坐标，且都与光环同受 `player+8 >= 4` 的门。
+#   · `player+8` 的真身（顺手钉死）：人妖切换的**进度计时器** 0..7 —— 切换那帧清零（`0x44b1a5` / `0x44b3f8`），
+#     每帧 `+1`（`0x44b1be`），`>= 7` 才置 `player+5 = is_youkai`（`0x44b1d0`–`:0x44b1d9`）；爆闪的门是 `>= 4`。
+# ⚠ **两支本体爆闪复用我们已经切好的 `YOUKAI_FAM_FLASH.png`**（原生同样用 sprite193）⇒ 不新增贴图。
+# ⚠ 光环脚本用了 `fsetRand` / `fsetAdd` —— **v8.anmm 里都有**（`fset` 101 / `fsetAdd` 113 / `fsetRand` 123，
+#   逐条 grep 过 `v8.anmm`）⇒ 又是**零翻译**照抄。
+AURA_SRC_SCRIPT = 54
+AURA_SPRITE = 218
+AURA_SCRIPT_NO = 312          # 接着 311
+AURA_NAME = "YOUKAI_FAM_AURA"
+BODY_FLASH_SRC_0 = 58         # 人→妖（TH08 特效 0x1d，色 0x80ff8080）
+BODY_FLASH_SRC_1 = 57         # 妖→人（TH08 特效 0x1c，色 0x808080ff）
+BODY_FLASH_SCRIPT_NO_0 = 313
+BODY_FLASH_SCRIPT_NO_1 = 314
+
 _SPRITE_RE = re.compile(r"sprite(\d+):\s*\{\s*x:\s*(\d+),\s*y:\s*(\d+),\s*w:\s*(\d+),\s*h:\s*(\d+)\s*\}")
 _TOKEN_RE = re.compile(r"@([A-Za-z_][A-Za-z0-9_]*)")
 _FILE_RE = re.compile(r"^(\d+)_([A-Za-z_][A-Za-z0-9_]*)\.anm\.txt$")
@@ -378,6 +404,12 @@ def write_order(rows):
         f"{RING_NAME}  ability/youkai_familiar/{RING_NAME}.png  64x64",
         "# ── 2026-09-22 追加：Shift 的**爆闪**（TH08 etama script59/60 共用一张 sprite193；零翻译）",
         f"{FLASH_NAME}  ability/youkai_familiar/{FLASH_NAME}.png  32x32",
+        "# ── 2026-09-22 夜追加（owner #23）：**本体**的 Shift 光环（单图；TH08 `etama.anm` script54）",
+        "#    一手：`Player::move` `th08:0x44b194 SpawnEffect(0x16, &player+0x2b4, slot 2, color -1)`",
+        "#    ⇒ 模板表 `0x4c6d30[0x16]` = script54，贴图 sprite218 = entry1 `data/etama/etama2.png`",
+        "#    `(0,112,64,64)`（64×64 已经是 2 的幂，无需补边）；句柄存 `player+0xbe834`，妖→人发 interrupt 1。",
+        "#    ⚠ 颜色参 `-1` = 中性 ⇒ **原生不逐机体变色**（一手结论，见 TUNING §2.0zd）。",
+        f"{AURA_NAME}  ability/youkai_familiar/{AURA_NAME}.png  64x64",
     ]
     lines = hdr + [f"{n}  {p}  {s}" for n, p, s, _k, _i in rows] + tail
     OUT_ORDER.parent.mkdir(parents=True, exist_ok=True)
@@ -682,6 +714,129 @@ def check_flash(flash, rects):
     print(f"⑦ {path.name} {size[0]}×{size[1]}：与源单元逐像素一致、可见像素 {vis} ✓")
 
 
+def gen_aura(tmp: Path):
+    """切**本体 Shift 光环**的贴图（sprite218）+ 逐条照抄 script54（零翻译）。
+
+    → (png 路径, 画布尺寸, 可见像素数, cell 字节, (正文, 期望正文, 原文, 脚本号, 源脚本号))
+    """
+    spec, png = read_anm(TH08_DAT / RING_SRC_ANM, tmp, RING_SRC_ENTRY)
+    rects, _sheet = parse_entry(spec, RING_SRC_ENTRY)
+    if AURA_SPRITE not in rects:
+        sys.exit(f"{RING_SRC_ANM} 的 {RING_SRC_ENTRY} 里没有 sprite{AURA_SPRITE}")
+    x, y, w, h = rects[AURA_SPRITE]
+    original = extract_script(spec, AURA_SRC_SCRIPT)
+    body_sprites = script_sprites(spec, AURA_SRC_SCRIPT)
+    if body_sprites != [AURA_SPRITE]:
+        sys.exit(f"{RING_SRC_ANM} script{AURA_SRC_SCRIPT} 引用 {body_sprites}，预期只有 [{AURA_SPRITE}]")
+    # 源脚本的四处「结构指纹」：任一处变了就说明源动了，别默默照抄
+    for need in ("fsetRand(", "fsetAdd(", "interruptLabel(1)", "angleVel("):
+        if need not in original:
+            sys.exit(f"{RING_SRC_ANM} script{AURA_SRC_SCRIPT} 里没有 `{need}`（源变了？）")
+
+    im = Image.open(png).convert("RGBA")
+    cell = im.crop((x, y, x + w, y + h))
+    cw, ch = canvas_size(w, h)
+    canvas = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
+    canvas.paste(cell, ((cw - w) // 2, (ch - h) // 2))
+    OUT_ART.mkdir(parents=True, exist_ok=True)
+    out_png = OUT_ART / f"{AURA_NAME}.png"
+    canvas.save(out_png)
+    vis = sum(1 for a in canvas.getchannel("A").get_flattened_data() if a > 32)
+    px = [q for q in cell.get_flattened_data() if q[3] > 32]
+    mean = tuple(round(sum(q[i] for q in px) / len(px)) for i in range(3)) if px else (0, 0, 0)
+
+    head = (f"    // 由 assets/ability/make_youkai_familiar_art.py 从 TH08 v1.00d `{RING_SRC_ANM}` "
+            f"script{AURA_SRC_SCRIPT} 逐条照抄（**零翻译**），别手改。\n"
+            f"    // 这是**本体**（自机）人→妖那一下起的光环：`Player::move`（`th08:0x44aec0`）在进妖侧那支\n"
+            f"    //   `0x44b17d`–`0x44b199` `push -1 / 1 / 2 / &player+0x2b4 / 0x16` → `call 0x425870`\n"
+            f"    //   ⇒ 模板表 `0x4c6d30[0x16]` = etama.anm script{AURA_SRC_SCRIPT}；句柄存 `player+0xbe834`。\n"
+            f"    // 生命周期全在脚本里：`alpha(0)` → 20 帧淡入到 255 → `stop()`（等着）→\n"
+            f"    //   `interruptLabel(1)`（妖→人：`th08:0x44b3e3 SetInterrupt(光环, 1)`）= 30 帧淡出 + `delete()`。\n"
+            f"    // 贴图 = entry1 `{RING_SRC_ENTRY}` sprite{AURA_SPRITE} {w}×{h}（可见像素均值 RGB≈{mean}，\n"
+            f"    //   淡红·粉白火花云；`%F0` 那个随机角速度 = 自转 1.5°/帧）。\n"
+            f"    // ⚠ 颜色参是 `-1` = `zAnmVm.color_1` **中性** ⇒ 原生**不**逐机体变色（一手负结论，见 TUNING §2.0zd）。")
+    body = original.replace(f"script script{AURA_SRC_SCRIPT} {{",
+                            f"script script{AURA_SCRIPT_NO} {{\n{head}", 1)
+    body = body.replace(f"sprite(sprite{AURA_SPRITE})", f"sprite(@{AURA_NAME})")
+    want = original.replace(f"script script{AURA_SRC_SCRIPT} {{",
+                            f"script script{AURA_SCRIPT_NO} {{\n{head}", 1)
+    want = want.replace(f"sprite(sprite{AURA_SPRITE})", f"sprite(@{AURA_NAME})")
+    code = "\n".join(l for l in body.splitlines() if not l.strip().startswith("//"))
+    if _SCRIPT_SPRITE_RE.search(code):
+        sys.exit("光环脚本的**指令**里还有没替换的 sprite 引用")
+    OUT_SCRIPTS.mkdir(parents=True, exist_ok=True)
+    fname = f"{AURA_SCRIPT_NO}_youkai_familiar_aura.anm.txt"
+    if not _FILE_RE.match(fname):
+        sys.exit(f"文件名不合 build_ability.py 的约定：{fname}")
+    (OUT_SCRIPTS / fname).write_text(body + "\n", encoding="utf-8")
+    print(f"[aura] {out_png.name}  ← {RING_SRC_ANM} sprite{AURA_SPRITE} {rects[AURA_SPRITE]} → {cw}×{ch}"
+          f"（可见像素 {vis}，均值 RGB≈{mean}）")
+    print(f"[aura] {fname}  ← {RING_SRC_ANM} script{AURA_SRC_SCRIPT}（逐条照抄，零翻译；"
+          f"fsetRand/fsetAdd 在 v8.anmm 里都有）")
+    return out_png, (cw, ch), vis, cell.tobytes(), (body, want, original, AURA_SCRIPT_NO, AURA_SRC_SCRIPT)
+
+
+def check_aura(aura, rects):
+    """⑧ 光环贴图：2 的幂 + 与源单元逐像素一致 + 非空（且**不是**空心的 —— 它是火花云）。"""
+    path, size, vis, cell_bytes, _sc = aura
+    im = Image.open(path).convert("RGBA")
+    assert im.size == size, f"⑧ {path.name} 是 {im.size}，标称 {size}"
+    assert (size[0] & (size[0] - 1)) == 0 and (size[1] & (size[1] - 1)) == 0, \
+        f"⑧ {path.name} 尺寸 {size} 不是 2 的幂"
+    x, y, w, h = rects[AURA_SPRITE]
+    bx, by = (size[0] - w) // 2, (size[1] - h) // 2
+    assert im.crop((bx, by, bx + w, by + h)).tobytes() == cell_bytes, \
+        f"⑧ {path.name} 与 {RING_SRC_ANM} sprite{AURA_SPRITE} 不逐像素一致"
+    assert vis >= 500, f"⑧ {path.name} 只有 {vis} 个可见像素（火花云应当 ≳1000）"
+    a = im.getchannel("A")
+    corners = max(a.getpixel((0, 0)), a.getpixel((size[0] - 1, 0)),
+                  a.getpixel((0, size[1] - 1)), a.getpixel((size[0] - 1, size[1] - 1)))
+    assert corners == 0, f"⑧ {path.name} 四角不透明（alpha {corners}）"
+    print(f"⑧ {path.name} {size[0]}×{size[1]}：与源单元逐像素一致、四角透明、可见像素 {vis} ✓")
+
+
+def gen_body_flash(tmp: Path):
+    """**本体**的两下爆闪（TH08 script58 / 57）—— 复用爆闪贴图，逐条照抄（零翻译）。
+
+    → {文件名: (正文, 期望正文, 原文, 脚本号, 源脚本号)}
+    """
+    spec, png = read_anm(TH08_DAT / RING_SRC_ANM, tmp, RING_SRC_ENTRY)
+    rects, _sheet = parse_entry(spec, RING_SRC_ENTRY)
+    if FLASH_SPRITE not in rects:
+        sys.exit(f"{RING_SRC_ANM} 的 {RING_SRC_ENTRY} 里没有 sprite{FLASH_SPRITE}")
+    x, y, w, h = rects[FLASH_SPRITE]
+    out = {}
+    for src_num, dst_no, tag in ((BODY_FLASH_SRC_0, BODY_FLASH_SCRIPT_NO_0,
+                                  "human->youkai, TH08 effect 0x1d, color 0x80ff8080"),
+                                 (BODY_FLASH_SRC_1, BODY_FLASH_SCRIPT_NO_1,
+                                  "youkai->human, TH08 effect 0x1c, color 0x808080ff")):
+        original = extract_script(spec, src_num)
+        body_sprites = script_sprites(spec, src_num)
+        if body_sprites != [FLASH_SPRITE]:
+            sys.exit(f"{RING_SRC_ANM} script{src_num} 引用 {body_sprites}，预期只有 [{FLASH_SPRITE}]")
+        if "blendAdditiveSet" in original:
+            sys.exit(f"{RING_SRC_ANM} script{src_num} 用了 blendAdditiveSet（那要翻译；本脚本按零翻译处理）")
+        head = (f"    // 由 assets/ability/make_youkai_familiar_art.py 从 TH08 v1.00d `{RING_SRC_ANM}` "
+                f"script{src_num} 逐条照抄（**零翻译**），别手改。\n"
+                f"    // **本体**那一下爆闪（{tag}）：`Player::move`（`th08:0x44aec0`）\n"
+                f"    //   `SpawnEffect(0x{'1d' if src_num == BODY_FLASH_SRC_0 else '1c'}, "
+                f"&player+0x2b4, 1, …)` ⇒ 模板表 `0x4c6d30[同号]` = etama.anm script{src_num}。\n"
+                f"    // ⚠ 与使魔那对（script59/60）**不是同一对**：那两支起在**敌人**身上（`FUN_0042c420`）。\n"
+                f"    // 贴图复用 `{FLASH_NAME}.png`（原生同用 sprite{FLASH_SPRITE} = {RING_SRC_ENTRY} "
+                f"({x},{y},{w},{h})）；脚本自己 `delete()`（+10 帧）⇒ 卡侧不跟踪句柄。")
+        body = original.replace(f"script script{src_num} {{", f"script script{dst_no} {{\n{head}", 1)
+        body = body.replace(f"sprite(sprite{FLASH_SPRITE})", f"sprite(@{FLASH_NAME})")
+        want = original.replace(f"script script{src_num} {{", f"script script{dst_no} {{\n{head}", 1)
+        want = want.replace(f"sprite(sprite{FLASH_SPRITE})", f"sprite(@{FLASH_NAME})")
+        fname = f"{dst_no}_youkai_familiar_bodyflash{src_num}.anm.txt"
+        if not _FILE_RE.match(fname):
+            sys.exit(f"文件名不合 build_ability.py 的约定：{fname}")
+        (OUT_SCRIPTS / fname).write_text(body + "\n", encoding="utf-8")
+        out[fname] = (body, want, original, dst_no, src_num)
+        print(f"[bodyflash] {fname}  ← {RING_SRC_ANM} script{src_num}（逐条照抄，零翻译；{tag}）")
+    return out
+
+
 # ── main ─────────────────────────────────────────────────────────────
 
 def main():
@@ -741,6 +896,18 @@ def main():
         flash = gen_flash(tmp)
         check_flash(flash, parse_entry(read_anm(TH08_DAT / RING_SRC_ANM, tmp, RING_SRC_ENTRY)[0],
                                       RING_SRC_ENTRY)[0])
+        # ★★★ 2026-09-22 夜（owner #23）：**本体**光环（script54 → 312）+ 两下本体爆闪（58/57 → 313/314）
+        aura = gen_aura(tmp)
+        check_aura(aura, parse_entry(read_anm(TH08_DAT / RING_SRC_ANM, tmp, RING_SRC_ENTRY)[0],
+                                    RING_SRC_ENTRY)[0])
+        body_flash = gen_body_flash(tmp)
+        check_compile({**scripts, f"aura{AURA_SCRIPT_NO}": aura[4]})
+        check_compile({**scripts, **{f"bodyflash{k}": v for k, v in body_flash.items()}})
+        aura_body, aura_want, aura_orig, _ai, _asrc = aura[4]
+        print("\n=== 光环脚本与 TH08 原文的**全部**差异（应当只有：脚本号 + 注释头 + sprite 名）")
+        for line in difflib.unified_diff(aura_orig.splitlines(), aura_body.splitlines(),
+                                         "TH08-original", "generated", lineterm="", n=0):
+            print(line)
         check_compile({**scripts, f"flash{FLASH_SCRIPT_NO_0}": flash[4][f"{FLASH_SCRIPT_NO_0}_youkai_familiar_flash{FLASH_SRC_SCRIPT_0}.anm.txt"],
                        f"flash{FLASH_SCRIPT_NO_1}": flash[4][f"{FLASH_SCRIPT_NO_1}_youkai_familiar_flash{FLASH_SRC_SCRIPT_1}.anm.txt"]})
         check_compile({**scripts, f"ring{RING_SCRIPT_NO}": ring[4]})
