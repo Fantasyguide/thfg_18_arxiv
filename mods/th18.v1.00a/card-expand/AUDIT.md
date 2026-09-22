@@ -19158,3 +19158,92 @@ commit `7647511` 才放出）⇒ #3（音效没屏蔽）/ #4 / #6（灵界结束
    `"token-take" -> id 0x0c`（若那一帧还出现 `"ufo-spawn"`，那是 UFO 入场的两声，
    一手也是同帧，见上表 #4）。
 3. Ufoalert 那一声应明显**变轻**（−14 dB，与 TH12 同）。
+
+## §BE 详录 #55（2026-09-22 晚）：P4 工单（108 永夜抄）—— owner 实跑四条：**隐藏原生子机 / 藍在敌人面前旋转 / 人妖槽贴图 / 永点满速**
+
+> **谁做的**：P4（108）子 agent，2026-09-22 晚。
+> **owner 四条原话（逐字）**：①「shift 之后原子机没有被隐藏」②「并且添加的妖子机本体应当追着敌人动」
+> ③「人妖槽 hud 不对，它肯定是有 th18 贴图的」→ **随后更正**「**口胡了，你得把 th08 的贴图搞过来**」
+> （即：按 TH08 的贴图，不是找 TH18 的原生量表）④「然后永点的吸收速度不对，很慢，像是有一个很小的
+> 加速度似的，应该刚开始就满速」。
+> **owner 对本条 B 的追加线索（逐字）**：「**th08 灵梦妖子机肯定是八云蓝在敌人面前旋转，甚至包括旋转
+> 的贴图 and 旋转动画（虽然只是 rotate）**」。
+> **没部署**：不跑 `make release` / `sync_modkit_dll.sh`、不写 `/mnt/d/...`、不碰 modkit。
+> **不新增站点**：A 条复用既有的 `ce_native_option_hide_*` 层（111 那一套，站点 `0x45d610`/`0x45e930`
+> 早就在案）；B/C/D 全是卡侧内存读写与既有的 anm VM。
+
+### 1. 一行一条结论（一手 + 可信度）
+
+| # | 结论 | 可信度 | 一手（地址 / 出处） |
+| --- | --- | --- | --- |
+| A | TH08 进低速那一帧把**同一个子机对象**换成妖侧脚本（人侧那套**不再存在**）⇒ TH18 侧低速必须把原生 4 格子机关掉 | ✅ | 本体 `th08:0x44b12b push 0x5` / `:0x44b385 push 0x0`；子机 `th08:0x44e3d7 push 0x12`、`:0x44ea6f push 0x1d`、`:0x44eba7 push 0x18` |
+| A | TH18 的「原生子机隐藏」**已有**声明层（111 的）⇒ 108 直接复用，机体门/自愈 sweep/激光收尾全在层里 | ✅ | `sdk.h` 的 `ce_native_option_hide_*` 一节 + `sdk.c` 的 `BP_ce_repopulate_native_option`（`th18:0x45d610`）/ `ce_native_option_sweep` / `ce_kill_retail_option_lasers`；AUDIT §BE 详录 #32 |
+| B | 妖侧子机**只有机体 0（霊夢・八雲藍）**有「追敌 + 旋转」；机体 1/2 的回调没有子状态机也不旋转 | ✅ | `g_OptionInitCallbacks[0][0] = th08:0x44e3a0`（子状态跳表 `th08:0x44e755`）；`0x44ea40` / `0x44eb70` 无此段 |
+| B | 追敌那一格（子状态 3）的**家位置 = 目标敌人 `final_pos` + (0, +32)**（y 夹 >= 32），运动 = 与跟随自机**同一条弹簧** | ✅ | `th08:0x44e8ef`（读 `player+0xe2abc`）→ `add ecx,0x2d88`（`zEnemy::final_pos`）→ `fadd ds:0x4b42cc (32.0)` → `0x44e939`–`0x44e9ab`（delta×1/16、vel += (delta−vel)×0.2、pos += vel、死区 0.05） |
+| B | 进入追敌 = 目标非 0 + 计时器 + **子机出场满 10 帧** ⇒ 发 `SetInterrupt(option, 3)`；退出 = 目标没了 ⇒ 发 `SetInterrupt(option, 1)` | ✅ | `th08:0x44e892 push 0xa` / `:0x44e8a6 push 3` / `:0x44e8b3`；退出 `:0x44e6dd push 1` + `:0x44e68b` |
+| B | 「旋转」= **贴图层**：`player00.anm` script18 标签 3 = `sprite(sprite30)` + `angleVel(0,0,0.62831855f)` + `stop()` ⇒ **36°/帧**（10 帧一圈）；反向标签 4 全 exe 无人发 | ✅ | `thanm -l 8 -m v2.anmm dat/player00.anm` 的 script18；发标签 3 的唯一落点 `th08:0x44e8a6`（`call 0x407120` 逐处穷举） |
+| B | ⚠ **一手与 owner 记忆的唯一冲突点**：那条目标指针 `player+0xe2abc` 在本样本（TH08 v1.00d）里**写点只有 3 处、写的都是 0** ⇒ 严格说该支路够不到 | ✅（负结论，逐指令边界核过）| 全 exe 搜位移 `bc 2a 0e 00` = 10 处（7 读 + 3 写 0：`0x44e455`/`0x44e6d3`/`0x44e8c4`）；`METHOD.md` 硬规矩 4 |
+| B | ⇒ **处置**：按 owner 口径 + 一手形状**实现**追敌+旋转，只把「目标从哪来」换成 TH18 拿得到的量（❓自定：boss → 最近敌） | 🟡 | 代码注释 + `TUNING.md` §2.0z；`youkai_core.h` 的「追敌 + 旋转」整段 |
+| C | 人妖槽四件贴图**没抄错**：全在 `ascii.anm` **entry0**（`data/ascii/ascii.png`）—— 条 `sprite155 (0,224,128,16)` / 人图标 `153 (160,208,16,16)` / 妖图标 `154 (176,208,16,16)` / 游标 `152 (128,208,8,12)`，脚本 5/6/7/8 逐条同形 | ✅ | `thanm -l 8 -m v2.anmm local/th08.v1.00d/dat/ascii.anm`（矩形表写进 `engine/player/th08/03-*.md` §2.3a）|
+| C | **条的位置我们抄错了**：script5 的正文是 `pos(32,465)` → `posTime(40,0,32,449,0)` ⇒ **465 是滑入起点（屏外）**，停稳在 **449**（与两图标同高）；我们原来画在 465 ⇒ 条比图标低 **16 px** | ✅ | `ascii.anm` script5 正文；`AsciiManager::InitializeVms`（图标/游标 449/453）|
+| C | **数字那一套贴图我们没搬**（原来用共用件的 HUD 数字）：TH08 = `ascii.anm` script4 当画布 + **sprite 0x88..0x94 = 136..148**（'0'..'9'、'%'、'.'、'-'，各 `8×12` @ y=208），布局 = `DrawPercentage` `th08:0x405e10` | ✅ | `AsciiManager.cpp:202`（script4）+ `:1095-1225`（逐字形 `SetSprite` 与步进 7/5、小数位 scale 0.8、y+2、行尾 `'%'`）|
+| C | 槽条/图标/游标/数字**同吃五档染色**（极人/中人/极妖/中妖/其余）| ✅ | `AsciiManager.cpp:1030-1062` |
+| D | 归航（state 1）是**恒速、无加速段**：模长 = `[ds:0x18b896c]+0x14` = 当前 `.sht` 头的 `itemCollectSpeed` = pl00/02/03 **10.0**、pl01 **12.0**（我们原来 ❓自定 3.0 ⇒ owner 说的「很慢」）| ✅ | `th08:0x440886`(方向) / `:0x440898`(`mov eax,[edx+0x14]`) / `:0x4408a5`(造速度)；`dat/ply0{,1,2,3}{,as}.sht` 直读 |
+| D | **「刚开始就满速」的一手落点**：擦弹/消弹那一路 `spawn_item(type 7, state 1)` ⇒ 生成即归航；只有「击破敌机/符卡」那一路是 state 3/5（先上浮 40 帧 = owner 说的「很小的加速度」）| ✅ | `th08:0x431650` 一族 push 1；`th08:0x42b048` push 3；`th08:0x4402cb`–`:0x4402e9`（state 3 初速）|
+| D | 收集 = **抓取盒相交**（与自机 y 无关）；`arcadeRegionSize.y + 16`（= 448+16 = 464）是**丢失线**（掉出去那颗不给分）—— 我们原来写成「`y <= 自机 y + 16` 就收」= 把丢失线当回收线且方向反了 | ✅ | `ItemManager.cpp:271-288` + `Player.cpp:100`/`:1059`；`th08:0x43a144` 写 448.0；比较方向 `th08:0x44096f`–`0x440983` |
+| D | 抓取盒半宽 = `[.sht+0x18]/2` = pl00/02/03 **12.0**、pl01 **16.0** ⇒ 加上刻符自身半宽 8，我们那套「半径」口径的一手等效值 = **20 / 24** | ✅ | `th08:0x44d83f`–`0x44d873`；`.sht` 的 `+0x18` = 24.0 / 32.0 |
+
+### 2. 改了哪些文件（文件 → 改了什么 → 为什么 → 验证）
+
+| 文件 | 改了什么 | 为什么 | 验证 |
+| --- | --- | --- | --- |
+| `assets/build_player_anm.py`（**共享件**） | 新增追加 entry **`gaugefont`**（13 sprite = TH08 `ascii.anm` 136..148）+ 载体脚本（TH08 `ascii.anm` **script4** 逐条照抄）+ `CE_PL_ANM_YKGAUGEFONT_BASE_*` 宏导出 | C 条：把 TH08 百分比字形的贴图与「可换字画布」脚本搬进来 | 生成器 rc=0：原生部分逐块一致 + 新贴图回读逐像素等于源图（详见 §4）|
+| `native/pl_anm_ids.h`（生成物） | +4 行 `CE_PL_ANM_SCRIPT_YKGAUGEFONT_PL0X`、+4 行 `CE_PL_ANM_YKGAUGEFONT_BASE_PL0X` | C 侧按机体查表取脚本号与字形 sprite 基号（写死常数会在重排时静默画错字） | 生成器写出；`PINNED_NEW_SIDS` 反向钉 4 个脚本号 |
+| `native/cards/youkai_core.h` / `.c` | ① B 追敌/旋转的常量与两个纯函数；② C 条 y 465 → 449 + 字形布局 `yk_gauge_text_glyphs`；③ D 刻符运动常量 + `yk_orb_motion_params` | 三条都要纯逻辑进主机单测 | `test_youkai_core` **4454 checks / 0 failed** |
+| `native/cards/youkai.c`（**108 自己的卡**） | ① A：每帧声明隐藏原生子机 + `sweep` + 收激光；② B：`yk_chase_target_resolve` + `on_option_pose_apply` 的追敌分支与旋转标签；③ C：HUD 数字改成 8 格 TH08 字形 VM（`yk_gauge_text_sync`）；④ D：刻符按来源给 state、按机体取一手速度/半径、state 0 下落与损失线 | owner 四条 | `make dllx87` 两个对象 x87 = **0**；`make dllverify` rc=0；`sizeof(yk_card_t)` = 316 B（上限 496）|
+| `native/tests/test_youkai_core.c` | +追敌（goal/门/标签号/收敛）、+字形布局（含 ±10000、负数、NULL、全定义域）、+运动常量、条 y 订正 | 覆盖新纯逻辑 | `test_youkai_core` 4454/0 |
+| `engine/player/th08/03-youkai-body-and-gauge.md` | 新增 **§2.3a**（贴图矩形表 / 停稳位置 449 与 465 的区别 / `DrawPercentage` 的排布与染色）；§2.3 补 script4 是数字画布 | 一手回流 | `check-docs` 通过 |
+| `engine/player/th08/02-youkai-option-motion.md` | 新增 **§4a**（追敌那一格的一手全文：进门/家位置/退出/旋转标签/只有机体 0），§4 的结论改两段式（**代码形状存在** vs **本 build 的门够不到**），并订正旧版「TH18 的中断扫描只能往后找」的 🟡 说法（一手：从**脚本开头**线性扫）| owner 线索 + 一手复核 | 同上 |
+| `engine/item/th08/01-time-orbs.md` | §7.2 重写（恒速归航 + `.sht` 字段、**收集 = 抓取盒**、`+16` = **丢失线**、比较方向订正）；§7.0 表补三行；结论表 +12/13/14 | owner 第 4 条 | 同上 |
+
+**没有动**：`sites.py` / `patch/**` / `Makefile` / `sdk*.c` / `engine.h` / `assets/ability/**` /
+`assets/ability/entries/ORDER.txt` / `native/cards/{ufo,trance,mof,faith,signal}*`（112/113/110/111 的地盘）。
+⇒ **不新增站点、不新增图集条目、不新增音效**。
+
+### 3. 影响面（共享件 / 别的卡）
+
+- `assets/build_player_anm.py` + `pl0X.anm`：四个文件**只追加**（每文件 +1 entry、+1 脚本、+13 sprite）；
+  `verify_rebuilt` 每次构建回读核对「原生 entry / script / 贴图块逐块一致」+ 追加脚本的越界/`scriptNew`
+  /源对齐/主路径无 `delete` 检查 ⇒ 113（灵界弹）、117（兽灵弹）引用的脚本号与 sprite 号**一个都没变**。
+- `native/cards/youkai.c` 的 A 条**只声明、不写引擎字段**（隐藏层的落笔全在 `sdk.c`）；与 111 的声明
+  **按机体各自生效**（`ce_native_option_hidden(char)` 是 OR）⇒ 魔理沙同时带 108+111 时两边都要求隐藏，
+  没有语义冲突；`owner` = id 最小者（诊断）。
+- 计分层：本卡此前已有的两条每帧声明未变（`ce_score_family_declare(108, FAMILY_08)` + `delta = piv`）。
+- 别的卡：**零行为变化**（只改了 108 自己的两个文件 + 它的单测 + 它自己的资产生成计划）。
+
+### 4. 验证原文（本轮跑过的）
+
+```
+make check   → rc=0
+  test_youkai_core: 4454 checks, 0 failed      （其余各支 0 failed）
+  x87 in our objects: 0
+  sites.py check / contract_check / gen_drift / sitecheck --all / capcheck（全绿 ✅）/
+  engine_abi_check（7 条 ✅）/ anm_hud_alpha_check（24 项一致 ✅）
+python3 tooling/check-docs.py → 全部通过（371 个文件）
+python3 assets/build_player_anm.py → 原生部分逐块一致；新 entry/贴图回读逐像素等于源图；写 pl_anm_ids.h
+```
+**未实跑**（本会话不部署）：A/B/C/D 四条都停在「静态 + 主机单测 + 资产回读」层。
+
+### 5. 要 owner 拍 / 实跑确认的点
+
+1. **B 的冲突点**：`player+0xe2abc` 在本样本里没有任何非 0 写点 ⇒ 严格讲 v1.00d 够不到那一支。
+   我们按 owner 口径实现了**形状**，并把目标来源换成「boss → 最近敌」（❓自定）。若 owner 认为
+   原作的目标选择另有其法（例如「当前正在打的那只」/「最近被击中的那只」），改一个函数即可
+   （`youkai.c` 的 `yk_chase_target_resolve`）。
+2. **B 的旋转方向**：一手只有「标签 3 = 正转」有发点（反向标签 4 是死代码）⇒ 我们只发正转。
+   若实跑看着方向不对，改 `YK_OPT_SPIN_LABEL`(5) → 6 即可（两支脚本段都已搬进来）。
+3. **C 的字形**：数字现在应当与 TH08 一样是 `XX.XX%`（小数两位是小号、行尾有 `%`），
+   颜色随五档；若 owner 期待的是**别的数字形态**（例如只显示整数），那是一处口径改动。
+4. **D 的擦弹刻符落点**：TH08 撒在**被擦的那颗弹**上，我们拿不到那颗弹（`ce_graze_take` 依赖的断点
+   `0x42497f` 在 `sites.py` 里是注释掉的 ⇒ 恒返回 0）⇒ 现在落在自机位置上、state 1 ⇒ **当帧即被收**，
+   视觉上看不到它飞（`TUNING.md` §2.0y #12）。
