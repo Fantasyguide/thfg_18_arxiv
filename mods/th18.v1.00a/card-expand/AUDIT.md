@@ -18753,3 +18753,14 @@ commit `7647511` 才放出）⇒ #3（音效没屏蔽）/ #4 / #6（灵界结束
    要 owner 拍（收窄后 113+117 同装时灵界里会重新看到黄闪）。**本次未动**（属别的口径，不在 #4 范围）。
 3. **🟡 未实跑**：本节的结论全是静态一手 + 现有的单卡实跑记录推断；#4 的最终判据在
    `SINGLE-CARD-TEST.md` §th13-P12（可自由移动 + `no-hit gate … skipped` 增长 + `player-lock watch: 0`）。
+
+### 7. 提交与发布状态（协作须知，2026-09-22 晚）
+
+- **本节的改动落在 `3a3e9f3`**（«docs(SINGLE-CARD-TEST): 深夜版清单…»）：我这边 `git add` 了那 4 份文件后，
+  **并发会话的整索引提交把暂存区一起带走了**，所以我自己的 `git commit` 报「no changes added to commit」。
+  内容完整（`git show HEAD:…trance.c | grep "player LOCKED-in-trance"` = 1，`AUDIT.md` 的 §BE-FH = 1）——
+  **不是丢改动，是提交信息没写上本节**，在这里补记一笔。
+- ⚠ **未进已发布批次**：`6e8fa7b`（DLL `7579a73a`）的说明里写着「主树里 `trance.c` 有别人在飞改动，未进本批」
+  ⇒ **本次的 `player-lock watch` 诊断行在 `7579a73a` 里看不到**，要等下一批 `make release` 才可见。
+  #4 的实跑判据里，「可以自由移动 + `no-hit gate … skipped` 每 ~60 帧一行」这两条**在本批就能验**，
+  只有第三条（`player-lock watch: 0`）要等下一批。
