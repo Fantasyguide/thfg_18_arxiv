@@ -18885,3 +18885,72 @@ commit `7647511` 才放出）⇒ #3（音效没屏蔽）/ #4 / #6（灵界结束
 - ⚠ 树里有**并发会话在飞的改动**（`native/cards/mof.c` 等）⇒ 本轮**不碰**它们；提交信息里只写本节内容。
 - **未部署**：DLL 只在本地 `native/th18_card_expand.dll`（构建产物，`native/build/` 与 DLL 都被 gitignore 排除），
   modkit 四路径**一个字节都没动**。
+
+## §BE-FJ（2026-09-22）：P6 工单（110/111 的绿点与 P 值）—— **110 绿妖精的三处修复 + 散布公式搬进共用件**；111 侧四条**只落根因不落笔**（都在 `signal.c`）
+
+> **谁做的**：P6 子会话（工单 [`WORK-PACKAGES.md`](WORK-PACKAGES.md) §0 P6，现象原文 [`SINGLE-CARD-TEST.md`](SINGLE-CARD-TEST.md) §th10/§th11）。
+> **动到的文件**：`native/cards/mof.c`、`native/cards/mof_green_core.{h,c}`、`native/cards/faith.{h,c}`（**共享件**）、
+> `native/tests/test_mof_green_core.c`、`assets/ecl/green_extra.ecl.txt`（只改注释）、
+> `engine/faith/th10/02-faith-drop-distribution.md`（新增 §3.6 一手）。
+> **没动**：`native/sites.py`、任何 patch/`.def`/`Makefile`、`cards/signal.c`（→ 见第四节）。
+
+### 一、改了什么（共享件改动逐条）
+
+| 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
+| --- | --- | --- | --- | --- |
+| `cards/mof.c`（110）| `mof_ge_follow_tick()` 的调用点从「补刷窗口之后」移到**三个早退之前**（每帧都跑）| 补刷那一帧就 `s_ge_done = 1` ⇒ 旧位置此后每帧早退 ⇒ 跟随通道**一次都没为刚刷出来的绿妖精跑过** ⇒ 它钉在出生点（用户报的「绿色妖精队列错误」的真根因）| P6 | `i686-w64-mingw32-gcc -Wall -Wextra` 0 警告；逻辑走查见 §三 |
+| 同上 | 新增 `mof_ge_is_ours()` + 扫敌时 `continue` | 我们刷出来的那只是 `(2,10)` = **也是「妖精」** ⇒ 旧实现每帧把**自己刷的**当成新出生妖精：混进队形采样 / 刷新波次边界 / 抢走下一波的跟随目标（跟随链套娃）| P6 | 同上 |
+| 同上 | 新增 `mof_ge_pick_target()`（当前目标死了 ⇒ 换本波最近那只 ⇒ 再换采样表里最近一只还活着的）| 旧实现只认 `s_ge_tgt_id`，那一只一死就只剩 `lost++` ⇒ 90 帧后喊离场，而同一波还有一堆活着的同类 | P6 | 同上 |
+| 同上 | 新增 `mof_ge_depart_all()`，并在 `mof_clear()` 里调 | `METHOD.md` 铁律二：它们的位置通道（`%F2/%F3`）与离场口令（`$I0 = 999`）**都只在 `on_tick_2` 里**，而删卡发生在商店（tick 全停）⇒ 旧实现把几只绿妖精**永久钉在关卡里** | P6 | 同上（只碰 `s_ge_fol[]` 里的 id，写前 `ce_enemy_by_id()` 当帧复核）|
+| `cards/mof_green_core.c/.h` | `mof_green_extra_slots()` 的槽位锚点：`side × (|x|max + d)` → **`xmin − d` / `xmax + d`**（有符号端点）| 一手 TH10 的绿妖精**排在循环的下一格**（`stage01.ecl` `main_572`/`main_2228` 的 `ins_257("Ecl_GGirl00", %B, …)`，`%B` = 最后一格 + 间距）。旧写法锚在**离屏幕中心最远那一端**⇒ 观测点全偏一侧时（TH18 一面道中的竖直列）补到**屏幕另一侧**（实测 +256 → 夹到 +176）| P6 | `test_mof_green_core` **415 断言 0 失败**（新增 4 条：两个一手列的形状 + 两条既有非对称用例的新期望）|
+| `cards/faith.{h,c}`（**共享件**）| 新增 `faith_scatter_from_enemy(enemy, *ox, *oy)`：ZUN 那条「一次爆多颗道具」分布（原先在 `mof.c` 里的私有 `mof_faith_scatter()`，连随机源一起搬）| 111 的落点（th11 #1「绿点和金钱重合」）需要**同一条**公式；留两份迟早漂 ⇒ 做成共用入口后 111 侧只剩两行（见第四节）| P6 | `mof.c` / `faith.c` 交叉编译 0 警告；公式、LCG、调用顺序逐字未变（110 行为不变）|
+| `cards/mof.c` | `on_enemy_death` 改调共用入口 `faith_scatter_from_enemy()` | 同上（搬家，不是改行为）| P6 | 同上 |
+| `assets/ecl/green_extra.ecl.txt` | 只改注释：删掉「卡侧传 `%F0/%F1` 入场向量」那段**已经过时的**描述（`%F0/%F1` 现在恒 0、谁都不读），写清唯一通道是 `%F2/%F3` 跟随 | 注释与代码不符会让下一个人照着写错 | P6 | 无二进制影响（`make ecl-ufo` 的输出逐字节不变）|
+| `engine/faith/th10/02-faith-drop-distribution.md` | 新增 **§3.6**：TH10 绿妖精的**位置**（循环下一格、间距 32、y 与全队同）与**运动**（`Ecl_Girl00` 族逐条、`%ANGLE_PLAYER` 7.0 减速到停 vs `Girl00` 直落 2.7）+ 对 110 的语义等价结论 | 「队列错误」这条现象此前**没有任何一手依据**可对照 | P6 | ECL 裸 dump 的偏移逐条可复算（`0x9f0c` / `0xa584` / `0x4ffc` / `0x5084`）|
+
+### 二、对既有卡的影响面（共享件改动 ⇒ 必读）
+
+- **110**：绿妖精的**数量/位置/掉落全部不变**（`MOF_GE_COUNT/EVERY/GAP/DELAY/WINDOW` 一个没改）；
+  变的是「它刷出来之后**真的会跟着队列走**」+「槽位不再甩到屏幕另一侧」+「删卡时会被收掉」。
+- **111**：**零影响** —— `faith_scatter_from_enemy()` 目前只有 110 调（111 要调得改 `signal.c`，见第四节）；
+  `mof_ge_*` 仍只在 110 的 tick 里。
+- **107**：**零影响** —— 没用满 P 转换的那个散布入口，也没碰 `faith_spawn()` 的语义。
+- **计分 / 实体池 / 站点账**：一个字节没动。`faith.h` 只**新增**一个声明（不改变既有函数签名与语义）。
+- ⚠ `faith.c` 里那条 LCG 的**状态**从 `mof.c` 搬到 `faith.c`（同一个生成器、同一调用顺序）⇒ 单场的随机序列
+  与改动前不同（`❓ 自定`的随机源，不影响任何数值口径与 replay 一致性）。
+
+### 三、110 绿妖精三处修复的逻辑走查（为什么要三处一起）
+
+| 环节 | 旧代码 | 后果 | 新代码 |
+| --- | --- | --- | --- |
+| 补刷那一帧 | `mof_ge_follow_tick()` 在窗口判断**之后**；补刷尾部 `s_ge_done = 1` | 下一帧起 `if (s_ge_done \|\| …) return;` ⇒ 跟随再也不跑；子程序每帧 `movePosTime(1,1,%F2,%F3)` 把它搬回**出生点** ⇒ 站着不动、且永不 `$I0 = 999` ⇒ 永不离场 | 跟随调用移到早退之前 |
+| 目标死亡 | 只认 `tgt_id` → `s_ge_tgt_id` | 同一波还有活着的同类却不跟 ⇒ 90 帧后飞走 | `mof_ge_pick_target()` 依次回退到采样表里最近一只活着的 |
+| 删卡 / 换局 | `mof_clear()` 只还原 sprite 表 | 场上那几只留到本局结束 | `mof_ge_depart_all()` 写 `$I0 = 999` |
+
+### 四、111 侧四条：**根因 + 现成落笔，但一行都没改**（`signal.c` 归 P7 会话）
+
+四条现象（th11 #1 / #4 / #5 / #6）**全部落在 `cards/signal.c`**，按工单纪律 P6 停手并交清单
+（逐行版在 [`SINGLE-CARD-TEST.md`](SINGLE-CARD-TEST.md) 的 §th11-P6）：
+
+| 现象 | 根因（一手/现状核对）| 落笔量 |
+| --- | --- | --- |
+| th11 #5 / #6（P 点 0.02/0.03 与 0.05 都没生效）| `CE_CARD(111, …)` 里 `.on_item_collect` / `.on_item_commit` **两行自 2026-09-17 的站点二分起一直注释着** ⇒ `s_p_item` 闩不置位、补值链恒不触发。⚠ **§BE-FE 的同类**：那次恢复的是**站点**，这次是**卡侧订阅** —— 站点在、卡没订，一样静默失效 | **2 行**（去掉注释；站点早已在案）|
+| th11 #1（绿点和金钱重合）| ① 落点用敌机坐标原值（110 已按 ZUN 公式撒开）② 判据仍是 110 于 2026-09-15 退役的 `*_main`/`*_dual`（退役理由正是本条现象）| ① **2 行**（调 `faith_scatter_from_enemy()`）；② **要 owner 拍口径**（换宿主表需要一张 TH11→TH18 对应表）|
+| th11 #4（全程未见绿色妖精）| 载体（`CEGreenFairy` + `mof_ge_*`）只被 110 的 `on_tick_2` 调 ⇒ 111 单装时**一次都不会生成**；且那只敌机 `main_drop = 0`，111 判不出「该掉大绿点」（110 靠宿主表 `(2,10)`）。一手：111 的设计本就要求「让绿妖精出现」（`2026-09-11-system-card-spec-review.md` §805）| **两处**（载体搬共用件 + 111 的 `on_tick_2` 调一次；判据里加 `mof_core_big_faith_host()`）—— ⚠ **必须一起上**，只做载体 = 「打死了什么都不掉」的半成品 |
+
+### 五、验证原文
+
+- `cc -std=c11 -Wall -Wextra -Werror -o /tmp/tg tests/test_mof_green_core.c cards/mof_green_core.c && /tmp/tg`
+  ⇒ **415 passed, 0 failed**
+- `i686-w64-mingw32-gcc -O2 -Wall -Wextra -mfpmath=sse -msse2 -I. -c` × {`cards/mof.c`, `cards/faith.c`,
+  `cards/mof_green_core.c`} ⇒ **0 警告 0 错误**（`signal.c` 那三条 `-Wunused-function` 是**别人在飞的**注释现场）
+- `python3 ../../../tooling/check-docs.py` ⇒ 全绿（见本次提交报告）
+- **未部署**：不跑 `make release`、不动 modkit；`sites.py` / patch / `.def` 一个字节没改（本节无站点改动）
+
+### 六、未决 / 要 owner 拍
+
+1. **111 的判据口径**：只做「散布」还是同时「判据收窄」（后者要一张 TH11→TH18 的宿主对应表）。
+2. **th11 #4 的两处是否一起上**（只上载体 = 半成品，见上）。
+3. **实跑验收**（110 绿妖精）：① 绿妖精与队列同向同速一起走；② 不再出现在屏幕另一侧；
+   ③ 一波结束/删卡后它飞离自删（日志 `mof: green extra fairy depart xN`）。
+

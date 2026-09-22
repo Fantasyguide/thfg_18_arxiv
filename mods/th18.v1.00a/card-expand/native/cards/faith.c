@@ -129,6 +129,11 @@
  *     两版都是 ❓ 自定替身，已被一手音色取代。
  *     ⚠ 「只在事件那一下响一声」仍是 ❓ 自定（原版响的是「吃到 P」那一声，而本卡的转换是引擎外的
  *     一次批量删+撒，没有对应的「吃到」事件）；判据与事件闩见 `faith_convert_full_p_items()` 头部。
+ *     ★ 2026-09-22（P6 复核，补一条**直接证据**）：TH10 那一声与「满 P 那一帧的全场转换」是
+ *     **同一条代码**里发生的 —— `0x41b446 call 0x43dd10`（播 `0x1d`）后面紧跟着
+ *     `0x41b44b cmp WORD PTR ds:0x474c48,0x64` → `0x41b455 mov DWORD PTR [esp+0x14],0x1`
+ *     （置「刚满 P」标志，正是转换循环 `0x41ba50` 的触发条件）⇒ 「满 P 那一刻」与这一声
+ *     在原作里**逐帧同源**（这也解释了用户的记忆为什么把两者连在一起）。
  *     换音 = 改这一个宏；要换 TH18 没有的 wav 就走 `assets/voice/ORDER.txt` 扩容（`AUDIT` §Q/§DK-7）。
  *
  * ## 二、★ 原版有的那颗特效（一手配方，逐条抄得下来）
@@ -793,6 +798,32 @@ int faith_spawn_art(float x, float y, faith_tier_t tier, int slot_mask, int32_t 
 int faith_spawn_big(float x, float y, int32_t value_110)
 {
     return faith_spawn(x, y, FAITH_TIER_BIG, 1 << FAITH_SLOT_110, value_110);
+}
+
+/* ★★ 2026-09-22（th11 #1「绿点和金钱重合问题需解决」）：ZUN 自己那条「一次爆多颗道具」的分布，
+ * 做成**共用入口** —— 110 的 `on_enemy_death` 与 111 的 `on_enemy_drop_pre` 用同一份公式，
+ * 才不会出现「110 撒开了、111 还压在金钱正中」。理由、一手出处与随机源口径全在 `faith.h` 的同名声明上。*/
+int faith_scatter_from_enemy(const uint8_t *enemy, float *ox, float *oy)
+{
+    static uint32_t s_seed = 0x9e3779b9u;   /* ❓ 自定：不用引擎那两支走 x87 的 RNG（见 `faith.h`）*/
+    const uint8_t *d;
+    float rx, ry, ang, cs_sn[3] = { 0.0f, 0.0f, 0.0f };
+
+    if (ox) *ox = 0.0f;
+    if (oy) *oy = 0.0f;
+    if (!enemy) return 0;
+    d = enemy + CE_ENEMY_DROP;
+    rx = *(const float *)(d + CE_ENEMY_DROP_AREA_X);
+    ry = *(const float *)(d + CE_ENEMY_DROP_AREA_Y);
+    if (!(rx > 0.5f)) rx = CE_ENEMY_DROP_AREA_DEFAULT;   /* 没调 dropArea ⇒ 引擎自己的默认 32×32 */
+    if (!(ry > 0.5f)) ry = CE_ENEMY_DROP_AREA_DEFAULT;
+    s_seed = s_seed * 1664525u + 1013904223u;            /* Numerical Recipes LCG */
+    ang = (((float)(s_seed >> 8) * (1.0f / 16777216.0f)) * 2.0f - 1.0f) * 3.1415927f;  /* rand± × π */
+    ce_polar_to_vel(cs_sn, ang, 1.0f);                   /* 引擎 FSINCOS ⇒ (cos, sin)，不引 libm */
+    s_seed = s_seed * 1664525u + 1013904223u;
+    faith_core_scatter_off(rx, ry, (float)(s_seed >> 8) * (1.0f / 16777216.0f),
+                           cs_sn[0], cs_sn[1], ox, oy);
+    return 1;
 }
 
 /* ==================== ★★ 满 P 全场转换（A + B 的同一台机器；一手见 faith.h 的长注）====================

@@ -72,18 +72,19 @@ int mof_green_is_fairy(int32_t anm_src, int32_t anm_script)
 
 int mof_green_extra_slots(const float *x, int n, int count, float *out_x, int out_max)
 {
-    float xmax = 0.0f, d = 0.0f;
+    float xmin = 0.0f, xmax = 0.0f, d = 0.0f;
     int neg = 0, pos = 0, i, j, cnt = 0;
     float uniq[16];
     int nu = 0;
-    float side;
+    int side;
 
     if (!x || !out_x || out_max <= 0 || n <= 0 || count <= 0) return 0;
     if (n > 16) n = 16;
     if (count > MOF_GREEN_EXTRA_SLOT_MAX) count = MOF_GREEN_EXTRA_SLOT_MAX;
+    xmin = xmax = x[0];
     for (i = 0; i < n; ++i) {
-        float a = x[i] < 0.0f ? -x[i] : x[i];
-        if (a > xmax) xmax = a;
+        if (x[i] < xmin) xmin = x[i];
+        if (x[i] > xmax) xmax = x[i];
         if (x[i] < 0.0f) ++neg; else if (x[i] > 0.0f) ++pos;
     }
     /* 唯一的 |x| 值（排序后取最小正间距）—— 队形的「一格」有多宽 */
@@ -104,16 +105,23 @@ int mof_green_extra_slots(const float *x, int n, int count, float *out_x, int ou
     }
     if (d == 0.0f) d = MOF_GREEN_EXTRA_SLOT_MIN;      /* 只观测到一个点 / 全在 x=0 ⇒ 用默认间距 */
 
+    /* ★★ 2026-09-22（th10 #2「绿色妖精队列错误」）：槽位**紧贴观测到的那一端**，不再用 `|x|max`。
+     *   旧写法 = `side × (|x|max + d)`：只要这一波的观测点**都偏在一侧**（TH18 一面道中的「竖直列」
+     *   就是这种 —— `st01.ecl` 的 `MainSub00` 里 `%A` 整波不变、3 只一直刷同一个 x），
+     *   `|x|max` 取的是**离屏幕中心最远那一端**的绝对值 ⇒ 补出来的一只会落到**屏幕另一侧**
+     *   （实测：一面第二波的列在 x ≈ −224..−160，补刷落在 **+256** → 夹到 +176 = 右边缘）。
+     *   一手 TH10 的形状是「**排在循环的下一格**」（`stage01.ecl` `main_572` 后紧跟一条
+     *   `ins_257("Ecl_GGirl00", %B, …)`，`%B` = 循环最后一格 **+d**）⇒ 相邻才是复刻，
+     *   照它改：**取「人少那一侧的端点 ± 一格」**（对称队形与旧规则逐值相同，见单测）。*/
     if (count == 1) {
-        /* 只补一只 ⇒ **人少的那一侧**（左右一样多、或都没观测到 ⇒ 右侧）*/
-        side = (neg < pos) ? -1.0f : 1.0f;
-        out_x[cnt++] = side * (xmax + d);
+        side = (neg < pos) ? -1 : 1;
+        out_x[cnt++] = (side < 0) ? (xmin - d) : (xmax + d);
         return cnt;
     }
     /* 一对 / 多对：由内向外一格格排（先负后正），`count` 是**总只数** */
     for (i = 0; i < count && cnt < out_max; ++i) {
-        float r = (float)(i / 2 + 1) * d + xmax;
-        out_x[cnt++] = ((i % 2) == 0) ? -r : r;
+        float r = (float)(i / 2 + 1) * d;
+        out_x[cnt++] = ((i % 2) == 0) ? (xmin - r) : (xmax + r);
     }
     return cnt;
 }

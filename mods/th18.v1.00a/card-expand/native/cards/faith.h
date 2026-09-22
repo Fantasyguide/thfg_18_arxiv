@@ -243,6 +243,28 @@ int faith_absorb_move(const faith_absorb_t *e, float nx, float ny);
 /* 大信仰点（110 的击破通道；§7.9 的判据由卡侧给，本函数只负责撒）。*/
 int faith_spawn_big(float x, float y, int32_t value_110);
 
+/* ============================ ★★ 2026-09-22：大点的**落点散布**（共用件）============================
+ *
+ * 一手 = ZUN 自己「一次爆多颗道具」的分布（附加掉落循环 `th18:0x430510`，逐条见
+ * `faith_core_scatter_off()` 的头注）：`pos = 敌机坐标 + polar(rand± × π, rx, ry) × (rand01 × 0.5)`
+ * —— 半径 `rx/ry` 取**这只敌人自己的掉落区**（`drop+0xbc/+0xc0`，`dropArea` handler `0x42d090` 写；
+ * 为 0 时用引擎自己给敌机死亡路径的默认 **32.0f**，`0x430766`/`0x430773`）。
+ *
+ * **为什么搬进共用件**（原先是 `cards/mof.c` 的私有 `mof_faith_scatter()`）：
+ *   用户报的现象是 th11 #1「**绿点和金钱重合问题需解决**」—— 111（`cards/signal.c`）在同一个
+ *   `enemy_drop_pre` 里 `faith_spawn()` 用的是**敌机坐标原值**，而金钱由引擎按上面那条公式撒在它周围
+ *   ⇒ 大绿点正好落在金钱云的中心。110 已经按这条公式撒了（2026-09-18c），111 没有。
+ *   做成共用入口之后 111 侧只需要两行（`if (faith_scatter_from_enemy(e, &ox, &oy)) { x += ox; y += oy; }`），
+ *   不必再抄一份公式。
+ *
+ * ⚠ 随机源是**我们自己的 LCG**（❓ 自定，登记 `TUNING.md` §2.0i）：引擎那两支 RNG
+ *   （`0x402810` / `0x4027d0`）的返回值走 **x87**（`fld/fstp`），从 C 里调会让目标文件带上 x87
+ *   ⇒ 撞 `make dllx87` 的 0 条硬线。**分布公式本身逐条照抄**，只有随机源换掉。
+ * ⚠ 三角走**引擎的 FSINCOS**（`ce_polar_to_vel`）⇒ 不引 libm。
+ * 返回 1 = 写好了偏移（调用方把它加到敌人坐标上）；0 = `enemy == NULL`（两个偏移都写 0）。
+ * 调用者：`cards/mof.c` 的 `on_enemy_death`（击破宿主 ⇒ 大信仰点）。*/
+int faith_scatter_from_enemy(const uint8_t *enemy, float *ox, float *oy);
+
 /* ★★ 2026-09-16：**把整池活着的点切成「朝自机飞」**（本池 state 3 = 引擎道具 state 3 的对位）。
  * 用途 = 所有「全屏收点」的调用点 —— 它们原来只调 `ce_item_collect_all()`，而**那个函数只扫原生道具池**，
  * 本池的点是**自建 VM**（TH18 没有信仰点 item type）⇒ 实跑里「信仰点纹丝不动」。
