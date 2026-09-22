@@ -3608,7 +3608,7 @@ boss 的发射口持续活跃 ⇒ 永久哑火」，于是给闸加了「到期�
 | 夹紧 / 死区 | 夹到两限值；`\|g\| ≤ 9 ⇒ 0` | `th08:0x43c0fa`/`:0x43c128`；`th08:0x44bf61` |
 | 涨源（已接的四个） | 击破敌 ±200 / 收道具 ±身价 / 收刻符 ±111 / 聚焦漂移 | `th08:0x42da2a`、`ItemManager.cpp:597`、`th08:0x4413cb`、TH08 `Player::move` |
 | 死亡清零 | `set_youkai_gauge(0)` | `th08:0x44ac09` |
-| HUD 几何（**640 空间**；本卡那四支脚本没有 `resolutionMode` ⇒ 引擎绘制时 ×2）| 槽条 128×16 左上 **(32,449)**、图标 32/144 @449、游标 `96 + g·112/20000` @453、数字 `96 + g·80/20000` @446 | `AsciiManager::InitializeVms` / `AsciiManager::on_draw`；★ 2026-09-22 晚订正：script5 的 `pos(32,465)` 是**滑入起点**、`posTime` 终点才是 **449**（见 `engine/player/th08/03-*.md` §2.3a）|
+| HUD 几何（一手值是 **640 空间**的字面量；★ 2026-09-23 定案：这批脚本不写 `resolutionMode` ⇒ `th18:0x4063d0` 的 mode 0 支**不乘** = **1 单位 = 1 表面 px** ⇒ 落笔要**位置/字形步进/贴图 scale 三者一起 ×2**）| 见右栏 | `AsciiManager::InitializeVms` / `AsciiManager::on_draw`；坐标空间全文见 `engine/player/th08/03-*.md` §2.3b + `AUDIT.md` §BE 详录 #56 |
 | HUD 贴图与脚本 | `ascii.anm` sprite152..155 + script5..8 **逐条抄进 `pl0X.anm`** | 同上（`anchorTopLeft()` 按 v2→v8 表翻成 `anchor(1, 1)`）|
 | HUD **百分比数字** | TH08 字形 sprite **136..148**（`0x88..0x94` = '0'..'9' '%' '.' '-'，`8×12`）+ 画布脚本 = `ascii.anm` **script4** 逐条抄；布局 = `DrawPercentage`（小数两位 scale 0.8 / y+2、行尾 `'%'`）| `AsciiManager.cpp:202` + `:1095-1225`；★ 2026-09-22 晚落地（原来用共用件 HUD 数字 = ❓自定，已作废）|
 | HUD 染色 | 极人 `7070ff` / 中人 `b0b0ff` / 极妖 `ff7070` / 中妖 `ffb0b0` / 白 | `AsciiManager.cpp:1035-1058` |

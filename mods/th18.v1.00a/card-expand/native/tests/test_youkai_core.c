@@ -539,6 +539,38 @@ int main(void)
     CHECK(yk_map_fam_count(&m) == 3);
     CHECK(yk_frame_end(&m, s_acts, (int)YK_FAM_MAX) == 0);
 
+    /* ★★★ 2026-09-23（P1，实跑日志直证）：**判据必须是只读的**。
+     * 这是那次「跟随 VM 表满 32 格 ⇒ 之后造的使魔 `stays invisible` + 敌方使魔滞留」的根因：
+     * 卡侧每帧的「排除我们自己的使魔」原来调的是**事件** `yk_fam_broken`（它会清 `fam_id` + 置
+     * `broken`），于是地图侧记录被清（那只真敌人变孤儿）、VM 侧记录再没人收。
+     * 这里把两件事钉死：① `yk_map_is_fam` 命中时 `yk_map_t` **一个字节都不变**（含 `broken` /
+     * `no_fam_frames` / 位置）；② 连问两次结果一致（幂等）；③ 对照 `yk_fam_broken` 确实会改表
+     * （两者的语义差别是**故意的**，不是可以互相替换的）。*/
+    {
+        yk_map_t snapshot;
+        yk_slot_t *cur;
+        float p2[2];
+        p2[0] = 1.0f; p2[1] = 2.0f;
+        yk_map_reset(&m);
+        yk_frame_begin(&m);
+        CHECK(yk_note_slot(&m, 500, 0, 1, p2, &a) == 1 && a.kind == YK_ACT_CREATE);
+        yk_fam_created(&m, 500, 0, 5555u);
+        yk_frame_end(&m, s_acts, (int)YK_FAM_MAX);
+        __builtin_memcpy(&snapshot, &m, sizeof m);
+        cur = yk_map_find(&m, 500, 0);
+        CHECK(cur != 0 && cur->fam_id == 5555u && cur->fam_seen == 1 && cur->broken == 0);
+        CHECK(yk_map_is_fam(&m, 5555u) == 1);                    /* 命中 */
+        CHECK(yk_map_is_fam(&m, 5555u) == 1);                    /* 幂等（连问两次）*/
+        CHECK(yk_map_is_fam(&m, 0u) == 0);                       /* fam_id 0 = 空 ⇒ 恒 0 */
+        CHECK(yk_map_is_fam(&m, 12345u) == 0);                   /* 不是我们的使魔 */
+        CHECK(yk_map_is_fam(0, 5555u) == 0);                     /* NULL 表不崩 */
+        CHECK(__builtin_memcmp(&snapshot, &m, sizeof m) == 0);   /* ★ 纯读：整张表逐字节不变 */
+        CHECK(yk_fam_broken(&m, 5555u) == 1);                    /* 对照：事件版**会**改表 */
+        CHECK(__builtin_memcmp(&snapshot, &m, sizeof m) != 0);
+        CHECK(yk_map_is_fam(&m, 5555u) == 0);                    /* 事件之后它不再是我的使魔 */
+        CHECK(yk_map_find(&m, 500, 0) != 0 && yk_map_find(&m, 500, 0)->broken == 1);
+    }
+
     /* 表满：一个敌人的 16 槽 + 另一个敌人的 16 槽 = YK_FAM_MAX ⇒ 第 33 个槽放弃（不崩、不排队）*/
     yk_map_reset(&m);
     yk_frame_begin(&m);
@@ -841,39 +873,44 @@ int main(void)
     CHECK(yk_gauge_color(0) == 0xffffffu);
     CHECK(yk_gauge_color(-8000) == 0x7070ffu);      /* 极人优先于中人 */
     CHECK(yk_gauge_color(8000) == 0xff7070u);       /* 极妖优先于中妖 */
-    /* HUD 几何（一手 `AsciiManager`）：**输出一律 640 空间**（这些 VM 的脚本没有 `resolutionMode`，
-     * 引擎按设计空间解释、绘制时 ×2；见 `youkai_core.h` 的注）。锚点 = 表面 (257,924) ⇒ 640 空间 (128.5,462)。*/
+    /* HUD 几何（一手 `AsciiManager`，**640 空间的字面量**）：**输出一律表面 px** ——
+     * `px = 1/to640 = 2`（TH18）。2026-09-23（P2）实跑定案：那批 VM 的脚本没有 `resolutionMode`
+     * ⇒ `th18:0x4063d0` 的 mode 0 支**一分量都不乘**（= 1 单位 = 1 表面 px），写 640 空间的数会
+     * 「位置高半个屏幕 + 整体缩小 50%」（owner th08 #14/#15）。全文见 `youkai_core.h` 的注。
+     * 锚点 = 货架那一格左下角（表面 px）(257,924)。*/
     {
         yk_gauge_hud_t h;
         float a[2];
-        const float ax = 257.0f * 0.5f, ay = 924.0f * 0.5f;         /* 128.5 / 462 */
+        const float ax = 257.0f, ay = 924.0f;                       /* 表面 px（锚点直接用）*/
+        const float k  = 2.0f;                                      /* 640 空间 → 表面 px */
         a[0] = 257.0f; a[1] = 924.0f;
         yk_gauge_hud(0, a, 0.5f, &h);
+        CHECK(h.px == k);                                           /* ★ P2：倍数出口 = 2 */
         /* ★ 2026-09-22 晚订正：槽条的停稳 y = **449**（`ascii.anm` script5 的 `posTime` 终点），
          * 465 只是滑入动画的起点 ⇒ 与两个图标同高（原来写 465 ⇒ 条比图标低 16 px）。*/
-        CHECK(h.bar_x == ax && h.bar_y == ay - 32.0f);              /* 槽条 128×16，左上 */
+        CHECK(h.bar_x == ax && h.bar_y == ay - 32.0f * k);          /* 槽条 128×16，左上 ⇒ 表面 860 */
         CHECK(h.bar_y == h.human_y);                                /* ★ 条与图标同高（一手 449）*/
-        CHECK(h.human_x == ax && h.human_y == ay - 32.0f);          /* 人间图标在条左端（88−56−32=0） */
-        CHECK(h.youkai_x == ax + 112.0f);                           /* 妖怪图标在条右端（88+56−32=112） */
-        CHECK(h.cursor_x == ax + 64.0f);                            /* g=0 ⇒ 96−32=64 */
-        CHECK(h.cursor_y == ay - 28.0f);
-        CHECK(h.text_x640 == ax + 64.0f);
-        CHECK(h.text_y640 == ay - 35.0f);
+        CHECK(h.human_x == ax && h.human_y == ay - 32.0f * k);      /* 人间图标在条左端（88−56−32=0） */
+        CHECK(h.youkai_x == ax + 112.0f * k);                       /* 妖怪图标在条右端（88+56−32=112） */
+        CHECK(h.cursor_x == ax + 64.0f * k);                        /* g=0 ⇒ 96−32=64 */
+        CHECK(h.cursor_y == ay - 28.0f * k);
+        CHECK(h.text_x == ax + 64.0f * k);
+        CHECK(h.text_y == ay - 35.0f * k);
         /* 满妖侧：游标走到条右端（96+56−32 = 120）。*/
         yk_gauge_hud(10000, a, 0.5f, &h);
-        CHECK(h.cursor_x == ax + 120.0f);
-        CHECK(h.text_x640 == ax + 64.0f + 40.0f);
+        CHECK(h.cursor_x == ax + 120.0f * k);
+        CHECK(h.text_x == ax + 64.0f * k + 40.0f * k);
         /* 满人侧：游标走到条左端。*/
         yk_gauge_hud(-10000, a, 0.5f, &h);
-        CHECK(h.cursor_x == ax + 8.0f);                             /* 96−56−32 = 8 */
+        CHECK(h.cursor_x == ax + 8.0f * k);                         /* 96−56−32 = 8 */
         /* 越界输入按限值夹（引擎/卡状态给脏值时不跑到条外）。*/
         yk_gauge_hud(999999, a, 0.5f, &h);
-        CHECK(h.cursor_x == ax + 120.0f);
-        /* 锚点 NULL / to640 非法 ⇒ 用默认比例、锚点当 0（不崩、不产生 NaN 之外的怪值）。*/
+        CHECK(h.cursor_x == ax + 120.0f * k);
+        /* 锚点 NULL / to640 非法 ⇒ 锚点当 0、比例回默认 2（不崩）。*/
         yk_gauge_hud(0, 0, 0.5f, &h);
-        CHECK(h.bar_x == 0.0f && h.bar_y == -(481.0f - 449.0f));
+        CHECK(h.bar_x == 0.0f && h.bar_y == -(481.0f - 449.0f) * k);
         yk_gauge_hud(0, a, 0.0f, &h);
-        CHECK(h.bar_x == 128.5f);
+        CHECK(h.px == 2.0f && h.bar_x == 257.0f);                   /* to640 = 0 ⇒ 倍数回 2，锚点仍是表面 px */
         yk_gauge_hud(0, a, 0.5f, 0);                                /* out = NULL：什么都不做 */
     }
 

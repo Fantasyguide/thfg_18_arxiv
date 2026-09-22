@@ -479,6 +479,24 @@ typedef struct {
 unsigned   yk_map_heals(const yk_map_t *m);      /* 自愈计数（#7 记账；NULL ⇒ 0）*/
 unsigned   yk_map_rearms(const yk_map_t *m);     /* 「下一波」复位计数（route A 记账；NULL ⇒ 0）*/
 
+/* ★★★ 2026-09-23（P1，实跑日志直证）：**只读**判据「这个 id 是不是我表里的使魔」。
+ *
+ * 为什么必须单独有它（**这条是一个真 bug 的根因**）：`yk_fam_broken` 虽然是 `int` 返回，
+ *   但它**有副作用**（清 `fam_id`、置 `broken`）—— 它是**事件处理**，不是判据。
+ *   卡侧「追踪目标解析」（`youkai.c` 的 `yk_chase_target_resolve`）曾经拿它当**纯谓词**用：
+ *   `if (yk_fam_broken(&s_map, id)) continue;`（注释原文：我们自己的使魔不当目标）
+ *   ⇒ 每帧、对**每一只可锁定的活使魔**都走了一次「使魔被打死」的处理：
+ *     ① 表条目被清 `fam_id`（卡从此不认识那只使魔 ⇒ 那只**真敌人永久留在场上**：不再钉位置、
+ *        不再随松 Shift 撤走 —— owner 报的「敌方使魔滞留」）；
+ *     ② 跟随 VM 的记录**没人收**（那条记录只在 `yk_fam_vm_kill_id` / `…_kill_all` 里清）
+ *        ⇒ 32 格 `s_fam_vm` 表泄漏，之后造的使魔 `ce_anm_spawn` 拿不到格子 ⇒
+ *        **画不出来**（日志：`familiar follow-VM table full (32) - familiar 193/194/… stays invisible`）；
+ *     ③ 槽被标 `broken` ⇒ 发射口闸夹上 ⇒ 下一次 `etOn` 走 route A 重建一只**新的**使魔
+ *        （新的 `fam_id`）⇒ 泄漏①逐波累积。
+ *   ⇒ 判据与事件从此分开：**判据走本函数（纯读）**，事件仍走 `yk_fam_broken` / `yk_fam_gone`。
+ *     （`tests/test_youkai_core.c` 有一条断言专门钉「本函数不改表」。）*/
+int        yk_map_is_fam(const yk_map_t *m, uint32_t fam_id);
+
 void       yk_map_reset(yk_map_t *m);
 unsigned   yk_map_fam_count(const yk_map_t *m);
 yk_slot_t *yk_map_find(yk_map_t *m, uint32_t enemy_id, int slot);
@@ -630,24 +648,49 @@ uint32_t yk_gauge_color(int gauge);
  *   `pos(32, 465)` → `posTime(40, 0, 32, 449, 0)` ⇒ **465 只是滑入动画的起点（在 480 高的屏外）**，
  *   停稳位置是 **449**。原来本卡写 465 ⇒ 槽条比两个图标/游标低 16 px（owner 报的「hud 不对」之一）。
  * 图标 x 由**限值**决定：`88 + limit·56/10000` ⇒ 本卡的 ±10000 给出 32 / 144（= 条的两端）。 */
-/* ★★ **全部输出都是 640 空间的（= 设计空间），不是表面 px** —— 2026-09-22 晚订正：
- *   本卡的 HUD 四件 + 字形都是 TH08 `ascii.anm` 的脚本**逐条照抄**进来的，它们**没有 `resolutionMode(2)`**
- *   ⇒ 引擎对这类 VM 的坐标按设计空间解释、绘制时乘 UI 倍率（2×）
- *   （一手：`th18:0x4063e8` 读 `vm+0x538 & 0x1c00000` 选倍率、`0x406429` 起逐分量乘；调用点
- *     `th18:0x481770` 就在绘制路径上，乘的正是 `vm+0x5f0` 那个实体坐标）。
- *   ⇒ 往这类 VM 写位置必须写 640 空间值（= `表面 px × to640`），写表面 px 会**整块跑到屏外**。
- *   （对照：`HUD-LAYOUT.md` §4.1b —— 写了 `resolutionMode(2)` 的脚本，1 单位 = 1 表面 px。）*/
+/* ★★★ **全部输出都是表面 px（= 1 单位 = 1 屏上像素）** —— 2026-09-23（P2）**实跑定案**，
+ *   订正 2026-09-22 晚那一版（它按「640 空间」输出，**改反了**）。
+ *
+ * **一手（`th18:0x4063d0` = VM 的「位置/尺寸 → 屏幕」那一步，逐指令）**：
+ *   ```
+ *   4063e8  mov  eax,[edi+0x538]        ; edi = vm
+ *   4063ee  and  eax,0x1c00000          ; = resolutionMode 的 3 位
+ *   4063f3  cmp  eax,0x400000  / je → 406421 : xmm1 = [0x56aca0]        ; mode 1 → ×世界倍率（2）
+ *   4063fa  cmp  eax,0xc00000  / je → 406421 : 同上                       ; mode 3 → 同上
+ *   406401  cmp  eax,0x800000  / je → 40640f : xmm1 = [0x56aca0]×[0x4b9138] ; mode 2 → ×(2×0.5) = ×1
+ *   406408  cmp  eax,0x1000000 / jne → 406451: **mode 0（不写）⇒ 一个字节都不乘 = ×1**
+ *   406429  movss xmm0,[esi] / mulss xmm0,xmm1 / movss [esi],xmm0 …    ; x/y/z 三分量逐一乘
+ *   ```
+ *   `[0x4b9138]` = **0.5**（`.rdata` 直读 4 字节 `00 00 00 3f`）、`[0x56aca0]` = 世界倍率（1280×960 下 2.0）。
+ *   同一判定在**尺寸**那一支**逐位同形**（`th18:0x4817c6`：mode1 → ×2、mode2 → ×1、**mode0 → 直通**）。
+ *   ⇒ **mode 0 与 mode 2 在 1280×960 下等价（都是 ×1 = 表面 px）**；`HUD-LAYOUT.md` §4.1b 里
+ *     「不写 `resolutionMode` ⇒ 坐标 ×2」那一行**与这段指令不符**（本卡按指令 + 实跑定案，见下）。
+ *
+ * **实跑判据（决定性，2026-09-22 那次 `th18_card_expand.log`）**：那一跑装的 DLL 是
+ *   `ea93d66e0957c0d39dc8dd29d4e84f2a`（= 18:13:42 的发布，也就**正是**写 640 空间那一版）
+ *   ⇒ owner 报「百分比**高了半个屏幕**」（#14：我们把 `text_y` 写 427，画面上就在 427 ⇒
+ *     正是 854 的一半）＋「人妖 HUD **整体缩小 50%**」（#15：16×16 的原生贴图按 16 px 画 = 原版的一半）
+ *   ⇒ **×1 生效**（若真按「不写 ⇒ ×2」，位置会落在 854、尺寸会是 32 px，两条抱怨都不会出现）。
+ *   ⚠ 这条**同时**解决了本卡内部的自相矛盾：HUD 货架块一直按**表面 px** 报（`YK_HUD_BLOCK_W 256` =
+ *     128 个 640 空间 px ×2）—— 只有 `yk_gauge_hud()` 的输出被改成 640 空间，于是「块 256 宽、
+ *     内容 128 宽」；现在两者一致。
+ *   ⚠ 若将来要改成「脚本显式写 `resolutionMode(2)` + 表面 px」，数值**一个都不用动**（1280×960 下
+ *     mode 2 也是 ×1）；但**别**写 `resolutionMode(1)`（那才会真 ×2 ⇒ 整块跑到屏外）。*/
 typedef struct {
-    float bar_x, bar_y;             /* 槽条 VM 位置（**640 空间**，左上；VM 用 anchorTopLeft）*/
+    float bar_x, bar_y;             /* 槽条 VM 位置（**表面 px**，左上；VM 用 anchorTopLeft）*/
     float human_x, human_y;         /* 人间图标（同上，anchorTopLeft）*/
     float youkai_x, youkai_y;       /* 妖怪图标（同上，anchorTopLeft）*/
     float cursor_x, cursor_y;       /* 游标（同上，**锚点 = 心 ⇒ 这是中心点**）*/
-    float text_x640, text_y640;     /* 百分比数字的**基准点**（640 空间；逐字形的偏移见下）*/
+    float text_x, text_y;           /* 百分比数字的**基准点**（表面 px；逐字形的偏移见下）*/
+    float px;                       /* ★ 本帧的「1 个 640 空间单位 = 多少表面 px」（TH18 = `1/to640` = 2）
+                                     *   —— 字形偏移、字形 scale、以及四件贴图的 scale 都要乘它：
+                                     *   贴图是 TH08 的**原生尺寸**（16×16 / 128×16 / 8×12），
+                                     *   在 1280×960 上要 ×2 才与原版同观感（#15「缩小 50%」的修法）。*/
 } yk_gauge_hud_t;
 
 /* `anchor[2]` = HUD 块的**左下角**（**表面 px**，= `ce_hud_slot_t` 的 x/y）；
- * `to640` = 表面→640 的比例（= `CE_HUD_SURFACE_TO_640`，TH18 是 0.5）⇒ 块左下角 ⇔ 640 空间的
- * `(anchor*to640)`，它就是 TH08 的 (32,481)（该块按 TH08 的 (32,449..465) 定的）。*/
+ * `to640` = 表面→640 的比例（= `CE_HUD_SURFACE_TO_640`，TH18 是 0.5）⇒ 内部倍数 `px = 1/to640 = 2`：
+ * 一手几何是 640 空间的字面量（TH08 的 `ascii.anm`），**一律先 ×px 换成表面 px 再落到 VM 上**。*/
 void yk_gauge_hud(int gauge, const float anchor[2], float to640, yk_gauge_hud_t *out);
 
 /* ---- ★★ 人妖槽的**百分比数字**：逐字形布局（一手 `AsciiManager::DrawPercentage` `th08:0x405e10`）----
@@ -663,9 +706,9 @@ void yk_gauge_hud(int gauge, const float anchor[2], float to640, yk_gauge_hud_t 
 #define YK_GAUGE_TEXT_MAX      8    /* 最多 = '-' + "100.00" + '%'（`abs(gauge) >= 10000` 且为负）*/
 typedef struct {
     uint8_t glyph;   /* 0..12（上面三个宏 + 数字）*/
-    float   dx;      /* 相对 `text_x640` 的 x 偏移（640 空间 px，已含居中）*/
-    float   dy;      /* 相对 `text_y640` 的 y 偏移（小号位 = +2）*/
-    float   scale;   /* 1.0 / 0.8（小号两位）*/
+    float   dx;      /* 相对 `text_x` 的 x 偏移（**640 空间 px**，已含居中 —— 落到 VM 前要 × `px`）*/
+    float   dy;      /* 相对 `text_y` 的 y 偏移（同上；小号位 = +2）*/
+    float   scale;   /* 1.0 / 0.8（小号两位）——落到 VM 前要 × `px`（贴图是原生尺寸）*/
 } yk_gauge_glyph_t;
 /* 把 `gauge`（−10000..+10000）拆成一串字形；返回字形数（1..`YK_GAUGE_TEXT_MAX`）；
  * `out` 为 NULL 或 `gauge` 越界（钳到 ±10000 后照算）都不会崩。**无浮点库调用**。*/

@@ -189,6 +189,9 @@ typedef struct {
     uint8_t       logged_sht;          /* 「妖侧 shooterset 没装」只记一次 */
     uint8_t       logged_noshot;       /* 「压了原生弹但自己也没弹」只记一次 */
     uint8_t       logged_pass0;        /* ★ 2026-09-12：「子机 0 ⇒ 放行原生弹（用户口径）」只记一次 */
+    uint8_t       logged_hudgeo;       /* ★★ 2026-09-23（P2）：人妖槽 HUD 的**几何自述**只记一次
+                                        *   （锚点 + 四个位置 + 倍数，实跑里用它与屏上所见对照，
+                                        *   定「写进去的数生效的是 640 空间还是表面 px」这一争）*/
     uint8_t       logged_full;         /* 「使魔表满 / 堆拒绝」只记一次 */
     uint8_t       logged_gate;         /* 「发射口精确闸生效（使魔没了 ⇒ 该槽哑火）」只记一次 */
     uint8_t       opt_spring_live;     /* ★ th08 #1：弹簧状态是否已经按「自机位置」起过步。
@@ -425,9 +428,52 @@ static void yk_fam_vm_kill_all(void)
     for (i = 0; i < YK_FAM_MAX; ++i) yk_fam_vm_kill(&s_fam_vm[i]);
 }
 
+/* ★★★ 2026-09-23（P1，实跑日志直证）：跟随 VM 表的**泄漏回收**（自愈）。
+ *
+ * **不变式**：`s_fam_vm` 里每条 `fam_id != 0` 的记录 ⇔ `s_map` 里那个 `fam_id` 还活着（活使魔）。
+ * 违反不变式的记录 = **泄漏**：格子被一条没人认领的记录占着，而它对应的那只使魔实体也没人管
+ * （不再钉位置、松 Shift 也不撤 = owner 报的「敌方使魔滞留」）。
+ *
+ * **实跑证据**（`game/th18_card_expand.log`，2026-09-22 那次）：
+ *   12 行 `youkai: familiar follow-VM table full (32) - familiar 193/194/… stays invisible`
+ *   —— 32 格全被泄漏记录占满，之后造的使魔**根本没有 VM ⇒ 画不出来**（`NoEnemyDebug` 空壳不跑 ECL，
+ *   没有任何别人会画它）。根因在 `yk_chase_target_resolve`（见那里的注）：判据误用了有副作用的
+ *   `yk_fam_broken` ⇒ 地图侧记录被清、VM 侧记录没人收。**根因已修**（判据改 `yk_map_is_fam`）；
+ *   本函数是**第二道保险**：即使以后又出现一条新路径漏收（或旧泄漏已经在场），表也不该满。
+ *
+ * 做两件事（幂等、可在 tick 里安全调用 —— 只标记删除，不析构）：
+ *   ① `ce_anm_delete` 收掉那条孤儿 VM；
+ *   ② 那只**孤儿使魔实体**也撤掉（`yk_kill_familiar` 只置 `flags_lo` 位 25 ⇒ 同帧 EnemyManager
+ *      sweep 静默析构它，不跑死亡处理 = 「撤」的语义）；实体早没了就跳过。
+ * 返回回收了几条（卡侧据此打一行日志 —— 实跑里这一行**应当不再出现**；出现了就说明还有漏收的路径）。*/
+static unsigned yk_fam_vm_prune(void)
+{
+    unsigned i, n = 0;
+    for (i = 0; i < YK_FAM_MAX; ++i) {
+        yk_fam_vm_t *v = &s_fam_vm[i];
+        uint8_t *f;
+        if (!v->fam_id) continue;
+        if (yk_map_is_fam(&s_map, v->fam_id)) continue;     /* 活使魔：不变式成立 */
+        f = yk_familiar_by_id(v->fam_id);                   /* 孤儿：先拿下实体（可能是 0） */
+        yk_fam_vm_kill(v);                                  /* ① 收 VM（幂等）*/
+        if (f) yk_kill_familiar(f);                         /* ② 撤那只没人管的真敌人 */
+        ++n;
+    }
+    return n;
+}
+
+/* 每帧的不变式检查 + 记账（`on_tick_2` 调；`noinline` 的理由见那里的注 —— 别并进 `on_tick_2`）。*/
+static void __attribute__((noinline)) yk_fam_vm_check(void)
+{
+    unsigned pruned = yk_fam_vm_prune();
+    if (pruned)
+        ce_log("youkai: familiar follow-VM table self-healed - reclaimed %u leaked record(s) "
+               "this frame (those familiars were orphans: the slot map no longer knew their "
+               "`fam_id`; entity + VM both withdrawn)", pruned);
+}
+
 /* 起一个跟随 VM 并**立刻**摆到实体坐标（世界层 VM 的实体坐标 (0,0,0) = 弹幕区上边框中点
- * ⇒ 不先摆会闪一帧）。失败只报日志（画不出来 ≠ 卡坏，`ufo_body_vm_spawn` 同款）。*/
-static void yk_fam_vm_spawn(uint32_t fam_id, int variant, float x, float y)
+ * ⇒ 不先摆会闪一帧）。失败只报日志（画不出来 ≠ 卡坏，`ufo_body_vm_spawn` 同款）。*/static void yk_fam_vm_spawn(uint32_t fam_id, int variant, float x, float y)
 {
     yk_fam_vm_t *v = yk_fam_vm_find(fam_id);
     uint32_t id;
@@ -437,6 +483,18 @@ static void yk_fam_vm_spawn(uint32_t fam_id, int variant, float x, float y)
     if (!fam_id) return;
     if (!v) {
         for (i = 0; i < YK_FAM_MAX; ++i) if (!s_fam_vm[i].fam_id) { v = &s_fam_vm[i]; break; }
+    }
+    if (!v) {
+        /* ★ 2026-09-23（P1）：表满 ⇒ **先自愈回收**（把已经不在 `s_map` 里的泄漏记录收掉）再重试一次。
+         * 回收后仍然没有空格 = 32 条记录逐条都对应一只活使魔 —— 那与 `yk_map_t` 那 32 格一一对应，
+         * 到不了（除非 `yk_map_alloc` 侧先满）。真到不了这一行，日志就是唯一线索。*/
+        unsigned n = yk_fam_vm_prune();
+        if (n) {
+            ce_log("youkai: familiar follow-VM table self-healed - reclaimed %u leaked record(s) "
+                   "before spawning familiar %u (P1: records outlive their `fam_id` in the slot map)",
+                   n, fam_id);
+            for (i = 0; i < YK_FAM_MAX; ++i) if (!s_fam_vm[i].fam_id) { v = &s_fam_vm[i]; break; }
+        }
     }
     if (!v) {   /* 表满：VM 表与使魔表同容量（每条使魔至多一条记录）⇒ 理论上到不了 */
         ce_log("youkai: familiar follow-VM table full (%d) - familiar %u stays invisible",
@@ -571,8 +629,14 @@ static void yk_familiars_tick(yk_card_t *s)
     yk_run_actions(s, tail, n);
 }
 
-/* ============================ §3.7 伤害转交 1/2 ============================ */
-static void yk_transfer_tick(yk_card_t *s)
+/* ============================ §3.7 伤害转交 1/2 ============================
+ * ⚠ **`noinline` 是必需的，别删**（2026-09-23 实测）：本函数是 `on_tick_2` 里**唯一**内联着
+ *   `ce_damage_rect`（`sdk.h:172` 那段内联汇编 —— 4 个栈参 + XMM2/XMM3）的路径。i686 只有 8 个
+ *   通用寄存器，而 `on_tick_2` 身上挂的东西已经很多（子机声明 / 人妖槽 / 刻符 / 擦弹 / 使魔表 /
+ *   PIV 上报…）⇒ 它一旦被内联进 `on_tick_2`，编译器就报
+ *   `inline assembly requires more registers than available`（整个 TU 编不过，不是警告）。
+ *   代价：每帧多一次 call（可忽略）；收益：加任何一行业务代码都不会再把整棵树编红。*/
+static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
 {
     unsigned i;
     uint8_t *boss = yk_boss();                      /* 每帧只解析一次（链表走 4 个 id）*/
@@ -687,7 +751,15 @@ static void yk_chase_target_resolve(yk_card_t *s)
         if (!ce_enemy_lockable(e)) continue;
         id = *(const uint32_t *)(e + CE_ENEMY_ID);
         if (!id) continue;
-        if (yk_fam_broken(&s_map, id)) continue;          /* 我们自己的使魔不当目标 */
+        /* ★★★ 2026-09-23（P1 / 实跑日志直证）：这里原来调的是 `yk_fam_broken` —— 那是**事件**
+         * （清 `fam_id` + 置 `broken`），**不是判据** ⇒ 每帧对每一只活使魔都走了一次「被打死」：
+         *   ① 表条目被清 ⇒ 那只真敌人变**孤儿**（不再钉位置、松 Shift 也不撤 = owner「敌方使魔滞留」）；
+         *   ② 跟随 VM 记录再没人收 ⇒ 32 格 `s_fam_vm` 泄漏 ⇒ 之后 `ce_anm_spawn` 拿不到格子
+         *      （日志 `familiar follow-VM table full (32) - familiar 193/… stays invisible`）；
+         *   ③ 槽被标 `broken` ⇒ 发射口闸夹上 ⇒ route A 重建一只**新**使魔（新 `fam_id`）⇒ ①逐波累积。
+         * 修法 = 判据换成**只读**的 `yk_map_is_fam`；事件那两条路（`on_enemy_death` / 静默消失）
+         * 仍走 `yk_fam_broken` / `yk_fam_gone`。全文见 `youkai_core.h` 的 `yk_map_is_fam`。*/
+        if (yk_map_is_fam(&s_map, id)) continue;          /* 我们自己的使魔不当目标 */
         ep = ce_enemy_pos(e);
         if (!ep) continue;
         dx = ep[0] - px;
@@ -1360,12 +1432,15 @@ static void yk_gauge_hud_spawn(ce_card_t *c, yk_card_t *s)
 {
     uint32_t *slot[4];
     int i, ch;
+    float px;
     (void)c;
     if (!s) return;
     slot[0] = &s->hud_bar; slot[1] = &s->hud_human;
     slot[2] = &s->hud_youkai; slot[3] = &s->hud_cursor;
     ch = yk_current_character();
     if (ch < 0 || ch > 3) ch = 0;
+    /* 表面 px / 640 空间 px（= `1/CE_HUD_SURFACE_TO_640`，TH18 = 2）—— 见下面那次 `ce_anm_set_scale`。*/
+    px = (CE_HUD_SURFACE_TO_640 > 0.0f) ? (1.0f / CE_HUD_SURFACE_TO_640) : 2.0f;
     for (i = 0; i < 4; ++i) {
         uint32_t id;
         if (*slot[i] && ce_anm_get_vm(*slot[i])) continue;
@@ -1373,6 +1448,12 @@ static void yk_gauge_hud_spawn(ce_card_t *c, yk_card_t *s)
         if (!id) { *slot[i] = 0; continue; }
         *slot[i] = id;
         ce_anm_interrupt(id, 1);          /* 一手：脚本出生是 stopHide 状态，interrupt 1 = 「显形」*/
+        /* ★★★ 2026-09-23（P2）：**贴图要 ×2**。四件贴图是从 TH08 `ascii.anm` 原生**原尺寸**切来的
+         * （游标 8×12 / 两图标 16×16 / 条 128×16），而 TH18 的表面是 1280×960（TH08 是 640×480）
+         * ⇒ 这四支脚本又没有 `resolutionMode`（`th18:0x4063d0` 的 mode 0 支 = **尺寸也 ×1**），
+         * 不乘 2 就只有原版一半的线性尺寸 —— owner 实跑 th08 #15「人妖整体的 hud 似乎比原版缩小了 50%」。
+         * 一手依据（mode 0 ⇒ 尺寸直通）见 `youkai_core.h` 的 `yk_gauge_hud_t`。*/
+        ce_anm_set_scale(id, px, px);
     }
     /* ★★ 2026-09-22 晚（owner：「th08 的贴图搞过来」）：**百分比数字的 7 格字形 VM**。
      * 载体脚本 = TH08 `ascii.anm` script4（`sprite(sprite136); zWriteDisable(1); static();`）
@@ -1388,7 +1469,12 @@ static void yk_gauge_hud_spawn(ce_card_t *c, yk_card_t *s)
 
 /* ★★ 人妖槽的百分比数字：按一手布局逐格写 7 个字形 VM 的 sprite / 位置 / 缩放 / 颜色。
  * 布局（`AsciiManager::DrawPercentage` `th08:0x405e10`）在纯逻辑 `yk_gauge_text_glyphs` 里。
- * ⚠ 不用的格：`alpha = 0`（同 `color(argb)` 的 alpha 通道）⇒ 不留残字。*/
+ * ⚠ 不用的格：`alpha = 0`（同 `color(argb)` 的 alpha 通道）⇒ 不留残字。
+ * ★★★ 2026-09-23（P2）：**基准点、逐字形的步进（7 / 5 / 2）、以及字形 scale 全部 × `h->px`**：
+ *   一手那一套步进是 **640 空间**的量（TH08 的屏幕宽 640），而这批 VM 的脚本没有 `resolutionMode`
+ *   ⇒ 位置与尺寸都按 1 单位 = 1 表面 px 走（`th18:0x4063d0` 的 mode 0 直通支，一手见
+ *   `youkai_core.h` 的 `yk_gauge_hud_t`）⇒ 不乘 2 就等于「字距只有一半、字也只有一半大」
+ *   （owner 实跑 th08 #14「百分比位置完全错位」/#15「整体缩小 50%」）。*/
 static void yk_gauge_text_sync(yk_card_t *s, const yk_gauge_hud_t *h, uint32_t col)
 {
     yk_gauge_glyph_t g[YK_GAUGE_TEXT_MAX];
@@ -1407,8 +1493,8 @@ static void yk_gauge_text_sync(yk_card_t *s, const yk_gauge_hud_t *h, uint32_t c
             continue;
         }
         if (anm) ce_anm_set_sprite(anm, id, YK_GAUGE_FONT_BASE[ch] + (int)g[i].glyph);
-        ce_anm_set_pos(id, h->text_x640 + g[i].dx, h->text_y640 + g[i].dy, 0.0f);
-        ce_anm_set_scale(id, g[i].scale, g[i].scale);      /* 小数两位 = 0.8（一手）*/
+        ce_anm_set_pos(id, h->text_x + g[i].dx * h->px, h->text_y + g[i].dy * h->px, 0.0f);
+        ce_anm_set_scale(id, g[i].scale * h->px, g[i].scale * h->px);  /* 小数两位 = 0.8×2 = 1.6（一手 + P2 的 ×2）*/
         ce_anm_set_color(id, 0xff000000u | col);           /* 一手：数字同吃那 5 档染色 */
     }
 }
@@ -1423,13 +1509,39 @@ static void yk_gauge_hud_update(yk_card_t *s)
     anchor[1] = s->hud.y;
     yk_gauge_hud(s->gauge, anchor, CE_HUD_SURFACE_TO_640, &h);
     col = yk_gauge_color(s->gauge);
+    /* ★★★ 2026-09-23（P2）：**四件也每帧重写 scale**（`h.px` = 2）。
+     * 为什么每帧写而不是只在 spawn 时写一次：贴图是 TH08 的原生尺寸（游标 8×12 / 图标 16×16 /
+     * 条 128×16），要 ×2 才与原版同观感；而 VM 的 scale 是会被别的路径动到的（引擎重建 VM、
+     * 脚本自己写、自愈重申请）⇒ 每帧钉死最省心，成本 = 4 次写。理由全文见 `yk_gauge_hud_t` 的注。*/
     if (s->hud_bar) {
         ce_anm_set_pos(s->hud_bar, h.bar_x, h.bar_y, 0.0f);
+        ce_anm_set_scale(s->hud_bar, h.px, h.px);
         ce_anm_set_color(s->hud_bar, 0xff000000u | col);   /* 一手：槽条用**同一个**颜色（AsciiManager.cpp:1060）*/
     }
-    if (s->hud_human)  ce_anm_set_pos(s->hud_human, h.human_x, h.human_y, 0.0f);
-    if (s->hud_youkai) ce_anm_set_pos(s->hud_youkai, h.youkai_x, h.youkai_y, 0.0f);
-    if (s->hud_cursor) ce_anm_set_pos(s->hud_cursor, h.cursor_x, h.cursor_y, 0.0f);
+    if (s->hud_human) {
+        ce_anm_set_pos(s->hud_human, h.human_x, h.human_y, 0.0f);
+        ce_anm_set_scale(s->hud_human, h.px, h.px);
+    }
+    if (s->hud_youkai) {
+        ce_anm_set_pos(s->hud_youkai, h.youkai_x, h.youkai_y, 0.0f);
+        ce_anm_set_scale(s->hud_youkai, h.px, h.px);
+    }
+    if (s->hud_cursor) {
+        ce_anm_set_pos(s->hud_cursor, h.cursor_x, h.cursor_y, 0.0f);
+        ce_anm_set_scale(s->hud_cursor, h.px, h.px);
+    }
+    /* ★ 只记一次的**几何自述**（实跑判据）：P2 这一版的分辨率空间之争（640 空间 vs 表面 px）
+     * 靠的就是把「我们写进去的那几个数」打在日志里 —— 与屏上看到的位置一比就知道生效的是哪一种。
+     * 锚点 = 货架给的那一格左下角（表面 px）。⚠ 参数刻意压到 6 个：`ce_log` 是变参函数，
+     * 一次压十几路浮点会把 i686 的寄存器用光，连带 `sdk.h` 里那些内联汇编的函数报
+     * 「inline assembly requires more registers than available」（2026-09-23 当场踩到过一次）。*/
+    if (!s->logged_hudgeo) {
+        s->logged_hudgeo = 1;
+        ce_log("youkai: gauge HUD geometry (surface px; these scripts carry no resolutionMode => "
+               "`th18:0x4063d0` mode 0 multiplies by 1) - anchor (%.0f,%.0f) bar (%.0f,%.0f) "
+               "text (%.0f,%.0f) scale x%.1f",
+               anchor[0], anchor[1], h.bar_x, h.bar_y, h.text_x, h.text_y, h.px);
+    }
     /* ★★ 百分比数字：**TH08 的字形**（`ascii.anm` sprite 0x88..0x94，生成器搬进 pl0X.anm）
      * 逐格换 sprite / 位置 / 缩放，布局 = `AsciiManager::DrawPercentage` `th08:0x405e10`
      * （纯逻辑在 `yk_gauge_text_glyphs`）。一手：数字同样吃那 5 档染色（`AsciiManager.cpp:1030-1058`）。*/
@@ -1452,6 +1564,7 @@ static int on_ctor(ce_card_t *c)
     s->spawns = s->broken = s->lost = s->transferred = s->dropped = s->fam_full = 0;
     s->logged_opt = s->logged_sht = s->logged_noshot = s->logged_full = s->logged_gate = 0;
     s->logged_pass0 = 0;
+    s->logged_hudgeo = 0;               /* ★ P2：换关重开 ⇒ 几何自述再打一次（锚点可能变了）*/
     s->heals_seen = 0;
     s->rearms_seen = 0;                 /* ★ route A：整表 reset 也清条目，但计数只增不清 ⇒ 快照回 0 */
     s->opt_spring_live = 0;
@@ -2018,6 +2131,13 @@ static int on_tick_2(ce_card_t *c)
     }
     yk_familiars_tick(s);
     yk_transfer_tick(s);
+    /* ★★★ 2026-09-23（P1）：跟随 VM 表的**每帧不变式检查**（32 次比较，成本可忽略）。
+     * 正常情况回收 0 条（判据已修，见 `yk_fam_vm_prune` 的注）；回收 >0 就是实跑判据里的
+     * 「还有别的漏收路径」信号 ⇒ 打一行日志（含条数）让人一眼看见。
+     * ⚠ 这一步**刻意包成一个 `noinline` 的小函数**：`on_tick_2` 已经很大，而它里面内联着
+     *   `ce_damage_rect`（`sdk.h:172` 那段内联汇编）—— 往它身上再加几路活值，i686 的寄存器就不够，
+     *   编译器会报「inline assembly requires more registers than available」（2026-09-23 实测）。*/
+    yk_fam_vm_check();
     /* ★★ 2026-09-22（工单 E / route A）：**波次级复位的记账**。夹住的槽在下一次 `etOn`
      * （= 引擎自己的发弹事件）就被放开，卡 tick 的 `yk_note_slot` 同帧消费并重建使魔
      * （语义与一手见 `youkai_core.h` §3.5.2）。这里只**记账**：

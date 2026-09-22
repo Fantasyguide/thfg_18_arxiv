@@ -19187,7 +19187,7 @@ commit `7647511` 才放出）⇒ #3（音效没屏蔽）/ #4 / #6（灵界结束
 | C | 人妖槽四件贴图**没抄错**：全在 `ascii.anm` **entry0**（`data/ascii/ascii.png`）—— 条 `sprite155 (0,224,128,16)` / 人图标 `153 (160,208,16,16)` / 妖图标 `154 (176,208,16,16)` / 游标 `152 (128,208,8,12)`，脚本 5/6/7/8 逐条同形 | ✅ | `thanm -l 8 -m v2.anmm local/th08.v1.00d/dat/ascii.anm`（矩形表写进 `engine/player/th08/03-*.md` §2.3a）|
 | C | **条的位置我们抄错了**：script5 的正文是 `pos(32,465)` → `posTime(40,0,32,449,0)` ⇒ **465 是滑入起点（屏外）**，停稳在 **449**（与两图标同高）；我们原来画在 465 ⇒ 条比图标低 **16 px** | ✅ | `ascii.anm` script5 正文；`AsciiManager::InitializeVms`（图标/游标 449/453）|
 | C | **数字那一套贴图我们没搬**（原来用共用件的 HUD 数字）：TH08 = `ascii.anm` script4 当画布 + **sprite 0x88..0x94 = 136..148**（'0'..'9'、'%'、'.'、'-'，各 `8×12` @ y=208），布局 = `DrawPercentage` `th08:0x405e10` | ✅ | `AsciiManager.cpp:202`（script4）+ `:1095-1225`（逐字形 `SetSprite` 与步进 7/5、小数位 scale 0.8、y+2、行尾 `'%'`）|
-| C | ★ **坐标空间踩错**：TH08 那四支脚本**没有 `resolutionMode`** ⇒ 在 TH18（surface = 2×）里，这类 VM 的坐标按**设计空间**解释、绘制时乘 UI 倍率 ⇒ 卡侧必须写 **640 空间**值（写表面 px 会整块跑到屏外）。本卡原来（以及本批第一版）写的是表面 px | ✅ | `th18:0x4063e8`/`0x406429`（读 `vm+0x538 & 0x1c00000` 选倍率后逐分量乘）+ 绘制路径调用点 `th18:0x481770`（乘的是 `vm+0x5f0` 实体坐标）；对照 `HUD-LAYOUT.md` §4.1b |
+| C | ★ **坐标空间**（⚠ **本行 2026-09-23 已被推翻 —— 见 §BE 详录 #56 第 2 节**：`th18:0x4063d0` 的 **mode 0 支根本不进乘法** ⇒ 这类 VM 是 **1 单位 = 1 表面 px**，写 640 空间才是错的）—— 当时写作「没有 `resolutionMode` ⇒ 坐标 ×2 ⇒ 必须写 640 空间值」 | ❌ 已推翻 | 当时只读到「按 `vm+0x538 & 0x1c00000` 选倍率」，**漏读 mode 0 那条 `jne 0x406451`**（跳过了整段乘法）；#56 补全指令边界 + 实跑合证 |
 | C | 槽条/图标/游标/数字**同吃五档染色**（极人/中人/极妖/中妖/其余）| ✅ | `AsciiManager.cpp:1030-1062` |
 | D | 归航（state 1）是**恒速、无加速段**：模长 = `[ds:0x18b896c]+0x14` = 当前 `.sht` 头的 `itemCollectSpeed` = pl00/02/03 **10.0**、pl01 **12.0**（我们原来 ❓自定 3.0 ⇒ owner 说的「很慢」）| ✅ | `th08:0x440886`(方向) / `:0x440898`(`mov eax,[edx+0x14]`) / `:0x4408a5`(造速度)；`dat/ply0{,1,2,3}{,as}.sht` 直读 |
 | D | **「刚开始就满速」的一手落点**：擦弹/消弹那一路 `spawn_item(type 7, state 1)` ⇒ 生成即归航；只有「击破敌机/符卡」那一路是 state 3/5（先上浮 40 帧 = owner 说的「很小的加速度」）| ✅ | `th08:0x431650` 一族 push 1；`th08:0x42b048` push 3；`th08:0x4402cb`–`:0x4402e9`（state 3 初速）|
@@ -19257,3 +19257,276 @@ python3 assets/build_player_anm.py → 原生部分逐块一致；新 entry/贴�
    ⇒ 引擎把它们的坐标按设计空间（640）解释、绘制时 ×2。本卡**第一版**写的是表面 px（= 2×），
    会整块跑到屏外 —— 现在改成 640 空间（`yk_gauge_hud` 的输出全部是 640 空间，单测钉着）。
    ⚠ 若实跑发现 HUD 位置仍然不对（偏了一半/一倍），第一个该看的也是这一条。
+
+## §BE 详录 #56（2026-09-23）：P1/P2 工单（108 永夜抄）—— **跟随 VM 表泄漏（实跑日志直证）+ 人妖槽 HUD 的坐标空间订正**
+
+> **谁做的**：P1/P2（108）子 agent，2026-09-23。
+> **owner 原话（逐字，来自 `SINGLE-CARD-TEST.md` §th08 的第二批 #12–#21）**：
+> ①（#12）「敌方使魔滞留，并且不会随着 shift 消失变成魔法阵，再放开 shift 重新变回来」
+> ②（#14）「人妖位置错位，缺少人妖具体百分比指示——更改，百分比位置完全错位，高了半个屏幕」
+> ③（#15）「人妖整体的 hud 似乎比原版缩小了 50%？」
+> **实跑日志**（`/mnt/d/项目/幻想指南/18/th18_modkit/game/th18_card_expand.log`，2026-09-22 18:20:13 起那次）：
+> `youkai: familiar follow-VM table full (32) - familiar 193/194/… stays invisible` **12 行**
+> （familiar 相关行 68、gate `re-armed` 28 次、`withdrew … (unfocused)` 8 次、`familiar … killed` 12 行）。
+> **那一跑装的 DLL** = `ea93d66e0957c0d39dc8dd29d4e84f2a`（`mods/` 与 `_255/` 两处 md5 实测同值；
+> = `release_guard` 记的 2026-09-22 18:13:42 那次发布）⇒ 日志里的现象属于**写 640 空间那一版**。
+> **没部署**：不跑 `make release` / `sync_modkit_dll.sh`、不写 `/mnt/d/...`、不碰 modkit。
+> **不新增站点**：两条都是卡侧内存读写与既有的 anm VM / 纯逻辑层。
+
+### 1. P1 —— 32 格跟随 VM 表为什么会满（根因 + 自愈）
+
+| # | 结论 | 可信度 | 一手 / 证据 |
+| --- | --- | --- | --- |
+| A | 根因 = 判据误用事件函数：`yk_chase_target_resolve` 调 `yk_fam_broken` 当谓词，而它会清 `fam_id` + 置 `broken` | ✅ | `youkai.c`（旧 690 行）+ `youkai_core.c` 的 `yk_fam_broken` |
+| A | ⇒ 每帧对每只活使魔执行一次「被打死」，三个后果：孤儿敌人（#12「滞留」）/ 跟随 VM 记录泄漏 / 槽被标 `broken` 后 route A 重建新 `fam_id`（逐波累积）| ✅ | 三条自洽，见下「P1 的三条后果」 |
+| A | 使魔在本作里**确实可锁定**（`life = 100 < 1000` ⇒ 不带 `0x40000000` 黑名单）⇒ 上面那条每帧路径真的会走到 | ✅ | `sdk.h` 的 `ce_enemy_lockable`；`youkai_core.h` 的 `YK_FAM_LIFE` / `YK_LIFE_LIMIT` |
+| B | 修法①（根因）：判据与事件分开 —— 新增**只读**的 `yk_map_is_fam()`，卡侧改调它；事件那两条路仍走 `yk_fam_broken`/`yk_fam_gone` | ✅ | `youkai_core.{h,c}` + 单测「整张表逐字节不变」|
+| B | 修法②（自愈，让表满不可能）：`yk_fam_vm_prune()` 回收「`fam_id` 已不在槽表里」的记录 —— 收 VM + 撤掉那只孤儿使魔；每帧一次 + spawn 表满时兜底 | ✅ | `youkai.c` 的 `yk_fam_vm_prune` / `yk_fam_vm_check` / `yk_fam_vm_spawn` |
+| B | 回收安全：`ce_anm_delete` 只标删、`yk_kill_familiar` 只置 `flags_lo` 位 25（同帧 sweep 静默析构），都不在死亡栈上析构 | ✅ | `youkai.c` 的注 + `sdk.h`；`METHOD.md` 的长持续效果铁律 |
+| C | route A 不受影响：闸的判据与「下一波 `etOn`」复位口一个字节都没改 | ✅ | `yk_shot_slot_gate` 未动；route A 单测全绿 |
+| D | **实跑判据**（三条，见下）| — | 日志关键字见 `SINGLE-CARD-TEST.md` §th08 #12 那一行 |
+
+**P1 的三条后果（同一个根因，逐条可对日志）**：① 槽表条目被清 ⇒ 那只真敌人变**孤儿**
+（不再钉位置、松 Shift 也不撤 = owner #12「敌方使魔滞留」）；② 跟随 VM 的记录再没人收 ⇒
+`s_fam_vm[32]` 逐波泄漏 ⇒ 之后造的使魔拿不到格子（日志 12 行 `table full … stays invisible`）；
+③ 槽被标 `broken` ⇒ 发射口闸夹上 ⇒ route A 重建一只**新**使魔（新 `fam_id`）⇒ ①②逐波累积。
+
+**P1 的实跑判据（逐条）**：① `youkai: familiar follow-VM table full (32) …` 应当**归零**（原来一跑 12 行）；
+② 新日志 `youkai: familiar follow-VM table self-healed - reclaimed N leaked record(s) this frame …`
+**不出现** = 没有别的漏收路径（出现则 N 就是还没找全的那条路）；
+③ 松 Shift 时 `youkai: withdrew N familiar(s) (unfocused)` 的 N 应等于当时场上的使魔数（不再有孤儿留在场上）。
+
+### 2. P2 —— 人妖槽 HUD 的坐标空间（**上一版改反了**，本批订正）
+
+| # | 结论 | 可信度 | 一手 / 证据 |
+| --- | --- | --- | --- |
+| A | `th18:0x4063d0` 按 `vm+0x538 & 0x1c00000` 选倍率；**mode 0（脚本不写 `resolutionMode`）⇒ 直接跳到 `0x406451`，一分量都不乘**（指令原文见下）| ✅ | `objdump -d -M intel local/th18.v1.00a/th18.exe`：`0x4063e8`–`0x40644c`；`[0x4b9138]` = `0000003f` = **0.5**；`[0x56aca0]` = 世界倍率（1280×960 = 2.0）|
+
+**`th18:0x4063d0` 逐指令（VM 位置 → 屏幕坐标；绘制路径调用点 `th18:0x481770`）**：
+`4063e8 mov eax,[edi+0x538]` → `4063ee and eax,0x1c00000` →
+`4063f3 cmp eax,0x400000 / je 406421`（mode1 → ×`[0x56aca0]`）、`4063fa cmp eax,0xc00000 / je 406421`（mode3 同）、
+`406401 cmp eax,0x800000 / je 40640f`（mode2 → ×`[0x56aca0]×[0x4b9138]` = ×1）、
+`406408 cmp eax,0x1000000 / jne 406451`（mode4 同 mode2；★ **其余含 mode 0 ⇒ 跳到 406451，整段乘法被绕过**）。
+| A | **尺寸**那一支逐位同形：`0x4817c6` 起 mode1 → ×2、mode2 → ×1、**mode 0 走 `0x481819` 直通** | ✅ | 同上反汇编（`0x4817c6`–`0x481825`）|
+| A | ⇒ **mode 0 与 mode 2 在本作分辨率下等价（都 ×1）= 1 单位 = 1 表面 px**；TH08 那批脚本的一手几何是**640 空间**的字面量 ⇒ 落笔要**位置 / 逐字形步进 / 贴图 scale 三者一起 ×2** | ✅ | 结论 ①② 合起来；⚠ 与 `HUD-LAYOUT.md` §4.1b 那行「不写 ⇒ ×2」**冲突**（该节已留订正块）|
+| B | **实跑合证**：写 640 空间那一版（DLL `ea93d66e…`）下 owner 报「百分比高了半个屏幕」+「整体缩小 50%」——两条都只在 ×1 下成立（427 vs 854；16 px vs 32 px）| ✅ | owner 原话 #14/#15 + 上面那条 md5 实测 |
+| B | **本卡内部本来就自相矛盾**：HUD 货架块一直按**表面 px** 报（`YK_HUD_BLOCK_W 256` = 128 个 640 空间 px ×2），只有 `yk_gauge_hud()` 的输出被改成了 640 空间 ⇒「报 256 宽、画 128 宽」 | ✅ | `youkai.c` 的 `YK_HUD_BLOCK_W/H` 注释（未随 16d2125 改动）|
+| C | **修法**（四处，见下）| ✅ | `youkai_core.{h,c}` / `youkai.c` + `test_youkai_core.c` 的 HUD 几何段（钉 `px == 2` 与逐项坐标）|
+
+**P2 的修法（四处）**：① `yk_gauge_hud()` 出口改回**表面 px**，并把倍数作新字段 `yk_gauge_hud_t.px`（= `1/to640` = 2）出口；
+② `yk_gauge_text_sync` 的基准点 / 逐字形步进 / 字形 scale 全乘 `px`；
+③ 四件贴图每帧 `ce_anm_set_scale(px, px)`（贴图是 TH08 原生尺寸）；
+④ 新增一行**几何自述**日志（= 实跑判据）。
+| D | **实跑判据**（三条，见下）| — | 与 owner #14/#15 逐条对照 |
+
+**P2 的实跑判据**：① 日志 `youkai: gauge HUD geometry (surface px; …) - anchor (x,y) bar (x,y) text (x,y) scale x2.0`
+里的 `bar`/`text` 应当**就是屏上所见的像素位置**（`bar = (锚点x, 锚点y−64)`、`text = (锚点x+128, 锚点y−140)`）；
+② 槽条与两个图标同高、条宽 ≈ 256 px；③ 百分比是 `XX.XX%`、小数两位明显更小。
+
+**`youkai.c` 的五处**：① `yk_chase_target_resolve` 的判据改 `yk_map_is_fam`（P1 根因）；
+② 新增 `yk_fam_vm_prune` / `yk_fam_vm_check`（每帧不变式检查）+ `yk_fam_vm_spawn` 表满时先自愈再重试；
+③ `yk_gauge_hud_spawn` / `yk_gauge_hud_update` / `yk_gauge_text_sync` 三处全部 ×`px`；
+④ 新增 `logged_hudgeo` 与几何自述日志；⑤ `yk_transfer_tick` 加 `noinline`（它内联着 `ce_damage_rect`
+的汇编，被并进 `on_tick_2` 会报「requires more registers than available」——2026-09-23 实际踩到）。
+
+### 3. 改了哪些文件（文件 → 改了什么 → 为什么 → 验证）
+
+| 文件 | 改了什么 | 为什么 | 验证 |
+| --- | --- | --- | --- |
+| `native/cards/youkai_core.c` | 实现 `yk_map_is_fam`；`yk_gauge_hud` 出口改回表面 px（`k = 1/to640`） | 同上 | 同上 |
+| `native/cards/youkai.c` | 五处（判据 / 自愈 / ×px / 几何日志 / `noinline`，见下）| P1 + P2 | `make dll` 通过；`make check` 见下 |
+| `native/cards/youkai_core.h` | `yk_map_is_fam` 声明与长注；`yk_gauge_hud_t` 改口径（表面 px + `px`，`text_x640`→`text_x`）| P1 根因 / P2 订正 | `make check` 的 `test-host` |
+| `native/tests/test_youkai_core.c` | 新增：`yk_map_is_fam` 纯读 + 幂等 + 与 `yk_fam_broken` 的差异（整表 memcmp）；HUD 几何段改成表面 px 并钉 `px == 2` | 把两条根因钉成断言 | 4469 断言 0 失败 |
+| `engine/player/th08/03-youkai-body-and-gauge.md` | §2.3a 那段「必须写 640 空间」换成 §2.3b 的**逐指令复核 + 实跑合证**（结论反了） | P2 的「一手钉死」要求 | `python tooling/check-docs.py` |
+| `mods/th18.v1.00a/card-expand/HUD-LAYOUT.md` | §4.1b 加订正块（「不写 ⇒ ×2」那一行与 `th18:0x4063d0` 不符） | 同一段指令，两处结论冲突必须先说清 | 同上 |
+| `TUNING.md` / `SINGLE-CARD-TEST.md` | 人妖槽 HUD 几何行改成表面 px；#12/#14/#15 的状态与判据更新 | 实跑清单 | 同上 |
+
+### 4. 机器门（本会话实跑原文）
+
+```
+gcc -std=c11 -Wall -Wextra -Werror tests/test_youkai_core.c cards/youkai_core.c && ./tests/build/test_youkai_core
+youkai_core: 4469 checks, 0 failed
+make dll  → 通过（无新增 warning；预先存在的 cards/youkai.c:5 `/*` in comment 一条）
+```
+
+（`make check` 全绿 + `check-docs` 的读数见提交信息；本批**未部署**。）
+
+### 5. 要 owner 拍 / 实跑确认的点
+
+1. **P2 的 ×2 是「按实跑 + 指令」定的**：若实跑看到 HUD 变成「大了一倍 + 位置低了一倍」，那就说明
+   那批 VM 走的不是我复核的那条路（唯一改动点是 `yk_gauge_hud` 的倍数与三处 `ce_anm_set_scale`，
+   把 `px` 改成 1 即可回到 640 空间口径）—— 日志的 `gauge HUD geometry …` 那一行会直接给出我们写进去的数。
+2. **P1 的自愈日志**：实跑若看到 `self-healed - reclaimed N leaked record(s)`，说明还有第三条漏收路径
+   （本批只找到并修了「判据误用」这一条），把 N 与当时的 `ledger` 行一起记下来即可定位。
+3. **#12 的另一半（人妖切换换外观/魔法阵）不属于本批** —— 一手已回流（`engine/enemy/th08/02-familiar-anm-57-58.md` §7），
+   本批只修「滞留」这一半；外观/圆环随 `IsYoukai()` 切换留给下一批（见 `SINGLE-CARD-TEST.md` §th08 #12）。
+
+## §BE 详录 #57（2026-09-23）：P? 工单（112 星莲船）—— 「槽位只有 1 个」的**根因 = 三格 VM 的脚本 `pos` 从没被摆开**（每帧由 C 补差值修好；顺带订正 `pos` 的字段偏移）
+
+> 工单原话（owner）：「星莲船**槽位只有 1 个**很奇怪，应该是**类 th17 的、有 3 个空槽位**才对」。
+> 本批**只动 112 的地盘 + 两个共享件（`engine.h` 的常量、`engine/anm/th18/01-vm-instantiate.md` 的订正）**，
+> **未部署**（没跑 `make release` / `deploy.py` / 没写 `/mnt/d/…`）、**不加站点**。
+
+### 1. 根因（一手 + 实跑日志，两条独立）
+
+| # | 事实 | 出处 |
+| --- | --- | --- |
+| ① | 绘制点 = `pos(+0x30)` + `entity_pos(+0x5f0)` + `__pos_2(+0x4e4)`（**三者相加**，旧记录只写了两个） | `th18:0x48171f`–`0x48174e` 逐指令（x 组 `0x30/0x5f0/0x4e4`，y 组 `0x34/0x5f4/0x4e8`） |
+| ② | 旧诊断把 `pos` 当成 `+0x2c` 读 ⇒ **差 4 字节**：`+0x2c` 是 `instr_offset`（脚本游标） | ExpHP `type-structs-own.json` 的 `zAnmVmPrefix`（`0x2c instr_offset` / `0x30 pos` / `0x4e4 __pos_2`）|
+| ③ | 于是日志里那列"pos.x"其实是 `+0x30`：**三格全 = 296**（= 脚本初始 `pos(296,912)`）⇒ 三格叠在同一点 | 实跑日志 `ufo/slot.vm` 1539 行（本机 `/mnt/d/项目/幻想指南/18/th18_modkit/game/th18_card_expand.log`）|
+| ④ | 摆位那条中断（一手 TH12 的 7/8/9 → `posTime`）**在 TH18 里不落地**；而**中断机制本身没坏** | 同日志：三格 alpha/scale 各自按 30 帧爬升 = 中断 17 的配方真在跑，但 pos 恒 296 |
+
+### 2. 逐条排掉的候选（工单点名的四条）
+
+| 候选 | 判据 | 结论 |
+| --- | --- | --- |
+| 三格 VM 是不是真建了三个 / 句柄被同一个 id 覆盖 | 日志三行**同一帧**读数不同（alpha 255/8/255、sprite 458/459/460、scale 2.00/0.13/2.00）⇒ 是三个不同对象；id 三元组整局不变 | **排除** |
+| 三格的 pos 是否确实不同 | 修好诊断后（下一版）见 `draw` 三项之和；本批用 `+0x30` 直读：三格相同 | **这就是根因** |
+| 脚本 `pos()` 与 C 侧 `ce_anm_set_pos` 打架 | 两者**相加**（①）⇒ 原注释「卡侧不用 set_pos 摆位」是对的，但因此三格谁也没被摆开 | **改成"补差值"写法** |
+| `state 2/1/0` 让其中两格画在别处/不可见 | 一手：三格 state **本来就各不相同** —— `th12:0x4214b0` 给每格写 `pending_interrupt = COLLECTED_UFOS[i] + 10`，`COLLECTED_UFOS[i]` 是**该格自己收的令牌色**（0/1/2/3 = 空/红/蓝/绿）| **不是病，是原版形态** |
+
+### 3. 改了什么（共享件按 CLAUDE.md 登记）
+
+| 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
+| --- | --- | --- | --- | --- |
+| `native/cards/ufo.c` | 新增 `ufo_hud_place_at()`（每帧 `entity_pos = 槽心 − (pos + __pos_2)`）+ 诊断打全三项/`flags_lo`/script + 闪光 VM 同款摆位 | 三格叠在一起（②③）⇒ 由 C 补差值 | 112 会话（本工单） | `make dll` 通过、`make dllx87` 0 条 x87、日志判据见 §4 |
+| `native/engine.h` | **追加** `CE_ANM_VM_SCRIPT_POS/POS_2/SCRIPT_ID/FLAGS_LO` 四个宏 + 订正 `CE_ANM_VM_POS` 的注释 | 旧偏移错（②），而且是被多张卡抄用的常量 | 同上 | 纯追加、无既有宏改名/改值 ⇒ 对别的卡零影响 |
+| `engine/anm/th18/01-vm-instantiate.md` | §3a 的 `+0x2c..0x34` 订正成 `+0x30..0x38`、补 `__pos_2`、加"补差值"推论；§2b 加交叉引用 | 同一处错偏移的源头文档 | 同上 | `check-docs` 通过（links/addr/version）|
+| `assets/ability/make_ufo_hud_art.py` | 文件头 + 生成脚本头的 **Δ7 注释**（脚本内容一字未改） | 把根因写在产物旁边 | 同上 | 重跑生成器后 `build/ability.anm` **md5 不变**（`6735a46c7051a89cd9d33eddee433a7c`）|
+
+### 4. 机器门 + 判据（本会话实跑原文）
+
+```
+make anm   → build/ability.anm md5 6735a46c7051a89cd9d33eddee433a7c（与 Δ7 之前逐字节相同）
+make check → quick/cards-check/anm-verify/sht-verify/snd-check/dllx87/dllverify/sites.py check/
+             contract_check/gen_drift/sitecheck --all/capcheck/engine_abi_check/anm_hud_alpha_check 全过
+             （唯一失败 = `AUDIT.md:19281` 的表格单元格 202 字符 > 200，属**并发会话**的 §BE #56 行，非本批）
+```
+
+下一版 `ufo/slot.vm` 的判据（每 60 帧一行 ×3）：`draw` 那一项应当**恰好**是
+`(296,912) / (338,912) / (380,912)`（三格 x 各差 42），`scale 2.00`、`alpha 255`、`layer 25`、
+`sprite = 457 + 四态 + (闪烁 ? 4 : 0)`。
+
+### 5. 要 owner 拍 / 实跑确认的点
+
+1. **`posTime` 为什么在 TH18 不落地 = 🟡 未结**（本批绕过它，没结案）。已知：中断 17 的
+   `alphaTime/scaleTime` 生效、位置类 `posTime` 不生效；候选（脚本先跑后 `caseReturn` 回 0、
+   `interruptLabel` 扫描、`flags_lo` 的 `0x400` 分支走 `__pos_2`）都还没被证据钉死。
+   下一版日志带 `instr`/`flags_lo`/三项 pos ⇒ 一次实跑就能收口。
+2. **三格的观感口径**：一手 TH12 的三格**互叠 6 表面 px**（槽贴图 24 单位宽、间距 21 单位）。
+   若 owner 要的是 TH17 那种"三个独立空格"，改 `ufo.c` 的 `k_ufo_slot_x[]`（间距 42 → 更大）即可。
+3. **`faith_hud.c`（110/111）的同一处读法错**：`FH_VM_POS_SCRIPT 0x2c` 也是 `instr_offset`，
+   它那条 `画在 (x,y)` 日志的第二个加数恒 0 ⇒ 日志少算了脚本 pos（**行为不受影响**，它摆位走
+   `entity_pos`）。属别人的卡 ⇒ 本批**只登记不动手**。
+
+## §BE-FM（2026-09-23）：终符「随机小玉没了」= **判伪（闸不是元凶）**；顺带查明「闸对未聚焦不设防」这条真缺口
+
+> **谁做的**：P13 调查工单（108 永夜抄）。**姿态：只读** —— 本工单**一行 `youkai.c` / `youkai_core.*`
+> 都没动**（另一会话正在改它们，P1）。产物 = 本文这一节 + `SINGLE-CARD-TEST.md` §th08 #21 的收口。
+> **owner 原话（逐字）**：「一面，我最后一个非符开了 B，然后击破进了终符，终符应当是自机狙大玉和随机小玉的，
+> 但是随机小玉没了，只有自机狙大玉」。
+> **一手**：① 本机实跑日志（2026-09-22 18:20:13 那次，与 §BE 详录 #56 同一份，72 766 帧）；
+> ② `local/th18.v1.00a/th18.exe` 逐指令（`objdump`，`0x433ff4`–`0x43402d` / `0x424fe0`/`0x427810`）；
+> ③ 一手 ECL：`local/_scratch/st01bs.asm`（`thecl -d 8`/`-d 18` 出的 stage 1 boss 反汇编，行号按下引）。
+> **结论一句话**：闸的**归属判据确实认 boss 自己的发射口**（判真，那就是 owner 上一条「击破一个阶段后
+> 不再发弹」的机制）；但**本跑那一局的终符期间，闸没有夹住过任何一个槽** —— 记账计数可证（§2）⇒ 本条症状**另有原因**（§6）。
+
+### 1. 闸的归属判据是什么、boss 的槽满不满足（owner 问 1）
+
+| 项 | 值 | 证据（一手） |
+| --- | --- | --- |
+| 判据 | `(enemy_id, slot)` 在**我们自己的**槽表里 **且** `fam_seen == 1` **且** 卡侧按 id 回查不到活使魔 | `youkai_core.c` 的 `yk_shot_slot_suppressed` |
+| `fam_seen` 唯一写点 | `yk_fam_created()` —— 只有**成功建出**一只使魔之后才置 1 | `youkai_core.c`；调用者 `youkai.c` 的 `yk_run_action` |
+| 槽表谁填 | `yk_familiars_tick` 对 `CE_ENEMY_FOREACH` 的**每一只**敌人、每个 `props[i].type != 0` 的槽建条目并建使魔；**没有 boss / 可锁定 / 归属过滤** | `youkai.c` 的 `yk_familiars_tick`；`sdk.h` 的 `CE_ENEMY_FOREACH` |
+| boss 在那张链表里吗 | 在 —— `yk_boss()` / `ce_enemy_by_id` 与遍历读的是**同一个** `CE_EM_LIST_HEAD` | `sdk.h` 的 `ce_enemy_by_id` 注 |
+| 掐的动作 | SDK 置 `retaddr = 0x43402d`：跳过 `0x42cca0`×2（保护半径设/清）与 `call 0x427810`（发射），**零内存写** | `0x433ff4`–`0x43402d` 逐指令 |
+
+⇒ **判真**：`props[i].type` 由 `etSprite` 的 arg1 写（`0x43404e` 一手），任何 ECL 敌人（含 boss）都能满足这条判据；
+触发路径 = ①ECL 武装该槽 → ②卡 tick 建条目 + 使魔（`fam_seen=1`）→ ③使魔被打死/静默消失（`fam_id=0`）→
+④闸本帧返回 1、该槽这一条 `etOn` 落空。这**正是** [`engine/enemy/th18/07-emitter-slots-waves-and-phase-transitions.md`](../../../engine/enemy/th18/07-emitter-slots-waves-and-phase-transitions.md) §5 那条链。
+
+### 2. 但本例**判伪**：那一局终符期间闸没夹过任何槽（可证）
+
+- **仪器**：闸只有两个记账口 —— `m->rearms`（route A 每次「夹住后被问」+1，只增不清）与 `m->heals`（TTL 自愈）。
+  两者都由**卡 tick** 打印，而打印块在 `on_tick_2` 的 `if (!focused) { … return 0; }` **之后** ⇒
+  只要此后有**任何一帧**聚焦，累积的 `re-armed N slot(s) (total M)` 必然打出（快照 `rearms_seen` 只在打印时更新）。
+- **日志读数**：最后一次 `re-armed` 是 **`total 45`（frame 55 772）**，此后到进程结束（frame 72 766）**一次都没有**。
+- **同一段里有聚焦帧的铁证**：`self-healed` 两次（frame 63 804 / 69 272；TTL 需要连续 ~120 个**聚焦**帧的计数）
+  + `ledger` 的 `spawned` 在 frame 64 754→68 354 之间 +1（建使魔只发生在聚焦分支里）。
+- **终符窗口**：日志里 stage 1 boss 的**最后一个非符 = `Boss2`（`lifeSet(14200)`）在 frame 62 456 结束**
+  （trance 的 boss PHASE 行写着 `life 14200/14200` 并标 `FINAL phase`）⇒ 终符 `BossCard2` 从这里开始。
+  而 frame 62 456 之后仍有聚焦帧（63 804 / 63 852–63 858 / 64 754–68 354）⇒ **那些帧上 `rearms` 仍是 45**
+  ⇒ 终符期间**没有任何 `(enemy_id, slot)` 条目被 `etOn` 问到过** ⇒ 闸没掐任何槽。
+- **结构性旁证**：route A + `YK_EMIT_BROKEN_TTL = 120` 把「一次使魔死亡」的静默上限钉成
+  **至多 1 条 `etOn` / 120 个聚焦帧**（`yk_shot_slot_gate` 的 `!e->rearm_pending` 保证每个夹持期只记一次账）
+  ⇒ 它本身就**不可能**让一整支弹幕消失。
+
+### 3. 顺带查出的**真**缺口（🟡 代码级已证；本跑未观察到它发作）
+
+闸**自己不设防聚焦**（`0x433ffa` 是每帧每槽无条件问卡链），但它的**两个复位口都只在聚焦路径上**：
+
+| 复位口 | 实装处 | 未聚焦时会发生什么 |
+| --- | --- | --- |
+| 消费 `rearm_pending`（route A 主路） | `yk_note_slot` ← `yk_familiars_tick`（`on_tick_2` 的聚焦分支） | **不消费** ⇒ 夹持一直挂着 |
+| `no_fam_frames` 到 120 的 TTL 兜底 | 同上 | **不涨** ⇒ TTL 永远不到期 |
+| `yk_map_reset`（松低速 / 删卡 / 局末） | `yk_drop_all`，被 `if (yk_map_fam_count(&s_map))` 守卫 | 夹持条目 `fam_id == 0` ⇒ **不计入 `fam_count`** ⇒ 松 Shift **清不掉**它 |
+
+⇒ 若玩家在「某槽刚被夹住」那一刻松开 Shift 并**一直不聚焦**（自机狙符里很常见），那一槽的**每一次**
+`etOn` 都被吞，而且**日志里一行都不会有**（记账行在 `!focused` 早退之后）。
+这是现版代码里唯一够得到「一整支弹幕消失」的路径 —— 但本跑日志**不支持它发生过**（§2）。修法见 §5。
+
+### 4. 一手：终符那两支弹幕各在哪一槽（判「随机小玉」是谁）
+
+| 项 | 值 | 证据 |
+| --- | --- | --- |
+| 终符 | stage 1 boss 的 `BossCard2` = `spell(4, 2100, 0, "招符「弾災招福」")`；`movePosTime(60, 4, 0, 128)` ⇒ 停在 (0,128) | `st01bs.asm:505`–`538` |
+| 自机狙那一支 | 槽 **0**、`etAim(0,3)`、`%A = %ANGLE_PLAYER`，每 90 帧 1 次（`BossCard2_at` → `_at_et`，7 次 `etOn` 夹 `wait(3)`） | `st01bs.asm:599`/`671` |
+| 随机那一支（**同槽 0**） | 同一子程序、`%A = %RANDRAD` + `etOffset(0, 随机±64, 0)`，每 90 帧 **2** 次；`$DIFF>=2` 再 +3、`>=3` 再 +2（**只有 Hard/Lunatic 有**） | `st01bs.asm:559`–`575` |
+| 另一条发射口 | 槽 **1**：`BossCard2_at2()`（`async`，`!NHL` = N/H/L 才跑）：`etNew(1); etAim(1,0); etSprite(1,32,3); etCount(1, N 档 3, 1); etAngle(1,0,-1); etSpeed(1,0.6,1); etOn(1)` = 慢速小扇 | `st01bs.asm:563`/`633`–`652` |
+| 本跑难度 | **Normal**（`ce_difficulty()` 原始档 = 1）⇒ `!NHL` 成立；`$DIFF>=2` 的三支额外随机波**不跑** | 日志 `trance: kill-count inputs … difficulty 1` |
+
+⇒ **逻辑约束（这一条最有用）**：闸的粒度是 `(enemy_id, slot)` ⇒ 它只能解释「**消失的那一支与活下来的那一支不在同一槽**」。
+本符跨槽的只有「槽 0 vs 槽 1」⇒ 只有当 owner 说的「随机小玉」= **槽 1 那支慢速小扇**时闸才在理论上够得着；
+若「随机小玉」指槽 0 的那两支 `%RANDRAD` 波，则**任何** per-slot 钩子都解释不了（它们与自机狙**同槽、同弹型、同 `etCount`**，一起生一起死）。
+⚠ 槽 1 的发射点偏移恒为 (0,0)（`etNew(1)` 清零且 `BossCard2_at2` 从不调 `etOffset`）⇒ 它的使魔会**正好钉在 boss 身上**（本跑 frame 69 290 那只死在 (0,128) 的使魔与这条相符，但**不能**据此定槽：🟡）。
+
+### 5. 给下一个工单的修法清单（逐文件逐函数；本工单一行代码没动）
+
+| # | 文件 → 函数 | 改什么 | 为什么 |
+| --- | --- | --- | --- |
+| 1 | `native/cards/youkai.c` → `yk_on_shot_slot` | 开头加 `if (!CE_PLAYER_FOCUSED()) return 0;` | 未聚焦时本卡的 1:1 映射整体关着（`on_tick_2` 的 `!focused` 分支）⇒「使魔死了就掐这个口子」在那时**没有语义**；这一条直接消掉 §3 的整条缺口 |
+| 2 | 同上 → `on_tick_2` 的 `!focused` 分支 | 守卫 `if (yk_map_fam_count(&s_map)) yk_drop_all(…)` 改成**无条件**清夹持态（或直接 `yk_map_reset`） | 夹持条目 `fam_id == 0` ⇒ `fam_count == 0` ⇒ 松 Shift 清不掉它，再聚焦还要白等 120 帧 / 1 条 `etOn` |
+| 3 | `native/cards/youkai_core.c` → `yk_shot_slot_gate` | 第二问即放行：`if (e->rearm_pending) { 清 rearm_pending/fam_seen/broken; return 0; }`（route A′） | 断点每帧每槽都被问到，本函数自己就有全部信息 ⇒ 把「恢复」从卡 tick 解耦；未聚焦 / 卡 tick 被压时也成立 |
+| 4 | 同上 → `yk_note_slot` 的 TTL 年龄 | 改成按「被 `etOn` 问过的次数 / 墙钟帧」计，别按卡 tick 计 | 现在的 120 帧量纲不是时间，是「聚焦帧」 |
+| 5 | `native/cards/youkai.c` → `yk_on_shot_slot` + `on_tick_2` 记账 | 夹住时**每次都记** `(enemy_id, slot, focused, fam_seen, broken, no_fam_frames)`；释放时记原因（edge / rearm / TTL / map-reset）；另记 boss 的 id 与它当前活跃槽 | 本工单判伪靠的是「计数没涨」这种间接证据；下一跑要能一眼看出**是哪一槽、谁在夹、聚焦没有** |
+| 6 | `native/cards/youkai.c` → `yk_transfer_tick` / `on_enemy_death` | `yk_fam_gone`（静默消失）也进 `ledger`（现在只有 `spawned/killed/withdrew`） | 本跑 frame 69 272 的 `self-healed` 前 120 帧找不到对应死亡行 = 一次静默消失，账上无痕（对不上账） |
+
+> ⚠ **站点预算**：以上全部**骑在既有站点上**（`ce_enemy_shot_slot` / 卡 tick），**不新增断点**（`sites.py` 已超线）。
+
+### 6. 替代解释（逐条给证据，含否掉的）
+
+| 候选 | 判 | 证据 |
+| --- | --- | --- |
+| 「非符放 B ⇒ 击破顺序变了 ⇒ 终符少跑一个子程序」 | ❌ 一手否掉 | `BossCard2` 里**没有** `$BOMB_COUNT` / `$MISS_COUNT` 分支：只有段首 `$TIMEOUT` 选 `etCancel` vs `etClear`、`$DIFF` 加波 ⇒ 放 B 击破与打光击破走**同一条** ECL（`st01bs.asm:505`–`596`） |
+| 「别的卡的钩子掐了那一槽」 | ❌ 否掉 | 全仓 grep：`on_enemy_shot_slot` **只有 108 注册**（`youkai.c` 的 `CE_CARD(108, …)`）；`on_native_shot_suppress` 只管**自机**弹道（`0x45ebfb`），与敌弹无关 |
+| 「闸掐了」 | ❌ 本跑否掉（§2）；机制仍存在于其他局 | 判据成立、日志不支持 |
+| 「弹被消掉了（小弹可消、大玉不可消）」 | 🟡 无证据 | 本跑日志里**没有任何消弹卡的记录**：109 的 `pofv: blast` 0 行、110 的 `mof:` 0 行、116 season 0 行 |
+| 「弹发了但画不出来（type 32 的贴图 / entry 错位）」 | ❓ 本工单没查 | 需要一次 `bullet.anm` 逐 type 对账（`zTableBulletSpriteData[type]` 的 `anm_script`/`colors`，结构体见 vendor `type-structs-own.json`） |
+
+### 7. 要 owner 补的（下一跑就能收口）
+
+1. **复现时的难度档 + 那 10 秒有没有按 Shift**（本跑是 **Normal**；若「随机小玉」的记忆来自 Hard/Lunatic，
+   Normal 本来就少 3 支随机波 —— 一手 ECL 见 §4）。
+2. 一段**录像或截图**（终符那 10 秒）：只要能看清「消失的是大玉还是小玉」⇒ 按 §4 的逻辑约束直接定它是槽 0 还是槽 1。
+3. **单卡（只装 108）与空卡组**各打一次同一张符卡：空卡组仍缺 ⇒ 与本卡无关（往 ECL / 难度 / 引擎侧查）。
+4. 用 §5 的新记账跑一版日志（`local/GAME-LOG.md` 的路径）；判据写进 `SINGLE-CARD-TEST.md` §th08 #21。
+
+### 8. 本工单动过的文件（协作须知）
+
+| 文件 | 改了什么 | 怎么验证的 |
+| --- | --- | --- |
+| `mods/th18.v1.00a/card-expand/AUDIT.md` | 新增本节 §BE-FM | `python3 tooling/check-docs.py` |
+| `mods/th18.v1.00a/card-expand/SINGLE-CARD-TEST.md` | §th08 #21 行 + 「#21 的定位方向」改成判伪结论与下一步 | 同上 |
+
+**没动**：`native/**`（含 `youkai.c` / `youkai_core.*` —— 另一会话在改）、`sites.py`、`patch/**`、`Makefile`、
+`cards_def.c`、`assets/**`。**没有部署**（不跑 `make release` / `deploy.py`，不写 modkit）。

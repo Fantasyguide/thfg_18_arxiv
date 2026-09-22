@@ -46,6 +46,12 @@ PRIMS = {
             (r"youkai: (run done|ledger) - \d+ familiars spawned|youkai: ledger - \d+ spawned",
               "使魔**创建过**（本局计数汇总；`ledger` = 108 补的定期账，见计划 §6.2）", True),
             (r"youkai: withdrew \d+ familiar\(s\)", "使魔按规则**撤回**（不是凭空消失）", False),
+            # ★ 2026-09-23（P1）：跟随 VM 表的**自愈回收**（正常情况不该出现 —— 出现就是还有漏收路径）
+            #   与「几何自述」（P2：把写进 VM 的锚点/条/数字位置打出来，与屏上所见对照即可定坐标空间）。
+            (r"youkai: familiar follow-VM table self-healed",
+             "跟随 VM 表自愈回收过（正常为 0；见 AUDIT §BE 详录 #56 第 1 节）", False),
+            (r"youkai: gauge HUD geometry \(surface px",
+             "人妖槽 HUD 的几何自述（P2：用来定「写进去的数 = 屏上的像素」）", False),
         ],
         fail=[(r"youkai: familiar spawn FAILED", "创建失败（池满 / 坐标非法）"),
               (r"youkai: familiar follow-VM table full", "跟随 VM 表满（画面会少使魔）")],

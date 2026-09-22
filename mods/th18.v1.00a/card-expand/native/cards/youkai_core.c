@@ -387,6 +387,18 @@ yk_slot_t *yk_map_find_fam(yk_map_t *m, uint32_t fam_id)
     return 0;
 }
 
+/* ★★★ 2026-09-23（P1）：**只读**版判据 —— 「这个 id 是不是我表里活着的使魔」。
+ * 与 `yk_fam_broken` 的区别是**它一个字节都不写**（后者是事件：清 `fam_id` + 置 `broken`）。
+ * 卡侧每帧的「排除我们自己的使魔」这类判据一律用它；理由与那次真事故（32 格跟随 VM 表泄漏）
+ * 见 `youkai_core.h` 里本函数上面那一整段。 */
+int yk_map_is_fam(const yk_map_t *m, uint32_t fam_id)
+{
+    unsigned i;
+    if (!m || !fam_id) return 0;
+    for (i = 0; i < YK_FAM_MAX; ++i) if (m->e[i].fam_id == fam_id) return 1;
+    return 0;
+}
+
 void yk_frame_begin(yk_map_t *m)
 {
     unsigned i;
@@ -770,31 +782,34 @@ uint32_t yk_gauge_color(int gauge)
 
 void yk_gauge_hud(int gauge, const float anchor[2], float to640, yk_gauge_hud_t *out)
 {
-    /* 一手（640 空间）：槽条左上 (32,465)、图标 (32,449)/(144,449)、游标中心 (96 + g·112/20000, 453)、
-     * 数字 (96 + g·80/20000, 446)。块左下角 ⇔ 640 空间的 **(32,481)** ⇒
-     *   表面偏移 x = (X640 − 32) × (1/to640)、y = (481 − Y640) × (1/to640)。
-     * ⚠ 图标 x 用**限值**算：`88 + limit·56/10000`（`AsciiManager::InitializeVms`）——
-     *   本卡是 ±10000 ⇒ 恰好落在条的两端（32 / 144），与一手数值一致。*/
-    float ax, ay, g;
+    /* 一手（**640 空间**的字面量）：槽条左上 (32,449)、图标 (32,449)/(144,449)、
+     * 游标中心 (96 + g·112/20000, 453)、数字 (96 + g·80/20000, 446)。块左下角 ⇔ 640 空间的 (32,481)。
+     *   ⚠ 图标 x 用**限值**算：`88 + limit·56/10000`（`AsciiManager::InitializeVms`）——
+     *     本卡是 ±10000 ⇒ 恰好落在条的两端（32 / 144），与一手数值一致。
+     *
+     * ★★★ 2026-09-23（P2）：**出口换回表面 px**（`px = 1/to640` = 2）：本卡那些 VM 的脚本没有
+     *   `resolutionMode` ⇒ `th18:0x4063d0` 那一步**一分量都不乘**（mode 0 ⇒ ×1 = 表面 px），
+     *   尺寸那一支同形（`th18:0x4817c6`）⇒ 写 640 空间的数就会「位置高半个屏幕 + 整体缩小 50%」
+     *   （owner th08 #14/#15 的实跑原话）。一手与实跑判据的全文在 `youkai_core.h` 的 `yk_gauge_hud_t`。*/
+    float k, ax, ay, g;
     int v;
     if (!out) return;
-    /* ★ 2026-09-22 晚：本函数**全部输出 640 空间**（这些 VM 的脚本没有 `resolutionMode`，见 .h 的注）
-     * ⇒ 先把表面 px 的锚点折成 640 空间，后续偏移一律用 640 空间的字面量。*/
-    if (!(to640 > 0.0f)) to640 = 0.5f;   /* = `CE_HUD_SURFACE_TO_640`（纯逻辑层不引 sdk.h）*/
-    ax = (anchor ? anchor[0] : 0.0f) * to640;
-    ay = (anchor ? anchor[1] : 0.0f) * to640;
+    k = (to640 > 0.0f) ? (1.0f / to640) : 2.0f;   /* 表面 px / 640 空间 px（TH18 = 2）*/
+    ax = anchor ? anchor[0] : 0.0f;               /* 锚点本来就是**表面 px** ⇒ 直接用 */
+    ay = anchor ? anchor[1] : 0.0f;
     v = yk_gauge_clamp(gauge);
     g = (float)v / (float)YK_GAUGE_SPAN;              /* −1..+1，TH08 是 float 除法（不是整数取整）*/
-    out->bar_x = ax + (32.0f - 32.0f);
-    out->bar_y = ay - (481.0f - 449.0f);              /* ★ 停稳位置 = 449（465 只是滑入起点；见 .h 的注）*/
-    out->human_x = ax + ((88.0f + (float)YK_GAUGE_HUMAN_LIMIT * 56.0f / 10000.0f) - 32.0f);
-    out->human_y = ay - (481.0f - 449.0f);
-    out->youkai_x = ax + ((88.0f + (float)YK_GAUGE_YOUKAI_LIMIT * 56.0f / 10000.0f) - 32.0f);
+    out->px = k;
+    out->bar_x = ax + (32.0f - 32.0f) * k;
+    out->bar_y = ay - (481.0f - 449.0f) * k;          /* ★ 停稳位置 = 449（465 只是滑入起点；见 .h 的注）*/
+    out->human_x = ax + ((88.0f + (float)YK_GAUGE_HUMAN_LIMIT * 56.0f / 10000.0f) - 32.0f) * k;
+    out->human_y = ay - (481.0f - 449.0f) * k;
+    out->youkai_x = ax + ((88.0f + (float)YK_GAUGE_YOUKAI_LIMIT * 56.0f / 10000.0f) - 32.0f) * k;
     out->youkai_y = out->human_y;
-    out->cursor_x = ax + ((96.0f + g * 56.0f) - 32.0f);   /* 112 / 2 = 56 */
-    out->cursor_y = ay - (481.0f - 453.0f);               /* 游标锚点 = 心 ⇒ 这是中心 */
-    out->text_x640 = ax + (64.0f + g * 40.0f);            /* 80 / 2 = 40；96 − 32 = 64 */
-    out->text_y640 = ay - (481.0f - 446.0f);              /* 游标 y − 7 = 446（640 空间）*/
+    out->cursor_x = ax + ((96.0f + g * 56.0f) - 32.0f) * k;   /* 112 / 2 = 56 */
+    out->cursor_y = ay - (481.0f - 453.0f) * k;               /* 游标锚点 = 心 ⇒ 这是中心 */
+    out->text_x = ax + (64.0f + g * 40.0f) * k;               /* 80 / 2 = 40；96 − 32 = 64 */
+    out->text_y = ay - (481.0f - 446.0f) * k;                 /* 游标 y − 7 = 446（640 空间）*/
 }
 
 /* ---------------------------------------- 人妖槽的百分比数字：逐字形布局（`th08:0x405e10`）
