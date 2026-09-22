@@ -31,8 +31,8 @@ TH16 的敌弹**不是**由一个中央弹幕系统统一驱动的。每颗弹�
 | TH07 | **`mode`**（六作里唯一的 mode 表；但 **`mode` 落 state、不落 type**） | `type` 来自 **`spawn_item` 的第 2 栈参** → `item+0x27c`（10 项跳表 `th07:0x433a5a` 只对它分派；默认 type 6） | `mode 0` / `≥9`（只杀不撒）；另一入口是**当场入账不出实体** | [th07/01](th07/01-cancel-to-item.md) |
 | TH08 | `cancel_all(arg)` 的 `arg` | 判定 == 2 ⇒ 用全局 type（🟡 该全局无写点、静态 0）；判定 ≠ 2 且 `arg ≠ 4` ⇒ `spawn_item(arg)` | **判定 ≠ 2 且 `arg == 4`** ⇒ 一颗都不出（只 `state=5`，判定在前） | [th08/01](th08/01-cancel-to-item.md) |
 | TH09 | **没有这个参数** | **❌ 什么都没有** —— 本作**没有实体道具系统** | 全部路径（收益是数值条，不是道具） | [th09/01](th09/01-cancel-to-item.md) |
-| TH10 | 栈参 **bool**（无 `mode`） | `type 8`（微信仰点）每颗 1 个，掉在**弹自己的位置**（矩形档 `th10:0x4083ae` 与它逐字节同形） | **决死**、擦弹消去、激光侧、boss 击破/符卡结束/关卡切换 | [th10/01](th10/01-cancel-to-item.md) |
-| TH11 | **没有这个参数**（体内写死 `mov ecx,0x8`） | `type 8` 每颗 1 个 | 擦弹消去（`state→3`）、boss 击破/符卡结束 | [th11/01](th11/01-cancel-to-item.md) |
+| TH10 | 栈参 **bool**（无 `mode`） | `type 8`（微信仰点）每颗 1 个，掉在**弹自己的位置**（矩形档 `th10:0x4083ae` 与它逐字节同形） | **决死**、~~擦弹消去~~ ⚠ **2026-09-23 订正：TH10 没有「擦弹消去」**（`th10:0x4064ad` 是**命中自机**支）、激光侧自身（激光对象的虚函数会撒）、boss 击破/符卡结束/关卡切换 | [th10/01](th10/01-cancel-to-item.md) |
+| TH11 | **没有这个参数**（体内写死 `mov ecx,0x8`） | `type 8` 每颗 1 个 | ~~擦弹消去（`state→3`）~~ ⚠ **2026-09-23 订正：TH11 也没有这一档**（`th11:0x40ae90` = 单颗弹消去例程：`state ∈ {1,2}` + 场地门 8.0）、boss 击破/符卡结束 | [th11/01](th11/01-cancel-to-item.md) |
 | TH12 | 布尔开关（第 3 个栈参） | `type 9` 每颗 1 个（PIV 系，**单位口径见该作文档**） | `etClear`(513) / `etClear2`(533)、玩家中弹、擦弹 | [th12/01](th12/01-cancel-to-item.md) |
 | TH13 | 布尔开关（第 3 个栈参，**本作没有 mode 号**） | `type 9` 每颗 1 个 | `etClear` 族、`etClearAll` 弹幕半边、灵界本身、**ECL 激光侧** | [th13/01](th13/01-cancel-to-item.md) |
 | TH14 | `mode` | `mode 1/3` ⇒ `type 0xa`；`mode 2` 另补每 5 颗 1 个 `type 1` | `mode 4/5`（只 inc 计数器）、`etClear`/`etClearAll`、玩家中弹 | [th14/01](th14/01-cancel-to-item.md) |

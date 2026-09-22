@@ -267,13 +267,13 @@ entry1（etama2.png）base **`0x2A7`**，max id 62 ⇒ entry2/3 base `0x2E5`。
 | --- | --- | --- |
 | `vm.anm_file_index` | `type + 0x2c4` | `th07:0x432905` |
 | 初始脚本 | `AnmManager[0x28ef0 + 4*(type+0x2c4)]` = **etama2.png 的 raw script `29 + type`** | `th07:0x432912` |
-| 绘制 sprite（线下方） | `AnmVm::set_sprite(type + 0x2ac)` = etama2.png **local `5 + type`** | `th07:0x433e1a` |
-| 绘制 sprite（线上方） | `AnmVm::set_sprite(type + 0x2b6)` = etama2.png **local `15 + type`** | `th07:0x433d73` |
+| 绘制 sprite（线下方） | `AnmVm::set_sprite(type + 0x2ac)` = etama2.png **local ~~`5 + type`~~ ⚠ 订正 **`4 + type`**（2026-09-23，订正块 §3.3-①）** | `th07:0x433e1a` |
+| 绘制 sprite（线上方） | `AnmVm::set_sprite(type + 0x2b6)` = etama2.png **local ~~`15 + type`~~ ⚠ 订正 **`14 + type`**（同）** | `th07:0x433d73` |
 
 ⇒ **三档樱点确实各自占一个独立的类型槽 / 脚本槽 / sprite 槽** ✅，
 但 ⚠ **anm 里有两处矩形是重复的**（etama2.png `local 11` 与 `local 13` 都是 `(112,64,16,16)`；
-`local 21/22/23` 都是 `(240,64,16,16)`）⇒ **type 6 与 type 8 的「线下方」图指向同一块 16×16 像素**，
-「线上方」三者亦同图。是否真的等价需要看图（本轮没能看图，见 §6 `❓ 未解 3`）。
+`local 21/22/23` 都是 `(240,64,16,16)`）⇒ ~~**type 6 与 type 8 的「线下方」图指向同一块 16×16 像素**，
+「线上方」三者亦同图~~ ⚠ **2026-09-23 订正：是 `type 7` 与 `type 9`（线下方）、`type 7/8/9`（线上方）** —— 原文的类型归属整体偏了一格（`5+type` vs `4+type`），见订正块 §3.3-①/②。是否真的等价需要看图（本轮没能看图，见 §6 `❓ 未解 3`；**2026-09-23 已逐像素补看：`local 11` ≡ `local 13` 同 rect ⇒ 同像素 ✅**）。
 
 | type | 名字 | 初始脚本 raw id | 脚本首帧 sprite（local / 矩形） | on_draw 线下方 (local/矩形) | on_draw 线上方 (local/矩形) |
 | --- | --- | --- | --- | --- | --- |
@@ -283,6 +283,9 @@ entry1（etama2.png）base **`0x2A7`**，max id 62 ⇒ entry2/3 base `0x2E5`。
 | 9 | 樱点 | 38 | 37 → (129,241,14,14) | 14 → (128,64,16,16) | 24 → (193,177,62,62) |
 
 > 图源：`thanm -l 7 local/th07.v1.00b/dat/etama.anm` 的 `entry1 (data/etama/etama2.png)` 段。
+> ⚠ **2026-09-23 订正（订正块 §3.3-①/②/③）**：下表**四列的 local 号都偏大 1**（真值 = 各列 **−1**），
+> 且「初始脚本 raw id」那一列混了两套编号（thanm 的**跨 entry 连续 real_index** vs **entry 内 id**）——
+> 正确的对应用 `local = type + 4` / `type + 14` 与**首帧 sprite 直接写明的 local 号**复核（见订正块）。
 > `on_draw` 的两个槽由 `item[+0x27e]` 闩锁切换（`th07:0x433d67` / `th07:0x433e0e`），
 > 判据是 `item.pos.y` 对 `th07:0x498c70` = **-8.0f** 的比较（`th07:0x433d35`）。🟡 两个槽的**语义**（大小/明暗）本文未定名。
 
@@ -363,7 +366,7 @@ entry1（etama2.png）base **`0x2A7`**，max id 62 ⇒ entry2/3 base `0x2E5`。
 | 3 | 火力 ≥ 128 时 type 0 与 2 被改写成 **7** | ✅ 一手（`th07:0x432730`） | v1.00b |
 | 4 | 类型分派表 `th07:0x433a5a`（10 项，按 type 直索引，无第二跳入点） | ✅ 一手 | v1.00b |
 | 5 | type 6 = ★（+20）/ type 7 = 大樱点（1000+100n）/ type 8 = 小樱点（+100）/ type 9 = 樱点（+100） | ✅ 效果与类型号一手；**名字 🟡** | v1.00b |
-| 6 | 道具图 = `data/etama.anm` entry1（etama2.png），sprite = `0x2ac+type` / `0x2b6+type`，脚本 raw id `29+type` | ✅ 一手（3 档独立槽）；sprite 语义 🟡 | v1.00b |
+| 6 | 道具图 = `data/etama.anm` entry1（etama2.png），sprite = `0x2ac+type` / `0x2b6+type`，~~脚本 raw id `29+type`~~ ⚠ **2026-09-23 订正：entry 内 id `28+type`（= thanm 的 `script53+type`）** | ✅ 一手（3 档独立槽）；sprite 语义 🟡 | v1.00b |
 | 7 | ECL 掉落只有 op119 / op154 / op124，**三者的立即数里没有樱点一族**（19,919 条指令全扫；`enmCreate` 的 42 处变量参数未排除，见 §6 `❓ 未解 2`） | ✅ 一手 | v1.00b |
 | 8 | ★ 来源 = 敌机死亡（每只 1 颗 + item 槽各 1 颗）与消弹（每颗弹 1 颗） | ✅ 一手 | v1.00b |
 | 9 | 小樱点来源 = `th07:0x424740(mode ≥ 3)`，全 exe 唯一入口 `th07:0x420131`（mode `0xa`） | ✅ 一手 | v1.00b |
@@ -381,9 +384,12 @@ entry1（etama2.png）base **`0x2A7`**，max id 62 ⇒ entry2/3 base `0x2E5`。
   ⇒ 「ECL 能不能间接掉出樱点一族」本文**没有证否**，只证了「三个掉落 opcode 的立即数里没有」。
   要定案得跑样本读 `enemy[+0x2e10]`，或在 `th07:0x41f535` 下断点看 `[ebp+0x14]`。
   同理 `dropItems` / `dropPointItems` 各有 5 处参数是变量（`10003`，pmask = 1，全在每关 `sub0`）。
-- `❓ 未解 3`：etama2.png 里 `local 11` 与 `local 13` 矩形完全相同（`local 21/22/23` 亦同），
+- ~~`❓ 未解 3`：etama2.png 里 `local 11` 与 `local 13` 矩形完全相同（`local 21/22/23` 亦同），
   故「★ 与 小樱点 的图是否真的不同」**没能用像素确认**（本会话模型不吃图，无法看图；
-  `thanm` 只给矩形）。要定案得看图或跑样本。
+  `thanm` 只给矩形）。要定案得看图或跑样本。~~
+  ⚠ **2026-09-23 已结案**：`local 11` ≡ `local 13` **同 rect ⇒ 同像素**；且按订正块 §3.3-① 的 `local = type + 4`，
+  这对重复图 = **`type 7`（大樱点）与 `type 9`（樱点）**（而 `type 9` 的输入脚本 `script62` 自己还叠了
+  `ins_9(0xC0C0C0)` 灰化 ⇒ 观感仍有别）。「★ 与小樱点不同图」= ✅（`local 10` vs `local 12`，像素已量）。
 - `❓ 未解 4`：`th07:0x4d44f8`（type 6 的 +20 / +10 分支开关）与 `ds:0x12fe0c8`（boss 死亡状态机计数）
   的全 exe 写点未找到（前者在 `.text` 里只有读）。
 - `❓ 未解 5`：`EnemyManager::on_tick_0a` 里轮转计数器的宿主对象 `[ebp-0x1e8]`（字段 `+0x9545b8` / `+0x9545ba`）
@@ -399,8 +405,8 @@ python3 local/_scratch/th07_ecl_scan.py
 
 # 2) 道具图核对（矩形 / script 首帧 sprite）
 local/vendor/thtk/build/thanm/thanm -l 7 local/th07.v1.00b/dat/etama.anm | less
-#    entry1 = data/etama/etama2.png；item sprite = local 5+type / 15+type
-#    script = local raw id 29+type
+#    entry1 = data/etama/etama2.png；item sprite = ~~local 5+type / 15+type~~ local 4+type / 14+type（2026-09-23 订正）
+#    script = ~~local raw id 29+type~~ entry 内 id 28+type（thanm 印成 script53+type）
 
 # 3) 一手反汇编（已存在，勿重跑）
 #    objdump -d -M intel local/th07.v1.00b/th07.exe > local/_scratch/th07_full.asm
@@ -460,3 +466,112 @@ local/vendor/thtk/build/thanm/thanm -l 7 local/th07.v1.00b/dat/etama.anm | less
 - ⚠ 我们侧**不照抄 TH07 的吸附半径/磁速** —— 用户 2026-09-18 口径「**吸附半径得统一到 th18 的吸附**」，
   TH18 的参数在**自机字段**里（`player+0x47990|94` 吸引半径 / `+0x47988` 磁速 / `+0x4798c` 收集半径 /
   `+0x47998` 回收线；见 `mods/th18.v1.00a/card-expand/native/cards/faith.c` 头注 §运动学 与 `engine.h`）。
+
+## ★ 蓝点（type 1）分值链 —— 一手全链（2026-09-18 补，逐指令）
+
+> 处理体 `th07:0x4330db`–`th07:0x4331e7`（写回 `[ebp-0xc]` 后接弹窗与入账 `th07:0x43321e`–`th07:0x43325f`）。
+> 记 `基准 = [player+0x88]`（= **初值**，本文「口径」：基础 = 初值）、`樱点 = th07:0x62f88c`、
+> `线高 = [0x575948]+0x20`、`y = item+0x250`。
+
+```
+4330db  fld [item+0x250] ; fcomp [线高]      ; 判「线上 / 线下」
+43310a  线上 ⇒ base = 0xc350 = 50000
+433116  线下 ⇒ base = 50000 − ftol(y − 线高) × 100        (43312d imul 100 / 433135 sub)
+433149  if (item+0x280 == 1) base = 50000                  ; 「按线上算」的例外位
+── 樱点项（两条分支形状不同，这是本作最特别的地方）──
+43315c  if (base >= 50000):                                ; 线上（或 y 恰好压线）
+433176      if (樱点 − 基准 > 50000) base = 樱点 − 基准     ; ★ **直接替换** base（不是相加）
+433194  else:                                              ; 线下
+4331a6      if (樱点 − 基准 > 50000)
+4331c8          base += (樱点 − 基准 − 50000) / 5          ; ★ 加在**折扣之后**，且 **÷5**
+4331d7  base = trunc10(base)                               ; idiv 10 + sub
+43324d  SCORE += trunc10(base) / 10                        ; 显示分 = base，实际入账 = base/10
+433212  弹窗色 = 0xffffffff（线上）/ 0xffffff00 黄（线下，或用例外位时不黄）
+```
+
+**⇒ 写成「基础 + 机制项」的形状**（`ΔG` = 机制项）：
+
+| 情形 | 分值 | `ΔG`（机制项的增益） |
+| --- | --- | --- |
+| 线上 | `max(50000, 樱点 − 基准)` | `max(0, 樱点 − 基准 − 50000)` |
+| 线下 | `[50000 − (y − 线高)×100] + floor((樱点 − 基准 − 50000)/5)`（仅当 `樱点 − 基准 > 50000`） | `floor(max(0, 樱点 − 基准 − 50000)/5)` |
+
+**两条对「总最大得点公式」至关重要的一手事实**：
+1. **本作的机制项不进收分高度折扣**（线上它把 50000 那段**整个替换**掉；线下它是**加在折扣之后**的，
+   只额外除以 5，**不再随高度衰减**）⇒ 这是 12 作里**唯一**「机制项没被高度包裹」的作（其余作的机制改的是 PIV/身价本身，PIV 再进同一条高度公式）。
+2. 线下**没有下限夹取**（这段看不到 clamp）⇒ `y` 足够大时 `base` 会趋 0 甚至为负 ❓（未验：可能有别处夹，或实际 `y` 上界使之为正）。
+
+---
+
+## ★★ 2026-09-23 订正块 §3.3-①/②/③（清册普查查出：sprite 的 local 号整体偏 1、重复图归属偏一格）
+
+> 订正人 / 日期：**2026-09-23**（DSH 工单「按两份新清册订正既有文档误读」，本轮**逐像素 + 逐脚本**复核）。
+> 原始清册：[`engine/_shared/rosters/th06-th09.md`](../../_shared/rosters/th06-th09.md) §2.1 的 ⚠ 与 §5 第 8 条。
+> 规矩：§3.3 的**旧字一字未删**（只加 ⚠ 与删除线），实测与正确说法写在这里。
+> 说明：本文 §3.3 早在 2026-09-12 就自己记过「本节 base 与派生的 raw / local 号**整体差 1**，需 −1」——
+> 本订正块把那条自注**落实成正式订正**，并补上当时缺的两条硬证据（像素、输入脚本）。
+
+### ① 绘制槽 = **local `4 + type`**（线下方）/ **`14 + type`**（线上方）—— 不是 `5 + type` / `15 + type`
+
+- **算术（用本文自己确立的 base）**：entry1 的 base 真值 = **`0x2A8` = 680**（§3.3 的 2026-09-12 订正 + [`engine/anm/th07/01-anm-id-space.md`](../../anm/th07/01-anm-id-space.md) §4.3）⇒
+  `local = (type + 0x2ac) − 0x2a8 = type + 4`；线上方 `local = (type + 0x2b6) − 0x2a8 = type + 14`。
+- **硬证据 A（输入脚本，`thanm -l 7` 直读）**：entry1 的十条道具脚本在 thanm 里印成 `script53`…`script62`
+  （thanm 的编号是**跨 entry 连续的 real_index**，entry1 的第一支 = 25 ⇒ entry 内 id = real_index − 25 = **28…37**，见 §3.3-③）。逐条首帧：
+
+```
+script53..script58 = ins_3(sprite4) .. ins_3(sprite9)     ; = type 0..5 的六枚小图（P/蓝点/大P/Bomb/满火力/1UP）
+script59           = ins_3(sprite10) + ins_8(192)         ; type 6 = ★
+script60           = ins_3(sprite11)                      ; type 7 = 大樱点
+script61           = ins_3(sprite12)                      ; type 8 = 小樱点
+script62           = ins_3(sprite11) + ins_9(0xC0C0C0)    ; type 9 = 樱点（同 type 7 的图 + 灰化）
+```
+
+  ⇒ 六个已知 type（0..5）的脚本首帧 sprite **恰好是 `4 + type`**，四档樱点（6..9）也**恰好**落在 `sprite10..13` ⇒ **`local = type + 4` 双向吻合** ✅。
+- **硬证据 B（像素，2026-09-23 用 PIL 逐格量 `local/th07.v1.00b/anm/etama/data/etama/etama2.png`）**：
+
+| local（矩形） | 不透明像素 | 主色 | 对应 type | 外观判定 |
+| --- | --- | --- | --- | --- |
+| 10 (96,64,16,16) | 147 / 256 | 灰白 `#e0e0e0` + 灰绿 | 6 | ★（与既有一手「灰白 ★」一致 ✅） |
+| 11 (112,64,16,16) | 151 / 256 | 粉 `#e0a0e0` + 白 | 7 | 大樱点（粉/品红方块 + 白「C」形）✅ |
+| 12 (0,80,16,16) | 72 / 256 | 粉 + 白（稀疏） | 8 | 小樱点（16×16 里只有稀疏亮点）✅ |
+| 13 (112,64,16,16) | 151 / 256 | 同 local 11（同 rect ⇒ 同像素） | 9 | 樱点 = 与 type 7 同图（脚本再灰化）✅ |
+| 14 (128,64,16,16) | 68 / 256 | 红 `#e00000` | （无对应 type） | 另一族小图（本作 type 0..9 用不到） |
+
+  若按原文的 `5 + type`，则 type 6 会落到**粉色大方块**、type 8 会落到**粉方块**——与「6 = 灰白 ★」「8 = 稀疏小点」两条**已知外观**直接矛盾 ⇒ **`5 + type` 被像素否掉**。
+
+### ② 重复图的归属：线下方 **type 7 与 type 9**；线上方 **type 7 / 8 / 9**
+
+- `thanm -l 7` 直读 entry1 的 sprite 矩形：`sprite11` 与 `sprite13` 都是 `(112,64,16,16)`（**同 rect = 同像素**）；
+  `sprite21/22/23` 都是 `(240,64,16,16)`；`sprite20` = `(224,64,16,16)`（与前三者不同）。
+- 按 ① 的 `local = type + 4` / `type + 14` 换算：线下方重复对 = **type 7（local 11）与 type 9（local 13）**；
+  线上方三者同图 = **type 7 / 8 / 9（local 21/22/23）**，**type 6 = local 20**（`(224,64,16,16)`，与前三个不同）。
+- ⇒ 原文「**type 6 与 type 8** 的线下方图指向同一块像素、线上方三者亦同图」应改为
+  「**type 7 与 type 9** 的线下方图同像素；**type 7/8/9** 的线上方同图」。
+
+### ③ 「初始脚本 raw id `29+type`」那一列：混了两套编号
+
+- 原文写的 `35 / 36 / 37 / 38` 是 **thanm 印出来的 real_index**（跨 entry 连续：entry0 的 25 支 + entry 内 id），
+  不是「entry 内脚本 id」；二者的关系 = `real_index = 25 + entry 内 id`。
+- 真正的**入口**是全局脚本号 `type + 0x2c4`（`th07:0x432905` 一带写 `vm.anm_file_index`），
+  按 base 680 换算成 **entry 内 id = `28 + type`**（= thanm `script53`…`script62`），与 [`engine/anm/th07/01-anm-id-space.md`](../../anm/th07/01-anm-id-space.md) §4.3
+  「`708..717` = entry1 的文件内 id 28..37 = 十连发道具脚本 `script53`…`script62`」逐字一致 ✅。
+- 原文那一列的「脚本首帧 sprite `28 / 29 / 33 / 37`」其实读的是 thanm `script35`–`script38`（entry 内 10–13）——
+  那是**别的效果**的脚本（`script35` = entry 内 10 = `EffectManager` type `0x1d` 的脚本，见同一份 anm 文档 §4.4），
+  **不是道具脚本**；道具脚本的首帧 sprite 以 ① 的清单为准（`sprite4`..`sprite9` / `sprite10`..`sprite12`）。
+
+### 判据 / 复现
+
+```bash
+local/vendor/thtk/build/thanm/thanm -l 7 local/th07.v1.00b/dat/etama.anm | sed -n '368,470p'   # entry1 的 sprite 矩形
+local/vendor/thtk/build/thanm/thanm -l 7 local/th07.v1.00b/dat/etama.anm | grep -n -A3 'script5[3-9]\|script6[0-2]'
+python3 - <<'PY'   # 像素复核（PIL）：逐格量 16×16 的不透明像素数与主色
+from PIL import Image
+im = Image.open('local/th07.v1.00b/anm/etama/data/etama/etama2.png').convert('RGBA')
+for name,(x,y) in {'s10':(96,64),'s11':(112,64),'s12':(0,80),'s13':(112,64),'s14':(128,64)}.items():
+    px = list(im.crop((x,y,x+16,y+16)).getdata()); print(name, sum(1 for q in px if q[3] > 0))
+PY
+```
+
+- **可信度**：①/② = ✅ 一手（base 算术 + 输入脚本 + 像素三条独立路径互证）；③ = ✅ 一手（thanm 编号规则 + anm id 空间那份的 §4.3 双向确认）。
+- ⚠ **一处仍未定名**（照实留）：`sprite14`（红 `(128,64,16,16)`）在本作 type 0..9 里**没有对应槽**（`local = type+4` 只用到 10..13），
+  它是给谁用的 🟡 未追（候选：`type + 4` 之外的另一族调用点，或 TH07 未使用的预留格）。

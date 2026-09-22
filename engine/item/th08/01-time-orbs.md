@@ -176,16 +176,17 @@ if (*(uint8_t *)0x17d5ef8 == 2) {          // 0x17d5ef8 = PLAYER 基址，+0 = s
 | `th08:0x430c77` | `BulletManager::sub_430aa0` | 动态 / `1` | 同上 |
 | `th08:0x430cf0` | `BulletManager::sub_430aa0` | 动态 / `1` | 同上 |
 | `th08:0x430de9` | `BulletManager::ecl_161__cancel_radius?` | `6` / `1` | ECL 161 半径消弹（掉的是类型 6） |
-| `th08:0x431650` `0x431668` | `BulletManager::on_tick` | `7` / `1` ×2 | **擦弹**：`ds:0x18b8988 == 9` 时掉 2 个；否则掉 `ds:0x18b8988` 个类型 7 |
-| `th08:0x43170a` `0x431722` `0x431749` | `BulletManager::on_tick` | `7` / `1` ×2 或动态 | 同上另一处 |
-| `th08:0x431837` `0x43184e` `0x431876` | `BulletManager::on_tick` | `7` / `1` ×2 或动态 | 同上 |
-| `th08:0x431948` `0x431960` `0x431987` | `BulletManager::on_tick` | `7` / `1` ×2 或动态 | 同上 |
-| `th08:0x431a59` `0x431a71` `0x431a98` | `BulletManager::on_tick` | `7` / `1` ×2 或动态 | 同上 |
-| `th08:0x44aac9` `0x44aaef` `0x44ab0f` | `Player::sub_44a6a0` | `0xa` / `1` | 玩家相关（`0x44aaae` 起先查 GameManager 两个查询，再查符卡状态） |
+| `th08:0x431650` `0x431668` | `BulletManager::on_tick` | `7` / `1` ×2 | ~~**擦弹**~~ ⚠ **2026-09-23 订正：`eax == 2` = 命中「炸弹消弹区」那一支**（订正块 ①）：`ds:0x18b8988 == 9` 时掉 2 个；否则掉 `ds:0x18b8988` 个类型 7 |
+| `th08:0x43170a` `0x431722` `0x431749` | `BulletManager::on_tick` | `7` / `1` ×2 或动态 | ~~同上另一处~~ ⚠ **同族：同样是 `cmp eax,0x2`（炸弹消弹区）支**，不是擦弹 |
+| `th08:0x431837` `0x43184e` `0x431876` | `BulletManager::on_tick` | `7` / `1` ×2 或动态 | ~~同上~~ ⚠ **同族：`call 0x449ff0` → `cmp eax,0x2` 门**，不是擦弹 |
+| `th08:0x431948` `0x431960` `0x431987` | `BulletManager::on_tick` | `7` / `1` ×2 或动态 | ~~同上~~ ⚠ **同族：`call 0x449ff0` → `cmp eax,0x2` 门**，不是擦弹 |
+| `th08:0x431a59` `0x431a71` `0x431a98` | `BulletManager::on_tick` | `7` / `1` ×2 或动态 | ~~同上~~ ⚠ **同族：`call 0x449ff0` → `cmp eax,0x2` 门**，不是擦弹 |
+| `th08:0x44aac9` `0x44aaef` `0x44ab0f` | `Player::sub_44a6a0` | `0xa` / `1` | ★ **这才是擦弹那一路**（`0x44a930` 体内，每擦一颗弹 **1~3 颗**；三道门见订正块 ②） |
 | `th08:0x451892` | `Player::compute_damage_to_enemy` | `7` / `3` | **自机弹打死敌机**时补一颗（`th08:0x451871` 读 `[enemy+0x480]+0x1e < 0` 判死） |
 
 > 交叉印证：`th08:0x18b8988` 这个全局在 `th08:0x43163d` / `0x43166f` 被当**数量**用（`push ds:0x18b8988` 当 type），
-> 同一地址在 `th08:0x4308cf` / `0x430b25` 也被当数量用 —— 🟡 是「擦弹连击档」一类的档位值，本文未追它怎么涨。
+> 同一地址在 `th08:0x4308cf` / `0x430b25` 也被当数量用 —— ~~🟡 是「擦弹连击档」一类的档位值~~ ⚠ **2026-09-23 订正：它只出现在「炸弹消弹区」那一支里当 `type` 用**（`0x43163d` / `0x43166f` / `0x4316ee`…），
+> 与擦弹无关；「它怎么涨」仍未追（订正块 ①，🟡）。
 
 ## 4. 敌机死亡掉多少 —— `Enemy::sub_42adb0` `th08:0x42adb0`
 
@@ -293,7 +294,7 @@ else:
 | **通用击破**（`Enemy::sub_42adb0`）| `0x42b03b push 3` / `0x42b03d push 7` | **state 3** | **上抛 ≈40–44 帧**（`vy = −2.0 − rand(0.2)`、`+0.05/帧`）| `vy > 0` 转 state 1 之后 | state 1：每帧重设满速（`[.sht+0x14]` = 10/12）归航 |
 | **極端人/妖那一颗**（`EnemyManager::on_tick` 死亡块）| `0x42da41 push 1` / `0x42da43 push 7` | **state 1** | **0 帧** | **生成当帧**（若已在抓取盒内）| 同上（满速归航）|
 | **击破符卡（螺旋）** | `0x417612 push 0xa`（→ type 7）| **state 5** | **上抛 ≈40–44 帧**（与 state 3 逐指令同形）| `vy > 0` 之后 | 同上 |
-| （对照）**擦弹** | `0x44aabe push 1` / `0x44aac0` 位置（type 恢复位）→ 与 `0x44ab0f` 一族同理 = **type 0xa ⇒ type 7 + state 5** | **state 5** | 同上 | 同上 | 同上 |
+| （对照）**擦弹** | ★ `0x44aac9` / `0x44aaef` / `0x44ab0f`（`0x44a930` 体内，`push 1`(state) + `push 0xa`(type)）；⚠ 订正 2026-09-23（订正块 ②） | **state 5**（`type 0xa` ⇒ type 7 + state 5） | 同上 | 同上 | 同上 |
 | （对照）**消弹 / `cancel_autocollect`** | `ItemManager::cancel_autocollect th08:0x4413e0`（整池改 state）| **state 1** | 0 帧 | 生成当帧 | 满速归航 |
 
 ⇒ **「自动吸收」两种含义分开写清楚**：① **state 1 = 当帧就满速归航**（不需要靠近它自己去够，但**仍要抓取盒相交**才入账）；
@@ -472,7 +473,7 @@ for (item = ...; item; item = next):
 | 10 | 时点**必然进归航**：state 3 出生 vy = −2.0−rand(0.2)、+0.05f/帧，约 40 帧后 vy > 0 ⇒ `state = 1`（`th08:0x4406e4`） | ✅ 一手（§7.1） | v1.00d |
 | 11 | 时点的贴图 = `data/etama.anm` entry1（`data/etama/etama2.png`）的 **sprite179** (112,64,16,16)，脚本 = 同 entry 的 **script68**（正文与两条独立证据见 §6.1） | ✅ 一手 | v1.00d |
 | 12 | **归航是恒速、无加速段**：模长 = `[ds:0x18b896c]+0x14`（= 当前 `.sht` 头的 `itemCollectSpeed`；pl00/02/03 = 10.0、pl01 = 12.0），方向每帧从 `Player::AngleToPlayer` 重算 | ✅ 一手（`th08:0x440886`/`:0x440898`/`:0x4408a5` + 8 份 `.sht` 直读，§7.2） | v1.00d |
-| 13 | **擦弹/消弹那一路生成即 state 1** ⇒ 一出现就是满速归航（没有 40 帧上浮）；「击破敌机 / 符卡」那一路才是 state 3/5（先上浮）| ✅ 一手（`th08:0x431650` 一族 push 1；`th08:0x42b048` push 3）| v1.00d |
+| 13 | **擦弹** = `0x44aac9` 一族（`type 0xa` ⇒ `0x440124` 改写 **type 7 + state 5**，**先上浮**）；**消弹** = `push 1` ⇒ **state 1 满速归航**。⚠ 订正 2026-09-23：原文把两条写成一条、且引错了 `0x431650` 一族（订正块 ①②） | ✅ 一手（`th08:0x44aac9`/`0x44aaef`/`0x44ab0f` + `th08:0x440124`；`th08:0x4308e5` push 1） | v1.00d |
 | 14 | 收集与自机 y 无关（**抓取盒相交**）；`arcadeRegionSize.y + 16` 是**丢失线**（掉出去那颗不给分）| ✅ 一手（`ItemManager.cpp:271-288`；`th08:0x43a144` 写 448.0）| v1.00d |
 
 ## 9. 未解 / 待办
@@ -633,3 +634,76 @@ E `0xea60` = **60000** / N `0x186a0` = **100000** / H `0x30d40` = **200000** / L
 
 **上限（用户口径 2026-09-18）**：本作 PIV **没有原生上限**（init 与两个写点都没有 clamp 常量）——
 mod 侧**不必去找**，按 int32 自然上界设一个**安全上界**（`2147483647` 级，防溢出成负数）即可。
+
+---
+
+## ★★ 2026-09-23 订正块（清册普查查出：`th08:0x431650` 一族不是擦弹 + 本文内部两处自相矛盾统一到一手）
+
+> 订正人 / 日期：**2026-09-23**（DSH 工单「按两份新清册订正既有文档误读」，本轮逐指令复核）。
+> 原始清册：[`engine/_shared/rosters/th06-th09.md`](../../_shared/rosters/th06-th09.md) §3.2 的「⚠ 一条看着像擦弹、其实是炸弹裁剪的路」+ §5 第 5 / 第 6 条。
+> 规矩：§3 表、§5.4、§8-13 的**旧字一字未删**（只加 ⚠ 与删除线），判据与正确说法写在这里。
+
+### ① `th08:0x431650` / `0x431668`（以及同族四簇）= **命中「炸弹消弹区」支（`eax == 2`）**，不是擦弹
+
+- **原文说了什么**：§3 表把 `0x431650` / `0x431668` 标成「**擦弹**：`ds:0x18b8988 == 9` 时掉 2 个…」，后面四簇写「同上」。§8-13 还用这一族当「擦弹那一路生成即 state 1」的证据。
+- **为什么错（一手，逐指令）**：这一族的判定返回值在 `[ebp-0x4]`，三条出口**互斥**：
+
+```
+th08:0x4315f2  call 0x44a470               ; 弹 × 自机判定（0 = 没碰上 / 1 = 擦弹 / 2 = 命中炸弹消弹区）
+th08:0x4315f7  mov  DWORD PTR [ebp-0x4],eax
+th08:0x4315fa  cmp  DWORD PTR [ebp-0x4],0x1 ; jne 0x43160f     ; ★ eax == 1 = 擦弹
+th08:0x431603  mov  BYTE PTR [eax+0xdbd],0x1 ; jmp 0x431699     ; ★★ 擦弹只置「已擦」闩，然后就走 ⇒ 不出货
+th08:0x43160f  cmp  DWORD PTR [ebp-0x4],0x2 ; jne 0x431694     ; ★ eax == 2 = 炸弹消弹区
+th08:0x431624  test edx,edx（[bullet+0xdb0] & 0x1000 门）
+th08:0x43162b  mov  WORD PTR [eax+0xdb8],0x5                   ; state = 5
+th08:0x431650  call 0x4400a0                                    ; ★ 撒 type 7（或 ds:0x18b8988）
+```
+
+  - `0x44a470` 的返回值 **2** 来自它开头的 `0x44a49e: call 0x449ff0`（`Player::check_bomb_cancel_areas`）：`0x44a4a6 test eax,eax` / `0x44a4a8 je 0x44a4b4` ⇒ 非 0 时 `0x44a4aa: mov eax,0x2` 直接返回；**返回 1 是它自己的擦弹出口**（`0x44a586`–`0x44a594`：`push 0x0` + `call 0x44a930` ⇒ `mov eax,0x1`）。⇒ **`eax == 2` 与擦弹互斥**。
+  - 同族另四簇（`0x43170a` 族 / `0x431837` 族 / `0x431948` 族 / `0x431a59` 族）的门同样是 `call 0x449ff0` + `cmp eax,0x2`（`0x4317cf`/`0x4317d4`、`0x4318e1`/`0x4318e6`、`0x4319f2`/`0x4319f7`，`0x4316c3`/`0x4316e8` 是同一函数里另一处拷贝）⇒ **整族都是炸弹消弹区支**。
+- **正确的说法**：`th08:0x431650` 一族 = **弹落在「炸弹消弹区」里时**的产出（判定函数 `th08:0x449ff0` = `Player::check_bomb_cancel_areas`：自机炸弹消弹区池 `player+0xbb834` 起、`0xc0` 槽 × `0x40` B，命中第一个区就返回 2 ⇒ `0x44a4aa: mov eax,0x2`）——
+  调用侧压的是 `push 0x1`(state) + `push 0x7`(type)（或 `push ds:0x18b8988`），而 **`spawn_item` 对 `type == 7` 强制 `state = 3`**（`0x440115: cmp [ebp+0xc],0x7` / `jne` ⇒ `0x44011b: mov DWORD PTR [ebp+0x10],0x3`）⇒ 落到池里的是 **type 7 + state 3（先上抛）**；只有动态 type 那一支（`ds:0x18b8988 != 9`）才保持 `state = 1`。
+  ⚠ 注意区分：`0x43162b: mov WORD PTR [eax+0xdb8],0x5` 写的是**弹对象自己的字段**（`bullet+0xdb8`），**不是道具 state**（原文把两者混着读）。**擦弹一颗道具都不出**（只置 `bullet+0xdbd = 1` 去重闩）。⇒ §3 表那五行的「擦弹」标注作废（❌）。
+- ⚠ 与清册的差别（照实记）：清册 §3.2 这道门写作「`ds:0x164d0b1 != 0xa`」——按指令是 `0x44aa94 movzx edx,BYTE PTR ds:0x164d0b1` / `0x44aa9b cmp edx,0xa` / `0x44aa9e jne 0x44ab14` ⇒ **必须 `== 0xa` 才继续**（写「!=」容易读反）；另 `0x42f1f0` 经清册 2026-09-22 夜复核 = `EnemyManager::is_boss_active`（扫 `ENEMY_MANAGER.bosses[0..7]`），即**有 boss 在场**是第 1 颗的前置。
+- **清册的残留 ❓ 已收敛**：清册 §3.2 把 `ds:0x18b8988` 标成「🟡 静态 0、无字面写点」——本轮确认它**只在这一支当 `type` 用**（`0x43163d` / `0x43166f` / `0x4316ee` / `0x43181b` / `0x43192c` / `0x431a3e` 处的 `push ds:0x18b8988`），**写点仍未找到** ⇒ 「它怎么涨」保持 ❓（待核方式：算基址后扫写点，或运行期断点）。
+
+### ② 擦弹的真实落点 = `0x44a930` 里的**三处** `spawn_item`（每擦一颗弹 1~3 颗），三道门逐条如下
+
+- **原文说了什么**：§3 表把 `0x44aac9` / `0x44aaef` / `0x44ab0f` 记作「玩家相关（`0x44aaae` 起先查 GameManager 两个查询，再查符卡状态）」；§5.4 又把擦弹写成 `0x44aabe push 1`；§8-13 则写「擦弹/消弹那一路生成即 state 1」——**后两者与 §5.4 自相矛盾**（本文档内两处口径打架）。
+- **正确的落点与门（一手，逐指令）**：三处都在 **`0x44a930`** 体内（= 擦弹奖励函数；它的两个调用者才是擦弹判定：`0x44a58f`（弹，`flag = 0`，来自 `0x44a470`）与 `0x44a8d1`（激光，`flag = 1`，来自 `Player::sub_44a6a0`））。
+  ⚠ 命名坑：§3 表里写的宿主 `Player::sub_44a6a0` 是 vendor「取 ≤ 地址的最近名」的产物，**`0x44a930` 是它自己的函数**。
+
+```
+门①（第 1 颗，0x44aac9）  0x44aa94 movzx edx,BYTE PTR ds:0x164d0b1 ; 0x44aa9b cmp edx,0xa ; jne 0x44ab14   ; 必须 == 0xa
+                          0x44aaa5 call 0x42f1f0(ecx=0x577f20)     ; 必须非 0
+                          0x44aab3 call 0x406d70(ecx=0x160f508)    ; GaugeIsExtremelyYoukai 必须非 0
+                          0x44aabc push 1(state) / 0x44aabe push 0xa(type) / 0x44aac0 位置 ⇒ 0x44aac9 call spawn_item
+门②（第 2 颗，0x44aaef）  0x44aace cmp DWORD PTR [ebp+0xc],0x0 ; jne 0x44ab14                       ; flag == 0 才继续 ⇒ 激光路径（flag=1）只给第 1 颗
+                          0x44aad9 call 0x4178a0(ecx=0x4ea670)     ; 必须非 0（清册 2026-09-22 夜复核 = SPELLCARD.flags & 1「符卡进行中」⇒ 不在符卡里连第 3 颗也没有）
+门③（第 3 颗，0x44ab0f）  0x44aaf9 call 0x42f270(ecx=0x160f508)    ; GameManager::shottype_is_solo_youkai 必须 == 0（不是「妖単独」）
+```
+
+| 问题 | 答案 | 一手 |
+| --- | --- | --- |
+| 每擦一颗弹掉几颗 | **1～3 颗**（三道门全过 = 3；激光擦弹 = 1） | `0x44aac9` / `0x44aaef` / `0x44ab0f` |
+| 走什么号 | **`type 0xa`**（三处都 `push 0xa`），在 `spawn_item` 里被 `0x440124` 改写成 **`type 7` + `state 5`** | `0x440124`：`cmp DWORD PTR [ebp+0xc],0xa` / `jne` ⇒ `mov DWORD PTR [ebp+0x10],0x5` + `mov DWORD PTR [ebp+0xc],0x7` |
+| 出生态 | **state 5 = 先上抛**（≈40 帧，`vy = −2.0 − rand(0.2)`、`+0.05/帧`）⇒ **不是**「生成即满速归航」 | §5.3 / §7.1 同款 |
+
+- ⇒ **§5.4 的 `push 1` 那格是笔误**（`0x44aabc` 才是 `push 0x1` = state；`0x44aabe` 是 `push 0xa` = type），**结论（state 5）本来就对**；
+  而 **§8-13 的「擦弹生成即 state 1」作废**——state 1 只属于**消弹**那一支（`BulletManager::cancel_all` 一类：动态 type = `[bullet+0x6ba570]`（初值 6）+ `push 1`）。两处口径**已按本节统一到一手**。
+- 🟡 **没复核到的一格（照实留）**：激光擦弹的判据「外扩 48.0f（`0x4b48c8`）+ 每个 `(timer % 20) == 0` 判一次」出自清册；
+  本轮只复核了 **`0x4b48c8 = 48.0f`**（直读 `.rdata`）与 **`0x4b6e98 = 20.0f`**（弹擦弹外扩，`0x44a4c4 fsub ds:0x4b6e98` ✅），
+  **没有逐指令复核 48.0f 在 `0x44a6a0` 里的用法**（该常量在 `0x42217c` 一族被读，属激光判定侧）⇒ 该句 🟡。
+
+### 判据 / 复现
+
+```bash
+objdump -d -M intel --start-address=0x4315f0 --stop-address=0x4316a0 local/th08.v1.00d/th08.exe   # ① 三条互斥出口
+objdump -d -M intel --start-address=0x44a470 --stop-address=0x44a4c0 local/th08.v1.00d/th08.exe   # ① 返回值 2 / 常量 0x4b6e98
+objdump -d -M intel --start-address=0x44aa80 --stop-address=0x44ab30 local/th08.v1.00d/th08.exe   # ② 三道门 + 三处 spawn
+objdump -d -M intel --start-address=0x4400f8 --stop-address=0x440140 local/th08.v1.00d/th08.exe   # ② type 0xa ⇒ 7 + state 5
+grep -n 'call   0x44a930' /tmp/th08_full.asm                                                      # 只 2 个调用点（弹 flag=0 / 激光 flag=1）
+```
+
+- **可信度**：① = ✅ 一手（三条出口逐指令 + 同族四簇门穷举）；② = ✅ 一手（三道门逐指令 + `0x440124` 改写 + 两个调用点穷举）；
+  `ds:0x18b8988` 的写点 = ❓（未找到）；激光擦弹的 48.0f 用法 = 🟡。
