@@ -284,6 +284,37 @@ int main(void)
         yk_opt_spring_step(0, vel, goal);
         yk_opt_spring_step(pos, 0, goal);
         yk_opt_spring_step(pos, vel, 0);
+
+        /* ★★ 2026-09-22 晚（owner 第 2 条）：**追敌**那一段（一手 `th08:0x44e8d0`）。
+         * 家位置 = 目标 `final_pos` + (0, +32)，`y` 夹到 `>= YK_OPT_HOME_Y_MIN`。*/
+        {
+            const float tgt[2] = { 240.0f, 120.0f };
+            CHECK(yk_option_chase_goal(tgt, goal));
+            CHECK(goal[0] == 240.0f && goal[1] == 120.0f + YK_OPT_CHASE_GOAL_DY);
+            {   /* 目标贴到屏上沿 ⇒ 夹到 32（`th08:0x44e918`–`0x44e92f` 的 fcomp/写回）*/
+                const float hi2[2] = { 240.0f, -40.0f };
+                CHECK(yk_option_chase_goal(hi2, goal));
+                CHECK(goal[1] == YK_OPT_HOME_Y_MIN);
+            }
+            CHECK(!yk_option_chase_goal(0, goal));
+            CHECK(!yk_option_chase_goal(tgt, 0));
+            /* 进门条件（`th08:0x44e770` 尾巴）：目标存在 **且** 出场满 10 帧 */
+            CHECK(yk_option_chase_want(1, YK_OPT_CHASE_MIN_AGE));
+            CHECK(yk_option_chase_want(1, YK_OPT_CHASE_MIN_AGE + 1));
+            CHECK(!yk_option_chase_want(1, YK_OPT_CHASE_MIN_AGE - 1));
+            CHECK(!yk_option_chase_want(1, 0));
+            CHECK(!yk_option_chase_want(1, -5));                          /* 越界当 0 */
+            CHECK(!yk_option_chase_want(0, 1000));                        /* 没目标 ⇒ 永不进 */
+            /* 旋转/待机标签号：脚本生成器（`make_youkai_option_art.py` 的 LABEL_MAP）里
+             * TH08 原号 3→5（旋转）、1→2（待机循环 A）—— 两处**必须**一致，改一处就编译期红。*/
+            CHECK(YK_OPT_SPIN_LABEL == 5);
+            CHECK(YK_OPT_IDLE_LABEL == 2);
+            /* 追踪用的弹簧与跟随自机**同一条**：从自机位出发、600 帧后收敛到目标上方 32 */
+            pos[0] = 200.0f; pos[1] = 300.0f; vel[0] = 0.0f; vel[1] = 0.0f;
+            {   int f; for (f = 0; f < 600; ++f) yk_opt_spring_step(pos, vel, goal); }
+            CHECK(pos[0] > goal[0] - 0.5f && pos[0] < goal[0] + 0.5f);
+            CHECK(pos[1] > goal[1] - 0.5f && pos[1] < goal[1] + 0.5f);
+        }
     }
 
     /* ============================== §3.4 弹幕（档位 / 妖侧弹 / shooterset 自检）*/
@@ -817,7 +848,10 @@ int main(void)
         float a[2];
         a[0] = 257.0f; a[1] = 924.0f;
         yk_gauge_hud(0, a, 0.5f, &h);
-        CHECK(h.bar_x == 257.0f && h.bar_y == 924.0f - 32.0f);      /* 槽条 128×16，左上 */
+        /* ★ 2026-09-22 晚订正：槽条的停稳 y = **449**（`ascii.anm` script5 的 `posTime` 终点），
+         * 465 只是滑入动画的起点 ⇒ 与两个图标同高（原来写 465 ⇒ 条比图标低 16 px）。*/
+        CHECK(h.bar_x == 257.0f && h.bar_y == 924.0f - 64.0f);      /* 槽条 128×16，左上 */
+        CHECK(h.bar_y == h.human_y);                                /* ★ 条与图标同高（一手 449）*/
         CHECK(h.human_x == 257.0f && h.human_y == 924.0f - 64.0f);  /* 人间图标在条左端（88−56−32=0） */
         CHECK(h.youkai_x == 257.0f + 224.0f);                       /* 妖怪图标在条右端（88+56−32=112 → ×2） */
         CHECK(h.cursor_x == 257.0f + 128.0f);                       /* g=0 ⇒ 96−32=64 → ×2 */
@@ -834,6 +868,75 @@ int main(void)
         /* 越界输入按限值夹（引擎/卡状态给脏值时不跑到条外）。*/
         yk_gauge_hud(999999, a, 0.5f, &h);
         CHECK(h.cursor_x == 257.0f + 240.0f);
+    }
+
+    /* ============ ★★ 人妖槽百分比数字的字形布局（一手 `th08:0x405e10`）============ */
+    {
+        yk_gauge_glyph_t g[YK_GAUGE_TEXT_MAX];
+        int n, i;
+
+        /* 0 ⇒ "0.00%"：5 个字形（1 整数 + '.' + 2 小号 + '%'）。*/
+        n = yk_gauge_text_glyphs(0, g);
+        CHECK(n == 5);
+        CHECK(g[0].glyph == 0 && g[1].glyph == YK_GAUGE_GLYPH_DOT);
+        CHECK(g[4].glyph == YK_GAUGE_GLYPH_PERCENT);
+        CHECK(g[2].glyph == 0 && g[3].glyph == 0);
+        CHECK(g[2].scale == 0.8f && g[3].scale == 0.8f);            /* 小数两位 = 小号 */
+        CHECK(g[2].dy == 2.0f && g[3].dy == 2.0f);                  /* 且 y += 2（一手）*/
+        CHECK(g[0].scale == 1.0f && g[4].scale == 1.0f && g[4].dy == 0.0f);
+        /* 位数只影响居中：n = 4 + 1（<1000）⇒ xPos = 5*3.5 − 3.5 − 4 = 10 ⇒ dx0 = −10。*/
+        CHECK(g[0].dx == -10.0f);
+        /* 步进：整数 7、'.' 之后 5、小号 5、收尾 7（逐条抄 `DrawPercentage`）。*/
+        CHECK(g[1].dx == g[0].dx + 7.0f);
+        CHECK(g[2].dx == g[1].dx + 5.0f);
+        CHECK(g[3].dx == g[2].dx + 5.0f);
+        CHECK(g[4].dx == g[3].dx + 7.0f);
+
+        /* 1234（= 12.34%）⇒ "12.34%"：6 个字形，整数两位。*/
+        n = yk_gauge_text_glyphs(1234, g);
+        CHECK(n == 6);
+        CHECK(g[0].glyph == 1 && g[1].glyph == 2 && g[2].glyph == YK_GAUGE_GLYPH_DOT);
+        CHECK(g[3].glyph == 3 && g[4].glyph == 4 && g[5].glyph == YK_GAUGE_GLYPH_PERCENT);
+        CHECK(g[3].scale == 0.8f && g[4].scale == 0.8f);
+        CHECK(g[0].dx == -((6 * 3.5f - 3.5f - 4.0f)));              /* n = 4 + 2 */
+
+        /* 负值 ⇒ 前面多一个 '-'（步进 7），位数 +1。*/
+        n = yk_gauge_text_glyphs(-1234, g);
+        CHECK(n == 7);
+        CHECK(g[0].glyph == YK_GAUGE_GLYPH_MINUS && g[0].scale == 1.0f && g[0].dy == 0.0f);
+        CHECK(g[1].glyph == 1 && g[1].dx == g[0].dx + 7.0f);
+        CHECK(g[6].glyph == YK_GAUGE_GLYPH_PERCENT);
+        CHECK(g[0].dx == -((7 * 3.5f - 3.5f - 4.0f)));
+
+        /* ±10000 ⇒ 固定 "100.00" / "-100.00"（一手：≥10000 那一支）。*/
+        n = yk_gauge_text_glyphs(10000, g);
+        CHECK(n == 7);                                              /* "100.00" + '%' */
+        CHECK(g[0].glyph == 1 && g[1].glyph == 0 && g[2].glyph == 0);
+        CHECK(g[3].glyph == YK_GAUGE_GLYPH_DOT);
+        CHECK(g[4].glyph == 0 && g[5].glyph == 0);
+        CHECK(g[4].scale == 0.8f && g[5].scale == 0.8f && g[5].dy == 2.0f);
+        CHECK(g[6].glyph == YK_GAUGE_GLYPH_PERCENT);
+        n = yk_gauge_text_glyphs(-10000, g);
+        CHECK(n == YK_GAUGE_TEXT_MAX);                              /* 8 = '-' + "100.00" + '%' */
+        CHECK(g[0].glyph == YK_GAUGE_GLYPH_MINUS && g[7].glyph == YK_GAUGE_GLYPH_PERCENT);
+        /* 越界值按 ±10000 夹（引擎给脏值时不会算到数组外）。*/
+        CHECK(yk_gauge_text_glyphs(999999, g) == 7);
+        CHECK(yk_gauge_text_glyphs(-999999, g) == YK_GAUGE_TEXT_MAX);
+        /* NULL 出口：只算位数、不崩。*/
+        CHECK(yk_gauge_text_glyphs(0, 0) == 5);
+        CHECK(yk_gauge_text_glyphs(12345, 0) == 7);
+        /* 全定义域：返回 1..MAX 且 dx 单调、字形号在域内。*/
+        for (i = -11000; i <= 11000; i += 137) {
+            int k = yk_gauge_text_glyphs(i, g);
+            int j;
+            CHECK(k >= 1 && k <= YK_GAUGE_TEXT_MAX);
+            for (j = 0; j < k; ++j) {
+                CHECK(g[j].glyph <= YK_GAUGE_GLYPH_MINUS);
+                CHECK(g[j].scale == 1.0f || g[j].scale == 0.8f);
+                if (j) CHECK(g[j].dx > g[j - 1].dx);
+            }
+            CHECK(g[k - 1].glyph == YK_GAUGE_GLYPH_PERCENT);
+        }
     }
 
     /* ============ §3.11 永点（刻符）→ PIV（一手 `th08:0x418220`）============ */
@@ -865,6 +968,39 @@ int main(void)
         CHECK(yk_orb_score(0, 100) == 500);          /* (100/2)*10 */
         CHECK(yk_orb_score(1999, 4) == 100);         /* 没到门槛 + 值太小 ⇒ 下限 */
         CHECK(yk_orb_score(0, 20000) == 100000);     /* 门槛按**本关**算，本局计数照给 */
+
+        /* ★★ 2026-09-22 晚（owner 第 4 条）：刻符的**运动常量**（一手 `.sht` 头 + `ItemManager.cpp`）。
+         * 归航速度 = `[.sht+0x14]`、收集半径 = `[.sht+0x18]/2 + 8`（刻符半宽）。*/
+        {
+            float sp = 0.0f, r = 0.0f;
+            int c;
+            yk_orb_motion_params(0, &sp, &r);
+            CHECK(sp == 10.0f && r == 20.0f);                     /* pl00as：10.0 / 24/2+8 */
+            yk_orb_motion_params(1, &sp, &r);
+            CHECK(sp == 12.0f && r == 24.0f);                     /* pl01as：12.0 / 32/2+8 */
+            yk_orb_motion_params(2, &sp, &r);
+            CHECK(sp == 10.0f && r == 20.0f);                     /* pl02as */
+            yk_orb_motion_params(3, &sp, &r);
+            CHECK(sp == 10.0f && r == 20.0f);                     /* pl03as */
+            yk_orb_motion_params(-1, &sp, &r);                    /* 越界 ⇒ 0 号那一档 */
+            CHECK(sp == 10.0f && r == 20.0f);
+            for (c = -2; c <= 6; ++c) {                           /* 全定义域不崩、值恒在 {10,12}/{20,24} */
+                yk_orb_motion_params(c, &sp, &r);
+                CHECK((sp == 10.0f || sp == 12.0f) && (r == 20.0f || r == 24.0f));
+            }
+            sp = 7.0f; r = 7.0f;
+            yk_orb_motion_params(0, &sp, 0);                      /* 单出口 */
+            CHECK(sp == 10.0f && r == 7.0f);
+            yk_orb_motion_params(0, 0, &r);
+            CHECK(r == 20.0f);
+            yk_orb_motion_params(0, 0, 0);                        /* 双 NULL：什么都不做、不崩 */
+            /* 一手的状态号与常量（改了要在注释里同步改一手出处）*/
+            CHECK(YK_ORB_STATE_FALL == 0 && YK_ORB_STATE_HOMING == 1 && YK_ORB_STATE_SPAWN == 3);
+            CHECK(YK_ORB_FALL_GRAVITY == 0.03f);                  /* `ds:0x4b44c0` */
+            CHECK(YK_ORB_FALL_TERMINAL == 3.0f);                  /* `0x40400000` */
+            CHECK(YK_ORB_FALL_VY_MIN == -2.2f);                   /* `ds:0x4b5b2c` */
+            CHECK(YK_ORB_LOST_Y == 464.0f);                       /* `arcadeRegionSize.y (448) + 16` */
+        }
     }
 
     printf("youkai_core: %d checks, %d failed\n", s_pass + s_fail, s_fail);

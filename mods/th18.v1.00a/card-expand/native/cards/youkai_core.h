@@ -233,6 +233,56 @@ int yk_option_home_from_player(int character, int cell, const float player_xy[2]
  * `have < 0` = 手里还没有子机 ⇒ 不算「变了」。 */
 int yk_option_script_changed(int want, int have);
 
+/* ====================================== ★★ 妖侧子机的**追敌 + 旋转**（TH08 灵梦那一支，2026-09-22 晚）
+ * >> owner 单卡实跑（原话）：「th08 灵梦妖子机肯定是**八云蓝在敌人面前旋转**，甚至包括
+ *    旋转的贴图和旋转动画（虽然只是 rotate）」+ 同轮第 2 条「添加的妖子机本体应当追着敌人动」。
+ *
+ * **一手**（`th08:0x44e3a0` 的子状态机 + `th08:0x44e8d0` + `th08:0x44e770` 尾巴 + `player00.anm` script18）：
+ *   · 只有**机体 0（霊夢・八雲紫/藍）**有这一支：`g_OptionInitCallbacks[0][0] = th08:0x44e3a0`，
+ *     机体 1/2 的每帧回调（`th08:0x44ea40` / `th08:0x44eb70`）**没有子状态机、也不旋转**。
+ *   · 子状态 `option+0x2cc` 有 4 格（跳表 `th08:0x44e755` = {`0x44e484`,`0x44e532`,`0x44e5e0`,`0x44e68b`}）：
+ *     0/1/2 = **跟随自机**（`th08:0x44e770` 弹簧，三格之间按**速度 vx 的符号**切换待机循环 A/B），
+ *     **3 = 追敌**（`th08:0x44e8d0`）。
+ *   · **追敌那一格的目标与运动**（`th08:0x44e8d0` 逐指令）：
+ *       `target = *(void **)(player + 0xe2abc)`（一只敌人的指针；`0x44e8f1` 读它）
+ *       `goal   = target->final_pos`（`zEnemy +0x2d88`，vendor 结构体表 `type-structs-own.json`）
+ *       `goal.y += 32.0`（`0x4b42cc`）且 `if (goal.y < 32.0) goal.y = 32.0`
+ *       然后 = **与跟随自机完全同一条弹簧**：`delta = (goal − pos) × (1/16)`；
+ *       `vel += (delta − vel) × 0.2`；`pos += vel`；`|vel.x| < 0.05 ⇒ vel.x = 0`（死区）。
+ *   · **进入追敌**（`th08:0x44e770` 尾巴，跟随自机时每帧判）：`Timer(&player+0xe2ac4)` 到期
+ *       **且** `player+0xe2abc != 0` **且** `Timer(&option+0x2e0)` 满 **10 帧**（`0x44e892 push 0xa`）
+ *       ⇒ `AnmVm::SetInterrupt(option, 3)`（`0x44e8a6`）+ 子状态 = 3（`0x44e8b3`）。
+ *   · **退出追敌**（`th08:0x44e68b`）：目标没了 / 计时器到 0 ⇒ `player+0xe2abc = 0` +
+ *       `SetInterrupt(option, 1)`（`0x44e6dd`）+ 子状态回 0（= 待机循环 A）。
+ *   · **旋转是贴图层面的**（owner 口径对上）：`player00.anm` script18 的标签 3 = `sprite(sprite30)`
+ *       + `angleVel(0, 0, 0.62831855f)` + `stop()` ⇒ **0.2π rad/帧 = 36°/帧，10 帧一圈**；
+ *       标签 4 是反向（`-0.62831855f`）——⚠ 全 exe 里**没有任何一处**发标签 4（玩家侧发往子机 VM 的
+ *       `call 0x407120` 逐处看过）⇒ 反向那一段在原版是死代码，本卡也不发。
+ *
+ * ⚠⚠ **一手与 owner 记忆的冲突（照实登记，别默默改）**：那条目标字段 `player+0xe2abc` 在**我们的样本**
+ *   （TH08 v1.00d）里**全 exe 只有 3 处写点、写的都是 0**（`0x44e455`/`0x44e6d3`/`0x44e8c4`；
+ *   同一字段的 10 处引用逐条按指令边界看过：7 读 + 3 写 0，`METHOD.md` 硬规矩 4）⇒ 严格地说，
+ *   **追敌 + 旋转这一段在本 build 里够不到**（前一轮因此写了「不追敌」的结论）。
+ *   owner 2026-09-22 晚口径改判：「肯定是八云蓝在敌人面前旋转」—— 代码形状（子状态 3 + 标签 3 的
+ *   `angleVel` 旋转 + `sprite30`）与 owner 的记忆**逐条吻合**，矛盾的只有「谁写那个目标指针」这一格。
+ *   ⇒ **本卡按一手的形状实现**，只把「目标从哪来」换成 TH18 上真拿得到的量：
+ *     **先取 boss（`mgr+0x48`，可锁定的那只）**，没有 boss 时取**最近的敌人**（排除我们自己的使魔）
+ *     —— 这一格标 ❓ 自定（登记 `TUNING.md` §2.0y），其余（弹簧式、+32、10 帧门、旋转标签、
+ *     速度符号 ⇒ 循环 A/B）全部一手。*/
+#define YK_OPT_CHASE_GOAL_DY   32.0f   /* `th08:0x44e8d0`：`goal.y += 32.0`（`0x4b42cc`），并夹 `>= 32.0` */
+#define YK_OPT_CHASE_MIN_AGE   10      /* `th08:0x44e770` 尾巴：`Timer(&option+0x2e0)` 满 10 帧才准进追踪 */
+#define YK_OPT_SPIN_LABEL       5      /* 我们 `pl0X.anm` 里那一支的**旋转**段（TH08 原号 3，映射见生成器）*/
+#define YK_OPT_IDLE_LABEL       2      /* 我们那一支的**待机循环 A**（TH08 原号 1）*/
+
+/* 追敌时的「家位置」= 目标坐标 + (0, `YK_OPT_CHASE_GOAL_DY`)，`y` 夹到 `>= YK_OPT_HOME_Y_MIN`
+ * （逐条照抄 `th08:0x44e8d0`；`target_xy` = 那只敌人的 `final_pos`）。越界参数 ⇒ 返回 0、`out` 不动。*/
+int yk_option_chase_goal(const float target_xy[2], float out[2]);
+
+/* 本帧该不该在「追敌」态（纯逻辑，`th08:0x44e770` 尾巴那三个门里我们复刻得到的两个）：
+ *   `target_present`（目标存在）+ `age_frames >= YK_OPT_CHASE_MIN_AGE`（子机出场够 10 帧）。
+ * `age_frames` 越界（< 0）当 0。*/
+int yk_option_chase_want(int target_present, int age_frames);
+
 /* =================================================================== §3.4 弹幕
  * 形态一档固定（用户 2026-09-12 拍板；★ 相对 TH08 是**主动简化** ⇒ ❓ 自定）、
  * **数值随 P 变**（这半条与原作一致）：`on_bullet_created` 里按 `bullet+0xac` 的打包 set id
@@ -573,22 +623,46 @@ int yk_gauge_orbs_delta(int focused);          /* 收刻符时该加多少（聚
 uint32_t yk_gauge_color(int gauge);
 
 /* HUD 几何（**全部一手**，`AsciiManager::InitializeVms` + `AsciiManager::on_draw`）：
- * 640 空间的一手值 —— 槽条左上 `(32,465)` 128×16、人间图标 `(32,449)`、妖怪图标 `(144,449)`（都是 16×16，
- * 三个 VM 都 `anchorTopLeft()`）、游标中心 `x = 96 + g·112/20000`、`y = 453`（8×12，**没有** anchor 调用
- * ⇒ 锚点 = 心）、百分比数字 `x = 96 + g·80/20000`、`y = 游标 y − 7 = 446`。
+ * 640 空间的一手值 —— 槽条左上 **`(32,449)`** 128×16、人间图标 `(32,449)`、妖怪图标 `(144,449)`
+ * （都是 16×16，三个 VM 都 `anchorTopLeft()`）、游标中心 `x = 96 + g·112/20000`、`y = 453`
+ * （8×12，**没有** anchor 调用 ⇒ 锚点 = 心）、百分比数字 `x = 96 + g·80/20000`、`y = 游标 y − 7 = 446`。
+ * ⚠ **槽条那个 y 是 449、不是 465**（2026-09-22 晚订正）：`ascii.anm` script5 的正文是
+ *   `pos(32, 465)` → `posTime(40, 0, 32, 449, 0)` ⇒ **465 只是滑入动画的起点（在 480 高的屏外）**，
+ *   停稳位置是 **449**。原来本卡写 465 ⇒ 槽条比两个图标/游标低 16 px（owner 报的「hud 不对」之一）。
  * 图标 x 由**限值**决定：`88 + limit·56/10000` ⇒ 本卡的 ±10000 给出 32 / 144（= 条的两端）。 */
 typedef struct {
     float bar_x, bar_y;             /* 槽条 VM 位置（**表面 px**，块左下角为原点；VM 用 anchorTopLeft）*/
     float human_x, human_y;         /* 人间图标（同上，anchorTopLeft）*/
     float youkai_x, youkai_y;       /* 妖怪图标（同上，anchorTopLeft）*/
     float cursor_x, cursor_y;       /* 游标（同上，**锚点 = 心 ⇒ 这是中心点**）*/
-    float text_x640, text_y640;     /* 百分比数字（**640×480 空间**，喂 `ce_hud_number_set`）*/
+    float text_x640, text_y640;     /* 百分比数字的**基准点**（**640×480 空间**；逐字形的偏移见下）*/
 } yk_gauge_hud_t;
 
 /* `anchor[2]` = HUD 块的**左下角**（表面 px，= `ce_hud_slot_t` 的 x/y）；
  * `to640` = 表面→640 的比例（= `CE_HUD_SURFACE_TO_640`，TH18 是 0.5）。
  * 换算：表面偏移 = 640 空间偏移 × 2（= 1/to640）；块左下角 ⇔ 640 空间的 (32,481)。*/
 void yk_gauge_hud(int gauge, const float anchor[2], float to640, yk_gauge_hud_t *out);
+
+/* ---- ★★ 人妖槽的**百分比数字**：逐字形布局（一手 `AsciiManager::DrawPercentage` `th08:0x405e10`）----
+ * 一手形状（TH08 用**同一个 VM** 反复换 sprite + 改 pos/scale 再画，见 `AsciiManager.cpp:1095-1225`）：
+ *   `n = 4 (+1 负号) (+3 若 ≥10000 / +2 若 ≥1000 / +1 否则)`；起始 `x -= n*3.5 − 3.5 − 4.0`（居中）
+ *   负号 `'-'` 步进 7；`≥10000` ⇒ `"100"`(各 7) + `'.'`(5) + 两个小号 `"00"`(5,5,7)；
+ *   `≥1000` ⇒ 两位整数(7,7) + `'.'`(5) + 两个小号(5,7)；否则 ⇒ 一位整数(7) + `'.'`(5) + 两个小号(5,7)；
+ *   最后 `'%'`。**小号 = scale 0.8 且 y += 2**（画完复位）。
+ * 字形号（= TH08 的 sprite 0x88..0x94 相对序）：`0..9` = '0'..'9'、`10` = '%'、`11` = '.'、`12` = '-'。*/
+#define YK_GAUGE_GLYPH_PERCENT 10   /* sprite 0x92 */
+#define YK_GAUGE_GLYPH_DOT     11   /* sprite 0x93 */
+#define YK_GAUGE_GLYPH_MINUS   12   /* sprite 0x94 */
+#define YK_GAUGE_TEXT_MAX      8    /* 最多 = '-' + "100.00" + '%'（`abs(gauge) >= 10000` 且为负）*/
+typedef struct {
+    uint8_t glyph;   /* 0..12（上面三个宏 + 数字）*/
+    float   dx;      /* 相对 `text_x640` 的 x 偏移（640 空间 px，已含居中）*/
+    float   dy;      /* 相对 `text_y640` 的 y 偏移（小号位 = +2）*/
+    float   scale;   /* 1.0 / 0.8（小号两位）*/
+} yk_gauge_glyph_t;
+/* 把 `gauge`（−10000..+10000）拆成一串字形；返回字形数（1..`YK_GAUGE_TEXT_MAX`）；
+ * `out` 为 NULL 或 `gauge` 越界（钳到 ±10000 后照算）都不会崩。**无浮点库调用**。*/
+int yk_gauge_text_glyphs(int gauge, yk_gauge_glyph_t *out);
 
 /* ============================================== §3.11 永点（刻符）→ PIV（= 额外最大得点）
  * 一手：`GameManager::sub_418220` `th08:0x418220` 与 `Item::collect_time_orb` `th08:0x4412b0`。
@@ -617,3 +691,46 @@ int32_t yk_orb_score(int32_t stage_point_items_in_game, int32_t point_items_in_g
 #define YK_ORB_SCORE_MIN        100
 #define YK_ORB_SCORE_MAX        10000
 #define YK_ORB_SCORE_STAGE_GATE 2000
+
+/* ================= ★★ 刻符（type 7）的**运动**常量（一手，2026-09-22 晚 owner 第 4 条）=========
+ * >> owner 原话：「永点的**吸收速度**不对，很慢，像是有一个很小的加速度似的，**应该刚开始就满速**」。
+ *
+ * 一手（`engine/item/th08/01-time-orbs.md` §2/§7 + 反编译 `ItemManager.cpp:180-305`，逐条地址）：
+ *   · **出生状态看来源**（`ItemManager::spawn_item` 的第三个参数）：
+ *       「击破敌机」`th08:0x42b048` 与「自机弹打死敌机」`th08:0x451892` ⇒ `state = 3`（先上浮）；
+ *       **擦弹** `th08:0x431650` 一族 / **消弹** `th08:0x4308e5` 一族 / 连锁尾巴 ⇒ `state = 1`
+ *       ⇒ **一生成就归航、当帧就是满速**（没有加速段）。
+ *   · **归航速度 = 当前位置那一份 `.sht` 头里的 `itemCollectSpeed`**：`th08:0x44088e` 读
+ *       `[ds:0x18b896c]+0x14`（`0x18b896c` = 已装载的 `PlayerRawShtFile*`），另一头
+ *       `th08:0x44c1b0` = `Player::AngleToPlayer`（反编译 `Player.cpp:121` 的 `atan2f`）拿方向 ⇒
+ *       `th08:0x4408a5 call 0x4286e0` 用 (角度, 模长) 造速度 Float3 ⇒ **每帧重设成满速、无加速度**。
+ *       实测 `+0x14`：`ply00as`（霊夢・紫）**10.0** / `ply01as`（魔理沙・アリス）**12.0** /
+ *       `ply02as`（咲夜・レミリア）10.0 / `ply03as`（妖夢・幽々子）10.0（本仓 `dat/ply*.sht` 直读）。
+ *   · **收集盒**（`Player::CalcItemBoxCollision` `Player.cpp:100`）：拿道具的 AABB（自身尺寸的一半）
+ *       与玩家的「抓取盒」相交。抓取盒 = `player+0x3ec` ± 各轴（`Player.cpp:1059`），其值 =
+ *       **`[.sht+0x18] / 2`**（`th08:0x44d83f`–`0x44d873`）= `itemCollectRadius/2`：
+ *       pl00/pl02/pl03 = **12.0**、pl01 = **16.0**；再叠加道具自己的半宽（16×16 的贴图 ⇒ 8）
+ *       ⇒ 我们那套「半径」口径下，一手的等效值 = **20 / 24 / 20 / 20**。
+ *   · **下落（state 0）**（`th08:0x440936` 一族 + 反编译 `ItemManager.cpp:268-276`）：
+ *       `vx = 0`、`vy` 夹到 `>= ds:0x4b5b2c (−2.2)`、每帧 `vy += ds:0x4b44c0 (0.03)`、
+ *       终速 `0x40400000 (3.0)`；**掉到 `arcadeRegionSize.y + 16` 以下就整颗删掉（不给分）**
+ *       （`ItemManager.cpp:271-277`：`state == 0 && arcadeRegionSize.y + 16 <= pos.y ⇒ Delete()`）
+ *       —— 这条**不是**「落到回收线就收」！回收是**接触抓取盒**（上一条），掉出下沿是**损失**。
+ *       TH18 的游玩区高同为一手 **448.0f**（`sdk_core.h` 的 `CE_POC_HEIGHT_MAX_BITS`）⇒ 下沿 = 464.0。
+ *   · 中弹/暴毙那一刻：`state 1 → 0`，`vx = 0`、`vy = −0.9`（`th08:0x441574` 批量版）/ `−0.7`（`th08:0x4408e0` 每帧版）。*/
+#define YK_ORB_STATE_FALL       0      /* 一手 `ITEM_STATE_DEFAULT`：普通下落 */
+#define YK_ORB_STATE_HOMING     1      /* 一手 `ITEM_STATE_UNK1`：归航（当帧满速）*/
+#define YK_ORB_STATE_SPAWN      3      /* 一手 `ITEM_STATE_UNK3`：出生上浮（不可收）*/
+#define YK_ORB_FALL_GRAVITY     0.03f  /* `ds:0x4b44c0`（`th08:0x4409c8`）*/
+#define YK_ORB_FALL_TERMINAL    3.0f   /* `0x40400000`（`th08:0x4409bb`）*/
+#define YK_ORB_FALL_VY_MIN     (-2.2f) /* `ds:0x4b5b2c`（`th08:0x44091c`）*/
+#define YK_ORB_LOST_Y           464.0f /* `arcadeRegionSize.y (448) + 16`（`ItemManager.cpp:271`）*/
+
+/* 归航速度（px/帧）= 一手 `.sht` 头的 `itemCollectSpeed`（+0x14）、收集半径（px）= 抓取盒半宽
+ * （`itemCollectRadius/2`）+ 刻符贴图半宽 8。`character` = TH18 机体号：
+ *   0 霊夢（TH08 pl00）speed 10.0 / r 20.0  ·  1 魔理沙（pl01）**12.0 / 24.0**
+ *   2 咲夜（pl02）10.0 / 20.0  ·  3 早苗（pl03）10.0 / 20.0；越界（含 < 0）取 0 号那一档。
+ * ⚠ **出口是 `float *` 而不是返回值**：本仓 32 位目标的 `.c` 里**返回 float 的函数必然走 x87**
+ *   （i386 ABI 的浮点返回值在 ST(0)），`make dllx87` 门会当场红 —— 所以这里照 `yk_opt_spring_step`
+ *   的先例用**指针出口**。任一指针为 NULL ⇒ 跳过那一项；两个都 NULL ⇒ 什么都不做。*/
+void yk_orb_motion_params(int character, float *home_speed, float *pick_r);

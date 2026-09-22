@@ -195,10 +195,46 @@ percentageText.pos.y = cursor.pos.y - 7.0f;                                     
 DrawPercentage(&percentageText.pos, GetYoukaiGauge(), …);                                     // :1066
 ```
 - **4 支 VM**（`ascii.anm`）：槽条 `script5`、人间图标 `script6`、妖怪图标 `script7`、游标 `script8`
-  （`AsciiManager.cpp:198-201` 的三次 `SetAndExecuteScriptIdx` + 游标）；
+  （`AsciiManager.cpp:198-201` 的三次 `SetAndExecuteScriptIdx` + 游标）；**百分比数字 = `script4`**
+  （`AsciiManager.cpp:202`），它的正文只有 `sprite(sprite136); zWriteDisable(1); static();`
+  —— 一支**可换字的画布**，引擎在一片里反复 `SetSprite` + `DrawNoRotation` 画完那串数字（见下）。
 - 人间/妖怪图标的 x 偏移由**阈值**决定：`humanIcon.pos.x -= humanLimit * 56.0f / -10000.0f`、
   `youkaiIcon.pos.x += youkaiLimit * 56.0f / 10000.0f`（`AsciiManager.cpp:209-210`）
   ⇒ 槽的两端就是两个限值，**量程 ±10000、条宽 112 px、图标各 56 px**。
+
+#### 2.3a ★ 贴图与「停稳位置」（2026-09-22 晚，卡 108 的 owner 第 3 条）
+
+`thanm -l 8 -m local/vendor/thpages/static/mapfile/v2.anmm local/th08.v1.00d/dat/ascii.anm`
+逐条读出来的矩形（**全部在 entry0 = `data/ascii/ascii.png`**，256×256）：
+
+| 件 | script | sprite | 矩形 (x,y,w,h) | 锚点 |
+| --- | --- | --- | --- | --- |
+| 槽条 | 5 | **155** | `(0, 224, 128, 16)` | `anchorTopLeft` |
+| 人间图标 | 6 | **153** | `(160, 208, 16, 16)` | `anchorTopLeft` |
+| 妖怪图标 | 7 | **154** | `(176, 208, 16, 16)` | `anchorTopLeft` |
+| 游标 | 8 | **152** | `(128, 208, 8, 12)` | **无 anchor 调用 ⇒ 中心** |
+| 百分比字形 | 4 | **136..148**（= `0x88..0x94`）| `(i*8, 208, 8, 12)`、i = 0..12 | 中心 |
+
+字形号序（`DrawPercentage` `0x405e10` 的注释 + 逐条 `SetSprite`）：**0x88..0x91 = '0'..'9'、
+0x92 = '%'、0x93 = '.'、0x94 = '-'**。
+
+⚠ **停稳位置不是脚本里那个 `pos()`**：`script5` 的正文是 `pos(32, 465)` → `posTime(40, 0, 32, 449, 0)`
+⇒ **465 是滑入动画的起点（480 高的屏外）**，停稳在 **`(32, 449)`**；两个图标与游标本来就在 449/453。
+⇒ 槽条的 y 是 **449**，与图标**同高**（卡 108 原来照 `pos()` 抄了 465 ⇒ 条比图标低 16 px）。
+
+百分比数字的排布（`DrawPercentage`，全部一手）：
+
+```
+n = 4 (+1 负号) (+3 若 |v| >= 10000 / +2 若 >= 1000 / +1 否则)
+x -= n*3.5 − 3.5 − 4.0                      ; 居中
+负号 '-'        x += 7
+|v| >= 10000 ： '1' '0' '0' 各 +7，'.' +5，两个小号 '0' '0' +5 / +5
+|v| >= 1000  ： 整数两位 +7/+7，'.' +5，小号两位 +5 / +5
+否则         ： 整数一位 +7，'.' +5，小号两位 +5 / +5
+最后 '%'；小号 = scale 0.8 且 y += 2（画完复位）
+```
+数字的颜色 = 与槽条**同一套**五档染色（`AsciiManager.cpp:1030-1058`：极人 `0x7070ff` / 中人 `0xb0b0ff` /
+极妖 `0xff7070` / 中妖 `0xffb0b0` / 其余 `0xffffff`）。
 
 ### 2.4 ✅ **限值的写点找到了**（2026-09-22 订正本文旧版的「没有写点」）
 

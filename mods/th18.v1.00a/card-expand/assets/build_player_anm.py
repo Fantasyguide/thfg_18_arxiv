@@ -487,11 +487,24 @@ YK_EXTRA_PLAN = {
                (154, 176, 208, 16, 16),     # 妖怪图标
                (155, 0, 224, 128, 16)],     # 槽条
               (168, 16)),
+    # ★★ 2026-09-22 晚（owner：「人妖槽 hud 不对 …… 你得把 th08 的贴图搞过来」）：
+    #   **百分比数字的字形**（TH08 `ascii.anm` entry0 的 sprite **0x88..0x94** = 136..148，
+    #   各 8×12，y = 208、x = 0,8,…,96）。一手：`AsciiManager::DrawPercentage` `th08:0x405e10`
+    #   的注释「0x88='0'..0x91='9'、0x92='%'、0x93='.'、0x94='-'」+ 逐条 `SetSprite` 调用；
+    #   矩形是本仓 `thanm -l 8 -m v2.anmm dat/ascii.anm` 逐条读出来的（见报告的表）。
+    #   ⚠ 这一批**不是**给脚本「画一句话」用的：TH08 那边引擎把**同一个 VM** 的 sprite 逐字改、
+    #     逐字画（`DrawPercentage` 里 5~6 次 `SetSprite` + `DrawNoRotation`）⇒ TH18 侧要**多个 VM**
+    #     （一个 VM 一帧只画一次），由 C 侧 `yk_gauge_text_*` 按同一套布局写每格的 sprite/位置。
+    "gaugefont": ("ascii", "data/ascii/ascii.png",
+                  [(136 + i, i * 8, 208, 8, 12) for i in range(13)],   # 136..148 = '0'..'9' '%' '.' '-'
+                  (104, 12)),
 }
 # 每项的**画布内摆放**（x 从左往右挨着放，间距 0；⚠ 槽条是 128 宽、游标 8 宽 ⇒ 画布 168 够）
-_YK_EXTRA_LAYOUT = {"orb": [(0, 0)], "gauge": [(0, 0), (8, 0), (24, 0), (40, 0)]}
+_YK_EXTRA_LAYOUT = {"orb": [(0, 0)], "gauge": [(0, 0), (8, 0), (24, 0), (40, 0)],
+                    "gaugefont": [(i * 8, 0) for i in range(13)]}
 # entry 名（每机各一份，故名字里不带机体号也可以；贴图按 entry 名去 tex 目录找）
-YK_EXTRA_NAME = {"orb": "player/yk_orb.png", "gauge": "player/yk_gauge.png"}
+YK_EXTRA_NAME = {"orb": "player/yk_orb.png", "gauge": "player/yk_gauge.png",
+                 "gaugefont": "player/yk_gaugefont.png"}
 # 每机的新 entry 号 / 首个 sprite 号 / 首个脚本号（接在「妖侧本体」之后，只追加）
 YK_EXTRA_IDS = {
     "pl00": dict(entry0=16, sprite0=97,  script0=48),
@@ -506,11 +519,17 @@ YK_EXTRA_SCRIPTS = (
     ("gauge",  "ascii", 6,  "GAUGE_HUMAN", {153: 1}),
     ("gauge",  "ascii", 7,  "GAUGE_YOUKAI", {154: 2}),
     ("gauge",  "ascii", 8,  "GAUGE_CURSOR", {152: 0}),
+    # ★ 字体 VM 的**载体脚本**：TH08 `ascii.anm` **script4** 逐条照抄 —— 它本身只做
+    #   `sprite(sprite136)`（= 字形 '0'）+ `zWriteDisable(1)` + `static()`：TH08 的引擎就是拿它当
+    #   「一块可换字的画布」（`AsciiManager.cpp:202` 把 percentageText 装成 script4，随后逐字
+    #   `SetSprite` 再 `DrawNoRotation`）。C 侧每帧用 `ce_anm_set_sprite` 换字、`ce_anm_set_scale`
+    #   缩放小数位 ⇒ 与一手同构（一个字形 = 一次绘制）。
+    ("gaugefont", "ascii", 4, "GAUGEFONT", {136: 0}),
 )
 
 
 def _yk_extra_order():
-    return ("orb", "gauge")
+    return ("orb", "gauge", "gaugefont")
 
 
 def _yk_extra_entries(player: str):
@@ -638,19 +657,19 @@ PINNED_NEW_SIDS = {
              "YKBODY_PL03_IDLE": 34, "YKBODY_PL03_MOVE_L": 35, "YKBODY_PL03_STOP_L": 36,
              "YKBODY_PL03_MOVE_R": 37, "YKBODY_PL03_STOP_R": 38,
              "YKORB_PL03": 39, "YKGAUGE_BAR_PL03": 40, "YKGAUGE_HUMAN_PL03": 41,
-             "YKGAUGE_YOUKAI_PL03": 42, "YKGAUGE_CURSOR_PL03": 43},
+             "YKGAUGE_YOUKAI_PL03": 42, "YKGAUGE_CURSOR_PL03": 43, "YKGAUGEFONT_PL03": 44},
 }
 # ★★ 108 的**人妖槽 HUD + 刻符**（2026-09-22，owner：「那就先做人妖槽以及永点VM池」）。
 #   与 `YKBODY_*` 同一个理由钉号：C 侧 `YK_ORB_SCRIPT[4]` / `YK_GAUGE_SCRIPT[4][4]` 直接吃这些宏。
 PINNED_NEW_SIDS["pl00"].update({"YKORB_PL00": 48, "YKGAUGE_BAR_PL00": 49,
                                "YKGAUGE_HUMAN_PL00": 50, "YKGAUGE_YOUKAI_PL00": 51,
-                               "YKGAUGE_CURSOR_PL00": 52})
+                               "YKGAUGE_CURSOR_PL00": 52, "YKGAUGEFONT_PL00": 53})
 PINNED_NEW_SIDS["pl01"].update({"YKORB_PL01": 54, "YKGAUGE_BAR_PL01": 55,
                                "YKGAUGE_HUMAN_PL01": 56, "YKGAUGE_YOUKAI_PL01": 57,
-                               "YKGAUGE_CURSOR_PL01": 58})
+                               "YKGAUGE_CURSOR_PL01": 58, "YKGAUGEFONT_PL01": 59})
 PINNED_NEW_SIDS["pl02"].update({"YKORB_PL02": 37, "YKGAUGE_BAR_PL02": 38,
                                "YKGAUGE_HUMAN_PL02": 39, "YKGAUGE_YOUKAI_PL02": 40,
-                               "YKGAUGE_CURSOR_PL02": 41})
+                               "YKGAUGE_CURSOR_PL02": 41, "YKGAUGEFONT_PL02": 42})
 
 _SPRITE_REF = re.compile(r"\bsprite\(sprite(\d+)\)")
 _SPRITE_DEF = re.compile(r"\bsprite(\d+):")
@@ -1074,6 +1093,18 @@ def write_pl_ids_h():
                      f"（{len(ent['sprites'])} 帧）*/")
         lines.append(f"#define CE_PL_ANM_YKBODY_LAST_{player.upper():<6} {last:>3}   "
                      f"/* 区间外 = 引擎把本体脚本换回去了（自愈闸，见 youkai.c）*/")
+    # ★★ 2026-09-22 晚（owner：「th08 的贴图搞过来」）：**人妖槽百分比字形的 sprite 基号**。
+    #   C 侧（`youkai.c` 的 `yk_gauge_text_*`）按 TH08 `AsciiManager::DrawPercentage` 的布局逐格
+    #   `ce_anm_set_sprite(pl0X.anm, id, BASE + 序号)` —— 序号顺序 = TH08 的 sprite 号序：
+    #   0..9 = '0'..'9'、10 = '%'、11 = '.'、12 = '-'（= 原生 0x88..0x94）。
+    #   写死常数会在「重新生成 / 插一格」时静默错位（画出来是别的字），所以从计划表现算。
+    lines.append("")
+    for player in sorted(YK_EXTRA_IDS):
+        ent = [e for e in _yk_extra_entries(player) if "gaugefont" in e["name"]][0]
+        first = ent["sprites"][0][0]
+        lines.append(f"#define CE_PL_ANM_YKGAUGEFONT_BASE_{player.upper():<5} {first:>3}   "
+                     f"/* {player}.anm 人妖槽字形 sprite {first}..{first + 12}"
+                     f"（0..9 = '0'..'9'、10 = '%'、11 = '.'、12 = '-'）*/")
     PL_IDS_H.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 

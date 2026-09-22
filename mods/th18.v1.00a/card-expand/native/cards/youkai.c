@@ -210,13 +210,31 @@ typedef struct {
     uint32_t      orb_taken;           /* 本局收了几颗刻符 */
     uint32_t      orb_full;            /* 池满 / VM 建不出来而放弃的颗数（诊断）*/
     uint32_t      hud_bar, hud_human, hud_youkai, hud_cursor;  /* 人妖槽 HUD 的 4 支 VM */
-    ce_hud_number_t hud_num;           /* 百分比数字（共用件的 HUD 数字）*/
+    uint32_t      hud_digit[YK_GAUGE_TEXT_MAX];  /* ★ 百分比数字的**字形 VM**（每格一个；TH08 那边是
+                                                  *   同一个 VM 反复换字，TH18 一个 VM 一帧只画一次
+                                                  *   ⇒ 卡侧开 7 格，逐格换 sprite，见 `yk_gauge_text_sync`）*/
     ce_hud_slot_t hud;                 /* HUD 货架槽（`ce_hud_slot_claim_card`，左下角）*/
     uint8_t       hud_ready;           /* 货架认领成功（0 = 这一关没抢到块，HUD 不画）*/
     uint8_t       body_focused;        /* 0/1 */
     uint8_t       body_state;          /* 0..YK_BODY_STATES-1 */
     int32_t       body_script;         /* 追加脚本号 或 -1 */
     int32_t       body_prev_dx;        /* player+0x47934 的上一帧快照 */
+    /* ★★ 2026-09-22 晚（owner 第 2 条：妖子机追敌 + 旋转）：**机体 0（霊夢・八雲藍）**那一支的状态。
+     * 一手（子状态机 + 弹簧 + 旋转标签）逐条见 `youkai_core.h` 的「妖侧子机的追敌 + 旋转」一节。
+     *   `opt_age`   = 手里这颗子机出场了多少帧（TH08 `Timer(&option+0x2e0)` 的对应物；
+     *                 进场门 = 满 `YK_OPT_CHASE_MIN_AGE`(10) 帧）；
+     *   `opt_chase` = 现在是不是「追敌」态（= 已发过旋转标签、家位置指向那只敌人）；
+     *   `chase_*`   = 本帧的追踪目标（`on_tick_2` 每帧解析一次，帧界的 `on_option_pose_apply` 读它）。
+     * ★ 目标从哪来 = ❓ **自定**（TH08 那一格 `player+0xe2abc` 在我们的样本里够不到，见 core 的长注释）：
+     *   先 boss（`mgr+0x48` 可锁定那只）、没有就取**最近的敌人**（排除我们自己的使魔）。*/
+    uint16_t      opt_age;             /* 手里那颗子机出场帧数（≥ 10 才准进追踪）*/
+    uint8_t       opt_chase;           /* 1 = 追敌态（已发旋转标签）*/
+    uint8_t       chase_have;          /* 本帧有没有目标 */
+    uint32_t      chase_id;            /* 目标 enemy_id（0 = 没有；诊断日志用）*/
+    float         chase_x, chase_y;    /* 目标坐标（640 空间 = `final_pos`）*/
+    uint32_t      chase_enters;        /* 本局进过几次追踪态（诊断）*/
+    uint8_t       logged_chase;        /* 「追踪生效」只记一次 */
+    uint8_t       logged_natopt;       /* 「隐藏原生子机」只记一次 */
     uint8_t       _pad[2];             /* 对齐（保持结构布局稳定；新增位一律从 `_pad` 里拿）*/
     uint32_t      heals_seen;          /* ★ 2026-09-22（#7）：上一帧读到的闸自愈计数（`yk_map_heals`）
                                         *   的快照。差值 > 0 ⇒ 打一行日志 —— 实跑里「boss 不发弹」
@@ -627,6 +645,59 @@ static int yk_current_power_level(void)
     return yk_shot_tier((int)CE_CURRENT_POWER());
 }
 
+/* ---- ★★ 2026-09-22 晚（owner 第 2 条）：本帧的**追踪目标**（`on_tick_2` 每帧解析一次）---------
+ * 一手：TH08 的目标是 `player+0xe2abc` 里的**一只敌人的指针**（`th08:0x44e8f1` 读它、取
+ * `final_pos` = `zEnemy+0x2d88`）。那个指针在本 build 里没有任何非 0 写点（见 `youkai_core.h` 的长注释）
+ * ⇒ 目标选择这一格 ❓ **自定**，取「先 boss、没有就最近的敌人」：
+ *   ① boss = `mgr+0x48` 的 4 个 id 里**可锁定**的那只（与伤害转嫁用同一个 `yk_boss()`，零新增读法）；
+ *   ② 没有 boss ⇒ 遍历敌人链表取**离自机最近**的一只（`ce_enemy_lockable` 过滤），
+ *      并**排除我们自己的使魔**（它们是真敌人，会把目标吸到自己身上）。
+ * 目标只在本帧有效（`on_tick_2` 写进卡状态、帧界的 `on_option_pose_apply` 读）——**绝不缓存指针**。*/
+static void yk_chase_target_resolve(yk_card_t *s)
+{
+    uint8_t *e;
+    float px = 0.0f, py = 0.0f;
+    float best = 0.0f;
+    uint32_t best_id = 0;
+    const float *bp;
+
+    if (!s) return;
+    s->chase_have = 0;
+    s->chase_id = 0;
+    e = yk_boss();
+    if (e && (bp = ce_enemy_pos(e)) != 0) {
+        uint32_t id = *(const uint32_t *)(e + CE_ENEMY_ID);
+        if (id) {
+            s->chase_have = 1;
+            s->chase_id = id;
+            s->chase_x = bp[0];
+            s->chase_y = bp[1];
+            return;
+        }
+    }
+    /* 没有 boss：最近的敌人。`best == 0` 表示还没选到（距离 0 也可能命中 ⇒ 用 `best_id` 判）。*/
+    if (CE_PLAYER()) {
+        const float *pp = ce_player_pos();
+        if (pp) { px = pp[0]; py = pp[1]; }
+    }
+    CE_ENEMY_FOREACH(CE_ENEMY_MGR(), e) {
+        const float *ep;
+        float dx, dy, d;
+        uint32_t id;
+        if (!ce_enemy_lockable(e)) continue;
+        id = *(const uint32_t *)(e + CE_ENEMY_ID);
+        if (!id) continue;
+        if (yk_fam_broken(&s_map, id)) continue;          /* 我们自己的使魔不当目标 */
+        ep = ce_enemy_pos(e);
+        if (!ep) continue;
+        dx = ep[0] - px;
+        dy = ep[1] - py;
+        d = dx * dx + dy * dy;
+        if (!best_id || d < best) { best = d; best_id = id; s->chase_x = ep[0]; s->chase_y = ep[1]; }
+    }
+    if (best_id) { s->chase_have = 1; s->chase_id = best_id; }
+}
+
 static void yk_option_declare(ce_card_t *c, yk_card_t *s, int focused)
 {
     ce_option_pose_t pose;
@@ -693,6 +764,8 @@ static void yk_option_release(ce_card_t *c, yk_card_t *s)
     ce_option_drop(c, 0);
     s->opt_script = -1;
     s->opt_spring_live = 0;                /* ★ th08 #1：松手 ⇒ 下次再要子机时重新从自机位置起 */
+    s->opt_age = 0;                        /* ★ 2026-09-22 晚：出场计时从 0 起（TH08 的 `Timer(&option+0x2e0)`）*/
+    s->opt_chase = 0;                      /* 手里没子机 ⇒ 追踪态自然结束（旋转标签由新 VM 自己的脚本起手）*/
 }
 
 /* ★ 被选举者落笔（SDK 每帧调**恰好一次**；spec §3.3.1 的 `on_option_pose_apply`）。
@@ -735,17 +808,49 @@ static int on_option_pose_apply(ce_card_t *c)
          * ⚠ 引擎每帧都会用我们写的这四个字段重算子机位置 ⇒ **必须每帧重写**（不能只在申请那一帧写）。*/
         if (yk_option_uses_spring(character) && pp) {
             float goal[2];
-            if (yk_option_home_from_player(character, i, pp, goal)) {
-                if (!s->opt_spring_live) {            /* TH08 state 1：从**自机位置**出发 */
-                    s->opt_pos[i][0] = pp[0];
-                    s->opt_pos[i][1] = pp[1];
-                    s->opt_vel[i][0] = 0.0f;
-                    s->opt_vel[i][1] = 0.0f;
+            int chasing = 0;
+            /* ★★ 2026-09-22 晚（owner 第 2 条）：**追敌 + 旋转**（只有机体 0 = 霊夢・八雲藍那一支，
+             * 一手 `th08:0x44e3a0` 的子状态 3 → `th08:0x44e8d0`；见 `youkai_core.h` 的长注释）。
+             * 判据 = `yk_option_chase_want(有目标, 出场帧数)`（TH08：目标存在 + `Timer(&option+0x2e0)` 满 10 帧）。
+             * 进/出的**边沿**各发一次 `AnmVm::SetInterrupt`（TH08 原版：进 = 标签 3 旋转、出 = 标签 1 待机循环；
+             * 我们的 TH18 号 = `YK_OPT_SPIN_LABEL`(5) / `YK_OPT_IDLE_LABEL`(2)，映射见生成器文件头）。
+             * ⚠ 只对 `i == 0` 做（TH08 只有 1 颗子机；机体 1/2 根本没有这一段）。*/
+            if (character == 0 && i == 0) {
+                uint32_t vm = *(const uint32_t *)(o + CE_OPT_ANM_ID);
+                int want_chase = yk_option_chase_want((int)s->chase_have, (int)s->opt_age);
+                chasing = want_chase;
+                if (want_chase && !s->opt_chase) {
+                    if (vm) ce_anm_interrupt(vm, YK_OPT_SPIN_LABEL);      /* TH08 `push 3`（`0x44e8a6`）*/
+                    s->opt_chase = 1;
+                    ++s->chase_enters;
+                    if (!s->logged_chase) {
+                        s->logged_chase = 1;
+                        ce_log("youkai: youkai option CHASING enemy_id %u (spin label %d, goal = target "
+                               "+ %.0f y) - TH08 shape: `th08:0x44e8d0` spring toward the target's "
+                               "`final_pos`, spin = script label from `th08:0x44e8a6 push 3`",
+                               s->chase_id, (int)YK_OPT_SPIN_LABEL, (double)YK_OPT_CHASE_GOAL_DY);
+                    }
+                } else if (!want_chase && s->opt_chase) {
+                    if (vm) ce_anm_interrupt(vm, YK_OPT_IDLE_LABEL);      /* TH08 `push 1`（`0x44e6dd`）*/
+                    s->opt_chase = 0;
                 }
-                yk_opt_spring_step(s->opt_pos[i], s->opt_vel[i], goal);
-                fx = s->opt_pos[i][0] - pp[0];
-                fy = s->opt_pos[i][1] - pp[1];
             }
+            if (chasing && s->chase_have) {
+                const float tgt[2] = { s->chase_x, s->chase_y };
+                /* 追敌：家位置 = 目标 `final_pos` + (0, +32)，弹簧与跟随自机**逐条同式**。*/
+                if (!yk_option_chase_goal(tgt, goal)) { goal[0] = pp[0]; goal[1] = pp[1]; }
+            } else if (!yk_option_home_from_player(character, i, pp, goal)) {
+                goal[0] = pp[0]; goal[1] = pp[1];   /* 跟随自机（一手 `th08:0x44e770`）*/
+            }
+            if (!s->opt_spring_live) {            /* TH08 state 1：从**自机位置**出发 */
+                s->opt_pos[i][0] = pp[0];
+                s->opt_pos[i][1] = pp[1];
+                s->opt_vel[i][0] = 0.0f;
+                s->opt_vel[i][1] = 0.0f;
+            }
+            yk_opt_spring_step(s->opt_pos[i], s->opt_vel[i], goal);
+            fx = s->opt_pos[i][0] - pp[0];
+            fy = s->opt_pos[i][1] - pp[1];
         }
         /* 写**这一格**的阵型（原生 `0x40b8c1` 也这么自己摆；单位 = 原生 1/128 定点）。
          * 引擎每帧自己按聚焦位取用：`pos = 自机位 + (聚焦 ? [+0x6c/+0x70] : [+0x64/+0x68])`
@@ -876,6 +981,17 @@ static const int32_t YK_GAUGE_SCRIPT[4][4] = {   /* [机体][0 槽条 / 1 人间
       CE_PL_ANM_SCRIPT_YKGAUGE_YOUKAI_PL03, CE_PL_ANM_SCRIPT_YKGAUGE_CURSOR_PL03 },
 };
 
+/* 字体脚本号按机体查表（生成物宏名带机体号；四个文件的号互不相同）*/
+static const int32_t YK_GAUGE_SCRIPT_FONT[4] = {
+    CE_PL_ANM_SCRIPT_YKGAUGEFONT_PL00, CE_PL_ANM_SCRIPT_YKGAUGEFONT_PL01,
+    CE_PL_ANM_SCRIPT_YKGAUGEFONT_PL02, CE_PL_ANM_SCRIPT_YKGAUGEFONT_PL03,
+};
+/* 字形 sprite 基号按机体查表（0..9 = '0'..'9'、10 = '%'、11 = '.'、12 = '-'）*/
+static const int32_t YK_GAUGE_FONT_BASE[4] = {
+    CE_PL_ANM_YKGAUGEFONT_BASE_PL00, CE_PL_ANM_YKGAUGEFONT_BASE_PL01,
+    CE_PL_ANM_YKGAUGEFONT_BASE_PL02, CE_PL_ANM_YKGAUGEFONT_BASE_PL03,
+};
+
 /* 自机自己的 anm（`player+0xc`）。⚠**不是** `player+0x10`：那一格开火期间被引擎换成 ability.anm
  * （engine.h 的注）⇒ 刻符 / HUD 的 VM 必须挂在 pl0X.anm 那一页上（贴图按 VM 自己那一页取）。*/
 static void *yk_player_anm(void)
@@ -893,11 +1009,21 @@ static void *yk_player_anm(void)
  *    6..11（`engine/anm/th18/02-render-stages.md`），使魔跟随 VM 用的就是 7（`YK_FAM_ANM_LAYER`）
  *    ⇒ 刻符同层。脚本自己没有 `layer()` ⇒ 这个参数是唯一的层来源。*/
 #define YK_ORB_ANM_LAYER      7
-/* ❓ **自定：归航速度 / 拾取半径 / 回收线下沿**（TH08 那三个量分别在道具运动表、道具与自机的
- *    碰撞代码里，本轮没有抽出一手数值 —— 见报告「未决」）。形状是一手的，数值是自定的。*/
-#define YK_ORB_HOME_SPEED     3.0f    /* 归航时朝自机的速度（640 空间 px/帧）*/
-#define YK_ORB_PICK_R         20.0f   /* 碰到自机就收（state 1）*/
-#define YK_ORB_LINE_OFF       16.0f   /* state 0：`y <= 自机 y + 16` 才收（TH08 `th08:0x44098c` 那个 +16.0f）*/
+/* ★★ 一手（owner 第 4 条，2026-09-22 晚）—— 见 `youkai_core.h` §3.11 的常量块：
+ *   · **归航速度**：`[ds:0x18b896c]+0x14` = 当前 `.sht` 头的 `itemCollectSpeed`
+ *     = **10.0**（pl00/pl02/pl03）/ **12.0**（pl01）⇒ 取代原来 ❓自定的 3.0
+ *     （owner 的原话「很慢」就是它：3.0 vs 10.0）。
+ *   · **「刚开始就满速」**：擦弹那一路在 TH08 里**直接就生 state 1**（`th08:0x431650` 一族
+ *     `spawn_item(type 7, state 1)`）⇒ 一生成就满速归航、没有加速段。原来我们把它也按 state 3 生，
+ *     于是先飘 ~40 帧（`vy = −2.0 + 0.05/帧`）再归航 —— 那正是 owner 说的「像是有一个很小的加速度」。
+ *     「击破敌机」那一路一手是 state 3（`th08:0x42b048`）⇒ 保持不变。
+ *   · **拾取**：一手是**接触玩家的抓取盒**（`Player::CalcItemBoxCollision`，`ItemManager.cpp:288`），
+ *     盒半宽 = `[.sht+0x18]/2`（12 / 16）+ 刻符半宽 8 ⇒ 半径口径 **20 / 24**。
+ *   · **下落（state 0）**：一手 `vx = 0`、`vy` 夹 `>= −2.2`、`vy += 0.03`（终速 3.0）；
+ *     **掉到游玩区下沿 + 16（= 464）就整颗删掉、不给分** —— ⚠ 原来我们写成「`y <= 自机 y + 16` 就收」，
+ *     那是把 `arcadeRegionSize.y + 16` 那条**损失线**读成了自机身上的回收线（方向也反了）。*/
+#define YK_ORB_ANM_LAYER      7       /* ❓自定：世界层（脚本自己没有 `layer()`；同使魔跟随 VM）*/
+
 /* 一手：出生初速 `vy = −2.0 − rand(0.2)`、`vx = rand(±0.6)`（`th08:0x4402cb`–`0x4402e9`）； */
 #define YK_ORB_VY0           (-2.0f)
 #define YK_ORB_VY0_RAND       0.2f
@@ -935,8 +1061,12 @@ static void yk_orb_kill_all(void)
     s_orb_live = 0;
 }
 
-/* 生成一颗刻符（TH08 的 `ItemManager::spawn_item(pos, 7, 3)`，`th08:0x4400a0` 的 type 7 那一档）。*/
-static void yk_orb_spawn(yk_card_t *s, float x, float y)
+/* 生成一颗刻符（TH08 的 `ItemManager::spawn_item(pos, 7, state)`，`th08:0x4400a0` 的 type 7 那一档）。
+ * `state` = **一手的出生状态**，按来源取（见 `youkai_core.h` §3.11 的常量块）：
+ *   · `YK_ORB_STATE_HOMING`(1) = **擦弹**那一路（`th08:0x431650` 一族 `spawn_item(type 7, 1)`
+ *     ⇒ 一生成就满速归航、没有加速段，owner 要的「刚开始就满速」）；
+ *   · `YK_ORB_STATE_SPAWN`(3) = **击破敌机**那一路（`th08:0x42b048` ⇒ 先上浮、`vy > 0` 再归航）。*/
+static void yk_orb_spawn(yk_card_t *s, float x, float y, int state)
 {
     yk_orb_t *o = 0;
     unsigned i;
@@ -957,13 +1087,17 @@ static void yk_orb_spawn(yk_card_t *s, float x, float y)
     }
     o->anm_id = id;
     o->used = 1;
-    o->state = 3;                               /* 一手：type 7 ⇒ 生成即 state 3（`th08:0x440115` 强制）*/
+    o->state = (uint8_t)((state == YK_ORB_STATE_HOMING) ? YK_ORB_STATE_HOMING : YK_ORB_STATE_SPAWN);
     o->x = x;
     o->y = y;
     /* 一手初速（`th08:0x4402cb`–`0x4402e9`）：`vx = rand(±0.6)`、`vy = −2.0 − rand(0.2)`。
+     * ⚠ 这两条**只在 state 3** 写（`spawn_item` 的 state 3 分支）；state 1 的初速是 `cancel_autocollect`
+     * 那一档 `(0, −0.5, 0)`（`th08:0x441407`–`0x44142c`），而**当帧就会被归航重设成满速**
+     * （`th08:0x4407f6` → `:0x4408a5`）⇒ 初始值对可见行为无影响，这里照样给一组合理初值。
      * RNG 走 `ce_rand()`（SDK 的 replay-safe RNG）——**不引 libm、不进 x87**。*/
     o->vx = ((float)(ce_rand() % 1201u) / 1000.0f - 0.6f);                    /* ❓ 用整数取模近似 randf */
-    o->vy = YK_ORB_VY0 - ((float)(ce_rand() % 1001u) / 1000.0f) * YK_ORB_VY0_RAND;
+    o->vy = (state == YK_ORB_STATE_HOMING) ? -0.5f   /* `th08:0x441407` 那一档的归航初速 */
+                                           : (YK_ORB_VY0 - ((float)(ce_rand() % 1001u) / 1000.0f) * YK_ORB_VY0_RAND);
     ce_anm_set_pos(id, x, y, 0.0f);
     ++s_orb_live;
 }
@@ -1034,12 +1168,18 @@ static int yk_orbs_tick(yk_card_t *s)
 {
     uint8_t *p = CE_PLAYER();
     float px, py;
+    float home_speed, pick_r;
     int taken = 0;
     unsigned i;
-    int dead;
+    int dead, ch;
     if (!p) return 0;
     px = *(float *)(p + CE_PLAYER_X);
     py = *(float *)(p + CE_PLAYER_Y);
+    /* ★★ 一手（owner 第 4 条）：归航速度 / 拾取半径**按机体**取当前 `.sht` 头的值
+     * （见 `youkai_core.h` §3.11）：10（pl00/02/03）/ 12（pl01）；拾取 20 / 24。*/
+    ch = yk_current_character();
+    if (ch < 0 || ch > 3) ch = 0;
+    yk_orb_motion_params(ch, &home_speed, &pick_r);
     /* 一手（`th08:0x440866`/`:0x4408f0`）：玩家 dead 段（TH08 是 state 1/2）⇒ 归航的刻符立刻回到
      * 下落态（「中途暴毙 ⇒ 变成类 P 点」）。TH18 的玩家状态机在 `player+0x476ac`，**state 2 = 死亡段**
      * （`Player__commit_death_and_enter_state2` `th18:0x45d090`）。*/
@@ -1058,34 +1198,53 @@ static int yk_orbs_tick(yk_card_t *s)
             ++taken;
             continue;
         }
-        if (dead && o->state == 1) { o->state = 0; o->vx = 0.0f; o->vy = YK_ORB_VY_DEAD; }
-        if (o->state == 3) {
+        if (dead && o->state == YK_ORB_STATE_HOMING) {
+            o->state = YK_ORB_STATE_FALL;
+            o->vx = 0.0f;
+            o->vy = YK_ORB_VY_DEAD;                      /* `th08:0x441574` 的 −0.9（每帧版是 −0.7）*/
+        }
+        if (o->state == YK_ORB_STATE_SPAWN) {
             /* 出生上浮：`vy += 0.05`；`vy > 0` 那一刻转归航（一手 `th08:0x4406ac` / `:0x4406e4`）。*/
             o->vy += YK_ORB_GRAVITY;
-            if (o->vy > 0.0f) o->state = 1;
+            if (o->vy > 0.0f) o->state = YK_ORB_STATE_HOMING;
         }
-        if (o->state == 1) {
-            /* 归航：每帧把速度指向自机、模长 = 归航速度（一手 `th08:0x4407f6` → `:0x440886`/`:0x4408a5`）。*/
-            dx = px - o->x; dy = py - o->y;
+        if (o->state == YK_ORB_STATE_FALL) {
+            /* 一手（`ItemManager.cpp:268-276` / `th08:0x44093e` 族）：`vx = 0`、`vy` 夹 `>= −2.2`、
+             * `vy += 0.03`（终速 3.0）。**掉出游玩区下沿 + 16 就整颗删掉、不给分**（= 损失）。*/
+            o->vx = 0.0f;
+            if (o->vy < YK_ORB_FALL_VY_MIN) o->vy = YK_ORB_FALL_VY_MIN;
+            o->vy += YK_ORB_FALL_GRAVITY;
+            if (o->vy > YK_ORB_FALL_TERMINAL) o->vy = YK_ORB_FALL_TERMINAL;
+        }
+        /* 收集 = **接触玩家的抓取盒**（一手 `Player::CalcItemBoxCollision`，`ItemManager.cpp:288`）：
+         * 只对 state 0/1 生效（TH08 把 state 3 从这条判据里摘出去 ⇒ 上浮期间收不到）。*/
+        if (o->state != YK_ORB_STATE_SPAWN) {
+            dx = px - o->x;
+            dy = py - o->y;
             dist = dx * dx + dy * dy;
-            if (dist <= YK_ORB_PICK_R * YK_ORB_PICK_R) {
+            if (dist <= pick_r * pick_r) {
                 yk_orb_collect(s);
                 yk_orb_kill(o);
                 if (s_orb_live) --s_orb_live;
                 ++taken;
                 continue;
             }
+        }
+        if (o->state == YK_ORB_STATE_HOMING) {
+            /* 归航：每帧把速度**重设**成指向自机、模长 = 一手速度（`th08:0x4407f6` →
+             * `:0x440886`(方向) / `:0x4408a5`(造速度)）⇒ **没有加速段**，当帧就是满速。*/
+            dx = px - o->x; dy = py - o->y;
+            dist = dx * dx + dy * dy;
             dist = yk_fsqrt(dist);              /* ❓ 自定：Newton 近似开方（见上）*/
-            if (dist > 0.0001f) { o->vx = dx / dist * YK_ORB_HOME_SPEED; o->vy = dy / dist * YK_ORB_HOME_SPEED; }
+            if (dist > 0.0001f) { o->vx = dx / dist * home_speed; o->vy = dy / dist * home_speed; }
         }
         o->x += o->vx;
         o->y += o->vy;
-        if (o->state == 0 && o->y <= py + YK_ORB_LINE_OFF) {
-            /* state 0 = 落到回收线才收（一手 `th08:0x44098c`）。*/
-            yk_orb_collect(s);
+        if (o->state == YK_ORB_STATE_FALL && o->y >= YK_ORB_LOST_Y) {
+            /* 一手：下沿那一颗**不给分**直接消失（`ItemManager.cpp:271` 的 `Delete()`；
+             * ⚠ 那条线是 `arcadeRegionSize.y (448) + 16`，**不是**自机身上的回收线）。*/
             yk_orb_kill(o);
             if (s_orb_live) --s_orb_live;
-            ++taken;
             continue;
         }
         ce_anm_set_pos(o->anm_id, o->x, o->y, 0.0f);
@@ -1175,19 +1334,24 @@ static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
         /* 一手：刻符撒在敌人位置 + **半径 128** 的环上（`th08:0x42b03b`，角度 = `randf(2π)`，
          * 常量 `0x43000000` = 128.0f）。角度用 `ce_rand()` 取（replay-safe）。*/
         ang = (float)(ce_rand() % 62832u) / 10000.0f;   /* 0..2π 的近似 */
-        yk_orb_spawn(s, ev->x + yk_cos_approx(ang) * 128.0f, ev->y + yk_sin_approx(ang) * 128.0f);
+        yk_orb_spawn(s, ev->x + yk_cos_approx(ang) * 128.0f, ev->y + yk_sin_approx(ang) * 128.0f,
+                     YK_ORB_STATE_SPAWN);   /* 一手：击破那一路是 state 3（`th08:0x42b048`）*/
     }
 }
 
 static void yk_gauge_hud_kill(yk_card_t *s)
 {
+    int i;
     if (!s) return;
     if (s->hud_bar)    ce_anm_delete(s->hud_bar);
     if (s->hud_human)  ce_anm_delete(s->hud_human);
     if (s->hud_youkai) ce_anm_delete(s->hud_youkai);
     if (s->hud_cursor) ce_anm_delete(s->hud_cursor);
     s->hud_bar = s->hud_human = s->hud_youkai = s->hud_cursor = 0;
-    ce_hud_number_clear(&s->hud_num);
+    for (i = 0; i < YK_GAUGE_TEXT_MAX; ++i) {
+        if (s->hud_digit[i]) ce_anm_delete(s->hud_digit[i]);
+        s->hud_digit[i] = 0;
+    }
 }
 
 /* 生成四支 VM（UI 列表；`ce_anm_spawn_ui` 的 `pos` 传 NULL ⇒ 由脚本自己的 `pos()` 起手，
@@ -1210,6 +1374,43 @@ static void yk_gauge_hud_spawn(ce_card_t *c, yk_card_t *s)
         *slot[i] = id;
         ce_anm_interrupt(id, 1);          /* 一手：脚本出生是 stopHide 状态，interrupt 1 = 「显形」*/
     }
+    /* ★★ 2026-09-22 晚（owner：「th08 的贴图搞过来」）：**百分比数字的 7 格字形 VM**。
+     * 载体脚本 = TH08 `ascii.anm` script4（`sprite(sprite136); zWriteDisable(1); static();`）
+     * 逐条照抄（生成器 `YK_EXTRA_SCRIPTS` 的 `gaugefont` 那一行）⇒ 这里只申请、不摆位置；
+     * 每帧由 `yk_gauge_text_sync` 换 sprite / 位置 / 缩放（TH08 那边是同一个 VM 反复换字）。*/
+    for (i = 0; i < YK_GAUGE_TEXT_MAX; ++i) {
+        uint32_t id;
+        if (s->hud_digit[i] && ce_anm_get_vm(s->hud_digit[i])) continue;
+        id = ce_anm_spawn_ui(yk_player_anm(), YK_GAUGE_SCRIPT_FONT[ch], 0);
+        s->hud_digit[i] = id;
+    }
+}
+
+/* ★★ 人妖槽的百分比数字：按一手布局逐格写 7 个字形 VM 的 sprite / 位置 / 缩放 / 颜色。
+ * 布局（`AsciiManager::DrawPercentage` `th08:0x405e10`）在纯逻辑 `yk_gauge_text_glyphs` 里。
+ * ⚠ 不用的格：`alpha = 0`（同 `color(argb)` 的 alpha 通道）⇒ 不留残字。*/
+static void yk_gauge_text_sync(yk_card_t *s, const yk_gauge_hud_t *h, uint32_t col)
+{
+    yk_gauge_glyph_t g[YK_GAUGE_TEXT_MAX];
+    void *anm;
+    int n, i, ch;
+    if (!s || !h) return;
+    ch = yk_current_character();
+    if (ch < 0 || ch > 3) ch = 0;
+    anm = yk_player_anm();
+    n = yk_gauge_text_glyphs(s->gauge, g);
+    for (i = 0; i < YK_GAUGE_TEXT_MAX; ++i) {
+        uint32_t id = s->hud_digit[i];
+        if (!id) continue;
+        if (i >= n) {                                     /* 这一格本帧不用 ⇒ 透明掉 */
+            ce_anm_set_color(id, 0x00ffffffu);
+            continue;
+        }
+        if (anm) ce_anm_set_sprite(anm, id, YK_GAUGE_FONT_BASE[ch] + (int)g[i].glyph);
+        ce_anm_set_pos(id, h->text_x640 + g[i].dx, h->text_y640 + g[i].dy, 0.0f);
+        ce_anm_set_scale(id, g[i].scale, g[i].scale);      /* 小数两位 = 0.8（一手）*/
+        ce_anm_set_color(id, 0xff000000u | col);           /* 一手：数字同吃那 5 档染色 */
+    }
 }
 
 static void yk_gauge_hud_update(yk_card_t *s)
@@ -1229,10 +1430,10 @@ static void yk_gauge_hud_update(yk_card_t *s)
     if (s->hud_human)  ce_anm_set_pos(s->hud_human, h.human_x, h.human_y, 0.0f);
     if (s->hud_youkai) ce_anm_set_pos(s->hud_youkai, h.youkai_x, h.youkai_y, 0.0f);
     if (s->hud_cursor) ce_anm_set_pos(s->hud_cursor, h.cursor_x, h.cursor_y, 0.0f);
-    /* 百分比 = gauge / 100（TH08 是 `DrawPercentage`，显示 `gauge/100` %）；用共用件的 HUD 数字画。
-     * ❓ 自定：字形是共用件的 HUD 数字（TH08 的 `ascii.anm` 字体没搬），且**没有 `%` 号**。*/
-    ce_hud_number_set(&s->hud_num, h.text_x640, h.text_y640, 7.0f,
-                      s->gauge / 100, 4, 0, "youkai_gauge");
+    /* ★★ 百分比数字：**TH08 的字形**（`ascii.anm` sprite 0x88..0x94，生成器搬进 pl0X.anm）
+     * 逐格换 sprite / 位置 / 缩放，布局 = `AsciiManager::DrawPercentage` `th08:0x405e10`
+     * （纯逻辑在 `yk_gauge_text_glyphs`）。一手：数字同样吃那 5 档染色（`AsciiManager.cpp:1030-1058`）。*/
+    yk_gauge_text_sync(s, &h, col);
 }
 
 static int on_ctor(ce_card_t *c)
@@ -1254,6 +1455,17 @@ static int on_ctor(ce_card_t *c)
     s->heals_seen = 0;
     s->rearms_seen = 0;                 /* ★ route A：整表 reset 也清条目，但计数只增不清 ⇒ 快照回 0 */
     s->opt_spring_live = 0;
+    /* ★ 2026-09-22 晚（owner 第 2 条）：追踪态 + 目标 + 出场计时（子机在 ctor 里已经全收）
+     * ★ 2026-09-22 晚（owner 第 1 条）：原生子机隐藏声明的「只记一次」闩 */
+    s->opt_age = 0;
+    s->opt_chase = 0;
+    s->chase_have = 0;
+    s->chase_id = 0;
+    s->chase_x = 0.0f;
+    s->chase_y = 0.0f;
+    s->chase_enters = 0;
+    s->logged_chase = 0;
+    s->logged_natopt = 0;
     __builtin_memset(s->opt_pos, 0, sizeof s->opt_pos);
     __builtin_memset(s->opt_vel, 0, sizeof s->opt_vel);
     /* ★★ 本体外观（路 A）：本函数在**属性点变化 / 局中重建**时也会跑 ⇒ 本体脚本的跟踪也要复位。
@@ -1751,13 +1963,52 @@ static int on_tick_2(ce_card_t *c)
             float px = *(const float *)(CE_PLAYER() + CE_PLAYER_X);
             float py = *(const float *)(CE_PLAYER() + CE_PLAYER_Y);
             if (d > 8u) d = 8u;                            /* ❓ 自定：单帧上限（防一段大擦弹一次性灌满池）*/
-            if (focused) for (i = 0; i < d; ++i) yk_orb_spawn(s, px, py);   /* ❓ 自定：落点 = 自机（拿不到被擦的那颗弹）*/
+            /* ★★ 2026-09-22 晚（owner 第 4 条）：擦弹那一路按一手是 **state 1**（`th08:0x431650` 一族
+             * `spawn_item(type 7, 1)`）⇒ 一生成就满速归航（owner：「应该刚开始就满速」）。
+             * ❓ 自定：落点仍 = 自机 —— TH08 是撒在**被擦到的那颗弹**上，我们拿不到那颗弹
+             * （SDK 的 `ce_graze_take` 依赖的断点 `0x42497f` 在 `sites.py` 里是**注释掉的**（会让游戏开不了机）
+             * ⇒ 它恒返回 0）。代价：这颗当帧就落在抓取盒里 ⇒ 几乎看不见它飞（见报告）。*/
+            if (focused) for (i = 0; i < d; ++i) yk_orb_spawn(s, px, py, YK_ORB_STATE_HOMING);
         }
         s->graze_seen = graze;
     }
     yk_gauge_tick(s, focused);
     ce_score_family_declare(ce_card_id(c), CE_COEFF_FAMILY_08);
     ce_score_declare_delta(ce_card_id(c), s->piv);
+    /* ★★ 2026-09-22 晚（owner 第 1 条）：**低速隐藏原生（人侧）子机**。
+     * 一手：TH08 进低速那一帧把同一个子机对象的脚本换成妖侧那一支（`th08:0x44b12b push 0x5` 是本体、
+     *   子机是各机体回调里的 `SetAndExecuteScriptIdx(option, 0x12/0x1d/0x18)`）⇒ **人侧那套子机不该同时存在**。
+     *   TH18 的原生 4 格子机是另一套数组（`player+0x670`，`engine.h` 的 `CE_NATIVE_OPT_*`）⇒ 走
+     *   **既有的** `ce_native_option_hide_*` 声明层（111 的同款，出处 `sdk.h` 那一整段 + AUDIT §BE #32）：
+     *     · **声明**（粘性；机体门在层里）：低速 = 1、高速 = 0 ⇒ 松开 Shift **当帧**就恢复原生行为；
+     *     · **每帧再 `sweep` 一遍**：卡刚装上 / power up 之后引擎 `repopulate` 的档位短路缓存会让
+     *       「不重建 = 也不清」⇒ 只靠断点会留下幽灵子机；
+     *     · **再收一次它已经在打的激光**：`mode=2` 激光的寿命只跟射击键走（`0x4601e0`），
+     *       持有者被清掉之后束会**钉在原地**直到松开 Z（2026-09-18 111 的同类实跑症状）。
+     *   ⚠ 与 111 的交互：两边都声明时语义 = **按机体各自生效**（`ce_native_option_hidden(char)` 是 OR）
+     *     ⇒ 魔理沙同时带 108+111 时仍然隐藏（两边都要隐藏，没有冲突）；`owner` = id 最小者（诊断）。*/
+    ce_native_option_hide_declare((uint32_t)ce_card_id(c), focused, yk_current_character());
+    if (focused) {
+        int n = ce_native_option_sweep();
+        (void)ce_kill_retail_option_lasers();
+        if (n && s && !s->logged_natopt) {
+            s->logged_natopt = 1;
+            ce_log("youkai: native (human-side) options hidden in low speed - swept %d stale VM(s); "
+                   "they come back the frame Shift is released (declaration is per-character)", n);
+        }
+    }
+    /* ★ 追踪目标（机体 0 那一支用）：每帧解析一次，帧界的 `on_option_pose_apply` 读卡状态。
+     * ⚠ 只在低速解析（高速没有我们的子机、使魔也撤了，解析出来也没人用）。*/
+    if (focused) {
+        yk_chase_target_resolve(s);
+        if (s->opt_script >= 0 && s->opt[0].ptr) { if (s->opt_age < 0xffffu) ++s->opt_age; }
+        else { s->opt_age = 0; s->opt_chase = 0; }
+    } else {
+        s->chase_have = 0;
+        s->chase_id = 0;
+        s->opt_age = 0;
+        s->opt_chase = 0;
+    }
     yk_option_refresh(c, s, focused);                     /* 每帧声明（低速才有货；落笔由 SDK 在帧界叫）*/
     if (!focused) {
         /* 高速 = 原机体：使魔全部撤（spec §9 实跑清单 1「松开全部还原」）。

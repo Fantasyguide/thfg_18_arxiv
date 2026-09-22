@@ -205,6 +205,27 @@ int yk_option_home_from_player(int character, int cell, const float player_xy[2]
     return 1;
 }
 
+/* ------------------------------------------- ★★ 追敌（`th08:0x44e8d0`，一手见 youkai_core.h）
+ * 与「跟随自机」**共用同一条弹簧**（`yk_opt_spring_step`），只有家位置换了：
+ *   `goal = target->final_pos(+0x2d88)`，`goal.y += 32.0`（`0x4b42cc`），`goal.y` 夹到 `>= 32.0`。
+ * 逐指令对照（`th08:0x44e8ec`–`0x44e92f`）：读完敌人坐标 → `fadd ds:0x4b42cc`（32.0）→
+ * `fcomp 32.0` + `test ah,0x5`/`jp` ⇒ 不小于 32 就写回 32.0（= 下限）。 */
+int yk_option_chase_goal(const float target_xy[2], float out[2])
+{
+    if (!target_xy || !out) return 0;
+    out[0] = target_xy[0];
+    out[1] = target_xy[1] + YK_OPT_CHASE_GOAL_DY;
+    if (out[1] < YK_OPT_HOME_Y_MIN) out[1] = YK_OPT_HOME_Y_MIN;
+    return 1;
+}
+
+int yk_option_chase_want(int target_present, int age_frames)
+{
+    if (!target_present) return 0;
+    if (age_frames < 0) age_frames = 0;
+    return age_frames >= YK_OPT_CHASE_MIN_AGE;
+}
+
 /* ------------------------------------------------------------------ §3.4 弹幕 */
 /* 档位表 = **不覆盖**（全 `YK_SHOT_DMG_NOT_SET` = 保留 shooter 记录自己写进 `bullet+0x9c` 的 damage）。
  * 档序按 TH08 六档阈值（`8/24/48/80/128/999`，人妖两表共用）压到 TH18 的五个火力档。
@@ -763,7 +784,7 @@ void yk_gauge_hud(int gauge, const float anchor[2], float to640, yk_gauge_hud_t 
     v = yk_gauge_clamp(gauge);
     g = (float)v / (float)YK_GAUGE_SPAN;              /* −1..+1，TH08 是 float 除法（不是整数取整）*/
     out->bar_x = ax + (32.0f - 32.0f) * k;
-    out->bar_y = ay - (481.0f - 465.0f) * k;          /* 槽条 128×16，anchorTopLeft ⇒ 位置 = 左上 */
+    out->bar_y = ay - (481.0f - 449.0f) * k;          /* ★ 停稳位置 = 449（465 只是滑入起点；见 .h 的注）*/
     out->human_x = ax + ((88.0f + (float)YK_GAUGE_HUMAN_LIMIT * 56.0f / 10000.0f) - 32.0f) * k;
     out->human_y = ay - (481.0f - 449.0f) * k;
     out->youkai_x = ax + ((88.0f + (float)YK_GAUGE_YOUKAI_LIMIT * 56.0f / 10000.0f) - 32.0f) * k;
@@ -772,6 +793,71 @@ void yk_gauge_hud(int gauge, const float anchor[2], float to640, yk_gauge_hud_t 
     out->cursor_y = ay - (481.0f - 453.0f) * k;               /* 游标锚点 = 心 ⇒ 这是中心 */
     out->text_x640 = (ax * to640) + (64.0f + g * 40.0f);      /* 80 / 2 = 40；96 − 32 = 64 */
     out->text_y640 = (ay * to640) - (481.0f - 446.0f);        /* 游标 y − 7 = 446（640 空间）*/
+}
+
+/* ---------------------------------------- 人妖槽的百分比数字：逐字形布局（`th08:0x405e10`）
+ * 逐条照抄 `AsciiManager::DrawPercentage`（`AsciiManager.cpp:1095-1225`）：
+ *   ① 位数 `n`（只为算居中）：4 +（负号 1）+（≥10000 → 3 / ≥1000 → 2 / 否则 1）；
+ *   ② 起始 x 偏移 = `−(n*3.5 − 3.5 − 4.0)`；
+ *   ③ 负号（sprite 0x94）步进 7；
+ *   ④ 整数部分与 `'.'`（0x93）的步进：整数位各 7、`.` 之后 5；
+ *   ⑤ **小数两位是小号**（scale 0.8、`y += 2`），步进 5、5（最后一位后面的 7 只影响下一格 = `'%'`）；
+ *   ⑥ 收尾 `'%'`（0x92，scale 复位、`y -= 2`）。
+ * 返回字形数（`int`）；`out == NULL` 时只算位数（不崩）。**没有浮点库调用**（只有 `* / +`）。*/
+int yk_gauge_text_glyphs(int gauge, yk_gauge_glyph_t *out)
+{
+    int n, absv, idx = 0;
+    float x, y;
+
+    if (gauge > YK_GAUGE_YOUKAI_LIMIT) gauge = YK_GAUGE_YOUKAI_LIMIT;    /* 一手：字段本身已被夹在 ±10000 */
+    if (gauge < YK_GAUGE_HUMAN_LIMIT) gauge = YK_GAUGE_HUMAN_LIMIT;
+    absv = (gauge < 0) ? -gauge : gauge;
+
+    n = 4 + ((gauge < 0) ? 1 : 0);
+    if (absv >= 10000)      n += 3;
+    else if (absv >= 1000)  n += 2;
+    else                    n += 1;
+
+    /* ① 居中：`xPos = numDigits*3.5 − 3.5 − 4.0`，再 `pos.x -= xPos`。*/
+    x = -((float)n * 3.5f - 3.5f - 4.0f);
+    y = 0.0f;
+
+/* ⚠ 宏参数必须用**大写**：成员名就叫 `dy`/`scale`，小写参数会被就地替换掉（`out[idx].dy`
+ *   会变成 `out[idx].0.0f` —— 编译期会报 expected identifier）。*/
+#define YK_EMIT(G, ADV, SC, DY) do {                                        \
+        if (out) { out[idx].glyph = (uint8_t)(G); out[idx].dx = x;          \
+                   out[idx].dy = y + (DY); out[idx].scale = (SC); }         \
+        ++idx; x += (ADV);                                                  \
+    } while (0)
+
+    if (gauge < 0) YK_EMIT(YK_GAUGE_GLYPH_MINUS, 7.0f, 1.0f, 0.0f);
+
+    if (absv >= 10000) {
+        /* 固定显示 "100.00"（`AsciiManager.cpp:1133-1162`）*/
+        YK_EMIT(1, 7.0f, 1.0f, 0.0f);
+        YK_EMIT(0, 7.0f, 1.0f, 0.0f);
+        YK_EMIT(0, 7.0f, 1.0f, 0.0f);
+        YK_EMIT(YK_GAUGE_GLYPH_DOT, 5.0f, 1.0f, 0.0f);
+        YK_EMIT(0, 5.0f, 0.8f, 2.0f);       /* 小号两位：scale 0.8、y += 2 */
+        YK_EMIT(0, 7.0f, 0.8f, 2.0f);
+    } else if (absv >= 1000) {
+        int v = absv;
+        YK_EMIT(v / 1000, 7.0f, 1.0f, 0.0f); v %= 1000;
+        YK_EMIT(v / 100,  7.0f, 1.0f, 0.0f);
+        YK_EMIT(YK_GAUGE_GLYPH_DOT, 5.0f, 1.0f, 0.0f);
+        YK_EMIT(v / 10 % 10, 5.0f, 0.8f, 2.0f);
+        YK_EMIT(v % 10,      7.0f, 0.8f, 2.0f);
+    } else {
+        int v = absv;
+        YK_EMIT(v / 100, 7.0f, 1.0f, 0.0f);
+        YK_EMIT(YK_GAUGE_GLYPH_DOT, 5.0f, 1.0f, 0.0f);
+        YK_EMIT(v / 10 % 10, 5.0f, 0.8f, 2.0f);
+        YK_EMIT(v % 10,      7.0f, 0.8f, 2.0f);
+    }
+    /* 收尾的 `'%'`：scale 复位、`y -= 2`（对最后一格而言就是回到 y = 0）*/
+    YK_EMIT(YK_GAUGE_GLYPH_PERCENT, 7.0f, 1.0f, 0.0f);
+#undef YK_EMIT
+    return idx;
 }
 
 /* ------------------------------------------------------ §3.11 永点 → PIV */
@@ -806,4 +892,15 @@ int32_t yk_orb_score(int32_t stage_point_items_in_game, int32_t point_items_in_g
     v = (point_items_in_game / 2) * 10;              /* 0x4412e3 cdq/sub/sar 1 然后 0x4412e8 imul 10 */
     if (v < YK_ORB_SCORE_MIN) v = YK_ORB_SCORE_MIN;  /* 0x4412ee cmp 0x64 / jge ⇒ 下限 100 */
     return v;
+}
+
+/* ---- ★★ 刻符的运动常量（一手见 youkai_core.h 的 §3.11 那一段；owner 第 4 条）------------- */
+void yk_orb_motion_params(int character, float *home_speed, float *pick_r)
+{
+    /* `[ds:0x18b896c]+0x14`（`th08:0x44088e`）= 当前 `.sht` 头的 `itemCollectSpeed`；
+     * 抓取盒半宽 = `[.sht+0x18] / 2`（`th08:0x44d83f`–`0x44d873`）+ 刻符自身半宽 8（16×16 贴图）。
+     * 本仓 `local/th08.v1.00d/dat/ply0{0,1,2,3}as.sht` 直读：10/12/10/10 与 24/32/24/24。*/
+    const int marisa = (character == 1);
+    if (home_speed) *home_speed = marisa ? 12.0f : 10.0f;     /* ply01as = 12.0，其余三队 = 10.0 */
+    if (pick_r)     *pick_r     = marisa ? 24.0f : 20.0f;     /* 16+8 / 12+8 */
 }

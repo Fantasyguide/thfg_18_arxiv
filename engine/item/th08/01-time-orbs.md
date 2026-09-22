@@ -21,7 +21,7 @@ TH08 的「时点」在引擎里就是一个**普通道具**：**类型 7**（�
 
 **「一定会被自动收集」体现在 state 3**：`spawn_item` 对类型 7 强制 `state = 3`（`th08:0x440115`），
 state 3 是**时点专属的应收分支**（`th08:0x4409f2` `cmp state,3` → `th08:0x440c37`），
-与普通道具「落到回收线才收」（state 0，`th08:0x44095e` 读 `player_y + off` 比较）不是同一条路。
+与普通道具「接触自机抓取盒才收」（state 0/1，`ItemManager.cpp:288` 的盒相交）不是同一条路。
 **中弹会停住**这一条也有一手落点：`ItemManager::cancel_autocollect` `th08:0x4413e0` 把**整池**道具的 `state` 改成 1
 并重设速度；再起时 `ItemManager::sub_441530` `th08:0x441530` 把 state 1 的改回 0（§7）。
 
@@ -84,7 +84,7 @@ Timer(item+0x2c8).set(0)
 item[+0x2b4] (vy) = ds:0x4b5b28 − Rng::randf_0_to_x(0x164d520, 0.2f)     ; th08:0x4402cb–0x4402e3
 item[+0x2b0] (vx) = Rng::randf_neg_x_to_x(0x164d520, 0.6f)               ; th08:0x4402e9（th08:0x4143c0）
 if (*(uint8_t *)0x17d5ef8 == 2) {          // 0x17d5ef8 = PLAYER 基址，+0 = shottype 字节
-    item[+0x2d7] = 0;                      // state 从 3 降成 0（走「落到回收线才收」那条）
+    item[+0x2d7] = 0;                      // state 从 3 降成 0（普通下落；收集仍是抓取盒相交，见 §7.2）
     item[+0x2b0] = 0.0f; item[+0x2b4] = -0.9f (0xbf666666); item[+0x2b8] = 0.0f;
 }                                                                        ; th08:0x440301–0x44032e
 ```
@@ -93,7 +93,7 @@ if (*(uint8_t *)0x17d5ef8 == 2) {          // 0x17d5ef8 = PLAYER 基址，+0 = s
 
 | state | 一手读点 | 行为（读出来的） |
 | --- | --- | --- |
-| **0** | `th08:0x44095e` | 普通下落 + **落到回收线才收**：`if (item.pos.y <= zPlayer.y + ds:0x4b42d4)` ⇒ `th08:0x44098c` 结算 + `th08:0x440994` `Item::remove_from_active_list` |
+| **0** | `th08:0x44095e` | 普通下落（`vx=0`、`vy += 0.03` 上限 3.0）；**掉到 `448+16` 以下 ⇒ `Delete()` 且不给分**（`ItemManager.cpp:271`；`th08:0x440985` 那一段是它）。**收集**走的是另一条：抓取盒相交（§7.2）|
 | **1** | `th08:0x4407f6` `cmp eax,1 / je 0x44085f` | ★ **归航（朝自机飞）**：每帧重算速度指向自机（细节见 §7.2）|
 | **2** | `th08:0x4405ad` `cmp edx,2` | 「从上方撒入」的飞行段（用 `Timer(item+0x2c8)` 做插值，`th08:0x4405ca`–`0x44061d`） |
 | **3** | `th08:0x4409f2` `cmp ecx,3` → `th08:0x440c37` | **时点专属**：先 `Timer(item+0x2c8)` 推进，若 `item+0x220 != 0` 则 `th08:0x45ea00` 注销附属对象，然后从活跃表摘除（收下 = `Item::collect_time_orb`） |
@@ -261,20 +261,42 @@ state 3（th08:0x44068d 那一段）：
 出生初速（§2.1）`vel.y = ds:0x4b5b28 (−2.0f) − rand(0.2)` ⇒ 从 −2.0 起、**+0.05/帧**，
 **约 40 帧后 vel.y 过 0 ⇒ 必然转 state 1（归航）**。这就是用户口径「时点是一定会被自动收集的」的一手落点：
 它不需要玩家做什么，**自己飞 0.7 秒就进入归航**。
-（**state 3 期间不可收**：`th08:0x4409f2 cmp ecx,3 / je 0x440c37` 把 state 3 从「落到回收线才收」那条路里摘出去。）
+（**state 3 期间不可收**：`ItemManager.cpp:288` 的 `item->state != ITEM_STATE_UNK3 &&` 把 state 3 从**抓取盒相交**那条路里摘出去。）
 
-### 7.2 归航（state 1）与「落到回收线才收」（state 0）
+### 7.2 归航（state 1）、**收集 = 接触抓取盒**、以及那条 `+16.0f` 到底是什么
 
-- **state 1 = 归航**：每帧重算速度指向自机 —— `th08:0x4407f6 cmp eax,1 / je 0x44085f` →
-  `th08:0x440886 call 0x44c1b0`（拿自机方向/距离）+ `th08:0x4408a5 call 0x4286e0`（造速度 Float3，模长取 `[ds:0x18b896c]+0x14`）
-  写进 `item+0x2b0`。**state 1 的道具碰到自机就收**。
+> ★★ **2026-09-22 晚订正（owner 第 4 条「永点的吸收速度不对」）**：本节旧版把
+> `ds:0x164d2e8 + 16.0f` 写成「落到回收线才收」，并据此认为归航速度是「未抽出的量」。
+> 逐条重读后**两处都要改**：① 收集**与自机 y 无关**，是 `Player::CalcItemBoxCollision` 的**盒相交**；
+> ② `+16` 那条线是**游玩区下沿之外**（`arcadeRegionSize.y + 16`）的**丢失线**（掉出去 = 那颗没了，**不给分**）。
+
+- **state 1 = 归航，且当帧就是满速**（**没有加速段**）：每帧重算速度 —— `th08:0x4407f6 cmp eax,1 / je 0x44085f`
+  → `th08:0x440886 call 0x44c1b0`（`Player::AngleToPlayer`，反编译 `Player.cpp:121` 的 `atan2f`，给方向）
+  + `th08:0x440898 push [edx+0x14]` / `th08:0x4408a5 call 0x4286e0`（用 (角度, 模长) 造速度 Float3）
+  写进 `item+0x2b0`。
+  **模长 = `[ds:0x18b896c]+0x14`**，而 `ds:0x18b896c` = **当前装载的那份 `.sht` 头**（`PlayerRawShtFile*`）——
+  同一指针在 `Player::on_registration`（`th08:0x44d7d1` 一族）里被读 `+0xc/+0x10/+0x18` 写进玩家的道具盒字段，
+  在 `spawn_item`（`th08:0x440524`）里被读 `+0x4` 当炸弹出数 ⇒ 就是它。**本仓实测该字段**（`dat/ply0X{,as}.sht` `+0x14`）：
+  **pl00 = 10.0 · pl01 = 12.0 · pl02 = 10.0 · pl03 = 10.0**（人/妖两份相同）。
+- **收集 = 接触自机的抓取盒**（对 **state 0/1** 都成立；state 3 被显式排除）：
+  `ItemManager.cpp:288` 的 `g_Player.CalcItemBoxCollision(&item->currentPosition, &size)`（`Player.cpp:100`）
+  = 道具的 AABB（自身 `±size/2`）与 `grabItemTopLeft/BottomRight`（`Player.cpp:1059`：`positionCenter ± shotSpeed3ec`）
+  相交。抓取盒半宽 = **`[.sht+0x18] / 2`**（`th08:0x44d83f`–`0x44d873`）= `itemCollectRadius/2`
+  （pl00/02/03 = **12.0**、pl01 = **16.0**）。
+- **`+16.0f` 那条线 = 丢失线**（`ItemManager.cpp:271-277`，逐行）：
+  `if (item->state == ITEM_STATE_DEFAULT && g_GameManager.arcadeRegionSize.y + 16.0f <= item->currentPosition.y)
+      { g_GameManager.DecreaseSubrank(3); item->Delete(); }`
+  ⇒ 只有 **state 0** 走到；`ds:0x164d2e8` 在开局的初始化块里被写成 **448.0**（`th08:0x43a144` `fld ds:0x4b4940`
+  → `fstp ds:0x164d2e8`，常量 `0x4b4940` = 448.0）⇒ 那条线 = `游玩区高 + 16`，**不是自机身上的线**。
+  `th08:0x440962`–`0x44097e` 的比较方向也印证：`fld ds:0x164d2e8; fadd 16.0; fcomp item.y` + `test ah,0x41; jp`
+  ⇒ 落进「结算」支的条件是 **`item.y > 448 + 16`**（掉到下沿之外）——旧版把不等号方向也写反了。
 - **state 0 进归航的门**（`th08:0x4407fb`–`0x440859`，全部满足才进）：
-  `ds:0x17d61b0`（收集线）`>` `[ds:0x18b896c]+0x1c`（道具自己那条线），**且**下列任一：
+  `ds:0x17d61b0`（自机的 POC 线）`>` `[ds:0x18b896c]+0x1c`（`pocY`：pl00/02/03 = 128.0、pl01 = 160.0），**且**下列任一：
   ① `get_current_power() >= 0x80`（128，`ds:0x4b5b30`）；② `ds:0x17d5efb`（`PLAYER+3` = `is_focused`）≠ 0；
   ③ `ds:0x164d0b1 == 1`；④ `ds:0x164d0b1 == 6`。
   进门后同样是 `th08:0x4408ad state = 1`。
-- **state 0 的收下条件**（`th08:0x44095e test edx,edx` 非 0 就跳过 → 只有 state 0 走到）：
-  `if (item.pos.y <= ds:0x164d2e8 + ds:0x4b42d4 (+16.0f))` ⇒ `th08:0x44098c` 结算 + `th08:0x440994` `Item::remove_from_active_list`。
+- **state 0 自己的运动**（`ItemManager.cpp:268-276`）：`vx = 0`、`vy` 夹到 `>= ds:0x4b5b2c (−2.2)`、
+  每帧 `vy += ds:0x4b44c0 (0.03)`、终速 `0x40400000 (3.0)`。
 
 ### 7.3 中弹 ⇒ 归航停住、按 P 点那样下落
 
@@ -335,7 +357,9 @@ for (item = ...; item; item = next):
 | state 3 初速 vy 的基数 | `ds:0x4b5b28` = **−2.0f** | `th08:0x4402da`（`fsubr`） |
 | state 3 / 5 的每帧增量 | `ds:0x4b5b38` = **0.05f** | `th08:0x4406ac` / `th08:0x440746` |
 | state 2 的生成矩形 | **288.0f × 192.0f**，中心偏移 (+48, −64) | `th08:0x440256`–`0x44028c` |
-| 收下判据（state 0） | `pos.y <= ds:0x164d2e8 + ds:0x4b42d4 (16.0f)` | `th08:0x440969`–`0x440978` |
+| **丢失线**（state 0，掉出去 = 没了） | `pos.y > ds:0x164d2e8 (448.0) + ds:0x4b42d4 (16.0f)` | `th08:0x440969`–`0x440978`（`fadd 16` / `fcomp item.y` / `test ah,0x41; jp`）|
+| **收集**（state 0/1）= 抓取盒相交 | 盒半宽 = `[.sht+0x18]/2`（pl00 12.0 / pl01 16.0）| `ItemManager.cpp:288` + `Player.cpp:100` / `:1059`；`th08:0x44d83f` |
+| **归航速度**（state 1，恒速、无加速）| `[.sht+0x14]` = pl00 **10.0** / pl01 **12.0** / pl02 10.0 / pl03 10.0 | `th08:0x440898`（`mov eax,[edx+0x14]`）/ `:0x4408a5` |
 | 中弹停住后的 vy | **−0.7f**（代入式）/ **−0.9f**（批量式） | `th08:0x4408e0` / `th08:0x441574` |
 
 ⇒ **+y 是「下」**：重力为正、终速为正 = 下落；初速 −2.2 = 先往上弹。
@@ -357,12 +381,16 @@ for (item = ...; item; item = next):
 | 9 | 收集一颗时点：分数 100/10000 档 + 刻符 +1 + 夜点 +5 + 符卡 +8000 + 人妖槽 ±111 | ✅ 一手（§6，另有 `research-th08-night-points.md`） | v1.00d |
 | 10 | 时点**必然进归航**：state 3 出生 vy = −2.0−rand(0.2)、+0.05f/帧，约 40 帧后 vy > 0 ⇒ `state = 1`（`th08:0x4406e4`） | ✅ 一手（§7.1） | v1.00d |
 | 11 | 时点的贴图 = `data/etama.anm` entry1（`data/etama/etama2.png`）的 **sprite179** (112,64,16,16)，脚本 = 同 entry 的 **script68**（正文与两条独立证据见 §6.1） | ✅ 一手 | v1.00d |
+| 12 | **归航是恒速、无加速段**：模长 = `[ds:0x18b896c]+0x14`（= 当前 `.sht` 头的 `itemCollectSpeed`；pl00/02/03 = 10.0、pl01 = 12.0），方向每帧从 `Player::AngleToPlayer` 重算 | ✅ 一手（`th08:0x440886`/`:0x440898`/`:0x4408a5` + 8 份 `.sht` 直读，§7.2） | v1.00d |
+| 13 | **擦弹/消弹那一路生成即 state 1** ⇒ 一出现就是满速归航（没有 40 帧上浮）；「击破敌机 / 符卡」那一路才是 state 3/5（先上浮）| ✅ 一手（`th08:0x431650` 一族 push 1；`th08:0x42b048` push 3）| v1.00d |
+| 14 | 收集与自机 y 无关（**抓取盒相交**）；`arcadeRegionSize.y + 16` 是**丢失线**（掉出去那颗不给分）| ✅ 一手（`ItemManager.cpp:271-288`；`th08:0x43a144` 写 448.0）| v1.00d |
 
 ## 9. 未解 / 待办
 
 - `❓ 未解 2`（已大幅收窄）：§7.0 的九个运动常量都已读出（`.rdata` 一手），正负号已定（+y = 下）；
-  仍未钉死的只有 `ds:0x17d61b0`（收集线）与 `ds:0x18b896c`（`+0x1c` 参与收集线比较、`+0x14` 归航速度模长）
-  这两个全局的**语义与写入者**。
+  ✅ **2026-09-22 晚结案**：`ds:0x18b896c` = **当前装载的 `.sht` 头**（`PlayerRawShtFile*`；`+0x14` 归航速度、
+  `+0x18` 抓取盒、`+0x1c` POC 线、`+0x4` 炸弹出数 —— 三处独立读点交叉印证，§7.2）；
+  `ds:0x17d61b0` = 自机当前的 POC 线（与 `+0x1c` 比大小的那个量）。仍未钉死的只剩「谁写 `0x17d61b0`」。
 - `❓ 未解 3`：`ds:0x18b8988`（擦弹档？）与 `ds:0x17d6ed4`（÷3 开关）、`enemy+0x3380` 三者语义未定名。
 - `❓ 未解 5`：`item+0x220` 那个附属对象是什么（state 3 退场时要在 `th08:0x45ea00` 注销它）。
 - `❓ 未解 6`：`th08:0x4415a0` 的另一支（`type+0xb6`、受 `pos.y < −8.0f` 门控的「贴边指示」）
