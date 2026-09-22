@@ -612,7 +612,14 @@ typedef struct { int32_t prev; int32_t cur; float cur_f; } ce_timer_t;   /* zTim
 #define CE_ENEMY_ANM_SCRIPT        0x1498     /* = CE_ENEMY_DATA + 0x26c（S）*/
 #define CE_ENEMY_LIST_GUARD        4096       /* 敌人链表遍历的护栏（坏链表不转死）；ce_enemy_by_id / CE_ENEMY_FOREACH 共用 */
 #define CE_ENEMY_POS_Y             0x1274
-#define CE_ENEMY_FLAGS             0x635c
+#define CE_ENEMY_FLAGS             0x635c    /* ★★★ 2026-09-22 夜（108 批次 2 一手）：`enemy+0x635c` 的 **bit4（0x10）= 免伤位**。
+     * 一手（引擎自己的两道免伤闸，玩家弹伤害路径 `th18:0x42f2b9`/`:0x42f2c2`，`ebx` = zEnemyData）：
+     *   `42f2b9 f6 83 30 51 00 00 10  test BYTE PTR [ebx+0x5130],0x10` → `jne 0x42f31c`（跳过伤害）
+     *   `42f2c2 83 bb f4 50 00 00 00  cmp DWORD PTR [ebx+0x50f4],0` → `jg 0x42f31c`（invuln 计时器还没走完）
+     * `ebx` = `zEnemyData`（`enemy + CE_ENEMY_DATA 0x122c`，见 `engine.h` 的那条注）⇒
+     *   绝对偏移 = `0x122c + 0x5130` = **`0x635c`**（就是本宏）与 `0x122c + 0x50f4` = `0x6320`（计时器）。
+     * ⇒ **置 `CE_ENEMY_FLAG_NO_DAMAGE` = 这只敌人打不掉**（引擎自己就不会扣血）。*/
+#define CE_ENEMY_FLAG_NO_DAMAGE    0x10
 /* ★ 2026-09-13 第五轮（113 的「Boss 随血量掉灵」= TH13 通道 A 的落点）：伤害施加点在
  *   `EnemyData::step_game_logic` `0x42ed40` 的 `0x42f2cb add [ebx+0x5008],esi`
  *   （`ebx` = **zEnemyData\*** = `zEnemy*+0x122c`）⇒ 下面的偏移一律**换算成 zEnemy\*** 口径。

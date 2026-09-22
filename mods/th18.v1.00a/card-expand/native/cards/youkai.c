@@ -272,6 +272,7 @@ typedef struct {
     uint16_t      gauge_idle;           /* ★ P-C：连停火帧数（一手 `player+0xe2ad0`，上限 30）*/
     uint8_t       gauge_shoot_logged;   /* ★ P-C：推进口径只记一行（1 = 斜坡 / 2 = 放符卡）*/
     uint16_t      orb_silence;          /* ★ P-D：击破魔使后的「收刻符不给槽」帧数（一手 50 帧）*/
+    uint8_t       fam_nodmg_logged;     /* ★ 批次 2：免伤位「按形态切过」只记一次（=1 妖侧 / =2 人侧）*/
     uint8_t       fengma;               /* ★ P-B：本帧在不在逢魔（极人 OR 极妖）*/
     int32_t       fengma_score;         /* ★ P-B：本局逢魔自动加分的累计（诊断）*/
     uint32_t      aura_id;
@@ -374,6 +375,8 @@ static uint8_t *yk_spawn_familiar(float x, float y)
 }
 
 /* 每帧钉位置（spec §3.5）+ 皮肤（资产未到时不动）。*/
+static uint8_t g_fam_nodmg_state = 0xff;   /* ★ 批次 2：上一次记过的免伤位状态（0/1；0xff = 还没记过）*/
+
 static void yk_pin_familiar(uint8_t *f, float x, float y)
 {
     *(float *)(f + CE_ENEMY_POS_X) = x;                   /* final_pos（spec §3.5 指定的那两格）*/
@@ -383,6 +386,25 @@ static void yk_pin_familiar(uint8_t *f, float x, float y)
     if (YK_FAM_ANM_INDEX >= 0 && YK_FAM_ANM_SCRIPT >= 0) { /* 占位 -1 ⇒ 现在不写 */
         *(int32_t *)(f + YK_ENEMY_ANM_INDEX) = YK_FAM_ANM_INDEX;
         *(int32_t *)(f + YK_ENEMY_ANM_MAIN) = YK_FAM_ANM_SCRIPT;
+    }
+    /* ★★★ 2026-09-22 夜（owner 口径 **批次 2**）：**人侧可打、妖侧不可打**。
+     * 一手：引擎自己的免伤闸 = `enemy+0x635c` 的 **bit4**（`th18:0x42f2b9 test BYTE [ebx+0x5130],0x10`，
+     * `ebx` = `zEnemyData` ⇒ 绝对 `0x122c+0x5130 = 0x635c` = `CE_ENEMY_FLAGS`）——**置上就扣不了血**；
+     * 另一道是 `enemy+0x6320` 的 invuln 计时器（> 0 也免伤），我们只用位这一道（干净、可逆、无计时）。
+     * ⇒ **妖侧（低速/聚焦）置位**：自机弹打不出伤害 ⇒ 打不掉 ⇒ P-D 那套（掉刻符 / `−gauge/12` / 50 帧静默）
+     *   **结构上不可能触发**；**人侧清位**：照旧可打、可击破。*/
+    {
+        uint32_t *fl = (uint32_t *)(f + CE_ENEMY_FLAGS);
+        int want = CE_PLAYER_FOCUSED() ? 1 : 0;
+        if (want) *fl |= CE_ENEMY_FLAG_NO_DAMAGE;
+        else      *fl &= ~(uint32_t)CE_ENEMY_FLAG_NO_DAMAGE;
+        if (g_fam_nodmg_state != want) {           /* 两态各记一次（实跑判据）*/
+            g_fam_nodmg_state = (uint8_t)want;
+            ce_log("youkai: familiar damage gate = %s (TH18 `enemy+0x635c` bit4, engine's own gate "
+                   "`th18:0x42f2b9`) - hit-able only on the HUMAN side, so the kill payout "
+                   "(1 orb + -gauge/12 + 50f silence) can only happen there",
+                   want ? "NO-DAMAGE (youkai side)" : "hittable (human side)");
+        }
     }
 }
 
@@ -2155,6 +2177,7 @@ static int on_ctor(ce_card_t *c)
     s->gauge_idle = 0;
     s->gauge_shoot_logged = 0;
     s->orb_silence = 0;
+    s->fam_nodmg_logged = 0;
     s->fengma = 0;
     s->fengma_score = 0;
     s->claimed_set = -1;                /* ★ P7：认领日志的「变化才打」闩 */

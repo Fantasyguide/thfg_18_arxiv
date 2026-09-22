@@ -20342,3 +20342,30 @@ imm `0x41a80000` = `f2i` 转换上界 ⇒ **实际峰值 20**）；清零 `th08:
   + 每只一支常驻环（脚本 309、`interrupt 2` = 妖侧蓝，一手 `th08:0x41b04e`）。
 - ⑤ `yk_fam_vm_kill` 一并 `ce_anm_delete(circle_id)`；`yk_fam_vm_kill_all` 随之覆盖整表。
 
+## §BE 详录 #69（2026-09-22 夜）：108 **批次 2 —— 妖侧不可打 / 人侧可打**（走引擎自己的免伤位）
+
+**改了什么**
+
+| 文件 | 改了什么 |
+| --- | --- |
+| `native/engine.h` | 加一个宏 `CE_ENEMY_FLAG_NO_DAMAGE 0x10`（共享件，只加宏；注释里带逐指令出处）|
+| `native/cards/youkai.c` | `yk_pin_familiar`（每帧写）按形态置/清 `CE_ENEMY_FLAGS` 的免伤位：妖侧置 1、人侧清 0；两态各记一行 `familiar damage gate = …`（新静态变量 `g_fam_nodmg_state`）|
+
+**一手**：`th18:0x42f2b9 test BYTE PTR [ebx+0x5130],0x10` → `jne 0x42f31c`（跳过伤害），`ebx` = `zEnemyData`（`enemy+0x122c`）
+⇒ 绝对偏移 `0x635c` = `CE_ENEMY_FLAGS`；第二道闸 `th18:0x42f2c2 cmp DWORD PTR [ebx+0x50f4],0` = `enemy+0x6320` 的 invuln 计时器（**不用**，位更干净）。
+
+**语义边界（owner 要的那条）**：人侧可打 ⇒ 击破走 P-D（掉 1 颗 + `−gauge/12` + 50 帧静默）；
+妖侧不可打 ⇒ **那套结构上不可能触发**。闸的语义自洽：`broken` 只会在人侧置位，夹持态照旧跨形态保持，
+复位口不变（route A：`rearms` ⇒ `releases`）。
+
+**怎么验证的**：`make check` **rc=0**（`x87 = 0`、`test_youkai_core` 4594/0、sites 双面、`sitecheck --all`、
+`contract_check`、`gen_drift`、`capcheck`、`sht-verify`、`anm-verify`、`snd-check`、`dllx87`、`dllverify`、
+`engine_abi_check`）；`python3 tooling/check-docs.py` 全部通过。
+
+**实跑判据**：① 妖侧贴着使魔打 ⇒ `rearms` **不涨**（打不掉）；② 切人侧打掉 ⇒ `rearms` 涨、下一波 `releases` 跟着涨；
+③ 人侧击破时掉 1 颗刻符 + 槽 `−gauge/12` + 随后 50 帧收刻符不给槽。
+
+**发布面**：**本批没改** `pl0X.sht` / `pl0X.anm` / `ability.anm` / wav / 站点（引擎侧只加了一个宏）。
+
+**批次 3 待办**：人侧「撞到使魔 ⇒ MISS」（`ce_forced_death_begin/end` + AABB，只人侧）。
+
