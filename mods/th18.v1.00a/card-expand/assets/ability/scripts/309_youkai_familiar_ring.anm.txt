@@ -1,0 +1,39 @@
+script script309 {
+    // 由 assets/ability/make_youkai_familiar_art.py 从 TH08 v1.00d `etama.anm` script48 生成，别手改。
+    // これは使い魔の**魔法陣**（环）：TH08 建使魔时 AllocEffectSlot(0x20, …) 起的那支特效，
+    //   模板表 0x4c6d30[0x20] = etama.anm script48
+    //   （`th08:0x41b003` op90-92 内联 / `th08:0x41e589` opcode 174 `anmFamiliar`）。
+    // 人/妖 = `AnmVm::SetInterrupt(环, IsYoukai() ? 2 : 1)`（`th08:0x407120` / `0x40bc40`）：
+    //   1 = 紫 (192,128,255) α255 scale 0.5（人侧）；2 = 蓝 (96,96,255) α200 scale 0.8（妖侧）；
+    //   3 = 淡出并 delete()（环的销毁路径）。
+    // 贴图 = entry1 `data/etama/etama2.png` 的 sprite197 62×62（空心环；自转 −3°/帧）。
+    // ⚠ 唯一一处指令翻译：TH08 的 `blendAdditiveSet(1)` 在 v8 anmm 里没有 ⇒ `blendMode(1)`
+    //   （一手：两个 raw handler 写同一个字段 vm+0x1f8 的 bit4-5：`th08:0x45f2a5` / `:0x45f2d3`）。
+    sprite(@YOUKAI_FAM_RING);
+    blendMode(1);
+    scale(0.0f, 0.0f);
+    alpha(0);
+    alpha2(0);
+    angleVel(0.0f, 0.0f, -0.05235988f);
+    zWriteDisable(1);
+    interruptLabel(1);
+    colorTime(8, 0, 192, 128, 255);
+    alphaTime(8, 0, 255);
+    color2Time(8, 0, 255, 92, 92);
+    alpha2Time(8, 0, 255);
+    scaleTime(8, 0, 0.5f, 0.5f);
+    stop();
+    interruptLabel(2);
+    colorTime(8, 0, 96, 96, 255);
+    alphaTime(8, 0, 200);
+    color2Time(8, 0, 255, 92, 92);
+    alpha2Time(8, 0, 200);
+    scaleTime(8, 0, 0.8f, 0.8f);
+    stop();
+    interruptLabel(3);
+    alphaTime(10, 0, 0);
+    alpha2Time(10, 0, 0);
+    scaleTime(10, 0, 0.0f, 0.0f);
++10: // 10
+    delete();
+}

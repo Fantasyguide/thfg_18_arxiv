@@ -297,6 +297,15 @@ static uint8_t *yk_boss(void)
     return 0;
 }
 
+/* ★★★ 2026-09-22（P3 第二批）：「射击中」的判据（TH18 侧）。
+ * TH08 是 `Player::shotActive`（一个 999 帧的射击周期标志，`th08:0x17d6ed4`）；TH18 没有同一个
+ * 状态量（每帧按 rate 发弹，没有周期）⇒ 本卡用**射击键按住**（`CE_INPUT_HELD` 的 bit0）。
+ * ❓ 口径，登记 `TUNING.md` §2.0y。*/
+static int yk_shooting(void)
+{
+    return (CE_INPUT_HELD() & 0x1u) != 0;
+}
+
 /* 每帧用 id 回查使魔（**绝不缓存敌人指针**：敌人是堆对象，过场 `destroy_all` 会静默释放）。*/
 static uint8_t *yk_familiar_by_id(uint32_t fam_id)
 {
@@ -402,6 +411,11 @@ typedef struct {
     uint32_t fam_id;   /* 0 = 空槽 */
     uint32_t anm_id;   /* 0 = 没有 VM（起失败 / 已被引擎销毁）*/
     int32_t  variant;  /* 0..3：自愈重起时要按同一套脚本再起一个 */
+    /* ★★★ 2026-09-22（P4）：**魔法阵环**（TH08 `etama.anm` script48 那条链）的句柄与状态。
+     * 环与本体**同生同死**（spawn/follow/kill/prune 四条路一起走），所以放在同一条记录里。
+     * `ring_state` = 上一次发过的 interrupt（0 = 还没发过 ⇒ 出生时补发 2 = 妖侧蓝环）。*/
+    uint32_t ring_id;  /* 0 = 没有环 VM */
+    int32_t  ring_state;/* 最近一次发的环 interrupt（1 = 人侧紫 / 2 = 妖侧蓝）*/
 } yk_fam_vm_t;
 static yk_fam_vm_t s_fam_vm[YK_FAM_MAX];
 
@@ -418,8 +432,10 @@ static void yk_fam_vm_kill(yk_fam_vm_t *v)
 {
     if (!v) return;
     if (v->anm_id) { ce_anm_delete(v->anm_id); v->anm_id = 0; }
+    if (v->ring_id) { ce_anm_delete(v->ring_id); v->ring_id = 0; }   /* ★ P4：环与本体同生同死 */
     v->fam_id = 0;
     v->variant = 0;
+    v->ring_state = 0;
 }
 
 static void yk_fam_vm_kill_id(uint32_t fam_id) { yk_fam_vm_kill(yk_fam_vm_find(fam_id)); }
@@ -518,6 +534,28 @@ static void __attribute__((noinline)) yk_fam_vm_check(void)
     v->anm_id = id;
     v->variant = variant;
     ce_anm_set_pos(id, x, y, 0.0f);
+    /* ★★★ 2026-09-22（P4）：**每一个使魔都带一个魔法阵环**（TH08 的行为：环在使魔的一生里
+     * 一直存在，Shift 只换它的 interrupt）。环脚本出生是 `scale(0,0); alpha(0)`（不可见）
+     * ⇒ 必须**立刻发一次 interrupt**，否则什么都看不到：TH08 那边就是
+     * `AllocEffectSlot(0x20,…)` 紧接着 `SetInterrupt(环, IsYoukai() ? 2 : 1)`（`th08:0x41b003`）。
+     * 我们的使魔只在低速（= 妖侧）存在 ⇒ 出生那一刻恒发 **2 = 蓝 (96,96,255) α200 λ0.8**；
+     * 人侧那支（1 = 紫 α255 λ0.5）留给「使魔在人侧也活着」的情形 —— `yk_fam_vm_follow` 每帧
+     * 按聚焦位比对，变了才补发（见那里的注）。*/
+    /* ⚠ 自愈重起时可能还攥着一支旧的环句柄（本体 VM 死了但环还活着）⇒ 先收掉，否则那条环永久留在场上。*/
+    if (v->ring_id) { ce_anm_delete(v->ring_id); v->ring_id = 0; }
+    v->ring_id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_RING,
+                              YK_FAM_ANM_LAYER);
+    v->ring_state = 0;
+    if (v->ring_id) {
+        ce_anm_set_pos(v->ring_id, x, y, 0.0f);
+        ce_anm_interrupt(v->ring_id, 2);
+        v->ring_state = 2;
+    } else {
+        /* 环起不出来只会「少一圈魔法阵」，不影响本体与机制 ⇒ 记一行就够（实跑判据）。*/
+        ce_log("youkai: familiar ring VM spawn FAILED (fam %u, script %d) - the familiar body is "
+               "there but its TH08 magic circle (etama.anm script48) is missing",
+               fam_id, (int)CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_RING);
+    }
 }
 
 /* 每帧跟随：位置 = 使魔**实体**的 `final_pos`（`CE_ENEMY_POS_X/Y` = spec §3.5 钉的那两格；
@@ -539,6 +577,22 @@ static void yk_fam_vm_follow(uint32_t fam_id, int variant, const uint8_t *f)
     if (!ce_anm_set_pos(v->anm_id, *(const float *)(f + CE_ENEMY_POS_X),
                                     *(const float *)(f + CE_ENEMY_POS_Y), 0.0f))
         v->anm_id = 0;                                     /* 句柄作废 ⇒ 下一帧自愈重起 */
+    /* ★★★ 2026-09-22（P4）：环 —— ① 同帧钉到同一坐标；② **聚焦位一变就换 interrupt**
+     * （TH08：`SetInterrupt(环, IsYoukai() ? 2 : 1)`，一手见 `youkai.c` 的环那一节与生成器文件头）。
+     * 环句柄没了就清 0（`ring_state` 也归 0）⇒ 下一帧按同一个 `fam_id` 走 spawn 的环分支重建。*/
+    if (v->ring_id && !ce_anm_get_vm(v->ring_id)) { v->ring_id = 0; v->ring_state = 0; }
+    if (v->ring_id) {
+        int want = CE_PLAYER_FOCUSED() ? 2 : 1;
+        if (v->ring_state != want) {
+            ce_anm_interrupt(v->ring_id, want);
+            v->ring_state = want;
+        }
+        if (!ce_anm_set_pos(v->ring_id, *(const float *)(f + CE_ENEMY_POS_X),
+                                        *(const float *)(f + CE_ENEMY_POS_Y), 0.0f)) {
+            v->ring_id = 0;
+            v->ring_state = 0;
+        }
+    }
 }
 
 static void yk_run_action(yk_card_t *s, const yk_action_t *act)   /* s 可为 NULL（卡状态没了也要把敌人收干净）*/
@@ -1195,7 +1249,11 @@ static int yk_orb_collect(yk_card_t *s)
      * ⚠ 另外两笔本轮**不接**（分数那一路与符卡 +8000），原因见下面那段「本轮的取舍」。*/
     if (!s) return 0;
     yk_piv_add(&s->piv, &s->orbs, 1);
-    s->gauge = yk_gauge_add(s->gauge, yk_gauge_orbs_delta(CE_PLAYER_FOCUSED()));
+    /* ★★★ 2026-09-22（P3 第二批）：`AddToYoukaiGauge` 的**第一道闸** —— 射击中（TH08 的
+     * `shotActive != 0`）带 `param_2 == 0` 的加数**整条丢掉**（一手 `th08:0x43c0c2`/`:0x43c0cb`，
+     * `0x17d6ed4` = `g_Player.shotActive`）⇒ 本卡这里照抄：射击中不收槽（PIV 那笔照记）。*/
+    if (!yk_gauge_gate_blocks(yk_shooting()))
+        s->gauge = yk_gauge_add(s->gauge, yk_gauge_orbs_delta(CE_PLAYER_FOCUSED()));
     ++s->orb_taken;
     return 1;
 }
@@ -1374,13 +1432,26 @@ static int yk_orbs_tick(yk_card_t *s)
 static void yk_gauge_tick(yk_card_t *s, int focused)
 {
     int d, g2;
+    int shooting;
     if (!s) return;
+    shooting = yk_shooting();
     if (focused != (int)s->gauge_focus_prev) {          /* 换状态 ⇒ 两个计时器清零（❓ 简化）*/
         s->gauge_focus_prev = (uint8_t)(focused ? 1 : 0);
         s->gauge_focus_run = 0;
         s->gauge_hold = 0;
     }
     if (s->gauge_focus_run < 0xffffu) ++s->gauge_focus_run;
+    /* ★★★ 2026-09-22（P3 第二批）：**射击中每帧 ±26**（一手 `Player.cpp:445-452`：
+     * `AddToYoukaiGauge(0x6590 / shotInterval(999) = 26, param_2 = 1)`，方向 = `shotType & 1`
+     * = `isYoukaiMode` ⇒ 我们的口径里 = 低速位）。
+     * ⚠ **两条 TH08 语义一起照抄**（都在 `FUN` / `Player` 的一手门里）：
+     *   ① 射击中**只**有这一项在动 —— 下面的漂移整段被 `shotActive == 0` 挡住（`Player.cpp:1083`
+     *      的 `this->shotActive == 0` 前置）；② 击破 ±200 / 收刻符 ±111 被 `AddToYoukaiGauge`
+     *      的第一道闸丢掉（`th08:0x43c0c2`；见 `yk_orb_collect` / `yk_on_enemy_killed` 的注）。*/
+    if (shooting) {
+        s->gauge = yk_gauge_add(s->gauge, yk_gauge_shoot_delta(focused));
+        return;                                         /* ★ 漂移在射击中不跑（一手的前置门）*/
+    }
     if (focused) {
         if (s->gauge_focus_run >= 4) {                  /* 一手：`unkE2ad0 >= 4` 才开始动 */
             d = (s->gauge_hold < 300) ? (int)(s->gauge_hold / 15) : 21;
@@ -1417,7 +1488,10 @@ static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
     float ang;
     if (!s || !ev) return;
     focused = CE_PLAYER_FOCUSED();
-    s->gauge = yk_gauge_add(s->gauge, focused ? 200 : -200);
+    /* ★★★ 2026-09-22（P3 第二批）：同刻符那一笔 —— 射击中 ±200 也被 `AddToYoukaiGauge`
+     * 的第一道闸丢掉（一手 `th08:0x43c0c2`；decomp `EnemyManager.cpp:670-677` 传的正是 `param_2 = 0`）。*/
+    if (!yk_gauge_gate_blocks(yk_shooting()))
+        s->gauge = yk_gauge_add(s->gauge, focused ? 200 : -200);
     if (!focused) return;                               /* 妖逢魔才撒刻符 */
     n = YK_ORB_PER_KILL_CHAIN * 2 + 10;
     for (i = 0; i < n; ++i) {
@@ -2132,9 +2206,20 @@ static int on_tick_2(ce_card_t *c)
     /* ★ 人妖槽 / 永点的账（每 ~600 帧一行）：实跑要看见的四件 —— 槽值、刻符收了几颗、
      * PIV 当前值、池里还剩几颗活着。VERIFY 的判据就取这一行（见 `SINGLE-CARD-TEST.md` §th08）。*/
     if ((s_ledger_frame % 600u) == 0u && (s->orb_taken || s->gauge || s->piv))
-        ce_log("youkai: gauge=%d piv=%d orbs=%d taken=%u live=%u full=%u hud=%u",
-               (int)s->gauge, (int)s->piv, (int)s->orbs, s->orb_taken, s_orb_live,
-               s->orb_full, (unsigned)s->hud_ready);
+        /* ★★★ 2026-09-22（P5 #16b / P3 第二批）：账里带上**本帧生效的运动参数与射击位** ——
+         * 实跑一眼可判「拾取半径是不是 TH18 那档 70」（一手 20/24 只在注释里，见 `youkai_core.c`）
+         * 与「射击中每帧 ±26 那一支有没有在跑」（`shoot=1` 时槽应当**稳步**走向当前形态，
+         * 而击破/收刻符那两笔在射击中不计）。*/
+        {
+            float sp = 0.0f, rr = 0.0f;
+            int ch = yk_current_character();
+            if (ch < 0 || ch > 3) ch = 0;
+            yk_orb_motion_params(ch, &sp, &rr);
+            ce_log("youkai: gauge=%d piv=%d orbs=%d taken=%u live=%u full=%u hud=%u "
+                   "speed=%.0f pick=%.0f shoot=%d",
+                   (int)s->gauge, (int)s->piv, (int)s->orbs, s->orb_taken, s_orb_live,
+                   s->orb_full, (unsigned)s->hud_ready, sp, rr, yk_shooting());
+        }
     if (!CE_PLAYER()) {
         yk_drop_all(s, "no player");
         return 0;
@@ -2309,7 +2394,9 @@ _Static_assert(YK_OPTION_CELLS == CE_OPTION_POSE_CELLS,
 _Static_assert(YK_OPTION_MAX >= 4, "YK_OPTION_MAX must cover the biggest row of YK_OPTION_BY_CHAR");
 /* 跟随 VM 的静态表：32 × 12 B = 384 B（文件级静态，不进卡的 496 B 预算）。
  * 钉住记录的大小是为了让「加字段 = 表变大」这件事**在编译期**被看见（12 = 3 × u32/i32，无 padding）。*/
-_Static_assert(sizeof(yk_fam_vm_t) == 12, "familiar follow-VM record grew (table is 32 of these)");
+/* P4 让记录从 12 B 长到 20 B（+ 环句柄 + 环 interrupt 状态）⇒ 32 × 20 = 640 B 的文件级静态表。
+ * 钉住大小是为了让「加字段 = 表变大」这件事在编译期被看见。*/
+_Static_assert(sizeof(yk_fam_vm_t) == 20, "familiar follow-VM record grew (table is 32 of these)");
 
 /* ============================== ★ 占位 / TODO 清单 ==============================
  * 每一条都「不自己发明数值」，取值一律是**不做**这个语义：

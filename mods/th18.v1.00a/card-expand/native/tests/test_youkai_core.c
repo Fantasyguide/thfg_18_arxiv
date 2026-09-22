@@ -872,6 +872,20 @@ int main(void)
     CHECK(yk_gauge_is_extremely_human(0) == 0 && yk_gauge_is_extremely_youkai(0) == 0);
     /* 收刻符的增量：聚焦 = +111、否则 −111（`th08:0x44139e`/`:0x4413b0`）。*/
     CHECK(yk_gauge_orbs_delta(1) == 111 && yk_gauge_orbs_delta(0) == -111);
+    /* ★★★ 2026-09-22（P3 第二批）：射击中每帧 ±26（一手 `Player.cpp:445-452` + `:541`
+     * `0x6590 / 0x3e7` = 26000/999 = 26，方向 = `shotType & 1` = isYoukaiMode ⇒ 本卡口径的低速位）
+     * 与 `AddToYoukaiGauge` 的第一道闸（一手 `th08:0x43c0c2`/`:0x43c0cb`：`shotActive != 0` 且
+     * `param_2 == 0` ⇒ 丢掉 ⇒ 击破 ±200 / 收刻符 ±111 在射击中不算）。*/
+    CHECK(YK_GAUGE_SHOOT_DELTA == 26);
+    CHECK(yk_gauge_shoot_delta(1) == 26 && yk_gauge_shoot_delta(0) == -26);
+    CHECK(yk_gauge_gate_blocks(1) == 1 && yk_gauge_gate_blocks(0) == 0);
+    /* ★★★ 2026-09-22（P3 第二批）：射击中每帧 ±26（一手 `Player.cpp:445-452` + `:541`
+     * `0x6590 / 0x3e7` = 26000/999 = 26，方向 = `shotType & 1` = isYoukaiMode ⇒ 本卡口径的低速位）
+     * 与 `AddToYoukaiGauge` 的第一道闸（一手 `th08:0x43c0c2`/`:0x43c0cb`：`shotActive != 0` 且
+     * `param_2 == 0` ⇒ 丢掉 ⇒ 击破 ±200 / 收刻符 ±111 在射击中不算）。*/
+    CHECK(YK_GAUGE_SHOOT_DELTA == 26);
+    CHECK(yk_gauge_shoot_delta(1) == 26 && yk_gauge_shoot_delta(0) == -26);
+    CHECK(yk_gauge_gate_blocks(1) == 1 && yk_gauge_gate_blocks(0) == 0);
     /* 染色五档（`AsciiManager.cpp:1035-1058`，顺序即优先级）。*/
     CHECK(yk_gauge_color(-9000) == 0x7070ffu);
     CHECK(yk_gauge_color(-3000) == 0xb0b0ffu);
@@ -1020,30 +1034,33 @@ int main(void)
         CHECK(yk_orb_score(1999, 4) == 100);         /* 没到门槛 + 值太小 ⇒ 下限 */
         CHECK(yk_orb_score(0, 20000) == 100000);     /* 门槛按**本关**算，本局计数照给 */
 
-        /* ★★ 2026-09-22 晚（owner 第 4 条）：刻符的**运动常量**（一手 `.sht` 头 + `ItemManager.cpp`）。
-         * 归航速度 = `[.sht+0x14]`、收集半径 = `[.sht+0x18]/2 + 8`（刻符半宽）。*/
+        /* ★★ 2026-09-22 晚（owner 第 4 条）+ ★★★ 2026-09-22（P5 #16b）：刻符的**运动常量**。
+         * 归航速度 = `[.sht+0x14]`（TH08 一手 10/12，**未改**）；
+         * 拾取半径 = **TH18 自己那一档 70**（`th18:0x45ae7b`/`:0x45ae85`；原生 22 号卡 ITEM_LINE = 110）
+         * —— owner 2026-09-22 拍的 **TH18 适配**（要「全屏吸收那种速度感」），
+         * **不是** TH08 一手值（一手 = `[.sht+0x18]/2 + 8` = 20/24，见 `youkai_core.c` 的注）。*/
         {
             float sp = 0.0f, r = 0.0f;
             int c;
             yk_orb_motion_params(0, &sp, &r);
-            CHECK(sp == 10.0f && r == 20.0f);                     /* pl00as：10.0 / 24/2+8 */
+            CHECK(sp == 10.0f && r == 70.0f);                     /* 速度 = pl00as 一手；半径 = TH18 适配 */
             yk_orb_motion_params(1, &sp, &r);
-            CHECK(sp == 12.0f && r == 24.0f);                     /* pl01as：12.0 / 32/2+8 */
+            CHECK(sp == 12.0f && r == 70.0f);                     /* pl01as：12.0（TH08 一手）*/
             yk_orb_motion_params(2, &sp, &r);
-            CHECK(sp == 10.0f && r == 20.0f);                     /* pl02as */
+            CHECK(sp == 10.0f && r == 70.0f);                     /* pl02as */
             yk_orb_motion_params(3, &sp, &r);
-            CHECK(sp == 10.0f && r == 20.0f);                     /* pl03as */
+            CHECK(sp == 10.0f && r == 70.0f);                     /* pl03as */
             yk_orb_motion_params(-1, &sp, &r);                    /* 越界 ⇒ 0 号那一档 */
-            CHECK(sp == 10.0f && r == 20.0f);
-            for (c = -2; c <= 6; ++c) {                           /* 全定义域不崩、值恒在 {10,12}/{20,24} */
+            CHECK(sp == 10.0f && r == 70.0f);
+            for (c = -2; c <= 6; ++c) {                           /* 全定义域不崩、值恒在 {10,12}/{70} */
                 yk_orb_motion_params(c, &sp, &r);
-                CHECK((sp == 10.0f || sp == 12.0f) && (r == 20.0f || r == 24.0f));
+                CHECK((sp == 10.0f || sp == 12.0f) && r == 70.0f);
             }
             sp = 7.0f; r = 7.0f;
             yk_orb_motion_params(0, &sp, 0);                      /* 单出口 */
             CHECK(sp == 10.0f && r == 7.0f);
             yk_orb_motion_params(0, 0, &r);
-            CHECK(r == 20.0f);
+            CHECK(r == 70.0f);
             yk_orb_motion_params(0, 0, 0);                        /* 双 NULL：什么都不做、不崩 */
             /* 一手的状态号与常量（改了要在注释里同步改一手出处）*/
             CHECK(YK_ORB_STATE_FALL == 0 && YK_ORB_STATE_HOMING == 1 && YK_ORB_STATE_SPAWN == 3);

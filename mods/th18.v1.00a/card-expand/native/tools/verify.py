@@ -54,7 +54,9 @@ PRIMS = {
              "人妖槽 HUD 的几何自述（P2：用来定「写进去的数 = 屏上的像素」）", False),
         ],
         fail=[(r"youkai: familiar spawn FAILED", "创建失败（池满 / 坐标非法）"),
-              (r"youkai: familiar follow-VM table full", "跟随 VM 表满（画面会少使魔）")],
+              (r"youkai: familiar follow-VM table full", "跟随 VM 表满（画面会少使魔）"),
+              # ★ 2026-09-22（P4）：使魔的**魔法阵环**（TH08 `etama.anm` script48）起不出来
+              (r"youkai: familiar ring VM spawn FAILED", "魔法阵环没装上（使魔少了那一圈）")],
     ),
     "emitter-close": dict(
         title="关闭发弹口（TH08 / 卡 108）",

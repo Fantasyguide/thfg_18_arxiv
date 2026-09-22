@@ -40,3 +40,8 @@ YOUKAI_FAM_S56_4  ability/youkai_familiar/YOUKAI_FAM_S56_4.png  32x32
 YOUKAI_FAM_S56_5  ability/youkai_familiar/YOUKAI_FAM_S56_5.png  32x32
 YOUKAI_FAM_S56_6  ability/youkai_familiar/YOUKAI_FAM_S56_6.png  32x32
 YOUKAI_FAM_S56_7  ability/youkai_familiar/YOUKAI_FAM_S56_7.png  32x32
+# ── 2026-09-22 追加：**魔法阵环**（P4 / owner #12）—— 单图行，不是图集成员。
+#    一手：TH08 建使魔时 `AllocEffectSlot(0x20, …)` → 模板表 `0x4c6d30[0x20]` = `etama.anm` script48
+#    （`th08:0x41b003` / `:0x41e589`），贴图 = entry1 `data/etama/etama2.png` 的 sprite197
+#    `(193,113,62,62)` 空心环（自转 −3°/帧）。人/妖只换 `SetInterrupt(1|2)`。
+YOUKAI_FAM_RING  ability/youkai_familiar/YOUKAI_FAM_RING.png  64x64

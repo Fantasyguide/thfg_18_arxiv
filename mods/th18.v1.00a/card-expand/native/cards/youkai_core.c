@@ -801,6 +801,21 @@ int yk_gauge_is_moderately_youkai(int gauge){ return gauge >= YK_GAUGE_RED_TINT;
 
 int yk_gauge_orbs_delta(int focused) { return focused ? YK_GAUGE_PER_ORB : -YK_GAUGE_PER_ORB; }
 
+/* ★★★ 2026-09-22（P3 第二批）：射击中每帧的槽增量（一手 `Player.cpp:445-452`，见 .h 的长注）。
+ * `0x6590 / 0x3e7` 是**整数除法**（ZUN 的算式就是 `i32`）⇒ 26000/999 = 26。*/
+int yk_gauge_shoot_delta(int focused)
+{
+    return focused ? YK_GAUGE_SHOOT_DELTA : -YK_GAUGE_SHOOT_DELTA;
+}
+
+/* `AddToYoukaiGauge` 的第一道闸：`*(i32*)0x17d6ed4 != 0 && param_2 == 0 ⇒ 丢掉`
+ * （`th08:0x43c0c2`/`:0x43c0cb`；`0x17d6ed4` = `g_Player.shotActive`）。
+ * 本函数只回答「现在过不过闸」，条件由卡侧提供（TH18 侧 = 射击键按住）。*/
+int yk_gauge_gate_blocks(int shooting)
+{
+    return shooting ? 1 : 0;
+}
+
 uint32_t yk_gauge_color(int gauge)
 {
     /* 一手 `AsciiManager.cpp:1035-1058`（顺序即优先级：极人 → 中人 → 极妖 → 中妖 → 白）。
@@ -950,6 +965,19 @@ void yk_orb_motion_params(int character, float *home_speed, float *pick_r)
      * 抓取盒半宽 = `[.sht+0x18] / 2`（`th08:0x44d83f`–`0x44d873`）+ 刻符自身半宽 8（16×16 贴图）。
      * 本仓 `local/th08.v1.00d/dat/ply0{0,1,2,3}as.sht` 直读：10/12/10/10 与 24/32/24/24。*/
     const int marisa = (character == 1);
+    (void)character;
     if (home_speed) *home_speed = marisa ? 12.0f : 10.0f;     /* ply01as = 12.0，其余三队 = 10.0 */
-    if (pick_r)     *pick_r     = marisa ? 24.0f : 20.0f;     /* 16+8 / 12+8 */
+    /* ★★★ 2026-09-22（P5 / owner #16b「永点吸收速度依旧不够快，得是**全屏吸收**的速度」）：
+     * **拾取半径改成 TH18 自己那一档（70）**，不再用 TH08 的 20/24。
+     *
+     * **一手（两条都记着，别混）**：
+     *   · TH08 一手值 = **20 / 24**（抓取盒半宽 `[.sht+0x18]/2` = 12/16 加刻符自身半宽 8；
+     *     `th08:0x44d83f`–`0x44d873`、`Player::CalcItemBoxCollision th08:0x44a5a0`）；
+     *   · **TH18 引擎自己的值 = 70.0**（`th18:0x45ae7b` / `:0x45ae85` 写 `player+0x47990/0x47994`
+     *     = 抓取半径；原生 22 号卡 ITEM_LINE 把它抬到 **110.0**，`th18:0x40c1e9`/`:0x40c1f3`）。
+     * ⇒ 这条是 **TH18 适配**（owner 2026-09-22 拍：「要的就是全屏吸收那种速度感」，而 70/110
+     *   本来就是**本引擎自己的值**），**不是 TH08 复刻** —— 已登记 `TUNING.md` §2.0y。
+     * ⚠ 归航**速度**没动：一手 10/12 px/帧本来就是 TH08 与 TH18 22 号卡同一档。
+     * ⚠ 与机体无关（TH08 的 20/24 按机体分，TH18 的 70 是全局默认）⇒ 四个机体同一档。*/
+    if (pick_r)     *pick_r     = 70.0f;
 }

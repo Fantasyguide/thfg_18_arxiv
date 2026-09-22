@@ -750,3 +750,15 @@ SENRO_HUD_BORDER       ability/senro_hud/BORDER.png      @80,0,48x16
 # ============================================================================================
 ATLAS ATLAS_SENRO_HUD_LABEL 96x16
 SENRO_HUD_LABEL        ability/senro_hud/LABEL.png       @0,0,96x16
+
+# ════════════════════════════════════════════════════════════════════════════════════════════
+# 2026-09-22 追加（P4 / 卡 108 owner #12）：使魔的**魔法阵环**（单图；不改既有任何行）
+#   生成器 = assets/ability/make_youkai_familiar_art.py（与使魔本体同一支）。
+#   一手：TH08 建使魔时 `AllocEffectSlot(0x20, &enemy+0x2d34, 1, -1)`（`th08:0x41b003` op90-92 内联 /
+#         `th08:0x41e589` opcode 174 `anmFamiliar`）⇒ 模板表 `0x4c6d30` 步长 0xc 的 `[0x20]`
+#         = **`etama.anm` script48**；贴图 = entry1 `data/etama/etama2.png` sprite197 `(193,113,62,62)`
+#         的**空心环**（alpha 剖面 r≤8 与 r≥33 为 0、r≈22–31 达峰；自转 −3°/帧）。
+#         人/妖 = `SetInterrupt(环, IsYoukai() ? 2 : 1)`（`th08:0x407120`/`0x40bc40`）。
+#   脚本 = 309（`309_youkai_familiar_ring.anm.txt`，`blendAdditiveSet(1)` → `blendMode(1)` 一处翻译）。
+# ════════════════════════════════════════════════════════════════════════════════════════════
+YOUKAI_FAM_RING  ability/youkai_familiar/YOUKAI_FAM_RING.png  64x64

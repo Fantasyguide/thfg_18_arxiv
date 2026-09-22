@@ -641,6 +641,33 @@ int yk_gauge_is_moderately_human(int gauge);   /* `g <= −2000` */
 int yk_gauge_is_extremely_youkai(int gauge);   /* `g >= +8000` */
 int yk_gauge_is_moderately_youkai(int gauge);  /* `g >= +2000` */
 int yk_gauge_orbs_delta(int focused);          /* 收刻符时该加多少（聚焦 +111 / 否则 −111）*/
+
+/* ★★★ 2026-09-22（P3 第二批）：TH08 人妖槽的**第四条涨源** + `AddToYoukaiGauge` 的**第一道闸**。
+ *
+ * **一手（逐条，样本 + decomp 双侧）**：
+ *   · `Player.cpp:445-452`（`Player::UpdateShooting` 里 `shotActive != 0` 那一支，本样本
+ *     `th08:0x44c650`）：`if (shotType < 4) { shotType & 1 ? +X : −X }`，`X = 0x6590 / shotInterval`；
+ *     `shotInterval` 在 `Player.cpp:541` 被写死 `0x3e7`（999）⇒ **X = 26000/999 = 26**（整数除法）。
+ *     `shotType = isYoukaiMode`（`Player.cpp:500`；B 型再 `+= 2`）⇒ `shotType & 1` **就是人/妖侧**。
+ *     第三个参数 `param_2 = 1` ⇒ 这一条**不过闸**（下一行）。
+ *   · `GameManager::AddToYoukaiGauge`（`th08:0x43c0bb`）开头那道闸（逐指令）：
+ *     `0x43c0c2 cmp DWORD PTR ds:0x17d6ed4,0` → `0x43c0cb cmp DWORD PTR [ebp+0xc],0` ⇒
+ *     **非 0 且 `param_2 == 0` ⇒ `jmp 0x43c15b`（整条丢掉）**。`0x17d6ed4 = g_Player + 0xfdc`
+ *     （`reccmp-globals.csv` 的 `g_Player = 0x17d5ef8` + `Player.hpp:190` 的偏移注释）
+ *     = **`Player::shotActive`**（射击进行中）⇒ 旧注「符卡中冻结」是误读。
+ *     ⇒ 含义：**射击中，击破 ±200 与收刻符 ±111 都不进槽**，只有「射击中每帧 ±26」在动。
+ *
+ * **TH18 侧的映射（❓ 口径，登记 `TUNING.md` §2.0y）**：TH18 没有 `shotActive` 这个状态量
+ *   （它的射击是每帧按 rate 发，没有 TH08 那种 999 帧的「射击周期」）⇒ 本卡用
+ *   **「射击键按住」**（`CE_INPUT_HELD & 0x1`）当判据，卡侧每帧把它传给这两个纯函数。*/
+#define YK_GAUGE_SHOOT_DELTA 26     /* = 0x6590(26000) / 999（`Player.cpp:445-452` + `:541`）*/
+
+/* 射击中每帧的槽增量（把当前形态推得更极端）：低聚（妖侧）= +26 / 否则 −26。
+ * `focused` = 本卡口径的「妖侧」（= 低速位）。*/
+int yk_gauge_shoot_delta(int focused);
+/* `AddToYoukaiGauge` 的第一道闸：返回 1 ⇒ **本帧 `param_2 == 0` 的加数全被丢掉**
+ * （击破 ±200 / 收刻符 ±111）。`shooting` = 卡侧读到的「射击中」。*/
+int yk_gauge_gate_blocks(int shooting);
 /* 百分比文字/槽条的染色（一手 `AsciiManager.cpp:1035-1058`）：极人 0x7070ff、中人 0xb0b0ff、
  * 极妖 0xff7070、中妖 0xffb0b0、其余 0xffffff（每通道 8 位，返回 0xRRGGBB）。*/
 uint32_t yk_gauge_color(int gauge);

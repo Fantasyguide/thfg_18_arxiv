@@ -73,6 +73,19 @@ script53/54/55/56 四套**全做**，卡侧按槽位 `ce_anm_set_sprite`（或�
 既保住「素材是官方原生」这条硬要求，又不用挑一个「最像」的。
 使魔被打死按 1/2 转嫁本体是**我们的设计**（原作没有这条管线），与本生成器无关。
 
+── ★★★ 2026-09-22（P4）：**魔法阵环**（owner #12「敌方使魔……不会随着 shift 消失变成魔法阵」）──
+同一支生成器多产一件：TH08 建使魔时 `AllocEffectSlot(0x20, &enemy+0x2d34, 1, -1)`
+（`th08:0x41b003` op90-92 内联 / `th08:0x41e589` opcode 174 `anmFamiliar`）⇒ 模板表 `0x4c6d30`
+步长 0xc 的 `[0x20]` = **`etama.anm` script48**；贴图 = entry1 `data/etama/etama2.png` 的
+**sprite197 = (193,113,62,62) 空心环**（alpha 剖面：r≤8 与 r≥33 为 0、r≈22–31 达峰），
+`angleVel(0,0,-0.05235988)` = **−3°/帧**自转；人/妖 = `SetInterrupt(环, IsYoukai() ? 2 : 1)`
+（`th08:0x407120` / `0x40bc40`）：1 = 紫 α255 scale 0.5、2 = 蓝 α200 scale 0.8、3 = 淡出 delete。
+**唯一一处指令翻译**：TH08 的 `blendAdditiveSet(1)` 在 v8 anmm 里不存在 ⇒ `blendMode(1)`
+（一手：两个 raw handler 写同一个字段 `vm+0x1f8` 的 bit4-5：`th08:0x45f2a5` / `:0x45f2d3`）。
+⚠ TH08 的 `FUN_0042c420`（`th08:0x42c420`）在 Shift 时**只**换环的 interrupt + 爆闪 + 音效 + 绘制桶，
+**使魔本体 sprite 全程不变** ⇒ 「本体消失只剩环」不是 TH08 行为（那是 ❓自定）；本生成器只做环，
+爆闪（etama script59/60）与音效（0x27/0x28）**未做**（登记 `TUNING.md`）。
+
 ── 产出（每条都不动别人的文件）────────────────────────────────────────────────────
   assets/ability/youkai_familiar/YOUKAI_FAM_S<53|54|55|56>_<0..7>.png
         —— `enemy.anm` sprite 69..100 的原生切图，每张 **32×32**（本来就是 2 的幂 ⇒ 无需补边）。
@@ -124,6 +137,33 @@ FAM_SCRIPTS = (53, 54, 55, 56)
 NOT_PORTED = (57, 58)
 SCRIPT0 = 206                                  # 脚本文件编号从这里起连续（206..209）
 
+# ── ★★★ 2026-09-22（P4 / owner #12「敌方使魔……不会随着 shift 消失变成魔法阵」）：**魔法阵环** ──────
+# 一手（逐条，样本 `local/th08.v1.00d/th08.exe` + `thanm -l 8 -m v2.anmm dat/etama.anm`）：
+#   · TH08 的使魔**始终**带着一个环：建使魔时 `AllocEffectSlot(0x20, &enemy+0x2d34, 1, -1)`
+#     （`th08:0x41b003` op90-92 内联 / `:0x41e589` opcode 174 `anmFamiliar`）⇒ 模板表 `0x4c6d30`
+#     步长 0xc 的 `[0x20]` = **script 48**；紧接着 `AnmVm::SetInterrupt(环, IsYoukai() ? 2 : 1)`
+#     （`0x407120`；`0x40bc40` = `Player::IsYoukai`）。
+#   · 那支脚本所在 anm = **etama.anm**（AnmManager 槽 6：`th08:0x433083 push "etama.anm"`）；
+#     `sprite197 = (193, 113, 62, 62)`，在 **entry1 `data/etama/etama2.png`**。
+#   · 环的形状（我在本机算的 alpha 剖面）：r ≤ 8 全透明、r ≈ 22–31 达峰(~190/255)、r ≥ 33 全透明
+#     ⇒ **空心环**（62×62 里那圈 annulus），自转 `angleVel(0,0,-0.05235988)` = **−3°/帧**。
+#   · 人/妖只换 interrupt：1 = 紫 `(192,128,255)` α255 scale 0.5（人侧）；2 = 蓝 `(96,96,255)`
+#     α200 scale 0.8（妖侧）；3 = 淡出并 `delete()`。
+#   · Shift 的引擎侧表现全在 `FUN_0042c420`（`th08:0x42c420`）：爆闪 `SpawnEffect(0x1e/0x1f)` +
+#     `SetInterrupt(环,2/1)` + 音效 `0x27/0x28` + 绘制桶重排；**使魔本体 sprite 全程不变**
+#     ⇒ 「本体消失只剩环」不是 TH08 行为（那会是 ❓自定）。本生成器只做**环**这一件（爆闪/音效未做）。
+# ⚠ **一处必需的指令翻译**：TH08 的 `blendAdditiveSet(1)` 在 v8 anmm 里没有（`grep blendAdditiveSet
+#   v8.anmm` 无命中），等价物 = **`blendMode(1)`**：一手 = 两个 raw handler 写的是**同一个字段**
+#   `vm+0x1f8` 的 bit4–5（TH08 raw16 `th08:0x45f2a5` / raw82 `th08:0x45f2d3`），语义都是「混合模式 = 1」。
+#   其余助记符（sprite/scale/alpha/alpha2/angleVel/zWriteDisable/interruptLabel/colorTime/color2Time/
+#   alphaTime/alpha2Time/scaleTime/stop/delete）v8 全有（逐个数过 v8.anmm）。
+RING_SRC_ANM = "etama.anm"
+RING_SRC_ENTRY = "data/etama/etama2.png"
+RING_SRC_SCRIPT = 48
+RING_SPRITE = 197
+RING_SCRIPT_NO = 309          # 接着 308（`build_ability.py` 按**文件名顺序**连续编号 ⇒ 新脚本必须接在最后）
+RING_NAME = "YOUKAI_FAM_RING"
+
 _SPRITE_RE = re.compile(r"sprite(\d+):\s*\{\s*x:\s*(\d+),\s*y:\s*(\d+),\s*w:\s*(\d+),\s*h:\s*(\d+)\s*\}")
 _TOKEN_RE = re.compile(r"@([A-Za-z_][A-Za-z0-9_]*)")
 _FILE_RE = re.compile(r"^(\d+)_([A-Za-z_][A-Za-z0-9_]*)\.anm\.txt$")
@@ -148,13 +188,13 @@ def run_thanm(args, cwd):
     return r.stdout
 
 
-def read_anm(anm: Path, workdir: Path):
+def read_anm(anm: Path, workdir: Path, entry=SRC_ENTRY):
     """→ (spec 文本, 解出来的贴图 PNG 路径)。`-l` 拿脚本/sprite 表；`-x` 解贴图。"""
     text = run_thanm(["-l", TH08_VERSION, "-m", str(ANMMAP_TH08), str(anm)], workdir)
     run_thanm(["-x", TH08_VERSION, str(anm)], workdir)
-    png = workdir / SRC_ENTRY
+    png = workdir / entry
     if not png.is_file():
-        sys.exit(f"{anm.name}: thanm -x 没解出 {SRC_ENTRY}（entry 名变了？）")
+        sys.exit(f"{anm.name}: thanm -x 没解出 {entry}（entry 名变了？）")
     return text, png
 
 
@@ -313,10 +353,17 @@ def write_order(rows):
         "# 四套对应最多 4 个发射口槽，卡侧按槽位挑一套即可（见生成器文件头「产出定位」）。",
         "# 每条脚本的正文逐条照抄原生，只把 sprite 引用换成这里的 @NAME；原生没有 layer()，故这里也不写。",
     ]
-    lines = hdr + [f"{n}  {p}  {s}" for n, p, s, _k, _i in rows]
+    tail = [
+        "# ── 2026-09-22 追加：**魔法阵环**（P4 / owner #12）—— 单图行，不是图集成员。",
+        "#    一手：TH08 建使魔时 `AllocEffectSlot(0x20, …)` → 模板表 `0x4c6d30[0x20]` = `etama.anm` script48",
+        "#    （`th08:0x41b003` / `:0x41e589`），贴图 = entry1 `data/etama/etama2.png` 的 sprite197",
+        "#    `(193,113,62,62)` 空心环（自转 −3°/帧）。人/妖只换 `SetInterrupt(1|2)`。",
+        f"{RING_NAME}  ability/youkai_familiar/{RING_NAME}.png  64x64",
+    ]
+    lines = hdr + [f"{n}  {p}  {s}" for n, p, s, _k, _i in rows] + tail
     OUT_ORDER.parent.mkdir(parents=True, exist_ok=True)
     OUT_ORDER.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    print(f"[order] {OUT_ORDER.relative_to(HERE.parent)}（{len(rows)} 行；**不动** entries/ORDER.txt）")
+    print(f"[order] {OUT_ORDER.relative_to(HERE.parent)}（{len(rows)} 行 + 环 1 行；**不动** entries/ORDER.txt）")
     return lines
 
 
@@ -324,7 +371,8 @@ def write_order(rows):
 
 def check_pngs(cycles, rects):
     """① 每张 PNG：尺寸是 2 的幂；② 不全是透明；且与源图对应单元逐像素一致。"""
-    files = sorted(OUT_ART.glob("YOUKAI_FAM_*.png"))
+    # ⚠ 只看本体的 32 张（`YOUKAI_FAM_S*`）；环是 `YOUKAI_FAM_RING.png`，由 `check_ring` 自己查。
+    files = sorted(OUT_ART.glob("YOUKAI_FAM_S*.png"))
     want = sum(len(cycles[k][0]) for k in FAM_SCRIPTS)
     assert len(files) == want, f"① youkai_familiar/ 下有 {len(files)} 张 PNG，预期 {want}"
     vis_all, sizes = [], set()
@@ -462,6 +510,93 @@ opcode 92 (th08:0x41b2bb → create_enemy_familiar_2 th08:0x41f110):
 """
 
 
+def gen_ring(tmp: Path):
+    """切环的贴图 + 生成环脚本（etama.anm script48 → TH18 脚本 RING_SCRIPT_NO）。
+
+    → (png 路径, 画布尺寸, 可见像素数, (正文, 期望正文, 原文, 脚本号, 源脚本号))
+    """
+    spec, png = read_anm(TH08_DAT / RING_SRC_ANM, tmp, RING_SRC_ENTRY)
+    rects, sheet = parse_entry(spec, RING_SRC_ENTRY)
+    if RING_SPRITE not in rects:
+        sys.exit(f"{RING_SRC_ANM} 的 {RING_SRC_ENTRY} 里没有 sprite{RING_SPRITE}")
+    x, y, w, h = rects[RING_SPRITE]
+    original = extract_script(spec, RING_SRC_SCRIPT)
+    body_sprites = script_sprites(spec, RING_SRC_SCRIPT)
+    if body_sprites != [RING_SPRITE]:
+        sys.exit(f"{RING_SRC_ANM} script{RING_SRC_SCRIPT} 引用的 sprite 是 {body_sprites}，"
+                 f"预期只有 [{RING_SPRITE}]（环换了 sprite 号就说明源变了）")
+    if "blendAdditiveSet(1);" not in original:
+        sys.exit(f"{RING_SRC_ANM} script{RING_SRC_SCRIPT} 里没有 `blendAdditiveSet(1);`（源变了？）")
+
+    # 贴图：62×62 → 64×64（2 的幂）居中补边（居中 = 原生的 VM 中心锚点，见文件头）
+    im = Image.open(png).convert("RGBA")
+    cell = im.crop((x, y, x + w, y + h))
+    cw, ch = canvas_size(w, h)
+    canvas = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
+    canvas.paste(cell, ((cw - w) // 2, (ch - h) // 2))
+    OUT_ART.mkdir(parents=True, exist_ok=True)
+    out_png = OUT_ART / f"{RING_NAME}.png"
+    canvas.save(out_png)
+    vis = sum(1 for a in canvas.getchannel("A").get_flattened_data() if a > 32)
+
+    # 脚本：只做两处结构改动（脚本号 + 注释头）与两处替换（sprite 名、blendAdditiveSet→blendMode）
+    head = (f"    // 由 assets/ability/make_youkai_familiar_art.py 从 TH08 v1.00d `{RING_SRC_ANM}` "
+            f"script{RING_SRC_SCRIPT} 生成，别手改。\n"
+            f"    // これは使い魔の**魔法陣**（环）：TH08 建使魔时 AllocEffectSlot(0x20, …) 起的那支特效，\n"
+            f"    //   模板表 0x4c6d30[0x20] = etama.anm script{RING_SRC_SCRIPT}\n"
+            f"    //   （`th08:0x41b003` op90-92 内联 / `th08:0x41e589` opcode 174 `anmFamiliar`）。\n"
+            f"    // 人/妖 = `AnmVm::SetInterrupt(环, IsYoukai() ? 2 : 1)`（`th08:0x407120` / `0x40bc40`）：\n"
+            f"    //   1 = 紫 (192,128,255) α255 scale 0.5（人侧）；2 = 蓝 (96,96,255) α200 scale 0.8（妖侧）；\n"
+            f"    //   3 = 淡出并 delete()（环的销毁路径）。\n"
+            f"    // 贴图 = entry1 `{RING_SRC_ENTRY}` 的 sprite{RING_SPRITE} {w}×{h}（空心环；自转 −3°/帧）。\n"
+            f"    // ⚠ 唯一一处指令翻译：TH08 的 `blendAdditiveSet(1)` 在 v8 anmm 里没有 ⇒ `blendMode(1)`\n"
+            f"    //   （一手：两个 raw handler 写同一个字段 vm+0x1f8 的 bit4-5：`th08:0x45f2a5` / `:0x45f2d3`）。")
+    body = original.replace(f"script script{RING_SRC_SCRIPT} {{",
+                            f"script script{RING_SCRIPT_NO} {{\n{head}", 1)
+    body = body.replace(f"sprite(sprite{RING_SPRITE})", f"sprite(@{RING_NAME})")
+    body = body.replace("blendAdditiveSet(1);", "blendMode(1);")
+    want = original.replace(f"script script{RING_SRC_SCRIPT} {{",
+                            f"script script{RING_SCRIPT_NO} {{\n{head}", 1)
+    want = want.replace(f"sprite(sprite{RING_SPRITE})", f"sprite(@{RING_NAME})")
+    # 只看**非注释行**（注释头里会写到 `blendAdditiveSet` 这个名字，那是说明不是指令）
+    code = "\n".join(l for l in body.splitlines() if not l.strip().startswith("//"))
+    if "blendAdditiveSet" in code or _SCRIPT_SPRITE_RE.search(code):
+        sys.exit("环脚本的**指令**里还有没替换的东西（blendAdditiveSet / sprite 引用）")
+    OUT_SCRIPTS.mkdir(parents=True, exist_ok=True)
+    fname = f"{RING_SCRIPT_NO}_youkai_familiar_ring.anm.txt"
+    if not _FILE_RE.match(fname):
+        sys.exit(f"文件名不合 build_ability.py 的约定：{fname}")
+    (OUT_SCRIPTS / fname).write_text(body + "\n", encoding="utf-8")
+    print(f"[ring] {out_png.name}  ← {RING_SRC_ANM} sprite{RING_SPRITE} {rects[RING_SPRITE]}  "
+          f"→ {cw}×{ch}（可见像素 {vis}）")
+    print(f"[ring] {fname}  ← {RING_SRC_ANM} script{RING_SRC_SCRIPT}（interruptLabel 1/2/3 逐条照抄，"
+          f"只把 blendAdditiveSet(1) 翻成 blendMode(1)）")
+    return out_png, (cw, ch), vis, cell.tobytes(), (body, want, original, RING_SCRIPT_NO, RING_SRC_SCRIPT)
+
+
+def check_ring(ring, rects):
+    """⑥ 环的自检：2 的幂、与源单元**逐像素一致**、**中心透明**（空心环）、可见像素够多。"""
+    path, size, vis, cell_bytes, _sc = ring
+    im = Image.open(path).convert("RGBA")
+    assert im.size == size, f"⑥ {path.name} 是 {im.size}，标称 {size}"
+    assert (size[0] & (size[0] - 1)) == 0 and (size[1] & (size[1] - 1)) == 0, \
+        f"⑥ {path.name} 尺寸 {size} 不是 2 的幂"
+    x, y, w, h = rects[RING_SPRITE]
+    bx, by = (size[0] - w) // 2, (size[1] - h) // 2
+    assert im.crop((bx, by, bx + w, by + h)).tobytes() == cell_bytes, \
+        f"⑥ {path.name} 与 {RING_SRC_ANM} sprite{RING_SPRITE} {rects[RING_SPRITE]} 不逐像素一致"
+    cx, cy = size[0] // 2, size[1] // 2
+    a = im.getchannel("A")
+    center = max(a.getpixel((cx + dx, cy + dy)) for dx in (-2, 0, 2) for dy in (-2, 0, 2))
+    corners = max(a.getpixel((0, 0)), a.getpixel((size[0] - 1, 0)),
+                  a.getpixel((0, size[1] - 1)), a.getpixel((size[0] - 1, size[1] - 1)))
+    assert center == 0, f"⑥ {path.name} 中心不透明（alpha {center}）—— 环应当是空心的"
+    assert corners == 0, f"⑥ {path.name} 四角不透明（alpha {corners}）"
+    assert vis >= 500, f"⑥ {path.name} 只有 {vis} 个可见像素（空心环应当 ≳1000）"
+    print(f"⑥ {path.name} {size[0]}×{size[1]}：与源单元逐像素一致、中心与四角透明（空心环）、"
+          f"可见像素 {vis} ✓（源单元 {w}×{h} 居中补边）")
+
+
 # ── main ─────────────────────────────────────────────────────────────
 
 def main():
@@ -469,6 +604,7 @@ def main():
     _require(ANMMAP_TH08, "TH08 用的 anmmap v2.anmm")
     _require(ANMMAP_TH18, "TH18 构建用的 anmmap v8.anmm")
     _require(TH08_DAT / SRC_ANM, f"TH08 原版 {SRC_ANM}")
+    _require(TH08_DAT / RING_SRC_ANM, f"TH08 原版 {RING_SRC_ANM}（魔法阵环的源）")
 
     with tempfile.TemporaryDirectory(prefix="fam-src-") as td:
         tmp = Path(td)
@@ -511,6 +647,18 @@ def main():
         check_scripts(scripts, maps, rows)
         print_script_diffs(scripts)
         check_compile(scripts)
+
+        # ★★★ 2026-09-22（P4）：魔法阵环（与本体同一支生成器，产物一起进 ORDER/scripts）
+        print("")
+        ring = gen_ring(tmp)
+        ring_spec = read_anm(TH08_DAT / RING_SRC_ANM, tmp, RING_SRC_ENTRY)
+        check_ring(ring, parse_entry(ring_spec[0], RING_SRC_ENTRY)[0])
+        check_compile({**scripts, f"ring{RING_SCRIPT_NO}": ring[4]})
+        ring_body, ring_want, ring_orig, _ri, _rs = ring[4]
+        print("\n=== 环脚本与 TH08 原文的**全部**差异（应当只有：脚本号 + 注释头 + sprite 名 + blend 那一行）")
+        for line in difflib.unified_diff(ring_orig.splitlines(), ring_body.splitlines(),
+                                         "TH08-original", "generated", lineterm="", n=0):
+            print(line)
 
         print("\n# —— ❓ 没做的那两套（57/58）——")
         for n in NOT_PORTED:
