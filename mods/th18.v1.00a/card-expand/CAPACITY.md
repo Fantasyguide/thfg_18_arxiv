@@ -203,6 +203,9 @@ cards: 35 registered from cards.js; shop pool 700/8192 slots, guaranteed offers 
   `CE_ANM_ABILITY_SCRIPT_FLAN_CHARGE_RING` = 277 / `…_FLAN_CLEAR_BURST` = 278）；
   生成器 `assets/ability/make_flan_art.py`，
   一手全链与「为什么不直接写 `sprite(85)`」见该文件头与 `engine/card/th18/13-mallet-clear-and-th17-charge.md` §1.4/§3.2。
+  - ★ **2026-10-01（P7）在 277 上加了「蓄满 ⇒ 换色闪烁」的 `interruptLabel(2)`**（TH12 `bullet.anm`
+    script204 的 4 色 × 每色 2 帧无限循环 + 卡侧蓄满那一帧发中断 2）：**只加脚本正文、不加 entry/sprite、
+    不加脚本号、不加音频** ⇒ 本台账的每一个用量数字**都没变**（`capcheck` 全绿，见 `AUDIT.md` §BE-FI）。
 - **★ 2026-09-16k 新增 `ATLAS_MOF_BOMB`（`ability.anm` 的 entry 54）**：110/111 的**灵击视觉**
   （`NEXT.md` §2N-补2）里那颗**火星** = **TH10 `bullet.anm` entry2 的 `sprite330` 的 1:1 切图**
   （`(0,224,32,32)`，一颗纯白四芒星；一手 = TH10 `bullet.anm` script398/399 正文第一行

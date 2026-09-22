@@ -1944,6 +1944,15 @@ static void signal_step_mod_fill(signal_card_t *s, signal_step_mod_t *mod)
 #define SIGNAL_SE_FLAN_LOOP         0x4du
 #define SIGNAL_SE_FLAN_FULL         CE_VOICE_CHARGEUP
 #define SIGNAL_SE_FLAN_LOOP_EVERY   30
+
+/* ★★ 2026-10-01（P7 = `SINGLE-CARD-TEST.md` §th11 #8「咲夜蓄满光圈应该闪烁」）：
+ *   蓄满那一帧给范围环（脚本 277）发的**中断号** —— `2` 是**一手的语义位**（三作一致）：
+ *     · TH17 蓄力满那一帧对蓄力光环发 2（`th17:0x44aa56`，`AnmManager::interrupt_tree` `th17:0x476510`）；
+ *     · TH12 吸满那一帧对三条环各发 2（`th12:0x44ad94`）⇒ 环的 `interruptLabel(2)` = 换色闪烁；
+ *     · TH18 原生 `ability.anm` script28（卡 42 小槌）的 `interruptLabel(2)` 也是「满/完成」那一下。
+ *   ⇒ 别改成别的号；脚本 277 里 `interruptLabel(1)` 是**收尾**（淡出），两者不可混。
+ *   完整推导 + 「为什么不抄 TH17 的放大」见 `assets/ability/scripts/277_flan_charge_ring.anm.txt` 的 §蓄满闪烁。*/
+#define SIGNAL_FLAN_RING_INT_FLASH  2
 #define SIGNAL_OPTION_OFFSET_ALLOC  0   /* `ce_allocate_option` 的 off 参数：原生装备卡都用 0 */
 #define SIGNAL_OPTION_RETRY        30   /* 认领失败时的补申请间隔（帧）*/
 /* 子机贴图脚本（**按机体**选；见下面 `signal_option_script_for()` 的说明）。
@@ -2360,6 +2369,33 @@ static void signal_support_flandre(signal_card_t *s)
                     float k = (float)signal_flandre_ring_ratio_permille(s->flandre.charge) * 0.001f;
                     if (pp0) ce_anm_set_pos(s->flan_ring_vm, pp0[0], pp0[1], pp0[2]);
                     (void)ce_anm_set_scale(s->flan_ring_vm, ring_r * k, ring_r * k);
+
+                    /* ★★★ 2026-10-01（工单 P7 = `SINGLE-CARD-TEST.md` §th11 #8「咲夜蓄满光圈应该闪烁」）：
+                     *   **蓄满那一帧**给光环发 **中断 2** ⇒ 脚本 277 的 `interruptLabel(2)` 进
+                     *   「每 2 帧换一色（黄→红→绿→青）、`jmp(…, 0)` 无限循环」，满着就一直闪、直到松手。
+                     *
+                     *   ## 一手（逐条；完整推导在脚本 277 文件头的 §蓄满闪烁）
+                     *   · **触发（TH17）**：`th17:0x44aa38`–`0x44aa56`（蓄力满那一支，判据
+                     *     `player+0x19084 == 0x3c`）末句就是 `AnmManager::interrupt_tree(player+0x19094, 2)`
+                     *     ⇒ 一手语义 = **蓄满 ⇒ 给蓄力光环 VM 发中断 2**。
+                     *   · **效果（TH12）**：`bullet.anm` script204/205/206 的 `interruptLabel(2)` =
+                     *     4 色 × 每色 2 帧的无限换色循环（驱动点 `th12:0x44ad94`；本仓 112 的
+                     *     `ufo_gauge_flash()` 已是同一条）。
+                     *   ⇒ 本卡取「TH17 的触发 + TH12 的闪烁配方」；**不抄** TH17 那支光环中断 2 的
+                     *     `scale 1.2 → 1.5`（本环半径是契约 = 清屏半径，放大会破坏
+                     *     「环 = 真被消掉的那一圈」，`engine/card/th18/14-clear-range-barrier.md` §4.3）
+                     *     ⇒ ❓ 自定，登记 `TUNING.md` §2.6g。
+                     *
+                     *   ⚠ 判据与上面那一记 `se_chargeup` **同帧同式**（都用 `charged_before`）：
+                     *     `charge` 被 tick 钳在 300 且此后不再增长 ⇒ 这条只有一帧为真。
+                     *     多发一次也无害（脚本那段是无限循环，重入只把相位打回第一色）。*/
+                    if (charged_before < SIGNAL_FLANDRE_CHARGE_FRAMES &&
+                        s->flandre.charge >= SIGNAL_FLANDRE_CHARGE_FRAMES) {
+                        (void)ce_anm_interrupt(s->flan_ring_vm, SIGNAL_FLAN_RING_INT_FLASH);
+                        ce_log("signal: 二小姐·蓄满 ⇒ 范围环进入闪烁（VM %u，中断 %d，脚本 277 的 "
+                               "interruptLabel(2)：每 2 帧换色…一手 th17:0x44aa56 触发 / th12 闪色配方）",
+                               (unsigned)s->flan_ring_vm, SIGNAL_FLAN_RING_INT_FLASH);
+                    }
                 }
             } else if (s->flan_ring_vm) {
                 /* 蓄力掉了（中弹打断 / 没满就松手）⇒ 收光环（脚本 277 的中断 1 = 20 帧淡出后自删）。*/

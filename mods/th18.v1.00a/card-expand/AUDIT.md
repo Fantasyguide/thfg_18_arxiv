@@ -18764,3 +18764,124 @@ commit `7647511` 才放出）⇒ #3（音效没屏蔽）/ #4 / #6（灵界结束
   ⇒ **本次的 `player-lock watch` 诊断行在 `7579a73a` 里看不到**，要等下一批 `make release` 才可见。
   #4 的实跑判据里，「可以自由移动 + `no-hit gate … skipped` 每 ~60 帧一行」这两条**在本批就能验**，
   只有第三条（`player-lock watch: 0`）要等下一批。
+
+## §BE-FI（2026-10-01）：P7 工单（111）—— **蓄满光圈闪烁**（`interrupt 2` = 满语义位）+ P1 的四个音效现象**逐条收口**
+
+> **谁做的**：P7（111 蓄力表现 + 一批缺音效）子 agent。**没部署**（不跑 `make release` / `sync_modkit_dll.sh`、
+> 不写 `/mnt/d/...`、不碰 modkit）。
+> **动到的文件**：`native/cards/signal.c`（111 的二小姐那一支：加 `SIGNAL_FLAN_RING_INT_FLASH` + 蓄满那一帧发中断 2；
+> 其余一字未改）、`assets/ability/scripts/277_flan_charge_ring.anm.txt`（它的 `interruptLabel(2)` 由「淡出别名」
+> 改成 TH12 的换色循环 + 注释；顺带订正注释里的一个笔误「`drawPoly`(604) 才是描边」→ `drawPolyBorder`(605)）、
+> `SINGLE-CARD-TEST.md`（§th11 #7/#8 + 新 §th11-P7、§th07 #2/#3 + 新 §th07-P1）、
+> `TUNING.md`（新 §2.6g）、`AUDIT.md`（本节）。
+> **没碰**：`mof.c` / `faith*` / `mof_green_core.*` / `assets/ecl/green_extra.ecl.txt`（另一会话的 110/111 绿点与 P 值）、
+> `trance*`（th13 #4）、`bomb10.*`（110/111 共用灵击）、`sites.py` / `sdk.*` / `engine.h` / `Makefile` / `patch/**`、
+> `assets/voice/**`（**本轮一枚 wav 都没加**）、`entries/ORDER.txt`（**没有新 entry/sprite**）。
+> **站点账不变**（25 → 25）：本轮**不需要新站点**；`capcheck` 全绿（见 §5）。
+
+### 1. 现象与结论（四条，逐条）
+
+| # | 现象（owner 原话） | 结论 | 状态 |
+| --- | --- | --- | --- |
+| th11 #8 | 咲夜蓄满光圈应该闪烁 | **真缺 → 本轮实现**：一手是「**蓄满那一帧给光环发中断 2**」（TH17 `th17:0x44aa56`）+「中断 2 = 每 2 帧换色循环」（TH12 `bullet.anm` script204/205/206） | **已改·待实跑（未发布）** |
+| th11 #7 | 咲夜应当有蓄力音效 | **已在 2026-09-20 修**（根因 = 三个 `ce_play_sound` 位于 `if (!signal_flandre_tick(...)) return;` 之后 = 死代码）。本轮**只补一手否定结论**：TH11 **没有**蓄力音 | 已改·待实跑 |
+| th07 #2 | 缺少各类音效、森罗结界指示 | **已在 2026-09-20（音效）/ 2026-09-22（HUD 指示）修**。本轮**独立复核**五枚 SE 的表读法与调用点 | 已改·待实跑 |
+| th07 #3 | 退出森罗结界音效错误 | **已在 2026-09-20 修**（三条退出路各自对齐一手）。本轮**独立复核**：`se_bonus`/`se_bonus2`/`se_tan00` 与 TH18 **md5 逐字节相同** | 已改·待实跑 |
+
+### 2. 一手证据（逐条，全部可按指令边界复跑）
+
+**① th11 #8 的「满 ⇒ 中断 2」是跨三作的同一约定**（三处独立）：
+
+| 作 | 一手 | 内容 |
+| --- | --- | --- |
+| TH17 | `th17:0x44aa38`–`0x44aa56`（蓄力满支，判据 `player+0x19084 == 0x3c`）| 末句 = `AnmManager::interrupt_tree(player+0x19094, 2)`（`th17:0x476510`）|
+| TH12 | `th12:0x44ad94` `anm_interrupt_by_id(vm3c, 2)`（吸满那一刻）| 三条环各进 `interruptLabel(2)` |
+| TH18 | 原生 `ability.anm` script28（卡 42 小槌）| `interruptLabel(2)` = `color(0,255,255)` → `+3:` → `color(255,255,255)`（「满/完成」那一下）|
+
+**② 闪烁节奏 = TH12 `bullet.anm` script204/205/206 的 `interruptLabel(2)`**（三条**逐字相同**）：
+`color(255,255,0)` → `+2:` `(255,0,0)` → `+2:` `(0,255,0)` → `+2:` `(0,255,255)` → `+2:` `jmp(offset144, 0)`
+⇒ **每 2 帧换一色、8 帧一周期、无限**（本仓 112 的 `ufo_gauge_flash()` 已是同一条）。
+
+**③ TH11 侧的两条否定结论**（本轮的「先找原代码」结论）：
+
+- **TH11 没有蓄力，也没有「蓄满光圈」**：`th11.dat` 的可操作角色只有 `pl00.anm`/`pl01.anm`（+`pl00a-c`/`pl01a-c.sht`）
+  —— **没有咲夜**；TH11 的 anm 是 v7，`front/pl00/pl01/bullet/enemy` 五份 dump **全库 0 处**
+  `drawPoly`/`drawRing`/`texCircle` ⇒ 它**画不出**这种环。TH11 的「满」表示 = HUD 换档图标
+  （`th11:0x41b593`–`0x41b673`：显示值 100/110/120 → `front.anm` script 7/8/9/10），**不是闪烁**。
+- **TH11 没有蓄力音**：名表 `th11:0x4a36b0`（46 项）无 `se_charge*`；`se_ch00`(id 31) **零播放站**、
+  `se_ch01`(id 32) 只有 2 站且都在**菜单**（`PauseMenu::sub_42c620` `0x42c6fa` / `MainMenu` `0x43a046`）
+  ⇒ `se_ch*` 是**菜单音**，不是蓄力音。全系列 20 个 exe 里 `se_charge*` **只有 TH09** 有。
+
+**④ TH07 五枚 SE（樱点/森罗结界模块）**：表 = `th07:0x49ea88`（stride 8 / 38 行，`+0x00` 名表下标、
+`+0x04` i16 音量）+ 名表 `th07:0x49ebb8`（30 项），唯一播放入口 `th07:0x44c930`（`ecx` = SoundManager `0x4ba0d8`）。
+
+| 时机 | 一手（我逐条重读） | TH07 id → wav | 我们的落点 |
+| --- | --- | --- | --- |
+| 结界展开（第一声）| `0x441b8a push 0x20` → `0x441b91 call` | `0x20` → `se_border.wav`（−3.00；**TH07 独有**）| `CE_VOICE_PCB_BORDER`（扩表 `0x5c`，构建期现取）|
+| 结界展开（第二声）| `0x441b98 push 0x24` → `0x441b9f call` | `0x24` → `se_bonus2.wav` | TH18 `0x30`（md5 `ee39e1df…` 相同）|
+| 自然到期 | `0x4416f6 push 0x21` → `0x4416fd call` | `0x21` → `se_bonus.wav` | TH18 `0x2f`（md5 `44b82b1d…` 相同）|
+| 灵击/中弹打断 | `0x441e3c push 0x07` → `0x441e43 call` | `0x07` → `se_tan00.wav`（−15 dB）| TH18 `0x1b`（同 md5 `f5409b28…`，−11 dB）|
+| 同上第二声 | `0x441e4a push 0x21` → `0x441e51 call` | `0x21` → `se_bonus.wav` | TH18 `0x2f` |
+
+**否定结论（过指令边界）**：TH07 全 exe `call 0x44c930` 共 **123** 处；`0x441000`–`0x442000` 内**只有上面 5 处**
+⇒ 这个模块**没有第 6 个播音点**（不是我们漏了一枚）。
+
+### 3. 改了什么（文件 → 行为）
+
+| 文件 | 改了什么 | 行为影响 |
+| --- | --- | --- |
+| `assets/ability/scripts/277_flan_charge_ring.anm.txt` | `interruptLabel(2)` 由「与中断 1 同义的淡出别名」→ **TH12 script204 的换色循环**（4 色 × 每色 2 帧 + `jmp(…,0)`）；文件头新增 §蓄满闪烁（一手 + ❓自定）；订正一处笔误 | 松手/打断的收尾**仍走中断 1**（卡侧本来就没发过 2）⇒ 只有「蓄满之后」的观感变了：光环**持续换色闪烁** |
+| `native/cards/signal.c` | 新增 `SIGNAL_FLAN_RING_INT_FLASH`(= 2) 宏 + 在 `signal_support_flandre()` 的范围环那一支里，`charged_before < 300 && charge >= 300` 那一帧 `ce_anm_interrupt(flan_ring_vm, 2)` + 一行日志 | 一帧一次；半径/位置/透明度**都不受影响**（脚本闪烁段只写 `color`/`color2`，卡侧每帧的 `set_scale` 继续生效）|
+| `SINGLE-CARD-TEST.md` | §th11 #7/#8 状态与线索 + 新 §th11-P7；§th07 #2/#3 + 新 §th07-P1 | 文档 |
+| `TUNING.md` | 新 §2.6g（111 蓄力的音/光圈 ❓自定三项 + 两条记载订正）；顺手补上 §4.1 #3 指向 §2.6g 的**悬空引用** | 文档 |
+| `AUDIT.md` | 本节 | 文档 |
+
+**共享件声明**（`CLAUDE.md` 的口径：`assets/ability/scripts/**` 的 layer 也算共享）：本轮改的是 **277 一条脚本**，
+它的调用方只有 111（`signal.c`）；`interruptLabel(2)` 在此之前是**休眠段**（全仓 `ce_anm_interrupt(…, 2)`
+只出现在 112 的 `ufo_gauge_flash()`，打的是 228/229/230）⇒ **对 58–80 与其它系统卡零影响**。
+`native/anm_ids.h` 与 `native/build/ability.anm` 重新生成后**没有新增 entry/sprite/脚本**（`capcheck` 全绿）。
+
+### 4. 影响面
+
+- **只有 111 的二小姐蓄力**：`charge == 300` 之后光环换色闪烁，直到松手（中断 1 淡出）。
+- **半径契约不动**：环 = 清屏半径 `R_clear`（`engine/card/th18/14-clear-range-barrier.md` §4.3）
+  —— 这也是**不抄** TH17「放大」的原因（登记在 `TUNING.md` §2.6g #3）。
+- **`on_delete` / `on_run_reset` 路径不动**：`signal_clear()` 仍按 `ce_anm_interrupt(1)` + 清句柄收
+  （脚本的闪烁段是无限循环，**收尾只能靠卡侧发中断 1** —— 这一点在脚本注释里写死了）。
+- **不新增音频、不新增图集、不新增站点** ⇒ `CAPACITY.md` 的用量数字**一个都没变**
+  （`ability.anm` 脚本 309 / entry 65 / sprite 479，与上一版相同）。
+
+### 5. 怎么验证的
+
+1. `make check` ⇒ **rc=0**（`native/`；含 `anm-verify` / `sht-verify` / `snd-check` / `dllx87` / `dllverify` /
+   `sites.py check` / `gen_drift` / `sitecheck --all` / `capcheck` / `engine_abi_check` / `anm_hud_alpha_check`）。
+2. `make dllx87` ⇒ **`x87 in our objects: 0`**；DLL 里能 grep 到新日志串（`蓄满 ⇒ 范围环进入闪烁` = 1）。
+3. `make anm-verify` ⇒ OK（含「117 的 script 全部存在 / sprite 引用在界内 / scriptNew 目标存在」那一段）。
+4. `make snd-check` ⇒ 通过（`CHARGE00/CHARGEUP/PCB_BORDER` 等行照旧；⚠ rms 提示是既有的口径提示，不是失败）。
+5. `python3 tools/capcheck.py` ⇒ **全绿 ✅**（台账与仓库现状一致）。
+6. `python3 tooling/check-docs.py` ⇒ **全部通过（371 个文件）**。
+7. **编译产物回读**：`thanm -l 18 native/build/ability.anm` 的 script277 尾部 =
+   `interruptLabel(2); offset228: color(255,255,0); +2: …; jmp(offset228, 0);` ⇒ 标签解析到字节偏移 228、
+   循环成立（不是「写了没编进去」）。
+8. **一手可复跑**：TH07 = `objdump -d -M intel --start-address=0x441b80 --stop-address=0x441ba8 local/th07.v1.00b/th07.exe`
+   （另两处同理）+ PE 节映射读 `0x49ea88`/`0x49ebb8`；TH17 = 同法读 `0x44aa38`–`0x44aa56`；
+   TH11/TH07 wav md5 = `thdat -x` 两份 `.dat` 后 `md5sum`。
+
+### 6. 未决 / 要 owner 拍
+
+1. **th07 #3 若实跑仍觉得不对，请指明是「哪一条退出路」**（自然到期 / 灵击 / 中弹）—— 三条现在都各自对齐一手了，
+   在没有指向之前不会再改。
+2. **闪烁的「观感」口径**：现在照 TH12 的**换色**循环（黄→红→绿→青）。若 owner 想要的是**明暗闪（alpha 呼吸）**
+   而不是换色，那要另找一个一手（本仓 116 的 `season` / 117 的 `158_hyper_bar_fill` 都是「换色」系）——
+   一句话就能换，但**换的就不再是 TH12 那条一手配方**了。
+3. **TH11 #7 的音仍是跨作借用**（TH09 的 charge 族，🟡 不是复刻）—— TH11/TH18 都没有可用的蓄力音
+   （结论与理由见 §2③）。
+4. **未发布**：本节内容**不在任何已发布的 DLL 里**（本轮不部署）⇒ 实跑验收要等统筹会话 `make release`。
+
+### 7. 提交与发布状态（协作须知）
+
+- 提交只走**显式路径**（本轮 5 个文件：`native/cards/signal.c`、`assets/ability/scripts/277_…anm.txt`、
+  `SINGLE-CARD-TEST.md`、`TUNING.md`、`AUDIT.md`），**未 `git add -A`**。
+- ⚠ 树里有**并发会话在飞的改动**（`native/cards/mof.c` 等）⇒ 本轮**不碰**它们；提交信息里只写本节内容。
+- **未部署**：DLL 只在本地 `native/th18_card_expand.dll`（构建产物，`native/build/` 与 DLL 都被 gitignore 排除），
+  modkit 四路径**一个字节都没动**。
