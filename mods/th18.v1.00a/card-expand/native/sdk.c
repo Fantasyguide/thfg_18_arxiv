@@ -3231,10 +3231,14 @@ int __cdecl BP_ce_enemy_death(x86_reg_t *regs, void *bp_info)
     ev.kind      = edeath_kind(ev.retaddr);
     ev.flags     = ((flags & 0x31u) == 0 ? CE_EDEATH_F_REAL : 0u);   /* ★ 置位 = 被排除在真敌人之外 */
     ev.drop_main = *(const int32_t *)(e + CE_ENEMY_DROP);
+    /* ★ 2026-09-22 夜：`by_player_bullet`（108 的 P-D 用）—— 取「主路被打死」这一档，见 `public.h` 的注。*/
+    ev.by_player_bullet = (ev.kind == CE_EDEATH_KILLED) ? 1 : 0;
     ev.x         = *(const float *)(e + CE_ENEMY_POS_X);
     ev.y         = *(const float *)(e + CE_ENEMY_POS_X + 4);
     ev.enemy     = e;
     if (ev.drop_main != 0) ev.flags |= CE_EDEATH_F_HAS_DROP;
+    /* ★ 2026-09-22 夜：`by_player_bullet`（108 的 P-D 用）—— 取「主路被打死」这一档，见 `public.h` 的注。*/
+    ev.by_player_bullet = (ev.kind == CE_EDEATH_KILLED) ? 1 : 0;
 
     unsigned guard = 0;
     for (const uint8_t *node = *(const uint8_t *const *)(mgr + CE_MGR_CARD_LIST_FIRST);

@@ -1159,3 +1159,9 @@ int yk_popup_digits(int32_t value, uint8_t *out, int max)
     for (i = 0; i < n; ++i) out[i] = tmp[count - 1 - i];  /* 高位在前 */
     return n;
 }
+
+/* ★★★ 2026-09-22 夜（P-D 缩水版）：击破魔使扣槽 = −gauge/12（一手 `th08:0x42b213`–`0x42b223`）。*/
+int yk_gauge_fam_kill_delta(int32_t gauge)
+{
+    return (int)(-gauge / YK_FAM_KILL_GAUGE_DIV);     /* C99 `/` 向零截断 = 一手 `idiv` */
+}

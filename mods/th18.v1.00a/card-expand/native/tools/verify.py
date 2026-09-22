@@ -68,6 +68,10 @@ PRIMS = {
             # ★ 2026-09-22 夜（P-E 单人反向封顶）：反侧真的被夹在 ±2000（= 20%）时的一行
             (r"youkai: solo reverse cap engaged - the opposite side stops at -?\d+",
              "单人反向封顶生效（反侧到不了逢魔；一手 th08:0x44daa2 / :0x44dacd）", False),
+            # ★ 2026-09-22 夜（P-D）：击破自家使魔 ⇒ −gauge/12 + 掉 1 颗 + 随后 50 帧收刻符不给槽
+            #   （一手 th08:0x42b216 除数 0xc / th08:0x42b29b / th08:0x42b240）
+            (r"youkai: familiar enemy_id \d+ killed",
+             "击破自家使魔（P-D 三条都在这一支；实跑看 50 帧内 gauge 不动）", False),
             # ★ 2026-09-22 夜（P-C）：推进口径的两行（斜坡 / 放符卡期间 ±26）+ 死亡清零
             (r"youkai: gauge advance = continuous-fire time ramp",
              "推进 = 时间斜坡（一手 `th08:0x44be67`；不是恒定 ±26）", False),

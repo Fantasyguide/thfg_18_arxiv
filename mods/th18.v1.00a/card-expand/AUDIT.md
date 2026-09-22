@@ -20247,3 +20247,43 @@ imm `0x41a80000` = `f2i` 转换上界 ⇒ **实际峰值 20**）；清零 `th08:
 
 **发布面**：**本批没改** `pl0X.sht` / `pl0X.anm` / `ability.anm` / wav / 站点（只有 DLL 里的卡代码 + `engine.h` 两个宏 + 文档）。
 
+## §BE 详录 #66（2026-09-22 夜）：108 **P-D 缩水版** + **共享件** `ce_enemy_death_t.by_player_bullet` 追加
+
+### §A 共享件改动（按协作规矩登记：文件 → 改了什么 → 为什么 → 谁改的 → 怎么验证的）
+
+| 项 | 内容 |
+| --- | --- |
+| 文件 | `native/sdk/public.h`（事件结构**尾部**追加 1 个 `int32_t by_player_bullet`）/ `native/sdk.c`（`BP_ce_enemy_death` 的填充点加一行）|
+| 改了什么 | 结构尾部加字段；填充 = `ev.by_player_bullet = (ev.kind == CE_EDEATH_KILLED) ? 1 : 0;` |
+| 为什么 | 108 的 P-D 要复刻「**人间逢魔 + 自机弹击杀 ⇒ 再掉 1 颗刻符**」（一手 `th08:0x45187f`），而事件里没有击杀者信息。owner 2026-09-22 授权追加 |
+| 谁改的 | 108（永夜抄）这一批 |
+| ABI 影响 | **字段追加在尾部** ⇒ 既有消费者的取值/偏移一字未变；`h->on_enemy_death(card, &ev)` 是 `const` 指针传参、不是按值拷贝 ⇒ 无尺寸耦合 |
+| 既有消费者回归 | 全仓 `.on_enemy_death =` 共 **8 处**（113/110/107/109/111/112/108）；**都没有读新字段**（逐文件 grep 过）⇒ 回归 = `make check` rc=0（含 `contract_check` / `sitecheck --all` / 全部单测）|
+| 怎么验证的 | `make check` **rc=0**；`python3 tooling/check-docs.py` 全过；结构体尾部追加不改变既有 offset（新字段只在 108 里被读）|
+| ❓ 登记 | 「自机弹击杀」的真信号（TH08 是「死亡发生在 `compute_damage_to_enemy` 里」）TH18 没有暴露面 ⇒ 本字段取最近一档 `CE_EDEATH_KILLED`，**是近似**（`TUNING.md` §2.0zk #39）|
+
+### §B 108 本批改了什么
+
+| 文件 | 改了什么 |
+| --- | --- |
+| `native/cards/youkai_core.{h,c}` | `YK_FAM_KILL_GAUGE_DIV 12` / `YK_ORB_SILENCE_FRAMES 50` / `yk_gauge_fam_kill_delta(gauge)`（`−gauge/12`，向零截断）|
+| `native/cards/youkai.c` | 击破自家使魔那一支：扣槽 + 掉 1 颗 + 置 50 帧静默；逢魔那 1 颗改用 `yk_fengma_kill_orbs(...)`（逐条见下）|
+| `native/tests/test_youkai_core.c` | +9 条断言（除数 12、向零截断 11⇒0 / 10000⇒−833、人侧反向、0）⇒ **4585 checks / 0 failed** |
+| `TUNING.md` / `native/tools/verify.py` | §2.0zk（复刻表 + `#37/#38/#39` + 一段「红色语义为什么先不动」）；新增一条 expect |
+
+**一手（本批）**：`th08:0x42b20e`/`th08:0x42b213`/`th08:0x42b216 mov ecx,0xc`/`th08:0x42b21b idiv`/`th08:0x42b223`；
+`th08:0x42b29b spawn_item(type 7, state 1)`；`th08:0x42b240 Timer(0x18b89d4).set(0x32)` 与门住点 `th08:0x44138e`–`0x44139c`。
+
+**红色语义（#38）本批没做**，理由写在 `TUNING.md` §2.0zk：我们的「魔使」= 自己的 `NoEnemyDebug` 空壳
+（只在低速存在、由我们的跟随 VM 画）⇒「人间撞 ⇒ MISS」结构上不成立；「妖怪侧不可见」与设计冲突。等 owner 对外观的结论。
+
+**发布面**：**本批没改** `pl0X.sht` / `pl0X.anm` / `ability.anm` / wav / 站点。
+**§B 那两行的逐条（细节留在这里，免得表格超长）**
+
+- `native/cards/youkai.c`：击破自家使魔那一支 ⇒ ① 槽 `yk_gauge_add2(gauge, yk_gauge_fam_kill_delta(gauge), hl, yl)`（= `−gauge/12`）；
+  ② `yk_orb_spawn(..., YK_ORB_STATE_HOMING)`（固定 1 颗、state 1）；③ `s->orb_silence = YK_ORB_SILENCE_FRAMES`（50），
+  `yk_orb_collect` 里 `orb_silence == 0` 才给那笔 ±111，每帧递减。逢魔那 1 颗改成
+  `yk_fengma_kill_orbs(fm, human_fm, ev->by_player_bullet)` ⇒ **人间逢魔 + 自机弹击杀 = 2 颗**。
+- 既有消费者回归名单：`animal.c`(113) / `mof.c`(110) / `pofv.c`(107) / `senro.c`(109) / `trance.c`(111) / `ufo.c`(112) /
+  `youkai.c`(108) —— 逐文件 grep `by_player_bullet` = **0 命中**（新字段只有 108 读）。
+

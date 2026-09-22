@@ -1020,3 +1020,20 @@ int yk_fengma_kill_orbs(int fengma, int is_human_fengma, int by_player_bullet);
 int yk_popup_alpha(int32_t dx, int32_t dy);
 /* 十进制字形（高位在前，返回位数；`value <= 0` ⇒ 1 位 '0'）。`out` 最多写 `max` 位。*/
 int yk_popup_digits(int32_t value, uint8_t *out, int max);
+/* ============ ★★★ 2026-09-22 夜（owner **P-D 缩水版**）：击破魔使的三条 ==========================
+ * owner 口径（`HUMAN-YOUKAI-GAUGE.md` §1.4）：「每击破 1 个魔使减去当前操术的**百分数的 10%**
+ *   （妖梦人型为例外，只减 5%）」；owner 2026-09-22 裁：**按一手**。
+ *
+ * **一手（我们样本）**：唯一写点 `th08:0x42b223`（在 `Enemy::sub_42adb0` 的 `0x42b1e5` 分支里）：
+ *   · 门 `th08:0x42b1e8 call 0x41fd20`（`[enemy+0x2da4] != 0` =「我是魔使」）+ `th08:0x42b1f5`（arg1 = 真击破）；
+ *   · `th08:0x42b20e get_youkai_gauge()` → `th08:0x42b213 neg` / `th08:0x42b216 mov ecx,0xc` / `th08:0x42b21b idiv`
+ *     ⇒ **`delta = −gauge/12`**（除数立即数 **0xc**；**没有 10%/5% 两个分支**，也没有 shottype 判定）；
+ *   · 连带两条：同支 `th08:0x42b29b SpawnItem(type 7, state 1)`（**固定掉 1 颗刻符**）与
+ *     `th08:0x42b240 Timer(0x18b89d4).set(0x32 = 50)` —— 后者把收刻符那笔 ±111 **门住 50 帧**
+ *     （`th08:0x44138e`–`0x44139c`；见 `Item::collect_time_orb`）。
+ *   ⇒ owner 口径与一手不同（10%/5% vs 1/12），**按一手**，登记 `TUNING.md` §2.0zk。*/
+#define YK_FAM_KILL_GAUGE_DIV   12   /* 一手 `th08:0x42b216 mov ecx,0xc`（`idiv` ⇒ 向零截断）*/
+#define YK_ORB_SILENCE_FRAMES   50   /* 一手 `th08:0x42b240 Timer(0x18b89d4).set(0x32)` */
+
+/* 击破一个魔使的人妖槽增量：**−gauge/12**（C 的 `/` 对负数向零取整，与一手 `idiv` 同义）。*/
+int yk_gauge_fam_kill_delta(int32_t gauge);

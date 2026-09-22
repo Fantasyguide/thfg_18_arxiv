@@ -270,6 +270,7 @@ typedef struct {
     uint16_t      gauge_ram;            /* ★ P-C：连续推进帧数（一手 `player+0xe2ae8`）*/
     uint16_t      gauge_idle;           /* ★ P-C：连停火帧数（一手 `player+0xe2ad0`，上限 30）*/
     uint8_t       gauge_shoot_logged;   /* ★ P-C：推进口径只记一行（1 = 斜坡 / 2 = 放符卡）*/
+    uint16_t      orb_silence;          /* ★ P-D：击破魔使后的「收刻符不给槽」帧数（一手 50 帧）*/
     uint8_t       fengma;               /* ★ P-B：本帧在不在逢魔（极人 OR 极妖）*/
     int32_t       fengma_score;         /* ★ P-B：本局逢魔自动加分的累计（诊断）*/
     uint32_t      aura_id;
@@ -1529,7 +1530,9 @@ static int yk_orb_collect(yk_card_t *s, float x, float y)
     /* ★★★ 2026-09-22（P3 第二批）：`AddToYoukaiGauge` 的**第一道闸** —— 射击中（TH08 的
      * `shotActive != 0`）带 `param_2 == 0` 的加数**整条丢掉**（一手 `th08:0x43c0c2`/`:0x43c0cb`，
      * `0x17d6ed4` = `g_Player.shotActive`）⇒ 本卡这里照抄：射击中不收槽（PIV 那笔照记）。*/
-        if (!yk_gauge_gate_blocks(yk_bomb_active()))
+        /* ★ P-D：击破魔使后 **50 帧内收刻符不给槽**（一手 `th08:0x42b240 Timer(0x18b89d4).set(50)`，
+         * 门住 `Item::collect_time_orb` 的 ±111：`th08:0x44138e`–`0x44139c`）。*/
+        if (s->orb_silence == 0 && !yk_gauge_gate_blocks(yk_bomb_active()))
             s->gauge = yk_gauge_add2(s->gauge, yk_gauge_orbs_delta(CE_PLAYER_FOCUSED()), hl, yl);
     }
     ++s->orb_taken;
@@ -1869,8 +1872,17 @@ static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
      * `th08:0x42da54 spawn_item(type 7, state 1)`），人侧（未聚焦）一样掉。
      * ⚠ 原来这段写在下面 `!focused` 之后 ⇒ 人侧逢魔不掉 —— 本批挪到前面（一手修正）。
      * 出生态 state 1 = 生成即满速归航（我们的 `YK_ORB_STATE_HOMING`）。*/
-    if (yk_fengma(s->gauge, YK_GAUGE_HUMAN_EFFECTS, YK_GAUGE_YOUKAI_EFFECTS))
-        yk_orb_spawn(s, ev->x, ev->y, YK_ORB_STATE_HOMING);
+    /* ★★★ 2026-09-22 夜（P-B + P-D）：逢魔击破掉几颗 = 一手 `yk_fengma_kill_orbs()` 的算式
+     *（逢魔 ⇒ 1；**人间逢魔 + 自机弹击杀** ⇒ 2）。`by_player_bullet` 是**新追加**的事件字段
+     *（`ce_enemy_death_t` 尾部，见 `sdk/public.h` 的注与 `AUDIT.md` §BE #66 的共享件登记）。*/
+    {
+        int fm = yk_fengma(s->gauge, YK_GAUGE_HUMAN_EFFECTS, YK_GAUGE_YOUKAI_EFFECTS);
+        int human_fm = (s->gauge <= YK_GAUGE_HUMAN_EFFECTS) ? 1 : 0;
+        int norbs = yk_fengma_kill_orbs(fm, human_fm, ev->by_player_bullet ? 1 : 0);
+        int oi;
+        for (oi = 0; oi < norbs; ++oi)
+            yk_orb_spawn(s, ev->x, ev->y, YK_ORB_STATE_HOMING);
+    }
     if (!focused) return;                               /* 妖逢魔才撒刻符 */
     /* ★★★ 2026-09-22 深夜（owner 口径细化）：**两条一手来源分开实现**（各带自己的出处）。
      *
@@ -2058,6 +2070,7 @@ static int on_ctor(ce_card_t *c)
     s->gauge_ram = 0;
     s->gauge_idle = 0;
     s->gauge_shoot_logged = 0;
+    s->orb_silence = 0;
     s->fengma = 0;
     s->fengma_score = 0;
     s->claimed_set = -1;                /* ★ P7：认领日志的「变化才打」闩 */
@@ -2704,6 +2717,17 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
      * `ufo.c` 的 `ufo_tok_kill` 同一条纪律、同一个 🟡（「从死亡断点直接进 AnmManager」未实跑验证）。*/
     yk_fam_vm_kill_id(ev->id);
     ++s->broken;
+    /* ★★★ 2026-09-22 夜（owner **P-D 缩水版**）：击破魔使的三条一手（逐条见 `youkai_core.h`）：
+     *   ① **扣槽 = −gauge/12**（`th08:0x42b213`–`0x42b223`，除数立即数 `0xc`；**不是 10%，也没有妖梦 5%**
+     *      —— owner 已裁「按一手」）；② **掉 1 颗刻符（state 1 = 生成即满速归航）**（`th08:0x42b29b`）；
+     *   ③ **50 帧内收刻符不给槽**（`th08:0x42b240 Timer(0x18b89d4).set(50)`）。*/
+    {
+        int32_t hl3, yl3;
+        yk_gauge_limits_solo(CE_PLAYER_FOCUSED() ? 1 : 0, &hl3, &yl3);
+        s->gauge = yk_gauge_add2(s->gauge, yk_gauge_fam_kill_delta(s->gauge), hl3, yl3);
+        yk_orb_spawn(s, ev->x, ev->y, YK_ORB_STATE_HOMING);
+        s->orb_silence = YK_ORB_SILENCE_FRAMES;
+    }
     /* ★ #27 支 1：**「+1」弹字**（一手 `Enemy::sub_42adb0 th08:0x42b296 CreateTimePopup(&enemy+0x2d88, 1, 0, 0xFFFFFFFF)`
      * —— 一手是「击破魔使」那一刻；我们卡里没有 op90-92 那种魔使，**我们的使魔 = 同一位置的对应物** ⇒ 挂这里）。*/
     yk_popup_spawn(ev->x, ev->y, 1, 1);
@@ -2920,6 +2944,7 @@ static int on_tick_2(ce_card_t *c)
     if (s->focus_age < 60000) ++s->focus_age;
     yk_aura_tick(s, *(const float *)(CE_PLAYER() + CE_PLAYER_X), *(const float *)(CE_PLAYER() + CE_PLAYER_Y));
     yk_ring_tick();                       /* ★ 切换环的计时（到点自己发 interrupt 3 淡出）*/
+    if (s->orb_silence) --s->orb_silence;   /* ★ P-D：击破魔使后的 50 帧静默倒数（一手 Timer(0x18b89d4)）*/
     yk_popup_tick();                      /* ★ #27：刻符弹字（寿命 / 上浮 / 排版 / 距离 alpha）*/
     /* ★★★ 2026-09-22 夜（P-C ②）：**死亡时人妖槽直接置 0**（一手 `Player::begin_death th08:0x44ac01 push 0` /
      * `th08:0x44ac09 call 0x44e140` = `set_youkai_gauge(0)`）。TH18 侧读 `CE_PLAYER_STATE`：进死亡段那一帧清零。*/

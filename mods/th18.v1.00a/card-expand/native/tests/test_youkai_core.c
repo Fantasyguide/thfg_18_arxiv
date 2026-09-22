@@ -1220,6 +1220,17 @@ int main(void)
             CHECK(yk_gauge_center_delta(-500) == 2);
             CHECK(yk_gauge_center_delta(-2500) == 3);
             CHECK(yk_gauge_center_delta(-9000) == 5);
+            /* ★★★ 2026-09-22 夜（P-D 缩水版）：击破魔使 = −gauge/12（一手 `th08:0x42b216 mov ecx,0xc`）
+             * 与 50 帧静默常量（一手 `th08:0x42b240`）。*/
+            CHECK(YK_FAM_KILL_GAUGE_DIV == 12 && YK_ORB_SILENCE_FRAMES == 50);
+            CHECK(yk_gauge_fam_kill_delta(12000) == -1000);   /* 夹紧后的量程内：−12000/12 */
+            CHECK(yk_gauge_fam_kill_delta(10000) == -833);    /* 一手 `idiv` 向零截断（不是 −834）*/
+            CHECK(yk_gauge_fam_kill_delta(8000) == -666);
+            CHECK(yk_gauge_fam_kill_delta(2000) == -166);
+            CHECK(yk_gauge_fam_kill_delta(12) == -1);
+            CHECK(yk_gauge_fam_kill_delta(11) == 0);          /* 向零截断 ⇒ 11/12 = 0 */
+            CHECK(yk_gauge_fam_kill_delta(-10000) == 833);    /* 人侧反向同式 */
+            CHECK(yk_gauge_fam_kill_delta(0) == 0);
             }
         }
     }
