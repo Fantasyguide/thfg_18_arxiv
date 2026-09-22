@@ -250,6 +250,8 @@ typedef struct {
     /* ★★★ 2026-09-22（#25 击破符卡的螺旋，一手参数见 `youkai_core.h` §3.11b）：
      * `spiral_quota` = 还剩几颗没吐（TH08 的 `spellcard[+0x10]`）；`spiral_t` = 计时器帧数（从 10 起算）；
      * `spell_was` = 上一帧在不在符卡里（**符卡结束的下降沿**是触发器）；`spiral_logged` = 只记一次日志。*/
+    uint8_t       flash_pending;      /* ★★★ 2026-09-22（#22）：本帧是「人→妖」那一帧 ⇒ 第一个建出来的
+                                       *   使魔身上补一支爆闪（一手：爆闪起在使魔位置上）*/
     uint32_t      spiral_quota;
     uint16_t      spiral_t;
     uint8_t       spell_was;
@@ -603,6 +605,24 @@ static void yk_fam_vm_follow(uint32_t fam_id, int variant, const uint8_t *f)
     }
 }
 
+/* ============ ★★★ #22 的另一半：Shift 那一下的**爆闪**（一手 `th08:0x42c420` 两支）=================
+ * 一手：`FUN_0042c420` 里两支各起一支特效（都在**使魔身上** `&enemy+0x2d88`）：
+ *   · **人→妖**：`0x42c44e SpawnEffect(0x1f, …, 颜色 0x80303080)` ⇒ 模板 `0x4c6d30[0x1f]` = `etama.anm`
+ *     **script59**（`alpha(96)→0`、`scale(0.5→5.0)` over 10 帧）—— 我们的脚本 **310**；
+ *   · **妖→人**：`0x42c4ef SpawnEffect(0x1e, …, 0x80803030)` ⇒ **script60**（`alpha(0)→96`、
+ *     `scale(5.0→0.4)`）—— 我们的脚本 **311**。
+ *   两支共用 sprite193（`etama2.png (65,209,30,30)`）⇒ 我们切了一张 `YOUKAI_FAM_FLASH.png`（32×32）。
+ * ⚠ 两支脚本**自己 `delete()`**（`+10:` 那一步）⇒ **卡侧不跟踪句柄**，起完就不管（10 帧后自灭）；
+ *   也因此**不需要**在 `on_delete` 里收尾（最坏情况是删卡后还飘 ≤10 帧的一闪）。
+ * ⚠ 位置 = 使魔的位置（一手就是 `enemy+0x2d88`）；我们只在**那一帧真的有使魔**时起
+ *   （人→妖 = 重建出来的那些使魔；妖→人 = 撤走前最后记下的坐标），免得在没使魔时凭空闪一下。*/
+static void yk_flash_spawn(int script, float x, float y)
+{
+    uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(), script, YK_FAM_ANM_LAYER);
+    if (id) ce_anm_set_pos(id, x, y, 0.0f);
+    /* 起不出来只影响观感（10 帧的一闪）⇒ 不记日志（每关都有若干次，会刷屏）。*/
+}
+
 static void yk_run_action(yk_card_t *s, const yk_action_t *act)   /* s 可为 NULL（卡状态没了也要把敌人收干净）*/
 {
     if (act->kind == YK_ACT_CREATE) {
@@ -623,6 +643,11 @@ static void yk_run_action(yk_card_t *s, const yk_action_t *act)   /* s 可为 NU
         /* ★ 壳建好的**那一刻**起跟随 VM（脚本按发射口槽选：槽 i → s53+i 那一套四色之一）。
          * ⚠ 建 VM 只能在 tick / 帧末（要分配），绝不在死亡栈上 —— 这条路径是 `on_tick_2`，合法。*/
         yk_fam_vm_spawn(fid, yk_fam_variant(act->slot), act->x, act->y);
+        /* ★ #22：人→妖那一帧的爆闪（310）—— 起在**第一只**建出来的使魔身上（一手 script59）。*/
+        if (s && s->flash_pending) {
+            s->flash_pending = 0;
+            yk_flash_spawn(CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_FLASH59, act->x, act->y);
+        }
         if (s) ++s->spawns;
     } else if (act->kind == YK_ACT_WITHDRAW) {
         uint8_t *f = yk_familiar_by_id(act->fam_id);
@@ -1760,6 +1785,7 @@ static int on_ctor(ce_card_t *c)
     s->rearms_seen = 0;                 /* ★ route A：整表 reset 也清条目，但计数只增不清 ⇒ 快照回 0 */
     s->releases_seen = 0;               /* ★ P8-3：同上（route A′ 计数只增不清）*/
     s->claimed_set = -1;                /* ★ P7：认领日志的「变化才打」闩 */
+    s->flash_pending = 0;
     s->spiral_quota = 0;                /* ★ #25：换关不开螺旋（下降沿才开）*/
     s->spiral_t = 0;
     s->spell_was = 1;                   /* 开场当作「已经在符卡外」⇒ 不会误触发一次 */
@@ -2434,8 +2460,20 @@ static int on_tick_2(ce_card_t *c)
         float px = *(const float *)(CE_PLAYER() + CE_PLAYER_X);
         if (focused) {
             if (yk_map_fam_count(&s_map)) ce_play_sound(0x0cu, px);        /* 人→妖：TH08 id 0x28 = se_invalid */
+            s->flash_pending = 1;                 /* ★ #22：使魔重建时在它身上补一支爆闪（310）*/
         } else {
-            if (yk_map_fam_count(&s_map)) ce_play_voice(YOUKAI_FAM_SHIFT, px); /* 妖→人：TH08 id 0x27 = se_ophide */
+            if (yk_map_fam_count(&s_map)) {
+                unsigned fi;
+                ce_play_voice(YOUKAI_FAM_SHIFT, px);   /* 妖→人：TH08 id 0x27 = se_ophide */
+                /* ★ #22：妖→人那一支的爆闪（311）起在**撤走前最后记下的使魔坐标**上
+                 *（一手就是起在使魔身上；使魔这一帧正在被撤）。*/
+                for (fi = 0; fi < YK_FAM_MAX; ++fi)
+                    if (s_map.e[fi].enemy_id && s_map.e[fi].fam_id) {
+                        yk_flash_spawn(CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_FLASH60,
+                                       s_map.e[fi].x, s_map.e[fi].y);
+                        break;                     /* 一手是每只使魔各一支；我们只起一支（画面上一闪）*/
+                    }
+            }
         }
     }
     yk_gauge_tick(s, focused);

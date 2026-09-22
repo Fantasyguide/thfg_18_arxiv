@@ -164,6 +164,23 @@ RING_SPRITE = 197
 RING_SCRIPT_NO = 309          # 接着 308（`build_ability.py` 按**文件名顺序**连续编号 ⇒ 新脚本必须接在最后）
 RING_NAME = "YOUKAI_FAM_RING"
 
+# ── ★★★ 2026-09-22（P4 / owner #22 的另一半）：Shift 那一下的**爆闪** ─────────────────────────
+# 一手（`FUN_0042c420` `th08:0x42c420` 两支各起一支特效）：
+#   · **人→妖**：`0x42c44e SpawnEffect(0x1f, &enemy+0x2d88, 1, 0x80303080)` ⇒ 模板表 `0x4c6d30[0x1f]`
+#     = **`etama.anm` script59**（`alpha(96)→0`、`scale(0.5→5.0)` over 10 帧、`+10: delete()`）；
+#   · **妖→人**：`0x42c4ef SpawnEffect(0x1e, …, 0x80803030)` ⇒ `0x4c6d30[0x1e]` = **script60**
+#     （`alpha(0)→96`、`scale(5.0→0.4)` over 10 帧、`+10: delete()`）。
+#   两支都用同一张 `sprite193 = etama2.png (65,209,30,30)`（30×30）。
+# ⚠ 这两支的正文**已经是 v8 语法**（`blendMode(1)`，不是 TH08 环那支的 `blendAdditiveSet(1)`）⇒ **零翻译**，
+#   逐条照抄即可（`zWriteDisable / blendMode / alpha / alphaTime / scale / scaleTime / delete` v8 全有）。
+# ⚠ 脚本**自己 `delete()`**（10 帧）⇒ 卡侧不必跟踪句柄（只要起的时候摆对位置）。
+FLASH_SRC_SCRIPT_0 = 59
+FLASH_SRC_SCRIPT_1 = 60
+FLASH_SPRITE = 193
+FLASH_SCRIPT_NO_0 = 310        # 人→妖（TH08 特效 0x1f）
+FLASH_SCRIPT_NO_1 = 311        # 妖→人（TH08 特效 0x1e）
+FLASH_NAME = "YOUKAI_FAM_FLASH"
+
 _SPRITE_RE = re.compile(r"sprite(\d+):\s*\{\s*x:\s*(\d+),\s*y:\s*(\d+),\s*w:\s*(\d+),\s*h:\s*(\d+)\s*\}")
 _TOKEN_RE = re.compile(r"@([A-Za-z_][A-Za-z0-9_]*)")
 _FILE_RE = re.compile(r"^(\d+)_([A-Za-z_][A-Za-z0-9_]*)\.anm\.txt$")
@@ -359,6 +376,8 @@ def write_order(rows):
         "#    （`th08:0x41b003` / `:0x41e589`），贴图 = entry1 `data/etama/etama2.png` 的 sprite197",
         "#    `(193,113,62,62)` 空心环（自转 −3°/帧）。人/妖只换 `SetInterrupt(1|2)`。",
         f"{RING_NAME}  ability/youkai_familiar/{RING_NAME}.png  64x64",
+        "# ── 2026-09-22 追加：Shift 的**爆闪**（TH08 etama script59/60 共用一张 sprite193；零翻译）",
+        f"{FLASH_NAME}  ability/youkai_familiar/{FLASH_NAME}.png  32x32",
     ]
     lines = hdr + [f"{n}  {p}  {s}" for n, p, s, _k, _i in rows] + tail
     OUT_ORDER.parent.mkdir(parents=True, exist_ok=True)
@@ -597,6 +616,72 @@ def check_ring(ring, rects):
           f"可见像素 {vis} ✓（源单元 {w}×{h} 居中补边）")
 
 
+def gen_flash(tmp: Path):
+    """切爆闪的贴图（两支脚本共用）+ 逐条照抄 script59/60（零翻译）。
+
+    → (png, size, vis, cell_bytes, {文件名: (正文, 期望正文, 原文, 脚本号, 源脚本号)})
+    """
+    spec, png = read_anm(TH08_DAT / RING_SRC_ANM, tmp, RING_SRC_ENTRY)
+    rects, _sheet = parse_entry(spec, RING_SRC_ENTRY)
+    if FLASH_SPRITE not in rects:
+        sys.exit(f"{RING_SRC_ANM} 的 {RING_SRC_ENTRY} 里没有 sprite{FLASH_SPRITE}")
+    x, y, w, h = rects[FLASH_SPRITE]
+    im = Image.open(png).convert("RGBA")
+    cell = im.crop((x, y, x + w, y + h))
+    cw, ch = canvas_size(w, h)
+    canvas = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
+    canvas.paste(cell, ((cw - w) // 2, (ch - h) // 2))
+    OUT_ART.mkdir(parents=True, exist_ok=True)
+    out_png = OUT_ART / f"{FLASH_NAME}.png"
+    canvas.save(out_png)
+    vis = sum(1 for a in canvas.getchannel("A").get_flattened_data() if a > 32)
+
+    out = {}
+    for src_num, dst_no, tag in ((FLASH_SRC_SCRIPT_0, FLASH_SCRIPT_NO_0, "familiar->youkai (TH08 effect 0x1f)"),
+                                 (FLASH_SRC_SCRIPT_1, FLASH_SCRIPT_NO_1, "youkai->familiar (TH08 effect 0x1e)")):
+        original = extract_script(spec, src_num)
+        body_sprites = script_sprites(spec, src_num)
+        if body_sprites != [FLASH_SPRITE]:
+            sys.exit(f"{RING_SRC_ANM} script{src_num} 引用 {body_sprites}，预期只有 [{FLASH_SPRITE}]")
+        if "blendAdditiveSet" in original:
+            sys.exit(f"{RING_SRC_ANM} script{src_num} 用了 blendAdditiveSet（那要翻译；本脚本按零翻译处理）")
+        head = (f"    // 由 assets/ability/make_youkai_familiar_art.py 从 TH08 v1.00d `{RING_SRC_ANM}` "
+                f"script{src_num} 逐条照抄（**零翻译**），别手改。\n"
+                f"    // Shift 那一下的**爆闪**（{tag}）：`FUN_0042c420`（`th08:0x42c420`）里\n"
+                f"    //   `SpawnEffect(0x{'1f' if src_num == FLASH_SRC_SCRIPT_0 else '1e'}, &enemy+0x2d88, 1, …)`\n"
+                f"    //   ⇒ 模板表 `0x4c6d30[同号]` = etama.anm script{src_num}；贴图 sprite{FLASH_SPRITE} = "
+                f"{RING_SRC_ENTRY} ({x},{y},{w},{h})。\n"
+                f"    // 脚本自己 `delete()`（+10 帧）⇒ 卡侧不用跟踪句柄。")
+        body = original.replace(f"script script{src_num} {{", f"script script{dst_no} {{\n{head}", 1)
+        body = body.replace(f"sprite(sprite{FLASH_SPRITE})", f"sprite(@{FLASH_NAME})")
+        want = original.replace(f"script script{src_num} {{", f"script script{dst_no} {{\n{head}", 1)
+        want = want.replace(f"sprite(sprite{FLASH_SPRITE})", f"sprite(@{FLASH_NAME})")
+        fname = f"{dst_no}_youkai_familiar_flash{src_num}.anm.txt"
+        if not _FILE_RE.match(fname):
+            sys.exit(f"文件名不合 build_ability.py 的约定：{fname}")
+        (OUT_SCRIPTS / fname).write_text(body + "\n", encoding="utf-8")
+        out[fname] = (body, want, original, dst_no, src_num)
+        print(f"[flash] {fname}  ← {RING_SRC_ANM} script{src_num}（逐条照抄，零翻译；{tag}）")
+    print(f"[flash] {out_png.name}  ← sprite{FLASH_SPRITE} {rects[FLASH_SPRITE]} → {cw}×{ch}"
+          f"（可见像素 {vis}；两支脚本共用）")
+    return out_png, (cw, ch), vis, cell.tobytes(), out
+
+
+def check_flash(flash, rects):
+    """⑦ 爆闪贴图：2 的幂 + 与源单元逐像素一致 + 非空。"""
+    path, size, vis, cell_bytes, _sc = flash
+    im = Image.open(path).convert("RGBA")
+    assert im.size == size, f"⑦ {path.name} 是 {im.size}，标称 {size}"
+    assert (size[0] & (size[0] - 1)) == 0 and (size[1] & (size[1] - 1)) == 0, \
+        f"⑦ {path.name} 尺寸 {size} 不是 2 的幂"
+    x, y, w, h = rects[FLASH_SPRITE]
+    bx, by = (size[0] - w) // 2, (size[1] - h) // 2
+    assert im.crop((bx, by, bx + w, by + h)).tobytes() == cell_bytes, \
+        f"⑦ {path.name} 与 {RING_SRC_ANM} sprite{FLASH_SPRITE} 不逐像素一致"
+    assert vis >= 200, f"⑦ {path.name} 只有 {vis} 个可见像素"
+    print(f"⑦ {path.name} {size[0]}×{size[1]}：与源单元逐像素一致、可见像素 {vis} ✓")
+
+
 # ── main ─────────────────────────────────────────────────────────────
 
 def main():
@@ -653,6 +738,11 @@ def main():
         ring = gen_ring(tmp)
         ring_spec = read_anm(TH08_DAT / RING_SRC_ANM, tmp, RING_SRC_ENTRY)
         check_ring(ring, parse_entry(ring_spec[0], RING_SRC_ENTRY)[0])
+        flash = gen_flash(tmp)
+        check_flash(flash, parse_entry(read_anm(TH08_DAT / RING_SRC_ANM, tmp, RING_SRC_ENTRY)[0],
+                                      RING_SRC_ENTRY)[0])
+        check_compile({**scripts, f"flash{FLASH_SCRIPT_NO_0}": flash[4][f"{FLASH_SCRIPT_NO_0}_youkai_familiar_flash{FLASH_SRC_SCRIPT_0}.anm.txt"],
+                       f"flash{FLASH_SCRIPT_NO_1}": flash[4][f"{FLASH_SCRIPT_NO_1}_youkai_familiar_flash{FLASH_SRC_SCRIPT_1}.anm.txt"]})
         check_compile({**scripts, f"ring{RING_SCRIPT_NO}": ring[4]})
         ring_body, ring_want, ring_orig, _ri, _rs = ring[4]
         print("\n=== 环脚本与 TH08 原文的**全部**差异（应当只有：脚本号 + 注释头 + sprite 名 + blend 那一行）")

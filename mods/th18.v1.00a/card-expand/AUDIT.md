@@ -19837,6 +19837,18 @@ opt_slot 都写成 0 ⇒ 每一行都从**使魔**发射。
   帧数 = `vy` 从 −2.0−rand(0.2) 以 +0.05/帧 过零 ⇒ ≈40–44 帧，需按 source 逐条核）；
   ③ **Shift 的爆闪**（`etama` script59/60）与 **#23 本体印象色光环** / **#24 深蓝点身份**（研究项）。
 
+**④-3 Shift 爆闪（2026-09-22，#22 的另一半）—— 已落地**：
+
+| 文件 | 改了什么 | 为什么 | 怎么验证 |
+| --- | --- | --- | --- |
+| `assets/ability/make_youkai_familiar_art.py` | 同一支流水线加 `gen_flash/check_flash`：切 `etama2.png` sprite193 `(65,209,30,30)` → `YOUKAI_FAM_FLASH.png`（32×32、与源单元逐像素一致）+ 照抄 `etama.anm` script59/60 → 我们的 **310/311**（**零翻译**：原文就是 `blendMode(1)`）| 一手 `th08:0x42c44e / 0x42c4ef` 的 `SpawnEffect(0x1f / 0x1e, &enemy+0x2d88, 1, …)` → 模板表 `0x4c6d30` 的 `[0x1f]/[0x1e]` = script59/60 | `python3 make_youkai_familiar_art.py`（自检：2 的幂 + 逐像素一致 + 非空 + `thanm -c 18` 编得过）|
+| `assets/ability/entries/ORDER.txt` + `ORDER.youkai_familiar.txt` | **末尾追加**单图行 `YOUKAI_FAM_FLASH`（既有行一行没动）| 同上 | `make anm`（sprite **480**、脚本 **310/311**）+ `make anm-verify` |
+| `native/cards/youkai.c` | `yk_flash_spawn()`（瞬时 VM，**不跟踪句柄**）+ 人→妖那一帧在**第一只重建的使魔**身上起 310 + 妖→人那一帧在**撤走前最后记下的使魔坐标**起 311 | 一手：爆闪起在**使魔位置**（`enemy+0x2d88`），且两支脚本自己 `+10: delete()` | `make check` |
+| `CAPACITY.md` | 单图行按具名登记（不吃图集；瞬时 VM 不计常驻容量）| 统筹口径 | `capcheck` 全绿 |
+
+⚠ **发布面**：本批**改了 `ability.anm`**（新单图 + 两条脚本）⇒ **DLL + `ability.anm` 必须同批发布**
+（`pl0X.sht` 未动）。
+
 ### 4. 要 owner 拍 / 实跑确认的点
 
 1. **#16 / #16b 是口径问题，不是 bug**：一手说 TH08 **没有**「击中即掉」与「全屏吸收专用速度」。

@@ -1,0 +1,16 @@
+script script311 {
+    // 由 assets/ability/make_youkai_familiar_art.py 从 TH08 v1.00d `etama.anm` script60 逐条照抄（**零翻译**），别手改。
+    // Shift 那一下的**爆闪**（youkai->familiar (TH08 effect 0x1e)）：`FUN_0042c420`（`th08:0x42c420`）里
+    //   `SpawnEffect(0x1e, &enemy+0x2d88, 1, …)`
+    //   ⇒ 模板表 `0x4c6d30[同号]` = etama.anm script60；贴图 sprite193 = data/etama/etama2.png (65,209,30,30)。
+    // 脚本自己 `delete()`（+10 帧）⇒ 卡侧不用跟踪句柄。
+    sprite(@YOUKAI_FAM_FLASH);
+    zWriteDisable(1);
+    blendMode(1);
+    alpha(0);
+    alphaTime(10, 0, 96);
+    scale(5.0f, 5.0f);
+    scaleTime(10, 0, 0.4f, 0.4f);
++10: // 10
+    delete();
+}

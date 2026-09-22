@@ -121,6 +121,16 @@
 - 一手：TH08 建使魔时 `AllocEffectSlot(0x20, …)` → 模板表 `0x4c6d30[0x20]` = `etama.anm` script48
   （`th08:0x41b003` / `:0x41e589`）；人/妖 = `SetInterrupt(环, IsYoukai() ? 2 : 1)`。
 
+#### 108 使魔的 Shift **爆闪**（2026-09-22，#22 的另一半）—— 具名登记
+
+- 资产：`ability.anm` **单图行** `YOUKAI_FAM_FLASH`（`ability/youkai_familiar/YOUKAI_FAM_FLASH.png` 32×32）
+  ⇒ sprite **480**；脚本 **310**（人→妖，TH08 `etama.anm` script59）/ **311**（妖→人，script60）。
+  单图行、不是图集 entry ⇒ 不吃任何图集画布，`abcard.anm` entry 数也不动。
+- 运行时：**瞬时** VM（脚本自己 `+10: delete()` ⇒ ≤10 帧），一次形态切换至多 2 支
+  ⇒ 不计入常驻容量，也不需要卡侧跟踪（`on_delete` 不必收尾）。
+- 一手：`th08:0x42c44e` / `0x42c4ef` 的 `SpawnEffect(0x1f / 0x1e, &enemy+0x2d88, 1, …)` → 模板表
+  `0x4c6d30[0x1f]` = script59、`[0x1e]` = script60；两支共用 `etama2.png (65,209,30,30)`。
+
 #### 音效表扩容：新 SE 槽的具名登记（2026-09-22）
 
 - **`0x5d` `YOUKAI_FAM_SHIFT`**（`assets/voice/ORDER.txt` 第 9 个新行；`patch/th18/voice.js` 里 id 显式写 93）

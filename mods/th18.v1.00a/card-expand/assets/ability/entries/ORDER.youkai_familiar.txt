@@ -45,3 +45,5 @@ YOUKAI_FAM_S56_7  ability/youkai_familiar/YOUKAI_FAM_S56_7.png  32x32
 #    （`th08:0x41b003` / `:0x41e589`），贴图 = entry1 `data/etama/etama2.png` 的 sprite197
 #    `(193,113,62,62)` 空心环（自转 −3°/帧）。人/妖只换 `SetInterrupt(1|2)`。
 YOUKAI_FAM_RING  ability/youkai_familiar/YOUKAI_FAM_RING.png  64x64
+# ── 2026-09-22 追加：Shift 的**爆闪**（TH08 etama script59/60 共用一张 sprite193；零翻译）
+YOUKAI_FAM_FLASH  ability/youkai_familiar/YOUKAI_FAM_FLASH.png  32x32

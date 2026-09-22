@@ -762,3 +762,11 @@ SENRO_HUD_LABEL        ability/senro_hud/LABEL.png       @0,0,96x16
 #   脚本 = 309（`309_youkai_familiar_ring.anm.txt`，`blendAdditiveSet(1)` → `blendMode(1)` 一处翻译）。
 # ════════════════════════════════════════════════════════════════════════════════════════════
 YOUKAI_FAM_RING  ability/youkai_familiar/YOUKAI_FAM_RING.png  64x64
+
+# ── 2026-09-22 追加（P4 / owner #22 的另一半）：Shift 那一下的**爆闪**（单图；既有行一行没动）
+#   一手：`FUN_0042c420`（`th08:0x42c420`）里 `SpawnEffect(0x1f / 0x1e, &enemy+0x2d88, 1, 0x80303080 / 0x80803030)`
+#         ⇒ 模板表 `0x4c6d30[0x1f]` = `etama.anm` script59（人→妖）/ `[0x1e]` = script60（妖→人）；
+#         两支共用 sprite193 = entry1 `data/etama/etama2.png` `(65,209,30,30)`（30×30）。
+#   脚本 = 310（script59 逐条照抄）/ 311（script60 逐条照抄）—— 两支**零翻译**（原文就是 `blendMode(1)`），
+#   且**自己 `delete()`**（+10 帧）⇒ 卡侧起完不用跟踪句柄。
+YOUKAI_FAM_FLASH  ability/youkai_familiar/YOUKAI_FAM_FLASH.png  32x32
