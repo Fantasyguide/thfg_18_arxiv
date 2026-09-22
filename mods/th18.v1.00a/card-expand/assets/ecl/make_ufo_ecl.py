@@ -32,7 +32,7 @@ ECLMAP = REPO / "local" / "vendor" / "eclmap" / "eclmap" / "th18.eclm"
 ENC = dict(encoding="utf-8", errors="surrogateescape")
 
 # 我们的子程序名（与 TH12 真名一致；`_TTL` 后缀那 4 个是自计时等价改写）
-OURS = ["UFO_EtBreak", "UFO_Red", "UFO_Blue", "UFO_Green", "UFO_Rainbow",
+OURS = ["UFO_EtBreak", "UFO_EtBreak2", "UFO_Red", "UFO_Blue", "UFO_Green", "UFO_Rainbow",
         "UFO_Red_TTL", "UFO_Blue_TTL", "UFO_Green_TTL", "UFO_Rainbow_TTL"]
 # ★ 2026-09-18：同一份 `default.ecl` 里再加 **110 的绿妖精载体**（用户「每波多刷一只绿的」）。
 #   放在同一个合并步里是**必须的**：两个脚本各写一次 `build/ecl/default.ecl` 会互相覆盖，

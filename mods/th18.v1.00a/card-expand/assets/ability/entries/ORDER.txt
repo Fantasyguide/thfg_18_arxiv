@@ -680,3 +680,60 @@ NITORI_BUBBLE          ability/signal/NITORI_BUBBLE.png           @0,0,254x254
 #   脚本 = `scripts/295_mof_conv_burst.anm.txt`（逐条搬 script393：淡绿 `color(128,255,128)` +
 #   `scale 0.5→1.5 / 20 帧` + `alphaTime(10,4,0)` + `delete()`）。
 CONV_BURST             ability/mof/CONV_BURST.png                     32x32
+
+# ============================================================================================
+# 2026-09-18 追加：卡 112 的 掉落物实体（压缩包 / 整颗 Bomb）
+#   生成器 = assets/ability/make_ufo_drop_art.py / make_ufo_hud_art.py（矩形从 anm 文本读 + 断死）
+#   append 在最末尾 ⇒ 一个既有号都没动。
+# ============================================================================================
+# 卡 112 的掉落物实体贴图（TH12 bullet.anm entry5 = bullet/etama8.png 的 1:1 切图）
+#   生成器 = assets/ability/make_ufo_drop_art.py（矩形从 anm 文本读 + 断死）
+ATLAS ATLAS_UFO_DROP 64x32
+BOUNTY_BAG         ability/ufo_drop/BOUNTY_BAG.png   @0,0,32x32
+DROP_ICON_P        ability/ufo_drop/DROP_ICON_P.png   @32,0,16x16
+DROP_ICON_POINT    ability/ufo_drop/DROP_ICON_POINT.png   @48,0,16x16
+DROP_BOMB          ability/ufo_drop/DROP_BOMB.png   @32,16,16x16
+
+# ============================================================================================
+# 2026-09-18 追加：卡 112 的 飞碟槽 HUD（令牌槽 / 收集闪光 / 记录面板）
+#   生成器 = assets/ability/make_ufo_drop_art.py / make_ufo_hud_art.py（矩形从 anm 文本读 + 断死）
+#   append 在最末尾 ⇒ 一个既有号都没动。
+# ============================================================================================
+# 卡 112 的飞碟槽 HUD 贴图（TH12 front.anm 的 1:1 切图）
+#   生成器 = assets/ability/make_ufo_hud_art.py（矩形从 anm 文本读 + 断死）
+# 卡 112 的飞碟槽 HUD 贴图（TH12 front.anm 的 1:1 切图）
+#   生成器 = assets/ability/make_ufo_hud_art.py（矩形从 anm 文本读 + 断死）
+#   ★ 槽的四态 = SLOT_EMPTY/RED/BLUE/GREEN（连续 4 个），亮版那一组紧接其后（+4）——
+#     一手 `th12:0x421690` 每帧写的 sprite 就是 `COLLECTED_UFOS[i] + 59 + (闪烁 ? 4 : 0)`。
+ATLAS ATLAS_UFO_HUD 256x192
+SLOT_EMPTY     ability/ufo_hud/SLOT_EMPTY.png   @0,0,32x16
+SLOT_RED       ability/ufo_hud/SLOT_RED.png   @32,0,32x16
+SLOT_BLUE      ability/ufo_hud/SLOT_BLUE.png   @64,0,32x16
+SLOT_GREEN     ability/ufo_hud/SLOT_GREEN.png   @96,0,32x16
+SLOT_EMPTY_B   ability/ufo_hud/SLOT_EMPTY_B.png   @0,18,32x16
+SLOT_RED_B     ability/ufo_hud/SLOT_RED_B.png   @32,18,32x16
+SLOT_BLUE_B    ability/ufo_hud/SLOT_BLUE_B.png   @64,18,32x16
+SLOT_GREEN_B   ability/ufo_hud/SLOT_GREEN_B.png   @96,18,32x16
+PANEL_FRAME    ability/ufo_hud/PANEL_FRAME.png   @0,40,128x128
+PANEL_INNER    ability/ufo_hud/PANEL_INNER.png   @128,40,128x128
+
+# ============================================================================================
+# 2026-09-19 追加：卡 107（妖妖梦）的 **HUD 数字字形 + 森罗结界指示**
+#   生成器 = assets/ability/make_senro_hud_art.py（矩形从 `thanm -l 7` 的 ascii.anm 文本读 + 断死）。
+#   一手：TH07 `ascii.anm` entry0 sprite132..141 = HUD 的 8×12 数字字形（`th07:0x404a41`/`0x404d7d`
+#         的 `sprite = 数字 + 0x84`）；sprite143（48×16）= **结界中才画**的那块（VM4，`th07:0x404de1`
+#         判 `ds:0x4bfee5 == 1`；脚本 script5 = `scaleTime(30,4,1.2,1.2)` ↔ `(30,1,0.8,0.8)` 无限脉动）。
+#   同批新脚本 = **296**（数字 VM）/ **297**（脉动板）。append 在最末尾 ⇒ 一个既有号都没动。
+# ============================================================================================
+ATLAS ATLAS_SENRO_HUD 128x16
+SENRO_HUD_D0           ability/senro_hud/D0.png          @0,0,8x12
+SENRO_HUD_D1           ability/senro_hud/D1.png          @8,0,8x12
+SENRO_HUD_D2           ability/senro_hud/D2.png          @16,0,8x12
+SENRO_HUD_D3           ability/senro_hud/D3.png          @24,0,8x12
+SENRO_HUD_D4           ability/senro_hud/D4.png          @32,0,8x12
+SENRO_HUD_D5           ability/senro_hud/D5.png          @40,0,8x12
+SENRO_HUD_D6           ability/senro_hud/D6.png          @48,0,8x12
+SENRO_HUD_D7           ability/senro_hud/D7.png          @56,0,8x12
+SENRO_HUD_D8           ability/senro_hud/D8.png          @64,0,8x12
+SENRO_HUD_D9           ability/senro_hud/D9.png          @72,0,8x12
+SENRO_HUD_BORDER       ability/senro_hud/BORDER.png      @80,0,48x16
