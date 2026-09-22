@@ -16,6 +16,7 @@
 #include "sht_ids.h"      /* append_shooterset.py 生成：pl0X.sht 追加的 shooterset 索引（§12）*/
 #include "sdk/public.h"
 #include "sdk_core.h"
+#include "cards/hud_dim.h"   /* hud_card_present()：原生「当前卡」UI 在不在（货架让位用）*/
 
 #define ce_card_id(c)     (*(uint32_t *)((uint8_t *)(c) + CE_CARD_ID))
 #define ce_card_entry(c)  (*(uint8_t **)((uint8_t *)(c) + CE_CARD_TABLE_ENTRY))
@@ -1030,8 +1031,12 @@ static inline int ce_hud_slot_claim_card(uint32_t card_id, const ce_hud_block_t 
 {
     /* ★ 关卡纪元（HUD-LAYOUT §4.4）：关卡号变了 ⇒ 先把上一关的占位清掉再认领。
      * 只在「认领前」比较 ⇒ 同一关内（局中删卡）一笔都不重排；而删卡留下的占位会在下一关收敛。
-     * 卡侧一律用这个入口，别直接 `ce_hud_slot_claim()`（那样不会重排）。*/
+     * 卡侧一律用这个入口，别直接 `ce_hud_slot_claim()`（那样不会重排）。
+     * ★ 2026-09-22：顺带把「原生那块『当前卡』UI 在不在」推进货架（`sdk_core.h` 的 `ce_hud_card_set()`）
+     *   —— 排布只在认领时算一次，所以在这里设一次就够。判据 = `ABILITY_MANAGER->+0x38`（一手，
+     *   见 `engine/card/th18/15-selected-card-hud.md` §2/§3）。*/
     ce_hud_stage_begin(CE_CURRENT_STAGE());
+    ce_hud_card_set(hud_card_present(*(void *const *)(CE_ABILITY_MGR() + CE_MGR_SELECTED_ACTIVE)));
     return ce_hud_slot_claim(card_id, blk, out);
 }
 
@@ -1041,6 +1046,7 @@ static inline int ce_hud_slot_claim_pinned_card(uint32_t card_id, const ce_hud_b
                                                 float anchor_x, float anchor_y, ce_hud_slot_t *out)
 {
     ce_hud_stage_begin(CE_CURRENT_STAGE());
+    ce_hud_card_set(hud_card_present(*(void *const *)(CE_ABILITY_MGR() + CE_MGR_SELECTED_ACTIVE)));
     return ce_hud_slot_claim_pinned(card_id, blk, anchor_x, anchor_y, out);
 }
 

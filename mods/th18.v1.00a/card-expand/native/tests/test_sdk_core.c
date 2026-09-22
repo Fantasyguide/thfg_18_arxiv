@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "../sdk_core.h"
+#include "../cards/hud_dim.h"   /* ★ 2026-09-22：货架让位那条不变式要读 HUD_CARD_* 一手常量 */
 
 static int s_fail, s_pass;
 #define CHECK(cond) do { if (cond) ++s_pass; else { ++s_fail; printf("  FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); } } while (0)
@@ -556,6 +557,26 @@ static void test_hud_slots(void)
     ce_hud_slot_t a, b, again;
     ce_hud_block_t blk   = { 108.0f, 36.0f, CE_HUD_SIDE_LEFT };
     ce_hud_block_t blk2  = { 108.0f, 36.0f, CE_HUD_SIDE_LEFT };
+
+    /* ★★ 2026-09-22：**货架给原生那块「当前卡」UI 让位**（`ce_hud_card_set()`，见 `sdk_core.h`）。
+     *   一手：那块 UI = `abcard.anm` script0 的树，块 = 表面 x 68..116 / y 864..924；有它时货架起点
+     *   取 `max(锚点, 116 + 8)`，没有时就是锚点（那块整体不存在 ⇒ 不占地方）。
+     *   ⚠ 现值代入**恒等**（124 < 257）—— 这两条断言钉的是**不变式**：谁把锚点左移过 124，
+     *     或把块加宽到压过锚点，`present=1` 那一支就会与 `present=0` 分叉。*/
+    {
+        ce_hud_slot_t p1, p0;
+        ce_hud_block_t small = { 40.0f, 20.0f, CE_HUD_SIDE_LEFT };
+        ce_hud_slots_reset();
+        ce_hud_card_set(0);
+        CHECK(ce_hud_slot_claim(120, &small, &p0));
+        ce_hud_slots_reset();
+        ce_hud_card_set(1);
+        CHECK(ce_hud_slot_claim(120, &small, &p1));
+        CHECK(p0.x == CE_HUD_ANCHOR_X && p1.x == CE_HUD_ANCHOR_X);   /* 今天两者相同（锚点已让开）*/
+        CHECK(p1.x >= HUD_CARD_POS_X + HUD_CARD_W);                 /* ★ 且绝不压到那块 UI */
+        ce_hud_card_set(0);
+        ce_hud_slots_reset();
+    }
 
     /* 首块：贴左锚点、坐底边，640 空间给同一点 */
     ce_hud_slots_reset();

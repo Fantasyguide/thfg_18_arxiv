@@ -4,21 +4,24 @@
  *   ① **表面 px → 自机坐标** 的定式（`自机 = 表面/2 − (320,16)`）——各卡的门限都从块矩形推出来，
  *      换算错了每张卡的门都会偏（`224` 是过时记法，2026-09-15h 订正，见 `hud_dim.h` 文件头）；
  *   ② **统一的那套动态**：**进 = 块矩形外扩 `HUD_DIM_MARGIN`(28)**、**出 = 离开「矩形 + 44」**
- *      （= 28 + `HUD_DIM_BAND` 16 ⇒ **16 px 滞回带**）、终点 alpha **128**（50% 透明）/ 起始 255 /
- *      **过渡 20 帧线性**、`pp == NULL` 的行为、逐帧连续性；
+ *      （= 28 + `HUD_DIM_BAND` 16 ⇒ **16 px 滞回带**）、终点 alpha **64**（25% 不透明）/ 起始 255 /
+ *      **过渡 8 帧线性**、`pp == NULL` 的行为、逐帧连续性；
  *   ③ **六块真块的「可触发区」不变式**（§⑩）：每块的「进」区与自机钳位 `x∈[−184,184] / y∈[32,432]`
  *      相交之后必须留下**真的点得亮**的一片（高 ≥ 32 px、宽 ≥ 24 px）—— 这就是 2026-09-15h
  *      把「进 = 矩形之内」改成「矩形 + 边距」要保的那个性质（改回"之内"会让 116/117/107 只剩 4–10 px 高）。
- * **性质 = ❓ 用户口径（UI 统一），不是复刻** —— 见 `hud_dim.h` 文件头。
+ * **性质**：**终点/帧数** = 复刻（TH18 原生那块「当前卡」UI 的一手值）；**区域 / 边距** = ❓ 用户口径 —— 见 `hud_dim.h` 文件头。
  *
- * ⚠ **取值口径（2026-09-21 换基准）**：终点 **128** / 过渡 **20 帧线性**（`HUD_DIM_ALPHA_DIM` /
- *   `HUD_DIM_FRAMES`；owner 拍定「20 帧 / 50% 是 UI ⇒ 统一成一个值，以 115 那套为基准」；
- *   20 帧的一手 = TH15 `front.anm` script241 的 `alphaTime(20, 0, 0)`）。旧口径 = 32 / 每帧 ±56（4 帧）。
- * ⚠ 断言里的 `249/243/…/128` 是 `HUD_DIM_ALPHA_DIM` 与 `HUD_DIM_FRAMES` 的**算术结果**
- *   （`from + Δ·t/20`，Δ = −127），不是一手值；改这两个宏会红 —— 那正是要的。
+ * ⚠ **取值口径（2026-09-22 换成 TH18 原生那块「当前卡」UI 的一手值）**：
+ *   终点 **64** / 过渡 **8 帧线性**（`HUD_DIM_ALPHA_DIM` / `HUD_DIM_FRAMES`）。
+ *   一手 = 原生 `abcard.anm` script1–4 的 `interruptLabel(5): alphaTime(8, 0, 64)` /
+ *   `interruptLabel(4): alphaTime(8, 0, 255)`，闸在 `th18:0x408640`（见
+ *   `engine/card/th18/15-selected-card-hud.md` §4.2）；owner 原话「th18左下角原生应该有动态吧，照着那个填」。
+ *   旧口径（已作废）：32 / 每帧 ±56（4 帧）→ **128（50%）/ 20 帧线性**（2026-09-21，一手是 TH15 script241）。
+ * ⚠ 断言里的 `232/208/…/64` 是 `HUD_DIM_ALPHA_DIM` 与 `HUD_DIM_FRAMES` 的**算术结果**
+ *   （`from + Δ·t/8`，Δ = −191），不是一手值；改这两个宏会红 —— 那正是要的。
  *   同理 `28 / 16 / 44` 由 `HUD_DIM_MARGIN` / `HUD_DIM_BAND` 推。
  * ⚠ 与**脚本侧**同帧数同终点：`assets/ability/scripts/123–127,175–178` 的 label 4/5 写成
- *   `alphaTime(20, 0, 255)` / `alphaTime(20, 0, 128)`，机器判据 = `native/tools/anm_hud_alpha_check.py`
+ *   `alphaTime(8, 0, 255)` / `alphaTime(8, 0, 64)`，机器判据 = `native/tools/anm_hud_alpha_check.py`
  *   （`make check` 里跑）—— 那边改了三处要一起改（`hud_dim.h` 文件头的「旧值留档」列了清单）。*/
 #include <stdio.h>
 #include <string.h>
@@ -47,7 +50,7 @@ static void ramp_table(int32_t from, int32_t target, int32_t *out)
         out[t] = from + (target - from) * (t + 1) / HUD_DIM_FRAMES;
 }
 
-/* 斜坡的**第一帧**：从满亮起步、朝 128 走一帧（= `HUD_DIM_ALPHA_FULL − 127/20` = 249）。
+/* 斜坡的**第一帧**：从满亮起步、朝 64 走一帧（= `HUD_DIM_ALPHA_FULL − 191/8` = **232**）。
  * 用它而不是字面量，是为了让「换了终点/帧数宏」时只有一处要跟。*/
 #define DIM_FRAME1 (HUD_DIM_ALPHA_FULL + (HUD_DIM_ALPHA_DIM - HUD_DIM_ALPHA_FULL) / HUD_DIM_FRAMES)
 
@@ -57,6 +60,11 @@ static void ramp_table(int32_t from, int32_t target, int32_t *out)
 #define PP_Y_MIN (  32.0f)
 #define PP_Y_MAX ( 432.0f)
 
+/* 货架锚点 x（表面 px）—— 与 `sdk_core.h` 的 `CE_HUD_ANCHOR_X` **同值**。
+ * 本单测不链 sdk_core.c（那会引出引擎侧依赖），所以这里复一份**只读**常量并对齐注释；
+ * 一旦那边改了锚点而这里没跟，§⑪ 的最后一条断言会红（这正是要的：块与锚点不许打架）。*/
+#define CE_HUD_ANCHOR_X_LOCAL 257.0f
+
 int main(void)
 {
     hud_dim_t d;
@@ -64,9 +72,9 @@ int main(void)
     int32_t a1, a2, a3, k;
 
     /* ① 统一取值本身（用户口径）*/
-    CHECK(HUD_DIM_ALPHA_FULL == 255 && HUD_DIM_ALPHA_DIM == 128);   /* ★ 2026-09-21：终点 128 = 50% 透明 */
-    CHECK(HUD_DIM_FRAMES == 20);                                    /* ★ 2026-09-21：20 帧线性（旧 ±56 = 4 帧）*/
-    CHECK(DIM_FRAME1 == 249);                                       /* 斜坡首帧（Δ = −127，取整向零）*/
+    CHECK(HUD_DIM_ALPHA_FULL == 255 && HUD_DIM_ALPHA_DIM == 64);    /* ★ 2026-09-22：终点 64 = 25%（原生 abcard script1–4 的一手值）*/
+    CHECK(HUD_DIM_FRAMES == 8);                                     /* ★ 2026-09-22：8 帧线性（原生一手；旧值 4 帧 / 20 帧）*/
+    CHECK(DIM_FRAME1 == 232);                                       /* 斜坡首帧（Δ = −191，取整向零）*/
     CHECK(NEAR(HUD_DIM_MARGIN, 28.0f));        /* ★ 进的边距（❓ 用户口径 2026-09-15h；一手各作 24–32）*/
     CHECK(NEAR(HUD_DIM_BAND, 16.0f));          /* ★ 滞回带（出的一侧 = 28 + 16 = 44）*/
 
@@ -123,14 +131,14 @@ int main(void)
     CHECK(d.dim == 0 && d.alpha == 255);
     CHECK(tick(&d, &r, -28.0f, 50.0f) == DIM_FRAME1);   /* 恰在「矩形 + 28」的沿上（含边界）⇒ 进，当帧起斜坡 */
     CHECK(d.dim == 1 && d.t == 1);
-    CHECK(tick(&d, &r, 128.0f, 50.0f) == 243);       /* 恰在右沿 + 28 上也算在内（斜坡第 2 帧）*/
+    CHECK(tick(&d, &r, 128.0f, 50.0f) == 208);       /* 恰在右沿 + 28 上也算在内（斜坡第 2 帧）*/
     CHECK(d.dim == 1);
-    CHECK(tick(&d, &r, 50.0f, -28.0f) == 236);       /* 上沿 − 28（第 3 帧）*/
+    CHECK(tick(&d, &r, 50.0f, -28.0f) == 184);       /* 上沿 − 28（第 3 帧）*/
     CHECK(d.dim == 1);
-    CHECK(tick(&d, &r, 50.0f, 128.0f) == 230);       /* 下沿 + 28（第 4 帧）*/
+    CHECK(tick(&d, &r, 50.0f, 128.0f) == 160);       /* 下沿 + 28（第 4 帧）*/
     CHECK(d.dim == 1);
-    CHECK(tick(&d, &r, 50.0f, 50.0f) == 224);        /* 矩形正中：仍在区内，斜坡继续 */
-    CHECK(tick(&d, &r, 0.0f, 0.0f) == 217);          /* 矩形的角（原本的边界值）当然也在内 */
+    CHECK(tick(&d, &r, 50.0f, 50.0f) == 136);        /* 矩形正中：仍在区内，斜坡继续 */
+    CHECK(tick(&d, &r, 0.0f, 0.0f) == 112);          /* 矩形的角（原本的边界值）当然也在内 */
     CHECK(d.dim == 1);
 
     /* ⑤ 滞回带 16 px：闩锁开着时，走到「矩形 + 44」（= 28 + 16）之内**保持压暗**，越过 44 才淡回
@@ -138,13 +146,13 @@ int main(void)
     memset(&d, 0xcc, sizeof d);
     hud_dim_init(&d);
     CHECK(tick(&d, &r, 128.0f, 50.0f) == DIM_FRAME1);   /* 进（贴「矩形 + 28」的右沿）*/
-    CHECK(tick(&d, &r, 138.0f, 50.0f) == 243);       /* 138 ∈ (128, 144] ⇒ 迟滞带内：保持（斜坡继续）*/
+    CHECK(tick(&d, &r, 138.0f, 50.0f) == 208);       /* 138 ∈ (128, 144] ⇒ 迟滞带内：保持（斜坡继续）*/
     CHECK(d.dim == 1);
-    CHECK(tick(&d, &r, 144.0f, 50.0f) == 236);       /* 恰在 100+44：`> 144` 不成立 ⇒ 仍保持 */
+    CHECK(tick(&d, &r, 144.0f, 50.0f) == 184);       /* 恰在 100+44：`> 144` 不成立 ⇒ 仍保持 */
     CHECK(d.dim == 1);
-    a1 = tick(&d, &r, 144.1f, 50.0f);                /* 越过 ⇒ 淡回（当帧从 236 起算，不跳变）*/
+    a1 = tick(&d, &r, 144.1f, 50.0f);                /* 越过 ⇒ 淡回（当帧从 184 起算，不跳变）*/
     CHECK(d.dim == 0);
-    CHECK(a1 >= 236 && a1 < 255);
+    CHECK(a1 >= 184 && a1 < 255);
     a2 = tick(&d, &r, 140.0f, 50.0f);                /* 140 在迟滞带里但**不在「矩形 + 28」内** ⇒ 继续淡回 */
     CHECK(d.dim == 0);
     CHECK(a2 >= a1 && a2 < 255);
@@ -155,11 +163,11 @@ int main(void)
     memset(&d, 0xcc, sizeof d);
     hud_dim_init(&d);
     CHECK(tick(&d, &r, 50.0f, -28.0f) == DIM_FRAME1);   /* 贴上沿 − 28 进 */
-    CHECK(tick(&d, &r, 50.0f, -44.0f) == 243);       /* −44 ∈ [−44, −28) ⇒ 迟滞带内保持 */
+    CHECK(tick(&d, &r, 50.0f, -44.0f) == 208);       /* −44 ∈ [−44, −28) ⇒ 迟滞带内保持 */
     CHECK(d.dim == 1);
     a1 = tick(&d, &r, 50.0f, -44.1f);                /* 越过 ⇒ 出（当帧起淡回）*/
     CHECK(d.dim == 0);
-    CHECK(a1 >= 236);
+    CHECK(a1 >= 208);   /* 当帧从 208（第 2 帧）起算 */
     a2 = tick(&d, &r, 50.0f, 140.0f);                /* 在 (100+28, 100+44] 里：**不算进**，继续淡回 */
     CHECK(d.dim == 0);
     CHECK(a2 >= a1);
@@ -167,14 +175,14 @@ int main(void)
     CHECK(d.dim == 1);
     CHECK(a3 > HUD_DIM_ALPHA_DIM && a3 <= a2);
 
-    /* ⑥ ★ 过渡 = **20 帧线性**（逐帧对表；`alphaTime(HUD_DIM_FRAMES, 0, target)` 的语义）：
-     *   255 → 128 走满 20 帧、第 20 帧**精确**到位、之后钉住；反向同长。
-     *   ⚠ 旧口径是 ±56（4 帧）：整数步进做不到精确 20 帧（Δ = 127 ⇒ 6/帧 = 22 帧、7/帧 = 19 帧）
+    /* ⑥ ★ 过渡 = **8 帧线性**（逐帧对表；`alphaTime(HUD_DIM_FRAMES, 0, target)` 的语义）：
+     *   255 → 64 走满 8 帧、第 8 帧**精确**到位、之后钉住；反向同长。
+     *   ⚠ 旧口径是 ±56（4 帧）/ 20 帧：固定步进做不到精确 8 帧（Δ = 191 ⇒ 23/帧 = 9 帧、24/帧 = 8 帧但到 63）
      *     ⇒ 现在是「起点 + 帧计数」（`hud_dim_t` 多了 `from` / `t`）。这一节就是那条性质的机器判据。*/
     {
         int32_t want[HUD_DIM_FRAMES];
         ramp_table(HUD_DIM_ALPHA_FULL, HUD_DIM_ALPHA_DIM, want);
-        CHECK(want[0] == 249 && want[HUD_DIM_FRAMES - 1] == HUD_DIM_ALPHA_DIM);
+        CHECK(want[0] == 232 && want[HUD_DIM_FRAMES - 1] == HUD_DIM_ALPHA_DIM);
         CHECK(want[0] != HUD_DIM_ALPHA_DIM);                 /* **不是**瞬间到位 */
         for (k = 1; k < HUD_DIM_FRAMES; ++k)
             CHECK(want[k] <= want[k - 1]);                   /* 单调下降 */
@@ -186,7 +194,7 @@ int main(void)
         CHECK(tick(&d, &r, 50.0f, 50.0f) == HUD_DIM_ALPHA_DIM);   /* 稳态：不再掉 */
         CHECK(tick(&d, &r, 50.0f, 50.0f) == HUD_DIM_ALPHA_DIM);
         ramp_table(HUD_DIM_ALPHA_DIM, HUD_DIM_ALPHA_FULL, want);
-        CHECK(want[0] == 134 && want[HUD_DIM_FRAMES - 1] == HUD_DIM_ALPHA_FULL);
+        CHECK(want[0] == 87 && want[HUD_DIM_FRAMES - 1] == HUD_DIM_ALPHA_FULL);
         for (k = 1; k < HUD_DIM_FRAMES; ++k)
             CHECK(want[k] >= want[k - 1]);                   /* 单调上升 */
         for (k = 0; k < HUD_DIM_FRAMES; ++k)
@@ -201,27 +209,27 @@ int main(void)
     hud_dim_init(&d);
     CHECK(hud_dim_tick(&d, &r, NULL) == 255);
     CHECK(d.dim == 0 && d.alpha == 255);
-    CHECK(tick(&d, &r, 50.0f, 50.0f) == 249);
-    CHECK(tick(&d, &r, 50.0f, 50.0f) == 243);
-    a1 = hud_dim_tick(&d, &r, NULL);                 /* 闩锁被 NULL 收掉，本帧就开始淡回（从 243 起算）*/
+    CHECK(tick(&d, &r, 50.0f, 50.0f) == 232);
+    CHECK(tick(&d, &r, 50.0f, 50.0f) == 208);
+    a1 = hud_dim_tick(&d, &r, NULL);                 /* 闩锁被 NULL 收掉，本帧就开始淡回（从 208 起算）*/
     CHECK(d.dim == 0);
-    CHECK(a1 >= 243 && a1 < 255);
+    CHECK(a1 >= 208 && a1 < 255);
     for (k = 0; k < HUD_DIM_FRAMES; ++k) (void)hud_dim_tick(&d, &r, NULL);
-    CHECK(d.alpha == HUD_DIM_ALPHA_FULL);            /* 20 帧内回到满亮 */
+    CHECK(d.alpha == HUD_DIM_ALPHA_FULL);            /* 8 帧内回到满亮 */
     CHECK(hud_dim_tick(&d, &r, NULL) == HUD_DIM_ALPHA_FULL);
 
     /* ⑧ 跨帧连续性：走到一半反向 ⇒ 从**当前值**接着走，不跳变、不重置、不瞬间到位 */
     memset(&d, 0xcc, sizeof d);
     hud_dim_init(&d);
-    CHECK(tick(&d, &r, 50.0f, 50.0f) == 249);
-    CHECK(tick(&d, &r, 50.0f, 50.0f) == 243);        /* 压暗中途（243）*/
-    a1 = tick(&d, &r, 999.0f, 999.0f);               /* 离开：从 243 起淡回（不是跳回 255、也不是从 128 起）*/
+    CHECK(tick(&d, &r, 50.0f, 50.0f) == 232);
+    CHECK(tick(&d, &r, 50.0f, 50.0f) == 208);        /* 压暗中途（208）*/
+    a1 = tick(&d, &r, 999.0f, 999.0f);               /* 离开：从 208 起淡回（不是跳回 255、也不是从 64 起）*/
     CHECK(d.dim == 0);
-    CHECK(a1 >= 243 && a1 < 255);
-    CHECK(a1 - 243 <= 127 / HUD_DIM_FRAMES + 1);     /* 一帧最多走 Δ/FRAMES（+1 取整余量）⇒ 不跳变 */
+    CHECK(a1 >= 208 && a1 < 255);
+    CHECK(a1 - 208 <= 191 / HUD_DIM_FRAMES + 1);     /* 一帧最多走 Δ/FRAMES（+1 取整余量）⇒ 不跳变 */
     a2 = tick(&d, &r, 50.0f, 50.0f);                 /* 又进去：从当前值往下走 */
     CHECK(d.dim == 1);
-    CHECK(a2 <= a1 && a1 - a2 <= 127 / HUD_DIM_FRAMES + 1);
+    CHECK(a2 <= a1 && a1 - a2 <= 191 / HUD_DIM_FRAMES + 1);
 
     /* ⑨ 空结构体 / 空矩形：不崩、返回满亮（卡侧 `ce_state` 拿不到时不该画成黑）*/
     CHECK(hud_dim_tick(NULL, &r, NULL) == HUD_DIM_ALPHA_FULL);
@@ -267,8 +275,9 @@ int main(void)
          *   `anchor` ⇒ `anchor(0,0)` = 居中），旧值却按「左上角 + 256 画布」算 ⇒ 右偏 96–160、下偏 16 表面 px
          *   （owner 实跑：「放挡触发框似乎比 UI 位置靠下」）。可见块 = 各条 `pos ± (96,16)` 的并集。
          *   一手证据（锚点三条 + 关面板的两段淡出）：`engine/chapter/th15/02-chapter-panel-geometry-and-fades.md`；
-         *   常量与实跑口径：`TUNING.md` §7.5。★ 同日 owner 拍定「20 帧 / 50% 统一成一个值、以 115 为基准」
-         *   ⇒ **共享件 `hud_dim.{h,c}` 已改成 128 / 20 帧**，本表六块一起走这一套（本文件 §①/§⑥ 钉的就是它）。*/
+         *   常量与实跑口径：`TUNING.md` §7.5。★ 2026-09-21 owner 曾拍定「20 帧 / 50% 统一成一个值、以 115 为基准」；
+         *   **2026-09-22 再换成 TH18 原生那块「当前卡」UI 的一手值（8 帧 / 64）** —— 本表六块一起走这一套
+         *   （本文件 §①/§⑥ 钉的就是它）。*/
 
         for (i = 0; i < sizeof blk / sizeof blk[0]; ++i) {
             float ix0, ix1, iy0, iy1, ox0, ox1, oy0, oy1;
@@ -296,11 +305,11 @@ int main(void)
             memset(&d, 0xcc, sizeof d);
             hud_dim_init(&d);
             CHECK(tick(&d, &r, (ix0 + ix1) * 0.5f, (iy0 + iy1) * 0.5f) == DIM_FRAME1);
-            CHECK(tick(&d, &r, ox1, (iy0 + iy1) * 0.5f) == 243);        /* 贴出沿：保持（dim 仍 1）*/
+            CHECK(tick(&d, &r, ox1, (iy0 + iy1) * 0.5f) == 208);        /* 贴出沿：保持（dim 仍 1）*/
             CHECK(d.dim == 1);
             a1 = tick(&d, &r, ox1 + 0.1f, (iy0 + iy1) * 0.5f);          /* 越 ⇒ 出 */
             CHECK(d.dim == 0);
-            CHECK(a1 >= 243 && a1 < 255);
+            CHECK(a1 >= 208 && a1 < 255);
 
             /* 可触发区 = 「进」∩ 自机钳位（自机够不到的地方不算） */
             vx0 = ix0 > PP_X_MIN ? ix0 : PP_X_MIN;  vx1 = ix1 < PP_X_MAX ? ix1 : PP_X_MAX;
@@ -315,6 +324,62 @@ int main(void)
             /* ⚠ 反面记录：这六块里 116/117/110+111 若退回「进 = 矩形之内」，高度只有 4 / 10 / 16 px
              *   ⇒ 上面那条 ≥ 32 的不变式会红（改动前 `hud_dim_gate` 就是那个口径）。*/
         }
+    }
+
+    /* ⑪ ★★ 左下角那块「当前（选中）主动卡」UI（一手几何 + 让位；2026-09-22 加）
+     *   一手出处：`abcard.anm` script0 的 `pos(68, 924)` / `anchor(1, 2)` / `scale(0.75)`
+     *   + entry0 = `ability/abframe.png` 64×80 ⇒ 块 = 表面 x 68..116 / y 864..924。
+     *   完整链路（VM 树 / 显隐判据 / 出场与压暗的脚本号）：`engine/card/th18/15-selected-card-hud.md`。*/
+    {
+        float cx, cy, cw, ch;
+        hud_dim_rect_t cr;
+
+        hud_card_rect_surface(&cx, &cy, &cw, &ch);
+        CHECK(NEAR(cx, 68.0f) && NEAR(cy, 924.0f));          /* VM 位置 = 块左下角（anchor(1,2) = 左·底）*/
+        CHECK(NEAR(cw, 48.0f) && NEAR(ch, 60.0f));           /* 64×80 × scale 0.75 */
+
+        /* 自机坐标下同一个矩形（换算 表面/2 − (320,16)）：
+         * x 68..116 → −286..−262、y 864..924 → 416..446 */
+        memset(&cr, 0xcc, sizeof cr);
+        hud_card_rect_self(&cr);
+        CHECK(NEAR(cr.x0, -286.0f) && NEAR(cr.x1, -262.0f));
+        CHECK(NEAR(cr.y0, 416.0f) && NEAR(cr.y1, 446.0f));
+        /* 与直接把表面矩形喂给 `hud_dim_rect_surface()` 必须**逐值相同**（两条路不许漂）*/
+        {
+            hud_dim_rect_t via_surface;
+            hud_dim_rect_surface(&via_surface, cx, cy, cw, ch);
+            CHECK(NEAR(cr.x0, via_surface.x0) && NEAR(cr.x1, via_surface.x1));
+            CHECK(NEAR(cr.y0, via_surface.y0) && NEAR(cr.y1, via_surface.y1));
+        }
+        hud_card_rect_self(NULL);                            /* 空指针：不崩 */
+        hud_card_rect_surface(NULL, NULL, NULL, NULL);       /* 全空：不崩 */
+
+        /* 判据 = `ABILITY_MANAGER->+0x38`（选中对象）非空 */
+        CHECK(hud_card_present(&d) == 1);
+        CHECK(hud_card_present(NULL) == 0);
+
+        /* ★ 货架让位：**没有当前卡 ⇒ 起点就是锚点**（那块整体不存在，不占地方）；
+         *   有 ⇒ 起点取 `max(锚点, 块右沿 + gap)`。*/
+        {
+            float sx = -1.0f;
+            hud_card_shelf_x0(&sx, 257.0f, 8.0f, 0);  CHECK(NEAR(sx, 257.0f));
+            hud_card_shelf_x0(&sx, 257.0f, 8.0f, 1);  CHECK(NEAR(sx, 257.0f));  /* 现值：116 + 8 = 124 < 257 ⇒ 恒等 */
+            hud_card_shelf_x0(&sx,  40.0f, 8.0f, 1);  CHECK(NEAR(sx, 124.0f));  /* 锚点被左移 ⇒ 让位立刻生效 */
+            hud_card_shelf_x0(&sx,  40.0f, 8.0f, 0);  CHECK(NEAR(sx,  40.0f));
+            hud_card_shelf_x0(&sx, 124.0f, 8.0f, 1);  CHECK(NEAR(sx, 124.0f));  /* 贴沿（含边界）*/
+            hud_card_shelf_x0(NULL, 257.0f, 8.0f, 1);                            /* 空指针：不崩 */
+        }
+
+        /* ★★ 换基准的机器判据：共享件的统一值**必须**等于原生那块的一手值。
+         *   （`cards/hud_dim.c` 里另有一条 `_Static_assert` 在编译期钉同一件事。）*/
+        CHECK(HUD_DIM_ALPHA_DIM == HUD_CARD_ALPHA_DIM);
+        CHECK(HUD_DIM_FRAMES == HUD_CARD_DIM_FRAMES);
+        CHECK(HUD_CARD_ALPHA_DIM == 64 && HUD_CARD_DIM_FRAMES == 8);
+        CHECK(HUD_CARD_FADEIN_FRAMES == 20);                 /* 出场淡入是另一档，**不许**被 8 带跑 */
+
+        /* 这块与货架锚点的**相对位置**（判据是否真的「不重叠」）：
+         * 块右沿（116）+ 间隙 ≤ 锚点（257）⇒ 今天一块都不用挪。谁把锚点左移过 124，这条会红。*/
+        CHECK(HUD_CARD_POS_X + HUD_CARD_W <= CE_HUD_ANCHOR_X_LOCAL);
     }
 
     printf("test_hud_dim_core: %d passed, %d failed\n", s_pass, s_fail);

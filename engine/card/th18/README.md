@@ -21,7 +21,11 @@
 | 09 | [`09-community-crosscheck.md`](09-community-crosscheck.md) | 与 THBWiki 的逐项对账 |
 | 10 | [`10-extensibility-limits.md`](10-extensibility-limits.md) | ★ **新增卡牌的硬边界**：被原生卡集合写死的地方（本篇 12 处 + 11 篇 21 处）|
 | 11 | [`11-sentinels-56-57.md`](11-sentinels-56-57.md) | ★ **两个哨兵 id 56/57 的真身**：查表回退行 / 存档里的空槽值 / 卡背；含**为什么写死**的全二进制穷举 |
+| 15 | [`15-selected-card-hud.md`](15-selected-card-hud.md) | ★ **左下角「当前（选中）主动卡」UI 全链路**：`abcard.anm` script0–4、`mgr+0x3c` VM、`visible` 位判据、出场 20 帧 / 压暗 8 帧到 64 的一手数值 |
 | — | [`OPEN-questions.md`](OPEN-questions.md) | 开放问题与验法 |
+
+> 12–14 三篇（`12-card29-aya-speedqueen` / `13-mallet-clear-and-th17-charge` / `14-clear-range-barrier`）
+> 不在上表里，是历史欠账；编号已占，新篇从 15 起。
 
 原始素材（社区 wikitext）在 [`_sources/`](_sources/thbwiki-cards.txt)，**不是结论**。
 

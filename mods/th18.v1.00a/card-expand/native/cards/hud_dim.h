@@ -10,22 +10,26 @@
  *   父 agent 第二处订正（2026-09-15h）：「**进 = 块矩形外扩 28**、出 = 外扩 44」——
  *   2026-09-15g 那版「进 = 矩形**之内**」是**裁错的**（见下「为什么要有边距」）。
  *
- * ★★ **2026-09-21：终点与过渡帧换了基准**（owner 拍定「20 帧 / 50% 如果是 UI 就得统一成一个值，
- *   你以哪个为基准都行」⇒ 父 agent 选**以 115 绀珠传那套为基准**，理由见下表「一手出处」）：
- *   旧口径 = 终点 **32**（≈12.5%）/ 每帧 ±56（**4 帧**）；新口径 = 终点 **128**（**50% 透明**）/
- *   **20 帧线性**。**六张卡（106–117 里用本件的：116/117/107/113/110+111 + 115）都走这一套**。
+ * ★★ **2026-09-22：终点与过渡帧换成 TH18 原生那块「当前卡」UI 的一手值**
+ *   （owner 拍板「th18左下角原生应该有动态吧，**照着那个填**」⇒ 不是拍一个数，是去查一手；
+ *   工单记录见 `WORK-PACKAGES.md` §10 第 1/2 条）。
+ *   旧口径 = 终点 **128**（50%）/ **20 帧线性**（2026-09-21 那版，**作废**）；
+ *   现行口径 = 终点 **64**（**25% 不透明**）/ **8 帧线性**，两者都是原生的一手值（见下表「谁定」）。
+ *   **六张卡（106–117 里用本件的：116/117/107/113/110+111 + 115）都走这一套**。
  *
  * | 项 | 口径 | 谁定 |
  * | --- | --- | --- |
- * | 起始 / 终点 alpha | **255 / 128**（128 = 50% 透明；owner 2026-09-19「透明改成 50%」）| 统一（❓ 用户口径 2026-09-21，以 115 那套为基准）|
- * | 过渡 | **20 帧线性**（`HUD_DIM_FRAMES`：从**当前** alpha 线性走到目标 = `alphaTime(·, 0, ·)` 的 mode 0 语义）| 统一。**一手**：TH15 `front.anm` script241（章节面板父 VM）关面板时 `alphaTime(20, 0, 0)`，见 `engine/chapter/th15/02-chapter-panel-geometry-and-fades.md` §3。★ 与**脚本侧**的统一写法 `alphaTime(20, 0, 128)` / `alphaTime(20, 0, 255)` 同帧数同终点 |
+ * | 起始 / 终点 alpha | **255 / 64**（64 = 25% 不透明）| 统一。**一手**：TH18 原生左下角「当前卡」UI 的压暗终点就是 64 —— `abcard.anm` script1–4 的 `interruptLabel(5): alphaTime(8, 0, 64)`，由 `th18:0x4086fd`（`push 5` → `FUN_00488c60` `0x488c60`）在自机 `x < −64 ∧ y > 368` 时发；见 `engine/card/th18/15-selected-card-hud.md` §4.2 |
+ * | 过渡 | **8 帧线性**（`HUD_DIM_FRAMES`：从**当前** alpha 线性走到目标 = `alphaTime(·, 0, ·)` 的 mode 0 语义）| 统一。**一手**：同上——脚本里的原生帧数就是 **8**（`alphaTime(8, 0, 64)` 压暗 / `alphaTime(8, 0, 255)` 淡回）。★ 与**脚本侧**的统一写法 `alphaTime(8, 0, 64)` / `alphaTime(8, 0, 255)` 同帧数同终点。⚠ 那 4 支脚本里另有一档 **20 帧**（`-1:`/`0:` 段的 `alphaTime(20, 0, …)`），那是**出场淡入**不是压暗 ⇒ 不归本件管、也不许被改 |
  * | **进** | 自机落在「**块矩形外扩 `HUD_DIM_MARGIN`(28)**」之内 | 统一（❓ 用户口径 2026-09-15h；**一手各作的边距是 24–32**）|
  * | **出** | 自机离开「**块矩形外扩 28 + 16 = 44**」之外（**滞回带仍是 16 px**，这一项才是"动态统一"的内容）| 同上 |
  * | **块矩形本身** | **各卡自己那块 HUD 的几何**（表面 px；换算见下）| **各卡几何**（不统一）|
  *
  * ⚠️ **旧值留档（不许删）**：终点 64（116/117/107/110+111 的一手值）与 76（115 的自定值）
- *   → 2026-09-15g 统一成 **32** → 2026-09-21 换成 **128**；帧数 ±51（5 帧）→ ±56（4 帧，2026-09-15j）
- *   → **20 帧线性**（2026-09-21）。要回退/再调：改 `HUD_DIM_FRAMES` / `HUD_DIM_ALPHA_DIM` 两个宏（全卡一起变），
+ *   → 2026-09-15g 统一成 **32** → 2026-09-21 换成 **128** → **2026-09-22 回到 64**（这次是原生一手的 64，
+ *   不是当年那批「照抄各作」的 64）；帧数 ±51（5 帧）→ ±56（4 帧，2026-09-15j）
+ *   → **20 帧线性**（2026-09-21）→ **8 帧线性**（2026-09-22，原生一手）。要回退/再调：
+ *   改 `HUD_DIM_FRAMES` / `HUD_DIM_ALPHA_DIM` 两个宏（全卡一起变），
  *   并同步 `assets/ability/scripts/123–127,175–178` 的 label 4/5 与 `native/tools/anm_hud_alpha_check.py`。
  *
  * ## 为什么要有边距（`HUD_DIM_MARGIN` = 28）—— 一手的语义本来就是「块矩形 + 一个边距」
@@ -105,21 +109,28 @@
 #pragma once
 #include <stdint.h>
 
-/* —— 统一的动态（❓ 用户口径，见文件头；改这里 = 改所有卡）—— */
+/* —— 统一的动态（见文件头；改这里 = 改所有卡）—— */
 #define HUD_DIM_ALPHA_FULL  255      /* 起始 / 未压暗 */
-#define HUD_DIM_ALPHA_DIM   128      /* 终点 = **50% 透明**（owner 2026-09-19「透明改成 50%」；
-                                      *  2026-09-21 拍定以 115 那套为基准统一。旧统一值 32 = 12.5%）*/
-#define HUD_DIM_FRAMES       20      /* 过渡帧数（C 侧，两个方向同）：从**当前** alpha 线性走到目标，
+#define HUD_DIM_ALPHA_DIM    64      /* 终点 = **25% 不透明**。★ **一手**（2026-09-22 换成本值，owner
+                                      *  「th18左下角原生应该有动态吧，照着那个填」）：TH18 原生左下角
+                                      *  「当前卡」UI 的压暗终点就是 64 —— `abcard.anm` script1–4 的
+                                      *  `interruptLabel(5): alphaTime(8, 0, 64)`，由 `th18:0x4086fd`
+                                      *  在自机 `x < −64 ∧ y > 368` 时发（`FUN_00488c60` 当场跑一帧）。
+                                      *  见 `engine/card/th18/15-selected-card-hud.md` §4.2。
+                                      *  旧统一值：32（2026-09-15g）→ 128（2026-09-21）→ 本值。*/
+#define HUD_DIM_FRAMES        8      /* 过渡帧数（C 侧，两个方向同）：从**当前** alpha 线性走到目标，
                                       * 即 `alphaTime(t, 0, target)` 的语义（第 t 帧到位 = 步长 Δ/t）。
-                                      * ★ **一手**：TH15 `front.anm` script241（章节面板父 VM）关面板时
-                                      * `alphaTime(20, 0, 0)` —— 见
-                                      * `engine/chapter/th15/02-chapter-panel-geometry-and-fades.md` §3。
-                                      * 旧口径：±51（5 帧）→ ±56（4 帧，2026-09-15j）→ 本值。*/
+                                      * ★ **一手**（2026-09-22）：原生那 4 支脚本的原生帧数就是 **8**
+                                      * （`alphaTime(8, 0, 64)` / `alphaTime(8, 0, 255)`，`abcard.anm`
+                                      *  script1–4）。旧口径：±51（5 帧）→ ±56（4 帧）→ 20 帧
+                                      * （TH15 `front.anm` script241）→ 本值。*/
 #define HUD_DIM_MARGIN     28.0f     /* ★ 进的边距：块矩形**外扩**这么多就算「自机靠近」；自机坐标 px。
                                       *   ❓ 用户口径（2026-09-15h 父 agent 裁；一手各作的边距 24–32 ⇒ 取 28）*/
 #define HUD_DIM_BAND       16.0f     /* ★ 滞回带宽度：出的一侧在「矩形 + MARGIN」之外**再**外扩这么多；
                                       *   于是出的一侧 = 矩形 + 44（= 28 + 16），进/出两沿差 16 px。
-                                      *   ❓ 用户统一值（一手那些 `416/400`、`400/384` 的差就是 16）*/
+                                      *   ❓ 用户统一值（一手那些 `416/400`、`400/384` 的差就是 16）。
+                                      *   ★ 原生那块「当前卡」的滞回带同样是 16：`th18:0x4b937c` = 368 /
+                                      *   `0x4b9374` = 352（y 轴）、`0x4b945c` = −64 / `0x4b9454` = −48（x 轴）*/
 
 /* —— 表面 px → 自机坐标 的定式（见文件头；`224` 是过时记法，别用）—— */
 #define HUD_DIM_SURF_DX   320.0f     /* 自机坐标 x = 表面 x / 2 − 它（= 表面 640 ↔ 世界 x 0）*/
@@ -136,7 +147,7 @@ typedef struct {
  *    （`= { 0, HUD_DIM_ALPHA_FULL, HUD_DIM_ALPHA_FULL, HUD_DIM_FRAMES }`），或者直接调 `hud_dim_init()`。*/
 typedef struct {
     int32_t dim;      /* 闩锁：1 = 自机在「块 + MARGIN」上（已按迟滞保持）、0 = 不在 */
-    int32_t alpha;    /* 本帧 HUD alpha：HUD_DIM_ALPHA_DIM(128) ↔ HUD_DIM_ALPHA_FULL(255) */
+    int32_t alpha;    /* 本帧 HUD alpha：HUD_DIM_ALPHA_DIM(64) ↔ HUD_DIM_ALPHA_FULL(255) */
     int32_t from;     /* 本次过渡的起点 alpha（方向翻转当帧的 alpha）*/
     int32_t t;        /* 本次过渡已走帧数：0..HUD_DIM_FRAMES；**= HUD_DIM_FRAMES 表示稳态**（钉在目标上）*/
 } hud_dim_t;
@@ -153,8 +164,76 @@ void hud_dim_rect_surface(hud_dim_rect_t *r, float x, float y, float w, float h)
  * 给「alpha 不在 C 侧」的卡用（113 的 alpha 在 anm 脚本里，只借这一半）。*/
 int hud_dim_gate(int was_dim, const hud_dim_rect_t *r, const float *pp);
 
-/* 推进一帧（= `hud_dim_gate()` + 朝目标走**线性 20 帧**的一帧），返回**本帧 alpha**。
+/* 推进一帧（= `hud_dim_gate()` + 朝目标走**线性 8 帧**的一帧），返回**本帧 alpha**。
  * 语义与 `alphaTime(HUD_DIM_FRAMES, 0, target)` 同形：方向翻转当帧从**当前** alpha 起算、第 t 帧到位；
  * 稳态（`t == HUD_DIM_FRAMES`）恒等于目标。
  * 闩锁/alpha 同时可从 `d->dim` / `d->alpha` 读。`d == NULL` ⇒ 返回 HUD_DIM_ALPHA_FULL（不崩）。*/
 int32_t hud_dim_tick(hud_dim_t *d, const hud_dim_rect_t *r, const float *pp);
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+ * ## ★★ 左下角那块「当前（选中）主动卡」UI —— 一手几何 + 让位（2026-09-22 加）
+ *
+ * ### 它**不是我们自己画的**：整条链都在引擎里（一手见 `engine/card/th18/15-selected-card-hud.md`）
+ *
+ *   · VM 树 = `abcard.anm` **script0**（根，自己不画）+ `scriptNew` 的 script1/2（`ability/abframe.png`
+ *     卡框，两层）与 script3/4（卡图，两层）；id 存 `ABILITY_MANAGER->+0x3c`；
+ *   · **显隐 = 一条判据**：`AbilityManager__update_selected_active_card_hud` `th18:0x408c30`
+ *     按 `ABILITY_MANAGER->+0x38`（选中的主动卡对象）为 0 与否，递归清/置整棵树的 `visible`
+ *     （`vm+0x534` bit1）⇒ **没有主动卡时整块 UI 一个像素都不画**（不是画 0 长度序列）；
+ *   · **换图**：同一个函数把卡表行的 `sprite_small`（`table_entry+0x30`）写进 script3/script4；
+ *   · 贴图 / 层次 / 动画**一个字都不许在 C 里重写** —— `METHOD.md` 的铁律（UI 与动画先从原代码找）。
+ *
+ * ⇒ 本件在这一块只做两件事：**① 把一手的矩形固化**（压暗判据 / 排布 / 让位都要用）；
+ *   **② 给货架一个「有它就别压上去」的起点**。画的那一半全归引擎。
+ *
+ * ### 一手取值（逐条落在 `abcard.anm` script0 与 `th18:0x407f10` 上）
+ *
+ * | 项 | 值 | 出处 |
+ * | --- | --- | --- |
+ * | VM 位置 | 表面 **(68, 924)** | `script0` 的 `pos(68.0f, 924.0f, 0.0f)` |
+ * | 锚点 | `anchor(1, 2)` = **左 · 底** ⇒ 块左下角就是 (68, 924) | `script0`（h=1 左 / v=2 底，见 `engine/anm/th16/10-sprite-geometry.md` §2.1）|
+ * | 尺寸 | 卡框 sprite = **64×80**（`abcard.anm` entry0 = `ability/abframe.png`），`scale(0.75)` ⇒ **48×60** | `script0` 的 `scale(0.75f, 0.75f)`（根没有 sprite ⇒ 这个 scale 就是给子 VM 继承的）|
+ * | 块矩形（表面 px）| **x 68..116 / y 864..924** | 上面三条推出 |
+ * | 压暗 | 终点 **64** / **8 帧**（脚本侧 `alphaTime(8, 0, 64/255)`）| `script1–4` 的 `interruptLabel(5)/(4)`；闸 `th18:0x4086fd` / `0x408736` |
+ * | 出场淡入 | **20 帧**（脚本侧 `alphaTime(20, 0, 255/255/64/224)`）| `script1–4` 的 `-1:`/`0:` 段（**不归本件管**）|
+ *
+ * ⚠️ **矩形是 🟡**：`anchor` 的 h=1 到底是「左」还是「右」是社区口径（本仓自己几支脚本按 1 = 左用）——
+ *   若 1 = 右，则块 = x 20..68。**两种解释下这块都在游玩区左边缘（257）之左**，所以不影响任何判据；
+ *   要钉死就实跑量一次（截一张图看卡框左沿）。
+ *
+ * ⚠️ **`HUD-LAYOUT.md` §1.3 那句「原版在 x < 1000、y > 850 什么都不画」是错的**：那份普查只覆盖了
+ *   `zGui__on_draw` 的 ASCII 文字与 HUD 图标排版，**漏了这棵树**（它在 world 列表、不在 `Gui` 的文字表里）。
+ *   已在那节原地订正。
+ * ══════════════════════════════════════════════════════════════════════════════════════════════ */
+
+#define HUD_CARD_POS_X      68.0f     /* 表面 px：VM 位置（= 块**左下角**，因为 anchor(1,2)）*/
+#define HUD_CARD_POS_Y     924.0f     /* 一手 `abcard.anm` script0 的 `pos(68, 924)`；924 = 游玩区底边 928 − 4 */
+#define HUD_CARD_ART_W      64.0f     /* `abcard.anm` entry0 sprite0 = `ability/abframe.png` 的 64×80 */
+#define HUD_CARD_ART_H      80.0f
+#define HUD_CARD_SCALE      0.75f     /* script0 的 `scale(0.75, 0.75)`（子 VM 继承）*/
+#define HUD_CARD_W  (HUD_CARD_ART_W * HUD_CARD_SCALE)   /* = 48 表面 px */
+#define HUD_CARD_H  (HUD_CARD_ART_H * HUD_CARD_SCALE)   /* = 60 表面 px */
+#define HUD_CARD_ALPHA_DIM      64    /* ★ 本块压暗终点（一手）—— 共享件 HUD_DIM_ALPHA_DIM 必须等于它 */
+#define HUD_CARD_DIM_FRAMES      8    /* ★ 本块压暗帧数（一手）—— 共享件 HUD_DIM_FRAMES 必须等于它 */
+#define HUD_CARD_FADEIN_FRAMES  20    /* 出场淡入帧数（一手；**不归本件管**，只是留档别被 8 带跑）*/
+
+/* 本块在**自机坐标**下的矩形（喂 `hud_dim_tick()`）。`r == NULL` 时什么都不做。
+ * 用途 = 「这块 HUD 在哪」这一格；**不改引擎的显隐**（那归 `th18:0x408c30`）。*/
+void hud_card_rect_self(hud_dim_rect_t *r);
+
+/* 本块在**表面 px** 下的矩形（左下角 + 宽高，约定同 `ce_hud_slot_t`）。任一指针可为 NULL。*/
+void hud_card_rect_surface(float *x, float *y, float *w, float *h);
+
+/* ★ **货架让位**：有当前卡时，左下角那一摞的**起点 x** 不许压到本块 ⇒ 返回
+ * `max(anchor_x, HUD_CARD_POS_X + HUD_CARD_W + gap)`；没有当前卡时返回 `anchor_x`（那块整体不存在，
+ * 所以不占地方 —— 这就是 owner 说的「整个 UI 是不存在的，这会影响 hud 排布」里「影响」的那一半）。
+ * ⚠ 用现值代入是**恒等**（257 > 116 + gap）—— 这条存在的意义是**把不变式写进代码与单测**：
+ *   谁把货架锚点左移、或把本块加宽到压过锚点，`make test-host` 立刻红。
+ * ⚠ **结果是 out-param 不是返回值**：i386 的 `float` 返回值走 st0，`make dllx87` 钉着「我们自己的
+ *   目标文件里零 x87」⇒ 本文件一律不用 float 返回值（同 `hud_dim_rect_surface()` 的写法）。
+ *   `out == NULL` 时什么都不做。*/
+void hud_card_shelf_x0(float *out, float anchor_x, float gap, int present);
+
+/* 「有没有当前卡」的**纯判据**：喂 `ABILITY_MANAGER->+0x38` 那个指针（`CE_MGR_SELECTED_ACTIVE`）。
+ * == NULL ⇒ 整块 UI 不存在（引擎会清掉 `visible`）。非 NULL 时返回 1。*/
+int hud_card_present(const void *selected_active);

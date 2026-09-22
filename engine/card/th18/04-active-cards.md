@@ -140,6 +140,9 @@ state 1 每帧把要石位置向玩家插值（系数 `0x4b90b8`），对 `card+
 两者都指向 **+0x34 那组计时器 = 充能**，这是 [`01-object-model.md`](01-object-model.md) §3
 那条订正的独立佐证。
 
+> ★ 左下角那块「当前卡」UI 的**全链路**（anm 脚本号 / VM 树 / 显隐判据 / 出场与压暗的一手数值 /
+> 屏幕矩形）单开了一篇：[`15-selected-card-hud.md`](15-selected-card-hud.md)。本文 §6 只到「充能比从哪来」。
+
 ## 7. 12 张主动卡（`c_press` 实现地址一览）
 
 | card_id | 内部名 | 类 | `c_press` | `__on_tick_2` | 充能（帧/秒）|

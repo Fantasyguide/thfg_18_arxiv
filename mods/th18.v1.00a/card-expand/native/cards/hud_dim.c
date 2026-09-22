@@ -1,5 +1,6 @@
 /* hud_dim.c —— 「自机贴近 HUD 块 → 压暗」的**唯一实现**（纯逻辑）。取值与判据形状见 `hud_dim.h`。
  * 主机单测：`tests/test_hud_dim_core.c`（`make test-host`）。本文件不进引擎地址、不碰任何 ABI。*/
+#include <stddef.h>          /* NULL（hud_card_present）*/
 #include "hud_dim.h"
 
 void hud_dim_init(hud_dim_t *d)
@@ -41,19 +42,21 @@ int hud_dim_gate(int was_dim, const hud_dim_rect_t *r, const float *pp)
     return 1;
 }
 
-/* ★★ 2026-09-21：斜坡从「每帧固定 ±HUD_DIM_STEP」改成「**20 帧线性**」（`HUD_DIM_FRAMES`）。
+/* ★★ 2026-09-22：斜坡从「20 帧线性」改成「**8 帧线性 / 终点 64**」（`HUD_DIM_FRAMES` / `HUD_DIM_ALPHA_DIM`）。
  *
- * 为什么改：owner 2026-09-21 拍定「20 帧 / 50% 是 UI ⇒ 得统一成一个值，以哪个为基准都行」，
- * 父 agent 选**以 115 那套为基准**；而 20 帧本身有**一手**出处 —— TH15 `front.anm` script241
- * （章节面板父 VM）关面板时 `alphaTime(20, 0, 0)`（见
- * `engine/chapter/th15/02-chapter-panel-geometry-and-fades.md` §3）。
+ * 为什么改：owner 拍板「th18左下角原生应该有动态吧，**照着那个填**」⇒ 以 **TH18 原生左下角那块「当前卡」UI**
+ * 的动态为准。一手（见 `engine/card/th18/15-selected-card-hud.md` §4.2）：
+ *   · 闸 = `AbilityManager__on_tick` `0x408640`：自机 `x < −64 ∧ y > 368` ⇒ `FUN_00488c60` `0x488c60` 发 `5`；
+ *     离开（`y < 352 ∨ x > −48`）⇒ 同函数发 `4`；
+ *   · 脚本 = `abcard.anm` script1–4：`interruptLabel(5): alphaTime(8, 0, 64)` / `interruptLabel(4): alphaTime(8, 0, 255)`。
+ * ⇒ **原生帧数 8、原生终点 64**，本件照抄这两个数（C 侧与脚本侧同值）。
  *
  * 语义与 anm 的 `alphaTime(t, mode 0, target)` 一致（`engine/anm/th16/07-general.md` 的 op 409）：
  *   · **起步**：方向翻转那一帧记下当前 alpha 作起点（`from`）、帧数清零；
  *   · **每帧**：`alpha = from + (target − from) × t / FRAMES`（t = 1..FRAMES）⇒ 第 FRAMES 帧**精确**落到目标；
  *   · **稳态**：`t == FRAMES` 时恒等于目标（旧实现靠「钳位到目标」达到同一个效果）。
- * ⚠ 旧口径 4 帧（±56）的整数步进**做不到**精确 20 帧（Δ=127 ⇒ 步长 6 = 22 帧、7 = 19 帧）
- *   ⇒ 用「起点 + 帧计数」而不是步长。这也是 `hud_dim_t` 多出 `from` / `t` 两个字段的原因。*/
+ * ⚠ 用「起点 + 帧计数」而不是固定步长：Δ = 255−64 = 191 在 8 帧下不是整数步长（191/8 = 23.875）
+ *   ⇒ 固定步进写法到不了「恰好 8 帧」。这也是 `hud_dim_t` 有 `from` / `t` 两个字段的原因。*/
 int32_t hud_dim_tick(hud_dim_t *d, const hud_dim_rect_t *r, const float *pp)
 {
     int32_t was, target;
@@ -73,4 +76,48 @@ int32_t hud_dim_tick(hud_dim_t *d, const hud_dim_rect_t *r, const float *pp)
         d->alpha = target;                  /* 稳态：钉在目标上 */
     }
     return d->alpha;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+ * 左下角那块「当前（选中）主动卡」UI 的一手几何 + 让位（2026-09-22；一手见 `engine/card/th18/15-selected-card-hud.md`）
+ * ══════════════════════════════════════════════════════════════════════════════════════════════ */
+
+/* ★ 编译期把「共享件的统一值 = 原生那块的一手值」钉死。
+ * 为什么要这一条：2026-09-22 的换基准（owner「照着原生那个填」）就是**从这块 UI 反推**出来的 ——
+ *   64 / 8 帧 这两个数的唯一出处就是 `abcard.anm` script1–4。谁把共享件改回别的数，编译就红。*/
+_Static_assert(HUD_DIM_ALPHA_DIM == HUD_CARD_ALPHA_DIM,
+               "HUD_DIM_ALPHA_DIM 必须 = 原生「当前卡」UI 的压暗终点（abcard.anm script1-4 的 alphaTime(8,0,64)）");
+_Static_assert(HUD_DIM_FRAMES == HUD_CARD_DIM_FRAMES,
+               "HUD_DIM_FRAMES 必须 = 原生「当前卡」UI 的压暗帧数（abcard.anm script1-4 的 alphaTime(8,...)）");
+
+void hud_card_rect_surface(float *x, float *y, float *w, float *h)
+{
+    if (x) *x = HUD_CARD_POS_X;
+    if (y) *y = HUD_CARD_POS_Y;
+    if (w) *w = HUD_CARD_W;
+    if (h) *h = HUD_CARD_H;
+}
+
+void hud_card_rect_self(hud_dim_rect_t *r)
+{
+    /* 一手：`abcard.anm` script0 `pos(68, 924)` + `anchor(1, 2)`（左·底）+ `scale(0.75)`
+     * ⇒ 块 = 表面 x 68..116 / y 864..924。换算定式同 `hud_dim_rect_surface()`。*/
+    hud_dim_rect_surface(r, HUD_CARD_POS_X, HUD_CARD_POS_Y, HUD_CARD_W, HUD_CARD_H);
+}
+
+int hud_card_present(const void *selected_active)
+{
+    return selected_active != NULL;
+}
+
+void hud_card_shelf_x0(float *out, float anchor_x, float gap, int present)
+{
+    float right;
+    if (!out) return;
+    /* ⚠ **不许写成 `return 一个 float`**：i386 的 float 返回值走 st0（`flds`），而 `make dllx87`
+     *   钉着「我们自己的目标文件里**零 x87**」（同 `hud_dim_rect_surface()` 用 out-param 的原因）。*/
+    if (!present) { *out = anchor_x; return; }      /* 没有当前卡 ⇒ 那块整体不存在，不占地方 */
+    right = HUD_CARD_POS_X + HUD_CARD_W + gap;      /* 有 ⇒ 货架起点不许压到它 */
+    if (right <= anchor_x) { *out = anchor_x; return; }
+    *out = right;
 }

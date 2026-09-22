@@ -82,10 +82,41 @@ static void give_mark(void *ctx, uint32_t id, uint32_t notify)
     ((ce_fn_mark_t)CE_FN_MARK_OBTAINED)(id, notify);
 }
 
+/* ★★ 2026-09-22：左下角那块「当前（选中）主动卡」UI 的刷新入口。
+ *
+ * 一手（`engine/card/th18/15-selected-card-hud.md` §2/§3）：那块 UI = `abcard.anm` script0 的 VM 树，
+ * 显隐与换图**只有一条实现** = `AbilityManager__update_selected_active_card_hud` `0x408c30`
+ * （thiscall(mgr)，**无栈参、`ret`**；一手 `0x408cfa`–`0x408cfd`）：`mgr+0x38 == 0` ⇒ 递归清整棵树的
+ * `visible`（`vm+0x534` bit1，anm opcode 310，绘制前 `0x481256` 读它）⇒ **一个像素都不画**；
+ * 非 0 ⇒ 置位并把卡表的 `sprite_small`（`table_entry+0x30`）写进 script3/script4 两颗子 VM。
+ *
+ * ⚠ **引擎不会替我们刷**：`set_selected_active_card` `0x408b00` 只在**找到卡**时调它（`0x408b74`），
+ *   「找不到」那条路直接返回 0（**不清 HUD**）；分配器尾段只写 `mgr+0x38`（`0x412d5d`）然后调
+ *   `create_all_card_lists_for_hud`（那只重画**卡组图标行**，不碰 `mgr+0x3c` 那棵树）。
+ * ⇒ 我们这两条改 `mgr+0x38` 的路（买到主动卡 / 删掉最后一张主动卡）**必须自己补这一下**，
+ *   否则现象正是 owner 描述的那两条：买了主动卡左下角不出现、删光主动卡那块卡图留在屏幕上。*/
+#define CE_FN_UPDATE_SELECTED_HUD 0x408c30
+typedef void (__attribute__((thiscall)) *ce_fn_update_selected_hud_t)(void *mgr);
+
+static void hud_card_refresh(void *mgr)
+{
+    if (mgr) ((ce_fn_update_selected_hud_t)CE_FN_UPDATE_SELECTED_HUD)(mgr);
+}
+
 int ce_give_card(uint32_t id, uint32_t mode, uint32_t notify)
 {
     void *mgr = CE_ABILITY_MGR();
-    return mgr ? ce_give_card_transaction(id, mode, notify, give_allocate, give_mark, mgr) : -1;
+    if (!mgr) return -1;
+    int r = ce_give_card_transaction(id, mode, notify, give_allocate, give_mark, mgr);
+    if (r >= 0) {
+        /* 分配尾段把**新卡**写进了 `mgr+0x38` 当选中卡（`0x412d5d`，一手：`test al,8` 门内的
+         * `mov [edi+0x38],esi`）⇒ 这里补一次 HUD 刷新，让左下角当场出现/换成它。
+         * 给的是被动卡时 `mgr+0x38` 没变，这一步是幂等的空转（`0x408c30` 只读不改选中对象）。*/
+        hud_card_refresh(mgr);
+        ce_log("hud-card: refreshed after giving card %u (selected=%p)", id,
+               *(void **)((uint8_t *)mgr + CE_MGR_SELECTED_ACTIVE));
+    }
+    return r;
 }
 
 /* ---- trace ---- */
@@ -2288,7 +2319,14 @@ int ce_destroy_card(ce_card_t *victim_)
     ((ce_base_del_t)(*(void **)((uint8_t *)vt + 0x50)))(victim, 1);   /* 0x408147..0x408149 push 1; call [vt+0x50]；我们的桩顺手释放 ce_state */
     if (was_selected) {
         int ok = ((int (CE_TC *)(void *, int))CE_FN_SET_SELECTED_ACTIVE)(mgr, -1);
-        ce_log("destroy: card %u was the selected active card; reselect -> %s", id, ok ? "ok" : "none left");
+        /* ★ 2026-09-22：`set_selected_active_card` **只在选中成功时**刷 HUD（`0x408b74`）⇒
+         * 「删掉的正好是最后一张主动卡」这条路上 `mgr+0x38` 已经是 NULL 而那棵 VM 树的 `visible`
+         * 还挂着 ⇒ 旧卡图会**永久留在左下角**（要到下一关开场 `FUN_00407f10` 重建才消失）。
+         * 这就是 owner 说的「没有主动卡的时候……整个 UI 是不存在的」那一半，必须在这里补一刀。*/
+        hud_card_refresh(mgr);
+        ce_log("destroy: card %u was the selected active card; reselect -> %s; hud card -> %s", id,
+               ok ? "ok" : "none left",
+               *(void **)((uint8_t *)mgr + CE_MGR_SELECTED_ACTIVE) ? "shown" : "hidden");
     }
     ((void (CE_TC *)(void *, int))CE_FN_CREATE_HUD_LISTS)(mgr, 0);
     ce_log("destroy: card %u (flags 0x%x) removed; now total %d = %d active + %d equipment + %d passive", id, flags,

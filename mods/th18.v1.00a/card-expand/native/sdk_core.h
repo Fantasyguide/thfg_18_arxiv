@@ -875,3 +875,17 @@ int ce_vitem_collect_pending(void);
 /* 在飞数合计（Σ 各源本帧声明；超窗的源不计）。0 = 本帧没有任何自建实体在飞。*/
 int ce_vitem_flying(void);
 int ce_vitem_flying_from(uint32_t source);                  /* 单个源（诊断 / 单测用）*/
+
+/* ★★ 2026-09-22：左下角那块**原生「当前（选中）主动卡」UI** 在不在 —— 货架排布要用它。
+ *
+ * 一手（`engine/card/th18/15-selected-card-hud.md`）：那块 UI = `abcard.anm` script0 的 VM 树，
+ * 显隐的唯一判据是 `ABILITY_MANAGER->+0x38`（选中的主动卡对象）为 0 与否 —— 为 0 时引擎把整棵树的
+ * `visible`（`vm+0x534` bit1）清掉 ⇒ **一个像素都不画**（不是画 0 长度序列）。
+ *
+ * 于是「排布」这一侧的契约很简单：**有它 ⇒ 货架起点不许压到它；没有它 ⇒ 那块不存在、不占地方**
+ * （后者就是 owner 说的「整个 UI 是不存在的，这会影响 hud 排布」）。几何与让位算式在
+ * `cards/hud_dim.{h,c}`（`hud_card_shelf_x0()`），本函数只是把「在不在」传进来。
+ *
+ * ⚠ 唯一调用方是 `sdk.h` 的两个 `ce_hud_slot_claim_*_card()` 包装（那里能读引擎全局）；
+ *   **认领之外不重排**（HUD-LAYOUT §4.4）⇒ 只在这里设一次就够了，别做每帧刷新。*/
+void ce_hud_card_set(int present);

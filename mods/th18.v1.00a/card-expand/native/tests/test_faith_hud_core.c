@@ -256,18 +256,20 @@ int main(void)
             CHECK(hud_dim_gate(1, &r, be_out) == 0);       /* 越 0.1 px ⇒ 出 */
         }
 
-        /* 与共享件的动态连起来跑一遍（★ 2026-09-21 起统一值 = **终点 128 / 20 帧线性**：
-         *   255 → 128 逐帧 = `255 + (−127)·t/20` ⇒ 249,243,236,…,128，第 20 帧精确到位；
-         *   闩锁与 alpha 同步；反向同长）。旧口径是 ±56（4 帧、终点 32）—— 那套已退役。*/
+        /* 与共享件的动态连起来跑一遍（★ **2026-09-22 起统一值 = 终点 64 / 8 帧线性** =
+         *   TH18 原生那块「当前卡」UI 的一手值，见 `cards/hud_dim.h` 的文件头与
+         *   `engine/card/th18/15-selected-card-hud.md` §4.2）：
+         *   255 → 64 逐帧 = `255 + (−191)·t/8` ⇒ 232,208,184,160,136,112,88,64，第 8 帧精确到位；
+         *   闩锁与 alpha 同步；反向同长。历史：±56（4 帧 / 终点 32）→ 128 / 20 帧 → 本值。*/
         hud_dim_init(&d);
-        CHECK(hud_dim_tick(&d, &r, pp_in) == 249);
-        CHECK(hud_dim_tick(&d, &r, pp_in) == 243);
-        CHECK(hud_dim_tick(&d, &r, pp_in) == 236);
-        CHECK(hud_dim_tick(&d, &r, pp_in) == 230);
+        CHECK(hud_dim_tick(&d, &r, pp_in) == 232);
+        CHECK(hud_dim_tick(&d, &r, pp_in) == 208);
+        CHECK(hud_dim_tick(&d, &r, pp_in) == 184);
+        CHECK(hud_dim_tick(&d, &r, pp_in) == 160);
         {
             int k;
             for (k = 4; k < HUD_DIM_FRAMES; ++k) (void)hud_dim_tick(&d, &r, pp_in);
-            CHECK(hud_dim_tick(&d, &r, pp_in) == HUD_DIM_ALPHA_DIM);   /* 第 20 帧精确到位 */
+            CHECK(hud_dim_tick(&d, &r, pp_in) == HUD_DIM_ALPHA_DIM);   /* 第 8 帧精确到位 */
         }
         CHECK(d.dim == 1);
         {

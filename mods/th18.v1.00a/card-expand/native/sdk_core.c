@@ -1,6 +1,7 @@
 /* sdk_core.c —— 见 sdk_core.h。纯 C11。 */
 #include <string.h>
 #include "sdk_core.h"
+#include "cards/hud_dim.h"   /* hud_card_shelf_x0()：让位算式（一手几何在 cards/hud_dim.h）*/
 
 /* ---- 注册表 ---- */
 static const ce_behavior_t *s_beh[CE_SDK_MAX_BEHAVIORS];
@@ -1360,13 +1361,22 @@ static struct {
     float  x, y;
 } s_hud[CE_SDK_CARD_ID_MAX + 1];
 static int s_hud_near_corner;
+static int s_hud_card_present;      /* 原生「当前卡」那块 UI 在不在（`ce_hud_card_set()`，见 sdk_core.h）*/
+
+void ce_hud_card_set(int present) { s_hud_card_present = present ? 1 : 0; }
 
 static void hud_relayout(void)
 {
     /* 底部货架（HUD-LAYOUT §2）：按 card_id 升序扫描（数组按 id 索引 ⇒ 天然有序），两侧各自算。
-     * 左列：cursor 从左锚点向右；右列：块的**右边缘**贴在 cursor 上、cursor 向左走。*/
+     * 左列：cursor 从左锚点向右；右列：块的**右边缘**贴在 cursor 上、cursor 向左走。
+     * ★ 2026-09-22：左列的**起点**不再写死锚点，而是 `hud_card_shelf_x0()` —— 有当前卡时取
+     *   `max(锚点, 块右沿 + 间隙)`，没有时就是锚点（那块整体不存在，不占地方）。
+     *   现值代入是恒等（`HUD_CARD_POS_X + HUD_CARD_W` = 116，`+8` = 124 < 257）；
+     *   意义在**不变式**：谁把锚点左移过 124 或把块加宽到压过锚点，会立刻在这里让位。*/
     float cx[2], row_bottom[2], row_h[2];
-    cx[0] = CE_HUD_ANCHOR_X;         row_bottom[0] = CE_HUD_ANCHOR_Y; row_h[0] = 0.0f;
+    float left0;
+    hud_card_shelf_x0(&left0, CE_HUD_ANCHOR_X, CE_HUD_GAP, s_hud_card_present);
+    cx[0] = left0;                   row_bottom[0] = CE_HUD_ANCHOR_Y; row_h[0] = 0.0f;
     cx[1] = CE_HUD_ANCHOR_X_RIGHT;   row_bottom[1] = CE_HUD_ANCHOR_Y; row_h[1] = 0.0f;
 
     for (int id = 0; id <= CE_SDK_CARD_ID_MAX; ++id) {
@@ -1380,7 +1390,7 @@ static void hud_relayout(void)
          * 否则单块就会被推到一条没意义的第 2 行上。*/
         if (!fits && row_h[side] > 0.0f) {
             row_bottom[side] -= row_h[side] + CE_HUD_GAP;
-            cx[side] = (side == 0) ? CE_HUD_ANCHOR_X : CE_HUD_ANCHOR_X_RIGHT;
+            cx[side] = (side == 0) ? left0 : CE_HUD_ANCHOR_X_RIGHT;
             row_h[side] = 0.0f;
         }
         if (side == 0) {

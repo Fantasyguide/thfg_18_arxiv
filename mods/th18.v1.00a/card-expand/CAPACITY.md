@@ -286,9 +286,20 @@ cards: 35 registered from cards.js; shop pool 700/8192 slots, guaranteed offers 
   同批新脚本 = **306 / 307**（`SENRO_HUD_DIGIT` / `SENRO_HUD_BORDER`），既有号一个没动
   （entry 63/256，余量 193）。生成器 `assets/ability/make_senro_hud_art.py`（矩形从 `thanm -l` 断死）。
   ⚠ 数字字形在 ORDER 里**必须连续升序**（卡侧 `ce_anm_set_sprite` 直接做 `D0 + 数字` 的加法）；
-  脚本 296/297 里另有 `scale(2.0, 2.0)`（TH07 是 640 原生、TH18 UI 层 1 texel = 1 表面 px 的换算，
-  先例 = 302 的 Δ4）。原版数字**左边**那块固定标签（sprite142）本轮**不切**，理由见 `cards/senro.c`
-  的 `SENRO_HUD_*` 注（要画得把货架块从 200 加宽到 ~340 表面 px，会挤动别人的块）。
+  脚本 306/307 里另有 `scale(2.0, 2.0)`（TH07 是 640 原生、TH18 UI 层 1 texel = 1 表面 px 的换算，
+  先例 = 302 的 Δ4）。
+  ~~原版数字**左边**那块固定标签（sprite142）本轮**不切**~~ ← **2026-09-22 作废**，见下一条。
+
+- **★ 2026-09-22 新增 `ATLAS_SENRO_HUD_LABEL`（entry **64**，`CE_ANM_ABILITY_ATLAS_ATLAS_SENRO_HUD_LABEL`）**：
+  同一个生成器、**同一张源图**（TH07 `ascii.anm` entry0）—— 就是上一条里「本轮不切」的那张固定标签
+  `sprite142`（96×16）：`CE_ANM_ABILITY_SPRITE_SENRO_HUD_LABEL` = **478**，脚本 **308**。
+  画布 **96×16**、**1 个成员**；**为什么另起一段 ATLAS**：`ORDER.txt` 只许追加，
+  `ATLAS_SENRO_HUD` 的画布行（128×16 已被 11 个成员填满）不许改 ⇒ 新成员只能新开一段。
+  **占的格子 = `ability.anm` 的 entry 索引 64（1 格）、sprite 号 478**，既有 entry / sprite 号一个没动
+  （`git diff native/anm_ids.h` = 4 行新增、0 删除）⇒ entry 用量 **65 / 256**（余量 191）。
+  一手：`th07:0x401be3` 给 VM2（`AsciiManager +0x498`）装 script4，正文 = `ins_3(sprite142)` + `ins_22()`
+  （**左上角锚**）；内容（逐像素读出）= 单词 `Cherry` + 粉色加号 `+`（+C 前缀）+ 粉色斜杠 `/`
+  （樱点 / 最大樱点之间的分隔符）+ 软投影。
 
 - **`abcard.anm` 是卡侧最紧的一道墙**（★最紧）：原生 118 条 + 每张新卡 2 条（大图/小图各一 entry），
   现在 190 条 ⇒ **只能再进 33 张**。它现在有**构建期硬门**（`MAX_ENTRIES`，与 `build_ability.py` 同名同口径）：

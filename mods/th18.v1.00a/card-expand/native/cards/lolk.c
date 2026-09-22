@@ -402,7 +402,7 @@ typedef struct {
     lolk_settle_t  last;            /* 最近一次结算（HUD 用）*/
     int32_t        last_age;        /* 结算后经过帧；-1 = 还没结算过 */
     hud_dim_t      hud;             /* ★ 2026-09-15g：面板防遮挡状态 —— **全部走共享件 `hud_dim_tick()`**
-                                     * （闩锁 `dim` + alpha；终点 **128（50%）**、过渡 **20 帧线性** ——
+                                     * （闩锁 `dim` + alpha；终点 **64（25%）**、过渡 **8 帧线性** ——
                                      * 这两个值 2026-09-21 起是**全卡统一值**，权威口径见 `hud_dim.h` 文件头
                                      * 与 `TUNING.md` §7.1/§7.5；本卡不再自持一份）。
                                      * 原来是 `int32_t panel_alpha`（255 / **76**、每帧 ±8）。*/
@@ -781,7 +781,7 @@ static void panel_show(lolk_card_t *s)
  *      `interruptLabel(1); alphaTime(20, 0, 0); +20: delete();`
  *    （一手：`th15:0x43b0f0` 把 label 1 发给 `gui+0x11c` 的面板树；`th15:0x435561` 在显示计时
  *      `gui+0x1a4 >= gui+0x1b4` 成立时调它 —— mode 0 的 `+0x1b4` = `0x122` = **290 帧**；
- *      `alphaTime` 的 mode 0 = **线性**，op 409）⇒ **20 帧线性**；淡回按对称用同一条。
+ *      `alphaTime` 的 mode 0 = **线性**）；★ 2026-09-22 起按原生一手 = **8 帧线性 / 终点 64**；淡回按对称用同一条。
  *    ★ 同一手还揭出**五行数值的淡出**：TH15 里这五行的 alpha **就是面板父 VM 的 alpha 字节**
  *      （`th15:0x436ae6` `mov al,[eax+0x53b]` → AsciiManager `+0x19227`；`+0x53b` = `color_1.A`，
  *      一手 `AnmVm::step_interpolators` `th15:0x47becf` 写它）= 父 VM 的 `alphaTime(20,0,0)`
@@ -793,7 +793,7 @@ static void panel_show(lolk_card_t *s)
  * ① **终点 50%** —— 纯数值件：终点 alpha **32 → 128**（❓ owner 口径 2026-09-19）。
  *    ★★ 2026-09-21（同日稍后）**统一收口**：owner 拍定「20 帧 / 50% 是 UI ⇒ 得**统一成一个值**，
  *    以哪个为基准都行」⇒ 父 agent 选**以本卡这套为基准**，**共享件 `hud_dim.{h,c}` 已改成
- *    终点 128 / 20 帧线性**，另外五张卡（116/117/107/113/110+111）跟着一起变。
+ *    终点 64 / 8 帧线性**，另外五张卡（116/117/107/113/110+111）跟着一起变。
  *    ⇒ 本卡**不再自持**终点与过渡帧数（`LOLK_PANEL_DIM_ALPHA` / `LOLK_PANEL_DIM_FRAMES` 已删），
  *      改回调共享件的 `hud_dim_tick()`。权威口径 = `hud_dim.h` 文件头 + `TUNING.md` §7.1/§7.5。*/
 
@@ -839,7 +839,7 @@ static int panel_rect(const lolk_card_t *s, hud_dim_rect_t *r)
 }
 
 /* ② 一帧一次：防遮挡的**全部动态都归共享件** —— 判据（进 = 矩形 + 28、出 = 矩形 + 44；滞回 16 px）
- * 与过渡（终点 128 / 20 帧线性）都在 `hud_dim_tick()` 里（`hud_dim.h` 文件头 + `TUNING.md` §7.1）。
+ * 与过渡（终点 64 / 8 帧线性）都在 `hud_dim_tick()` 里（`hud_dim.h` 文件头 + `TUNING.md` §7.1）。
  * 本卡只负责：每帧现算**自己那块可见块**的矩形、把返回的 alpha 写进六条、并在闩锁翻转时打一行日志。*/
 static int32_t panel_alpha_sync(lolk_card_t *s)
 {
@@ -1070,7 +1070,7 @@ static int on_draw(ce_card_t *c)
     }
 
     panel_show(s);
-    a = panel_alpha_sync(s);        /* ② 触发框按可见块现算；③ 防遮挡 alpha（终点 128 / 20 帧线性）*/
+    a = panel_alpha_sync(s);        /* ② 触发框按可见块现算；③ 防遮挡 alpha（终点 64 / 8 帧线性）*/
     panel_rows_draw(s, (uint32_t)a);
     return 0;
 }

@@ -4900,7 +4900,7 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 | 2026-09-21 | **所有卡（共享件 `patch/th18/cards.js`：111 的 `category` 由缺省 2 → **0** + 加一行 `desc`；卡侧只动 111 自己的 `cards/signal.c`）** | 见下方「§BE-EV」 |
 | 2026-09-21b | **所有卡（共享件 `patch/th18/cards.js`：117 的 `category` 由 0 → 缺省 2 = 被动；卡侧只动 116 的 `cards/season.c` 与 117 的 `cards/animal.c`）** | 见下方「§BE-EW」 |
 | 2026-09-21c | **所有卡（新增共享件 `native/cards/bomb10.{h,c}` —— 110/111 的**同一份**灵击实现；共享件 `patch/th18/cards.js` 的 **110** 加 `category: 0` + 一行 `desc`；卡侧动 110 的 `cards/mof.c` 与 111 的 `cards/signal.c`）** | 见下方「§BE-FA」 |
-| 2026-09-21d | **所有卡（共享资源 `assets/ability/entries/ORDER.txt` 末尾 append 一段 `ATLAS_SENRO_HUD_LABEL` + 新脚本 `308_senro_hud_label.anm.txt`；共享生成物 `native/anm_ids.h` 追加 4 行）** | 见下方「§BE-FB」（107 的 HUD 固定标签 = TH07 原贴图，owner 口径「107的UI按照原贴图做」；**脚本 306/307、`sdk.*`、`sites.py`、`Makefile`、`patch/**` 一行未动**，既有 sprite/entry 号一个没挪）|
+| 2026-09-22d | **所有卡（共享资源 `assets/ability/entries/ORDER.txt` 末尾 append 一段 `ATLAS_SENRO_HUD_LABEL` + 新脚本 `308_senro_hud_label.anm.txt`；共享生成物 `native/anm_ids.h` 追加 4 行）** | 见下方「§BE-FB」（107 的 HUD 固定标签 = TH07 原贴图，owner 口径「107的UI按照原贴图做」；**脚本 306/307、`sdk.*`、`sites.py`、`Makefile`、`patch/**` 一行未动**，既有 sprite/entry 号一个没挪）|
 
 
 > **§BE 详录 #42（2026-09-20 · P1「缺音效一批」8 条 + 音效表扩容新增 5 枚别作原版 SE）**

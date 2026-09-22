@@ -180,7 +180,9 @@ test-host:
 	@mkdir -p tests/build
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_cards_def tests/test_cards_def.c cards_def.c
 	./tests/build/test_cards_def
-	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_sdk_core tests/test_sdk_core.c sdk_core.c
+## ★ 2026-09-22：`sdk_core.c` 现在调 `hud_card_shelf_x0()`（货架给原生「当前卡」那块 UI 让位，
+##   一手几何在 `cards/hud_dim.{h,c}`）⇒ 所有链 sdk_core.c 的主机单测都要一起链 `cards/hud_dim.c`。
+	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_sdk_core tests/test_sdk_core.c sdk_core.c cards/hud_dim.c
 	./tests/build/test_sdk_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_sdk_actions tests/test_sdk_actions.c sdk_actions.c
 	./tests/build/test_sdk_actions
@@ -206,7 +208,7 @@ test-host:
 ##   **接线级**单测。它**同时**链 sdk_core.c 与 cards/collect2x_core.c（两个模块各自那份单测只链自己），
 ##   按 cards/faith.c 与 cards/collect2x.c 里同一段代码的形状一帧一帧对跑（成员 +1 / 不进批分 /
 ##   在飞 presence / 微档不入批 / 114 不在场零副作用 / 帧内顺序无关）。见测试文件头。
-	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_vitem_batch tests/test_vitem_batch.c sdk_core.c cards/collect2x_core.c
+	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_vitem_batch tests/test_vitem_batch.c sdk_core.c cards/collect2x_core.c cards/hud_dim.c
 	./tests/build/test_vitem_batch
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_peashooter_core tests/test_peashooter_core.c cards/peashooter_core.c
 	./tests/build/test_peashooter_core

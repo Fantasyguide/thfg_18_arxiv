@@ -38,9 +38,9 @@ offset124:
     jmp(offset124, 0);
     stop();
     interruptLabel(4);
-    alphaTime(20, 0, 255);   // ★ 2026-09-21 统一动态（TUNING §7.1）：淡回 = 20 帧线性到满亮
+    alphaTime(8, 0, 255);    // ★ 2026-09-22 统一动态（TUNING §7.1）：淡回 = **8 帧线性到满亮** —— 一手 = 原生 `abcard.anm` script1–4 的 `interruptLabel(4)`
     caseReturn();
     interruptLabel(5);
-    alphaTime(20, 0, 128);   // ★ 2026-09-21 统一动态（TUNING §7.1）：压暗 = 20 帧线性到 128（50% 透明）
+    alphaTime(8, 0, 64);     // ★ 2026-09-22 统一动态（TUNING §7.1）：压暗 = **8 帧线性到 64（25%）** —— 一手 = 原生 `abcard.anm` script1–4 的 `interruptLabel(5)`
     caseReturn();
 }

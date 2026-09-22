@@ -737,3 +737,16 @@ SENRO_HUD_D7           ability/senro_hud/D7.png          @56,0,8x12
 SENRO_HUD_D8           ability/senro_hud/D8.png          @64,0,8x12
 SENRO_HUD_D9           ability/senro_hud/D9.png          @72,0,8x12
 SENRO_HUD_BORDER       ability/senro_hud/BORDER.png      @80,0,48x16
+
+# ============================================================================================
+# 2026-09-22 追加：卡 107（妖妖梦）**HUD 的固定标签**（TH07 `ascii.anm` entry0 sprite142，96×16）
+#   生成器 = assets/ability/make_senro_hud_art.py（矩形从 `thanm -l 7` 的 ascii.anm 文本读 + 断死）。
+#   一手：VM2（`AsciiManager +0x498`）在 `th07:0x401be3` 被装 script4，正文第一句 = `ins_3(sprite142)`；
+#         内容（逐像素读出）= 单词 `Cherry` + 粉色加号 `+`（= +C 字段的前缀）+ 粉色斜杠 `/`
+#         （= 樱点 / 最大樱点之间那 9 单位空档里的分隔符）+ 一层软投影。
+#         **锚点 = 左上角**（script4 的 `ins_22()`；opcode 22 = `th07:0x451b51` 的 `or flags,0xc00`）。
+#   贴图脚本 = 308（`anchor(1,1)`）；数字 306 / 脉动花 307 是**居中锚**（照 TH07 的 VM3/VM4），一行不动。
+#   ⚠ 单独起一段 ATLAS：本文件只许追加 ⇒ 既有 ATLAS_SENRO_HUD 那段的画布行不许改。
+# ============================================================================================
+ATLAS ATLAS_SENRO_HUD_LABEL 96x16
+SENRO_HUD_LABEL        ability/senro_hud/LABEL.png       @0,0,96x16
