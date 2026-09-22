@@ -1261,6 +1261,18 @@ int main(void)
             CHECK(yk_fam_hit_player(1.0f, 1.0f, 0.0f) == 1);           /* 自机半径 0 也按 hurtbox 判 */
             CHECK(yk_fam_hit_player(20.0f, 0.0f, 0.0f) == 0);
             CHECK(yk_fam_hit_player(1.0f, 0.0f, -5.0f) == 1);          /* 负半径：仍按 hurtbox（r>0）*/
+            /* ★★★ 2026-09-22 夜（Time 第三道门）：抓取盒的玩家状态白名单。
+             * 一手 TH08 = {0 ALIVE, 3 INVULNERABLE, 4 BORDER} 放行（`th08:0x44a5c1`/`:0x44a5c9`/`:0x44a5d4`）；
+             * TH18 等位映射 = {1 存活, 3 无敌/复活, 4 决死窗口}（移动只在 case 1 `th18:0x45c0cc`）。*/
+            CHECK(YK_ITEM_BOX_STATE_INIT == 0 && YK_ITEM_BOX_STATE_ALIVE == 1 &&
+                  YK_ITEM_BOX_STATE_DEAD == 2 && YK_ITEM_BOX_STATE_INVULN == 3 &&
+                  YK_ITEM_BOX_STATE_BORDER == 4);
+            CHECK(yk_item_box_open(1) == 1);                      /* 存活 */
+            CHECK(yk_item_box_open(3) == 1);                      /* 无敌/复活 */
+            CHECK(yk_item_box_open(4) == 1);                      /* 决死窗口 */
+            CHECK(yk_item_box_open(0) == 0);                      /* 初生/未就位 ⇒ 关 */
+            CHECK(yk_item_box_open(2) == 0);                      /* 死亡段 ⇒ 关 */
+            CHECK(yk_item_box_open(-1) == 0 && yk_item_box_open(99) == 0);   /* 野值一律关 */
             }
             }
         }

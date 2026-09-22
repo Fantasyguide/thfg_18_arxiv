@@ -20480,4 +20480,27 @@ state 5 在上抛期间不动（`th08:0x4407a5`）。抓取盒的三态白名单
 
 **发布面**：**本批没改** `pl0X.sht` / `pl0X.anm` / `ability.anm` / wav / 站点（只有 DLL 里的卡代码 + 文档）。
 
+## §BE 详录 #72（2026-09-22 夜）：108 **Time 的第三道门**（损命窗口内抓取盒整段关闭）+ TH18 playerState 编号补齐
+
+**改了什么**
+
+| 文件 | 改了什么 |
+| --- | --- |
+| `native/cards/youkai_core.{h,c}` | `YK_ITEM_BOX_STATE_*`（0 初生 / 1 存活 / 2 死亡段 / 3 无敌复活 / 4 决死窗口）+ `yk_item_box_open(player_state)`（一手白名单 `{1,3,4}`）|
+| `native/cards/youkai.c` | 刻符的收集判据并进 `yk_item_box_open(*(int32_t *)(CE_PLAYER() + CE_PLAYER_STATE))` |
+| `native/tests/test_youkai_core.c` | +7 条断言（白名单三档放行、初生/死亡/野值一律关）⇒ **4610 checks / 0 failed** |
+| `TUNING.md` | §2.0zr（一手 + 等位映射 + `❓` state 0 语义 + 实跑判据）|
+
+**一手**：TH08 白名单 `th08:0x44a5c1`（0）/ `:0x44a5c9`（3）/ `:0x44a5d4`（4）三个 `je`，其余 `th08:0x44a5d9 xor eax,eax`；
+TH18 编号 = `player+0x476ac`（`switch 0..4`、移动只在 case 1 `th18:0x45c0cc`）、`Player__die th18:0x45d3a0` 置 4（`th18:0x45d4e4`）、
+`th18:0x45d090` → 2 = 死亡段、命中链在 `{2,4,3}` 早退（`th18:0x45cd10` 一族）。
+⇒ **等位映射**（按语义不按编号）：TH08 `{0,3,4}` ↔ TH18 `{1,3,4}`；被挡 `{1,2}` ↔ `{0,2}`。
+
+**怎么验证的**：`make check` **rc=0**（`x87 = 0`、`test_youkai_core` 4610/0、sites 双面、`sitecheck --all`、
+`contract_check`、`gen_drift`、`capcheck`、`sht-verify`、`anm-verify`、`snd-check`、`dllx87`、`dllverify`、
+`engine_abi_check`）；`python3 tooling/check-docs.py` 全部通过。
+
+**实跑判据**：中弹那一帧起（决死窗口/死亡段）**收不到刻符**（`taken` 不涨）；无敌/复活（3）与决死窗口（4）照常收。
+
+**发布面**：**本批没改** `pl0X.sht` / `pl0X.anm` / `ability.anm` / wav / 站点（只有 DLL 里的卡代码 + 文档）。
 

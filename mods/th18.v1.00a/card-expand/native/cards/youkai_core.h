@@ -1060,3 +1060,29 @@ int yk_gauge_fam_kill_delta(int32_t gauge);
 #define YK_FAM_HIT_REACH  (YK_FAM_HURTBOX_HALF)   /* = 12.0（自机半径由调用方传入，见卡侧读 `+0x4799c`）*/
 /* `dx/dy` = 自机 − 使魔（世界单位）；`hit_r` = 自机判定半径（一手 3.0）。⇒ 1 = 撞上。 */
 int yk_fam_hit_player(float dx, float dy, float hit_r);
+/* ============ ★★★ 2026-09-22 夜（Time 的**第三道门**）：**损命窗口内抓取盒整段关闭** ============
+ * owner 口径（TH08-ITEMS-AND-SC §1.1 的 Time 那一档）：「**恰好在自机损命时出现的那颗不能自动吸收**」。
+ *
+ * **一手（TH08）**：`Player::CalcItemBoxCollision th08:0x44a5a0` 读 `ds:0x17d5ef8`（playerState）：
+ *   `th08:0x44a5c1 je`（**0 = ALIVE 放行**）/ `th08:0x44a5c9 cmp 3 je`（**3 = INVULNERABLE 放行**）/
+ *   `th08:0x44a5d4 cmp 4 je`（**4 = BORDER 放行**）/ 否则 `th08:0x44a5d9 xor eax,eax`（**其余一律「没碰到」**）
+ *   ⇒ **白名单 = {0, 3, 4}**，被挡的是 {1 SPAWNING, 2 DEAD}。
+ *
+ * **TH18 侧的状态编号（本批补的一手，`engine/player/th18/01-…`/`03-player-hit-gate.md`）**：
+ *   `player+0x476ac` 是状态机 `switch (0..4)`；**移动只在 case 1 调**（`th18:0x45c0cc`）⇒ **1 = 存活可动**；
+ *   `Player__die th18:0x45d3a0` 置 **4 = 决死窗口**（`th18:0x45d4e4 movl $0x4`）；
+ *   `Player__commit_death_and_enter_state2 th18:0x45d090`（8 帧后）⇒ **2 = 死亡段**（miss 已记、不可动）；
+ *   命中链在 `+0x476ac ∈ {2,4,3}` 时一律早退（`th18:0x45cd10` 一族）⇒ 3 = 无敌/复活那一档。
+ * ⇒ **等位映射**：TH08 `{0 ALIVE, 3 INVULNERABLE, 4 BORDER}` ↔ **TH18 `{1, 3, 4}`**；
+ *   被挡的 TH08 `{1 SPAWNING, 2 DEAD}` ↔ **TH18 `{0, 2}`**（0 = 初生/未就位）。
+ * ⚠ 这条是**等位映射**（不是逐位复刻）：TH18 的 0 是「初生」、TH08 的 0 是「存活」，两个 0 语义相反 ⇒ 映射按**语义**而非编号。
+ *   🟡 残余：TH18 的 state 0 具体是什么（`Player::initialize` 之后到第一帧之间）没有逐指令钉死；若实跑发现开局收不到东西，
+ *   把 `YK_ITEM_BOX_STATE_INIT` 一并放行即可（一行）。*/
+#define YK_ITEM_BOX_STATE_INIT 0   /* TH18「初生/未就位」（TH08 的 SPAWNING 对应位；本卡**不放行**）*/
+#define YK_ITEM_BOX_STATE_ALIVE 1  /* TH18 存活可动（移动只在 case 1）*/
+#define YK_ITEM_BOX_STATE_DEAD 2   /* TH18 死亡段（`th18:0x45d090` 之后）*/
+#define YK_ITEM_BOX_STATE_INVULN 3 /* TH18 无敌/复活档（命中链在 3 时早退）*/
+#define YK_ITEM_BOX_STATE_BORDER 4 /* TH18 决死窗口（`Player__die` 置 4）*/
+
+/* 抓取盒开着吗：一手白名单 `{ALIVE, INVULNERABLE, BORDER}` ⇒ 1；其余（含初生/死亡/野值）⇒ 0。 */
+int yk_item_box_open(int32_t player_state);

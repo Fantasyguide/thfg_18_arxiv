@@ -1197,3 +1197,11 @@ int yk_fam_hit_player(float dx, float dy, float hit_r)
     if (r <= 0.0f) return 0;
     return (dx * dx + dy * dy) <= r * r;
 }
+
+/* ★★★ 2026-09-22 夜（Time 第三道门）：抓取盒的玩家状态白名单（一手/等位映射见 `youkai_core.h`）。*/
+int yk_item_box_open(int32_t player_state)
+{
+    return (player_state == YK_ITEM_BOX_STATE_ALIVE ||
+            player_state == YK_ITEM_BOX_STATE_INVULN ||
+            player_state == YK_ITEM_BOX_STATE_BORDER) ? 1 : 0;
+}

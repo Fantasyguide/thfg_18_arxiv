@@ -1799,7 +1799,14 @@ static int yk_orbs_tick(yk_card_t *s)
         }
         /* 收集 = **接触玩家的抓取盒**（一手 `Player::CalcItemBoxCollision`，`ItemManager.cpp:288`）：
          * 只对 state 0/1 生效（TH08 把 state 3 从这条判据里摘出去 ⇒ 上浮期间收不到）。*/
-        if (o->state != YK_ORB_STATE_SPAWN) {
+        /* ★★★ 2026-09-22 夜（Time 的**第三道门**）：**损命窗口内抓取盒整段关闭** —— 一手
+         * `Player::CalcItemBoxCollision th08:0x44a5a0` 的白名单是 `{0 ALIVE, 3 INVULNERABLE, 4 BORDER}`
+         *（`th08:0x44a5c1`/`:0x44a5c9`/`:0x44a5d4` 三个 `je`，其余 `th08:0x44a5d9 xor eax,eax`）。
+         * TH18 的等位映射 = `{1 存活, 3 无敌/复活, 4 决死窗口}`（一手：移动只在 case 1 `th18:0x45c0cc`；
+         * `Player__die th18:0x45d3a0` 置 4；`th18:0x45d090` → 2 = 死亡段）⇒ 被挡的是 `{0, 2}`。
+         * ⚠ 与「每帧把刻符打回下落」（上一批那两处订正）**是两条独立规矩**，一起才等于 owner 那条
+         *   「恰好在损命时出现的那颗不能自动吸收」。*/
+        if (o->state != YK_ORB_STATE_SPAWN && yk_item_box_open(*(const int32_t *)(CE_PLAYER() + CE_PLAYER_STATE))) {
             dx = px - o->x;
             dy = py - o->y;
             dist = dx * dx + dy * dy;
