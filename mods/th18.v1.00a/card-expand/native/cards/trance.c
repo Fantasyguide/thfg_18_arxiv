@@ -206,7 +206,16 @@
  *     `mov eax,[ecx+0x644] / test al,1 / … or eax,1 / mov [ecx+0x640],0 / mov [ecx+0x644],eax`
  *     `mov [ecx+0x638],0x3c / mov [ecx+0x63c],0x42700000(60.0f) / mov [ecx+0x634],0x3b`
  *     `mov [ecx+0x476ac],1 / ret`
- *   ⇒ 它**只写 6 个字段、读零个计时器**：`state(+0x476ac) → 1`（活）、无敌计时器 = 60 帧。
+ *   ⇒ 它**只写 6 个字段、读零个计时器**：`state(+0x476ac) → 1`（活）、**状态/动画计时器 1**
+ *     `zTimer{prev 0x3b, cur 0x3c, 60.0f}`（= `player+0x634/0x638/0x63c`，见
+ *     [`engine/player/th18/01-position-and-state-timers.md`] 的布局表）。
+ *     ⚠ **订正（2026-09-22）**：本行旧注释写「无敌计时器 = 60 帧」是**错的** ——
+ *     无敌计时器是 `player+0x47774`（判据读 `+0x47778`），**这个函数一个字都不碰它**
+ *     （穷举：`+0x47774/78/7c` 的全 exe 写点表里没有 `0x45d590`）。⇒ **救下之后自机没有无敌帧**。
+ *     一手 TH13 同样如此：`Player::die` `th13:0x444a10` 的「免费灵界」支（`th13:0x444a32`
+ *     `call TranceManager::begin` → `th13:0x444a3f test eax,eax` → `th13:0x444a43
+ *     mov dword [edi+0x65c],1` → `ret`）**也只写一个 state**，不写无敌计时器。
+ *     ⇒ 两作都靠「灵界里不会再中弹」来保护，而不是靠救下时给无敌（见下面 ④-2 的体术那一段）。
  *   ⇒ 「决死窗口关掉之后还管不管用」的答案：**管用**（它不看窗口计时器）；
  *    真正的不归点是 `Player__commit_death_and_enter_state2` `th18:0x45d090`（**扣命**）。
  *   先例：`cards/senro.c:51`（107）、`cards/animal.c:268`（117）已经照同一形状在用；
@@ -1509,6 +1518,23 @@ static int32_t s_stat_state[8];          /* 当前各 state 的颗数（诊断�
 static int32_t s_stat_maxpoint_log;       /* 诊断：type 1 加成打过几行日志（限流）*/
 static int32_t s_stat_popup;             /* 起过几支数字弹窗（收集反馈 ③）*/
 static int32_t s_stat_popup_failed;      /* 其中 VM 没建起来的次数（anm 没装载时会涨）*/
+
+/* ★★ 2026-09-22 工单（owner th13 #4「灵界状态下被 boss 体术 = 不能移动」）的**现场取证**。
+ *   一手结论（`engine/player/th18/03-player-hit-gate.md` §1.6）：TH18 里**唯一**的「不能移动」=
+ *   自机状态机 `player+0x476ac` 离开 `1`（移动只从 `Player__on_tick__body` 的 case 1 调，
+ *   `th18:0x45c0c1`→`0x45c0cc call 0x45b170`；全 exe 只有 7 处写状态，值 4 只由 `0x45d4e4` 写在
+ *   `Player__die` 体内 = 我们闸门之后；值 2 只由 `0x45d21c` 写在 `0x45d090`，而它只能从状态 4 走到）。
+ *   ⇒ 灵界期间只要闸门在跑，状态就该**恒 1**、自机可自由移动。
+ *   这两个计数就是那句话的可观测化（**只读** `+0x476ac`、不写任何引擎字段）：
+ *     · `s_stat_locked_frames` = 灵界期间读到状态 ≠ 1 的帧数（正常恒 0）；
+ *     · 每次**状态值变化**各打一行（限 `TRANCE_LOCK_LOG_LIMIT` 行），带当时的状态值，
+ *       方便 owner 回报的是"哪个状态把自机锁住了"而不是"感觉动不了"。
+ *   ⚠ 已知会出 1 行的正常情形：死亡触发档（DEATH_FREE）窗口结束那一帧自机本来就要死
+ *     （状态会走 4 → 2），那一条是**预期**，不是回归。*/
+#define TRANCE_LOCK_LOG_LIMIT 6
+static int32_t s_stat_locked_frames;     /* 灵界里状态 ≠ 1 的帧数（诊断；正常恒 0）*/
+static int32_t s_lock_log_lines;         /* 已打过的"被锁"日志行数（限流）*/
+static int32_t s_lock_state_prev = 1;    /* 上一帧读到的状态（边沿检测用）*/
 
 /* swap-remove：把尾元素换到 i（**不 ++i**，尾元素也要过筛）。与 `faith.c` 的 `dot_remove` 同形。*/
 static void spirit_remove(int i)
@@ -2897,10 +2923,82 @@ static void on_item_frame(ce_card_t *c)
      *   这里按相位**粘性声明**（断点落在两个 tick 之间也要挡得住）。
      *   ⚠ 与上面那条 `ce_invuln_request` **不是一回事**，两条都留着：
      *     无敌层 = 子弹**根本不判定**；本闸门 = 判定照跑、**弹被吃掉**（= 原版）。
-     *     实跑首日要按 `AUDIT` §BP-6 的判据确认：灵界中撞弹 ⇒ 不掉命、不记 miss、**弹消失**。*/
+     *     实跑首日要按 `AUDIT` §BP-6 的判据确认：灵界中撞弹 ⇒ 不掉命、不记 miss、**弹消失**。
+     *
+     * ★★ 2026-09-22（工单 owner th13 #4「灵界里被 boss 体术 ⇒ 不能移动，持续被体术」）**结案备注**。
+     *   一手全文 = [`engine/player/th18/03-player-hit-gate.md`] §1.6（体术路径）/ §4.2（TH13 判定层闸门）/
+     *   §4.3（TH13 体术路径）。四条要点（都过指令边界，逐条可复跑）：
+     *
+     *   ① **「boss 体术」没有自己的路径**：它是 `EnemyData__step_game_logic`（`0x42ed40`）里的接触判定
+     *      —— 圆分支 `0x42f580 call 0x45cd90`、OBB 分支 `0x42f667 call 0x45cea0`，两处第 3 参都传 0
+     *      （= 可致死）；命中后调用侧**只对 `eax==2`（擦弹）做事**（`0x42f66c`–`0x42f69a` 每 6 帧一次
+     *      `Player__do_graze`），**`eax==1` 什么都不做**。⇒ 体术的全部后果只可能来自
+     *      这两条判定函数体内的 `call 0x45d3a0`（= 本站点），没有别的分支。
+     *
+     *   ② **TH18 里「不能移动」只有一种形态 = 自机状态机离开 1**：移动只在
+     *      `Player__on_tick__body` 的 **case 1** 里被调（`0x45c0c1` 判 `[0x4cf2a4]==0` 后
+     *      `0x45c0cc call 0x45b170`，全 exe 唯一调用者）；case 0/2/4 都不调它。
+     *      而 `player+0x476ac` 全 exe 只有 7 个写点，**值 4（决死窗口 = 那条"停止移动"）只有
+     *      `0x45d4e4` 一处，就在 `Player__die` 体内（= 本闸门之后）**；值 2 只有 `0x45d21c`
+     *      一处（`0x45d090` 的 commit），而它只能从状态 4 走到（唯一调用者 `0x45c135` 在 case 4 里）。
+     *
+     *   ③ **命中链里「判中 → call」之间一条玩家字段写都没有**：三条判定函数
+     *      （`0x45cc20` / `0x45cd90` / `0x45cea0`）逐个筛「写内存」指令，命中的只有各自的栈局部
+     *      （`0x45cd90` 更是**一条内存写都没有**）；区间 `0x423e10`–`0x45d588`（62035 条）按
+     *      `+0x476ac`/`+0x47774/78`/`+0x4779c`/`+0x477a4`/`+0x620/624/62c/630`/`+0x47908`/`0x4cf2a4`
+     *      过滤出 49 条写，**判定函数体内 0 条**；玩家位置/速度的 26 条写点**全部**属于玩家自己那一族
+     *      ⇒ **TH18 没有「体术推挤/位移写回」**（对 `+0x47778` 的直写也没有）。
+     *      ⇒ **本站点已经早到极限**：再往前（判定函数里返回 0）弹就**不被吃掉**了，
+     *        与 owner 口径「弹照样被吃掉 + 金光」冲突 ⇒ **不加站点、不挪站点**（`AUDIT` §BE-FE）。
+     *
+     *   ④ **不用无敌层**（owner 2026-09-22 否决：「无敌 = 会删金光」）：灵界期间继续保持
+     *      `ce_invuln_request(113, 0)`（上面 ④），只留本闸门 —— 判定照跑（碰撞发生）、弹被吃掉、
+     *      hit 音被拦（`0x45d3b4` 在闸门之后）、状态 4 / 决死窗口 / 停止移动一笔都不写。
+     *      一手对照：TH13 那道 `on_hit` 闸门（`th13:0x444ca4` → `th13:0x444de4` 函数尾）之前
+     *      同样**没有任何玩家字段写**；而 TH13 的**四个判定函数一个内存写都没有**
+     *      （所以「TH13 早退就够」这条成立）。
+     *      ⚠ 一手差异（已知、按 owner 口径不复刻）：TH13 的圆/OBB 判定函数**自己**也过灵界旗标
+     *      （`th13:0x444146` / `th13:0x444269` / `th13:0x444759` → `xor eax,eax; ret`）⇒
+     *      原版灵界里「圆弹 / 激光 / 体术」是「连判定都不成立 = 穿过去」，我们这版是「判定成立但被吃掉」。
+     *
+     *   ⇒ **无回归可修的结论**：owner 2026-09-18 那次实跑（《单卡测试》）时本站点**还 park 着没进 patch**
+     *     （09-19 `7647511` 才放出）⇒ 那时体术命中真的走 `Player__die` ⇒ **状态 4 = 决死窗口 = 不能移动**，
+     *     窗口结束被本卡的 `+0x0c` 救援取消 ⇒ 下一帧再中 ⇒ 那个「持续不能动」的循环。
+     *     09-19 之后闸门在跑，这一笔在代码上已经不存在；实跑判据见 §1.6.4（含下面 ④-2b 的诊断行）。*/
     ce_no_hit_declare(TRANCE_NUM,
                       (s->core.phase == TRANCE_PHASE_MANUAL
                        || s->core.phase == TRANCE_PHASE_DEATH_FREE) ? 1 : 0);
+
+    /* ④-2b ★★ **灵界期间「自机被锁」现场取证**（2026-09-22 工单 owner th13 #4）。
+     *   为什么需要它：owner 的观察原话是「灵界状态下被 boss 体术 = 不能移动，持续被体术」——
+     *   「不能移动」是一句**观感**，而引擎里它只有一种可判定的形态：自机状态机离开 `1`
+     *   （一手：移动只从 `Player__on_tick__body` 的 case 1 调，`0x45c0c1` 判 `[0x4cf2a4]==0` 后
+     *   `0x45c0cc call 0x45b170`；状态 4/2/0 那三支都不调它。全 exe 于 `+0x476ac` 的 7 个写点见
+     *   `engine/player/th18/03-player-hit-gate.md` §1.6）。
+     *   与本卡的关系：灵界里我们只声明**闸门**（上面 ④-2），闸门开着的那些命中路径**进不了状态 4**
+     *   ⇒ 灵界期间状态应当**恒 1**。所以"读到 ≠1"要么是**闸门没生效**（站点没挂上 / 声明没到），
+     *   要么是**另一条我没找到的锁**（那就是新证据，必须带状态值回报）。
+     *   ⚠ 只读、只记数、不写任何引擎字段；限流 6 行。预期会各出 1 行的正常情形：死亡触发档收尾
+     *   （自机本来就要死：状态 4 → 2）。*/
+    if (s->core.phase != TRANCE_PHASE_IDLE) {
+        uint8_t *wpl = CE_PLAYER();
+        const int32_t ps = wpl ? *(int32_t *)(wpl + CE_PLAYER_STATE) : -1;
+        if (ps != 1) {
+            ++s_stat_locked_frames;
+            if (ps != s_lock_state_prev && s_lock_log_lines < TRANCE_LOCK_LOG_LIMIT) {
+                ++s_lock_log_lines;
+                ce_log("trance: ★ player LOCKED-in-trance: state %d -> %d while the no-hit gate is "
+                       "declared for card %d (frame %d, phase %d) — 移动只从 state 1 那一支调 "
+                       "(0x45c0cc)，所以 state != 1 就是「不能移动」；state 4 的唯一写点是 "
+                       "0x45d4e4（在 Player__die 体内 = 本卡闸门之后）⇒ 若非死亡触发档收尾看到这一行，"
+                       "请连同这行回报", (int)s_lock_state_prev, (int)ps, TRANCE_NUM, (int)s->frame,
+                       (int)s->core.phase);
+            }
+        }
+        s_lock_state_prev = ps;
+    } else {
+        s_lock_state_prev = 1;   /* 出灵界复位（下一次进灵界从 1 起算，边沿检测不误报）*/
+    }
 
     /* ④′ ★ **灵界版 BGM（路线 A：DLL 侧第二路 + 交叉淡化）** —— 只在**帧点**动手。
      *   为什么不在 `on_activate` / `on_death_after_deathbomb` 里起：
@@ -3433,7 +3531,9 @@ static void on_item_frame(ce_card_t *c)
                "(r=%d px, life %d f + script tail %d f = %d f, scale %d held %d f then ->%d over %d f; "
                "tick guard dup %d, age-probe lines %d), "
                "score-decl BLOCKED (decl %d, %d frames), %s "
-               "| gauge-hud vms [%d %d %d %d] respawn %d tries %d",
+               "| gauge-hud vms [%d %d %d %d] respawn %d tries %d "
+               "| player-lock watch: %d frame(s) with state != 1 while in trance (0 = 灵界期间自机没被锁；"
+               "见本文件 on_item_frame 的 ④-2b)",
                (int)s->core.gauge.gauge, TRANCE_GAUGE_MAX, (int)s->core.gauge.tier, (int)s->core.phase,
                (int)s->core.spirits_seen[0], (int)s->core.spirits_seen[1],
                (int)s->core.spirits_seen[2], (int)s->core.spirits_seen[3],
@@ -3464,7 +3564,8 @@ static void on_item_frame(ce_card_t *c)
                (int)s_stat_tick_dup, (int)s_stat_age_probe_lines,
                (int)s->decl_last, (int)s->decl_blocked, ce_trance_bgm_state_name(),
                (int)s_hud_vm[0], (int)s_hud_vm[1], (int)s_hud_vm[2], (int)s_hud_vm[3],
-               (int)s_hud_respawn, (int)s_hud_tries);
+               (int)s_hud_respawn, (int)s_hud_tries,
+               (int)s_stat_locked_frames);
     }
 }
 
