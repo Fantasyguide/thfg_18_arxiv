@@ -145,6 +145,15 @@
 - 一手：`Player::move`（`th08:0x44aec0`）`0x44b194 SpawnEffect(0x16, &player+0x2b4, slot 2, color -1)`
   ⇒ 模板表 `0x4c6d30[0x16]` = script54；妖→人 `0x44b3e3 SetInterrupt(光环, 1)`。
 
+#### 108 的字形图集扩容：**第 14 格 = '+'**（2026-09-22 夜，#27 弹字）—— 具名登记
+
+- 资产：`pl0X.anm` 每机的 `yk_gaugefont` entry（`player/yk_gaugefont.png`）从 **13 格 → 14 格**
+  （画布 104×12 → **112×12**），新增格 = TH08 `ascii.anm` entry0 **sprite149** `(104,208,8,12)` = **'+'**
+  （逐像素确认十字形）；每机 sprite 区间相应 +1（pl00 的 `CE_PL_ANM_YKGAUGEFONT_BASE_PL00` 仍是 102，
+  区间变成 **102..116**，第 13 号 = '+'）。
+- 走既有路径：`assets/build_player_anm.py` **只追加** + `verify_rebuilt` 回读闸 + `pl_anm_ids.h` + 本行具名。
+- 用途 = #27 的**刻符弹字**（「+1」那支要用 '+'）；`ability.anm` / `pl0X.sht` / wav / 站点**本批未动**。
+
 #### 音效表扩容：新 SE 槽的具名登记（2026-09-22）
 
 - **`0x5d` `YOUKAI_FAM_SHIFT`**（`assets/voice/ORDER.txt` 第 9 个新行；`patch/th18/voice.js` 里 id 显式写 93）

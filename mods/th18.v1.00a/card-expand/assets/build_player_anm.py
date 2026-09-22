@@ -495,13 +495,15 @@ YK_EXTRA_PLAN = {
     #   ⚠ 这一批**不是**给脚本「画一句话」用的：TH08 那边引擎把**同一个 VM** 的 sprite 逐字改、
     #     逐字画（`DrawPercentage` 里 5~6 次 `SetSprite` + `DrawNoRotation`）⇒ TH18 侧要**多个 VM**
     #     （一个 VM 一帧只画一次），由 C 侧 `yk_gauge_text_*` 按同一套布局写每格的 sprite/位置。
+    # ★ 2026-09-22 夜（owner #27）：**第 14 格 = '+'**（TH08 `ascii.anm` entry0 sprite **149** =
+    #   `(104,208,8,12)`，逐像素确认是十字形），给「+1」弹字用；`0x8a` 那套里 150/151 未定名 ⇒ **不追加**。
     "gaugefont": ("ascii", "data/ascii/ascii.png",
-                  [(136 + i, i * 8, 208, 8, 12) for i in range(13)],   # 136..148 = '0'..'9' '%' '.' '-'
-                  (104, 12)),
+                  [(136 + i, i * 8, 208, 8, 12) for i in range(14)],   # 136..149 = '0'..'9' '%' '.' '-' '+'
+                  (112, 12)),
 }
 # 每项的**画布内摆放**（x 从左往右挨着放，间距 0；⚠ 槽条是 128 宽、游标 8 宽 ⇒ 画布 168 够）
 _YK_EXTRA_LAYOUT = {"orb": [(0, 0)], "gauge": [(0, 0), (8, 0), (24, 0), (40, 0)],
-                    "gaugefont": [(i * 8, 0) for i in range(13)]}
+                    "gaugefont": [(i * 8, 0) for i in range(14)]}
 # entry 名（每机各一份，故名字里不带机体号也可以；贴图按 entry 名去 tex 目录找）
 YK_EXTRA_NAME = {"orb": "player/yk_orb.png", "gauge": "player/yk_gauge.png",
                  "gaugefont": "player/yk_gaugefont.png"}
@@ -1096,7 +1098,7 @@ def write_pl_ids_h():
     # ★★ 2026-09-22 晚（owner：「th08 的贴图搞过来」）：**人妖槽百分比字形的 sprite 基号**。
     #   C 侧（`youkai.c` 的 `yk_gauge_text_*`）按 TH08 `AsciiManager::DrawPercentage` 的布局逐格
     #   `ce_anm_set_sprite(pl0X.anm, id, BASE + 序号)` —— 序号顺序 = TH08 的 sprite 号序：
-    #   0..9 = '0'..'9'、10 = '%'、11 = '.'、12 = '-'（= 原生 0x88..0x94）。
+    #   0..9 = '0'..'9'、10 = '%'、11 = '.'、12 = '-'、13 = '+'（= 原生 0x88..0x94）。
     #   写死常数会在「重新生成 / 插一格」时静默错位（画出来是别的字），所以从计划表现算。
     lines.append("")
     for player in sorted(YK_EXTRA_IDS):
@@ -1104,7 +1106,7 @@ def write_pl_ids_h():
         first = ent["sprites"][0][0]
         lines.append(f"#define CE_PL_ANM_YKGAUGEFONT_BASE_{player.upper():<5} {first:>3}   "
                      f"/* {player}.anm 人妖槽字形 sprite {first}..{first + 12}"
-                     f"（0..9 = '0'..'9'、10 = '%'、11 = '.'、12 = '-'）*/")
+                     f"（0..9 = '0'..'9'、10 = '%'、11 = '.'、12 = '-'、13 = '+'）*/")
     PL_IDS_H.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 

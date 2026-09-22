@@ -1177,6 +1177,26 @@ int main(void)
                       yk_gauge_clamp(99999));
                 CHECK(yk_gauge_clamp2(1234, YK_GAUGE_HUMAN_LIMIT, YK_GAUGE_YOUKAI_LIMIT) == 1234);
             }
+            /* ★★★ 2026-09-22 夜（#27 弹字）：距离 alpha 三段 + 十进制字形。
+             * 一手：`th08:0x4054e3`-`0x405545` / `:0x405983`-`0x4059f1`（`d = dx²+dy²` 整数）。*/
+            CHECK(YK_POPUP_SCORE_LIFE == 60 && YK_POPUP_TIME_LIFE == 90);
+            CHECK(YK_POPUP_GLYPH_PLUS == 13);
+            CHECK(yk_popup_alpha(0, 0) == 0x50);                  /* d = 0 ⇒ 0x50 */
+            CHECK(yk_popup_alpha(32, 0) == 0x50);                 /* d = 0x400 ⇒ 仍 0x50（不 > 0x400）*/
+            CHECK(yk_popup_alpha(33, 0) == 0x50 + (0x41 * 128) / 0xc00);   /* 刚过 0x400 */
+            CHECK(yk_popup_alpha(64, 0) == 0xD0);                 /* d = 0x1000 ⇒ > 0x400 支；0x1000 不 > 0x1000 */
+            CHECK(yk_popup_alpha(65, 0) == 0xD0 || yk_popup_alpha(65, 0) > 0x50);
+            CHECK(yk_popup_alpha(1000, 1000) == 0xD0);            /* 远处 ⇒ 满 alpha 上限 */
+            {
+                uint8_t g[6];
+                CHECK(yk_popup_digits(1, g, 6) == 1 && g[0] == 1);
+                CHECK(yk_popup_digits(10000, g, 6) == 5 && g[0] == 1 && g[4] == 0);
+                CHECK(yk_popup_digits(12345, g, 3) == 3 && g[0] == 1 && g[1] == 2 && g[2] == 3);
+                CHECK(yk_popup_digits(0, g, 6) == 1 && g[0] == 0);
+                CHECK(yk_popup_digits(-5, g, 6) == 1 && g[0] == 0);
+                CHECK(yk_popup_digits(7, 0, 6) == 0);              /* NULL 出口：不写、不崩 */
+                CHECK(yk_popup_digits(7, g, 0) == 0);              /* 容量 0：不写 */
+            }
         }
     }
 

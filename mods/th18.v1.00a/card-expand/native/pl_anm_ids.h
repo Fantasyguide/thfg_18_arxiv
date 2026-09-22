@@ -71,7 +71,7 @@
 #define CE_PL_ANM_YKBODY_FIRST_PL03   97   /* pl03.anm 妖侧本体帧 sprite 97..120（24 帧）*/
 #define CE_PL_ANM_YKBODY_LAST_PL03   120   /* 区间外 = 引擎把本体脚本换回去了（自愈闸，见 youkai.c）*/
 
-#define CE_PL_ANM_YKGAUGEFONT_BASE_PL00  102   /* pl00.anm 人妖槽字形 sprite 102..114（0..9 = '0'..'9'、10 = '%'、11 = '.'、12 = '-'）*/
-#define CE_PL_ANM_YKGAUGEFONT_BASE_PL01  112   /* pl01.anm 人妖槽字形 sprite 112..124（0..9 = '0'..'9'、10 = '%'、11 = '.'、12 = '-'）*/
-#define CE_PL_ANM_YKGAUGEFONT_BASE_PL02  115   /* pl02.anm 人妖槽字形 sprite 115..127（0..9 = '0'..'9'、10 = '%'、11 = '.'、12 = '-'）*/
-#define CE_PL_ANM_YKGAUGEFONT_BASE_PL03  126   /* pl03.anm 人妖槽字形 sprite 126..138（0..9 = '0'..'9'、10 = '%'、11 = '.'、12 = '-'）*/
+#define CE_PL_ANM_YKGAUGEFONT_BASE_PL00  102   /* pl00.anm 人妖槽字形 sprite 102..114（0..9 = '0'..'9'、10 = '%'、11 = '.'、12 = '-'、13 = '+'）*/
+#define CE_PL_ANM_YKGAUGEFONT_BASE_PL01  112   /* pl01.anm 人妖槽字形 sprite 112..124（0..9 = '0'..'9'、10 = '%'、11 = '.'、12 = '-'、13 = '+'）*/
+#define CE_PL_ANM_YKGAUGEFONT_BASE_PL02  115   /* pl02.anm 人妖槽字形 sprite 115..127（0..9 = '0'..'9'、10 = '%'、11 = '.'、12 = '-'、13 = '+'）*/
+#define CE_PL_ANM_YKGAUGEFONT_BASE_PL03  126   /* pl03.anm 人妖槽字形 sprite 126..138（0..9 = '0'..'9'、10 = '%'、11 = '.'、12 = '-'、13 = '+'）*/

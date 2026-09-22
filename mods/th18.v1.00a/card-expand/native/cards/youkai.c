@@ -1272,7 +1272,7 @@ static const int32_t YK_GAUGE_SCRIPT_FONT[4] = {
     CE_PL_ANM_SCRIPT_YKGAUGEFONT_PL00, CE_PL_ANM_SCRIPT_YKGAUGEFONT_PL01,
     CE_PL_ANM_SCRIPT_YKGAUGEFONT_PL02, CE_PL_ANM_SCRIPT_YKGAUGEFONT_PL03,
 };
-/* 字形 sprite 基号按机体查表（0..9 = '0'..'9'、10 = '%'、11 = '.'、12 = '-'）*/
+/* 字形 sprite 基号按机体查表（0..9 = '0'..'9'、10 = '%'、11 = '.'、12 = '-'、**13 = '+'** —— 第 14 格是 #27 追加的）*/
 static const int32_t YK_GAUGE_FONT_BASE[4] = {
     CE_PL_ANM_YKGAUGEFONT_BASE_PL00, CE_PL_ANM_YKGAUGEFONT_BASE_PL01,
     CE_PL_ANM_YKGAUGEFONT_BASE_PL02, CE_PL_ANM_YKGAUGEFONT_BASE_PL03,
@@ -1404,7 +1404,104 @@ static void yk_orb_spawn(yk_card_t *s, float x, float y, int state)
     ++s_orb_live;
 }
 
-static int yk_orb_collect(yk_card_t *s)
+/* ============ ★★★ 2026-09-22 夜（owner #27）：**刻符的两支弹字**（+N 提示）====================
+ * 一手与两支的分工见 `youkai_core.h` 的同名小节（`th08:0x403460` / `th08:0x403330`）。
+ * ⚠ **我们卡里没有 TH08 op90-92 那种「魔使」**：一手弹「+1」的是「击破魔使」那一刻
+ *   （`th08:0x42b296`，紧跟掉 1 颗刻符）⇒ 我们的对应物 = **击破我们自己的使魔**（`yk_fam_*` 那套），
+ *   所以「+1」挂在**使魔被击破**那一刻（依据写在这里，免得后来人以为是随手挂的）。
+ * 贴图 = `pl0X.anm` 里已有的字形（`CE_PL_ANM_YKGAUGEFONT_BASE_PLxx`：0..9 = '0'..'9'、
+ *   10 = '%'、11 = '.'、12 = '-'、**13 = '+'**（本批追加的第 14 格，TH08 sprite149））；
+ *   VM 必须挂**自机那一页**（`yk_player_anm()`，贴图按 VM 自己那一页取）。
+ * ❓ 自定（owner 2026-09-22 已批，登记 `TUNING.md`）：**层 = 世界层 11**、**池 = 3 支 x 5 字形**。*/
+#define YK_POPUP_MAX        3
+#define YK_POPUP_GLYPHS     5
+#define YK_POPUP_ANM_LAYER  11
+
+typedef struct {
+    uint8_t  used;
+    uint8_t  kind;
+    uint8_t  n;
+    uint8_t  age;
+    float    x, y;
+    uint32_t vm[YK_POPUP_GLYPHS];
+    uint8_t  g[YK_POPUP_GLYPHS];
+} yk_popup_t;
+static yk_popup_t s_popup[YK_POPUP_MAX];
+static unsigned s_popup_dropped;
+
+static void yk_popup_kill(yk_popup_t *p)
+{
+    unsigned i;
+    if (!p) return;
+    for (i = 0; i < YK_POPUP_GLYPHS; ++i) {
+        if (p->vm[i]) { ce_anm_delete(p->vm[i]); p->vm[i] = 0; }
+    }
+    p->used = 0; p->n = 0; p->age = 0;
+}
+
+static void yk_popup_kill_all(void)
+{
+    unsigned i;
+    for (i = 0; i < YK_POPUP_MAX; ++i) yk_popup_kill(&s_popup[i]);
+}
+
+static void yk_popup_spawn(float x, float y, int32_t value, int kind)
+{
+    yk_popup_t *p = 0;
+    uint8_t dg[YK_POPUP_GLYPHS];
+    int n, i, ch = yk_current_character();
+    unsigned k;
+    void *anm;
+    for (k = 0; k < YK_POPUP_MAX; ++k) if (!s_popup[k].used) { p = &s_popup[k]; break; }
+    if (!p) { ++s_popup_dropped; return; }
+    if (ch < 0 || ch > 3) ch = 0;
+    n = yk_popup_digits(value, dg, (int)YK_POPUP_GLYPHS);
+    p->n = 0;
+    if (kind == 1) p->g[p->n++] = YK_POPUP_GLYPH_PLUS;
+    for (i = 0; i < n && p->n < (int)YK_POPUP_GLYPHS; ++i) p->g[p->n++] = dg[i];
+    anm = yk_player_anm();
+    if (!anm) { p->n = 0; return; }
+    for (i = 0; i < (int)p->n; ++i) {
+        uint32_t id = ce_anm_spawn(anm, YK_GAUGE_SCRIPT_FONT[ch], YK_POPUP_ANM_LAYER);
+        if (!id) { yk_popup_kill(p); return; }
+        p->vm[i] = id;
+        ce_anm_set_sprite(anm, id, YK_GAUGE_FONT_BASE[ch] + (int)p->g[i]);
+    }
+    p->kind = (uint8_t)kind;
+    p->age = 0;
+    p->x = x; p->y = y;
+    p->used = 1;
+}
+
+static void yk_popup_tick(void)
+{
+    const float *pp = ce_player_pos();
+    unsigned k, i;
+    for (k = 0; k < YK_POPUP_MAX; ++k) {
+        yk_popup_t *p = &s_popup[k];
+        int life;
+        float base_x, step;
+        if (!p->used) continue;
+        life = (p->kind == 1) ? (int)YK_POPUP_TIME_LIFE : (int)YK_POPUP_SCORE_LIFE;
+        if (++p->age >= life) { yk_popup_kill(p); continue; }
+        if (p->kind == 0) p->y -= 0.5f;
+        if (p->kind == 0) { step = 8.0f; base_x = p->x - (float)p->n * 4.0f; }
+        else              { step = 7.0f; base_x = p->x - (float)p->n * 3.5f; }
+        for (i = 0; i < (unsigned)p->n; ++i) {
+            uint32_t id = p->vm[i];
+            float gx = base_x + (float)i * step;
+            int a, dx0, dy0;
+            if (!id || !ce_anm_get_vm(id)) { p->vm[i] = 0; continue; }
+            if (!ce_anm_set_pos(id, gx, p->y, 0.0f)) { p->vm[i] = 0; continue; }
+            dx0 = pp ? (int)(gx - pp[0]) : 0;
+            dy0 = pp ? (int)(p->y - pp[1]) : 0;
+            a = yk_popup_alpha(dx0, dy0);
+            (void)ce_anm_set_color(id, ((uint32_t)a << 24) | 0x00ffffffu);
+        }
+    }
+}
+
+static int yk_orb_collect(yk_card_t *s, float x, float y)
 {
     /* 收集结算（一手 `Item::collect_time_orb` `th08:0x4412b0`）：
      *   ① `AddTimeOrbs(1)`（`th08:0x44137a`）⇒ 刻符 +1、**PIV += ((1+(total&1))/2)×10**（见 core §3.11）；
@@ -1422,6 +1519,10 @@ static int yk_orb_collect(yk_card_t *s)
             s->gauge = yk_gauge_add2(s->gauge, yk_gauge_orbs_delta(CE_PLAYER_FOCUSED()), hl, yl);
     }
     ++s->orb_taken;
+    /* ★ #27 支 2：**收刻符的分值弹字**（一手 `Item::collect_time_orb th08:0x441348`
+     * `CreatePlayerPointPopup(&item+0x2a4, value, color)`）—— 值 = `yk_orb_score()`（下限 100 / 上限 10000 /
+     * 阶段门 2000），落点 = 那颗刻符的位置（一手就是道具位置，不换算）。*/
+    yk_popup_spawn(x, y, yk_orb_score((int32_t)s->orb_taken, (int32_t)s->orb_taken), 0);
     return 1;
 }
 
@@ -1538,7 +1639,8 @@ static int yk_orbs_tick(yk_card_t *s)
             dy = py - o->y;
             dist = dx * dx + dy * dy;
             if (dist <= pick_r * pick_r) {
-                yk_orb_collect(s);
+                float ox = o->x, oy = o->y;
+                yk_orb_collect(s, ox, oy);
                 yk_orb_kill(o);
                 if (s_orb_live) --s_orb_live;
                 ++taken;
@@ -2103,6 +2205,7 @@ static void on_run_reset(ce_card_t *c)
                "%u transfer damage, %u dropped (no boss)",
                s->spawns, s->broken, s->lost, s->silent, s->transferred, s->dropped);
     yk_ring_kill_all();                                  /* ★ 切换环：换关时 tick 会停 ⇒ 这里直接收 */
+    yk_popup_kill_all();                                 /* ★ #27：弹字同样要收干净 */
     (void)yk_deathbomb_tint();                           /* ★ #26：换关也要把染色还回去（先还原）*/
     yk_drop_all(s, 0);                                   /* 局末：不留使魔 */
     if (s) yk_option_release(c, s);
@@ -2120,6 +2223,7 @@ static void on_delete(ce_card_t *c)
            s ? s->spawns : 0, s ? s->broken : 0, s ? s->transferred : 0);
     yk_drop_all(s, 0);
     yk_ring_kill_all();                                  /* ★ 切换环：删卡那一刻 tick 停着 ⇒ 直接收 */
+    yk_popup_kill_all();                                 /* ★ #27：弹字（删卡那一刻 tick 停着）*/
 #if YK_DEATHBOMB_RED_ENABLE
     /* ★ #26：删卡那一刻 tick 全停 ⇒ 这里兜一次「把颜色还回去」（否则商店里那些弹会一直红）。*/
     if (s_tint_n) {
@@ -2569,6 +2673,9 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
      * `ufo.c` 的 `ufo_tok_kill` 同一条纪律、同一个 🟡（「从死亡断点直接进 AnmManager」未实跑验证）。*/
     yk_fam_vm_kill_id(ev->id);
     ++s->broken;
+    /* ★ #27 支 1：**「+1」弹字**（一手 `Enemy::sub_42adb0 th08:0x42b296 CreateTimePopup(&enemy+0x2d88, 1, 0, 0xFFFFFFFF)`
+     * —— 一手是「击破魔使」那一刻；我们卡里没有 op90-92 那种魔使，**我们的使魔 = 同一位置的对应物** ⇒ 挂这里）。*/
+    yk_popup_spawn(ev->x, ev->y, 1, 1);
     ce_log("youkai: familiar enemy_id %u killed (kind %u, real=%u) at (%.0f, %.0f) - "
            "that emitter slot stays silent until the NEXT etOn of that slot (route A) or the "
            "%d-frame fallback self-heal expires (gate = on_enemy_shot_slot 0x433ffa)",
@@ -2769,6 +2876,7 @@ static int on_tick_2(ce_card_t *c)
     if (s->focus_age < 60000) ++s->focus_age;
     yk_aura_tick(s, *(const float *)(CE_PLAYER() + CE_PLAYER_X), *(const float *)(CE_PLAYER() + CE_PLAYER_Y));
     yk_ring_tick();                       /* ★ 切换环的计时（到点自己发 interrupt 3 淡出）*/
+    yk_popup_tick();                      /* ★ #27：刻符弹字（寿命 / 上浮 / 排版 / 距离 alpha）*/
     /* ★★★ 2026-09-22 夜（owner 工单 **P-B 逢魔**）：**逢魔时分数自动加 100/帧**（一手一档）。
      * 一手：`Player::on_tick th08:0x44c390` 的 `th08:0x44c554 push 0x64` → `th08:0x44c55b add_to_score`
      *   （人侧）/ `th08:0x44c58c`+`:0x44c593`（妖侧）；门 = 极人 OR 极妖 **且 `Gui::IsMsgActive() == 0`**

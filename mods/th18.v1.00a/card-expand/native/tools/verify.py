@@ -68,6 +68,9 @@ PRIMS = {
             # ★ 2026-09-22 夜（P-E 单人反向封顶）：反侧真的被夹在 ±2000（= 20%）时的一行
             (r"youkai: solo reverse cap engaged - the opposite side stops at -?\d+",
              "单人反向封顶生效（反侧到不了逢魔；一手 th08:0x44daa2 / :0x44dacd）", False),
+            # ★ 2026-09-22 夜（#27 弹字）：两支刻符弹字是**纯观感**，正常没有日志；
+            #   实跑判据 = 收刻符时在那颗刻符上闪出分值（60 帧上浮）、击破使魔时闪「+1」（90 帧不动）。
+            #   （池满/起不出来的诊断走 ledger 的计数，不单独刷屏。）
         ],
         fail=[(r"youkai: familiar spawn FAILED", "创建失败（池满 / 坐标非法）"),
               (r"youkai: familiar follow-VM table full", "跟随 VM 表满（画面会少使魔）"),

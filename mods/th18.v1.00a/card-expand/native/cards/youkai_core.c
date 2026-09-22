@@ -1110,3 +1110,28 @@ int yk_fengma_kill_orbs(int fengma, int is_human_fengma, int by_player_bullet)
     if (is_human_fengma && by_player_bullet) return 2;   /* 逢魔 +1 与 `0x45187f` 那一颗 +1 */
     return 1;
 }
+
+/* ============ ★★★ 2026-09-22 夜（#27）：弹字的 alpha 与字形（一手见 youkai_core.h 的同名小节）==*/
+int yk_popup_alpha(int32_t dx, int32_t dy)
+{
+    int32_t d = (int32_t)(uint32_t)((uint32_t)dx * (uint32_t)dx + (uint32_t)dy * (uint32_t)dy);
+    if (d > 0x1000) return 0xD0;
+    if (d > 0x400)  return (int)(((d - 0x400) * 128) / 0xc00) + 0x50;
+    return 0x50;
+}
+
+int yk_popup_digits(int32_t value, uint8_t *out, int max)
+{
+    uint8_t tmp[12];
+    int n = 0, i, count;
+    if (!out || max <= 0) return 0;                  /* NULL / 容量 0：不写、不崩 */
+    if (value <= 0) { out[0] = 0; return 1; }
+    while (value > 0 && n < (int)sizeof(tmp)) {
+        tmp[n++] = (uint8_t)(value % 10);
+        value /= 10;
+    }
+    count = n;
+    if (n > max) n = max;                                 /* 容量不够时**留高位**（弹字宁缺低位）*/
+    for (i = 0; i < n; ++i) out[i] = tmp[count - 1 - i];  /* 高位在前 */
+    return n;
+}

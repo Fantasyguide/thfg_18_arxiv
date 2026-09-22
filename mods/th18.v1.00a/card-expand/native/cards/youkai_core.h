@@ -976,3 +976,23 @@ int yk_fengma(int32_t gauge, int32_t human_effects, int32_t youkai_effects);
 /* 逢魔击破该掉几颗刻符（一手：逢魔 ⇒ 1；人间逢魔 + 自机弹击杀 ⇒ 2；其余 ⇒ 0）。
  * `is_human_fengma` = 人侧那一条门为真（`gauge <= human_eff`）；`by_player_bullet` = 这一下是自机弹打死的。*/
 int yk_fengma_kill_orbs(int fengma, int is_human_fengma, int by_player_bullet);
+
+/* ============ ★★★ 2026-09-22 夜（owner #27）：**刻符的两支弹字**（+N 提示）======================
+ * owner 原话：「**+刻符也有 UI，这个估计也得 VM 贴图**」。一手（`engine/player/th08/03-youkai-body-and-gauge.md` §2.7.3）：
+ *   · **支 1「+1」** = `CreateTimePopup`（`th08:0x403460`）—— 击破魔使那一支
+ *     `Enemy::sub_42adb0 th08:0x42b296`：`CreateTimePopup(&enemy+0x2d88, 1, 0, 0xFFFFFFFF)`，紧跟掉 1 颗刻符；
+ *     **90 帧、位置不动**；文本布局 `[15][param3][14][number][13]`（13 = '+' = sprite149，逐像素确认）。
+ *   · **支 2「分值」** = `CreatePlayerPointPopup`（`th08:0x403330`）—— 收刻符那一支
+ *     `Item::collect_time_orb th08:0x441348`；值 = 100..10000（`yk_orb_score()` 已落）、颜色黄 `0xDFFFEF80` / 白 `0xDFFFFFFF`；
+ *     **60 帧**、每帧 `y −= 0.5 × framerateMultiplier`。
+ *   · **两支都没有时间淡出**：alpha 按**与自机的距离**现算（`th08:0x4054e3`–`0x405545` / `:0x405983`–`0x4059f1`）。
+ *   · 落点 = **相对被收的道具 / 被击破的敌人 + 战场原点 (32,16)**（`th08:0x43a126`）⇒ 与世界层同一套坐标。*/
+#define YK_POPUP_SCORE_LIFE   60   /* 一手 `0x3c`：score/点数弹字 60 帧 */
+#define YK_POPUP_TIME_LIFE    90   /* 一手 `0x5a`：time/魔使弹字 90 帧（位置不动）*/
+#define YK_POPUP_GLYPH_PLUS   13   /* 字形索引 13 = '+'（TH08 `ascii.anm` sprite149，逐像素确认）*/
+
+/* 弹字的 alpha（一手三段整数式）：`d = dx² + dy²`（相对自机，单位 = 世界单位取整、按 8 位截断）。
+ *   `d > 0x1000 ⇒ 0xD0`；`d > 0x400 ⇒ ((d − 0x400) × 128) / 0xc00 + 0x50`；否则 `0x50`。*/
+int yk_popup_alpha(int32_t dx, int32_t dy);
+/* 十进制字形（高位在前，返回位数；`value <= 0` ⇒ 1 位 '0'）。`out` 最多写 `max` 位。*/
+int yk_popup_digits(int32_t value, uint8_t *out, int max);

@@ -20175,3 +20175,37 @@ type 1 的来路要先 grep `push 1` + `push <type>` 的调用点上下文）。
 `engine_abi_check`）；`python3 tooling/check-docs.py` 全部通过。
 
 **本批没改** `pl0X.sht` / `ability.anm` / wav / 站点。
+
+## §BE 详录 #64（2026-09-22 夜）：108 **#27 刻符的两支弹字**（+N 提示，VM 贴图）
+
+**改了什么**
+
+| 文件 | 改了什么 |
+| --- | --- |
+| `assets/build_player_anm.py` | 字形表 **13 格 → 14 格**：新增 TH08 `ascii.anm` entry0 **sprite149** `(104,208,8,12)` = **'+'**（逐像素确认十字形）；画布 104×12 → 112×12（**只追加**，既有格一格未动）；`pl_anm_ids.h` 随之重生成 |
+| `native/cards/youkai_core.{h,c}` | 新增 `YK_POPUP_SCORE_LIFE 60` / `YK_POPUP_TIME_LIFE 90` / `YK_POPUP_GLYPH_PLUS 13`、`yk_popup_alpha(dx,dy)`（一手三段整数式）、`yk_popup_digits(value,out,max)`（高位在前、容量不够留高位、NULL 安全）|
+| `native/cards/youkai.c` | 逐条见下 |
+| `native/tests/test_youkai_core.c` | +15 条断言（alpha 三段边界、digits 五种情形与 NULL/容量 0）⇒ **4556 checks / 0 failed** |
+| `CAPACITY.md` / `TUNING.md` / `native/tools/verify.py` | 字形扩容具名登记；§2.0zi（复刻表 + `❓ #30` 层 11 / `#31` 池 3×5 / `#32` 颜色恒白 / `#33` 文本顺序「+1」）；弹字实跑判据写进 verify 注释 |
+
+**一手**：`CreateTimePopup th08:0x403460`（击破魔使支 `th08:0x42b296`，90 帧不动）/ `CreatePlayerPointPopup th08:0x403330`
+（`th08:0x441348`，60 帧上浮）；alpha 三段 `th08:0x4054e3`–`0x405545` / `th08:0x405983`–`0x4059f1`；
+排版 `th08:0x405905`（time `−charCount×3.5`、+7）/ `th08:0x405462`（score `−charCount×4`、+8）；
+落点 = 道具/敌人位置 + 战场原点 (32,16)（`th08:0x43a126`）；字形 `ascii.anm` entry0 **136..149**（149 = '+'）。
+
+**怎么验证的**：`make check` **rc=0**（`x87 = 0`、`test_youkai_core` 4556/0、sites 双面、`sitecheck --all`、
+`contract_check`、`gen_drift`、`capcheck`、`sht-verify`、`anm-verify`、`snd-check`、`dllx87`、`dllverify`、
+`engine_abi_check`）；`python3 tooling/check-docs.py` 全部通过（373 个文件）。
+
+**发布面（本批必读）**：**本批 = DLL + `pl0X.anm` 同批**（四个 `pl0X.anm` 的字形 entry 都多了一格）；
+**`ability.anm` / `pl0X.sht` / wav / 站点未改**。
+
+**#27 那两行的逐条（AUDIT 里留全，免得与表格的简写打架）**
+
+- **`native/cards/youkai.c`**：弹字池 `s_popup[YK_POPUP_MAX 3]`（每支 ≤5 个字形 VM；层 = `YK_POPUP_ANM_LAYER 11`；
+  VM 必须挂**自机那一页** `yk_player_anm()`，因为字形在 `pl0X.anm` 里）+ `yk_popup_spawn` / `yk_popup_kill` /
+  `yk_popup_kill_all` / `yk_popup_tick`；**两支触发** = 收刻符 ⇒ 分值弹字（`yk_orb_collect` 增加 `(x, y)` 实参，
+  落点就是那颗刻符）、击破自家使魔 ⇒ 「+1」（`on_enemy_death` 的 `broken` 支）；每帧 `yk_popup_tick`；
+  换关（`on_run_reset`）与删卡（`on_delete`）各 `yk_popup_kill_all`。
+- **`native/cards/youkai_core.{h,c}`**：`YK_POPUP_SCORE_LIFE 60` / `YK_POPUP_TIME_LIFE 90` / `YK_POPUP_GLYPH_PLUS 13`；
+  `yk_popup_alpha(dx,dy)`（一手三段整数式）；`yk_popup_digits(value,out,max)`（高位在前、容量不够留高位、NULL 安全）。
