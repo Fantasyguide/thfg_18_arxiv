@@ -599,7 +599,8 @@ static int ufo_tok_script(int32_t color, int rb_state, int cycler)
  *        （`FUN_004214b0` 的 0x20a02 段：`push 0x51` 建 VM、`lea edx,[ebx+7]`、`ax = [COLLECTED_UFOS[arg]] + 0xa`）。
  * ★ 块认领 = **自带锚点（`CE_HUD_SIDE_PINNED`）钉在原版槽的位置上**，理由两条：
  *   ① 槽/闪光的坐标**写在脚本里**（原版把三个槽位做成 `posTime` 中断 7/8/9 的目标点，那是原版配方，
- *      照抄）⇒ 块必须钉在与脚本数字一致的地方，走货架自动排布的话一旦被重排（别的卡先占位），
+ *      照抄；Δ7 起同一组数字在 C 侧也有一份 —— `k_ufo_slot_x[]`，摆位由 C 补差值）⇒ 块必须钉在与
+ *      脚本数字一致的地方，走货架自动排布的话一旦被重排（别的卡先占位），
  *      块会和画面上的槽错开（"块在这、槽在那"是这类 HUD 最典型的坑）；
  *   ② ★★★ 2026-09-22 订正（P3 #1）：原版槽在 **游玩区的左下角**，不是屏幕左下角的黑边里 ——
  *      一手 `front.anm` script80 的 `pos(52/73/94, 456)` 是 **TH12 那套 anm 世界空间**的坐标，
@@ -618,8 +619,19 @@ static int ufo_tok_script(int32_t color, int rb_state, int cycler)
  *     896..928）横向重叠** —— 这是"按一手的场地左下角"与"116/117 也占着同一条带子"的**口径冲突**，
  *     已登记 `TUNING.md` §2.0v 待 owner 拍；要退回旧位置就把生成器 `X_SHIFT_640` 改回 `0.0`
  *     （一行，重跑生成器 + `make anm`）。
- * ⚠ 卡侧只发中断、不用 `ce_anm_set_pos` 摆位（两条路都按"绝对坐标"写会互相打架，见
- *   `engine/anm/th18/01-vm-instantiate.md` §3a）。 */
+ * ★★★ Δ7（2026-09-23「槽位只有 1 个」工单）—— **摆位改由 C 侧接管**，理由是一手实跑证据：
+ *   · 用户实跑：三格只看得见 1 个。日志（`ufo/slot.vm` 1539 行）里三格的**脚本 pos.x 恒 = 296**，
+ *     即三只 VM 叠在同一点上（详见 `ufo_hud_vm_log()` 的注：旧诊断把 `+0x2c` 当 pos 读，
+ *     真正的 pos 在 `+0x30`，那一列三格全是 296）。
+ *   · 同一份日志证明**中断机制本身是好的**：三格的 alpha/scale 各自按 30 帧爬升（= 中断 17 的
+ *     `alpha(0)+alphaTime(30,0,255)+scale(0,0)+scaleTime(30,4,2,2)` 真在跑），但**只有摆位那一条
+ *     （一手 TH12 的 7/8/9 → `posTime`）从不生效** ⇒ 原版那套「脚本自己摆位」在 TH18 里没落地。
+ *   · 绘制点 = `pos(+0x30) + entity_pos(+0x5f0) + __pos_2(+0x4e4)`（一手 `th18:0x48171f`）⇒
+ *     直接写前两项都会和脚本打架。Δ7 的做法：**每帧把差值写进 entity_pos**，让三项之和**恰为**槽心：
+ *         `entity_pos = 槽心 − (pos + __pos_2)`
+ *     这个式子是**自校准**的：脚本那两项是什么值都不影响结果（将来若 7/8/9 生效了，pos 变成目标值，
+ *     entity_pos 自动归零，画面不动）。
+ *   · 中断 7/8/9 照旧发（一手配方原样保留，无害）；脚本 302/303 **一个字都没改**。 */
 #define UFO_ID_NUM        112u      /* 本卡 id（HUD 槽 / 日志用；`CE_CARD(112, …)` 里的那个数）*/
 /* 块 = 三格槽的外沿（表面 px）：槽心 296/338/380（间距 21 单位 = 42 表面 px）、槽 24×16 单位 = 48×32 表面 px
  * ⇒ 块 x 272..404 / y 896..928。钉块用的锚点 = 块的**左下角**（`ce_hud_slot_claim_pinned_card` 的口径，
@@ -628,6 +640,13 @@ static int ufo_tok_script(int32_t color, int rb_state, int cycler)
 #define UFO_HUD_BLOCK_H    32.0f    /* = 928 − 896（槽本体高，底边与场地下沿齐平）*/
 #define UFO_HUD_PIN_X     272.0f    /* = 640 空间 136 = 场地左沿(128) + 第一格外沿 8；块左下角（表面 px）*/
 #define UFO_HUD_PIN_Y     928.0f    /* = 640 空间 464 = **场地下沿**；槽本体落在 896..928*/
+/* ★★ 三格的**槽心**（表面 px）= 上面那套换算的结果，也是 Δ7 的摆位目标（脚本里同一组数字：
+ * `pos(296,912)` 与中断 7/8/9 的 `posTime(8, 0, 296/338/380, 912, 0)`）。相邻间距 21 单位 = **42 表面 px**。
+ * ⚠ 是**数组**不是 `X0 + i*DX`：本文件有"零 x87"硬门（`make dllx87`），`(float)i` 这类整→浮转换
+ *   在本仓是明令避免的写法（同文件尾 `_Static_assert` 那一带的先例），常量表最稳。 */
+static const float k_ufo_slot_x[UFO_SLOT_COUNT] = { 296.0f, 338.0f, 380.0f };
+#define UFO_HUD_SLOT_Y 912.0f       /* = 32 + 2×440（场地相对 y 440）；槽高 16 单位 = 32 表面 px ⇒ 896..928 */
+_Static_assert(UFO_SLOT_COUNT == 3, "k_ufo_slot_x holds exactly the three TH12 slot columns");
 /* 槽的 **sprite 基数**与**亮版偏移**：ORDER 里 457/458/459/460 = 空/红/蓝/绿，461..464 = 亮版
  * ⇒ 与一手 `FUN_00421690` 的 `59 + 四态 + (闪烁 ? 4 : 0)` **同一个算式**（`anm_ids.h` 生成）。 */
 #ifdef CE_ANM_ABILITY_SPRITE_SLOT_EMPTY
@@ -902,30 +921,42 @@ static uint8_t  s_slot_blink;                /* 当前这一帧用的是不是�
 static uint8_t  s_slot_blink_prev;           /* 上一帧的闪烁位（**离场沿**检测：一手在 UFO 结束时会重置三格）*/
 static uint32_t s_slot_log_tick;             /* ★ 2026-09-23 诊断节奏：本函数自己的帧计数（别用 `s->play_frame`，见那条注释）*/
 static uint8_t  s_timer_logged;              /* ★ #9 击破计时器：本次召唤的诊断行是否已经打过（每次召唤一行 + 每 60 帧一行）*/
+static uint32_t s_flash_id[UFO_SLOT_COUNT];  /* ★ Δ7：每格**最近的**闪光 VM（脚本 303，31 帧自删）—— 存活期内每帧摆位 */
+static uint8_t  s_flash_left[UFO_SLOT_COUNT];/* 该闪光的剩余寿命（防句柄陈旧：过期就丢句柄，不再碰它）*/
 
 /* ★★ 2026-09-23（「槽位 UI 完全看不见」工单）：把槽 VM 的**实况**打一行 —— 只读、不写。
  * 为什么需要：原来那条 `ufo/slot:` 只打我们自己的记账值（state / blink），**VM 真正画在哪、
  * 多大、alpha 多少一概看不到** ⇒ 判不出「根本没建 VM」「VM 建了但画在屏外」「scale 是 0」
- * 这三种完全不同的病。字段偏移全部来自本仓已复核的一手：
- *   `pos` = `+0x2c`(x) / `+0x30`(y)（脚本 `pos()` / `posTime()` 写的就是它，
- *   `engine/anm/th18/01-vm-instantiate.md` §3a；与**实体坐标** `+0x5f0` 是两个字段，绘制时相加）；
- *   `sprite` = `CE_ANM_VM_SPRITE_ID`(+0x24) / `scale` = `CE_ANM_VM_SCALE`(+0x54) /
- *   `color_1` = `CE_ANM_VM_COLOR1`(+0x524，A 取最高字节) / `layer` = `CE_ANM_VM_LAYER`(+0x18)。
- * ⇒ 判据：1280×960 的表面上，槽心应当在 **(296/338/380, 912)**、`scale=2.00`、`a=255`、`L=25`。
- *   若 `pos` 是 (592,1824) 那个量级，说明脚本的 `resolutionMode(2)` 没生效（会被 ×2 顶到屏外）。 */
-#define UFO_ANM_VM_SCRIPT_POS 0x2c
-static void ufo_hud_vm_log(const char *tag, const uint8_t *vm)
+ * 这三种完全不同的病。
+ * ★★★ 2026-09-23 第二轮（「槽位只有 1 个」工单）**订正了字段**：第一版把脚本 `pos` 当成 `+0x2c`，
+ *   那是**差 4 字节**的读法 —— `+0x2c` 是 `instr_offset`（脚本指令游标，恒 0），所以旧日志里那句
+ *   `pos (0, 296)` 其实是 `(instr_offset=0, pos.x=296)`：**y 从来没被打出来过**，而"pos.x"那一列
+ *   三格全是 296（= 脚本初始 `pos(296,912)`）⇒ 三格**叠在同一个点上**，正是用户看到的「只有 1 个」。
+ *   一手（两处独立，见 `engine.h` 的 `CE_ANM_VM_*` 注）：`draw_vm 0x48171f` 的
+ *   `x = [vm+0x30] + [vm+0x5f0] + [vm+0x4e4]` + ExpHP `zAnmVmPrefix`（`0x30 pos` / `0x4e4 __pos_2`）。
+ * ⇒ 这一版把**三项 + 和**全打出来，"画在表面哪一点"一眼可算，不再靠猜。 */
+static void ufo_hud_vm_log(int i, const char *tag, uint32_t id)
 {
-    if (!vm) { ce_log("ufo/slot.vm %s: (no VM)", tag); return; }
-    ce_log("ufo/slot.vm %s: pos (%.0f, %.0f) sprite %d scale %.2f alpha %u layer %d "
-           "(surface px; 期望槽心 296/338/380 x 912、scale 2.00、alpha 255、layer 25)",
-           tag,
-           (double)*(const float *)(vm + UFO_ANM_VM_SCRIPT_POS),
-           (double)*(const float *)(vm + UFO_ANM_VM_SCRIPT_POS + 4),
+    const uint8_t *vm = id ? (const uint8_t *)ce_anm_get_vm(id) : 0;
+    const float *sp, *p2, *ep;
+
+    if (!vm) { ce_log("ufo/slot.vm %s: (no VM; id %u)", tag, id); return; }
+    sp = (const float *)(vm + CE_ANM_VM_SCRIPT_POS);        /* +0x30 脚本 pos（pos()/posTime() 写的）*/
+    p2 = (const float *)(vm + CE_ANM_VM_POS_2);             /* +0x4e4 第二份 pos */
+    ep = (const float *)(vm + CE_ANM_VM_POS);               /* +0x5f0 实体坐标（C 侧摆位用这个）*/
+    ce_log("ufo/slot.vm %s id %u script %d instr %d: draw = pos(0x30)(%.0f,%.0f) + pos2(0x4e4)(%.0f,%.0f) "
+           "+ ent(0x5f0)(%.0f,%.0f) = 表面 (%.0f,%.0f) [本格槽心应 (%.0f,%.0f)]; "
+           "sprite %d scale %.2f alpha %u layer %d flags_lo %08x",
+           tag, id, (int)*(const int32_t *)(vm + CE_ANM_VM_SCRIPT_ID),
+           (int)*(const int32_t *)(vm + 0x2c) /* instr_offset：脚本游标（诊断脚本停在哪）*/,
+           (double)sp[0], (double)sp[1], (double)p2[0], (double)p2[1], (double)ep[0], (double)ep[1],
+           (double)(sp[0] + p2[0] + ep[0]), (double)(sp[1] + p2[1] + ep[1]),
+           (double)k_ufo_slot_x[i], (double)UFO_HUD_SLOT_Y,
            (int)*(const int32_t *)(vm + CE_ANM_VM_SPRITE_ID),
            (double)*(const float *)(vm + CE_ANM_VM_SCALE),
            (unsigned)((*(const uint32_t *)(vm + CE_ANM_VM_COLOR1) >> 24) & 0xffu),
-           (int)*(const int32_t *)(vm + CE_ANM_VM_LAYER));
+           (int)*(const int32_t *)(vm + CE_ANM_VM_LAYER),
+           (unsigned)*(const uint32_t *)(vm + CE_ANM_VM_FLAGS_LO));
 }
 
 /* ---- ★ A7（2026-09-12）：五边形框的**每个令牌槽一个** VM 句柄，同样放**文件静态** ----------------
@@ -2875,13 +2906,37 @@ static void ufo_break(ufo_card_t *s)
  * ⏳ 还没接的（见文件尾清单）：出现横幅 79（sprite67，贴图已可切）、大横幅 82（front02.png 304×32）、
  *   吸收数记录面板 304/305（**TH18 的右列被原生卡组图标占着**，位置要另定）。 */
 
-/* 起一只 HUD VM：坐标**一律由脚本自己写**（原版把槽位/面板位都写在脚本里）⇒ 实体坐标传 0。
- * ⚠ 不要再用 `ce_anm_set_pos` 摆位：`pos` 与 `entity_pos` 是**相加**的
- *   （`engine/anm/th18/01-vm-instantiate.md` §3a），两条都按"绝对坐标"写会互相打架。 */
+/* 起一只 HUD VM：脚本自己的坐标照抄一手（槽位/面板位都写在脚本里），实体坐标先传 0；
+ * 摆位由 `ufo_hud_place_at()`（Δ7）每帧按"绘制点 = 三项之和"补差值 —— 见常量区的 Δ7 长注。 */
 static uint32_t ufo_hud_vm_spawn(int script)
 {
     static const float origin[3] = { 0.0f, 0.0f, 0.0f };
     return ce_anm_spawn_ui(CE_ABILITY_ANM(), script, origin);
+}
+
+/* ---- Δ7 的落点：把第 i 格的**绘制点**钉到槽心（表面 px）-----------------------------------------
+ * 绘制点 = `pos(+0x30)` + `entity_pos(+0x5f0)` + `__pos_2(+0x4e4)`（一手 `th18:0x48171f`，见 `engine.h`）。
+ * 前两项里 `pos`/`__pos_2` 是脚本/装载器的账（我们不动它们），差值全部由 **entity_pos** 吃掉：
+ *     entity_pos = 槽心 − (pos + __pos_2)
+ * ⇒ 无论脚本那两项是 296 还是 0 还是别的，画面上三格都落在 296/338/380 × 912。
+ * ⚠ 必须**每帧**算（`pos` 若哪天被中断改了就自动跟随），只在数值变了时才写（省 D3D 无关的写）。
+ * ⚠ 浮点全是 `-` 运算、没有整→浮转换（本文件的零 x87 硬门）。 */
+static void ufo_hud_place_at(int i, uint32_t id)
+{
+    uint8_t *vm;
+    const float *sp, *p2;
+    float *ep, want_x, want_y;
+
+    if (i < 0 || i >= UFO_SLOT_COUNT || !id) return;
+    vm = ce_anm_get_vm(id);
+    if (!vm) return;
+    sp = (const float *)(vm + CE_ANM_VM_SCRIPT_POS);
+    p2 = (const float *)(vm + CE_ANM_VM_POS_2);
+    ep = (float *)(vm + CE_ANM_VM_POS);
+    want_x = k_ufo_slot_x[i] - (sp[0] + p2[0]);
+    want_y = UFO_HUD_SLOT_Y  - (sp[1] + p2[1]);
+    if (ep[0] != want_x) ep[0] = want_x;
+    if (ep[1] != want_y) ep[1] = want_y;
 }
 
 /* 槽里的颜色 → **四态**（0 空 / 1 红 / 2 蓝 / 3 绿）。
@@ -2907,6 +2962,10 @@ static void ufo_hud_kill(void)
     for (i = 0; i < UFO_SLOT_COUNT; ++i) {
         if (s_slot_id[i]) { ce_anm_delete(s_slot_id[i]); s_slot_id[i] = 0; }
         s_slot_state[i] = -1;                 /* 下一帧从"没上过色"重来（新 VM 的 sprite 是脚本给的初始态）*/
+        /* ★ Δ7：闪光 VM 会自己 `delete()`（一手 31 帧），但**句柄必须在这里作废** ——
+         *   否则下一局的 VM 若复用了同一个 id，我们会去动别人的位置（长持续效果铁律的同类坑）。 */
+        s_flash_id[i] = 0;
+        s_flash_left[i] = 0;
     }
     s_slot_blink = 0;
     s_slot_blink_prev = 0;
@@ -2928,13 +2987,20 @@ static void ufo_hud_ensure(void)
 
 /* 新令牌落进第 i 格的动作：起一只闪光 VM（脚本 303）并给它摆位 + 上色，同时对本格发**出现**中断 17。
  * 一手出处：`FUN_004214b0` 的 0x20a02 段（`push 0x51` 建 VM → 摆位中断 + 四态中断）与
- * 紧随其后的「对该格发 17」（`mov edx,0x11`）。 */
+ * 紧随其后的「对该格发 17」（`mov edx,0x11`）。
+ * ★ Δ7：闪光的**摆位**也归 C —— 一手同样把槽位做成 7/8/9 的 `posTime` 目标，而那条路在 TH18 里
+ *   不落地（同槽本体，见常量区 Δ7）。闪光是 31 帧自删的一次性 VM ⇒ 句柄留在 `s_flash_id[i]` 里，
+ *   由 `ufo_hud_slots_tick()` 在它的存活期内每帧摆一次（寿命计数 `s_flash_left[i]` 兜住"句柄变陈旧"）。 */
 static void ufo_hud_slot_flash(int i, int32_t state)
 {
     uint32_t id = ufo_hud_vm_spawn(UFO_HUD_SCRIPT_FLASH);
     if (!id) return;
-    ce_anm_interrupt(id, UFO_HUD_INTERRUPT_SLOT0 + i);            /* 摆到第 i 格（7/8/9）*/
+    ce_anm_interrupt(id, UFO_HUD_INTERRUPT_SLOT0 + i);            /* 摆到第 i 格（7/8/9；Δ7 起只是配方保留）*/
     ce_anm_interrupt(id, UFO_HUD_INTERRUPT_STATE0 + state);       /* 上第 i 格的四态色（10..13）*/
+    ufo_hud_place_at(i, id);                                     /* Δ7：当场摆一次（下一帧起由 tick 续）*/
+    ufo_hud_vm_log(i, "flash", id);                              /* 闪光 VM 的实况（一次性，不刷屏）*/
+    s_flash_id[i] = id;
+    s_flash_left[i] = UFO_HUD_FLASH_FRAMES + 2;                  /* 一手 31 帧自删 ⇒ 多给 2 帧余量 */
     if (s_slot_id[i]) ce_anm_interrupt(s_slot_id[i], UFO_HUD_INTERRUPT_APPEAR);
     ce_log("ufo: slot %d flash (state %d) - ability.anm script %d + slot interrupt %d/%d "
            "(one-hand th12:0x4214b0)", i + 1, (int)state, UFO_HUD_SCRIPT_FLASH,
@@ -2960,6 +3026,16 @@ static void ufo_hud_slots_tick(ufo_card_t *s, int ufo_on_field)
         const int32_t st = ufo_hud_slot_state_of(s->grp.slot[i]);
         uint32_t id = s_slot_id[i];
 
+        /* ③ ★ Δ7：闪光的摆位（在它 31 帧的寿命内每帧一次；过期就丢句柄，别再碰那个 id）。 */
+        if (s_flash_id[i]) {
+            if (s_flash_left[i]) {
+                --s_flash_left[i];
+                ufo_hud_place_at(i, s_flash_id[i]);
+            } else {
+                s_flash_id[i] = 0;                    /* 一手：脚本 303 已自删 ⇒ 句柄作废 */
+            }
+        }
+
         if (!id || !ce_anm_get_vm(id)) continue;      /* 引擎刚销毁过 ⇒ 下一帧 `ensure` 重建 */
         if (st != s_slot_state[i]) {                  /* ① 四态变了：发中断（新令牌还会带一只闪光 VM）*/
             const int32_t prev = s_slot_state[i];
@@ -2980,19 +3056,21 @@ static void ufo_hud_slots_tick(ufo_card_t *s, int ufo_on_field)
         } else if (s_slot_blink_prev) {
             ce_anm_interrupt(id, UFO_HUD_INTERRUPT_STATE0 + st);
         }
+        /* ③ ★★ Δ7（本工单的根因修复）：每帧把三格钉回槽心 —— 一手那套"脚本自己摆位"
+         *    （中断 7/8/9 → `posTime`）在 TH18 里不落地，三格会全部叠在脚本初始 x=296 上。 */
+        ufo_hud_place_at(i, id);
     }
     /* 每 60 帧一行诊断（与环那条同款）：用户/我们只凭日志就能判「三格 VM 在不在、摆在哪、是哪个 sprite」。
      * ★★ 2026-09-23（「完全看不见」工单）：原来这条只打我们的**记账值**，看不到 VM 真正的
      *   位置/尺寸/alpha ⇒ 判不出「没画」还是「画在屏外」。现在把三格的**VM 实况**并进来：
-     *     `pos`(+0x2c/0x30，脚本 `pos`/`posTime` 写的字段) / `spr`(+0x24) / `scale`(+0x54) /
-     *     `a`(color_1 `+0x524` 的 A 字节) / `L`(layer `+0x18`)。
-     *   ⇒ 若再次出现「看不见」，这一行就能直接区分：pos 在屏外 / scale≈0 / alpha=0 / sprite 不对。
+     *     `draw` = `pos(+0x30)` + `__pos_2(+0x4e4)` + `ent(+0x5f0)`（三项全打） / `spr`(+0x24) /
+     *     `scale`(+0x54) / `a`(color_1 `+0x524` 的 A 字节) / `L`(layer `+0x18`) / `flags_lo`(+0x534)。
+     *   ⇒ 判据一句话：`draw` 必须 ≈ 本格槽心 (296/338/380, 912)、`scale 2.00`、`a 255`、`L 25`。
+     * ★ 2026-09-23 第二轮（「槽位只有 1 个」）：第一版读错了字段（把 `+0x2c` instr_offset 当 pos），
+     *   三格"pos.x"全是 296 却没打 y —— 这次三项 + 和全打，叠没叠一眼看得出。
      * ⚠ 节奏用**本函数自己的静态帧计数**，不用 `s->play_frame` —— 后者在关卡开头的若干帧是 0，
      *   会让 `% 60 == 0` 连打几十行（2026-09-22 的实跑日志里就是这样刷的）。 */
     if (++s_slot_log_tick >= UFO_TIMER_LOG_EVERY) {
-        uint8_t *v0 = s_slot_id[0] ? ce_anm_get_vm(s_slot_id[0]) : 0;
-        uint8_t *v1 = s_slot_id[1] ? ce_anm_get_vm(s_slot_id[1]) : 0;
-        uint8_t *v2 = s_slot_id[2] ? ce_anm_get_vm(s_slot_id[2]) : 0;
         s_slot_log_tick = 0;
         ce_log("ufo/slot: vm %u/%u/%u state %d/%d/%d sprite-base %u blink %u/%u frames %u "
                "(one-hand th12:0x4214b0 + 0x421690; script %d tiles x = 296/338/380 surface)",
@@ -3000,9 +3078,12 @@ static void ufo_hud_slots_tick(ufo_card_t *s, int ufo_on_field)
                (int)s_slot_state[0], (int)s_slot_state[1], (int)s_slot_state[2],
                UFO_HUD_SPR_SLOT_EMPTY, s_slot_blink, s_slot_blink_prev, s->u.frames,
                UFO_HUD_SCRIPT_SLOT);
-        ufo_hud_vm_log("slot1", v0);
-        ufo_hud_vm_log("slot2", v1);
-        ufo_hud_vm_log("slot3", v2);
+        for (i = 0; i < UFO_SLOT_COUNT; ++i) {
+            char tag[8];
+            tag[0] = 's'; tag[1] = 'l'; tag[2] = 'o'; tag[3] = 't';
+            tag[4] = (char)('1' + i); tag[5] = '\0';       /* 手写 tag：不为一行日志引 snprintf */
+            ufo_hud_vm_log(i, tag, s_slot_id[i]);
+        }
     }
     s_slot_blink_prev = s_slot_blink;
 }
@@ -3123,9 +3204,9 @@ static void ufo_hud_ensure_registered(void)
         s_hud_logged_ok = 1;
         ce_log("ufo: HUD block %.0fx%.0f claimed (pinned) at surface (%.0f, %.0f) (= 640 space "
                "(%.1f, %.1f)); the slot VMs draw at surface (296/338/380, 912) from the ported script "
-               "(script 302 writes `scale(2.0,2.0)` + `resolutionMode(2)`; ★ 2026-09-23: **without** "
-               "resolutionMode the UI-layer script values are read as 640-space and get doubled "
-               "=> y=1824 = below the 1280x960 surface = the whole row invisible)",
+               "(script 302 writes `scale(2.0,2.0)` + `resolutionMode(2)`; ★ 2026-09-23 订正: "
+               "`resolutionMode(2)` 在本机 1280x960 下与「不写」等价（都是 x1，一手 `th18:0x4063d0`）"
+               "—— 当初让槽从看不见变看得见的是 Δ4b 的 `scale(2.0)`)",
                (double)blk.w, (double)blk.h, (double)got.x, (double)got.y,
                (double)(got.x * CE_HUD_SURFACE_TO_640), (double)(got.y * CE_HUD_SURFACE_TO_640));
     }

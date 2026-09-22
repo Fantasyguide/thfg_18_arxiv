@@ -252,7 +252,21 @@
 #define CE_HUD_MONEY_COLOR         0xff808000u /* 金钱那行的字色（B=0 G=0x80 R=0x80，FUN_0043cd00 在 (620, 204) 处设的），持仓净值贴着它画 */
 #define CE_HUD_DMG_X               478.0f      /* 倍率读数：贴在火力左边，同一行。"x1.60" 五个字约 55 px ⇒ 478..533，刚好不压到 540 的火力，也在侧栏里（弹幕区右边缘约 x 416）。**待实跑微调** */
 
-#define CE_ANM_VM_POS              0x5f0      /* float3 实体坐标（Tenshi/Miko/Remilia 每帧写；engine/anm/th18/01-vm-instantiate.md）*/
+#define CE_ANM_VM_POS              0x5f0      /* float3 实体坐标（Tenshi/Miko/Remilia 每帧写；engine/anm/th18/01-vm-instantiate.md）
+                                              * ⚠ 它不是"VM 的位置"，只是**加数之一**（绘制点 = pos + entity_pos + __pos_2，见下）*/
+/* ★★ 2026-09-23（112 槽位 HUD 工单）：**绘制点 = 三个字段相加**，一次钉死（一手两处）：
+ *   ① `AnmManager__draw_vm` `th18:0x48171f`–`0x48174e` 逐指令：
+ *        x = `[vm+0x30]` + `[vm+0x5f0]` + `[vm+0x4e4]`（y/z 同形：0x34/0x5f4/0x4e8、0x38/0x5f8/0x4ec）
+ *      —— 所以"脚本 pos"与"实体坐标"是**相加**的，谁都不是绝对坐标。
+ *   ② ExpHP `th-re-data/data/th18.v1.00a/type-structs-own.json` 的 `zAnmVmPrefix`：
+ *        `"0x2c" instr_offset` / `"0x30" pos` / `"0x4e4" __pos_2`；`entity_pos` 在 `zAnmVmSuffix`（0x544+0xac = 0x5f0）。
+ *   ⇒ 旧记录（`engine/anm/th18/01-vm-instantiate.md` §3a 与 `ufo.c`/`faith_hud.c` 里的诊断）
+ *     把 `pos` 写成 `+0x2c` 是**差 4 字节**：`+0x2c` 是 `instr_offset`（脚本指令游标），
+ *     日志里它恒 0、被当成了"pos.x"读（2026-09-22 的实跑诊断就是这样误报的）。 */
+#define CE_ANM_VM_SCRIPT_POS       0x30       /* float3：**脚本 `pos()` / `posTime()` 写的那个**（绘制点第一项）*/
+#define CE_ANM_VM_POS_2            0x4e4      /* float3：ExpHP `__pos_2`（绘制点第三项，装载时从模板 VM 的 pos 拷来）*/
+#define CE_ANM_VM_SCRIPT_ID        0x28       /* int32：当前脚本号（zAnmVmPrefix；诊断用）*/
+#define CE_ANM_VM_FLAGS_LO         0x534      /* int32：flags_lo（bit0/1 绘制门槛、bit21 = 脚本停、bit10(0x400) = `pos` 走 `__pos_2`）*/
 #define CE_ANM_VM_COLOR2           0x528      /* D3DCOLOR：`color2()` 写的第二个色（渐变条靠它）*/
 #define CE_ANM_VM_COLOR1           0x524      /* D3DCOLOR 0xAARRGGBB：Tenshi 0x40eb4c 无命中写 0xffffffff、0x40eb60 有命中写 0xff0080ff（= 蓝 (0,128,255)）*/
 #define CE_ANM_VM_LAYER            0x18       /* ★ int32：**绘制层**（世界列表成员按它分桶）。
