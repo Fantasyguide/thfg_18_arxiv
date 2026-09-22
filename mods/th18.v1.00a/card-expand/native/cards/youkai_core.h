@@ -816,3 +816,27 @@ int32_t yk_orb_score(int32_t stage_point_items_in_game, int32_t point_items_in_g
  *   （i386 ABI 的浮点返回值在 ST(0)），`make dllx87` 门会当场红 —— 所以这里照 `yk_opt_spring_step`
  *   的先例用**指针出口**。任一指针为 NULL ⇒ 跳过那一项；两个都 NULL ⇒ 什么都不做。*/
 void yk_orb_motion_params(int character, float *home_speed, float *pick_r);
+
+/* ★★★ 2026-09-22（owner 口径细化 · 永点的两条来源）：**「自动吸收」= state 1（生成即满速归航）**。
+ *
+ * **owner 原话（逐字）**：「th08 一手永点大概是：**极端人形态爆点是落下即消失，自动吸收**；
+ *   敌人死亡爆点是「无敌」上抛，然后**自动地满速吸收**」。
+ *
+ * **一手（逐站点读 push 的 type/state，本样本）**：
+ *   | 站点 | 触发 | push |
+ *   | --- | --- | --- |
+ *   | `th08:0x42b048`（`Enemy::sub_42adb0`，通用击破、带连锁段数公式）| 敌死 | state **3** / type 7 |
+ *   | `th08:0x42da54`（`EnemyManager::on_tick` 死亡块）| **極端人間 或 極端妖怪**（`0x42da2a`/`0x42da38` 两问取**或**，两者皆非才跳过）| state **1** / type 7（**一颗**，无循环）|
+ *   | `th08:0x451892`（`Player::compute_damage_to_enemy`）| 極端人間 + 目标**已在死亡段**（`[eax+0x1e] < 0`）+ 自机弹 | state **3** |
+ *   | `th08:0x44aac9` 一族（擦弹）| 擦弹 | `type 0xa` ⇒ 被 `0x440124` 改写成 **type 7 + state 5** |
+ *   ⇒ **state 1 = 当帧就满速归航**（「自动吸收」那一档）；state 3/5 = 先上抛、`vy > 0` 才转归航。
+ *   ⇒ **「无敌」= state 3 在收集分派里被显式排除**：`th08:0x4409f2`–`0x4409ff`
+ *     （`movsx ecx,[item+0x2d7]; cmp ecx,3; je 0x440c37`）⇒ **上抛期间根本进不了收集判定**，
+ *     这正是 owner 记忆里那个「无敌」的上抛过程。
+ *   ⇒ ⚠ 但「吸收」本身**仍然是抓取盒相交**：`0x440a17 call 0x44a5a0`（`Player::CalcItemBoxCollision`，
+ *     盒 = `[.sht+0x18]/2`，TH08 一手 = 20/24）——**一手里没有任何「免半径自动入账」的状态**。
+ *     所谓「自动」= 道具自己飞过来（state 1 归航），玩家不需要去够它。
+ *
+ * 本卡落点：**两条来源分开** —— ① 通用击破批 = state 3（上抛，收不到）；② 極端人/妖那一颗 = state 1
+ *   （当帧满速归航）。判据就是一个纯函数（下面这个），卡侧按 gauge 的极值档调用。*/
+int yk_orb_instant_absorb(int gauge);   /* 極端人 或 極端妖 ⇒ 1（一手 `0x42da54` 的或门）*/

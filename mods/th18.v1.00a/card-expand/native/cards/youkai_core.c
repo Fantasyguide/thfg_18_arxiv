@@ -959,6 +959,15 @@ int32_t yk_orb_score(int32_t stage_point_items_in_game, int32_t point_items_in_g
 }
 
 /* ---- ★★ 刻符的运动常量（一手见 youkai_core.h 的 §3.11 那一段；owner 第 4 条）------------- */
+/* ★★★ 2026-09-22（永点两条来源）：一手 `th08:0x42da54` 的或门 ——
+ * 「極端人間 或 極端妖怪」时，EnemyManager 的死亡块会再撒**一颗 state 1** 的刻符
+ * （`0x42da2a call 0x406d10`(極端人間) 为真就跳过去 spawn，否则 `0x42da38 call 0x406d70`(極端妖怪)，
+ * 两者皆非才跳过）⇒ 那一颗**当帧就满速归航**（= owner 说的「自动吸收」）。*/
+int yk_orb_instant_absorb(int gauge)
+{
+    return (yk_gauge_is_extremely_human(gauge) || yk_gauge_is_extremely_youkai(gauge)) ? 1 : 0;
+}
+
 void yk_orb_motion_params(int character, float *home_speed, float *pick_r)
 {
     /* `[ds:0x18b896c]+0x14`（`th08:0x44088e`）= 当前 `.sht` 头的 `itemCollectSpeed`；
@@ -979,5 +988,17 @@ void yk_orb_motion_params(int character, float *home_speed, float *pick_r)
      *   本来就是**本引擎自己的值**），**不是 TH08 复刻** —— 已登记 `TUNING.md` §2.0y。
      * ⚠ 归航**速度**没动：一手 10/12 px/帧本来就是 TH08 与 TH18 22 号卡同一档。
      * ⚠ 与机体无关（TH08 的 20/24 按机体分，TH18 的 70 是全局默认）⇒ 四个机体同一档。*/
-    if (pick_r)     *pick_r     = 70.0f;
+    /* ★★★ 2026-09-22 深夜（owner 口径细化）—— **拾取半径回到 TH08 一手 20/24**。
+     *
+     * 上一版按 owner 的「全屏吸收那种速度感」把它改成 TH18 的 70（登记为「TH18 适配」）；
+     * 拿到 owner 的细化口径（「自动吸收」）之后**逐指令复核**，结论是那条适配**解决的不是真问题**：
+     *   · 「自动」在一手里 = **state 1（生成即满速归航）**（`th08:0x42da54` push 1）；
+     *   · 「吸收」在一手里**仍然要抓取盒相交**（`th08:0x4409f2`–`0x440a1e`：唯一判据 =
+     *     `call 0x44a5a0`，state 3 被显式排除）⇒ **没有任何「免半径自动入账」的状态**；
+     *   · 本卡原来的「要靠近才收」之所以慢，真因是**所有**刻符都走了 state 3（上抛约 40 帧），
+     *     而一手在極端人/妖那一档是 **state 1**（当帧满速归航）。
+     * ⇒ 修法 = 两条来源分开（`yk_orb_instant_absorb` + `yk_on_enemy_killed`），半径回一手 20/24。
+     * ⚠ **回退/再适配开关**：若 owner 实跑仍嫌慢，`return` 上面那一行改成 `70.0f`
+     *   （= TH18 原生档 `th18:0x45ae7b`；22 号卡 ITEM_LINE = 110）即可，不用动别处。*/
+    if (pick_r)     *pick_r     = marisa ? 24.0f : 20.0f;     /* 16+8 / 12+8（TH08 一手）*/
 }

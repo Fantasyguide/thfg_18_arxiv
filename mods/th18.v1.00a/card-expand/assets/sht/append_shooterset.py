@@ -249,7 +249,7 @@ APPEND = [
 #   `+0x1c..+0x1f` / `+0x3c..+0x4b` / `+0x50..+0x5b` = 0（TH18 原生 268 行全 0 的字段）。
 #   ❓ TH08 的 `rec[+0x1e]`（`side`，ply00as 是 ±20..50、ply03as 全 0）与 `rec[+0x22]`（弹种，
 #      本档全 0 = 普通命中）在 TH18 记录里**没有对应字段** ⇒ 不翻译。
-def _yk_row(rate, damage, dx, angle, sfx, speed=12.0, dy=0.0):
+def _yk_row(rate, damage, dx, angle, sfx, speed=12.0, dy=0.0, opt_slot=0):
     """一行 = 一个 TH18 shooter 记录 dict（字段名见 pack_shooter）。
 
     ★ 2026-09-22：加了 `speed` / `dy` 两个可选参数 —— 原版 TH08 的 `plyNNas.sht` **每行有自己的
@@ -258,7 +258,7 @@ def _yk_row(rate, damage, dx, angle, sfx, speed=12.0, dy=0.0):
     参数留着是为了「照抄」而不是「假设」）。既有 `REPLACE` 的调用点不传 ⇒ 行为逐字节不变。"""
     return dict(fire_rate=rate, start_delay=0, damage=damage,
                 spawn_dx=dx, spawn_dy=dy, hit_w=16.0, hit_h=16.0,
-                angle=angle, speed=speed, opt_slot=0, mode=0,
+                angle=angle, speed=speed, opt_slot=opt_slot, mode=0,
                 anm=21, sfx=sfx, hit_fx=0, fire_rate2=0, start_delay2=0,
                 func_on_init=0, func_on_tick=0, func_on_draw=0, func_on_hit=0)
 
@@ -268,15 +268,16 @@ def _yk_row(rate, damage, dx, angle, sfx, speed=12.0, dy=0.0):
 REPLACE = [
     ("YOUKAI", 0x16, [
         # ply03as.sht tier5(thr=128) 的 9 行，逐行照抄（TH08 anm 值写在行末注释里）
-        _yk_row(rate=10, damage=24, dx=-12.0, angle=-1.780236, sfx=-1),   # row0 anm4 外侧左
-        _yk_row(rate=5,  damage=26, dx=-6.0,  angle=-1.675516, sfx=-1),   # row1 anm2
-        _yk_row(rate=3,  damage=30, dx=0.0,   angle=-1.570796, sfx=0),    # row2 anm2 中央（出膛音）
-        _yk_row(rate=5,  damage=26, dx=6.0,   angle=-1.466077, sfx=-1),   # row3 anm2
-        _yk_row(rate=10, damage=24, dx=12.0,  angle=-1.361357, sfx=-1),   # row4 anm4 外侧右
-        _yk_row(rate=6,  damage=22, dx=0.0,   angle=-1.850049, sfx=-1),   # row5 anm6 子机1 最外左
-        _yk_row(rate=5,  damage=24, dx=0.0,   angle=-1.710423, sfx=-1),   # row6 anm4 子机1
-        _yk_row(rate=5,  damage=24, dx=0.0,   angle=-1.431170, sfx=-1),   # row7 anm4 子机2
-        _yk_row(rate=6,  damage=22, dx=0.0,   angle=-1.291544, sfx=-1),   # row8 anm6 子机2 最外右
+        # ⚠ 行末的 `opt=` = TH08 `rec[+0x20]` 的原点（一手见上面 YOUKAI_TIER_ORIGINS 那一段的解析法）
+        _yk_row(rate=10, damage=24, dx=-12.0, angle=-1.780236, sfx=-1, opt_slot=0),   # row0 anm4 外侧左
+        _yk_row(rate=5,  damage=26, dx=-6.0,  angle=-1.675516, sfx=-1, opt_slot=0),   # row1 anm2
+        _yk_row(rate=3,  damage=30, dx=0.0,   angle=-1.570796, sfx=0,  opt_slot=0),   # row2 anm2 中央（出膛音）
+        _yk_row(rate=5,  damage=26, dx=6.0,   angle=-1.466077, sfx=-1, opt_slot=0),   # row3 anm2
+        _yk_row(rate=10, damage=24, dx=12.0,  angle=-1.361357, sfx=-1, opt_slot=0),   # row4 anm4 外侧右
+        _yk_row(rate=6,  damage=22, dx=0.0,   angle=-1.850049, sfx=-1, opt_slot=1),   # row5 anm6 子机1 最外左
+        _yk_row(rate=5,  damage=24, dx=0.0,   angle=-1.710423, sfx=-1, opt_slot=1),   # row6 anm4 子机1
+        _yk_row(rate=5,  damage=24, dx=0.0,   angle=-1.431170, sfx=-1, opt_slot=2),   # row7 anm4 子机2
+        _yk_row(rate=6,  damage=22, dx=0.0,   angle=-1.291544, sfx=-1, opt_slot=2),   # row8 anm6 子机2 最外右
     ]),
 ]
 
@@ -323,15 +324,44 @@ REPLACE = [
 #
 # ## 已知偏差（❓ 记账，不改数字硬凑）
 #
-# - **膛口**：TH08 的每行带 `+0x20` = 从哪一架子机出膛（紫 0/1、アリス 0/1、レミリア 0..4），
-#   而 TH18 的**卡路径恒用传进来的那颗子机的坐标**（`0x40aa0c`/`0x40aa21` 一手：膛口只算一次）
-#   ⇒ 本批照既有 `_yk_row` 的口径填 `opt_slot = 0`，一行不落地**全从同一架子机出膛**。
-#   行数 / 角度 / 速度 / 伤害 / 节奏全部照抄 ⇒ 「同角色同档的弹幕形状」对，**多子机的横向分布**不对。
+# - **膛口**：✅ **2026-09-22（P7）已照抄** —— 每行的 `opt_slot` 现在 = TH08 `rec[+0x20]`
+#   （见上面 `YOUKAI_TIER_ORIGINS`：0 = 自机本体、n = 第 n 架子机）。**前提**是这些组由**引擎的行循环**
+#   发（卡侧认领 set 之后就是这样）；走**卡路径**（`Player__tick_shooters_for_ability_card`）时
+#   `+0x20` 会被忽略（膛口恒取传进来的那颗子机）⇒ 认领 + 不压行循环是一对，缺一不可。
+#   行数 / 角度 / 速度 / 伤害 / 节奏 / 原点全部照抄。
 # - **贴图**：`+0x22` 填 21（= 原生 `ability.anm` 的合法弹脚本，与既有 `YOUKAI` 那一格同源）；
 #   TH08 用的是它自己 `pl0X.anm` 的 2/4/6/12/14…，数字空间不同（`0x40aa03` 一手：
 #   卡路径把 `player+0x10` 换成 `ability.anm`）⇒ 要把 TH08 的弹贴图切进 `ability.anm` 才谈得上，见报告 ❓。
 # - **`+0x0c/+0x10`（判定盒）**：TH08 有数据（18×48 / 24×16）但全 exe 只有写点、没有读点
 #   ⇒ 照原生同形组填 `(16, 16)`（与既有 `YOUKAI` 那一格同口径）。
+# ## ★★★ 2026-09-22（P7 / owner #13「妖形态主机也发弹」）：**每行的 `+0x20`（生成原点）照抄** ----
+#
+# 一手：TH08 `rec[+0x20]`（i16）= **生成原点**：`0` = 自机本体、`n>=1` = `options[n-1]`
+#   （`engine/sht/th08/01-youkai-shootersets.md` §3，读点 `th08:0x44fb7f`–`0x44fbd7`）。
+# TH18 的**同一格语义相同**：原生行循环 `th18:0x45ec41 mov al,[edi+0x20]` → `0` ⇒ 膛口 = 自机自身
+#   `player+0x620`；非 0 ⇒ `player+0x580 + (n & 0xf) * 0xf0`，而那一族正是 **slot 1..4 的 4 架子机**
+#   （`engine.h` 一手：`CE_NATIVE_OPT_PLAYER_MUZ0 0x670` = slot 1，`CE_NATIVE_OPT_COUNT 4`）
+#   ⇒ **两作的编号法一致（0 = 本体、1 起 = 第 n 架子机）**，照抄不需要 ±1。
+# 来源（本机 `local/th08.v1.00d/dat/ply0{0,1,2,3}as.sht` 直读；**烘成常量**是为了让 `make sht`
+#   在没有 TH08 样本的机器上也能跑 —— 与上面三张行表同一条纪律）：
+# ```
+#   nsets = u16 @ +0x02;  槽数组从 +0x38 起、每槽 8 字节 = (u32 首行文件内偏移, i32 火力阈值)
+#   行 stride 0x38，`i16 @ +0x00 < 0` = 终止符；`i16 @ +0x20` = 生成原点
+#   ⇒ 逐档行数实测（括号里是阈值）：ply00as 2,2,3,4,5(,7) @ 8/24/48/80/128/999
+#     ply01as 2,2,2,2,2(,2)；ply02as 3,3,5,5,5(,6)；ply03as 3,3,5,7,9(,11)  —— 与下面三张行表的
+#     行数**逐一相等**（生成时 assert，两边不可能静默漂移）。
+# ```
+YOUKAI_TIER_ORIGINS = {
+    # 霊夢・紫：低档 1 主 + 1 子机 → 满档 3 主 + 2 子机（本体行的原点恒 0）
+    "R": [[0, 1], [0, 1], [0, 0, 1], [0, 0, 1, 1], [0, 0, 0, 1, 1]],
+    # 魔理沙・アリス：两行恒为「1 子机 + 1 本体」（注意顺序 = 子机行在前）
+    "M": [[1, 0], [1, 0], [1, 0], [1, 0], [1, 0]],
+    # 咲夜・レミリア：三档起就是 1 本体 + 4 架子机各一路
+    "S": [[0, 2, 3], [0, 2, 3], [0, 1, 2, 3, 4], [0, 1, 2, 3, 4], [0, 1, 2, 3, 4]],
+}
+# 既有 `REPLACE(YOUKAI, 0x16)` = ply03as slot4（9 行）的原点同样照抄（早苗的回落档也走引擎行循环）
+YOUKAI_0X16_ORIGINS = [0, 0, 0, 0, 0, 1, 1, 2, 2]
+
 # ---- 霊夢 / 八雲紫（TH08 `ply00as.sht` 的 slot 0..4 = 火力档 0..4）----
 YOUKAI_TIERS_R = [
     [   # tier 0（TH08 阈值 8）
@@ -1350,8 +1380,19 @@ def _youkai_tier_sets(target_file: str, anm_ids: dict) -> list:
     out = []
     for k in YOUKAI_TIER_SUFFIXES:
         tiers = YOUKAI_TIER_TABLES[k] if k == suf else None
+        orig = YOUKAI_TIER_ORIGINS[k] if k == suf else None
         for t in range(5):
             rows = (tiers[t] if tiers is not None else [])
+            if orig is not None:
+                # ★ 2026-09-22（P7）：逐行套上 TH08 的 `+0x20`。行数与烘进来的原点表**必须相等**
+                #   —— 不等就说明行表或原点表被单独改过（那是静默错弹），当场停构建。
+                if len(rows) != len(orig[t]):
+                    raise SystemExit(f"YOUKAI_TIERS_{k} tier{t}: {len(rows)} 行 与烘焙的 origin 表 "
+                                     f"{len(orig[t])} 项不等（TH08 ply{suf}as.sht 的实测行数）")
+                rows = [dict(r, opt_slot=o) for r, o in zip(rows, orig[t])]
+                for o in orig[t]:
+                    if not 0 <= o <= 4:
+                        raise SystemExit(f"YOUKAI_TIERS_{k} tier{t}: origin {o} 越界（TH08 只会有 0..4）")
             out.append((f"YOUKAI_{k}{t}",
                         b"".join(pack_shooter(r, anm_ids) for r in rows) + TERMINATOR))
     return out

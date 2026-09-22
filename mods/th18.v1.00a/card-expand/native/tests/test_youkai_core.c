@@ -879,6 +879,12 @@ int main(void)
     CHECK(YK_GAUGE_SHOOT_DELTA == 26);
     CHECK(yk_gauge_shoot_delta(1) == 26 && yk_gauge_shoot_delta(0) == -26);
     CHECK(yk_gauge_gate_blocks(1) == 1 && yk_gauge_gate_blocks(0) == 0);
+    /* ★★★ 2026-09-22（永点三来源之一）：一手 `th08:0x42da54` 的**或门** ——
+     * 「極端人間 **或** 極端妖怪」时那一颗刻符是 **state 1**（生成即满速归航 = 自动吸收）。*/
+    CHECK(yk_orb_instant_absorb(-8000) == 1);      /* 極端人間（`<= −8000`）*/
+    CHECK(yk_orb_instant_absorb(8000) == 1);       /* 極端妖怪（`>= +8000`）*/
+    CHECK(yk_orb_instant_absorb(-3000) == 0);      /* 中人：不成立 */
+    CHECK(yk_orb_instant_absorb(0) == 0);
     /* ★★★ 2026-09-22（P3 第二批）：射击中每帧 ±26（一手 `Player.cpp:445-452` + `:541`
      * `0x6590 / 0x3e7` = 26000/999 = 26，方向 = `shotType & 1` = isYoukaiMode ⇒ 本卡口径的低速位）
      * 与 `AddToYoukaiGauge` 的第一道闸（一手 `th08:0x43c0c2`/`:0x43c0cb`：`shotActive != 0` 且
@@ -1043,24 +1049,24 @@ int main(void)
             float sp = 0.0f, r = 0.0f;
             int c;
             yk_orb_motion_params(0, &sp, &r);
-            CHECK(sp == 10.0f && r == 70.0f);                     /* 速度 = pl00as 一手；半径 = TH18 适配 */
+            CHECK(sp == 10.0f && r == 20.0f);                     /* pl00as：10.0 / 24/2+8（一手）*/
             yk_orb_motion_params(1, &sp, &r);
-            CHECK(sp == 12.0f && r == 70.0f);                     /* pl01as：12.0（TH08 一手）*/
+            CHECK(sp == 12.0f && r == 24.0f);                     /* pl01as：12.0 / 32/2+8（一手）*/
             yk_orb_motion_params(2, &sp, &r);
-            CHECK(sp == 10.0f && r == 70.0f);                     /* pl02as */
+            CHECK(sp == 10.0f && r == 20.0f);                     /* pl02as */
             yk_orb_motion_params(3, &sp, &r);
-            CHECK(sp == 10.0f && r == 70.0f);                     /* pl03as */
+            CHECK(sp == 10.0f && r == 20.0f);                     /* pl03as */
             yk_orb_motion_params(-1, &sp, &r);                    /* 越界 ⇒ 0 号那一档 */
-            CHECK(sp == 10.0f && r == 70.0f);
+            CHECK(sp == 10.0f && r == 20.0f);
             for (c = -2; c <= 6; ++c) {                           /* 全定义域不崩、值恒在 {10,12}/{70} */
                 yk_orb_motion_params(c, &sp, &r);
-                CHECK((sp == 10.0f || sp == 12.0f) && r == 70.0f);
+                CHECK((sp == 10.0f || sp == 12.0f) && (r == 20.0f || r == 24.0f));
             }
             sp = 7.0f; r = 7.0f;
             yk_orb_motion_params(0, &sp, 0);                      /* 单出口 */
             CHECK(sp == 10.0f && r == 7.0f);
             yk_orb_motion_params(0, 0, &r);
-            CHECK(r == 70.0f);
+            CHECK(r == 20.0f);
             yk_orb_motion_params(0, 0, 0);                        /* 双 NULL：什么都不做、不崩 */
             /* 一手的状态号与常量（改了要在注释里同步改一手出处）*/
             CHECK(YK_ORB_STATE_FALL == 0 && YK_ORB_STATE_HOMING == 1 && YK_ORB_STATE_SPAWN == 3);

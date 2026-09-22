@@ -246,6 +246,7 @@ typedef struct {
                                         *   计数（`yk_map_rearms`）的快照。它在涨 = 波次级复位生效
                                         *   （被夹住的槽在下一次 `etOn` 就被放开、使魔同帧重建）。*/
 
+    int32_t       claimed_set;        /* ★★★ 2026-09-22（P7）：最近一次认领/打日志的主炮 set（-1 = 还没认领过）*/
     uint32_t      releases_seen;       /* ★★★ 2026-09-22（P8-3 / route A′）：上一帧读到的
                                         *   `yk_map_releases`（第二问主动放行的次数，只增不清）*/
     uint32_t      silent;              /* ★★★ 2026-09-22（P8-6）：使魔**查不到**（过场 destroy_all /
@@ -1493,14 +1494,31 @@ static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
     if (!yk_gauge_gate_blocks(yk_shooting()))
         s->gauge = yk_gauge_add(s->gauge, focused ? 200 : -200);
     if (!focused) return;                               /* 妖逢魔才撒刻符 */
+    /* ★★★ 2026-09-22 深夜（owner 口径细化）：**两条一手来源分开实现**（各带自己的出处）。
+     *
+     * ① **通用击破批**（一手 `th08:0x42b048` = `Enemy::sub_42adb0`，push **state 3**）：
+     *    撒在敌人位置 + **半径 128** 的环上（`th08:0x42b03b`，角度 = `randf(2π)`，常量 `0x43000000`）。
+     *    **state 3 = 先上抛** —— 而且**上抛期间收不到它**（一手 `th08:0x4409f2`–`0x4409ff`：
+     *    收集分派第一句就是 `cmp [item+0x2d7],3 / je 跳过`）⇒ 这正是 owner 记忆里的
+     *    「**『无敌』的上抛过程**」，上抛结束（`vy > 0`）才转归航。
+     * ② **極端人/妖那一颗**（一手 `th08:0x42da54` = `EnemyManager::on_tick` 的死亡块，
+     *    push **state 1**）：那一档是**生成即满速归航**（= owner 说的「**自动吸收**」），
+     *    原样**一颗**、不发生在上抛环上（一手就是一次 `call 0x4400a0`）。
+     *    ⚠ 一手里这条是「極端人間 **或** 極端妖怪」（`0x42da2a`/`0x42da38` 两问取或）——
+     *      判据 = core 的 `yk_orb_instant_absorb(gauge)`。
+     * ⚠ 一句口径：**「自动」≠「免半径」** —— 一手唯一吸收判据仍是抓取盒相交
+     *   （`th08:0x440a17 call 0x44a5a0`，盒 = `[.sht+0x18]/2` = 20/24）；「自动」的意思是
+     *   道具自己飞过来（state 1 当帧满速），玩家不用去够。*/
     n = YK_ORB_PER_KILL_CHAIN * 2 + 10;
     for (i = 0; i < n; ++i) {
-        /* 一手：刻符撒在敌人位置 + **半径 128** 的环上（`th08:0x42b03b`，角度 = `randf(2π)`，
-         * 常量 `0x43000000` = 128.0f）。角度用 `ce_rand()` 取（replay-safe）。*/
         ang = (float)(ce_rand() % 62832u) / 10000.0f;   /* 0..2π 的近似 */
         yk_orb_spawn(s, ev->x + yk_cos_approx(ang) * 128.0f, ev->y + yk_sin_approx(ang) * 128.0f,
-                     YK_ORB_STATE_SPAWN);   /* 一手：击破那一路是 state 3（`th08:0x42b048`）*/
+                     YK_ORB_STATE_SPAWN);   /* 一手 `th08:0x42b048`：state 3（上抛，期间收不到）*/
     }
+    /* ② 極端人/妖的那一颗：state 1（生成即满速归航 = 自动吸收）。位置 = 敌人处（一手 push 的是
+     * `enemy+0x2d88` 那份坐标，没有 128 环）。*/
+    if (yk_orb_instant_absorb(s->gauge))
+        yk_orb_spawn(s, ev->x, ev->y, YK_ORB_STATE_HOMING);
 }
 
 static void yk_gauge_hud_kill(yk_card_t *s)
@@ -1660,6 +1678,7 @@ static int on_ctor(ce_card_t *c)
     s->heals_seen = 0;
     s->rearms_seen = 0;                 /* ★ route A：整表 reset 也清条目，但计数只增不清 ⇒ 快照回 0 */
     s->releases_seen = 0;               /* ★ P8-3：同上（route A′ 计数只增不清）*/
+    s->claimed_set = -1;                /* ★ P7：认领日志的「变化才打」闩 */
     s->silent = 0;                      /* ★ P8-6：静默消失的账，每关重开归零 */
     s->opt_spring_live = 0;
     /* ★ 2026-09-22 晚（owner 第 2 条）：追踪态 + 目标 + 出场计时（子机在 ctor 里已经全收）
@@ -1923,6 +1942,46 @@ static int on_power_level_change(ce_card_t *c)
  *   ② 那一格必须是**我们写的合法记录**：原生 0x16 是 `fire_rate = 0`，装备卡路径会整数除零
  *      （`engine/sht/th18/02` §2）⇒ 自检记录（`yk_shotset_usable`），没覆盖成功就不调。
  *      覆盖由 `assets/sht/append_shooterset.py` 的 `REPLACE` 做（`make sht`）。*/
+/* ★★★ 2026-09-22（P7 / owner #13「妖形态主机也发弹的」）：**本卡主动认领主炮 shooterset**。
+ *
+ * 一手（TH08）：妖侧那一套 set **含本体行**（`ply00as.sht` 满档 5 行里 3 行 `+0x20` = 0 = 本体、
+ * 2 行 = 1 = 子机；`th08:0x450f6f` 按 `player+0x3` = isYoukaiMode 选 `plyNNas.sht`）⇒
+ * 「妖形态主机也发弹」是原作行为；我们原来把整条行循环压掉（`on_native_shot_suppress`），
+ * 妖形态本体一发都没有 —— 而且**连带把 113/117 的 set 覆盖也压死**（它们同样靠这条行循环发）。
+ *
+ * 现在：低速（= 妖侧）时返回我们那一组（按机体 × 火力档选，早苗回落 `0x16`），
+ * 让**引擎**发（它按 `+0x20` 分膛口）。优先级用默认 0 —— `sdk/public.h` 的阶梯表里
+ * 「108（默认 0）」本来就是这么写的；113（10）/117（20）仍然赢我们，111（−1）输给我们
+ * （111 那一组现在压根不需要发：108 聚焦时它本来就被压着，见 AUDIT §BE 详录 #57 §3c 的影响面）。
+ * ⚠ 高速一律返回 −1（人侧交回引擎的原生 set）。*/
+static int on_shot_set_index(ce_card_t *c, int power_level)
+{
+    yk_card_t *s = ce_state(c, yk_card_t);
+    if (!s) return -1;
+    if (!CE_PLAYER_FOCUSED()) return -1;                      /* 人侧：原生 set */
+    /* ⚠ `power_level` 这个形参是 SDK 传进来的**主炮档**（`BP_ce_shot_set_index` 的 eax），
+     *   与 `yk_current_power_level()` 同源（`CURRENT_POWER / 100`）⇒ 直接用引擎给的那个值，
+     *   不做二次读法（少一条可能与引擎不同步的路径）。越界一律钳进表内。*/
+    {
+        int tier = power_level;
+        int set;
+        if (tier < 0) tier = 0;
+        if (tier >= YK_SHOT_TIERS) tier = YK_SHOT_TIERS - 1;
+        set = yk_youkai_shotset_pick(yk_current_character(), tier);
+        /* ★ 认领的**一行证据**（实跑判据 + 归属证据）：只在「(机体, 档, set) 变了」时打一次。
+         * 它同时把 P7 影响面里那两条写进日志：① 我们赢了谁（111 的 −1 恒输给我们）；
+         * ② 113(10)/117(20) 若同时在认领，SDK 会另打一条 trace（槽 0x98）。*/
+        if (set != (int)s->claimed_set) {
+            s->claimed_set = set;
+            ce_log("youkai: claiming main-cannon shot set 0x%02x (char %d tier %d) - the ENGINE "
+                   "fires our rows now (slot 0 from the player, slot>=1 from our options); "
+                   "113/117 still win by priority, 111 loses (its set never fired while we "
+                   "suppressed the whole row loop)", set, yk_current_character(), tier);
+        }
+        return set;
+    }
+}
+
 static int on_tick_shooters(ce_card_t *c, uint32_t short_timer, uint32_t long_timer)
 {
     yk_card_t *s = ce_state(c, yk_card_t);
@@ -1947,10 +2006,14 @@ static int on_tick_shooters(ce_card_t *c, uint32_t short_timer, uint32_t long_ti
         }
         return 0;
     }
-    o = ce_option_claim(c, &s->opt[0]);                       /* 膛口 = 子机（0x40a9c0 一手）*/
-    if (!o) return 0;
-    ++s->shot_timer;                                          /* 射击帧计数自己数（引擎那个松开 Z 会跳）*/
-    ce_tick_shooters_for_card(o, (int)s->shot_timer, 0, set);
+    /* ★★★ 2026-09-22（P7 / owner #13）：**这里不再自己发弹** —— 妖侧的主炮组改成由
+     * **引擎自己的行循环**发（`th18:0x45ebfb`–`0x45ec9f`，本卡经 `on_shot_set_index` 认领 set）。
+     * 为什么必须换：`Player__tick_shooters_for_ability_card`（`0x40a9c0`）**完全不读行里的 `+0x20`**
+     * （膛口恒取传进来的那颗子机，`0x40aa0c`/`0x40aa21` 只算一次）⇒ 妖侧本体主炮**一发都发不出来**；
+     * 而引擎那条行循环按 `0x45ec41 mov al,[edi+0x20]` 分「本体（0）/ 第 n 架子机（≥1）」，
+     * 正是 TH08 的语义（两作的编号法一致，见 `assets/sht/append_shooterset.py` 的 origin 段）。
+     * ⚠ 与 `on_shot_set_index` 是**一对**：那边认领、这边闭嘴；少任何一半都会「双发」或「都不发」。*/
+    (void)o; (void)set;
     return 0;
 }
 
@@ -2268,6 +2331,28 @@ static int on_tick_2(ce_card_t *c)
         }
         s->graze_seen = graze;
     }
+    /* ★★★ 2026-09-22（P4 / owner：「人转妖的时候，敌方使魔会有一个 wav，这个不存在于后续音效当中」）：
+     * **Shift 那一下的两枚 SE** —— 一手 `FUN_0042c420`（`th08:0x42c420`）两支各播一枚（逐指令）：
+     *   · **人→妖**（`0x42c43a` 起：`flags` bit11 == 0 且玩家已是妖，同支把环换成 interrupt 2）：
+     *     `0x42c489 push 0x28` → id 0x28 → 声音表第二格 wav **33** = **`se_invalid.wav`**；
+     *     而这一枚的字节**与 TH18 自己的 `se_invalid.wav` 完全相同**（md5 `464ff702…`）
+     *     ⇒ 直接播 TH18 原生那一格（`0x0c`），**不占新槽**。
+     *   · **妖→人**（`0x42c4e1` 起：bit11 != 0 且玩家已不是妖，同支把环换成 interrupt 1）：
+     *     `0x42c529 push 0x27` → wav **32** = **`se_ophide.wav`**（= option hide「子机收起来」那一声）；
+     *     TH18 没有这一枚 ⇒ 走扩表 `CE_VOICE_YOUKAI_FAM_SHIFT`（`0x5d`，构建期从 TH08 现取）。
+     * ⚠ 口径出入照实登记：owner 记的是「**人→妖**那一枚不存在于后续」，一手是「**妖→人**那枚
+     *   （se_ophide）才是 TH08 独有」（人→妖那枚 = se_invalid，TH18 一直有）⇒ 两向都播，各用一手那一枚。
+     * ⚠ 我们的使魔只在低速（妖）存在 ⇒ 妖→人那一下正是「把它们收起」= 与 se_ophide 的语义完全对上；
+     *   人→妖那一下（TH18 里 se_invalid 同时是**符卡超时**音）只在**当时场上有我们的使魔**（= 一次形态
+     *   切换真的发生）时才播，免得每次按 Shift 都像超时。*/
+    if (focused != (int)s->gauge_focus_prev) {
+        float px = *(const float *)(CE_PLAYER() + CE_PLAYER_X);
+        if (focused) {
+            if (yk_map_fam_count(&s_map)) ce_play_sound(0x0cu, px);        /* 人→妖：TH08 id 0x28 = se_invalid */
+        } else {
+            if (yk_map_fam_count(&s_map)) ce_play_voice(YOUKAI_FAM_SHIFT, px); /* 妖→人：TH08 id 0x27 = se_ophide */
+        }
+    }
     yk_gauge_tick(s, focused);
     ce_score_family_declare(ce_card_id(c), CE_COEFF_FAMILY_08);
     ce_score_declare_delta(ce_card_id(c), s->piv);
@@ -2371,7 +2456,9 @@ CE_CARD(108, .ctor = on_ctor, .on_load = on_load, .on_power_level_change = on_po
              .on_tick_shooters = on_tick_shooters, .on_tick_2 = on_tick_2,
              .on_bullet_created = on_bullet_created, .on_enemy_death = on_enemy_death,
              .on_enemy_shot_slot = yk_on_shot_slot,           /* §3.5.1 发射口精确闸（0x433ffa）*/
-             .on_native_shot_suppress = on_native_shot_suppress, .on_draw = on_draw,
+             /* ★ 2026-09-22（P7）：`on_native_shot_suppress` **已退订** —— 妖侧主炮改成「认领 set +
+              *   让引擎的行循环发」（见 `on_shot_set_index` 的注）。站点本身留着（109 还在用同一站点）。*/
+             .on_shot_set_index = on_shot_set_index, .on_draw = on_draw,
              /* ★ 2026-09-22（P6）：本体脚本的换装改在**更新相位**（晚于自机 tick 0x17、早于自机绘制 0x1d）
               *   —— 原来挂在 `on_draw`（绘制 0x33）⇒ 移动起步那一帧会先画出引擎装的人侧脚本（闪一帧）。*/
              .on_item_frame = on_item_frame,
