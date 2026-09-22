@@ -18467,3 +18467,98 @@ blue_tint −2000 / red_tint +2000`，按 `shottype`（`0x164d0b1`）分支写�
   - **资产耦合**：9 支脚本改了 ⇒ `ability.anm` 必须与 DLL **同批发布**（本会话**没有**部署）。
 - **回退**：改 `HUD_DIM_ALPHA_DIM`(64)/`HUD_DIM_FRAMES`(8) 两个宏 + 9 支脚本 + checker 的 `LABELS` + 单测里的算术值，
   六处一起（`_Static_assert` 与 §⑪ 会拦住只改一半）。
+
+## §BE-FD（2026-09-22）：工单 E 续 —— 108 使魔**逐波重建（route A）落地** + `YK_FAM_LIFE` 按一手定值
+
+> **谁做的**：工单 E 会话（本轮**只动 108 自己的三个文件 + TUNING**）。
+> **owner 口径**（本轮的输入）：① 走 route A、**不加站点**；② 保留「打掉使魔 ⇒ 那一波停火」；
+> ③ `YK_FAM_LIFE` 去 TH08 的 ECL 抄字面值。**没碰** `yk_body_sync`（§BE-FC 的妖侧本体那条路）。
+> **一手全文**：`engine/enemy/th18/07-emitter-slots-waves-and-phase-transitions.md`（TH18 波次/换阶段/`enmKillAll`）、
+> `engine/enemy/th08/01-familiars-and-anm.md`（TH08 使魔每波重建 + 动画）。
+
+### 1. 改了什么（文件 → 行为）
+
+| 文件 | 改了什么 | 为什么 |
+| --- | --- | --- |
+| 文件 | 改了什么（摘要；细节见 §1a）| 为什么 |
+| --- | --- | --- |
+| `cards/youkai_core.h` | HP 定值 + `yk_slot_t`/`yk_map_t` 各加一个字段 + 两个新声明 | 闸需要新复位口；HP 需要一手取值 |
+| `cards/youkai_core.c` | 新增 `yk_shot_slot_gate()`；`yk_note_slot` 消费 `rearm_pending`；四处清零 + `yk_map_rearms()` | route A 的全部逻辑都在纯逻辑层（主机单测可跑）|
+| `cards/youkai.c` | `yk_on_shot_slot` 改调新闸 + 新记账日志 + 文案/清单订正 | 卡侧只做「读计数 + 打日志」，不做判断 |
+| `tests/test_youkai_core.c` | 新增 route A 段（+28 checks）+ `sizeof` 断言 + 栈上 map 先清零 | 992 → **1020 checks / 0 failed** |
+| `TUNING.md` §2.0w | 新增 #10、#9 降级为兜底、订正 #7 的真因说明 | 数值改动必须记账 |
+
+### 1a. 逐文件明细
+
+- **`cards/youkai_core.h`**：① `YK_FAM_LIFE` **1 → 100**（一手出处见 §2）；
+  ② `yk_slot_t` 新增 `uint8_t rearm_pending`，**插在 `fam_seen` 与 `no_fam_frames` 之间** ——
+  正好吃掉 `uint16_t` 对齐留下的那 1 字节空洞 ⇒ `sizeof(yk_slot_t)` 仍 **28 B**（放错位置会变 32，单测钉着）；
+  ③ `yk_map_t` 新增 `uint32_t rearms`（`sizeof` 900 → **904 B**）；④ 新增声明 `yk_shot_slot_gate()` / `yk_map_rearms()`。
+- **`cards/youkai_core.c`**：① 新增 `yk_shot_slot_gate()`（= 原判据 + 副作用：夹住时置 `rearm_pending`
+  并给 `rearms` 记一笔，**同一夹持期只记一次**）；② `yk_note_slot` **消费** `rearm_pending`
+  （位置在 `broken` 判定与 TTL 记账**之前**）⇒ 清 `broken`/`fam_seen`/`no_fam_frames`，
+  同一帧的 1:1 分支就把使魔建回来；③ `yk_map_reset`/`yk_map_alloc`/`yk_frame_end`/`yk_fam_created`
+  清该标志（`yk_fam_broken` **故意不清**，理由在文件内注）；④ `yk_map_rearms()`。
+- **`cards/youkai.c`**：① `yk_on_shot_slot` 改调 `yk_shot_slot_gate`（原来调纯判据
+  `yk_shot_slot_suppressed`），日志文案改成「until the next `etOn` of that slot (route A) or the
+  `%d`-frame fallback」；② `on_tick_2` 新增 route A 记账行（`rearms` 快照比对），并把原
+  `self-healed` 那行标注成 **fallback**；③ 卡状态加 `rearms_seen`；④ 死亡日志与文件尾 TODO 清单第 5/9 条订正。
+- **`tests/test_youkai_core.c`**：新增 route A 段（+28 checks：夹住 ⇒ 第一次 `etOn` 掐并记账、
+  同夹持期不重复记账、tick 消费后同帧重建且**不动用 TTL**、再来一轮、未被夹住的槽一律不记账、
+  整表复位不留悬案）+ `sizeof(yk_slot_t) == 28u` + 栈上的 `yk_map_t` 先清零
+  （`heals`/`rearms` 是**只增不清**的账本计数，`yk_map_reset` 不动它们）。
+
+- **没有动共享件**：`sites.py` / `sdk*` / `patch/**` / `Makefile` / `cards_def.*` 一字未改；**没有加站点**
+  （route A 全部骑在已有的 `ce_enemy_shot_slot`（`0x433ffa`）上）。
+- 对 71 / 77 / 111 / 116 / 117 的**行为影响 = 0**（只改了 108 自己的两个文件 + 它的单测）。
+
+### 2. `YK_FAM_LIFE = 100` 的一手出处（可复算）
+
+`thecl -d 8 -m th08.eclm` 反汇编 24 个 `ecldata*.ecl`，逐处取
+`familiarCreate[A-Z]*("SubN", x, y, life, drop, score)` 的第 4 参 ⇒ **990 处**字面值：
+
+- 众数 = **100（159 处）**；其后 13500(90) / 300(68) / 1200(66) / 200(59) / 600(51) / 5000(44) / 1000(37)…
+- 只看**我们已经移植外观的那四套**（子程序 `anmSet(K)`、K = 53..56）：**100 仍是众数（68 处）**。
+- ⚠ **TH08 更大的档不能用**：本卡 spawn 的 life ≥ 1000 会被 `th18:0x42d8f6` 置 `flags_lo |= 0x40000000`
+  （锁定黑名单 ⇒ 诱导打不到使魔）⇒ 1200 / 13500 / 5000 / 4000 全部出局。
+
+### 3. 验证原文（本轮跑过的）
+
+```
+make test-host      → youkai_core: 1020 checks, 0 failed（其余各支 0 failed）
+make check          → rc=0；'x87 in our objects: 0'；check-docs '全部通过（370 个文件）'
+make dllx87         → x87 in our objects: 0
+python3 tooling/check-docs.py → 全部通过（370 个文件）
+```
+**未实跑**（不部署）：本节的结论停在「静态 + 主机单测」层。
+
+### 4. 一处**与工单字面不同**的实现（必须让 owner 知道）
+
+工单原话是「闸夹住时……置 `rearm_pending` **并放行这一帧**」。本实现取的是「**置 `rearm_pending` 且照旧掐这一帧**」：
+
+- 理由：放行 = 让**一只已经不存在的使魔**的发射口照常发弹 —— 那正是 TH08 里**不存在**的状态
+  （TH08 使魔与发射口一体，见 TH08 篇 §3.3），也与 owner 第 3 条「保留打掉使魔 ⇒ 那一波停火」相反。
+- 代价完全相同：**每次使魔死亡最多丢 1 条 `etOn`**（下一帧 tick 已把使魔建回来 ⇒ 之后的 `etOn` 全放行）。
+- 想改成字面版只是 `youkai_core.c` 里 `yk_shot_slot_gate` 的一行（`return 1` → `return 0`），已在该函数注释里写明。
+
+### 5. route A 仍可能漏的场景（先按 A 落地，B/C 对比留档）
+
+| 场景 | route A 的行为 | 结论 |
+| --- | --- | --- |
+| 使魔被段首 `enmKillAll()` 清掉（= 原报的现象）| 该槽下一次 `etOn` 就记 `rearm_pending` ⇒ 下一帧重建 | ✅ 正是要修的 |
+| `etOn` 与死亡**同帧**（清场与发弹的先后不定）| 若 `etOn` 在死亡后：同上；若在死亡前：闸本帧放行、下一帧的 `etOn` 才记账 | ✅ 两种都不会夹死（`yk_fam_broken` 故意不清 `rearm_pending`，最多早一帧重建）|
+| 该槽**再也不 `etOn`**（这一波本来就不发弹 / 换了槽）| 没有事件 ⇒ 闸保持夹着，但**也没有弹被吞**；等 `YK_EMIT_BROKEN_TTL` 兜底放开 | ✅ 无害 |
+| 卡侧建使魔失败（表满 / 堆拒绝）| 标志已消费、`fam_seen` 清 0 ⇒ 闸放行，1:1 每帧重试 | ✅ 不会夹死 |
+| 更前面的卡也掐这一槽（SDK 是 OR）| 我们的 `rearm_pending` 照样记（钩子会跑到我们）| ✅ 与我们无关的掐不影响复位 |
+| **B（取消掐闸）** | —— | 少一个「打掉使魔」的收益点，owner 已明确要保留 ⇒ 不采用 |
+| **C（挂 `etNew` = 真波次事件，需 1 条新站点）** | —— | 语义最精确（引擎自己的「重建这一槽」事件），但要动 `sites.py`/`sdk.c`/`sdk/public.h` + 生成物 + 走站点三判据。窗口已挑好并过闸：`0x433de7` / cavesize 6 / `sitecheck` W1–W4 全过。**本轮不做**，留作「A 实跑仍有漏」时的下一步 |
+
+### 6. 实跑观察点（沿用既有日志行，另加一行）
+
+| 行 | 判读 |
+| --- | --- |
+| `youkai: familiar enemy_id N killed (kind K, …)` | `K == 4`（KILL_ALL）⇒ 触发者是段首 `enmKillAll`（理论成立）|
+| `youkai: emitter gate ACTIVE - slot S of enemy_id N …` | 闸确实夹过一次（只打一次）|
+| **`youkai: emitter gate re-armed %u slot(s) on the next etOn (route A, total %u)`** | **本轮新增**：在涨 = 主路生效（夹住后**一帧内**就被下一次 `etOn` 放开）|
+| `youkai: emitter gate self-healed … (fallback path; total %u)` | route A 落地后**不该**再涨（涨了说明那个槽的 ECL 再也不 `etOn` 它，才轮到 TTL）|
+| `youkai: ledger - N spawned, M killed, W withdrew, D dropped` | `killed` 与 `spawned` 同步涨、差≈0 ⇒ 「每建必死」；`YK_FAM_LIFE = 100` 之后**这个涨速应当明显变慢**（使魔不再一碰就碎），且 §3.7 的转嫁（`transferred`）应当**第一次真正不为 0** |
