@@ -14944,6 +14944,7 @@ TH18 没有 PIV 状态量，但**有同量纲的对位物**：`engine.h` 的 `CE
 | 2026-09-18 | **四张卡的共享 PIV 涨源接线（112 / 113 / 114 / 115）**：`cards/ufo.c`、`cards/trance.c`、`cards/collect2x.c`、`cards/lolk.c` | 见下方「§BE 详录 #48」 |
 | 2026-09-18 | **所有卡（发布侧登记：本会话在 ⛔ 冻结期跑了 3 次 `make release`，把**整棵树**（含其他批次的未提交产出）发到了部署侧）** | 见下方「§BE 详录 #50」 |
 | 2026-09-21 | **六张卡（共享件 `native/cards/hud_dim.{h,c}`：终点 alpha 32 → **128**、每帧 ±56（4 帧）→ **20 帧线性**；行为级 —— 六张卡的 HUD 压暗深度与过渡都变了）** | 见下方「§BE 详录 #51」 |
+| 2026-09-22 | **六张卡（共享件 `cards/hud_dim.*` + `sdk.*` / `sdk_core.*` / `Makefile` + 9 支脚本）** | 见下方「§BE 详录 #53」 |
 
 **§BE 详录 #51**（共享件 `hud_dim.*` 的统一动态换基准，2026-09-21）
 
@@ -16638,7 +16639,8 @@ TH18 没有 PIV 状态量，但**有同量纲的对位物**：`engine.h` 的 `CE
 | 2026-09-18 | **四张卡的共享 PIV 涨源接线（112 / 113 / 114 / 115）**：`cards/ufo.c`、`cards/trance.c`、`cards/collect2x.c`、`cards/lolk.c` | 见下方「§BE 详录 #48」 |
 | 2026-09-18 | **所有卡（发布侧登记：本会话在 ⛔ 冻结期跑了 3 次 `make release`，把**整棵树**（含其他批次的未提交产出）发到了部署侧）** | 见下方「§BE 详录 #50」 |
 | 2026-09-21 | **六张卡（共享件 `native/cards/hud_dim.{h,c}`：终点 alpha 32 → **128**、每帧 ±56（4 帧）→ **20 帧线性**；行为级 —— 六张卡的 HUD 压暗深度与过渡都变了）** | 见下方「§BE 详录 #51」 |
-| 2026-09-22 | **112（星莲船）的 P3 表现件**：`assets/ability/scripts/302..305_ufo_hud_*.anm.txt`、`assets/ability/ufo_hud/{SLOT_*,PANEL_*}.png`（10 张）、`assets/ability/make_ufo_hud_art.py`、`native/cards/ufo.c`、`native/anm_ids.h`（`make anm` 生成物，号段未变）、`native/build/ability.anm`（⚠ 与 DLL 必须同批发布）| 见下方「§BE 详录 #52」 |
+| 2026-09-22 | **六张卡（共享件 `cards/hud_dim.*` + `sdk.*` / `sdk_core.*` / `Makefile` + 9 支脚本）** | 见下方「§BE 详录 #53」 |
+| 2026-09-22 | **112（星莲船）的 P3 表现件**（脚本 302..305 + 10 张贴图 + 生成器 + `cards/ufo.c`；文件清单与影响面见详录）| 见下方「§BE 详录 #52」 |
 
 **§BE 详录 #51**（共享件 `hud_dim.*` 的统一动态换基准，2026-09-21）
 
@@ -17807,6 +17809,58 @@ state-8 每帧：`0x426192 fld [edi+0x984]` → `0x4261ad call 0x4377a0`（朝**
 | `test-host` | `test_youkai_core` 45 failed（工作树里的 `youkai_core.*` 是**未提交**改动）| 用 HEAD 版重编同一支单测 ⇒ **709 checks / 0 failed**；本包只动 `pofv*` |
 | `capcheck` | ① `sht_groups` 豁免的计划段在 `NEXT.md` 找不到；② 15 个 `CE_SHT_SET_YOUKAI_*` 没登记进台账 | 两条都是 108/117 那条线（youkai shooterset）；HEAD 上 capcheck 另有 1 条旧红（atlas entry） |
 
+## §BE-FD（2026-09-22）：**113「手动灵界被中弹 ⇒ 升格成死亡强制档」= 我们误读一手**（owner th13 #6），已删
+
+> **谁做的**：统筹会话（owner 2026-09-22 实跑口径：「13 灵界之前是好的，击中后连 hit 音都没有」
+> ＝闸门按设计在工作，但**灵界里中弹不该在结束时死**）。**动到的文件**：`native/cards/trance_core.c`
+> （`trance_begin` 早退路 + `trance_force_on_death` 注释 + 自检块）、`native/tests/test_trance_core.c`（M.8）。
+> **没动** `cards/trance.c`（它只消费 `re_die`）、`sdk.*`、`sites.py`、任何共享件 —— **站点账不变**。
+
+### 一、一手复核（capstone 直读 `local/th13.v1.00c/th13.exe`，本次现读）
+
+| 地址 | 指令 | 含义 |
+| --- | --- | --- |
+| `th13:0x405a36` | `test byte ptr [esi+0x14],1` + `0x405a3a jne 0x405b64` | 「已在灵界」⇒ 跳 `0x405b64` |
+| `th13:0x405b64` | `mov ecx,[ebp-4] / xor ecx,ebp / xor eax,eax / pop esi / call __security_check_cookie / ret 4` | ★ **返回 0（成功）且一个字节都不碰 `this+0x14`** |
+| `th13:0x405a40`–`0x405a4c` | `cmp dword ptr [0x4be808],0xc8` / `jge 0x405a60` / `or eax,-1 … ret 4` | **槽 < 200 ⇒ 返回 −1（失败）**，什么都不改（这是**另一条路**，不是「已在灵界」那条） |
+| `th13:0x405a60`–`0x405a7e` | `or dword ptr [0x4be830],0x100` / `and ecx,2` / `or ecx,1` / `mov [esi+0x14],ecx` | **正常进入**时才写位：bit0=1、bit1=`param_1`（死亡触发档） |
+
+⇒ 一手语义 = **「已在灵界 ⇒ 成功（返回 0）且原样不动」**：**手动灵界里中弹不会被升格成「死亡强制」档**，
+所以那一窗结束时**不欠死亡**（`end` 里 `if (this+0x14 & 2)` 那条分支走不到），只补扣 200。
+
+### 二、上一版错在哪
+
+上一版（`trance_core.c` 的「第二版补」）把「已在灵界」那条早退路读成
+「仍然写 `this+0x14 |= 1` 且把 bit1 设成 `param_1`」，并引 `0x405a4c`–`0x405a50` 当证据 ——
+而 `0x405a4c` 起是**槽 < 200 那条失败路**（`or eax,-1`），位写实际在 `0x405a60`–`0x405a7e`。
+⇒ 我们据此把 `PHASE_MANUAL` **升格**成 `PHASE_DEATH_FREE`（灵界里中弹 ⇒ 结束那帧补一次 `Player__die`
+⇒ owner 看到的「灵界结束后死亡」）。而「hit 音被屏蔽」是另一条：`BP_ce_player_die` 闸门按设计跳过整段
+`Player__die` 体（一手 `th13:0x444ca4` 的同一语义槽位）—— 两者叠在一起正好是 owner 描述的现象。
+
+### 三、改了什么
+
+| 文件 | 改了什么 |
+| --- | --- |
+| `trance_core.c`（`trance_begin`）| 「已在灵界」分支从「按 `death_free` 升格 + `++deaths_rescued` + 另算一次 `activations`」改成 **`return 1`（成功、原样不动）**，附一手反汇编长注释 |
+| `trance_core.c`（`trance_force_on_death`）| 注释口径订正（返回 1 = 「这次中弹被吃下」；已在灵界时不再升格），**代码不变**（仍走 `trance_begin` 拿判定）|
+| `trance_core.c`（`selfcheck` 行为不变式）| 旧断言（升格 / `deaths_rescued==1` / `activations==2` / `re_die==1`）改成**新语义**：档位不变、不记账、`re_die==0`、槽 `−200`；死亡强制档里再中弹 = 幂等不改账 |
+| `tests/test_trance_core.c`（M.8）| 同上（旧 M.8 钉的正是那条错语义）|
+
+### 四、验证
+
+- `cc -std=c11 -Wall -Wextra -Werror -o tests/build/test_trance_core tests/test_trance_core.c cards/trance_core.c && ./tests/build/test_trance_core`
+  ⇒ **1511 passed, 0 failed**（含 `CHECK(trance_core_selfcheck() == 0)` —— 上面那块自检也跑了）。
+- `make cards/trance_core.o cards/trance.o` 通过（DLL 侧编译无碍）。
+- 主树 `make check` 仍红，但**红点全在别人的在飞改动**（`test_faith_hud_core` 的 hud_dim 4 条、senro HUD 图集、`build_player_anm.py`），与本节无关。
+
+### 五、影响面 / 待实跑
+
+- 行为变化：**手动（主动）灵界里中弹 ⇒ 窗口不再升格 ⇒ 结束时不再补死**（owner 口径）。
+  死亡触发（救援）那一档**一字未改**：`re_die` 照旧 ⇒ `trance_player_die()` 照旧补死（一手 `th13:0x405c3e`）。
+- 顺带一致：`trance_end` 的「非死亡档 −200」现在也真的只在**非死亡档**发生（以前手动窗被升格后反而不扣 200）。
+- ⚠ 未进 2026-09-22 15:00 那批发布（DLL `eec2b9c5…`）—— 等下一批 `make release` 生效；`SINGLE-CARD-TEST.md` §th13 #6 已改成「已改·待实跑」。
+- 一手复核方法留在本节：**capstone 直读样本 + 按 PE 节表做 RVA→文件偏移**，地址逐条可复算。
+
 ## §BE-EZ（2026-09-22）：**站点账上三处「二分遗留」** —— 恢复 `ce_bomb_gate`、删掉「下标 < 10」兜底、把 12 条启动核对行放回去
 
 > **谁做的**：统筹会话（owner 2026-09-22「那就先加呗」后的排查）。**动到的共享件**：
@@ -18307,3 +18361,55 @@ blue_tint −2000 / red_tint +2000`，按 `shottype`（`0x164d0b1`）分支写�
 2. **人妖槽**：限值数值已可照抄（±10000 / ±8000 / ±2000），但 6 个字段**必须卡侧自建**（TH18 无写点）。
 3. **🟡 未实跑**：路 A 的装载与状态机只在代码层对账（`make check` + 单测）；实跑要盯
    「低速换妖侧那一帧有没有闪一下人侧」「左右起步/停下四支动画对不对」「早苗（文）24 帧是否完整」。
+
+## §BE 详录 #53（HUD 压暗换基准 = TH18 原生一手 + 左下角「当前卡」UI 的接缝，2026-09-22）
+
+> **工单**：`WORK-PACKAGES.md` §10 第 1/2 条（owner：「th18左下角原生应该有动态吧，照着那个填」/
+> 「当有主动卡的时候，左下角是有一个当前卡显示的；而没有主动卡的时候……整个UI是不存在的，这会影响hud排布」）。
+> **一手调研**（新篇）：[`engine/card/th18/15-selected-card-hud.md`](../../../engine/card/th18/15-selected-card-hud.md)。
+
+- **文件 → 改了什么**
+  - `native/cards/hud_dim.h` / `.c`：`HUD_DIM_ALPHA_DIM` **128 → 64**（25%）、`HUD_DIM_FRAMES` **20 → 8**（8 帧线性）；
+    文件头表与宏注释换成原生一手出处；新增一节 `hud_card_*`（原生那块「当前卡」UI 的**一手几何**
+    `HUD_CARD_*` + `hud_card_rect_self/surface()` + `hud_card_present()` + `hud_card_shelf_x0()`），
+    并在 `.c` 里加两条 `_Static_assert` 把「共享件统一值 == 原生一手值」钉在编译期。
+  - `assets/ability/scripts/`：**9 支**脚本的 label 4/5 —— `123/124/125/126/127_season_gauge_*.anm.txt`、
+    `175/176/177/178_trance_gauge_*.anm.txt`：`alphaTime(20, 0, 128)` → **`alphaTime(8, 0, 64)`**（压暗）、
+    `alphaTime(20, 0, 255)` → **`alphaTime(8, 0, 255)`**（淡回）。**出场那一档 20 帧一字未动**（`-1:`/`0:` 段）。
+  - `native/tools/anm_hud_alpha_check.py`：`LABELS` 期望值 → `alphaTime(8, 0, 64)` / `alphaTime(8, 0, 255)`；docstring 与成功/失败提示同步。
+  - `native/tests/test_hud_dim_core.c`：§①（宏值 + 首帧 232）、§④–⑧（逐帧表 232/208/184/160/136/112、反向 87）、
+    §⑩（§⑩ 的 `243`→`208` 等）全部跟着换；新增 **§⑪** 钉原生「当前卡」块的矩形 / 判据 / 让位 / 换基准不变式。
+  - `native/sdk.c`（**共享件**）：新增 `hud_card_refresh()` = 直接调引擎 `th18:0x408c30`；在 `ce_give_card()`
+    成功后与 `ce_destroy_card()`（删的是主动卡时）各补一次 —— **没有新增站点**。
+  - `native/sdk.h`（**共享件**）：两个 `ce_hud_slot_claim_*_card()` 包装里把「当前卡在不在」推给货架（`ce_hud_card_set()`）。
+  - `native/sdk_core.h` / `.c`（**共享件**）：新增 `ce_hud_card_set()`；`hud_relayout()` 的左列起点从写死的
+    `CE_HUD_ANCHOR_X` 改成 `hud_card_shelf_x0(锚点, 间隙, 有无)`（现值恒等，见「影响面」）。
+  - `native/tests/test_sdk_core.c`：`test_hud_slots()` 头部新增「有/无当前卡」两支断言 + 「货架绝不压到那块 UI」不变式。
+  - `native/Makefile`：`test_sdk_core` / `test_vitem_batch` 两条单测的链接行加 `cards/hud_dim.c`（`sdk_core.c` 新依赖）。
+  - `HUD-LAYOUT.md`：§1.3 原「左下角其实是空的」**订正**（新增 §1.3b：原生那块 UI 的位置/尺寸/判据/动态 + 对排布的影响）。
+  - `TUNING.md`：§7.1 表与「换基准的一手取值 / 两版作废值」小节、§7.3、§7.5、G4 行、§2.6f 两处；
+    **新增 §7.6**（原生「当前卡」UI 全表 + 「为什么非补那两下」+ ❓ 待 owner 拍的 placement 口径）。
+  - `WORK-PACKAGES.md` §8b：口径条改成「现行 = 64 / 8 帧（复刻）」，09-21 那版降为历史。
+- **为什么**：owner 2026-09-22 工单 A/B（§10 第 1/2 条）。一手依据：原生 `abcard.anm` script1–4 的
+  `interruptLabel(5): alphaTime(8, 0, 64)` / `interruptLabel(4): alphaTime(8, 0, 255)`，闸在 `th18:0x4086fd`
+  （进 `x < −64 ∧ y > 368`，常量 `0x4b937c`/`0x4b945c`）与 `th18:0x408736`（出 `y < 352 ∨ x > −48`，
+  `0x4b9374`/`0x4b9454`）；显隐唯一判据 = `th18:0x408c30` 递归清/置 `vm+0x534` bit1（anm opcode 310 `visible`，
+  读者 `th18:0x481256`）。
+- **谁改的**：系统卡批次（106–117），2026-09-22 本会话。
+- **怎么验证的**（原文见 `RELEASE-STATE.json` 之外的本次会话留档）：
+  `make test-host` 全绿（`test_hud_dim_core` **355 passed / 0 failed**、`test_sdk_core` **1370 passed / 0 failed**）；
+  `python3 tools/anm_hud_alpha_check.py` → `24 项一致 ✅（压暗 8 帧→64 / 淡回 8 帧→255；6 个脚本）`（并做过**反向**实验：
+  把一支改回 `alphaTime(20,0,128)` ⇒ rc=1 且逐条打印，确认判据真的会红）；
+  `python3 assets/build_ability.py --verify-only` rc=0；`python3 native/tools/capcheck.py` 全绿；
+  `python3 ../../../tooling/check-docs.py` 对本批文件全通过（仓内另有 5 处越格属**别的会话在飞的文件**）。
+  ⚠ **未实跑**：视觉验收（左下角那块出现/消失、8 帧压到 64 的手感）要等 owner 跑一局。
+- **对既有卡的影响面**（**共享件改动，所有卡同受**）：
+  - **行为级**：六张用本件的卡（116/117/107/113/110+111 + 115）的 HUD 压暗**终点从 50% 变 25%、过渡从 20 帧变 8 帧**
+    —— 这是 owner 要的（照原生）。其余卡不受影响（不用本件）。
+  - **排布级**：货架左列起点现在是 `max(257, 116+8)` = **257**（恒等）⇒ **今天任何一张卡的坐标都不变**；
+    它是一条**不变式**（谁把锚点左移过 124 就会当场让位）。
+  - **接口级**：`sdk.h` 的 `ce_hud_slot_claim*` 多了一次引擎全局读（`mgr+0x38`）—— 在 `on_load` 认领路径上，
+    不在任何 tick 里；`sdk_core.c` 多一个 `.c` 依赖（已补进 Makefile 的两条单测链接行）。
+  - **资产耦合**：9 支脚本改了 ⇒ `ability.anm` 必须与 DLL **同批发布**（本会话**没有**部署）。
+- **回退**：改 `HUD_DIM_ALPHA_DIM`(64)/`HUD_DIM_FRAMES`(8) 两个宏 + 9 支脚本 + checker 的 `LABELS` + 单测里的算术值，
+  六处一起（`_Static_assert` 与 §⑪ 会拦住只改一半）。

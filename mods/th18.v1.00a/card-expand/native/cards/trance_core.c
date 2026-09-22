@@ -178,29 +178,22 @@ int trance_begin(trance_state_t *s, int death_free, const trance_cond_t *c)
 {
     int32_t gauge;
     if (!s) return 0;
-    /* 一手 `0x405a20` 第一行：`if (this+0x14 & 1) return 0;` ⇒ **已在灵界视为成功**（返回 0 = 成功）。
-     * ★★ **第二版补**（一手 `0x405a4c`–`0x405a50`）：一手的这条早退路**不是空操作** ——
-     *   它在「已在灵界」时**仍然**写 `this+0x14 |= 1` 且把 bit1 设成 `param_1`
-     *   ⇒ **手动灵界被中弹打断 ⇒ 那个窗口当场变成「死亡强制」档**（结束时也要再死一次）。
-     *   我们的对应动作：把 `PHASE_MANUAL` **升格**成 `PHASE_DEATH_FREE`（并 ++deaths_rescued）。
-     *   这就是「保命是延时不是免死」在纯逻辑里的落点：只要这次中弹被吃下，窗口结束时一定欠一次死亡。
-     *   ⚠ 升格时**不重开窗口、不重置槽**（槽继续按 −1/帧 走）—— 一手也只改那两个位。*/
+    /* ★★★ 2026-09-22 **一手复核（capstone 直读 `local/th13.v1.00c/th13.exe`）—— 上一版这里读错了**：
+     *   一手 `0x405a36 test byte ptr [esi+0x14],1` + `0x405a3a jne 0x405b64` ⇒ 「已在灵界」那条路
+     *   落在 **`0x405b64`**，那里只有
+     *     `mov ecx,[ebp-4] / xor ecx,ebp / xor eax,eax / pop esi / call __security_check_cookie / ret 4`
+     *   = **返回 0（成功）且一个字节都不碰 `this+0x14`**。
+     *   上一版把这条早退路读成「仍然写 `this+0x14 |= 1` 且把 bit1 设成 `param_1`」，并据此把
+     *   **手动窗升格成死亡强制档**（⇒ 灵界里中弹 ⇒ 结束时补死）。它引的
+     *   `0x405a4c`–`0x405a50` 其实是**另一条路**：`0x405a40 cmp [0x4be808],0xc8` / `jge 0x405a60`
+     *   之后的 `or eax,-1; pop esi; …; ret 4` = **槽 < 200 ⇒ 返回 −1（失败）且什么都不改**。
+     *   真正写那两个位的在 `0x405a60`–`0x405a7e`（**正常进入**那条路：`or ecx,1` 置 bit0，
+     *   bit1 由 `param_1` 决定）—— 只有「本来不在灵界」时才走得到。
+     *   ⇒ 一手语义 = **「已在灵界 ⇒ 成功 + 原样不动」**：手动灵界里中弹**不会**变成延时死。
+     *   owner 2026-09-22 的实跑口径（th13 #6）与之相符：灵界里中弹连 hit 音都没有（闸门按设计），
+     *   但**结束后不该死**。*/
     if (s->phase != TRANCE_PHASE_IDLE) {
-        /* ★ 一手 `0x405a20` 第一行的早退语义：已在灵界 ⇒ 返回「成功」，**但窗口档要保持
-         *   首次进入时定下的那一档**（一手 `end` 里 `if (!(this+0x14 & 2)) GAUGE -= 200`
-         *   —— bit1 被改掉就会少扣 / 多扣 200）。手动窗被中弹打断时才**升格**，见下。*/
-        if (s->phase == TRANCE_PHASE_DEATH_FREE) {
-            return 1;    /* 已经是死亡强制档 ⇒ 幂等成功，不改档（一手 `0x405a20` 第一行）*/
-        }
-        if (death_free && s->phase == TRANCE_PHASE_MANUAL) {
-            int32_t gauge_now = s->gauge.gauge;
-            /* 一手同一道门（`0x405a40`）：`begin` 在写位之前先查槽 —— 槽 < 200 时它返回 −1、
-             * **什么都没改** ⇒ 手动窗**不被升格**，那次中弹也就没有「延时死亡」的欠账。*/
-            if (gauge_now < TRANCE_GAUGE_MIN_ENTER) return 0;
-            begin_common(s, 1);
-            return 1;
-        }
-        return 1;
+        return 1;   /* 一手 `0x405b64`：返回 0（成功），**不改档、不重开窗、不记账** */
     }
     gauge = s->gauge.gauge;
     /* 一手 `0x405a40`：`if (CURRENT_SPIRIT_GAUGE < 200) return -1;` ⇒ 失败。
@@ -337,10 +330,11 @@ int trance_force_on_death(trance_state_t *s)
      *   ⚠ 曾经写在这里的 `if (s->re_dying) return 0;`（防「自己救自己」）**已删**：
      *     它的前提（补死会立刻再触发一次救援）不成立 —— 补死要走完一整个决死窗口（8 帧）
      *     才轮到 113 的 `+0x0c`，而那时槽早已被那道门挡住。链式是**用户允许**的行为，不许堵。*/
-    /* 已在一档真灵界里（手动 / 死亡强制）：`begin` 会走「已在灵界」那条路 ——
-     * 一手的 `0x405a4c`–`0x405a50` 在那里**仍然**把 bit1 设成 `param_1` ⇒ 手动窗会被**升格**成
-     * 死亡强制档（⇒ 结束时也要再死一次）。所以这里不能直接返回 0，而要**走 `begin` 拿它的判定**：
-     * 返回 1 = 真的升格了（算救下）；返回 0 = 槽 < 200，没升格（那次中弹没被救）。*/
+    /* 已在一档真灵界里（手动 / 死亡强制）：`begin` 走「已在灵界」那条路 ——
+     * ★ 2026-09-22 一手复核后：那条路**什么都不改**（`0x405b64` 的 `xor eax,eax; ret 4`），
+     * 所以这里**照旧走 `begin` 拿它的返回值**，但语义变成：
+     *   返回 1 = 「这次中弹被吃下了」（本来不在灵界 ⇒ 真开了救下窗；已经在灵界 ⇒ 原样不动 +
+     *            成功，**不升格、不欠死**）；返回 0 = 槽 < 200 且本来不在灵界 ⇒ 救不成。*/
     fill_cond_death_free(&c, s->gauge.gauge);
     return trance_begin(s, 1, &c);
 }
@@ -847,9 +841,10 @@ int trance_core_selfcheck(void)
         if (trance_boss_phase_spirit_type(0, 2) != TRANCE_PHASE_TYPE_REST) ++bad;    /* 防呆分支 */
     }
 
-    /* ★ 行为不变式（第二版）：**手动窗被中弹升格**（一手 `0x405a4c`–`0x405a50` 的两个位写）——
-     *   常量写对了但升格分支漏了「槽 >= 200」那道门、或忘了 ++deaths_rescued，只有跑一遍才看得出来。
-     *   纯计算、不改全局；卡侧 `on_load` 每次都会调本函数。*/
+    /* ★ 行为不变式（2026-09-22 **一手复核后改写**）：**已在灵界 ⇒ begin 成功且什么都不改**
+     *   （一手 `0x405b64` 的 `xor eax,eax; ret 4`）⇒ 手动窗里中弹**不升格、不欠死**。
+     *   上一版这段钉的是「升格成死亡强制档」——那是把 `0x405a4c`（其实是「槽 < 200 ⇒ return −1」）
+     *   误读成位写，见 `trance_begin` 的长注释。纯计算、不改全局；卡侧 `on_load` 每次都会调。*/
     {
         trance_state_t t2;
         trance_cond_t c2;
@@ -862,21 +857,23 @@ int trance_core_selfcheck(void)
         if (r0 != 1) ++bad;
         if (t2.phase != TRANCE_PHASE_MANUAL) ++bad;
         if (t2.activations != 1) ++bad;
-        r1 = trance_force_on_death(&t2);                         /* 窗里中弹 ⇒ 升格 */
+        r1 = trance_force_on_death(&t2);                         /* 窗里中弹 ⇒ 一手：成功 + 原样不动 */
         if (r1 != 1) ++bad;
-        if (t2.phase != TRANCE_PHASE_DEATH_FREE) ++bad;
-        if (t2.deaths_rescued != 1) ++bad;
-        if (t2.activations != 2) ++bad;                          /* 升格**另算一次** begin（一手同一函数）*/
+        if (t2.phase != TRANCE_PHASE_MANUAL) ++bad;              /* ★ 不升格 */
+        if (t2.deaths_rescued != 0) ++bad;                       /* ★ 不算救下（不记账）*/
+        if (t2.activations != 1) ++bad;                          /* ★ 不另算一次 begin */
         trance_end(&t2, &tk2);
-        if (tk2.re_die != 1) ++bad;                              /* 升格过的窗结束也**欠一次死亡** */
-        if (t2.gauge.gauge != TRANCE_GAUGE_MAX) ++bad;           /* 死亡强制档结束不补扣 200 */
-        /* 槽不够 ⇒ **不许**升格（一手同一道门）⇒ 那次中弹没被救，`force` 必须返回 0。*/
+        if (tk2.re_die != 0) ++bad;                              /* ★ 手动窗结束**不欠死**（owner th13 #6）*/
+        if (tk2.ended_death_free != 0) ++bad;
+        if (t2.gauge.gauge != TRANCE_GAUGE_MAX - TRANCE_GAUGE_END_PENALTY) ++bad;  /* 非死亡档 ⇒ −200 */
+        /* 已经在死亡强制档里再被中弹（同一帧第二次撞弹 / 补死链）⇒ 同样「成功 + 原样不动」。*/
         trance_state_init(&t2);
-        t2.phase = TRANCE_PHASE_MANUAL;
-        trance_gauge_set(&t2.gauge, TRANCE_GAUGE_MIN_ENTER - 1);
+        trance_gauge_set(&t2.gauge, TRANCE_GAUGE_MAX);
+        if (trance_force_on_death(&t2) != 1) ++bad;
+        if (t2.phase != TRANCE_PHASE_DEATH_FREE || t2.deaths_rescued != 1 || t2.activations != 1) ++bad;
         r2 = trance_force_on_death(&t2);
-        if (r2 != 0) ++bad;
-        if (t2.phase != TRANCE_PHASE_MANUAL) ++bad;
+        if (r2 != 1) ++bad;
+        if (t2.deaths_rescued != 1 || t2.activations != 1) ++bad;   /* 幂等，不重复记账 */
         /* ★ 链式是**允许**的（用户 2026-09-12 定案「就这样，允许链式」）⇒ 本卡**没有**任何
          *   「禁止再救」的状态位（第一版的 `re_die_note` 已删）：补死就是一次普通死亡，
          *   槽够就照样能再救。这里钉住「救过之后（诊断计数已涨）仍然能再救一次」。*/

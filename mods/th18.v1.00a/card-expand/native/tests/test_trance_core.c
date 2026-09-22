@@ -869,30 +869,38 @@ int main(void)
     trance_gauge_set(&s.gauge, TRANCE_GAUGE_MIN_ENTER - 1);
     CHECK(trance_force_on_death(&s) == 0);
 
-    /* ---- M.8 手动窗被中弹**升格**（一手 `0x405a4c`–`0x405a50` 的位写）----
-     * 手动灵界里中弹 ⇒ 那个窗口当场变成「死亡强制」档 ⇒ 结束时也要再死一次。
-     * ⚠ 升格同样吃 `槽 >= 200` 那道门（否则一次中弹会变成两条命）。*/
+    /* ---- M.8 已在灵界时再 `begin` = **成功且什么都不改**（★ 2026-09-22 一手复核后改写）----
+     * 一手 `0x405a36 test byte ptr [esi+0x14],1` / `0x405a3a jne 0x405b64` ⇒ `0x405b64` 只有
+     * `xor eax,eax; pop esi; …; ret 4`（返回 0 = 成功，**不碰 `this+0x14`**）。
+     * 上一版读成「手动窗被中弹升格成死亡强制档」是把 `0x405a4c`（其实是「槽 < 200 ⇒ return −1」）
+     * 误当位写 ⇒ owner 实跑看到「灵界里中弹 ⇒ 结束时死」（th13 #6）。*/
     trance_state_init(&s);
     trance_gauge_set(&s.gauge, TRANCE_GAUGE_MAX);
     CHECK(trance_begin(&s, 0, &c) == 1);
-    CHECK(s.phase == TRANCE_PHASE_MANUAL && s.deaths_rescued == 0);
+    CHECK(s.phase == TRANCE_PHASE_MANUAL && s.deaths_rescued == 0 && s.activations == 1);
+    CHECK(trance_force_on_death(&s) == 1);             /* 窗里中弹 ⇒ 成功（被吃下）*/
+    CHECK(s.phase == TRANCE_PHASE_MANUAL);             /* ★ 不升格 */
+    CHECK(s.deaths_rescued == 0 && s.activations == 1);/* ★ 不记账、不另算一次 begin */
+    /* 已经在死亡强制档里再被中弹（同一帧第二次撞弹）⇒ 同样「成功 + 原样不动」。*/
+    trance_state_init(&s);
+    trance_gauge_set(&s.gauge, TRANCE_GAUGE_MAX);
     CHECK(trance_force_on_death(&s) == 1);
-    CHECK(s.phase == TRANCE_PHASE_DEATH_FREE);
-    CHECK(s.deaths_rescued == 1);
-    /* 升格走的是同一个 `begin` ⇒ **另算一次激活**（一手也只改位、不重开窗口）。
-     * ⚠ 这是有意的：`activations` 是「begin 跑了几次」的诊断口径，不是「开了几个窗口」。*/
-    CHECK(s.activations == 2);
-    /* 已经在死亡强制档里再被中弹（同一帧第二次撞弹）⇒ 幂等成功、不重复记账。*/
+    CHECK(s.phase == TRANCE_PHASE_DEATH_FREE && s.deaths_rescued == 1 && s.activations == 1);
     CHECK(trance_force_on_death(&s) == 1);
-    CHECK(s.deaths_rescued == 1 && s.activations == 2);
-    /* 槽不够 ⇒ **不许**升格 */
+    CHECK(s.deaths_rescued == 1 && s.activations == 1);
+    /* 手动窗结束 ⇒ 一手 `end`：非死亡档 ⇒ 补扣 200、**不欠死**（owner th13 #6 的口径）*/
     trance_state_init(&s);
     trance_gauge_set(&s.gauge, TRANCE_GAUGE_MAX);
     trance_begin(&s, 0, &c);
+    trance_force_on_death(&s);
+    trance_end(&s, &tk);
+    CHECK(tk.re_die == 0 && tk.ended_death_free == 0);
+    CHECK(s.gauge.gauge == TRANCE_GAUGE_MAX - TRANCE_GAUGE_END_PENALTY);
+    /* 槽不够**且本来不在灵界** ⇒ 救不成（一手 `0x405a4c` 的 `return −1` 那条路）*/
+    trance_state_init(&s);
     trance_gauge_set(&s.gauge, TRANCE_GAUGE_MIN_ENTER - 1);
     CHECK(trance_force_on_death(&s) == 0);
-    CHECK(s.phase == TRANCE_PHASE_MANUAL);
-    CHECK(s.deaths_rescued == 0);
+    CHECK(s.phase == TRANCE_PHASE_IDLE && s.deaths_rescued == 0);
 
     /* ---- M.9 一条完整的「中弹 → 救 → 补死」账（卡侧 `+0x0c` 回调的纯逻辑镜像）----
      * 卡侧的序列（`cards/trance.c` 的 `on_death_after_deathbomb` / `on_item_frame` ③）：
