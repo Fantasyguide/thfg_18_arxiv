@@ -3606,9 +3606,9 @@ boss 的发射口持续活跃 ⇒ 永久哑火」，于是给闸加了「到期�
 | 人妖槽量程与 6 个限值 | ±10000 / ±8000 / ±2000 | `th08:0x44d9ee`–`0x44da8f`（本卡自建，TH18 无此字段） |
 | 4 档判定 | 极人 `≤ −8000` / 中人 `≤ −2000` / 极妖 `≥ +8000` / 中妖 `≥ +2000` | `th08:0x406d10/40/70/a0` |
 | 夹紧 / 死区 | 夹到两限值；`\|g\| ≤ 9 ⇒ 0` | `th08:0x43c0fa`/`:0x43c128`；`th08:0x44bf61` |
-| 涨源（**三条**，2026-09-23 订正）| 击破敌 ±200 / 收刻符 ±111 / 聚焦漂移（第四源「收道具 ±身价」**已删除** —— 它来自对 `ItemManager.cpp:597` 的误读：那一行在 `Item::CollectTimeOrb` 体内、`th08:0x44139e` 当场把 `itemScore` 改写成 **111**，说的是收刻符）| `th08:0x42da2a`、`th08:0x4413cb`、TH08 `Player::move`；删源的一手见 `AUDIT.md` §BE 详录 #57 |
+| 涨源（**三条**，2026-09-22 订正）| 击破敌 ±200 / 收刻符 ±111 / 聚焦漂移（第四源「收道具 ±身价」**已删除** —— 它来自对 `ItemManager.cpp:597` 的误读：那一行在 `Item::CollectTimeOrb` 体内、`th08:0x44139e` 当场把 `itemScore` 改写成 **111**，说的是收刻符）| `th08:0x42da2a`、`th08:0x4413cb`、TH08 `Player::move`；删源的一手见 `AUDIT.md` §BE 详录 #57 |
 | 死亡清零 | `set_youkai_gauge(0)` | `th08:0x44ac09` |
-| HUD 几何（一手值是 **640 空间**的字面量；★ 2026-09-23 定案：这批脚本不写 `resolutionMode` ⇒ `th18:0x4063d0` 的 mode 0 支**不乘** = **1 单位 = 1 表面 px** ⇒ 落笔要**位置/字形步进/贴图 scale 三者一起 ×2**）| 见右栏 | `AsciiManager::InitializeVms` / `AsciiManager::on_draw`；坐标空间全文见 `engine/player/th08/03-*.md` §2.3b + `AUDIT.md` §BE 详录 #56 |
+| HUD 几何（一手值是 **640 空间**的字面量；★ 2026-09-22 定案：这批脚本不写 `resolutionMode` ⇒ `th18:0x4063d0` 的 mode 0 支**不乘** = **1 单位 = 1 表面 px** ⇒ 落笔要**位置/字形步进/贴图 scale 三者一起 ×2**）| 见右栏 | `AsciiManager::InitializeVms` / `AsciiManager::on_draw`；坐标空间全文见 `engine/player/th08/03-*.md` §2.3b + `AUDIT.md` §BE 详录 #56 |
 | HUD 贴图与脚本 | `ascii.anm` sprite152..155 + script5..8 **逐条抄进 `pl0X.anm`** | 同上（`anchorTopLeft()` 按 v2→v8 表翻成 `anchor(1, 1)`）|
 | HUD **百分比数字** | TH08 字形 sprite **136..148**（`0x88..0x94` = '0'..'9' '%' '.' '-'，`8×12`）+ 画布脚本 = `ascii.anm` **script4** 逐条抄；布局 = `DrawPercentage`（小数两位 scale 0.8 / y+2、行尾 `'%'`）| `AsciiManager.cpp:202` + `:1095-1225`；★ 2026-09-22 晚落地（原来用共用件 HUD 数字 = ❓自定，已作废）|
 | HUD 染色 | 极人 `7070ff` / 中人 `b0b0ff` / 极妖 `ff7070` / 中妖 `ffb0b0` / 白 | `AsciiManager.cpp:1035-1058` |

@@ -539,7 +539,7 @@ int main(void)
     CHECK(yk_map_fam_count(&m) == 3);
     CHECK(yk_frame_end(&m, s_acts, (int)YK_FAM_MAX) == 0);
 
-    /* ★★★ 2026-09-23（P1，实跑日志直证）：**判据必须是只读的**。
+    /* ★★★ 2026-09-22（P1，实跑日志直证）：**判据必须是只读的**。
      * 这是那次「跟随 VM 表满 32 格 ⇒ 之后造的使魔 `stays invisible` + 敌方使魔滞留」的根因：
      * 卡侧每帧的「排除我们自己的使魔」原来调的是**事件** `yk_fam_broken`（它会清 `fam_id` + 置
      * `broken`），于是地图侧记录被清（那只真敌人变孤儿）、VM 侧记录再没人收。
@@ -797,7 +797,7 @@ int main(void)
         unsigned lbase = yk_map_releases(&m);
         CHECK(yk_shot_slot_gate(&m, 800, 0, 0) == 1);           /* 第一次 etOn：掐 + 记「下一波」 */
         CHECK(yk_map_rearms(&m) == base + 1);
-        /* ★★★ 2026-09-23（P8-3 / **route A′**）：**第二次**被问到时当场放行并清夹持态 ——
+        /* ★★★ 2026-09-22（P8-3 / **route A′**）：**第二次**被问到时当场放行并清夹持态 ——
          * 「恢复」不再依赖卡 tick（卡 tick 在未聚焦时根本不跑），也不用等 120 帧 TTL。*/
         CHECK(yk_shot_slot_gate(&m, 800, 0, 0) == 0);
         CHECK(yk_map_releases(&m) == lbase + 1);                /* ★ 记一笔「第二问放行」 */
@@ -881,7 +881,7 @@ int main(void)
     CHECK(yk_gauge_color(-8000) == 0x7070ffu);      /* 极人优先于中人 */
     CHECK(yk_gauge_color(8000) == 0xff7070u);       /* 极妖优先于中妖 */
     /* HUD 几何（一手 `AsciiManager`，**640 空间的字面量**）：**输出一律表面 px** ——
-     * `px = 1/to640 = 2`（TH18）。2026-09-23（P2）实跑定案：那批 VM 的脚本没有 `resolutionMode`
+     * `px = 1/to640 = 2`（TH18）。2026-09-22（P2）实跑定案：那批 VM 的脚本没有 `resolutionMode`
      * ⇒ `th18:0x4063d0` 的 mode 0 支**一分量都不乘**（= 1 单位 = 1 表面 px），写 640 空间的数会
      * 「位置高半个屏幕 + 整体缩小 50%」（owner th08 #14/#15）。全文见 `youkai_core.h` 的注。
      * 锚点 = 货架那一格左下角（表面 px）(257,924)。*/

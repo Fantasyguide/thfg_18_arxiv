@@ -392,7 +392,7 @@ yk_slot_t *yk_map_find_fam(yk_map_t *m, uint32_t fam_id)
     return 0;
 }
 
-/* ★★★ 2026-09-23（P1）：**只读**版判据 —— 「这个 id 是不是我表里活着的使魔」。
+/* ★★★ 2026-09-22（P1）：**只读**版判据 —— 「这个 id 是不是我表里活着的使魔」。
  * 与 `yk_fam_broken` 的区别是**它一个字节都不写**（后者是事件：清 `fam_id` + 置 `broken`）。
  * 卡侧每帧的「排除我们自己的使魔」这类判据一律用它；理由与那次真事故（32 格跟随 VM 表泄漏）
  * 见 `youkai_core.h` 里本函数上面那一整段。 */
@@ -639,10 +639,10 @@ int yk_shot_slot_suppressed(const yk_map_t *m, uint32_t enemy_id, int slot, uint
  *   `engine/enemy/th08/01-familiars-and-anm.md` §3.3）。代价 = **每次使魔死亡最多丢 1 条 `etOn`**
  *   （下一帧使魔已重建 ⇒ 之后的 `etOn` 全放行）。若把这里改成 `return 0`，就变成「这一个口子一帧都不哑」
  *   —— 那是**放行一条没有使魔的发射**，与 owner 保留的语义相反，所以不做。 */
-/* ★★★ 2026-09-23（P8-3 / **route A′**）：闸的第二问即放行 —— 把「恢复」从卡 tick 解耦。
+/* ★★★ 2026-09-22（P8-3 / **route A′**）：闸的第二问即放行 —— 把「恢复」从卡 tick 解耦。
  *
  * 原来的 route A 只做两件事：夹住时置 `rearm_pending`，**卡 tick**（`yk_note_slot`）同帧消费它
- * ⇒ 清夹持态 + 重建使魔。缺口（2026-09-23 只读调查查实）：没有任何东西保证卡 tick 会跑到 ——
+ * ⇒ 清夹持态 + 重建使魔。缺口（2026-09-22 只读调查查实）：没有任何东西保证卡 tick 会跑到 ——
  * 卡 tick 只在**聚焦**时跑（`on_tick_2` 的 `!focused` 早退），而闸对「未聚焦」不设防
  * （见 `yk_on_shot_slot` 那边的 P8-1）。⇒ 一旦在某个相位夹住，恢复可能被拖到 120 帧 TTL 兜底。
  *
@@ -819,7 +819,7 @@ void yk_gauge_hud(int gauge, const float anchor[2], float to640, yk_gauge_hud_t 
      *   ⚠ 图标 x 用**限值**算：`88 + limit·56/10000`（`AsciiManager::InitializeVms`）——
      *     本卡是 ±10000 ⇒ 恰好落在条的两端（32 / 144），与一手数值一致。
      *
-     * ★★★ 2026-09-23（P2）：**出口换回表面 px**（`px = 1/to640` = 2）：本卡那些 VM 的脚本没有
+     * ★★★ 2026-09-22（P2）：**出口换回表面 px**（`px = 1/to640` = 2）：本卡那些 VM 的脚本没有
      *   `resolutionMode` ⇒ `th18:0x4063d0` 那一步**一分量都不乘**（mode 0 ⇒ ×1 = 表面 px），
      *   尺寸那一支同形（`th18:0x4817c6`）⇒ 写 640 空间的数就会「位置高半个屏幕 + 整体缩小 50%」
      *   （owner th08 #14/#15 的实跑原话）。一手与实跑判据的全文在 `youkai_core.h` 的 `yk_gauge_hud_t`。*/

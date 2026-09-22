@@ -189,7 +189,7 @@ typedef struct {
     uint8_t       logged_sht;          /* 「妖侧 shooterset 没装」只记一次 */
     uint8_t       logged_noshot;       /* 「压了原生弹但自己也没弹」只记一次 */
     uint8_t       logged_pass0;        /* ★ 2026-09-12：「子机 0 ⇒ 放行原生弹（用户口径）」只记一次 */
-    uint8_t       logged_hudgeo;       /* ★★ 2026-09-23（P2）：人妖槽 HUD 的**几何自述**只记一次
+    uint8_t       logged_hudgeo;       /* ★★ 2026-09-22（P2）：人妖槽 HUD 的**几何自述**只记一次
                                         *   （锚点 + 四个位置 + 倍数，实跑里用它与屏上所见对照，
                                         *   定「写进去的数生效的是 640 空间还是表面 px」这一争）*/
     uint8_t       logged_full;         /* 「使魔表满 / 堆拒绝」只记一次 */
@@ -246,9 +246,9 @@ typedef struct {
                                         *   计数（`yk_map_rearms`）的快照。它在涨 = 波次级复位生效
                                         *   （被夹住的槽在下一次 `etOn` 就被放开、使魔同帧重建）。*/
 
-    uint32_t      releases_seen;       /* ★★★ 2026-09-23（P8-3 / route A′）：上一帧读到的
+    uint32_t      releases_seen;       /* ★★★ 2026-09-22（P8-3 / route A′）：上一帧读到的
                                         *   `yk_map_releases`（第二问主动放行的次数，只增不清）*/
-    uint32_t      silent;              /* ★★★ 2026-09-23（P8-6）：使魔**查不到**（过场 destroy_all /
+    uint32_t      silent;              /* ★★★ 2026-09-22（P8-6）：使魔**查不到**（过场 destroy_all /
                                         *   静默移除）而被松开的次数 —— 原来账上无痕（只有 VM 侧自愈）*/
 } yk_card_t;
 
@@ -433,7 +433,7 @@ static void yk_fam_vm_kill_all(void)
     for (i = 0; i < YK_FAM_MAX; ++i) yk_fam_vm_kill(&s_fam_vm[i]);
 }
 
-/* ★★★ 2026-09-23（P1，实跑日志直证）：跟随 VM 表的**泄漏回收**（自愈）。
+/* ★★★ 2026-09-22（P1，实跑日志直证）：跟随 VM 表的**泄漏回收**（自愈）。
  *
  * **不变式**：`s_fam_vm` 里每条 `fam_id != 0` 的记录 ⇔ `s_map` 里那个 `fam_id` 还活着（活使魔）。
  * 违反不变式的记录 = **泄漏**：格子被一条没人认领的记录占着，而它对应的那只使魔实体也没人管
@@ -490,7 +490,7 @@ static void __attribute__((noinline)) yk_fam_vm_check(void)
         for (i = 0; i < YK_FAM_MAX; ++i) if (!s_fam_vm[i].fam_id) { v = &s_fam_vm[i]; break; }
     }
     if (!v) {
-        /* ★ 2026-09-23（P1）：表满 ⇒ **先自愈回收**（把已经不在 `s_map` 里的泄漏记录收掉）再重试一次。
+        /* ★ 2026-09-22（P1）：表满 ⇒ **先自愈回收**（把已经不在 `s_map` 里的泄漏记录收掉）再重试一次。
          * 回收后仍然没有空格 = 32 条记录逐条都对应一只活使魔 —— 那与 `yk_map_t` 那 32 格一一对应，
          * 到不了（除非 `yk_map_alloc` 侧先满）。真到不了这一行，日志就是唯一线索。*/
         unsigned n = yk_fam_vm_prune();
@@ -635,7 +635,7 @@ static void yk_familiars_tick(yk_card_t *s)
 }
 
 /* ============================ §3.7 伤害转交 1/2 ============================
- * ⚠ **`noinline` 是必需的，别删**（2026-09-23 实测）：本函数是 `on_tick_2` 里**唯一**内联着
+ * ⚠ **`noinline` 是必需的，别删**（2026-09-22 实测）：本函数是 `on_tick_2` 里**唯一**内联着
  *   `ce_damage_rect`（`sdk.h:172` 那段内联汇编 —— 4 个栈参 + XMM2/XMM3）的路径。i686 只有 8 个
  *   通用寄存器，而 `on_tick_2` 身上挂的东西已经很多（子机声明 / 人妖槽 / 刻符 / 擦弹 / 使魔表 /
  *   PIV 上报…）⇒ 它一旦被内联进 `on_tick_2`，编译器就报
@@ -656,7 +656,7 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
         if (!f) {
             /* 不走死亡事件就没了（过场 `destroy_all`）⇒ 双保险：自己松开（spec §9 实跑清单 6），
              * 并且**同时收掉跟随 VM** —— 实体没了还留 VM = 场上一个打不到的幽灵使魔。
-             * ★★★ 2026-09-23（P8-6）：**这一步也进账 + 打一行**（原来账上无痕 —— 实跑里
+             * ★★★ 2026-09-22（P8-6）：**这一步也进账 + 打一行**（原来账上无痕 —— 实跑里
              *   「self-healed 前 120 帧找不到对应死亡行」就是因为静默消失没有记录）。
              *   `silent` 与 `killed`（死亡事件）/`lost`（我们的状态差分撤）三笔分开记，
              *   三者相加才是「这一局使魔消失的完整账」。*/
@@ -764,7 +764,7 @@ static void yk_chase_target_resolve(yk_card_t *s)
         if (!ce_enemy_lockable(e)) continue;
         id = *(const uint32_t *)(e + CE_ENEMY_ID);
         if (!id) continue;
-        /* ★★★ 2026-09-23（P1 / 实跑日志直证）：这里原来调的是 `yk_fam_broken` —— 那是**事件**
+        /* ★★★ 2026-09-22（P1 / 实跑日志直证）：这里原来调的是 `yk_fam_broken` —— 那是**事件**
          * （清 `fam_id` + 置 `broken`），**不是判据** ⇒ 每帧对每一只活使魔都走了一次「被打死」：
          *   ① 表条目被清 ⇒ 那只真敌人变**孤儿**（不再钉位置、松 Shift 也不撤 = owner「敌方使魔滞留」）；
          *   ② 跟随 VM 记录再没人收 ⇒ 32 格 `s_fam_vm` 泄漏 ⇒ 之后 `ce_anm_spawn` 拿不到格子
@@ -1274,7 +1274,7 @@ static int yk_orbs_tick(yk_card_t *s)
         float dx, dy, dist;
         if (!o->used) continue;
         if (!o->anm_id || !ce_anm_get_vm(o->anm_id)) {
-            /* ★★★ 2026-09-23（P5 / th08 #19「人形态击中得到的永点……上抛之后下落直接消失，
+            /* ★★★ 2026-09-22（P5 / th08 #19「人形态击中得到的永点……上抛之后下落直接消失，
              * 动画上不吸收到角色这里来」）：**这里原来直接 `yk_orb_collect()` 记账收下**、
              * 顺手把那一颗停掉 —— 观感就是「飞向角色的途中凭空消失、没进角色身上」，而
              * `orb_taken` 还在涨 ⇒ 正是 owner 描述的那一幕。
@@ -1466,7 +1466,7 @@ static void yk_gauge_hud_spawn(ce_card_t *c, yk_card_t *s)
         if (!id) { *slot[i] = 0; continue; }
         *slot[i] = id;
         ce_anm_interrupt(id, 1);          /* 一手：脚本出生是 stopHide 状态，interrupt 1 = 「显形」*/
-        /* ★★★ 2026-09-23（P2）：**贴图要 ×2**。四件贴图是从 TH08 `ascii.anm` 原生**原尺寸**切来的
+        /* ★★★ 2026-09-22（P2）：**贴图要 ×2**。四件贴图是从 TH08 `ascii.anm` 原生**原尺寸**切来的
          * （游标 8×12 / 两图标 16×16 / 条 128×16），而 TH18 的表面是 1280×960（TH08 是 640×480）
          * ⇒ 这四支脚本又没有 `resolutionMode`（`th18:0x4063d0` 的 mode 0 支 = **尺寸也 ×1**），
          * 不乘 2 就只有原版一半的线性尺寸 —— owner 实跑 th08 #15「人妖整体的 hud 似乎比原版缩小了 50%」。
@@ -1488,7 +1488,7 @@ static void yk_gauge_hud_spawn(ce_card_t *c, yk_card_t *s)
 /* ★★ 人妖槽的百分比数字：按一手布局逐格写 7 个字形 VM 的 sprite / 位置 / 缩放 / 颜色。
  * 布局（`AsciiManager::DrawPercentage` `th08:0x405e10`）在纯逻辑 `yk_gauge_text_glyphs` 里。
  * ⚠ 不用的格：`alpha = 0`（同 `color(argb)` 的 alpha 通道）⇒ 不留残字。
- * ★★★ 2026-09-23（P2）：**基准点、逐字形的步进（7 / 5 / 2）、以及字形 scale 全部 × `h->px`**：
+ * ★★★ 2026-09-22（P2）：**基准点、逐字形的步进（7 / 5 / 2）、以及字形 scale 全部 × `h->px`**：
  *   一手那一套步进是 **640 空间**的量（TH08 的屏幕宽 640），而这批 VM 的脚本没有 `resolutionMode`
  *   ⇒ 位置与尺寸都按 1 单位 = 1 表面 px 走（`th18:0x4063d0` 的 mode 0 直通支，一手见
  *   `youkai_core.h` 的 `yk_gauge_hud_t`）⇒ 不乘 2 就等于「字距只有一半、字也只有一半大」
@@ -1527,7 +1527,7 @@ static void yk_gauge_hud_update(yk_card_t *s)
     anchor[1] = s->hud.y;
     yk_gauge_hud(s->gauge, anchor, CE_HUD_SURFACE_TO_640, &h);
     col = yk_gauge_color(s->gauge);
-    /* ★★★ 2026-09-23（P2）：**四件也每帧重写 scale**（`h.px` = 2）。
+    /* ★★★ 2026-09-22（P2）：**四件也每帧重写 scale**（`h.px` = 2）。
      * 为什么每帧写而不是只在 spawn 时写一次：贴图是 TH08 的原生尺寸（游标 8×12 / 图标 16×16 /
      * 条 128×16），要 ×2 才与原版同观感；而 VM 的 scale 是会被别的路径动到的（引擎重建 VM、
      * 脚本自己写、自愈重申请）⇒ 每帧钉死最省心，成本 = 4 次写。理由全文见 `yk_gauge_hud_t` 的注。*/
@@ -1552,7 +1552,7 @@ static void yk_gauge_hud_update(yk_card_t *s)
      * 靠的就是把「我们写进去的那几个数」打在日志里 —— 与屏上看到的位置一比就知道生效的是哪一种。
      * 锚点 = 货架给的那一格左下角（表面 px）。⚠ 参数刻意压到 6 个：`ce_log` 是变参函数，
      * 一次压十几路浮点会把 i686 的寄存器用光，连带 `sdk.h` 里那些内联汇编的函数报
-     * 「inline assembly requires more registers than available」（2026-09-23 当场踩到过一次）。*/
+     * 「inline assembly requires more registers than available」（2026-09-22 当场踩到过一次）。*/
     if (!s->logged_hudgeo) {
         s->logged_hudgeo = 1;
         ce_log("youkai: gauge HUD geometry (surface px; these scripts carry no resolutionMode => "
@@ -1793,7 +1793,7 @@ static void yk_body_sync(yk_card_t *s)
     s->body_script = want;
 }
 
-/* ★★★ 2026-09-23（P6 / th08 #20「妖自机在开始移动的时候会闪一帧」）：`yk_body_sync` 的**相位**改了 ——
+/* ★★★ 2026-09-22（P6 / th08 #20「妖自机在开始移动的时候会闪一帧」）：`yk_body_sync` 的**相位**改了 ——
  * 原来它只从 `on_draw`（= `AbilityManager__on_draw`，**绘制优先级 0x33**）跑
  * —— 一手（`th18:0x408484`–`0x40849d`：注册时 `push 0x33`），而自机是
  * `Player__on_tick` 更新 0x17、`Player__on_draw` 绘制 **0x1d**；引擎自己的移动换脚本状态机在
@@ -1815,7 +1815,7 @@ static void on_item_frame(ce_card_t *c)
 
 static int on_draw(ce_card_t *c)
 {
-    /* ★ 2026-09-23（P6）：本体换脚本**不在这里**了（绘制相位太晚 ⇒ 会闪一帧），见 `on_item_frame`。
+    /* ★ 2026-09-22（P6）：本体换脚本**不在这里**了（绘制相位太晚 ⇒ 会闪一帧），见 `on_item_frame`。
      * 这个钩子留着（本卡以后若要在绘制相位做纯视觉的东西再放这里）。*/
     (void)c;
     return 0;
@@ -1990,7 +1990,7 @@ static int yk_on_shot_slot(ce_card_t *c, const ce_enemy_shot_t *ev)
 
     if (!s || !ev || !ev->enemy_id) return 0;
     if (ev->slot < 0 || ev->slot >= YK_EMIT_SLOTS) return 0;
-    /* ★★★ 2026-09-23（P8-1）：**未聚焦 ⇒ 本卡一律不表态**。
+    /* ★★★ 2026-09-22（P8-1）：**未聚焦 ⇒ 本卡一律不表态**。
      * 本卡的 1:1 映射整体只在低速（= 妖侧）活着（`on_tick_2` 的 `!focused` 分支把使魔全撤 + 清表）；
      * 高速时场上的使魔与我们无关 ⇒ 闸在这里没有任何语义，却**可能认下 boss 自己的发射口**
      * （槽表对每一只敌人、每个 `props[i].type != 0` 的槽都建条目，没有任何 boss / 可锁定过滤）。
@@ -2002,7 +2002,7 @@ static int yk_on_shot_slot(ce_card_t *c, const ce_enemy_shot_t *ev)
     have = yk_slot_fam_id(&s_map, ev->enemy_id, ev->slot);
     rearms_before = yk_map_rearms(&s_map);
     if (!yk_shot_slot_gate(&s_map, ev->enemy_id, ev->slot, have)) return 0;
-    /* ★★★ 2026-09-23（P8-5）：**每一次「夹持期开始」记一行完整的上下文**（含 boss 与活跃槽数）。
+    /* ★★★ 2026-09-22（P8-5）：**每一次「夹持期开始」记一行完整的上下文**（含 boss 与活跃槽数）。
      * 记账判据 = `rearms` 涨（= 闸刚置上 `rearm_pending`，一个夹持期只记一次）。
      * ⚠ 不逐帧逐槽打（16 槽 × 60 fps = 每秒上千行，会把日志淹掉）——「每次」按**夹持期**计。*/
     if (s && yk_map_rearms(&s_map) != rearms_before) {
@@ -2067,10 +2067,10 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
            (int)YK_EMIT_BROKEN_TTL);
 }
 
-/* ★★★ 2026-09-23（P3 / th08 #17「人妖槽在 +99 和 -99 点跳」）：**原来的「收道具 ⇒ 人妖槽 ±身价/100」
+/* ★★★ 2026-09-22（P3 / th08 #17「人妖槽在 +99 和 -99 点跳」）：**原来的「收道具 ⇒ 人妖槽 ±身价/100」
  * 这一源已被删除** —— 它在原作里**不存在**，是 `ItemManager.cpp:597` 那一行的**误读**。
  *
- * **一手（逐条，2026-09-23 复核）**：
+ * **一手（逐条，2026-09-22 复核）**：
  *   · `ItemManager.cpp:597` 在 `Item::CollectTimeOrb`（本样本 `th08:0x4412b0`）体内，而且
  *     `0x44139e mov DWORD PTR [ebp-0x4],0x6f` 把 `itemScore` **当场改写成字面量 111**
  *     再 `0x4413cb call 0x43c0bb`（= `AddToYoukaiGauge`）⇒ 那一行说的是**收刻符 ±111**，
@@ -2160,7 +2160,7 @@ static int on_tick_2(ce_card_t *c)
             float px = *(const float *)(CE_PLAYER() + CE_PLAYER_X);
             float py = *(const float *)(CE_PLAYER() + CE_PLAYER_Y);
             if (d > 8u) d = 8u;                            /* ❓ 自定：单帧上限（防一段大擦弹一次性灌满池）*/
-            /* ★★★ 2026-09-23（P5 / th08 #18「妖形态是擦弹得自动吸收的永点……总之是有一个『无敌』的
+            /* ★★★ 2026-09-22（P5 / th08 #18「妖形态是擦弹得自动吸收的永点……总之是有一个『无敌』的
              * 上抛过程，然后直接吸收」）：**擦弹那一路是 state 5（上抛），不是 state 1** —— 上一版
              * 认错了对象。一手（逐指令，本样本）：
              *   · 擦弹真正的落点 = `Player::sub_44a6a0` 的 `th08:0x44aac9 / :0x44aaef / :0x44ab0f`
@@ -2223,7 +2223,7 @@ static int on_tick_2(ce_card_t *c)
     yk_option_refresh(c, s, focused);                     /* 每帧声明（低速才有货；落笔由 SDK 在帧界叫）*/
     if (!focused) {
         /* 高速 = 原机体：使魔全部撤（spec §9 实跑清单 1「松开全部还原」）。
-         * ★★★ 2026-09-23（P8-2）：**无条件**走这一支（原来写成 `if (yk_map_fam_count(...))`）——
+         * ★★★ 2026-09-22（P8-2）：**无条件**走这一支（原来写成 `if (yk_map_fam_count(...))`）——
          *   `yk_map_fam_count` 只数 `fam_id != 0` 的条目，而**夹持态**的条目（`fam_seen == 1` /
          *   `broken == 1` / `rearm_pending == 1`，`fam_id == 0`）**不在计数里** ⇒ 松 Shift 清不掉它，
          *   下一次聚焦时那条夹持态还在（闸还会掐）。`yk_drop_all` 里的 `yk_withdraw_all`
@@ -2233,12 +2233,12 @@ static int on_tick_2(ce_card_t *c)
     }
     yk_familiars_tick(s);
     yk_transfer_tick(s);
-    /* ★★★ 2026-09-23（P1）：跟随 VM 表的**每帧不变式检查**（32 次比较，成本可忽略）。
+    /* ★★★ 2026-09-22（P1）：跟随 VM 表的**每帧不变式检查**（32 次比较，成本可忽略）。
      * 正常情况回收 0 条（判据已修，见 `yk_fam_vm_prune` 的注）；回收 >0 就是实跑判据里的
      * 「还有别的漏收路径」信号 ⇒ 打一行日志（含条数）让人一眼看见。
      * ⚠ 这一步**刻意包成一个 `noinline` 的小函数**：`on_tick_2` 已经很大，而它里面内联着
      *   `ce_damage_rect`（`sdk.h:172` 那段内联汇编）—— 往它身上再加几路活值，i686 的寄存器就不够，
-     *   编译器会报「inline assembly requires more registers than available」（2026-09-23 实测）。*/
+     *   编译器会报「inline assembly requires more registers than available」（2026-09-22 实测）。*/
     yk_fam_vm_check();
     /* ★★ 2026-09-22（工单 E / route A）：**波次级复位的记账**。夹住的槽在下一次 `etOn`
      * （= 引擎自己的发弹事件）就被放开，卡 tick 的 `yk_note_slot` 同帧消费并重建使魔
@@ -2255,7 +2255,7 @@ static int on_tick_2(ce_card_t *c)
             s->rearms_seen = rearms;
         }
     }
-    /* ★★★ 2026-09-23（P8-3 / **route A′**）：`yk_shot_slot_gate` 在**第二次**被问到时当场放行并清夹持态
+    /* ★★★ 2026-09-22（P8-3 / **route A′**）：`yk_shot_slot_gate` 在**第二次**被问到时当场放行并清夹持态
      * （不再等卡 tick 消费、也不再等 120 帧 TTL）⇒ 这一行在涨就是「恢复已经与卡 tick 解耦」的证据。
      * 与上面 `re-armed` 的分工：`re-armed` = 掐掉过几发（卡 tick 侧的消费），`released` = 断点侧放行了几次。*/
     {
@@ -2287,10 +2287,10 @@ CE_CARD(108, .ctor = on_ctor, .on_load = on_load, .on_power_level_change = on_po
              .on_bullet_created = on_bullet_created, .on_enemy_death = on_enemy_death,
              .on_enemy_shot_slot = yk_on_shot_slot,           /* §3.5.1 发射口精确闸（0x433ffa）*/
              .on_native_shot_suppress = on_native_shot_suppress, .on_draw = on_draw,
-             /* ★ 2026-09-23（P6）：本体脚本的换装改在**更新相位**（晚于自机 tick 0x17、早于自机绘制 0x1d）
+             /* ★ 2026-09-22（P6）：本体脚本的换装改在**更新相位**（晚于自机 tick 0x17、早于自机绘制 0x1d）
               *   —— 原来挂在 `on_draw`（绘制 0x33）⇒ 移动起步那一帧会先画出引擎装的人侧脚本（闪一帧）。*/
              .on_item_frame = on_item_frame,
-             /* ★ 2026-09-23（P3）：`on_item_commit` **已退订** —— 它原来那一源（收道具 ±身价/100）
+             /* ★ 2026-09-22（P3）：`on_item_commit` **已退订** —— 它原来那一源（收道具 ±身价/100）
               *   在原作里不存在（逐条一手见上面那段订正：`ItemManager.cpp:597` 是**收刻符 ±111**）。*/
              .on_death_before_deathbomb = on_death_before_deathbomb,   /* 人妖槽：死亡清零 */
              .on_option_pose_apply = on_option_pose_apply,    /* §3.3.1 低速子机声明层的落笔 */
