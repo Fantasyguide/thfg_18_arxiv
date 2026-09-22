@@ -180,7 +180,7 @@
 **§2c.3 两行的逐条（表里只留指针）**
 
 - **梯的开关**：门 = `[globals+0x34] ≥ 0`（`th08:0x440fbd jl`）；另外 stage ∈ {6,7,8}（`ds:0x164d2cc`）时
-  `th08:0x43511c or DWORD PTR [eax+0x34],0xffffffff` = **把整条奖命梯关掉**（🟡「0x164d2cc = stage 号」是从比较值 6/7/8 推的）。
+  `th08:0x43511c or DWORD PTR [eax+0x34],0xffffffff` = **把整条奖命梯关掉**（🟡「`0x164d2cc` = stage 号」是从比较值 6/7/8 推的）。
 - **奖命动作** `GameManager::CollectExtend th08:0x439b29`：`th08:0x439b3e cmp eax,8 / jge` ⇒ **命上限 8**；
   命 <8 ⇒ `th08:0x439b43 push 1` → `th08:0x439b48 call 0x43c641`，其内 `th08:0x43c66d fadd DWORD PTR [eax+0x74]`
   = **残余自机数 +1**（float `globals+0x74`），并 `th08:0x439b5b push 0xc8`(200) → `call 0x43bfc3` = **subrank +200**；
