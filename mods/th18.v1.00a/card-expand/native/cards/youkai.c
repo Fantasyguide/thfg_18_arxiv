@@ -273,6 +273,7 @@ typedef struct {
     uint8_t       gauge_shoot_logged;   /* ★ P-C：推进口径只记一行（1 = 斜坡 / 2 = 放符卡）*/
     uint16_t      orb_silence;          /* ★ P-D：击破魔使后的「收刻符不给槽」帧数（一手 50 帧）*/
     uint8_t       fam_nodmg_logged;     /* ★ 批次 2：免伤位「按形态切过」只记一次（=1 妖侧 / =2 人侧）*/
+    uint32_t      fam_miss_latch;       /* ★ 批次 3：已经撞过的那只使魔的 fam_id（接触期不重复触发）*/
     uint8_t       fengma;               /* ★ P-B：本帧在不在逢魔（极人 OR 极妖）*/
     int32_t       fengma_score;         /* ★ P-B：本局逢魔自动加分的累计（诊断）*/
     uint32_t      aura_id;
@@ -281,7 +282,15 @@ typedef struct {
     uint8_t       aura_logged;
 } yk_card_t;
 
-static yk_map_t s_map;              /* 使魔表（(enemy_id, 发射口槽) → 使魔）*/
+static yk_map_t s_map;
+
+/* ★ 批次 3：表里有没有活着的使魔（撞判用的零成本门）。*/
+static int s_map_has_fam(void)
+{
+    unsigned i;
+    for (i = 0; i < YK_FAM_MAX; ++i) if (s_map.e[i].fam_id) return 1;
+    return 0;
+}              /* 使魔表（(enemy_id, 发射口槽) → 使魔）*/
 
 /* ============================== 小工具 ============================== */
 static int yk_base_damage_cap(void)                       /* 照 76 guding.c：sht 头的每敌每帧上限基值 */
@@ -872,6 +881,65 @@ static void yk_drop_all(yk_card_t *s, const char *why)
 }
 
 /* 扫全场敌人 → 1:1 映射 + 状态差分。*/
+/* ★★★ 2026-09-22 夜（owner **批次 3**）：**人侧撞到使魔 ⇒ MISS**（妖侧「不可见可穿梭」⇒ 不判）。
+ *
+ * 一手/口径：
+ *   · owner：「人间操术下撞击会 MISS；妖怪操术下不可见但可穿梭其间」（`TH08-ITEMS-AND-SC.md` §2b）；
+ *   · 自机判定半径 = `player+0x4799c`（非聚焦，原生 **3.0**；`engine.h` 的 `CE_PLAYER_HITBOX_R_NF`）；
+ *   · 使魔 hurtbox 半宽 = **12.0**（惰性真敌人默认 hurtbox 24 的一半，`YK_FAM_HURTBOX_HALF`，spec §6.1）；
+ *   · 判据 = **圆 vs 圆**：`dx²+dy² <= (3.0 + 12.0)²`（`yk_fam_hit_player`，纯逻辑在 core，有单测）。
+ *   ⚠ 用 `ce_forced_death_begin/end` **包不包**这一调 = 一个开关（`YK_FAM_HIT_FORCED_DEATH`）：
+ *     包上 ⇒ 111 的河童罩子会**让位**（`sdk_core.h` 的通报位语义：那是给「卡造的死」用的，例如 113 的补死）；
+ *     不包 ⇒ 这次死亡与**真中弹**完全同形，**所有救援层（107/113/117 + 111 罩子）照旧生效**。
+ *     本批取 **0（不包）**：owner/工单要的是「撞魔使 = 一次**普通 MISS**」+「救援层该照旧生效」。
+ *     ⇒ 要 111 让位就把这一个数改成 1（一行、无其它影响）。
+ *   · **只在人侧判**（妖侧与批次 2 的免伤位分工一致：妖侧**打不到 + 撞不到**）；
+ *   · 自机不在存活态（`CE_PLAYER_STATE != 1`）⇒ 不判（死了/决死窗口里不该再撞）；
+ *   · 同一只使魔**只触发一次**（`fam_miss_latch` 记住那只 `fam_id`，离开接触范围后解锁）。*/
+#define YK_FAM_HIT_FORCED_DEATH 0     /* ❓ 口径（见上）；1 = 用通报位包住这一调（111 罩子让位）*/
+#define YK_FN_PLAYER_DIE 0x45d3a0     /* TH18 `Player__die`（一手；先例 `trance.c` 的 `TRANCE_FN_PLAYER_DIE`）*/
+typedef void (__attribute__((thiscall)) *yk_fn_player_die_t)(void *player);
+
+static void yk_fam_collide_tick(yk_card_t *s)
+{
+    uint8_t *pl;
+    const float *pp;
+    float hit_r;
+    unsigned i;
+    if (!s || !s_map_has_fam()) return;
+    if (CE_PLAYER_FOCUSED()) { s->fam_miss_latch = 0; return; }   /* 妖侧：可穿梭 ⇒ 不判 */
+    pl = CE_PLAYER();
+    if (!pl) return;
+    if (*(const int32_t *)(pl + CE_PLAYER_STATE) != 1) return;    /* 只在存活态判（1 = 存活）*/
+    pp = ce_player_pos();
+    if (!pp) return;
+    hit_r = *(const float *)(pl + CE_PLAYER_HITBOX_R_NF);         /* 一手 3.0 */
+    for (i = 0; i < YK_FAM_MAX; ++i) {
+        uint8_t *f;
+        uint32_t fid = s_map.e[i].fam_id;
+        float dx, dy;
+        if (!fid) continue;
+        if (fid == s->fam_miss_latch) continue;                   /* 这一只已经撞过（接触期不重复）*/
+        f = yk_familiar_by_id(fid);
+        if (!f) continue;
+        dx = pp[0] - *(const float *)(f + CE_ENEMY_POS_X);
+        dy = pp[1] - *(const float *)(f + CE_ENEMY_POS_Y);
+        if (!yk_fam_hit_player(dx, dy, hit_r)) continue;
+        s->fam_miss_latch = fid;                                  /* 先落闩，异常路径也不会连撞 */
+        ce_log("youkai: MISS by touching familiar enemy_id %u (human side; TH08 人型撞魔使 = 一次普通 MISS, "
+               "hit_r %.1f + hurtbox %.1f)", fid, (double)hit_r, (double)YK_FAM_HIT_REACH);
+#if YK_FAM_HIT_FORCED_DEATH
+        ce_forced_death_begin();
+#endif
+        ((yk_fn_player_die_t)(uintptr_t)YK_FN_PLAYER_DIE)(pl);
+#if YK_FAM_HIT_FORCED_DEATH
+        ce_forced_death_end();
+#endif
+        return;                                                   /* 一帧最多一次 */
+    }
+    s->fam_miss_latch = 0;                                        /* 没在接触 ⇒ 解锁 */
+}
+
 static void yk_familiars_tick(yk_card_t *s)
 {
     uint8_t *em = CE_ENEMY_MGR();
@@ -2178,6 +2246,7 @@ static int on_ctor(ce_card_t *c)
     s->gauge_shoot_logged = 0;
     s->orb_silence = 0;
     s->fam_nodmg_logged = 0;
+    s->fam_miss_latch = 0;
     s->fengma = 0;
     s->fengma_score = 0;
     s->claimed_set = -1;                /* ★ P7：认领日志的「变化才打」闩 */
@@ -3134,6 +3203,7 @@ static int on_tick_2(ce_card_t *c)
         yk_leave_youkai(s);
     }
     yk_familiars_tick(s);
+    yk_fam_collide_tick(s);              /* ★ 批次 3：**人侧**撞到使魔 ⇒ MISS（妖侧可穿梭）*/
     yk_transfer_tick(s);
     /* ★★★ 2026-09-22（P1）：跟随 VM 表的**每帧不变式检查**（32 次比较，成本可忽略）。
      * 正常情况回收 0 条（判据已修，见 `yk_fam_vm_prune` 的注）；回收 >0 就是实跑判据里的

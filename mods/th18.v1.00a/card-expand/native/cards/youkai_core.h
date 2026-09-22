@@ -1046,3 +1046,17 @@ int yk_popup_digits(int32_t value, uint8_t *out, int max);
 
 /* 击破一个魔使的人妖槽增量：**−gauge/12**（C 的 `/` 对负数向零取整，与一手 `idiv` 同义）。*/
 int yk_gauge_fam_kill_delta(int32_t gauge);
+/* ============ ★★★ 2026-09-22 夜（owner **批次 3**）：**人侧撞到使魔 ⇒ MISS** ====================
+ * owner 口径：「**人间操术下撞击会 MISS**；妖怪操术下**不可见但可穿梭其间**」（`TH08-ITEMS-AND-SC.md` §2b）。
+ *
+ * **一手（两个半径，都是我们样本/本仓已有的一手值）**：
+ *   · 自机判定半径 = `player+0x4799c`（非聚焦，原生 **3.0**）/ `+0x479a0`（聚焦，原生 3.0）
+ *     —— `engine.h` 的 `CE_PLAYER_HITBOX_R_NF/_F`；
+ *   · 使魔 hurtbox = 惰性真敌人的默认 hurtbox **24.0** 的一半 ⇒ **12.0**（`YK_FAM_HURTBOX_HALF`，
+ *     spec §6.1）。
+ * ⇒ 判据 = **圆 vs 圆**：`dx² + dy² <= (自机半径 + 12.0)²`（人侧 3.0 + 12.0 = **15.0** 内触发）。
+ *   ⚠ TH08 那边是「敌本体碰撞体 vs 自机判定点」的盒判定；我们这里两个都是圆（引擎给我们的读数就是半径），
+ *   所以用圆 vs 圆 —— 这是**口径**（登记 `TUNING.md`），不是逐位复刻。*/
+#define YK_FAM_HIT_REACH  (YK_FAM_HURTBOX_HALF)   /* = 12.0（自机半径由调用方传入，见卡侧读 `+0x4799c`）*/
+/* `dx/dy` = 自机 − 使魔（世界单位）；`hit_r` = 自机判定半径（一手 3.0）。⇒ 1 = 撞上。 */
+int yk_fam_hit_player(float dx, float dy, float hit_r);

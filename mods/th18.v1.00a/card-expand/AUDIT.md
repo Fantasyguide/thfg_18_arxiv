@@ -20369,3 +20369,27 @@ imm `0x41a80000` = `f2i` 转换上界 ⇒ **实际峰值 20**）；清零 `th08:
 
 **批次 3 待办**：人侧「撞到使魔 ⇒ MISS」（`ce_forced_death_begin/end` + AABB，只人侧）。
 
+## §BE 详录 #70（2026-09-22 夜）：108 **批次 3 —— 人侧撞到使魔 ⇒ MISS**
+
+**改了什么**
+
+| 文件 | 改了什么 |
+| --- | --- |
+| `native/cards/youkai_core.{h,c}` | `YK_FAM_HIT_REACH`（= `YK_FAM_HURTBOX_HALF` 12.0）与 `yk_fam_hit_player(dx, dy, hit_r)`（圆 vs 圆）|
+| `native/cards/youkai.c` | 新增 `yk_fam_collide_tick(s)`（每帧一次，只人侧、只存活态、圆 vs 圆；命中 ⇒ 一行日志 + `Player__die`）+ `fam_miss_latch`（同只只触发一次）+ `s_map_has_fam()` 门 |
+| `native/tests/test_youkai_core.c` | +8 条断言（正中 / 14.9 命中 / 15.1 不中 / 斜向 √200 与 √242 / 半径 0 与负值）⇒ **4603 checks / 0 failed** |
+| `TUNING.md` | §2.0zo（表 + `❓ #44` 的「包不包通报位」与一行改法）|
+
+**一手**：自机判定半径 `player+0x4799c`（原生 3.0）；使魔 hurtbox 半宽 12.0（默认 24 的一半，spec §6.1）；
+死亡入口 `Player__die th18:0x45d3a0`（先例 `trance.c` `trance_player_die()`）。**没有新增站点、没有直写引擎字段。**
+
+**怎么验证的**：`make check` **rc=0**（`x87 = 0`、`test_youkai_core` 4603/0、sites 双面、`sitecheck --all`、
+`contract_check`、`gen_drift`、`capcheck`、`sht-verify`、`anm-verify`、`snd-check`、`dllx87`、`dllverify`、
+`engine_abi_check`）；`python3 tooling/check-docs.py` 全部通过。
+
+**实跑判据**：① 人侧贴着使魔站定 ⇒ MISS（`youkai: MISS by touching familiar enemy_id N`）；
+② 妖侧同位置 ⇒ 穿过去无事（无日志、不扣命）；③ 撞完那一帧使魔不消失。
+
+**发布面**：**本批没改** `pl0X.sht` / `pl0X.anm` / `ability.anm` / wav / 站点。
+
+

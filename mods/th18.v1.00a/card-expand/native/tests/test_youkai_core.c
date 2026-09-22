@@ -1250,6 +1250,17 @@ int main(void)
                 n2 = yk_night_text_glyphs(-5, ng);
                 CHECK(n2 == 1 && ng[0].glyph == 0);
                 CHECK(yk_night_text_glyphs(60000, 0) >= 1);               /* NULL 出口不崩 */
+            /* ★★★ 2026-09-22 夜（批次 3）：人侧撞使魔 = 圆 vs 圆
+             * （一手：自机判定半径 3.0 @`player+0x4799c`；使魔 hurtbox 半宽 12.0 = 默认 24 的一半）。*/
+            CHECK(YK_FAM_HIT_REACH == YK_FAM_HURTBOX_HALF && YK_FAM_HIT_REACH == 12.0f);
+            CHECK(yk_fam_hit_player(0.0f, 0.0f, 3.0f) == 1);           /* 正中 */
+            CHECK(yk_fam_hit_player(14.9f, 0.0f, 3.0f) == 1);          /* 3.0 + 12.0 = 15.0 内 */
+            CHECK(yk_fam_hit_player(15.1f, 0.0f, 3.0f) == 0);          /* 刚好出界 */
+            CHECK(yk_fam_hit_player(10.0f, 10.0f, 3.0f) == 1);         /* √200 ≈ 14.1 < 15 */
+            CHECK(yk_fam_hit_player(11.0f, 11.0f, 3.0f) == 0);         /* √242 ≈ 15.6 > 15 */
+            CHECK(yk_fam_hit_player(1.0f, 1.0f, 0.0f) == 1);           /* 自机半径 0 也按 hurtbox 判 */
+            CHECK(yk_fam_hit_player(20.0f, 0.0f, 0.0f) == 0);
+            CHECK(yk_fam_hit_player(1.0f, 0.0f, -5.0f) == 1);          /* 负半径：仍按 hurtbox（r>0）*/
             }
             }
         }

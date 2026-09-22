@@ -1189,3 +1189,11 @@ int yk_night_text_glyphs(int32_t night, yk_gauge_glyph_t *out)
     }
     return n;
 }
+
+/* ★★★ 2026-09-22 夜（批次 3）：人侧撞到使魔 = 圆 vs 圆（一手两半径见 `youkai_core.h` 的同名小节）。*/
+int yk_fam_hit_player(float dx, float dy, float hit_r)
+{
+    float r = hit_r + YK_FAM_HIT_REACH;
+    if (r <= 0.0f) return 0;
+    return (dx * dx + dy * dy) <= r * r;
+}
