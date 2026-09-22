@@ -630,17 +630,24 @@ uint32_t yk_gauge_color(int gauge);
  *   `pos(32, 465)` → `posTime(40, 0, 32, 449, 0)` ⇒ **465 只是滑入动画的起点（在 480 高的屏外）**，
  *   停稳位置是 **449**。原来本卡写 465 ⇒ 槽条比两个图标/游标低 16 px（owner 报的「hud 不对」之一）。
  * 图标 x 由**限值**决定：`88 + limit·56/10000` ⇒ 本卡的 ±10000 给出 32 / 144（= 条的两端）。 */
+/* ★★ **全部输出都是 640 空间的（= 设计空间），不是表面 px** —— 2026-09-22 晚订正：
+ *   本卡的 HUD 四件 + 字形都是 TH08 `ascii.anm` 的脚本**逐条照抄**进来的，它们**没有 `resolutionMode(2)`**
+ *   ⇒ 引擎对这类 VM 的坐标按设计空间解释、绘制时乘 UI 倍率（2×）
+ *   （一手：`th18:0x4063e8` 读 `vm+0x538 & 0x1c00000` 选倍率、`0x406429` 起逐分量乘；调用点
+ *     `th18:0x481770` 就在绘制路径上，乘的正是 `vm+0x5f0` 那个实体坐标）。
+ *   ⇒ 往这类 VM 写位置必须写 640 空间值（= `表面 px × to640`），写表面 px 会**整块跑到屏外**。
+ *   （对照：`HUD-LAYOUT.md` §4.1b —— 写了 `resolutionMode(2)` 的脚本，1 单位 = 1 表面 px。）*/
 typedef struct {
-    float bar_x, bar_y;             /* 槽条 VM 位置（**表面 px**，块左下角为原点；VM 用 anchorTopLeft）*/
+    float bar_x, bar_y;             /* 槽条 VM 位置（**640 空间**，左上；VM 用 anchorTopLeft）*/
     float human_x, human_y;         /* 人间图标（同上，anchorTopLeft）*/
     float youkai_x, youkai_y;       /* 妖怪图标（同上，anchorTopLeft）*/
     float cursor_x, cursor_y;       /* 游标（同上，**锚点 = 心 ⇒ 这是中心点**）*/
-    float text_x640, text_y640;     /* 百分比数字的**基准点**（**640×480 空间**；逐字形的偏移见下）*/
+    float text_x640, text_y640;     /* 百分比数字的**基准点**（640 空间；逐字形的偏移见下）*/
 } yk_gauge_hud_t;
 
-/* `anchor[2]` = HUD 块的**左下角**（表面 px，= `ce_hud_slot_t` 的 x/y）；
- * `to640` = 表面→640 的比例（= `CE_HUD_SURFACE_TO_640`，TH18 是 0.5）。
- * 换算：表面偏移 = 640 空间偏移 × 2（= 1/to640）；块左下角 ⇔ 640 空间的 (32,481)。*/
+/* `anchor[2]` = HUD 块的**左下角**（**表面 px**，= `ce_hud_slot_t` 的 x/y）；
+ * `to640` = 表面→640 的比例（= `CE_HUD_SURFACE_TO_640`，TH18 是 0.5）⇒ 块左下角 ⇔ 640 空间的
+ * `(anchor*to640)`，它就是 TH08 的 (32,481)（该块按 TH08 的 (32,449..465) 定的）。*/
 void yk_gauge_hud(int gauge, const float anchor[2], float to640, yk_gauge_hud_t *out);
 
 /* ---- ★★ 人妖槽的**百分比数字**：逐字形布局（一手 `AsciiManager::DrawPercentage` `th08:0x405e10`）----

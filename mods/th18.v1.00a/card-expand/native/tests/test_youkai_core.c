@@ -841,33 +841,40 @@ int main(void)
     CHECK(yk_gauge_color(0) == 0xffffffu);
     CHECK(yk_gauge_color(-8000) == 0x7070ffu);      /* 极人优先于中人 */
     CHECK(yk_gauge_color(8000) == 0xff7070u);       /* 极妖优先于中妖 */
-    /* HUD 几何（一手 `AsciiManager`）：块左下角 = 640 空间的 (32,481)、表面 = 640 × 2。
-     * 锚点取 (257,924)（货架第一格）时逐项核。*/
+    /* HUD 几何（一手 `AsciiManager`）：**输出一律 640 空间**（这些 VM 的脚本没有 `resolutionMode`，
+     * 引擎按设计空间解释、绘制时 ×2；见 `youkai_core.h` 的注）。锚点 = 表面 (257,924) ⇒ 640 空间 (128.5,462)。*/
     {
         yk_gauge_hud_t h;
         float a[2];
+        const float ax = 257.0f * 0.5f, ay = 924.0f * 0.5f;         /* 128.5 / 462 */
         a[0] = 257.0f; a[1] = 924.0f;
         yk_gauge_hud(0, a, 0.5f, &h);
         /* ★ 2026-09-22 晚订正：槽条的停稳 y = **449**（`ascii.anm` script5 的 `posTime` 终点），
          * 465 只是滑入动画的起点 ⇒ 与两个图标同高（原来写 465 ⇒ 条比图标低 16 px）。*/
-        CHECK(h.bar_x == 257.0f && h.bar_y == 924.0f - 64.0f);      /* 槽条 128×16，左上 */
+        CHECK(h.bar_x == ax && h.bar_y == ay - 32.0f);              /* 槽条 128×16，左上 */
         CHECK(h.bar_y == h.human_y);                                /* ★ 条与图标同高（一手 449）*/
-        CHECK(h.human_x == 257.0f && h.human_y == 924.0f - 64.0f);  /* 人间图标在条左端（88−56−32=0） */
-        CHECK(h.youkai_x == 257.0f + 224.0f);                       /* 妖怪图标在条右端（88+56−32=112 → ×2） */
-        CHECK(h.cursor_x == 257.0f + 128.0f);                       /* g=0 ⇒ 96−32=64 → ×2 */
-        CHECK(h.cursor_y == 924.0f - 56.0f);
-        CHECK(h.text_x640 == 257.0f * 0.5f + 64.0f);
-        CHECK(h.text_y640 == 924.0f * 0.5f - 35.0f);
-        /* 满妖侧：游标走到条右端（96+56−32 = 120 → ×2 = 240）。*/
+        CHECK(h.human_x == ax && h.human_y == ay - 32.0f);          /* 人间图标在条左端（88−56−32=0） */
+        CHECK(h.youkai_x == ax + 112.0f);                           /* 妖怪图标在条右端（88+56−32=112） */
+        CHECK(h.cursor_x == ax + 64.0f);                            /* g=0 ⇒ 96−32=64 */
+        CHECK(h.cursor_y == ay - 28.0f);
+        CHECK(h.text_x640 == ax + 64.0f);
+        CHECK(h.text_y640 == ay - 35.0f);
+        /* 满妖侧：游标走到条右端（96+56−32 = 120）。*/
         yk_gauge_hud(10000, a, 0.5f, &h);
-        CHECK(h.cursor_x == 257.0f + 240.0f);
-        CHECK(h.text_x640 == 257.0f * 0.5f + 64.0f + 40.0f);
+        CHECK(h.cursor_x == ax + 120.0f);
+        CHECK(h.text_x640 == ax + 64.0f + 40.0f);
         /* 满人侧：游标走到条左端。*/
         yk_gauge_hud(-10000, a, 0.5f, &h);
-        CHECK(h.cursor_x == 257.0f + 16.0f);                        /* 96−56−32 = 8 → ×2 = 16 */
+        CHECK(h.cursor_x == ax + 8.0f);                             /* 96−56−32 = 8 */
         /* 越界输入按限值夹（引擎/卡状态给脏值时不跑到条外）。*/
         yk_gauge_hud(999999, a, 0.5f, &h);
-        CHECK(h.cursor_x == 257.0f + 240.0f);
+        CHECK(h.cursor_x == ax + 120.0f);
+        /* 锚点 NULL / to640 非法 ⇒ 用默认比例、锚点当 0（不崩、不产生 NaN 之外的怪值）。*/
+        yk_gauge_hud(0, 0, 0.5f, &h);
+        CHECK(h.bar_x == 0.0f && h.bar_y == -(481.0f - 449.0f));
+        yk_gauge_hud(0, a, 0.0f, &h);
+        CHECK(h.bar_x == 128.5f);
+        yk_gauge_hud(0, a, 0.5f, 0);                                /* out = NULL：什么都不做 */
     }
 
     /* ============ ★★ 人妖槽百分比数字的字形布局（一手 `th08:0x405e10`）============ */

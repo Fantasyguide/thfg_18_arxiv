@@ -775,24 +775,26 @@ void yk_gauge_hud(int gauge, const float anchor[2], float to640, yk_gauge_hud_t 
      *   表面偏移 x = (X640 − 32) × (1/to640)、y = (481 − Y640) × (1/to640)。
      * ⚠ 图标 x 用**限值**算：`88 + limit·56/10000`（`AsciiManager::InitializeVms`）——
      *   本卡是 ±10000 ⇒ 恰好落在条的两端（32 / 144），与一手数值一致。*/
-    float k, ax, ay, g;
+    float ax, ay, g;
     int v;
     if (!out) return;
-    k = (to640 > 0.0f) ? (1.0f / to640) : 2.0f;       /* 表面 px 每 640 空间 px（TH18 = 2）*/
-    ax = anchor ? anchor[0] : 0.0f;
-    ay = anchor ? anchor[1] : 0.0f;
+    /* ★ 2026-09-22 晚：本函数**全部输出 640 空间**（这些 VM 的脚本没有 `resolutionMode`，见 .h 的注）
+     * ⇒ 先把表面 px 的锚点折成 640 空间，后续偏移一律用 640 空间的字面量。*/
+    if (!(to640 > 0.0f)) to640 = 0.5f;   /* = `CE_HUD_SURFACE_TO_640`（纯逻辑层不引 sdk.h）*/
+    ax = (anchor ? anchor[0] : 0.0f) * to640;
+    ay = (anchor ? anchor[1] : 0.0f) * to640;
     v = yk_gauge_clamp(gauge);
     g = (float)v / (float)YK_GAUGE_SPAN;              /* −1..+1，TH08 是 float 除法（不是整数取整）*/
-    out->bar_x = ax + (32.0f - 32.0f) * k;
-    out->bar_y = ay - (481.0f - 449.0f) * k;          /* ★ 停稳位置 = 449（465 只是滑入起点；见 .h 的注）*/
-    out->human_x = ax + ((88.0f + (float)YK_GAUGE_HUMAN_LIMIT * 56.0f / 10000.0f) - 32.0f) * k;
-    out->human_y = ay - (481.0f - 449.0f) * k;
-    out->youkai_x = ax + ((88.0f + (float)YK_GAUGE_YOUKAI_LIMIT * 56.0f / 10000.0f) - 32.0f) * k;
+    out->bar_x = ax + (32.0f - 32.0f);
+    out->bar_y = ay - (481.0f - 449.0f);              /* ★ 停稳位置 = 449（465 只是滑入起点；见 .h 的注）*/
+    out->human_x = ax + ((88.0f + (float)YK_GAUGE_HUMAN_LIMIT * 56.0f / 10000.0f) - 32.0f);
+    out->human_y = ay - (481.0f - 449.0f);
+    out->youkai_x = ax + ((88.0f + (float)YK_GAUGE_YOUKAI_LIMIT * 56.0f / 10000.0f) - 32.0f);
     out->youkai_y = out->human_y;
-    out->cursor_x = ax + ((96.0f + g * 56.0f) - 32.0f) * k;   /* 112 / 2 = 56 */
-    out->cursor_y = ay - (481.0f - 453.0f) * k;               /* 游标锚点 = 心 ⇒ 这是中心 */
-    out->text_x640 = (ax * to640) + (64.0f + g * 40.0f);      /* 80 / 2 = 40；96 − 32 = 64 */
-    out->text_y640 = (ay * to640) - (481.0f - 446.0f);        /* 游标 y − 7 = 446（640 空间）*/
+    out->cursor_x = ax + ((96.0f + g * 56.0f) - 32.0f);   /* 112 / 2 = 56 */
+    out->cursor_y = ay - (481.0f - 453.0f);               /* 游标锚点 = 心 ⇒ 这是中心 */
+    out->text_x640 = ax + (64.0f + g * 40.0f);            /* 80 / 2 = 40；96 − 32 = 64 */
+    out->text_y640 = ay - (481.0f - 446.0f);              /* 游标 y − 7 = 446（640 空间）*/
 }
 
 /* ---------------------------------------- 人妖槽的百分比数字：逐字形布局（`th08:0x405e10`）
