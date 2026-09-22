@@ -113,11 +113,12 @@
   ⇒ sprite **479**；脚本 **309**（`CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_RING`）。
   它是**单图行、不是图集 entry** ⇒ 不吃 `ATLAS_YK_FAM` 那一段的画布，也不改 `abcard.anm` entry 数
   （本表的「新图集 entry 必须具名出现」这条由上面那条单图行满足；`capcheck` 实跑仍全绿）。
-- **运行时**：每个使魔**多一支环 VM** ⇒ 我们的 anm VM 峰值从 ≤32（使魔本体）涨到 **≤64**
-  （`YK_FAM_MAX` = 32，环与本体同生同死：`youkai.c` 的 `yk_fam_vm_spawn/follow/kill/prune`）。
-  引擎的 ANM VM 池不是本表里那种「有界且满了会静默改行为」的定长数组（它是链表 + id 复用）
-  ⇒ 这一条**不进**上表的容量行，只在这里具名登记；实跑判据 = 屏上环数应当恰好等于使魔数
-  （少 = 环 VM 起不出来，日志 `youkai: familiar follow-VM spawn FAILED` 同族）。
+- **运行时（★ 2026-09-22 夜 owner 二次订正后）**：环**不再常驻在使魔身上** —— 它是**切换那一下的
+  短命特效**（`youkai.c` 的 `yk_ring_blink` / `yk_ring_tick`，池 `YK_RING_MAX 4`，存活
+  `YK_RING_LIFE_FRAMES` = 14 帧后发 interrupt 3，脚本再淡出 10 帧自删）⇒ 常驻 VM 峰值**回到 ≤32**
+  （只有使魔本体）。引擎的 ANM VM 池不是本表那种「有界且满了会静默改行为」的定长数组
+  ⇒ 这一条**不进**上表的容量行；实跑判据 = 按 Shift 时**使魔位置各闪一圈、很快消失**，
+  而不是使魔身上一直挂着环（起不出来 = 日志 `youkai: switch ring VM spawn FAILED`）。
 - 一手：TH08 建使魔时 `AllocEffectSlot(0x20, …)` → 模板表 `0x4c6d30[0x20]` = `etama.anm` script48
   （`th08:0x41b003` / `:0x41e589`）；人/妖 = `SetInterrupt(环, IsYoukai() ? 2 : 1)`。
 

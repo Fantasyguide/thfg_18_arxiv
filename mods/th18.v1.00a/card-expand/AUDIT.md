@@ -20041,3 +20041,50 @@ type 1 的来路要先 grep `push 1` + `push <type>` 的调用点上下文）。
 - 类型全集（社区枚举 `ItemManager.hpp:8-20` 与 `thanm` 读出的脚本号逐条一致）已写进
   `engine/item/th08/01-time-orbs.md` §2.0；**建议不做**（我们卡里没有 TH08 的 P 点/点道具体系，
   没有可降格的对象）—— owner 答复原稿在 `SINGLE-CARD-TEST.md` 的「#24 答案」。
+
+
+## §BE 详录 #60（2026-09-22 夜）：108 的 #12 **环的形态订正** —— owner 口径覆盖一手（旧的「常驻环」改「切换那一下的短命环」）
+
+**owner 口径（逐字）**：「它不是一个固定的环，而是在切换时候的一个特效环，只会存在一小段时间 / 你可能扫错了」。
+
+**旧实现错在哪（一句）**：我们把 TH08 那支**挂在使魔身上、与使魔同生**的常驻环（`etama.anm` script48）
+当成了「切换特效」，于是**使魔身上一直挂着一圈环**、只在聚焦位变化时换 `interrupt`。
+
+**重扫（一手，逐条给地址）**
+
+| # | 结论 | 一手 |
+| --- | --- | --- |
+| 1 | 环 = `etama.anm` script48（sprite197 = `etama2.png (193,113,62,62)` 空心环，自转 −3°/帧），**不是**爆闪那几张（sprite193 是 30×30 **实心圆盘**，逐像素量过） | `thanm -l 8 -m v2.anmm etama.anm`；模板表 `0x4c6d30[0x20]` |
+| 2 | 模板槽 **0x20**；建使魔时分配：`0x41b003` 门 `enemy+0x53c8 == 0` → `0x41b01d push 0x20` + `0x41b024 call 0x425b70` → 句柄存 **`enemy+0x53c8`**（`0x41b02c`）；全 exe 对 `+0x53c8` 的**写点只有 3 处**（op90/91/92 各一）| `th08:0x41b003`–`0x41b02c`、`0x41b1b3`–`0x41b1dc`、`0x41b3dd` 一族 |
+| 3 | 出生**立刻**发色：`0x41b037 call 0x40bc40`（`Player::is_youkai`）→ `setne/inc` ⇒ **1 或 2** → `0x41b04e call 0x407120`（`AnmVm::SetInterrupt`）| `th08:0x41b032`–`0x41b04e` |
+| 4 | 环**跟着使魔**：位置源 `&enemy+0x2d34`（分配时传的指针，不是爆闪那支的 `+0x2d88`）；`[enemy+0x2e0c] & 1` 时把环的角速度取反（`fld [ring+0x14] / fchs`）| `th08:0x41b0a6`–`0x41b0ba` |
+| 5 | Shift 那一下 `FUN_0042c420` 只**重发** interrupt（人→妖 `0x42c482` 发 2 / 妖→人 `0x42c522` 发 1）+ 爆闪（script59/60）+ 音效；**不重建环** | `th08:0x42c420` |
+| 6 | 环的寿命：脚本主路径 `interruptLabel(1/2)` = `colorTime/alphaTime/scaleTime(8,…)` 后 `stop()`（**不自删**）；**只有 `interruptLabel(3)`** 是 `alphaTime(10,0,0)+scaleTime(10,0,0)` → `+10: delete()` | `etama.anm` script48 正文 |
+| 7 | ⇒ **一手形态 = 常驻环**；owner 要的是「切换那一下的短命环」 ⇒ 本条按**口径覆盖一手**执行，登记 `TUNING.md` §2.0ze | — |
+
+**改了什么**
+
+| 文件 | 改了什么 |
+| --- | --- |
+| `native/cards/youkai.c` | 去掉常驻环（`yk_fam_vm_t` 两个字段 + spawn/follow/kill 的环逻辑，`_Static_assert` 20 → 12）；新增短命环池与 `yk_ring_blink/_tick/_kill_all`；接线与收尾见下 |
+| `native/tools/verify.py` | fail 关键字 `familiar ring VM spawn FAILED` → `switch ring VM spawn FAILED` |
+| `CAPACITY.md` | 环的具名登记改成「短命环」（常驻 VM 峰值回到 ≤32） |
+| `TUNING.md` | 新增 §2.0ze（一手表 + `❓ 自定` #20/#21：形态覆盖 + 存活 14 帧） |
+| `SINGLE-CARD-TEST.md` | #12 行 + 「#12 环的形态订正」小节（含「实跑该看到什么」） |
+
+**卡侧的接线与收尾（AUDIT 里写清，免得与「常驻环」的旧描述打架）**
+
+- **起环**：人→妖那一帧在**第一只重建出来的使魔**位置（`2` = 妖侧蓝，与 #22 的爆闪同一处）；
+  妖→人那一帧在**在场各一只使魔**的位置（`1` = 人侧紫，最多 `YK_RING_MAX 4` 只）。
+- **寿命**：`yk_ring_tick` 每帧计时，`YK_RING_LIFE_FRAMES = 8 + 6 = 14` 帧后发 `interrupt 3`
+  ⇒ 脚本淡出 10 帧 + `delete()` ⇒ 总可见 ≈ 24 帧，之后**不跟踪**（自删）。
+- **收尾**：`on_delete`（商店里删卡）与 `on_run_reset`（换关）各 `yk_ring_kill_all()`。
+  ⚠ **刻意不放进 `yk_drop_all`**：松 Shift 时 `yk_drop_all` 就跑在「刚起环」之后，放进去会把刚闪的那一圈立刻收掉。
+- **池满**（一次切换 >4 只使魔）⇒ 多出来的不闪（纯观感，不影响机制）；起失败只记一行
+  `youkai: switch ring VM spawn FAILED`（并在 ledger 里累计总数）。
+
+**怎么验证的**：`make check` **rc=0**（`x87 = 0`、`test_youkai_core` 4502/0、sites 双面、`sitecheck --all`、
+`contract_check`、`gen_drift`、`capcheck`、`sht-verify`、`anm-verify`、`snd-check`、`dllx87`、`dllverify`、
+`engine_abi_check`）；`python3 tooling/check-docs.py` 全部通过。
+
+**本批没改** `pl0X.sht` / `ability.anm`（环脚本 309 一个字没动）/ wav / 站点 —— **只改了 DLL 里的卡代码**。

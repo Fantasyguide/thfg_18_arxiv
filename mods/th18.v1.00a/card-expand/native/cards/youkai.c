@@ -436,11 +436,6 @@ typedef struct {
     uint32_t fam_id;   /* 0 = 空槽 */
     uint32_t anm_id;   /* 0 = 没有 VM（起失败 / 已被引擎销毁）*/
     int32_t  variant;  /* 0..3：自愈重起时要按同一套脚本再起一个 */
-    /* ★★★ 2026-09-22（P4）：**魔法阵环**（TH08 `etama.anm` script48 那条链）的句柄与状态。
-     * 环与本体**同生同死**（spawn/follow/kill/prune 四条路一起走），所以放在同一条记录里。
-     * `ring_state` = 上一次发过的 interrupt（0 = 还没发过 ⇒ 出生时补发 2 = 妖侧蓝环）。*/
-    uint32_t ring_id;  /* 0 = 没有环 VM */
-    int32_t  ring_state;/* 最近一次发的环 interrupt（1 = 人侧紫 / 2 = 妖侧蓝）*/
 } yk_fam_vm_t;
 static yk_fam_vm_t s_fam_vm[YK_FAM_MAX];
 
@@ -457,10 +452,8 @@ static void yk_fam_vm_kill(yk_fam_vm_t *v)
 {
     if (!v) return;
     if (v->anm_id) { ce_anm_delete(v->anm_id); v->anm_id = 0; }
-    if (v->ring_id) { ce_anm_delete(v->ring_id); v->ring_id = 0; }   /* ★ P4：环与本体同生同死 */
     v->fam_id = 0;
     v->variant = 0;
-    v->ring_state = 0;
 }
 
 static void yk_fam_vm_kill_id(uint32_t fam_id) { yk_fam_vm_kill(yk_fam_vm_find(fam_id)); }
@@ -559,28 +552,8 @@ static void __attribute__((noinline)) yk_fam_vm_check(void)
     v->anm_id = id;
     v->variant = variant;
     ce_anm_set_pos(id, x, y, 0.0f);
-    /* ★★★ 2026-09-22（P4）：**每一个使魔都带一个魔法阵环**（TH08 的行为：环在使魔的一生里
-     * 一直存在，Shift 只换它的 interrupt）。环脚本出生是 `scale(0,0); alpha(0)`（不可见）
-     * ⇒ 必须**立刻发一次 interrupt**，否则什么都看不到：TH08 那边就是
-     * `AllocEffectSlot(0x20,…)` 紧接着 `SetInterrupt(环, IsYoukai() ? 2 : 1)`（`th08:0x41b003`）。
-     * 我们的使魔只在低速（= 妖侧）存在 ⇒ 出生那一刻恒发 **2 = 蓝 (96,96,255) α200 λ0.8**；
-     * 人侧那支（1 = 紫 α255 λ0.5）留给「使魔在人侧也活着」的情形 —— `yk_fam_vm_follow` 每帧
-     * 按聚焦位比对，变了才补发（见那里的注）。*/
-    /* ⚠ 自愈重起时可能还攥着一支旧的环句柄（本体 VM 死了但环还活着）⇒ 先收掉，否则那条环永久留在场上。*/
-    if (v->ring_id) { ce_anm_delete(v->ring_id); v->ring_id = 0; }
-    v->ring_id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_RING,
-                              YK_FAM_ANM_LAYER);
-    v->ring_state = 0;
-    if (v->ring_id) {
-        ce_anm_set_pos(v->ring_id, x, y, 0.0f);
-        ce_anm_interrupt(v->ring_id, 2);
-        v->ring_state = 2;
-    } else {
-        /* 环起不出来只会「少一圈魔法阵」，不影响本体与机制 ⇒ 记一行就够（实跑判据）。*/
-        ce_log("youkai: familiar ring VM spawn FAILED (fam %u, script %d) - the familiar body is "
-               "there but its TH08 magic circle (etama.anm script48) is missing",
-               fam_id, (int)CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_RING);
-    }
+    /* ★★★ 2026-09-22 夜（owner 二次订正）：**使魔身上不再挂常驻环** —— 环改成「切换那一下的
+     * 短命特效」（`yk_ring_blink`，见上面那一段的长注）。使魔本体这一层只剩一个跟随 VM。*/
 }
 
 /* 每帧跟随：位置 = 使魔**实体**的 `final_pos`（`CE_ENEMY_POS_X/Y` = spec §3.5 钉的那两格；
@@ -602,23 +575,8 @@ static void yk_fam_vm_follow(uint32_t fam_id, int variant, const uint8_t *f)
     if (!ce_anm_set_pos(v->anm_id, *(const float *)(f + CE_ENEMY_POS_X),
                                     *(const float *)(f + CE_ENEMY_POS_Y), 0.0f))
         v->anm_id = 0;                                     /* 句柄作废 ⇒ 下一帧自愈重起 */
-    /* ★★★ 2026-09-22（P4）：环 —— ① 同帧钉到同一坐标；② **聚焦位一变就换 interrupt**
-     * （TH08：`SetInterrupt(环, IsYoukai() ? 2 : 1)`，一手见 `youkai.c` 的环那一节与生成器文件头）。
-     * 环句柄没了就清 0（`ring_state` 也归 0）⇒ 下一帧按同一个 `fam_id` 走 spawn 的环分支重建。*/
-    if (v->ring_id && !ce_anm_get_vm(v->ring_id)) { v->ring_id = 0; v->ring_state = 0; }
-    if (v->ring_id) {
-        int want = CE_PLAYER_FOCUSED() ? 2 : 1;
-        if (v->ring_state != want) {
-            ce_anm_interrupt(v->ring_id, want);
-            v->ring_state = want;
-        }
-        if (!ce_anm_set_pos(v->ring_id, *(const float *)(f + CE_ENEMY_POS_X),
-                                        *(const float *)(f + CE_ENEMY_POS_Y), 0.0f)) {
-            v->ring_id = 0;
-            v->ring_state = 0;
-        }
-    }
 }
+
 
 /* ============ ★★★ #22 的另一半：Shift 那一下的**爆闪**（一手 `th08:0x42c420` 两支）=================
  * 一手：`FUN_0042c420` 里两支各起一支特效（都在**使魔身上** `&enemy+0x2d88`）：
@@ -636,6 +594,80 @@ static void yk_flash_spawn(int script, float x, float y)
     uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(), script, YK_FAM_ANM_LAYER);
     if (id) ce_anm_set_pos(id, x, y, 0.0f);
     /* 起不出来只影响观感（10 帧的一闪）⇒ 不记日志（每关都有若干次，会刷屏）。*/
+}
+
+/* ============ ★★★ 2026-09-22 夜（owner **二次订正**）：切换那一下的**短命魔法阵环** =============
+ * owner 原话：「**它不是一个固定的环，而是在切换时候的一个特效环，只会存在一小段时间 / 你可能扫错了**」。
+ *
+ * **一手（先说清旧实现站在什么上，免得后人以为我们瞎改）**：TH08 的使魔环（`etama.anm` script48，
+ *   sprite197 = `etama2.png (193,113,62,62)` 的**空心环**）确实是**挂在使魔身上、与使魔同生**的：
+ *   · 建使魔时 `th08:0x41b003` 门 `enemy+0x53c8 == 0` → `0x41b01d push 0x20` + `call 0x425b70`（第三个分配器）
+ *     → 句柄存 `enemy+0x53c8`（`0x41b02c`），紧接着 `0x41b04e SetInterrupt(环, Player::is_youkai()?2:1)`；
+ *   · Shift 时 `FUN_0042c420` 只**重发** interrupt（人→妖 `0x42c482` 发 2、妖→人 `0x42c522` 发 1）+ 爆闪 + 音效；
+ *   · 脚本**主路径不自删**：`interruptLabel(1/2)` 淡入 8 帧 → `stop()`；只有 **interrupt 3**
+ *     是「淡出 10 帧 + `delete()`」（那是使魔死亡/回收那条路）。
+ *   ⇒ 一手里它是**常驻环**（= 我们 P4 那一版做的形态）。
+ *
+ * ⇒ **本实现 = owner 口径覆盖一手**（登记 `TUNING.md` §2.0ze 的 `❓ 自定`）：按 owner 要的**形态**做 ——
+ *   **切换那一下**在**每只当时在场的使魔**位置**起一支新的环**（人→妖 = interrupt 2 蓝 / 妖→人 = 1 紫，
+ *   沿用一手 `0x41b04e` 的取色法），保持 `YK_RING_LIFE_FRAMES` 帧后发 **interrupt 3**
+ *   ⇒ 脚本自己淡出 10 帧再 `delete()` ⇒ **「闪一圈、很快消失」**，场上**不再有常驻环**。
+ *   ⚠ 环与爆闪一样是**纯观感**：起不出来只记一行，不动任何机制。*/
+#define YK_RING_MAX         4      /* 一次切换最多起 4 支（一闪而过；多出来的丢弃）*/
+#define YK_RING_HOLD_FRAMES 6      /* 淡入 8 帧（一手 script48 的 `alphaTime(8,0,…)`）+ 保持 6 帧 */
+#define YK_RING_LIFE_FRAMES (8 + YK_RING_HOLD_FRAMES)
+
+typedef struct { uint32_t id; uint8_t age; } yk_ring_t;
+static yk_ring_t s_ring[YK_RING_MAX];
+static unsigned  s_ring_failed;     /* 起失败的支数（诊断；进 ledger 那一行 —— 不单独刷屏）*/
+static uint8_t   s_ring_logged;     /* 「起失败」只记一行 */
+
+/* 起一支短命环（`variant`：1 = 人侧紫 / 2 = 妖侧蓝 —— 一手 `0x41b04e` 的 `IsYoukai()?2:1`）。*/
+static void yk_ring_blink(float x, float y, int variant)
+{
+    unsigned i;
+    uint32_t id;
+    for (i = 0; i < YK_RING_MAX; ++i) if (!s_ring[i].id) break;
+    if (i == YK_RING_MAX) return;                      /* 池满 ⇒ 这一次少闪几圈（纯观感）*/
+    id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_RING,
+                      YK_FAM_ANM_LAYER);
+    if (!id) {
+        ++s_ring_failed;
+        if (!s_ring_logged) {
+            s_ring_logged = 1;
+            ce_log("youkai: switch ring VM spawn FAILED (script %d) - the Shift magic circle is "
+                   "missing (cosmetic only)", (int)CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_RING);
+        }
+        return;
+    }
+    s_ring[i].id = id;
+    s_ring[i].age = 0;
+    ce_anm_set_pos(id, x, y, 0.0f);
+    ce_anm_interrupt(id, variant);                     /* 出生是 `scale(0) alpha(0)` ⇒ 必须立刻发一次 */
+}
+
+/* 每帧：计时；到点发 interrupt 3（脚本淡出 10 帧 + `delete()`）⇒ 之后不跟踪（自删）。*/
+static void yk_ring_tick(void)
+{
+    unsigned i;
+    for (i = 0; i < YK_RING_MAX; ++i) {
+        if (!s_ring[i].id) continue;
+        if (!ce_anm_get_vm(s_ring[i].id)) { s_ring[i].id = 0; continue; }   /* 引擎清过 ⇒ 丢弃 */
+        if (++s_ring[i].age >= YK_RING_LIFE_FRAMES) {
+            ce_anm_interrupt(s_ring[i].id, 3);
+            s_ring[i].id = 0;                          /* 剩下 10 帧淡出由脚本自己走完 */
+        }
+    }
+}
+
+/* 收干净：**只有「卡的 tick 会停」的两条路**需要它（`on_delete` 商店里删卡 / `on_run_reset` 换关）。
+ * ⚠ **不要**放进 `yk_drop_all` —— 松 Shift 时 drop_all 就跑在「刚起环」之后，会把刚闪的那一圈立刻收掉。*/
+static void yk_ring_kill_all(void)
+{
+    unsigned i;
+    for (i = 0; i < YK_RING_MAX; ++i) {
+        if (s_ring[i].id) { ce_anm_delete(s_ring[i].id); s_ring[i].id = 0; }
+    }
 }
 
 /* ============ ★★★ 2026-09-22 夜（owner #23）：**本体**的 Shift 光环 + 两下**本体**爆闪 ==============
@@ -718,10 +750,12 @@ static void yk_run_action(yk_card_t *s, const yk_action_t *act)   /* s 可为 NU
         /* ★ 壳建好的**那一刻**起跟随 VM（脚本按发射口槽选：槽 i → s53+i 那一套四色之一）。
          * ⚠ 建 VM 只能在 tick / 帧末（要分配），绝不在死亡栈上 —— 这条路径是 `on_tick_2`，合法。*/
         yk_fam_vm_spawn(fid, yk_fam_variant(act->slot), act->x, act->y);
-        /* ★ #22：人→妖那一帧的爆闪（310）—— 起在**第一只**建出来的使魔身上（一手 script59）。*/
+        /* ★ #22：人→妖那一帧的爆闪（310）—— 起在**第一只**建出来的使魔身上（一手 script59）。
+         * ★ owner 二次订正：同一下还要起一支**短命环**（一手里环是常驻的，owner 要切换那一下的形态）。*/
         if (s && s->flash_pending) {
             s->flash_pending = 0;
             yk_flash_spawn(CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_FLASH59, act->x, act->y);
+            yk_ring_blink(act->x, act->y, 2);          /* 2 = 妖侧蓝（一手 `0x41b04e`）*/
         }
         if (s) ++s->spawns;
     } else if (act->kind == YK_ACT_WITHDRAW) {
@@ -2024,6 +2058,7 @@ static void on_run_reset(ce_card_t *c)
         ce_log("youkai: run done - %u familiars spawned, %u killed, %u withdrew, %u silent, "
                "%u transfer damage, %u dropped (no boss)",
                s->spawns, s->broken, s->lost, s->silent, s->transferred, s->dropped);
+    yk_ring_kill_all();                                  /* ★ 切换环：换关时 tick 会停 ⇒ 这里直接收 */
     (void)yk_deathbomb_tint();                           /* ★ #26：换关也要把染色还回去（先还原）*/
     yk_drop_all(s, 0);                                   /* 局末：不留使魔 */
     if (s) yk_option_release(c, s);
@@ -2040,6 +2075,7 @@ static void on_delete(ce_card_t *c)
            "(%u spawned, %u killed, %u transfer damage this run)",
            s ? s->spawns : 0, s ? s->broken : 0, s ? s->transferred : 0);
     yk_drop_all(s, 0);
+    yk_ring_kill_all();                                  /* ★ 切换环：删卡那一刻 tick 停着 ⇒ 直接收 */
 #if YK_DEATHBOMB_RED_ENABLE
     /* ★ #26：删卡那一刻 tick 全停 ⇒ 这里兜一次「把颜色还回去」（否则商店里那些弹会一直红）。*/
     if (s_tint_n) {
@@ -2558,6 +2594,9 @@ static int on_tick_2(ce_card_t *c)
     if ((++s_ledger_frame % 600u) == 0u && (s->spawns || s->broken || s->lost || s->silent))
         ce_log("youkai: ledger - %u spawned, %u killed, %u withdrew, %u silent, %u dropped",
                s->spawns, s->broken, s->lost, s->silent, s->dropped);
+    if (s_ring_failed && (s_ledger_frame % 600u) == 0u)
+        ce_log("youkai: switch ring VM spawn FAILED %u time(s) total (cosmetic only - the Shift "
+               "magic circle was missing)", s_ring_failed);
     /* ★ 人妖槽 / 永点的账（每 ~600 帧一行）：实跑要看见的四件 —— 槽值、刻符收了几颗、
      * PIV 当前值、池里还剩几颗活着。VERIFY 的判据就取这一行（见 `SINGLE-CARD-TEST.md` §th08）。*/
     if ((s_ledger_frame % 600u) == 0u && (s->orb_taken || s->gauge || s->piv))
@@ -2654,6 +2693,16 @@ static int on_tick_2(ce_card_t *c)
         } else {
             /* ★ #23：妖→人那一下（一手 `0x44b3af SpawnEffect(0x1c, …, 0x808080ff)` = 我们的 314）。*/
             if (flash_ok) yk_flash_spawn(CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_BODYFLASH57, px, py);
+            /* ★ owner 二次订正：使魔**撤走那一刻**在它们各自的位置上闪一圈魔法阵
+             *（=`「随着 shift 消失变成魔法阵」那条 #12 的形态）；环短命、自删，不留常驻环。*/
+            {
+                unsigned fi, nring = 0;
+                for (fi = 0; fi < YK_FAM_MAX && nring < YK_RING_MAX; ++fi)
+                    if (s_map.e[fi].enemy_id && s_map.e[fi].fam_id) {
+                        yk_ring_blink(s_map.e[fi].x, s_map.e[fi].y, 1);   /* 1 = 人侧紫 */
+                        ++nring;
+                    }
+            }
             yk_aura_kill(s);                      /* 光环收到 interrupt 1（30 帧淡出后自删）*/
             if (yk_map_fam_count(&s_map)) {
                 unsigned fi;
@@ -2674,6 +2723,7 @@ static int on_tick_2(ce_card_t *c)
      * 就是每帧读自机坐标）+ 自愈。`focus_age` = 上一次切换之后过了几帧（一手 `player+8` 的口径）。*/
     if (s->focus_age < 60000) ++s->focus_age;
     yk_aura_tick(s, *(const float *)(CE_PLAYER() + CE_PLAYER_X), *(const float *)(CE_PLAYER() + CE_PLAYER_Y));
+    yk_ring_tick();                       /* ★ 切换环的计时（到点自己发 interrupt 3 淡出）*/
     /* ★ #26 风味选项：决死窗口里全屏敌弹变红（判据 = 既有原语 `player+0x476ac == 4`）。*/
     (void)yk_deathbomb_tint();
     yk_gauge_tick(s, focused);
@@ -2816,7 +2866,9 @@ _Static_assert(YK_OPTION_MAX >= 4, "YK_OPTION_MAX must cover the biggest row of 
  * 钉住记录的大小是为了让「加字段 = 表变大」这件事**在编译期**被看见（12 = 3 × u32/i32，无 padding）。*/
 /* P4 让记录从 12 B 长到 20 B（+ 环句柄 + 环 interrupt 状态）⇒ 32 × 20 = 640 B 的文件级静态表。
  * 钉住大小是为了让「加字段 = 表变大」这件事在编译期被看见。*/
-_Static_assert(sizeof(yk_fam_vm_t) == 20, "familiar follow-VM record grew (table is 32 of these)");
+/* ★ 2026-09-22 夜（owner 二次订正）后记录 = 12 B（`fam_id`/`anm_id`/`variant`）：常驻环的两个字段
+ * 随「环改成切换那一下的短命特效」一起去掉了 ⇒ 表从 32×20 B 降到 32×12 B。*/
+_Static_assert(sizeof(yk_fam_vm_t) == 12, "familiar follow-VM record changed size");
 
 /* ============================== ★ 占位 / TODO 清单 ==============================
  * 每一条都「不自己发明数值」，取值一律是**不做**这个语义：

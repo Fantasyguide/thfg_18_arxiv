@@ -62,8 +62,9 @@ PRIMS = {
         ],
         fail=[(r"youkai: familiar spawn FAILED", "创建失败（池满 / 坐标非法）"),
               (r"youkai: familiar follow-VM table full", "跟随 VM 表满（画面会少使魔）"),
-              # ★ 2026-09-22（P4）：使魔的**魔法阵环**（TH08 `etama.anm` script48）起不出来
-              (r"youkai: familiar ring VM spawn FAILED", "魔法阵环没装上（使魔少了那一圈）"),
+              # ★ 2026-09-22 夜（owner 二次订正）：**切换那一下的短命魔法阵环**（TH08 `etama.anm` script48）
+              #   起不出来（观感项；现在它是「闪一圈就自删」，不再常驻在使魔身上）
+              (r"youkai: switch ring VM spawn FAILED", "切换环没装上（Shift 那一下少闪一圈）"),
               # ★ 2026-09-22 夜（#23）：**本体**光环起不出来（画面少了那一圈，机制不受影响）
               (r"youkai: body Shift aura VM spawn FAILED", "本体 Shift 光环没装上（自机身上少一圈）")],
     ),
