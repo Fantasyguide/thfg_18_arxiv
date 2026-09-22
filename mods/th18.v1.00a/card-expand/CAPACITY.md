@@ -72,7 +72,7 @@
 | `ability.anm` sprite 表 | **无上限**：sprite 号是 dword（`vm+0x24`），解析器 `0x477b00` 按 `idx*0x44` 取 | 不适用（当成 255 上限是**旧的误读**） | 435 / 无上限 | `check_ability_anm_bounds.py`（脚本引用的 sprite 必须存在） | 不适用 | ✅ |
 | `ability.anm` 脚本表 | **无上限**：脚本号是 dword（`anm+0x120` 指针表 / `anm+0x10c` 脚本体） | 不适用 | 211 / 无上限 | `make anm-verify`（脚本号必须连续、`@NAME@` 必须都能解析） | 不适用 | ✅ |
 | `pl0X.anm` entry（自机弹贴图） | 同 256 | `build_player_anm.py` 只追加（原生部分逐字节不变，`--verify-only` 回读校验） | 18 / 256，余量 238（93.0%） | `check_player_anm_bounds.py`（sprite 越界 + sht 的 anm/hit_fx 必须存在） | 同一份 anm 里继续并 entry（117 的兽灵已经这么做） | ✅ |
-| shooterset 组数组（`pl0X.sht` 影像 `+0xe0`） | **96 格宣布可用**（数组区 `[+0xe0,0x4e0)` **预留 256 格**，末尾正好顶到数据区）；计数 = 影像头 `+0x02` 的 u16 | **2026-09-14 已扩容**（`AUDIT.md` §CQ / `NEXT.md` §1w）：数组区原地长到预留格数、数据区基点 `0x180 → 0x4e0`，exe 侧 **1 条** 6 字节等长 binhack | **55 / 96，余量 41 格（42.7%）**（2026-09-21 起：108 妖侧逐角色×逐档占 `0x48`–`0x56` 共 **15** 格 `CE_SHT_SET_YOUKAI_{M,R,S}0..4`；名单见 `NEXT.md` 的「SHT 容量扩容计划」段）| `sht-verify` + **读者普查**（15 处引用 = 14 读者 + 1 加载器，§4）+ `capcheck` 的 `sht_ids.h ↔ patch ↔ 恒等式` 三方对账 | 再要更多格：抬 `CE_SHT_SLOTS`（到 `0xff` 为止，**只改文件**）| ✅ |
+| shooterset 组数组（`pl0X.sht` 影像 `+0xe0`） | **96 格宣布可用**（数组区 `[+0xe0,0x4e0)` **预留 256 格**，末尾正好顶到数据区）；计数 = 影像头 `+0x02` 的 u16 | **2026-09-14 已扩容**（`AUDIT.md` §CQ / `NEXT.md` §1w）：数组区原地长到预留格数、数据区基点 `0x180 → 0x4e0`，exe 侧 **1 条** 6 字节等长 binhack | **55 / 96，余量 41 格（42.7%）**（2026-09-21 起：108 妖侧逐角色×逐档占 `0x48`–`0x56` 共 **15** 格；逐宏名见本表下方「shooterset 组的具名清单」）| `sht-verify` + **读者普查**（15 处引用 = 14 读者 + 1 加载器，§4）+ `capcheck` 的 `sht_ids.h ↔ patch ↔ 恒等式` 三方对账 | 再要更多格：抬 `CE_SHT_SLOTS`（到 `0xff` 为止，**只改文件**）| ✅ |
 | 卡本地池 `TRANCE_SPIRIT_POOL` | 我们自己定的（`trance_core.h`） | 改常量即可 —— `_Static_assert` 会拦住静态区超限 | 运行期才知道 / 128 | 运行时计数 `s_stat_spirit_dropped` | 满 → 丢尾并计数（汇总日志 `pool dropped`） | ✅ |
 | 卡本地池 `TRANCE_POPUP_MAX` | 我们自己定的（`trance.c`） | 同上 | 运行期才知道 / 24 | 运行时计数 `s_popup_overflow` | 满 → 顶掉最老的一支并计数（`popup overflow`） | ✅ |
 | 卡本地池 `TRANCE_KILL_QUEUE_MAX` | 我们自己定的（`trance_core.h`） | 同上 | 运行期才知道 / 16 | 运行时计数 `trance_kill_queue_dropped` | 满 → 丢尾并计数（`queue dropped`） | ✅ |
@@ -88,6 +88,24 @@
 | 卡本地池 `LOLK_TINT_MAX` | 我们自己定的（`lolk.c`） | 同上 | 运行期才知道 / 256 | **无运行时余量断言** | 满 → 直接不染（注释口径「只影响观感」） | ⚠ |
 | 卡本地池 `FAITH_MAX_USERS` | 我们自己定的（`faith.h`） | 同上 | 运行期才知道 / 8 | **无运行时余量断言** | 满 → `faith_register` 返回 0（这张卡不计分） | ⚠ |
 | 道具池（`ItemManager`，**我们不长大**） | 原生：构造器把 `mgr+0x14` 起 4696 个槽（stride `0xc94`）挂成双向空链表；循环 `cmp eax,0x1258`（`0x4467fc`） | **不长大**（改它会连带几十处链表/遍历假设）；卡侧只**扫**它 | 运行期才知道 / 4696，不进余量闸 | `CE_ITEM_SLOTS` 的读者：`sdk.c`、`sdk.h`、`cards/ufo.c`、`cards/th06rank.c` | 撞顶的表现是**静默 spawn 失败**（空链表返回 0）：分批撒 / 排队补撒，**别去抬这个界** | 🟡 |
+
+### shooterset 组的具名清单
+
+★ `capcheck` 的「有界消费者」闸是**按名字**在 `CAPACITY.md` 正文里找的（见 `native/tools/capcheck.py` 的 `name_gate()`）
+⇒ 组宏**必须逐个名字出现**，写缩写（`{M,R,S}0..4`）或只写「见 `NEXT.md`」都会判红。加组的人往这里追加一行。
+
+| 卡 / 用途 | 占格 |
+| --- | --- |
+| 108 妖侧逐角色×逐档（2026-09-21，P4 第 1 批） | `0x48`–`0x56`（15 格） |
+
+组宏逐条（`sht_ids.h` 里的号）：
+
+- `CE_SHT_SET_YOUKAI_R0` `0x48` · `CE_SHT_SET_YOUKAI_R1` `0x49` · `CE_SHT_SET_YOUKAI_R2` `0x4a` ·
+  `CE_SHT_SET_YOUKAI_R3` `0x4b` · `CE_SHT_SET_YOUKAI_R4` `0x4c`
+- `CE_SHT_SET_YOUKAI_M0` `0x4d` · `CE_SHT_SET_YOUKAI_M1` `0x4e` · `CE_SHT_SET_YOUKAI_M2` `0x4f` ·
+  `CE_SHT_SET_YOUKAI_M3` `0x50` · `CE_SHT_SET_YOUKAI_M4` `0x51`
+- `CE_SHT_SET_YOUKAI_S0` `0x52` · `CE_SHT_SET_YOUKAI_S1` `0x53` · `CE_SHT_SET_YOUKAI_S2` `0x54` ·
+  `CE_SHT_SET_YOUKAI_S3` `0x55` · `CE_SHT_SET_YOUKAI_S4` `0x56`
 
 **余量最小的四条**（按余量% 排序）：shooterset 组数组 **0.0%**（40/40，有 §1w 计划）·
 音效 cfg 表 **25.0%**（87/116）· wav 名表 **27.9%**（75/104）· `abcard.anm` entry **74.2%**（190/256）。
