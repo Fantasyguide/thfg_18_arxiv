@@ -309,11 +309,27 @@ int     yk_shotset_usable(int fire_rate);
                                   * 否则 `flags_lo` 位 30 被置 ⇒ 进锁定黑名单 ⇒ 诱导打不到使魔。*/
 #define YK_LIFE_MAX_ALLOWED 999
 #define YK_LIFE_UNSAMPLED INT32_MIN   /* `prev_life` 未采样（第一次看到这只使魔）*/
-/* ★ TODO(数值设计 §10⑥)：使魔 HP **待用户定**（spec §4 表里是 ⏳）。占位 = 1：
- *   「一发即破」—— 它**不是**数值设计结果，只满足两条：① 必须 < `YK_LIFE_LIMIT`（硬约束，上面那条）；
- *   ② 让「使魔可打 → 击破 → 关那个槽 → 1/2 转嫁」这条链在实跑里**一发就能验完**。
- *   定案后改这一行即可（`yk_clamp_spawn_life` 会拦住 >= 1000 的误填）。*/
-#define YK_FAM_LIFE       1
+/* ★★ 2026-09-22（工单 E 第 2 条）：使魔 HP = 100，**一手取自 TH08 `familiarCreate` 的 life 参数**。
+ *
+ * **一手（全量，可复算）**：`thecl -d 8 -m th08.eclm` 反汇编 24 个 `ecldata*.ecl`，逐处取
+ * `familiarCreate[A-Z]*("SubN", x, y, life, drop, score)` 的第 4 参 ⇒ **990 处**可有字面值：
+ *   · 众数 = **100（159 处）**；其后 13500(90) / 300(68) / 1200(66) / 200(59) / 600(51) /
+ *     5000(44) / 1000(37) / 4000(34) / 20(32) / 3000(30) / 700(30) / 500(28) / 1500(26) …
+ *   · 只看**我们已经移植外观的那四套**（子程序的 `anmSet(K)`，K = 53..56）：**100 仍是众数（68 处）**
+ *     （其后 1200(66) / 200(59) / 300(56) / 13500(40)…）—— 出处
+ *     `engine/enemy/th08/01-familiars-and-anm.md` §4。
+ * ⇒ **原作没有统一值**（同一波里各 `familiarCreate` 各给各的），本卡取**众数 100**。
+ *
+ * **为什么不照抄更大的那些档**（硬约束）：`EnemyManager__allocate_new_enemy` `th18:0x42d8f6` 在 spawn
+ *   的 life ≥ 1000 时置 `flags_lo |= 0x40000000`（锁定黑名单 ⇒ 诱导打不到使魔）⇒ TH08 里 1200 / 13500 /
+ *   5000 / 4000 这些档**在本卡的 spawn 路径上不可用**；可用的字面值里 100 就是众数。
+ *
+ * ⚠ **这条顺手救活了 1/2 转嫁**：`life = 1` 时 `yk_sample_life` 的每帧掉血至多 1，而
+ *   `yk_half_with_carry(1)` = **0** ⇒ `tr.pending` 恒 0 ⇒ `ce_damage_rect` 那条转嫁源**从未被建过**
+ *   （数值上是死代码）。100 点血让 §3.7 真正跑到。
+ * ⚠ 仍是**数值设计项**（owner 可调）：只改这一行，`yk_clamp_spawn_life` 会拦住 >= 1000 的误填；
+ *   已登记 `TUNING.md`。*/
+#define YK_FAM_LIFE       100
 
 /* ★★ 2026-09-22（P4 · th08 #7 「击破 boss 一个阶段后 boss 几乎不再发弹」的修法）：
  * **发射口闸的自愈上限**。
@@ -382,6 +398,16 @@ typedef struct {
                           *   与 `fam_id` 分开：`yk_fam_broken` / `yk_fam_gone` 都会清 `fam_id`，
                           *   但闸要一直夹到 ECL 重新武装（inactive→active 边沿）为止。
                           *   塞进原有 padding ⇒ `yk_slot_t` 仍是 24 B（单测有 sizeof 断言）。*/
+    uint8_t  rearm_pending; /* ★★ 2026-09-22（工单 E / route A）：**「下一波发弹」请求**。
+                          *   闸（`yk_shot_slot_gate`，在 `etOn` 那一刻被调用）夹住一个槽时置 1；
+                          *   `yk_note_slot`（卡 tick）**同帧消费**它 ⇒ 清 `broken`/`fam_seen`/
+                          *   `no_fam_frames` 并让 1:1 映射把使魔建回来。语义 = owner 6⑦ 的
+                          *   「下一波发弹时重建」（TH08 的使魔就是每波 `familiarCreate` 重建的，
+                          *   见 `engine/enemy/th08/01-familiars-and-anm.md` §3）。
+                          *   归零口 = 消费 / `yk_fam_created` / 退休 / `yk_map_reset`。
+                          *   ★ 位置在 `fam_seen` 与 `no_fam_frames` **之间**：正好吃掉
+                          *     `uint16_t` 对齐留出的那 1 字节空洞 ⇒
+                          *     **`sizeof(yk_slot_t)` 仍是 28 B**（单测 `== 28u` 盯着；放错位置会变 32）。*/
     uint16_t no_fam_frames; /* ★ 2026-09-22（#7）：`fam_seen == 1 && fam_id == 0` 已经连续多少帧
                           *   （= 闸夹着、使魔又不在）。到了 `YK_EMIT_BROKEN_TTL` 就自愈
                           *   （清 `fam_seen` + 清 `broken`）。归零口 = `yk_fam_created` /
@@ -394,9 +420,14 @@ typedef struct {
                           *   卡侧每帧读一次、与自己的快照比对后打日志 ⇒ 实跑里一眼看出
                           *   「boss 不发弹」到底是闸夹死（heals 涨）还是别的原因。
                           *   放在表尾（`yk_slot_t` 的布局不变）⇒ `sizeof(yk_map_t)` = 32×28+4 = 900 B。*/
+    uint32_t  rearms;    /* ★★ 2026-09-22（route A）：闸被「下一波 `etOn`」放开的次数
+                          *   （每个夹住的槽每置一次 `rearm_pending` 记一次，只增不清）。卡侧打一行日志
+                          *   —— 它**在涨**就是 route A 生效的直接证据（对照 `heals`：TTL 那条现在应当
+                          *   基本不涨）。`sizeof(yk_map_t)` = 32×28+8 = 904 B。*/
 } yk_map_t;
 
 unsigned   yk_map_heals(const yk_map_t *m);      /* 自愈计数（#7 记账；NULL ⇒ 0）*/
+unsigned   yk_map_rearms(const yk_map_t *m);     /* 「下一波」复位计数（route A 记账；NULL ⇒ 0）*/
 
 void       yk_map_reset(yk_map_t *m);
 unsigned   yk_map_fam_count(const yk_map_t *m);
@@ -439,6 +470,33 @@ int        yk_withdraw_all(yk_map_t *m, yk_action_t *out, int max);
  *   复位口 = `yk_note_slot` 的 inactive→active 边沿（ECL 重新武装）+ `yk_map_reset`（删卡等）。
  *   **该函数不读 `props[].type`** ⇒ 不受「`etOn` 与 `etSprite` 谁先写 type」这个未定量的影响。 */
 int        yk_shot_slot_suppressed(const yk_map_t *m, uint32_t enemy_id, int slot, uint32_t have_fam_id);
+
+/* ============================ ★★ §3.5.2 route A：「下一波发弹」= 闸的复位口（2026-09-22，工单 E）
+ *
+ * **为什么需要它**（一手根因，全文 `engine/enemy/th18/07-emitter-slots-waves-and-phase-transitions.md`）：
+ * 闸原本的复位口是 `props[i].type` 的 **inactive→active 边沿**（= ECL 重新武装），但
+ *   · TH18 的 ECL 里 `etNew(i)`（清零）与同槽 `etSprite(i,…)`（写回）**永远同帧**
+ *     （`dat/` 里 ECL 全集 22 份、**282/282 处**下一句就是同槽 `etSprite`，中间没有一次 `wait()`）
+ *   · 卡每帧只采样一次该字段（AbilityManager 节点 `0x16` < 敌人 ECL `0x1b`）
+ * ⇒ **那个边沿在实战里观测不到**，`broken`/`fam_seen` 只能靠 `YK_EMIT_BROKEN_TTL` 到期才清；
+ *   而 boss 每段攻击开头的 `enmKillAll()`（opcode 525 → `0x434e1b` → `0x430710`，杀所有
+ *   `flags_lo & 0xc004a0 == 0` 的敌人 —— 我们的使魔正是）**必然**在换阶段那一帧把使魔清光 ⇒
+ *   「击破 boss 第一个阶段后再不发弹」。
+ *
+ * **route A 的做法（不加站点）**：把复位口换成**引擎自己的发弹事件** —— 这个槽下一次 `etOn`
+ * （就是本函数被调用的那一刻）就是「下一波发弹」。于是：
+ *   · 夹住时：本帧**照旧掐**（`retaddr = 0x43402d`，一帧都不多发 ⇒ spec §9.6「打掉使魔 ⇒ 那个发射口
+ *     停火」保持），同时置 `rearm_pending` 并给 `m->rearms` 记一笔；
+ *   · 卡 tick 的 `yk_note_slot` **消费** `rearm_pending` ⇒ 清闸 + 同帧按 1:1 建回使魔；
+ *   · 下一次 `etOn`（通常就是下一帧）问闸时使魔已活 ⇒ 放行。
+ * ⇒ 每个使魔的「停火窗口」从**至多 120 帧**缩短成**至多 1 条 `etOn`**（这正是「下一波重建」）。
+ *
+ * ⚠ 口径（写给读的人）：本函数是 `yk_shot_slot_suppressed` 的**带副作用版**，卡侧只调本函数；
+ *   纯判据那支保留给单测与「只想问、不想记」的场合。
+ * ⚠ 与 `YK_EMIT_BROKEN_TTL`（120 帧到期自愈）的分工：**route A 是主路**（波次级，正常游戏里总会有
+ *   下一次 `etOn`）；TTL 是**兜底**（ECL 再也不 `etOn` 这个槽、或 `etOn` 永远被更前面的卡掐掉时）。
+ *   两者都清同一组标志，幂等。 */
+int        yk_shot_slot_gate(yk_map_t *m, uint32_t enemy_id, int slot, uint32_t have_fam_id);
 
 /* 硬约束护栏：spawn 的 life 参数 >= 1000 会进锁定黑名单 ⇒ 钳到 999（并在卡侧记一条日志）。 */
 int32_t    yk_clamp_spawn_life(int32_t life);

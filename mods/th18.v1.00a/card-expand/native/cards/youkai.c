@@ -207,6 +207,9 @@ typedef struct {
     uint32_t      heals_seen;          /* ★ 2026-09-22（#7）：上一帧读到的闸自愈计数（`yk_map_heals`）
                                         *   的快照。差值 > 0 ⇒ 打一行日志 —— 实跑里「boss 不发弹」
                                         *   到底是闸夹死（这一行在涨）还是别的原因，一眼可判。*/
+    uint32_t      rearms_seen;         /* ★★ 2026-09-22（工单 E / route A）：上一帧读到的「下一波复位」
+                                        *   计数（`yk_map_rearms`）的快照。它在涨 = 波次级复位生效
+                                        *   （被夹住的槽在下一次 `etOn` 就被放开、使魔同帧重建）。*/
 } yk_card_t;
 
 static yk_map_t s_map;              /* 使魔表（(enemy_id, 发射口槽) → 使魔）*/
@@ -837,6 +840,7 @@ static int on_ctor(ce_card_t *c)
     s->logged_opt = s->logged_sht = s->logged_noshot = s->logged_full = s->logged_gate = 0;
     s->logged_pass0 = 0;
     s->heals_seen = 0;
+    s->rearms_seen = 0;                 /* ★ route A：整表 reset 也清条目，但计数只增不清 ⇒ 快照回 0 */
     s->opt_spring_live = 0;
     __builtin_memset(s->opt_pos, 0, sizeof s->opt_pos);
     __builtin_memset(s->opt_vel, 0, sizeof s->opt_vel);
@@ -1161,7 +1165,16 @@ static int on_native_shot_suppress(ce_card_t *c)
  *   表满 / 条目退休等原因没掐到，也不会重建使魔、也不会继续转嫁。
  *
  * ⚠ 一个 `enemy_id` 可能被**多张卡**同时挂钩（SDK 是 OR：任一返回非 0 即掐）——本卡只对
- *   自己使魔表里的槽表态，别的槽一律放行。 */
+ *   自己使魔表里的槽表态，别的槽一律放行。
+ *
+ * ★★ 2026-09-22（工单 E / **route A**）：改调 `yk_shot_slot_gate`（= 上面那条判据 + **副作用**）。
+ *   副作用 = 夹住的槽被问到时置 `rearm_pending`：**这个槽的下一次 `etOn` 就是「下一波发弹」**，
+ *   卡 tick 会消费它 ⇒ 清闸 + 同帧重建使魔。这一条取代了原来的「等 ECL 重新武装」——
+ *   一手（22 份原生 ECL、282/282 处）证明那条边沿在实战里观测不到（`etNew` 与同槽 `etSprite` 永远同帧），
+ *   而 boss 段首的 `enmKillAll()` 必然把使魔清光 ⇒ 原来会落到 120 帧 TTL 才放开
+ *   （= owner 报的「击破 boss 第一阶段后再不发弹」）。全文见
+ *   `engine/enemy/th18/07-emitter-slots-waves-and-phase-transitions.md` 与 `youkai_core.h` §3.5.2。
+ * ⚠ 代价：每次使魔死亡**最多丢 1 条 `etOn`**（那一帧照旧掐，下一帧使魔已回来）。 */
 static int yk_on_shot_slot(ce_card_t *c, const ce_enemy_shot_t *ev)
 {
     yk_card_t *s = ce_state(c, yk_card_t);
@@ -1172,11 +1185,12 @@ static int yk_on_shot_slot(ce_card_t *c, const ce_enemy_shot_t *ev)
     /* 按 id 回查**当前活着的**使魔（0 = 没了）。★ 不碰 `ev->enemy`：那是敌人本体、不是使魔，
      * 而且只在本次回调内有效（同帧 sweep 可能删它）。 */
     have = yk_slot_fam_id(&s_map, ev->enemy_id, ev->slot);
-    if (!yk_shot_slot_suppressed(&s_map, ev->enemy_id, ev->slot, have)) return 0;
+    if (!yk_shot_slot_gate(&s_map, ev->enemy_id, ev->slot, have)) return 0;
     if (s && !s->logged_gate) {
         s->logged_gate = 1;
-        ce_log("youkai: emitter gate ACTIVE - slot %d of enemy_id %u stays silent until ECL re-arms it",
-               ev->slot, ev->enemy_id);
+        ce_log("youkai: emitter gate ACTIVE - slot %d of enemy_id %u stays silent until the next "
+               "etOn of that slot (route A) or the %d-frame self-heal expires",
+               ev->slot, ev->enemy_id, (int)YK_EMIT_BROKEN_TTL);
     }
     return 1;
 }
@@ -1213,8 +1227,8 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
     yk_fam_vm_kill_id(ev->id);
     ++s->broken;
     ce_log("youkai: familiar enemy_id %u killed (kind %u, real=%u) at (%.0f, %.0f) - "
-           "that emitter slot stays silent until ECL re-arms it or the %d-frame self-heal "
-           "expires (gate = on_enemy_shot_slot 0x433ffa; see youkai_core.h YK_EMIT_BROKEN_TTL)",
+           "that emitter slot stays silent until the NEXT etOn of that slot (route A) or the "
+           "%d-frame fallback self-heal expires (gate = on_enemy_shot_slot 0x433ffa)",
            ev->id, ev->kind, (ev->flags & CE_EDEATH_F_REAL) ? 1u : 0u, ev->x, ev->y,
            (int)YK_EMIT_BROKEN_TTL);
 }
@@ -1247,14 +1261,29 @@ static int on_tick_2(ce_card_t *c)
     }
     yk_familiars_tick(s);
     yk_transfer_tick(s);
-    /* ★ 2026-09-22（#7）：闸的自愈记账。`YK_EMIT_BROKEN_TTL` 帧没再被 ECL 重新武装的发射口
-     * 会被无条件放开（否则 boss 的持续活跃发射口会**永久哑火**，见 `youkai_core.h`）。
-     * 这里只**记账**：涨了就说明「有格子曾经被闸夹死过 TTL 帧」——实跑诊断的关键一行。*/
+    /* ★★ 2026-09-22（工单 E / route A）：**波次级复位的记账**。夹住的槽在下一次 `etOn`
+     * （= 引擎自己的发弹事件）就被放开，卡 tick 的 `yk_note_slot` 同帧消费并重建使魔
+     * （语义与一手见 `youkai_core.h` §3.5.2）。这里只**记账**：
+     *   这一行在涨 = route A 生效（= 原来会掉进 120 帧哑火的那种局面被一帧内解决）；
+     *   它**不涨而 `killed` 在涨** ⇒ 那些槽的 ECL 再也不 `etOn` 它们（只发生在「这一波本来就不发弹」的
+     *   时候，无害）或者闸被更前面的卡掐在前面 —— 后者要看 `gate ACTIVE` 那行。 */
+    {
+        uint32_t rearms = yk_map_rearms(&s_map);
+        if (rearms != s->rearms_seen) {
+            ce_log("youkai: emitter gate re-armed %u slot(s) on the next etOn (route A, total %u) - "
+                   "those emitters fire again and their familiar is rebuilt in the same tick",
+                   rearms - s->rearms_seen, rearms);
+            s->rearms_seen = rearms;
+        }
+    }
+    /* ★ 2026-09-22（#7）：闸的**兜底**自愈记账。`YK_EMIT_BROKEN_TTL` 帧没再被 `etOn` 问到的
+     * 发射口会被无条件放开。route A 落地后这一条**正常应当基本不涨**（只有「ECL 再也不 `etOn`
+     * 这个槽」时才轮到它）；它在涨 ⇒ 那个槽是靠 TTL 才放开的，值得看一眼。*/
     {
         uint32_t heals = yk_map_heals(&s_map);
         if (heals != s->heals_seen) {
-            ce_log("youkai: emitter gate self-healed %u slot(s) after %d frames without ECL re-arm "
-                   "(total %u) - those emitters fire again", heals - s->heals_seen,
+            ce_log("youkai: emitter gate self-healed %u slot(s) after %d frames without any etOn "
+                   "(fallback path; total %u) - those emitters fire again", heals - s->heals_seen,
                    (int)YK_EMIT_BROKEN_TTL, heals);
             s->heals_seen = heals;
         }
@@ -1318,15 +1347,20 @@ _Static_assert(sizeof(yk_fam_vm_t) == 12, "familiar follow-VM record grew (table
  *          （`YK_FAM_ANM_LAYER` 那一节；槽 i → s53+i）。上面那两个偏移保持占位（仍 ❓ 未证实）。
  *        🟡 未实跑：层号 7 与「VM 位置 = 实体 final_pos」都只在代码层对账过。
  *   §10 决策
- *     5. `YK_FAM_LIFE` = 1（使魔 HP；硬约束 < 1000）
+ *     5. ~~`YK_FAM_LIFE` = 1~~ —— ✅ 2026-09-22（工单 E 第 2 条）**定案 = 100**，一手取自 TH08
+ *        `familiarCreate` 的 life 参数众数（990 处里 100 出现 159 次；只看我们移植的那四套外观
+ *        53..56 也是众数 68 次）；TH08 里更大的档（1200/13500/5000）在**本卡的 spawn 路径上不可用**
+ *        （life ≥ 1000 ⇒ 引擎置锁定黑名单，`th18:0x42d8f6`）。已登记 `TUNING.md`。
+ *        ★ 附带效果：`life = 1` 时 1/2 转嫁**从未生效过**（`yk_half_with_carry(1) == 0`）⇒ 现在才真正跑到。
  *     6. `YK_TRANSFER_CAP_PER_FRAME` = 0（单帧转嫁上限：0 = 无上限；研究 §7.5 提醒会顶掉 boss 配额）
  *     7. `YK_FAM_MAX` = 32（分配护栏；spec 没给上限）
  *     8. ~~`YK_OPTION_OFFSET_*` = 0（妖侧子机阵型）~~ —— ✅ 2026-09-12 **已接真数据**：
  *        逐格阵型 = 原生 `pl0X.sht` 的非聚焦/聚焦位置块（`yk_option_offsets`，`youkai_core.h` §3.3
  *        有一手出处；机体 2 的极坐标行已离线换算成像素）。单位 = 像素（引擎自己 ×128）。
  *   §3.5 缺断点
- *     9. `0x434019`（`etOn` 里 `push eax` 前）没装 —— 「打死使魔 ⇒ 真的关掉那个发射口」只能近似
- *        （不重建 + 转嫁归零），发射口**本身**还在开火
+ *     9. `0x434019`（`etOn` 里 `push eax` 前）没装 —— ★ 2026-09-22：**不再需要单独装**：
+ *        route A 用的 `0x433ffa`（同一 opcode 的「发弹三步」汇聚点，已在 `sdk.c` 里）就能在
+ *        **发弹前**掐掉这一槽，且能顺便拿到「下一波发弹」这个事件。旧的「不重建 + 转嫁归零」兜底保留。
  *   🟡 待实跑
  *    10. 文件头的 `abs_pos` 双写（spec §3.5 只写 final_pos）
  *    11. `YK_TRANSFER_BOX_W/H` = 16×16、`YK_FAM_HURTBOX_HALF` = 12（默认 hurtbox 24.0 的一半）

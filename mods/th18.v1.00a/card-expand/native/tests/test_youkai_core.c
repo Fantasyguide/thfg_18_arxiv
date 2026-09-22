@@ -54,6 +54,11 @@ int main(void)
 
     p1[0] = 10.0f; p1[1] = 20.0f;
 
+    /* ★ 2026-09-22（工单 E）：`yk_map_reset` **不**清账本计数（`heals` / `rearms` 是「只增不清」的
+     *   计数器，见 `yk_map_rearms` 的注）；卡侧那份表是**文件级静态**（天然 0 初始化），
+     *   而这里是栈上的局部 ⇒ 必须先自己清零一次，否则计数断言读到的是垃圾值。*/
+    __builtin_memset(&m, 0, sizeof m);
+
     /* ============================== §3.1 止射闸 */
     CHECK(yk_suppress_native_shot_spec31_legacy(1, 1) == 1);        /* ★ legacy（§3.1 字面）：只说明「有自机 + 聚焦」，不含「0 子机放行」那条用户口径 */
     CHECK(yk_suppress_native_shot_spec31_legacy(1, 0) == 0);        /* 高速 = 原机体 ⇒ 不压 */
@@ -537,7 +542,8 @@ int main(void)
     CHECK(yk_withdraw_all(&m, s_acts, (int)YK_FAM_MAX) == 1);
     CHECK(yk_map_fam_count(&m) == 0);                    /* 处理完 ⇒ 表清空 */
     CHECK(yk_withdraw_all(&m, s_acts, 1) == 0);
-    CHECK(sizeof(yk_map_t) <= 1024u);                 /* 静态表预算（现 32 × 28 = 896 B；加 fam_seen 后 24→28）*/
+    CHECK(sizeof(yk_map_t) <= 1024u);                 /* 静态表预算（现 32 × 28 + 8 = 904 B）*/
+    CHECK(sizeof(yk_slot_t) == 28u);                  /* ★ route A 的 rearm_pending 塞进 padding，不许撑大 */
 
     /* ============================== §3.7 伤害转交 1/2：取整 */
     yk_transfer_reset(&t);
@@ -705,6 +711,65 @@ int main(void)
         CHECK(yk_note_slot(&m, 701, 0, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE); /* etSprite：写回 */
         CHECK(yk_shot_slot_suppressed(&m, 701, 0, 0) == 0);
         CHECK(yk_map_heals(&m) == base);                         /* 边沿复位**不**记账 */
+    }
+
+    /* ============ ★★ 2026-09-22（工单 E）route A = 闸的复位口改成「下一波 etOn」============
+     * 一手根因：`engine/enemy/th18/07-emitter-slots-waves-and-phase-transitions.md`
+     * 原来的复位口是 `props[i].type` 的 inactive→active 边沿，而 `etNew` 与同槽 `etSprite` 在原生 ECL 里
+     * **永远同帧**（22 份 ECL、282/282 处）⇒ 卡每帧只采样一次，永远看不到那一瞬 ⇒ 边沿基本不发生；
+     * 而 boss 段首的 `enmKillAll()` 必然把使魔清光 ⇒ 原来只能等 `YK_EMIT_BROKEN_TTL` 才放开。
+     * route A：夹住的槽**被 `etOn` 问到**（= `yk_shot_slot_gate`）时置 `rearm_pending`，
+     * 卡 tick 的 `yk_note_slot` 同帧消费 ⇒ 清闸 + 重建（每个使魔死亡最多丢 1 条 etOn）。 */
+    CHECK(sizeof(yk_slot_t) == 28u);                  /* 新字段塞进 padding（上面那条是同一件事）*/
+    yk_map_reset(&m);
+    yk_frame_begin(&m);
+    CHECK(yk_note_slot(&m, 800, 0, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);
+    yk_fam_created(&m, 800, 0, 8001);
+    CHECK(yk_shot_slot_gate(&m, 800, 0, 8001) == 0);            /* 使魔活着 ⇒ 放行，不记账 */
+    CHECK(yk_map_rearms(&m) == 0);
+    CHECK(yk_fam_broken(&m, 8001) == 1);                        /* 被打死（例如段首 enmKillAll） */
+    {
+        unsigned base = yk_map_rearms(&m);
+        unsigned hbase = yk_map_heals(&m);
+        CHECK(yk_shot_slot_gate(&m, 800, 0, 0) == 1);           /* 第一次 etOn：掐 + 记「下一波」 */
+        CHECK(yk_map_rearms(&m) == base + 1);
+        CHECK(yk_shot_slot_gate(&m, 800, 0, 0) == 1);           /* 同一个夹持期再来问：照旧掐 */
+        CHECK(yk_map_rearms(&m) == base + 1);                   /* ★ 但**不重复记账** */
+        /* 卡 tick：消费 ⇒ 同帧重建（不需要等 TTL、也不需要 ECL 重新武装） */
+        yk_frame_begin(&m);
+        CHECK(yk_note_slot(&m, 800, 0, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);
+        CHECK(yk_shot_slot_suppressed(&m, 800, 0, 0) == 0);     /* ★ 闸已放开（关键断言） */
+        CHECK(yk_map_heals(&m) == hbase);                       /* ★ 走的是 route A，**没**用 TTL 兜底 */
+        yk_fam_created(&m, 800, 0, 8002);
+        CHECK(yk_shot_slot_gate(&m, 800, 0, 8002) == 0);        /* 下一次 etOn：使魔已回来 ⇒ 放行 */
+        /* 再来一轮：证明不是一次性的 */
+        CHECK(yk_fam_broken(&m, 8002) == 1);
+        CHECK(yk_shot_slot_gate(&m, 800, 0, 0) == 1);
+        CHECK(yk_map_rearms(&m) == base + 2);
+        yk_frame_begin(&m);
+        CHECK(yk_note_slot(&m, 800, 0, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);
+    }
+    /* 没被夹住的槽：闸恒放行、一次都不记账（route A 绝不误伤）。
+     * ⚠ `rearms`/`heals` 都是**只增不清**的（`yk_map_reset` 不动它们，卡侧靠快照比对打日志）
+     *   ⇒ 这里一律与快照比，别写绝对值。*/
+    {
+    unsigned rbase = yk_map_rearms(&m);
+    yk_map_reset(&m);
+    yk_frame_begin(&m);
+    CHECK(yk_note_slot(&m, 801, 0, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);
+    CHECK(yk_shot_slot_gate(&m, 801, 0, 0) == 0);               /* 还没建完：放行（第一道保险） */
+    CHECK(yk_shot_slot_gate(&m, 801, 1, 0) == 0);               /* 别的槽 / 从没管过 */
+    CHECK(yk_shot_slot_gate(&m, 0, 0, 0) == 0);
+    CHECK(yk_shot_slot_gate(0, 801, 0, 0) == 0);
+    CHECK(yk_map_rearms(&m) == rbase);
+    /* 整表复位（撤卡 / 松低速 / 局末）⇒ 待处理的「下一波」也一起清掉，不留悬案 */
+    yk_fam_created(&m, 801, 0, 8101);
+    CHECK(yk_fam_broken(&m, 8101) == 1);
+    CHECK(yk_shot_slot_gate(&m, 801, 0, 0) == 1);
+    yk_map_reset(&m);
+    yk_frame_begin(&m);
+    CHECK(yk_note_slot(&m, 801, 0, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);  /* 新条目、无残留 */
+    CHECK(yk_shot_slot_suppressed(&m, 801, 0, 0) == 0);
     }
 
     printf("youkai_core: %d checks, %d failed\n", s_pass + s_fail, s_fail);

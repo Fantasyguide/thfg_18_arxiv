@@ -325,6 +325,7 @@ void yk_map_reset(yk_map_t *m)
         m->e[i].broken = 0;
         m->e[i].fam_seen = 0;
         m->e[i].no_fam_frames = 0;
+        m->e[i].rearm_pending = 0;      /* ★ route A：整表清空（撤卡 / 松低速 / 局末 / 断链）⇒ 没有待处理的「下一波」 */
     }
 }
 
@@ -339,6 +340,13 @@ unsigned yk_map_fam_count(const yk_map_t *m)
 unsigned yk_map_heals(const yk_map_t *m)
 {
     return m ? m->heals : 0u;
+}
+
+/* ★★ route A（2026-09-22）：闸被「下一波 `etOn`」松开的次数。与 `heals` 一样**只增不清**
+ * （整表 reset 也不清）—— 卡侧每帧与自己的快照比对后打日志，涨了就说明波次级复位在起作用。 */
+unsigned yk_map_rearms(const yk_map_t *m)
+{
+    return m ? m->rearms : 0u;
 }
 
 yk_slot_t *yk_map_find(yk_map_t *m, uint32_t enemy_id, int slot)
@@ -377,6 +385,7 @@ static yk_slot_t *yk_map_alloc(yk_map_t *m, uint32_t enemy_id, int slot)
         m->e[i].broken = 0;
         m->e[i].fam_seen = 0;
         m->e[i].no_fam_frames = 0;
+        m->e[i].rearm_pending = 0;                        /* ★ route A：新条目没有待处理的「下一波」 */
         return &m->e[i];
     }
     return 0;                                             /* 表满：放弃这个槽（卡侧记日志）*/
@@ -432,6 +441,20 @@ int yk_note_slot(yk_map_t *m, uint32_t enemy_id, int slot, int active, const flo
      * 「下一波要重开」这条就是这么自动成立的（review §6.3 末）。*/
     if (active && !was_active) { e->broken = 0; e->fam_seen = 0; e->no_fam_frames = 0; }  /* ★ ECL 重新武装 ⇒ 关闸复位 */
 
+    /* ★★ 2026-09-22（工单 E / route A）：**「下一波发弹」复位**（主路，常量与理由见 `youkai_core.h` §3.5.2）。
+     * 闸（`yk_shot_slot_gate`，在 `etOn` 那一刻被调用）夹住这个槽时置了 `rearm_pending`；这里是**同帧消费**：
+     * 清掉闸的记忆（`fam_seen`）+ 拆掉「不再重建」的锁（`broken`）⇒ 下面那条 1:1 分支**本次调用就建**。
+     * ⚠ 位置必须在 `broken` 判定与 TTL 记账**之前**（否则本帧又会被 TTL/`broken` 挡一次）。
+     * ⚠ 与上面那条边沿复位是**两条独立的路**：边沿那条依赖「卡能看见 `type == 0` 的帧」，
+     *   而一手实测（22 份原生 ECL、282/282 处）`etNew` 与同槽 `etSprite` **永远同帧** ⇒ 那条基本观测不到；
+     *   本路依赖的是引擎自己的发弹事件，实战里必然发生。*/
+    if (e->rearm_pending) {
+        e->rearm_pending = 0;
+        e->broken = 0;
+        e->fam_seen = 0;
+        e->no_fam_frames = 0;
+    }
+
     /* ★★ 2026-09-22（#7）：**闸的到期自愈**（常量与三条理由见 `youkai_core.h`）。
      * 判据 = 「记忆里有使魔、当前没有」，也就是闸夹着的那个状态本身；连续 `YK_EMIT_BROKEN_TTL`
      * 帧都这样 ⇒ 无条件放开（清 `fam_seen` 让闸放行、清 `broken` 让 1:1 映射把它建回来）。
@@ -486,6 +509,7 @@ int yk_frame_end(yk_map_t *m, yk_action_t *out, int max)
         e->broken = 0;
         e->fam_seen = 0;
         e->no_fam_frames = 0;
+        e->rearm_pending = 0;                             /* ★ route A：退休的条目不带「下一波」 */
     }
     return n;
 }
@@ -497,6 +521,7 @@ void yk_fam_created(yk_map_t *m, uint32_t enemy_id, int slot, uint32_t fam_id)
     e->fam_id = fam_id;
     e->fam_seen = 1;                                      /* ★ 关闸的「曾经有过」记忆 */
     e->no_fam_frames = 0;                                 /* ★ 建回来了 ⇒ 闸的年龄归零（#7）*/
+    e->rearm_pending = 0;                                 /* ★ route A：使魔活着 ⇒ 没有待处理的「下一波」 */
     e->prev_life = YK_LIFE_UNSAMPLED;                     /* 新使魔：下一帧才允许出 delta */
 }
 
@@ -507,6 +532,9 @@ int yk_fam_broken(yk_map_t *m, uint32_t fam_id)
     e->fam_id = 0;
     e->no_fam_frames = 0;                                 /* ★ #7：从「它没了的这一刻」开始计闸的年龄 */
     e->prev_life = YK_LIFE_UNSAMPLED;
+    /* ★ route A：这里**故意不清** `rearm_pending`。它是「这一槽的下一次 `etOn` 已经来过」的证据；
+     *   若正巧与死亡同帧（段首 `enmKillAll` 与 `etOn` 的先后本来就不定），带着它进 tick 只会让
+     *   使魔**早一帧**回来 —— 而清掉它就等于把那次 `etOn` 白丢。两种都不会夹死（下面是 TTL 兜底）。*/
     /* ★ 「打死使魔 ⇒ 关掉那个发射口」的**近似**：真正的关槽要 hook `0x434019`（`etOn` 里 `push eax`
      * 前，`esi = enemy + i*0x488` 可反推 `i`）—— 那是**新断点**（sites.py，本卡不能加）。
      * 这里做的两件事替代它：① 使魔不再重建（本标志）② 它带来的转嫁归零（没有使魔就没差分）。
@@ -555,10 +583,39 @@ int yk_shot_slot_suppressed(const yk_map_t *m, uint32_t enemy_id, int slot, uint
      * ① 从没建过（`fam_seen == 0`，含「建被排到下一个 on_tick_2」）⇒ **放行**，
      *    否则第一帧就把槽掐死、永远建不出来。
      * ⚠ 复位口 = `yk_note_slot` 的 inactive→active 边沿（ECL 重新武装）+ `yk_map_reset`
-     *    （删卡 / 松开低速 / 局末 / 断链）+ ★ **`YK_EMIT_BROKEN_TTL` 帧的到期自愈**
-     *    （2026-09-22 加，见 `youkai_core.h` 那段：没有它，一个持续活跃、ECL 不再 `etNew` 的发射口
-     *    会**永久哑火** —— 那就是 th08 #7 的现象）。 */
+     *    （删卡 / 松开低速 / 局末 / 断链）+ ★ **route A：该槽下一次 `etOn`**
+     *    （2026-09-22 主路，见 `yk_shot_slot_gate`）+ `YK_EMIT_BROKEN_TTL` 帧的到期自愈（兜底）。
+     *    没有后两条时，一个持续活跃、ECL 不再 `etNew` 的发射口会**永久哑火** —— 那就是 th08 #7 的现象。 */
     return e->fam_seen ? 1 : 0;
+}
+
+/* ★★ §3.5.2 route A：闸 + 「下一波发弹」记账（语义 / 一手根因 / 与 TTL 的分工见 `youkai_core.h`）。
+ *
+ * 卡侧（`yk_on_shot_slot`，断点 `0x433ffa`）只调本函数：返回 1 ⇒ SDK 置 `retaddr = 0x43402d`
+ * ⇒ 本帧这一槽不发射；返回 0 ⇒ 照常发。
+ * 副作用只有一处：**夹住的槽被问到** ⇒ 置 `rearm_pending`（每个夹持期只记一次账），
+ * 卡 tick 的 `yk_note_slot` 同帧消费它 ⇒ 清闸 + 重建使魔。
+ *
+ * ⚠ 返回 1（不是放行）是**故意的**：让这一条 `etOn` 落空 = 「使魔没了，这一波这个口子就是哑的」
+ *   （TH08 里使魔与发射口一体，使魔没了就不会有这一发 —— 见
+ *   `engine/enemy/th08/01-familiars-and-anm.md` §3.3）。代价 = **每次使魔死亡最多丢 1 条 `etOn`**
+ *   （下一帧使魔已重建 ⇒ 之后的 `etOn` 全放行）。若把这里改成 `return 0`，就变成「这一个口子一帧都不哑」
+ *   —— 那是**放行一条没有使魔的发射**，与 owner 保留的语义相反，所以不做。 */
+int yk_shot_slot_gate(yk_map_t *m, uint32_t enemy_id, int slot, uint32_t have_fam_id)
+{
+    yk_slot_t *e;
+
+    if (!yk_shot_slot_suppressed(m, enemy_id, slot, have_fam_id)) {
+        /* 放行。⚠ 放行**不代表**没有待办：夹持期里被放行只可能发生在「使魔活着」那条路上，
+         *   而那条路已经在 `yk_fam_created` 里把 `rearm_pending` 清掉了 ⇒ 这里不用管。 */
+        return 0;
+    }
+    e = yk_map_find(m, enemy_id, slot);      /* 上面那支已确认条目存在（否则它返回 0）*/
+    if (e && !e->rearm_pending) {
+        e->rearm_pending = 1;                /* ★ 「下一波到了」：卡 tick 消费它 ⇒ 清闸 + 重建 */
+        ++m->rearms;                         /* ★ 记账（只增不清）：涨了 = 波次级复位在起作用 */
+    }
+    return 1;
 }
 
 int yk_withdraw_all(yk_map_t *m, yk_action_t *out, int max)
