@@ -1131,6 +1131,24 @@ int main(void)
             CHECK(yk_blue_point_score(0, 10, 0) == 0);
             /* 十位取整：60000/2 − 7×(60000/1000) = 30000 − 420 = 29580（已是 10 的倍数）*/
             CHECK(yk_blue_point_score(60000, 7, 0) == 29580);
+            /* ★★★ 2026-09-22 夜（P-B 逢魔）：门（两条都含等号、取或）+ 击破掉几颗刻符
+             * 一手：`th08:0x406d10`（极人 `g <= −8000`，`setle`）/ `th08:0x406d70`（极妖 `g >= +8000`，`setge`）；
+             *       `th08:0x42da41`（逢魔 ⇒ 1 颗）；`th08:0x45187f`（人间逢魔 + 自机弹击杀 ⇒ 再 1 颗）。*/
+            CHECK(YK_FENGMA_SCORE_PER_FRAME == 100);
+            CHECK(yk_fengma(-8000, YK_GAUGE_HUMAN_EFFECTS, YK_GAUGE_YOUKAI_EFFECTS) == 1);   /* 含等号 */
+            CHECK(yk_fengma(8000, YK_GAUGE_HUMAN_EFFECTS, YK_GAUGE_YOUKAI_EFFECTS) == 1);
+            CHECK(yk_fengma(-8001, YK_GAUGE_HUMAN_EFFECTS, YK_GAUGE_YOUKAI_EFFECTS) == 1);   /* 更极端也算 */
+            CHECK(yk_fengma(-7999, YK_GAUGE_HUMAN_EFFECTS, YK_GAUGE_YOUKAI_EFFECTS) == 0);
+            CHECK(yk_fengma(7999, YK_GAUGE_HUMAN_EFFECTS, YK_GAUGE_YOUKAI_EFFECTS) == 0);
+            CHECK(yk_fengma(0, YK_GAUGE_HUMAN_EFFECTS, YK_GAUGE_YOUKAI_EFFECTS) == 0);
+            /* 妖梦人型那种「人侧只要 −3000」的阈值也走同一个函数（阈值是参数）*/
+            CHECK(yk_fengma(-3000, -3000, 8000) == 1 && yk_fengma(-2999, -3000, 8000) == 0);
+            /* 击破掉几颗：非逢魔 0；逢魔 1；人间逢魔 + 自机弹 2（妖怪逢魔恒 1）*/
+            CHECK(yk_fengma_kill_orbs(0, 1, 1) == 0);
+            CHECK(yk_fengma_kill_orbs(1, 0, 0) == 1);
+            CHECK(yk_fengma_kill_orbs(1, 0, 1) == 1);          /* 妖怪逢魔：自机弹也只 1 颗 */
+            CHECK(yk_fengma_kill_orbs(1, 1, 0) == 1);
+            CHECK(yk_fengma_kill_orbs(1, 1, 1) == 2);
         }
     }
 

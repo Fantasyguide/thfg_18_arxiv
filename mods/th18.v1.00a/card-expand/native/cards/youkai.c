@@ -266,6 +266,8 @@ typedef struct {
      *   `focus_age` = **上一次形态切换之后过了几帧** —— 对应一手 `player+8`（人妖切换的进度计时器 0..7，
      *   `>= 7` 才置 `player+5 = is_youkai`），两下本体爆闪的门是 `>= 4`（`th08:0x44b14f` / `:0x44b3a9`）。*/
     uint8_t       night_logged;         /* ★ P-A：夜点初值只记一行 */
+    uint8_t       fengma;               /* ★ P-B：本帧在不在逢魔（极人 OR 极妖）*/
+    int32_t       fengma_score;         /* ★ P-B：本局逢魔自动加分的累计（诊断）*/
     uint32_t      aura_id;
     uint16_t      focus_age;
     uint8_t       aura_on;
@@ -1710,6 +1712,13 @@ static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
      * 的第一道闸丢掉（一手 `th08:0x43c0c2`；decomp `EnemyManager.cpp:670-677` 传的正是 `param_2 = 0`）。*/
     if (!yk_gauge_gate_blocks(yk_shooting()))
         s->gauge = yk_gauge_add(s->gauge, focused ? 200 : -200);
+    /* ★★★ 2026-09-22 夜（P-B）：**逢魔那一颗刻符与聚焦无关** —— 一手它在死亡公共尾
+     *（`EnemyManager::on_tick` 的 `th08:0x42da2a`/`th08:0x42da38` ⇒ `th08:0x42da41 push 1` /
+     * `th08:0x42da54 spawn_item(type 7, state 1)`），人侧（未聚焦）一样掉。
+     * ⚠ 原来这段写在下面 `!focused` 之后 ⇒ 人侧逢魔不掉 —— 本批挪到前面（一手修正）。
+     * 出生态 state 1 = 生成即满速归航（我们的 `YK_ORB_STATE_HOMING`）。*/
+    if (yk_fengma(s->gauge, YK_GAUGE_HUMAN_EFFECTS, YK_GAUGE_YOUKAI_EFFECTS))
+        yk_orb_spawn(s, ev->x, ev->y, YK_ORB_STATE_HOMING);
     if (!focused) return;                               /* 妖逢魔才撒刻符 */
     /* ★★★ 2026-09-22 深夜（owner 口径细化）：**两条一手来源分开实现**（各带自己的出处）。
      *
@@ -1732,10 +1741,7 @@ static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
         yk_orb_spawn(s, ev->x + yk_cos_approx(ang) * 128.0f, ev->y + yk_sin_approx(ang) * 128.0f,
                      YK_ORB_STATE_SPAWN);   /* 一手 `th08:0x42b048`：state 3（上抛，期间收不到）*/
     }
-    /* ② 極端人/妖的那一颗：state 1（生成即满速归航 = 自动吸收）。位置 = 敌人处（一手 push 的是
-     * `enemy+0x2d88` 那份坐标，没有 128 环）。*/
-    if (yk_orb_instant_absorb(s->gauge))
-        yk_orb_spawn(s, ev->x, ev->y, YK_ORB_STATE_HOMING);
+    /* ② 極端人/妖的那一颗**已挪到上面**（`!focused` 之前）—— 一手它与聚焦无关，见那里的注。*/
 }
 
 static void yk_gauge_hud_kill(yk_card_t *s)
@@ -1896,6 +1902,8 @@ static int on_ctor(ce_card_t *c)
     s->rearms_seen = 0;                 /* ★ route A：整表 reset 也清条目，但计数只增不清 ⇒ 快照回 0 */
     s->releases_seen = 0;               /* ★ P8-3：同上（route A′ 计数只增不清）*/
     s->night_logged = 0;
+    s->fengma = 0;
+    s->fengma_score = 0;
     s->claimed_set = -1;                /* ★ P7：认领日志的「变化才打」闩 */
     s->flash_pending = 0;
     s->aura_id = 0;                     /* ★ #23：本体 Shift 光环（低速 = 妖侧才存在）*/
@@ -2623,9 +2631,10 @@ static int on_tick_2(ce_card_t *c)
             if (ch < 0 || ch > 3) ch = 0;
             yk_orb_motion_params(ch, &sp, &rr);
             ce_log("youkai: gauge=%d piv=%d orbs=%d taken=%u live=%u full=%u hud=%u "
-                   "speed=%.0f pick=%.0f shoot=%d",
+                   "speed=%.0f pick=%.0f shoot=%d fengma=%u fscore=%d",
                    (int)s->gauge, (int)s->piv, (int)s->orbs, s->orb_taken, s_orb_live,
-                   s->orb_full, (unsigned)s->hud_ready, sp, rr, yk_shooting());
+                   s->orb_full, (unsigned)s->hud_ready, sp, rr, yk_shooting(),
+                   (unsigned)s->fengma, (int)s->fengma_score);
         }
     if (!CE_PLAYER()) {
         yk_drop_all(s, "no player");
@@ -2737,6 +2746,22 @@ static int on_tick_2(ce_card_t *c)
     if (s->focus_age < 60000) ++s->focus_age;
     yk_aura_tick(s, *(const float *)(CE_PLAYER() + CE_PLAYER_X), *(const float *)(CE_PLAYER() + CE_PLAYER_Y));
     yk_ring_tick();                       /* ★ 切换环的计时（到点自己发 interrupt 3 淡出）*/
+    /* ★★★ 2026-09-22 夜（owner 工单 **P-B 逢魔**）：**逢魔时分数自动加 100/帧**（一手一档）。
+     * 一手：`Player::on_tick th08:0x44c390` 的 `th08:0x44c554 push 0x64` → `th08:0x44c55b add_to_score`
+     *   （人侧）/ `th08:0x44c58c`+`:0x44c593`（妖侧）；门 = 极人 OR 极妖 **且 `Gui::IsMsgActive() == 0`**
+     *   （`th08:0x44c504 call 0x4358bb`）⇒ **对话中不加分**。⚠ owner 的「≥90% 最快档」一手不存在
+     *   （owner 2026-09-22 裁：按一手）。落笔 = 直接加 `CE_SCORE()`（TH18 的显示分那一格）。*/
+    {
+        uint8_t *pl2 = CE_PLAYER();
+        if (pl2) {
+            int fm = yk_fengma(s->gauge, YK_GAUGE_HUMAN_EFFECTS, YK_GAUGE_YOUKAI_EFFECTS);
+            s->fengma = (uint8_t)fm;
+            if (fm && !CE_GUI_MSG_ACTIVE()) {
+                CE_SCORE() += YK_FENGMA_SCORE_PER_FRAME;       /* 一手 100 显示分/帧、一档 */
+                s->fengma_score += YK_FENGMA_SCORE_PER_FRAME;
+            }
+        }
+    }
     /* ★ #26 风味选项：决死窗口里全屏敌弹变红（判据 = 既有原语 `player+0x476ac == 4`）。*/
     (void)yk_deathbomb_tint();
     yk_gauge_tick(s, focused);

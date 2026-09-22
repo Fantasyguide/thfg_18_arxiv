@@ -62,6 +62,9 @@ PRIMS = {
             # ★ 2026-09-22 夜（P-A 夜点）：开局那一行 —— 夜点初值按难度四档（一手 th08:0x43af1b 的 switch）
             (r"youkai: night point init = \d+ \(difficulty \d",
              "夜点初值已按难度起（蓝点最大分 = 夜点；每 2 刻符 +10）", False),
+            # ★ 2026-09-22 夜（P-B 逢魔）：ledger 行里的逢魔位（1 = 极人 OR 极妖；加分 100/帧、对话中不涨）
+            (r"fengma=[01] fscore=\d+",
+             "逢魔状态与自动加分在账上可见（一手 100 分/帧、一档）", False),
         ],
         fail=[(r"youkai: familiar spawn FAILED", "创建失败（池满 / 坐标非法）"),
               (r"youkai: familiar follow-VM table full", "跟随 VM 表满（画面会少使魔）"),

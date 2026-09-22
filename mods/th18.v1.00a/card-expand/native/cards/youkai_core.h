@@ -923,3 +923,28 @@ int32_t yk_night_point_init(int32_t difficulty);          /* 0..4 → 60000/1000
 /* **蓝点分**（TH08 一手算式，整数版）：自机在收点线以上 ⇒ 满值（= 夜点）；以下 ⇒ 按 y 距离衰减。
  * `dist` = `y − pocY`（> 0 = 线下方，单位与 y 同为 640 空间的世界 y）。★ 只做整数（本仓 x87 门）。*/
 int32_t yk_blue_point_score(int32_t night, int32_t dist, int32_t is_max_value);
+
+/* ============ ★★★ 2026-09-22 夜（owner 工单 **P-B 逢魔**）============================================
+ * owner 口径（`HUMAN-YOUKAI-GAUGE.md` §1.5/§1.7）：「人间 −80% 或 妖怪 +80% 以上称为逢魔（妖梦人间率例外 30%）」
+ *   「逢魔时分数会自动不断加，90% 以上达到最快加分速度；每击破一个敌人可获得 2 个刻符」。
+ *
+ * **一手（我们样本，逐指令；owner 2026-09-22 裁：四条冲突一律按一手）**：
+ *   · **门** = 两个「极」谓词取或：极人 `th08:0x406d10`（`gauge <= GM+0x3ddfc`，默认 **−8000**）/
+ *     极妖 `th08:0x406d70`（`gauge >= GM+0x3ddfe`，默认 **+8000**）⇒ `setle`/`setge` 都是**含等号**。
+ *     **没有状态位**（每次现算）；阈值按 shottype 改（妖梦人型 −3000 等，见规格 §3bis.1）。
+ *   · **加分 = 100 显示分/帧、只有一档**：`Player::on_tick th08:0x44c390` 的 `th08:0x44c554 push 0x64`
+ *     → `th08:0x44c55b call 0x4181f0`（人侧）/ `th08:0x44c58c`+`:0x44c593`（妖侧）；`if/else` 不双算。
+ *     门还有一条 **`th08:0x44c504 call 0x4358bb`（`Gui::IsMsgActive() == 0`）** —— **对话中不加分**。
+ *     ⚠ **owner 的「≥90% 最快档」在一手里不存在**（全 exe 无 9000 比较；立即数 9000 在 `.text` 一次都不出现）。
+ *   · **击破掉刻符 = 逢魔时 1 颗**（`EnemyManager::on_tick` 死亡公共尾 `th08:0x42da2a`/`th08:0x42da38`
+ *     ⇒ `th08:0x42da41 push 1` / `th08:0x42da54 spawn_item(type 7)`），**出生态 = state 1**（生成即满速归航）。
+ *     人间逢魔且**自机弹击杀**再加 1 颗（`th08:0x451860`/`:0x45187f`）⇒ 一手是「+1（人人/妖怪都算）
+ *     + 人间逢魔自机弹击杀再 +1」；**没有 `AddTimeOrbs(2)` 这个调用**。
+ *   · 妖梦人型的 30% 例外在 TH18 **没有对应机体** ⇒ 阈值这一格按「默认 ±8000」落（规格 §4 的口径）。*/
+#define YK_FENGMA_SCORE_PER_FRAME 100    /* 一手 `th08:0x44c554 push 0x64`（显示分/帧，一档）*/
+
+/* 逢魔判定：`gauge <= human_eff（默认为负）` **或** `gauge >= youkai_eff（默认为正）` ⇒ 1。 */
+int yk_fengma(int32_t gauge, int32_t human_effects, int32_t youkai_effects);
+/* 逢魔击破该掉几颗刻符（一手：逢魔 ⇒ 1；人间逢魔 + 自机弹击杀 ⇒ 2；其余 ⇒ 0）。
+ * `is_human_fengma` = 人侧那一条门为真（`gauge <= human_eff`）；`by_player_bullet` = 这一下是自机弹打死的。*/
+int yk_fengma_kill_orbs(int fengma, int is_human_fengma, int by_player_bullet);

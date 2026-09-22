@@ -1069,3 +1069,19 @@ int32_t yk_blue_point_score(int32_t night, int32_t dist, int32_t is_max_value)
     v -= v % 10;                                       /* 一手：`itemScore -= itemScore % 10` */
     return v;
 }
+
+/* ============ ★★★ 2026-09-22 夜（P-B 逢魔）：门与击破掉落的纯逻辑 ==============================
+ * 一手（`th08:0x406d10`/`:0x406d70` 两个谓词、`th08:0x42da41` 那一支、`th08:0x45187f` 那第二颗）
+ * 与 owner 的四条冲突裁决（一律按一手）全在 `youkai_core.h` 的同名小节。*/
+int yk_fengma(int32_t gauge, int32_t human_effects, int32_t youkai_effects)
+{
+    /* 一手是 `setle` / `setge` ⇒ 两条都**含等号**；取或（`0x42da2a` / `0x42da38` 两问取或）*/
+    return (gauge <= human_effects || gauge >= youkai_effects) ? 1 : 0;
+}
+
+int yk_fengma_kill_orbs(int fengma, int is_human_fengma, int by_player_bullet)
+{
+    if (!fengma) return 0;
+    if (is_human_fengma && by_player_bullet) return 2;   /* 逢魔 +1 与 `0x45187f` 那一颗 +1 */
+    return 1;
+}

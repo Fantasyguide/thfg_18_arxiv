@@ -20121,3 +20121,35 @@ type 1 的来路要先 grep `push 1` + `push <type>` 的调用点上下文）。
 `engine_abi_check`）；`python3 tooling/check-docs.py` 全部通过（373 个文件）。
 
 **本批没改** `pl0X.sht` / `ability.anm` / wav / 站点。
+
+## §BE 详录 #62（2026-09-22 夜）：108 **P-B 逢魔**（owner「人妖逢魔 / 夜点」工单的第二批）
+
+**owner 裁决（2026-09-22，原话选项）**：「**全部按一手**（÷12 扣槽、无重叠计数、+1+1、时间斜坡）」，
+并要求逐条登记「口径 vs 一手 → 按一手」。本批落 P-B 的三条（P-C/P-D 的在各自批次登记）。
+
+**改了什么**
+
+| 文件 | 改了什么 |
+| --- | --- |
+| `native/cards/youkai_core.{h,c}` | 新增 `YK_FENGMA_SCORE_PER_FRAME 100`、`yk_fengma(gauge, human_eff, youkai_eff)`（两条都含等号、取或）、`yk_fengma_kill_orbs(fengma, is_human, by_player_bullet)`（一手 +1/+1 全算式）|
+| `native/cards/youkai.c` | `on_tick_2` 每帧：算逢魔位存 `s->fengma`；逢魔 **且 `!CE_GUI_MSG_ACTIVE()`** ⇒ `CE_SCORE() += 100`（累计进 `s->fengma_score`）；**把「逢魔那一颗刻符」从 `!focused` 之后挪到之前**（一手它在死亡公共尾、与聚焦无关）；`ledger` 行加 `fengma=` / `fscore=` |
+| `native/tests/test_youkai_core.c` | +13 条断言（门的等号两侧、妖梦式阈值、击破颗数四种组合）⇒ **4529 checks / 0 failed** |
+| `TUNING.md` | 新增 §2.0zg（复刻表 + `#25/#26/#27` 三条「口径 vs 一手 → 按一手」+ 两条一手修正）|
+| `native/tools/verify.py` | expect 新增 `fengma=[01] fscore=\d+` |
+
+**一手（本批新增，全部逐指令）**：门 = `th08:0x406d10`（`setle`，读 `GM+0x3ddfc`）/ `th08:0x406d70`（`setge`，读 `GM+0x3ddfe`），
+阈值写点 `th08:0x44d9f7`（−8000）/ `th08:0x44da12`（+8000）；**加分 100/帧一档**（`th08:0x44c554 push 0x64` →
+`th08:0x44c55b`；妖侧 `th08:0x44c58c`/`:0x44c593`），门含 `Gui::IsMsgActive() == 0`（`th08:0x44c504`）；
+**逢魔击破掉 1 颗刻符**（`th08:0x42da41 push 1` / `th08:0x42da54 spawn_item(type 7, state 1)`）；
+**owner 的「+2」= 逢魔 +1 ＋ 人间逢魔自机弹击杀 +1**（`th08:0x451860`/`:0x45187f`）；
+**owner 的「≥90% 快档」在样本里不存在**。
+
+**待接（明确登记，不假装做了）**：「人间逢魔 + **自机弹击杀**」那第二颗需要「这一下是谁打死的」，
+而 `ce_enemy_death_t` **没有击杀者字段** ⇒ 当前传 `by_player_bullet = 0`（`yk_fengma_kill_orbs` 的算式已写好，
+接上事件字段即可生效）。
+
+**怎么验证的**：`make check` **rc=0**（`x87 = 0`、`test_youkai_core` 4529/0、sites 双面、`sitecheck --all`、
+`contract_check`、`gen_drift`、`capcheck`、`sht-verify`、`anm-verify`、`snd-check`、`dllx87`、`dllverify`、
+`engine_abi_check`）；`python3 tooling/check-docs.py` 全部通过。
+
+**本批没改** `pl0X.sht` / `ability.anm` / wav / 站点。
