@@ -627,29 +627,33 @@ int main(void)
         CHECK(trance_kill_spirit_clamp(100000) == TRANCE_KILL_SPIRIT_MAX);
     }
 
-    /* ============ 12b′. ★★ 兜底档 = 按敌人 HP 上限分两档（2026-09-23 重做）============
+    /* ============ 12b′. ★★ 兜底档 = 按敌人 HP 上限分两档（2026-09-23 重做；同日 owner 拍「往下调」）============
      *
      * 背景（owner 2026-09-19 实跑「神灵掉的**相对**数量偏多」）：旧兜底是写死的 `(120,5)`
      * ⇒ 瞬杀 6 颗，而同一张卡里配了原生窗口的敌人只有 2 颗（TH18 原生 `N` 众数 = 1）
-     * ⇒ 观感上"没配窗口的反而掉得多"。新版把兜底钉在**TH18 原生窗口在同一 HP 档里的众数**上。
-     *
-     * 一手锚（全在 `cards/trance_core.h` 的 `TRANCE_KILL_FB_*` 注释里，本次重跑 `thecl -d 18`
-     * ＋ `thecl -d 13` 得出）：<1000 三档的 `N` 众数 = 1（66/72、44/52、42/65）、`T` 众数 = 120；
-     * ≥1000 档 `N` 众数 = 10（23/57）、`T` 众数 = 300（31/57）。TH13 侧同向（小妖精 1..4、GirlC/D 10..40）。*/
+     * ⇒ 观感上"没配窗口的反而掉得多"。第一轮改成按 HP 两档（`(120,1)` / `(300,10)`），
+     * **同日 owner 又拍「整体往下调」**⇒ 现行 = `(60,1)` / `(120,4)`，取值仍全来自 TH13 普查：
+     *   · 小怪档 `T = 60` = TH13 普查 T 众数（11/59）、`N = 1` = N 众数（12/59）；
+     *   · 大怪档 `(120,4)` = TH13 大妖精档的**最低一档** `GirlC01@st03/st04`（同表 `GirlD01@st03`）。
+     * TH18 原生同档众数是 `(120,1)` / `(300,10)` ⇒ 现行档**有意取在其下**（保守侧）。*/
     {
         int32_t T = 0, N = 0;
+        /* 第一轮那两档（**只用来钉"只降不升"**，不再是现行值）*/
+        const int32_t prev_small_T = 120, prev_small_N = 1;
+        const int32_t prev_big_T = 300, prev_big_N = 10;
 
         /* —— 小怪档（TH18 的实战主体：216 个未配窗口的创建点里 178 个 HP<500）—— */
         trance_kill_fallback(200, &T, &N);                       /* st04 Phantom01 那一档 */
-        CHECK(T == 120 && N == 1);
-        CHECK(trance_kill_spirit_count(0, T, N, 1) == 2);        /* 瞬杀 2 颗（= 原生小怪同档）*/
+        CHECK(T == 60 && N == 1);
+        CHECK(trance_kill_spirit_count(0, T, N, 1) == 2);        /* 瞬杀 2 颗 */
         CHECK(trance_kill_spirit_count(0, T, N, 2) == 3);        /* Hard +1 */
+        CHECK(trance_kill_spirit_count(T, T, N, 1) == 1);        /* 拖满 60 帧（1 s）⇒ 1 颗 */
         CHECK(trance_kill_spirit_count(T + 1, T, N, 1) == 1);    /* 拖过窗口 ⇒ 保底 1 */
 
         /* —— 大怪档（TH18 侧只有 `GirlD01` 那 3 个点落在这一档）—— */
         trance_kill_fallback(5000, &T, &N);
-        CHECK(T == 300 && N == 10);
-        CHECK(trance_kill_spirit_count(0, T, N, 1) == 11);       /* 瞬杀 11（TH13 GirlC01 (10,400) 同量级）*/
+        CHECK(T == 120 && N == 4);
+        CHECK(trance_kill_spirit_count(0, T, N, 1) == 5);        /* 瞬杀 5 颗（第一轮是 11）*/
 
         /* —— 分档线的两条边界（`>=` 归大档）—— */
         trance_kill_fallback(TRANCE_KILL_FB_HP_BIG - 1, &T, &N);
@@ -663,7 +667,7 @@ int main(void)
         trance_kill_fallback(-12345, &T, &N);
         CHECK(T == TRANCE_KILL_FB_T_SMALL && N == TRANCE_KILL_FB_N_SMALL);
 
-        /* —— 不变式：大档一定不比小档小（同 alive 下的颗数单调）—— */
+        /* —— 不变式①：大档一定不比小档小（同 alive 下的颗数单调）—— */
         {
             int32_t alive;
             CHECK(TRANCE_KILL_FB_T_BIG >= TRANCE_KILL_FB_T_SMALL);
@@ -675,6 +679,19 @@ int main(void)
                                                                TRANCE_KILL_FB_N_SMALL, 1);
                 CHECK(big >= small);
                 CHECK(small >= TRANCE_KILL_SPIRIT_MIN);
+            }
+        }
+        /* —— 不变式②（owner 2026-09-23「整体往下调」的可执行版）：**逐点 ≤ 第一轮那两档** ——
+         *   扫 0..600 帧 × 两档 × 两个难度：任何一格比第一轮高 ⇒ 红。谁想往上抬必须先改这条。*/
+        {
+            int32_t alive; int d;
+            for (d = 0; d <= 3; ++d) {
+                for (alive = 0; alive <= 600; ++alive) {
+                    CHECK(trance_kill_spirit_count(alive, TRANCE_KILL_FB_T_SMALL, TRANCE_KILL_FB_N_SMALL, d)
+                          <= trance_kill_spirit_count(alive, prev_small_T, prev_small_N, d));
+                    CHECK(trance_kill_spirit_count(alive, TRANCE_KILL_FB_T_BIG, TRANCE_KILL_FB_N_BIG, d)
+                          <= trance_kill_spirit_count(alive, prev_big_T, prev_big_N, d));
+                }
             }
         }
         /* —— 新兜底档一定落在夹取上界内（不会再像旧 `(120,5)` 那样贴到 64 附近）—— */

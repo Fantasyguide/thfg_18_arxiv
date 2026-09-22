@@ -787,12 +787,16 @@ int trance_core_selfcheck(void)
     if (TRANCE_KILL_SPIRIT_TYPE != 1) ++bad;        /* SPEC §2.2：击破 = 通道 B ⇒ type 1 */
     if (TRANCE_KILL_SPIRIT_MIN != 1) ++bad;
     if (TRANCE_KILL_SPIRIT_MAX != 64) ++bad;        /* ❓ 自定（防脏数据；见 .h 的注释）*/
-    /* ★ 2026-09-23 兜底档：四条普查值 + 两条档位不变式（"大档一定不比小档小"）*/
+    /* ★ 2026-09-23 兜底档：四条普查值 + 四条不变式。第 4/5 条 = 档位方向（大档不小于小档）；
+     *   第 6/7 条 = **owner「整体往下调」的可执行判据**：现行两档必须逐点 ≤ 第一轮那两档
+     *   （(120,1) / (300,10)）—— 谁把数值往上抬，`make check` 立刻红。*/
     if (TRANCE_KILL_FB_HP_BIG != 1000) ++bad;
-    if (TRANCE_KILL_FB_T_SMALL != 120 || TRANCE_KILL_FB_N_SMALL != 1) ++bad;
-    if (TRANCE_KILL_FB_T_BIG != 300 || TRANCE_KILL_FB_N_BIG != 10) ++bad;
+    if (TRANCE_KILL_FB_T_SMALL != 60 || TRANCE_KILL_FB_N_SMALL != 1) ++bad;
+    if (TRANCE_KILL_FB_T_BIG != 120 || TRANCE_KILL_FB_N_BIG != 4) ++bad;
     if (!(TRANCE_KILL_FB_T_BIG >= TRANCE_KILL_FB_T_SMALL)) ++bad;
     if (!(TRANCE_KILL_FB_N_BIG >= TRANCE_KILL_FB_N_SMALL)) ++bad;
+    if (!(TRANCE_KILL_FB_T_SMALL <= 120 && TRANCE_KILL_FB_N_SMALL <= 1)) ++bad;   /* ≤ 第一轮小怪档 */
+    if (!(TRANCE_KILL_FB_T_BIG <= 300 && TRANCE_KILL_FB_N_BIG <= 10)) ++bad;      /* ≤ 第一轮大怪档 */
     if (TRANCE_PHASE_BATCH_TYPES != 7) ++bad;
     if (TRANCE_PHASE_TYPE_A != 0 || TRANCE_PHASE_TYPE_B != 2 || TRANCE_PHASE_TYPE_REST != 3) ++bad;
     if (TRANCE_DURATION_FRAMES_MAX != 600) ++bad;

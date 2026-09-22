@@ -4270,7 +4270,7 @@ static int on_load(ce_card_t *c)
            "spirit ENTITY pool (%d slots, ORIGINAL TH13 scripts type*6+1/+4 = %d..%d layer %d) "
            "-> walk within %d px to collect "
            "(type %d; per-kill count = TH13 channel B decay n=(T-alive)/(T/N)+1, "
-           "+1 on Hard/Lunatic, cap %d, fallback (T,N) by HP band: hp<%d -> (120,1), hp>=%d -> (300,10)) -> trance_collect -> gauge; "
+           "+1 on Hard/Lunatic, cap %d, fallback (T,N) by HP band: hp<%d -> (60,1), hp>=%d -> (120,4)) -> trance_collect -> gauge; "
            "MID-HIT RESCUE (2nd revision, landing fixed): at card slot +0x0c "
            "(on_death_after_deathbomb, after the 8-frame deathbomb window and after the B path) -> "
            "no other claimer -> trance_force_on_death + cancel_impending_death 0x%x + **return 1**; "

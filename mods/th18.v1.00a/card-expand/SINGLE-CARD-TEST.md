@@ -704,7 +704,8 @@ TH08 的妖侧 **有**本体主炮：`ply00as.sht` 满档那一组 5 行里 **3 
   [`engine/spirit/th13/01`](../../../engine/spirit/th13/01-spirit-and-trance.md) §3.2 / §3.2b；
   TH18 侧的档位分布：[`engine/season/th18/01`](../../../engine/season/th18/01-season-residuals.md) §1b‴。
 - **落笔（已改）**：兜底档改成**按敌人 HP 上限（`zEnemyData.life.maximum` = `enemy+0x6224`）两档**——
-  `hp < 1000 ⇒ (T,N)=(120,1)`（瞬杀 **2** 颗）、`hp ≥ 1000 ⇒ (300,10)`（瞬杀 11 颗）；读不到 HP 走小怪档。
+  `hp < 1000 ⇒ (T,N)=(60,1)`（瞬杀 **2** 颗、窗口 1 s）、`hp ≥ 1000 ⇒ (120,4)`（瞬杀 **5** 颗）；读不到 HP 走小怪档。
+  （同日 owner 再拍「两档整体往下调」⇒ 第一轮的 `(120,1)`/`(300,10)` 已作废；现行两档仍全来自 TH13 普查：小怪档 = T 众数 60 / N 众数 1，大怪档 = 大妖精档最低一档 `GirlC01@st03/st04`。）
   **是复刻吗？** 公式与两档的**数值/档位线**来自普查（一手），但**"按 HP 分档"这个映射本身 ❓ 自定**
   （TH13 侧逐敌手写、无公式可抄）⇒ 已进 [`TUNING.md`](TUNING.md) §2.0c，登记 [`AUDIT.md`](AUDIT.md) §BE 详录 #71。
 - **实跑判据**：`trance:  kill #n: T=.. N=.. alive=.. hp=.. -> n=.. [fallback (T,N) by HP band]`

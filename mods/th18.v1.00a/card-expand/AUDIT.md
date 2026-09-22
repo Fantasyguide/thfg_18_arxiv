@@ -20429,10 +20429,17 @@ imm `0x41a80000` = `f2i` 转换上界 ⇒ **实际峰值 20**）；清零 `th08:
 
 | 文件 | 改了什么 | 为什么 |
 | --- | --- | --- |
-| `cards/trance_core.h` | 新增 `TRANCE_KILL_FB_HP_BIG/T_SMALL/N_SMALL/T_BIG/N_BIG` + `trance_kill_fallback(hp_max, &T, &N)` 声明（含三条一手锚的表）；删掉「旧兜底 (120,5)」那段 ❓自定注 | owner 2026-09-19 实跑「神灵掉的**相对**数量偏多」= 兜底瞬杀 6 颗 > 同卡原生档 2 颗。新档位 = **TH18 原生窗口在同一 HP 档里的众数**（<1000 ⇒ `(120,1)`；≥1000 ⇒ `(300,10)`）|
+| `cards/trance_core.h` | 新增 `TRANCE_KILL_FB_HP_BIG/T_SMALL/N_SMALL/T_BIG/N_BIG` + `trance_kill_fallback(hp_max, &T, &N)`；删掉「旧兜底 (120,5)」那段 ❓自定注 | 旧兜底瞬杀 6 颗 > 同卡原生档 2 颗（owner 2026-09-19）⇒ 按 HP 两档；**同日 owner 再拍「整体往下调」** ⇒ 现行 `(60,1)`/`(120,4)`（取值见下节）|
 | `cards/trance_core.c` | 实现 `trance_kill_fallback()`（纯函数）+ selfcheck 四条档位断言 | 同上；`hp_max < 1` 走小怪档（保守）|
 | `cards/trance.c` | `on_enemy_death` 读 `zEnemyData.life.maximum`（`CE_ENEMY_DATA + TRANCE_ENEMY_LIFE_MAX`）并调上面那个查表；日志加 `hp=` 与 `[fallback (T,N) by HP band]`；load 行打印分档线；文件头那段 ❓自定注重写 | 同上 |
 | `native/tests/test_trance_core.c` | 新增 §12b′（档位/边界/读不到 HP/单调不变式/夹取，共 ~40 条断言）| 让"改档位常数忘了改口径"在单测里立刻红 |
+
+**第二轮（同日 owner 拍「两档整体往下调、不许往上涨」）**：第一轮取的是 TH18 原生窗口在同 HP 档的**众数**
+（`(120,1)` / `(300,10)`）—— owner 看过实跑后要求整体调低 ⇒ 现行 = **`hp<1000 ⇒ (60,1)`**（瞬杀 2 颗、窗口 1 s）、
+**`hp≥1000 ⇒ (120,4)`**（瞬杀 5 颗），两档取值仍全部来自 TH13 普查：小怪档 = TH13 的 **T 众数 60（11/59）与 N 众数 1（12/59）**，
+大怪档 = **大妖精档最低一档** `GirlC01@st03/st04 = (spec2 4, spec1 120)`（同表 `GirlD01@st03` 也是 `(4,120)`）。
+「只降不升」是**可执行判据**：`cards/trance_core.c` 的 selfcheck 与 `tests/test_trance_core.c` §12b′ 断言
+「现行两档逐点 ≤ 第一轮那两档」（扫 0..600 帧 × 4 档难度 ⇒ 单测从 2326 涨到 7135 条断言）。
 
 **一手普查（本次重跑，两条命令可复现）**：
 
