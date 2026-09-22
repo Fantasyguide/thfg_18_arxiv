@@ -1068,6 +1068,25 @@ int main(void)
             yk_orb_motion_params(0, 0, &r);
             CHECK(r == 20.0f);
             yk_orb_motion_params(0, 0, 0);                        /* 双 NULL：什么都不做、不崩 */
+            /* ★★★ 2026-09-22（#25 击破符卡的螺旋）：一手参数（`engine/item/th08/01-time-orbs.md` §5.3）
+             * 角度闭式 `θ(t) = ((t − 10) × 2π/40) − π/2`：`t = 10` 正上方（−π/2）、每 +1 帧 +9°（2π/40）。*/
+            {
+                float a = 0.0f;
+                const float D = 0.15707963268f;            /* 2π/40 = 9° */
+                yk_spiral_angle(10, &a);
+                CHECK(a > -1.5708f - 1e-4f && a < -1.5708f + 1e-4f);      /* t = 10 ⇒ 正上方 */
+                yk_spiral_angle(11, &a);
+                CHECK(a > (-1.5708f + D) - 1e-3f && a < (-1.5708f + D) + 1e-3f);
+                yk_spiral_angle(50, &a);                                   /* 40 帧一圈 ⇒ 回到正上方 */
+                CHECK(a > -1.5708f - 1e-3f && a < -1.5708f + 1e-3f);
+                yk_spiral_angle(0, 0);                                     /* NULL 出口不崩 */
+                CHECK(YK_SPIRAL_BATCH_FRAMES == 8 && YK_SPIRAL_FIRST_MAX == 7 &&
+                      YK_SPIRAL_SECOND_N == 6 && YK_SPIRAL_RADIUS == 128.0f);
+                CHECK(yk_spiral_first_count(1000) == 7);                   /* min(额度, 7) */
+                CHECK(yk_spiral_first_count(7) == 7);
+                CHECK(yk_spiral_first_count(3) == 3);
+                CHECK(yk_spiral_first_count(0) == 0 && yk_spiral_first_count(-5) == 0);
+            }
             /* 一手的状态号与常量（改了要在注释里同步改一手出处）*/
             CHECK(YK_ORB_STATE_FALL == 0 && YK_ORB_STATE_HOMING == 1 && YK_ORB_STATE_SPAWN == 3);
             CHECK(YK_ORB_FALL_GRAVITY == 0.03f);                  /* `ds:0x4b44c0` */

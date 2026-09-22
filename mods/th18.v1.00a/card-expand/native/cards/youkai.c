@@ -247,6 +247,13 @@ typedef struct {
                                         *   （被夹住的槽在下一次 `etOn` 就被放开、使魔同帧重建）。*/
 
     int32_t       claimed_set;        /* ★★★ 2026-09-22（P7）：最近一次认领/打日志的主炮 set（-1 = 还没认领过）*/
+    /* ★★★ 2026-09-22（#25 击破符卡的螺旋，一手参数见 `youkai_core.h` §3.11b）：
+     * `spiral_quota` = 还剩几颗没吐（TH08 的 `spellcard[+0x10]`）；`spiral_t` = 计时器帧数（从 10 起算）；
+     * `spell_was` = 上一帧在不在符卡里（**符卡结束的下降沿**是触发器）；`spiral_logged` = 只记一次日志。*/
+    uint32_t      spiral_quota;
+    uint16_t      spiral_t;
+    uint8_t       spell_was;
+    uint8_t       spiral_logged;
     uint32_t      releases_seen;       /* ★★★ 2026-09-22（P8-3 / route A′）：上一帧读到的
                                         *   `yk_map_releases`（第二问主动放行的次数，只增不清）*/
     uint32_t      silent;              /* ★★★ 2026-09-22（P8-6）：使魔**查不到**（过场 destroy_all /
@@ -1206,6 +1213,22 @@ static void yk_orb_kill_all(void)
  *   · `YK_ORB_STATE_HOMING`(1) = **擦弹**那一路（`th08:0x431650` 一族 `spawn_item(type 7, 1)`
  *     ⇒ 一生成就满速归航、没有加速段，owner 要的「刚开始就满速」）；
  *   · `YK_ORB_STATE_SPAWN`(3) = **击破敌机**那一路（`th08:0x42b048` ⇒ 先上浮、`vy > 0` 再归航）。*/
+/* ★★★ 2026-09-22（#25 / 一手）：**三条来源 × state × 何时可被收**（逐站点读 push，全文
+ * `engine/item/th08/01-time-orbs.md` §5.4）。这张表就是 owner 那三句话的编码：
+ *
+ * | 来源 | 出生态（我们） | 上抛/「无敌」 | 何时可被收 |
+ * | --- | --- | --- | --- |
+ * | 通用击破（`th08:0x42b03b push 3`）| `YK_ORB_STATE_SPAWN` | **≈40–44 帧**（`vy = −2.0 − rand(0.2)`、`+0.05/帧`）| `vy > 0` 转归航之后 |
+ * | **極端人/妖那一颗**（`0x42da41 push 1`）| `YK_ORB_STATE_HOMING` | **0 帧** | **生成当帧**（若已在抓取盒内）|
+ * | 击破符卡螺旋 / 擦弹（type 0xa → type 7）| `YK_ORB_STATE_SPAWN` | ≈40–44 帧 | `vy > 0` 之后 |
+ * | 消弹 / `cancel_autocollect` | `YK_ORB_STATE_HOMING` | 0 帧 | 生成当帧 |
+ *
+ * ⚠ **「无敌」的正确含义（别写成无敌帧）**：state 3/5 被**收集分派显式排除**
+ *   （`th08:0x4409f2`–`0x4409ff`：`movsx ecx,[item+0x2d7]; cmp ecx,3; je 0x440c37`）——
+ *   上抛期间**吸收判定根本不会跑**，但道具本身仍是普通道具（会掉出下沿被丢失线吃掉、也会被清屏）。
+ * ⚠ 我们的 `YK_ORB_STATE_SPAWN`(3) 同时覆盖 TH08 的 **state 3 与 state 5**：两者逐指令同形
+ *   （`0x42b03b` 的 state 3 与 `0x440124` 改写出的 state 5 都是「vy 上抛 → `vy > 0` 转归航」，
+ *   且都被收集分派排除）⇒ 一个常量就够，不必再造一个 5。*/
 static void yk_orb_spawn(yk_card_t *s, float x, float y, int state)
 {
     yk_orb_t *o = 0;
@@ -1399,6 +1422,64 @@ static int yk_orbs_tick(yk_card_t *s)
         ce_anm_set_pos(o->anm_id, o->x, o->y, 0.0f);
     }
     return taken;
+}
+
+/* ============ ★★★ #25 击破符卡的「螺旋撒点」（一手参数逐条照抄，见 `youkai_core.h` §3.11b）================
+ *
+ * owner 口径：「击破符卡会有一个**螺旋式**的撒永点，无敌一段时间后自动满速吸收」。
+ * 一手（`th08:0x416b10` 的喷点主体 `0x417533`–`0x4176e1`，逐指令）：每 **8** 帧一批；
+ * `θ(t) = ((t − 10) × 2π/40) − π/2`（**9°/帧、40 帧一圈**、`t = 10` 正上方）；半径 **128**；
+ * 绕**符卡所有者（boss）的位置**；一批 = `min(额度, 7)` 同角 + **固定 6 颗 +π**；
+ * 额度两段扣减；出生态 = `type 0xa → type 7 + state 5`（我们的 `YK_ORB_STATE_SPAWN`）。
+ *
+ * ⚠ **「无敌」这个词的正确含义**（别写成无敌帧）：state 5/3 只是被**收集分派显式排除**
+ *   （`th08:0x4409f2`–`0x4409ff`：`cmp [item+0x2d7],3 / je 跳过`）⇒ 上抛期间**收不到**它，
+ *   但它照样是普通道具（会被丢失线吃掉、也会被清屏）。所谓「之后自动满速吸收」= `vy > 0` 转
+ *   state 1 之后每帧把速度重设成满速归航（`th08:0x44088e` = `[.sht+0x14]` = 10/12）。
+ *
+ * ❓ **一处口径**（登记 `TUNING.md`）：TH08 的额度 `spellcard[+0x10]` 由它自己的
+ *   `Spellcard::ecl_spell_end`（`th08:0x4161b0`）按**符卡计时器**算出 100 / 700 / 1000
+ *   （用时越短越高；「不算击破」那一位给 700）；TH18 的符卡对象在我们的 SDK 里没有对应的
+ *   计时器读法 ⇒ 本卡取**满额 1000**（= 用时最短那一档）。要按 TH18 符卡用时折算只改这一个常量。*/
+#define YK_SPIRAL_QUOTA_FULL 1000u   /* ❓ 口径：TH08 满额档（`th08:0x4162ef` 写 0x3e8）*/
+
+static void yk_spiral_tick(yk_card_t *s)
+{
+    uint8_t *boss;
+    const float *bp;
+    int k, i;
+    float th, cs, sn;
+    if (!s || !s->spiral_quota) return;
+    if (s->spiral_t % YK_SPIRAL_BATCH_FRAMES) { ++s->spiral_t; return; }   /* 一手：每 8 帧一批 */
+    boss = yk_boss();
+    bp = boss ? ce_enemy_pos(boss) : 0;
+    if (!bp) { s->spiral_quota = 0; return; }        /* boss 没了 ⇒ 这一轮作废（下一次符卡重来）*/
+    yk_spiral_angle((int)s->spiral_t + 10, &th);     /* `t` 从 10 起算 ⇒ 第一批 = 正上方 */
+    k = yk_spiral_first_count((int)s->spiral_quota);
+    cs = yk_cos_approx(th);
+    sn = yk_sin_approx(th);
+    for (i = 0; i < k; ++i)                          /* 第一段：同一角、k 颗 */
+        yk_orb_spawn(s, bp[0] + cs * YK_SPIRAL_RADIUS, bp[1] + sn * YK_SPIRAL_RADIUS,
+                     YK_ORB_STATE_SPAWN);
+    if (k) s->spiral_quota = (uint32_t)((int)s->spiral_quota - k);
+    /* 第二段：**固定 6 颗**、角 = 第一段 **+π**（一手 `0x417639 push 0x40490fdb` = π；
+     * ⚠ 不是 π/2 —— `engine/item/th08/01-time-orbs.md` 的旧值已订正）。*/
+    cs = yk_cos_approx(th + 3.14159265f);
+    sn = yk_sin_approx(th + 3.14159265f);
+    for (i = 0; i < YK_SPIRAL_SECOND_N; ++i)
+        yk_orb_spawn(s, bp[0] + cs * YK_SPIRAL_RADIUS, bp[1] + sn * YK_SPIRAL_RADIUS,
+                     YK_ORB_STATE_SPAWN);
+    s->spiral_quota = (s->spiral_quota > (uint32_t)YK_SPIRAL_SECOND_N)
+                        ? (s->spiral_quota - (uint32_t)YK_SPIRAL_SECOND_N) : 0u;   /* 夹到 0 */
+    if (!s->spiral_logged) {
+        s->spiral_logged = 1;
+        ce_log("youkai: spell-card break spiral ON (TH08 `Spellcard::sub_416b10`) - 8-frame batches, "
+               "9 deg/frame (40 frames per turn), radius 128 around the boss, %d same-angle orbs + "
+               "%d at +pi per batch; orbs spawn in state 5 = toss (NOT collectible until vy > 0 - "
+               "that is the 'invincible' in the owner report, not an invulnerability window)",
+               YK_SPIRAL_FIRST_MAX, YK_SPIRAL_SECOND_N);
+    }
+    ++s->spiral_t;
 }
 
 /* ---- 人妖槽 HUD（TH08 `ascii.anm` 的 4 支脚本 + 百分比数字）--------------------------------
@@ -1679,6 +1760,10 @@ static int on_ctor(ce_card_t *c)
     s->rearms_seen = 0;                 /* ★ route A：整表 reset 也清条目，但计数只增不清 ⇒ 快照回 0 */
     s->releases_seen = 0;               /* ★ P8-3：同上（route A′ 计数只增不清）*/
     s->claimed_set = -1;                /* ★ P7：认领日志的「变化才打」闩 */
+    s->spiral_quota = 0;                /* ★ #25：换关不开螺旋（下降沿才开）*/
+    s->spiral_t = 0;
+    s->spell_was = 1;                   /* 开场当作「已经在符卡外」⇒ 不会误触发一次 */
+    s->spiral_logged = 0;
     s->silent = 0;                      /* ★ P8-6：静默消失的账，每关重开归零 */
     s->opt_spring_live = 0;
     /* ★ 2026-09-22 晚（owner 第 2 条）：追踪态 + 目标 + 出场计时（子机在 ctor 里已经全收）
@@ -2410,6 +2495,16 @@ static int on_tick_2(ce_card_t *c)
      *   `ce_damage_rect`（`sdk.h:172` 那段内联汇编）—— 往它身上再加几路活值，i686 的寄存器就不够，
      *   编译器会报「inline assembly requires more registers than available」（2026-09-22 实测）。*/
     yk_fam_vm_check();
+    /* ★★★ #25：**符卡结束的下降沿**开一轮螺旋（一手：TH08 在符卡结算时给额度、之后分批吐）。*/
+    {
+        int sp = ce_spell_active();
+        if (s->spell_was && !sp) {
+            s->spiral_quota = YK_SPIRAL_QUOTA_FULL;
+            s->spiral_t = 0;
+        }
+        s->spell_was = (uint8_t)(sp ? 1 : 0);
+    }
+    yk_spiral_tick(s);
     /* ★★ 2026-09-22（工单 E / route A）：**波次级复位的记账**。夹住的槽在下一次 `etOn`
      * （= 引擎自己的发弹事件）就被放开，卡 tick 的 `yk_note_slot` 同帧消费并重建使魔
      * （语义与一手见 `youkai_core.h` §3.5.2）。这里只**记账**：

@@ -817,6 +817,33 @@ int32_t yk_orb_score(int32_t stage_point_items_in_game, int32_t point_items_in_g
  *   的先例用**指针出口**。任一指针为 NULL ⇒ 跳过那一项；两个都 NULL ⇒ 什么都不做。*/
 void yk_orb_motion_params(int character, float *home_speed, float *pick_r);
 
+/* ============ ★★★ §3.11b 击破符卡的「螺旋撒点」（一手参数，见 engine/item/th08/01-time-orbs.md §5.3）===
+ * owner 口径：「击破符卡会有一个**螺旋式**的撒永点，无敌一段时间后自动满速吸收」。
+ *
+ * 一手（`Spellcard::sub_416b10` `th08:0x416b10`，喷点主体 `0x417533`–`0x4176e1`，逐指令）：
+ *   · **门**：`Timer(owner+0x338)` 命中 **8** ⇒ **每 8 帧一批**（`0x41751a push 8` → `0x41752e call 0x4066c0`）；
+ *   · **角度**：`θ(t) = ((t − 10) × 2π / 40) − π/2`，`t` = 那个计时器的帧数
+ *     （常量 `0x4b4390` = **10.0**、`0x4b4460` = **2π**、`0x4b432c` = **40.0**、`0x4b4468` = **π/2**）
+     *     ⇒ **每帧 9°**（40 帧一圈）、`t = 10` 时指向**正上方**；
+ *   · **半径**：**128.0**（`0x417593 push 0x43000000` → `0x4286e0` 造 (角度, 模长) 的速度向量）；
+ *   · **绕谁**：绕**符卡所有者（boss）的位置**（`[owner+0xf8] + 0x2e0` 再 `0x410a70` 向量加）；
+ *   · **每批颗数**：`k = min(spellcard[+0x10], 7)` **同一角** ＋ **固定 6 颗 +π**（第二段角 = 第一段 +π，
+ *     `0x417639 push 0x40490fdb` = **π**；⚠ 本文旧版曾写「+π/2」，已订正）⇒ 一批 **13** 颗；
+ *     额度两段扣减：`spellcard[+0x10] -= k`（`0x41762d`）、再 `-= 6` 并夹到 0（`0x4176e1`）；
+ *   · **出生态**：`spawn_item(pos, type 0xa, state 0)` → 被 `0x440124` 改写成 **type 7 + state 5**
+ *     （= 我们的 `YK_ORB_STATE_SPAWN`：先上抛、`vy > 0` 才转归航；上抛期间**进不了收集判定**）。
+ *
+ * 下面两个纯函数把「角度」与「每批颗数」抽出来，便于主机单测与卡侧共用（无浮点库调用）。*/
+#define YK_SPIRAL_BATCH_FRAMES 8        /* `0x41751a push 8`：每 8 帧一批 */
+#define YK_SPIRAL_FIRST_MAX    7        /* `0x4175cc cmp ..,7 / jle`：同角一批至多 7 颗 */
+#define YK_SPIRAL_SECOND_N     6        /* `0x4176be cmp [ebp-8],6 / jge`：第二段固定 6 颗（+π）*/
+#define YK_SPIRAL_RADIUS       128.0f   /* `0x43000000`（`0x417593`）*/
+
+/* `t` = 该计时器的帧数（我们从 10 起算，见卡侧）。返回弧度：`((t−10)·2π/40) − π/2`。 */
+void  yk_spiral_angle(int t, float *out);
+/* 本批同角的颗数 = `min(quota, 7)`（quota <= 0 ⇒ 0）。 */
+int   yk_spiral_first_count(int quota);
+
 /* ★★★ 2026-09-22（owner 口径细化 · 永点的两条来源）：**「自动吸收」= state 1（生成即满速归航）**。
  *
  * **owner 原话（逐字）**：「th08 一手永点大概是：**极端人形态爆点是落下即消失，自动吸收**；

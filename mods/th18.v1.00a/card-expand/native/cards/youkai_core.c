@@ -968,6 +968,29 @@ int yk_orb_instant_absorb(int gauge)
     return (yk_gauge_is_extremely_human(gauge) || yk_gauge_is_extremely_youkai(gauge)) ? 1 : 0;
 }
 
+/* ★★★ 2026-09-22（#25 击破符卡的螺旋）：一手角度式（见 .h 的常量与出处）。
+ * `θ = ((t − 10) × 2π / 40) − π/2` —— 只用 `* / + -`（不引 libm，x87 门不受影响）。*/
+void yk_spiral_angle(int t, float *out)
+{
+    const float TWO_PI = 6.28318531f;
+    const float PI = 3.14159265f;
+    float a;
+    if (!out) return;
+    a = (((float)t - 10.0f) * TWO_PI / 40.0f) - 1.57079633f;
+    /* ★ 一手还有一步**角规约**：`0x417590 call 0x43edb0`（= `θ += off` 后 `while (θ > [0x4b4334]) θ -= 2π`，
+     *   `off` 第一段 = 0、第二段 = π）。`[0x4b4334]` = π ⇒ 规约到 (−π, π]。
+     *   照抄（`cos/sin` 本来也周期性，但规约后与一手逐位可比、单测也好钉）。*/
+    while (a > PI) a -= TWO_PI;
+    while (a <= -PI) a += TWO_PI;
+    *out = a;
+}
+
+int yk_spiral_first_count(int quota)
+{
+    if (quota <= 0) return 0;
+    return (quota > YK_SPIRAL_FIRST_MAX) ? YK_SPIRAL_FIRST_MAX : quota;
+}
+
 void yk_orb_motion_params(int character, float *home_speed, float *pick_r)
 {
     /* `[ds:0x18b896c]+0x14`（`th08:0x44088e`）= 当前 `.sht` 头的 `itemCollectSpeed`；
