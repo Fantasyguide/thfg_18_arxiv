@@ -171,3 +171,52 @@ thtk 的 `v2.anmm` 里 **raw 25 是空白行**（上一条 24 `posMode`、下一
    「ins_25 与 rotateAuto 是不是同一个东西」（本文只说**不建议替换**）。
 3. 本文只覆盖 `enemy.anm`（v1.00d）。TH08 的社区反编译记录的 sha256 与本机样本不同（另一个 1.00d 构建）
    ⇒ 若别的构建里 57/58 正文不同，须以本机样本为准（本文全部读自本机样本）。
+
+## 7. ★★ 订正：使魔外观**确实随人/妖（Shift）变** —— owner 2026-09-22 提示的一手落点
+
+> owner 原话：「th08 是有反编译源代码的，**使魔的样子会随着是否 shift（人/妖）变**」。
+> 本节用 `local/vendor/th08_dec/src/EclManager.cpp`（逐函数可读）查证。**本节订正 §4 的判据**，但 §1/§2 的
+> 逐帧抄写与 sprite 矩形**不变**（那是「脚本正文」层面的事实）。
+
+### 7.1 发现：建使魔的三条 opcode 当场按人/妖分流（一手，三处逐条相同）
+
+`EclManager.cpp` 的 case **89/90/91**（= ECL opcode **90/91/92** = `familiarCreateA/F`，
+与我 §1 的 handler `th08:0x41af5b` / `0x41b10b` / `0x41b2bb` → `0x41f110` / `0x41f280` 对得上）
+在 `g_BulletSpawnFlag == 0` 那一支里做三件事（`EclManager.cpp:2149-2160` / `2182-2193` / `2215-2226`）：
+
+| 写哪里 | 写什么 | 出处 |
+| --- | --- | --- |
+| `node->flags` bit11 | `= g_Player.IsYoukai() & 1`（枚举名 **`ECL_FLAG_ISYOUKAI_MODE = 0x800`**，注释「依玩家 youkai 状态调整 (op90-92)」）| `EclManager.cpp:58` / `:2150` |
+| **`node->enemyType`** | `= g_Player.IsYoukai() ? 0 : 2` | `EclManager.cpp:2151` |
+| 圆环特效 `linkedEffect`（`AllocEffectSlot(0x20, …)`）| `SetInterrupt(IsYoukai() ? 2 : 1)` | `EclManager.cpp:2159` |
+
+⇒ **人/妖两侧的使魔不是一个东西**：妖侧 = `enemyType 0` + 圆环 interrupt **2**；人侧 = `enemyType 2` + interrupt **1**
+（外加 `flags` bit11 也跟着翻）。另外 **opcode 83（`trailFamiliarSet` = 「打上使魔旗标」那条）**
+在 decomp 里写的是 `enemy->anmFlags` 位1，取值同样来自 `IsYoukai()`——
+枚举名直接就叫 **`ECL_ANM_FLAG_ISYOUKAI = 0x2`**（注释「(op83)」，`EclManager.cpp:76` / `:3304`）。
+
+**字段身份一手核对**：`enemy+0x3328` 的 vendor 名是 `flags_hi`，而 decomp 明确把它叫 **`Enemy::anmFlags`**
+（`EclManager.cpp:74` 的「Enemy::anmFlags (0x3328) 位定义」）⇒ 我 §1/§2 记的「`flags_hi` 的使魔旗标」
+**就是 anm 侧的旗标**，不是单纯的行为 flags。
+
+🟡 **与我 §1 的一处不一致（留待复核）**：我读 handler `th08:0x41e532` 时看到的是
+`movzx eax,[edx+0xa]; and eax,1 → bit1`（像是「取 opcode 参数」），而 decomp `:3304` 写的是
+`(v82a & 1) << 1` 且 `v82a` 来自 `IsYoukai()`。两条都指向「这一位 = 人/妖」，但**「值从哪来」没对齐**：
+要么 `op83` 的参数在原生脚本里恒等于人/妖（不太可能），要么我对 `[edx+0xa]` 的取址读错了。
+⇒ 复核办法：读 `EclManager.cpp` 的 case **82** 上下文（`v82a` 的赋值行）并与 `0x41e532` 逐指令对。
+
+### 7.2 结论：§4 的判据要**限定**
+
+- §4 说的「外观按**生成它的子程序**分（子程序里的 `anmSet(K)`）」—— **只对「脚本号」这一层成立**；
+- **同一支子程序 / 同一个 K，在人侧与妖侧还可能取到不同的图**（`anmFlags` 位1 = `ECL_ANM_FLAG_ISYOUKAI`、
+  `enemyType` 0 vs 2），**而且圆环特效的动画本来就分两侧**（interrupt 2 / 1）。
+- ⇒ **选素材的人的判据**（本节要传达的那一条）：**不能只问「哪支子程序用哪套 anm」，还要问
+  「这套是在人侧还是妖侧被看到的」**；两作在这条上不是同一套坐标。
+- **对我们的简化（这条是好消息）**：108 的使魔**只在低速（= 妖侧）存在**（高速时 `yk_drop_all` 全撤，
+  见 `youkai.c` 的 `on_tick_2`）⇒ **我们只会用到妖侧那一半**（对应 `enemyType 0` / 圆环 interrupt 2），
+  人侧那半永远不出现 ⇒ 现在「按发射口槽选四套」虽然仍是 ❓ 自定（§4 已记），但**不需要**再加人/妖维度。
+- 仍未定（🟡，留给下一条一手）：`enemyType`（0/2）与 `flags` bit11 到底是**换图集**、**换 sprite 段**，
+  还是只换**列表归属/显示顺序**（`EnemyManager.cpp:870-871` 把它当 per-type 链表的桶下标用）。
+  候选读点：`th08:0x42c432` / `0x42cf1f` / `0x42db14`（`shr …,0xb` = 取 `flags` bit11）、
+  `th08:0x43db64` / `0x43db8a`（`and …,0x800`），以及 decomp `EclManager.cpp:920` / `:1777`
+  （读 `anmFlags` 的位2/位1）。**在把这几处读完之前，任何「哪套贴图属于哪一侧」的说法都只能是 🟡。**

@@ -251,3 +251,47 @@ solo-youkai，逐套数值见 [`research-th08-night-points.md`](https://) 的同
 | #2 妖侧本体 | ❌ 没有「换本体脚本」的 SDK 面；`pl0X.anm` 禁改 | **等 owner 在 A/B/D 里选一条**（§1.4）|
 | #4 人妖槽（数值）| ❌ 没有 | 卡侧自建 i16 标量 + 4 阈值；7 个写入者里**能复刻的 4 个**：击破敌（±200）、收道具（±itemScore）、射击帧（±`0x6590/shotInterval`）、聚焦漂移（±`youkaiDelta*g_ShotSpeed`）——都需要「击破/收集」回调（`on_enemy_death` / `on_item_collect` 已有）|
 | #4 人妖槽（HUD）| ✅ **有现成的 HUD 层**（`ce_hud_number_*` / `ce_hud_vm_text_*` / `ce_hud_slot_*`）| 照 `AsciiManager` 的**几何**（条宽 112、图标 56、量程 ±10000、百分比文字在游标上方 7 px）画；贴图走 `ascii.anm` 的 4 支脚本**原生切图**（不许自绘）|
+
+## ★ 附：人/妖的本体动画脚本对（一手 `local/vendor/th08_dec/src/Player.cpp`）—— 与 108 卡侧逐条对照
+
+> 起因：owner 2026-09-22「th08 是有反编译源代码的，使魔的样子会随着是否 shift（人/妖）变」。
+> 本节回答**玩家侧**那一半：人/妖换的到底是「换整支脚本」还是「同一脚本换 sprite」。结论：**换整支脚本，
+> 且脚本号就是「人侧 + 5」**。地址/行号均为 TH08 v1.00d 反编译源码（本机 `local/vendor/th08_dec`）。
+
+### 1. 发现（行号级）
+
+| 态 | 人侧脚本号 | 妖侧脚本号 | 出处 |
+| --- | --- | --- | --- |
+| 站立（idle）| **0** | **5** | `Player.cpp:652-660`（`isYoukaiMode == 0` ⇒ `setForm0`；否则 `g_PlayerCharacter & 1` 选 5 —— 见 §3 的差异）|
+| 移动四态 | **1 / 2 / 3 / 4** | **6 / 7 / 8 / 9** | `Player.cpp:1013-1030`（`isYoukaiMode != 0` ⇒ `SET_MOVE_ANIM(6,7,8,9)`，否则 `SET_MOVE_ANIM(1,2,3,4)`）|
+
+- 宏 `SET_MOVE_ANIM(a,b,c,d)` 在 `Player.cpp:798-806`：**按横向速度的边沿**选脚本 ——
+  `speedX < 0 && velocityX >= 0`（向左起步）→ `a`；`speedX == 0 && velocityX < 0`（左停）→ `b`；
+  `speedX > 0 && velocityX <= 0`（向右起步）→ `c`；`speedX == 0 && velocityX > 0`（右停）→ `d`。
+  调用点先对 `speedX/speedY` 乘 `unk404/unk408`（该形态的速度系数）再比。
+- 换态的两条路：`Player.cpp:900`（`isYoukaiMode = 1`）/ `:965`（`= 0`），换态途中显式设脚本 **5**（`:878` / `:942`）。
+
+### 2. 与 108 卡侧的对照
+
+| 项 | TH08 原版（本节一手）| 108 卡侧 | 判定 |
+| --- | --- | --- | --- |
+| 每侧脚本数 | **5**（idle + 4 移动态）| `YK_BODY_SCRIPT[4][5]` | ✅ 同形 |
+| 妖侧怎么取 | **人侧 + 5**（0↔5、1..4↔6..9）| 「进妖侧脚本 = 人侧 + 5」| ✅ **对得上** |
+| 换法 | `SetAndExecuteScriptIdx` 整体换脚本（不是换 sprite）| 低速换整支脚本（`yk_body_load_script`）| ✅ 同形 |
+| 触发 | 站立/移动由**输入速度边沿**选 | `yk_body_state`（自复刻的状态机）| ⚠ 要逐条核对四个边沿条件（见 §4）|
+
+### 3. TH08 还有、我们没有的两个东西（不影响结论，但要写清）
+
+1. **第三态 `isYoukaiMode == 2`**：`Player.cpp:1534` 在初始化里把它置 2；而**判定用的 `IsYoukai()`
+   返回的是另一个字段**（`Player.cpp:353-356`：`return this->unk5;`，`th08:0x40bc40`）⇒
+   「`isYoukaiMode`」与「`IsYoukai()`」在 TH08 里**不是同一个读数**（🟡 `unk5` 的写点未查）。
+   动画那条判据用的是 `isYoukaiMode != 0`（`:1013`）⇒ **2 也走妖侧动画**。
+2. **`g_PlayerCharacter >= 4` 的 solo 分支**：TH08 的 8 个可选角色里 4..7 是「直接选妖侧角色」的单人模式，
+   它们的 idle 用 `g_PlayerCharacter & 1` 选 0/5（`Player.cpp:652-660`、`:1020-1028`）。
+   TH18 只有 4 个机体 + Shift 二态 ⇒ **我们不需要这个维度**（这也解释了为什么我们的表是 `[4][5]`）。
+
+### 4. 缺口（🟡）
+
+- `Player.cpp:798-806` 的四个边沿条件要与我们 `youkai_core.h` §3.2 的状态机**逐条**对一遍
+  （本轮只给一手原文，未做逐条对照）——这是「路 A 本体」实跑验收前唯一还欠的静态对账。
+- `unk5`（`IsYoukai()` 的真身）的写点未查；它与人妖槽的关系见本文件 §2（人妖槽）那几节。
