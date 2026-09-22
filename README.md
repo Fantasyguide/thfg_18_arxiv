@@ -50,6 +50,7 @@ local/         gitignored:exe / 资产 / Ghidra 工程 / vendor 克隆
 | 开一个新作 | [`games/`](games/) 看已有两作的登记格式 → [`tooling/ghidra/README.md`](tooling/ghidra/README.md) 建库 |
 | 做 mod | [`mods/README.md`](mods/README.md) → [`mods/_template/`](mods/_template/) |
 | 查某个格式/社区结论 | [`engine/_shared/community-sources.md`](engine/_shared/community-sources.md) |
+| **问「这一作原版有没有 X」之前** | ★ [`engine/_shared/original-common-sense.md`](engine/_shared/original-common-sense.md)（原版常识层 + 「三查」硬规矩；**答案在里面就不许问 owner**）|
 
 ## 每个子系统怎么读
 
