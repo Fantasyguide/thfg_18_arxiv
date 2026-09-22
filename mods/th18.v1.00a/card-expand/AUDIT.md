@@ -17810,6 +17810,63 @@ state-8 每帧：`0x426192 fld [edi+0x984]` → `0x4261ad call 0x4377a0`（朝**
 | `test-host` | `test_youkai_core` 45 failed（工作树里的 `youkai_core.*` 是**未提交**改动）| 用 HEAD 版重编同一支单测 ⇒ **709 checks / 0 failed**；本包只动 `pofv*` |
 | `capcheck` | ① `sht_groups` 豁免的计划段在 `NEXT.md` 找不到；② 15 个 `CE_SHT_SET_YOUKAI_*` 没登记进台账 | 两条都是 108/117 那条线（youkai shooterset）；HEAD 上 capcheck 另有 1 条旧红（atlas entry） |
 
+## §BE-FE（2026-09-22 夜）：**「名额回收 / 二分（临时）」摘掉的功能站点没回填 —— 全表排查 + 四条恢复**
+
+> **谁做的**：统筹会话。**起因**：owner 2026-09-22 晚「我估计其中的部分 bug 你重新查一下名额回收静默摘掉」
+> （导火索是当天先修的 `ce_bomb_gate`）。**动到的文件**：`native/sites.py`（4 条站点表 + `_SDK_KEEP_NAMED` + 宏发射行）、
+> `native/sdk.c`（`bps[]` 启动核对行）、生成物 `patch/th18.v1.00a.js` / `patch-test/…` / `native/sites_gen.h` /
+> `native/th18_card_expand.def`（`make gen` + `tools/gen_def.py` 重生成）。
+
+### 一、排查方法（可复算）
+
+把「**源码里实现了的 `BP_*` handler**」与「**patch / `.def` 里导出的 `BP_*`**」做全量对账：
+
+```python
+# 源码里 ^int|void __cdecl BP_xxx( 的定义集  vs  .def 里的导出集 —— 差集 = 有实现却没进 patch 的 handler
+```
+
+⇒ **11 个 handler 有实现却没进 patch**（= 永远不会被调用）。再对每个名字找**消费方**
+（卡注册的 hook / SDK 内部依赖），据此分三类：**该恢复 / 无消费者 / 故意 park**。
+
+### 二、恢复的四条（每条都先过 `sitecheck.py <addr> <len>` 四项 + 找齐消费方）
+
+| 站点 | 地址/窗口 | 消费方（证据）| 摘掉时的注释 |
+| --- | --- | --- | --- |
+| `ce_bomb_gate` | `0x45c048`×7 | `cards/animal.c` 的 `on_bomb_gate`（117「咆哮期间 X 不放下原版炸弹」）| 2026-09-16zs「二分（临时）」，**没写理由** |
+| `ce_option_shot_gate` | `0x40a9c3`×6 | `cards/trance.c` + `cards/animal.c` 的 `on_option_shot_gate`（113 灵界 / 117 咆哮期间停装备卡子机弹）；`sdk.c:72` 的 `CE_OPTION_SHOT_GATE_ENABLE` **早就是 1** | 2026-09-18「名额回收」 |
+| `ce_item_score_in` | `0x446bf9`×8 | **计分层唯一的落笔点**（`sdk.c` 的 `score-in:` 整套注入）⇒ 摘着 = 107/110/111/113 的 `ce_score_declare` 全部静默失效、分值悄悄回原生 | 2026-09-16zr「二分（临时）」 |
+| `ce_bomb_spent` | `0x4203bc`×5 | **六张卡**注册了 `.on_bomb_spent`：`corruption(70)` / `senro(107)` / `signal(111)` / `th06rank(106)` / `truesilver(75)` / `whirlwind(79)` | 2026-09-16zs「二分（临时）」 |
+
+**共同形态**：注释里写着「临时」，之后没有任何回填记录；功能性消费方一直挂着 ⇒ **静默失效**
+（没有站点 = handler 永不调用，日志一个字都不抱怨）—— 与 2026-09-18 那颗「按【下标】截断」的雷同源。
+
+### 三、仍然 park 的四条（各有理由，写在这里免得下次再查一遍）
+
+| 站点 | 为什么不恢复 |
+| --- | --- |
+| `ce_poc_gate_a` / `ce_poc_gate_b` | **故意**不装：接管那条 `ja` 有害（106 在场时道具只减速、不变橙不抖），且 handler 从不复现 `ja` 的比较语义 ⇒ 无人声明时恒落真空入口（§BE-EN / §BE-EQ）|
+| `ce_death_result`（`0x45c127`）| **无生产消费者**：`ce_death_result()` / `ce_death_cancelled()` 全库只有单测在读 ⇒ 恢复它对行为零影响（真要用时一行放回，窗口 6 字节已过 sitecheck）|
+| `ce_chain_node_guard`（`0x401357`）| 2026-09-16zn 已把站点从 `0x401352`（`call eax` **之前**）挪到 `0x401357`（**之后**）以读取回调返回值做取证 ⇒ **拦截能力当时就自弃了**，现在只是个观察者；观察者按「名额回收」口径停用 |
+
+### 四、验证原文
+
+- `sitecheck.py` 四条窗口各 **W1/W2/W3/R/W4 全绿**；`sitecheck.py --all` ⇒ **56 窗口 / 6 落点 / 判据自检 12 例 ✅**
+- `make gen` + `tools/gen_def.py` ⇒ patch 断点 **25 → 31**、`.def` 导出 **32**（= 1 + 31）
+- `sites.py check` ⇒ **「断点导出对账：31 个 BP_* 双向一致 ✅」**（无「patch 声明但 DLL 没导出」）
+- `tools/gen_drift.py` ⇒ **生成物无漂移**；`tools/contract_check.py` ⇒ 37 张卡契约预检通过
+- `make check` / `check-docs`（371 文件）⇒ 全绿
+
+### 五、影响面（**这几条会改变可观察行为，实跑要盯**）
+
+- **计分层真的开始生效**：107/110/111/113 的 `ce_score_declare`（含 113 的 10000、107 的樱点分、110/111 的信仰分）
+  从「声明了但没人读」变成「真的加进这一笔分」。日志会出现 `score-in: base=… G0=… sum=… -> ecx=…`。
+- **六张卡的「炸弹被消耗」回调真的会响**（含别人批次的 70 / 75 / 79）。
+- **113 的灵界 / 117 的咆哮期间**：装备卡原生子机弹会被**真的停掉**（`on_option_shot_gate`）。
+- **117 咆哮中按 X**：不再放下原版炸弹（`ce_bomb_gate`）。
+- 站点账：我们 patch 声明 **31** 条（超记账线 24；进程级 31+2+20 = 53 > 42 —— 两条都是**告警口径**，
+  真判据仍是 sitecheck + 启动日志 `pool:` 实测余格 + 实跑，见 `WORK-PACKAGES.md` §10「站点余量答问」）。
+- 启动核对表 `bps[]` 同步补上这四条 ⇒ 若哪条没挂上，开机会打印 `FAIL: sdk: breakpoint … not applied` 并拒绝初始化。
+
 ## §BE-FD（2026-09-22）：**113「手动灵界被中弹 ⇒ 升格成死亡强制档」= 我们误读一手**（owner th13 #6），已删
 
 > **谁做的**：统筹会话（owner 2026-09-22 实跑口径：「13 灵界之前是好的，击中后连 hit 音都没有」

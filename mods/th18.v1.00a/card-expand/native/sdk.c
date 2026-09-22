@@ -2438,7 +2438,12 @@ int ce_sdk_setup(uint8_t *base, int trace)
         /* 名额回收：本行停用（站点已从 patch 摘除，功能=纯观察者）*/
         /* 名额回收：本行停用（站点已从 patch 摘除，功能=纯观察者）*/
         { "ce_item_money",  CE_BP_ITEM_MONEY_RVA,  6 },
-        /* ⛔ ce_bomb_spent：站点仍在 park（`_sdk_rva` = 0，见 `sites.py` 的 `SDK_SITES` 过滤）*/
+        /* ★ 2026-09-22 恢复（同 `ce_bomb_gate`/`ce_option_shot_gate`）：`ce_bomb_spent` 有**六个**
+         *   卡的 `.on_bomb_spent` 消费方；`ce_item_score_in` 是**计分层唯一的落笔点**（`score-in:` 那套）。
+         *   两条都是 2026-09-16 的「二分（临时）」摘的、**从没回填** ⇒ 静默失效。sitecheck 四项全过。*/
+        { "ce_item_score_in", CE_BP_ITEM_SCORE_IN_RVA, 8 },
+        { "ce_bomb_spent",  CE_BP_BOMB_SPENT_RVA,  5 },
+        /* ⛔ ce_death_result / ce_poc_gate_a / ce_poc_gate_b / ce_chain_node_guard：仍 park（见 §BE-FE）*/
         { "ce_enemy_drop",  CE_BP_ENEMY_DROP_RVA,  6 },
         /* ★★ 2026-09-22 恢复（本表曾被 2026-09-16/17 的「二分」整片注释掉，但那些站点后来
          *   已在 `sites.py` 的 `_SDK_KEEP_NAMED` 里按名字放回 patch ⇒ **注释没跟着回来** =
@@ -2453,7 +2458,9 @@ int ce_sdk_setup(uint8_t *base, int trace)
         { "ce_shot_damage", CE_BP_SHOT_DAMAGE_RVA, 7 },
         { "ce_bomb_gate",   CE_BP_BOMB_GATE_RVA,   7 },
         { "ce_shot_set_index", CE_BP_SHOT_SET_INDEX_RVA, 7 },
-        /* ⛔ ce_option_shot_gate：站点仍在 park（宏是坏值 `0x-400000`）*/
+        /* ★ 2026-09-22 恢复（同 `ce_bomb_gate`）：`CE_OPTION_SHOT_GATE_ENABLE` = 1 而站点被「名额回收」
+         *   摘掉 ⇒ 113 的「灵界期间停掉装备卡子机弹」与 117 的咆哮同款闸**静默失效**。sitecheck 四项全过。*/
+        { "ce_option_shot_gate", CE_BP_OPTION_SHOT_GATE_RVA, 6 },
         { "ce_enemy_damage", CE_BP_ENEMY_DAMAGE_RVA, 6 },
         { "ce_enemy_death", CE_BP_ENEMY_DEATH_RVA, 6 },
         { "ce_enemy_shot_slot", CE_BP_ENEMY_SHOT_SLOT_RVA, 8 },

@@ -1025,13 +1025,17 @@ SDK_SITES = [
     #    为什么搬：那两个站点都在**引擎算完身价之后**（`esi` = 引擎自己的最终值），handler 一写 `regs->esi`
     #    就把引擎刚做的高度系数（`0x446bf9`–`0x446cf3`）整个丢掉 ⇒ 实际结构 = `coeff × G_0 + ΣG_i`，
     #    而用户规格要的是 `coeff × (G_0 + ΣG_i)`。改 `ecx` = 改「引擎接下来要乘系数的那个输入」⇒ 系数自动乘在整笔上。
-    # ⚗ 2026-09-16zr 二分（临时）：整条摘掉「计分层返工新增的落笔点」ce_item_score_in（0x446bf9）。
-    #     ("ce_item_score_in", 0x446bf9, 8, "f30f108698790400",
-    #      "collect_money_item 0x446b00 的**单一汇合点**：movss xmm0,[esi+0x47998]（回收线；8 字节、无相对寻址）。"
-    #      "三条难度支（0x446b30 EASY / 0x446b86 其余 / 0x446ba3 EXTRA）与 `ja 0x446bf3` 那条都汇到这里；"
-    #      "此刻 **ecx = 引擎钳位后的身价**（单位 1/1000 点，恒等于 [0x4ccd24]）、**esi = PLAYER**（0x446b0c 从 0x4cf410 载入）、"
-    #      "**edi = ITEM**（= [ebp-8]）。handler 把它改成 `1000 × (G_0 + ΣG_i)` ⇒ 引擎自己那两段高度系数"
-    #      "（满额 0x446cb4 / 线下折扣 0x446c17）就乘在**整笔**上，满额支的 `SCORE += floor(ecx/1000)` 精确给出我们声明的条数。"),
+    # ★★ 2026-09-22 **恢复**（owner 2026-09-22 晚：「我估计其中的部分 bug 你重新查一下名额回收静默摘掉」）：
+    #    这条 2026-09-16zr 的二分注释只写了「临时」，**从来没回填** —— 而它是**计分层唯一的落笔点**
+    #    （`sdk.c` 的 `score-in:` 那一整套注入逻辑挂在这条上）⇒ 摘着 = 107/110/111/113 的
+    #    `ce_score_declare` 全部**静默失效**（分值悄悄回到原生，日志上一句抱怨都没有）。
+    #    恢复前逐项过 `sitecheck.py 0x446bf9 8`：W1/W2/W3/R/W4 全绿。
+    ("ce_item_score_in", 0x446bf9, 8, "f30f108698790400",
+     "collect_money_item 0x446b00 的**单一汇合点**：movss xmm0,[esi+0x47998]（回收线；8 字节、无相对寻址）。"
+     "三条难度支（0x446b30 EASY / 0x446b86 其余 / 0x446ba3 EXTRA）与 `ja 0x446bf3` 那条都汇到这里；"
+     "此刻 **ecx = 引擎钳位后的身价**（单位 1/1000 点，恒等于 [0x4ccd24]）、**esi = PLAYER**（0x446b0c 从 0x4cf410 载入）、"
+     "**edi = ITEM**（= [ebp-8]）。handler 把它改成 `1000 × (G_0 + ΣG_i)` ⇒ 引擎自己那两段高度系数"
+     "（满额 0x446cb4 / 线下折扣 0x446c17）就乘在**整笔**上，满额支的 `SCORE += floor(ecx/1000)` 精确给出我们声明的条数。"),
     # ⚗ 2026-10-01 回收名额：ce_item_score 是**纯观察者**（日志 `score-out: … delta=0` 已反复确认）
     #     ("ce_item_score", 0x446cf6, 6, "8d872c0c0000",
     #      "collect_money_item 的**满额支**出口 lea eax,[edi+0xc2c]（弹窗与 SCORE 入账之前，esi = 引擎算好的最终身价）。"
@@ -1047,10 +1051,13 @@ SDK_SITES = [
     #      "两支互斥 ⇒ 每次收集只出**一行** `score-in:` 与**一行** `score-out:`，可逐颗对照。"),
     ("ce_item_money", 0x446d28, 6, "ff0530cd4c00",
      "collect_money_item：inc [MONEY_TOTAL]（下一条 inc [MONEY]）；沿卡链表调 on_item_money(&bonus)，两个全局一起 += bonus"),
-    # ⚗ 2026-09-16zs 二分（临时）：摘掉炸弹路径站点 ce_bomb_spent
-    #     ("ce_bomb_spent", 0x4203bc, 5, "a1c0f24c00",
-    #      "do_bomb 里 consume_bomb(0x4574d0) **刚返回**那一条：mov eax,ds:0x4cf2c0，5 字节绝对寻址无相对量。"
-    #      "0x4574d0 全库只有 0x4203b7 一个调用方，所以这里不多不少覆盖每一次炸弹消耗；沿卡链表调 on_bomb_spent()"),
+    # ★★ 2026-09-22 **恢复**（同 `ce_item_score_in`）：这条 2026-09-16zs 的二分注释也只写「临时」，
+    #    而它有**六个活的消费方**（`cards/{corruption,senro,signal,th06rank,truesilver,whirlwind}.c`
+    #    都注册了 `.on_bomb_spent`）⇒ 摘着 = 这六张卡的「炸弹被消耗」回调**永远不被调用**（静默失效）。
+    #    恢复前逐项过 `sitecheck.py 0x4203bc 5`：W1/W2/W3/R/W4 全绿。
+    ("ce_bomb_spent", 0x4203bc, 5, "a1c0f24c00",
+     "do_bomb 里 consume_bomb(0x4574d0) **刚返回**那一条：mov eax,ds:0x4cf2c0，5 字节绝对寻址无相对量。"
+     "0x4574d0 全库只有 0x4203b7 一个调用方，所以这里不多不少覆盖每一次炸弹消耗；沿卡链表调 on_bomb_spent()"),
     ("ce_enemy_drop", 0x430510, 6, "558bec83ec20",
      "Enemy__drop_items_and_notify_cards 入口（thiscall，**ecx = zEnemyDrop = enemy+0x623c，不是敌人对象**；"
      "一手 0x430499 `lea ecx,[edi+0x623c]`、ECL dropItems 0x42d0c0 同）：push ebp/mov ebp,esp/sub esp,0x20，无相对寻址。"
@@ -1252,6 +1259,14 @@ _SDK_KEEP_NAMED = {
     "ce_item_commit",
     "ce_shot_damage",
     "ce_bomb_gate",                   # 0x45c048：117「咆哮期间 X 不放下原版炸弹」
+    # ★ 2026-09-22 恢复：这条被 2026-09-18 的「名额回收」摘掉（为了腾站点名额），**但它有活的消费方**：
+    #   `cards/trance.c` 的 `on_option_shot_gate`（灵界期间停掉装备卡子机弹）与 `cards/animal.c` 的同名回调
+    #   （117 咆哮期间），而 `sdk.c` 的 `CE_OPTION_SHOT_GATE_ENABLE` 早就是 **1**（2026-09-12 十四修）
+    #   ⇒ 站点不在 patch 里 = 那两个回调**永远不会被调用**（静默失效，日志一个字都没有）。
+    #   恢复前逐项过 `sitecheck.py 0x40a9c3 6`：W1/W2/W3/R/W4 全绿。
+    "ce_option_shot_gate",            # 0x40a9c3：装备卡子机开火闸（113 灵界 / 117 咆哮）
+    "ce_item_score_in",               # 0x446bf9：**计分层唯一的落笔点**（107/110/111/113 的 ce_score_declare）
+    "ce_bomb_spent",                  # 0x4203bc：六张卡的 .on_bomb_spent（corruption/senro/signal/th06rank/truesilver/whirlwind）
     "ce_repopulate_native_option",   # 111：不建原生 4 格子机（并走引擎自己的清空）
     "ce_native_option_muzzle",       # 111：原生子机膛口发出的弹**整发跳过**（激光与导弹都在这条上）
     # ★★ 2026-09-19（owner 口径「对于明确是bug的部分，先解决吧」）：把**功能站点**从 `i < 10` 的
@@ -1687,10 +1702,11 @@ def emit_header(sites, unlock_reads, order_sites, menu_binhacks):
               "#define CE_BP_TEXT_DESC_RVA   0x%06x" % (TEXT_SITES[1][1] - 0x400000),
               "#define CE_BP_TEXT_NOTIFY_RVA 0x%06x" % (TEXT_SITES[2][1] - 0x400000),
               "#define CE_BP_CARD_BIND_RVA 0x%06x" % (_sdk_rva("ce_card_bind") - 0x400000),
-              # ⚗ 二分临时：摘掉 ce_item_score_in
+              "#define CE_BP_ITEM_SCORE_IN_RVA 0x%06x" % (_sdk_rva("ce_item_score_in") - 0x400000),
+              # ⚗ 旧行（留着对照）：
               # "#define CE_BP_ITEM_SCORE_IN_RVA ...
               "#define CE_BP_ITEM_MONEY_RVA 0x%06x" % (_sdk_rva("ce_item_money") - 0x400000),
-              # ⚗ 二分临时：摘掉 ce_bomb_spent
+              "#define CE_BP_BOMB_SPENT_RVA 0x%06x" % (_sdk_rva("ce_bomb_spent") - 0x400000),
               "#define CE_BP_ENEMY_DROP_RVA 0x%06x" % (_sdk_rva("ce_enemy_drop") - 0x400000),
               "#define CE_BP_ITEM_FRAME_RVA 0x%06x" % (_sdk_rva("ce_item_frame") - 0x400000),
               "#define CE_BP_ITEM_COLLECT_RVA 0x%06x" % (_sdk_rva("ce_item_collect") - 0x400000),

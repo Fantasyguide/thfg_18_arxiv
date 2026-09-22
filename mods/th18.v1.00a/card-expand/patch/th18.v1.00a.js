@@ -1393,11 +1393,23 @@
       "expected": "895e048b4728",
       "title": "行为 SDK → BP_ce_card_bind：allocate_new_card 公共尾段 mov [esi+4],ebx（esi=卡对象, ebx=id）+ mov eax,[edi+0x28]：登记了行为的 id 换虚表"
     },
+    "ce_item_score_in": {
+      "addr": "0x446bf9",
+      "cavesize": 8,
+      "expected": "f30f108698790400",
+      "title": "行为 SDK → BP_ce_item_score_in：collect_money_item 0x446b00 的**单一汇合点**：movss xmm0,[esi+0x47998]（回收线；8 字节、无相对寻址）。三条难度支（0x446b30 EASY / 0x446b86 其余 / 0x446ba3 EXTRA）与 `ja 0x446bf3` 那条都汇到这里；此刻 **ecx = 引擎钳位后的身价**（单位 1/1000 点，恒等于 [0x4ccd24]）、**esi = PLAYER**（0x446b0c 从 0x4cf410 载入）、**edi = ITEM**（= [ebp-8]）。handler 把它改成 `1000 × (G_0 + ΣG_i)` ⇒ 引擎自己那两段高度系数（满额 0x446cb4 / 线下折扣 0x446c17）就乘在**整笔**上，满额支的 `SCORE += floor(ecx/1000)` 精确给出我们声明的条数。"
+    },
     "ce_item_money": {
       "addr": "0x446d28",
       "cavesize": 6,
       "expected": "ff0530cd4c00",
       "title": "行为 SDK → BP_ce_item_money：collect_money_item：inc [MONEY_TOTAL]（下一条 inc [MONEY]）；沿卡链表调 on_item_money(&bonus)，两个全局一起 += bonus"
+    },
+    "ce_bomb_spent": {
+      "addr": "0x4203bc",
+      "cavesize": 5,
+      "expected": "a1c0f24c00",
+      "title": "行为 SDK → BP_ce_bomb_spent：do_bomb 里 consume_bomb(0x4574d0) **刚返回**那一条：mov eax,ds:0x4cf2c0，5 字节绝对寻址无相对量。0x4574d0 全库只有 0x4203b7 一个调用方，所以这里不多不少覆盖每一次炸弹消耗；沿卡链表调 on_bomb_spent()"
     },
     "ce_enemy_drop": {
       "addr": "0x430510",
@@ -1471,6 +1483,12 @@
       "expected": "558bec5153",
       "title": "行为 SDK → BP_ce_native_option_muzzle：Player__shoot_one_bullet 0x45e930 的**函数入口**（5 字节 = push ebp / mov ebp,esp / push ecx / push ebx，恰好在指令边界上；无相对寻址、窗内无跳转靶。⚠ 取 6 字节会**从 `mov ebx,[ebp+8]` 中间切开**（那条是 3 字节、落在 0x45e935）⇒ cave 会回放半条指令，必须取 5 或 8）。thiscall ⇒ ecx = zPlayer*；栈（低→高）= 返回地址、packed id、timer、pos*、**option*（膛口）**（调用方压栈序一手：0x45ec5f push 膛口 / 0x45ec68 push pos / 0x45ec71 push timer / 0x45ec72 push id）。handler 读第 5 个栈参：落在**原生子机数组区间** `[PLAYER+0x670, PLAYER+0xa30)` 时**整发跳过**（★ 2026-09-17 订正：本版 thcrap 的桩**没有** `esp_diff`，改 `regs->esp` 无效；改用原生 `stack_clear_size: 0x10` ⇒ 桩走 `bp_entry0s` 变体的 `ret 0x10`，handler 只设 `retaddr = sp[1]`（真正的调用者返回地址；`sp[0]` 是 thcrap 自己的蹦床返回地址 = 站点+5） —— 一手见 engine/_shared/thcrap-breakpoint-pools.md §2；返回值调用方不检查，一手 0x45ec78；返回值调用方不检查，一手 0x45ec78）。卡申请的池 = `PLAYER+0xa30` 起（一手 0x40a7a4 `add edi,0xa30`）⇒ 区间不相交，117 / 116 / 108 的卡子机零影响。",
       "stack_clear_size": 20
+    },
+    "ce_option_shot_gate": {
+      "addr": "0x40a9c3",
+      "cavesize": 6,
+      "expected": "8b550883ec0c",
+      "title": "行为 SDK → BP_ce_option_shot_gate：Player__tick_shooters_for_ability_card 0x40a9c0 的序言后 `mov edx,[ebp+8]; sub esp,0xc`（两条完整指令，6 字节，无相对寻址 / 无窗内跳转目标）。选 6 字节是因为 thcrap 的 sourcecave 下限是 5 字节：上一版只取 3 字节的 `mov edx,[ebp+8]`，thcrap 直接以 `cavesize too small` 拒绝装载，SDK 门回读失败后触发 `restore_alloc_bound` 降级路径 —— 存档/编成里已有新 id 时会踩出「卡 id 变垃圾 / HUD 槽消失」。**不能用 `0x40a9cb` 的 6 字节 `je`**：thcrap 的 cave_fix 不重定位 `0f 84 rel32`，复制进 cave 后会跳飞。handler 返回 1 = 执行完整两条原指令；返回 0 且 retaddr=0x40aa9e 才跳过本组（`mov esp,ebp` 重设栈顶）。⚠ 当前 C 侧 `CE_OPTION_SHOT_GATE_ENABLE` 默认 0（不启用），只为让门回读通过并保留实现。"
     },
     "ce_bullet_damage_final": {
       "addr": "0x45e7ff",
