@@ -30,6 +30,8 @@ typedef struct {
     uint32_t strip_vm;     /* 电流边竖条环的 VM id（脚本 293；0 = 没起 / 已收）*/
     int32_t  ring_fading;  /* 环已发过淡出中断（不再写 scale，只在兜底帧数上硬删）*/
     int32_t  spark_tick;   /* 火星出生节流计数（每 `BOMB10_SPARK_EVERY` 帧一红一蓝）*/
+    int32_t  invuln_left;  /* ★ 2026-09-22：本发**还剩几帧无敌**（一手 270 / 决死 200；
+                            *   见 `bomb10.h` 的「无敌帧」段）。机器每帧声明它、数到 0 声明 0。*/
 } bomb10_run_t;
 
 static bomb10_run_t s_run;
@@ -47,6 +49,7 @@ int32_t bomb10_left(void)         { return s_run.left; }
 int32_t bomb10_target_centi(void) { return s_run.target_centi; }
 int32_t bomb10_spell_frames(void) { return s_run.spell_frames; }
 int32_t bomb10_owner_id(void)     { return s_run.owner_id; }
+int32_t bomb10_invuln_left(void)  { return s_run.invuln_left; }
 
 /* 救命：`th18:0x45d590`（thiscall(Player*)、无栈参、裸 `ret`）。一手逐条见 `mof_core.h` 的
  * 「灵击 → 决死」块与 `signal_core.h` 的同名段（两个文件都在引用它）。*/
@@ -143,6 +146,15 @@ int32_t bomb10_start(const bomb10_host_t *host, void *user, int32_t by_hit)
     s_run.ring_vm      = 0;
     s_run.strip_vm     = 0;
 
+    /* 无敌（一手；口径与「为什么不是每帧刷」见 `bomb10.h` 的「无敌帧」段）：
+     * 普通灵击 270 帧（`th10:0x4259be push 0x10e`）、决死 200 帧（`th10:0x425c2d push 0xc8`）。
+     * 声明层是**粘性**的 ⇒ 这里先声明一次，之后由 `bomb10_tick()` 每帧声明**递减后的剩余值**、数到 0 清。*/
+    s_run.invuln_left = (by_hit ? BOMB10_INVULN_FRAMES_DEATHBOMB : BOMB10_INVULN_FRAMES);
+    ce_invuln_request(host->card_id, s_run.invuln_left);
+    ce_log("%s: 灵击无敌 %d 帧（一手 `th10:%s push 0x%x`；走 SDK 无敌声明层，每帧声明剩余值）",
+           host->log_tag, (int)s_run.invuln_left, by_hit ? "0x425c2d" : "0x4259be",
+           (unsigned)(by_hit ? 0xc8 : 0x10e));
+
     /* 决死形态：**救命**（`th18:0x45d590`）—— 位置 = 三道门都过了、火力也扣了之后
      * （门槛不过时上面已经 return ⇒ 不救命，照常死）。两张卡原来都在同一个位置上。*/
     if (by_hit) bomb10_cancel_impending_death();
@@ -205,6 +217,14 @@ void bomb10_tick(int32_t driver)
         return;
     }
     s_idle_calls = 0;
+
+    /* ★ 2026-09-22 无敌：**每帧声明剩余帧数**（声明层取 max、只写更长值 ⇒ 不会截短别人的无敌）。
+     * 一手是「发动瞬间一次性给 270/200」（`Timer::set`），引擎自己逐帧递减 ⇒ 我们这里同步递减并声明，
+     * 两者在锁步中只可能**补足**（引擎那侧被消耗掉了才重写），数到 0 就声明 0 把这一格清干净。*/
+    if (s_run.invuln_left > 0) {
+        --s_run.invuln_left;
+        ce_invuln_request((uint32_t)s_run.owner_id, s_run.invuln_left);
+    }
 
     /* 符卡帧计数：**与有没有在灵击无关**（`big_bomb` 要的是「本次攻击已过帧数」）*/
     if (ce_spell_active()) {
@@ -327,6 +347,9 @@ void bomb10_tick(int32_t driver)
  *   `[bomb+0x28]` 置 0（`th10:0x405781`–`0x405786`）。*/
 void bomb10_reset(void)
 {
+    /* ⚠ 顺序：**先用 `s_run.owner_id` 把无敌声明清掉**（声明层是粘性的 ⇒ 不清会一直按最后那个值刷
+     * = 永久无敌；卡被删时 `ce_layer_drop_card()` 也会清一次，但换关那条路不清）——再清状态。*/
+    if (s_run.owner_id) ce_invuln_request((uint32_t)s_run.owner_id, 0);
     bomb10_fx_kill();
     memset(&s_run, 0, sizeof s_run);
 }

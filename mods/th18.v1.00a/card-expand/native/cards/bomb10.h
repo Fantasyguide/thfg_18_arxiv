@@ -13,6 +13,44 @@
  *   · 本模块 = **引擎层**（VM、消弹、伤害源、音效、RANK）—— 与 `cards/faith.c`（绿点实体池）
  *     同一层、同一条理由：这些原语只能在实机上跑，主机单测编不出来（`sdk.h` 的 inline asm）。
  *
+ * ## 无敌帧（★★ 2026-09-22，owner 口径：「按一手补上」）
+ *   TH10 的灵击在**发动那一瞬间**给玩家一段**一次性**无敌（不是每帧刷）：
+ *     · 普通灵击 `th10:0x4259be push 0x10e`（**270**）→ `lea eax,[ebp+0x430c]` → `Timer::set` `0x405410`
+ *       （该函数体：`[eax+0x4]=N` / `dec` → `[eax+0x0]=N−1` / `fstp [eax+0x8]` ⇒ 定时器 `{prev=N−1, cur=N, cur_f=N.0}`）；
+ *     · 决死灵击 `th10:0x425c2d push 0xc8`（**200**）→ 同一个定时器；
+ *       （同一条支路另有 `th10:0x425c20 push 0x3c` → `Timer::set(&player[+0x474])` —— 那是**闪烁**计时器，
+ *        不是无敌：它被 `th10:0x425ebb cmp [ebp+0x478],[ebp+0x474]` 的「每 3 帧翻一次」逻辑读，而命中判定读的是
+ *        `+0x4310`。⇒ owner 工单里那句「TH11 决死 60 帧」同理**不是无敌**，证据见 §「为什么只补 270/200」。）
+ *   无敌判据（一手）：`th10:0x426950 mov eax,[ecx+0x4310] / test eax,eax / jg 0x4269bf` ⇒ **cur > 0 即跳过中弹**，
+ *     同一个读点还在 `th10:0x426756`（擦弹/命中那条）。
+ *   TH18 的同位字段 = `player+0x47774` 的 zTimer（**判据读 `+0x47778`**）：命中判定 `th18:0x45cd1c
+ *     cmp DWORD PTR [edx+0x47778],0 / jg 0x45cd2c`（> 0 ⇒ 不调 `Player__die` `0x45d3a0`）；
+ *     **原生自己的三张 bomb 卡也直接写它**（例：`th18:0x42067c mov DWORD PTR [eax+0x47778],0x78` = 120 帧）。
+ *   ⇒ 本模块**走 SDK 的声明层**（`ce_invuln_request()` 每帧声明**剩余**帧数 + `ce_invuln_apply()` 取 max、
+ *     且只写更长值）—— 直接写 `+0x47778` 会**截短别人的长无敌**（一手写点表与理由：
+ *     `engine/player/th18/03-player-hit-gate.md` §2 与 §6(b) 风险 1）。
+ *     ⚠ 声明层是**粘性**的：不清就一直按最后那个值刷 ⇒ 会变成永久无敌。⇒ 机器自己数「还剩几帧」、
+ *     每帧声明、数到 0 就声明 0（`bomb10_reset()` 也显式清）。
+ *   ⚠ **一处诚实差异**：TH10 的 270 < 灵击时长 296 ⇒ **最后 26 帧没有无敌**（照一手，不是 bug）；
+ *     TH18 原生那三张 bomb 是**每帧刷**（40/110/120，见 `BombReimu/Sanae/Marisa__on_tick`），
+ *     比我们更"护"，我们按 TH10 一手取一次性。
+ *
+ * ### 为什么只补 270/200（不补 TH11 那两个 60）
+ *   owner 工单点名了两条：「TH10 灵击自带 **270** 帧」与「TH11 决死窗口 **60** 帧」。一手复核后：
+ *   · **TH10 的 270 = 无敌** ✅（上面已证：`push 0x10e` → 命中判定读的那个定时器）；
+ *   · **TH11 的 60 不是无敌**：`th11:0x431286 push 0x3c` → `Timer::set(&player[+0x944], 60)`，而 `+0x948`
+ *     （= 该定时器的 `cur`）在 state 4 那一支被判成**窗口门槛**：`th11:0x43122d cmp DWORD PTR [esi+0x948],0x8
+ *     / jl 0x43124f`（窗口用完 ⇒ 真死）⇒ 它是**决死窗口计时器**（成功决死后重装填 60）。
+ *     TH11 的**无敌**是另一样东西：`set_iframes` `th11:0x406860`（写 `[0x4a8eb4]+0x8bb0` 的 zTimer）；
+ *     全 exe 的 5 个调用点**全部 `push 0x28`（40 帧）**：`th11:0x4071bb` / `0x407963`（荷取·破罩后）/
+ *     `0x407ade` / `0x407d3a` / `0x45de67` ⇒ **TH11 的灵击自带 40 帧无敌**。
+ *   ⇒ 结论：按 owner 的口径「**装 th11 的时候也是 th10 灵击**」（2026-09-16m）与「两卡共用同一份实现」，
+ *     本模块取 **TH10 那一套：普通 270 / 决死 200**；TH11 的 40 **不复刻**（它是 per-shot bomb 的数，
+ *     我们的 bomb 不是 TH11 的 bomb），登记在 `TUNING.md` §2.5 与 `AUDIT.md` §BE-FA 的 2026-09-22b 补遗。
+ *   ⇒ 而「决死要有无敌」这件事在一手侧本来就成立：TH10 决死给 **200**（> TH11 那条窗口的 60）⇒
+ *     两个数都满足；TH18 侧 `Player__cancel_impending_death` `0x45d590` 另给一个 **60 帧的闪烁计时器**
+ *     （`[ecx+0x634]=0x3b / [ecx+0x638]=0x3c / [ecx+0x63c]=60.0f`，**不是**无敌字段 `+0x47774`）。
+ *
  * ## 一套系统 ⇒ 三条硬语义
  *   ① **单实例**：进程里只有一个 `s_bomb`（本模块的文件静态）⇒ 任何时刻**最多一发**灵击。
  *   ② **不叠加**：`bomb10_start()` 的头一道门就是「**本发还在进行中 ⇒ 不放**」。这一条**不是新闸**，
@@ -85,6 +123,8 @@
 #define BOMB10_CANCEL_MAX      99999      /* 消弹颗数上限（一手 TH10 的 `cancel_circle` 也没有上限）*/
 #define BOMB10_CANCEL_MODE     1          /* 消弹模式（1 = 引擎撒 type 9 消弹点）*/
 #define BOMB10_DMG_CAP         MOF_BOMB_DMG_CAP  /* 伤害上限抬升值（❓ 自定，理由见 mof_core.h）*/
+#define BOMB10_INVULN_FRAMES           270   /* 普通灵击的无敌帧数（一手 `th10:0x4259be push 0x10e`）*/
+#define BOMB10_INVULN_FRAMES_DEATHBOMB 200   /* 决死灵击的无敌帧数（一手 `th10:0x425c2d push 0xc8`）*/
 #define BOMB10_FN_CANCEL_IMPENDING_DEATH  0x45d590u
 /* 消弹闩锁的 tag 从卡侧的 `host->card_id` 来（`ce_cancel_latch_claim(id)`：同帧只有第一个认领者消弹）。*/
 
@@ -135,6 +175,7 @@ int32_t bomb10_left(void);           /* 剩余帧数（0 = 没在灵击）*/
 int32_t bomb10_target_centi(void);   /* 本发的目标半径（1/100 px）*/
 int32_t bomb10_spell_frames(void);   /* 符卡已过帧数（= 一手 `[spellcard+0x3738]` 的对位）*/
 int32_t bomb10_owner_id(void);       /* 本发的发动者卡号（0 = 没有）*/
+int32_t bomb10_invuln_left(void);    /* 本发还剩几帧无敌（0 = 已给完；诊断用）*/
 
 /* ---- 发动 / 推进 / 收尾 ----
  * `bomb10_start`：返回 1 = **本发由你发动**（公共那一半 + 你的 `on_start` 都做完了）；
