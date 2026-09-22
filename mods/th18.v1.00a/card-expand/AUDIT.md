@@ -17770,3 +17770,127 @@ state-8 每帧：`0x426192 fld [edi+0x984]` → `0x4261ad call 0x4377a0`（朝**
 | --- | --- | --- |
 | `test-host` | `test_youkai_core` 45 failed（工作树里的 `youkai_core.*` 是**未提交**改动）| 用 HEAD 版重编同一支单测 ⇒ **709 checks / 0 failed**；本包只动 `pofv*` |
 | `capcheck` | ① `sht_groups` 豁免的计划段在 `NEXT.md` 找不到；② 15 个 `CE_SHT_SET_YOUKAI_*` 没登记进台账 | 两条都是 108/117 那条线（youkai shooterset）；HEAD 上 capcheck 另有 1 条旧红（atlas entry） |
+
+## §BE-EZ（2026-09-22）：**站点账上三处「二分遗留」** —— 恢复 `ce_bomb_gate`、删掉「下标 < 10」兜底、把 12 条启动核对行放回去
+
+> **谁做的**：统筹会话（owner 2026-09-22「那就先加呗」后的排查）。**动到的共享件**：
+> `native/sites.py`（站点表 + `_SDK_KEEP_NAMED` + 过滤行）、`native/sdk.c`（`bps[]` 核对表）、
+> 生成物 `patch/th18.v1.00a.js`、`patch-test/th18.v1.00a.js`、`native/sites_gen.h`、`native/th18_card_expand.def`
+> （后四者都是 `make gen` / `tools/gen_def.py` 重生成的，**没有手改**）。
+
+### 一、起因：查 owner 第 7 问（站点余量）时撞出来的三件事
+
+1. **`ce_bomb_gate` 是「功能站点」却被 park 着** —— `sites.py` 里它那条 2026-09-16zs 的二分注释
+   （`# ⚗ 二分（临时）：摘掉炸弹路径站点 ce_bomb_gate`）**没写任何理由**，而它是
+   **117「咆哮期间按 X 不放下原版炸弹」的唯一实现**（handler = `cards/animal.c` 的 `on_bomb_gate`；
+   站点 `0x45c048` = `Player__on_tick__body` 里的 `test BYTE PTR ds:0x4ca434,0x2`，7 字节）。
+   站点不在 patch 里 ⇒ handler **永远不会被调用**，而日志上一个字都没有 ⇒ **静默失效**。
+2. **`sdk.c` 的启动核对表 `bps[]` 只剩 3 条**（`ce_card_bind` / `ce_item_money` / `ce_enemy_drop`）——
+   它在 2026-09-16/17 的「二分」里被**整片注释掉**（16 行），而 09-18/09-19 又把那些站点
+   **按名字放回了 patch**（`_SDK_KEEP_NAMED`）⇒ 注释没跟着回来 ⇒ **12 条已声明站点的
+   「挂不上直接 FAIL」护栏关了 5 天**（正是这张表当初要防的那一类：断点没挂上时一行都不说）。
+3. **`SDK_SITES` 的过滤仍留着「下标 < 10」兜底** —— 本次加回 `ce_bomb_gate` 时它**当场咬人**：
+   新条目插在第 10 位 ⇒ 后面整体右移 ⇒ `ce_enemy_death`（原靠下标兜底、不在名字表里）
+   **静默掉出 patch**（`sites_gen.h` 里它的宏变成坏值 `0x-400000`）。
+
+### 二、改了什么
+
+| 文件 | 改了什么 | 为什么 |
+| --- | --- | --- |
+| `sites.py`（站点表）| 取消 `ce_bomb_gate` 的注释，**逐条过 sitecheck** 后放回 patch | 它是 117 那条已实现功能的唯一载体（§一-1）|
+| `sites.py`（`SDK_SITES` 过滤行）| 删掉 `i < 10 or …`，**一律按名字** `s2[0] in _SDK_KEEP_NAMED` | 下标兜底 = `§BE-EG` 那颗定时炸弹的同款；本次已实际踩到（§一-3）|
+| `sites.py`（`_SDK_KEEP_NAMED`）| 把原先靠下标兜底的 10 条**逐条点名**，并补 `ce_bomb_gate`、`ce_enemy_death` | 删了兜底就必须点名，漏一条 = 静默掉出 patch |
+| `sdk.c`（`bps[]`）| 放回 12 条核对行：`ce_item_frame/collect/commit`、`ce_shot_damage`、`ce_shot_set_index`、`ce_bomb_gate`、`ce_enemy_damage`、`ce_enemy_death`、`ce_enemy_shot_slot`、`ce_player_die`、`ce_bullet_damage_final`、`ce_repopulate_native_option`、`ce_native_option_muzzle`（用各自**正确**的宏名；其中两条是 `CE_BP_REPOP_NATIVE_OPT_RVA` / `CE_BP_NATIVE_OPT_MUZZLE_RVA`）| 恢复「挂不上直接 FAIL」的护栏 |
+| 生成物 | `make gen` 重生成 patch（25 → **26** 条断点）与 `sites_gen.h`；`tools/gen_def.py` 重生成 `.def`（29 个导出 = 1 + 28）| 生成物不许手改 |
+
+**仍在 park 的（保持注释，理由都已写明）**：`ce_bomb_spent`、`ce_option_shot_gate`、`ce_death_result`、
+`ce_chain_node_guard`、`ce_poc_gate_a/b`（后者是**故意**不装：接管那条 `ja` 有害，见 §BE-EN / §BE-EQ）。
+它们的宏值是**坏值** `0x-400000` ⇒ 谁误启用谁**编译不过**（刻意的第二道保险）。
+
+### 三、怎么验证的
+
+1. `sitecheck.py 0x45c048 7`：W1 长度 7≥5 / W2 一条指令恰好 7 字节 / W3 窗内无分支 /
+   R 回放安全（窗内没有 `cave_fix` 修不了的近相对分支）/ W4 与既有站点零重叠 —— **全绿**。
+2. **`expected` 逐字节对账**（一次性脚本，按 PE 节表做 RVA→文件偏移映射）：26 条断点的
+   `expected` 与 `local/th18.v1.00a/th18.exe` 对应字节**全部相符** ⇒ thcrap 会全部挂上，
+   恢复核对行不会造成误报 FAIL（这是恢复核对行的**前提**）。
+3. `make gen` 后核对生成物：`sites_gen.h` **只多一行**（`CE_BP_BOMB_GATE_RVA 0x05c048`）；
+   patch 的断点名 25 → 26，原有名字**一个不少**（`ce_enemy_death` 回来后宏也恢复成 `0x030240`）。
+4. `make check`（含 `gen_drift` 生成物漂移闸、`sites.py check`、`sitecheck --all`、`contract_check`、
+   `dllx87` / `dllverify`）：**rc=0**。
+
+### 四、对既有卡/批次的影响面
+
+- **行为变化只有一条**：装上 117 时「咆哮中按 X」不再触发原版炸弹（恢复 TH17 语义 = `animal.c` 的设计本意）。
+  其余 25 条站点与之前**逐字节相同**（生成物 diff 已核）。
+- 核对行恢复后，**少挂一条断点 = 开机会 FAIL 并拒绝初始化 SDK**（设计意图，不是回归）；前提由第 2 条证据钉死。
+- ⚠ 本节改动**没进 2026-09-22 15:00 那批发布**（DLL `eec2b9c5…`）—— 要等下一批 `make release` 才生效。
+
+## §BE-EY（2026-09-22）：工单 E（108 永夜抄）—— 「击破 boss 第一阶段后再不发弹」的**根因**（只读排查，卡侧一行未改）
+
+**谁做的**：工单 E 会话（**只读 + 只写报告**：`cards/youkai.c` / `youkai_core.*` 一字未动 —— 另一会话正在改它们；
+本节只登记结论、一手出处与修法约束）。owner 口径见 [`WORK-PACKAGES.md`](WORK-PACKAGES.md) §10 第 6⑥/6⑦ 行。
+**一手全文**：[`engine/enemy/th18/07-emitter-slots-waves-and-phase-transitions.md`](../../../engine/enemy/th18/07-emitter-slots-waves-and-phase-transitions.md)
+（TH18 发射口槽 / 波次 / 换阶段逐指令）；TH08 侧见 `engine/enemy/th08/`。
+
+### 1. 根因（三条，逐条一手）
+
+| # | 结论 | 可信度 | 一手证据 |
+| --- | --- | --- | --- |
+| ① | **「ECL 重新武装」这个复位口在实战里观测不到**：`etNew(i)` 与同槽的 `etSprite(i,…)` **永远同帧**（`dat/` 里 ECL 全集 22 份、**282/282** 处中间没有 `wait()`：226 字面槽 + 56 变量槽），而卡每帧只采样一次 `props[i].type` | ✅ | `local/_scratch/st01..st07{,bs,mbs}.asm` 全量计数；`props[i].type` 写点 `0x43404e`、清零点 `0x433dde` |
+| ② | **触发者是段首的 `enmKillAll()`**：boss 每一段攻击开头都先 `killAllAsync(); enmKillAll();`，它杀掉**所有 `flags_lo & 0xc004a0 == 0` 的敌人** —— 我们的使魔正是 | ✅ | `st01bs.asm:177/310/515/708/726`；过滤器 `0x430741`–`0x43074d`；`st01bs.asm` 里 `setBoss` 只出现一次 |
+| ③ | **boss 整场是同一个敌人**（阶段 = 中断槽，不换对象）⇒ 槽表的 `fam_seen`/`broken` **跨阶段一直留着** | ✅ | [`engine/ecl/th18/01-boss-interrupts-and-spellcard.md`](../../../engine/ecl/th18/01-boss-interrupts-and-spellcard.md) §1–2 |
+
+② 的细节：`enmKillAll` = opcode `525` → handler `0x434e1b` → `0x430710`（遍历 `mgr+0x18c` 链表）；
+spawn（`0x42d7d0`）只按参数写 `flags_lo` 的 `0x80000`/`0x4000000`/`0x40000000`，而卡侧两个 flag 都填 0
+⇒ 使魔一定落在「掩码为 0 ⇒ 杀」那一支，死因 `kind = CE_EDEATH_KILL_ALL(4)`。
+③ 的细节：换阶段 = `zEnemyData.interrupts[8]` 的一格（血量钉到 `hp_value` + 跑 `sub_life`）⇒ `enemy_id` 整场不变。
+
+**链**：使魔被杀（`kind = KILL_ALL(4)`）⇒ `yk_fam_broken` 置 `broken=1`、清 `fam_id`、留 `fam_seen=1`
+⇒ 闸（`0x433ffa`）每帧掐掉该槽的 `etOn`；而 `broken=1` 又挡住 1:1 重建、ECL 的重武装又观测不到（①）
+⇒ **唯一出口是 `YK_EMIT_BROKEN_TTL` 120 帧**；自愈那一次调用同帧就重建使魔（`YK_FAM_LIFE = 1` 的占位值、钉在发射口上）
+⇒ 它再死一次 ⇒ 回到起点。**稳态 = 每 120 帧只发 1–2 帧弹**（这才是 owner 说的「不是 120 帧的那种问题」：
+调 TTL 只改「每次死亡沉默多久」，不改「还会再死一次」）。
+
+🟡 **这条链只差最后一步的实跑确认**（第 5 步「重建出来的使魔会再死一次」）；观察点见 §3。
+
+### 2. 「不是 120 帧的问题」还有第二种读法（一并否掉）
+
+若自愈**完全不发生**，那就是「条目被退休后又重新分配 / 敌人遍历漏扫」一类 —— 但那条路**会自己治好**：
+条目退休会清 `fam_seen`/`broken` ⇒ 闸自动放开（`yk_frame_end`）。现象既然是持续哑火，
+就反过来钉死「boss 每帧都在被扫到」这一条（见一手文档 §5.1）。
+
+### 3. 实跑观察点（用**现有**日志行，不需要新日志）
+
+| 看什么 | 判读 |
+| --- | --- |
+| `youkai: familiar enemy_id N killed (kind K, …)` | **`K == 4`（KILL_ALL）** ⇒ 触发者是段首 `enmKillAll` ✅ 理论成立；`K == 0` ⇒ 触发者是自机弹（同样成立，只是触发者换人）|
+| `youkai: emitter gate ACTIVE - slot S of enemy_id N stays silent…` | 只打一次；把 `(S, N)` 与 boss 的 id 对上 ⇒ 闸确实夹过 |
+| `youkai: emitter gate self-healed X slot(s) after 120 frames… (total Y)` | **在涨** ⇒ 自愈发生了 ⇒ 现象是「循环」不是「永久夹死」（⇒ 查第 5 步）；**一次都不打** ⇒ 连 `yk_note_slot` 都没再跑到该条目 |
+| `youkai: ledger - N spawned, M killed, W withdrew, D dropped`（每 600 帧）| `spawned` 与 `killed` **同步单调涨、差值≈0** ⇒ 「每建必死」= 循环坐实 |
+
+### 4. 修法约束与三条候选（**要动站点先报**，本轮一行未改）
+
+- **站点现状**（`python3 native/sites.py check`）：本 patch 声明 **27**（`SITE_BUDGET` 24，告警口径）、
+  进程级 **47**（我们 25 + 测试归档 2 + 外部 `base_tsa` 20）vs `SITE_TOTAL_BUDGET` 42（告警口径）。
+  真判据 = `sitecheck.py` 窗口 + 启动日志 `pool:` 实测余格 + 实跑一局（[`WORK-PACKAGES.md`](WORK-PACKAGES.md) §「站点余量答问」）。
+- **候选 A（不加站点，首选）**：把「重新武装」的复位口从 `props[i].type` 的边沿改成**站点本身的 `etOn` 事件** ——
+  闸夹住时，该槽的**下一次 `etOn`** 就置一个 `rearm_request` 并**放行**（本帧照发），卡 tick 消费它 ⇒
+  清 `broken`/`fam_seen` 并重建使魔。语义 = 「**下一波发弹时重建**」（正是 owner 6⑦ 的原话），
+  代价 = 每次使魔死亡最多丢**一条** `etOn`。`yk_slot_t` 还有 1 字节 padding（仍 28 B，单测的 sizeof 断言不变）。
+- **候选 B（不加站点，最省）**：**取消掐闸**（`on_enemy_shot_slot` 恒返回 0 / 直接不挂），使魔退回
+  「装饰 + 伤害转嫁」，被打死由 1:1 映射下一帧重建。副作用 = 丢掉 spec §9.6「打掉使魔 ⇒ 那个发射口停火」
+  （那条**不是一手复刻**：TH08 没有这条规则）。**要不要保留这个玩法 = owner 拍**。
+- **候选 C（加 1 个站点，最精确）**：挂 `etNew` 的 handler —— 引擎自己的「重建这一槽」事件 = 真波次。
+  窗口已挑好并过闸：**`0x433de7`（`mov ecx,[ebp-0x570]`，6 字节）**
+  `python3 tools/sitecheck.py 0x433de7 6` ⇒ W1/W2/W3/W4 **全过**（`eax` = 槽号、`[ebp-0x570]` = `&zEnemyData`）。
+  代价 = 1 条站点 + SDK 多一个 hook（`sdk.h`/`sdk/public.h` 是共享件，要登记）+ 走 §「加站点真判据」三条。
+- **共同前提**：`YK_FAM_LIFE = 1` 是占位值（`youkai_core.h` 自标 TODO）—— 1 点血 + 钉在发射口上 =
+  「建出来就死」，任何「使魔没了就掐闸」的语义都会被它放大。修法应同时定这个值。
+
+### 5. 本轮产出
+
+| 文件 | 内容 | 怎么验证 |
+| --- | --- | --- |
+| `engine/enemy/th18/07-emitter-slots-waves-and-phase-transitions.md`（新增）| TH18 发射口槽布局 / `etNew`-`etSprite`-`etOn` 的波次形状（282/282 全量）/ 中断槽 = 阶段 / `enmKillAll` 的过滤与使用点 / 因果链 / 观察点 / 修法约束 | 地址逐条对 `th18.exe` 字节与 22 份原生 ECL 反汇编可复算；`python3 tooling/check-docs.py` 全绿 |
+| `cards/youkai.c` / `youkai_core.{h,c}` / `sites.py` / `patch/**` / 任何共享件 | **一字未改**（另一会话正在改 108 的 `youkai_core.*`）| `git status` 逐路径核对 |

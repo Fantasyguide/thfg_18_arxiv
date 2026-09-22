@@ -1081,11 +1081,15 @@ SDK_SITES = [
      "0x45f2dc 因 guard-fail 路 0x45f14e jmp 0x45f2de 落在窗内而**被否**，此窗已对齐 objdump 确认无窗内跳转目标）。"
      "esi = 本帧本敌伤害（钳 cap 后 ≥1），ebx = 帧基 → pos 在 [ebx+8]（敌世界坐标 x,y）、param_6 在 [ebx+0x1c]。"
      "沿卡链表调 on_shot_damage(card, dmg, pos)"),
-    # ⚗ 2026-09-16zs 二分（临时）：摘掉炸弹路径站点 ce_bomb_gate
-    #     ("ce_bomb_gate", 0x45c048, 7, "f60534a44c0002",
-    #      "Player__on_tick__body 0x45be90 的普通炸弹分支：test BYTE PTR ds:0x4ca434,0x2（7 字节，输入上升沿 bit1）。"
-    #      "handler 沿卡链表问 on_bomb_gate()；任一卡返回 1 时用 retaddr 跳到 0x45c056 跳过 call do_bomb 0x45c051。"
-    #      "只在咆哮 ready/hypering 的卡返回 1；其余帧/无卡时放行原指令（真实炸弹不受影响）。"),
+    # ★ 2026-09-22 恢复：这条 2026-09-16zs 的二分（临时）摘除**没有留下任何理由**，而它摘掉的是
+    #   **功能站点**（117 的「咆哮期间 X 不放下原版炸弹」，handler 在 `animal.c` 的 `on_bomb_gate`）
+    #   ⇒ 摘着的时候那个功能是**静默失效**的（没有站点 = handler 永远不被调用，日志上一个字都没有）。
+    #   恢复前逐项过过 `sitecheck.py 0x45c048 7`：W1 长度 7≥5 / W2 一条指令恰好 7 字节 /
+    #   W3 窗内无分支 / R 回放安全（窗内没有 `cave_fix` 修不了的近相对分支）/ W4 与既有站点零重叠 —— 全绿。
+    ("ce_bomb_gate", 0x45c048, 7, "f60534a44c0002",
+     "Player__on_tick__body 0x45be90 的普通炸弹分支：test BYTE PTR ds:0x4ca434,0x2（7 字节，输入上升沿 bit1）。"
+     "handler 沿卡链表问 on_bomb_gate()；任一卡返回 1 时用 retaddr 跳到 0x45c056 跳过 call do_bomb 0x45c051。"
+     "只在咆哮 ready/hypering 的卡返回 1；其余帧/无卡时放行原指令（真实炸弹不受影响）。"),
     ("ce_enemy_death", 0x430240, 6, "558bec83ec14",
      "FUN_00430240（SDK 名 Enemy__die）入口：push ebp/mov ebp,esp/sub esp,0x14，无相对寻址。"
      "thiscall，ecx = zEnemy；**引擎撒主掉落之前**（0x430493 才是撒、0x43049f 才通知卡）、链表仍挂着，"
@@ -1236,12 +1240,25 @@ SDK_SITES = [
 #     条数本身不是判据（`GATES.md` §8.1 的实测结论），所以这里按「功能优先」取舍。
 #   本轮先恢复**用户当场报的那两条**（111 的原生子机门：少一条 = 静默半失效，见 sdk.c 的长注）。
 _SDK_KEEP_NAMED = {
+    # ★ 2026-09-22：原先靠「下标 < 10」兜底的那 10 条**逐条点名**（下标兜底已删，见下面的过滤行）。
+    #   一条都不能漏：漏了 = 该站点静默掉出 patch（`sites_gen.h` 宏变坏值 `0x-400000`）。
+    "ce_enemy_damage",                # 0x42f2cb：Boss 随血量掉灵（113 通道 A 的事件源）
+    "ce_card_bind",
+    "ce_item_money",
+    "ce_enemy_drop",
+    "ce_enemy_shot_slot",
+    "ce_item_frame",
+    "ce_item_collect",
+    "ce_item_commit",
+    "ce_shot_damage",
+    "ce_bomb_gate",                   # 0x45c048：117「咆哮期间 X 不放下原版炸弹」
     "ce_repopulate_native_option",   # 111：不建原生 4 格子机（并走引擎自己的清空）
     "ce_native_option_muzzle",       # 111：原生子机膛口发出的弹**整发跳过**（激光与导弹都在这条上）
     # ★★ 2026-09-19（owner 口径「对于明确是bug的部分，先解决吧」）：把**功能站点**从 `i < 10` 的
     #   下标截断里放出来。下面五条每一条都对应一个**已报的 bug**（或一条静默失效的功能），
     #   窗口四项检查（W1–W4）逐条过过（`sitecheck.py <addr> <len>`）：
     "ce_shot_set_index",             # 0x45ebfb：主炮组号覆盖 ⇒ 修 th13 #5「灵界发弹更改消失」+ th17 #2「咆哮发弹更改消失」
+    "ce_enemy_death",                # 0x430240：共享「敌机死亡」事件（一敌一生一次）—— 2026-09-22 补点名（原靠下标兜底）
     "ce_player_die",                 # 0x45d3a0：中弹无伤闸门 ⇒ 修 th13 #6「主动灵界中弹⇒结束后死亡」+ #3「中弹音效未屏蔽」
     # ⛔ 2026-09-19 二次二分：**接管这条 `ja` 本身有害**（106 在场时道具只减速、不变橙不抖）⇒ 再 park。
     #    106 的「不满 P 过线不吸」改走**非接管**的路（POC 线高度：不满 P 时声明成永远不满足 `line > py` 的值）。
@@ -1260,7 +1277,13 @@ _SDK_KEEP_NAMED = {
 # 过滤**之前**的全表（含 park 的）—— `tools/sitecheck.py` 的体检要连 park 的一起查：
 # park = 没进 patch = 现在没装，所以本身没风险；但**一旦放回发布面**，用的就是这一份声明。
 SDK_SITES_ALL = list(SDK_SITES)
-SDK_SITES = [s2 for i, s2 in enumerate(SDK_SITES) if i < 10 or s2[0] in _SDK_KEEP_NAMED]
+# ★★ 2026-09-22：**去掉「下标 < 10」那条兜底**（它就是 `AUDIT.md` §BE-EG 那颗定时炸弹的同款）——
+#   今天加回 `ce_bomb_gate` 时它当场咬了人：新条目插在中间 ⇒ 后面整体右移一位 ⇒
+#   `ce_enemy_death`（在第 10 位、又没写进 `_SDK_KEEP_NAMED`）**静默掉出 patch**
+#   （`sites_gen.h` 里它的宏变成坏值 `0x-400000`，只有 `gen_drift`/`sdk.c` 那个核对表会侧面暴露）。
+#   ⇒ 现在**一律按名字**：在 `_SDK_KEEP_NAMED` 里 = 进 patch；不在 = park（`SDK_SITES_ALL` 仍留全表，
+#     给 `sitecheck.py` 体检用）。加站点的人只要往 keep 表里补一行，不会再被下标暗算。
+SDK_SITES = [s2 for s2 in SDK_SITES if s2[0] in _SDK_KEEP_NAMED]
 
 # 站点级的**原生声明字段**（thcrap 的 `breakpoint_from_json` 认识的那些）。
 # `stack_clear_size = N` ⇒ 该站点改用 `bp_entry0s` 变体（桩末尾是 `ret imm16`），
@@ -1673,7 +1696,7 @@ def emit_header(sites, unlock_reads, order_sites, menu_binhacks):
               "#define CE_BP_ITEM_COLLECT_RVA 0x%06x" % (_sdk_rva("ce_item_collect") - 0x400000),
               "#define CE_BP_ITEM_COMMIT_RVA 0x%06x" % (_sdk_rva("ce_item_commit") - 0x400000),
               "#define CE_BP_SHOT_DAMAGE_RVA 0x%06x" % (_sdk_rva("ce_shot_damage") - 0x400000),
-              # ⚗ 二分临时：摘掉 ce_bomb_gate
+              "#define CE_BP_BOMB_GATE_RVA 0x%06x" % (_sdk_rva("ce_bomb_gate") - 0x400000),
               "#define CE_BP_PLAYER_DIE_RVA 0x%06x" % (_sdk_rva("ce_player_die") - 0x400000),
               "#define CE_BP_SHOT_SET_INDEX_RVA 0x%06x" % (_sdk_rva("ce_shot_set_index") - 0x400000),
               "#define CE_BP_OPTION_SHOT_GATE_RVA 0x%06x" % (_sdk_rva("ce_option_shot_gate") - 0x400000),

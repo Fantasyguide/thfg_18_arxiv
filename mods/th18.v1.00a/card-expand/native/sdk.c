@@ -2400,32 +2400,36 @@ int ce_sdk_setup(uint8_t *base, int trace)
         /* 名额回收：本行停用（站点已从 patch 摘除，功能=纯观察者）*/
         /* 名额回收：本行停用（站点已从 patch 摘除，功能=纯观察者）*/
         { "ce_item_money",  CE_BP_ITEM_MONEY_RVA,  6 },
-        /* 二分临时停用: { "ce_bomb_spent", ... } */
+        /* ⛔ ce_bomb_spent：站点仍在 park（`_sdk_rva` = 0，见 `sites.py` 的 `SDK_SITES` 过滤）*/
         { "ce_enemy_drop",  CE_BP_ENEMY_DROP_RVA,  6 },
-        /* 二分临时摘掉: ce_item_frame */
-        /* 二分临时摘掉: ce_item_collect */
-        /* 二分临时摘掉: ce_item_commit */
-        /* 二分临时摘掉: ce_shot_damage */
-        /* 二分临时停用: { "ce_bomb_gate", ... } */
-        /* 二分临时摘掉: ce_shot_set_index */
-        /* 二分临时摘掉: ce_option_shot_gate */
-        /* ⚗ 二分临时摘掉（2026-09-17a）: ce_enemy_damage —— 站点已从 patch 摘掉，见 AUDIT §BE */
-        /* 二分临时摘掉: ce_enemy_death */
-        /* 二分临时摘掉: ce_enemy_shot_slot */
-        /* 二分临时摘掉: ce_player_die */
-        /* 二分临时摘掉: ce_bullet_damage_final */
-        /* 二分临时摘掉: ce_death_result */
+        /* ★★ 2026-09-22 恢复（本表曾被 2026-09-16/17 的「二分」整片注释掉，但那些站点后来
+         *   已在 `sites.py` 的 `_SDK_KEEP_NAMED` 里按名字放回 patch ⇒ **注释没跟着回来** =
+         *   这些站点的「挂不上直接 FAIL」护栏整整 5 天是关着的（静默失效那一类风险）。
+         *   恢复前逐条核过：① 每个名字都在当前 patch 的断点表里（25 条）；
+         *   ② 每条的 `expected` 与 `th18.exe` 那 6/7/8/9 个字节**逐字节相符**（写了个一次性脚本按
+         *      PE 段表做 RVA→文件偏移映射后比对，25 条全符）⇒ thcrap 会全部挂上，不会误报 FAIL；
+         *   ③ `_sdk_rva` = 0 的（仍在 park 的）宏是坏值（`0x-400000`）⇒ **编译器会拦住**误启用。*/
+        { "ce_item_frame",  CE_BP_ITEM_FRAME_RVA,  7 },
+        { "ce_item_collect", CE_BP_ITEM_COLLECT_RVA, 6 },
+        { "ce_item_commit", CE_BP_ITEM_COMMIT_RVA, 6 },
+        { "ce_shot_damage", CE_BP_SHOT_DAMAGE_RVA, 7 },
+        { "ce_bomb_gate",   CE_BP_BOMB_GATE_RVA,   7 },
+        { "ce_shot_set_index", CE_BP_SHOT_SET_INDEX_RVA, 7 },
+        /* ⛔ ce_option_shot_gate：站点仍在 park（宏是坏值 `0x-400000`）*/
+        { "ce_enemy_damage", CE_BP_ENEMY_DAMAGE_RVA, 6 },
+        { "ce_enemy_death", CE_BP_ENEMY_DEATH_RVA, 6 },
+        { "ce_enemy_shot_slot", CE_BP_ENEMY_SHOT_SLOT_RVA, 8 },
+        { "ce_player_die",  CE_BP_PLAYER_DIE_RVA,  6 },
+        { "ce_bullet_damage_final", CE_BP_BULLET_DAMAGE_FINAL_RVA, 9 },
+        /* ⛔ ce_death_result：站点仍在 park */
         /* ★ 2026-09-16（111 魔理沙侧「原生子机不许出现」）：`sdk.c` 上面那一大段。
          *   两条都**必须**在这里：少一条 = 静默失效（①不拦 ⇒ 原生子机照建照画；②不拦 ⇒
          *   子弹从看不见的子机位置飞出来，且那部分输出与 111 的子机层**叠加**）。*/
-        /* 二分临时摘掉: ce_repopulate_native_option */
-        /* 二分临时摘掉: ce_native_option_muzzle */
-        /* ★ 2026-09-16za（106 的「上线收点当且仅当满 P」）：两条**都要在**，少一条 = 静默半失效。*/
-        /* 二分临时摘掉: ce_poc_gate_a */
-        /* 二分临时摘掉: ce_poc_gate_b */
-        /* ★ 2026-09-16ze（头号崩溃的止血点）：这条**挂了才有意义** —— 不挂 = 悬垂节点照旧
-         * `call eax` 崩在堆里（而日志上一个字都不会说）。所以和其余一样「挂不上直接 FAIL」。*/
-        /* 二分临时摘掉: ce_chain_node_guard */
+        { "ce_repopulate_native_option", CE_BP_REPOP_NATIVE_OPT_RVA, 7 },
+        { "ce_native_option_muzzle", CE_BP_NATIVE_OPT_MUZZLE_RVA, 5 },
+        /* ⛔ ce_poc_gate_a / ce_poc_gate_b：**故意** park（接管那条 `ja` 有害，见 `sites.py` 的 ⛔ 段）——
+         *   宏同样只是坏值，想放回先读 `AUDIT.md` §BE-EN。*/
+        /* ⛔ ce_chain_node_guard：站点仍在 park */
     };
     unsigned n_bp_fail = 0;
     for (unsigned i = 0; i < sizeof bps / sizeof bps[0]; ++i) {

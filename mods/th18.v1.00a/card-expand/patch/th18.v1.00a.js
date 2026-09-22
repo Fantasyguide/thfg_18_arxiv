@@ -1435,6 +1435,12 @@
       "expected": "b867666666f7ee",
       "title": "行为 SDK → BP_ce_shot_damage：enm_compute_damage_sources 0x45f0f0 里可计分命中路径：mov eax,0xee666667 + imul esi（两条，都无相对寻址；0x45f2dc 因 guard-fail 路 0x45f14e jmp 0x45f2de 落在窗内而**被否**，此窗已对齐 objdump 确认无窗内跳转目标）。esi = 本帧本敌伤害（钳 cap 后 ≥1），ebx = 帧基 → pos 在 [ebx+8]（敌世界坐标 x,y）、param_6 在 [ebx+0x1c]。沿卡链表调 on_shot_damage(card, dmg, pos)"
     },
+    "ce_bomb_gate": {
+      "addr": "0x45c048",
+      "cavesize": 7,
+      "expected": "f60534a44c0002",
+      "title": "行为 SDK → BP_ce_bomb_gate：Player__on_tick__body 0x45be90 的普通炸弹分支：test BYTE PTR ds:0x4ca434,0x2（7 字节，输入上升沿 bit1）。handler 沿卡链表问 on_bomb_gate()；任一卡返回 1 时用 retaddr 跳到 0x45c056 跳过 call do_bomb 0x45c051。只在咆哮 ready/hypering 的卡返回 1；其余帧/无卡时放行原指令（真实炸弹不受影响）。"
+    },
     "ce_enemy_death": {
       "addr": "0x430240",
       "cavesize": 6,
