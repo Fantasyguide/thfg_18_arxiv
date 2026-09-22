@@ -1020,6 +1020,37 @@ int yk_orb_instant_absorb(int gauge)
     return (yk_gauge_is_extremely_human(gauge) || yk_gauge_is_extremely_youkai(gauge)) ? 1 : 0;
 }
 
+/* ★★★ §3.11c 擦弹时点的三道门（一手逐指令、出处与判据全文在 `youkai_core.h` 同名小节）。
+ * 这里只落算式：TH08 `Player::sub_44a930`（`th08:0x44a930`）里三处 `spawn_item(pos, 0xa, 1)`。*/
+int yk_shottype_is_solo_human(int shottype)
+{
+    /* `th08:0x42f230`：`cmp ecx,0x4 / jl`（<4 直接假）→ `and eax,1 / jne`（奇数直接假）。*/
+    return (shottype >= 4 && (shottype & 1) == 0) ? 1 : 0;
+}
+
+int yk_shottype_is_solo_youkai(int shottype)
+{
+    /* `th08:0x42f270`：同形，`and eax,1` 后 `je`（偶数直接假）⇒ 只认奇数。*/
+    return (shottype >= 4 && (shottype & 1) != 0) ? 1 : 0;
+}
+
+int yk_graze_orbs_per_bullet(int bullet_path, int spell_active, int shottype)
+{
+    int n;
+    /* 门 0（`th08:0x44aa94` / `:0x44aa9e`）：**人単独**且不是妖夢（0xa）⇒ 一颗都不给。*/
+    if (yk_shottype_is_solo_human(shottype) && shottype != 0xa) return 0;
+    /* 门 1（`th08:0x44aac9`）：走到这里就有 1 颗（场上的 boss / 极妖两条门在卡侧，见 .h 的注）。*/
+    n = 1;
+    /* 门 2（`th08:0x44aace` + `:0x44aae0`）：只有**弹**路径**且符卡进行中**才给第 2 颗；
+     * 注意 `je 0x44ab14` 是跳到函数尾 ⇒ 没在打符卡时**连第 3 颗也没有**（三道门是嵌套的）。*/
+    if (bullet_path && spell_active) {
+        n = 2;
+        /* 门 3（`th08:0x44ab00`）：「妖単独」机体停在第 2 颗。*/
+        if (!yk_shottype_is_solo_youkai(shottype)) n = 3;
+    }
+    return n;
+}
+
 /* ★★★ 2026-09-22（#25 击破符卡的螺旋）：一手角度式（见 .h 的常量与出处）。
  * `θ = ((t − 10) × 2π / 40) − π/2` —— 只用 `* / + -`（不引 libm，x87 门不受影响）。*/
 void yk_spiral_angle(int t, float *out)

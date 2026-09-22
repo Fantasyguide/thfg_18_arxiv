@@ -1273,6 +1273,42 @@ int main(void)
             CHECK(yk_item_box_open(0) == 0);                      /* 初生/未就位 ⇒ 关 */
             CHECK(yk_item_box_open(2) == 0);                      /* 死亡段 ⇒ 关 */
             CHECK(yk_item_box_open(-1) == 0 && yk_item_box_open(99) == 0);   /* 野值一律关 */
+            /* ★★★ 2026-09-22 夜（P-F · 擦弹的**颗数**）：一手 `Player::sub_44a930`（`th08:0x44a930`）
+             * 三处 `spawn_item(pos, type 0xa, state 1)`（`th08:0x44aac9` / `:0x44aaef` / `:0x44ab0f`），
+             * 三道门**嵌套** ⇒ 每擦到一颗弹 **1 / 2 / 3** 颗。逐指令与门语义全文 = `youkai_core.h` §3.11c。
+             * 这里**每道门各测正 / 反两个方向**（同一个函数的三个入参正交地把门打开 / 关上）。*/
+            /* 两条 shottype 谓词（一手 `th08:0x42f230` / `:0x42f270`：`>= 4` 才算单人，再取奇偶）。*/
+            CHECK(yk_shottype_is_solo_human(0) == 0 && yk_shottype_is_solo_human(3) == 0);
+            CHECK(yk_shottype_is_solo_human(4) == 1 && yk_shottype_is_solo_human(10) == 1);
+            CHECK(yk_shottype_is_solo_human(5) == 0 && yk_shottype_is_solo_human(11) == 0);
+            CHECK(yk_shottype_is_solo_youkai(5) == 1 && yk_shottype_is_solo_youkai(11) == 1);
+            CHECK(yk_shottype_is_solo_youkai(4) == 0 && yk_shottype_is_solo_youkai(10) == 0);
+            CHECK(yk_shottype_is_solo_youkai(0) == 0 && yk_shottype_is_solo_youkai(3) == 0);
+            CHECK(yk_shottype_is_solo_human(4) != yk_shottype_is_solo_youkai(4));   /* 互斥 */
+            /* 门 0（`th08:0x44aa94` / `:0x44aa9e`）：**人単独且不是妖夢（0xa）** ⇒ 一颗都不给。
+             *   正：4 / 6 / 8（人単独）⇒ 0；反：3（组）、5（妖単独）、0xa（妖夢例外）⇒ 不是 0。*/
+            CHECK(yk_graze_orbs_per_bullet(1, 1, 4) == 0);
+            CHECK(yk_graze_orbs_per_bullet(1, 0, 6) == 0);
+            CHECK(yk_graze_orbs_per_bullet(0, 1, 8) == 0);
+            CHECK(yk_graze_orbs_per_bullet(1, 1, 3) == 3);          /* 组 ⇒ 照给 */
+            CHECK(yk_graze_orbs_per_bullet(1, 1, 10) == 3);         /* 妖夢例外 ⇒ 照给 */
+            /* 门 A = flag（`th08:0x44aace`）**且** 符卡进行中（`th08:0x44aad9` = `SPELLCARD.flags & 1`）：
+             *   正：弹路径 + 符卡中 ⇒ 第 2/3 颗；反：符卡不在 ⇒ 停在 1 颗；激光路径（flag=1）⇒ 也停在 1 颗。*/
+            CHECK(yk_graze_orbs_per_bullet(1, 1, 0) == 3);          /* 门开 */
+            CHECK(yk_graze_orbs_per_bullet(1, 0, 0) == 1);          /* 门关（没在打符卡）*/
+            CHECK(yk_graze_orbs_per_bullet(0, 1, 0) == 1);          /* 门关（激光擦弹，flag != 0）*/
+            /* 门 B（`th08:0x44ab00`）：**妖単独**机体停在第 2 颗。
+             *   正：`!solo_youkai`（组 0..3）⇒ 3 颗；反：`solo_youkai`（5 / 7 / 9 / 11）⇒ 2 颗。*/
+            CHECK(yk_graze_orbs_per_bullet(1, 1, 0) == 3);
+            CHECK(yk_graze_orbs_per_bullet(1, 1, 5) == 2);
+            CHECK(yk_graze_orbs_per_bullet(1, 1, 11) == 2);
+            /* 门 B 只在前两颗都给出来的前提下才被求值（嵌套）：妖単独 + 没在打符卡 ⇒ 仍是 1 颗。*/
+            CHECK(yk_graze_orbs_per_bullet(1, 0, 5) == 1);
+            /* 本卡的映射（TH18 机体号 0..3 = TH08 的「组」）下能取到的两档：平擦 1 / 符卡中 3。*/
+            for (i = 0; i < 4u; ++i) {
+                CHECK(yk_graze_orbs_per_bullet(1, 0, (int)i) == 1);
+                CHECK(yk_graze_orbs_per_bullet(1, 1, (int)i) == 3);
+            }
             }
             }
         }

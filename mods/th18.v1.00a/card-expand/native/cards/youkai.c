@@ -1439,10 +1439,17 @@ static void *yk_player_anm(void)
  *   · **归航速度**：`[ds:0x18b896c]+0x14` = 当前 `.sht` 头的 `itemCollectSpeed`
  *     = **10.0**（pl00/pl02/pl03）/ **12.0**（pl01）⇒ 取代原来 ❓自定的 3.0
  *     （owner 的原话「很慢」就是它：3.0 vs 10.0）。
- *   · **「刚开始就满速」**：擦弹那一路在 TH08 里**直接就生 state 1**（`th08:0x431650` 一族
- *     `spawn_item(type 7, state 1)`）⇒ 一生成就满速归航、没有加速段。原来我们把它也按 state 3 生，
- *     于是先飘 ~40 帧（`vy = −2.0 + 0.05/帧`）再归航 —— 那正是 owner 说的「像是有一个很小的加速度」。
- *     「击破敌机」那一路一手是 state 3（`th08:0x42b048`）⇒ 保持不变。
+ *   · **「刚开始就满速」**（★ 出处**已订正**，行为不变）：当年据 `th08:0x431650` 一族
+ *     `spawn_item(type 7, state 1)` 认定「擦弹那一路生 state 1」，**那一族的出处认错了** ——
+ *     `th08:0x431650`/`:0x431668` 是 `BulletManager::on_tick` 里「判定返回 **`eax == 2`**」那一支
+ *     （`th08:0x43160f cmp eax,2 / jne`；2 = `th08:0x44a4a1 call 0x449ff0`
+ *     `Player::check_bomb_cancel_areas` 命中**自机的炸弹消弹区** ⇒ `th08:0x44a4aa mov eax,2`），
+ *     按 `ds:0x18b8988`（== 9 ⇒ 2 颗，否则 1 颗）出 `type 7, state 1`，
+ *     **与擦弹无关**。擦弹（判定 `eax == 1`）在 `th08:0x431603` 只置 `bullet+0xdbd` 闩；
+ *     出货在 `Player::sub_44a930` 的 `th08:0x44aac9`/`:0x44aaef`/`:0x44ab0f`（`type 0xa, state 1`
+ *     ⇒ 被 `th08:0x440124` 改写成 **type 7 + state 5**）。
+ *     ⇒ 擦弹那一路**不是**「生成即满速」，我们按 state 5 生（= `YK_ORB_STATE_SPAWN`，先上抛）。
+ *     「击破敌机」那一路一手是 state 3（`th08:0x42b048`）⇒ 与之同形，保持不变。
  *   · **拾取**：一手是**接触玩家的抓取盒**（`Player::CalcItemBoxCollision`，`ItemManager.cpp:288`），
  *     盒半宽 = `[.sht+0x18]/2`（12 / 16）+ 刻符半宽 8 ⇒ 半径口径 **20 / 24**。
  *   · **下落（state 0）**：一手 `vx = 0`、`vy` 夹 `>= −2.2`、`vy += 0.03`（终速 3.0）；
@@ -1495,9 +1502,12 @@ static void yk_orb_kill_all(void)
 
 /* 生成一颗刻符（TH08 的 `ItemManager::spawn_item(pos, 7, state)`，`th08:0x4400a0` 的 type 7 那一档）。
  * `state` = **一手的出生状态**，按来源取（见 `youkai_core.h` §3.11 的常量块）：
- *   · `YK_ORB_STATE_HOMING`(1) = **擦弹**那一路（`th08:0x431650` 一族 `spawn_item(type 7, 1)`
- *     ⇒ 一生成就满速归航、没有加速段，owner 要的「刚开始就满速」）；
- *   · `YK_ORB_STATE_SPAWN`(3) = **击破敌机**那一路（`th08:0x42b048` ⇒ 先上浮、`vy > 0` 再归航）。*/
+ *   · `YK_ORB_STATE_HOMING`(1) = **消弹 / `cancel_autocollect`** 那一支
+ *     （`th08:0x4308e5` 一族 + `ItemManager::cancel_autocollect th08:0x4413e0` ⇒ 生成即满速归航）；
+ *   · `YK_ORB_STATE_SPAWN`(3) = **击破敌机 / 符卡螺旋 / 擦弹**那几路（`th08:0x42b048` /
+ *     `th08:0x41761d` / `th08:0x44aac9` 一族 ⇒ 先上浮、`vy > 0` 再归航）。
+ *     ⚠ 擦弹那一路的一手出处是 **`th08:0x44aac9` 一族**（`Player::sub_44a930`），**不是**
+ *     `th08:0x431650`（那是炸弹消弹区那一支，见 `YK_ORB_ANM_LAYER` 前的注）。*/
 /* ★★★ 2026-09-22（#25 / 一手）：**三条来源 × state × 何时可被收**（逐站点读 push，全文
  * `engine/item/th08/01-time-orbs.md` §5.4）。这张表就是 owner 那三句话的编码：
  *
@@ -2987,6 +2997,23 @@ static int on_death_before_deathbomb(ce_card_t *c)
  * `verify.py` 的 familiar 判据已经同时接受 `run done` 与 `ledger` 两种形态。*/
 static uint32_t s_ledger_frame;
 
+/* ★★★ 2026-09-22 夜（P-F 工单 · 擦弹颗数的保真缺口）：**擦弹那一路给几颗**的三本账。
+ * 全部只进日志（实跑判据），不参与任何判定；`n` 的值域与三道门见 `youkai_core.h` §3.11c。*/
+static unsigned s_graze_n[4];        /* [1]/[2]/[3] = 各档各给过几次 */
+static unsigned s_graze_clamped;     /* 被对账护栏夹掉的弹数（> 0 = 那一帧确实跳帧了） */
+static int      s_graze_log_n = -1;  /* 上一次打日志时的 n（值一变就打一行） */
+static uint32_t s_graze_log_frame;   /* 上一次打日志的帧号（值不变时最多每 60 帧一行） */
+
+/* ❓ **自定（不是一手规则）**：一手对「一帧擦到几颗弹」**没有上限** —— `BulletManager::on_tick`
+ * 逐弹调一次 `Player::sub_44a930`，一帧 N 颗就是 N 次（`engine/_shared/rosters/th06-th09.md` §3.2
+ * 与 `HUMAN-YOUKAI-GAUGE.md` §3bis.6 都写了「没有单帧上限」）。这一格是**对账护栏**，理由只有一条：
+ * 我们读的是 TH18 的**累计**擦弹计数 `CE_ADDR_GRAZE`（`0x4ccd0c`），而本卡的 tick 在商店 / 暂停等
+ * 场合不跑（AbilityManager 冻结）⇒ 恢复后那一帧的差分可能是「一段被跳过的时间」而不是
+ * 「一次擦弹爆发」，**差分本身分不出这两种情形**。上限取 = 刻符池容量（一帧最多填满一次池）；
+ * 夹掉的部分进 `s_graze_clamped` 并**当场打一行日志**（实跑见到那行 = 那一帧确实跳帧了）。
+ * （上一版这里是「单帧上限 8 颗，防一段大擦弹一次性灌满池」，既没有一手依据、也没考虑跳帧。）*/
+#define YK_GRAZE_RESYNC_MAX 64u
+
 static int on_tick_2(ce_card_t *c)
 {
     yk_card_t *s = ce_state(c, yk_card_t);
@@ -3011,10 +3038,12 @@ static int on_tick_2(ce_card_t *c)
             if (ch < 0 || ch > 3) ch = 0;
             yk_orb_motion_params(ch, &sp, &rr);
             ce_log("youkai: gauge=%d piv=%d orbs=%d taken=%u live=%u full=%u hud=%u "
-                   "speed=%.0f pick=%.0f shoot=%d fengma=%u fscore=%d",
+                   "speed=%.0f pick=%.0f shoot=%d fengma=%u fscore=%d "
+                   "graze_n 1/2/3=%u/%u/%u clamped=%u",
                    (int)s->gauge, (int)s->piv, (int)s->orbs, s->orb_taken, s_orb_live,
                    s->orb_full, (unsigned)s->hud_ready, sp, rr, yk_shooting(),
-                   (unsigned)s->fengma, (int)s->fengma_score);
+                   (unsigned)s->fengma, (int)s->fengma_score,
+                   s_graze_n[1], s_graze_n[2], s_graze_n[3], s_graze_clamped);
         }
     if (!CE_PLAYER()) {
         yk_drop_all(s, "no player");
@@ -3038,14 +3067,28 @@ static int on_tick_2(ce_card_t *c)
         uint32_t graze = *(const uint32_t *)(uintptr_t)CE_ADDR_GRAZE;
         if (graze > s->graze_seen) {
             uint32_t d = graze - s->graze_seen, i;
+            unsigned k, orbs;
+            int spell, st;
             float px = *(const float *)(CE_PLAYER() + CE_PLAYER_X);
             float py = *(const float *)(CE_PLAYER() + CE_PLAYER_Y);
-            if (d > 8u) d = 8u;                            /* ❓ 自定：单帧上限（防一段大擦弹一次性灌满池）*/
+            if (d > YK_GRAZE_RESYNC_MAX) {                 /* ❓ 自定：**对账护栏**，不是一手规则
+                                                            *   （一手「没有单帧上限」的证据与理由见
+                                                            *   `YK_GRAZE_RESYNC_MAX` 的注释）*/
+                s_graze_clamped += d - YK_GRAZE_RESYNC_MAX;
+                ce_log("youkai: graze resync clamped %u bullet(s) (cumulative %u) - the cumulative "
+                       "TH18 graze counter jumped, i.e. our tick did not run for a while; "
+                       "first-hand TH08 has NO per-frame cap",
+                       d - YK_GRAZE_RESYNC_MAX, s_graze_clamped);
+                d = YK_GRAZE_RESYNC_MAX;
+            }
             /* ★★★ 2026-09-22（P5 / th08 #18「妖形态是擦弹得自动吸收的永点……总之是有一个『无敌』的
              * 上抛过程，然后直接吸收」）：**擦弹那一路是 state 5（上抛），不是 state 1** —— 上一版
              * 认错了对象。一手（逐指令，本样本）：
-             *   · 擦弹真正的落点 = `Player::sub_44a6a0` 的 `th08:0x44aac9 / :0x44aaef / :0x44ab0f`
-             *     ⇒ `spawn_item(pos, **type 0xa**, state 1)`；
+             *   · 擦弹真正的落点 = `Player::sub_44a930`（`th08:0x44a930`）的
+             *     `th08:0x44aac9 / :0x44aaef / :0x44ab0f` ⇒ `spawn_item(pos, **type 0xa**, state 1)`；
+             *     ⚠ **不是** `Player::sub_44a6a0`：那个是 `0x44a6a0`–`0x44a928`（`ret 0x14` = 五参）的
+             *     **激光判定**，它在 `th08:0x44a8d1` 以 `flag = 1` 调进 `sub_44a930`（`ret 0x8` = 两参）；
+             *     vendor `funcs.json` 把这两个函数并成了一条，别照它读边界（core §3.11c 有全文）。
              *   · 而 `spawn_item` 把 type 10 **当场改写**成 `type 7 + state 5`
              *     （`th08:0x440124 cmp [ebp+0xc],0xa / mov [ebp+0x10],5 / mov [ebp+0xc],7`）⇒
              *     那个 `state 1` 实参**被丢弃**；
@@ -3056,11 +3099,47 @@ static int on_tick_2(ce_card_t *c)
              *     （`th08:0x4308e5` 一族 + `ItemManager::cancel_autocollect` `th08:0x4413e0`）。
              * ⇒ 我们那句 `YK_ORB_STATE_HOMING` 改成 `YK_ORB_STATE_SPAWN`（= 我们的 state 3，
              *   运动方程与 TH08 的 state 5 同一套：上抛 → `vy > 0` 转归航，且上抛期间不收）。
-             * ⚠ 仍**未复刻**的两点（登记 TUNING）：① 落点 —— TH08 撒在**被擦到的那颗弹**上，
+             * ⚠ 仍**未复刻**的三点（登记 TUNING §2.0y）：① 落点 —— TH08 撒在**被擦到的那颗弹**上，
              *   我们拿不到那颗弹（`ce_graze_take` 的断点 `0x42497f` 在 `sites.py` 里被注释掉 ⇒ 恒返回 0）
-             *   ⇒ 落点 = 自机（上抛之后回来才被收，至少看得见动作）；② TH08 那支的门
-             *   （極端妖怪 + `is_boss_active` + 符卡/机体分支）我们没接，用的是「聚焦即撒」。*/
-            if (focused) for (i = 0; i < d; ++i) yk_orb_spawn(s, px, py, YK_ORB_STATE_SPAWN);
+             *   ⇒ 落点 = 自机（上抛之后回来才被收，至少看得见动作）；② 第 1 颗那两条**场上门**
+             *   （`is_boss_active` + 槽极妖 >= +8000）没接，用的是「聚焦即撒」；
+             *   ③ 弹 / 激光那条 `flag`（`[ebp+0xc]`）分不出来（TH18 只有一个累计计数）。
+             *
+             * ★★★ 2026-09-22 夜（P-F · **颗数**的保真缺口，本批）：一手是
+             * **每擦到一颗弹给 1 / 2 / 3 颗**（三道门**嵌套**，`je 0x44ab14` 直接跳到函数尾）：
+             *   · `th08:0x44aac9` = 第 1 颗（场上门见上面 ②）；
+             *   · `th08:0x44aaef` = 第 2 颗：门 = `[ebp+0xc] == 0`（**弹**路径；激光那条传 1）
+             *     **且** `SPELLCARD.flags & 1`（`th08:0x44aad9 call 0x4178a0`）= **符卡进行中**；
+             *   · `th08:0x44ab0f` = 第 3 颗：门 = `!shottype_is_solo_youkai()`（`th08:0x44aaf9`）。
+             * 判据 / 出处全文 = `youkai_core.h` §3.11c（含两条 shottype 谓词、`SPELLCARD.flags` bit0 的
+             * 置位与清位指令、以及「一帧可以擦 N 颗」这条没有上限的一手）。TH18 侧我们这样接：
+             * `spell_active = ce_spell_active()`（`zSpellcard+0x78` bit0，与 TH08 的 bit0 同义）、
+             * `shottype` = TH18 机体号 0..3（owner §4 的映射把每个 TH18 机体都映到 TH08 的一个**组**
+             * ⇒ 两条 solo 谓词恒假 ⇒ 本卡只会给 **1 颗**（没在打符卡）/ **3 颗**（符卡进行中）；
+             * 第 2 颗那一档 = 「妖単独」机体，TH18 没有对应机体）、`bullet_path` 恒 1。*/
+            spell = ce_spell_active();
+            st = yk_current_character();
+            if (st < 0 || st > 3) st = 0;
+            orbs = (unsigned)yk_graze_orbs_per_bullet(1 /* 弹路径（激光分不出来，见上面 ③）*/,
+                                                      spell, st);
+            if (focused && orbs) {
+                for (i = 0; i < d; ++i)
+                    for (k = 0; k < orbs; ++k)
+                        yk_orb_spawn(s, px, py, YK_ORB_STATE_SPAWN);
+                /* ★ 实跑判据（父工单要的那一条）：`n=` 就是**这次擦弹每颗弹给几颗**
+                 * （1 = 平擦 / 3 = 符卡进行中 / 2 = 只可能出现在「妖単独」机体）。
+                 * 限频：值一变就打一行；值不变时最多每 60 帧一行（免得密擦时刷屏）。*/
+                if (orbs <= 3u) ++s_graze_n[orbs];
+                if (orbs != (unsigned)s_graze_log_n
+                    || (uint32_t)(s_ledger_frame - s_graze_log_frame) >= 60u) {
+                    s_graze_log_n = (int)orbs;
+                    s_graze_log_frame = s_ledger_frame;
+                    ce_log("youkai: graze orbs n=%u x%u bullet(s) (spell=%d shottype=%d) "
+                           "tally 1/2/3=%u/%u/%u clamped=%u - TH08 th08:0x44aac9+aaef+ab0f",
+                           orbs, d, spell, st, s_graze_n[1], s_graze_n[2], s_graze_n[3],
+                           s_graze_clamped);
+                }
+            }
             /* ★★★ 2026-09-22 夜（P-C ③）：**擦弹 +100 只给妖侧**（一手 `Player::sub_44a930 th08:0x44a930`：
              * `th08:0x44aa6c call 0x40bc40`（`IsYoukai()` = **`player+5`**）为真才
              * `th08:0x44aa78 push 0 / th08:0x44aa7a push 0x64 / th08:0x44aa81 call 0x43c0bb`）。
@@ -3399,7 +3478,11 @@ _Static_assert(sizeof(yk_fam_vm_t) == 16, "familiar follow-VM record changed siz
  *         `YK_ORB_PICK_R` = 20.0（TH08 那两个量在道具运动表 / 碰撞代码里，本轮没抽出一手）；
  *       · 三角 / 开方用**自己写的多项式与 Newton 近似**（不引 libm、不进 x87）；
  *       · 击破敌机撒刻符的数量取「双人组」支 + **连锁段数 n = 1** ⇒ 12 颗；
- *       · 擦弹 ⇒ 每点擦弹 1 颗（落在自机位置）、单帧上限 8 颗；
+ *       · ~~擦弹 ⇒ 每点擦弹 1 颗（落在自机位置）、单帧上限 8 颗~~ —— **2026-09-22 晚已作废**：
+ *         一手是**每擦到一颗弹 1 / 2 / 3 颗**（`th08:0x44aac9` 必给 + `:0x44aaef` 的符卡门 +
+ *         `:0x44ab0f` 的机体门；逐指令全文在 `youkai_core.h` §3.11c），落点仍 = 自机
+ *         （拿不到被擦的那颗弹）；同时那个「单帧上限 8」也撤了，换成 `YK_GRAZE_RESYNC_MAX`
+ *         （❓ 对账护栏，**不是**一手规则 —— 一手没有单帧上限）；
  *       · 漂移算式末尾的 `g_ShotSpeed` 取 1，两个计时器的重置时机做了简化；
  *       · HUD 块 256×78 与「每帧覆盖位置 ⇒ TH08 的 `posTime` 滑入被覆盖」；
  *       · 人妖槽**换关会归零**（一手是**不**归零，只有新局清）—— 因为本卡的 `on_load` 复用 `on_ctor`。

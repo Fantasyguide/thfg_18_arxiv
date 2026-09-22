@@ -20511,3 +20511,72 @@ TH18 编号 = `player+0x476ac`（`switch 0..4`、移动只在 case 1 `th18:0x45c
 
 **发布面**：**本批没改** `pl0X.sht` / `pl0X.anm` / `ability.anm` / wav / 站点（只有 DLL 里的卡代码 + 文档）。
 
+## §BE 详录 #73（2026-09-22 夜）：108 永夜抄 —— 擦弹的**颗数**（我们 1 颗 vs 一手 1~3 颗）按一手补齐 + 那道自定单帧上限的处置 + 两处陈旧注释订正
+
+> **谁做的**：108 保真缺口修复子会话（P-F 工单；父 agent `session-ea21e315-5763-4d2e-8148-2fd328838640`）。
+> **工单原话**：「TH08 原版：**每擦到一颗弹**，在擦弹点生成 **1~3 颗**时点……我们每次擦弹给 1 颗，
+> 且自己加了个「单帧上限 8 颗」的 ❓ 自定 ⇒ 差异：**颗数（1 vs 1~3）**，以及**那两道门我们没有**。」
+
+**改了什么**
+
+| 文件 | 改了什么 |
+| --- | --- |
+| `native/cards/youkai_core.h` | 新增 §3.11c 小节：`Player::sub_44a930` 三处 `spawn_item` 的**逐指令门表** + 两条 shottype 谓词 + `SPELLCARD.flags & 1` 的置/清位指令 + 函数边界（`ret` 证据）+ TH18 侧三个输入的映射口径；新增三个声明 |
+| `native/cards/youkai_core.c` | 新增 `yk_shottype_is_solo_human` / `yk_shottype_is_solo_youkai`（一手 `th08:0x42f230` / `:0x42f270` 的判据）与 `yk_graze_orbs_per_bullet(bullet_path, spell_active, shottype)`（三道门**嵌套** ⇒ 0/1/2/3） |
+| `native/cards/youkai.c` | 擦弹那一支改成**每颗弹给 `n` 颗**（`n` 由上面那个纯函数算）；撤掉「单帧上限 8 颗」换成护栏 `YK_GRAZE_RESYNC_MAX`；新增日志 `youkai: graze orbs n=…`；账行尾追加 `graze_n 1/2/3=…`；订正两处陈旧注释（详见本节「为什么」末条） |
+| `native/tests/test_youkai_core.c` | 新增 27 条断言：两条谓词各正/反、**每道门各正/反**、嵌套关系、本卡映射下能取到的两档 ⇒ `4637 checks / 0 failed`（原文 4610） |
+| `native/tools/verify.py` | `youkai` 期望表追加两条：`youkai: graze orbs n=[123] x\d+ bullet`、`youkai: graze resync clamped` |
+| `TUNING.md` | §2.0y 的陈旧行（擦弹出生态写成 state 1 + `0x431650`）订正；§2.0y #6（「每点 1 颗 + 单帧上限 8」）改为指向新小节；**新增 §2.0zs**（一手三道门 + 映射 + 护栏 + 实跑判据） |
+| `engine/_shared/rosters/th06-th09.md` | §th08 里 `th08:0x449ff0` 那条 ❓（「待核：读本体确认判定语义」）**结案**：一手 = 自机炸弹消弹区池（`player+0xbb834`、0xc0 槽 × 0x40B），命中即返回 2 |
+
+**为什么（一手，本样本 `local/th08.v1.00d/th08.exe` 平坦反汇编）**
+
+- 擦弹奖励的落点 = **`Player::sub_44a930`**（`th08:0x44a930`–`0x44ab36`，`ret 0x8` = 两参），
+  **不是** `Player::sub_44a6a0`（`0x44a6a0`–`0x44a928`，`ret 0x14` = 五参的激光判定；它在 `th08:0x44a8d1`
+  以 `flag = 1` 调进前者）—— vendor `funcs.json` 把两者并成一条，按 `ret imm16` 切才对。
+  调用点穷举只有两处：`th08:0x44a58f`（弹，`push 0x0`）/ `th08:0x44a8d1`（激光，`push 0x1`）。
+- 三处 `call 0x4400a0`：`th08:0x44aac9`（必给第 1 颗，门 = 机体不是「人単独」且 `is_boss_active()` 且
+  `gauge_is_extremely_youkai()`）、`th08:0x44aaef`（第 2 颗，门 = `flag == 0` **且** `SPELLCARD.flags & 1`）、
+  `th08:0x44ab0f`（第 3 颗，门 = `!shottype_is_solo_youkai()`）；都是 `type 0xa, state 1`
+  ⇒ 被 `th08:0x440124` 改写成 **type 7 + state 5**（我们的 `YK_ORB_STATE_SPAWN`，**不是** state 1）。
+  三道门是**嵌套**的（`je 0x44ab14` 直接跳到函数尾）⇒ 没在打符卡时连第 3 颗也没有。
+- `SPELLCARD.flags & 1` = **符卡进行中**（不是社区口述）：置位 `th08:0x4152cf or ecx,1`（`Spellcard::ecl_spell`）、
+  清位 `th08:0x4161e0`（`Spellcard::ecl_spell_end`，且 `th08:0x4161c7` 先 `and 1 / je` **整段早退**）。
+- 「器量」那一格仍**照旧**：一手 `BulletManager::on_tick` 一帧可以擦 N 颗（**没有单帧上限**）⇒
+  我们过去的「单帧上限 8 颗」既没有一手依据，也没覆盖「tick 跳帧时累计量跳变」这个真实情形
+  ⇒ 撤掉玩法上限，换成 `YK_GRAZE_RESYNC_MAX = 64`（= 池容量）的**对账护栏** + 触发时打日志。
+- **两处陈旧注释的订正（只订正注释，行为本来就对）**：`th08:0x431650`/`:0x431668` 是
+  `BulletManager::on_tick` 里判定 `eax == 2` 那一支（`th08:0x43160f cmp eax,2`；2 =
+  `th08:0x44a4a1 call 0x449ff0` 命中**自机炸弹消弹区** ⇒ `th08:0x44a4aa mov eax,2`），
+  按 `ds:0x18b8988` 出 `type 7, state 1`；擦弹（`eax == 1`）在 `th08:0x431603` 只置 `bullet+0xdbd` 闩。
+  行为侧本卡早就是 `YK_ORB_STATE_SPAWN`（§BE 详录 #57 / `TUNING.md` §2.0za 已改对）⇒ 本批只把
+  `youkai.c` 那两处注释与 `TUNING.md` §2.0y 的那一行**改成正确出处**，**没有行为变化**。
+
+**`youkai.c` 第五条的逐条（那条被缩写的改动）**：① 撤掉「单帧上限 8 颗」⇒ 换成 `YK_GRAZE_RESYNC_MAX` = **64**
+（❓ 对账护栏：一手没有单帧上限，而累计计数差分分不出「擦弹爆发」与「跳帧」两种情形）；② 新增实跑日志
+`youkai: graze orbs n=<1|2|3> x<N> bullet(s) (spell=… shottype=…) tally 1/2/3=… clamped=…`（值变就打、最多每 60 帧一行）；
+③ 600 帧那行账尾追加 `graze_n 1/2/3=… clamped=…`；④ 两处陈旧注释订正：`th08:0x431650` 一族 = **炸弹消弹支**
+（`eax == 2`）、擦弹真实落点 = `th08:0x44aac9` 一族（**注释订正，行为本来就是对的那一档**）。
+
+**没接的（如实登记，留给 owner 拍）**
+
+- 第 1 颗的两条**场上门**：`is_boss_active`（`th08:0x42f1f0` 扫 `ENEMY_MANAGER.bosses[0..7]`）与
+  「槽 >= +8000 极妖」仍**没接**（本卡仍「聚焦即撒」）。TH18 侧两个输入都拿得到
+  （`CE_EM_BOSS_IDS` / 卡自己的 `gauge`）⇒ 接上只需两条判据，但**平擦会变成 0 颗**、手感变化很大，故不擅动。
+- 「妖単独」那一档（每颗弹 2 颗）在 TH18 **没有对应机体**（owner §4 的映射把每个 TH18 机体都映到
+  TH08 的**组**）⇒ 本卡只会给 1 颗 / 3 颗；要让 2 颗出现得先有「单人机体」维度。
+- 弹 / 激光这条 `flag` 分不出来（TH18 的擦弹计数 `0x4ccd0c` 是一个累计量）⇒ 一律按弹算。
+
+**怎么验证的**：`make test-host` ⇒ `youkai_core: **4637 checks, 0 failed**`（原 4610，新增 27 条）；
+`make check` 的其余各门全绿（`x87 in our objects: 0`、sites 双面、`sitecheck --all`、`contract_check`、
+`gen_drift`、`capcheck`、`engine_abi_check`、`anm_hud_alpha_check`、`dllverify`）；
+`python3 tooling/check-docs.py` —— ⚠ **本批提交时该门有 2 处违规，都在 `engine/faith/OVERVIEW.md`**
+（`0x43edae` 缺版本前缀 + 一个 252 字符的表格单元格），**那是并发会话正在改的文件**
+（`git status` 显示它 ` M`，且 HEAD 版只有 57 行 = 那个会话新写的内容），本批**一个字都没碰它**；
+把该文件按 HEAD 还原后单独跑 `check-docs` 即全绿（见报告 §④）。
+
+**发布面**：**本批没改** `pl0X.sht` / `pl0X.anm` / `ability.anm` / wav / 站点 ——
+没新增断点、没动 `sites.py` / `SITE_BUDGET` / `patch/**`、没碰别人的卡；改的共享面只有
+`engine/_shared/rosters/th06-th09.md` 的一条 ❓ 结案（**追加式**，本记录即是登记）。
+
+

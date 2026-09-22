@@ -929,6 +929,77 @@ int   yk_spiral_first_count(int quota);
  *   （当帧满速归航）。判据就是一个纯函数（下面这个），卡侧按 gauge 的极值档调用。*/
 int yk_orb_instant_absorb(int gauge);   /* 極端人 或 極端妖 ⇒ 1（一手 `0x42da54` 的或门）*/
 
+/* ============ ★★★ §3.11c 擦弹：**每擦到一颗弹给几颗时点**（TH08 `Player::sub_44a930`）==========
+ * 一手 = TH08 v1.00d（`local/th08.v1.00d/th08.exe`，平坦反汇编），函数 = **`Player::sub_44a930`**
+ *   （`th08:0x44a930`–`th08:0x44ab36`，`ret 0x8` = 两参：`(Float3 *pos, i32 flag)`）。
+ *   ⚠ **不是** `Player::sub_44a6a0`：那个是 `th08:0x44a6a0`–`th08:0x44a928`（`ret 0x14` = 五参）的
+ *     **激光判定**函数，它在 `th08:0x44a8d1` 以 `flag = 1` 调进本函数；vendor `funcs.json` 把这两个函数
+ *     合并成一条（`0x44a6a0` 名字一直盖到 `0x44ab40`）⇒ **别照它读边界**，按 `ret imm16` 切。
+ *   调用点穷举（`grep 'call   0x44a930'` 全文只两处）：`th08:0x44a58f`（弹擦弹路径，
+ *     `push 0x0`）/ `th08:0x44a8d1`（激光擦弹路径，`push 0x1`）⇒ **`flag` = 「是不是激光擦弹」**。
+ *
+ * 逐指令（三处 `call 0x4400a0` = `ItemManager::spawn_item(pos, type, state)`；push 顺序 state/type/pos
+ *   ⇒ 三处都是 `spawn_item(pos, type = 0xa, state = 1)`，而 type 0xa 会被 `th08:0x440124` 当场改写成
+ *   **type 7 + state 5**）：
+ *
+ *   `th08:0x44aa86` `ecx = GameManager; call 0x42f230`   ; `shottype_is_solo_human`
+ *   `th08:0x44aa92` `je 0x44aaa0`                        ; 不是「人単独」⇒ 跳过下一条
+ *   `th08:0x44aa94` `movzx edx, BYTE ds:0x164d0b1`      ; = `GameManager+0x3dba9` = **shottype**
+ *   `th08:0x44aa9e` `jne 0x44ab14`                       ; 人単独 且 shottype != 0xa ⇒ **一颗都不给**
+ *   `th08:0x44aaa0` `ecx = 0x577f20; call 0x42f1f0`      ; `EnemyManager::is_boss_active`
+ *   `th08:0x44aaac` `je 0x44ab14`                        ; 场上没 boss ⇒ **一颗都不给**
+ *   `th08:0x44aab3` `call 0x406d70`                      ; `GaugeIsExtremelyYoukai`（槽 >= **+8000**）
+ *   `th08:0x44aaba` `je 0x44ab14`                        ; 不是极妖 ⇒ **一颗都不给**
+ *   `th08:0x44aac9` `call 0x4400a0`                      ; ★ **第 1 颗**
+ *   `th08:0x44aace` `cmp DWORD [ebp+0xc],0 / jne 0x44ab14` ; `flag != 0`（激光）⇒ 只给这一颗
+ *   `th08:0x44aad9` `[ecx = SPELLCARD 0x4ea670] call 0x4178a0` ; = `SPELLCARD.flags & 1`
+ *   `th08:0x44aae0` `je 0x44ab14`                        ; **没在打符卡** ⇒ 只给这一颗
+ *   `th08:0x44aaef` `call 0x4400a0`                      ; ★ **第 2 颗**
+ *   `th08:0x44aaf9` `call 0x42f270`                      ; `shottype_is_solo_youkai`
+ *   `th08:0x44ab00` `jne 0x44ab14`                       ; 「妖単独」⇒ 不给第 3 颗
+ *   `th08:0x44ab0f` `call 0x4400a0`                      ; ★ **第 3 颗**
+ *
+ * ⇒ **三道门是嵌套的**（后一颗都要求前一颗已经给出）⇒ 每擦到一颗弹给 **1 / 2 / 3** 颗：
+ *
+ * | # | 生成点 | 门（逐指令） | 判的是什么 |
+ * | --- | --- | --- | --- |
+ * | 1 | `th08:0x44aac9` | `!(solo_human && shottype != 0xa)` **且** `is_boss_active()` **且** `gauge_is_extremely_youkai()` | 机体不是「人単独」（妖夢 0xa 例外）、场上**有 boss**、人妖槽 **>= +8000（80%）** |
+ * | 2 | `th08:0x44aaef` | `flag == 0`（**不是激光擦弹**）**且** `SPELLCARD.flags & 1` | 弹路径、**符卡进行中** |
+ * | 3 | `th08:0x44ab0f` | `!shottype_is_solo_youkai()` | 不是「**妖単独**」机体 |
+ *
+ * 两条谓词的逐指令（都在 `GameManager`，`shottype` = `ds:0x164d0b1` = `GM+0x3dba9`）：
+ *   · `shottype_is_solo_human` `th08:0x42f230`（`0x42f243 cmp ecx,0x4 / jl` → `0x42f252 and eax,1 / jne`）
+ *     = `shottype >= 4 && (shottype & 1) == 0`；
+ *   · `shottype_is_solo_youkai` `th08:0x42f270`（同形，`0x42f297 je`）
+ *     = `shottype >= 4 && (shottype & 1) != 0`。
+ *   ⇒ TH08 的 shottype：0..3 = 四**组**（霊夢&紫 / 魔理沙&アリス / 咲夜&レミリア / 妖夢&幽々子）、
+ *     4..11 = 单人（偶数 = 人型那一半、奇数 = 妖型那一半；**0xa = 妖夢**，也是唯一「人単独但照样给」的）。
+ *   · `is_boss_active` `th08:0x42f1f0`：扫 `ENEMY_MANAGER.bosses[0..7]`
+ *     （`0x577f20 + 0x9dcda0 + 4i`；ExpHP `zEnemyManager` 该字段名就是 `bosses`）⇒ **任一非 0 即真**。
+ *   · `SPELLCARD.flags & 1`：置位 = 符卡声明那条 ECL opcode `Spellcard::ecl_spell th08:0x4152a0`
+ *     （`0x4152cf or ecx,0x1` → `0x4152d8 mov [edx],ecx`，同段还 `or` 了 bit2）；
+ *     清位 = `Spellcard::ecl_spell_end th08:0x4161b0`（`0x4161c7 and ecx,0x1 / je 0x416a86` **整段早退**，
+ *     随后 `0x4161e0 and eax,0xfffffffe` 清掉）⇒ **bit0 = 「符卡进行中」**，与 TH18 的
+ *     `CE_SPELL_FLAG_ACTIVE`（`zSpellcard+0x78` bit0）**同一语义**。
+ *   · ⚠ **一手没有单帧上限**：一帧擦到 N 颗弹 = 本函数被调 N 次（`BulletManager::on_tick` 逐弹各判一次）。
+ *
+ * TH18 侧三个输入怎么取（本卡）：
+ *   · `spell_active` = `ce_spell_active()`（`sdk.h`：读 `zSpellcard+0x78` 的 bit0，一手 `th18:0x409b10` 置位）；
+ *   · `shottype` = **TH18 的机体号 0..3 直接当 TH08 的「组」号**（owner §4 的映射
+ *     「灵梦/紫 · 魔理沙/爱丽丝 · 咲夜/蕾米莉亚 · 早苗/文」把 TH18 每个机体都映到 TH08 的一个**组**）
+ *     ⇒ `solo_human` / `solo_youkai` 两条在本卡**恒为假** ⇒ 本卡只可能给 **1 颗**（没在打符卡）
+ *       或 **3 颗**（符卡进行中）；**第 2 颗那一档（「妖単独」）在 TH18 没有对应机体**
+ *       —— 这是映射的必然结果，不是漏读（登记 `TUNING.md` §2.0y #6 / `AUDIT.md` §BE）；
+ *   · `flag`（弹 / 激光）：TH18 的擦弹计数 `0x4ccd0c` 是**一个累计量**、分不出来源 ⇒ 一律按**弹**
+ *     （`flag = 0`）算。⚠ 同一条累计量也读不出「被擦的是哪颗弹」（落点仍取自机，见 `TUNING.md` §2.0y #12）。
+ *
+ * ⚠ **本函数只覆盖「机体轴 + flag + 符卡」这三道**；第 1 颗那两条**场上门**（有 boss / 极妖 >= +8000）
+ *   在卡侧仍是 ❓（现在用「聚焦即撒」代替，登记 `TUNING.md` §2.0y #6 与 `youkai.c` 的站内注）。*/
+int yk_shottype_is_solo_human(int shottype);   /* `shottype >= 4 && (shottype & 1) == 0` */
+int yk_shottype_is_solo_youkai(int shottype);  /* `shottype >= 4 && (shottype & 1) != 0` */
+/* 每擦到一颗弹给几颗时点（0 / 1 / 2 / 3）。`bullet_path` = `flag == 0`（弹路径）。*/
+int yk_graze_orbs_per_bullet(int bullet_path, int spell_active, int shottype);
+
 /* ============ ★★★ 2026-09-22（owner #26 · **风味选项**）决死窗口里全屏敌弹变红 ==================
  * owner 原话：「有 th08 的时候，**决死状态会导致画面上所有弹幕变红**」—— 这是**风味**（要一个开关）。
  * owner 2026-09-22 裁：**不抽共享件**（「应该不会再有染色需求了，抽共享也行，不抽也行」）
