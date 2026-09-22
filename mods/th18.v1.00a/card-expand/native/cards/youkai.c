@@ -265,6 +265,7 @@ typedef struct {
      *   `aura_on` = 「现在应当在」（低速 = 妖侧）；`aura_logged` = 「起来过」只记一行；
      *   `focus_age` = **上一次形态切换之后过了几帧** —— 对应一手 `player+8`（人妖切换的进度计时器 0..7，
      *   `>= 7` 才置 `player+5 = is_youkai`），两下本体爆闪的门是 `>= 4`（`th08:0x44b14f` / `:0x44b3a9`）。*/
+    uint8_t       night_logged;         /* ★ P-A：夜点初值只记一行 */
     uint32_t      aura_id;
     uint16_t      focus_age;
     uint8_t       aura_on;
@@ -1894,6 +1895,7 @@ static int on_ctor(ce_card_t *c)
     s->heals_seen = 0;
     s->rearms_seen = 0;                 /* ★ route A：整表 reset 也清条目，但计数只增不清 ⇒ 快照回 0 */
     s->releases_seen = 0;               /* ★ P8-3：同上（route A′ 计数只增不清）*/
+    s->night_logged = 0;
     s->claimed_set = -1;                /* ★ P7：认领日志的「变化才打」闩 */
     s->flash_pending = 0;
     s->aura_id = 0;                     /* ★ #23：本体 Shift 光环（低速 = 妖侧才存在）*/
@@ -1936,6 +1938,17 @@ static int on_ctor(ce_card_t *c)
     yk_orb_kill_all();
     yk_gauge_hud_kill(s);
     yk_piv_reset(&s->piv, &s->orbs);
+    /* ★★★ 2026-09-22 夜（owner 工单 P-A）：**夜点初值四档**按难度起（一手 `th08:0x43af1b` 的 switch）——
+     * 我们此前从 0 起，那是一手没有的状态。夜点 = TH08 的 `pointItemValue`（`globals+0x24`），
+     * 也就是我们这套 `piv`（永点/最大得点）：屏幕中间下方那个数 + 「蓝点的最大分」。
+     * 难度一手编码 = `CE_ADDR_DIFFICULTY`（0 EASY/1 NORMAL/2 HARD/3 LUNATIC/4 EXTRA），与 TH08 同序。*/
+    s->piv = yk_night_point_init(*(const int32_t *)(uintptr_t)CE_ADDR_DIFFICULTY);
+    if (!s->night_logged) {
+        s->night_logged = 1;
+        ce_log("youkai: night point init = %d (difficulty %d; TH08 `pointItemValue` globals+0x24, "
+               "`th08:0x43af1b` switch) - blue points give at most this much, +10 per 2 time orbs",
+               (int)s->piv, *(const int32_t *)(uintptr_t)CE_ADDR_DIFFICULTY);
+    }
     s->gauge = 0;
     s->gauge_focus_run = 0;
     s->gauge_hold = 0;

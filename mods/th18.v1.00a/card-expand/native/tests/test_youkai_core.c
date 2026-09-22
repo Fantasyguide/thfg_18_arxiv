@@ -1110,6 +1110,27 @@ int main(void)
             CHECK(yk_tint_restore(0xffffffffu, 0x80aabbccu) == 0xffaabbccu);
             /* 染了再还原 = 回到原色（除 alpha 用的是「当前」那一份 —— 引擎每帧会重设颜色）。*/
             CHECK(yk_tint_restore(yk_tint_apply(0xffffffffu), 0xffffffffu) == 0xffffffffu);
+            /* ★★★ 2026-09-22 夜（owner 工单 P-A · 夜点）：初值四档 + 蓝点分（TH08 一手算式）。
+             * 一手：`th08:0x43af1b` 的 switch（60000/100000/200000/300000/300000）；
+             *       `Item::CollectPoint`（PoC 线以上 = 满值；以下 = 夜点/2 − 距离×(夜点/1000)，十位取整）。*/
+            CHECK(YK_NIGHT_POINT_GRADES == 5);
+            CHECK(yk_night_point_init(0) == 60000);
+            CHECK(yk_night_point_init(1) == 100000);
+            CHECK(yk_night_point_init(2) == 200000);
+            CHECK(yk_night_point_init(3) == 300000);
+            CHECK(yk_night_point_init(4) == 300000);          /* Extra（`th08:0x43af85`）*/
+            CHECK(yk_night_point_init(-1) == 300000 && yk_night_point_init(99) == 300000);  /* 越界取最高档 */
+            /* 蓝点分：线以上 / isMaxValue ⇒ 满值（十位取整不改它，因为四档初值都是 10 的倍数）*/
+            CHECK(yk_blue_point_score(100000, 0, 0) == 100000);
+            CHECK(yk_blue_point_score(100000, -5, 0) == 100000);
+            CHECK(yk_blue_point_score(100000, 123, 1) == 100000);
+            /* 线以下：100000/2 − 123×(100000/1000) = 50000 − 12300 = 37700（十位取整后同值）*/
+            CHECK(yk_blue_point_score(100000, 123, 0) == 37700);
+            /* 距离大到把值压成负 ⇒ 我们夹 0（一手没有夹零，登记 ❓ 自定）*/
+            CHECK(yk_blue_point_score(100000, 100000, 0) == 0);
+            CHECK(yk_blue_point_score(0, 10, 0) == 0);
+            /* 十位取整：60000/2 − 7×(60000/1000) = 30000 − 420 = 29580（已是 10 的倍数）*/
+            CHECK(yk_blue_point_score(60000, 7, 0) == 29580);
         }
     }
 

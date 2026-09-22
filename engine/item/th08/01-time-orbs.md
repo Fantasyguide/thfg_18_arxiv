@@ -144,6 +144,19 @@ if (*(uint8_t *)0x17d5ef8 == 2) {          // 0x17d5ef8 = PLAYER 基址，+0 = s
 > 而 state 1 的分支头 `th08:0x4407f6 cmp eax,0x1 / je 0x44085f` 落到的正是「每帧把速度指向自机」那段。
 
 
+## 2.9 ★★★ 夜点（= `pointItemValue`）—— 初值四档与「每 2 刻符 +10」（2026-09-22 夜，卡 108 的 P-A）
+
+- **夜点就是 `zGlobals.pointItemValue`**（`globals+0x24`，`globals` = `[0x160f508+8]`）；屏幕中间下方那个数、
+  以及「蓝点的最大分」都是它（`Item::CollectPoint` 的 `itemScore` 直接由它算，见 §2.0 那条 type 1 的说明）。
+- **初值按难度四档**：`th08:0x43af1b mov eax,ds:0x160f538` → switch 0..4 ⇒ `[globals+0x24]` =
+  **60000**（`0x43af49`，Easy）/ **100000**（`0x43af58`，Normal）/ **200000**（`0x43af67`，Hard）/
+  **300000**（`0x43af76`，Lunatic）/ **300000**（`0x43af85`，Extra）。
+- **每 2 个刻符 +10**（`GameManager::AddTimeOrbs th08:0x418220`）：
+  `0x418294 and eax,1`（用**累计刻符数的奇偶**修正本批颗数）→ `0x41829d add` → `0x4182ab sar 1`
+  → `0x4182b0 imul 0xa` → `0x4182bc` 写回；门 = `0x418227 orbs >= 0`、`0x418288 orbs > 0`。
+  ⇒ 跨批也精确（不是每批各自取整）。
+- 刻符被**收下**时才进这一笔：`Item::collect_time_orb th08:0x4412b0` → `0x44137a AddTimeOrbs(1)`。
+
 ## 3. 谁在生时点 —— 全 exe 穷举
 
 全 exe `call 0x4400a0`（`ItemManager::spawn_item`）共 **58 处**。按 `[ebp+0xc]`（type）参数筛，

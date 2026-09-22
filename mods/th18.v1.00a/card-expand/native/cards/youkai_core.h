@@ -896,3 +896,30 @@ int      yk_deathbomb_window(int32_t player_state);
 uint32_t yk_tint_apply(uint32_t cur);
 /* 还原：`(cur & 0xff000000) | (orig & 0x00ffffff)` —— 取**当前**的 alpha + **快照**的 RGB。 */
 uint32_t yk_tint_restore(uint32_t cur, uint32_t orig);
+
+/* ============ ★★★ 2026-09-22 夜（owner 工单 P-A · **夜点**）==========================================
+ * owner 口径（`HUMAN-YOUKAI-GAUGE.md` §1.1/§1.2）：
+ *   「夜点的初值按难度：初月 60000 / 三日月 100000 / 上つ弓张 200000 / 待宵 300000」
+ *   「游戏中的**蓝点的最大分等于当前夜点值**，每得到 **2 个刻符**可增加 **10 点夜点**」。
+ *
+ * **一手（我们样本 `local/th08.v1.00d/th08.exe`，逐指令）**：
+ *   · 夜点 = `zGlobals.pointItemValue`（`globals+0x24`；`globals` = `[0x160f508+8]`）；
+ *   · **初值四档**：`th08:0x43af1b mov eax,ds:0x160f538`（difficulty）→ switch 0..4 写 `[globals+0x24]`：
+ *     `th08:0x43af49` = **60000**、`th08:0x43af58` = **100000**、`th08:0x43af67` = **200000**、
+ *     `th08:0x43af76` / `:0x43af85`（Extra） = **300000**；
+ *   · **每 2 刻符 +10**：`GameManager::AddTimeOrbs th08:0x418220` 体内
+ *     `th08:0x418294 and eax,1`（**累计刻符数的奇偶**）→ `th08:0x41829d add`（`orbs += total & 1`）
+ *     → `th08:0x4182ab sar 1` → `th08:0x4182b0 imul 0xa` → `th08:0x4182bc mov [globals+0x24]`；
+ *     门 = `th08:0x418227 orbs >= 0`、`th08:0x418288 orbs > 0` 才进（负数只走 currentTimeOrbs 夹 0 那支）。
+ *   · **蓝点最大分 = 夜点**：`Item::CollectPoint`（`ItemManager.cpp:430-460`）里
+ *     `itemScore = (y < pocY) ? pointItemValue : pointItemValue/2 − (y − pocY) × (pointItemValue/1000)`，
+ *     再十位取整、`isMaxValue` 后恒为满值 ⇒ **改的是道具分值本身**（不是结算系数）。
+ *
+ * ⚠ 本卡此前把 `piv`（= TH08 的 `pointItemValue`，我们叫「永点 PIV」）从 **0** 起 —— 一手是上面那四档
+ *   （本批修）。「每 2 刻符 +10」那条公式早在 `yk_piv_add` 里就是一手照抄（含奇偶修正），这里不重复。
+ * ⚠ 夜点在 TH08 里就是屏幕中间下方那个数（`HUMAN-YOUKAI-GAUGE.md` §0 词表）⇒ 与 PIV 是**同一个量**。*/
+#define YK_NIGHT_POINT_GRADES 5
+int32_t yk_night_point_init(int32_t difficulty);          /* 0..4 → 60000/100000/200000/300000/300000 */
+/* **蓝点分**（TH08 一手算式，整数版）：自机在收点线以上 ⇒ 满值（= 夜点）；以下 ⇒ 按 y 距离衰减。
+ * `dist` = `y − pocY`（> 0 = 线下方，单位与 y 同为 640 空间的世界 y）。★ 只做整数（本仓 x87 门）。*/
+int32_t yk_blue_point_score(int32_t night, int32_t dist, int32_t is_max_value);

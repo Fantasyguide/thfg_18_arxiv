@@ -59,6 +59,9 @@ PRIMS = {
             # ★ 2026-09-22（#26 风味）：决死窗口里全屏敌弹变红（默认开；开关见 TUNING §2.0zc）
             (r"youkai: deathbomb window - tinted \d+ live enemy bullet\(s\) red",
              "决死窗口染红生效（风味选项；退出窗口当帧还原）", False),
+            # ★ 2026-09-22 夜（P-A 夜点）：开局那一行 —— 夜点初值按难度四档（一手 th08:0x43af1b 的 switch）
+            (r"youkai: night point init = \d+ \(difficulty \d",
+             "夜点初值已按难度起（蓝点最大分 = 夜点；每 2 刻符 +10）", False),
         ],
         fail=[(r"youkai: familiar spawn FAILED", "创建失败（池满 / 坐标非法）"),
               (r"youkai: familiar follow-VM table full", "跟随 VM 表满（画面会少使魔）"),

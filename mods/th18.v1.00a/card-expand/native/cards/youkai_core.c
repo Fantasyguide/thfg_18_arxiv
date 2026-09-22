@@ -1042,3 +1042,30 @@ uint32_t yk_tint_restore(uint32_t cur, uint32_t orig)
 {
     return (cur & 0xff000000u) | (orig & 0x00ffffffu);
 }
+
+/* ============ ★★★ 2026-09-22 夜（owner 工单 P-A · 夜点）：两条纯逻辑 ==========================
+ * 一手、地址与算式全在 `youkai_core.h` 的同名小节（`th08:0x43af1b` 的 switch / `Item::CollectPoint`）。*/
+int32_t yk_night_point_init(int32_t difficulty)
+{
+    switch (difficulty) {
+    case 0:  return 60000;      /* `th08:0x43af49`（0xea60）*/
+    case 1:  return 100000;     /* `th08:0x43af58`（0x186a0）*/
+    case 2:  return 200000;     /* `th08:0x43af67`（0x30d40）*/
+    case 3:  return 300000;     /* `th08:0x43af76`（0x493e0）*/
+    default: return 300000;     /* `th08:0x43af85`：Extra（4）同 300000；越界也取这一档 */
+    }
+}
+
+int32_t yk_blue_point_score(int32_t night, int32_t dist, int32_t is_max_value)
+{
+    int32_t v;
+    if (night <= 0) return 0;
+    if (is_max_value) v = night;                       /* 一手：`isMaxValue == 1 ⇒ itemScore = 满值` */
+    else if (dist <= 0) v = night;                     /* 收点线以上（`y < pocY`）*/
+    else {
+        v = night / 2 - dist * (night / 1000);         /* 一手：`pointItemValue/2 − (y − pocY) × (…/1000)` */
+        if (v < 0) v = 0;                              /* 一手没有夹零；分数不能为负 ⇒ 我们夹（❓ 自定）*/
+    }
+    v -= v % 10;                                       /* 一手：`itemScore -= itemScore % 10` */
+    return v;
+}

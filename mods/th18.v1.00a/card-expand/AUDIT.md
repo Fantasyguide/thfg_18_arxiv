@@ -20088,3 +20088,36 @@ type 1 的来路要先 grep `push 1` + `push <type>` 的调用点上下文）。
 `engine_abi_check`）；`python3 tooling/check-docs.py` 全部通过。
 
 **本批没改** `pl0X.sht` / `ability.anm`（环脚本 309 一个字没动）/ wav / 站点 —— **只改了 DLL 里的卡代码**。
+
+
+## §BE 详录 #61（2026-09-22 夜）：108 **P-A 夜点**（owner「人妖逢魔 / 夜点」工单的第一批）
+
+**改了什么**
+
+| 文件 | 改了什么 |
+| --- | --- |
+| `native/cards/youkai_core.{h,c}` | 新增 `yk_night_point_init(difficulty)`（四档 60000/100000/200000/300000/Extra 同）与 `yk_blue_point_score(night, dist, is_max)`（TH08 `CollectPoint` 一手算式，整数版）|
+| `native/cards/youkai.c` | 夜点初值不再从 0 起：`on_ctor` 用 `CE_ADDR_DIFFICULTY`（0..4 与 TH08 同序）取 `yk_night_point_init` 写进 `s->piv`；`night_logged` 只记一行；ledger 的 `piv=` 照旧 |
+| `native/tests/test_youkai_core.c` | +14 条断言（四档、越界、蓝点分的四种情形与十位取整）⇒ **4516 checks / 0 failed** |
+| `HUMAN-YOUKAI-GAUGE.md` | 新增 §3bis.0（夜点三条口径的一手答案 + TH18 侧耦合面）、§3bis.1–§3bis.5（逢魔三问的一手答案）|
+| `engine/item/th08/01-time-orbs.md` | 新增 §2.9（夜点 = `pointItemValue`：初值四档 + 每 2 刻符 +10 的逐条）|
+| `TUNING.md` | 新增 §2.0zf（复刻表 + `❓ 自定` #22/#23/#24）|
+| `native/tools/verify.py` | 新增 expect：`youkai: night point init = …` |
+
+**一手（本批新增）**：夜点 = `zGlobals.pointItemValue`（`globals+0x24`）；初值四档写点
+`th08:0x43af49`/`0x43af58`/`0x43af67`/`0x43af76`/`0x43af85`（门 `th08:0x43af1b` 读 `ds:0x160f538`）；
+「每 2 刻符 +10」= `th08:0x418294`–`0x4182bc`（含**累计奇偶**修正）；「蓝点最大分 = 夜点」= 道具分值本身
+（`Item::CollectPoint`）。**TH18 侧的耦合面**：`th18:0x4ccd34`（点道具分值，`th18:0x446547` 里 `score += V/10`）
+同时被 TH18 的续命阈值逻辑用 ⇒ **覆盖与否要 owner 拍**（`TUNING.md` §2.0zf #23）。
+
+**顺带记下 P-B/P-C/P-D 的一手（只记录，未落地）**：逢魔阈值 ±8000（`th08:0x44d9f7`/`:0x44da12`）、
+妖梦人型 30%（`th08:0x44da39`）/ 单人妖梦 ±3000（`:0x44da65`/`:0x44da80`）、单人反侧 limit ±2000（`0x44daa2`/`0x44dacd`）、
+逢魔加分 **100/帧一档**（`th08:0x44c554`/`:0x44c58c`，门 `IsMsgActive()==0`）、
+**owner 的「≥90% 快档」样本里不存在**、**「每击破敌人 +2 刻符」一手是 +1 颗刻符道具**（`th08:0x42da41`–`0x42da54`）、
+样本里唯一的「×2」是「每魔使 2 颗」（`th08:0x42b14d shl eax,1`）—— 全部登记在 `HUMAN-YOUKAI-GAUGE.md` §3bis。
+
+**怎么验证的**：`make check` **rc=0**（`x87 = 0`、`test_youkai_core` 4516/0、sites 双面、`sitecheck --all`、
+`contract_check`、`gen_drift`、`capcheck`、`sht-verify`、`anm-verify`、`snd-check`、`dllx87`、`dllverify`、
+`engine_abi_check`）；`python3 tooling/check-docs.py` 全部通过（373 个文件）。
+
+**本批没改** `pl0X.sht` / `ability.anm` / wav / 站点。
