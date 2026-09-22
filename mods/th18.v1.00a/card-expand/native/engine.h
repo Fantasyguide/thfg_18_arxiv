@@ -140,7 +140,7 @@
                                                * （一手 `0x4369ec mov eax,[edx+0x198]` → `0x4369f5 cmp eax,[edx+0x8c]`
                                                *   → `0x4369fb jge 0x436ba3` 跳过）—— **卡直接调
                                                *   `EnemyManager__allocate_new_enemy` 时引擎不给这道门**，
-                                               *   调用方要自己判（见 `cards/mof.c` 的 `mof_ge_spawn_one()`）。*/
+                                               *   调用方要自己判（见 `cards/faith.c` 的 `gf_spawn_one()`；2026-09-22 从 `cards/mof.c` 搬来）。*/
 #define CE_EM_ENEMY_LIST_HEAD      0x18c      /* zEnemyList* {entry, next, prev}（ExpHP active_enemy_list_head）*/
 /* ---- anm 源（`anmSelect(N)` 选中的那个文件）与它的 **sprite 表** —— ★★ 2026-09-18（110 变绿）----
  * 一手（`AnmLoaded__set_sprite` `0x477b00` 逐条 + `anmSetSprite` 的四分支 `0x436c16`–`0x436c4e`）：
@@ -585,6 +585,15 @@ typedef struct { int32_t prev; int32_t cur; float cur_f; } ce_timer_t;   /* zTim
                                                  * （`0x42e3fc`–`0x42e408`）⇒ 内存复用也不会撞号，
                                                  * 拿去重（同一个敌人的多次掉落回调）比指针可靠。*/
 #define CE_ENEMY_POS_X             0x1270     /* = data(+0x122c).final_pos(+0x44).pos。★ 同为 float3 基址；用 `ce_enemy_pos(e)` */
+/* ★★ 2026-09-22（P6）：**敌人的外观身份** `(N, S)` —— 这只敌机画的是哪个 anm、哪条主脚本。
+ *   一手：`zEnemy+0x1494` = `zEnemyData(+0x122c)` 的 `+0x268`（`anmSelect` 的选择子 N）、
+ *   `+0x1498` = `+0x26c`（槽 0 的主脚本号 S）；写点 `th18:0x436c85`/`0x436c91`（`enmCreate` 族，
+ *   只在槽号 K==0 时写）与 `anmSetMain` 的同两处 `th18:0x431659`/`0x431675`。
+ *   用途 = 「这一支妖精是不是绿妖精」（宿主表 `mof_big_faith_table.h` 的键）——
+ *   110（`cards/mof.c` 的 `on_enemy_death`）与 111（`cards/signal.c` 的 `on_enemy_drop_pre`）
+ *   与绿妖精载体（`cards/faith.c`）都读它 ⇒ 常量只有这一处出处（原先硬编码在 `cards/mof.c`）。*/
+#define CE_ENEMY_ANM_SRC           0x1494     /* = CE_ENEMY_DATA + 0x268（N）*/
+#define CE_ENEMY_ANM_SCRIPT        0x1498     /* = CE_ENEMY_DATA + 0x26c（S）*/
 #define CE_ENEMY_LIST_GUARD        4096       /* 敌人链表遍历的护栏（坏链表不转死）；ce_enemy_by_id / CE_ENEMY_FOREACH 共用 */
 #define CE_ENEMY_POS_Y             0x1274
 #define CE_ENEMY_FLAGS             0x635c

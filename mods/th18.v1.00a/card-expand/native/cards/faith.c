@@ -81,6 +81,7 @@
 #include <string.h>
 #include "sdk.h"
 #include "faith.h"
+#include "mof_green_core.h"   /* ★ 2026-09-22：绿妖精载体的三个纯函数 */
 
 /* —— 运动学常量（出处见文件头；与 season.c 同值，别单独调）—— */
 #define FAITH_GRAVITY         0.03f    /* 每帧重力增量（`0x4b90a4`）*/
@@ -1175,6 +1176,493 @@ int faith_enemies_present(void)
     return (em && *(int32_t *)(em + CE_EM_ENEMY_COUNT) > 0) ? 1 : 0;
 }
 
+/* ============================================================================================
+ * ★★★ 2026-09-22（P6）：**绿妖精载体 —— 110 / 111 共用**（原在 `cards/mof.c`，整段搬来）
+ *
+ * 「**每波多刷一只（或一对）绿的**」（2026-09-18b）—— 不碰原版妖精。
+ *
+ * ## 为什么搬进共用件（一手 + 现状）
+ *   · 111（地灵殿）的设计**本来就要求「让绿妖精出现」**（`docs/superpowers/specs/2026-09-11-system-card-spec-review.md`
+ *     §805，用户 2026-09-12 口径）—— 而这段代码原来只被 110 的 `on_tick_2` 调
+ *     ⇒ 只装 111 时绿妖精**一次都不会出现**（owner 实跑 th11 #4「全程未见绿妖精」）。
+ *   · 它天生是「两作共用的一件事」：载体掉的 `(N,S) = (2,10)` 是**同一张宿主表**的键
+ *     （110 判据用它、111 现在也判它），所以载体、跟随、收尾都该只有**一份**实现。
+ *   · 搬到共用件的代价最小：本段只用 SDK 原语 + `mof_green_core.h` 的三个纯函数
+ *     （`mof_green_is_fairy` / `mof_green_extra_slots` / `mof_green_extra_follow_offset`）。
+ *
+ * ## 谁驱动它（**一帧只跑一遍**）
+ *   110（`cards/mof.c`）与 111（`cards/signal.c`）各在自己的 `on_tick_2` 里调一次
+ *   `faith_green_fairy_tick()`；本函数自带**帧守卫**（与 `faith_pool_tick()` / `faith_convert_full_p_items()`
+ *   同一口径，帧号 = `ce_sdk_frame()`）⇒ 两卡同装时只有先跑到的那一次真的执行。
+ *   ⚠ 帧号从「卡自己的 `s->frame`」换成**引擎帧号**：本段所有比较都是**相对差**
+ *     （`frame - s_gf_last` / `frame < s_gf_frame + DELAY`）⇒ 行为等价（110 侧不变）。
+ *   ⚠ 卡被删掉（倒吊人 / 空白卡）那一刻两卡都不再调它 ⇒ 场上那几只必须由
+ *     `faith_green_fairy_depart_all()` 收尾（由**每张卡的** `on_clear` 调，幂等）。
+ *
+ * ## 读了哪两个引擎字段
+ *   `CE_ENEMY_ANM_SRC`(`+0x1494`) / `CE_ENEMY_ANM_SCRIPT`(`+0x1498`) = 这只敌机的 `(N,S)`
+ *   （一手与出处写在 `engine.h` 那两个宏上）—— 判「这一只算不算妖精」与「它是不是我们自己刷的」。
+ *
+ * 用户原话：「**有没有可能你给循环 +1？**」+「按照**几何形状**，每波多**一对**，或者多**一只**，你懂我意思」。
+ * 为什么不是「改 ECL 循环计数 +1」：循环体只有**一处** `enmCreate("GirlBlueA01", …)`，所有迭代共用同一
+ * 调用点 ⇒ 多刷出来的是**原色**妖精，引擎里没有任何字段能区分「我是多出来的那只」（全量论证见
+ * `REPORT-110-GREEN-FAIRY.md` §1.6）⇒ 改成「**我们自己多刷一只**」：
+ *
+ *   · 载体 = **我们自己的 ECL 子程序** `CEGreenFairy`（`assets/ecl/green_extra.ecl.txt`；
+ *     `make ecl-ufo` 把它合进原生 `default.ecl`，`release.py:33` 映射进 thcrap 常开的 patch-step3）
+ *     —— 先例 = 108 使魔壳 / 112 的四个 UFO 令牌（都走 `ce_spawn_enemy()`，`sdk.h:980`）。
+ *   · 它**天生就是绿的**：子程序里 `anmSelect(2); anmSetMain(0, 10);` ⇒ `enemy.anm` 绿色变体。
+ *     ★ 顺带：`(N,S) = (2,10)` **本来就是宿主表的键** ⇒ 它死亡时自动撒一颗大信仰点，
+ *       本文件一个字都不用加；`main_drop = 0` ⇒ **纯**信仰点（原生什么都不掉）。
+ *   · **几何**：卡侧每帧扫敌人，把本波已经刷出的小妖精**出生点**记下来（最多 8 个），
+ *     隔 `FAITH_GF_DELAY` 帧后用 `mof_green_extra_slots()` 算出**队形外面那一格**（左右人少的一侧优先；
+ *     一对则左右各一），**并且采样本波第一只的入场向量**（同帧位移 → 角/速）传给子程序
+ *     ⇒ 它沿着同一队形方向入场，看起来就是这一波的一员。
+ *   · **一波的边界**：用「超过 `FAITH_GF_GAP` 帧没有新的小妖精」当判据（不需要读 ECL 调用栈）。
+ *   · 卡不在场 ⇒ 本函数根本不会被调（只有 `on_tick_2` 调它）；已刷出的自己会到点离场（子程序里 `delete()`）。
+ *
+ * ⚠ 影响面（写在这里免得后人踩）：**多一只敌人** ⇒ 章节击破数、117 的波次普查
+ *   （`animal_wave_group_totals`，它以**静态表**为准、运行期 census 兜底）、以及本卡
+ *   「非 boss 击破 +10f 连击」（`on_enemy_death`）都会看到它 —— 用户口径下这是**要的**
+ *   （它就该是一颗能打的信仰点），但数值口径变了要知道。*/
+#define FAITH_GF_ECL_NAME  "CEGreenFairy"   /* = `assets/ecl/green_extra.ecl.txt` 里的子程序名 */
+#define FAITH_GF_ENABLE    1                /* 总开关（❓自定）*/
+/* ★★ 两个常量 = 「一波几只 / 每几波补」，默认值照 **TH10（MoF，本卡的正牌原型）** 实测的分布定：
+ *   · TH10 全作 177 只掉大信仰点（type 3）的敌人，**每一处都只刷 1 只（177/177 = 100%）** —— ZUN 从不批量刷绿妖精；
+ *   · 逐波：54 波里 **33 波是 0 只**，非零波里 **9 个是 1–2 只**，只有 3 个是密集波（EX 36 / 五面 boss 段 21 / 四面 boss 段 18）；
+ *   · 一站点的占比 = 175/1774 = **9.9%**；一关累计 14–37 只（均值 25.3）。
+ *   一手：`engine/faith/th10/02-faith-drop-distribution.md` §3/§5（用户口径「一波改一两只」与这条**实测一致**）。
+ * ⚠ 姊妹作 TH11（卡 111）**不是**这个形状 —— 它是双峰「一波要么 0 只、要么 5~80 只」
+ *   （`engine/faith/th11/03-faith-drop-distribution.md` §3）。要让 110 走 TH11 的形状：
+ *   `FAITH_GF_COUNT = 5..8` + `FAITH_GF_EVERY = 2..3`（**那是另一个游戏的手感，默认不采用**）。*/
+#define FAITH_GF_COUNT     1                /* 每波补刷**几只**：1 = 一只（TH10 的形状）/ 2 = 一对 / 5–8 = 整群 */
+#define FAITH_GF_EVERY     2                /* 每**几**波补一次：2 = 隔一波（≈50% 的波有，TH10 是 39%）/ 1 = 每波 / 0 = 关 */
+#define FAITH_GF_GAP       75               /* 帧：这么久没有新的小妖精 ⇒ 认为换了一波（❓自定）*/
+#define FAITH_GF_DELAY     12               /* 帧：本波第一只出现后隔这么久再补刷（攒几个出生点认队形，
+                                           *      但**要趁妖精还在刷** —— 2026-09-18c 从 18 收到 12）*/
+#define FAITH_GF_WINDOW    24               /* 帧：只在「上一只妖精还是在这么久内刷出的」时才补 —— 避免
+                                           *      补刷落到**下一波**的画面里（用户实跑：大蝴蝶/阴阳玉）*/
+#define FAITH_GF_SAMPLES   8                /* 记几个出生点（队形采样上限）*/
+#define FAITH_GF_LIFE      40               /* 血量（TH18 小妖精量级；`CE_SPAWN_LIFE` 必须 < 1000）*/
+#define FAITH_GF_SCORE     0                /* 击破分：给 0 ⇒ 不靠它刷分（❓自定）*/
+#define FAITH_GF_TTL       690              /* ★ 存活上限帧数（≈11.5 s @60fps）。2026-09-22 订正：
+                                           *   旧注释写「只传给 ECL 记日志、子程序到点自己 delete」——
+                                           *   **ECL 里没有这段**（它只认 `$I0 == 999`）⇒ 现在由卡侧的
+                                           *   `gf_follow_tick()` 按 `age` 到点写 `$I0 = 999` 收尾。
+                                           *   ❓自定：TH18 一波妖精的本体运动 ≈450 帧（`GirlA01` 体：
+                                           *   30 + 120 + 300），690 给它留了余量又不至于永久占位。*/
+#define FAITH_GF_ANGLE_DOWN 1.5707964f      /* π/2：ECL 的角度（0 = +x，π/2 = 向下）*/
+/* ★★ 2026-09-18c（用户实跑后修的两条）：实跑日志里三只补刷有**两只撒到屏幕外**
+ *   （`@(384,96)` / `@(-264,96)` —— 游玩区只有 ECL x ∈ [−192,192]，见
+ *   `engine/anm/th18/01-vm-instantiate.md` §3），第三只 `@(104,-32)` 正常。
+ *   还有一只的 `y` 是观测到的 96（屏幕中段）⇒ 看着"凭空出现在半空"。
+ *   ⇒ ① 槽位 x **夹进游玩区**（留 `FAITH_GF_X_LIMIT` 边距）；② 只用**看起来像入场线**的 y
+ *      （`|y| ≤ FAITH_GF_ENTRY_BAND`），否则一律走标准入场线 `FAITH_GF_ENTRY_Y`。*/
+#define FAITH_GF_X_LIMIT    176.0f          /* |x| 上限（游玩区 192 − 16 边距）*/
+#define FAITH_GF_ENTRY_Y    (-32.0f)        /* 标准入场线（实跑日志里原生 `enmCreate` 的 y 就是 −32）*/
+#define FAITH_GF_ENTRY_BAND 48.0f           /* 观测到的 y 超过这个绝对值 ⇒ 认为它已经进场，不用它*/
+
+static int32_t s_gf_frame;                /* 本波第一只出现的那一帧 */
+static int32_t s_gf_last;                 /* 上一只小妖精出现的帧（波次边界的判据）*/
+static int32_t s_gf_max_id;               /* 见过的小妖精里最大的 `enemy_id`（单调递增 ⇒ 用它认「新」）*/
+static float   s_gf_first_y;              /* 本波第一只的出生 **y**（队形的深度）*/
+static float   s_gf_tgt_x, s_gf_tgt_y;    /* ★ 最近刷出的那只妖精的出生点（跟随偏移的基准）*/
+static float   s_gf_x[FAITH_GF_SAMPLES];
+static int32_t s_gf_id[FAITH_GF_SAMPLES];   /* ★★ 2026-09-22：被采样的那几只妖精的 `enemy_id`。
+                                           * 用途 = **跟随目标死了之后换一只**（同波任一只的轨迹都一样，
+                                           * 见下面 `gf_pick_target()`）—— 只有 x/y 不够，要有身份。*/
+static int32_t s_gf_n;
+static int32_t s_gf_done;                 /* 本波已补刷 */
+static int32_t s_gf_stage = -1;
+static int32_t s_gf_wave;                 /* 本关第几波（1 起；用来实现 `FAITH_GF_EVERY`）*/
+static int32_t s_gf_trig_src, s_gf_trig_script;   /* 触发这一波的那只妖精的外观（诊断用）*/
+/* ★★ 2026-09-18c（用户实跑口径「**妖精应当跟随那个队列才对**」）：补刷出来的绿妖精要**跟着同一波的妖精
+ * 一起动**。通道 = 它自己的 ECL float 槽 `%F2/%F3`（= `enemy+0x14d0/+0x14d4`，一手
+ * `Enemy__ecl_get_float_global_ptr 0x4387e0`）：卡侧每帧写「目标妖精坐标 + 出生时定下的队形偏移」，
+ * 我们那支子程序每帧 `movePosTime(1,1,%F2,%F3)` 走过去（它自己**不设**任何运动）。
+ * `tgt_id` = 它跟着的那只妖精（本波最近刷出的一只）；目标没了就换 `s_gf_tgt_id`，再没了就喊它走。*/
+typedef struct {
+    int32_t id;          /* 这只绿妖精的 `enemy_id`（0 = 空槽）*/
+    int32_t tgt_id;      /* 跟着的那只妖精的 `enemy_id`（0 = 还没定）*/
+    float   off_x, off_y;/* 出生时定下的队形偏移（相对目标，常数 ⇒ 与目标同轨迹）*/
+    int32_t lost;        /* 目标找不到的连续帧数 */
+    int32_t wave;        /* ★★ 2026-09-22：它属于第几波（`s_gf_wave`）—— **换目标不许跨波**：
+                          *   否则上一波那只绿妖精会挂到下一波的妖精身上，永远有人可跟 ⇒ 既不 `lost`
+                          *   也不离场 ⇒ 占着 8 个跟随槽位（槽满 = 后面的绿妖精没人写位置 = 又站住不动）。*/
+    int32_t age;         /* ★★ 2026-09-22：存活帧数 —— 兜底寿命（见 `FAITH_GF_TTL`）。
+                          *   没有它的话「目标一直活着」的那只可以永远留在场上。*/
+} gf_fol_t;
+
+#define FAITH_GF_LOST_FRAMES 90        /* 目标没了这么久 ⇒ 喊它飞离自删（❓自定：1.5 s @60fps）*/
+
+static gf_fol_t s_gf_fol[MOF_GREEN_EXTRA_SLOT_MAX];
+static int32_t s_gf_tgt_id;              /* 本波**最近刷出**的那只妖精（新妖精出生时更新）*/
+static int32_t s_gf_wave_id;              /* 本波第一只妖精的 `enemy_id`（判「别的种类是这波之后才来的」）*/
+static int32_t s_gf_other_id;             /* 见过的「**非妖精**」外观里最大的 id（水位线）*/
+static int32_t s_gf_cancel;               /* ★ 本波出现过大妖精/阴阳玉/幽灵/boss ⇒ 撤销补刷 */
+static int32_t s_gf_stat;                 /* 诊断：一共刷了几只 */
+
+/* 「**妖精**」的外观（`enemy.anm` 的扁平脚本号；一手 = `native/tools/measure_enemy_variants.py`
+ * 的变体表 + `local/_scratch/th18_wave_density.py` 的波次实例普查）：
+ *   A 组 0–19（GirlRedA\* / GirlBlueA\* / GirlA0x）、GirlB/GirlC 20–39、
+ *   B 组 184–203（st02/03/07 的蓝/红妖精）；C 组 159–178 也收（ECL 零站点，收了也无害）。
+ *
+ * ★★ 2026-09-18c **用户口径（逐字）**：「我忘说了，不是**所有 for 循环**都加绿妖精，而是**妖精循环**
+ *   加绿妖精」⇒ **只有刷出「妖精」的那些波**才补刷，而且判据是**这只敌机长什么样**（脚本号），
+ *   不是"哪段 ECL 循环"（引擎里拿不到循环身份；外观是唯一稳的机器可读判据）。
+ * **不含**（因此这些波永远不会被补刷）：
+ *   · 大妖精 40–44 / 224–228（64×64，剪影没有绿色版）—— 实跑里用户叫它「大蝴蝶」；
+ *   · **阴阳玉 `Cir*` 45–80**（`Cir00m/p` 等；绿的那批本来就是宿主，红的不补）；
+ *   · `Phantom*` 91–110（幽灵）、以及所有 boss/中 boss 的脚本。*/
+static int gf_is_fairy(int32_t src, int32_t script)
+{
+    return mof_green_is_fairy(src, script);           /* 判据在 core（可离线单测）*/
+}
+
+/* 这只敌机的 `(N,S)` 外观身份（一手与出处见 `engine.h` 的 `CE_ENEMY_ANM_SRC/_SCRIPT`）：
+ * `N` = `anmSelect` 的选择子、`S` = 槽 0 的主脚本号。绿妖精载体与宿主表都靠它认人。*/
+static void gf_anm_identity(const uint8_t *e, int32_t *src, int32_t *script)
+{
+    if (src)    *src    = e ? *(const int32_t *)(e + CE_ENEMY_ANM_SRC)    : -1;
+    if (script) *script = e ? *(const int32_t *)(e + CE_ENEMY_ANM_SCRIPT) : -1;
+}
+
+/* ★★ 2026-09-22：**这一只敌机是不是我们自己补刷的绿妖精**。
+ * 为什么必须有这条判据（否则会自噬）：我们刷出来的那只外观是 `(2,10)` —— 它**也是「妖精」**，
+ * 于是每帧的扫敌会把它当成「新出生的妖精」：① 混进队形采样（`s_gf_x[]` / `s_gf_n`），
+ * ② 刷新 `s_gf_last`（波次边界的判据），③ 抢走 `s_gf_tgt_id`（下一波的跟随目标会变成上一波的绿妖精，
+ * 而它自己的位置又是别人给的 ⇒ 跟随链**套娃**）。
+ * 判据 = 「在不在本卡的补刷表 `s_gf_fol[]` 里」。*/
+static int gf_is_ours(int32_t id)
+{
+    int i;
+    if (!id) return 0;
+    for (i = 0; i < MOF_GREEN_EXTRA_SLOT_MAX; ++i)
+        if (s_gf_fol[i].id == id) return 1;
+    return 0;
+}
+
+/* ★★ 2026-09-22：给一只补刷妖精挑**当下还活着**的跟随目标。
+ * 规则（同一波内任一成员的轨迹都一样 ⇒ 换谁都能保持队形）：
+ *   ① 现在的目标还活着 ⇒ 不变（避免每帧换人造成抖动）；
+ *   ② `wave != s_gf_wave`（本波已经翻页）⇒ 直接返回 0，**不许跨波换目标**；
+ *   ③ 否则本波**最近刷出**的那只（`s_gf_tgt_id`）；
+ *   ④ 否则从本波采样表里**从后往前**（最近的优先）挑第一只还活着的；
+ *   ⑤ 都没有 ⇒ 返回 0（调用方累计 `lost`，到点喊它飞离）。
+ * ⚠ 只在**这一帧**用 `ce_enemy_by_id()` 判活；不缓存指针（`METHOD.md`：「禁止缓存 ev->enemy」同源）。*/
+static int32_t gf_pick_target(uint8_t *em, int32_t cur, int32_t wave)
+{
+    int i;
+    if (cur && ce_enemy_by_id(em, cur)) return cur;
+    if (wave != s_gf_wave) return 0;                     /* ★ 跨波不换（见 `gf_fol_t.wave`）*/
+    if (s_gf_tgt_id && s_gf_tgt_id != cur && ce_enemy_by_id(em, s_gf_tgt_id)) return s_gf_tgt_id;
+    for (i = s_gf_n - 1; i >= 0; --i) {
+        const int32_t id = s_gf_id[i];
+        if (id && id != cur && ce_enemy_by_id(em, id)) return id;
+    }
+    return 0;
+}
+
+static void gf_reset(int32_t stage)
+{
+    s_gf_stage = stage;
+    s_gf_frame = 0;
+    s_gf_last = 0;
+    s_gf_first_y = 0.0f;
+    s_gf_n = 0;
+    s_gf_done = 0;
+    s_gf_wave = 0;
+    s_gf_cancel = 0;
+    s_gf_tgt_id = 0;
+    s_gf_tgt_x = s_gf_tgt_y = 0.0f;
+    memset(s_gf_id, 0, sizeof s_gf_id);
+    memset(s_gf_fol, 0, sizeof s_gf_fol);      /* ★ 跟随表：换关/换局就断了跟踪（场上的自己会飞走）*/
+    /* ⚠ `s_gf_max_id` / `s_gf_other_id` **不重置**：它们只是「我见过哪些实例」的水位线，跨关继续单调递增。*/
+}
+
+static void gf_spawn_one(float x, float y, float tgt_x, float tgt_y)
+{
+    uint8_t sp[CE_SPAWN_SIZE];
+    uint8_t *e;
+    uint8_t *mgr = CE_ENEMY_MGR();
+    float off_x = 0.0f, off_y = 0.0f;
+
+    /* ★★ 2026-09-18c：**自己判敌人数上限** —— 一手：ECL 的 `enmCreate` 那条路有这道门
+     *   （`th18:0x4369ec mov eax,[edx+0x198]` → `0x4369f5 cmp eax,[edx+0x8c]` → `jge` 跳过），
+     *   而**卡直接调 `allocate_new_enemy` 时引擎不给**（这条也写在同事那份
+     *   `engine/enemy/th18/01-spawn-api-and-card-summons.md` 里）⇒ 我们自己补上，
+     *   免得在敌机拥挤的波次上把敌人池顶爆。*/
+    if (!mgr) return;
+    if (*(const int32_t *)(mgr + CE_EM_ENEMY_COUNT) >= *(const int32_t *)(mgr + CE_EM_ENEMY_MAX)) {
+        ce_log("faithgf: green extra fairy skipped —— 敌人数到上限（%d >= %d；ECL 那条路同款门）",
+               (int)*(const int32_t *)(mgr + CE_EM_ENEMY_COUNT),
+               (int)*(const int32_t *)(mgr + CE_EM_ENEMY_MAX));
+        return;
+    }
+    memset(sp, 0, sizeof sp);
+    *(float   *)(sp + CE_SPAWN_POS + 0) = x;
+    *(float   *)(sp + CE_SPAWN_POS + 4) = y;
+    *(float   *)(sp + CE_SPAWN_POS + 8) = 0.0f;
+    *(int32_t *)(sp + CE_SPAWN_SCORE)     = FAITH_GF_SCORE;
+    *(int32_t *)(sp + CE_SPAWN_MAIN_DROP) = 0;              /* 纯信仰点：原生什么都不掉 */
+    *(int32_t *)(sp + CE_SPAWN_LIFE)      = FAITH_GF_LIFE;
+    *(int32_t *)(sp + CE_SPAWN_ECL_I + 0) = 0;              /* `$I0` = 999 时才飞离自删（卡侧喊走）*/
+    *(float   *)(sp + CE_SPAWN_ECL_F + 0) = 0.0f;           /* `%F0/%F1` 现在不用（子程序自己不设运动）*/
+    *(float   *)(sp + CE_SPAWN_ECL_F + 4) = 0.0f;
+    /* ★ 跟随通道的初值：`%F2/%F3` = 出生点（= 队形槽位）*/
+    *(float   *)(sp + CE_SPAWN_ECL_F + 8)  = x;
+    *(float   *)(sp + CE_SPAWN_ECL_F + 12) = y;
+    e = (uint8_t *)ce_spawn_enemy(FAITH_GF_ECL_NAME, sp);
+    if (e) {
+        int32_t id = *(const int32_t *)(e + CE_ENEMY_ID);
+        int i;
+        ++s_gf_stat;
+        /* ★ 记进跟随表：偏移 = 队形槽位 − 目标出生点（常数）⇒ 之后它与目标**同轨迹**。*/
+        mof_green_extra_follow_offset(x, y, tgt_x, tgt_y, &off_x, &off_y);
+        for (i = 0; i < MOF_GREEN_EXTRA_SLOT_MAX; ++i) {
+            if (s_gf_fol[i].id == 0) {
+                s_gf_fol[i].id = id;
+                s_gf_fol[i].tgt_id = s_gf_tgt_id;
+                s_gf_fol[i].off_x = off_x;
+                s_gf_fol[i].off_y = off_y;
+                s_gf_fol[i].lost = 0;
+                s_gf_fol[i].wave = s_gf_wave;      /* ★ 归属本波：换目标不许跨波（见 `gf_fol_t`）*/
+                s_gf_fol[i].age = 0;
+                break;
+            }
+        }
+        ce_log("faithgf: green extra fairy @(%.0f,%.0f) 跟随 #%d 偏移 (%+.0f,%+.0f)"
+               " (wave frame %d, %d obs, trigger anm %d/%d, wave#%d, total %d)",
+               (double)x, (double)y, (int)s_gf_fol[i < MOF_GREEN_EXTRA_SLOT_MAX ? i : 0].tgt_id,
+               (double)off_x, (double)off_y,
+               (int)s_gf_frame, (int)s_gf_n, (int)s_gf_trig_src, (int)s_gf_trig_script,
+               (int)s_gf_wave, (int)s_gf_stat);
+    } else {
+        ce_log("faithgf: green extra fairy spawn FAILED —— `%s` 不在已加载的 default.ecl 里？"
+               "（`make ecl-ufo` + `make dist` + 发布那一步）", FAITH_GF_ECL_NAME);
+    }
+}
+
+/* ★★ 2026-09-18c：每帧把「目标妖精坐标 + 出生时的队形偏移」写进每只补刷妖精的 `%F2/%F3`
+ * （= `enemy+0x14d0/+0x14d4`）—— 子程序那边只是 `movePosTime(1,1,%F2,%F3)`，所以它**跟着同一波的
+ * 妖精同轨迹运动**（用户口径：「妖精应当跟随那个队列才对」）。
+ * 目标丢了的处理：`gf_pick_target()` 先换成本波最近那只、再换采样表里最近一只还活着的；
+ * 都没了就累计 `lost`，超过 `FAITH_GF_LOST_FRAMES` 就写 `$I0 = 999` 喊它飞离自删（不留在场上当孤儿）。
+ *
+ * ★★ 2026-09-22（th10 #2「绿色妖精队列错误」的根因修复）：**本函数必须每帧都跑**。
+ *   旧写法把它放在 `faith_green_fairy_tick()` 的**补刷窗口之后**（`if (s_gf_done || …) return;` 那段的下方），
+ *   而补刷成功的那一帧就把 `s_gf_done = 1` ⇒ 此后的每一帧都在那三个早退里返回 ⇒
+ *   本函数**一次都没为刚刷出来的那只跑过**（补刷那一帧它还没进表，下一帧已经 `s_gf_done`）。
+ *   后果：`%F2/%F3` 永远是 `gf_spawn_one()` 写进去的**出生点**，子程序的
+ *   `movePosTime(1,1,%F2,%F3)` 于是每帧都把它搬回出生点 ⇒ 它**钉在入场线上不动**、
+ *   也不会收到 `$I0 = 999`（那行也在这里）⇒ 既不入队、也永不离场。用户看到的「队列错误」
+ *   就是这一条。（2026-09-18c 的「跟随」机制本身是对的，只是调用点被早退挡住了。）*/
+static void gf_follow_tick(uint8_t *em)
+{
+    int i;
+    for (i = 0; i < MOF_GREEN_EXTRA_SLOT_MAX; ++i) {
+        gf_fol_t *f = &s_gf_fol[i];
+        uint8_t *me, *tg;
+        const float *tp;
+        int32_t tid;
+
+        if (f->id == 0) continue;
+        me = ce_enemy_by_id(em, f->id);
+        if (!me) { f->id = 0; continue; }                   /* 它已经不在了（被打死/自删）*/
+        /* ★ 2026-09-22：**寿命兜底** —— 目标一直活着、也没被打死的那种，不能永远留在场上。*/
+        if (++f->age > FAITH_GF_TTL) {
+            *(int32_t *)(me + CE_ENEMY_ECL_I0) = 999;
+            f->id = 0;
+            continue;
+        }
+        tid = gf_pick_target(em, f->tgt_id, f->wave);
+        if (tid != f->tgt_id) f->tgt_id = tid;
+        tg = tid ? ce_enemy_by_id(em, tid) : 0;
+        if (!tg) {
+            if (++f->lost > FAITH_GF_LOST_FRAMES) {
+                *(int32_t *)(me + CE_ENEMY_ECL_I0) = 999;   /* 喊它飞离自删 */
+                f->id = 0;
+            }
+            continue;
+        }
+        f->lost = 0;
+        tp = ce_enemy_pos(tg);
+        if (!tp) continue;
+        *(float *)(me + CE_ENEMY_ECL_F2) = tp[0] + f->off_x;
+        *(float *)(me + CE_ENEMY_ECL_F3) = tp[1] + f->off_y;
+    }
+}
+
+/* ★★ 2026-09-22：**删卡 / 换局时把场上的补刷妖精收掉**（公共入口 `faith_green_fairy_depart_all()`）。
+ * `METHOD.md` 铁律二：任何跨帧留下东西的效果都要交代「被删掉会怎样」（删卡发生在**商店**里，
+ * 那一刻 `on_tick_2` 已经不再跑 ⇒ 上面那条跟随/离场通道**断得干干净净**）。
+ * 留在这条路上的后果（旧版就是这样）：那几只绿妖精的 `%F2/%F3` 冻在最后一次写入值上、
+ * `$I0` 永远是 0 ⇒ 子程序既不跟人走、也永不 `delete()` ⇒ **它们会钉在关卡里直到本局结束**。
+ * 做法 = 与跟随丢失时同一条口令：写 `$I0 = 999`（子程序 `moveVel(-π/2, 3.0)` 飞离 + `delete()`）。
+ * ⚠ 只碰**我们自己的**实例（`s_gf_fol[]` 里的 id，`ce_enemy_by_id()` 当帧复核）；写之前必须
+ *   校验指针还在（商店里 `ENEMY_MGR` 可能是空的 / 那只已经不在了）。
+ * ⚠ **110 与 111 都要调它**（各自的 `on_clear`）—— 谁被删掉，那一侧的 tick 就没了；幂等，
+ *   两卡同装时先跑到的那个清空表、后一个什么都不做。*/
+static void gf_depart_all(void)
+{
+    uint8_t *em = CE_ENEMY_MGR();
+    int i, n = 0;
+    if (em) {
+        for (i = 0; i < MOF_GREEN_EXTRA_SLOT_MAX; ++i) {
+            uint8_t *me;
+            if (s_gf_fol[i].id == 0) continue;
+            me = ce_enemy_by_id(em, s_gf_fol[i].id);
+            if (me) {
+                *(int32_t *)(me + CE_ENEMY_ECL_I0) = 999;
+                ++n;
+            }
+        }
+    }
+    if (n) ce_log("faithgf: green fairy depart x%d（删卡/换局 ⇒ $I0 = 999，子程序飞离自删）", n);
+    memset(s_gf_fol, 0, sizeof s_gf_fol);
+    /* ★ 与搬家前的 `mof_clear()` **逐行等价**：那一版清的是 `s_ge_stage/s_ge_n/s_ge_done/s_ge_last`
+     *   （同一组值，现在住在本文件的静态区）⇒ 110 的行为不变。
+     *   `s_gf_max_id` / `s_gf_other_id` 是「我见过哪些实例」的水位线，**不重置**。*/
+    s_gf_stage = -1;        /* 下一局重新划波次（下一个 tick 会走 `gf_reset()`）*/
+    s_gf_n = 0;
+    s_gf_done = 0;
+    s_gf_last = 0;
+}
+
+/* 公共收尾入口（`faith.h`）：110 与 111 的 `on_clear` 都调它。*/
+void faith_green_fairy_depart_all(void)
+{
+    gf_depart_all();
+}
+
+/* 每帧：认新妖精 → 划波次 → 隔 N 帧补刷 + 跟随（只由卡的 `on_tick_2` 调 ⇒ 卡不在场时一次都不跑）。
+ * ★★ 2026-09-22（P6）：**公共入口**（`faith.h`），110 与 111 各调一次；自带帧守卫 ⇒ 一帧只跑一遍。*/
+void faith_green_fairy_tick(void)
+{
+    const int32_t frame = (int32_t)ce_sdk_frame();   /* ★ 引擎帧号（本段所有比较都是相对差，见文件头）*/
+    uint8_t *em;
+    int32_t stage;
+    /* ★ 帧守卫（与 `faith_pool_tick()` / `faith_convert_full_p_items()` 同一口径）：
+     *   110 与 111 同装时两卡各调一次 ⇒ 不加这道门就会**一帧推两遍**（波次计数/采样/补刷全部翻倍）。*/
+    {
+        static uint32_t s_last_frame;
+        static int      s_have_last;
+        const uint32_t now = ce_sdk_frame();
+        if (s_have_last && now == s_last_frame) return;
+        s_last_frame = now;
+        s_have_last = 1;
+    }
+    em = CE_ENEMY_MGR();
+    stage = CE_CURRENT_STAGE();
+
+#if !FAITH_GF_ENABLE
+    (void)frame; (void)em; (void)stage;
+    return;
+#else
+    if (!em) return;
+    if (stage != s_gf_stage) gf_reset(stage);
+
+    {
+        uint8_t *e;
+        CE_ENEMY_FOREACH(em, e) {
+            int32_t src = 0, script = 0, id;
+            gf_anm_identity(e, &src, &script);
+            id = *(const int32_t *)(e + CE_ENEMY_ID);
+            /* ★★ 2026-09-22：**我们自己补刷的那几只不算「本波的妖精」**（`gf_is_ours()` 的长注：
+             *   不排除它们就会混进队形采样、刷新波次边界、并抢走下一波的跟随目标 —— 跟随链套娃）。*/
+            if (gf_is_ours(id)) continue;
+            if (!gf_is_fairy(src, script)) {
+                /* ★★ 2026-09-18c（用户：「**三只大蝴蝶那里不应该有绿妖精！**」）：
+                 * 这一波只要出现**别的种类**（大妖精 40–44/224–228、阴阳玉 `Cir*`、`Phantom*`、boss…），
+                 * 就**撤销**本波的补刷 —— 否则「上一波妖精触发、延迟十几帧才落地」的那只绿妖精
+                 * 会正好落在它们的画面上（实跑就是这么被看到的）。*/
+                if (id > s_gf_other_id) {
+                    s_gf_other_id = id;
+                    if (s_gf_n > 0 && s_gf_wave_id != 0 && id > s_gf_wave_id) s_gf_cancel = 1;
+                }
+                continue;
+            }
+            if (id <= s_gf_max_id) continue;                  /* 老面孔 */
+            s_gf_max_id = id;
+            if (s_gf_last != 0 && frame - s_gf_last > FAITH_GF_GAP) {   /* 隔太久 ⇒ 新的一波 */
+                s_gf_n = 0;
+                s_gf_done = 0;
+                s_gf_cancel = 0;
+                ++s_gf_wave;
+            } else if (s_gf_wave == 0) {
+                s_gf_wave = 1;                                        /* 本关第一波 */
+            }
+            if (s_gf_n == 0) {
+                const float *p = ce_enemy_pos(e);
+                s_gf_frame = frame;
+                s_gf_first_y = p ? p[1] : 0.0f;      /* 队形的深度（补刷的那只与它同深）*/
+                s_gf_trig_src = src;                 /* 诊断：触发这一波的外观 */
+                s_gf_trig_script = script;
+                s_gf_wave_id = id;                   /* 本波第一只的 id（判「别的种类是这波之后才来的」）*/
+            }
+            if (s_gf_n < FAITH_GF_SAMPLES) {
+                const float *p = ce_enemy_pos(e);
+                s_gf_x[s_gf_n] = p ? p[0] : 0.0f;
+                s_gf_id[s_gf_n] = id;                /* ★ 记身份：目标死了要换一只（见 `gf_pick_target()`）*/
+                ++s_gf_n;
+            }
+            {   /* ★ 跟随目标 = 本波**最近刷出**的那只妖精（记下它的出生点，偏移以它为基准）*/
+                const float *p = ce_enemy_pos(e);
+                s_gf_tgt_id = id;
+                s_gf_tgt_x = p ? p[0] : 0.0f;
+                s_gf_tgt_y = p ? p[1] : 0.0f;
+            }
+            s_gf_last = frame;
+        }
+    }
+
+    /* ★★ 2026-09-22：**跟随通道每帧都跑**（在下面三个「不补刷」的早退之前）——
+     *   已经刷出去的那几只要一直有 `%F2/%F3` 才会跟着队列走，而补刷一旦发生就 `s_gf_done = 1`
+     *   ⇒ 放在早退之后等于「只为 0 只服务」。根因全文见 `gf_follow_tick()`。*/
+    gf_follow_tick(em);
+
+    if (s_gf_done || s_gf_n <= 0) return;
+    if (frame < s_gf_frame + FAITH_GF_DELAY) return;            /* 先攒几个出生点（认队形）*/
+    /* ★ 这一波**还在刷**才补：否则画面已经是下一波了（用户实跑「绿妖精跟阴阳玉/大蝴蝶混在一起」）*/
+    if (frame - s_gf_last > FAITH_GF_WINDOW) { s_gf_done = 1; return; }
+    /* ★★ 这一波出现过**别的种类**（大妖精=大蝴蝶 / 阴阳玉 / 幽灵 / boss）⇒ 本波**不补**
+     *   （用户 2026-09-18c 原话：「三只大蝴蝶那里不应该有绿妖精！」）*/
+    if (s_gf_cancel) {
+        s_gf_done = 1;
+        ce_log("faithgf: green extra fairy CANCELLED for wave#%d —— 这一波出现了非妖精外观"
+               "（大妖精/Cir*/Phantom*/boss；见 `mof_green_is_fairy()`）", (int)s_gf_wave);
+        return;
+    }
+
+    {
+        float slots[MOF_GREEN_EXTRA_SLOT_MAX];
+        int i, n;
+        /* ⚠ **不采样同波妖精的入场向量**（v1）：算角要用 `atan2f`，而 32 位目标上 float 返回走
+         * x87（`make dllx87`：本仓 0 条 x87 的硬线）⇒ 这里的入场向量就用**原生小妖精那一套**
+         * （`GirlA01` 体：`%F0 = π/2 向下`、`%F1 = 1.0`），队形一致性靠**出生点**给（见
+         * `mof_green_extra_slots()`）。要真对齐同波妖精的向量，得改用整数近似或直接读它的
+         * 速度字段（记为后续可选优化，`TUNING.md` §2.0h）。
+         * ★ 2026-09-18：删掉两个**未用**的局部（`angle` / `speed`）—— 出生已经走 `gf_spawn_one()`
+         *   （它的入场上抛角/速度是自己的常量），这两个是搬走之后留下的壳
+         *   （`faith.h` 一改，mof.c 被重编才暴露出来）。*/
+        float ey = s_gf_first_y;
+        if (FAITH_GF_EVERY > 0 && (s_gf_wave % FAITH_GF_EVERY) != 0) {   /* 这一波不补（例如隔波）*/
+            s_gf_done = 1;
+            return;
+        }
+        /* 观测到的 y 只在「像入场线」时才用（否则它已经进场了，用标准入场线让它从上面下来）*/
+        if (ey > FAITH_GF_ENTRY_BAND || ey < -FAITH_GF_ENTRY_BAND) ey = FAITH_GF_ENTRY_Y;
+        n = mof_green_extra_slots(s_gf_x, s_gf_n, FAITH_GF_COUNT, slots, MOF_GREEN_EXTRA_SLOT_MAX);
+        for (i = 0; i < n; ++i) {
+            float sx = slots[i];
+            if (sx >  FAITH_GF_X_LIMIT) sx =  FAITH_GF_X_LIMIT;      /* ★ 夹进游玩区 */
+            if (sx < -FAITH_GF_X_LIMIT) sx = -FAITH_GF_X_LIMIT;
+            gf_spawn_one(sx, ey, s_gf_tgt_x, s_gf_tgt_y);
+        }
+        s_gf_done = 1;
+    }
+#endif
+}
 int faith_pool_tick(void)
 {
     uint8_t *pl = CE_PLAYER();

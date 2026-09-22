@@ -620,7 +620,9 @@ static void signal_on_enemy_drop_pre(ce_card_t *c, int32_t *counts)
     uint8_t *e;
     const float *ep;
     int32_t main_drop, drops = 0, p_count = 0;
+    int32_t anm_src = 0, anm_script = 0;
     int is_boss, want;
+    float ox = 0.0f, oy = 0.0f;
     int i;
 
     if (!s || !counts) return;
@@ -633,15 +635,41 @@ static void signal_on_enemy_drop_pre(ce_card_t *c, int32_t *counts)
         if (i + 1 == MOF_DROP_TYPE_MONEY) drops = counts[i];
         if (i + 1 == MOF_DROP_TYPE_P)     p_count = counts[i];
     }
+    /* ★★ 2026-09-22（P6，th11 #4「全程未见绿色妖精」的②）：**宿主表判据** ——
+     *   110 的 `on_enemy_death` 早就用 `mof_core_wants_big_host()`（键 = 这只敌机的 `(N,S)` 外观），
+     *   111 只有下面那两条**旧口径**。少了它，**我们自己刷出来的绿妖精打死什么都不掉**
+     *   （它的 `main_drop = 0`、ex_drop 全 0 ⇒ 旧判据两条都不成立）⇒ 「绿妖精 = 大绿点宿主」
+     *   这条不变式在 111 单装时是断的。一手键与表见 `cards/mof_big_faith_table.h`。
+     * ⚠ 只**加**这一条或门，旧两条一字未动 ⇒ 111 的触发集只会变大（判据收窄是另一件事，
+     *   见 `SINGLE-CARD-TEST.md` §th11-P6 的「要不要收窄」）。
+     * ⚠ 两条如实登记的边界：
+     *   ① **过场 `killAll` 清场**：110 那条路把 `CE_EDEATH_KILL_ALL` 排除在外，而本钩子
+     *      （`ce_enemy_drop_pre`）**不带 `kind`**（kind 由调用点的返回地址推出，只有
+     *      `on_enemy_death` 事件里有）⇒ 清场时在屏幕上的宿主妖精会**多掉一颗**（每只一次）。
+     *      影响面：一次过场多一颗大绿点（+100 显示），不刷分、不刷连击（111 没有连击槽）。
+     *      要收口 = 把这条判据搬到 `on_enemy_death`（110 的位置），代价是两处判据必须互斥
+     *      （同一个敌人两条钩子都命中会撒两颗）⇒ 留给 owner 拍，记在 §th11-P6。
+     *   ② **不会重复撒**：`0x430510` 还会被 ECL `dropItems`（boss 相位 `@BossItem` 用）调一次，
+     *      但那条路上的敌人是 boss，而本项带 `!is_boss` ⇒ 命中不了。*/
+    anm_src    = e ? *(const int32_t *)(e + CE_ENEMY_ANM_SRC)    : -1;
+    anm_script = e ? *(const int32_t *)(e + CE_ENEMY_ANM_SCRIPT) : -1;
     want = mof_core_wants_big_main(main_drop, is_boss)
-        || mof_core_wants_big_dual(main_drop, drops, p_count, is_boss);
+        || mof_core_wants_big_dual(main_drop, drops, p_count, is_boss)
+        || (!is_boss && mof_core_big_faith_host(anm_src, anm_script));
     if (!want) return;
     ep = ce_enemy_pos(e);
     if (!ep) return;
 
+    /* ★★ 2026-09-22（P6，th11 #1「绿点和金钱重合问题需解决」）：**落点按 ZUN 自己的散布公式撒开**
+     *   —— 与 110 的 `on_enemy_death` 用**同一个**共用入口（`faith_scatter_from_enemy()`）。
+     *   旧写法直接落在**敌机坐标**上，而金钱/点是引擎按 `th18:0x430510` 那条公式撒在它**周围**
+     *   （半径 = 这只敌人的掉落区、默认 32）⇒ 大绿点正好压在金钱云正中。
+     *   一手公式与随机源口径见 `cards/faith.h` 的同名声明；出生角仍是**一手**的 −π/2 直上。*/
+    (void)faith_scatter_from_enemy(e, &ox, &oy);
+
     /* 值用**本卡的**「大」档（`SIGNAL_GREEN_BIG` = 100），槽写本卡自己的掩码。
      * 与 110 同一次死亡各撒各的（池按 `slot_mask` 分账、回调只发认领该掩码的卡）⇒ 互不干扰。*/
-    if (faith_spawn(ep[0], ep[1], faith_core_tier_for_source(FAITH_SRC_BREAK),
+    if (faith_spawn(ep[0] + ox, ep[1] + oy, faith_core_tier_for_source(FAITH_SRC_BREAK),
                     1 << FAITH_SLOT_111, SIGNAL_GREEN_BIG)) {
         ++s->stat_big_spawn;
     } else {
@@ -2723,6 +2751,15 @@ static int on_tick_2(ce_card_t *c)
     ++s->frame;
     pp = ce_player_pos();
 
+    /* ★★★ 2026-09-22（P6，th11 #4「全程未见绿色妖精」的①）：**绿妖精载体** ——
+     *   实现是**共用件** `faith_green_fairy_tick()`（`cards/faith.c`，110 与 111 共用一份）。
+     *   原来这段只被 110 的 `on_tick_2` 调 ⇒ 只装 111 时**一只都不会出现**；而 111 的设计
+     *   本来就要求「让绿妖精出现」（`docs/superpowers/specs/2026-09-11-system-card-spec-review.md` §805，
+     *   用户 2026-09-12 口径），并且它掉的正是本卡要的**大绿点**（宿主表 `(2,10)`）。
+     *   ⚠ 自带帧守卫 ⇒ 110+111 同装时一帧只跑一遍（谁先跑到谁执行）；
+     *   ⚠ 位置与 110 侧对齐（`on_tick_2` 一开头）——它要抢在下面那些记账/UI 之前把敌人扫完。*/
+    faith_green_fairy_tick();
+
     /* ⓪ ★★ 2026-09-16m：**先跑大小姐的擦弹扫描**（它会调引擎的 `do_graze` ⇒ 原生计数 `0x4ccd0c`
      *    在本帧就已经包含我们的那几颗）—— 必须在 ① 读 `g` **之前**，否则那笔增量会落到
      *    `last_graze` 之后、下一帧被当成「原生擦弹」再喂一遍（一次擦弹进两次槽）。
@@ -3174,6 +3211,12 @@ static void signal_clear(ce_card_t *c)
      * 它是同一颗道具内的瞬时状态（collect 置 / commit 清），清它只是为了「删卡后又以同 id 回来」
      * 时绝对干净（ctor 也清一次）。*/
     s_p_item = 0;
+    /* ★★ 2026-09-22（P6，`METHOD.md` 铁律二）：**场上那几只绿妖精载体也要收掉** ——
+     *   它们的位置由共用件每帧写 `%F2/%F3`、离场由它写 `$I0 = 999`，两条通道都只在 `on_tick_2` 里
+     *   （110 与 111 各调一次那个 tick；本卡被删掉 ⇒ 少一个驱动者），而删卡发生在**商店**里
+     *   （那一刻 tick 全停）⇒ 不收它们就会钉在关卡里到本局结束。
+     *   ⚠ 幂等：两卡同装时先被删的那张把表清空，另一张照旧每帧驱动 ⇒ 下一波照常补刷。*/
+    faith_green_fairy_depart_all();
     if (!s) return;
     /* ★ 支援特技的跨帧状态与**卡外**的那一个旋钮（`CE_PLAYER_SPEED_MULT`）先收掉：
      *   删卡发生在**商店**里（AbilityManager 冻住、Player tick 也停了）⇒ 只能靠这里，不能等下一帧。
@@ -3461,10 +3504,34 @@ CE_CARD(111,
         .on_load = on_load,
         .on_tick_2 = on_tick_2,
         .on_draw = on_draw,
-        /* ⚗ 2026-09-16zp 二分（**临时**）：111 的三个道具钩子全部停用 —— 它们是「只有崩溃配置里才会跑」
-         * 的那一层（无 mod / 只有 patch 的两次正常里，卡的钩子从来没跑过）。停用后若不崩 ⇒ 元凶在这三个里；
-         * 若照旧崩 ⇒ 元凶在我们「每帧都跑」的那一层（闸/家务/其它站点）。副作用：本卡不再处理道具。*/
-        /* .on_item_score = on_item_score, */
+        /* ★★★ 2026-09-22（P6）：**三个道具钩子恢复启用**（原「⚗ 2026-09-16zp 二分（临时）」注释）。
+         *
+         * ## 为什么现在能恢复（两条，都有账）
+         *   ① **那次的元凶不是它们**：2026-09-17 那次崩的定论是 `AUDIT.md` §BE-DW / §BE-ER
+         *      ——「**窗口 = 一条裸 `ja rel32` 的站点被回放**」（跳进跳板池未写区 ⇒ `00 00` ⇒ 写 `0x1`），
+         *      与卡侧这三个道具回调无关；
+         *   ② **站点那一层今天已经恢复了**：`AUDIT.md` §BE-FE（2026-09-22 夜）把 `ce_item_score_in` /
+         *      `ce_bomb_spent` / `ce_bomb_gate` / `ce_option_shot_gate` 四条**功能站点**放回了 patch，
+         *      而 `ce_item_collect`(`0x44625f`) / `ce_item_commit`(`0x44658a`) **一直在 patch 里**
+         *      （`sites.py` 的 `_SDK_KEEP_NAMED`）⇒ 本卡的订阅一旦接上就立刻生效，**不动站点账**。
+         *
+         * ## 不恢复的代价（= owner 实跑报的两条）
+         *   · th11 #5/#6「P 点 0.02/0.03 交替 / 0.05 未生效」：P 点补值那条链是
+         *     `on_item_collect` 置 `s_p_item` 闩 → `on_item_commit` 读闩补 4 单位
+         *     （`mof_core_p_topup_units()`）⇒ **两个钩子缺一个就恒不生效**（110 不在场时落笔者是 111）。
+         *   · 命碎道具的观测（`on_item_collect` ①）与满 P 的同帧竞态网（②）也一直是哑的。
+         *   旁证：停用期间交叉编译对这三个函数报 `-Wunused-function`（它们确实是死代码）。
+         *
+         * ## 影响面（放回会改变什么）
+         *   · `on_item_collect`：① 命碎道具**只计数 + 一行日志**（不重发、不加碎片）；
+         *     ② 满 P 时那颗被原生抢先吃掉的小 P ⇒ 补一颗中绿点（**同帧竞态网**，正常路径不触发）。
+         *   · `on_item_commit`：本卡落笔时把这一颗小 P 补到 `+0.05` 档（魔理沙走共享策略的 2/3 交替）；
+         *     **110 在场时本卡让位**（`mof_core_p_owner()` 选举），所以双卡同装只补一次。
+         *   · `on_item_score`：只做一次**粘性声明**（`signal_declare_score()`）——`on_tick_2` 本来
+         *     每帧也在声明同一个值 ⇒ 数值路径**没有新增**，只是把「每颗道具当场声明一次」这条
+         *     原本写明的意图接回来（落笔站点 `ce_item_score_in` 见 §BE-FE 已恢复）。
+         *   ⇒ 三条都是**本卡自己的**回调，不新增站点、不占站点预算、不改共享件。*/
+        .on_item_score = on_item_score,
         /* ★★ 2026-09-16q：**原生 B 的河童罩子**（用户点名要的那一条）。*/
         .on_bomb_spent = on_bomb_spent,
         /* ★★ 2026-09-16q：**中弹瞬间**（`Player__die` `0x45d574`）—— 本卡挂它**只为罩子**
@@ -3476,8 +3543,8 @@ CE_CARD(111,
          * ★ 2026-09-15e：同一个钩子还**观测命碎道具**（TH18 type 0x10 ↔ th11 type 5）——
          *   道具由本卡在段收尾撒（`signal_seg_drop()`），这里只计数、不重发。*/
         .on_enemy_drop_pre = signal_on_enemy_drop_pre,
-        /* .on_item_collect = signal_on_item_collect, */
-        /* .on_item_commit = signal_on_item_commit,  —— 二分临时停用 */
+        .on_item_collect = signal_on_item_collect,
+        .on_item_commit = signal_on_item_commit,
         /* ★ 2026-09-15：这一个钩子现在做**两件事**（一手 `th11:0x4327d0` 就是同一个函数里两件）：
          *   信号槽归零（`0x432807`）+ 信仰 −显示 100,000（`0x4327e7`，下限 = 初值）。*/
         .on_death_after_deathbomb = on_death_after_deathbomb,

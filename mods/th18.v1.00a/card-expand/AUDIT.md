@@ -18921,6 +18921,9 @@ commit `7647511` 才放出）⇒ #3（音效没屏蔽）/ #4 / #6（灵界结束
 > `native/tests/test_mof_green_core.c`、`assets/ecl/green_extra.ecl.txt`（只改注释）、
 > `engine/faith/th10/02-faith-drop-distribution.md`（新增 §3.6 一手）。
 > **没动**：`native/sites.py`、任何 patch/`.def`/`Makefile`、`cards/signal.c`（→ 见第四节）。
+> ★ **后续**：本节写的 `cards/mof.c` 的 `mof_ge_*` 已于同日**整段搬进共用件**（§BE-FK）⇒ 现在叫
+>   `cards/faith.c` 的 `faith_green_fairy_tick()` / `gf_*`（110/111 共用，行为不变）；第四节那四条
+>   也在 §BE-FK 里落地了。本节其余文字按当时的树原样保留。
 
 ### 一、改了什么（共享件改动逐条）
 
@@ -18980,5 +18983,70 @@ commit `7647511` 才放出）⇒ #3（音效没屏蔽）/ #4 / #6（灵界结束
 1. **111 的判据口径**：只做「散布」还是同时「判据收窄」（后者要一张 TH11→TH18 的宿主对应表）。
 2. **th11 #4 的两处是否一起上**（只上载体 = 半成品，见上）。
 3. **实跑验收**（110 绿妖精）：① 绿妖精与队列同向同速一起走；② 不再出现在屏幕另一侧；
-   ③ 一波结束/删卡后它飞离自删（日志 `mof: green extra fairy depart xN`）。
+   ③ 一波结束/删卡后它飞离自删（日志 `faithgf: green fairy depart xN`；§BE-FK 起前缀从 `mof:` 统一成 `faithgf:`）。
+
+## §BE-FK（2026-09-22）：P6 批的**下半场** —— 111 四条一次落地（`signal.c` 移交后）+ 绿妖精载体搬进共用件
+
+> **谁做的**：P6 子会话（§BE-FJ 的同一批；111 侧四条在 §BE-FJ 里只落根因，因为当时 `cards/signal.c`
+> 归 P7 会话 ⇒ 由统筹在 P7 收工后把该文件交回 P6，本节是那次交接的落地）。
+> **动到的文件**：`native/cards/signal.c`（111）、`native/cards/faith.{h,c}`（**共享件**）、
+> `native/cards/mof.c`（110，只把那段搬走）、`native/engine.h`（**共享件**，2 个新常量）+ 文档。
+> **没动**：`sites.py` / `patch/**` / `.th18_card_expand.def` / `Makefile` / `signal_core.*`（**零站点改动**）。
+
+### 一、改了什么
+
+| 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
+| --- | --- | --- | --- | --- |
+| `cards/signal.c` | ① `CE_CARD(111,…)` 的 `.on_item_collect` / `.on_item_commit`（+ `.on_item_score`）**去掉注释** | owner th11 #5/#6「P 点 0.05 / 0.02·0.03 都没生效」的根因 = **卡侧订阅自 2026-09-17 站点二分起一直注释着**（补值链 = collect 置 `s_p_item` 闩 → commit 读闩补 4 单位）。恢复理由：那次崩的元凶已定为 §BE-DW 的回放窗口、站点那一层在 §BE-FE 已恢复、两条站点一直在 patch 里 | P6 | 交叉编译 `-Wall -Wextra` **0 警告**（停用期间那三条 `-Wunused-function` 随之消失） |
+| 同上 | ② `signal_on_enemy_drop_pre()` 的落点改走 `faith_scatter_from_enemy(e,&ox,&oy)`，实参 `ep[0]+ox, ep[1]+oy` | owner th11 #1「绿点和金钱重合」：旧写法落在**敌机坐标原值**，而金钱/点由引擎按 `th18:0x430510` 的公式撒在周围 | P6 | 与 110 用**同一个**共用入口（同一公式、同一随机源） |
+| 同上 | ③ 同函数判据**加一条** `!is_boss && mof_core_big_faith_host(anm_src, anm_script)`（读 `CE_ENEMY_ANM_SRC/_SCRIPT`）| owner th11 #4 的一半：绿妖精载体 `main_drop = 0` ⇒ 旧两条判据都不成立 ⇒「打死绿妖精什么都不掉」 | P6 | 表与键的纯逻辑早被 `test_mof_core`（520 断言）钉着；一手键来源见 `mof_big_faith_table.h` |
+| 同上 | ④ `on_tick_2` 开头调 `faith_green_fairy_tick()`；`signal_clear()` 里调 `faith_green_fairy_depart_all()` | th11 #4 的另一半：载体原来只被 110 的 tick 调 ⇒ 111 单装时**一只都不会出现**；收尾是 `METHOD.md` 铁律二（删卡在商店里、tick 全停）| P6 | 帧守卫 ⇒ 两卡同装一帧只跑一遍 |
+| `cards/faith.{h,c}`（**共享件**）| 新增 `faith_green_fairy_tick()` / `faith_green_fairy_depart_all()`；把 `cards/mof.c` 的整套绿妖精载体（`FAITH_GF_*` / `gf_*` / `gf_fol_t`）**整段搬来**（逐行同一份，只换名与日志前缀 `mof:` → `faithgf:`）| 111 也要有载体（它的设计本来就要求「让绿妖精出现」，`2026-09-11-system-card-spec-review.md` §805，用户 2026-09-12）⇒ 两份实现迟早漂，**只留一份** | P6 | 见第三节「搬移等价性」；`test_faith_core` 223 断言不变 |
+| `engine.h`（**共享件**）| 新增 `CE_ENEMY_ANM_SRC 0x1494` / `CE_ENEMY_ANM_SCRIPT 0x1498`（敌人的 `(N,S)` 外观身份；一手写点 `th18:0x436c85`/`0x436c91` 与 `0x431659`/`0x431675`）| 110（`mof.c`）、111（`signal.c`）、载体（`faith.c`）三方都要读同一对字段 ⇒ 常量只留一处出处（`mof.c` 里原先那两条 `#define` 已删）| P6 | 只增不改；`make dll` 0 新警告；`test_mof_core` 逐值不变 |
+| `cards/mof.c`（110）| 删掉搬走的那段（两处调用改调共用件）；`s_mof_killed`（**本卡自己的**衰减速率闩）留在原位 | 搬家 + 保持 110 行为不变 | P6 | 见第三节 |
+
+### 二、对既有卡的影响面（共享件改动 ⇒ 必读）
+
+- **110**：绿妖精载体**行为不变**（同一份代码、同一帧内位置、同一判据与数值；帧号从卡的 `s->frame`
+  换成引擎帧号，而段内所有比较都是**相对差**）。110 的大信仰点判据 / 数值一个字没动。
+- **111**：四条现象落地（见上）。**新增的可见行为**：① 每波多一只绿妖精（跟着同波队列）；
+  ② 打死它掉一颗大绿点（+100 显示）；③ 吃小 P **真的** +0.05 档（魔理沙 2/3 交替）；
+  ④ 大绿点落点从「敌机坐标」改成「按 ZUN 散布公式撒开」（≤ 16 px）。
+- **107**：**零影响** —— 它不调载体 tick；`faith_pool_tick()` / `faith_spawn()` / `faith_register()`
+  的语义一字未改（本次只**新增**两个入口 + 一个函数）。
+- **站点 / patch / DLL 声明**：零改动（`sites.py check` 与 `dllverify` 的原值不变）。
+- ⚠ 一条副作用要知道：`.on_item_collect` 恢复后，111 的**命碎道具观测**（TH18 type `0x10`）与
+  **满 P 同帧竞态网**也一起活了（前者只计数 + 一行日志、不重发；后者正常路径不触发）。
+
+### 三、为什么说「110 行为不变」（可复算的等价性证明）
+
+1. **搬移是逐行的**：把 §BE-FJ 那一版的 `cards/mof.c` 绿妖精段取出、套上**同一个改名映射**
+   （`MOF_GE_*`→`FAITH_GF_*`、`mof_ge_*`→`gf_*`、`s_ge_*`→`s_gf_*`、`mof_enemy_anm_identity`→`gf_anm_identity`），
+   与 `cards/faith.c` 里搬进去的那段 `diff`：**89 行差异全部是有意为之**（文件头改写、日志前缀、
+   `s_mof_killed` 留在 110、`gf_anm_identity` 新增、公共包装 + 帧守卫、`depart_all` 补上与 `mof_clear()`
+   原来那四行等价的复位）⇒ **执行体没有一处语义改动**。
+2. **纯逻辑单测逐值不变**：`test_mof_core` **520**、`test_faith_core` **223**、`test_mof_green_core` **415**、
+   `test_signal_core` **2182**（与 §BE-FJ 前一字不差）。
+3. **调用点位置不变**：110 仍是在 `on_tick_2` 一开头、`mof_green_tick()` 之后调（同一帧内同一位置）。
+4. **编译器证据**：`i686-w64-mingw32-gcc -O2 -Wall -Wextra` 对 `faith.c` / `mof.c` / `signal.c` 均 **0 警告 0 错误**。
+
+### 四、验证原文
+
+- `make check` ⇒ **rc=0**（host 单测全家 + `x87 in our objects: 0` + `dllverify` + `sitecheck` 56 窗口 /
+  6 落点 + `capcheck` 全绿 + 契约 / 漂移 / ABI / **`check-docs` 371 文件**）
+- 纯逻辑单测：`test_signal_core` 2182 / `test_mof_core` 520 / `test_faith_core` 223 /
+  `test_mof_green_core` 415，**0 失败**
+- **未部署**：不跑 `make release`、不碰 modkit。
+
+### 五、未决 / 要 owner 拍
+
+1. **111 的判据收窄**（th11 #1 的②）：现状仍含「所有掉钱的敌人都给一颗」（110 于 2026-09-15 退役的那条）
+   ⇒ 大绿点比 TH11 一手的分布**偏多**，且与金钱同源（散布只错开 ≤16 px）。收窄要一张
+   **TH11 → TH18 宿主对应表**（46 个 `dropMain(3)` + 12 个 `enmCreate(…,3)`）。
+2. **过场 `killAll` 的一颗偏差**：`on_enemy_drop_pre` 不带 `kind` ⇒ 清场那一帧在场上的宿主妖精
+   会多掉一颗（110 把 `CE_EDEATH_KILL_ALL` 排除在外）。要精确就把判据搬到 `on_enemy_death`，
+   代价 = 两处判据须互斥（同敌人两条钩子都命中会撒两颗）。
+3. **实跑验收**：① 111 单装**看得见绿妖精**且它跟着同波队列走；② 打死它掉一颗大绿点；
+   ③ 其他机体吃小 P **每颗 +0.05 档**、魔理沙 10 颗共 +0.25 档（日志 `Ptop` / `ptop`）；
+   ④ 大绿点不再压在金钱正中。
 
