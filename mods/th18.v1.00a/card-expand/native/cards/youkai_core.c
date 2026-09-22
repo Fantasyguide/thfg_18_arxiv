@@ -370,6 +370,11 @@ unsigned yk_map_rearms(const yk_map_t *m)
     return m ? m->rearms : 0u;
 }
 
+unsigned yk_map_releases(const yk_map_t *m)
+{
+    return m ? m->releases : 0u;
+}
+
 yk_slot_t *yk_map_find(yk_map_t *m, uint32_t enemy_id, int slot)
 {
     unsigned i;
@@ -634,6 +639,21 @@ int yk_shot_slot_suppressed(const yk_map_t *m, uint32_t enemy_id, int slot, uint
  *   `engine/enemy/th08/01-familiars-and-anm.md` §3.3）。代价 = **每次使魔死亡最多丢 1 条 `etOn`**
  *   （下一帧使魔已重建 ⇒ 之后的 `etOn` 全放行）。若把这里改成 `return 0`，就变成「这一个口子一帧都不哑」
  *   —— 那是**放行一条没有使魔的发射**，与 owner 保留的语义相反，所以不做。 */
+/* ★★★ 2026-09-23（P8-3 / **route A′**）：闸的第二问即放行 —— 把「恢复」从卡 tick 解耦。
+ *
+ * 原来的 route A 只做两件事：夹住时置 `rearm_pending`，**卡 tick**（`yk_note_slot`）同帧消费它
+ * ⇒ 清夹持态 + 重建使魔。缺口（2026-09-23 只读调查查实）：没有任何东西保证卡 tick 会跑到 ——
+ * 卡 tick 只在**聚焦**时跑（`on_tick_2` 的 `!focused` 早退），而闸对「未聚焦」不设防
+ * （见 `yk_on_shot_slot` 那边的 P8-1）。⇒ 一旦在某个相位夹住，恢复可能被拖到 120 帧 TTL 兜底。
+ *
+ * **本函数每帧每槽都有全部信息**（断点在 `etOn` 那一刻，`enemy_id`/`slot` 都在手上）⇒ 直接在这里闭环：
+ *   · 第一次被问（`rearm_pending == 0`）⇒ 掐（`return 1`，语义不变：使魔没了这一发就是哑的），
+ *     记 `rearm_pending = 1` + `rearms++`；
+ *   · **第二次被问**（上一次那条 `etOn` 已经被掐掉了）⇒ **放行并当场清夹持态**
+ *     （`rearm_pending` / `fam_seen` / `broken` / `no_fam_frames` 全清）⇒ 1:1 映射下一帧就能把它建回来
+ *     —— 最快的复位口，不再等卡 tick、也不再等 TTL。
+ * ⚠ 与 `yk_note_slot` 的消费是**幂等**的：谁先清都是同一组标志位。
+ * ⚠ 计数：`rearms` 记「掐掉过几次」（夹持期数），`releases` 记「route A′ 放过几次」（只增不清）。*/
 int yk_shot_slot_gate(yk_map_t *m, uint32_t enemy_id, int slot, uint32_t have_fam_id)
 {
     yk_slot_t *e;
@@ -644,9 +664,21 @@ int yk_shot_slot_gate(yk_map_t *m, uint32_t enemy_id, int slot, uint32_t have_fa
         return 0;
     }
     e = yk_map_find(m, enemy_id, slot);      /* 上面那支已确认条目存在（否则它返回 0）*/
+    if (e && e->rearm_pending) {
+        /* ★ route A′：上一次那条 `etOn` 已经哑过一发了 ⇒ 这一次放行 + 当场拆夹持态。*/
+        e->rearm_pending = 0;
+        e->fam_seen = 0;
+        e->broken = 0;
+        e->no_fam_frames = 0;
+        ++m->releases;
+        return 0;
+    }
     if (e && !e->rearm_pending) {
-        e->rearm_pending = 1;                /* ★ 「下一波到了」：卡 tick 消费它 ⇒ 清闸 + 重建 */
+        e->rearm_pending = 1;                /* ★ 「下一波到了」：卡 tick 也会消费它（幂等）*/
         ++m->rearms;                         /* ★ 记账（只增不清）：涨了 = 波次级复位在起作用 */
+        /* ★ P8-4：年龄按**「被 `etOn` 问过几次」**计（不再只按卡 tick 的聚焦帧计）——
+         *   卡 tick 在未聚焦时早退，那样会把兜底 TTL 冻住；断点这条每帧每槽都会到。*/
+        if (e->no_fam_frames < 0xffffu) ++e->no_fam_frames;
     }
     return 1;
 }

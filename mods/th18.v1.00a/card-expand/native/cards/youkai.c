@@ -245,6 +245,11 @@ typedef struct {
     uint32_t      rearms_seen;         /* ★★ 2026-09-22（工单 E / route A）：上一帧读到的「下一波复位」
                                         *   计数（`yk_map_rearms`）的快照。它在涨 = 波次级复位生效
                                         *   （被夹住的槽在下一次 `etOn` 就被放开、使魔同帧重建）。*/
+
+    uint32_t      releases_seen;       /* ★★★ 2026-09-23（P8-3 / route A′）：上一帧读到的
+                                        *   `yk_map_releases`（第二问主动放行的次数，只增不清）*/
+    uint32_t      silent;              /* ★★★ 2026-09-23（P8-6）：使魔**查不到**（过场 destroy_all /
+                                        *   静默移除）而被松开的次数 —— 原来账上无痕（只有 VM 侧自愈）*/
 } yk_card_t;
 
 static yk_map_t s_map;              /* 使魔表（(enemy_id, 发射口槽) → 使魔）*/
@@ -650,9 +655,17 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
         f = yk_familiar_by_id(sl->fam_id);
         if (!f) {
             /* 不走死亡事件就没了（过场 `destroy_all`）⇒ 双保险：自己松开（spec §9 实跑清单 6），
-             * 并且**同时收掉跟随 VM** —— 实体没了还留 VM = 场上一个打不到的幽灵使魔。*/
+             * 并且**同时收掉跟随 VM** —— 实体没了还留 VM = 场上一个打不到的幽灵使魔。
+             * ★★★ 2026-09-23（P8-6）：**这一步也进账 + 打一行**（原来账上无痕 —— 实跑里
+             *   「self-healed 前 120 帧找不到对应死亡行」就是因为静默消失没有记录）。
+             *   `silent` 与 `killed`（死亡事件）/`lost`（我们的状态差分撤）三笔分开记，
+             *   三者相加才是「这一局使魔消失的完整账」。*/
+            ce_log("youkai: familiar %u vanished silently (no death event) - released its emitter "
+                   "slot %d of enemy_id %u (silent total %u); VM withdrawn too",
+                   sl->fam_id, (int)sl->slot, sl->enemy_id, s->silent + 1u);
             yk_fam_vm_kill_id(sl->fam_id);
             yk_fam_gone(&s_map, sl->fam_id);
+            ++s->silent;
             continue;
         }
         yk_pin_familiar(f, sl->x, sl->y);                              /* 位置每帧重钉 */
@@ -1261,14 +1274,19 @@ static int yk_orbs_tick(yk_card_t *s)
         float dx, dy, dist;
         if (!o->used) continue;
         if (!o->anm_id || !ce_anm_get_vm(o->anm_id)) {
-            /* 句柄没了（过场重建 ANM 管理器 / 被引擎清掉）⇒ 这一颗当作收下（TH08 的刻符必然被收，
-             * 不会凭空消失）—— 只记账，不重起（重起会把位置丢回出生点）。*/
-            yk_orb_collect(s);
-            o->used = 0;
-            o->anm_id = 0;
-            if (s_orb_live) --s_orb_live;
-            ++taken;
-            continue;
+            /* ★★★ 2026-09-23（P5 / th08 #19「人形态击中得到的永点……上抛之后下落直接消失，
+             * 动画上不吸收到角色这里来」）：**这里原来直接 `yk_orb_collect()` 记账收下**、
+             * 顺手把那一颗停掉 —— 观感就是「飞向角色的途中凭空消失、没进角色身上」，而
+             * `orb_taken` 还在涨 ⇒ 正是 owner 描述的那一幕。
+             * 一手复核：TH08 里**没有**「刻符自己消失」的路径（丢失线只对 state 0 生效、而且要走
+             * 464 下沿）⇒ 这条 ⚠ 只能是我们自己的句柄死亡路径。
+             * 修法 = **VM 没了 ≠ 这一颗没了**：清句柄，然后在**原位重起一支**（脚本/层与出生时同一套）
+             * —— 飞行坐标与 state 都在我们自己的池里，跟 VM 无关；收下与否只由抓取盒决定。*/
+            int ch2 = yk_current_character();
+            if (ch2 < 0 || ch2 > 3) ch2 = 0;
+            o->anm_id = ce_anm_spawn(yk_player_anm(), YK_ORB_SCRIPT[ch2], YK_ORB_ANM_LAYER);
+            if (o->anm_id) ce_anm_set_pos(o->anm_id, o->x, o->y, 0.0f);
+            else if (s) ++s->orb_full;              /* 重起也失败 ⇒ 这颗只当「看不见但仍在飞」*/
         }
         if (dead && o->state == YK_ORB_STATE_HOMING) {
             o->state = YK_ORB_STATE_FALL;
@@ -1567,6 +1585,8 @@ static int on_ctor(ce_card_t *c)
     s->logged_hudgeo = 0;               /* ★ P2：换关重开 ⇒ 几何自述再打一次（锚点可能变了）*/
     s->heals_seen = 0;
     s->rearms_seen = 0;                 /* ★ route A：整表 reset 也清条目，但计数只增不清 ⇒ 快照回 0 */
+    s->releases_seen = 0;               /* ★ P8-3：同上（route A′ 计数只增不清）*/
+    s->silent = 0;                      /* ★ P8-6：静默消失的账，每关重开归零 */
     s->opt_spring_live = 0;
     /* ★ 2026-09-22 晚（owner 第 2 条）：追踪态 + 目标 + 出场计时（子机在 ctor 里已经全收）
      * ★ 2026-09-22 晚（owner 第 1 条）：原生子机隐藏声明的「只记一次」闩 */
@@ -1624,9 +1644,9 @@ static void on_run_reset(ce_card_t *c)
 {
     yk_card_t *s = ce_state(c, yk_card_t);
     if (s && (s->spawns || s->transferred))
-        ce_log("youkai: run done - %u familiars spawned, %u killed, %u withdrew, "
+        ce_log("youkai: run done - %u familiars spawned, %u killed, %u withdrew, %u silent, "
                "%u transfer damage, %u dropped (no boss)",
-               s->spawns, s->broken, s->lost, s->transferred, s->dropped);
+               s->spawns, s->broken, s->lost, s->silent, s->transferred, s->dropped);
     yk_drop_all(s, 0);                                   /* 局末：不留使魔 */
     if (s) yk_option_release(c, s);
     on_ctor(c);
@@ -1773,9 +1793,31 @@ static void yk_body_sync(yk_card_t *s)
     s->body_script = want;
 }
 
-static int on_draw(ce_card_t *c)
+/* ★★★ 2026-09-23（P6 / th08 #20「妖自机在开始移动的时候会闪一帧」）：`yk_body_sync` 的**相位**改了 ——
+ * 原来它只从 `on_draw`（= `AbilityManager__on_draw`，**绘制优先级 0x33**）跑
+ * —— 一手（`th18:0x408484`–`0x40849d`：注册时 `push 0x33`），而自机是
+ * `Player__on_tick` 更新 0x17、`Player__on_draw` 绘制 **0x1d**；引擎自己的移动换脚本状态机在
+ * **tick** 里（`Player__tick` → `0x45be90` → `0x45b170`，`0x45b621`–`0x45b649` 那三步：
+ * `AnmVm__load_script` + `vm+0x5c0 = 0` + `vm+0x5bc = 0`），而且**只在输入边沿**（`0x45b618`
+ * 读「上一帧 dx」）动手 ⇒
+ *   **边沿那一帧**：tick 里装了**人侧**移动脚本、同帧 0x1d 就把它画出来（= owner 看到的「闪一帧」），
+ *   我们的修正在 0x33 才落地 ⇒ 只能下一帧才纠正。
+ * ⇒ 修法 = 把 `yk_body_sync` 挪到「**晚于自机 tick(0x17)、早于自机 draw(0x1d)**」的 tick 相位。
+ *   TH08 也是这个相位（`th08:0x44aec0` = `Player::UpdateMovement` 里的 `push 0x5` / `push 0x0`，
+ *   在自机的每帧更新里、VM 被画之前）⇒ 这是**复刻一手**，不是自定。
+ *   **不新增站点**：走 SDK 既有的事件 `on_item_frame`（`sites.py` 的 `0x446ee3` = ItemManager tick，
+ *   更新优先级 **0x1e**：晚于 0x17、早于 0x1d，且与自机同在**更新相位**）—— 先例 = 114 的 `on_item_frame`。
+ * ⚠ 别把它挪回任何 `on_draw`（那正是「闪一帧」的成因）。*/
+static void on_item_frame(ce_card_t *c)
 {
     yk_body_sync(ce_state(c, yk_card_t));
+}
+
+static int on_draw(ce_card_t *c)
+{
+    /* ★ 2026-09-23（P6）：本体换脚本**不在这里**了（绘制相位太晚 ⇒ 会闪一帧），见 `on_item_frame`。
+     * 这个钩子留着（本卡以后若要在绘制相位做纯视觉的东西再放这里）。*/
+    (void)c;
     return 0;
 }
 
@@ -1944,13 +1986,34 @@ static int yk_on_shot_slot(ce_card_t *c, const ce_enemy_shot_t *ev)
 {
     yk_card_t *s = ce_state(c, yk_card_t);
     uint32_t have = 0;
+    uint32_t rearms_before;
 
     if (!s || !ev || !ev->enemy_id) return 0;
     if (ev->slot < 0 || ev->slot >= YK_EMIT_SLOTS) return 0;
+    /* ★★★ 2026-09-23（P8-1）：**未聚焦 ⇒ 本卡一律不表态**。
+     * 本卡的 1:1 映射整体只在低速（= 妖侧）活着（`on_tick_2` 的 `!focused` 分支把使魔全撤 + 清表）；
+     * 高速时场上的使魔与我们无关 ⇒ 闸在这里没有任何语义，却**可能认下 boss 自己的发射口**
+     * （槽表对每一只敌人、每个 `props[i].type != 0` 的槽都建条目，没有任何 boss / 可锁定过滤）。
+     * 这条闸就是 owner 早先「击破一个阶段后 boss 不再发弹」的机制（闸的归属判据确实会认 boss）——
+     * 加上这条门之后，「未聚焦的那一半时间」不再有任何夹持的可能。*/
+    if (!CE_PLAYER_FOCUSED()) return 0;
     /* 按 id 回查**当前活着的**使魔（0 = 没了）。★ 不碰 `ev->enemy`：那是敌人本体、不是使魔，
      * 而且只在本次回调内有效（同帧 sweep 可能删它）。 */
     have = yk_slot_fam_id(&s_map, ev->enemy_id, ev->slot);
+    rearms_before = yk_map_rearms(&s_map);
     if (!yk_shot_slot_gate(&s_map, ev->enemy_id, ev->slot, have)) return 0;
+    /* ★★★ 2026-09-23（P8-5）：**每一次「夹持期开始」记一行完整的上下文**（含 boss 与活跃槽数）。
+     * 记账判据 = `rearms` 涨（= 闸刚置上 `rearm_pending`，一个夹持期只记一次）。
+     * ⚠ 不逐帧逐槽打（16 槽 × 60 fps = 每秒上千行，会把日志淹掉）——「每次」按**夹持期**计。*/
+    if (s && yk_map_rearms(&s_map) != rearms_before) {
+        yk_slot_t *sl = yk_map_find(&s_map, ev->enemy_id, ev->slot);
+        ce_log("youkai: emitter gate CLAMPED slot %d of enemy_id %u (focused=%d fam_seen=%d "
+               "broken=%d no_fam_frames=%d) - this etOn is dropped; the NEXT etOn of this slot is "
+               "released by route A' (core: `yk_shot_slot_gate`)",
+               ev->slot, ev->enemy_id, CE_PLAYER_FOCUSED() ? 1 : 0,
+               sl ? (int)sl->fam_seen : -1, sl ? (int)sl->broken : -1,
+               sl ? (int)sl->no_fam_frames : -1);
+    }
     if (s && !s->logged_gate) {
         s->logged_gate = 1;
         ce_log("youkai: emitter gate ACTIVE - slot %d of enemy_id %u stays silent until the next "
@@ -2004,13 +2067,33 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
            (int)YK_EMIT_BROKEN_TTL);
 }
 
-/* ★★ 2026-09-22（人妖槽涨源②）：**收集道具** ⇒ 人妖槽 ±itemScore（一手 `ItemManager.cpp:597`：
- * `isYoukaiMode ? +itemScore : −itemScore`）。
- * 取分的落点：`on_item_commit`（`0x44658a` = 本道具分值已入 SCORE、公共收尾之前）那一刻，
- * `CE_ADDR_MONEY_BASE`（0x4ccd24）**就是这一颗的身价**（一手：`0x446bf3` 的 `ja` 支直接读回它，
- * 见 engine.h 的注）⇒ 显示点 = 身价 / 100。
- * ⚠ **为什么不走 `on_item_score`**：那个钩子自 2026-09-13 起是「**声明自己的 G_i**」的通道
- *   （`sdk.c` 传进去的指针是 `unused`），读不到分值 —— 别在那儿当读者。*/
+/* ★★★ 2026-09-23（P3 / th08 #17「人妖槽在 +99 和 -99 点跳」）：**原来的「收道具 ⇒ 人妖槽 ±身价/100」
+ * 这一源已被删除** —— 它在原作里**不存在**，是 `ItemManager.cpp:597` 那一行的**误读**。
+ *
+ * **一手（逐条，2026-09-23 复核）**：
+ *   · `ItemManager.cpp:597` 在 `Item::CollectTimeOrb`（本样本 `th08:0x4412b0`）体内，而且
+ *     `0x44139e mov DWORD PTR [ebp-0x4],0x6f` 把 `itemScore` **当场改写成字面量 111**
+ *     再 `0x4413cb call 0x43c0bb`（= `AddToYoukaiGauge`）⇒ 那一行说的是**收刻符 ±111**，
+ *     与「普通道具身价」无关（刻符那一源已在 `yk_orb_collect` 里实现 ✅）。
+ *   · 全 exe 里 `call 0x43c0bb` 只有 **8 处**（`0x42b223` / `0x42d682` / `0x4413cb` / `0x44aa81` /
+ *     `0x44bedf` / `0x44bffb` / `0x44c832` / `0x44c850`）—— **没有一处**在「普通道具被收下」的路径上。
+ *   · 更致命的是**量纲**：TH18 的 `CE_ADDR_MONEY_BASE`（`0x4ccd24`）单位是「点 × 100」且下限
+ *     **1,000,000**（`engine.h` 的注）⇒ `base/100` ≥ **10,000** = **一整条槽**。owner 那一跑的
+ *     日志里 `score-in: base=1000000 …` 逐颗递增，于是每收一颗道具就把槽**顶到 ±10000（夹紧）**，
+ *     数值长期停在 ±99.xx% 那一带、且符号跟着「收下那一刻聚不聚焦」翻 —— 正是 owner 报的
+ *     「在 +99 和 -99 点跳」。日志合证：`youkai: gauge=-9855 … taken=0` = −10000 + 5×29（只有漂移与
+ *     3 次击破 −200 在动，没有任何刻符），只有这一源能给出那个量级。
+ *
+ * ⇒ 结论：**删掉这一源**（不是调小，是它不该存在）。本卡的四个涨源与一手一一对应：
+ *   ① 击破敌机 ±200（`th08:0x42da2a` 一族 / decomp `EnemyManager.cpp:670`）、
+ *   ② 收刻符 ±111（`th08:0x4413cb`，且过「自动收集期间不加」那道门 —— 见 `yk_orb_collect` 的注）、
+ *   ③ 聚焦漂移（decomp `Player.cpp:1088-1127`）、④ 死亡清零（`th08:0x44ac09`）。
+ *   ⚠ 尚缺的两条（一手已定位，见 `AUDIT.md` §BE 详录 #57）：**射击中每帧 ±26**（`Player.cpp:445-452`，
+ *     `AddToYoukaiGauge(0x6590/0x3e7, 1)`）与 `AddToYoukaiGauge` 的**第一道闸**
+ *     （`th08:0x43c0c2`：`ds:0x17d6ed4` = `g_Player+0xfdc` = **`shotActive`**，非 0 且 `param_2 == 0`
+ *     ⇒ 整条丢掉）——本批**未接**（登记 `TUNING.md`），本批只做「去掉不存在的源」这一半。
+ * ⚠ `on_item_commit` 这个钩子**不再订阅**（下方 `CE_CARD` 表里已删）：它在本卡里没有别的用途。*/
+#if 0  /* 保留原文以便对照（见上面那段订正）—— 这一源已作废，别再打开 */
 static void on_item_commit(ce_card_t *c)
 {
     yk_card_t *s = ce_state(c, yk_card_t);
@@ -2020,6 +2103,7 @@ static void on_item_commit(ce_card_t *c)
     if (base <= 0) return;
     s->gauge = yk_gauge_add(s->gauge, CE_PLAYER_FOCUSED() ? (int)(base / 100) : -(int)(base / 100));
 }
+#endif
 
 /* ★★ 2026-09-22（人妖槽：死亡清零）：一手 `th08:0x44ac09`（`Player::begin_death` 里
  * `set_youkai_gauge(0)`）。走 `on_death_before_deathbomb`（决死窗口**之前**那一帧，
@@ -2042,9 +2126,9 @@ static int on_tick_2(ce_card_t *c)
     yk_card_t *s = ce_state(c, yk_card_t);
     int focused;
     if (!s) return 0;
-    if ((++s_ledger_frame % 600u) == 0u && (s->spawns || s->broken || s->lost))
-        ce_log("youkai: ledger - %u spawned, %u killed, %u withdrew, %u dropped",
-               s->spawns, s->broken, s->lost, s->dropped);
+    if ((++s_ledger_frame % 600u) == 0u && (s->spawns || s->broken || s->lost || s->silent))
+        ce_log("youkai: ledger - %u spawned, %u killed, %u withdrew, %u silent, %u dropped",
+               s->spawns, s->broken, s->lost, s->silent, s->dropped);
     /* ★ 人妖槽 / 永点的账（每 ~600 帧一行）：实跑要看见的四件 —— 槽值、刻符收了几颗、
      * PIV 当前值、池里还剩几颗活着。VERIFY 的判据就取这一行（见 `SINGLE-CARD-TEST.md` §th08）。*/
     if ((s_ledger_frame % 600u) == 0u && (s->orb_taken || s->gauge || s->piv))
@@ -2076,12 +2160,26 @@ static int on_tick_2(ce_card_t *c)
             float px = *(const float *)(CE_PLAYER() + CE_PLAYER_X);
             float py = *(const float *)(CE_PLAYER() + CE_PLAYER_Y);
             if (d > 8u) d = 8u;                            /* ❓ 自定：单帧上限（防一段大擦弹一次性灌满池）*/
-            /* ★★ 2026-09-22 晚（owner 第 4 条）：擦弹那一路按一手是 **state 1**（`th08:0x431650` 一族
-             * `spawn_item(type 7, 1)`）⇒ 一生成就满速归航（owner：「应该刚开始就满速」）。
-             * ❓ 自定：落点仍 = 自机 —— TH08 是撒在**被擦到的那颗弹**上，我们拿不到那颗弹
-             * （SDK 的 `ce_graze_take` 依赖的断点 `0x42497f` 在 `sites.py` 里是**注释掉的**（会让游戏开不了机）
-             * ⇒ 它恒返回 0）。代价：这颗当帧就落在抓取盒里 ⇒ 几乎看不见它飞（见报告）。*/
-            if (focused) for (i = 0; i < d; ++i) yk_orb_spawn(s, px, py, YK_ORB_STATE_HOMING);
+            /* ★★★ 2026-09-23（P5 / th08 #18「妖形态是擦弹得自动吸收的永点……总之是有一个『无敌』的
+             * 上抛过程，然后直接吸收」）：**擦弹那一路是 state 5（上抛），不是 state 1** —— 上一版
+             * 认错了对象。一手（逐指令，本样本）：
+             *   · 擦弹真正的落点 = `Player::sub_44a6a0` 的 `th08:0x44aac9 / :0x44aaef / :0x44ab0f`
+             *     ⇒ `spawn_item(pos, **type 0xa**, state 1)`；
+             *   · 而 `spawn_item` 把 type 10 **当场改写**成 `type 7 + state 5`
+             *     （`th08:0x440124 cmp [ebp+0xc],0xa / mov [ebp+0x10],5 / mov [ebp+0xc],7`）⇒
+             *     那个 `state 1` 实参**被丢弃**；
+             *   · state 5 的初速与 state 3 逐指令同形（`th08:0x4402cb`–`:0x4403b6`：`vy = −2.0 − rand(0.2)`、
+             *     `vx = rand(±0.6)`），每帧 `vy += 0.05`（`th08:0x440740`），`vy > 0` 才转归航
+             *     （`th08:0x44079c`），且**上抛期间跳过抓取盒判定**（`0x4407a5`）⇒ 看得见那一段上抛。
+             *   · `state 1`（生成即满速）只属于「消弹 / `cancel_autocollect`」那一支
+             *     （`th08:0x4308e5` 一族 + `ItemManager::cancel_autocollect` `th08:0x4413e0`）。
+             * ⇒ 我们那句 `YK_ORB_STATE_HOMING` 改成 `YK_ORB_STATE_SPAWN`（= 我们的 state 3，
+             *   运动方程与 TH08 的 state 5 同一套：上抛 → `vy > 0` 转归航，且上抛期间不收）。
+             * ⚠ 仍**未复刻**的两点（登记 TUNING）：① 落点 —— TH08 撒在**被擦到的那颗弹**上，
+             *   我们拿不到那颗弹（`ce_graze_take` 的断点 `0x42497f` 在 `sites.py` 里被注释掉 ⇒ 恒返回 0）
+             *   ⇒ 落点 = 自机（上抛之后回来才被收，至少看得见动作）；② TH08 那支的门
+             *   （極端妖怪 + `is_boss_active` + 符卡/机体分支）我们没接，用的是「聚焦即撒」。*/
+            if (focused) for (i = 0; i < d; ++i) yk_orb_spawn(s, px, py, YK_ORB_STATE_SPAWN);
         }
         s->graze_seen = graze;
     }
@@ -2125,8 +2223,12 @@ static int on_tick_2(ce_card_t *c)
     yk_option_refresh(c, s, focused);                     /* 每帧声明（低速才有货；落笔由 SDK 在帧界叫）*/
     if (!focused) {
         /* 高速 = 原机体：使魔全部撤（spec §9 实跑清单 1「松开全部还原」）。
-         * 常态下这条只是两次比较。*/
-        if (yk_map_fam_count(&s_map)) yk_drop_all(s, "unfocused");
+         * ★★★ 2026-09-23（P8-2）：**无条件**走这一支（原来写成 `if (yk_map_fam_count(...))`）——
+         *   `yk_map_fam_count` 只数 `fam_id != 0` 的条目，而**夹持态**的条目（`fam_seen == 1` /
+         *   `broken == 1` / `rearm_pending == 1`，`fam_id == 0`）**不在计数里** ⇒ 松 Shift 清不掉它，
+         *   下一次聚焦时那条夹持态还在（闸还会掐）。`yk_drop_all` 里的 `yk_withdraw_all`
+         *   **整表 reset**，把夹持态一起清干净；`had == 0` 时它只是一个 32 次的循环 + 不做任何日志。*/
+        yk_drop_all(s, "unfocused");
         return 0;
     }
     yk_familiars_tick(s);
@@ -2153,6 +2255,18 @@ static int on_tick_2(ce_card_t *c)
             s->rearms_seen = rearms;
         }
     }
+    /* ★★★ 2026-09-23（P8-3 / **route A′**）：`yk_shot_slot_gate` 在**第二次**被问到时当场放行并清夹持态
+     * （不再等卡 tick 消费、也不再等 120 帧 TTL）⇒ 这一行在涨就是「恢复已经与卡 tick 解耦」的证据。
+     * 与上面 `re-armed` 的分工：`re-armed` = 掐掉过几发（卡 tick 侧的消费），`released` = 断点侧放行了几次。*/
+    {
+        uint32_t rel = yk_map_releases(&s_map);
+        if (rel != s->releases_seen) {
+            ce_log("youkai: emitter gate released %u slot(s) on the second etOn (route A', total %u) "
+                   "- clamp flags cleared at the breakpoint, the 1:1 mapping rebuilds next tick",
+                   rel - s->releases_seen, rel);
+            s->releases_seen = rel;
+        }
+    }
     /* ★ 2026-09-22（#7）：闸的**兜底**自愈记账。`YK_EMIT_BROKEN_TTL` 帧没再被 `etOn` 问到的
      * 发射口会被无条件放开。route A 落地后这一条**正常应当基本不涨**（只有「ECL 再也不 `etOn`
      * 这个槽」时才轮到它）；它在涨 ⇒ 那个槽是靠 TTL 才放开的，值得看一眼。*/
@@ -2173,7 +2287,11 @@ CE_CARD(108, .ctor = on_ctor, .on_load = on_load, .on_power_level_change = on_po
              .on_bullet_created = on_bullet_created, .on_enemy_death = on_enemy_death,
              .on_enemy_shot_slot = yk_on_shot_slot,           /* §3.5.1 发射口精确闸（0x433ffa）*/
              .on_native_shot_suppress = on_native_shot_suppress, .on_draw = on_draw,
-             .on_item_commit = on_item_commit,              /* 人妖槽涨源②：收道具 ±身价 */
+             /* ★ 2026-09-23（P6）：本体脚本的换装改在**更新相位**（晚于自机 tick 0x17、早于自机绘制 0x1d）
+              *   —— 原来挂在 `on_draw`（绘制 0x33）⇒ 移动起步那一帧会先画出引擎装的人侧脚本（闪一帧）。*/
+             .on_item_frame = on_item_frame,
+             /* ★ 2026-09-23（P3）：`on_item_commit` **已退订** —— 它原来那一源（收道具 ±身价/100）
+              *   在原作里不存在（逐条一手见上面那段订正：`ItemManager.cpp:597` 是**收刻符 ±111**）。*/
              .on_death_before_deathbomb = on_death_before_deathbomb,   /* 人妖槽：死亡清零 */
              .on_option_pose_apply = on_option_pose_apply,    /* §3.3.1 低速子机声明层的落笔 */
              .on_run_reset = on_run_reset, .on_delete = on_delete);

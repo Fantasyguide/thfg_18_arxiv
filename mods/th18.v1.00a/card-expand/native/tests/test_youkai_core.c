@@ -794,23 +794,30 @@ int main(void)
     {
         unsigned base = yk_map_rearms(&m);
         unsigned hbase = yk_map_heals(&m);
+        unsigned lbase = yk_map_releases(&m);
         CHECK(yk_shot_slot_gate(&m, 800, 0, 0) == 1);           /* 第一次 etOn：掐 + 记「下一波」 */
         CHECK(yk_map_rearms(&m) == base + 1);
-        CHECK(yk_shot_slot_gate(&m, 800, 0, 0) == 1);           /* 同一个夹持期再来问：照旧掐 */
-        CHECK(yk_map_rearms(&m) == base + 1);                   /* ★ 但**不重复记账** */
-        /* 卡 tick：消费 ⇒ 同帧重建（不需要等 TTL、也不需要 ECL 重新武装） */
-        yk_frame_begin(&m);
-        CHECK(yk_note_slot(&m, 800, 0, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);
+        /* ★★★ 2026-09-23（P8-3 / **route A′**）：**第二次**被问到时当场放行并清夹持态 ——
+         * 「恢复」不再依赖卡 tick（卡 tick 在未聚焦时根本不跑），也不用等 120 帧 TTL。*/
+        CHECK(yk_shot_slot_gate(&m, 800, 0, 0) == 0);
+        CHECK(yk_map_releases(&m) == lbase + 1);                /* ★ 记一笔「第二问放行」 */
+        CHECK(yk_map_rearms(&m) == base + 1);                   /* ★ 不重复记「掐」的账 */
         CHECK(yk_shot_slot_suppressed(&m, 800, 0, 0) == 0);     /* ★ 闸已放开（关键断言） */
-        CHECK(yk_map_heals(&m) == hbase);                       /* ★ 走的是 route A，**没**用 TTL 兜底 */
+        CHECK(yk_frame_end(&m, s_acts, (int)YK_FAM_MAX) == 0);
+        yk_frame_begin(&m);
+        CHECK(yk_note_slot(&m, 800, 0, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);  /* 1:1 映射重建 */
+        CHECK(yk_map_heals(&m) == hbase);                       /* ★ 没走 TTL 兜底 */
         yk_fam_created(&m, 800, 0, 8002);
         CHECK(yk_shot_slot_gate(&m, 800, 0, 8002) == 0);        /* 下一次 etOn：使魔已回来 ⇒ 放行 */
-        /* 再来一轮：证明不是一次性的 */
+        /* 再来一轮：证明不是一次性的（掐 → 放 → 重建）*/
         CHECK(yk_fam_broken(&m, 8002) == 1);
         CHECK(yk_shot_slot_gate(&m, 800, 0, 0) == 1);
         CHECK(yk_map_rearms(&m) == base + 2);
+        CHECK(yk_shot_slot_gate(&m, 800, 0, 0) == 0);           /* 第二问：route A′ 再放一次 */
+        CHECK(yk_map_releases(&m) == lbase + 2);
         yk_frame_begin(&m);
         CHECK(yk_note_slot(&m, 800, 0, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);
+        yk_fam_created(&m, 800, 0, 8003);
     }
     /* 没被夹住的槽：闸恒放行、一次都不记账（route A 绝不误伤）。
      * ⚠ `rearms`/`heals` 都是**只增不清**的（`yk_map_reset` 不动它们，卡侧靠快照比对打日志）

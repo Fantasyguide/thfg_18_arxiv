@@ -470,14 +470,19 @@ typedef struct {
                           *   卡侧每帧读一次、与自己的快照比对后打日志 ⇒ 实跑里一眼看出
                           *   「boss 不发弹」到底是闸夹死（heals 涨）还是别的原因。
                           *   放在表尾（`yk_slot_t` 的布局不变）⇒ `sizeof(yk_map_t)` = 32×28+4 = 900 B。*/
-    uint32_t  rearms;    /* ★★ 2026-09-22（route A）：闸被「下一波 `etOn`」放开的次数
-                          *   （每个夹住的槽每置一次 `rearm_pending` 记一次，只增不清）。卡侧打一行日志
-                          *   —— 它**在涨**就是 route A 生效的直接证据（对照 `heals`：TTL 那条现在应当
-                          *   基本不涨）。`sizeof(yk_map_t)` = 32×28+8 = 904 B。*/
+    uint32_t  rearms;    /* ★★ 2026-09-22（route A）：闸**掐掉过几次**（每个夹住的槽每置一次
+                          *   `rearm_pending` 记一次，只增不清）。卡侧打一行日志 —— 它**在涨**就是
+                          *   route A 生效的直接证据（对照 `heals`：TTL 那条现在应当基本不涨）。
+                          *   `sizeof(yk_map_t)` = 32×28+8 = 904 B。*/
+    uint32_t  releases;  /* ★★★ 2026-09-23（P8-3 / **route A′**）：闸**在第二问主动放行**的次数
+                          *   （`yk_shot_slot_gate` 里看到 `rearm_pending` 已置 ⇒ 清夹持态并 return 0）。
+                          *   与 `rearms` 成对：`rearms` 涨 = 掐过，`releases` 涨 = 恢复不再依赖卡 tick。
+                          *   `sizeof(yk_map_t)` = 32×28+12 = 908 B（单测上限 1024 仍有余量）。*/
 } yk_map_t;
 
 unsigned   yk_map_heals(const yk_map_t *m);      /* 自愈计数（#7 记账；NULL ⇒ 0）*/
-unsigned   yk_map_rearms(const yk_map_t *m);     /* 「下一波」复位计数（route A 记账；NULL ⇒ 0）*/
+unsigned   yk_map_rearms(const yk_map_t *m);     /* 「掐掉过几次」计数（route A 记账；NULL ⇒ 0）*/
+unsigned   yk_map_releases(const yk_map_t *m);   /* 「第二问放行」计数（route A′ 记账；NULL ⇒ 0）*/
 
 /* ★★★ 2026-09-23（P1，实跑日志直证）：**只读**判据「这个 id 是不是我表里的使魔」。
  *
