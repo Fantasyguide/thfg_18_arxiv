@@ -65,11 +65,15 @@
  *
  * 本卡跨帧留下的东西：① 绿点 VM 池（共用件，静态区）；② HUD 的 **9 个 VM**
  * （图标 1 + 数字位 6 + 连击条 2 —— 2026-09-12 从「两行贴图字数字」换成原生那一整块）；
- * ③ ★ 2026-09-15 新增：**一发灵击的状态**（`s->bomb`：剩余帧数 / 中心 / 目标半径）+ 它每帧撒的
- * **引擎伤害源**（`player+0x20574` 池，寿命 2 帧自灭）。
+ * ③ ★ 2026-09-15 新增 / ★★ 2026-09-21 改归共用件：**一发灵击的状态**（剩余帧数 / 中心 / 目标半径）
+ * + 它每帧撒的 **引擎伤害源**（`player+0x20574` 池，寿命 2 帧自灭）。
+ * 状态本身现在住在 `cards/bomb10.c` 的文件静态里（110/111 **共用一份**，为的是「同一套灵击系统」）；
  * **`on_delete` 与 `on_run_reset` 都走同一个 `mof_clear()`**：收池 + 收 HUD + 从计分层撤销声明
- * （`ce_score_declare_coupled(id, 0)`）+ 把 `s->bomb` 清零（下一帧不再续撒）；删卡发生在**商店**里、
- * 那一刻 AbilityManager 冻住 ⇒ 只能靠 `on_delete`（虚表 `+0x50`），不能等下一帧。
+ * （`ce_score_declare_coupled(id, 0)`）+ `bomb10_reset()`（删两支环 VM + 清那一发状态 ⇒
+ * 下一帧不再续撒）；删卡发生在**商店**里、那一刻 AbilityManager 冻住 ⇒ 只能靠 `on_delete`
+ * （虚表 `+0x50`），不能等下一帧。
+ * ⚠ 「共用一份」的代价与必然性：本卡被删掉时**111 发的那一发也一起收**（反之亦然）——
+ * 这正是「同一套系统」的意思（见 `bomb10.h` 的硬语义 ①②③）。
  * 伤害源的残留与「为什么不手动清池槽」见 `mof_clear()` 里的那段注释。
  *
  * ## 明确不做 / 未做（本轮）
@@ -87,6 +91,11 @@
 #include "faith_hud.h"        /* ★★ 2026-09-15：110/111 共用的「组合 UI」（共享件）*/
 #include "mof_core.h"
 #include "mof_green_core.h"   /* ★★ 2026-09-18：变绿表（改精灵 + 改掉落，跟着卡走）*/
+#include "bomb10.h"           /* ★★★ 2026-09-21：**110 型灵击的唯一一份实现**（110/111 共用）——
+                               * 本卡原来那套 `mof_bomb_start/tick` 已整段搬进去（行为逐条不变），
+                               * 本卡只交「自己那一半」：对话门 / 整档扣火力 / 发动代价 / 消弹记账。
+                               * 为什么搬：owner 口径「只要有 110 or 111 就有灵击，**它们完全走同一套
+                               * 灵击系统**」⇒ 两卡同装时不许各发一发（见 `bomb10.h` 的硬语义 ①②③）。*/
 
 /* ---- 本卡常量 ---- */
 #define MOF_ID_NUM            110      /* ⚠ `CE_CARD` 会对 ID 做 ## 拼接 ⇒ 这里必须给**字面量**，
@@ -158,43 +167,9 @@
  *   · `CE_SPELL_BONUS` `th18:0x7c` / `CE_SPELL_FLAG_BONUS` `th18:0x78` bit1（= TH10 的 `+0x3790` / `+0x378c` bit1）；
  *   · `CE_ADDR_RANK` —— engine.h 里**没有**这个宏（只有 106 卡自己写死过）⇒ 本卡就地定义。*/
 #define MOF_ADDR_CHARACTER    0x4cccf4   /* int32 角色号 0..3（engine.h 一手：`Player__initialize` `0x45a7a3`）*/
-#define MOF_RANK_ADDR         0x4ccd08   /* = GlobalsInner+0x2c（ExpHP `RANK`）；⚠ TH18 里是**死字段**：全程序只有 2 条读
-                                          * （`Enemy__ecl_get_int/float_global` `0x437515`/`0x438183`，即 ECL opcode 529–534
-                                          * 的 global getter），**没人写**、22 个 ECL 一次都没用过那几个 opcode
-                                          * ⇒ 写它**没有实际效果**（同结论：`IDEAS.md` §217–226、`th06rank.c` 头注）*/
-#define MOF_RANK_BOMB_DROP    0x80       /* 一手 `th10:0x40598c sub eax,0x80`（= −128）*/
-#define MOF_RANK_MIN          (-0x400)   /* 一手 `th10:0x4059b1 cmp eax,0xfffffc00` 的下钳 */
-#define MOF_RANK_MAX          0x400      /* 一手 `th10:0x40599e mov ds:0x474c98,0x400` 的上钳 */
-#define MOF_BOMB_DMG_SRC_LIFE 2          /* 伤害源寿命：2 帧只为一帧余量（`enm_compute_damage_sources` 的
-                                          * tag 守卫让**一个源对同一敌人只结算一次** ⇒ 每帧一个新源 = 每帧一笔）*/
-#define MOF_PLAYFIELD_W       384.0f     /* 游玩区宽（世界坐标 −192..192）——TH10/TH18 同量纲 */
-#define MOF_PLAYFIELD_H       448.0f     /* 游玩区高（世界坐标 0..448）*/
-#define MOF_PLAYFIELD_CX      0.0f
-#define MOF_PLAYFIELD_CY      224.0f
-#define MOF_BOMB_SE           0x2c       /* ★ 复刻（**同一 wav**）：TH10 灵击播 `se_slash.wav`（id `0x26`，
-                                          * `th10:0x405942`）↔ TH18 的 `se_slash.wav` = id `0x2c`/`0x2d`
-                                          * （`engine/_shared/th18-sound-table.md`）。❓ 两号同文件、音量不同
-                                          * （−13.8 / −19.8）⇒ 取 0x2c，登记 `TUNING.md` §2.5。*/
-/* ★★ 2026-09-16k 灵击视觉（用户：「灵击依然没有特效」）—— 两个节流/时点常量，都是 ❓ 自定：
- *   · `MOF_BOMB_RING_FADE_AT` = **120**：环在半径长满那一帧开始淡出。一手来源 = TH10 script400 的
- *     `scaleTime(120, 6, 16.0 → 160.0)`（`MOF_BOMB_R_GROW_FRAMES` 也是 120）⇒ 这不是随手取的数。
- *   · `MOF_BOMB_SPARK_EVERY` = **6**：火星每 6 帧一红一蓝。一手：TH10 的灵击本体在**同一帧**里起
- *     12 颗（`scriptNew` × 4、`jmpDec` 循环 3 趟）；我们摊到 120 帧里 ⇒ 一帧 12 颗在 TH18 太吵、
- *     也白占 VM 池，故节流（登记 `TUNING.md` §2.5）。*/
-#define MOF_BOMB_RING_FADE_AT 120
-#define MOF_BOMB_SPARK_EVERY  6
-
-/* ---- ★★ 2026-09-15c：灵击 → **决死**（「决死 B 形态」）的救命调用 ----
- * `Player__cancel_impending_death` **`th18:0x45d590`**：thiscall(**zPlayer***)、**无栈参**、结尾裸 `ret`。
- * 本轮**自己在样本上复核**（`objdump -d --start-address=0x45d590 --stop-address=0x45d5d5 th18.exe`）：
- *   体内只有 6 个「写」，逐条原文 = `mov eax,[ecx+0x644] / test al,1 / or eax,1 / mov [ecx+0x640],0 /
- *   mov [ecx+0x644],eax` → `mov [ecx+0x638],0x3c` → `mov [ecx+0x63c],0x42700000 (60.0f)` →
- *   `mov [ecx+0x634],0x3b` → **`mov [ecx+0x476ac],1`**（状态回存活）→ `ret`（`0x45d5d5`）。
- * 先例（形状照抄）：`cards/senro.c` 的 `senro_cancel_impending_death()`、
- *   `cards/trance.c` 的 `trance_cancel_impending_death()`、`cards/animal.c` 的 `cancel_impending_death()`。
- * ⚠ 它**只取消状态机**（不写命数、不写 `+0x47908` 决死窗口帧数）⇒ 与原生 `do_bomb` 那条路（`th18:0x45c2d7`）
- *   落在同一个函数上，语义等价（一手：`0x45c2d7 call 0x45d590`）。*/
-#define MOF_FN_CANCEL_IMPENDING_DEATH  0x45d590u
+/* ★★ 2026-09-21：灵击的那批常量（RANK / 音效 id / 伤害源寿命 / 游玩区 / 环淡出与火星节流）
+ * 与**救命调用** `th18:0x45d590` 全部搬进共用件 `cards/bomb10.h`（两张卡原来各抄一份，现在只有一份）。
+ * 一手出处逐条跟着搬过去（文件头那张表），本文件不再重复。*/
 
 /* 弹字环的数字槽（`engine.h` 的 `CE_POPUP_*` 一手；**照原生 adder `th18:0x4645f0` 的字段写序**）：
  *   mgr+0x10 = 槽号计数器（原生 adder 读它、≥0xa 归零、写完 inc）、18 槽 @ mgr+0x624、stride 0x48、
@@ -215,34 +190,11 @@
 #define MOF_POPUP_FLAG        0x30
 #define MOF_POPUP_ANIM        0x2c
 
-/* 灵击的跨帧状态（★ 2026-09-15 新增）：TH10 的灵击是**一条随时间长的曲线**（消弹圈 + 中心上移 +
- * 每帧每敌一笔伤害），所以必须逐帧推进，不能像旧实现那样一帧做完。
- * 全部字段都是**本卡私有**的标量 ⇒ 删卡时会被 `mof_clear()` 清零，不留任何跨帧痕迹（伤害源是引擎
- * 池里的对象、寿命 2 帧自灭，见 `mof_clear()` 的注释）。*/
-typedef struct {
-    int32_t left;          /* 还剩几帧（0 = 没在灵击）*/
-    int32_t elapsed;       /* 已经过几帧（半径曲线的自变量）*/
-    float   x, y;          /* 消弹/伤害中心（x = 发动瞬间的自机 x，y 每帧上移）*/
-    int32_t target_centi;  /* 本发的目标半径（1/100 px）：灵梦 16000 / 魔理沙 11200 / 符卡中 6400 */
-    int32_t rise_milli;    /* 每帧上移量（1/1000 px）：0.5 / 1.0 / 1.3 */
-    int32_t reimu;         /* 发动瞬间的 `CHARACTER == 0`（伤害表的圈外档分灵梦/魔理沙）*/
-    int32_t frames;        /* 诊断：本发实际走了几帧 */
-    int32_t dmg_frames;    /* 诊断：本发实际撒出伤害源的帧数（说明伤害档没被 `/5` 归零）*/
-    mof_bomb_form_t form;  /* ★ 2026-09-15c 本发的**形态**（按 B / **决死 B**）+ 累计消弹颗数。
-                            *   语义与两条代价口径全在 `mof_core.h` 的「灵击 → 决死」块
-                            *   （状态在 core ⇒ 主机单测能钉住；卡侧只「检测窗口 → 传参」）。*/
-    /* ★★ 2026-09-16k 视觉（用户：「**灵击依然没有特效**」）：两件东西，都是 TH10 原版那一套 ——
-     *   · `ring_vm` = **消弹范围环**（脚本 279）：半径**逐帧等于** `mof_core_bomb_radius_centi()`
-     *     ⇒ 环画的就是「这一帧真被消掉的那一圈」。一手：TH10 的灵击半径**就是**它那支 VM 的
-     *     `scale.y`（`th10:0x405813`），曲线 = `bullet.anm` script400 `scaleTime(120, 6, 16→160)`。
-     *   · 火星（脚本 280/281 = TH10 `bullet.anm` script398/399 的逐条移植）：**一次性 VM**，
-     *     不记 id（脚本自己 `wait` + `delete()`），按 `spark_tick` 节流出生。*/
-    uint32_t ring_vm;      /* 范围环的 VM id（脚本 279；0 = 没起）*/
-    uint32_t strip_vm;     /* ★ 2026-09-16p：**电流边**竖条环的 VM id（脚本 293 = TH10 sprite362+texCircle32）*/
-    int32_t  ring_fading;  /* 环已发过淡出中断（不再写 scale）*/
-    int32_t  spark_tick;   /* 火星出生节流计数（每 `MOF_BOMB_SPARK_EVERY` 帧一红一蓝）*/
-    int32_t  faith_dots;   /* ★ 2026-09-16p 诊断：本发一共撒出几颗信仰点（TH10 的 type 8 对位）*/
-} mof_bomb_t;
+/* ★★★ 2026-09-21：这里原来有 `mof_bomb_t`（一发灵击的全部跨帧状态：剩余帧数 / 中心 / 目标半径 /
+ * 环与竖条环 VM / 火星节流 / 形态），**整段搬进共用件 `cards/bomb10.{h,c}`** —— 那一份是 110 与 111
+ * **共用的一份状态**（这是「同一套灵击系统」在代码上的意思，见 `bomb10.h` 的硬语义 ①②③）。
+ * 本卡只留**形态账本**（`mof_bomb_form_t form`，在下面那个结构体里）：它是本卡自己的代价口径
+ * （决死扣 0 信仰那条 0/1 开关），与「这一发走到第几帧」无关。*/
 
 typedef struct {
     faith_slot_t slot;              /* Δ_110 / 连击槽（130f）/ 基础 50000（共用件）*/
@@ -251,9 +203,14 @@ typedef struct {
     int32_t      graze_mult;        /* 擦弹倍率（千分点定点）*/
     int32_t      last_lives;        /* 上一帧残机（miss 检测：命数减少）*/
     mof_spell_watch_t spell_watch;  /* 符卡监视器（状态机在 mof_core.c 的 mof_core_spell_watch()）*/
-    int32_t      spell_frames;      /* 本次符卡已过的帧数（= TH10 `[spellcard+0x3738]` 的对位；
-                                     * 两处一手都在用它：`bomb+0x44`（≥60）与作废符卡奖励的门）*/
-    mof_bomb_t   bomb;              /* ★ 灵击（逐帧推进；见上面那个结构的注释）*/
+    /* ⚠ `spell_frames`（本次符卡已过帧数）与 `bomb`（一发灵击的全部状态）**都不在这里了**
+     *   （2026-09-21）：两者都搬进共用件 `cards/bomb10.*`（`bomb10_spell_frames()` 查询）。
+     *   理由 = 「同一套灵击系统」：符卡帧数是那一发的自变量（`big_bomb` 判据），必须与状态同住；
+     *   而状态必须是**唯一的一份**（两张卡同装不许各发一发）。*/
+    mof_bomb_form_t form;           /* ★ 2026-09-15c 本发的**形态**（按 B / **决死 B**）+ 累计消弹颗数。
+                                     *   语义与两条代价口径全在 `mof_core.h` 的「灵击 → 决死」块
+                                     *   （状态在 core ⇒ 主机单测能钉住；卡侧只「检测窗口 → 传参」）。
+                                     *   ⚠ 逐帧状态搬走之后它是本卡**唯一**残留的灵击字段：纯诊断 + 代价口径。*/
     int32_t      spell_avoided;     /* 诊断：全避次数 */
     int32_t      frame;
     /* ★ 2026-09-12 审计（本次，任务 1 的收尾）：诊断口径拆成「**收到** / **撒出**」两分法 ——
@@ -416,6 +373,12 @@ static void mof_declare_score(mof_card_t *s)
     delta = faith_score_unit(&s->slot) - FAITH_BASE_110;      /* = Δ_110（基础由层出）*/
     if (delta < 0) delta = 0;
     ce_score_declare_coupled(MOF_ID_NUM, delta);
+    /* ★ 2026-09-18（换版）：本卡是 **th10** 那一族 —— 信仰**整个坐在高度公式里面**
+     *   （一手 `th10:0x41b4d5`–`th10:0x41b52b`：`F/2 − d(F−100000)/6080`）⇒ `coeff_110` 是它自己那条曲线。
+     *   曲线要 `F` = **显示信仰**（层据此按 `500 − d×(F−100000)×1000/(6080·F)` 算千分点，
+     *   `d` 取**道具 y** —— 一手：th10 判的是 `item+0x3c4` 与 144 线；见 `engine/faith/th10/01-faith-and-points.md`）。*/
+    ce_score_family_declare(MOF_ID_NUM, CE_COEFF_FAMILY_10);
+    ce_score_family10_faith(faith_score_unit(&s->slot));      /* ← 就是上面那个 `F`（显示单位）*/
 }
 
 /* ---- 绿色 `+N` 弹窗（★ 用户要求复刻「吃绿点有绿色 +N」）----------------------------------
@@ -1378,6 +1341,13 @@ static void on_item_score(ce_card_t *c, int32_t *value)
 
 /* ============================ 灵击（★ 2026-09-15 按 TH10 一手重写）============================
  *
+ * ★★★ **2026-09-21：本节正文（触发之外的「怎么做」）整段搬进共用件 `cards/bomb10.{h,c}`。**
+ *   下面这一整段**保留原样**——它是这套实现的**一手依据底稿**（TH10 的门槛 / 消耗 / 伤害链 /
+ *   半径曲线 / 载体取舍），`bomb10.c` 的实现逐条对应它；函数名里的 `mof_bomb_start()` /
+ *   `mof_bomb_tick()` 现在叫 `bomb10_start()` / `bomb10_tick()`（在共用件里，110/111 同一份）。
+ *   本卡留在自己文件里的只有四项（对话门 / 整档扣火力 / 发动代价 / 消弹记账）——
+ *   见本节末端那一段与 `s_bomb_host`。
+ *
  * 触发：`on_tick_2` 读炸弹键**上升沿**（`INPUT_PRESSED & 0x2`）—— **不是 `on_bomb_spent`**
  * （它在 `0x4203bc`，炸弹**成功花掉之后**才触发，承载不了「库存 == 0」这条分支，§5.5 订正 2）。
  * 库存 == 0 → 本卡自干；库存 > 0 → 交给原生 `do_bomb`（本卡不动）。
@@ -1386,7 +1356,8 @@ static void on_item_score(ce_card_t *c, int32_t *value)
  * ## ★★ 2026-09-15c **决死形态**（「决死 B」；用户口径「灵击==B」「所以灵击也得决死」）
  *   库存 == 0 且**自机在决死窗口里**（`player+0x476ac == 4`，一手 `th18:0x45d4e4`）时按 B
  *   ⇒ 本发灵击走**决死形态**：**照常发动**（扣 1 档火力 / 消弹 / 伤害源 / 节奏一字不改）+
- *   **调 `Player__cancel_impending_death` `th18:0x45d590` 救命**（`mof_cancel_impending_death()`）。
+ *   **调 `Player__cancel_impending_death` `th18:0x45d590` 救命**（现役实现 = 共用件的
+ *   `bomb10_cancel_impending_death()`，由 `bomb10_start()` 在决死形态下调用）。
  *   两条代价口径（一手复核 + 判定依据全部在 `mof_core.h` 的「灵击 → 决死」块，**别在这里重复推理**）：
  *     · **不扣 −3000 信仰** ✅ 一手（TH10 决死那一支没有 `call 0x412e70`）；
  *     · **消弹不记「每颗 +10」** 🟡/❓ 自定（引文被本轮复核推翻）—— 开关 = `MOF_BOMB_DEATHBOMB_ACCOUNT`。
@@ -1460,315 +1431,130 @@ static void on_item_score(ce_card_t *c, int32_t *value)
  *   · 频率与寿命：一手 = 「灵击 anm VM 存活期」🟡（脚本 time 累加 296 帧，尾部还有 80×30 帧的计数循环）
  *     ⇒ `MOF_BOMB_FRAMES` = 296（🟡，登记）。*/
 
-/* 取消本次死亡（`Player__cancel_impending_death` `th18:0x45d590`）。
- * 形状照 `cards/senro.c` 的 `senro_cancel_impending_death()`（判空后 thiscall 调用）。
- * ⚠ 它只写玩家状态机（状态 → 1 + 无敌 60 帧），**不碰命数 / 不碰 `+0x47908` 决死窗口帧数**。*/
-static void mof_cancel_impending_death(void)
+/* ============================ 灵击（★ 2026-09-21：实现整段搬进共用件 `cards/bomb10.*`）============
+ * 本文原来的 `mof_bomb_start()` / `mof_bomb_tick()` / `mof_bomb_fx_dump()` / `mof_bomb_fx_kill()` /
+ * `mof_cancel_impending_death()`（TH10 一手的逐帧状态机）**整段搬进 `cards/bomb10.{h,c}`** ——
+ * owner 口径（逐字）：「**110也得是主动卡，因为只要有110 or 111就有灵击，当然，它们完全走同一套
+ * 灵击系统**」⇒ 那份状态必须**只有一份**，否则两张卡同装时按 X（库存 == 0）会**各发一发**
+ * （双倍扣火力 / 双倍伤害 / 两份环 VM），而且改一处必须记得同步另一处。
+ *
+ * 搬走的是**公共那一半**：扣火力之后的写 `CURRENT_POWER` + `ce_repopulate_options()`、决死救命、
+ * 曲线参数（半径目标 / 上移量 / 角色档）、范围环与电流边 VM、音效、RANK、每帧消弹 + 伤害源 +
+ * 环推进 + 火星 + 收尾日志；连带那批常量（`MOF_RANK_*` / `MOF_BOMB_SE` / `MOF_PLAYFIELD_*` /
+ * `MOF_BOMB_RING_FADE_AT` / `MOF_BOMB_SPARK_EVERY` / 救命地址）也都搬进 `bomb10.h`（只有一份）。
+ *
+ * 留在本文件的是**本卡那一半**（四项，逐条见 `bomb10_host_t` 的定义）：
+ *   ① `mof_bomb_gate()`        —— 对话 VM 忙 ⇒ 不放（一手 `th10:0x425971`）；
+ *   ② `mof_bomb_power_spend()` —— **整档**扣火力（`mof_core_power_spend()`）；
+ *   ③ `mof_bomb_on_start()`    —— 记形态 + 信仰 −3000（非决死）+ 作废符卡奖励 + 全避标记 + 诊断 + 日志；
+ *   ④ `mof_bomb_on_cancel()`   —— 消弹记账。
+ * **门序与改动前逐条相同**：进行中（现在由机器把守）→ 对话门 → 火力门槛；只有这三道，一个都没多。
+ * ⚠ 「进行中不放」那一道**不是新闸**：一手 `th10:0x42598d mov eax,[esi+0x28] / test / jne 0x425a24`
+ *   （`esi` = `BOMB_PTR`），同时它就是「两张卡同装不叠加」的机制（`bomb10.h` 硬语义 ②）。*/
+
+/* ① 卡私有前置闸 = **对话 VM 忙**（一手 `th10:0x425971 mov ecx,[eax+0x9eb8] / test / jne 0x425a24`，
+ * `eax` = `GUI_PTR` `0x47770c`）。`CE_GUI_MSG_ACTIVE()` 是 engine.h 的一手宏（同一个 `+0x9eb8`）。
+ * ⚠ 一手还有一道「没有 GUI 就不干」（`th10:0x425964 test eax,eax / je`）—— 在 TH18 里由
+ *   `on_tick_2` 的调用条件天然满足（没有 GUI 就没有卡机器），所以这里只判对话那一条。*/
+static int32_t mof_bomb_gate(void *user)
 {
-    void *p = CE_PLAYER();
-    if (p) ((void (__attribute__((thiscall)) *)(void *))(uintptr_t)MOF_FN_CANCEL_IMPENDING_DEATH)(p);
+    (void)user;
+    return CE_GUI_MSG_ACTIVE() ? 1 : 0;
 }
 
-/* 发动：抄一手的四件事 + 记录本发的曲线参数（半径目标 / 上移量 / 角色档）。
- * ★ `by_hit` = 形态（`MOF_BOMB_BY_PRESS` / `MOF_BOMB_BY_HIT`）—— 由 `on_tick_2` **检测决死窗口**
- *   之后传进来（卡侧只做「检测 → 传参」，口径全在 `mof_core.h`）。*/
-static void mof_bomb_fx_dump(const char *tag, mof_bomb_t *b);   /* 定义在下面（诊断用）*/
-
-static void mof_bomb_start(ce_card_t *c, mof_card_t *s, int32_t by_hit)
+/* ② 火力扣法 = **整档**（共用件 `mof_core_power_spend()`：≥2.00 档 / 扣 1 档 / 下限 1.05；
+ * 门槛与下限是用户裁决的 TH18 侧映射、**不是** TH10 原版，一手差别见 `mof_core.h`）。
+ * 「决死形态没发动」那一行日志与改动前**逐字相同**（它原来在 `mof_bomb_start()` 里）。*/
+static int32_t mof_bomb_power_spend(void *user, int32_t by_hit, int32_t power_now, int32_t *power_after)
 {
-    const float *pp = ce_player_pos();
-    mof_power_t pw = mof_core_power_spend(CE_CURRENT_POWER());
-    int reimu = (*(volatile int32_t *)MOF_ADDR_CHARACTER == 0);
-    int spell_now = ce_spell_active();
+    mof_power_t pw = mof_core_power_spend(power_now);
 
-    (void)c;                                             /* 本函数不用卡对象（回调签名统一）*/
-
-    /* ★ TH10 的两道前置门（一手 `th10:0x425964`/`th10:0x425971`/`th10:0x425992`）：
-     *   · `[bomb+0x28] != 0`（**灵击进行中**）⇒ 不再发动 —— 我们的对位 = `bomb.left > 0`
-     *     （少了这一条，连按 X 会在同一发里反复扣火力、反复重算曲线）；
-     *   · `[gui+0x9eb8] != 0`（**对话 VM 忙**）⇒ 不发动（`CE_GUI_MSG_ACTIVE()`，engine.h 一手）。
-     * 剩下的那道「无 GUI 不干」在 TH18 里由 `on_tick_2` 的调用条件天然满足（没有 GUI 就没有卡机器）。
-     * ⚠ **决死形态也走这三道门** —— 一手 TH10 的决死支同样有这三道门 + 同样的火力门槛
-     *   （决死支的 `idiv` 门槛在 `th10:0x425bfe`/`0x425c0d`）；门槛不过 ⇒ **不发动、也不救命**
-     *   （即「照常死」），下面给一行日志说明为什么没救。*/
-    if (s->bomb.left > 0) return;
-    if (CE_GUI_MSG_ACTIVE()) return;
-    if (!pp || !pw.ok) {                                 /* 火力不够 ⇒ 什么都不做（照原作）*/
+    (void)user;
+    if (!pw.ok) {
         if (by_hit) ce_log("mof: 灵击发动（决死）**没发动**：火力 %d 不够门槛（power_ok=0）⇒ 本次不救命",
-                           (int)CE_CURRENT_POWER());
-        return;
+                           (int)power_now);
+        return 0;
     }
+    *power_after = pw.new_power;
+    return 1;
+}
 
-    mof_bomb_form_start(&s->bomb.form, by_hit);          /* ★ 记形态（by_hit + 消弹颗数归零）*/
+/* ③ 发动瞬间的卡私有那一半（机器已经把火力扣完、子机重建完、救命叫完、环 VM 起完、音效与 RANK 落完）。
+ * 逐条的一手依据（= 搬走前 `mof_bomb_start()` 里那段注释，**理由一字未改**）：
+ *   · 信仰 **−3000**（一手 `th10:0x425a15 push 0xbb8 / call 0x412e70`，`FAITH_REDUCE_BOMB`）；
+ *     **决死形态扣 0**（一手：决死那一支没有 `call 0x412e70`）—— `faith_slot_reduce()` 对
+ *     `FAITH_REDUCE_NONE` 恒返回 0 ⇒ 这里不必分支；
+ *   · **作废当前符卡奖励**（一手 `th10:0x405500`，`Bomb::start` 在 `th10:0x405982` **无条件**调它）：
+ *     一手的门只有一条 `cmp [spellcard+0x3738],0x3c`（本次攻击已过 ≥60 帧）⇒ 命中则奖励值归零 +
+ *     清 bit1（奖励存活位）。TH18 的同位字段 = `CE_SPELL_BONUS`（`th18:0x7c`）与
+ *     `CE_SPELL_FLAG_BONUS`（`th18:0x78` bit1，一手 `th18:0x42a7ed` 读它 / `0x42a801 mul [edi+0x7c]` 计分）
+ *     ⇒ **同一件事、同一位**（先例 = `cards/judgment.c` 的同一对写）。**这是复刻。**
+ *     我们额外要求「符卡进行中」——差别只在「非符攻击里也去清一遍奖励」，而那时奖励本来就是 0
+ *     ⇒ **无可观察差异**（更保守：绝不在非符阶段动奖励位）；
+ *   · `spell_watch.bombed = 1`（本张符卡期间放过灵击 ⇒ 不算全避，见 `mof_core_spell_watch()`）；
+ *   · 诊断计数 `stat_bomb` / `stat_bomb_dbf` + 计分声明（信仰变了，`mof_declare_score()`）。
+ * ⚠ 符卡帧数改读 `bomb10_spell_frames()`（同一个一手量 `[spellcard+0x3738]`，现在由机器逐帧推进）——
+ *   **与改动前差 1 帧相位**：原来本卡在 ④ 处先自增、再进 ⑤ 发动（含当帧），现在机器在 ⑧ 处推进
+ *   （发动机上不含当帧，= 111 一直以来的那个相位）⇒ 「符卡已过 ≥60 帧」这条门的边界整体后移一帧。
+ *   影响面 = 作废符卡奖励与 `big_bomb` 伤害档各差一帧，登记在 `AUDIT.md` §BE-EY。*/
+static void mof_bomb_on_start(void *user, int32_t by_hit, int32_t cost, int32_t power_before, int32_t power_after)
+{
+    mof_card_t *s = (mof_card_t *)user;
+    int32_t spell_now = ce_spell_active();
+    int32_t reimu = (*(const volatile int32_t *)MOF_ADDR_CHARACTER == 0);
 
-    *(int32_t *)CE_ADDR_CURRENT_POWER = pw.new_power;    /* ★ 自写扣法（原生会拒绝、且只能整档扣）*/
-    ce_repopulate_options();                             /* 子机按新档重建（必须）*/
-
-    /* ③ 作废当前符卡奖励（复刻一手 `th10:0x405500`，`Bomb::start` 在 `th10:0x405982` **无条件**调它）。
-     *   一手的门只有一条：`cmp [spellcard+0x3738],0x3c` ⇒ **本次攻击已过 ≥60 帧**（函数体内**没有**
-     *   符卡进行位的测试）。我们额外要求「符卡进行中」—— 差别只在「非符攻击里也去清一遍奖励」，
-     *   而那时奖励本来就是 0 ⇒ **无可观察差异**（更保守：绝不会在非符阶段动奖励位）。*/
-    if (spell_now && s->spell_frames >= (int32_t)MOF_BOMB_BIG_BOMB_FRAMES) {
+    (void)cost;
+    if (!s) return;
+    mof_bomb_form_start(&s->form, by_hit);               /* 记形态（by_hit + 消弹颗数归零）*/
+    ++s->stat_bomb;
+    if (by_hit) ++s->stat_bomb_dbf;                      /* 诊断（**救命本身由机器做**）*/
+    /* ③ 作废当前符卡奖励（复刻一手 `th10:0x405500`；门 = 本次攻击已过 ≥60 帧）*/
+    if (spell_now && bomb10_spell_frames() >= (int32_t)MOF_BOMB_BIG_BOMB_FRAMES) {
         uint8_t *sp = CE_SPELLCARD();
         if (sp) {
             *(uint32_t *)(sp + CE_SPELL_FLAGS) &= ~(uint32_t)CE_SPELL_FLAG_BONUS;   /* 清 bit1（奖励存活）*/
             *(int32_t *)(sp + CE_SPELL_BONUS) = 0;                                  /* 奖励值归零 */
         }
     }
-    /* ④ RANK −= 0x80（复刻一手；⚠ TH18 是死字段 ⇒ 无效果，见常量块注释）*/
-    {
-        int32_t r = *(volatile int32_t *)MOF_RANK_ADDR - MOF_RANK_BOMB_DROP;
-        if (r > MOF_RANK_MAX) r = MOF_RANK_MAX;
-        if (r < MOF_RANK_MIN) r = MOF_RANK_MIN;
-        *(volatile int32_t *)MOF_RANK_ADDR = r;
-    }
-
-    /* ⑤ 音效（TH10 `se_slash.wav` ↔ TH18 同 wav，id 0x2c）*/
-    ce_play_sound(MOF_BOMB_SE, pp[0]);
-
-    /* 本发的曲线参数（一手 `Bomb::start` `th10:0x4058d9`–`0x405917` 选脚本：
-     * 符卡中 → 64.0；否则灵梦 → 160.0、魔理沙 → 112.0。
-     * ⚠ TH10 的「符卡中」还要求 `[spellcard+0x3788] ∈ 0x5d..0x60 ∪ {0x6d}`（**具体哪几个攻击**）
-     *   ——TH18 没有这个字段的对位 ⇒ 我们只用「符卡进行中」这一半（近似，登记 `TUNING.md` §2.5）。*/
-    s->bomb.target_centi = spell_now ? MOF_BOMB_R_SPELL_CENTI
-                                     : (reimu ? MOF_BOMB_R_REIMU_CENTI : MOF_BOMB_R_MARISA_CENTI);
-    s->bomb.rise_milli  = mof_core_bomb_rise_milli(spell_now, reimu);
-    s->bomb.reimu       = reimu;
-    s->bomb.x           = pp[0];
-    s->bomb.y           = pp[1];
-    s->bomb.left        = MOF_BOMB_FRAMES;
-    s->bomb.elapsed     = 0;
-    s->bomb.frames      = 0;
-    s->bomb.dmg_frames  = 0;
-    s->bomb.ring_fading = 0;
-    s->bomb.spark_tick  = 0;
-
-    /* ★★ 2026-09-16k 视觉①：**消弹范围环**（脚本 279 = TH18 原生 `ability.anm` script35 的配方，
-     *   半径由卡侧逐帧给 px ⇒ 「可见半径 = 参数 × scale」，一手 `th16:0x4626eb`）。
-     *   位置在 `mof_bomb_tick()` 里每帧跟着灵击中心走（中心每帧上移）。*/
-    {
-        float c0[3];
-        c0[0] = s->bomb.x; c0[1] = s->bomb.y; c0[2] = 0.0f;
-        s->bomb.ring_vm = ce_anm_spawn(CE_ABILITY_ANM(),
-                                       CE_ANM_ABILITY_SCRIPT_BOMB_CLEAR_RING, 13);
-        if (s->bomb.ring_vm) {
-            ce_anm_set_pos(s->bomb.ring_vm, c0[0], c0[1], c0[2]);
-            ce_anm_set_scale(s->bomb.ring_vm, MOF_BOMB_R_START_CENTI * 0.01f,
-                             MOF_BOMB_R_START_CENTI * 0.01f);
-        }
-        /* ★ 2026-09-16p：**电流边**（脚本 293 = TH10 `sprite(sprite362)` + `texCircle(32)` 的竖条环）。
-         *   用户口径：「th10 的灵击…**边缘有类似于电流的特效**」。与 279 同层、同半径、同淡出
-         *   ⇒ 叠在实心盘上就是「一圈带分段的边」。⚠ `texCircle` 在世界列表里没有先例 🟡
-         *   ⇒ 看不见/画得怪就把下面这三行删掉（实体盘仍然在）。*/
-        s->bomb.strip_vm = ce_anm_spawn(CE_ABILITY_ANM(),
-                                        CE_ANM_ABILITY_SCRIPT_MOF_BOMB_RING_STRIP, 13);
-        if (s->bomb.strip_vm) {
-            ce_anm_set_pos(s->bomb.strip_vm, c0[0], c0[1], c0[2]);
-            ce_anm_set_scale(s->bomb.strip_vm, MOF_BOMB_R_START_CENTI * 0.01f,
-                             MOF_BOMB_R_START_CENTI * 0.01f);
-        }
-        ce_log("mof: 灵击范围环起 VM（id %u，脚本 %d，层 13，起点半径 %.2f px）",
-               (unsigned)s->bomb.ring_vm, (int)CE_ANM_ABILITY_SCRIPT_BOMB_CLEAR_RING,
-               (double)(MOF_BOMB_R_START_CENTI * 0.01f));
-        mof_bomb_fx_dump("起", &s->bomb);
-    }
-
     s->spell_watch.bombed = 1;                           /* 本张符卡期间放过灵击 ⇒ 不算全避 */
-    ++s->stat_bomb;
-    /* ★★ 决死形态：**救命**（`th18:0x45d590`）。位置选在这里（自带门都过了、火力也扣了）——
-     *   「照常发动 + 救命」是一个动作；门槛不过时上面已经 return（不救命，照常死）。
-     *   ⚠ 放在消弹闩锁**之前**（第 ① 步在 `mof_bomb_tick` 里）：同帧若别的卡已经认领了消弹闩锁，
-     *   我们这发**照样要救命** —— 救命与「本帧谁消弹」是两件事。*/
-    if (by_hit) {
-        mof_cancel_impending_death();
-        ++s->stat_bomb_dbf;
-    }
-    /* ② 信仰：主动 −3000（一手 `th10:0x425a15`）；**决死 = 0**（一手：决死那一支没有 `call 0x412e70`）。
-     *   `faith_slot_reduce(s, FAITH_REDUCE_NONE)` 恒返回 0 ⇒ 这里不必分支。*/
-    faith_slot_reduce(&s->slot, mof_bomb_form_faith_kind(&s->bomb.form));
+    faith_slot_reduce(&s->slot, mof_bomb_form_faith_kind(&s->form));
     mof_declare_score(s);
+    /* ★ 日志（纯诊断）。**唯一一处措辞变化**：`power 前 -> 后` —— 改动前那一行两个数**都是扣完的值**
+     *   （首字段读的是 `CE_CURRENT_POWER()`，而它刚被写过），现在用机器传进来的真值，
+     *   与 111 那一行同口径。其余字段逐字未变。*/
     ce_log("mof: 灵击发动%s (power %d -> %d, %s, target r=%.1f, rise=%.2f/f, frames %d, faith %d)",
-           mof_bomb_form_is_deathbomb(&s->bomb.form) ? "（决死）" : "",
-           (int)CE_CURRENT_POWER(), (int)pw.new_power, spell_now ? "spell" : (reimu ? "reimu" : "marisa"),
-           (double)((float)s->bomb.target_centi * 0.01f), (double)((float)s->bomb.rise_milli * 0.001f),
-           (int)s->bomb.left, (int)faith_slot_total(&s->slot));
+           mof_bomb_form_is_deathbomb(&s->form) ? "（决死）" : "",
+           (int)power_before, (int)power_after,
+           spell_now ? "spell" : (reimu ? "reimu" : "marisa"),
+           (double)((float)bomb10_target_centi() * 0.01f),
+           (double)((float)mof_core_bomb_rise_milli(spell_now, reimu) * 0.001f),
+           (int)bomb10_left(), (int)faith_slot_total(&s->slot));
 }
 
-/* 每帧推进一发灵击：消弹圈（半径随帧长）+ 中心上移 + 每敌每帧一笔伤害。*/
-/* ★ 2026-09-16m 诊断：把范围环 VM 的关键字段打一行 —— 用户两次实跑报「起了 VM 却看不见」，
- * 下一次一眼就能分辨「字段不对（我们的 bug）」还是「字段都对但不画（图元/层的问题）」。
- * 对照物 = `signal/opt:` 那行（同一批字段、那支 VM 实跑看得见）。*/
-static void mof_bomb_fx_dump(const char *tag, mof_bomb_t *b)
+/* ④ 每帧消弹的卡私有记账（机器只报「本帧消掉几颗」）。**口径与改动前逐字相同**：
+ *   形态账本照记（`mof_bomb_form_cancel_note()` —— 无论入不入账都记），入不入账由
+ *   `mof_bomb_form_cancel_accounts()` 回答（决死形态那条 🟡 开关 = `MOF_BOMB_DEATHBOMB_ACCOUNT`，
+ *   全论证在 `mof_core.h`）。
+ * ⚠ 本卡的 `stat_cancel` 是「**有消弹的帧数**」（`++`），111 那边是「颗数」（`+= n`）——
+ *   这个不一致是**既有的**（两边旧注都只写「诊断」），本次**不合并**：机器只把颗数原样转给卡。*/
+static void mof_bomb_on_cancel(void *user, int32_t bullets)
 {
-    uint8_t *vm = b->ring_vm ? ce_anm_get_vm(b->ring_vm) : 0;
+    mof_card_t *s = (mof_card_t *)user;
 
-    if (!vm) {
-        ce_log("mof/fx: %s ring vm=%u **alive=0**（VM 已经不在了）", tag, (unsigned)b->ring_vm);
-        return;
-    }
-    ce_log("mof/fx: %s ring vm=%u sprite=%d scale=(%.2f,%.2f) pos=(%.1f,%.1f) c1=%08x c2=%08x elapsed=%d",
-           tag, (unsigned)b->ring_vm,
-           (int)*(const int32_t *)(vm + CE_ANM_VM_SPRITE_ID),
-           (double)((const float *)(vm + CE_ANM_VM_SCALE))[0],
-           (double)((const float *)(vm + CE_ANM_VM_SCALE))[1],
-           (double)((const float *)(vm + CE_ANM_VM_POS))[0],
-           (double)((const float *)(vm + CE_ANM_VM_POS))[1],
-           *(const uint32_t *)(vm + CE_ANM_VM_COLOR1),
-           *(const uint32_t *)(vm + CE_ANM_VM_COLOR2),
-           (int)b->elapsed);
+    if (!s || bullets <= 0) return;
+    mof_bomb_form_cancel_note(&s->form, bullets);
+    if (!mof_bomb_form_cancel_accounts(&s->form)) ++s->stat_cancel;
 }
 
-/* ★★ 2026-09-16k：灵击视觉的收尾（**长持续效果铁律**，`METHOD.md`）。
- * 脚本 279 **自己不会死**（`stop()` 之后只画，寿命完全由卡侧定）⇒ 三条路都必须显式收：
- *   ① 灵击正常走完（`mof_bomb_tick()` 末尾）；② 删卡 / 局末（`mof_clear()` 的 `memset` **之前** ——
- *   删卡发生在**商店**里，那一刻 `on_tick_2` 不会再跑，只有 `on_delete` 跑得到）；
- *   ③ 换关（`on_stage_start` 把 `bomb.left` 清零那条路）。
- * 火星（280/281）是**一次性** VM（脚本自己 `wait` + `delete()`，最长 43 帧）⇒ 不用管。*/
-static void mof_bomb_fx_kill(mof_bomb_t *b)
-{
-    if (b->ring_vm) {
-        ce_anm_delete(b->ring_vm);
-        b->ring_vm = 0;
-    }
-    if (b->strip_vm) {                      /* ★ 2026-09-16p：竖条环一起收（长持续效果铁律）*/
-        ce_anm_delete(b->strip_vm);
-        b->strip_vm = 0;
-    }
-    b->ring_fading = 0;
-    b->spark_tick  = 0;
-}
-
-static void mof_bomb_tick(mof_card_t *s)
-{
-    float center[3];
-    float r;
-    int32_t r_centi, dmg_in, dmg_out, dmg_src, n;
-    int boss_alive, spell_now, big_bomb, reimu;
-
-    if (s->bomb.left <= 0) return;
-
-    /* 中心先上移，再拿它消弹/放伤害源（一手 `th10:0x4057b6`–`0x4057de` 的顺序：
-     * y -= 上升量 → `th10:0x405813` 取半径 → `th10:0x405816` 消弹）。*/
-    s->bomb.y -= (float)s->bomb.rise_milli * 0.001f;
-    r_centi = mof_core_bomb_radius_centi(s->bomb.elapsed, s->bomb.target_centi);
-    r = (float)r_centi * 0.01f;
-    center[0] = s->bomb.x;
-    center[1] = s->bomb.y;
-    center[2] = 0.0f;
-
-    /* ① 消弹（半径 = 本帧的 r；mode = **0 = 纯删除**）。
-     * 为什么是 mode 0：TH10 的消弹**不撒点道具**，而是每颗撒一颗 type 8 微信仰点（`th10:0x4081e7`），
-     * 那一颗由我们的 `mof_on_cancel()` 记 +10 信仰 ⇒ 用 mode 1 会让引擎另撒 type 9–0xe 点道具、
-     * 与本卡的 §2.2 口径**双计**（先例 `senro.c` 的 `SENRO_CANCEL_MODE` 注释同款理由）。
-     * ⚠ 「本帧已消过弹」的闩锁：每帧 claim 一次；一颗都没消就把闩锁交回（2026-09-13 的原生卡冲突审计）。
-     * ★ 2026-09-15c：**入不入信仰账**改由 `mof_bomb_form_cancel_accounts()` 回答（**决死形态**那条 🟡
-     *   开关 = `MOF_BOMB_DEATHBOMB_ACCOUNT`，全论证在 `mof_core.h`）。颗数**无论入不入账都记**在
-     *   `form.cancels` 里 ⇒ 实跑能看出「不记账」这一档到底吞了多少颗（诊断，不参与数值）。*/
-    if (ce_shoot_cancel_claim((uint32_t)MOF_ID_NUM)) {
-        /* ★★ 2026-09-16p 用户口径：「**th10 灵击消弹应当是掉落中信仰点并自动收集的**」
-         *   ⇒ **先在圈内每颗弹自己的位置撒一颗微档信仰点（值 +10 = TH10 的 type 8）并整池切成朝自机飞**，
-         *     再删弹。`faith_cancel_drop_dots()` 是共享件（110/111 同一份），一手的地址链写在它上面。
-         *   ⚠ 与旧写法的差别：**不再** `faith_cancel_account(n)` 直接进账 —— 那些信仰现在由
-         *     **被吸进来的点**在拾取回调里入账（与别的信仰点同一条路，不双计）。
-         *     `mof_declare_score()` 也随之后移：拾取回调里会自己声明（`mof_on_pickup`）。*/
-        /* ★★★ 2026-09-16q 用户口径：「**微档点可以完全认为是 th18 消弹点吧**」
-         *   ⇒ 消弹**改成 mode 1**：让**引擎自己**在每颗弹的位置撒它自己的消弹点
-         *     （一手 = `engine/bullet/th18/01-cancel-to-item.md` §2.1：**mode 1 撒 type 9**，
-         *      角 `rand×10° − π/2`、速 2.2 —— 与我们原来手工撒的那一颗**同位同量纲**）。
-         *   ⇒ 于是**撤掉两条自造件**：① 不再 `faith_cancel_drop_dots()`（那是我上一批自己扫池撒点的临时件）；
-         *     ② 不再 `faith_cancel_account(n)` 直接记账 —— 信仰改由**吸进来的那些原生消弹点**
-         *     在拾取回调里入账（我们本来就把 type 9 档当我方的「绿点·中」档，见 `mof_core.h` 的 E-1）。
-         *   ⚠ 这正是原文档（`AUDIT`/本文件旧注释）里说的「用 mode 1 会与本卡 §2.2 口径双计」那条取舍 ——
-         *     现在按用户口径**选 mode 1**、并同步去掉那一侧的记账 ⇒ 不双计。*/
-        n = ce_cancel_radius(center, r, MOF_BOMB_CANCEL_MAX, 1);
-        if (n > 0) {
-            mof_bomb_form_cancel_note(&s->bomb.form, n);
-            if (!mof_bomb_form_cancel_accounts(&s->bomb.form)) ++s->stat_cancel;
-        } else {
-            (void)ce_cancel_latch_release((uint32_t)MOF_ID_NUM);
-        }
-        if (r > 0.0f && (s->bomb.elapsed % 30) == 0) {
-            ce_log("mof: 灵击消弹圈 r=%.2f 本帧 cancelled %d（mode 1 = 引擎自己撒消弹点 type 9）",
-                   (double)r, (int)n);
-        }
-    }
-
-    /* ② 伤害：每帧一个新源（一手「每敌每帧一笔」；`enm_compute_damage_sources` `th18:0x45f0f0`
-     *    的 tag 守卫让**一个源对同一敌人只结算一次** ⇒ 每帧一个新源 = 每帧一笔，
-     *    寿命 2 帧只是给「先建后结算」留一帧余量，先例 `cards/broken_core.c` 的 AUDIT U9）。*/
-    boss_alive = mof_boss_alive();
-    spell_now  = ce_spell_active();
-    big_bomb   = spell_now && s->spell_frames >= (int32_t)MOF_BOMB_BIG_BOMB_FRAMES;
-    reimu      = s->bomb.reimu;
-
-    /* 圈内档 / 圈外档（TH10 的两档是**互斥**的：`th10:0x405a25` 的 `fcompp/test/jne` 决定走哪一支）*/
-    dmg_in  = mof_core_bomb_damage(1, boss_alive, spell_now, big_bomb, reimu);
-    /* 圈外档只在「有 boss」或「符卡中」时非 0（`th10:0x405a68`–`th10:0x405ab7`）*/
-    dmg_out = (boss_alive || spell_now) ? mof_core_bomb_damage(0, boss_alive, spell_now, big_bomb, reimu) : 0;
-
-    if (dmg_in > 0 || dmg_out > 0) ce_raise_damage_cap(MOF_BOMB_DMG_CAP);
-
-    /* 把「互斥分档」用两个源**精确**表达：外圈源覆盖全游玩区（= TH10 的「圈外」），
-     * 内圈源只补差额（`内圈档 − 圈外档`）⇒ 圈内敌机吃到的是**内圈档**（不是两档相加）。
-     * 当圈外档为 0（没有 boss、也不在符卡里）时内圈源就是内圈档本身。*/
-    dmg_src = dmg_in - dmg_out;
-    if (dmg_src > 0) {
-        float side = r * 2.0f;                    /* 外接方形（一手是圆 ⇒ 角落多覆盖，见文件头 (b)）*/
-        if (ce_damage_rect(center, 0.0f, MOF_BOMB_DMG_SRC_LIFE, dmg_src, side, side)) ++s->bomb.dmg_frames;
-    }
-    if (dmg_out > 0) {
-        float pc[3];
-        pc[0] = MOF_PLAYFIELD_CX; pc[1] = MOF_PLAYFIELD_CY; pc[2] = center[2];
-        if (ce_damage_rect(pc, 0.0f, MOF_BOMB_DMG_SRC_LIFE, dmg_out,
-                           MOF_PLAYFIELD_W, MOF_PLAYFIELD_H)) ++s->bomb.dmg_frames;
-    }
-
-    ++s->bomb.elapsed;
-    ++s->bomb.frames;
-
-    /* ★★ 2026-09-16k 视觉②：环每帧跟着「本帧的真半径」长（一手：TH10 的灵击半径就是那支 VM 的
-     *   `scale.y`，`th10:0x405813`）；半径长满那帧起淡出（= TH10 script400 的 `scaleTime(120, …)`）。
-     *   火星按 `MOF_BOMB_SPARK_EVERY` 帧一红一蓝（脚本 280/281 = TH10 script398/399 逐条移植）。*/
-    if (s->bomb.ring_vm) {
-        if (!ce_anm_get_vm(s->bomb.ring_vm)) {
-            s->bomb.ring_vm = 0;                         /* 脚本自己被删了/被打断 ⇒ 清 id */
-        } else if (s->bomb.ring_fading) {
-            /* 已发淡出：不再写 scale（写也没用，alpha 已经在走）；30 帧后还没死就硬删兜底 */
-            if (s->bomb.elapsed > MOF_BOMB_RING_FADE_AT + 30) {
-                ce_anm_delete(s->bomb.ring_vm);
-                s->bomb.ring_vm = 0;
-            }
-        } else {
-            if (s->bomb.elapsed >= MOF_BOMB_RING_FADE_AT) {
-                ce_anm_interrupt(s->bomb.ring_vm, 1);    /* 20 帧淡出 → 脚本自删 */
-                s->bomb.ring_fading = 1;
-            }
-            ce_anm_set_pos(s->bomb.ring_vm, center[0], center[1], center[2]);
-            (void)ce_anm_set_scale(s->bomb.ring_vm, r, r);
-            if (s->bomb.strip_vm && ce_anm_get_vm(s->bomb.strip_vm)) {   /* ★ 竖条环同驱 */
-                ce_anm_set_pos(s->bomb.strip_vm, center[0], center[1], center[2]);
-                (void)ce_anm_set_scale(s->bomb.strip_vm, r, r);
-            }
-            if (s->bomb.elapsed == MOF_BOMB_RING_FADE_AT + 2) mof_bomb_fx_dump("长满后", &s->bomb);
-        }
-    }
-    if (++s->bomb.spark_tick >= MOF_BOMB_SPARK_EVERY) {
-        uint32_t red  = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_MOF_BOMB_SPARK, 13);
-        uint32_t blue = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_MOF_BOMB_SPARK_BLUE, 13);
-        s->bomb.spark_tick = 0;
-        if (red)  ce_anm_set_pos(red,  center[0], center[1], center[2]);
-        if (blue) ce_anm_set_pos(blue, center[0], center[1], center[2]);
-    }
-
-    if (--s->bomb.left <= 0) {
-        mof_bomb_fx_dump("结束前", &s->bomb);
-        mof_bomb_fx_kill(&s->bomb);                      /* 环收干净（脚本自己不会死）*/
-        ce_log("mof: 灵击结束（%d 帧，伤害源 %d 帧，半径 %.1f，中心 y %.1f，撒信仰点 %d 颗）",
-               (int)s->bomb.frames, (int)s->bomb.dmg_frames,
-               (double)r, (double)s->bomb.y, (int)s->bomb.faith_dots);
-        s->bomb.left = 0;
-    }
-}
+/* 本卡交给共用机器的那四项（静态常量表；机器不认识卡，卡也不持有那份状态）*/
+static const bomb10_host_t s_bomb_host = {
+    .card_id     = MOF_ID_NUM,
+    .log_tag     = "mof",
+    .gate        = mof_bomb_gate,
+    .power_spend = mof_bomb_power_spend,
+    .on_start    = mof_bomb_on_start,
+    .on_cancel   = mof_bomb_on_cancel,
+};
 
 /* ---- 每帧 ---- */
 /* ★★ 2026-09-18（用户实跑）：**中盘拿到卡（卡 118 的十二合一）时 `on_load` 不会被调** ——
@@ -1862,11 +1648,14 @@ static int on_tick_2(ce_card_t *c)
     }
     s->last_lives = lives;
 
-    /* ④ 符卡监视 + **本次符卡已过帧数**（★ 2026-09-15 新增计数器）
+    /* ④ 符卡监视（★ 2026-09-15 新增）
      * `spell_now` 是「符卡进行中」（`[spellcard+0x378c] bit0`，一手 `th10:0x405798` 那一支用的同一字段）。
-     * `s->spell_frames` = TH10 `[spellcard+0x3738]`（**本次攻击已过帧数**）的对位 —— 一手有两处读它：
+     * **「本次符卡已过帧数」这个计数搬走了**（2026-09-21，`s->spell_frames` 已删）：它是一手
+     *   `[spellcard+0x3738]`（**本次攻击已过帧数**）的对位，一手有两处读它 ——
      *   · `bomb+0x44` = 1 iff（符卡中 且 该计数 ≥ 60）（`th10:0x4059ca`）⇒ 内圈 3 vs 38 等分档；
      *   · 作废符卡奖励的门（`th10:0x405500` 的第一条 `cmp [eax+0x3738],0x3c`）。
+     *   两处**都是那一发灵击的自变量** ⇒ 与那一发的状态同住（`bomb10_spell_frames()`，
+     *   由共用机器在每帧的灵击钩子里推进；本卡在 `mof_bomb_on_start()` 里读它）。
      * ⚠ 一手那个计数器是**引擎的字段**（按攻击走）；我们只能自己数「连续 active 的帧数」——两者在
      *   「符卡刚开始就炸弹」与「符卡中途炸弹」这两种情形下等价（差异只可能出现在引擎把计时器
      *   提前重置的怪情况）⇒ 记为近似，登记 `TUNING.md` §2.5。
@@ -1881,7 +1670,6 @@ static int on_tick_2(ce_card_t *c)
      *   ⚠ 旧实现只判「没放灵击」⇒ **每张符卡正常收掉也扣 30000**（一局 boss 战就能把 Δ_110
      *     打到下限 0、信仰永久钉在 50000）。这是审计发现并修掉的行为差异。*/
     spell_now = ce_spell_active();
-    if (spell_now) ++s->spell_frames; else s->spell_frames = 0;
     if (mof_core_spell_watch(&s->spell_watch, spell_now,
                              (ce_spell_flags() & CE_SPELL_FLAG_TIMED_OUT) != 0)) {
         faith_slot_reduce(&s->slot, FAITH_REDUCE_AVOID);
@@ -1889,22 +1677,28 @@ static int on_tick_2(ce_card_t *c)
         mof_declare_score(s);
     }
 
-    /* ⑤ 灵击（库存 == 0 且炸弹键上升沿）→ 发动（`mof_bomb_start`）；
-     *    然后**每帧推进**已经发动的那一发（`mof_bomb_tick`：消弹圈 / 中心上移 / 伤害源）。
+    /* ⑤ 灵击（库存 == 0 且炸弹键上升沿）→ 发动；然后**每帧推进**已经发动的那一发。
+     * ★★ 2026-09-21：实现是**共用件** `bomb10_start()` / `bomb10_tick()`（110 与 111 的**同一套**，
+     *   见本文件上面「灵击」那一段与本卡那四项 `s_bomb_host`）。**X 路径的触发条件一字未动。**
      * ★ 2026-09-15c：**决死窗口内**按 B ⇒ 同一支路走**决死形态**（发动 + 救命 + 不扣信仰）。
      *   窗口判据 = `player+0x476ac == 4`（一手 `th18:0x45d4e4`，全 exe 唯一写 4 的点），
      *   判据本体在 core（`mof_core_deathbomb_window()`）⇒ 主机单测钉得住；
      *   卡侧在这里只做「检测窗口 → 传参」这一件事（本仓硬要求：状态/语义进 core）。
-     * ⚠ **不做**别的救人事（不挂 `+0x10`）—— 见上面「决死形态」那段与 `EVENTS-CONTRACT.md` §5.2。*/
+     * ⚠ **不做**别的救人事（不挂 `+0x10`）—— 见上面「决死形态」那段与 `EVENTS-CONTRACT.md` §5.2。
+     * ⚠ 推进那一行传的 `driver` = 「**本卡负责驱动这一帧**」：两张同装时那一发状态只有一份，
+     *   只能有一张来推（否则一发灵击每帧前进两帧：半径 / 伤害 / 时长全错）。规则 = **id 小的那张推**
+     *   （先例 = 低速子机声明层「id 小者落笔」（108 < 111）、组合 UI「110 优先」）
+     *   ⇒ **110 恒推**（它是两张里 id 小的那张；111 那边只在 `!ce_owned(110)` 时才推）。
+     *   ⚠ 别写成「另一张在场就让位」—— 两边都让位 = 谁都不推（这一发彻底不动）。*/
     if (CE_CURRENT_BOMBS() <= 0 && (*(uint32_t *)CE_ADDR_INPUT_PRESSED & 0x002u)) {
         uint8_t *pl = CE_PLAYER();
         int32_t pstate = pl ? *(int32_t *)(pl + CE_PLAYER_STATE) : -1;
         int32_t by_hit = mof_core_deathbomb_window(pstate);
         if (by_hit)
             ce_log("mof: 决死窗口内按 B（state %d == 4，库存 0）⇒ 本发走决死形态", (int)pstate);
-        mof_bomb_start(c, s, by_hit);
+        (void)bomb10_start(&s_bomb_host, s, by_hit);
     }
-    mof_bomb_tick(s);
+    bomb10_tick(1);                 /* 110 = id 小的那张 ⇒ 恒推（111 在场时由它让位，见上）*/
 
     /* ⑥ 满 P 全场转换（★★ 2026-09-15，A + B 的主路；**必须在池推进之前**）——
      *    满 P 时把原生 P 类道具原位删掉、在它自己的位置撒一颗 type 9 档的点（角 −π/2、速 2.2）。
@@ -1951,7 +1745,7 @@ static int on_tick_2(ce_card_t *c)
                /* ★ 2026-09-15c：`dbf` = **决死形态**发动的次数（`bomb − dbf` = 主动次数）； */
                (int)s->stat_cancel, (int)s->stat_miss, (int)s->stat_bomb, (int)s->stat_bomb_dbf,
                (int)s->spell_avoided,
-               (int)s->bomb.left, (double)((float)s->bomb.target_centi * 0.01f),
+               (int)bomb10_left(), (double)((float)bomb10_target_centi() * 0.01f),
                /* ★ 2026-09-16：「连击槽**进账**」的四条通道对账（未夹取；某一项恒 0 ⇒ 那条断了）。
                 * `pickup` = **自建信仰点**被收（大 +120 / 小 +60，`mof_core_pickup_combo()`）——
                 *   用 `stat_big/stat_small`×值**算**出来，不另开累计字段（省 `ce_state` 的 496 字节上限）；
@@ -1963,9 +1757,9 @@ static int on_tick_2(ce_card_t *c)
                (int)s->stat_combo_item, (int)s->stat_combo_kill,
                (int)(3 * s->stat_cancel));
         /* ★ 决死形态的「不记账」那一档要看得见：本发的颗数记在 `form.cancels`（诊断，不入数值）。*/
-        if (s->bomb.left > 0 && mof_bomb_form_is_deathbomb(&s->bomb.form))
+        if (bomb10_busy() && mof_bomb_form_is_deathbomb(&s->form))
             ce_log("mof: 决死形态进行中（已消 %d 颗，本形态入账=%d）",
-                   (int)s->bomb.form.cancels, (int)mof_bomb_form_cancel_accounts(&s->bomb.form));
+                   (int)s->form.cancels, (int)mof_bomb_form_cancel_accounts(&s->form));
         if (s->stat_spawn_failed)
             ce_log("mof: %d faith point(s) dropped (pool full)", (int)s->stat_spawn_failed);
         /* ★★ 2026-09-15 逐帧衰减的对账行（`TUNING.md` §2.5h 的「怎么钉」就靠它）。
@@ -2097,17 +1891,19 @@ static void mof_clear(ce_card_t *c)
     s_ge_done = 0;
     s_ge_last = 0;
     if (!s) return;
-    /* ★★ 2026-09-16k：灵击的**范围环**要先删掉再 `memset` —— 它的 VM 是**跨帧**留下的东西
-     *   （脚本 279 自己不会死）⇒ 不显式删就会「删了卡还挂一圈在场上」。火星不用管（一次性自删）。*/
-    mof_bomb_fx_kill(&s->bomb);
+    /* ★★ 2026-09-16k / 2026-09-21：灵击的**范围环 + 电流边**要先删掉再 `memset` —— 它们的 VM 是
+     *   **跨帧**留下的东西（脚本 279/293 自己不会死）⇒ 不显式删就会「删了卡还挂一圈在场上」。
+     *   火星不用管（一次性 VM，脚本自己 `wait` + `delete()`）。
+     *   ⚠ 现在收的是**共用件** `bomb10_reset()`：那一发状态是 110/111 **共用的一份** ⇒ 本卡被删掉时
+     *     111 发的那一发也必须一起收（否则那两支环 VM 永远留在场上）。反之亦然。*/
+    bomb10_reset();
     /* ★ 2026-09-15（灵击改成跨帧之后）自查一遍「删卡会留下什么」（`METHOD.md` 铁律二）：
-     *   · `s->bomb`（剩余帧数 / 中心 / 目标半径）**随这次 `memset` 一起清零** ⇒ 下一帧不再续撒消弹圈
-     *     与伤害源（`mof_bomb_tick()` 的首行 `if (bomb.left <= 0) return`）；删卡发生在商店里、
-     *     `on_tick_2` 本来也不再跑，两条路都断得干净。
-     *   · **伤害源**是引擎池（`player+0x20574`）里的对象、寿命只有 `MOF_BOMB_DMG_SRC_LIFE` 帧 ⇒
+     *   · 那一发的状态（剩余帧数 / 中心 / 目标半径）**随 `bomb10_reset()` 一起清零** ⇒ 下一帧不再
+     *     续撒消弹圈与伤害源；删卡发生在商店里、`on_tick_2` 本来也不再跑，两条路都断得干净。
+     *   · **伤害源**是引擎池（`player+0x20574`）里的对象、寿命只有 `BOMB10_DMG_SRC_LIFE` 帧 ⇒
      *     最多再存活 1–2 帧自己回收。引擎**没有**「按键删一条伤害源」的接口，而按槽位去清
      *     `flags` 会在池槽已被别人复用时误伤别人的源 ⇒ **故意不碰它**（残留 ≤2 帧、无副作用）。
-     *   · 绿点实体 / HUD VM 在上面两行收；计分声明在上面第三行退。*/
+     *   · 绿点实体 / HUD VM 在上面几行收；计分声明在上面退。*/
     memset(s, 0, sizeof *s);
     s->last_graze = -1;
     s->last_lives = -1;
@@ -2201,18 +1997,80 @@ static void on_delete(ce_card_t *c)    { mof_clear(c); }
  *   `Bomb` 的 anm VM 归关卡所有，换关时 bullet.anm 的 VM 被清 ⇒ VM 没了 `Bomb::on_tick` 就把
  *   `[bomb+0x28]` 置 0（`th10:0x405781`–`th10:0x405786`），半径查询随即返回 0）。
  *   不做这一步的话，一发 296 帧的灵击会**跨关**继续消弹/撒伤害源（打到下一关刚出场的敌人）。
- *   顺带把「本次符卡帧数」与符卡监视器归零（换关本来也不该带着上一关的符卡状态）。*/
+ *   顺带把「本次符卡帧数」与符卡监视器归零（换关本来也不该带着上一关的符卡状态）。
+ * ★★ 2026-09-21：收的是共用件 `bomb10_reset()`（那一发状态 110/111 共用 ⇒ 两张卡**都**有权收，
+ *   谁先到都算、幂等）。⇒ 111 单装时也顺带得到这条「灵击不跨关」的保证（它原来没有，
+ *   见 `AUDIT.md` §BE-EY 的差异表）。「符卡帧数」现在也归共用件（`bomb10_reset()` 一起清）。*/
 static void on_stage_start(ce_card_t *c)
 {
     mof_card_t *s = st(c);
 
     if (!s) return;
-    mof_bomb_fx_kill(&s->bomb);      /* ★ 2026-09-16k：跨关也不许把范围环带过去（见该函数的注释）*/
-    s->bomb.left = 0;
-    s->spell_frames = 0;
+    bomb10_reset();
     s->spell_watch.was = 0;
     s->spell_watch.bombed = 0;
     s->spell_watch.timed_out = 0;
+}
+
+/* ============================ ★★ 主动卡入口（`on_activate` / 用户的 C 键）============================
+ * 2026-09-21（owner 口径逐字）：
+ *   「**110也得是主动卡，因为只要有110 or 111就有灵击，当然，它们完全走同一套灵击系统**」
+ *   （逐字前半句来自 `WORK-PACKAGES.md` §10 的第 4 行回答；111 侧的同一条口径见 §9 与 §BE-EV。）
+ *
+ * ## 这一层做了什么（只有「多一个入口」这一件事）
+ *   · `.active_recharge = 1` ⇒ SDK 在卡绑定时走**主动卡**那一支（`sdk.c` 的 `active_init`）：
+ *     `flags = (flags & ~0x46) | 0x08`（`CE_FLAG_ACTIVE`，一手 `th18:0x411d83` 的主动 case）
+ *     + 写 `card+0x48` = 充能时长 + 按 Tenshi 初始化两组 zTimer ⇒ **引擎**据此把本卡放进主动卡组、
+ *     画进 HUD 主动行、可被 D 选中，并在 C 键上升沿（一手 `th18:0x45c084 test ds:0x4ca434,0x400`
+ *     → `0x45c090 mov ecx,[ecx+0x38]`（**被选中的那张**）→ `0x45c099 call [eax+0x8]`）
+ *     调到 `vtable+0x08` = SDK 的 `ce_sdk_c_press`（它做门控：state 空闲 + 充能到底 ⇒ 再调这里）。
+ *     ⇒ 与 111 的实现**逐项同形**（111 是 `WORK-PACKAGES.md` §9 的先例；值 `= 1` 照本 mod 惯例）。
+ *   · 本函数**只调 `bomb10_start()`**（X 路径用的**同一个入口 / 同一份实现**），
+ *     **不复制、不另写一套**，也不在这里做任何灵击侧的计算。
+ *
+ * ## 与 X 路径（`on_tick_2` 的 ⑤）逐项对照 —— 只差「触发条件」，灵击侧**逐项相同**
+ *   | 项 | X 路径（⑤）| C 路径（本函数）|
+ *   | --- | --- | --- |
+ *   | 触发 | `CE_CURRENT_BOMBS() <= 0` 且 `INPUT_PRESSED & 0x2`（X 上升沿）| 引擎的主动卡分派：C 上升沿 `0x400` + 无对话 + 关卡在跑 + **本卡被 D 选中**（四重门控在引擎/SDK 侧，见 `engine/card/th18/04-active-cards.md` §2）|
+ *   | 形态判据 | `mof_core_deathbomb_window(player_state)` | **同一个判据**（下面逐字照写：同一函数、同一入参来源）|
+ *   | 火力门槛 / 消耗 | `mof_bomb_power_spend()` → `mof_core_power_spend()` | 同（都在 `bomb10_start()` 里）|
+ *   | 伤害 / 帧数 / 判定框 / 消弹 / 音效 / 视觉 | `bomb10_start()` + `bomb10_tick()` | 同（**同一个函数**）|
+ *   | 决死（B 形态）语义 | `by_hit` ⇒ 救命 + 消弹照常记账 | 同 |
+ *   | 火力不足时 | **静默什么都不做**（不扣 P / 不消弹 / 不响音效）| 同（这里**不**加 `ce_refuse()` —— 拒绝音 + 日志是 X 路径没有的行为）|
+ *
+ * ## 三条口径说明
+ *   ① **没有新增闸**：这里**不**加「库存 == 0」。那一句描述的是 **X 那条路与原生炸弹的仲裁**
+ *      （库存 > 0 ⇒ X 交给原生 `do_bomb`），**不是灵击的规则**；C 走的是完全独立的主动卡分派
+ *      ⇒ 加这个闸就是「新增闸」（与 §9 的口径相反，111 侧同款判断）。
+ *   ② **不加冷却数值**：`active_recharge = 1` 是 SDK 主动卡机器的**入场券**（先例 116 / 118 / 111），
+ *      不是我们新定的冷却；灵击的真代价仍是「扣 1 档火力」。
+ *   ③ **返回值 0 = 瞬发**：`ce_sdk_c_press` 拿到 0 会把状态置 2（收尾），本卡**不声明**
+ *      `on_active_tick` ⇒ 主动卡机器不会替我们推进任何东西；灵击照旧由 `on_tick_2` 的 ⑤
+ *      （`bomb10_tick`）推进 —— **与从哪个入口发动无关**。
+ *
+ * ## 🟡 已知的一帧相位差（与 111 逐字相同，诚实记一笔）
+ *   一手帧序（`engine.h` 的 `CE_PLAYER_SPEED_MULT` 注）：**AbilityManager tick（`0x16`）先于 Player（`0x17`）**，
+ *   而 C 的分派在 `Player__on_tick__body`（`0x17`）里 ⇒ C 入口发动的那一帧，`on_tick_2` 的 ⑤
+ *   **已经跑过**了 ⇒ 灵击的**第一次 tick 落在下一帧**；X 入口是「⑤ 发动 → 当帧推进一次」。
+ *   **总帧数（`MOF_BOMB_FRAMES` = 296）、每帧伤害、半径曲线、消耗、消弹全部逐项相同**，
+ *   差的只是「起手那一帧要不要立刻推进一次」⇒ owner 2026-09-21 拍「不动 X（不并进 ⑤）」。*/
+static int on_activate(ce_card_t *c)
+{
+    mof_card_t *s = st(c);
+    uint8_t *pl;
+    int32_t ps, by_hit;
+
+    if (!s) return 0;
+    /* 形态判据 = **逐字照 X 路径**（`on_tick_2` ⑤）：决死窗口内发动 ⇒ 决死 B 形态（救命 + 消弹照常记账）。
+     * ⚠ 这两行是**同一判据的同一写法**（不是另写一套规则）：`mof_core_deathbomb_window()` 是
+     *   `mof_core.h` 里唯一的窗口判据，两个入口共用它。*/
+    pl = CE_PLAYER();
+    ps = pl ? *(int32_t *)(pl + CE_PLAYER_STATE) : -1;
+    by_hit = mof_core_deathbomb_window(ps);
+    ce_log("mof: **C（主动卡发动）** ⇒ 调 bomb10_start()（与 X 路径同一入口；库存 %d、"
+           "state %d%s）", (int)CE_CURRENT_BOMBS(), (int)ps, by_hit ? " = 决死窗口" : "");
+    (void)bomb10_start(&s_bomb_host, s, by_hit);
+    return 0;                      /* 瞬发：不持续、不接管 `on_active_tick`（理由见上 ③）*/
 }
 
 /* 钩子分工（★ 2026-09-15：**只剩一条路**）：
@@ -2229,6 +2087,14 @@ static void on_stage_start(ce_card_t *c)
  *     没有 P 类道具），只有看场上的那条路做得到」，全文见 `faith.h`。
  * 「不做」清单（spec §6）与长持续效果自查（METHOD 铁律二）见文件头。*/
 CE_CARD(110,
+        /* ★★ 2026-09-21（owner 口径逐字：「**110也得是主动卡，因为只要有110 or 111就有灵击，
+         *   当然，它们完全走同一套灵击系统**」）：**主动卡** —— 灵击多一个 C 入口。
+         *   `.active_recharge = 1` = 先例取值（111 / 116 / 118 同值）；`.on_activate` 里
+         *   **只调共用件的 `bomb10_start()`**（X 路径用的同一个入口）；**X 路径一字未动**。
+         *   ⚠ 配套：`patch/th18/cards.js` 的 110 条目必须 `"category": 0`（契约 reason 2：
+         *     有主动行为 ⟺ `category == 0`；不一致 = **整局新卡禁用**，先例见 `AUDIT.md` §BE-EJ）。*/
+        .active_recharge = 1,
+        .on_activate = on_activate,
         .ctor = ctor,
         .on_load = on_load,
         .on_tick_2 = on_tick_2,

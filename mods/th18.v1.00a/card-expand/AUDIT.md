@@ -4900,6 +4900,7 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 | 2026-09-21 | **所有卡（共享件 `patch/th18/cards.js`：111 的 `category` 由缺省 2 → **0** + 加一行 `desc`；卡侧只动 111 自己的 `cards/signal.c`）** | 见下方「§BE-EV」 |
 | 2026-09-21b | **所有卡（共享件 `patch/th18/cards.js`：117 的 `category` 由 0 → 缺省 2 = 被动；卡侧只动 116 的 `cards/season.c` 与 117 的 `cards/animal.c`）** | 见下方「§BE-EW」 |
 | 2026-09-21c | **所有卡（新增共享件 `native/cards/bomb10.{h,c}` —— 110/111 的**同一份**灵击实现；共享件 `patch/th18/cards.js` 的 **110** 加 `category: 0` + 一行 `desc`；卡侧动 110 的 `cards/mof.c` 与 111 的 `cards/signal.c`）** | 见下方「§BE-FA」 |
+| 2026-09-21d | **所有卡（共享资源 `assets/ability/entries/ORDER.txt` 末尾 append 一段 `ATLAS_SENRO_HUD_LABEL` + 新脚本 `308_senro_hud_label.anm.txt`；共享生成物 `native/anm_ids.h` 追加 4 行）** | 见下方「§BE-FB」（107 的 HUD 固定标签 = TH07 原贴图，owner 口径「107的UI按照原贴图做」；**脚本 306/307、`sdk.*`、`sites.py`、`Makefile`、`patch/**` 一行未动**，既有 sprite/entry 号一个没挪）|
 
 
 > **§BE 详录 #42（2026-09-20 · P1「缺音效一批」8 条 + 音效表扩容新增 5 枚别作原版 SE）**
@@ -16637,6 +16638,7 @@ TH18 没有 PIV 状态量，但**有同量纲的对位物**：`engine.h` 的 `CE
 | 2026-09-18 | **四张卡的共享 PIV 涨源接线（112 / 113 / 114 / 115）**：`cards/ufo.c`、`cards/trance.c`、`cards/collect2x.c`、`cards/lolk.c` | 见下方「§BE 详录 #48」 |
 | 2026-09-18 | **所有卡（发布侧登记：本会话在 ⛔ 冻结期跑了 3 次 `make release`，把**整棵树**（含其他批次的未提交产出）发到了部署侧）** | 见下方「§BE 详录 #50」 |
 | 2026-09-21 | **六张卡（共享件 `native/cards/hud_dim.{h,c}`：终点 alpha 32 → **128**、每帧 ±56（4 帧）→ **20 帧线性**；行为级 —— 六张卡的 HUD 压暗深度与过渡都变了）** | 见下方「§BE 详录 #51」 |
+| 2026-09-22 | **112（星莲船）的 P3 表现件**：`assets/ability/scripts/302..305_ufo_hud_*.anm.txt`、`assets/ability/ufo_hud/{SLOT_*,PANEL_*}.png`（10 张）、`assets/ability/make_ufo_hud_art.py`、`native/cards/ufo.c`、`native/anm_ids.h`（`make anm` 生成物，号段未变）、`native/build/ability.anm`（⚠ 与 DLL 必须同批发布）| 见下方「§BE 详录 #52」 |
 
 **§BE 详录 #51**（共享件 `hud_dim.*` 的统一动态换基准，2026-09-21）
 
@@ -16659,6 +16661,39 @@ TH18 没有 PIV 状态量，但**有同量纲的对位物**：`engine.h` 的 `CE
   ⚠️ **回退**：改 `HUD_DIM_ALPHA_DIM` / `HUD_DIM_FRAMES` 两个宏 + 9 支脚本 + checker 的 `LABELS`，四处一起。 ｜`
 
 
+**§BE 详录 #52**（112 的 P3 表现件：槽位 UI 落点 / 吸收环同心 / 击破计时器，2026-09-22）
+
+- **文件 → 改了什么**
+  - `assets/ability/make_ufo_hud_art.py`：`X_SHIFT_640` **0.0 → 96.0**（槽/闪光脚本的 x 位移，见下）；
+    贴图粘贴从**左上角**改成**居中**（32×16 画布里的 24×16 原图）；头部 Δ5 整段重写（一手出处 + 口径冲突）。
+  - `assets/ability/scripts/302_ufo_hud_slot.anm.txt` / `303_ufo_hud_flash.anm.txt`：由生成器重跑产出 ——
+    `pos(296,912)`、三个槽位 `posTime(..., 296/338/380, 912)`、回收位 `x=254`（旧 104/146/188/62）。
+    ⚠ **脚本号（302..305）与 sprite 号（457..466）一个都没动**，`ORDER.txt` 一个字未改。
+  - `assets/ability/ufo_hud/*.png`（10 张）：`SLOT_*` 8 张的图心平移 +4 px（居中）、`PANEL_*` 2 张同理。
+  - `native/cards/ufo.c`：`UFO_GAUGE_RING_DX/DY` **32/16 → 0/0**（+ 一整段一手推导）；
+    `UFO_HUD_BLOCK_{W,H}`/`UFO_HUD_PIN_{X,Y}` → **132×32 @ (272,928)**；新增 **击破计时器**
+    `ufo_timer_draw()`（`on_draw` 里调，一手 `th12:0x44a6e3`–`0x44a7e8` 的 `"%2u:%.2u"` 倒计时）；
+    槽的诊断行（每 60 帧）、闪烁相位改用 `u.frames`、UFO 离场时补发四态中断。
+  - `native/anm_ids.h` / `native/build/ability.anm`：`make anm` 的生成物（号段与成员数不变）。
+- **为什么**：`SINGLE-CARD-TEST.md` §th12 的 **#1 / #7 / #9**（owner 单卡实跑原话，工单 `WORK-PACKAGES.md` §0 P3）。
+  三件事的根因都是**把 TH12 的 anm 世界空间当成屏幕空间**：那套空间里场地占 x∈[32,416]、y∈[16,464]
+  （同文件 script82 `pos(224,208)` = 场地中心、script79 滑到 `x=32,y=467` = 左沿/下沿），
+  于是 ① 槽的 52/73/94 是**场地相对 20/41/62**（不是屏幕 52/73/94 ⇒ 旧版画在场地外的黑边、
+  而空槽是纯黑框 ⇒ 看不见 = #1）；② 环的 `敌人 + (32+192, 16)` 里 192/16 是**换算项**
+  ⇒ 残差 0（旧版当偏移 ⇒ 偏移 表面 (64,32) = #7 的「UFO 在环心 10 点方向」）。
+- **谁改的**：系统卡批次（112 owner 的 P3 子会话）。
+- **怎么验证的**（原文见下节「验证留档」）：`make dll` rc=0（`cards/ufo.c` 0 warning）、
+  `make anm` + `make anm-verify` rc=0（回读 `native/build/ability.anm` 的 script302/303 确认
+  `sprite(457)` / `layer(25)` / `pos(296,912)` / 槽位 296/338/380）、`python3 tools/capcheck.py` 对
+  `ATLAS_UFO_HUD` 无异议、`python3 ../../../tooling/check-docs.py` 全部通过。
+  ⚠ `make check` **未全绿**，但两处红**都不在本工单的文件面**（见下节）。
+- **对既有卡的影响面**：**代码零影响**（没动 `sdk.*` / `sdk_core.*` / `engine.h` / `sites.py` /
+  `Makefile` / `cards_def.c` / `patch/**`；没有增删断点、站点账不变）。
+  **画面**：112 的槽块从屏幕最左黑边移到**场地左下角**（表面 272..404 / 896..928）
+  ⇒ 与 **116 的季节槽（263..365 / 888..920）**、**117 的动物灵格（257..449 / 876..924）**横向重叠
+  —— 这是**口径冲突**，已登记 `TUNING.md` §2.0x 待 owner 拍；退回旧位置 = 生成器 `X_SHIFT_640 = 0.0`
+  + 重跑生成器 + `make anm`（一行）。
+  ⚠ **资产耦合**：脚本 302..305 改了 ⇒ `ability.anm` 必须与 DLL **同批发布**（本会话**没有**部署）。
 ## §DS. ★★★ 112 的第五批：**飞碟槽 HUD 改成原版切图**（用户实跑 ⑤）+ **槽的 sprite 语义订正**（2026-09-18）
 
 > **来源**：用户 2026-09-18 实跑第④条：「**飞碟槽 HUD 你没按照原版做**」。
@@ -18045,8 +18080,14 @@ TH18 原生 X 路径**本来就有**（`can_bomb` → `do_bomb`），它唯一�
    `mof_core_bomb_damage` 的调用点只出现在 `cards/bomb10.o` 里，`mof.o` / `signal.o` 一处都没有。
 
 **「谁推这一帧」的唯一规则**（防「一发灵击每帧前进两帧」）：两张卡的 `on_tick_2` **都**调
-`bomb10_tick(driver)`，`driver` = `ce_owned(另一张) ? 0 : 1` —— 同装时 110（id 小）驱动、111 让位。
+`bomb10_tick(driver)`，规则 = **id 小的那张推** ⇒ **110 恒推**（`bomb10_tick(1)`）、
+**111 只在 110 不在场时推**（`bomb10_tick(ce_owned(110) ? 0 : 1)`）。
 先例 = 低速子机声明层「id 小者落笔」（108 < 111）、组合 UI「110 优先（`faith_hud`）」。
+⚠ **本次自己踩过的坑（留档）**：两边的判据**都**写成「另一张在场就让位」过一次 —— 两张同装时
+**谁都不推** ⇒ 那一发永远停在第一帧（半径 16 / 不消弹 / 不掉血），实跑表现为「放了灵击没反应」。
+⇒ ① 两处调用点各写了「别写成让位」的注释；② `bomb10.c` 加了**只打日志**的安全网
+（一发一次都没被推过却连着让位 ≥5 次 ⇒ 打一行醒目日志），正常情形（让位后紧跟驱动者那一次调用）
+当帧计数归零、绝不误报。
 
 ### 3. 改了什么（逐文件）
 
@@ -18137,3 +18178,132 @@ TH18 原生 X 路径**本来就有**（`can_bomb` → `do_bomb`），它唯一�
    本次把「爱丽丝 0.5 档」那条**原样接回**（它在改动前就在 `signal_bomb10_start()` 里）。
 4. **`stat_cancel` 两张卡口径不同**（110 记「有消弹的帧数」、111 记「颗数」）—— 本次**故意不合并**
    （合并会改 110 的连击进账诊断行 `3 × stat_cancel`）。要统一得先确认 110 那一行的本意。
+
+## §BE-FB（2026-09-22）：107 妖妖梦的 **HUD 固定标签**（TH07 原贴图）—— 共享资源 `ORDER.txt` 追加 + 新脚本 308
+
+> **谁改的**：P8 工单（107 系统卡，owner 口径逐字「**107的UI按照原贴图做**」）。
+> **为什么动共享件**：标签是**贴图**，必须进 `assets/ability/` 那套图集/脚本流水线；而 `ORDER.txt` 的
+> 规矩是**只许追加**（冻结段 + 图集合并后不许重排）⇒ 新成员只能另起一段 ATLAS。
+
+### 1. 改了哪些文件（逐条：文件 → 改了什么 → 为什么 → 怎么验的）
+
+| 文件 | 改了什么 | 为什么 | 验证 |
+| --- | --- | --- | --- |
+| `assets/ability/entries/ORDER.txt` | **末尾 append** 一段 11 行（注释块 + `ATLAS ATLAS_SENRO_HUD_LABEL 96x16` + 一行成员）；**既有行一字未动** | 标签贴图（TH07 `ascii.anm` entry0 sprite142，96×16）要进 `ability.anm` | `git diff` = 纯 13 行新增、0 删除；`build_ability.py` 的**重排检测**逐行核对冻结段 ✅ |
+| `assets/ability/make_senro_hud_art.py` | 加切 `LABEL`（sprite142）+ 分两段输出；顺手把 `entries/ORDER.senro_hud.txt` 改成**由脚本写出**（原来只有 stdout） | 生成物不许手改；一段 ATLAS 装不下新成员（既有段画布 128×16 已满，且画布行不许改） | `python3 make_senro_hud_art.py` rc=0、矩形从 `thanm -l 7` 读并断死；`--verify-only` 从 anm 回读逐像素等于源图 ✅ |
+| `assets/ability/senro_hud/LABEL.png` | 新增（生成物，96×16） | 原生 1:1 切图 | 同上（图集逐像素自检 36 个图集 / 348 个成员全等）|
+| `assets/ability/scripts/308_senro_hud_label.anm.txt` | **新增**脚本（编号 = 现有最大 307 + 1） | TH07 script4 的稳态移植（含 `anchor(1,1)`） | `build_ability.py` 的「编号必须连续追加」硬门 ✅；脚本逐条对照原文写进文件头 |
+| `native/anm_ids.h` | 生成物：+4 行（`ATLAS_SENRO_HUD_LABEL` = 64、`SPRITE_SENRO_HUD_LABEL` = **478**、`SCRIPT_SENRO_HUD_LABEL` = **308**） | 新 entry/脚本的宏 | `git diff --stat` = 4 insertions / 0 deletions ⇒ **既有宏一个没变** |
+| `native/cards/senro.c`（**107 自己的卡**） | 起标签 VM（`label_id`，先于数字生成 ⇒ 被数字压住）+ 块高 40→42 + `T` 落点 `(−42,−16) → (−43,−17)` | 见下 §2（几何） | `make dllx87` rc=0（x87 = 0 警告门）；`make dllverify` rc=0 |
+
+### 2. 影响面（别人的卡 / 共享件）
+
+- **entry / sprite 号**：新 entry = **64**、新 sprite = **478**，都是**新号段尾部**；
+  `git diff native/anm_ids.h` 只有 4 行新增、**0 删除** ⇒ 别的卡的宏值一个没动。
+  entry 用量 64 → **65 / 256**（还剩 191）⇒ 不影响 `ATLAS-MERGE-AUDIT.md` §9 的余量账。
+- **顺序 / 编号**：新 ATLAS 段追加在 `ORDER.txt` 末尾、新脚本编号 308 = 现有最大 + 1 ⇒ **一个既有号都没挪**
+  （`ORDER.frozen.txt` 的冻结段逐行未变）。
+- **两种共享件「图集」对账**：`make atlas-check`（读 `ATLAS-MERGE-AUDIT.md` §4.3，**故意不进 `make check`**）
+  **本来就是红的** —— 工作区里有 13 个图集（含 107 上一轮自己的 `ATLAS_SENRO_HUD`、112 的 UFO HUD 等）
+  都没登记进 §4.3/`EXTRA`；本次多一个 `ATLAS_SENRO_HUD_LABEL` 属**同一类既有欠账**，没有修它（不在本工单范围）。
+- **`sdk.*` / `sites.py` / `Makefile` / `patch/**` / 别的卡**：**没有改动**（本项目新增站点数 = 0）。
+- **布局**：本卡认领的货架块宽**仍是 200**（不改 ⇒ 110/111、112、116、117 的块位置一寸不动）；
+  只把块高 40 → 42（行高取本行最大块 = 112 的 64 ⇒ 不影响别人的行）。
+
+### 3. 怎么验证的（原文）
+
+```bash
+cd mods/th18.v1.00a/card-expand/assets/ability && python3 make_senro_hud_art.py        # rc=0，矩形断死
+cd ../../native && make dllx87            # x87 in our objects: 0
+make dllverify                            # DLL ABI: 23 exports
+make anm-verify                           # entry 65 / sprite 479 / script 309；图集 348 成员逐像素 ✅
+cd ../../../.. && python3 tooling/check-docs.py   # 本工单新增的文件 0 违规（其余违规见下方 §4）
+```
+
+## §BE-FC（2026-09-22）：P4 工单（108 永夜抄）—— **路 A：妖侧本体 55 张进 `pl0X.anm`** + 人妖槽限值写点普查 + 永点 ΔG 判定
+
+> **谁做的**：P4（108）子 agent。#1/#5/#7 是上一批（§BE-EX），本批只做**工单 D 那三件**
+> （owner 三条逐字口径：「（2）那就按照推荐来」、「（3）永点如果原版进，那就进」、
+> 「（4）人妖槽写点是 th08 还是 th18 不知道」）。
+> **没部署**：不跑 `make release`、不碰 modkit、不写 `/mnt/d/...`。
+> **没碰别人的地盘**：发射口闸 / `YK_EMIT_BROKEN_TTL` / `YK_FAM_LIFE` **一行未动**
+> （工单 E 已定案，见 §BE-EY / §BE-FX）；`assets/ability/entries/ORDER.txt` **一行未动**。
+
+### 1. 三条结论（一手；地址 + 可信度 + 证据）
+
+| # | 结论 | 可信度 | 证据（一手） |
+| --- | --- | --- | --- |
+| ① | **妖侧本体 = 同一台 VM 换脚本号**；人 0/1..4 ↔ 妖 5/6..9 | ✅ | `th08:0x44b12b push 0x5`（进妖侧）/ `th08:0x44b385 push 0x0`（出妖侧）→ `call 0x4069f0` |
+| ①b | TH18 那条移动动画状态机与 TH08 的 `SET_MOVE_ANIM` **逐槽同序** | ✅ | `th18:0x45b610`–`0x45b7a8` 四条判据；脚本 1/2/3/4 = 起步左/从左停/起步右/从右停 |
+| ② | **永点（PIV）进 ΔG**：`ΔG_08 = (刻符/2)×10`，SC 捕获那笔再加 `+count×10` | ✅ | `th08:0x418288`–`0x4182bc`；`th08:0x41731e` + `:0x41732c`–`:0x41733d`；`th08:0x440e4b` 读 PIV 当点值 |
+| ③ | **6 个限值字段的写点在 TH08**，TH18 **没有**这套东西 | ✅ | 写点 `th08:0x44d9ee`–`0x44da8f`（绝对寻址，24 条）；TH18 侧三条负证据见下 |
+
+**① 的一手细节**（`Player::move` `th08:0x44aec0` 内的换形分支；⚠ vendor 反编译 `Player.cpp:942`
+把「出妖侧」那份印成 `5`，**指令是 `push 0x0`** —— 以 `local/_scratch/th08_full.asm` 为准）。
+**TH18 侧的对照**：`Player__sub_45b170` 的 `0x45b610`–`0x45b7a8` 四条 `cmp/jcc`：
+`dx<0&&px>=0 → 脚本 1`、`dx==0&&px<0 → 2`、`dx>0&&px<=0 → 3`、`dx==0&&px>0 → 4`，否则不动；
+`dx` = `player+0x47934`（全 exe **只 5 处引用**，都在同一函数里）。
+**第二条独立链（结构 + 像素）**：TH18 原生 `pl00.anm` script3/4 与 1/2 同形状但用 sprite 16..23，
+而 TH08 的 3/4 用 `flipX()`；实测 `mirror(sprite8..15)` vs `sprite16..23` 的 MAE ≈ **8**
+（不镜像 **27–54**）⇒ 16..23 就是 8..15 的镜像，TH18 把 flipX 预先烤成了贴图。
+
+**② 的一手细节**：`418294 mov eax,[edx+0x44]` / `418297 and eax,1` / `41829d add ecx,eax` /
+`4182ab cdq`+`4182ac sub`+`4182ae sar 1`（= C 整除 2）/ `4182b0 imul eax,eax,0xa` /
+`4182b3 add eax,[ecx+0x24]` / `4182bc mov [ecx+0x24],eax` ⇒ `PIV += ((delta+(total&1))/2)×10`，
+**只在 `delta > 0` 进**（`418288 cmp [ebp+8],0` / `41828c jle`）。
+SC 捕获那笔：`417329 mov edx,[ecx+0x10]`（`zSpellcard+0x10`）/ `41732c imul edx,edx,0xa` /
+`417334 add edx,[globals+0x24]` / `41733d mov [globals+0x24],edx` ⇒ **另加 `count×10`**（两笔都算）。
+PIV 进**点值公式**：`440e4b mov eax,ds:0x160f510` / `440e50 mov ecx,[eax+0x24]`（`Item::CollectPoint` 拿它当基数）
+⇒ 机制改的是 **PIV 本身**，所以「并进 `ecx` 声明」与原作同义（`engine/item/th08/01-time-orbs.md` 复核一致）。
+
+**③ 的一手细节**：全 exe 对 `0x164d300`–`0x164d30a` 的写 = **24 条**，全在 `th08:0x44d9ee`–`0x44da8f`
+（`Player::on_registration` `th08:0x44d650` 内），形态是**绝对寻址** `66 c7 05 <addr32> <imm16>`：
+`human_limit −10000 / youkai_limit +10000 / human_effects −8000 / youkai_effects +8000 /
+blue_tint −2000 / red_tint +2000`，按 `shottype`（`0x164d0b1`）分支写五套。
+⚠ 这**订正**了 `engine/player/th08/03-youkai-body-and-gauge.md` 旧版 §2.4 的 🟡「本 build 里没有写点」
+—— 旧版搜的是**位移**字节而写点是**绝对寻址**，另外它猜的绝对地址 `0x16ed3xx` 多算了一位
+（真值 `0x164d30x = 0x160f508 + 0x3ddf8`）。**TH18 侧（负结论，三条独立证据）**：
+① `0xd8f0`/`0xe0c0`/`0xf830`/`0xec78` 在 `th18.dis` 里各 **0** 命中；
+② 全 exe 对 `0x4cxxxx` 的 **word** 绝对写只有 2 条（`0x4cd00e`/`0x4cd76c`），与这 6 个值无关；
+③ `th18-funcs.json`（2333 条）里 gauge / youkai / human 相关函数名 **0** 命中。
+⇒ **TH18 无写点**，卡 108 要做人妖槽必须**自己维护这 6 个限值**（数值已可照抄，载体自建）。
+
+### 2. 改了哪些文件（文件 → 改了什么 → 为什么 → 验证）
+
+| 文件 | 改了什么 | 为什么 | 验证 |
+| --- | --- | --- | --- |
+| `assets/build_player_anm.py`（**共享件**） | 新增 `game="th08"/"th16"` 跨版本源（含按头版本选 anmmap）+ `YOUKAI_BODY`/`YOUKAI_BODY_IDS`/`_youkai_plan`/`_body_canvas`/`_body_readback` + `_inject_body_prologue` + `_norm_labels` | 55 张要按「只追加」进 pl0X.anm，脚本要逐条抄 TH08/TH16 源 | `--verify-only` rc=0；原生 entry/script/贴图**逐块一致**；回读 55 张逐像素等于源图 |
+| `native/pl_anm_ids.h`（生成物） | +20 行 `CE_PL_ANM_SCRIPT_YKBODY_*` | C 侧要按宏取脚本号 | 生成器写出；`PINNED_NEW_SIDS` 反向钉号 |
+| `native/cards/youkai_core.{h,c}` | §3.2 重写：删 `YK_BODY_SPRITE_*`/`yk_body_sprite`，新增 `YK_BODY_STATES`/`YK_BODY_IDLE..STOP_R`/`yk_body_state` | 旧占位（`= -1` 死代码）没有意义了 | `make test-host` 的 `test_youkai_core` **992 checks / 0 failed** |
+| `native/cards/youkai.c`（**108 自己的卡**） | `on_draw` 改成 `yk_body_sync`；新增 `YK_BODY_SCRIPT[4][5]`、`yk_body_load_script`；`yk_card_t` +4 字段；`on_ctor` 复位本体跟踪；文件尾 TODO #1 结案 | 低速要真的把妖侧本体画出来 | `make dllx87`（我的两个 .o x87 = **0**）、`make dllverify` rc=0、`_Static_assert` 状态预算过 |
+| `native/engine.h`（**共享件**） | +`CE_PLAYER_SPEED_X/Y`、`CE_ANM_VM_POST_LOAD_A/B`、`CE_FN_ANM_LOAD_SCRIPT`、`CE_FN_ANM_VM_RUN` | 都是新常量，零行为变化 | 全库编译过；`engine_abi_check` 不变 |
+| `native/tests/test_youkai_core.c` | §3.2 段换成 11 条状态机断言（含越界钳位） | 覆盖新纯逻辑 | 992/0 |
+| `engine/player/th08/03-youkai-body-and-gauge.md` | §1.4/§1.5 实装记录；**§2.4 订正**（限值写点）；新增 §2.5（TH18 侧负结论） | 旧版 §2.4 是一条**错的否定结论** | `check-docs` 该文件无违例 |
+
+### 3. 影响面（别人的卡 / 共享件）
+
+- `pl0X.anm`：四个文件**只追加**（每文件 +1 entry、+5 脚本）；`verify_rebuilt` 每次构建都回读核对
+  「原生 entry / script / 贴图块逐块一致」⇒ 113（灵界弹）、117（兽灵弹）引用的脚本号与 sprite
+  号**一个都没变**（`pl_anm_ids.h` 的新宏全在原有宏之后）。
+- `native/engine.h` / `youkai_core.h`：**纯新增**（`yk_body_sprite` 只有 108 自己用，已随之删除；
+  全库 grep 无第二处引用）。
+- `sht` / `sites.py` / `patch/**` / `Makefile` / `assets/ability/entries/ORDER.txt`：**一行未动**
+  （⇒ 不新增站点，不需要 `sitecheck`）。
+- 回归跑的：`make anm-verify` rc=0、`make sht-verify` rc=0、`make cards-check` rc=0、
+  `make test-host`（`test_youkai_core` 992/0；⚠ 见下方「本批之外的 RED」）、`make dllverify` rc=0、
+  `python3 native/tools/capcheck.py`、`python3 tooling/check-docs.py`。
+- **⚠ 本批之外的 RED（与本批无关，工作树里别人的在制品）**：
+  ① `test_faith_hud_core` 4 条失败 —— 用 **HEAD 版** `cards/hud_dim.c` 同样复现（预先存在）；
+  ② `make dllx87` = 1 —— 来自工作树里**被并发修改**的 `cards/hud_dim.c`（HEAD 版编译出 **0** x87），
+     我的 `youkai.o`/`youkai_core.o` 各 0；
+  ③ `capcheck` 报 `CE_ANM_ABILITY_ATLAS_ATLAS_SENRO_HUD_LABEL` 未登记（107 的在制品）；
+  ④ `check-docs` 的 `TUNING.md` 超长单元格（别人的在制品）。
+
+### 4. 未决 / 要 owner 拍的
+
+1. **永点那条只判不装**：原版**进** ΔG（证据见 §1 的 ②），但 108 **今天没有刻符载体**
+   （无生成点 / 无 VM 池 / 无收集 / 无人妖槽）⇒ 现在唯一能做的是「凭空造一个 PIV 涨源」，
+   而那正是铁律禁止的。等 owner 定「刻符载体」那一轮再按 `ce_piv_add(108, …)` + `FAMILY_08` 接。
+2. **人妖槽**：限值数值已可照抄（±10000 / ±8000 / ±2000），但 6 个字段**必须卡侧自建**（TH18 无写点）。
+3. **🟡 未实跑**：路 A 的装载与状态机只在代码层对账（`make check` + 单测）；实跑要盯
+   「低速换妖侧那一帧有没有闪一下人侧」「左右起步/停下四支动画对不对」「早苗（文）24 帧是否完整」。
