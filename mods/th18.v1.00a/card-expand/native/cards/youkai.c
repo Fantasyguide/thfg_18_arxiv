@@ -199,6 +199,20 @@ typedef struct {
      * `body_script` = 我们**当前装着**的脚本号；`-1` = 「现在跑的不是我们装的」（高速 / 还没装过）
      *   —— 用它挡「状态没变还重装」（重装 = 动画从第 0 帧起，会看出来一顿一顿的）。
      * `body_prev_dx` = 上一次看到的 `player+0x47934`（引擎拿它当「上一帧输入速度」）。*/
+    /* ★★ 2026-09-22（人妖槽 + 永点）：见文件里那一节的长注释。 */
+    int32_t       piv;                 /* 永点：PIV 累加器（= 额外最大得点，点）—— 每帧声明给计分层 */
+    int32_t       orbs;                /* 累计刻符数（一手公式里的 `total_time_orbs`，`th08:0x41825c`）*/
+    int32_t       gauge;               /* 人妖槽（i16 语义；负 = 人侧、正 = 妖侧，量程 ±10000）*/
+    uint16_t      gauge_focus_run;     /* 一手 `unkE2ad0`：聚焦状态**保持不变**的帧数（TH08 的 4 / 30 两档门）*/
+    uint16_t      gauge_hold;          /* 一手 `unkE2ae8`：按住聚焦的帧数（爬升速率 = min(帧数/15, 21)）*/
+    uint8_t       gauge_focus_prev;    /* 上一帧的聚焦位（漂移状态机的边沿检测）*/
+    uint32_t      graze_seen;          /* 上一帧的累计擦弹（`CE_ADDR_GRAZE` 0x4ccd0c）快照 */
+    uint32_t      orb_taken;           /* 本局收了几颗刻符 */
+    uint32_t      orb_full;            /* 池满 / VM 建不出来而放弃的颗数（诊断）*/
+    uint32_t      hud_bar, hud_human, hud_youkai, hud_cursor;  /* 人妖槽 HUD 的 4 支 VM */
+    ce_hud_number_t hud_num;           /* 百分比数字（共用件的 HUD 数字）*/
+    ce_hud_slot_t hud;                 /* HUD 货架槽（`ce_hud_slot_claim_card`，左下角）*/
+    uint8_t       hud_ready;           /* 货架认领成功（0 = 这一关没抢到块，HUD 不画）*/
     uint8_t       body_focused;        /* 0/1 */
     uint8_t       body_state;          /* 0..YK_BODY_STATES-1 */
     int32_t       body_script;         /* 追加脚本号 或 -1 */
@@ -823,6 +837,404 @@ static int yk_youkai_shotset_pick(int character, int tier)
 
 /* ============================== 回调 ============================== */
 /* +0x00：卡对象可能在局中被重建（每关开始引擎对卡组每张卡再调一次 ctor）⇒ 静态表在这里复位。*/
+/* =====================================================================================
+ * ★★ 2026-09-22（owner：「那就先做人妖槽以及永点VM池」）：**人妖槽 + 永点（刻符）**
+ *
+ * 一手全文：`engine/player/th08/03-youkai-body-and-gauge.md` §2（人妖槽）与
+ *           `engine/item/th08/01-time-orbs.md`（刻符：生成点 / 运动 / 收集 / 资产）。
+ * 纯逻辑（限值 / 判定 / 几何 / PIV 公式）在 `youkai_core.{h,c}` §3.10/§3.11，这里是引擎侧。
+ *
+ * 三件事：
+ *   ① **人妖槽**：TH18 **没有**这套字段与写点（三条独立负证据见该文 §2.5）⇒ 卡侧自建一个 i16 +
+ *      6 个限值（数值抄一手写点 `th08:0x44d9ee`–`0x44da8f`）+ 4 个判定 + TH08 那 7 个写入者里
+ *      **能在 TH18 上接到的那些**（逐条见下方各自注释）。
+ *   ② **永点（刻符）VM 池**：TH08 的刻符是**真道具实体**（type 7，一生成就是 state 3 的「必然归航」），
+ *      本卡用**一个 VM 池**当载体（owner 口径：「刻符要建一个相对更大的 VM 池子；默认自动吸收；
+ *      中途暴毙 ⇒ 变成类 P 点」）。贴图/脚本逐条照抄 TH08（`etama.anm` sprite179 + script68）。
+ *   ③ **永点 → PIV**：`PIV += ((delta + (total&1))/2)×10`（`th08:0x418220`）⇒ 按 §BE 详录 #43 的口径
+ *      作为 `ΔG_08` **并进 `ecx` 声明**（`ce_score_family_declare(FAMILY_08)` + `ce_score_declare_delta`）。
+ *
+ * ★ 铁律：长持续效果要交代「被删掉会怎样」—— 刻符 VM 与 HUD 四件 VM 的生命周期全部经过
+ *   `yk_orb_kill_all` / `yk_gauge_hud_kill`，`on_delete`（虚表 +0x50，商店里唯一跑得到的收尾点）
+ *   与 `on_run_reset` 都调；HUD 槽位由 `ce_layer_drop_card` 自动释放。
+ * ===================================================================================== */
+
+/* 追加进 `pl0X.anm` 的**刻符 / 人妖槽 HUD**脚本号（生成物 `pl_anm_ids.h`）。
+ * ⚠ 四个文件的号互不相同（各从自己的原生脚本数往后接）⇒ 必须按机体查表，不能写死一个数。*/
+static const int32_t YK_ORB_SCRIPT[4] = {
+    CE_PL_ANM_SCRIPT_YKORB_PL00, CE_PL_ANM_SCRIPT_YKORB_PL01,
+    CE_PL_ANM_SCRIPT_YKORB_PL02, CE_PL_ANM_SCRIPT_YKORB_PL03,
+};
+static const int32_t YK_GAUGE_SCRIPT[4][4] = {   /* [机体][0 槽条 / 1 人间图标 / 2 妖怪图标 / 3 游标] */
+    { CE_PL_ANM_SCRIPT_YKGAUGE_BAR_PL00, CE_PL_ANM_SCRIPT_YKGAUGE_HUMAN_PL00,
+      CE_PL_ANM_SCRIPT_YKGAUGE_YOUKAI_PL00, CE_PL_ANM_SCRIPT_YKGAUGE_CURSOR_PL00 },
+    { CE_PL_ANM_SCRIPT_YKGAUGE_BAR_PL01, CE_PL_ANM_SCRIPT_YKGAUGE_HUMAN_PL01,
+      CE_PL_ANM_SCRIPT_YKGAUGE_YOUKAI_PL01, CE_PL_ANM_SCRIPT_YKGAUGE_CURSOR_PL01 },
+    { CE_PL_ANM_SCRIPT_YKGAUGE_BAR_PL02, CE_PL_ANM_SCRIPT_YKGAUGE_HUMAN_PL02,
+      CE_PL_ANM_SCRIPT_YKGAUGE_YOUKAI_PL02, CE_PL_ANM_SCRIPT_YKGAUGE_CURSOR_PL02 },
+    { CE_PL_ANM_SCRIPT_YKGAUGE_BAR_PL03, CE_PL_ANM_SCRIPT_YKGAUGE_HUMAN_PL03,
+      CE_PL_ANM_SCRIPT_YKGAUGE_YOUKAI_PL03, CE_PL_ANM_SCRIPT_YKGAUGE_CURSOR_PL03 },
+};
+
+/* 自机自己的 anm（`player+0xc`）。⚠**不是** `player+0x10`：那一格开火期间被引擎换成 ability.anm
+ * （engine.h 的注）⇒ 刻符 / HUD 的 VM 必须挂在 pl0X.anm 那一页上（贴图按 VM 自己那一页取）。*/
+static void *yk_player_anm(void)
+{
+    uint8_t *p = CE_PLAYER();
+    return p ? *(void **)(p + CE_PLAYER_ANM) : 0;
+}
+
+/* ---- 永点（刻符）VM 池 -------------------------------------------------------------------
+ * ❓ **自定：池容量**（owner 只说「相对更大」）：64。TH08 那边是道具池（`ItemManager` 自己的数组，
+ *    实参 `push 8` 一类），本卡不共享那个池 ⇒ 自己定一个。满 ⇒ **放弃这一颗**（不排队、不崩），
+ *    并在 `s->orb_full` 上记账（诊断日志用）。*/
+#define YK_ORB_MAX            64
+/* ❓ **自定：世界层**。TH08 的刻符是道具实体；TH18 里同档的是「场上实体」那一层 =
+ *    6..11（`engine/anm/th18/02-render-stages.md`），使魔跟随 VM 用的就是 7（`YK_FAM_ANM_LAYER`）
+ *    ⇒ 刻符同层。脚本自己没有 `layer()` ⇒ 这个参数是唯一的层来源。*/
+#define YK_ORB_ANM_LAYER      7
+/* ❓ **自定：归航速度 / 拾取半径 / 回收线下沿**（TH08 那三个量分别在道具运动表、道具与自机的
+ *    碰撞代码里，本轮没有抽出一手数值 —— 见报告「未决」）。形状是一手的，数值是自定的。*/
+#define YK_ORB_HOME_SPEED     3.0f    /* 归航时朝自机的速度（640 空间 px/帧）*/
+#define YK_ORB_PICK_R         20.0f   /* 碰到自机就收（state 1）*/
+#define YK_ORB_LINE_OFF       16.0f   /* state 0：`y <= 自机 y + 16` 才收（TH08 `th08:0x44098c` 那个 +16.0f）*/
+/* 一手：出生初速 `vy = −2.0 − rand(0.2)`、`vx = rand(±0.6)`（`th08:0x4402cb`–`0x4402e9`）； */
+#define YK_ORB_VY0           (-2.0f)
+#define YK_ORB_VY0_RAND       0.2f
+#define YK_ORB_VX_RAND        0.6f
+/* 一手：`vy += 0.05`（`th08:0x4406ac`，常量 `ds:0x4b5b38`），`vy > 0` 那一刻转归航（`th08:0x4406e4`）。*/
+#define YK_ORB_GRAVITY        0.05f
+/* 一手：中弹/暴毙那一刻把**归航**的刻符打回下落态：`vx = 0`、`vy = −0.9`、state = 0
+ *（`th08:0x441567`/`:0x441574` 的批量收尾 与 `th08:0x4408e0`/`:0x4408f0` 的每帧判定，两条同结果）。*/
+#define YK_ORB_VY_DEAD       (-0.9f)
+
+typedef struct {
+    uint32_t anm_id;      /* 0 = 空槽 */
+    float    x, y;        /* 640 空间（世界层 VM 的实体坐标与 ECL 同一套，`ufo_body_vm_follow` 的注）*/
+    float    vx, vy;
+    uint8_t  state;       /* 一手：3 = 出生上浮（必转 1）、1 = 归航、0 = 下落（类 P 点）*/
+    uint8_t  used;
+    uint16_t _pad;
+} yk_orb_t;
+
+static yk_orb_t s_orb[YK_ORB_MAX];
+static unsigned s_orb_live;                 /* 诊断用：当前活着几颗 */
+
+static void yk_orb_kill(yk_orb_t *o)
+{
+    if (!o || !o->used) return;
+    if (o->anm_id) ce_anm_delete(o->anm_id);  /* 按 id 标删（`0x488cf0`）；VM 自己也会 static() 不走 delete */
+    o->anm_id = 0;
+    o->used = 0;
+}
+
+static void yk_orb_kill_all(void)
+{
+    unsigned i;
+    for (i = 0; i < YK_ORB_MAX; ++i) yk_orb_kill(&s_orb[i]);
+    s_orb_live = 0;
+}
+
+/* 生成一颗刻符（TH08 的 `ItemManager::spawn_item(pos, 7, 3)`，`th08:0x4400a0` 的 type 7 那一档）。*/
+static void yk_orb_spawn(yk_card_t *s, float x, float y)
+{
+    yk_orb_t *o = 0;
+    unsigned i;
+    uint32_t id;
+    for (i = 0; i < YK_ORB_MAX; ++i) if (!s_orb[i].used) { o = &s_orb[i]; break; }
+    if (!o) {
+        if (s) ++s->orb_full;
+        return;
+    }
+    {
+        int ch = yk_current_character();
+        if (ch < 0 || ch > 3) ch = 0;
+        id = ce_anm_spawn(yk_player_anm(), YK_ORB_SCRIPT[ch], YK_ORB_ANM_LAYER);
+    }
+    if (!id) {                                  /* VM 建不出来 ⇒ 这颗不要（不崩、不排队）*/
+        if (s) ++s->orb_full;
+        return;
+    }
+    o->anm_id = id;
+    o->used = 1;
+    o->state = 3;                               /* 一手：type 7 ⇒ 生成即 state 3（`th08:0x440115` 强制）*/
+    o->x = x;
+    o->y = y;
+    /* 一手初速（`th08:0x4402cb`–`0x4402e9`）：`vx = rand(±0.6)`、`vy = −2.0 − rand(0.2)`。
+     * RNG 走 `ce_rand()`（SDK 的 replay-safe RNG）——**不引 libm、不进 x87**。*/
+    o->vx = ((float)(ce_rand() % 1201u) / 1000.0f - 0.6f);                    /* ❓ 用整数取模近似 randf */
+    o->vy = YK_ORB_VY0 - ((float)(ce_rand() % 1001u) / 1000.0f) * YK_ORB_VY0_RAND;
+    ce_anm_set_pos(id, x, y, 0.0f);
+    ++s_orb_live;
+}
+
+static int yk_orb_collect(yk_card_t *s)
+{
+    /* 收集结算（一手 `Item::collect_time_orb` `th08:0x4412b0`）：
+     *   ① `AddTimeOrbs(1)`（`th08:0x44137a`）⇒ 刻符 +1、**PIV += ((1+(total&1))/2)×10**（见 core §3.11）；
+     *   ② 人妖槽 ±111（`th08:0x44139e`/`:0x4413b0` → `th08:0x4413cb`，聚焦 = +111）。
+     * ⚠ 另外两笔本轮**不接**（分数那一路与符卡 +8000），原因见下面那段「本轮的取舍」。*/
+    if (!s) return 0;
+    yk_piv_add(&s->piv, &s->orbs, 1);
+    s->gauge = yk_gauge_add(s->gauge, yk_gauge_orbs_delta(CE_PLAYER_FOCUSED()));
+    ++s->orb_taken;
+    return 1;
+}
+
+/* ❓ 自定：**多项式近似 sin / cos**（不引 libm、不进 x87）。只用于「刻符撒在半径 128 的环上」
+ *   这个**视觉**位置 —— 不参与任何判定与计分 ⇒ 精度足够。`ang` 归一到 [−π, π] 后用
+ *   Bhaskara 一类的三点近似（误差 < 2%），乘 128 的落点偏差 < 3 px。*/
+static float yk_cos_approx(float a)
+{
+    float s;
+    const float PI = 3.14159265f, TWO_PI = 6.28318531f;
+    while (a > PI) a -= TWO_PI;
+    while (a < -PI) a += TWO_PI;
+    /* cos(a) ≈ 1 − a²/2 + a⁴/24 − a⁶/720（泰勒到 6 阶，|a| ≤ π 时误差 < 0.5%）*/
+    s = a * a;
+    return 1.0f - s * 0.5f + s * s * (1.0f / 24.0f) - s * s * s * (1.0f / 720.0f);
+}
+static float yk_sin_approx(float a)
+{
+    float s;
+    const float PI = 3.14159265f, TWO_PI = 6.28318531f;
+    while (a > PI) a -= TWO_PI;
+    while (a < -PI) a += TWO_PI;
+    /* sin(a) ≈ a − a³/6 + a⁵/120 − a⁷/5040 */
+    s = a * a;
+    return a * (1.0f - s * (1.0f / 6.0f) + s * s * (1.0f / 120.0f) - s * s * s * (1.0f / 5040.0f));
+}
+
+/* ❓ 自定：**Newton 迭代开方**（6 次）。为什么要它：归航要把速度归一化，而本仓 `.c` 不引 libm
+ *   （108 的子机弹簧那一节也是同一条纪律）。纯 `* / +` ⇒ `-mfpmath=sse` 下全是 SSE 指令，
+ *   `make dllx87` 门不受影响；迭代次数固定 ⇒ **回放确定**。输入 `v = dx²+dy²`，量级 < 1e6 时 6 次足够。*/
+static float yk_fsqrt(float v)
+{
+    float x;
+    int i;
+    if (!(v > 0.0f)) return 0.0f;
+    x = (v > 1.0f) ? v : 1.0f;
+    for (i = 0; i < 6; ++i) x = 0.5f * (x + v / x);
+    return x;
+}
+
+/*
+ * ❓ **本轮的取舍（写在这里免得别人以为漏了）**：
+ *   · 刻符入账的**分数**那一路先不接 —— `yk_orb_score()` 需要「本关蓝点数 / 本局蓝点数」两个计数，
+ *     TH18 侧只有 `CE_ADDR_MONEY_ITEMS`（吃到的金钱道具数）这一个近似物；两者语义不同，
+ *     硬套会把「分数」这条线变成自定。⇒ **只做 PIV 那条线**（owner 要的正是它），分数留待 owner 拍。
+ *   · 符卡加成 +8000 同理（TH18 的符卡分与 TH08 不是一套）。
+ *   · `Timer::current_is_eq_(&0x18b89d4, 0)` 那道门（TH08 里「收刻符什么时候动人妖槽」的条件）
+ *     ❓ 语义未钉 ⇒ 本卡**无条件**动（登记 `TUNING.md`）。
+ */
+
+/* 每帧：刻符的运动（一手 `ItemManager::on_tick__` 的三个 state 分支 + 卡自己的池遍历）。
+ * 返回本帧收了几颗。*/
+static int yk_orbs_tick(yk_card_t *s)
+{
+    uint8_t *p = CE_PLAYER();
+    float px, py;
+    int taken = 0;
+    unsigned i;
+    int dead;
+    if (!p) return 0;
+    px = *(float *)(p + CE_PLAYER_X);
+    py = *(float *)(p + CE_PLAYER_Y);
+    /* 一手（`th08:0x440866`/`:0x4408f0`）：玩家 dead 段（TH08 是 state 1/2）⇒ 归航的刻符立刻回到
+     * 下落态（「中途暴毙 ⇒ 变成类 P 点」）。TH18 的玩家状态机在 `player+0x476ac`，**state 2 = 死亡段**
+     * （`Player__commit_death_and_enter_state2` `th18:0x45d090`）。*/
+    dead = (*(const int32_t *)(p + CE_PLAYER_STATE) == 2);   /* TH18 的 state 2 = 死亡/复活段 */
+    for (i = 0; i < YK_ORB_MAX; ++i) {
+        yk_orb_t *o = &s_orb[i];
+        float dx, dy, dist;
+        if (!o->used) continue;
+        if (!o->anm_id || !ce_anm_get_vm(o->anm_id)) {
+            /* 句柄没了（过场重建 ANM 管理器 / 被引擎清掉）⇒ 这一颗当作收下（TH08 的刻符必然被收，
+             * 不会凭空消失）—— 只记账，不重起（重起会把位置丢回出生点）。*/
+            yk_orb_collect(s);
+            o->used = 0;
+            o->anm_id = 0;
+            if (s_orb_live) --s_orb_live;
+            ++taken;
+            continue;
+        }
+        if (dead && o->state == 1) { o->state = 0; o->vx = 0.0f; o->vy = YK_ORB_VY_DEAD; }
+        if (o->state == 3) {
+            /* 出生上浮：`vy += 0.05`；`vy > 0` 那一刻转归航（一手 `th08:0x4406ac` / `:0x4406e4`）。*/
+            o->vy += YK_ORB_GRAVITY;
+            if (o->vy > 0.0f) o->state = 1;
+        }
+        if (o->state == 1) {
+            /* 归航：每帧把速度指向自机、模长 = 归航速度（一手 `th08:0x4407f6` → `:0x440886`/`:0x4408a5`）。*/
+            dx = px - o->x; dy = py - o->y;
+            dist = dx * dx + dy * dy;
+            if (dist <= YK_ORB_PICK_R * YK_ORB_PICK_R) {
+                yk_orb_collect(s);
+                yk_orb_kill(o);
+                if (s_orb_live) --s_orb_live;
+                ++taken;
+                continue;
+            }
+            dist = yk_fsqrt(dist);              /* ❓ 自定：Newton 近似开方（见上）*/
+            if (dist > 0.0001f) { o->vx = dx / dist * YK_ORB_HOME_SPEED; o->vy = dy / dist * YK_ORB_HOME_SPEED; }
+        }
+        o->x += o->vx;
+        o->y += o->vy;
+        if (o->state == 0 && o->y <= py + YK_ORB_LINE_OFF) {
+            /* state 0 = 落到回收线才收（一手 `th08:0x44098c`）。*/
+            yk_orb_collect(s);
+            yk_orb_kill(o);
+            if (s_orb_live) --s_orb_live;
+            ++taken;
+            continue;
+        }
+        ce_anm_set_pos(o->anm_id, o->x, o->y, 0.0f);
+    }
+    return taken;
+}
+
+/* ---- 人妖槽 HUD（TH08 `ascii.anm` 的 4 支脚本 + 百分比数字）--------------------------------
+ * 一手（`AsciiManager::InitializeVms` + `AsciiManager::on_draw`）：
+ *   槽条 = script5（sprite155，128×16，`anchorTopLeft`）、人间图标 = script6（sprite153，16×16）、
+ *   妖怪图标 = script7（sprite154，16×16）、游标 = script8（sprite152，8×12，**锚点 = 心**）；
+ *   百分比数字 = `DrawPercentage`（本卡用共用件的 `ce_hud_number_set` 画，见 ❓ 注）。
+ * 四支脚本与贴图**逐条抄进 pl0X.anm**（`build_player_anm.py` 的 `YK_EXTRA_PLAN`；脚本里的
+ * `anchorTopLeft()` 按 v2→v8 的 opcode 表翻成 `anchor(1, 1)`）。
+ *
+ * ⚠ TH08 的脚本自带 `pos()` / `posTime()`（TH08 的 640×480 坐标）：本卡**每帧覆盖位置**
+ *   （`ce_gauge_hud()` 按 HUD 货架锚点算），所以那段滑入动画**被覆盖掉**了 —— ❓ 自定，登记 `TUNING`。
+ * ⚠ 四支脚本出生时是**隐藏**的（`stopHide()` + `interruptLabel(1)` 停着），要 `ce_anm_interrupt(id, 1)`
+ *   才显形（TH08 那边由 `SetGaugeInterrupt` 发）—— 本卡生成后立刻发一次。
+ * ⚠ 图标的 x 由**限值**决定（一手 `88 + limit·56/10000`），游标/数字按 gauge 走（core §3.10 的几何）。*/
+
+/* ❓ 自定：HUD 块尺寸（表面 px，喂货架分配器）。宽 = 128×2（槽条 128 个 640 空间 px）、
+ *   高 = 视觉 70（数字顶 446 → 槽条底 481 = 35 个 640 空间 px ×2）+ 上下各 4 px pad（照 §6.1 口径）。*/
+#define YK_HUD_BLOCK_W 256.0f
+#define YK_HUD_BLOCK_H  78.0f
+
+/* ---- 人妖槽的每帧漂移（TH08 `Player::move` 的聚焦状态机，一手）--------------------------------
+ * 一手形状（`th08_dec/src/Player.cpp` 那段，逐条地址见 `engine/player/th08/03-...md` §2.2 的
+ * 「Player::UpdateMovement 聚焦漂移」一行）：
+ *   · **按住低速**：状态保持 ≥ 4 帧后开始爬升，速率 = `min(按住帧数 / 15, 21)`，方向**朝妖**（+）；
+ *   · **松开低速**：状态保持 ≥ 30 帧后开始回落，速率按当前档取 **−5 / −3 / −2 / +2 / +3 / +5**
+ *     （极妖 −5、中妖 −3、正 −2、未到中人 +2、未到极人 +3、极人 +5）；`|g| <= 9` ⇒ 直接归零。
+ * ❓ **自定**：TH08 那两条算式末尾都乘 `g_ShotSpeed`（本作聚焦的射击减速因子，≤ 1）；
+ *   TH18 没有同一个全局 ⇒ 本卡取 1（登记 `TUNING.md`）。
+ * ❓ **自定**：两个计时器的**精确**语义（`unkE2ad0` / `unkE2ae8` 的重置时机）按上式简化：
+ *   换状态时两个都清。方向与速率表是一手的。*/
+static void yk_gauge_tick(yk_card_t *s, int focused)
+{
+    int d, g2;
+    if (!s) return;
+    if (focused != (int)s->gauge_focus_prev) {          /* 换状态 ⇒ 两个计时器清零（❓ 简化）*/
+        s->gauge_focus_prev = (uint8_t)(focused ? 1 : 0);
+        s->gauge_focus_run = 0;
+        s->gauge_hold = 0;
+    }
+    if (s->gauge_focus_run < 0xffffu) ++s->gauge_focus_run;
+    if (focused) {
+        if (s->gauge_focus_run >= 4) {                  /* 一手：`unkE2ad0 >= 4` 才开始动 */
+            d = (s->gauge_hold < 300) ? (int)(s->gauge_hold / 15) : 21;
+            s->gauge = yk_gauge_add(s->gauge, d);
+            if (s->gauge_hold < 300) ++s->gauge_hold;
+        }
+        return;
+    }
+    s->gauge_hold = 0;
+    if (s->gauge_focus_run < 30) return;                /* 一手：`unkE2ad0 >= 0x1e` 才开始回落 */
+    g2 = s->gauge;
+    if (g2 > YK_GAUGE_DEAD_ZONE || g2 < -YK_GAUGE_DEAD_ZONE) {
+        if (yk_gauge_is_extremely_youkai(g2))        d = -5;
+        else if (yk_gauge_is_moderately_youkai(g2))  d = -3;
+        else if (g2 > 0)                             d = -2;
+        else if (!yk_gauge_is_moderately_human(g2))  d = 2;
+        else if (!yk_gauge_is_extremely_human(g2))   d = 3;
+        else                                        d = 5;
+        s->gauge = yk_gauge_add(s->gauge, d);
+    } else {
+        s->gauge = 0;                                   /* 一手 `th08:0x44bf61`：死区归零 */
+    }
+}
+
+/* 涨源①：**击破敌机** ⇒ 人妖槽 ±200（一手 `th08:0x42da2a` 一带：`isYoukaiMode ? +200 : -200`）；
+ * 同时（仅在妖侧）撒刻符 —— 一手 `Enemy::sub_42adb0` `th08:0x42b048`（type 7 / state 3）。
+ * 数量：一手有**三条按 `shottype` 分的公式**（§4），共用变量 `n` = 该敌的**连锁段数**（`th08:0x41fd40`
+ * 沿 `enemy+0x8` 数）。TH18 侧我们读不到那个连锁计数 ⇒ ❓ **自定：取 n = 1**，
+ * 走「双人组」那一支 `N = n*2 + 10 = 12`（TH08 的默认档；妖単独同式但常数是 +6）。登记 `TUNING.md`。*/
+#define YK_ORB_PER_KILL_CHAIN 1
+static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
+{
+    int focused, i, n;
+    float ang;
+    if (!s || !ev) return;
+    focused = CE_PLAYER_FOCUSED();
+    s->gauge = yk_gauge_add(s->gauge, focused ? 200 : -200);
+    if (!focused) return;                               /* 妖逢魔才撒刻符 */
+    n = YK_ORB_PER_KILL_CHAIN * 2 + 10;
+    for (i = 0; i < n; ++i) {
+        /* 一手：刻符撒在敌人位置 + **半径 128** 的环上（`th08:0x42b03b`，角度 = `randf(2π)`，
+         * 常量 `0x43000000` = 128.0f）。角度用 `ce_rand()` 取（replay-safe）。*/
+        ang = (float)(ce_rand() % 62832u) / 10000.0f;   /* 0..2π 的近似 */
+        yk_orb_spawn(s, ev->x + yk_cos_approx(ang) * 128.0f, ev->y + yk_sin_approx(ang) * 128.0f);
+    }
+}
+
+static void yk_gauge_hud_kill(yk_card_t *s)
+{
+    if (!s) return;
+    if (s->hud_bar)    ce_anm_delete(s->hud_bar);
+    if (s->hud_human)  ce_anm_delete(s->hud_human);
+    if (s->hud_youkai) ce_anm_delete(s->hud_youkai);
+    if (s->hud_cursor) ce_anm_delete(s->hud_cursor);
+    s->hud_bar = s->hud_human = s->hud_youkai = s->hud_cursor = 0;
+    ce_hud_number_clear(&s->hud_num);
+}
+
+/* 生成四支 VM（UI 列表；`ce_anm_spawn_ui` 的 `pos` 传 NULL ⇒ 由脚本自己的 `pos()` 起手，
+ * 下面第一帧就被我们的几何覆盖）。句柄存在卡的私有状态里 ⇒ 自愈：找不到就重建。*/
+static void yk_gauge_hud_spawn(ce_card_t *c, yk_card_t *s)
+{
+    uint32_t *slot[4];
+    int i, ch;
+    (void)c;
+    if (!s) return;
+    slot[0] = &s->hud_bar; slot[1] = &s->hud_human;
+    slot[2] = &s->hud_youkai; slot[3] = &s->hud_cursor;
+    ch = yk_current_character();
+    if (ch < 0 || ch > 3) ch = 0;
+    for (i = 0; i < 4; ++i) {
+        uint32_t id;
+        if (*slot[i] && ce_anm_get_vm(*slot[i])) continue;
+        id = ce_anm_spawn_ui(yk_player_anm(), YK_GAUGE_SCRIPT[ch][i], 0);
+        if (!id) { *slot[i] = 0; continue; }
+        *slot[i] = id;
+        ce_anm_interrupt(id, 1);          /* 一手：脚本出生是 stopHide 状态，interrupt 1 = 「显形」*/
+    }
+}
+
+static void yk_gauge_hud_update(yk_card_t *s)
+{
+    yk_gauge_hud_t h;
+    float anchor[2];
+    uint32_t col;
+    if (!s) return;
+    anchor[0] = s->hud.x;
+    anchor[1] = s->hud.y;
+    yk_gauge_hud(s->gauge, anchor, CE_HUD_SURFACE_TO_640, &h);
+    col = yk_gauge_color(s->gauge);
+    if (s->hud_bar) {
+        ce_anm_set_pos(s->hud_bar, h.bar_x, h.bar_y, 0.0f);
+        ce_anm_set_color(s->hud_bar, 0xff000000u | col);   /* 一手：槽条用**同一个**颜色（AsciiManager.cpp:1060）*/
+    }
+    if (s->hud_human)  ce_anm_set_pos(s->hud_human, h.human_x, h.human_y, 0.0f);
+    if (s->hud_youkai) ce_anm_set_pos(s->hud_youkai, h.youkai_x, h.youkai_y, 0.0f);
+    if (s->hud_cursor) ce_anm_set_pos(s->hud_cursor, h.cursor_x, h.cursor_y, 0.0f);
+    /* 百分比 = gauge / 100（TH08 是 `DrawPercentage`，显示 `gauge/100` %）；用共用件的 HUD 数字画。
+     * ❓ 自定：字形是共用件的 HUD 数字（TH08 的 `ascii.anm` 字体没搬），且**没有 `%` 号**。*/
+    ce_hud_number_set(&s->hud_num, h.text_x640, h.text_y640, 7.0f,
+                      s->gauge / 100, 4, 0, "youkai_gauge");
+}
+
 static int on_ctor(ce_card_t *c)
 {
     yk_card_t *s = ce_state(c, yk_card_t);
@@ -852,6 +1264,32 @@ static int on_ctor(ce_card_t *c)
     s->body_script = -1;
     s->body_state = YK_BODY_IDLE;
     s->body_prev_dx = 0;
+    /* ★★ 2026-09-22（人妖槽 + 永点）：
+     *   · 刻符池 / HUD VM **先收干净**（本函数在局中重建时也会跑）；
+     *   · PIV / 刻符计数 / 人妖槽清零 —— 一手：人妖槽在新局初始化块里被清（`th08:0x43ad9f`）、
+     *     但**换关不清**（`engine/player/th08/03-...md` §4.2：关卡开始块只写显示副本），
+     *     所以这里**只在「新局」语义下调**：`on_run_reset` → `on_ctor` 是本卡唯一的局末收尾；
+     *     每关的 `on_load` 也走这里 ⇒ 人妖槽会在换关时归零（⚠ **与一手不同**，登记 `TUNING.md`）。*/
+    yk_orb_kill_all();
+    yk_gauge_hud_kill(s);
+    yk_piv_reset(&s->piv, &s->orbs);
+    s->gauge = 0;
+    s->gauge_focus_run = 0;
+    s->gauge_hold = 0;
+    s->gauge_focus_prev = (uint8_t)(CE_PLAYER_FOCUSED() ? 1 : 0);
+    s->graze_seen = 0;
+    s->orb_taken = 0;
+    s->orb_full = 0;
+    /* 人妖槽 HUD：认领一块左下角货架（每关开场重排；认领幂等）。抢不到就不画（0 = 没抢到）。*/
+    {
+        ce_hud_block_t blk;
+        __builtin_memset(&blk, 0, sizeof blk);
+        blk.w = YK_HUD_BLOCK_W;
+        blk.h = YK_HUD_BLOCK_H;
+        blk.side = 0;
+        s->hud_ready = (uint8_t)(ce_hud_slot_claim_card(ce_card_id(c), &blk, &s->hud) ? 1 : 0);
+    }
+    if (s->hud_ready) yk_gauge_hud_spawn(c, s);
     return 0;
 }
 
@@ -879,6 +1317,8 @@ static void on_delete(ce_card_t *c)
            "(%u spawned, %u killed, %u transfer damage this run)",
            s ? s->spawns : 0, s ? s->broken : 0, s ? s->transferred : 0);
     yk_drop_all(s, 0);
+    yk_orb_kill_all();                                   /* ★ 刻符 VM 池：删卡时一并收（商店里 tick 停着）*/
+    yk_gauge_hud_kill(s);                                /* ★ 人妖槽 HUD 四件 + 数字 */
     if (s) yk_option_release(c, s);                      /* 私有状态随后由 SDK 释放 */
 }
 
@@ -1219,7 +1659,13 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
     if (ev->kind != CE_EDEATH_KILLED && ev->kind != CE_EDEATH_BOMB_KILL &&
         ev->kind != CE_EDEATH_KILL_ALL)
         return;
-    if (!yk_fam_broken(&s_map, ev->id)) return;           /* 不是我们的使魔（道中妖精 / boss 死了）*/
+    if (!yk_fam_broken(&s_map, ev->id)) {
+        /* ★★ 2026-09-22：**不是我们的使魔** ⇒ 这是一次普通击破 —— 人妖槽与刻符的涨源就在这里。
+         * ⚠ `KILL_ALL`（段首清场 `enmKillAll`）**不算击破**（本函数开头那段约定：给奖励的东西必须
+         *   排除它，否则清场会把计数刷满）。*/
+        if (ev->kind != CE_EDEATH_KILL_ALL) yk_on_enemy_killed(s, ev);
+        return;
+    }
     /* ★ 壳体已经被引擎析构了 ⇒ 跟随 VM 也必须同时收，否则会留下一个**画着已死使魔的幽灵**
      *（打不到、不消失）。这里是**共享死亡断点的死亡栈**上：删 VM 只是给它标删
      *（`0x488cf0` 置 `vm+0x538` 位 7，真正的析构由 AnmManager 自己的 update 走）⇒ 与
@@ -1231,6 +1677,33 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
            "%d-frame fallback self-heal expires (gate = on_enemy_shot_slot 0x433ffa)",
            ev->id, ev->kind, (ev->flags & CE_EDEATH_F_REAL) ? 1u : 0u, ev->x, ev->y,
            (int)YK_EMIT_BROKEN_TTL);
+}
+
+/* ★★ 2026-09-22（人妖槽涨源②）：**收集道具** ⇒ 人妖槽 ±itemScore（一手 `ItemManager.cpp:597`：
+ * `isYoukaiMode ? +itemScore : −itemScore`）。
+ * 取分的落点：`on_item_commit`（`0x44658a` = 本道具分值已入 SCORE、公共收尾之前）那一刻，
+ * `CE_ADDR_MONEY_BASE`（0x4ccd24）**就是这一颗的身价**（一手：`0x446bf3` 的 `ja` 支直接读回它，
+ * 见 engine.h 的注）⇒ 显示点 = 身价 / 100。
+ * ⚠ **为什么不走 `on_item_score`**：那个钩子自 2026-09-13 起是「**声明自己的 G_i**」的通道
+ *   （`sdk.c` 传进去的指针是 `unused`），读不到分值 —— 别在那儿当读者。*/
+static void on_item_commit(ce_card_t *c)
+{
+    yk_card_t *s = ce_state(c, yk_card_t);
+    int32_t base;
+    if (!s) return;
+    base = *(const int32_t *)(uintptr_t)CE_ADDR_MONEY_BASE;
+    if (base <= 0) return;
+    s->gauge = yk_gauge_add(s->gauge, CE_PLAYER_FOCUSED() ? (int)(base / 100) : -(int)(base / 100));
+}
+
+/* ★★ 2026-09-22（人妖槽：死亡清零）：一手 `th08:0x44ac09`（`Player::begin_death` 里
+ * `set_youkai_gauge(0)`）。走 `on_death_before_deathbomb`（决死窗口**之前**那一帧，
+ * 与 TH08 的 `begin_death` 同一时刻）。*/
+static int on_death_before_deathbomb(ce_card_t *c)
+{
+    yk_card_t *s = ce_state(c, yk_card_t);
+    if (s) s->gauge = 0;
+    return 0;
 }
 
 /* +0x2c：AbilityManager tick（优先级 0x16），早于敌人结算（0x1b）⇒ 上限只对当帧有效、不用还原。*/
@@ -1247,11 +1720,44 @@ static int on_tick_2(ce_card_t *c)
     if ((++s_ledger_frame % 600u) == 0u && (s->spawns || s->broken || s->lost))
         ce_log("youkai: ledger - %u spawned, %u killed, %u withdrew, %u dropped",
                s->spawns, s->broken, s->lost, s->dropped);
+    /* ★ 人妖槽 / 永点的账（每 ~600 帧一行）：实跑要看见的四件 —— 槽值、刻符收了几颗、
+     * PIV 当前值、池里还剩几颗活着。VERIFY 的判据就取这一行（见 `SINGLE-CARD-TEST.md` §th08）。*/
+    if ((s_ledger_frame % 600u) == 0u && (s->orb_taken || s->gauge || s->piv))
+        ce_log("youkai: gauge=%d piv=%d orbs=%d taken=%u live=%u full=%u hud=%u",
+               (int)s->gauge, (int)s->piv, (int)s->orbs, s->orb_taken, s_orb_live,
+               s->orb_full, (unsigned)s->hud_ready);
     if (!CE_PLAYER()) {
         yk_drop_all(s, "no player");
         return 0;
     }
     focused = CE_PLAYER_FOCUSED();
+    /* ★★ 2026-09-22（人妖槽 + 永点）：每帧三件事 + 一件声明，全部是**普通内存读写**（不新增站点）。
+     *   ① 刻符运动 / 收集（`yk_orbs_tick`，一手运动方程见 core §3.11）；
+     *   ② 擦弹涨源：TH18 的累计擦弹在 `CE_ADDR_GRAZE`（0x4ccd0c），本卡自己差分
+     *      （SDK 的 `ce_graze_bridge` 读的是同一个全局 ⇒ 不新增站点、不重复计数）；
+     *   ③ 人妖槽漂移（一手 TH08 的聚焦状态机）；
+     *   ④ PIV 声明给计分层：**族 08**（`CE_COEFF_FAMILY_08`）+ 未耦合加数 = PIV
+     *      —— 这正是 §BE 详录 #43 的「并进 `ecx` 声明」口径（`ΔG_08` 随 `coeff_18` 一起被折扣）。*/
+    if (s->hud_ready) {
+        ce_hud_slot_get(ce_card_id(c), &s->hud);           /* 每帧取最新锚点（同批后来的认领会重排）*/
+        yk_gauge_hud_spawn(c, s);                          /* 自愈：VM 被引擎清过就重建 */
+        yk_gauge_hud_update(s);
+    }
+    yk_orbs_tick(s);
+    {
+        uint32_t graze = *(const uint32_t *)(uintptr_t)CE_ADDR_GRAZE;
+        if (graze > s->graze_seen) {
+            uint32_t d = graze - s->graze_seen, i;
+            float px = *(const float *)(CE_PLAYER() + CE_PLAYER_X);
+            float py = *(const float *)(CE_PLAYER() + CE_PLAYER_Y);
+            if (d > 8u) d = 8u;                            /* ❓ 自定：单帧上限（防一段大擦弹一次性灌满池）*/
+            if (focused) for (i = 0; i < d; ++i) yk_orb_spawn(s, px, py);   /* ❓ 自定：落点 = 自机（拿不到被擦的那颗弹）*/
+        }
+        s->graze_seen = graze;
+    }
+    yk_gauge_tick(s, focused);
+    ce_score_family_declare(ce_card_id(c), CE_COEFF_FAMILY_08);
+    ce_score_declare_delta(ce_card_id(c), s->piv);
     yk_option_refresh(c, s, focused);                     /* 每帧声明（低速才有货；落笔由 SDK 在帧界叫）*/
     if (!focused) {
         /* 高速 = 原机体：使魔全部撤（spec §9 实跑清单 1「松开全部还原」）。
@@ -1296,6 +1802,8 @@ CE_CARD(108, .ctor = on_ctor, .on_load = on_load, .on_power_level_change = on_po
              .on_bullet_created = on_bullet_created, .on_enemy_death = on_enemy_death,
              .on_enemy_shot_slot = yk_on_shot_slot,           /* §3.5.1 发射口精确闸（0x433ffa）*/
              .on_native_shot_suppress = on_native_shot_suppress, .on_draw = on_draw,
+             .on_item_commit = on_item_commit,              /* 人妖槽涨源②：收道具 ±身价 */
+             .on_death_before_deathbomb = on_death_before_deathbomb,   /* 人妖槽：死亡清零 */
              .on_option_pose_apply = on_option_pose_apply,    /* §3.3.1 低速子机声明层的落笔 */
              .on_run_reset = on_run_reset, .on_delete = on_delete);
 
@@ -1377,4 +1885,29 @@ _Static_assert(sizeof(yk_fam_vm_t) == 12, "familiar follow-VM record grew (table
  *        ⇒ 设正值 = 使魔无敌，与「使魔必须能被打」直接冲突 ⇒ **不采用**
  *    15. 直接写 `enemy+0x6220`（life）转嫁 —— 跳过 12 件事（符卡 ×7 记账 / 每帧上限 / 死亡判定本身），
  *        且会打乱死亡事件的 retaddr 分类（研究 §2.2）⇒ **不采用**
- *    16. `on_shot_damage` 当转嫁触发器 —— 它有 `CE_PLAYER_FOCUSED()` 门，妖机体期间一次都不来（研究 §0）*/
+ *    16. `on_shot_damage` 当转嫁触发器 —— 它有 `CE_PLAYER_FOCUSED()` 门，妖机体期间一次都不来（研究 §0）
+ *   ★★ 2026-09-22（人妖槽 + 永点，owner「那就先做人妖槽以及永点VM池」）—— 那一节自己的清单：
+ *     已接（一手出处逐条写在代码里）：
+ *       · 人妖槽：卡侧 i16 + 6 个限值（`th08:0x44d9ee`–`0x44da8f`）+ 4 个判定（`th08:0x406d10/40/70/a0`）
+ *         + 夹紧（`th08:0x43c0bb`）+ 死区归零（`th08:0x44bf61`）+ HUD 四件（TH08 `ascii.anm` script5..8）
+ *         + 百分比数字（共用件 HUD 数字）；
+ *       · 涨源：击破敌机 ±200（`th08:0x42da2a`）、收道具 ±身价（`ItemManager.cpp:597` 的形状）、
+ *         收刻符 ±111（`th08:0x4413cb`）、聚焦漂移（TH08 `Player::move` 的状态机）、死亡清零（`th08:0x44ac09`）；
+ *       · 永点：刻符 VM 池（贴图/脚本逐条抄 TH08 `etama.anm` sprite179 + script68）+
+ *         运动三段（出生上浮 → 归航 → 下落）+ 收集 → `PIV += ((1+(total&1))/2)×10`（`th08:0x418220`）+
+ *         按 §BE 详录 #43 作为 `ΔG_08` 并进 `ecx` 声明（`ce_score_family_declare(FAMILY_08)`）。
+ *     ❓ 自定（逐条登记在 `TUNING.md` §2.0x，实跑可能要动）：
+ *       · `YK_ORB_MAX` = 64（池容量）、`YK_ORB_ANM_LAYER` = 7（层）、`YK_ORB_HOME_SPEED` = 3.0、
+ *         `YK_ORB_PICK_R` = 20.0（TH08 那两个量在道具运动表 / 碰撞代码里，本轮没抽出一手）；
+ *       · 三角 / 开方用**自己写的多项式与 Newton 近似**（不引 libm、不进 x87）；
+ *       · 击破敌机撒刻符的数量取「双人组」支 + **连锁段数 n = 1** ⇒ 12 颗；
+ *       · 擦弹 ⇒ 每点擦弹 1 颗（落在自机位置）、单帧上限 8 颗；
+ *       · 漂移算式末尾的 `g_ShotSpeed` 取 1，两个计时器的重置时机做了简化；
+ *       · HUD 块 256×78 与「每帧覆盖位置 ⇒ TH08 的 `posTime` 滑入被覆盖」；
+ *       · 人妖槽**换关会归零**（一手是**不**归零，只有新局清）—— 因为本卡的 `on_load` 复用 `on_ctor`。
+ *     ⏳ 本轮**不接**（都在报告「未决」里）：
+ *       · 刻符的**分数**那一路（`yk_orb_score` 需要「本关/本局蓝点数」，TH18 只有 `CE_ADDR_MONEY_ITEMS` 这个近似物）
+ *         与**符卡 +8000**（TH18 的符卡分不是 TH08 那套）；
+ *       · 「收刻符动人妖槽」那道 `Timer::current_is_eq_(&0x18b89d4, 0)` 门 ❓ 语义未钉 ⇒ 本卡无条件动；
+ *       · 人妖槽四档判定在 TH18 侧的**后果**（TH08 的蓝点 ×2 / 掉落分档 / 使魔弹染色 / 射击间隔）
+ *         —— 判定与 HUD 染色已接，四档的玩法后果待 owner 拍（见 `AUDIT.md` §BE-FG §4）。*/

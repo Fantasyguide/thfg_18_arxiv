@@ -533,3 +533,87 @@ int32_t yk_sample_life(yk_slot_t *e, uint32_t fam_id, int32_t life_now);
  * 返回非 0 = 在盒内 ⇒ 这一帧的掉血**不计入**转嫁。 */
 #define YK_FAM_HURTBOX_HALF 12.0f
 int     yk_in_transfer_zone(float fx, float fy, float cx, float cy, float w, float h);
+
+/* ==================================================== §3.10 人妖槽（TH08 的 `youkaiGauge`）
+ * 一手全文：`engine/player/th08/03-youkai-body-and-gauge.md` §2（2026-09-22 订正版）。
+ *
+ * 它是**一个 i16 标量**（TH08 落在 `[GAME_MANAGER+8]+0x22`）：
+ *   · **负 = 人侧、正 = 妖侧**（人侧判据是 `≤` 一个负阈值）；量程 ±10000。
+ *   · 唯一入口 `GameManager::AddToYoukaiGauge(delta, unconditional)` `th08:0x43c0bb`：
+ *     `gauge += delta` 然后**夹到 `[+0x3ddf8, +0x3ddfa]`**，并写显示副本 `+0x20`。
+ *     ⚠ 第一道闸：`ds:0x17d6ed4 != 0 && delta == 0 的调用` 被整条丢掉 —— 那条是「符卡中冻结」，
+ *       ❓ 语义未钉（名片场），**本卡不实现**（登记见报告）。
+ *   · **6 个限值字段**（`th08:0x44d9ee`–`0x44da8f` 一手写点，本卡侧自建）：
+ *     human_limit −10000 / youkai_limit +10000 / human_effects −8000 / youkai_effects +8000 /
+ *     blue_tint −2000 / red_tint +2000。TH18 **没有这套字段**（见该文 §2.5 的三条负证据）。
+ *   · 4 个判定（`th08:0x406d10/40/70/a0`，一律 `setle`/`setge`，**取等号**）：
+ *     极人 `g <= −8000`、中人 `g <= −2000`、极妖 `g >= +8000`、中妖 `g >= +2000`。
+ *   · TH08 里还有「死区归零」（`th08:0x44bf61`，前置 `fabs(gauge) <= 9.0` ⇒ 写 0）与
+ *     「死亡清零」（`th08:0x44ac09` 调 set_youkai_gauge(0)）。 */
+#define YK_GAUGE_SPAN             10000   /* = ±limit（HUD 的量程：条宽 112 px / 图标 56 px 都是相对它算的）*/
+#define YK_GAUGE_HUMAN_LIMIT     (-10000) /* `th08:0x44d9ee` 0xd8f0 */
+#define YK_GAUGE_YOUKAI_LIMIT      10000  /* `th08:0x44da09` 0x2710 */
+#define YK_GAUGE_HUMAN_EFFECTS    (-8000) /* `th08:0x44d9f7` 0xe0c0 → 极人判定 */
+#define YK_GAUGE_YOUKAI_EFFECTS     8000  /* `th08:0x44da12` 0x1f40 → 极妖判定 */
+#define YK_GAUGE_BLUE_TINT        (-2000) /* `th08:0x44da00` 0xf830 → 中人判定 */
+#define YK_GAUGE_RED_TINT           2000  /* `th08:0x44da1b` 0x7d0  → 中妖判定 */
+#define YK_GAUGE_DEAD_ZONE            9   /* `ds:0x4b6f28` = 9.0：`|g| <= 9 ⇒ 0`（`th08:0x44bf4d`/`:0x44bf61`）*/
+#define YK_GAUGE_PER_ORB            111   /* 收一颗刻符的人妖槽增量（`th08:0x44139e`/`:0x4413b0`）—— 聚焦 = +，否则 − */
+
+int yk_gauge_clamp(int gauge);                 /* 夹到 [ HUMAN_LIMIT, YOUKAI_LIMIT ]（`th08:0x43c0fa`/`:0x43c128`）*/
+int yk_gauge_add(int gauge, int delta);        /* 夹紧后的加法（= AddToYoukaiGauge 的算术部分）*/
+int yk_gauge_dead_zone(int gauge);             /* `|g| <= 9 ⇒ 0`（`th08:0x44bf61`）*/
+int yk_gauge_is_extremely_human(int gauge);    /* `g <= −8000` */
+int yk_gauge_is_moderately_human(int gauge);   /* `g <= −2000` */
+int yk_gauge_is_extremely_youkai(int gauge);   /* `g >= +8000` */
+int yk_gauge_is_moderately_youkai(int gauge);  /* `g >= +2000` */
+int yk_gauge_orbs_delta(int focused);          /* 收刻符时该加多少（聚焦 +111 / 否则 −111）*/
+/* 百分比文字/槽条的染色（一手 `AsciiManager.cpp:1035-1058`）：极人 0x7070ff、中人 0xb0b0ff、
+ * 极妖 0xff7070、中妖 0xffb0b0、其余 0xffffff（每通道 8 位，返回 0xRRGGBB）。*/
+uint32_t yk_gauge_color(int gauge);
+
+/* HUD 几何（**全部一手**，`AsciiManager::InitializeVms` + `AsciiManager::on_draw`）：
+ * 640 空间的一手值 —— 槽条左上 `(32,465)` 128×16、人间图标 `(32,449)`、妖怪图标 `(144,449)`（都是 16×16，
+ * 三个 VM 都 `anchorTopLeft()`）、游标中心 `x = 96 + g·112/20000`、`y = 453`（8×12，**没有** anchor 调用
+ * ⇒ 锚点 = 心）、百分比数字 `x = 96 + g·80/20000`、`y = 游标 y − 7 = 446`。
+ * 图标 x 由**限值**决定：`88 + limit·56/10000` ⇒ 本卡的 ±10000 给出 32 / 144（= 条的两端）。 */
+typedef struct {
+    float bar_x, bar_y;             /* 槽条 VM 位置（**表面 px**，块左下角为原点；VM 用 anchorTopLeft）*/
+    float human_x, human_y;         /* 人间图标（同上，anchorTopLeft）*/
+    float youkai_x, youkai_y;       /* 妖怪图标（同上，anchorTopLeft）*/
+    float cursor_x, cursor_y;       /* 游标（同上，**锚点 = 心 ⇒ 这是中心点**）*/
+    float text_x640, text_y640;     /* 百分比数字（**640×480 空间**，喂 `ce_hud_number_set`）*/
+} yk_gauge_hud_t;
+
+/* `anchor[2]` = HUD 块的**左下角**（表面 px，= `ce_hud_slot_t` 的 x/y）；
+ * `to640` = 表面→640 的比例（= `CE_HUD_SURFACE_TO_640`，TH18 是 0.5）。
+ * 换算：表面偏移 = 640 空间偏移 × 2（= 1/to640）；块左下角 ⇔ 640 空间的 (32,481)。*/
+void yk_gauge_hud(int gauge, const float anchor[2], float to640, yk_gauge_hud_t *out);
+
+/* ============================================== §3.11 永点（刻符）→ PIV（= 额外最大得点）
+ * 一手：`GameManager::sub_418220` `th08:0x418220` 与 `Item::collect_time_orb` `th08:0x4412b0`。
+ *
+ * ```
+ * 418241  current_time_orbs(+0x3c) += delta
+ * 41825c  total_time_orbs(+0x44)   += delta          ; ★ 先加
+ * 418288  if (delta <= 0) 跳出                        ; `jle`（41828c）—— **负增量不碰 PIV**
+ * 418294  delta += (total_time_orbs & 1)             ; ★ 用**加完之后**的奇偶
+ * 4182ab  cdq / sub / sar 1                          ; C 整除 2
+ * 4182b0  eax *= 10
+ * 4182bc  PIV(+0x24) += eax                          ; PIV 就是点道具分值的**基数**（`th08:0x440e50`）
+ * ```
+ * 逐颗（delta = 1）呈 **+10 / 0 / +10 / 0 …**（总数为奇数那颗 +10）⇒ 平均 +5/颗。
+ * 第二条账（**SC 捕获结算**，`th08:0x41731e` + `:0x41732c`–`:0x41733d`）：
+ * `AddTimeOrbs(count)` 之后**再** `PIV += [zSpellcard+0x10] × 10` —— 两笔都算（用户 2026-09-18 口径：
+ * 「有意无意就按照复刻即可」，不要替 ZUN 去重）。 */
+void    yk_piv_reset(int32_t *piv, int32_t *orbs);
+/* `delta` 颗刻符入账（本卡只有 `delta = 1` 与死亡罚分的负数；负数**不动** `*piv`，只动计数）。*/
+void    yk_piv_add(int32_t *piv, int32_t *orbs, int32_t delta);
+/* SC 捕获那份额外账：`*piv += count × 10`（`th08:0x41732c`）。*/
+void    yk_piv_spell_bonus(int32_t *piv, int32_t count);
+/* 刻符的道具分值（`Item::collect_time_orb` 的分数那一段，`th08:0x4412c3`–`0x4412ee`）：
+ * `stage_point_items >= 2000 ⇒ 10000`，否则 `max(100, (point_items / 2) × 10)`。 */
+int32_t yk_orb_score(int32_t stage_point_items_in_game, int32_t point_items_in_game);
+#define YK_ORB_SCORE_MIN        100
+#define YK_ORB_SCORE_MAX        10000
+#define YK_ORB_SCORE_STAGE_GATE 2000

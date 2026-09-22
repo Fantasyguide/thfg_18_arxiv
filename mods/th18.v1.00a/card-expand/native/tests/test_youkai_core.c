@@ -772,6 +772,101 @@ int main(void)
     CHECK(yk_shot_slot_suppressed(&m, 801, 0, 0) == 0);
     }
 
+    /* ============ §3.10 人妖槽（TH08 `youkaiGauge`；限值/判定/几何全部一手）============ */
+    /* 夹紧：`th08:0x43c0fa`（下限）/`th08:0x43c128`（上限），两条都**取等号**。*/
+    CHECK(yk_gauge_clamp(0) == 0);
+    CHECK(yk_gauge_clamp(9999) == 9999);
+    CHECK(yk_gauge_clamp(10000) == YK_GAUGE_YOUKAI_LIMIT);
+    CHECK(yk_gauge_clamp(12345) == YK_GAUGE_YOUKAI_LIMIT);
+    CHECK(yk_gauge_clamp(-12345) == YK_GAUGE_HUMAN_LIMIT);
+    /* 加法先按 i16 截断再夹（`th08:0x43c0e9` 的 `mov WORD`）——小增量下与直接加等价。*/
+    CHECK(yk_gauge_add(9000, 500) == 9500);
+    CHECK(yk_gauge_add(9900, 500) == YK_GAUGE_YOUKAI_LIMIT);
+    CHECK(yk_gauge_add(-9900, -500) == YK_GAUGE_HUMAN_LIMIT);
+    CHECK(yk_gauge_add(0, 200) == 200);
+    /* 死区：`|g| <= 9 ⇒ 0`（`th08:0x44bf4d` 的 fcomp 9.0 → `:0x44bf61`）。*/
+    CHECK(yk_gauge_dead_zone(9) == 0);
+    CHECK(yk_gauge_dead_zone(-9) == 0);
+    CHECK(yk_gauge_dead_zone(0) == 0);
+    CHECK(yk_gauge_dead_zone(10) == 10);
+    CHECK(yk_gauge_dead_zone(-10) == -10);
+    /* 四档判定（`th08:0x406d10/40/70/a0`；极人/中人 ≤、极妖/中妖 ≥，**取等号**）。*/
+    CHECK(yk_gauge_is_extremely_human(-8000) == 1);
+    CHECK(yk_gauge_is_extremely_human(-7999) == 0);
+    CHECK(yk_gauge_is_moderately_human(-2000) == 1);
+    CHECK(yk_gauge_is_moderately_human(-1999) == 0);
+    CHECK(yk_gauge_is_extremely_youkai(8000) == 1);
+    CHECK(yk_gauge_is_extremely_youkai(7999) == 0);
+    CHECK(yk_gauge_is_moderately_youkai(2000) == 1);
+    CHECK(yk_gauge_is_moderately_youkai(1999) == 0);
+    CHECK(yk_gauge_is_extremely_human(0) == 0 && yk_gauge_is_extremely_youkai(0) == 0);
+    /* 收刻符的增量：聚焦 = +111、否则 −111（`th08:0x44139e`/`:0x4413b0`）。*/
+    CHECK(yk_gauge_orbs_delta(1) == 111 && yk_gauge_orbs_delta(0) == -111);
+    /* 染色五档（`AsciiManager.cpp:1035-1058`，顺序即优先级）。*/
+    CHECK(yk_gauge_color(-9000) == 0x7070ffu);
+    CHECK(yk_gauge_color(-3000) == 0xb0b0ffu);
+    CHECK(yk_gauge_color(9000) == 0xff7070u);
+    CHECK(yk_gauge_color(3000) == 0xffb0b0u);
+    CHECK(yk_gauge_color(0) == 0xffffffu);
+    CHECK(yk_gauge_color(-8000) == 0x7070ffu);      /* 极人优先于中人 */
+    CHECK(yk_gauge_color(8000) == 0xff7070u);       /* 极妖优先于中妖 */
+    /* HUD 几何（一手 `AsciiManager`）：块左下角 = 640 空间的 (32,481)、表面 = 640 × 2。
+     * 锚点取 (257,924)（货架第一格）时逐项核。*/
+    {
+        yk_gauge_hud_t h;
+        float a[2];
+        a[0] = 257.0f; a[1] = 924.0f;
+        yk_gauge_hud(0, a, 0.5f, &h);
+        CHECK(h.bar_x == 257.0f && h.bar_y == 924.0f - 32.0f);      /* 槽条 128×16，左上 */
+        CHECK(h.human_x == 257.0f && h.human_y == 924.0f - 64.0f);  /* 人间图标在条左端（88−56−32=0） */
+        CHECK(h.youkai_x == 257.0f + 224.0f);                       /* 妖怪图标在条右端（88+56−32=112 → ×2） */
+        CHECK(h.cursor_x == 257.0f + 128.0f);                       /* g=0 ⇒ 96−32=64 → ×2 */
+        CHECK(h.cursor_y == 924.0f - 56.0f);
+        CHECK(h.text_x640 == 257.0f * 0.5f + 64.0f);
+        CHECK(h.text_y640 == 924.0f * 0.5f - 35.0f);
+        /* 满妖侧：游标走到条右端（96+56−32 = 120 → ×2 = 240）。*/
+        yk_gauge_hud(10000, a, 0.5f, &h);
+        CHECK(h.cursor_x == 257.0f + 240.0f);
+        CHECK(h.text_x640 == 257.0f * 0.5f + 64.0f + 40.0f);
+        /* 满人侧：游标走到条左端。*/
+        yk_gauge_hud(-10000, a, 0.5f, &h);
+        CHECK(h.cursor_x == 257.0f + 16.0f);                        /* 96−56−32 = 8 → ×2 = 16 */
+        /* 越界输入按限值夹（引擎/卡状态给脏值时不跑到条外）。*/
+        yk_gauge_hud(999999, a, 0.5f, &h);
+        CHECK(h.cursor_x == 257.0f + 240.0f);
+    }
+
+    /* ============ §3.11 永点（刻符）→ PIV（一手 `th08:0x418220`）============ */
+    {
+        int32_t piv, orbs;
+        /* 逐颗：+10 / 0 / +10 / 0 …（总数为奇数那颗 +10）⇒ 平均 +5/颗。*/
+        yk_piv_reset(&piv, &orbs);
+        CHECK(piv == 0 && orbs == 0);
+        yk_piv_add(&piv, &orbs, 1);  CHECK(orbs == 1 && piv == 10);
+        yk_piv_add(&piv, &orbs, 1);  CHECK(orbs == 2 && piv == 10);
+        yk_piv_add(&piv, &orbs, 1);  CHECK(orbs == 3 && piv == 20);
+        yk_piv_add(&piv, &orbs, 1);  CHECK(orbs == 4 && piv == 20);
+        /* 一次给 2 颗：total = 6（偶）⇒ (2+0)/2×10 = 10。*/
+        yk_piv_add(&piv, &orbs, 2);  CHECK(orbs == 6 && piv == 30);
+        /* **负数不动 PIV**（`th08:0x418288`/`:0x41828c jle`），只动计数。*/
+        yk_piv_add(&piv, &orbs, -15);
+        CHECK(orbs == -9 && piv == 30);
+        /* 再收一颗：total = −8（偶）⇒ (1+0)/2 = 0 ⇒ 不加。*/
+        yk_piv_add(&piv, &orbs, 1);  CHECK(orbs == -8 && piv == 30);
+        yk_piv_add(&piv, &orbs, 1);  CHECK(orbs == -7 && piv == 40);  /* total 奇 ⇒ +10 */
+        /* SC 捕获那份额外账：`count × 10`，独立加（`th08:0x41732c`）。*/
+        yk_piv_spell_bonus(&piv, 7); CHECK(piv == 110);
+        yk_piv_spell_bonus(&piv, 0); CHECK(piv == 110);               /* 非正不加 */
+        yk_piv_spell_bonus(&piv, -3);CHECK(piv == 110);
+        /* 刻符的道具分值（`th08:0x4412c3`–`0x4412ee`）：本关蓝点 ≥ 2000 ⇒ 满值 10000。*/
+        CHECK(yk_orb_score(2000, 0) == 10000);
+        CHECK(yk_orb_score(5000, 10) == 10000);
+        CHECK(yk_orb_score(0, 0) == 100);            /* (0/2)*10 = 0 ⇒ 下限 100 */
+        CHECK(yk_orb_score(0, 100) == 500);          /* (100/2)*10 */
+        CHECK(yk_orb_score(1999, 4) == 100);         /* 没到门槛 + 值太小 ⇒ 下限 */
+        CHECK(yk_orb_score(0, 20000) == 100000);     /* 门槛按**本关**算，本局计数照给 */
+    }
+
     printf("youkai_core: %d checks, %d failed\n", s_pass + s_fail, s_fail);
     return s_fail ? 1 : 0;
 }

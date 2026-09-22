@@ -288,25 +288,31 @@ def abcard_order():
 def pl_plan():
     """`assets/build_player_anm.py` → ({pl0X: entry 总数}, {pl0X: 追加脚本数})。
 
-    解析规则（对着那份源码的结构写的；那边改结构这里要跟着改）：
-      · `dict(idx=N` 是该文件里**唯一**带 `idx=` 的写法 ⇒ N 只出现在 entry 计划里，
-        且归属**最近一个前面出现过的** `"plNN":` 键（两个表都是这个布局）；
-      · entry 总数 = max(idx) + 1 —— `_append_spec()` 硬校验「idx = 原生 entry 数 + 序号」；
-      · `new_sid=N` 只出现在 `APPEND_PLAN` 的脚本计划里 ⇒ 按同一个「最近键」归属后计数。
-    """
-    cur = None
-    max_idx, n_scripts = {}, {}
-    for line in read_text(ASSETS / "build_player_anm.py").splitlines():
-        m = re.search(r'"(pl\d\d)"\s*:', line)
-        if m:
-            cur = m.group(1)
-        if cur is None:
-            continue
-        m = re.search(r"dict\(idx=(\d+)", line)
-        if m:
-            max_idx[cur] = max(max_idx.get(cur, -1), int(m.group(1)))
-        if re.search(r"new_sid=\d+", line):
-            n_scripts[cur] = n_scripts.get(cur, 0) + 1
+    ★ 2026-09-22 改法（108 的人妖槽 / 刻符那一批之后）：**不再正则扫源码**，而是
+    **把那份脚本 import 进来、问它要真正的计划表**。为什么必须改：
+      · 旧实现按「`dict(idx=N` 归给最近一个 `"plNN":` 键」解析；而 108 的妖侧本体（2026-09-22）
+        与 HUD/刻符（同日晚）这两批的 entry 是**函数生成**的（`_youkai_body_entries()` /
+        `_yk_extra_entries()`），源码里根本没有 `dict(idx=` 字面量 ⇒ 旧解析**静默少数 2~5 条 entry**；
+        更糟的是 `_yk_extra_plan()` 里的 `new_sid=` 会被归给最后一个 `"plNN":` 键 ⇒ 脚本数也串位。
+      · 台账少报 = 余量看起来比实际大 ⇒ 正是这个脚本存在的理由（「不许过期」）要拦的东西。
+    ⇒ 现在直接算：entry 总数 = `max(idx)+1`（`_append_spec()` 硬校验 idx = 原生 + 序号），
+      脚本数 = `len(APPEND_PLAN[pl])`。import 会执行那份脚本的模块级代码（只建表、不碰工具）。"""
+    import importlib.util
+    path = ASSETS / "build_player_anm.py"
+    spec = importlib.util.spec_from_file_location("_capcheck_build_player_anm", path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.path.insert(0, str(ASSETS))          # 它 import anmlib
+    try:
+        spec.loader.exec_module(mod)
+        max_idx = {pl: max(e["idx"] for e in mod._entries_of(pl)) for pl in mod.PLAYERS}
+        n_scripts = {pl: len(mod.APPEND_PLAN.get(pl, [])) for pl in mod.PLAYERS}
+    except SystemExit:
+        raise
+    except Exception as e:                   # noqa: BLE001 —— 导入失败就把话说清楚，别静默少报
+        raise SystemExit(f"capcheck: import build_player_anm.py 失败（{e!r}）—— 台账算不出来，先修脚本")
+    finally:
+        if str(ASSETS) in sys.path:
+            sys.path.remove(str(ASSETS))
     if set(max_idx) != {"pl00", "pl01", "pl02", "pl03"}:
         raise SystemExit(f"capcheck: 从 build_player_anm.py 只认出 {sorted(max_idx)} 的 entry 计划"
                          f"（期望 pl00..pl03）—— 解析规则过期了，先修脚本")

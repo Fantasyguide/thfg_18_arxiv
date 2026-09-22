@@ -56,6 +56,7 @@ TH18_DAT = REPO / "local" / "th18.v1.00a" / "dat"
 TH13_DAT = REPO / "local" / "th13.v1.00c" / "dat"
 TH13_ANM = REPO / "local" / "th13.v1.00c" / "anm"   # unpack.py 解出来的原版贴图（只读）
 TH08_DAT = REPO / "local" / "th08.v1.00d" / "dat"   # ★ 108：TH08 的 player0X.anm（**裸 .dat 里的文件**，不用 unpack）
+TH08_ANM = REPO / "local" / "th08.v1.00d" / "anm"   # 108 的 HUD / 刻符贴图源（`unpack.py th08.v1.00d` 解出来）
 TH16_DAT = REPO / "local" / "th16.v1.00a" / "dat"
 OUT = L.BUILD
 PLAYERS = ("pl00", "pl01", "pl02", "pl03")
@@ -458,6 +459,96 @@ def _youkai_plan(player: str, src: str, sid0: int, sprite0: int):
     return out
 
 
+
+# ★★ 2026-09-22（owner：「那就先做人妖槽以及永点VM池」）：**108 的人妖槽 HUD + 刻符（时点）**。
+#
+# 两张贴图、5 支脚本，来源**全是 TH08 原版**（⇒ 走 `game="th08"` 那条现成路：裸 `dat/*.anm` + `v2.anmm`）：
+#   · **刻符（时点）**：`etama.anm` entry1 `data/etama/etama2.png` 的 **sprite179 = (112,64,16,16)**
+#     + 它自己的脚本 **script68**（`th08` 里脚本号 = `61 + item_type`，type 7 = 刻符，一手 `th08:0x4403b9`）。
+#   · **人妖槽 HUD 四件**（`ascii.anm` entry0 `data/ascii/ascii.png`，一手 `AsciiManager::InitializeVms`）：
+#     槽条 = **script5 / sprite155 (0,224,128,16)**、人间图标 = **script6 / sprite153 (160,208,16,16)**、
+#     妖怪图标 = **script7 / sprite154 (176,208,16,16)**、游标 = **script8 / sprite152 (128,208,8,12)**。
+#
+# ⚠ **一处跨版本 opcode 翻译（必须做，否则编不过）**：TH08 的 `anchorTopLeft()`（v2 的 opcode 22）
+#   在 v8 里**没有**了 —— v8 是带参的 `anchor(h, v)`（opcode 421），按
+#   `engine/anm/OVERVIEW.md` 的跨版本锚点表：**0 = 中 / 1 = 左(顶) / 2 = 右(底)**
+#   ⇒ `anchorTopLeft()` ≡ `anchor(1, 1)`（取值口径 🟡，但 107 的 HUD 标签也是这么用的）。
+#   其余 opcode（`sprite/zWriteDisable/alpha/alphaTime/colorTime/pos/posTime/stop/stopHide/
+#   interruptLabel/static`）v8 全有（`stopHide` 见 TH18 原生 `text.anm`，`static` 见 `bullet.anm`）。
+#
+# 每个机体一套（四个 `pl0X.anm` 各追加一份）：VM 的贴图按 **VM 自己那一页**的 anm 取
+# （`th18:0x481117`–`0x481136`）⇒ 不追加进 pl0X.anm 就画不出来 —— 与妖侧本体同一条理。
+YK_EXTRA_PLAN = {
+    # 名字 : (源 anm 名, 源贴图相对路径, [(源 sprite 号, 源 x, 源 y, w, h), …], 画布宽高)
+    "orb":   ("etama", "data/etama/etama2.png", [(179, 112, 64, 16, 16)], (16, 16)),
+    "gauge": ("ascii", "data/ascii/ascii.png",
+              [(152, 128, 208, 8, 12),      # 游标（放在画布最左，TH08 的号序）
+               (153, 160, 208, 16, 16),     # 人间图标
+               (154, 176, 208, 16, 16),     # 妖怪图标
+               (155, 0, 224, 128, 16)],     # 槽条
+              (168, 16)),
+}
+# 每项的**画布内摆放**（x 从左往右挨着放，间距 0；⚠ 槽条是 128 宽、游标 8 宽 ⇒ 画布 168 够）
+_YK_EXTRA_LAYOUT = {"orb": [(0, 0)], "gauge": [(0, 0), (8, 0), (24, 0), (40, 0)]}
+# entry 名（每机各一份，故名字里不带机体号也可以；贴图按 entry 名去 tex 目录找）
+YK_EXTRA_NAME = {"orb": "player/yk_orb.png", "gauge": "player/yk_gauge.png"}
+# 每机的新 entry 号 / 首个 sprite 号 / 首个脚本号（接在「妖侧本体」之后，只追加）
+YK_EXTRA_IDS = {
+    "pl00": dict(entry0=16, sprite0=97,  script0=48),
+    "pl01": dict(entry0=17, sprite0=107, script0=54),
+    "pl02": dict(entry0=15, sprite0=110, script0=37),
+    "pl03": dict(entry0=20, sprite0=121, script0=39),
+}
+# 脚本：键 → (源 anm, 源脚本号, 宏后缀, 源 sprite → 该 entry 内第几个)
+YK_EXTRA_SCRIPTS = (
+    ("orb",    "etama", 68, "ORB",        {179: 0}),
+    ("gauge",  "ascii", 5,  "GAUGE_BAR",  {155: 3}),
+    ("gauge",  "ascii", 6,  "GAUGE_HUMAN", {153: 1}),
+    ("gauge",  "ascii", 7,  "GAUGE_YOUKAI", {154: 2}),
+    ("gauge",  "ascii", 8,  "GAUGE_CURSOR", {152: 0}),
+)
+
+
+def _yk_extra_order():
+    return ("orb", "gauge")
+
+
+def _yk_extra_entries(player: str):
+    """该机体的 2 条追加 entry（刻符 + 人妖槽 HUD）；编号/sprite 号接在妖侧本体之后。"""
+    ids = YK_EXTRA_IDS[player]
+    out, k = [], 0
+    for name in _yk_extra_order():
+        src_anm, src_png, sprites, size = YK_EXTRA_PLAN[name]
+        lay = _YK_EXTRA_LAYOUT[name]
+        ps = []
+        for i, (_sid, sx, sy, w, h) in enumerate(sprites):
+            cx, cy = lay[i]
+            ps.append((ids["sprite0"] + k, cx, cy, w, h, src_anm, src_png, sx, sy))
+            k += 1
+        out.append(dict(idx=ids["entry0"] + len(out), name=YK_EXTRA_NAME[name],
+                        size=size, sprites=ps))
+    return out
+
+
+def _yk_extra_plan(player: str):
+    """该机体的 5 支追加脚本（刻符 1 + 人妖槽 HUD 4）。"""
+    ids = YK_EXTRA_IDS[player]
+    order = _yk_extra_order()
+    base = {}
+    k = 0
+    for name in order:
+        base[name] = ids["sprite0"] + k
+        k += len(YK_EXTRA_PLAN[name][2])
+    out = []
+    for i, (name, src, sid, macro, smap_src) in enumerate(YK_EXTRA_SCRIPTS):
+        smap = {s: base[name] + idx for s, idx in smap_src.items()}
+        # ⚠ 宏名必须**带机体号**：四个 pl0X.anm 的追加脚本号互不相同（各文件从自己的原生脚本数
+        #   往后接），不带就会在 `pl_anm_ids.h` 里互相覆盖（实测报 `macro redefined`）。
+        out.append(dict(macro=f"YK{macro}_{player.upper()}", game="th08", src=src, sid=sid,
+                        new_sid=ids["script0"] + i, smap=smap, k=1.0, alpha255=False,
+                        scale_inject=False, th08_opcodes=True))
+    return out
+
 APPEND_PLAN = {
     # ★★ 2026-09-13（卡 113）：TH13 灵界**主炮**弹 —— 每机两支：主弹 + 每帧闪光子 VM。
     #
@@ -481,7 +572,7 @@ APPEND_PLAN = {
     ] + _youkai_plan(
         # ★★ 108 妖侧本体 = 八雲紫（TH08 `player00.anm` script5..9）
         # state 号 ↔ 宏后缀：0 idle / 1 move-L / 2 stop-L / 3 move-R / 4 stop-R（见 `_youkai_plan` 的长注释）
-        "pl00", "player00", 43, 86),
+        "pl00", "player00", 43, 86) + _yk_extra_plan("pl00"),
     "pl01": [
         dict(macro="PL01_TRANCE", game="th13", src="pl01", sid=11, new_sid=47,
              smap={69: 67, 70: 68, 71: 69, 72: 70}, sref={12: 48},
@@ -490,7 +581,7 @@ APPEND_PLAN = {
              smap={73: 71}, k=1.0, alpha255=False, scale_inject=False),
     ] + _youkai_plan(
         # ★★ 108 妖侧本体 = アリス（TH08 `player01.anm` script5..9）
-        "pl01", "player01", 49, 96),
+        "pl01", "player01", 49, 96) + _yk_extra_plan("pl01"),
     "pl02": [
         dict(macro="PL02_WOLF",  src="pl02", sid=5, new_sid=30, smap={24: 75},
              k=KNIFE_SCALE, alpha255=True, scale_inject=True),
@@ -498,7 +589,7 @@ APPEND_PLAN = {
              k=KNIFE_SCALE, alpha255=True, scale_inject=True),
     ] + _youkai_plan(
         # ★★ 108 妖侧本体 = レミリア（TH08 `player02.anm` script5..9，9 帧、46×46）
-        "pl02", "player02", 32, 101),
+        "pl02", "player02", 32, 101) + _yk_extra_plan("pl02"),
     "pl03": [
         dict(macro="PL03_FROG",  src="pl03", sid=8, new_sid=29,
              smap={34: 57, 40: 62, 41: 63, 42: 64, 43: 65, 25: 66},
@@ -519,7 +610,7 @@ APPEND_PLAN = {
              smap={62: 72}, k=1.0, alpha255=False, scale_inject=False),
     ] + _youkai_plan(
         # ★★ 108 妖侧本体 = 射命丸文（**TH16** `pl03.anm` script0..4，24 帧；她的 0..4 就是本体全套）
-        "pl03", "pl03", 34, 97),
+        "pl03", "pl03", 34, 97) + _yk_extra_plan("pl03"),
 }
 PL_IDS_H = MOD / "native" / "pl_anm_ids.h"
 
@@ -545,8 +636,21 @@ PINNED_NEW_SIDS = {
     "pl03": {"PL03_FROG": 29, "PL03_SNAKE": 30, "PL03_GLINT": 31, "PL03_TRANCE": 32,
              "PL03_TRANCE_GLINT": 33,
              "YKBODY_PL03_IDLE": 34, "YKBODY_PL03_MOVE_L": 35, "YKBODY_PL03_STOP_L": 36,
-             "YKBODY_PL03_MOVE_R": 37, "YKBODY_PL03_STOP_R": 38},
+             "YKBODY_PL03_MOVE_R": 37, "YKBODY_PL03_STOP_R": 38,
+             "YKORB_PL03": 39, "YKGAUGE_BAR_PL03": 40, "YKGAUGE_HUMAN_PL03": 41,
+             "YKGAUGE_YOUKAI_PL03": 42, "YKGAUGE_CURSOR_PL03": 43},
 }
+# ★★ 108 的**人妖槽 HUD + 刻符**（2026-09-22，owner：「那就先做人妖槽以及永点VM池」）。
+#   与 `YKBODY_*` 同一个理由钉号：C 侧 `YK_ORB_SCRIPT[4]` / `YK_GAUGE_SCRIPT[4][4]` 直接吃这些宏。
+PINNED_NEW_SIDS["pl00"].update({"YKORB_PL00": 48, "YKGAUGE_BAR_PL00": 49,
+                               "YKGAUGE_HUMAN_PL00": 50, "YKGAUGE_YOUKAI_PL00": 51,
+                               "YKGAUGE_CURSOR_PL00": 52})
+PINNED_NEW_SIDS["pl01"].update({"YKORB_PL01": 54, "YKGAUGE_BAR_PL01": 55,
+                               "YKGAUGE_HUMAN_PL01": 56, "YKGAUGE_YOUKAI_PL01": 57,
+                               "YKGAUGE_CURSOR_PL01": 58})
+PINNED_NEW_SIDS["pl02"].update({"YKORB_PL02": 37, "YKGAUGE_BAR_PL02": 38,
+                               "YKGAUGE_HUMAN_PL02": 39, "YKGAUGE_YOUKAI_PL02": 40,
+                               "YKGAUGE_CURSOR_PL02": 41})
 
 _SPRITE_REF = re.compile(r"\bsprite\(sprite(\d+)\)")
 _SPRITE_DEF = re.compile(r"\bsprite(\d+):")
@@ -674,7 +778,7 @@ def _entries_of(player: str):
     顺序就是 entry 号：`idx` 必须等于「原生 entry 数 + 前面几项」，`_append_spec` 会硬校验。
     """
     return (PLAYER_ART_ENTRIES.get(player, []) + TH13_TRANCE_ENTRIES.get(player, [])
-            + _youkai_body_entries(player))
+            + _youkai_body_entries(player) + _yk_extra_entries(player))
 
 
 def _anmmap_for(game):
@@ -872,6 +976,8 @@ def _append_spec(player: str, retail_text: str, tools, anmmap) -> str:
             body = body.replace("alpha(192)", "alpha(255)")
         if spec["scale_inject"]:
             body = _inject_scale(body, spec["k"])
+        if spec.get("th08_opcodes"):
+            body = _th08_opcodes(body)               # TH08(v2) → TH18(v8) 的 opcode 翻译
         if spec.get("prologue"):
             body = _inject_body_prologue(body)       # TH08 本体脚本的前导（见该函数注释）
         body = _rename_script(body, src_sid, new_sid)
@@ -1118,6 +1224,54 @@ def _body_canvas(ent: dict):
     return canvas
 
 
+def _yk_extra_canvas(ent: dict):
+    """108 的 HUD / 刻符 entry 的**期望画布**：从 TH08 解包目录按声明的源矩形现切、1:1 贴。
+
+    与 `_body_canvas` 同一条纪律：只 `paste`（不带 mask）、零缩放零改色 ⇒ 回读闸要求逐像素相等。
+    ⚠ 源目录要 `python3 tooling/thtk/unpack.py th08.v1.00d`（本仓 TH13 那条路同款要求）。
+    """
+    from PIL import Image
+    canvas = Image.new("RGBA", ent["size"], (0, 0, 0, 0))
+    for (_sid, x, y, w, h, src_anm, src_png, sx, sy) in ent["sprites"]:
+        p = TH08_ANM / src_anm / src_png
+        if not p.is_file():
+            raise SystemExit(f"缺 TH08 解包贴图 {p}\n"
+                             f"（先 `python3 tooling/thtk/unpack.py th08.v1.00d`）")
+        tile = Image.open(p).convert("RGBA").crop((sx, sy, sx + w, sy + h))
+        if tile.size != (w, h):
+            raise SystemExit(f"{p.name}: 源矩形 ({sx},{sy},{w},{h}) 切不出来")
+        canvas.paste(tile, (x, y))
+    return canvas
+
+
+def _yk_extra_readback(player: str, td: Path):
+    """回读闸：从编出来的 anm 里解出来的 HUD / 刻符 entry 贴图，必须逐像素等于 TH08 原版切图。"""
+    from PIL import Image, ImageChops
+    for ent in _yk_extra_entries(player):
+        p = td / ent["name"]
+        if not p.is_file():
+            raise SystemExit(f"{player}.anm: 回读不到追加 entry 贴图 {ent['name']}")
+        got = Image.open(p).convert("RGBA")
+        want = _yk_extra_canvas(ent)
+        if got.size != want.size:
+            raise SystemExit(f"{player}.anm: entry{ent['idx']} 贴图 {got.size} != 期望 {want.size}")
+        if ImageChops.difference(got, want).getbbox() is not None:
+            raise SystemExit(f"{player}.anm: entry{ent['idx']}（108 HUD/刻符）的贴图与 TH08 原版"
+                             f"切图不一致 —— 切图/编译链路改坏了像素")
+
+
+def _th08_opcodes(body: str) -> str:
+    """TH08（v2）→ TH18（v8）的 **opcode 翻译**（只翻名字真的变了的那些）。
+
+    一手：`engine/anm/OVERVIEW.md` 的跨版本锚点表 —— v2 的 `22 anchorTopLeft`（无参）在 v8 里
+    没有了，v8 是带参的 `421 anchor(h, v)`，取值 `0 = 中 / 1 = 左(顶) / 2 = 右(底)`
+    ⇒ `anchorTopLeft()` ≡ `anchor(1, 1)`。**别的 opcode 一个都不动**（脚本里用到的其余指令
+    `sprite/zWriteDisable/alpha/alphaTime/colorTime/pos/posTime/stop/stopHide/interruptLabel/static`
+    v8 全有：`stopHide` 见 TH18 原生 `text.anm`、`static` 见 `bullet.anm`）。
+    """
+    return body.replace("anchorTopLeft();", "anchor(1, 1);")
+
+
 def _body_readback(player: str, td: Path):
     """回读闸：从**编出来的** anm 里解出来的本体 entry 贴图，必须逐像素等于 55 张源图拼的画布。"""
     from PIL import Image, ImageChops
@@ -1155,6 +1309,10 @@ def _write_entry_textures(player: str, tex: Path):
         dst = tex / ent["name"]
         dst.parent.mkdir(parents=True, exist_ok=True)
         _body_canvas(ent).save(dst)           # 108 妖侧本体（源图原样横排，1:1、零补边）
+    for ent in _yk_extra_entries(player):
+        dst = tex / ent["name"]
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        _yk_extra_canvas(ent).save(dst)       # 108 HUD / 刻符（TH08 原版现切，1:1、零补边）
 
 
 def _trance_readback(player: str, td: Path):
@@ -1210,7 +1368,8 @@ def _do_appended(player: str, a, tools, anmmap):
         raise SystemExit(f"缺 {out_anm}：先跑 python3 assets/build_player_anm.py")
     built_text, n_e, n_s = L.verify_rebuilt(out_anm, retail_text, retail_dir, tools, anmmap,
                                            on_extract=lambda td: (_trance_readback(player, td),
-                                                                  _body_readback(player, td)))
+                                                                  _body_readback(player, td),
+                                                                  _yk_extra_readback(player, td)))
     n_sprites, n_scripts, used = _verify_appended(player, built_text, spec_text)
     plan = " ".join(f"script{s['new_sid']}={s['macro']}("
                     + (f"{s['game']} {s['src']}" if s.get("game") else s["src"])

@@ -701,3 +701,109 @@ int yk_in_transfer_zone(float fx, float fy, float cx, float cy, float w, float h
     if (dy < 0.0f) dy = -dy;
     return (dx <= w * 0.5f + YK_FAM_HURTBOX_HALF) && (dy <= h * 0.5f + YK_FAM_HURTBOX_HALF);
 }
+
+/* ------------------------------------------------------ §3.10 人妖槽 */
+int yk_gauge_clamp(int gauge)
+{
+    /* `th08:0x43c0fa`/`:0x43c103`（低于下限 ⇒ 写下限）与 `th08:0x43c128`/`:0x43c131`（高于上限 ⇒ 写上限）。
+     * 两条都是**有符号 i16 比较**（`movsx` + `cmp` + `jge`/`jle`）⇒ C 的 int 比较同义。*/
+    if (gauge < YK_GAUGE_HUMAN_LIMIT) return YK_GAUGE_HUMAN_LIMIT;
+    if (gauge > YK_GAUGE_YOUKAI_LIMIT) return YK_GAUGE_YOUKAI_LIMIT;
+    return gauge;
+}
+
+int yk_gauge_add(int gauge, int delta)
+{
+    /* `th08:0x43c0d9`–`:0x43c0e9`：`gauge = (int16)((int)gauge + delta)`（**先按 i16 截断再夹**）。
+     * 这一步照抄：TH08 的中间值是 `eax += delta` 后 `mov WORD [...]`（存 i16）⇒ 溢出会绕回。
+     * 本卡的 delta 都是小常数（±111 / ±200 / ±26000），不会绕；按 i16 截断只是为了逐位对齐。*/
+    int32_t v = (int32_t)(int16_t)((int32_t)gauge + (int32_t)delta);
+    return yk_gauge_clamp((int)v);
+}
+
+int yk_gauge_dead_zone(int gauge)
+{
+    /* `th08:0x44bf4d` `fcomp 9.0` → `:0x44bf61` `set_youkai_gauge(0)`：`|g| <= 9` 时归零。
+     * （TH08 那边是 `fabs()` 比较，整数同义。）*/
+    int v = gauge < 0 ? -gauge : gauge;
+    return (v <= YK_GAUGE_DEAD_ZONE) ? 0 : gauge;
+}
+
+int yk_gauge_is_extremely_human(int gauge)  { return gauge <= YK_GAUGE_HUMAN_EFFECTS; }  /* th08:0x406d10 setle */
+int yk_gauge_is_moderately_human(int gauge) { return gauge <= YK_GAUGE_BLUE_TINT; }      /* th08:0x406d40 setle */
+int yk_gauge_is_extremely_youkai(int gauge) { return gauge >= YK_GAUGE_YOUKAI_EFFECTS; } /* th08:0x406d70 setge */
+int yk_gauge_is_moderately_youkai(int gauge){ return gauge >= YK_GAUGE_RED_TINT; }       /* th08:0x406da0 setge */
+
+int yk_gauge_orbs_delta(int focused) { return focused ? YK_GAUGE_PER_ORB : -YK_GAUGE_PER_ORB; }
+
+uint32_t yk_gauge_color(int gauge)
+{
+    /* 一手 `AsciiManager.cpp:1035-1058`（顺序即优先级：极人 → 中人 → 极妖 → 中妖 → 白）。
+     * 这三通道写的都是 `prefix.color1.r/g/b`，槽条用的是**同一个**颜色（`:1060` 把文字色拷给槽条 VM）。*/
+    if (yk_gauge_is_extremely_human(gauge))  return 0x7070ffu;
+    if (yk_gauge_is_moderately_human(gauge)) return 0xb0b0ffu;
+    if (yk_gauge_is_extremely_youkai(gauge)) return 0xff7070u;
+    if (yk_gauge_is_moderately_youkai(gauge))return 0xffb0b0u;
+    return 0xffffffu;
+}
+
+void yk_gauge_hud(int gauge, const float anchor[2], float to640, yk_gauge_hud_t *out)
+{
+    /* 一手（640 空间）：槽条左上 (32,465)、图标 (32,449)/(144,449)、游标中心 (96 + g·112/20000, 453)、
+     * 数字 (96 + g·80/20000, 446)。块左下角 ⇔ 640 空间的 **(32,481)** ⇒
+     *   表面偏移 x = (X640 − 32) × (1/to640)、y = (481 − Y640) × (1/to640)。
+     * ⚠ 图标 x 用**限值**算：`88 + limit·56/10000`（`AsciiManager::InitializeVms`）——
+     *   本卡是 ±10000 ⇒ 恰好落在条的两端（32 / 144），与一手数值一致。*/
+    float k, ax, ay, g;
+    int v;
+    if (!out) return;
+    k = (to640 > 0.0f) ? (1.0f / to640) : 2.0f;       /* 表面 px 每 640 空间 px（TH18 = 2）*/
+    ax = anchor ? anchor[0] : 0.0f;
+    ay = anchor ? anchor[1] : 0.0f;
+    v = yk_gauge_clamp(gauge);
+    g = (float)v / (float)YK_GAUGE_SPAN;              /* −1..+1，TH08 是 float 除法（不是整数取整）*/
+    out->bar_x = ax + (32.0f - 32.0f) * k;
+    out->bar_y = ay - (481.0f - 465.0f) * k;          /* 槽条 128×16，anchorTopLeft ⇒ 位置 = 左上 */
+    out->human_x = ax + ((88.0f + (float)YK_GAUGE_HUMAN_LIMIT * 56.0f / 10000.0f) - 32.0f) * k;
+    out->human_y = ay - (481.0f - 449.0f) * k;
+    out->youkai_x = ax + ((88.0f + (float)YK_GAUGE_YOUKAI_LIMIT * 56.0f / 10000.0f) - 32.0f) * k;
+    out->youkai_y = out->human_y;
+    out->cursor_x = ax + ((96.0f + g * 56.0f) - 32.0f) * k;   /* 112 / 2 = 56 */
+    out->cursor_y = ay - (481.0f - 453.0f) * k;               /* 游标锚点 = 心 ⇒ 这是中心 */
+    out->text_x640 = (ax * to640) + (64.0f + g * 40.0f);      /* 80 / 2 = 40；96 − 32 = 64 */
+    out->text_y640 = (ay * to640) - (481.0f - 446.0f);        /* 游标 y − 7 = 446（640 空间）*/
+}
+
+/* ------------------------------------------------------ §3.11 永点 → PIV */
+void yk_piv_reset(int32_t *piv, int32_t *orbs)
+{
+    if (piv) *piv = 0;
+    if (orbs) *orbs = 0;
+}
+
+void yk_piv_add(int32_t *piv, int32_t *orbs, int32_t delta)
+{
+    int32_t d, total;
+    if (!orbs) return;
+    *orbs += delta;                                  /* +0x3c 与 +0x44 同增（本卡只留总量这一个计数）*/
+    if (!piv) return;
+    if (delta <= 0) return;                          /* `th08:0x418288`/`:0x41828c jle`：负数**不动** PIV */
+    total = *orbs;
+    d = delta + (total & 1);                         /* ★ 用加完之后的奇偶（`th08:0x418294`）*/
+    *piv += (d / 2) * 10;                            /* `th08:0x4182ab`–`:0x4182bc`：C 整除 2 再 ×10 */
+}
+
+void yk_piv_spell_bonus(int32_t *piv, int32_t count)
+{
+    if (!piv || count <= 0) return;
+    *piv += count * 10;                              /* `th08:0x41732c` imul ×10 / `:0x417334` add / `:0x41733d` */
+}
+
+int32_t yk_orb_score(int32_t stage_point_items_in_game, int32_t point_items_in_game)
+{
+    int32_t v;
+    if (stage_point_items_in_game >= YK_ORB_SCORE_STAGE_GATE) return YK_ORB_SCORE_MAX;  /* 0x4412c8 cmp 0x7d0 */
+    v = (point_items_in_game / 2) * 10;              /* 0x4412e3 cdq/sub/sar 1 然后 0x4412e8 imul 10 */
+    if (v < YK_ORB_SCORE_MIN) v = YK_ORB_SCORE_MIN;  /* 0x4412ee cmp 0x64 / jge ⇒ 下限 100 */
+    return v;
+}

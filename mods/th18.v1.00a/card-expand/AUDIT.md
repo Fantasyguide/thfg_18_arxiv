@@ -18562,3 +18562,62 @@ python3 tooling/check-docs.py → 全部通过（370 个文件）
 | **`youkai: emitter gate re-armed %u slot(s) on the next etOn (route A, total %u)`** | **本轮新增**：在涨 = 主路生效（夹住后**一帧内**就被下一次 `etOn` 放开）|
 | `youkai: emitter gate self-healed … (fallback path; total %u)` | route A 落地后**不该**再涨（涨了说明那个槽的 ECL 再也不 `etOn` 它，才轮到 TTL）|
 | `youkai: ledger - N spawned, M killed, W withdrew, D dropped` | `killed` 与 `spawned` 同步涨、差≈0 ⇒ 「每建必死」；`YK_FAM_LIFE = 100` 之后**这个涨速应当明显变慢**（使魔不再一碰就碎），且 §3.7 的转嫁（`transferred`）应当**第一次真正不为 0** |
+
+## §BE-FG（2026-09-22 晚）：P4 工单（108）—— **人妖槽 + 永点（刻符）VM 池**（owner「那就先做人妖槽以及永点VM池」）
+
+> **谁做的**：P4（108）子 agent。**没部署**（不跑 `make release`、不碰 modkit）。
+> **没碰**：发射口闸 / `YK_EMIT_BROKEN_TTL` / `YK_FAM_LIFE`（工单 E 的地盘，一行未动）；
+> `assets/ability/entries/ORDER.txt`（一行未动 —— 本批的贴图**全部追加进 `pl0X.anm`**）。
+> **不新增站点**：全部走既有量（`0x4ccd0c` 擦弹 / `0x4ccd24` 身价 / `player+0x476ac` 玩家状态 /
+> `player+0x620,0x624` 坐标）与既有钩子（`on_tick_2` / `on_enemy_death` / `on_item_commit` /
+> `on_death_before_deathbomb` / `on_load` / `on_delete`）。
+
+### 1. 一手出处（每条都被代码注释指回）
+
+| 件 | 一手 |
+| --- | --- |
+| 人妖槽是**一个 i16**（负 = 人 / 正 = 妖），量程 ±10000 | `engine/player/th08/03-youkai-body-and-gauge.md` §2.1（`th08:0x406d1d` 等）|
+| **6 个限值字段写点**（本批普查的结论，顺手订正了同文旧版 §2.4 的错结论） | `th08:0x44d9ee`–`0x44da8f`（24 条绝对寻址写，`Player::on_registration` 内）|
+| **TH18 没有这套字段**（⇒ 卡侧自建） | 同文 §2.5：特征常量 0 命中 / `0x4cxxxx` 的 word 绝对写只 2 条 / 符号表 0 命中 |
+| 4 档判定 / 夹紧 / 死区 / 死亡清零 | `th08:0x406d10/40/70/a0`、`th08:0x43c0fa`+`:0x43c128`、`th08:0x44bf61`、`th08:0x44ac09` |
+| HUD 几何 / 染色 / 四支脚本 | `AsciiManager::InitializeVms` + `AsciiManager::on_draw`（`AsciiManager.cpp:1016-1060`）|
+| 刻符 = 真道具（type 7、生成即 state 3、必然归航） | `engine/item/th08/01-time-orbs.md` §2.1/§7.1（`th08:0x440115`、`:0x4402cb`–`:0x4406e4`）|
+| 刻符贴图与脚本 | 同文 §6.1：`etama.anm` sprite179 (112,64,16,16) + script68（脚本号 = 61 + type）|
+| **永点 → PIV** | `th08:0x418294`–`:0x4182bc`（本批又独立复核一遍：`and eax,1` / `add ecx,eax` / `cdq`+`sub`+`sar 1` / `imul 10` / `add [ecx+0x24]`）|
+| PIV 的去向（口径） | 用户 2026-09-18 拍板，§BE 详录 #43：作为 `ΔG_08` **并进 `ecx` 声明** |
+
+### 2. 改了哪些文件（文件 → 改了什么 → 为什么 → 验证）
+
+| 文件 | 改了什么 | 为什么 | 验证 |
+| --- | --- | --- | --- |
+| `assets/build_player_anm.py`（**共享件**） | 新增 `YK_EXTRA_PLAN` / `_yk_extra_entries` / `_yk_extra_plan` / `_yk_extra_canvas` / `_yk_extra_readback` / `_th08_opcodes`；四个文件各追加 **2 entry + 5 脚本** | 刻符与 HUD 的贴图必须进 `pl0X.anm`（VM 按自己那一页取贴图）；`anchorTopLeft()` 在 v8 没有，要按跨版本表翻成 `anchor(1, 1)` | `--verify-only` rc=0；原生部分逐块一致；新贴图回读**逐像素**等于 TH08 原版切图 |
+| `native/pl_anm_ids.h`（生成物） | +20 行 `CE_PL_ANM_SCRIPT_{YKORB,YKGAUGE_*}_PL0X`（**带机体号** —— 不带会宏重定义） | C 侧按机体查表取脚本号 | 生成器写出；`PINNED_NEW_SIDS` 反向钉 20 个号 |
+| `native/cards/youkai_core.{h,c}` | 新增 §3.10（人妖槽：限值/判定/几何/染色）+ §3.11（PIV 公式 / 刻符分值） | 纯逻辑进 core ⇒ 主机单测覆盖 | `test_youkai_core` **1080 checks / 0 failed** |
+| `native/cards/youkai.c`（**108 自己的卡**） | 刻符 VM 池（64 槽）+ 运动三段 + 收集；人妖槽状态 + 4 个涨源 + 漂移 + 死亡清零；HUD 四件 VM + 数字；`on_delete` / `on_run_reset` 收尾 | 见 §1/§3 | `make dllx87` 我的对象 = **0**；`make dllverify` rc=0；`_Static_assert` 状态预算过 |
+| `native/tools/capcheck.py`（**共享工具**） | `pl_plan()` 从「正则扫源码」改成「**import 那份脚本、问真计划表**」 | 本批的 entry 是**函数生成**的（源码里没有 `dict(idx=` 字面量）⇒ 旧解析会**静默少数 2~5 条 entry**，台账少报 = 余量看着比实际大 | 改后四份用量 18/19/17/22（原来少报成 16/17/15/20）；`capcheck` 全绿 |
+| `native/tests/test_youkai_core.c` | +88 条断言（限值 / 判定 / 死区 / 颜色 / HUD 几何 / PIV 逐颗奇偶 / 刻符分值） | 覆盖新纯逻辑 | 1080/0 |
+
+### 3. 影响面
+
+- `pl0X.anm`：四个文件**只追加**（各 +2 entry +5 脚本）；`verify_rebuilt` 每次构建回读核对
+  「原生 entry / script / 贴图块逐块一致」⇒ 113 / 117 引用的脚本号与 sprite 号**一个都没变**。
+- `sites.py` / `patch/**` / `Makefile` / `assets/ability/**` / `assets/sht/**`：**一行未动**
+  ⇒ **不新增站点**（无需 `sitecheck`）。
+- `capcheck.py` 的改法**只影响它自己的报数**（更准），不改任何产物。
+- 计分层：本卡新增两条**每帧**声明（`ce_score_family_declare(108, FAMILY_08)` +
+  `ce_score_declare_delta(108, piv)`）。⚠ **未声明族之前本卡不参与计分** ⇒ 只有 108 自己受影响；
+  `piv = 0` 时声明值也是 0（与不声明等价）。
+
+### 4. 未决（要 owner 拍 / 实跑要看的）
+
+1. **人妖槽四档判定的「玩法后果」本轮没接**。判定与 HUD 染色已有一手实现，但 TH08 用那四档干的事
+   （蓝点 ×2 `th08:0x440f03`、敌击破的掉落分档、使魔弹染色/加伤 `0x44fd58`、射击间隔）在 TH18 侧
+   各自需要另一套一手（或落在共享件上）⇒ 单列，等 owner 拍。
+2. **刻符的「分数」与「符卡 +8000」没接**：`yk_orb_score()` 需要「本关 / 本局蓝点数」两个计数，
+   TH18 只有 `CE_ADDR_MONEY_ITEMS` 这个**近似物**（语义不同）⇒ 硬套会把分数线变成自定。
+3. **擦弹的颗数**：一手是「按 `ds:0x18b8988` 的档位给 1..N 颗、落在被擦的那颗弹上」，
+   本卡拿不到档位与那颗粒 ⇒ 暂定「每点 1 颗、落在自机、单帧上限 8」（`TUNING.md` §2.0y #6）。
+4. **`Timer::current_is_eq_(&0x18b89d4, 0)` 那道门**（TH08 里「收刻符什么时候动人妖槽」的条件）
+   ❓ 语义未钉 ⇒ 本卡无条件动（登记 `TUNING.md`）。
+5. **🟡 未实跑**：见 `SINGLE-CARD-TEST.md` 的新条目（HUD 位置/贴图、刻符贴图与运动、PIV 与
+   `score-out:` 日志、暴毙变类 P 点、删卡/局末收干净）。
