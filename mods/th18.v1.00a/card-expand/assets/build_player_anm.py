@@ -23,6 +23,13 @@
   ⚠ 两作层号不是一个空间 ⇒ `layer()` 必须过 `LAYER_MAP` 翻译（表里有实测依据）。
   ⚠ TH13 的 `ins_433`（v8 的 `posTime2D`，极坐标目标）TH18 **有**（分发表 case `th18:0x47a730`，
   极坐标 helper `th18:0x47d890` 是 `fld θ; fsincos; fmul r`）⇒ 原样保留，不算自定。
+- **★★ 108 妖侧本体（2026-09-22，owner 裁决走「路 A」）**：把 TH08 `player0X.anm` 的**妖侧本体脚本
+  5..9**（pl03 走 TH16 `pl03.anm` 的 0..4 = 射命丸文）**逐条搬进 pl0X.anm**，`sprite()` 号重编号到
+  本文件新追加的 entry；贴图 = `assets/ability/youkai/YOUKAI_{YUKARI,ALICE,REMILIA}_S*.png`
+  （+ `assets/ability/sanae_youkai/YOUKAI_AYA_S*.png`），**逐像素等于原版切图**（本文件有回读闸）。
+  为什么必须进 pl0X.anm：本体 VM 的贴图按 **VM 自己那一页的 anm** 取（`th18:0x481117`–`0x481136`
+  `[vm+0x20]` → AnmLoaded → `[anm+0x11c]` sprite 表），而本体 VM 的页就是 `player+0xc` = pl0X.anm。
+  一手与设计见 `engine/player/th08/03-youkai-body-and-gauge.md` §1、`AUDIT.md` §BE 详录 #50。
 
 ## 硬校验（任一失败非 0 退出、不产出文件）
 目标脚本存在；sprite 全在界内；`scriptNew` 目标存在；`pl00/pl01` 兽灵脚本与 TH17 逐字节一致；
@@ -33,6 +40,7 @@
 import argparse
 import re
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -47,8 +55,24 @@ TH17_DAT = REPO / "local" / "th17.v1.00b" / "dat"
 TH18_DAT = REPO / "local" / "th18.v1.00a" / "dat"
 TH13_DAT = REPO / "local" / "th13.v1.00c" / "dat"
 TH13_ANM = REPO / "local" / "th13.v1.00c" / "anm"   # unpack.py 解出来的原版贴图（只读）
+TH08_DAT = REPO / "local" / "th08.v1.00d" / "dat"   # ★ 108：TH08 的 player0X.anm（**裸 .dat 里的文件**，不用 unpack）
+TH16_DAT = REPO / "local" / "th16.v1.00a" / "dat"
 OUT = L.BUILD
 PLAYERS = ("pl00", "pl01", "pl02", "pl03")
+
+# ★ 跨版本源脚本（`game=` 键）：每作的 `thanm -l` 作品号与 **anm 头版本对应的 anmmap**。
+#   ⚠ anmmap 按「anm 文件头 version」选，不是按作品号（`tooling/thtk/unpack.py` 的注释）：
+#   TH08 的头是 3 ⇒ `v2.anmm`；TH13/TH16/TH18 的头是 8 ⇒ `v8.anmm`。选错不报错、只会把 mnemonic
+#   译成垃圾（拿 v8.anmm 读 TH11 会把 `sprite` 译成 `stop`）。
+GAME_VER = {"th08": "8", "th13": "13", "th16": "16"}
+GAME_ANMMAP = {"th08": "v2.anmm", "th13": "v8.anmm", "th16": "v8.anmm"}
+GAME_DAT = {"th08": TH08_DAT, "th13": TH13_DAT, "th16": TH16_DAT}
+# 各作源脚本里允许出现的 `layer()` 值（跨版本层号不是同一个空间 ⇒ 必须逐游戏钉死，见 LAYER_MAP）：
+#   · th13：走 LAYER_MAP 翻译；
+#   · th16：与 TH18 同一个层空间，本体脚本的层就是 **14**（= TH18 原生本体脚本的 `layer(14)`）⇒ 恒等；
+#   · th08：本体脚本 5..9 里**一个 layer() 都没有**（层由 VM 保留，见 `_inject_body_prologue`）。
+GAME_LAYERS = {"th13": None, "th16": {14}, "th08": set()}
+MAPDIR = None                                        # `main()` 里由 `L.find_tools()` 填
 
 # TH17 shooter `anm` 字段 -> 该文件里的实际脚本号（= anm+5；slot7 是 hit5 硬编码 script8）。
 # pl00/pl01 的原生文件里就有这些脚本；pl02/pl03 没有，走 FALLBACK。
@@ -322,6 +346,118 @@ TH13_TRANCE_ENTRIES = {
 
     ],
 }
+
+# ★★ 2026-09-22（108 · owner 裁决「路 A」）：**妖侧本体 55 张**接进 pl0X.anm。
+#
+# ■ 贴图源（**已经在仓里**，就是 `engine/player/th08/03-youkai-body-and-gauge.md` §1.3 切好的那 55 张）：
+#   `assets/ability/youkai/YOUKAI_{YUKARI,ALICE,REMILIA}_S*.png`
+#   `assets/ability/sanae_youkai/YOUKAI_AYA_S*.png`
+#   ⇒ 本轮**逐张复核**：每张 PNG 里那段「有效画区」与原版切图**逐像素相等**（55/55，MAE = 0.000）。
+#     PNG 是带透明补边的画布，**有效画区** = 原版 sprite 矩形：
+#       pl00/pl01/pl03：32×64 画布、画区 (1,9,30,46)（= TH08 player00/01.anm、TH16 pl03.anm 的 sprite 矩形）
+#       pl02（レミリア）：64×64 画布、画区 (9,9,46,46)（= TH08 player02.anm 的 sprite 矩形）
+#     ⚠ **sprite 矩形必须写原版那个（30×46 / 46×46），不能写画布的 32×64 / 64×64**：引擎按 w/h 算锚点
+#       （`AnmVm__set_sprite` `0x477b00` 把 w/256、h/256 写进 `vm+0x3d4/+0x3e8`，绘制时 ±128×w/256 = ±w/2
+#       ⇒ 锚点 = 矩形中心，见 `engine/anm/th18/02-render-stages.md`）⇒ 拿画布尺寸接上去会整体偏 (1,9)。
+#   ⇒ 源 PNG **原样**（含补边）贴进画布、矩形写原版值；两件事都不做变换 ⇒ 回读闸才能要求逐像素相等。
+#     实测这 55 张**本来就是 4 位色阶**（每通道都是 17 的倍数，来自原版 16 位贴图）⇒ ARGB4444 往返无损。
+#
+# ■ 每项 = (源目录, 名字前缀, 帧 → 原版 sprite 号, 画布单格, 有效画区@单格内)
+YOUKAI_BODY_SRC = MOD / "assets" / "ability"
+YOUKAI_BODY = {
+    "pl00": ("youkai", "YOUKAI_YUKARI", range(11, 22), (32, 64), (1, 9, 30, 46)),
+    "pl01": ("youkai", "YOUKAI_ALICE", range(11, 22), (32, 64), (1, 9, 30, 46)),
+    "pl02": ("youkai", "YOUKAI_REMILIA", range(11, 20), (64, 64), (9, 9, 46, 46)),
+    "pl03": ("sanae_youkai", "YOUKAI_AYA", range(0, 24), (32, 64), (1, 9, 30, 46)),
+}
+# 各机体的 entry 号 / 首个 sprite 号 / 新贴图名（**接在已有追加之后**；`_append_spec` 会硬校验 entry 号）。
+# sprite 号 = 该文件当前最大 sprite + 1 起连续（pl00 原生 0..59 + 113 追加 60..85 ⇒ 86 起，以此类推）。
+YOUKAI_BODY_IDS = {
+    "pl00": dict(idx=15, sprite0=86, name="player/pl00/pl00yk.png"),
+    "pl01": dict(idx=16, sprite0=96, name="player/pl01/pl01yk.png"),
+    "pl02": dict(idx=14, sprite0=101, name="player/pl02/pl02yk.png"),
+    "pl03": dict(idx=19, sprite0=97, name="player/pl03/pl03yk.png"),
+}
+
+
+def _youkai_body_entries(player: str):
+    """该机体的妖侧本体 entry（1 条；55 张按机体分成 11/11/9/24 帧）。"""
+    if player not in YOUKAI_BODY:
+        return []
+    sub, prefix, ids, cell, (ax, ay, aw, ah) = YOUKAI_BODY[player]
+    meta = YOUKAI_BODY_IDS[player]
+    ids = list(ids)
+    return [dict(idx=meta["idx"], name=meta["name"],
+                 size=(cell[0] * len(ids), cell[1]), cell=cell,
+                 cells=[(prefix, sub, sid) for sid in ids],
+                 sprites=[(meta["sprite0"] + k, cell[0] * k + ax, ay, aw, ah)
+                          for k in range(len(ids))])]
+
+
+# ---- 五个「本体动画状态」的源脚本号 + 该脚本**实际引用到**的源 sprite 区间 ----------------------
+#
+# 状态名与号（0..4）**就是 TH18 引擎自己那套**（不是我们起的）：`th18:0x45b610`–`0x45b7a8` 的
+# 移动动画状态机按「本帧输入速度 x（`player+0x47934`）vs 上一帧」四选一装载脚本 1/2/3/4，
+# 其余时候保持不动（初始 = 脚本 0）。逐条读出来的对照：
+#
+#   dx<0 && px>=0 → 脚本 **1**   dx==0 && px<0 → 脚本 **2**
+#   dx>0 && px<=0 → 脚本 **3**   dx==0 && px>0 → 脚本 **4**   （否则不变；开局 = 0）
+#
+# 与 TH08 的 `SET_MOVE_ANIM(a,b,c,d)`（`SET_MOVE_ANIM(1,2,3,4)` 人侧 / `(6,7,8,9)` 妖侧）**逐槽同序**：
+# a=起步向左、b=从左侧停下、c=起步向右、d=从右侧停下 ⇒ **妖侧脚本号 = 人侧 + 5**（idle 0 → 5）。
+# 结构证据（两条独立）：① TH18 原生 `pl00.anm` script1/2 的 lead-in+循环形状与 TH08 人侧 1/2 同形；
+# ② TH18 的 script3/4 = 同形状但用 sprite 16..23，而 TH08 的 3/4 用 `flipX()` —— 实测
+#    `mirror(sprite8..15)` 与 `sprite16..23` 的 MAE ≈ 8、不镜像 ≈ 27–54 ⇒ **16..23 就是 8..15 的镜像**，
+#    即 TH18 把 TH08 的 `flipX` 预先烤成了贴图。一手全程见 `engine/player/th08/03-youkai-body-and-gauge.md`。
+#
+# 区间是**从原版 spec 里数出来的**（`sprite()` 引用集合），不是猜的顺序；
+# `_assert_spec_source` 每次构建都回读对账（多一个少一个都报错）。
+_YK_STATES = ("IDLE", "MOVE_L", "STOP_L", "MOVE_R", "STOP_R")
+_YK_SRC_SPANS = {
+    # TH08 `player00.anm`（八雲紫）与 `player01.anm`（アリス）：脚本 5..9，sprite 11..21
+    "player00": ((5, ((11, 15),)), (6, ((15, 22),)), (7, ((11, 19),)),
+                 (8, ((15, 22),)), (9, ((11, 19),))),
+    "player01": ((5, ((11, 15),)), (6, ((15, 22),)), (7, ((11, 19),)),
+                 (8, ((15, 22),)), (9, ((11, 19),))),
+    # TH08 `player02.anm`（レミリア）：**只有 9 帧**（sprite 11..19），且每个脚本的引用集合更小
+    "player02": ((5, ((11, 15),)), (6, ((15, 20),)), (7, ((11, 17),)),
+                 (8, ((15, 20),)), (9, ((11, 17),))),
+    # TH16 `pl03.anm`（射命丸文，24 帧）：脚本 **0..4**（TH16 的人/妖不分家，0..4 就是她的全部本体动画）
+    "pl03": ((0, ((0, 8),)), (1, ((8, 16),)), (2, ((0, 12),)),
+             (3, ((16, 24),)), (4, ((0, 8), (16, 20)))),
+}
+_YK_SRC_BASE = {"player00": 11, "player01": 11, "player02": 11, "pl03": 0}
+
+
+def _youkai_plan(player: str, src: str, sid0: int, sprite0: int):
+    """该机体的 5 支妖侧本体脚本（顺序 = `_YK_STATES` = 引擎的状态号 0..4）。
+
+    `sid0` = 第一支的追加脚本号（必须**正好**接在该文件已有追加之后，`_append_spec` 会硬校验）；
+    `sprite0` = 第一张帧贴图的 sprite 号（= 该文件当前最大 sprite + 1）。
+
+    `prologue=True` 只给 TH08 源：TH08 的本体脚本 5..9 **没有** `type/layer/resampleMode` 前导
+    （TH08 里这些字段由 VM 保留），而 TH18 的 `AnmVm__load_script` `0x407420` 会把整块脚本模板
+    拷进 VM ⇒ 必须在头部补上与 **TH18 原生本体脚本逐字相同**的那三行（`-1:` / `type(0)` /
+    `layer(14)` / `resampleMode(1)` / `0:`），否则装上去的是模板里的默认值。
+    TH16 源的脚本自带同样的前导 ⇒ 不注入。
+
+    ⚠ `flipX()` **原样保留**（TH18 的 v8 支持：原生 `enemy.anm` 等处共 50+ 次使用）。
+    """
+    game = "th16" if src == "pl03" else "th08"
+    base = _YK_SRC_BASE[src]
+    spans = _YK_SRC_SPANS[src]
+    out = []
+    for k, (name, (sid, rs)) in enumerate(zip(_YK_STATES, spans)):
+        smap = {}
+        for (lo, hi) in rs:
+            for sp in range(lo, hi):
+                smap[sp] = sprite0 + (sp - base)
+        out.append(dict(macro=f"YKBODY_{player.upper()}_{name}", game=game, src=src,
+                        sid=sid, new_sid=sid0 + k, smap=smap, k=1.0, alpha255=False,
+                        scale_inject=False, prologue=(game == "th08")))
+    return out
+
+
 APPEND_PLAN = {
     # ★★ 2026-09-13（卡 113）：TH13 灵界**主炮**弹 —— 每机两支：主弹 + 每帧闪光子 VM。
     #
@@ -342,20 +478,27 @@ APPEND_PLAN = {
              smap={67: 60}, sref={15: 42}, k=1.0, alpha255=False, scale_inject=False),
         dict(macro="PL00_TRANCE_GLINT", game="th13", src="pl00", sid=15, new_sid=42,
              smap={68: 61}, k=1.0, alpha255=False, scale_inject=False),
-    ],
+    ] + _youkai_plan(
+        # ★★ 108 妖侧本体 = 八雲紫（TH08 `player00.anm` script5..9）
+        # state 号 ↔ 宏后缀：0 idle / 1 move-L / 2 stop-L / 3 move-R / 4 stop-R（见 `_youkai_plan` 的长注释）
+        "pl00", "player00", 43, 86),
     "pl01": [
         dict(macro="PL01_TRANCE", game="th13", src="pl01", sid=11, new_sid=47,
              smap={69: 67, 70: 68, 71: 69, 72: 70}, sref={12: 48},
              k=1.0, alpha255=False, scale_inject=False),
         dict(macro="PL01_TRANCE_GLINT", game="th13", src="pl01", sid=12, new_sid=48,
              smap={73: 71}, k=1.0, alpha255=False, scale_inject=False),
-    ],
+    ] + _youkai_plan(
+        # ★★ 108 妖侧本体 = アリス（TH08 `player01.anm` script5..9）
+        "pl01", "player01", 49, 96),
     "pl02": [
         dict(macro="PL02_WOLF",  src="pl02", sid=5, new_sid=30, smap={24: 75},
              k=KNIFE_SCALE, alpha255=True, scale_inject=True),
         dict(macro="PL02_EAGLE", src="pl02", sid=9, new_sid=31, smap={25: 76},
              k=KNIFE_SCALE, alpha255=True, scale_inject=True),
-    ],
+    ] + _youkai_plan(
+        # ★★ 108 妖侧本体 = レミリア（TH08 `player02.anm` script5..9，9 帧、46×46）
+        "pl02", "player02", 32, 101),
     "pl03": [
         dict(macro="PL03_FROG",  src="pl03", sid=8, new_sid=29,
              smap={34: 57, 40: 62, 41: 63, 42: 64, 43: 65, 25: 66},
@@ -374,7 +517,9 @@ APPEND_PLAN = {
              k=1.0, alpha255=False, scale_inject=False),
         dict(macro="PL03_TRANCE_GLINT", game="th13", src="pl02", sid=12, new_sid=33,
              smap={62: 72}, k=1.0, alpha255=False, scale_inject=False),
-    ],
+    ] + _youkai_plan(
+        # ★★ 108 妖侧本体 = 射命丸文（**TH16** `pl03.anm` script0..4，24 帧；她的 0..4 就是本体全套）
+        "pl03", "pl03", 34, 97),
 }
 PL_IDS_H = MOD / "native" / "pl_anm_ids.h"
 
@@ -385,13 +530,28 @@ PL_IDS_H = MOD / "native" / "pl_anm_ids.h"
 #   谁要动号，必须**同时**改 `APPEND_PLAN` + 本表 + `append_shooterset.py`，否则这里先红，
 #   而不是等实跑发现「灵界弹指向了别的脚本」（那是最难查的一类静默错）。
 PINNED_NEW_SIDS = {
-    "pl00": {"PL00_TRANCE": 41, "PL00_TRANCE_GLINT": 42},
-    "pl01": {"PL01_TRANCE": 47, "PL01_TRANCE_GLINT": 48},
-    "pl03": {"PL03_TRANCE": 32, "PL03_TRANCE_GLINT": 33},
+    # ★★ 108 妖侧本体（2026-09-22）：C 侧 `YK_BODY_SCRIPT[4][5]` 直接吃 `pl_anm_ids.h` 的宏，
+    #   所以号本身不会静默漂移；钉这一遍是为了**任何重排顺序**都先在这里红，而不是等实跑发现
+    #   「低速画出来的是另一支动画」。宏名后缀 = 状态号（`_YK_STATES`，0..4）。
+    "pl00": {"PL00_TRANCE": 41, "PL00_TRANCE_GLINT": 42,
+             "YKBODY_PL00_IDLE": 43, "YKBODY_PL00_MOVE_L": 44, "YKBODY_PL00_STOP_L": 45,
+             "YKBODY_PL00_MOVE_R": 46, "YKBODY_PL00_STOP_R": 47},
+    "pl01": {"PL01_TRANCE": 47, "PL01_TRANCE_GLINT": 48,
+             "YKBODY_PL01_IDLE": 49, "YKBODY_PL01_MOVE_L": 50, "YKBODY_PL01_STOP_L": 51,
+             "YKBODY_PL01_MOVE_R": 52, "YKBODY_PL01_STOP_R": 53},
+    "pl02": {"PL02_WOLF": 30, "PL02_EAGLE": 31,
+             "YKBODY_PL02_IDLE": 32, "YKBODY_PL02_MOVE_L": 33, "YKBODY_PL02_STOP_L": 34,
+             "YKBODY_PL02_MOVE_R": 35, "YKBODY_PL02_STOP_R": 36},
+    "pl03": {"PL03_FROG": 29, "PL03_SNAKE": 30, "PL03_GLINT": 31, "PL03_TRANCE": 32,
+             "PL03_TRANCE_GLINT": 33,
+             "YKBODY_PL03_IDLE": 34, "YKBODY_PL03_MOVE_L": 35, "YKBODY_PL03_STOP_L": 36,
+             "YKBODY_PL03_MOVE_R": 37, "YKBODY_PL03_STOP_R": 38},
 }
 
 _SPRITE_REF = re.compile(r"\bsprite\(sprite(\d+)\)")
 _SPRITE_DEF = re.compile(r"\bsprite(\d+):")
+# `thanm` 读 spec 时**已知无害**的 stderr 行（见 `_spec_of`）。
+_THANM_BENIGN = ("is a keyword, ignoring",)
 # `scriptNew` 家族的**全部**拼法（v8.anmm：500 scriptNew / 501 scriptNewUI / 502 scriptNewFront /
 # 503 scriptNewUIFront / 504 scriptNewRoot / 505 scriptNewPos / 506 scriptNewRootPos）。
 # ⚠ 2026-09-13 修：这里原先是 `scriptNewPos?` —— **漏了 `scriptNewRoot`**。而 TH13 灵界弹与
@@ -509,11 +669,20 @@ def _entry_block(ent: dict) -> str:
 
 
 def _entries_of(player: str):
-    """该文件**按追加顺序**排好的 entry 计划（117 的兽灵/刀在前，113 的灵界弹在后）。
+    """该文件**按追加顺序**排好的 entry 计划（117 的兽灵/刀 → 113 的灵界弹 → 108 的妖侧本体）。
 
     顺序就是 entry 号：`idx` 必须等于「原生 entry 数 + 前面几项」，`_append_spec` 会硬校验。
     """
-    return PLAYER_ART_ENTRIES.get(player, []) + TH13_TRANCE_ENTRIES.get(player, [])
+    return (PLAYER_ART_ENTRIES.get(player, []) + TH13_TRANCE_ENTRIES.get(player, [])
+            + _youkai_body_entries(player))
+
+
+def _anmmap_for(game):
+    """`game=` 对应的 anmmap（按 **anm 头版本**选，见 `GAME_ANMMAP`）。"""
+    p = MAPDIR / GAME_ANMMAP[game]
+    if not p.is_file():
+        raise SystemExit(f"缺 anmmap {p}（git clone https://github.com/ExpHP/thpages local/vendor/thpages）")
+    return p
 
 
 def _th13_texture(ent: dict):
@@ -594,12 +763,18 @@ def _trance_canvas(ent: dict):
 
 
 def _source_spec(spec: dict, player: str, retail_text: str, tools, anmmap):
-    """该 spec 的源 spec 文本 —— TH18 本文件 / TH18 别的自机 / **TH13 原版**（`game="th13"`）。"""
-    if spec.get("game") == "th13":
-        p = TH13_DAT / f"{spec['src']}.anm"
+    """该 spec 的源 spec 文本 —— TH18 本文件 / TH18 别的自机 / **跨版本原版**
+    （`game="th13"` TH13 / `game="th08"` TH08 / `game="th16"` TH16）。
+
+    ⚠ 跨版本的源**直接读 `local/<版本>/dat/<名>.anm`**（不用先 `unpack.py`）：`thanm -l` 能直接吃
+      `.dat` 里的 anm 文件，`-m` 用该作头版本对应的 anmmap（`GAME_ANMMAP`）。
+    """
+    g = spec.get("game")
+    if g in ("th08", "th13", "th16"):
+        p = GAME_DAT[g] / f"{spec['src']}.anm"
         if not p.is_file():
-            raise SystemExit(f"缺 TH13 样本 {p}（用户放进 local/，见 local/README.md）")
-        return _spec_of(p, tools, anmmap, ver="13")
+            raise SystemExit(f"缺 {g} 样本 {p}（用户放进 local/，见 local/README.md）")
+        return _spec_of(p, tools, _anmmap_for(g), ver=GAME_VER[g])
     return retail_text if spec["src"] == player else L.retail(spec["src"])[1]
 
 
@@ -608,8 +783,8 @@ def _assert_spec_source(spec: dict, src_block: str, src_text: str):
 
     · `smap` 里每个源 sprite 号都得真的被引用（引用别的 = 多半抄错了脚本号）；
     · `sref` 里每个源脚本号都得真的被 `scriptNew`；
-    · `game="th13"` 的还要**双向相等** + 「每个 `layer()` 都在 `LAYER_MAP` 里」——
-      层号没登记就报错，逼后来者先查清 TH18 对应哪一层，而不是照抄一个 TH13 的数字。
+    · **跨版本来源**（`game=` 有值）的还要**双向相等** + 「每个 `layer()` 在 `GAME_LAYERS` 里」——
+      层号没登记就报错，逼后来者先查清目标版本对应哪一层，而不是照抄源版的数字。
     """
     macro = spec["macro"]
     refs = {int(m.group(1)) for m in _SPRITE_REF.finditer(src_block)}
@@ -622,21 +797,48 @@ def _assert_spec_source(spec: dict, src_block: str, src_text: str):
     if unused_sn:
         raise SystemExit(f"{macro}: 源 script{spec['sid']} 没有 scriptNew 到 {unused_sn}"
                          f"（计划 sref 里登记的）")
-    if spec.get("game") != "th13":
+    g = spec.get("game")
+    if g not in ("th08", "th13", "th16"):
         return
     if refs != set(spec["smap"]) or sn != set(spec.get("sref", {})):
-        raise SystemExit(f"{macro}: TH13 源 script{spec['sid']} 的引用 {sorted(refs)}/{sorted(sn)}"
+        raise SystemExit(f"{macro}: {g} 源 script{spec['sid']} 的引用 {sorted(refs)}/{sorted(sn)}"
                          f" 与计划 {sorted(spec['smap'])}/{sorted(spec.get('sref', {}))} 不是一一对应"
-                         f"（TH13 来源要求精确对齐，否则贴图/子 VM 会静默错位）")
-    unknown = sorted({int(m.group(1)) for m in _LAYER_CALL.finditer(src_block)} - set(LAYER_MAP))
-    if unknown:
-        raise SystemExit(f"{macro}: TH13 源 script{spec['sid']} 用了未登记的 TH13 层号 {unknown}"
-                         f"（LAYER_MAP 只有 {sorted(LAYER_MAP)}）—— 先在 TH18 里找出对应层，"
-                         f"再往 LAYER_MAP 加一行，别照抄 TH13 的数字")
+                         f"（{g} 来源要求精确对齐，否则贴图/子 VM 会静默错位）")
+    layers = {int(m.group(1)) for m in _LAYER_CALL.finditer(src_block)}
+    allowed = GAME_LAYERS[g]
+    if allowed is None:                              # th13：走 LAYER_MAP 翻译
+        unknown = sorted(layers - set(LAYER_MAP))
+        if unknown:
+            raise SystemExit(f"{macro}: TH13 源 script{spec['sid']} 用了未登记的 TH13 层号 {unknown}"
+                             f"（LAYER_MAP 只有 {sorted(LAYER_MAP)}）—— 先在 TH18 里找出对应层，"
+                             f"再往 LAYER_MAP 加一行，别照抄 TH13 的数字")
+    elif layers - allowed:
+        # th16：与 TH18 同一个层空间，本体脚本只允许 `layer(14)`（= TH18 原生本体脚本的层）；
+        # th08：本体脚本 5..9 **一个 layer() 都没有**（层由 VM 保留）。这一支红了说明源脚本抄错了。
+        raise SystemExit(f"{macro}: {g} 源 script{spec['sid']} 的 layer() = {sorted(layers)}，"
+                         f"不在该来源允许的 {sorted(allowed)} 里 —— 层号要显式登记（`GAME_LAYERS`）")
+
+
+def _inject_body_prologue(body: str) -> str:
+    """给「从 TH08 搬来的本体脚本」补上与 **TH18 原生本体脚本逐字相同**的前导。
+
+    一手：TH18 原生 `pl00/pl01/pl02/pl03.anm` 的**每一支**本体脚本（0..4）都以
+    `-1: type(0); layer(14); resampleMode(1); 0:` 开头；而**装载新脚本会把整块模板拷进 VM**
+    （`AnmVm__load_script` `0x407420`：`rep movs` 0x151 dword 从 `[anm+0x10c]+idx*0x60c` 到 `vm+0`，
+    只把 `vm+0x18`(层) 与 `vm+0x548` 存下来再写回）⇒ 前导不跟着来就会留在模板的默认值上。
+    TH08 的本体脚本 5..9 没有前导（TH08 的层/type 由 VM 保留）⇒ 这一段是**必需的搬运**，不是自定。
+    `0:` 之后紧跟源脚本自己的第一行（TH08 script5 是 `offset0:` 标签 ⇒ 两个标签同刻，thanm 允许 ——
+    TH18 原生 script0 就是 `0:` 紧跟 `offset36:`）。
+    """
+    m = re.match(r"(script script\d+ \{\n)", body)
+    if not m:
+        raise SystemExit("注入本体前导失败：脚本头没找到")
+    pro = "-1:\n    type(0);\n    layer(14);\n    resampleMode(1);\n0:\n"
+    return body[:m.end()] + pro + body[m.end():]
 
 
 def _append_spec(player: str, retail_text: str, tools, anmmap) -> str:
-    """按 PLAYER_ART_ENTRIES / TH13_TRANCE_ENTRIES / APPEND_PLAN 生成追加后的 spec
+    """按 PLAYER_ART_ENTRIES / TH13_TRANCE_ENTRIES / YOUKAI_BODY / APPEND_PLAN 生成追加后的 spec
     （纯函数，编译前先自检）。"""
     text = retail_text
     n_native_e = len(L.parse_entries(retail_text))
@@ -670,6 +872,8 @@ def _append_spec(player: str, retail_text: str, tools, anmmap) -> str:
             body = body.replace("alpha(192)", "alpha(255)")
         if spec["scale_inject"]:
             body = _inject_scale(body, spec["k"])
+        if spec.get("prologue"):
+            body = _inject_body_prologue(body)       # TH08 本体脚本的前导（见该函数注释）
         body = _rename_script(body, src_sid, new_sid)
         blocks.append(body)
     return L.append_scripts(text, blocks) if blocks else text
@@ -695,7 +899,7 @@ def _verify_appended(player: str, text: str, planned_text: str):
             raise SystemExit(f"{player}.anm: 追加脚本 script{new_sid}（{macro}）不存在")
         want_block = _script_block(planned_text, new_sid)
         got_block = _script_block(text, new_sid)
-        if (want_block or "").rstrip() != (got_block or "").rstrip():
+        if _norm_labels(want_block or "").rstrip() != _norm_labels(got_block or "").rstrip():
             raise SystemExit(f"{player}.anm: {macro} script{new_sid} 与计划不一致 —— "
                              f"文件里的内容不是 `_append_spec` 生成的那一份"
                              f"（层号翻译 / sprite 重编号 / 源脚本号有一处对不上）")
@@ -759,6 +963,16 @@ def _scripts(text: str):
                                  text, re.M | re.S)}
 
 
+# `offsetNN` 里的 NN 是**汇编器按字节偏移重算**出来的：往脚本头注入前导（`_inject_body_prologue`）
+# 之后，同一支脚本的标签号必然整体平移。比较「计划 vs 编出来的」时把它归一掉；**其余逐字符比**
+# （opcode / 时间 / sprite 号一个都不放过）⇒ 注入前导不会让这道闸失效。
+_LABEL = re.compile(r"\boffset\d+\b")
+
+
+def _norm_labels(block: str) -> str:
+    return _LABEL.sub("offset#", block)
+
+
 def _script_block(text: str, sid: int):
     """整块（含 `script scriptNN {` 头）—— 追加时要连头一起改名。"""
     m = re.search(rf"^script script{sid} \{{\n.*?^\}}", text, re.M | re.S)
@@ -805,12 +1019,23 @@ def _verify_scripts(player: str, text: str, targets: dict, label: str):
 
 
 def _spec_of(path: Path, tools, anmmap, ver: str = None):
-    """解 spec。`ver` = thanm `-l` 的版本参数（默认本作 TH18；TH13 的源要显式传 "13"）。
+    """解 spec。`ver` = thanm `-l` 的版本参数（默认本作 TH18；跨版本源要显式传 `GAME_VER`）。
 
-    ⚠ anmmap 与 `-l` 是两件事：anmmap 按 **anm 文件头 version** 选（TH13 与 TH18 的头都是 8
-      ⇒ 同一张 `v8.anmm`，见 `tooling/thtk/unpack.py` 的 VERSIONS 表），`-l` 才是作品号。
+    ⚠ anmmap 与 `-l` 是两件事：anmmap 按 **anm 文件头 version** 选（TH13/TH16/TH18 的头都是 8
+      ⇒ 同一张 `v8.anmm`；**TH08 的头是 3 ⇒ `v2.anmm`**，见 `GAME_ANMMAP`）。
+
+    ⚠ 这里**自己**跑 `thanm` 而不是复用 `L.thanm`：后者把「stderr 非空」当失败（防静默译错，
+      对构建是对的），但 TH08 的 `v2.anmm` 每次都会打一行**无害**的 mapfile 解析警告
+      （`'acos' is a keyword, ignoring` = mapfile 里那条注释）⇒ 只放行**这一条已知警告**，
+      其余 stderr 照旧报错。
     """
-    return L.thanm(["-l", ver or L.VERSION, str(path), "-m", str(anmmap)], path.parent, tools)
+    args = ["-l", ver or L.VERSION, str(path), "-m", str(anmmap)]
+    r = subprocess.run([str(tools[0]), *args], cwd=path.parent, capture_output=True, text=True)
+    err = "\n".join(l for l in r.stderr.splitlines()
+                    if l.strip() and not any(b in l for b in _THANM_BENIGN))
+    if r.returncode != 0 or err.strip():
+        raise SystemExit(f"thanm {' '.join(map(str, args))} 失败：\n{err or r.stdout}")
+    return r.stdout
 
 
 def _assert_sources(player: str, text: str, tools, anmmap):
@@ -857,8 +1082,46 @@ def _do_native(player: str, a, tools, anmmap):
           f"；用到 sprite {flat_used}")
 
 
+def _body_canvas(ent: dict):
+    """妖侧本体 entry 的**期望画布** = 55 张源 PNG **原样**（含透明补边）按帧序横排。
+
+    ⚠ 与 `_trance_canvas` 同一条纪律：只 `canvas.paste(tile, xy)`（**不带 mask**）。
+    零缩放、零改色、零补边 ⇒ 回读闸才能要求**逐像素相等**；sprite 矩形由 `ent["sprites"]` 给出
+    （写的是**原版**的有效画区，不是画布单格 —— 见 `YOUKAI_BODY` 上方那段）。
+    """
+    from PIL import Image
+    cw, ch = ent["cell"]
+    canvas = Image.new("RGBA", ent["size"], (0, 0, 0, 0))
+    for k, (prefix, sub, sid) in enumerate(ent["cells"]):
+        p = YOUKAI_BODY_SRC / sub / f"{prefix}_S{sid}.png"
+        if not p.is_file():
+            raise SystemExit(f"缺妖侧本体源图 {p}（108 的 55 张，见 YOUKAI_BODY 的注释）")
+        tile = Image.open(p).convert("RGBA")
+        if tile.size != (cw, ch):
+            raise SystemExit(f"{p.name}: 源图 {tile.size} != 声明的单格 {cw}x{ch}"
+                             f"（改图别改画布尺寸）")
+        canvas.paste(tile, (cw * k, 0))
+    return canvas
+
+
+def _body_readback(player: str, td: Path):
+    """回读闸：从**编出来的** anm 里解出来的本体 entry 贴图，必须逐像素等于 55 张源图拼的画布。"""
+    from PIL import Image, ImageChops
+    for ent in _youkai_body_entries(player):
+        p = td / ent["name"]
+        if not p.is_file():
+            raise SystemExit(f"{player}.anm: 回读不到追加 entry 贴图 {ent['name']}")
+        got = Image.open(p).convert("RGBA")
+        want = _body_canvas(ent)
+        if got.size != want.size:
+            raise SystemExit(f"{player}.anm: entry{ent['idx']} 贴图 {got.size} != 期望 {want.size}")
+        if ImageChops.difference(got, want).getbbox() is not None:
+            raise SystemExit(f"{player}.anm: entry{ent['idx']}（妖侧本体）的贴图与源图不一致 —— "
+                             f"切图/编译链路改坏了像素（这一批要求 1:1 零处理）")
+
+
 def _write_entry_textures(player: str, tex: Path):
-    """把追加 entry 的贴图写进编译用的 tex 目录（两类来源，见文件头与两个 ENTRIES 表）。"""
+    """把追加 entry 的贴图写进编译用的 tex 目录（三类来源，见文件头与三个 ENTRIES 表）。"""
     from PIL import Image
     for ent in PLAYER_ART_ENTRIES.get(player, []):
         canvas = Image.new("RGBA", ent["size"], (0, 0, 0, 0))
@@ -874,6 +1137,10 @@ def _write_entry_textures(player: str, tex: Path):
         dst = tex / ent["name"]
         dst.parent.mkdir(parents=True, exist_ok=True)
         _trance_canvas(ent).save(dst)         # TH13 原版图现切（1:1、零补边）
+    for ent in _youkai_body_entries(player):
+        dst = tex / ent["name"]
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        _body_canvas(ent).save(dst)           # 108 妖侧本体（源图原样横排，1:1、零补边）
 
 
 def _trance_readback(player: str, td: Path):
@@ -928,14 +1195,16 @@ def _do_appended(player: str, a, tools, anmmap):
     if not out_anm.is_file():
         raise SystemExit(f"缺 {out_anm}：先跑 python3 assets/build_player_anm.py")
     built_text, n_e, n_s = L.verify_rebuilt(out_anm, retail_text, retail_dir, tools, anmmap,
-                                           on_extract=lambda td: _trance_readback(player, td))
+                                           on_extract=lambda td: (_trance_readback(player, td),
+                                                                  _body_readback(player, td)))
     n_sprites, n_scripts, used = _verify_appended(player, built_text, spec_text)
     plan = " ".join(f"script{s['new_sid']}={s['macro']}("
-                    + (f"TH13 {s['src']}" if s.get("game") == "th13" else s["src"])
+                    + (f"{s['game']} {s['src']}" if s.get("game") else s["src"])
                     + f" script{s['sid']}"
                     + (f", scale×{s['k']}" if s["k"] != 1.0 else "")
                     + (", alpha255" if s["alpha255"] else "")
-                    + (", scaleInj" if s["scale_inject"] else "") + ")"
+                    + (", scaleInj" if s["scale_inject"] else "")
+                    + (", prologue" if s.get("prologue") else "") + ")"
                     for s in APPEND_PLAN[player])
     entries = " ".join(f"entry{e['idx']}({len(e['sprites'])} sprites, {e['size'][0]}x{e['size'][1]})"
                        for e in _entries_of(player))
@@ -945,11 +1214,13 @@ def _do_appended(player: str, a, tools, anmmap):
 
 
 def main():
+    global MAPDIR
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--verify-only", action="store_true")
     a = ap.parse_args()
 
     th, td, mapdir = L.find_tools()
+    MAPDIR = mapdir
     tools, anmmap = (th, td), mapdir / "v8.anmm"
 
     OUT.mkdir(parents=True, exist_ok=True)
@@ -965,8 +1236,8 @@ def main():
     write_pl_ids_h()
     print(f"verify: 四个文件的原生部分 = 逐 entry / 逐 script / 逐贴图块一致（`verify_rebuilt`）；"
           f"pl00/pl01 的 TH17 兽灵脚本仍逐字节对账；追加脚本通过 越界 / scriptNew / 源脚本对齐 / "
-          f"主路径 delete 检查；TH13 灵界贴图从编出的 anm 回读逐像素等于原版切图；"
-          f"写 {PL_IDS_H.relative_to(MOD)}")
+          f"主路径 delete 检查；TH13 灵界贴图与 **108 妖侧本体 55 张** 从编出的 anm 回读逐像素等于"
+          f"各自的源图；写 {PL_IDS_H.relative_to(MOD)}")
     return 0
 
 

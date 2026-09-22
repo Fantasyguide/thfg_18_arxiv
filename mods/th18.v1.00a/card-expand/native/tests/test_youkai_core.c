@@ -103,12 +103,27 @@ int main(void)
         CHECK(yk_should_suppress_native(1, 1, 3, 99) == 1);
     }
 
-    /* ============================== §3.2 本体贴图 */
-    CHECK(yk_body_sprite(1) == YK_BODY_SPRITE_FOCUSED);
-    CHECK(yk_body_sprite(0) == YK_BODY_SPRITE_UNFOCUSED);
-    CHECK(yk_body_sprite(0) < 0);                     /* 高速不抢写（设计：高速 = 原机体）*/
-    CHECK(yk_body_sprite(1) < 0);                     /* ★ 占位：妖侧 sprite 资产未到 ⇒ 现在也不抢写 */
-
+    /* ============================== §3.2 本体外观（移动动画状态机，一手 th18:0x45b610–0x45b7a8）*/
+    /* 四条判据 + 「都不成立 ⇒ 保持原状态」，逐条对着引擎的 `cmp/jcc` 写（见 youkai_core.h §3.2）。*/
+    CHECK(yk_body_state(-1, 0, YK_BODY_IDLE) == YK_BODY_MOVE_L);    /* 起步向左（th18:0x45b62a）*/
+    CHECK(yk_body_state(-5, 2, YK_BODY_IDLE) == YK_BODY_MOVE_L);    /* 上一帧为正也算「起步」*/
+    CHECK(yk_body_state(0, -1, YK_BODY_MOVE_L) == YK_BODY_STOP_L);  /* 从左侧停下（th18:0x45b766）*/
+    CHECK(yk_body_state(1, 0, YK_BODY_IDLE) == YK_BODY_MOVE_R);     /* 起步向右（th18:0x45b7a6）*/
+    CHECK(yk_body_state(3, -2, YK_BODY_IDLE) == YK_BODY_MOVE_R);
+    CHECK(yk_body_state(0, 1, YK_BODY_MOVE_R) == YK_BODY_STOP_R);   /* 从右侧停下（th18:0x45b66a）*/
+    /* 持续同向移动 / 静止 ⇒ 引擎**不动脚本** ⇒ 我们也保持上一次的状态。*/
+    CHECK(yk_body_state(-1, -1, YK_BODY_MOVE_L) == YK_BODY_MOVE_L);
+    CHECK(yk_body_state(1, 1, YK_BODY_MOVE_R) == YK_BODY_MOVE_R);
+    CHECK(yk_body_state(0, 0, YK_BODY_IDLE) == YK_BODY_IDLE);
+    CHECK(yk_body_state(0, 0, YK_BODY_STOP_L) == YK_BODY_STOP_L);   /* 「停下」那支脚本会自己循环 */
+    /* `last` 越界（引擎读到的值不信任）⇒ 钳成 idle。*/
+    CHECK(yk_body_state(0, 0, 99) == YK_BODY_IDLE);
+    CHECK(yk_body_state(0, 0, -7) == YK_BODY_IDLE);
+    /* 状态号必须是 0..4 连续（C 侧 `YK_BODY_SCRIPT[4][YK_BODY_STATES]` 的下标 = 状态号，
+     * 生成器 `_YK_STATES` 的次序也是这一套 ⇒ 两边靠这三个常量对齐）。*/
+    CHECK(YK_BODY_STATES == 5);
+    CHECK(YK_BODY_IDLE == 0 && YK_BODY_MOVE_L == 1 && YK_BODY_STOP_L == 2);
+    CHECK(YK_BODY_MOVE_R == 3 && YK_BODY_STOP_R == 4);
     /* ============================== §3.3 子机（SDK 的低速子机声明层，spec §3.3.1 / §12.4）*/
     /* --- 数量表：用户定案「看不同机体在永夜抄与天空璋（文文）的数量」+ 一手出处见 youkai_core.h。
      *     行 = 机体 0..3（霊夢/魔理沙/咲夜/早苗），列 = 火力档 0..4（CURRENT_POWER/100 钳位）。*/

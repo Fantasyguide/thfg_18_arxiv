@@ -35,6 +35,7 @@
 
 #include "sdk.h"
 #include "youkai_core.h"
+#include "pl_anm_ids.h"   /* ★ 生成物：pl0X.anm 追加脚本号（妖侧本体 5 支 = CE_PL_ANM_SCRIPT_YKBODY_*）*/
 
 /* ============================ 裸引擎地址 / 偏移 ============================
  * ★ 本卡**不改 sdk.h / engine.h**（硬约束）⇒ 缺的包装在这里写 `static inline` / 宏，每条带出处。
@@ -192,7 +193,17 @@ typedef struct {
     uint8_t       logged_gate;         /* 「发射口精确闸生效（使魔没了 ⇒ 该槽哑火）」只记一次 */
     uint8_t       opt_spring_live;     /* ★ th08 #1：弹簧状态是否已经按「自机位置」起过步。
                                         *   0 = 下一帧从自机位置出发（= TH08 state 1 的初值）。*/
-    uint8_t       _pad[1];             /* 对齐（保持结构布局稳定；新增位一律从 `_pad` 里拿）*/
+    /* ★★ 2026-09-22（路 A）：本体脚本的跟踪状态（`yk_body_sync`）。
+     * `body_focused` = 上一帧在不在低速（换形那一帧要**显式**设脚本，见 `yk_body_sync`）；
+     * `body_state` = 引擎那条移动动画状态机的复刻结果（0..4）；
+     * `body_script` = 我们**当前装着**的脚本号；`-1` = 「现在跑的不是我们装的」（高速 / 还没装过）
+     *   —— 用它挡「状态没变还重装」（重装 = 动画从第 0 帧起，会看出来一顿一顿的）。
+     * `body_prev_dx` = 上一次看到的 `player+0x47934`（引擎拿它当「上一帧输入速度」）。*/
+    uint8_t       body_focused;        /* 0/1 */
+    uint8_t       body_state;          /* 0..YK_BODY_STATES-1 */
+    int32_t       body_script;         /* 追加脚本号 或 -1 */
+    int32_t       body_prev_dx;        /* player+0x47934 的上一帧快照 */
+    uint8_t       _pad[2];             /* 对齐（保持结构布局稳定；新增位一律从 `_pad` 里拿）*/
     uint32_t      heals_seen;          /* ★ 2026-09-22（#7）：上一帧读到的闸自愈计数（`yk_map_heals`）
                                         *   的快照。差值 > 0 ⇒ 打一行日志 —— 实跑里「boss 不发弹」
                                         *   到底是闸夹死（这一行在涨）还是别的原因，一眼可判。*/
@@ -829,6 +840,14 @@ static int on_ctor(ce_card_t *c)
     s->opt_spring_live = 0;
     __builtin_memset(s->opt_pos, 0, sizeof s->opt_pos);
     __builtin_memset(s->opt_vel, 0, sizeof s->opt_vel);
+    /* ★★ 本体外观（路 A）：本函数在**属性点变化 / 局中重建**时也会跑 ⇒ 本体脚本的跟踪也要复位。
+     * `body_focused = 0` + `body_script = -1` 的组合语义 =「现在跑的不是我们装的脚本、上一帧不在低速」
+     * ⇒ 下一次进低速那一帧**必定**走一次「换形」分支装载妖侧 idle（与 TH08 进妖侧时显式设脚本 5 同效）。
+     * 高速且从未进过低速时，`yk_body_sync` 什么都不做（人侧交回引擎）。*/
+    s->body_focused = 0;
+    s->body_script = -1;
+    s->body_state = YK_BODY_IDLE;
+    s->body_prev_dx = 0;
     return 0;
 }
 
@@ -859,44 +878,117 @@ static void on_delete(ce_card_t *c)
     if (s) yk_option_release(c, s);                      /* 私有状态随后由 SDK 释放 */
 }
 
-/* +0x48（帧末）：抢写本体 sprite。★ 全仓无先例（114–117 都没改过自机本体贴图）⇒ AUDIT 单列一条。
- * 本体脚本每帧写 `vm+0x24`，所以必须**每帧**在绘制前抢写；写的是 VM 字段（不是脚本），
- * 不动 `+0x28 instr_offset`（换脚本 = 重启、丢状态，spec §3.2 明确不做）。
+/* ---- 本体动画：追加进 pl0X.anm 的 5 支脚本号（生成物 `pl_anm_ids.h`）----------------------
+ * 下标 = 引擎自己的状态号（`yk_body_state()` 的 0..4 = idle / 起步左 / 从左停 / 起步右 / 从右停），
+ * 与 `assets/build_player_anm.py` 的 `_YK_STATES`、宏后缀、以及 `PINNED_NEW_SIDS` **三处同名同序**
+ * （生成器那条 `_assert_pinned_numbers()` 会在构建期先红，不会等到实跑发现「低速放的是另一支动画」）。 */
+static const int32_t YK_BODY_SCRIPT[4][YK_BODY_STATES] = {
+    /* 0 霊夢   → 八雲紫   （TH08 player00.anm script5..9）*/
+    { CE_PL_ANM_SCRIPT_YKBODY_PL00_IDLE,   CE_PL_ANM_SCRIPT_YKBODY_PL00_MOVE_L,
+      CE_PL_ANM_SCRIPT_YKBODY_PL00_STOP_L, CE_PL_ANM_SCRIPT_YKBODY_PL00_MOVE_R,
+      CE_PL_ANM_SCRIPT_YKBODY_PL00_STOP_R },
+    /* 1 魔理沙 → アリス   （TH08 player01.anm script5..9）*/
+    { CE_PL_ANM_SCRIPT_YKBODY_PL01_IDLE,   CE_PL_ANM_SCRIPT_YKBODY_PL01_MOVE_L,
+      CE_PL_ANM_SCRIPT_YKBODY_PL01_STOP_L, CE_PL_ANM_SCRIPT_YKBODY_PL01_MOVE_R,
+      CE_PL_ANM_SCRIPT_YKBODY_PL01_STOP_R },
+    /* 2 咲夜   → レミリア （TH08 player02.anm script5..9；9 帧、46×46）*/
+    { CE_PL_ANM_SCRIPT_YKBODY_PL02_IDLE,   CE_PL_ANM_SCRIPT_YKBODY_PL02_MOVE_L,
+      CE_PL_ANM_SCRIPT_YKBODY_PL02_STOP_L, CE_PL_ANM_SCRIPT_YKBODY_PL02_MOVE_R,
+      CE_PL_ANM_SCRIPT_YKBODY_PL02_STOP_R },
+    /* 3 早苗   → 射命丸文 （**TH16** pl03.anm script0..4；24 帧）*/
+    { CE_PL_ANM_SCRIPT_YKBODY_PL03_IDLE,   CE_PL_ANM_SCRIPT_YKBODY_PL03_MOVE_L,
+      CE_PL_ANM_SCRIPT_YKBODY_PL03_STOP_L, CE_PL_ANM_SCRIPT_YKBODY_PL03_MOVE_R,
+      CE_PL_ANM_SCRIPT_YKBODY_PL03_STOP_R },
+};
+
+/* 两条调用约定的本地签名（照 sdk.h 里 `ce_fn_anm_set_sprite_t` 的写法；**不动共享件 sdk.h**）。
+ * 一手：`0x407420` 两个出口都 `ret 8`（`0x407580`）、`0x478580` 是裸 `ret`（`0x47b89d`）。*/
+typedef void (__attribute__((thiscall)) *ce_fn_anm_load_script_t)(void *anm, void *vm, int script);
+typedef void (__attribute__((thiscall)) *ce_fn_anm_vm_run_t)(void *vm);
+
+/* +0x48（帧末）：本体外观。
  *
- * ★★ 2026-09-12 一手订正：**不能直写 `p + CE_PLAYER_VM + CE_ANM_VM_SPRITE_ID`**。正确形状 =
- *   `AnmLoaded__set_sprite`（`0x477b00`；thiscall(anm; vm, sprite_idx) ret 8，engine.h 的
- *   `CE_FN_ANM_SET_SPRITE`），一手逐条：
- *     ① `477b24: mov [edx+0x24],eax` **只是第一句**：它接着用 `esi+0x11c`（anm 的 sprite 表，
- *         stride 0x44）把 UV（`vm+0x3ac/0x3b0/0x3b4/0x3b8` 与 `+0x3c0..+0x3c8` 两组）、
- *        尺寸基准（`vm+0x74/+0x78`）与 scale 反比（`vm+0x454/+0x468`）一起算出来并写回
- *        （`477b2e`–`477d1a`）⇒ **直写会让这些缓存停在上一张图上**。
- *     ② 而**画的时候**贴图取的不是 `vm+0x24` 之外的东西，是 **VM 自己那一页的 anm**：
- *        `0x4810d0`（AnmVm 的绘制）`481117: mov eax,[esi+0x20]`（页号）→
- *        `481129: mov edx,[0x51f65c+eax*4+0x312072c]`（该页 = AnmLoaded*）→
- *        `481130: mov eax,[edx+0x11c]`（它的 sprite 表）→ `481136: mov ecx,[eax+ecx*4+0x8]`
- *        （texture id）→ SetTexture（`481171 call [esi+0x104]`）。
- *   ⇒ 传的 `anm` 必须是 **VM 的页所指向的那一份**：自机本体就是 `player+0xc`（pl0X.anm）。
- *     ⚠ **不是** `player+0x10`：那一格开火期间被引擎换成 ability.anm（engine.h 的注）⇒
- *       传错 = UV 从一个 anm 取、贴图从另一个 anm 取，画出来是错的。
- *   先例：`season.c:996-1003`（起残影 VM 后读本体 sprite 号，再 `ce_anm_set_sprite(anm, id, sprite)`，
- *   传的 anm 就是 `player+0xc`）。
- *   ⚠ sdk.h 的 `ce_anm_set_sprite(anm, id, sprite)` 收的是**世界列表的 anm id**（内部走
- *     `ce_anm_get_vm(id)`），而本体 VM **没有 id**（它是 `player+0x14` 里的内嵌 zAnmVm）
- *     ⇒ 这里直接调 `0x477b00`，复用 sdk.h 的 `ce_fn_anm_set_sprite_t` 签名（不改共享件）。
- *   🟡 今天这一支**一次都不会执行**：`YK_BODY_SPRITE_FOCUSED = -1`（妖侧本体资产未接，占位）
- *     ⇒ 连旧的直写也从来没生效过（`if (sprite >= 0)` 恒假）。见报告。*/
-static int on_draw(ce_card_t *c)
+ * ★★ 2026-09-22（P4 · **路 A**，owner 裁决）：「抢写本体 sprite」这条路**已废弃**，改成
+ *   「**整支换脚本**」——低速 = 妖侧：把 TH08 那五支妖侧本体脚本（已追加进 `pl0X.anm`，
+ *   见 `assets/build_player_anm.py` 的 `YOUKAI_BODY` / `_youkai_plan`）按引擎自己的状态号装上；
+ *   高速 = 原机体：交回引擎那条状态机（我们只在**出低速那一帧**把它显式设回人侧 idle）。
+ *
+ * 为什么必须是「换脚本」而不是「换 sprite 号」（两条一手，都逐条看过）：
+ *   ① TH08 的妖侧本体就是**同一台 VM 换脚本号**（人 0/1..4 ↔ 妖 5/6..9）——帧时序与朝向
+ *      （script8/9 的 `flipX()`）全在脚本正文里 ⇒ 只改 `vm+0x24` 会把两者一起丢掉。
+ *   ② 贴图按 **VM 自己那一页的 anm** 取：`0x4810d0`（AnmVm 的绘制）`481117: mov eax,[esi+0x20]`
+ *      （页号）→ `481129: mov edx,[0x51f65c+eax*4+0x312072c]`（AnmLoaded*）→
+ *      `481130: mov eax,[edx+0x11c]`（它的 sprite 表）→ `481136: mov ecx,[eax+ecx*4+0x8]`
+ *      （texture id）→ SetTexture（`481171 call [esi+0x104]`）
+ *      ⇒ 传的 `anm` 必须是 **VM 的页所指向的那一份**：自机本体 = `player+0xc`（pl0X.anm）。
+ *      ⚠ **不是** `player+0x10`：那一格开火期间被引擎换成 ability.anm（engine.h 的注）
+ *        ⇒ 传错 = UV 从一个 anm 取、贴图从另一个 anm 取，画出来是错的。
+ *   先例：113 `trance.c` 的 `trance_form_set_sprite`（它只换**一张图**：形态 24 帧与本体帧号 1:1
+ *   ⇒ `0x477b00` 就够）；本卡要换**整支脚本**，所以走 `0x407420`。
+ *   旧路（写 `vm+0x24`）与它的全部一手订正留在 `AUDIT.md` §BE 详录 #50 里，不再执行。*/
+static void yk_body_load_script(void *anm, uint8_t *vm, int32_t script)
+{
+    /* 三步曲**逐条照抄引擎自己的两处用法**（`Player__initialize` `th18:0x45a8dd`–`0x45a8fe`
+     * 与移动动画状态机 `th18:0x45b621`–`0x45b645`，两处逐字节同形）：
+     *   ① `AnmVm__load_script` `0x407420`（thiscall(anm; vm, script) ret 8）—— 把脚本模板
+     *      `[anm+0x10c] + script*0x60c` 的 0x151 dword（0x544 B）整块拷进 VM；层 `vm+0x18`
+     *      与 `vm+0x548` 由它自己存下来再写回；
+     *   ② `vm+0x5c0 = 0`、`vm+0x5bc = 0`；③ `AnmVm__run` `0x478580`（thiscall(vm)，裸 ret）。
+     * ⚠ 脚本头部必须自带 `type/layer/resampleMode` 前导（`0x407420` 会整块替换模板）：
+     *   TH18 原生本体脚本自带那三行，TH08 的源脚本没有 ⇒ 由生成器补（`_inject_body_prologue`）。*/
+    ((ce_fn_anm_load_script_t)CE_FN_ANM_LOAD_SCRIPT)(anm, vm, script);
+    *(int32_t *)(vm + CE_ANM_VM_POST_LOAD_A) = 0;
+    *(int32_t *)(vm + CE_ANM_VM_POST_LOAD_B) = 0;
+    ((ce_fn_anm_vm_run_t)CE_FN_ANM_VM_RUN)(vm);
+}
+
+/* 每帧的本体外观同步。判据 / 状态号 / 换形那一帧的规则全部一手（见 youkai_core.h §3.2）：
+ *   · 状态 = `yk_body_state(本帧 dx, 上一帧 dx, 上一帧状态)`，dx = `player+0x47934`
+ *     （引擎在同一个函数里先把它读成「上一帧」再覆盖成本帧值 ⇒ 我们自己留一份 prev 就等价）；
+ *   · **换形那一帧**（进/出低速）= TH08 的显式设脚本 + `velocityX = 0`：
+ *     进 = 妖侧 idle（`th08:0x44b12b push 0x5`）、出 = 人侧 idle（`th08:0x44b385 push 0x0`），
+ *     并把我们的 `prev_dx` 清 0 ⇒ 下一帧必定按方向选到移动动画（与 TH08 清 velocityX 同效）；
+ *   · 高速期间**不碰本体 VM**（人侧 0..4 由引擎那条状态机自己管，我们不抢）。*/
+static void yk_body_sync(yk_card_t *s)
 {
     uint8_t *p = CE_PLAYER();
+    uint8_t *vm;
     void *anm;
-    int sprite;
-    (void)c;
-    if (!p) return 0;
-    sprite = yk_body_sprite(CE_PLAYER_FOCUSED());
-    if (sprite < 0) return 0;                             /* 占位期走这条（高速恒走这条，是设计）*/
+    int ch, focused, dx, st, want;
+    if (!p || !s) return;
     anm = *(void **)(p + CE_PLAYER_ANM);
-    if (!anm) return 0;
-    ((ce_fn_anm_set_sprite_t)CE_FN_ANM_SET_SPRITE)(anm, p + CE_PLAYER_VM, sprite);
+    if (!anm) return;                                     /* anm 未装载 ⇒ 什么都别碰 */
+    vm = p + CE_PLAYER_VM;
+    ch = yk_current_character();
+    if (ch < 0 || ch > 3) ch = 0;
+    focused = CE_PLAYER_FOCUSED() ? 1 : 0;
+    if (focused != (int)s->body_focused) {                /* 换形那一帧 */
+        s->body_prev_dx = 0;
+        s->body_state = YK_BODY_IDLE;
+        s->body_focused = (uint8_t)focused;
+        if (focused) {
+            yk_body_load_script(anm, vm, YK_BODY_SCRIPT[ch][YK_BODY_IDLE]);
+            s->body_script = YK_BODY_SCRIPT[ch][YK_BODY_IDLE];
+        } else {
+            yk_body_load_script(anm, vm, YK_BODY_IDLE);   /* th08:0x44b385 push 0x0（人侧 idle）*/
+            s->body_script = -1;                          /* 「现在跑的不是我们装的脚本」*/
+        }
+        return;
+    }
+    dx = *(int32_t *)(p + CE_PLAYER_SPEED_X);
+    st = yk_body_state(dx, s->body_prev_dx, s->body_state);
+    s->body_prev_dx = dx;
+    s->body_state = (uint8_t)st;
+    if (!focused) return;                                 /* 高速：引擎自己管，我们不抢 */
+    want = YK_BODY_SCRIPT[ch][st];
+    if (want == s->body_script) return;                   /* 状态没变 ⇒ 别重装（重装 = 从第 0 帧起）*/
+    yk_body_load_script(anm, vm, want);
+    s->body_script = want;
+}
+
+static int on_draw(ce_card_t *c)
+{
+    yk_body_sync(ce_state(c, yk_card_t));
     return 0;
 }
 
@@ -1178,7 +1270,12 @@ _Static_assert(sizeof(yk_fam_vm_t) == 12, "familiar follow-VM record grew (table
 /* ============================== ★ 占位 / TODO 清单 ==============================
  * 每一条都「不自己发明数值」，取值一律是**不做**这个语义：
  *   §5 资产
- *     1. `YK_BODY_SPRITE_FOCUSED` = -1        —— 妖侧本体 sprite 号（射命丸文 / TH16 pl03.anm 未接进 pl0X.anm）
+ *     1. ~~`YK_BODY_SPRITE_FOCUSED` = -1~~ —— ✅ 2026-09-22 **已接真资产（路 A，owner 裁决）**：
+ *        55 张妖侧本体图经 `assets/build_player_anm.py` 的 `YOUKAI_BODY` / `_youkai_plan`
+ *        **追加**进 pl00/pl01/pl02/pl03.anm（4 个 entry + 20 支脚本），本体画法改成**整支换脚本**
+ *        （`yk_body_sync` / `yk_body_load_script`，一手见 `youkai_core.h` §3.2）。旧路（写 `vm+0x24`）
+ *        与它的全部一手订正留在 `AUDIT.md` §BE 详录 #50，**已不执行**。
+ *        🟡 未实跑：装载与状态机只在代码层对过账（`make check` / 单测）。
  *     2. ~~`YK_SHOT_SET_YOUKAI` = 0x16 + 档位表~~ —— ✅ 2026-09-12 **已接真数据**：
  *        shooterset = TH08 `ply03as.sht` 满 P 档 9 行（`assets/sht/append_shooterset.py` 的 `REPLACE`
  *        覆盖原生那格，`fire_rate ∈ {3,5,6,10}`，除零风险随之消失）；**档位伤害表仍不填**

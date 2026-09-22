@@ -384,3 +384,134 @@ objdump -d -M intel local/th08.v1.00d/th08.exe > local/_scratch/th08_full.asm
 # 4) ECL 操作码跳表（statics.json 的 ecl_jump_table_41ecbe，184 项）；
 #    dropPointItems = op 168 → th08:0x41e28f，dropItems = 142 → th08:0x41d183
 ```
+
+## ★ 蓝点（type 1）分值链 + 本作的「机制项」（2026-09-18 补，一手 × 反编译源码互证）
+
+> 本节的可靠性：`local/vendor/th08_dec`（社区 TH08 反编译，93% 函数已实现）的 `Item::CollectPoint()`
+> （`src/ItemManager.cpp:430`）与 `GameManager::AddTimeOrbs()`（`src/GameManager.hpp:181`）
+> **逐指令对上**了本仓自己的一手反汇编（`th08:0x440e40` / `th08:0x418220`，含常量直读）⇒ 本节按 ✅ 记。
+
+**分派**：收集类型跳表 `th08:0x440cc5`（`th08:0x440a63 jmp [eax*4+0x440cc5]`，type 0..8）——
+type 0 = `th08:0x440cf0`、**type 1 = 蓝点 `th08:0x440e40`**、type 2 = `th08:0x441170`、type 8 = `th08:0x441020`、
+type 7 = 时点（`Item::CollectTimeOrb` `th08:0x4412b0`，本节不涉及）。
+
+**蓝点分值（`th08:0x440e40`–`th08:0x440f1c`，逐指令）**：
+
+```
+PIV = [globals(0x160f510) + 0x24]                     ; pointItemValue
+线上 (item->y < pocY，pocY = [0x18b896c]+0x1c)  ⇒ itemScore = PIV
+线下                                        ⇒ itemScore = PIV/2 − ftol(item->y − pocY) × (PIV/1000)
+if (item+0x2d8 == 1) itemScore = PIV                   ; 「按满值算」的例外位（同 th07 的 item+0x280）
+itemScore -= itemScore % 10                            ; trunc10
+if (call 0x406d10 == true)  itemScore += itemScore     ; ★ GaugeIsExtremelyHuman() ⇒ ×2
+弹窗色 = (itemScore ≥ PIV) ? 黄 : 白
+AddScore(itemScore)；pointItemsCollected(+InStage)++；GUI 刷新 2 帧；
+IncreaseSubrank(itemScore ≥ PIV ? 10 : 3)；点道具 EXTEND 阈值推进
+```
+
+**本作的「机制项」= 时点（刻符）抬高 PIV 本身**（所以它**进**收分高度公式里面）：
+
+```
+GameManager::AddTimeOrbs(orbs)  th08:0x418220
+418227  if (orbs < 0 && currentTimeOrbs < -orbs) currentTimeOrbs = 0     ; 越界清零
+418241  currentTimeOrbs(+0x3c) += orbs
+41825c  totalTimeOrbs(+0x44)   += orbs
+41826e  hscr.numTimeOrbsCollected += orbs；call 0x406e50 (UpdateAntiTamper)
+418288  if (orbs > 0):
+418294      orbs += (totalTimeOrbs & 1)          ; ★ 奇偶补正（不丢半颗）
+4182b0      PIV(+0x24) += (orbs/2) × 10          ; ★★ 每 2 颗时点 ⇒ 最大得点 +10
+```
+
+**PIV 初值**（`th08:0x43af49`–`0x43af85`，按难度 switch，直读原始字节）：
+E `0xea60` = **60000** / N `0x186a0` = **100000** / H `0x30d40` = **200000** / L `0x493e0` = **300000** / EX **300000**。
+
+**对「总最大得点公式」的两条结论**：
+1. **机制项在收分高度里面**（机制改的是 PIV；线下折扣项 ∝ PIV）⇒ 与 TH07 相反，**不需要外挂 ΔG**。
+2. 唯一的外挂是**乘法项 ×2**（`GaugeIsExtremelyHuman()`），它乘在 `trunc10` **之后** ⇒ 与高度系数**可交换**
+   ⇒ 写成 `G = (…base…) × (1 + [极端人间])` 即可。另注意线下式**没有下限夹取**（大 `y` 时可为负）❓。
+
+### 按 mod 的「额外机制」口径重述（2026-09-18，用户订正参照系后）
+
+参照系：`G_0 = G_18`（TH18 原生身价，全卡共用）；各作机制 = `ΔG_i`，且逐项判断**进不进 `coeff_18`**。
+
+| TH08 的机制 | 形状 | 进 `coeff_18`？ | 依据（一手） |
+| --- | --- | --- | --- |
+| **时点（刻符）⇒ 最大得点** | **加性**：`ΔG_08 = (时点/2) × 10`（每 2 颗时点 +10，奇偶补正不丢半颗） | ✅ **进**（原作里它改的是 **PIV 本身**，而 PIV 进高度公式 ⇒ 我们声明进 `ecx` 即可同义） | `th08:0x418220`（`PIV += (orbs+(totalOrbs&1))/2×10`）+ `Item::CollectPoint` 的线下式 `PIV/2 − d·(PIV/1000)` |
+| **人妖槽「极端人间」** | **乘法**：`×2`（只作用蓝点/小点，时点不加倍） | 可交换（乘在 `trunc10` 之后）⇒ 写在系数内/外**等价** | `Item::CollectPoint` 的 `if (GaugeIsExtremelyHuman()) score += score`（`th08:0x440f03`；调用 `th08:0x406d10`） |
+| 线下折扣 | `G_08 = PIV/2 − d×(PIV/1000)`（`d = y − pocY`，无下限夹取 ❓） | 由 TH18 的 `coeff_18` 代劳 ⇒ **我们不再自己乘** | 同上 |
+
+⇒ **TH08 卡的实现口径**：时点机制作为 `ΔG_08` **并进 `ecx` 声明**（随 `coeff_18` 一起被折扣）；
+「极端人间 ×2」单独作为乘法项叠加。**不要**把 TH08 自己的 PIV 初值（60000/100000/200000/300000）
+当成基线搬进来 —— 基线永远是 `G_18`。
+
+### ★★ 「进不进 ΔG」的第三次复核（2026-09-22，为卡 108 工单 D 重跑一遍）
+
+**结论不变：进**（本文 §按 mod 的「额外机制」口径重述 那一节的表就是这个判定）。这次是**另一个人、
+从零再读一遍指令**（不引用上一轮的结论），三条都独立命中：
+
+| 步骤 | 指令（一手，`local/_scratch/th08_full.asm`） |
+| --- | --- |
+| ① 时点加 PIV | `418294 mov eax,[edx+0x44]` / `418297 and eax,1` / `41829d add ecx,eax` / `4182ab cdq` / `4182ae sar eax,1` / `4182b0 imul eax,eax,0xa` / `4182bc mov [ecx+0x24],eax` |
+| ② SC 捕获再加一笔 | `417329 mov edx,[ecx+0x10]` / `41732c imul edx,edx,0xa` / `417334 add edx,[globals+0x24]` / `41733d mov [globals+0x24],edx` |
+| ③ PIV 就是点值基数 | `440e4b mov eax,ds:0x160f510` / `440e50 mov ecx,[eax+0x24]`（`Item::CollectPoint`）|
+
+⇒ 机制改的是 **PIV 本身**，而 PIV 是点道具分值的基数 ⇒ 把 `ΔG_08` **并进 `ecx` 声明**与原作同义。
+
+**卡 108 的落点（2026-09-22，P4 工单）**：判定为**进**，但**本轮不实装** —— 108 今天**没有刻符载体**
+（没有「谁生时点」的生成点、没有 VM 池、没有收集路径、也没有人妖槽）。现在唯一能落笔的做法是
+凭空造一个 PIV 涨源，那是 [`METHOD.md`](../../../METHOD.md) 禁止的「自定包装成复刻」。
+⇒ 等 owner 定「刻符载体」那一轮（口径已由 owner 2026-09-18 给出：VM 池 + 默认自动吸收 + 中途暴毙变类 P 点），
+按 `ce_piv_add(108, …)` + `FAMILY_08` 接上即可。登记见 `mods/th18.v1.00a/card-expand/AUDIT.md` §BE-FC。
+
+### ★ PIV 初值的一手复核（2026-09-18，直读字节 + 平坦反汇编）
+
+`th08:0x43af20` 起是一个按难度分派的 switch（分派变量 = **`ds:0x160f538`**，同文件多处拿它与 `0x4` 比 ⇒ 难度 0..4），
+五个分支各写一次 `[[this]+8]+0x24`（= `[ds:0x160f510]+0x24` = **蓝点分值读的那个字段**）：
+
+| 难度 | 分支 | 指令 | 值 |
+| --- | --- | --- | --- |
+| E（0） | `th08:0x43af43` | `th08:0x43af49` `mov dword [eax+0x24], 0xea60` | **60000** |
+| N（1） | `th08:0x43af52` | `th08:0x43af58` `mov dword [eax+0x24], 0x186a0` | **100000** |
+| H（2） | `th08:0x43af61` | `th08:0x43af67` `mov dword [eax+0x24], 0x30d40` | **200000** |
+| L（3） | `th08:0x43af70` | `th08:0x43af76` `mov dword [eax+0x24], 0x493e0` | **300000** |
+| EX（4） | `th08:0x43af7f` | `th08:0x43af85` `mov dword [eax+0x24], 0x493e0` | **300000**（与 L 同值） |
+
+读侧确认：`th08:0x440e4b`–`th08:0x440e53`（蓝点处理体 `th08:0x440e40`）就是 `mov eax,ds:0x160f510; mov ecx,[eax+0x24]` ⇒ **同一字段**。
+⇒ **单位是「点」1:1**（对比 TH12–TH17 的「存储 = 显示 ×100」），且**没有找到上限钳位**（init 分支与涨值站点都没有 clamp 常量）❓。
+
+### ★★ PIV 的全部写点穷举（2026-09-18 补核，取代上一段的「❓ 未钉」）
+
+**写 PIV（= `[[0x160f508]+8]+0x24`，即 `[ds:0x160f510]+0x24`）的站点全 exe 只有三处**（把 `mov reg,ds:0x160f510` 与 `mov [this+8]` 两种取法都扫了）：
+
+| # | 站点 | 形状 | 语义 |
+| --- | --- | --- | --- |
+| 1 | `th08:0x43af49` / `:0x43af58` / `:0x43af67` / `:0x43af76` / `:0x43af85` | 按难度写初值 `60000/100000/200000/300000/300000` | 开局初始化（见上文表） |
+| 2 | `th08:0x4182b0`–`th08:0x4182bc` | `PIV += ((orbs + (totalTimeOrbs & 1)) / 2) × 10` | ★ **`GameManager::sub_418220`**（本文称 `AddTimeOrbs`）—— **+10 / 2 颗**，**只在 `orbs > 0` 时进这段** ⇒ **负数不会掉 PIV** |
+| 3 | `th08:0x41732f`–`th08:0x41733d` | `PIV += [zSpellcard+0x10] × 10` | ★ **`Spellcard::on_tick`**（`th08:0x416b90`）里的 **SC 结算段**：`AddTimeOrbs(count)` 之后**再额外**加 `count × 10` |
+
+**站点 3 的来龙去脉（一手）**：
+- `th08:0x417f60` = **`Spellcard::initialize`**：`UpdateFunc::operator new`（`th08:0x43ce60`）造两个回调（`on_tick` = `th08:0x418010` 的 thunk → `th08:0x416b90`；`on_cleanup`/draw = `th08:0x418030` / `th08:0x418050`），句柄存 `[zSpellcard+0x263c]` / `[zSpellcard+0x2640]`，再 `register__on_tick`（`th08:0x43c880`）/ `register__on_draw`（`th08:0x43c960`）挂上。
+- 那段代码的触发：SC 结算分支（`th08:0x4172bf`–`th08:0x4172e8` 先 `add_score([zSpellcard+0x104])`，`0x4181f0` = `GameManager::add_score` = `SCORE += amount/10`）之后清 `flags` 的 `0x100` 位；**若 `[zSpellcard+0x10] > 0`** 才走这个 flush。
+- `zSpellcard + 0x10` 的名字（ExpHP `type-structs-own.json`）= **`time_orbs_not_yet_spawned_during_capture`** ⇒ 这段就是**「SC 捕获时把 SC 期间攒下的时点一次性入账」**。
+- ⇒ **与「面数/关底结算」无关**：关底那套（蓝点 5W / graze 500 / time 1000 那几行）**没有任何 PIV 写点**。
+
+**`AddTimeOrbs` 的 5 个调用点全列**（`grep 'call   0x418220'`）：
+
+| 调用点 | 参数 | 归属 |
+| --- | --- | --- |
+| `th08:0x4155ae` | `[obj+0x10]` | `th08:0x4152a0` 里的**另一次** `+0x10` flush（**不带**额外 PIV 那一笔）⇒ 说明「攒着再入账」的形状在本作里有两处 |
+| `th08:0x41731e` | `[zSpellcard+0x10]` | ★ SC 结算（带 `PIV += count×10`） |
+| `th08:0x44137a` | `1` | `Item::CollectTimeOrb`（`th08:0x4412b0`，type 7）：先 `add_score([item])` 再 **+1 刻符** |
+| `th08:0x44cc10` | `0xfffffff1` = **−15** | `th08:0x44cbf0`：**负**增量（miss / 决死那类）⇒ 只扣统计、**不进 PIV 分支** |
+| `th08:0x44cd7c` | `−(x/10)` | 同上函数内的另一处负增量 |
+
+⇒ **社区口径逐条对上（交叉验证 ✅）**：夜点初值 6W/10W/20W/30W/30W ✓、人逢魔 ×2 ✓、线下越靠版底越低 ✓、
+**miss/决死只扣「右侧 time 统计」而不扣夜点** ✓（= 一手那条「负数不进 PIV 分支」）、SC 捕获按剩余时间给刻符奖励 ✓（= 站点 3）。
+
+**⚠ 一条留给口径判的算术**：站点 3 对**同一批 `count`** 先调 `AddTimeOrbs(count)`（+10/2 颗）**再** `+10/颗`
+⇒ 若两笔都算生效，SC 期间攒下的刻符是 **约 15/颗**（普通路是 5/颗）。这是 ZUN 有意还是重叠，静态**判不了**。
+★ **用户口径（2026-09-18）：「有意无意就按照复刻即可」** ⇒ **两笔都写**：
+`ΔG_08` 在 SC 捕获那批上 = `AddTimeOrbs` 那一份 **＋** `count × 10` 那一份（不要因为「看着像重复」而只取其一）。
+
+**上限（用户口径 2026-09-18）**：本作 PIV **没有原生上限**（init 与两个写点都没有 clamp 常量）——
+mod 侧**不必去找**，按 int32 自然上界设一个**安全上界**（`2147483647` 级，防溢出成负数）即可。

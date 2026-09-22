@@ -269,6 +269,11 @@
                                               *     ⇒ **弹脚本自己必须写 `layer()`**，否则弹被画进背景那一趟 = 看不见。
                                               *     先例：零售 `pl01.anm` script5 的 `-1: layer(13)`、本仓 282/128/131 用 13。*/
 #define CE_ANM_VM_SPRITE_ID        0x24       /* int32：当前 sprite 号（ExpHP zAnmVmPrefix.sprite_id；残像照自机当下那帧取）*/
+/* ★★ 2026-09-22（108 妖侧本体）：`AnmVm__run` 之前引擎**紧跟着清零**的那两个 dword ——
+ * `0x407420` 的调用方两处都这么做（`Player__initialize` `th18:0x45a8f4`/`0x45a8fb` 与移动动画
+ * 状态机 `th18:0x45b631`/`0x45b63b`）⇒ 换脚本时必须照抄「load → 清这两个 → run」三步（youkai.c）。*/
+#define CE_ANM_VM_POST_LOAD_A      0x5c0      /* int32，装载脚本后清零（含义未钉；引擎两处都清）*/
+#define CE_ANM_VM_POST_LOAD_B      0x5bc      /* int32，同上 */
 #define CE_ANM_VM_FVARS            0x4b4      /* float[4] 脚本变量 %F0–%F3（ExpHP zAnmVmPrefix float_script_vars）；C 写、脚本 scale(%F0, …) 读 */
 #define CE_ANM_VM_ROTATION         0x3c       /* zFloat3 rx/ry/rz（zAnmVmPrefix；自机弹每帧更新 `0x45edb0` 写 +0x44 = rz = 弹的实时角度）*/
 #define CE_ANM_VM_SCALE            0x54       /* zFloat2 scale x/y：HUD 充能条 0x408a53 写 +0x58 = fill 比例（thpages drawRect：动态尺寸就改 scale）；ExpHP zAnmVmPrefix（AUDIT O29k）*/
@@ -426,6 +431,14 @@
 #define CE_PLAYER_ANM              0x0c       /* AnmLoaded*：**自机自己的 anm**（pl0X.anm，残像用它起脚本）*/
 #define CE_PLAYER_ANM_CURRENT      0x10       /* 同上，但开火期间被换成 ability.anm（0x40a9c0），别拿它当玩家 anm */
 #define CE_PLAYER_VM               0x14       /* 自机本体 zAnmVm（`Player__on_tick__body` 里 `LEA ECX,[EDI+0x14]`）*/
+/* ★★ 2026-09-22（108 妖侧本体）：**本帧的输入速度 x**（int32，`Player__sub_45b170` `0x45b69f` 写）。
+ * 它的**唯一用途**就是喂那条移动动画状态机 —— 全 exe 只有 5 处引用（4 读 + 1 写），全在同一个函数里：
+ *   `th18:0x45b618` / `0x45b658` / `0x45b750` / `0x45b799` 四处 `cmp DWORD PTR [edi+0x47934],0x0`
+ *   （= 在 0x45b69f 覆盖**之前**读它当「上一帧」），`0x45b69f` 那一条 `mov [edi+0x47934],eax` 是写。
+ *   y 方向的兄弟字段 = `+0x47938`（同处写；状态机不读它）。⇒ 读它做「上一帧/本帧」比较是安全的：
+ *   引擎语义上就是「上一帧的输入速度 x」这一格的暂存。 */
+#define CE_PLAYER_SPEED_X          0x47934    /* int32 */
+#define CE_PLAYER_SPEED_Y          0x47938    /* int32（未用；仅记录）*/
 
 typedef struct { int32_t prev; int32_t cur; float cur_f; } ce_timer_t;   /* zTimer 前三个字段（Bomb / Card 的写法一致）*/
 #define CE_PLAYER_INVULN()   ((ce_timer_t *)(CE_PLAYER() + CE_PLAYER_INVULN_TIMER))
@@ -464,6 +477,20 @@ typedef struct { int32_t prev; int32_t cur; float cur_f; } ce_timer_t;   /* zTim
 #define CE_FN_ANM_INSTANTIATE_WORLD_BACK 0x405bf0 /* AnmLoaded__instantiate_vm_to_world_list_back：thiscall(AnmLoaded*; int* out_id, int script, int layer, void** out_vm) ret 0x10。建 VM、实体坐标 (0,0,0)、layer<0x18 时写 vm+0x18、AnmVm__run 一帧、挂 world 列表尾；内部自己进临界区。AUDIT O24 */
 #define CE_FN_ANM_SET_SPRITE       0x477b00   /* AnmLoaded__set_sprite：thiscall(AnmLoaded*; vm, sprite_idx) ret 8（备查，特效脚本自己 sprite() 就不用）*/
 #define CE_FN_ANM_DELETE_BY_ID     0x488cf0   /* stdcall(anm_id) ret 4：按 id 标记删除 VM 及其子树（Tenshi 收尾用；一次性脚本自 delete() 就不用）*/
+/* ★★ 2026-09-22（108 妖侧本体·路 A）：**给已存在的 VM 换脚本**两步曲。全仓第二个用它的卡。
+ * 一手（`objdump -d --start-address` 逐条 + 两个调用方的用法）：
+ *   `AnmVm__load_script` `0x407420`：thiscall(AnmLoaded*; AnmVm* vm, int script) **ret 8**。
+ *     把脚本模板 `[anm+0x10c] + script*0x60c` 整块（`rep movs` **0x151 dword = 0x544 B**）拷进 `vm+0`；
+ *     拷贝前把 `vm+0x18`（层）与 `vm+0x548` 存下来、拷完写回（`0x40743a`/`0x407470`）—— 层是被**保留**的；
+ *     `vm+0x54c..0x570` 一批插值/待处理字段被复位。
+ *   `AnmVm__run` `0x478580`：thiscall(AnmVm* vm)，**裸 ret**（无栈参）。
+ *   引擎自己的用法（两处逐字节同形）：`load → vm+0x5c0 = 0 → vm+0x5bc = 0 → run`
+ *     · `Player__initialize` `th18:0x45a8dd`–`0x45a8fe`（开局装脚本 0）
+ *     · 移动动画状态机 `th18:0x45b621`–`0x45b645`（起步/停下那一刻装 1/2/3/4）
+ *   ⚠ 与 `CE_FN_ANM_SET_SPRITE` 的分工：那个只换**一张贴图**（UV/尺寸重算），脚本的帧时序与
+ *     `flipX()` 全丢 ⇒ 复刻「妖侧本体 = TH08 那五支脚本」必须走这条。*/
+#define CE_FN_ANM_LOAD_SCRIPT      0x407420   /* thiscall(AnmLoaded*; vm, script) ret 8 */
+#define CE_FN_ANM_VM_RUN           0x478580   /* thiscall(vm)，裸 ret */
 /* ---- 装备卡：子机（option）与 SHT（engine/sht/th18/，engine/card/th18/03-hooks.md §5）---- */
 #define CE_FN_PLAYER_ALLOCATE_OPTION 0x40a790 /* ★thiscall(card; card, off_x, card, off_y, ability_script) ret 0x14
                                                  —— 五个栈参里第 1、3 个是 card 自己（`CardReimu1__on_power_level_change` 0x40aae0

@@ -48,14 +48,49 @@ int yk_should_suppress_native(int player_present, int focused, int character, in
  * ⚠ 引擎侧**不要**再用它：真实判据一律走上面那条四参函数。 */
 int yk_suppress_native_shot_spec31_legacy(int player_present, int focused);
 
-/* ================================================================= §3.2 本体贴图
- * 本体 VM = `player+0x14`，换贴图 = 写 `vm+0x24`（sprite id）；脚本每帧写 sprite
- * ⇒ 必须 `on_draw`（帧末）每帧抢写。返回 **< 0 = 本帧不抢写**。
- *   高速 = 原机体 ⇒ 恒 -1（这是**设计**，不是占位：spec §0「高速 = 原机体」）。
- *   低速 = 妖侧（早苗 → 射命丸文，TH16 `pl03.anm`）⇒ ★ TODO(资产)：见下方常量。 */
-#define YK_BODY_SPRITE_UNFOCUSED (-1)   /* 高速：原机体（设计，永久）*/
-#define YK_BODY_SPRITE_FOCUSED   (-1)   /* ★ TODO(资产 §5)：妖侧本体 sprite 号。资产未接进 pl0X.anm ⇒ 不抢写 */
-int yk_body_sprite(int focused);
+/* ================================================================= §3.2 本体外观（妖侧 = TH08 那五支本体脚本）
+ * **一手**：TH08 的**人/妖两侧用的是同一台本体 VM，只换脚本号** —— 本体 VM（`player+0x10` 那一格）
+ *   由 `SetAndExecuteScriptIdx` 换脚本：人侧 idle = **0** / 移动 = **1..4**，
+ *   妖侧 idle = **5** / 移动 = **6..9**（同一个 `playerNN.anm`；`th08:0x44d650` 一带的注册 +
+ *   `th08:0x44aec0` 的 `SET_MOVE_ANIM`）。**进出妖侧那一帧是显式设脚本**：
+ *     进妖侧 `th08:0x44b12b` `push 0x5`（妖侧 idle）→ `th08:0x44b13a call 0x4069f0`
+ *     出妖侧 `th08:0x44b385` `push 0x0`（人侧 idle）→ `th08:0x44b394 call 0x4069f0`
+ *   两处后面都紧跟 `player+0xe2a9c = 0`（= `velocityX`，`th08:0x44b142` / `th08:0x44b39c`）
+ *   ⇒ **下一帧必定触发一次移动动画状态机**。
+ *   ⚠ vendor 反编译 `Player.cpp:942` 把「出妖侧」那份也印成 `5` —— **指令是 `push 0x0`**，
+ *     以 `local/_scratch/th08_full.asm` 的 `th08:0x44b385` 为准。
+ *
+ * **TH18 侧一一对应**：`th18:0x45b610`–`0x45b7a8`（在 `Player__sub_45b170` 内）就是同一套状态机。
+ *   逐条读出来的判据（`edx` = 本帧输入速度 x = `player+0x47934`，`[edi+0x47934]` = 上一帧那个值）：
+ *     `dx < 0 && px >= 0` → 装脚本 **1**（起步向左，`th18:0x45b62a`）
+ *     `dx == 0 && px < 0` → 装脚本 **2**（从左侧停下，`th18:0x45b766`）
+ *     `dx > 0 && px <= 0` → 装脚本 **3**（起步向右，`th18:0x45b7a6` → `0x45b663`）
+ *     `dx == 0 && px > 0` → 装脚本 **4**（从右侧停下，`th18:0x45b66a`）
+ *     四条都不成立 ⇒ **不动**（引擎保持当前脚本）；开局 = 脚本 **0**（`th18:0x45a8e0 push 0x0`）。
+ *   ⇒ 与 TH08 的 `SET_MOVE_ANIM(1,2,3,4)` **逐槽同序**（a=起步左 / b=从左停 / c=起步右 / d=从右停）
+ *     ⇒ **妖侧脚本号 = 人侧 + 5**（idle 0 → 5），这正是 TH08 自己的编号法。
+ *
+ * **结构证据（第二条独立链）**：TH18 原生 `pl00.anm` 的 script3/4 与 script1/2 **同形状但用
+ *   sprite 16..23**，而 TH08 的 3/4 用 `flipX()`；实测 `mirror(sprite8..15)` vs `sprite16..23`
+ *   的 MAE ≈ 8（不镜像 27–54）⇒ **16..23 就是 8..15 的镜像**，即 TH18 把 TH08 的 `flipX`
+ *   预先烤成了贴图 ⇒ 两作的 script0..4 是同一套「idle + 四个移动态」，可以逐槽对搬。
+ *
+ * 本卡的落点（**路 A**，owner 2026-09-22 裁决）：把 TH08 的妖侧脚本 5..9 **逐条追加进 `pl0X.anm`**
+ *   （pl03 用 TH16 `pl03.anm` 的 0..4 = 射命丸文），低速时把本体 VM **整支换**过去、高速换回引擎那支。
+ *   换脚本三步曲与理由见 `youkai.c` 的 `yk_body_load_script`。
+ *   一手全文见 `engine/player/th08/03-youkai-body-and-gauge.md` §1 / §1.4。 */
+#define YK_BODY_STATES        5      /* = 引擎那 5 支本体脚本（追加进 pl0X.anm 的就是它们）*/
+#define YK_BODY_IDLE          0      /* 人侧脚本 0 / 妖侧脚本 5 */
+#define YK_BODY_MOVE_L        1      /* 人侧 1 / 妖侧 6（起步向左）*/
+#define YK_BODY_STOP_L        2      /* 人侧 2 / 妖侧 7（从左侧停下）*/
+#define YK_BODY_MOVE_R        3      /* 人侧 3 / 妖侧 8（起步向右）*/
+#define YK_BODY_STOP_R        4      /* 人侧 4 / 妖侧 9（从右侧停下）*/
+
+/* 引擎那条移动动画状态机的**纯逻辑复刻**：返回本帧该用哪个状态（0..YK_BODY_STATES-1）。
+ * `dx` = 本帧输入速度 x（`player+0x47934`）；`prev_dx` = 上一次调用时传进来的 `dx`
+ * （引擎在同一个函数里先把它当「上一帧」读、再覆盖成本帧值 ⇒ 我们自己在卡状态里留一份即可）；
+ * 四个条件都不成立 ⇒ 返回 `last`（引擎保持原脚本）。`last` 越界一律钳成 `YK_BODY_IDLE`。 */
+int yk_body_state(int dx, int prev_dx, int last);
 
 /* ==================================================================== §3.3 子机
  * 换位（低速阵型）是**原生双偏移** `+0x64/+0x68` vs `+0x6c/+0x70`，引擎每帧自己取用，卡侧零成本。

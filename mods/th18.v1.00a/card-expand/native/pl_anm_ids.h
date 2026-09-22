@@ -3,15 +3,35 @@
 
 #define CE_PL_ANM_SCRIPT_PL00_TRANCE       41   /* pl00.anm 追加 */
 #define CE_PL_ANM_SCRIPT_PL00_TRANCE_GLINT  42   /* pl00.anm 追加 */
+#define CE_PL_ANM_SCRIPT_YKBODY_PL00_IDLE  43   /* pl00.anm 追加 */
+#define CE_PL_ANM_SCRIPT_YKBODY_PL00_MOVE_L  44   /* pl00.anm 追加 */
+#define CE_PL_ANM_SCRIPT_YKBODY_PL00_STOP_L  45   /* pl00.anm 追加 */
+#define CE_PL_ANM_SCRIPT_YKBODY_PL00_MOVE_R  46   /* pl00.anm 追加 */
+#define CE_PL_ANM_SCRIPT_YKBODY_PL00_STOP_R  47   /* pl00.anm 追加 */
 #define CE_PL_ANM_SCRIPT_PL01_TRANCE       47   /* pl01.anm 追加 */
 #define CE_PL_ANM_SCRIPT_PL01_TRANCE_GLINT  48   /* pl01.anm 追加 */
+#define CE_PL_ANM_SCRIPT_YKBODY_PL01_IDLE  49   /* pl01.anm 追加 */
+#define CE_PL_ANM_SCRIPT_YKBODY_PL01_MOVE_L  50   /* pl01.anm 追加 */
+#define CE_PL_ANM_SCRIPT_YKBODY_PL01_STOP_L  51   /* pl01.anm 追加 */
+#define CE_PL_ANM_SCRIPT_YKBODY_PL01_MOVE_R  52   /* pl01.anm 追加 */
+#define CE_PL_ANM_SCRIPT_YKBODY_PL01_STOP_R  53   /* pl01.anm 追加 */
 #define CE_PL_ANM_SCRIPT_PL02_WOLF         30   /* pl02.anm 追加 */
 #define CE_PL_ANM_SCRIPT_PL02_EAGLE        31   /* pl02.anm 追加 */
+#define CE_PL_ANM_SCRIPT_YKBODY_PL02_IDLE  32   /* pl02.anm 追加 */
+#define CE_PL_ANM_SCRIPT_YKBODY_PL02_MOVE_L  33   /* pl02.anm 追加 */
+#define CE_PL_ANM_SCRIPT_YKBODY_PL02_STOP_L  34   /* pl02.anm 追加 */
+#define CE_PL_ANM_SCRIPT_YKBODY_PL02_MOVE_R  35   /* pl02.anm 追加 */
+#define CE_PL_ANM_SCRIPT_YKBODY_PL02_STOP_R  36   /* pl02.anm 追加 */
 #define CE_PL_ANM_SCRIPT_PL03_FROG         29   /* pl03.anm 追加 */
 #define CE_PL_ANM_SCRIPT_PL03_SNAKE        30   /* pl03.anm 追加 */
 #define CE_PL_ANM_SCRIPT_PL03_GLINT        31   /* pl03.anm 追加 */
 #define CE_PL_ANM_SCRIPT_PL03_TRANCE       32   /* pl03.anm 追加 */
 #define CE_PL_ANM_SCRIPT_PL03_TRANCE_GLINT  33   /* pl03.anm 追加 */
+#define CE_PL_ANM_SCRIPT_YKBODY_PL03_IDLE  34   /* pl03.anm 追加 */
+#define CE_PL_ANM_SCRIPT_YKBODY_PL03_MOVE_L  35   /* pl03.anm 追加 */
+#define CE_PL_ANM_SCRIPT_YKBODY_PL03_STOP_L  36   /* pl03.anm 追加 */
+#define CE_PL_ANM_SCRIPT_YKBODY_PL03_MOVE_R  37   /* pl03.anm 追加 */
+#define CE_PL_ANM_SCRIPT_YKBODY_PL03_STOP_R  38   /* pl03.anm 追加 */
 
 #define CE_PL_ANM_FORM_BASE_PL00   62   /* pl00.anm 灵界形态 sprite 62..85（24 帧）= 本体帧号 0..23 的加数 */
 #define CE_PL_ANM_FORM_BASE_PL01   72   /* pl01.anm 灵界形态 sprite 72..95（24 帧）= 本体帧号 0..23 的加数 */

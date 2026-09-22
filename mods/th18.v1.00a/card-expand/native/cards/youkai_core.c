@@ -29,12 +29,21 @@ int yk_suppress_native_shot_spec31_legacy(int player_present, int focused)
     return yk_should_suppress_native(player_present, focused, 0, 0);
 }
 
-/* --------------------------------------------------------------- §3.2 本体贴图 */
-int yk_body_sprite(int focused)
+/* --------------------------------------------------------- §3.2 本体外观 / 移动动画状态 */
+int yk_body_state(int dx, int prev_dx, int last)
 {
-    /* < 0 = 不抢写。高速恒不抢（设计）；低速现在是占位 -1（资产未到）⇒ 两档现都返回 -1，
-     * 但**代码路径已经在**：资产一到只改 YK_BODY_SPRITE_FOCUSED。*/
-    return focused ? YK_BODY_SPRITE_FOCUSED : YK_BODY_SPRITE_UNFOCUSED;
+    /* 与 `th18:0x45b610`–`0x45b7a8` 的判定**逐条同序**（一手，见 youkai_core.h §3.2）：
+     * 引擎那四条 `cmp/jcc` 的次序是「dx<0 → 零 → 正」，四条互斥所以次序不影响结果，
+     * 这里照它的读法写，便于逐条对拍：
+     *   dx < 0   : 上一帧 >= 0 ⇒ 1（起步向左）；否则落到「dx==0」那一格（不成立）⇒ 不变
+     *   dx == 0  : 上一帧 > 0 ⇒ 4（从右侧停）；上一帧 < 0 ⇒ 2（从左侧停）；== 0 ⇒ 不变
+     *   dx > 0   : 上一帧 <= 0 ⇒ 3（起步向右）；否则不变 */
+    if (last < 0 || last >= YK_BODY_STATES) last = YK_BODY_IDLE;
+    if (dx < 0 && prev_dx >= 0) return YK_BODY_MOVE_L;
+    if (dx == 0 && prev_dx > 0) return YK_BODY_STOP_R;
+    if (dx == 0 && prev_dx < 0) return YK_BODY_STOP_L;
+    if (dx > 0 && prev_dx <= 0) return YK_BODY_MOVE_R;
+    return last;
 }
 
 /* ------------------------------------------------------------------ §3.3 子机 */
