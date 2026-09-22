@@ -1025,3 +1025,20 @@ void yk_orb_motion_params(int character, float *home_speed, float *pick_r)
      *   （= TH18 原生档 `th18:0x45ae7b`；22 号卡 ITEM_LINE = 110）即可，不用动别处。*/
     if (pick_r)     *pick_r     = marisa ? 24.0f : 20.0f;     /* 16+8 / 12+8（TH08 一手）*/
 }
+
+/* ============ ★★★ 2026-09-22（owner #26 · 风味选项）决死窗口全屏敌弹变红：三条纯逻辑 ============
+ * 依据、一手与「为什么留在卡内」全在 `youkai_core.h` 的同名小节；这里只有算式。*/
+int yk_deathbomb_window(int32_t player_state)
+{
+    return (player_state == YK_DEATHBOMB_STATE) ? 1 : 0;
+}
+
+uint32_t yk_tint_apply(uint32_t cur)
+{
+    return (cur & 0xff000000u) | (YK_TINT_RED & 0x00ffffffu);
+}
+
+uint32_t yk_tint_restore(uint32_t cur, uint32_t orig)
+{
+    return (cur & 0xff000000u) | (orig & 0x00ffffffu);
+}

@@ -867,3 +867,32 @@ int   yk_spiral_first_count(int quota);
  * 本卡落点：**两条来源分开** —— ① 通用击破批 = state 3（上抛，收不到）；② 極端人/妖那一颗 = state 1
  *   （当帧满速归航）。判据就是一个纯函数（下面这个），卡侧按 gauge 的极值档调用。*/
 int yk_orb_instant_absorb(int gauge);   /* 極端人 或 極端妖 ⇒ 1（一手 `0x42da54` 的或门）*/
+
+/* ============ ★★★ 2026-09-22（owner #26 · **风味选项**）决死窗口里全屏敌弹变红 ==================
+ * owner 原话：「有 th08 的时候，**决死状态会导致画面上所有弹幕变红**」—— 这是**风味**（要一个开关）。
+ * owner 2026-09-22 裁：**不抽共享件**（「应该不会再有染色需求了，抽共享也行，不抽也行」）
+ *   ⇒ 染色留在 108 卡内（`youkai.c`），115（`lolk.c`）一个字都不动。
+ *
+ * 一手/口径（**这条是风味，不是复刻**，登记 `TUNING.md`）：
+ *   · **决死窗口 = `player + 0x476ac == 4`**（`CE_PLAYER_STATE`）：一手 `th18:0x45d4e4
+ *     movl $0x4,0x476ac(%edi)` 是全 exe **唯一**把那一格写成 4 的地方；先例 = `mof_core.c` /
+ *     `signal_core.c` 的同名判据（两边都是「core 只认『窗口 = state 4』，那个 4 由卡侧读进来」）。
+ *   · **颜色**：TH08 的 `Player::begin_death`（`th08:0x44ab40`）里**没有**逐弹改色的循环
+ *     （逐指令看过：起特效 0x06 + 置玩家状态 + 屏效，没碰弹）⇒ 「决死染红」不是 TH08 行为。
+ *     颜色本身取 TH08 自己的一枚红：`PlayerBombArea::reset`（`th08:0x44e370`）在 `:0x44f0c0` /
+ *     `:0x44f728` 给 VM 写 **`0xffff8080`**（A=ff R=ff G=80 B=80，柔和的红）—— 同 `lolk.c` 取
+ *     TH15 那一枚黄的规矩（那一枚的来源写在它的注释里）。
+ *
+ * 这里只放**三条纯逻辑**（无引擎地址、无浮点）⇒ 主机单测直接锁住两个不变量：
+ *   ① 染色**只换 RGB、alpha 原样保留**（115 第三十三轮的实跑教训：把含 alpha 的快照写回去
+ *      会把弹钉死在低 alpha 上 ⇒ 「变透明」）；
+ *   ② 还原 = **当前 alpha + 快照 RGB**（同一件事的另一半）。*/
+#define YK_DEATHBOMB_STATE 4             /* 一手 `th18:0x45d4e4`：全 exe 唯一写 4 的点 */
+#define YK_TINT_RED        0xffff8080u   /* 一手 TH08 红（见上：`th08:0x44f0c0` / `:0x44f728`）*/
+
+/* 决死窗口 = state 4 ⇒ 1。 */
+int      yk_deathbomb_window(int32_t player_state);
+/* 染色：`(cur & 0xff000000) | (YK_TINT_RED & 0x00ffffff)` —— **只动 RGB**。 */
+uint32_t yk_tint_apply(uint32_t cur);
+/* 还原：`(cur & 0xff000000) | (orig & 0x00ffffff)` —— 取**当前**的 alpha + **快照**的 RGB。 */
+uint32_t yk_tint_restore(uint32_t cur, uint32_t orig);

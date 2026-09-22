@@ -1093,6 +1093,23 @@ int main(void)
             CHECK(YK_ORB_FALL_TERMINAL == 3.0f);                  /* `0x40400000` */
             CHECK(YK_ORB_FALL_VY_MIN == -2.2f);                   /* `ds:0x4b5b2c` */
             CHECK(YK_ORB_LOST_Y == 464.0f);                       /* `arcadeRegionSize.y (448) + 16` */
+            /* ★★★ 2026-09-22（owner #26 · 风味选项）：决死窗口 + 染色的两条不变量。
+             * 判据与一手见 `youkai_core.h` 的同名小节（窗口 = `player+0x476ac == 4`，
+             * 一手 `th18:0x45d4e4` 全 exe 唯一写点）。*/
+            CHECK(YK_DEATHBOMB_STATE == 4);
+            CHECK(yk_deathbomb_window(4) == 1);
+            CHECK(yk_deathbomb_window(0) == 0 && yk_deathbomb_window(1) == 0 &&
+                  yk_deathbomb_window(3) == 0 && yk_deathbomb_window(5) == 0);
+            CHECK(yk_deathbomb_window(-1) == 0);
+            /* 染色的两条不变量：只换 RGB + alpha 原样；还原 = 当前 alpha + 快照 RGB。*/
+            CHECK(YK_TINT_RED == 0xffff8080u);
+            CHECK(yk_tint_apply(0xffffffffu) == 0xffff8080u);
+            CHECK(yk_tint_apply(0x80aabbccu) == 0x80ff8080u);        /* alpha 0x80 原样保留 */
+            CHECK(yk_tint_apply(0x00112233u) == 0x00ff8080u);
+            CHECK(yk_tint_restore(0x40ff8080u, 0x80aabbccu) == 0x40aabbccu);  /* 取当前 alpha */
+            CHECK(yk_tint_restore(0xffffffffu, 0x80aabbccu) == 0xffaabbccu);
+            /* 染了再还原 = 回到原色（除 alpha 用的是「当前」那一份 —— 引擎每帧会重设颜色）。*/
+            CHECK(yk_tint_restore(yk_tint_apply(0xffffffffu), 0xffffffffu) == 0xffffffffu);
         }
     }
 

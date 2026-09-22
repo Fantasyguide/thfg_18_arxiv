@@ -400,6 +400,12 @@ static void yk_kill_familiar(uint8_t *f)
  *   🟡 层号本身未实跑核（ufo.c 的 7 也标着未验）。实跑若整只看不见，第一个该动的就是这一个数。*/
 #define YK_FAM_ANM_LAYER 7
 
+/* 弹壳里的 anm VM（颜色在它 `+CE_ANM_VM_COLOR1`）。
+ * 一手/先例：`lolk.c:73` 的 `CE_BULLET_VM 0x28`（115 拿它逐颗染擦弹圈里的弹）、
+ * `signal.c:1795` 的 `SIGNAL_BULLET_VM_OFF 0x28`（`zBullet.vm`）⇒ 两个卡各自本地定义同一格，
+ * `engine.h` 没有这一条（它只钉了 `CE_BULLET_FLAGS/POS/STATE`）⇒ 本卡照同一写法**本地**定义。*/
+#define YK_BULLET_VM 0x28
+
 /* 变体（0..3）→ `ability.anm` 里的脚本号。★ 用 `anm_ids.h` 的**宏名**（`make anm` 生成），
  * 不写死数字；四条逐一列（不假设号连续 —— 万一资产重排，这里会**编译期**就对不上而不是静默画错）。*/
 static int yk_fam_anm_script(int variant)
@@ -1842,6 +1848,99 @@ static int on_ctor(ce_card_t *c)
     return 0;
 }
 
+/* ============ ★★★ 2026-09-22（owner #26 · **风味选项**）决死窗口里全屏**敌弹**变红 =============
+ * owner 原话：「有 th08 的时候，决死状态会导致画面上所有弹幕变红」；这是**风味**（要一个开关）。
+ * 实现照 115（`lolk.c`）的现成做法**逐条**抄（owner 指定）；owner 同日裁：**不抽共享件**
+ *   ⇒ 留在 108 卡内，115 一个字不动（`AUDIT.md` §BE 无需跨卡登记）。
+ *
+ * 抄过来的三件事（`lolk.c:429`–`516`）：
+ *   · 染色字段 = 弹的 anm VM 颜色 `b + YK_BULLET_VM + CE_ANM_VM_COLOR1`；
+ *   · `mark` 进池前**先记原色**，**每帧开头**无条件把上一帧染过的还原 —— 只换 RGB、**绝不碰 alpha**
+ *     （115 的第三十三轮实跑教训：写回含 alpha 的快照会把弹钉死在低 alpha 上 ⇒ 越擦越透明）；
+ *   · 池 `YK_TINT_MAX 256`，满了就不再染（只影响观感）。
+ *
+ * owner 的三条硬要求，逐条对应到下面的代码：
+ *   ① **只染敌弹** —— 扫的是**敌弹管理器**的池（`CE_BULLET_MGR()`；115 拿同一个池做擦弹圈，
+ *      语义就是「敌弹」）。自机弹在 `zPlayer` 里另一个数组（`player+0xbe838`）、道具在 `ItemManager`
+ *      ⇒ 结构上碰不到；
+ *   ② **退出 / 死亡 / 换关必须还原** —— 每帧开头无条件还原（退出窗口、中弹死亡都在下一帧还原；引擎
+ *      每帧按脚本重设弹的颜色，所以「还原」= 交还给引擎）+ `on_delete` / `on_run_reset` 各兜一次
+ *      （那两条路上卡的 tick 会停）；
+ *   ③ **开关关掉一帧都不许染** —— 整段（含两张静态表）包在 `#if YK_DEATHBOMB_RED_ENABLE` 里：
+ *      关掉 = 连代码都不存在，零指令零副作用。
+ *
+ * ⚠ 表放在**卡外**（文件级静态数组）而不是 `yk_card_t` 里：`ce_state` 的上限是 496 字节，
+ *   超了它返回 NULL、每个回调都在 `if (!s) return 0;` 退掉 —— 卡看着绑上了却什么都不做
+ *   （115 2026-09-09 正是这么踩的，`lolk.c:420` 留了编译期闸）。*/
+#define YK_DEATHBOMB_RED_ENABLE 1       /* ★ 风味总开关（owner 说要一个开关；默认选 1 的理由见 TUNING.md）*/
+#define YK_TINT_MAX 256                 /* 照 115 `LOLK_TINT_MAX`：满了就不再染（只影响观感）*/
+
+#if YK_DEATHBOMB_RED_ENABLE
+static uint8_t *s_tint_bullet[YK_TINT_MAX];
+static uint32_t s_tint_orig[YK_TINT_MAX];
+static unsigned s_tint_n;               /* 本帧染了几颗（= 下一帧要还原几颗）*/
+static uint8_t  s_tint_logged;          /* 「本次决死窗口已记过一行」*/
+
+/* 还原上一帧染过的（无条件、只换 RGB）。返回还原了几颗（诊断）。*/
+static unsigned yk_tint_restore_all(void)
+{
+    unsigned i;
+    for (i = 0; i < s_tint_n; ++i) {
+        volatile uint32_t *c = (volatile uint32_t *)(s_tint_bullet[i] + YK_BULLET_VM + CE_ANM_VM_COLOR1);
+        *c = yk_tint_restore(*c, s_tint_orig[i]);
+    }
+    i = s_tint_n;
+    s_tint_n = 0;
+    return i;
+}
+
+static void yk_tint_mark(uint8_t *b, uint32_t *col)
+{
+    if (s_tint_n >= YK_TINT_MAX) return;         /* 表满就不再染（只影响观感）*/
+    s_tint_bullet[s_tint_n] = b;
+    s_tint_orig[s_tint_n] = *col;
+    s_tint_n++;
+    *(volatile uint32_t *)col = yk_tint_apply(*col);   /* ★ 只换 RGB */
+}
+
+/* 帧级：还原上一帧 + （若在决死窗口）把本帧池里所有活着的敌弹染红。
+ * ★ 闲时零成本：不在窗口且上一帧没染过任何东西 ⇒ 连池都不扫（`#if` 关掉时整个函数不存在）。*/
+static unsigned yk_deathbomb_tint(void)
+{
+    uint8_t *mgr;
+    uint8_t *pl = CE_PLAYER();
+    unsigned i, n = 0;
+    int want;
+
+    if (!pl) {
+        if (s_tint_n) yk_tint_restore_all();     /* 自机没了（重生间隙）⇒ 也要把颜色还回去 */
+        s_tint_logged = 0;
+        return 0;
+    }
+    want = yk_deathbomb_window(*(const int32_t *)(pl + CE_PLAYER_STATE));
+    if (!want && s_tint_n == 0) { s_tint_logged = 0; return 0; }
+    (void)yk_tint_restore_all();                 /* ★ 每帧开头无条件还原上一帧 */
+    if (!want) { s_tint_logged = 0; return 0; }
+    mgr = CE_BULLET_MGR();
+    if (!mgr) return 0;
+    for (i = 0; i < CE_BM_BULLET_COUNT; ++i) {
+        uint8_t *b = mgr + CE_BM_BULLETS + (size_t)i * CE_BULLET_STRIDE;
+        if (*(const uint16_t *)(b + CE_BULLET_STATE) == 0) continue;      /* 空槽（一手语义）*/
+        yk_tint_mark(b, (uint32_t *)(b + YK_BULLET_VM + CE_ANM_VM_COLOR1));
+        ++n;
+    }
+    if (n && !s_tint_logged) {
+        s_tint_logged = 1;
+        ce_log("youkai: deathbomb window - tinted %u live enemy bullet(s) red "
+               "(TH08 flavour option, YK_DEATHBOMB_RED_ENABLE=1; restored on the frame the window ends)",
+               n);
+    }
+    return n;
+}
+#else
+static unsigned yk_deathbomb_tint(void) { return 0; }
+#endif
+
 static int on_load(ce_card_t *c) { return on_ctor(c); }
 
 static void on_run_reset(ce_card_t *c)
@@ -1851,6 +1950,7 @@ static void on_run_reset(ce_card_t *c)
         ce_log("youkai: run done - %u familiars spawned, %u killed, %u withdrew, %u silent, "
                "%u transfer damage, %u dropped (no boss)",
                s->spawns, s->broken, s->lost, s->silent, s->transferred, s->dropped);
+    (void)yk_deathbomb_tint();                           /* ★ #26：换关也要把染色还回去（先还原）*/
     yk_drop_all(s, 0);                                   /* 局末：不留使魔 */
     if (s) yk_option_release(c, s);
     on_ctor(c);
@@ -1866,6 +1966,13 @@ static void on_delete(ce_card_t *c)
            "(%u spawned, %u killed, %u transfer damage this run)",
            s ? s->spawns : 0, s ? s->broken : 0, s ? s->transferred : 0);
     yk_drop_all(s, 0);
+#if YK_DEATHBOMB_RED_ENABLE
+    /* ★ #26：删卡那一刻 tick 全停 ⇒ 这里兜一次「把颜色还回去」（否则商店里那些弹会一直红）。*/
+    if (s_tint_n) {
+        unsigned n = yk_tint_restore_all();
+        ce_log("youkai: card deleted during the deathbomb window - restored %u tinted bullet(s)", n);
+    }
+#endif
     yk_orb_kill_all();                                   /* ★ 刻符 VM 池：删卡时一并收（商店里 tick 停着）*/
     yk_gauge_hud_kill(s);                                /* ★ 人妖槽 HUD 四件 + 数字 */
     if (s) yk_option_release(c, s);                      /* 私有状态随后由 SDK 释放 */
@@ -2476,6 +2583,8 @@ static int on_tick_2(ce_card_t *c)
             }
         }
     }
+    /* ★ #26 风味选项：决死窗口里全屏敌弹变红（判据 = 既有原语 `player+0x476ac == 4`）。*/
+    (void)yk_deathbomb_tint();
     yk_gauge_tick(s, focused);
     ce_score_family_declare(ce_card_id(c), CE_COEFF_FAMILY_08);
     ce_score_declare_delta(ce_card_id(c), s->piv);
