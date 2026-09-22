@@ -505,22 +505,33 @@ static int ufo_tok_script(int32_t color, int rb_state, int cycler)
  *   ① 槽/闪光的坐标**写在脚本里**（原版把三个槽位做成 `posTime` 中断 7/8/9 的目标点，那是原版配方，
  *      照抄）⇒ 块必须钉在与脚本数字一致的地方，走货架自动排布的话一旦被重排（别的卡先占位），
  *      块会和画面上的槽错开（"块在这、槽在那"是这类 HUD 最典型的坑）；
- *   ② 原版槽就在**屏幕**左下角（640 空间 52/73/94 → 表面 104/146/188，y 456 → 912），
- *      与用户 2026-09-18 对 110/111 的裁决同一个方位（用户把系统卡 HUD 都往屏幕左下角摆）。
- *   ⚠ 实测过的相邻占位（`HUD-LAYOUT.md` §1.4）：110/111 的组合 UI 块 = 表面 x 64..252 / y 864..924
- *     ⇒ 与本块（x 104..248 / y 888..952）在 y 912..924 这一段（6 个 640 单位）**相擦**；
- *     116（263..365 / 910..920）与 117（257..449 / 876..924）在本块**右侧**，不冲突。
- *     ⏳ 若实跑嫌擦到：把生成器的 `X_SHIFT_640` 改成 96（槽整体右移 96 单位，跟着 TH18 的场地左边缘）
- *     或把槽整体下移 8 个单位（`SHIFT_Y`）—— 两个都是一行，但都会各自换来另一种擦碰（见生成器文件头）。
+ *   ② ★★★ 2026-09-22 订正（P3 #1）：原版槽在 **游玩区的左下角**，不是屏幕左下角的黑边里 ——
+ *      一手 `front.anm` script80 的 `pos(52/73/94, 456)` 是 **TH12 那套 anm 世界空间**的坐标，
+ *      而那个空间里**游玩区占 x ∈ [32,416]、y ∈ [16,464]**（同文件 script82 的大横幅写
+ *      `pos(224, 208)` = 场地中心；script79 的小横幅滑到 `x=32, y=467` = 场地左沿/下沿下 3 px）
+ *      ⇒ 换算成**场地相对**坐标：x = 52/73/94 − 32 = **20/41/62**、y = 456 − 16 = **440**
+ *      （槽高 16 ⇒ 底边 448 = **与场地下沿齐平**）。
+ *      TH18 的场地在表面 px 里 = x 256..1024 / y 32..928（`engine/anm/th18/02-render-stages.md` §1、
+ *      用户 1280 截图实测左边缘 257 / 底边 928）⇒ 槽心 = **表面 (296, 338, 380) × 912**。
+ *      ⚠ 旧实现按「640 空间 52/73/94」直接 ×2 写 = 表面 104/146/188 —— 那是**屏幕最左的黑边**
+ *        （TH18 场地左沿在表面 256），空槽本身是**纯黑框**（sprite59 逐像素量过）⇒ 黑底画黑框 =
+ *        用户实跑报的「**缺少飞碟(token)槽位 UI**」。同一个错把槽挤到 110/111 的组合 UI 上，
+ *        也是 §DS 里那句「擦到 6 个单位」的来源。
+ *   ⚠ 实测过的相邻占位（`HUD-LAYOUT.md` §1.4）：110/111 组合 UI = 表面 x 64..252（本块在它右侧，
+ *     不重叠 ✓）；**116（263..365 / 888..920）与 117（257..449 / 876..924）与本块（272..404 /
+ *     896..928）横向重叠** —— 这是"按一手的场地左下角"与"116/117 也占着同一条带子"的**口径冲突**，
+ *     已登记 `TUNING.md` §2.0v 待 owner 拍；要退回旧位置就把生成器 `X_SHIFT_640` 改回 `0.0`
+ *     （一行，重跑生成器 + `make anm`）。
  * ⚠ 卡侧只发中断、不用 `ce_anm_set_pos` 摆位（两条路都按"绝对坐标"写会互相打架，见
  *   `engine/anm/th18/01-vm-instantiate.md` §3a）。 */
 #define UFO_ID_NUM        112u      /* 本卡 id（HUD 槽 / 日志用；`CE_CARD(112, …)` 里的那个数）*/
-/* 块 = 三格槽的外沿（表面 px）：槽本体 x 104..236、y 912..944 ⇒ 块取 x 104..248 / y 888..952。
- * 钉块用的锚点 = 块的**左下角**（`ce_hud_slot_claim_pinned_card` 的口径，与 `faith_hud.c` 同）。 */
-#define UFO_HUD_BLOCK_W   144.0f    /* ❓ 自定（给货架/遮挡对账看的占位）*/
-#define UFO_HUD_BLOCK_H    64.0f    /* ❓ 自定：比槽本体高 32 表面 px，把"原版槽比场地底边低 8 单位"包进去 */
-#define UFO_HUD_PIN_X     104.0f    /* = 640 空间 52 = 原版第一个槽的 x（表面 px，块左下角）*/
-#define UFO_HUD_PIN_Y     952.0f    /* = 640 空间 476；槽本体落在 912..944（原版 y 456..472 → ×2）*/
+/* 块 = 三格槽的外沿（表面 px）：槽心 296/338/380（间距 21 单位 = 42 表面 px）、槽 24×16 单位 = 48×32 表面 px
+ * ⇒ 块 x 272..404 / y 896..928。钉块用的锚点 = 块的**左下角**（`ce_hud_slot_claim_pinned_card` 的口径，
+ * 与 `faith_hud.c` 同）。 */
+#define UFO_HUD_BLOCK_W   132.0f    /* = 404 − 272（三个槽的外沿宽）*/
+#define UFO_HUD_BLOCK_H    32.0f    /* = 928 − 896（槽本体高，底边与场地下沿齐平）*/
+#define UFO_HUD_PIN_X     272.0f    /* = 640 空间 136 = 场地左沿(128) + 第一格外沿 8；块左下角（表面 px）*/
+#define UFO_HUD_PIN_Y     928.0f    /* = 640 空间 464 = **场地下沿**；槽本体落在 896..928*/
 /* 槽的 **sprite 基数**与**亮版偏移**：ORDER 里 457/458/459/460 = 空/红/蓝/绿，461..464 = 亮版
  * ⇒ 与一手 `FUN_00421690` 的 `59 + 四态 + (闪烁 ? 4 : 0)` **同一个算式**（`anm_ids.h` 生成）。 */
 #ifdef CE_ANM_ABILITY_SPRITE_SLOT_EMPTY
@@ -543,6 +554,43 @@ _Static_assert(CE_ANM_ABILITY_SPRITE_SLOT_EMPTY_B == CE_ANM_ABILITY_SPRITE_SLOT_
 #define UFO_HUD_INTERRUPT_APPEAR 17     /* 一手：新令牌入槽那一格的出现动画 */
 #define UFO_HUD_FLASH_FRAMES     31     /* 一手：脚本 303（← script81）在 +31 帧 `delete()` */
 #define UFO_HUD_BLINK_PERIOD     16     /* 一手：`FUN_00421690` 的 `(timer % 16 == 1)` —— 16 帧闪一下 */
+/* ==================== ★★ 击破计时器（P3 #9「UFO 缺少击破计时器」）====================
+ * 一手 = `Ufo::on_draw_16` `th12:0x44a6e3`–`0x44a7e8`（**逐指令读出**，不是猜「HUD 数字/条」）：
+ *
+ * ```
+ * 44a6e3  mov ecx,[ebx+0x38]      ; zUfo+0x38 = 场上 UFO 的 enemy_id（0 = 没有 UFO）
+ * 44a6ee  cmp [ebx+0x14],0x3c     ; zUfo+0x14 = 存活帧数；**< 60 帧不画**
+ * 44a72c  ... 找到那只敌人（链表按 enemy_id 走）
+ * 44a782  mov eax,[ebx+0x28]      ; zUfo+0x28 = 存活上限 **720**
+ * 44a78d  sub eax,[ebx+0x14]      ; ★ remaining = 720 − 存活帧数
+ * 44a796  mov [esp+0x2c],eax
+ * 44a7ac  fild [esp+0x2c]         ; float(remaining)
+ * 44a7b0  fdiv [0x4a3d20]         ; ÷ **60.0**          ⇒ 秒（double 直读 = 60.0）
+ * 44a7be  fld [0x4a3ce8]          ;    **100.0**
+ * 44a7c4  fmul st,st(1)           ; × 100
+ * 44a7c6  call 0x4931e0           ; (int)
+ * 44a7cc  mov ecx,0x64 / idiv     ; ÷ 100 ⇒ eax = 秒、edx = **百分秒**
+ * 44a7d3  push edx / push eax
+ * 44a7da  push 0x4a215c           ; ★ 格式串 = **"%2d:%.2d"**
+ * 44a7e3  call 0x4020a0           ; AsciiManager__printf（= 我们的 ce_hud_text 同一条路）
+ * ```
+ *  · 颜色：`44a778 mov [AsciiMgr+0x18f80],0xc080ffc0` = **A=0xc0 / R=0x80 / G=0xff / B=0xc0**（淡绿）。
+ *  · 字号：`44a66e fld1` ⇒ **1.0**（`[+0x18f84]/[+0x18f88]`）；字符集 `[+0x18f98] = 2`。
+ *  · 位置：基座 = 「敌人的世界坐标」（`44a748`–`44a772` 的 `enemy+0x1074/78/7c` 再加那套空间换算项
+ *    32+192 / 16，与环/血条同一个点）⇒ x 再 **−12.0**（`44a7a2 fsub [0x4a4128]` = double 12.0）、
+ *    y 再 **+20.0**（`44a790 fadd [0x4a4170]` = double 20.0，那本是行距）⇒ 落在 UFO **正下方 20 单位**、
+ *    x 左移 12（= 5 个字符手工居中；我们用 `align_h = 居中` 拿到同一个结果，见下面的实现）。
+ *  · 单位：`%2d` 的秒最大 **12**（720/60）⇒ 显示形如 `12:00`、`11:91`、` 7:00`（秒:百分秒，**不是**分:秒）。
+ *  · 消失条件同出现条件：UFO 不在场上 / 那 60 帧宽限内 / 敌人已不在 ⇒ 不画。
+ * ⚠ 一手里它由 `AsciiManager` 画（TH12 整个 HUD 都是 ASCII）⇒ **我们照抄同一条路（`ce_hud_text*`）**，
+ *   而不是自己另起贴图 VM：这正是 METHOD「能复刻就不要自己写」。
+ *   代价（`SDK.md` §16 已声明）：ASCII 文字**结构上盖不进暂停模糊罩**，暂停时它会在罩子上面 ——
+ *   原版的计时器同样是 ASCII（TH12 没有这层罩子），这条差异登记在 `TUNING.md` §2.0v。 */
+#define UFO_TIMER_FIRST_FRAME  60u      /* 一手 0x44a6ee：存活帧数 >= 0x3c 才画 */
+#define UFO_TIMER_DX640        0.0f     /* 一手那 −12.0 是**手工居中**；我们用 align_h=居中 ⇒ 不再位移 */
+#define UFO_TIMER_DY640        20.0f    /* 一手 0x44a790：`fadd [0x4a4170]` = 20.0（UFO 正下方）*/
+#define UFO_TIMER_COLOR   0xc080ffc0u   /* 一手 0x44a778：D3DCOLOR 0xc080ffc0（淡绿）*/
+#define UFO_TIMER_LOG_EVERY    60u      /* 诊断行节奏（跟环那一条一样，每 60 帧一行）*/
 /* HUD 脚本号（`make anm` 生成的宏优先；没有宏时用字面量 —— 与 gauge 那一组同一写法）*/
 #ifdef CE_ANM_ABILITY_SCRIPT_UFO_HUD_SLOT
 #define UFO_HUD_SCRIPT_SLOT  CE_ANM_ABILITY_SCRIPT_UFO_HUD_SLOT     /* 302 */
@@ -755,6 +803,8 @@ static uint32_t s_slot_id[UFO_SLOT_COUNT];   /* 三格令牌槽（脚本 302 ←
 static int32_t  s_slot_state[UFO_SLOT_COUNT];/* 每格**当前显示的四态**（0 空 / 1 红 / 2 蓝 / 3 绿）；
                                               * −1 = 还没上过色（首帧会发一次中断）。改态才发中断 ⇒ 幂等。*/
 static uint8_t  s_slot_blink;                /* 当前这一帧用的是不是亮版那一组（一手 `FUN_00421690`）*/
+static uint8_t  s_slot_blink_prev;           /* 上一帧的闪烁位（**离场沿**检测：一手在 UFO 结束时会重置三格）*/
+static uint8_t  s_timer_logged;              /* ★ #9 击破计时器：本次召唤的诊断行是否已经打过（每次召唤一行 + 每 60 帧一行）*/
 
 /* ---- ★ A7（2026-09-12）：五边形框的**每个令牌槽一个** VM 句柄，同样放**文件静态** ----------------
  * 为什么不像别的跟随 VM 那样放卡私状态（`ufo_tok_t.anm_id` 就在那里）：**放不下** ——
@@ -1425,18 +1475,39 @@ static void ufo_body_vm_follow(ufo_card_t *s)
  *   `ufo_withdraw_all()` → `ufo_gauge_kill()` 一条路收干净 —— 删卡那一刻 tick 全停，
  *   只有这条路跑得到；`on_stage_start` / `on_run_reset` 也汇到它。 */
 
-/* --- ❓ 环的落点偏移（**唯一**待实机确认的一处）-----------------------------------------------------
- * 一手 `th12:0x44a412`–`0x44a447` 把光环实体坐标重设成 `敌人 + (32, 16)`，**同一段里另有 192**。
- * 192 = 场地半宽（`th12:0x4a3d28` 一手读出 = double **192.0**；`0x4a3d70` = double **32.0**）。两种读法：
- *   **读法 A（绝对值）**：那是世界坐标 ⇒ 环在敌人**右侧 224 px**（32 + 192）—— 在一个 408 px 宽的游玩区里
- *      等于贴着右缘，作为「实体身边的物件」很怪；
- *   **读法 B（换算用的中心项）**：+192 只在换算坐标空间（把「以游玩区中心为原点」的 ECL 坐标折到屏幕系）
- *      时出现，环看着就是**贴着敌人右侧 32 px**。
- * ★ 用户口径是「环绕在实体**身边**」⇒ **本卡取读法 B**（`DX = +32`）。同帧写血条那一支**不加** 192
- *   （`th12:0x44a83e` 直接把敌人坐标写进去）⇒ 血条与环同处一个坐标空间，两者一致。
- * **实机若发现环跑到屏幕最右缘** ⇒ 把 `UFO_GAUGE_RING_DX` 改成 `224.0f`（**只改这一行**）。 */
-#define UFO_GAUGE_RING_DX      32.0f      /* 🟡 读法 B（读法 A = 224.0f）；见上 */
-#define UFO_GAUGE_RING_DY      16.0f      /* 一手：原版在同一处 +16（`th12:0x44a4b7` 的 `fadd [0x4a3d68]` = 16.0）*/
+/* ★★★ 2026-09-22 定案（P3 #7「吸收环明显偏移 UFO 中心，UFO 中心在吸收环的 10 点方向」）：
+ * **环的偏移 = (0, 0) —— 它与 UFO 同心**。此前写 `(32, 16)` 是把**坐标空间换算**的两项当成了偏移。
+ *
+ * 一手（两条路径写的是同一个字段 `vm+0x430`，逐指令读出来）：
+ *   · 召唤那一帧 `th12:0x44aa8e`–`0x44aab4`：`fld [enemy+0x1074]`（x）→ `fadd [0x4a3d70]`
+ *     → `fadd [0x4a3d28]` → `fstp [vm+0x430]`；y 同理只加一项 `[0x4a3d68]`；z 原样。
+ *   · 每帧跟随 `th12:0x44a42a`–`0x44a45f`：与上面**逐条同形**（同两个常量、同三格）。
+ *   · 三个常量的**值**（PE 节映射后直读 double）：`0x4a3d70` = **32.0**、`0x4a3d28` = **192.0**、
+ *     `0x4a3d68` = **16.0**。
+ *
+ * ⇒ `192` + `16` 是 **TH12 那套 anm 世界空间的换算项**，不是偏移：
+ *   TH12 的 `front.anm` / `bullet.anm` 世界空间里，**游玩区占 x ∈ [32, 416]、y ∈ [16, 464]**
+ *   （0 = 左边框再往左 32 px、上边框再往上 16 px），而敌人自己的 ECL 坐标是「x 以场地中心为原点、
+ *   y 从场地上沿起算」。把敌人的 ECL 坐标折进那个空间**恰好**要 +192（半宽）+32（左内缩）、+16（上内缩）
+ *   ⇒ `敌人 + (32+192, 16)` 与「环画在敌人身上」是**同一个点**。
+ *
+ * 三条独立印证（都不是"看着像"）：
+ *  ① 同族脚本的**位置语义**：`front.anm` script82（UFO 出现大横幅，304×32）写 `pos(224, 208)`
+ *     = 上面那个空间里的 **x 224** = 场地中心（32 + 384/2）✓、y 208 = 16 + 192 ✓（横幅居中）；
+ *     script79（小横幅，96×16）`pos(-96, 467)` → `posTime(60,4, 32, 467)`：起点 = 那个空间的
+ *     x 0…… 而 x=32 正是**场地左沿**、y=467 正好在**场地下沿（464）下 3 px** ⇒ 两处都对得上。
+ *  ② **同一个敌人的另一件跟随物**：血条 VM（`front.anm` script136）由 `th12:0x44a83e`–`0x44a849`
+ *     调 `0x461e30(&zUfo+0x44, &enemy.x)` 摆位 —— **与环同一条换算、同一个空间**，其脚本
+ *     `pos(0,-28)` 让条落在敌人上方 28 单位。本卡的血条一直写的是 `(0, -28)`（`UFO_GAUGE_BAR_DY`），
+ *     实跑从没被报过偏移 ⇒ 同一个空间里的环就该是 `(0, 0)`（差 32/16 的那一版**必然**偏）。
+ *  ③ 用户实跑的方位与量级：`(32, 16)` 在世界单位下 = 表面 **(64, 32) px**（1 单位 = 2 表面 px），
+ *     即环心在 UFO 的**右下** ⇒ 反过来说 UFO 落在环心的**左上 = 10 点方向** —— 与用户原话逐字吻合。
+ *
+ * 复查入口：`objdump -d --start-address=0x44a412 --stop-address=0x44a460 -M intel th12.exe`（每帧那一段）、
+ * `0x44aa8e`–`0x44aab4`（召唤那一段）；常量用 PE 节映射直读（`.rdata` 文件偏移 = VA − 0x498000 + 0x97000）。
+ * ⚠ 别再把它改成 `224`（那是"读法 A"）：224 是**换算项之和**，不是偏移 —— 写成 224 环会整个飘到右侧。 */
+#define UFO_GAUGE_RING_DX       0.0f      /* ✅ 一手：与敌人同心（见上，32 + 192 都是空间换算项）*/
+#define UFO_GAUGE_RING_DY       0.0f      /* ✅ 一手：同上（`0x4a3d68` = 16.0 也是空间换算项）*/
 #define UFO_GAUGE_BAR_DY     (-28.0f)     /* 一手：脚本 231（TH12 `front.anm` script136）的 `pos(0,-28,0)` */
 #define UFO_GAUGE_LAYER_RING   7          /* 一手：TH12 script206/204/205 自己写的 `layer(7)` */
 #define UFO_GAUGE_LAYER_BAR   10          /* 一手：TH12 script136 自己写的 `layer(10)` */
@@ -2694,6 +2765,8 @@ static void ufo_hud_kill(void)
         s_slot_state[i] = -1;                 /* 下一帧从"没上过色"重来（新 VM 的 sprite 是脚本给的初始态）*/
     }
     s_slot_blink = 0;
+    s_slot_blink_prev = 0;
+    s_timer_logged = 0;                  /* #9：计时器每次召唤只打一行「首次」诊断 */
 }
 
 /* 起/补 VM（幂等 + 自愈：引擎可能在别处摧毁它们；照 `signal.c` 的写法每帧查一次，开销可忽略）。
@@ -2730,10 +2803,14 @@ static void ufo_hud_slots_tick(ufo_card_t *s, int ufo_on_field)
     int i;
 
     ufo_hud_ensure();
-    /* 闪烁相：一手 `FUN_00421690` 的调用侧 = `(timer % 16 == 1)`（16 帧闪一下）。
-     * ⚠ 用**游玩帧**（`play_frame`）当相位基准：一手那个 timer 的确切来源未钉死（🟡），
-     *   而它只影响"闪在哪一帧"，不影响亮/暗两组的形状与相对关系。 */
-    s_slot_blink = (ufo_on_field && (s->play_frame % UFO_HUD_BLINK_PERIOD) == 1u) ? 1u : 0u;
+    /* 闪烁相：一手 `FUN_00421690` 的调用侧（`th12:0x44a2e0`–`0x44a2fd`，2026-09-22 逐指令读出）：
+     *   `mov eax,[zUfo+0x14]`（**UFO 自己的存活帧数**）→ `and eax,0x8000000f`（% 16）
+     *   → `cmp eax,1; jne; push 1; call 0x421690`（**亮版**）/ `cmp eax,9; jne; push 0; call`（**暗版**）。
+     * ⇒ 相位基准 = **UFO 的存活帧数**（本卡的 `s->u.frames`），不是全局游玩帧 ——
+     *   旧实现用 `play_frame`（🟡 当时的猜测）会让「第一帧闪不闪」随机取决于你在第几帧召唤。
+     * ⚠ 我们**每帧都写一次** sprite（一手里只在 %16 == 1/9 两帧写）：写法等价（中间帧的 sprite 本来
+     *   就没人改），而且引擎若在别处重建过 VM，我们下一帧就自愈 —— 与 `ufo_hud_ensure()` 同一口径。 */
+    s_slot_blink = (ufo_on_field && (s->u.frames % UFO_HUD_BLINK_PERIOD) == 1u) ? 1u : 0u;
 
     for (i = 0; i < UFO_SLOT_COUNT; ++i) {
         const int32_t st = ufo_hud_slot_state_of(s->grp.slot[i]);
@@ -2748,11 +2825,66 @@ static void ufo_hud_slots_tick(ufo_card_t *s, int ufo_on_field)
                 ufo_hud_slot_flash(i, st);
         }
         /* ② UFO 在场：每帧写 sprite（一手 `FUN_00421690`）—— 亮版那一组正好 +4。
-         *    不在场时不写：那时显示的就是四态中断给的那一组（原版同一时序）。 */
-        if (ufo_on_field)
+         *    不在场时不写：那时显示的就是四态中断给的那一组（原版同一时序）。
+         *    ★ 但**离场那一帧要补一次四态中断**：一手 UFO 结束时（`th12:0x44a357`–`0x44a362`）
+         *      调的是 `FUN_004214b0(gui, -1)` ⇒ 把三格**重置回 `COLLECTED_UFOS[i] + 10`（暗版）**。
+         *      只停写 sprite 的话，最后一帧写下去的**亮版**会一直留在屏幕上（原版不会）。 */
+        if (ufo_on_field) {
             ce_anm_set_sprite(CE_ABILITY_ANM(), id,
                               UFO_HUD_SPR_SLOT_EMPTY + (int)st
                                   + (s_slot_blink ? UFO_HUD_SLOT_BLINK_OFFSET : 0));
+        } else if (s_slot_blink_prev) {
+            ce_anm_interrupt(id, UFO_HUD_INTERRUPT_STATE0 + st);
+        }
+    }
+    /* 每 60 帧一行诊断（与环那条同款）：用户/我们只凭日志就能判「三格 VM 在不在、摆在哪、是哪个 sprite」*/
+    if ((s->play_frame % UFO_TIMER_LOG_EVERY) == 0u) {
+        ce_log("ufo/slot: vm %u/%u/%u state %d/%d/%d sprite-base %u blink %u/%u frames %u "
+               "(one-hand th12:0x4214b0 + 0x421690; script %d tiles x = 296/338/380 surface)",
+               s_slot_id[0], s_slot_id[1], s_slot_id[2],
+               (int)s_slot_state[0], (int)s_slot_state[1], (int)s_slot_state[2],
+               UFO_HUD_SPR_SLOT_EMPTY, s_slot_blink, s_slot_blink_prev, s->u.frames,
+               UFO_HUD_SCRIPT_SLOT);
+    }
+    s_slot_blink_prev = s_slot_blink;
+}
+
+/* ==================== ★★ 击破计时器（P3 #9）—— 一手全套见常量区的长注 ====================
+ * 与 HUD 槽**无关**（原版那两条是各自独立的 VM/绘制点）⇒ 由 `on_draw` 直接调，不经过
+ * `ufo_hud_draw()` 的「HUD 块已认领」闸（认领失败不该把计时器一起吞掉）。
+ * 数值全整数（x87 硬门：本文件里任何 `(float)int` 都会带出 x87 指令）⇒ 秒/百分秒按一手那两条
+ * 整数除法算，`remain*100/60 % 100` 与一手 `(int)(100 × remain/60) % 100` 同值。 */
+static void ufo_timer_draw(const ufo_card_t *s)
+{
+    uint8_t *e;
+    uint32_t remain, sec, hund;
+    float x, y;
+
+    if (!s || !ufo_present(&s->u)) { s_timer_logged = 0; return; }
+    if (s->u.frames < UFO_TIMER_FIRST_FRAME) return;      /* 一手 0x44a6ee：前 60 帧不画 */
+    e = ufo_enemy_by_id(s->u.ufo_id);
+    if (!e) return;                                       /* 一手 0x44a72c：敌人不在就不画 */
+
+    remain = (s->u.frames < UFO_LIFE_MAX) ? (UFO_LIFE_MAX - s->u.frames) : 0u;
+    sec    = remain / 60u;                                /* 一手：÷ [0x4a3d20] = 60.0 */
+    hund   = (remain * 100u / 60u) % 100u;                /* 一手：× 100 → (int) → % 100 */
+
+    /* 位置 = 敌人的**屏幕**坐标（TH18 的 ASCII 空间是 640×480：场地中心 x=320、上沿 y=16）+ 一手那 +20。
+     * 一手还有一处 x −12（`fsub [0x4a4128]` = 12.0）—— 那是**把 5 个字符手工居中**（TH12 的 ASCII 默认左对齐）；
+     * 我们用 `align_h = 居中`，同一个结果 ⇒ 不再重复那次位移。 */
+    x = 320.0f + *(const float *)(e + CE_ENEMY_POS_X) + UFO_TIMER_DX640;
+    y =  16.0f + *(const float *)(e + CE_ENEMY_POS_Y) + UFO_TIMER_DY640;
+    /* 格式串、颜色、字号逐条照抄一手（`"%2d:%.2d"` / 0xc080ffc0 / 1.0）。
+     * ⚠ `font`/`group`/`scale` 传 -1/0 = 用**环境值**（TH12 明写字符集 2 与 scale 1.0；TH18 的
+     *   「字体 id」与 TH12 的「字符集」不是同一个编号体系 ⇒ 不硬抄那个 2，见 TUNING §2.0v）。 */
+    ce_hud_text_ex(x, y, UFO_TIMER_COLOR, 0u, -1, -1, CE_ASCII_ALIGN_CENTER, 0.0f,
+                   "%2u:%.2u", (unsigned)sec, (unsigned)hund);
+    if (!s_timer_logged || (s->play_frame % UFO_TIMER_LOG_EVERY) == 0u) {
+        s_timer_logged = 1;
+        ce_log("ufo/timer: %2u:%.2u left (%u = %u-frame cap - age %u) at screen 640 (%.0f, %.0f) "
+               "= one-hand th12:0x44a6e3-0x44a7e8 (\"%%2d:%%.2d\", color 0xc080ffc0, +20 under UFO)",
+               (unsigned)sec, (unsigned)hund, remain, (unsigned)UFO_LIFE_MAX, s->u.frames,
+               (double)x, (double)y);
     }
 }
 
@@ -2768,9 +2900,11 @@ static void ufo_hud_draw(ufo_card_t *s)
     if (!s->logged_no_hud && s_slot_id[0]) {
         s->logged_no_hud = 1;
         ce_log("ufo: HUD up (TH12 original art) - 3 token slot VMs (ability.anm script %d <= front.anm "
-               "script80) on UI layer 25, panel %.0fx%.0f claimed; slots are positioned by interrupts "
-               "7/8/9 and coloured by 10/11/12/13 (empty/red/blue/green)",
-               UFO_HUD_SCRIPT_SLOT, (double)UFO_HUD_BLOCK_W, (double)UFO_HUD_BLOCK_H);
+               "script80) on UI layer 25, block %.0fx%.0f pinned at surface (%.0f, %.0f) = the "
+               "PLAYFIELD bottom-left corner (640-space 136..202, 464); slots are positioned by "
+               "interrupts 7/8/9 and coloured by 10/11/12/13 (empty/red/blue/green)",
+               UFO_HUD_SCRIPT_SLOT, (double)UFO_HUD_BLOCK_W, (double)UFO_HUD_BLOCK_H,
+               (double)UFO_HUD_PIN_X, (double)UFO_HUD_PIN_Y);
     }
     ufo_hud_slots_tick(s, body != 0);
 }
@@ -3145,12 +3279,16 @@ static int on_hud_anm(ce_card_t *c, uint32_t icon_id)
 /* ★ 菜单门（用户裁决 ④ 的硬要求；先例 `animal.c` / `lolk.c` / `signal.c`）：
  * `on_draw`（虚表 `+0x48`）在**主菜单 / 标题**里也会被调，而 `on_tick_2`（`+0x2c`）不会
  * ⇒ 不设门会在菜单上留一整套 HUD，而且 `ufo_hud_ensure()` 会在菜单里反复重建那 5 个 VM。
- * 门关着时把 VM 收掉；**HUD 槽位不动**（槽位的账归 `on_load` / `on_delete`）。 */
+ * 门关着时把 VM 收掉；**HUD 槽位不动**（槽位的账归 `on_load` / `on_delete`）。
+ * ★ #9 起这里还负责画**击破计时器**：一手它是 `Ufo::on_draw_16` 里的 `AsciiManager__printf`
+ *   （`th12:0x44a6e3`），而本仓的 ASCII 原语（`ce_hud_text*`）**只允许在 `on_draw` 里调**
+ *   （`SDK.md` §14）⇒ 位置与闸门天然对上。 */
 static int on_draw(ce_card_t *c)
 {
     ufo_card_t *s = ce_state(c, ufo_card_t);
     if (!s) return 0;
-    if (!CE_PLAYER() || !CE_GAME_THREAD()) { ufo_hud_kill(); return 0; }
+    if (!CE_PLAYER() || !CE_GAME_THREAD()) { ufo_hud_kill(); s_timer_logged = 0; return 0; }
+    ufo_timer_draw(s);                                 /* 一手 th12:0x44a6e3-0x44a7e8（与 HUD 块认领无关）*/
     ufo_hud_draw(s);
     return 0;
 }
