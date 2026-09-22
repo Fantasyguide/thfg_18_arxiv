@@ -4899,6 +4899,7 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 | 2026-09-20 | **109 花映塚 / 110 风神录 / 111 地灵殿 / 112 星莲船 / 107 妖妖梦（P1「缺音效一批」；owner 裁定 A 的收窄版，随后逐个放行 signal / senro / faith）** | 见下方「§BE 详录 #42」 |
 | 2026-09-21 | **所有卡（共享件 `patch/th18/cards.js`：111 的 `category` 由缺省 2 → **0** + 加一行 `desc`；卡侧只动 111 自己的 `cards/signal.c`）** | 见下方「§BE-EV」 |
 | 2026-09-21b | **所有卡（共享件 `patch/th18/cards.js`：117 的 `category` 由 0 → 缺省 2 = 被动；卡侧只动 116 的 `cards/season.c` 与 117 的 `cards/animal.c`）** | 见下方「§BE-EW」 |
+| 2026-09-21c | **所有卡（新增共享件 `native/cards/bomb10.{h,c}` —— 110/111 的**同一份**灵击实现；共享件 `patch/th18/cards.js` 的 **110** 加 `category: 0` + 一行 `desc`；卡侧动 110 的 `cards/mof.c` 与 111 的 `cards/signal.c`）** | 见下方「§BE-FA」 |
 
 
 > **§BE 详录 #42（2026-09-20 · P1「缺音效一批」8 条 + 音效表扩容新增 5 枚别作原版 SE）**
@@ -17800,8 +17801,13 @@ state-8 每帧：`0x426192 fld [edi+0x984]` → `0x4261ad call 0x4377a0`（朝**
 | `sites.py`（站点表）| 取消 `ce_bomb_gate` 的注释，**逐条过 sitecheck** 后放回 patch | 它是 117 那条已实现功能的唯一载体（§一-1）|
 | `sites.py`（`SDK_SITES` 过滤行）| 删掉 `i < 10 or …`，**一律按名字** `s2[0] in _SDK_KEEP_NAMED` | 下标兜底 = `§BE-EG` 那颗定时炸弹的同款；本次已实际踩到（§一-3）|
 | `sites.py`（`_SDK_KEEP_NAMED`）| 把原先靠下标兜底的 10 条**逐条点名**，并补 `ce_bomb_gate`、`ce_enemy_death` | 删了兜底就必须点名，漏一条 = 静默掉出 patch |
-| `sdk.c`（`bps[]`）| 放回 12 条核对行：`ce_item_frame/collect/commit`、`ce_shot_damage`、`ce_shot_set_index`、`ce_bomb_gate`、`ce_enemy_damage`、`ce_enemy_death`、`ce_enemy_shot_slot`、`ce_player_die`、`ce_bullet_damage_final`、`ce_repopulate_native_option`、`ce_native_option_muzzle`（用各自**正确**的宏名；其中两条是 `CE_BP_REPOP_NATIVE_OPT_RVA` / `CE_BP_NATIVE_OPT_MUZZLE_RVA`）| 恢复「挂不上直接 FAIL」的护栏 |
+| `sdk.c`（`bps[]`）| 放回 **12 条**核对行（名单见下表后「放回的那 12 条」）| 恢复「挂不上直接 FAIL」的护栏 |
 | 生成物 | `make gen` 重生成 patch（25 → **26** 条断点）与 `sites_gen.h`；`tools/gen_def.py` 重生成 `.def`（29 个导出 = 1 + 28）| 生成物不许手改 |
+
+**放回的那 12 条**（用各自**正确**的宏名 —— 其中两条不是按站点名拼的：`CE_BP_REPOP_NATIVE_OPT_RVA` /
+`CE_BP_NATIVE_OPT_MUZZLE_RVA`）：`ce_item_frame`、`ce_item_collect`、`ce_item_commit`、`ce_shot_damage`、
+`ce_shot_set_index`、`ce_bomb_gate`、`ce_enemy_damage`、`ce_enemy_death`、`ce_enemy_shot_slot`、
+`ce_player_die`、`ce_bullet_damage_final`、`ce_repopulate_native_option`、`ce_native_option_muzzle`。
 
 **仍在 park 的（保持注释，理由都已写明）**：`ce_bomb_spent`、`ce_option_shot_gate`、`ce_death_result`、
 `ce_chain_node_guard`、`ce_poc_gate_a/b`（后者是**故意**不装：接管那条 `ja` 有害，见 §BE-EN / §BE-EQ）。
@@ -17893,4 +17899,241 @@ spawn（`0x42d7d0`）只按参数写 `flags_lo` 的 `0x80000`/`0x4000000`/`0x400
 | 文件 | 内容 | 怎么验证 |
 | --- | --- | --- |
 | `engine/enemy/th18/07-emitter-slots-waves-and-phase-transitions.md`（新增）| TH18 发射口槽布局 / `etNew`-`etSprite`-`etOn` 的波次形状（282/282 全量）/ 中断槽 = 阶段 / `enmKillAll` 的过滤与使用点 / 因果链 / 观察点 / 修法约束 | 地址逐条对 `th18.exe` 字节与 22 份原生 ECL 反汇编可复算；`python3 tooling/check-docs.py` 全绿 |
+| `engine/enemy/th08/01-familiars-and-anm.md`（新增）| TH08 **敌机使魔**：是「真敌人 + familiar 旗标」；opcode 90/91/92 的 handler 与字段；「每波重建」= 段首 `enmKillAll` + 本波 `familiarCreate`；使魔动画 = `enemy.anm` script 53..58（sprite 逐条）| `thecl -d 8` 反汇编 24 个 `ecldata*.ecl`（1016 处 `familiarCreate`、157 处 `enmKillAll`）+ 自解分派表 `th08:0x41ecbe`（opcode 90 → `0x41af5b` 与另一份独立记录逐字相同）|
 | `cards/youkai.c` / `youkai_core.{h,c}` / `sites.py` / `patch/**` / 任何共享件 | **一字未改**（另一会话正在改 108 的 `youkai_core.*`）| `git status` 逐路径核对 |
+
+### 6. TH08 一侧（工单 E 的后半）：敌机使魔 + 使魔动画
+
+一手全文：[`engine/enemy/th08/01-familiars-and-anm.md`](../../../engine/enemy/th08/01-familiars-and-anm.md)。四条要点：
+
+1. **使魔 = 真敌人 + 「使魔旗标」**：ECL opcode **90/91/92**（`familiarCreateA/F`，签名 `NffSSS` = 子程序 / x / y / life / drop / score）
+   → `Enemy::create_enemy_familiar_2` `th08:0x41f110` / `enemy_create_familiar` `th08:0x41f280`
+   → `EnemyManager::create_enemy` `th08:0x42a680`；另由 `trailFamiliarSet`（opcode 83）/ `anmFamiliar`（opcode 174）
+   在 `enemy+0x3328`（vendor 名 **`flags_hi`**）上打位，并带 `enemy+0x53c8 familiar_circle_effect`、
+   `enemy+0x3380 __familiar_count__but_not_total`（每次生成 +1）。**TH18 的 ECL 里没有 familiar 一族**（`th18.eclm` grep = 0）。
+2. **「每一波重建」是脚本行为**：boss 每段开头 `enmKillAll()`（opcode 95）把上一波的敌人（含使魔）清光，
+   本波再由循环里的 `familiarCreate` 重新生成（24 个 ECL：`familiarCreate` **1016 处**、`enmKillAll` **157 处**；
+   4 面 boss 的段首形状见 `ecldata4b.ecl:313/1038/1208/1392/1638/1847/2069`）。
+   ⇒ TH18 那边段首也有同样的 `enmKillAll()`（TH18 篇 §3/§4），**差别只在我们这边「清掉之后没人重建」**。
+3. **使魔自己就是发射口的载体**：`sub Sub12`（使魔）→ `callAsync("Sub13")` → 每 10 帧 `enmCreate("Sub14")`，
+   而 `Sub14` 才是扛 `etOffset`/`etEx`/`etRing` 的那一层（`ecldata8.ecl`）。⇒ TH08 里使魔与发射口**一体**，
+   不存在「使魔没了、发射口还在」的夹死态 —— 这正是我们那个闸的病根。
+4. **使魔动画 = 它自己子程序的 `anmSet(K)`**，K ∈ **`enemy.anm` script 53..58**（按调用点加权：53 ×347 / 57 ×165 /
+   54 ×162 / 56 ×48 / 58 ×46 / 55 ×22）：53..56 = 8 帧循环（sprite 69..76 / 77..84 / 85..92 / 93..100）、
+   57/58 = 4 帧（101..104 / 105..108，含 anm v3 专有 `ins_25` ⇒ 未移植）。⚠ **长相按「生成它的子程序」分，
+   不是按发射口槽分**；108 现在「槽 i → script 53+i」是 ❓ 自定映射（资产已在 `ability.anm` 206..209）。
+
+### 7. 三条修法的落笔清单（owner 已放开加站点：每条要 `sitecheck` 全过 + 统筹记账）
+
+| 候选 | 站点 | 要动的文件 | 语义 / 代价 | 风险 |
+| --- | --- | --- | --- | --- |
+| **A** 用 `etOn` 当波次（**首选**）| **不加** | `youkai_core.{h,c}`、`youkai.c`、`native/tests/test_youkai_core.c` | 闸夹住时该槽**下一次 `etOn`** 置 `rearm_pending` 并放行这一帧；卡 tick 消费 ⇒ 清 `broken`/`fam_seen`、1:1 映射同帧重建。= owner 的「下一波重建」 | 使魔 1 点血时「建出来就死」⇒ 每次死亡丢 1 发，连射循环里观感变弱。**必须与 `YK_FAM_LIFE` 一起定** |
+| **B** 直接取消掐闸（最省）| **不加** | `youkai.c`（`youkai_core.c` 那条判据留作单测或删）| 使魔退回「装饰 + 伤害转嫁」，死了下一帧由 1:1 重建；症状根除 | **丢掉 spec §9.6「打掉使魔 ⇒ 那个发射口停火」**（那条不是一手复刻）；要不要保留 = owner 拍 |
+| **C** 挂 `etNew` = 真波次事件（最精确）| **加 1 条** | 见 §7.1 | 引擎自己的「重建这一槽」事件 ⇒ 每波精确复位，零猜测 | 动 3 个共享件 + 生成物；站点账 47→48；需重测池余格 + 实跑 |
+
+#### 7.1 候选 C 的站点与 SDK 形状（可直接拿去拍板）
+
+- **站点**：`ce_enemy_emit_new` @ `0x433de7`，`cavesize = 6`（窗口字节 `8b 8d 90 fa ff ff` = `mov ecx,[ebp-0x570]`）。
+  `python3 native/tools/sitecheck.py 0x433de7 6` ⇒ **W1 长度 / W2 整指令边界 / W3 无相对寻址 / W4 与既有站点零重叠 全过**。
+  时点语义（一手）：`etNew`（opcode 600 / `0x258`）handler `0x433dde` 里 `call 0x438aa0(0)`（取 arg0）**已返回** ⇒
+  **`eax` = 槽号**、**`[ebp-0x570]` = `&zEnemyData`**（同函数 `0x433e0a` 再读它、`0x433df5 add ecx,0x598` 交叉印证）；
+  `enemy = data − 0x122c`。纯观察者（不改 `retaddr`、不写内存）⇒ 单条 `mov` 的窗口天然可回放。
+- **要动的文件**：
+
+  | 文件 | 改什么 |
+  | --- | --- |
+  | `native/sites.py` | 声明 `("ce_enemy_emit_new", 0x433de7, 6, "8b8d90faffff", …)`（共享件）|
+  | `native/sdk/public.h` | 新事件 `ce_enemy_wave_t { u32 enemy_id; i32 slot; u8 *enemy; }` + `ce_hooks_t` 末尾加 `on_enemy_wave` |
+  | `native/sdk.c` | `BP_ce_enemy_emit_new()`（读 `[ebp-0x570]`/`eax` → 沿卡链调 `on_enemy_wave`）+ `bps[]` 启动自检补一行 |
+  | `native/cards/youkai.c`、`youkai_core.{h,c}`、`tests/test_youkai_core.c` | 消费事件：清 `broken`/`fam_seen`/`no_fam_frames` ⇒ 1:1 映射当帧重建 |
+  | 生成物（**不手改**）| `native/sites_gen.h`、`native/th18_card_expand.def`、`patch/th18.v1.00a.js`、`patch-test/…` = `make gen` + `tools/gen_def.py` |
+  | 文档 | 本节 + `GATES.md` §8 记账 + `EVENTS-CONTRACT.md`（新 hook 契约）+ `SDK.md` |
+
+- **风险 / 代价**：① 站点账 47 → **48**（真判据三条：`sitecheck` ✓、启动日志 `pool:` 实测余格、实跑一局）；
+  ② 新 hook 是给所有卡的新 API 面（必须进契约文档）；③ `etNew` 全关 **282 处** ⇒ 回调只做 O(1)（照 `on_enemy_shot_slot` 的链式调用），不分配；
+  ④ 若 `etNew` 之外的换弹路径（`etSprite(i,0,…)` 2 处 / `etCopy` 2 处）也要算波次，得另加判据。
+
+## §BE-FA（2026-09-21）：**110 风神录也改成主动卡**，且 **110 / 111 的灵击合成唯一一份实现**（新增共享件 `cards/bomb10.{h,c}`）
+
+> **来源**：`WORK-PACKAGES.md` §10 第 4 行（111 那三小问的 owner 回答）+ 同一条回答里追加的下一条。
+> **owner 口径（逐字）**：
+> 「**默认没问题，然后还有一个问题是，110也得是主动卡，因为只要有110 or 111就有灵击，当然，它们完全走同一套灵击系统**」
+> ⇒ 「默认没问题」= 111 那三条**维持现状**：C 入口**不**沿用「库存 == 0」、描述里新增那行**保留**、
+> C 与 X 的**一帧相位差不动**（三者本次**一个字节都没改**）。
+> **不部署**（没跑 `make release` / `tools/deploy.py` / `sync_modkit_dll.sh`）；**没有新增断点站点**。
+
+### 0. 一句话结论
+
+「**有 110 或者 111 就有灵击**」在程序上 = **两张卡接在同一个缺口上**（一手，见 §1.1/§1.2）：
+TH18 原生 X 路径**本来就有**（`can_bomb` → `do_bomb`），它唯一缺的是「**炸弹库存 == 0 那一支**」
+（`th18:0x420420` 的第一条指令就是库存判断）；而 C 路径是**引擎的主动卡分派**，
+**只派发给被 D 选中的那一张**（`th18:0x45c099 call [eax+8]`）。
+⇒ 「同一套灵击系统」= 两张卡**共用同一份状态与同一份逐帧推进**（本次抽成 `cards/bomb10.{h,c}`），
+每张卡只交「自己那一半」（110：整档扣火力 / 信仰 −3000 / 作废符卡奖励；111：爱丽丝 0.5 档 / 河童罩子）。
+
+### 1. 一手调查（逐条给地址与可信度）
+
+> 一手 = 本次**自己在样本上逐条读的指令**（`objdump -d -M intel`，`local/*/…exe`）；
+> 「沿用」= 本仓已回流的一手文档（地址链在那边，本次复核了同一段的前后指令）。
+
+#### 1.1 TH18 原生：X 那条路**存在**，缺的是「库存 == 0」
+
+| 断言 | 一手 |
+| --- | --- |
+| X = `INPUT_PRESSED & 0x2`，先问 `can_bomb`、再 `do_bomb` | ✅ `0x45c036 cmp ds:0x4cf2b8,0`（玩家）→ `0x45c03f call 0x420420` → `0x45c046 je 0x45c056` → `0x45c048 test BYTE ds:0x4ca434,0x2` → `0x45c051 call 0x420360` |
+| **库存 == 0 ⇒ `can_bomb` = 0** | ✅ `0x420420` 第一条 = `cmp DWORD ds:0x4ccd58,0` / `jle 0x420462`（返回 0）⇒ 原生整条 X 不走 |
+| `do_bomb` 的两道自身门 | ✅ `0x420360`：`[player+0x30] != 0` 或 `[player+0xa0] != 0` ⇒ `or eax,-1` 返回 −1 |
+
+#### 1.2 TH18 原生：C 只派发给**被选中的那一张**
+
+| 断言 | 一手 |
+| --- | --- |
+| 四重门控 + 选中卡 | ✅ `0x45c084 test DWORD ds:0x4ca434,0x400`（C 上升沿）+ `ds:0x4cf298`（AbilityManager）非空 + `[0x4cf2e0]+0x1b0 == 0`（无对话）+ `[0x4cf2d0]+0x198 != 0`（关卡在跑）|
+| 落点 = `mgr+0x38` 那张卡的 `vtable+0x08` | ✅ `0x45c090 mov ecx,[ecx+0x38]` → `0x45c097 mov eax,[ecx]` → `0x45c099 call [eax+8]` ⇒ **一次只会有一张卡收到**（C 侧天然不叠加）|
+| 原生自己的「决死 B」= 同一个救命函数 | ✅ 沿用：`0x45c2a9` 那支 `can_bomb` → `do_bomb` → `0x45c2d7 call 0x45d590`（本卡补的就是「库存 0 时这一支够不到」）|
+
+#### 1.3 TH10（110 的原版）：门 / 消耗 / 无敌 / 消弹 / 计分
+
+| 项 | 一手 | 可信度 |
+| --- | --- | --- |
+| 门① 无 GUI / 门② 对话 VM 忙 / 门③ **灵击进行中** | ✅ `0x425964 test eax,eax`（`GUI_PTR 0x47770c`）/ `0x425971 mov ecx,[eax+0x9eb8]` / `0x42598d mov eax,[esi+0x28]`（`esi` = `BOMB_PTR 0x4776ec`）⇒ 三条都 `jne 0x425a24` 跳出 | ✅ 本次逐条读 |
+| 门槛 = `火力 / 20 != 0`（≥ 1.00 档） | ✅ `0x425998 movsx ecx,WORD ds:0x474c48` → 魔数 `0x66666667` + `sar edx,3` → `0x4259b0 test cx,cx / je` | ✅ |
+| 触发 = X（`INPUT & 0x2`） | ✅ `0x4259b5 test BYTE ds:0x474e5c,0x2` | ✅ |
+| **无敌 270 帧** + `Bomb::start` | ✅ `0x4259be push 0x10e` + `lea eax,[ebp+0x430c]` + `call 0x405410` → `0x4259cf call 0x405860` | ✅（沿用文档同段，本次读到同两条）|
+| 消耗 = **−20 单位 = −1.00 档**，**无下限钳位** | ✅ `0x4259d4 add WORD ds:0x474c48,0xffec` | ✅ |
+| 非决死灵击扣信仰 **−3000** | ✅ `0x425a15 push 0xbb8` + `mov ecx,0x474c40`（`call` 落在 `0x412e70`）；决死那一支（`0x425bd9` 起）**没有**它 | ✅ |
+| 决死支 = 同门槛 / 同消耗 + `Timer(60)` + 状态置 1 | ✅ `0x425bfe`/`0x425c0d` 的 `idiv`、`0x425c43` 的 −20、`0x425c20 push 0x3c`、`0x425c84 mov [ebp+0x458],1` | 🟡（沿用文档，本次未逐条重读该段）|
+| 消弹 = 半径**逐帧**取自灵击 VM 的 `scale.y`，判定 = 半径 + 敌弹半径×0.5 | 沿用 ✅ `0x405813` → `0x405816 call 0x405ac0` → `0x40818d fadd`；曲线 = `bullet.anm` script400 `scaleTime(120,6,16→160)` | ✅（文档已回流，本次复核了 `0x4259d4` 前后的同段）|
+| 伤害 = 每敌每帧一笔（按圈内/圈外分档），且**顺带把同一伤害 `/10` 计入 SCORE** | 沿用 ✅ `0x4059f0` 被 `0x428630` 回调 → `0x40e1b6` 扣 HP；`0x428a6d`–`0x428aa5` 进 `CURRENT_SCORE` | ✅（文档 §2）|
+| 作废当前符卡奖励 + RANK −0x80 | 沿用 ✅ `0x405500`（门 `[spellcard+0x3738] >= 60`）、`0x405987`–`0x4059b8` | ✅ |
+
+#### 1.4 TH11（111 的原版）：门 / 消耗 / 决死
+
+| 项 | 一手 | 可信度 |
+| --- | --- | --- |
+| 门：GUI 忙 / bomb 指针空 / **`[bomb+0x3c] != 0`（这一发还在进行中）** / 门槛 / X | ✅ `0x4311ac`（`[0x4a8d84]+0x4438`）、`0x4311be`（`[0x4a8d64]`）、`0x4311c7 cmp DWORD PTR [eax+0x3c],0 / jne 0x4311fe`、`0x4311d3 idiv DWORD ds:0x4a574c`、`0x4311dd test BYTE ds:0x4c93c0,0x2` | ✅ 本次逐条读 |
+| 消耗 = `CURRENT_POWER -= BOMB_COST`（per-shot 字段，5 自机 20 / 魔理沙A 12），**无下限** | ✅ `0x4311e6 call 0x406510`（`do_bomb`）→ `0x4311f1 sub DWORD ds:0x4a56e8,edx` | ✅ |
+| **每个 bomb tick 都消弹** | ✅ `0x431180 call 0x424fe0`（在 state 1 那一支里、`do_bomb` 之前）| ✅ 本次读到 |
+| 决死支（state 4）：窗口 `[player+0x948] < 8` + `[bomb+0x3c] == 0` + 同门槛 + X ⇒ `Timer(60)` + `do_bomb` + 扣火力 + 状态置 1 | ✅ `0x43122d`–`0x4312aa`（本次逐条读：`0x431286 push 0x3c`、`0x431293 call 0x406510`、`0x431298 sub ds:0x4a56e8,eax`、`0x4312aa mov [esi+0x928],1`）| ✅ |
+| 伤害源三元组 = `(pos, 32.0/帧, 75 帧, 20×30)` 等四套 | 沿用 ✅ `th11:0x433a90` 的四个调用点（`00e6b`/`45dec0`/`407923`/`4314dd`）| ✅（文档 §2，本卡早已按它写过一轮）|
+| 决死与普通灵击**代价完全相同**、都撒 type 8 消弹点 | 沿用 ✅ `th11:0x40af90` / `0x40b0ac` | 🟡（`signal_core.h` 的结论，另一个 agent 钉死、本仓采用）|
+
+**结论（本次工单要回答的那一问）**：所谓「有 110 或 111 就有灵击」**不是**「引擎里有一张
+『装了某张卡 ⇒ 打开某个 X 入口』的表」，而是：**原生 X 入口一直在**（库存 > 0 时两张卡都不碰它），
+**两张卡各自补的正是「库存 == 0」那一个缺口**（§1.1）；C 入口是引擎的主动卡分派，**一次只发给一张卡**（§1.2）。
+⇒ owner 的「完全走同一套灵击系统」在实现上只能有一个答案：**共用同一份状态与同一份逐帧推进**，
+这就是本次抽 `cards/bomb10.{h,c}` 的理由（也是「两张都装不许各发一发」的唯一做法）。**可信度 ✅**。
+
+### 2. 共用化的做法（结构与理由）
+
+| 件 | 在哪 | 管什么 |
+| --- | --- | --- |
+| **共享机器（新）** | `cards/bomb10.c` | **一份**状态（`static bomb10_run_t s_run`）+ 发动 + 逐帧推进 + 收尾；引擎原语（环 VM / 消弹 / 伤害源 / 音效 / RANK / 救命）全在这里 |
+| 共享常量与接口（新） | `cards/bomb10.h` | 常量（音效 id / RANK / 伤害源寿命 / 游玩区 / 环淡出 / 火星节流 / 消弹上限与 mode）+ `bomb10_host_t`（卡侧那四项）+ 状态查询 |
+| 纯数学（既有，**未改**） | `mof_core.*` | 半径曲线 / 每帧上移 / 伤害表 / 扣火力门槛 —— 一手出处与主机单测都在那边 |
+| 卡侧那一半（110） | `cards/mof.c` | 对话门 / **整档**扣火力 / 信仰 −3000 + 作废符卡奖励 + 全避标记 / 消弹记账 |
+| 卡侧那一半（111） | `cards/signal.c` | 河童罩子门 / 爱丽丝 0.5 档 / 罩子 + 计分声明 / 消弹记账 |
+
+**为什么是「共享机器 + 每卡四个钩子」而不是别的**
+
+1. **单实例是硬要求**：owner 要「两张都装不叠加、一次只放一次」⇒ 状态必须**只有一份**。
+   两份状态（哪怕逐字同形）在「两张卡同帧各按一次 X」时必然各发一发 —— 那正是本次要消灭的东西；
+2. **差异本来就只有四处**：把两张卡的旧实现并排看，公共那一半（曲线 / 消弹 / 伤害 / 环 / 音效 / RANK /
+   救命 / 收尾）逐条同形，差异只有「闸 / 扣法 / 发动代价 / 消弹记账」⇒ 用**四个钩子**表达，
+   不引入任何新参数、新数值；
+3. **不复制第二份**：`nm cards/*.o` 可证（§5 验证原文）—— `mof_core_bomb_radius_centi` /
+   `mof_core_bomb_damage` 的调用点只出现在 `cards/bomb10.o` 里，`mof.o` / `signal.o` 一处都没有。
+
+**「谁推这一帧」的唯一规则**（防「一发灵击每帧前进两帧」）：两张卡的 `on_tick_2` **都**调
+`bomb10_tick(driver)`，`driver` = `ce_owned(另一张) ? 0 : 1` —— 同装时 110（id 小）驱动、111 让位。
+先例 = 低速子机声明层「id 小者落笔」（108 < 111）、组合 UI「110 优先（`faith_hud`）」。
+
+### 3. 改了什么（逐文件）
+
+| 文件 | 改了什么 | 为什么 | 谁改的 | 怎么验证的 |
+| --- | --- | --- | --- | --- |
+| `native/cards/bomb10.{h,c}`（**新增**）| 110 型灵击的唯一一份实现 + 常量 + `bomb10_host_t` + 状态查询 | 「同一套灵击系统」= 一份状态（owner 口径）| 本工单 | `make dll` rc=0；`nm cards/*.o` 的调用点表（§5）|
+| `native/cards/mof.c` | ① 灵击实现整段搬走（`mof_bomb_start/tick/fx_*` 与 `mof_bomb_t` 删除）；② 新增四项钩子 + `s_bomb_host`；③ `.active_recharge = 1` + `.on_activate`；④ `bomb10_tick` / `bomb10_reset` 接上 | 110 变主动卡（owner 口径）+ 共用实现 | 同上 | `make dll` rc=0；`make check` 见 §5 |
+| `native/cards/signal.c` | ① 同上搬走（`signal_bomb10_*`、`s_b10`、`SIGNAL_BOMB10_*` 删除）；② 四项钩子 + `s_bomb_host`；③ `on_activate` 改调 `bomb10_start()`；④ 罩子救命改调共用包装 | 同一份实现（111 的行为逐条保留）| 同上 | 同上 |
+| `patch/th18/cards.js`（**共享件**）| **110 那一行**：加 `"category": 0` + 一行 `desc`（与 111 同一句）| 契约 reason 2：有主动行为 ⇒ `category` 必须 = 0（不一致 = 整局新卡禁用，先例 §BE-EJ）| 同上 | `tools/contract_check.py` 绿；`mkfiles.py --check` 合规（行 <64 B、总 5 行）|
+| `patch/files.js`（生成物）| `make files` 刷 CRC：`th18/cards.js` → `2877448409` | thcrap 的 `files.js` 是 patch 清单的 crc32 | 同上 | `make files` 输出与仓库一致（`gen_drift` 绿）|
+| `native/sdk.*` / `sites.py` / `Makefile` / `cards_def.c` / `assets/**` | **一字未改** | 本次**不需要新站点、不需要新 hook** | — | `sites.py check` 28 个 `BP_*` 双向一致；`sitecheck --all` 全过 |
+
+### 4. 与改动前的**行为差异**（逐条，含口径来源）
+
+> 除了下面这五条，其余全部逐条相同（消耗 / 伤害 / 帧数 / 判定框 / 消弹 / 音效 / 视觉 / 决死 / 罩子）。
+
+| # | 差异 | 谁的口径 | 影响面 |
+| --- | --- | --- | --- |
+| 1 | **「灵击进行中 ⇒ 不再发动」现在也管 111** | 一手（`th10:0x42598d` / `th11:0x4311c7`）+ owner「一次只放一次」| 111 单装时：一发进行中再按 X（或按 C）**不再重开一发**（改前会重扣 1 档火力 + 覆盖环 VM id ⇒ 旧环 VM 永久留在场上）；**这正是「不叠加」的实现** |
+| 2 | 两张同装时按 X（库存 0）**只发一发** | owner 口径 | 发动机 = 先 tick 到的那一张（卡的链表顺序 = 获得顺序）⇒ **卡私有副效果由那一张承担**（110 的信仰 −3000 / 111 的罩子）；见 §7 未决 ①|
+| 3 | **110 的符卡帧数相位差 1 帧** | 实现取舍（111 的相位）| 「符卡已过 ≥60 帧」这条门的边界后移一帧 ⇒ 作废符卡奖励与 `big_bomb` 伤害档各差一帧（111 侧一直是这个相位）|
+| 4 | **111 的环淡出时点差 ≤1 帧**、竖条环在收尾时一起删 | 实现取舍（110 的顺序）| 纯视觉；另外顺手修掉「111 收尾只删环、不删电流边」那半条（改前那支 VM 要等删卡才收）|
+| 5 | 日志措辞：`mof: 灵击发动 (power 前 -> 后)`（改前两个数都是扣完的值）、收尾行去掉「撒信仰点 0 颗」、111 多一行「起 VM」、两卡共用 `bomb10` 的消弹行 | 纯诊断 | 实跑对账时看这几行（§6 列了新的读法）|
+
+另外一条**不是差异、是修掉**：111 单装时**不再跨关续放**（`on_stage_start` 走 `bomb10_reset()`）——
+一手依据是 TH10 那条「灵击的 anm VM 归关卡所有」（`th10:0x405781`），110 早就这么做，111 原来没有。
+
+### 5. 影响面 + 回归（验证原文）
+
+- **对既有卡的影响面**：卡侧只动 `cards/mof.c`（110 自己的）与 `cards/signal.c`（111 自己的）；
+  共享件只动 `patch/th18/cards.js` 的 **110 那一行**（其余 36 张卡的条目逐字节未动）与它派生的
+  `patch/files.js` CRC。`sdk.*` / `sdk_core.*` / `sdk/public.h` / `engine.h` / `sites.py` / `Makefile` /
+  `cards_def.c` / `assets/**` **一字未改** ⇒ **站点账不变**（28 个 `BP_*`）、**不需要新站点**。
+- **回归（本机实跑留档）**：
+  - `rm -f th18_card_expand.dll && make dll` → **rc=0**（3 条既有 `-Wunused-function` 警告来自被注释掉的
+    111 道具钩子、1 条 `youkai.c` 的 `-Wcomment`，与本改动无关）；`make dllx87` → `x87 in our objects: 0`；
+    `make dllverify` → `DLL ABI: 23 exports`（含 `cards/bomb10.o` 在链接行上）；
+  - `python3 sites.py check` → ✅（25 个实例不变式 + 28 个 `BP_*` 双向一致）；
+    `python3 tools/contract_check.py` → ✅（37 张卡 category 与主动行为一致）；
+    `python3 tools/gen_drift.py` → ✅ 无漂移；`python3 tools/sitecheck.py --all` → ✅（56 窗口 / 6 落点）；
+    `python3 tools/engine_abi_check.py` → ✅；`make cards-check` → ✅；`make snd-check` → ✅；
+  - **主机单测全绿**（`make test-host` 的逐条读数）：`test_mof_core: 520 passed` / `test_signal_core: 2182 passed` /
+    `test_faith_hud_core: 4106 passed` / `test_senro_core: 12258 passed` / `test_ufo_core: 4595 checks` … **0 failed**；
+    `python3 -m pytest -q` → `8 passed`；
+  - **孤立复现（本次自己搭的对照）**：`git archive HEAD` 解到 `/tmp` + **只**覆盖本工单那 6 个文件
+    ⇒ `make test-host` 与 pytest **全绿**（证明本改动与主树里那两条红无关，见下）；
+  - **主树里现存的两条红，都不是本改动**（本次做了 A/B）：
+    ① `test_faith_hud_core` 4 条 `hud_dim_tick` 断言 —— **另一个会话正在飞**的「压暗 20 帧/128 → 8 帧/64」
+    （`cards/hud_dim.{c,h}` 在同一个工作树里被改，宿主单测期望值还没跟）。同一份临时树里：
+    用 `HEAD` 版 `hud_dim.{c,h}` ⇒ **4106 passed, 0 failed**；用工作树那版 ⇒ **4 failed**（逐次复现）；
+    ② `capcheck` 红 1 条（`CE_ANM_ABILITY_ATLAS_ATLAS_SENRO_HUD_LABEL` 未进台账）+ `anm-verify` 红
+    （`ATLAS_SENRO_HUD_LABEL.png` 回读失败）+ `pl_anm_ids.h` 红（`build_player_anm.py` 的 `TypeError`）
+    —— 三处都指向**别的会话在飞的 senro HUD / 玩家 anm 资产**，本工单**一个资产文件都没碰**（`git status` 可核）。
+  - `python3 ../../../tooling/check-docs.py` → **全部通过**（本节写完后就地跑过）。
+- **不部署**：没跑 `make release` / `tools/deploy.py` / `sync_modkit_dll.sh`。
+- **⚠ 一条不该发生的写盘（登记）**：为了做上面的「孤立复现」，在 `/tmp` 的临时树里跑过一次 `make anm`；
+  它链到的 `assets/player_art_src/make_player_art.py` 会**把兜底图写回 modkit 的 art-src 路径**
+  （`/mnt/d/项目/幻想指南/18/art-src/`：`README.md` + `_auto_default/` 13 张，时间戳 15:16）。
+  用户自己的图**一张都没被覆盖**（脚本自己报「写入 0 张（未覆盖已存在的）」），内容由生成器决定，
+  但按本工单的纪律这属于**不该发生的写盘**，在此登记，后续在临时树里不要再跑 `make anm`。
+
+### 6. 给 owner 的实跑验收清单（110 + 111）
+
+1. **110 仍是 110**：编成/图鉴里 110/111 都落在**主动段**（`category = 0`）；选择卡组时两张都能被 D 选中；
+2. **110 单装**：库存 == 0 时按 X ⇒ 灵击（与改动前逐项相同）；**D 切到 110 后按 C** ⇒ 同一发灵击，
+   日志 `mof: **C（主动卡发动）** ⇒ 调 bomb10_start()（与 X 路径同一入口；库存 N、state S）`
+   + 既有的 `mof: 灵击发动…` 与 `mof: 灵击范围环起 VM…`；
+3. **111 单装**：X 路径与 C 入口逐项照旧（§BE-EV 的清单仍然有效）；**新增**：一发进行中再按 X / C
+   ⇒ 日志里**没有**第二条 `灵击发动`（= 不重开一发）；
+4. **两张同装**：库存 == 0 按 X ⇒ **恰好一发**（日志里只有一行 `灵击发动`；`power` 只掉 1 档）；
+   连按 X（放掉再按）在一发进行中 ⇒ 仍然只有一发；
+5. **两张同装 + 魔理沙**：按 C（D 选到 111）⇒ 灵击 + 河童罩子；罩子没破时再按 C ⇒ `被罩子挡住` 且不扣火力；
+6. **决死**：残弹 == 0 时中弹、窗口内按 X 或 C ⇒ 两卡都救命（`决死形态` 那行 + 消弹照常记账）；
+7. **换关**：一发灵击打到一半过面 ⇒ 下一面无残留环（111 单装也应当如此，`bomb10_reset` 那条）；
+8. **删卡**：买倒吊人删掉 110（或 111）⇒ 场上不留环 / 电流边（两卡共用一份 ⇒ 谁被删都收干净）。
+
+### 7. 未决问题（需要 owner 或后续工单拍）
+
+1. **两张同装时，X 那一发由谁「出效果」**：现在是「先 tick 到的那一张」（链表顺序 = 获得顺序，
+   玩家不可控）⇒ 同一发灵击在 110 名下会扣信仰 −3000、在 111 名下会起罩子。三个候选：
+   ① 保持现状（先到先得，最省）；② 按 id 小者固定给 110（可预测，但会与「D 选中 111 按 C」不对称）；
+   ③ X 路径只在「只有一张在场」时发动、同装时要求按 C 选卡（最可预测，但改了玩家手感）。
+   **本次按 ①（最小改动 + 一手没有这条规则）**。
+2. **无敌帧没有复刻**：TH10 的灵击自带 **270 帧**无敌（`th10:0x4259be push 0x10e`），TH11 决死自带 60 帧
+   （`th11:0x431286 push 0x3c`）—— 我们两张卡都**不发无敌**（改动前也是如此，本次不动）。
+   要补的话是**一条 SDK 声明**（`ce_invuln_request`）而不是新站点，但会明显改变手感 ⇒ 等 owner 拍。
+3. **TH11 的 `BOMB_COST`（魔理沙A 只扣 0.60）与「无下限」仍未复刻**（既有 🟡，见 `signal_core.h`）；
+   本次把「爱丽丝 0.5 档」那条**原样接回**（它在改动前就在 `signal_bomb10_start()` 里）。
+4. **`stat_cancel` 两张卡口径不同**（110 记「有消弹的帧数」、111 记「颗数」）—— 本次**故意不合并**
+   （合并会改 110 的连击进账诊断行 `3 × stat_cancel`）。要统一得先确认 110 那一行的本意。

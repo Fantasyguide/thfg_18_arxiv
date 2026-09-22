@@ -165,7 +165,7 @@ TH08 里「使魔」与「发射口」是一体的，所以使魔被清掉 = 发
 ### 4.1 外观由**使魔自己的 ECL 子程序** `anmSet(K)` 决定
 
 `anmSet` = opcode **54**，handler `0x419812`：取 1 个参数 K，调
-`AnmLoaded::load_script_into_vm(this = `th08:0xf54e0c`, vm = &enemy+0xc primary_vm, script = K)` `0x4069f0`
+`AnmLoaded::load_script_into_vm`（`th08:0x4069f0`）：`this = `th08:0xf54e0c`（TH08 的 anm 池基址）、`vm = &enemy+0xc`（primary_vm）、`script = K`
 ⇒ **把第 K 号 anm 脚本装进这只敌人的本体 VM**。
 
 把 24 个 ECL 里**每个 `familiarCreate*(...)` 的子程序**追到它自己的 `anmSet(K)`（脚本复算，按调用点加权）：

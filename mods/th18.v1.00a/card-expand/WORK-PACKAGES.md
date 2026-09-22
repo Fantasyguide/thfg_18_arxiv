@@ -417,12 +417,30 @@ owner 实跑口径订正：**道具确实变慢了**（⇒ 门①state==1 / 门�
 ⇒ 116 的「加键」只能从**未被占用的玩法键（如 A / S）+ 掩码空闲位**里选；`sdk.h` 的 `CE_VK_*` 注释已同步写上这条，
 交叉链 `WORK-PACKAGES.md` §1b/§1c。
 
-## 8b. ★ owner 2026-09-21 拍定：115 的「20 帧 / 50%」**统一进共享件**（基准 = 我选的这套）
+## 8b. HUD 压暗的口径条（owner 2026-09-21 拍「统一成一个值」→ **2026-09-22 拍「照原生」**）
 
-owner 原话：「20帧/50%如果是UI的话**得统一成一个值**，你以哪个为基准都行」。
-⇒ **基准 = 115 这套**（`20 帧线性` + `alpha 128` = 50% 透明）：理由是 50% 是 owner 口径、20 帧有 TH15 一手
-（`script241` 父 VM 的 `alphaTime(20,0,0)`）⇒ 把 `hud_dim.{h,c}` 的统一值改成这套，115 的本地覆盖删掉，
-另外五张卡（116/117/107/113/110+111）随之统一。**共享件改动 ⇒ 按 `AUDIT.md` §BE 登记 + 回归那五张卡的宿主单测。**
+**现行口径（2026-09-22 起，以本节为准）**：
+
+| 项 | 值 | 性质 |
+| --- | --- | --- |
+| 终点 alpha | **64**（25% 不透明）| **复刻**：TH18 原生 `abcard.anm` script1–4 的 `interruptLabel(5): alphaTime(8, 0, 64)` |
+| 过渡帧数 | **8 帧线性** | **复刻**：同一批脚本的原生帧数（淡回 `alphaTime(8, 0, 255)`）|
+| 谁定 | `native/cards/hud_dim.{h,c}` 的 `HUD_DIM_ALPHA_DIM` / `HUD_DIM_FRAMES`（**六张卡共用**）；脚本侧同值写在 `assets/ability/scripts/123–127,175–178` 的 label 4/5 | 一手链路见 [`engine/card/th18/15-selected-card-hud.md`](../../../engine/card/th18/15-selected-card-hud.md) §4.2 |
+| 机器判据 | `native/tools/anm_hud_alpha_check.py`（脚本侧）+ `native/tests/test_hud_dim_core.c` §①/§⑥（C 侧）| `make check` / `make test-host` |
+
+**历史（两版都作废，留档不许删）**：
+
+- **2026-09-21**：owner 原话「20帧/50%如果是UI的话**得统一成一个值**，你以哪个为基准都行」
+  ⇒ 父 agent 选**基准 = 115 这套**（`20 帧线性` + `alpha 128` = 50%），把 `hud_dim.{h,c}` 改成这套、
+  115 的本地覆盖删掉，另外五张卡（116/117/107/113/110+111）随之统一。
+- **2026-09-22**：owner 又拍「**th18左下角原生应该有动态吧，照着那个填**」（§10 第 1/2 条）
+  ⇒ **不再由我们拍**：换成 **TH18 原生那块「当前卡」UI 的一手值 = `64 / 8 帧`**。上表即本值。
+  ⚠ 这次不是又一次裁量 —— 64 与 8 都逐字节在 `abcard.anm` 里，性质从「❓ 用户口径」升成「复刻」。
+  115 那一套的 **20 帧**仍在用，但只用于**出场淡入**（脚本 `alphaTime(20, 0, 255)`，一手 = 同批原生脚本的出场值）。
+
+**共享件改动 ⇒ 按 `AUDIT.md` §BE 登记 + 回归那六张卡的宿主单测**（`make test-host` 的
+`test_hud_dim_core` / `test_faith_hud_core` / `test_season_core` / `test_trance_core` / `test_senro_core` /
+`test_animal_core` / `test_lolk_core`）。
 
 ## 9. ★ 新设计目标（owner 2026-09-21）: **111 地灵殿改成主动卡 —— 消耗 P 放灵击；原有灵击保留**
 
