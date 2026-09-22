@@ -433,3 +433,73 @@ solo-youkai，逐套数值见 [`research-th08-night-points.md`](https://) 的同
 - `Player.cpp:798-806` 的四个边沿条件要与我们 `youkai_core.h` §3.2 的状态机**逐条**对一遍
   （本轮只给一手原文，未做逐条对照）——这是「路 A 本体」实跑验收前唯一还欠的静态对账。
 - `unk5`（`IsYoukai()` 的真身）的写点未查；它与人妖槽的关系见本文件 §2（人妖槽）那几节。
+
+## 2.7 ★★★ 左下角那块 HUD 的**完整元素清单**（2026-09-22 夜一手；卡 108 的 #27/#28 以此为准）
+
+> **绘制者**：`AsciiManager::OnDrawHighPrioImpl th08:0x405420`（挂 AsciiManager draw 链**优先级 14**，注册点 `th08:0x402780`）。
+> **整块的门**：`th08:0x405acd`–`th08:0x405af7` = `youkaiGauge.IsVisible()`（`vm+0x1f8` bit0，`th08:0x4066e0`）
+> ⇒ 为 0 时下面 **6 件（含夜点）一起不画**。绘制顺序 = 游标 → 槽条 → 人图标 → 妖图标 → 百分比 → **夜点（最上层）**。
+
+| # | 元素 | anm / 脚本 / sprite（矩形）| 坐标 · 锚点 | 写值字段 | 一手 |
+| --- | --- | --- | --- | --- | --- |
+| 1 | **游标** | `ascii.anm` entry0 script8 + sprite **152** (128,208,8,12) | y=**453**；x=**96 + g·112/20000** | `globals+0x22` | x 写点 `th08:0x405afd`–`0x405b31`；draw `th08:0x405b47` |
+| 2 | **槽条** | script5 + sprite **155** (0,224,128,16) | `pos(32,465)` → `posTime(40 帧)` → 停稳 **(32,449)** | — | draw `th08:0x405cbd` |
+| 3 | **人图标** | script6 + sprite **153** (160,208,16,16) | 基线 (88,449)，`x −= humanLimit·56/−10000` ⇒ **(32,449)** | `GM+0x3ddf8` | `th08:0x402709`–`0x40272e` |
+| 4 | **妖图标** | script7 + sprite **154** (176,208,16,16) | `x += youkaiLimit·56/10000` ⇒ **(144,449)** | `GM+0x3ddfa` | `th08:0x402734`–`0x402759` |
+| 5 | **百分比数字** | script4 + 字形 **136..148**（8×12；'0'..'9' = 136..145、'%'=146、'.'=147、'-'=148）| y=**446**；x=96+g·80/20000 再按位数居中 | `globals+0x22` | `th08:0x405b4c`–`0x405b86`；`th08:0x405d0c call 0x405e10` |
+| 6 | **★ 夜点（8 位数字）** | **同一个 VM（`+0x127c`）** + 字形 **136..145**（`digit + 0x88`）| 左对齐起 **(80,460)**，7 px/字 | **`globals+0x24`**（`zGlobals.pointItemValue`）| `th08:0x405d11`–`0x405e01` |
+
+**五档染色**（槽条 / 百分比 / 夜点**共用**；写 `percentageText.color`@`+0x146c` 再拷给槽条 @`+0x9dc`）：
+极人 `0x7070ff`、中人 `0xb0b0ff`、极妖 `0xff7070`、中妖 `0xffb0b0`、其余 `0xffffff`（`th08:0x405bc2`–`0x405c9b`）；
+**alpha 取槽条自己的 alpha** ⇒ 夜点跟着槽条一起淡入淡出。
+
+**显隐时机**：脚本 load 后默认段（`interruptLabel(-1)` → `stopHide()` = 隐藏）；`SetGaugeInterrupt(1)`（`th08:0x4070b0`，
+`Player::on_registration th08:0x44d9bf` 调）⇒ 置可见 + `alphaTime(15,0,255)` + **40 帧滑入**；玩家压到屏幕左下
+（`player+0x2b8 ≥ 400.0`@`th08:0x4b4aa8` 且 `player+0x2b4 < 160.0`@`th08:0x4b4554`，`th08:0x44d4b0`–`0x44d522`）
+⇒ 中断 2 = **alpha 64**（变暗）；离开 ⇒ 中断 3 = 回 255；`SetGaugeInterrupt(99)`（`th08:0x44dc88`）⇒ 隐藏。
+
+### 2.7.1 ★ owner #28「叠在进度条上那个最大得点量级的数」= **夜点本体**（并订正一条旧记录）
+
+- **就是 `zGlobals.pointItemValue`（`globals+0x24`）** = 我们说的夜点：`th08:0x405d18 mov ecx,ds:0x160f510`
+  （globals 指针）→ `th08:0x405d1e mov edx,[ecx+0x24]` → `divisor = 10^7` 逐位取 8 位、`SetSprite(digit + 0x88)`、
+  每画出一位 `pos.x += 7.0`。
+- **前导零不画也不占位** ⇒ 从 **x=80** 左对齐（`60000` = 5 格；8 位满格到 x≈133）；字形 8×12 **中心锚点**
+  ⇒ 占 y ≈ 454..466 —— **正好压在槽条那条轨上**（owner 的「overlay 在进度条上」✅）。
+- **与百分比是两个元素**（各自绘制点、各自 x 公式），**共用同一 VM 与五档颜色**；y=446 vs y=460 ⇒ **上下错开 14 px**。
+- ⚠ **订正**：`HUMAN-YOUKAI-GAUGE.md` §3bis.0 曾写「夜点 = 屏幕**中间下方**那个数」——**那是错的**；
+  一手它画在**左下角槽条上 (80,460)**、与槽条同门同 alpha 同色、随槽条 40 帧滑入，**没有第二处绘制**。
+- **刷新**：每帧现算（不需要"显示副本"字段）。
+
+### 2.7.2 那块 HUD 上**没有**刻符计数/图标；刻符真正画在哪
+
+1. **穷举**：`IsVisible()` 门之后到函数尾（`th08:0x405af7`–`0x405e09`）的全部绘制点 = §2.7 那 6 条；夜点循环字形是 `digit+0x88`，**不含 orb 图**。
+2. **刻符计数在右上信息列 (488,184)**：`th08:0x436e2c`–`0x436f32`（值 = `GetTimeOrbs()` `th08:0x421b60` = `globals+0x3c`，
+   阈值 = `th08:0x421b80` = `globals+0x40`；`"%d"` + `/` + 阈值；x=488.0@`th08:0x4b4cfc`、y=184.0@`th08:0x4b4d0c`、
+   +13/字、超阈值 `SetColor(0xfffff0c0)`）；字形来自 **`asciis.png`(entry1)**，索引 `ASCII + 0x8a`（`th08:0x402d5b`）。
+3. **刻符图标本身是道具**：`etama.anm` entry1 sprite **179**（itemType 7 → `+0xac` 映射，`th08:0x4416fb`），画在道具自己的世界位置。
+4. **那块区域唯一「悬空」物**：AsciiManager `+0x1520` 的 script9 VM（sprite156、`scaleTime` 脉冲）**每帧 run 但从不绘制/定位**，
+   全 exe 也无任何指针引用其地址 `th08:0x4ce340` ⇒ **死代码，别照抄**。
+
+### 2.7.3 「+N 弹字」的四个入口（owner 的「+刻符 提示」= 这张表）
+
+| 入口 | 地址（签名）| 数组 / 容量 | 文本构造 | 寿命 / 运动 |
+| --- | --- | --- | --- | --- |
+| `CreateScorePopup` | **`th08:0x403200`** `(Float3*, i32 number, D3DCOLOR)` | `+0xb4dc`，720×0x38 | 逐位 `number%10`（`<0` ⇒ 字符 10）| **60 帧**；每帧 `y −= 0.5×framerateMultiplier` |
+| `CreatePlayerPointPopup` | **`th08:0x403330`** 同签名 | 同数组 `[720..722]` | 同上 | 同上 |
+| `CreateTimePopup` | **`th08:0x403460`** `(pos, number, param3, color)` | `+0x15304`，128×0x38 | `[15][param3 位][14][number 位][13]` | **90 帧，位置不动** |
+| `CreateFamiliarPopup` | **`th08:0x403600`** 同 4 参 | 同数组同索引 | 同上，`timer = 88` | 90 帧 ⇒ 实活 ~2–3 帧（Gui 每帧重建）|
+
+- **收刻符那支显示的是「分值」而不是 +1**：`th08:0x441348` 调 **`CreatePlayerPointPopup(&item+0x2a4, value, color)`**；
+  `value = (globals+0x30)/2×10`（下限 100），`globals+0x2c ≥ 2000` ⇒ `0x2710`，flag `0x18b8974 != 0` ⇒ 100
+  （`th08:0x4412c3`–`0x441304`）；颜色黄 `0xDFFFEF80` / 白 `0xDFFFFFFF`（`th08:0x441316`–`0x44132e`）。
+  同函数另有 `AddScore(value)` 与 `AddTimeOrbs(1)` ⇒ **「刻符 +1」是计数（右上），不是弹字**。
+- **弹「+1」的是击破魔使那一支**：`th08:0x42b296 CreateTimePopup(&enemy+0x2d88, 1, 0, 0xFFFFFFFF)`，紧跟 `th08:0x42b29b SpawnItem(type7, state1)`；
+  同函数另有 `th08:0x42b122`（number = `enemy+0x3380`、色 `0xfff0f00f`、调用前 `SetScale(2,2)`）与 `th08:0x42af78`（number = 魔使数、按数量分档色）。
+- **字形**：全走 `ascii.anm` entry0。time/魔使弹字 = `popupText`(`+0x548`) → `GetSprite(char+0x88)` = sprite **136..151**
+  （字符 13/14/15 ⇒ **149**（**逐像素确认是「+」**）/150/151；150/151 未定名 ❓）。分数弹字 = `smallScoreText`(`+0x2a4`) →
+  `GetSprite(char)`/`+0xb`/`+0x15` = sprite 0..10 / 11..21 / 21..31，帧切换 timer<52 / <56 / 否则（`th08:0x405599` 一族）。
+- **排版/上浮/淡出全在代码里**：score 弹字 `pos.x = position.x − charCount×4`、逐字 +8（`th08:0x405462`）；
+  time 弹字 `− charCount×3.5`、逐字 `+7×scale`（`th08:0x405905`）。**落点 = 相对被收的道具 / 被击破的敌人**
+  （`item+0x2a4` / `enemy+0x2d88`）+ 战场原点 (32,16)（`+0x164d2dc`/`+0x164d2e0`，写点 `th08:0x43a126`）
+  ⇒ **与左下角固定 HUD 无关**。**alpha 按与自机距离现算**（`d > 0x1000 ⇒ 0xD0`；`d > 0x400 ⇒ ((d−0x400)×128)/0xc00+0x50`；
+  否则 `0x50`；`th08:0x4054e3`–`0x405545` / `th08:0x405983`–`0x4059f1`）⇒ 传入的 `0xDF` alpha **只保留 RGB**。
