@@ -188,6 +188,15 @@ script141 { alpha(0); scriptNew(139); scriptNew(140);      // 发射器：
 **我上一轮扫漏的原因（记下来免得再犯）**：按 `color(R,G,B)` 扫紫、且条件写成「G < 110」，
 而这里是 **`color2(255,128,255)`**（G=128）⇒ 两个条件都不满足，直接漏掉。
 
+**★ 已实现 + 编译产物核验（2026-09-23）**：三支脚本已进 `ability.anm`（**316 / 317 / 318**），产物已同步进 modkit
+（`md5sum` 与 `native/build/ability.anm` 相同 = `2e57e4cf…`）。反汇编产物 `script316` **11 条指令一条不少**：
+`ins_304(7)`（layer 7）/ `ins_300(-1)`（sprite -1）/ **`ins_604(192.0f,3)`**（= `drawPoly`，★ v8 助记符 **604**）/ 
+`ins_404(0,0,0)`（color）/ **`ins_406(255,128,255)`**（= `color2`，★ v8 助记符 **406**）/ `ins_415(0,0,0.09817477)`（angleVel）/
+`ins_403(0)`+`ins_409(10,0,15)`（alpha/alphaTime）/ `ins_405(0)`+`ins_414(60,0,255)`（alpha2/alpha2Time）/ `ins_412(60,5,0,0)`（scaleTime）/
+`+10: ins_409(30,0,0)` / `+70: ins_1()`（delete）；`script318` = 3× (`316`+`317`) + `+70: ins_1()` ✓。
+⇒ **「以为移植了」这类风险已排除**（产物回读为准；`thanm -l` 的助记符表里 `drawPoly`/`color2` 没名字，
+别用名字 grep 产物 —— 用 `ins_604` / `ins_406`）。
+
 **落地要点**：① TH18 的 v8 **有** `drawPoly` / `color2`（TH18 `front.anm` 里 58 处）⇒ 三支脚本可**逐条移植**成
 `ability.anm` 的新脚本（生成器 `make_ufo_hud_art.py` 的 `SCRIPT_PORTS` 加三条；TH12 的 `layer(7)` 是**世界层**，
 召唤特效挂在 UFO 身上 ⇒ **保持世界层**，别搬进 25）；② 创建时机 = 我们**召唤 UFO 的那一刻**（与 `ufo_body_spawn` 同一处）；
