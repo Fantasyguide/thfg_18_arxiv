@@ -1043,7 +1043,8 @@ typedef struct {
      * 生命周期与 `u` 绑死：`ufo_try_summon()` 建起来、`ufo_teardown()` / `ufo_withdraw_all()` 收掉
      * （⚠ 删卡走 `on_delete`，那一刻 tick 全停 ⇒ 必须在 `ufo_withdraw_all()` 里收，不能指望每帧跟随时收）。*/
     uint32_t    body_anm_id;
-    uint32_t    ring_vm_for;           /* ★ #14：紫环已经为哪一只 UFO（`s->u.ufo_id`）起过 —— 每只只起一次 */
+    uint32_t    ring_vm_for;
+    int32_t     panel_last;             /* ★ #22：上一次看到的吸收数（变了就重弹记录面板）*/           /* ★ #14：紫环已经为哪一只 UFO（`s->u.ufo_id`）起过 —— 每只只起一次 */
     uint8_t     pend_drop;                             /* 1 = 有一枚令牌等着落地（来源那条路）*/
     uint8_t     pending_break;                         /* 1 = 帧末要按「击破」收尾开奖 */
     uint8_t     logged_no_hud;                         /* 保留名：HUD「画起来了」日志只报一次（第三版起 = 原版槽 VM 到位）*/
@@ -2747,6 +2748,95 @@ static void ufo_xn_tick(void)
     }
 }
 
+
+/* ==================== ★★ #22 吸收数记录面板（TH12 `front.anm` script134/135）====================
+ * 一手（`local/th12.v1.00b/anm/front/front.anm.txt`）：
+ *   · 父 **script134** = `sprite(sprite102)`（= `front_ufo.png` 的 96×96）+ `scriptNew(script135)` +
+ *     `resampleMode(1)` + `layer(23)` + `scale(0,0)` → `scaleTime(20, 0, 1.0, 1.0)` + **`pos(528, 288)`**；
+ *   · 子 **script135** = 内容那半，+20 帧 `delete()`；**中断 1 = 缩回**（134 自己不 delete）。
+ * 卡侧脚本 = `ability.anm` 的 **304（父）/ 305（子）**（生成器 `make_ufo_hud_art.py` 早就移植好了，
+ * 但直到 2026-09-23 才接上 —— 那之前 `ufo.c` 一个字都没引用它）。
+ * **内容（吸收数）**：TH12 用 ascii manager 画 ⇒ 我们走**自己的字形通道**（与 #20 的 ×N 同一套：
+ * `SCRIPT_HUD_GLYPH` + `ATLAS_HUD_DIGIT_0..9`）。
+ * **触发**：每帧看「吸收数」有没有变（= `cnt_p + cnt_money`，就是这只 UFO 吃进去的 token 数）
+ *   ⇒ 变了就**重新弹一次**面板并刷新数字；静置 `UFO_PANEL_LIFETIME` 帧后发**中断 1 缩回**。*/
+#define UFO_PANEL_GLYPHS   3               /* ❓自定：最多三位（99+ 只画后三位）*/
+#define UFO_PANEL_LIFETIME 180u            /* ❓自定：静置 3 秒后缩回（一手只做了「中断 1 = 缩回」）*/
+#define UFO_PANEL_DX       40.0f           /* ❓自定：数字在面板内的起点（一手 `pos(528,288)` 是面板本身）*/
+#define UFO_PANEL_DY       44.0f
+#define UFO_PANEL_ADV      22.0f           /* ❓自定：字距（同 #20）*/
+#define UFO_PANEL_SCALE    2.0f            /* ❓自定：UI 层 1 texel = 1 表面 px ⇒ ×2（先例：人妖槽四件）*/
+
+static uint32_t s_panel_id;                /* 面板父 VM（304）*/
+static uint32_t s_panel_glyph[UFO_PANEL_GLYPHS];
+static uint16_t s_panel_left;              /* 静置倒计时（0 = 已经缩回）*/
+
+static void ufo_panel_kill(void)
+{
+    int i;
+    if (s_panel_id) { ce_anm_delete(s_panel_id); s_panel_id = 0; }
+    for (i = 0; i < UFO_PANEL_GLYPHS; ++i)
+        if (s_panel_glyph[i]) { ce_anm_delete(s_panel_glyph[i]); s_panel_glyph[i] = 0; }
+    s_panel_left = 0;
+}
+
+/* 弹一次面板 + 把 `count` 画出来（数字从右往左取位）。 */
+static void ufo_panel_pop(int32_t count)
+{
+    void *anm = CE_ABILITY_ANM();
+    const float px = 528.0f + UFO_PANEL_DX;     /* 一手的面板位 = (528,288)（脚本里写着）*/
+    const float py = 288.0f + UFO_PANEL_DY;
+    float p[3];
+    int i, n = 0, v;
+    if (!anm) return;
+    if (count < 0) count = 0;
+    v = count % 1000;                            /* ❓自定：只画后三位 */
+    ufo_panel_kill();                            /* 重弹：先收上一套（不会叠）*/
+    p[0] = 0.0f; p[1] = 0.0f; p[2] = 0.0f;
+    s_panel_id = ce_anm_spawn_ui(anm, CE_ANM_ABILITY_SCRIPT_UFO_HUD_PANEL, p);
+    do { ++n; v /= 10; } while (v > 0 && n < UFO_PANEL_GLYPHS);
+    v = count % 1000;
+    for (i = 0; i < n; ++i) {
+        int div = 1, k;
+        for (k = 0; k < (n - 1 - i); ++k) div *= 10;
+        p[0] = px + (float)i * UFO_PANEL_ADV;
+        p[1] = py;
+        s_panel_glyph[i] = ce_anm_spawn_ui(anm, CE_ANM_ABILITY_SCRIPT_HUD_GLYPH, p);
+        if (s_panel_glyph[i]) {
+            ce_anm_set_sprite(anm, s_panel_glyph[i],
+                              CE_ANM_ABILITY_SPRITE_ATLAS_HUD_DIGIT_0 + (v / div) % 10);
+            ce_anm_set_scale(s_panel_glyph[i], UFO_PANEL_SCALE, UFO_PANEL_SCALE);
+            ce_anm_set_color(s_panel_glyph[i], 0xffffffffu);
+        }
+    }
+    s_panel_left = (uint16_t)UFO_PANEL_LIFETIME;
+    ce_log("ufo: absorb-count panel popped (ability.anm script %d <= TH12 front.anm script134/135; count = %d, "
+           "%d digit VM(s) on script %d) - one-hand panel pos (528,288), retracts via interrupt 1 after %u frames",
+           CE_ANM_ABILITY_SCRIPT_UFO_HUD_PANEL, (int)count, n, CE_ANM_ABILITY_SCRIPT_HUD_GLYPH,
+           (unsigned)UFO_PANEL_LIFETIME);
+}
+
+/* 每帧：看吸收数变没变（变了就重弹）+ 静置超时缩回。 */
+static void ufo_panel_tick(ufo_card_t *s)
+{
+    int32_t now;
+    if (!s) return;
+    now = s->u.cnt_p + s->u.cnt_money;
+    if (now != s->panel_last) {
+        s->panel_last = now;
+        if (now > 0) ufo_panel_pop(now);
+        return;
+    }
+    if (!s_panel_id) return;
+    if (!ce_anm_get_vm(s_panel_id)) { s_panel_id = 0; return; }   /* 引擎删了 ⇒ 清句柄 */
+    if (s_panel_left && --s_panel_left == 0) {
+        int i;
+        ce_anm_interrupt(s_panel_id, 1);                          /* 一手：中断 1 = 缩回（子 135 在 +20 帧自删）*/
+        for (i = 0; i < UFO_PANEL_GLYPHS; ++i)
+            if (s_panel_glyph[i]) { ce_anm_delete(s_panel_glyph[i]); s_panel_glyph[i] = 0; }
+    }
+}
+
 /* 击破时掉的**压缩包**（用户口径：有实体、被自动吸收、收集时结算）。 */
 static void ufo_drop_spawn_bag(ufo_card_t *s, float x, float y)
 {
@@ -3183,6 +3273,7 @@ static void ufo_hud_kill(void)
 {
     int i;
     ufo_xn_kill();                                     /* ★ #20：×N 也一并收干净 */
+    ufo_panel_kill();                                  /* ★ #22：记录面板也一并收干净 */
     if (s_banner_id) { ce_anm_delete(s_banner_id); s_banner_id = 0; }   /* ★ #17 横幅（长持续效果铁律）*/
     for (i = 0; i < UFO_SLOT_COUNT; ++i) {
         if (s_slot_id[i]) { ce_anm_delete(s_slot_id[i]); s_slot_id[i] = 0; }
@@ -3734,6 +3825,7 @@ static int on_tick_2(ce_card_t *c)
         ufo_break(s);
     }
     ufo_xn_tick();                                     /* ★ #20：×N 上移 + 到期自删 */
+    ufo_panel_tick(s);                                 /* ★ #22：吸收数记录面板（变了就弹）*/
     /* ②b ★ 令牌落地（死亡栈里只登记了落点；这一刻已经离开死亡栈 ⇒ 可以安全建 VM）。
      *   一手：令牌是「敌人掉落表」的产物（`dropExtra`）⇒ 触发点 = 那一只敌人的死亡位置。
      *   ⚠ 换池后这一步建的是**我们自己的 VM**（不是敌人）—— 「不在死亡栈上建」这条纪律不变。 */

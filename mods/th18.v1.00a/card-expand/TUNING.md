@@ -4599,3 +4599,22 @@ owner 2026-09-23 18:14 的「偏右 1/3 个游玩区宽」是**相对屏幕左�
 **❓ 自定**：0（常量直接取 113 的复刻值）。
 **实跑判据**：`youkai: gauge HUD geometry … anchor (248,928) bar (248,864) …` ⇒ 无论装了几张卡，
 人妖槽都应固定在**场地左下角**。若仍被挡，看 `youkai/hud.vm … draw` 的实际值再判绘制组。
+
+### 2.0zz ★ 112 #22 吸收数记录面板（2026-09-23 接上；一手面板参数 + 5 个自定）
+
+**一手**（`front.anm`）：父 **134** = `sprite(sprite102)`（`front_ufo.png` 96×96）+ `scriptNew(135)` + `layer(23)` +
+`scale(0,0)`→`scaleTime(20,0,1.0,1.0)` + **`pos(528,288)`**；子 **135** +20 帧 `delete()`；**中断 1 = 缩回**。
+
+**卡侧**：`ability.anm` **304/305**（早就移植好，2026-09-23 才接上）；数字用 `SCRIPT_HUD_GLYPH` + `ATLAS_HUD_DIGIT_0..9`。
+**触发**：每帧看 `cnt_p + cnt_money`（= 这只 UFO 吃进去的 token 数）有没有变 ⇒ 变了就重弹并刷新。
+
+| # | ❓ 自定值 | 值 | 为什么 |
+| --- | --- | --- | --- |
+| 1 | 数字在面板内的位置 | `UFO_PANEL_DX/DY = 40/44` | 一手的 `pos(528,288)` 是**面板本身**；TH12 的文字由 ascii manager 摆，没有可照抄的偏移 |
+| 2 | 字距 | `UFO_PANEL_ADV = 22.0f` | 同 #20（一手没给排版参数）|
+| 3 | 缩放 | `UFO_PANEL_SCALE = 2.0f` | UI 层 1 texel = 1 表面 px（先例：人妖槽四件）|
+| 4 | 静置时长 | `UFO_PANEL_LIFETIME = 180` 帧 | 一手只做了「中断 1 = 缩回」，没说多久缩 |
+| 5 | 只画后三位 | `count % 1000` | 面板 96×96 放不下更多；一手是 ascii 排版、位数没上限 |
+
+**实跑判据**：`ufo: absorb-count panel popped (ability.anm script 304 <= TH12 front.anm script134/135; count = N, …)`
+⇒ 吸收 token 时屏幕 (528,288) 处应弹出那张 96×96 的面板并显示吸收数，静置约 3 秒后缩回。
