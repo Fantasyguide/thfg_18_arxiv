@@ -2359,8 +2359,20 @@ static void yk_gauge_hud_update(yk_card_t *s)
     float anchor[2];
     uint32_t col;
     if (!s) return;
-    anchor[0] = s->hud.x;
-    anchor[1] = s->hud.y;
+    /* ★★★ 2026-09-23（owner：「人妖槽好像在整个画面的**上方**被挡住了」+「**照着 113 定位**」）：
+     *   根因 = **货架（shelf）会把块上抬**：`HUD-LAYOUT.md` §2 的算法在一行放不下时
+     *   `row_bottom -= row_h + GAP` ⇒ 装了几张系统卡（116/117/110/111 …）之后，我们这块可能被排到
+     *   **第二行**（= 画面上方），还会和游玩区叠着 ⇒ 观感正是「跑到上面、还被挡住」。
+     *   而 **113（`trance.c`）根本不用货架** —— 它写死表面坐标（`TRANCE_HUD_BASE_X/Y = 248/928`），
+     *   owner 2026-09-23 明确要「照着 113 117 定位」⇒ 本卡按同一口径：**锚点改成常量**，
+     *   不再吃 `s->hud`（认领仍保留：只为「这块归我」的记账与日志，不参与定位）。
+     *   常量取**一手换算**：TH08 的槽条根 = 场地左沿 + 0（`TRANCE_HUD_BASE_*` 同源），
+     *   y 取**场地下沿**（928）⇒ 与 113 同一条基准线（113 = 248/928）。*/
+#define YK_GAUGE_BASE_X   248.0f        /* = 113 的 `TRANCE_HUD_BASE_X`（✅ 复刻同口径）*/
+#define YK_GAUGE_BASE_Y   928.0f        /* = 113 的 `TRANCE_HUD_BASE_Y`（= 场地下沿）*/
+    anchor[0] = YK_GAUGE_BASE_X;
+    anchor[1] = YK_GAUGE_BASE_Y;
+    (void)s->hud;                       /* 认领值不再参与定位（见上）；日志里保留显示 */
     yk_gauge_hud(s->gauge, anchor, CE_HUD_SURFACE_TO_640, &h);
     col = yk_gauge_color(s->gauge);
     /* ★★★ 2026-09-22（P2）：**四件也每帧重写 scale**（`h.px` = 2）。
