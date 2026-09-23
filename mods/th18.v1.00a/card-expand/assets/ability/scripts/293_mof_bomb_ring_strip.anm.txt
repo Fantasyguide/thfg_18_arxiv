@@ -27,7 +27,11 @@ script script293 {
 //     每帧同样写 `entity_pos` + `ce_anm_set_scale(id, r, r)`，半径长满那帧 `ce_anm_interrupt(id, 1)`。
 //   · 收尾同 279（删卡 / 换关 / 局末都要删）。
     sprite(@MOF_BOMB_RING_STRIP@);
-    texCircle(32);
+    // ★ 2026-09-23：**删掉 `texCircle(32)`** —— TH18 的 anm VM 是否执行这条指令没有先例
+    //   （`AUDIT.md`：「`texCircle` 在世界列表没有实跑先例」），实跑症状正是「不生效」的形状：
+    //   这条 VM 会把 14×128 竖条按 scale 放大成**一条巨大的竖光晕**，而该有的那圈电弧不存在。
+    //   ⇒ 环改由**卡侧 32 台 VM 自己摆**（`bomb10.c` 的 `BOMB10_RING_UNITS`；每片给 pos/rotation/scale），
+    //   本脚本只负责「画哪张贴图、怎么淡出」，`stop()` 之后不再自己动任何字段。
     layer(13);
     blendMode(1);
     type(1);
