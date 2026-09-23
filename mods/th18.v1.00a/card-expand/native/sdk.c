@@ -458,6 +458,11 @@ void ce_option_pose_drop(ce_card_t *c)
  * ⚠ 为什么断点之外还要这一支：`repopulate` 的档位短路缓存（`inner+0x470d8`）会让引擎在
  *   「档位没变」时**既不重建也不清理** ⇒ 卡刚装上 / 换机体回来那一刻场上已有的原生子机
  *   会一直留着（幽灵子机 + 出膛点仍在）。这一支把「不管谁建的、只要我在就收掉」变成硬保证。*/
+/* ★ 2026-09-23：**这一轮隐藏期内真的收掉过原生子机 VM** 的旗子（由 sweep 置、由可见化补重建清）。
+ *   `BP_ce_item_frame` 只在它立着时才补 `repopulate` ⇒ **没杀过就一次都不重建**（快速高低切时不会
+ *   按帧触发重建 / 广播；见那里的长注）。*/
+static int s_natopt_swept;
+
 int ce_native_option_sweep(void)
 {
     uint8_t *pl = CE_PLAYER();
@@ -478,6 +483,7 @@ int ce_native_option_sweep(void)
     }
     if (n) {
         static int s_logged;
+        s_natopt_swept = 1;        /* ★ 见 `BP_ce_item_frame` 的「可见化补重建」：真收掉过才需要补 */
         if (!s_logged) {
             s_logged = 1;
             ce_log("sdk: 原生子机自愈清理：本帧收掉 %d 支 VM（声明者 id %d）",
@@ -2077,30 +2083,44 @@ int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
         s_bomb_prev = bomb_now;
     }
     /* ★★★ 2026-09-23（108 #33/#38「退出 shift 后原生子机在进 shift 的位置发弹、本体消失」）：
-     *   **「隐藏过 → 恢复可见」这一个边沿必须补一次 `repopulate`**，否则原生子机永远回不来。机制逐条：
-     *     · 隐藏那一侧（`BP_ce_repopulate_native_option` `0x45d610`）= 把 `lvl` 压成 0（**不建**）+ 把已建的
-     *       1 对 VM `interrupt` 掉、id 写 0（一手见本文件 §「隐藏自机原生那 4 格子机」那一段）；
+     *   **隐藏期收掉过原生子机 VM ⇒ 可见化之后必须补一次 `repopulate`**，否则它们永远回不来。机制逐条：
+     *     · 隐藏那一侧（`BP_ce_repopulate_native_option` `0x45d610` + 卡侧每帧的 `ce_native_option_sweep()`）
+     *       把 `lvl` 压成 0（**不建**）**并**把已建的那对 VM `interrupt` 掉、id 写 0、状态写 0；
      *     · 引擎**只在火力档变化时**才叫 `Player__repopulate_options_and_notify_cards` `0x45d5e0`
      *       （就是 sdk.h 里那句「档位短路缓存」）⇒ 松开 Shift 只是「不再隐藏」，**没有任何人叫重建**
      *       ⇒ 4 格子机的记录还在、主炮行循环照旧从**看不见的膛口**出弹（`BP_ce_native_option_muzzle`
      *       只在隐藏期拦），但 VM 一个都回不来 = owner 报的「**发弹但不显示、停在进 shift 那一处**」。
-     *   ⇒ 在**可见化那一个边沿**替引擎补一次 `ce_repopulate_options()`（= 按当前档重建 + 广播
-     *     `on_power_level_change`，与卡扣火力后必须补的那一次**同一个调用**）。
-     *   ⚠ 只在**边沿**叫（`prev == 1 && !now`），不是每帧 ⇒ 稳态一次都不调，没装这类卡时行为不变；
-     *     `hidden` 是**按机体**判的（换机体当帧恢复，见层注释）。
+     *   · 修法 = 在可见化之后替引擎补一次 `ce_repopulate_options()`（按当前档重建 + 广播
+     *     `on_power_level_change`，与「卡扣完火力必须补的那一次」同一个调用）。
+     *
+     * ★★ 2026-09-23（owner：**快速高低切不能出显著的 bug**）—— 这一段必须对「高频切换」稳，故三条约束：
+     *   ① **真杀过才补**：判据是 `s_natopt_swept`（由 `ce_native_option_sweep()` 在**真的收掉 VM** 时立起）。
+     *      快速连按时若这一轮 hide 没来得及收掉任何 VM，就**一次都不重建** ⇒ 不产生任何抖动；
+     *   ② **冷却 = 20 帧**（≈0.33 s）：连按时重建最多 3 次/秒，绝不按帧触发 —— 重建会**广播
+     *      `on_power_level_change`**，而 116（`season.c`）等卡在那个回调里会**重分子机**
+     *      ⇒ 按帧广播会把别人的子机池搅乱（那才是「显著的 bug」）；冷却 + 真杀过两条一起把这条路封住；
+     *   ③ **按机体判**（`ce_native_option_hidden(当前机体)`）+ 只在**可见态**补 ⇒ 与层本身的机体门口径一致，
+     *      换机体当帧就能自愈。
+     *   ⚠ 写 `CE_OFF_OPT_LAST_LEVEL = -1` 是**必要的**：引擎那个「上次按哪一档建过」的缓存会让
+     *     `repopulate` 直接短路返回（一手读点 `0x45d84d` `cmp [esi+0x476f8],eax`；写 -1 一定重走重建/清空）。
      *   ⚠ 与卡池无关：原生 4 格 = `inner+0x50`（`PLAYER+0x670` 那一族），卡申请的是 `inner+0x410`
      *     ⇒ 这次重建**不动** 108/111/116/117 手里已申请的子机（两个数组互不相干，一手见上段）。*/
     {
-        static int s_natopt_hidden_prev = -1;             /* -1 = 还没看过（第一帧不算边沿）*/
+        static uint32_t s_natopt_fix_frame;
         const int ch_now = *(const int32_t *)CE_ADDR_CHARACTER;
         const int hid_now = ce_native_option_hidden(ch_now);
-        if (s_natopt_hidden_prev == 1 && !hid_now) {
+        const uint32_t f_now = ce_sdk_frame();
+        if (!hid_now && s_natopt_swept && (s_natopt_fix_frame == 0u ||
+                                           f_now - s_natopt_fix_frame >= 20u)) {
+            s_natopt_swept = 0;
+            s_natopt_fix_frame = f_now ? f_now : 1u;
+            *(volatile int32_t *)(uintptr_t)(CE_ADDR_GLOBALS_INNER + CE_OFF_OPT_LAST_LEVEL) = -1;
             ce_repopulate_options();
-            ce_log("sdk: native options UNHIDDEN (char %d, owner card %d) - forced repopulate so the "
-                   "retail 4-cell options come back with their VMs (else they stay invisible while "
-                   "still firing from stale muzzles)", ch_now, ce_native_option_hide_owner());
+            ce_log("sdk: native options restored (char %d, owner card %d, frame %u) - swept VMs were "
+                   "rebuilt (last-level cache reset first); this fires only after a hide that really "
+                   "swept something, at most once per 20 frames",
+                   ch_now, ce_native_option_hide_owner(), (unsigned)f_now);
         }
-        s_natopt_hidden_prev = hid_now;
     }
     (void)regs; (void)bp_info;
     uint8_t *mgr = CE_ABILITY_MGR();

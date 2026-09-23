@@ -1106,11 +1106,11 @@ int main(void)
                   yk_deathbomb_window(3) == 0 && yk_deathbomb_window(5) == 0);
             CHECK(yk_deathbomb_window(-1) == 0);
             /* 染色的两条不变量：只换 RGB + alpha 原样；还原 = 当前 alpha + 快照 RGB。*/
-            CHECK(YK_TINT_RED == 0xffff8080u);
-            CHECK(yk_tint_apply(0xffffffffu) == 0xffff8080u);
-            CHECK(yk_tint_apply(0x80aabbccu) == 0x80ff8080u);        /* alpha 0x80 原样保留 */
-            CHECK(yk_tint_apply(0x00112233u) == 0x00ff8080u);
-            CHECK(yk_tint_restore(0x40ff8080u, 0x80aabbccu) == 0x40aabbccu);  /* 取当前 alpha */
+            CHECK(YK_TINT_RED == 0xffff0000u);
+            CHECK(yk_tint_apply(0xffffffffu) == 0xffff0000u);   /* 纯红 */
+            CHECK(yk_tint_apply(0x80aabbccu) == 0x80ff0000u);        /* alpha 0x80 原样保留 */
+            CHECK(yk_tint_apply(0x00112233u) == 0x00ff0000u);
+            CHECK(yk_tint_restore(0x40ff0000u, 0x80aabbccu) == 0x40aabbccu);  /* 取当前 alpha */
             CHECK(yk_tint_restore(0xffffffffu, 0x80aabbccu) == 0xffaabbccu);
             /* 染了再还原 = 回到原色（除 alpha 用的是「当前」那一份 —— 引擎每帧会重设颜色）。*/
             CHECK(yk_tint_restore(yk_tint_apply(0xffffffffu), 0xffffffffu) == 0xffffffffu);

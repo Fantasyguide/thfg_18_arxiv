@@ -1026,18 +1026,23 @@ int yk_graze_orbs_per_bullet(int field_gate, int bullet_path, int spell_active, 
  *   · **决死窗口 = `player + 0x476ac == 4`**（`CE_PLAYER_STATE`）：一手 `th18:0x45d4e4
  *     movl $0x4,0x476ac(%edi)` 是全 exe **唯一**把那一格写成 4 的地方；先例 = `mof_core.c` /
  *     `signal_core.c` 的同名判据（两边都是「core 只认『窗口 = state 4』，那个 4 由卡侧读进来」）。
- *   · **颜色**：TH08 的 `Player::begin_death`（`th08:0x44ab40`）里**没有**逐弹改色的循环
- *     （逐指令看过：起特效 0x06 + 置玩家状态 + 屏效，没碰弹）⇒ 「决死染红」不是 TH08 行为。
- *     颜色本身取 TH08 自己的一枚红：`PlayerBombArea::reset`（`th08:0x44e370`）在 `:0x44f0c0` /
- *     `:0x44f728` 给 VM 写 **`0xffff8080`**（A=ff R=ff G=80 B=80，柔和的红）—— 同 `lolk.c` 取
- *     TH15 那一枚黄的规矩（那一枚的来源写在它的注释里）。
+ *   · **颜色**：★★ 2026-09-23 **owner 实跑订正** —— TH08 决死时场上弹幕是「**完全变成红色**」，
+ *     而我们原来那枚 `0xffff8080`（A=ff R=ff G=80 B=80，柔红）**是照 115 的写法借来的**：
+ *     它出自 TH08 `PlayerBombArea::reset`（`th08:0x44e370` / `:0x44f0c0` / `:0x44f728`）——
+ *     那是 **bomb 范围特效那支 VM 的颜色**，**不是弹幕色**（owner 的原话：「目前的颜色情况
+ *     似乎是照着 115 卡复刻的」，即它看起来像 115 那种淡色静态染色）。
+ *     ⇒ 改成 **纯红 `0xffff0000`**（只换 RGB、alpha 仍原样保留），见 `YK_TINT_RED`。
+ *     ⚠ 115（`lolk.c`）那套是**擦弹判定圈 → TH15 的黄**（另一件事、另一个机制）；
+ *       「看 115 的实现」当时指的是**染色机制**（记原色 / 每帧还原 / 只动 RGB），不是那个颜色。
  *
  * 这里只放**三条纯逻辑**（无引擎地址、无浮点）⇒ 主机单测直接锁住两个不变量：
  *   ① 染色**只换 RGB、alpha 原样保留**（115 第三十三轮的实跑教训：把含 alpha 的快照写回去
  *      会把弹钉死在低 alpha 上 ⇒ 「变透明」）；
  *   ② 还原 = **当前 alpha + 快照 RGB**（同一件事的另一半）。*/
 #define YK_DEATHBOMB_STATE 4             /* 一手 `th18:0x45d4e4`：全 exe 唯一写 4 的点 */
-#define YK_TINT_RED        0xffff8080u   /* 一手 TH08 红（见上：`th08:0x44f0c0` / `:0x44f728`）*/
+#define YK_TINT_RED        0xffff0000u   /* ★ 2026-09-23 owner 口径：**纯红**（原 `0xffff8080` = TH08
+                                          *   `PlayerBombArea` 那枚柔红，属 bomb 范围特效的 VM，不是弹幕色
+                                          *   ⇒ 已作废）。只换 RGB、alpha 原样（`yk_tint_apply` 的规矩不变）。*/
 
 /* 决死窗口 = state 4 ⇒ 1。 */
 int      yk_deathbomb_window(int32_t player_state);
