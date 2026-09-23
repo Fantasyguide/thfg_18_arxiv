@@ -566,8 +566,14 @@ def _yk_extra_plan(player: str):
         # ⚠ 宏名必须**带机体号**：四个 pl0X.anm 的追加脚本号互不相同（各文件从自己的原生脚本数
         #   往后接），不带就会在 `pl_anm_ids.h` 里互相覆盖（实测报 `macro redefined`）。
         out.append(dict(macro=f"YK{macro}_{player.upper()}", game="th08", src=src, sid=sid,
-                        new_sid=ids["script0"] + i, smap=smap, k=1.0, alpha255=False,
-                        scale_inject=False, th08_opcodes=True,
+                        new_sid=ids["script0"] + i, smap=smap,
+                        # ★ #42：刻符的 TH08 原脚本没有 scale() ⇒ 显式 ×2（否则只有一半尺寸 = 「看不见」）
+                        k=(2.0 if name == "orb" else 1.0), alpha255=False,
+                        # ★ 2026-09-23（#42「永点没看见」）：刻符的 TH08 原脚本**通篇没有 `scale()`**
+                        #   ⇒ 静止尺寸吃 VM 初值 1.0 ⇒ 只有一半线性尺寸（1/4 面积），观感上就是「看不见」。
+                        #   与 `302_ufo_hud_slot` 的 Δ4b 是同一个坑 ⇒ 只给刻符显式注入 `scale(2.0)`。
+                        #   实跑证据：`youkai/orb.vm` 五行 `sprite 97 alpha 255 layer 7 **scale 1.00**`。
+                        scale_inject=(name == "orb"), th08_opcodes=True,
                         # ★ 2026-09-23（#th11-3 同源缺口）：刻符（`orb`）走**世界列表**且自带层
                         #   （`YK_ORB_ANM_LAYER`，由 C 侧传）⇒ 不注入；四支人妖槽 HUD + 字形
                         #   走 `ce_anm_spawn_ui`（UI 列表）⇒ 必须自带 `layer(25)`，见
