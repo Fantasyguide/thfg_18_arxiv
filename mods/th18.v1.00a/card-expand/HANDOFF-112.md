@@ -16,7 +16,7 @@
 
 | 项 | 现值 |
 | --- | --- |
-| DLL | `e6d621a4371a7d8b3d55bc58d850d5e0`（modkit 四处同 md5；`RELEASE-STATE.json` 为准）|
+| DLL | `0d55e6bd215aba92f8d4a7225557a57d`（modkit 四处同 md5；`RELEASE-STATE.json` 为准）|
 | patch | `df14d5707689ca4b66cdfab2b0f642b3` |
 | **ability.anm** | `058cec74…` ← **2026-09-23 因 #17 毛笔横幅变过**（旧值 `f06ba70d…`）|
 | abcard.anm | `bf91a0f5…`；四份 `pl0X.sht` 见快照 |
