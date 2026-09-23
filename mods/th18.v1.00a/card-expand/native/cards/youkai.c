@@ -1220,6 +1220,25 @@ static void yk_option_refresh(ce_card_t *c, yk_card_t *s, int focused)
 static void yk_option_release(ce_card_t *c, yk_card_t *s)
 {
     int i;
+    /* ★★ 2026-09-23（owner：「依旧子机滞留」）：**交出子机那一刻记一行** ——
+     *   owner 那局日志里 `youkai: option allocated (ptr 183eb908, anm id …)` 反复出现、**ptr 恒定而 anm id
+     *   每次都是新的** ⇒ 两种可能必须分开：① 我们在反复重申请同一格而**旧 VM 没被删**（= 滞留 VMs 越积越多）；
+     *   ② 那些是**引擎原生**子机（被我们重建后停在原地）。这一行给的是「我们交出去了几格、哪些 VM 被点名删」，
+     *   与下面那支「引擎原生 4 格」的探针合起来就能一眼分流。*/
+    if (s) {
+        int n = 0;
+        uint32_t vm0 = 0, vm1 = 0, vm2 = 0, vm3 = 0;
+        for (i = 0; i < YK_OPTION_MAX; ++i) {
+            if (!s->opt[i].ptr) continue;
+            uint32_t vm = *(const uint32_t *)(s->opt[i].ptr + CE_OPT_ANM_ID);
+            if (n == 0) vm0 = vm; else if (n == 1) vm1 = vm;
+            else if (n == 2) vm2 = vm; else vm3 = vm;
+            ++n;
+        }
+        if (n) ce_log("youkai: option release - %d slot(s) held, VMs to delete: %08x %08x %08x %08x "
+                      "(if the same slot keeps coming back with a NEW anm id, the old VM did not die)",
+                      n, (unsigned)vm0, (unsigned)vm1, (unsigned)vm2, (unsigned)vm3);
+    }
     for (i = 0; i < YK_OPTION_MAX; ++i) {
         /* ★ 删卡路径的漏洞补在这里（2026-09-12 审计）：`ce_option_drop(c, o)` 在 `o->ptr == 0`
          * 时走的是**原生单子机**那一支（`sdk.c:426`）—— 它无条件删 `card+0x1c` 那个 VM。而多子机卡里
@@ -3228,6 +3247,31 @@ static int on_tick_2(ce_card_t *c)
      *   可我们**恰恰在低速把它们藏了**（`ce_native_option_hide_declare` + 每帧 `sweep` + 隐藏断点把 `lvl`
      *   压 0 ⇒ 连记录都不建）⇒ 若这一行打出「4 格全是 0/状态 0」，机制就当场坐实，修法见下面那条待办。
      *   ⚠ 只读、每进一次妖侧一行（不刷屏）。*/
+    if (!focused && !s_natopt_probe_done) {
+        /* ★ 2026-09-23：**高速**也探一次（`focused` 那一支探的是「藏起来了没」；这一支探的是
+         *   「松 Shift 后它们回没回来、位置动不动」）—— 判「滞留」到底是原生那 4 格还是我们的。*/
+        uint8_t *pl = CE_PLAYER();
+        s_natopt_probe_done = 1;
+        if (pl) {
+            int k, live = 0;
+            for (k = 0; k < CE_NATIVE_OPT_COUNT; ++k) {
+                uint8_t *o = pl + CE_NATIVE_OPT_PLAYER_MUZ0 + (size_t)k * CE_NATIVE_OPT_STRIDE;
+                if (*(const int32_t *)(o + CE_NATOPT_STATE) == 2 ||
+                    *(const uint32_t *)(o + CE_NATOPT_VM_MAIN))
+                    ++live;
+            }
+            ce_log("youkai: native option slots at HIGH speed - %d/4 live (these are what the human "
+                   "side shows and what the row loop's slot>=1 fires from)", live);
+            for (k = 0; k < CE_NATIVE_OPT_COUNT; ++k) {
+                uint8_t *o = pl + CE_NATIVE_OPT_PLAYER_MUZ0 + (size_t)k * CE_NATIVE_OPT_STRIDE;
+                ce_log("youkai:   native opt slot %d: state %d vm %08x muzzle (%.1f, %.1f)", k + 1,
+                       *(const int32_t *)(o + CE_NATOPT_STATE),
+                       (unsigned)*(const uint32_t *)(o + CE_NATOPT_VM_MAIN),
+                       (double)(*(const int32_t *)(o + CE_NATOPT_POS_X) * CE_SUBPIXEL_TO_PIXEL),
+                       (double)(*(const int32_t *)(o + CE_NATOPT_POS_Y) * CE_SUBPIXEL_TO_PIXEL));
+            }
+        }
+    }
     if (focused && !s_natopt_probe_done) {
         uint8_t *pl = CE_PLAYER();
         s_natopt_probe_done = 1;
