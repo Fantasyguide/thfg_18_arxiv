@@ -44,6 +44,13 @@
 - **2026-09-23 追加**：UFO **本体**贴图来自 TH12 **`enemy.anm` script135**（见 `assets/ability/scripts/164_ufo_red.anm.txt`
   的文件头：`make_ufo_art.py` 从 `enemy.anm` script135 生成）⇒ 下一轮找环/闪电时**别只看 `front.anm`**：
   优先查 `enemy.anm`（本体同族）与 `stgenm06.anm`；按 `rotateTime` 形状扫过一遍，命中的文件 = `bullet` / `enemy` / `front` / `pl01` / `stgenm06`（未定论，别据此下结论）。
+- **已排除③（2026-09-23 本轮）**：`0x421371→0x55` 与 `0x421619→0x51` 都不属召唤 ——
+  · `0x421360` 那一处：建 VM 存 `+0x6cac`，紧接着是**分数运算**（`imul $0xf4240` = ×1,000,000、
+    `cmp $0x3b9aca00` = 1e9 封顶、写 `0x4b0c44`）+ 逐槽读表 `0x4b0c4c(,%ebx,4)` ⇒ **收令牌/算分**那条路；
+  · `0x421619` 那一处：建完 `call 0x461920` 查 VM 后 `lea 0x7(%ebx),%edx` = **中断 7+格号**
+    （与我们的槽位中断 7/8/9 同款）⇒ **槽 VM 的创建**（脚本 0x51 = 槽闪光，已知）。
+  ⇒ 下一轮把火力集中在 `0x43xxxx`（`0x436622→0x4d`、`0x438429→0x50`）与 `0x448xxx`（`0x63`/`0x75`），
+    以及**本体脚本的子 VM**（`enemy.anm` script135 的 `scriptNew` 链）。
 - **方法（下一轮照走）**：`objdump -d local/th12.v1.00b/th12.exe > /tmp/th12.asm`，
   认 `call 0x4615a0`（anm 实例化）并取它前面最近的 `push $0xNN` ⇒ 全 exe **142 处**创建点。
   UFO/GUI 家族邻近候选：`0x421371→0x55`、`0x421619→0x51`、`0x4314e3/0x431593→0x51/0x52`、
