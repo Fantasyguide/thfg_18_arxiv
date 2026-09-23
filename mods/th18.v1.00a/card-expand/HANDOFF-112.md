@@ -65,7 +65,14 @@
     就在 `~ufo.c:2635` ⇒ **生成时机 = 这一处**（owner 说的「击破 UFO 时」= 开奖那一刻）。
   · **× 字形**：`SIGNAL_MUL` = `ability/faith_hud/MUL.png`（16×32，共享资产，`ORDER.txt:555`）⇒ 直接用。
   · **数字**：`ATLAS ATLAS_HUD_DIGIT 128x96@4x3`（`ORDER.txt:50`）= 0..9 的图集 + 现成的 HUD 数字脚本族。
-- **两份实现路径（挑一条）**：① **世界层**（推荐）：照 108 的 `yk_popup_*` 先例，用 `ce_anm_spawn` 在世界层起
+- **★ 用哪个脚本（2026-09-23 已反汇编确认，不必再查）**：`CE_ANM_ABILITY_SCRIPT_HUD_GLYPH`（= 136）=
+  `sprite(119) + layer(25) + resolutionMode(2) + pos(0,0,0) + stop()`，中断 1 = `delete()` ⇒
+  **它是 UI 列表脚本**（层 25、**表面 px**）⇒ #20 **只能走 UI 层**（不能走世界层）。
+  调用形状：`ce_anm_spawn_ui(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_HUD_GLYPH, pos_surface)`（第 3 参就是初位置）
+  → 每支 VM 用 `ce_anm_set_sprite(anm, id, …)` 换成「×」(`CE_ANM_ABILITY_SPRITE_SIGNAL_MUL` = 430)
+  或数字（`CE_ANM_ABILITY_SPRITE_ATLAS_HUD_DIGIT_0`..`_9` = 109..118）→ 每帧 `ce_anm_set_pos` / `ce_anm_set_color`。
+  **世界 → 表面**：`surface_x = 640 + world_x*2`、`surface_y = 480 + world_y*2`（居中系，换算口径见 `trance.c` 的注释）。
+- **两条实现路径（挑一条）**：① **世界层**（推荐）：照 108 的 `yk_popup_*` 先例，用 `ce_anm_spawn` 在世界层起
   「×」+ 每位数字各一支 VM，位置 = 开奖时那只 UFO 的世界坐标（每帧写、随它动），颜色 `0xFFFF6060`，
   再叠一支黑色副本错开 `(1,1)` 做描边；② UI 层：`ce_anm_spawn_ui` + 把 UFO 的世界坐标换算成表面 px
   （`640 + x*2` / `480 + y*2`，见 `trance.c` 的换算注释）—— 少一层跟随逻辑但要做换算。
