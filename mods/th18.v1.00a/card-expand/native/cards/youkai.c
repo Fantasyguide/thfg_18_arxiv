@@ -3577,6 +3577,21 @@ static int on_tick_2(ce_card_t *c)
          *（人侧可见可打；妖侧不可见只留魔法阵）。这里只收「妖侧才有的东西」（光环 / 切换环 / 染色）。
          * ⇒ 1:1 映射与闸的夹持态**跨形态保持**（闸的基线行为回归见 §BE 详录 #68）。*/
         yk_leave_youkai(s);
+        /* ★★★ 2026-09-23（owner：「**依旧子机滞留**」）—— **高速安全带**：
+         *   正常路径是 SDK 在帧界叫 `on_option_pose_apply`，那里看到「这一帧我们没声明」就把手里的
+         *   子机交回（`yk_option_release`）。可 owner 反复看到「子机滞留」⇒ 万一那条路没走到
+         *   （退位通知没来 / 池被重建 / 我们上一帧的声明还被当成赢家），子机就会**一直挂在场上**。
+         *   这里在**高速**（= 人侧）每帧做一次兜底：只要我们还攥着子机，就当场交回。
+         *   ⚠ 是**幂等**的：没攥着时 `opt_script < 0 && !opt[0].ptr` ⇒ 一次函数调用 + 两个比较；
+         *     真攥着才会走释放（并打一行 —— 那一行本身也是诊断：若它反复出现，说明帧界那条路有问题）。*/
+        if (s->opt_script >= 0 || s->opt[0].ptr) {
+            static uint32_t s_hs_release_n;
+            ++s_hs_release_n;
+            ce_log("youkai: HIGH-SPEED safety release #%u - we still held options while unfocused "
+                   "(the frame-boundary pose hand-back did not run; this is the belt-and-braces path)",
+                   (unsigned)s_hs_release_n);
+            yk_option_release(c, s);
+        }
         s_natopt_probe_done = 0;      /* ★ 诊断：下次再进妖侧再打一行 */
     }
     yk_familiars_tick(s);
