@@ -1648,6 +1648,7 @@ typedef struct {
 static yk_popup_t s_popup[YK_POPUP_MAX];
 static unsigned s_popup_dropped;
 static uint32_t s_hud_vm_log_tick;   /* ★ 2026-09-23（#30）：逐 VM 实况行的节拍 */
+static uint8_t s_natopt_probe_done;   /* ★ 上一条诊断：每进一次妖侧打一行（离开时复位）*/
 static uint8_t  s_aura_edge_spawn;   /* ★ 2026-09-23（#32/#29）：光环**每个形态边沿只起一次** */   /* ★ 2026-09-23（#30）：逐 VM 实况行的节拍 */
 
 static void yk_popup_kill(yk_popup_t *p)
@@ -3216,6 +3217,38 @@ static int on_tick_2(ce_card_t *c)
      *   ③ 人妖槽漂移（一手 TH08 的聚焦状态机）；
      *   ④ PIV 声明给计分层：**族 08**（`CE_COEFF_FAMILY_08`）+ 未耦合加数 = PIV
      *      —— 这正是 §BE 详录 #43 的「并进 `ecx` 声明」口径（`ΔG_08` 随 `coeff_18` 一起被折扣）。*/
+    /* ★★★ 2026-09-23（owner：妖侧「只有本体在发弹、只有一列（正常两列）」，四机体都是「子机问题」）：
+     *   **机制诊断**（每次进妖侧打一行）：TH18 主炮行循环按行里的 `+0x20` 选膛口 —— `slot 0` = 自机本体，
+     *   `slot >= 1` = **`PLAYER + 0x580 + slot*0xf0` = 引擎自己的 4 格原生子机**（一手 `0x45ec4c`–`0x45ec5d`；
+     *   `engine.h` 的 `CE_NATIVE_OPT_*` 一节），**不是**卡申请的池（`inner+0x410`）。而我们这套 TH08 的行
+     *   正是按 TH08 的子机编号写的（`+0x20` = 0..4）⇒ 那些行要的就是**原生那 4 格**。
+     *   可我们**恰恰在低速把它们藏了**（`ce_native_option_hide_declare` + 每帧 `sweep` + 隐藏断点把 `lvl`
+     *   压 0 ⇒ 连记录都不建）⇒ 若这一行打出「4 格全是 0/状态 0」，机制就当场坐实，修法见下面那条待办。
+     *   ⚠ 只读、每进一次妖侧一行（不刷屏）。*/
+    if (focused && !s_natopt_probe_done) {
+        uint8_t *pl = CE_PLAYER();
+        s_natopt_probe_done = 1;
+        if (pl) {
+            int k, live = 0;
+            for (k = 0; k < CE_NATIVE_OPT_COUNT; ++k) {
+                uint8_t *o = pl + CE_NATIVE_OPT_PLAYER_MUZ0 + (size_t)k * CE_NATIVE_OPT_STRIDE;
+                if (*(const int32_t *)(o + CE_NATOPT_STATE) == 2 ||
+                    *(const uint32_t *)(o + CE_NATOPT_VM_MAIN))
+                    ++live;
+            }
+            ce_log("youkai: native option slots at low speed - %d/4 live (state==2 or a VM). Our TH08 "
+                   "rows fire their slot>=1 rows from THIS array (0x45ec4c), NOT from the card pool; "
+                   "if this is 0/4 the option half of the set cannot fire = 'only one column'", live);
+            for (k = 0; k < CE_NATIVE_OPT_COUNT; ++k) {
+                uint8_t *o = pl + CE_NATIVE_OPT_PLAYER_MUZ0 + (size_t)k * CE_NATIVE_OPT_STRIDE;
+                ce_log("youkai:   native opt slot %d: state %d vm %08x muzzle (%.1f, %.1f)", k + 1,
+                       *(const int32_t *)(o + CE_NATOPT_STATE),
+                       (unsigned)*(const uint32_t *)(o + CE_NATOPT_VM_MAIN),
+                       (double)(*(const int32_t *)(o + CE_NATOPT_POS_X) * CE_SUBPIXEL_TO_PIXEL),
+                       (double)(*(const int32_t *)(o + CE_NATOPT_POS_Y) * CE_SUBPIXEL_TO_PIXEL));
+            }
+        }
+    }
     if (s->hud_ready) {
         ce_hud_slot_get(ce_card_id(c), &s->hud);           /* 每帧取最新锚点（同批后来的认领会重排）*/
         yk_gauge_hud_spawn(c, s);                          /* 自愈：VM 被引擎清过就重建 */
@@ -3483,6 +3516,7 @@ static int on_tick_2(ce_card_t *c)
          *（人侧可见可打；妖侧不可见只留魔法阵）。这里只收「妖侧才有的东西」（光环 / 切换环 / 染色）。
          * ⇒ 1:1 映射与闸的夹持态**跨形态保持**（闸的基线行为回归见 §BE 详录 #68）。*/
         yk_leave_youkai(s);
+        s_natopt_probe_done = 0;      /* ★ 诊断：下次再进妖侧再打一行 */
     }
     yk_familiars_tick(s);
     yk_fam_collide_tick(s);              /* ★ 批次 3：**人侧**撞到使魔 ⇒ MISS（妖侧可穿梭）*/
