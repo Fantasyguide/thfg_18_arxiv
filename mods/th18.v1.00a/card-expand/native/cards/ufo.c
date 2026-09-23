@@ -2708,7 +2708,10 @@ static void ufo_xn_spawn(float wx, float wy, int32_t mult_permille)
             for (k = 0; k < digits - i; ++k) div *= 10;
             spr = CE_ANM_ABILITY_SPRITE_ATLAS_HUD_DIGIT_0 + (val / div) % 10;
         }
-        p[0] = 640.0f + wx * 2.0f - (float)(digits)*UFO_XN_ADVANCE * 0.5f + (float)i * UFO_XN_ADVANCE;
+        /* ★ 2026-09-23 自审订正：整组是 `digits + 1` 个字形（**含「×」**）⇒ 居中偏移必须用 `digits + 1`，
+         *   原来用 `digits` 会让整组偏右半格（观感上「×N 没对准包」）。*/
+        p[0] = 640.0f + wx * 2.0f - (float)(digits + 1) * UFO_XN_ADVANCE * 0.5f
+               + (float)i * UFO_XN_ADVANCE;
         s_xn_x[gx] = p[0];        s_xn_y[gx] = p[1];
         s_xn_x[gy] = p[0] + UFO_XN_SHADOW_DX;  s_xn_y[gy] = p[1] + UFO_XN_SHADOW_DY;
         s_xn_id[gx] = ce_anm_spawn_ui(anm, CE_ANM_ABILITY_SCRIPT_HUD_GLYPH, p);
