@@ -373,6 +373,18 @@ cards: 35 registered from cards.js; shop pool 700/8192 slots, guaranteed offers 
   （**左上角锚**）；内容（逐像素读出）= 单词 `Cherry` + 粉色加号 `+`（+C 前缀）+ 粉色斜杠 `/`
   （樱点 / 最大樱点之间的分隔符）+ 软投影。
 
+- **★ 2026-09-23 新增 `ATLAS_MOF_BOMB_RING_BENT`（entry **70**，`CE_ANM_ABILITY_ATLAS_ATLAS_MOF_BOMB_RING_BENT`）**：
+  110/111 灵击柱环的**连续环**贴图（用户口径「**它不是32段**」⇒ 不再用「卡侧摆 32 片竖条」近似一手的
+  `texCircle(32)`，改成**构建期把那条 14×128 竖条极坐标弯成一整圈**，见 `assets/ability/make_mof_bomb_ring_bent.py`）。
+  画布 **256×256**、**1 个成员**（**基准半径 100 px** ⇒ 环脚本里 `scale = 半径 / 100`）；
+  **append 在最末尾** ⇒ 新 sprite = **487**、同批新脚本 = **327–330**（脚本号原本取 302–305，
+  撞上另一张会话的 `302_ufo_hud_slot.anm.txt`，已让位重编；见 `AUDIT.md` §BE 的登记）。
+  **占的格子 = `ability.anm` 的 entry 索引 70（1 格）、sprite 号 487**，既有 entry / sprite 号一个没动
+  ⇒ entry 用量 **71 / 256**（余量 185）。一手：TH10 `bullet.anm` script394–397 的
+  `sprite(sprite362) + texCircle(32)`（竖条 = `etama3.png` 的 (65,0,14,128)，与 `ATLAS_MOF_BOMB_RING` 同源）。
+  ⚠ 退役但**不删**：脚本 279（实心盘占位）与 293（32 片竖条）留在 `assets/ability/scripts/` 里 ——
+  脚本号不许回收（删文件会让后面所有脚本号整体前移，撞别的会话的宏）。
+
 - **`abcard.anm` 是卡侧最紧的一道墙**（★最紧）：原生 118 条 + 每张新卡 2 条（大图/小图各一 entry），
   现在 190 条 ⇒ **只能再进 33 张**。它现在有**构建期硬门**（`MAX_ENTRIES`，与 `build_ability.py` 同名同口径）：
   越限直接 `SystemExit`、**先于任何写盘**，并且每次构建都印一行余量

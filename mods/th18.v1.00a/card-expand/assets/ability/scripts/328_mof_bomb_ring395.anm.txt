@@ -1,0 +1,22 @@
+script script328 {
+    // ★风神录（TH10，card 110/111 **共用**）灵击四条环之一 —— 一手 `bullet.anm` **script395** 逐条照抄，
+    //   只做两处改动：① `sprite(sprite362)` → `@MOF_BOMB_RING_BENT@`（构建期把竖条 sprite362 (14x128)
+    //   极坐标弯成的**连续环**，见 `assets/ability/make_mof_bomb_ring_bent.py`）；
+    //   ② 删掉 `iset($I0,32) / iset($I1,3) / texCircle($I0)` 三行 —— TH18 的 anm VM 是否执行 `texCircle`
+    //   没有先例（实跑症状 = 竖条被放大成一条大光晕），而用户口径「**它不是32段**」否掉了卡侧摆 32 片的近似。
+    //   唯一换算：烘出来的环**基准半径 100 px / 厚度 14 px**，而原版把 `scale` 当**半径(px)** 用
+    //   ⇒ 这里所有 scale 值 ÷100（原版 16→160 写成 0.16→1.60）；`scaleTime` 的 mode 取 **4**（线性，
+    //   本仓已在用；原版 394/395 写 6/5，那两个 mode 在 TH18 版 anm 里的语义没有一手）。
+    //   起法见总控 `script400`：第 0 帧起 394/395/396，第 10/20/30 帧各再起 397/396/397
+    //   ⇒ 画面上同时有**几条大小不同的环**（用户口径「几个扩大的紫色虚影环」）。
+    blendMode(1);
+    layer(13);
+    sprite(@MOF_BOMB_RING_BENT@);
+    angleVel(0.0f, 0.0f, 0.31415927f);
+    scale(0.16f, 0.16f);
+    scaleTime(60, 4, 0.32f, 1.60f);
++120:
+    alphaTime(20, 0, 0);
++20:
+    delete();
+}

@@ -4897,7 +4897,8 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 | 2026-09-18 | **106–118（共享资源 `assets/cards/` + 共享件 `assets/cardframe.py`、`patch/th18/cards.js`）** | 见下方「§BE-EG」 |
 | 2026-09-17a | **所有卡（共享件 `patch/th18.v1.00a.js` / `th18_card_expand.def` / `Makefile` / `sdk.c`：**摘掉断点 `ce_enemy_damage`**；113 退订 `.on_enemy_damage`）** | 见下方「§BE 详录 #41」 |
 | 2026-09-20 | **109 花映塚 / 110 风神录 / 111 地灵殿 / 112 星莲船 / 107 妖妖梦（P1「缺音效一批」；owner 裁定 A 的收窄版，随后逐个放行 signal / senro / faith）** | 见下方「§BE 详录 #42」 |
-| 2026-09-21 | **所有卡（共享件 `patch/th18/cards.js`：111 的 `category` 由缺省 2 → **0** + 加一行 `desc`；卡侧只动 111 自己的 `cards/signal.c`）** | 见下方「§BE-EV」 |
+| 2026-09-21 | **所有卡（共享件 `patch/th18/cards.js`：111 的 `category` 由缺省 2 → **0** + 加一行 `desc`；卡侧只动 111 自己的 `cards/signal.c`）** | 见下方「§BE-EV」
+| 2026-09-23 | **所有卡（共享资源：`assets/ability/scripts/` 新增 327–330 + `entries/ORDER.txt` 末尾 append `ATLAS_MOF_BOMB_RING_BENT`；`CAPACITY.md` 台账）** | 见下方「§BE 详录 #84」 | |
 | 2026-09-21b | **所有卡（共享件 `patch/th18/cards.js`：117 的 `category` 由 0 → 缺省 2 = 被动；卡侧只动 116 的 `cards/season.c` 与 117 的 `cards/animal.c`）** | 见下方「§BE-EW」 |
 | 2026-09-22b | **所有卡（共享件 `native/cards/bomb10.{h,c}` 的**无敌帧**：灵击发动时按一手给无敌）** | 见下方「§BE-FA」末的 **2026-09-22b 补遗** |
 | 2026-09-21c | **所有卡（新增共享件 `native/cards/bomb10.{h,c}` —— 110/111 的**同一份**灵击实现；共享件 `patch/th18/cards.js` 的 **110** 加 `category: 0` + 一行 `desc`；卡侧动 110 的 `cards/mof.c` 与 111 的 `cards/signal.c`）** | 见下方「§BE-FA」 |
@@ -20998,3 +20999,26 @@ youkai:   native opt slot 2: state 0 vm 00000000 muzzle (0.0, -400.0)   （3/4 �
 **对既有卡的影响面**：**零行为变化** —— 只是字符集多了两个字符（原来这两字符按"未知、跳过一个字距"处理）；
 `ORDER.txt` 只追加（已定稿段逐行未变，新 sprite 号在文件末尾，既有号一个没动）。**回归**：
 `make -C native anm` 幂等、`make check` rc=0（含 `atlas-check` / `check-docs` 381 文件）、`make dllx87` = 0。
+
+## §BE 详录 #84（2026-09-23）：★ **共享资源** `assets/ability/**`（新增图集 `ATLAS_MOF_BOMB_RING_BENT` + 四支环脚本 327–330 + `ORDER.txt` 末尾 append；`CAPACITY.md` 台账）
+
+**为什么必须登记**：`assets/ability/scripts/**`、`assets/ability/entries/ORDER.txt` 都在共享件清单里
+（脚本号 / entry / sprite 号是**全卡共用**的号段，动它们 = 动所有卡的资产表）。
+
+**文件 → 改了什么 → 为什么 → 谁改的 → 怎么验证的**
+
+| 文件 | 改了什么 | 为什么 | 验证 |
+| --- | --- | --- | --- |
+| `assets/ability/make_mof_bomb_ring_bent.py`（新）| 把 TH10 那条 14×128 竖条**极坐标弯成一整圈**，烘成 256×256 的 `MOF_BOMB_RING_BENT.png`（基准半径 **100 px**、厚 14 px；`--dump` 打 ASCII 自检）| 一手四支柱环写的是 `sprite(sprite362) + texCircle(32)`，而 **TH18 的 anm VM 是否执行 `texCircle` 没有实跑先例**（§BE #31 起就记着这条）；owner 2026-09-23 口径「**它不是32段**」⇒ 弯圈挪到构建期做，画出来的形状与一手一致 | `python3 -c … --dump`：4158 个不透明像素、环连续（无缺口）|
+| `assets/ability/entries/ORDER.txt` | **末尾** append 一段图集：`ATLAS ATLAS_MOF_BOMB_RING_BENT 256x256` + 成员 `MOF_BOMB_RING_BENT … @0,0,256x256` | `ORDER.txt` 只许追加（`ORDER.frozen.txt` 的已定稿段逐行不许动）；段尾 ⇒ 新号在其后 | `build_ability.py`：`重排检测` 通过、图集成员从 anm 回读**逐像素等于原图** ✅ |
+| `assets/ability/scripts/327..330_mof_bomb_ring394..397.anm.txt`（新）| TH10 `bullet.anm` script394–397 的逐条移植（`sprite` 换成新图集成员；删 `texCircle`；数值只做 scale ÷100 的换算）| 110/111 灵击动画 = 一手 script400 排期的六支柱环（见 `TUNING.md` §2.0zze）| 同上 + `make check` 全绿 |
+| 号段占用 | 新 entry = **70**、新 sprite = **487**、新脚本 = **327–330** | 脚本号原本取 **302–305**，**撞上另一张会话的 `302_ufo_hud_slot.anm.txt`** ⇒ 让位改 327–330（同批报错 = `327_mof_bomb_ring394.anm.txt：开头应为 script script327 {`）。**既有号一个都没动** | `git diff native/anm_ids.h` = 纯新增；`capcheck` 全绿 |
+| `CAPACITY.md` | §3.2 台账追加 `ATLAS_MOF_BOMB_RING_BENT` 一条（entry 70 / sprite 487 / 脚本 327–330 / 余量 185）| `capcheck` 硬门：新图集宏必须登记进台账（否则 `make check` 红）| `make check` → `capcheck：全绿 ✅` |
+| 退役（**不删**）| 卡侧不再 spawn 脚本 279（实心盘占位）与 293（32 片竖条）；两条脚本文件**留在原号** | 脚本号不许回收：删文件会让后面所有脚本号整体前移，撞到别的会话的宏（本次 302 撞号就是这个坑的反面教训）| `grep -c BOMB_CLEAR_RING native/cards/bomb10.c` = 0（只剩注释里的历史说明）|
+
+**对既有卡的影响面**：**零** —— `sprite -1`/`layer 13` 之外没有共享字段变化；
+新 entry / sprite / 脚本号全部 append 在末尾，`ORDER.frozen.txt` 的已定稿段逐行未变；
+`ability.anm` entry 用量 65 → **71 / 256**（余量 185，仍远松于 `abcard.anm` 那道最紧的墙）。
+**别的会话需要知道的一件事**：`302–305` 这四个号**已经被占**（`302_ufo_hud_slot`），
+以后再往 `assets/ability/scripts/` 加脚本请**先 `ls` 一遍再定号**，构建期报的
+「开头应为 script scriptN」就是撞号信号。

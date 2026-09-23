@@ -89,10 +89,13 @@
  *   · `BOMB10_DMG_SRC_LIFE` = 2 帧 —— 只为一帧余量：`enm_compute_damage_sources` `th18:0x45f0f0`
  *     的 tag 守卫让**一个源对同一敌人只结算一次** ⇒ 每帧一个新源 = 每帧一笔。
  *   · `BOMB10_FIELD_*` —— TH10/TH18 游玩区同量纲 384×448（世界坐标 −192..192 / 0..448）。
- *   · `BOMB10_RING_FADE_AT` = 120（= `MOF_BOMB_R_GROW_FRAMES`：半径长满那一帧起淡出；
- *     一手 `bullet.anm` script400 的 `scaleTime(120, 6, 16.0 → 160.0)`）；
- *     `BOMB10_SPARK_EVERY` = 6（❓ 自定节流：一手 TH10 灵击在**同一帧**起 12 颗火星，
- *     摊进 120 帧里更安静，登记 `TUNING.md` §2.5）。
+ *   · `BOMB10_RING_VMS` / `BOMB10_RING_LEAF_*` —— 一手 TH10 `bullet.anm` **script400**（灵击本体脚本）
+ *     的 `scriptNew` 排期，逐条见 `bomb10.c` 的 `s_ring_sched` 表与文件头：
+ *     六支柱环（394/395/396 在第 0 帧、397/396/397 在第 10/20/30 帧）+ 火星第一趟在第 31 帧、
+ *     每 30 帧一趟、一趟 4 颗（红蓝红蓝）。★ 2026-09-23 起**不再**用「卡侧摆 32 片」那个近似
+ *     （用户口径「**它不是 32 段**」），改回一手的配方（贴图走构建期烘出的**连续环**）。
+ *     旧的 `BOMB10_RING_FADE_AT` / `BOMB10_RING_FADE_EXTRA` / `BOMB10_SPARK_EVERY`
+ *     三个常量随 32 片方案一起退役（淡出/寿命现在由脚本自己走，见 `bomb10.c`）。
  *   · `BOMB10_CANCEL_MODE` = 1 —— 消弹让**引擎自己**撒消弹点（一手 `engine/bullet/th18/01-cancel-to-item.md`
  *     §2.1：mode 1 撒 type 9、角 `rand×10° − π/2`、速 2.2）；用户 2026-09-16q 口径
  *     「微档点可以完全认为是 TH18 消弹点」。
@@ -117,9 +120,10 @@
 #define BOMB10_FIELD_H         448.0f     /* 游玩区高（世界坐标 0..448）*/
 #define BOMB10_FIELD_CX        0.0f
 #define BOMB10_FIELD_CY        224.0f
-#define BOMB10_RING_FADE_AT    120        /* 环淡出时点 = 半径长满那一帧（= `MOF_BOMB_R_GROW_FRAMES`）*/
-#define BOMB10_RING_FADE_EXTRA 30         /* 淡出发了之后还没死 ⇒ 硬删的兜底帧数（防漏 VM）*/
-#define BOMB10_SPARK_EVERY     6          /* 火星出生节流（❓ 自定，见文件头）*/
+#define BOMB10_RING_VMS        6          /* 柱环 VM 槽数（一手 script400 一共 `scriptNew` 六次）*/
+#define BOMB10_RING_LEAF_FIRST 31         /* 火星/枫叶第一趟的帧号（一手 script400 的 `+1: // 31`）*/
+#define BOMB10_RING_LEAF_EVERY 30         /* 火星每趟间隔（一手 `interruptLabel($I0, offset128, 30)`）*/
+#define BOMB10_RING_LEAF_UNITS 4          /* 每趟颗数 = 红蓝红蓝（一手脚本正文四行 `scriptNew`）*/
 #define BOMB10_CANCEL_MAX      99999      /* 消弹颗数上限（一手 TH10 的 `cancel_circle` 也没有上限）*/
 #define BOMB10_CANCEL_MODE     1          /* 消弹模式（1 = 引擎撒 type 9 消弹点）*/
 #define BOMB10_DMG_CAP         MOF_BOMB_DMG_CAP  /* 伤害上限抬升值（❓ 自定，理由见 mof_core.h）*/

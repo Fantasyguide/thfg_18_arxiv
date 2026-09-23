@@ -11,19 +11,69 @@
 #include "sdk.h"
 #include "bomb10.h"
 
-/* ---- 视觉：**电流边环**的 32 片（一手 TH10 `bullet.anm` script394–397 的 `texCircle(32)`）----
- * 为什么改成「卡侧摆 32 片」：TH10 那四条环脚本写的是 `sprite(sprite362) + texCircle(32)`
- * （sprite362 = `etama3.png` 的 **(65,0,14,128)** 竖条），而 **TH18 的 anm VM 是否执行 `texCircle`
- * 没有先例**（`AUDIT.md` 早就标了「`texCircle` 在世界列表没有实跑先例」）。用户实跑看到的现象
- * （2026-09-23）正好是「`texCircle` 没生效」的形状：**一条被放大 16 倍的竖条 = 画面上一团大光晕**，
- * 而该有的那一圈电弧不存在。⇒ 我们不再依赖那条指令：**自己摆 32 片**（与 107 的 32 颗同一手法），
- * 每片=条带的 1/32 弧长、厚度恒 14 px（= 条带自己的宽）、切线朝向，角上按一手自转 18°/帧。
- * 一手对位：`scale(16,16)` → `scaleTime(60, …, 32, 160)` 表示「环半径从 16 长到 160 px」，
- * 与卡侧每帧给 `r`（`mof_core_bomb_radius_centi()` 的 px 值）同口径 ⇒ 半径仍由卡侧那一个数说了算。*/
-#define BOMB10_RING_UNITS      32           /* 一手 `iset($I0, 32); texCircle($I0)`（script394–397）*/
-#define BOMB10_RING_SPIN       0.31415927f  /* rad/帧 = 18°（一手 script394 的 `angleVel(0,0,-0.31415927f)`）*/
-#define BOMB10_RING_STRIP_W    14.0f        /* 条带 sprite362 的宽（`th10` etama3.png (65,0,14,128)）= 环厚(px)*/
-#define BOMB10_RING_STRIP_H    128.0f       /* 条带的高 = 一片覆盖的弧长基准（32 片首尾相接成整圈）*/
+/* ---- 视觉：TH10 灵击本体脚本的**排期**（一手 `th10` `bullet.anm` **script400**）----
+ *
+ * ══ 这是什么 ═══════════════════════════════════════════════════════════════════════════
+ *   TH10 的灵击本体 = `bullet.anm` script400（灵梦）/ 407（魔理沙）/ 441（符卡中）。它**自己几乎不画东西**，
+ *   只做两件事：① `scale(16,16) + scaleTime(120, 6, 16 → 160)` —— **这个 scale 就是灵击半径**
+ *   （`Bomb::on_tick` 每帧 `[bomb+0x3c] = vm.scale.y`，`th10:0x40580e`/`0x405813`）；② `scriptNew` 出一堆子 VM。
+ *   子 VM 的排期（一手原文，v4 `anmmap` 的名字）：
+ *       script400 { scale(16,16); scaleTime(120,6,16.0f,160.0f);
+ *                   scriptNew(394); scriptNew(395); scriptNew(396);        // 第 0 帧
+ *                 +10: scriptNew(397);                                      // 第 10 帧
+ *                 +10: scriptNew(396);                                      // 第 20 帧
+ *                 +10: scriptNew(397);                                      // 第 30 帧
+ *                   iset($I0, 80);
+ *                 +1: // 31
+ *                 offset128: scriptNew(398); scriptNew(399); scriptNew(398); scriptNew(399);
+ *                            jmpDec($I0, offset128, 30);
+ *                 +20: delete(); }
+ *   ⇒ **六支柱环 + 每 30 帧一趟 4 颗火星**（红蓝红蓝，直到灵击结束）。
+ *
+ * ══ 2026-09-23：为什么把「卡侧摆 32 片」换回一手配方 ═══════════════════════════════════
+ *   上一版没有移植贴图，用「卡侧摆 32 片竖条」近似 `texCircle(32)`（TH10 四支柱环写的是
+ *   `sprite(sprite362) + texCircle(32)`，把一条 14×128 的渐变竖条弯成圈）。用户实跑给了正确形状：
+ *   「**它不是32段**，然后内外还会发射红色和蓝色的枫叶特效，放的时候还会有几个扩大的紫色虚影环」
+ *   ⇒ ① 环必须是**连续**的（烘焙成一张环贴图，见 `make_mof_bomb_ring_bent.py`）；
+ *     ② 火星（枫叶）**内外都发、红蓝两色**（脚本 398 红往外 160→208 / 399 蓝往里 160→112，本仓已有）；
+ *     ③ 起手那几帧要有**几个越来越大的紫色环**（= 一手的 script396/397：`color(255,0,255)`。
+ *        扬色 + 半径 16→200 px + 60 帧寿命，在第 0/10/20/30 帧各起一支 ⇒ 画面上就是「几个扩大的紫色虚影环」）。
+ *
+ * ══ 逐条落位（一手 → 本仓）═════════════════════════════════════════════════════════════
+ *   | 一手 | 本仓 | 说明 |
+ *   | script394 | 脚本 327 `MOF_BOMB_RING394` | 白/电边，`angleVel(0,0,−0.31415927)` = −18°/帧，半径 32→160 px |
+ *   | script395 | 脚本 328 `MOF_BOMB_RING395` | 同上，自转 **+18°/帧**、半径 16→160 px |
+ *   | script396 | 脚本 329 `MOF_BOMB_RING396` | **紫**（`color(255,0,255)`），+6°/帧，半径 16→200 px |
+ *   | script397 | 脚本 330 `MOF_BOMB_RING397` | 同上，自转 **−6°/帧** |
+ *   | script398 | 脚本 280 `MOF_BOMB_SPARK`（已有）| 红枫叶**往外** 160→208 px |
+ *   | script399 | 脚本 281 `MOF_BOMB_SPARK_BLUE`（已有）| 蓝枫叶**往里** 160→112 px |
+ *   六次 `scriptNew` 的时点由下面的 `s_ring_sched` 表给；火星的时点由 `BOMB10_RING_LEAF_*` 给。
+ *
+ * ══ 两处**必须**偏离一手的地方（都登记 `TUNING.md`）═══════════════════════════════════
+ *   ① **不做父子层级**：TH18 卡侧 `ce_anm_spawn` 起的是**平铺** VM（v8 的 `scriptNew` 才是「带父级的子 VM」）
+ *      ⇒ 一手「子环的 scale 乘在主脚本的 scale 上」这层乘法没有了。取法：**把柱环脚本自己的 scale 当 px 半径**
+ *      （烘出来的环**基准半径正好 100 px** ⇒ `scale` 就是「多少个 100 px」），于是 394 的 `scaleTime(60,4,0.32→1.60)`
+ *      = 半径 32→160 px —— **正好等于灵击半径**（`MOF_BOMB_R_*_CENTI` 的目标值 16000 = 160 px）✓。
+ *   ② **`scale` / `alpha` 一律不写**：脚本自己跑 `scaleTime` / `alphaTime`（卡侧每帧写 scale 会被插值器盖掉，
+ *      `native/sdk.h:330`）⇒ 卡侧**只写位置**（灵击中心每帧上移，环得跟着走），淡出与自删全交给脚本。
+ *      这也让「几个扩大的紫色虚影环」成立：六支柱环各自按**自己的出生帧**长大 ⇒ 半径天然错开。
+ *   ③ 已退役：脚本 279（❓ 自定的实心盘占位）与 293（32 片竖条）**不再从这里 spawn** —— 一手没有实心盘，
+ *      而「32 段」正是用户否掉的那个形状。两条脚本留在 `assets/ability/scripts/` 里不动（脚本号不许回收：
+ *      删文件会让后面的脚本号整体前移，撞到别的会话的脚本）。
+ */
+#define BOMB10_RING_RADIUS_100 100.0f       /* 环贴图的基准半径(px) = 环脚本 scale 1.0 的可见半径 */
+
+/* 排期表：`at` = 出生帧（相对灵击发动；一手 script400 的标签帧号），`script` = 柱环脚本号。*/
+static const struct { int32_t at; uint32_t script; const char *tag; } s_ring_sched[] = {
+    {  0, CE_ANM_ABILITY_SCRIPT_MOF_BOMB_RING394, "394白" },
+    {  0, CE_ANM_ABILITY_SCRIPT_MOF_BOMB_RING395, "395白" },
+    {  0, CE_ANM_ABILITY_SCRIPT_MOF_BOMB_RING396, "396紫" },
+    { 10, CE_ANM_ABILITY_SCRIPT_MOF_BOMB_RING397, "397紫" },
+    { 20, CE_ANM_ABILITY_SCRIPT_MOF_BOMB_RING396, "396紫" },
+    { 30, CE_ANM_ABILITY_SCRIPT_MOF_BOMB_RING397, "397紫" },
+};
+#define BOMB10_RING_SCHED_N ((int32_t)(sizeof s_ring_sched / sizeof s_ring_sched[0]))
+
 
 /* ---- 一发灵击的全部状态（**进程里只有这一份**：bomb10.h 的硬语义 ①）---- */
 typedef struct {
@@ -40,13 +90,12 @@ typedef struct {
     int32_t  owner_id;     /* 本发的发动者卡号（诊断：两张同装时看得出是谁发的）*/
     const bomb10_host_t *host;  /* 本发的发动者（卡侧那一半的回调都走它）*/
     void    *user;              /* 本发的发动者的卡私有状态（回调第一参）*/
-    uint32_t ring_vm[BOMB10_RING_UNITS];  /* 电流边环的 32 片 VM（脚本 293；0 = 没起 / 已收）。
-                                           * ★ 2026-09-23 起**取代**原来「279 实心盘 + 293 单条带」那一对：
-                                           *   实心盘是本仓的占位（一手 TH10 没有它），单条带是不认 `texCircle`
-                                           *   时的半成品（会被放大成一条大光晕）—— 两个都不该留。*/
-    float    ring_spin;    /* 环的自转角（rad；每帧 += `BOMB10_RING_SPIN`）*/
-    int32_t  ring_fading;  /* 环已发过淡出中断（不再写 scale，只在兜底帧数上硬删）*/
-    int32_t  spark_tick;   /* 火星出生节流计数（每 `BOMB10_SPARK_EVERY` 帧一红一蓝）*/
+    uint32_t ring_vm[BOMB10_RING_VMS];    /* 六支柱环的 VM 句柄（脚本 327–330；0 = 还没起 / 已自删）。
+                                           * ★ 2026-09-23 起**取代**「279 实心盘 + 293 单条带 + 卡侧 32 片」
+                                           *   那一套：实心盘是本仓的占位（一手 TH10 没有它），32 片是不认
+                                           *   `texCircle` 时的近似（用户口径「**它不是32段**」）—— 两个都不该留。*/
+    int32_t  ring_next;    /* 下一根要起的柱环在 `s_ring_sched` 里的下标（排期按帧号升序 ⇒ 顺序推即可）*/
+    int32_t  leaf_tick;    /* 诊断：本发一共起了几颗火星（一手：每 30 帧一趟、一趟 4 颗）*/
     int32_t  invuln_left;  /* ★ 2026-09-22：本发**还剩几帧无敌**（一手 270 / 决死 200；
                             *   见 `bomb10.h` 的「无敌帧」段）。机器每帧声明它、数到 0 声明 0。*/
 } bomb10_run_t;
@@ -77,34 +126,38 @@ void bomb10_cancel_impending_death(void)
     ((void (__attribute__((thiscall)) *)(void *))(uintptr_t)BOMB10_FN_CANCEL_IMPENDING_DEATH)(p);
 }
 
-/* ---- 视觉：收干净（脚本 279/293 **自己不会死**，`stop()` 之后只画 ⇒ 必须显式删）---- */
+/* ---- 视觉：收干净（柱环脚本自己会 `delete()`，但删卡那一路没人替我们收 ⇒ 句柄必须显式删）---- */
 static void bomb10_fx_kill(void)
 {
     int i;
-    for (i = 0; i < BOMB10_RING_UNITS; ++i) {
+    for (i = 0; i < BOMB10_RING_VMS; ++i) {
         if (s_run.ring_vm[i]) { ce_anm_delete(s_run.ring_vm[i]); s_run.ring_vm[i] = 0; }
     }
-    s_run.ring_spin = 0.0f;
+    s_run.ring_next = 0;
 }
 
 /* 诊断一行：把环 VM 的关键字段打出来（用户两次报「起了 VM 却看不见」⇒ 一眼分辨
- * 「字段不对（我们的 bug）」还是「字段都对但不画（图元/层的问题）」）。对照物 = `signal/opt:` 那行。*/
+ * 「字段不对（我们的 bug）」还是「字段都对但不画（图元/层的问题）」）。对照物 = `signal/opt:` 那行。
+ * ★ 2026-09-23：环现在由脚本自走 `scale`（卡侧不写）⇒ 这里的 `scale` 读数是**脚本自己跑出来的值**，
+ *   正常应当看到它随帧长大（32→160 px 那一档 = 0.32→1.60）。*/
 static void bomb10_fx_dump(const char *tag)
 {
-    uint8_t *vm = s_run.ring_vm[0] ? ce_anm_get_vm(s_run.ring_vm[0]) : 0;
+    uint32_t first = 0;
+    uint8_t *vm;
     int i, alive = 0;
 
-    for (i = 0; i < BOMB10_RING_UNITS; ++i)
-        if (s_run.ring_vm[i] && ce_anm_get_vm(s_run.ring_vm[i])) ++alive;
+    for (i = 0; i < BOMB10_RING_VMS; ++i) {
+        if (s_run.ring_vm[i] && ce_anm_get_vm(s_run.ring_vm[i])) { ++alive; if (!first) first = s_run.ring_vm[i]; }
+    }
+    vm = first ? ce_anm_get_vm(first) : 0;
     if (!vm) {
-        ce_log("%s/fx: %s ring 片[0] vm=%u **alive=0**（VM 已经不在了；活着的片 %d/%d）",
-               s_run.host ? s_run.host->log_tag : "bomb10", tag, (unsigned)s_run.ring_vm[0], alive,
-               (int)BOMB10_RING_UNITS);
+        ce_log("%s/fx: %s 环 vm=0 **alive=0**（六支柱环都已经不在了；`ring_next`=%d/%d）",
+               s_run.host ? s_run.host->log_tag : "bomb10", tag, (int)s_run.ring_next, (int)BOMB10_RING_SCHED_N);
         return;
     }
-    ce_log("%s/fx: %s ring 片[0] vm=%u 活 %d/%d sprite=%d scale=(%.3f,%.3f) pos=(%.1f,%.1f) c1=%08x c2=%08x frames=%d",
-           s_run.host ? s_run.host->log_tag : "bomb10", tag, (unsigned)s_run.ring_vm[0], alive,
-           (int)BOMB10_RING_UNITS,
+    ce_log("%s/fx: %s 首个活环 vm=%u 活 %d/%d sprite=%d scale=(%.3f,%.3f) pos=(%.1f,%.1f) c1=%08x c2=%08x frames=%d",
+           s_run.host ? s_run.host->log_tag : "bomb10", tag, (unsigned)first, alive,
+           (int)BOMB10_RING_VMS,
            (int)*(const int32_t *)(vm + CE_ANM_VM_SPRITE_ID),
            (double)((const float *)(vm + CE_ANM_VM_SCALE))[0],
            (double)((const float *)(vm + CE_ANM_VM_SCALE))[1],
@@ -113,6 +166,40 @@ static void bomb10_fx_dump(const char *tag)
            *(const uint32_t *)(vm + CE_ANM_VM_COLOR1),
            *(const uint32_t *)(vm + CE_ANM_VM_COLOR2),
            (int)s_run.frames);
+}
+
+/* ---- 柱环的两件事：到点起（排期表）、每帧跟着灵击中心 ------------------------------------
+ * 一手：柱环是主脚本的**子 VM**（`scriptNew`）⇒ 位置天生跟着主脚本走，主脚本又跟着灵击中心。
+ * 我们平铺 spawn（见文件头的偏离 ①）⇒ 位置得由卡侧每帧补上。**scale 绝不碰**（偏离 ②）。*/
+static void bomb10_ring_spawn_due(void)
+{
+    while (s_run.ring_next < BOMB10_RING_SCHED_N &&
+           s_run.elapsed >= s_ring_sched[s_run.ring_next].at) {
+        const int32_t  k  = s_run.ring_next++;
+        const uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(), s_ring_sched[k].script, 13);
+        int i;
+        if (!id) {
+            ce_log("%s: 柱环 %s 起不来（帧 %d，ANM VM 池满？）",
+                   s_run.host ? s_run.host->log_tag : "bomb10", s_ring_sched[k].tag, (int)s_run.elapsed);
+            continue;
+        }
+        for (i = 0; i < BOMB10_RING_VMS; ++i)
+            if (!s_run.ring_vm[i]) { s_run.ring_vm[i] = id; break; }
+        (void)ce_anm_set_pos(id, s_run.x, s_run.y, 0.0f);
+        ce_log("%s/fx: 起柱环 %s vm=%u 帧 %d（脚本 %u）",
+               s_run.host ? s_run.host->log_tag : "bomb10", s_ring_sched[k].tag, (unsigned)id,
+               (int)s_run.elapsed, (unsigned)s_ring_sched[k].script);
+    }
+}
+
+static void bomb10_ring_follow(float cx, float cy)
+{
+    int i;
+    for (i = 0; i < BOMB10_RING_VMS; ++i) {
+        if (!s_run.ring_vm[i]) continue;
+        if (!ce_anm_get_vm(s_run.ring_vm[i])) { s_run.ring_vm[i] = 0; continue; }  /* 脚本自删 ⇒ 清句柄 */
+        (void)ce_anm_set_pos(s_run.ring_vm[i], cx, cy, 0.0f);
+    }
 }
 
 /* ======================================================================================
@@ -160,13 +247,12 @@ int32_t bomb10_start(const bomb10_host_t *host, void *user, int32_t by_hit)
     s_run.elapsed      = 0;
     s_run.frames       = 0;
     s_run.dmg_frames   = 0;
-    s_run.ring_fading  = 0;
-    s_run.spark_tick   = 0;
+    s_run.leaf_tick    = 0;
+    s_run.ring_next    = 0;
     {
         int i;
-        for (i = 0; i < BOMB10_RING_UNITS; ++i) s_run.ring_vm[i] = 0;
+        for (i = 0; i < BOMB10_RING_VMS; ++i) s_run.ring_vm[i] = 0;
     }
-    s_run.ring_spin    = 0.0f;
 
     /* 无敌（一手；口径与「为什么不是每帧刷」见 `bomb10.h` 的「无敌帧」段）：
      * 普通灵击 270 帧（`th10:0x4259be push 0x10e`）、决死 200 帧（`th10:0x425c2d push 0xc8`）。
@@ -181,39 +267,13 @@ int32_t bomb10_start(const bomb10_host_t *host, void *user, int32_t by_hit)
      * （门槛不过时上面已经 return ⇒ 不救命，照常死）。两张卡原来都在同一个位置上。*/
     if (by_hit) bomb10_cancel_impending_death();
 
-    /* 范围环（脚本 279；半径逐帧给 px、起点 = TH10 的 16.00）+ 电流边（脚本 293）
-     * —— 两点与改动前**逐字相同**（同一脚本号、同一层 13、同一初值）。*/
-    r = mof_core_bomb_radius_centi(0, s_run.target_centi);
-    /* ★ 2026-09-23：**电流边环 = 32 片自己摆**（见上面常量段的注）。
-     *   起手半径 = 一手 script394–397 的 `scale(16,16)` = **16 px**（`r` 的初值同源）。*/
-    {
-        const float r0 = (float)r * 0.01f;                 /* 1/100 px → px */
-        int i, made = 0;
-        for (i = 0; i < BOMB10_RING_UNITS; ++i) {
-            const float th = (6.2831853f * (float)i) / (float)BOMB10_RING_UNITS;
-            float off[2];
-            uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_MOF_BOMB_RING_STRIP, 13);
-            if (!id) continue;
-            s_run.ring_vm[i] = id;
-            ce_polar_to_vel(off, th, r0);                  /* 引擎自己的 FSINCOS（不引 libm、不入 x87）*/
-            ce_anm_set_pos(id, s_run.x + off[0], s_run.y + off[1], 0.0f);
-            /* ★ 2026-09-23 订正（用户实跑：「**每一截都旋转了 90°**，看着跟太阳光环似的」）：
-             *   贴条 sprite362 是 **14 宽 × 128 高** ⇒ 它的**长边 = 局部 +y**。VM 旋转 φ 之后，
-             *   局部 +y 指向**世界角 `π/2 + φ`**（TH18 的角度约定：0 = +x、π/2 = **下** = +y）
-             *   ⇒ 要长边沿**切向**（= `θ + π/2`）就得 **φ = θ**。原来写的 `th + 1.5707964f`
-             *   把长边转到了**半径方向** ⇒ 32 片变成放射状 = 太阳光环 ✗。*/
-            ce_anm_set_rotation(id, 0.0f, 0.0f, th);
-            ce_anm_set_scale(id, 1.0f, (6.2831853f * r0 / (float)BOMB10_RING_UNITS) / BOMB10_RING_STRIP_H);
-            ++made;
-        }
-        if (made != (int)BOMB10_RING_UNITS)
-            ce_log("%s: 电流边环只起了 %d/%d 片（ANM VM 池满？）",
-                   s_run.host ? s_run.host->log_tag : "bomb10", made, (int)BOMB10_RING_UNITS);
-    }
-    ce_log("%s: 灵击范围环起 VM（id %u，脚本 %d，层 13，起点半径 %.2f px）",
-           host->log_tag, (unsigned)s_run.ring_vm, (int)CE_ANM_ABILITY_SCRIPT_BOMB_CLEAR_RING,
-           (double)((float)r * 0.01f));
+    /* 柱环：第 0 帧起 394/395/396（一手 script400 的头三行 `scriptNew`）——
+     * 半径/淡出/自删**全在脚本里**（见文件头的「两处必须偏离一手」），卡侧只给出生点。*/
+    r = mof_core_bomb_radius_centi(0, s_run.target_centi);   /* 仍在别处用（伤害/消弹的半径曲线）*/
+    (void)r;
+    bomb10_ring_spawn_due();
     bomb10_fx_dump("起");
+
 
     /* 音效（TH10 `se_slash.wav` ↔ TH18 同 wav id 0x2c）*/
     ce_play_sound(BOMB10_SE, pp[0]);
@@ -329,61 +389,33 @@ void bomb10_tick(int32_t driver)
     ++s_run.elapsed;
     ++s_run.frames;
 
-    /* ③ 范围环：逐帧跟着「本帧的真半径」长；长满那一帧起淡出（= TH10 的 120 帧成长），
-     *    淡出后 30 帧还没死就硬删兜底。火星按 `BOMB10_SPARK_EVERY` 帧一红一蓝（脚本 280/281）。*/
-    if (s_run.ring_vm[0] || s_run.ring_fading) {
-        /* 本帧先把「脚本自己死掉的片」清句柄（自愈；`ce_anm_get_vm` 返回 0 ⇒ 那一片已经没了）。*/
-        int i, live = 0;
-        for (i = 0; i < BOMB10_RING_UNITS; ++i)
-            if (s_run.ring_vm[i] && !ce_anm_get_vm(s_run.ring_vm[i])) s_run.ring_vm[i] = 0;
-
-        if (s_run.ring_fading) {
-            if (s_run.elapsed > BOMB10_RING_FADE_AT + BOMB10_RING_FADE_EXTRA) {
-                bomb10_fx_kill();                            /* 兜底：淡出后还没自删就硬删 */
-            }
-        } else {
-            if (s_run.elapsed >= BOMB10_RING_FADE_AT) {
-                for (i = 0; i < BOMB10_RING_UNITS; ++i)
-                    if (s_run.ring_vm[i]) ce_anm_interrupt(s_run.ring_vm[i], 1);   /* 20 帧淡出 → 脚本自删 */
-                s_run.ring_fading = 1;
-            } else {
-                /* ★ 32 片的首尾相接：一片覆盖的弧长 = 2πr/32 ⇒ 高度方向缩放 = 弧长/128（厚度恒 14 px，
-                 *   所以 x 方向恒 1.0）。位置 = 圆心 + polar(θ, r)，朝向 = 切线（θ+90°）。
-                 *   环整体按一手自转 18°/帧（`BOMB10_RING_SPIN`）。*/
-                const float arc = 6.2831853f * r / (float)BOMB10_RING_UNITS;
-                const float sy  = arc / BOMB10_RING_STRIP_H;
-                s_run.ring_spin += BOMB10_RING_SPIN;
-                if (s_run.ring_spin > 6.2831853f) s_run.ring_spin -= 6.2831853f;
-                for (i = 0; i < BOMB10_RING_UNITS; ++i) {
-                    float off[2];
-                    const float th = s_run.ring_spin + (6.2831853f * (float)i) / (float)BOMB10_RING_UNITS;
-                    if (!s_run.ring_vm[i]) continue;
-                    ce_polar_to_vel(off, th, r);
-                    (void)ce_anm_set_pos(s_run.ring_vm[i], center[0] + off[0], center[1] + off[1], center[2]);
-                    /* 旋转 = θ（长边切向；订正理由见 spawn 那段：多加了 90° 会变成放射状/太阳光环）*/
-                    (void)ce_anm_set_rotation(s_run.ring_vm[i], 0.0f, 0.0f, th);
-                    (void)ce_anm_set_scale(s_run.ring_vm[i], 1.0f, sy);
-                    ++live;
-                }
-                if (s_run.elapsed == BOMB10_RING_FADE_AT + 2) bomb10_fx_dump("长满后");
-            }
+    /* ③ 柱环 + 火星（脚本 327–330 / 280 / 281）—— 排期**逐条照抄一手 script400**：
+     *    · 柱环：到点起（第 0/10/20/30 帧共六支），之后每帧只写位置（环跟着上移的灵击中心走）；
+     *      半径 / 淡出 / 自删全由脚本自己跑 ⇒ 卡侧**不写 scale、不发 interrupt**。
+     *    · 火星（枫叶）：**第 31 帧第一趟**，之后每 30 帧一趟、一趟 4 颗 = 红蓝红蓝
+     *      （一手 `+1: offset128: scriptNew(398);(399);(398);(399); jmpDec($I0, offset128, 30)`）。
+     *      ⚠ 上界：一手那个循环是 `iset($I0, 80)`（80 趟 = 2400 帧），实际由**灵击寿命**截断
+     *      （我们 296 帧 ⇒ 9 趟 36 颗；TH10 亦同，主脚本的 `+20: delete()` 只是兜底）。*/
+    bomb10_ring_spawn_due();
+    bomb10_ring_follow(center[0], center[1]);
+    if (s_run.elapsed >= BOMB10_RING_LEAF_FIRST &&
+        (s_run.elapsed - BOMB10_RING_LEAF_FIRST) % BOMB10_RING_LEAF_EVERY == 0) {
+        int k;
+        for (k = 0; k < BOMB10_RING_LEAF_UNITS; ++k) {
+            const uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(),
+                                             (k & 1) ? CE_ANM_ABILITY_SCRIPT_MOF_BOMB_SPARK_BLUE
+                                                     : CE_ANM_ABILITY_SCRIPT_MOF_BOMB_SPARK, 13);
+            if (id) { (void)ce_anm_set_pos(id, center[0], center[1], 0.0f); ++s_run.leaf_tick; }
         }
-        (void)live;
-    }
-    if (++s_run.spark_tick >= BOMB10_SPARK_EVERY) {
-        uint32_t red  = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_MOF_BOMB_SPARK, 13);
-        uint32_t blue = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_MOF_BOMB_SPARK_BLUE, 13);
-        s_run.spark_tick = 0;
-        if (red)  ce_anm_set_pos(red,  center[0], center[1], 0.0f);
-        if (blue) ce_anm_set_pos(blue, center[0], center[1], 0.0f);
     }
 
-    /* ④ 收尾（脚本 279/293 自己不会死 ⇒ 两条环 VM 都要显式删）*/
+    /* ④ 收尾（还在场上的柱环要显式删 —— 六支里最长的寿命 140 帧 < 灵击 296 帧）*/
     if (--s_run.left <= 0) {
         bomb10_fx_dump("结束前");
         bomb10_fx_kill();
-        ce_log("%s: 灵击结束（%d 帧，伤害源 %d 帧，半径 %.1f，中心 y %.1f）",
-               host->log_tag, (int)s_run.frames, (int)s_run.dmg_frames, (double)r, (double)s_run.y);
+        ce_log("%s: 灵击结束（%d 帧，伤害源 %d 帧，半径 %.1f，中心 y %.1f，火星 %d 颗）",
+               host->log_tag, (int)s_run.frames, (int)s_run.dmg_frames, (double)r, (double)s_run.y,
+               (int)s_run.leaf_tick);
         s_run.left = 0;
     }
 }

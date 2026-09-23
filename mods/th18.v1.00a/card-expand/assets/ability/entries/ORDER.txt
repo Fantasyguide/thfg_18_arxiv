@@ -785,3 +785,13 @@ YOUKAI_FAM_AURA  ability/youkai_familiar/YOUKAI_FAM_AURA.png  64x64
 #   ⚠ 两张都落 16×32 画布、字形居中 ⇒ 与 `ATLAS_FONT2` 那套度量（7 px 步进 / 半行高 10 / vm_dy 5）完全一致。
 FONT2_COLON  ability/font2/FONT2_COLON.png  16x32
 FONT2_STAR   ability/font2/FONT2_STAR.png  16x32
+
+# ============================================================================================
+# 2026-09-23 追加：卡 110/111 灵击的**环**（TH10 `bullet.anm` script394–397 的 texCircle(32)）
+#   —— 构建期把竖条 sprite362 极坐标弯成**连续环**（生成器 `assets/ability/make_mof_bomb_ring_bent.py`）：
+#   256x256、基准半径 100 px、厚度 14 px；脚本侧 scale = 目标半径(px) / 100（见 302–305 四条脚本）。
+#   为什么烘：TH18 的 anm VM 是否执行 `texCircle` 没有先例（实跑症状 = 竖条被放大成一条大光晕），
+#   而用户口径「它不是32段」⇒ 卡侧摆 32 片的近似也被否掉，改回**连续的一条**。
+# ============================================================================================
+ATLAS ATLAS_MOF_BOMB_RING_BENT 256x256
+MOF_BOMB_RING_BENT     ability/mof_bomb/MOF_BOMB_RING_BENT.png     @0,0,256x256
