@@ -59,4 +59,10 @@
     "volume_db": 0,
     "priority": 100
   }
+  ,"UFO_TOKEN_SPAWN": {
+    "wav": "UFO_TOKEN_SPAWN",
+    "id": 94,
+    "volume_db": -300,
+    "priority": 100
+  }
 }

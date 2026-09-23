@@ -43,3 +43,10 @@ PCB_BORDER
 #   ⚠ 听感提醒：TH18 把 `se_invalid` 用作**符卡超时**音（`th18:0x43bfac`）⇒ 人→妖那一声会与超时音同源。
 YOUKAI_FAM_SHIFT
 
+
+# ★★ 2026-09-23（112 #18 / owner：「生成飞碟==token 的时候有一个音效，得加进来」）
+#   TH12 原版**令牌生成**那一声：一手 `th12:0x42741b mov $0x37,%eax` + `th12:0x427423 call 0x453e20`
+#   （= 我们已知那支 SE 播放器，与 token-take 同一个）；id `0x37` → SE 表 `th12:0x4ae5a4` 第 0x37 行
+#   （VA `0x4ae9f0`）`+0x00` = 名表下标 **44** → 名表 `th12:0x4aea50` → 字符串 **`se_piyo.wav`**。
+#   TH18 **没有**这一枚（`local/th18.v1.00a/dat/` 里不存在）⇒ 必须走扩表；构建期从 TH12 逐字节现取。
+UFO_TOKEN_SPAWN

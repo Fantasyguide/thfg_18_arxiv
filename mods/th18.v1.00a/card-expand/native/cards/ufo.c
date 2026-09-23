@@ -210,6 +210,7 @@
  * ⚠ 计数在 `on_ctor`（每关开场）清零 ⇒ 一行汇总里的数字是**本关**的。
  * ⚠ 本函数只是 `ce_play_sound` 的薄包装（**不新增站点、不碰共享件**），行为与原调用完全一致。 */
 #define UFO_SEV_TOKEN_TAKE  0    /* 令牌被自机收下并落槽（一手 `0x426da4` 共同尾 = `0x26`）*/
+#define UFO_SEV_TOKEN_SPAWN 5    /* ★ 2026-09-23（#18）：**令牌生成**那一声（一手 `0x42741b` = `0x37` = `se_piyo.wav`）*/
 #define UFO_SEV_TOKEN_FULL  1    /* 槽里已有成组 ⇒ 令牌被吃掉换满槽补偿（同一条共同尾）*/
 #define UFO_SEV_ABSORB      2    /* UFO 吞下一颗道具（一手 `0x426970` = `0x26`）*/
 #define UFO_SEV_SPAWN       3    /* UFO 入场（一手 `0x44a9d9` = `0x34` + `0x44a9fe` = `0x36`）*/
@@ -255,7 +256,7 @@ static void ufo_se_tally(const char *why)
            "token-recolor %u / ufo-fill-full %u / ufo-break %u / ufo-etbreak2 %u / package-open %u / "
            "bomb-take %u / drop-spawn %u (本关累计；id 见上面各条 `ufo/se: \"...\" -> id` 行)",
            why, s_sev_count[UFO_SEV_TOKEN_TAKE], s_sev_count[UFO_SEV_TOKEN_FULL],
-           s_sev_count[UFO_SEV_ABSORB], s_sev_count[UFO_SEV_SPAWN], s_sev_count[UFO_SEV_RECOLOR],
+           s_sev_count[UFO_SEV_ABSORB], s_sev_count[UFO_SEV_SPAWN], s_sev_count[UFO_SEV_RECOLOR], s_sev_count[UFO_SEV_TOKEN_SPAWN],
            s_sev_count[UFO_SEV_FULL], s_sev_count[UFO_SEV_BREAK], s_sev_count[UFO_SEV_ETBREAK2],
            s_sev_count[UFO_SEV_PACKAGE], s_sev_count[UFO_SEV_BOMB_TAKE], s_sev_count[UFO_SEV_DROP_SPAWN]);
 }
@@ -1461,7 +1462,16 @@ static int ufo_tok_spawn(ufo_card_t *s, float x, float y)
     uint32_t roll = (s_rng_seed = ufo_rand_next(s_rng_seed));
     int st = (int)(roll % UFO_TOK_RB_STATES);
     int32_t c = ufo_token_display_color(UFO_COLOR_RED, 1, st);
-    return ufo_tok_spawn_ex(s, x, y, c, st, 1);        /* cycler = 1（会换色）*/
+    int ok = ufo_tok_spawn_ex(s, x, y, c, st, 1);      /* cycler = 1（会换色）*/
+    /* ★★★ 2026-09-23（owner #18：「生成飞碟==token 的时候有一个音效，得加进来」）：
+     *   TH12 在**令牌生成**那一刻播一声：一手 `th12:0x42741b mov $0x37,%eax` + `0x427423 call 0x453e20`
+     *   （= 同一支 SE 播放器，与 token-take 那条同一个）⇒ id `0x37` → SE 表 `th12:0x4ae5a4` 第 0x37 行
+     *   （VA `0x4ae9f0`）`+0x00` = 名表下标 44 → 名表 `th12:0x4aea50` → **`se_piyo.wav`**。
+     *   TH18 **没有**这一枚 ⇒ 走扩表新槽 `CE_VOICE_UFO_TOKEN_SPAWN`（`0x5e`，构建期从 TH12 逐字节现取；
+     *   音量 −300 = TH12 该行 `+0x04` 的 −3.00 dB；priority 100 为 ❓ 自定、与其它扩表项一致）。*/
+    if (ok) ufo_se(UFO_SEV_TOKEN_SPAWN, CE_VOICE_UFO_TOKEN_SPAWN, x,
+                   "一手 th12:0x42741b mov $0x37 + 0x427423 call 0x453e20（令牌生成；se_piyo.wav）");
+    return ok;
 }
 
 /* ★ 2026-09-18（新增 2）：令牌的**显示色** = 它会往槽里记的那一色（一手：变色令牌按「当时显示的那一色」）。

@@ -62,6 +62,9 @@ TABLE = (
     ("PCB_BORDER", "th07.v1.00b", "se_border.wav",
      "th07:0x441b91 `push 0x20`（结界展开支，函数 `th07:0x441960`）→ TH07 `0x20` = `se_border.wav`；"
      "TH07 独有（TH18 71 枚里没有同名也没有同 md5 的波形）"),
+    ("UFO_TOKEN_SPAWN", "th12.v1.00b", "se_piyo.wav",
+     "th12:0x42741b `mov $0x37,%eax` + 0x427423 `call 0x453e20`（令牌生成那一声）；TH12 SE 表 0x4ae5a4 第 0x37 行"
+     "（VA 0x4ae9f0）`+0x00` = 名表下标 44 → 名表 0x4aea50 → `se_piyo.wav`。TH18 没有这一枚 ⇒ 现取"),
 )
 
 
