@@ -254,7 +254,30 @@ APPEND = [
 #   `+0x1c..+0x1f` / `+0x3c..+0x4b` / `+0x50..+0x5b` = 0（TH18 原生 268 行全 0 的字段）。
 #   ❓ TH08 的 `rec[+0x1e]`（`side`，ply00as 是 ±20..50、ply03as 全 0）与 `rec[+0x22]`（弹种，
 #      本档全 0 = 普通命中）在 TH18 记录里**没有对应字段** ⇒ 不翻译。
-def _yk_row(rate, damage, dx, angle, sfx, speed=12.0, dy=0.0, opt_slot=0):
+# ★★★ 2026-09-23（owner 实跑：#39/#40/#41 —— 妖侧「丢伤害 / 看不见弹 / 发射自己 B 的图」）：
+#   **妖侧行的 `anm`（shooter `+0x22`）必须按文件取「该文件原生主炮那一支」**，不能全填一个数。
+#   一手（`local/th18.v1.00a/dat/pl0X.sht` 的 set 0x00 = 原生主炮行，`+0x22`）：
+#     pl00 = **5**、pl01 = **5**、pl02 = **9**、pl03 = **5** —— ZUN 自己就是**按文件不同**的，
+#     因为主炮路径读的是 **`pl0X.anm` 的脚本号**（不是 `ability.anm`：后者只属于卡/子机路径）。
+#   我们原来四个文件全填 `21` ⇒ 21 在各文件里根本不是同一样东西：
+#     · pl02（咲夜）`script21` = `sprite(-1)` + `layer(12)` ⇒ **画不出来** = owner「**看不见弹幕却有伤害**」；
+#     · pl03（早苗）`script21` = `ins_500(script18/19/20)` ⇒ **去生成子 VM**（她自己 B 的那套图）
+#       = owner「**在发射自己 B 的贴图、命中不消失还缓慢上移**」；
+#     · pl01（魔理沙）`script21` = `layer(15)` + `sprite44` 特效 = 「**有火焰发弹、却几乎没有伤害**」；
+#     · pl00（灵梦）`script21` = `sprite(-1)` + 淡出 = 同样是特效不是弹。
+#   ⇒ 这条同时解释了 #34/#35（灵梦妖侧「不发弹」= 画的是特效）与 #39/#40/#41。
+YK_BULLET_ANM = {"pl00": 5, "pl01": 5, "pl02": 9, "pl03": 5}   # 与零售回读校验（见 check_yk_bullet_anm）
+
+
+def _yk_anm_for(target_file: str) -> int:
+    """`target_file` 是 `pl0X.sht` 这种带后缀的名字 ⇒ 必须归一化（第一版没做，`get` 恒回落 21）。"""
+    key = target_file[:-4] if target_file.endswith(".sht") else target_file
+    if key not in YK_BULLET_ANM:
+        raise SystemExit(f"YK_BULLET_ANM 里没有 {key}（新机体/新文件名 ⇒ 必须补一行，别静默回落）")
+    return YK_BULLET_ANM[key]
+
+
+def _yk_row(rate, damage, dx, angle, sfx, speed=12.0, dy=0.0, opt_slot=0, anm=None):
     """一行 = 一个 TH18 shooter 记录 dict（字段名见 pack_shooter）。
 
     ★ 2026-09-22：加了 `speed` / `dy` 两个可选参数 —— 原版 TH08 的 `plyNNas.sht` **每行有自己的
@@ -264,7 +287,7 @@ def _yk_row(rate, damage, dx, angle, sfx, speed=12.0, dy=0.0, opt_slot=0):
     return dict(fire_rate=rate, start_delay=0, damage=damage,
                 spawn_dx=dx, spawn_dy=dy, hit_w=16.0, hit_h=16.0,
                 angle=angle, speed=speed, opt_slot=opt_slot, mode=0,
-                anm=21, sfx=sfx, hit_fx=0, fire_rate2=0, start_delay2=0,
+                anm=(21 if anm is None else anm), sfx=sfx, hit_fx=0, fire_rate2=0, start_delay2=0,
                 func_on_init=0, func_on_tick=0, func_on_draw=0, func_on_hit=0)
 
 
@@ -1421,13 +1444,15 @@ def _youkai_tier_sets(target_file: str, anm_ids: dict) -> list:
         orig = YOUKAI_TIER_ORIGINS[k] if k == suf else None
         for t in range(5):
             rows = (tiers[t] if tiers is not None else [])
+            if rows:
+                rows = [dict(r, anm=_yk_anm_for(target_file)) for r in rows]
             if orig is not None:
                 # ★ 2026-09-22（P7）：逐行套上 TH08 的 `+0x20`。行数与烘进来的原点表**必须相等**
                 #   —— 不等就说明行表或原点表被单独改过（那是静默错弹），当场停构建。
                 if len(rows) != len(orig[t]):
                     raise SystemExit(f"YOUKAI_TIERS_{k} tier{t}: {len(rows)} 行 与烘焙的 origin 表 "
                                      f"{len(orig[t])} 项不等（TH08 ply{suf}as.sht 的实测行数）")
-                rows = [dict(r, opt_slot=o) for r, o in zip(rows, orig[t])]
+                rows = [dict(r, opt_slot=o, anm=_yk_anm_for(target_file)) for r, o in zip(rows, orig[t])]
                 for o in orig[t]:
                     if not 0 <= o <= 4:
                         raise SystemExit(f"YOUKAI_TIERS_{k} tier{t}: origin {o} 越界（TH08 只会有 0..4）")
@@ -1454,14 +1479,18 @@ def _alloc_names(sets: list) -> list:
     return [nm for nm, blob in sets if blob is not None]
 
 
-def repl_sets(anm_ids: dict) -> list:
-    """REPLACE → [(槽号, 名字, blob)]，blob 含终止符。四个文件各自独立 rebuild，内容相同。"""
+def repl_sets(anm_ids: dict, target_file: str = None) -> list:
+    """REPLACE → [(槽号, 名字, blob)]，blob 含终止符。
+    ★ 2026-09-23：`target_file` 非空时，`YOUKAI`（0x16）那几行的 `anm` 换成**该文件**的弹脚本号
+    （见 `YK_BULLET_ANM`）—— 四个文件的**行数据不同**了，不能再共用一份 blob。"""
     out = []
     for nm, idx, rows in REPLACE:
         if not 0 <= idx < N_RETAIL:
             raise SystemExit(f"REPLACE {nm}: 槽 {idx:#x} 不是原生槽（只能覆盖 0x00–{N_RETAIL - 1:#x}）")
         if any(o == idx for o, _, _ in out):
             raise SystemExit(f"REPLACE {nm}: 槽 {idx:#x} 被两条登记同时覆盖")
+        if target_file and nm == "YOUKAI":
+            rows = [dict(r, anm=_yk_anm_for(target_file)) for r in rows]
         blob = b"".join(pack_shooter(r, anm_ids) for r in rows) + TERMINATOR
         out.append((idx, nm, blob))
     return out
@@ -1532,6 +1561,30 @@ def check_pl_anm_ids():
                              f" —— pl0X.sht 会指到错的脚本，先让两边一致")
     print(f"  {PL_IDS_H.name}: pl0X 追加脚本号与 append_shooterset.py 一致")
 
+
+
+def check_yk_bullet_anm() -> None:
+    """★ 2026-09-23：把 `YK_BULLET_ANM` 与**零售文件里那一格**逐文件回读对账。
+
+    判据（一手）：`local/th18.v1.00a/dat/pl0X.sht` 的 **set 0x00 = 原生主炮**，
+    它前几行的 `+0x22` 就是「本文件里合法、且看得见的弹脚本号」。我们的妖侧行必须用同一个数
+    （主炮路径读的是 `pl0X.anm` 的脚本号；`ability.anm` 只属于卡/子机路径）。
+    ⚠ 这条自检存在的理由：原来四个文件全填 21，而 21 在每个文件里不是同一样东西
+    （pl02 是画不出来的空图、pl03 会去生成子 VM）⇒ owner 实跑 #39/#40/#41。
+    """
+    for key, want in sorted(YK_BULLET_ANM.items()):
+        src = RETAIL / (key + ".sht")
+        if not src.is_file():
+            raise SystemExit(f"check_yk_bullet_anm: 缺零售样本 {src}")
+        b = src.read_bytes()
+        base = OFF_ARRAY + N_SLOTS_RETAIL * 4          # 零售：偏移相对它自己的 DATA_BASE
+        off = struct.unpack_from("<I", b, OFF_ARRAY)[0] + base   # set 0x00
+        got = struct.unpack_from("<h", b, off + 0x22)[0]
+        if got != want:
+            raise SystemExit(
+                f"check_yk_bullet_anm: {key} 的妖侧弹脚本号表里写 {want}，而零售 set 0x00 的 "
+                f"`+0x22` = {got} ⇒ 两边必须相等（改了任一边都要重核；一手见 YK_BULLET_ANM 注解）")
+    print(f"  妖侧弹脚本号逐文件对账 OK：{YK_BULLET_ANM}")
 
 def offsets(data: bytes, n: int = N_SLOTS) -> list:
     return list(struct.unpack_from(f"<{n}I", data, OFF_ARRAY))
@@ -1831,10 +1884,12 @@ def main():
     sets_by_file = {name: sets_for_file(name, anm_ids) for name in FILES}
     canonical = sets_by_file[FILES[0]]
     repl = repl_sets(anm_ids)
+    repl_by = {name: repl_sets(anm_ids, name) for name in FILES}
     check_card_constants(repl)
     check_pl_anm_ids()
     check_new_slot_placement(canonical)
     check_bullet_scripts_have_layer(anm_ids)      # ★ 2026-09-16w：弹脚本必须自带 layer(12..19)
+    check_yk_bullet_anm()                         # ★ 2026-09-23：妖侧弹脚本号逐文件对账（#39/#40/#41）
 
     if not canonical and not repl:                  # 没有要追加的：不产出（别发一份和原生一模一样的 .sht）
         if not a.verify_only:
@@ -1851,7 +1906,7 @@ def main():
             raise SystemExit(f"缺原生样本 {src}（用户放进 local/，见 local/README.md）")
         retail = src.read_bytes()
         sets = sets_by_file[name]
-        expect = build_one(name, retail, sets, repl)
+        expect = build_one(name, retail, sets, repl_by[name])
         dst = OUT / name
         if a.verify_only:
             if not dst.is_file():
@@ -1860,7 +1915,7 @@ def main():
         else:
             built = expect
             dst.write_bytes(built)
-        verify(name, retail, built, sets, repl)
+        verify(name, retail, built, sets, repl_by[name])
         print(f"  {name}: {len(retail)} → {len(built)} 字节，追加 {len(sets)} 组"
               f"（索引 {N_RETAIL:#04x}..{N_RETAIL + len(sets) - 1:#04x}）"
               f"，覆盖 {len(repl)} 个原生槽"
