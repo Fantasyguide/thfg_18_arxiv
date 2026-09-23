@@ -657,6 +657,18 @@ static void signal_on_enemy_drop_pre(ce_card_t *c, int32_t *counts)
         || mof_core_wants_big_dual(main_drop, drops, p_count, is_boss)
         || (!is_boss && mof_core_big_faith_host(anm_src, anm_script));
     if (!want) return;
+
+    /* ★★ 2026-09-23（用户实跑：「**一个绿色阴阳玉会掉两个大信仰点**」）：**110 在场时本卡让位**。
+     *   两张卡对同一只敌人的触发集**重合**：110 走宿主表（`mof_core_big_faith_host()`），
+     *   而本卡还有上面那两条**旧判据**，其中判据① = 「主掉落是金钱 ⇒ 给」——
+     *   绿阴阳玉 `Cir00m/bm` 的 `drop_main` 实测就是 **2（金钱）** ⇒ 同一只敌人被撒了**两颗绿点**
+     *   （110 的大信仰点 5000 + 本卡的大绿点 100 = 画面上两颗绿点）。
+     *   实跑日志（本机 `game/th18_card_expand.log`）：111 的汇总行 `big 109/103`（收 109 / **撒出 103**）
+     *   与 110 的 `mof: big faith +5000 via host table … (anm 2/80, drop_main 2 …)` 逐条同期 ⇒ 就是这条。
+     *   判据 = 注册表里的 110 位（`faith_registered_mask()`，与「组合 UI 谁认领」同一个口径）；
+     *   **110 不在场时本卡照旧自己撒** —— 这正是 2026-09-22 给本卡加宿主表那条的理由
+     *   （我们自己刷出来的绿妖精打死不能什么都不掉）。⇒ 单装 111 的行为**一个字没变**。*/
+    if (faith_registered_mask() & (1 << FAITH_SLOT_110)) return;
     ep = ce_enemy_pos(e);
     if (!ep) return;
 

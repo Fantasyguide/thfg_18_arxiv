@@ -14480,6 +14480,22 @@ fill 循环**一圈不跑**、图鉴整表空掉（§AG 的症状链）。于是
 - ⚠ **部署被别人的在制品挡住**：`cards/ufo.c:3317` 调用了尚未声明的 `ufo_break_mult_permille`
   ⇒ 整体 `make` 失败、DLL 出不来（不是本条的代码）。本条代码本身已提交，等那处修好即可构建部署。
 
+### §BE-EJ 111 的灵珠撒点**让位给 110**（双发 bug 的修，2026-09-23）
+
+> **谁改的**：110/111 这条线。**动到的**：`cards/signal.c` 的 `signal_on_enemy_drop_pre()` 加一道让位门
+> （`faith_registered_mask()` 的 110 位）；**没动**共享件接口、没动 110、没动判据本身。
+
+- **用户报的现象（逐字）**：「一个绿色阴阳玉会掉两个大信仰点，这个显然不太对」。
+- **根因**：110 走宿主表（`mof_core_big_faith_host()`，绿阴阳玉 `(2,68)`/`(2,80)` 命中），
+  111 的同一钩子还带着旧判据①「主掉落是金钱就给」，而绿阴阳玉 `drop_main = 2` ⇒ 两只卡各撒一颗绿点。
+- **实跑证据**：110 的 `mof: big faith +5000 via host table … (anm 2/80, drop_main 2, enemy …)` 与
+  111 的周期汇总 `big 109/103`（**撒出 103**）同期；110 的日志里每个 enemy id 只出现一次 ⇒ 少的那颗来自 111。
+- **修法**：`if (faith_registered_mask() & (1 << FAITH_SLOT_110)) return;`（110 在场 ⇒ 本卡不撒）。
+  单装 111 行为不变；判据与「组合 UI 认领」「满 P 转换落笔」同源（注册表 = 在场判据）。
+- **验证**：`make cards/signal.o` 干净；`make check` 全绿（`check-docs` 381 文件 / `capcheck` / `anm-verify` /
+  `sht-verify` / `engine_abi_check`）；`make dllx87` = **0**；四份 DLL 同 md5（见提交信息）。
+- **开放项**：111 单装时那两条旧判据要不要收窄（`SINGLE-CARD-TEST.md` §th11-P6）⇒ 不在本轮。
+
 ### §BE-EE 卡组体检 `ce_deck_audit()`（AUDIT §Z11 / §G7 那条老账的诊断件，2026-09-19）
 
 **背景**：用户口径「之前的状态是，id=254 这张卡装备后会直接吞掉一个 slot，该 slot 会直接消失，
