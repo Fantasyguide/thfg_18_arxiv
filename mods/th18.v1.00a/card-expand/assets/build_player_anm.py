@@ -1009,6 +1009,7 @@ def _zero_script_pos(body: str) -> str:
       `bar: pos(0x30)(32,449) + ent(0x5f0)(257,860) = 表面 (289,1309)` —— 屏幕只有 960 高。
     ⇒ 与 111/112 的 HUD 同一口径：**脚本 pos 归零、位置全归 C 侧**（它们的脚本本来就写着 `pos(0,0,0)`）。
     """
+    body = re.sub(r"^[ \t]*posTime\([^\n]*\);\n", "", body, flags=re.M)   # ★ 连 posTime 一起删
     body = re.sub(r"^[ \t]*pos\([^\n]*\);[ \t]*\n", "", body, flags=re.M)
     m = re.match(r"(script script\d+ \{\n)", body)
     return body if not m else body[:m.end()] + "    pos(0.0f, 0.0f, 0.0f);\n" + body[m.end():]
