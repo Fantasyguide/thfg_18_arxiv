@@ -33,7 +33,7 @@
 | `ABCARD_RETAIL_ENTRIES` | 118 | `assets/build_abcard.py` 文件头「base = 原生 entry 数（th18 = 118）」|
 | `ABILITY_RETAIL_ENTRIES` / `_SPRITES` | 7 / 109 | `engine/anm/th18/06-entry-limit-and-multi-sprite.md` §2.5 |
 | `ANM_ENTRY_MAX` | 256 | `assets/build_ability.py` 的 `MAX_ENTRIES`（这里有同名兜底常量）|
-| `SHT_SET_SLOTS_NOW` / `_TARGET` | 96 / 96 | 2026-09-14 扩容**已落地**（`AUDIT.md` §CQ）：数组原地长到 96 格、数据区基点 `0x180→0x260`；零售仍是 40 格 |
+| `SHT_SET_SLOTS_NOW` / `_TARGET` | 128 / 128 | 2026-09-14 扩容落地 96（`AUDIT.md` §CQ）；**2026-09-23 抬到 128**（111 组数 31→43）；数组区预留 256 不变、数据区基点不动 ⇒ 只改文件 |
 | `SHT_SET_RETAIL_USED` | 22 | 一手普查：4 份零售 `pl0X.sht` 的 `+0xe0` 各 22 格非零（`0x01`–`0x16`）|
 | `RETAIL_SHOP_POOL` | 362 | `AUDIT.md` §AH（原生 55 张卡的 `Σ(weight+5)`）|
 | `RETAIL_SHOP_GUARANTEED` | `None` | 🟡 未普查 ⇒ 那一行不进余量闸，只报新卡增量 |
@@ -68,8 +68,10 @@ ABCARD_RETAIL_ENTRIES = 118
 ABILITY_RETAIL_ENTRIES = 7
 ABILITY_RETAIL_SPRITES = 109
 SHT_DBASE_OLD = 0x180          # 零售数据区起点 = 重定位基址那处 LEA 的立即数
-SHT_SET_SLOTS_NOW = 96        # 2026-09-14 扩容落地（AUDIT §CQ）；零售 40 = [0xe0,0x180)
-SHT_SET_SLOTS_TARGET = 96
+SHT_SET_SLOTS_NOW = 128       # ★ 2026-09-23：111 的组数 31→43（DPS 对齐原生后不再跨档去重）
+                              #   ⇒ 全 mod 需要 99 格 > 96 ⇒ `N_SLOTS` 96→128（数组区仍预留 256、
+                              #   数据区基点 0x4E0 不动 ⇒ 只改文件、exe 与 DLL 常量都不动）
+SHT_SET_SLOTS_TARGET = 128
 SHT_SET_RETAIL_USED = 22
 RETAIL_SHOP_POOL = 362
 RETAIL_SHOP_GUARANTEED = None

@@ -388,8 +388,11 @@ cards: 35 registered from cards.js; shop pool 700/8192 slots, guaranteed offers 
 - **架构收益**：基点已让到 `0x4e0` ⇒ `96 → 256` 之间加格子**只改文件**（抬 `CE_SHT_SLOTS` + 写槽位），
   **补丁与 DLL 常量都不用动**。
 - **`0x28` 起的新占用（2026-09-15 起，卡 111 落地；★ 2026-09-16zb 扩到 31 格）**：按 [NEXT.md](NEXT.md) §1w 的第 5/6 步，
-  **`0x28` 留给 113**（灵界主炮收尾换成永久专属槽）；**111 魔理沙B 现在是 31 组落在 `0x29`–`0x47`**
-  = 子机 **23 格**（`0x29`–`0x3f`，`MARISA_OPT_*`）+ 主炮 **8 格**（`0x40`–`0x47`，`MARISA_MAIN_*`）。
+  **`0x28` 留给 113**（灵界主炮收尾换成永久专属槽）；**111 魔理沙B 现在是 43 组落在 `0x29`–`0x53`**
+  = 子机 **35 格**（`0x29`–`0x4b`，`MARISA_OPT_*`）+ 主炮 **8 格**（`0x4c`–`0x53`，`MARISA_MAIN_*`）。
+  - ★ **为什么 31 → 43**（2026-09-23，owner 口径「th11 都是老弱病残 ⇒ DPS 对齐 TH18 原生同机体」）：
+    子机行的伤害按档缩放后**不再跨档去重**（每档数值都不同）⇒ 组数 +12；`CE_SHT_SLOTS` 96 → **128**
+    （数组区仍预留 256、数据区基点 `0x4e0` 不动 ⇒ 只改文件）。见 `TUNING.md` §2.0zt。
   - ★ **为什么从 5 组变 31 组**（2026-09-16zb，用户口径「尽可能完全对齐」+「主炮别换弹幕了」）：
     整套改成 TH11 `pl01b.sht` 的**逐字段复刻**（25 组 = 5 元素 × 5 档）—— 子机的率/角度/伤害**逐格**不同，
     主炮伤害**逐元素逐档**不同（16→8..16）⇒ 去重后 23 + 8 = 31。推导与一手表见
@@ -602,14 +605,26 @@ CE_SHT_SET_MARISA_OPT_19 0x003c
 CE_SHT_SET_MARISA_OPT_20 0x003d
 CE_SHT_SET_MARISA_OPT_21 0x003e
 CE_SHT_SET_MARISA_OPT_22 0x003f
-CE_SHT_SET_MARISA_MAIN_00 0x0040
-CE_SHT_SET_MARISA_MAIN_01 0x0041
-CE_SHT_SET_MARISA_MAIN_02 0x0042
-CE_SHT_SET_MARISA_MAIN_03 0x0043
-CE_SHT_SET_MARISA_MAIN_04 0x0044
-CE_SHT_SET_MARISA_MAIN_05 0x0045
-CE_SHT_SET_MARISA_MAIN_06 0x0046
-CE_SHT_SET_MARISA_MAIN_07 0x0047
+CE_SHT_SET_MARISA_OPT_23 0x0040
+CE_SHT_SET_MARISA_OPT_24 0x0041
+CE_SHT_SET_MARISA_OPT_25 0x0042
+CE_SHT_SET_MARISA_OPT_26 0x0043
+CE_SHT_SET_MARISA_OPT_27 0x0044
+CE_SHT_SET_MARISA_OPT_28 0x0045
+CE_SHT_SET_MARISA_OPT_29 0x0046
+CE_SHT_SET_MARISA_OPT_30 0x0047
+CE_SHT_SET_MARISA_OPT_31 0x0048
+CE_SHT_SET_MARISA_OPT_32 0x0049
+CE_SHT_SET_MARISA_OPT_33 0x004a
+CE_SHT_SET_MARISA_OPT_34 0x004b
+CE_SHT_SET_MARISA_MAIN_00 0x004c
+CE_SHT_SET_MARISA_MAIN_01 0x004d
+CE_SHT_SET_MARISA_MAIN_02 0x004e
+CE_SHT_SET_MARISA_MAIN_03 0x004f
+CE_SHT_SET_MARISA_MAIN_04 0x0050
+CE_SHT_SET_MARISA_MAIN_05 0x0051
+CE_SHT_SET_MARISA_MAIN_06 0x0052
+CE_SHT_SET_MARISA_MAIN_07 0x0053
 ```
 
 **A3. 图集 entry（`CE_ANM_ABILITY_ATLAS_*`，32 个）** —— 每个 = `ability.anm` 一个 entry

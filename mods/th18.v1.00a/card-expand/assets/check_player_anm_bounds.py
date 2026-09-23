@@ -33,6 +33,18 @@ _SPRITE_REF = re.compile(r"\bsprite\(sprite(\d+)\)")
 _SPRITE_DEF = re.compile(r"\bsprite(\d+):")
 
 
+def _declared_slots() -> int:
+    """从生成物 `native/sht_ids.h` 读 `CE_SHT_SLOTS`（= 影像头 `+0x02` 应当等于的那个数）。
+    ★ 2026-09-23 起不再硬编码 96：111 的组数会随数值口径变化（`N_SLOTS` 已抬到 128）。"""
+    h = L.BUILD.parent / "sht_ids.h"
+    if not h.is_file():
+        raise SystemExit(f"check_player_anm_bounds: 缺生成物 {h}（先跑 `make sht`）")
+    m = re.search(r"^#define\s+CE_SHT_SLOTS\s+(\d+)", h.read_text(), re.M)
+    if not m:
+        raise SystemExit(f"check_player_anm_bounds: {h} 里没有 `#define CE_SHT_SLOTS`")
+    return int(m.group(1))
+
+
 def _read_sht(path: Path):
     """-> {set_idx: [(anm, hit_fx), …]}
 
@@ -43,7 +55,11 @@ def _read_sht(path: Path):
       代价是常量有两处；`make check` 里生成器自己的 `verify()` 与 `capcheck` 的三方对账是另外两边。
     """
     b = path.read_bytes()
-    slots, reserved, base = 96, 256, 0x4E0
+    # ★ 2026-09-23：**宣布可用格数从生成物 `native/sht_ids.h` 读**（`CE_SHT_SLOTS`），不再硬编码 ——
+    #   111 的组数会随数值口径变化（DPS 对齐 TH18 原生后 31 → 43 格），`N_SLOTS` 96 → 128；
+    #   硬编码会让这条回读被无关改动打红。**预留格数与数据区起点仍是常量**（它们没变过：
+    #   256 / 0x4E0 ⇒ 恒等式自检仍然有效）。读的是**产物**而不是生成器内部状态，故独立性不变。
+    slots, reserved, base = _declared_slots(), 256, 0x4E0
     # 结构性自检：**预留**数组区末尾必须正好顶到数据区（与生成器同一条恒等式）
     if 0xE0 + reserved * 4 != base:
         raise SystemExit("check_player_anm_bounds: 扩容常量自相矛盾（数组区末尾 != 数据区起点）")

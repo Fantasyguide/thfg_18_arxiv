@@ -20665,3 +20665,49 @@ TH13 灵体与 108 妖侧本体 55 张逐像素回读**全部通过**）；`than
 
 **发布面**：**动了 `pl0X.anm`**（本次四份与 DLL 同批发）；未动 `pl0X.sht` / `ability.anm` / wav /
 `sites.py` / `SITE_BUDGET` / `patch/**` 声明集；**没新增断点**（站点 31 个原样）、没碰别人的卡。
+
+## §BE 详录 #75（2026-09-23）：★ **共享件** 111 的 DPS 按 owner 口径**对齐 TH18 原生同机体**（`pl0X.sht` 重生 + `N_SLOTS` 96→128）
+
+**文件 → 改了什么 → 为什么 → 谁改的 → 怎么验证的**
+
+| 文件 | 改了什么 |
+| --- | --- |
+| `assets/sht/append_shooterset.py` | 四件事：新增对齐表（`MARISA_NATIVE_TARGET` / `_marisa_align_k()` / `MARISA_ALIGN_K` / `MARISA_OPT_ROWS_ALIGNED`）、`_marisa_layout()` 改用 ALIGNED、断言改两段式、**`N_SLOTS` 96 → 128**（细目见下表后）|
+
+**`append_shooterset.py` 四件事的细目**：
+
+1. **新增对齐表**：`MARISA_NATIVE_TARGET`（原生每档每帧输出）/ `_marisa_align_k()` / `MARISA_ALIGN_K` /
+   `MARISA_OPT_ROWS_ALIGNED` —— **只缩放子机行伤害**，率与角度**逐值照抄 TH11**（形状不动、量级对齐）。
+2. `_marisa_layout()` 的 `cells` 改用 `MARISA_OPT_ROWS_ALIGNED[elem][lv]`（主炮仍取 `MARISA_MAIN_DMG`，不缩放）。
+3. 断言改**两段式**：① 形状（主炮 = TH11 一手；子机 = TH11×K，容差 = 取整上界）；② 逐档五元素平均 = 原生目标（2%）。
+4. **`N_SLOTS` 96 → 128**：111 的组数 31 → 43（缩放后不再跨档去重）⇒ 全 mod 需要 99 格 > 96；
+   数组区仍预留 256、`DATA_BASE 0x4e0` 不动 ⇒ **只改文件、exe 与 DLL 常量都不动**（生成器既定做法）。
+| `native/cards/signal.c` | `on_tick_shooters` **补机体门**（只让魔理沙发五元素子机）—— 原来没有门，灵梦/咲夜/早苗也在发魔理沙的双元素弹；缩放后会让她们远超各自原生上限（`pl0X.sht+0x28` = 90/60/120）|
+| `native/tools/capcheck.py` | `SHT_SET_SLOTS_NOW` / `_TARGET` 96 → 128（与 `sht_ids.h` 三方对账）|
+| `assets/check_player_anm_bounds.py` | 宣布可用格数改成**从生成物 `native/sht_ids.h` 读 `CE_SHT_SLOTS`**（不再硬编码 96 —— 硬编码正是本次被打红的原因）|
+| `native/tests/test_youkai_core.c` | `CE_SHT_SET_YOUKAI_R0 == 0x48` → **不钉绝对值**（只钉「排在 111 之后」+「15 格在宣布范围内」）：111 组数会随数值口径变化，硬编码会让纯逻辑单测被无关改动打红 |
+| `CAPACITY.md` | 111 的台账 31 行 → 43 行（逐宏逐值，与 `sht_ids.h` 一致）+ 叙述段（`0x29`–`0x53` = 子机 35 格 + 主炮 8 格）|
+| 生成物 | 四份 `native/build/sht/pl0X.sht` + `sht_ids.h`（`make sht`；**生成物不手改**）|
+
+**为什么**（owner 2026-09-23 原话）：「根据社区的说法，**th11 都是老弱病残** / 所以 dps 对齐应当是，
+**th11 的魔理沙/灵梦 应当对齐 th18 的魔理沙/灵梦**」＋「还得**根据 boss 血量**做参考，因为直观上的输出在于**收卡速度**」。
+一手锚点：每机体每帧伤害上限写在 `pl0X.sht+0x28`（魔理沙 **160** / 灵梦 90 / 咲夜 60 / 早苗 120，
+由 `enm_compute_damage_sources` `0x45f0f0` 钳 `player+0x47984`）；原生魔理沙每档 ≈ **10.667 / 34 / 42 / 90 / 106**/帧
+（`pl01.sht` 直读，行长 `0x5c`、槽偏移相对 `DATA_BASE 0x180`；子机行是激光/伤害源 ⇒ 每帧结算）。
+对齐前我们档 4 只有 14.7~37.3/帧 ⇒ 19800 血符卡要 8.8~22.5 s，原生 3.1 s。
+
+**影响面（共享件 —— 所有人都要看）**：
+- ① 四份 `pl0X.sht` 的头部 `+0x02` 从 **96 → 128**：加载器解析循环上界变大，新增的 32 格**全部为 0**
+  （= 未分配别名到 set 0，幂等）；数据区基点 `0x4e0` **不动** ⇒ 零售 40 项的值与 14 个读者的位移 `+0xe0` 一个都没改。
+- ② **所有卡共用这四份 sht**：111 的组占 `0x29`–`0x53`（原来是 `0x29`–`0x47`）⇒ **108 的 `CE_SHT_SET_YOUKAI_*`
+  从 `0x48` 顺移到 `0x54` 起**（生成物自动改，卡侧用的是宏 ⇒ 无需改代码）；`0x28` = 113 灵界槽未动；
+  `0x1e`–`0x27` = 117 的 WOLF/EAGLE 未动。
+- ③ 其余卡零行为改动（它们只引用自己的宏）。
+
+**怎么验证的**：`make check` **rc=0**（含 `capcheck` 三方对账、`sht-verify`、`check_player_anm_bounds`、
+`contract_check`、`gen_drift`、`sitecheck --all` 56 窗口/6 落点、`dllverify`、全部主机单测 —— 其中
+`youkai_core` 4657/0、`signal_core` 2182/0）；生成器自己的两段式断言在**每一次 `make sht`** 都会跑；
+`python3 tooling/check-docs.py` 全绿。
+
+**发布面**：动了四份 `pl0X.sht`（与 DLL 同批）；未动 `pl0X.anm` / `ability.anm` / wav / `sites.py` /
+`SITE_BUDGET` / patch 声明集；**没新增断点**（站点 31 个原样）。

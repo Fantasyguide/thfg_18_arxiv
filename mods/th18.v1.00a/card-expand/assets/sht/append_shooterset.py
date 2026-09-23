@@ -99,7 +99,12 @@ FILES = ("pl00.sht", "pl01.sht", "pl02.sht", "pl03.sht")
 OFF_ARRAY = 0xE0        # 偏移数组在影像内的起点（**14 个读者指令里的位移就是这个值，扩容不动它**）
 N_SLOTS_RETAIL = 40     # 零售文件的格数（= 零售头 `+0x02`）
 # ── 两个「格数」：**宣布可用的**（= 影像头 `+0x02` = 加载器解析循环上界）与**预留的数组区**──
-N_SLOTS = 96            # ★ 宣布可用：用户 2026-09-13 拍板的目标（本 mod 现在用到 0x5f）
+N_SLOTS = 128           # ★ 宣布可用（= 影像头 `+0x02` = 加载器解析循环上界）。
+                        #   2026-09-13 起是 96（用户拍板的目标）；**2026-09-23 抬到 128** ——
+                        #   理由：111 的子机组按 new「DPS 对齐 TH18 原生」逐档缩放后**不再跨档去重**
+                        #   （每档的伤害值都不同）⇒ 111 的组数 31 → 43，全 mod 需要 99 格 > 96。
+                        #   本生成器的既定做法就是「抬 N_SLOTS，只改文件」（数组区已预留 256、
+                        #   数据区起点 `DATA_BASE` 由 `N_SLOTS_RESERVED` 算出 ⇒ 布局不动、exe 不动）。
 N_SLOTS_RESERVED = 256  # ★ 数组区一次留够：以后用到 0x60+ 只需**改文件**（抬 N_SLOTS + 写槽位
                         #   + 接行数据），exe 补丁与 DLL 常量都不用动（数据区起点已让开）
 DATA_BASE_RETAIL = 0x180  # 零售的数据区起点（= `th18:0x45a830` 的原始立即数）
@@ -1136,6 +1141,13 @@ MARISA_TH11_DPS = {
     "METAL": [(10.666667, 0.0), (6.666667, 8.0), (6.666667, 16.0), (5.333333, 24.0), (5.333333, 32.0)],
     "EARTH": [(10.666667, 0.0), (10.0, 9.333333), (10.0, 14.0), (10.0, 16.333333), (10.0, 21.333333)],
 }
+# ★★★ 2026-09-23（owner 口径）：**111 的 DPS 要对齐 TH18 原生同机体**，不再逐值照抄 TH11 的低伤害。
+#   owner 原话：「根据社区的说法，th11 都是老弱病残 / 所以 dps 对齐应当是，th11 的魔理沙/灵梦 应当对齐
+#   th18 的魔理沙/灵梦」＋「还得根据 boss 血量做参考，因为直观上的输出在于收卡速度」。
+#   目标 = **TH18 原生魔理沙每档的每帧输出**（`local/th18.v1.00a/dat/pl01.sht` 直读：行长 `0x5c`、
+#   槽偏移相对 `DATA_BASE 0x180`）——⚠ 原生子机行是**激光 / 伤害源（每帧结算 = 多判）**，
+#   所以那几行的伤害就是**每帧伤害**，不能按 `dmg/rate` 算（一手 `engine/sht/th18/03` §5/§5.1）。
+MARISA_NATIVE_TARGET = (10.667, 34.0, 42.0, 90.0, 106.0)
 # 行形状常量（一手 pl01b.sht；主炮的弹/音效按用户口径**用本作原生**，见上）
 MARISA_MAIN_RATE, MARISA_MAIN_DELAY = 3, 0
 MARISA_MAIN_DX, MARISA_MAIN_DY = 10.0, -8.0
@@ -1146,6 +1158,32 @@ MARISA_OPT_DELAY, MARISA_OPT_SPEED = 0, 24.0
 MARISA_OPT_BOX = (16.0, 48.0)
 MARISA_FORMATION_CELLS = 4                # = 原生满档子机格数 / 卡侧 `SIGNAL_OPTION_MAX`
 MARISA_LEVELS = 5                         # ★ TH11 的档数 = 5（档 0..4；`pl01b` 头 `+0x20 = 4` + 1）
+
+#   做法 = **只缩放子机行的伤害**，逐档取系数使「五元素合计的平均」= 目标：
+#   · 主炮保持 TH11 一手（它档 0 与原生**逐字段相同**、高档也同量级）⇒ 主炮组数不变（仍是 8 组）；
+#   · 保留 TH11 的**五元素相对差异**（火最弱 / 金最强），只是整体抬到原生的量级；
+#   · 上界：`pl01.sht+0x28` = **160** = 原生每帧伤害上限（`enm_compute_damage_sources` 钳位）⇒
+#     缩放后最强的金档 4 ≈ 156，仍在上限内（**对齐不许越过它**）。
+#   · 收卡判据：同一张符卡（`st03bs.ecl` 的 `ins_511(19800)`）原生约 **3.1 s** ⇒ 缩放后回到同一量级。
+def _marisa_align_k() -> dict:
+    """逐档对齐系数（只作用于子机行伤害）。档 0 没有子机行 ⇒ 系数恒 1（原生档 0 = 10.667 = 我们）。"""
+    out = {}
+    for lv in range(MARISA_LEVELS):
+        mm = sum(MARISA_TH11_DPS[e][lv][0] for e in MARISA_ELEMS) / len(MARISA_ELEMS)
+        oo = sum(MARISA_TH11_DPS[e][lv][1] for e in MARISA_ELEMS) / len(MARISA_ELEMS)
+        want = MARISA_NATIVE_TARGET[lv]
+        out[lv] = 1.0 if oo <= 1e-9 else max(1.0, (want - mm) / oo)
+    return out
+
+
+MARISA_ALIGN_K = _marisa_align_k()
+# 缩放后的子机行表（**只有伤害变**：率与角度逐值照抄 TH11）
+MARISA_OPT_ROWS_ALIGNED = {
+    e: {lv: [[(rate, max(1, int(round(dmg * MARISA_ALIGN_K[lv]))), ang) for (rate, dmg, ang) in cell]
+             for cell in MARISA_OPT_ROWS[e][lv]]
+        for lv in MARISA_OPT_ROWS[e]}
+    for e in MARISA_ELEMS
+}
 # ★★ **`0x28` = 113 的永久专属槽**（NEXT.md §1w 第 5 步，2026-09-15 落地）。
 #    此前那一格是「洞」（序列里占位、偏移项 0）+ 文件尾的**孤儿段**，靠卡侧临时把偏移项指过去；
 #    现在它是一格**正常的追加组**（名字 `TRANCE`），行数据 = TH13 灵界 set10 的复刻行
@@ -1169,7 +1207,7 @@ def _marisa_layout() -> tuple:
                for _ in MARISA_ELEMS]
     for e, elem in enumerate(MARISA_ELEMS):
         for lv in range(1, MARISA_LEVELS):
-            cells = MARISA_OPT_ROWS[elem][lv]
+            cells = MARISA_OPT_ROWS_ALIGNED[elem][lv]
             assert len(cells) == lv, f"{elem} 档 {lv} 的格数 {len(cells)} != {lv}（一手 pl01b 是逐档加一格）"
             for c, rows in enumerate(cells):
                 key = (elem, tuple(rows))
@@ -1871,25 +1909,38 @@ def print_dps_table():
            ("早苗 灵界 113", _dps(TRANCE_ROWS["pl03.sht"]), "TH13 set10 一手（2×22/2）", 22.0),
            ("咲夜 灵界 113", _dps(TRANCE_ROWS["pl02.sht"]),
             "灵梦数值 + 咲夜刀弹（用户 2026-09-16 定案；anm=7，非 TH13 一手）", 22.0),
-           # ★★ 2026-09-16zb（111 魔理沙B）：**逐字段照抄 TH11 `pl01b.sht`** —— 硬断言在下面，
-           #   这里只打印满档的两个极端（火最弱 / 金最强，与一手一致）。
-           ("111 火 满档 主炮+子机", MARISA_TH11_DPS["FIRE"][4][0] + MARISA_TH11_DPS["FIRE"][4][1],
-            "TH11 pl01b 一手：主炮 8.00 + 子机 6.67（子机/主炮 = 0.83×）", None),
-           ("111 金 满档 主炮+子机", MARISA_TH11_DPS["METAL"][4][0] + MARISA_TH11_DPS["METAL"][4][1],
-            "TH11 pl01b 一手：主炮 5.33 + 子机 32.00（子机/主炮 = 6.00×）", None)]
-    # ★★ 2026-09-16zb：111 现在是**逐字段复刻**（不再"归一"）⇒ 断言改成**逐 (元素, 档) 对账**：
-    #   把生成出来的行复算一遍，必须逐值等于从 TH11 `pl01b.sht` 一手算出来的 `MARISA_TH11_DPS`。
-    #   改了任何一行数值 / 率 / 角度 / 组映射而没重新对账 ⇒ 这里直接停构建（这是"照抄"的守卫）。
+           # ★★★ 2026-09-23：111 改按 owner 口径**对齐 TH18 原生同机体**（不再是 TH11 的低伤害）——
+           #   这里打印满档的两个极端（火最弱 / 金最强，与 TH11 的相对关系一致）+ 对齐后的平均。
+           ("111 火 满档 主炮+子机", MARISA_TH11_DPS["FIRE"][4][0] + MARISA_TH11_DPS["FIRE"][4][1] * MARISA_ALIGN_K[4],
+            "主炮 8.00（TH11 一手）+ 子机 6.67×K4（火最弱）", None),
+           ("111 金 满档 主炮+子机", MARISA_TH11_DPS["METAL"][4][0] + MARISA_TH11_DPS["METAL"][4][1] * MARISA_ALIGN_K[4],
+            "主炮 5.33 + 子机 32.00×K4（金最强，仍 ≤ 原生上限 160）", None)]
+    # ★★★ 2026-09-23 起断言改成**两段式**（owner 口径「对齐 TH18 原生」）：
+    #   ① **形状**照抄 TH11：子机行的率 / 角度逐值不变，伤害 = TH11 一手值 × 该档系数（容差 1 个伤害单位的取整误差）；
+    #   ② **量级**对齐原生：逐档「五元素合计的平均」必须 = `MARISA_NATIVE_TARGET`（容差 2%）——
+    #      这就是「收卡速度」那条判据在数值侧的守卫（原生 19800 血符卡 ≈ 3.1 s）。
     _got = marisa_dps_table()
     for _e in MARISA_ELEMS:
         for _lv in range(MARISA_LEVELS):
             _wm, _ws = MARISA_TH11_DPS[_e][_lv]
             _gm, _gs = _got[_e][_lv]
-            if abs(_gm - _wm) > 1e-4 or abs(_gs - _ws) > 1e-4:
+            _k = MARISA_ALIGN_K[_lv]
+            _want_sub = _ws * _k
+            # 取整容差：每一行伤害最多差 0.5 个单位 ⇒ 每帧最多差 0.5×K×(Σ 1/rate)；档 0 没有子机行 ⇒ 0
+            _tol = 0.5 * _k * sum(1.0 / r for cell in MARISA_OPT_ROWS[_e].get(_lv, [])
+                                  for (r, _d, _a) in cell) + 1e-6
+            if abs(_gm - _wm) > 1e-4 or abs(_gs - _want_sub) > _tol:
                 raise SystemExit(
                     f"★ 111 {MARISA_ELEM_CN[_e]} 档{_lv}：生成出来 主炮 {_gm:.6f} / 子机 {_gs:.6f}，"
-                    f"与 TH11 `pl01b.sht` 一手值 主炮 {_wm:.6f} / 子机 {_ws:.6f} 不等"
-                    f"（改了 `MARISA_*` 任一张表就必须重新对账；一手出处见那段注释）")
+                    f"期望 主炮 {_wm:.6f}（= TH11 一手，不缩放）/ 子机 {_want_sub:.6f}"
+                    f"（= TH11 一手 {_ws:.6f} × 对齐系数 {_k:.4f}，容差 {_tol:.4f}）"
+                    f"（改了 `MARISA_*` / `MARISA_NATIVE_TARGET` 任一张表就必须重新对账；出处见那段注释）")
+    for _lv in range(MARISA_LEVELS):
+        _mean = sum(_got[_e][_lv][0] + _got[_e][_lv][1] for _e in MARISA_ELEMS) / len(MARISA_ELEMS)
+        if abs(_mean - MARISA_NATIVE_TARGET[_lv]) > MARISA_NATIVE_TARGET[_lv] * 0.02:
+            raise SystemExit(
+                f"★ 111 档{_lv}：对齐后五元素平均 {_mean:.3f}/帧，与 TH18 原生目标 "
+                f"{MARISA_NATIVE_TARGET[_lv]:.3f}/帧 差超过 2%（owner 口径「DPS 对齐 TH18 原生同机体」）")
     print("  DPS 对照（每帧伤害；新卡参数在 append_shooterset.py / animal.c）:")
     for nm, v in refs:
         print(f"    {nm:<18} {v:7.2f}  (一手)")

@@ -385,7 +385,11 @@ int main(void)
     /* ===== ★★ 2026-09-22（th08 #5）：妖侧不再只有一格 =====
      * 逐角色 × 逐火力档那 15 格**必须**是连续的、且顺序 = R0..R4, M0..M4, S0..S4
      *（`youkai.c` 的 `_Static_assert` 钉同一件事；这里再钉一次是为了让**纯逻辑单测**也能跑）。 */
-    CHECK(CE_SHT_SET_YOUKAI_R0 == 0x48);                            /* 追加区第一格（生成器分配）*/
+    /* ★ 2026-09-23：**不再钉绝对值** —— 111 的组数会随数值口径变化（DPS 对齐 TH18 原生后
+     *   31 → 43 格），硬编码会把这条纯逻辑单测被**无关改动**打红。只钉意图：
+     *   ① 排在 111 那一段之后；② 15 格都在「宣布可用」的范围内。*/
+    CHECK(CE_SHT_SET_YOUKAI_R0 > CE_SHT_SET_MARISA_MAIN_00);
+    CHECK(CE_SHT_SET_YOUKAI_R0 + YK_SHOT_TIERS * 3 <= CE_SHT_SLOTS);
     CHECK(CE_SHT_SET_YOUKAI_M0 == CE_SHT_SET_YOUKAI_R0 + YK_SHOT_TIERS);
     CHECK(CE_SHT_SET_YOUKAI_S0 == CE_SHT_SET_YOUKAI_M0 + YK_SHOT_TIERS);
     CHECK(YK_YOUKAI_TIER_SETS == 15);

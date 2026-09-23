@@ -2189,6 +2189,7 @@ static int on_option_pose_apply(ce_card_t *c)
 /* ★ 2026-09-16u 诊断：本卡喂给引擎的最后一组参数（给 `signal/opt:` 那行用）+ 一次「引擎给了什么」的对照。*/
 static int32_t s_opt_last_set;
 static int     s_opt_timer_logged;
+static int     s_opt_char_logged;     /* ★ 2026-09-23：非魔理沙机体「不发五元素子机」只记一行 */
 
 static int on_tick_shooters(ce_card_t *c, uint32_t short_timer, uint32_t long_timer)
 {
@@ -2196,6 +2197,22 @@ static int on_tick_shooters(ce_card_t *c, uint32_t short_timer, uint32_t long_ti
     int elem, lv, i;
 
     if (!s || !s->opt_on) return 0;
+    /* ★★★ 2026-09-23（owner 口径「th11 的魔理沙/灵梦 应当**各自**对齐 th18 的魔理沙/灵梦」）：
+     *   本卡的子机层是**魔理沙×帕秋莉的五元素系统**（`s_marisa_opt` 全是魔理沙的行组），
+     *   而这条 tick 原来**没有机体门** ⇒ **灵梦/咲夜/早苗也在发魔理沙那五套元素弹**。
+     *   在「逐档 DPS 对齐 TH18 原生**同机体**」之后这会直接违规：非魔理沙机体的原生每帧上限
+     *   只有 90 / 60 / 120（`pl0X.sht+0x28`），却吃到按魔理沙 160 对齐的量级 ⇒ 明显超模。
+     *   ⇒ **只让魔理沙发**；其余机体的主炮与子机**全部保持本作原生** = 天然「对齐各自原生」。
+     *   （主炮那条 `on_shot_set_index` 早就有同一道门，这里补上才一致。）*/
+    if (*(const int32_t *)CE_ADDR_CHARACTER != SIGNAL_CHAR_MARISA) {
+        if (!s_opt_char_logged) {
+            s_opt_char_logged = 1;
+            ce_log("signal/opt2: 机体 %d 不是魔理沙 ⇒ 本卡不发五元素子机（保持本作原生子机与主炮；"
+                   "owner 口径 = 各机体各自对齐 TH18 原生）",
+                   (int)*(const int32_t *)CE_ADDR_CHARACTER);
+        }
+        return 0;
+    }
     if (!s_opt_timer_logged) {                     /* 只打一次（引擎给的两个计时器 vs 我们传的） */
         s_opt_timer_logged = 1;
         ce_log("signal/opt2: 引擎调用 on_tick_shooters(+0x1c) 时给的计时器 short=%u long=%u；"
