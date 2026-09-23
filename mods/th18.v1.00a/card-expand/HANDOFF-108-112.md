@@ -41,6 +41,9 @@
 - **已排除①**：召唤的 C 路径（`th12:0x44a8xx`–`0x44a97x`）里**只建一支 VM** = `push $0x52`（脚本 82 = 大横幅）。
 - **已排除②**：不是靠 `color` 染的 —— 扫全部 TH12 anm dump，紫色系只有 `bullet.anm` 的纯品红 `(255,0,255)`
   ⇒ 紫环是**贴图**，得从 `sprite` 号切出来认。
+- **2026-09-23 追加**：UFO **本体**贴图来自 TH12 **`enemy.anm` script135**（见 `assets/ability/scripts/164_ufo_red.anm.txt`
+  的文件头：`make_ufo_art.py` 从 `enemy.anm` script135 生成）⇒ 下一轮找环/闪电时**别只看 `front.anm`**：
+  优先查 `enemy.anm`（本体同族）与 `stgenm06.anm`；按 `rotateTime` 形状扫过一遍，命中的文件 = `bullet` / `enemy` / `front` / `pl01` / `stgenm06`（未定论，别据此下结论）。
 - **方法（下一轮照走）**：`objdump -d local/th12.v1.00b/th12.exe > /tmp/th12.asm`，
   认 `call 0x4615a0`（anm 实例化）并取它前面最近的 `push $0xNN` ⇒ 全 exe **142 处**创建点。
   UFO/GUI 家族邻近候选：`0x421371→0x55`、`0x421619→0x51`、`0x4314e3/0x431593→0x51/0x52`、
