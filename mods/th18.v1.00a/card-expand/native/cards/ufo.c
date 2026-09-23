@@ -769,17 +769,40 @@ _Static_assert(CE_ANM_ABILITY_SPRITE_SLOT_EMPTY_B == CE_ANM_ABILITY_SPRITE_SLOT_
 _Static_assert(UFO_HUD_BLOCK_W > 0.0f && UFO_HUD_BLOCK_H > 0.0f,
                "the UFO HUD block is claimed now (user ruling 4) - a zero-size claim would be a bug");
 
-/* ============================ ★ 调试键（2026-09-18，用户要求：「依旧仿照 th17 调试，空格给我生成 token」）===
+/* ============================ ★ 调试键（2026-09-18；★ 2026-09-23 改键位）================================
  * 形状**完全照抄 117（TH17 动物灵）`animal.c` 的那一套**（`ANIMAL_DEBUG_KEY` 那一块）：
- *   · `ce_key_down(CE_VK_SPACE)` + 卡状态里一个 `dbg_key_prev` 做**边沿检测**（拍一下出一枚，按住不连发）；
- *   · 固定落点 + **一行日志**（`DEBUG … by SPACE`）；
+ *   · `ce_key_down(CE_VK_SPACE)` + 卡状态里一个 `dbg_key_prev` 做**边沿检测**（拍一下出一批，按住不连发）；
+ *   · 固定落点 + **一行日志**；
  *   · 一个宏开关：`UFO_DEBUG_KEY`（发布前改 0 即可全部停用 —— 117 的发布版就是 0）。
  * ⚠ 为什么能用空格：`ce_key_down` 走 `GetKeyboardState`（user32），空格**不在游戏配置里、也不进 replay
  *   输入流** ⇒ 只作调试用（117 的原话，同一只手一验过）。
- * ⚠ 本卡不吃 `CE_INPUT_*`（那是引擎的游戏输入），所以这枚键与「按不按 shift/Z」完全不冲突。 */
-#define UFO_DEBUG_KEY        1        /* ★ 用户 2026-09-18 要测 token 流 ⇒ 本轮开着；**发布前改 0** */
-#define UFO_DEBUG_X          0.0f     /* 落点 = 画面中央（与 117 的 (0, 224) 同一口径：ECL 640 空间）*/
+ * ⚠ 本卡不吃 `CE_INPUT_*`（那是引擎的游戏输入），所以这几枚键与「按不按 shift/Z」完全不冲突。
+ *
+ * ★ 2026-09-23（用户）：「**本卡的 shift+空格调试换成：爆大量 P 点和金钱点，方便测试 UFO 吸收**」
+ *   ⇒ 键位表如下（`UFO_DEBUG_*` 三个宏都是 ❓自定，只为调试）：
+ *     · **空格**          = 生成 1 枚令牌（一手小怪那种**固定色**）—— 不变
+ *     · **Shift+空格**    = **爆一批 P 点 + 金钱点**（按下表的网格铺开）—— ★ 本轮新行为
+ *     · **Ctrl+空格**     = 生成 1 枚**变色**令牌（原 Shift+空格 那件；搬过来是**为了让「变色」那条链
+ *       仍然有键可测**，`AUDIT` §BE 详报过「token 变色」是你报过的项；不想要就删这一个 `else if` 分支）
+ */
+#define UFO_DEBUG_KEY        1        /* ★ 调试期开着；**发布前改 0** */
+#define UFO_DEBUG_X          0.0f     /* 令牌落点 = 画面中央（与 117 的 (0, 224) 同一口径：ECL 640 空间）*/
 #define UFO_DEBUG_Y          224.0f   /* ⚠ 令牌的活动框是 y ∈ [160,370]、x ∈ [−176,176] ⇒ 这一带安全 */
+
+/* ---- Shift+空格 那一批点的铺法（❓自定）------------------------------------------------------------
+ * 为什么要「一批」：UFO 吸收链是**每帧扫全池**、18 单位内直接吞、之外靠累计速度拉（`ufo_absorb_tick`）
+ * ⇒ 一次铺一大片才能同时压到「吞」与「拉」两条路，也才看得出 fill 涨得快不快。
+ * 铺法：以**场上的 UFO 为圆心**（没有 UFO 就围着自机）铺一个 `COLS×ROWS` 的**固定偏移网格**——
+ *   · **不用三角函数**：本仓硬门是「我们的 object 里 0 条 x87」，表驱动最省事也最稳（`make dllx87`）；
+ *   · 两种点**各占一半的格子**（交错），这样一眼能看出 P 点与金钱点都被吸；
+ *   · 网格半径刻意 > 18 单位（吸收圈）⇒ 看得见它们**一颗一颗流进去**，而不是一帧全没。
+ * ❓ 数量/步长/半径全是调试口径：嫌少改 `ROWS`，嫌挤改步长。 */
+#define UFO_DEBUG_ITEM_COLS   8        /* 每行 8 颗 */
+#define UFO_DEBUG_ITEM_ROWS   6        /* 6 行 ⇒ 每色 24 颗、一次共 48 颗 */
+#define UFO_DEBUG_ITEM_DX     12.0f    /* 网格步长（ECL 单位；8 列 ⇒ 横跨 84 单位 ≈ 168 表面 px）*/
+#define UFO_DEBUG_ITEM_DY     14.0f    /* 行距（6 行 ⇒ 纵跨 70 单位）*/
+#define UFO_DEBUG_ITEM_ANGLE (-1.5707964f)  /* 初速方向 = **正上方**（一手奖励/普通道具都用 −π/2 `th12:0x44aca0`）*/
+#define UFO_DEBUG_ITEM_SPEED  1.4f     /* 初速大小（一手普通道具 2.2 / 令牌 1.4 ⇒ 调试取后者，慢一点好看）*/
 
 /* 帧源：`on_item_frame`（`0x446ee3`）每次分派 = 一个**正常游玩帧**（冻结/商店帧连门卫 CMP 都到不了；
  * 114 `collect2x.c` 的一手推导）。本卡全程用它当帧计数，不用 `card+0x20` 那个钟。 */
@@ -3732,6 +3755,51 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
     }
 }
 
+#if UFO_DEBUG_KEY
+/* ★ 2026-09-23（用户原话）：「**本卡的 shift+空格调试换成：爆大量 P 点和金钱点，方便测试 UFO 吸收**」。
+ *   · 圆心 = **场上的那台 UFO**（`ufo_enemy_by_id` ⇒ 吸收链的目标就是它）；没有 UFO 时围着自机
+ *     （吸收链照样会把它们拉向本体，只是要先等本体出来）。
+ *   · 铺法 = `COLS × ROWS` 的**固定偏移网格**（两种点交错），半径刻意大于 18 单位的「吞」圈
+ *     ⇒ 能看到它们**一颗一颗被拉进去**，同时压到「吞」与「拉」两条路。
+ *   · ⚠ **不用三角函数**：本仓硬门 = 我们的 object 里 0 条 x87（`make dllx87`），表/网格最稳。
+ *   · 落点在同一帧内不重叠：偏移是整数倍的步长（`DX/DY`），每颗再给同一组固定初速让引擎物理散开。 */
+static void ufo_debug_spawn_items(ufo_card_t *s)
+{
+    uint8_t *e = ufo_enemy_by_id(s->u.ufo_id);
+    float cx, cy;
+    int made_p = 0, made_m = 0, refused = 0;
+    int row, col;
+
+    if (e) {
+        cx = *(const float *)(e + CE_ENEMY_POS_X);     /* 吸收目标 = UFO 本体 */
+        cy = *(const float *)(e + CE_ENEMY_POS_Y);
+    } else {
+        ufo_player_xy(&cx, &cy);                       /* 没 UFO ⇒ 围着自机（等本体现身再吸）*/
+    }
+    for (row = 0; row < UFO_DEBUG_ITEM_ROWS; ++row) {
+        for (col = 0; col < UFO_DEBUG_ITEM_COLS; ++col) {
+            float pos[3];
+            /* 交错：奇偶格各出一种点 ⇒ 一眼能看出 P 点与金钱点**都在**被吸 */
+            uint32_t type = (((row * UFO_DEBUG_ITEM_COLS + col) & 1) ? UFO_ITEM_TYPE_MONEY
+                                                                     : UFO_ITEM_TYPE_P);
+            pos[0] = cx + ((float)col - (float)(UFO_DEBUG_ITEM_COLS - 1) * 0.5f) * UFO_DEBUG_ITEM_DX;
+            pos[1] = cy + ((float)row - (float)(UFO_DEBUG_ITEM_ROWS - 1) * 0.5f) * UFO_DEBUG_ITEM_DY;
+            pos[2] = 0.0f;
+            if (ce_spawn_item(type, pos, UFO_DEBUG_ITEM_ANGLE, UFO_DEBUG_ITEM_SPEED)) {
+                if (type == UFO_ITEM_TYPE_MONEY) ++made_m; else ++made_p;
+            } else {
+                ++refused;
+            }
+        }
+    }
+    ce_log("ufo: DEBUG item burst by SHIFT+SPACE - %d P + %d money around %s (%.0f, %.0f); "
+           "grid %dx%d step %.0fx%.0f, %d refused (item pool full?)",
+           made_p, made_m, e ? "the UFO" : "the player (no UFO on field)", (double)cx, (double)cy,
+           UFO_DEBUG_ITEM_COLS, UFO_DEBUG_ITEM_ROWS,
+           (double)UFO_DEBUG_ITEM_DX, (double)UFO_DEBUG_ITEM_DY, refused);
+}
+#endif  /* UFO_DEBUG_KEY */
+
 static void on_item_frame(ce_card_t *c)
 {
     /* ★ 2026-09-18（用户口径）：向**共享 PIV 池**声明本卡在场 + 本卡的可写上限（`cap_i − init_i`，按难度查表）。
@@ -3745,23 +3813,27 @@ static void on_item_frame(ce_card_t *c)
     if (!s) return;
     ++s->play_frame;
 #if UFO_DEBUG_KEY
-    {   /* ★ 调试（照 117 `animal.c` 同款）：拍**空格** ⇒ 在画面中央生成一枚令牌。
-         *   颜色走正常那条路（P2 随机取色 + 金变体）⇒ 顺便也能测「随机取色」那一格。 */
-        int down = ce_key_down(CE_VK_SPACE) ? 1 : 0;
+    {   /* ★ 调试（照 117 `animal.c` 同款）：边沿检测 + 一行日志。
+         *   ★ 2026-09-23 键位：**空格 = 1 枚固定色令牌** / **Shift+空格 = 爆一批 P 点+金钱点** /
+         *   **Ctrl+空格 = 1 枚变色令牌**（原 Shift+空格 那件搬到 Ctrl，见常量区那段长注）。 */
+        int down  = ce_key_down(CE_VK_SPACE) ? 1 : 0;
         int shift = ce_key_down(CE_VK_SHIFT) ? 1 : 0;
+        int ctrl  = ce_key_down(CE_VK_CONTROL) ? 1 : 0;
         if (down && !s->dbg_key_prev && shift) {
-            /* ★ Shift+空格 = 出**变色令牌**（一手 type 13/14/15 的对位）：起色随机、之后每 150 帧换一次。
+            ufo_debug_spawn_items(s);                  /* ★ 本轮新行为（用户 2026-09-23 口径）*/
+        } else if (down && !s->dbg_key_prev && ctrl) {
+            /* Ctrl+空格 = 出**变色令牌**（一手 type 13/14/15 的对位）：起色随机、之后每 150 帧换一次。
              *   用途：不用真去打碎一个 UFO 就能验证「变色」那条链
              *   （普通空格出的是一手小怪那种**固定色**令牌 —— 那一类本来就不会变色）。*/
             int st = (int)((s_rng_seed = ufo_rand_next(s_rng_seed)) % UFO_TOK_RB_STATES);
             if (ufo_tok_spawn_ex(s, UFO_DEBUG_X, UFO_DEBUG_Y,
                                  ufo_token_display_color(UFO_COLOR_RED, 1, st), st, 1))
-                ce_log("ufo: DEBUG spawn CYCLER token #%u at (%.0f, %.0f) by SHIFT+SPACE "
+                ce_log("ufo: DEBUG spawn CYCLER token #%u at (%.0f, %.0f) by CTRL+SPACE "
                        "(rb_state %d; recolours every %d frames)",
                        s->token_serial - 1u, (double)UFO_DEBUG_X, (double)UFO_DEBUG_Y, st,
                        UFO_TOK_CYCLE_TICKS);
             else
-                ce_log("ufo: DEBUG spawn cycler token by SHIFT+SPACE failed (pool full?)");
+                ce_log("ufo: DEBUG spawn cycler token by CTRL+SPACE failed (pool full?)");
         } else if (down && !s->dbg_key_prev) {
             if (ufo_tok_spawn(s, UFO_DEBUG_X, UFO_DEBUG_Y))
                 ce_log("ufo: DEBUG spawn token #%u at (%.0f, %.0f) by SPACE (color %d, %s)",
