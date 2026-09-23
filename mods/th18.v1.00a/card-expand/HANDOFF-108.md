@@ -68,6 +68,9 @@ ce: shot-set-index first claim (frame N): edi=0x… [player+0x47940]=0x…
 ⇒ 那些行要的正是原生那 4 格 —— **可我们低速把它们藏了**（`ce_native_option_hide_declare` + 每帧
 `ce_native_option_sweep()` + 隐藏断点把 `lvl` 压 0 ⇒ 连**记录**都不建）⇒ 没有活膛口 ⇒ 只有本体那一列发得出来。
 
+**★★ B-1 已实现并发版（DLL `65f78eab…`，登记 `AUDIT.md` §BE #78）**：① 108 不再声明隐藏；② 新增 `ce_native_option_sweep_keep_state()`（只杀显示、保留 `state`/坐标）。★ 连带修掉第二条机制：`BP_ce_native_option_muzzle` 只在 `ce_native_option_hidden()` 为真时动手 ⇒ 旧版会把**我们自己的** `slot ≥ 1` 行的弹也拦掉（膛口正是原生那 4 格）⇒ 现在是两条一起解开。
+⚠ **剩下的一处**：装 108+111 且**机体 = 魔理沙**时，111 仍声明隐藏 ⇒ 隐藏断点把 `lvl` 压 0 ⇒ 那一路 `slot ≥ 1` 仍无膛口。修法与 108 同形（把 111 也改成「只杀显示、保留记录」，并在构建断点里**去掉 `lvl = 0` 那一写**）—— 但**等 B-1 实跑验证过再动**（一次只改一处）。
+
 **★★★ 2026-09-23 实跑定案 = 分支 B**：owner 19:02 那局打出 `youkai: native option slots at low speed - 0/4 live`
 （偶见 1/4）⇒ 低速时引擎那 4 格原生子机**基本是空的** ⇒ 我们 TH08 行的 `slot ≥ 1` 没有膛口 ⇒ 只有本体那一列
 ⇒ 与 owner「本体只发一列、子机不发」逐字对上。**不用再分流，按 §4 的 B 修。**
