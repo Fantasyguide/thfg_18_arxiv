@@ -1,0 +1,34 @@
+script script322 {
+    // 112 星莲船 —— **UFO 击破时的爆炸特效（外圈）**
+    //   一手：TH12 v1.00b `bullet.anm` **script208** 逐条移植（`local/th12.v1.00b/anm/bullet/bullet.anm.txt`）。
+    //   原文：
+    //     sprite(-1); layer(12); blendMode(1); scriptNew(script209); drawPoly(1.0f, 32);
+    //     color(0,255,192); color2(255,255,255); scale(0,0); scaleTime(40,4,192,192);
+    //     alpha(255); alphaTime(10,1,1); alpha2(255); +20: alpha2Time(20,4,0); +40: delete();
+    //     interruptLabel(1): alphaTime(20,0,0); +20: delete();
+    // ★ 移植改动：**一个都没有**（只有 `scriptNew(script209)` → `@SCRIPT_UFO_BREAK_FLASH_INNER@` 这个引用换了写法）。
+    //   层 12 在 TH18 里同样是**世界层**（相机 3，`engine/anm/th18/02-render-stages.md`）⇒ 爆炸就炸在 UFO 身上。
+    // ★★ owner 2026-09-23 实跑第 12 条：「**击破 UFO 的时候是类似于击破 boss 有一个爆炸特效的**」
+    //   ⇒ 一手的击破特效正是这两支（外圈 206/192、内圈 320），`drawPoly` **不需要任何贴图**。
+    //   ⚠ `drawPoly` 在 TH18 = v8 的 **604**（mode 17）；`color2`/`alpha2` = 406/411（v8 里同名）。
+    sprite(-1);
+    layer(12);
+    blendMode(1);
+    scriptNew(@SCRIPT_UFO_BREAK_FLASH_INNER@);
+    drawPoly(1.0f, 32);
+    color(0, 255, 192);
+    color2(255, 255, 255);
+    scale(0.0f, 0.0f);
+    scaleTime(40, 4, 192.0f, 192.0f);
+    alpha(255);
+    alphaTime(10, 1, 1);
+    alpha2(255);
++20: // 20
+    alpha2Time(20, 4, 0);
++20: // 40
+    delete();
+    interruptLabel(1);
+    alphaTime(20, 0, 0);
++20: // 60
+    delete();
+}

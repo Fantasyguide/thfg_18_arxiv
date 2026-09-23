@@ -42,6 +42,27 @@
 | 6 | 按 shift ⇒ 使魔变**魔法阵**，**不与自机碰撞**、**不可被打** | ⚠ 现为「人侧可打/撞 ⇒ MISS、妖侧不可打」；按此条要核「妖侧不与自机碰撞」是否也满足 |
 
 
+## ★ 本批（2026-09-23 深夜 · 最新）已改 · 待实跑 —— **owner 12 条实跑反馈**
+
+> **部署**：DLL 见 `RELEASE-STATE.json`（modkit **4 路径同 md5**）· patch / `ability.anm` / `voice` 同批。
+> **前几版内容全部包含在本版里。** 逐条判据见下表（日志关键字都在）。
+
+| # | owner 原话（要点）| 改了什么 | 实跑看什么（关键字）|
+| --- | --- | --- | --- |
+| 1+3 | 「去掉**右侧的收点 HUD**，不需要了」+「**吸收了多少点数的那个 ascii 也不要了**」| 面板（脚本 304/305）与它上面那排数字**整套关掉**（`ufo.c` 的 `UFO_PANEL_ENABLED = 0`，代码/资产保留一行可开回）| 屏幕右侧不再出现 96×96 面板；日志不再有 `ufo: absorb-count panel popped` |
+| 2 | 「击破之后我能看见一个**黑色的 `*1` 从画面的下方缓慢地往上飞，一直也不消失**」| ×N 弹字**改回 ASCII**（一手就是 `printf("*%1.1f")`）：位置换算修正（原来低 448 表面 px）· 寿命 **120 帧**（原来误用 UFO 的 720）· 颜色回到一手那套**灰/黄 5 帧一换**（旧版走字形通道，贴图是深灰 ⇒ 乘红=近黑）| `ufo: xN popup up - mult … -> ascii "*%1.1f" at world (x, y) for 120 frames`；画面：UFO 正下方 2 秒后消失 |
+| 4 | 「**UFO（敌人）吸收道具不应该有音效**，我**收取飞碟 token 不应该有音效**」| 静音表（`s_sev_mute`）：`ufo-absorb` / `token-take` / `token-slot-full` 三格 = **不播**（照旧计数 + 日志），一行可回退一手| `ufo/se: "ufo-absorb" -> … [MUTED by owner ruling - not played]`；耳朵：吸收与收碟都**没有**那一声 |
+| 5 | 「绿 UFO 吸满掉的满 B…**图片换成（本作）完整 B 的卡面**」| 整颗 Bomb 的贴图**换成 TH18 自己的 `ability/BOMB_min.png`**（原生完整 B 卡面；`BOMB2_min.png` = B 碎那张），画布 16→32、图集 64×32→64×64 | 绿 UFO 吸满掉出来的那件：外观 = **本作完整 B 卡面** |
+| 6 | 「**召唤 UFO 之后会把场上的所有飞碟 token 清空**」| 真因：P1「槽满 ⇒ 令牌照收（满槽补偿）」那一支**排在接触闸之前** ⇒ UFO 一在场就吃掉**全池**令牌。已把接触闸提到它前面 | 召唤后场上 token **留在场上**；只有自机**碰到**的那一枚才会被换成满槽补偿（`ufo: slots FULL …`）|
+| 7 | 「UFO 吸收满之后是有一个音效的，好像是 `se_cardget.wav`」| 吸满音效改 TH18 `0x2e` = **`se_cardget.wav`**（一手其实是 `se_bonus`（TH12 `0x30`）；两作 `se_bonus.wav`/`se_cardget.wav` **都逐字节相同** ⇒ 属听感取舍，一行可回退）| 吸满那一下的音变了（`ufo/se: "ufo-fill-full" -> th18 id 0x2e`）|
+| 8 | 「UFO 召唤…**看不见任何特效**，并且得有音效 `se_ufo.wav`」| ① **真因**：召唤特效只在「重建本体 VM」那一支里起，而本体 VM 永远先由召唤路径建好 ⇒ **一次都没执行过**（旧日志 0 行）⇒ 改到召唤成功那一刻；② 新增音效表一格 `CE_VOICE_UFO`（`0x5f`，源 = TH12 `se_ufo.wav`）在召唤时播（`AUDIT.md` §BE #81）| `ufo: summon purple ring up … + hex burst script …`；`ufo/se: "ufo-spawn" -> th18 id 0x5f`；画面：紫环 + 六边形爆闪 |
+| 9 | 「**进入对话后，场上的 token 应当不再反弹，直接飞走**」| 新纯逻辑 `ufo_tok_motion_leave()`（`age` 顶到不反弹阈值 + 速度 ×2、幂等，有单测）：对话那一刻对全池调用 | `ufo: DIALOGUE - N token(s) switched to the leave flight (no more bounce, speed x2.0 …)`；画面：token 直着飞出场外 |
+| 10 | 「**小怪掉落飞碟**（击破 UFO 掉落没有）的时候得有 `se_piyo.wav`」| 代码本来就只在小怪那条路播（`ufo_tok_spawn()`），但**事件号撞号**（`UFO_SEV_TOKEN_SPAWN == UFO_SEV_FULL == 5`）⇒ 日志一行都没打过（无法确认）。本轮重排事件号 | `ufo/se: "token-spawn" -> th18 id 0x5e`；耳朵：小怪掉 token 一声（击破 UFO 返还那枚**没有**）|
+| 11 | 「**UFO 存在的时候一直有音效 `se_ufoalert.wav`**」| 手动循环：在场期间每 **28 帧**重放一次（0.5 s wav；SDK 无停循环音通路 ⇒ 不设循环位，UFO 一走自然停）| `ufo/se: "ufo-alert-loop" -> th18 id 0x58`、关底 tally 里 `ufo-alert-loop` 计数 ≈ 存活帧 / 28 |
+| 12 | 「**击破 UFO 的时候是类似于击破 boss 有一个爆炸特效的**」| 一手 `bullet.anm` script208/209 逐条移植成 `ability.anm` **322/323**（`drawPoly(1,32)`、`scaleTime(40,4,192/320)`、`layer(12)`、无贴图）⇒ 击破时在 UFO 位置起一发 | `ufo: break explosion up at (x, y) - ability.anm script 322 (+inner 323) …`；画面：两圈扩散爆闪 |
+
+**顺带**：把「三格槽逐 VM 实况」诊断的节奏 60 → **600 帧**（上一次实跑它打了 1737 行，把日志里其它东西盖住了）。
+
 ## ★ 本批（2026-09-23 夜 · 最新）已改 · 待实跑
 
 > **部署**：DLL `2e3e7d17a0eb55ce9060c485299700ee`（modkit **4 路径同 md5**）· patch `df14d570…` ·

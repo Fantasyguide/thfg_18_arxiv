@@ -1061,6 +1061,27 @@ int main(void)
         ufo_tok_motion_init_at(&m, 1u, 0.0f, 0.0f);
         CHECK(ufo_tok_motion_step(&m) == 0);                         /* 场内 ⇒ 活 */
         CHECK(ufo_tok_motion_step(NULL) == 1);                       /* 空指针 ⇒ 报「撤」（防御）*/
+
+        /* ★ 2026-09-23（owner 实跑第 9 条）：「**进入对话后，场上的 token 应当不再反弹，直接飞走**」
+         *   ⇒ `ufo_tok_motion_leave()`：① `age` 顶到「不反弹」阈值；② 速度 ×2；③ 幂等。*/
+        ufo_tok_motion_init_at(&m, 1u, 0.0f, 0.0f);
+        CHECK(m.age == 0);
+        {
+            const float vx0 = m.vx, vy0 = m.vy;
+            ufo_tok_motion_leave(&m);
+            CHECK(m.age == UFO_TOK_NO_BOUNCE_FRAMES);                /* ① 进"不反弹"段 */
+            CHECK(m.vx == vx0 * UFO_TOK_LEAVE_SPEED_MUL);            /* ② 加速（整数倍，浮点逐位相等）*/
+            CHECK(m.vy == vy0 * UFO_TOK_LEAVE_SPEED_MUL);
+            ufo_tok_motion_leave(&m);                                /* ③ 幂等：再叫一次不再加速 */
+            CHECK(m.vx == vx0 * UFO_TOK_LEAVE_SPEED_MUL);
+            CHECK(m.vy == vy0 * UFO_TOK_LEAVE_SPEED_MUL);
+        }
+        /* 离场态贴到边界**不反弹**（与 1200 帧之后那一段同一条判据）*/
+        ufo_tok_motion_init_at(&m, 1u, 176.5f, 0.0f);                /* 右下：vx>0、vy>0 */
+        ufo_tok_motion_leave(&m);
+        CHECK(ufo_tok_motion_step(&m) == 0);
+        CHECK(m.vx > 0.0f && m.vy > 0.0f);                           /* 速度没被翻 */
+        ufo_tok_motion_leave(NULL);                                  /* 空指针：什么也不做（不崩）*/
     }
 
 

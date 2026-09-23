@@ -688,19 +688,12 @@ CONV_BURST             ability/mof/CONV_BURST.png                     32x32
 # ============================================================================================
 # 卡 112 的掉落物实体贴图（TH12 bullet.anm entry5 = bullet/etama8.png 的 1:1 切图）
 #   生成器 = assets/ability/make_ufo_drop_art.py（矩形从 anm 文本读 + 断死）
-ATLAS ATLAS_UFO_DROP 64x32
+ATLAS ATLAS_UFO_DROP 64x64
 BOUNTY_BAG         ability/ufo_drop/BOUNTY_BAG.png   @0,0,32x32
 DROP_ICON_P        ability/ufo_drop/DROP_ICON_P.png   @32,0,16x16
 DROP_ICON_POINT    ability/ufo_drop/DROP_ICON_POINT.png   @48,0,16x16
-DROP_BOMB          ability/ufo_drop/DROP_BOMB.png   @32,16,16x16
+DROP_BOMB          ability/ufo_drop/DROP_BOMB.png   @32,32,32x32
 
-# ============================================================================================
-# 2026-09-18 追加：卡 112 的 飞碟槽 HUD（令牌槽 / 收集闪光 / 记录面板）
-#   生成器 = assets/ability/make_ufo_drop_art.py / make_ufo_hud_art.py（矩形从 anm 文本读 + 断死）
-#   append 在最末尾 ⇒ 一个既有号都没动。
-# ============================================================================================
-# 卡 112 的飞碟槽 HUD 贴图（TH12 front.anm 的 1:1 切图）
-#   生成器 = assets/ability/make_ufo_hud_art.py（矩形从 anm 文本读 + 断死）
 # 卡 112 的飞碟槽 HUD 贴图（TH12 front.anm 的 1:1 切图）
 #   生成器 = assets/ability/make_ufo_hud_art.py（矩形从 anm 文本读 + 断死）
 #   ★ 槽的四态 = SLOT_EMPTY/RED/BLUE/GREEN（连续 4 个），亮版那一组紧接其后（+4）——

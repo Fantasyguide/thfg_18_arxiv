@@ -65,4 +65,10 @@
     "volume_db": -300,
     "priority": 100
   }
+  ,"UFO": {
+    "wav": "UFO",
+    "id": 95,
+    "volume_db": -400,
+    "priority": 100
+  }
 }

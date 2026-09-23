@@ -554,6 +554,15 @@ int ufo_tok_motion_step(ufo_tok_motion_t *m)
     return 0;
 }
 
+void ufo_tok_motion_leave(ufo_tok_motion_t *m)
+{
+    if (!m) return;
+    if (m->age >= UFO_TOK_NO_BOUNCE_FRAMES) return;      /* 已经在"不反弹"那一段 ⇒ 不重复加速（幂等）*/
+    m->age = UFO_TOK_NO_BOUNCE_FRAMES;
+    m->vx *= UFO_TOK_LEAVE_SPEED_MUL;
+    m->vy *= UFO_TOK_LEAVE_SPEED_MUL;
+}
+
 int32_t ufo_bounty_item_type(const ufo_ufo_t *u)
 {
     if (!u) return 0;

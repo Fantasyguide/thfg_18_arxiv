@@ -16643,6 +16643,7 @@ TH18 没有 PIV 状态量，但**有同量纲的对位物**：`engine.h` 的 `CE
 | 2026-09-22 | **六张卡（共享件 `cards/hud_dim.*` + `sdk.*` / `sdk_core.*` / `Makefile` + 9 支脚本）** | 见下方「§BE 详录 #53」 |
 | 2026-09-22 | **112（星莲船）的 P3 表现件**（脚本 302..305 + 10 张贴图 + 生成器 + `cards/ufo.c`；文件清单与影响面见详录）| 见下方「§BE 详录 #52」 |
 | 2026-09-23 | **112（星莲船）HUD 真根因修复 + 音效两处一手订正 + 共享件 `patch/th18/voice.js`（UFOALERT 音量行）**：`assets/ability/make_ufo_hud_art.py`、`assets/ability/scripts/302..305`、`cards/ufo.c`、`patch/th18/voice.js` | 见下方「§BE 详录 #54」 |
+| 2026-09-23 | **所有卡（共享件 `assets/voice/*` + `patch/th18/voice.js`：音效表再加一格 `UFO` = `se_ufo.wav`，id **0x5f**；`CE_VOICE_REGISTERED` 10 → 12，零行为变化）** | 见下方「§BE 详录 #81」 |
 
 **§BE 详录 #51**（共享件 `hud_dim.*` 的统一动态换基准，2026-09-21）
 
@@ -20877,3 +20878,28 @@ youkai:   native opt slot 2: state 0 vm 00000000 muzzle (0.0, -400.0)   （3/4 �
 
 **发布面**：动 `sdk_core.c` + `sdk.c`（⇒ DLL）；未动 `pl0X.sht` / `pl0X.anm` / `ability.anm` / wav / `sites.py` / `SITE_BUDGET`；
 **没新增断点**（31 个原样）。
+
+## §BE 详录 #81（2026-09-23）：★ **共享件** `assets/voice/*` + `patch/th18/voice.js` —— 音效表再加一格 `UFO`（`se_ufo.wav`，id **0x5f**）
+
+**谁改的**：112（星莲船）owner 实跑第 8 条「UFO 召唤的时候…**得有音效 `se_ufo.wav`**」⇒ 走与 `UFOALERT`（#54）
+/ `UFO_TOKEN_SPAWN` 同一条**扩表通道**（TH18 原生 84 行里没有这一枚 wav）。
+
+**改动面（四处 + 一个产物，全在共享件）**：
+
+| 文件 | 改了什么 |
+| --- | --- |
+| `assets/voice/derive_retail_se.py` | TABLE 追加一行 `("UFO", "th12.v1.00b", "se_ufo.wav", …)`（含一手定位与"不是 `Ufo::spawn`"的诚实标注）|
+| `assets/voice/ORDER.txt` | 末尾追加 `UFO` 一行 + 注释块（一手 id/名表下标/行属性）|
+| `patch/th18/voice.js` | 追加 `"UFO": { "wav": "UFO", "id": 95, "volume_db": -400, "priority": 100 }`（**id 显式写死**，`build_voice.py` 会对账）|
+| `native/voice_ids.h` | 生成物：新增 `CE_VOICE_UFO 0x5f`、`CE_VOICE_REGISTERED 12` |
+| `patch/th18/voice/UFO.wav` + `assets/voice/UFO.wav` | 构建期从 `local/th12.v1.00b` 逐字节现取（44100 Hz / 16-bit / 1ch / 176528 B）|
+
+**一手（逐字段读出）**：TH12 SE 表 `th12:0x4ae5a4` 第 **0x33** 行 `+0x00` = 名表下标 **40** → 名表 `th12:0x4aea50`
+→ `se_ufo.wav`；行属性 **vol −400 / prio 100 / loop 0**。⚠ TH12 里这一枚的播放点是
+`0x407059`/`0x4077c9`/`0x408161`/`0x408a09`（居中）与 `0x46a836`（带声像）—— **不在** `Ufo::spawn`
+（那里只有 `0x34` se_lazer02 + `0x36` se_ufoalert）⇒ **本格是 owner 口径的映射，不是一手的"召唤就是这一声"**，
+已在宏注释与 TUNING 里写明。
+
+**对既有卡的影响面**：零行为变化 —— 新增一格 id（95）与一个新 wav 文件；`CE_VOICE_REGISTERED` 10 → **12**
+（它只是计数器，没有数组按它分配）。其它卡不引用这一格。**回归**：`make voice` 重建通过、
+`make check` rc=0、`make dllx87` = 0。

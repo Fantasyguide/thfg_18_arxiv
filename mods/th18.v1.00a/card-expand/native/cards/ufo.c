@@ -181,7 +181,21 @@
                                  * 免得同一个动作响三声 —— 记在 `TUNING.md`）。
                                  * 后者（`ufo_break` 里 spawn 加成道具时播）**一手 spawn_item 根本不播音** ⇒
                                  * 它是 ❓自定 的"这里该有声"补丁，**本轮不动**（删它要 owner 点头）。*/
-#define UFO_SE_FULL     0x2f    /* `se_bonus.wav`（+0 dB / prio 100）：吸满吐奖励 */
+#define UFO_SE_FULL     0x2e    /* ★★ 2026-09-23（owner 实跑第 7 条）：「**UFO 吸收满之后是有一个音效的**，
+                                 *   好像是 **`se_cardget.wav`**」⇒ 用 TH18 自己的 `0x2e`（= `se_cardget.wav`，
+                                 *   +0 dB / prio 100；同一枚 wav 在 `0x0f` 也有一行 = −8 dB，取响的那一行）。
+                                 *   ⚠ **一手是 `se_bonus.wav`**：TH12 吸满那一支 `0x44ad7e` 的 id `0x30`
+                                 *   → TH12 表第 0x30 行 = `se_bonus.wav`（vol 0 / prio 100），而 TH18 同名的
+                                 *   `0x2f` = `se_bonus.wav` **逐字节相同**（md5 44b82b1d…）⇒ 原来那一格是**一手正确**的。
+                                 *   ⇒ 本轮按 owner 口径改成 `se_cardget`，属**听感取舍**（一行可回退），登记 `TUNING.md`。*/
+#define UFO_SE_UFO       CE_VOICE_UFO
+                                /* ★★ 2026-09-23（owner 实跑第 8 条）：「UFO 召唤的时候…得有音效
+                                 *   **`se_ufo.wav`**」⇒ 新扩表槽 `CE_VOICE_UFO`（`0x5f`，源 = TH12
+                                 *   `se_ufo.wav` 逐字节现取，构建期由 `assets/voice/derive_retail_se.py` 取）。
+                                 *   一手定位见该脚本的 TABLE 行：TH12 表第 **0x33** 行 ⇒ `se_ufo.wav`
+                                 *   （vol −400 / prio 100 / loop 0）。
+                                 *   ⚠ TH12 里这一枚**不是** `Ufo::spawn` 播的（那里只有 0x34 + 0x36）⇒ 本格 =
+                                 *   **owner 指定的映射**，不是「一手召唤时就是这一声」。*/
 #define UFO_SE_BREAK    0x38    /* `se_extend2.wav`（+0 dB / prio 100）：击破 */
 #define UFO_SE_TOKEN    0x0c    /* ★★ 2026-09-20 改（P1 #th12-3「收取 token 声音应该不是这个」）：
                                  *   **一手 = TH12 `0x26` = `se_timeout2.wav`** —— 令牌（道具 type 10..15）
@@ -210,7 +224,6 @@
  * ⚠ 计数在 `on_ctor`（每关开场）清零 ⇒ 一行汇总里的数字是**本关**的。
  * ⚠ 本函数只是 `ce_play_sound` 的薄包装（**不新增站点、不碰共享件**），行为与原调用完全一致。 */
 #define UFO_SEV_TOKEN_TAKE  0    /* 令牌被自机收下并落槽（一手 `0x426da4` 共同尾 = `0x26`）*/
-#define UFO_SEV_TOKEN_SPAWN 5    /* ★ 2026-09-23（#18）：**令牌生成**那一声（一手 `0x42741b` = `0x37` = `se_piyo.wav`）*/
 #define UFO_SEV_TOKEN_FULL  1    /* 槽里已有成组 ⇒ 令牌被吃掉换满槽补偿（同一条共同尾）*/
 #define UFO_SEV_ABSORB      2    /* UFO 吞下一颗道具（一手 `0x426970` = `0x26`）*/
 #define UFO_SEV_SPAWN       3    /* UFO 入场（一手 `0x44a9d9` = `0x34` + `0x44a9fe` = `0x36`）*/
@@ -221,26 +234,43 @@
 #define UFO_SEV_PACKAGE     8    /* 赏金压缩包被收下（一手 `0x426c76` = `0x27`）*/
 #define UFO_SEV_BOMB_TAKE   9    /* 整颗 Bomb 被收下（一手 = 道具 7：`collect_bomb` + 共同尾）*/
 #define UFO_SEV_DROP_SPAWN 10    /* ❓自定：击破时加成道具 spawn 那一声（一手 `spawn_item` 不播音）*/
-#define UFO_SEV_COUNT      11
+#define UFO_SEV_TOKEN_SPAWN 11   /* ★ 2026-09-23（#18）：**令牌生成**那一声（一手 `0x42741b` = `0x37`）*/
+#define UFO_SEV_ALERT_LOOP 12    /* ★ 2026-09-23（#11）：UFO 在场期间的**持续** `se_ufoalert`（循环音）*/
+#define UFO_SEV_COUNT      13
 
 static const char *const s_sev_name[UFO_SEV_COUNT] = {
     "token-take", "token-slot-full", "ufo-absorb", "ufo-spawn", "token-recolor",
-    "ufo-fill-full", "ufo-break", "ufo-etbreak2", "package-open", "bomb-take", "drop-spawn"
+    "ufo-fill-full", "ufo-break", "ufo-etbreak2", "package-open", "bomb-take", "drop-spawn",
+    "token-spawn", "ufo-alert-loop"
+};
+
+/* ★★ 2026-09-23（owner 实跑第 4 条）：「**UFO（敌人）吸收道具不应该有音效**，我**收取飞碟 token 不应该有音效**」
+ *   —— 这两件事一手确实各有一声（都是 TH12 `0x26` = `se_timeout2.wav`），但 owner 听感上明确要**静音**
+ *   （同一天早些时候的口径也是「收 token 没声音，就当没声音处理」）。
+ *   ⇒ 实现成**静音表**：事件照旧计数/照旧进日志（可对账），只是**不调 `ce_play_sound`**。
+ *   ⚠ 要恢复一手：把下面两格改 0（一行）。登记见 `TUNING.md` §2.0y/§2.0z… 与 `SINGLE-CARD-TEST.md` #4。*/
+static const uint8_t s_sev_mute[UFO_SEV_COUNT] = {
+    /* token-take */ 1, /* token-slot-full */ 1, /* ufo-absorb */ 1,
+    /* ufo-spawn */ 0, /* token-recolor */ 0, /* ufo-fill-full */ 0, /* ufo-break */ 0,
+    /* ufo-etbreak2 */ 0, /* package-open */ 0, /* bomb-take */ 0, /* drop-spawn */ 0,
+    /* token-spawn */ 0, /* ufo-alert-loop */ 0
 };
 static uint32_t s_sev_count[UFO_SEV_COUNT];
 static uint8_t  s_sev_logged[UFO_SEV_COUNT];
 
-/* 唯一的播放入口：计数 + 首播一行 + 转发 `ce_play_sound`。`ev` 越界（不该发生）只转发、不记账。 */
+/* 唯一的播放入口：计数 + 首播一行 + 转发 `ce_play_sound`（**静音事件只计数/记日志**）。 */
 static void ufo_se(int ev, uint32_t id, float x, const char *one_hand)
 {
     if (ev >= 0 && ev < UFO_SEV_COUNT) {
         ++s_sev_count[ev];
         if (!s_sev_logged[ev]) {
             s_sev_logged[ev] = 1;
-            ce_log("ufo/se: \"%s\" -> th18 id 0x%02x (pan %.0f) - %s",
+            ce_log("ufo/se: \"%s\" -> th18 id 0x%02x (pan %.0f)%s - %s",
                    s_sev_name[ev], (unsigned)id, (double)x,
+                   s_sev_mute[ev] ? " [MUTED by owner ruling - not played]" : "",
                    one_hand ? one_hand : "(no source recorded)");
         }
+        if (s_sev_mute[ev]) return;                   /* ★ 静音：不播，但账照记 */
     }
     ce_play_sound(id, x);
 }
@@ -744,6 +774,10 @@ _Static_assert(CE_ANM_ABILITY_SPRITE_SLOT_EMPTY_B == CE_ANM_ABILITY_SPRITE_SLOT_
 #define UFO_TIMER_DY640        20.0f    /* 一手 0x44a790：`fadd [0x4a4170]` = 20.0（UFO 正下方）*/
 #define UFO_TIMER_COLOR   0xc080ffc0u   /* 一手 0x44a778：D3DCOLOR 0xc080ffc0（淡绿）*/
 #define UFO_TIMER_LOG_EVERY    60u      /* 诊断行节奏（跟环那一条一样，每 60 帧一行）*/
+/* 2026-09-23: the 3-slot per-VM dump was also every 60 frames -> 1737 lines in a 10-minute session
+ * (ufo/slot.vm + ufo/slot:), drowning everything else in the log => throttled to 600 frames (10 s).
+ * The countdown line (ufo/timer:) stays at 60 frames (it is live state, not noise). */
+#define UFO_SLOT_LOG_EVERY    600u      /* custom: per-VM slot dump cadence */
 /* HUD 脚本号（`make anm` 生成的宏优先；没有宏时用字面量 —— 与 gauge 那一组同一写法）*/
 #ifdef CE_ANM_ABILITY_SCRIPT_UFO_HUD_SLOT
 #define UFO_HUD_SCRIPT_SLOT  CE_ANM_ABILITY_SCRIPT_UFO_HUD_SLOT     /* 302 */
@@ -1072,6 +1106,7 @@ typedef struct {
     uint8_t     pending_break;                         /* 1 = 帧末要按「击破」收尾开奖 */
     uint8_t     logged_no_hud;                         /* 保留名：HUD「画起来了」日志只报一次（第三版起 = 原版槽 VM 到位）*/
     uint8_t     logged_lifetime;                       /* 存活上限日志每局只报一次 */
+    uint8_t     tokens_leave_logged;                   /* 2026-09-23 owner #9: dialogue -> leave flight, log once */
     uint8_t     pentagon_any;                          /* 本帧有没有令牌够格画五边形框（= 场上真有框）*/
     uint8_t     pentagon_logged;                       /* 五边形框条件第一次成立时只报一条日志 */
     /* —— 统计（只用于日志，不参与判定）—— */
@@ -1908,6 +1943,28 @@ static void ufo_gauge_spawn(ufo_card_t *s, const uint8_t *e)
     ufo_gauge_follow(s);                               /* 摆好位置 / 颜色 / 角度（唯一的摆位点）*/
 }
 
+/* ★★ 2026-09-23（owner 实跑第 11 条）：「**UFO 存在的时候一直有音效 `se_ufoalert.wav`**」。
+ *   一手：TH12 `Ufo::spawn` 的第二声（`th12:0x44a9fe mov eax,0x36` + `0x44aa06 call 0x453e20`，在飞碟的 x），
+ *   **且那一行是循环音**（TH12 cfg 第 0x36 行 `+0x0c` = 1；wav 本身只有 ~0.5 s）⇒ 原版是"一直响到 UFO 走"。
+ *   ⚠ 本仓 SDK **没有停循环音的通路**（`ce_play_sound` 是唯一出口；TH18 的循环位只有原生 0x14/0x37 两行）
+ *   ⇒ 用**手动循环**：UFO 在场期间每 `UFO_SE_ALERT_PERIOD` 帧重放一次（0.5 s 的 wav × 28 帧 ≈ 无缝），
+ *   UFO 一消失就**自然停**（不再调用 = 没有下一声）。
+ *   ❓自定：周期 28 帧（不改循环位、不新增断点；宁可听感上略有缝，也不要一个停不掉的循环）。 */
+#define UFO_SE_ALERT_PERIOD 28u
+static uint16_t s_alert_left;                  /* 距离下一声还有几帧（0 = 立刻）*/
+
+static void ufo_alert_loop_tick(ufo_card_t *s)
+{
+    uint8_t *e;
+    if (!s || !ufo_present(&s->u)) { s_alert_left = 0; return; }
+    e = ufo_enemy_by_id(s->u.ufo_id);
+    if (!e) { s_alert_left = 0; return; }
+    if (s_alert_left) { --s_alert_left; return; }
+    s_alert_left = (uint16_t)UFO_SE_ALERT_PERIOD;
+    ufo_se(UFO_SEV_ALERT_LOOP, UFO_SE_ENTER, *(const float *)(e + CE_ENEMY_POS_X),
+           "一手 th12:0x44a9fe mov eax,0x36 + 0x44aa06（循环音；本卡用手动循环重放，见函数注）");
+}
+
 /* 每游玩帧跟随这几件（位置 / 环角 / 条宽）。调用点 = `on_tick_2` 末尾（每帧一次，与 `fill` 同一拍）。 */
 static void ufo_gauge_follow(ufo_card_t *s)
 {
@@ -2397,19 +2454,24 @@ static void ufo_try_summon(ufo_card_t *s)
     /* ★★ 实体上的两件 UI（用户点名）：吸收环 + 血量条。与本体 VM **同一拍**起（位置在 spawn 里当场
      * 摆好），生命周期也绑在一起 —— 收尾走 `ufo_withdraw_all()` → `ufo_gauge_kill()`。 */
     ufo_gauge_spawn(s, body);
+    /* ★★ 2026-09-23（owner 实跑第 8 条：「**UFO 召唤的时候目前看不见任何特效**」的真因）：
+     *   召唤特效（紫环 318 + 六边形 321）原来**只在 `ufo_body_vm_follow()` 的"重建本体 VM"那一支**里起
+     *   —— 而本体 VM 永远先由**本函数**（`ufo_body_vm_spawn`）建好 ⇒ follow 那一支**一次都进不去**
+     *   ⇒ 特效从来没被创建过（日志铁证：整个会话 0 行 `ufo: summon purple ring up`）。
+     *   ⇒ 改在**这里**（召唤成功那一刻）起，与本体 VM 同一拍。`ufo_summon_ring_try` 自带两道幂等门。 */
+    ufo_summon_ring_try(s, body);
     /* ★ 日志带 `art idx`：用户裁决 ① 说「金 = 蓝的调色版」，这一格就是证据 ——
      *   金（4）打出来必须是 **1**（= 蓝那一格，`ufo_color_art_index`），实跑一眼可核。 */
     /* ★ P4/P2 #6 对账：把「火力 → 档位 → 一手 HP → 写进 spawn 的钳制值」四个数一次打全
      *   —— 实跑里核「HP 确实按火力 + 真血量 > 999」只用看这一行（一手表 {1600..2500}）。 */
     ufo_se(UFO_SEV_SPAWN, UFO_SE_SPAWN, 0.0f,
                        "一手 th12:0x44a9d9 mov edx,0x34 + 0x44a9ef call 0x453d90（居中）");                 /* 一手：`Ufo::spawn` 的出场音（se_lazer02，居中）*/
-    /* ★★ 2026-09-20 补（P1 #th12-8「UFO 缺少入场音效」）：一手的**第二声**，在**飞碟自己的 x** 播
-     *   （`th12:0x44a9f4 mov eax,[esi+0x34]` = 敌机 → `th12:0x44a9f7 fld [eax+0x1074]` = 敌机 x →
-     *    `th12:0x44a9fe mov eax,0x36` → `th12:0x44aa06 call 0x453e20`）。位置取自**同一个 `body`**
-     *   （上面刚 `ufo_spawn` 成功、`body` 即那只敌机）⇒ 与一手的取法逐字对应。
-     *   ⚠ 一手是循环音（th12 cfg 行 `+8` = 1），我们只放一次（没有停循环音的通路，见宏定义处的注释）。*/
-    ufo_se(UFO_SEV_SPAWN, UFO_SE_ENTER, *(const float *)(body + CE_ENEMY_POS_X),
-                       "一手 th12:0x44a9fe mov eax,0x36 + 0x44aa06 call 0x453e20（在飞碟自己的 x）");
+    /* ★★ 2026-09-23（owner 实跑第 8 条）：**召唤音 = `se_ufo.wav`**（新扩表槽 `CE_VOICE_UFO`）。
+     *   一手的第二声（`0x36` = `se_ufoalert`，在飞碟自己的 x、且是**循环音**）不再在这里放一次 ——
+     *   它改由 `ufo_alert_loop_tick()` 在 UFO 存活期间**持续**播（owner 第 11 条口径）。 */
+    ufo_se(UFO_SEV_SPAWN, UFO_SE_UFO, *(const float *)(body + CE_ENEMY_POS_X),
+                       "★ owner 2026-09-23 指定 se_ufo.wav（TH12 表第 0x33 行；一手那一枚不在 Ufo::spawn —— "
+                       "见宏定义处的说明）");
     ce_log("ufo: summoned UFO (color %d, art idx %d%s) enemy_id %u at frame %u - REAL HP %d "
            "(one-hand tier %d = %d, applied to enemy+0x6220/24/28 after spawn; spawn life was %d "
            "to stay under the >=1000 flag-30 gate; power %d, per level %d)", (int)made,
@@ -2425,6 +2487,21 @@ static void ufo_try_summon(ufo_card_t *s)
  * ⚠ 池是**紧凑数组**：回收用 swap-remove ⇒ 循环**不能 `++i`**（尾元素会搬进来，也要过一遍筛）。 */
 static void ufo_pentagon_hint_update(ufo_card_t *s);   /* 定义在下面（算判据 + 驱动框 VM，见它的注释块）*/
 static void ufo_slot_full_bonus(ufo_card_t *s, float x, float y);  /* 定义在下面（P1 的满槽补偿）*/
+/* ★ 2026-09-23（owner 第 9 条）：把场上所有令牌切进"离场态"（对话那一刻调）。
+ * 只改运动状态（纯逻辑层 `ufo_tok_motion_leave()`），**不删 VM** —— 一手的回收点只有"出界"这一条，
+ * 让它们自己飞出去（几秒内）比当场消失更像原版。幂等 ⇒ 对话期间每帧调也无副作用。 */
+static void ufo_tokens_leave(ufo_card_t *s)
+{
+    int i;
+    for (i = 0; i < s_tokpool.n; ++i) ufo_tok_motion_leave(&s_tokpool.tok[i].motion);
+    if (s_tokpool.n && !s->tokens_leave_logged) {
+        s->tokens_leave_logged = 1;
+        ce_log("ufo: DIALOGUE - %d token(s) switched to the leave flight (no more bounce, speed x%.1f; "
+               "owner 2026-09-23 ruling #9) - they exit the frame and get recycled as usual",
+               s_tokpool.n, (double)UFO_TOK_LEAVE_SPEED_MUL);
+    }
+}
+
 static void ufo_tokens_tick(ufo_card_t *s)
 {
     float px, py, pick_r;
@@ -2481,25 +2558,31 @@ static void ufo_tokens_tick(ufo_card_t *s)
             continue;
         }
         color = t->color;
+        /* ⑥ **接触收取**：半径 = **本作（TH18）自己的收点半径**（P5 轮已落地 —— 读 `player+0x4798c`，
+         *    不是自定值；见 `ufo_tok_pick_radius()` 的注）。
+         * ★★ 2026-09-23（owner 实跑第 6 条）：「**目前依旧召唤 UFO 之后会把场上的所有飞碟 token 清空**」
+         *   —— 真因就在这一段：P1 那条「槽满 ⇒ 令牌照收、只给满槽补偿」的支**原先排在接触闸之前**
+         *   ⇒ UFO 一在场（或有一个组干等着），**全池**的令牌当帧都被 `ufo_tok_take_and_kill()` 吃掉
+         *   （与距离无关）⇒ 场上所有 token 瞬间消失。一手不是这样：`FUN_004270b0` 是**被自机碰到**
+         *   时才进的那条路（`0x4270b0` 的调用点在道具接触分派里）⇒ 闸必须在前面。
+         *   ⇒ 本轮把「接触闸」提到 P1 支**之前**（下面 `ufo_tok_pick` 先判，没碰到就 `++i; continue`）。 */
+        if (!ufo_tok_pick(t->motion.x, t->motion.y, px, py, pick_r)) { ++i; continue; }
+        /* 接触即入槽：**先取值、再撤令牌**（顺序见 `ufo_tok_take_and_kill`）
+         * ⚠ 令牌的 x 也要**在撤之前**抄下来：`ufo_tok_take_and_kill` 是 swap-remove，
+         *   调用后 `t` 指向的那一格已经换了人（音效的声像要用**这一颗**令牌的 x）。*/
+        tx = t->motion.x;
         /* ★★ P1（一手 `0x4270b0` 开头）：**槽满（= 已有一个干等着的组 / UFO 在场）⇒ 令牌照收，
          *   但给的是「满槽补偿」而不是进槽**：一手是 `[PIV] += 100000` + 飘字 1000，令牌**被消耗**。
-         *   ⚠ 旧写法是"不收也不撤、留在场上等组被消费掉" —— 那是一手没有的行为（一手照收照消耗），
-         *   本轮按 P1 裁决改掉。补偿的载体映射见 `ufo_slot_full_bonus()` 的注（TH18 没有 PIV）。 */
+         *   ⚠ 旧写法是"不收也不撤、留在场上等组被消费掉" —— 那是一手没有的行为（一手照收照消耗）。
+         *   ⚠ **必须在接触闸之后**（见上面 ⑥ 的注；2026-09-23 修「召唤即清场」那一条）。 */
         if (ufo_present_group_ready(s)) {
-            float bx = t->motion.x, by = t->motion.y;
+            float bx = tx, by = t->motion.y;
             color = ufo_tok_take_and_kill(i);           /* 令牌被消耗（一手同款：state=0 + 音效 + 淡出）*/
             ufo_se(UFO_SEV_TOKEN_FULL, UFO_SE_TOKEN, bx,
                      "一手 th12:0x426da4 共同尾（槽满再收一枚 ⇒ 同一枚音）");            /* 一手的共同尾也播音效 0x26（= 我们的入槽音）*/
             ufo_slot_full_bonus(s, bx, by);
             continue;                                   /* swap-remove ⇒ 不 ++i */
         }
-        /* ⑥ **接触收取**：半径 = **本作（TH18）自己的收点半径**（P5 轮已落地 —— 读 `player+0x4798c`，
-         *    不是自定值；见 `ufo_tok_pick_radius()` 的注）。 */
-        if (!ufo_tok_pick(t->motion.x, t->motion.y, px, py, pick_r)) { ++i; continue; }
-        /* 接触即入槽：**先取值、再撤令牌**（顺序见 `ufo_tok_take_and_kill`）
-         * ⚠ 令牌的 x 也要**在撤之前**抄下来：`ufo_tok_take_and_kill` 是 swap-remove，
-         *   调用后 `t` 指向的那一格已经换了人（音效的声像要用**这一颗**令牌的 x）。*/
-        tx = t->motion.x;
         color = ufo_tok_take_and_kill(i);              /* 内部 swap-remove ⇒ 不 ++i */
         /* ⚠ 这里不是死亡栈（`on_item_frame` 是每游玩帧的门卫位次）⇒ 可以立刻建本体；
          *   死亡事件那条路只登记、由 `on_tick_2` 兑现。 */
@@ -2658,122 +2741,72 @@ static int ufo_drop_spawn(ufo_card_t *s, int32_t kind, float x, float y,
 }
 
 
-/* ============================ ★★ #20 击破 UFO 的 **×N** 弹出 ============================
+/* ============================ ★★ #20 击破 UFO 的 **×N** 弹出（2026-09-23 重做：ASCII）=================
  * owner（2026-09-23）：「击破 UFO 时有个**大大的 ×一个数**的 ascii 贴图或特效」。
- * 一手（逐条，出处 = `HANDOFF-112.md` §3① / `SINGLE-CARD-TEST.md` #20）：
- *   · 创建点 `th12:0x44ab00`–`0x44ab5f`：`push $0x88`（= 脚本 136）建 VM 存进 `+0x44`；
- *     兄弟 VM = 脚本 134（`+0x40`）；`movl $0x2d0,0x28(%esi)` ⇒ **寿命 720 帧**。
- *   · `front.anm` script136 = `drawRect(32,4) + layer(10) + color(255,96,96) + pos(0,-28)`，
- *     script137（子）= 同形、`color(0,0,0)`、`pos(1,1)` ⇒ **亮红 + 黑、错开 1 px** = 描边式文字。
- *   · 每帧更新（`th12:0x44a80b`–`0x44a83b`）：查 VM（返回 0 就清句柄）→ 置 flag → 写位置
- *     ⇒ **文字内容与坐标由 C 每帧写**（TH12 自己也是）。
- * 我们的实现（❓ 自定的部分逐条标了）：
- *   · 走 **UI 层**：`SCRIPT_HUD_GLYPH`（= 136）实测是 `layer(25) + resolutionMode(2) + pos(0,0,0)`
- *     ⇒ **表面 px** 的 UI 脚本（反汇编产物确认）⇒ 世界坐标要换算：`surface = 640 + x*2 / 480 + y*2`
- *     （TH18 自机/敌人坐标是以**场地中心**为 0 的居中系，换算口径同 `trance.c` 的注释）。
- *   · 字形：`SIGNAL_MUL`（= 430，`faith_hud/MUL.png` 16×32）= 「×」；数字 = `ATLAS_HUD_DIGIT_0..9`
- *     （= 109..118，共享图集）⇒ 用现成 HUD 字形通道，**不新造贴图**。
- *   · 显示值：**整数倍率** `mult_permille / 1000`（例 1500 ⇒ ×1）—— ❓ 自定：一手那支是 ascii 文本，
- *     小数位要不要画没有一手依据；要画再补一个小数点字形（`FONT2_DOT` 一族已在 ORDER 里）。
- *   · 黑色描边 = 每个字形再叠一支错开 `(1,1)` 的黑色副本（一手 script137 的 `pos(1,1) + color(0,0,0)`）。
- *   · 运动：每帧 `y -= 0.5`（缓慢上移）+ 寿命倒数；到 0 或换关/删卡时 `ce_anm_delete`。
- * ⚠ 与 HUD 槽无关（那三支是 `ufo_hud_*`）；本组只活在开奖之后的 720 帧里。*/
-#define UFO_XN_GLYPHS     4              /* 「×」+ 最多 3 位整数（❓ 自定：一手是 ascii 文本，位数由值定）*/
-#define UFO_XN_VMS        (UFO_XN_GLYPHS * 2)   /* 每字形一支主 + 一支黑色描边 */
-#define UFO_XN_LAYER_UI   25             /* = `SCRIPT_HUD_GLYPH` 自带的层（脚本里就写着 25，这里只记账）*/
-#define UFO_XN_COLOR      0xffff6060u    /* ✅ 一手 `front.anm` script136 的 `color(255,96,96)` */
-#define UFO_XN_SHADOW     0xff000000u    /* ✅ 一手 script137 的 `color(0,0,0)` */
-#define UFO_XN_SHADOW_DX  1.0f           /* ✅ 一手 script137 的 `pos(1,1)` */
-#define UFO_XN_SHADOW_DY  1.0f
-#define UFO_XN_LIFETIME   720u           /* ✅ 一手 `th12:0x44ab52 movl $0x2d0,0x28(%esi)` */
-#define UFO_XN_RISE       0.5f           /* ❓ 自定：每帧上移量（一手只写了「每帧更新位置」）*/
-#define UFO_XN_ADVANCE    20.0f          /* ❓ 自定：字形横向间距（表面 px；32×32 的字形留 20 的缝）*/
-#define UFO_XN_LIFT       44.0f          /* ❓ 自定：整体抬到包上方（一手 `pos(0,-28)` 是子 VM 的偏移）*/
-#define UFO_XN_SCALE      2.0f           /* ❓ 自定：UI 层 1 texel = 1 表面 px ⇒ 16×32 的字形 ×2 = 32×64 */
+ * ★★ 2026-09-23 第二轮（owner 实跑第 2 条）：「**我能看见一个黑色的 *1 从画面的下方缓慢地往上飞，
+ *   一直也不消失**」⇒ 上一版（字形 VM 通道）有**三个**毛病，这一轮全按一手重做：
+ *   ① **位置错 448 表面 px**：上一版把世界坐标按 `480 + y×2` 折到表面 px，而 ASCII 空间是
+ *      `x = 320 + wx`、`y = 16 + wy`（与 #9 倒计时同一条换算）⇒ 整条弹字被画在画面**下方**。
+ *   ② **寿命错**：一手 `th12:0x44ab52 movl $0x2d0,0x28(%esi)` 写的是 **`zUfo+0x28` = UFO 自己的存活上限
+ *      （720 帧）**，**不是**弹字寿命；弹字活的是 `zUfo+0x64`（「弹字剩余帧」，**击破时置 120**，
+ *      `Ufo__on_draw_16` 的门 `cmp [ebx+0x64],0 … jle`）⇒ 旧版 720 帧所以"一直也不消失"。
+ *   ③ **颜色发黑**：旧版走我们自己的字形通道（`MUL.png` = 深灰 (28,28,28) + `TS_DIGIT_*` = 灰 (101,101,101)），
+ *      而 `ce_anm_set_color` 是**乘**色 ⇒ 红 × 深灰 = 近黑（用户看到的"黑色的 *1"就是它）。
+ *   ⇒ 一手本来就是 **ASCII 文字**：`Ufo__on_draw_16`（`th12:0x44a5d0`）里
+ *      `printf` 格式串 = `0x4a2154` = **`"*%1.1f"`**（我直读字符串）、`font 4`、**scale 2.0**
+ *      （`fld [0x4a4014]` = 2.0）、颜色**每 `%10` 帧闪一次**：
+ *      `edx = [ebx+0x64] % 10`，`setge edx,5` ⇒ **≥5 灰 `0xff808080` / <5 黄**（那两个 dword 的算式见
+ *      `0x44a644`–`0x44a658`；一手里黄那一支算出来是 `0x00FFFF00`，alpha 位为 0 —— ASCII 管理器不看
+ *      alpha，我们按显示意图取 **`0xffffff00`**，🟡）。
+ *   ⇒ 本版：**改回 ASCII 通道**（`ce_hud_text_ex`，与 #9 倒计时同一条路），只留"值 + 位置 + 剩余帧"三个数。
+ *   ⚠ ASCII 文字**盖不进暂停模糊罩**（`SDK.md` §16）—— 与 #9 倒计时同一个已知差异，`TUNING.md` 有登记。 */
+/* ★ #12 击破爆炸的层号：一手 `bullet.anm` script208/209 自己写的 `layer(12)`（世界层、原值）*/
+#define UFO_BREAK_FLASH_LAYER 12
 
-static uint32_t s_xn_id[UFO_XN_VMS];
-static uint16_t s_xn_left[UFO_XN_VMS];   /* 各自寿命（帧）*/
-static float    s_xn_x[UFO_XN_VMS];      /* 表面 px（每帧写）*/
-static float    s_xn_y[UFO_XN_VMS];
+#define UFO_XN_LIFETIME   120u           /* ✅ 一手 `zUfo+0x64` = "弹字剩余帧"，击破时置 120（2 秒）*/
+#define UFO_XN_DY         24.0f          /* ❓自定：画在 UFO **下方** 24 单位（一手弹字位置存在 `+0x54`，写点未逐条钉死）*/
+#define UFO_XN_SCALE      2.0f           /* ✅ 一手 `fld [0x4a4014]` = 2.0 */
+#define UFO_XN_COLOR_GREY 0xff808080u    /* ✅ 一手 `rem%10 >= 5` 那一支（dword 直读 0xff808080）*/
+#define UFO_XN_COLOR_YEL  0xffffff00u    /* 🟡 一手另一支算出 0x00ffff00（alpha=0，ASCII 不看 alpha）⇒ 补 255 */
+#define UFO_XN_FLASH_MOD  10u            /* ✅ 一手 `idiv 0x0a`：按剩余帧的个位闪 */
 
-static void ufo_xn_kill(void)
-{
-    int i;
-    for (i = 0; i < UFO_XN_VMS; ++i) {
-        if (s_xn_id[i]) { ce_anm_delete(s_xn_id[i]); s_xn_id[i] = 0; }
-        s_xn_left[i] = 0;
-    }
-}
+static uint16_t s_xn_left;               /* 剩余帧（0 = 不画）*/
+static float    s_xn_wx, s_xn_wy;        /* 世界坐标（ECL 640 空间）*/
+static int32_t  s_xn_permille;           /* 倍率（千分比；显示 `*%1.1f`）*/
+
+static void ufo_xn_kill(void) { s_xn_left = 0; }
 
 /* 起一次（开奖那一刻调）。`wx/wy` = 掉落物的**世界坐标**（居中系）。 */
 static void ufo_xn_spawn(float wx, float wy, int32_t mult_permille)
 {
-    void *anm = CE_ABILITY_ANM();
-    float p[3];
-    int n = 0, i, val, digits = 1;
-    if (!anm) return;
-    val = (int)(mult_permille / 1000);            /* ❓ 自定：只画整数倍率 */
-    if (val < 1) val = 1;
-    if (val > 999) val = 999;
-    for (i = val; i >= 10; i /= 10) ++digits;     /* 1..3 位 */
-    ufo_xn_kill();                                /* 上一次的还在飞 ⇒ 先收（不会叠）*/
-    /* 字形序列：× 然后整数部分的每一位（高位在前）*/
-    p[0] = 640.0f + wx * 2.0f;
-    p[1] = 480.0f + wy * 2.0f - UFO_XN_LIFT;
-    p[2] = 0.0f;
-    for (i = 0; i < digits + 1 && n < UFO_XN_GLYPHS; ++i, ++n) {
-        int gx = n * 2;                            /* 主 VM / 描边 VM 的槽号 */
-        int gy = gx + 1;
-        int spr;
-        if (i == 0) spr = CE_ANM_ABILITY_SPRITE_SIGNAL_MUL;
-        else {
-            int div = 1, k;
-            for (k = 0; k < digits - i; ++k) div *= 10;
-            spr = CE_ANM_ABILITY_SPRITE_ATLAS_HUD_DIGIT_0 + (val / div) % 10;
-        }
-        /* ★ 2026-09-23 自审订正：整组是 `digits + 1` 个字形（**含「×」**）⇒ 居中偏移必须用 `digits + 1`，
-         *   原来用 `digits` 会让整组偏右半格（观感上「×N 没对准包」）。*/
-        p[0] = 640.0f + wx * 2.0f - (float)(digits + 1) * UFO_XN_ADVANCE * 0.5f
-               + (float)i * UFO_XN_ADVANCE;
-        s_xn_x[gx] = p[0];        s_xn_y[gx] = p[1];
-        s_xn_x[gy] = p[0] + UFO_XN_SHADOW_DX;  s_xn_y[gy] = p[1] + UFO_XN_SHADOW_DY;
-        s_xn_id[gx] = ce_anm_spawn_ui(anm, CE_ANM_ABILITY_SCRIPT_HUD_GLYPH, p);
-        if (s_xn_id[gx]) {
-            ce_anm_set_sprite(anm, s_xn_id[gx], spr);
-            ce_anm_set_scale(s_xn_id[gx], UFO_XN_SCALE, UFO_XN_SCALE);
-            ce_anm_set_color(s_xn_id[gx], UFO_XN_COLOR);
-            s_xn_left[gx] = (uint16_t)UFO_XN_LIFETIME;
-        }
-        p[0] += UFO_XN_SHADOW_DX;  p[1] += UFO_XN_SHADOW_DY;
-        s_xn_id[gy] = ce_anm_spawn_ui(anm, CE_ANM_ABILITY_SCRIPT_HUD_GLYPH, p);
-        if (s_xn_id[gy]) {
-            ce_anm_set_sprite(anm, s_xn_id[gy], spr);
-            ce_anm_set_scale(s_xn_id[gy], UFO_XN_SCALE, UFO_XN_SCALE);
-            ce_anm_set_color(s_xn_id[gy], UFO_XN_SHADOW);
-            s_xn_left[gy] = (uint16_t)UFO_XN_LIFETIME;
-        }
-        p[0] -= UFO_XN_SHADOW_DX;  p[1] -= UFO_XN_SHADOW_DY;
-    }
-    ce_log("ufo: xN popup up - mult %d.%03d -> val %d, %d glyph(s) x2 VMs (one-hand script136/137 shape: "
-           "red 0x%08x + black shadow offset (1,1), lifetime %u frames; positions written every frame)",
-           (int)(mult_permille / 1000), (int)(mult_permille % 1000), val, digits + 1,
-           (unsigned)UFO_XN_COLOR, (unsigned)UFO_XN_LIFETIME);
+    s_xn_wx = wx;
+    s_xn_wy = wy;
+    s_xn_permille = (mult_permille > 0) ? mult_permille : 1000;
+    s_xn_left = (uint16_t)UFO_XN_LIFETIME;
+    ce_log("ufo: xN popup up - mult %d.%03d -> ascii \"*%%1.1f\" at world (%.0f, %.0f) for %u frames "
+           "(one-hand th12:0x44a5d0: format 0x4a2154 \"*%%1.1f\", scale 2.0, colour flashes "
+           "grey/yellow every %%10 frames; lifetime = zUfo+0x64 = 120)",
+           s_xn_permille / 1000, s_xn_permille % 1000, (double)wx, (double)wy,
+           (unsigned)UFO_XN_LIFETIME);
 }
 
-/* 每帧（`on_tick_2`）：上移 + 到期自删。★ 长持续效果铁律：句柄留在这里，`ufo_xn_kill()` 兜底。 */
+/* 每帧（**draw 相位**：ASCII 只能在 `on_draw` 里画）：画字 + 倒数。
+ * ⚠ 位置/寿命都在**卡状态之外**（文件静态）—— 与令牌池同一个口径（`on_ctor` 的 memset 清不到）。
+ * ★ 长持续效果：`ufo_xn_kill()` 在 `on_delete`/换关时清掉（只清"剩余帧"这一个数 ⇒ 幂等）。 */
 static void ufo_xn_tick(void)
 {
-    int i;
-    for (i = 0; i < UFO_XN_VMS; ++i) {
-        if (!s_xn_id[i]) continue;
-        if (!ce_anm_get_vm(s_xn_id[i])) { s_xn_id[i] = 0; s_xn_left[i] = 0; continue; }   /* 引擎删了 ⇒ 清句柄 */
-        if (s_xn_left[i] == 0) { ce_anm_delete(s_xn_id[i]); s_xn_id[i] = 0; continue; }
-        --s_xn_left[i];
-        s_xn_y[i] -= UFO_XN_RISE;
-        ce_anm_set_pos(s_xn_id[i], s_xn_x[i], s_xn_y[i], 0.0f);
-    }
+    float x, y;
+    uint32_t rem;
+    if (!s_xn_left) return;
+    --s_xn_left;
+    rem = (uint32_t)s_xn_left % UFO_XN_FLASH_MOD;
+    /* ASCII 空间（640×480）：x 以场地中心 320 为 0、y 以场地上沿 16 起算（与 #9 倒计时同一条换算）*/
+    x = 320.0f + s_xn_wx;
+    y = 16.0f + s_xn_wy + UFO_XN_DY;
+    ce_hud_text_ex(x, y, (rem >= UFO_XN_FLASH_MOD / 2u) ? UFO_XN_COLOR_GREY : UFO_XN_COLOR_YEL,
+                   0u, -1, -1, CE_ASCII_ALIGN_CENTER, UFO_XN_SCALE, "*%1.1f",
+                   (double)s_xn_permille / 1000.0);
 }
-
 
 /* ==================== ★★ #22 吸收数记录面板（TH12 `front.anm` script134/135）====================
  * 一手（`local/th12.v1.00b/anm/front/front.anm.txt`）：
@@ -2786,6 +2819,54 @@ static void ufo_xn_tick(void)
  * `SCRIPT_HUD_GLYPH` + `ATLAS_HUD_DIGIT_0..9`）。
  * **触发**：每帧看「吸收数」有没有变（= `cnt_p + cnt_money`，就是这只 UFO 吃进去的 token 数）
  *   ⇒ 变了就**重新弹一次**面板并刷新数字；静置 `UFO_PANEL_LIFETIME` 帧后发**中断 1 缩回**。*/
+/* ==================== ★★ #12 击破 UFO 的**爆炸特效**（owner 2026-09-23）=========================
+ * owner 原话：「击破 UFO 的时候是**类似于击破 boss 有一个爆炸特效**的」。
+ * 一手 = TH12 `Ufo::break`（`0x44af00` 一带）建的那两支：`bullet.anm` **script208**（外圈，`drawPoly(1,32)`
+ *   `scaleTime(40,4,192,192)`、`color(0,255,192)` + `color2(255,255,255)`、`layer(12)`、`blendMode(1)`）
+ *   与它的 `scriptNew` 子 **script209**（内圈，同形、`scaleTime(40,4,320,320)`、`color2(255,255,0)`、
+ *   `alpha(128)` / `alpha2(64)`）⇒ 逐条移植成 `ability.anm` 的 **322 / 323**（那边一个改动都没有）。
+ * `drawPoly` = 程序画的多边形 ⇒ **不需要任何贴图 / 图集**（与召唤紫环/六边形同一族做法）。
+ * 生命周期：脚本自己在 +40 帧 `delete()` ⇒ 卡侧只记一个句柄（供"消失时不再重复用"与诊断），
+ *   `on_delete`/换关时 `ufo_break_flash_kill()` 一并收。 */
+static uint32_t s_break_flash_id;
+
+static void ufo_break_flash_kill(void)
+{
+    if (s_break_flash_id) { ce_anm_delete(s_break_flash_id); s_break_flash_id = 0; }
+}
+
+static void ufo_break_flash_spawn(float wx, float wy)
+{
+    void *anm = CE_ABILITY_ANM();
+    if (!anm) return;
+    ufo_break_flash_kill();                            /* 上一发还没消失 ⇒ 先收（不叠）*/
+    s_break_flash_id = ce_anm_spawn(anm, CE_ANM_ABILITY_SCRIPT_UFO_BREAK_FLASH, UFO_BREAK_FLASH_LAYER);
+    if (!s_break_flash_id) {
+        ce_log("ufo: break flash VM spawn FAILED (ability.anm script %d, layer %d) - the explosion is "
+               "missing this break (assets/ability/scripts/322_,323_*)",
+               CE_ANM_ABILITY_SCRIPT_UFO_BREAK_FLASH, UFO_BREAK_FLASH_LAYER);
+        return;
+    }
+    ce_anm_set_pos(s_break_flash_id, wx, wy, 0.0f);
+    ce_log("ufo: break explosion up at (%.0f, %.0f) - ability.anm script %d (+inner %d), one-hand "
+           "TH12 bullet.anm script208/209 (drawPoly(1,32), scaleTime(40,4,192 / 320), layer %d, "
+           "no texture needed)",
+           (double)wx, (double)wy, CE_ANM_ABILITY_SCRIPT_UFO_BREAK_FLASH,
+           CE_ANM_ABILITY_SCRIPT_UFO_BREAK_FLASH_INNER, UFO_BREAK_FLASH_LAYER);
+}
+
+#if !UFO_PANEL_ENABLED
+/* owner 2026-09-23：右侧收点面板与它上面的数字**整套关掉** ⇒ 这里只留两个空壳（不产生未用警告）。*/
+static void ufo_panel_kill(void) { }
+static void ufo_panel_tick(ufo_card_t *s) { (void)s; }
+#else
+/* ★★ 2026-09-23（owner 实跑第 1 + 3 条）：「**去掉右侧的收点 HUD，不需要了**」+
+ *   「**然后吸收了多少点数的那个 ascii 也不要了**」⇒ 面板（脚本 304/305）与它上面那排数字**整套关掉**。
+ *   做法 = 一个开关（**代码保留**：资产、脚本、字形通道都在，将来要开只需把这里改回 1）：
+ *   关掉之后 `ufo_panel_tick()` 立刻返回 ⇒ 面板 VM 与数字 VM 都不会被创建。
+ *   ⚠ 面板的资产（`ability.anm` 304/305）留在库里 —— 「移植了但没接」那条审计指的是**卡侧一个引用都没有**，
+ *     这里是"接过了、按 owner 口径关掉"，注释里写明，不算那类问题。*/
+#define UFO_PANEL_ENABLED  0               /* ★ owner 2026-09-23：0 = 不弹（一手确实有这件，但 owner 不要）*/
 #define UFO_PANEL_GLYPHS   3               /* ❓自定：最多三位（99+ 只画后三位）*/
 #define UFO_PANEL_LIFETIME 180u            /* ❓自定：静置 3 秒后缩回（一手只做了「中断 1 = 缩回」）*/
 #define UFO_PANEL_DX       40.0f           /* ❓自定：数字在面板内的起点（一手 `pos(528,288)` 是面板本身）*/
@@ -2904,6 +2985,8 @@ static void ufo_panel_tick(ufo_card_t *s)
     }
 }
 
+#endif  /* UFO_PANEL_ENABLED */
+
 /* 击破时掉的**压缩包**（用户口径：有实体、被自动吸收、收集时结算）。 */
 static void ufo_drop_spawn_bag(ufo_card_t *s, float x, float y)
 {
@@ -2957,6 +3040,7 @@ static void ufo_drop_collect(ufo_card_t *s, int i)
                (int)c->ufo_color, (int)c->cnt_p, (int)c->cnt_money,
                (int)c->mult_permille / 1000, (int)c->mult_permille % 1000, (int)pv, (int)gain);
         ufo_xn_spawn(c->x, c->y, c->mult_permille);   /* ★ #20：击破 UFO 的 ×N（一手 th12:0x44ab00）*/
+        ufo_break_flash_spawn(c->x, c->y);            /* ★ 2026-09-23（owner #12）：击破爆炸特效（一手 bullet.anm 208/209）*/
         /* ★ 信仰点原样还回去（用户：「被吸走后爆出来还得按照信仰-樱点算 … 后面只调用收信仰樱点的函数即可吧」）
          *   —— 这里调的是**生产者自己的 spawn 入口**（`faith_spawn`），不碰它的记账：还回去的点
          *   会像正常撒出来的点一样被自机收走/过线/进批（= 用户要的"按信仰算"）。 */
@@ -3340,6 +3424,7 @@ static void ufo_hud_kill(void)
 {
     int i;
     ufo_xn_kill();                                     /* ★ #20：×N 也一并收干净 */
+    ufo_break_flash_kill();                            /* ★ #12：击破爆炸也一并收干净 */
     ufo_panel_kill();                                  /* ★ #22：记录面板也一并收干净 */
     if (s_banner_id) { ce_anm_delete(s_banner_id); s_banner_id = 0; }   /* ★ #17 横幅（长持续效果铁律）*/
     for (i = 0; i < UFO_SLOT_COUNT; ++i) {
@@ -3477,7 +3562,7 @@ static void ufo_hud_slots_tick(ufo_card_t *s, int ufo_on_field)
      *   三格"pos.x"全是脚本值 296 却没打 y —— 这次三项 + 和全打，叠没叠一眼看得出。
      * ⚠ 节奏用**本函数自己的静态帧计数**，不用 `s->play_frame` —— 后者在关卡开头的若干帧是 0，
      *   会让 `% 60 == 0` 连打几十行（2026-09-22 的实跑日志里就是这样刷的）。 */
-    if (++s_slot_log_tick >= UFO_TIMER_LOG_EVERY) {
+    if (++s_slot_log_tick >= UFO_SLOT_LOG_EVERY) {
         s_slot_log_tick = 0;
         ce_log("ufo/slot: vm %u/%u/%u state %d/%d/%d sprite-base %u blink %u/%u frames %u "
                "(one-hand th12:0x4214b0 + 0x421690; slot centres x = 272/314/356 surface)",
@@ -3889,6 +3974,11 @@ static void on_item_frame(ce_card_t *c)
     if (ufo_present(&s->u)) {
         uint8_t *be = ufo_enemy_by_id(s->u.ufo_id);
         if (CE_GUI_MSG_ACTIVE()) {
+            /* ★★ 2026-09-23（owner 实跑第 9 条）：「**进入对话后，场上的 token 应当不再反弹，直接飞走**」
+             *   —— 在自爆之前先把场上的令牌切进"离场态"（不再反弹 + 速度 ×2；纯逻辑层的
+             *   `ufo_tok_motion_leave()`），它们会在随后几秒里自己飞出外框被回收
+             *   （不主动删：一手的回收点只有"出界即 state 0"这一条）。 */
+            ufo_tokens_leave(s);
             /* 对话 ⇒ 原地自爆 = 击破开奖路（一手）。位置 = UFO 当前坐标（一手 `0x44af25` 读 final_pos）。 */
             if (!s->dialogue_break_logged) {
                 s->dialogue_break_logged = 1;
@@ -3924,6 +4014,9 @@ static void on_item_frame(ce_card_t *c)
      * 放在**召唤之后**：这一帧刚召唤出来的本体与两件 UI 由 `ufo_gauge_spawn` 当场摆好，
      * 这里再跟一次是幂等的；而「敌机被静默撤掉 / 击破」那一帧由 `ufo_gauge_follow` 自己收干净。 */
     ufo_gauge_follow(s);
+    /* ★ 2026-09-23（owner 第 11 条）：UFO 在场期间的**持续** `se_ufoalert`（手动循环，见它的注）。
+     * 放在最后：UFO 这一帧走掉的话 `ufo_present()` 已经是假 ⇒ 不再补下一声。 */
+    ufo_alert_loop_tick(s);
 }
 
 /* 帧末统一判定（对齐 109 的教训：`DEATH` §4.1「回调里只登记、帧末动手」）。
@@ -3940,8 +4033,8 @@ static int on_tick_2(ce_card_t *c)
         s->pending_break = 0;
         ufo_break(s);
     }
-    ufo_xn_tick();                                     /* ★ #20：×N 上移 + 到期自删 */
-    ufo_panel_tick(s);                                 /* ★ #22：吸收数记录面板（变了就弹）*/
+    ufo_panel_tick(s);                                 /* ★ #22：吸收数记录面板（变了就弹；owner 已要求关掉）*/
+    /* ★ #20 的 ×N 弹字是 **ASCII**（2026-09-23 重做）⇒ 只能在 draw 相位画 ⇒ 它的 tick 在 `on_draw` 里 */
     /* ②b ★ 令牌落地（死亡栈里只登记了落点；这一刻已经离开死亡栈 ⇒ 可以安全建 VM）。
      *   一手：令牌是「敌人掉落表」的产物（`dropExtra`）⇒ 触发点 = 那一只敌人的死亡位置。
      *   ⚠ 换池后这一步建的是**我们自己的 VM**（不是敌人）—— 「不在死亡栈上建」这条纪律不变。 */
@@ -3990,6 +4083,7 @@ static int on_draw(ce_card_t *c)
     if (!s) return 0;
     if (!CE_PLAYER() || !CE_GAME_THREAD()) { ufo_hud_kill(); s_timer_logged = 0; return 0; }
     ufo_timer_draw(s);                                 /* 一手 th12:0x44a6e3-0x44a7e8（与 HUD 块认领无关）*/
+    ufo_xn_tick();                                     /* ★ #20：×N 弹字（ASCII ⇒ 必须在 draw 相位，见它的注）*/
     ufo_hud_draw(s);
     return 0;
 }

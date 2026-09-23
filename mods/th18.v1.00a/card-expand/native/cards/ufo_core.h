@@ -805,6 +805,14 @@ void ufo_tok_motion_init_at(ufo_tok_motion_t *m, uint32_t serial, float x, float
  * 指针入参、整型返回 ⇒ 不产生 x87（`dllx87` 门）。 */
 int  ufo_tok_motion_step(ufo_tok_motion_t *m);
 
+/* ★★ 2026-09-23（owner 实跑第 9 条）：「**进入对话后，场上的 token 应当不再反弹，直接飞走**」。
+ * 一手没有「对话」这条支（TH12 的令牌是普通道具，只按 1200 帧那条规则停止反弹）；
+ * ⇒ 本函数把「停止反弹」这件事**提前**：`age` 直接顶到 `UFO_TOK_NO_BOUNCE_FRAMES`（⇒ 不再反弹，
+ * 出界判定照旧把它回收），并把速度**放大 `UFO_TOK_LEAVE_SPEED_MUL` 倍**（❓自定：owner 要的是"直接飞走"，
+ * 不是"慢慢飘出去"）。幂等（已经进入离场态的令牌不再加速）。 */
+#define UFO_TOK_LEAVE_SPEED_MUL 2.0f
+void ufo_tok_motion_leave(ufo_tok_motion_t *m);
+
 /* ================================================= §3.4 伪磁场扫描（成本记账）
  * 池 = `CE_ITEM_SLOTS` 4696 槽 × stride 0xc94（`engine.h:426-427`）。本层的早停判据：
  *   ① 只在「UFO 在场且已过 60 帧暂停」时扫（`ufo_can_absorb`）；

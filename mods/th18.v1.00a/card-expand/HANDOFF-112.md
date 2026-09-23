@@ -53,6 +53,7 @@
 | **#14 六边形（雷电候选）** | ability.anm **319/320/321**（`enemy.anm` script103 + 102/104 逐条照抄）| 待眼判（**这就是问题**：像不像「雷电」）|
 | **#22 吸收数记录面板** | `ufo.c` 新增 `ufo_panel_pop/digits/tick/kill`：弹 **304/305**（一手 `pos(528,288)`）+ 字形画吸收数、静置 180 帧后中断 1 缩回；吸收数变化时**冷却 20 帧**内只原地刷数字 | 待实跑：`ufo: absorb-count panel popped …` |
 | **调试键（2026-09-23 晚，owner 要求）** | 键位：**空格** = 1 枚固定色令牌 · **Shift+空格** = **爆一批 P 点 + 金钱点**（8×6 网格、两色交错、围**场上的 UFO**；无 UFO 围自机）· **Ctrl+空格** = 1 枚变色令牌（原 Shift 那件搬过来）| 日志 `ufo: DEBUG item burst by SHIFT+SPACE - 24 P + 24 money around the UFO (…)`；自定值见 `TUNING.md` §2.0m 末段 |
+| **owner 12 条实跑反馈（2026-09-23 深夜）** | 12 条：面板关掉 · ×N 改回 ASCII · 吸收/收碟静音 · 吸满音 = `se_cardget` · 满 B 换本作完整 B 卡面 · **召唤不再吃光场上 token** · 召唤特效真的起来 + 新音效槽 `se_ufo` · 对话 token 直飞 · `se_piyo` 事件号修好 · UFO 在场持续 `se_ufoalert` · 击破爆炸特效 | 逐条判据（含日志关键字）见 [`SINGLE-CARD-TEST.md`](SINGLE-CARD-TEST.md) 的「本批（2026-09-23 深夜）」表；自定值与「复刻 / owner 口径」的分类见 [`TUNING.md`](TUNING.md) §2.0zza |
 
 ## §3 待办
 

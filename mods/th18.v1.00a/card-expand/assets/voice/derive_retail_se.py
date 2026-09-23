@@ -65,6 +65,12 @@ TABLE = (
     ("UFO_TOKEN_SPAWN", "th12.v1.00b", "se_piyo.wav",
      "th12:0x42741b `mov $0x37,%eax` + 0x427423 `call 0x453e20`（令牌生成那一声）；TH12 SE 表 0x4ae5a4 第 0x37 行"
      "（VA 0x4ae9f0）`+0x00` = 名表下标 44 → 名表 0x4aea50 → `se_piyo.wav`。TH18 没有这一枚 ⇒ 现取"),
+    ("UFO", "th12.v1.00b", "se_ufo.wav",
+     "★ owner 2026-09-23（112 #8「UFO 召唤…得有音效 se_ufo.wav」）指定；一手定位 = TH12 SE 表 `th12:0x4ae5a4` "
+     "第 **0x33** 行 `+0x00` = 名表下标 **40** → 名表 `th12:0x4aea50` → `se_ufo.wav`，行属性 vol **−400** / "
+     "prio 100 / loop 0（逐字段读出）。⚠ TH12 里这一枚的播放点是 0x407059/0x4077c9/0x408161/0x408a09（居中）"
+     "与 0x46a836（带声像）—— **不在** `Ufo::spawn`（那里只有 0x34 + 0x36）⇒ 本槽属 **owner 口径映射**。"
+     "TH18 84 行里没有这一枚 ⇒ 现取"),
 )
 
 

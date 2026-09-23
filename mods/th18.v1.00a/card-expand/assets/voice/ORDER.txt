@@ -50,3 +50,8 @@ YOUKAI_FAM_SHIFT
 #   （VA `0x4ae9f0`）`+0x00` = 名表下标 **44** → 名表 `th12:0x4aea50` → 字符串 **`se_piyo.wav`**。
 #   TH18 **没有**这一枚（`local/th18.v1.00a/dat/` 里不存在）⇒ 必须走扩表；构建期从 TH12 逐字节现取。
 UFO_TOKEN_SPAWN
+
+# ★★ 2026-09-23（112 #8 / owner：「UFO 召唤的时候…得有音效 se_ufo.wav」）
+#   一手定位：TH12 SE 表 `th12:0x4ae5a4` 第 **0x33** 行 `+0x00` = 名表下标 **40** → 名表 `th12:0x4aea50`
+#   → **`se_ufo.wav`**；行属性 vol **−400** / prio 100 / loop 0。TH18 84 行里没有这一枚 ⇒ 扩表现取。
+UFO

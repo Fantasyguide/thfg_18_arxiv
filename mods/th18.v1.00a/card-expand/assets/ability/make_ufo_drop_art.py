@@ -63,6 +63,10 @@ from PIL import Image
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[4]
 SRC_PNG = REPO / "local/th12.v1.00b/anm/bullet/bullet/etama8.png"
+# ★★ 2026-09-23（owner 实跑第 5 条）：**整颗 Bomb 的外观换成本作（TH18）自己的「完整 B 卡面」** ——
+#   一手 `ability/BOMB_min.png`（原生能力卡美术；同族还有 `BOMB2_min.png` = **B 碎**卡面）。
+#   ⚠ 源画布 64×128、卡面只占上半 64×80（与 117 的 `make_animal_art.py` 同一个切法：alpha bbox + 等比缩放）。
+SRC_TH18_BOMB_CARD = REPO / "local/th18.v1.00a/anm/abcard/ability/BOMB_min.png"
 SRC_TXT = REPO / "local/th12.v1.00b/anm/bullet/bullet.anm.txt"
 OUT = HERE / "ufo_drop"
 SCRIPTS = HERE / "scripts"
@@ -74,17 +78,18 @@ SPRITES = [
     ("BOUNTY_BAG",      459, (30, 30), (32, 32)),
     ("DROP_ICON_P",     426, (16, 16), (16, 16)),
     ("DROP_ICON_POINT", 427, (16, 16), (16, 16)),
-    ("DROP_BOMB",       432, (16, 16), (16, 16)),
+    # ★ DROP_BOMB 的源**不是** TH12 的 sprite432 了（见 `SRC_TH18_BOMB_CARD`）：owner 口径换成 TH18 完整 B 卡面
+    ("DROP_BOMB",       None, None,    (32, 32)),
 ]
 
 # 图集排布（2 的幂：64×32）
 ATLAS_NAME = "ATLAS_UFO_DROP"
-ATLAS_W, ATLAS_H = 64, 32
-ATLAS_POS = {                       # 输出名 → (x, y)
+ATLAS_W, ATLAS_H = 64, 64
+ATLAS_POS = {                       # 输出名 → (x, y)（DROP_BOMB 换成 32×32 画布 ⇒ 图集 64×64）
     "BOUNTY_BAG":      (0, 0),
     "DROP_ICON_P":     (32, 0),
     "DROP_ICON_POINT": (48, 0),
-    "DROP_BOMB":       (32, 16),
+    "DROP_BOMB":       (32, 32),
 }
 
 # (输出脚本号, 输出名, TH12 源脚本号, 图标脚本)  —— 图标脚本为 None = 整条照抄（只换 sprite 名）
@@ -139,6 +144,24 @@ def make_sprites() -> list[str]:
     OUT.mkdir(parents=True, exist_ok=True)
     order_lines = []
     for name, sid, unit_wh, canvas_wh in SPRITES:
+        if sid is None:                                # ★ DROP_BOMB：TH18 自己的完整 B 卡面
+            if not SRC_TH18_BOMB_CARD.is_file():
+                raise SystemExit(f"缺 {SRC_TH18_BOMB_CARD}（先 python3 tooling/thtk/unpack.py th18.v1.00a）")
+            art = Image.open(SRC_TH18_BOMB_CARD).convert("RGBA")
+            bb = art.getchannel("A").getbbox()
+            if bb is None:
+                raise SystemExit(f"{SRC_TH18_BOMB_CARD}: 整张透明，切不出卡面")
+            art = art.crop(bb)
+            w, h = art.size
+            sc = min(canvas_wh[0] / w, canvas_wh[1] / h)
+            art = art.resize((max(1, int(w * sc)), max(1, int(h * sc))), Image.LANCZOS)
+            canvas = Image.new("RGBA", canvas_wh, (0, 0, 0, 0))
+            canvas.paste(art, ((canvas_wh[0] - art.size[0]) // 2, (canvas_wh[1] - art.size[1]) // 2))
+            canvas.save(OUT / f"{name}.png")
+            order_lines.append(
+                f"{name:<18} ability/ufo_drop/{name}.png   "
+                f"@{ATLAS_POS[name][0]},{ATLAS_POS[name][1]},{canvas_wh[0]}x{canvas_wh[1]}")
+            continue
         if sid not in rects:
             raise SystemExit(f"{SRC_TXT}: entry {ENTRY_NAME} 里没有 sprite{sid}")
         x, y, w, h = rects[sid]
@@ -196,10 +219,15 @@ def port_script(lines: list[str], name_map: dict[int, str], icon: str | None,
 
 def main() -> int:
     rects = read_sprite_rects()
-    name_map = {sid: name for name, sid, _u, _c in SPRITES}
+    # 脚本里的 sprite 引用 → 我们的图集成员名。
+    # ★★ 2026-09-23：`DROP_BOMB` 的**贴图来源**换成了 TH18 的完整 B 卡面（`SPRITES` 里它 sid=None），
+    #   但**脚本 301 里引用的仍然是 TH12 的 `sprite432`**（一手脚本原文如此）⇒ 这里必须**单独**保留这条映射，
+    #   否则 `port_script()` 找不到 432 ⇒ 生成出来的脚本会留下裸的 `sprite(sprite432)`
+    #   （本仓的 ability.anm 里没有 432 号 sprite ⇒ 画出来是越界采样的杂图）。
+    name_map = {sid: name for name, sid, _u, _c in SPRITES if sid is not None}
+    name_map[432] = "DROP_BOMB"                       # ← 一手 script172 的 sprite 号（贴图换成 TH18 卡面）
     # sprite 号断言（把一手矩形钉死，改源文件会当场红）
-    expect = {459: (225, 113, 30, 30), 426: (0, 96, 16, 16),
-              427: (16, 96, 16, 16), 432: (96, 96, 16, 16)}
+    expect = {459: (225, 113, 30, 30), 426: (0, 96, 16, 16), 427: (16, 96, 16, 16)}
     for sid, want in expect.items():
         got = rects.get(sid)
         if got != want:

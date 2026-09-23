@@ -4629,3 +4629,20 @@ owner 2026-09-23 18:14 的「偏右 1/3 个游玩区宽」是**相对屏幕左�
 
 **实跑判据**：`ufo: absorb-count panel popped (ability.anm script 304 <= TH12 front.anm script134/135; count = N, …)`
 ⇒ 吸收 token 时屏幕 (528,288) 处应弹出那张 96×96 的面板并显示吸收数，静置约 3 秒后缩回。
+
+### 2.0zza ★★ 112 的 **owner 12 条实跑反馈**（2026-09-23 深夜；每条标了「复刻 / owner 口径 / 自定」）
+
+| # | 项 | 值 / 做法 | 性质 |
+| --- | --- | --- | --- |
+| 1+3 | 右侧收点面板 + 它的数字 | `UFO_PANEL_ENABLED = 0`（整套不弹）| **owner 口径**（一手确实有这件面板；owner 不要）|
+| 2 | ×N 弹字 | ASCII `"*%1.1f"`、scale 2.0、**120 帧**、颜色**灰/黄每 5 帧一换**、位置 = UFO 正下方 24 单位 | ✅ 复刻（一手 `th12:0x44a5d0` 的格式串/字号/闪色 + `zUfo+0x64` 的 120 帧）；❓ 自定只有那 24 单位偏移 |
+| 4 | 吸收音 / 收 token 音 | **静音**（照旧计数与日志）| **owner 口径**（一手各有一声 `0x26 = se_timeout2`；owner 明确说不要）|
+| 5 | 整颗 Bomb 的贴图 | TH18 `ability/BOMB_min.png`（完整 B 卡面）切成 32×32 | **owner 口径**（一手是 TH12 `etama8.png` sprite432）|
+| 6 | 满槽补偿的触发 | 移到**接触闸之后**（只有自机碰到的那一枚才被换成补偿）| ✅ 复刻（一手 `FUN_004270b0` 是接触路径）|
+| 7 | 吸满音 | TH18 `0x2e = se_cardget.wav` | **owner 口径**（一手 = `se_bonus`：TH12 `0x30`；两作两枚 wav 都逐字节相同 ⇒ 纯听感取舍）|
+| 8 | 召唤音 | 新扩表槽 `CE_VOICE_UFO = 0x5f`（源 = TH12 `se_ufo.wav`，vol −400 / prio 100）| **owner 口径**（一手那枚不在 `Ufo::spawn`）|
+| 9 | 对话 ⇒ token | `age` 顶到不反弹阈值 + 速度 ×2（`UFO_TOK_LEAVE_SPEED_MUL`），幂等 | **owner 口径**（一手没有"对话"这条支）；×2 是 ❓自定 |
+| 10 | token 生成音 | 只在小怪掉那条路（`ufo_tok_spawn()`）播 `CE_VOICE_UFO_TOKEN_SPAWN`（0x5e = se_piyo）| ✅ 复刻（一手 `0x42741b`）|
+| 11 | UFO 在场持续音 | `se_ufoalert`（0x58）**每 28 帧重放**（手动循环；无停循环音通路）| 一手是**循环音**（TH12 cfg 行 loop=1）⇒ ❓ 手段自定（周期 28 帧）|
+| 12 | 击破爆炸 | `ability.anm` 322（外圈 1→192）+ 323（内圈 1→320），`layer(12)`、`drawPoly(1,32)`、无贴图 | ✅ 复刻（TH12 `bullet.anm` script208/209 逐条）|
+

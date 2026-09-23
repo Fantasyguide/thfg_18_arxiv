@@ -1,0 +1,26 @@
+script script323 {
+    // 112 星莲船 —— **UFO 击破爆炸的内圈**（TH12 v1.00b `bullet.anm` **script209** 逐条移植）。
+    //   原文：sprite(-1); layer(12); blendMode(1); drawPoly(1.0f, 32); color(0,255,192);
+    //         color2(255,255,0); scale(0,0); scaleTime(40,4,320,320); alpha(128); alphaTime(10,1,1);
+    //         alpha2(64); +20: alpha2Time(20,4,0); +40: delete(); 中断 1: alphaTime(20,0,0) → +20 delete();
+    // ★ 移植改动：**一个都没有**（它是 322 的 `scriptNew` 子 VM；层/颜色/寿命逐条照抄）。
+    sprite(-1);
+    layer(12);
+    blendMode(1);
+    drawPoly(1.0f, 32);
+    color(0, 255, 192);
+    color2(255, 255, 0);
+    scale(0.0f, 0.0f);
+    scaleTime(40, 4, 320.0f, 320.0f);
+    alpha(128);
+    alphaTime(10, 1, 1);
+    alpha2(64);
++20: // 20
+    alpha2Time(20, 4, 0);
++20: // 40
+    delete();
+    interruptLabel(1);
+    alphaTime(20, 0, 0);
++20: // 60
+    delete();
+}
