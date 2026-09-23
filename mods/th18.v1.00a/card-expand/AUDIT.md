@@ -21013,7 +21013,7 @@ youkai:   native opt slot 2: state 0 vm 00000000 muzzle (0.0, -400.0)   （3/4 �
 | `assets/ability/entries/ORDER.txt` | **末尾** append 一段图集：`ATLAS ATLAS_MOF_BOMB_RING_BENT 256x256` + 成员 `MOF_BOMB_RING_BENT … @0,0,256x256` | `ORDER.txt` 只许追加（`ORDER.frozen.txt` 的已定稿段逐行不许动）；段尾 ⇒ 新号在其后 | `build_ability.py`：`重排检测` 通过、图集成员从 anm 回读**逐像素等于原图** ✅ |
 | `assets/ability/scripts/327..330_mof_bomb_ring394..397.anm.txt`（新）| TH10 `bullet.anm` script394–397 的逐条移植（`sprite` 换成新图集成员；删 `texCircle`；数值只做 scale ÷100 的换算）| 110/111 灵击动画 = 一手 script400 排期的六支柱环（见 `TUNING.md` §2.0zze）| 同上 + `make check` 全绿 |
 | 号段占用 | 新 entry = **70**、新 sprite = **487**、新脚本 = **327–330** | 脚本号原本取 **302–305**，**撞上另一张会话的 `302_ufo_hud_slot.anm.txt`** ⇒ 让位改 327–330（同批报错 = `327_mof_bomb_ring394.anm.txt：开头应为 script script327 {`）。**既有号一个都没动** | `git diff native/anm_ids.h` = 纯新增；`capcheck` 全绿 |
-| `CAPACITY.md` | §3.2 台账追加 `ATLAS_MOF_BOMB_RING_BENT` 一条（entry 70 / sprite 487 / 脚本 327–330 / 余量 185）| `capcheck` 硬门：新图集宏必须登记进台账（否则 `make check` 红）| `make check` → `capcheck：全绿 ✅` |
+| `CAPACITY.md` | §3.2 台账追加 `ATLAS_MOF_BOMB_RING_BENT` 一条（entry 68 / sprite 486 / 脚本 327–330）| `capcheck` 硬门：新图集宏必须登记进台账（否则 `make check` 红）| `make check` → `capcheck：全绿 ✅` |
 | 退役（**不删**）| 卡侧不再 spawn 脚本 279（实心盘占位）与 293（32 片竖条）；两条脚本文件**留在原号** | 脚本号不许回收：删文件会让后面所有脚本号整体前移，撞到别的会话的宏（本次 302 撞号就是这个坑的反面教训）| `grep -c BOMB_CLEAR_RING native/cards/bomb10.c` = 0（只剩注释里的历史说明）|
 
 **几何与滤波（表格里放不下的那半）**：极坐标映射 —— 竖条的**长边(128 px)沿圆周**、**短边(14 px)成环的厚度**；
@@ -21029,3 +21029,18 @@ youkai:   native opt slot 2: state 0 vm 00000000 muzzle (0.0, -400.0)   （3/4 �
 **别的会话需要知道的一件事**：`302–305` 这四个号**已经被占**（`302_ufo_hud_slot`），
 以后再往 `assets/ability/scripts/` 加脚本请**先 `ls` 一遍再定号**，构建期报的
 「开头应为 script scriptN」就是撞号信号。
+
+## §BE 详录 #85（2026-09-24）：★ **共享件** `CAPACITY.md` —— 给 112 的 `ATLAS_FONT2B` 那一格**补上宏名**（capcheck 硬门）
+
+**为什么动别人的台账**：`make check` 的 `capcheck` 有一条硬门 ——
+**新图集宏的完整名字**（`CE_ANM_ABILITY_ATLAS_ATLAS_<名>`）必须出现在 `CAPACITY.md` 里。
+112 那条线写的标题是「新增 `ATLAS_FONT2B`（… entry 70）」⇒ 少了 `CE_ANM_ABILITY_ATLAS_ATLAS_` 前缀，
+硬门认不出来 ⇒ **所有人的 `make check` 都红**（我这一轮被它挡住）。
+
+| 文件 | 改了什么 | 为什么 | 验证 |
+| --- | --- | --- | --- |
+| `CAPACITY.md` §3.2 | 那一格的标题补上 `CE_ANM_ABILITY_ATLAS_ATLAS_FONT2B`，并把 entry 号订正成现值 **69**（他们写 70 = 他们构建时的读数），并在格内注明「补名的是 110/111 这条线」| 让硬门认得出；**正文、口径、数值一个没改** | `python3 native/tools/capcheck.py` → 全绿 ✅；`make check` → 绿 |
+| `CAPACITY.md` §3.2 | 我自己那一格（`ATLAS_MOF_BOMB_RING_BENT`）的 entry/sprite 号订正成现值 **68 / 486**，并写明「号是每次构建现算的」（落笔时是 70 / 487）| 别的会话往 `ORDER.txt` 补条目后，append 段的下标会前移 | `native/anm_ids.h` 现读 = 68 / 486；脚本按**名字**引用，不受影响 |
+
+**对既有卡的影响面**：零（只改台账文字）。**给 112 那条线的一句话**：以后往 `CAPACITY.md` 登记图集时，
+标题里请带上**完整宏名**（`CE_ANM_ABILITY_ATLAS_ATLAS_*`），否则 `capcheck` 会拦下全仓的 `make check`。

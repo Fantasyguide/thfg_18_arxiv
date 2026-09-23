@@ -688,11 +688,12 @@ CONV_BURST             ability/mof/CONV_BURST.png                     32x32
 # ============================================================================================
 # 卡 112 的掉落物实体贴图（TH12 bullet.anm entry5 = bullet/etama8.png 的 1:1 切图）
 #   生成器 = assets/ability/make_ufo_drop_art.py（矩形从 anm 文本读 + 断死）
-ATLAS ATLAS_UFO_DROP 80x80
+ATLAS ATLAS_UFO_DROP 80x96
 BOUNTY_BAG         ability/ufo_drop/BOUNTY_BAG.png   @0,0,32x32
 DROP_ICON_P        ability/ufo_drop/DROP_ICON_P.png   @32,0,16x16
 DROP_ICON_POINT    ability/ufo_drop/DROP_ICON_POINT.png   @48,0,16x16
-DROP_BOMB          ability/ufo_drop/DROP_BOMB.png   @32,32,40x44
+DROP_BOMB          ability/ufo_drop/DROP_BOMB.png   @40,32,40x50
+CARD_GLOW          ability/ufo_drop/CARD_GLOW.png   @0,32,40x44
 
 # 卡 112 的飞碟槽 HUD 贴图（TH12 front.anm 的 1:1 切图）
 #   生成器 = assets/ability/make_ufo_hud_art.py（矩形从 anm 文本读 + 断死）
@@ -783,8 +784,6 @@ YOUKAI_FAM_AURA  ability/youkai_familiar/YOUKAI_FAM_AURA.png  64x64
 #   本机直读 ⇒ `':'`(0x3a) = **206**（`ascii1280` 的 (160,320,16×20)，与数字同一行）、
 #   `'*'`(0x2a) = **190**（(448,208,16×16)，另一行）。切图脚本 `assets/ability/make_font2_art.py`。
 #   ⚠ 两张都落 16×32 画布、字形居中 ⇒ 与 `ATLAS_FONT2` 那套度量（7 px 步进 / 半行高 10 / vm_dy 5）完全一致。
-FONT2_COLON  ability/font2/FONT2_COLON.png  16x32
-FONT2_STAR   ability/font2/FONT2_STAR.png  16x32
 
 # ============================================================================================
 # 2026-09-23 追加：卡 110/111 灵击的**环**（TH10 `bullet.anm` script394–397 的 texCircle(32)）
@@ -795,3 +794,29 @@ FONT2_STAR   ability/font2/FONT2_STAR.png  16x32
 # ============================================================================================
 ATLAS ATLAS_MOF_BOMB_RING_BENT 256x256
 MOF_BOMB_RING_BENT     ability/mof_bomb/MOF_BOMB_RING_BENT.png     @0,0,256x256
+# ── 2026-09-24 追加：卡 112 的 HUD 文字要 `:` 与 `*` 两个字形的**独立图集**
+#   为什么另起一个图集而不是往 ATLAS_FONT2 里加两行：**那个图集在 ORDER 的已定稿段**（前 186 行），
+#   插行 = 全库 sprite 号平移（构建期会拒）。而单图行（每个字形一个 entry）也不行 ——
+#   引擎的 sprite 号是**按 VM 所属 entry 解析**的，`ce_hud_vm_text_*` 的 VM 绑在 ATLAS_FONT2 那支
+#   脚本上 ⇒ 指向别的 entry 的号会越界（实跑症状：`*` 画成了别的东西）。
+#   ⇒ 复制一份完整字形集另起 `ATLAS_FONT2B`（16 格 = 8×2 网格刚好放下），再配一支脚本 332，
+#     由 SDK 的第三个字体档 `CE_HUD_FONT_TH18_FONT2B` 使用（见 `native/sdk.h` 的 `hud_font_t`）。
+#   ⚠ 字形切图 = `assets/ability/make_font2_art.py`（同一批原生精灵：196..205 = 数字、
+#     190 = `*`、193 = `-`、194 = `.`、185 = `%`、191 = `+`、206 = `:`）。
+ATLAS ATLAS_FONT2B 128x64@8x2
+FONT2B_0               ability/font2b/FONT2B_0.png                          16x32
+FONT2B_1               ability/font2b/FONT2B_1.png                          16x32
+FONT2B_2               ability/font2b/FONT2B_2.png                          16x32
+FONT2B_3               ability/font2b/FONT2B_3.png                          16x32
+FONT2B_4               ability/font2b/FONT2B_4.png                          16x32
+FONT2B_5               ability/font2b/FONT2B_5.png                          16x32
+FONT2B_6               ability/font2b/FONT2B_6.png                          16x32
+FONT2B_7               ability/font2b/FONT2B_7.png                          16x32
+FONT2B_8               ability/font2b/FONT2B_8.png                          16x32
+FONT2B_9               ability/font2b/FONT2B_9.png                          16x32
+FONT2B_MINUS           ability/font2b/FONT2B_MINUS.png                          16x32
+FONT2B_PERCENT         ability/font2b/FONT2B_PERCENT.png                          16x32
+FONT2B_DOT             ability/font2b/FONT2B_DOT.png                          16x32
+FONT2B_PLUS            ability/font2b/FONT2B_PLUS.png                          16x32
+FONT2B_COLON           ability/font2b/FONT2B_COLON.png                          16x32
+FONT2B_STAR            ability/font2b/FONT2B_STAR.png                          16x32

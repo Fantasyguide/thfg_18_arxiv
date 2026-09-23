@@ -244,11 +244,17 @@ cards: 35 registered from cards.js; shop pool 700/8192 slots, guaranteed offers 
   别按墨迹裁：`scale.x` 乘的是 sprite 矩形宽，`th18:0x481703`）；
   **追加在 ORDER.txt 末尾** ⇒ 新 sprite = **430**、同批新脚本 = **275/276**，
   **既有 sprite / 脚本号一个都没动**（`ORDER.frozen.txt` 的前 186 行逐行未变，构建期已核）。
-- **★ 2026-09-23 追加两张单图**（`FONT2_COLON` entry **68** / `FONT2_STAR` entry **69**，各 1 个 sprite =
-  `':`' 与 `'*'` 的字形）：卡 112 的计时器与击破 ×N 弹字要从 ASCII 换成**贴图 VM 文字**（才进得了暂停模糊罩），
-  而这两个字符此前认不出来。贴图**不能**并进 `ATLAS_FONT2`（那个图集在 `ORDER.frozen.txt` 的已定稿段里、
-  插行 = 全库 sprite 号平移）⇒ 按规矩在 ORDER.txt **末尾**追加两张单图。**append 在最末尾** ⇒
-  新 sprite = **485 / 486**，既有号一个没动（entry 69/256）。切图 = `assets/ability/make_font2_art.py`。
+- **★ 2026-09-24 新增 `ATLAS_FONT2B`（`CE_ANM_ABILITY_ATLAS_ATLAS_FONT2B`，`ability.anm` 的 entry **69**；
+  ⚠ 补宏名与现值的是 110/111 这条线，只为让 `capcheck` 的硬门认得出 —— 正文与口径都是 112 那位写的，
+  见 `AUDIT.md` §BE 详录 #85）**：卡 112 的 HUD 文字字形
+  —— **16 个成员**（TH18 font 2 的完整字形集 + `:` 与 `*`）。为什么要另起一格而不是往
+  `ATLAS_FONT2` 里加两行：`ce_hud_vm_text_*` 的每个字形 VM 都绑在一支**固定脚本**上，而引擎按
+  **该脚本所属 entry 的精灵表**解析 `vm->sprite` ⇒ 想让 112 用上 `:` / `*`，它们就必须来自**同一张表**；
+  而 `ATLAS_FONT2` 在 `ORDER.frozen.txt` 的**已定稿段**里（插行 = 全库 sprite 号平移，构建期会拒）。
+  ⇒ 复制整套字形另起一格 + 脚本 **332**（`332_font2b_glyph.anm.txt` = 脚本 136 的孪生）
+  + SDK 第三档字体 `CE_HUD_FONT_TH18_FONT2B`（度量与第 0 档逐值相同，只多认两个字符）。
+  画布 **128×64@8x2**（16 格刚好放下）；**append 在最末尾** ⇒ 新 sprite 在文件末尾追加、
+  **既有号一个没动**。切图 = `assets/ability/make_font2_art.py`（同一批字形同时落 `font2/` 与 `font2b/`）。
   只占 1 个 entry（53/256，余量 203）；生成器 `assets/ability/make_faith_hud_art.py`，
   合并块的几何与逐项判定见 `engine/player/th11/04-merged-hud-spec.md` 与 `AUDIT` §DB/§DC。
 - **★ 2026-09-16 新增 `ATLAS_FLAN`（`ability.anm` 的 entry 53）**：111 的二小姐蓄力特技
@@ -373,15 +379,18 @@ cards: 35 registered from cards.js; shop pool 700/8192 slots, guaranteed offers 
   （**左上角锚**）；内容（逐像素读出）= 单词 `Cherry` + 粉色加号 `+`（+C 前缀）+ 粉色斜杠 `/`
   （樱点 / 最大樱点之间的分隔符）+ 软投影。
 
-- **★ 2026-09-23 新增 `ATLAS_MOF_BOMB_RING_BENT`（entry **70**，`CE_ANM_ABILITY_ATLAS_ATLAS_MOF_BOMB_RING_BENT`）**：
+- **★ 2026-09-23 新增 `ATLAS_MOF_BOMB_RING_BENT`（entry **68**、sprite **486**，
+  `CE_ANM_ABILITY_ATLAS_ATLAS_MOF_BOMB_RING_BENT`；⚠ 这两个号是**每次构建现算**的 ——
+  本行写下来时它是 entry 70 / sprite 487，中间别的会话又往 ORDER.txt 补了条目就前移了两位。
+  脚本里一律用**名字**（`@MOF_BOMB_RING_BENT@`）引用，不受影响）**：
   110/111 灵击柱环的**连续环**贴图（用户口径「**它不是32段**」⇒ 不再用「卡侧摆 32 片竖条」近似一手的
   `texCircle(32)`，改成**构建期把那条 14×128 竖条极坐标弯环、并沿圆周铺 32 份**（= 一手 `texCircle(32)` 的那个 32），
   见 `assets/ability/make_mof_bomb_ring_bent.py`）。
   画布 **256×256**、**1 个成员**（**基准半径 100 px** ⇒ 环脚本里 `scale = 半径 / 100`）；
-  **append 在最末尾** ⇒ 新 sprite = **487**、同批新脚本 = **327–330**（脚本号原本取 302–305，
+  **append 在最末尾** ⇒ 新 sprite = **486**、同批新脚本 = **327–330**（脚本号原本取 302–305，
   撞上另一张会话的 `302_ufo_hud_slot.anm.txt`，已让位重编；见 `AUDIT.md` §BE 的登记）。
-  **占的格子 = `ability.anm` 的 entry 索引 70（1 格）、sprite 号 487**，既有 entry / sprite 号一个没动
-  ⇒ entry 用量 **71 / 256**（余量 185）。一手：TH10 `bullet.anm` script394–397 的
+  **占的格子 = `ability.anm` 的 entry 索引 **68**（1 格）、sprite 号 **486****，既有 entry / sprite 号一个没动。
+  （本行落笔时的读数 = entry 70 / sprite 487 / 余量 185；现值见 `native/anm_ids.h`。）一手：TH10 `bullet.anm` script394–397 的
   `sprite(sprite362) + texCircle(32)`（竖条 = `etama3.png` 的 (65,0,14,128)，与 `ATLAS_MOF_BOMB_RING` 同源）。
   ⚠ 退役但**不删**：脚本 279（实心盘占位）与 293（32 片竖条）留在 `assets/ability/scripts/` 里 ——
   脚本号不许回收（删文件会让后面所有脚本号整体前移，撞别的会话的宏）。
@@ -664,6 +673,7 @@ CE_ANM_ABILITY_ATLAS_ATLAS_ANIMAL_TOKEN
 CE_ANM_ABILITY_ATLAS_ATLAS_FAITH_HUD
 CE_ANM_ABILITY_ATLAS_ATLAS_FLAN
 CE_ANM_ABILITY_ATLAS_ATLAS_FONT2
+CE_ANM_ABILITY_ATLAS_ATLAS_FONT2B
 CE_ANM_ABILITY_ATLAS_ATLAS_HUD_DIGIT
 CE_ANM_ABILITY_ATLAS_ATLAS_LOLK
 CE_ANM_ABILITY_ATLAS_ATLAS_MARISA_BULLET

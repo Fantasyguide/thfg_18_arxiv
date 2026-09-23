@@ -96,6 +96,13 @@ typedef struct {
                                            *   `texCircle` 时的近似（用户口径「**它不是32段**」）—— 两个都不该留。*/
     int32_t  ring_next;    /* 下一根要起的柱环在 `s_ring_sched` 里的下标（排期按帧号升序 ⇒ 顺序推即可）*/
     int32_t  leaf_tick;    /* 诊断：本发一共起了几颗火星（一手：每 30 帧一趟、一趟 4 颗）*/
+    float    vx, vy;       /* ★ 2026-09-24：**视觉锚点** = 发动瞬间的自机坐标（柱环/火星都挂在这里）。
+                            *   一手：`Bomb::on_tick` 每帧只动**自己**的 `bomb+0x30..0x38`（消弹/伤害中心），
+                            *   **没有**写 anm VM 的位置字段（`th10:0x4057b6`–`0x4057de` 全段只碰炸弹对象）
+                            *   ⇒ 环画在 `Bomb::start` 给的那一点，不跟着上升的中心走。
+                            *   用户实跑口径：「**你的灵击往上运动速度太快了**」。*/
+    uint32_t leaf_probe[BOMB10_RING_LEAF_UNITS];  /* ★ 诊断：最近一趟火星的 VM（用户报「枫叶呢?」）*/
+    int32_t  leaf_probe_at;                       /* 诊断：到这一帧就把上面那几个 VM 的字段打出来 */
     int32_t  invuln_left;  /* ★ 2026-09-22：本发**还剩几帧无敌**（一手 270 / 决死 200；
                             *   见 `bomb10.h` 的「无敌帧」段）。机器每帧声明它、数到 0 声明 0。*/
 } bomb10_run_t;
@@ -185,7 +192,7 @@ static void bomb10_ring_spawn_due(void)
         }
         for (i = 0; i < BOMB10_RING_VMS; ++i)
             if (!s_run.ring_vm[i]) { s_run.ring_vm[i] = id; break; }
-        (void)ce_anm_set_pos(id, s_run.x, s_run.y, 0.0f);
+        (void)ce_anm_set_pos(id, s_run.vx, s_run.vy, 0.0f);   /* 视觉锚点（见 bomb10_run_t 的注）*/
         ce_log("%s/fx: 起柱环 %s vm=%u 帧 %d（脚本 %u）",
                s_run.host ? s_run.host->log_tag : "bomb10", s_ring_sched[k].tag, (unsigned)id,
                (int)s_run.elapsed, (unsigned)s_ring_sched[k].script);
@@ -249,6 +256,13 @@ int32_t bomb10_start(const bomb10_host_t *host, void *user, int32_t by_hit)
     s_run.dmg_frames   = 0;
     s_run.leaf_tick    = 0;
     s_run.ring_next    = 0;
+    s_run.vx           = pp[0];
+    s_run.vy           = pp[1];
+    s_run.leaf_probe_at = 0;
+    {
+        int i;
+        for (i = 0; i < BOMB10_RING_LEAF_UNITS; ++i) s_run.leaf_probe[i] = 0;
+    }
     {
         int i;
         for (i = 0; i < BOMB10_RING_VMS; ++i) s_run.ring_vm[i] = 0;
@@ -394,7 +408,9 @@ void bomb10_tick(int32_t driver)
      *      ⚠ 上界：一手那个循环是 `iset($I0, 80)`（80 趟 = 2400 帧），实际由**灵击寿命**截断
      *      （我们 296 帧 ⇒ 9 趟 36 颗；TH10 亦同，主脚本的 `+20: delete()` 只是兜底）。*/
     bomb10_ring_spawn_due();
-    bomb10_ring_follow(center[0], center[1]);
+    /* ★ 2026-09-24：柱环钉在**发动点**（`vx/vy`），不跟每帧上移的 `center` —— 见 `bomb10_run_t` 的注。
+     *   位置每帧写一次是必要的：脚本自己不写 `pos()`（draw = `pos(0x30) + entity_pos(0x5f0) + __pos_2`）。*/
+    bomb10_ring_follow(s_run.vx, s_run.vy);
     if (s_run.elapsed >= BOMB10_RING_LEAF_FIRST &&
         (s_run.elapsed - BOMB10_RING_LEAF_FIRST) % BOMB10_RING_LEAF_EVERY == 0) {
         int k;
@@ -402,7 +418,38 @@ void bomb10_tick(int32_t driver)
             const uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(),
                                              (k & 1) ? CE_ANM_ABILITY_SCRIPT_MOF_BOMB_SPARK_BLUE
                                                      : CE_ANM_ABILITY_SCRIPT_MOF_BOMB_SPARK, 13);
-            if (id) { (void)ce_anm_set_pos(id, center[0], center[1], 0.0f); ++s_run.leaf_tick; }
+            if (id) {
+                (void)ce_anm_set_pos(id, s_run.vx, s_run.vy, 0.0f);   /* 火星也挂在锚点（一手是主脚本的子 VM）*/
+                s_run.leaf_probe[k] = id;                             /* 诊断：5 帧后读它的字段 */
+                ++s_run.leaf_tick;
+            }
+        }
+        s_run.leaf_probe_at = s_run.elapsed + 5;
+    }
+    /* ★ 诊断（用户报「**枫叶呢?**」）：一趟火星出生 5 帧后，把它们在**引擎里**的字段读出来。
+     *   能一眼分辨三种情况：VM 已经不在了 / 画在别处（pos 不是锚点+半径方向）/ scale = NaN 或 0。*/
+    if (s_run.leaf_probe_at && s_run.elapsed >= s_run.leaf_probe_at) {
+        int k;
+        s_run.leaf_probe_at = 0;
+        for (k = 0; k < BOMB10_RING_LEAF_UNITS; ++k) {
+            const uint32_t id = s_run.leaf_probe[k];
+            uint8_t *vm = id ? ce_anm_get_vm(id) : 0;
+            if (!vm) {
+                ce_log("%s/fx: 火星[%d] vm=%u **已经不在了**（出生后第 5 帧）",
+                       s_run.host ? s_run.host->log_tag : "bomb10", k, (unsigned)id);
+                continue;
+            }
+            ce_log("%s/fx: 火星[%d] vm=%u sprite=%d scale=(%.3f,%.3f) 脚本pos=(%.1f,%.1f) 实体pos=(%.1f,%.1f) c1=%08x",
+                   s_run.host ? s_run.host->log_tag : "bomb10", k, (unsigned)id,
+                   (int)*(const int32_t *)(vm + CE_ANM_VM_SPRITE_ID),
+                   (double)((const float *)(vm + CE_ANM_VM_SCALE))[0],
+                   (double)((const float *)(vm + CE_ANM_VM_SCALE))[1],
+                   (double)((const float *)(vm + CE_ANM_VM_SCRIPT_POS))[0],
+                   (double)((const float *)(vm + CE_ANM_VM_SCRIPT_POS))[1],
+                   (double)((const float *)(vm + CE_ANM_VM_POS))[0],
+                   (double)((const float *)(vm + CE_ANM_VM_POS))[1],
+                   *(const uint32_t *)(vm + CE_ANM_VM_COLOR1));
+            s_run.leaf_probe[k] = 0;
         }
     }
 

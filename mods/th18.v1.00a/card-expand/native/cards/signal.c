@@ -312,6 +312,26 @@ static int32_t      s_slot_stage111 = -1;
  *   `ce_option_drop` 并清零（静态区不再被 `memset(s, 0, …)` 顺手清掉，必须显式清）。*/
 static ce_option_t s_opt[SIGNAL_OPTION_MAX];
 
+/* ★★ 2026-09-24（用户实跑两条：「**魔理沙切换子机都是火子机的样式**（仅子机贴图，阵型发弹正常）」
+ *   +「按了 C 之后子机样式变成现在样式，**但是残留一个错误的贴图子机**」）：
+ *   每个槽**实际**认领到的那支 VM（anm id）与它的贴图脚本号。
+ *   一手（本仓已记录，`sdk.h` 的 `ce_option_get` 一节）：**子机贴图脚本只在「申请」那一刻定死**
+ *   （`Player__allocate_option` `th18:0x40a790` 的第 5 个栈参），而 `ce_option_claim()` 对**已存在**的槽
+ *   只是「认领并返回」⇒ 光把新脚本传给 `ce_option_get()` 是**白传**。旧版就是这么写的，于是：
+ *     · 换元素（火→水→木…，本卡魔理沙那一支按 `s->formation` 选脚本）不生效 ⇒ 永远是「加火力那一刻」的球；
+ *     · 引擎 repopulate（灵击扣火力那一发）重建出来的槽，认领回来时还带着旧脚本 ⇒ 残留一颗错误贴图。
+ *   ⇒ 每帧核对这两个字段，对不上就**收掉重申请**（这是换贴图的唯一合法路径）。*/
+static int32_t  s_opt_live_script[SIGNAL_OPTION_MAX];   /* 那个 VM 申请时用的脚本号（-1 = 没有）*/
+static uint32_t s_opt_live_vm[SIGNAL_OPTION_MAX];       /* 那个 VM 的 anm id（0 = 没有）*/
+
+/* 这个槽现在挂的 VM 还是不是我们记的那一支？（引擎 repopulate / 别人接管都会换掉它）*/
+static int signal_option_vm_changed(int i)
+{
+    const ce_option_t *o = &s_opt[i];
+    if (!o->ptr) return 1;
+    return *(const uint32_t *)(o->ptr + CE_OPT_ANM_ID) != s_opt_live_vm[i];
+}
+
 /* ---- 卡私有状态（`ce_state`，含 `CE_CARD` 的 16 字节保留头）---- */
 typedef struct {
     faith_slot_t slot;            /* Δ_111（定点 ×100）/ **signal（千分点 0..130000）** / 小绿点余数
@@ -2168,17 +2188,46 @@ static void signal_option_align(ce_card_t *c, signal_card_t *s, int want,
     if (want < 0) want = 0;
     if (want > SIGNAL_OPTION_MAX) want = SIGNAL_OPTION_MAX;
     for (i = want; i < SIGNAL_OPTION_MAX; ++i) {
-        if (!s_opt[i].ptr) { s_opt[i].retry = 0; continue; }
+        if (!s_opt[i].ptr) { s_opt[i].retry = 0; s_opt_live_script[i] = -1; s_opt_live_vm[i] = 0; continue; }
         ce_option_drop(c, &s_opt[i]);
         s_opt[i].ptr = 0;
         s_opt[i].retry = 0;
+        s_opt_live_script[i] = -1;
+        s_opt_live_vm[i] = 0;
         ce_log("signal: option #%d 回收（只要 %d 格；frame %u）", i, want, (unsigned)ce_sdk_frame());
     }
     if (!pose || want <= 0) return;
     for (i = 0; i < want; ++i) {
-        uint8_t *o = ce_option_get(c, &s_opt[i], SIGNAL_OPTION_OFFSET_ALLOC, pose->anm_script,
-                                   SIGNAL_OPTION_RETRY, "signal");
+        uint8_t *o;
+        /* ★ 先看这个槽还认不认我们（引擎 repopulate / 回收都会让它悄悄丢）。丢掉的**当帧**补 ——
+         *   不再等 `SIGNAL_OPTION_RETRY` 那个节流：节流是给「池满」用的，而「子机刚被灵击重建、
+         *   却要慢慢一格一格补回来」正是用户报的「添加也慢」（`o->retry = 0` 只影响这一次尝试，
+         *   池满时 `ce_option_retry()` 会重新压上节流 ⇒ 不会变成每帧刷日志）。*/
+        if (s_opt[i].ptr && !ce_option_claim(c, &s_opt[i])) {
+            s_opt[i].retry = 0;
+            s_opt_live_script[i] = -1;
+            s_opt_live_vm[i] = 0;
+        }
+        /* ★ 槽还在，但**贴图脚本不是本帧要的**（换元素 / 刚被引擎重建过）⇒ 收掉重申请。
+         *   一手：换不了脚本（见 `s_opt_live_*` 的注），只能重申请。*/
+        if (s_opt[i].ptr &&
+            (s_opt_live_script[i] != pose->anm_script || signal_option_vm_changed(i))) {
+            ce_log("signal: option #%d 贴图脚本重申请（旧脚本 %d → 新 %d；frame %u）",
+                   i, (int)s_opt_live_script[i], (int)pose->anm_script, (unsigned)ce_sdk_frame());
+            ce_option_drop(c, &s_opt[i]);
+            s_opt[i].ptr = 0;
+            s_opt[i].retry = 0;
+            s_opt_live_script[i] = -1;
+            s_opt_live_vm[i] = 0;
+        }
+        o = ce_option_get(c, &s_opt[i], SIGNAL_OPTION_OFFSET_ALLOC, pose->anm_script,
+                          SIGNAL_OPTION_RETRY, "signal");
         if (!o) continue;
+        {   /* 记下「这一支 VM 是用哪个脚本申请的」——下面每帧拿它核对（见上面的注）*/
+            const uint32_t vm = *(const uint32_t *)(o + CE_OPT_ANM_ID);
+            s_opt_live_vm[i] = vm;
+            s_opt_live_script[i] = pose->anm_script;
+        }
         s->opt_script = pose->anm_script;
         s->opt_on = 1;
         *(int32_t *)(o + CE_OPT_OFF_NF_X) = (int32_t)(pose->cell[i].ux * 128.0f);
@@ -2195,7 +2244,7 @@ static int on_option_pose_apply(ce_card_t *c)
 {
     signal_card_t *s = st(c);
     const ce_option_pose_t *pose = ce_option_pose_pose();
-    int i, want;
+    int want;
 
     if (!s) return 0;
     if (ce_option_pose_winner() != (int)ce_card_id(c) || !pose || pose->count <= 0) {
@@ -2204,15 +2253,10 @@ static int on_option_pose_apply(ce_card_t *c)
         s->opt_on = 0;
         return 0;
     }
-    if (s->opt_script >= 0 && s->opt_script != pose->anm_script) {
-        /* 子机贴图脚本是**申请时**定死的（`Player__allocate_option` `th18:0x40a790` 第 5 个栈参）
-         * ⇒ 换脚本必须先收再要。（本卡当前只有一个脚本 ⇒ 这条现在走不到，留着防将来换图。）*/
-        for (i = 0; i < SIGNAL_OPTION_MAX; ++i) {
-            if (s_opt[i].ptr) ce_option_drop(c, &s_opt[i]);
-            s_opt[i].ptr = 0;
-        }
-        s->opt_script = -1;
-    }
+    /* ★ 2026-09-24：这里原来有一条「换脚本 ⇒ 全收」的分支，**从来没生效过** ——
+     *   `s->opt_script` 每帧都被 `signal_option_align()` 刷成当前值（那时 align 先跑），
+     *   所以判据永远为假（旧注释也自认「走不到」）。换脚本现在由 `signal_option_align()`
+     *   按**每槽台账**（`s_opt_live_script[]`）做，那份账只在**真的申请到 VM** 时才更新 ⇒ 判得准。*/
     want = pose->count;
     if (want > SIGNAL_OPTION_MAX) want = SIGNAL_OPTION_MAX;
     /* ★★ 2026-09-23（用户实跑报的「经典 bug」）：**多出来的槽必须收掉**。
@@ -2653,6 +2697,8 @@ static void signal_support_reset(ce_card_t *c, signal_card_t *s)
             if (s_opt[i].ptr) ce_option_drop(c, &s_opt[i]);
             s_opt[i].ptr = 0;
             s_opt[i].retry = 0;
+            s_opt_live_script[i] = -1;
+            s_opt_live_vm[i] = 0;
         }
         ce_option_pose_drop(c);      /* 退出子机声明层（退位/删卡都要）*/
     }
