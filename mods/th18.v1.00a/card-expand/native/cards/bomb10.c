@@ -210,12 +210,12 @@ static void bomb10_ring_follow(float cx, float cy)
  *   ② 卡私有闸（`host->gate`）
  *   ③ 自机指针 / 火力门槛（`host->power_spend`；门槛不过 ⇒ **什么都不做**，卡侧自己打日志）
  * 过了三道门之后，公共那一半与前实现逐条同形（顺序照 110）：
- *   写 `CURRENT_POWER` → `ce_repopulate_options()` → 决死救命 → 记曲线参数 → 环 + 电流边 VM
+ *   写 `CURRENT_POWER` → `ce_repopulate_options()` → 决死救命 → 记曲线参数 → 柱环（一手排期）
  *   → 音效 → RANK −0x80 → 卡侧 `on_start`。*/
 int32_t bomb10_start(const bomb10_host_t *host, void *user, int32_t by_hit)
 {
     const float *pp;
-    int32_t power_before, power_after = 0, cost, reimu, spell_now, r;
+    int32_t power_before, power_after = 0, cost, reimu, spell_now;
 
     if (!host) return 0;
     if (s_run.left > 0) return 0;                       /* ① 一手：灵击进行中 ⇒ 不再发动 */
@@ -269,11 +269,8 @@ int32_t bomb10_start(const bomb10_host_t *host, void *user, int32_t by_hit)
 
     /* 柱环：第 0 帧起 394/395/396（一手 script400 的头三行 `scriptNew`）——
      * 半径/淡出/自删**全在脚本里**（见文件头的「两处必须偏离一手」），卡侧只给出生点。*/
-    r = mof_core_bomb_radius_centi(0, s_run.target_centi);   /* 仍在别处用（伤害/消弹的半径曲线）*/
-    (void)r;
     bomb10_ring_spawn_due();
     bomb10_fx_dump("起");
-
 
     /* 音效（TH10 `se_slash.wav` ↔ TH18 同 wav id 0x2c）*/
     ce_play_sound(BOMB10_SE, pp[0]);

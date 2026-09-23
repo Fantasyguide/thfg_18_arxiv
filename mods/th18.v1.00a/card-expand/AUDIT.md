@@ -21009,12 +21009,19 @@ youkai:   native opt slot 2: state 0 vm 00000000 muzzle (0.0, -400.0)   （3/4 �
 
 | 文件 | 改了什么 | 为什么 | 验证 |
 | --- | --- | --- | --- |
-| `assets/ability/make_mof_bomb_ring_bent.py`（新）| 把 TH10 那条 14×128 竖条**极坐标弯环**（长边沿圆周、短边成厚度）**并沿圆周铺 `TILES=32` 份**（= 一手 `texCircle(32)`；竖条长边自己带 3 个周期 ⇒ 一圈共 96 道电弧），烘成 256×256 的 `MOF_BOMB_RING_BENT.png`（基准半径 **100 px**、厚 14 px；像素级 3×3 超采样缩小；`--dump` 打 ASCII 自检）| 一手四支柱环写的是 `sprite(sprite362) + texCircle(32)`，而 **TH18 的 anm VM 是否执行 `texCircle` 没有实跑先例**（§BE #31 起就记着这条）；owner 2026-09-23 口径「**它不是32段**」⇒ 弯圈挪到构建期做，画出来的形状与一手一致 | `--dump`：6004 个不透明像素、环连续（无缺口、无 32 个独立 VM 的错位）|
+| `assets/ability/make_mof_bomb_ring_bent.py`（新）| 把 TH10 那条 14×128 竖条**极坐标弯环 + 沿圆周铺 32 份**，烘成 256×256 的 `MOF_BOMB_RING_BENT.png`（几何与滤波见下方注）| 一手四支柱环写的是 `sprite(sprite362) + texCircle(32)`，而 **TH18 的 anm VM 是否执行 `texCircle` 没有实跑先例**（§BE #31 起就记着这条）；owner 2026-09-23 口径「**它不是32段**」⇒ 弯圈挪到构建期做，画出来的形状与一手一致 | `--dump`：6004 个不透明像素、环连续（无缺口、无 32 个独立 VM 的错位）|
 | `assets/ability/entries/ORDER.txt` | **末尾** append 一段图集：`ATLAS ATLAS_MOF_BOMB_RING_BENT 256x256` + 成员 `MOF_BOMB_RING_BENT … @0,0,256x256` | `ORDER.txt` 只许追加（`ORDER.frozen.txt` 的已定稿段逐行不许动）；段尾 ⇒ 新号在其后 | `build_ability.py`：`重排检测` 通过、图集成员从 anm 回读**逐像素等于原图** ✅ |
 | `assets/ability/scripts/327..330_mof_bomb_ring394..397.anm.txt`（新）| TH10 `bullet.anm` script394–397 的逐条移植（`sprite` 换成新图集成员；删 `texCircle`；数值只做 scale ÷100 的换算）| 110/111 灵击动画 = 一手 script400 排期的六支柱环（见 `TUNING.md` §2.0zze）| 同上 + `make check` 全绿 |
 | 号段占用 | 新 entry = **70**、新 sprite = **487**、新脚本 = **327–330** | 脚本号原本取 **302–305**，**撞上另一张会话的 `302_ufo_hud_slot.anm.txt`** ⇒ 让位改 327–330（同批报错 = `327_mof_bomb_ring394.anm.txt：开头应为 script script327 {`）。**既有号一个都没动** | `git diff native/anm_ids.h` = 纯新增；`capcheck` 全绿 |
 | `CAPACITY.md` | §3.2 台账追加 `ATLAS_MOF_BOMB_RING_BENT` 一条（entry 70 / sprite 487 / 脚本 327–330 / 余量 185）| `capcheck` 硬门：新图集宏必须登记进台账（否则 `make check` 红）| `make check` → `capcheck：全绿 ✅` |
 | 退役（**不删**）| 卡侧不再 spawn 脚本 279（实心盘占位）与 293（32 片竖条）；两条脚本文件**留在原号** | 脚本号不许回收：删文件会让后面所有脚本号整体前移，撞到别的会话的宏（本次 302 撞号就是这个坑的反面教训）| `grep -c BOMB_CLEAR_RING native/cards/bomb10.c` = 0（只剩注释里的历史说明）|
+
+**几何与滤波（表格里放不下的那半）**：极坐标映射 —— 竖条的**长边(128 px)沿圆周**、**短边(14 px)成环的厚度**；
+`TILES = 32` = 一手 `texCircle(32)` 的那个 32（沿圆周**首尾相接铺 32 份**，不是 32 个独立 VM 摆片 ——
+用户否掉的是后者）。竖条长边自己带 **3 个周期**（峰值行 8 / 58 / 107，周期 ≈ 49.5 px）⇒ 一圈共 **96 道电弧**，
+这才是 TH10 那条「电流边」的密度。烘图时对每个目标像素做 **3×3 超采样**（竖条 128 px 要压进
+`2π·100/32 ≈ 19.6 px` 的弧长，不滤波就是抽样噪点）。基准半径 **100 px** ⇒ 脚本里 `scale = 半径/100`；
+`--dump` 打 ASCII 自检（6004 个不透明像素、环连续无缺口）。
 
 **对既有卡的影响面**：**零** —— `sprite -1`/`layer 13` 之外没有共享字段变化；
 新 entry / sprite / 脚本号全部 append 在末尾，`ORDER.frozen.txt` 的已定稿段逐行未变；
