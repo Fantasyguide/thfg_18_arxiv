@@ -808,6 +808,7 @@ static void yk_aura_kill(yk_card_t *s)
 }
 
 /* 每帧跟随（一手就是每帧钉在自机）+ 自愈（句柄被引擎清过 ⇒ 重起；脚本自己 delete 了 ⇒ 清 0）。*/
+static uint32_t s_orb_log_tick;     /* ★ 2026-09-23（#42）：永点逐 VM 实况的节拍 */
 static uint8_t s_aura_edge_spawn;   /* ★ #32/#29：光环「每个形态边沿只起一次」的许可位 */
 static void yk_aura_tick(yk_card_t *s, float x, float y)
 {
@@ -1805,6 +1806,37 @@ static float yk_fsqrt(float v)
  *     ❓ 语义未钉 ⇒ 本卡**无条件**动（登记 `TUNING.md`）。
  */
 
+
+/* ★ 2026-09-23（#42「永点没看见」）：**永点 VM 的逐 VM 实况** —— 与 `yk_hud_vm_log` / 112 的
+ * `ufo/slot.vm` 同一套读法（spr/scale/alpha/layer/draw）。每 60 帧给前两颗**在飞**的刻符各打一行，
+ * 一次实跑即可判定「没建 / alpha=0 / 画错层 / 画在屏外」——这是 #42 收口缺的最后一块证据。*/
+static void yk_orb_vm_log(yk_card_t *s)
+{
+    unsigned i, n = 0;
+    (void)s;
+    for (i = 0; i < YK_ORB_MAX && n < 2; ++i) {
+        yk_orb_t *o = &s_orb[i];
+        const uint8_t *vm;
+        const float *sp, *p2, *ep;
+        if (!o->used || !o->anm_id) continue;
+        vm = (const uint8_t *)ce_anm_get_vm(o->anm_id);
+        if (!vm) { ce_log("youkai/orb.vm #%u: (no VM; id %u, state %d, live=%.1f)", i, o->anm_id, (int)o->state, (double)o->y); ++n; continue; }
+        sp = (const float *)(vm + CE_ANM_VM_SCRIPT_POS);
+        p2 = (const float *)(vm + CE_ANM_VM_POS_2);
+        ep = (const float *)(vm + CE_ANM_VM_POS);
+        ce_log("youkai/orb.vm #%u id %u script %d state %d: draw = (%.0f,%.0f) [= pos+pos2+ent]; "
+               "sprite %d scale %.2f alpha %u layer %d flags_lo %08x",
+               i, o->anm_id, (int)*(const int32_t *)(vm + CE_ANM_VM_SCRIPT_ID), (int)o->state,
+               (double)(sp[0] + p2[0] + ep[0]), (double)(sp[1] + p2[1] + ep[1]),
+               (int)*(const int32_t *)(vm + CE_ANM_VM_SPRITE_ID),
+               (double)*(const float *)(vm + CE_ANM_VM_SCALE),
+               (unsigned)((*(const uint32_t *)(vm + CE_ANM_VM_COLOR1) >> 24) & 0xffu),
+               (int)*(const int32_t *)(vm + CE_ANM_VM_LAYER),
+               (unsigned)*(const uint32_t *)(vm + CE_ANM_VM_FLAGS_LO));
+        ++n;
+    }
+}
+
 /* 每帧：刻符的运动（一手 `ItemManager::on_tick__` 的三个 state 分支 + 卡自己的池遍历）。
  * 返回本帧收了几颗。*/
 static int yk_orbs_tick(yk_card_t *s)
@@ -1911,6 +1943,7 @@ static int yk_orbs_tick(yk_card_t *s)
         }
         ce_anm_set_pos(o->anm_id, o->x, o->y, 0.0f);
     }
+    if (++s_orb_log_tick >= 3600u) { s_orb_log_tick = 0; yk_orb_vm_log(s); }   /* #42：每 60 秒一次 */
     return taken;
 }
 
