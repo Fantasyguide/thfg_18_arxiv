@@ -72,7 +72,18 @@ ce: shot-set-index first claim (frame N): edi=0x… [player+0x47940]=0x…
 `ce_native_option_sweep()` + 隐藏断点把 `lvl` 压 0 ⇒ 连**记录**都不建）⇒ 没有活膛口 ⇒ 只有本体那一列发得出来。
 
 **★★ B-1 已实现并发版（DLL `65f78eab…`，登记 `AUDIT.md` §BE #78）**：① 108 不再声明隐藏；② 新增 `ce_native_option_sweep_keep_state()`（只杀显示、保留 `state`/坐标）。★ 连带修掉第二条机制：`BP_ce_native_option_muzzle` 只在 `ce_native_option_hidden()` 为真时动手 ⇒ 旧版会把**我们自己的** `slot ≥ 1` 行的弹也拦掉（膛口正是原生那 4 格）⇒ 现在是两条一起解开。
-⚠ **剩下的一处**：装 108+111 且**机体 = 魔理沙**时，111 仍声明隐藏 ⇒ 隐藏断点把 `lvl` 压 0 ⇒ 那一路 `slot ≥ 1` 仍无膛口。修法与 108 同形（把 111 也改成「只杀显示、保留记录」，并在构建断点里**去掉 `lvl = 0` 那一写**）—— 但**等 B-1 实跑验证过再动**（一次只改一处）。
+⚠ **剩下的一处：装 108+111 且机体 = 魔理沙**。这一路要**三处一起改**（拆开做会互相打架，所以本轮只设计、不写码）：
+  1. **构建断点**（`BP_ce_repopulate_native_option`，`th18:0x45d610`）：现在只要「有卡声明隐藏」就把 `lvl` 压 0
+     ⇒ 加一个**新的每卡声明** `ce_native_option_keep_records(card_id, on)`（108 在低速声明），
+     断点里改成「**有卡要 keep_records ⇒ 不压 `lvl`**（但仍照旧把已建的 VM 收掉）」
+     ⇒ 111 的「原生子机不许**出现**」不受影响（VM 还是被收），而记录与坐标活着 ✓。
+  2. **膛口断点**（`BP_ce_native_option_muzzle`）：它现在只看 `ce_native_option_hidden(机体)` ⇒ 魔理沙机体下
+     会把**每一发**膛口落在原生数组里的弹都拦掉 —— **包括我们认领的 set 那些行**（那些行的膛口正是原生那 4 格）
+     ⇒ 加一条早退：**本帧若已经有卡认领了 set（`BP_ce_shot_set_index` 找到 winner），就不拦**
+     （SDK 里存一个帧标志即可）。理由与 set 覆写那条早退同源：**行是我们的，弹就该飞**。
+  3. **108 侧**：低速 `ce_native_option_keep_records(id, 1)` + 继续用 `sweep_keep_state()` 杀显示。
+  ⇒ 这样 111 的语义（原生子机不可见 + 它的原生 set 弹被拦）与 108 的语义（记录活着 + 我们的行能出膛）
+     同时在 Marisa 上成立。⚠ **等 B-1 实跑验证过再动**（一次只改一处，免得「改了两处不知道哪处起作用」）。
 
 **★★★ 2026-09-23 实跑定案 = 分支 B**：owner 19:02 那局打出 `youkai: native option slots at low speed - 0/4 live`
 （偶见 1/4）⇒ 低速时引擎那 4 格原生子机**基本是空的** ⇒ 我们 TH08 行的 `slot ≥ 1` 没有膛口 ⇒ 只有本体那一列
