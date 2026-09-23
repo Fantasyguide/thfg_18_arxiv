@@ -1652,6 +1652,13 @@ static void ufo_summon_ring_try(ufo_card_t *s, const uint8_t *e)
     void *anm = CE_ABILITY_ANM();
     float p[3];
     if (!s || !e || !anm) return;
+    /* ★★ 2026-09-23 自审补的一段（**VM id 会被引擎复用** ⇒ 陈旧句柄必须先作废）：
+     *   脚本 318/321 都在 +70 帧自己 `delete()` ⇒ 那之后这两个句柄就是**陈旧 id**；
+     *   若下一只 UFO 的 VM 恰好复用了同一个 id，`ce_anm_get_vm()` 会返回**别人**的 VM
+     *   ⇒ 「上一只的还在飞 ⇒ 不叠」那条会误判成真，**新 UFO 再也不出环**（偶发、难查）。
+     *   ⇒ 先「查不到就清句柄」，再做「这只起过没 / 上一只还在飞吗」两道门。*/
+    if (s_ring_id && !ce_anm_get_vm(s_ring_id)) s_ring_id = 0;
+    if (s_hex_id && !ce_anm_get_vm(s_hex_id)) s_hex_id = 0;
     if (s->ring_vm_for == s->u.ufo_id && s_ring_id) return;    /* 这只已经起过 */
     if (s_ring_id && ce_anm_get_vm(s_ring_id)) return;         /* 上一只的还在飞 ⇒ 不叠 */
     s->ring_vm_for = s->u.ufo_id;
