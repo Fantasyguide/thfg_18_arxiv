@@ -2765,11 +2765,14 @@ static void ufo_xn_tick(void)
 #define UFO_PANEL_DX       40.0f           /* ❓自定：数字在面板内的起点（一手 `pos(528,288)` 是面板本身）*/
 #define UFO_PANEL_DY       44.0f
 #define UFO_PANEL_ADV      22.0f           /* ❓自定：字距（同 #20）*/
-#define UFO_PANEL_SCALE    2.0f            /* ❓自定：UI 层 1 texel = 1 表面 px ⇒ ×2（先例：人妖槽四件）*/
+#define UFO_PANEL_SCALE    2.0f
+#define UFO_PANEL_COOLDOWN 20u             /* ★ 自审补：吸收数每变一次就整块重弹会抖 ⇒ 冷却期内只**原地刷数字**，
+                                            *   不重建面板（快速吸收时尤其明显）。20 帧 ≈ 0.33 s。*/            /* ❓自定：UI 层 1 texel = 1 表面 px ⇒ ×2（先例：人妖槽四件）*/
 
 static uint32_t s_panel_id;                /* 面板父 VM（304）*/
 static uint32_t s_panel_glyph[UFO_PANEL_GLYPHS];
 static uint16_t s_panel_left;              /* 静置倒计时（0 = 已经缩回）*/
+static uint16_t s_panel_cool;              /* ★ 自审补：重弹冷却（>0 时只原地刷新数字）*/
 
 static void ufo_panel_kill(void)
 {
@@ -2778,6 +2781,37 @@ static void ufo_panel_kill(void)
     for (i = 0; i < UFO_PANEL_GLYPHS; ++i)
         if (s_panel_glyph[i]) { ce_anm_delete(s_panel_glyph[i]); s_panel_glyph[i] = 0; }
     s_panel_left = 0;
+}
+
+/* 原地刷新数字（冷却期用）：只重建几位字形 VM，**不碰面板本体**。 */
+static void ufo_panel_digits(int32_t count)
+{
+    void *anm = CE_ABILITY_ANM();
+    const float px = 528.0f + UFO_PANEL_DX;
+    const float py = 288.0f + UFO_PANEL_DY;
+    float p[3];
+    int i, n = 0, v;
+    if (!anm) return;
+    if (count < 0) count = 0;
+    v = count % 1000;
+    for (i = 0; i < UFO_PANEL_GLYPHS; ++i)
+        if (s_panel_glyph[i]) { ce_anm_delete(s_panel_glyph[i]); s_panel_glyph[i] = 0; }
+    do { ++n; v /= 10; } while (v > 0 && n < UFO_PANEL_GLYPHS);
+    v = count % 1000;
+    for (i = 0; i < n; ++i) {
+        int div = 1, k;
+        for (k = 0; k < (n - 1 - i); ++k) div *= 10;
+        p[0] = px + (float)i * UFO_PANEL_ADV;
+        p[1] = py; p[2] = 0.0f;
+        s_panel_glyph[i] = ce_anm_spawn_ui(anm, CE_ANM_ABILITY_SCRIPT_HUD_GLYPH, p);
+        if (s_panel_glyph[i]) {
+            ce_anm_set_sprite(anm, s_panel_glyph[i],
+                              CE_ANM_ABILITY_SPRITE_ATLAS_HUD_DIGIT_0 + (v / div) % 10);
+            ce_anm_set_scale(s_panel_glyph[i], UFO_PANEL_SCALE, UFO_PANEL_SCALE);
+            ce_anm_set_color(s_panel_glyph[i], 0xffffffffu);
+        }
+    }
+    s_panel_left = (uint16_t)UFO_PANEL_LIFETIME;
 }
 
 /* 弹一次面板 + 把 `count` 画出来（数字从右往左取位）。 */
@@ -2794,6 +2828,7 @@ static void ufo_panel_pop(int32_t count)
     ufo_panel_kill();                            /* 重弹：先收上一套（不会叠）*/
     p[0] = 0.0f; p[1] = 0.0f; p[2] = 0.0f;
     s_panel_id = ce_anm_spawn_ui(anm, CE_ANM_ABILITY_SCRIPT_UFO_HUD_PANEL, p);
+    s_panel_cool = UFO_PANEL_COOLDOWN;
     do { ++n; v /= 10; } while (v > 0 && n < UFO_PANEL_GLYPHS);
     v = count % 1000;
     for (i = 0; i < n; ++i) {
@@ -2821,10 +2856,16 @@ static void ufo_panel_tick(ufo_card_t *s)
 {
     int32_t now;
     if (!s) return;
+    if (s_panel_cool) --s_panel_cool;
     now = s->u.cnt_p + s->u.cnt_money;
     if (now != s->panel_last) {
         s->panel_last = now;
-        if (now > 0) ufo_panel_pop(now);
+        /* ★ 自审补（2026-09-23）：冷却期内**只刷数字**（面板与它的出现动画不重播）——
+         *   否则快速吸收时每帧都重建 VM：画面抖 + VM churn。 */
+        if (now > 0) {
+            if (s_panel_cool && s_panel_id && ce_anm_get_vm(s_panel_id)) ufo_panel_digits(now);
+            else ufo_panel_pop(now);
+        }
         return;
     }
     if (!s_panel_id) return;
