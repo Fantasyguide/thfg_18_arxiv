@@ -4775,6 +4775,56 @@ owner 2026-09-23 18:14 的「偏右 1/3 个游玩区宽」是**相对屏幕左�
 | `on_run_reset` | 把"上一个关卡号"清成 `NONE` ⇒ 紧接着的 ctor 走全清 | ✅ 防"上一局的令牌进新局" |
 | `on_stage_start` | 只收本体 + 环/血条 + 五边形框重判 + HUD 认领复位；**不再** `ufo_withdraw_all` / `on_ctor` | ✅ 修 bug（旧版那两句 = 换关即清） |
 
+### 2.0zzj ★★★ 柱环改回**一手原样**：TH18 引擎原生就在用 `texCircle`（波长 / 旋转两条一起解决）
+
+owner 2026-09-24 实跑：「**灵梦的灵击没有旋转**——视觉上没有演化」+「从**波长**的角度来讲，
+你的这个波长比 th10 原生似乎短」。
+
+#### 一手证据：TH18 引擎**自己**在用 `texCircle`（op 600）
+
+`local/th18.v1.00a/anm/ability/ability.anm` 里 5 处，写法与 TH10 的 394–397 **同形**：
+
+```
+script29:  sprite(sprite106); layer(6); … iset($I0, 32); iset($I1, 10); iset($I2, 1); texCircle($I0); scale(48.0f,24.0f);
+script43:  sprite(sprite104); layer(13); … iset($I0, 64); iset($I1,  6);                  texCircle($I0); scale(-128.0f,64.0f);
+           （一手 TH10）：           blendMode(1); iset($I0, 32); iset($I1,  3);               texCircle($I0); layer(13); sprite(sprite362);
+```
+
+⇒ 参数含义读作：**`$I0` = 圆的分段数**（32 / 64）、**`$I1` = 贴图沿圆周铺几份**
+（TH18 原生 10 / 6；**一手 TH10 = 3 份** ⇒ 每条弧占 1/9 圈）。这也解释了两条实跑症状：
+
+- **波长**：我上一版是「构建期把竖条沿圆周铺 **32** 份烘成一张环贴图」⇒ 一圈 96 道细弧，
+  比原生的 9 道**短 ~10 倍** ✓ 与 owner 的观察一致；
+- **没有旋转**：96 道细弧里每道只有几像素，18°/帧的自转在画面上只是**闪烁**，看不出「弧在绕圈」；
+  3 份时每条弧很长，转起来一眼就能看见。
+
+#### 改法
+
+柱环脚本 327–330 / 333–340 **逐条照抄一手**（数值一处没改，只有 `sprite` 与 `texCircle` 的先后
+按 TH18 原生习惯挪了一下）：
+
+```
+script script327 {
+    blendMode(1);
+    layer(13);
+    sprite(@MOF_BOMB_RING_STRIP@);   // 一手 sprite362 = etama3.png (65,0,14,128) 的 1:1 切图
+    iset($I0, 32);                   // 一手：分段数
+    iset($I1, 3);                    // 一手：铺 3 份（★ 我们之前烘了 32 份 ⇒ 波长错）
+    texCircle($I0);                  // ★ 引擎原生指令
+    angleVel(0.0f, 0.0f, -0.31415927f);
+    scale(16.0f, 16.0f);
+    scaleTime(60, 6, 16.0f, 160.0f); // 一手原值：scale.y 就是**半径 px**（Bomb::on_tick 读它）
++120: alphaTime(20, 0, 0); +20: delete();
+}
+```
+
+- **`scale`/`scaleTime` 全部换回一手原值**（16/32/160、16/16/160、16/16/200；魔理沙与符卡中同理）
+  —— 一手把 `scale.y` 当半径 px 用（`Bomb::on_tick` 每帧 `[bomb+0x3c] = vm.scale.y`）⇒
+  **不需要**任何 ÷100 / ÷200 的换算（那套换算是给烘环贴图用的）。
+- `scaleTime` 的 mode 也照抄一手（6 / 5 / 4）。
+- 烘环那套（`make_mof_bomb_ring_bent.py` + `ATLAS_MOF_BOMB_RING_BENT`）**退役保留**：
+  `ORDER.txt` 里加了退役注（行不删 —— 删行会让后面所有 entry/sprite 号前移），回退 = `--bent`。
+
 ### 2.0zzi ★★★ 两条 owner 口径订正（2026-09-24）：绿妖精**只管杂鱼**、小灵击**不是常态**
 
 owner 逐字：「对于一面 boss 前的最后一波，比较奇怪。你把我会称之为**中妖精**的妖精——第一面第二波里面
@@ -4941,8 +4991,8 @@ owner 逐字：「灵击动画依旧不对，**它不是32段**，然后内外�
 | # | 项 | 值 / 做法 | 性质 |
 | --- | --- | --- | --- |
 | 1 | UFO 的**拉拽速度** | **常量** `UFO_DRAG_SPEED_CONST_MILLI = 1500`（1.5 单位/帧；道具与信仰点同一条）| **owner 口径**（「是匀速缓慢吸收」）。一手 TH18 那条匀速吸附 = `player+0x47988/3` = 1.667（`th18:0x446647`）；TH12 state 7 的累计加速（`th12:0x426926`）在头 1 秒只有 0.02 ⇒ 就是 owner 报的"定住"。回退 = `UFO_DRAG_ACCEL_ENABLE` 改 1 |
-| 2a | 满 B **卡面** | 原生 `abcard/ability/BOMB_max.png`（256×320）等比装进 40×50；**不加算** | owner（「不会用这个？」给了 modkit 的 `cardart/native/ability/BOMB_max.png`，与本机那份同 md5）|
-| 2b | 满 B **背光** | 独立一层 = 原生 `abcard/ability/abitem.png`（40×44，自带柔光晕）加算 + 呼吸（脚本 **331**，= 一手 `abcard.anm` script16 的配方）；层 **15**（世界层）| ✅ 复刻（script16）；⚠ 卡的层号 = 世界层（原生 HUD 那棵树用 24/25，照抄会飞到 UI 层）|
+| 2a | 满 B **卡面** | 原生 `abcard/ability/BOMB_max.png`（256×320）等比装进 **26×32**；**不加算** | owner（「不会用这个？」给了 modkit 那份，与本机 `local/` 同 md5）+「卡大了一倍」⇒ 26×32（= 原生整 B 图标 32×32 的量级）|
+| 2b | 满 B **背光** | 独立一层 = 原生 `abcard/ability/abitem.png` 等比缩到 **34×40**（**比卡面 26×32 大一圈**，露出的才是看得见的光）加算 + 呼吸（脚本 **331** = 一手 script16 的配方）；层 **15** | ✅ 复刻（script16）；⚠ 层号必须世界层（原生 HUD 那棵树用 24/25）；合成图方案已作废（owner 第四轮）|
 | 3a | ×N 弹字**到点消失** | 到点显式 `ce_hud_vm_text_clear()` | ✅ 修 bug（换成常驻 VM 之后到 0 只是 `return` ⇒ 字永远留着 = owner 的「一直赖着不走」）|
 | 3b | HUD 文字的**暂停门** | `ufo_play_frame()`（读 `GameThread+0xb0`，引擎道具池 body 的同一条判据）⇒ 非游玩帧一个字都不画 | ✅ 修 bug（暂停时新建的 VM 排在模糊罩之后 ⇒ "不被暂停模糊"）|
 | 3c | `:` 与 `*` 字形 | 另起 `ATLAS_FONT2B`（16 格）+ 脚本 332 + SDK 第三档字体 `CE_HUD_FONT_TH18_FONT2B` | ✅ 修 bug（字形 VM 绑固定脚本 ⇒ sprite 号必须与脚本同 entry；`ATLAS_FONT2` 在已定稿段不能插行）|

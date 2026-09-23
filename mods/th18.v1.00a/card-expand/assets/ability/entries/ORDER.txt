@@ -692,8 +692,8 @@ ATLAS ATLAS_UFO_DROP 80x96
 BOUNTY_BAG         ability/ufo_drop/BOUNTY_BAG.png   @0,0,32x32
 DROP_ICON_P        ability/ufo_drop/DROP_ICON_P.png   @32,0,16x16
 DROP_ICON_POINT    ability/ufo_drop/DROP_ICON_POINT.png   @48,0,16x16
-DROP_BOMB          ability/ufo_drop/DROP_BOMB.png   @40,32,34x40
-CARD_GLOW          ability/ufo_drop/CARD_GLOW.png   @0,32,40x44
+DROP_BOMB          ability/ufo_drop/DROP_BOMB.png   @40,32,26x32
+CARD_GLOW          ability/ufo_drop/CARD_GLOW.png   @0,32,34x40
 
 # 卡 112 的飞碟槽 HUD 贴图（TH12 front.anm 的 1:1 切图）
 #   生成器 = assets/ability/make_ufo_hud_art.py（矩形从 anm 文本读 + 断死）
@@ -792,6 +792,9 @@ YOUKAI_FAM_AURA  ability/youkai_familiar/YOUKAI_FAM_AURA.png  64x64
 #   为什么烘：TH18 的 anm VM 是否执行 `texCircle` 没有先例（实跑症状 = 竖条被放大成一条大光晕），
 #   而用户口径「它不是32段」⇒ 卡侧摆 32 片的近似也被否掉，改回**连续的一条**。
 # ============================================================================================
+# ★ 2026-09-24 **退役（保留行，不删）**：柱环改成一手原样 —— `sprite(竖条切图) + iset($I0,32); iset($I1,3); texCircle($I0)`（TH18 引擎原生就在用 texCircle，见 TUNING §2.0zzj）。
+#   下面这段烘出来的环贴图**没有任何脚本在引用**了；留着只为「删行会让后面所有 entry/sprite 号前移」。
+#   回退路径：`python3 assets/ability/make_mof_bomb_ring_scripts.py --bent`。
 ATLAS ATLAS_MOF_BOMB_RING_BENT 512x512
 MOF_BOMB_RING_BENT     ability/mof_bomb/MOF_BOMB_RING_BENT.png     @0,0,512x512
 # ── 2026-09-24 追加：卡 112 的 HUD 文字要 `:` 与 `*` 两个字形的**独立图集**

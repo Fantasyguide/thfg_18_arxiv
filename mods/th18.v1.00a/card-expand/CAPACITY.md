@@ -394,7 +394,10 @@ cards: 35 registered from cards.js; shop pool 700/8192 slots, guaranteed offers 
   **占的格子 = `ability.anm` 的 entry 索引 **68**（1 格）、sprite 号 **486****，既有 entry / sprite 号一个没动。
   （本行落笔时的读数 = entry 70 / sprite 487 / 余量 185；现值见 `native/anm_ids.h`。）一手：TH10 `bullet.anm` script394–397 的
   `sprite(sprite362) + texCircle(32)`（竖条 = `etama3.png` 的 (65,0,14,128)，与 `ATLAS_MOF_BOMB_RING` 同源）。
-  ⚠ 退役但**不删**：脚本 279（实心盘占位）与 293（32 片竖条）留在 `assets/ability/scripts/` 里 ——
+  ⚠ **2026-09-24 本图集本身退役**：柱环改回一手原样（`sprite(竖条切图) + iset($I0,32); iset($I1,3);
+  texCircle($I0)`，TH18 引擎原生就在用 texCircle）⇒ 这张 512×512 的烘环**没有脚本引用**了，
+  但**行不删**（删了会让后面的 entry/sprite 号前移）。见 `TUNING.md` §2.0zzj。
+  ⚠ 另一批退役但**不删**：脚本 279（实心盘占位）与 293（32 片竖条）留在 `assets/ability/scripts/` 里 ——
   脚本号不许回收（删文件会让后面所有脚本号整体前移，撞别的会话的宏）。
 
 - **`abcard.anm` 是卡侧最紧的一道墙**（★最紧）：原生 118 条 + 每张新卡 2 条（大图/小图各一 entry），

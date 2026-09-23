@@ -1,34 +1,36 @@
 script script339 {
-// ★风神录（110）灵击的柱环之一 —— 一手 TH10 `bullet.anm` **script437**（符卡中）的逐条移植。
+// ★风神录（110）灵击的柱环之一 —— 一手 TH10 `bullet.anm` **script437**（符卡中）的**逐条**移植。
 //   ⚠ 本文件由 `assets/ability/make_mof_bomb_ring_scripts.py` **生成**（改数值请改那个脚本的 RING 表）。
 //
 //   一手原文（v4 `anmmap` 名）：
 //       blendMode(1); iset($I0,32); iset($I1,3); texCircle($I0); layer(13); sprite(sprite362);
-//       angleVel(0,0,0.10471976); scale(16,16); scaleTime(60, 6, 32.0f, 80.0);
-//     （紫环：`color(255,0,255)`）+40: alphaTime(20,0,0); +20: delete();
-//   逐条落位：
-//     · `sprite(sprite362)` → `@MOF_BOMB_RING_BENT@`：构建期把 14×128 竖条**极坐标弯环**并沿圆周
-//       **铺 32 份**（= 一手 `texCircle(32)` 的那个 32），见 `make_mof_bomb_ring_bent.py`
-//       （512×512 画布、基准半径 **R0 = 200 px**、厚 28 px）。
-//     · `iset($I0,32)/iset($I1,3)/texCircle($I0)` 三行**删掉**：TH18 的 anm VM 是否执行 `texCircle`
-//       没有实跑先例（实跑症状 = 竖条被放大成一条大光晕）。
-//     · `scaleTime` 的**第 3/4 参是目标值**（不是起点→终点）—— 铁证：本仓
-//       `engine/card/th18/13-mallet-clear-and-th17-charge.md` 记的 TH18 原生 `ability.anm` script28
-//       `scale(0.0f,2.8f) + scaleTime(20,4,1.0f,1.0f)` 的行为是「y 从 2.8 拉到 **1.0**」。
-//       ⇒ 一手那对不等比的数（32.0f/80.0）是**给竖条 + texCircle 的**；我们的贴图已经是整圈
-//       ⇒ **两轴同值** = 目标半径 / R0 = 80 / 200 = **0.40**。
-//     · 起手 `scale(16,16)`（一手，= 半径 16 px）⇒ `0.08`；成长 60 帧（一手 `scaleTime` 的帧数）。
-//     · 偏离一手①：`scaleTime` 的 mode 一手写 6，我们统一 **4**（mode 6/5 在 TH18 版 anm 里没有一手；
-//       4 = 本仓在用的线性档，先例 116 季解 / TH16 季解）。
-//     · 偏离一手②：TH18 卡侧起的是**平铺** VM（v8 的 `scriptNew` 才是带父级的子 VM）⇒ 脚本自己的
-//       `scale` 就是「多少个 R0（200 px）」；一手「子环 scale 乘在主脚本 scale 上」那层乘法不存在。
-//   · 变体 = **符卡中**（一手主脚本 script441；卡侧按 `spell_now`/`reimu` 选，与半径曲线同一判据）。
+//       angleVel(0,0,0.10471976); scale(32.0f, 16.0f); scaleTime(60, 4, 32.0f, 80.0f);
+//       （紫环：`color(255,0,255)`）+40: alphaTime(20,0,0); +20: delete();
+//
+//   逐条落位（**数值一处都没改**，只有 `sprite` 与 `texCircle` 的先后按 TH18 原生习惯挪了一下）：
+//     · `sprite(sprite362)` → `sprite(@MOF_BOMB_RING_STRIP@)`：一手 sprite362 = TH10 `etama3.png` 的
+//       **(65,0,14,128)** 竖条，本仓有 1:1 切图（entry 58 / sprite 450）。
+//     · `iset($I0,32); iset($I1,3); texCircle($I0);` **逐条照抄** —— TH18 引擎**原生**就在用这条指令：
+//         `ability.anm` script29 `iset($I0,32); iset($I1,10); iset($I2,1); texCircle($I0); scale(48.0f,24.0f);`
+//         `ability.anm` script43 `iset($I0,64); iset($I1, 6);                  texCircle($I0);`
+//       ⇒ `$I0` = 圆的**分段数**、`$I1` = 贴图沿圆周**铺几份**；一手是 **3 份**（每条弧占 1/9 圈）。
+//       ⚠ 2026-09-24：上一版把这三行删掉、改在构建期烘一张「铺 **32** 份」的环贴图 ⇒ owner 实跑
+//         「**波长比 th10 原生似乎短**」+「灵梦的灵击**没有旋转**」（96 道细弧转起来只是闪烁）。
+//     · `scale` / `scaleTime` **原样照抄一手**（`32.0f, 16.0f` + 60 帧到 `32.0f, 80.0f`）：
+//       一手 `scale.y` 就是**半径 px**（`Bomb::on_tick` 每帧 `[bomb+0x3c] = vm.scale.y`，
+//       见 `engine/player/th10/01-bomb-full-chain.md` §3）⇒ 不需要任何 ÷100/÷200 换算。
+//     · `scaleTime` 的第 3/4 参是**目标**（铁证：本仓一手记录里 TH18 原生 script28 的
+//       `scale(0.0f,2.8f) + scaleTime(20,4,1.0f,1.0f)` = 「y 从 2.8 拉到 1.0」）；mode 也照抄一手（4）。
+//   · 变体 = **符卡中**（一手主脚本 script441；卡侧按「小灵击档 / 机体」选，与半径曲线同一判据）。
     blendMode(1);
     layer(13);
-    sprite(@MOF_BOMB_RING_BENT@);
+    sprite(@MOF_BOMB_RING_STRIP@);
+    iset($I0, 32);                  // 一手：圆的分段数（TH18 原生同形：32 / 64）
+    iset($I1, 3);                   // 一手：贴图沿圆周**铺 3 份**（TH18 原生用 10 / 6）
+    texCircle($I0);                 // ★ 引擎原生指令（TH18 ability.anm script29/32/43 就是这么用的）
     angleVel(0.0f, 0.0f, 0.10471976f);
-    scale(0.08f, 0.08f);
-    scaleTime(60, 4, 0.40f, 0.40f);
+    scale(32.0f, 16.0f);
+    scaleTime(60, 4, 32.0f, 80.0f);
     color(255, 0, 255);
 +40:
     alphaTime(20, 0, 0);
