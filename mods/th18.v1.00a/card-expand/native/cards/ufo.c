@@ -1787,6 +1787,13 @@ static void ufo_body_vm_spawn(ufo_card_t *s, int32_t color, const uint8_t *e)
  *   TH12 那个 anm 空间的场地是 x∈[32,416] / y∈[16,464]（x 以场地左沿为原点），TH18 世界层
  *   x **以场地中心为原点**（本卡脚本 228/231 的 `pos(0,-28)`、`scale(6,59)` 原值就能落在 UFO 上，
  *   实跑验过）⇒ Δx = 224 − 32 − 192 = 0、Δy = 208 − 16 = 192（推导同脚本 324 的 Δ1）。*/
+/* ★★ 2026-09-23（owner 两轮实跑）：**横幅的整体尺寸系数** ——
+ *   一手 `front.anm` script82/84 是 `scale 1.0 → scaleTime(30,2,2,2)`（304×32 的贴图 ⇒ 峰值 608 单位，
+ *   比场地（384）还宽）。owner 先报「大概大了 3 倍」⇒ 缩到 1/3，随后又报「那个 UI 又小了」
+ *   ⇒ 取中间 **2/3**（基准 0.667 / 峰值 1.333 ⇒ 峰值约 405 单位 ≈ 场地宽，"刚好横跨场地"）。
+ *   ⚠ 这个宏**只用于日志**（真正生效的数是三支脚本里的 `scale` / `scaleTime` 目标 —— 脚本里读不到 C 宏）；
+ *     改尺寸就改那两对数（324 基准+峰值、325 基准、326 基准+峰值），顺手把这个数改成同一个值。*/
+#define UFO_SUMMON_FX_SCALE_PERMILLE 667u
 #define UFO_SUMMON_FX_LAYER  6             /* 一手：script82/83/84 自己写的 `layer(6)`（游玩区世界层）*/
 #define UFO_SUMMON_FX_DX     0.0f          /* 一手：(224 − 32 − 192) = 场地中心 */
 #define UFO_SUMMON_FX_DY   192.0f          /* 一手：(208 − 16) = 场地上沿往下 192 */
@@ -1815,10 +1822,13 @@ static void ufo_summon_fx_try(ufo_card_t *s, const uint8_t *e)
         int idx = ufo_color_art_index(s->u.color);
         if (idx >= 0) ce_anm_interrupt(s_summon_fx_id, 7 + idx);
         ce_log("ufo: summon banner up (ability.anm script %d <= TH12 front.anm script82 + 83 + 84; "
-               "color %d idx %d -> interrupt %d; world layer %d, pos (%.0f, %.0f), self-deletes at +75)",
+               "color %d idx %d -> interrupt %d; world layer %d, pos (%.0f, %.0f), size x0.%03u "
+               "(owner ruling; peak = x0.%03u), self-deletes at +75)",
                CE_ANM_ABILITY_SCRIPT_UFO_SUMMON_BANNER, (int)s->u.color, idx,
                idx >= 0 ? 7 + idx : -1, UFO_SUMMON_FX_LAYER,
-               (double)UFO_SUMMON_FX_DX, (double)UFO_SUMMON_FX_DY);
+               (double)UFO_SUMMON_FX_DX, (double)UFO_SUMMON_FX_DY,
+               (unsigned)UFO_SUMMON_FX_SCALE_PERMILLE,
+               (unsigned)(UFO_SUMMON_FX_SCALE_PERMILLE * 2u));
     }
 }
 

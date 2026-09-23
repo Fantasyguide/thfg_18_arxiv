@@ -17,10 +17,10 @@ script script326 {
     randMode(1);
     blendMode(1);
     alpha(128);
-    /* ★ owner 口径：×1/3（一手是 1.0 → 2.0）。⚠ `scale` 必须在 `scaleTime` **之前** ——
+    /* ★ owner 口径：整体 2/3（一手是 1.0 → 2.0）。⚠ `scale` 必须在 `scaleTime` **之前** ——
      *   anm 是顺序执行：先 `scaleTime`（起一段 30 帧插值）再 `scale` 会当场被后面的值盖掉。*/
-    scale(0.333f, 0.333f);
-    scaleTime(30, 2, 0.667f, 0.667f);
+    scale(0.667f, 0.667f);
+    scaleTime(30, 2, 1.333f, 1.333f);
     alphaTime(30, 0, 0);
 +30: // 30
     delete();
