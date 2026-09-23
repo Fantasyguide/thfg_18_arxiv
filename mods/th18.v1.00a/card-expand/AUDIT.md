@@ -20786,3 +20786,39 @@ TH13 灵体与 108 妖侧本体 55 张逐像素回读**全部通过**）；`than
 
 **发布面**：只动 `sdk.c`（⇒ DLL）；未动 `pl0X.sht` / `pl0X.anm` / `ability.anm` / wav / `sites.py` / `SITE_BUDGET`；
 **没新增断点**（站点 31 个原样）。
+
+## §BE 详录 #78（2026-09-23）：★ **共享件** `native/sdk.{h,c}` —— 新增 `ce_native_option_sweep_keep_state()`（108 的「子机不发」修法 B-1）
+
+**来路**：owner 实跑（19:02 那局）的日志把根因定死了 ——
+```
+youkai: native option slots at low speed - 0/4 live
+youkai:   native opt slot 1: state 0 vm 00000000 muzzle (-7.8, 312.6)
+youkai:   native opt slot 2: state 0 vm 00000000 muzzle (0.0, -400.0)   （3/4 同）
+```
+⇒ 引擎那 4 格原生子机**全是 `state 0`**（= 未启用）⇒ TH18 主炮行循环按行里 `+0x20` 选膛口
+（`slot ≥ 1` 取 `PLAYER+0x580+slot*0xf0`，一手 `th18:0x45ec4c`–`0x45ec5d`）时**认不出膛口**
+⇒ 我们 TH08 行里 `slot ≥ 1` 的行发不出来 ⇒ owner 看到的「**本体只发一列（正常两列）、子机不发**」（四机体共通）。
+
+**文件 → 改了什么**
+
+| 文件 | 改动 |
+| --- | --- |
+| `native/sdk.h` / `native/sdk.c` | 新增 `ce_native_option_sweep_keep_state()`：与 `ce_native_option_sweep()` 同形，**唯一区别 = 不写 `option+0x00`（state）**（也不动坐标）⇒ 只杀 4×2 支 VM 的**显示**，记录保持「已启用」⇒ 引擎继续跟随它们的坐标、行循环继续有活膛口 |
+| `native/cards/youkai.c` | ① 不再声明隐藏（`ce_native_option_hide_declare(id, 0, char)` —— 原来传 `focused`）；② 低速改用 `ce_native_option_sweep_keep_state()` |
+
+**为什么这样改**：本卡的 TH08 行按 TH08 的子机编号写（`+0x20` = 0..4），那些 `slot ≥ 1` 的膛口**就是**
+引擎那 4 格原生子机 ⇒ 原来的「声明隐藏（隐藏断点把 `lvl` 压 0 ⇒ 连记录都不建）+ 每帧 sweep 把 `state` 写 0」
+等于把它们**彻底废掉**。⇒ 改成「记录留着、只杀显示」：引擎照常建/跟随，行循环有膛口，画面上仍只有我们自己的子机。
+
+**影响面**：
+- **111 不变**：它继续用原 `ce_native_option_sweep()` + 自己的隐藏声明（语义是「原生子机不许出现」）。
+- ⚠ **已知剩下的一处**：装 **108 + 111** 且机体 = **魔理沙**时，111 的隐藏声明仍会让隐藏断点把 `lvl` 压 0
+  ⇒ 那一路上 `slot ≥ 1` 的行仍无膛口（见 `HANDOFF-108.md` §4）。
+- 108 不声明隐藏后，**高速**行为不变（原样返回 −1、原生 set 照发）；低速的 set 覆盖仍是我们的（`on_shot_set_index`）。
+
+**怎么验证的**：`make check` **rc=0**（380 文件）、`python3 tooling/check-docs.py` 全绿、`make dllx87` = **0 条 x87**。
+实跑判据：下一次进妖侧，`youkai: native option slots at low speed - N/4 live` **应不再是 0/4**（记录活着、
+`state` 不再被清零），且妖侧应有**第二列**弹（子机那一列）。
+
+**发布面**：动 `sdk.c`（⇒ DLL）；未动 `pl0X.sht` / `pl0X.anm` / `ability.anm` / wav / `sites.py` / `SITE_BUDGET`；
+**没新增断点**（站点 31 个原样）。

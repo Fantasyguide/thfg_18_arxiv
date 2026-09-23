@@ -687,6 +687,15 @@ static inline const ce_option_pose_t *ce_option_pose_pose(void) { return ce_optp
 void ce_native_option_hide_declare(uint32_t card_id, int on, int character);
 int  ce_native_option_hidden(int character);
 int  ce_native_option_sweep(void);
+/* ★★★ 2026-09-23（108 的「子机不发」修法 B-1）：**只杀显示、保留记录**的 sweep。
+ *   背景：引擎的主炮行循环按行里 `+0x20` 选膛口 —— `slot >= 1` 取的是**原生那 4 格**
+ *   （一手 `0x45ec4c`）。而 `ce_native_option_sweep()` 会把 `state` 也写 0，跟随逻辑只更新
+ *   `state == 2` 的格子 ⇒ 那些行的膛口就「没被点过名」⇒ **只有本体那一列发得出来**（owner 实跑：
+ *   `native option slots at low speed - 0/4 live`，四格全是 `state 0`）。
+ *   ⇒ 这一支只把 4×2 支 VM `interrupt` 掉并清 id（**显示消失**），`state` 与坐标**一个字不动**
+ *     ⇒ 引擎继续跟随它们、行循环继续有活膛口。给「靠原生膛口发弹」的卡用（108）；
+ *     声明「原生子机不许出现」的卡（111）继续用原来那支。*/
+int  ce_native_option_sweep_keep_state(void);
 
 /* ---- HUD 小卡上的一位数字（AUDIT §X）----
  * 引擎建好本卡的 HUD 图标后经 `+0x44` 把图标根 VM 的 anm id 交来（图标重建时会再交一次）；

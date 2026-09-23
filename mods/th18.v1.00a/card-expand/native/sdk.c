@@ -493,6 +493,26 @@ int ce_native_option_sweep(void)
     return n;
 }
 
+int ce_native_option_sweep_keep_state(void)
+{
+    uint8_t *pl = CE_PLAYER();
+    int i, n = 0;
+
+    if (!pl) return 0;
+    for (i = 0; i < CE_NATIVE_OPT_COUNT; ++i) {
+        uint8_t *slot = pl + CE_NATIVE_OPT_PLAYER_MUZ0 + (size_t)i * CE_NATIVE_OPT_STRIDE;
+        uint32_t *vm[2];
+        int k;
+        vm[0] = (uint32_t *)(slot + CE_NATOPT_VM_MAIN);
+        vm[1] = (uint32_t *)(slot + CE_NATOPT_VM_MAX);
+        for (k = 0; k < 2; ++k)
+            if (*vm[k]) { ce_anm_interrupt(*vm[k], 1); *vm[k] = 0; ++n; }
+        /* ★ 与 `ce_native_option_sweep()` 的**唯一区别**：`state`（`+0x00`）与坐标**不动** */
+    }
+    if (n) s_natopt_swept = 1;      /* 与老 sweep 共用同一个旗子（可见化时补 repopulate） */
+    return n;
+}
+
 uint8_t *ce_option_alloc(ce_card_t *c, ce_option_t *o, int offset, int anm_script, const char *card)
 {
     if (!o || !CE_PLAYER()) return 0;

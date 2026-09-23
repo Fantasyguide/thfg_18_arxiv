@@ -3570,9 +3570,17 @@ static int on_tick_2(ce_card_t *c)
      *       持有者被清掉之后束会**钉在原地**直到松开 Z（2026-09-18 111 的同类实跑症状）。
      *   ⚠ 与 111 的交互：两边都声明时语义 = **按机体各自生效**（`ce_native_option_hidden(char)` 是 OR）
      *     ⇒ 魔理沙同时带 108+111 时仍然隐藏（两边都要隐藏，没有冲突）；`owner` = id 最小者（诊断）。*/
-    ce_native_option_hide_declare((uint32_t)ce_card_id(c), focused, yk_current_character());
+    /* ★★★ 2026-09-23（修法 **B-1**，依据 = owner 19:02 那局的实跑证据 `native option slots at low speed
+     *   - 0/4 live`，四格全 `state 0`）：**本卡不再声明「原生子机不许出现」**。
+     *   原因：本卡的 TH08 行里 `slot >= 1` 的膛口就是**引擎那 4 格原生子机**（一手 `0x45ec4c`），
+     *   而我们原来既声明隐藏（隐藏断点把 `lvl` 压 0 ⇒ **记录都不建**）又每帧 sweep（`state` 写 0）
+     *   ⇒ 那些行**没有活膛口** ⇒ 只有本体一列发得出来（owner：「本体只发一列、子机不发」）。
+     *   ⇒ 现在：不声明隐藏（让引擎照常建记录、跟随位置），只**杀显示**（新 sweep 保留 `state`）。
+     *   ⚠ 已知剩下的一处：**111（魔理沙侧）仍然声明隐藏** ⇒ 魔理沙机体下隐藏断点仍会把 `lvl` 压 0，
+     *     那一路的 `slot >= 1` 行仍无膛口（登记在 `HANDOFF-108.md` §4）。*/
+    ce_native_option_hide_declare((uint32_t)ce_card_id(c), 0, yk_current_character());
     if (focused) {
-        int n = ce_native_option_sweep();
+        int n = ce_native_option_sweep_keep_state();
         (void)ce_kill_retail_option_lasers();
         if (n && s && !s->logged_natopt) {
             s->logged_natopt = 1;
