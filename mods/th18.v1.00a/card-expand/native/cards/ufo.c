@@ -950,8 +950,11 @@ typedef struct {
  * 为什么**可以**在这里：本卡是**单例**（`CE_CARD(112, …)`）⇒ 没有串台问题（与 `s_penta_id` / HUD 那几组
  *   句柄同一个理由）。⚠ 换池前作者担心「卡对象局中重建 ⇒ 静态表串台」—— 本池的**分配器只看 `color`**、
  *   每次 `on_ctor` 都 `ufo_tok_pool_clear_all()`（清句柄 + 清表），所以重建只会「先收干净再重来」。
- * 收尾（长持续效果的铁律）：`on_delete` / `on_run_reset` / `on_stage_start` 三条路都汇到
- *   `ufo_withdraw_all()` → `ufo_tok_pool_clear_all()`；删卡那一刻卡的 tick 全停、**只有 `on_delete` 跑得到**。 */
+ * 收尾（长持续效果的铁律）：`on_delete` / `on_run_reset` 两条路汇到 `ufo_withdraw_all()` →
+ *   `ufo_tok_pool_clear_all()`；删卡那一刻卡的 tick 全停、**只有 `on_delete` 跑得到**。
+ *   ★★ 2026-09-23 订正：**换关不再走这条路**（owner：「换面数的时候 token 清零」= 经典 bug）——
+ *     换关只收本体（引擎已经在 stage-end 销毁了那只真敌人），令牌池与三格槽原样跨关。
+ *     详见 `on_stage_start` 与 `s_stage_seen` 的注。 */
 static struct {
     ufo_tok_t tok[UFO_TOKEN_CAP];   /* 紧凑数组：`[0, n)` 全是活的；swap-remove 保持紧凑 */
     int32_t   n;                    /* 池里活着几只（0..UFO_TOKEN_CAP）*/
@@ -1002,6 +1005,19 @@ typedef struct {
     uint8_t    logged;                          /* 「起来了 / 被收了」各只报一次 */
 } ufo_drop_slot_t;
 static ufo_drop_slot_t s_drops[UFO_DROP_POOL];
+
+/* ★★ 2026-09-23（owner：「一面进二面，**换面数的时候 token（飞碟）清零**」）——
+ *   引擎在**每关开始**会对卡组里每张卡再调一次 ctor（一手实跑 2026-09-04：`on_stage_start` 后紧跟 ctor，
+ *   见 `sdk.h` §ctor 的注）；而本卡的 `on_ctor` 会 `memset` 卡私状态 + `ufo_tok_pool_clear_all()`
+ *   ⇒ 三格令牌的账与场上令牌**都被清零** = owner 说的那个"经典 bug"。
+ *   ⇒ 本文件记住"上一个见过的关卡号"，在 ctor 里就能把「**换关重入**」与「**刚拿到卡**」分开：
+ *     关卡号变了 ⇒ 换关重入 ⇒ **令牌池与槽原样带过去**；关卡号没变 ⇒ 真的新拿卡 ⇒ 照旧全清。
+ *   ⚠ 一手对照：TH12 里"每关重来"的是**敌人/弹幕**（引擎的 stage-end 清场），而三格令牌的账
+ *     （`COLLECTED_UFOS` 一族）是**整局**的账 —— 它**唯一**的一手清除点是「**UFO 结束**那一刻」
+ *     （`th12:0x44a326`，本卡 `ufo_teardown` 已照做）。把"换关时引擎强制销毁 UFO 敌机"也当成
+ *     "UFO 正常结束"去清槽，就是 owner 反复报的那条。*/
+#define UFO_STAGE_SEEN_NONE 0xffffffffu
+static uint32_t s_stage_seen = UFO_STAGE_SEEN_NONE;
 
 /* ==================== ★★ 拉拽速度是**累计量**（一手；2026-09-18 实跑反馈修）====================
  * 一手（`th12:0x426879` 段，逐条）：
@@ -1857,7 +1873,7 @@ static void ufo_body_vm_follow(ufo_card_t *s)
  *
  * **收尾**（METHOD 铁律）：三件都在文件静态区（同 `s_penta_id` 的先例），
  *   `ufo_withdraw_all()` → `ufo_gauge_kill()` 一条路收干净 —— 删卡那一刻 tick 全停，
- *   只有这条路跑得到；`on_stage_start` / `on_run_reset` 也汇到它。 */
+ *   只有这条路跑得到；`on_run_reset` / `on_delete` 汇到它（**换关不走这条路**，见 `on_stage_start`）。 */
 
 /* ★★★ 2026-09-22 定案（P3 #7「吸收环明显偏移 UFO 中心，UFO 中心在吸收环的 10 点方向」）：
  * **环的偏移 = (0, 0) —— 它与 UFO 同心**。此前写 `(32, 16)` 是把**坐标空间换算**的两项当成了偏移。
@@ -1966,7 +1982,7 @@ static void ufo_gauge_flash(void)
 }
 
 /* 收干净这几件（幂等：句柄清零）。**长持续效果铁律**：`ufo_withdraw_all()` 是唯一入口，
- * `on_stage_start` / `on_run_reset` / `on_delete` 三条路都汇到它。
+ * `on_run_reset` / `on_delete` 两条路汇到它（★ 2026-09-23：**换关不汇到它** —— 令牌跨关，见 `on_stage_start`）。
  * ⚠ **不用** `ce_anm_interrupt`：删卡那一刻 tick 全停，脚本里的 `interruptLabel(1)`（淡出 → `delete()`）
  *   根本跑不到 —— 直接 `ce_anm_delete`（血条的 `scriptNew` 子 VM 会随父一并清）。 */
 static void ufo_gauge_kill(void)
@@ -3944,13 +3960,32 @@ static int on_ctor(ce_card_t *c)
      *   ⇒ memset 清不到它们，所以**必须显式**收：`ufo_tok_pool_clear_all()`（只看句柄、不看 `color`）。
      *   这一步是**幂等**的（池空 = 无操作），而且**不依赖 tick** —— 删卡那一刻 tick 全停也照样收。
      *   正常路径上它已经是无操作（`ufo_withdraw_all` 先收过一遍），这里是防御，不是主路径。 */
-    ufo_body_vm_kill(s);
-    ufo_tok_pool_clear_all();
-    memset(s, 0, sizeof *s);
-    ufo_group_reset(&s->grp);
-    ufo_reset(&s->u);
+    /* ★★ 换关重入（关卡号变了）⇒ **令牌池与三格槽原样带过去**（owner 口径，见 `s_stage_seen` 的注）：
+     *   池不清（VM 一个都不删，句柄留在文件静态区）、槽不清。其余每关该重来的照旧重来。*/
+    {
+        uint32_t stage = (uint32_t)CE_CURRENT_STAGE();
+        int per_stage = (s_stage_seen != UFO_STAGE_SEEN_NONE && stage != s_stage_seen);
+        ufo_group_t keep_grp;
+        uint16_t    keep_filled = 0;
+        if (per_stage) { keep_grp = s->grp; keep_filled = s_tokpool.n; }
+        else ufo_tok_pool_clear_all();
+        ufo_body_vm_kill(s);            /* ⚠ 必须**在 memset 之前**：句柄就在这块状态里 */
+        memset(s, 0, sizeof *s);
+        ufo_group_reset(&s->grp);
+        ufo_reset(&s->u);
+        if (per_stage) {
+            s->grp = keep_grp;
+            /* 令牌池的 `n` 与各条记录本来就留在 `s_tokpool`（没被 memset 也没被 clear）⇒ 只报一行日志 */
+            if (keep_filled || keep_grp.filled)
+                ce_log("ufo: stage %u start - KEPT %u field token(s) + %d collected token(s) in the "
+                       "slots (slots are a per-RUN tally; the only one-hand clear point is 'the UFO "
+                       "ended', th12:0x44a326)", (unsigned)stage, (unsigned)keep_filled,
+                       (int)keep_grp.filled);
+        }
+        s_stage_seen = stage;
+    }
     s->pend_drop = 0;
-    s_tokpool.dropped = 0;                             /* 诊断计数每局从零（与 113 的口径一致）*/
+    s_tokpool.dropped = 0;                             /* 诊断计数每关从零（与 113 的口径一致）*/
     s->next_token_at = UFO_TOKEN_SPAWN_FIRST;          /* 开局先等一会儿再出第一个令牌 */
     /* ★ P2：给令牌颜色的随机数播种（文件静态的 LCG）。用「关卡号 ⊕ 帧钟 ⊕ 一个奇常数」混一次 ——
      *   同一局内不重复、重开一局会变；**不调引擎 RNG**（那两支走 x87，见 `s_rng_seed` 的注）。 */
@@ -4010,11 +4045,36 @@ static void on_stage_start(ce_card_t *c)
                "%u items pulled, %u rewards, %u tokens dropped", s->spawned_tokens, s->ufos_spawned,
                s->ufos_broken, s->ufos_vanished, s->failed_summons, s->items_pulled, s->rewards_spit,
                s->dropped_tokens);
-    /* 换关：令牌与 UFO 都不跨关（一手 TH12 的管理器每关重来）。引擎自己也会在换关时
-     * `EnemyManager__destroy_all` 清掉真敌人（`DEATH` §1.4：那条路**不报事件** —— 对我们正好），
-     * 但那发生在关卡结束时点；这里**主动置位**撤干净，免得在本关末尾多留几个实体。 */
-    ufo_withdraw_all(s, "stage start");
-    on_ctor(c);
+    /* ★★★ 2026-09-23（owner：「一面进二面，换关数的时候 token（飞碟）清零」= 经典 bug）——
+     *   这里以前是 `ufo_withdraw_all(s, "stage start")` + `on_ctor(c)`，等于**换关就把令牌全清**：
+     *     · `ufo_withdraw_all` 会 `ufo_teardown` ⇒ **清三格槽**；还会清掉令牌池（场上令牌）；
+     *     · `on_ctor` 再 memset 一遍卡私状态（槽又一次归零）。
+     *   ⇒ 现在换关**只做两件必须做的事**，令牌（池 + 槽）原样跨关：
+     *     ① 本体：换关时引擎已经在 stage-end 静默销毁那只真敌人（`DEATH` §1.4：不报事件）
+     *        ⇒ 本体 VM 与 `u` 状态收干净。若这一刻 UFO 居然还活着（时序边界），也当场结束它，
+     *        但**槽不清**（那是玩家的账，不是"UFO 正常结束"）。环 / 血条跟着本体收。
+     *     ② HUD 认领闸复位 + 当场补一次登记（新关卡按新布局重新登记；槽位 VM 的账在关卡纪元里）。*/
+    if (ufo_present(&s->u)) {
+        ufo_group_t keep = s->grp;                     /* ★ owner 口径：换关不清槽 */
+        ufo_gauge_kill();                              /* 环 + 血条（跟着本体）*/
+        ufo_body_vm_kill(s);
+        ufo_teardown(s, "stage start");
+        s->grp = keep;
+    } else {
+        ufo_body_vm_kill(s);                           /* 幂等：敌人已经不在也不会出错 */
+        ufo_gauge_kill();
+    }
+    {
+        int i;
+        /* 五边形框的句柄在文件静态区：换关后要按**新关卡**的条件重判 ⇒ 全部收掉重来（令牌一个没动）。
+         * 本函数不是死亡栈（`on_stage_start` 在引擎的事件位次上），`ce_anm_spawn` 合规。*/
+        for (i = 0; i < UFO_TOKEN_CAP; ++i) {
+            s_tokpool.tok[i].pentagon_hint = 0;
+            ufo_tok_penta_kill(i);
+        }
+        s->pentagon_any = 0;
+        s->pentagon_logged = 0;
+    }
     /* ★ 2026-09-18：换关 ⇒ 让 HUD 认领的闸复位（新关卡要按新布局重新登记一次；
      *   关卡纪元本身也会清旧占位，这里是同一条纪律的第二道）。 */
     ufo_hud_claim_forget();
@@ -4331,6 +4391,10 @@ static void on_run_reset(ce_card_t *c)
     ufo_se_tally("run reset");                         /* ★ se 诊断：本关「哪一枚响了几次」*/
     ufo_hud_kill();                                    /* ★ 局末收 HUD VM（长持续效果铁律）*/
     if (s) ufo_withdraw_all(s, "run reset");
+    /* ★ 2026-09-23：**一整局重来** ⇒ 把「上一个见过的关卡号」也清掉，让紧接着的 `on_ctor` 走
+     *   **全清**那一支（否则"从第 3 关退到标题、再开新局第 1 关"会因为关卡号变了而被当成换关，
+     *   把上一局的令牌带到新局里去）。*/
+    s_stage_seen = UFO_STAGE_SEEN_NONE;
     on_ctor(c);
     /* ★ 2026-09-18：局末把「已认领」的闸复位 ⇒ 下一局的每帧补认领会重新登记一次
      *   （槽位本身的账归关卡纪元；这里只是让 `ufo_hud_ensure_registered()` 不再被自己的闸挡住）。*/
