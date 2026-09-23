@@ -739,7 +739,8 @@ void ce_hud_number_clear(ce_hud_number_t *n);
  *     —— 与引擎的 `record+0x130` 三个分支逐条对应；
  *   · 字形是 **16×20** 的单元（`ascii1280` 变体），贴图 entry 声明 16×32、上下各补 6 px 透明，
  *     于是「精灵中心」= 单元水平中线；VM 位置 = `(字笔 x, (y + 5) × DAT)` 就与引擎画出来的像素对齐。
- * 只认这 17 个字符（其余按字距跳过、不画）：`0-9 . % + - : *` 与空格。
+ * 第 0 档只认 15 个字符（其余按字距跳过、不画）：`0-9 . % + -` 与空格；
+ * 第 2 档（`CE_HUD_FONT_TH18_FONT2B`）多认 `:` 与 `*`。
  * ★ 2026-09-23 加了 `:` 与 `*`（卡 112 的计时器 / ×N 弹字要从 ASCII 换成贴图 VM 文字，
  *   才能进暂停模糊罩）；两者的一手映射 = 引擎字符表 `th18:0x4b019c` 的 `0x3a`/`0x2a`，
  *   贴图以单图行 append 在 ORDER.txt 末尾（`ATLAS_FONT2` 属已定稿段不许插行）。*/
@@ -757,8 +758,13 @@ void ce_hud_vm_text_set(ce_hud_vm_text_t *t, float x, float y, uint32_t bgra,
  * `ATLAS_TH13ASCII`（32×40 字格、16 px 步进、`s` 落在 x-height）⇒ 字距/行高/VM 偏移都与 font 2
  * 不同 ⇒ 做成"只换字形表、不换代码"。`ce_hud_vm_text_set` = `…_font(…, CE_HUD_FONT_TH18_FONT2)`，
  * 其它卡的行为一个字节不变。*/
-enum { CE_HUD_FONT_TH18_FONT2 = 0,   /* TH18 font 2（16×32 画布、7 px 步进、'.' 4 px）—— 默认 */
-       CE_HUD_FONT_TH13_BIG   = 1 }; /* TH13 大字体（32×40 字格、16 px 步进、's' 在 x-height）*/
+enum { CE_HUD_FONT_TH18_FONT2  = 0,  /* TH18 font 2（16×32 画布、7 px 步进、'.' 4 px）—— 默认 */
+       CE_HUD_FONT_TH13_BIG    = 1,  /* TH13 大字体（32×40 字格、16 px 步进、's' 在 x-height）*/
+       /* ★ 2026-09-24：TH18 font 2 的**完整字形集**（`ATLAS_FONT2B`，比第 0 档多 `:` 与 `*`）。
+        *   度量与第 0 档逐值相同 ⇒ 只是"认得的字符"多两个、贴图来自另一个 entry。
+        *   为什么要另一档：字形 VM 绑在固定脚本上，sprite 号按**该脚本所属 entry** 解析 ——
+        *   第 0 档那个图集（`ATLAS_FONT2`）在 ORDER 的已定稿段、不能插行，所以另起一套。*/
+       CE_HUD_FONT_TH18_FONT2B = 2 };
 
 void ce_hud_vm_text_set_font(ce_hud_vm_text_t *t, float x, float y, uint32_t bgra,
                              int align_h, float scale, const char *s, const char *tag, int font);

@@ -73,6 +73,16 @@ SRC_PNG = REPO / "local/th12.v1.00b/anm/bullet/bullet/etama8.png"
 #      `scaleTime(…,2.0)` 让屏显变成 64×64，而原生整 B 道具是 32×32 ⇒ 本轮把脚本也换成一手的
 #     `abcard.anm` script16 配方，见 `assets/ability/scripts/301_ufo_bomb_item.anm.txt` 文件头）。
 SRC_TH18_BOMB_CARD = REPO / "local/th18.v1.00a/anm/abcard/ability/BOMB_max.png"
+# ★★ 2026-09-24（owner 第三轮）：「**你画的满B卡是 smjb，不会用这个？**」+ 给了 modkit 里的
+#   `cardart/native/ability/BOMB_max.png`（**与本机 `local/` 那份逐字节同一 md5** `ed6b9481…`）
+#   + 「**发光也不是 tm 这么发的啊**」 ⇒ 本轮把「卡面」与「背光」拆成**两个图集成员**：
+#     · `DROP_BOMB` = **原生卡图本身**（`BOMB_max.png` 256×320，**不再重画、不再压扁**）——
+#       等比装进 **40×50** 画布（256:320 = 40:50 ✓ 比例零损失）；
+#     · `CARD_GLOW` = **原生卡道具的发光卡形贴图** `abcard/ability/abitem.png`（40×44，自带一圈柔光晕；
+#       一手 = `abcard.anm` entry1 sprite1，卡道具显示脚本 script16 画的就是它）。
+#   ⇒ 卡面**不再加算**（加算会把卡图冲淡 —— owner 说的"发光不是这么发的"），
+#     背光改由 `CARD_GLOW` 那一层**加算 + 呼吸**提供（= 一手 script16 的配方）。
+SRC_ABITEM = REPO / "local/th18.v1.00a/anm/abcard/ability/abitem.png"     # 原生卡道具的发光卡形
 SRC_TXT = REPO / "local/th12.v1.00b/anm/bullet/bullet.anm.txt"
 OUT = HERE / "ufo_drop"
 SCRIPTS = HERE / "scripts"
@@ -85,17 +95,19 @@ SPRITES = [
     ("DROP_ICON_P",     426, (16, 16), (16, 16)),
     ("DROP_ICON_POINT", 427, (16, 16), (16, 16)),
     # ★ DROP_BOMB 的源**不是** TH12 的 sprite432 了（见 `SRC_TH18_BOMB_CARD`）：owner 口径换成 TH18 完整 B 卡面
-    ("DROP_BOMB",       None, None,    (40, 44)),   # ★ = 原生 `abcard/ability/abitem.png` 的矩形
+    ("DROP_BOMB",       None, None,    (40, 50)),   # ★ 原生卡图 `BOMB_max.png` 等比装入（4:5）
+    ("CARD_GLOW",       None, None,    (40, 44)),   # ★ 原生 `abcard/ability/abitem.png`（卡形 + 柔光晕）
 ]
 
 # 图集排布（2 的幂：64×32）
 ATLAS_NAME = "ATLAS_UFO_DROP"
-ATLAS_W, ATLAS_H = 80, 80             # ★ DROP_BOMB 画布 32×32 → 40×44 ⇒ 图集 64×64 → 80×80
+ATLAS_W, ATLAS_H = 80, 96             # ★ 2026-09-24：DROP_BOMB 40×50 + CARD_GLOW 40×44 ⇒ 80×96
 ATLAS_POS = {                       # 输出名 → (x, y)
     "BOUNTY_BAG":      (0, 0),
     "DROP_ICON_P":     (32, 0),
     "DROP_ICON_POINT": (48, 0),
-    "DROP_BOMB":       (32, 32),    # 32+40=72 ≤ 80、32+44=76 ≤ 80 ✓
+    "CARD_GLOW":       (0, 32),     # 0+40=40 ≤ 80、32+44=76 ≤ 96 ✓
+    "DROP_BOMB":       (40, 32),    # 40+40=80 ≤ 80、32+50=82 ≤ 96 ✓（与 CARD_GLOW 不重叠）
 }
 
 # (输出脚本号, 输出名, TH12 源脚本号, 图标脚本)  —— 图标脚本为 None = 整条照抄（只换 sprite 名）
@@ -152,13 +164,14 @@ def make_sprites() -> list[str]:
     OUT.mkdir(parents=True, exist_ok=True)
     order_lines = []
     for name, sid, unit_wh, canvas_wh in SPRITES:
-        if sid is None:                                # ★ DROP_BOMB：TH18 自己的完整 B 卡面
-            if not SRC_TH18_BOMB_CARD.is_file():
-                raise SystemExit(f"缺 {SRC_TH18_BOMB_CARD}（先 python3 tooling/thtk/unpack.py th18.v1.00a）")
-            art = Image.open(SRC_TH18_BOMB_CARD).convert("RGBA")
+        if sid is None:                                # ★ DROP_BOMB / CARD_GLOW：TH18 自己的原生图
+            src_path = SRC_ABITEM if name == "CARD_GLOW" else SRC_TH18_BOMB_CARD
+            if not src_path.is_file():
+                raise SystemExit(f"缺 {src_path}（先 python3 tooling/thtk/unpack.py th18.v1.00a）")
+            art = Image.open(src_path).convert("RGBA")
             bb = art.getchannel("A").getbbox()
             if bb is None:
-                raise SystemExit(f"{SRC_TH18_BOMB_CARD}: 整张透明，切不出卡面")
+                raise SystemExit(f"{src_path}: 整张透明，切不出卡面")
             art = art.crop(bb)
             w, h = art.size
             sc = min(canvas_wh[0] / w, canvas_wh[1] / h)

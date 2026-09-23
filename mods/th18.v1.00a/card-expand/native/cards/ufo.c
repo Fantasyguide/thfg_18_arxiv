@@ -1041,7 +1041,9 @@ static ufo_pull_t s_pull[UFO_PULL_MAX];
 static float ufo_pull_speed(uint8_t *it, uint32_t type, uint32_t ufo_frames)
 {
     int i, free_i = -1;
+#if UFO_DRAG_ACCEL_ENABLE
     int32_t inc;
+#endif
 
     for (i = 0; i < UFO_PULL_MAX; ++i) {
         if (s_pull[i].item == it) {
@@ -1056,11 +1058,20 @@ static float ufo_pull_speed(uint8_t *it, uint32_t type, uint32_t ufo_frames)
         s_pull[i].type = type;
         s_pull[i].spd_milli = 0;
     }
+#if !UFO_DRAG_ACCEL_ENABLE
+    /* ★★★ 2026-09-24（owner：「是**匀速缓慢吸收**」）—— 常量速度，见 `ufo_core.h` 的常量注
+     *   （一手 TH18 那条匀速吸附 = `player+0x47988 / 3` = 1.667 单位/帧；本卡取 1.5）。
+     *   这一支不再需要那张逐颗增量表，但表与 `ufo_pull_forget*` 全部保留
+     *   （回退 = `UFO_DRAG_ACCEL_ENABLE` 改回 1，一行）。*/
+    (void)it; (void)type; (void)ufo_frames;
+    return ufo_drag_speed_const();
+#else
     /* 一手：`+ (timer/600)×0.05 + 0.02`（百万分比整数算，避免浮点误差累积）*/
     inc = (int32_t)((int64_t)ufo_frames * 50 / 600) + 20;       /* 0.05 → 50‰、0.02 → 20‰ */
     s_pull[i].spd_milli += inc;
     if (s_pull[i].spd_milli > 6000) s_pull[i].spd_milli = 6000;  /* 一手上限 6.0 */
     return (float)s_pull[i].spd_milli / 1000.0f;
+#endif
 }
 
 /* 道具被吸掉 / 撤掉时把它的累计量丢掉（槽要被回收了）。*/
@@ -2922,6 +2933,25 @@ static int32_t  s_xn_permille;           /* 倍率（千分比；显示 `*%1.1f`
 static ce_hud_vm_text_t s_xn_text;       /* ×N 的那 4 个字形 VM */
 static ce_hud_vm_text_t s_timer_text;    /* `11:00` 的那 5 个字形 VM */
 
+/* ★★ 2026-09-24（owner：「不知道哪儿冒出来一个 **14.0 的 UI 一直赖着不走**，并且**不被暂停模糊**」）：
+ *   **暂停时 `on_draw` 照样会被调**（SDK 的菜单门注里写着），而本卡的两处 HUD 文字每帧都调
+ *   `ce_hud_vm_text_set()` —— 只要那一帧有 VM 需要**新建**（引擎在别处收掉了句柄 / 串变长），
+ *   新 VM 就落在**暂停模糊罩之后**（罩子是暂停时新起的 VM、尾插 = 画在后面）⇒ 那几个字形看起来
+ *   "没被模糊"，而且会一直留在屏上。
+ *   引擎自己判"这一帧是不是游玩帧"的判据就在 `GameThread+0xb0`（`th18:0x446ec0`，道具池 body 的门）：
+ *   `flags & 3` 或 `flags & 0x400` 置位 ⇒ 那一帧不是正常游玩帧。
+ *   ⇒ 本卡的 HUD 文字照同一条门：**非游玩帧什么都不画**（不建 VM、也不清 —— 解除后下一帧照旧）。
+ *   ⚠ 不影响别的路径：令牌 / 掉落物是**世界层** VM（引擎自己的道具池用同一条门），位置与生命周期
+ *     都不依赖这里。*/
+static int ufo_play_frame(void)
+{
+    const uint8_t *gt = (const uint8_t *)CE_GAME_THREAD();
+    uint32_t f;
+    if (!gt) return 0;
+    f = *(const uint32_t *)(gt + CE_GT_FLAGS);
+    return (f & 0x3u) == 0u && (f & 0x400u) == 0u;
+}
+
 static void ufo_xn_kill(void)
 {
     s_xn_left = 0;
@@ -2950,8 +2980,15 @@ static void ufo_xn_tick(void)
     float x, y;
     uint32_t rem;
     char buf[8];
-    if (!s_xn_left) return;
+    if (!s_xn_left) return;                            /* 已经收过尾（见下）*/
+    if (!ufo_play_frame()) return;                     /* ★ 暂停/非游玩帧：一个字都不画（见 `ufo_play_frame`）*/
     --s_xn_left;
+    if (!s_xn_left) {                                  /* ★★ 到点**必须把字形 VM 收掉** —— 上一版在这里
+                                                        * 只是下一帧 `return`，于是 ×N 的字**永远留在屏上**
+                                                        * （owner：「一直赖着不走」）。*/
+        ce_hud_vm_text_clear(&s_xn_text);
+        return;
+    }
     rem = (uint32_t)s_xn_left % UFO_XN_FLASH_MOD;
     /* 位置：640×480 空间（x 以场地中心 320 为 0、y 以场地上沿 16 起算，与 #9 倒计时同一条换算）*/
     x = 320.0f + s_xn_wx;
@@ -2965,15 +3002,22 @@ static void ufo_xn_tick(void)
         uint32_t p = (uint32_t)s_xn_permille;
         uint32_t tenths = (p + 50u) / 100u;            /* 四舍五入到 0.1 */
         uint32_t whole = tenths / 10u;
-        buf[0] = '*';
-        buf[1] = (char)('0' + (whole % 10u));          /* 倍率域 1.0..8.0 ⇒ 一位整数 */
-        buf[2] = '.';
-        buf[3] = (char)('0' + (tenths % 10u));
-        buf[4] = '\0';
+        /* ★ 2026-09-24：倍率域是 1.0..**10.0**（蓝/金那条 `2000 + 8000·fill` 在 fill→1 时逼近 10000）
+         *   ⇒ 整数位**可能是两位**；上一版只打一位（`whole % 10`）⇒ 9.95 以上会显示成 `*0.0`。*/
+        int k = 0;
+        buf[k++] = '*';
+        if (whole >= 10u) buf[k++] = (char)('0' + (whole / 10u) % 10u);
+        buf[k++] = (char)('0' + (whole % 10u));
+        buf[k++] = '.';
+        buf[k++] = (char)('0' + (tenths % 10u));
+        buf[k] = '\0';
     }
-    ce_hud_vm_text_set(&s_xn_text, x, y,
-                       (rem >= UFO_XN_FLASH_MOD / 2u) ? UFO_XN_COLOR_GREY : UFO_XN_COLOR_YEL,
-                       CE_ASCII_ALIGN_CENTER, UFO_XN_SCALE, buf, "ufo-xn");
+    /* ★ 2026-09-24：改用 **`CE_HUD_FONT_TH18_FONT2B`**（`*` 与 `:` 只在那套字形集里，
+     *   而这个字形表绑的 entry 决定了 sprite 号往哪张表查 —— 详见脚本 332 的头注）。*/
+    ce_hud_vm_text_set_font(&s_xn_text, x, y,
+                            (rem >= UFO_XN_FLASH_MOD / 2u) ? UFO_XN_COLOR_GREY : UFO_XN_COLOR_YEL,
+                            CE_ASCII_ALIGN_CENTER, UFO_XN_SCALE, buf, "ufo-xn",
+                            CE_HUD_FONT_TH18_FONT2B);
 }
 
 /* ==================== ★★ #22 吸收数记录面板（TH12 `front.anm` script134/135）====================
@@ -3829,6 +3873,7 @@ static void ufo_timer_draw(const ufo_card_t *s)
     /* ★ 三条"不画"的出口都必须**把贴图 VM 收掉**（ASCII 时代不用管：不调就不画；
      *   换成常驻 VM 之后留着就是"上一只的时间冻在屏幕上"）。*/
     if (!s || !ufo_present(&s->u)) { s_timer_logged = 0; ce_hud_vm_text_clear(&s_timer_text); return; }
+    if (!ufo_play_frame()) return;                     /* ★ 非游玩帧（暂停 / 菜单）：一个字都不画 */
     if (s->u.frames < UFO_TIMER_FIRST_FRAME) { ce_hud_vm_text_clear(&s_timer_text); return; }  /* 一手 0x44a6ee：前 60 帧不画 */
     e = ufo_enemy_by_id(s->u.ufo_id);
     if (!e) { ce_hud_vm_text_clear(&s_timer_text); return; }   /* 一手 0x44a72c：敌人不在就不画 */
@@ -3862,8 +3907,8 @@ static void ufo_timer_draw(const ufo_card_t *s)
         buf[3] = (char)('0' + h10);
         buf[4] = (char)('0' + h1);
         buf[5] = '\0';
-        ce_hud_vm_text_set(&s_timer_text, x, y, UFO_TIMER_COLOR, CE_ASCII_ALIGN_CENTER, 0.0f,
-                           buf, "ufo-timer");
+        ce_hud_vm_text_set_font(&s_timer_text, x, y, UFO_TIMER_COLOR, CE_ASCII_ALIGN_CENTER, 0.0f,
+                                buf, "ufo-timer", CE_HUD_FONT_TH18_FONT2B);
     }
     if (!s_timer_logged || (s->play_frame % UFO_TIMER_LOG_EVERY) == 0u) {
         s_timer_logged = 1;

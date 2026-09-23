@@ -1,41 +1,35 @@
 script script301 {
-    // 112 星莲船 —— **满 B 掉落物的外观 VM**（一手：TH18 自己的**卡道具显示配方**）
+    // 112 星莲船 —— **满 B 掉落物的卡面层**（一手：TH18 卡道具的显示配方 + owner 第三轮口径）
     //
-    // ★★ 2026-09-23 第二轮（owner 实跑第 5 条）**重写**。上一版是从 TH12 `bullet.anm` **script172**
-    //   逐条移植的（`angleVel 45°/帧 + scale 0.5 → scaleTime(16,0,2.0)`）—— owner 实跑判两处不对：
-    //     · 「**卡图大了一倍**」：屏显 = 画布 ×2.0 = **64×64**，而 TH18 原生的整 B 道具是 **32×32**
-    //       ⇒ 正好一倍（一手 `bullet.anm` script118 的 `scaleTime(16,0,1.0,1.0)`）。
-    //     · 「要**有黑边那版**」+「复刻动态（**微微 rotate + 背光**）」。
+    // ★★★ 2026-09-24（owner 第三轮）：「你画的满B卡是 smjb，不会用这个？
+    //   `…/cardart/native/ability/BOMB_max.png`」+「**发光也不是 tm 这么发的啊**」
+    //   ⇒ 两件事分开做：
+    //     · **卡面 = 原生卡图本身**（`abcard/ability/BOMB_max.png` 256×320 ⇒ 等比装进 40×50 画布，
+    //       比例 4:5 零损失；owner 给的那份与本机 `local/` 那份**逐字节同 md5** `ed6b9481…`）；
+    //       这层**不再加算**（加算把卡图冲淡了 —— owner 说的"发光不是这么发的"）。
+    //     · **背光 = 另一层**（脚本 **331**，`CARD_GLOW` = 原生 `abcard/ability/abitem.png`，
+    //       加算 + 呼吸）—— 由本脚本第一句 `scriptNew` 一起起，父的 `entity_pos` 子 VM 继承
+    //       ⇒ 两层永远重合（本卡脚本 231→232 血条/投影就是这条先例）。
     //
-    // **一手（逐条、可复核）**
-    //   ① **TH18 的卡道具长什么样** = `abcard.anm` **script16**
-    //      （`local/th18.v1.00a/anm/abcard/abcard.anm.txt`）：
-    //        `-1: sprite(sprite1); ins_431(1); randMode(1); pos(0,0,0); layer(16);
-    //             color(255,255,255); type(1); blendMode(1);
-    //         0: offset112: scaleTime(7, 9, 0.9, 0.9); +7: scaleTime(7, 9, 1.0, 1.0); +7: jmp(offset112);
-    //            stop();`
-    //      ⇒ **加算（`blendMode(1)` = 背光）+ 呼吸式缩放（0.9 ↔ 1.0，7 帧一段、缓动 9）+ 层 16**。
-    //      `sprite1` = entry1 `abcard/ability/abitem.png`（**40×44**，卡形 + 一圈柔光晕 —— 那圈柔光是
-    //      贴图自带的，也是"背光"观感的一半）。
-    //   ② **整 B 道具本身**的一手 = `bullet.anm` **script118**（`sprite512` 32×32、`scale 0.5→1.0`、
-    //      `angleVel 45°/帧`、32 帧后停）—— 那颗**原生**道具现在由引擎自己画（本卡改成生成原生
-    //      `item type 7`，见 `ufo.c` 的 `ufo_drop_spawn`）⇒ 本脚本**不再重复画它**，只画我们的卡面。
-    //   ③ **为什么卡面自己不转**：一手 script16 **没有**任何 `angleVel` ⇒ 原生卡道具不转。
-    //      owner 看到的那点转动来自 **②那颗原生图标**（45°/帧、自转 32 帧后停），它就在卡面**后面**
-    //      ⇒ 观感正是「微微 rotate + 背光」。要真让卡面也转，加一行 `angleVel` 即可（属 ❓ 自定）。
+    // **一手的动态**（`abcard.anm` script16 = 卡道具的显示脚本，逐条）：
+    //   `sprite(sprite1=abitem); ins_431(1); layer(16); blendMode(1);
+    //    offset112: scaleTime(7, 9, 0.9, 0.9); +7: scaleTime(7, 9, 1.0, 1.0); +7: jmp(offset112); stop();`
+    //   ⇒ **呼吸式缩放**（0.9 ↔ 1.0，7 帧一段、缓动 9）+ **加算**。原生 script16 里**没有** `angleVel`
+    //     ⇒ 卡面自己不转（owner 看到的那点转动 = 引擎画的那颗**原生整 B 图标**自转 45°/帧 ×32 帧，
+    //       它在卡面**后面**，见 `ufo.c` 的 `ufo_drop_spawn`）。
+    //   ⚠ 层的分工：**两层都必须是世界层**（TH18 的层号决定相机：3–19 = 游玩区相机 3、
+    //     24+ = 外围 UI 相机 2）⇒ 背光 **15** / 卡面 **16**（层号小的先画 ⇒ 背光在卡面后面）。
+    //     原生那棵树（`abcard.anm` script0）用的是 24/25，但那是 **HUD 里的"当前卡"**；
+    //     我们是**场里的掉落物**，照抄它会把背光送到 UI 层去。
     //
-    // **移植改动（Δ）**
-    //   · `sprite(sprite1)` → `sprite(@DROP_BOMB@)`（我们图集里的**完整 B 卡面**；源 = TH18
-    //     `abcard/ability/BOMB_max.png` = **有黑边那版**，见生成器文件头）。
-    //   · 画布 **40×44** = 一手 `abitem.png` 的尺寸（脚本里不写尺寸，尺寸在图集/画布那一侧）。
-    //   · `ins_431(1)`：v8 anmm 的 `v8-flag-431`（`flags_hi` bit8），社区标注为**未知位** ⇒ 本卡不写
-    //     （它属"卡显示"子系统的开关，我们的 VM 不在那个子系统里）。
-    //   · 不写 `-1:` 起始标签：本仓的世界/UI 脚本一律不写（引擎默认从第 0 条开始；先例 = 脚本 228/231）。
+    // **Δ（与一手的差异，逐条）**
+    //   · `sprite(sprite1)` → `sprite(@DROP_BOMB@)`（我们的卡面成员；`CARD_GLOW` 在脚本 331）。
+    //   · `layer(16)` **原值保留**（一手 script16 自己写的就是 16，且那是**世界层** —— 正是我们要的）。
     sprite(@DROP_BOMB@);
+    scriptNew(@SCRIPT_UFO_CARD_GLOW@);   /* ★ 背光层（原生 abitem：加算 + 呼吸）*/
     type(1);
-    layer(16);                      // 一手 script16 的层（世界层：跟着道具在场里画）
-    blendMode(1);                   // ★ 一手 script16：加算 = "背光"
-    color(255, 255, 255);           // 一手 script16 的 color
+    layer(16);                      /* 一手 script16 的层（世界层：跟着道具在场里画）*/
+    color(255, 255, 255);           /* 一手 script16 的 color；**不加算**（owner 第三轮）*/
     scale(1.0f, 1.0f);
 offset112:
     scaleTime(7, 9, 0.9f, 0.9f);    // 一手 script16：7 帧 → 0.9（缓动 9）

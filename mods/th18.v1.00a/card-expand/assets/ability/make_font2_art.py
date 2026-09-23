@@ -41,6 +41,7 @@ REPO = HERE.parents[4]                                # renkolab/
 SRC_TXT = REPO / "local/th18.v1.00a/anm/ascii1280/ascii1280.anm.txt"
 SRC_PNG = REPO / "local/th18.v1.00a/anm/ascii1280/ascii/ascii_1280.png"
 OUT = HERE / "font2"
+OUT_B = HERE / "font2b"          # ★ 2026-09-24：给 `ATLAS_FONT2B` 用（同一批字形、独立图集）
 
 # 名字 → (精灵号, 注释)
 GLYPHS = [("FONT2_" + (str(i) if i >= 0 else ""), 196 + i, f"'{i}'") for i in range(10)] + [
@@ -77,6 +78,7 @@ def main():
              for m in _SPRITE.finditer(SRC_TXT.read_text(encoding="utf-8"))}
     im = Image.open(SRC_PNG).convert("RGBA")
     OUT.mkdir(exist_ok=True)
+    OUT_B.mkdir(exist_ok=True)
     for name, sid, comment in GLYPHS:
         if sid not in rects:
             raise SystemExit(f"{SRC_TXT.name} 里没有 sprite{sid}")
@@ -85,9 +87,14 @@ def main():
         pad = Image.new("RGBA", CANVAS, (0, 0, 0, 0))
         pad.paste(cell, ((CANVAS[0] - w) // 2, (CANVAS[1] - h) // 2))   # 不带 mask：原像素 1:1
         pad.save(OUT / f"{name}.png")
+        '''★ 2026-09-24：同一张字形再落一份到 `font2b/`（`FONT2B_*`）——
+         *   给**独立的图集** `ATLAS_FONT2B` 用：`ce_hud_vm_text_*` 的 VM 绑在哪个 entry 决定
+         *   sprite 号往哪张表里查，而 `ATLAS_FONT2` 属 ORDER 的已定稿段（不能插行）
+         *   ⇒ 需要 `:`/`*` 的调用点改用这一套（SDK 的 `CE_HUD_FONT_TH18_FONT2B`）。'''
+        pad.save(OUT_B / f"FONT2B_{name[len('FONT2_'):]}.png")
         print(f"{name:<14} sprite{sid:<4} 源矩形 ({x},{y},{w},{h}) → 画布 {CANVAS[0]}x{CANVAS[1]}（居中）  {comment}")
-    print(f"→ {OUT.relative_to(REPO)}（{len(GLYPHS)} 张 {CANVAS[0]}×{CANVAS[1]}；"
-          f"ORDER.txt 的 ATLAS_FONT2 里按同尺寸声明）")
+    print(f"→ {OUT.relative_to(REPO)} + {OUT_B.relative_to(REPO)}（各 {len(GLYPHS)} 张 {CANVAS[0]}×{CANVAS[1]}；"
+          f"ORDER.txt 的 ATLAS_FONT2 / ATLAS_FONT2B 里按同尺寸声明）")
 
 
 if __name__ == "__main__":

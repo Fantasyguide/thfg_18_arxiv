@@ -16686,7 +16686,7 @@ TH18 没有 PIV 状态量，但**有同量纲的对位物**：`engine.h` 的 `CE
 | 2026-09-23 | **112（星莲船）HUD 真根因修复 + 音效两处一手订正 + 共享件 `patch/th18/voice.js`（UFOALERT 音量行）**：`assets/ability/make_ufo_hud_art.py`、`assets/ability/scripts/302..305`、`cards/ufo.c`、`patch/th18/voice.js` | 见下方「§BE 详录 #54」 |
 | 2026-09-23 | **所有卡（共享件 `assets/voice/*` + `patch/th18/voice.js`：音效表再加一格 `UFO` = `se_ufo.wav`，id **0x5f**；`CE_VOICE_REGISTERED` 10 → 12，零行为变化）** | 见下方「§BE 详录 #81」 |
 | 2026-09-23 | **112（星莲船）第二轮（owner 7 条 + 2 条口径）：共享件 `assets/ability/**`** —— ORDER 两张图集画布 + 6 支既有脚本 + 3 支新脚本 + 两个生成器 + `cards/ufo.c` | 见下方「§BE 详录 #82」 |
-| 2026-09-23 | **所有卡（共享件 `native/sdk.{h,c}` 的贴图 VM 文字**：字符集加 `':'` 与 `'*'` 两个字形；`assets/ability/entries/ORDER.txt` 末尾追加两张单图 | 见下方「§BE 详录 #83」 |
+| 2026-09-24 | **所有卡（共享件 `native/sdk.{h,c}` + `assets/ability/entries/ORDER.txt`）**：贴图 VM 文字加**第三档字体** `CE_HUD_FONT_TH18_FONT2B`（新图集 `ATLAS_FONT2B` + 脚本 332，含 `:` `*`）；上一版那两张单图行已撤 | 见下方「§BE 详录 #84」 |
 
 **§BE 详录 #51**（共享件 `hud_dim.*` 的统一动态换基准，2026-09-21）
 
@@ -21044,3 +21044,26 @@ youkai:   native opt slot 2: state 0 vm 00000000 muzzle (0.0, -400.0)   （3/4 �
 
 **对既有卡的影响面**：零（只改台账文字）。**给 112 那条线的一句话**：以后往 `CAPACITY.md` 登记图集时，
 标题里请带上**完整宏名**（`CE_ANM_ABILITY_ATLAS_ATLAS_*`），否则 `capcheck` 会拦下全仓的 `make check`。
+
+## §BE 详录 #84（2026-09-24）：★ **共享件** `native/sdk.{h,c}` + `assets/ability/entries/ORDER.txt` —— 贴图 VM 文字加第三档字体（`ATLAS_FONT2B`）
+
+**为什么必须登记**：`native/sdk.{h,c}` 与 `assets/ability/entries/ORDER.txt` 都在共享件清单里。
+
+**背景（一手）**：`ce_hud_vm_text_*` 的每个字形 VM 都绑在一支**固定脚本**上，而引擎解析 `vm->sprite`
+是按**该脚本所属 entry 的精灵表** ⇒ 想让卡 112 的 HUD 用上 `':'` 与 `'*'`，这两个字形必须与脚本
+**同属一个 entry**。而 `ATLAS_FONT2` 在 `ORDER.frozen.txt` 的**已定稿段**里（往里插行 = 全库 sprite
+号平移，构建期会拒）。上一轮（§BE #83）用"两张单图行"绕开的做法**是错的**：实跑症状 = ×N 弹字的
+`*` 画成了别的东西（owner 看到"一个 14.0 的 UI"）。
+
+| 文件 | 改了什么 | 怎么验证的 |
+| --- | --- | --- |
+| `assets/ability/entries/ORDER.txt` | **撤掉**上一轮追加的 `FONT2_COLON` / `FONT2_STAR` 两行；在末尾**追加** `ATLAS ATLAS_FONT2B 128x64@8x2` + 16 个成员 | `make -C native anm` 通过（`entry69 ATLAS_FONT2B 画布 128x64`）+ `重排检测：已定稿 186 行逐行未变` |
+| `assets/ability/make_font2_art.py` | 同一批字形**同时**落 `font2/` 与 `font2b/`（`FONT2B_*`） | 生成器重跑幂等（各 16 张）|
+| `assets/ability/scripts/332_font2b_glyph.anm.txt` | **新增**（脚本 136 的孪生：只有 sprite 名/图集不同）| `make anm` 打印 `script332 font2b_glyph` |
+| `native/sdk.h` | 字体枚举加 `CE_HUD_FONT_TH18_FONT2B = 2`（+ 注释里"认得的字符"分档说明）| `make check` rc=0 |
+| `native/sdk.c` | 新增 `hud_vm_glyph_font2b()`（含 `':'` `'*'`）、`HUD_FONTS[2]`（度量与第 0 档逐值相同：7 / 4 / 10 / 5 / size 1.0）、`ce_hud_vm_text_set_font()` 的选择逻辑改三分支；**撤掉**上一轮往 `hud_vm_glyph()` 里加的两条（那两个 sprite 已随单图行删除）| 同上 |
+
+**对既有卡的影响面**：**零** —— 第 0 档（默认）与第 1 档（TH13 大字体）的**字形表、度量、脚本一字未改**，
+只是多了一个可选择的新档；`ORDER.txt` 只追加（已定稿段逐行未变，新 entry/sprite 在末尾）。
+只有卡 112 的计时器与 ×N 弹字改用了第 2 档（两者都是本卡自己的 HUD）。
+**回归**：`make -C native anm` 幂等 / `make check` rc=0（含 `capcheck` 台账、`atlas-check`、381 文件 `check-docs`）/ `make dllx87` = 0。

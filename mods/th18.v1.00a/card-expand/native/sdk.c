@@ -758,14 +758,8 @@ static uint32_t hud_vm_glyph(char ch)
     case '%': return CE_ANM_ABILITY_SPRITE_FONT2_PERCENT;
     case '.': return CE_ANM_ABILITY_SPRITE_FONT2_DOT;
     case '+': return CE_ANM_ABILITY_SPRITE_FONT2_PLUS;
-    /* ★ 2026-09-23（卡 112 的计时器要进暂停模糊罩 ⇒ 从 ASCII 换成贴图 VM 文字）：
-     *   `':'` 与 `'*'` 的一手映射就在上面那张表的 `0x3a` / `0x2a` 项（本机直读 = 206 / 190）。
-     *   ⚠ 它们**不在** `ATLAS_FONT2` 里（那个图集属 ORDER 的已定稿段、不许插行）⇒ 贴图以**单图行**
-     *     append 在 ORDER.txt 末尾（新 sprite 号在最后），字形表指向那两个号即可 —— 引擎的
-     *     「sprite 号」是**文件级全局**编号，`ce_anm_set_sprite` 换的是全局号，跨 entry 没问题
-     *     （先例：TS_DIGIT_* 与 FONT2_* 本来就在不同 entry 里混用）。*/
-    case ':': return CE_ANM_ABILITY_SPRITE_FONT2_COLON;
-    case '*': return CE_ANM_ABILITY_SPRITE_FONT2_STAR;
+    /* ⚠ `':'` / `'*'` **不放这一档**：它们不在 `ATLAS_FONT2` 里，而这个字形表绑的就是那个 entry
+     *   （引擎按 entry 的精灵表解析 sprite 号）⇒ 要用它们请用下一档 `hud_vm_glyph_font2b`。*/
     default:  return 0;                      /* 空格等：按字距跳过 */
     }
 }
@@ -780,6 +774,23 @@ static float hud_vm_ui_scale(void)
  * 不用 TH18 遗留的）。字形来自 `ATLAS_TH13ASCII`（切图脚本 assets/ability/make_th13_ascii_art.py）：
  * 图里唯二 39 px 高的两行、格距 32、行距 40 ⇒ 12 个字形 = `0`..`9` `.` `s`。
  * 它在 640 空间是 16×20（脚本里 resolutionMode(2) ⇒ 1280→640 减半），所以步进 16、半行高 10。*/
+/* ★ 2026-09-24（卡 112）：**`ATLAS_FONT2B` 版**字形表 —— `ATLAS_FONT2` 的完整复制，
+ *   只多了 `':'` 与 `'*'` 两个字形（一手映射同上一张表：引擎字符表 `th18:0x4b019c` 的
+ *   `0x3a` → 206、`0x2a` → 190）。为什么要独立一档见 `assets/ability/scripts/332_*.anm.txt` 的头注。*/
+static uint32_t hud_vm_glyph_font2b(char ch)
+{
+    if (ch >= '0' && ch <= '9') return CE_ANM_ABILITY_SPRITE_FONT2B_0 + (uint32_t)(ch - '0');
+    switch (ch) {
+    case '-': return CE_ANM_ABILITY_SPRITE_FONT2B_MINUS;
+    case '%': return CE_ANM_ABILITY_SPRITE_FONT2B_PERCENT;
+    case '.': return CE_ANM_ABILITY_SPRITE_FONT2B_DOT;
+    case '+': return CE_ANM_ABILITY_SPRITE_FONT2B_PLUS;
+    case ':': return CE_ANM_ABILITY_SPRITE_FONT2B_COLON;
+    case '*': return CE_ANM_ABILITY_SPRITE_FONT2B_STAR;
+    default:  return 0;
+    }
+}
+
 static uint32_t hud_vm_glyph_th13(char ch)
 {
     if (ch >= '0' && ch <= '9') return CE_ANM_ABILITY_SPRITE_TH13ASCII_D0 + (uint32_t)(ch - '0');
@@ -835,6 +846,9 @@ static const hud_font_t HUD_FONTS[] = {
      *   ⇒ 剩下的 `A = 53` 是**锚点**差（整串往右 53），其中 12 来自"步进收窄后居中左缘右移"，
      *      其余 41 = 锚点残差 ⇒ 见 `trance.c` 的 `TRANCE_HUD_X_OFFSET`（单独一个旋钮，等下一张表定）。*/
     { hud_vm_glyph_th13, 15.0f, 5.0f, CE_ANM_ABILITY_SCRIPT_TH13_BIG_GLYPH, 10.0f, 20.0f, 9.5f, 2.0f },
+    /* ★ 2026-09-24 第三档：TH18 font 2 的**完整字形集**（`ATLAS_FONT2B`）+ `:` `*`；
+     *   度量与第 0 档逐值相同（7 / 4 / 10 / 5 / size 1.0）⇒ 换过去字号不变。*/
+    { hud_vm_glyph_font2b, 7.0f, 4.0f, CE_ANM_ABILITY_SCRIPT_FONT2B_GLYPH, 5.0f, 10.0f, 5.0f, 1.0f },
 };
 
 /* 默认字形集 = TH18 font 2（所有既有调用点走这里，行为一个字节不变）。*/
@@ -855,7 +869,9 @@ void ce_hud_vm_text_clear(ce_hud_vm_text_t *t)
 void ce_hud_vm_text_set_font(ce_hud_vm_text_t *t, float x, float y, uint32_t bgra,
                              int align_h, float scale, const char *s, const char *tag, int font)
 {
-    const hud_font_t *f = (font == CE_HUD_FONT_TH13_BIG) ? &HUD_FONTS[1] : &HUD_FONTS[0];
+    const hud_font_t *f = (font == CE_HUD_FONT_TH13_BIG)   ? &HUD_FONTS[1]
+                        : (font == CE_HUD_FONT_TH18_FONT2B) ? &HUD_FONTS[2]
+                                                            : &HUD_FONTS[0];
     const char *p;
     uint8_t *mgr = *(uint8_t **)CE_ADDR_ASCII_MANAGER_PTR;
     void *anm = CE_ABILITY_ANM();

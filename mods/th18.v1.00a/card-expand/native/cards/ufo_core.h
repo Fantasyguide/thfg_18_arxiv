@@ -352,10 +352,33 @@ static inline float ufo_drag_speed(uint32_t ufo_frames)
  *   ⇒ N=100 时 ≈ **2.42 单位/帧**（把它当 0.028 用就慢了几十倍 —— 那就是实跑报的"定住"）。
  * 道具那边用**逐颗的增量表**（`ufo.c` 的 `s_pull[]`，更忠实：中途开始被拉的道具不会白得历史）；
  * 信仰点是自建实体、没有道具槽地址可做键 ⇒ 这边用**闭式累计**（❓ 自定：晚进场的点会继承当前速度）。 */
+/* ★★★ 2026-09-24（owner 第三轮实跑）：「UFO 吸收的速度很奇怪，**先是让道具定那了**，然后再是
+ *   缓慢**从 0 开始匀加速**吸收；之前不是这样的你怎么又改错了，是**匀速缓慢吸收**」
+ *   ⇒ 拉拽速度改成**常量**：`UFO_DRAG_SPEED_CONST_MILLI` = **1500**（= 1.5 单位/帧）。
+ *
+ *   一手依据（**TH18 自己那条匀速吸附**）：`th18:0x446647` 把 `item+0xc80` 写成
+ *     `[player+0x47988] / 3.0` = 5.0 / 3 = **1.667 单位/帧**（state 4 = 70 px 环吸，每帧重查）
+ *     ⇒ 引擎那一支是**匀速**的；本卡取 **1.5**（比它再缓一点，就是 owner 说的"缓慢"）。
+ *
+ *   ⚠ **TH12 的 state 7（被 UFO 吸）那一支确实是累计加速**（`th12:0x426926 fadd [edi+0x9bc]`，
+ *     增量 = `timer/600×0.05 + 0.02`、上限 6.0；2026-09-18 那版照抄了它，也是 owner 当时
+ *     「吸收速度极慢、道具定住了一样」促成的）⇒ **本行是 owner 口径、不是复刻**：
+ *     一手的曲线在头 1 秒里只有 0.02→0.04 单位/帧（≈0.08 表面 px/帧）⇒ 肉眼就是"定住"。
+ *   回退 = 把 `UFO_DRAG_ACCEL_ENABLE` 改回 **1**（下面那条闭式与 `ufo.c` 的逐颗增量表都还在）。*/
+#define UFO_DRAG_ACCEL_ENABLE      0
+#define UFO_DRAG_SPEED_CONST_MILLI 1500     /* ❓owner 口径：1.5 单位/帧（= 3 表面 px/帧）*/
+static inline float ufo_drag_speed_const(void)
+{
+    return (float)UFO_DRAG_SPEED_CONST_MILLI / 1000.0f;
+}
+
 static inline float ufo_drag_speed_accum(uint32_t frames)
 {
-    float n = (float)frames;
-    float s = 0.02f * n + (0.05f / 1200.0f) * n * (n + 1.0f);
+    float n;
+    float s;
+    if (!UFO_DRAG_ACCEL_ENABLE) return ufo_drag_speed_const();
+    n = (float)frames;
+    s = 0.02f * n + (0.05f / 1200.0f) * n * (n + 1.0f);
     if (s > UFO_DRAG_SPEED_MAX) s = UFO_DRAG_SPEED_MAX;
     if (s < UFO_DRAG_SPEED_BASE) s = UFO_DRAG_SPEED_BASE;
     return s;

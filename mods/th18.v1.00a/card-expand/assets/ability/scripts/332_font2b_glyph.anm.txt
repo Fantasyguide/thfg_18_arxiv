@@ -1,0 +1,20 @@
+script script332 {
+    // 卡 112 的 HUD 文字字形（**独立图集** `ATLAS_FONT2B` 版）—— 脚本 136（`ATLAS_FONT2` 版）的孪生。
+    //
+    // ★ 2026-09-24 为什么要另起一套：`ce_hud_vm_text_*` 的每个字形 VM 都绑在**一支固定脚本**上，
+    //   而引擎解析 `vm->sprite` 是**按该脚本所属 entry 的精灵表** —— 让绑在 `ATLAS_FONT2` 上的 VM
+    //   去指一个属于别的 entry 的 sprite 号会越界（实跑症状：卡 112 的 ×N 弹字里 `*` 画成了别的东西，
+    //   owner 看到的是"一个 14.0 的 UI"）。而 `ATLAS_FONT2` 在 `ORDER.txt` 的**已定稿段**里
+    //   ⇒ 不能往里插行（会平移全库 sprite 号）⇒ 复制整套字形另起 `ATLAS_FONT2B` + 本脚本。
+    //   它与 136 **逐条同形**（只有 sprite 名与图集不同），所以 SDK 那边只是"换字形表、不换代码"。
+    sprite(@FONT2B_0@);
+    ins_431(1);
+    type(1);
+    layer(25);
+    resolutionMode(2);
+    pos(0.0f, 0.0f, 0.0f);
+    alpha(255);
+    stop();
+    interruptLabel(1);
+    delete();
+}
