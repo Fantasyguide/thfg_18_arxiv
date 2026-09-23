@@ -567,13 +567,19 @@ def _yk_extra_plan(player: str):
         #   往后接），不带就会在 `pl_anm_ids.h` 里互相覆盖（实测报 `macro redefined`）。
         out.append(dict(macro=f"YK{macro}_{player.upper()}", game="th08", src=src, sid=sid,
                         new_sid=ids["script0"] + i, smap=smap,
-                        # ★ #42：刻符的 TH08 原脚本没有 scale() ⇒ 显式 ×2（否则只有一半尺寸 = 「看不见」）
                         k=(2.0 if name == "orb" else 1.0), alpha255=False,
-                        # ★ 2026-09-23（#42「永点没看见」）：刻符的 TH08 原脚本**通篇没有 `scale()`**
-                        #   ⇒ 静止尺寸吃 VM 初值 1.0 ⇒ 只有一半线性尺寸（1/4 面积），观感上就是「看不见」。
-                        #   与 `302_ufo_hud_slot` 的 Δ4b 是同一个坑 ⇒ 只给刻符显式注入 `scale(2.0)`。
-                        #   实跑证据：`youkai/orb.vm` 五行 `sprite 97 alpha 255 layer 7 **scale 1.00**`。
-                        scale_inject=(name == "orb"), th08_opcodes=True,
+                        # ★★★ 2026-09-23 **订正**（owner 实跑：「**永点图案大了 tm 3 倍**」）——
+                        #   上一版在这里注入 `scale(2.0)`，理由抄的是 **UI 层**那条规矩（UI 层 1 texel = 1 表面 px，
+                        #   TH08 的 640 空间美术要 ×2）。但**刻符不是 UI 层**：它是**世界层** VM
+                        #   （`YK_ORB_ANM_LAYER = 7`、`ce_anm_spawn` = 世界列表、引擎里层 3–19 归**相机 3**，
+                        #   见 `engine/anm/th18/02-render-stages.md` §1）⇒ 世界层本来就吃 `×DAT = ×2`
+                        #   （一手 `th18:0x4063d0` 的 mode 0/2 路径 + `0x4735ce` 把 DAT 写成 2.0）
+                        #   ⇒ 再注入 2.0 = **双重放大**（16 texel 的球画成 64 表面 px）。
+                        #   ⇒ **不注入**：VM 初值 1.0 ⇒ 16 texel × 2 = **32 表面 px** = TH18 自己那枚道具
+                        #   的尺寸（`etama` 16×16 的球在 TH08 的 640 空间里也是 16 px）✓
+                        #   ⚠ 要按眼睛微调就改这一个开关（改成 `True` 会把 `k` 当 scale 注入；`k` 见上行）。
+                        #   验收：`youkai/orb.vm … scale …` 那行应打 **1.00**（注入 2.0 那一版打 2.00）。
+                        scale_inject=False, th08_opcodes=True,
                         # ★ #30：人妖槽四支 + 字形要**归零脚本 pos**（否则与 C 侧锚点叠加 ⇒ y 翻倍画到屏外）
                         zero_pos=(name in ("gauge", "gaugefont")),
                         # ★ 2026-09-23（#th11-3 同源缺口）：刻符（`orb`）走**世界列表**且自带层
