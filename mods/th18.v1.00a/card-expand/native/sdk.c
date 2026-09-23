@@ -1329,8 +1329,19 @@ int __cdecl BP_ce_shot_set_index(x86_reg_t *regs, void *bp_info)
      *   ⇒ 站点处的 `edi` 必须是**本机体的 sht 表基址**（一手：engine.h `CE_PLAYER_SHT_PTR` = player+0x47940，
      *   取自 `th18:0x443d32 mov eax,[ecx+0x47940]`）。对不上 = 我们在别的上下文里命中了这条站点
      *   （本卡 109 的「拦 Z」与 117/113 的 set 覆写都建立在这个前提上）⇒ 记一行，**照常放行**。*/
-    if (CE_PLAYER() && regs->edi != (uint32_t)(uintptr_t)(CE_PLAYER() + CE_PLAYER_SHT_PTR))
-        ce_assume_fail("shot-set-index: 站点处 edi 不是本机体 sht 表基址（拦Z/set 覆写的前提）");
+    /* ★★★ 2026-09-23 订正（这条自检原来**自己写错了** ⇒ 一直是假警报）：
+     *   `CE_PLAYER_SHT_PTR`（`0x47940`）是 zPlayer 里的**指针字段**（一手：`th18:0x443d32
+     *   mov eax,[ecx+0x47940]`），全仓其它 6 处消费者都写 `*(u8**)(p + 0x47940)`；而这里原来比的是
+     *   **字段的地址** `player + 0x47940` ⇒ 永远不等 ⇒ 每次开局都打一行 `assume FAIL`，
+     *   **信息量为零**，还把它误当成了「妖侧不出弹」的第一嫌疑。
+     *   现在按值比（`edi` 应在站点处 = sht 基址），并且在**第一次有卡认领**时把四个真值打进日志 ——
+     *   那一行才是判「覆写有没有落在本机体行表那条循环上」的证据。*/
+    {
+        const uint32_t sht_now = CE_PLAYER()
+            ? *(const uint32_t *)(uintptr_t)(CE_PLAYER() + CE_PLAYER_SHT_PTR) : 0u;
+        if (sht_now && regs->edi != sht_now)
+            ce_assume_fail("shot-set-index: 站点处 edi 不是本机体 sht 表基址（拦Z/set 覆写的前提）");
+    }
     if (!mgr) return BP_EXEC_ORIGINAL;
     unsigned guard = 0;
     uint8_t *winner = NULL;
@@ -1355,6 +1366,23 @@ int __cdecl BP_ce_shot_set_index(x86_reg_t *regs, void *bp_info)
     }
     if (winner) {
         int idx = winner_idx;
+        /* ★ 2026-09-23：**第一次认领**时打一行真值（one-shot，不随帧刷）——
+         *   判据：`edi` 是否 = `[player+0x47940]`（sht 基址）、引擎给的档 `eax`、
+         *   本帧 set `edx` 与栈上的 `[ebp-8]` 副本。若 `edi != sht` ⇒ 我们的 set 号被塞进了
+         *   **别的表**（那正是「妖侧一行都不发」的机制）。*/
+        {
+            static int s_first_logged;
+            if (!s_first_logged) {
+                s_first_logged = 1;
+                ce_log("ce: shot-set-index first claim (frame %u): edi=%#x [player+0x47940]=%#x "
+                       "eax(tier)=%d edx(set before)=%d stack_slot=%#x winner id=%u prio=%d set=%#x",
+                       (unsigned)ce_sdk_frame(), (unsigned)regs->edi,
+                       CE_PLAYER() ? (unsigned)*(const uint32_t *)(uintptr_t)(CE_PLAYER() + CE_PLAYER_SHT_PTR) : 0u,
+                       (int)regs->eax, (int)regs->edx,
+                       regs->ebp ? (unsigned)*(const uint32_t *)(uintptr_t)(regs->ebp - 8) : 0u,
+                       (unsigned)ce_card_id(winner), winner_prio, (unsigned)idx);
+            }
+        }
         if (n_claim > 1) {
             /* 同帧争用：记一条（含胜者的优先级与卡号），现场靠它区分「灵界赢」还是「咆哮赢」。*/
             ce_sdk_trace(ce_card_id(winner), 0x98, "on_shot_set_index contested");
