@@ -80,15 +80,15 @@ SRC_TH18_BOMB_CARD = REPO / "local/th18.v1.00a/anm/abcard/ability/BOMB_max.png"
 #       等比装进 **40×50** 画布（256:320 = 40:50 ✓ 比例零损失）；
 #     · `CARD_GLOW` = **原生卡道具的发光卡形贴图** `abcard/ability/abitem.png`（40×44，自带一圈柔光晕；
 #       一手 = `abcard.anm` entry1 sprite1，卡道具显示脚本 script16 画的就是它）。
-#   ★★★ 2026-09-24 第三轮（owner：「**你要不然直接做一张合成图吧，发光难道还有动画效果吗？**」
-#     +「**卡大了一倍，没有看见发光**」）⇒ **烘成一张图**（静态、单层、单 VM）：
-#     · 尺寸：**26×32**（= 原生整 B 道具 `bullet/item.png` sprite512 的 32×32 见方；owner 判 40×50 大一倍
-#       —— 面积 2000 vs 原生图标 1024 ≈ 2 倍，正好对上他的说法）。卡图 4:5 ⇒ 26×32 是等比。
-#     · 发光：把 `abitem.png`（原生卡道具的**发光卡形**，自带柔光晕）按 **1.3×** 放大当底
-#       —— 比卡面大一圈 ⇒ 露出来那圈就是光。⚠ 上一版把背光做成**独立的一层**、尺寸还**比卡面小**
-#       （40×44 < 40×50）⇒ 整圈被卡面盖住 = "没有看见发光"。
-#     · **静态**：不再做加算层、不再做呼吸（一手 `abcard.anm` script16 **确实**有呼吸循环
-#       `scaleTime(7,9,0.9)↔(7,9,1.0)`，但 owner 要一张合成图 ⇒ 按 owner 口径烘死）。
+#   ★★★ 2026-09-24 第三/四轮（owner）：「你要不然直接做一张合成图吧，发光难道还有动画效果吗？」
+#     →「卡大了一倍，没有看见发光」→ **「别搞合成图了还是重新背光吧」** ⇒ 回到**两层**（合成图作废）：
+#     · **卡面** `DROP_BOMB` = 原生卡图 `BOMB_max.png`（256×320）等比缩到 **26×32**（4:5）。
+#       为什么 26×32：原生**整 B 道具图标** = `bullet/item.png` sprite512 = 32×32（`scale 0.5→1.0`
+#       ⇒ 屏显 32×32）；owner 判上一版 40×50「大了一倍」（面积 2000 vs 1024 ≈ 两倍）⇒ 取高 32。
+#     · **背光** `CARD_GLOW` = 原生卡道具的**发光卡形** `abcard/ability/abitem.png`（一手 = `abcard.anm`
+#       entry1 sprite1），**放大到 34×40（比卡面大一圈）** ⇒ 露出的那一圈才是"看得见的光"。
+#       ⚠ 上一版背光之所以"看不见"：那层是 40×44、**比卡面 40×50 小** ⇒ 整圈被卡面盖住。
+#     · 发光 = **真加算**（脚本 331 的 `blendMode(1)` + 呼吸，= 一手 `abcard.anm` script16 的配方）。
 SRC_ABITEM = REPO / "local/th18.v1.00a/anm/abcard/ability/abitem.png"     # 原生卡道具的发光卡形
 SRC_TXT = REPO / "local/th12.v1.00b/anm/bullet/bullet.anm.txt"
 OUT = HERE / "ufo_drop"
@@ -102,8 +102,8 @@ SPRITES = [
     ("DROP_ICON_P",     426, (16, 16), (16, 16)),
     ("DROP_ICON_POINT", 427, (16, 16), (16, 16)),
     # ★ DROP_BOMB 的源**不是** TH12 的 sprite432 了（见 `SRC_TH18_BOMB_CARD`）：owner 口径换成 TH18 完整 B 卡面
-    ("DROP_BOMB",       None, None,    (34, 40)),   # ★ **合成图**：光晕(34×40) + 卡面(26×32)
-    ("CARD_GLOW",       None, None,    (40, 44)),   # 原生 `abcard/ability/abitem.png`（合成用的光晕源）
+    ("DROP_BOMB",       None, None,    (26, 32)),   # ★ 原生卡图 `BOMB_max.png` 等比装入（4:5）
+    ("CARD_GLOW",       None, None,    (34, 40)),   # ★ 原生 `abitem.png` 放大到比卡面大一圈 = 背光层
 ]
 
 # 图集排布（2 的幂：64×32）
@@ -113,8 +113,8 @@ ATLAS_POS = {                       # 输出名 → (x, y)
     "BOUNTY_BAG":      (0, 0),
     "DROP_ICON_P":     (32, 0),
     "DROP_ICON_POINT": (48, 0),
-    "CARD_GLOW":       (0, 32),     # 0+40=40 ≤ 80、32+44=76 ≤ 96 ✓
-    "DROP_BOMB":       (40, 32),    # 40+34=74 ≤ 80、32+40=72 ≤ 96 ✓（与 CARD_GLOW 不重叠）
+    "CARD_GLOW":       (0, 32),     # 0+34=34 ≤ 80、32+40=72 ≤ 96 ✓
+    "DROP_BOMB":       (40, 32),    # 40+26=66 ≤ 80、32+32=64 ≤ 96 ✓（与 CARD_GLOW 不重叠）
 }
 
 # (输出脚本号, 输出名, TH12 源脚本号, 图标脚本)  —— 图标脚本为 None = 整条照抄（只换 sprite 名）
@@ -161,50 +161,9 @@ def scripts_of(text: str) -> dict[int, list[str]]:
     return out
 
 
-# ★★★ 2026-09-24（owner：「直接做一张合成图吧」+「卡大了一倍，没有看见发光」）——
-#   **满 B 掉落物 = 一张烘死的合成图**：原生卡道具的光晕（`abcard/ability/abitem.png`）放大到 **1.3×**
-#   当底，再把**原生卡图**（`abcard/ability/BOMB_max.png`，owner 指定的那张）等比缩到 **26×32**
-#   居中贴上去 ⇒ 露出来的那圈柔光就是"发光"（静态，无动画、无第二层、无加算）。
-#   · 为什么光晕要 **比卡面大**：上一版把光晕做在**独立图层**、尺寸还比卡面小 ⇒ 整圈被盖住
-#     = owner 看到的"没有看见发光"。
-#   · 为什么 26×32：原生整 B 道具的图标是 `bullet/item.png` sprite512 = **32×32**（`scale 0.5→1.0`
-#     ⇒ 屏显 32×32）；owner 判 40×50"大了一倍"（面积 2000 ≈ 图标 1024 的两倍）⇒ 取**高 32**、4:5 等比 ⇒ 26×32。
-GLOW_SCALE = 1.3
-GLOW_ALPHA_MUL = 2.2      # ❓owner 口径的替代：把光晕 alpha 提一档，近似一手的 `blendMode(1)`
+# 两张图的画布（尺寸由来见文件头：卡面 26×32 = 原生整 B 图标的量级；背光 34×40 = 比卡面大一圈）
 CARD_FIT = (26, 32)
-
-
-def make_drop_bomb_composite(canvas_wh: tuple[int, int]) -> Image.Image:
-    for f in (SRC_TH18_BOMB_CARD, SRC_ABITEM):
-        if not f.is_file():
-            raise SystemExit(f"缺 {f}（先 python3 tooling/thtk/unpack.py th18.v1.00a）")
-    # ① 光晕：原生卡道具的发光卡形 → 放大到画布（1.3× 卡面 ⇒ 四周露出一圈光）
-    glow = Image.open(SRC_ABITEM).convert("RGBA")
-    gbb = glow.getchannel("A").getbbox()
-    if gbb is None:
-        raise SystemExit(f"{SRC_ABITEM}: 整张透明")
-    glow = glow.crop(gbb).resize(canvas_wh, Image.LANCZOS)
-    # ★ 2026-09-24：光晕的**亮度**要单独提一档。原生那张的 alpha 剖面是「核心 194 平顶 + 外圈
-    #   8 px 渐隐」—— 一手里它靠 **`blendMode(1)` 加算**才"发光"（半透明的卡形叠在背景上）。
-    #   烘成一张静态图就没法加算了（加算会把卡面也冲淡）⇒ 用**把 alpha 乘一档**（`GLOW_ALPHA_MUL`）
-    #   来近似"叠上去更亮"：外圈那 8 px 就从"几乎看不见"变成一圈看得见的光。
-    g = glow.getchannel("A").point(lambda v: min(255, int(v * GLOW_ALPHA_MUL)))
-    glow.putalpha(g)    # ② 卡面：原生卡图（owner 指定的 BOMB_max）等比缩到 CARD_FIT
-    art = Image.open(SRC_TH18_BOMB_CARD).convert("RGBA")
-    abb = art.getchannel("A").getbbox()
-    if abb is None:
-        raise SystemExit(f"{SRC_TH18_BOMB_CARD}: 整张透明，切不出卡面")
-    art = art.crop(abb)
-    w, h = art.size
-    sc = min(CARD_FIT[0] / w, CARD_FIT[1] / h)
-    art = art.resize((max(1, int(round(w * sc))), max(1, int(round(h * sc)))), Image.LANCZOS)
-    if art.size[0] > canvas_wh[0] or art.size[1] > canvas_wh[1]:
-        raise SystemExit(f"卡面 {art.size} 装不进画布 {canvas_wh}（GLOW_SCALE/CARD_FIT 配错了）")
-    canvas = Image.new("RGBA", canvas_wh, (0, 0, 0, 0))
-    canvas.alpha_composite(glow)                       # 底：光晕
-    canvas.alpha_composite(art, ((canvas_wh[0] - art.size[0]) // 2,
-                                 (canvas_wh[1] - art.size[1]) // 2))   # 面：卡图
-    return canvas
+GLOW_FIT = (34, 40)
 
 
 def make_sprites() -> list[str]:
@@ -217,15 +176,8 @@ def make_sprites() -> list[str]:
     OUT.mkdir(parents=True, exist_ok=True)
     order_lines = []
     for name, sid, unit_wh, canvas_wh in SPRITES:
-        if sid is None:                                # ★ DROP_BOMB / CARD_GLOW：TH18 自己的原生图
-            if name == "DROP_BOMB":
-                canvas = make_drop_bomb_composite(canvas_wh)
-                canvas.save(OUT / f"{name}.png")
-                order_lines.append(
-                    f"{name:<18} ability/ufo_drop/{name}.png   "
-                    f"@{ATLAS_POS[name][0]},{ATLAS_POS[name][1]},{canvas_wh[0]}x{canvas_wh[1]}")
-                continue
-            src_path = SRC_ABITEM
+        if sid is None:                                # ★ DROP_BOMB（卡面）/ CARD_GLOW（背光）：原生图
+            src_path = SRC_ABITEM if name == "CARD_GLOW" else SRC_TH18_BOMB_CARD
             if not src_path.is_file():
                 raise SystemExit(f"缺 {src_path}（先 python3 tooling/thtk/unpack.py th18.v1.00a）")
             art = Image.open(src_path).convert("RGBA")
