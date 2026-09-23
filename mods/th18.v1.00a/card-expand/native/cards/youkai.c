@@ -3465,7 +3465,10 @@ static int on_tick_2(ce_card_t *c)
          * 读的是**这次边沿之前**的 `focus_age` ⇒ 语义与一手一致；读完这一帧归零。*/
         int flash_ok = (s->focus_age >= YK_AURA_FLASH_MIN_AGE);
         if (focused) {
-            if (yk_map_fam_live_count(&s_map)) ce_play_sound(0x0cu, px);   /* #37：改按存活使魔 */        /* 人→妖：TH08 id 0x28 = se_invalid */
+            if (yk_map_fam_live_count(&s_map))
+                ce_log("youkai: shift SE 人→妖 (se_invalid, th18 0x0c) played; familiar live count = %d",
+                       (int)yk_map_fam_live_count(&s_map));
+            if (yk_map_fam_live_count(&s_map)) ce_play_sound(0x0cu, px);   /* 人→妖：TH08 id 0x28 = se_invalid */
             s->flash_pending = 1;                 /* ★ #22：使魔重建时在它身上补一支爆闪（310）*/
             /* ★ #23：本体那一下（一手 `0x44b155 SpawnEffect(0x1d, …, 0x80ff8080)` = 我们的 313）
              * —— 一手起在**自机**坐标上（`&player+0x2b4`），不是使魔身上。*/
@@ -3487,9 +3490,21 @@ static int on_tick_2(ce_card_t *c)
                     }
             }
             yk_aura_kill(s);                      /* 光环收到 interrupt 1（30 帧淡出后自删）*/
+            /* ★★★ 2026-09-23（owner #36 原话：「是**进** shift 有『使魔→魔法阵』的音效，**退出没有**」）：
+             *   上一版把这声 `se_ophide`（扩展表 `0x5d`）放在 `if (yk_map_fam_live_count(...))` 里
+             *   —— 「真有使魔被收起才响」。可退出那一刻我们记的使魔表**未必非空**（使魔被打掉 / 被闸挡住 /
+             *   上一帧刚撤过），于是**该响的时候一声不响** = owner 听到的「退出没有」。
+             *   ⇒ 改成**形态边沿无条件播**（TH08 一手也是「形态切换就播」，不是「有使魔才播」）。
+             *   ⚠ 下面那支爆闪（起在使魔坐标上）仍然要门 —— 没有使魔就没有坐标可起。
+             *   实跑判据：`youkai: shift SE ` 两向各一行（见下面两条日志）。*/
+            {
+                ce_log("youkai: shift SE 妖→人 (se_ophide, ext 0x%02x) played at the form edge; "
+                       "familiar live count = %d (this used to gate the sound and swallow it)",
+                       (unsigned)CE_VOICE_YOUKAI_FAM_SHIFT, (int)yk_map_fam_live_count(&s_map));
+                ce_play_voice(YOUKAI_FAM_SHIFT, px);   /* 妖→人：TH08 id 0x27 = se_ophide */
+            }
             if (yk_map_fam_live_count(&s_map)) {
                 unsigned fi;
-                ce_play_voice(YOUKAI_FAM_SHIFT, px);   /* #37/#36：只在真有使魔被收起时响 */   /* 妖→人：TH08 id 0x27 = se_ophide */
                 /* ★ #22：妖→人那一支的爆闪（311）起在**撤走前最后记下的使魔坐标**上
                  *（一手就是起在使魔身上；使魔这一帧正在被撤）。*/
                 for (fi = 0; fi < YK_FAM_MAX; ++fi)
