@@ -1,0 +1,15 @@
+script script321 {
+    // 112 星莲船 —— 六边形爆闪的**发射器**（一手：TH12 `enemy.anm` **script103** 逐条移植）
+    //   原文：alpha(0); scriptNew(102);  +5: scriptNew(102);  +5: scriptNew(102);  +70: delete();
+    //   ⇒ 一共 **3 个六边形**（`scriptNew` 的子脚本号已按本仓重编号指向 319）。
+    //   ⚠ 一手只发 3 次 script102（缩的那一支）；script104（涨的那一支）是另一条调用点用的，本组不起它
+    //     （**照抄一手**；真要两个方向同时出现，再补一次 scriptNew(320)）。
+    alpha(0);
+    scriptNew(script319);
++5: // 5
+    scriptNew(script319);
++5: // 10
+    scriptNew(script319);
++60: // 70
+    delete();
+}

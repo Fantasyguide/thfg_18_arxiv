@@ -4565,3 +4565,20 @@ owner 2026-09-23 18:14 的「偏右 1/3 个游玩区宽」是**相对屏幕左�
 
 **仍缺**：owner 说的「**雷电**」没有一手 —— `enemy.anm` 142/143/144 是三套小飞碟本体，不是雷电；
 下一轮候选 = 145+ 与 `effect.anm`；也可能就是这些多边形的尖角观感（待 owner 眼判）。
+
+### 2.0zx ★ 112 #14「雷电」候选：六边形爆闪（2026-09-23 实现；一手照抄，0 个自定，**待 owner 眼判**）
+
+**一手**：`enemy.anm` **script103**（发射器：`alpha(0); scriptNew(102)` ×3 @0/+5/+10；+70 `delete()`）
++ **script102**（`drawPoly(96.0f,6) + color(0,0,0)/color2(0,128,128) + rotate(0,0,π/2) + alpha...(60,0,255)
++ scaleTime(60,5,0,0)`）/ **script104**（同形；`alpha2(255)+alpha2Time(60,0,0)`、`scale(0,0)+scaleTime(60,5,1,1)`）。
+
+**为什么认为它是「雷电」**：全 `enemy.anm`（146 支脚本）里只有 4 支用 `drawPoly`，正好**两族** ——
+139/140（紫、`drawPoly(192,3)`、`angleVel` 旋转）= 已实现的紫环；**102/104（青 `color2(0,128,128)`、
+`drawPoly(96,6)` 六边形、固定 `rotate(π/2)`）= 本组**；两族的层（7）/alpha 表/寿命（+70）逐条同形。
+
+**移植改动：0 个**（卡侧脚本 = ability.anm **319 / 320 / 321**；`sprite(-1)` + `drawPoly` ⇒ **不需要贴图/图集**）。
+创建时机 = 与紫环同一处（召唤 UFO 那一刻，`ufo_summon_ring_try`）。
+
+**实跑判据**：日志 `ufo: summon purple ring up (… script 318 …) + hex burst script 321 …`
+⇒ 召唤时除紫环外应再出现**青色的六边形爆闪**；**owner 眼判**：这就是你说的「雷电」吗？
+不是的话回 `stgenm*.anm` / `effect.anm` 两条候选（或直接描述形状）。

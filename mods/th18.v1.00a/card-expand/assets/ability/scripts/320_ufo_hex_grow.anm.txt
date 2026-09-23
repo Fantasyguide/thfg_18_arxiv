@@ -1,0 +1,29 @@
+script script320 {
+    // 112 星莲船 —— **UFO 召唤时的六边形爆闪**（一手：TH12 v1.00b `enemy.anm` **script104** 逐条移植）
+    //   原文（local/th12.v1.00b/anm/enemy/enemy.anm.txt）：
+    //     layer(7); sprite(-1); drawPoly(96.0f, 6); color(0,0,0); color2(0,128,128);
+    //     rotate(0.0f, 0.0f, 1.5707964f); alpha(0); alphaTime(10,0,15); alpha2(255); alpha2Time(60,0,0); scale(0,0); scaleTime(60,5,1,1);
+    //   +10: alphaTime(30,0,0);  +70: delete();
+    // ★ 移植改动：**一个都没有**。层 7 在 TH18 里同样是**世界层**（相机 3）⇒ 挂在那只 UFO 身上。
+    // ★★ 为什么做它：owner #14 说召唤时有「紫色圆环 **+ 雷电**」两个特效；全 `enemy.anm`（146 支）
+    //   里只有 4 支用 `drawPoly`，正好两族 —— 139/140（紫、`drawPoly(192,3)`、angleVel 旋转）= 紫环（已做），
+    //   102/104（青 `color2(0,128,128)`、`drawPoly(96,6)` 六边形、`rotate(π/2)` 固定）= **本组**。
+    //   两族的层 / alpha 表 / 寿命（+70）逐条同形 ⇒ 同一个召唤表现的两半。**本组即「雷电」的候选。**
+    //   `sprite(-1)` + `drawPoly` ⇒ **不需要任何贴图 / 图集**。
+    layer(7);
+    sprite(-1);
+    drawPoly(96.0f, 6);
+    color(0, 0, 0);
+    color2(0, 128, 128);
+    rotate(0.0f, 0.0f, 1.5707964f);
+    alpha(0);
+    alphaTime(10, 0, 15);
+    alpha2(255);
+    alpha2Time(60, 0, 0);
+    scale(0.0f, 0.0f);
+    scaleTime(60, 5, 1.0f, 1.0f);
++10: // 10
+    alphaTime(30, 0, 0);
++60: // 70
+    delete();
+}

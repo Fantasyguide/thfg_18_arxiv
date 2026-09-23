@@ -1645,6 +1645,7 @@ static void ufo_body_vm_spawn(ufo_card_t *s, int32_t color, const uint8_t *e)
  *   ⚠ 「雷电」那一半**还没找到一手**（见 `SINGLE-CARD-TEST.md` #14 的小节）⇒ 本函数只做环。*/
 #define UFO_RING_LAYER  7                  /* = TH12 script139/140 的原层（世界层 / 相机 3）*/
 static uint32_t s_ring_id;                 /* 紫环发射器 VM（脚本 318 自己 +70 帧 delete()）*/
+static uint32_t s_hex_id;                  /* ★ #14「雷电」候选：六边形爆闪发射器（脚本 321，+70 自删）*/
 
 static void ufo_summon_ring_try(ufo_card_t *s, const uint8_t *e)
 {
@@ -1660,10 +1661,20 @@ static void ufo_summon_ring_try(ufo_card_t *s, const uint8_t *e)
     s_ring_id = ce_anm_spawn(anm, CE_ANM_ABILITY_SCRIPT_UFO_SUMMON_RING, UFO_RING_LAYER);
     if (!s_ring_id) return;
     ce_anm_set_pos(s_ring_id, p[0], p[1], 0.0f);
+    /* ★★ 2026-09-23（#14 的「雷电」那一半）：同一时刻再起一支**六边形爆闪** ——
+     *   一手 = TH12 `enemy.anm` **script103**（发射器，3× `scriptNew(102)`）⇒ 卡侧 **321**。
+     *   依据：全 `enemy.anm` 里只有 4 支用 `drawPoly`，正好两族（139/140 紫三角环 = 已做的紫环；
+     *   102/104 青六边形 = 本组），层/alpha 表/寿命逐条同形 ⇒ 同一个召唤表现的两半。
+     *   ⚠ 这是「**候选**」：owner 眼判若说不是雷电，再回 `stgenm*.anm` / `effect.anm` 那两条。*/
+    if (!s_hex_id || !ce_anm_get_vm(s_hex_id)) {
+        s_hex_id = ce_anm_spawn(anm, CE_ANM_ABILITY_SCRIPT_UFO_SUMMON_HEX, UFO_RING_LAYER);
+        if (s_hex_id) ce_anm_set_pos(s_hex_id, p[0], p[1], 0.0f);
+    }
     ce_log("ufo: summon purple ring up (ability.anm script %d <= TH12 enemy.anm script141 + 139/140; "
-           "6 counter-rotating purple polygons, world layer %d, self-deletes at +70 frames) - the "
-           "'lightning' half of owner #14 has no one-hand yet",
-           CE_ANM_ABILITY_SCRIPT_UFO_SUMMON_RING, UFO_RING_LAYER);
+           "6 counter-rotating purple polygons, world layer %d, self-deletes at +70 frames) + "
+           "hex burst script %d (<= TH12 enemy.anm script103 + 102/104; owner's 'lightning' candidate)",
+           CE_ANM_ABILITY_SCRIPT_UFO_SUMMON_RING, UFO_RING_LAYER,
+           CE_ANM_ABILITY_SCRIPT_UFO_SUMMON_HEX);
 }
 
 static void ufo_body_vm_follow(ufo_card_t *s)
