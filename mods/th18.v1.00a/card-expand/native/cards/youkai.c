@@ -1614,6 +1614,7 @@ typedef struct {
 } yk_popup_t;
 static yk_popup_t s_popup[YK_POPUP_MAX];
 static unsigned s_popup_dropped;
+static uint32_t s_hud_vm_log_tick;   /* ★ 2026-09-23（#30）：逐 VM 实况行的节拍 */
 
 static void yk_popup_kill(yk_popup_t *p)
 {
@@ -2210,6 +2211,33 @@ static void yk_gauge_text_sync(yk_card_t *s, const yk_gauge_hud_t *h, uint32_t c
         ce_anm_set_scale(id, g[i].scale * h->px, g[i].scale * h->px);  /* 小数两位 = 0.8×2 = 1.6（一手 + P2 的 ×2）*/
         ce_anm_set_color(id, 0xff000000u | col);           /* 一手：数字同吃那 5 档染色 */
     }
+}
+
+/* ★★★ 2026-09-23（owner 第 #30 条「又看不见人妖槽」）：**逐 VM 实况行** —— 与 112 那条
+ * `ufo/slot.vm`（正是靠它一次定案的）同款。只读、每 60 帧一次 ⇒ 常驻零成本。
+ * 五项判据：`spr`(+0x24) / `scale`(+0x54) / `a`(color_1 `+0x524` 的 A 字节) / `L`(layer `+0x18`) /
+ * `draw` = 脚本 pos(+0x30) + `__pos_2`(+0x4e4) + 实体坐标(+0x5f0)（C 侧摆位写的就是最后那项）。
+ * 判据一句话：**`L` 必须是 24/25（否则落在兜底绘制组 39 = 暂停模糊罩之后）、`a` 必须非 0、
+ * `draw` 必须落在 HUD 块里**。三者缺哪个，一眼就看得出是「没画 / 透明 / 画错层 / 画错地方」。*/
+static void yk_hud_vm_log(const char *tag, uint32_t id)
+{
+    const uint8_t *vm = id ? (const uint8_t *)ce_anm_get_vm(id) : 0;
+    const float *sp, *p2, *ep;
+    if (!vm) { ce_log("youkai/hud.vm %s: (no VM; id %u)", tag, id); return; }
+    sp = (const float *)(vm + CE_ANM_VM_SCRIPT_POS);
+    p2 = (const float *)(vm + CE_ANM_VM_POS_2);
+    ep = (const float *)(vm + CE_ANM_VM_POS);
+    ce_log("youkai/hud.vm %s id %u script %d instr %d: draw = pos(0x30)(%.0f,%.0f) + pos2(0x4e4)(%.0f,%.0f) "
+           "+ ent(0x5f0)(%.0f,%.0f) = 表面 (%.0f,%.0f); sprite %d scale %.2f alpha %u layer %d flags_lo %08x",
+           tag, id, (int)*(const int32_t *)(vm + CE_ANM_VM_SCRIPT_ID),
+           (int)*(const int32_t *)(vm + 0x2c),
+           (double)sp[0], (double)sp[1], (double)p2[0], (double)p2[1], (double)ep[0], (double)ep[1],
+           (double)(sp[0] + p2[0] + ep[0]), (double)(sp[1] + p2[1] + ep[1]),
+           (int)*(const int32_t *)(vm + CE_ANM_VM_SPRITE_ID),
+           (double)*(const float *)(vm + CE_ANM_VM_SCALE),
+           (unsigned)((*(const uint32_t *)(vm + CE_ANM_VM_COLOR1) >> 24) & 0xffu),
+           (int)*(const int32_t *)(vm + CE_ANM_VM_LAYER),
+           (unsigned)*(const uint32_t *)(vm + CE_ANM_VM_FLAGS_LO));
 }
 
 /* ★★★ 2026-09-22 夜（#27/#28）：**夜点数字**（一手几何：y=460、x 从 80 起、左对齐 7 px/字、
@@ -3125,6 +3153,17 @@ static int on_tick_2(ce_card_t *c)
         ce_hud_slot_get(ce_card_id(c), &s->hud);           /* 每帧取最新锚点（同批后来的认领会重排）*/
         yk_gauge_hud_spawn(c, s);                          /* 自愈：VM 被引擎清过就重建 */
         yk_gauge_hud_update(s);
+        /* ★ 2026-09-23（#30「又看不见人妖槽」）：每 60 帧一次逐 VM 实况（与 112 那条同款）。
+         *   静态计数（不用 play_frame —— 后者在关卡开头若干帧是 0，会连打几十行）。 */
+        if (++s_hud_vm_log_tick >= 3600u) {
+            int q;
+            s_hud_vm_log_tick = 0;
+            yk_hud_vm_log("bar", s->hud_bar);
+            yk_hud_vm_log("human", s->hud_human);
+            yk_hud_vm_log("youkai", s->hud_youkai);
+            yk_hud_vm_log("cursor", s->hud_cursor);
+            for (q = 0; q < YK_GAUGE_TEXT_MAX; ++q) yk_hud_vm_log("digit", s->hud_digit[q]);
+        }
     }
     yk_orbs_tick(s);
     {
