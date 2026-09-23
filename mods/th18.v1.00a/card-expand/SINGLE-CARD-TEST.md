@@ -349,6 +349,15 @@ script84 { sprite(sprite68); layer(6); type(2); blendMode(1); alpha(128);
 ③ 创建时机 = 我们**召唤 UFO 那一刻**（与紫环 `ufo_summon_ring_try` 同一处），并按颜色发中断 7/8/9/10。
 ⚠ **不是 owner 报的**，是我从「一手召唤路径 `push $0x52`」补出来的原版件 ⇒ 优先级低于 owner 的实跑反馈。
 
+**★ 2026-09-23 侦察结论 + 暂不实现的决定（留档，免得下一个人重做侦察）**：
+- ✅ **没有闸会拦**：`make_atlas.py` 完全不碰 UFO 图集（grep `UFO_HUD`/`ATLAS_UFO` 无命中）⇒ 加第二个图集不会撞几何断言。
+- ⚠ **但生成器目前是单图集假设**：`make_ufo_hud_art.py` 里 `ATLAS_NAME/ATLAS_W/ATLAS_H/ATLAS_POS`（185–188 行）、
+  拼片段的 `ORDER_FRAG.write_text(...)`（369–374 行，只写一条 `ATLAS ...` 行）、以及切图/排版的 `make_sprites()`
+  都是「一张图集」的写法 ⇒ 要加 `ATLAS_UFO_BANNER 336x32` 必须同时改这三处（并让 `make_sprites()` 支持按图集分组）。
+- ❌ **决定：本轮不做**。理由两条：① #23 **不是 owner 报的**（优先级低）；② 这条链一旦改错，**会把现在已验证过的
+  112 HUD（槽/横幅/面板）一起搞坏** —— 用一个没被要求的 extras 去冒退化已验证功能的风险，不划算。
+  ⇒ 等 owner 的实跑反馈清完、或明确要求补这件时再做（实现地图见上三条）。
+
 #### #22 吸收数记录面板（自查；TH12 `front.anm` script134/135）—— **资产已就位、C 侧未接**
 
 - 资产：生成器 `make_ufo_hud_art.py` 的 **304/305**（贴图 `PANEL_FRAME` / `PANEL_INNER` = `front_ufo.png` 的两张 96×96）⇒ `ability.anm` 里有 ✓；`ufo.c` 里 grep 不到任何引用 ✗。
