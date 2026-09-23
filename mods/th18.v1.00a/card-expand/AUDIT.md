@@ -20822,3 +20822,29 @@ youkai:   native opt slot 2: state 0 vm 00000000 muzzle (0.0, -400.0)   （3/4 �
 
 **发布面**：动 `sdk.c`（⇒ DLL）；未动 `pl0X.sht` / `pl0X.anm` / `ability.anm` / wav / `sites.py` / `SITE_BUDGET`；
 **没新增断点**（站点 31 个原样）。
+
+## §BE 详录 #79（2026-09-23）：★ **共享件** `native/sdk.c` —— 膛口断点新增「本帧已有卡认领 set ⇒ 放行」早退（108 子机修法的第 2 步）
+
+**来路**：108 的「子机不发」修法分三步（设计见 `HANDOFF-108.md` §4）。第 2 步独立可做、且**零风险**，本轮先发它：
+`BP_ce_native_option_muzzle` 原来只看 `ce_native_option_hidden(当前机体)` ⇒ 在「111 声明隐藏（**魔理沙机体**）」时，
+它会把**每一发**膛口落在原生子机数组里的弹都拦掉 —— 而**我们认领的 set 那些行**（TH08 行里 `slot ≥ 1`）的膛口
+**正是**原生那 4 格（一手 `th18:0x45ec4c`）⇒ 等于「行是我们的、弹却被自己拦了」（机制全文见 §BE #78 的连带项）。
+
+**文件 → 改了什么**
+
+| 文件 | 改动 |
+| --- | --- |
+| `native/sdk.c` | ① 新增静态 `s_set_claimed_frame` / `s_set_claimed_seen`；`BP_ce_shot_set_index` 找到 winner 时记 `ce_sdk_frame()`；② `BP_ce_native_option_muzzle` 顶部加早退：**本帧有卡认领过 set ⇒ 直接放行**（不拦）|
+
+**为什么用「帧号」而不是 bool**：选 set 与投弹都在**同一个玩家 tick 内**（set-index 在前、shoot_one_bullet 在后）
+⇒ 帧号相等即「这一发用的是被认领的那一组行」；跨帧的旧认领不该放行。
+
+**影响面（今天）**：只在「**111 声明隐藏（魔理沙）+ 有卡认领 set（108 的低速）**」这一种组合下改变行为，
+而那种组合下这些弹此前本来就发不出来（记录被隐藏断点压掉了，§BE #78）
+⇒ 现在只是**把门先打开**，为第 1 步（`keep_records` 声明，让记录活着）铺路。非魔理沙机体、以及没卡认领 set 的帧：行为逐字节不变。
+111 的语义（原生**不可见**）不受影响 —— 那由构建断点收 VM 负责。
+
+**怎么验证的**：`make check` **rc=0**（380 文件）、`python3 tooling/check-docs.py` 全绿、`make dllx87` = **0 条 x87**。
+
+**发布面**：动 `sdk.c`（⇒ DLL）；未动 `pl0X.sht` / `pl0X.anm` / `ability.anm` / wav / `sites.py` / `SITE_BUDGET`；**没新增断点**（31 个原样）。
+**下一步**：第 1 步（`ce_native_option_keep_records()` + 构建断点不压 `lvl`）与第 3 步（108 低速声明）—— 等 B-1 实跑验证后一起做。

@@ -1341,6 +1341,13 @@ int __cdecl BP_ce_bomb_gate(x86_reg_t *regs, void *bp_info)
  *   它把主炮整组换掉）。实现：扫完整条卡链表，取「返回 >= 0 且优先级最大」的那张；
  *   同优先级取链表里靠前的（= 旧行为，对只声明 117 一家的现况零影响）。
  *   两张以上同帧都要覆盖时打一条 trace（槽 `0x98`，未占用的空槽，见 sdk.c 顶部的槽表）—— 现场日志能直接看出谁赢了。*/
+/* ★★★ 2026-09-23（108 的「子机不发」修法第 2 步，见 `HANDOFF-108.md` §4）：
+ *   **本帧有没有卡认领过 set** —— 认领了，说明**行是那张卡的**，那么膛口落在原生子机数组里的弹
+ *   就该让它飞（`BP_ce_native_option_muzzle` 的「不发弹」只该管**原生那一组**的行）。
+ *   记帧号而不是 bool：投弹与选 set 在同一个玩家 tick 内，用帧号比较天然只在同一帧内有效。*/
+static uint32_t s_set_claimed_frame;
+static int      s_set_claimed_seen;
+
 int __cdecl BP_ce_shot_set_index(x86_reg_t *regs, void *bp_info)
 {
     (void)bp_info;
@@ -1414,6 +1421,8 @@ int __cdecl BP_ce_shot_set_index(x86_reg_t *regs, void *bp_info)
             regs->edx = (uint32_t)idx;
             if (regs->ebp) *(uint32_t *)(uintptr_t)(regs->ebp - 8) = (uint32_t)idx;
         }
+        s_set_claimed_frame = ce_sdk_frame();
+        s_set_claimed_seen = 1;
         ce_sdk_trace(ce_card_id(winner), 0x7c, "on_shot_set_index");
         /* ★ 有卡覆写了 set（= 117 咆哮 / 113 灵界）⇒ **本帧不抑制**。
          *   用户口径 2026-09-16z 的阶梯：**117 > 113 > 108 > 111** ⇒ 这一条早退同时实现了
@@ -1561,6 +1570,10 @@ int __cdecl BP_ce_native_option_muzzle(x86_reg_t *regs, void *bp_info)
     (void)bp_info;
     if (!player || !sp) return BP_EXEC_ORIGINAL;
     if (!ce_native_option_hidden(*(const int32_t *)CE_ADDR_CHARACTER)) return BP_EXEC_ORIGINAL;
+    /* ★ 2026-09-23（第 2 步）：**本帧已有卡认领 set ⇒ 放行**（理由见 `s_set_claimed_frame` 的注）。
+     *   影响面：今天只在「111 声明了隐藏（= 魔理沙机体）+ 有卡认领 set（= 108 的低速）」这一种组合下
+     *   改变行为，而那种组合下这些弹此前本来就发不出来（记录被隐藏断点压掉了）⇒ 现在只是**把门先打开**。*/
+    if (s_set_claimed_seen && s_set_claimed_frame == ce_sdk_frame()) return BP_EXEC_ORIGINAL;
     muzzle = (uint8_t *)(uintptr_t)sp[5];          /* 第 5 个栈参 = 膛口（0 = 自机本体）；sp[0] 是蹦床返回地址 */
     if (!muzzle) return BP_EXEC_ORIGINAL;
     if (muzzle < player + CE_NATIVE_OPT_PLAYER_MUZ0 || muzzle >= player + CE_NATIVE_OPT_PLAYER_END)
