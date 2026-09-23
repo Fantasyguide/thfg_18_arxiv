@@ -1417,3 +1417,19 @@ TH08 的妖侧 **有**本体主炮：`ply00as.sht` 满档那一组 5 行里 **3 
 **（截断原文）**：★ 一手排查（已排除一段）：`0x44a300`–`0x44a3c0` 那三支是自身 VM 收尾；**开奖算分那一支**（`0x44a808` 起）是**VM 位置/缩放的更新**（`fstps 0x40(%eax)` + `orl $0x8,0x47c`）并调 `0x461e30`（= 与血条同族的绘制），**不是新建文本** ⇒ ×N 的脚本号要在**创建那个 VM 的地方**（`[ebx+0x44]` 句柄的 spawner）取，下一轮从那处追 ／ ★ 一手排查（已排除一段）：`0x44a300`–`0x44a3c0` 那三支是自身 VM 收尾；**开奖算分那一支**（`0x44a808` 起）是**VM 位置/缩放的更新**（`fstps 0x40(%eax)` + `orl $0x8,0x47c`）并调 `0x461e30`（= 与血条同族的绘制），**不是新建文本** ⇒ ×N 的脚本号要在**创建那个 VM 的地方**（`[ebx+0x44]` 句柄的 spawner）取，下一轮从那处追
 
 **（截断原文）**：★ **确认缺失**：`ufo_tok_spawn_ex()`（`ufo.c:1381`）只管建令牌、**没有播任何 SE**（事件表里只有 `token-take`/`token-slot-full`/`ufo-absorb`/`ufo-spawn`/`token-recolor`，没有 token 生成那一声）⇒ 下一轮回 TH12 取「令牌生成」那一声的 id（`ItemManager__spawn_item` 的 type 10..15 路径）再加进扩表 ／ ✅ **已是一手**：两声都在 —— `UFO_SE_SPAWN = 0x14`（一手 `th12:0x44a9d9 mov edx,0x34`，播放点 `ufo.c:2272`）+ `UFO_SE_ENTER = CE_VOICE_UFOALERT`（一手 `0x44a9fe` = `0x36`，在飞碟自己的 x 播，`ufo.c:2279`）。验收看 `ufo/se tally … ufo-spawn N` ／ ★ **确认缺失**：`ufo_tok_spawn_ex()`（`ufo.c:1381`）只管建令牌、**没有播任何 SE**（事件表里只有 `token-take`/`token-slot-full`/`ufo-absorb`/`ufo-spawn`/`token-recolor`，没有 token 生成那一声）⇒ 下一轮回 TH12 取「令牌生成」那一声的 id（`ItemManager__spawn_item` 的 type 10..15 路径）再加进扩表 ／ ✅ **已是一手**：两声都在 —— `UFO_SE_SPAWN = 0x14`（一手 `th12:0x44a9d9 mov edx,0x34`，播放点 `ufo.c:2272`）+ `UFO_SE_ENTER = CE_VOICE_UFOALERT`（一手 `0x44a9fe` = `0x36`，在飞碟自己的 x 播，`ufo.c:2279`）。验收看 `ufo/se tally … ufo-spawn N`
+
+#### 108 #37 第一半（人侧应见「红色火焰使魔」）—— **2026-09-23 自查：资产侧无 bug，待实跑重看**
+
+**自查过程（含我的一次误判，留档）**：先拿「卡侧脚本 206」与 TH08 `etama.anm` script53 比，发现形状完全不同
+（我们 = `sprite` 逐帧换图的 8 帧循环；它 = 单张 sprite + `blendAdditiveSet` + 随机 scale/rotate）⇒ 一度以为挂错了。
+**误判原因 = 比错了文件**：我们的 206 来自 TH08 **`enemy.anm`** script53（脚本头逐条写着出处与外观链条），
+不是 `etama.anm` 的同号脚本。
+
+**核对结果（四项全过）**：
+1. 贴图映射正确（`ATLAS_YK_FAM[0..7]` = 我们自己的使魔图集）；
+2. **可见像素均值 RGB≈(219,164,164)** = 浅粉、**不是黑**（深色底上看得见）；
+3. 原生那支脚本**没有 `layer()`** ⇒ 层由挂它的那一方补（我们 C 侧传 `YK_FAM_ANM_LAYER` = 7，世界层 ✓）；
+4. 人侧 alpha 由 C 每帧写 `0xffffffff`（妖侧写 0）✓。
+
+⇒ **资产 / 脚本 / 层 / alpha 四项都没问题** ⇒ owner 报的「人侧看不见火焰使魔」在当前版本下应当已不复现
+（或与当时的旧产物有关）⇒ **待一次实跑重看**；若仍看不见，就加一行逐 VM 实况（VM 在不在 / alpha 多少 / layer 多少）来判。
