@@ -318,7 +318,10 @@ cards: 35 registered from cards.js; shop pool 700/8192 slots, guaranteed offers 
   （一手：道具自身 anm 脚本 = type+0xa5，`th12:0x4275b2`/`0x427712`）：
   `BOUNTY_BAG` = sprite459 (225,113,30,30)、`DROP_ICON_P` = sprite426 (0,96,16,16)、
   `DROP_ICON_POINT` = sprite427 (16,96,16,16)、`DROP_BOMB` = sprite432 (96,96,16,16)。
-  画布 **64×32**、4 个成员；**append 在最末尾** ⇒ 新 sprite = **453..456**、同批新脚本 = **296..301**
+  画布 **64×64 → 80×80**（★ 2026-09-23 第二轮：`DROP_BOMB` 的画布 32×32 → **40×44**，
+  = 一手 TH18 `abcard/ability/abitem.png` 的矩形；贴图源同时换成 `abcard/ability/BOMB_max.png`
+  = **有 3 px 纯黑边**那版，见 `SINGLE-CARD-TEST.md` §本批-5）、4 个成员；
+  **append 在最末尾** ⇒ 新 sprite = **453..456**、同批新脚本 = **296..301**
   （`UFO_BOUNTY_BAG{,_P,_MONEY}` / `UFO_DROP_ICON_{P,POINT}` / `UFO_BOMB_ITEM`），
   既有号一个没动（entry 61/256，余量 195）。生成器 `assets/ability/make_ufo_drop_art.py`。
 
@@ -328,10 +331,15 @@ cards: 35 registered from cards.js; shop pool 700/8192 slots, guaranteed offers 
   = (336/360/384/408, **336**, 24×16)（逐像素量过：**59 = 纯黑框 = 空槽**，60/61/62 = 红/蓝/绿）、
   四态的**亮版** sprite63..66 = 同 x、**y=352**、24×16（闪烁时换这一组，一手 `th12:0x421690`）、
   以及记录面板 `front/front_ufo.png` sprite102 (0,0,96×96) / sprite103 (96,0,96×96)。
-  画布 **256×192**、**10 个成员**（8 个 32×16 槽：两行 y=0 / y=18，行间留 2 px 防线性采样竖渗色；
-  2 个 128×128 面板在 y=40）。**append 在最末尾** ⇒ 新 sprite = **457..466**、
-  同批新脚本 = **302..305**（`UFO_HUD_SLOT` / `UFO_HUD_FLASH` / `UFO_HUD_PANEL` / `_PANEL_INNER`），
-  既有号一个没动（entry 62/256，余量 194）。生成器 `assets/ability/make_ufo_hud_art.py`。
+  画布 **256×192 → 512×224**（★ 2026-09-23 第二轮加 **2 个成员**：召唤大横幅 `SUMMON_BANNER`
+  = TH12 `front.anm` entry1 `front/front02.png` 的 sprite68 (0,0,**304×32**)、擦除窗 `SUMMON_STRIP`
+  = 同 entry 的 sprite69 (0,0,**32×32**)；一手 = `th12:0x44a8a0` 建的 `front.anm` script82/83，
+  见 `SINGLE-CARD-TEST.md` §本批-3）、**10 → 12 个成员**（8 个 32×16 槽：两行 y=0 / y=18，
+  行间留 2 px 防线性采样竖渗色；2 个 128×128 面板在 y=40；96×16 毛笔横幅在 y=170；
+  新两条在 x=192,y=0 与 x=0,y=192 —— 与既有成员零重叠）。
+  **append 在最末尾** ⇒ 既有 sprite 号一个没动、新 sprite = **468..469**，
+  同批新脚本 = **302..305** + **315** + **324..326**（`UFO_HUD_SLOT` / `_FLASH` / `_PANEL` / `_PANEL_INNER` /
+  `UFO_HUD_BANNER` / `UFO_SUMMON_BANNER{,_STRIP,_ECHO}`）。生成器 `assets/ability/make_ufo_hud_art.py`。
   ⚠ **槽的四态在 ORDER 里必须连续、亮版那一组正好 +4**（卡侧 `ce_anm_set_sprite` 直接做加法，
   与一手 `COLLECTED_UFOS[i] + 59 + (闪烁 ? 4 : 0)` 同形）⇒ 生成器里 assert 了 ORDER 顺序、
   `ufo.c` 里另有一条 `_Static_assert` 断死号段。⚠ 面板脚本**暂未接线**（位置与原生卡组图标列冲突）。

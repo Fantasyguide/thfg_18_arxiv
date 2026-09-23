@@ -1,0 +1,41 @@
+script script325 {
+    // 112 星莲船 —— 召唤大横幅的**擦除窗**（一手：TH12 `front.anm` **script83** 逐条移植）
+    //   由脚本 324（← script82）第一句 `scriptNew(script83)` 起，**继承父 VM 的 entity_pos**
+    //   （本卡先例：脚本 232 血条投影不设 pos、跟着脚本 231 走 —— 实跑验过）。
+    //
+    // **原文**：
+    //   `sprite(sprite69); layer(6); ins_85(1); randMode(1); pos(224, 208); blendMode(1);
+    //    pos(88, 208); posTime(30, 0, 360, 208); scrollX(0.0296875); alpha(192); +30: delete();`
+    //   中断 7/8/9/10 与 script82 **同值**（红/蓝/绿/彩虹）。原文里两条 `pos` 是**先后生效**、
+    //   后者覆盖前者（anm 指令是顺序执行）⇒ 起点 (88, 208)、30 帧滑到 (360, 208)。
+    //   `sprite69` = entry1 `front/front02.png` 的 (0, 0, **32×32**) —— 同一张贴图上的一个
+    //   **32 宽的窗口**（THTX 304×32 ⇒ 窗口只取最左 32×32），配 `scrollX` 卷 uv
+    //   ⇒ 一道**从左往右扫过横幅、边扫边翻 uv** 的擦除。本仓成员 = `SUMMON_STRIP`（32×32）。
+    //
+    // **移植改动**：Δ1 坐标折进 TH18 世界层（Δx = 值 − 224、Δy = 192；推导见脚本 324 的注释）
+    //   ⇒ `pos(88,208) → (-136, 192)`、`posTime(30,0,360,208) → (30, 0, 136, 192)`；
+    //   Δ2 删 `ins_85(1)`；Δ3 子脚本号重编号。层 6 原值保留。
+    sprite(@SUMMON_STRIP@);
+    layer(6);
+    randMode(1);
+    blendMode(1);
+    pos(-136.0f, 192.0f, 0.0f);
+    posTime(30, 0, 136.0f, 192.0f, 0.0f);
+    scrollX(0.0296875f);
+    alpha(192);
++30: // 30
+    delete();
+    interruptLabel(7);
+    color(255, 128, 128);
+    caseReturn();
+    interruptLabel(8);
+    color(128, 128, 255);
+    caseReturn();
+    interruptLabel(9);
+    color(128, 255, 128);
+    caseReturn();
+    interruptLabel(10);
+    color(255, 255, 128);
+    colorTime(30, 0, 128, 255, 255);
+    caseReturn();
+}

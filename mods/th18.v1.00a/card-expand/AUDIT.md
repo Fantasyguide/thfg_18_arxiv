@@ -16684,6 +16684,7 @@ TH18 没有 PIV 状态量，但**有同量纲的对位物**：`engine.h` 的 `CE
 | 2026-09-22 | **112（星莲船）的 P3 表现件**（脚本 302..305 + 10 张贴图 + 生成器 + `cards/ufo.c`；文件清单与影响面见详录）| 见下方「§BE 详录 #52」 |
 | 2026-09-23 | **112（星莲船）HUD 真根因修复 + 音效两处一手订正 + 共享件 `patch/th18/voice.js`（UFOALERT 音量行）**：`assets/ability/make_ufo_hud_art.py`、`assets/ability/scripts/302..305`、`cards/ufo.c`、`patch/th18/voice.js` | 见下方「§BE 详录 #54」 |
 | 2026-09-23 | **所有卡（共享件 `assets/voice/*` + `patch/th18/voice.js`：音效表再加一格 `UFO` = `se_ufo.wav`，id **0x5f**；`CE_VOICE_REGISTERED` 10 → 12，零行为变化）** | 见下方「§BE 详录 #81」 |
+| 2026-09-23 | **112（星莲船）第二轮（owner 7 条 + 2 条口径）：共享件 `assets/ability/**`** —— ORDER 两张图集画布 + 6 支既有脚本 + 3 支新脚本 + 两个生成器 + `cards/ufo.c` | 见下方「§BE 详录 #82」 |
 
 **§BE 详录 #51**（共享件 `hud_dim.*` 的统一动态换基准，2026-09-21）
 
@@ -20943,3 +20944,34 @@ youkai:   native opt slot 2: state 0 vm 00000000 muzzle (0.0, -400.0)   （3/4 �
 **对既有卡的影响面**：零行为变化 —— 新增一格 id（95）与一个新 wav 文件；`CE_VOICE_REGISTERED` 10 → **12**
 （它只是计数器，没有数组按它分配）。其它卡不引用这一格。**回归**：`make voice` 重建通过、
 `make check` rc=0、`make dllx87` = 0。
+
+
+## §BE 详录 #82（2026-09-23）：★ **共享件** `assets/ability/**`（ORDER + 6 支脚本 + 两张图集画布）—— 112 星莲船第二轮：召唤动画换一手、满 B 换原生道具
+
+**为什么必须登记**：`assets/ability/scripts/**`（含**脚本的 layer**）与 `assets/ability/entries/ORDER.txt`
+都在 `CLAUDE.md` 的共享件清单里 —— 本次动了 **6 支既有脚本**、**新增 3 支**、**改了 2 张图集的画布尺寸**。
+
+**文件 → 改了什么 → 为什么 → 谁改的 → 怎么验证的**
+
+| 文件 | 改了什么 | 为什么 | 验证 |
+| --- | --- | --- | --- |
+| `assets/ability/entries/ORDER.txt` | `ATLAS_UFO_HUD` 256×192 → **512×224**、成员 10 → **12**；`ATLAS_UFO_DROP` 64×64 → **80×80** | 加 112 的召唤横幅两张；`DROP_BOMB` 画布 → 40×44 | `make -C native anm` 通过（打印两张画布尺寸）+ `make atlas-check` |
+| `assets/ability/make_ufo_hud_art.py` | 新增两个切图 + 两张图集坐标；`port()` 多收 `src_num` 并按**脚本号 81** 删掉那三段 `scale`/`scaleTime` | owner 第 ① 条（收槽动画）与第 ③ 条（召唤动画回一手）| 生成器重跑幂等；`thanm` 侧由 `anm-verify` 兜 |
+| `assets/ability/scripts/303_ufo_hud_flash.anm.txt` | 删掉 4 行 `scale`/`scaleTime`（只留 alpha 闪）| **owner 口径**（原版确实有那三段，原文以注释留在产物里；回退 = 删生成器里那个 `if`）| `make anm` + `make check` |
+| `assets/ability/scripts/316/317/318/319/320/321_*` | 各加一段**停用标记**（**字节零改动**）| 紫三角（318/316/317）与青六边形（321/319/320）是 #14 按 `drawPoly` 挑的**候选**，owner 判"不对"、`Ufo::spawn` 里没有它们 | 文件仍在、编号未动 ⇒ 322/323 的破碟爆闪不受影响 |
+| `assets/ability/scripts/315_ufo_hud_banner.anm.txt` | 无字节改动（槽底横幅**位置**改由 C 侧 `entity_pos` 左移）| owner 第 ② 条（整体左移） | 脚本未变 ⇒ 无回归面 |
+| `assets/ability/scripts/301_ufo_bomb_item.anm.txt` | **重写**：TH12 `bullet.anm` script172 移植版 → **TH18 `abcard.anm` script16 的配方**（`layer(16)` + `blendMode(1)` 加算 + 呼吸缩放 0.9↔1.0）| owner 第 5 条（大了一倍 / 要黑边那版 / 复刻动态）| `make anm`；实跑看整 B 的外观 |
+| `assets/ability/scripts/324/325/326_ufo_summon_banner{,_strip,_echo}.anm.txt` | **新增**（← TH12 `front.anm` script82/83/84 逐条移植，Δ 写在文件头）| owner 第 ③ 条 | `make -C native anm` 里三支都进了产物（`script324/325/326`）|
+| `assets/ability/make_ufo_drop_art.py` | 源换 `BOMB_max.png`（有黑边那版）、画布 32×32 → 40×44、图集 64×64 → 80×80、301 移出 `SCRIPT_PORTS`（改手写）| owner 第 5 条 | 生成器重跑幂等；`make anm` |
+
+**对既有卡的影响面**：**零**——两张图集都是 112 自己的 entry；新 sprite 只在 112 的 entry 末尾追加
+（既有 sprite 号一个没动），新增/改动的脚本号只被 `cards/ufo.c` 引用；`ATLAS_*` 换画布尺寸只影响该 entry
+自身的 UV。唯一的"全域"效果是 `native/anm_ids.h` 里 112 之后那些 entry 的 sprite 号 **+2**
+（那是生成物，所有引用都走宏名 ⇒ 无源码影响）。
+
+**回归跑了什么**：`make -C native anm`（幂等 + append-only 通过）/ `make check` rc=0（含 `atlas-check`、
+`anm-verify`、`cards-check`、381 个文件的 `check-docs`）/ `make dllx87` = **0** 条 x87。
+
+**一手出处**（完整表在 `SINGLE-CARD-TEST.md` §本批-3 / §本批-5）：召唤动画 = `th12:0x44a8a0` 建的
+`front.anm` script 0x52(82) + `pending_interrupt = 色+7`；满 B = TH18 原生 `item type 7`
+（handler `th18:0x4464d5`，原版自己就用它掉整颗 B：`th18:0x40d2e0`）；卡面配方 = `abcard.anm` script16。

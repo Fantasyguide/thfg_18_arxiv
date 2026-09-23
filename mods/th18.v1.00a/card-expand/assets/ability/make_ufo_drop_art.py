@@ -63,10 +63,16 @@ from PIL import Image
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[4]
 SRC_PNG = REPO / "local/th12.v1.00b/anm/bullet/bullet/etama8.png"
-# ★★ 2026-09-23（owner 实跑第 5 条）：**整颗 Bomb 的外观换成本作（TH18）自己的「完整 B 卡面」** ——
-#   一手 `ability/BOMB_min.png`（原生能力卡美术；同族还有 `BOMB2_min.png` = **B 碎**卡面）。
-#   ⚠ 源画布 64×128、卡面只占上半 64×80（与 117 的 `make_animal_art.py` 同一个切法：alpha bbox + 等比缩放）。
-SRC_TH18_BOMB_CARD = REPO / "local/th18.v1.00a/anm/abcard/ability/BOMB_min.png"
+# ★★ 2026-09-23（owner 实跑第 5 条）：**整颗 Bomb 的外观 = 本作（TH18）自己的「完整 B 卡面」**。
+#   ★★ 2026-09-23 第二轮（owner「要**有黑边那版**」）：源从 `BOMB_min.png`（64×80，外沿是卡自己的浅绿描边）
+#     换成 **`BOMB_max.png`（256×320，画布外圈 3 px 是**纯黑边**，逐像素量过：外圈均值 RGB(0,0,0)；
+#     `_min` 同一位置均值 (171,205,124)）** ⇒ 缩小到 40×44 之后黑边还在（`_min` 那版的黑线只有 1 px，
+#     缩下去就糊掉了 —— 这正是 owner 说「要有黑边那版」的原因）。
+#   ⚠ 画布尺寸同时从 32×32 改成 **40×44 = 原生卡道具贴图 `abcard/ability/abitem.png` 的尺寸**
+#     （一手：`abcard.anm` entry1 = sprite1 (0,0,40,44)；owner 另一句「卡图大了一倍」= 我们的
+#      `scaleTime(…,2.0)` 让屏显变成 64×64，而原生整 B 道具是 32×32 ⇒ 本轮把脚本也换成一手的
+#     `abcard.anm` script16 配方，见 `assets/ability/scripts/301_ufo_bomb_item.anm.txt` 文件头）。
+SRC_TH18_BOMB_CARD = REPO / "local/th18.v1.00a/anm/abcard/ability/BOMB_max.png"
 SRC_TXT = REPO / "local/th12.v1.00b/anm/bullet/bullet.anm.txt"
 OUT = HERE / "ufo_drop"
 SCRIPTS = HERE / "scripts"
@@ -79,17 +85,17 @@ SPRITES = [
     ("DROP_ICON_P",     426, (16, 16), (16, 16)),
     ("DROP_ICON_POINT", 427, (16, 16), (16, 16)),
     # ★ DROP_BOMB 的源**不是** TH12 的 sprite432 了（见 `SRC_TH18_BOMB_CARD`）：owner 口径换成 TH18 完整 B 卡面
-    ("DROP_BOMB",       None, None,    (32, 32)),
+    ("DROP_BOMB",       None, None,    (40, 44)),   # ★ = 原生 `abcard/ability/abitem.png` 的矩形
 ]
 
 # 图集排布（2 的幂：64×32）
 ATLAS_NAME = "ATLAS_UFO_DROP"
-ATLAS_W, ATLAS_H = 64, 64
-ATLAS_POS = {                       # 输出名 → (x, y)（DROP_BOMB 换成 32×32 画布 ⇒ 图集 64×64）
+ATLAS_W, ATLAS_H = 80, 80             # ★ DROP_BOMB 画布 32×32 → 40×44 ⇒ 图集 64×64 → 80×80
+ATLAS_POS = {                       # 输出名 → (x, y)
     "BOUNTY_BAG":      (0, 0),
     "DROP_ICON_P":     (32, 0),
     "DROP_ICON_POINT": (48, 0),
-    "DROP_BOMB":       (32, 32),
+    "DROP_BOMB":       (32, 32),    # 32+40=72 ≤ 80、32+44=76 ≤ 80 ✓
 }
 
 # (输出脚本号, 输出名, TH12 源脚本号, 图标脚本)  —— 图标脚本为 None = 整条照抄（只换 sprite 名）
@@ -99,7 +105,9 @@ SCRIPT_PORTS = [
     (298, "ufo_bounty_bag_money", 181, "money"),
     (299, "ufo_drop_icon_p",      184, None),
     (300, "ufo_drop_icon_point",  185, None),
-    (301, "ufo_bomb_item",        172, None),
+    # ⚠ 301（ufo_bomb_item）**不在本表里**：它 2026-09-23 第二轮换成了一手的 TH18 卡道具配方
+    #   （`abcard.anm` script16），不再是从 TH12 script172 移植来的 —— 那一版是手写文件，
+    #   本生成器**不重写**它（跑生成器不会把它冲掉）。
 ]
 ICON_P, ICON_POINT = "ICON_P", "ICON_POINT"     # 占位符（生成时换成 @脚本名@）
 

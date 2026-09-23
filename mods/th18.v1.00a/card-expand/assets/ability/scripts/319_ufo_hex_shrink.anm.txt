@@ -1,4 +1,5 @@
 script script319 {
+    // ❌ 2026-09-23 起停用：只被上面那支候选脚本 `scriptNew`（owner 判"不对"，见其文件头）。
     // 112 星莲船 —— **UFO 召唤时的六边形爆闪**（一手：TH12 v1.00b `enemy.anm` **script102** 逐条移植）
     //   原文（local/th12.v1.00b/anm/enemy/enemy.anm.txt）：
     //     layer(7); sprite(-1); drawPoly(96.0f, 6); color(0,0,0); color2(0,128,128);

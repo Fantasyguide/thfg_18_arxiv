@@ -134,8 +134,8 @@ token」完全吻合 ✓）。三处一手互相印证：
 
 ## 输出
 
-- `assets/ability/ufo_hud/{SLOT_*,PANEL_*}.png`（10 张）
-- ORDER 片段 `entries/ORDER.ufo_hud.txt`（一个图集 entry、10 个成员）
+- `assets/ability/ufo_hud/{SLOT_*,PANEL_*,BANNER_*,SUMMON_*}.png`（12 张）
+- ORDER 片段 `entries/ORDER.ufo_hud.txt`（一个图集 entry、12 个成员）
 - 脚本 `assets/ability/scripts/{302..305}_ufo_hud_*.anm.txt`
 
 跑法（幂等）：
@@ -153,6 +153,7 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[4]
 SRC00 = REPO / "local/th12.v1.00b/anm/front/front/front00.png"
 SRC_UFO = REPO / "local/th12.v1.00b/anm/front/front/front_ufo.png"
+SRC02 = REPO / "local/th12.v1.00b/anm/front/front/front02.png"   # 召唤大横幅（entry1，THTX 304x32）
 SRC_TXT = Path("/tmp/front12.txt")            # `thanm -l 12 -m v4.anmm th12.dat` 的 front.anm 文本
 OUT = HERE / "ufo_hud"
 SCRIPTS = HERE / "scripts"
@@ -180,17 +181,39 @@ SPRITES = [
     ("BANNER_APPEAR", SRC00,  "front/front00.png",    67, (336, 368, 96, 16), (96, 16)),
     ("PANEL_FRAME",  SRC_UFO, "front/front_ufo.png", 102, (0, 0, 96, 96),     (128, 128)),
     ("PANEL_INNER",  SRC_UFO, "front/front_ufo.png", 103, (96, 0, 96, 96),    (128, 128)),
+    # ★★ 2026-09-23（owner 实跑第 ③ 条「召唤动画是紫色三角（不对）」→ 回一手）：
+    #   **TH12 召唤 UFO 时的真实表现**在 `th12:0x44a8a0` 里写得很清楚 —— 它建的是
+    #   `front.anm` **script 0x52(82)** 的 VM，并写 `pending_interrupt = (色==-1?3:色-1) + 7`
+    #   （`engine/ufo/th12/01-ufo-system.md` §5）。script82 = **大横幅**：
+    #     `sprite68`（entry1 `front/front02.png` 的 (0,0,304,32)，THTX 就是 304x32）、`layer(6)`、
+    #     `type(2)`、`pos(224,208)`（= 场地中心、场地上半）、`blendMode(1)`（加算）、
+    #     `alpha(0) → alphaTime(20,0,128)`；`+30: scaleTime(30,2,2,2) + alphaTime(30,0,0)`；
+    #     `+35/+40/+45: scriptNew(84)`（三只同样的横幅残影）；`+75: delete()`；
+    #     中断 7/8/9/10 = 红/蓝/绿/彩虹（`color(255,128,128)` 一族）—— 与 §5 的 `+7` 逐字吻合 ✓。
+    #   子脚本 83 = `sprite69`（(0,0,32,32) 的**32 宽窗口**）从 `pos(88,208)` `posTime(30,0,360,208)`
+    #     + `scrollX(0.0296875)` ⇒ 一道**扫过横幅的擦除**（32 宽的窗口在 304 宽的贴图上滑 + 卷动 uv）。
+    #   ⇒ 本图集加这两个成员（304x32 + 32x32），卡侧脚本 = 324（82）/ 325（83）/ 326（84）。
+    #   ⚠ 它与我们此前"候选"的紫环（enemy.anm 141+139/140）/ 青六边形（103+102/104）**无关**：
+    #     那两个是 owner #14 之前按"全 enemy.anm 里只有 4 支用 drawPoly"猜的，owner 已判**不对**。
+    ("SUMMON_BANNER", SRC02,  "front/front02.png",     68, (0, 0, 304, 32),     (304, 32)),
+    ("SUMMON_STRIP",  SRC02,  "front/front02.png",     69, (0, 0, 32, 32),      (32, 32)),
 ]
 
 ATLAS_NAME = "ATLAS_UFO_HUD"
-# 10 个成员：8 个 32x16 槽（两行 y=0 / y=18 —— 行间留 2 px，免得线性采样竖向渗色）
-#             + 2 个 128x128 面板（y=40，到 y=168 ≤ 192 ✓）
-ATLAS_W, ATLAS_H = 256, 192
+# 12 个成员：8 个 32x16 槽（两行 y=0 / y=18 —— 行间留 2 px，免得线性采样竖向渗色）
+#             + 2 个 128x128 面板（y=40，到 y=168）
+#             + 96x16 毛笔横幅（y=170..186）
+#             + ★ 召唤大横幅 304x32（y=0，x=192..496 —— 槽只占 x<128，不冲突）
+#             + ★ 召唤擦除窗口 32x32（y=192..224）
+#   ⇒ 画布从 256x192 长到 **512x224**（只多这一条 304 宽的横幅，其余成员坐标一个没动）。
+ATLAS_W, ATLAS_H = 512, 224
 ATLAS_POS = {
     "SLOT_EMPTY":   (0, 0),   "SLOT_RED":   (32, 0),   "SLOT_BLUE":   (64, 0),   "SLOT_GREEN":   (96, 0),
     "SLOT_EMPTY_B": (0, 18),  "SLOT_RED_B": (32, 18),  "SLOT_BLUE_B": (64, 18),  "SLOT_GREEN_B": (96, 18),
     "PANEL_FRAME":  (0, 40),  "PANEL_INNER": (128, 40),
-    "BANNER_APPEAR": (0, 170),      # #17 毛笔横幅：面板段结束于 y=168，170+16=186 ≤ 192 ✓
+    "BANNER_APPEAR": (0, 170),      # #17 毛笔横幅：面板段结束于 y=168，170+16=186 ✓
+    "SUMMON_BANNER": (192, 0),      # #③ 召唤大横幅 304x32：x 192..496 ≤ 512 ✓（槽的 x<128 不撞）
+    "SUMMON_STRIP":  (0, 192),      # #③ 擦除窗口 32x32：y 192..224 ≤ 224 ✓
 }
 
 # ★ 槽的四态在 ORDER 里必须**连续四个**、且亮版那一组紧接其后（正好 +4）
@@ -261,7 +284,7 @@ def scripts_of(text: str) -> dict[int, list[str]]:
 def make_sprites() -> list[str]:
     # ⚠ 矩形从**anm 文本**读（不是从 PNG 读）——两个 entry 都在同一份 front.anm 文本里
     rects = {e: read_sprite_rects(SRC_TXT, e)
-             for e in ("front/front00.png", "front/front_ufo.png")}
+             for e in ("front/front00.png", "front/front_ufo.png", "front/front02.png")}
     OUT.mkdir(parents=True, exist_ok=True)
     lines = []
     for name, src, entry, sid, want, canvas_wh in SPRITES:
@@ -317,7 +340,8 @@ def conv_line(line: str, x_shift: bool) -> str:
     return line
 
 
-def port(lines: list[str], name_map: dict[int, str], x_shift: bool, rest_scale: bool) -> list[str]:
+def port(lines: list[str], name_map: dict[int, str], x_shift: bool, rest_scale: bool,
+         src_num: int) -> list[str]:
     out = []
     for line in lines:
         if line.strip() == "}":
@@ -346,6 +370,15 @@ def port(lines: list[str], name_map: dict[int, str], x_shift: bool, rest_scale: 
         # Δ2：删掉 `ins_85(1)` —— v4 表里它是 `unknown flag`，TH18 没这条 opcode
         if re.match(r"\s*ins_85\([^)]*\);\s*$", s):
             out.append("    // Δ2：原版的 `ins_85(1)` 已删（v4 表里它叫 `unknown flag`，TH18 无此 opcode）")
+            continue
+        # ★★ Δ-OWNER（2026-09-23，owner 实跑第 1 条）：**闪光脚本（← script81）不再做缩放动画**。
+        #   owner 原话：「收槽的动画还是不太对，收进去之后现在是**空槽位本身会有一个放大再缩小的动作**，
+        #   一手显然不是」⇒ 那支 flash VM 画的**就是槽位那一张彩色框**（同一个 sprite）⇒ 它的
+        #   `scale 0.5→1.5→1.0` 看起来就是"槽自己放大缩小" ⇒ 本批**只留 alpha 闪**。
+        #   ⚠ 一手 script81 的默认路径**确实有**这三段 scale（原文见本文件 README 的对照表）⇒
+        #     这是 **owner 口径**、不是复刻；回退 = 把下面这个 if 删掉（原文即回来）。
+        if src_num == 81 and re.match(r"\s*scale(Time)?\([^)]*\);\s*$", s):
+            out.append("    // Δ-OWNER：原版的这一行 scale 已按 owner 口径去掉（`" + s.strip() + "`）")
             continue
         out.append(conv_line(s, x_shift))
     return out
@@ -379,7 +412,7 @@ def main() -> int:
     for num, name, src_num, x_shift, rest_scale in SCRIPT_PORTS:
         if src_num not in src_scripts:
             raise SystemExit(f"源脚本 script{src_num} 不在 {SRC_TXT}")
-        body = port(src_scripts[src_num], name_map, x_shift, rest_scale)
+        body = port(src_scripts[src_num], name_map, x_shift, rest_scale, src_num)
         d4b_common = [
             f"script script{num} {{",
             f"    // 卡 112（星莲船）飞碟槽 HUD —— TH12 v1.00b `front.anm` **script{src_num}** 的逐条移植",

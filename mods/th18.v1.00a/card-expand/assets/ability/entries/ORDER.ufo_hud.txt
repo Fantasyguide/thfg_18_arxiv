@@ -2,7 +2,7 @@
 #   生成器 = assets/ability/make_ufo_hud_art.py（矩形从 anm 文本读 + 断死）
 #   ★ 槽的四态 = SLOT_EMPTY/RED/BLUE/GREEN（连续 4 个），亮版那一组紧接其后（+4）——
 #     一手 `th12:0x421690` 每帧写的 sprite 就是 `COLLECTED_UFOS[i] + 59 + (闪烁 ? 4 : 0)`。
-ATLAS ATLAS_UFO_HUD 256x192
+ATLAS ATLAS_UFO_HUD 512x224
 SLOT_EMPTY     ability/ufo_hud/SLOT_EMPTY.png   @0,0,32x16
 SLOT_RED       ability/ufo_hud/SLOT_RED.png   @32,0,32x16
 SLOT_BLUE      ability/ufo_hud/SLOT_BLUE.png   @64,0,32x16
@@ -14,3 +14,5 @@ SLOT_GREEN_B   ability/ufo_hud/SLOT_GREEN_B.png   @96,18,32x16
 BANNER_APPEAR  ability/ufo_hud/BANNER_APPEAR.png   @0,170,96x16
 PANEL_FRAME    ability/ufo_hud/PANEL_FRAME.png   @0,40,128x128
 PANEL_INNER    ability/ufo_hud/PANEL_INNER.png   @128,40,128x128
+SUMMON_BANNER  ability/ufo_hud/SUMMON_BANNER.png   @192,0,304x32
+SUMMON_STRIP   ability/ufo_hud/SUMMON_STRIP.png   @0,192,32x32

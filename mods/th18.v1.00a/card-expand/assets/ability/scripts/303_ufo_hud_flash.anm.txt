@@ -33,11 +33,11 @@ script script303 {
     alpha(0);
 +15: // 15
     alpha(255);
-    scale(1.0f, 1.0f);
-    scaleTime(8, 4, 3.0f, 3.0f);
+    // Δ-OWNER：原版的这一行 scale 已按 owner 口径去掉（`scale(0.5f, 0.5f);`）
+    // Δ-OWNER：原版的这一行 scale 已按 owner 口径去掉（`scaleTime(8, 4, 1.5f, 1.5f);`）
 +8: // 23
-    scale(3.0f, 3.0f);
-    scaleTime(8, 1, 2.0f, 2.0f);
+    // Δ-OWNER：原版的这一行 scale 已按 owner 口径去掉（`scale(1.5f, 1.5f);`）
+    // Δ-OWNER：原版的这一行 scale 已按 owner 口径去掉（`scaleTime(8, 1, 1.0f, 1.0f);`）
 +8: // 31
     delete();
     interruptLabel(7);
