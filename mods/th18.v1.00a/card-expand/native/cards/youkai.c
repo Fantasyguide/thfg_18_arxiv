@@ -192,6 +192,8 @@ typedef struct {
     uint8_t       logged_hudgeo;       /* ★★ 2026-09-22（P2）：人妖槽 HUD 的**几何自述**只记一次
                                         *   （锚点 + 四个位置 + 倍数，实跑里用它与屏上所见对照，
                                         *   定「写进去的数生效的是 640 空间还是表面 px」这一争）*/
+    uint8_t       hud_vm_up_logged;    /* ★ 2026-09-23：HUD 起来时**必打一次**逐 VM 实况的许可位
+                                        *   （owner 那两局太短 ⇒ 60 秒那支一行都没打，位置判不出）*/
     uint8_t       logged_full;         /* 「使魔表满 / 堆拒绝」只记一次 */
     uint8_t       logged_gate;         /* 「发射口精确闸生效（使魔没了 ⇒ 该槽哑火）」只记一次 */
     uint8_t       opt_spring_live;     /* ★ th08 #1：弹簧状态是否已经按「自机位置」起过步。
@@ -2397,6 +2399,7 @@ static int on_ctor(ce_card_t *c)
     s->shot_timer = 0;
     s->spawns = s->broken = s->lost = s->transferred = s->dropped = s->fam_full = 0;
     s->logged_opt = s->logged_sht = s->logged_noshot = s->logged_full = s->logged_gate = 0;
+    s->hud_vm_up_logged = 0;
     s->logged_pass0 = 0;
     s->logged_hudgeo = 0;               /* ★ P2：换关重开 ⇒ 几何自述再打一次（锚点可能变了）*/
     s->heals_seen = 0;
@@ -3255,6 +3258,20 @@ static int on_tick_2(ce_card_t *c)
         yk_gauge_hud_update(s);
         /* ★ 2026-09-23（#30「又看不见人妖槽」）：每 60 帧一次逐 VM 实况（与 112 那条同款）。
          *   静态计数（不用 play_frame —— 后者在关卡开头若干帧是 0，会连打几十行）。 */
+        /* ★★ 2026-09-23（owner：「人妖槽好像在整个画面的**上方**被挡住了」）：
+         *   上一版这一族只挂在 **60 秒**节拍上（下面那支）⇒ owner 那两局**一行都没打**（局太短），
+         *   于是「我们写进去的数」有证据（几何自述：anchor (257,924) bar (257,860) ✓ 左下角），
+         *   而「**实际画在哪**」没有证据 ⇒ 判不出是「写错」还是「画到别的 pass 去了」。
+         *   ⇒ 补一支 **HUD 起来时必打一次**（`s->hud_vm_up_logged`，每关/每次重建各一次）。
+         *   判据：`draw` 那一列若 = 我们写的 (257,860) ⇒ 数值生效、问题在绘制组/pass；
+         *         若 = (0,0) 之类 ⇒ 写没落到 VM 上（句柄陈旧 / VM 被引擎重建过）。*/
+        if (s->hud_bar && !s->hud_vm_up_logged) {
+            s->hud_vm_up_logged = 1;
+            yk_hud_vm_log("bar", s->hud_bar);
+            yk_hud_vm_log("human", s->hud_human);
+            yk_hud_vm_log("youkai", s->hud_youkai);
+            yk_hud_vm_log("cursor", s->hud_cursor);
+        }
         if (++s_hud_vm_log_tick >= 3600u) {
             int q;
             s_hud_vm_log_tick = 0;
