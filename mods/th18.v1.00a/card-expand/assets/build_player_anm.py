@@ -1046,6 +1046,8 @@ def _append_spec(player: str, retail_text: str, tools, anmmap) -> str:
             body = _remap_layer(body, LAYER_MAP)     # 跨版本层号翻译（表见 LAYER_MAP）
         if spec["alpha255"]:
             body = body.replace("alpha(192)", "alpha(255)")
+        if spec.get("zero_pos"):
+            body = _zero_script_pos(body)            # ★ #30：脚本 pos 归零（位置全归 C 侧；否则与锚点叠加 ⇒ y 翻倍画到屏外）
         if spec["scale_inject"]:
             body = _inject_scale(body, spec["k"])
         if spec.get("th08_opcodes"):
