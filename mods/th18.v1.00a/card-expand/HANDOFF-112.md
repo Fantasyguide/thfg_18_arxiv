@@ -1,0 +1,124 @@
+# 112 星莲船（`UFO`）交接文档 —— 接手从这里开始
+
+> **版本**：TH18 v1.00a（`th18.exe`，imagebase `0x400000`）。裸地址默认属该版本；
+> 引用其他版本带前缀（`th12:…`）。
+> **姊妹文档**：108 永夜抄在 [`HANDOFF-108.md`](HANDOFF-108.md)（两张卡已拆给不同的人/agent）。
+> 逐条台账在 [`SINGLE-CARD-TEST.md`](SINGLE-CARD-TEST.md) 的 `§th12` 段，本文只留「状态 / 下一步 / 判据」。
+
+## §0 一句话现状
+
+**HUD 那条线做完了**（槽位位置、槽底毛笔横幅、音效、召唤清槽都对并且实跑验过）；
+**只剩两件美术没实现**：#14 召唤时的**紫环 + 雷电**（一手还没找到）、#20 击破时的 **×N**
+（一手**已全部到手**，照 §3① 实现即可）。
+
+### 部署面（单一来源 = `RELEASE-STATE.json`）
+
+| 项 | 现值 |
+| --- | --- |
+| DLL | `bf3d12ff8a3b6baf37be2b991798837d`（modkit 四处同 md5）|
+| patch | `df14d5707689ca4b66cdfab2b0f642b3` |
+| **ability.anm** | `058cec74…` ← **2026-09-23 因 #17 毛笔横幅变过**（旧值 `f06ba70d…`）|
+| abcard.anm | `bf91a0f5…`；四份 `pl0X.sht` 见快照 |
+
+## §1 怎么干（每批固定动作）
+
+1. **闸三件**：`cd native && make check`（**rc=0**）、`python3 tooling/check-docs.py`（全绿）、`make dllx87`（**0 条**）。
+2. **改了行为必须发版**：`make release MODKIT_DIR="/mnt/d/项目/幻想指南/18/th18_modkit" NO_GIT=1`，
+   再 `DLL_SRC=$PWD/native/th18_card_expand.dll bash /home/nipporita/renkolab/local/sync_modkit_dll.sh`
+   （必须打印 4 条同 md5），最后一起提交 `RELEASE-STATE.json` 与手改的文档。
+   ⚠ 只改 anm 资产也要发版（`make release` 会把 `dist/patch-step3/*.anm` 一起同步进 modkit）。
+3. **实跑日志**：`/mnt/d/项目/幻想指南/18/th18_modkit/game/th18_card_expand.log`。
+   本机铁律（`local/GAME-LOG.md`）：**用户说「跑了 / 看到 X」，先自己读日志尾巴，别问用户**；
+   按 `=== th18_card_expand <时间> ===` **先切出本次**再看。
+4. **共享件**（`assets/ability/**` 的 ORDER / 脚本、`sdk.*`、`sites.py`、`Makefile`）改动要在 `AUDIT.md` §BE 登记。
+
+## §2 已完成（逐条给「做了什么 + 怎么验的」）
+
+| 条 | 做了什么 | 怎么验的 |
+| --- | --- | --- |
+| #21 槽带位置 | 锚点改成 **113 的块基准 `(248, 928)`**（`trance.c` 的 `TRANCE_HUD_BASE_X/Y`）⇒ 槽心 **272/314/356**（块 248..380 / 896..928）| 日志 `ufo: HUD up … pinned at surface (248, 928) … aligned to card 113's block` ✅ 已验。一手也定了案：TH12 那个 anm 空间 = 640 屏幕空间 **x 方向 +96**（该文件把场地中心写成 `pos(224,240)`，而屏幕空间下该写 `(320,240)`，**全文件没有 320**）|
+| #17 槽底毛笔横幅 | 生成器加 `BANNER_APPEAR`（TH12 `front00.png` (336,368,96×16)，与槽图**同一张 sheet**）+ ability.anm **script315**；`ufo.c` 的 `ufo_hud_ensure()` **先**起（同层 25 ⇒ 画在槽下面）、`ufo_hud_kill()` 一并收 | 日志 `ufo: brush banner under the slots up (ability.anm script 315 <= front.anm script79, sprite67 …)` ✅ VM 已起（观感待眼判）|
+| #18 token 生成音效 | 新 SE 通道项（构建期从 TH12 派生 wav，`assets/voice/ORDER.txt` + `derive_retail_se.py`）| `ufo/se tally …` 里应有对应计数 |
+| #19 召唤清槽 | 代码侧本来就是一手口径（唯一的清槽点 = **UFO 结束**那一刻）| 那一局**无** `ufo: slots cleared`，而 tally 有 `ufo-fill-full 2 / ufo-break 2`（确实召唤过两轮）✅ 不重现 |
+| 槽四态 / 闪光 | 槽 VM 每帧写 sprite（`457 + 四态 + 闪烁×4`）、入槽闪光走 flash VM（script 303）| 日志 `ufo: slot 1 flash (state 3) - ability.anm script 303 + slot interrupt 7/13` ✅ |
+
+## §3 待办
+
+### ① #20 击破 UFO 的 ×N（**规格已全**，实现即可）
+
+- **创建点**：`th12:0x44ab00`–`0x44ab5f` ——
+  `push $0x86` → `call 0x4615a0` → 存 `+0x40`（兄弟 VM = 脚本 134）；
+  `push $0x88` → `call 0x4615a0` → 存 `+0x44`（**★ ×N = 脚本 136**）；
+  `movl $0x2d0,0x28(%esi)` = **寿命 720 帧**。
+- **脚本原文**（`local/th12.v1.00b/anm/front/front.anm.txt`）：
+  `script136 { scriptNew(137); sprite(-1); drawRect(32,4); layer(10); color(255,96,96); pos(0,-28); stop(); 中断1=delete }`
+  `script137 { sprite(-1); drawRect(32,4); layer(9); color(0,0,0); pos(1,1); stop(); 中断1=delete }`
+  ⇒ 亮红 + 黑、错开 (0,−28)/(1,1) = **描边式文字**（不是贴图）。
+- **每帧更新**：`th12:0x44a80b`–`0x44a83b`（取 `[ebx+0x44]` → `call 0x461920` 查 VM，返回 0 就清句柄 →
+  `orl $0x8,0x47c(%eax)` → `fstps 0x40(%eax)`）⇒ 文字内容与坐标**由 C 每帧写**。
+- **我们的实现要点**：用 112 现有 HUD 字形通道拼「×」+ 数字（**不新造贴图**，`ability.anm` 已有
+  `SCRIPT_HUD_DIGIT` / `SCRIPT_HUD_GLYPH` 一族与 `ATLAS_HUD_DIGIT`）；颜色 `(255,96,96)` + 黑描边错开 `(1,1)`；
+  寿命 **720 帧**；生成时机 = **击破 / 结算那一刻**（`ufo.c` 的结算路径同一处）；位置每帧写。
+- **验收关键字**：实现时自己定一行（例 `ufo: xN popup up …`）+ 数字与颜色对不对由 owner 眼判。
+
+### ② #14 召唤时的紫环 + 雷电（一手未定，方法已备）
+
+**已排除**：
+- ① 召唤的 C 路径（`th12:0x44a8xx`–`0x44a97x`）里**只建一支 VM** = `push $0x52`（脚本 82 = **大横幅**，
+  `front02.png` 304×32、`layer(6)`、`pos(224,208)`、`scriptNew(83)`）。
+- ② **不是靠 `color` 染的** —— 扫全部 TH12 anm dump，紫色系只有 `bullet.anm` 的纯品红 `(255,0,255)`
+  ⇒ 紫环是**贴图**（或颜色由代码后写 `+0x524`）。
+- ③ 候选①**已降级**：`0x436622` 建的是 `bullet.anm` **script77**（`sprite380` + `scale 0.3→1.0` +
+  `rotate(−π)→rotateTime(π)` + `angleVel`）；把 `bullet/etama2.png` 的 (0,16,64×64) 切出来看过 ——
+  是**红/粉色的圆环 + 放射状尖刺**（形状对、**颜色不对**），且紧接着是**逐档读表算分** ⇒ 更像「**收令牌那一圈**」。
+
+**方法（通用，本轮验过好用）**：
+```bash
+objdump -d local/th12.v1.00b/th12.exe > /tmp/th12.asm      # 约 205782 行
+# 只认 call 0x4615a0（anm 实例化），脚本号 = 它前面最近的 push $0xNN
+```
+TH12 v1.00b 全 exe 共 **142 处**创建点。已查过的：
+
+| 地址 | 脚本 | 结论 |
+| --- | --- | --- |
+| `0x421371` | `0x55` | ❌ 紧接**分数运算**（`imul $0xf4240`、`cmp $0x3b9aca00`、写 `0x4b0c44`）+ 逐槽读表 ⇒ **收令牌 / 算分**那条路 |
+| `0x421619` | `0x51` | ❌ 建完 `lea 0x7(%ebx),%edx` = **中断 7+格号** ⇒ **槽 VM 创建**（脚本 81 = 槽闪光，已知）|
+| `0x4314e3` / `0x431593` | `0x51` / `0x52` | 大横幅 82 的另一处调用点 |
+| `0x436622` | `0x4d` | ⚠ 候选①已降级（见上）|
+| `0x438429` | `0x50` | **未查** |
+| `0x448ab1` / `0x448adf` | `0x63` / `0x75` | **未查**（`0x447xxx`–`0x448xxx` = 结算 / 分数族）|
+| `0x44a96e` | `0x52` | ✅ 召唤 C 路径唯一那一支 = 大横幅 |
+
+**下一步**：`0x438429` 与 `0x448xxx` 那两处；**UFO 本体脚本的 `scriptNew` 子链**
+（本体贴图来自 TH12 `enemy.anm` **script135** —— 见 `assets/ability/scripts/164_ufo_red.anm.txt` 文件头，
+所以**别只在 `front.anm` 里找**）；以及「颜色由代码后写 VM（`+0x524`）」这一可能。
+切图认形状：PIL 从 `<anm>/<entry>.png` 按 anm dump 的 sprite 表裁（本轮就这么确认 sprite380 的）。
+
+## §4 资产 / 产物怎么读（别用土办法）
+
+| 想读什么 | 怎么做 |
+| --- | --- |
+| 编出来的 anm 长什么样 | `thanm -l 8 -m v8.anmm native/build/pl00.anm`（改前 / 改后逐句比）|
+| sht 的组/行对不对 | **`make sht` 自带的对账**（`妖侧弹脚本号逐文件对账 OK …`）；**别**自己按 `base 0x180/0x4e0` 猜着扫（踩过，读出过假数据）|
+| 部署面是不是本地产物 | `md5sum` modkit 里的 `pl0X.anm/pl0X.sht` 与 `native/build/` 对 |
+| 112 的 HUD 资产从哪来 | `assets/ability/make_ufo_hud_art.py`（槽/闪光/面板/毛笔横幅，全从 TH12 `front.anm` 切图 + 端口脚本）；本体/令牌 = `make_ufo_art.py` / `make_ufo_token_art.py` |
+| 脚本号 | 由构建侧定：`assets/ability/scripts/` 的文件名前缀必须是 `68 + 排序序号`（`make anm` 报「编号应为 N」就以它为准）|
+| ORDER | 生成器只写**片段**（如 `entries/ORDER.ufo_hud.txt`），要**手写拼进** `entries/ORDER.txt`；没拼会报 `未定义的占位 @…` |
+
+## §5 与 112 相关的关键位置
+
+| 事 | 位置 |
+| --- | --- |
+| 卡主体（召唤 / 令牌 / 槽 / 结算 / 音效）| `native/cards/ufo.c`（约 4000 行）+ `native/cards/ufo_core.{h,c}` |
+| HUD 槽与横幅 | `ufo.c` 的 `ufo_hud_*`（`UFO_HUD_SCRIPT_SLOT/FLASH/BANNER`、`k_ufo_slot_x[]`、`UFO_HUD_PIN_X`) |
+| HUD 生成器 | `assets/ability/make_ufo_hud_art.py`（含 Δ1..Δ7 全部移植改动与一手出处）|
+| 台账 | `SINGLE-CARD-TEST.md` §th12；一手过程在 `AUDIT.md` §BE / §BO |
+| 已定口径 | 槽 = 113 的 248/928 基准、槽心 272/314/356；token 收取音保持一手 `0x0c`（owner 已拍）|
+
+## §6 坑
+
+1. 文档表格**单元格 ≤ 200 字符**（超了 `make check` 直接红）。
+2. **不加新断点站点**（预算 31）。
+3. 改 anm 资产要跑 `make anm`（会重编 `ability.anm` / `pl0X.anm`）并**发版**，否则游戏里看不到。
+4. 「部署面 = 本地产物」要显式核一次（本会话踩过：日志里的旧现象其实是旧产物）。
+5. **状态别落后于代码**：已修的要立刻把 `SINGLE-CARD-TEST.md` 的状态列改掉，否则下一轮会被当新 bug 重报。
