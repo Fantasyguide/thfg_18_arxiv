@@ -3044,18 +3044,20 @@ static void ufo_hud_slots_tick(ufo_card_t *s, int ufo_on_field)
             if (prev >= 0 && st != 0)                 /* 从"有东西"变成"另一种东西"= 新令牌落进这一格 */
                 ufo_hud_slot_flash(i, st);
         }
-        /* ② UFO 在场：每帧写 sprite（一手 `FUN_00421690`）—— 亮版那一组正好 +4。
-         *    不在场时不写：那时显示的就是四态中断给的那一组（原版同一时序）。
-         *    ★ 但**离场那一帧要补一次四态中断**：一手 UFO 结束时（`th12:0x44a357`–`0x44a362`）
-         *      调的是 `FUN_004214b0(gui, -1)` ⇒ 把三格**重置回 `COLLECTED_UFOS[i] + 10`（暗版）**。
-         *      只停写 sprite 的话，最后一帧写下去的**亮版**会一直留在屏幕上（原版不会）。 */
-        if (ufo_on_field) {
-            ce_anm_set_sprite(CE_ABILITY_ANM(), id,
-                              UFO_HUD_SPR_SLOT_EMPTY + (int)st
-                                  + (s_slot_blink ? UFO_HUD_SLOT_BLINK_OFFSET : 0));
-        } else if (s_slot_blink_prev) {
-            ce_anm_interrupt(id, UFO_HUD_INTERRUPT_STATE0 + st);
-        }
+        /* ② ★★★ 2026-09-23（owner 实跑：「**收碟子之后碟子在 HUD 在有动画的时候出现一下然后消失了**」）：
+         *   根因 = **持久配色原来只靠 `interrupt(10+st)`，而那一支在 TH18 里不落地**。
+         *   一手走的是 `FUN_004214b0(gui, n)` = **直接写 sprite 号**（`COLLECTED_UFOS[i] + 10`，
+         *   `th12:0x4214b0`），我们把它翻成了「发中断 10+n」；槽位 VM 的主脚本早已 `stop()`
+         *   （`instr 140`），那支中断的 sprite 写不进画面 ⇒ **只有 UFO 在场时** C 侧每帧写 sprite
+         *   才看得见颜色，UFO 一离场就退回脚本初值 `sprite 457`（空槽）⇒ 唯一还显示碟子的是
+         *   那支 31 帧自删的 flash VM（脚本 303）⇒「出现一下然后消失」。
+         *   日志铁证：`state 2/0/0` 那几帧的槽 VM `sprite 457 alpha 255`，而 UFO 在场（`frames 24`）
+         *   那几帧正好是 `459/460/458`（= 457 + state）。
+         *   ⇒ 改成**每帧直接写**（与一手同一个「直接写」口径）：亮版那一组 = 基址 + 4
+         *   （`FUN_00421690` 的那套闪烁仍然只在 UFO 在场时成立 —— `s_slot_blink` 已经含这个门）。 */
+        ce_anm_set_sprite(CE_ABILITY_ANM(), id,
+                          UFO_HUD_SPR_SLOT_EMPTY + (int)st
+                              + (s_slot_blink ? UFO_HUD_SLOT_BLINK_OFFSET : 0));
         /* ③ ★★ Δ7（本工单的根因修复）：每帧把三格钉回槽心 —— 一手那套"脚本自己摆位"
          *    （中断 7/8/9 → `posTime`）在 TH18 里不落地，三格会全部叠在脚本初始 x=296 上。 */
         ufo_hud_place_at(i, id);
