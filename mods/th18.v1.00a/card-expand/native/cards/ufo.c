@@ -658,19 +658,32 @@ static int ufo_tok_script(int32_t color, int rb_state, int cycler)
  *     entity_pos 自动归零，画面不动）。
  *   · 中断 7/8/9 照旧发（一手配方原样保留，无害）；脚本 302/303 **一个字都没改**。 */
 #define UFO_ID_NUM        112u      /* 本卡 id（HUD 槽 / 日志用；`CE_CARD(112, …)` 里的那个数）*/
-/* 块 = 三格槽的外沿（表面 px）：槽心 296/338/380（间距 21 单位 = 42 表面 px）、槽 24×16 单位 = 48×32 表面 px
- * ⇒ 块 x 272..404 / y 896..928。钉块用的锚点 = 块的**左下角**（`ce_hud_slot_claim_pinned_card` 的口径，
- * 与 `faith_hud.c` 同）。 */
-#define UFO_HUD_BLOCK_W   132.0f    /* = 404 − 272（三个槽的外沿宽）*/
+/* 块 = 三格槽的外沿（表面 px）：槽心 **272/314/356**（间距 42 表面 px）、槽 24×16 单位 = 48×32 表面 px
+ * ⇒ 块 x **248..380** / y 896..928。钉块用的锚点 = 块的**左下角**
+ * （`ce_hud_slot_claim_pinned_card` 的口径，与 `faith_hud.c`、`trance.c` 同）。 */
+#define UFO_HUD_BLOCK_W   132.0f    /* = 380 − 248（三个槽的外沿宽）*/
 #define UFO_HUD_BLOCK_H    32.0f    /* = 928 − 896（槽本体高，底边与场地下沿齐平）*/
-#define UFO_HUD_PIN_X     272.0f    /* = 640 空间 136 = 场地左沿(128) + 第一格外沿 8；块左下角（表面 px）*/
+#define UFO_HUD_PIN_X     248.0f    /* = **照 113 的口径**（owner 2026-09-23）：113 的左下角块 = 248；块左下角 */
 #define UFO_HUD_PIN_Y     928.0f    /* = 640 空间 464 = **场地下沿**；槽本体落在 896..928*/
-/* ★★ 三格的**槽心**（表面 px）= 上面那套换算的结果，也是 Δ7 的摆位目标（脚本里同一组数字：
- * `pos(296,912)` 与中断 7/8/9 的 `posTime(8, 0, 296/338/380, 912, 0)`）。相邻间距 21 单位 = **42 表面 px**。
+/* ★★ 三格的**槽心**（表面 px）= Δ7 的摆位目标（脚本里那一份是 296/338/380，差值由 entity_pos 补，
+ * 见上「Δ7」注的 `entity_pos = 槽心 − (pos + __pos_2)` 自校准式 ⇒ 这张表是**唯一摆位源**）。
+ * 相邻间距 21 单位 = **42 表面 px**。
+ * ★★★ 2026-09-23 **owner 裁决 ②（故意左移）+「参考一下 113 的位置」**：一手值 = **296/338/380**
+ *   （已在上面「定案」注里证死，+96 属复刻），但 owner 实跑观感「偏右、不在左下角」⇒ **改按 113 的口径对齐**：
+ *     113（同在左下角带的系统卡）的块锚点是 `trance.c` 的 `TRANCE_HUD_BASE_X/Y = 248/928`
+ *     （一手 TH13 根 x = −196 场地坐标 ⇒ 表面 640 + (−196)×2 = **248** = **场地左沿 256 外 8 px**；
+ *      y 928 = **场地下沿** ⇒ 与「场地左下角」同一个口径，只是**允许探出左沿一点点**）。
+ *   ⇒ 本卡取**块左沿 248**（= 113 同值）⇒ 槽心 = 248 + 24（半格）= **272/314/356**，块 x **248..380**、
+ *     底边 928 与 113 **完全同一条基准线**；槽组左沿比一手左移 **24 表面 px**（= 场地宽的 3%）。
+ *     · **红线**：再往左（含旧的 104/146/188）槽就深进**场外左侧黑边**，而空槽是**纯黑框** ⇒ 黑底画黑框，
+ *       正是 owner 报过「缺少飞碟(token)槽位 UI」那一版 ⇒ **左移到此为止**。
+ *     · 代价：与 116/117 的块重叠更多（`TUNING.md` §2.0v 的口径冲突，owner 已知）。
+ *   ⇒ **偏离一手是 owner 明确裁决的**，不是我们的自定；要回一手就把这张表改回 296/338/380
+ *     + `UFO_HUD_PIN_X` 改回 272（两行，行为改动 ⇒ 发 DLL）。
  * ⚠ 是**数组**不是 `X0 + i*DX`：本文件有"零 x87"硬门（`make dllx87`），`(float)i` 这类整→浮转换
  *   在本仓是明令避免的写法（同文件尾 `_Static_assert` 那一带的先例），常量表最稳。 */
-static const float k_ufo_slot_x[UFO_SLOT_COUNT] = { 296.0f, 338.0f, 380.0f };
-#define UFO_HUD_SLOT_Y 912.0f       /* = 32 + 2×440（场地相对 y 440）；槽高 16 单位 = 32 表面 px ⇒ 896..928 */
+static const float k_ufo_slot_x[UFO_SLOT_COUNT] = { 272.0f, 314.0f, 356.0f };
+#define UFO_HUD_SLOT_Y 912.0f       /* = 456 ×2（一手槽 y）；槽高 16 单位 = 32 表面 px ⇒ 896..928 */
 _Static_assert(UFO_SLOT_COUNT == 3, "k_ufo_slot_x holds exactly the three TH12 slot columns");
 /* 槽的 **sprite 基数**与**亮版偏移**：ORDER 里 457/458/459/460 = 空/红/蓝/绿，461..464 = 亮版
  * ⇒ 与一手 `FUN_00421690` 的 `59 + 四态 + (闪烁 ? 4 : 0)` **同一个算式**（`anm_ids.h` 生成）。 */
@@ -3101,7 +3114,7 @@ static void ufo_hud_slots_tick(ufo_card_t *s, int ufo_on_field)
                           UFO_HUD_SPR_SLOT_EMPTY + (int)st
                               + (s_slot_blink ? UFO_HUD_SLOT_BLINK_OFFSET : 0));
         /* ③ ★★ Δ7（本工单的根因修复）：每帧把三格钉回槽心 —— 一手那套"脚本自己摆位"
-         *    （中断 7/8/9 → `posTime`）在 TH18 里不落地，三格会全部叠在脚本初始 x=296 上。 */
+         *    （中断 7/8/9 → `posTime`）在 TH18 里不落地，三格会全部叠在脚本初始 x（= 296）上。 */
         ufo_hud_place_at(i, id);
     }
     /* 每 60 帧一行诊断（与环那条同款）：用户/我们只凭日志就能判「三格 VM 在不在、摆在哪、是哪个 sprite」。
@@ -3109,15 +3122,15 @@ static void ufo_hud_slots_tick(ufo_card_t *s, int ufo_on_field)
      *   位置/尺寸/alpha ⇒ 判不出「没画」还是「画在屏外」。现在把三格的**VM 实况**并进来：
      *     `draw` = `pos(+0x30)` + `__pos_2(+0x4e4)` + `ent(+0x5f0)`（三项全打） / `spr`(+0x24) /
      *     `scale`(+0x54) / `a`(color_1 `+0x524` 的 A 字节) / `L`(layer `+0x18`) / `flags_lo`(+0x534)。
-     *   ⇒ 判据一句话：`draw` 必须 ≈ 本格槽心 (296/338/380, 912)、`scale 2.00`、`a 255`、`L 25`。
+     *   ⇒ 判据一句话：`draw` 必须 ≈ 本格槽心 (272/314/356, 912)、`scale 2.00`、`a 255`、`L 25`。
      * ★ 2026-09-23 第二轮（「槽位只有 1 个」）：第一版读错了字段（把 `+0x2c` instr_offset 当 pos），
-     *   三格"pos.x"全是 296 却没打 y —— 这次三项 + 和全打，叠没叠一眼看得出。
+     *   三格"pos.x"全是脚本值 296 却没打 y —— 这次三项 + 和全打，叠没叠一眼看得出。
      * ⚠ 节奏用**本函数自己的静态帧计数**，不用 `s->play_frame` —— 后者在关卡开头的若干帧是 0，
      *   会让 `% 60 == 0` 连打几十行（2026-09-22 的实跑日志里就是这样刷的）。 */
     if (++s_slot_log_tick >= UFO_TIMER_LOG_EVERY) {
         s_slot_log_tick = 0;
         ce_log("ufo/slot: vm %u/%u/%u state %d/%d/%d sprite-base %u blink %u/%u frames %u "
-               "(one-hand th12:0x4214b0 + 0x421690; script %d tiles x = 296/338/380 surface)",
+               "(one-hand th12:0x4214b0 + 0x421690; slot centres x = 272/314/356 surface)",
                s_slot_id[0], s_slot_id[1], s_slot_id[2],
                (int)s_slot_state[0], (int)s_slot_state[1], (int)s_slot_state[2],
                UFO_HUD_SPR_SLOT_EMPTY, s_slot_blink, s_slot_blink_prev, s->u.frames,
@@ -3184,7 +3197,7 @@ static void ufo_hud_draw(ufo_card_t *s)
         s->logged_no_hud = 1;
         ce_log("ufo: HUD up (TH12 original art) - 3 token slot VMs (ability.anm script %d <= front.anm "
                "script80) on UI layer 25, block %.0fx%.0f pinned at surface (%.0f, %.0f) = the "
-               "PLAYFIELD bottom-left corner (640-space 136..202, 464); slots are positioned by "
+               "PLAYFIELD bottom-left corner, aligned to card 113's block (248, 928); slots are positioned by "
                "interrupts 7/8/9 and coloured by 10/11/12/13 (empty/red/blue/green)",
                UFO_HUD_SCRIPT_SLOT, (double)UFO_HUD_BLOCK_W, (double)UFO_HUD_BLOCK_H,
                (double)UFO_HUD_PIN_X, (double)UFO_HUD_PIN_Y);
@@ -3247,7 +3260,7 @@ static void ufo_hud_ensure_registered(void)
     if (!s_hud_logged_ok) {
         s_hud_logged_ok = 1;
         ce_log("ufo: HUD block %.0fx%.0f claimed (pinned) at surface (%.0f, %.0f) (= 640 space "
-               "(%.1f, %.1f)); the slot VMs draw at surface (296/338/380, 912) from the ported script "
+               "(%.1f, %.1f)); the slot VMs are pinned to surface (272/314/356, 912) by ufo_hud_place_at "
                "(script 302 writes `scale(2.0,2.0)` + `resolutionMode(2)`; ★ 2026-09-23 订正: "
                "`resolutionMode(2)` 在本机 1280x960 下与「不写」等价（都是 x1，一手 `th18:0x4063d0`）"
                "—— 当初让槽从看不见变看得见的是 Δ4b 的 `scale(2.0)`)",
