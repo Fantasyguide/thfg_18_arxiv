@@ -74,6 +74,9 @@ ce: shot-set-index first claim (frame N): edi=0x… [player+0x47940]=0x…
 - 低速：`youkai: native option slots at low speed - N/4 live …` + 四行 `native opt slot k: state/vm/muzzle`
 - 高速：`youkai: native option slots at HIGH speed - N/4 live …` + 同样四行
 - 交出子机：`youkai: option release - N slot(s) held, VMs to delete: v0 v1 v2 v3 …`
+- ★ **高速安全带（2026-09-23 补，DLL `c85ce2c1…`）**：`youkai: HIGH-SPEED safety release #N - we still held options while unfocused …`
+  ⇒ **出现**说明帧界那条「退位交回」没跑到（**那就是「子机滞留」的机制 ⇒ 走分支 A**）；
+    **一行都没有** ⇒ 滞留不是这条路 ⇒ 看分支 B 的判据。
 
 ### ② 人妖槽「在画面上方被挡」（owner 最新一轮）
 
