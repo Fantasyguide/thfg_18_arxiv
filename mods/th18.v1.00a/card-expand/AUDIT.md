@@ -20636,3 +20636,32 @@ TH18 编号 = `player+0x476ac`（`switch 0..4`、移动只在 case 1 `th18:0x45c
 **发布面**：同 #73 主段 —— **没改** `pl0X.sht` / `pl0X.anm` / `ability.anm` / wav / `sites.py` /
 `SITE_BUDGET` / `patch/**`，**没新增断点、没碰别人的卡**（本续写只动 108 卡自己的两个 C 文件 + 单测 +
 `tools/verify.py` + 两个文档）。
+
+## §BE 详录 #74（2026-09-23）：★ **共享件** `assets/build_player_anm.py` —— 给 108 的五支 HUD 脚本注入 `layer(25)`（暂停模糊罩）
+
+**文件 → 改了什么 → 为什么 → 谁改的 → 怎么验证的**
+
+| 文件 | 改了什么 |
+| --- | --- |
+| `assets/build_player_anm.py` | ① 新增 `_inject_hud_layer(body, layer)`（插在脚本头之后、**首个指令之前**；头后若是标签则插到标签之后）；② `_yk_extra_plan()` 给四支人妖槽 HUD + 字形带 `hud_layer=25`，**刻符 `orb` 不带**（它走世界列表、层由 C 侧 `YK_ORB_ANM_LAYER` 传） |
+| `engine/…`（无）| — |
+| 生成物 | `build/pl00..pl03.anm`（`make anm` 重建；**生成物不手改**） |
+
+**为什么**（一手）：`AnmManager__render_layer` `0x4882b8` 的 UI 列表那一段把 layer 24..32 折到绘制组
+`layer+13`、**其余任何层一律兜底折到组 39**；暂停模糊罩 = `text.anm` script59 的 UI VM（层 38 ⇒ 组 38）
+⇒ **只有 24/25 会被罩住**（`HUD-LAYOUT.md` §4.1 的硬规则）。而 108 那五支 HUD 是从 TH08 `ascii.anm`
+**逐条搬来的**（script5/6/7/8 + script4），**TH08 原文一个 `layer()` 都没有**（TH08 的层由 VM 保留，
+与本体脚本同一情形）⇒ 搬进 TH18 后落到兜底组 39 ⇒ **暂停时我们的 HUD 不被模糊罩盖住、且进不了 P 键截图**
+（同一条规则害过 `99/104/105` 三支，它们写的是 26 也照红过）。
+
+**影响面（共享件，所有人都要看）**：只有 108 的 `YKGAUGE_*` / `YKGAUGEFONT_*` 五支脚本受影响
+（每机体一份，共 20 支）；脚本号 / sprite 号 / 条目 / 原生部分**一律不变**，只多一条 `layer(25)` 指令
+⇒ **别的卡零影响**（它们不引用这五支）。刻符 `YKORB_*` 明确**不注入**（世界列表）。
+
+**怎么验证的**：`make anm` 重建四份 `pl0X.anm`（生成器自带 `verify_rebuilt` + 越界/scriptNew/源脚本对齐/
+TH13 灵体与 108 妖侧本体 55 张逐像素回读**全部通过**）；`thanm -l 18` 回读确认 `script49..53` 首条 =
+`ins_304(25)`、`script48`（刻符）**无 layer**；`make check` **rc=0**（含 `anm_hud_alpha_check`、
+`gen_drift`、`sitecheck --all`、`engine_abi_check`、`capcheck`、`dllverify`）；`check-docs` 全绿（378 文件）。
+
+**发布面**：**动了 `pl0X.anm`**（本次四份与 DLL 同批发）；未动 `pl0X.sht` / `ability.anm` / wav /
+`sites.py` / `SITE_BUDGET` / `patch/**` 声明集；**没新增断点**（站点 31 个原样）、没碰别人的卡。

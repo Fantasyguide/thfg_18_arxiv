@@ -567,7 +567,12 @@ def _yk_extra_plan(player: str):
         #   往后接），不带就会在 `pl_anm_ids.h` 里互相覆盖（实测报 `macro redefined`）。
         out.append(dict(macro=f"YK{macro}_{player.upper()}", game="th08", src=src, sid=sid,
                         new_sid=ids["script0"] + i, smap=smap, k=1.0, alpha255=False,
-                        scale_inject=False, th08_opcodes=True))
+                        scale_inject=False, th08_opcodes=True,
+                        # ★ 2026-09-23（#th11-3 同源缺口）：刻符（`orb`）走**世界列表**且自带层
+                        #   （`YK_ORB_ANM_LAYER`，由 C 侧传）⇒ 不注入；四支人妖槽 HUD + 字形
+                        #   走 `ce_anm_spawn_ui`（UI 列表）⇒ 必须自带 `layer(25)`，见
+                        #   `_inject_hud_layer` 的一手理由。
+                        hud_layer=(None if name == "orb" else 25)))
     return out
 
 APPEND_PLAN = {
@@ -962,6 +967,30 @@ def _inject_body_prologue(body: str) -> str:
     return body[:m.end()] + pro + body[m.end():]
 
 
+def _inject_hud_layer(body: str, layer: int) -> str:
+    """给「追加进 `pl0X.anm` 的 **HUD** 脚本」补一行 `layer(N)`（2026-09-23 立）。
+
+    为什么必需（一手）：`AnmManager__render_layer` `0x4882b8` 的 UI 列表那一段把 layer 24..32
+    折到绘制组 layer+13、**其余任何层一律兜底折到组 39**；而暂停模糊罩 = `text.anm` script59 的
+    UI VM（层 38 ⇒ 组 38）⇒ **只有 24/25 会被罩住**（`HUD-LAYOUT.md` §4.1，硬规则）。
+    TH08 的 `ascii.anm` 那几支 HUD 脚本**原文就没有 `layer()`**（TH08 的层由 VM 保留，
+    与本体脚本同一情形）⇒ 直接搬进 TH18 会落到兜底组 39 ⇒ 暂停时**我们的 HUD 比原版 HUD 更清晰**
+    （观感差异；同一条规则害过 99/104/105 三支，它们写的是 26 也照红过）。
+    ⇒ TH18 侧一律 24 或 25（推荐 25，与 `ce_hud_vm_text_*` 一致）。
+
+    插入点：脚本头之后的第一条**指令**之前。若头后面紧跟的是标签（`-1:` / `0:` 那种）就插到标签之后 ——
+    thanm 的 `layer()` 是脚本级指令，放进 `-1:` 块里会改不到 VM 的层。
+    """
+    m = re.match(r"(script script\d+ \{\n)", body)
+    if not m:
+        raise SystemExit("注入 HUD 层失败：脚本头没找到")
+    head, rest = body[:m.end()], body[m.end():]
+    lm = re.match(r"[ \t]*(-?\d+:)[ \t]*\n", rest)
+    if lm:                                            # 头后面是标签 ⇒ 插到标签之后
+        return head + rest[:lm.end()] + f"    layer({layer});\n" + rest[lm.end():]
+    return head + f"    layer({layer});\n" + rest
+
+
 def _append_spec(player: str, retail_text: str, tools, anmmap) -> str:
     """按 PLAYER_ART_ENTRIES / TH13_TRANCE_ENTRIES / YOUKAI_BODY / APPEND_PLAN 生成追加后的 spec
     （纯函数，编译前先自检）。"""
@@ -1001,6 +1030,8 @@ def _append_spec(player: str, retail_text: str, tools, anmmap) -> str:
             body = _th08_opcodes(body)               # TH08(v2) → TH18(v8) 的 opcode 翻译
         if spec.get("prologue"):
             body = _inject_body_prologue(body)       # TH08 本体脚本的前导（见该函数注释）
+        if spec.get("hud_layer"):
+            body = _inject_hud_layer(body, spec["hud_layer"])   # HUD 脚本必须自带层，见该函数
         body = _rename_script(body, src_sid, new_sid)
         blocks.append(body)
     return L.append_scripts(text, blocks) if blocks else text
