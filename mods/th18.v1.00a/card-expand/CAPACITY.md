@@ -375,7 +375,8 @@ cards: 35 registered from cards.js; shop pool 700/8192 slots, guaranteed offers 
 
 - **★ 2026-09-23 新增 `ATLAS_MOF_BOMB_RING_BENT`（entry **70**，`CE_ANM_ABILITY_ATLAS_ATLAS_MOF_BOMB_RING_BENT`）**：
   110/111 灵击柱环的**连续环**贴图（用户口径「**它不是32段**」⇒ 不再用「卡侧摆 32 片竖条」近似一手的
-  `texCircle(32)`，改成**构建期把那条 14×128 竖条极坐标弯成一整圈**，见 `assets/ability/make_mof_bomb_ring_bent.py`）。
+  `texCircle(32)`，改成**构建期把那条 14×128 竖条极坐标弯环、并沿圆周铺 32 份**（= 一手 `texCircle(32)` 的那个 32），
+  见 `assets/ability/make_mof_bomb_ring_bent.py`）。
   画布 **256×256**、**1 个成员**（**基准半径 100 px** ⇒ 环脚本里 `scale = 半径 / 100`）；
   **append 在最末尾** ⇒ 新 sprite = **487**、同批新脚本 = **327–330**（脚本号原本取 302–305，
   撞上另一张会话的 `302_ufo_hud_slot.anm.txt`，已让位重编；见 `AUDIT.md` §BE 的登记）。
