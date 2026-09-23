@@ -1274,6 +1274,29 @@ static int32_t s_gf_id[FAITH_GF_SAMPLES];   /* ★★ 2026-09-22：被采样的�
 static int32_t s_gf_n;
 static int32_t s_gf_done;                 /* 本波已补刷 */
 static int32_t s_gf_stage = -1;
+
+/* ★★ 2026-09-23（用户实跑：「绿妖精一直有问题，没有出现」）—— **诊断**（只打日志、不改行为）。
+ *   判据链上一共有四个**静默**早退（`s_gf_n <= 0` / 隔波门 / 延迟 / 窗口），日志里一条 `faithgf:` 都没有
+ *   ⇒ 分不清是「没看见妖精」还是「看见了但被门挡住」。这一行把本帧的原始观测摊开：
+ *   敌机数、被判成「妖精」的只数、波次账（wave/n/done/cancel），以及**见过的外观 (src,script)**
+ *   —— 外观对不上的话，照着它把 `mof_green_is_fairy()` 的区间改对（那份区间当年只按 st01 系普查过）。
+ *   节流：每 `FAITH_GF_DBG_EVERY` 帧一行；只在「这一段里有敌机」时才打。*/
+#define FAITH_GF_DBG_EVERY 300
+static int32_t s_gf_dbg_frame;
+static int32_t s_gf_dbg_enemy, s_gf_dbg_fairy;
+static int32_t s_gf_dbg_pair[8][2];
+static int32_t s_gf_dbg_np;
+static void gf_dbg_pair(int32_t src, int32_t script)
+{
+    int i;
+    for (i = 0; i < s_gf_dbg_np; ++i)
+        if (s_gf_dbg_pair[i][0] == src && s_gf_dbg_pair[i][1] == script) return;
+    if (s_gf_dbg_np < 8) {
+        s_gf_dbg_pair[s_gf_dbg_np][0] = src;
+        s_gf_dbg_pair[s_gf_dbg_np][1] = script;
+        ++s_gf_dbg_np;
+    }
+}
 static int32_t s_gf_wave;                 /* 本关第几波（1 起；用来实现 `FAITH_GF_EVERY`）*/
 static int32_t s_gf_trig_src, s_gf_trig_script;   /* 触发这一波的那只妖精的外观（诊断用）*/
 /* ★★ 2026-09-18c（用户实跑口径「**妖精应当跟随那个队列才对**」）：补刷出来的绿妖精要**跟着同一波的妖精
@@ -1568,6 +1591,8 @@ void faith_green_fairy_tick(void)
             int32_t src = 0, script = 0, id;
             gf_anm_identity(e, &src, &script);
             id = *(const int32_t *)(e + CE_ENEMY_ID);
+            ++s_gf_dbg_enemy;                          /* ★ 诊断：本帧敌机总数 */
+            gf_dbg_pair(src, script);                  /* ★ 诊断：见过的外观（不管是不是妖精）*/
             /* ★★ 2026-09-22：**我们自己补刷的那几只不算「本波的妖精」**（`gf_is_ours()` 的长注：
              *   不排除它们就会混进队形采样、刷新波次边界、并抢走下一波的跟随目标 —— 跟随链套娃）。*/
             if (gf_is_ours(id)) continue;
@@ -1582,6 +1607,7 @@ void faith_green_fairy_tick(void)
                 }
                 continue;
             }
+            ++s_gf_dbg_fairy;                          /* ★ 诊断：被判成「妖精」的只数 */
             if (id <= s_gf_max_id) continue;                  /* 老面孔 */
             s_gf_max_id = id;
             if (s_gf_last != 0 && frame - s_gf_last > FAITH_GF_GAP) {   /* 隔太久 ⇒ 新的一波 */
@@ -1621,6 +1647,25 @@ void faith_green_fairy_tick(void)
      *   ⇒ 放在早退之后等于「只为 0 只服务」。根因全文见 `gf_follow_tick()`。*/
     gf_follow_tick(em);
 
+    /* ★ 诊断（节流）：一行说清「这一段引擎给了什么、我们判成什么、这一波的账卡在哪一步」。
+     *   ⚠ 不用 `snprintf`（本 TU 没链 stdio）⇒ 最多 6 对外观用固定字段打出来。*/
+    if (frame - s_gf_dbg_frame >= FAITH_GF_DBG_EVERY && s_gf_dbg_enemy > 0) {
+        int32_t ps[6], pt[6];
+        int i;
+        s_gf_dbg_frame = frame;
+        for (i = 0; i < 6; ++i) {
+            ps[i] = (i < s_gf_dbg_np) ? s_gf_dbg_pair[i][0] : -1;
+            pt[i] = (i < s_gf_dbg_np) ? s_gf_dbg_pair[i][1] : -1;
+        }
+        ce_log("faithgf/dbg: 帧 %d 敌 %d 妖精 %d | wave#%d n=%d done=%d cancel=%d last=%d "
+               "trig=(%d,%d) | 外观 (%d,%d)(%d,%d)(%d,%d)(%d,%d)(%d,%d)(%d,%d)",
+               (int)frame, (int)s_gf_dbg_enemy, (int)s_gf_dbg_fairy,
+               (int)s_gf_wave, (int)s_gf_n, (int)s_gf_done, (int)s_gf_cancel, (int)s_gf_last,
+               (int)s_gf_trig_src, (int)s_gf_trig_script,
+               (int)ps[0], (int)pt[0], (int)ps[1], (int)pt[1], (int)ps[2], (int)pt[2],
+               (int)ps[3], (int)pt[3], (int)ps[4], (int)pt[4], (int)ps[5], (int)pt[5]);
+        s_gf_dbg_enemy = s_gf_dbg_fairy = s_gf_dbg_np = 0;
+    }
     if (s_gf_done || s_gf_n <= 0) return;
     if (frame < s_gf_frame + FAITH_GF_DELAY) return;            /* 先攒几个出生点（认队形）*/
     /* ★ 这一波**还在刷**才补：否则画面已经是下一波了（用户实跑「绿妖精跟阴阳玉/大蝴蝶混在一起」）*/
