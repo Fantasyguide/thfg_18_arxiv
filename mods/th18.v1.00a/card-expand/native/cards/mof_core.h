@@ -722,8 +722,20 @@ int32_t mof_core_graze_mult(int32_t graze);
  * 返回本帧半径（1/100 px）。线性、只增不减、帧 ≥ 120 保持目标值（一手曲线）。*/
 int32_t mof_core_bomb_radius_centi(int32_t frame, int32_t target_centi);
 
-/* 消弹/伤害中心每帧上移量（1/1000 px）。`spell_ish` = 符卡中、`reimu` = `CHARACTER == 0`。*/
+/* 消弹/伤害中心每帧上移量（1/1000 px）。`spell_ish` = **小灵击档**（= `mof_core_bomb_suppressed()`）、
+ * `reimu` = `CHARACTER == 0`。*/
 int32_t mof_core_bomb_rise_milli(int spell_ish, int reimu);
+
+/* ★★★ **小灵击档**：一手 TH10 里 `Bomb::start` 选主脚本的第三条分支不是「符卡中」，而是
+ *   **特定几张符卡**（`[spellcard+0x3788] ∈ 0x5d..0x60 ∪ {0x6d}`，半径 64）——
+ *   那正是风神录 6 面终符（灵击被神奈子压制）。owner 2026-09-24 口径（逐字）：
+ *   「风神录 6 面终符，灵击会被神妈压制所以开一个小的，这个一般认为是**剧情和平衡意义**，
+ *     **不能把这个当常态**」。
+ *   ⇒ 本函数只在 `spell_id` 命中**白名单**时返回 1；白名单默认**空**（= TH18 侧不启用这条特例），
+ *     要按 TH18 自己的某张符卡复刻，把那张符卡的 id 填进 `k_suppress_ids` 即可。
+ *   ⚠ 这与「符卡中」**不是同一个判据**：伤害表 / `bomb+0x44` 走的是**通用**的
+ *     `ce_spell_active()`（一手 `flags & 1`），那些地方**不要**换成这个谓词。*/
+int mof_core_bomb_suppressed(int32_t spell_id);
 
 /* 本帧**每敌**的伤害（已过 TH10 的 `/5`（+符卡 `/5`）缩放链；0 = 这一笔不存在）。
  *   `in_circle`   = 该敌在消弹圈内（圈外走 `*_OUT_*` 那几档）

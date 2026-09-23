@@ -578,6 +578,16 @@ static inline uint32_t ce_spell_flags(void)
 }
 static inline int ce_spell_active(void) { return (ce_spell_flags() & CE_SPELL_FLAG_ACTIVE) != 0; }
 
+/* 当前符卡的 **id**（`zSpellcard+0x74`；没有符卡 / 没在符卡中 = 0）。
+ * ★ 110 的**小灵击**判据要用它：一手 TH10 `Bomb::start` 那条分支要求的是**特定几张符卡**
+ *   （`[spellcard+0x3788] ∈ 0x5d..0x60 ∪ {0x6d}`），不是「任何符卡」——owner 2026-09-24 口径
+ *   「风神录 6 面终符那个是剧情/平衡特例，**不能把这个当常态**」。见 `mof_core_bomb_suppressed()`。*/
+static inline int32_t ce_spell_id(void)
+{
+    uint8_t *sp = CE_SPELLCARD();
+    return (sp && (ce_spell_flags() & CE_SPELL_FLAG_ACTIVE)) ? *(int32_t *)(sp + CE_SPELL_ID) : 0;
+}
+
 /* 按 enemy_id 在 EnemyManager 的敌人链表里找（照 `get_boss_enemy_full` `0x4237f0`：结点 {entry, next, prev}）。
  * 找不到 / em 为空返回 0；guard 防坏链表。要遍历全部敌人用下面的 `CE_ENEMY_FOREACH`。boss 用 `em + CE_EM_BOSS_IDS + i*4` 取 id 再问它。*/
 static inline uint8_t *ce_enemy_by_id(uint8_t *em, int32_t id)

@@ -1177,13 +1177,14 @@ static void mof_bomb_on_start(void *user, int32_t by_hit, int32_t cost, int32_t 
     /* ★ 日志（纯诊断）。**唯一一处措辞变化**：`power 前 -> 后` —— 改动前那一行两个数**都是扣完的值**
      *   （首字段读的是 `CE_CURRENT_POWER()`，而它刚被写过），现在用机器传进来的真值，
      *   与 111 那一行同口径。其余字段逐字未变。*/
-    ce_log("mof: 灵击发动%s (power %d -> %d, %s, target r=%.1f, rise=%.2f/f, frames %d, faith %d)",
+    ce_log("mof: 灵击发动%s (power %d -> %d, %s, target r=%.1f, rise=%.2f/f, frames %d, faith %d, 变体 %d)",
            mof_bomb_form_is_deathbomb(&s->form) ? "（决死）" : "",
            (int)power_before, (int)power_after,
            spell_now ? "spell" : (reimu ? "reimu" : "marisa"),
            (double)((float)bomb10_target_centi() * 0.01f),
-           (double)((float)mof_core_bomb_rise_milli(spell_now, reimu) * 0.001f),
-           (int)bomb10_left(), (int)faith_slot_total(&s->slot));
+           (double)((float)mof_core_bomb_rise_milli(bomb10_variant() == 2, reimu) * 0.001f),
+           (int)bomb10_left(), (int)faith_slot_total(&s->slot),
+           (int)bomb10_variant());
 }
 
 /* ④ 每帧消弹的卡私有记账（机器只报「本帧消掉几颗」）。**口径与改动前逐字相同**：

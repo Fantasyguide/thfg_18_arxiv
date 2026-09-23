@@ -1,0 +1,40 @@
+script script342 {
+// ★风神录（110）灵击的**火星（枫叶）**之一 —— 一手 TH10 `bullet.anm` **script406**（魔理沙）的移植。
+//   ⚠ 本文件由 `assets/ability/make_mof_bomb_ring_scripts.py` **生成**（改数值请改那个脚本的 LEAF 表）。
+//   一手原文与逐条解读见 `280_mof_bomb_spark.anm.txt` 的文件头（同一套配方）；本变体唯一的差别是
+//   **基准半径 = 112 px**（一手 406 的字面量，与该变体的灵击半径相同）：
+//     起点 = 半径 112 px 的随机方向；红往外 ⇒ 终点 112+48 = 160 px、
+//     蓝往里 ⇒ 终点 112−48 = 64 px。`posTime($I0,4,…)` 线性、`scaleTime($I0,4,0,0)` 缩到 0、
+//     `wait($I0)` 之后 `+8: delete()`；寿命 `$I0 = 20..35` 帧（`isetRand(15)+iadd(20)`）。
+//   ⚠ 变体 = **魔理沙**（一手主脚本 script407）—— 2026-09-24 owner 实跑「灵击依旧很奇怪」的根因
+//     就是我最初把**灵梦那套**（半径 160）用在了魔理沙身上（她的灵击半径只有 112）。
+    sprite(@MOF_BOMB_SPARK@);
+    layer(13);
+    type(1);
+    blendMode(1);
+    alpha(255);
+    color(0, 0, 255);
+    isetRand($I0, 15);
+    iadd($I0, 20);
+    fsetMul(%F0, %RANDF, 1.5f);
+    fadd(%F0, 0.5f);
+    scale(%F0, %F0);
+    rotate(0.0f, 0.0f, %RANDRAD);
+    fsetDiv(%F0, %RANDRAD, 20.0f);
+    angleVel(0.0f, 0.0f, %F0);
+    fset(%F0, %RANDRAD);
+    fcos(%F1, %F0);
+    fsin(%F2, %F0);
+    fsetMul(%F3, %F1, 112.0f);
+    fsetMul(%F0, %F2, 112.0f);
+    fmul(%F1, 48.0f);
+    fmul(%F2, 48.0f);
+    fsetSub(%F1, %F3, %F1);          // ★ 一手：往里收 ⇒ 终点 64 px
+    fsetSub(%F2, %F0, %F2);
+    pos(%F3, %F0, 0.0f);
+    posTime($I0, 4, %F1, %F2, 0.0f);
+    scaleTime($I0, 4, 0.0f, 0.0f);
+    wait($I0);
++8:
+    delete();
+}

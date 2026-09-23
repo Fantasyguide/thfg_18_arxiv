@@ -61,12 +61,22 @@ const mof_green_pair_t mof_green_pairs[MOF_GREEN_PAIR_MAX] = {
     {   256,     244,     199,     194,     0,  ALL_STAGES,  "B 组第四色（橙）· ECL 零站点（备用行）" },
 };
 
+/* ★★★ 2026-09-24（owner 口径，逐字）：「你会称之为**中妖精**的妖精——第一面第二波里面单独一只的那个，
+ *   也对应地建了绿色妖精；但是**有色妖精是杂鱼妖精**，而这一波根本没有杂鱼妖精。
+ *   而我说的加绿色妖精，**是只有杂鱼妖精**」。
+ *   ⇒ 「补绿妖精」只认**杂鱼妖精**（小号有色妖精）。判据落到**精灵尺寸**上（一手 `enemy.anm` 的 sprite 表）：
+ *     · `script 0..19`  → 32×32  ⇒ **杂鱼** ✅
+ *     · `script 20..39` → 48×32 / 48×48 ⇒ **中妖精** ✗（第一面第二波那只单独的就是这一类）
+ *     · `script 159..178` / `184..203` → 32×32 ⇒ 杂鱼 ✅
+ *   （64×64 的 `script 40` / `224` = 大妖精，本来就在白名单外。）尺寸表可复现：
+ *   `python3 -c` 扫 `local/_scratch/th18anm/enemy.anm.txt` 的 `script→sprite→rect`，见 `TUNING.md` §2.0zzi。*/
 int mof_green_is_fairy(int32_t anm_src, int32_t anm_script)
 {
     if (anm_src != 2) return 0;                       /* 只认 `enemy.anm`（`anmSelect(2)`）的外观 */
-    if (anm_script >= 0 && anm_script <= 39) return 1;
-    if (anm_script >= 159 && anm_script <= 178) return 1;
-    if (anm_script >= 184 && anm_script <= 203) return 1;
+    if (anm_script >= 0 && anm_script <= 19) return 1;    /* 32×32：A 组杂鱼（4 色）*/
+    if (anm_script >= 159 && anm_script <= 178) return 1; /* 32×32：B 组杂鱼 */
+    if (anm_script >= 184 && anm_script <= 203) return 1; /* 32×32：B 组杂鱼（另一批外观）*/
+    /* 20..39 = 48×32 / 48×48 的**中妖精**：owner 明确否掉（「这一波根本没有杂鱼妖精」）⇒ 不补。 */
     return 0;
 }
 

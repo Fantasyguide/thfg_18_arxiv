@@ -501,6 +501,20 @@ int32_t mof_core_bomb_radius_centi(int32_t frame, int32_t target_centi)
     return target_centi - (target_centi - MOF_BOMB_R_START_CENTI) * b / MOF_BOMB_R_GROW_FRAMES;
 }
 
+int mof_core_bomb_suppressed(int32_t spell_id)
+{
+    /* 一手的 TH10 名单（仅作记录，见头文件）：0x5d..0x60 与 0x6d。
+     * ★ TH18 的符卡 id 是**另一套编号**，直接照搬没有意义 ⇒ 默认名单为空，
+     *   即「TH18 里不把小灵击当常态」（owner 2026-09-24 口径）。
+     *   要复刻某一张 TH18 符卡上的压制，把它的 `zSpellcard+0x74` 填进来。*/
+    static const int32_t k_suppress_ids[] = { /* 0x5d, 0x5e, 0x5f, 0x60, 0x6d — 见上：TH10 的号，TH18 不适用 */ };
+    int i;
+    if (spell_id <= 0) return 0;
+    for (i = 0; i < (int)(sizeof k_suppress_ids / sizeof k_suppress_ids[0]); ++i)
+        if (spell_id == k_suppress_ids[i]) return 1;
+    return 0;
+}
+
 int32_t mof_core_bomb_rise_milli(int spell_ish, int reimu)
 {
     if (spell_ish) return MOF_BOMB_RISE_SPELL_MILLI;      /* 0.5：`th10:0x4057b6`（符卡中那支）*/

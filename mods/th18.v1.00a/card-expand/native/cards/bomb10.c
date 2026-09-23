@@ -63,14 +63,43 @@
  */
 #define BOMB10_RING_RADIUS_100 100.0f       /* 环贴图的基准半径(px) = 环脚本 scale 1.0 的可见半径 */
 
-/* 排期表：`at` = 出生帧（相对灵击发动；一手 script400 的标签帧号），`script` = 柱环脚本号。*/
-static const struct { int32_t at; uint32_t script; const char *tag; } s_ring_sched[] = {
-    {  0, CE_ANM_ABILITY_SCRIPT_MOF_BOMB_RING394, "394白" },
-    {  0, CE_ANM_ABILITY_SCRIPT_MOF_BOMB_RING395, "395白" },
-    {  0, CE_ANM_ABILITY_SCRIPT_MOF_BOMB_RING396, "396紫" },
-    { 10, CE_ANM_ABILITY_SCRIPT_MOF_BOMB_RING397, "397紫" },
-    { 20, CE_ANM_ABILITY_SCRIPT_MOF_BOMB_RING396, "396紫" },
-    { 30, CE_ANM_ABILITY_SCRIPT_MOF_BOMB_RING397, "397紫" },
+static const char *bomb10_variant_name(int32_t v)
+{
+    return (v == 0) ? "灵梦" : (v == 1) ? "魔理沙" : "符卡中";
+}
+
+/* 排期表：`at` = 出生帧（相对灵击发动；一手主脚本 400/407/441 的标签帧号），
+ * `script[变体]` = 柱环脚本号。**变体下标与一手 `Bomb::start` 选主脚本的那三条分支一一对应**
+ *   （0 = 灵梦 script400 / 1 = 魔理沙 script407 / 2 = 符卡中 script441），
+ *   判据与半径曲线同一个（`spell_now` → `reimu`），见 `bomb10_start()` 里的 `s_run.variant`。
+ * ⚠ 三套的子脚本**只差几个数**（成长帧数 / 目标半径 / 淡出时点），一手各有一套；
+ *   2026-09-24 owner 实跑「灵击依旧很奇怪」的根因 = 我最初**只移植了灵梦那一套给全部机体**
+ *   ⇒ 魔理沙（半径 112）看到的环是照 160/200 px 画的。三套的数值表在
+ *   `assets/ability/make_mof_bomb_ring_scripts.py`（唯一出处，脚本由它生成）。*/
+static const struct {
+    int32_t  at;
+    uint32_t script[3];      /* [0] 灵梦 / [1] 魔理沙 / [2] 符卡中 */
+    const char *tag;
+} s_ring_sched[] = {
+    {  0, { CE_ANM_ABILITY_SCRIPT_MOF_BOMB_RING394, CE_ANM_ABILITY_SCRIPT_MOF_BOMB_RING401,
+            CE_ANM_ABILITY_SCRIPT_MOF_BOMB_RING435 }, "环1白" },
+    {  0, { CE_ANM_ABILITY_SCRIPT_MOF_BOMB_RING395, CE_ANM_ABILITY_SCRIPT_MOF_BOMB_RING402,
+            CE_ANM_ABILITY_SCRIPT_MOF_BOMB_RING436 }, "环2白" },
+    {  0, { CE_ANM_ABILITY_SCRIPT_MOF_BOMB_RING396, CE_ANM_ABILITY_SCRIPT_MOF_BOMB_RING403,
+            CE_ANM_ABILITY_SCRIPT_MOF_BOMB_RING437 }, "环3紫" },
+    { 10, { CE_ANM_ABILITY_SCRIPT_MOF_BOMB_RING397, CE_ANM_ABILITY_SCRIPT_MOF_BOMB_RING404,
+            CE_ANM_ABILITY_SCRIPT_MOF_BOMB_RING438 }, "环4紫" },
+    { 20, { CE_ANM_ABILITY_SCRIPT_MOF_BOMB_RING396, CE_ANM_ABILITY_SCRIPT_MOF_BOMB_RING403,
+            CE_ANM_ABILITY_SCRIPT_MOF_BOMB_RING437 }, "环3紫" },
+    { 30, { CE_ANM_ABILITY_SCRIPT_MOF_BOMB_RING397, CE_ANM_ABILITY_SCRIPT_MOF_BOMB_RING404,
+            CE_ANM_ABILITY_SCRIPT_MOF_BOMB_RING438 }, "环4紫" },
+};
+/* 火星（枫叶）：一手 398/399（灵梦 半径 160）、405/406（魔理沙 112）、439/440（符卡中 64）。
+ * 红 = 往外飞、蓝 = 往里收（一手字面量 +48 / −48）。*/
+static const uint32_t s_leaf_script[3][2] = {
+    { CE_ANM_ABILITY_SCRIPT_MOF_BOMB_SPARK,     CE_ANM_ABILITY_SCRIPT_MOF_BOMB_SPARK_BLUE     },
+    { CE_ANM_ABILITY_SCRIPT_MOF_BOMB_SPARK112,  CE_ANM_ABILITY_SCRIPT_MOF_BOMB_SPARK_BLUE112  },
+    { CE_ANM_ABILITY_SCRIPT_MOF_BOMB_SPARK64,   CE_ANM_ABILITY_SCRIPT_MOF_BOMB_SPARK_BLUE64   },
 };
 #define BOMB10_RING_SCHED_N ((int32_t)(sizeof s_ring_sched / sizeof s_ring_sched[0]))
 
@@ -96,6 +125,9 @@ typedef struct {
                                            *   `texCircle` 时的近似（用户口径「**它不是32段**」）—— 两个都不该留。*/
     int32_t  ring_next;    /* 下一根要起的柱环在 `s_ring_sched` 里的下标（排期按帧号升序 ⇒ 顺序推即可）*/
     int32_t  leaf_tick;    /* 诊断：本发一共起了几颗火星（一手：每 30 帧一趟、一趟 4 颗）*/
+    int32_t  small;        /* ★★ 2026-09-24：**小灵击档**（一手：特定符卡上的压制，不是「符卡中」）*/
+    int32_t  variant;      /* ★★ 2026-09-24：**视觉变体** 0 = 灵梦 / 1 = 魔理沙 / 2 = 符卡中
+                            *   （一手 `Bomb::start` 按同一判据选主脚本 400/407/441，三套子脚本不同）*/
     float    vx, vy;       /* ★ 2026-09-24：**视觉锚点** = 发动瞬间的自机坐标（柱环/火星都挂在这里）。
                             *   一手：`Bomb::on_tick` 每帧只动**自己**的 `bomb+0x30..0x38`（消弹/伤害中心），
                             *   **没有**写 anm VM 的位置字段（`th10:0x4057b6`–`0x4057de` 全段只碰炸弹对象）
@@ -123,6 +155,9 @@ int32_t bomb10_target_centi(void) { return s_run.target_centi; }
 int32_t bomb10_spell_frames(void) { return s_run.spell_frames; }
 int32_t bomb10_owner_id(void)     { return s_run.owner_id; }
 int32_t bomb10_invuln_left(void)  { return s_run.invuln_left; }
+/* ★ 2026-09-24：本发的**视觉变体**（0 灵梦 / 1 魔理沙 / 2 小灵击档）—— 给卡侧的发动日志用
+ *   （变体决定用哪一套柱环/火星脚本，见 `s_ring_sched`）。*/
+int32_t bomb10_variant(void)      { return s_run.variant; }
 
 /* 救命：`th18:0x45d590`（thiscall(Player*)、无栈参、裸 `ret`）。一手逐条见 `mof_core.h` 的
  * 「灵击 → 决死」块与 `signal_core.h` 的同名段（两个文件都在引用它）。*/
@@ -183,7 +218,8 @@ static void bomb10_ring_spawn_due(void)
     while (s_run.ring_next < BOMB10_RING_SCHED_N &&
            s_run.elapsed >= s_ring_sched[s_run.ring_next].at) {
         const int32_t  k  = s_run.ring_next++;
-        const uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(), s_ring_sched[k].script, 13);
+        const uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(),
+                                         s_ring_sched[k].script[s_run.variant], 13);
         int i;
         if (!id) {
             ce_log("%s: 柱环 %s 起不来（帧 %d，ANM VM 池满？）",
@@ -193,9 +229,10 @@ static void bomb10_ring_spawn_due(void)
         for (i = 0; i < BOMB10_RING_VMS; ++i)
             if (!s_run.ring_vm[i]) { s_run.ring_vm[i] = id; break; }
         (void)ce_anm_set_pos(id, s_run.vx, s_run.vy, 0.0f);   /* 视觉锚点（见 bomb10_run_t 的注）*/
-        ce_log("%s/fx: 起柱环 %s vm=%u 帧 %d（脚本 %u）",
+        ce_log("%s/fx: 起柱环 %s vm=%u 帧 %d（脚本 %u，变体 %s）",
                s_run.host ? s_run.host->log_tag : "bomb10", s_ring_sched[k].tag, (unsigned)id,
-               (int)s_run.elapsed, (unsigned)s_ring_sched[k].script);
+               (int)s_run.elapsed, (unsigned)s_ring_sched[k].script[s_run.variant],
+               bomb10_variant_name(s_run.variant));
     }
 }
 
@@ -244,9 +281,20 @@ int32_t bomb10_start(const bomb10_host_t *host, void *user, int32_t by_hit)
     s_run.user         = user;
     s_run.owner_id     = (int32_t)host->card_id;
     s_run.by_hit       = by_hit;
-    s_run.target_centi = spell_now ? MOF_BOMB_R_SPELL_CENTI
-                                   : (reimu ? MOF_BOMB_R_REIMU_CENTI : MOF_BOMB_R_MARISA_CENTI);
-    s_run.rise_milli   = mof_core_bomb_rise_milli(spell_now, reimu);
+    /* ★★★ 小灵击档 = **特定符卡**（一手：`[spellcard+0x3788] ∈ 0x5d..0x60 ∪ {0x6d}` = 风神录 6 面终符
+     *   那类「灵击被压制」的场面），**不是「符卡中」**。owner 2026-09-24 口径：「那是剧情和平衡意义，
+     *   不能把这个当常态」⇒ 判据走 `mof_core_bomb_suppressed(spell_id)`（名单默认空 ⇒ TH18 侧不启用），
+     *   而**不是** `spell_now`。⚠ 伤害表 / `bomb+0x44` 那几处仍然用通用的 `spell_now`（一手 `flags & 1`），
+     *   别混用：两者一手就不是同一个判据。
+     *   ⚠ `spell_now` 这一行仍然要读（它给伤害/大字灵击用），只是**不再**参与半径与视觉变体。*/
+    s_run.small        = mof_core_bomb_suppressed(ce_spell_id());
+    /* ★★ 一手 `Bomb::start` 的三条分支（脚本 400/407/441）＝ 灵梦 / 魔理沙 / 小灵击：
+     *   判据与下面选半径的那一条**必须同源**（`s_run.small` 优先，再看 `CHARACTER == 0`）⇒
+     *   视觉与半径永远一致。三套子脚本只差数值，见 `s_ring_sched` / `s_leaf_script` 的注。*/
+    s_run.variant      = s_run.small ? 2 : (reimu ? 0 : 1);
+    s_run.target_centi = s_run.small ? MOF_BOMB_R_SPELL_CENTI
+                                     : (reimu ? MOF_BOMB_R_REIMU_CENTI : MOF_BOMB_R_MARISA_CENTI);
+    s_run.rise_milli   = mof_core_bomb_rise_milli(s_run.small, reimu);
     s_run.reimu        = reimu;
     s_run.x            = pp[0];
     s_run.y            = pp[1];
@@ -416,8 +464,7 @@ void bomb10_tick(int32_t driver)
         int k;
         for (k = 0; k < BOMB10_RING_LEAF_UNITS; ++k) {
             const uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(),
-                                             (k & 1) ? CE_ANM_ABILITY_SCRIPT_MOF_BOMB_SPARK_BLUE
-                                                     : CE_ANM_ABILITY_SCRIPT_MOF_BOMB_SPARK, 13);
+                                             s_leaf_script[s_run.variant][k & 1], 13);
             if (id) {
                 (void)ce_anm_set_pos(id, s_run.vx, s_run.vy, 0.0f);   /* 火星也挂在锚点（一手是主脚本的子 VM）*/
                 s_run.leaf_probe[k] = id;                             /* 诊断：5 帧后读它的字段 */
@@ -457,9 +504,10 @@ void bomb10_tick(int32_t driver)
     if (--s_run.left <= 0) {
         bomb10_fx_dump("结束前");
         bomb10_fx_kill();
-        ce_log("%s: 灵击结束（%d 帧，伤害源 %d 帧，半径 %.1f，中心 y %.1f，火星 %d 颗）",
+        ce_log("%s: 灵击结束（%d 帧，伤害源 %d 帧，半径 %.1f，中心 y %.1f，火星 %d 颗，变体 %s%s）",
                host->log_tag, (int)s_run.frames, (int)s_run.dmg_frames, (double)r, (double)s_run.y,
-               (int)s_run.leaf_tick);
+               (int)s_run.leaf_tick, bomb10_variant_name(s_run.variant),
+               s_run.small ? "（小灵击档）" : "");
         s_run.left = 0;
     }
 }

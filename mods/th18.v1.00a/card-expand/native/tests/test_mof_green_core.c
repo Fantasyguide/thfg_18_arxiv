@@ -269,7 +269,9 @@ static void test_is_fairy(void)
 {
     int i;
     /* 妖精：A 族 0–39（GirlBlueA/GirlRedA/GirlA0x/GirlB/GirlC）、C 族 159–178、B 族 184–203 */
-    for (i = 0; i <= 39; ++i) CHECK(mof_green_is_fairy(2, i) == 1);
+    for (i = 0; i <= 19; ++i) CHECK(mof_green_is_fairy(2, i) == 1);
+    /* ★ 2026-09-24 owner 口径：20..39 = 48×32/48×48 的**中妖精** ⇒ 不算杂鱼，不补绿妖精 */
+    for (i = 20; i <= 39; ++i) CHECK(mof_green_is_fairy(2, i) == 0);
     for (i = 159; i <= 178; ++i) CHECK(mof_green_is_fairy(2, i) == 1);
     for (i = 184; i <= 203; ++i) CHECK(mof_green_is_fairy(2, i) == 1);
     /* **大妖精（实跑里的「大蝴蝶」）不是妖精** —— 40–44 / 224–228 一律 0 */

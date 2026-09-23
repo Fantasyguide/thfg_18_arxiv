@@ -129,6 +129,9 @@
 #define CE_GT_FLAG_OPEN_SHOP       0x20000
 #define CE_ADDR_LIFE_FRAGMENTS     0x4ccd4c   /* = GlobalsInner+0x70（ExpHP LIFE_FRAGMENTS）*/
 #define CE_ADDR_SPELLCARD_PTR      0x4cf2c0   /* zSpellcard*（ExpHP SPELLCARD_PTR）；GameThread__thread_start 0x44308c 写 */
+#define CE_SPELL_ID                0x74       /* int32：**符卡 id**（一手 `engine/ecl/th18/01-boss-interrupts-and-spellcard.md`
+                                              * §1 的字段表；`Spellcard__start` `0x42A320` 的第一个实参写的就是它）。
+                                              * 110 的**小灵击**判据要用它（见 `mof_core.h` 的 `mof_core_bomb_suppressed()`）*/
 #define CE_SPELL_FLAGS             0x78       /* bit0 符卡进行中（0x409b10）、bit1 奖励存活（0x42d640，收符卡拿奖励 / Sannyo 碎片看它）、bit3 耐久符卡（ECL 542 → 0x42d650；超时按收符卡算）、bit7 已超时（步进 0x42eff4 置）*/
 #define CE_SPELL_FLAG_ACTIVE       0x1
 #define CE_SPELL_FLAG_BONUS        0x2

@@ -179,7 +179,9 @@ int32_t bomb10_left(void);           /* 剩余帧数（0 = 没在灵击）*/
 int32_t bomb10_target_centi(void);   /* 本发的目标半径（1/100 px）*/
 int32_t bomb10_spell_frames(void);   /* 符卡已过帧数（= 一手 `[spellcard+0x3738]` 的对位）*/
 int32_t bomb10_owner_id(void);       /* 本发的发动者卡号（0 = 没有）*/
-int32_t bomb10_invuln_left(void);    /* 本发还剩几帧无敌（0 = 已给完；诊断用）*/
+int32_t bomb10_invuln_left(void);
+/* 本发的视觉变体（0 灵梦 / 1 魔理沙 / 2 小灵击档）—— 一手三套子脚本（主脚本 400/407/441）*/
+int32_t bomb10_variant(void);    /* 本发还剩几帧无敌（0 = 已给完；诊断用）*/
 
 /* ---- 发动 / 推进 / 收尾 ----
  * `bomb10_start`：返回 1 = **本发由你发动**（公共那一半 + 你的 `on_start` 都做完了）；
