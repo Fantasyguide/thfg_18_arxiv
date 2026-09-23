@@ -808,11 +808,19 @@ static void yk_aura_kill(yk_card_t *s)
 }
 
 /* 每帧跟随（一手就是每帧钉在自机）+ 自愈（句柄被引擎清过 ⇒ 重起；脚本自己 delete 了 ⇒ 清 0）。*/
+static uint8_t s_aura_edge_spawn;   /* ★ #32/#29：光环「每个形态边沿只起一次」的许可位 */
 static void yk_aura_tick(yk_card_t *s, float x, float y)
 {
     if (!s || !s->aura_on) return;
-    if (s->aura_id && !ce_anm_get_vm(s->aura_id)) s->aura_id = 0;   /* 引擎清过 VM 列表 ⇒ 自愈 */
-    if (!s->aura_id) {
+    if (s->aura_id && !ce_anm_get_vm(s->aura_id)) s->aura_id = 0;   /* 引擎清过 VM 列表 ⇒ 句柄作废 */
+    /* ★★★ 2026-09-23（owner #32/#29：「th08 按 shift **光环动画持续触发**」，判据 = **切换那一下的边沿**）：
+     *   原来这里「只要 `aura_id == 0` 就起一支」= **每帧自愈重起** —— 一旦外壳的 VM 被引擎清掉
+     *   （或 `ce_anm_set_pos` 当帧失败把句柄清零），下一帧又会起一支**从头播**的动画 ⇒
+     *   观感就是「光环一直重新触发」。
+     *   ⇒ 改成**每个边沿只起一次**：`s_aura_edge_spawn` 只在「进低速」那一支置 1，
+     *     这里消费掉（起成功就清 0）⇒ VM 中途没了**不补**（等下一次切换），动画只播一遍。
+     *   ⚠ 与 #33/#38 的「高速完全回归原生」一致：离开低速走 `yk_aura_kill()`（interrupt 1 → 30 帧淡出自删）。*/
+    if (!s->aura_id && s_aura_edge_spawn) {
         s->aura_id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_AURA,
                                   YK_FAM_ANM_LAYER);
         if (!s->aura_id) {
@@ -821,6 +829,7 @@ static void yk_aura_tick(yk_card_t *s, float x, float y)
                    (int)CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_AURA);
             return;                                          /* 下一帧再试（脚本没起来不影响机制）*/
         }
+        s_aura_edge_spawn = 0;                               /* ★ #32/#29：本边沿只起一次 */
         if (!s->aura_logged) {
             s->aura_logged = 1;
             ce_log("youkai: body Shift aura ON (TH08 `Player::move` 0x44b194 -> etama.anm script54) - "
@@ -1629,6 +1638,7 @@ typedef struct {
 static yk_popup_t s_popup[YK_POPUP_MAX];
 static unsigned s_popup_dropped;
 static uint32_t s_hud_vm_log_tick;   /* ★ 2026-09-23（#30）：逐 VM 实况行的节拍 */
+static uint8_t  s_aura_edge_spawn;   /* ★ 2026-09-23（#32/#29）：光环**每个形态边沿只起一次** */   /* ★ 2026-09-23（#30）：逐 VM 实况行的节拍 */
 
 static void yk_popup_kill(yk_popup_t *p)
 {
@@ -3311,7 +3321,8 @@ static int on_tick_2(ce_card_t *c)
             /* ★ #23：本体那一下（一手 `0x44b155 SpawnEffect(0x1d, …, 0x80ff8080)` = 我们的 313）
              * —— 一手起在**自机**坐标上（`&player+0x2b4`），不是使魔身上。*/
             if (flash_ok) yk_flash_spawn(CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_BODYFLASH58, px, py);
-            s->aura_on = 1;                       /* ★ #23：妖侧 ⇒ 光环应当在（本帧由 yk_aura_tick 起）*/
+            s->aura_on = 1;                       /* ★ #23：妖侧 ⇒ 光环应当在 */
+            s_aura_edge_spawn = 1;                /* ★ #32/#29：**只在这个边沿**允许起一支（下一帧由 tick 消费）*/
         } else {
             /* ★ #23：妖→人那一下（一手 `0x44b3af SpawnEffect(0x1c, …, 0x808080ff)` = 我们的 314）。*/
             if (flash_ok) yk_flash_spawn(CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_BODYFLASH57, px, py);
