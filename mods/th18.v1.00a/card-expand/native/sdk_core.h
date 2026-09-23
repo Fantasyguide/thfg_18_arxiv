@@ -581,6 +581,10 @@ void ce_full_p_gate_reset(void);                    /* 全清（SDK 初始化用
  * ⚠ **粘性**（照 `ce_no_hit_declare`）：声明 1 = 生效到改口为止。理由与它同：`repopulate` 可能落在
  *   两帧之间的任意时刻，而声明写在卡 tick 里。删卡/退场时由 `ce_layer_drop_card()` 撤（见 `sdk.h`）。*/
 void ce_native_option_hide_declare(uint32_t id, int on, int character);  /* 粘性；character = 生效的机体号 */
+/* ★ 2026-09-23：**隐藏但请求保留记录**（108 用）。有卡这么声明时，构建断点不动手（记录/坐标照建），
+ *   显示由该卡自己的 `ce_native_option_sweep_keep_state()` 每帧收掉。 */
+void ce_native_option_keep_records(uint32_t id, int on);
+int  ce_native_option_records_wanted(void);
 int  ce_native_option_hidden(int character);   /* 断点 handler 读它：非 0 ⇒ 隐藏（character = 当前机体）*/
 int  ce_native_option_hide_owner(void);        /* 声明者 id（最小）；无人 = -1 */
 void ce_native_option_hide_reset(void);        /* 全清（SDK 初始化用）*/

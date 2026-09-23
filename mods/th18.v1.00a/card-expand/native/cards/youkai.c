@@ -3579,6 +3579,10 @@ static int on_tick_2(ce_card_t *c)
      *   ⚠ 已知剩下的一处：**111（魔理沙侧）仍然声明隐藏** ⇒ 魔理沙机体下隐藏断点仍会把 `lvl` 压 0，
      *     那一路的 `slot >= 1` 行仍无膛口（登记在 `HANDOFF-108.md` §4）。*/
     ce_native_option_hide_declare((uint32_t)ce_card_id(c), 0, yk_current_character());
+    /* ★ 修法第 3 步（2026-09-23）：**隐藏但请求保留记录** —— 这样即使 111（魔理沙侧）同时声明了隐藏，
+     *   构建断点也不会把 `lvl` 压 0 ⇒ 那 4 格的记录/坐标照建，行循环有活膛口（我们的 `slot >= 1` 行）。
+     *   显示仍由下面那支 keep_state sweep 每帧收掉 ⇒ 111 的「原生不可见」不受影响。*/
+    ce_native_option_keep_records((uint32_t)ce_card_id(c), focused);
     if (focused) {
         int n = ce_native_option_sweep_keep_state();
         (void)ce_kill_retail_option_lasers();

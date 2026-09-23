@@ -20848,3 +20848,32 @@ youkai:   native opt slot 2: state 0 vm 00000000 muzzle (0.0, -400.0)   （3/4 �
 
 **发布面**：动 `sdk.c`（⇒ DLL）；未动 `pl0X.sht` / `pl0X.anm` / `ability.anm` / wav / `sites.py` / `SITE_BUDGET`；**没新增断点**（31 个原样）。
 **下一步**：第 1 步（`ce_native_option_keep_records()` + 构建断点不压 `lvl`）与第 3 步（108 低速声明）—— 等 B-1 实跑验证后一起做。
+
+## §BE 详录 #80（2026-09-23）：★ **共享件** `native/sdk_core.{h,c}` + `native/sdk.c` —— 新增「隐藏但请求保留记录」声明层（108 子机修法第 1 步）+ 108 侧第 3 步
+
+**来路**：`§BE #78` 之后剩下的一处 = **装 108 + 111 且机体 = 魔理沙**：111 声明了隐藏 ⇒ 构建断点把 `lvl` 压 0
+⇒ 原生那 4 格的**记录都不建** ⇒ 108 行里 `slot ≥ 1` 仍无膛口（而第 2 步 `§BE #79` 已经把「弹被自己的断点拦掉」那一半解开了）。
+
+**文件 → 改了什么**
+
+| 文件 | 改动 |
+| --- | --- |
+| `native/sdk_core.{h,c}` | 新增 `ce_native_option_keep_records(card_id, on)`（每卡、粘性）+ `ce_native_option_records_wanted()`；`ce_native_option_hide_reset()` 里一并清零 |
+| `native/sdk.c` | `BP_ce_repopulate_native_option` 在「已隐藏」之后加一条早退：**有卡请求保留记录 ⇒ 本支什么都不做**（不压 `lvl`、不清 `state`/VM）|
+| `native/cards/youkai.c` | 低速声明 `ce_native_option_keep_records(id, focused)`（第 3 步）|
+
+**为什么是「本支什么都不做」而不是「只留记录不留 VM」**：引擎建记录的**那一刻**就同时建了 VM（同一支 `0x45d610` 里），
+所以「只留记录」在这一支里做不到 —— 必须让**显示**交给**每帧**的 `ce_native_option_sweep_keep_state()`（`§BE #78`）
+去收。⇒ 两家需求同时成立：111 的「原生**不可见**」（VM 每帧被杀）+ 108 的「记录活着、行循环有膛口」。
+
+**影响面**：
+- 只在**有卡声明 `keep_records`** 时改变行为（今天只有 108，且只在低速）⇒ 其它卡、以及 108 的高速：逐字节不变。
+- 111 的隐藏声明仍然生效（`ce_native_option_hidden()` 语义没动）：它的**原生 set 弹**照旧被膛口断点拦（除了第 2 步那条
+  「本帧有卡认领 set ⇒ 放行」的早退 ⇒ 那种帧上「行是认领者的」）。
+
+**怎么验证的**：`make check` **rc=0**（380 文件）、`python3 tooling/check-docs.py` 全绿、`make dllx87` = **0 条 x87**。
+实跑判据：**魔理沙机体**进妖侧时 `youkai: native option slots at low speed - N/4 live` 也应不再是 `0/4`，
+且妖侧应出现**第二列**弹（与灵梦那一档的预期一致）。
+
+**发布面**：动 `sdk_core.c` + `sdk.c`（⇒ DLL）；未动 `pl0X.sht` / `pl0X.anm` / `ability.anm` / wav / `sites.py` / `SITE_BUDGET`；
+**没新增断点**（31 个原样）。

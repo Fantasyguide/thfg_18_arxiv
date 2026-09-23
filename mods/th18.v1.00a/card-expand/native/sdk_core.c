@@ -651,6 +651,23 @@ void ce_native_option_hide_declare(uint32_t id, int on, int character)
         if (s_natopt_hide[i]) { s_natopt_owner = i; break; }
 }
 
+/* ★★★ 2026-09-23（108 子机修法第 1 步）：**「隐藏，但请求保留记录」**声明（照 `s_natopt_hide` 那一对的写法）。
+ *   语义：有卡这么声明时，构建断点**不动手**（让引擎照常建记录/坐标），而**显示**由那张卡自己的
+ *   每帧 `ce_native_option_sweep_keep_state()` 收掉 ⇒ 两家的需求同时成立（详见 `HANDOFF-108.md` §4）。*/
+static uint8_t s_natopt_records[CE_SDK_CARD_ID_MAX + 1];
+
+void ce_native_option_keep_records(uint32_t id, int on)
+{
+    if (id > (uint32_t)CE_SDK_CARD_ID_MAX) return;
+    s_natopt_records[id] = on ? 1u : 0u;
+}
+
+int ce_native_option_records_wanted(void)
+{
+    for (int i = 0; i <= CE_SDK_CARD_ID_MAX; ++i) if (s_natopt_records[i]) return 1;
+    return 0;
+}
+
 int ce_native_option_hidden(int character)
 {
     for (int i = 0; i <= CE_SDK_CARD_ID_MAX; ++i)
@@ -663,6 +680,7 @@ int ce_native_option_hide_owner(void) { return s_natopt_owner; }
 void ce_native_option_hide_reset(void)
 {
     for (int i = 0; i <= CE_SDK_CARD_ID_MAX; ++i) { s_natopt_hide[i] = 0; s_natopt_char[i] = 0; }
+    for (int i = 0; i <= CE_SDK_CARD_ID_MAX; ++i) s_natopt_records[i] = 0;
     s_natopt_owner = -1;
 }
 

@@ -1506,6 +1506,11 @@ int __cdecl BP_ce_repopulate_native_option(x86_reg_t *regs, void *bp_info)
     if (!inner) return BP_EXEC_ORIGINAL;
     character = *(const int32_t *)CE_ADDR_CHARACTER;
     if (!ce_native_option_hidden(character)) return BP_EXEC_ORIGINAL;
+    /* ★★★ 2026-09-23（修法第 1 步）：**有卡请求保留记录 ⇒ 本支什么都不做**（既不压 `lvl` 也不清 `state`/VM）
+     *   ⇒ 引擎照常建记录、每帧跟随坐标 ⇒ 行循环有活膛口；而**显示**由那张卡自己的
+     *   `ce_native_option_sweep_keep_state()` 每帧收掉（这一步必须留给**每帧**做，因为引擎建记录的那一刻
+     *   就同时建了 VM ⇒ 想在**这一支**里「只留记录不留 VM」是不可能的）。*/
+    if (ce_native_option_records_wanted()) return BP_EXEC_ORIGINAL;
 
     /* 收掉 4 格 × 2 支原生子机 VM（普通形 / 满火力形）。
      * ⚠ id 读出来就置 0 再 interrupt（引擎自己也是这个顺序：先 interrupt 再写 0 —— 顺序无所谓，
