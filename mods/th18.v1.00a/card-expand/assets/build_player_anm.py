@@ -574,6 +574,8 @@ def _yk_extra_plan(player: str):
                         #   与 `302_ufo_hud_slot` 的 Δ4b 是同一个坑 ⇒ 只给刻符显式注入 `scale(2.0)`。
                         #   实跑证据：`youkai/orb.vm` 五行 `sprite 97 alpha 255 layer 7 **scale 1.00**`。
                         scale_inject=(name == "orb"), th08_opcodes=True,
+                        # ★ #30：人妖槽四支 + 字形要**归零脚本 pos**（否则与 C 侧锚点叠加 ⇒ y 翻倍画到屏外）
+                        zero_pos=(name in ("gauge", "gaugefont")),
                         # ★ 2026-09-23（#th11-3 同源缺口）：刻符（`orb`）走**世界列表**且自带层
                         #   （`YK_ORB_ANM_LAYER`，由 C 侧传）⇒ 不注入；四支人妖槽 HUD + 字形
                         #   走 `ce_anm_spawn_ui`（UI 列表）⇒ 必须自带 `layer(25)`，见
@@ -996,6 +998,20 @@ def _inject_hud_layer(body: str, layer: int) -> str:
         return head + rest[:lm.end()] + f"    layer({layer});\n" + rest[lm.end():]
     return head + f"    layer({layer});\n" + rest
 
+
+
+def _zero_script_pos(body: str) -> str:
+    """★ 2026-09-23（#30「人妖槽又看不见」）：把脚本自带的 `pos(...)` **全部删掉**并改成 `pos(0,0,0)`。
+
+    为什么：人妖槽那四支（+字形）是从 TH08 `ascii.anm` 搬来的，**自带 `pos(32,449)` 一类的站位**；
+    而我们 C 侧每帧又用 `ce_anm_set_pos()` 写 `entity_pos(+0x5f0)` 摆位 ⇒ **绘制点 = 脚本 pos + 实体 pos**
+    （一手 `th18:0x48171f`）⇒ **y 被加了两次**。实跑日志（`youkai/hud.vm`）给的是铁证：
+      `bar: pos(0x30)(32,449) + ent(0x5f0)(257,860) = 表面 (289,1309)` —— 屏幕只有 960 高。
+    ⇒ 与 111/112 的 HUD 同一口径：**脚本 pos 归零、位置全归 C 侧**（它们的脚本本来就写着 `pos(0,0,0)`）。
+    """
+    body = re.sub(r"^[ \t]*pos\([^\n]*\);[ \t]*\n", "", body, flags=re.M)
+    m = re.match(r"(script script\d+ \{\n)", body)
+    return body if not m else body[:m.end()] + "    pos(0.0f, 0.0f, 0.0f);\n" + body[m.end():]
 
 def _append_spec(player: str, retail_text: str, tools, anmmap) -> str:
     """按 PLAYER_ART_ENTRIES / TH13_TRANCE_ENTRIES / YOUKAI_BODY / APPEND_PLAN 生成追加后的 spec
