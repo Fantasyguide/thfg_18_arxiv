@@ -2103,28 +2103,9 @@ static void signal_support_patchouli(signal_card_t *s)
  * ★★ 2026-09-16：**格数随档**（用户口径 ②）——档 0 一格不申请，档 N 申请 N 格，
  *   第 i 格的位置 = 本档阵型的第 i 格（`signal_formation_cell`）；满档第一次看到**整个阵型**。
  *   合计输出由 `*_core.h` 的 DPS 归一守住（4 格 × 20/12 = 原生满档子机层）。*/
-/* ★★ 2026-09-23（用户实跑：「**被回收了，但是回收得很慢**」）：**多余的子机格每帧收**。
- *   上一版把回收放在 `on_option_pose_apply()` 里 —— 而那个回调**只在「本卡当选落笔者」的帧**才跑
- *   （`sdk.c` 的 `ce_option_pose_frame_tick()`：声明层每帧选举，只有当选者的 apply 被调）
- *   ⇒ 档位掉下来之后，要等到**下一次当选**才收，中间那几帧（乃至更久）那台子机就冻在原地。
- *   档位是**卡自己读的**（`signal_power_level()`，与声明里用的同一个数）⇒ 回收由卡每帧做，
- *   与选举无关。`ce_option_drop()` 删 VM 且真松槽（只清 `ptr` 会漏槽：12 格用完后再也申请不到）。*/
-static void signal_option_drop_surplus(ce_card_t *c, signal_card_t *s)
-{
-    int i, want = signal_power_level();
-
-    if (!s) return;
-    if (want < 0) want = 0;
-    if (want > SIGNAL_OPTION_MAX) want = SIGNAL_OPTION_MAX;
-    for (i = want; i < SIGNAL_OPTION_MAX; ++i) {
-        if (!s_opt[i].ptr) { s_opt[i].retry = 0; continue; }
-        ce_option_drop(c, &s_opt[i]);
-        s_opt[i].ptr = 0;
-        s_opt[i].retry = 0;
-        ce_log("signal: option #%d 回收（当前档 %d ⇒ 只要 %d 格；frame %u）",
-               i, (int)signal_power_level(), want, (unsigned)ce_sdk_frame());
-    }
-}
+/* 前置声明：`signal_option_align()` 定义在 `on_option_pose_apply()` 之前（本函数要用它）。*/
+static void signal_option_align(ce_card_t *c, signal_card_t *s, int want,
+                                const ce_option_pose_t *pose);
 
 static void signal_option_declare(ce_card_t *c, signal_card_t *s)
 {
@@ -2134,6 +2115,8 @@ static void signal_option_declare(ce_card_t *c, signal_card_t *s)
 
     if (n <= 0) {                       /* 档 0（或取不到档）⇒ 本帧退出声明 */
         (void)ce_option_pose_declare(c, NULL);
+        /* ★ 2026-09-23：**档 0 也要当帧收干净**（不然扣到 0 档时那几台子机还留在场上）。*/
+        signal_option_align(c, s, 0, NULL);
         return;
     }
     if (n > SIGNAL_OPTION_MAX) n = SIGNAL_OPTION_MAX;
@@ -2156,6 +2139,53 @@ static void signal_option_declare(ce_card_t *c, signal_card_t *s)
     }
     pose.count = i;                     /* 阵型表给不出那么多格时按实际填到的格数声明 */
     (void)ce_option_pose_declare(c, (pose.count > 0) ? &pose : NULL);
+    /* ★★ 2026-09-23（用户实跑：「**被回收了，但是回收得很慢**」＋「**添加子机也慢**，可能是同一个 bug」）：
+     *   两条慢的根因是同一个 —— 收与补原先都只挂在 `on_option_pose_apply()` 上，而那个回调
+     *   **只在「本卡当选落笔者」的帧**才跑（`sdk.c` 的声明层每帧选举，只有当选者的 apply 被调）
+     *   ⇒ 档位一变，要等下一次当选才生效，中间那几帧（乃至更久）子机数就是旧的。
+     *   档位是**卡自己读的**（`signal_power_level()`，与上面 `pose.count` 同源）⇒ 每帧自己对齐。
+     *   ⚠ 只在**当选**时补，不当选（108 在场等）一律收到 0 ⇒ 与声明层的「谁落笔」口径一致。*/
+    signal_option_align(c, s,
+                        (ce_option_pose_winner() == (int)ce_card_id(c)) ? pose.count : 0,
+                        (ce_option_pose_winner() == (int)ce_card_id(c)) ? &pose : NULL);
+}
+
+/* ★★ 2026-09-23：**把「本卡当前该有的子机」与手上的槽对齐一遍**（幂等）——
+ *   收掉 `i >= want` 的多余格、补上 `i < want` 缺的格、并把偏移字段刷新成 `pose` 的当前阵型。
+ *   由**两条路**共用：
+ *     ① `on_option_pose_apply()`（声明层每帧只调**当选落笔者**一次；被顶掉时补叫一次退位通知）；
+ *     ② **每帧的 `signal_option_declare()`**（见那里的注：回收/添加都不能只挂在当选的那几帧上 ——
+ *        用户实跑报的「**回收得很慢**」与「**添加也慢**」是同一个根因）。
+ *   ⚠ `want = 0` ⇒ 全收（退位 / 不当选 / 档 0 的情形都走这条）。
+ *   ⚠ `ce_option_get()` 对**已申请**的槽是「认领并返回」（不重申请）⇒ 每帧调它只是刷新偏移，很便宜。
+ *   `ce_option_drop()` 删 VM（`o->ptr + CE_OPT_ANM_ID`）**并真松池槽**（`in_use = 0`）⇒ 完整回收。*/
+static void signal_option_align(ce_card_t *c, signal_card_t *s, int want,
+                                const ce_option_pose_t *pose)
+{
+    int i;
+
+    if (!s) return;
+    if (want < 0) want = 0;
+    if (want > SIGNAL_OPTION_MAX) want = SIGNAL_OPTION_MAX;
+    for (i = want; i < SIGNAL_OPTION_MAX; ++i) {
+        if (!s_opt[i].ptr) { s_opt[i].retry = 0; continue; }
+        ce_option_drop(c, &s_opt[i]);
+        s_opt[i].ptr = 0;
+        s_opt[i].retry = 0;
+        ce_log("signal: option #%d 回收（只要 %d 格；frame %u）", i, want, (unsigned)ce_sdk_frame());
+    }
+    if (!pose || want <= 0) return;
+    for (i = 0; i < want; ++i) {
+        uint8_t *o = ce_option_get(c, &s_opt[i], SIGNAL_OPTION_OFFSET_ALLOC, pose->anm_script,
+                                   SIGNAL_OPTION_RETRY, "signal");
+        if (!o) continue;
+        s->opt_script = pose->anm_script;
+        s->opt_on = 1;
+        *(int32_t *)(o + CE_OPT_OFF_NF_X) = (int32_t)(pose->cell[i].ux * 128.0f);
+        *(int32_t *)(o + CE_OPT_OFF_NF_Y) = (int32_t)(pose->cell[i].uy * 128.0f);
+        *(int32_t *)(o + CE_OPT_OFF_F_X)  = (int32_t)(pose->cell[i].fx * 128.0f);
+        *(int32_t *)(o + CE_OPT_OFF_F_Y)  = (int32_t)(pose->cell[i].fy * 128.0f);
+    }
 }
 
 /* 落笔（声明层每帧只调**被选举者**一次；被顶掉时再补叫一次「退位通知」）。
@@ -2169,11 +2199,7 @@ static int on_option_pose_apply(ce_card_t *c)
 
     if (!s) return 0;
     if (ce_option_pose_winner() != (int)ce_card_id(c) || !pose || pose->count <= 0) {
-        for (i = 0; i < SIGNAL_OPTION_MAX; ++i) {
-            if (s_opt[i].ptr) ce_option_drop(c, &s_opt[i]);
-            s_opt[i].ptr = 0;
-            s_opt[i].retry = 0;
-        }
+        signal_option_align(c, s, 0, NULL);     /* 退位 / 不当选 / 档 0 ⇒ 全收 */
         s->opt_script = -1;
         s->opt_on = 0;
         return 0;
@@ -2200,22 +2226,7 @@ static int on_option_pose_apply(ce_card_t *c)
      *   （`th18:0x45d5e0` 那一族本来就成对做）⇒ 我们这一侧的申请循环必须自己补齐这半。
      *   `ce_option_drop()` 会删 VM（`o->ptr + CE_OPT_ANM_ID`）**并真的松开池槽**（`in_use = 0`），
      *   所以这里是完整回收（不是只清指针）。*/
-    for (i = want; i < SIGNAL_OPTION_MAX; ++i) {
-        if (s_opt[i].ptr) ce_option_drop(c, &s_opt[i]);
-        s_opt[i].ptr = 0;
-        s_opt[i].retry = 0;
-    }
-    for (i = 0; i < want; ++i) {
-        uint8_t *o = ce_option_get(c, &s_opt[i], SIGNAL_OPTION_OFFSET_ALLOC, pose->anm_script,
-                                   SIGNAL_OPTION_RETRY, "signal");
-        if (!o) continue;
-        s->opt_script = pose->anm_script;
-        s->opt_on = 1;
-        *(int32_t *)(o + CE_OPT_OFF_NF_X) = (int32_t)(pose->cell[i].ux * 128.0f);
-        *(int32_t *)(o + CE_OPT_OFF_NF_Y) = (int32_t)(pose->cell[i].uy * 128.0f);
-        *(int32_t *)(o + CE_OPT_OFF_F_X)  = (int32_t)(pose->cell[i].fx * 128.0f);
-        *(int32_t *)(o + CE_OPT_OFF_F_Y)  = (int32_t)(pose->cell[i].fy * 128.0f);
-    }
+    signal_option_align(c, s, want, pose);      /* 收多补少 + 刷新偏移（共用件，见它的注）*/
     return 0;
 }
 
@@ -2354,9 +2365,7 @@ static void signal_support_marisa(ce_card_t *c, signal_card_t *s)
      *     「子机刚复活」而我们的 sweep 还没轮到 ⇒ 那一帧发出来的束就是新的一条（用户看到的「换位置」）。
      *     代价 = 128 槽扫描（无命中时不打日志）。*/
     (void)ce_kill_retail_option_lasers();
-    signal_option_declare(c, s);
-    /* ★ 回收与选举无关 ⇒ 档位一掉当帧就收（见 `signal_option_drop_surplus()` 的长注）。*/
-    signal_option_drop_surplus(c, s);
+    signal_option_declare(c, s);   /* 声明 + 每帧对齐（收多补少都在里面，见 declare 尾部的注）*/
 }
 
 /* ======================================================================================
