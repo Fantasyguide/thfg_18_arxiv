@@ -370,6 +370,20 @@ static uint8_t *yk_familiar_by_id(uint32_t fam_id)
     return em && fam_id ? ce_enemy_by_id(em, (int32_t)fam_id) : 0;
 }
 
+/* ★★★ 2026-09-23（owner #37/#36「没有使魔也出魔法阵 / 也响切换音」）：
+ * `yk_map_fam_count()` 数的是**映射表里的发射口**，而**与敌人重合的发射口按规则不建使魔**
+ * ⇒ 那些格子照样留在映射里 ⇒ 计数 > 0 ⇒ 一按 shift 就响一声 + 在敌人身上画一圈魔法阵
+ *（owner 逐字：「**那一声切换是绑定在使魔形态转换上的**…我一按 shift 发现敌人身上都有一个魔法阵」）。
+ * ⇒ 判据改成**真正活着的使魔实体**（`yk_familiar_by_id()` 解得到）。环 / 切换音 / 爆闪三处全用它。*/
+static unsigned yk_map_fam_live_count(const yk_map_t *m)
+{
+    unsigned i, n = 0;
+    if (!m) return 0;
+    for (i = 0; i < YK_FAM_MAX; ++i)
+        if (m->e[i].enemy_id && m->e[i].fam_id && yk_familiar_by_id(m->e[i].fam_id)) ++n;
+    return n;
+}
+
 /* 按 `(enemy_id, 发射口槽)` 取**本卡记的**使魔 id（0 = 这一槽没有活着的使魔）。
  * ★ 只读自己的槽表 —— 关闸判据、位置重钉、life 差分三条路都用它，**不碰 `ev->enemy`**
  *   （那是敌人本体，且只在回调内有效）。同时核一遍「按 id 还查得到」⇒ 表里记的 id 死了也当 0。*/
@@ -3292,7 +3306,7 @@ static int on_tick_2(ce_card_t *c)
          * 读的是**这次边沿之前**的 `focus_age` ⇒ 语义与一手一致；读完这一帧归零。*/
         int flash_ok = (s->focus_age >= YK_AURA_FLASH_MIN_AGE);
         if (focused) {
-            if (yk_map_fam_count(&s_map)) ce_play_sound(0x0cu, px);        /* 人→妖：TH08 id 0x28 = se_invalid */
+            if (yk_map_fam_live_count(&s_map)) ce_play_sound(0x0cu, px);   /* #37：改按存活使魔 */        /* 人→妖：TH08 id 0x28 = se_invalid */
             s->flash_pending = 1;                 /* ★ #22：使魔重建时在它身上补一支爆闪（310）*/
             /* ★ #23：本体那一下（一手 `0x44b155 SpawnEffect(0x1d, …, 0x80ff8080)` = 我们的 313）
              * —— 一手起在**自机**坐标上（`&player+0x2b4`），不是使魔身上。*/
@@ -3306,19 +3320,21 @@ static int on_tick_2(ce_card_t *c)
             {
                 unsigned fi, nring = 0;
                 for (fi = 0; fi < YK_FAM_MAX && nring < YK_RING_MAX; ++fi)
-                    if (s_map.e[fi].enemy_id && s_map.e[fi].fam_id) {
+                    if (s_map.e[fi].enemy_id && s_map.e[fi].fam_id &&
+                        yk_familiar_by_id(s_map.e[fi].fam_id)) {   /* #37：只给活着的使魔画环 */
                         yk_ring_blink(s_map.e[fi].x, s_map.e[fi].y, 1);   /* 1 = 人侧紫 */
                         ++nring;
                     }
             }
             yk_aura_kill(s);                      /* 光环收到 interrupt 1（30 帧淡出后自删）*/
-            if (yk_map_fam_count(&s_map)) {
+            if (yk_map_fam_live_count(&s_map)) {
                 unsigned fi;
-                ce_play_voice(YOUKAI_FAM_SHIFT, px);   /* 妖→人：TH08 id 0x27 = se_ophide */
+                ce_play_voice(YOUKAI_FAM_SHIFT, px);   /* #37/#36：只在真有使魔被收起时响 */   /* 妖→人：TH08 id 0x27 = se_ophide */
                 /* ★ #22：妖→人那一支的爆闪（311）起在**撤走前最后记下的使魔坐标**上
                  *（一手就是起在使魔身上；使魔这一帧正在被撤）。*/
                 for (fi = 0; fi < YK_FAM_MAX; ++fi)
-                    if (s_map.e[fi].enemy_id && s_map.e[fi].fam_id) {
+                    if (s_map.e[fi].enemy_id && s_map.e[fi].fam_id &&
+                        yk_familiar_by_id(s_map.e[fi].fam_id)) {
                         yk_flash_spawn(CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_FLASH60,
                                        s_map.e[fi].x, s_map.e[fi].y);
                         break;                     /* 一手是每只使魔各一支；我们只起一支（画面上一闪）*/
