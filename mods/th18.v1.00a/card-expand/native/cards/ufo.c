@@ -3001,7 +3001,15 @@ static void ufo_hud_slot_flash(int i, int32_t state)
     ufo_hud_vm_log(i, "flash", id);                              /* 闪光 VM 的实况（一次性，不刷屏）*/
     s_flash_id[i] = id;
     s_flash_left[i] = UFO_HUD_FLASH_FRAMES + 2;                  /* 一手 31 帧自删 ⇒ 多给 2 帧余量 */
-    if (s_slot_id[i]) ce_anm_interrupt(s_slot_id[i], UFO_HUD_INTERRUPT_APPEAR);
+    /* ★★★ 2026-09-23（owner：「飞碟槽的动画很奇怪，是先装进去了一个碟子，然后瞬间消失，然后才是
+     *   一个放大缩小进入碟子的动画」）：**「放大缩小进槽」应当由这支 flash VM 自己演**。
+     *   原来我们把这个出现动画发给了**槽位 VM**，而 flash VM 同时画着一枚**实心碟子**（alpha 255、
+     *   盖在同一格上）⇒ 槽位 VM 的放大缩小被**盖住**；等 flash 在 31 帧自删后，那支动画才露出来
+     *   ⇒ 观感正是「先有一个碟子 → 瞬间消失 → 才看到放大缩小」。
+     *   改法：flash VM 演出现动画（它才是 owner 看到的那个碟子），槽位 VM 只**换色**（由 tick 的
+     *   `interrupt(10+st)` 负责，这里再补一次保证顺序）。 */
+    ce_anm_interrupt(id, UFO_HUD_INTERRUPT_APPEAR);
+    if (s_slot_id[i]) ce_anm_interrupt(s_slot_id[i], UFO_HUD_INTERRUPT_STATE0 + state);
     ce_log("ufo: slot %d flash (state %d) - ability.anm script %d + slot interrupt %d/%d "
            "(one-hand th12:0x4214b0)", i + 1, (int)state, UFO_HUD_SCRIPT_FLASH,
            UFO_HUD_INTERRUPT_SLOT0 + i, UFO_HUD_INTERRUPT_STATE0 + state);
