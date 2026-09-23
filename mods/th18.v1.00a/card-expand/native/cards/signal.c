@@ -2103,6 +2103,29 @@ static void signal_support_patchouli(signal_card_t *s)
  * ★★ 2026-09-16：**格数随档**（用户口径 ②）——档 0 一格不申请，档 N 申请 N 格，
  *   第 i 格的位置 = 本档阵型的第 i 格（`signal_formation_cell`）；满档第一次看到**整个阵型**。
  *   合计输出由 `*_core.h` 的 DPS 归一守住（4 格 × 20/12 = 原生满档子机层）。*/
+/* ★★ 2026-09-23（用户实跑：「**被回收了，但是回收得很慢**」）：**多余的子机格每帧收**。
+ *   上一版把回收放在 `on_option_pose_apply()` 里 —— 而那个回调**只在「本卡当选落笔者」的帧**才跑
+ *   （`sdk.c` 的 `ce_option_pose_frame_tick()`：声明层每帧选举，只有当选者的 apply 被调）
+ *   ⇒ 档位掉下来之后，要等到**下一次当选**才收，中间那几帧（乃至更久）那台子机就冻在原地。
+ *   档位是**卡自己读的**（`signal_power_level()`，与声明里用的同一个数）⇒ 回收由卡每帧做，
+ *   与选举无关。`ce_option_drop()` 删 VM 且真松槽（只清 `ptr` 会漏槽：12 格用完后再也申请不到）。*/
+static void signal_option_drop_surplus(ce_card_t *c, signal_card_t *s)
+{
+    int i, want = signal_power_level();
+
+    if (!s) return;
+    if (want < 0) want = 0;
+    if (want > SIGNAL_OPTION_MAX) want = SIGNAL_OPTION_MAX;
+    for (i = want; i < SIGNAL_OPTION_MAX; ++i) {
+        if (!s_opt[i].ptr) { s_opt[i].retry = 0; continue; }
+        ce_option_drop(c, &s_opt[i]);
+        s_opt[i].ptr = 0;
+        s_opt[i].retry = 0;
+        ce_log("signal: option #%d 回收（当前档 %d ⇒ 只要 %d 格；frame %u）",
+               i, (int)signal_power_level(), want, (unsigned)ce_sdk_frame());
+    }
+}
+
 static void signal_option_declare(ce_card_t *c, signal_card_t *s)
 {
     ce_option_pose_t pose;
@@ -2332,6 +2355,8 @@ static void signal_support_marisa(ce_card_t *c, signal_card_t *s)
      *     代价 = 128 槽扫描（无命中时不打日志）。*/
     (void)ce_kill_retail_option_lasers();
     signal_option_declare(c, s);
+    /* ★ 回收与选举无关 ⇒ 档位一掉当帧就收（见 `signal_option_drop_surplus()` 的长注）。*/
+    signal_option_drop_surplus(c, s);
 }
 
 /* ======================================================================================
