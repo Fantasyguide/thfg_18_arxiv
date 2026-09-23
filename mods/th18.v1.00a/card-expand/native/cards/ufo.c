@@ -1043,6 +1043,7 @@ typedef struct {
      * 生命周期与 `u` 绑死：`ufo_try_summon()` 建起来、`ufo_teardown()` / `ufo_withdraw_all()` 收掉
      * （⚠ 删卡走 `on_delete`，那一刻 tick 全停 ⇒ 必须在 `ufo_withdraw_all()` 里收，不能指望每帧跟随时收）。*/
     uint32_t    body_anm_id;
+    uint32_t    ring_vm_for;           /* ★ #14：紫环已经为哪一只 UFO（`s->u.ufo_id`）起过 —— 每只只起一次 */
     uint8_t     pend_drop;                             /* 1 = 有一枚令牌等着落地（来源那条路）*/
     uint8_t     pending_break;                         /* 1 = 帧末要按「击破」收尾开奖 */
     uint8_t     logged_no_hud;                         /* 保留名：HUD「画起来了」日志只报一次（第三版起 = 原版槽 VM 到位）*/
@@ -1636,6 +1637,35 @@ static void ufo_body_vm_spawn(ufo_card_t *s, int32_t color, const uint8_t *e)
  * ⚠ 句柄在别处被引擎销毁过 ⇒ 自愈：丢掉句柄重新起一个（与令牌那一支同款，照 `ufo_hud_ensure()`）。
  * 🟡 位置取自「本帧 `on_item_frame` 时刻」的敌机坐标；敌人 sweep 在同一帧更晚的位次跑 ⇒ 极端情况下
  *    VM 可能比敌机的**逻辑位置**晚一帧（敌机本体是隐形的，肉眼看不到这一帧差）。待实跑确认。 */
+/* ★★★ 2026-09-23（owner #14「召唤 UFO 时 UFO 上有一个紫色圆环特效 + 雷电特效」）：
+ *   **紫环**的一手 = TH12 `enemy.anm` **script141**（发射器）+ 139/140（一对反向旋转的紫多边形）——
+ *   逐条移植成 `ability.anm` 的 **318 / 316 / 317**（脚本文件头有原文与「一个改动都没有」的说明）。
+ *   外观 = 6 个反向旋转、边放大边淡出的紫色多边形环；`layer(7)` = 世界层（挂在那只 UFO 身上）。
+ *   创建时机 = 我们**召唤 UFO 那一刻**（本体 VM 起来时）⇒ 每只 UFO 只起一次（`ring_vm_for` 门）。
+ *   ⚠ 「雷电」那一半**还没找到一手**（见 `SINGLE-CARD-TEST.md` #14 的小节）⇒ 本函数只做环。*/
+#define UFO_RING_LAYER  7                  /* = TH12 script139/140 的原层（世界层 / 相机 3）*/
+static uint32_t s_ring_id;                 /* 紫环发射器 VM（脚本 318 自己 +70 帧 delete()）*/
+
+static void ufo_summon_ring_try(ufo_card_t *s, const uint8_t *e)
+{
+    void *anm = CE_ABILITY_ANM();
+    float p[3];
+    if (!s || !e || !anm) return;
+    if (s->ring_vm_for == s->u.ufo_id && s_ring_id) return;    /* 这只已经起过 */
+    if (s_ring_id && ce_anm_get_vm(s_ring_id)) return;         /* 上一只的还在飞 ⇒ 不叠 */
+    s->ring_vm_for = s->u.ufo_id;
+    p[0] = *(const float *)(e + CE_ENEMY_POS_X);
+    p[1] = *(const float *)(e + CE_ENEMY_POS_Y);
+    p[2] = 0.0f;
+    s_ring_id = ce_anm_spawn(anm, CE_ANM_ABILITY_SCRIPT_UFO_SUMMON_RING, UFO_RING_LAYER);
+    if (!s_ring_id) return;
+    ce_anm_set_pos(s_ring_id, p[0], p[1], 0.0f);
+    ce_log("ufo: summon purple ring up (ability.anm script %d <= TH12 enemy.anm script141 + 139/140; "
+           "6 counter-rotating purple polygons, world layer %d, self-deletes at +70 frames) - the "
+           "'lightning' half of owner #14 has no one-hand yet",
+           CE_ANM_ABILITY_SCRIPT_UFO_SUMMON_RING, UFO_RING_LAYER);
+}
+
 static void ufo_body_vm_follow(ufo_card_t *s)
 {
     uint8_t *e = ufo_enemy_by_id(s->u.ufo_id);
@@ -1646,6 +1676,7 @@ static void ufo_body_vm_follow(ufo_card_t *s)
     if (!s->body_anm_id || !ce_anm_get_vm(s->body_anm_id)) {
         s->body_anm_id = 0;
         ufo_body_vm_spawn(s, s->u.color, e);
+        ufo_summon_ring_try(s, e);                     /* ★ #14：召唤紫环（每只 UFO 一次）*/
         return;                                        /* spawn 里已经摆好位置 */
     }
     ce_anm_set_pos(s->body_anm_id, *(const float *)(e + CE_ENEMY_POS_X),

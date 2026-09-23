@@ -1,0 +1,27 @@
+script script316 {
+    // 112 星莲船 —— **UFO 召唤时的紫环**（一手：TH12 v1.00b `enemy.anm` **script139** 逐条移植）
+    //   原文（local/th12.v1.00b/anm/enemy/enemy.anm.txt）：
+    //     layer(7); sprite(-1); drawPoly(192.0f, 3); color(0,0,0); color2(255,128,255);
+    //     angleVel(0,0, 0.09817477f); alpha(0); alphaTime(10,0,15);
+    //     alpha2(0); alpha2Time(60,0,255); scaleTime(60, 5, 0,0);
+    //   +10: alphaTime(30,0,0);  +70: delete();
+    // ★ 移植改动：**一个都没有**（逐条照抄）。层 7 在 TH18 里同样是**世界层**（相机 3 = 游玩区，
+    //   engine/anm/th18/02-render-stages.md §1）⇒ 召唤特效挂在 UFO 身上，不许搬进 HUD 的 25。
+    //   v8 里 `drawPoly` / `color2` / `angleVel` / `alpha2` 都在（TH18 的 front.anm 里就有 58 处）。
+    //   `sprite(-1)` = 无贴图（纯多边形）⇒ **本组不需要任何贴图 / 图集**。
+    layer(7);
+    sprite(-1);
+    drawPoly(192.0f, 3);
+    color(0, 0, 0);
+    color2(255, 128, 255);
+    angleVel(0.0f, 0.0f, 0.09817477f);
+    alpha(0);
+    alphaTime(10, 0, 15);
+    alpha2(0);
+    alpha2Time(60, 0, 255);
+    scaleTime(60, 5, 0.0f, 0.0f);
++10: // 10
+    alphaTime(30, 0, 0);
++60: // 70
+    delete();
+}

@@ -1,0 +1,16 @@
+script script318 {
+    // 112 星莲船 —— 紫环的**发射器**（一手：TH12 `enemy.anm` **script141** 逐条移植）
+    //   原文：alpha(0); scriptNew(139); scriptNew(140);  +5: 再来一对;  +5: 再来一对;  +70: delete();
+    //   ⇒ 一共 **3 对 = 6 个反向旋转的紫环**（`scriptNew` 的子 VM 号已按本仓重编号改成 316/317）。
+    alpha(0);
+    scriptNew(script316);
+    scriptNew(script317);
++5: // 5
+    scriptNew(script316);
+    scriptNew(script317);
++5: // 10
+    scriptNew(script316);
+    scriptNew(script317);
++60: // 70
+    delete();
+}

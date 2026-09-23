@@ -4550,3 +4550,18 @@ owner 2026-09-23 18:14 的「偏右 1/3 个游玩区宽」是**相对屏幕左�
 
 **实跑判据**：开奖那一帧起一行 `ufo: xN popup up - mult %d.%03d -> val N, M glyph(s) x2 VMs …`；
 包的位置上方应出现**红字黑边**的「×N」，约 720 帧后自行消失。
+
+### 2.0zw ★ 112 #14 召唤 UFO 的**紫环**（2026-09-23 实现；一手照抄，0 个自定）
+
+**一手**（`local/th12.v1.00b/anm/enemy/enemy.anm.txt`）：`script141` = 发射器（0/+5/+10 各 `scriptNew(139)` + `scriptNew(140)`）；
+`script139/140` = `layer(7) + sprite(-1) + drawPoly(192.0f,3) + color(0,0,0)/**color2(255,128,255)**` + `angleVel(±0.09817477)`
++ `alphaTime(10,0,15)` / `alpha2Time(60,0,255)` + `scaleTime(60,5,0,0)`，+70 帧 `delete()`。
+
+**移植改动：0 个**（逐条照抄；卡侧脚本 = ability.anm **316 / 317 / 318**，`sprite(-1)` ⇒ **不需要任何贴图 / 图集**）。
+层保持 **7**（世界层，挂在那只 UFO 身上）。创建时机 = 召唤那一刻（本体 VM 起来时，每只 UFO 一次，`ring_vm_for` 门）。
+
+**实跑判据**：`ufo: summon purple ring up (ability.anm script 318 <= TH12 enemy.anm script141 + 139/140; …)`
+⇒ 召唤 UFO 时它身上应出现**6 个反向旋转、边放大边淡出的紫色多边形环**（约 70 帧后自行消失）。
+
+**仍缺**：owner 说的「**雷电**」没有一手 —— `enemy.anm` 142/143/144 是三套小飞碟本体，不是雷电；
+下一轮候选 = 145+ 与 `effect.anm`；也可能就是这些多边形的尖角观感（待 owner 眼判）。
