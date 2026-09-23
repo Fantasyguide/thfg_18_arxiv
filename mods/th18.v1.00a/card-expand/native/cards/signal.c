@@ -2154,6 +2154,22 @@ static int on_option_pose_apply(ce_card_t *c)
     }
     want = pose->count;
     if (want > SIGNAL_OPTION_MAX) want = SIGNAL_OPTION_MAX;
+    /* ★★ 2026-09-23（用户实跑报的「经典 bug」）：**多出来的槽必须收掉**。
+     *   现象（用户原话）：「魔理沙用 C 放灵击之后，有一个我们改出来的子机就定在原地了…
+     *   放灵击的几帧里面三个子机都被定在原地，但是只有两个子机一段时间后被重建了，
+     *   然后留下那个子机没有被回收」。
+     *   根因：本函数只在 `i < want` 里申请，**从来没有回收 `i >= want` 的槽** ⇒ 灵击扣火力
+     *   （`bomb10.c` 的 `ce_repopulate_options()` 那条路）让档数 3 → 2 之后，第 3 格的 `ptr` 还在、
+     *   它的 ANM VM 也没人删 ⇒ 那台子机**冻在最后被摆的位置**上再也不动。
+     *   一手对位：引擎自己的 `Player__repopulate_options` 是「按当前档重建**并清掉多出来的**」
+     *   （`th18:0x45d5e0` 那一族本来就成对做）⇒ 我们这一侧的申请循环必须自己补齐这半。
+     *   `ce_option_drop()` 会删 VM（`o->ptr + CE_OPT_ANM_ID`）**并真的松开池槽**（`in_use = 0`），
+     *   所以这里是完整回收（不是只清指针）。*/
+    for (i = want; i < SIGNAL_OPTION_MAX; ++i) {
+        if (s_opt[i].ptr) ce_option_drop(c, &s_opt[i]);
+        s_opt[i].ptr = 0;
+        s_opt[i].retry = 0;
+    }
     for (i = 0; i < want; ++i) {
         uint8_t *o = ce_option_get(c, &s_opt[i], SIGNAL_OPTION_OFFSET_ALLOC, pose->anm_script,
                                    SIGNAL_OPTION_RETRY, "signal");
