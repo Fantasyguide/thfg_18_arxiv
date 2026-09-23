@@ -197,7 +197,12 @@ int32_t bomb10_start(const bomb10_host_t *host, void *user, int32_t by_hit)
             s_run.ring_vm[i] = id;
             ce_polar_to_vel(off, th, r0);                  /* 引擎自己的 FSINCOS（不引 libm、不入 x87）*/
             ce_anm_set_pos(id, s_run.x + off[0], s_run.y + off[1], 0.0f);
-            ce_anm_set_rotation(id, 0.0f, 0.0f, th + 1.5707964f);   /* 长边切向 */
+            /* ★ 2026-09-23 订正（用户实跑：「**每一截都旋转了 90°**，看着跟太阳光环似的」）：
+             *   贴条 sprite362 是 **14 宽 × 128 高** ⇒ 它的**长边 = 局部 +y**。VM 旋转 φ 之后，
+             *   局部 +y 指向**世界角 `π/2 + φ`**（TH18 的角度约定：0 = +x、π/2 = **下** = +y）
+             *   ⇒ 要长边沿**切向**（= `θ + π/2`）就得 **φ = θ**。原来写的 `th + 1.5707964f`
+             *   把长边转到了**半径方向** ⇒ 32 片变成放射状 = 太阳光环 ✗。*/
+            ce_anm_set_rotation(id, 0.0f, 0.0f, th);
             ce_anm_set_scale(id, 1.0f, (6.2831853f * r0 / (float)BOMB10_RING_UNITS) / BOMB10_RING_STRIP_H);
             ++made;
         }
@@ -355,7 +360,8 @@ void bomb10_tick(int32_t driver)
                     if (!s_run.ring_vm[i]) continue;
                     ce_polar_to_vel(off, th, r);
                     (void)ce_anm_set_pos(s_run.ring_vm[i], center[0] + off[0], center[1] + off[1], center[2]);
-                    (void)ce_anm_set_rotation(s_run.ring_vm[i], 0.0f, 0.0f, th + 1.5707964f);
+                    /* 旋转 = θ（长边切向；订正理由见 spawn 那段：多加了 90° 会变成放射状/太阳光环）*/
+                    (void)ce_anm_set_rotation(s_run.ring_vm[i], 0.0f, 0.0f, th);
                     (void)ce_anm_set_scale(s_run.ring_vm[i], 1.0f, sy);
                     ++live;
                 }
