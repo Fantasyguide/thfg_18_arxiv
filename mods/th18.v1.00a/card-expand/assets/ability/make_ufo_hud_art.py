@@ -168,6 +168,16 @@ SPRITES = [
     ("SLOT_RED_B",   SRC00,   "front/front00.png",    64, (360, 352, 24, 16), (32, 16)),
     ("SLOT_BLUE_B",  SRC00,   "front/front00.png",    65, (384, 352, 24, 16), (32, 16)),
     ("SLOT_GREEN_B", SRC00,   "front/front00.png",    66, (408, 352, 24, 16), (32, 16)),
+    # ★★ 2026-09-23（owner #17「飞碟槽**底下**还有一抹**毛笔**艺术化贴图，我们没有」）：
+    #   一手 = TH12 `front.anm` **script79** 用的 `sprite67` = `front00.png` (336, 368, 96×16)
+    #   —— **与我们已切过的 8 张槽图同一张 sheet**（59..66 在 y=336/352，67 就在它们下面的 y=368）。
+    #   脚本原文（`local/th12.v1.00b/anm/front/front.anm.txt`，`thanm` 反出的文本）：
+    #     `sprite(sprite67); resampleMode(1); anchor(1, 2); layer(19); alpha(128);
+    #      pos(-96, 467); posTime(60, 4, 32, 467);` → `+30: alphaTime(20, 0, 255)`（淡入到位）
+    #   ⇒ 位置 = 该 anm 空间 (32, 467)：x 是**场地左沿**、y 比场地下沿(464)低 3 ⇒ 换算到表面
+    #     (32+96)×2 = **256**、(467)×2 = **934** ⇒ 正好压在我们那排槽（248..380 / 896..928）**下面** ✓
+    #     （owner 原话「槽底下」）⇒ 它是**槽的底衬**，画在槽之前。
+    ("BANNER_APPEAR", SRC00,  "front/front00.png",    67, (336, 368, 96, 16), (96, 16)),
     ("PANEL_FRAME",  SRC_UFO, "front/front_ufo.png", 102, (0, 0, 96, 96),     (128, 128)),
     ("PANEL_INNER",  SRC_UFO, "front/front_ufo.png", 103, (96, 0, 96, 96),    (128, 128)),
 ]
@@ -180,6 +190,7 @@ ATLAS_POS = {
     "SLOT_EMPTY":   (0, 0),   "SLOT_RED":   (32, 0),   "SLOT_BLUE":   (64, 0),   "SLOT_GREEN":   (96, 0),
     "SLOT_EMPTY_B": (0, 18),  "SLOT_RED_B": (32, 18),  "SLOT_BLUE_B": (64, 18),  "SLOT_GREEN_B": (96, 18),
     "PANEL_FRAME":  (0, 40),  "PANEL_INNER": (128, 40),
+    "BANNER_APPEAR": (0, 170),      # #17 毛笔横幅：面板段结束于 y=168，170+16=186 ≤ 192 ✓
 }
 
 # ★ 槽的四态在 ORDER 里必须**连续四个**、且亮版那一组紧接其后（正好 +4）
@@ -195,8 +206,15 @@ SCRIPT_PORTS = [
     (303, "ufo_hud_flash",       81,  True, True),    # 收集闪光（一次性，31 帧后自删）  ⚠ True = 受 X_SHIFT_640 影响
     (304, "ufo_hud_panel",      134,  False, False),  # 吸收数记录面板（父；子 = 305）—— 自己第一句就 scale(0,0)
     (305, "ufo_hud_panel_inner", 135, False, False),  # 面板内容（134 的 scriptNew）
+    (315, "ufo_hud_banner",       79, True,  True),   # ★ #17 毛笔横幅（owner：槽底下那一抹）
+                                                      #   ⚠ 编号由构建侧按文件名顺序定（脚本号被占则顺延，`make anm` 会报「编号应为 N」）
+                                                      #   x_shift=True：它也在那个 +96 的 anm 空间里
+                                                      #   rest_scale=True：script79 通篇**没有** `scale()`
+                                                      #     ⇒ 吃 VM 初值 1.0（同 script80/81 的 Δ4b 坑）
 ]
-LAYER_FROM, LAYER_TO = (20, 21, 23, 24), 25   # Δ1
+LAYER_FROM, LAYER_TO = (19, 20, 21, 23, 24), 25   # Δ1（19 = script79 毛笔横幅那一层；TH12 里它也是 HUD 层，
+                                                    #   搬到 TH18 必须进 25 那一组，否则按「不在 37..45 ⇒ 组 39」
+                                                    #   落到暂停模糊罩之后，与 slot 的 25 不同批）
 REST_SCALE = 2.0                              # Δ4b：VM 初值 1.0 的 TH18 等价（= Δ4 对"没写出来的那个数"的同一刀）
 X_SHIFT_640 = 96.0                            # Δ5：**96 = 复刻**（2026-09-23 末轮一手定案，原 ❓自定 作废）。
                                               #     一手 TH12 `front.anm` 那个 anm 空间 = 640 屏幕空间**x 方向 +96**

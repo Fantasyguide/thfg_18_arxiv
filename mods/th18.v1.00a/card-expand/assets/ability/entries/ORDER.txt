@@ -714,6 +714,7 @@ SLOT_EMPTY_B   ability/ufo_hud/SLOT_EMPTY_B.png   @0,18,32x16
 SLOT_RED_B     ability/ufo_hud/SLOT_RED_B.png   @32,18,32x16
 SLOT_BLUE_B    ability/ufo_hud/SLOT_BLUE_B.png   @64,18,32x16
 SLOT_GREEN_B   ability/ufo_hud/SLOT_GREEN_B.png   @96,18,32x16
+BANNER_APPEAR  ability/ufo_hud/BANNER_APPEAR.png   @0,170,96x16
 PANEL_FRAME    ability/ufo_hud/PANEL_FRAME.png   @0,40,128x128
 PANEL_INNER    ability/ufo_hud/PANEL_INNER.png   @128,40,128x128
 

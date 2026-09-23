@@ -755,6 +755,17 @@ _Static_assert(CE_ANM_ABILITY_SPRITE_SLOT_EMPTY_B == CE_ANM_ABILITY_SPRITE_SLOT_
 #else
 #define UFO_HUD_SCRIPT_FLASH 303
 #endif
+/* ★★ 2026-09-23（owner #17「飞碟槽**底下**还有一抹**毛笔**艺术化贴图」）：一手 = TH12 `front.anm`
+ *   **script79**（`sprite67` = `front00.png` (336,368,96×16)，`anchor(1,2)`、`layer(19)`、`alpha(128)`、
+ *   `pos(-96,467)` → `posTime(60,4, 32,467)` → `+30: alphaTime(20,0,255)`）。
+ *   换算到表面（该 anm 空间 x 方向 +96、坐标 ×2）= **(256, 934)** ⇒ 正好压在那排槽
+ *   （248..380 / 896..928）**下面** ✓ 与 owner 的原话一致。生成器 `make_ufo_hud_art.py` 把它
+ *   逐条移植成 ability.anm 的 **script315**（`ufo_hud_banner`），本卡只负责起一支 + 收干净。*/
+#ifdef CE_ANM_ABILITY_SCRIPT_UFO_HUD_BANNER
+#define UFO_HUD_SCRIPT_BANNER CE_ANM_ABILITY_SCRIPT_UFO_HUD_BANNER  /* 315 */
+#else
+#define UFO_HUD_SCRIPT_BANNER 315
+#endif
 _Static_assert(UFO_HUD_BLOCK_W > 0.0f && UFO_HUD_BLOCK_H > 0.0f,
                "the UFO HUD block is claimed now (user ruling 4) - a zero-size claim would be a bug");
 
@@ -953,6 +964,7 @@ static uint32_t s_rng_seed = 0x9e3779b9u;
  *      而引擎可能在别处摧毁这些 UI VM ⇒ 句柄必须活得比一次 `memset` 长，靠每帧 `ufo_hud_ensure()`
  *      自愈（照 `signal.c` 的同一支写法）。**卡单例**（`CE_CARD(112, …)`）⇒ 静态没有串台问题。 */
 static uint32_t s_slot_id[UFO_SLOT_COUNT];   /* 三格令牌槽（脚本 302 ← TH12 front.anm script80）*/
+static uint32_t s_banner_id;   /* ★ #17 槽底毛笔横幅（ability.anm script315）的句柄 */
 static int32_t  s_slot_state[UFO_SLOT_COUNT];/* 每格**当前显示的四态**（0 空 / 1 红 / 2 蓝 / 3 绿）；
                                               * −1 = 还没上过色（首帧会发一次中断）。改态才发中断 ⇒ 幂等。*/
 static uint8_t  s_slot_blink;                /* 当前这一帧用的是不是亮版那一组（一手 `FUN_00421690`）*/
@@ -3006,6 +3018,7 @@ static int32_t ufo_hud_slot_state_of(int32_t color)
 static void ufo_hud_kill(void)
 {
     int i;
+    if (s_banner_id) { ce_anm_delete(s_banner_id); s_banner_id = 0; }   /* ★ #17 横幅（长持续效果铁律）*/
     for (i = 0; i < UFO_SLOT_COUNT; ++i) {
         if (s_slot_id[i]) { ce_anm_delete(s_slot_id[i]); s_slot_id[i] = 0; }
         s_slot_state[i] = -1;                 /* 下一帧从"没上过色"重来（新 VM 的 sprite 是脚本给的初始态）*/
@@ -3024,6 +3037,20 @@ static void ufo_hud_kill(void)
 static void ufo_hud_ensure(void)
 {
     int i;
+    /* ★ #17：**先**起槽底那抹毛笔横幅（同一层 25 ⇒ 先生成的画在下面 = 「槽底下」）*/
+    if (!s_banner_id || !ce_anm_get_vm(s_banner_id)) {
+        s_banner_id = ufo_hud_vm_spawn(UFO_HUD_SCRIPT_BANNER);
+        if (s_banner_id) {
+            static int s_logged_banner;
+            if (!s_logged_banner) {
+                s_logged_banner = 1;
+                ce_log("ufo: brush banner under the slots up (ability.anm script %d <= front.anm script79, "
+                       "sprite67 of front00.png; one-hand pos = surface (256, 934) = playfield bottom-left, "
+                       "3 units below the field's bottom edge, so it sits right under the token row)",
+                       UFO_HUD_SCRIPT_BANNER);
+            }
+        }
+    }
     for (i = 0; i < UFO_SLOT_COUNT; ++i)
         if (!s_slot_id[i] || !ce_anm_get_vm(s_slot_id[i])) {
             s_slot_id[i] = ufo_hud_vm_spawn(UFO_HUD_SCRIPT_SLOT);
