@@ -2076,6 +2076,32 @@ int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
                    (unsigned)ce_sdk_frame(), (unsigned)s_bomb_prev);
         s_bomb_prev = bomb_now;
     }
+    /* ★★★ 2026-09-23（108 #33/#38「退出 shift 后原生子机在进 shift 的位置发弹、本体消失」）：
+     *   **「隐藏过 → 恢复可见」这一个边沿必须补一次 `repopulate`**，否则原生子机永远回不来。机制逐条：
+     *     · 隐藏那一侧（`BP_ce_repopulate_native_option` `0x45d610`）= 把 `lvl` 压成 0（**不建**）+ 把已建的
+     *       1 对 VM `interrupt` 掉、id 写 0（一手见本文件 §「隐藏自机原生那 4 格子机」那一段）；
+     *     · 引擎**只在火力档变化时**才叫 `Player__repopulate_options_and_notify_cards` `0x45d5e0`
+     *       （就是 sdk.h 里那句「档位短路缓存」）⇒ 松开 Shift 只是「不再隐藏」，**没有任何人叫重建**
+     *       ⇒ 4 格子机的记录还在、主炮行循环照旧从**看不见的膛口**出弹（`BP_ce_native_option_muzzle`
+     *       只在隐藏期拦），但 VM 一个都回不来 = owner 报的「**发弹但不显示、停在进 shift 那一处**」。
+     *   ⇒ 在**可见化那一个边沿**替引擎补一次 `ce_repopulate_options()`（= 按当前档重建 + 广播
+     *     `on_power_level_change`，与卡扣火力后必须补的那一次**同一个调用**）。
+     *   ⚠ 只在**边沿**叫（`prev == 1 && !now`），不是每帧 ⇒ 稳态一次都不调，没装这类卡时行为不变；
+     *     `hidden` 是**按机体**判的（换机体当帧恢复，见层注释）。
+     *   ⚠ 与卡池无关：原生 4 格 = `inner+0x50`（`PLAYER+0x670` 那一族），卡申请的是 `inner+0x410`
+     *     ⇒ 这次重建**不动** 108/111/116/117 手里已申请的子机（两个数组互不相干，一手见上段）。*/
+    {
+        static int s_natopt_hidden_prev = -1;             /* -1 = 还没看过（第一帧不算边沿）*/
+        const int ch_now = *(const int32_t *)CE_ADDR_CHARACTER;
+        const int hid_now = ce_native_option_hidden(ch_now);
+        if (s_natopt_hidden_prev == 1 && !hid_now) {
+            ce_repopulate_options();
+            ce_log("sdk: native options UNHIDDEN (char %d, owner card %d) - forced repopulate so the "
+                   "retail 4-cell options come back with their VMs (else they stay invisible while "
+                   "still firing from stale muzzles)", ch_now, ce_native_option_hide_owner());
+        }
+        s_natopt_hidden_prev = hid_now;
+    }
     (void)regs; (void)bp_info;
     uint8_t *mgr = CE_ABILITY_MGR();
     if (!mgr) return BP_EXEC_ORIGINAL;

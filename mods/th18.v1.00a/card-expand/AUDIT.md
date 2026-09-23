@@ -20711,3 +20711,47 @@ TH13 灵体与 108 妖侧本体 55 张逐像素回读**全部通过**）；`than
 
 **发布面**：动了四份 `pl0X.sht`（与 DLL 同批）；未动 `pl0X.anm` / `ability.anm` / wav / `sites.py` /
 `SITE_BUDGET` / patch 声明集；**没新增断点**（站点 31 个原样）。
+
+## §BE 详录 #76（2026-09-23）：★ **共享件** `native/sdk.c` —— 「原生子机**隐藏 → 可见**」的边沿补一次 `repopulate`
+
+**来路（owner 2026-09-23 实跑，108 第 33/38 条）**：「退出 shift 之后，人形态子机在**当时进 shift 的地方**发弹、
+**不移动**，并且子机的**本体消失**，并且之后再按 shift 子机还是**最初那个** shift 的位置」（**四个人都一样**）。
+
+**文件 → 改了什么**
+
+| 文件 | 改动 |
+| --- | --- |
+| `native/sdk.c` | `BP_ce_item_frame` 里新增**边沿检测块**：隐藏→可见那一个边沿叫一次 `ce_repopulate_options()` + 一行日志（细节见下） |
+
+**改动细节**：`BP_ce_item_frame`（`0x446ee3`，每帧一次）里加一个 `static int s_natopt_hidden_prev`，
+当 `s_natopt_hidden_prev == 1 && !ce_native_option_hidden(当前机体)` 时叫 `ce_repopulate_options()`，
+并打一行 `sdk: native options UNHIDDEN (char N, owner card M) - forced repopulate …`（一行足矣，靠它判边沿）。
+
+**为什么**（机制逐条，一手/既有注释都在本文件 §「隐藏自机原生那 4 格子机」那一段）：
+1. **隐藏那一侧**（`BP_ce_repopulate_native_option` `0x45d610`）做两件事：把 `lvl` 压成 0（⇒ 原生子机**建不出来**）
+   ＋ 把已建的那 1 对 VM `interrupt` 掉、id 写 0（引擎自己的清理写法）。
+2. **恢复那一侧原来什么都没有**：引擎只**在火力档变化时**才叫 `Player__repopulate_options_and_notify_cards` `0x45d5e0`
+   （= `sdk.h` 里那句「`repopulate` 的档位短路缓存」）⇒ 松开 Shift 只是「不再隐藏」，**没有任何人叫重建**
+   ⇒ 4 格子机的**记录还在**、主炮行循环照旧从那几个**看不见的膛口**出弹（`BP_ce_native_option_muzzle`
+   只在隐藏期拦），而 VM 一个都回不来 ⇒ 症状 = 「**看得见发弹、看不见子机本体、位置停在进 shift 那一处**」。
+3. ⇒ 在可见化那一个**边沿**替引擎补一次 `ce_repopulate_options()`：按当前档重建原生子机 + 广播
+   `on_power_level_change`（与「卡扣完火力必须补的那一次」**同一个调用**，`bomb10.c:126` / `firelord.c:107` /
+   `mof.c:960` 是既有先例）。
+4. **不动卡池**：原生 4 格在 `inner+0x50`（`PLAYER+0x670` 那一族），卡申请的是 `inner+0x410`
+   ⇒ 这次重建不会碰 108/111/116/117 手里已申请的子机（两个数组互不相干，一手见同段）。
+
+**谁改的**：系统卡批次（108）—— 但改的是共享件，**111（魔理沙侧原生子机）与任何声明隐藏的卡都同样受益**。
+
+**影响面**：
+- 只在**边沿**触发（稳态每帧只是一次比较）⇒ **没装这类卡时行为逐字节不变**（`prev` 与 `now` 恒 0）。
+- 多卡同时声明隐藏（108 + 111）时 `ce_native_option_hidden()` 是 **OR**（按机体）⇒ 只要有**任何一家**
+  还在隐藏，`hid_now` 就是 1，**不会**提前重建 ⇒ 不会把「另一家还想藏」的子机放出来。
+- 换机体（商店里）⇒ 层按机体判 ⇒ 当帧恢复 + 当帧重建，符合层注释的口径。
+
+**怎么验证的**：`make check` **rc=0**（378 文件；含 `dllverify` / `sitecheck --all` / 全部主机单测）、
+`python3 tooling/check-docs.py` 全绿、`make dllx87` = **0 条 x87**；实跑验收关键字（下次跑）：
+`native options UNHIDDEN (char N, owner card 108)` 应在**松 Shift 那一帧恰好出现一次**，
+且此后 4 格原生子机 VM 重新可见（伴随一帧 `on_power_level_change` 广播）。
+
+**发布面**：只动 `sdk.c`（⇒ DLL）；未动 `pl0X.sht` / `pl0X.anm` / `ability.anm` / wav / `sites.py` /
+`SITE_BUDGET`；**没新增断点**（站点 31 个原样）。
