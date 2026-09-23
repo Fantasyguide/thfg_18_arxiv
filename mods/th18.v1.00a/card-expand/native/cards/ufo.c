@@ -2584,6 +2584,120 @@ static int ufo_drop_spawn(ufo_card_t *s, int32_t kind, float x, float y,
     return 1;
 }
 
+
+/* ============================ ★★ #20 击破 UFO 的 **×N** 弹出 ============================
+ * owner（2026-09-23）：「击破 UFO 时有个**大大的 ×一个数**的 ascii 贴图或特效」。
+ * 一手（逐条，出处 = `HANDOFF-112.md` §3① / `SINGLE-CARD-TEST.md` #20）：
+ *   · 创建点 `th12:0x44ab00`–`0x44ab5f`：`push $0x88`（= 脚本 136）建 VM 存进 `+0x44`；
+ *     兄弟 VM = 脚本 134（`+0x40`）；`movl $0x2d0,0x28(%esi)` ⇒ **寿命 720 帧**。
+ *   · `front.anm` script136 = `drawRect(32,4) + layer(10) + color(255,96,96) + pos(0,-28)`，
+ *     script137（子）= 同形、`color(0,0,0)`、`pos(1,1)` ⇒ **亮红 + 黑、错开 1 px** = 描边式文字。
+ *   · 每帧更新（`th12:0x44a80b`–`0x44a83b`）：查 VM（返回 0 就清句柄）→ 置 flag → 写位置
+ *     ⇒ **文字内容与坐标由 C 每帧写**（TH12 自己也是）。
+ * 我们的实现（❓ 自定的部分逐条标了）：
+ *   · 走 **UI 层**：`SCRIPT_HUD_GLYPH`（= 136）实测是 `layer(25) + resolutionMode(2) + pos(0,0,0)`
+ *     ⇒ **表面 px** 的 UI 脚本（反汇编产物确认）⇒ 世界坐标要换算：`surface = 640 + x*2 / 480 + y*2`
+ *     （TH18 自机/敌人坐标是以**场地中心**为 0 的居中系，换算口径同 `trance.c` 的注释）。
+ *   · 字形：`SIGNAL_MUL`（= 430，`faith_hud/MUL.png` 16×32）= 「×」；数字 = `ATLAS_HUD_DIGIT_0..9`
+ *     （= 109..118，共享图集）⇒ 用现成 HUD 字形通道，**不新造贴图**。
+ *   · 显示值：**整数倍率** `mult_permille / 1000`（例 1500 ⇒ ×1）—— ❓ 自定：一手那支是 ascii 文本，
+ *     小数位要不要画没有一手依据；要画再补一个小数点字形（`FONT2_DOT` 一族已在 ORDER 里）。
+ *   · 黑色描边 = 每个字形再叠一支错开 `(1,1)` 的黑色副本（一手 script137 的 `pos(1,1) + color(0,0,0)`）。
+ *   · 运动：每帧 `y -= 0.5`（缓慢上移）+ 寿命倒数；到 0 或换关/删卡时 `ce_anm_delete`。
+ * ⚠ 与 HUD 槽无关（那三支是 `ufo_hud_*`）；本组只活在开奖之后的 720 帧里。*/
+#define UFO_XN_GLYPHS     4              /* 「×」+ 最多 3 位整数（❓ 自定：一手是 ascii 文本，位数由值定）*/
+#define UFO_XN_VMS        (UFO_XN_GLYPHS * 2)   /* 每字形一支主 + 一支黑色描边 */
+#define UFO_XN_LAYER_UI   25             /* = `SCRIPT_HUD_GLYPH` 自带的层（脚本里就写着 25，这里只记账）*/
+#define UFO_XN_COLOR      0xffff6060u    /* ✅ 一手 `front.anm` script136 的 `color(255,96,96)` */
+#define UFO_XN_SHADOW     0xff000000u    /* ✅ 一手 script137 的 `color(0,0,0)` */
+#define UFO_XN_SHADOW_DX  1.0f           /* ✅ 一手 script137 的 `pos(1,1)` */
+#define UFO_XN_SHADOW_DY  1.0f
+#define UFO_XN_LIFETIME   720u           /* ✅ 一手 `th12:0x44ab52 movl $0x2d0,0x28(%esi)` */
+#define UFO_XN_RISE       0.5f           /* ❓ 自定：每帧上移量（一手只写了「每帧更新位置」）*/
+#define UFO_XN_ADVANCE    20.0f          /* ❓ 自定：字形横向间距（表面 px；32×32 的字形留 20 的缝）*/
+#define UFO_XN_LIFT       44.0f          /* ❓ 自定：整体抬到包上方（一手 `pos(0,-28)` 是子 VM 的偏移）*/
+#define UFO_XN_SCALE      2.0f           /* ❓ 自定：UI 层 1 texel = 1 表面 px ⇒ 16×32 的字形 ×2 = 32×64 */
+
+static uint32_t s_xn_id[UFO_XN_VMS];
+static uint16_t s_xn_left[UFO_XN_VMS];   /* 各自寿命（帧）*/
+static float    s_xn_x[UFO_XN_VMS];      /* 表面 px（每帧写）*/
+static float    s_xn_y[UFO_XN_VMS];
+
+static void ufo_xn_kill(void)
+{
+    int i;
+    for (i = 0; i < UFO_XN_VMS; ++i) {
+        if (s_xn_id[i]) { ce_anm_delete(s_xn_id[i]); s_xn_id[i] = 0; }
+        s_xn_left[i] = 0;
+    }
+}
+
+/* 起一次（开奖那一刻调）。`wx/wy` = 掉落物的**世界坐标**（居中系）。 */
+static void ufo_xn_spawn(float wx, float wy, int32_t mult_permille)
+{
+    void *anm = CE_ABILITY_ANM();
+    float p[3];
+    int n = 0, i, val, digits = 1;
+    if (!anm) return;
+    val = (int)(mult_permille / 1000);            /* ❓ 自定：只画整数倍率 */
+    if (val < 1) val = 1;
+    if (val > 999) val = 999;
+    for (i = val; i >= 10; i /= 10) ++digits;     /* 1..3 位 */
+    ufo_xn_kill();                                /* 上一次的还在飞 ⇒ 先收（不会叠）*/
+    /* 字形序列：× 然后整数部分的每一位（高位在前）*/
+    p[0] = 640.0f + wx * 2.0f;
+    p[1] = 480.0f + wy * 2.0f - UFO_XN_LIFT;
+    p[2] = 0.0f;
+    for (i = 0; i < digits + 1 && n < UFO_XN_GLYPHS; ++i, ++n) {
+        int gx = n * 2;                            /* 主 VM / 描边 VM 的槽号 */
+        int gy = gx + 1;
+        int spr;
+        if (i == 0) spr = CE_ANM_ABILITY_SPRITE_SIGNAL_MUL;
+        else {
+            int div = 1, k;
+            for (k = 0; k < digits - i; ++k) div *= 10;
+            spr = CE_ANM_ABILITY_SPRITE_ATLAS_HUD_DIGIT_0 + (val / div) % 10;
+        }
+        p[0] = 640.0f + wx * 2.0f - (float)(digits)*UFO_XN_ADVANCE * 0.5f + (float)i * UFO_XN_ADVANCE;
+        s_xn_x[gx] = p[0];        s_xn_y[gx] = p[1];
+        s_xn_x[gy] = p[0] + UFO_XN_SHADOW_DX;  s_xn_y[gy] = p[1] + UFO_XN_SHADOW_DY;
+        s_xn_id[gx] = ce_anm_spawn_ui(anm, CE_ANM_ABILITY_SCRIPT_HUD_GLYPH, p);
+        if (s_xn_id[gx]) {
+            ce_anm_set_sprite(anm, s_xn_id[gx], spr);
+            ce_anm_set_scale(s_xn_id[gx], UFO_XN_SCALE, UFO_XN_SCALE);
+            ce_anm_set_color(s_xn_id[gx], UFO_XN_COLOR);
+            s_xn_left[gx] = (uint16_t)UFO_XN_LIFETIME;
+        }
+        p[0] += UFO_XN_SHADOW_DX;  p[1] += UFO_XN_SHADOW_DY;
+        s_xn_id[gy] = ce_anm_spawn_ui(anm, CE_ANM_ABILITY_SCRIPT_HUD_GLYPH, p);
+        if (s_xn_id[gy]) {
+            ce_anm_set_sprite(anm, s_xn_id[gy], spr);
+            ce_anm_set_scale(s_xn_id[gy], UFO_XN_SCALE, UFO_XN_SCALE);
+            ce_anm_set_color(s_xn_id[gy], UFO_XN_SHADOW);
+            s_xn_left[gy] = (uint16_t)UFO_XN_LIFETIME;
+        }
+        p[0] -= UFO_XN_SHADOW_DX;  p[1] -= UFO_XN_SHADOW_DY;
+    }
+    ce_log("ufo: xN popup up - mult %d.%03d -> val %d, %d glyph(s) x2 VMs (one-hand script136/137 shape: "
+           "red 0x%08x + black shadow offset (1,1), lifetime %u frames; positions written every frame)",
+           (int)(mult_permille / 1000), (int)(mult_permille % 1000), val, digits + 1,
+           (unsigned)UFO_XN_COLOR, (unsigned)UFO_XN_LIFETIME);
+}
+
+/* 每帧（`on_tick_2`）：上移 + 到期自删。★ 长持续效果铁律：句柄留在这里，`ufo_xn_kill()` 兜底。 */
+static void ufo_xn_tick(void)
+{
+    int i;
+    for (i = 0; i < UFO_XN_VMS; ++i) {
+        if (!s_xn_id[i]) continue;
+        if (!ce_anm_get_vm(s_xn_id[i])) { s_xn_id[i] = 0; s_xn_left[i] = 0; continue; }   /* 引擎删了 ⇒ 清句柄 */
+        if (s_xn_left[i] == 0) { ce_anm_delete(s_xn_id[i]); s_xn_id[i] = 0; continue; }
+        --s_xn_left[i];
+        s_xn_y[i] -= UFO_XN_RISE;
+        ce_anm_set_pos(s_xn_id[i], s_xn_x[i], s_xn_y[i], 0.0f);
+    }
+}
+
 /* 击破时掉的**压缩包**（用户口径：有实体、被自动吸收、收集时结算）。 */
 static void ufo_drop_spawn_bag(ufo_card_t *s, float x, float y)
 {
@@ -2636,6 +2750,7 @@ static void ufo_drop_collect(ufo_card_t *s, int i)
                "(one-hand formulas; th12:0x426c9a/0x426cd2/0x426d27)",
                (int)c->ufo_color, (int)c->cnt_p, (int)c->cnt_money,
                (int)c->mult_permille / 1000, (int)c->mult_permille % 1000, (int)pv, (int)gain);
+        ufo_xn_spawn(c->x, c->y, c->mult_permille);   /* ★ #20：击破 UFO 的 ×N（一手 th12:0x44ab00）*/
         /* ★ 信仰点原样还回去（用户：「被吸走后爆出来还得按照信仰-樱点算 … 后面只调用收信仰樱点的函数即可吧」）
          *   —— 这里调的是**生产者自己的 spawn 入口**（`faith_spawn`），不碰它的记账：还回去的点
          *   会像正常撒出来的点一样被自机收走/过线/进批（= 用户要的"按信仰算"）。 */
@@ -3018,6 +3133,7 @@ static int32_t ufo_hud_slot_state_of(int32_t color)
 static void ufo_hud_kill(void)
 {
     int i;
+    ufo_xn_kill();                                     /* ★ #20：×N 也一并收干净 */
     if (s_banner_id) { ce_anm_delete(s_banner_id); s_banner_id = 0; }   /* ★ #17 横幅（长持续效果铁律）*/
     for (i = 0; i < UFO_SLOT_COUNT; ++i) {
         if (s_slot_id[i]) { ce_anm_delete(s_slot_id[i]); s_slot_id[i] = 0; }
@@ -3568,6 +3684,7 @@ static int on_tick_2(ce_card_t *c)
         s->pending_break = 0;
         ufo_break(s);
     }
+    ufo_xn_tick();                                     /* ★ #20：×N 上移 + 到期自删 */
     /* ②b ★ 令牌落地（死亡栈里只登记了落点；这一刻已经离开死亡栈 ⇒ 可以安全建 VM）。
      *   一手：令牌是「敌人掉落表」的产物（`dropExtra`）⇒ 触发点 = 那一只敌人的死亡位置。
      *   ⚠ 换池后这一步建的是**我们自己的 VM**（不是敌人）—— 「不在死亡栈上建」这条纪律不变。 */
