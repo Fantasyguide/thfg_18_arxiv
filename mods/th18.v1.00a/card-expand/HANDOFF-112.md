@@ -59,6 +59,16 @@
 - **我们的实现要点**：用 112 现有 HUD 字形通道拼「×」+ 数字（**不新造贴图**，`ability.anm` 已有
   `SCRIPT_HUD_DIGIT` / `SCRIPT_HUD_GLYPH` 一族与 `ATLAS_HUD_DIGIT`）；颜色 `(255,96,96)` + 黑描边错开 `(1,1)`；
   寿命 **720 帧**；生成时机 = **击破 / 结算那一刻**（`ufo.c` 的结算路径同一处）；位置每帧写。
+- **★ 落地所需的三个名字（2026-09-23 本轮查好，写码时不用再找）**：
+  · **乘数从哪来**：`native/cards/ufo.c` 的开奖那一段 —— `mult = ufo_drop_mult_permille(color, …)`（**千分比**，
+    例 `1500` = ×1.5），日志行 `ufo: PACKAGE opened - color %d, cntA %d + cntB %d, mult %d.%03d, PV %d -> score %d`
+    就在 `~ufo.c:2635` ⇒ **生成时机 = 这一处**（owner 说的「击破 UFO 时」= 开奖那一刻）。
+  · **× 字形**：`SIGNAL_MUL` = `ability/faith_hud/MUL.png`（16×32，共享资产，`ORDER.txt:555`）⇒ 直接用。
+  · **数字**：`ATLAS ATLAS_HUD_DIGIT 128x96@4x3`（`ORDER.txt:50`）= 0..9 的图集 + 现成的 HUD 数字脚本族。
+- **两份实现路径（挑一条）**：① **世界层**（推荐）：照 108 的 `yk_popup_*` 先例，用 `ce_anm_spawn` 在世界层起
+  「×」+ 每位数字各一支 VM，位置 = 开奖时那只 UFO 的世界坐标（每帧写、随它动），颜色 `0xFFFF6060`，
+  再叠一支黑色副本错开 `(1,1)` 做描边；② UI 层：`ce_anm_spawn_ui` + 把 UFO 的世界坐标换算成表面 px
+  （`640 + x*2` / `480 + y*2`，见 `trance.c` 的换算注释）—— 少一层跟随逻辑但要做换算。
 - **验收关键字**：实现时自己定一行（例 `ufo: xN popup up …`）+ 数字与颜色对不对由 owner 眼判。
 
 ### ② #14 召唤时的紫环 + 雷电（一手未定，方法已备）

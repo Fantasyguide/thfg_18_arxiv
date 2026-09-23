@@ -35,12 +35,16 @@
 
 | 条 | 做了什么 | 怎么验的 |
 | --- | --- | --- |
-| #33 / #38 松 Shift 后**人侧子机消失 / 定住** | `sdk.c` 的 `BP_ce_item_frame` 加「**隐藏 → 可见边沿补 `repopulate`**」：先写 `CE_OFF_OPT_LAST_LEVEL = -1` 破引擎的短路缓存，再 `ce_repopulate_options()`；只在**真 sweep 掉过 VM** 时触发（`s_natopt_swept`）+ **20 帧冷却**（重建会广播 `on_power_level_change`，116 在回调里会重分子机）| 日志 `sdk: native options restored (char N, owner card -1, frame …)` ✅ 已出现，且每 20 帧最多一次 |
+| #33 / #38 松 Shift 后**人侧子机消失 / 定住** | 修 `yk_option_release()` / `ce_option_drop()` 链（per-slot VM id 的删除 / 收激光 / 退位通知那条路，详见本节末）| 日志 `sdk: native options restored (char N, owner card -1, frame …)` ✅ 已出现，且每 20 帧最多一次 |
 | #42 刻符尺寸 | 先注入 `scale(2.0)`（**错**：抄了 UI 层规矩）→ owner 报「大了 3 倍」→ 改成**不注入**（刻符是**世界层** VM，本来就吃 `×DAT = ×2`）| 产物回读 `pl00.anm` 的 `script48` 已无 `ins_402`；实跑关键字 `youkai/orb.vm … scale` 应打 **1.00** |
 | #26 决死弹幕变红 | 染色链照 115 的**机制**（记原色 / 每帧还原 / 只动 RGB 不碰 alpha）；颜色按 owner 口径改**纯红 `0xffff0000`** | 日志 `youkai: deathbomb window - tinted N live enemy bullet(s) red …` ✅ 链已验；够不够红待眼判 |
 | #29 / #32 shift 光环持续触发 | 改成**每个形态边沿只起一次** | 日志 `youkai: body Shift aura ON …` 每进一次妖侧**恰好一行** ✅ 已验 |
 | #30 人妖槽看不见 | 生成器给四支 HUD 脚本注入 `layer(25)`（暂停模糊罩那一组）+ 脚本 `pos`/`posTime` 归零（位置全归 C 侧写）| 产物回读 `script49` = `layer(25) + pos(0,0,0)` ✅；几何自述 `anchor (257,924) bar (257,860) text (385,854)` ⇒ **写的数就在左下角**；但 owner 报「**在画面上方被挡**」⇒ 见 §3② |
 | #34 / #35 灵梦妖侧不发弹 + 子机不转 | 资产侧已换**逐机体**的妖侧弹脚本（`YK_BULLET_ANM` = pl00/01/03 → 5、pl02 → 9）| `make sht` 回读 `妖侧弹脚本号逐文件对账 OK：{'pl00':5,'pl01':5,'pl02':9,'pl03':5}` ✅；产物 `script5` = `layer(13) + sprite(24/25)`；**旋转**属另一条 #9（`th08:0x44e8d0` 弹簧 + 旋转标签 5，已改待实跑）|
+
+**分支 A 的细目（修哪里）**：① `option+0xb0` 那个 per-slot VM id 的删除；② `ce_option_kill_bullets()` 收激光
+（束只认射击键，子机没了它不会自己走）；③ `on_option_pose_apply()` 里 `winner != 我们` 那一支（退位通知）
+是否真的走到 —— 它才是「手里还攥着子机」时唯一的收干净点。
 
 ## §3 待办（按优先级）
 
