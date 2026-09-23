@@ -2890,8 +2890,17 @@ static int ufo_drop_spawn(ufo_card_t *s, int32_t kind, float x, float y,
 static uint16_t s_xn_left;               /* 剩余帧（0 = 不画）*/
 static float    s_xn_wx, s_xn_wy;        /* 世界坐标（ECL 640 空间）*/
 static int32_t  s_xn_permille;           /* 倍率（千分比；显示 `*%1.1f`）*/
+/* ★★ 2026-09-23：**#20 ×N 弹字与 #9 剩余时间都从 ASCII 换成「贴图 VM 文字」**
+ *   （owner：「剩余时间画在模糊层之后，暂停不会模糊」）—— ASCII 永远进不了暂停模糊罩，
+ *   VM 放 UI 层 25 才折到 38 那一个绘制桩（`SDK.md` §16）。状态放 DLL 静态区（同 ×N 的其余几个数）。*/
+static ce_hud_vm_text_t s_xn_text;       /* ×N 的那 4 个字形 VM */
+static ce_hud_vm_text_t s_timer_text;    /* `11:00` 的那 5 个字形 VM */
 
-static void ufo_xn_kill(void) { s_xn_left = 0; }
+static void ufo_xn_kill(void)
+{
+    s_xn_left = 0;
+    ce_hud_vm_text_clear(&s_xn_text);           /* ★ 长持续效果铁律：VM 也要一起收 */
+}
 
 /* 起一次（开奖那一刻调）。`wx/wy` = 掉落物的**世界坐标**（居中系）。 */
 static void ufo_xn_spawn(float wx, float wy, int32_t mult_permille)
@@ -2900,7 +2909,7 @@ static void ufo_xn_spawn(float wx, float wy, int32_t mult_permille)
     s_xn_wy = wy;
     s_xn_permille = (mult_permille > 0) ? mult_permille : 1000;
     s_xn_left = (uint16_t)UFO_XN_LIFETIME;
-    ce_log("ufo: xN popup up - mult %d.%03d -> ascii \"*%%1.1f\" at world (%.0f, %.0f) for %u frames "
+    ce_log("ufo: xN popup up - mult %d.%03d -> vm-text \"*%%1.1f\" at world (%.0f, %.0f) for %u frames "
            "(one-hand th12:0x44a5d0: format 0x4a2154 \"*%%1.1f\", scale 2.0, colour flashes "
            "grey/yellow every %%10 frames; lifetime = zUfo+0x64 = 120)",
            s_xn_permille / 1000, s_xn_permille % 1000, (double)wx, (double)wy,
@@ -2914,15 +2923,31 @@ static void ufo_xn_tick(void)
 {
     float x, y;
     uint32_t rem;
+    char buf[8];
     if (!s_xn_left) return;
     --s_xn_left;
     rem = (uint32_t)s_xn_left % UFO_XN_FLASH_MOD;
-    /* ASCII 空间（640×480）：x 以场地中心 320 为 0、y 以场地上沿 16 起算（与 #9 倒计时同一条换算）*/
+    /* 位置：640×480 空间（x 以场地中心 320 为 0、y 以场地上沿 16 起算，与 #9 倒计时同一条换算）*/
     x = 320.0f + s_xn_wx;
     y = 16.0f + s_xn_wy + UFO_XN_DY;
-    ce_hud_text_ex(x, y, (rem >= UFO_XN_FLASH_MOD / 2u) ? UFO_XN_COLOR_GREY : UFO_XN_COLOR_YEL,
-                   0u, -1, -1, CE_ASCII_ALIGN_CENTER, UFO_XN_SCALE, "*%1.1f",
-                   (double)s_xn_permille / 1000.0);
+    /* ★★ 2026-09-23（owner：「剩余时间画在模糊层之后，暂停不会模糊」）—— 同一条毛病也在 ×N 上：
+     *   ASCII **永远进不了暂停模糊罩**（`SDK.md` §16）⇒ 两处都改成**贴图 VM 文字**
+     *   （`ce_hud_vm_text_*`，UI 层 25 折到 38、与罩子同一个绘制桩）。
+     *   ⚠ 串是**手写**的（不为 4 个字符引 `snprintf` 的格式化机器，与上面 `tag[6]` 同一个口径）：
+     *     一手格式 = `"*%1.1f"` ⇒ `*` + 整数位 + `.` + 一位小数（四舍五入，`%1.1f` 的行为）。*/
+    {
+        uint32_t p = (uint32_t)s_xn_permille;
+        uint32_t tenths = (p + 50u) / 100u;            /* 四舍五入到 0.1 */
+        uint32_t whole = tenths / 10u;
+        buf[0] = '*';
+        buf[1] = (char)('0' + (whole % 10u));          /* 倍率域 1.0..8.0 ⇒ 一位整数 */
+        buf[2] = '.';
+        buf[3] = (char)('0' + (tenths % 10u));
+        buf[4] = '\0';
+    }
+    ce_hud_vm_text_set(&s_xn_text, x, y,
+                       (rem >= UFO_XN_FLASH_MOD / 2u) ? UFO_XN_COLOR_GREY : UFO_XN_COLOR_YEL,
+                       CE_ASCII_ALIGN_CENTER, UFO_XN_SCALE, buf, "ufo-xn");
 }
 
 /* ==================== ★★ #22 吸收数记录面板（TH12 `front.anm` script134/135）====================
@@ -3612,6 +3637,7 @@ static void ufo_hud_kill(void)
     }
     s_slot_blink = 0;
     s_slot_blink_prev = 0;
+    ce_hud_vm_text_clear(&s_timer_text);  /* ★ #9 剩余时间：换成 VM 之后要显式收（长持续效果铁律）*/
     s_timer_logged = 0;                  /* #9：计时器每次召唤只打一行「首次」诊断 */
 }
 
@@ -3774,10 +3800,12 @@ static void ufo_timer_draw(const ufo_card_t *s)
     uint32_t remain, sec, hund;
     float x, y;
 
-    if (!s || !ufo_present(&s->u)) { s_timer_logged = 0; return; }
-    if (s->u.frames < UFO_TIMER_FIRST_FRAME) return;      /* 一手 0x44a6ee：前 60 帧不画 */
+    /* ★ 三条"不画"的出口都必须**把贴图 VM 收掉**（ASCII 时代不用管：不调就不画；
+     *   换成常驻 VM 之后留着就是"上一只的时间冻在屏幕上"）。*/
+    if (!s || !ufo_present(&s->u)) { s_timer_logged = 0; ce_hud_vm_text_clear(&s_timer_text); return; }
+    if (s->u.frames < UFO_TIMER_FIRST_FRAME) { ce_hud_vm_text_clear(&s_timer_text); return; }  /* 一手 0x44a6ee：前 60 帧不画 */
     e = ufo_enemy_by_id(s->u.ufo_id);
-    if (!e) return;                                       /* 一手 0x44a72c：敌人不在就不画 */
+    if (!e) { ce_hud_vm_text_clear(&s_timer_text); return; }   /* 一手 0x44a72c：敌人不在就不画 */
 
     remain = (s->u.frames < UFO_LIFE_MAX) ? (UFO_LIFE_MAX - s->u.frames) : 0u;
     sec    = remain / 60u;                                /* 一手：÷ [0x4a3d20] = 60.0 */
@@ -3791,8 +3819,26 @@ static void ufo_timer_draw(const ufo_card_t *s)
     /* 格式串、颜色、字号逐条照抄一手（`"%2d:%.2d"` / 0xc080ffc0 / 1.0）。
      * ⚠ `font`/`group`/`scale` 传 -1/0 = 用**环境值**（TH12 明写字符集 2 与 scale 1.0；TH18 的
      *   「字体 id」与 TH12 的「字符集」不是同一个编号体系 ⇒ 不硬抄那个 2，见 TUNING §2.0v）。 */
-    ce_hud_text_ex(x, y, UFO_TIMER_COLOR, 0u, -1, -1, CE_ASCII_ALIGN_CENTER, 0.0f,
-                   "%2u:%.2u", (unsigned)sec, (unsigned)hund);
+    /* ★★ 2026-09-23（owner：「那个剩余时间画在模糊层之后，暂停不会模糊」）——
+     *   ASCII 文字**永远进不了暂停模糊罩**（罩子 = `text.anm` script59 的 UI VM、层 38/绘制桩 0x3e；
+     *   四个 ASCII 绘制趟里只有组 1 早于它，而那一趟在 surface 1 + 相机 0 上、实跑看不见 —— `SDK.md` §16）
+     *   ⇒ 改成**贴图 VM 版文字**（`ce_hud_vm_text_*`：VM 放 UI 层 25，`render_layer` `0x4882b8` 折到 38
+     *     ⇒ 与罩子同一个绘制桩，暂停时被罩住）。字形 = TH18 **font 2** 的原生切图（数字 + `:`）。
+     *   ⚠ 串手写（同 ×N 那条口径）：一手格式 = `"%2d:%.2d"` ⇒ 秒两位（个位前补空格，`%2d` 的行为）、
+     *     `:`、百分秒两位；`UFO_LIFE_MAX` = 720 ⇒ 秒恒 < 12 ⇒ 两位够。*/
+    {
+        unsigned s10 = sec / 10u, s1 = sec % 10u;
+        unsigned h10 = hund / 10u, h1 = hund % 10u;
+        char buf[8];
+        buf[0] = (s10 > 0u) ? (char)('0' + s10) : ' ';    /* 一手 `%2d`：10 以下左补空格 */
+        buf[1] = (char)('0' + s1);
+        buf[2] = ':';
+        buf[3] = (char)('0' + h10);
+        buf[4] = (char)('0' + h1);
+        buf[5] = '\0';
+        ce_hud_vm_text_set(&s_timer_text, x, y, UFO_TIMER_COLOR, CE_ASCII_ALIGN_CENTER, 0.0f,
+                           buf, "ufo-timer");
+    }
     if (!s_timer_logged || (s->play_frame % UFO_TIMER_LOG_EVERY) == 0u) {
         s_timer_logged = 1;
         ce_log("ufo/timer: %2u:%.2u left (%u = %u-frame cap - age %u) at screen 640 (%.0f, %.0f) "

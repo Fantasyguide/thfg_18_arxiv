@@ -758,6 +758,14 @@ static uint32_t hud_vm_glyph(char ch)
     case '%': return CE_ANM_ABILITY_SPRITE_FONT2_PERCENT;
     case '.': return CE_ANM_ABILITY_SPRITE_FONT2_DOT;
     case '+': return CE_ANM_ABILITY_SPRITE_FONT2_PLUS;
+    /* ★ 2026-09-23（卡 112 的计时器要进暂停模糊罩 ⇒ 从 ASCII 换成贴图 VM 文字）：
+     *   `':'` 与 `'*'` 的一手映射就在上面那张表的 `0x3a` / `0x2a` 项（本机直读 = 206 / 190）。
+     *   ⚠ 它们**不在** `ATLAS_FONT2` 里（那个图集属 ORDER 的已定稿段、不许插行）⇒ 贴图以**单图行**
+     *     append 在 ORDER.txt 末尾（新 sprite 号在最后），字形表指向那两个号即可 —— 引擎的
+     *     「sprite 号」是**文件级全局**编号，`ce_anm_set_sprite` 换的是全局号，跨 entry 没问题
+     *     （先例：TS_DIGIT_* 与 FONT2_* 本来就在不同 entry 里混用）。*/
+    case ':': return CE_ANM_ABILITY_SPRITE_FONT2_COLON;
+    case '*': return CE_ANM_ABILITY_SPRITE_FONT2_STAR;
     default:  return 0;                      /* 空格等：按字距跳过 */
     }
 }

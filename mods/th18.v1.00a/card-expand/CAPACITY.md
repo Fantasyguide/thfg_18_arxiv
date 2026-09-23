@@ -244,6 +244,11 @@ cards: 35 registered from cards.js; shop pool 700/8192 slots, guaranteed offers 
   别按墨迹裁：`scale.x` 乘的是 sprite 矩形宽，`th18:0x481703`）；
   **追加在 ORDER.txt 末尾** ⇒ 新 sprite = **430**、同批新脚本 = **275/276**，
   **既有 sprite / 脚本号一个都没动**（`ORDER.frozen.txt` 的前 186 行逐行未变，构建期已核）。
+- **★ 2026-09-23 追加两张单图**（`FONT2_COLON` entry **68** / `FONT2_STAR` entry **69**，各 1 个 sprite =
+  `':`' 与 `'*'` 的字形）：卡 112 的计时器与击破 ×N 弹字要从 ASCII 换成**贴图 VM 文字**（才进得了暂停模糊罩），
+  而这两个字符此前认不出来。贴图**不能**并进 `ATLAS_FONT2`（那个图集在 `ORDER.frozen.txt` 的已定稿段里、
+  插行 = 全库 sprite 号平移）⇒ 按规矩在 ORDER.txt **末尾**追加两张单图。**append 在最末尾** ⇒
+  新 sprite = **485 / 486**，既有号一个没动（entry 69/256）。切图 = `assets/ability/make_font2_art.py`。
   只占 1 个 entry（53/256，余量 203）；生成器 `assets/ability/make_faith_hud_art.py`，
   合并块的几何与逐项判定见 `engine/player/th11/04-merged-hud-spec.md` 与 `AUDIT` §DB/§DC。
 - **★ 2026-09-16 新增 `ATLAS_FLAN`（`ability.anm` 的 entry 53）**：111 的二小姐蓄力特技

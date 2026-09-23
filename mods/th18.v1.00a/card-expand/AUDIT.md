@@ -16685,6 +16685,7 @@ TH18 没有 PIV 状态量，但**有同量纲的对位物**：`engine.h` 的 `CE
 | 2026-09-23 | **112（星莲船）HUD 真根因修复 + 音效两处一手订正 + 共享件 `patch/th18/voice.js`（UFOALERT 音量行）**：`assets/ability/make_ufo_hud_art.py`、`assets/ability/scripts/302..305`、`cards/ufo.c`、`patch/th18/voice.js` | 见下方「§BE 详录 #54」 |
 | 2026-09-23 | **所有卡（共享件 `assets/voice/*` + `patch/th18/voice.js`：音效表再加一格 `UFO` = `se_ufo.wav`，id **0x5f**；`CE_VOICE_REGISTERED` 10 → 12，零行为变化）** | 见下方「§BE 详录 #81」 |
 | 2026-09-23 | **112（星莲船）第二轮（owner 7 条 + 2 条口径）：共享件 `assets/ability/**`** —— ORDER 两张图集画布 + 6 支既有脚本 + 3 支新脚本 + 两个生成器 + `cards/ufo.c` | 见下方「§BE 详录 #82」 |
+| 2026-09-23 | **所有卡（共享件 `native/sdk.{h,c}` 的贴图 VM 文字**：字符集加 `':'` 与 `'*'` 两个字形；`assets/ability/entries/ORDER.txt` 末尾追加两张单图 | 见下方「§BE 详录 #83」 |
 
 **§BE 详录 #51**（共享件 `hud_dim.*` 的统一动态换基准，2026-09-21）
 
@@ -20975,3 +20976,25 @@ youkai:   native opt slot 2: state 0 vm 00000000 muzzle (0.0, -400.0)   （3/4 �
 **一手出处**（完整表在 `SINGLE-CARD-TEST.md` §本批-3 / §本批-5）：召唤动画 = `th12:0x44a8a0` 建的
 `front.anm` script 0x52(82) + `pending_interrupt = 色+7`；满 B = TH18 原生 `item type 7`
 （handler `th18:0x4464d5`，原版自己就用它掉整颗 B：`th18:0x40d2e0`）；卡面配方 = `abcard.anm` script16。
+
+
+## §BE 详录 #83（2026-09-23）：★ **共享件** `native/sdk.{h,c}` + `assets/ability/entries/ORDER.txt` —— 贴图 VM 文字加两个字形（`:` / `*`）
+
+**为什么必须登记**：`native/sdk.{h,c}` 与 `assets/ability/entries/ORDER.txt` 都在共享件清单里（改它们 = 改所有卡的卡）。
+
+**文件 → 改了什么 → 为什么 → 谁改的 → 怎么验证的**
+
+| 文件 | 改了什么 | 为什么 | 验证 |
+| --- | --- | --- | --- |
+| `native/sdk.c` | `hud_vm_glyph()` 加两条：`':'` → `FONT2_COLON`、`'*'` → `FONT2_STAR` | 112 的计时器 / ×N 弹字要从 ASCII 换成贴图 VM 文字（才能进暂停模糊罩），而它们用到的两个字符此前认不出来 | `make check` rc=0；112 的实跑应看到 `11:00` 与 `*1.5` |
+| `native/sdk.h` | 注释里"只认 15 个字符"→ **17 个**（加 `:` `*`）+ 说明 | 同上（文档与实现同步）| 同上 |
+| `assets/ability/entries/ORDER.txt` | **末尾**追加两行单图：`FONT2_COLON` / `FONT2_STAR`（16×32）| `ATLAS_FONT2` 在**已定稿段**（`ORDER.frozen.txt` 前 186 行不许插行）⇒ 只能追加单图；sprite 号 = 文件级全局 ⇒ VM 能跨 entry 用（先例：TS_DIGIT_* 与 FONT2_* 本就混用）| `make -C native anm` 打印 `entry68/69` + `重排检测：已定稿的前 186 个数据行逐行未变 ✅` |
+| `assets/ability/make_font2_art.py` | `GLYPHS` 加两项（精灵号 **206** / **190**，附一手出处）| 同上 | 生成器重跑幂等（16 张 16×32）|
+
+**一手出处**：引擎自己的「字符码 → 精灵号」表在 `.rdata`：`th18:0x4b019c`（另有 `0x4b029c` / `0x4b031c` / `0x4b041c` 三张同值），
+256 字节、索引 = 字符码、值 = 精灵号。本机直读：`':'`(0x3a) → **206**、`'*'`(0x2a) → **190**，
+且 `'.'`/`'-'`/`'%'`/`'+'`/`' '`/`'0'..'9'` 的取值与 SDK 里原有的映射**逐值相同**（= 交叉验证）。
+
+**对既有卡的影响面**：**零行为变化** —— 只是字符集多了两个字符（原来这两字符按"未知、跳过一个字距"处理）；
+`ORDER.txt` 只追加（已定稿段逐行未变，新 sprite 号在文件末尾，既有号一个没动）。**回归**：
+`make -C native anm` 幂等、`make check` rc=0（含 `atlas-check` / `check-docs` 381 文件）、`make dllx87` = 0。

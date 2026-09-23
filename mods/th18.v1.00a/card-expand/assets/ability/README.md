@@ -87,7 +87,7 @@ script33–36 生成（`beastr.png` sprite69）、水獭消弹体 149 手写（`
 `CE_ANM_ABILITY_SPRITE_{WOLF,OTTER,EAGLE}_{0,1,2}` / `FISH_*` / `GAUGE_FRAME`。一手：
 [`engine/animal/th17/01`](../../../../../engine/animal/th17/01-animal-spirits.md) §3.2（token→sprite 表）、§4、§7。
 
-`make_font2_art.py`：**TH18 font 2 的字形切图**（`font2/FONT2_{0..9,MINUS,PERCENT,DOT,PLUS}.png`，各 16×20）——
+`make_font2_art.py`：**TH18 font 2 的字形切图**（`font2/FONT2_{0..9,MINUS,PERCENT,DOT,PLUS,COLON,STAR}.png`；`FONT2_*` 被 `.gitignore` 排除 ⇒ **构建前要跑一次这个生成器**；后两个 2026-09-23 追加，见 `AUDIT.md` §BE 详录 #83）——
 从原生 `local/th18.v1.00a/anm/ascii1280/ascii/ascii_1280.png` 按 `ascii1280.anm.txt` 的精灵矩形切
 （数字 = sprite 196..205，`-`/`%`/`.`/`+` = 208/210/211/212，一手映射见
 [`engine/anm/th18/03-ascii-text.md`](../../../../../engine/anm/th18/03-ascii-text.md) §2f）。

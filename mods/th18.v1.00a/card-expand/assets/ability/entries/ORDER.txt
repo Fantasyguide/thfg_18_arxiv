@@ -773,3 +773,15 @@ YOUKAI_FAM_FLASH  ability/youkai_familiar/YOUKAI_FAM_FLASH.png  32x32
 #   脚本 = 312（script54 逐条照抄，**零翻译** —— `fsetRand`/`fsetAdd` 在 v8.anmm 里都有）。
 #   ⚠ 原生颜色参 `-1` = 中性 ⇒ **不逐机体变色**（一手结论；见 TUNING §2.0zd）。
 YOUKAI_FAM_AURA  ability/youkai_familiar/YOUKAI_FAM_AURA.png  64x64
+# ── 2026-09-23 追加（卡 112，owner 第二轮：「剩余时间画在模糊层之后，暂停不会模糊」）
+#   ASCII 文字**永远进不了暂停模糊罩**（罩子 = `text.anm` script59 的 UI VM、层 38 ⇒ 绘制桩 0x3e；
+#   四个 ASCII 趟里只有组 1 早于它，而那一趟在 surface 1 + 相机 0 上，实跑不可见 —— 见 `SDK.md` §16）
+#   ⇒ 把 112 的计时器与击破 ×N 弹字换成**贴图 VM 版文字**（`ce_hud_vm_text_*`，UI 层 25 折到 38）。
+#   它们用到的两个字形此前不在 `ATLAS_FONT2` 里，而那个图集在**已定稿段**（不许插行）
+#   ⇒ 按规矩**只在文件末尾追加**这两张单图（新 sprite 号在最后，既有号一个没动）。
+#   精灵号一手：引擎的「字符码 → 精灵号」表 `th18:0x4b019c`（+ `0x4b029c/0x4b031c/0x4b041c` 同值）
+#   本机直读 ⇒ `':'`(0x3a) = **206**（`ascii1280` 的 (160,320,16×20)，与数字同一行）、
+#   `'*'`(0x2a) = **190**（(448,208,16×16)，另一行）。切图脚本 `assets/ability/make_font2_art.py`。
+#   ⚠ 两张都落 16×32 画布、字形居中 ⇒ 与 `ATLAS_FONT2` 那套度量（7 px 步进 / 半行高 10 / vm_dy 5）完全一致。
+FONT2_COLON  ability/font2/FONT2_COLON.png  16x32
+FONT2_STAR   ability/font2/FONT2_STAR.png  16x32

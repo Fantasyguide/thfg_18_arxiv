@@ -766,6 +766,8 @@
 #define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_RING       482   /* entry65 */
 #define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_FLASH      483   /* entry66 */
 #define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_AURA       484   /* entry67 */
+#define CE_ANM_ABILITY_SPRITE_FONT2_COLON           485   /* entry68 */
+#define CE_ANM_ABILITY_SPRITE_FONT2_STAR            486   /* entry69 */
 #define CE_ANM_ABILITY_SPRITE_YOUKAI_ALICE_S11      415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
 #define CE_ANM_ABILITY_SPRITE_YOUKAI_ALICE_S12      415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
 #define CE_ANM_ABILITY_SPRITE_YOUKAI_ALICE_S13      415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
