@@ -19,6 +19,9 @@
 | patch | `df14d5707689ca4b66cdfab2b0f642b3` |
 | anm / sht | `bf91a0f5…` / `058cec74…`；四份 `pl0X.sht` 见快照 |
 
+
+> **★ 部署面审计（2026-09-23，本轮全量核对通过）**：`native/th18_card_expand.dll` 与 modkit 两处**同 md5** 且 = `RELEASE-STATE.json` 的 `last_release.dll_md5`（`65f78eab…`）；`ability.anm` / `abcard.anm` / 四份 `pl0X.anm` / 四份 `pl0X.sht` **逐个 md5 与 `native/build/`（含 `build/sht/`）相同**；`voice/` 11 颗 wav 在场。⇒ 「实跑看到的是不是我发的版本」这类疑问不用再猜：用 `md5sum` 对一次即可。
+
 ## §1 怎么干（每批固定动作）
 
 1. **闸三件**：`cd native && make check`（**rc=0**）、`python3 tooling/check-docs.py`（全绿）、`make dllx87`（**0 条**）。
