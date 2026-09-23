@@ -808,7 +808,9 @@ static void yk_aura_kill(yk_card_t *s)
 }
 
 /* 每帧跟随（一手就是每帧钉在自机）+ 自愈（句柄被引擎清过 ⇒ 重起；脚本自己 delete 了 ⇒ 清 0）。*/
-static uint32_t s_orb_log_tick;     /* ★ 2026-09-23（#42）：永点逐 VM 实况的节拍 */
+static uint32_t s_orb_log_tick;
+static uint32_t s_orb_vm_logged;    /* ★ #42：出生即记的计数（前 5 颗）*/
+static uint32_t s_orb_log_pending;   /* ★ #42：下一帧要打的那颗 VM id（0 = 不用打）*/     /* ★ 2026-09-23（#42）：永点逐 VM 实况的节拍 */
 static uint8_t s_aura_edge_spawn;   /* ★ #32/#29：光环「每个形态边沿只起一次」的许可位 */
 static void yk_aura_tick(yk_card_t *s, float x, float y)
 {
@@ -1581,6 +1583,13 @@ static void yk_orb_spawn(yk_card_t *s, float x, float y, int state)
         int ch = yk_current_character();
         if (ch < 0 || ch > 3) ch = 0;
         id = ce_anm_spawn(yk_player_anm(), YK_ORB_SCRIPT[ch], YK_ORB_ANM_LAYER);
+        /* ★ 2026-09-23（#42）：**出生即记**（前 5 颗）—— 上一版只在「60 秒采样点那一刻有活着的永点」才打，
+         *   而永点常在几帧内就被收走 ⇒ 一次实跑 0 行、拿不到证据（实测 owner 15:17 那局的日志就是 0 行）。
+         *   出生即记保证必有一手证据：VM 在不在、sprite/alpha/layer/draw 是什么，一眼可判。*/
+        if (id && s_orb_vm_logged < 5u) {
+            ++s_orb_vm_logged;
+            s_orb_log_pending = id;                    /* 下一帧的 tick 里打（VM 已建好、字段已写）*/
+        }
     }
     if (!id) {                                  /* VM 建不出来 ⇒ 这颗不要（不崩、不排队）*/
         if (s) ++s->orb_full;
@@ -1943,7 +1952,8 @@ static int yk_orbs_tick(yk_card_t *s)
         }
         ce_anm_set_pos(o->anm_id, o->x, o->y, 0.0f);
     }
-    if (++s_orb_log_tick >= 3600u) { s_orb_log_tick = 0; yk_orb_vm_log(s); }   /* #42：每 60 秒一次 */
+    if (s_orb_log_pending) { s_orb_log_pending = 0; yk_orb_vm_log(s); }        /* ★ #42：出生即记 */
+    if (++s_orb_log_tick >= 3600u) { s_orb_log_tick = 0; yk_orb_vm_log(s); }   /* #42：另有每 60 秒一次 */
     return taken;
 }
 
