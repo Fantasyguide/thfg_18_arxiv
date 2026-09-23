@@ -16,7 +16,7 @@
 
 | 项 | 现值 |
 | --- | --- |
-| DLL | `bf3d12ff8a3b6baf37be2b991798837d`（modkit 四处同 md5）|
+| DLL | `e6d621a4371a7d8b3d55bc58d850d5e0`（modkit 四处同 md5；`RELEASE-STATE.json` 为准）|
 | patch | `df14d5707689ca4b66cdfab2b0f642b3` |
 | **ability.anm** | `058cec74…` ← **2026-09-23 因 #17 毛笔横幅变过**（旧值 `f06ba70d…`）|
 | abcard.anm | `bf91a0f5…`；四份 `pl0X.sht` 见快照 |
@@ -45,6 +45,15 @@
 | #18 token 生成音效 | 新 SE 通道项（构建期从 TH12 派生 wav，`assets/voice/ORDER.txt` + `derive_retail_se.py`）| `ufo/se tally …` 里应有对应计数 |
 | #19 召唤清槽 | 代码侧本来就是一手口径（唯一的清槽点 = **UFO 结束**那一刻）| 那一局**无** `ufo: slots cleared`，而 tally 有 `ufo-fill-full 2 / ufo-break 2`（确实召唤过两轮）✅ 不重现 |
 | 槽四态 / 闪光 | 槽 VM 每帧写 sprite（`457 + 四态 + 闪烁×4`）、入槽闪光走 flash VM（script 303）| 日志 `ufo: slot 1 flash (state 3) - ability.anm script 303 + slot interrupt 7/13` ✅ |
+
+## §2b 2026-09-23 后新增（都已实现发版，等 owner 眼判）
+
+| 条 | 做了什么 |
+| --- | --- |
+| #20 ×N | `ufo.c` 新增 `ufo_xn_spawn/tick/kill`：UI 层字形通道拼「×」+整数倍率，红 `0xffff6060` + 黑描边错开 (1,1)、寿命 **720 帧**（一手 `0x2d0`）；关键字 `ufo: xN popup up …` |
+| #14 紫环 | `ability.anm` **316/317/318**（逐条照抄 TH12 `enemy.anm` script139/140/141，**无贴图**）⇒ 召唤时 6 个反向旋转的紫多边形；关键字 `ufo: summon purple ring up …` |
+| #14 六边形（雷电候选）| `ability.anm` **319/320/321**（`enemy.anm` script103 + 102/104 逐条照抄）⇒ 召唤时青六边形爆闪；**待你眼判「这是不是雷电」** |
+| #22 吸收数记录面板 | `ufo.c` 新增 `ufo_panel_pop/tick/kill`：弹 304/305（一手 `pos(528,288)`）+ 字形画吸收数、静置 180 帧后中断 1 缩回；5 个 ❓自定登记 `TUNING §2.0zz`；关键字 `ufo: absorb-count panel popped …` |
 
 ## §3 待办
 

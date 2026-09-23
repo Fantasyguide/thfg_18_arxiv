@@ -9,13 +9,14 @@
 
 人妖槽 / 刻符 / 决死染色 / 光环边沿 / 松开 Shift 的恢复**都已做完并实跑验过**；
 **只剩「子机」这一条大坑**：妖侧 `slot ≥ 1` 的行不发弹（本体只发一列）、人侧子机滞留。
-根因已由实跑**定案 = 分支 B**（owner 19:02 那局打出 `native option slots at low speed - 0/4 live`）⇒ 直接按 §4 的 B 修。
+根因已由实跑**定案 = 分支 B**（owner 19:02 那局打出 `native option slots at low speed - 0/4 live`）
+**且代码侧已按此改完三步并全部发版**（B-1 / 膛口断点早退 / keep_records；见 §2 与 §4）⇒ 只剩**一次实跑确认**。
 
 ### 部署面（单一来源 = `RELEASE-STATE.json`）
 
 | 项 | 现值 |
 | --- | --- |
-| DLL | `bf3d12ff8a3b6baf37be2b991798837d`（modkit 四处同 md5）|
+| DLL | `e6d621a4371a7d8b3d55bc58d850d5e0`（modkit 四处同 md5；`RELEASE-STATE.json` 为准）|
 | patch | `df14d5707689ca4b66cdfab2b0f642b3` |
 | anm / sht | `bf91a0f5…` / `058cec74…`；四份 `pl0X.sht` 见快照 |
 
@@ -43,6 +44,10 @@
 | #26 决死弹幕变红 | 染色链照 115 的**机制**（记原色 / 每帧还原 / 只动 RGB 不碰 alpha）；颜色按 owner 口径改**纯红 `0xffff0000`** | 日志 `youkai: deathbomb window - tinted N live enemy bullet(s) red …` ✅ 链已验；够不够红待眼判 |
 | #29 / #32 shift 光环持续触发 | 改成**每个形态边沿只起一次** | 日志 `youkai: body Shift aura ON …` 每进一次妖侧**恰好一行** ✅ 已验 |
 | #30 人妖槽看不见 | 生成器给四支 HUD 脚本注入 `layer(25)`（暂停模糊罩那一组）+ 脚本 `pos`/`posTime` 归零（位置全归 C 侧写）| 产物回读 `script49` = `layer(25) + pos(0,0,0)` ✅；几何自述 `anchor (257,924) bar (257,860) text (385,854)` ⇒ **写的数就在左下角**；但 owner 报「**在画面上方被挡**」⇒ 见 §3② |
+| ★ 子机修法 第 0 步（B-1）| 108 **不再声明隐藏** + 低速改用**新增的** `ce_native_option_sweep_keep_state()`（只杀显示、保留 `state`/坐标）| 待实跑：`native option slots at low speed - N/4 live` 不再 0/4 + 妖侧第二列弹（`AUDIT §BE #78`）|
+| ★ 子机修法 第 2 步 | 膛口断点加早退「**本帧已有卡认领 set ⇒ 放行**」（否则我们那些行的弹会被自己的断点拦掉）| 待实跑；今天只影响「111 隐藏 + 有人认领 set」这一组合（`AUDIT §BE #79`）|
+| ★ 子机修法 第 1+3 步 | 新增每卡声明 `ce_native_option_keep_records()`（108 低速声明）⇒ 构建断点**什么都不做**（不压 `lvl`）⇒ **魔理沙**那一路的记录也照建 | 待实跑：魔理沙机体 `N/4 live` 也不再 0/4（`AUDIT §BE #80`）|
+| #37 第一半 人侧火焰使魔 | **自查：资产/脚本/层/alpha 四项都没问题**（贴图浅粉 219,164,164、无 layer 由 C 补 7、人侧 alpha 0xff）| **待实跑重看**；若仍不见就加逐 VM 实况行（见台账末尾的小节）|
 | #34 / #35 灵梦妖侧不发弹 + 子机不转 | 资产侧已换**逐机体**的妖侧弹脚本（`YK_BULLET_ANM` = pl00/01/03 → 5、pl02 → 9）| `make sht` 回读 `妖侧弹脚本号逐文件对账 OK：{'pl00':5,'pl01':5,'pl02':9,'pl03':5}` ✅；产物 `script5` = `layer(13) + sprite(24/25)`；**旋转**属另一条 #9（`th08:0x44e8d0` 弹簧 + 旋转标签 5，已改待实跑）|
 
 **分支 A 的细目（修哪里）**：① `option+0xb0` 那个 per-slot VM id 的删除；② `ce_option_kill_bullets()` 收激光
