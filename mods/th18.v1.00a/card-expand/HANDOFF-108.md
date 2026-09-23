@@ -9,7 +9,7 @@
 
 人妖槽 / 刻符 / 决死染色 / 光环边沿 / 松开 Shift 的恢复**都已做完并实跑验过**；
 **只剩「子机」这一条大坑**：妖侧 `slot ≥ 1` 的行不发弹（本体只发一列）、人侧子机滞留。
-根因的**两种可能还没分流**，分流只差一次实跑日志（探针已在最新 DLL 里）。
+根因已由实跑**定案 = 分支 B**（owner 19:02 那局打出 `native option slots at low speed - 0/4 live`）⇒ 直接按 §4 的 B 修。
 
 ### 部署面（单一来源 = `RELEASE-STATE.json`）
 
@@ -68,7 +68,9 @@ ce: shot-set-index first claim (frame N): edi=0x… [player+0x47940]=0x…
 ⇒ 那些行要的正是原生那 4 格 —— **可我们低速把它们藏了**（`ce_native_option_hide_declare` + 每帧
 `ce_native_option_sweep()` + 隐藏断点把 `lvl` 压 0 ⇒ 连**记录**都不建）⇒ 没有活膛口 ⇒ 只有本体那一列发得出来。
 
-**下一步 = 先分流（两种可能的修法方向相反，别乱改）**：见 §4。
+**★★★ 2026-09-23 实跑定案 = 分支 B**：owner 19:02 那局打出 `youkai: native option slots at low speed - 0/4 live`
+（偶见 1/4）⇒ 低速时引擎那 4 格原生子机**基本是空的** ⇒ 我们 TH08 行的 `slot ≥ 1` 没有膛口 ⇒ 只有本体那一列
+⇒ 与 owner「本体只发一列、子机不发」逐字对上。**不用再分流，按 §4 的 B 修。**
 
 **已在最新 DLL 里的探针（等一次实跑，三条关键字）**：
 - 低速：`youkai: native option slots at low speed - N/4 live …` + 四行 `native opt slot k: state/vm/muzzle`
@@ -93,7 +95,7 @@ owner：「是**进** shift 有『使魔 → 魔法阵』的音效，退出没�
 挂点 = `assets/voice/ORDER.txt` 与 `patch/th18/voice.js`（两向的事件名）；改法 = 交换两个事件名，或双向都播同一颗。
 ⚠ 一手判向要再核一次再动手。
 
-## §4 子机：两条互斥分支（**等日志分流**）
+## §4 子机：两条互斥分支（**已定案 = B**，见下）
 
 | 分支 | 触发判据（日志）| 修法 |
 | --- | --- | --- |
