@@ -1522,10 +1522,34 @@ static void gf_follow_tick(uint8_t *em)
 
         if (f->id == 0) continue;
         me = ce_enemy_by_id(em, f->id);
-        if (!me) { f->id = 0; continue; }                   /* 它已经不在了（被打死/自删）*/
+        if (!me) {
+            ce_log("faithgf: 绿妖精 #%d 不在了（被打死 / 自删；age=%d wave#%d）",
+                   (int)f->id, (int)f->age, (int)f->wave);
+            f->id = 0;
+            continue;
+        }
         /* ★ 2026-09-22：**寿命兜底** —— 目标一直活着、也没被打死的那种，不能永远留在场上。*/
+        /* ★★ 2026-09-24 诊断（owner：「**依旧没有绿色妖精**」）：偏移已经修好（日志里 `(+0,+0)`/`(+40,+0)`），
+         *   那就得看**引擎里那支敌机自己**的状态 —— 出生后 +30 / +150 帧各读一次：
+         *   位置 / 外观 (N,S) / 目标与偏移 / 我们写进 `%F2/%F3` 的点。
+         *   三种可能的读法：① 已经不在敌人表里（被打死 / 自删）；② 位置在场地外；
+         *   ③ 外观不是 `(2,10)`（那我们写错了 `anmSetMain` 的参数）。*/
+        if (f->age == 30 || f->age == 150) {
+            const float *mp = ce_enemy_pos(me);
+            ce_log("faithgf/probe: 绿妖精 #%d age=%d pos=(%.0f,%.0f) anm=(%d,%d) 跟随 #%d 偏移(%+.0f,%+.0f) "
+                   "写F2/F3=(%.0f,%.0f) wave#%d",
+                   (int)f->id, (int)f->age,
+                   mp ? (double)mp[0] : 0.0, mp ? (double)mp[1] : 0.0,
+                   (int)*(const int32_t *)(me + CE_ENEMY_ANM_SRC),
+                   (int)*(const int32_t *)(me + CE_ENEMY_ANM_SCRIPT),
+                   (int)f->tgt_id, (double)f->off_x, (double)f->off_y,
+                   (double)*(const float *)(me + CE_ENEMY_ECL_F2),
+                   (double)*(const float *)(me + CE_ENEMY_ECL_F3),
+                   (int)f->wave);
+        }
         if (++f->age > FAITH_GF_TTL) {
             *(int32_t *)(me + CE_ENEMY_ECL_I0) = 999;
+            ce_log("faithgf: 绿妖精 #%d 到寿命上限（%d 帧）⇒ 喊它飞离", (int)f->id, (int)FAITH_GF_TTL);
             f->id = 0;
             continue;
         }
@@ -1535,6 +1559,8 @@ static void gf_follow_tick(uint8_t *em)
         if (!tg) {
             if (++f->lost > FAITH_GF_LOST_FRAMES) {
                 *(int32_t *)(me + CE_ENEMY_ECL_I0) = 999;   /* 喊它飞离自删 */
+                ce_log("faithgf: 绿妖精 #%d 的目标丢了 %d 帧 ⇒ 喊它飞离（wave#%d）",
+                       (int)f->id, (int)FAITH_GF_LOST_FRAMES, (int)f->wave);
                 f->id = 0;
             }
             continue;
