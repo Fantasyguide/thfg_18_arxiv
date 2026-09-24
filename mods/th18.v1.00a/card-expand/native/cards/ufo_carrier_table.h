@@ -28,20 +28,29 @@ typedef struct {
     uint8_t  kind;     /* ufo_carrier_kind_t */
     uint8_t  sprite_w; /* 主脚本第一张精灵的宽（仅供人读；分档就是靠它）*/
     uint8_t  sprite_h;
+    int16_t  hp_min;   /* 创建点 hp 的最小值（owner 第 12 轮的分档判据：≤ 400 = 一碰就碎）*/
+    int16_t  hp_max;
     const char *who;   /* 一手出处（TH12 侧的子程序名）*/
     const char *stages;/* 在 TH18 的哪几关出现 */
 } ufo_carrier_key_t;
 
 /* ★ 表（按 (N,S) 升序；一条 = 一个"外观"）*/
 static const ufo_carrier_key_t UFO_CARRIER_KEYS[] = {
-    {    2,   20, UFO_CARRIER_KIND_FAIRY,  48,  32, "TH12 GirlB01", "st1/st2/st3/st5/st6/st7" },
-    {    2,   30, UFO_CARRIER_KIND_FAIRY,  48,  48, "TH12 GirlC01", "st5/st6" },
-    {    2,   35, UFO_CARRIER_KIND_FAIRY,  48,  48, "TH12 GirlC01", "st1" },
-    {    2,   40, UFO_CARRIER_KIND_BFLY ,  64,  64, "TH12 GirlC01、TH12 GirlD01、TH12 GirlD02、TH12 GirlD03", "st1/st3/st4/st5/st6/st7" },
-    {    2,   91, UFO_CARRIER_KIND_FAIRY,  32,  32, "TH12 Phantom01、TH12 Phantom01d", "st3/st4/st5/st6/st7" },
-    {    2,   99, UFO_CARRIER_KIND_FAIRY,  32,  32, "TH12 Phantom01、TH12 Phantom01c、TH12 Phantom01d", "st1/st2/st3/st5/st7" },
-    {    2,  214, UFO_CARRIER_KIND_FAIRY,  48,  48, "TH12 GirlC01", "st2/st3/st4" },
-    {    2,  224, UFO_CARRIER_KIND_BFLY ,  64,  64, "TH12 GirlD01、TH12 GirlD02、TH12 GirlD03", "st2/st7" },
+    {    2,    0, UFO_CARRIER_KIND_FAIRY,  32,  32,   100,   300, "TH18 蓝妖精", "st1/st2/st5/st6" },
+    {    2,    5, UFO_CARRIER_KIND_FAIRY,  32,  32,   100,   500, "TH18 妖精、TH18 红妖精", "st1/st2/st5/st6" },
+    {    2,   10, UFO_CARRIER_KIND_FAIRY,  32,  32,   120,   120, "TH18 蓝妖精", "st5" },
+    {    2,   15, UFO_CARRIER_KIND_FAIRY,  32,  32,   120,   500, "TH18 妖精、TH18 红妖精", "st5" },
+    {    2,   20, UFO_CARRIER_KIND_BFLY ,  48,  32,   500,   500, "TH12 GirlB01", "st1/st2/st3/st5/st6/st7" },
+    {    2,   30, UFO_CARRIER_KIND_BFLY ,  48,  48,   600,  3200, "TH12 GirlC01", "st5/st6" },
+    {    2,   35, UFO_CARRIER_KIND_BFLY ,  48,  48,   600,  3200, "TH12 GirlC01", "st1" },
+    {    2,   40, UFO_CARRIER_KIND_BFLY ,  64,  64,   600, 10000, "TH12 GirlC01、TH12 GirlD01、TH12 GirlD02、TH12 GirlD03", "st1/st3/st4/st5/st6/st7" },
+    {    2,   91, UFO_CARRIER_KIND_FAIRY,  32,  32,   120,   400, "TH12 Phantom01、TH12 Phantom01d、TH18 幻影妖精", "st1/st3/st4/st5/st6/st7" },
+    {    2,   99, UFO_CARRIER_KIND_FAIRY,  32,  32,   120,   400, "TH12 Phantom01、TH12 Phantom01c、TH12 Phantom01d、TH18 幻影妖精", "st1/st2/st3/st5/st7" },
+    {    2,  103, UFO_CARRIER_KIND_FAIRY,  32,  32,   300,   300, "TH18 幻影妖精", "st2/st3/st5/st7" },
+    {    2,  184, UFO_CARRIER_KIND_FAIRY,  32,  32,   100,   300, "TH18 蓝妖精", "st2/st3/st7" },
+    {    2,  189, UFO_CARRIER_KIND_FAIRY,  32,  32,   100,   500, "TH18 红妖精", "st2/st3/st7" },
+    {    2,  214, UFO_CARRIER_KIND_BFLY ,  48,  48,   600,  3200, "TH12 GirlC01", "st2/st3/st4" },
+    {    2,  224, UFO_CARRIER_KIND_BFLY ,  64,  64,   800, 10000, "TH12 GirlD01、TH12 GirlD02、TH12 GirlD03", "st2/st7" },
 };
 #define UFO_CARRIER_KEY_COUNT (int)(sizeof(UFO_CARRIER_KEYS) / sizeof(UFO_CARRIER_KEYS[0]))
 
