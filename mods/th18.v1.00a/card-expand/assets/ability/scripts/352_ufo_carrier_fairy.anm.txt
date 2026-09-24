@@ -1,13 +1,15 @@
 script script352 {
     // 112 星莲船 —— **UFO 令牌宿主：杂鱼妖精**（换皮用）
-    //   一手：TH12 v1.00b `enemy.anm` **script35** 逐条移植（`local/th12.v1.00b/anm/enemy/enemy.anm.txt`）。
-    //   原文：`layer(8); offset12: sprite(84); +5: sprite(85); +5: sprite(86); +5: sprite(87);
+    //   一手：TH12 v1.00b `enemy.anm` **script15** 逐条移植（`local/th12.v1.00b/anm/enemy/enemy.anm.txt`）。
+    //   原文：`layer(8); offset12: sprite(36); +5: sprite(37); +5: sprite(38); +5: sprite(39);
     //         +5: jmp(offset12, 0);`（4 帧走位、共 20 帧一圈）
-    //   ⇒ 精灵 84..87 = `enemy/enemy.png` 里那 32px 精灵块的**第 4 行**（y=96），正是 owner 说的
+    //   ⇒ 精灵 36..39 = `enemy/enemy.png` 里**完整小妖精那一块**（`sprite0..47` = 4 行 × 12 帧 =
+    //     4 个颜色族：0-11 蓝 / 12-23 红 / 24-35 绿 / **36-47 黄**）的**第 4 行**，正是 owner 说的
     //     「掉飞碟的杂鱼妖精是 **enemy.png 妖精贴图的第 4 行**」。
-    //     ★ 旁证：TH12 那几个掉落令牌的妖精子程序（`GirlB01` 等）自己写的就是
-    //     `anmSelect(2); anmSetMain(0, 30/20/35); anmSetSprite(1, 85/88/91)` —— 其中 `85/88/91`
-    //     全落在第 4 行（y=96），与 owner 的观察逐字吻合；`anmSetMain(0,35)` 对应的正是本脚本这一套。
+    //   ⚠⚠ 2026-09-24 第 16 轮订正：上一版切的是 `sprite84..87` —— 那**不是妖精**，而是大蝴蝶那张
+    //     64×64 整图（`sprite125..136` 那一带）的 **32×32 象限碎片**，所以换皮之后"I 只看到一块残片、
+    //     头和尾没变"（owner 实跑原话：「sprite 切分有问题」）。切图器 `make_ufo_carrier_art.py`
+    //     的文件头把这一带的地图与复核过程写清楚了。
     //
     // **移植改动（Δ）**
     //   Δ1 `sprite(84..87)` → `@CARRIER_FAIRY_0..3@`。

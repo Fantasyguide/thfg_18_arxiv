@@ -14,8 +14,28 @@
 | 输出 | 一手 sprite | 一手脚本 | 说明 |
 | --- | --- | --- | --- |
 | `CARRIER_BFLY_0..7` | `enemy.anm` **sprite125..132** | **script45**（4 帧走位 + 左右翻转两套） | 64×64 的蝴蝶（白翅 + 粉花身体）= owner 说的「第一二行」 |
-| `CARRIER_FAIRY_0..3` | `sprite84..87` | **script35** | 32×32 的小妖精（同形蝴蝶翅）= owner 说的「妖精贴图第 4 行」 |
+| `CARRIER_FAIRY_0..3` | **`sprite36..39`** | **script15** | ★ 32×32 的**完整**小妖精 = owner 说的「妖精贴图第 4 行」 |
 | `CARRIER_MARK_0..5` | `sprite167..172` | **script98**（+ 子 100/101 两层灰影） | 64×32 的**旋转飞碟**（每 3 帧换一张），挂在头顶 `pos(0, -32)` |
+
+## ★★ 2026-09-24 第 16 轮：妖精那三张图**切错了**（owner 实跑：「sprite 切分有问题」）
+
+上一版把 `sprite84..87` 当成"妖精贴图第 4 行"切了 —— 实跑一看，那**不是妖精**，是
+**大蝴蝶那张 64×64 图的四个 32×32 象限碎片**（`sprite84` = 左下、`sprite85` = 右下…），
+所以换皮之后妖精看着像"只有头和尾没变"的一块残片。
+
+一手复核（`enemy/enemy.png` 512×512 的精灵表 + 逐格渲染）：
+
+| 区域 | 内容 |
+| --- | --- |
+| `sprite0..47`（y=256..383）| **完整的小妖精**，**4 行 × 12 帧 = 4 个颜色族**：0-11 蓝 / 12-23 红 / 24-35 绿 / 36-47 黄 |
+| `sprite48..107`（y=0..127）| **不是独立精灵** —— 大蝴蝶/飞碟那些 64×64 图的象限碎片（125..136 才是整图）|
+| `sprite125..132`（y=0，64×64）| 大蝴蝶（owner 的「第一二行」）|
+| `sprite167..172`（64×32）| 头顶旋转飞碟（owner 的「第二行右半」）|
+
+一手脚本（TH12 `enemy.anm`）：`script0` = 蓝妖精走位（sprite0..3）、`script5` = **红**（12..15）、
+`script10` = **绿**（24..27）、**`script15` = 黄（36..39）** —— **第 4 行就是这一族** ✓
+（旁证：TH12 的 `GirlRedA01` 写的就是 `anmSetMain(0, 5)`、`GirlBlueA01` 是 `anmSetMain(0, 0)`，
+颜色与名字对得上；而我们上一版那个 `script35`（sprite84..87）落在碎片区，所以切出来是残片）。
 
 ⚠ 精灵矩形**从原生 anm 文本读**（`sprites {}` 表），不写死坐标；逐张断言尺寸，
 与 `make_ufo_debris_art.py` / `make_ufo_drop_art.py` 同一套纪律。**不重画、不缩放**。
@@ -47,8 +67,8 @@ ORDER_FRAG = HERE / "entries" / "ORDER.ufo_carrier.txt"
 GROUPS = [
     ("ATLAS_UFO_CARRIER_BFLY",  "CARRIER_BFLY",  125, 8, (64, 64),
      "64×64 蝴蝶 8 张（一手 enemy.anm sprite125..132；走位用前 4 张 = script45）"),
-    ("ATLAS_UFO_CARRIER_FAIRY", "CARRIER_FAIRY",  84, 4, (32, 32),
-     "32×32 小妖精 4 张（一手 sprite84..87 = 妖精贴图第 4 行；script35 走位）"),
+    ("ATLAS_UFO_CARRIER_FAIRY", "CARRIER_FAIRY",  36, 4, (32, 32),
+     "32×32 完整小妖精 4 帧（一手 sprite36..39 = 妖精贴图**第 4 行**；一手 script15 走位）"),
     ("ATLAS_UFO_CARRIER_MARK",  "CARRIER_MARK",  167, 6, (64, 32),
      "64×32 头顶旋转飞碟 6 张（一手 sprite167..172；script98 每 3 帧换一张）"),
 ]

@@ -1906,7 +1906,7 @@ static void ufo_summon_fx_kill(void)
  *
  * ⇒ 三条硬规则（**都不是"整族换皮"，而是"这一只带着 UFO"的视觉标记**）：
  *   **A. 谁能带**：`UFO_CARRIER_KEYS[]`（生成器扫出来的宿主表）——
- *      · **32×32 且一碰就碎**（`hp ≤ 400`）的**杂鱼妖精** ⇒ 穿妖精皮（脚本 352 = TH12 `sprite84..87`）；
+ *      · **32×32 且一碰就碎**（`hp ≤ 400`）的**杂鱼妖精** ⇒ 穿妖精皮（脚本 352 = TH12 `sprite36..39`）；
  *      · **64×64** 的**大蝴蝶** ⇒ 穿蝴蝶皮（脚本 351 = TH12 `sprite125..132`）；
  *      · **其余（48×32 / 48×48 的中妖精家族）不是宿主**：不换皮、一枚都不掉（owner ⑥）。
  *   **B. 一波只挑 1~2 只**（owner ⑦）：同一波（同 `(N,S)`、到达间隔 ≤ `UFO_CARRIER_WAVE_GAP` 帧）里
@@ -1919,7 +1919,7 @@ static void ufo_summon_fx_kill(void)
  *
  * **一手依据**：表 = `native/tools/gen_ufo_carrier_table.py` 从 TH18 的 7 关 ECL + `enemy.anm` 现扫
  * （键 = `enemy+0x1494/0x1498` 的 `(N,S)`「它长什么样」，与 110 的大信仰点表同一套判据）；
- * 三张皮 = TH12 `enemy.anm` 的 `sprite125..132` / `84..87` / `167..172` 1:1 切图（`make_ufo_carrier_art.py`）。
+ * 三张皮 = TH12 `enemy.anm` 的 `sprite125..132` / `36..39` / `167..172` 1:1 切图（`make_ufo_carrier_art.py`）。
  * 逐条推导与退役清单见 `TUNING.md` §2.0zzm / §2.0zzo / §2.0zzp / §2.0zzq，实跑判据见
  * `SINGLE-CARD-TEST.md` §本批14-1。 */
 /* ---- ECL 波号（owner 2026-09-24 第 15 轮：「115 审计的时候看见了，**ecl 脚本里面是有波的计数的**」）----
@@ -2252,9 +2252,17 @@ static void ufo_carrier_tick(void)
              *   读不到波号（−1）时才退回"到达间隔 > GAP"那条启发式。 */
             {
                 int32_t w = (s_stage_wave >= 0) ? s_stage_wave : -1;
-                int new_wave = (s_wave_n > 0) &&
-                               ((w >= 0 && s_wave_cur >= 0 && w != s_wave_cur) ||
-                                (s_carrier_tick_no - s_wave_last_arrival) > UFO_CARRIER_WAVE_GAP);
+                /* ★ 2026-09-24 第 16 轮修 bug（owner 实跑：「第二波外侧的杂鱼妖精**几乎全变了**」）：
+                 *   上一版的判据是 `波号变了 || 间隔 > GAP` —— 那个 `||` 会把**同一波里分几拍刷**的
+                 *   妖精拆成好几个"波"，每小组各挑一次 ⇒ 换皮的比该换的多得多。
+                 *   现在：**有波号就只看波号**（同一波永不被间隔拆开）；只有读不到波号时才退回间隔。*/
+                int new_wave;
+                if (w >= 0 && s_wave_cur >= 0)
+                    new_wave = (w != s_wave_cur);
+                else if (w < 0)
+                    new_wave = (s_carrier_tick_no - s_wave_last_arrival) > UFO_CARRIER_WAVE_GAP;
+                else
+                    new_wave = 0;              /* 波号由"读不到"变"读得到"：同一波继续攒 */
                 if (s_wave_n > 0 && new_wave) ufo_carrier_wave_flush();
                 if (s_wave_n == 0) s_wave_cur = w;
                 if (s_wave_n < UFO_CARRIER_WAVE_MAX) {
@@ -2282,7 +2290,7 @@ static void ufo_carrier_tick(void)
             ce_log("ufo: carrier skin ON - enemy_id %d (N %d, S %d) -> %s x%.2f; body script %d + mark script %d "
                    "(owner: the skin MEANS it carries a token)",
                    (int)c->enemy_id, (int)c->n, (int)c->s,
-                   c->kind == (uint8_t)UFO_CARRIER_KIND_BFLY ? "BFLY (sprite125..132 蝴蝶)" : "FAIRY (sprite84..87 妖精)",
+                   c->kind == (uint8_t)UFO_CARRIER_KIND_BFLY ? "BFLY (sprite125..132 蝴蝶)" : "FAIRY (sprite36..39 妖精)",
                    (double)c->skin_scale, ufo_carrier_body_script(c->kind),
                    CE_ANM_ABILITY_SCRIPT_UFO_CARRIER_MARK);
         }
