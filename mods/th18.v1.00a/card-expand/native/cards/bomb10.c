@@ -384,8 +384,12 @@ int32_t bomb10_start(const bomb10_host_t *host, void *user, int32_t by_hit)
 
     /* 柱环：第 0 帧起 394/395/396（一手 script400 的头三行 `scriptNew`）——
      * 半径/淡出/自删**全在脚本里**（见文件头的「两处必须偏离一手」），卡侧只给出生点。*/
-    bomb10_ring_spawn_due();
-    bomb10_fx_dump("起");
+    if (!s_run.nitori_form) {          /* ★ 罩子形态：**连起手那三支环都不起**（owner：「还有普通灵击特效」）*/
+        bomb10_ring_spawn_due();
+        bomb10_fx_dump("起");
+    } else {
+        ce_log("%s: 罩子形态（河童）⇒ **不起任何灵击视觉**（柱环/火星全免；泡自己才是视觉）", host->log_tag);
+    }
 
     /* 音效（TH10 `se_slash.wav` ↔ TH18 同 wav id 0x2c）*/
     ce_play_sound(BOMB10_SE, pp[0]);
@@ -431,7 +435,14 @@ void bomb10_tick(int32_t driver)
     /* ★ 2026-09-22 无敌：**每帧声明剩余帧数**（声明层取 max、只写更长值 ⇒ 不会截短别人的无敌）。
      * 一手是「发动瞬间一次性给 270/200」（`Timer::set`），引擎自己逐帧递减 ⇒ 我们这里同步递减并声明，
      * 两者在锁步中只可能**补足**（引擎那侧被消耗掉了才重写），数到 0 就声明 0 把这一格清干净。*/
-    if (s_run.invuln_left > 0) {          /* 罩子形态这一格恒 0（起手就没给）⇒ 整段自然跳过 */
+    if (s_run.nitori_form) {
+        /* ★★★ 2026-09-24（owner 实跑：「罩子在第二次放的时候**持续时间无限、永续无敌**，撞也没用」）：
+         *   罩子形态**每帧显式把无敌清零** —— 无敌声明层是粘性的，只要有一处没撤（上一次灵击的
+         *   270 帧、原生 B、破罩的无敌…），罩子的「暴露帧」就永远不再累加（它的寿命按**非无敌帧**
+         *   算）⇒ 表现正是「罩子永续 + 无敌永续」。这里每帧压 0 = 罩子形态期间**不可能**有我们的无敌。*/
+        s_run.invuln_left = 0;
+        ce_invuln_request((uint32_t)s_run.owner_id, 0);
+    } else if (s_run.invuln_left > 0) {
         --s_run.invuln_left;
         ce_invuln_request((uint32_t)s_run.owner_id, s_run.invuln_left);
     }

@@ -1402,11 +1402,17 @@ static int32_t signal_bomb_gate(void *user)
 
     if (!s) return 1;
     if (*(const int32_t *)CE_ADDR_CHARACTER != SIGNAL_CHAR_MARISA) return 0;
-    if (!signal_shield_busy()) return 0;
-    ce_log("signal: 灵击**被罩子挡住**（河童泡还在进行中：暴露 %d 帧 / 暂停 %d 帧 / 破罩演出剩 %d 帧）"
-           "⇒ 这一下不放（一手 `th11:0x40651b` 的 `[bomb+0x3c] != 0` ⇒ `do_bomb` 返回 −1）",
-           (int)s_shield.frames, (int)s_shield.paused, (int)s_shield.break_left);
-    return 1;
+    /* ★★★ 2026-09-24 owner 口径（逐字）：「**魔理沙的罩子持续当中不应该能发灵击**（B 能放，
+     *   **会刷新罩子的持续时间**）」⇒ 这道闸**不再是拒绝**：B 照放，`signal_shield_arm()` 会把
+     *   旧的泡顶掉并**重新计 920 帧**（= 刷新）。
+     *   ⚠ 与一手 TH11 的 `[bomb+0x3c] != 0 ⇒ do_bomb 返回 −1`（拒绝）不同 —— 按 owner 口径走，
+     *     差别登记在 `TUNING.md` §2.0zzy-5。*/
+    if (signal_shield_busy()) {
+        ce_log("signal: 罩子还在（暴露 %d 帧 / 暂停 %d 帧 / 破罩演出剩 %d 帧）⇒ 这一发 B 照放，"
+               "会**刷新**罩子时长（owner 口径）",
+               (int)s_shield.frames, (int)s_shield.paused, (int)s_shield.break_left);
+    }
+    return 0;
 }
 
 /* ② 火力扣法：**魔理沙机体的灵击消耗 = 0.5 档**（爱丽丝那条，🟡 用户口径 2026-09-16m 追加：
