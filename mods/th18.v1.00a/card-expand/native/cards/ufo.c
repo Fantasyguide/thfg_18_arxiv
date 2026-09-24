@@ -2024,6 +2024,13 @@ static int32_t ufo_stage_wave(void)
 #define UFO_CARRIER_BODY_LAYER      8     /* 一手：`enemy.anm` script45 / script35 的 `layer(8)` */
 #define UFO_CARRIER_MARK_LAYER      9     /* 一手：script98 的 `layer(9)`（压在皮之上）*/
 #define UFO_CARRIER_ALPHA_HIDDEN    0x00ffffffu   /* D3DCOLOR：alpha 0、RGB 白（同整 B 藏原生星的手法）*/
+#define UFO_CARRIER_SLOTS          16     /* 宿主自己的 anm 槽数（`zEnemyData.anm_vm_ids[0x10]`）*/
+/* ★★ owner 2026-09-24 第 18 轮裁决：「**如果自带火焰那就别改了**」⇒ 默认 **0 = 火焰留着**
+ *   （槽 1 是敌人自带的火焰/光环：TH18 `GirlD01` 的 ECL 写 `anmSetSprite(1, 105)`，
+ *    脚本 105 = `layer(11)` + `加算` + 子脚本 106/107 = `sprite152..159` 的 8 帧火焰
+ *    —— 那是**敌人自己的设计**，不是我们画的；换皮的宿主背后照样挂着自己的火）
+ *   想连它一起隐掉（让宿主只剩 TH12 那层皮）就把这个宏改 1 —— 一行。）*/
+#define UFO_CARRIER_HIDE_SLOT1      0     /* 1 = 连槽 1（敌自带的火焰/光环）一起隐掉；0 = 留着（owner 口径）*/
 #define UFO_TOKEN_DROP_LEGACY       0     /* 1 = 旧行为：任意带掉落表的小怪也掉（owner 口径已废）*/
 
 /* ★★ owner 2026-09-24 第 11 轮：「道中 boss 怎么是掉落一红一蓝啊，掉落两蓝的也有 ——
@@ -2031,7 +2038,8 @@ static int32_t ufo_stage_wave(void)
  *   （登记时 `color = UFO_COLOR_NONE` ⇒ 走 `ufo_tok_spawn()`：随机起始色 + 每 150 帧换一色）。
  *   ⚠ 退役（历史口径留在 `TUNING.md` §2.0zzn / §2.0zzm-4）：妖精1/蝴蝶2 两个宏、逐关固定色掩码表、
  *     boss 的 1 红 + 1 绿（`pend_drop_boss`）。 */
-#define UFO_CARRIER_TOKENS_DROP    2      /* ★ owner 口径：任何宿主 / boss 击破都掉 2 枚 */
+#define UFO_CARRIER_TOKENS_DROP    1      /* ★ owner 2026-09-24 第 18 轮：「**一个非 boss 敌人只掉 1 个飞碟，不是 2 个**」*/
+#define UFO_CARRIER_TOKENS_BOSS    2      /* ★ boss 仍是 2 枚（owner 第 11 轮：「道中 boss 一红一蓝 / 两蓝」⇒ 统一两个会变的随机）*/
 
 typedef struct {
     uint8_t  used;
@@ -2045,8 +2053,12 @@ typedef struct {
     int32_t  enemy_id;
     float    skin_scale;           /* 皮的缩放（表里的 `skin_scale_permille`）= 1.0（三条规则下恒等）*/
     uint32_t body_vm, mark_vm;     /* 皮 / 头顶飞碟 */
-    uint32_t native_vm;            /* 宿主自己的 anm VM id（每帧复查，引擎可能重建）*/
-    uint32_t native_color;         /* 隐掉之前 `vm+0x524` 的原值（收尾还原）*/
+    /* ★★ 2026-09-24 第 18 轮：宿主**全部 16 个 anm 槽**的原色都要存 —— 原来只隐槽 0（本体），
+     *   而 TH18 的大敌人把**火焰/光环挂在槽 1**（`GirlD01` 的 ECL 写 `anmSetSprite(1, 105)`，
+     *   而脚本 105 = `layer(11)` + 加算 + 子脚本 106/107 = sprite152..159 的 8 帧火焰）
+     *   ⇒ 只隐槽 0 时，"背后的火焰"照样在（owner 实跑：「怎么画出来都有火焰，包括没改的那一只」）。*/
+    uint32_t native_vm[UFO_CARRIER_SLOTS];
+    uint32_t native_color[UFO_CARRIER_SLOTS];
     uint32_t seen_tick;
 } ufo_carrier_t;
 
@@ -2125,14 +2137,17 @@ static ufo_carrier_t *ufo_carrier_find(int32_t id)
 static void ufo_carrier_unhide(ufo_carrier_t *c)
 {
 #if UFO_CARRIER_HIDE_NATIVE
-    if (c->native_vm && c->native_color) {
-        uint8_t *vm = ce_anm_get_vm(c->native_vm);
-        if (vm) *(uint32_t *)(vm + CE_ANM_VM_COLOR1) = c->native_color;
-        if (s_carrier_hidden) --s_carrier_hidden;
+    int k;
+    for (k = 0; k < UFO_CARRIER_SLOTS; ++k) {
+        if (c->native_vm[k] && c->native_color[k]) {
+            uint8_t *vm = ce_anm_get_vm(c->native_vm[k]);
+            if (vm) *(uint32_t *)(vm + CE_ANM_VM_COLOR1) = c->native_color[k];
+            if (s_carrier_hidden) --s_carrier_hidden;
+        }
+        c->native_vm[k] = 0;
+        c->native_color[k] = 0;
     }
 #endif
-    c->native_vm = 0;
-    c->native_color = 0;
 }
 
 /* 收掉一个跟踪槽（皮 + 标记 + 还原原生贴图）。幂等。 */
@@ -2324,22 +2339,29 @@ static void ufo_carrier_tick(void)
             if (c->mark_vm) ce_anm_set_pos(c->mark_vm, x, y, 0.0f);
         }
 #if UFO_CARRIER_HIDE_NATIVE
-        {   /* 隐掉原生贴图：**每帧**写（宿主的 anm 脚本可能自己在跑 alpha/color 插值）。 */
-            uint32_t nv = *(const uint32_t *)(e + CE_ENEMY_DATA + 0x124);   /* `anm_vm_ids[0]`（K=0 那一槽）*/
-            if (nv != c->native_vm) {
-                uint8_t *vm = nv ? ce_anm_get_vm(nv) : 0;
-                if (c->native_vm && c->native_color) {                      /* 旧的那只还回去 */
-                    uint8_t *old = ce_anm_get_vm(c->native_vm);
-                    if (old) *(uint32_t *)(old + CE_ANM_VM_COLOR1) = c->native_color;
-                    if (s_carrier_hidden) --s_carrier_hidden;
+        {   /* 隐掉原生贴图：**每帧**写（宿主的 anm 脚本可能自己在跑 alpha/color 插值）。
+             * ★ 第 18 轮：**槽 0 = 本体、槽 1 = 火焰/光环**（大敌人的 `anmSetSprite(1, 105)`），
+             *   两槽一起隐 —— 否则换完皮背后还挂着一团原生火（owner 实跑点名的那件事）。*/
+            int k;
+            for (k = 0; k < UFO_CARRIER_SLOTS; ++k) {
+                uint32_t nv;
+                if (k > 0 && !UFO_CARRIER_HIDE_SLOT1) break;
+                nv = *(const uint32_t *)(e + CE_ENEMY_DATA + 0x124 + k * 4);   /* `anm_vm_ids[k]` */
+                if (nv != c->native_vm[k]) {
+                    uint8_t *vm = nv ? ce_anm_get_vm(nv) : 0;
+                    if (c->native_vm[k] && c->native_color[k]) {               /* 旧的那只还回去 */
+                        uint8_t *old = ce_anm_get_vm(c->native_vm[k]);
+                        if (old) *(uint32_t *)(old + CE_ANM_VM_COLOR1) = c->native_color[k];
+                        if (s_carrier_hidden) --s_carrier_hidden;
+                    }
+                    c->native_vm[k] = nv;
+                    c->native_color[k] = vm ? *(const uint32_t *)(vm + CE_ANM_VM_COLOR1) : 0;
+                    if (vm) ++s_carrier_hidden;
                 }
-                c->native_vm = nv;
-                c->native_color = vm ? *(const uint32_t *)(vm + CE_ANM_VM_COLOR1) : 0;
-                if (vm) ++s_carrier_hidden;
-            }
-            if (c->native_vm) {
-                uint8_t *vm = ce_anm_get_vm(c->native_vm);
-                if (vm) *(uint32_t *)(vm + CE_ANM_VM_COLOR1) = UFO_CARRIER_ALPHA_HIDDEN;
+                if (c->native_vm[k]) {
+                    uint8_t *vm = ce_anm_get_vm(c->native_vm[k]);
+                    if (vm) *(uint32_t *)(vm + CE_ANM_VM_COLOR1) = UFO_CARRIER_ALPHA_HIDDEN;
+                }
             }
         }
 #endif
@@ -4830,11 +4852,13 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
             ufo_tok_live_count() >= UFO_TOKEN_MAX) {
             /* 清场 / 假敌人 / 上一枚还没兑现 / 场上满了 ⇒ 这一只不算 */
         } else if (is_carrier || is_boss) {
-            /* ★ owner 第 11 轮：**统一两个、会变的、随机** —— `col` 留 `UFO_COLOR_NONE`
-             * ⇒ 兑现时走 `ufo_tok_spawn()`（随机起始色 + 变色令牌），宿主与 boss 一模一样。
+            /* ★ owner 第 11 轮：掉落一律是"**会变的、随机起始色**"（`col` 留 `UFO_COLOR_NONE`
+             * ⇒ 兑现时走 `ufo_tok_spawn()`）。
+             * ★ owner 第 18 轮再收一格：「**一个非 boss 敌人只掉 1 个飞碟，不是 2 个**」
+             * ⇒ **宿主（妖精/蝴蝶）1 枚、boss 2 枚**。
              * ⚠ 一手**没有冷却**（表里有就掉）⇒ 宿主/boss 这条**不吃 `next_token_at` 节流**
              * （一波里那 2 只宿主都该掉；节流只留给 `UFO_TOKEN_DROP_LEGACY` 那条旧路）。 */
-            want = UFO_CARRIER_TOKENS_DROP;
+            want = is_boss ? UFO_CARRIER_TOKENS_BOSS : UFO_CARRIER_TOKENS_DROP;
         }
 #if UFO_TOKEN_DROP_LEGACY
         else if ((ev->flags & CE_EDEATH_F_HAS_DROP) && s->play_frame >= s->next_token_at) {
