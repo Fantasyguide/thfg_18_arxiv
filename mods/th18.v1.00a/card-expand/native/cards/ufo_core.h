@@ -366,7 +366,12 @@ static inline float ufo_drag_speed(uint32_t ufo_frames)
  *     一手的曲线在头 1 秒里只有 0.02→0.04 单位/帧（≈0.08 表面 px/帧）⇒ 肉眼就是"定住"。
  *   回退 = 把 `UFO_DRAG_ACCEL_ENABLE` 改回 **1**（下面那条闭式与 `ufo.c` 的逐颗增量表都还在）。*/
 #define UFO_DRAG_ACCEL_ENABLE      0
-#define UFO_DRAG_SPEED_CONST_MILLI 1500     /* ❓owner 口径：1.5 单位/帧（= 3 表面 px/帧）*/
+/* ★★★ 2026-09-24 第二轮（owner：「**th10-th11 的绿点似乎没有被 UFO 吸收**…理应被吸收的绿点结果
+ *   还能慢慢悠悠往下飘」）—— 常量从 1.5 提到 **3.0 单位/帧**：
+ *   **1.5 压不过落体末速**：道具与信仰点的下落都是 `vy += 0.03`、**封顶 2.0**（一手 `0x4b90a4`；
+ *   信仰点同表，见 `faith.c` 的注）⇒ 匀速 1.5 < 2.0 时**永远追不上**，看着就是"慢慢悠悠往下飘"。
+ *   一手那条累计曲线在第 **~1.2 s** 越过 2.0 ⇒ 3.0 与它的量级一致，且对速度下限留了一档余量。*/
+#define UFO_DRAG_SPEED_CONST_MILLI 3000     /* ❓owner 口径：3.0 单位/帧（= 6 表面 px/帧）*/
 static inline float ufo_drag_speed_const(void)
 {
     return (float)UFO_DRAG_SPEED_CONST_MILLI / 1000.0f;

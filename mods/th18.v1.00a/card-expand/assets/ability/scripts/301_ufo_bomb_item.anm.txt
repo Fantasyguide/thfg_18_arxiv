@@ -21,12 +21,27 @@ script script301 {
     // **Δ**：`sprite(sprite1)` → `sprite(@DROP_BOMB@)`（我们的卡面成员）；
     //   `layer(16)` 原值保留（一手 script16 自己写的就是 16，且那是**世界层** = 掉落物该在的层）；
     //   卡面这层**不加算**（加算会把卡图冲淡 —— owner 说的"发光不是这么发的"）。
-    sprite(@DROP_BOMB@);
-    scriptNew(@SCRIPT_UFO_CARD_GLOW@);   /* ★ 背光层（原生 abitem：加算 + 呼吸）*/
+    // ★★★ 2026-09-24 第二轮（owner）：「**整张卡片应当旋转摇摆的**」—— 一手那支**摇摆**就在
+    //   `abcard.anm` **script5**（会摇摆的卡显示）里，逐条原样：
+    //     `offset176: rotateTime(120, 21, -0.034906585, 0, -0.034906585);
+    //      +120: rotateTime(120, 21, 0.06981317, 0, 0.06981317); +120: jmp(offset176, 0);`
+    //   ⇒ 在 **-2° ↔ +4°** 之间用 120 帧（2 秒）一个来回、缓动 21 地**无限摇摆**。
+    //   ⚠ 摆的是**父 VM**（本脚本没有 sprite）⇒ 子 VM（背光 331）继承同样的变换 ⇒ 两层一起摆。
+    sprite(-1);                     /* 父自己不画（一手 script5 第一句就是 `sprite(-1)`）*/
+    scriptNew(@SCRIPT_UFO_CARD_GLOW@);   /* ★ 背光层（原生卡框 abframe：加算 + 呼吸）*/
+    scriptNew(@SCRIPT_UFO_CARD_FACE@);   /* ★ 卡面层（原生卡图，正常混合）*/
     type(1);
-    layer(16);                      /* 一手 script16 的层（世界层）；背光在 15 = 先画 = 在卡面后面 */
+    layer(16);
     color(255, 255, 255);
     scale(1.0f, 1.0f);
+offset176:
+    rotateTime(120, 21, -0.034906585f, 0.0f, -0.034906585f);   // 一手 script5：-2°
++120: // 120
+    rotateTime(120, 21, 0.06981317f, 0.0f, 0.06981317f);       // 一手 script5：+4°
++120: // 240
+    jmp(offset176, 0);                                         // 一手 script5：无限摇摆
++20: // 260
+    stop();
 offset112:
     scaleTime(7, 9, 0.9f, 0.9f);    // 一手 script16：7 帧 → 0.9（缓动 9）
 +7: // 7
