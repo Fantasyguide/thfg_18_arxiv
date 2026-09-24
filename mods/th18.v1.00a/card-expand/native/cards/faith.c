@@ -1542,8 +1542,15 @@ static void gf_follow_tick(uint8_t *em)
         f->lost = 0;
         tp = ce_enemy_pos(tg);
         if (!tp) continue;
-        *(float *)(me + CE_ENEMY_ECL_F2) = tp[0] + f->off_x;
-        *(float *)(me + CE_ENEMY_ECL_F3) = tp[1] + f->off_y;
+        {   /* ★ 2026-09-24：**最终位置夹进游玩区**。换目标（`gf_pick_target`）之后偏移不变，
+             *   而新目标可能在另一头 ⇒ 不夹的话这支补刷妖精又会被带出屏幕（owner 报「看不见」）。*/
+            float fx = tp[0] + f->off_x;
+            float fy = tp[1] + f->off_y;
+            if (fx >  FAITH_GF_X_LIMIT) fx =  FAITH_GF_X_LIMIT;
+            if (fx < -FAITH_GF_X_LIMIT) fx = -FAITH_GF_X_LIMIT;
+            *(float *)(me + CE_ENEMY_ECL_F2) = fx;
+            *(float *)(me + CE_ENEMY_ECL_F3) = fy;
+        }
     }
 }
 
@@ -1731,9 +1738,31 @@ void faith_green_fairy_tick(void)
         n = mof_green_extra_slots(s_gf_x, s_gf_n, FAITH_GF_COUNT, slots, MOF_GREEN_EXTRA_SLOT_MAX);
         for (i = 0; i < n; ++i) {
             float sx = slots[i];
+            float tx = s_gf_tgt_x, ty = s_gf_tgt_y;                  /* 缺省 = 本波最后那只 */
+            int j;
+            /* ★★★ 2026-09-24（owner：「**我依旧没有看见绿妖精**」）：跟随目标改成
+             *   **离本槽位最近的那只同波妖精**，而不是「本波最后刷出的那只」。
+             *   根因（实跑日志）：`@(176,-32) 跟随 #26 偏移 (+360,+0)` —— 队形横向铺开时
+             *   「最后刷出的那只」可能在另一头（x=−184），而偏移 = 槽位 − 目标 ⇒ **+360 px**；
+             *   跟随通道每帧写 `%F2/%F3 = 目标 + 偏移` ⇒ 那支妖精一出生就被**恒定偏移**带出
+             *   游玩区（x ∈ −192..192）⇒ 永远看不见。取最近的那只 ⇒ 偏移只有「一格队形」那么宽。*/
+            {
+                float best = 1.0e9f;
+                for (j = 0; j < s_gf_n && j < FAITH_GF_SAMPLES; ++j) {
+                    float d = s_gf_x[j] - sx;
+                    if (d < 0.0f) d = -d;
+                    if (d < best) {
+                        best = d;
+                        tx = s_gf_x[j];
+                        ty = ey;                    /* 同一条入场线（y 用本波入场线）*/
+                    }
+                }
+            }
+            if (tx >  FAITH_GF_X_LIMIT) tx =  FAITH_GF_X_LIMIT;
+            if (tx < -FAITH_GF_X_LIMIT) tx = -FAITH_GF_X_LIMIT;
             if (sx >  FAITH_GF_X_LIMIT) sx =  FAITH_GF_X_LIMIT;      /* ★ 夹进游玩区 */
             if (sx < -FAITH_GF_X_LIMIT) sx = -FAITH_GF_X_LIMIT;
-            gf_spawn_one(sx, ey, s_gf_tgt_x, s_gf_tgt_y);
+            gf_spawn_one(sx, ey, tx, ty);
         }
         s_gf_done = 1;
     }
