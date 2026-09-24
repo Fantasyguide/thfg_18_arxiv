@@ -3,7 +3,8 @@
 > **版本**：TH18 v1.00a（`th18.exe`，imagebase `0x400000`）——本文裸地址默认属该版本。
 > **谁写的**：110/111/107 这一条线（2026-09-23）。**为什么写**：用户实跑报的 bug 会在**所有「子机数随火力档变化」的卡**
 > 上复发，用户点名「**108 写进 handover 里面**」（117 我自查过，结论见 §5；116 查了，本来就是对的，见 §4）。
-> ⚠ 本文件**只登记、不改 108 的代码**（`youkai.c` 那一批有自己的 owner 在动）。
+> ⚠ 本文件**原本只登记、不改 108 的代码**（`youkai.c` 那一批有自己的 owner 在动）。
+> **2026-09-25 更新**：108 owner 接手后**已按 §3 改掉**（含 §6 那三条警告），改法与一手依据见 §3 / §6。
 
 ## 1. 用户报的现象（逐字，2026-09-23）
 
@@ -38,29 +39,45 @@ signal: option allocated (ptr 1846ceb8, anm id 6607f963)
 **并且真的松开池槽**（`option+0x00 = 0`）—— 只把 `o->ptr = 0` 是**漏槽**（12 格用完后新子机再也申请不到，
 日志会现 `option allocated FAILED (pool full)`；这条在 `ce_option_drop()` 的注释里有一手出处）。
 
-## 3. 108 的落点（**未改，等 owner 处理**）
+## 3. 108 的落点 —— ✅ **已改（2026-09-25，108 owner 接手后第一件事）**
 
-`mods/th18.v1.00a/card-expand/native/cards/youkai.c` 的 `on_option_pose_apply()`（约 `:1290` 起）：
+`mods/th18.v1.00a/card-expand/native/cards/youkai.c` 的 `on_option_pose_apply()`：
 
 ```c
     want = pose->count;
     if (want > YK_OPTION_MAX) want = YK_OPTION_MAX;
-    for (i = 0; i < want; ++i) {                  /* ← 只有这一半 */
-        uint8_t *o = ce_option_get(c, &s->opt[i], YK_OPTION_OFFSET_ALLOC, pose->anm_script,
-                                   YK_OPTION_RETRY, "youkai");
-        …
-    }
-```
-
-**修法（照 116 的写法，逐字可抄）**：在申请循环**之前**补一个 else 分支
-
-```c
+    /* ★★ 补齐「收掉多出来的」这半（照 116/111 的形状）*/
     for (i = want; i < YK_OPTION_MAX; ++i) {
-        if (s->opt[i].ptr) ce_option_drop(c, &s->opt[i]);
+        if (!s->opt[i].ptr) { s->opt[i].retry = 0; continue; }
+        ce_option_drop(c, &s->opt[i]);
         s->opt[i].ptr = 0;
         s->opt[i].retry = 0;
+        s->opt_pos[i][0] = s->opt_pos[i][1] = 0.0f;   /* 弹簧状态也清：下次按「新槽」从自机位置起步 */
+        s->opt_vel[i][0] = s->opt_vel[i][1] = 0.0f;
+        ce_log("youkai: option #%d reclaimed (only %d wanted now; frame %u) …", i, want, ce_sdk_frame());
     }
+    for (i = 0; i < want; ++i) { … 原来的申请循环不动 … }
 ```
+
+**落地细节（与本文档原建议的两处差异，都是有意的）**：
+
+1. **只补一条路就够**：本文原建议「照 116 那样『档位变化时收 + 每帧兜底再收一次』两条路」。108 不需要第二条 ——
+   `on_option_pose_apply()` 本身**被声明层每帧调一次**（当选才调，退位走 `yk_option_release`）⇒ 档数一掉，
+   下一帧就收干净。116 需要兜底是因为它挂在 `on_power_level_change` 那种**边沿**回调上。
+2. **顺带修一个必然的次生现象**：收掉再重建的那一格，弹簧位置还是「冻住时的旧坐标」⇒ 新子机会从旧位置飞出来。
+   加了 `was_held`（申请循环里判「这一格本帧是不是新申请」）⇒ 新格从**自机位置**起步（TH08 state 1，与
+   卡级 `opt_spring_live` 那条同义）。这一条是**同一处**的收尾，不是新机制。
+
+**一手对位（2026-09-25 本人在 `th18.exe` 上逐指令读，比本文 §2 那句更细）**：引擎自己就是成对做 ——
+`Player__repopulate_options_and_notify_cards` `th18:0x45d5e0` 里 ① 恒扫 4 格拆 VM（`0x45d818` / `0x45d81e mov edi,4`）；
+② `0x45dbe0 mov edi,4` + `0x45dbeb sub edi,edx`（`edx` = 档数）⇒ **`4 − lvl` 次**循环把多余格的 `+0xb0` VM 删掉、
+`+0x00` 状态清零；③ 重建只建 `i < lvl` 格。回流见
+[`engine/sht/th18/03-func-tables-timers-and-dead-fields.md`](../../../engine/sht/th18/03-func-tables-timers-and-dead-fields.md) §3。
+
+**验收判据**（与本文 §7 同，实跑时看日志）：
+`youkai: option #N reclaimed (only M wanted now; frame F)` 应只在**档数下降**那一帧各出现一次；
+`option allocated` 的台数应恒等于当前档；反复扣/加火力 10 次，`option allocated FAILED (pool full)` **永不出现**；
+场上目视：子机数 = 档数，没有冻在旧位置的那一台。
 
 ## 4. 参考实现（两条都在本仓，已实跑/已合入）
 
@@ -82,13 +99,23 @@ signal: option allocated (ptr 1846ceb8, anm id 6607f963)
 
 ⇒ 117 不需要动。若以后 117 改成「按档挂子机」，**必须**照 §4 的形状写。
 
-## 6. 顺带登记（108 的文件，本轮**没改**）
+## 6. 顺带登记（108 的文件，本轮**没改**）—— ✅ **三条都已在 2026-09-25 清掉**
 
-`make` 重编 `youkai.c` 时会出 3 条警告（不影响功能，但仓库的「0 警告」卫生要求它们被处理）：
+`make` 重编 `youkai.c` 时曾出 3 条警告（不影响功能，但仓库的「0 警告」卫生要求它们被处理）：
 
 - `cards/youkai.c:5` `warning: '/*' within block comment`（文件头注释里嵌了 `/*` ⇒ 注释提前闭合，检查那段的说明是否还在注释里）；
 - `cards/youkai.c:2940` `unused function 'on_native_shot_suppress'`（要么挂上、要么标 `unused` 属性）；
 - `cards/youkai.c:1670` `variable 's_popup_dropped' set but not used`（诊断计数没被读 ⇒ 要么打进日志、要么删）。
+
+**处置（2026-09-25，逐条）**：
+
+| 条 | 怎么修的 | 在哪儿 |
+| --- | --- | --- |
+| `/*` 嵌注释 | 第 5 行的 `` `src/*.cpp` `` 就是那个 `/*` ⇒ 改写成「`` `src/` 下的 `.cpp` 源码 ``」（语义不变，注释不再是提前闭合的）| `youkai.c` 文件头 |
+| `unused on_native_shot_suppress` | 保留为**历史参考**并显式标 `__attribute__((unused))`（照 `cards/trance_bgm.c:234` 的先例）；函数头注里写明「**不要再挂回去**：2026-09-22 P7 之后妖侧主炮靠 set 认领」| `youkai.c` 该函数前的声明 |
+| `s_popup_dropped` | 改成**首次 + 每 60 次**各打一行 `youkai: popup pool full, dropped N popup(s) so far (YK_POPUP_MAX 3)` —— 池满 = 「弹字被吃掉」的唯一可观测信号，据此决定要不要抬那个 ❓ 自定上限 | `youkai.c` 的 `yk_popup_spawn()` |
+
+⇒ 现在 `make cards/youkai.o` **零警告**（`gcc -O2 -Wall -Wextra`，无输出）。
 
 ## 7. 验证判据（108 owner 改完照这个看）
 

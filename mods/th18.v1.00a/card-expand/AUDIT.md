@@ -16689,6 +16689,7 @@ TH18 没有 PIV 状态量，但**有同量纲的对位物**：`engine.h` 的 `CE
 | 2026-09-24 | **所有卡（共享件 `native/sdk.{h,c}` + `assets/ability/entries/ORDER.txt`）**：贴图 VM 文字加**第三档字体** `CE_HUD_FONT_TH18_FONT2B`（新图集 `ATLAS_FONT2B` + 脚本 332，含 `:` `*`）；上一版那两张单图行已撤 | 见下方「§BE 详录 #84」 |
 | 2026-09-24 | **110/111 + 112（共享件 `native/cards/faith.{h,c}`）**：`faith_absorb_t` 加 `age/state/in_toss` 三个字段 + 新 API `faith_absorb_hold()` | 见下方「§BE 详录 #85」 |
 | 2026-09-24 | **112（星莲船）第九轮（owner 3 条：召唤闪电碎屑 + 中心洋红）：共享件 `assets/ability/**` + `CAPACITY.md`** —— ORDER 末尾 append 新图集 `ATLAS_UFO_DEBRIS`（entry 70 / sprite 503..510）+ 5 支新脚本 346..350 + 新生成器 + 台账一格 | 见下方「§BE 详录 #86」 |
+| 2026-09-25 | **108（永夜抄）**：`cards/youkai.c` 的 `on_option_pose_apply()` 补「收掉多余槽」+ 清三条编译警告（**本卡自己的文件，零共享件**）；依据 = `HANDOVER-108.md` §3 的缺口登记 | 见下方「§BE 详录 #90」 |
 
 **§BE 详录 #51**（共享件 `hud_dim.*` 的统一动态换基准，2026-09-21）
 
@@ -21208,3 +21209,26 @@ owner 原话见 `SINGLE-CARD-TEST.md` §本批10-1；一手/数值/自定项见 
 **回归跑了什么**：`make -C native anm`（entry 75 / sprite 537 / script 359；`verify_rebuilt` 与越界 /
 scriptNew 检查全绿、卡框图集逐像素等于原生）→ `make -C native dllx87`（rc=0、`x87 in our objects: 0`）→
 `make -C native check`（含 `capcheck` 与 `check-docs.py`）。**实跑判据**见 `TUNING.md` §2.0zzx-3 末尾四条。
+
+## §BE 详录 #90（2026-09-25）：108 永夜抄 —— 子机**随火力档回收缺口**（`HANDOVER-108.md` §3 登记的那一条）+ 三条编译警告清零
+
+**为什么登记**：改的是 **108 自己的文件** `native/cards/youkai.c`（**零共享件**：没动 `sdk.*` / `engine.h` /
+`sites.py` / `Makefile` / `patch/**` / `assets/**`）；登记的直接理由是这份缺口**是 110/111/107 那条线的作者
+按用户点名写进 [`HANDOVER-108.md`](HANDOVER-108.md) §3 留给 108 owner 的**（本文档是那份登记的**回执**）。
+
+| 文件 | 改了什么 | 为什么 | 怎么验的 |
+| --- | --- | --- | --- |
+| `native/cards/youkai.c`（`on_option_pose_apply()`）| `want` 之后、申请循环之前新增回收循环 `for (i = want; i < YK_OPTION_MAX; ++i)`：有 `ptr` 就 `ce_option_drop()`（删 VM + 收激光 + 真松池槽）、清 `ptr`/`retry`/弹簧状态，并打一行 `youkai: option #N reclaimed (only M wanted now; frame F)` | 用户实跑报的「经典 bug」：魔理沙放 C 灵击后**有一台子机定在原地**。根因 = 本函数**只建不收**，档数 3→2 时第 3 格的 `ptr`/VM 无人回收（登记与用户原话见 `HANDOVER-108.md` §1/§3）| 一手：引擎自己就是成对做的 —— `th18:0x45dbe0 mov edi,4` + `0x45dbeb sub edi,edx` ⇒ **`4 − lvl` 次**循环删多余格的 `+0xb0` VM 并清 `+0x00`；静态：`make cards/youkai.o` 零警告、`make check` 全绿。**实跑判据**见 `HANDOFF-108.md` §3 第 8 行 |
+| 同上（申请循环内）| 新增 `const int was_held = (s->opt[i].ptr != 0);`，弹簧起始条件从 `!s->opt_spring_live` 放宽到 `!s->opt_spring_live \|\| !was_held` | 收掉再重建的那一格，弹簧位置还是「冻住时的旧坐标」⇒ 新子机会从旧位置飞出来。TH08 一手是 state 1「从自机位置出发」 | 同上（同一处的收尾；`was_held` 只影响**新申请**的那一格，旧格行为逐字节不变）|
+| 同上（文件头 / `yk_popup_spawn()` / `on_native_shot_suppress` 前）| 清掉 `HANDOVER-108.md` §6 记的三条警告：`src/*.cpp` 里的嵌套 `/*` 改写；`on_native_shot_suppress`（2026-09-22 P7 后**已退订**）标 `__attribute__((unused))` 并注明「不要再挂回去」；`s_popup_dropped` 改成**首次 + 每 60 次**打一行池满日志 | 仓库「0 警告」卫生要求（三条都是别人替我登记下来的）| `make cards/youkai.o`（`-O2 -Wall -Wextra`）**输出为空** = 零警告 |
+| [`engine/sht/th18/03-func-tables-timers-and-dead-fields.md`](../../../engine/sht/th18/03-func-tables-timers-and-dead-fields.md) §3 | 一手结论**回流**：把 `repopulate_options` 的「拆 / 收多余 / 重建」三段补进那段伪码与那条 ★ 注 | 方法论要求「一手结论回流 `engine/`」；这条是**跨卡**知识（108/111/116 都自己申请子机）| `check-docs.py` 全绿（382 文件）|
+
+**对既有卡的影响面**：**零**。`youkai.c` 是 108 独有的文件，导出的站点集合与 `sites.py` 未动（未加断点，
+`python3 sites.py verify` 仍「213 条 binhack 全部对上」）；回收循环只在**本卡当选落笔者**的帧、且只在
+`i >= want` 的格上动手 ⇒ 别的卡（116/111/117）的路径一字未改。
+
+**回归跑了什么**：`make check`（rc=0，含 `capcheck` / `engine_abi_check` / `anm_hud_alpha_check` /
+`check-docs.py` 全绿）→ `make dllx87`（`x87 in our objects: 0`）→ `python3 sites.py verify`（✅）→
+发版 + `local/sync_modkit_dll.sh`（4 处同 md5，见 `RELEASE-STATE.json`）。**实跑判据**：
+`youkai: option #N reclaimed …` 只在档数下降那帧各一次；子机数恒 = 档数；反复扣/加火力 10 次
+`option allocated FAILED (pool full)` 永不出现。

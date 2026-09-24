@@ -39,13 +39,26 @@ long  = player+0x476e8;  if (long  < 119) Timer__increment(long);  else if (shoo
 
 ```c
 lvl = CURRENT_POWER / 100;                       // 火力档 0..4
-for (i = 0; i < lvl; i++) {
+for (i = 0; i < 4; i++) {                        // ★ 恒 4 格（不是 lvl 格）：先拆干净
+    AnmManager::delete(option[i].vm_max, 1);     // 0x45d823 push 1 / 0x45d827 call 0x488be0
+    option[i].vm_max = 0;                        // 0x45d82c mov [esi],0x0
+}
+for (i = 0; i < lvl; i++) {                      // 再按当前档重建（≤ 4 格）
     k = TRI[CHARACTER*8 + lvl] + i;              // TRI @0x4cdb5c = {0, 0, 1, 3, 6, 10, 11, 13}（四角色相同）
     option[i].pos_unfocus = sht[0x40 + k*8] * 128,  sht[0x44 + k*8] * 128;
     option[i].pos_focus   = sht[0x90 + k*8] * 128,  sht[0x94 + k*8] * 128;
     option[i].anm_script  = (0x4b7020 + CHARACTER*4)  → {15, 17, 12, 10};  // 0x4b7030 → {16, 18, 13, 12}（另一形态）
 }
 ```
+
+> ★ **2026-09-25 一手补（本人在 `th18.exe` 上逐指令读，用于卡 108 的子机回收）**：**多出来的格由引擎自己收掉**，
+> 两处都在本函数里 ——
+> ① 拆（与 `lvl` 无关，恒扫满 4 格）：`th18:0x45d818 lea esi,[ebx+0xb4]`（= `inner+0x50+i*0xf0+0xb4`，满火力形 VM 字段）、
+> `th18:0x45d81e mov edi,4`，循环体 `push 1` + `push [esi]` + `call 0x488be0`（删 VM）、`mov [esi],0x0`、
+> `lea esi,[esi+0xf0]`、`sub edi,1; jne`；
+> ② 收多余格：`th18:0x45dbe0 mov edi,4` + `th18:0x45dbeb sub edi,edx`（`edx` = 档数 `lvl`）⇒ 循环 **`4 − lvl` 次**，
+> 每次删该格 `+0xb0`（普通形）VM（`0x45dbf2 push [esi]` + `0x45dc05 call 0x488be0`）并清 `+0x00` 状态与 `+0xdc`。
+> ⇒ 卡侧自己申请子机的卡（108 / 111 / 116）必须自己补同一半，见 `mods/th18.v1.00a/card-expand/HANDOVER-108.md` §3。
 
 - 高速块 `+0x40`（10 对）、低速块 `+0x90`（10 对），每对 `(x, y)` float，×128 转定点；`TRI[lvl]` = 三角数 0/1/3/6。
 - 咲夜（CHARACTER == 2）额外把 `+0x40` 的 x 当**角度**用（归一到 `[-π, π]`，两端都闭——见下），并挂钩子 `FUN_0045dd10`——她的子机绕圈。

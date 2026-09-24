@@ -2,7 +2,7 @@
  *
  * 设计唯一真源：`docs/superpowers/specs/2026-09-12-youkai-108-design.md`。
  * ★ TH08 的**社区反编译**（用户 2026-09-16 提供，MIT）：<https://github.com/Patchouli-CN/th08_dec>，
- *   本地克隆 `local/vendor/th08_dec`（`src/*.cpp` + `config/reccmp-functions.csv` 的 2221 条名字↔地址）。
+ *   本地克隆 `local/vendor/th08_dec`（`src/` 下的 `.cpp` 源码 + `config/reccmp-functions.csv` 的 2221 条名字↔地址）。
  *   本作此前没有源码级来源 ⇒ **本卡进一步查证先翻它**；⚠ 它记的 sha256 与我们样本不同（另一个 1.00d 构建），
  *   本轮抽样核过布局一致（vtable 6/6、函数入口 400/400），但每条结论仍要落到 `th08:0x…` + 我们自己的样本上。
  *   出处与用法见 `engine/_shared/community-sources.md` 的「TH08 专用」一节。
@@ -1286,7 +1286,41 @@ static int on_option_pose_apply(ce_card_t *c)
     }
     want = pose->count;
     if (want > YK_OPTION_MAX) want = YK_OPTION_MAX;
+    /* ★★ 2026-09-25：**多出来的槽必须自己收掉**（`HANDOVER-108.md` §3 点名的缺口，此前只建不收）。
+     *   现象（owner 2026-09-23 逐字）：「魔理沙用 C 放灵击之后，有一个我们改出来的子机就定在原地了…
+     *   放灵击的几帧里面，三个子机都被定在原地，但是只有两个子机一段时间后被重建了，
+     *   然后留下那个子机没有被回收」。
+     *   根因：本函数只在 `i < want` 里申请，**从来没有回收 `i >= want` 的槽** —— 110 的 C 灵击扣火力后调
+     *   `ce_repopulate_options()`（`th18:0x45d5e0`）⇒ 档数 3 → 2 ⇒ 下一帧 `want == 2` ⇒ 第 3 格的
+     *   `ptr` 还在、它的 ANM VM 也没人删 ⇒ 那台子机**冻在最后被摆的位置**上再也不动（`ptr` 永不归还池）。
+     *   一手对位（2026-09-25 本人在 `th18.exe` 上逐指令读的）：引擎自己就是「**按档重建 + 收掉多出来的**」成对做 ——
+     *   ① 拆：`0x45d818 lea esi,[ebx+0xb4]` + `0x45d81e mov edi,4`（★ 恒 **4** 次，与 `lvl` 无关）⇒ 循环体
+     *      `0x45d827 call 0x488be0` 删该格 VM、`0x45d82c mov [esi],0x0` 清字段，`0x45d832 lea esi,[esi+0xf0]` 下一格；
+     *   ② 收**多出来的那几格**：`0x45dbe0 mov edi,4` + `0x45dbeb sub edi,edx`（`edx` = 档数）⇒ 循环 **`4 − lvl` 次**，
+     *      每次删 `+0xb0` 那支 VM（`0x45dbf2 push [esi]` + `0x45dc05 call 0x488be0`）并清 `+0x00` 状态
+     *      （`0x45dbf4 mov [esi-0xb0],0x0`）+ `+0xdc`（`0x45dc00`）；
+     *   ③ 重建只建 `i < lvl` 的格。
+     *   ⇒ 档数掉下去时，**引擎会自己收掉多出来的格**；卡侧自己申请子机时必须补齐同一半。
+     *   形状照 116 `cards/season.c:alloc_options()` 与 111 `cards/signal.c:signal_option_align()`（两条都已实跑）。
+     *   `ce_option_drop()` 删 VM（按**该槽自己**的 `option+0xb0`）**并真的松开池槽**（`option+0x00 = 0`）——
+     *   只写 `o->ptr = 0` 是**漏槽**（12 格用完后新子机再也申请不到，日志现 `option allocated FAILED (pool full)`）。
+     *   ⚠ 这一支**每帧都会跑**（本函数被声明层每帧调一次），所以档数掉下去的那一帧就收干净，
+     *     不需要 116 那种「每帧兜底再收一次」的第二条路。*/
+    for (i = want; i < YK_OPTION_MAX; ++i) {
+        if (!s->opt[i].ptr) { s->opt[i].retry = 0; continue; }
+        ce_option_drop(c, &s->opt[i]);                  /* 删 VM + 收激光 + 真正松开池槽 */
+        s->opt[i].ptr = 0;
+        s->opt[i].retry = 0;
+        /* 弹簧状态也清掉：这一格下次被重新申请时按「新槽」从**自机位置**起步（TH08 state 1），
+         * 而不是从这台子机冻住的旧坐标飞出来。*/
+        s->opt_pos[i][0] = 0.0f; s->opt_pos[i][1] = 0.0f;
+        s->opt_vel[i][0] = 0.0f; s->opt_vel[i][1] = 0.0f;
+        ce_log("youkai: option #%d reclaimed (only %d wanted now; frame %u) - "
+               "the slot is handed back to the pool, its VM deleted",
+               i, want, (unsigned)ce_sdk_frame());
+    }
     for (i = 0; i < want; ++i) {
+        const int was_held = (s->opt[i].ptr != 0);      /* 本帧是「认领旧槽」还是「新申请」 */
         uint8_t *o = ce_option_get(c, &s->opt[i], YK_OPTION_OFFSET_ALLOC, pose->anm_script,
                                    YK_OPTION_RETRY, "youkai");
         float fx = pose->cell[i].fx;
@@ -1334,7 +1368,10 @@ static int on_option_pose_apply(ce_card_t *c)
             } else if (!yk_option_home_from_player(character, i, pp, goal)) {
                 goal[0] = pp[0]; goal[1] = pp[1];   /* 跟随自机（一手 `th08:0x44e770`）*/
             }
-            if (!s->opt_spring_live) {            /* TH08 state 1：从**自机位置**出发 */
+            if (!s->opt_spring_live || !was_held) {   /* TH08 state 1：从**自机位置**出发
+                                                       * （`!was_held` = 本帧新申请的这一格 —— 见上面
+                                                       * 「多出来的槽必须自己收掉」那段：收掉再重建的槽
+                                                       * 不能从停住的旧坐标起步）*/
                 s->opt_pos[i][0] = pp[0];
                 s->opt_pos[i][1] = pp[1];
                 s->opt_vel[i][0] = 0.0f;
@@ -1696,7 +1733,16 @@ static void yk_popup_spawn(float x, float y, int32_t value, int kind)
     unsigned k;
     void *anm;
     for (k = 0; k < YK_POPUP_MAX; ++k) if (!s_popup[k].used) { p = &s_popup[k]; break; }
-    if (!p) { ++s_popup_dropped; return; }
+    if (!p) {
+        /* ★ 2026-09-25（卫生 + 诊断）：这个计数原来**只加不读**（`-Wunused-but-set-variable`）。
+         *   改成**首次 + 每 60 次**各打一行 —— 池满（`YK_POPUP_MAX` = 3 是 ❓ 自定值，见 `TUNING.md`）
+         *   在实跑里是「弹字被吃掉」的唯一可观测信号，据此决定要不要抬这个自定上限。*/
+        ++s_popup_dropped;
+        if (s_popup_dropped == 1 || (s_popup_dropped % 60) == 0)
+            ce_log("youkai: popup pool full, dropped %u popup(s) so far (YK_POPUP_MAX %d)",
+                   s_popup_dropped, (int)YK_POPUP_MAX);
+        return;
+    }
     if (ch < 0 || ch > 3) ch = 0;
     n = yk_popup_digits(value, dg, (int)YK_POPUP_GLYPHS);
     p->n = 0;
@@ -2936,7 +2982,12 @@ static int on_bullet_created(ce_card_t *c, void *bullet)
  *   → `yk_option_count` → `YK_OPTION_BY_CHAR`）—— 这里调的是**同一个** `yk_option_wanted`，没有第二份判断。
  *   ⚠ 这一条**不是一手复刻**：原版永夜抄的妖侧不看火力、一按低速就有子机（TH08 那张固定表），
  *     原作里不存在「低火力 ⇒ 没子机 ⇒ 一发都没有」这个档；这条门是本实现的约束（膛口恒取子机）
- *     逼出来的，用户 2026-09-12 拍了「宁可打原生弹，也别一发都没有」。 */
+ *     逼出来的，用户 2026-09-12 拍了「宁可打原生弹，也别一发都没有」。
+ *
+ * ★ 2026-09-25（卫生）：本函数**已退订**（2026-09-22 P7 妖侧主炮改成「认领 set + 逐行」之后就不再挂进
+ *   `.on_native_shot_suppress`，见本文件尾「占位清单」）⇒ 保留为**历史参考**，并按 `trance_bgm.c:234`
+ *   的先例显式标 `unused`，让仓库的「0 警告」卫生要求过。**不要再挂回去**：现在妖侧靠 set 认领。*/
+static int on_native_shot_suppress(ce_card_t *c) __attribute__((unused));
 static int on_native_shot_suppress(ce_card_t *c)
 {
     yk_card_t *s = ce_state(c, yk_card_t);
