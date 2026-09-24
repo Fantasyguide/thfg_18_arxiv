@@ -340,7 +340,12 @@ int32_t bomb10_start(const bomb10_host_t *host, void *user, int32_t by_hit)
     *(int32_t *)CE_ADDR_CURRENT_POWER = power_after;
     ce_repopulate_options();                            /* 子机按新档重建（必须）*/
 
-    reimu = (*(const volatile int32_t *)CE_ADDR_CHARACTER == 0);
+    /* ★★★ 2026-09-25（owner 口径）：「**咲夜用魔理沙的普通灵击，早苗用灵梦的灵击**」——
+     *   模板映射见 `mof_core_bomb_reimu_template()`（灵梦/早苗 ⇒ 灵梦档；魔理沙/咲夜 ⇒ 魔理沙档）。
+     *   ⚠ 这里决定的是**模板**（半径 160/112、上移 1.0/1.3、圈外伤害 20/16、视觉变体 0/1），
+     *     与「哪些特技生效」是两件事：爱丽丝半档、河童罩子、隐藏原生子机仍然是**魔理沙专属**
+     *     （各自的门写死在 `signal.c`，不受这里影响）。*/
+    reimu = mof_core_bomb_reimu_template(*(const volatile int32_t *)CE_ADDR_CHARACTER);
     s_run.host         = host;
     s_run.user         = user;
     s_run.owner_id     = (int32_t)host->card_id;

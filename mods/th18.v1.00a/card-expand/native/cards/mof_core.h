@@ -772,6 +772,16 @@ int mof_core_bomb_suppressed(int32_t spell_id);
  *   `big_bomb`    = 本题的 `bomb+0x44`（见 `MOF_BOMB_BIG_BOMB_FRAMES`）
  *   `reimu`       = `CHARACTER == 0`（圈外那一档分灵梦/魔理沙） */
 int32_t mof_core_bomb_damage(int in_circle, int boss_alive, int spell_active, int big_bomb, int reimu);
+/* ★★★ 2026-09-25（owner 口径，逐字）：「**咲夜用魔理沙的普通灵击，早苗用灵梦的灵击**」。
+ * 灵击的**模板**（半径曲线 / 中心上移 / 伤害表的圈外档 / 视觉变体）在 TH10 一手里**只分两档**
+ *   （`Bomb::start` 的两条分支：`CHARACTER == 0` ⇒ 灵梦 script400（160.0）、否则 ⇒ 魔理沙 script407（112.0）），
+ * 而 TH18 有四位自机（0 灵梦 / 1 魔理沙 / 2 咲夜 / 3 早苗）⇒ 需要一个**映射**：
+ *   灵梦(0) → 灵梦档；魔理沙(1) → 魔理沙档；**咲夜(2) → 魔理沙档（普通灵击，不含爱丽丝半档/河童罩子）**；
+ *   **早苗(3) → 灵梦档**。未知值一律按魔理沙档（= TH10 的「非灵梦」分支，安全侧）。*/
+static inline int mof_core_bomb_reimu_template(int32_t character)
+{
+    return (character == 0 || character == 3) ? 1 : 0;
+}
 
 /* ============ ★ 2026-09-15「灵击 → 决死」（**决死 B 形态**）：形态状态 + 两条代价口径 ============
  * 用户口径（2026-09-15 逐字）：「**基本语义上灵击==B**」「**所以灵击也得决死**」

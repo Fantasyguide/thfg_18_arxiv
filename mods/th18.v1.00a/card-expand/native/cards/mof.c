@@ -1102,7 +1102,9 @@ static void mof_bomb_on_start(void *user, int32_t by_hit, int32_t cost, int32_t 
 {
     mof_card_t *s = (mof_card_t *)user;
     int32_t spell_now = ce_spell_active();
-    int32_t reimu = (*(const volatile int32_t *)MOF_ADDR_CHARACTER == 0);
+    /* ★ 2026-09-25：与 `bomb10.c` 同口径（owner：「咲夜用魔理沙的普通灵击，早苗用灵梦的灵击」）
+     *   ⇒ 这一行打印的模板名也要跟着走（日志里 `reimu`/`marisa` 表示**用的是哪一档模板**）。*/
+    int32_t reimu = mof_core_bomb_reimu_template(*(const volatile int32_t *)MOF_ADDR_CHARACTER);
 
     (void)cost;
     if (!s) return;

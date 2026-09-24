@@ -2142,6 +2142,7 @@ typedef struct {
     int32_t  skin_count;    /* 诊断：这条起过几次皮（>1 = ECL 中途换过动画）*/
     int32_t  seen_tick;     /* 最后一次在敌人表里见到的 tick（mark & sweep）*/
     int32_t  born_tick;     /* 起皮时的 tick（探针的节流基准）*/
+    float    native_sc_x, native_sc_y;   /* 原生 VM 的 scale（镜像/转向就是它）—— 每帧抄到我们的皮上 */
     float    x, y;          /* 最后一次见到的坐标（诊断 + 镜像判据的组锚点）*/
 } faith_gf_node_t;
 
@@ -2261,6 +2262,8 @@ static int faith_gf_skin_up(faith_gf_node_t *nd, uint8_t *e, int32_t green_scrip
      *   只要起皮每帧都发生（见下面的订正），它就会**永远停在原点、永远第 0 帧** —— 用户看到的两条症状
      *   （位置 + 「定住」）就是这一条。⇒ 起皮**当场**把坐标写上。*/
     (void)ce_anm_set_pos(nd->vm, x, y, 0.0f);
+    nd->native_sc_x = 1.0f;
+    nd->native_sc_y = 1.0f;
     ++nd->skin_count;
     ce_fairy_claim_instance(110, nd->id);       /* 实例护栏（每帧重申；112 读得到）*/
     ce_log("faithgf/skin: #%d **改为绿妖精**（(N,S)=(2,%d) → 皮脚本 %d；第 %d 次起皮）"
@@ -2445,6 +2448,27 @@ static void faith_gf_skin_tick(uint8_t *em)
             if (nd->native_vm) {
                 vm = ce_anm_get_vm(nd->native_vm);
                 if (vm) *(uint32_t *)(vm + CE_ANM_VM_COLOR1) = FAITH_GF_HIDE_COLOR;
+                /* ★★★ 2026-09-25（owner 实跑：「**绿妖精没有转向动画**」）——
+                 *   一手（`local/vendor/thtk` 反编译 `st01.ecl` 的 MainSub01/01b）：
+                 *     `enmCreateM("GirlBlueA01",  184.0f, -32.0f, …)`   ← **M 变体**（右侧那只）
+                 *     `enmCreate ("GirlBlueA01", -184.0f, -32.0f, …)`   ← 普通变体（左侧那只）
+                 *   而 fairy 的子程序里 `anmSelect(2); anmSetMain(0, 0);` **只调一次、之后永不换脚本**
+                 *   （所以「朝向」**不可能**体现在敌人的 `+0x26c` 上 —— 我原来盯着那个字段看，当然看不到）。
+                 *   ⇒ 朝向是**生成时的 M 标志**带给 anm VM 的（镜像），落点在 VM 自己身上。
+                 *   我们这支皮是**另一个 VM**，不会自动继承 ⇒ 表现为「没有转向动画」。
+                 *   ⇒ 每帧把**原生 VM 的 scale 原样抄到我们的皮上**（镜像 = `scale.x = −1` 那种做法
+                 *     不管是哪一种落点，抄过来就等于跟原生完全一致）。*/
+                if (nd->vm) {
+                    const float *ns = (const float *)(vm + CE_ANM_VM_SCALE);
+                    uint8_t *sk = ce_anm_get_vm(nd->vm);
+                    if (vm && sk && ns) {
+                        nd->native_sc_x = ns[0];
+                        nd->native_sc_y = ns[1];
+                        (void)ce_anm_set_scale(nd->vm, ns[0], ns[1]);
+                    } else if (sk) {
+                        (void)ce_anm_set_scale(nd->vm, nd->native_sc_x, nd->native_sc_y);
+                    }
+                }
             }
         }
         /* ★★★ 2026-09-25 订正（owner 实跑：「第二波一只绿妖精**半截身子在画面上边缘外面、定住不动**」）：
@@ -2470,9 +2494,13 @@ static void faith_gf_skin_tick(uint8_t *em)
         if (FAITH_GF_PROBE_EVERY > 0 && (s_gf_tick_no % FAITH_GF_PROBE_EVERY) == 0) {
             uint8_t *sk = nd->vm ? ce_anm_get_vm(nd->vm) : 0;
             const float *sp = sk ? (const float *)(sk + CE_ANM_VM_POS) : 0;
-            ce_log("faithgf/skin/probe: #%d 敌(%.0f,%.0f) 皮%s(%.0f,%.0f) 蓝脚本 %d 绿脚本 %d 起皮 %d 次",
+            const float *sk_s = sk ? (const float *)(sk + CE_ANM_VM_SCALE) : 0;
+            ce_log("faithgf/skin/probe: #%d 敌(%.0f,%.0f) 皮%s(%.0f,%.0f) scale 皮(%.2f,%.2f)/原生(%.2f,%.2f) "
+                   "蓝脚本 %d 绿脚本 %d 起皮 %d 次",
                    (int)id, (double)x, (double)y, sk ? "" : "**没了**",
                    sp ? (double)sp[0] : -999.0, sp ? (double)sp[1] : -999.0,
+                   sk_s ? (double)sk_s[0] : -999.0, sk_s ? (double)sk_s[1] : -999.0,
+                   (double)nd->native_sc_x, (double)nd->native_sc_y,
                    (int)nd->blue_script, (int)nd->green_script, (int)nd->skin_count);
         }
     }

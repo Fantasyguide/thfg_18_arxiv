@@ -776,6 +776,13 @@ int main(void)
     CHECK(MOF_BOMB_DMG_NONE == 0);
     CHECK(MOF_BOMB_DMG_DIV == 5);
     CHECK(MOF_BOMB_BIG_BOMB_FRAMES == 60);            /* `bomb+0x44` 的门（`th10:0x4059ca cmp …,0x3c`）*/
+    /* ★★★ 2026-09-25（owner 口径）：「**咲夜用魔理沙的普通灵击，早苗用灵梦的灵击**」
+     *   ⇒ 机体 → 灵击模板的映射（TH10 一手只有「灵梦 / 非灵梦」两档，TH18 有四位自机）。*/
+    CHECK(mof_core_bomb_reimu_template(0) == 1);   /* 灵梦 → 灵梦档（半径 160 / 上移 1.0 / 圈外 20 / 视觉变体 0）*/
+    CHECK(mof_core_bomb_reimu_template(1) == 0);   /* 魔理沙 → 魔理沙档（112 / 1.3 / 16 / 变体 1）*/
+    CHECK(mof_core_bomb_reimu_template(2) == 0);   /* ★ 咲夜 → **魔理沙档**（owner：用魔理沙的普通灵击）*/
+    CHECK(mof_core_bomb_reimu_template(3) == 1);   /* ★ 早苗 → **灵梦档**（owner：用灵梦的灵击）*/
+    CHECK(mof_core_bomb_reimu_template(99) == 0);  /* 未知值 = TH10 的「非灵梦」分支（安全侧）*/
     /* 圈内 / 无符卡 / 有 boss → **38**（一手原始值原样落地：正常游玩不过第一道 /5）*/
     CHECK(mof_core_bomb_damage(1, 1, 0, 0, 1) == 38);
     /* 圈内 / 无符卡 / 无 boss → **5**（小怪阶段也有伤害）*/
