@@ -1342,6 +1342,7 @@ typedef struct {
     int32_t id;          /* 这只绿妖精的 `enemy_id`（0 = 空槽）*/
     int32_t tgt_id;      /* 跟着的那只妖精的 `enemy_id`（0 = 还没定）*/
     float   off_x, off_y;/* 出生时定下的队形偏移（相对目标，常数 ⇒ 与目标同轨迹）*/
+    float   last_x, last_y; /* 诊断：最后一帧写进 `%F2/%F3` 的点 */
     float   y0;          /* ★ 2026-09-24：**出生时的 y**（= 入场线）—— 入场那一段从它插值下来，
                           *   见 `gf_follow_tick()`（owner：「有一个绿色妖精瞬间出现了一帧
                           *   然后直接消失了」）。*/
@@ -1530,8 +1531,10 @@ static void gf_follow_tick(uint8_t *em)
         if (f->id == 0) continue;
         me = ce_enemy_by_id(em, f->id);
         if (!me) {
-            ce_log("faithgf: 绿妖精 #%d 不在了（被打死 / 自删；age=%d wave#%d）",
-                   (int)f->id, (int)f->age, (int)f->wave);
+            ce_log("faithgf: 绿妖精 #%d 不在了（被打死 / 自删；age=%d wave#%d，最后一次写的 F2/F3="
+                   "(%.1f,%.1f)、偏移(%+.0f,%+.0f)）",
+                   (int)f->id, (int)f->age, (int)f->wave,
+                   (double)f->last_x, (double)f->last_y, (double)f->off_x, (double)f->off_y);
             f->id = 0;
             continue;
         }
@@ -1541,7 +1544,9 @@ static void gf_follow_tick(uint8_t *em)
          *   位置 / 外观 (N,S) / 目标与偏移 / 我们写进 `%F2/%F3` 的点。
          *   三种可能的读法：① 已经不在敌人表里（被打死 / 自删）；② 位置在场地外；
          *   ③ 外观不是 `(2,10)`（那我们写错了 `anmSetMain` 的参数）。*/
-        if (f->age == 30 || f->age == 150) {
+        /* ★★ 2026-09-24：探针挪到**出生后 1/2/3/10 帧** —— 实跑日志里 7 次补刷**全部在 `age=2`
+         *   就消失**（那时入场段还没让它进场地、火力够不到）⇒ 必须在消失前把状态打出来。*/
+        if (f->age == 1 || f->age == 2 || f->age == 3 || f->age == 10) {
             const float *mp = ce_enemy_pos(me);
             ce_log("faithgf/probe: 绿妖精 #%d age=%d pos=(%.0f,%.0f) anm=(%d,%d) 跟随 #%d 偏移(%+.0f,%+.0f) "
                    "写F2/F3=(%.0f,%.0f) wave#%d",
@@ -1590,6 +1595,7 @@ static void gf_follow_tick(uint8_t *em)
             }
             if (fx >  FAITH_GF_X_LIMIT) fx =  FAITH_GF_X_LIMIT;
             if (fx < -FAITH_GF_X_LIMIT) fx = -FAITH_GF_X_LIMIT;
+            f->last_x = fx; f->last_y = fy;
             *(float *)(me + CE_ENEMY_ECL_F2) = fx;
             *(float *)(me + CE_ENEMY_ECL_F3) = fy;
         }
