@@ -72,7 +72,19 @@ SRC_PNG = REPO / "local/th12.v1.00b/anm/bullet/bullet/etama8.png"
 #     （一手：`abcard.anm` entry1 = sprite1 (0,0,40,44)；owner 另一句「卡图大了一倍」= 我们的
 #      `scaleTime(…,2.0)` 让屏显变成 64×64，而原生整 B 道具是 32×32 ⇒ 本轮把脚本也换成一手的
 #     `abcard.anm` script16 配方，见 `assets/ability/scripts/301_ufo_bomb_item.anm.txt` 文件头）。
-SRC_TH18_BOMB_CARD = REPO / "local/th18.v1.00a/anm/abcard/ability/BOMB_max.png"
+# ★★★ 2026-09-24 第 22 轮（owner 终局口径）：「**我要和 B 碎一样大**」「**它得在各方面 == B 碎卡**」
+#   ⇒ 满 B 的外观**不再是我们的二次加工**，而是**原生卡道具那一套逐条复刻**：
+#     一手 `abcard.anm`：**场地里那张卡道具**的显示配方 = script14（父，摆动）→ script16（背光，
+#     加算 + 呼吸）/ script15（**卡面**，`scale(0.3,0.3)` + `resampleMode(0)`）/ script17（暗卡框）。
+#     · **卡面** `DROP_BOMB` = 原生**整 B 卡图** `abcard/ability/BOMB_min.png` 的 sprite9 (0,0,64,80)
+#       **1:1 原样**（不缩放！脚本里写 `scale(0.3,0.3)` —— 与原生同一张 texel、同一个倍率、
+#       同一个采样模式 ⇒ 屏显 **19.2×24**，与 B 碎卡（`BOMB2_min.png`，同 64×80 同倍率）**逐像素同尺寸**）。
+#     · **背光** `CARD_GLOW` = 原生光晕 `abitem.png` sprite1 (0,0,40,44) **1:1 原样**（脚本 `scale(1,1)`
+#       ⇒ 屏显 40×44，与原生 script16 同值）。
+#   ⚠ 为什么从 `BOMB_max.png`（256×320）换回 `_min`：owner 第 5 轮要的「**有黑边那版**」是**在卡被画大**
+#     （40×50 / 26×32）时才有意义 —— `_max` 外圈 3 texel 纯黑，缩到 **19.2 px 宽**只有 **0.22 px**，
+#     与 `_min`（浅绿描边）**肉眼无差**；而「和 B 碎一样大」只能靠原生那对同尺寸的 `_min` 卡图做到。
+SRC_TH18_BOMB_CARD = REPO / "local/th18.v1.00a/anm/abcard/ability/BOMB_min.png"
 # ★★ 2026-09-24（owner 第三轮）：「**你画的满B卡是 smjb，不会用这个？**」+ 给了 modkit 里的
 #   `cardart/native/ability/BOMB_max.png`（**与本机 `local/` 那份逐字节同一 md5** `ed6b9481…`）
 #   + 「**发光也不是 tm 这么发的啊**」 ⇒ 本轮把「卡面」与「背光」拆成**两个图集成员**：
@@ -95,6 +107,11 @@ SRC_TH18_BOMB_CARD = REPO / "local/th18.v1.00a/anm/abcard/ability/BOMB_max.png"
 #       （中间那版一度换成 `abframe.png` 卡框，是误以为"星"出自这张光晕 —— owner 已澄清，换回。）
 #     · 发光 = **真加算**（脚本 331 的 `blendMode(1)` + 呼吸，= 一手 `abcard.anm` script16 的配方）。
 SRC_ABITEM = REPO / "local/th18.v1.00a/anm/abcard/ability/abitem.png"     # ★ 原生**光晕**（背光层用它）
+SRC_ABCARD_TXT = REPO / "local/th18.v1.00a/anm/abcard/abcard.anm.txt"     # ★ 原生矩形（现读，见下）
+# 原生卡图（卡面层）：`BOMB_min.png` = **整颗 B 的卡面**（`BOMB2_min.png` = B 碎的卡面，同 64×80 同倍率）
+#   ⇒ owner「和 B 碎一样大」靠的是**同一张画布的同一倍率**，不是我们手调的像素数。
+ABCARD_CARD_ENTRY = "ability/BOMB_min.png"
+ABCARD_GLOW_ENTRY = "ability/abitem.png"
 SRC_TXT = REPO / "local/th12.v1.00b/anm/bullet/bullet.anm.txt"
 OUT = HERE / "ufo_drop"
 SCRIPTS = HERE / "scripts"
@@ -102,29 +119,28 @@ ORDER_FRAG = HERE / "entries" / "ORDER.ufo_drop.txt"
 ENTRY_NAME = "bullet/etama8.png"
 
 # (输出名, TH12 sprite 号, 单元尺寸, 画布)  —— 矩形从 anm 文本读出来做断言，不写死在切图里
+#   ★ `sid is None` 的成员 = **TH18 原生图**（矩形从 `abcard.anm.txt` 读，1:1 原样，**不缩放**）
 SPRITES = [
     ("BOUNTY_BAG",      459, (30, 30), (32, 32)),
     ("DROP_ICON_P",     426, (16, 16), (16, 16)),
     ("DROP_ICON_POINT", 427, (16, 16), (16, 16)),
-    # ★ DROP_BOMB 的源**不是** TH12 的 sprite432 了（见 `SRC_TH18_BOMB_CARD`）：owner 口径换成 TH18 完整 B 卡面
-    ("DROP_BOMB",       None, None,    (20, 25)),   # ★ 原生卡图 `BOMB_max.png` 等比装入（4:5）
-                                                    #   ★ 2026-09-24 第 21 轮：owner「**卡面比 B 碎大一圈**」
-                                                    #   ⇒ 26×32 → **20×25**（同 4:5）。参考尺寸：B 碎图标
-                                                    #   （`bullet/item.png` 的 16×16 那一族）= 16×16、
-                                                    #   原生整 B 图标（sprite512）= 32×32。
-    ("CARD_GLOW",       None, None,    (28, 35)),   # ★ 原生**光晕** `abitem.png` 缩到比卡面大一圈 = 背光层
-                                                    #   ★ 第 21 轮：34×40 → 28×35（卡面缩到 20×25，仍大一圈）
+    # ★ DROP_BOMB 的源不是 TH12 的 sprite432（见 `SRC_TH18_BOMB_CARD`）：owner 口径 = TH18 原生整 B 卡面
+    ("DROP_BOMB",       None, None,    (64, 80)),   # ★ 原生卡图 `BOMB_min.png` sprite9 (0,0,64,80) **1:1**
+                                                    #   （脚本 345 写 `scale(0.3,0.3)` ⇒ 屏显 19.2×24 =
+                                                    #    与原生 B 碎卡同尺寸，见本文件头 2026-09-24 第 22 轮）
+    ("CARD_GLOW",       None, None,    (40, 44)),   # ★ 原生光晕 `abitem.png` sprite1 (0,0,40,44) **1:1**
+                                                    #   （脚本 331 写 `scale(1,1)` ⇒ 屏显 40×44 = 原生 script16 同值）
 ]
 
-# 图集排布（2 的幂：64×32）
+# 图集排布（★ 2026-09-24 第 22 轮：卡面 20×25 → 64×80、背光 28×35 → 40×44 ⇒ 画布 80×96 → 128×128）
 ATLAS_NAME = "ATLAS_UFO_DROP"
-ATLAS_W, ATLAS_H = 80, 96             # ★ DROP_BOMB 34×40 + CARD_GLOW 40×44 ⇒ 80×96
+ATLAS_W, ATLAS_H = 128, 128
 ATLAS_POS = {                       # 输出名 → (x, y)
     "BOUNTY_BAG":      (0, 0),
     "DROP_ICON_P":     (32, 0),
     "DROP_ICON_POINT": (48, 0),
-    "CARD_GLOW":       (0, 32),     # 0+28=28 ≤ 80、32+35=67 ≤ 96 ✓
-    "DROP_BOMB":       (40, 32),    # 40+20=60 ≤ 80、32+25=57 ≤ 96 ✓（与 CARD_GLOW 不重叠）
+    "DROP_BOMB":       (0, 32),     # 0+64=64 ≤ 128、32+80=112 ≤ 128 ✓
+    "CARD_GLOW":       (64, 32),    # 64+40=104 ≤ 128、32+44=76 ≤ 128 ✓（与 DROP_BOMB 不重叠）
 }
 
 # (输出脚本号, 输出名, TH12 源脚本号, 图标脚本)  —— 图标脚本为 None = 整条照抄（只换 sprite 名）
@@ -155,6 +171,24 @@ def read_sprite_rects() -> dict[int, tuple[int, int, int, int]]:
     return rects
 
 
+def read_abcard_rects() -> dict[str, tuple[int, int, int, int]]:
+    """TH18 `abcard.anm` 的「entry 名 → 那一个 sprite 的矩形」—— 一手，不写死。
+
+    ★ 2026-09-24 第 22 轮：卡面/背光的尺寸**必须**从原生 anm 文本现读（`sprite9: {0,0,64,80}` /
+    `sprite1: {0,0,40,44}`）—— owner 的判据是「和 B 碎一样大」，而"一样大"= 原生卡面 64×80 乘
+    脚本里的 0.3 ⇒ 一旦 ZUN 的矩形记错，这里当场红，不会悄悄画大一圈。"""
+    if not SRC_ABCARD_TXT.is_file():
+        raise SystemExit(f"缺 TH18 abcard.anm 的文本 {SRC_ABCARD_TXT}（先 tooling/thtk/unpack.py th18.v1.00a）")
+    txt = SRC_ABCARD_TXT.read_text(encoding="utf-8", errors="replace")
+    out: dict[str, tuple[int, int, int, int]] = {}
+    for m in re.finditer(r'name: "([^"]+)"(.*?)\n\}', txt, re.S):
+        name, body = m.group(1), m.group(2)
+        sm = re.search(r"sprite\d+: \{ x: (\d+), y: (\d+), w: (\d+), h: (\d+) \}", body)
+        if sm:
+            out[name] = tuple(int(g) for g in sm.groups())     # type: ignore[assignment]
+    return out
+
+
 def scripts_of(text: str) -> dict[int, list[str]]:
     out: dict[int, list[str]] = {}
     cur = None
@@ -171,36 +205,40 @@ def scripts_of(text: str) -> dict[int, list[str]]:
     return out
 
 
-# 两张图的画布（尺寸由来见文件头：卡面 26×32 = 原生整 B 图标的量级；背光 34×40 = 比卡面大一圈）
-CARD_FIT = (20, 25)      # ★ 第 21 轮：26×32 → 20×25（owner「卡面比 B 碎大一圈」）
-GLOW_FIT = (28, 35)      # ★ 背光仍比卡面大一圈（20+8 / 25+10）
+# ★ 2026-09-24 第 22 轮：卡面/背光**不再由我们缩**（`CARD_FIT`/`GLOW_FIT` 两个手调常数已删）——
+#   取原生矩形 1:1，倍率写进脚本（0.3 / 1.0，逐值同原生）⇒ 与 B 碎卡同尺寸且同采样。
 
 
 def make_sprites() -> list[str]:
     if not SRC_PNG.is_file():
         raise SystemExit(f"缺 TH12 原版贴图 {SRC_PNG}")
     rects = read_sprite_rects()
+    abrects = read_abcard_rects()
     src = Image.open(SRC_PNG).convert("RGBA")
     if src.size != (256, 256):
         raise SystemExit(f"{SRC_PNG}: 期望 256×256，实际 {src.size}")
+    # 原生矩形断言（一手 `abcard.anm`：卡面 64×80、光晕 40×44）
+    for ent, want in ((ABCARD_CARD_ENTRY, (0, 0, 64, 80)), (ABCARD_GLOW_ENTRY, (0, 0, 40, 44))):
+        got = abrects.get(ent)
+        if got != want:
+            raise SystemExit(f"abcard.anm 的 {ent} 矩形漂了：期望 {want}，实际 {got}")
     OUT.mkdir(parents=True, exist_ok=True)
     order_lines = []
     for name, sid, unit_wh, canvas_wh in SPRITES:
         if sid is None:                                # ★ DROP_BOMB（卡面）/ CARD_GLOW（背光）：原生图
+            ent = ABCARD_GLOW_ENTRY if name == "CARD_GLOW" else ABCARD_CARD_ENTRY
             src_path = SRC_ABITEM if name == "CARD_GLOW" else SRC_TH18_BOMB_CARD
             if not src_path.is_file():
                 raise SystemExit(f"缺 {src_path}（先 python3 tooling/thtk/unpack.py th18.v1.00a）")
+            x, y, w, h = abrects[ent]
+            if (w, h) != canvas_wh:
+                raise SystemExit(f"{ent}: 原生矩形 {w}×{h} 与 SPRITES 里写的画布 {canvas_wh} 不一致")
             art = Image.open(src_path).convert("RGBA")
-            bb = art.getchannel("A").getbbox()
-            if bb is None:
-                raise SystemExit(f"{src_path}: 整张透明，切不出卡面")
-            art = art.crop(bb)
-            w, h = art.size
-            sc = min(canvas_wh[0] / w, canvas_wh[1] / h)
-            art = art.resize((max(1, int(w * sc)), max(1, int(h * sc))), Image.LANCZOS)
-            canvas = Image.new("RGBA", canvas_wh, (0, 0, 0, 0))
-            canvas.paste(art, ((canvas_wh[0] - art.size[0]) // 2, (canvas_wh[1] - art.size[1]) // 2))
-            canvas.save(OUT / f"{name}.png")
+            unit = art.crop((x, y, x + w, y + h))      # ★ 1:1 原样（**不缩放、不重采样**）
+            vis = sum(1 for a in unit.getchannel("A").tobytes() if a > 32)
+            if vis < 60:
+                raise SystemExit(f"{src_path}: 切出来的 {w}×{h} 只有 {vis} 个可见像素 —— 矩形错位")
+            unit.save(OUT / f"{name}.png")
             order_lines.append(
                 f"{name:<18} ability/ufo_drop/{name}.png   "
                 f"@{ATLAS_POS[name][0]},{ATLAS_POS[name][1]},{canvas_wh[0]}x{canvas_wh[1]}")

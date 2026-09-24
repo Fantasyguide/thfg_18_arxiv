@@ -1,25 +1,29 @@
 script script345 {
-    // 112 星莲船 —— **满 B 掉落物的卡面层**（一手：TH18 卡道具显示的图层之一）
+    // 112 星莲船 —— **满 B 掉落物的卡面层**（一手：TH18 卡道具在场地里的显示配方 `abcard.anm` script15）
     //
-    // ★ 2026-09-24 第二轮：从脚本 301 里**拆出来**独立一层 —— 301 现在是**父**（`sprite(-1)` +
-    //   一手 `abcard.anm` script5 的 **`rotateTime` 摇摆**），两个子各管一层：
-    //     · **本层（333）** = **卡面**：原生卡图 `abcard/ability/BOMB_max.png` 等比缩到 **26×32**、
-    //       **正常混合**（不加算 —— 加算会把卡图冲淡）、世界层 **16**。
-    //     · 背光层（331）= 原生**卡框** `abframe.png`（30×36，比卡面大一圈）、**加算**、世界层 **15**。
-    //   ⚠ 两层都由**父**的 `entity_pos` 定位、并由父的 `rotateTime` 一起摆（子 VM 继承父的变换）。
+    // ★★★ 2026-09-24 第 22 轮（owner 终局口径）：「**我要和 B 碎一样大**」「**它得在各方面 == B 碎卡**」
+    //   ⇒ 本层**逐条等于**原生场地卡道具的那一层 —— 一手 `abcard.anm` **script15**：
+    //       `sprite(sprite11); ins_431(1); randMode(1); pos(0,0,0); layer(16);
+    //        color(255,255,255); scale(0.3f, 0.3f); type(1); resampleMode(0); stop();`
+    //     其中 `sprite11` = entry11 `ability/EXTEND2_min.png`（命碎卡）—— **引擎按卡 id 换成对应那张**：
+    //       B 碎卡用 `BOMB2_min.png`、整颗 B 用 **`BOMB_min.png`**（同一张 64×80 画布、同一个 0.3 倍率）。
     //
-    // **呼吸**：一手 `abcard.anm` script16 有 `scaleTime(7,9,0.9) ↔ (7,9,1.0)` 的无限呼吸，
-    //   本版保留（要静止就删掉 `jmp(offset112, 0)`、`scale` 固定 1.0）。
+    //   ⇒ 「一样大」不是我们量出来的，而是**同一张 64×80 × 同一个 0.3 = 屏显 19.2×24**，
+    //     与 owner 场里看到的 B 碎卡**逐像素同尺寸**（贴图成员 `DROP_BOMB` = 原生 `BOMB_min.png`
+    //     sprite9 (0,0,64,80) 的 1:1 切图，见 `assets/ability/make_ufo_drop_art.py`）。
+    //
+    // **Δ（两条，都不改外观）**：
+    //   · `ins_431(1)`（v8 未知 flag，一手 `engine/anm/th16/07-general.md` §8 标 ❓）本卡不写 ——
+    //     本仓其它原生移植脚本同款处理（写不写都过；语义未知不发明）。
+    //   · `pos(0,0,0)` 省略：本 VM 的 `entity_pos` 由 C 侧**逐帧**从原生道具坐标（`item+0xc2c`）写，
+    //     原生那句 pos 是给引擎自己 spawn 的 VM 用的初值（`ufo.c` 的 `ufo_drops_draw_follow()`）。
+    //   · ★ 第 21 轮那版本层还带 `scaleTime(7,9,0.9) ↔ (7,9,1.0)` 的呼吸 —— **删掉**：一手的呼吸只在
+    //     **背光层**（script16）上，卡面层是静止的。两层一起呼吸 = 与 B 碎卡不同（owner 要「各方面 ==」）。
     sprite(@DROP_BOMB@);
     type(1);
-    layer(16);
+    layer(16);                      /* 一手 script15：世界层 16（掉落物该在的层）*/
     color(255, 255, 255);
-    scale(1.0f, 1.0f);
-offset112:
-    scaleTime(7, 9, 0.9f, 0.9f);
-+7: // 7
-    scaleTime(7, 9, 1.0f, 1.0f);
-+7: // 14
-    jmp(offset112, 0);
+    scale(0.3f, 0.3f);              /* ★ 一手原值：64×80 texel × 0.3 ⇒ 屏显 19.2×24（= B 碎卡尺寸）*/
+    resampleMode(0);                /* ★ 一手原值（`engine/anm/th16/06-settings.md` §3.5：bit11 = 0 线性）*/
     stop();
 }

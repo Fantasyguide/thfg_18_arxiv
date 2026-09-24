@@ -3484,7 +3484,8 @@ static int ufo_drop_spawn(ufo_card_t *s, int32_t kind, float x, float y,
             ufo_drop_kill(slot);
             return 0;
         }
-        /* 卡面 VM（我们自己的贴图，脚本 301 = TH18 `abcard.anm` script16 的配方：加算 + 呼吸缩放）：
+        /* 卡面 VM（我们自己的贴图，脚本 301 = **TH18 场地卡道具那一棵树** `abcard.anm` script14 的配方：
+         * 父 VM 只负责 ±10°/30 帧的摇摆，两层子 VM = 卡面 64×80×0.3 + 背光 `abitem.png` 40×44 加算呼吸）：
          * 位置每帧跟随**原生道具**的坐标（`item+0xc2c` = 世界坐标 float3），见 `ufo_drops_draw_follow()`。*/
         script = CE_ANM_ABILITY_SCRIPT_UFO_BOMB_ITEM;
         layer = UFO_DROP_BOMB_ANM_LAYER;
@@ -4042,8 +4043,9 @@ static void ufo_drops_draw_follow(void)
 #if UFO_DROP_ANM_LOG_EVERY
         /* ★ 2026-09-24 第 21 轮诊断（owner：「**没有左右摇摆**」）：每 60 帧把**父 VM**的
          *   `rotation`（`+0x38/3c/40`）与 `scale`（`+0x54/58`）打一行 ——
-         *   摇摆是脚本 301 的 `rotateTime(120,21,…)` 在跑，日志里看得见它在动就说明是**幅度太小**
-         *   （一手 -2°↔+4° 只有 6°），而不是"动画没跑"。*/
+         *   摇摆是脚本 301 的 `rotateTime(30,9,±0.17453292)` 在跑（第 22 轮换成**一手 script14 的原值**：
+         *   ±10°、30 帧一个单程）；日志里 `rot` 在 ±0.17 之间来回 = 动画在跑。
+         *   ⚠ `scale` 恒 1.000 —— 父 VM 不缩放；卡面那 0.3 在**子 VM**（脚本 345）身上（一手同构）。*/
         if ((++s_drop_log_tick % UFO_DROP_ANM_LOG_EVERY) == 0u) {
             float *rv = (float *)(ce_anm_get_vm(d->anm_id) + CE_ANM_VM_ROTATION);
             float *sv = (float *)(ce_anm_get_vm(d->anm_id) + CE_ANM_VM_SCALE);

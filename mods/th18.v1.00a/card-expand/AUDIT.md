@@ -21153,3 +21153,33 @@ owner 原话见 `SINGLE-CARD-TEST.md` §本批10-1；一手/数值/自定项见 
 **回归跑了什么**：`make -C native anm`（entry 74 / sprite 529 / script 356；三张新图集逐像素自检）→
 `make -C native anm-verify` → `make -C native dllx87`（rc=0、`x87 in our objects: 0`、`ufo.c` 零告警）→
 `make -C native check`（含 `check-docs.py` 382 文件全绿）。**实跑判据**见 `TUNING.md` §2.0zzm 末尾那四条。
+
+## §BE 详录 #88（2026-09-24）：★ **共享件** `assets/ability/**` + `CAPACITY.md` —— 112 星莲船第**二十二**轮：满 B 的外观换成原生「场地卡道具」整棵照抄
+
+**为什么必须登记**：本轮动了 `assets/ability/entries/ORDER.txt`（共享件清单里那条：把
+`ATLAS_UFO_DROP` 段的大小改掉）与 `assets/ability/scripts/301|331|345`（脚本目录也在清单里），
+以及共享台账 `CAPACITY.md`。owner 原话与逐句对照见 `SINGLE-CARD-TEST.md` §本批22-1，
+数值与 Δ 见 `TUNING.md` §2.0zzx-2。
+
+| 文件 | 改了什么 | 为什么 | 怎么验的 |
+| --- | --- | --- | --- |
+| `assets/ability/entries/ORDER.txt`（**共享件**）| **只改我们自己那一段**（数据行 432..437）：`ATLAS ATLAS_UFO_DROP 80x96` → `128x128`、`DROP_BOMB …@0,32,64x80`、`CARD_GLOW …@64,32,40x44`；**行数、行序、名字一字未变** | owner「和 B 碎一样大」要求卡面用原生 64×80 texel 1:1（倍率交给脚本）| 构建期「重排检测」逐行比对 `ORDER.frozen.txt` 前 **187** 行 ⇒ 已定稿段一字未动（本段在冻结段之后）；`make -C native anm` 报 entry 61 画布 128x128、sprite 453…457 |
+| `assets/ability/scripts/301_ufo_bomb_item.anm.txt`（112 自己的父 VM）| 摇摆换成一手 `abcard.anm` **script14** 的 `rotateTime(30, 9, ±0.17453292)`（±10°、30 帧单程）；旧版抄的是 script5 的 ±2°↔+4°/120 帧再 ×2.5 | 上一轮「没有左右摇摆」的真因是**抄错了脚本**（script5 = "当前卡"演出，不是场地卡道具）| `make -C native anm` 绿；实跑看 `ufo/drop.bomb` 诊断行的 `rot` 在 ±0.17 之间 |
+| `assets/ability/scripts/345_ufo_card_face.anm.txt`（同上）| 换成一手 **script15** 的配方：`scale(0.3f,0.3f)` + `resampleMode(0)`，并**删掉**上一轮加的卡面呼吸 | 一手那支呼吸只在**背光**层；两层一起呼吸 ≠ B 碎卡 | 同上；图集里卡面 texel 与原生 `BOMB_min.png` sprite9 **逐字节相同**（构建后回读比对）|
+| `assets/ability/scripts/331_ufo_card_glow.anm.txt`（同上）| 注释重写（说明背光恢复原生 40×44 = 1.0 倍率）；**正文未动** | 尺寸来源变了（生成器 1:1），脚本注里的旧数字会误导 | 同上 |
+| `assets/ability/make_ufo_drop_art.py`（112 生成器）| 源图 `BOMB_max.png` → **`BOMB_min.png`**；删掉 `CARD_FIT`/`GLOW_FIT` 两个手调常数，改成**从 `abcard.anm.txt` 现读原生矩形、1:1 切图**（并把 64×80 / 40×44 钉成断言）；图集排布改 128×128 | 手调像素永远对不齐"和 B 碎一样大"；矩形从一手文本读才可复核 | 重跑生成器幂等；断言在矩形漂移时当场红 |
+| `assets/ability/ufo_drop/{DROP_BOMB,CARD_GLOW}.png`（112 自己的美术）| 换成原生 `abcard/ability/BOMB_min.png` sprite9 / `abitem.png` sprite1 的 **1:1 切图** | 借原生素材，不自己画 | 构建期图集逐像素回读：卡面与光晕**都与原生源图逐字节相同** |
+| `CAPACITY.md`（**共享台账**）| `ATLAS_UFO_DROP` 那一格补 2026-09-24 第 22 轮：画布 128×128、5 个成员、新尺寸、宏名不变 | 台账不许过期（capcheck 的硬门要宏全名在册）| `make check` 全绿 |
+
+**对既有卡的影响面**：**零行为变化、零编号变化**。
+- `ORDER.txt` 的改动只在**冻结段之后**（前 187 行逐行比对通过），**行数与行序都没动** ⇒
+  entry 号（61）与 sprite 号（453..457）**一个都没动**，别的卡引用的图集全部不受影响；
+  只有我们这一格的画布尺寸变大。
+- 三支脚本（301/331/345）都是 112 专属（`UFO_BOMB_ITEM` / `UFO_CARD_*` 宏只被 `ufo.c` 用）。
+- 没有动 `sdk.*` / `engine.h` / `sites.py` / `Makefile` / `patch/**` / `cards/faith.*` / `anm_ids.h` 的手写部分
+  （`anm_ids.h` 是 `make anm` 的生成物，本轮只是跟着重建）。
+
+**回归跑了什么**：`make -C native anm`（entry 74 不变、`ATLAS_UFO_DROP` 128×128 / sprite 453…457、
+`verify_rebuilt` 与越界/scriptNew 检查全绿）→ `make -C native dllx87`（rc=0；本轮 `ufo.c` 只改注释）→
+`make -C native check`（`engine_abi_check` 8 条 ✅ / `anm_hud_alpha_check` ✅ / `check-docs.py` 全绿）。
+**实跑判据**见 `TUNING.md` §2.0zzx-2 末尾那五条（大小 / 摆动 / 柔光 / 无五角星 / Bomb +1）。

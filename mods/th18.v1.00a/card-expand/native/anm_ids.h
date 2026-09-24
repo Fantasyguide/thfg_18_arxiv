@@ -701,7 +701,7 @@
 #define CE_ANM_ABILITY_SPRITE_NITORI_BUBBLE         451   /* entry59 ATLAS_NITORI_BUBBLE[0] */
 #define CE_ANM_ABILITY_SPRITE_ATLAS_NITORI_BUBBLE_0  451   /* = NITORI_BUBBLE */
 #define CE_ANM_ABILITY_SPRITE_CONV_BURST            452   /* entry60 */
-#define CE_ANM_ABILITY_ATLAS_ATLAS_UFO_DROP          61   /* 画布 80x96，5 个 sprite */
+#define CE_ANM_ABILITY_ATLAS_ATLAS_UFO_DROP          61   /* 画布 128x128，5 个 sprite */
 #define CE_ANM_ABILITY_SPRITE_BOUNTY_BAG            453   /* entry61 ATLAS_UFO_DROP[0] */
 #define CE_ANM_ABILITY_SPRITE_DROP_ICON_P           454   /* entry61 ATLAS_UFO_DROP[1] */
 #define CE_ANM_ABILITY_SPRITE_DROP_ICON_POINT       455   /* entry61 ATLAS_UFO_DROP[2] */

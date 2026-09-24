@@ -335,6 +335,11 @@ cards: 35 registered from cards.js; shop pool 700/8192 slots, guaranteed offers 
   **append 在最末尾** ⇒ 新 sprite = **453..456**、同批新脚本 = **296..301**
   （`UFO_BOUNTY_BAG{,_P,_MONEY}` / `UFO_DROP_ICON_{P,POINT}` / `UFO_BOMB_ITEM`），
   既有号一个没动（entry 61/256，余量 195）。生成器 `assets/ability/make_ufo_drop_art.py`。
+  ★★ **2026-09-24 第 22 轮（owner「和 B 碎一样大」「各方面 == B 碎卡」）**：本图集长成
+  **128×128、5 个成员**（`DROP_BOMB` 20×25 → **64×80** = 原生 `BOMB_min.png` sprite9 **1:1**；
+  `CARD_GLOW` 28×35 → **40×44** = 原生 `abitem.png` sprite1 **1:1**；倍率 0.3 / 1.0 写进脚本 345/331，
+  逐值同原生 `abcard.anm` script15/16）⇒ 满 B 与 B 碎卡**同尺寸同配方**。
+  sprite 号仍是 **453..457**（行序没动，只是画布变大）、entry 61 不变；明细见 `TUNING.md` §2.0zzx-2。
 
 - **★ 2026-09-18 新增 `ATLAS_UFO_HUD`（entry **62**，`CE_ANM_ABILITY_ATLAS_ATLAS_UFO_HUD`）**：
   卡 112 的**飞碟槽 HUD** 贴图（用户 2026-09-18 实跑 ⑤：「**飞碟槽 HUD 你没按照原版做**」）
