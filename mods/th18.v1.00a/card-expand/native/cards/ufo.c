@@ -1888,83 +1888,89 @@ static void ufo_summon_fx_kill(void)
     if (s_summon_debris_id)  { ce_anm_delete(s_summon_debris_id);  s_summon_debris_id = 0; }
 }
 
-/* ==================== ★★ 令牌宿主：换皮 + 头顶旋转飞碟（owner 2026-09-24）====================
+/* ==================== ★★ 令牌宿主：换皮 + 头顶旋转飞碟 + 每波只挑 1~2 只（owner 2026-09-24）==========
  *
- * **owner 口径（原话）**
- *   ·「th12 原版掉落飞碟的怪，除了 boss 可能掉之外，只有**大蝴蝶**和**杂鱼妖精**……
- *      **得改谁能飞碟掉落，并且还得给掉的那个改帖图**」
- *   ·「掉飞碟的大蝴蝶的贴图是 **enemy.png 的第一二行**；掉飞碟的杂鱼妖精是 **enemy.png 妖精贴图的第 4 行**；
- *      并且她们头上会有 **enemy.png 第二行的右半部分的旋转飞碟特效**」
+ * **owner 口径（逐轮原话，合起来就是这一节的全部规则）**
+ *   ①「th12 原版掉落飞碟的怪……只有**大蝴蝶**和**杂鱼妖精**（boss 我不清楚）；**得改谁能飞碟掉落**，
+ *      并且还得给掉的那个**改帖图**」
+ *   ②「掉飞碟的大蝴蝶的贴图是 `enemy.png` 的**第一二行**；掉飞碟的杂鱼妖精是 `enemy.png` 妖精贴图的
+ *      **第 4 行**；并且她们头上会有 `enemy.png` 第二行的右半部分的**旋转飞碟特效**」
+ *   ③「**杂鱼妖精是一碰就碎的**，但是我一般说的"**中**"妖精，血量一般**得打一会儿**」
+ *   ④「th18 第一面，第一波是三波**红绿阴阳玉**，第二波是**一些杂鱼妖精外加一个中妖精**」
+ *   ⑤「**杂鱼妖精原始精灵尺寸也得是 32*32 的**」
+ *   ⑥「**同一波的那只中妖精不应该掉，整个中妖精家族就不应该掉**。你把换皮看成是，**它带着 token，
+ *      所以换皮** ⇒ **必须原本是 64*64 是大蝴蝶才换皮掉**」
+ *   ⑦「和目前 th10 th11 的卡（的设计/困境）类似，**一波（或者一个子波）一般只有 1 个妖精是特殊妖精**，
+ *      考虑到对称性**可能是两个**；第一面第二波如果是手动设计的话，是**只会有对称位置的 2 个小妖精**给 UFO，
+ *      且**排在队列最后**」
  *
- * **一手（逐条可复核；详见 `TUNING.md` §2.0zzm）**
- *   · 谁掉：TH12 的令牌只由 `dropExtra(10/11/12, n)`（ECL op 407）给出，而这条指令只出现在
- *     `GirlB01`、`GirlB01b`、`GirlC01b/c/d`、`GirlD01-03`、`Phantom*` 这几族子程序 + boss/道中 boss 的死亡段里
- *     （7 关 ECL + default.ecl 全扫过）。
- *   · 换皮用的三张图：TH12 `enemy.anm` 的 **sprite125..132**（64×64 蝴蝶 = "第一二行"）、
- *     **sprite84..87**（32×32 小妖精 = "妖精贴图第 4 行"）、**sprite167..172**（64×32 头顶旋转飞碟
- *     = "第二行右半"）⇒ 切图见 `assets/ability/make_ufo_carrier_art.py`，脚本 **351/352/353**（+ 灰影子
- *     **354/355**，一手 = `enemy.anm` script45 / script35 / script98(+100/101) 逐条移植）。
+ * ⇒ 三条硬规则（**都不是"整族换皮"，而是"这一只带着 UFO"的视觉标记**）：
+ *   **A. 谁能带**：`UFO_CARRIER_KEYS[]`（生成器扫出来的宿主表）——
+ *      · **32×32 且一碰就碎**（`hp ≤ 400`）的**杂鱼妖精** ⇒ 穿妖精皮（脚本 352 = TH12 `sprite84..87`）；
+ *      · **64×64** 的**大蝴蝶** ⇒ 穿蝴蝶皮（脚本 351 = TH12 `sprite125..132`）；
+ *      · **其余（48×32 / 48×48 的中妖精家族）不是宿主**：不换皮、一枚都不掉（owner ⑥）。
+ *   **B. 一波只挑 1~2 只**（owner ⑦）：同一波（同 `(N,S)`、到达间隔 ≤ `UFO_CARRIER_WAVE_GAP` 帧）里
+ *      只把**最后到达**的那一只 + 它的**镜像伙伴**（`|x1+x2| ≤ 16`、`|y1−y2| ≤ 24`）选成宿主 ——
+ *      「排在队列最后」+"对称位置的 2 个"。其余同波同类妖精**保持原生贴图、不掉令牌**。
+ *      （波号靠 **`enemy_id` 单调递增** = 创建顺序，所以"最后到达"就是"创建得最晚"那只。）
+ *   **C. 换皮的画面**：皮 VM（`layer(8)`）+ 头顶飞碟 VM（脚本 353，`layer(9)`、脚本自带 `pos(0,-32)`），
+ *      每帧跟着敌人的 `final_pos`；同时**把原生贴图隐掉**（每帧写宿主槽 0 的 VM `color_1` alpha = 0），
+ *      收尾（删卡 / 换关 / 敌人消失）**还原**原来那一色。
  *
- * **本卡怎么做**
- *   · 宿主 = **TH18 自己的原生敌人**（不新增敌人）：每游玩帧扫一遍敌机，凡 `(N,S)` 命中
- *     `UFO_CARRIER_KEYS[]`（= 与 TH12 那些宿主子程序**同名**的 TH18 子程序，逐关扫出来的）就：
- *       ① 起一只"皮"VM（蝴蝶/妖精走位，脚本 351/352）压在原位；② 起一只"头顶飞碟"VM（脚本 353）；
- *       ③ **把原生贴图隐掉**（每帧写 `vm+0x524` 的 alpha = 0；收尾时**还原**原来那一色）。
- *   · 只有这些宿主（+ boss）击破才掉令牌 ⇒ 旧的"任意带掉落表的敌人 + 300 帧节流"那条路默认关掉
- *     （`UFO_TOKEN_DROP_LEGACY`，1 = 回退到旧行为）。
- *   · 皮/标记的飞行**层级**照一手：皮 `layer(8)`（脚本里写死）、标记 `layer(9)` —— 都在世界层，
- *     且都**压在本体（7）之上**；标记脚本自己写 `pos(0, -32)` = 头顶 32 单位。
- *
- * **⚠ 已知取舍（登记在 `TUNING.md` §2.0zzm / `AUDIT.md` §BE #87）**
- *   ① 隐掉原生贴图是**每帧写 alpha**（不是删 VM）：宿主自己的 anm 脚本若在跑 `alphaTime`/`colorTime`，
- *      有可能在引擎帧内**晚于**我们写回自己的 alpha ⇒ 实跑若看到"两边都露"，把 `UFO_CARRIER_HIDE_NATIVE`
- *      的写法换成 `ce_anm_delete(native_vm)`（那就不可还原了，见宏处的注释）。
- *   ② 表是按**同名子程序 + 精灵尺寸**对出来的（TH18 没有蝴蝶这种敌人），owner 要过一眼：
- *      不对就改 `ufo_carrier_table.h` 的表（生成器的 `CARRIER_SUBS` 名单），改表不动代码。 */
-#define UFO_CARRIER_MAX            16     /* 同时挂皮的宿主上限（超出的宿主仍然掉令牌，只是不换皮）*/
-#define UFO_CARRIER_SKIN_ENABLE     1     /* 0 = 完全不换皮（只保留"谁能掉"那条改动）*/
+ * **一手依据**：表 = `native/tools/gen_ufo_carrier_table.py` 从 TH18 的 7 关 ECL + `enemy.anm` 现扫
+ * （键 = `enemy+0x1494/0x1498` 的 `(N,S)`「它长什么样」，与 110 的大信仰点表同一套判据）；
+ * 三张皮 = TH12 `enemy.anm` 的 `sprite125..132` / `84..87` / `167..172` 1:1 切图（`make_ufo_carrier_art.py`）。
+ * 逐条推导与退役清单见 `TUNING.md` §2.0zzm / §2.0zzo / §2.0zzp / §2.0zzq，实跑判据见
+ * `SINGLE-CARD-TEST.md` §本批14-1。 */
+#define UFO_CARRIER_TRACK_MAX      24     /* 同时跟踪的"候选 + 宿主"上限（波里多出来的只跟丢不换皮）*/
+#define UFO_CARRIER_WAVE_MAX       12     /* 一波里最多记这么多只候选 */
+#define UFO_CARRIER_WAVE_GAP       20     /* 相邻两只到达间隔 > 它 ⇒ 算新的一波（帧）*/
+#define UFO_CARRIER_PER_WAVE        2     /* 一波里最多几只宿主：owner ⑦「一般 1 只，考虑对称性 2 只」*/
+#define UFO_CARRIER_SYM_XTOL       16.0f  /* 镜像判据（单位）：|x1 + x2| ≤ 它 */
+#define UFO_CARRIER_SYM_YTOL       24.0f  /*                  |y1 − y2| ≤ 它 */
+#define UFO_CARRIER_SKIN_ENABLE     1     /* 0 = 不换皮（只保留"谁能掉"那条规则）*/
 #define UFO_CARRIER_HIDE_NATIVE     1     /* 1 = 隐掉宿主原生贴图（每帧写 alpha 0；收尾还原）*/
 #define UFO_CARRIER_BODY_LAYER      8     /* 一手：`enemy.anm` script45 / script35 的 `layer(8)` */
 #define UFO_CARRIER_MARK_LAYER      9     /* 一手：script98 的 `layer(9)`（压在皮之上）*/
-#define UFO_CARRIER_ALPHA_HIDDEN    0x00ffffffu   /* D3DCOLOR：alpha 0、RGB 白（与整 B 藏原生星同一个手法）*/
-#define UFO_TOKEN_DROP_LEGACY       0     /* 1 = 同时保留旧的"任意带掉落表的敌人也掉"那条路 */
+#define UFO_CARRIER_ALPHA_HIDDEN    0x00ffffffu   /* D3DCOLOR：alpha 0、RGB 白（同整 B 藏原生星的手法）*/
+#define UFO_TOKEN_DROP_LEGACY       0     /* 1 = 旧行为：任意带掉落表的小怪也掉（owner 口径已废）*/
+
+/* ★★ owner 2026-09-24 第 11 轮：「道中 boss 怎么是掉落一红一蓝啊，掉落两蓝的也有 ——
+ *   **统一改成两个会变的随机吧**」⇒ **任何宿主 / boss 击破都掉 2 枚**，而且都是"会变的"令牌
+ *   （登记时 `color = UFO_COLOR_NONE` ⇒ 走 `ufo_tok_spawn()`：随机起始色 + 每 150 帧换一色）。
+ *   ⚠ 退役（历史口径留在 `TUNING.md` §2.0zzn / §2.0zzm-4）：妖精1/蝴蝶2 两个宏、逐关固定色掩码表、
+ *     boss 的 1 红 + 1 绿（`pend_drop_boss`）。 */
+#define UFO_CARRIER_TOKENS_DROP    2      /* ★ owner 口径：任何宿主 / boss 击破都掉 2 枚 */
 
 typedef struct {
     uint8_t  used;
-    uint8_t  kind;                 /* `ufo_carrier_kind_t`（表里的那一档）*/
+    uint8_t  carrier;              /* 1 = 这一只被选中（换皮 + 掉令牌）；0 = 只是波里的普通妖精 */
+    uint8_t  logged;               /* 换皮日志每只只报一次 */
+    uint8_t  kind;                 /* `ufo_carrier_kind_t` */
+    int16_t  n, s;                 /* 外观身份（`anmSelect` 的 N / 主脚本 S）*/
     int32_t  enemy_id;
-    uint32_t body_vm;              /* 皮（351 蝴蝶 / 352 妖精）*/
-    uint32_t mark_vm;              /* 头顶飞碟（353，自带两只灰影子）*/
+    float    skin_scale;           /* 皮的缩放（表里的 `skin_scale_permille`）= 1.0（三条规则下恒等）*/
+    uint32_t body_vm, mark_vm;     /* 皮 / 头顶飞碟 */
     uint32_t native_vm;            /* 宿主自己的 anm VM id（每帧复查，引擎可能重建）*/
     uint32_t native_color;         /* 隐掉之前 `vm+0x524` 的原值（收尾还原）*/
     uint32_t seen_tick;
 } ufo_carrier_t;
 
-static ufo_carrier_t s_carriers[UFO_CARRIER_MAX];
+typedef struct {                   /* 一波里的候选（到达顺序 = `enemy_id` 顺序）*/
+    int32_t enemy_id;
+    int16_t n, s;
+    float   x, y;
+} ufo_carrier_wave_t;
+
+static ufo_carrier_t s_carriers[UFO_CARRIER_TRACK_MAX];
+static ufo_carrier_wave_t s_wave[UFO_CARRIER_WAVE_MAX];
+static int s_wave_n;
+static uint32_t s_wave_last_arrival;
 static uint32_t s_carrier_tick_no;
-static unsigned s_carrier_live, s_carrier_peak, s_carrier_fail, s_carrier_hidden;
+static unsigned s_carrier_live, s_carrier_peak, s_carrier_fail, s_carrier_hidden,
+                s_carrier_waves, s_carrier_plain;      /* plain = 同波但没被选中的那些 */
 
-/* ══ 掉落的**枚数**与**颜色** —— ★★ owner 2026-09-24 第 11 轮口径：**「统一改成两个会变的随机吧」** ══
- *
- * owner 原话（两段）：「我看网上视频的**道中 boss 怎么是掉落一红一蓝**啊，**掉落两蓝的也有**」
- *   +「**统一改成两个会变的随机吧**」。
- * ⇒ 本卡**所有**令牌掉落（妖精宿主 / 大蝴蝶宿主 / boss / 道中 boss）统一 = **2 枚**，而且**都是"会变的"
- *   令牌**（一手 type 13/14/15 那种：起始色随机、之后每 150 帧换一色）—— 也就是走 `ufo_tok_spawn()`
- *   那条路（登记时 `color = UFO_COLOR_NONE`、`cycler = 1`）。
- *
- * ⚠ **本轮退役（历史留档见 `TUNING.md` §2.0zzm-4；上一版的值一个都不要再捡回来）**
- *   · 「妖精 1 枚 / 大蝴蝶 2 枚」两个宏（`UFO_CARRIER_TOKENS_FAIRY/_BFLY`）；
- *   · **逐关固定色掩码表**（按 TH12 各关宿主自己写的 `dropExtra(10/11/12, n)` 抄的
- *     `UFO_CARRIER_STAGE_COLORS` + `ufo_carrier_stage_color()`）；
- *   · boss 的「1 红 + 1 绿」（`UFO_CARRIER_BOSS_COLOR1/2` + `pend_drop_boss` 那套红绿交替）。
- *   为什么连"固定色"一起废掉：owner 的视频观察（道中 boss 掉「1 红 1 蓝」甚至「2 蓝」）说明我们那套
- *   「类型 10/11/12 → 红/蓝/绿」的读法本身就对不上实机；既然现在统一成"会变的随机"，这个分歧
- *   **不再影响任何实装值**（`ufo_carrier_table.h` 头注里那条「`dropExtra(13, n)` 存疑」同理）。 */
-#define UFO_CARRIER_TOKENS_DROP    2      /* ★ owner 口径：任何宿主 / boss 击破都掉 2 枚（会变的 + 起始色随机）*/
-
-/* 宿主判据：`enemy+0x1494` 的 N 与 `+0x1498` 的 S 命中宿主表 ⇒ 返回档位；否则 −1。
- * （为什么只用这两个数：死亡事件里**没有**敌人类型号，`(N,S)` 是"它长什么样"的机器可读形式，
- *   与 110 的大信仰点表同一套判据 —— 见 `ufo_carrier_table.h` 的头注。）*/
+/* 宿主判据：`(N,S)` 命中宿主表 ⇒ 返回档位；否则 −1（表本身已经把"中妖精家族"剔掉了）。*/
 static int ufo_carrier_kind_of(const uint8_t *e)
 {
     int32_t n, s;
@@ -1978,10 +1984,33 @@ static int ufo_carrier_kind_of(const uint8_t *e)
     return -1;
 }
 
+static float ufo_carrier_skin_scale(const uint8_t *e, int kind)
+{
+    int32_t n, s;
+    int i;
+    if (!e) return 1.0f;
+    n = *(const int32_t *)(e + CE_ENEMY_ANM_SRC);
+    s = *(const int32_t *)(e + CE_ENEMY_ANM_SCRIPT);
+    for (i = 0; i < UFO_CARRIER_KEY_COUNT; ++i)
+        if (UFO_CARRIER_KEYS[i].n == n && UFO_CARRIER_KEYS[i].s == s &&
+            (int)UFO_CARRIER_KEYS[i].kind == kind)
+            return (float)UFO_CARRIER_KEYS[i].skin_scale_permille / 1000.0f;
+    return 1.0f;
+}
+
 static int ufo_carrier_body_script(int kind)
 {
     return kind == (int)UFO_CARRIER_KIND_BFLY ? CE_ANM_ABILITY_SCRIPT_UFO_CARRIER_BUTTERFLY
                                               : CE_ANM_ABILITY_SCRIPT_UFO_CARRIER_FAIRY;
+}
+
+static ufo_carrier_t *ufo_carrier_find(int32_t id)
+{
+    int i;
+    if (!id) return 0;
+    for (i = 0; i < UFO_CARRIER_TRACK_MAX; ++i)
+        if (s_carriers[i].used && s_carriers[i].enemy_id == id) return &s_carriers[i];
+    return 0;
 }
 
 /* 还原宿主原生贴图的颜色（幂等；句柄/原值都清掉）。 */
@@ -1998,32 +2027,92 @@ static void ufo_carrier_unhide(ufo_carrier_t *c)
     c->native_color = 0;
 }
 
-/* 收掉一个槽（皮 + 标记 + 还原原生贴图）。幂等。 */
+/* 收掉一个跟踪槽（皮 + 标记 + 还原原生贴图）。幂等。 */
 static void ufo_carrier_release(ufo_carrier_t *c)
 {
     if (!c || !c->used) return;
     ufo_carrier_unhide(c);
     if (c->body_vm) { ce_anm_delete(c->body_vm); c->body_vm = 0; }
     if (c->mark_vm) { ce_anm_delete(c->mark_vm); c->mark_vm = 0; }
+    if (c->carrier && s_carrier_live) --s_carrier_live;
     c->used = 0;
+    c->carrier = 0;
     c->enemy_id = 0;
     c->kind = 0;
-    if (s_carrier_live) --s_carrier_live;
 }
 
-/* 全部收掉（删卡 / 换关 / run reset 那条路 —— 见 `ufo_withdraw_all`）。
- * ★ 顺便报一条**每批一次**的对账日志（活着几只 / 峰值 / 槽满拒掉几次 / 现在隐掉了几只宿主）——
- *   实跑核「换皮有没有生效、有没有把宿主留在隐形状态」就只看这一行。 */
+/* 全部收掉（删卡 / 换关 / run reset 那条路 —— 见 `ufo_withdraw_all`）。顺手报一条每批一次的对账。 */
 static void ufo_carrier_kill_all(void)
 {
     int i;
-    for (i = 0; i < UFO_CARRIER_MAX; ++i) ufo_carrier_release(&s_carriers[i]);
-    if (s_carrier_peak || s_carrier_fail || s_carrier_hidden)
-        ce_log("ufo: carrier skins released - peak %u host(s) skinned at once, %u refused (slots full, "
-               "%d max), %u native sprite(s) still hidden after release (must be 0)",
-               s_carrier_peak, s_carrier_fail, (int)UFO_CARRIER_MAX, s_carrier_hidden);
+    for (i = 0; i < UFO_CARRIER_TRACK_MAX; ++i) ufo_carrier_release(&s_carriers[i]);
+    s_wave_n = 0;
+    if (s_carrier_peak || s_carrier_fail || s_carrier_hidden || s_carrier_waves)
+        ce_log("ufo: carrier skins released - %u wave(s) judged, peak %u host(s) at once, %u same-wave "
+               "fairy(ies) left plain, %u refused (track full, %d max), %u native sprite(s) still hidden "
+               "after release (must be 0)",
+               s_carrier_waves, s_carrier_peak, s_carrier_plain, s_carrier_fail,
+               (int)UFO_CARRIER_TRACK_MAX, s_carrier_hidden);
     s_carrier_peak = 0;
     s_carrier_fail = 0;
+    s_carrier_waves = 0;
+    s_carrier_plain = 0;
+}
+
+/* 一波结束 ⇒ 选宿主：**最后到达的那一只** + 它的**镜像伙伴**（owner ⑦「一般 1 只，考虑对称性 2 只」
+ * 「只会有对称位置的 2 个小妖精……且排在队列最后」）。 */
+static void ufo_carrier_wave_flush(void)
+{
+    int i, picked = 0, last_i;
+    ufo_carrier_t *c;
+    if (s_wave_n <= 0) return;
+    ++s_carrier_waves;
+    last_i = s_wave_n - 1;                             /* 队列最后 = 创建得最晚（id 单调递增）*/
+    if ((c = ufo_carrier_find(s_wave[last_i].enemy_id)) != 0 && !c->carrier) {
+        c->carrier = 1;
+        ++s_carrier_live;
+        if (s_carrier_live > s_carrier_peak) s_carrier_peak = s_carrier_live;
+        ++picked;
+    }
+    if (UFO_CARRIER_PER_WAVE >= 2) {                   /* 找它的镜像伙伴（同波、同 (N,S)、x ≈ −x、y 接近）*/
+        for (i = last_i - 1; i >= 0; --i) {
+            float dx = s_wave[i].x + s_wave[last_i].x;
+            float dy = s_wave[i].y - s_wave[last_i].y;
+            if (dx < 0.0f) dx = -dx;
+            if (dy < 0.0f) dy = -dy;
+            if (s_wave[i].n != s_wave[last_i].n || s_wave[i].s != s_wave[last_i].s) continue;
+            if (dx > UFO_CARRIER_SYM_XTOL || dy > UFO_CARRIER_SYM_YTOL) continue;
+            if ((c = ufo_carrier_find(s_wave[i].enemy_id)) != 0 && !c->carrier) {
+                c->carrier = 1;
+                ++s_carrier_live;
+                if (s_carrier_live > s_carrier_peak) s_carrier_peak = s_carrier_live;
+                ++picked;
+            }
+            break;
+        }
+    }
+    s_carrier_plain += (unsigned)(s_wave_n - picked);
+    ce_log("ufo: carrier wave judged - %d candidate(s) (N %d, S %d), picked %d as host(s): enemy_id %d "
+           "at (%.0f, %.0f)%s (owner: one per wave, two when symmetric, at the END of the queue)",
+           s_wave_n, (int)s_wave[0].n, (int)s_wave[0].s, picked, (int)s_wave[last_i].enemy_id,
+           (double)s_wave[last_i].x, (double)s_wave[last_i].y,
+           picked > 1 ? " + its mirror" : " (no mirror found)");
+    s_wave_n = 0;
+}
+
+/* 死亡回调里的那一问：**这一只是不是宿主**。
+ * ⚠ 两种情况要看死人的顺序：① 这一波还没结束（玩家把"队列最后那只"提前打死了 —— 一手里那只就是宿主）；
+ * ② 刚出生就被打死（我们还没扫到过它）⇒ 把它所在的那一波**当场判掉**再问一次。
+ * 这样"宿主 = 本波最后到达的那一只"这条规则不会因为死亡时机而漏掉。 */
+static int ufo_carrier_host_now(int32_t id)
+{
+    ufo_carrier_t *c = ufo_carrier_find(id);
+    int i;
+    if (c && c->carrier) return 1;
+    for (i = 0; i < s_wave_n; ++i)
+        if (s_wave[i].enemy_id == id) { ufo_carrier_wave_flush(); break; }
+    c = ufo_carrier_find(id);
+    return (c && c->carrier) ? 1 : 0;
 }
 
 /* ★ 每游玩帧扫一遍敌机（调用点 = `on_item_frame`，与本体跟随 VM 同一拍）。
@@ -2042,48 +2131,67 @@ static void ufo_carrier_tick(void)
     CE_ENEMY_FOREACH(em, e) {
         int kind = ufo_carrier_kind_of(e);
         int32_t id;
-        ufo_carrier_t *c = 0;
-        if (kind < 0) continue;                       /* 不是宿主：一个字节都不碰 */
+        ufo_carrier_t *c;
+        if (kind < 0) continue;                        /* 不是宿主外观：一个字节都不碰 */
         id = *(const int32_t *)(e + CE_ENEMY_ID);
-        for (i = 0; i < UFO_CARRIER_MAX; ++i)
-            if (s_carriers[i].used && s_carriers[i].enemy_id == id) { c = &s_carriers[i]; break; }
-        if (!c) {                                     /* 新宿主：起皮 + 起头顶飞碟 */
-            for (i = 0; i < UFO_CARRIER_MAX; ++i)
+        c = ufo_carrier_find(id);
+        if (!c) {                                      /* 第一次见到这一只 ⇒ 只登记为"本波候选" */
+            for (i = 0; i < UFO_CARRIER_TRACK_MAX; ++i)
                 if (!s_carriers[i].used) { c = &s_carriers[i]; break; }
-            if (!c) { ++s_carrier_fail; continue; }    /* 槽满：只掉令牌、不换皮（不报错）*/
+            if (!c) { ++s_carrier_fail; continue; }
             memset(c, 0, sizeof(*c));
             c->used = 1;
             c->enemy_id = id;
             c->kind = (uint8_t)kind;
-            c->body_vm = ce_anm_spawn(CE_ABILITY_ANM(), ufo_carrier_body_script(kind), UFO_CARRIER_BODY_LAYER);
-            c->mark_vm = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_UFO_CARRIER_MARK,
-                                      UFO_CARRIER_MARK_LAYER);
-            ++s_carrier_live;
-            if (s_carrier_live > s_carrier_peak) s_carrier_peak = s_carrier_live;
-            ce_log("ufo: carrier skin ON - enemy_id %d (N %d, S %d) -> %s; body script %d%s + mark script %d%s "
-                   "(owner 2026-09-24: UFO carriers wear the TH12 skin)",
-                   id, (int)*(const int32_t *)(e + CE_ENEMY_ANM_SRC), (int)*(const int32_t *)(e + CE_ENEMY_ANM_SCRIPT),
-                   kind == (int)UFO_CARRIER_KIND_BFLY ? "BFLY (sprite125..132 蝴蝶)" : "FAIRY (sprite84..87 妖精)",
-                   CE_ANM_ABILITY_SCRIPT_UFO_CARRIER_BUTTERFLY,
-                   kind == (int)UFO_CARRIER_KIND_BFLY ? "" : " or 352",
-                   CE_ANM_ABILITY_SCRIPT_UFO_CARRIER_MARK,
-                   c->mark_vm ? "" : " (FAILED)");
+            c->n = (int16_t)*(const int32_t *)(e + CE_ENEMY_ANM_SRC);
+            c->s = (int16_t)*(const int32_t *)(e + CE_ENEMY_ANM_SCRIPT);
+            c->skin_scale = ufo_carrier_skin_scale(e, kind);
+            /* 到达间隔 > GAP ⇒ 上一波到此为止（先把上一波判完，再开新的一波）*/
+            if (s_wave_n > 0 && (s_carrier_tick_no - s_wave_last_arrival) > UFO_CARRIER_WAVE_GAP)
+                ufo_carrier_wave_flush();
+            if (s_wave_n < UFO_CARRIER_WAVE_MAX) {
+                s_wave[s_wave_n].enemy_id = id;
+                s_wave[s_wave_n].n = c->n;
+                s_wave[s_wave_n].s = c->s;
+                s_wave[s_wave_n].x = *(const float *)(e + CE_ENEMY_POS_X);
+                s_wave[s_wave_n].y = *(const float *)(e + CE_ENEMY_POS_Y);
+                ++s_wave_n;
+            }
+            s_wave_last_arrival = s_carrier_tick_no;
         }
         c->seen_tick = s_carrier_tick_no;
-        {   /* 位置：两个 VM 的实体坐标 = 敌人的 `final_pos`（标记脚本自己写 `pos(0,-32)` = 头顶）*/
+        if (!c->carrier) continue;                     /* 没被选中 ⇒ 保持原生贴图、不掉令牌 */
+        /* —— 被选中的宿主：起皮（第一次进来时）+ 每帧跟随 + 隐掉原生贴图 —— */
+        if (!c->body_vm)
+            c->body_vm = ce_anm_spawn(CE_ABILITY_ANM(), ufo_carrier_body_script(c->kind), UFO_CARRIER_BODY_LAYER);
+        if (!c->mark_vm)
+            c->mark_vm = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_UFO_CARRIER_MARK,
+                                      UFO_CARRIER_MARK_LAYER);
+        if (!c->logged) {
+            c->logged = 1;
+            ce_log("ufo: carrier skin ON - enemy_id %d (N %d, S %d) -> %s x%.2f; body script %d + mark script %d "
+                   "(owner: the skin MEANS it carries a token)",
+                   (int)c->enemy_id, (int)c->n, (int)c->s,
+                   c->kind == (uint8_t)UFO_CARRIER_KIND_BFLY ? "BFLY (sprite125..132 蝴蝶)" : "FAIRY (sprite84..87 妖精)",
+                   (double)c->skin_scale, ufo_carrier_body_script(c->kind),
+                   CE_ANM_ABILITY_SCRIPT_UFO_CARRIER_MARK);
+        }
+        {
             float x = *(const float *)(e + CE_ENEMY_POS_X);
             float y = *(const float *)(e + CE_ENEMY_POS_Y);
-            if (c->body_vm) ce_anm_set_pos(c->body_vm, x, y, 0.0f);
+            if (c->body_vm) {
+                ce_anm_set_pos(c->body_vm, x, y, 0.0f);
+                if (c->skin_scale != 1.0f)
+                    ce_anm_set_scale(c->body_vm, c->skin_scale, c->skin_scale);
+            }
             if (c->mark_vm) ce_anm_set_pos(c->mark_vm, x, y, 0.0f);
         }
 #if UFO_CARRIER_HIDE_NATIVE
-        /* 隐掉原生贴图：**每帧**写（宿主的 anm 脚本可能自己在跑 alpha/color 插值）。
-         * VM id 会被引擎重建（`anmSetSprite`）⇒ 每帧复查，重建了就重新存一份原色。 */
-        {
+        {   /* 隐掉原生贴图：**每帧**写（宿主的 anm 脚本可能自己在跑 alpha/color 插值）。 */
             uint32_t nv = *(const uint32_t *)(e + CE_ENEMY_DATA + 0x124);   /* `anm_vm_ids[0]`（K=0 那一槽）*/
             if (nv != c->native_vm) {
                 uint8_t *vm = nv ? ce_anm_get_vm(nv) : 0;
-                if (c->native_vm && c->native_color) {                     /* 旧的那只还回去 */
+                if (c->native_vm && c->native_color) {                      /* 旧的那只还回去 */
                     uint8_t *old = ce_anm_get_vm(c->native_vm);
                     if (old) *(uint32_t *)(old + CE_ANM_VM_COLOR1) = c->native_color;
                     if (s_carrier_hidden) --s_carrier_hidden;
@@ -2099,8 +2207,11 @@ static void ufo_carrier_tick(void)
         }
 #endif
     }
+    /* 这一波没有新面孔了 ⇒ 判定这一波（选宿主）*/
+    if (s_wave_n > 0 && (s_carrier_tick_no - s_wave_last_arrival) > UFO_CARRIER_WAVE_GAP)
+        ufo_carrier_wave_flush();
     /* 这一帧没见到的（死了 / 飞走了 / 换关清了场）⇒ 收皮 + 还原颜色 */
-    for (i = 0; i < UFO_CARRIER_MAX; ++i)
+    for (i = 0; i < UFO_CARRIER_TRACK_MAX; ++i)
         if (s_carriers[i].used && s_carriers[i].seen_tick != s_carrier_tick_no)
             ufo_carrier_release(&s_carriers[i]);
 #endif  /* UFO_CARRIER_SKIN_ENABLE */
@@ -4569,21 +4680,24 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
      *   场上的硬上限仍是 `UFO_TOKEN_MAX`。 */
     {
         const uint8_t *ee = (const uint8_t *)ev->enemy;
-        int kind = ufo_carrier_kind_of(ee);
+        ufo_carrier_t *cc = ufo_carrier_find(ev->id);
+        int is_carrier = ufo_carrier_host_now(ev->id);   /* ★ 只有"每波挑选"选中的那一只掉 */
+        cc = ufo_carrier_find(ev->id);                   /* 判定后可能新建/更新过 ⇒ 重新取一次 */
         int is_boss = ee && (*(const uint32_t *)(ee + CE_ENEMY_FLAGS) & CE_ENEMY_FLAG_BOSS);
         int want = 0;
         int32_t col = UFO_COLOR_NONE;
         if (!(ev->flags & CE_EDEATH_F_REAL) || !ufo_body_kill_counts(ev->kind) || s->pend_drop ||
-            s->play_frame < s->next_token_at ||
             ufo_tok_live_count() >= UFO_TOKEN_MAX) {
-            /* 清场 / 假敌人 / 上一枚还没兑现 / 节流中 / 场上满了 ⇒ 这一只不算 */
-        } else if (kind >= 0 || is_boss) {
+            /* 清场 / 假敌人 / 上一枚还没兑现 / 场上满了 ⇒ 这一只不算 */
+        } else if (is_carrier || is_boss) {
             /* ★ owner 第 11 轮：**统一两个、会变的、随机** —— `col` 留 `UFO_COLOR_NONE`
-             * ⇒ 兑现时走 `ufo_tok_spawn()`（随机起始色 + 变色令牌），宿主与 boss 一模一样。 */
+             * ⇒ 兑现时走 `ufo_tok_spawn()`（随机起始色 + 变色令牌），宿主与 boss 一模一样。
+             * ⚠ 一手**没有冷却**（表里有就掉）⇒ 宿主/boss 这条**不吃 `next_token_at` 节流**
+             * （一波里那 2 只宿主都该掉；节流只留给 `UFO_TOKEN_DROP_LEGACY` 那条旧路）。 */
             want = UFO_CARRIER_TOKENS_DROP;
         }
 #if UFO_TOKEN_DROP_LEGACY
-        else if (ev->flags & CE_EDEATH_F_HAS_DROP) {
+        else if ((ev->flags & CE_EDEATH_F_HAS_DROP) && s->play_frame >= s->next_token_at) {
             want = 1;                                   /* 旧行为：任意带掉落表的小怪，一枚、随机色 */
         }
 #endif
@@ -4593,14 +4707,15 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
             s->pend_drop_color = col;
             s->pend_drop_x = ev->x;
             s->pend_drop_y = ev->y;
-            if (kind >= 0 || is_boss)
+            if (is_carrier || is_boss)
                 ce_log("ufo: token drop queued - %s (N %d, S %d)%s -> %d token(s), cycler + random "
                        "start colour (owner r11: two colour-changing random ones)",
-                       kind == (int)UFO_CARRIER_KIND_BFLY ? "BUTTERFLY host" :
-                       kind == (int)UFO_CARRIER_KIND_FAIRY ? "FAIRY host" : "boss",
+                       is_carrier ? (cc && cc->kind == (uint8_t)UFO_CARRIER_KIND_BFLY ? "BUTTERFLY host"
+                                                                                             : "FAIRY host")
+                                  : "boss",
                        ee ? (int)*(const int32_t *)(ee + CE_ENEMY_ANM_SRC) : -1,
                        ee ? (int)*(const int32_t *)(ee + CE_ENEMY_ANM_SCRIPT) : -1,
-                       is_boss && kind < 0 ? " [boss]" : "", want);
+                       is_boss && !is_carrier ? " [boss]" : "", want);
         }
     }
 }

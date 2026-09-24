@@ -46,9 +46,19 @@ owner 2026-09-24 口径：「th12 原版掉落飞碟的怪……只有**大蝴�
 | `GirlD01/02/03` | 400..2000 | 中~大 |
 | `PhantomC1` | 500 | 中 |
 
-⇒ 本表按 **hp 阈值**（`UFO_CARRIER_SCRUB_HP`，默认 **400**）分档：
-**min(hp) ≤ 400 ⇒ 杂鱼妖精皮（32×32，`sprite84..87`）；否则 ⇒ 大蝴蝶皮（64×64，`sprite125..132`）**。
-每行都把量到的 hp 区间写进注释，判据与结果一眼可核；要挪阈值或翻单行 = 改这个脚本再跑一遍。
+⇒ 本表按**三条**判定（owner 2026-09-24 第 13/14 轮）：
+
+1. **杂鱼妖精**：`min(hp) ≤ UFO_CARRIER_SCRUB_HP`（400 = 一碰就碎）**且原始精灵 32×32**
+   （「杂鱼妖精原始精灵尺寸也得是 32*32 的」）⇒ 穿杂鱼妖精皮（`sprite84..87`）**并掉令牌**；
+2. **大蝴蝶**：**原始精灵 64×64** ⇒ 穿大蝴蝶皮（`sprite125..132`）**并掉令牌**；
+3. **其余一律不是宿主** —— 尤其 **48×32 / 48×48 的那一族（中妖精）整族不入表**：
+   owner 原话「**同一波的那只中妖精不应该掉，整个中妖精家族就不应该掉**」+
+   「你把换皮看成是，**它带着 token，所以换皮**」+「所以**必须原本是 64\*64 是大蝴蝶**才换皮掉」。
+   ⇒ 换皮 = 「它带着 UFO」的**视觉标记**，所以只有 32×32 的杂鱼妖精与 64×64 的大蝴蝶会换皮（也才掉令牌）；
+   中妖精（48px）保持原生贴图、一枚都不掉。
+
+每行都把量到的 hp 区间与精灵尺寸写进表注释，判据与结果一眼可核；`skin_scale_permille` 只在
+"皮的原始边长 ≠ 宿主原始边长"时才不是 1000（上面三条下 32×32/64×64 都是 1.0，字段留着以后用）。
 
 # 用法（幂等）
 
@@ -187,8 +197,21 @@ def main() -> int:
         lo = min(hps) if hps else 0
         hi = max(hps) if hps else 0
         r["hp_lo"], r["hp_hi"] = lo, hi
-        # ★ owner 第 12 轮口径：**一碰就碎（hp ≤ 阈值）⇒ 杂鱼妖精皮**，其余（中/大，要打一会儿）⇒ 大蝴蝶皮。
-        r["kind"] = 'FAIRY' if (hps and lo <= SCRUB_HP) else 'BFLY'
+        w, h = r["size"]
+        big = max(w, h)
+        # ★ owner 2026-09-24 第 13/14 轮的三条（见文件头）：
+        #   ① 32×32 且一碰就碎 ⇒ 杂鱼妖精（换皮 + 掉）
+        #   ② 64×64        ⇒ 大蝴蝶（换皮 + 掉）
+        #   ③ 其余（48×32 / 48×48 = 中妖精家族）⇒ **不是宿主**（不换皮、不掉）
+        if big == 32 and hps and lo <= SCRUB_HP:
+            r["kind"] = 'FAIRY'
+            r["scale_permille"] = 1000
+        elif big == 64:
+            r["kind"] = 'BFLY'
+            r["scale_permille"] = 1000
+        else:
+            r["kind"] = 'NONE'          # 中妖精家族：整族不入表
+            r["scale_permille"] = 1000
     if not rows:
         print('✖ 一个宿主都没扫到（thecl / eclmap 路径对不上？）', file=sys.stderr)
         return 1
@@ -225,6 +248,7 @@ def main() -> int:
         '    uint8_t  sprite_h;',
         '    int16_t  hp_min;   /* 创建点 hp 的最小值（owner 第 12 轮的分档判据：≤ 400 = 一碰就碎）*/',
         '    int16_t  hp_max;',
+        '    int16_t  skin_scale_permille;  /* 皮的缩放（千分比）：宿主原始精灵 max(w,h) ÷ 皮的原始边长*/',
         '    const char *who;   /* 一手出处（TH12 侧的子程序名）*/',
         '    const char *stages;/* 在 TH18 的哪几关出现 */',
         '} ufo_carrier_key_t;',
@@ -232,12 +256,17 @@ def main() -> int:
         '/* ★ 表（按 (N,S) 升序；一条 = 一个"外观"）*/',
         'static const ufo_carrier_key_t UFO_CARRIER_KEYS[] = {',
     ]
+    dropped = [(n, s, r) for (n, s), r in sorted(rows.items()) if r["kind"] == 'NONE']
+    rows = {k: r for k, r in rows.items() if r["kind"] != 'NONE'}
+    for n, s, r in dropped:
+        print(f'  × 剔除 (N={n}, S={s:3d}) sprite {r["size"][0]}x{r["size"][1]} hp {r.get("hp_lo",0)}..{r.get("hp_hi",0)}'
+              f'  —— owner 口径：中妖精家族不是宿主（不换皮、不掉）')
     for (n, s), r in sorted(rows.items()):
         stages = '/'.join(f'st{i}' for i in sorted(r['stages']))
         who = '、'.join(sorted(r['who']))
         lines.append(f'    {{ {n:4d}, {s:4d}, UFO_CARRIER_KIND_{r["kind"]:<5}, '
                      f'{r["size"][0]:3d}, {r["size"][1]:3d}, {r.get("hp_lo", 0):5d}, {r.get("hp_hi", 0):5d}, '
-                     f'"{who}", "{stages}" }},')
+                     f'{r.get("scale_permille", 1000):5d}, "{who}", "{stages}" }},')
     lines += [
         '};',
         '#define UFO_CARRIER_KEY_COUNT (int)(sizeof(UFO_CARRIER_KEYS) / sizeof(UFO_CARRIER_KEYS[0]))',
@@ -250,7 +279,7 @@ def main() -> int:
     print(f'写 {os.path.relpath(OUT, ROOT)}（{len(rows)} 行）：')
     for (n, s), r in sorted(rows.items()):
         print(f'  (N={n}, S={s:3d}) {r["kind"]:5s} sprite {r["size"][0]}x{r["size"][1]}  '
-              f'hp {r.get("hp_lo", 0)}..{r.get("hp_hi", 0)}  '
+              f'hp {r.get("hp_lo", 0)}..{r.get("hp_hi", 0)} scale x{r.get("scale_permille", 1000) / 1000:.2f}  '
               f'stages={"".join(str(i) for i in sorted(r["stages"]))}  {"/".join(sorted(r["who"]))}')
     return 0
 
