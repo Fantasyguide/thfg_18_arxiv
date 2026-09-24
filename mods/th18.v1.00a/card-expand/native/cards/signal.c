@@ -2273,10 +2273,36 @@ static void signal_option_align(ce_card_t *c, signal_card_t *s, int want,
              *     没有一手，误判会去收别人的子机；用我们自己记的 id 是零风险判据。*/
             const uint32_t vm_before = *(const uint32_t *)(s_opt[i].ptr + CE_OPT_ANM_ID);
             if (!ce_option_claim(c, &s_opt[i])) {
+                /* ★★★ 2026-09-24（owner 实跑：「**残留一只，定在原地不动，C**」）：
+                 *   槽丢掉时**两支都要收**，只收「槽里现存的那支」不够：
+                 *     ① 槽里现存的那支 = `vm_before`（若它正是我们记下的 ⇒ 收掉）；
+                 *     ② **我们记下的那支** `s_opt_live_vm[i]` —— 引擎 repopulate 会把它从槽里摘掉
+                 *        （槽里换成新 id 或 0），而**摘掉之后没有任何代码再驱动它的位置**
+                 *        ⇒ 它就**定在原地**（正是 owner 看到的这一只）。
+                 *   ⚠ 只收「确实是我们申请过的那支 id」（`s_opt_live_vm[i]`），不碰别人的子机。*/
+                int k;
                 if (vm_before && vm_before == s_opt_live_vm[i] && ce_anm_get_vm(vm_before)) {
                     ce_anm_interrupt(vm_before, 1);
                     ce_log("signal: 收掉一支**遗留子机 VM**（槽 #%d 已丢，vm=%u；frame %u）",
                            i, (unsigned)vm_before, (unsigned)ce_sdk_frame());
+                }
+                /* ② 记录里那支：只要它还活着、而且**不再挂在任何槽上**就收掉（防「定在原地」）*/
+                if (s_opt_live_vm[i] && s_opt_live_vm[i] != vm_before && ce_anm_get_vm(s_opt_live_vm[i])) {
+                    int attached = 0;
+                    for (k = 0; k < SIGNAL_OPTION_MAX; ++k) {
+                        if (s_opt[k].ptr
+                            && *(const uint32_t *)(s_opt[k].ptr + CE_OPT_ANM_ID) == s_opt_live_vm[i]) {
+                            attached = 1;
+                            break;
+                        }
+                    }
+                    if (!attached) {
+                        ce_anm_interrupt(s_opt_live_vm[i], 1);
+                        ce_log("signal: 收掉**脱槽的旧子机 VM**（槽 #%d 记录里的 vm=%u，已不挂任何槽 ⇒ "
+                               "否则它会定在原地；frame %u）",
+                               i, (unsigned)s_opt_live_vm[i], (unsigned)ce_sdk_frame());
+                        s_opt_live_vm[i] = 0;
+                    }
                 }
                 s_opt[i].retry = 0;
                 s_opt_live_script[i] = -1;

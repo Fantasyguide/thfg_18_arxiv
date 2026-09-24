@@ -32,7 +32,10 @@ static int s_fail, s_pass;
  * 口径：读不到文件就**跳过**（别处的 cwd 不该误报），读到就逐条断言。*/
 static char *faith_slurp(const char *path)
 {
-    static char buf[4][262144];
+    /* ★ 2026-09-24：`signal.c` 已经涨到 **268 KB+**，而这里原来只给 256 KB ⇒ `fread` 被截断，
+     *   文件**尾部**的断言（`u.conv_value = SIGNAL_GREEN_MID` 那条，在 3476 行）永远读不到 ⇒
+     *   宿主单测假红。⇒ 每份 512 KB（补刷妖精那一批代码就是这么把文件顶过 256 KB 的）。*/
+    static char buf[4][524288];
     static int  slot;
     FILE *f = fopen(path, "rb");
     size_t n;
