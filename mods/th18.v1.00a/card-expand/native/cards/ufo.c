@@ -1922,9 +1922,100 @@ static void ufo_summon_fx_kill(void)
  * 三张皮 = TH12 `enemy.anm` 的 `sprite125..132` / `84..87` / `167..172` 1:1 切图（`make_ufo_carrier_art.py`）。
  * 逐条推导与退役清单见 `TUNING.md` §2.0zzm / §2.0zzo / §2.0zzp / §2.0zzq，实跑判据见
  * `SINGLE-CARD-TEST.md` §本批14-1。 */
+/* ---- ECL 波号（owner 2026-09-24 第 15 轮：「115 审计的时候看见了，**ecl 脚本里面是有波的计数的**」）----
+ * 一手与 115/117 同源（`native/cards/lolk.c` 的 `enemy_ecl_sub` / `animal.c` 的 `animal_enemy_sub_name`）：
+ *   · 关卡脚本 = 引擎建的那个 `main` 敌人（`parent_enemy_id == 0` 且当前子程序名是 `main` / `Main*`）；
+ *   · 它的**当前子程序**（`zEnemy+0xc` → `ctx+0x4`，子程序名从 `zEnemy+0x1218` → `fm+0x8c` 的
+ *     子程序表取，每项 8 B = {name, bytecode}）；
+ *   · 名字里的 **`MainSubNN` 数字 = 波号**（"MainSub00"→0、"MainSub01b"→1、"MainSub01c"→1；
+ *     `main` / `MainFront` / `MainBoss` 这种 → −1）。115 的注释把这件事写得很清楚：
+ *     「章/波的天然键 —— 去掉尾部字母后的数字是一章」。
+ * ⇒ **波 = MainSub 编号**（ECL 自己的计数），不再靠"到达间隔 ≤ N 帧"这种我们编的启发式；
+ *   拿不到时（例如开发壳、或主上下文恰好不在 MainSub 段）才退回间隔启发式（`s_stage_wave = -1`）。 */
+#define UFO_ENEMY_PARENT_ID    0x6834     /* zEnemy.parent_enemy_id（引擎建的关卡脚本 = 0）*/
+#define UFO_ENEMY_ECL_CTX      0x0c       /* zEnemy.ecl.context.current_context */
+#define UFO_ECL_CTX_SUB        0x04       /* zEclRunContext.cur_location.subroutine_index */
+#define UFO_ENEMY_ECL_FILEMGR  0x1218     /* zEnemy.ecl.file_manager */
+#define UFO_ECL_FM_SUB_TABLE   0x8c       /* zEclFileManager.subroutines */
+#define UFO_ECL_FM_SUB_COUNT   0x08       /* zEclFileManager 子程序个数 */
+#define UFO_MAINSUB_DIGITS_MAX 6
+
+static int32_t s_stage_script_id;         /* 关卡脚本那只敌人的 id（指针不跨帧缓存）*/
+static int32_t s_stage_wave = -1;         /* 本帧的 ECL 波号（MainSub 数字；-1 = 读不到）*/
+
+static const char *ufo_enemy_sub_name(const uint8_t *e, int32_t *out_sub)
+{
+    uint8_t *ctx, *fm, **subs;
+    int32_t sub;
+    if (out_sub) *out_sub = -1;
+    if (!e) return 0;
+    ctx = *(uint8_t **)(e + UFO_ENEMY_ECL_CTX);
+    fm  = *(uint8_t **)(e + UFO_ENEMY_ECL_FILEMGR);
+    if (!ctx || !fm) return 0;
+    sub = *(int32_t *)(ctx + UFO_ECL_CTX_SUB);
+    if (sub < 0 || sub >= *(int32_t *)(fm + UFO_ECL_FM_SUB_COUNT)) return 0;
+    subs = *(uint8_t ***)(fm + UFO_ECL_FM_SUB_TABLE);
+    if (!subs) return 0;
+    if (out_sub) *out_sub = sub;
+    return (const char *)subs[sub * 2];
+}
+
+static int32_t ufo_parse_mainsub_number(const char *n)
+{
+    int32_t v = 0;
+    int i;
+    if (!n) return -1;
+    if (strncmp(n, "MainSub", 7) != 0) return -1;
+    n += 7;
+    if (*n < '0' || *n > '9') return -1;
+    for (i = 0; i < UFO_MAINSUB_DIGITS_MAX && n[i] >= '0' && n[i] <= '9'; ++i) {
+        v = v * 10 + (n[i] - '0');
+        if (v > 99999) { v = 99999; break; }
+    }
+    return v;
+}
+
+static uint8_t *ufo_stage_script_find(uint8_t *em)
+{
+    uint8_t *e;
+    if (!em) return 0;
+    if (s_stage_script_id) {
+        e = ce_enemy_by_id(em, s_stage_script_id);
+        if (e) return e;
+        s_stage_script_id = 0;
+    }
+    CE_ENEMY_FOREACH(em, e) {
+        const char *name;
+        int32_t sub;
+        if (!e) continue;
+        if (*(const int32_t *)(e + UFO_ENEMY_PARENT_ID) != 0) continue;
+        name = ufo_enemy_sub_name(e, &sub);
+        if (name && (strncmp(name, "Main", 4) == 0 || strcmp(name, "main") == 0)) {
+            s_stage_script_id = *(const int32_t *)(e + CE_ENEMY_ID);
+            return e;
+        }
+    }
+    return 0;
+}
+
+/* 本帧的 ECL 波号（读不到就 −1；读不到时上层退回"到达间隔"那条启发式）。 */
+static int32_t ufo_stage_wave(void)
+{
+    uint8_t *em = (uint8_t *)CE_ENEMY_MGR();
+    uint8_t *e;
+    const char *name;
+    int32_t sub;
+    if (!em) return -1;
+    e = ufo_stage_script_find(em);
+    if (!e) return -1;
+    name = ufo_enemy_sub_name(e, &sub);
+    return ufo_parse_mainsub_number(name);
+}
+
 #define UFO_CARRIER_TRACK_MAX      24     /* 同时跟踪的"候选 + 宿主"上限（波里多出来的只跟丢不换皮）*/
 #define UFO_CARRIER_WAVE_MAX       12     /* 一波里最多记这么多只候选 */
-#define UFO_CARRIER_WAVE_GAP       20     /* 相邻两只到达间隔 > 它 ⇒ 算新的一波（帧）*/
+#define UFO_CARRIER_WAVE_GAP       20     /* 读不到 ECL 波号时：相邻两只到达间隔 > 它 ⇒ 算新的一波（帧）*/
+#define UFO_CARRIER_WAVE_SETTLE    60     /* 有 ECL 波号时：一波静默 > 它 ⇒ 判定（防止最后那波一直不判）*/
 #define UFO_CARRIER_PER_WAVE        2     /* 一波里最多几只宿主：owner ⑦「一般 1 只，考虑对称性 2 只」*/
 #define UFO_CARRIER_SYM_XTOL       16.0f  /* 镜像判据（单位）：|x1 + x2| ≤ 它 */
 #define UFO_CARRIER_SYM_YTOL       24.0f  /*                  |y1 − y2| ≤ 它 */
@@ -1958,6 +2049,7 @@ typedef struct {
 
 typedef struct {                   /* 一波里的候选（到达顺序 = `enemy_id` 顺序）*/
     int32_t enemy_id;
+    int32_t wave;                  /* ★ 这一只落地时的 **ECL 波号**（MainSub 数字；−1 = 读不到）*/
     int16_t n, s;
     float   x, y;
 } ufo_carrier_wave_t;
@@ -1965,6 +2057,7 @@ typedef struct {                   /* 一波里的候选（到达顺序 = `enemy
 static ufo_carrier_t s_carriers[UFO_CARRIER_TRACK_MAX];
 static ufo_carrier_wave_t s_wave[UFO_CARRIER_WAVE_MAX];
 static int s_wave_n;
+static int32_t s_wave_cur = -2;            /* 当前这组的 ECL 波号（−2 = 没开组、−1 = 读不到）*/
 static uint32_t s_wave_last_arrival;
 static uint32_t s_carrier_tick_no;
 static unsigned s_carrier_live, s_carrier_peak, s_carrier_fail, s_carrier_hidden,
@@ -2047,6 +2140,9 @@ static void ufo_carrier_kill_all(void)
     int i;
     for (i = 0; i < UFO_CARRIER_TRACK_MAX; ++i) ufo_carrier_release(&s_carriers[i]);
     s_wave_n = 0;
+    s_wave_cur = -2;
+    s_stage_script_id = 0;      /* 换关/删卡 ⇒ 关卡脚本的句柄与波号一起作废（下帧重新认）*/
+    s_stage_wave = -1;
     if (s_carrier_peak || s_carrier_fail || s_carrier_hidden || s_carrier_waves)
         ce_log("ufo: carrier skins released - %u wave(s) judged, peak %u host(s) at once, %u same-wave "
                "fairy(ies) left plain, %u refused (track full, %d max), %u native sprite(s) still hidden "
@@ -2092,10 +2188,11 @@ static void ufo_carrier_wave_flush(void)
         }
     }
     s_carrier_plain += (unsigned)(s_wave_n - picked);
-    ce_log("ufo: carrier wave judged - %d candidate(s) (N %d, S %d), picked %d as host(s): enemy_id %d "
-           "at (%.0f, %.0f)%s (owner: one per wave, two when symmetric, at the END of the queue)",
-           s_wave_n, (int)s_wave[0].n, (int)s_wave[0].s, picked, (int)s_wave[last_i].enemy_id,
-           (double)s_wave[last_i].x, (double)s_wave[last_i].y,
+    ce_log("ufo: carrier wave judged - MainSub %d (ECL wave count), %d candidate(s) (N %d, S %d), "
+           "picked %d as host(s): enemy_id %d at (%.0f, %.0f)%s "
+           "(owner: one per wave, two when symmetric, at the END of the queue)",
+           (int)s_wave_cur, s_wave_n, (int)s_wave[0].n, (int)s_wave[0].s, picked,
+           (int)s_wave[last_i].enemy_id, (double)s_wave[last_i].x, (double)s_wave[last_i].y,
            picked > 1 ? " + its mirror" : " (no mirror found)");
     s_wave_n = 0;
 }
@@ -2128,6 +2225,10 @@ static void ufo_carrier_tick(void)
     return;
 #else
     if (!em) return;
+    {   /* ★ 本帧的 ECL 波号（MainSub 数字）。读得到就更新 sticky，读不到沿用上一次 —— 与 117 同法。 */
+        int32_t w = ufo_stage_wave();
+        if (w >= 0) s_stage_wave = w;
+    }
     CE_ENEMY_FOREACH(em, e) {
         int kind = ufo_carrier_kind_of(e);
         int32_t id;
@@ -2146,16 +2247,25 @@ static void ufo_carrier_tick(void)
             c->n = (int16_t)*(const int32_t *)(e + CE_ENEMY_ANM_SRC);
             c->s = (int16_t)*(const int32_t *)(e + CE_ENEMY_ANM_SCRIPT);
             c->skin_scale = ufo_carrier_skin_scale(e, kind);
-            /* 到达间隔 > GAP ⇒ 上一波到此为止（先把上一波判完，再开新的一波）*/
-            if (s_wave_n > 0 && (s_carrier_tick_no - s_wave_last_arrival) > UFO_CARRIER_WAVE_GAP)
-                ufo_carrier_wave_flush();
-            if (s_wave_n < UFO_CARRIER_WAVE_MAX) {
-                s_wave[s_wave_n].enemy_id = id;
-                s_wave[s_wave_n].n = c->n;
-                s_wave[s_wave_n].s = c->s;
-                s_wave[s_wave_n].x = *(const float *)(e + CE_ENEMY_POS_X);
-                s_wave[s_wave_n].y = *(const float *)(e + CE_ENEMY_POS_Y);
-                ++s_wave_n;
+            /* ★ 分组键 = **ECL 自己的波号**（MainSub 数字，owner 第 15 轮点的那件事）：
+             *   波号变了 ⇒ 上一波到此为止（先把上一波判完，再开新的一波）；
+             *   读不到波号（−1）时才退回"到达间隔 > GAP"那条启发式。 */
+            {
+                int32_t w = (s_stage_wave >= 0) ? s_stage_wave : -1;
+                int new_wave = (s_wave_n > 0) &&
+                               ((w >= 0 && s_wave_cur >= 0 && w != s_wave_cur) ||
+                                (s_carrier_tick_no - s_wave_last_arrival) > UFO_CARRIER_WAVE_GAP);
+                if (s_wave_n > 0 && new_wave) ufo_carrier_wave_flush();
+                if (s_wave_n == 0) s_wave_cur = w;
+                if (s_wave_n < UFO_CARRIER_WAVE_MAX) {
+                    s_wave[s_wave_n].enemy_id = id;
+                    s_wave[s_wave_n].wave = w;
+                    s_wave[s_wave_n].n = c->n;
+                    s_wave[s_wave_n].s = c->s;
+                    s_wave[s_wave_n].x = *(const float *)(e + CE_ENEMY_POS_X);
+                    s_wave[s_wave_n].y = *(const float *)(e + CE_ENEMY_POS_Y);
+                    ++s_wave_n;
+                }
             }
             s_wave_last_arrival = s_carrier_tick_no;
         }
@@ -2207,9 +2317,13 @@ static void ufo_carrier_tick(void)
         }
 #endif
     }
-    /* 这一波没有新面孔了 ⇒ 判定这一波（选宿主）*/
-    if (s_wave_n > 0 && (s_carrier_tick_no - s_wave_last_arrival) > UFO_CARRIER_WAVE_GAP)
-        ufo_carrier_wave_flush();
+    /* 静默判定：有 ECL 波号时用较长的 SETTLE（一波里的刷出可能隔几十帧），
+     * 只有启发式时才用 GAP（否则最后那一波永远不会被判到）。*/
+    {
+        uint32_t quiet = (s_wave_cur >= 0) ? UFO_CARRIER_WAVE_SETTLE : UFO_CARRIER_WAVE_GAP;
+        if (s_wave_n > 0 && (s_carrier_tick_no - s_wave_last_arrival) > quiet)
+            ufo_carrier_wave_flush();
+    }
     /* 这一帧没见到的（死了 / 飞走了 / 换关清了场）⇒ 收皮 + 还原颜色 */
     for (i = 0; i < UFO_CARRIER_TRACK_MAX; ++i)
         if (s_carriers[i].used && s_carriers[i].seen_tick != s_carrier_tick_no)

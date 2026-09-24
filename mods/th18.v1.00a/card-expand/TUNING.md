@@ -5403,3 +5403,30 @@ start colour (owner r11: two colour-changing random ones)`。
    收尾 `ufo: carrier skins released - N wave(s) judged, peak 2 host(s) at once, M same-wave fairy(ies) left plain, …`
 
 **回归**：`dllx87` = 0（`ufo.c` 零告警）、`make check` 全绿；表变了、美术没变 ⇒ `ability.anm` 不变。
+
+### 2.0zzr ★★★ 112 的第**十五轮**（2026-09-24）：**波 = ECL 自己的波计数**（`MainSub` 编号），不再用"到达间隔"猜
+
+> owner 原话：「**波**的判定 = 同 (N,S)、到达间隔 ≤ 20 帧算同一波……**115 审计的时候看见了，ecl 脚本里面是有波的计数的**」。
+
+⇒ 上一轮那个「到达间隔 ≤ 20 帧」是**我编的启发式**；ECL 本来就把波写在子程序名里，而且 115/117
+两张卡早就把这套读法做出来了（`native/cards/lolk.c` 的 `enemy_ecl_sub`、`native/cards/animal.c`
+的 `animal_stage_mainsub`）。本轮改成用引擎自己的波号：
+
+| 项 | 一手 | 出处 |
+| --- | --- | --- |
+| **波号 = `MainSub` 数字** | 关卡脚本（引擎建的那个 `main` 敌人：`parent_enemy_id == 0` 且当前子程序名 `main` / `Main*`）的**当前子程序名**里那段数字：`MainSub00`→0、`MainSub01b`→1、`MainSub01c`→1；`main`/`MainFront`/`MainBoss` → −1 | 115 的原文：「章/波的天然键 —— 去掉尾部字母后的数字是一章，`01` + `01b`（+ `01c`）同章」|
+| 读数链 | `zEnemy+0xc`（当前 ECL 上下文）→ `ctx+0x4` 子程序号；`zEnemy+0x1218` → `fm+0x8c` 子程序表（每项 8 B = {name, bytecode}）| 与 115 `enemy_ecl_sub` / 117 `animal_enemy_sub_name` **同一套**（引擎自己读它：`th18:0x436a14`）|
+
+**改动**（`ufo.c` 的 `ufo_carrier_*` 一节）
+- 新增 `ufo_enemy_sub_name()` / `ufo_parse_mainsub_number()` / `ufo_stage_script_find()` / `ufo_stage_wave()`
+  （**照 115/117 的先例复制进本卡**，不动共享件），每帧读一次波号，读得到就更新 sticky。
+- **分组键从"到达间隔"改成"波号"**：波号一变 ⇒ 上一波结算（判宿主）；同一波号的候选归一组。
+- 「到达间隔」**只作为读不到波号时的退路**（`UFO_CARRIER_WAVE_GAP = 20`）；
+  有波号时改用 `UFO_CARRIER_WAVE_SETTLE = 60` 帧的静默阈值，**防止最后一波永远不被判到**。
+- 判定日志带上波号：`ufo: carrier wave judged - MainSub 1 (ECL wave count), 4 candidate(s) (N 2, S 5), picked 2 as host(s): enemy_id … + its mirror`。
+
+**为什么这样更对**：一面第二波那 4 只妖精是 `MainSub01`（+ 它的 `01b`/`01c` 辅助子程序）刷的 ——
+**波号就是 1**，与"玩家看到的一波"完全一致；而"到达间隔"遇到"同一波里分几拍刷"就会**误判成两波**。
+`ufo_carrier_kill_all()` 里同时把关卡脚本句柄与波号作废（换关/删卡下帧重新认）。
+
+**回归**：`dllx87` = 0（`ufo.c` 零告警）、`make check` 全绿；只改 `ufo.c` + 文档 ⇒ `ability.anm` 不变。
