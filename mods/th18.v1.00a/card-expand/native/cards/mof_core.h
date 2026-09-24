@@ -722,6 +722,14 @@ int32_t mof_core_graze_mult(int32_t graze);
  * 返回本帧半径（1/100 px）。线性、只增不减、帧 ≥ 120 保持目标值（一手曲线）。*/
 int32_t mof_core_bomb_radius_centi(int32_t frame, int32_t target_centi);
 
+/* 灵击消耗的**半档**（111 在场 + 魔理沙机体的额外特技）：50 单位 = 0.5 档。*/
+#define MOF_BOMB_POWER_COST_HALF   (MOF_BOMB_POWER_COST / 2)
+
+/* ★★ 灵击的**消耗规则**（110/111 **共用同一套系统**，见 `mof_core.c` 的实现注）：
+ *   `alice_on` = 「111 在场 + 魔理沙机体」⇒ 半档（门槛 1.55 档 / 扣 50 单位 / 下限 1.05 档）；
+ *   否则 = 常态（门槛 2.00 档 / 扣 1 档 / 下限 1.05 档）。*/
+mof_power_t mof_core_bomb_power_spend(int32_t power, int alice_on);
+
 /* 消弹/伤害中心每帧上移量（1/1000 px）。`spell_ish` = **小灵击档**（= `mof_core_bomb_suppressed()`）、
  * `reimu` = `CHARACTER == 0`。*/
 int32_t mof_core_bomb_rise_milli(int spell_ish, int reimu);

@@ -1276,6 +1276,9 @@ int faith_enemies_present(void)
 #define FAITH_GF_SAMPLES   8                /* 记几个出生点（队形采样上限）*/
 #define FAITH_GF_LIFE      40               /* 血量（TH18 小妖精量级；`CE_SPAWN_LIFE` 必须 < 1000）*/
 #define FAITH_GF_SCORE     0                /* 击破分：给 0 ⇒ 不靠它刷分（❓自定）*/
+/* ★ 2026-09-24：**入场段帧数** —— 出生后这么多帧里 y 从入场线插值到目标那一格
+ *   （≈0.75 s @60fps，与原生小妖精从 y=−32 走进场地的节奏同量级）。见 `gf_follow_tick()`。*/
+#define FAITH_GF_ENTER_FRAMES 45
 #define FAITH_GF_TTL       690              /* ★ 存活上限帧数（≈11.5 s @60fps）。2026-09-22 订正：
                                            *   旧注释写「只传给 ECL 记日志、子程序到点自己 delete」——
                                            *   **ECL 里没有这段**（它只认 `$I0 == 999`）⇒ 现在由卡侧的
@@ -1339,6 +1342,9 @@ typedef struct {
     int32_t id;          /* 这只绿妖精的 `enemy_id`（0 = 空槽）*/
     int32_t tgt_id;      /* 跟着的那只妖精的 `enemy_id`（0 = 还没定）*/
     float   off_x, off_y;/* 出生时定下的队形偏移（相对目标，常数 ⇒ 与目标同轨迹）*/
+    float   y0;          /* ★ 2026-09-24：**出生时的 y**（= 入场线）—— 入场那一段从它插值下来，
+                          *   见 `gf_follow_tick()`（owner：「有一个绿色妖精瞬间出现了一帧
+                          *   然后直接消失了」）。*/
     int32_t lost;        /* 目标找不到的连续帧数 */
     int32_t wave;        /* ★★ 2026-09-22：它属于第几波（`s_gf_wave`）—— **换目标不许跨波**：
                           *   否则上一波那只绿妖精会挂到下一波的妖精身上，永远有人可跟 ⇒ 既不 `lost`
@@ -1478,6 +1484,7 @@ static void gf_spawn_one(float x, float y, float tgt_x, float tgt_y)
                 s_gf_fol[i].id = id;
                 s_gf_fol[i].tgt_id = s_gf_tgt_id;
                 s_gf_fol[i].off_x = off_x;
+                s_gf_fol[i].y0    = (y < 0.0f) ? y : -32.0f;   /* 入场线（出生点通常已在场地之上）*/
                 s_gf_fol[i].off_y = off_y;
                 s_gf_fol[i].lost = 0;
                 s_gf_fol[i].wave = s_gf_wave;      /* ★ 归属本波：换目标不许跨波（见 `gf_fol_t`）*/
@@ -1569,9 +1576,18 @@ static void gf_follow_tick(uint8_t *em)
         tp = ce_enemy_pos(tg);
         if (!tp) continue;
         {   /* ★ 2026-09-24：**最终位置夹进游玩区**。换目标（`gf_pick_target`）之后偏移不变，
-             *   而新目标可能在另一头 ⇒ 不夹的话这支补刷妖精又会被带出屏幕（owner 报「看不见」）。*/
+             *   而新目标可能在另一头 ⇒ 不夹的话这支补刷妖精又会被带出屏幕（owner 报「看不见」）。
+             *   ★★ 同一轮：**入场段**（前 `FAITH_GF_ENTER_FRAMES` 帧）y 从**出生时的入场线**
+             *   插值到目标那一格 —— owner 实跑「有一个绿色妖精**瞬间出现了一帧然后直接消失**」：
+             *   原来第一帧就把 y 写成目标的 y（可能已在场地深处、正贴着火线）⇒ 它是**瞬移进场**
+             *   然后当帧被打掉；按同波妖精的入场节奏从上面飞下来才看得见
+             *   （也正是「补一只同队形成员」的原意）。*/
             float fx = tp[0] + f->off_x;
             float fy = tp[1] + f->off_y;
+            if (f->age < FAITH_GF_ENTER_FRAMES) {
+                const float u = (float)f->age / (float)FAITH_GF_ENTER_FRAMES;
+                fy = f->y0 + (fy - f->y0) * u;
+            }
             if (fx >  FAITH_GF_X_LIMIT) fx =  FAITH_GF_X_LIMIT;
             if (fx < -FAITH_GF_X_LIMIT) fx = -FAITH_GF_X_LIMIT;
             *(float *)(me + CE_ENEMY_ECL_F2) = fx;

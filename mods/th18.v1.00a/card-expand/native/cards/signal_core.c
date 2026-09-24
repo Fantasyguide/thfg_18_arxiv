@@ -506,20 +506,11 @@ int signal_hold_tick(signal_hold_t *h, int ok, int *rising)
  * 写在 `signal_core.h` 的 ④ 段，这里不重复推理，只放可执行形式（主机单测钉得住）。*/
 mof_power_t signal_core_alice_power_spend(int32_t power, int alice_on)
 {
-    mof_power_t r;
-
-    /* 非 Alice（或非魔理沙机体）⇒ **原样转发共用件**：110 与常态那套的行为逐字节不变。*/
-    if (!alice_on) return mof_core_power_spend(power);
-
-    r.ok = 0;
-    r.new_power = power;
-    /* 门槛 = 「能扣就扣」且**不越下限**：`power − 50 >= 105` ⇔ `power >= 155`（1.55 档）。
-     * ⚠ 不能用 `power >= 50`：那样 `power ∈ [50,105]` 会被下限**反向抬起来**（净赚火力）= 白嫖灵击。*/
-    if (power < SIGNAL_ALICE_BOMB_COST_UNITS + FAITH_POWER_FLOOR) return r;
-    r.ok = 1;
-    r.new_power = power - SIGNAL_ALICE_BOMB_COST_UNITS;
-    if (r.new_power < FAITH_POWER_FLOOR) r.new_power = FAITH_POWER_FLOOR;   /* 兜底（门槛已保证走不到）*/
-    return r;
+    /* ★ 2026-09-24：规则本体搬进**共用件**（`mof_core_bomb_power_spend()`）—— 因为 owner 口径是
+     *   「110 与 111 的灵击是**完全一套系统**，半档是 111+魔理沙 的额外特技」，无论谁放都该走同一条
+     *   （原来只有 111 自己放的那一发吃到半档）。本函数留作**兼容入口**，行为与旧版逐值相同，
+     *   主机单测（`test_signal_core`）原样通过。*/
+    return mof_core_bomb_power_spend(power, alice_on);
 }
 
 /* ⛔ **已退役（2026-09-15h）**：`signal_alice_p_total()` / `signal_alice_p_topup()` 两支连同

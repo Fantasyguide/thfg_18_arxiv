@@ -1122,9 +1122,24 @@ static int32_t mof_bomb_gate(void *user)
  * 「决死形态没发动」那一行日志与改动前**逐字相同**（它原来在 `mof_bomb_start()` 里）。*/
 static int32_t mof_bomb_power_spend(void *user, int32_t by_hit, int32_t power_now, int32_t *power_after)
 {
-    mof_power_t pw = mof_core_power_spend(power_now);
+    /* ★★★ 2026-09-24（owner：「110 和 111 的灵击应当是完全一套系统，而魔理沙机体 111 会有一些额外
+     *   灵击特技」）：**消耗规则与卡号无关** —— 111 在场 + 魔理沙机体时，**谁放的灵击都吃半档**
+     *   （原来只有 111 自己放的那一发吃，110 放照样扣整档 ⇒ owner 实跑「试图发动 110 灵击，
+     *   并没有以 0.5p 释放」）。判据与 111 侧、与 P 点补值那条（`faith_p_topup_take()`）**同源**：
+     *   `faith_registered_mask()` 的 111 位 + `CHARACTER == 魔理沙`。*/
+    int alice = ((faith_registered_mask() & (1 << FAITH_SLOT_111)) != 0
+                 && *(const volatile int32_t *)CE_ADDR_CHARACTER == FAITH_CHAR_MARISA) ? 1 : 0;
+    mof_power_t pw = mof_core_bomb_power_spend(power_now, alice);
 
     (void)user;
+    if (alice) {
+        static int s_logged;
+        if (!s_logged) {
+            s_logged = 1;
+            ce_log("mof: 灵击消耗走**半档**（111 在场 + 魔理沙机体；门槛 1.55 档 / 扣 50 单位 / 下限 1.05）"
+                   "—— 与 111 放的那一发同一条规则");
+        }
+    }
     if (!pw.ok) {
         if (by_hit) ce_log("mof: 灵击发动（决死）**没发动**：火力 %d 不够门槛（power_ok=0）⇒ 本次不救命",
                            (int)power_now);
