@@ -1209,7 +1209,6 @@ typedef struct {
     uint8_t     pend_drop;                             /* 1 = 有令牌等着落地（来源那条路）*/
     uint8_t     pend_drop_n;                           /* ★ 2026-09-24：这一批要落**几枚**（宿主表给：妖精 1 / 大蝴蝶 2 / boss 2）*/
     int32_t     pend_drop_color;                       /* ★ 2026-09-24：固定色（`UFO_COLOR_*`；`UFO_COLOR_NONE` = 走旧的随机/变色那条）*/
-    uint8_t     pend_drop_boss;                        /* ★ 2026-09-24：1 = 这一批是 boss 的（红/绿交替，一手 1+1）*/
     uint8_t     pending_break;                         /* 1 = 帧末要按「击破」收尾开奖 */
     uint8_t     logged_no_hud;                         /* 保留名：HUD「画起来了」日志只报一次（第三版起 = 原版槽 VM 到位）*/
     uint8_t     logged_lifetime;                       /* 存活上限日志每局只报一次 */
@@ -1945,59 +1944,23 @@ static ufo_carrier_t s_carriers[UFO_CARRIER_MAX];
 static uint32_t s_carrier_tick_no;
 static unsigned s_carrier_live, s_carrier_peak, s_carrier_fail, s_carrier_hidden;
 
-/* ---- 掉落的**枚数**与**颜色**（owner 2026-09-24 口径 + 一手）--------------------------------
- * 枚数：一手 `dropExtra(10..12, n)` 的 `n` 逐子程序不同（1..3：`GirlB01`(st02) 是 3、`GirlC01d` 是 2、
- *   大多数是 1）⇒ 本卡取「妖精 1 / 大蝴蝶 2」（❓ 自定，落在一手的 1..3 区间里；见 `TUNING.md` §2.0zzm）。
- * 颜色：一手把颜色**写死在敌人的掉落表**里、逐关不同 ⇒ 本卡按关给一张掩码表（七行都有一手出处）。
- * boss：一手每个相位 `dropExtra(10,1) + dropExtra(12,1)` = **1 红 + 1 绿**（道中 boss 死于一手那笔
- *   10~15 蓝不采用，理由见 `ufo_carrier_table.h` 头注）。*/
-#define UFO_CARRIER_TOKENS_FAIRY   1
-#define UFO_CARRIER_TOKENS_BFLY    2
-#define UFO_CARRIER_TOKENS_BOSS    2
-#define UFO_CARRIER_BOSS_COLOR1    UFO_COLOR_RED
-#define UFO_CARRIER_BOSS_COLOR2    UFO_COLOR_GREEN
-#define UFO_CARRIER_COL_RED   (1u << 0)
-#define UFO_CARRIER_COL_BLUE  (1u << 1)
-#define UFO_CARRIER_COL_GREEN (1u << 2)
-#define UFO_CARRIER_COL_ALL   (UFO_CARRIER_COL_RED | UFO_CARRIER_COL_BLUE | UFO_CARRIER_COL_GREEN)
-
-/* 逐关的令牌颜色（一手 = TH12 各关**掉落令牌的宿主子程序**自己写的 `dropExtra(10/11/12, n)`）：
- *   st01 `GirlB01` → 11 蓝；st02 `GirlB01` → 10 红、`GirlC01*` → 12 绿（两者都有）；
- *   st03 `PhantomC1` → 11 蓝；st04 `GirlB01` → 12 绿、`GirlD01-03` → 12/10；
- *   st05 **一手一个宿主都没有**（令牌只能来自环境蝴蝶）⇒ 三色都给；
- *   st06 `Phantom01c/d` → 12 绿 / 10 红；st07 `GirlB01`+`GirlD02` → 10 红 + 12 绿。*/
-static const uint8_t UFO_CARRIER_STAGE_COLORS[7] = {
-    UFO_CARRIER_COL_BLUE,
-    UFO_CARRIER_COL_RED | UFO_CARRIER_COL_GREEN,
-    UFO_CARRIER_COL_BLUE,
-    UFO_CARRIER_COL_GREEN | UFO_CARRIER_COL_RED,
-    UFO_CARRIER_COL_ALL,
-    UFO_CARRIER_COL_GREEN | UFO_CARRIER_COL_RED,
-    UFO_CARRIER_COL_RED | UFO_CARRIER_COL_GREEN,
-};
-
-/* 本关这一枚令牌该是什么色（掩码里随机取一个；颜色是**固定色**令牌，不走变色那条路）。
- * ⚠ 随机数用本卡自己的整数 LCG（`ufo_rand_next`）—— 引擎那两支走 x87，会踩 `dllx87` 硬门。 */
-static int32_t ufo_carrier_stage_color(int stage)
-{
-    uint8_t mask = (stage >= 1 && stage <= 7) ? UFO_CARRIER_STAGE_COLORS[stage - 1] : UFO_CARRIER_COL_ALL;
-    uint32_t roll = (s_rng_seed = ufo_rand_next(s_rng_seed));
-    int pick = (int)((roll >> 16) % 3u);
-    int i;
-    /* 从随机那一格开始绕一圈取第一个在掩码里的色（掩码空 = 不该发生，兜底红）*/
-    for (i = 0; i < 3; ++i) {
-        int k = (pick + i) % 3;
-        uint8_t bit = (uint8_t)(1u << k);
-        if (mask & bit) {
-            switch (k) {
-            case 0:  return UFO_COLOR_RED;
-            case 1:  return UFO_COLOR_BLUE;
-            default: return UFO_COLOR_GREEN;
-            }
-        }
-    }
-    return UFO_COLOR_RED;
-}
+/* ══ 掉落的**枚数**与**颜色** —— ★★ owner 2026-09-24 第 11 轮口径：**「统一改成两个会变的随机吧」** ══
+ *
+ * owner 原话（两段）：「我看网上视频的**道中 boss 怎么是掉落一红一蓝**啊，**掉落两蓝的也有**」
+ *   +「**统一改成两个会变的随机吧**」。
+ * ⇒ 本卡**所有**令牌掉落（妖精宿主 / 大蝴蝶宿主 / boss / 道中 boss）统一 = **2 枚**，而且**都是"会变的"
+ *   令牌**（一手 type 13/14/15 那种：起始色随机、之后每 150 帧换一色）—— 也就是走 `ufo_tok_spawn()`
+ *   那条路（登记时 `color = UFO_COLOR_NONE`、`cycler = 1`）。
+ *
+ * ⚠ **本轮退役（历史留档见 `TUNING.md` §2.0zzm-4；上一版的值一个都不要再捡回来）**
+ *   · 「妖精 1 枚 / 大蝴蝶 2 枚」两个宏（`UFO_CARRIER_TOKENS_FAIRY/_BFLY`）；
+ *   · **逐关固定色掩码表**（按 TH12 各关宿主自己写的 `dropExtra(10/11/12, n)` 抄的
+ *     `UFO_CARRIER_STAGE_COLORS` + `ufo_carrier_stage_color()`）；
+ *   · boss 的「1 红 + 1 绿」（`UFO_CARRIER_BOSS_COLOR1/2` + `pend_drop_boss` 那套红绿交替）。
+ *   为什么连"固定色"一起废掉：owner 的视频观察（道中 boss 掉「1 红 1 蓝」甚至「2 蓝」）说明我们那套
+ *   「类型 10/11/12 → 红/蓝/绿」的读法本身就对不上实机；既然现在统一成"会变的随机"，这个分歧
+ *   **不再影响任何实装值**（`ufo_carrier_table.h` 头注里那条「`dropExtra(13, n)` 存疑」同理）。 */
+#define UFO_CARRIER_TOKENS_DROP    2      /* ★ owner 口径：任何宿主 / boss 击破都掉 2 枚（会变的 + 起始色随机）*/
 
 /* 宿主判据：`enemy+0x1494` 的 N 与 `+0x1498` 的 S 命中宿主表 ⇒ 返回档位；否则 −1。
  * （为什么只用这两个数：死亡事件里**没有**敌人类型号，`(N,S)` 是"它长什么样"的机器可读形式，
@@ -4614,12 +4577,10 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
             s->play_frame < s->next_token_at ||
             ufo_tok_live_count() >= UFO_TOKEN_MAX) {
             /* 清场 / 假敌人 / 上一枚还没兑现 / 节流中 / 场上满了 ⇒ 这一只不算 */
-        } else if (kind >= 0) {
-            want = (kind == (int)UFO_CARRIER_KIND_BFLY) ? UFO_CARRIER_TOKENS_BFLY : UFO_CARRIER_TOKENS_FAIRY;
-            col = ufo_carrier_stage_color((int)CE_CURRENT_STAGE());
-        } else if (is_boss) {
-            want = UFO_CARRIER_TOKENS_BOSS;
-            col = UFO_CARRIER_BOSS_COLOR1;
+        } else if (kind >= 0 || is_boss) {
+            /* ★ owner 第 11 轮：**统一两个、会变的、随机** —— `col` 留 `UFO_COLOR_NONE`
+             * ⇒ 兑现时走 `ufo_tok_spawn()`（随机起始色 + 变色令牌），宿主与 boss 一模一样。 */
+            want = UFO_CARRIER_TOKENS_DROP;
         }
 #if UFO_TOKEN_DROP_LEGACY
         else if (ev->flags & CE_EDEATH_F_HAS_DROP) {
@@ -4630,17 +4591,16 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
             s->pend_drop = 1;
             s->pend_drop_n = (uint8_t)want;
             s->pend_drop_color = col;
-            s->pend_drop_boss = (uint8_t)((kind < 0 && is_boss) ? 1 : 0);   /* boss 那一批红/绿交替 */
             s->pend_drop_x = ev->x;
             s->pend_drop_y = ev->y;
             if (kind >= 0 || is_boss)
-                ce_log("ufo: token drop queued - %s (N %d, S %d)%s -> %d token(s), fixed color %d "
-                       "(owner 2026-09-24: only the TH12 carrier hosts drop)",
+                ce_log("ufo: token drop queued - %s (N %d, S %d)%s -> %d token(s), cycler + random "
+                       "start colour (owner r11: two colour-changing random ones)",
                        kind == (int)UFO_CARRIER_KIND_BFLY ? "BUTTERFLY host" :
                        kind == (int)UFO_CARRIER_KIND_FAIRY ? "FAIRY host" : "boss",
                        ee ? (int)*(const int32_t *)(ee + CE_ENEMY_ANM_SRC) : -1,
                        ee ? (int)*(const int32_t *)(ee + CE_ENEMY_ANM_SCRIPT) : -1,
-                       is_boss && kind < 0 ? " [boss]" : "", want, (int)col);
+                       is_boss && kind < 0 ? " [boss]" : "", want);
         }
     }
 }
@@ -4849,18 +4809,16 @@ static int on_tick_2(ce_card_t *c)
     if (s->pend_drop) {
         int n = s->pend_drop_n ? (int)s->pend_drop_n : 1;
         int32_t col = s->pend_drop_color;
-        int boss_mix = s->pend_drop_boss ? 1 : 0;
         int spawned = 0;
         s->pend_drop = 0;
         s->pend_drop_n = 0;
         s->pend_drop_color = 0;
-        s->pend_drop_boss = 0;
         /* ★★ 2026-09-24（owner「得改谁能飞碟掉落」）：宿主表那条路一次可能落**多枚**
          * （一手：`dropExtra(10,3)` 这种一台敌人一次掉 2-3 枚），并且**颜色按关固定**
          * （一手 type 10/11/12 = 红/蓝/绿，写死在敌人的掉落表里）。
          * 旧的"任意带掉落表的小怪"那条路保持原样（一枚、随机/变色）—— 见 `UFO_TOKEN_DROP_LEGACY`。 */
         while (n-- > 0) {
-            int32_t c = boss_mix ? ((n & 1) ? UFO_CARRIER_BOSS_COLOR2 : UFO_CARRIER_BOSS_COLOR1) : col;
+            int32_t c = col;                    /* 恒为 `UFO_COLOR_NONE` ⇒ 随机起始色 + 会变色 */
             int ok = ufo_token_color_is_field(c)
                          ? ufo_tok_spawn_ex(s, s->pend_drop_x, s->pend_drop_y, c, 0, 0)
                          : ufo_tok_spawn(s, s->pend_drop_x, s->pend_drop_y);

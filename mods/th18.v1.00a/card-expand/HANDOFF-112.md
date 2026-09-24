@@ -59,6 +59,7 @@
 | **owner 12 条实跑反馈（2026-09-23 深夜）** | 12 条：面板关掉 · ×N 改回 ASCII · 吸收/收碟静音 · 吸满音 = `se_cardget` · 满 B 换本作完整 B 卡面 · **召唤不再吃光场上 token** · 召唤特效真的起来 + 新音效槽 `se_ufo` · 对话 token 直飞 · `se_piyo` 事件号修好 · UFO 在场持续 `se_ufoalert` · 击破爆炸特效 | 逐条判据（含日志关键字）见 [`SINGLE-CARD-TEST.md`](SINGLE-CARD-TEST.md) 的「本批（2026-09-23 深夜）」表；自定值与「复刻 / owner 口径」的分类见 [`TUNING.md`](TUNING.md) §2.0zza |
 | **owner 第 8 轮 3 条（2026-09-24）** | ① 拉拽改**匀速 3.0**（压过落体末速 2.0）· ② 出生无敌 = **不做**（一手就没有） · ③ 击破音 **`se_enep02`** · ④ ×N 底下补**得分行** | 见 `SINGLE-CARD-TEST.md` §本批8-1/8-2 + `TUNING.md` §2.0zze（行 0/1a/1b/2b/2d/2e/6）|
 | **owner 第 9 轮 3 条（2026-09-24）：召唤闪电 + 中心洋红** | 一手 = TH18 自己的 `bullet.anm` etbreak 家族 ⇒ 新脚本 **346**（驱动器）/ **347+348**（蓝色暗层+亮层）/ **349+350**（中心洋红）+ 图集 `ATLAS_UFO_DEBRIS`；层 **5/6** ⇒ 中心被飞碟盖住；`ufo.c` 加收尾 `ufo_summon_fx_kill()` | 见 `SINGLE-CARD-TEST.md` §本批9-1 + `TUNING.md` §2.0zzl；`AUDIT.md` §BE #86 |
+| **owner 第 11 轮（2026-09-24）：令牌掉落统一「两个 + 会变的 + 随机」** | 所有宿主与 boss 一律掉 **2 枚**、起始色随机 + 会变色（`UFO_CARRIER_TOKENS_DROP = 2`；旧的"按关固定色 / 妖精1蝴蝶2 / boss 红绿交替"全退役）| 见 `TUNING.md` §2.0zzn + `SINGLE-CARD-TEST.md` §本批11-1；**本轮只改 DLL** |
 | **owner 第 10 轮（2026-09-24）：谁能掉飞碟 + 给宿主换皮** | 掉落判据换成**宿主表**（`cards/ufo_carrier_table.h`：`(N,S)` 命中 TH18 妖精/幻影族才掉，boss 每相位 1 红 + 1 绿）；宿主**换 TH12 皮**（脚本 351..355 + 3 张新图集）+ **隐掉原生贴图并还原** | 见 `SINGLE-CARD-TEST.md` §本批10-1（**含待你过目的宿主表**）+ `TUNING.md` §2.0zzm；`AUDIT.md` §BE #87 |
 
 ## §3 待办

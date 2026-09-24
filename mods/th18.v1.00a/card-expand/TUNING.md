@@ -5213,3 +5213,31 @@ TH18 侧按**同名子程序**配对（ZUN 各作共用角色命名）+ **精灵
 
 **回归**：`make -C native anm`（entry 74 / sprite 529 / script 356；三个新图集逐像素自检过）、
 `dllx87` = 0（`ufo.c` 零告警）、`make check` 全绿。
+
+### 2.0zzn ★★ 112 的第**十一轮**（2026-09-24）：令牌掉落**统一「两个 + 会变的 + 随机」**
+
+> owner 原话：「我看网上视频的**道中 boss 怎么是掉落一红一蓝**啊，**掉落两蓝的也有** ——
+> **统一改成两个会变的随机吧**」。
+
+| # | 项 | 旧（第 10 轮，**已退役**）| 新（本轮）| 性质 |
+| --- | --- | --- | --- | --- |
+| 1 | 枚数 | 妖精 1 / 大蝴蝶 2 / boss 2（三个宏）| **一律 2 枚**（`UFO_CARRIER_TOKENS_DROP = 2`，一个宏管全部）| **owner 口径** |
+| 2 | 颜色 | **按关固定色**（照 TH12 各关宿主写的 `dropExtra(10/11/12, n)` 抄的掩码表）| **随机起始色 + 会变色**（`color = UFO_COLOR_NONE` ⇒ 走 `ufo_tok_spawn()` 那条：随机取红/蓝/绿 + 每 150 帧换一色）| **owner 口径** |
+| 3 | boss | 1 红 + 1 绿（`pend_drop_boss` 红绿交替）| 与宿主**完全相同**（2 枚、会变的、随机）| **owner 口径**（"统一"）|
+
+**为什么"固定色"整条一起废掉**：我们上一版是按一手「类型 10/11/12 → 红/蓝/绿」把颜色抄成"逐关固定"的，
+但 owner 的视频观察（道中 boss 掉「1 红 1 蓝」、也有「2 蓝」）说明**那条类型→颜色的读法本身对不上实机**
+⇒ 与其继续猜，不如按 owner 口径统一成"会变的随机"——自此**颜色这条线不再有分歧**，
+`ufo_carrier_table.h` 头注里那条「`dropExtra(13, n)` 存疑」也不再影响任何实装值（存疑本身仍留在档）。
+
+**退役清单**（都从 `ufo.c` 删掉了，历史口径留在本节 + §2.0zzm-4）：
+`UFO_CARRIER_TOKENS_FAIRY` / `_BFLY` / `_BOSS`、`UFO_CARRIER_BOSS_COLOR1/2`、
+`UFO_CARRIER_COL_*` + `UFO_CARRIER_STAGE_COLORS[]` + `ufo_carrier_stage_color()`、卡私状态里的 `pend_drop_boss`。
+⚠ **宿主表（谁掉）不受影响**：这一轮只改"掉几枚 / 什么色"，`(N,S) → 妖精/蝴蝶` 那张表与换皮一个字没动。
+
+**实跑判据**：击破宿主或 boss ⇒ 掉 **2 枚**令牌，两枚的颜色**各自随机**、并且**每约 150 帧换一色**
+（会变色）。日志：`ufo: token drop queued - FAIRY host (N 2, S 20) -> 2 token(s), cycler + random
+start colour (owner r11: two colour-changing random ones)`。
+
+**回归**：`make -C native dllx87` = 0（`ufo.c` 零告警）；`make -C native check` 全绿。
+⚠ 本轮**没动** `assets/**`（无新美术/脚本）⇒ `ability.anm` 不变，只需发 DLL。
