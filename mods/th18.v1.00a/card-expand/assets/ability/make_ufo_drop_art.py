@@ -85,14 +85,16 @@ SRC_TH18_BOMB_CARD = REPO / "local/th18.v1.00a/anm/abcard/ability/BOMB_max.png"
 #     · **卡面** `DROP_BOMB` = 原生卡图 `BOMB_max.png`（256×320）等比缩到 **26×32**（4:5）。
 #       为什么 26×32：原生**整 B 道具图标** = `bullet/item.png` sprite512 = 32×32（`scale 0.5→1.0`
 #       ⇒ 屏显 32×32）；owner 判上一版 40×50「大了一倍」（面积 2000 vs 1024 ≈ 两倍）⇒ 取高 32。
-#     · **背光** `CARD_GLOW` = 原生**卡框** `abcard/ability/abframe.png`（一手 = `abcard.anm` entry0，
-#       原生卡显示那棵树里**每个图层用的都是它**：`sprite(sprite0)`），缩到 **30×36（比卡面大一圈）**
-#       ⇒ 加法叠在卡面后面 = 一圈发光的卡框。
-#       ⚠ owner 上一轮看到的「背后的光环像一颗五角星」= `abitem.png`（一张**整卡形的柔光块**）
-#         加法放大后的四个圆角 ⇒ 换成本源生的**卡框**（一个矩形描边），形状对得上卡。
-#       ⚠ 更早一版背光之所以"看不见"：那层比卡面小 ⇒ 整圈被卡面盖住。
+#     · **背光** `CARD_GLOW` = 原生**光晕** `abcard/ability/abitem.png`（一手 = `abcard.anm` entry1
+#       sprite1；owner 2026-09-24 亲自确认「**这张图本身确实是光晕**」），缩到 **34×40**（比卡面大一圈）
+#       ⇒ 加法叠在卡面后面 = 一圈柔光（上一版背光比卡面小 ⇒ 整圈被盖住 = "看不见发光"）。
+#       ★ owner 澄清了那个「五角星」的来历：**不是这张光晕**，而是**引擎自己画的原生整 B 图标**
+#         （`bullet/item.png` sprite512 —— 那颗星星是 ZUN 从早期作品层垒下来的**整 B 美术**，
+#          owner 原话「其他作品确实是用那个作为一颗 B 的」）⇒ 本卡把**原生那颗图标藏起来**
+#         （`ufo.c` 的 `ufo_drops_tick` 每帧写 `item+0x534` 的 alpha = 0），只留「卡面 + 光晕」。
+#       （中间那版一度换成 `abframe.png` 卡框，是误以为"星"出自这张光晕 —— owner 已澄清，换回。）
 #     · 发光 = **真加算**（脚本 331 的 `blendMode(1)` + 呼吸，= 一手 `abcard.anm` script16 的配方）。
-SRC_ABITEM = REPO / "local/th18.v1.00a/anm/abcard/ability/abframe.png"   # ★ 原生**卡框**（背光层用它）
+SRC_ABITEM = REPO / "local/th18.v1.00a/anm/abcard/ability/abitem.png"     # ★ 原生**光晕**（背光层用它）
 SRC_TXT = REPO / "local/th12.v1.00b/anm/bullet/bullet.anm.txt"
 OUT = HERE / "ufo_drop"
 SCRIPTS = HERE / "scripts"
@@ -106,7 +108,7 @@ SPRITES = [
     ("DROP_ICON_POINT", 427, (16, 16), (16, 16)),
     # ★ DROP_BOMB 的源**不是** TH12 的 sprite432 了（见 `SRC_TH18_BOMB_CARD`）：owner 口径换成 TH18 完整 B 卡面
     ("DROP_BOMB",       None, None,    (26, 32)),   # ★ 原生卡图 `BOMB_max.png` 等比装入（4:5）
-    ("CARD_GLOW",       None, None,    (30, 36)),   # ★ 原生**卡框** `abframe.png` 缩到比卡面大一圈 = 背光层
+    ("CARD_GLOW",       None, None,    (34, 40)),   # ★ 原生**光晕** `abitem.png` 缩到比卡面大一圈 = 背光层
 ]
 
 # 图集排布（2 的幂：64×32）
@@ -116,7 +118,7 @@ ATLAS_POS = {                       # 输出名 → (x, y)
     "BOUNTY_BAG":      (0, 0),
     "DROP_ICON_P":     (32, 0),
     "DROP_ICON_POINT": (48, 0),
-    "CARD_GLOW":       (0, 32),     # 0+30=30 ≤ 80、32+36=68 ≤ 96 ✓
+    "CARD_GLOW":       (0, 32),     # 0+34=34 ≤ 80、32+40=72 ≤ 96 ✓
     "DROP_BOMB":       (40, 32),    # 40+26=66 ≤ 80、32+32=64 ≤ 96 ✓（与 CARD_GLOW 不重叠）
 }
 

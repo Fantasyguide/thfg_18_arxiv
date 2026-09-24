@@ -693,7 +693,7 @@ BOUNTY_BAG         ability/ufo_drop/BOUNTY_BAG.png   @0,0,32x32
 DROP_ICON_P        ability/ufo_drop/DROP_ICON_P.png   @32,0,16x16
 DROP_ICON_POINT    ability/ufo_drop/DROP_ICON_POINT.png   @48,0,16x16
 DROP_BOMB          ability/ufo_drop/DROP_BOMB.png   @40,32,26x32
-CARD_GLOW          ability/ufo_drop/CARD_GLOW.png   @0,32,30x36
+CARD_GLOW          ability/ufo_drop/CARD_GLOW.png   @0,32,34x40
 
 # 卡 112 的飞碟槽 HUD 贴图（TH12 front.anm 的 1:1 切图）
 #   生成器 = assets/ability/make_ufo_hud_art.py（矩形从 anm 文本读 + 断死）

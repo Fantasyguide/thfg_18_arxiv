@@ -992,6 +992,18 @@ static uint32_t s_penta_id[UFO_TOKEN_CAP];
 #define UFO_ITEM_POS        0xc2c
 #define UFO_ITEM_STATE      0xc74
 #define UFO_ITEM_STATE_OFF  0
+/* ★★★ 2026-09-24（owner）：那颗「**五角星**」的来历查清了 —— 它**不是**我们的贴图，而是
+ *   **引擎自己画的原生整 B 道具图标**（`bullet/item.png` sprite512，type 7 的 VM1 脚本 118 画的）
+ *   —— ZUN 从早期作品层垒下来的**整 B 美术**（owner 原话「其他作品确实是用那个作为一颗 B 的」）。
+ *   本卡的外观走「**卡面 + 原生光晕**」那一套（脚本 301/331/345）⇒ 把**引擎那颗图标藏起来**：
+ *   每个游玩帧把道具 VM1 的 `color_1`（`item+0x534`，一手 `th18:0x447115` 出生写 0xffffffff）的
+ *   **alpha 字节写成 0**（`0x00ffffff`）。
+ *   ⚠ 为什么写在 **tick**（`ufo_drops_tick`，位次在道具 body **之前**）而不是 draw：这样整帧都是透明的；
+ *     而引擎的「减速压暗」那支只写 `+0x535/+0x536`（G/R 两个字节，`0x445d42 mov WORD [edi+0x535],0xffa0`）
+ *     ⇒ **碰不到 alpha 字节**，我们写的 0 不会被覆盖 ✓。
+ *   ⇒ 想让「原生那颗星星」当整 B 外观（而不是我们的卡面）：把 `UFO_ITEM_HIDE_ICON` 改 0 即可。*/
+#define UFO_ITEM_VM1_COLOR  0x534
+#define UFO_ITEM_HIDE_ICON  1
 /* 引擎读数（照 110 `mof.c` 的同名宏）：满火力判据 = `CURRENT_POWER >= MAX_POWER` */
 #define CE_MAX_POWER_VAL()       (*(int32_t *)CE_ADDR_MAX_POWER)
 #define CE_MONEY_BASE_VAL()      (*(int32_t *)CE_ADDR_MONEY_BASE)
@@ -3319,6 +3331,11 @@ static void ufo_drops_tick(ufo_card_t *s)
                                            UFO_DROP_BOMB_ANM_LAYER);
                 if (id) d->anm_id = id;
             }
+#if UFO_ITEM_HIDE_ICON
+            /* ★ 藏掉**引擎画的那颗原生整 B 图标**（ZUN 的遗留星星美术）—— 见 `UFO_ITEM_VM1_COLOR` 的注。
+             *   每帧写一次（幂等）：引擎只在出生那一帧写白，压暗那支不碰 alpha 字节。*/
+            *(uint32_t *)(it + UFO_ITEM_VM1_COLOR) = 0x00ffffffu;
+#endif
             continue;
         }
         /* 句柄自愈（引擎在别处销毁过 ⇒ 丢了就重建；照令牌那一支同款口径）*/
