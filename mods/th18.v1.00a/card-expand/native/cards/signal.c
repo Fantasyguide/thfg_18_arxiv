@@ -2190,16 +2190,20 @@ static void signal_step_mod_fill(signal_card_t *s, signal_step_mod_t *mod)
  *     + `th09:0x41fb38`，条件是 **`floor(charge/100)` 比上一帧大**（`th09:0x41fb15 cmp edi,eax` / `jge`，
  *     即每跨 100/200/300/400 一声）= **「每升一级」的叮** ⇒ 正好对上本卡「蓄满那一下」。
  *     同样 TH18 没有 ⇒ `CE_VOICE_CHARGEUP` = `0x5a`。（旧值 `0x29` 借的是原生卡 42 的挥击音。）
- *   · `SIGNAL_SE_FLAN_LOOP` = TH18 `0x4d` = `se_release.wav`（**保持不动**）——
- *     它是 TH17 妖梦蓄力的「蓄力中每帧嗡鸣」那一层（`th17:0x44a8d0`；一手见
- *     `engine/card/th18/13-mallet-clear-and-th17-charge.md`）。**TH09 的 charge 族里没有对应物**
- *     （TH09 只有「起手一声 + 每升一级一声」，没有持续音）⇒ 本卡这 5 秒里要一点持续反馈只能留它；
- *     性质仍是 ❓ 自定（`TUNING.md` §2.6g + §4.1 #3）。
- *   `SIGNAL_SE_FLAN_LOOP_EVERY` = 循环音节流（❓ 自定：一手每帧一声，我们 30 帧一次）。*/
+ *   · ⛔ **循环音（`se_release` / TH18 `0x4d`，每 30 帧一发）已删** ——
+ *     owner 实跑：「**咲夜的蓄力音效完全不对**」。复核之后这条确实是错的：
+ *     ① 它借的是 **TH17** 妖梦蓄力的「蓄力中嗡鸣」层（`th17:0x44a8d0`），**TH09 的 charge 族里没有对应物**；
+ *     ② 更要命的是**用法** —— 原版那一层是**每帧一声的持续音**，我们改成「每 30 帧把一枚 *release*
+ *        音重放一次」⇒ 听感是「隔半秒放一次放招音」，与蓄力毫无关系（"完全不对"就是它）。
+ *   · **改成一手的用法**（TH09 全套两条，逐条都是 `th09` 的调用点）：
+ *       ① 起手那一帧（`player+0x30384 == 0`）⇒ `se_charge00` —— **保留**；
+ *       ② `floor(charge/100)` 变大那一帧 ⇒ `se_chargeup` —— **每升一格一声**（不再只在满时一声）。
+ *     本卡蓄力 300 帧 ⇒ 100/200/300 各一声，「一路叮上去」= 原作的感觉；最后一声正好落在**蓄满**。
+ *     ⚠ 一格 = 100 帧 = TH09 的 100 单位（`th09:0x41fa88 imul 0x51eb851f; sar edx,5` 就是 /100）；
+ *       起手那一声的一手判据也是同一个计时器 ⇒ 两条同源。*/
 #define SIGNAL_SE_FLAN_CHARGE       CE_VOICE_CHARGE00
-#define SIGNAL_SE_FLAN_LOOP         0x4du
 #define SIGNAL_SE_FLAN_FULL         CE_VOICE_CHARGEUP
-#define SIGNAL_SE_FLAN_LOOP_EVERY   30
+#define SIGNAL_FLAN_LEVEL_FRAMES    100     /* ★ 一格 = 100 帧（一手 TH09 的 /100 判级）*/
 
 /* ★★ 2026-10-01（P7 = `SINGLE-CARD-TEST.md` §th11 #8「咲夜蓄满光圈应该闪烁」）：
  *   蓄满那一帧给范围环（脚本 277）发的**中断号** —— `2` 是**一手的语义位**（三作一致）：
@@ -2701,14 +2705,18 @@ static void signal_support_flandre(signal_card_t *s)
             const float sx = px ? px[0] : 0.0f;
 
             if (charged_before == 0 && s->flandre.charge > 0) {
-                ce_play_sound(SIGNAL_SE_FLAN_CHARGE, sx);          /* 起手：TH09 se_charge00 (0x59) */
+                ce_play_sound(SIGNAL_SE_FLAN_CHARGE, sx);          /* 起手：TH09 se_charge00（一手 `th09:0x41fa5e`）*/
             }
-            if (s->flandre.charge > 0 && (s->flandre.charge % SIGNAL_SE_FLAN_LOOP_EVERY) == 0) {
-                ce_play_sound(SIGNAL_SE_FLAN_LOOP, sx);            /* 循环：TH17 se_release (0x4d)，节流 ❓ 自定 */
-            }
-            if (charged_before < SIGNAL_FLANDRE_CHARGE_FRAMES &&
-                s->flandre.charge >= SIGNAL_FLANDRE_CHARGE_FRAMES) {
-                ce_play_sound(SIGNAL_SE_FLAN_FULL, sx);            /* 蓄满：TH09 se_chargeup (0x5a) */
+            /* ★★★ 2026-09-25：**每升一格一声**（一手 `th09:0x41fb31`：`floor(charge/100)` 变大那一帧）。
+             *   300 帧 ⇒ 100/200/300 三声；最后一声与「蓄满」同帧 ⇒ 满的那一记 `se_chargeup` 就长在这里，
+             *   不再单独判一次（原来那条「只在满时一声」= 一手里没有的用法）。*/
+            if (s->flandre.charge > 0 && charged_before > 0 &&
+                (s->flandre.charge / SIGNAL_FLAN_LEVEL_FRAMES) >
+                (charged_before / SIGNAL_FLAN_LEVEL_FRAMES)) {
+                ce_play_sound(SIGNAL_SE_FLAN_FULL, sx);            /* TH09 se_chargeup（`CE_VOICE_CHARGEUP`）*/
+                ce_log("signal: 二小姐·蓄力升格 %d/%d 帧 ⇒ 一声 `se_chargeup`"
+                       "（一手 th09:0x41fb31：`floor(charge/100)` 变大那一帧）",
+                       (int)s->flandre.charge, (int)SIGNAL_FLANDRE_CHARGE_FRAMES);
             }
         }
 
