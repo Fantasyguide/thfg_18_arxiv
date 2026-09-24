@@ -1831,6 +1831,7 @@ void faith_green_fairy_tick(void)
 }
 int faith_pool_tick(void)
 {
+    faith_green_swap_tick();          /* ★ 换皮驱动（110/111 任一在场都跑；幂等）*/
     uint8_t *pl = CE_PLAYER();
     /* ★★ 2026-09-13 补（跨卡互作审计发现 #3）：**帧守卫**。
      *   这个池是 110/111 **共用**的（`faith_register` 按 slot_mask 分账），而两个卡各自在自己的
@@ -2061,3 +2062,112 @@ int faith_pool_tick(void)
 
     return collected;
 }
+#define MOF_GREEN_WIPE_HOSTS 0
+
+static uint8_t  s_fgreen_bak[MOF_GREEN_PAIR_MAX * MOF_GREEN_PAIR_BYTES];
+static uint32_t s_fgreen_applied;     /* ★ 「此刻真的改上了」位掩码（判据只看它，不看表里的开关）*/
+static int32_t  s_fgreen_logged;      /* 汇总日志只打一次（应用/还原各一次）*/
+static int32_t  s_fgreen_warned;      /* 运行期同形体检失败只报一次（免得每帧刷屏）*/
+
+/* `zAnmLoaded*`（`enemy.anm`）的 sprite 表基址；拿不到（关卡还没载入 / 没装载）返回 NULL。*/
+static uint8_t *faith_enemy_sprite_table(void)
+{
+    uint8_t *mgr = CE_ENEMY_MGR();
+    uint8_t *anm, *tbl;
+
+    if (!mgr) return 0;
+    anm = *(uint8_t **)(mgr + CE_EM_ANM_ENEMY);
+    if (!anm) return 0;
+    if (*(const uint32_t *)(anm + CE_ANM_LOADED_READY) == 0) return 0;
+    tbl = *(uint8_t **)(anm + CE_ANM_LOADED_SPRITES);
+    return tbl;
+}
+
+/* 每帧幂等：按「当前关 ⇒ 该改哪些行」逐行 apply / restore（`mof_green_plan()` 是纯函数，单测钉住）。
+ * ⚠ 只由 `on_tick_2` 调 ⇒ **卡不在场时根本不会跑**（用户「没有卡的时候不改」）。*/
+void faith_green_swap_tick(void)
+{
+    uint8_t *tbl = faith_enemy_sprite_table();
+    uint32_t want_apply = 0, want_restore = 0;
+    int32_t stage = CE_CURRENT_STAGE();
+    int i, applied_now = 0;
+
+    if (!tbl) return;
+    mof_green_plan(stage, s_fgreen_applied, &want_apply, &want_restore);
+
+    for (i = 0; i < MOF_GREEN_PAIR_MAX; ++i) {
+        const mof_green_pair_t *p = &mof_green_pairs[i];
+        uint8_t *bak = s_fgreen_bak + (size_t)i * MOF_GREEN_PAIR_BYTES;
+        uint32_t bit = 1u << i;
+
+        if (want_restore & bit) {                       /* 换关 ⇒ 这一行不该在 */
+            mof_green_pair_restore(tbl, p, bak);
+            s_fgreen_applied &= ~bit;
+            continue;
+        }
+        if (!(want_apply & bit)) {
+            /* 已经改上的行：`anm` 若被重载（换关先还原再重载的另一条路）会把表项打回原色 ⇒ 自愈。
+             * **不重取备份**（备份里是原色，此时表里也是原色；重取只会多一次无谓写）。*/
+            if ((s_fgreen_applied & bit) && !mof_green_pair_is_green(tbl, p))
+                mof_green_pair_apply(tbl, p);
+            if (s_fgreen_applied & bit) ce_fairy_claim_group(110, 2, p->src_script);   /* 护栏位每帧重申 */
+            continue;
+        }
+        /* 第一次接管这一行：先做运行期同形体检（源/绿两支的宽高逐条相等），不过就**不改**。*/
+        if (!mof_green_pair_sane(tbl, p)) {
+            if (!s_fgreen_warned) {
+                s_fgreen_warned = 1;
+                ce_log("faith: green pair %d REJECTED (sprite %d->%d 宽高不一致；常量与真表对不上，本行不改)",
+                       i, (int)p->src_sprite, (int)p->dst_sprite);
+            }
+            continue;
+        }
+        mof_green_pair_swap(tbl, p, bak);
+        s_fgreen_applied |= bit;
+        /* ★★★ 2026-09-24 实例/组级护栏（owner 口径「**别同时操作同一只妖精的 VM，否则爆了**」，
+         *   112 那条线确认他们的宿主池**含 `(2,0)`** = 我们换皮这一组）⇒ 我们每帧对自己**真的改上的**
+         *   每一行重申一次「(N=2, S=src_script) 这组妖精归我」（`sdk.h` 的 `ce_fairy_claim_group()`）。
+         *   112 那边读到就**当场放弃这只宿主**（不发皮、不掉令牌）；我们这侧是整组换皮，按组通报足够。*/
+        ce_fairy_claim_group(110, 2, p->src_script);
+        ++applied_now;
+        if (!s_fgreen_logged)
+            ce_log("faith: green fairy swap #%d '%s' (stage %d, sprite %d->%d, script %d->%d)",
+                   i, p->who ? p->who : "?", (int)stage,
+                   (int)p->src_sprite, (int)p->dst_sprite, (int)p->src_script, (int)p->dst_script);
+    }
+    if (applied_now) s_fgreen_logged = 1;
+}
+
+/* 还原全部（删卡 / 换局 / 换关清场）。`mof_clear()` 调它 —— 删卡发生在商店里，那一刻只有
+ * `on_delete`（虚表 `+0x50`）跑得到（`METHOD.md` 铁律二：长持续效果必须交代「被删掉会怎样」）。*/
+void faith_green_restore_all(void)
+{
+    uint8_t *tbl = faith_enemy_sprite_table();
+    int i, n = 0;
+
+    if (!tbl) { s_fgreen_applied = 0; return; }
+    for (i = 0; i < MOF_GREEN_PAIR_MAX; ++i) {
+        if (!(s_fgreen_applied & (1u << i))) continue;
+        mof_green_pair_restore(tbl, &mof_green_pairs[i],
+                               s_fgreen_bak + (size_t)i * MOF_GREEN_PAIR_BYTES);
+        ++n;
+    }
+    if (n) ce_log("faith: green fairy restore (%d 行，sprite 表已还原)", n);
+    s_fgreen_applied = 0;
+    ce_fairy_claim_clear(110);   /* ★ 护栏位一并撤（删卡/换局）*/
+}
+
+/* ★★★ 2026-09-24 owner 口径：「**你得把改妖精抽离出来，是 110 或 111 只要装一张就改**」
+ *   ⇒ 换皮驱动从 `mof.c` 搬到这里（共享件），由 `faith_pool_tick()` 每帧驱动一次 ——
+ *     那张池子 110/111 **都会调**，所以「装任意一张就生效」。`mof.c` 只留两个只读查询。*/
+uint32_t faith_green_applied(void) { return s_fgreen_applied; }
+
+/* 某一行**此刻真的改上了**且表里仍是绿（给 110 的「变绿 ⇒ 掉绿点」判据用）。*/
+int faith_green_row_green(int i)
+{
+    uint8_t *tbl = faith_enemy_sprite_table();
+    if (!tbl || i < 0 || i >= MOF_GREEN_PAIR_MAX) return 0;
+    if (!(s_fgreen_applied & (1u << i))) return 0;
+    return mof_green_pair_is_green(tbl, &mof_green_pairs[i]);
+}
+

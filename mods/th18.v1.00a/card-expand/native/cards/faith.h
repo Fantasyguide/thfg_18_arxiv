@@ -193,6 +193,13 @@ int faith_registered_mask(void);
  *   相位/计数是**纯记账**、在世界里不留任何东西（不建实体、不写引擎字段、不占槽位）：
  *   最后一张卡走时 `faith_unregister()` 把它归零 ⇒「删卡后又装回来」不会带着上一局的相位。
  * ==================================================================================== */
+/* ★★★ 2026-09-24：「改妖精」抽离到共享件 —— owner 口径「**是 110 或 111 只要装一张就改**」。
+ *   驱动 = `faith_pool_tick()` 每帧调一次 `faith_green_swap_tick()`（那张池子两张卡都会调）。*/
+void     faith_green_swap_tick(void);
+void     faith_green_restore_all(void);
+uint32_t faith_green_applied(void);          /* 此刻真的改上的行位掩码（= s_fgreen_applied）*/
+int      faith_green_row_green(int i);       /* 第 i 行此刻既改上、表里也仍是绿 */
+
 int32_t faith_p_topup_take(void);
 /* 只读诊断（**任何卡都可以调**，不推进相位）：相位 / 已推进颗数 / LO、HI 两侧计数；任一 `out` 可为 NULL。
  * ⚠ 读的是**共享**相位（不是本卡私有的）⇒ 两张卡打出来的是同一组数。*/
