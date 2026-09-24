@@ -130,11 +130,16 @@ typedef struct {
     int32_t  small;        /* ★★ 2026-09-24：**小灵击档**（一手：特定符卡上的压制，不是「符卡中」）*/
     int32_t  variant;      /* ★★ 2026-09-24：**视觉变体** 0 = 灵梦 / 1 = 魔理沙 / 2 = 符卡中
                             *   （一手 `Bomb::start` 按同一判据选主脚本 400/407/441，三套子脚本不同）*/
-    float    vx, vy;       /* ★ 2026-09-24：**视觉锚点** = 发动瞬间的自机坐标（柱环/火星都挂在这里）。
-                            *   一手：`Bomb::on_tick` 每帧只动**自己**的 `bomb+0x30..0x38`（消弹/伤害中心），
-                            *   **没有**写 anm VM 的位置字段（`th10:0x4057b6`–`0x4057de` 全段只碰炸弹对象）
-                            *   ⇒ 环画在 `Bomb::start` 给的那一点，不跟着上升的中心走。
-                            *   用户实跑口径：「**你的灵击往上运动速度太快了**」。*/
+    float    vx, vy;       /* 发动瞬间的自机坐标（**只作诊断/出生点用**）。
+                            *   ★★ 2026-09-24 第二轮订正（owner：「**灵击的移动动态还有问题**」）：
+                            *   曾经把柱环/火星**钉死在发动点**（理由 = 一手 `Bomb::on_tick` 的 rise 段只动
+                            *   炸弹对象自己的 `bomb+0x30..0x38`）—— 但那样一来**消弹中心每帧上移、
+                            *   视觉留在原地**，一场 296 帧的灵击下来两者最多差 **385 px**：
+                            *   玩家看到的是「圈在下面、消弹在上面」。owner 两轮都在说这件事
+                            *   （「消弹半径不和白色环重合」+「移动动态还有问题」）。
+                            *   ⇒ 改回：**柱环/火星都骑在 `center`（= 逐帧上移的消弹中心）上** ——
+                            *   于是「可见边界 = 消弹半径」在**空间与曲线**上逐帧一致（曲线另见 §2.0zzk-1）。
+                            *   上移速率本身是一手（`mof_core_bomb_rise_milli()`，魔理沙 1.3 px/帧）。*/
     uint32_t leaf_probe[BOMB10_RING_LEAF_UNITS];  /* ★ 诊断：最近一趟火星的 VM（用户报「枫叶呢?」）*/
     int32_t  leaf_probe_at;                       /* 诊断：到这一帧就把上面那几个 VM 的字段打出来 */
     int32_t  invuln_left;  /* ★ 2026-09-22：本发**还剩几帧无敌**（一手 270 / 决死 200；
@@ -230,7 +235,7 @@ static void bomb10_ring_spawn_due(void)
         }
         for (i = 0; i < BOMB10_RING_VMS; ++i)
             if (!s_run.ring_vm[i]) { s_run.ring_vm[i] = id; break; }
-        (void)ce_anm_set_pos(id, s_run.vx, s_run.vy, 0.0f);   /* 视觉锚点（见 bomb10_run_t 的注）*/
+        (void)ce_anm_set_pos(id, s_run.x, s_run.y, 0.0f);   /* 出生那一帧的消弹中心 = 自机坐标*/
         ce_log("%s/fx: 起柱环 %s vm=%u 帧 %d（脚本 %u，变体 %s）",
                s_run.host ? s_run.host->log_tag : "bomb10", s_ring_sched[k].tag, (unsigned)id,
                (int)s_run.elapsed, (unsigned)s_ring_sched[k].script[s_run.variant],
@@ -470,9 +475,10 @@ void bomb10_tick(int32_t driver)
      *      ⚠ 上界：一手那个循环是 `iset($I0, 80)`（80 趟 = 2400 帧），实际由**灵击寿命**截断
      *      （我们 296 帧 ⇒ 9 趟 36 颗；TH10 亦同，主脚本的 `+20: delete()` 只是兜底）。*/
     bomb10_ring_spawn_due();
-    /* ★ 2026-09-24：柱环钉在**发动点**（`vx/vy`），不跟每帧上移的 `center` —— 见 `bomb10_run_t` 的注。
+    /* ★★ 2026-09-24 二轮订正：柱环**骑着消弹中心**（`center` = 每帧上移的 `bomb.y`）——
+     *   见 `bomb10_run_t.vx/vy` 的注（「圈和消弹区分家」就是这个锚点造成的）。
      *   位置每帧写一次是必要的：脚本自己不写 `pos()`（draw = `pos(0x30) + entity_pos(0x5f0) + __pos_2`）。*/
-    bomb10_ring_follow(s_run.vx, s_run.vy);
+    bomb10_ring_follow(center[0], center[1]);
     if (s_run.elapsed >= BOMB10_RING_LEAF_FIRST &&
         (s_run.elapsed - BOMB10_RING_LEAF_FIRST) % BOMB10_RING_LEAF_EVERY == 0) {
         int k;
@@ -480,7 +486,7 @@ void bomb10_tick(int32_t driver)
             const uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(),
                                              s_leaf_script[s_run.variant][k & 1], 13);
             if (id) {
-                (void)ce_anm_set_pos(id, s_run.vx, s_run.vy, 0.0f);   /* 火星也挂在锚点（一手是主脚本的子 VM）*/
+                (void)ce_anm_set_pos(id, center[0], center[1], 0.0f);   /* 火星也骑中心（一手是主脚本的子 VM）*/
                 s_run.leaf_probe[k] = id;                             /* 诊断：5 帧后读它的字段 */
                 ++s_run.leaf_tick;
             }
