@@ -1027,8 +1027,14 @@ static uint32_t s_penta_id[UFO_TOKEN_CAP];
  *     而引擎的「减速压暗」那支只写 `+0x535/+0x536`（G/R 两个字节，`0x445d42 mov WORD [edi+0x535],0xffa0`）
  *     ⇒ **碰不到 alpha 字节**，我们写的 0 不会被覆盖 ✓。
  *   ⇒ 想让「原生那颗星星」当整 B 外观（而不是我们的卡面）：把 `UFO_ITEM_HIDE_ICON` 改 0 即可。*/
-#define UFO_ITEM_VM1_COLOR  0x534
+/* ★★★ 2026-09-24 第 21 轮**修 bug**（owner：「**依旧画了老满B的五角星**」）：
+ *   上一版写的是 `item+0x534` —— **那不是颜色**！一手逐指令：道具构造器 `th18:0x447115` 把
+ *   `[item+0x534] = 0xffffffff`（道具自己的字段），而**图标 VM 的颜色**在
+ *   `th18:0x445d0a`–`0x445d12`：`mov [item+0xc28], eax`（新 VM id）+ `mov [eax+0x524], 0xffa0ffff`
+ *   ⇒ 颜色在 **VM + 0x524**（= `engine.h` 的 `CE_ANM_VM_COLOR1`），VM id 在 `item+0xc28`。
+ *   ⇒ 现在的藏法 = 每帧 `ce_anm_get_vm(item+0xc28)` 取到 VM，再把 `vm+0x524` 的 **alpha 写 0**。 */
 #define UFO_ITEM_HIDE_ICON  1
+#define UFO_DROP_ANM_LOG_EVERY 60   /* 满 B 的诊断行节奏（0 = 关）；验证摇摆/隐藏星用 */
 /* 引擎读数（照 110 `mof.c` 的同名宏）：满火力判据 = `CURRENT_POWER >= MAX_POWER` */
 #define CE_MAX_POWER_VAL()       (*(int32_t *)CE_ADDR_MAX_POWER)
 #define CE_MONEY_BASE_VAL()      (*(int32_t *)CE_ADDR_MONEY_BASE)
@@ -3990,9 +3996,15 @@ static void ufo_drops_tick(ufo_card_t *s)
                 if (id) d->anm_id = id;
             }
 #if UFO_ITEM_HIDE_ICON
-            /* ★ 藏掉**引擎画的那颗原生整 B 图标**（ZUN 的遗留星星美术）—— 见 `UFO_ITEM_VM1_COLOR` 的注。
-             *   每帧写一次（幂等）：引擎只在出生那一帧写白，压暗那支不碰 alpha 字节。*/
-            *(uint32_t *)(it + UFO_ITEM_VM1_COLOR) = 0x00ffffffu;
+            /* ★ 藏掉**引擎画的那颗原生整 B 图标**（ZUN 的遗留星星美术）：每帧把**图标 VM** 的
+             *   `color_1`（`vm+0x524`）alpha 写 0 —— VM id 在 `item+0xc28`（一手 `th18:0x445d0a/0x445d12`
+             *   逐指令，见 `UFO_ITEM_HIDE_ICON` 上面的注）。每帧写一次（幂等）：引擎只在出生/重建那帧
+             *   写白，压暗那支只碰 G/R 字节 ⇒ 我们写的 alpha 不会被覆盖。 */
+            {
+                uint32_t ivm = *(const uint32_t *)(it + UFO_ITEM_ANM_ID);
+                uint8_t *vm = ivm ? ce_anm_get_vm(ivm) : 0;
+                if (vm) *(uint32_t *)(vm + CE_ANM_VM_COLOR1) = 0x00ffffffu;
+            }
 #endif
             continue;
         }
@@ -4014,6 +4026,7 @@ static void ufo_drops_tick(ufo_card_t *s)
  * 一手：`ItemManager__on_draw__body` `th18:0x446d60` 自己也是"把道具的世界坐标写进两个 VM 的
  *   `entity_pos`"（`VM+0x5f0`）再 `call 0x481210` ⇒ 我们照同一条路走，只是 VM 换成自己的卡面。
  * ⚠ 道具已被收走 ⇒ 顺手把槽收干净（`ufo_drops_tick` 那条也会收，这里兜一拍）。*/
+static uint32_t s_drop_log_tick;      /* 满 B 诊断行的节拍（本函数没有卡状态参数）*/
 static void ufo_drops_draw_follow(void)
 {
     int i;
@@ -4026,6 +4039,23 @@ static void ufo_drops_draw_follow(void)
         if (!d->anm_id || !ce_anm_get_vm(d->anm_id)) { d->anm_id = 0; continue; }
         ce_anm_set_pos(d->anm_id, *(const float *)(it + UFO_ITEM_POS),
                                    *(const float *)(it + UFO_ITEM_POS + 4), 0.0f);
+#if UFO_DROP_ANM_LOG_EVERY
+        /* ★ 2026-09-24 第 21 轮诊断（owner：「**没有左右摇摆**」）：每 60 帧把**父 VM**的
+         *   `rotation`（`+0x38/3c/40`）与 `scale`（`+0x54/58`）打一行 ——
+         *   摇摆是脚本 301 的 `rotateTime(120,21,…)` 在跑，日志里看得见它在动就说明是**幅度太小**
+         *   （一手 -2°↔+4° 只有 6°），而不是"动画没跑"。*/
+        if ((++s_drop_log_tick % UFO_DROP_ANM_LOG_EVERY) == 0u) {
+            float *rv = (float *)(ce_anm_get_vm(d->anm_id) + CE_ANM_VM_ROTATION);
+            float *sv = (float *)(ce_anm_get_vm(d->anm_id) + CE_ANM_VM_SCALE);
+            uint32_t ivm = *(const uint32_t *)(it + UFO_ITEM_ANM_ID);
+            uint8_t *ivm_p = ivm ? ce_anm_get_vm(ivm) : 0;
+            ce_log("ufo/drop.bomb: parent vm %u rot (%.4f, %.4f, %.4f) scale (%.3f, %.3f) | native icon vm %u "
+                   "color 0x%08x (alpha must be 0 = hidden star)",
+                   d->anm_id, (double)rv[0], (double)rv[1], (double)rv[2],
+                   (double)sv[0], (double)sv[1], ivm,
+                   ivm_p ? *(const uint32_t *)(ivm_p + CE_ANM_VM_COLOR1) : 0u);
+        }
+#endif
     }
 }
 
@@ -4979,26 +5009,19 @@ static void on_item_frame(ce_card_t *c)
     ++s->play_frame;
 #if UFO_DEBUG_KEY
     {   /* ★ 调试（照 117 `animal.c` 同款）：边沿检测 + 一行日志。
-         *   ★ 2026-09-23 键位：**空格 = 1 枚固定色令牌** / **Shift+空格 = 爆一批 P 点+金钱点** /
-         *   **Ctrl+空格 = 1 枚变色令牌**（原 Shift+空格 那件搬到 Ctrl，见常量区那段长注）。 */
+         *   ★ 2026-09-24 第 21 轮键位（owner）：「**调试改成：Ctrl+空格，掉落一个满 B**」
+         *   ⇒ **空格 = 1 枚固定色令牌** / **Shift+空格 = 爆一批 P 点+金钱点** /
+         *      **Ctrl+空格 = 掉一颗满 B**（原来那件"1 枚变色令牌"退役；要验证变色链就直接看满 B 那条路）。*/
         int down  = ce_key_down(CE_VK_SPACE) ? 1 : 0;
         int shift = ce_key_down(CE_VK_SHIFT) ? 1 : 0;
         int ctrl  = ce_key_down(CE_VK_CONTROL) ? 1 : 0;
         if (down && !s->dbg_key_prev && shift) {
             ufo_debug_spawn_items(s);                  /* ★ 本轮新行为（用户 2026-09-23 口径）*/
         } else if (down && !s->dbg_key_prev && ctrl) {
-            /* Ctrl+空格 = 出**变色令牌**（一手 type 13/14/15 的对位）：起色随机、之后每 150 帧换一次。
-             *   用途：不用真去打碎一个 UFO 就能验证「变色」那条链
-             *   （普通空格出的是一手小怪那种**固定色**令牌 —— 那一类本来就不会变色）。*/
-            int st = (int)((s_rng_seed = ufo_rand_next(s_rng_seed)) % UFO_TOK_RB_STATES);
-            if (ufo_tok_spawn_ex(s, UFO_DEBUG_X, UFO_DEBUG_Y,
-                                 ufo_token_display_color(UFO_COLOR_RED, 1, st), st, 1))
-                ce_log("ufo: DEBUG spawn CYCLER token #%u at (%.0f, %.0f) by CTRL+SPACE "
-                       "(rb_state %d; recolours every %d frames)",
-                       s->token_serial - 1u, (double)UFO_DEBUG_X, (double)UFO_DEBUG_Y, st,
-                       UFO_TOK_CYCLE_TICKS);
-            else
-                ce_log("ufo: DEBUG spawn cycler token by CTRL+SPACE failed (pool full?)");
+            /* ★★ owner 2026-09-24 第 21 轮：「**Ctrl+空格，掉落一个满 B**」—— 直接走 P6 那条
+             *   「绿 UFO 喂饱」的生产函数（原生 `item type 7` + 我们的卡面/背光两层 VM）。
+             *   用途：不用真去打 UFO，一眼就能验"满 B"的**摇摆 / 尺寸 / 那颗原生星有没有藏掉 / 光晕**。*/
+            ufo_drop_spawn_bomb(s, UFO_DEBUG_X, UFO_DEBUG_Y);
         } else if (down && !s->dbg_key_prev) {
             if (ufo_tok_spawn(s, UFO_DEBUG_X, UFO_DEBUG_Y))
                 ce_log("ufo: DEBUG spawn token #%u at (%.0f, %.0f) by SPACE (color %d, %s)",

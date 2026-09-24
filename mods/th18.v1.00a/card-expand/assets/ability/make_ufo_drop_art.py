@@ -107,8 +107,13 @@ SPRITES = [
     ("DROP_ICON_P",     426, (16, 16), (16, 16)),
     ("DROP_ICON_POINT", 427, (16, 16), (16, 16)),
     # ★ DROP_BOMB 的源**不是** TH12 的 sprite432 了（见 `SRC_TH18_BOMB_CARD`）：owner 口径换成 TH18 完整 B 卡面
-    ("DROP_BOMB",       None, None,    (26, 32)),   # ★ 原生卡图 `BOMB_max.png` 等比装入（4:5）
-    ("CARD_GLOW",       None, None,    (34, 40)),   # ★ 原生**光晕** `abitem.png` 缩到比卡面大一圈 = 背光层
+    ("DROP_BOMB",       None, None,    (20, 25)),   # ★ 原生卡图 `BOMB_max.png` 等比装入（4:5）
+                                                    #   ★ 2026-09-24 第 21 轮：owner「**卡面比 B 碎大一圈**」
+                                                    #   ⇒ 26×32 → **20×25**（同 4:5）。参考尺寸：B 碎图标
+                                                    #   （`bullet/item.png` 的 16×16 那一族）= 16×16、
+                                                    #   原生整 B 图标（sprite512）= 32×32。
+    ("CARD_GLOW",       None, None,    (28, 35)),   # ★ 原生**光晕** `abitem.png` 缩到比卡面大一圈 = 背光层
+                                                    #   ★ 第 21 轮：34×40 → 28×35（卡面缩到 20×25，仍大一圈）
 ]
 
 # 图集排布（2 的幂：64×32）
@@ -118,8 +123,8 @@ ATLAS_POS = {                       # 输出名 → (x, y)
     "BOUNTY_BAG":      (0, 0),
     "DROP_ICON_P":     (32, 0),
     "DROP_ICON_POINT": (48, 0),
-    "CARD_GLOW":       (0, 32),     # 0+34=34 ≤ 80、32+40=72 ≤ 96 ✓
-    "DROP_BOMB":       (40, 32),    # 40+26=66 ≤ 80、32+32=64 ≤ 96 ✓（与 CARD_GLOW 不重叠）
+    "CARD_GLOW":       (0, 32),     # 0+28=28 ≤ 80、32+35=67 ≤ 96 ✓
+    "DROP_BOMB":       (40, 32),    # 40+20=60 ≤ 80、32+25=57 ≤ 96 ✓（与 CARD_GLOW 不重叠）
 }
 
 # (输出脚本号, 输出名, TH12 源脚本号, 图标脚本)  —— 图标脚本为 None = 整条照抄（只换 sprite 名）
@@ -167,8 +172,8 @@ def scripts_of(text: str) -> dict[int, list[str]]:
 
 
 # 两张图的画布（尺寸由来见文件头：卡面 26×32 = 原生整 B 图标的量级；背光 34×40 = 比卡面大一圈）
-CARD_FIT = (26, 32)
-GLOW_FIT = (34, 40)
+CARD_FIT = (20, 25)      # ★ 第 21 轮：26×32 → 20×25（owner「卡面比 B 碎大一圈」）
+GLOW_FIT = (28, 35)      # ★ 背光仍比卡面大一圈（20+8 / 25+10）
 
 
 def make_sprites() -> list[str]:
