@@ -1,0 +1,51 @@
+script script349 {
+    // 112 星莲船 —— 召唤 UFO 时**正中心那颗洋红**（暗层）
+    //   一手：TH18 `bullet.anm` **script219** 逐条移植（`local/th18.v1.00a/anm/bullet/bullet.anm.txt`）
+    //   —— 与卡侧脚本 347（← 一手 225）同形，只差颜色与层：`color(224, 8, 224)` = **洋红**。
+    //
+    // **为什么是它 / owner 口径**
+    //   · owner 2026-09-24：「哦，并且**中间是洋红色**／**后面被 ufo 贴图盖住了**我没看出来」
+    //     ⇒ 原版召唤动画的**正中**有一颗洋红的东西，被 UFO 自己的贴图挡住大半、只露边。
+    //   · 本件**照抄一手的 ±6 随机偏移、不做向外飞行**（对比 347/348 的 Δ2）——它就是"停在中心"的那一颗，
+    //     由驱动器 346 在**第一帧**撒一对（Δ3）。
+    //
+    // **移植改动（Δ；自定项见 `TUNING.md` §2.0zzf）**
+    //   Δ1 `layer(20)` → **`layer(5)`**：世界层、且 **低于本体 VM 的 7** ⇒ 中心被 UFO 贴图盖住，
+    //      只有边缘露出来 —— 这正是 owner 描述的现象（一手那层 20 归相机 1，不跟游玩区走）。
+    //      配对的亮层 = 脚本 350（`layer(6)`）。
+    //   Δ3 `sprite(sprite540..547)` → `@DEBRIS_0..7@`。
+    //   ⚠ 其余逐条照抄：`type(1)` / `color(224,8,224)` / `alpha(64)` / `fsetMul(%F0,%RANDF2,6.0f)`×2 /
+    //      `scale(0.5f)`→`scaleTime(24, 0, 0.7f, 0.7f)` / 8 帧精灵循环 / `rotate(%RANDRAD)` /
+    //      `+24: delete()` / `interruptLabel(3): alpha(8)`。
+    type(1);
+    layer(5);                                     // Δ1：一手 219 是 20
+    color(224, 8, 224);                           // 一手 219：洋红（owner：「中间是洋红色」）
+    sprite(@DEBRIS_0@);                           // 一手 sprite540
+    alpha(64);                                    // 一手
+0: // 0
+    fsetMul(%F0, %RANDF2, 6.0f);                  // 一手：±6 单位的随机偏移（**故意不加位移**：它就待在中心）
+    fsetMul(%F1, %RANDF2, 6.0f);                  // 一手
+    pos(%F0, %F1, 0.0f);                          // 一手
+    scale(0.5f, 0.5f);                            // 一手
+    scaleTime(24, 0, 0.7f, 0.7f);                 // 一手
+    rotate(0.0f, 0.0f, %RANDRAD);                 // 一手
++3: // 3
+    sprite(@DEBRIS_1@);
++3: // 6
+    sprite(@DEBRIS_2@);
++3: // 9
+    sprite(@DEBRIS_3@);
++3: // 12
+    sprite(@DEBRIS_4@);
++3: // 15
+    sprite(@DEBRIS_5@);
++3: // 18
+    sprite(@DEBRIS_6@);
++3: // 21
+    sprite(@DEBRIS_7@);
++3: // 24
+    delete();
+    interruptLabel(3);
+    alpha(8);
+    caseReturn();
+}

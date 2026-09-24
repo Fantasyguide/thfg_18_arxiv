@@ -1828,6 +1828,59 @@ static void ufo_body_vm_spawn(ufo_card_t *s, int32_t color, const uint8_t *e)
 #define UFO_SUMMON_FX_DY   192.0f          /* 一手：(208 − 16) = 场地上沿往下 192 */
 static uint32_t s_summon_fx_id;            /* 大横幅发射器 VM（脚本 324 在 +75 帧自己 delete()）*/
 
+/* ★★ 2026-09-24（owner：「召唤动画的**闪电**…它的样式就是**类闪电**，并且似乎是**动态**的 ——
+ *   拿了一个**蓝色的会有残影的像素，随机地让它向外运动**画出来的」＋「并且**中间是洋红色**／
+ *   **后面被 ufo 贴图盖住了**我没看出来」）—— 召唤那一刻的**闪电碎屑**。
+ *
+ * **一手 = TH18 自己的 `bullet.anm` etbreak 家族**（`local/th18.v1.00a/anm/bullet/bullet.anm.txt`
+ * 的 `script160..313`）：那一族是**同形、只差颜色与尺寸档**的几十支脚本，本作引擎自己就在用
+ * （敌人被击破时的碎屑）。本卡借其中**第二档 + 蓝/洋红两色**，五支脚本落在 `ability.anm` 346..350：
+ *   346 = 驱动器（← 一手 script227）／347+348 = 蓝色碎屑的暗层 + 加算亮层（← 225/226）／
+ *   349+350 = 中心洋红的暗层 + 加算亮层（← 219/220，第一帧撒一对 ⇒ owner 说的「中间是洋红色」）。
+ *   切图 = `assets/ability/make_ufo_debris_art.py`（原生 `effect/etbreak.png` 的 sprite540..547）；
+ *   移植改动（层号 20/21 → **5/6**、加「向外飞」的 `posTime`、撒 12 轮）= 那五支脚本的文件头 +
+ *   `TUNING.md` §2.0zzf。
+ *
+ * 位置 = **UFO 本体那一刻的位置**（`entity_pos` 写敌机的 `final_pos`，与本体跟随 VM 同一套 ECL 空间）
+ * ⇒ 子 VM 继承它、整批碎屑就洒在飞碟身上。驱动器在 346 里自己撒完、约 90 帧后自删，C 侧不跟随
+ * （UFO 在这 ~1.5 秒里只挪几个单位，一手那些驱动器同样是一次性摆位）。
+ * 层号在脚本里写死 **5/6**：**低于本体 VM 的 7** ⇒ 正中心那一颗洋红会被 UFO 贴图盖住 —— 正是 owner
+ * 观察到的那件事（详见那五支脚本的 Δ1）。 */
+#define UFO_SUMMON_DEBRIS_LAYER 6          /* 驱动器自己的层（脚本 346 里也写 6；子 VM 各自写 5/6）*/
+static uint32_t s_summon_debris_id;        /* 闪电碎屑发射器 VM（脚本 346 自己 delete()）*/
+
+static void ufo_summon_debris_spawn(const uint8_t *e)
+{
+    void *anm = CE_ABILITY_ANM();
+    if (!anm) return;
+    /* 陈旧句柄先作废（驱动器自删 ⇒ 句柄会被引擎复用，见 `ufo_summon_fx_try` 的同一段说明）。 */
+    if (s_summon_debris_id && !ce_anm_get_vm(s_summon_debris_id)) s_summon_debris_id = 0;
+    if (s_summon_debris_id && ce_anm_get_vm(s_summon_debris_id)) return;   /* 上一批还在飞 ⇒ 不叠 */
+    s_summon_debris_id = ce_anm_spawn(anm, CE_ANM_ABILITY_SCRIPT_UFO_SUMMON_DEBRIS, UFO_SUMMON_DEBRIS_LAYER);
+    if (!s_summon_debris_id) {
+        ce_log("ufo: summon debris spawn FAILED (script %d, layers %d/5+6) - no lightning this time",
+               CE_ANM_ABILITY_SCRIPT_UFO_SUMMON_DEBRIS, UFO_SUMMON_DEBRIS_LAYER);
+        return;
+    }
+    if (e) ce_anm_set_pos(s_summon_debris_id, *(const float *)(e + CE_ENEMY_POS_X),
+                                              *(const float *)(e + CE_ENEMY_POS_Y), 0.0f);
+    ce_log("ufo: summon debris up (ability.anm script %d <= TH18 bullet.anm script227 driver + "
+           "225/226 blue + 219/220 magenta core; world layers 5 (dim) + 6 (additive), i.e. BELOW the "
+           "body VM's 7 so the centre hides behind the UFO sprite - owner observation; 12 rounds, "
+           "self-deletes)",
+           CE_ANM_ABILITY_SCRIPT_UFO_SUMMON_DEBRIS);
+}
+
+/* 收尾（**长持续效果铁律**）：横幅 / 碎屑都绑在 UFO 上，但两条路都必须收得掉 ——
+ * `ufo_withdraw_all()`（`on_delete` / `on_run_reset`）与 `on_stage_start()` 各调一次（幂等）。
+ * ⚠ 为什么不能只靠"它们自己会 delete()"：删卡那一刻卡的 tick 全停（`on_delete`），
+ *   而这两只 VM 是**引擎**在跑的 —— 不收就会在场上留一条横幅 / 一批碎屑。 */
+static void ufo_summon_fx_kill(void)
+{
+    if (s_summon_fx_id)      { ce_anm_delete(s_summon_fx_id);      s_summon_fx_id = 0; }
+    if (s_summon_debris_id)  { ce_anm_delete(s_summon_debris_id);  s_summon_debris_id = 0; }
+}
+
 static void ufo_summon_fx_try(ufo_card_t *s, const uint8_t *e)
 {
     void *anm = CE_ABILITY_ANM();
@@ -1835,9 +1888,14 @@ static void ufo_summon_fx_try(ufo_card_t *s, const uint8_t *e)
     /* VM id 会被引擎复用 ⇒ 陈旧句柄先作废（脚本 324 在 +75 帧自删；不清的话下一只 UFO 的 VM
      * 恰好复用同一个 id 时，「上一只还在放」那条门会误判成真 ⇒ 新 UFO 再也不出横幅）。*/
     if (s_summon_fx_id && !ce_anm_get_vm(s_summon_fx_id)) s_summon_fx_id = 0;
-    if (s->summon_fx_for == s->u.ufo_id && s_summon_fx_id) return;   /* 这只已经起过 */
-    if (s_summon_fx_id && ce_anm_get_vm(s_summon_fx_id)) return;     /* 上一只的还在放 ⇒ 不叠 */
+    if (s_summon_debris_id && !ce_anm_get_vm(s_summon_debris_id)) s_summon_debris_id = 0;
+    /* ★ 2026-09-24：这一道门改成**只看「这只 UFO 起过没有」**（原来还要求"横幅 VM 还活着"）。
+     *   为什么改：现在一次召唤要起**两件**东西（横幅 75 帧 / 碎屑 ~90 帧），若仍用"横幅还在放就
+     *   整条返回"的写法，第二只 UFO 来得快时连碎屑也起不来 —— 而两件东西的时长并不相等。 */
+    if (s->u.ufo_id && s->summon_fx_for == s->u.ufo_id) return;      /* 这只已经起过两件 */
     s->summon_fx_for = s->u.ufo_id;
+    ufo_summon_debris_spawn(e);                                      /* ★ 闪电碎屑（脚本 346）*/
+    if (s_summon_fx_id && ce_anm_get_vm(s_summon_fx_id)) return;     /* 上一只的横幅还在放 ⇒ 不叠 */
     s_summon_fx_id = ce_anm_spawn(anm, CE_ANM_ABILITY_SCRIPT_UFO_SUMMON_BANNER, UFO_SUMMON_FX_LAYER);
     if (!s_summon_fx_id) {
         ce_log("ufo: summon banner spawn FAILED (script %d, layer %d) - no summon animation this time",
@@ -4159,6 +4217,9 @@ static void ufo_withdraw_all(ufo_card_t *s, const char *why)
 {
     int n = 0;
     ufo_body_vm_kill(s);
+    /* ★ 2026-09-24：召唤特效（横幅 324 / 闪电碎屑 346）也在这里收 —— 它们由**引擎**跑，
+     * 卡的 tick 停了它们照样会画完那几十帧（METHOD 长持续效果铁律：删卡那一刻只有本函数跑得到）。 */
+    ufo_summon_fx_kill();
     /* ★★ 实体上的两件 UI（吸收环 / 血量条）：**必须在这里收** —— 删卡那一刻 tick 全停
      * （`on_delete`），漏了就会在场上留一圈弧 + 一条血条（METHOD 长持续效果铁律）。 */
     ufo_gauge_kill();
@@ -4194,17 +4255,20 @@ static void on_stage_start(ce_card_t *c)
      *   ⇒ 现在换关**只做两件必须做的事**，令牌（池 + 槽）原样跨关：
      *     ① 本体：换关时引擎已经在 stage-end 静默销毁那只真敌人（`DEATH` §1.4：不报事件）
      *        ⇒ 本体 VM 与 `u` 状态收干净。若这一刻 UFO 居然还活着（时序边界），也当场结束它，
-     *        但**槽不清**（那是玩家的账，不是"UFO 正常结束"）。环 / 血条跟着本体收。
+     *        但**槽不清**（那是玩家的账，不是"UFO 正常结束"）。环 / 血条 / **召唤特效（横幅 + 闪电碎屑）**
+     *        都跟着本体收（`ufo_summon_fx_kill()`，2026-09-24 补 —— 那两只 VM 由引擎跑，卡停了也会画完）。
      *     ② HUD 认领闸复位 + 当场补一次登记（新关卡按新布局重新登记；槽位 VM 的账在关卡纪元里）。*/
     if (ufo_present(&s->u)) {
         ufo_group_t keep = s->grp;                     /* ★ owner 口径：换关不清槽 */
         ufo_gauge_kill();                              /* 环 + 血条（跟着本体）*/
+        ufo_summon_fx_kill();                          /* ★ 召唤特效（横幅 + 闪电碎屑）也跟着本体 */
         ufo_body_vm_kill(s);
         ufo_teardown(s, "stage start");
         s->grp = keep;
     } else {
         ufo_body_vm_kill(s);                           /* 幂等：敌人已经不在也不会出错 */
         ufo_gauge_kill();
+        ufo_summon_fx_kill();                          /* ★ 幂等（正常情况下它们早自删了）*/
     }
     {
         int i;

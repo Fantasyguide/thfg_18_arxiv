@@ -16688,6 +16688,7 @@ TH18 没有 PIV 状态量，但**有同量纲的对位物**：`engine.h` 的 `CE
 | 2026-09-23 | **112（星莲船）第二轮（owner 7 条 + 2 条口径）：共享件 `assets/ability/**`** —— ORDER 两张图集画布 + 6 支既有脚本 + 3 支新脚本 + 两个生成器 + `cards/ufo.c` | 见下方「§BE 详录 #82」 |
 | 2026-09-24 | **所有卡（共享件 `native/sdk.{h,c}` + `assets/ability/entries/ORDER.txt`）**：贴图 VM 文字加**第三档字体** `CE_HUD_FONT_TH18_FONT2B`（新图集 `ATLAS_FONT2B` + 脚本 332，含 `:` `*`）；上一版那两张单图行已撤 | 见下方「§BE 详录 #84」 |
 | 2026-09-24 | **110/111 + 112（共享件 `native/cards/faith.{h,c}`）**：`faith_absorb_t` 加 `age/state/in_toss` 三个字段 + 新 API `faith_absorb_hold()` | 见下方「§BE 详录 #85」 |
+| 2026-09-24 | **112（星莲船）第九轮（owner 3 条：召唤闪电碎屑 + 中心洋红）：共享件 `assets/ability/**` + `CAPACITY.md`** —— ORDER 末尾 append 新图集 `ATLAS_UFO_DEBRIS`（entry 70 / sprite 503..510）+ 5 支新脚本 346..350 + 新生成器 + 台账一格 | 见下方「§BE 详录 #86」 |
 
 **§BE 详录 #51**（共享件 `hud_dim.*` 的统一动态换基准，2026-09-21）
 
@@ -21099,3 +21100,30 @@ youkai:   native opt slot 2: state 0 vm 00000000 muzzle (0.0, -400.0)   （3/4 �
 **对既有卡的影响面**：**零行为变化** —— `faith_absorb_t` 只是多了三个只读字段（生产者照旧填）；
 `faith_absorb_list/take/move` 的语义一字未改；110/111 不引用新字段与新 API（只有 112 用）。
 **回归**：`make quick`（host 单测 8 组 + `test_hud_dim_core` 355 项）通过、`make check` rc=0。
+
+## §BE 详录 #86（2026-09-24）：★ **共享件** `assets/ability/**` + `CAPACITY.md` —— 112 星莲船第九轮：召唤 UFO 的**闪电碎屑 + 中心洋红**
+
+**为什么必须登记**：这一轮动了 `assets/ability/entries/ORDER.txt`（共享件清单里的那条）与
+`assets/ability/scripts/**`（脚本目录也在清单里，**层号也算**），并且新增了一个**图集 entry**
+（entry 号 / sprite 号是**全库连续**的，append 会让后面的号跟着动）。
+owner 原话见 `SINGLE-CARD-TEST.md` §本批9-1；数值/推导/自定项见 `TUNING.md` §2.0zzl（含 §2.0zzl-1/2）。
+
+| 文件 | 改了什么 | 为什么 | 怎么验的 |
+| --- | --- | --- | --- |
+| `assets/ability/entries/ORDER.txt`（**共享件**）| **只 append**：文件末尾加一段 `ATLAS ATLAS_UFO_DEBRIS 256x128`（8 个成员 `DEBRIS_0..7`，各 `@x,y,64x64`）+ 一段注释（一手出处 / 层号理由）| 召唤闪电碎屑的 8 张 64×64 原生切图要有 entry 才有 sprite 号 | 构建期「重排检测」硬门逐行比对 `ORDER.frozen.txt` 的前 186 行 ⇒ 已定稿段一字未动；`anm-verify` 报 **entry 71、sprite 511、script 351** |
+| `assets/ability/scripts/346..350_ufo_summon_*.anm.txt`（**新文件**）| 新增 5 支：`346` 驱动器 / `347+348` 蓝色暗层+亮层 / `349+350` 中心洋红暗层+亮层。**层号写 5/6**（一手是 20/21）、碎屑那对加一段「向外飞」的 `posTime` | 一手 = **TH18 自己 `bullet.anm` 的 etbreak 家族**（`script227/225/226/219/220`）；层 5/6 的理由 = 世界层 + **低于本体 VM 的 7** ⇒ 中心那颗洋红被 UFO 贴图盖住（owner 观察）| `make -C native anm` + `anm-verify` 绿（脚本 sprite 引用逐个落在源 entry 的对应矩形里）；`dllx87` = 0 |
+| `assets/ability/entries/ORDER.ufo_debris.txt`、`assets/ability/make_ufo_debris_art.py`（**新文件**）| 图集片段 + 切图器（矩形从原生 anm 文本读、逐张断言 64×64）| 本仓口径：美术要能**重跑生成**，不许手摆 | 重跑生成器幂等（8 张图与片段一致）|
+| `assets/ability/ufo_drop/DEBRIS_0..7.png`（**新文件**）| 原生 `local/th18.v1.00a/anm/bullet/effect/etbreak.png` 的 `sprite540..547` 1:1 切图 | 借全套原生素材，不自己画 | 构建期图集逐像素回读比对（8 格）|
+| `native/cards/ufo.c`（本卡自己的）| ① `ufo_summon_debris_spawn()` 在召唤那一刻起驱动器（位置 = 敌机 `final_pos`）；② 新增 `ufo_summon_fx_kill()`（横幅 + 碎屑各收一次），在 `ufo_withdraw_all` 与 `on_stage_start` 两处调用；③ `summon_fx_for` 那道幂等门改成**只看"这只 UFO 起过没有"** | ① 触发点与横幅同一拍；② **长持续效果铁律**：那两只 VM 由**引擎**跑，删卡那一刻卡的 tick 全停 ⇒ 不收会在场上留东西；③ 一次召唤要起两件（横幅 75 帧 / 碎屑 ~90 帧），旧门会误拦 | `dllx87` 零告警；`make check` 全绿 |
+| `CAPACITY.md`（**共享台账**）| 新增一格：`ATLAS_UFO_DEBRIS`（带**完整宏名** `CE_ANM_ABILITY_ATLAS_ATLAS_UFO_DEBRIS`，entry **70** / sprite **503..510**），并注明既有号一个没动 | capcheck 的硬门要求宏全名在台账里；号是每次构建现算的 | `make check` 全绿（capcheck 过）|
+
+**对既有卡的影响面**：**零行为变化**。`ORDER.txt` / 脚本目录都是**纯 append**（新脚本号 346..350、
+新 entry 70、新 sprite 503..510 全在文件末尾），既有卡的 entry / sprite / script 号一个都没动
+（构建期的重排检测与本轮 `make check` 都是证据）。`native/cards/ufo.c` 是 112 自己的卡文件。
+`CAPACITY.md` 只加了一格文字。**唯一需要别人知道的一条**：往 `ORDER.txt` 里 append 会让**后加的**
+entry/sprite 号变大 —— 本仓的脚本一律**按名字**引用（`@NAME@` → `build_ability.py` 的 mapping），
+所以不受影响；写死数字的地方只有 `anm_ids.h` 那种**生成物**。
+
+**回归跑了什么**：`make -C native anm`（entry 71 / sprite 511 / script 351；新图集 8 格逐像素自检）→
+`make -C native anm-verify` → `make -C native dllx87`（rc=0、`x87 in our objects: 0`、`cards/ufo.c` 零告警）→
+`make -C native check`（含 `check-docs.py` 382 文件全绿）。**实跑判据**见 `TUNING.md` §2.0zzl 末尾那五条。

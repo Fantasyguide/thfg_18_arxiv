@@ -959,3 +959,15 @@ CE_ANM_ABILITY_SPRITE 宏 721 个，号 109..452
 
 
 
+
+- **★ 2026-09-24 新增 `ATLAS_UFO_DEBRIS`（entry **70**，`CE_ANM_ABILITY_ATLAS_ATLAS_UFO_DEBRIS`）**：
+  卡 112 的**召唤闪电碎屑**贴图（owner 2026-09-24：「召唤动画的**闪电**…拿了一个**蓝色的会有残影的像素，
+  随机地让它向外运动**画出来的」+「中间是洋红色」）= **TH18 自己 `bullet.anm` 的 etbreak 家族素材**
+  （`local/th18.v1.00a/anm/bullet/effect/etbreak.png`，256×128）里 **`sprite540..547` 八张 64×64 的 1:1 切图**
+  —— 这一族是**本作引擎自己在敌人击破时**用的那套（脚本 `script160..313`），所以是"借全套"，不是自绘。
+  成员 **8 个**（`DEBRIS_0..7`，矩形各 `64x64`）、画布 **256×128**（4×2 格刚好）；
+  **append 在最末尾** ⇒ 新 sprite = **503..510**、同批新脚本 = **346..350**
+  （`UFO_SUMMON_DEBRIS` 驱动器 + `..._DEBRIS_{DIM,GLOW}` 蓝 + `..._CORE_{DIM,GLOW}` 洋红），
+  既有号一个没动（entry **70/256**，余量 **185**；`ability.anm` 合计 entry 71、sprite 511、script 351）。
+  生成器 `assets/ability/make_ufo_debris_art.py`（矩形从原生 anm 文本读 + 逐张断言 64×64）；
+  层号 5/6 与"向外飞"那一段的理由见 `TUNING.md` §2.0zzl。

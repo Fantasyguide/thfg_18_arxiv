@@ -1,0 +1,58 @@
+script script347 {
+    // 112 星莲船 —— 召唤 UFO 的**蓝色闪电碎屑（暗层）**
+    //   一手：TH18 `bullet.anm` **script225** 逐条移植（`local/th18.v1.00a/anm/bullet/bullet.anm.txt`）。
+    //
+    // **移植改动（Δ；自定项见 `TUNING.md` §2.0zzf）**
+    //   Δ1 `layer(20)` → **`layer(5)`**：一手那层归**相机 1**（游玩区内全分辨率 UI，TH18 的 20–23），
+    //      本件要跟 UFO 一起待在**世界层**（相机 3，3–19）；取 5 的第二个理由 = **比本体 VM 的层 7 低**
+    //      ⇒ 靠近中心的那几颗会被 UFO 贴图盖住（owner：「后面被 ufo 贴图盖住了」）。
+    //      同族脚本 348 用 6（亮层压在暗层上，与一手 20 < 21 的次序一致）。
+    //   Δ2 一手 225 只有 `fsetMul(%F0,%RANDF2,6.0f)`×2 → `pos`（±6 单位的**固定**随机偏移，没有位移），
+    //      而 owner 的口径是「随机地让它**向外运动**」⇒ 把那一对 `pos` 换成极坐标的向外飞行：
+    //      方向 = `%RANDRAD`（`fcos/fsin`，写法照本仓 `341_mof_bomb_spark112.anm.txt` = TH10 火星配方），
+    //      起点半径 **12** 单位、终点半径 **44** 单位（= 24 → 88 表面 px；UFO 贴图本体是 64 px）。
+    //      时长 `posTime(24, 0, …)` 取一手里 `scaleTime` 的同一个 24 帧。
+    //   Δ3 `sprite(sprite540..547)` → `@DEBRIS_0..7@`（原生精灵号在本仓不存在；切图见
+    //      `assets/ability/ufo_drop/DEBRIS_*.png`，矩形 = 原图 64×64，ORDER 段 `ATLAS_UFO_DEBRIS`）。
+    //   ⚠ 其余**逐条照抄**：`type(1)` / `color(80,80,255)` / `alpha(64)` / 每 3 帧换一张精灵
+    //      （`+3:` 到 `+24:` 共 8 张 = owner 说的「残影」）/ `rotate(%RANDRAD)` / `scale(0.5f)`
+    //      → `scaleTime(24, 0, 0.7f, 0.7f)` / `+24: delete()` / `interruptLabel(3): alpha(8)`。
+    //      渐变模式（第二个参数）也照抄一手：`scaleTime(…, 0, …)`。
+    type(1);
+    layer(5);                                     // Δ1：一手 225 是 20
+    color(80, 80, 255);                           // 一手 225：蓝
+    sprite(@DEBRIS_0@);                           // 一手 sprite540
+    alpha(64);                                    // 一手
+0: // 0
+    fset(%F0, %RANDRAD);                          // Δ2：随机方向（一手这里是 ±6 的固定随机偏移）
+    fcos(%F1, %F0);
+    fsin(%F2, %F0);
+    fsetMul(%F3, %F1, 12.0f);                     // Δ2：起点 = 半径 12 单位
+    fsetMul(%F0, %F2, 12.0f);
+    fmul(%F1, 44.0f);                             // Δ2：终点 = 半径 44 单位
+    fmul(%F2, 44.0f);
+    pos(%F3, %F0, 0.0f);
+    posTime(24, 0, %F1, %F2, 0.0f);               // Δ2：飞出去（时长同下面的 scaleTime = 24 帧）
+    scale(0.5f, 0.5f);                            // 一手
+    scaleTime(24, 0, 0.7f, 0.7f);                 // 一手
+    rotate(0.0f, 0.0f, %RANDRAD);                 // 一手：随机自转
++3: // 3
+    sprite(@DEBRIS_1@);
++3: // 6
+    sprite(@DEBRIS_2@);
++3: // 9
+    sprite(@DEBRIS_3@);
++3: // 12
+    sprite(@DEBRIS_4@);
++3: // 15
+    sprite(@DEBRIS_5@);
++3: // 18
+    sprite(@DEBRIS_6@);
++3: // 21
+    sprite(@DEBRIS_7@);
++3: // 24
+    delete();
+    interruptLabel(3);
+    alpha(8);
+    caseReturn();
+}

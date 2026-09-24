@@ -823,3 +823,30 @@ FONT2B_DOT             ability/font2b/FONT2B_DOT.png                          16
 FONT2B_PLUS            ability/font2b/FONT2B_PLUS.png                          16x32
 FONT2B_COLON           ability/font2b/FONT2B_COLON.png                          16x32
 FONT2B_STAR            ability/font2b/FONT2B_STAR.png                          16x32
+# ── 2026-09-24 追加：卡 112 召唤 UFO 时的**碎片爆闪**（TH18 自己的 `etbreak` 家族）
+#   owner 描述（他研究过原版动画）：「闪电是在召唤 UFO 同时发生的，也和紫色特效是一样的；样式就是类闪电，
+#   并且似乎是动态的……拿了一个**蓝色的会有残影的像素，随机地让它向外运动**画出来的」+「中间是**洋红色**」
+#   +「后面被 UFO 贴图盖住了我没看出来」。
+#   一手 = TH18 `bullet.anm` 的 **etbreak 家族**（`script173..313`，几十支同形脚本，只差颜色/尺寸档）：
+#     · 素材 = entry `effect/etbreak.png`（256×128，8 个 **64×64 白色碎片** sprite540..547，alpha≈170..190）
+#     · 子脚本（如 **script174** dim / **script175** glow）：`fsetMul(%F0,%RANDF2,3.6)`（随机偏移 ±3.6）
+#       + `rotate(0,0,%RANDRAD)`（随机转角）+ `scale(0.3)`→`scaleTime(16,0,0.42/0.45)` + **每 2 帧换一个碎片
+#       sprite**（540→547 = 8 帧动画 = owner 说的"残影"）+ `+16: delete()`；
+#       dim 在 layer 20（alpha 64、正常混合）/ glow 在 layer 21（`blendMode(1)`、alpha 224）⇒ **一对两层**。
+#     · 驱动器（如 **script176**）用 `isetMod($I0,$RAND,8)` + `wait()` + `scriptNew(174/175)` 反复撒，
+#       `%RAND` 决定左右翻转（`scale(±1,1)`）⇒ 一次爆闪 = 很多个这种小碎片。
+#     · **颜色由脚本自带**：`(32,32,255)`/`(8,192,255)` = **蓝**（script174/175）、
+#       `(208,8,208)`/`(255,32,255)` = **洋红**（script168/169/171/172）⇒ owner 看到的"中间洋红 + 外围蓝"= 两套一起放。
+#   ⇒ 本卡把 8 个碎片 1:1 切进这个图集（`DEBRIS_0..7`，各 64×64），脚本 = 自己那四支
+#     （蓝 dim/glow + 洋红 dim/glow，见 `assets/ability/scripts/`），由卡侧在召唤那一刻在 UFO 位置撒一批。
+#   ⚠ 层号：TH18 那两支用 20/21（"游戏区域内全分辨率 UI"相机）⇒ 本卡改成 **世界层 5/6**
+#     （比本体 VM 的 7 更低 ⇒ 会**被 UFO 贴图盖住** —— 正是 owner 观察到的"后面被盖住"）。
+ATLAS ATLAS_UFO_DEBRIS 256x128
+DEBRIS_0               ability/ufo_drop/DEBRIS_0.png   @0,0,64x64
+DEBRIS_1               ability/ufo_drop/DEBRIS_1.png   @64,0,64x64
+DEBRIS_2               ability/ufo_drop/DEBRIS_2.png   @128,0,64x64
+DEBRIS_3               ability/ufo_drop/DEBRIS_3.png   @192,0,64x64
+DEBRIS_4               ability/ufo_drop/DEBRIS_4.png   @0,64,64x64
+DEBRIS_5               ability/ufo_drop/DEBRIS_5.png   @64,64,64x64
+DEBRIS_6               ability/ufo_drop/DEBRIS_6.png   @128,64,64x64
+DEBRIS_7               ability/ufo_drop/DEBRIS_7.png   @192,64,64x64

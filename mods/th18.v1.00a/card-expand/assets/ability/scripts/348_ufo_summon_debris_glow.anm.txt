@@ -1,0 +1,52 @@
+script script348 {
+    // 112 星莲船 —— 召唤 UFO 的**蓝色闪电碎屑（亮层 / 加算）**
+    //   一手：TH18 `bullet.anm` **script226** 逐条移植 —— 与卡侧脚本 347（← 一手 225）**逐字节同形**，
+    //   只差四处：`layer(21)`、`blendMode(1)`（加算）、`alpha(224)`、`scaleTime(24, 0, 0.75f, 0.75f)`。
+    //   ⇒ 一手是「暗层（正常混合、alpha 64）+ 亮层（加算、alpha 224）」成对撒（驱动器 227 每轮 `scriptNew` 两只）。
+    //
+    // **移植改动（Δ；与 347 同一套，自定项见 `TUNING.md` §2.0zzf）**
+    //   Δ1 `layer(21)` → **`layer(6)`**（347 是 5）：世界层、且比本体 VM 的 7 低 ⇒ 中间被 UFO 贴图盖住。
+    //   Δ2 同 347：±6 的固定随机偏移 → 极坐标的向外飞行（半径 12 → 44 单位，`posTime(24, 0, …)`）。
+    //   Δ3 `sprite(sprite540..547)` → `@DEBRIS_0..7@`。
+    //   ⚠ 其余逐条照抄：`type(1)` / `color(80,80,255)` / `blendMode(1)` / `alpha(224)` / 8 帧精灵循环 /
+    //      `rotate(%RANDRAD)` / `scale(0.5f)`→`scaleTime(24, 0, 0.75f, 0.75f)` / `+24: delete()` /
+    //      `interruptLabel(3): alpha(16)`（一手亮层的中断值是 16，暗层是 8 —— 别写成一样）。
+    type(1);
+    layer(6);                                     // Δ1：一手 226 是 21
+    color(80, 80, 255);                           // 一手 226：蓝
+    blendMode(1);                                 // 一手：加算（"闪电"的亮部）
+    sprite(@DEBRIS_0@);                           // 一手 sprite540
+    alpha(224);                                   // 一手
+0: // 0
+    fset(%F0, %RANDRAD);                          // Δ2：随机方向
+    fcos(%F1, %F0);
+    fsin(%F2, %F0);
+    fsetMul(%F3, %F1, 12.0f);                     // Δ2：起点 = 半径 12 单位
+    fsetMul(%F0, %F2, 12.0f);
+    fmul(%F1, 44.0f);                             // Δ2：终点 = 半径 44 单位
+    fmul(%F2, 44.0f);
+    pos(%F3, %F0, 0.0f);
+    posTime(24, 0, %F1, %F2, 0.0f);               // Δ2：飞出去
+    scale(0.5f, 0.5f);                            // 一手
+    scaleTime(24, 0, 0.75f, 0.75f);               // 一手（亮层比暗层大 0.05 —— 原生原值）
+    rotate(0.0f, 0.0f, %RANDRAD);                 // 一手
++3: // 3
+    sprite(@DEBRIS_1@);
++3: // 6
+    sprite(@DEBRIS_2@);
++3: // 9
+    sprite(@DEBRIS_3@);
++3: // 12
+    sprite(@DEBRIS_4@);
++3: // 15
+    sprite(@DEBRIS_5@);
++3: // 18
+    sprite(@DEBRIS_6@);
++3: // 21
+    sprite(@DEBRIS_7@);
++3: // 24
+    delete();
+    interruptLabel(3);
+    alpha(16);
+    caseReturn();
+}

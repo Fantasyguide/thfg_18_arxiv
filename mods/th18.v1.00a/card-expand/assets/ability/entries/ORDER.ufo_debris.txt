@@ -1,0 +1,14 @@
+# 卡 112 的召唤闪电碎屑（**TH18 自己的** `bullet.anm` etbreak 家族：`anm/bullet/effect/etbreak.png`
+#   的 sprite540..sprite547 八张 64×64 的 1:1 切图；生成器 =
+#   assets/ability/make_ufo_debris_art.py，矩形从原生 anm 文本读 + 逐张断言尺寸）。
+#   用它的五支脚本 = 346..350（一手 = `bullet.anm` script227/225/226/219/220），理由与移植改动见
+#   那些脚本的文件头 + TUNING.md §2.0zzf。
+ATLAS ATLAS_UFO_DEBRIS 256x128
+DEBRIS_0              ability/ufo_drop/DEBRIS_0.png   @0,0,64x64
+DEBRIS_1              ability/ufo_drop/DEBRIS_1.png   @64,0,64x64
+DEBRIS_2              ability/ufo_drop/DEBRIS_2.png   @128,0,64x64
+DEBRIS_3              ability/ufo_drop/DEBRIS_3.png   @192,0,64x64
+DEBRIS_4              ability/ufo_drop/DEBRIS_4.png   @0,64,64x64
+DEBRIS_5              ability/ufo_drop/DEBRIS_5.png   @64,64,64x64
+DEBRIS_6              ability/ufo_drop/DEBRIS_6.png   @128,64,64x64
+DEBRIS_7              ability/ufo_drop/DEBRIS_7.png   @192,64,64x64
