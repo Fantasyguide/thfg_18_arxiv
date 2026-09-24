@@ -2282,6 +2282,14 @@ static void ufo_carrier_tick(void)
         int32_t id;
         ufo_carrier_t *c;
         if (kind < 0) continue;                        /* 不是宿主外观：一个字节都不碰 */
+        /* ★★ 2026-09-24（110/111 ↔ 112 的妖精冲突护栏，owner 口径「**别同时操作同一只妖精的 VM**」）：
+         *   110/111 的绿妖精换皮每帧重申 `ce_fairy_claim_group(card_id, N, S)`（**整组**换皮），
+         *   我们在这里**同帧只读**：命中就**当场放弃这一只**（不登记、不发皮、不掉令牌）。
+         *   ⚠ 必须在 `!c`（第一次见到）之前就跳过 —— 否则被认领的那只会**顶掉本波"第一只"的位置**，
+         *     本波就少一个宿主。定义与语义见 `native/sdk.h`（他们登记在 `AUDIT.md` §BE 详录 #86）。*/
+        if (ce_fairy_group_claimed(*(const int32_t *)(e + CE_ENEMY_ANM_SRC),
+                                   *(const int32_t *)(e + CE_ENEMY_ANM_SCRIPT)))
+            continue;
         id = *(const int32_t *)(e + CE_ENEMY_ID);
         c = ufo_carrier_find(id);
         if (!c) {                                      /* 第一次见到这一只 ⇒ 只登记为"本波候选" */
@@ -2307,6 +2315,16 @@ static void ufo_carrier_tick(void)
         }
         c->seen_tick = s_carrier_tick_no;
         if (!c->carrier) continue;                     /* 没被选中 ⇒ 保持原生贴图、不掉令牌 */
+        /* ★ 万一我们在它落地时先选了它、其后 110/111 才把它那一组认领（护栏是帧内有效的通报）
+         *   ⇒ **当场撤皮 + 撤掉宿主资格**（`carrier` 清掉 ⇒ 死亡回调也不会掉令牌）。 */
+        if (ce_fairy_group_claimed(c->n, c->s)) {
+            ce_log("ufo: carrier skin OFF - enemy_id %d (N %d, S %d) is claimed by card 110/111 "
+                   "(ce_fairy_group_claimed) - skin released, no token drop (owner: never touch the "
+                   "same fairy's VM from two cards)",
+                   (int)c->enemy_id, (int)c->n, (int)c->s);
+            ufo_carrier_release(c);
+            continue;
+        }
         /* —— 被选中的宿主：起皮（第一次进来时）+ 每帧跟随 + 隐掉原生贴图 —— */
         {   /* ★ 第 17 轮：按**飞行方向**挑皮的那一支（正面 352 / 向右 356 / 向左 357）——
              * owner 实跑：「左右的动态没有复刻」⇒ 妖精得跟着自己的飞行方向转身（一手 script15/16/17）。
@@ -4858,6 +4876,10 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
         const uint8_t *ee = (const uint8_t *)ev->enemy;
         ufo_carrier_t *cc = ufo_carrier_find(ev->id);
         int is_carrier = ufo_carrier_host_now(ev->id);   /* ★ 只有"每波挑选"选中的那一只掉 */
+        /* ★ 110/111 的护栏（帧内有效）：整组被认领的那一只**不算宿主**（防御性复核一遍）。 */
+        if (is_carrier && ee && ce_fairy_group_claimed(*(const int32_t *)(ee + CE_ENEMY_ANM_SRC),
+                                                      *(const int32_t *)(ee + CE_ENEMY_ANM_SCRIPT)))
+            is_carrier = 0;
         cc = ufo_carrier_find(ev->id);                   /* 判定后可能新建/更新过 ⇒ 重新取一次 */
         int is_boss = ee && (*(const uint32_t *)(ee + CE_ENEMY_FLAGS) & CE_ENEMY_FLAG_BOSS);
         int want = 0;
