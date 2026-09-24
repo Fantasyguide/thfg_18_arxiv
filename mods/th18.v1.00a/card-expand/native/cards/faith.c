@@ -493,6 +493,12 @@ int faith_absorb_list(faith_absorb_t *out, int max)
             out[n].tier = (int32_t)tier;
             out[n].slot_mask = p->slot_mask;
             out[n].value = p->value;
+            /* ★ 2026-09-24：把"出生多久 / 在哪个段 / 在不在上抛豁免期"一并声明给消费者
+             *   （112 的飞碟要按它决定"刚撒出来的点先别吸"）。判据与真空门那一处**同一条**。*/
+            out[n].age = (int32_t)p->age;
+            out[n].state = (int32_t)p->state;
+            out[n].in_toss = (p->state == (uint8_t)FAITH_STATE_SCATTER &&
+                              p->age < FAITH_TOSS_FRAMES) ? 1 : 0;
             ++n;
         }
     }
@@ -529,6 +535,25 @@ int faith_absorb_move(const faith_absorb_t *e, float nx, float ny)
     p->x = nx;
     p->y = ny;
     /* VM 位置同步（世界层 VM 的实体坐标就是本坐标空间；照本文件别处写位置的同一支）*/
+    if (p->id) {
+        void *anm = CE_ABILITY_ANM();
+        if (anm) ce_anm_set_pos((uint32_t)p->id, nx, ny, 0.0f);
+    }
+    return 1;
+}
+
+int faith_absorb_hold(const faith_absorb_t *e, float nx, float ny)
+{
+    faith_dot_t *p = faith_absorb_find(e, 0);
+    if (!p) return 0;
+    p->x = nx;
+    p->y = ny;
+    /* ★ 一手：TH12 的道具上钩那一刻把速度清零（state 7，`0x4271ec`–`0x427204` 三条 FLDZ/FST）
+     *   ⇒ 位移只由飞碟那一步决定。这里照做：清零本点的 vx/vy；若还在飞散段（state 2），
+     *   把 `lr` 也清零 ⇒ 下一帧自然落回"飘落"（state 1），不会再从 `lang/lr` 重算出速度。*/
+    p->vx = 0.0f;
+    p->vy = 0.0f;
+    if (p->state == (uint8_t)FAITH_STATE_SCATTER) p->lr = 0.0f;
     if (p->id) {
         void *anm = CE_ABILITY_ANM();
         if (anm) ce_anm_set_pos((uint32_t)p->id, nx, ny, 0.0f);

@@ -2405,6 +2405,13 @@ static void ufo_absorb_faith_tick(ufo_card_t *s, float ux, float uy)
         float dx = e.x - ux, dy = e.y - uy;
         float nx, ny, speed;
 
+        /* ★★ 2026-09-24（owner：「**似乎在 UFO 期间生成的点是没有『出生无敌』的**」）——
+         *   本池对**回收线/放 B/对话**那条真空门**本来就有**上抛豁免（`FAITH_TOSS_FRAMES`，
+         *   见 `faith.c` §B12），但飞碟这一路此前拿不到这个信息 ⇒ 刚撒出来的点被当场吸走。
+         *   一手对照：TH12 里**消弹/炸弹撒出来的道具**出生在 state 5（intro + 倒计时）**不可上钩**
+         *   （钩子的门要求 `state ∈ {1,2}`，`0x4271dc`）⇒ 「撒出来的点先有一段自己的时间」是一手行为。
+         *   ⇒ 快照的 `in_toss` 为真时**本帧不吸也不拉**（消费者的记账口径不变：它只是"晚一点再吸"）。*/
+        if (e.in_toss) continue;
         if (ufo_within_capture(dx, dy)) {              /* 18 px 内 ⇒ 吸掉（与道具同一判据）*/
             if (!faith_absorb_take(&e)) continue;      /* 这一颗已经被别人收走 / 匹配不上 */
             if (e.tier == FAITH_TIER_BIG) { ++s->faith_pulled_big; s->faith_pulled_big_sum += e.value; }
@@ -2427,7 +2434,12 @@ static void ufo_absorb_faith_tick(ufo_card_t *s, float ux, float uy)
         speed = ufo_drag_speed_accum(s->u.frames);
         nx = e.x; ny = e.y;
         ufo_drag_step(&nx, &ny, ux, uy, speed);
-        if (nx != e.x || ny != e.y) faith_absorb_move(&e, nx, ny);   /* 写回（按坐标定位）*/
+        /* ★★ 2026-09-24（owner：「我看到的只是顿住一下，**实测是顿住好长时间**」）——
+         *   这里原来调 `faith_absorb_move()`（**只写坐标、不碰速度**）⇒ 点自己的上抛/下落每帧还在叠，
+         *   与飞碟那一步互相抵消 ⇒ 点**悬在半空** = owner 看到的"顿住好长时间"。
+         *   一手：TH12 的道具上钩那一刻（state 7）**把速度向量与吸引距离一起清零** ⇒ 之后位移只由
+         *   飞碟那一步决定 ⇒ 换成 `faith_absorb_hold()`（写坐标 + 清 vx/vy + 飞散段清 lr）。*/
+        if (nx != e.x || ny != e.y) faith_absorb_hold(&e, nx, ny);   /* 写回 + 按住它自己的运动*/
     }
 }
 

@@ -16687,6 +16687,7 @@ TH18 没有 PIV 状态量，但**有同量纲的对位物**：`engine.h` 的 `CE
 | 2026-09-23 | **所有卡（共享件 `assets/voice/*` + `patch/th18/voice.js`：音效表再加一格 `UFO` = `se_ufo.wav`，id **0x5f**；`CE_VOICE_REGISTERED` 10 → 12，零行为变化）** | 见下方「§BE 详录 #81」 |
 | 2026-09-23 | **112（星莲船）第二轮（owner 7 条 + 2 条口径）：共享件 `assets/ability/**`** —— ORDER 两张图集画布 + 6 支既有脚本 + 3 支新脚本 + 两个生成器 + `cards/ufo.c` | 见下方「§BE 详录 #82」 |
 | 2026-09-24 | **所有卡（共享件 `native/sdk.{h,c}` + `assets/ability/entries/ORDER.txt`）**：贴图 VM 文字加**第三档字体** `CE_HUD_FONT_TH18_FONT2B`（新图集 `ATLAS_FONT2B` + 脚本 332，含 `:` `*`）；上一版那两张单图行已撤 | 见下方「§BE 详录 #84」 |
+| 2026-09-24 | **110/111 + 112（共享件 `native/cards/faith.{h,c}`）**：`faith_absorb_t` 加 `age/state/in_toss` 三个字段 + 新 API `faith_absorb_hold()` | 见下方「§BE 详录 #85」 |
 
 **§BE 详录 #51**（共享件 `hud_dim.*` 的统一动态换基准，2026-09-21）
 
@@ -21075,3 +21076,26 @@ youkai:   native opt slot 2: state 0 vm 00000000 muzzle (0.0, -400.0)   （3/4 �
 只是多了一个可选择的新档；`ORDER.txt` 只追加（已定稿段逐行未变，新 entry/sprite 在末尾）。
 只有卡 112 的计时器与 ×N 弹字改用了第 2 档（两者都是本卡自己的 HUD）。
 **回归**：`make -C native anm` 幂等 / `make check` rc=0（含 `capcheck` 台账、`atlas-check`、381 文件 `check-docs`）/ `make dllx87` = 0。
+
+## §BE 详录 #85（2026-09-24）：★ **共享件** `native/cards/faith.{h,c}` —— 消费者侧加两个声明 + 一个 API（112 的飞碟拉拽用）
+
+**为什么必须登记**：`faith.{h,c}` 是 **110/111 共用的绿点（信仰点）实体池**（`signal.c` / `mof.c` 的生产者），
+本次为 112（UFO）的拉拽补了两件事，属于共享件改动。
+
+| 文件 | 改了什么 | 为什么 | 怎么验证的 |
+| --- | --- | --- | --- |
+| `native/cards/faith.h` | `faith_absorb_t` 加 **`age` / `state` / `in_toss`** 三个字段；新增声明 `faith_absorb_hold()` | ① 消费者（112）要判"这颗点是不是刚撒出来、还在上抛豁免期"；② 拉拽期要能**按住这颗点自己的运动** | `make check` rc=0（`cards-check` 编译所有卡 + `test-host`） |
+| `native/cards/faith.c` | `faith_absorb_list()` 多填三个字段（判据与真空门那一处**同一条**：`state == FAITH_STATE_SCATTER && age < FAITH_TOSS_FRAMES`）；新增 `faith_absorb_hold()`（写坐标 + 清 `vx/vy`，飞散段再清 `lr`）| 同上 | 同上；112 的实跑应看到点**直着飘向飞碟**、且撒出来后先自己飞约 20 帧 |
+
+**语义边界（没变的那部分）**：两个函数都**只动位置/速度**，**不碰记账**（不进 Δ、不进 114 的批、
+不加连击）—— 一手「被 UFO 吸走的道具不进自机的账」由调用方（112）自己记，见 `NEXT.md` §1x.9。
+`faith_absorb_move()` 保留（语义不变：只挪位置），112 改用 `hold`。
+
+**一手依据**：TH12 的道具上钩那一刻（state 7，`0x4271ec`–`0x427204` 三条 `FLDZ`/`FST`）把
+**速度向量与吸引距离一起清零** ⇒ 之后位移只由飞碟那一步决定（= `hold` 的语义）；
+另外 TH12 里**炸弹/消弹撒出来的道具**出生在 **state 5**（intro + 倒计时）**不可上钩**
+（钩子的门要求 `state ∈ {1,2}`，`0x4271dc`）⇒ 「撒出来的点先有一段自己的时间」= `in_toss` 的语义。
+
+**对既有卡的影响面**：**零行为变化** —— `faith_absorb_t` 只是多了三个只读字段（生产者照旧填）；
+`faith_absorb_list/take/move` 的语义一字未改；110/111 不引用新字段与新 API（只有 112 用）。
+**回归**：`make quick`（host 单测 8 组 + `test_hud_dim_core` 355 项）通过、`make check` rc=0。

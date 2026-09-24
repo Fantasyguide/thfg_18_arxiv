@@ -230,6 +230,14 @@ typedef struct {
     int32_t tier;          /* FAITH_TIER_BIG / FAITH_TIER_SMALL（faith_tier_t）*/
     int32_t slot_mask;     /* 落进谁的槽（= 它是 110 的还是 111 的）*/
     int32_t value;         /* 原始单位分值 */
+    /* ★★ 2026-09-24（owner：「**似乎在 UFO 期间生成的点是没有『出生无敌』的**」）——
+     *   本池对**回收线/放 B/对话**那条真空门**本来就有**出生豁免（`FAITH_TOSS_FRAMES` = 上抛期，
+     *   见 `faith.c` §B12），但**消费者（112 的飞碟）此前拿不到这个信息** ⇒ 刚撒出来的点会被
+     *   UFO 当场吸走（= owner 说的"没有出生无敌"）。
+     *   ⇒ 快照带上这两个字段，让消费者**自己判**（生产者只声明状态、不替消费者决定扣不扣）。*/
+    int32_t age;           /* 出厂帧数（`p->age`）*/
+    int32_t state;         /* 本池的段号：1 飘落 / 2 飞散(上抛) / 3,4 朝自机飞 */
+    int32_t in_toss;       /* 1 = 还在**上抛豁免期**（`state == 2 && age < FAITH_TOSS_FRAMES`）*/
 } faith_absorb_t;
 
 int faith_absorb_list(faith_absorb_t *out, int max);   /* 返回写进 out 的条数（0 = 没有 / 参数非法）*/
@@ -239,6 +247,15 @@ int faith_absorb_take(const faith_absorb_t *e);        /* 1 = 真的取走了一
  *    ⚠ 只动 `x/y` 与 VM 位置：**不碰 state / 速度 / 记账**（拉拽期它仍然是"飘落中"的点，
  *      110/111 自己的收点判定照旧能把它收走 —— 与一手「被吸走的道具仍可被自机碰触」同款）。 */
 int faith_absorb_move(const faith_absorb_t *e, float nx, float ny);
+/* ④ ★★ 2026-09-24（owner：「我原本所说的愣住确实是 UFO 原版吸收的状态，但是我看到的只是顿住一下，
+ *     实测是顿住好长时间」）—— **被拉拽期间把这一颗自己的运动按住**：写回新坐标、同时把它的
+ *     `vx/vy` 清零（`state 2` 时再把 `lr` 清零 ⇒ 下一帧落回"飘落"）。
+ *   **一手依据**：TH12 的道具上钩那一刻（state 7，`0x4271ec`–`0x427204` 三条 `FLDZ/FST`）
+ *     **把速度向量与吸引距离一起清零** ⇒ 后面的位移**只**由飞碟那一步决定。
+ *   ⚠ 我们此前只调 `faith_absorb_move()`（只写坐标、不碰速度）⇒ 点自己的上抛/下落每帧还在叠，
+ *     与飞碟那一步互相抵消 ⇒ 点**悬在半空**（owner 看到的"顿住好长时间"）。
+ *   ⚠ 与 `move` 一样**不碰记账**（不进 Δ / 不进批 / 不加连击）。*/
+int faith_absorb_hold(const faith_absorb_t *e, float nx, float ny);
 
 /* 大信仰点（110 的击破通道；§7.9 的判据由卡侧给，本函数只负责撒）。*/
 int faith_spawn_big(float x, float y, int32_t value_110);
