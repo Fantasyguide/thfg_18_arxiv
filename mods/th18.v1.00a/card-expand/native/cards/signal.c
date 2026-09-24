@@ -1098,6 +1098,14 @@ static void signal_nitori_join_bomb(signal_card_t *s)
     int32_t cost;
 
     bomb10_nitori_declare(SIGNAL_ID_NUM, 1);          /* ① 在场声明（每帧，粘性）*/
+    /* ★★★ 2026-09-24（owner：「罩子被击破后**无敌无限持续**」）：破罩那 30 帧的 40 帧无敌改成
+     *   **每帧声明** —— 破罩进行中才声明 40，其余帧一律声明 **0**。
+     *   为什么不能在「破罩数到 0」那一刻清：`signal_shield_tick()` 里 `if (!s_shield.vm) return;`
+     *   在破罩分支**之前**，泡的 VM 一被 interrupt 就早退 ⇒ `break_left` 永远数不到 0 ⇒ 那句清零
+     *   永远跑不到（实跑日志里 `破罩收尾` 一次都没出现，就是这个原因）。
+     *   ⇒ 落到**每帧必然经过**的这里，结构上不可能再粘住。*/
+    ce_invuln_request((uint32_t)SIGNAL_ID_NUM,
+                      (s_shield.break_left > 0) ? SIGNAL_NITORI_BREAK_IFRAMES : 0);
     if (s && bomb10_busy() && !s_shield.vm && !s_shield.spawn_pending
         && now_frame - s_dbg_frame > 30) {
         s_dbg_frame = now_frame;

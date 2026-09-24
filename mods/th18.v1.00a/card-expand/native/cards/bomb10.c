@@ -260,6 +260,10 @@ static void bomb10_fx_dump(const char *tag)
  * 我们平铺 spawn（见文件头的偏离 ①）⇒ 位置得由卡侧每帧补上。**scale 绝不碰**（偏离 ②）。*/
 static void bomb10_ring_spawn_due(void)
 {
+    /* ★★★ 2026-09-24（owner：「放罩子的时候**依旧有灵击光环**」）—— 判据放在**函数内部**：
+     *   上一版把 gate 写在 tick 里，后来一次补丁替换把那段吃掉了（日志证据：`罩子形态…不起任何灵击视觉`
+     *   之后紧跟着 `起柱环 环1白 帧 1`）⇒ 现在**函数自己**不看上下文，罩子形态一律不干活。*/
+    if (s_run.nitori_form) return;
     while (s_run.ring_next < BOMB10_RING_SCHED_N &&
            s_run.elapsed >= s_ring_sched[s_run.ring_next].at) {
         const int32_t  k  = s_run.ring_next++;
@@ -284,6 +288,7 @@ static void bomb10_ring_spawn_due(void)
 static void bomb10_ring_follow(float cx, float cy)
 {
     int i;
+    if (s_run.nitori_form) return;          /* ★ 同上：罩子形态不驱动任何环 */
     for (i = 0; i < BOMB10_RING_VMS; ++i) {
         if (!s_run.ring_vm[i]) continue;
         if (!ce_anm_get_vm(s_run.ring_vm[i])) { s_run.ring_vm[i] = 0; continue; }  /* 脚本自删 ⇒ 清句柄 */
@@ -538,6 +543,9 @@ void bomb10_tick(int32_t driver)
      *      （一手 `+1: offset128: scriptNew(398);(399);(398);(399); jmpDec($I0, offset128, 30)`）。
      *      ⚠ 上界：一手那个循环是 `iset($I0, 80)`（80 趟 = 2400 帧），实际由**灵击寿命**截断
      *      （我们 296 帧 ⇒ 9 趟 36 颗；TH10 亦同，主脚本的 `+20: delete()` 只是兜底）。*/
+    /* ★★★ 2026-09-24：**罩子形态整套视觉免掉**（火星与探针也要）。上一版这道 gate 被后续补丁吃掉了
+     *   ⇒ 这次除了函数内部那道，再在调用点补一道（两道都留着，谁被改坏都还有一道）。*/
+    if (s_run.nitori_form) goto skip_bomb_fx;
     bomb10_ring_spawn_due();
     /* ★★ 2026-09-24 二轮订正：柱环**骑着消弹中心**（`center` = 每帧上移的 `bomb.y`）——
      *   见 `bomb10_run_t.vx/vy` 的注（「圈和消弹区分家」就是这个锚点造成的）。
@@ -583,6 +591,7 @@ void bomb10_tick(int32_t driver)
             s_run.leaf_probe[k] = 0;
         }
     }
+skip_bomb_fx:;
 
     /* ④ 收尾（还在场上的柱环要显式删 —— 六支里最长的寿命 140 帧 < 灵击 296 帧）*/
     if (--s_run.left <= 0) {
