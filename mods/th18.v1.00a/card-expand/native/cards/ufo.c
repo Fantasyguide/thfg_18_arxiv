@@ -196,12 +196,18 @@
                                  *   （vol −400 / prio 100 / loop 0）。
                                  *   ⚠ TH12 里这一枚**不是** `Ufo::spawn` 播的（那里只有 0x34 + 0x36）⇒ 本格 =
                                  *   **owner 指定的映射**，不是「一手召唤时就是这一声」。*/
-#define UFO_SE_BREAK    0x1d    /* ★★ 2026-09-23（owner 实跑第 6 条「**击破 UFO 的音效不对**」）重读一手：
-                                 *   TH12 `Ufo::break`（`0x44af00`）那一声 = `th12:0x44af65 lea eax,[edi+0x6]`
-                                 *   + `0x44af6b call 0x453e20`，此刻 `edi` = **0**（同一支里 edi 被写进
-                                 *   `UFO_EtBreak2` 的 main_drop / score_reward，一手那两个字段确实是 0）
-                                 *   ⇒ **id 6 = `se_power1.wav`**（TH12 表第 0x06 行：vol −700 / prio 100）
-                                 *   ⇒ TH18 同一枚 = **0x1d**。旧值 0x38（se_extend2）是 ❓自定 ⇒ 已订正。*/
+#define UFO_SE_BREAK    0x06    /* ★★★ 2026-09-24（owner 报的正确音源）：「**击破 UFO 时候的音效应该是
+                                 *   `se_enep02.wav`**」（并给了他那份 TH12 的 wav，本机 md5 `7d31b64f…`）。
+                                 *   ⇒ 两张表都核过（本机直读）：
+                                 *     · TH12 SE 表 `0x4ae5a4` 第 **0x32**(50) 行 = `se_enep02.wav`
+                                 *       （名表 idx 39、vol −500 / prio 100）；
+                                 *     · TH18 SE 表 `0x4c9b80` 第 6 行 = `se_enep02.wav`（名表 `0x4b47a0` idx 37、
+                                 *       vol −500 / prio 100）⇒ **TH18 id = 0x06**。
+                                 *   ⚠ 订正上一版：`0x44af65 lea eax,[edi+0x6]` 那一声（`edi` 在 `0x44af15 xor edi,edi`
+                                 *     之后确实是 0）＝ TH12 **id 6 = `se_power1.wav`** —— 那是**击破代码里显式播的
+                                 *     一声**（vol −700），不是 owner 耳朵里那声"碎"；**击杀那个真敌人本身**还会由引擎
+                                 *     播它自己的敌人击破音 `se_enep02`（TH12 id 0x32）⇒ 一手实际是**两层**
+                                 *     （显式 se_power1 + 引擎 se_enep02）。owner 要的是后者 ⇒ 我们直接播 0x06。*/
 #define UFO_SE_TOKEN    0x0c    /* ★★ 2026-09-20 改（P1 #th12-3「收取 token 声音应该不是这个」）：
                                  *   **一手 = TH12 `0x26` = `se_timeout2.wav`** —— 令牌（道具 type 10..15）
                                  *   被收下的公共尾：`th12:0x426f7c` 跳表（索引 = type−1，`th12:0x42616a`–
@@ -254,7 +260,7 @@ static const char *const s_sev_name[UFO_SEV_COUNT] = {
  *   （同一天早些时候的口径也是「收 token 没声音，就当没声音处理」）。
  *   ⇒ 实现成**静音表**：事件照旧计数/照旧进日志（可对账），只是**不调 `ce_play_sound`**。
  *   ⚠ 要恢复一手：把下面几格改 0（一行）。
- *   ★ 2026-09-23 追加静音一格 `ufo-etbreak2`：一手击破**只有一声**（id 6 = se_power1，见 `UFO_SE_BREAK`
+ *   ★ 2026-09-23 追加静音一格 `ufo-etbreak2`：一手那发扩圈**自己不播音**（它只是消弹；见 `UFO_SE_BREAK`
  *     的注）⇒ 原来在 `ufo-break` 与 `ufo-etbreak2` 各播一次会听成两声。登记见 `TUNING.md` §2.0y/§2.0z… 与 `SINGLE-CARD-TEST.md` #4。*/
 static const uint8_t s_sev_mute[UFO_SEV_COUNT] = {
     /* token-take */ 1, /* token-slot-full */ 1, /* ufo-absorb */ 1,
@@ -2405,13 +2411,11 @@ static void ufo_absorb_faith_tick(ufo_card_t *s, float ux, float uy)
         float dx = e.x - ux, dy = e.y - uy;
         float nx, ny, speed;
 
-        /* ★★ 2026-09-24（owner：「**似乎在 UFO 期间生成的点是没有『出生无敌』的**」）——
-         *   本池对**回收线/放 B/对话**那条真空门**本来就有**上抛豁免（`FAITH_TOSS_FRAMES`，
-         *   见 `faith.c` §B12），但飞碟这一路此前拿不到这个信息 ⇒ 刚撒出来的点被当场吸走。
-         *   一手对照：TH12 里**消弹/炸弹撒出来的道具**出生在 state 5（intro + 倒计时）**不可上钩**
-         *   （钩子的门要求 `state ∈ {1,2}`，`0x4271dc`）⇒ 「撒出来的点先有一段自己的时间」是一手行为。
-         *   ⇒ 快照的 `in_toss` 为真时**本帧不吸也不拉**（消费者的记账口径不变：它只是"晚一点再吸"）。*/
-        if (e.in_toss) continue;
+        /* ★★ 2026-09-24（owner 追认）：「**没有出生无敌是我们要复现的效果**（我们后建的点是我们自己搞的、
+         *   无所谓，主要是对于**原生点**）」⇒ 飞碟这一路**不看** `in_toss`、也不给任何出生豁免：
+         *   一手里道具的钩子门只要求 `state ∈ {1,2}`（`0x4271dc`），刚出生的道具就是 state 1 ⇒ **当场可吸** ✓。
+         *   （`faith_absorb_t` 里的 `age/state/in_toss` 三个字段保留：生产者照旧声明，
+         *     消费者**当前不用** —— 将来若要给自建点加豁免，判据已经在那儿了。）*/
         if (ufo_within_capture(dx, dy)) {              /* 18 px 内 ⇒ 吸掉（与道具同一判据）*/
             if (!faith_absorb_take(&e)) continue;      /* 这一颗已经被别人收走 / 匹配不上 */
             if (e.tier == FAITH_TIER_BIG) { ++s->faith_pulled_big; s->faith_pulled_big_sum += e.value; }
@@ -2947,6 +2951,10 @@ static int ufo_drop_spawn(ufo_card_t *s, int32_t kind, float x, float y,
 #define UFO_XN_COLOR_GREY 0xff808080u    /* ✅ 一手 `rem%10 >= 5` 那一支（dword 直读 0xff808080）*/
 #define UFO_XN_COLOR_YEL  0xffffff00u    /* 🟡 一手另一支算出 0x00ffff00（alpha=0，ASCII 不看 alpha）⇒ 补 255 */
 #define UFO_XN_FLASH_MOD  10u            /* ✅ 一手 `idiv 0x0a`：按剩余帧的个位闪 */
+/* ★ 2026-09-24（owner 指出原版有第二行）：得分那一行的两个一手数 —— 位置 = 同一点 **y + 32.0**
+ *   （`th12:0x44a68f fadd [0x4a3d70]`，那个常量就是 **32.0**）、**scale 1.0**（倍率那行是 2.0）。*/
+#define UFO_XN_SCORE_DY     32.0f        /* ✅ 一手 `[0x4a3d70]` = 32.0（y 向屏幕下方）*/
+#define UFO_XN_SCORE_SCALE  1.0f         /* ✅ 一手第二条 printf 的 scale = 1.0 */
 
 static uint16_t s_xn_left;               /* 剩余帧（0 = 不画）*/
 static float    s_xn_wx, s_xn_wy;        /* 世界坐标（ECL 640 空间）*/
@@ -2955,6 +2963,8 @@ static int32_t  s_xn_permille;           /* 倍率（千分比；显示 `*%1.1f`
  *   （owner：「剩余时间画在模糊层之后，暂停不会模糊」）—— ASCII 永远进不了暂停模糊罩，
  *   VM 放 UI 层 25 才折到 38 那一个绘制桩（`SDK.md` §16）。状态放 DLL 静态区（同 ×N 的其余几个数）。*/
 static ce_hud_vm_text_t s_xn_text;       /* ×N 的那 4 个字形 VM */
+static ce_hud_vm_text_t s_xn_score_text; /* ★ 它底下那行**得分**（一手 `on_draw_16` 的第二条 printf）*/
+static int32_t s_xn_score;               /* 要显示的分（`zUfo+0x68`）*/
 static ce_hud_vm_text_t s_timer_text;    /* `11:00` 的那 5 个字形 VM */
 
 /* ★★ 2026-09-24（owner：「不知道哪儿冒出来一个 **14.0 的 UI 一直赖着不走**，并且**不被暂停模糊**」）：
@@ -2980,19 +2990,29 @@ static void ufo_xn_kill(void)
 {
     s_xn_left = 0;
     ce_hud_vm_text_clear(&s_xn_text);           /* ★ 长持续效果铁律：VM 也要一起收 */
+    ce_hud_vm_text_clear(&s_xn_score_text);     /* ★ 得分那一行同命 */
+    s_xn_score = 0;
 }
 
 /* 起一次（开奖那一刻调）。`wx/wy` = 掉落物的**世界坐标**（居中系）。 */
-static void ufo_xn_spawn(float wx, float wy, int32_t mult_permille)
+/* ★★★ 2026-09-24（owner 指出原版 ×N 下面还有一行"得分"）—— **这一击的得分**：
+ *   一手把它算在**击破那一刻**（`th12:0x44af00` 里按色四条分支写 `zUfo+0x68`，
+ *   公式 = 我们已经在用的 `ufo_drop_settle_value()`：`cntA×PV×mult + cntB×PV`（红）
+ *   或 `trunc(PV×cntB×mult)` 再 `/10×10`（蓝/绿/彩虹））⇒ 与「赏金包」收集时给的分**同一条公式**。
+ *   ⚠ 收集那一刻的 PV 可能变了（本作 PV 由金钱档推出来）⇒ 弹字显示的是**击破时那一刻**的值
+ *     （一手也是击破时算的 ✓），与包里最终给的分可能有极小差异 —— 记在 `TUNING.md`。*/
+static void ufo_xn_spawn(float wx, float wy, int32_t mult_permille, int32_t score)
 {
     s_xn_wx = wx;
     s_xn_wy = wy;
     s_xn_permille = (mult_permille > 0) ? mult_permille : 1000;
+    s_xn_score = (score > 0) ? score : 0;
     s_xn_left = (uint16_t)UFO_XN_LIFETIME;
-    ce_log("ufo: xN popup up - mult %d.%03d -> vm-text \"*%%1.1f\" at world (%.0f, %.0f) for %u frames "
+    ce_log("ufo: xN popup up - mult %d.%03d + score %d -> vm-text \"*%%1.1f\" (+ score line at +32) "
+           "at world (%.0f, %.0f) for %u frames "
            "(one-hand th12:0x44a5d0: format 0x4a2154 \"*%%1.1f\", scale 2.0, colour flashes "
            "grey/yellow every %%10 frames; lifetime = zUfo+0x64 = 120)",
-           s_xn_permille / 1000, s_xn_permille % 1000, (double)wx, (double)wy,
+           s_xn_permille / 1000, s_xn_permille % 1000, (int)s_xn_score, (double)wx, (double)wy,
            (unsigned)UFO_XN_LIFETIME);
 }
 
@@ -3011,6 +3031,8 @@ static void ufo_xn_tick(void)
                                                         * 只是下一帧 `return`，于是 ×N 的字**永远留在屏上**
                                                         * （owner：「一直赖着不走」）。*/
         ce_hud_vm_text_clear(&s_xn_text);
+        ce_hud_vm_text_clear(&s_xn_score_text);
+        s_xn_score = 0;
         return;
     }
     rem = (uint32_t)s_xn_left % UFO_XN_FLASH_MOD;
@@ -3042,6 +3064,29 @@ static void ufo_xn_tick(void)
                             (rem >= UFO_XN_FLASH_MOD / 2u) ? UFO_XN_COLOR_GREY : UFO_XN_COLOR_YEL,
                             CE_ASCII_ALIGN_CENTER, UFO_XN_SCALE, buf, "ufo-xn",
                             CE_HUD_FONT_TH18_FONT2B);
+    /* ★★★ 2026-09-24（owner：「爆炸之后会有一个 **×[数]** 的黄色大数字，**以及在其底下的一个量级
+     *   应该是得分的数字**」）—— 一手 `Ufo::on_draw_16`（`th12:0x44a5d0`）里确实是**两条** ASCII：
+     *     · 第 1 条（`0x44a664`）：`push 0x4a2154` = **`"*%1.1f"`**，参数 = `zUfo+0x60`（倍率）、
+     *       颜色 = 每 `%10` 帧在灰 `0xff808080` / 黄 之间翻、**scale 2.0**（`fld [0x4a4014]`）、font 4 ✓
+     *       —— 就是上面这一行。
+     *     · 第 2 条（`0x44a6a9`，`test [ebx+0x68],…; jle` 才调）：位置 = 同一点 **y + 32.0**
+     *       （`fld [esp+0x44]; fadd [0x4a3d70]`）、颜色 **white（`[esi+0x18f80] = -1`）**、
+     *       **scale 1.0**、参数 = **`zUfo+0x68` = 这一击的得分**（`0x44af00` 里按色四条分支写进去）。
+     *   ⇒ 本行就是它：白色、scale 1.0、画在 ×N 下方 **32 单位**，而且**只有得分 > 0 才画**（一手同款门）。
+     *   ⚠ 一手那个数是按 `%d,%.3d,%.3d`（千分位）打的（`0x4021a0`，`<1000` 用 `%d`）——
+     *     我们的字形集里**没有逗号** ⇒ 先按**纯数字**打；要千分位就得再补一个 `,` 字形（一处）。*/
+    if (s_xn_score > 0) {
+        char sbuf[16];
+        uint32_t v = (uint32_t)s_xn_score;
+        int k = 0, j;
+        char tmp[12];
+        do { tmp[k++] = (char)('0' + (v % 10u)); v /= 10u; } while (v && k < 11);
+        for (j = 0; j < k; ++j) sbuf[j] = tmp[k - 1 - j];
+        sbuf[k] = '\0';
+        ce_hud_vm_text_set_font(&s_xn_score_text, x, y + UFO_XN_SCORE_DY, 0xffffffffu,
+                                CE_ASCII_ALIGN_CENTER, UFO_XN_SCORE_SCALE, sbuf, "ufo-xn-score",
+                                CE_HUD_FONT_TH18_FONT2B);
+    }
 }
 
 /* ==================== ★★ #22 吸收数记录面板（TH12 `front.anm` script134/135）====================
@@ -3229,6 +3274,19 @@ static int32_t ufo_break_mult_permille(const ufo_card_t *s)
 {
     return ufo_drop_mult_permille(s->u.color, CE_CURRENT_POWER() >= CE_MAX_POWER_VAL(),
                                   s->u.fill_millionths);
+}
+
+/* ★★★ 2026-09-24（owner 指出原版 ×N 下面还有一行"得分"）—— **这一击的得分**：
+ *   一手把它算在**击破那一刻**（`th12:0x44af00` 里按色四条分支写 `zUfo+0x68`，公式 =
+ *   我们已经在用的 `ufo_drop_settle_value()`：红 `cntA×PV×mult + cntB×PV`、
+ *   蓝/绿/彩虹 `trunc(PV×cntB×mult)` 再 `/10×10`）⇒ 与「赏金包」收集时给的分**同一条公式**。
+ *   ⚠ 收集那一刻的 PV 可能变了（本作 PV 由金钱档推出来）⇒ 弹字显示的是**击破时那一刻**的值
+ *     （一手也是击破时算的 ✓），与包里最终给的分可能有极小差异 —— 记在 `TUNING.md`。*/
+static int32_t ufo_break_popup_score(const ufo_card_t *s)
+{
+    int32_t pv = ufo_drop_pv_from_base(CE_MONEY_BASE_VAL());
+    return ufo_drop_settle_value(s->u.color, s->u.cnt_p, s->u.cnt_money,
+                                 ufo_break_mult_permille(s), pv);
 }
 
 /* 击破时掉的**压缩包**（用户口径：有实体、被自动吸收、收集时结算）。 */
@@ -3590,7 +3648,7 @@ static void ufo_break(ufo_card_t *s)
      *     这份快照（在下面算好），**不要**用收包那一刻的值。 */
     {
         int32_t mult = ufo_break_mult_permille(s);
-        ufo_xn_spawn(s->last_x, s->last_y, mult);
+        ufo_xn_spawn(s->last_x, s->last_y, mult, ufo_break_popup_score(s));
         ufo_break_flash_spawn(s->last_x, s->last_y);
     }
     ufo_se(UFO_SEV_BREAK, UFO_SE_BREAK, s->last_x,
