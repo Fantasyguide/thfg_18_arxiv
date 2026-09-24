@@ -1013,26 +1013,35 @@ static uint32_t s_penta_id[UFO_TOKEN_CAP];
 #define UFO_DROP_NATIVE_BOMB_SPEED  2.2f
 /* 原生道具的只读字段（`zItem`；结构体一手 = `local/vendor/th-re-data` 的 `zItem`）：
  *   `+0xc2c` = 世界坐标 float3（一手：spawn 支 `th18:0x447090` 把 `lea ebx,[esi+0xc2c]` 当坐标指针
- *   交给 `0x488f70` 写副 VM 的 `entity_pos`）；`+0xc74` = state（0 = 池里已回收/不画）。*/
+ *   交给 `0x488f70` 写副 VM 的 `entity_pos`）；`+0xc74` = state（0 = 池里已回收/不画）。
+ *   ★★ `+0x10` = `__vm_1`（**内嵌** `zAnmVm`）、`+0x61c` = `__vm_2`（内嵌，两个都 0x60c 字节）、
+ *   `+0xc28` = **只在"卡道具"（type 0x10–0x13）路径**里写的另一个 VM id（vendor `zItem` 与一手
+ *   `th18:0x4470ba`/`0x44710b` 两处同证：卡道具写 id、普通道具写 0）⇒ **对 type 7 恒 0**。*/
 #define UFO_ITEM_POS        0xc2c
 #define UFO_ITEM_STATE      0xc74
 #define UFO_ITEM_STATE_OFF  0
+#define UFO_ITEM_VM1        0x10        /* zItem.__vm_1（内嵌 zAnmVm，脚本 118 = sprite512 那颗星）*/
+#define UFO_ITEM_VM2        0x61c       /* zItem.__vm_2（内嵌 zAnmVm，脚本 140 = sprite513）*/
 /* ★★★ 2026-09-24（owner）：那颗「**五角星**」的来历查清了 —— 它**不是**我们的贴图，而是
- *   **引擎自己画的原生整 B 道具图标**（`bullet/item.png` sprite512，type 7 的 VM1 脚本 118 画的）
- *   —— ZUN 从早期作品层垒下来的**整 B 美术**（owner 原话「其他作品确实是用那个作为一颗 B 的」）。
- *   本卡的外观走「**卡面 + 原生光晕**」那一套（脚本 301/331/345）⇒ 把**引擎那颗图标藏起来**：
- *   每个游玩帧把道具 VM1 的 `color_1`（`item+0x534`，一手 `th18:0x447115` 出生写 0xffffffff）的
- *   **alpha 字节写成 0**（`0x00ffffff`）。
+ *   **引擎自己画的原生整 B 道具图标**（type 7 的两个内嵌 VM：脚本 118 → `bullet/item.png` sprite512、
+ *   脚本 140 → sprite513，都是 32×32 的绿星）—— ZUN 从早期作品层垒下来的**整 B 美术**
+ *   （owner 原话「其他作品确实是用那个作为一颗 B 的」）。
+ *   本卡的外观走「**卡面 + 卡框 + 原生光晕**」那一套（脚本 301/345/358/331）⇒ 把**引擎那两颗星藏起来**：
+ *   每个游玩帧把**两个内嵌 VM 的 `color_1` 的 alpha 字节写成 0**（`0x00ffffff`）。
+ *   `color_1` = `VM+0x524`（= `engine.h` 的 `CE_ANM_VM_COLOR1`）⇒ 落点 = **`item+0x534`** /
+ *   **`item+0xb40`**（`0x10+0x524` / `0x61c+0x524`）。
  *   ⚠ 为什么写在 **tick**（`ufo_drops_tick`，位次在道具 body **之前**）而不是 draw：这样整帧都是透明的；
  *     而引擎的「减速压暗」那支只写 `+0x535/+0x536`（G/R 两个字节，`0x445d42 mov WORD [edi+0x535],0xffa0`）
  *     ⇒ **碰不到 alpha 字节**，我们写的 0 不会被覆盖 ✓。
  *   ⇒ 想让「原生那颗星星」当整 B 外观（而不是我们的卡面）：把 `UFO_ITEM_HIDE_ICON` 改 0 即可。*/
-/* ★★★ 2026-09-24 第 21 轮**修 bug**（owner：「**依旧画了老满B的五角星**」）：
- *   上一版写的是 `item+0x534` —— **那不是颜色**！一手逐指令：道具构造器 `th18:0x447115` 把
- *   `[item+0x534] = 0xffffffff`（道具自己的字段），而**图标 VM 的颜色**在
- *   `th18:0x445d0a`–`0x445d12`：`mov [item+0xc28], eax`（新 VM id）+ `mov [eax+0x524], 0xffa0ffff`
- *   ⇒ 颜色在 **VM + 0x524**（= `engine.h` 的 `CE_ANM_VM_COLOR1`），VM id 在 `item+0xc28`。
- *   ⇒ 现在的藏法 = 每帧 `ce_anm_get_vm(item+0xc28)` 取到 VM，再把 `vm+0x524` 的 **alpha 写 0**。 */
+/* ★★★ 2026-09-24 第 23 轮**再修**（owner 第 22 轮复报「**依旧画了满B五角星**」）：
+ *   第 21 轮那版"藏法"打的是 `ce_anm_get_vm(item+0xc28)` + `vm+0x524` —— **它对我们恒等于空操作**：
+ *   `item+0xc28` 只有**卡道具**（type 0x10–0x13）才写（一手 `th18:0x4470ba` 写在 `type−0x10 ≤ 3` 那条
+ *   分支里），普通道具在 `0x44710b` 被显式写成 **0** ⇒ 实跑日志一直是 `native icon vm 0` ✓ 实证。
+ *   真正画那颗星的是**两个内嵌 VM**（`item+0x10` / `item+0x61c`，spawn 一手 `th18:0x4470d4` 起、
+ *   `0x41f920(脚本, 目的指针)` 两次）⇒ 颜色就在它们自己的 `+0x524` 上，也就是 `item+0x534` /
+ *   `item+0xb40`（一手也在 `0x447115` 出生时写 `[esi+0x534] = 0xffffffff` 证实第一条）。
+ *   ⇒ 现在**两个都写** 0（幂等、每游玩帧一次）。 */
 #define UFO_ITEM_HIDE_ICON  1
 #define UFO_DROP_ANM_LOG_EVERY 60   /* 满 B 的诊断行节奏（0 = 关）；验证摇摆/隐藏星用 */
 /* 引擎读数（照 110 `mof.c` 的同名宏）：满火力判据 = `CURRENT_POWER >= MAX_POWER` */
@@ -3997,15 +4006,17 @@ static void ufo_drops_tick(ufo_card_t *s)
                 if (id) d->anm_id = id;
             }
 #if UFO_ITEM_HIDE_ICON
-            /* ★ 藏掉**引擎画的那颗原生整 B 图标**（ZUN 的遗留星星美术）：每帧把**图标 VM** 的
-             *   `color_1`（`vm+0x524`）alpha 写 0 —— VM id 在 `item+0xc28`（一手 `th18:0x445d0a/0x445d12`
-             *   逐指令，见 `UFO_ITEM_HIDE_ICON` 上面的注）。每帧写一次（幂等）：引擎只在出生/重建那帧
-             *   写白，压暗那支只碰 G/R 字节 ⇒ 我们写的 alpha 不会被覆盖。 */
-            {
-                uint32_t ivm = *(const uint32_t *)(it + UFO_ITEM_ANM_ID);
-                uint8_t *vm = ivm ? ce_anm_get_vm(ivm) : 0;
-                if (vm) *(uint32_t *)(vm + CE_ANM_VM_COLOR1) = 0x00ffffffu;
-            }
+            /* ★★★ 第 23 轮：藏掉**引擎画的那两颗原生整 B 图标**（ZUN 的遗留星星美术）——
+             *   它们是**内嵌 zAnmVm**（`zItem.__vm_1` = `item+0x10`、`__vm_2` = `item+0x61c`，
+             *   一手 spawn `th18:0x4470d4` 两支 `0x41f920`；脚本 = `bullet.anm` 118 → sprite512 /
+             *   140 → sprite513，都是 32×32 的绿星）⇒ 颜色在各自的 `+0x524`：
+             *   `item+0x534`（0x10+0x524）与 `item+0xb40`（0x61c+0x524）。每游玩帧写一次（幂等）：
+             *   引擎只在出生那帧写白（一手 `th18:0x447115` 写 `[esi+0x534]`），压暗那支只碰 G/R 字节
+             *   （`0x445d42`）⇒ 我们写的 alpha=0 不会被覆盖。
+             *   ⚠ 第 21 轮那版走的 `ce_anm_get_vm(item+0xc28)` 对我们**恒是空操作**（那个 id 只有卡道具
+             *   才写，普通道具在 `0x44710b` 被写 0）—— 实跑日志 `native icon vm 0` 就是证据。 */
+            *(uint32_t *)(it + UFO_ITEM_VM1 + CE_ANM_VM_COLOR1) = 0x00ffffffu;
+            *(uint32_t *)(it + UFO_ITEM_VM2 + CE_ANM_VM_COLOR1) = 0x00ffffffu;
 #endif
             continue;
         }
@@ -4045,17 +4056,18 @@ static void ufo_drops_draw_follow(void)
          *   `rotation`（`+0x38/3c/40`）与 `scale`（`+0x54/58`）打一行 ——
          *   摇摆是脚本 301 的 `rotateTime(30,9,±0.17453292)` 在跑（第 22 轮换成**一手 script14 的原值**：
          *   ±10°、30 帧一个单程）；日志里 `rot` 在 ±0.17 之间来回 = 动画在跑。
-         *   ⚠ `scale` 恒 1.000 —— 父 VM 不缩放；卡面那 0.3 在**子 VM**（脚本 345）身上（一手同构）。*/
+         *   ⚠ `scale` 恒 1.000 —— 父 VM 不缩放；卡面那 0.3 在**子 VM**（脚本 345）身上（一手同构）。
+         *   ★ 第 23 轮：同一行再打**两个内嵌图标 VM 的颜色**（`item+0x534` / `item+0xb40`）——
+         *   藏星星就是往这两处写 alpha=0（见 `UFO_ITEM_HIDE_ICON`），日志里两个都应是 `0x00ffffff`。*/
         if ((++s_drop_log_tick % UFO_DROP_ANM_LOG_EVERY) == 0u) {
             float *rv = (float *)(ce_anm_get_vm(d->anm_id) + CE_ANM_VM_ROTATION);
             float *sv = (float *)(ce_anm_get_vm(d->anm_id) + CE_ANM_VM_SCALE);
-            uint32_t ivm = *(const uint32_t *)(it + UFO_ITEM_ANM_ID);
-            uint8_t *ivm_p = ivm ? ce_anm_get_vm(ivm) : 0;
-            ce_log("ufo/drop.bomb: parent vm %u rot (%.4f, %.4f, %.4f) scale (%.3f, %.3f) | native icon vm %u "
-                   "color 0x%08x (alpha must be 0 = hidden star)",
+            uint32_t vm1c = *(const uint32_t *)(it + UFO_ITEM_VM1 + CE_ANM_VM_COLOR1);
+            uint32_t vm2c = *(const uint32_t *)(it + UFO_ITEM_VM2 + CE_ANM_VM_COLOR1);
+            ce_log("ufo/drop.bomb: parent vm %u rot (%.4f, %.4f, %.4f) scale (%.3f, %.3f) | native icon "
+                   "vm1(item+0x534) 0x%08x vm2(item+0xb40) 0x%08x (both alpha must be 00 = star hidden)",
                    d->anm_id, (double)rv[0], (double)rv[1], (double)rv[2],
-                   (double)sv[0], (double)sv[1], ivm,
-                   ivm_p ? *(const uint32_t *)(ivm_p + CE_ANM_VM_COLOR1) : 0u);
+                   (double)sv[0], (double)sv[1], vm1c, vm2c);
         }
 #endif
     }

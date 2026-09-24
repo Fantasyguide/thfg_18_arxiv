@@ -57,6 +57,27 @@
 | 6 | 「**击破 UFO 的音效不对**」| 重读一手 ⇒ `se_power1`（TH18 `0x1d`）；「击破那发 `EtBreak2`」那一格静音（一手只有一声）| `ufo/se: "ufo-break" -> th18 id 0x1d`；耳朵：一声"碎" |
 | 7 | 「**最后一个 UFO 收满却没进入收满状态**（没掉 B、没变炫彩）」| 真因：吸满可以由**信仰点**（不是道具）补满 —— 那条路的返回值被 `(void)` 丢掉了 ⇒ 收满回调（掉 B / 变炫彩 / 播吸满音）不触发。已改成 `if (ufo_absorb_item(...)) ufo_fill_complete(...)` | 最后一只 UFO 靠**信仰点**吸满时，日志出现 `ufo: fill COMPLETE (…)` 且**照样掉 B / 变炫彩** |
 
+## ★ 本批（2026-09-24 深夜第 2 批 · 最新）已改 · 待实跑 —— **owner 第 23 轮：五角星的真身 + 那圈黑边**
+
+> **部署**：DLL 见 `RELEASE-STATE.json`（modkit **4 路径同 md5**）+ **同批 `ability.anm`**（新增卡框图集 `ATLAS_UFO_FRAME`）。
+
+| # | owner 原话（要点）| 真因 / 改了什么 | 实跑看什么 |
+| --- | --- | --- | --- |
+| 1 | 「**依旧画了满B五角星**」| ★★ **我前两轮的藏星是空操作**：`item+0xc28` 只有**卡道具**才写，普通道具恒 0（日志里的 `native icon vm 0` 就是证据）。真正画星的是 `zItem` 的**两个内嵌 VM**（脚本 118/140）⇒ 现在每帧写它们自己的颜色（`item+0x534` / `item+0xb40`）的 alpha=0，证据链见 §本批23-1 | 满 B 前后**一颗星都没有**；诊断行两个颜色都 = `0x00ffffff` |
+| 2 | 「**缺少一个黑色的边框**」| 一手 `abcard.anm` **script17**（上一轮被我跳过）= `sprite(abframe)` + `color(0,32,0)` + `scale(0.3,0.3)`；`abframe.png` **只有外圈 4 px 白环、内部 alpha=0**（上一轮垫深色背景渲染，把透明内部误看成实心卡框）⇒ 照抄 = 新脚本 **358**、层 **17** | 满 B 周围一圈**细黑边**（与 B 碎卡同款）|
+
+### §本批23-1 两条的一手证据链
+
+- **两个内嵌 VM**：vendor `type-structs-own.json` 的 `zItem` = `+0x10 __vm_1 (struct zAnmVm)` /
+  `+0x61c __vm_2` / `+0xc28 unknown`；spawn `th18:0x4470d4`–`0x447106` 两次 `0x41f920(脚本, 目的)`，
+  脚本取自 `0x4b4020`（A）/ `0x4b4024`（B）两张表（**按 PE 节表换算 VA 现 dump**：type 7 ⇒ 118 / 140）。
+- **颜色落点**：`color_1` = `VM+0x524`（`engine.h` 的 `CE_ANM_VM_COLOR1`）⇒ `item+0x534`（0x10+0x524）、
+  `item+0xb40`（0x61c+0x524）；一手 `th18:0x447115` 出生时写 `[esi+0x534]=0xffffffff` 佐证第一条。
+  压暗那支只写 `0x535/0x536`（G/R）⇒ alpha 不会被覆盖。
+- **卡框图**：`abframe.png` 1088 个可见像素全是 `RGB(255,255,255)`（外圈 4 px），4032 个 alpha=0；
+  `color(0,32,0)` 一乘 ⇒ 近黑细边。图集 `ATLAS_UFO_FRAME`（entry 74 / sprite 537）**单独 append 在最末尾**
+  （不插 `ATLAS_UFO_DROP` 中间行 —— 行序 = 编号，插中间会让后面所有卡的 sprite 号 +1）。
+
 ## ★ 本批（2026-09-24 深夜 · 最新）已改 · 待实跑 —— **owner 第 22 轮：「我要和 B 碎一样大」「它得在各方面 == B 碎卡」**
 
 > **部署**：DLL 见 `RELEASE-STATE.json`（modkit **4 路径同 md5**）+ **同批 `ability.anm`**（`ATLAS_UFO_DROP` 的卡面/背光重切）。

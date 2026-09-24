@@ -1,0 +1,6 @@
+# 卡 112 的满 B 卡框（TH18 abcard/ability/abframe.png 的 1:1 切图）
+#   生成器 = assets/ability/make_ufo_drop_art.py
+#   ★ 单独一个图集、**append 在 ORDER.txt 最末尾**：插进 ATLAS_UFO_DROP 的中间行
+#     会让它后面所有行的 sprite 号整体 +1（行序 = 编号，本仓明令避免）。
+ATLAS ATLAS_UFO_FRAME 64x80
+DROP_FRAME         ability/ufo_drop/DROP_FRAME.png   @0,0,64x80

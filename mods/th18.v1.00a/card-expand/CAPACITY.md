@@ -341,6 +341,15 @@ cards: 35 registered from cards.js; shop pool 700/8192 slots, guaranteed offers 
   逐值同原生 `abcard.anm` script15/16）⇒ 满 B 与 B 碎卡**同尺寸同配方**。
   sprite 号仍是 **453..457**（行序没动，只是画布变大）、entry 61 不变；明细见 `TUNING.md` §2.0zzx-2。
 
+- **★ 2026-09-24 第 23 轮新增 `ATLAS_UFO_FRAME`（entry **74**，`CE_ANM_ABILITY_ATLAS_ATLAS_UFO_FRAME`）**：
+  卡 112 的**满 B 卡框**（owner 实跑「**缺少一个黑色的边框**」）= TH18 `abcard/ability/abframe.png`
+  sprite0 (0,0,64,80) 的 **1:1 切图**（原生卡道具那棵树的 script17 画的就是它；画布上**只有外圈 4 px
+  是白的**、内部 alpha=0，乘 `color(0,32,0)` ⇒ 那圈近黑细边）。
+  画布 **64×80**、1 个成员 `DROP_FRAME`；**append 在最末尾**（**单独一个图集**，不塞进 `ATLAS_UFO_DROP`
+  的中间行 —— 行序 = 编号，插中间会让后面所有卡的 sprite 号平移）⇒ 新 sprite = **537**、
+  同批新脚本 = **358**（`CE_ANM_ABILITY_SCRIPT_UFO_CARD_FRAME`），既有号一个没动（entry 74/256，余量 182）。
+  生成器 `assets/ability/make_ufo_drop_art.py`（片段 `entries/ORDER.ufo_frame.txt`）。
+
 - **★ 2026-09-18 新增 `ATLAS_UFO_HUD`（entry **62**，`CE_ANM_ABILITY_ATLAS_ATLAS_UFO_HUD`）**：
   卡 112 的**飞碟槽 HUD** 贴图（用户 2026-09-18 实跑 ⑤：「**飞碟槽 HUD 你没按照原版做**」）
   = **TH12 `front.anm` 的 10 张 1:1 切图**：令牌槽四态 `front/front00.png` sprite59/60/61/62

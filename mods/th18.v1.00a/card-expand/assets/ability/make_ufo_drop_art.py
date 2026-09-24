@@ -112,6 +112,13 @@ SRC_ABCARD_TXT = REPO / "local/th18.v1.00a/anm/abcard/abcard.anm.txt"     # ★ 
 #   ⇒ owner「和 B 碎一样大」靠的是**同一张画布的同一倍率**，不是我们手调的像素数。
 ABCARD_CARD_ENTRY = "ability/BOMB_min.png"
 ABCARD_GLOW_ENTRY = "ability/abitem.png"
+# ★★ 2026-09-24 第 23 轮（owner：「**缺少一个黑色的边框**」）：原生卡道具那棵树的第三支
+#   `abcard.anm` **script17** 画的是 **`ability/abframe.png`**（64×80，**外圈 4 px 白环、内部全透明**
+#   —— 逐像素量过：1088 个可见像素全是 RGB(255,255,255)，其余 4032 个 alpha=0），
+#   乘 `color(0,32,0)` ⇒ **一圈近黑的细边框**。上一轮我以为"卡图不透明 ⇒ 卡框被盖住"而跳过它 ——
+#   错在把**透明内部**当成了实心（PIL 里垫深色背景看成了"深蓝实心"）⇒ 这就是 owner 说少的那圈黑边。
+SRC_ABFRAME = REPO / "local/th18.v1.00a/anm/abcard/ability/abframe.png"
+ABCARD_FRAME_ENTRY = "ability/abframe.png"
 SRC_TXT = REPO / "local/th12.v1.00b/anm/bullet/bullet.anm.txt"
 OUT = HERE / "ufo_drop"
 SCRIPTS = HERE / "scripts"
@@ -130,6 +137,11 @@ SPRITES = [
                                                     #    与原生 B 碎卡同尺寸，见本文件头 2026-09-24 第 22 轮）
     ("CARD_GLOW",       None, None,    (40, 44)),   # ★ 原生光晕 `abitem.png` sprite1 (0,0,40,44) **1:1**
                                                     #   （脚本 331 写 `scale(1,1)` ⇒ 屏显 40×44 = 原生 script16 同值）
+    ("DROP_FRAME",      None, None,    (64, 80)),   # ★ 原生**卡框** `abframe.png` sprite0 (0,0,64,80) **1:1**
+                                                    #   （脚本 358 写 `scale(0.3,0.3)` + `color(0,32,0)` ⇒ 那圈黑边）
+                                                    #   ★ 第 23 轮新增；**单独一个图集、append 在最末尾**
+                                                    #   （见 FRAME_ATLAS_*：塞进 ATLAS_UFO_DROP 的中间行
+                                                    #    会让它后面所有行的 sprite 号整体 +1）
 ]
 
 # 图集排布（★ 2026-09-24 第 22 轮：卡面 20×25 → 64×80、背光 28×35 → 40×44 ⇒ 画布 80×96 → 128×128）
@@ -141,6 +153,22 @@ ATLAS_POS = {                       # 输出名 → (x, y)
     "DROP_ICON_POINT": (48, 0),
     "DROP_BOMB":       (0, 32),     # 0+64=64 ≤ 128、32+80=112 ≤ 128 ✓
     "CARD_GLOW":       (64, 32),    # 64+40=104 ≤ 128、32+44=76 ≤ 128 ✓（与 DROP_BOMB 不重叠）
+}
+# ★ 第 23 轮：`DROP_FRAME` 走**独立的图集**，ORDER 行 **append 在本文件最末尾** ——
+#   行序 = sprite 号，插进中间会让后面所有卡的 sprite 号平移（本仓明令避免）。
+FRAME_ATLAS_NAME = "ATLAS_UFO_FRAME"
+FRAME_ATLAS_W, FRAME_ATLAS_H = 64, 80
+FRAME_ATLAS_POS = {"DROP_FRAME": (0, 0)}
+FRAME_ORDER_FRAG = HERE / "entries" / "ORDER.ufo_frame.txt"
+# 哪些成员走哪个图集：名字 → (图集名, (x, y), 宽, 高)
+ATLAS_OF = {
+    "DROP_FRAME": (FRAME_ATLAS_NAME, FRAME_ATLAS_POS["DROP_FRAME"], FRAME_ATLAS_W, FRAME_ATLAS_H),
+}
+# 原生图成员：名字 → (源 png, `abcard.anm` 里的 entry 名)
+NATIVE_SRC_OF = {
+    "DROP_BOMB":  (SRC_TH18_BOMB_CARD, ABCARD_CARD_ENTRY),
+    "CARD_GLOW":  (SRC_ABITEM, ABCARD_GLOW_ENTRY),
+    "DROP_FRAME": (SRC_ABFRAME, ABCARD_FRAME_ENTRY),
 }
 
 # (输出脚本号, 输出名, TH12 源脚本号, 图标脚本)  —— 图标脚本为 None = 整条照抄（只换 sprite 名）
@@ -209,7 +237,19 @@ def scripts_of(text: str) -> dict[int, list[str]]:
 #   取原生矩形 1:1，倍率写进脚本（0.3 / 1.0，逐值同原生）⇒ 与 B 碎卡同尺寸且同采样。
 
 
-def make_sprites() -> list[str]:
+def _order_row(name: str, canvas_wh: tuple[int, int]) -> str:
+    """ORDER 行：图集成员 = `名字  源 png  @x,y,WxH`（W×H = **画布**尺寸，图集本身就是画布拼的）。
+
+    ★ 第 23 轮：`DROP_FRAME` 落在**另一个图集**（`FRAME_ATLAS_*`）⇒ 坐标从 `ATLAS_OF` 取。"""
+    if name in ATLAS_OF:                               # ★ 卡框：另一个图集
+        _aname, (ax, ay), _w, _h = ATLAS_OF[name]
+    else:
+        ax, ay = ATLAS_POS[name]
+    return (f"{name:<18} ability/ufo_drop/{name}.png   @{ax},{ay},{canvas_wh[0]}x{canvas_wh[1]}")
+
+
+def make_sprites() -> tuple[list[str], list[str]]:
+    """返回 (ATLAS_UFO_DROP 的行, ATLAS_UFO_FRAME 的行)。"""
     if not SRC_PNG.is_file():
         raise SystemExit(f"缺 TH12 原版贴图 {SRC_PNG}")
     rects = read_sprite_rects()
@@ -217,17 +257,18 @@ def make_sprites() -> list[str]:
     src = Image.open(SRC_PNG).convert("RGBA")
     if src.size != (256, 256):
         raise SystemExit(f"{SRC_PNG}: 期望 256×256，实际 {src.size}")
-    # 原生矩形断言（一手 `abcard.anm`：卡面 64×80、光晕 40×44）
-    for ent, want in ((ABCARD_CARD_ENTRY, (0, 0, 64, 80)), (ABCARD_GLOW_ENTRY, (0, 0, 40, 44))):
+    # 原生矩形断言（一手 `abcard.anm`：卡面 64×80、光晕 40×44、卡框 64×80）
+    for ent, want in ((ABCARD_CARD_ENTRY, (0, 0, 64, 80)), (ABCARD_GLOW_ENTRY, (0, 0, 40, 44)),
+                      (ABCARD_FRAME_ENTRY, (0, 0, 64, 80))):
         got = abrects.get(ent)
         if got != want:
             raise SystemExit(f"abcard.anm 的 {ent} 矩形漂了：期望 {want}，实际 {got}")
     OUT.mkdir(parents=True, exist_ok=True)
-    order_lines = []
+    order_lines: list[str] = []
+    frame_lines: list[str] = []
     for name, sid, unit_wh, canvas_wh in SPRITES:
-        if sid is None:                                # ★ DROP_BOMB（卡面）/ CARD_GLOW（背光）：原生图
-            ent = ABCARD_GLOW_ENTRY if name == "CARD_GLOW" else ABCARD_CARD_ENTRY
-            src_path = SRC_ABITEM if name == "CARD_GLOW" else SRC_TH18_BOMB_CARD
+        if sid is None:                                # ★ 卡面 / 背光 / 卡框：原生图 1:1
+            src_path, ent = NATIVE_SRC_OF[name]
             if not src_path.is_file():
                 raise SystemExit(f"缺 {src_path}（先 python3 tooling/thtk/unpack.py th18.v1.00a）")
             x, y, w, h = abrects[ent]
@@ -239,9 +280,7 @@ def make_sprites() -> list[str]:
             if vis < 60:
                 raise SystemExit(f"{src_path}: 切出来的 {w}×{h} 只有 {vis} 个可见像素 —— 矩形错位")
             unit.save(OUT / f"{name}.png")
-            order_lines.append(
-                f"{name:<18} ability/ufo_drop/{name}.png   "
-                f"@{ATLAS_POS[name][0]},{ATLAS_POS[name][1]},{canvas_wh[0]}x{canvas_wh[1]}")
+            (frame_lines if name in ATLAS_OF else order_lines).append(_order_row(name, canvas_wh))
             continue
         if sid not in rects:
             raise SystemExit(f"{SRC_TXT}: entry {ENTRY_NAME} 里没有 sprite{sid}")
@@ -255,11 +294,8 @@ def make_sprites() -> list[str]:
         canvas = Image.new("RGBA", canvas_wh, (0, 0, 0, 0))
         canvas.paste(unit, ((canvas_wh[0] - w) // 2, (canvas_wh[1] - h) // 2))
         canvas.save(OUT / f"{name}.png")
-        # ORDER 行：图集成员 = `名字  源png  @x,y,WxH`（W×H = **画布**尺寸，图集本身就是画布拼的）
-        order_lines.append(
-            f"{name:<18} ability/ufo_drop/{name}.png   "
-            f"@{ATLAS_POS[name][0]},{ATLAS_POS[name][1]},{canvas_wh[0]}x{canvas_wh[1]}")
-    return order_lines
+        order_lines.append(_order_row(name, canvas_wh))
+    return order_lines, frame_lines
 
 
 def port_script(lines: list[str], name_map: dict[int, str], icon: str | None,
@@ -314,11 +350,19 @@ def main() -> int:
         if got != want:
             raise SystemExit(f"sprite{sid} 矩形漂了：期望 {want}，实际 {got}")
 
-    order = make_sprites()
+    order, frame_order = make_sprites()
     ORDER_FRAG.write_text(
         "# 卡 112 的掉落物实体贴图（TH12 bullet.anm entry5 = bullet/etama8.png 的 1:1 切图）\n"
         "#   生成器 = assets/ability/make_ufo_drop_art.py（矩形从 anm 文本读 + 断死）\n"
         f"ATLAS {ATLAS_NAME} {ATLAS_W}x{ATLAS_H}\n" + "\n".join(order) + "\n",
+        encoding="utf-8")
+    # ★ 第 23 轮：卡框单独一个图集，片段**拼在 ORDER.txt 的最末尾**（见 FRAME_ATLAS_* 的注）
+    FRAME_ORDER_FRAG.write_text(
+        "# 卡 112 的满 B 卡框（TH18 abcard/ability/abframe.png 的 1:1 切图）\n"
+        "#   生成器 = assets/ability/make_ufo_drop_art.py\n"
+        "#   ★ 单独一个图集、**append 在 ORDER.txt 最末尾**：插进 ATLAS_UFO_DROP 的中间行\n"
+        "#     会让它后面所有行的 sprite 号整体 +1（行序 = 编号，本仓明令避免）。\n"
+        f"ATLAS {FRAME_ATLAS_NAME} {FRAME_ATLAS_W}x{FRAME_ATLAS_H}\n" + "\n".join(frame_order) + "\n",
         encoding="utf-8")
 
     src_scripts = scripts_of(SRC_TXT.read_text(encoding="utf-8", errors="replace"))

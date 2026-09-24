@@ -21183,3 +21183,28 @@ owner 原话见 `SINGLE-CARD-TEST.md` §本批10-1；一手/数值/自定项见 
 `verify_rebuilt` 与越界/scriptNew 检查全绿）→ `make -C native dllx87`（rc=0；本轮 `ufo.c` 只改注释）→
 `make -C native check`（`engine_abi_check` 8 条 ✅ / `anm_hud_alpha_check` ✅ / `check-docs.py` 全绿）。
 **实跑判据**见 `TUNING.md` §2.0zzx-2 末尾那五条（大小 / 摆动 / 柔光 / 无五角星 / Bomb +1）。
+
+## §BE 详录 #89（2026-09-24）：★ **共享件** `assets/ability/**` + `CAPACITY.md` —— 112 星莲船第**二十三**轮：藏星的**真 bug**（两个内嵌 VM）+ 一手**卡框**（黑边）
+
+**为什么必须登记**：本轮动了 `assets/ability/entries/ORDER.txt`（共享件清单里那条：**append** 了一个新图集
+`ATLAS_UFO_FRAME`）、`assets/ability/scripts/358_*.anm.txt`（**新脚本文件**）、`native/cards/ufo.c`（本卡的）
+与共享台账 `CAPACITY.md`。owner 原话与判据见 `SINGLE-CARD-TEST.md` §本批23-1、数值见 `TUNING.md` §2.0zzx-3。
+
+| 文件 | 改了什么 | 为什么 | 怎么验的 |
+| --- | --- | --- | --- |
+| `assets/ability/entries/ORDER.txt`（**共享件**）| **只 append**：末尾加 `ATLAS ATLAS_UFO_FRAME 64x80` + 1 个成员 `DROP_FRAME`（= 原生 `abcard/ability/abframe.png` sprite0 (0,0,64,80) 的 1:1 切图）。**故意不**塞进 `ATLAS_UFO_DROP` 的中间行 | owner「缺少一个黑色的边框」= 原生卡道具那棵树 script17 画的卡框；塞中间会让**后面所有卡的 sprite 号整体 +1**（行序 = 编号）| 构建期「重排检测」逐行比对 `ORDER.frozen.txt` 前 **187** 行 ⇒ 已定稿段一字未动；`make -C native anm` 报 **entry 74 / sprite 537 / script 359**，`ATLAS_UFO_DROP` 与既有号全部不动 |
+| `assets/ability/scripts/358_ufo_card_frame.anm.txt`（**新文件**）| 一手 `abcard.anm` **script17** 逐条：`sprite(@DROP_FRAME@)` + `color(0,32,0)` + `scale(0.3,0.3)`；`layer(16) → 17`（写得画在卡面之上）| 那圈黑边就是"白环 × (0,32,0)" | `make -C native anm` 绿（脚本按文件名连续追加 = 358）；实跑看卡周围那圈细边 |
+| `assets/ability/scripts/301_ufo_bomb_item.anm.txt`（112 自己的父 VM）| 加一句 `scriptNew(@SCRIPT_UFO_CARD_FRAME@)`（第三支子层），注释里把第 22 轮"Δ3 不抄 script17"改写成"已作废" | 卡框必须在卡面之后起 | 同上 |
+| `assets/ability/make_ufo_drop_art.py`（112 生成器）| 新增第三个原生成员 `DROP_FRAME`（矩形同样从 `abcard.anm.txt` 现读 + 断言 64×80），并新增 `ORDER.ufo_frame.txt` 片段（独立图集）| 美术要能重跑生成 | 重跑幂等；断言在矩形漂移时当场红 |
+| `assets/ability/ufo_drop/DROP_FRAME.png`（**新美术**）| 原生 `abframe.png` sprite0 的 1:1 切图 | 借原生素材，不自己画 | 构建期图集回读：与原生源图**逐字节相同** |
+| `native/cards/ufo.c`（本卡自己的）| ★ 藏星改对地方：从 `ce_anm_get_vm(item+0xc28)`（**空操作**）改成往 `zItem` 两个**内嵌 VM** 的颜色写 alpha=0（`item+0x534` / `item+0xb40`）；诊断行改打这两处颜色 | owner 第 22 轮复报「依旧画了满B五角星」 | `dllx87` 零告警；实跑日志两个颜色都应是 `0x00ffffff` |
+| `CAPACITY.md`（**共享台账**）| 新增 `ATLAS_UFO_FRAME` 那一格（完整宏名 `CE_ANM_ABILITY_ATLAS_ATLAS_UFO_FRAME`、entry 74、成员、一手出处、余量 182）| capcheck 硬门（新图集必须登记）—— 本轮首跑就是被它拦下的 | `make check` 全绿 |
+
+**对既有卡的影响面**：**零编号变化**。`ORDER.txt` 只在**最末尾 append** 一个 entry（74）与一个 sprite（537），
+既有卡的 entry / sprite / script 号**一个都没动**（重排检测 + 本轮 `make check` 是证据；`ATLAS_UFO_DROP`
+那一段的 128×128 / sprite 453…457 与第 22 轮完全一致）。`ufo.c` 与生成器是 112 自己的文件；
+没有动 `sdk.*` / `engine.h` / `sites.py` / `Makefile` / `patch/**` / `cards/faith.*`。
+
+**回归跑了什么**：`make -C native anm`（entry 75 / sprite 537 / script 359；`verify_rebuilt` 与越界 /
+scriptNew 检查全绿、卡框图集逐像素等于原生）→ `make -C native dllx87`（rc=0、`x87 in our objects: 0`）→
+`make -C native check`（含 `capcheck` 与 `check-docs.py`）。**实跑判据**见 `TUNING.md` §2.0zzx-3 末尾四条。
