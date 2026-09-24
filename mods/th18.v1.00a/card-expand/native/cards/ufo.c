@@ -2037,6 +2037,9 @@ typedef struct {
     uint8_t  used;
     uint8_t  carrier;              /* 1 = 这一只被选中（换皮 + 掉令牌）；0 = 只是波里的普通妖精 */
     uint8_t  logged;               /* 换皮日志每只只报一次 */
+    uint8_t  facing;               /* ★ 第 17 轮：0 = 正面（走位皮）/ 1 = 向右（356）/ 2 = 向左（357）*/
+    float    last_x;               /* 上一帧的 x（算水平速度方向）*/
+    uint8_t  have_last_x;
     uint8_t  kind;                 /* `ufo_carrier_kind_t` */
     int16_t  n, s;                 /* 外观身份（`anmSelect` 的 N / 主脚本 S）*/
     int32_t  enemy_id;
@@ -2047,18 +2050,23 @@ typedef struct {
     uint32_t seen_tick;
 } ufo_carrier_t;
 
-typedef struct {                   /* 一波里的候选（到达顺序 = `enemy_id` 顺序）*/
-    int32_t enemy_id;
-    int32_t wave;                  /* ★ 这一只落地时的 **ECL 波号**（MainSub 数字；−1 = 读不到）*/
-    int16_t n, s;
-    float   x, y;
-} ufo_carrier_wave_t;
-
 static ufo_carrier_t s_carriers[UFO_CARRIER_TRACK_MAX];
-static ufo_carrier_wave_t s_wave[UFO_CARRIER_WAVE_MAX];
-static int s_wave_n;
-static int32_t s_wave_cur = -2;            /* 当前这组的 ECL 波号（−2 = 没开组、−1 = 读不到）*/
-static uint32_t s_wave_last_arrival;
+/* ★★ 2026-09-24 第 17 轮：**选宿主改成"落地即选、不再等一波结束"**（owner 实跑两条：
+ *   ①「队列中**前两个**妖精变了（考虑对称总共 4 个）」②「走到一半的路程，**倒数第三个突然变了**」）。
+ *   真因：上一版是"一波结束时才判" ⇒ ①一波里**分几拍刷**的（或跨 MainSub 的）被拆成几组、每组各挑一次；
+ *   ②判定发生在**飞行途中** ⇒ 妖精飞一半突然换皮。
+ *   现在：**每一组的第一只到达时立刻成为宿主**（+ 它后来的**镜像**），组只在"波号变了 / 静默超时"时关闭；
+ *   选择不再依赖"波结束"，所以没有"半途突变"。
+ *   ⚠ 另一条实跑观察（owner ①）：用"**最后**到达的那只当宿主"时，画面上变的是**队列最前面**那只
+ *   ⇒ **创建顺序与队列顺序相反** ⇒ 取"**第一只**到达的"才是 owner 要的「**排在队列最后**」。
+ *   （ENEMY_ID 单调递增 = 创建顺序；这里用"第一次见到"的顺序近似它，同一帧内多只按遍历顺序。）*/
+static int32_t s_grp_wave = -2;            /* 当前组的波号（−2 = 没开组、−1 = 读不到）*/
+static int32_t s_grp_id;                   /* 组里第一只（= 宿主 #1）*/
+static int16_t s_grp_n, s_grp_s;
+static float   s_grp_x, s_grp_y;
+static uint8_t s_grp_mirror;               /* 已经选到镜像了 */
+static uint32_t s_grp_last_arrival;
+static unsigned s_grp_count;               /* 组里见过几只（纯日志）*/
 static uint32_t s_carrier_tick_no;
 static unsigned s_carrier_live, s_carrier_peak, s_carrier_fail, s_carrier_hidden,
                 s_carrier_waves, s_carrier_plain;      /* plain = 同波但没被选中的那些 */
@@ -2091,10 +2099,17 @@ static float ufo_carrier_skin_scale(const uint8_t *e, int kind)
     return 1.0f;
 }
 
-static int ufo_carrier_body_script(int kind)
+/* 皮的脚本：蝴蝶那一档只有一支（一手 script45 本身就是左右两套 sprite 的表）；
+ * 妖精那一档**按飞行方向挑**（owner 第 17 轮：「左右的动态没有复刻」）：
+ *   0 = 正面走位（脚本 352 ← 一手 script15）／1 = 向右（脚本 356 ← 一手 script17）／2 = 向左（357 ← script16）。*/
+static int ufo_carrier_body_script_k(int kind, int facing)
 {
-    return kind == (int)UFO_CARRIER_KIND_BFLY ? CE_ANM_ABILITY_SCRIPT_UFO_CARRIER_BUTTERFLY
-                                              : CE_ANM_ABILITY_SCRIPT_UFO_CARRIER_FAIRY;
+    if (kind == (int)UFO_CARRIER_KIND_BFLY) return CE_ANM_ABILITY_SCRIPT_UFO_CARRIER_BUTTERFLY;
+    switch (facing) {
+    case 1:  return CE_ANM_ABILITY_SCRIPT_UFO_CARRIER_FAIRY_SIDE_R;
+    case 2:  return CE_ANM_ABILITY_SCRIPT_UFO_CARRIER_FAIRY_SIDE_L;
+    default: return CE_ANM_ABILITY_SCRIPT_UFO_CARRIER_FAIRY;
+    }
 }
 
 static ufo_carrier_t *ufo_carrier_find(int32_t id)
@@ -2139,8 +2154,10 @@ static void ufo_carrier_kill_all(void)
 {
     int i;
     for (i = 0; i < UFO_CARRIER_TRACK_MAX; ++i) ufo_carrier_release(&s_carriers[i]);
-    s_wave_n = 0;
-    s_wave_cur = -2;
+    s_grp_wave = -2;
+    s_grp_id = 0;
+    s_grp_mirror = 0;
+    s_grp_count = 0;
     s_stage_script_id = 0;      /* 换关/删卡 ⇒ 关卡脚本的句柄与波号一起作废（下帧重新认）*/
     s_stage_wave = -1;
     if (s_carrier_peak || s_carrier_fail || s_carrier_hidden || s_carrier_waves)
@@ -2155,46 +2172,53 @@ static void ufo_carrier_kill_all(void)
     s_carrier_plain = 0;
 }
 
-/* 一波结束 ⇒ 选宿主：**最后到达的那一只** + 它的**镜像伙伴**（owner ⑦「一般 1 只，考虑对称性 2 只」
- * 「只会有对称位置的 2 个小妖精……且排在队列最后」）。 */
-static void ufo_carrier_wave_flush(void)
+/* 组关闭（只在日志里交代一声；**选宿主不在这里做** —— 已经"落地即选"了）。 */
+static void ufo_carrier_group_close(const char *why)
 {
-    int i, picked = 0, last_i;
-    ufo_carrier_t *c;
-    if (s_wave_n <= 0) return;
+    if (s_grp_wave == -2) return;
     ++s_carrier_waves;
-    last_i = s_wave_n - 1;                             /* 队列最后 = 创建得最晚（id 单调递增）*/
-    if ((c = ufo_carrier_find(s_wave[last_i].enemy_id)) != 0 && !c->carrier) {
-        c->carrier = 1;
-        ++s_carrier_live;
-        if (s_carrier_live > s_carrier_peak) s_carrier_peak = s_carrier_live;
-        ++picked;
+    if (s_grp_count > 0)
+        ce_log("ufo: carrier wave closed (%s) - MainSub %d, %u candidate(s) seen, host %d%s "
+               "(owner: one per wave, two when symmetric, the LAST in the queue)",
+               why, (int)s_grp_wave, s_grp_count, (int)s_grp_id, s_grp_mirror ? " + its mirror" : "");
+    s_grp_wave = -2;
+    s_grp_id = 0;
+    s_grp_mirror = 0;
+    s_grp_count = 0;
+}
+
+/* 新到一只候选：决定它是不是宿主。返回 1 = 它成了宿主（要起皮）。 */
+static int ufo_carrier_arrival(ufo_carrier_t *c, float x, float y)
+{
+    int32_t w = (s_stage_wave >= 0) ? s_stage_wave : -1;
+    int new_group;
+    if (s_grp_wave == -2)                       new_group = 1;
+    else if (w >= 0 && s_grp_wave >= 0)         new_group = (w != s_grp_wave);   /* 有波号：只看波号 */
+    else                                        new_group = (s_carrier_tick_no - s_grp_last_arrival) > UFO_CARRIER_WAVE_GAP;
+    ++s_grp_count;
+    s_grp_last_arrival = s_carrier_tick_no;
+    if (new_group) {
+        if (s_grp_wave != -2) ufo_carrier_group_close("next wave");
+        s_grp_wave = w;
+        s_grp_id = c->enemy_id;
+        s_grp_n = c->n;
+        s_grp_s = c->s;
+        s_grp_x = x;
+        s_grp_y = y;
+        s_grp_mirror = 0;
+        s_grp_count = 1;
+        return 1;                               /* ★ 组里第一只 = 宿主 #1（= 队列最后那只）*/
     }
-    if (UFO_CARRIER_PER_WAVE >= 2) {                   /* 找它的镜像伙伴（同波、同 (N,S)、x ≈ −x、y 接近）*/
-        for (i = last_i - 1; i >= 0; --i) {
-            float dx = s_wave[i].x + s_wave[last_i].x;
-            float dy = s_wave[i].y - s_wave[last_i].y;
-            if (dx < 0.0f) dx = -dx;
-            if (dy < 0.0f) dy = -dy;
-            if (s_wave[i].n != s_wave[last_i].n || s_wave[i].s != s_wave[last_i].s) continue;
-            if (dx > UFO_CARRIER_SYM_XTOL || dy > UFO_CARRIER_SYM_YTOL) continue;
-            if ((c = ufo_carrier_find(s_wave[i].enemy_id)) != 0 && !c->carrier) {
-                c->carrier = 1;
-                ++s_carrier_live;
-                if (s_carrier_live > s_carrier_peak) s_carrier_peak = s_carrier_live;
-                ++picked;
-            }
-            break;
+    if (UFO_CARRIER_PER_WAVE >= 2 && !s_grp_mirror && c->n == s_grp_n && c->s == s_grp_s) {
+        float dx = x + s_grp_x, dy = y - s_grp_y;
+        if (dx < 0.0f) dx = -dx;
+        if (dy < 0.0f) dy = -dy;
+        if (dx <= UFO_CARRIER_SYM_XTOL && dy <= UFO_CARRIER_SYM_YTOL) {
+            s_grp_mirror = 1;
+            return 1;                           /* ★ 它的**镜像伙伴** = 宿主 #2 */
         }
     }
-    s_carrier_plain += (unsigned)(s_wave_n - picked);
-    ce_log("ufo: carrier wave judged - MainSub %d (ECL wave count), %d candidate(s) (N %d, S %d), "
-           "picked %d as host(s): enemy_id %d at (%.0f, %.0f)%s "
-           "(owner: one per wave, two when symmetric, at the END of the queue)",
-           (int)s_wave_cur, s_wave_n, (int)s_wave[0].n, (int)s_wave[0].s, picked,
-           (int)s_wave[last_i].enemy_id, (double)s_wave[last_i].x, (double)s_wave[last_i].y,
-           picked > 1 ? " + its mirror" : " (no mirror found)");
-    s_wave_n = 0;
+    return 0;                                   /* 同波其余同类妖精：原样、不掉 */
 }
 
 /* 死亡回调里的那一问：**这一只是不是宿主**。
@@ -2204,12 +2228,7 @@ static void ufo_carrier_wave_flush(void)
 static int ufo_carrier_host_now(int32_t id)
 {
     ufo_carrier_t *c = ufo_carrier_find(id);
-    int i;
-    if (c && c->carrier) return 1;
-    for (i = 0; i < s_wave_n; ++i)
-        if (s_wave[i].enemy_id == id) { ufo_carrier_wave_flush(); break; }
-    c = ufo_carrier_find(id);
-    return (c && c->carrier) ? 1 : 0;
+    return (c && c->carrier) ? 1 : 0;       /* 选宿主是"落地即定"的 ⇒ 死亡时只查一下记录 */
 }
 
 /* ★ 每游玩帧扫一遍敌机（调用点 = `on_item_frame`，与本体跟随 VM 同一拍）。
@@ -2247,41 +2266,41 @@ static void ufo_carrier_tick(void)
             c->n = (int16_t)*(const int32_t *)(e + CE_ENEMY_ANM_SRC);
             c->s = (int16_t)*(const int32_t *)(e + CE_ENEMY_ANM_SCRIPT);
             c->skin_scale = ufo_carrier_skin_scale(e, kind);
-            /* ★ 分组键 = **ECL 自己的波号**（MainSub 数字，owner 第 15 轮点的那件事）：
-             *   波号变了 ⇒ 上一波到此为止（先把上一波判完，再开新的一波）；
-             *   读不到波号（−1）时才退回"到达间隔 > GAP"那条启发式。 */
-            {
-                int32_t w = (s_stage_wave >= 0) ? s_stage_wave : -1;
-                /* ★ 2026-09-24 第 16 轮修 bug（owner 实跑：「第二波外侧的杂鱼妖精**几乎全变了**」）：
-                 *   上一版的判据是 `波号变了 || 间隔 > GAP` —— 那个 `||` 会把**同一波里分几拍刷**的
-                 *   妖精拆成好几个"波"，每小组各挑一次 ⇒ 换皮的比该换的多得多。
-                 *   现在：**有波号就只看波号**（同一波永不被间隔拆开）；只有读不到波号时才退回间隔。*/
-                int new_wave;
-                if (w >= 0 && s_wave_cur >= 0)
-                    new_wave = (w != s_wave_cur);
-                else if (w < 0)
-                    new_wave = (s_carrier_tick_no - s_wave_last_arrival) > UFO_CARRIER_WAVE_GAP;
-                else
-                    new_wave = 0;              /* 波号由"读不到"变"读得到"：同一波继续攒 */
-                if (s_wave_n > 0 && new_wave) ufo_carrier_wave_flush();
-                if (s_wave_n == 0) s_wave_cur = w;
-                if (s_wave_n < UFO_CARRIER_WAVE_MAX) {
-                    s_wave[s_wave_n].enemy_id = id;
-                    s_wave[s_wave_n].wave = w;
-                    s_wave[s_wave_n].n = c->n;
-                    s_wave[s_wave_n].s = c->s;
-                    s_wave[s_wave_n].x = *(const float *)(e + CE_ENEMY_POS_X);
-                    s_wave[s_wave_n].y = *(const float *)(e + CE_ENEMY_POS_Y);
-                    ++s_wave_n;
-                }
+            /* ★ 分组键 = **ECL 自己的波号**（MainSub 数字），组里的**第一只立刻当宿主** + 后来的镜像。 */
+            if (ufo_carrier_arrival(c, *(const float *)(e + CE_ENEMY_POS_X),
+                                       *(const float *)(e + CE_ENEMY_POS_Y))) {
+                c->carrier = 1;
+                ++s_carrier_live;
+                if (s_carrier_live > s_carrier_peak) s_carrier_peak = s_carrier_live;
+            } else {
+                ++s_carrier_plain;
             }
-            s_wave_last_arrival = s_carrier_tick_no;
         }
         c->seen_tick = s_carrier_tick_no;
         if (!c->carrier) continue;                     /* 没被选中 ⇒ 保持原生贴图、不掉令牌 */
         /* —— 被选中的宿主：起皮（第一次进来时）+ 每帧跟随 + 隐掉原生贴图 —— */
-        if (!c->body_vm)
-            c->body_vm = ce_anm_spawn(CE_ABILITY_ANM(), ufo_carrier_body_script(c->kind), UFO_CARRIER_BODY_LAYER);
+        {   /* ★ 第 17 轮：按**飞行方向**挑皮的那一支（正面 352 / 向右 356 / 向左 357）——
+             * owner 实跑：「左右的动态没有复刻」⇒ 妖精得跟着自己的飞行方向转身（一手 script15/16/17）。
+             * 方向变了就**重起一次皮 VM**（走位那一段会在新脚本里从头播一遍，观感与原版一致）；
+             * 死区 0.5 单位/帧，避免飘着飘着左右抖。 */
+            float x_now = *(const float *)(e + CE_ENEMY_POS_X);
+            int facing = c->facing;
+            if (c->have_last_x) {
+                float dx = x_now - c->last_x;
+                if (dx > 0.5f)       facing = 1;
+                else if (dx < -0.5f) facing = 2;
+            }
+            c->last_x = x_now;
+            c->have_last_x = 1;
+            if (!c->body_vm || facing != c->facing) {
+                if (c->body_vm) { ce_anm_delete(c->body_vm); c->body_vm = 0; }
+                c->facing = (uint8_t)facing;
+                c->body_vm = ce_anm_spawn(CE_ABILITY_ANM(), ufo_carrier_body_script_k(c->kind, facing),
+                                          UFO_CARRIER_BODY_LAYER);
+                if (c->body_vm && c->skin_scale != 1.0f)
+                    ce_anm_set_scale(c->body_vm, c->skin_scale, c->skin_scale);
+            }
+        }
         if (!c->mark_vm)
             c->mark_vm = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_UFO_CARRIER_MARK,
                                       UFO_CARRIER_MARK_LAYER);
@@ -2290,8 +2309,8 @@ static void ufo_carrier_tick(void)
             ce_log("ufo: carrier skin ON - enemy_id %d (N %d, S %d) -> %s x%.2f; body script %d + mark script %d "
                    "(owner: the skin MEANS it carries a token)",
                    (int)c->enemy_id, (int)c->n, (int)c->s,
-                   c->kind == (uint8_t)UFO_CARRIER_KIND_BFLY ? "BFLY (sprite125..132 蝴蝶)" : "FAIRY (sprite36..39 妖精)",
-                   (double)c->skin_scale, ufo_carrier_body_script(c->kind),
+                   c->kind == (uint8_t)UFO_CARRIER_KIND_BFLY ? "BFLY (sprite125..132 蝴蝶)" : "FAIRY (sprite36..47 妖精)",
+                   (double)c->skin_scale, ufo_carrier_body_script_k(c->kind, (int)c->facing),
                    CE_ANM_ABILITY_SCRIPT_UFO_CARRIER_MARK);
         }
         {
@@ -2325,12 +2344,11 @@ static void ufo_carrier_tick(void)
         }
 #endif
     }
-    /* 静默判定：有 ECL 波号时用较长的 SETTLE（一波里的刷出可能隔几十帧），
-     * 只有启发式时才用 GAP（否则最后那一波永远不会被判到）。*/
+    /* 组静默超时 ⇒ 关组（只为日志与状态复位；宿主早就选好了）。*/
     {
-        uint32_t quiet = (s_wave_cur >= 0) ? UFO_CARRIER_WAVE_SETTLE : UFO_CARRIER_WAVE_GAP;
-        if (s_wave_n > 0 && (s_carrier_tick_no - s_wave_last_arrival) > quiet)
-            ufo_carrier_wave_flush();
+        uint32_t quiet = (s_grp_wave >= 0) ? UFO_CARRIER_WAVE_SETTLE : UFO_CARRIER_WAVE_GAP;
+        if (s_grp_wave != -2 && (s_carrier_tick_no - s_grp_last_arrival) > quiet)
+            ufo_carrier_group_close("quiet");
     }
     /* 这一帧没见到的（死了 / 飞走了 / 换关清了场）⇒ 收皮 + 还原颜色 */
     for (i = 0; i < UFO_CARRIER_TRACK_MAX; ++i)

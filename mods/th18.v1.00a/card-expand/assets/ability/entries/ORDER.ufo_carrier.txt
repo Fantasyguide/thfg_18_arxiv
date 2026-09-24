@@ -16,12 +16,20 @@ CARRIER_BFLY_5            ability/ufo_carrier/CARRIER_BFLY_5.png   @320,0,64x64
 CARRIER_BFLY_6            ability/ufo_carrier/CARRIER_BFLY_6.png   @384,0,64x64
 CARRIER_BFLY_7            ability/ufo_carrier/CARRIER_BFLY_7.png   @448,0,64x64
 
-# 32×32 小妖精 4 张（一手 sprite84..87 = 妖精贴图第 4 行；script35 走位）
-ATLAS ATLAS_UFO_CARRIER_FAIRY 128x32
+# 32×32 完整小妖精 12 帧（一手 sprite36..47 = 妖精贴图**第 4 行 / 黄族**整行：36..39 = 正面走位（一手 script15）、40..47 = 转身/侧身（一手 script16..19））
+ATLAS ATLAS_UFO_CARRIER_FAIRY 256x64
 CARRIER_FAIRY_0           ability/ufo_carrier/CARRIER_FAIRY_0.png   @0,0,32x32
 CARRIER_FAIRY_1           ability/ufo_carrier/CARRIER_FAIRY_1.png   @32,0,32x32
 CARRIER_FAIRY_2           ability/ufo_carrier/CARRIER_FAIRY_2.png   @64,0,32x32
 CARRIER_FAIRY_3           ability/ufo_carrier/CARRIER_FAIRY_3.png   @96,0,32x32
+CARRIER_FAIRY_4           ability/ufo_carrier/CARRIER_FAIRY_4.png   @128,0,32x32
+CARRIER_FAIRY_5           ability/ufo_carrier/CARRIER_FAIRY_5.png   @160,0,32x32
+CARRIER_FAIRY_6           ability/ufo_carrier/CARRIER_FAIRY_6.png   @192,0,32x32
+CARRIER_FAIRY_7           ability/ufo_carrier/CARRIER_FAIRY_7.png   @224,0,32x32
+CARRIER_FAIRY_8           ability/ufo_carrier/CARRIER_FAIRY_8.png   @0,32,32x32
+CARRIER_FAIRY_9           ability/ufo_carrier/CARRIER_FAIRY_9.png   @32,32,32x32
+CARRIER_FAIRY_10          ability/ufo_carrier/CARRIER_FAIRY_10.png   @64,32,32x32
+CARRIER_FAIRY_11          ability/ufo_carrier/CARRIER_FAIRY_11.png   @96,32,32x32
 
 # 64×32 头顶旋转飞碟 6 张（一手 sprite167..172；script98 每 3 帧换一张）
 ATLAS ATLAS_UFO_CARRIER_MARK 384x32

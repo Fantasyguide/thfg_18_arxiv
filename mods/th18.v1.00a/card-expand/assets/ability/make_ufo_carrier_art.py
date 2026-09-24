@@ -14,7 +14,7 @@
 | 输出 | 一手 sprite | 一手脚本 | 说明 |
 | --- | --- | --- | --- |
 | `CARRIER_BFLY_0..7` | `enemy.anm` **sprite125..132** | **script45**（4 帧走位 + 左右翻转两套） | 64×64 的蝴蝶（白翅 + 粉花身体）= owner 说的「第一二行」 |
-| `CARRIER_FAIRY_0..3` | **`sprite36..39`** | **script15** | ★ 32×32 的**完整**小妖精 = owner 说的「妖精贴图第 4 行」 |
+| `CARRIER_FAIRY_0..11` | **`sprite36..47`** | **script15**（36..39）+ **script16..19**（40..47）| ★ 32×32 的**完整**小妖精 = owner 说的「妖精贴图第 4 行」；**一行 12 帧 = 正面走位 + 转身/侧身**（owner：「左右的动态没有复刻」= 这 8 帧转身动画也要用上）|
 | `CARRIER_MARK_0..5` | `sprite167..172` | **script98**（+ 子 100/101 两层灰影） | 64×32 的**旋转飞碟**（每 3 帧换一张），挂在头顶 `pos(0, -32)` |
 
 ## ★★ 2026-09-24 第 16 轮：妖精那三张图**切错了**（owner 实跑：「sprite 切分有问题」）
@@ -67,8 +67,9 @@ ORDER_FRAG = HERE / "entries" / "ORDER.ufo_carrier.txt"
 GROUPS = [
     ("ATLAS_UFO_CARRIER_BFLY",  "CARRIER_BFLY",  125, 8, (64, 64),
      "64×64 蝴蝶 8 张（一手 enemy.anm sprite125..132；走位用前 4 张 = script45）"),
-    ("ATLAS_UFO_CARRIER_FAIRY", "CARRIER_FAIRY",  36, 4, (32, 32),
-     "32×32 完整小妖精 4 帧（一手 sprite36..39 = 妖精贴图**第 4 行**；一手 script15 走位）"),
+    ("ATLAS_UFO_CARRIER_FAIRY", "CARRIER_FAIRY",  36, 12, (32, 32),
+     "32×32 完整小妖精 12 帧（一手 sprite36..47 = 妖精贴图**第 4 行 / 黄族**整行："
+     "36..39 = 正面走位（一手 script15）、40..47 = 转身/侧身（一手 script16..19））"),
     ("ATLAS_UFO_CARRIER_MARK",  "CARRIER_MARK",  167, 6, (64, 32),
      "64×32 头顶旋转飞碟 6 张（一手 sprite167..172；script98 每 3 帧换一张）"),
 ]

@@ -1,0 +1,36 @@
+script script357 {
+    // 112 星莲船 —— **杂鱼妖精宿主：向左飞时的转身/侧身动画（= 356 的镜像；一手 script16 与 script17 的唯一差别就是这一行 `flipX()`）**
+    //   一手：TH12 v1.00b `enemy.anm` **script16** 逐条移植（`local/th12.v1.00b/anm/enemy/enemy.anm.txt`）。
+    //   原文：`layer(8); flipX(); sprite(40); +4: 41; +4: 42; +4: 43; +5: offset60: sprite(44);
+    //         +5: 45; +5: 46; +5: 47; jmp(offset60, 12);`（★ 与 script17 的唯一差别就是 `flipX()`）
+    //   ⇒ 精灵 40..43 = 转身的前半段（4 帧），44..47 = 侧身循环（4 帧，5 帧一张、`jmp(...,12)` 绕回去）。
+    //
+    // ★★ 为什么要有这一支（owner 2026-09-24 第 17 轮实跑：「**左右的动态没有复刻**」）：
+    //   妖精那一行 12 帧里**前 4 帧是正面走位、后 8 帧是转身到侧身**；我们上一版只切了正面那 4 帧
+    //   ⇒ 妖精往左/右飞的时候还是正面朝着镜头，和原版"转身朝自己的飞行方向"不搭。
+    //   TH12 自己就是用 `script16/17/18/19` 四支（正/反 × `flipX` 与否）切这套左右动态的
+    //   ⇒ 本卡照抄两支：**357 = `flipX()`**、**356 = 不翻转**，
+    //   由 C 侧按敌人的**水平速度方向**决定用哪一支（见 `ufo.c` 的 `ufo_carrier_body_script()`）。
+    //
+    // 移植改动（Δ）：`sprite(40..47)` → `@CARRIER_FAIRY_4..11@`（图集里 0..3 = 正面 / 4..11 = 转身侧身）；
+    //   `layer(8)` 原值保留。
+    layer(8);
+    flipX();          // ★ 与 356 的唯一差别（一手 script16 也是只多这一行）
+    sprite(@CARRIER_FAIRY_4@);
++4: // 4
+    sprite(@CARRIER_FAIRY_5@);
++4: // 8
+    sprite(@CARRIER_FAIRY_6@);
++4: // 12
+    sprite(@CARRIER_FAIRY_7@);
++5: // 17
+offset60:
+    sprite(@CARRIER_FAIRY_8@);
++5: // 22
+    sprite(@CARRIER_FAIRY_9@);
++5: // 27
+    sprite(@CARRIER_FAIRY_10@);
++5: // 32
+    sprite(@CARRIER_FAIRY_11@);
+    jmp(offset60, 12);
+}
