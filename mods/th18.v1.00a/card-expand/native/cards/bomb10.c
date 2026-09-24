@@ -304,7 +304,7 @@ static void bomb10_ring_follow(float cx, float cy)
 int32_t bomb10_start(const bomb10_host_t *host, void *user, int32_t by_hit)
 {
     const float *pp;
-    int32_t power_before, power_after = 0, cost, reimu, spell_now;
+    int32_t power_before, power_after = 0, cost, reimu;
 
     if (!host) return 0;
     if (s_run.left > 0) return 0;                       /* ① 一手：灵击进行中 ⇒ 不再发动 */
@@ -320,7 +320,6 @@ int32_t bomb10_start(const bomb10_host_t *host, void *user, int32_t by_hit)
     *(int32_t *)CE_ADDR_CURRENT_POWER = power_after;
     ce_repopulate_options();                            /* 子机按新档重建（必须）*/
 
-    spell_now = ce_spell_active();
     reimu = (*(const volatile int32_t *)CE_ADDR_CHARACTER == 0);
     s_run.host         = host;
     s_run.user         = user;
@@ -331,7 +330,8 @@ int32_t bomb10_start(const bomb10_host_t *host, void *user, int32_t by_hit)
      *   不能把这个当常态」⇒ 判据走 `mof_core_bomb_suppressed(spell_id)`（名单默认空 ⇒ TH18 侧不启用），
      *   而**不是** `spell_now`。⚠ 伤害表 / `bomb+0x44` 那几处仍然用通用的 `spell_now`（一手 `flags & 1`），
      *   别混用：两者一手就不是同一个判据。
-     *   ⚠ `spell_now` 这一行仍然要读（它给伤害/大字灵击用），只是**不再**参与半径与视觉变体。*/
+     *   ⚠ 伤害表 / 大字灵击那几处仍用通用的 `ce_spell_active()`（逐帧在 `bomb10_tick()` 里读），
+     *     只是**不再**参与半径与视觉变体的选择。*/
     /* ★★★ owner 口径（2026-09-24）：「**111 和 110 是一套系统，当然也得吃特技**」⇒ 判据 = 
      *   **装了 111（声明位）+ 魔理沙机体**，与「谁放的那一发」无关 —— 110 放的照样是罩子形态。
      *   `s_nitori_armed` 由 111 **每帧**声明（见 `signal.c` 的 tick）⇒ 同帧内谁先 tick 都不影响。*/
@@ -431,7 +431,7 @@ void bomb10_tick(int32_t driver)
     /* ★ 2026-09-22 无敌：**每帧声明剩余帧数**（声明层取 max、只写更长值 ⇒ 不会截短别人的无敌）。
      * 一手是「发动瞬间一次性给 270/200」（`Timer::set`），引擎自己逐帧递减 ⇒ 我们这里同步递减并声明，
      * 两者在锁步中只可能**补足**（引擎那侧被消耗掉了才重写），数到 0 就声明 0 把这一格清干净。*/
-    if (s_run.invuln_left > 0) {
+    if (s_run.invuln_left > 0) {          /* 罩子形态这一格恒 0（起手就没给）⇒ 整段自然跳过 */
         --s_run.invuln_left;
         ce_invuln_request((uint32_t)s_run.owner_id, s_run.invuln_left);
     }

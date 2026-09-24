@@ -1088,18 +1088,36 @@ static void signal_shield_arm(signal_card_t *s, int32_t cost, int with_refund)
  *   幂等：罩子已经在 ⇒ 什么都不做。*/
 static void signal_nitori_join_bomb(signal_card_t *s)
 {
+    /* 诊断（节流）：只在「有灵击在跑、但本卡没泡」的帧里打一行，说清每一道门的状态 ——
+     * owner 报「第二次放灵击时罩子再也放不出来」⇒ 这行能直接指出是哪个条件挡住的。*/
+    static int32_t s_dbg_frame;
+    int32_t now_frame = (int32_t)ce_sdk_frame();
     int32_t cost;
 
     bomb10_nitori_declare(SIGNAL_ID_NUM, 1);          /* ① 在场声明（每帧，粘性）*/
+    if (s && bomb10_busy() && !s_shield.vm && !s_shield.spawn_pending
+        && now_frame - s_dbg_frame > 30) {
+        s_dbg_frame = now_frame;
+        ce_log("signal/shield/dbg: 有灵击在跑但本卡没泡 —— elapsed=%d ch=%d cost=%d "
+               "spawn_pending=%d break_left=%d breaks=%d refunds=%d denials=%d",
+               (int)bomb10_elapsed(), (int)*(const volatile int32_t *)CE_ADDR_CHARACTER,
+               (int)bomb10_last_cost(), (int)s_shield.spawn_pending, (int)s_shield.break_left,
+               (int)s_shield.breaks, (int)s_nitori.refunds, (int)s_nitori.denials);
+    }
     if (!s) return;
     if (*(const volatile int32_t *)CE_ADDR_CHARACTER != SIGNAL_CHAR_MARISA) return;
-    if (!bomb10_busy() || bomb10_elapsed() > 2) return;   /* 只认「刚起手那一两帧」*/
-    if (s_shield.vm || s_shield.spawn_pending || s_shield.break_left > 0) return;   /* 已经有罩子 */
+    if (!bomb10_busy()) return;
+    /* ★ 2026-09-24（owner 实跑：「**第二次放灵击的时候罩子再也放不出来**」）：窗口 2 → **10 帧**，
+     *   并且**不再因为破罩演出还在放就拒绝**（`break_left > 0` 只是上一只泡的 30 帧破罩动画还没演完
+     *   —— 新泡起来时 `signal_shield_arm()` 本来就会把那段演出提前结束）。仍只在「本卡手上没有泡」
+     *   时补（`vm` / `spawn_pending` 为空）。*/
+    if (bomb10_elapsed() > 10) return;
+    if (s_shield.vm || s_shield.spawn_pending) return;
     cost = bomb10_last_cost();
     if (cost <= 0) return;
     signal_shield_arm(s, cost, 1);
     ce_log("signal/shield: 补起泡 —— 这一发是**别人**（110）放的，但 111 在场 ⇒ 照吃河童特技"
-           "（扣款真值 %d 单位，退款窗已开）", (int)cost);
+           "（扣款真值 %d 单位，退款窗已开；elapsed=%d）", (int)cost, (int)bomb10_elapsed());
 }
 
 static int signal_shield_busy(void)
