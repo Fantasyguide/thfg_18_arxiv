@@ -759,9 +759,16 @@ int main(void)
     CHECK(mof_core_bomb_rise_milli(0, 1) == 1000);    /* 非符卡 + 灵梦：1.0 */
     CHECK(mof_core_bomb_rise_milli(0, 0) == 1300);    /* 非符卡 + 魔理沙：1.3 */
 
-    /* ============ 灵击：伤害表与缩放链（★ 2026-09-15 一手）============
+    /* ============ 灵击：伤害表与缩放链（★ 2026-09-15 一手；★★ 2026-09-25 订正）============
      * 一手 `th10:0x4059f0` 的返回表 + `th10:0x40e141`–`0x40e19e` 的缩放：
-     *   raw → /5（player_state ∈ {0,2}）→ 0 则整笔跳过 → 符卡中再 /5、下限 1。*/
+     *   raw → 0 则整笔跳过 → （**该敌是 boss** 且符卡中）再 /5、下限 1。
+     * ★★★ 2026-09-25 订正（owner 实跑：「灵击的伤害有点小」）：原来我们**无条件**先 /5 一次，
+     *   依据是「`player_state ∈ {0,2} ⇒ /5`」＋ 一条 🟡 推断「游玩中恒 0」。**推断被一手否掉**：
+     *   `player+0x458` 是 0..4 状态机（跳转表 `th10:0x426344`），装表项 **1 = 正常游玩**
+     *   （灵击的门槛/按键/扣火力整段在 `th10:0x425964` 里），状态 0 = 入场/复活上升
+     *   （`th10:0x425751`，满 60 帧后 `th10:0x42590f` 写 1）、状态 2 = 被弹（`th10:0x426a44`）。
+     *   ⇒ **正常游玩不除**，我们原来恒少 5 倍（符卡里对 boss 少 25 倍 → 被保底 1 吃掉）。
+     *   下面每一条都标了「一手原始值 → 正常游玩实得」。*/
     CHECK(MOF_BOMB_DMG_IN_SPELL_NOBIG == 3);          /* 表本身（一手立即数）*/
     CHECK(MOF_BOMB_DMG_IN_SPELL_BIG == 38);
     CHECK(MOF_BOMB_DMG_IN_BOSS == 38);
@@ -769,25 +776,33 @@ int main(void)
     CHECK(MOF_BOMB_DMG_NONE == 0);
     CHECK(MOF_BOMB_DMG_DIV == 5);
     CHECK(MOF_BOMB_BIG_BOMB_FRAMES == 60);            /* `bomb+0x44` 的门（`th10:0x4059ca cmp …,0x3c`）*/
-    /* 圈内 / 无符卡 / 有 boss → 38/5 = 7（一手主用例）*/
-    CHECK(mof_core_bomb_damage(1, 1, 0, 0, 1) == 7);
-    /* 圈内 / 无符卡 / 无 boss → 5/5 = 1（小怪阶段也有伤害，且不被归零）*/
-    CHECK(mof_core_bomb_damage(1, 0, 0, 0, 1) == 1);
-    /* 圈内 / 符卡中 / `bomb+0x44==0`（符卡前 60 帧）→ 3/5 = 0 ⇒ **整笔跳过**（一手 `0x40e169` 的行为）*/
-    CHECK(mof_core_bomb_damage(1, 1, 1, 0, 1) == 0);
-    /* 圈内 / 符卡中 / `bomb+0x44==1` → 38/5 = 7 →boss+符卡 /5 = 1（下限 1）*/
-    CHECK(mof_core_bomb_damage(1, 1, 1, 1, 1) == 1);
-    /* 圈外 / 无符卡 / 有 boss：灵梦 20/5 = 4、魔理沙 16/5 = 3 */
-    CHECK(mof_core_bomb_damage(0, 1, 0, 0, 1) == 4);
-    CHECK(mof_core_bomb_damage(0, 1, 0, 0, 0) == 3);
+    /* 圈内 / 无符卡 / 有 boss → **38**（一手原始值原样落地：正常游玩不过第一道 /5）*/
+    CHECK(mof_core_bomb_damage(1, 1, 0, 0, 1) == 38);
+    /* 圈内 / 无符卡 / 无 boss → **5**（小怪阶段也有伤害）*/
+    CHECK(mof_core_bomb_damage(1, 0, 0, 0, 1) == 5);
+    /* 圈内 / 符卡中（boss）/ `bomb+0x44==0`（符卡前 60 帧）→ 3 → boss+符卡 /5 = 0 ⇒ **下限 1**
+     * ⚠ 一手那两句的顺序是「**先**判 0 跳过（`0x40e169`）**后**除并保底 1（`0x40e19a`/`0x40e19e）」
+     *   ⇒ 符卡前 60 帧对 boss 不是「一点不掉」而是**每帧 1**（原来我们错误地当成 0 是另一条错链的产物）*/
+    CHECK(mof_core_bomb_damage(1, 1, 1, 0, 1) == 1);
+    /* 圈内 / 符卡中（boss）/ `bomb+0x44==1` → 38 → boss+符卡 /5 = **7** */
+    CHECK(mof_core_bomb_damage(1, 1, 1, 1, 1) == 7);
+    /* 圈内 / 符卡中 / **非 boss**（召唤物）→ 不 /5（那道门的条件是「该敌是 boss」）⇒ 38（大）/ 3（前 60 帧）*/
+    CHECK(mof_core_bomb_damage(1, 0, 1, 1, 1) == 38);
+    CHECK(mof_core_bomb_damage(1, 0, 1, 0, 1) == 3);
+    /* 圈外 / 无符卡 / 有 boss：灵梦 **20**、魔理沙 **16** */
+    CHECK(mof_core_bomb_damage(0, 1, 0, 0, 1) == 20);
+    CHECK(mof_core_bomb_damage(0, 1, 0, 0, 0) == 16);
     /* 圈外 / 无符卡 / 无 boss ⇒ 0（**圈外只有有 boss 才有伤害**，一手 `th10:0x405a95`）*/
     CHECK(mof_core_bomb_damage(0, 0, 0, 0, 1) == 0);
-    /* 圈外 / 符卡 / 大灵击：灵梦 26/5 = 5 → /5 = 1（下限）；魔理沙 23/5 = 4 → /5 = 0 → 下限 1 */
-    CHECK(mof_core_bomb_damage(0, 0, 1, 1, 1) == 1);
-    CHECK(mof_core_bomb_damage(0, 0, 1, 1, 0) == 1);
+    /* 圈外 / 符卡（boss）/ 大灵击：灵梦 26/5 = **5**；魔理沙 23/5 = **4** */
+    CHECK(mof_core_bomb_damage(0, 1, 1, 1, 1) == 5);
+    CHECK(mof_core_bomb_damage(0, 1, 1, 1, 0) == 4);
+    /* 圈外 / 符卡 / 非 boss / 大灵击：不 /5 ⇒ 一手原始值 26 / 23 */
+    CHECK(mof_core_bomb_damage(0, 0, 1, 1, 1) == 26);
+    CHECK(mof_core_bomb_damage(0, 0, 1, 1, 0) == 23);
     /* 圈外 / 符卡 / 非大灵击 ⇒ 0（一手 `th10:0x405a76 cmp [ecx+0x44],0x1; jne → 0`）*/
     CHECK(mof_core_bomb_damage(0, 0, 1, 0, 1) == 0);
-    /* 值域：任何组合都落在 {0,1,3,4,7}（张表的全部结局）*/
+    /* 值域：任何组合都落在 {0,1,3,4,5,7,16,20,23,26,38}（张表的全部结局，订正后）*/
     {
         int in_c, ba, sp, big, re, ok = 1;
         for (in_c = 0; in_c < 2; ++in_c)
@@ -796,7 +811,8 @@ int main(void)
         for (big = 0; big < 2; ++big)
         for (re = 0; re < 2; ++re) {
             int32_t d = mof_core_bomb_damage(in_c, ba, sp, big, re);
-            if (d != 0 && d != 1 && d != 3 && d != 4 && d != 7) ok = 0;
+            if (d != 0 && d != 1 && d != 3 && d != 4 && d != 5 && d != 7 && d != 16
+                && d != 20 && d != 23 && d != 26 && d != 38) ok = 0;
         }
         CHECK(ok);
     }

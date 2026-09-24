@@ -553,11 +553,12 @@ int32_t mof_core_bomb_rise_milli(int spell_ish, int reimu)
 
 /* 每敌每帧的伤害（已过缩放链）。逐条对位 `th10:0x4059f0` 的返回表 + `th10:0x40e141`–`0x40e19e`：
  *     raw = 表(...)             // 圈内/圈外 × 符卡/无符卡 × 有 boss/无 boss × 灵梦/魔理沙
- *     dmg = raw / 5             // player_state ∈ {0,2}（`th10:0x40e157`；游玩中恒 0）
- *     if (dmg == 0) return 0    // `th10:0x40e169 je 0x40e26b`：0 伤害整笔跳过（**符卡前 60 帧的 3 就是这里消失的**）
- *     if (spell_active) { dmg /= 5; if (dmg <= 0) dmg = 1; }   // `th10:0x40e188`–`0x40e19e`（下限 1）
+ *     if (raw == 0) return 0     // `th10:0x40e169 je`：0 伤害整笔跳过
+ *     if (spell_active && boss_alive) { dmg = raw / 5; if (dmg <= 0) dmg = 1; }   // `0x40e188`–`0x40e19e`
+ * ★★★ 2026-09-25 订正：这里原来还有**第一道 `/5`**（`player_state ∈ {0,2}`）并**无条件**执行 ——
+ *   那次推断（「游玩中恒 0」）已被一手否掉，详见 `mof_core.h` 伤害表注释与下面的函数内注释。
  * ⚠ TH10 的第二道 `/5` 条件是「**该敌是 boss** 且符卡中」（`th10:0x40e184 test ah,ah`）——TH18 的
- *   矩形伤害源**不区分敌**（谁在框里谁吃同一个数）⇒ 我们退化成「符卡中就对所有目标都 /5」，
+ *   矩形伤害源**不区分敌**（谁在框里谁吃同一个数）⇒ 我们退化成「场上有 boss 就对框里所有人 /5」，
  *   差异登记在 `TUNING.md` §2.5（符卡里通常只有 boss 与其召唤物在场，实跑看手感）。*/
 int32_t mof_core_bomb_damage(int in_circle, int boss_alive, int spell_active, int big_bomb, int reimu)
 {
@@ -579,13 +580,18 @@ int32_t mof_core_bomb_damage(int in_circle, int boss_alive, int spell_active, in
         }
     }
     if (raw <= 0) return 0;
-    dmg = raw / MOF_BOMB_DMG_DIV;                 /* /5（魔数 0x66666667 + sar 1 的整数语义）*/
-    if (dmg <= 0) return 0;                       /* ★ 归零就整笔跳过（一手 `0x40e169`）*/
-    if (spell_active) {                           /* boss + 符卡：再 /5、下限 1（一手 `0x40e188`–`0x40e19e`）*/
-        dmg /= MOF_BOMB_DMG_DIV;
-        if (dmg <= 0) dmg = 1;
+    /* ★★★ 2026-09-25 订正（owner：「灵击的伤害有点小？核一下 th10 的灵击伤害」）：
+     *   这里原来**无条件**先 `/5` 一次（依据 `th10:0x40e148` 那句「`player_state ∈ {0,2} ⇒ /5`」
+     *   加上一条 🟡 推断「游玩中恒 0」）。**逐条核一手后那条推断是错的**，理由与地址见
+     *   `mof_core.h` 的伤害表注释（要点：`player+0x458` 是 0..4 状态机，跳转表 `th10:0x426344`；
+     *   装表项 1 = `th10:0x425964`，而「按 B 的门槛/按键/扣火力」整段就在状态 1 里 ⇒ **正常游玩
+     *   = 状态 1**；状态 0 = 入场/复活上升、状态 2 = 被弹 —— 那道 `/5` 是这两段的惩罚）。
+     *   ⇒ 正常游玩**不除** ⇒ 只保留第二条 `/5`（该敌是 boss 且符卡中，下限 1）。*/
+    if (spell_active && boss_alive) {             /* `th10:0x40e17e`–`0x40e19e`（bear 的 boss 位 = 0x8000）*/
+        dmg = raw / MOF_BOMB_DMG_DIV;
+        return (dmg > 0) ? dmg : 1;
     }
-    return dmg;
+    return raw;
 }
 
 /* ============ ★ 2026-09-15「灵击 → 决死」（决死 B 形态）—— 依据全在 `mof_core.h` 那段注释 ============
