@@ -666,6 +666,7 @@ static void mof_green_tick(void)
              * **不重取备份**（备份里是原色，此时表里也是原色；重取只会多一次无谓写）。*/
             if ((s_green_applied & bit) && !mof_green_pair_is_green(tbl, p))
                 mof_green_pair_apply(tbl, p);
+            if (s_green_applied & bit) ce_fairy_claim_group(110, 2, p->src_script);   /* 护栏位每帧重申 */
             continue;
         }
         /* 第一次接管这一行：先做运行期同形体检（源/绿两支的宽高逐条相等），不过就**不改**。*/
@@ -679,6 +680,11 @@ static void mof_green_tick(void)
         }
         mof_green_pair_swap(tbl, p, bak);
         s_green_applied |= bit;
+        /* ★★★ 2026-09-24 实例/组级护栏（owner 口径「**别同时操作同一只妖精的 VM，否则爆了**」，
+         *   112 那条线确认他们的宿主池**含 `(2,0)`** = 我们换皮这一组）⇒ 我们每帧对自己**真的改上的**
+         *   每一行重申一次「(N=2, S=src_script) 这组妖精归我」（`sdk.h` 的 `ce_fairy_claim_group()`）。
+         *   112 那边读到就**当场放弃这只宿主**（不发皮、不掉令牌）；我们这侧是整组换皮，按组通报足够。*/
+        ce_fairy_claim_group(110, 2, p->src_script);
         ++applied_now;
         if (!s_green_logged)
             ce_log("mof: green fairy swap #%d '%s' (stage %d, sprite %d->%d, script %d->%d)",
@@ -1559,6 +1565,7 @@ static void mof_clear(ce_card_t *c)
      * sprite 表**，是彻头彻尾的「跨帧留下的东西」；`on_run_reset` 与 `on_delete` 都走本函数。
      * ⚠ 放在 `if (!s) return;` **之前**：还原不依赖卡私有状态（备份在文件静态区）。*/
     mof_green_restore_all();
+    ce_fairy_claim_clear(110);      /* ★ 护栏位也要收干净（删卡/换局）*/
     /* ★★ 2026-09-22（`METHOD.md` 铁律二，th10 #2 的 ride-along）：**场上那几只补刷妖精也要收掉**——
      *   它们的位置由共用件每帧写 `%F2/%F3`、离场由它写 `$I0 = 999`，两条通道都只在 `on_tick_2` 里；
      *   删卡发生在**商店**里（那一刻 tick 全停）⇒ 不收就会钉在关卡里到本局结束。

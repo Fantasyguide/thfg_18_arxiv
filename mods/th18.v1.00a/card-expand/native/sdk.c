@@ -3395,3 +3395,70 @@ int __cdecl BP_ce_enemy_death(x86_reg_t *regs, void *bp_info)
     }
     return BP_EXEC_ORIGINAL;
 }
+
+/* ============================ ★★★ 2026-09-24 妖精认领通报位（110/111 ↔ 112）============================
+ * 语义与三条纪律写在 `sdk.h` 的声明处（唯一出处）。实现要点：
+ *   · 两条小表（组 / 实例），条目 = {卡号, 键, 帧号}；**帧号不等于当前帧 ⇒ 视为过期**（无需清理钩子）；
+ *   · 每帧重申 = 覆盖同键条目的帧号；满了就丢（诊断计数），不覆盖别人的条目。*/
+typedef struct { uint32_t card; int32_t key, key2, frame; } ce_fairy_claim_t;
+static ce_fairy_claim_t s_gclaim[CE_FAIRY_CLAIM_MAX];
+static ce_fairy_claim_t s_iclaim[CE_FAIRY_CLAIM_MAX];
+
+void ce_fairy_claim_group(uint32_t card_id, int32_t anm_src, int32_t anm_script)
+{
+    int i, free_i = -1;
+    int32_t fr = (int32_t)ce_sdk_frame();
+    if (!card_id) return;
+    for (i = 0; i < CE_FAIRY_CLAIM_MAX; ++i) {
+        if (s_gclaim[i].card == card_id && s_gclaim[i].key == anm_src && s_gclaim[i].key2 == anm_script) {
+            s_gclaim[i].frame = fr;
+            return;
+        }
+        if (free_i < 0 && (s_gclaim[i].card == 0 || s_gclaim[i].frame != fr)) free_i = i;
+    }
+    if (free_i < 0) { ce_log("fairyclaim: 组通报表满（%d 条）—— 这一帧没通报上", (int)CE_FAIRY_CLAIM_MAX); return; }
+    s_gclaim[free_i].card = card_id; s_gclaim[free_i].key = anm_src;
+    s_gclaim[free_i].key2 = anm_script; s_gclaim[free_i].frame = fr;
+}
+
+int ce_fairy_group_claimed(int32_t anm_src, int32_t anm_script)
+{
+    int i;
+    int32_t fr = (int32_t)ce_sdk_frame();
+    for (i = 0; i < CE_FAIRY_CLAIM_MAX; ++i)
+        if (s_gclaim[i].card && s_gclaim[i].frame == fr
+            && s_gclaim[i].key == anm_src && s_gclaim[i].key2 == anm_script) return 1;
+    return 0;
+}
+
+void ce_fairy_claim_instance(uint32_t card_id, int32_t enemy_id)
+{
+    int i, free_i = -1;
+    int32_t fr = (int32_t)ce_sdk_frame();
+    if (!card_id || !enemy_id) return;
+    for (i = 0; i < CE_FAIRY_CLAIM_MAX; ++i) {
+        if (s_iclaim[i].card == card_id && s_iclaim[i].key == enemy_id) { s_iclaim[i].frame = fr; return; }
+        if (free_i < 0 && (s_iclaim[i].card == 0 || s_iclaim[i].frame != fr)) free_i = i;
+    }
+    if (free_i < 0) return;
+    s_iclaim[free_i].card = card_id; s_iclaim[free_i].key = enemy_id; s_iclaim[free_i].frame = fr;
+}
+
+int ce_fairy_instance_claimed(int32_t enemy_id)
+{
+    int i;
+    int32_t fr = (int32_t)ce_sdk_frame();
+    for (i = 0; i < CE_FAIRY_CLAIM_MAX; ++i)
+        if (s_iclaim[i].card && s_iclaim[i].frame == fr && s_iclaim[i].key == enemy_id) return 1;
+    return 0;
+}
+
+void ce_fairy_claim_clear(uint32_t card_id)
+{
+    int i;
+    if (!card_id) return;
+    for (i = 0; i < CE_FAIRY_CLAIM_MAX; ++i) {
+        if (s_gclaim[i].card == card_id) { s_gclaim[i].card = 0; s_gclaim[i].frame = 0; }
+        if (s_iclaim[i].card == card_id) { s_iclaim[i].card = 0; s_iclaim[i].frame = 0; }
+    }
+}

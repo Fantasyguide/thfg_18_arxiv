@@ -1037,6 +1037,22 @@ static inline void ce_layer_drop_card(uint32_t id)
     ce_hud_slot_release(id);
 }
 
+/* ★★★ 2026-09-24 **实例/组级护栏位（110/111 ↔ 112 的妖精冲突）** —— 只读通报，语义三条：
+ *   · **谁写**：110/111 的绿妖精换皮（`mof.c` 的 `mof_green_tick()`）—— 每帧对自己**真的改上的**
+ *     那几行（`mof_green_pairs` 的 `src_script`，N 恒 2）重申一次；
+ *   · **谁读**：112（星莲船）的令牌宿主候选判断 —— 命中就**当场放弃这只**（不发皮、不掉令牌）；
+ *   · **为什么有这个**：owner 口径「**别同时操作同一只妖精的 VM，否则爆了**」；112 的宿主池
+ *     `native/cards/ufo_carrier_table.h` 里**含 `(2,0)`**（st01 蓝妖精那一组 = 我们换皮的那组）
+ *     ⇒ 必须有个只读位让两边错开。**我们这侧是整组换皮（sprite 表项覆盖）**，所以按「组」通报足够；
+ *     若将来要精确到某一只，再用 `ce_fairy_claim_instance_*()` 那一对（同一张表，按 enemy id）。
+ *   ⚠ 通报是**帧内有效**：每帧重新声明，过期条目自动失效（`ce_sdk_frame()` 比对）。*/
+#define CE_FAIRY_CLAIM_MAX   32
+void ce_fairy_claim_group(uint32_t card_id, int32_t anm_src, int32_t anm_script);  /* 每帧重申 */
+int  ce_fairy_group_claimed(int32_t anm_src, int32_t anm_script);                   /* 只读 */
+void ce_fairy_claim_instance(uint32_t card_id, int32_t enemy_id);                   /* 可选：精确到只 */
+int  ce_fairy_instance_claimed(int32_t enemy_id);                                   /* 只读 */
+void ce_fairy_claim_clear(uint32_t card_id);                                        /* 删卡/换关收干净 */
+
 /* ---- 自建真敌人载体（108 使魔 / 112 彩虹令牌 / 后续任何「要能被打、能掉东西」的实体）----
  * 一手 ABI 见 `engine.h` 的 `CE_FN_ALLOCATE_NEW_ENEMY`：名字是**加载中的 `default.ecl` 的 ECL 子程序名**
  * （不是 C 函数名），查不到时 `0x48b3a0` 干净退出 ⇒ 占位期可用原版自带的惰性壳（108 用 `"NoEnemyDebug"`）。
