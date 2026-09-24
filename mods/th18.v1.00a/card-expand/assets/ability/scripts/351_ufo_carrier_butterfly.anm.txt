@@ -1,0 +1,26 @@
+script script351 {
+    // 112 星莲船 —— **UFO 令牌宿主：大蝴蝶**（换皮用）
+    //   一手：TH12 v1.00b `enemy.anm` **script45** 逐条移植（`local/th12.v1.00b/anm/enemy/enemy.anm.txt`）。
+    //   原文：`layer(8); offset12: sprite(125); +5: sprite(126); +5: sprite(127); +5: sprite(128);
+    //         +5: jmp(offset12, 0);`（4 帧走位、共 20 帧一圈）
+    //   ⇒ 精灵 125..128 = `enemy/enemy.png` 的 **64×64 白翅粉花蝴蝶**，正是 owner 说的
+    //     「掉飞碟的大蝴蝶的贴图是 **enemy.png 的第一二行**」（切图见 `make_ufo_carrier_art.py`）。
+    //
+    // **移植改动（Δ）**
+    //   Δ1 `sprite(125..128)` → `@CARRIER_BFLY_0..3@`（原生精灵号在本仓不存在）。
+    //   Δ2 层号 `layer(8)` **原值保留**：TH12 与 TH18 的 8 都落在"游玩区世界层"。
+    //   ⚠ 只取**前 4 张**（= 一手 script45 那一套）。后 4 张（129-132，一手 script46 用 `flipX()` 的
+    //     另一套朝向）也一并切进了图集，要改成朝另一边的版本就把下面四行换成 `_4.._7`
+    //     （并补一行 `flipX();`，见 `TUNING.md` §2.0zzm）。
+    layer(8);
+offset12:
+    sprite(@CARRIER_BFLY_0@);
++5: // 5
+    sprite(@CARRIER_BFLY_1@);
++5: // 10
+    sprite(@CARRIER_BFLY_2@);
++5: // 15
+    sprite(@CARRIER_BFLY_3@);
++5: // 20
+    jmp(offset12, 0);
+}

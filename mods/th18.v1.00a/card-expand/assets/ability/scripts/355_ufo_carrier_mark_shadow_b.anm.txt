@@ -1,0 +1,32 @@
+script script355 {
+    // 112 星莲船 —— 头顶飞碟标记的**灰影 B**（一手：TH12 `enemy.anm` **script101** 逐条移植）
+    //   原文：`layer(8); color(128,128,128); alpha(0); +1: sprite(167); +6: alpha(128);
+    //         offset68: sprite(167); +3: 168; +3: 169; +3: 170; +3: 171; +3: 172; +3: jmp(offset68, 7);
+    //         interruptLabel(1): +12: delete();`
+    //   ⇒ 比 A 更暗（128 灰）、起点更早（第 1 帧）但淡入更慢。
+    //   Δ1 `sprite(167..172)` → `@CARRIER_MARK_0..5@`；其余逐条照抄。
+    layer(8);
+    color(128, 128, 128);
+    alpha(0);
++1: // 1
+    sprite(@CARRIER_MARK_0@);
++6: // 7
+    alpha(128);
+offset68:
+    sprite(@CARRIER_MARK_0@);
++3: // 10
+    sprite(@CARRIER_MARK_1@);
++3: // 13
+    sprite(@CARRIER_MARK_2@);
++3: // 16
+    sprite(@CARRIER_MARK_3@);
++3: // 19
+    sprite(@CARRIER_MARK_4@);
++3: // 22
+    sprite(@CARRIER_MARK_5@);
++3: // 25
+    jmp(offset68, 7);
+    interruptLabel(1);
++12: // 37
+    delete();
+}

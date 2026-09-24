@@ -850,3 +850,37 @@ DEBRIS_4               ability/ufo_drop/DEBRIS_4.png   @0,64,64x64
 DEBRIS_5               ability/ufo_drop/DEBRIS_5.png   @64,64,64x64
 DEBRIS_6               ability/ufo_drop/DEBRIS_6.png   @128,64,64x64
 DEBRIS_7               ability/ufo_drop/DEBRIS_7.png   @192,64,64x64
+
+# 卡 112 的**令牌宿主皮肤**（TH12 `enemy.anm` 的 1:1 切图；生成器 =
+#   assets/ability/make_ufo_carrier_art.py，矩形从原生 anm 文本读 + 逐张断言尺寸）：
+#   · ATLAS_UFO_CARRIER_BFLY  = 64×64 蝴蝶 8 张（sprite125..132；一手 script45 走位）
+#   · ATLAS_UFO_CARRIER_FAIRY = 32×32 小妖精 4 张（sprite84..87 = 妖精贴图第 4 行；script35）
+#   · ATLAS_UFO_CARRIER_MARK  = 64×32 头顶旋转飞碟 6 张（sprite167..172；script98）
+#   owner 口径与三样东西的一手对照见生成器文件头；用它们的三支脚本 = ability.anm 351..355。
+
+# 64×64 蝴蝶 8 张（一手 enemy.anm sprite125..132；走位用前 4 张 = script45）
+ATLAS ATLAS_UFO_CARRIER_BFLY 512x64
+CARRIER_BFLY_0            ability/ufo_carrier/CARRIER_BFLY_0.png   @0,0,64x64
+CARRIER_BFLY_1            ability/ufo_carrier/CARRIER_BFLY_1.png   @64,0,64x64
+CARRIER_BFLY_2            ability/ufo_carrier/CARRIER_BFLY_2.png   @128,0,64x64
+CARRIER_BFLY_3            ability/ufo_carrier/CARRIER_BFLY_3.png   @192,0,64x64
+CARRIER_BFLY_4            ability/ufo_carrier/CARRIER_BFLY_4.png   @256,0,64x64
+CARRIER_BFLY_5            ability/ufo_carrier/CARRIER_BFLY_5.png   @320,0,64x64
+CARRIER_BFLY_6            ability/ufo_carrier/CARRIER_BFLY_6.png   @384,0,64x64
+CARRIER_BFLY_7            ability/ufo_carrier/CARRIER_BFLY_7.png   @448,0,64x64
+
+# 32×32 小妖精 4 张（一手 sprite84..87 = 妖精贴图第 4 行；script35 走位）
+ATLAS ATLAS_UFO_CARRIER_FAIRY 128x32
+CARRIER_FAIRY_0           ability/ufo_carrier/CARRIER_FAIRY_0.png   @0,0,32x32
+CARRIER_FAIRY_1           ability/ufo_carrier/CARRIER_FAIRY_1.png   @32,0,32x32
+CARRIER_FAIRY_2           ability/ufo_carrier/CARRIER_FAIRY_2.png   @64,0,32x32
+CARRIER_FAIRY_3           ability/ufo_carrier/CARRIER_FAIRY_3.png   @96,0,32x32
+
+# 64×32 头顶旋转飞碟 6 张（一手 sprite167..172；script98 每 3 帧换一张）
+ATLAS ATLAS_UFO_CARRIER_MARK 384x32
+CARRIER_MARK_0            ability/ufo_carrier/CARRIER_MARK_0.png   @0,0,64x32
+CARRIER_MARK_1            ability/ufo_carrier/CARRIER_MARK_1.png   @64,0,64x32
+CARRIER_MARK_2            ability/ufo_carrier/CARRIER_MARK_2.png   @128,0,64x32
+CARRIER_MARK_3            ability/ufo_carrier/CARRIER_MARK_3.png   @192,0,64x32
+CARRIER_MARK_4            ability/ufo_carrier/CARRIER_MARK_4.png   @256,0,64x32
+CARRIER_MARK_5            ability/ufo_carrier/CARRIER_MARK_5.png   @320,0,64x32

@@ -1,0 +1,41 @@
+script script353 {
+    // 112 星莲船 —— **宿主头顶的"旋转飞碟"标记**
+    //   一手：TH12 v1.00b `enemy.anm` **script98** 逐条移植（`local/th12.v1.00b/anm/enemy/enemy.anm.txt`）。
+    //   原文：
+    //     `pos(0.0f, -32.0f, 0.0f);          // ★ 挂在**头顶 32 单位**
+    //      scriptNew(100); scriptNew(101);   // 两层灰影（下面 354/355）
+    //      layer(9);
+    //      offset56: sprite(167); +3: sprite(168); +3: sprite(169); +3: sprite(170);
+    //                +3: sprite(171); +3: sprite(172); +3: jmp(offset56, 0);   // 6 帧、每 3 帧一张
+    //      interruptLabel(1): +12: delete();`
+    //   ⇒ 精灵 167..172 = `enemy/enemy.png` **第二行的右半部分**（64×32 的旋转飞碟），
+    //     正是 owner 说的「她们头上会有 enemy.png 第二行的右半部分的旋转飞碟特效」。
+    //
+    // **移植改动（Δ）**
+    //   Δ1 `sprite(167..172)` → `@CARRIER_MARK_0..5@`。
+    //   Δ2 子脚本号 → `@SCRIPT_UFO_CARRIER_MARK_SHADOW_A/B@`（本仓按名字引用）。
+    //   Δ3 `pos(0, -32)` **原值保留**（头顶 32 单位 = 64 表面 px；宿主体贴图 32-64 px ⇒ 正好在头顶）。
+    //   Δ4 层号 `layer(9)` **原值保留**（世界层、压在本体 8 之上 —— 与一手同序）。
+    //   ⚠ 本脚本的**实体坐标由 C 侧每帧写**（= 宿主敌人的位置），子脚本继承同一个 `entity_pos`。
+    pos(0.0f, -32.0f, 0.0f);
+    scriptNew(@SCRIPT_UFO_CARRIER_MARK_SHADOW_A@);
+    scriptNew(@SCRIPT_UFO_CARRIER_MARK_SHADOW_B@);
+    layer(9);
+offset56:
+    sprite(@CARRIER_MARK_0@);
++3: // 3
+    sprite(@CARRIER_MARK_1@);
++3: // 6
+    sprite(@CARRIER_MARK_2@);
++3: // 9
+    sprite(@CARRIER_MARK_3@);
++3: // 12
+    sprite(@CARRIER_MARK_4@);
++3: // 15
+    sprite(@CARRIER_MARK_5@);
++3: // 18
+    jmp(offset56, 0);
+    interruptLabel(1);
++12: // 30
+    delete();
+}

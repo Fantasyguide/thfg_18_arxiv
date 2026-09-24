@@ -21127,3 +21127,29 @@ entry/sprite 号变大 —— 本仓的脚本一律**按名字**引用（`@NAME@
 **回归跑了什么**：`make -C native anm`（entry 71 / sprite 511 / script 351；新图集 8 格逐像素自检）→
 `make -C native anm-verify` → `make -C native dllx87`（rc=0、`x87 in our objects: 0`、`cards/ufo.c` 零告警）→
 `make -C native check`（含 `check-docs.py` 382 文件全绿）。**实跑判据**见 `TUNING.md` §2.0zzl 末尾那五条。
+
+## §BE 详录 #87（2026-09-24）：★ **共享件** `assets/ability/**` + `CAPACITY.md` —— 112 星莲船第十轮：令牌宿主表 + 换皮
+
+**为什么必须登记**：这一轮动了 `assets/ability/entries/ORDER.txt`（共享件清单里那条）与
+`assets/ability/scripts/**`（脚本目录也在清单里，**层号也算**），并且新增了**三个图集 entry**
+（entry 号 / sprite 号是全库连续的，append 会让后面的号跟着动）。
+owner 原话见 `SINGLE-CARD-TEST.md` §本批10-1；一手/数值/自定项见 `TUNING.md` §2.0zzm。
+
+| 文件 | 改了什么 | 为什么 | 怎么验的 |
+| --- | --- | --- | --- |
+| `assets/ability/entries/ORDER.txt`（**共享件**）| **只 append**：末尾加 `ATLAS_UFO_CARRIER_BFLY`（512×64，8 格 64×64）/ `ATLAS_UFO_CARRIER_FAIRY`（128×32，4 格 32×32）/ `ATLAS_UFO_CARRIER_MARK`（384×32，6 格 64×32）| 宿主皮肤（TH12 `enemy.anm` 的 1:1 切图）要有 entry 才有 sprite 号 | 构建期「重排检测」逐行比对 `ORDER.frozen.txt` 前 186 行 ⇒ 已定稿段一字未动；`anm-verify` 报 **entry 74、sprite 529、script 356** |
+| `assets/ability/scripts/351..355_ufo_carrier_*.anm.txt`（**新文件**）| 5 支：蝴蝶走位 / 妖精走位 / 头顶飞碟 / 两只灰影。逐条移植 TH12 `enemy.anm` script45 / script35 / script98(+100/101)；层号 8/9 原值保留 | owner 2026-09-24 点名要的三张皮 | `make -C native anm` + `anm-verify` 绿（sprite 引用逐个落在源 entry 的对应矩形里）|
+| `assets/ability/entries/ORDER.ufo_carrier.txt`、`assets/ability/make_ufo_carrier_art.py`（**新文件**）| 图集片段 + 切图器（矩形从原生 anm 文本读、逐张断言尺寸）| 本仓口径：美术要能重跑生成 | 重跑生成器幂等 |
+| `assets/ability/ufo_carrier/CARRIER_*.png`（**新文件**）| TH12 `enemy/enemy.png` 的 `sprite125..132` / `84..87` / `167..172` 1:1 切图 | 借原生素材，不自己画 | 构建期图集逐像素回读比对（18 格）|
+| `native/cards/ufo_carrier_table.h` + `native/tools/gen_ufo_carrier_table.py`（**新文件**）| 宿主表（8 行 `(N,S)` → 皮档）+ 生成器（扫 TH18 的 7 关 ECL + `enemy.anm`）| 判据 = 「它长什么样」（与 110 的 `mof_big_faith_table.h` 同一套）；表要能重跑 | 生成器幂等；表内容见 `SINGLE-CARD-TEST.md` §本批10-1 |
+| `native/cards/ufo.c`（本卡自己的）| ① `ufo_carrier_*` 一节（每帧扫敌机 → 起皮 + 头顶飞碟 + **隐掉原生贴图并还原**）；② 掉落判据换成宿主表 + boss（旧判据进 `UFO_TOKEN_DROP_LEGACY`）；③ `on_tick_2` 的兑现支持一次多枚 + 固定色 | owner「得改谁能飞碟掉落，并且还得给掉的那个改帖图」 | `dllx87` 零告警（`ufo.c`）、`make check` 全绿 |
+| `CAPACITY.md`（**共享台账**）| 新增一格（三个图集的**完整宏名** + 画布 + 成员 + 一手 sprite），并注明既有号一个没动 | capcheck 硬门要求宏全名在台账里 | `make check` 全绿 |
+
+**对既有卡的影响面**：**零行为变化**。`ORDER.txt` / 脚本目录都是**纯 append**（新脚本 351..355、
+新 entry 71/72/73、新 sprite 511..529 全在文件末尾），既有卡的 entry / sprite / script 号一个都没动
+（重排检测 + 本轮 `make check` 是证据）。`native/cards/ufo.c` 与那两张新表都是 112 自己的文件。
+`CAPACITY.md` 只加了一格文字。
+
+**回归跑了什么**：`make -C native anm`（entry 74 / sprite 529 / script 356；三张新图集逐像素自检）→
+`make -C native anm-verify` → `make -C native dllx87`（rc=0、`x87 in our objects: 0`、`ufo.c` 零告警）→
+`make -C native check`（含 `check-docs.py` 382 文件全绿）。**实跑判据**见 `TUNING.md` §2.0zzm 末尾那四条。

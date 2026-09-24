@@ -971,3 +971,21 @@ CE_ANM_ABILITY_SPRITE 宏 721 个，号 109..452
   既有号一个没动（entry **70/256**，余量 **185**；`ability.anm` 合计 entry 71、sprite 511、script 351）。
   生成器 `assets/ability/make_ufo_debris_art.py`（矩形从原生 anm 文本读 + 逐张断言 64×64）；
   层号 5/6 与"向外飞"那一段的理由见 `TUNING.md` §2.0zzl。
+
+- **★ 2026-09-24 新增 `ATLAS_UFO_CARRIER_BFLY` / `_FAIRY` / `_MARK`（entry **71 / 72 / 73**）；
+  宏名 **`CE_ANM_ABILITY_ATLAS_ATLAS_UFO_CARRIER_BFLY`**、**`CE_ANM_ABILITY_ATLAS_ATLAS_UFO_CARRIER_FAIRY`**、**`CE_ANM_ABILITY_ATLAS_ATLAS_UFO_CARRIER_MARK`****：
+  卡 112 的**令牌宿主皮肤**（owner 2026-09-24：「掉飞碟的大蝴蝶的贴图是 `enemy.png` 的第一二行；
+  掉飞碟的杂鱼妖精是 `enemy.png` 妖精贴图的第 4 行；并且她们头上会有 `enemy.png` 第二行的右半部分的
+  旋转飞碟特效……**得改谁能飞碟掉落，并且还得给掉的那个改帖图**」）—— 全部是 TH12 `enemy.anm`
+  （`enemy/enemy.png`）的 1:1 切图：
+
+  | 图集 | 画布 | 成员 | 一手 | 用途 |
+  | --- | --- | --- | --- | --- |
+  | `ATLAS_UFO_CARRIER_BFLY` | 512×64 | `CARRIER_BFLY_0..7`（各 64×64）| `sprite125..132` | 大蝴蝶走位（脚本 351，用前 4 张 = 一手 script45）|
+  | `ATLAS_UFO_CARRIER_FAIRY` | 128×32 | `CARRIER_FAIRY_0..3`（各 32×32）| `sprite84..87`（= 妖精贴图第 4 行）| 杂鱼妖精走位（脚本 352 = 一手 script35）|
+  | `ATLAS_UFO_CARRIER_MARK` | 384×32 | `CARRIER_MARK_0..5`（各 64×32）| `sprite167..172`（= 第二行右半）| 头顶旋转飞碟（脚本 353 = 一手 script98；灰影子 354/355 = 一手 script100/101）|
+
+  **append 在最末尾** ⇒ 新 sprite = **511..529**、同批新脚本 = **351..355**；既有号一个没动
+  （entry **71/72/73**，合计 74/256、余量 **182**）。切图 = `assets/ability/make_ufo_carrier_art.py`。
+  宿主表（哪些敌人换皮 / 谁掉令牌）= `native/cards/ufo_carrier_table.h`，生成器
+  `native/tools/gen_ufo_carrier_table.py`；一手依据见 `TUNING.md` §2.0zzm。

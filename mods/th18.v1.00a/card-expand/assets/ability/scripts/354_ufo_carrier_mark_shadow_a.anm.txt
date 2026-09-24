@@ -1,0 +1,31 @@
+script script354 {
+    // 112 星莲船 —— 头顶飞碟标记的**灰影 A**（一手：TH12 `enemy.anm` **script100** 逐条移植）
+    //   原文：`layer(8); color(192,192,192); alpha(0); sprite(167); +3: alpha(192);
+    //         offset68: sprite(167); +3: 168; +3: 169; +3: 170; +3: 171; +3: 172; +3: jmp(offset68, 3);
+    //         interruptLabel(1): +12: delete();`
+    //   ⇒ 与 353 **同一批精灵**、同一层（8，在亮的那只下面），只是染成 192 灰 + 稍后起转（相位差 3 帧）。
+    //   Δ1 `sprite(167..172)` → `@CARRIER_MARK_0..5@`；其余逐条照抄。
+    layer(8);
+    color(192, 192, 192);
+    alpha(0);
+    sprite(@CARRIER_MARK_0@);
++3: // 3
+    alpha(192);
+offset68:
+    sprite(@CARRIER_MARK_0@);
++3: // 6
+    sprite(@CARRIER_MARK_1@);
++3: // 9
+    sprite(@CARRIER_MARK_2@);
++3: // 12
+    sprite(@CARRIER_MARK_3@);
++3: // 15
+    sprite(@CARRIER_MARK_4@);
++3: // 18
+    sprite(@CARRIER_MARK_5@);
++3: // 21
+    jmp(offset68, 3);
+    interruptLabel(1);
++12: // 33
+    delete();
+}
