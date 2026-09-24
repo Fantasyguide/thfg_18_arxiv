@@ -2129,6 +2129,10 @@ static uint8_t *faith_enemy_sprite_table(void)
 #define FAITH_GF_ECL_FM_SUB_TABLE 0x8c     /* zEclFileManager.subroutines */
 #define FAITH_GF_ECL_FM_SUB_COUNT 0x08     /* zEclFileManager 子程序个数 */
 #define FAITH_GF_ANM_VM0          0x124    /* zEnemyData.anm_vm_ids[0]（`CE_ENEMY_DATA + 0x124`）*/
+#define FAITH_GF_ANM_MAIN         0x270    /* zEnemyData.anm_main（ExpHP；`anmSetMain` K==0 写它）*/
+#define FAITH_GF_ANM_SUB          0x274    /* `anmSetMain` K==0 一并清 0 */
+#define FAITH_GF_ANM_FLAGS        0x5130   /* flags_lo：`anmSetMain` K==0 置 bit 0x100000（=`anmReset` 的判据）*/
+#define FAITH_GF_ANM_FLAG_MAIN    0x100000u
 #define FAITH_GF_ANM_LAYERS       0x27c    /* zEnemyData.anm_layers（引擎的 layer 表达式 = `[+0x27c] + 7`）*/
 
 typedef struct {
@@ -2138,11 +2142,11 @@ typedef struct {
     int32_t  green_script;  /* 我们的皮 VM 正在播的绿脚本 */
     uint32_t vm;            /* 我们起的皮 VM（`enemy.anm` 的绿脚本）*/
     uint32_t native_vm;     /* 原生槽 0 的 VM（隐它用；ECL 重起 VM 时会变）*/
-    uint32_t native_color;  /* 原生 VM 被我们盖掉之前 `color_1` 的原值（撤离时还回去）*/
+    uint32_t native_color;  /* ⛔ 旧做法（隐原生贴图）的残留字段，现在不用了 */
     int32_t  skin_count;    /* 诊断：这条起过几次皮（>1 = ECL 中途换过动画）*/
     int32_t  seen_tick;     /* 最后一次在敌人表里见到的 tick（mark & sweep）*/
     int32_t  born_tick;     /* 起皮时的 tick（探针的节流基准）*/
-    float    native_sc_x, native_sc_y;   /* 原生 VM 的 scale（镜像/转向就是它）—— 每帧抄到我们的皮上 */
+    float    native_sc_x, native_sc_y;   /* ⛔ 同上：旧做法抄 scale 用的残留字段 */
     float    x, y;          /* 最后一次见到的坐标（诊断 + 镜像判据的组锚点）*/
 } faith_gf_node_t;
 
@@ -2224,49 +2228,114 @@ static faith_gf_node_t *faith_gf_node_find(int32_t id)
 
 /* 收掉一条跟皮：删我们的 VM + 把原生 VM 的 `color_1` 还回去（`restore` = 0 时只删 VM，
  * 因为那只敌人已经不在了）。幂等。*/
+/* 把敌人自己的主 anm 换到 `green_script`（一手 `anmSetMain(0,S)` 的 K==0 复刻）；定义在下面。*/
+static int faith_gf_repoint(faith_gf_node_t *nd, uint8_t *e, int32_t green_script);
+
 static void faith_gf_node_release(faith_gf_node_t *nd, int restore)
 {
+    /* ★ 2026-09-25：新做法下**我们自己没有 VM**（那支 VM 本来就是敌人的）⇒ 撤离 = 把敌人的主 anm
+     *   **换回它原来的蓝脚本**（`restore` = 1 且那只还活着时）。不还回去的话，那只妖精会以绿的样子
+     *   留在场上（删卡/换关后「改过的妖精没变回来」）。*/
     if (!nd || !nd->id) return;
-    if (nd->vm) { ce_anm_delete(nd->vm); nd->vm = 0; }
-    if (restore && nd->native_vm) {
-        uint8_t *vm = ce_anm_get_vm(nd->native_vm);
-        if (vm) *(uint32_t *)(vm + CE_ANM_VM_COLOR1) = nd->native_color;
+    if (restore && nd->green_script >= 0) {
+        uint8_t *e = ce_enemy_by_id((uint8_t *)CE_ENEMY_MGR(), nd->id);
+        if (e) (void)faith_gf_repoint(nd, e, nd->blue_script);
     }
     memset(nd, 0, sizeof *nd);
 }
 
-/* 给这一只起皮（或**重起**：ECL 中途换了动画 ⇒ 我们的绿脚本必须跟着换 pose）。
- * 起皮三件：① 自己的 VM 播绿脚本（`enemy.anm` = N=2 那一份）；② 每帧把原生槽 0 的 VM 隐掉；
- * ③ 记住原生颜色原值（撤离时还回去）。返回 1 = 皮起来了。*/
-static int faith_gf_skin_up(faith_gf_node_t *nd, uint8_t *e, int32_t green_script,
-                            float x, float y)
+/* 把敌人**自己的**主 anm 换到 `green_script`（= 一手 `anmSetMain(0, S)` 的 K==0 复刻，逐条见下）。
+ * 返回 1 = 换上了。这是**唯一**改外观的地方（没有第二支 VM、没有隐原生贴图）。*/
+static int faith_gf_repoint(faith_gf_node_t *nd, uint8_t *e, int32_t green_script)
 {
     uint8_t *em_mgr = (uint8_t *)CE_ENEMY_MGR();
     uint8_t *enemy_anm = em_mgr ? *(uint8_t **)(em_mgr + CE_EM_ANM_ENEMY) : 0;   /* N=2 那一份 */
     uint8_t *data = e + CE_ENEMY_DATA;
-    int32_t layer = *(const int32_t *)(data + FAITH_GF_ANM_LAYERS) + 7;
+    int32_t layer = *(const int32_t *)(data + FAITH_GF_ANM_LAYERS) + 7;          /* 引擎自己的 layer 表达式 */
+    uint32_t *slot = (uint32_t *)(data + FAITH_GF_ANM_VM0);
+    uint32_t old = *slot;
+    uint32_t nv;
 
-    if (!enemy_anm) return 0;
+    float keep_pos[3]   = {0.0f, 0.0f, 0.0f};
+    float keep_pos2[3]  = {0.0f, 0.0f, 0.0f};
+    float keep_scale[2] = {1.0f, 1.0f};
+    int   have_keep = 0;
+
+    if (!enemy_anm || !nd) return 0;
     if (layer < 1 || layer > 30) layer = 8;      /* 兜底 = 一手妖精脚本自己的 `layer(8)`（112 同值）*/
-    if (nd->vm) { ce_anm_delete(nd->vm); nd->vm = 0; }
-    nd->vm = ce_anm_spawn(enemy_anm, (int)green_script, (int)layer);
-    if (!nd->vm) {
-        ce_log("faithgf/skin: 起皮失败（enemy.anm 脚本 %d，layer %d）—— VM 池满？",
-               (int)green_script, (int)layer);
+    /* ★★★ 2026-09-25：**换 VM 之前先把旧 VM 的"姿态"记下来** ——
+     *   一手（`local/vendor/thtk` 反编译 st01.ecl）：同一只妖精的左/右版本是**两个不同的生成变体**
+     *   （`enmCreateM("GirlBlueA01", +184, …)` vs `enmCreate("GirlBlueA01", −184, …)`），
+     *   而妖精的行为子程序 `GirlA01` 里**一个 anm 指令都没有** ⇒ 左右朝向**不可能**来自 ECL 的换脚本，
+     *   只能是**生成时/引擎侧写在 VM 上**的东西（镜像 = `scale.x = −1` 那一类），
+     *   再加上引擎每帧维护的坐标/`__pos_2`。⇒ 我们替换 VM 时**必须把这些原样继承过去**，
+     *   否则新的那支 VM 就是「没镜像、坐标还在原点」的样子（用户看到的「不转向 / 半截在边缘外」正是它）。*/
+    if (old) {
+        uint8_t *ovm = ce_anm_get_vm(old);
+        if (ovm) {
+            memcpy(keep_pos,   ovm + CE_ANM_VM_POS,   12);
+            memcpy(keep_pos2,  ovm + CE_ANM_VM_POS_2, 12);
+            memcpy(keep_scale, ovm + CE_ANM_VM_SCALE,  8);
+            have_keep = 1;
+            ce_anm_delete(old);                  /* 引擎 `anmSetSprite`/`anmSetMain` 同款：先 kill 旧 VM */
+        }
+    }
+    *slot = 0;
+    nv = ce_anm_spawn(enemy_anm, (int)green_script, (int)layer);
+    if (!nv) {
+        ce_log("faithgf/skin: 换绿失败（enemy.anm 脚本 %d，layer %d）—— VM 池满？", (int)green_script, (int)layer);
         return 0;
     }
+    *slot = nv;
+    if (have_keep) {                             /* 继承旧 VM 的姿态（镜像/坐标）—— 见上面那段 */
+        uint8_t *nvm = ce_anm_get_vm(nv);
+        if (nvm) {
+            memcpy(nvm + CE_ANM_VM_POS,   keep_pos,   12);
+            memcpy(nvm + CE_ANM_VM_POS_2, keep_pos2,  12);
+            memcpy(nvm + CE_ANM_VM_SCALE, keep_scale,  8);
+        }
+    }
+    /* ★ 逐条复刻引擎 `anmSetMain` 的 K==0 收尾（一手 `th18:0x431640` 那一段）：
+     *   `[+0x270] = S`（主脚本记忆，`anmReset`/`anmSelectedPlay` 回放用）、`[+0x26c] = S`、
+     *   `[+0x274] = 0`、`[+0x268] = N`、`flags_lo |= 0x100000`。
+     *   ⚠ `+0x4fd8/+0x4fdc`（final_sprite_size = vm 尺寸 × scale）**不写**：蓝/绿两支同形
+     *     （`mof_green_pair_sane()` 在运行期逐条比过 12 个 sprite 的宽高）⇒ 值本来就一样。*/
+    *(int32_t *)(data + FAITH_GF_ANM_MAIN)    = green_script;   /* +0x270 */
+    *(int32_t *)(data + 0x26c)                = green_script;   /* +0x26c（= `CE_ENEMY_ANM_SCRIPT` 的相对值）*/
+    *(int32_t *)(data + FAITH_GF_ANM_SUB)     = 0;              /* +0x274 */
+    *(int32_t *)(data + CE_ENEMY_ANM_SRC)     = 2;              /* +0x268 = N */
+    *(uint32_t *)(data + FAITH_GF_ANM_FLAGS) |= FAITH_GF_ANM_FLAG_MAIN;
     nd->green_script = green_script;
-    /* ★★★ 2026-09-25（owner 实跑：「第二波一只绿妖精**半截身子在画面上边缘外面、定住不动**」）：
-     *   `ce_anm_spawn` 建出来的 VM 坐标是 **(0,0,0)**（引擎原样），而跟随坐标是在**下一帧**才写的
-     *   ⇒ 起皮那一帧它就画在世界的原点（TH18 世界原点 = 游玩区左上角 ⇒「半截身子在上边缘外」）。
-     *   只要起皮每帧都发生（见下面的订正），它就会**永远停在原点、永远第 0 帧** —— 用户看到的两条症状
-     *   （位置 + 「定住」）就是这一条。⇒ 起皮**当场**把坐标写上。*/
-    (void)ce_anm_set_pos(nd->vm, x, y, 0.0f);
-    nd->native_sc_x = 1.0f;
-    nd->native_sc_y = 1.0f;
+    nd->native_vm = nv;
     ++nd->skin_count;
+    return 1;
+}
+
+/* 给这一只换绿（首换或 ECL 换了动画后的跟随）。`blue_script` = 被换掉的那一支蓝 pose。*/
+static int faith_gf_skin_up(faith_gf_node_t *nd, uint8_t *e, int32_t green_script,
+                            float x, float y)
+{
+    (void)x; (void)y;
+    if (!faith_gf_repoint(nd, e, green_script)) return 0;
+    /* ★★★ 2026-09-25（owner：「**绿妖精没有转向动画**」+ 一条关键线索：「它精灵表 12 帧，
+     *   其中有 2/3 的帧分别是左右」）⇒ 这一版**换掉整套做法**：
+     *
+     *   **旧做法（拆掉）**：「隐掉原生贴图（`vm+0x524` alpha=0）+ 自己起一支 VM 播绿脚本 + 每帧跟随坐标」。
+     *   它有三个天生的坑，实跑全撞上了：① 自己的 VM 出生在 (0,0)（世界原点）；② 原生 VM 上的
+     *   **一切 VM 级效果都不继承** —— 镜像/翻转（左右朝向）、VM 上跑的 pose 切换，全丢；
+     *   ③ 「跟随」要我们自己每帧写坐标，任何一次早退/重起都会让它定格。
+     *
+     *   **新做法**：**把敌人自己的主 anm 指到绿脚本**（`faith_gf_repoint()` = 一手 `anmSetMain(0, S)`
+     *   的 K==0 逐条复刻）⇒ 从这一刻起**原生的那支 VM 自己就是绿妖精**：
+     *     · 坐标/镜像/翻转/pose 切换/死亡动画**全部由引擎自己驱动**，我们一个字节都不用跟；
+     *     · 精灵表 12 帧里的左右两套（`script1/2` 与 `3/4`：同一批 sprite 4..11，其中一支带
+     *       `ins_308()` = **flipX**）本来就是**脚本级**的 ⇒ 引擎/ECL 一切换，切到的就是**绿的那一支**
+     *       同名 pose（我们只把蓝 pose k 映射到绿 pose k，`mof_green_green_script()`）。
+     *   ⚠ 「精灵表 12 帧 = 4 帧 idle（sprite0..3）+ 8 帧转向/飞行（sprite4..11）」这条一手事实
+     *     直接来自 `thanm -l 18 enemy.anm`（script0 = sprite0..3；script1/2 = sprite4..11 正向、
+     *     script3/4 = 同一批反向；script1/3 带 `ins_308()`）—— 与 owner 的描述逐条吻合。*/
     ce_fairy_claim_instance(110, nd->id);       /* 实例护栏（每帧重申；112 读得到）*/
-    ce_log("faithgf/skin: #%d **改为绿妖精**（(N,S)=(2,%d) → 皮脚本 %d；第 %d 次起皮）"
+    ce_log("faithgf/skin: #%d **改为绿妖精**（(N,S)=(2,%d) → 绿脚本 %d；第 %d 次换）"
            "（owner：一波改一只/一对，别和 112 改同一只）",
            (int)nd->id, (int)nd->blue_script, (int)green_script, (int)nd->skin_count);
     return 1;
@@ -2303,7 +2372,7 @@ static int faith_gf_host_take(int32_t id, int32_t row, int32_t n, int32_t s,
     nd->native_vm = *(const uint32_t *)(e + CE_ENEMY_DATA + FAITH_GF_ANM_VM0);
     if (nd->native_vm) {
         uint8_t *vm = ce_anm_get_vm(nd->native_vm);
-        nd->native_color = vm ? *(const uint32_t *)(vm + CE_ANM_VM_COLOR1) : 0;
+        nd->native_color = vm ? *(const uint32_t *)(vm + CE_ANM_VM_COLOR1) : 0;   /* 残留：不再写 */
     }
     if (!faith_gf_skin_up(nd, e, green, x, y)) { memset(nd, 0, sizeof *nd); return 0; }
     (void)n; (void)wave;
@@ -2429,79 +2498,35 @@ static void faith_gf_skin_tick(uint8_t *em)
                 (void)faith_gf_host_take(id, row, n, s, x, y, wave);
             continue;
         }
-        /* 已经在跟皮：① 跟随坐标；② 原生贴图每帧隐；③ ECL 换了动画 ⇒ 重起一次皮。*/
+        /* 已经在跟皮：① 脚本变了就跟着换绿（蓝 pose k → 绿 pose k）；② 探针。
+         * ⚠ 新做法下**不需要**跟随坐标、也不需要隐原生贴图、更不需要抄 scale ——
+         *   那支 VM 就是敌人自己的，引擎会把坐标/朝向/翻转/pose 全都驱动好。*/
         nd->seen_tick = s_gf_tick_no;
         nd->x = x; nd->y = y;
-        if (nd->vm) ce_anm_set_pos(nd->vm, x, y, 0.0f);
-        {
-            uint32_t nv = *(const uint32_t *)(e + CE_ENEMY_DATA + FAITH_GF_ANM_VM0);
-            uint8_t *vm;
-            if (nv && nv != nd->native_vm) {                      /* ECL 重起了槽 0 的 VM ⇒ 重新记原色 */
-                if (nd->native_vm) {                              /* 旧的那只（若还在）还回去 */
-                    uint8_t *old = ce_anm_get_vm(nd->native_vm);
-                    if (old) *(uint32_t *)(old + CE_ANM_VM_COLOR1) = nd->native_color;
-                }
-                nd->native_vm = nv;
-                vm = ce_anm_get_vm(nv);
-                nd->native_color = vm ? *(const uint32_t *)(vm + CE_ANM_VM_COLOR1) : 0;
-            }
-            if (nd->native_vm) {
-                vm = ce_anm_get_vm(nd->native_vm);
-                if (vm) *(uint32_t *)(vm + CE_ANM_VM_COLOR1) = FAITH_GF_HIDE_COLOR;
-                /* ★★★ 2026-09-25（owner 实跑：「**绿妖精没有转向动画**」）——
-                 *   一手（`local/vendor/thtk` 反编译 `st01.ecl` 的 MainSub01/01b）：
-                 *     `enmCreateM("GirlBlueA01",  184.0f, -32.0f, …)`   ← **M 变体**（右侧那只）
-                 *     `enmCreate ("GirlBlueA01", -184.0f, -32.0f, …)`   ← 普通变体（左侧那只）
-                 *   而 fairy 的子程序里 `anmSelect(2); anmSetMain(0, 0);` **只调一次、之后永不换脚本**
-                 *   （所以「朝向」**不可能**体现在敌人的 `+0x26c` 上 —— 我原来盯着那个字段看，当然看不到）。
-                 *   ⇒ 朝向是**生成时的 M 标志**带给 anm VM 的（镜像），落点在 VM 自己身上。
-                 *   我们这支皮是**另一个 VM**，不会自动继承 ⇒ 表现为「没有转向动画」。
-                 *   ⇒ 每帧把**原生 VM 的 scale 原样抄到我们的皮上**（镜像 = `scale.x = −1` 那种做法
-                 *     不管是哪一种落点，抄过来就等于跟原生完全一致）。*/
-                if (nd->vm) {
-                    const float *ns = (const float *)(vm + CE_ANM_VM_SCALE);
-                    uint8_t *sk = ce_anm_get_vm(nd->vm);
-                    if (vm && sk && ns) {
-                        nd->native_sc_x = ns[0];
-                        nd->native_sc_y = ns[1];
-                        (void)ce_anm_set_scale(nd->vm, ns[0], ns[1]);
-                    } else if (sk) {
-                        (void)ce_anm_set_scale(nd->vm, nd->native_sc_x, nd->native_sc_y);
-                    }
-                }
-            }
-        }
-        /* ★★★ 2026-09-25 订正（owner 实跑：「第二波一只绿妖精**半截身子在画面上边缘外面、定住不动**」）：
-         *   这里的判据原来是「**敌人当前脚本是不是绿的**」—— **错的**：本条路线**不改敌人的脚本**
-         *   （它是「隐掉原生贴图 + 自己起一支皮 VM」）⇒ 敌人的 `+0x26c` **永远是蓝的** ⇒ 判据每帧都
-         *   成立 ⇒ **每帧删掉旧皮、重起一支新皮**（实跑日志铁证：`第 1..22 次起皮`，一帧一次）。
-         *   后果正是 owner 看到的两条：① 新 VM 出生在 (0,0)（世界原点 = 游玩区左上角）⇒「半截身子在
-         *   上边缘外」；② 脚本每帧从第 0 帧重来 ⇒「**定住不动**」。
-         *   ⇒ 判据改成「**蓝脚本（`nd->blue_script`）变了没有**」：只有 ECL 真的换了动画才重起皮。*/
-        if (s != nd->blue_script) {
+        nd->native_vm = *(const uint32_t *)(e + CE_ENEMY_DATA + FAITH_GF_ANM_VM0);
+        if (s != nd->green_script) {          /* 引擎/ECL 改了主脚本（换 pose / 转向 / 死亡动画…）*/
             int32_t green = mof_green_green_script(&mof_green_pairs[nd->row], s);
-            if (green >= 0) {                                     /* 蓝 pose 变了 ⇒ 跟到对应的绿 pose */
+            if (green >= 0) {                 /* 还是那一支蓝妖精的某个 pose ⇒ 跟到对应的绿 pose */
                 nd->blue_script = s;
                 (void)faith_gf_skin_up(nd, e, green, x, y);
-            } else {
-                ce_log("faithgf/skin: #%d 的外观脚本变成了 (N,S)=(%d,%d)（不在那一行里）⇒ 不再跟皮",
-                       (int)id, (int)n, (int)s);
-                faith_gf_node_release(nd, 1);
+            } else if (!mof_green_is_green_script(&mof_green_pairs[nd->row], s)) {
+                ce_log("faithgf/skin: #%d 的主脚本变成了 (N,S)=(%d,%d)（既不是那一行的蓝 pose、也不是绿）"
+                       "⇒ 不再改它（保留它自己的外观）", (int)id, (int)n, (int)s);
+                faith_gf_node_release(nd, 0);
                 continue;
             }
         }
         ce_fairy_claim_instance(110, id);                          /* 实例护栏每帧重申 */
         if (FAITH_GF_PROBE_EVERY > 0 && (s_gf_tick_no % FAITH_GF_PROBE_EVERY) == 0) {
-            uint8_t *sk = nd->vm ? ce_anm_get_vm(nd->vm) : 0;
-            const float *sp = sk ? (const float *)(sk + CE_ANM_VM_POS) : 0;
-            const float *sk_s = sk ? (const float *)(sk + CE_ANM_VM_SCALE) : 0;
-            ce_log("faithgf/skin/probe: #%d 敌(%.0f,%.0f) 皮%s(%.0f,%.0f) scale 皮(%.2f,%.2f)/原生(%.2f,%.2f) "
-                   "蓝脚本 %d 绿脚本 %d 起皮 %d 次",
-                   (int)id, (double)x, (double)y, sk ? "" : "**没了**",
+            uint8_t *vm = nd->native_vm ? ce_anm_get_vm(nd->native_vm) : 0;
+            const float *sp = vm ? (const float *)(vm + CE_ANM_VM_POS) : 0;
+            const float *sc = vm ? (const float *)(vm + CE_ANM_VM_SCALE) : 0;
+            ce_log("faithgf/skin/probe: #%d 敌(%.0f,%.0f) VM %s(%.0f,%.0f) scale(%.2f,%.2f) "
+                   "主脚本 %d（我们的绿脚本 %d）换绿 %d 次",
+                   (int)id, (double)x, (double)y, vm ? "" : "**没了**",
                    sp ? (double)sp[0] : -999.0, sp ? (double)sp[1] : -999.0,
-                   sk_s ? (double)sk_s[0] : -999.0, sk_s ? (double)sk_s[1] : -999.0,
-                   (double)nd->native_sc_x, (double)nd->native_sc_y,
-                   (int)nd->blue_script, (int)nd->green_script, (int)nd->skin_count);
+                   sc ? (double)sc[0] : -999.0, sc ? (double)sc[1] : -999.0,
+                   (int)s, (int)nd->green_script, (int)nd->skin_count);
         }
     }
     /* mark & sweep：连着几帧没见到 ⇒ 那只已经不在了（被打死/自删）⇒ 收掉这一条。*/

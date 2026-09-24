@@ -5861,6 +5861,41 @@ TH10 一手只有**两档**模板（`Bomb::start` 的两条分支：`CHARACTER =
 ⚠ **只改「模板」**：爱丽丝半档消耗、河童罩子、隐藏原生子机仍然是**魔理沙专属**（各自的门写死在 `signal.c`），
 咲夜/早苗**不吃**这三条 —— owner 的措辞就是「咲夜用魔理沙的**普通**灵击」。
 
+#### §2.0zzz-5a ★★★ 2026-09-25 深夜：**换掉整套做法**（owner 线索：「它精灵表 12 帧，其中有 2/3 的帧分别是左右」）
+
+那条线索把方向定死了 —— 一手 `thanm -l 18 enemy.anm`（A 组蓝妖精那一支）：
+
+```
+script0: sprite0,1,2,3                       ← 4 帧 idle（悬停）
+script1: sprite4,5,6,7 → 循环 8,9,10,11  + ins_308()   ← 转向+飞行（8 帧，带 flipX）
+script2: 同 script1 但**没有** ins_308()                ← 同一批帧的另一侧
+script3: sprite7,6,5,4 → 循环 0,1,2,3   + ins_308()    ← 反向
+script4: 同 script3 但没有 ins_308()
+script5..: sprite12.. ← 下一支变体（红）
+```
+即 **12 帧 = 4 idle + 8 左右转向/飞行**（owner 说的「2/3 的帧分别是左右」= 逐条吻合）；
+而 ECL（`st01.ecl`）里：`GirlBlueA01() { anmSelect(2); anmSetMain(0,0); @GirlA01(1); }`，
+行为子程序 **`GirlA01` 一个 anm 指令都没有**（只有 `moveVel`/`moveAngleTime`/`moveSpeedTime`），
+整关**没有一处** `anmSelectedPlay`/`anm316`/`anmSwitch`；同一只妖精的左右版本来自**两个不同的生成变体**
+（`enmCreateM("GirlBlueA01", +184, …)` vs `enmCreate("GirlBlueA01", −184, …)`）。
+
+⇒ **左右朝向不可能来自「换脚本」**，它是**引擎/生成侧写在 VM 上**的东西（镜像 + 引擎每帧维护的坐标）；
+⇒ 我上一版「**隐掉原生贴图 + 自己起一支 VM 播绿脚本**」在结构上就错了：自己那支 VM
+**永远继承不到** VM 级的镜像/朝向，而且坐标也要我们每帧补 —— 实跑的两个症状
+（不转向 / 定在画面外）都是这个结构的必然结果，**不是补丁能修的**。
+
+**新做法（本次）**：不再有第二支 VM —— **把敌人自己的主 anm 指到绿脚本**（`faith_gf_repoint()`，
+= 一手 `anmSetMain(0, S)` 的 K==0 逐条复刻：kill 旧 VM → 从 `enemy.anm` 起新 VM → 写
+`+0x270`/`+0x26c`/`+0x274`/`+0x268` → `flags_lo |= 0x100000`，并**继承旧 VM 的 pos / `__pos_2` / scale**）。
+从这一刻起**原生的那支 VM 自己就是绿妖精**：坐标、镜像、朝向、pose、死亡动画**全部由引擎驱动**，
+我们只做一件事 —— 引擎/ECL 每次改主脚本时，把**蓝 pose k 映射到绿 pose k**（`mof_green_green_script()`）。
+删卡/换关时换回原来的蓝脚本（`faith_gf_node_release(nd, 1)`）。
+
+**实跑判据（探针）**：
+`faithgf/skin/probe: #N 敌(x,y) VM(…) scale(±1.00,1.00) 主脚本 S（我们的绿脚本 G）换绿 N 次`
+—— 妖精向左飞时 `scale.x` 应当是 **−1.00**（向右 `1.00`），且**绿妖精与同波蓝妖精的朝向一致**；
+「换绿」次数应停在 1（ECL 换 pose 才增加）。
+
 ### 2.0zzz-5 ★★★ 2026-09-25：绿妖精**转向**（owner：「绿妖精没有转向动画」）
 
 **一手（`local/vendor/thtk` 反编译 `st01.ecl` 的 `MainSub01`/`MainSub01b`）**：
