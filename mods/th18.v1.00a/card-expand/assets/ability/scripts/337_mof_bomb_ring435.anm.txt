@@ -4,7 +4,7 @@ script script337 {
 //
 //   一手原文（v4 `anmmap` 名）：
 //       blendMode(1); iset($I0,32); iset($I1,3); texCircle($I0); layer(13); sprite(sprite362);
-//       angleVel(0,0,-0.31415927); scale(16.0f, 16.0f); scaleTime(120, 6, 16.0f, 64.0f);
+//       angleVel(0,0,-0.31415927); scale(32.0f, 16.0f); scaleTime(60, 6, 32.0f, 64.0f);
 //       （白环：一手不写 `color`）+120: alphaTime(20,0,0); +20: delete();
 //
 //   逐条落位（**数值一处都没改**，只有 `sprite` 与 `texCircle` 的先后按 TH18 原生习惯挪了一下）：
@@ -16,15 +16,12 @@ script script337 {
 //       ⇒ `$I0` = 圆的**分段数**、`$I1` = 贴图沿圆周**铺几份**；一手是 **3 份**（每条弧占 1/9 圈）。
 //       ⚠ 2026-09-24：上一版把这三行删掉、改在构建期烘一张「铺 **32** 份」的环贴图 ⇒ owner 实跑
 //         「**波长比 th10 原生似乎短**」+「灵梦的灵击**没有旋转**」（96 道细弧转起来只是闪烁）。
-//     · `scale` / `scaleTime` **原样照抄一手**（`16.0f, 16.0f` + 120 帧到 `16.0f, 64.0f`）：
+//     · `scale` / `scaleTime` **原样照抄一手**（`32.0f, 16.0f` + 60 帧到 `32.0f, 64.0f`）：
 //       一手 `scale.y` 就是**半径 px**（`Bomb::on_tick` 每帧 `[bomb+0x3c] = vm.scale.y`，
 //       见 `engine/player/th10/01-bomb-full-chain.md` §3）⇒ 不需要任何 ÷100/÷200 换算。
 //     · `scaleTime` 的第 3/4 参是**目标**（铁证：本仓一手记录里 TH18 原生 script28 的
 //       `scale(0.0f,2.8f) + scaleTime(20,4,1.0f,1.0f)` = 「y 从 2.8 拉到 1.0」）；mode 也照抄一手（6）。
 //   · 变体 = **符卡中**（一手主脚本 script441；卡侧按「小灵击档 / 机体」选，与半径曲线同一判据）。
-//   ★★ 本支**改用主脚本那条曲线**（一手 400/407/441 的 `scale(16,16) + scaleTime(120, 6, 16→64)`）：owner 实跑口径「消弹半径不和白色环重合」——
-//      一手白环子脚本自己写 60/40 帧，而消弹半径读的是**主脚本**的 scale.y ⇒ 两者不同步；
-//      我们按「**可见边界 = 消弹半径**」取（见 `TUNING.md` §2.0zzk）。
     blendMode(1);
     layer(13);
     sprite(@MOF_BOMB_RING_STRIP@);
@@ -32,8 +29,8 @@ script script337 {
     iset($I1, 3);                   // 一手：贴图沿圆周**铺 3 份**（TH18 原生用 10 / 6）
     texCircle($I0);                 // ★ 引擎原生指令（TH18 ability.anm script29/32/43 就是这么用的）
     angleVel(0.0f, 0.0f, -0.31415927f);
-    scale(16.0f, 16.0f);
-    scaleTime(120, 6, 16.0f, 64.0f);
+    scale(32.0f, 16.0f);
+    scaleTime(60, 6, 32.0f, 64.0f);
 +120:
     alphaTime(20, 0, 0);
 +20:

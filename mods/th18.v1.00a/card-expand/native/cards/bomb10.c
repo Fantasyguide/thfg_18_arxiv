@@ -124,6 +124,8 @@ typedef struct {
                                            *   那一套：实心盘是本仓的占位（一手 TH10 没有它），32 片是不认
                                            *   `texCircle` 时的近似（用户口径「**它不是32段**」）—— 两个都不该留。*/
     int32_t  ring_next;    /* 下一根要起的柱环在 `s_ring_sched` 里的下标（排期按帧号升序 ⇒ 顺序推即可）*/
+    int32_t  cancel_total; /* ★ 2026-09-24 诊断：本发**累计消弹颗数**（owner 要看消弹有没有中途停）*/
+    int32_t  cancel_frames;/* ★ 诊断：本发**有消弹的帧数**（非零帧）*/
     int32_t  leaf_tick;    /* 诊断：本发一共起了几颗火星（一手：每 30 帧一趟、一趟 4 颗）*/
     int32_t  small;        /* ★★ 2026-09-24：**小灵击档**（一手：特定符卡上的压制，不是「符卡中」）*/
     int32_t  variant;      /* ★★ 2026-09-24：**视觉变体** 0 = 灵梦 / 1 = 魔理沙 / 2 = 符卡中
@@ -303,6 +305,8 @@ int32_t bomb10_start(const bomb10_host_t *host, void *user, int32_t by_hit)
     s_run.frames       = 0;
     s_run.dmg_frames   = 0;
     s_run.leaf_tick    = 0;
+    s_run.cancel_total = 0;
+    s_run.cancel_frames = 0;
     s_run.ring_next    = 0;
     s_run.vx           = pp[0];
     s_run.vy           = pp[1];
@@ -407,13 +411,23 @@ void bomb10_tick(int32_t driver)
     if (ce_cancel_latch_claim(host->card_id)) {
         n = ce_cancel_radius(center, r, BOMB10_CANCEL_MAX, BOMB10_CANCEL_MODE);
         if (n > 0) {
+            /* ★★ 2026-09-24（owner 口径：「消弹每 0.5s 采样一次吗？事件太短了吧」）：
+             *   **每一帧真的消掉弹就打一行**（带累计），另每 `BOMB10_CANCEL_LOG_EVERY` 帧补一行
+             *   「安静帧」的读数 —— 这样既能看清消弹是**连续在跑**还是中途停了，
+             *   也不会把「这一帧没弹进圈」误读成「消弹停了」。帧数也一并打出来（对齐用）。*/
+            s_run.cancel_total += n;
+            ++s_run.cancel_frames;
+            ce_log("%s/fx: 消弹 r=%.2f 帧 %d 本帧 %d 颗，累计 %d 颗（非零帧 %d）",
+                   host->log_tag, (double)r, (int)s_run.elapsed, (int)n,
+                   (int)s_run.cancel_total, (int)s_run.cancel_frames);
             if (host->on_cancel) host->on_cancel(s_run.user, n);
         } else {
             (void)ce_cancel_latch_release(host->card_id);
         }
-        if (r > 0.0f && (s_run.elapsed % 30) == 0) {
-            ce_log("%s: 灵击消弹圈 r=%.2f 本帧 cancelled %d（mode 1 = 引擎撒消弹点）",
-                   host->log_tag, (double)r, (int)n);
+        if (n == 0 && r > 0.0f && (s_run.elapsed % BOMB10_CANCEL_LOG_EVERY) == 0) {
+            ce_log("%s: 灵击消弹圈 r=%.2f 帧 %d 本帧 cancelled 0（安静帧；累计 %d 颗 / 非零帧 %d）",
+                   host->log_tag, (double)r, (int)s_run.elapsed,
+                   (int)s_run.cancel_total, (int)s_run.cancel_frames);
         }
     }
 
@@ -504,10 +518,11 @@ void bomb10_tick(int32_t driver)
     if (--s_run.left <= 0) {
         bomb10_fx_dump("结束前");
         bomb10_fx_kill();
-        ce_log("%s: 灵击结束（%d 帧，伤害源 %d 帧，半径 %.1f，中心 y %.1f，火星 %d 颗，变体 %s%s）",
+        ce_log("%s: 灵击结束（%d 帧，伤害源 %d 帧，半径 %.1f，中心 y %.1f，火星 %d 颗，"
+               "**消弹累计 %d 颗 / 非零帧 %d**，变体 %s%s）",
                host->log_tag, (int)s_run.frames, (int)s_run.dmg_frames, (double)r, (double)s_run.y,
-               (int)s_run.leaf_tick, bomb10_variant_name(s_run.variant),
-               s_run.small ? "（小灵击档）" : "");
+               (int)s_run.leaf_tick, (int)s_run.cancel_total, (int)s_run.cancel_frames,
+               bomb10_variant_name(s_run.variant), s_run.small ? "（小灵击档）" : "");
         s_run.left = 0;
     }
 }

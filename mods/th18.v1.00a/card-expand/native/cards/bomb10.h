@@ -126,6 +126,10 @@
 #define BOMB10_RING_LEAF_UNITS 4          /* 每趟颗数 = 红蓝红蓝（一手脚本正文四行 `scriptNew`）*/
 #define BOMB10_CANCEL_MAX      99999      /* 消弹颗数上限（一手 TH10 的 `cancel_circle` 也没有上限）*/
 #define BOMB10_CANCEL_MODE     1          /* 消弹模式（1 = 引擎撒 type 9 消弹点）*/
+/* 消弹诊断的「安静帧」采样间隔（帧）。★ 2026-09-24：从 30（0.5 s）收紧到 **10**（≈0.17 s）——
+ * owner 口径「消弹每 0.5s 采样一次吗？事件太短了吧」：0.5 s 会把「连续在消」读成「停了」。
+ * 另外**每一帧真的消掉弹都会单独打一行**（带累计），这两条加起来才看得出消弹是连续还是中断。*/
+#define BOMB10_CANCEL_LOG_EVERY 10
 #define BOMB10_DMG_CAP         MOF_BOMB_DMG_CAP  /* 伤害上限抬升值（❓ 自定，理由见 mof_core.h）*/
 #define BOMB10_INVULN_FRAMES           270   /* 普通灵击的无敌帧数（一手 `th10:0x4259be push 0x10e`）*/
 #define BOMB10_INVULN_FRAMES_DEATHBOMB 200   /* 决死灵击的无敌帧数（一手 `th10:0x425c2d push 0xc8`）*/
