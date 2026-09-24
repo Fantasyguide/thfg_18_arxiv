@@ -2114,6 +2114,10 @@ static uint8_t *faith_enemy_sprite_table(void)
 #define FAITH_GF_WAVE_GAP      20         /* 读不到 ECL 波号时：相邻两只到达间隔 > 它 ⇒ 算新的一波（帧）*/
 #define FAITH_GF_WAVE_SETTLE   60         /* 有波号时：一波静默 > 它 ⇒ 关组（防最后一波永远不判）*/
 #define FAITH_GF_STALE_TICKS   3          /* 连着这么多帧没在敌人表里见到 ⇒ 收掉这一条的跟皮 */
+/* 跟随探针（每这么多 tick 打一行「敌机坐标 vs 我们的皮的坐标」）—— 2026-09-25 加的：
+ * owner 实跑报「绿妖精**定住在画面外**」⇒ 这一行让「皮有没有跟着敌人走」变成**日志可判**的事，
+ * 不必再靠肉眼（上一次的根因就是皮每帧被重起、永远停在 (0,0)，但日志里只看到一堆「起皮」）。*/
+#define FAITH_GF_PROBE_EVERY  60
 #define FAITH_GF_HIDE_COLOR    0x00ffffffu/* VM `color_1` 写它 = alpha 0、RGB 白 ⇒ 原生贴图不可见（112 同值）*/
 
 /* ECL 侧字段（与 112 的 `ufo.c` 同源：`lolk.c` / `animal.c` 也是这一套 —— 关卡脚本那只敌人的
@@ -2137,6 +2141,7 @@ typedef struct {
     uint32_t native_color;  /* 原生 VM 被我们盖掉之前 `color_1` 的原值（撤离时还回去）*/
     int32_t  skin_count;    /* 诊断：这条起过几次皮（>1 = ECL 中途换过动画）*/
     int32_t  seen_tick;     /* 最后一次在敌人表里见到的 tick（mark & sweep）*/
+    int32_t  born_tick;     /* 起皮时的 tick（探针的节流基准）*/
     float    x, y;          /* 最后一次见到的坐标（诊断 + 镜像判据的组锚点）*/
 } faith_gf_node_t;
 
@@ -2232,7 +2237,8 @@ static void faith_gf_node_release(faith_gf_node_t *nd, int restore)
 /* 给这一只起皮（或**重起**：ECL 中途换了动画 ⇒ 我们的绿脚本必须跟着换 pose）。
  * 起皮三件：① 自己的 VM 播绿脚本（`enemy.anm` = N=2 那一份）；② 每帧把原生槽 0 的 VM 隐掉；
  * ③ 记住原生颜色原值（撤离时还回去）。返回 1 = 皮起来了。*/
-static int faith_gf_skin_up(faith_gf_node_t *nd, uint8_t *e, int32_t green_script)
+static int faith_gf_skin_up(faith_gf_node_t *nd, uint8_t *e, int32_t green_script,
+                            float x, float y)
 {
     uint8_t *em_mgr = (uint8_t *)CE_ENEMY_MGR();
     uint8_t *enemy_anm = em_mgr ? *(uint8_t **)(em_mgr + CE_EM_ANM_ENEMY) : 0;   /* N=2 那一份 */
@@ -2249,6 +2255,12 @@ static int faith_gf_skin_up(faith_gf_node_t *nd, uint8_t *e, int32_t green_scrip
         return 0;
     }
     nd->green_script = green_script;
+    /* ★★★ 2026-09-25（owner 实跑：「第二波一只绿妖精**半截身子在画面上边缘外面、定住不动**」）：
+     *   `ce_anm_spawn` 建出来的 VM 坐标是 **(0,0,0)**（引擎原样），而跟随坐标是在**下一帧**才写的
+     *   ⇒ 起皮那一帧它就画在世界的原点（TH18 世界原点 = 游玩区左上角 ⇒「半截身子在上边缘外」）。
+     *   只要起皮每帧都发生（见下面的订正），它就会**永远停在原点、永远第 0 帧** —— 用户看到的两条症状
+     *   （位置 + 「定住」）就是这一条。⇒ 起皮**当场**把坐标写上。*/
+    (void)ce_anm_set_pos(nd->vm, x, y, 0.0f);
     ++nd->skin_count;
     ce_fairy_claim_instance(110, nd->id);       /* 实例护栏（每帧重申；112 读得到）*/
     ce_log("faithgf/skin: #%d **改为绿妖精**（(N,S)=(2,%d) → 皮脚本 %d；第 %d 次起皮）"
@@ -2282,6 +2294,7 @@ static int faith_gf_host_take(int32_t id, int32_t row, int32_t n, int32_t s,
     nd->row = row;
     nd->blue_script = s;
     nd->seen_tick = s_gf_tick_no;
+    nd->born_tick = s_gf_tick_no;
     nd->x = x;
     nd->y = y;
     nd->native_vm = *(const uint32_t *)(e + CE_ENEMY_DATA + FAITH_GF_ANM_VM0);
@@ -2289,7 +2302,7 @@ static int faith_gf_host_take(int32_t id, int32_t row, int32_t n, int32_t s,
         uint8_t *vm = ce_anm_get_vm(nd->native_vm);
         nd->native_color = vm ? *(const uint32_t *)(vm + CE_ANM_VM_COLOR1) : 0;
     }
-    if (!faith_gf_skin_up(nd, e, green)) { memset(nd, 0, sizeof *nd); return 0; }
+    if (!faith_gf_skin_up(nd, e, green, x, y)) { memset(nd, 0, sizeof *nd); return 0; }
     (void)n; (void)wave;
     return 1;
 }
@@ -2434,18 +2447,34 @@ static void faith_gf_skin_tick(uint8_t *em)
                 if (vm) *(uint32_t *)(vm + CE_ANM_VM_COLOR1) = FAITH_GF_HIDE_COLOR;
             }
         }
-        if (!mof_green_is_green_script(&mof_green_pairs[nd->row], s)) {
+        /* ★★★ 2026-09-25 订正（owner 实跑：「第二波一只绿妖精**半截身子在画面上边缘外面、定住不动**」）：
+         *   这里的判据原来是「**敌人当前脚本是不是绿的**」—— **错的**：本条路线**不改敌人的脚本**
+         *   （它是「隐掉原生贴图 + 自己起一支皮 VM」）⇒ 敌人的 `+0x26c` **永远是蓝的** ⇒ 判据每帧都
+         *   成立 ⇒ **每帧删掉旧皮、重起一支新皮**（实跑日志铁证：`第 1..22 次起皮`，一帧一次）。
+         *   后果正是 owner 看到的两条：① 新 VM 出生在 (0,0)（世界原点 = 游玩区左上角）⇒「半截身子在
+         *   上边缘外」；② 脚本每帧从第 0 帧重来 ⇒「**定住不动**」。
+         *   ⇒ 判据改成「**蓝脚本（`nd->blue_script`）变了没有**」：只有 ECL 真的换了动画才重起皮。*/
+        if (s != nd->blue_script) {
             int32_t green = mof_green_green_script(&mof_green_pairs[nd->row], s);
             if (green >= 0) {                                     /* 蓝 pose 变了 ⇒ 跟到对应的绿 pose */
                 nd->blue_script = s;
-                (void)faith_gf_skin_up(nd, e, green);
+                (void)faith_gf_skin_up(nd, e, green, x, y);
             } else {
                 ce_log("faithgf/skin: #%d 的外观脚本变成了 (N,S)=(%d,%d)（不在那一行里）⇒ 不再跟皮",
                        (int)id, (int)n, (int)s);
                 faith_gf_node_release(nd, 1);
+                continue;
             }
         }
         ce_fairy_claim_instance(110, id);                          /* 实例护栏每帧重申 */
+        if (FAITH_GF_PROBE_EVERY > 0 && (s_gf_tick_no % FAITH_GF_PROBE_EVERY) == 0) {
+            uint8_t *sk = nd->vm ? ce_anm_get_vm(nd->vm) : 0;
+            const float *sp = sk ? (const float *)(sk + CE_ANM_VM_POS) : 0;
+            ce_log("faithgf/skin/probe: #%d 敌(%.0f,%.0f) 皮%s(%.0f,%.0f) 蓝脚本 %d 绿脚本 %d 起皮 %d 次",
+                   (int)id, (double)x, (double)y, sk ? "" : "**没了**",
+                   sp ? (double)sp[0] : -999.0, sp ? (double)sp[1] : -999.0,
+                   (int)nd->blue_script, (int)nd->green_script, (int)nd->skin_count);
+        }
     }
     /* mark & sweep：连着几帧没见到 ⇒ 那只已经不在了（被打死/自删）⇒ 收掉这一条。*/
     for (i = 0; i < FAITH_GF_NODE_MAX; ++i) {
