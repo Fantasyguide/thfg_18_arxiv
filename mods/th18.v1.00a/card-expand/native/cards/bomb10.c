@@ -167,7 +167,22 @@ void bomb10_nitori_declare(uint32_t card_id, int armed)
     s_nitori_armed = armed ? 1 : 0;
 }
 
-int bomb10_nitori_armed(void) { return s_nitori_armed; }
+int bomb10_nitori_armed(void)
+{
+    /* ★★★ 2026-09-25 订正（owner 实跑：「**在有罩子的时候按 B，罩子破掉了重开了一个罩子，但是
+     *   bonus failed 了** —— 特技是说不撞，而不是说破掉」）：
+     *   这里原来**只看那条声明位**，而声明位是「**泡还在**」的语义（111 在破罩/谢幕时会撤）
+     *   ⇒ 声明位在**一帧之中**可能被清掉（`signal_shield_eat_hit()` 的真被弹那一路、
+     *   `signal_shield_settle()` 的换泡那一路），而 110 的 `mof_bomb_on_start()` 只要**恰好在
+     *   那一帧的后半**读到它，就会把符卡奖励作废 ⇒ 玩家看到的是「我没撞，只是罩子换了一个，
+     *   bonus 却 failed 了」。
+     *   ⇒ 判据补上**权威的那一半**：**正在跑的这一发本身就是罩子形态**（`s_run.nitori_form`，
+     *     由 `bomb10_start()` 用 `ce_owned(111) && 魔理沙` 判定，与声明位/时序无关）。
+     *   语义随之收紧成 owner 的原话：「**河童特技 = 按 Bomb 不 bonus failed，除非你真撞了**」——
+     *   111+魔理沙 的每一发灵击都是罩子形态 ⇒ **按出那一刻永不作废**，只有
+     *   「罩子替你挡下中弹」（`signal_shield_note_real_hit()`）那一条路会 failed。*/
+    return (s_nitori_armed || s_run.nitori_form) ? 1 : 0;
+}
 
 /* 作废当前符卡奖励（TH10 一手 `th10:0x405500`；门 = 本次攻击已过 ≥60 帧）。
  * 从 `mof.c` 搬来这里，因为**两条路都要用**：卡侧发动时（非罩子形态）与「罩子替你挡了一下」时。*/

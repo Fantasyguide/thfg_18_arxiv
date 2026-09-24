@@ -1103,8 +1103,21 @@ static void mof_bomb_on_start(void *user, int32_t by_hit, int32_t cost, int32_t 
     /* ③ 作废当前符卡奖励（复刻一手 `th10:0x405500`；门 = 本次攻击已过 ≥60 帧）——
      *   ★★★ 2026-09-24 owner 口径：**河童特技 = 按 Bomb 不 bonus failed，除非你真撞了**
      *   ⇒ 罩子形态（111+魔理沙）这一发**跳过**作废；真被弹那一下由 111 的罩子路径调
-     *   `bomb10_void_spell_bonus()` 补上。实现搬进 `bomb10.c`（两条路共用一份）。*/
-    if (!bomb10_nitori_armed()) bomb10_void_spell_bonus();
+     *   `bomb10_void_spell_bonus()` 补上。实现搬进 `bomb10.c`（两条路共用一份）。
+     *   ★★★ 2026-09-25 订正（owner 实跑：「**在有罩子的时候按 B，罩子破掉了重开了一个罩子，
+     *   但是 bonus failed 了** —— 特技是说不撞，而不是说破掉」）：判据原来只看 111 的声明位，
+     *   而声明位在一帧之中可能被清（破罩/换泡那两路）⇒ 110 恰好在那一帧读到 0 就作废了奖励。
+     *   `bomb10_nitori_armed()` 现在把**「正在跑的这发就是罩子形态」**当权威那一半
+     *   （111+魔理沙 ⇒ 每一发灵击都是罩子形态 ⇒ **按出那一刻永不作废**）。*/
+    if (!bomb10_nitori_armed()) {
+        bomb10_void_spell_bonus();
+        if (ce_spell_active() && bomb10_spell_frames() >= (int32_t)MOF_BOMB_BIG_BOMB_FRAMES)
+            ce_log("mof: **bonus failed**（按 Bomb 作废当前符卡奖励：奖励值归零 + 清存活位；"
+                   "一手 `th10:0x405500`，门 = 本次攻击已过 ≥60 帧）—— 非河童罩子形态才走这条");
+    } else {
+        ce_log("mof: 罩子形态（河童）⇒ **不作废符卡奖励**（owner：按 Bomb 不 bonus failed，"
+               "除非真撞；failed 只可能来自「罩子挡下中弹」那一条路）");
+    }
     s->spell_watch.bombed = 1;                           /* 本张符卡期间放过灵击 ⇒ 不算全避 */
     faith_slot_reduce(&s->slot, mof_bomb_form_faith_kind(&s->form));
     mof_declare_score(s);

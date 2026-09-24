@@ -1230,7 +1230,11 @@ static int signal_shield_eat_hit(void)
      *   不 bonus failed，**除非你真撞了**」）—— 按 Bomb 那一刻已经在 `mof_bomb_on_start()` 里
      *   因为罩子在而被跳过，这里补上「真被弹」那一半；同时撤掉罩子形态声明（泡要破了）。*/
     signal_shield_note_real_hit();
-    bomb10_nitori_declare(SIGNAL_ID_NUM, 0);
+    /* ★★★ 2026-09-25：这里**不再**撤「罩子形态」声明（原来撤）—— 声明位的语义已经从
+     *   「泡还在不在」改成「**111+魔理沙 在场 ⇒ 河童特技可用**」（每帧由 `signal_nitori_join_bomb()`
+     *   声明 1，只有删卡才撤）。原来在这里撤会在**一帧之中**留下一个 0 窗口，而 110 的
+     *   `mof_bomb_on_start()` 的作废判据恰好读它 ⇒ owner 看到的「没撞也 bonus failed」。
+     *   详见 `bomb10.c` 的 `bomb10_nitori_armed()`。*/
     (void)ce_rescue_note_claim(SIGNAL_ID_NUM);        /* 救援闩锁照 107/117 的约定（返回值丢弃）*/
     bomb10_cancel_impending_death();                  /* ★ 一手 `th11:0x4078c4`：把这一下中弹撤销 */
     return 1;
@@ -1240,9 +1244,12 @@ static int signal_shield_eat_hit(void)
  * `back` = 该退还给火力的单位数（0 = 不退）；一手额度 = `collect_power(10)` = `BOMB_COST` 的一半。*/
 static void signal_shield_settle(signal_card_t *s, int32_t back, const char *why)
 {
-    /* ★ 2026-09-24：泡谢幕（含破罩演出收尾）⇒ 撤掉「罩子形态」声明 —— 之后再有灵击就按常态走
-     *   （消弹/伤害/作废 bonus 都恢复）；**并把破罩那 30 帧刷的无敌撤干净**（粘性声明 ⇒ 不撤就永久）。*/
-    bomb10_nitori_declare(SIGNAL_ID_NUM, 0);
+    /* ★★★ 2026-09-25：**不再**在这里撤「罩子形态」声明。声明位现在的语义是
+     *   「111+魔理沙 在场 ⇒ 河童特技可用」（`signal_nitori_join_bomb()` 每帧声明 1，删卡才撤），
+     *   与「泡还在不在」无关 —— 原来这里撤会在**换泡那一帧的中途**留下 0 窗口，正好被
+     *   110 的作废判据（`mof_bomb_on_start()` → `bomb10_nitori_armed()`）读到 ⇒
+     *   owner 报的「罩子只是换了一个，bonus 却 failed」（详见 `bomb10.c` 那一段）。
+     *   这里只收**无敌**声明（粘性层 ⇒ 不撤就永久）。*/
     ce_invuln_request((uint32_t)SIGNAL_ID_NUM, 0);
     int32_t maxp, now, want;
 
