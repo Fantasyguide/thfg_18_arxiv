@@ -162,6 +162,26 @@ static bomb10_run_t s_run;
 static int32_t s_nitori_armed;
 static int32_t s_nitori_busy;      /* ★ 2026-09-25：「罩子还在演」—— 由 111 每帧声明 */
 
+/* ---- ★★★ 2026-09-25：**在场提供者注册表**（见 `bomb10.h` 里 owner 那段口径）----
+ * 两张卡各注册一次；机器在「动作」发生时**逐个**调它们的 `gate`/`on_start`/`on_cancel`
+ * ⇒ 「谁按的 C」不影响结果，「哪些卡在场」才影响（= 灵击的**性质**）。*/
+#define BOMB10_HOST_MAX 4
+typedef struct { const bomb10_host_t *host; void *user; } bomb10_reg_t;
+static bomb10_reg_t s_reg[BOMB10_HOST_MAX];
+
+void bomb10_register_host(const bomb10_host_t *host, void *user)
+{
+    int i, free_i = -1;
+    if (!host) return;
+    for (i = 0; i < BOMB10_HOST_MAX; ++i) {
+        if (s_reg[i].host == host) { s_reg[i].user = user; return; }    /* 幂等（user 刷新）*/
+        if (!s_reg[i].host && free_i < 0) free_i = i;
+    }
+    if (free_i >= 0) { s_reg[free_i].host = host; s_reg[free_i].user = user; }
+    else ce_log("bomb10: 提供者注册表满（%d 格）—— 这一张卡的 on_start/on_cancel 不会再被机器调到",
+                (int)BOMB10_HOST_MAX);
+}
+
 void bomb10_nitori_declare(uint32_t card_id, int armed)
 {
     if (!card_id) return;
@@ -350,7 +370,17 @@ int32_t bomb10_start(const bomb10_host_t *host, void *user, int32_t by_hit)
                (int)BOMB10_NITORI_BOMB_WHILE_SHIELD);
         return 0;
     }
-    if (host->gate && host->gate(user)) return 0;       /* ② 卡私有闸（各作自己的那道，例如 TH10 的对话门）*/
+    /* ② 各**在场提供者**的前置闸（不只看发起者）：110 = 对话 VM 忙；111 的罩子闸已在上面（系统级）。
+     *   ⇒ 「一套系统」下，任一张在场的卡说不放，这一发就不放（与谁发起无关）。*/
+    {
+        int i;
+        if (host->gate && host->gate(user)) return 0;
+        for (i = 0; i < BOMB10_HOST_MAX; ++i) {
+            const bomb10_host_t *h = s_reg[i].host;
+            if (!h || h == host) continue;
+            if (h->gate && h->gate(s_reg[i].user)) return 0;
+        }
+    }
 
     pp = ce_player_pos();
     power_before = CE_CURRENT_POWER();
@@ -485,7 +515,18 @@ int32_t bomb10_start(const bomb10_host_t *host, void *user, int32_t by_hit)
         *(volatile int32_t *)BOMB10_RANK_ADDR = rk;
     }
 
+    /* ③ 各**在场提供者**的「发动那一半」：**逐个**调（不再只看发起者）——
+     *   owner 口径「无论 110 还是 111 按 C，都是同一个灵击动作；有没有 111 只改它的性质」。
+     *   于是：110 在场 ⇒ 信仰 −3000 / 全避标记照记；111 在场 ⇒ 罩子照起（不再依赖「补起泡」那条兜底）。*/
     if (host->on_start) host->on_start(user, by_hit, cost, power_before, power_after);
+    {
+        int i;
+        for (i = 0; i < BOMB10_HOST_MAX; ++i) {
+            const bomb10_host_t *h = s_reg[i].host;
+            if (!h || h == host || !h->on_start) continue;
+            h->on_start(s_reg[i].user, by_hit, cost, power_before, power_after);
+        }
+    }
     return 1;
 }
 
@@ -496,7 +537,8 @@ int32_t bomb10_start(const bomb10_host_t *host, void *user, int32_t by_hit)
  * 判据写在调用点（`ce_owned(另一张) ? 0 : 1`）：同装时 110（id 小）推、111 让位。
  * 为什么必须这样：两卡都推 = 一发灵击每帧前进两帧（半径 / 伤害 / 时长全错）。
  * 先例 = 低速子机声明层「id 小者落笔」（108 < 111）、组合 UI「110 优先」。
- * ⚠ 卡侧那一半的回调（`on_cancel`）**永远走本发的发动者**（`s_run.host`），不是驱动者。*/
+ * ⚠ 卡侧那一半的回调（`on_cancel`）：★ 2026-09-25 起**逐个调所有在场提供者**（口径同上 ——
+ *   一套系统里「谁在场」才影响结果；各卡自己决定入不入账，`bomb_form_cancel_accounts()` 就是那个开关）。*/
 void bomb10_tick(int32_t driver)
 {
     float center[3], r;
@@ -567,6 +609,14 @@ void bomb10_tick(int32_t driver)
                    host->log_tag, (double)r, (int)s_run.elapsed, (int)n,
                    (int)s_run.cancel_total, (int)s_run.cancel_frames);
             if (host->on_cancel) host->on_cancel(s_run.user, n);
+            {
+                int i;
+                for (i = 0; i < BOMB10_HOST_MAX; ++i) {
+                    const bomb10_host_t *h = s_reg[i].host;
+                    if (!h || h == host || !h->on_cancel) continue;
+                    h->on_cancel(s_reg[i].user, n);
+                }
+            }
         } else {
             (void)ce_cancel_latch_release(host->card_id);
         }

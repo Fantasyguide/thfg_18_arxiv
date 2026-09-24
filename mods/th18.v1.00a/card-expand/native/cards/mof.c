@@ -1533,6 +1533,11 @@ static void mof_ensure_registered(ce_card_t *c)
     faith_user_t u;
 
     if (!s) return;
+    /* ★★★ 2026-09-25（owner：「无论 110 按 C 还是 111 按 C，本质上都是在寻求灵击动作；有没有 111
+     *   只影响灵击性质」）⇒ 本卡把**灵击提供者**注册进共用机器：之后**所有**灵击动作（不管是哪张卡
+     *   按出来的）都会调到本卡的 `gate`/`on_start`/`on_cancel` —— 于是「只装 111 时信仰不扣」
+     *   这类按发起者分岔的行为没有了。幂等（每帧补一次，卡对象重建时刷新 user）。*/
+    bomb10_register_host(&s_bomb_host, s);
     memset(&u, 0, sizeof u);
     u.card_id = MOF_ID_NUM;
     u.slot_mask = 1 << FAITH_SLOT_110;       /* 只消费 110 槽 */

@@ -3602,6 +3602,10 @@ static void signal_ensure_registered(ce_card_t *c)
     faith_user_t u;
 
     if (!s) return;
+    /* ★★★ 2026-09-25：同 110 —— 把本卡注册成**灵击提供者**（见 `bomb10_register_host()` 与
+     *   owner 那句「都是在寻求灵击动作」）。效果：**110 发起的那一发也会起罩子**
+     *   （不再依赖 `signal_nitori_join_bomb()` 的「补起泡」兜底）。*/
+    bomb10_register_host(&s_bomb_host, s);
     memset(&u, 0, sizeof u);
     u.card_id = SIGNAL_ID_NUM;
     u.slot_mask = 1 << FAITH_SLOT_111;    /* 只消费 111 槽（实体层零改动）*/
