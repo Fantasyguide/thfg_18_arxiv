@@ -1168,8 +1168,9 @@ static int signal_shield_eat_hit(void)
 static void signal_shield_settle(signal_card_t *s, int32_t back, const char *why)
 {
     /* ★ 2026-09-24：泡谢幕（含破罩演出收尾）⇒ 撤掉「罩子形态」声明 —— 之后再有灵击就按常态走
-     *   （消弹/伤害/作废 bonus 都恢复）。*/
+     *   （消弹/伤害/作废 bonus 都恢复）；**并把破罩那 30 帧刷的无敌撤干净**（粘性声明 ⇒ 不撤就永久）。*/
     bomb10_nitori_declare(SIGNAL_ID_NUM, 0);
+    ce_invuln_request((uint32_t)SIGNAL_ID_NUM, 0);
     int32_t maxp, now, want;
 
     s->stat_nitori = s_nitori.refunds;
@@ -1286,9 +1287,16 @@ static void signal_shield_tick(signal_card_t *s)
         }
         ce_invuln_request((uint32_t)SIGNAL_ID_NUM, SIGNAL_NITORI_BREAK_IFRAMES);
         if (--s_shield.break_left == 0) {
-            /* ⚠ 这里**不写 0**：一手的 iframes 是「每帧刷 40」，bomb 结束后那 40 帧由引擎自己跑完
-             *   （`ce_invuln_apply()` 只在更长时才改计时器，声明消失就等于不再续期）。
-             *   写 0 会撤掉**同一张卡**另一条路（恋恋）本帧的声明，得不偿失。*/
+            /* ★★★ 2026-09-24 订正（owner 实跑：「**罩子被击破后，无敌无限持续**，而由于我们的罩子计时
+             *   在无敌期间不走，所以看起来好像罩子永续 + 无敌」）：
+             *   这里原来**故意不写 0**，理由是「一手是每帧刷 40、bomb 结束后那 40 帧由引擎自己跑完」
+             *   —— **错**：无敌**声明层是粘性的**（`sdk.h` ②：某 id 声明过一次就一直按那个值刷，
+             *   直到**改口**）⇒ 最后那次 40 会**永远**被续期 ⇒ 永久无敌；而罩子的暴露帧在无敌期间
+             *   不累加 ⇒ 罩子也永不谢幕。两条症状同一个根 ✓。
+             *   ⇒ 破罩演出结束时**显式声明 0**。
+             *   ⚠ 已知小代价：同一张卡的恋恋（放开键 4 帧无敌）若**恰好在同一帧**也声明过，这一句会把它
+             *     撤掉（那 4 帧少一次）—— 概率极低、代价可接受；要彻底解决得给罩子单独一条声明 id。*/
+            ce_invuln_request((uint32_t)SIGNAL_ID_NUM, 0);
             if (s_shield.break_vm) {                  /* ★ 一手的收尾：30 帧后显式删泡的 VM */
                 ce_anm_delete(s_shield.break_vm);
                 s_shield.break_vm = 0;
