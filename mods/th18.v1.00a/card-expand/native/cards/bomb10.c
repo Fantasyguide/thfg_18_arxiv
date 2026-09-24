@@ -335,7 +335,12 @@ int32_t bomb10_start(const bomb10_host_t *host, void *user, int32_t by_hit)
     /* ★★★ owner 口径（2026-09-24）：「**111 和 110 是一套系统，当然也得吃特技**」⇒ 判据 = 
      *   **装了 111（声明位）+ 魔理沙机体**，与「谁放的那一发」无关 —— 110 放的照样是罩子形态。
      *   `s_nitori_armed` 由 111 **每帧**声明（见 `signal.c` 的 tick）⇒ 同帧内谁先 tick 都不影响。*/
-    s_run.nitori_form  = (s_nitori_armed
+    /* ★★★ 2026-09-24 夜（owner 实跑「**还是有普通灵击的环特效**」+「罩子破了之后再按 C 又永续无敌」）：
+     *   判据不再依赖 111 每帧声明的那个位（声明/撤除的时序一旦错开，`nitori_form` 就会是 0 ⇒
+     *   视觉与无敌**两条 gate 同时失效** —— 正是 owner 看到的两条症状一起出现）。
+     *   改成**直接问「111 这张卡在不在卡组里」**（`ce_owned()`，与声明无关、任何时刻都一致）+
+     *   魔理沙机体 ⇒ 判据确定、不会漏。罩子那个声明只剩「怎么起泡/退款」用得到。*/
+    s_run.nitori_form  = (ce_owned(111)
                           && *(const volatile int32_t *)CE_ADDR_CHARACTER == 1 /* 魔理沙 */) ? 1 : 0;
     s_run.small        = mof_core_bomb_suppressed(ce_spell_id());
     /* ★★ 一手 `Bomb::start` 的三条分支（脚本 400/407/441）＝ 灵梦 / 魔理沙 / 小灵击：
