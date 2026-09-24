@@ -131,6 +131,10 @@
  * 另外**每一帧真的消掉弹都会单独打一行**（带累计），这两条加起来才看得出消弹是连续还是中断。*/
 #define BOMB10_CANCEL_LOG_EVERY 10
 #define BOMB10_DMG_CAP         MOF_BOMB_DMG_CAP  /* 伤害上限抬升值（❓ 自定，理由见 mof_core.h）*/
+/* 伤害档自证行的采样间隔（帧）。★ 2026-09-25（owner：「灵击的伤害有点小？核一下 th10 的灵击伤害」）：
+ * 每 30 帧（≈0.5 s）打一行 `…/dmg: 帧 N 内圈 X / 全场 Y（| boss=… 符卡中=… 大灵击=… …）` ——
+ * 那一行直接把「这一刻吃的是哪一档、档位为什么是它」写出来，实跑对账不必再猜。*/
+#define BOMB10_DMG_LOG_EVERY   30
 #define BOMB10_INVULN_FRAMES           270   /* 普通灵击的无敌帧数（一手 `th10:0x4259be push 0x10e`）*/
 #define BOMB10_INVULN_FRAMES_DEATHBOMB 200   /* 决死灵击的无敌帧数（一手 `th10:0x425c2d push 0xc8`）*/
 #define BOMB10_FN_CANCEL_IMPENDING_DEATH  0x45d590u

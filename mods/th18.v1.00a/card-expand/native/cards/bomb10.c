@@ -522,6 +522,18 @@ void bomb10_tick(int32_t driver)
 
     }
     dmg_src = dmg_in - dmg_out;
+    /* ★★★ 2026-09-25：**伤害档自证行**（owner：「灵击的伤害有点小？核一下 th10 的灵击伤害」）——
+     *   每 `BOMB10_DMG_LOG_EVERY` 帧打一行，把「这一发此刻吃的是哪一档、档位为什么是它」全写出来。
+     *   判读：无符卡打 boss 应是 **38**（`内圈 38 / 全场 20 或 16`）；符卡里（过 60 帧）是 **7**
+     *   （`内圈 7 / 全场 5 或 4`）；符卡前 60 帧打 boss 是 **1**；小怪阶段（无 boss）内圈 **5**。
+     *   ⚠ 订正前这些数恒为 1/5（38→7、7→1）—— 这一行就是那次订正的实跑判据。*/
+    if (s_run.frames == 0 || (s_run.elapsed % BOMB10_DMG_LOG_EVERY) == 0) {
+        ce_log("%s/dmg: 帧 %d 内圈 %d / 全场 %d（两者都套在矩形源上：内圈源 = 内 − 全）"
+               " | boss=%d 符卡中=%d 大灵击(bomb+0x44)=%d 本次攻击已过 %d 帧 机体=%s",
+               host->log_tag, (int)s_run.elapsed, (int)dmg_in, (int)dmg_out,
+               (int)boss_alive, (int)spell_now, (int)big_bomb, (int)s_run.spell_frames,
+               reimu ? "灵梦" : "魔理沙");
+    }
     if (dmg_src > 0) {
         float side = r * 2.0f;                  /* 外接方形（一手是圆 ⇒ 角落多覆盖，见 AUDIT 的差异表）*/
         if (ce_damage_rect(center, 0.0f, BOMB10_DMG_SRC_LIFE, dmg_src, side, side)) ++s_run.dmg_frames;
