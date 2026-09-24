@@ -126,7 +126,10 @@ typedef struct {
     int32_t  ring_next;    /* 下一根要起的柱环在 `s_ring_sched` 里的下标（排期按帧号升序 ⇒ 顺序推即可）*/
     int32_t  cancel_total; /* ★ 2026-09-24 诊断：本发**累计消弹颗数**（owner 要看消弹有没有中途停）*/
     int32_t  cancel_frames;/* ★ 诊断：本发**有消弹的帧数**（非零帧）*/
+    int32_t  cost;         /* ★ 本发**实际扣掉的火力单位**（退款窗用真值，见 `bomb10_last_cost()`）*/
     int32_t  leaf_tick;    /* 诊断：本发一共起了几颗火星（一手：每 30 帧一趟、一趟 4 颗）*/
+    int32_t  nitori_form;  /* ★★★ 2026-09-24：**河童罩子形态**（111+魔理沙）—— 不消弹、不撒伤害、
+                            *   不作废符卡奖励（owner 口径：按 Bomb 不 bonus failed，除非真被弹）*/
     int32_t  small;        /* ★★ 2026-09-24：**小灵击档**（一手：特定符卡上的压制，不是「符卡中」）*/
     int32_t  variant;      /* ★★ 2026-09-24：**视觉变体** 0 = 灵梦 / 1 = 魔理沙 / 2 = 符卡中
                             *   （一手 `Bomb::start` 按同一判据选主脚本 400/407/441，三套子脚本不同）*/
@@ -147,6 +150,37 @@ typedef struct {
 } bomb10_run_t;
 
 static bomb10_run_t s_run;
+
+/* ★★★ 2026-09-24（owner 口径，逐字）：「在 th 的一般机制里面，你如果符卡、非符途中按了 Bomb，就
+ *   **bonus failed** 了，但是**河童的特技**就在于：**按 Bomb 不 bonus failed，除非你真撞了**」。
+ *   配合上一条「它是一个罩子…**释放不消弹**，只是一个保命的罩子」⇒ 111+魔理沙 的 B 是**罩子形态**：
+ *     · 不消弹、不撒伤害源（保命用）；
+ *     · **不作废符卡奖励**（`mof.c` 那条 TH10 一手写的作废要跳过）；
+ *     · 真被弹（罩子替你挡下那一下）⇒ **那时才** `bomb10_void_spell_bonus()`。
+ *   罩子的归属住在 111 的卡状态里，而本模块不认识任何一张卡 ⇒ 用一条**声明**（谁都能读）：
+ *   `bomb10_nitori_declare(id, 1)`（111 在罩子起来时声明、谢幕/破罩时撤）。*/
+static int32_t s_nitori_armed;
+
+void bomb10_nitori_declare(uint32_t card_id, int armed)
+{
+    if (!card_id) return;
+    s_nitori_armed = armed ? 1 : 0;
+}
+
+int bomb10_nitori_armed(void) { return s_nitori_armed; }
+
+/* 作废当前符卡奖励（TH10 一手 `th10:0x405500`；门 = 本次攻击已过 ≥60 帧）。
+ * 从 `mof.c` 搬来这里，因为**两条路都要用**：卡侧发动时（非罩子形态）与「罩子替你挡了一下」时。*/
+void bomb10_void_spell_bonus(void)
+{
+    uint8_t *sp;
+    if (!ce_spell_active()) return;
+    if (bomb10_spell_frames() < (int32_t)MOF_BOMB_BIG_BOMB_FRAMES) return;
+    sp = CE_SPELLCARD();
+    if (!sp) return;
+    *(uint32_t *)(sp + CE_SPELL_FLAGS) &= ~(uint32_t)CE_SPELL_FLAG_BONUS;   /* 清 bit1（奖励存活）*/
+    *(int32_t *)(sp + CE_SPELL_BONUS) = 0;                                  /* 奖励值归零 */
+}
 /* ★ 安全网（2026-09-21c，本次自己踩过的坑）：两卡的 `driver` 判据若写成「另一张在场就让位」，
  * 两张同装时**谁都不推** ⇒ 这一发永远停在第一帧（半径 16 / 不消弹 / 不掉血），实跑表现为
  * 「放了灵击没反应」。⇒ 记「连续让位次数」，一发**一次都没被推过**却连着让位 ≥`BOMB10_IDLE_WARN`
@@ -165,6 +199,10 @@ int32_t bomb10_invuln_left(void)  { return s_run.invuln_left; }
 /* ★ 2026-09-24：本发的**视觉变体**（0 灵梦 / 1 魔理沙 / 2 小灵击档）—— 给卡侧的发动日志用
  *   （变体决定用哪一套柱环/火星脚本，见 `s_ring_sched`）。*/
 int32_t bomb10_variant(void)      { return s_run.variant; }
+/* ★ 2026-09-24：给 111 侧用的两个只读量 —— 「这一发已经走了几帧」（判「刚起手」）与
+ *   「这一发实际扣了多少火力单位」（开退款窗要用真值，而 110 放的那一发 111 拿不到 cost 参数）。*/
+int32_t bomb10_elapsed(void)      { return s_run.elapsed; }
+int32_t bomb10_last_cost(void)    { return s_run.cost; }
 
 /* 救命：`th18:0x45d590`（thiscall(Player*)、无栈参、裸 `ret`）。一手逐条见 `mof_core.h` 的
  * 「灵击 → 决死」块与 `signal_core.h` 的同名段（两个文件都在引用它）。*/
@@ -294,6 +332,11 @@ int32_t bomb10_start(const bomb10_host_t *host, void *user, int32_t by_hit)
      *   而**不是** `spell_now`。⚠ 伤害表 / `bomb+0x44` 那几处仍然用通用的 `spell_now`（一手 `flags & 1`），
      *   别混用：两者一手就不是同一个判据。
      *   ⚠ `spell_now` 这一行仍然要读（它给伤害/大字灵击用），只是**不再**参与半径与视觉变体。*/
+    /* ★★★ owner 口径（2026-09-24）：「**111 和 110 是一套系统，当然也得吃特技**」⇒ 判据 = 
+     *   **装了 111（声明位）+ 魔理沙机体**，与「谁放的那一发」无关 —— 110 放的照样是罩子形态。
+     *   `s_nitori_armed` 由 111 **每帧**声明（见 `signal.c` 的 tick）⇒ 同帧内谁先 tick 都不影响。*/
+    s_run.nitori_form  = (s_nitori_armed
+                          && *(const volatile int32_t *)CE_ADDR_CHARACTER == 1 /* 魔理沙 */) ? 1 : 0;
     s_run.small        = mof_core_bomb_suppressed(ce_spell_id());
     /* ★★ 一手 `Bomb::start` 的三条分支（脚本 400/407/441）＝ 灵梦 / 魔理沙 / 小灵击：
      *   判据与下面选半径的那一条**必须同源**（`s_run.small` 优先，再看 `CHARACTER == 0`）⇒
@@ -310,6 +353,7 @@ int32_t bomb10_start(const bomb10_host_t *host, void *user, int32_t by_hit)
     s_run.frames       = 0;
     s_run.dmg_frames   = 0;
     s_run.leaf_tick    = 0;
+    s_run.cost         = cost;
     s_run.cancel_total = 0;
     s_run.cancel_frames = 0;
     s_run.ring_next    = 0;
@@ -413,7 +457,7 @@ void bomb10_tick(int32_t driver)
     /* ① 消弹（半径 = 本帧的 r；mode 1 = 引擎自己在每颗弹的位置撒 type 9 消弹点）。
      * 「本帧已消过弹」的闩锁：每帧 claim 一次；一颗都没消就把闩锁交回（原生卡冲突审计那条）——
      * tag = **本发的发动者卡号**（两张卡原来各用自己的号，行为逐条相同）。*/
-    if (ce_cancel_latch_claim(host->card_id)) {
+    if (!s_run.nitori_form && ce_cancel_latch_claim(host->card_id)) {
         n = ce_cancel_radius(center, r, BOMB10_CANCEL_MAX, BOMB10_CANCEL_MODE);
         if (n > 0) {
             /* ★★ 2026-09-24（owner 口径：「消弹每 0.5s 采样一次吗？事件太短了吧」）：
@@ -447,11 +491,15 @@ void bomb10_tick(int32_t driver)
     big_bomb  = spell_now && s_run.spell_frames >= (int32_t)MOF_BOMB_BIG_BOMB_FRAMES;
     reimu     = s_run.reimu;
 
+    if (s_run.nitori_form) {   /* ★ 罩子形态：不撒任何伤害源（「只是一个保命的罩子」）*/
+        dmg_in = dmg_out = 0;
+    } else {
     dmg_in  = mof_core_bomb_damage(1, boss_alive, spell_now, big_bomb, reimu);
     /* 圈外档只在「有 boss」或「符卡中」时非 0（一手 `th10:0x405a68`–`0x405ab7`）*/
     dmg_out = (boss_alive || spell_now) ? mof_core_bomb_damage(0, boss_alive, spell_now, big_bomb, reimu) : 0;
     if (dmg_in > 0 || dmg_out > 0) ce_raise_damage_cap(BOMB10_DMG_CAP);
 
+    }
     dmg_src = dmg_in - dmg_out;
     if (dmg_src > 0) {
         float side = r * 2.0f;                  /* 外接方形（一手是圆 ⇒ 角落多覆盖，见 AUDIT 的差异表）*/

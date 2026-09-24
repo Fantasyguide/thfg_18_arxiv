@@ -1178,14 +1178,11 @@ static void mof_bomb_on_start(void *user, int32_t by_hit, int32_t cost, int32_t 
     mof_bomb_form_start(&s->form, by_hit);               /* 记形态（by_hit + 消弹颗数归零）*/
     ++s->stat_bomb;
     if (by_hit) ++s->stat_bomb_dbf;                      /* 诊断（**救命本身由机器做**）*/
-    /* ③ 作废当前符卡奖励（复刻一手 `th10:0x405500`；门 = 本次攻击已过 ≥60 帧）*/
-    if (spell_now && bomb10_spell_frames() >= (int32_t)MOF_BOMB_BIG_BOMB_FRAMES) {
-        uint8_t *sp = CE_SPELLCARD();
-        if (sp) {
-            *(uint32_t *)(sp + CE_SPELL_FLAGS) &= ~(uint32_t)CE_SPELL_FLAG_BONUS;   /* 清 bit1（奖励存活）*/
-            *(int32_t *)(sp + CE_SPELL_BONUS) = 0;                                  /* 奖励值归零 */
-        }
-    }
+    /* ③ 作废当前符卡奖励（复刻一手 `th10:0x405500`；门 = 本次攻击已过 ≥60 帧）——
+     *   ★★★ 2026-09-24 owner 口径：**河童特技 = 按 Bomb 不 bonus failed，除非你真撞了**
+     *   ⇒ 罩子形态（111+魔理沙）这一发**跳过**作废；真被弹那一下由 111 的罩子路径调
+     *   `bomb10_void_spell_bonus()` 补上。实现搬进 `bomb10.c`（两条路共用一份）。*/
+    if (!bomb10_nitori_armed()) bomb10_void_spell_bonus();
     s->spell_watch.bombed = 1;                           /* 本张符卡期间放过灵击 ⇒ 不算全避 */
     faith_slot_reduce(&s->slot, mof_bomb_form_faith_kind(&s->form));
     mof_declare_score(s);

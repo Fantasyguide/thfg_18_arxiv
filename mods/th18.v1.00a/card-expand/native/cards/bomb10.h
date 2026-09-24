@@ -185,7 +185,16 @@ int32_t bomb10_spell_frames(void);   /* 符卡已过帧数（= 一手 `[spellcar
 int32_t bomb10_owner_id(void);       /* 本发的发动者卡号（0 = 没有）*/
 int32_t bomb10_invuln_left(void);
 /* 本发的视觉变体（0 灵梦 / 1 魔理沙 / 2 小灵击档）—— 一手三套子脚本（主脚本 400/407/441）*/
-int32_t bomb10_variant(void);    /* 本发还剩几帧无敌（0 = 已给完；诊断用）*/
+int32_t bomb10_variant(void);
+/* ★★★ 河童罩子（111+魔理沙）的**声明层**：111 在罩子起来/谢幕时声明，本模块据此把那一发切成
+ *   「罩子形态」（不消弹、不撒伤害、不作废符卡奖励 —— owner 2026-09-24 口径）。*/
+void    bomb10_nitori_declare(uint32_t card_id, int armed);
+int     bomb10_nitori_armed(void);
+/* 作废当前符卡奖励（TH10 一手 `th10:0x405500`）—— 卡侧发动时（非罩子形态）与「罩子挡了一下」时用。*/
+void    bomb10_void_spell_bonus(void);
+/* 只读量（111 侧要用）：本发已过帧数 / 本发实际扣掉的火力单位。*/
+int32_t bomb10_elapsed(void);
+int32_t bomb10_last_cost(void);    /* 本发还剩几帧无敌（0 = 已给完；诊断用）*/
 
 /* ---- 发动 / 推进 / 收尾 ----
  * `bomb10_start`：返回 1 = **本发由你发动**（公共那一半 + 你的 `on_start` 都做完了）；

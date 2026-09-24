@@ -1012,6 +1012,9 @@ static void signal_shield_settle(signal_card_t *s, int32_t back, const char *why
 /* 收干净（删卡 / 换关 / 局末 / 换机体）。幂等。*/
 static void signal_shield_kill(void)
 {
+    /* ★ 2026-09-24：删卡/换关/局末都要**撤掉罩子形态声明**（否则共用件会一直以为「罩子在」⇒
+     *   之后的灵击永远不消弹、不作废 bonus）。下面 `signal_shield_settle()` 也会撤一次，幂等。*/
+    bomb10_nitori_declare(SIGNAL_ID_NUM, 0);
     if (s_shield.vm) {
         ce_anm_delete(s_shield.vm);
         s_shield.vm = 0;
@@ -1077,6 +1080,28 @@ static void signal_shield_arm(signal_card_t *s, int32_t cost, int with_refund)
  *   （一手 `Bomb::on_tick__marisa_c` 要等 `[bomb+0x2c] > 30` 才删 VM 并返回 −1，`[bomb+0x3c]` 才清
  *   ⇒ 演出没演完放不出第二发）。⇒ 灵击那条**整段罩子生命周期内都放不出来**（含被撞之后那 30 帧）。
  *   ⚠ 原生 B 那条**不走这个闸**（用户前一条口径：「能放 B ⇒ 罩子自动破掉换新的」）。*/
+/* ★★★ 2026-09-24（owner：「**111 和 110 是一套系统，当然也得吃特技**」）：
+ *   ① **每帧**向共用件声明「本卡在场」（含义 = 110/111 那套系统的**河童特技可用**）
+ *      ⇒ `bomb10.c` 用「声明位 + 魔理沙机体」判**罩子形态**，与「这一发是谁放的」无关；
+ *   ② 若**已经有一发灵击在跑**（可能是 **110** 放的）而本卡还没起泡 ⇒ 现在补上
+ *      （真值扣款取 `bomb10_last_cost()`，退款窗按它算 —— 110 放的那一发 111 拿不到 `cost` 参数）。
+ *   幂等：罩子已经在 ⇒ 什么都不做。*/
+static void signal_nitori_join_bomb(signal_card_t *s)
+{
+    int32_t cost;
+
+    bomb10_nitori_declare(SIGNAL_ID_NUM, 1);          /* ① 在场声明（每帧，粘性）*/
+    if (!s) return;
+    if (*(const volatile int32_t *)CE_ADDR_CHARACTER != SIGNAL_CHAR_MARISA) return;
+    if (!bomb10_busy() || bomb10_elapsed() > 2) return;   /* 只认「刚起手那一两帧」*/
+    if (s_shield.vm || s_shield.spawn_pending || s_shield.break_left > 0) return;   /* 已经有罩子 */
+    cost = bomb10_last_cost();
+    if (cost <= 0) return;
+    signal_shield_arm(s, cost, 1);
+    ce_log("signal/shield: 补起泡 —— 这一发是**别人**（110）放的，但 111 在场 ⇒ 照吃河童特技"
+           "（扣款真值 %d 单位，退款窗已开）", (int)cost);
+}
+
 static int signal_shield_busy(void)
 {
     if (s_shield.vm || s_shield.spawn_pending) return 1;
@@ -1085,6 +1110,15 @@ static int signal_shield_busy(void)
 }
 
 /* 泡吃掉这一下中弹（在 `+0x10` 里调）。返回 1 = 这一下被泡吃了（卡侧已撤销中弹）。*/
+/* ★★★ 2026-09-24（owner：「河童的特技就在于**按 Bomb 不 bonus failed，除非你真撞了**」）：
+ *   「真撞了」= 罩子替你挡下中弹的那一下 ⇒ **那时才**作废当前符卡奖励（与一手 TH10 的
+ *   `Bomb::start` 无条件的作废同形，只是把它挪到「被弹」这一刻）。*/
+static void signal_shield_note_real_hit(void)
+{
+    bomb10_void_spell_bonus();
+    ce_log("signal/shield: **真被弹**（罩子挡下）⇒ 按一手作废当前符卡奖励（bonus failed）");
+}
+
 static int signal_shield_eat_hit(void)
 {
     if (!s_shield.vm && !s_shield.spawn_pending) return 0;   /* 没有泡 ⇒ 本卡不接这一下 */
@@ -1098,6 +1132,11 @@ static int signal_shield_eat_hit(void)
     }
     s_shield.break_pending = 1;
     signal_nitori_break(&s_nitori);                  /* 破罩 ⇒ 这一发不退款（一手同上）*/
+    /* ★★★ 2026-09-24：**「真撞了」这一刻才作废符卡奖励**（owner：「河童的特技就在于按 Bomb
+     *   不 bonus failed，**除非你真撞了**」）—— 按 Bomb 那一刻已经在 `mof_bomb_on_start()` 里
+     *   因为罩子在而被跳过，这里补上「真被弹」那一半；同时撤掉罩子形态声明（泡要破了）。*/
+    signal_shield_note_real_hit();
+    bomb10_nitori_declare(SIGNAL_ID_NUM, 0);
     (void)ce_rescue_note_claim(SIGNAL_ID_NUM);        /* 救援闩锁照 107/117 的约定（返回值丢弃）*/
     bomb10_cancel_impending_death();                  /* ★ 一手 `th11:0x4078c4`：把这一下中弹撤销 */
     return 1;
@@ -1107,6 +1146,9 @@ static int signal_shield_eat_hit(void)
  * `back` = 该退还给火力的单位数（0 = 不退）；一手额度 = `collect_power(10)` = `BOMB_COST` 的一半。*/
 static void signal_shield_settle(signal_card_t *s, int32_t back, const char *why)
 {
+    /* ★ 2026-09-24：泡谢幕（含破罩演出收尾）⇒ 撤掉「罩子形态」声明 —— 之后再有灵击就按常态走
+     *   （消弹/伤害/作废 bonus 都恢复）。*/
+    bomb10_nitori_declare(SIGNAL_ID_NUM, 0);
     int32_t maxp, now, want;
 
     s->stat_nitori = s_nitori.refunds;
@@ -2890,6 +2932,10 @@ static int on_tick_2(ce_card_t *c)
     if (!s || !CE_PLAYER()) return 0;
     ++s->frame;
     pp = ce_player_pos();
+    /* ★★★ 2026-09-24：**每帧**声明「本卡在场」+ 若这一发灵击是 **110** 放的则补起泡
+     *   （owner：「111 和 110 是一套系统，当然也得吃特技」）。放在 tick 最前 —— 同帧内
+     *   无论两张卡谁先 tick，110 的 `bomb10_start()` 都能读到上一帧就已声明的位。*/
+    signal_nitori_join_bomb(s);
 
     /* ★★★ 2026-09-22（P6，th11 #4「全程未见绿色妖精」的①）：**绿妖精载体** ——
      *   实现是**共用件** `faith_green_fairy_tick()`（`cards/faith.c`，110 与 111 共用一份）。
