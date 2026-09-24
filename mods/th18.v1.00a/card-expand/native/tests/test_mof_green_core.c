@@ -159,12 +159,18 @@ static void test_lookup(void)
     /* ★★ 2026-09-18c（用户实跑后）：**默认名单全部关掉**（原话「第一面第二波的蓝妖精全变绿妖精了」
      * ⇒ 他选的是路线②「我们自己多刷一只绿的」＝**不碰原版妖精**）。⇒ 判据必须对默认状态返回 0，
      * 机制用下面的**合成表**继续测（`*_tbl` 入口）。谁要重新开某一支，改那行的 `enabled` 即可。*/
-    CHECK(mof_green_active_count() == 0);
-    CHECK(mof_green_lookup(0xffffffffu, 2, 0) == 0);        /* 即使认为"全改上了"，没有启用的行 ⇒ 不算 */
-    CHECK(mof_green_lookup(0xffffffffu, 2, 184) == 0);
+    /* ★★ 2026-09-24 owner 口径：「**绿妖精我放弃了，走改妖精路线**（只有杂鱼绿色妖精、一只/一对）」
+     *   ⇒ 默认表里**恰好开一行**：`A 组蓝妖精 · 只 st01`（src sprite0 → sprite24、screen 0 → 10，
+     *   只 st01）。其余各行仍然全关 —— 尤其**不许**碰 sprite36（那是 112 载体皮用的
+     *   `sprite36..47` 那一组：owner 明确要求「和 th12 错开改，别改成同一只」）。*/
+    CHECK(mof_green_active_count() == 1);
+    CHECK(mof_green_lookup(0xffffffffu, 2, 0) != 0);        /* ★ 开的那一行：st01 的蓝妖精命中 */
+    CHECK(mof_green_lookup(0xffffffffu, 2, 24) == 0);       /* 换过去的目标组不参与判据 */
+    CHECK(mof_green_lookup(applied, 2, 36) == 0);           /* ★ 112 载体皮那一组**绝不**命中 */
+    CHECK(mof_green_lookup(applied, 2, 184) == 0);
 
-    for (i = 0; i < 5; ++i) {                   /* 默认全关 ⇒ 一条都不命中 */
-        CHECK(mof_green_lookup(applied, 2, 0 + i) == 0);
+    for (i = 0; i < 5; ++i) {                   /* 除那一行之外，仍然一条都不命中 */
+        CHECK(mof_green_lookup(applied, 2, 0 + i) != 0);    /* ★ 这一组（0..4）是开着的 */
         CHECK(mof_green_lookup(applied, 2, 5 + i) == 0);
         CHECK(mof_green_lookup(applied, 2, 184 + i) == 0);
         CHECK(mof_green_lookup(applied, 2, 189 + i) == 0);
