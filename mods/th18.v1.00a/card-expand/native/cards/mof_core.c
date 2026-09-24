@@ -271,8 +271,10 @@ int mof_core_power_can(int32_t power)
  *   会有一些额外灵击特技」。⇒ 灵击的**消耗规则**也搬进共用件：无论这一发是 110 还是 111 放出来的，
  *   都走同一个函数 ——
  *     · `alice_on == 0`（常态）：**≥ 2.00 档**门槛、扣 **1 档**（`mof_core_power_spend()`，TH18 原口径）；
- *     · `alice_on == 1`（**111 在场 + 魔理沙机体** = 111 的那条额外特技）：门槛「能扣就扣」
- *       `power ≥ 50 + 105 = 155`（1.55 档）、扣 **半档 50 单位**、下限仍 1.05 档
+ *     · `alice_on == 1`（**111 在场 + 魔理沙机体** = 111 的那条额外特技）：门槛 = **1.50 档**（150 单位，
+ *       owner 2026-09-24 口径「111 魔理沙换成 power >= 1.50，下限不变 —— 相当于最后一次灵击只花 0.45」）、
+ *       扣 **半档 50 单位**、下限仍 1.05 档 ⇒ `power = 150` 那一发实际只花 **45 单位 = 0.45 档**
+ *       （150 − 105，被下限截住）。
  *       （🟡 用户口径；比例是一手 TH11 的「别人的一半」，档位是映射 —— 见 `TUNING.md` §2.1f）。
  *   ⚠ 原实现住在 `signal_core_alice_power_spend()`：**只有 111 自己放的那一发**吃到半档，
  *     110 放的照样扣整档 ⇒ owner 实跑「试图发动 110 灵击，并没有以 0.5p 释放」就是这个原因。
@@ -285,9 +287,9 @@ mof_power_t mof_core_bomb_power_spend(int32_t power, int alice_on)
 
     r.ok = 0;
     r.new_power = power;
-    /* 门槛 = `power − 50 ≥ 105` ⇔ `power ≥ 155`。
+    /* 门槛 = **1.50 档**（owner 口径；下限 1.05 不变 ⇒ `power = 150` 时实扣 45 = 0.45 档）。
      * ⚠ 不能写成 `power ≥ 50`：那样 `power ∈ [50,105]` 会被下限**反向抬起来** = 白嫖灵击。*/
-    if (power < MOF_BOMB_POWER_COST_HALF + MOF_BOMB_POWER_FLOOR) return r;
+    if (power < MOF_BOMB_POWER_HALF_GATE) return r;
     r.ok = 1;
     r.new_power = power - MOF_BOMB_POWER_COST_HALF;
     if (r.new_power < MOF_BOMB_POWER_FLOOR) r.new_power = MOF_BOMB_POWER_FLOOR;

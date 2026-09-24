@@ -724,6 +724,9 @@ int32_t mof_core_bomb_radius_centi(int32_t frame, int32_t target_centi);
 
 /* 灵击消耗的**半档**（111 在场 + 魔理沙机体的额外特技）：50 单位 = 0.5 档。*/
 #define MOF_BOMB_POWER_COST_HALF   (MOF_BOMB_POWER_COST / 2)
+/* 半档那一支的**门槛** = 1.50 档（owner 2026-09-24：「111 魔理沙换成 power >= 1.50，下限不变
+ *   —— 相当于最后一次灵击只花 0.45」）。下限仍是 `MOF_BOMB_POWER_FLOOR`（105）⇒ 150 那一发实扣 45。*/
+#define MOF_BOMB_POWER_HALF_GATE   (150)
 
 /* ★★ 灵击的**消耗规则**（110/111 **共用同一套系统**，见 `mof_core.c` 的实现注）：
  *   `alice_on` = 「111 在场 + 魔理沙机体」⇒ 半档（门槛 1.55 档 / 扣 50 单位 / 下限 1.05 档）；

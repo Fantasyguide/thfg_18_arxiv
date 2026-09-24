@@ -14,7 +14,7 @@
  *     · HUD 条宽 = `9 + 4×level`（一手），**5 格那套已删**；
  *     · ★ P 点火力 +0.05 档的 **111 侧那一半**（2026-09-15）：`mof_core_p_owner(ce_owned(110), 1)`
  *       ⇒ 110 在场就**让位**（两张同装只算一次）；算式与穷举在 `test_mof_core.c`。
- *     · ★★ **爱丽丝（§18）**：**111 私有**的那一条 = 灵击 **别人的一半**（门槛「能扣就扣」= ≥1.55 档、
+ *     · ★★ **爱丽丝（§18）**：**111 私有**的那一条 = 灵击 **别人的一半**（门槛 = ≥**1.50** 档、
  *       下限 1.05 照旧、每次恒扣 50 单位）。**比例 ✅ 一手**（`pl01a.sht` 的 `+0x24`=12 / `+0x20`=8
  *       ⇒ 一发占满槽 1/8 vs 其余五机 20/4 ⇒ 1/4）、**绝对档位 ❓ 我们的映射**。依据见 `signal_core.h` ④。
  *     · ⚠ **爱丽丝的另一条（P 点平均 +0.025 档）不在本文件的覆盖里**：它 2026-09-15h 搬进了共享件
@@ -1339,7 +1339,8 @@ int main(void)
      * ⇒ **恰好一半**；「绝对数 0.50」不在表里）全在 `cards/signal_core.h` 的 ④ 段。这里只钉
      * **111 私有**的那一条（灵击），钉三件事：
      *   ① **一手登记值**与两条口径常量自洽（`SIGNAL_ALICE_BOMB_COST_TH11` = 12；50 单位 = 半个常态价）；
-     *   ② 门槛 / 下限 / 每次扣款：**恒扣 50 单位**、`power ≥ 155`（= 50 + 下限 105）才放得出、
+     *   ② 门槛 / 下限 / 每次扣款：**恒扣 50 单位**、`power ≥ 150`（owner 2026-09-24 口径「换成 1.50，
+     *      下限不变」；于是 150 那一发被下限截住 ⇒ **实扣 45 = 0.45 档**）才放得出、
      *      扣完**永不越 1.05 档**、`power ∈ [50,105]` 一律拒绝（否则会被下限反向抬起来 = 白嫖灵击）；
      *   ③ `alice_on == 0` ⇒ **逐值等于共用件** `mof_core_power_spend()` ⇒ 「只在爱丽丝生效时改变」可证。
      * ★★ **P 点那一条（+0.02/+0.03 交替）2026-09-15h 已搬进共享件**（`faith_core.c` / `faith.c`）——
@@ -1357,25 +1358,30 @@ int main(void)
         CHECK(SIGNAL_ALICE_BOMB_COST_UNITS == 50);                /* ❓ 映射：1 档的一半 */
         CHECK(SIGNAL_ALICE_BOMB_COST_UNITS * 2 == FAITH_POWER_COST);      /* = 半个常态价（1 档）*/
 
-        /* --- ② 灵击：扣款恒 50、门槛「能扣就扣」= ≥1.55 档、下限 1.05 照旧 --- */
+        /* --- ② 灵击：扣款恒 50、门槛 = ≥1.50 档、下限 1.05 照旧 --- */
         pa = signal_core_alice_power_spend(400, 1);
         CHECK(pa.ok == 1 && pa.new_power == 350);                 /* 4.00 档 → 3.50 档 */
         pa = signal_core_alice_power_spend(200, 1);
         CHECK(pa.ok == 1 && pa.new_power == 150);                 /* ★ 常态在 2.00 档只扣到 1.05（95 单位）；
                                                                    *   爱丽丝扣满 50 单位 */
-        pa = signal_core_alice_power_spend(155, 1);               /* 恰好 1.55 档 ⇒ 放得出 */
+        pa = signal_core_alice_power_spend(150, 1);               /* 恰好 1.50 档 ⇒ 放得出 */
+        CHECK(pa.ok == 1);
+        CHECK(pa.new_power == 105);                               /* ★ 150 − 50 = 100 < 下限 ⇒ 截到 105：
+                                                                   *   这一发**实扣 45 = 0.45 档**（owner 口径）*/
         CHECK(pa.ok == 1 && pa.new_power == FAITH_POWER_FLOOR);   /* 落到下限 1.05，**正好**不越 */
-        pa = signal_core_alice_power_spend(154, 1);               /* 1.54 档 ⇒ 放不出（下限吃不下）*/
-        CHECK(pa.ok == 0 && pa.new_power == 154);                 /* 失败时火力**一个字节都不动** */
+        pa = signal_core_alice_power_spend(149, 1);               /* 1.49 档 ⇒ 放不出（低于 owner 的口槛 1.50）*/
+        CHECK(pa.ok == 0 && pa.new_power == 149);                 /* 失败时火力**一个字节都不动** */
         CHECK(signal_core_alice_power_spend(105, 1).ok == 0);
         CHECK(signal_core_alice_power_spend(50, 1).ok == 0);      /* ★ 「能扣就扣」**不许**白嫖：
                                                                    *   50 单位时会扣成 0 再被下限抬回来 ⇒ 拒绝 */
         CHECK(signal_core_alice_power_spend(0, 1).ok == 0);
         bad = 0;
-        for (p = 155; p <= 400; ++p) {                             /* 全域：恒扣 50、永不越下限 */
+        for (p = 150; p <= 400; ++p) {                             /* 全域：恒扣 50（150 那一发被下限截成 45）、
+                                                                   *   永不越下限 */
             pa = signal_core_alice_power_spend(p, 1);
-            if (!pa.ok || p - pa.new_power != SIGNAL_ALICE_BOMB_COST_UNITS
-                || pa.new_power < FAITH_POWER_FLOOR) bad = 1;
+            if (!pa.ok || pa.new_power < FAITH_POWER_FLOOR) bad = 1;
+            if (p >= 155 && p - pa.new_power != SIGNAL_ALICE_BOMB_COST_UNITS) bad = 1;
+            if (p == 150 && p - pa.new_power != 45) bad = 1;       /* ★ 最后一发只花 0.45 档（owner 口径）*/
         }
         CHECK(bad == 0);
 
