@@ -966,6 +966,7 @@ typedef struct {
     int32_t  spawn_pending; /* 1 = 本帧要起泡（建 VM 只在 tick 里干）*/
     int32_t  break_pending; /* 1 = 刚刚被撞（在 `+0x10` 里置；tick 里真播破罩 + 建伤害源）*/
     int32_t  break_left;    /* 破罩特写还剩几帧（一手 30）；>0 = 正在破 */
+    int32_t  break_watch_left; /* ★ 看门狗：破罩演出还剩几帧的**硬上限**（见 `signal_shield_tick()` 顶部）*/
     int32_t  life_left;     /* ★ 寿命（**暴露帧**）：无敌的帧不推进；0 = 该收尾了 */
     int32_t  intro;         /* ★ 出场动画（real 帧，封顶 20）：泡必须**立刻看得见**，见下 */
     float    rot;           /* ★ 自转角 rz（每 real 帧 −3°，一手 `angleVel(0,0,-0.05235988f)`）*/
@@ -991,6 +992,15 @@ typedef struct {
 #define SIGNAL_SHIELD_INTRO_FRAMES   20
 
 static signal_shield_t s_shield;
+
+/* ★★★ 2026-09-25：**破罩无敌的绝对截止帧**（见 `signal_nitori_break_invuln_tick()`）。
+ *   为什么不用「按 `break_left > 0` 每帧声明」：那是**把无敌的生命周期挂在了破罩演出状态机上**
+ *   —— 状态机一旦因为某个早退停摆（2026-09-24 就是：泡句柄搬去 `break_vm` 后
+ *   `if (!s_shield.vm) return;` 把整段 ③ 跳掉 ⇒ `break_left` 永远停在 29），无敌就被
+ *   **每帧续期到永久**。改成绝对截止帧之后，这两件事**结构上解耦**：无敌只可能活
+ *   `SIGNAL_NITORI_BREAK_IFRAMES` 帧，演出状态机再坏也影响不到它。*/
+static int32_t s_break_iframe_until;   /* 绝对截止帧（`ce_sdk_frame()` 口径）；<= now = 已过期 */
+static int32_t s_break_iframe_live;    /* 1 = 本卡正占着这个声明位（决定过期时要不要显式写一次 0）*/
 
 /* ★★ 2026-09-16u：**文·超高速残像的池**（为了「时间渐变 = 位置渐变」）。
  * 用户口径：「灵梦的残影看起来是红色，原版更贴洋红**并且有时间渐变**（等价于不同残影的位置渐变），
@@ -1026,6 +1036,12 @@ static void signal_shield_kill(void)
         ce_anm_delete(s_shield.break_vm);
         s_shield.break_vm = 0;
     }
+    /* ★ 2026-09-25：破罩无敌的声明位也要退（粘性层 —— 不退就是「删了卡还永久无敌」）。
+     *   ⚠ 这里**直接写**，不走 `signal_nitori_break_invuln_clear()`：删卡发生在**商店里**
+     *   （帧钩子不跑、卡的 tick 也停了），只能当场改口，等不到下一次 tick。*/
+    ce_invuln_request((uint32_t)SIGNAL_ID_NUM, 0);
+    s_break_iframe_live  = 0;
+    s_break_iframe_until = 0;
     memset(&s_shield, 0, sizeof s_shield);
 }
 
@@ -1083,6 +1099,55 @@ static void signal_shield_arm(signal_card_t *s, int32_t cost, int with_refund)
  *   （一手 `Bomb::on_tick__marisa_c` 要等 `[bomb+0x2c] > 30` 才删 VM 并返回 −1，`[bomb+0x3c]` 才清
  *   ⇒ 演出没演完放不出第二发）。⇒ 灵击那条**整段罩子生命周期内都放不出来**（含被撞之后那 30 帧）。
  *   ⚠ 原生 B 那条**不走这个闸**（用户前一条口径：「能放 B ⇒ 罩子自动破掉换新的」）。*/
+/* ★★★ 2026-09-25：破罩无敌 = **绝对截止帧**（每帧在 `signal_nitori_join_bomb()` 最前面落一次）。
+ *
+ * 一手（TH11 `Bomb::on_tick__marisa_c`）：破罩后每帧刷 40 帧无敌（`th11:0x407942` / `0x407961`），
+ * 直到那 30 帧演出走完，之后由引擎自己的无敌计时器跑完剩下的几十帧。
+ *
+ * ★ 本仓的实现**刻意不照抄「每帧刷」这个形状**：无敌的声明层是**粘性**的（`sdk_core.c` 的
+ *   `s_invuln[]` 表 + `ce_invuln_apply()` 只加不减）⇒「每帧刷 40」只要**多刷一帧**就变成永久。
+ *   2026-09-24 实跑正是如此（`break_left` 卡在 29 ⇒ 40 帧无敌被续期 2400+ 帧）。
+ *   ⇒ 这里按**截止帧**声明：`left = until − now`（封顶 40）；到点那一帧**显式改口 0**
+ *     （粘性层必须「改口」才停），此后本卡不再碰这个声明位。
+ *   ⚠ 只在**本卡占着这个位**时才写（`s_break_iframe_live`），否则会擦掉**同一张卡**别的声明
+ *     —— `ce_invuln_request()` 的键是**卡号**，本卡 111 的恋恋（放开键 4 帧）用的正是同一个键。*/
+static void signal_nitori_break_invuln_arm(void)
+{
+    s_break_iframe_until = (int32_t)ce_sdk_frame() + SIGNAL_NITORI_BREAK_IFRAMES;
+    s_break_iframe_live  = 1;
+    ce_invuln_request((uint32_t)SIGNAL_ID_NUM, SIGNAL_NITORI_BREAK_IFRAMES);
+    ce_log("signal/shield: 破罩无敌 %d 帧（**绝对截止帧**口径：卡号 %d 的声明位从这一刻起占 %d 帧，"
+           "到点显式改口 0 —— 不再依赖破罩演出状态机）",
+           (int)SIGNAL_NITORI_BREAK_IFRAMES, (int)SIGNAL_ID_NUM, (int)SIGNAL_NITORI_BREAK_IFRAMES);
+}
+
+/* 提前收（破罩演出走完 / 卡被删 / 看门狗强制收尾）：只把截止帧拉到当下，
+ * **真正的 0 由下一次 `signal_nitori_break_invuln_tick()` 落笔**（保证「改口」一定发生一次）。*/
+static void signal_nitori_break_invuln_clear(void)
+{
+    s_break_iframe_until = 0;
+    s_break_iframe_live  = 1;
+}
+
+static void signal_nitori_break_invuln_tick(void)
+{
+    int32_t now  = (int32_t)ce_sdk_frame();
+    int32_t left = 0;
+
+    if (s_break_iframe_until > now) {
+        left = s_break_iframe_until - now;
+        if (left > SIGNAL_NITORI_BREAK_IFRAMES) left = SIGNAL_NITORI_BREAK_IFRAMES;
+    }
+    if (left <= 0 && !s_break_iframe_live) return;   /* 本卡没占着这个位 ⇒ 一个字都不写 */
+    ce_invuln_request((uint32_t)SIGNAL_ID_NUM, left);
+    if (left <= 0) {
+        s_break_iframe_live  = 0;
+        s_break_iframe_until = 0;
+        ce_log("signal/shield: 破罩无敌**到点**⇒ 声明位改口 0（此后本卡不再碰它；引擎自己那几十帧"
+               "无敌自然跑完）");
+    }
+}
+
 /* ★★★ 2026-09-24（owner：「**111 和 110 是一套系统，当然也得吃特技**」）：
  *   ① **每帧**向共用件声明「本卡在场」（含义 = 110/111 那套系统的**河童特技可用**）
  *      ⇒ `bomb10.c` 用「声明位 + 魔理沙机体」判**罩子形态**，与「这一发是谁放的」无关；
@@ -1098,14 +1163,14 @@ static void signal_nitori_join_bomb(signal_card_t *s)
     int32_t cost;
 
     bomb10_nitori_declare(SIGNAL_ID_NUM, 1);          /* ① 在场声明（每帧，粘性）*/
-    /* ★★★ 2026-09-24（owner：「罩子被击破后**无敌无限持续**」）：破罩那 30 帧的 40 帧无敌改成
-     *   **每帧声明** —— 破罩进行中才声明 40，其余帧一律声明 **0**。
-     *   为什么不能在「破罩数到 0」那一刻清：`signal_shield_tick()` 里 `if (!s_shield.vm) return;`
-     *   在破罩分支**之前**，泡的 VM 一被 interrupt 就早退 ⇒ `break_left` 永远数不到 0 ⇒ 那句清零
-     *   永远跑不到（实跑日志里 `破罩收尾` 一次都没出现，就是这个原因）。
-     *   ⇒ 落到**每帧必然经过**的这里，结构上不可能再粘住。*/
-    ce_invuln_request((uint32_t)SIGNAL_ID_NUM,
-                      (s_shield.break_left > 0) ? SIGNAL_NITORI_BREAK_IFRAMES : 0);
+    /* ★★★ 2026-09-25 订正（owner 实跑：「**破罩之后依旧永久无敌**」）：
+     *   上一版把「破罩 40 帧无敌」写成这里**每帧** `(break_left > 0) ? 40 : 0` —— 落点是对的
+     *   （每帧必然经过），但**量**取错了：`break_left` 当时因为一处早退**永远停在 29**
+     *   （见 `signal_shield_tick()` 的 ②/③ 注释），于是 40 被每帧续期 ⇒ 永久无敌。
+     *   ⇒ 现在改成**绝对截止帧**：无敌的生命与破罩演出状态机**解耦**（`signal_nitori_break_invuln_tick()`）。
+     *   ⚠ 这也顺带修掉上一版引入的副作用：无条件写 0 会擦掉**同一张卡**恋恋（放开键）那 4 帧
+     *     无敌请求（`ce_invuln_request()` 按**卡号**记，两张特技撞同一个键）。*/
+    signal_nitori_break_invuln_tick();
     if (s && bomb10_busy() && !s_shield.vm && !s_shield.spawn_pending
         && now_frame - s_dbg_frame > 30) {
         s_dbg_frame = now_frame;
@@ -1215,6 +1280,28 @@ static void signal_shield_tick(signal_card_t *s)
     const float *pp = ce_player_pos();
     float center[3];
 
+    /* ★★★ 2026-09-25 **看门狗**（专治「状态机某处早退把 ③ 的递减吃掉」这一类 bug）：
+     *   2026-09-24 的永久无敌就是它 —— 破罩开始后 ③ 一次都没跑到，`break_left` 从 30 直接冻在 29。
+     *   现在破罩一开始就点一根 `SIGNAL_NITORI_BREAK_FRAMES + 60` 帧的引线：演出**必须**在这之前
+     *   走完，否则这里强制收尾并**醒目报警**（这么写之后，同一个 bug 再犯也只会表现为一次报警，
+     *   而不是「永久无敌 + 灵击永远放不出」）。*/
+    if (s_shield.break_left > 0 && s_shield.break_watch_left > 0
+        && --s_shield.break_watch_left == 0) {
+        ce_log("signal/shield: ⚠⚠ 破罩演出**卡住了**（break_left=%d 连续 %d 帧没推进）⇒ 看门狗强制收尾"
+               "（删泡 VM、撤无敌、清账）—— 这是一条**不该出现**的报警，出现即说明 ③ 又被跳过了",
+               (int)s_shield.break_left, (int)(SIGNAL_NITORI_BREAK_FRAMES + 60));
+        s_shield.break_left = 0;
+        signal_nitori_break_invuln_clear();
+        if (s_shield.break_vm) {
+            if (ce_anm_get_vm(s_shield.break_vm)) ce_anm_delete(s_shield.break_vm);
+            s_shield.break_vm = 0;
+        }
+        {
+            int32_t back = signal_nitori_expire(&s_nitori);
+            signal_shield_settle(s, back, "破罩演出卡住（看门狗强制收尾）");
+        }
+    }
+
     /* ① 出生（延迟到 tick 里做）*/
     if (s_shield.spawn_pending) {
         s_shield.spawn_pending = 0;
@@ -1235,12 +1322,27 @@ static void signal_shield_tick(signal_card_t *s)
             return;
         }
     }
-    if (!s_shield.vm) return;
-
+    /* ★★★ 2026-09-25 结构性订正（owner 实跑：「**破罩之后依旧永久无敌**」）——
+     *   这里原来是 `if (!s_shield.vm) return;`，而 ② 里破罩一开始就把泡的句柄**搬去了
+     *   `break_vm`**（`s_shield.vm = 0`）⇒ 破罩那一帧之后的**每一帧都在这里早退**，
+     *   ③（递减 + 消弹圈 + 删泡收尾）**一次都跑不到** ⇒ `break_left` 冻在 **29**。
+     *   实证（22:50 那次实跑的 `signal/shield: tick` 对账行）：`break_left=29` 连挂 2400+ 帧，
+     *   直到用户按了下一发 B 才被 `signal_shield_arm()` 提前结束。
+     *   后果三条、同一个根：① 破罩那 40 帧无敌被每帧续期 ⇒ **永久无敌**；② `signal_shield_busy()`
+     *   永远为真 ⇒ 之后**再也放不出灵击**（正是 owner 之前报过的那条）；③ 泡的 VM 永远不删。
+     *   ⇒ 早退**挪到 ③ 之后**：破罩演出的推进与「泡的句柄在哪个字段」无关。*/
+    if (s_shield.break_pending && !s_shield.vm) {   /* 防御：泡没了 ⇒ 无事可破，别留下悬挂的 pending */
+        s_shield.break_pending = 0;
+        ce_log("signal/shield: 收到破罩请求但泡的 VM 已经不在 ⇒ 无事可破（只清 pending）");
+    }
     /* ② 被撞 ⇒ 播破罩动画 + 建那一发伤害源（一手：破罩那一帧只做这两件，消弹圈从本帧开始长）*/
     if (s_shield.break_pending) {
-        s_shield.break_pending = 0;
-        s_shield.break_left    = SIGNAL_NITORI_BREAK_FRAMES;
+        s_shield.break_pending   = 0;
+        s_shield.break_left      = SIGNAL_NITORI_BREAK_FRAMES;
+        s_shield.break_watch_left = SIGNAL_NITORI_BREAK_FRAMES + 60;   /* ★ 看门狗引线（见函数顶部）*/
+        /* ★★★ 2026-09-25：破罩无敌在这里**开一次**（绝对截止帧），之后由
+         *   `signal_nitori_break_invuln_tick()` 每帧按「截止帧 − 现在」落笔 —— 不再每帧刷 40。*/
+        signal_nitori_break_invuln_arm();
         ++s_shield.breaks;
         if (ce_anm_get_vm(s_shield.vm)) ce_anm_interrupt(s_shield.vm, 1);
         /* 泡已经交了：句柄**搬到 `break_vm`**（不能丢）——
@@ -1266,7 +1368,8 @@ static void signal_shield_tick(signal_card_t *s)
          *   ⇒ TH18 同 wav = **0x2c**，与我们的灵击 SE 同一个 wav）。*/
         ce_play_sound(SIGNAL_SHIELD_BREAK_SE, pp ? pp[0] : 0.0f);
         ce_log("signal/shield: **破罩**（被撞 %d 次）⇒ 撤销中弹 + 泡播破罩动画 + %d 帧外扩消弹圈"
-               "（%.0f→%.0f px）+ 每帧 %d 帧无敌 + 伤害源 %d/帧 × %d 帧",
+               "（%.0f→%.0f px）+ 破罩无敌 %d 帧（**绝对截止帧**，见 `signal_nitori_break_invuln_tick`）"
+               " + 伤害源 %d/帧 × %d 帧",
                (int)s_shield.breaks, (int)SIGNAL_NITORI_BREAK_FRAMES,
                (double)signal_nitori_break_radius_px(1),
                (double)signal_nitori_break_radius_px(SIGNAL_NITORI_BREAK_FRAMES),
@@ -1274,7 +1377,12 @@ static void signal_shield_tick(signal_card_t *s)
                (int)SIGNAL_NITORI_BREAK_DMG_LIFE);
     }
 
-    /* ③ 破罩的 30 帧：消弹圈逐帧外扩 + 每帧刷无敌（一手 `0x407942` / `0x407961`）*/
+    /* ③ 破罩的 30 帧：消弹圈逐帧外扩（一手 `0x407942`）
+     *   ★★★ 2026-09-25：**这一段现在真的跑得到了** —— 上面那句 `if (!s_shield.vm) return;` 挪到了
+     *   本段**之后**（破罩时泡的句柄在 `break_vm` 里，`vm` 是 0；原来那句话让本段一次都跑不到，
+     *   于是 `break_left` 冻在 29 ⇒ 永久无敌 + 灵击永远放不出）。见上方订正块。
+     *   ⚠ **无敌不在这里刷**：改由 `signal_nitori_break_invuln_tick()` 按**绝对截止帧**落笔
+     *     （「每帧刷 40」的形状只要多刷一帧就是永久，已经被实跑打脸过一次）。*/
     if (s_shield.break_left > 0) {
         if (s_shield.break_vm && pp) {              /* 破罩中泡也**跟着自机**（一手 follow 在 VM 还在时照跑）*/
             ce_anm_set_pos(s_shield.break_vm, pp[0], pp[1], 0.0f);
@@ -1293,26 +1401,32 @@ static void signal_shield_tick(signal_card_t *s)
             int n = ce_cancel_radius(center, r, (int)MOF_BOMB_CANCEL_MAX, 1);
             if (n > 0) signal_bomb_form_cancel_note(&s->bomb_form, n);
         }
-        ce_invuln_request((uint32_t)SIGNAL_ID_NUM, SIGNAL_NITORI_BREAK_IFRAMES);
-        if (--s_shield.break_left == 0) {
-            /* ★★★ 2026-09-24 订正（owner 实跑：「**罩子被击破后，无敌无限持续**，而由于我们的罩子计时
-             *   在无敌期间不走，所以看起来好像罩子永续 + 无敌」）：
-             *   这里原来**故意不写 0**，理由是「一手是每帧刷 40、bomb 结束后那 40 帧由引擎自己跑完」
-             *   —— **错**：无敌**声明层是粘性的**（`sdk.h` ②：某 id 声明过一次就一直按那个值刷，
-             *   直到**改口**）⇒ 最后那次 40 会**永远**被续期 ⇒ 永久无敌；而罩子的暴露帧在无敌期间
-             *   不累加 ⇒ 罩子也永不谢幕。两条症状同一个根 ✓。
-             *   ⇒ 破罩演出结束时**显式声明 0**。
-             *   ⚠ 已知小代价：同一张卡的恋恋（放开键 4 帧无敌）若**恰好在同一帧**也声明过，这一句会把它
-             *     撤掉（那 4 帧少一次）—— 概率极低、代价可接受；要彻底解决得给罩子单独一条声明 id。*/
-            ce_invuln_request((uint32_t)SIGNAL_ID_NUM, 0);
-            if (s_shield.break_vm) {                  /* ★ 一手的收尾：30 帧后显式删泡的 VM */
+        --s_shield.break_left;
+        if (s_shield.break_left == 0) {
+            /* ★★★ 2026-09-25：破罩演出**走完**（这一次终于跑得到）。收四件：
+             *   ① 无敌**改口 0**（本次订正后由「绝对截止帧」保证，这里只是提前收）；
+             *   ② 泡的 VM 按一手显式删（一手 `th11:0x407968 cmp [edi+0x2c],0x1e` → `0x407980`）；
+             *   ③ 结算这一发（被撞过 ⇒ 不退款，但账要清 —— 不清 `active` 一直是 1）；
+             *   ④ 一行收尾日志（判读：`break_left` 从这里起必须回 0，且**不再**出现「无敌」字样）。*/
+            signal_nitori_break_invuln_clear();
+            if (s_shield.break_vm) {
                 ce_anm_delete(s_shield.break_vm);
                 s_shield.break_vm = 0;
             }
-            ce_log("signal/shield: 破罩收尾（30 帧走完；泡的 VM 已按一手显式删；无敌计时器自然跑完）");
+            s_shield.break_watch_left = 0;
+            {
+                int32_t back = signal_nitori_expire(&s_nitori);
+                signal_shield_settle(s, back, "破罩演出走完（被撞过）");
+            }
+            ce_log("signal/shield: 破罩收尾（%d 帧走完；泡的 VM 已按一手显式删；无敌**下一帧改口 0**、"
+                   "引擎自己那几十帧无敌自然跑完）", (int)SIGNAL_NITORI_BREAK_FRAMES);
         }
         return;
     }
+
+    /* ★★★ 泡的句柄没了 且 没有破罩演出在跑 ⇒ 本卡这一刻什么都不用做。
+     *   ⚠ 这句**必须**留在 ③ 之后（2026-09-24 的永久无敌就是把它放前面造成的）。*/
+    if (!s_shield.vm) return;
 
     /* ④ 泡活着：每帧钉在自机身上（一手 `th11:0x407866`–`0x407892`）+ 按**暴露年龄**驱动曲线。
      *   ★★ 2026-09-16u/v：三件事分开算（实跑实证过各自为什么必须这么算）：
