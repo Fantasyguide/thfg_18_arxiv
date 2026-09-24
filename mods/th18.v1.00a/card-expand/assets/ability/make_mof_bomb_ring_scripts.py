@@ -49,20 +49,29 @@ SCRIPTS = HERE / "scripts"
 SPRITE = "@MOF_BOMB_RING_STRIP@"      # 一手 `sprite362` 的 1:1 切图（14×128；entry 58 / sprite 450）
 SPRITE_BENT = "@MOF_BOMB_RING_BENT@"  # 退役的烘环（回退用；见文件头）
 
-# 柱环： (变体, 一手主脚本, 本仓号, 一手子脚本号, 文件名, 自转, 目标半径 px, 成长帧, 淡出帧, 紫, 一手 mode)
+# 柱环： (变体, 一手主脚本, 本仓号, 一手子脚本号, 文件名, 自转, 目标半径 px, 成长帧, 淡出帧, 紫,
+#        一手 mode, 跟随主脚本曲线?)
+#   ★★ 2026-09-24（owner 实跑「消弹半径是感觉**不和白色环重合**」）：**白环跟随主脚本那条曲线**
+#   —— 一手白环脚本（394/395、401/402、435/436）自己写的是 60 / 40 帧成长，而**一手的消弹半径读的是
+#   主脚本的 `scale.y`**（`Bomb::on_tick` `0x40580e` 读 `bomb+0x2c` 那支 VM = 主脚本 400/407/441，
+#   曲线 = `scaleTime(120, 6, 16→target)`）⇒ 一手里这两条曲线本来就不同步：白环 40/60 帧就冲满，
+#   消弹要到 120 帧，中间那 80 帧「圈看着比实际消弹范围大」。owner 认为这是 bug ⇒ 我们让白环
+#   **改用主脚本那条曲线**（`scale(16,16) + scaleTime(120, 6, 16→target)`，逐值同 400/407/441）。
+#   紫环仍是**一手子脚本原值**（60/40 帧、目标 200/140/80）—— 它是「虚影」，本来就该冲出边界后再淡掉
+#   （owner 当初要的「几个扩大的紫色虚影环」）。
 RING = [
-    ("灵梦",   400, 327, 394, "mof_bomb_ring394", -0.31415927, 160.0, 60, 120, False, 6),
-    ("灵梦",   400, 328, 395, "mof_bomb_ring395",  0.31415927, 160.0, 60, 120, False, 5),
-    ("灵梦",   400, 329, 396, "mof_bomb_ring396",  0.10471976, 200.0, 60,  40, True,  4),
-    ("灵梦",   400, 330, 397, "mof_bomb_ring397", -0.10471976, 200.0, 60,  40, True,  4),
-    ("魔理沙", 407, 333, 401, "mof_bomb_ring401", -0.31415927, 112.0, 40, 160, False, 6),
-    ("魔理沙", 407, 334, 402, "mof_bomb_ring402",  0.31415927, 112.0, 40, 160, False, 5),
-    ("魔理沙", 407, 335, 403, "mof_bomb_ring403",  0.10471976, 140.0, 40,  40, True,  4),
-    ("魔理沙", 407, 336, 404, "mof_bomb_ring404", -0.10471976, 140.0, 40,  40, True,  4),
-    ("符卡中", 441, 337, 435, "mof_bomb_ring435", -0.31415927,  64.0, 60, 120, False, 6),
-    ("符卡中", 441, 338, 436, "mof_bomb_ring436",  0.31415927,  64.0, 60, 120, False, 5),
-    ("符卡中", 441, 339, 437, "mof_bomb_ring437",  0.10471976,  80.0, 60,  40, True,  4),
-    ("符卡中", 441, 340, 438, "mof_bomb_ring438", -0.10471976,  80.0, 60,  40, True,  4),
+    ("灵梦",   400, 327, 394, "mof_bomb_ring394", -0.31415927, 160.0, 60, 120, False, 6, True),
+    ("灵梦",   400, 328, 395, "mof_bomb_ring395",  0.31415927, 160.0, 60, 120, False, 5, True),
+    ("灵梦",   400, 329, 396, "mof_bomb_ring396",  0.10471976, 200.0, 60,  40, True,  4, False),
+    ("灵梦",   400, 330, 397, "mof_bomb_ring397", -0.10471976, 200.0, 60,  40, True,  4, False),
+    ("魔理沙", 407, 333, 401, "mof_bomb_ring401", -0.31415927, 112.0, 40, 160, False, 6, True),
+    ("魔理沙", 407, 334, 402, "mof_bomb_ring402",  0.31415927, 112.0, 40, 160, False, 5, True),
+    ("魔理沙", 407, 335, 403, "mof_bomb_ring403",  0.10471976, 140.0, 40,  40, True,  4, False),
+    ("魔理沙", 407, 336, 404, "mof_bomb_ring404", -0.10471976, 140.0, 40,  40, True,  4, False),
+    ("符卡中", 441, 337, 435, "mof_bomb_ring435", -0.31415927,  64.0, 60, 120, False, 6, True),
+    ("符卡中", 441, 338, 436, "mof_bomb_ring436",  0.31415927,  64.0, 60, 120, False, 5, True),
+    ("符卡中", 441, 339, 437, "mof_bomb_ring437",  0.10471976,  80.0, 60,  40, True,  4, False),
+    ("符卡中", 441, 340, 438, "mof_bomb_ring438", -0.10471976,  80.0, 60,  40, True,  4, False),
 ]
 
 # 火星（枫叶）： (变体, 一手子脚本号, 本仓号, 文件名, 基准半径 px, 蓝?)
@@ -159,9 +168,25 @@ LEAF_HEAD = """script script{n} {{
 
 
 def ring_text(rec, sprite):
-    variant, master, n, src, _pad, spin, target_px, frames, fade, magenta, mode = rec
+    variant, master, n, src, _pad, spin, target_px, frames, fade, magenta, mode, follow = rec
     # 一手第 3/4 参：每对里第一支写 32（分段×?），第二支写 16 —— 逐条照抄
     hand_x = 32.0 if (src % 2 == 1) else 16.0
+    if follow:
+        # ★ 白环跟随**主脚本**那条（= 消弹半径的曲线）：`scale(16,16) + scaleTime(120, 6, 16→target)`
+        return HEAD.format(
+            n=n, src=src, variant=variant, master=master, sprite=sprite,
+            spin=("%.8f" % spin).rstrip("0").rstrip("."),
+            hand_scale="16.0f, 16.0f",
+            hand_target="16.0f, {:.1f}f".format(target_px),
+            frames=120, mode=6, fade=fade,
+            color_note=("（紫环：`color(255,0,255)`）" if magenta else "（白环：一手不写 `color`）"),
+            color=("    color(255, 0, 255);\n" if magenta else ""),
+            extra=("//   ★★ 本支**改用主脚本那条曲线**（一手 400/407/441 的 `scale(16,16) + "
+                   "scaleTime(120, 6, 16→{:.0f})`）：owner 实跑口径「消弹半径不和白色环重合」——\n"
+                   "//      一手白环子脚本自己写 60/40 帧，而消弹半径读的是**主脚本**的 scale.y ⇒ 两者不同步；\n"
+                   "//      我们按「**可见边界 = 消弹半径**」取（见 `TUNING.md` §2.0zzk）。\n"
+                   .format(target_px)),
+        )
     return HEAD.format(
         n=n, src=src, variant=variant, master=master, sprite=sprite,
         spin=("%.8f" % spin).rstrip("0").rstrip("."),
@@ -198,9 +223,10 @@ def main():
     print("| 脚本 | 变体 | 一手 | 自转(rad/帧) | 目标半径(px) | 成长(帧) | mode | 淡出 | 紫 |")
     print("| --- | --- | --- | --- | --- | --- | --- | --- | --- |")
     for rec in RING:
-        variant, master, n, src, pad, spin, target_px, frames, fade, magenta, mode = rec
+        variant, master, n, src, pad, spin, target_px, frames, fade, magenta, mode, follow = rec
         print(f"| {n}_{pad} | {variant} | script{src} | {spin:+.8f} | {target_px:.0f} | "
-              f"{frames} | {mode} | +{fade} | {'✅' if magenta else '—'} |")
+              f"{120 if follow else frames} | {6 if follow else mode} | +{fade} | {'✅' if magenta else '—'} |"
+              f"{' ← 跟随主脚本曲线' if follow else ''}")
         path = SCRIPTS / f"{n}_{pad}.anm.txt"
         text = ring_text(rec, sprite)
         if a.check:

@@ -2203,10 +2203,25 @@ static void signal_option_align(ce_card_t *c, signal_card_t *s, int want,
          *   不再等 `SIGNAL_OPTION_RETRY` 那个节流：节流是给「池满」用的，而「子机刚被灵击重建、
          *   却要慢慢一格一格补回来」正是用户报的「添加也慢」（`o->retry = 0` 只影响这一次尝试，
          *   池满时 `ce_option_retry()` 会重新压上节流 ⇒ 不会变成每帧刷日志）。*/
-        if (s_opt[i].ptr && !ce_option_claim(c, &s_opt[i])) {
-            s_opt[i].retry = 0;
-            s_opt_live_script[i] = -1;
-            s_opt_live_vm[i] = 0;
+        if (s_opt[i].ptr) {
+            /* ★★ 2026-09-24（owner 实跑「按 C 会**不回收一个子机**」）：槽丢了（引擎 `repopulate`
+             *   重建 / 被回收）时，**槽里那支 VM 未必跟着死** —— 它会留在场上、贴着**旧贴图**
+             *   再也不动（就是这个症状）。判据取**我们自己记下的 VM id**：
+             *   `anm id == s_opt_live_vm[i]` ⇒ 那支是本卡申请出来的 ⇒ 收掉；
+             *   不等 ⇒ 引擎或别的卡换了人 ⇒ **不动**（别误伤别人的子机）。
+             *   ⚠ 为什么不用 `vm+0x28` 的「脚本号」判：那个字段的语义（脚本号 vs 表内下标）
+             *     没有一手，误判会去收别人的子机；用我们自己记的 id 是零风险判据。*/
+            const uint32_t vm_before = *(const uint32_t *)(s_opt[i].ptr + CE_OPT_ANM_ID);
+            if (!ce_option_claim(c, &s_opt[i])) {
+                if (vm_before && vm_before == s_opt_live_vm[i] && ce_anm_get_vm(vm_before)) {
+                    ce_anm_interrupt(vm_before, 1);
+                    ce_log("signal: 收掉一支**遗留子机 VM**（槽 #%d 已丢，vm=%u；frame %u）",
+                           i, (unsigned)vm_before, (unsigned)ce_sdk_frame());
+                }
+                s_opt[i].retry = 0;
+                s_opt_live_script[i] = -1;
+                s_opt_live_vm[i] = 0;
+            }
         }
         /* ★ 槽还在，但**贴图脚本不是本帧要的**（换元素 / 刚被引擎重建过）⇒ 收掉重申请。
          *   一手：换不了脚本（见 `s_opt_live_*` 的注），只能重申请。*/
