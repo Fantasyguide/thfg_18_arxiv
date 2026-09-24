@@ -1278,6 +1278,8 @@ int faith_enemies_present(void)
 #define FAITH_GF_SCORE     0                /* 击破分：给 0 ⇒ 不靠它刷分（❓自定）*/
 /* ★ 2026-09-24：**入场段帧数** —— 出生后这么多帧里 y 从入场线插值到目标那一格
  *   （≈0.75 s @60fps，与原生小妖精从 y=−32 走进场地的节奏同量级）。见 `gf_follow_tick()`。*/
+#define FAITH_GF_SPAWN_Y_MIN 24.0f        /* ★ 补刷妖精的**出生 y 下限**（夹进场地内，理由见出生点那段：
+                                           *   场地之上的敌机会被引擎当帧回收 —— 探针实测 age=2 就没了）*/
 #define FAITH_GF_ENTER_FRAMES 45
 #define FAITH_GF_TTL       690              /* ★ 存活上限帧数（≈11.5 s @60fps）。2026-09-22 订正：
                                            *   旧注释写「只传给 ECL 记日志、子程序到点自己 delete」——
@@ -1783,6 +1785,14 @@ void faith_green_fairy_tick(void)
         }
         /* 观测到的 y 只在「像入场线」时才用（否则它已经进场了，用标准入场线让它从上面下来）*/
         if (ey > FAITH_GF_ENTRY_BAND || ey < -FAITH_GF_ENTRY_BAND) ey = FAITH_GF_ENTRY_Y;
+        /* ★★★ 2026-09-24（决定性探针数据）：`faithgf/probe: 绿妖精 #27 age=1 pos=(0,0) anm=(2,10)` →
+         *   下一行就「不在了（age=2）」。外观 `(2,10)` 是对的、位置却是 `(0,0)`，而且它出生在
+         *   **y = −32（场地之上）** ⇒ 结论：**它一出生就踩了「不在场地内」的回收** —— ECL 自己
+         *   `enmCreate` 出来的妖精带入场状态（引擎不回收），而**卡侧 `allocate_new_enemy()` 出来的
+         *   没有那一层**（112 的 UFO 令牌之所以没踩到，是因为它一直在场地内出生）。
+         *   ⇒ 出生 y **夹进场地**（≥ `FAITH_GF_SPAWN_Y_MIN`）；「从上面飞下来」那一段仍由入场段
+         *   （`FAITH_GF_ENTER_FRAMES`）从**这个** y 插值到队形槽位 ⇒ 观感不变，但不会被回收。*/
+        if (ey < FAITH_GF_SPAWN_Y_MIN) ey = FAITH_GF_SPAWN_Y_MIN;
         n = mof_green_extra_slots(s_gf_x, s_gf_n, FAITH_GF_COUNT, slots, MOF_GREEN_EXTRA_SLOT_MAX);
         for (i = 0; i < n; ++i) {
             float sx = slots[i];
