@@ -401,12 +401,27 @@ int32_t bomb10_start(const bomb10_host_t *host, void *user, int32_t by_hit)
 
     /* 无敌（一手；口径与「为什么不是每帧刷」见 `bomb10.h` 的「无敌帧」段）：
      * 普通灵击 270 帧（`th10:0x4259be push 0x10e`）、决死 200 帧（`th10:0x425c2d push 0xc8`）。
-     * 声明层是**粘性**的 ⇒ 这里先声明一次，之后由 `bomb10_tick()` 每帧声明**递减后的剩余值**、数到 0 清。*/
-    s_run.invuln_left = (by_hit ? BOMB10_INVULN_FRAMES_DEATHBOMB : BOMB10_INVULN_FRAMES);
-    ce_invuln_request(host->card_id, s_run.invuln_left);
-    ce_log("%s: 灵击无敌 %d 帧（一手 `th10:%s push 0x%x`；走 SDK 无敌声明层，每帧声明剩余值）",
-           host->log_tag, (int)s_run.invuln_left, by_hit ? "0x425c2d" : "0x4259be",
-           (unsigned)(by_hit ? 0xc8 : 0x10e));
+     * 声明层是**粘性**的 ⇒ 这里先声明一次，之后由 `bomb10_tick()` 每帧声明**递减后的剩余值**、数到 0 清。
+     * ★★★ 2026-09-25（owner 实跑：「**在有罩子的时候放 C，结果是仍有无敌时间？**」）：
+     *   **罩子形态一帧无敌都不给**（owner 既有口径：罩子本身就是保命手段 ⇒ `TUNING.md` §2.0zzy-4c），
+     *   而这条**必须在"声明出去之前"分叉** —— 事后每帧声明 0 是**撤不回来**的：
+     *   `ce_invuln_apply()`（`sdk.h` ②）**只会加不会减**（`if (t->cur < frames) t->cur = frames`），
+     *   起手那一次 270 一旦落进 `player+0x47774`，引擎自己的计时器就会照跑 270 帧。
+     *   旧写法只在 `bomb10_tick()` 里每帧压 0 ⇒ 那 270 帧照旧存在（用户看到的就是这个）。
+     *   ⚠ 决死那一支（`by_hit`）同样不给 200：罩子替你挡，而不是靠无敌。*/
+    if (s_run.nitori_form) {
+        s_run.invuln_left = 0;
+        ce_invuln_request((uint32_t)host->card_id, 0);   /* 明确声明 0：本卡这一格不参与 */
+        ce_log("%s: 罩子形态（河童）⇒ **不给无敌**（owner：罩子本身就是保命手段；"
+               "不再声明 %d/%d 帧 —— 声明层只加不减，起手给了就撤不回来）",
+               host->log_tag, (int)BOMB10_INVULN_FRAMES, (int)BOMB10_INVULN_FRAMES_DEATHBOMB);
+    } else {
+        s_run.invuln_left = (by_hit ? BOMB10_INVULN_FRAMES_DEATHBOMB : BOMB10_INVULN_FRAMES);
+        ce_invuln_request(host->card_id, s_run.invuln_left);
+        ce_log("%s: 灵击无敌 %d 帧（一手 `th10:%s push 0x%x`；走 SDK 无敌声明层，每帧声明剩余值）",
+               host->log_tag, (int)s_run.invuln_left, by_hit ? "0x425c2d" : "0x4259be",
+               (unsigned)(by_hit ? 0xc8 : 0x10e));
+    }
 
     /* 决死形态：**救命**（`th18:0x45d590`）—— 位置 = 三道门都过了、火力也扣了之后
      * （门槛不过时上面已经 return ⇒ 不救命，照常死）。两张卡原来都在同一个位置上。*/
@@ -469,7 +484,10 @@ void bomb10_tick(int32_t driver)
         /* ★★★ 2026-09-24（owner 实跑：「罩子在第二次放的时候**持续时间无限、永续无敌**，撞也没用」）：
          *   罩子形态**每帧显式把无敌清零** —— 无敌声明层是粘性的，只要有一处没撤（上一次灵击的
          *   270 帧、原生 B、破罩的无敌…），罩子的「暴露帧」就永远不再累加（它的寿命按**非无敌帧**
-         *   算）⇒ 表现正是「罩子永续 + 无敌永续」。这里每帧压 0 = 罩子形态期间**不可能**有我们的无敌。*/
+         *   算）⇒ 表现正是「罩子永续 + 无敌永续」。这里每帧压 0 = 罩子形态期间**不可能**有我们的无敌。
+         * ★★★ 2026-09-25：**这只是兜底**，真正的闸在 `bomb10_start()` —— 起手就**不声明** 270/200。
+         *   原因：`ce_invuln_apply()` 只加不减，起手声明出去的那次无敌**事后清不掉**（用户报的
+         *   「有罩子时放 C 仍有无敌时间」就是它）。*/
         s_run.invuln_left = 0;
         ce_invuln_request((uint32_t)s_run.owner_id, 0);
     } else if (s_run.invuln_left > 0) {
