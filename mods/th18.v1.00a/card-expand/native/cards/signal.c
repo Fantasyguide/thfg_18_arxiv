@@ -982,6 +982,9 @@ typedef struct {
  *     否则「原生 B 起泡、B 的无敌期里寿命不推进」会让泡永远停在 scale 0 / alpha 0 ⇒ **看不见**
  *     （实跑日志实证：`暴露 0 帧、暂停 300+ 帧` 而 scale/alpha 还是第 0 帧的值）。
  *   · 视觉年龄 = `intro + 暴露帧`（`intro` 封顶 20）⇒ 无敌期里泡是**长大到 1.0 后冻住**，不是没出现。*/
+/* ★ 罩子还在时按 B 怎么办：0 = **拒绝**（一手 TH11 `th11:0x40651b`；owner 后来实跑确认「第一个罩子时
+ *   确实不能再放灵击了」）；1 = 放行并**刷新**罩子 920 帧（owner 较早口径）。改这里即可，别改逻辑。*/
+#define SIGNAL_NITORI_BOMB_WHILE_SHIELD  0
 #define SIGNAL_SHIELD_REFUND_SE      0x30   /* `se_bonus2.wav`（一手 TH11 id 0x33 ↔ TH18 0x30）*/
 #define SIGNAL_SHIELD_BREAK_SE       0x2c   /* `se_slash.wav`（一手 TH11 id 0x26 ↔ TH18 0x2c，与灵击同 wav）*/
 #define SIGNAL_SHIELD_ROT_STEP       (-0.05235988f)
@@ -1407,10 +1410,21 @@ static int32_t signal_bomb_gate(void *user)
      *   旧的泡顶掉并**重新计 920 帧**（= 刷新）。
      *   ⚠ 与一手 TH11 的 `[bomb+0x3c] != 0 ⇒ do_bomb 返回 −1`（拒绝）不同 —— 按 owner 口径走，
      *     差别登记在 `TUNING.md` §2.0zzy-5。*/
+    /* ★★ 2026-09-24 夜：owner 两条口径**互相矛盾**，所以做成**一个开关**，别再来回改代码：
+     *     · 较早口径（§2.0zzy-2）：「罩子持续当中**不应该能发灵击**（B 能放，会刷新罩子时长）」
+     *       ⇒ 放行 + 刷新；
+     *     · 后来的实跑观察：「**第一个罩子的时候确实不能再放灵击了**」（= 一手 TH11 的行为）。
+     *   默认按**一手**（拒绝）走 —— `SIGNAL_NITORI_BOMB_WHILE_SHIELD = 0`；
+     *   要「放行 + 刷新」把它改 1（日志会打出当前走的是哪一支）。*/
     if (signal_shield_busy()) {
-        ce_log("signal: 罩子还在（暴露 %d 帧 / 暂停 %d 帧 / 破罩演出剩 %d 帧）⇒ 这一发 B 照放，"
-               "会**刷新**罩子时长（owner 口径）",
-               (int)s_shield.frames, (int)s_shield.paused, (int)s_shield.break_left);
+        ce_log("signal: 罩子还在（暴露 %d 帧 / 暂停 %d 帧 / 破罩演出剩 %d 帧）⇒ 这一发 B %s"
+               "（开关 SIGNAL_NITORI_BOMB_WHILE_SHIELD=%d）",
+               (int)s_shield.frames, (int)s_shield.paused, (int)s_shield.break_left,
+               SIGNAL_NITORI_BOMB_WHILE_SHIELD ? "**照放、刷新罩子时长**" : "**被拒**（一手 th11:0x40651b）",
+               (int)SIGNAL_NITORI_BOMB_WHILE_SHIELD);
+#if !SIGNAL_NITORI_BOMB_WHILE_SHIELD
+        return 1;                      /* 拒绝：一手 TH11 `[bomb+0x3c] != 0 ⇒ do_bomb 返回 −1` */
+#endif
     }
     return 0;
 }
