@@ -160,12 +160,21 @@ static bomb10_run_t s_run;
  *   罩子的归属住在 111 的卡状态里，而本模块不认识任何一张卡 ⇒ 用一条**声明**（谁都能读）：
  *   `bomb10_nitori_declare(id, 1)`（111 在罩子起来时声明、谢幕/破罩时撤）。*/
 static int32_t s_nitori_armed;
+static int32_t s_nitori_busy;      /* ★ 2026-09-25：「罩子还在演」—— 由 111 每帧声明 */
 
 void bomb10_nitori_declare(uint32_t card_id, int armed)
 {
     if (!card_id) return;
     s_nitori_armed = armed ? 1 : 0;
 }
+
+void bomb10_nitori_busy_declare(uint32_t card_id, int busy)
+{
+    if (!card_id) return;
+    s_nitori_busy = busy ? 1 : 0;
+}
+
+int bomb10_nitori_busy(void) { return s_nitori_busy; }
 
 int bomb10_nitori_armed(void)
 {
@@ -328,7 +337,20 @@ int32_t bomb10_start(const bomb10_host_t *host, void *user, int32_t by_hit)
 
     if (!host) return 0;
     if (s_run.left > 0) return 0;                       /* ① 一手：灵击进行中 ⇒ 不再发动 */
-    if (host->gate && host->gate(user)) return 0;       /* ② 卡私有闸 */
+    /* ★★★ 2026-09-25（owner 点破「你对这两个是一套系统的理解有问题」）：**罩子没破不让放**
+     *   是**系统级**规则（一手 `th11:0x40651b` / `th11:0x4311c7`），必须闸在**机器里** ——
+     *   旧写法把它写在 111 的 `host->gate` 里 ⇒ **110 发起的那一发直接绕过去了**
+     *   （两张同装时「罩子还在也能按 C」，而且那一发还会把旧罩子顶掉重开）。
+     *   状态走声明通道（111 每帧声明 `signal_shield_busy()`）⇒ 与「哪张卡发起」无关。
+     *   ⚠ 原生 B 那条路**不走这里**（`on_bomb_spent`，「能放 B ⇒ 罩子自动破掉换新」）。*/
+    if (bomb10_nitori_busy() && !BOMB10_NITORI_BOMB_WHILE_SHIELD) {
+        ce_log("bomb10: 河童罩子还在 ⇒ 这一发灵击**被系统拒绝**（一手 `th11:0x40651b`："
+               "`[bomb+0x3c] != 0 ⇒ do_bomb` 返回 −1；**与哪张卡发起无关**；"
+               "开关 BOMB10_NITORI_BOMB_WHILE_SHIELD=%d）",
+               (int)BOMB10_NITORI_BOMB_WHILE_SHIELD);
+        return 0;
+    }
+    if (host->gate && host->gate(user)) return 0;       /* ② 卡私有闸（各作自己的那道，例如 TH10 的对话门）*/
 
     pp = ce_player_pos();
     power_before = CE_CURRENT_POWER();
@@ -367,6 +389,22 @@ int32_t bomb10_start(const bomb10_host_t *host, void *user, int32_t by_hit)
      *   魔理沙机体 ⇒ 判据确定、不会漏。罩子那个声明只剩「怎么起泡/退款」用得到。*/
     s_run.nitori_form  = (ce_owned(111)
                           && *(const volatile int32_t *)CE_ADDR_CHARACTER == 1 /* 魔理沙 */) ? 1 : 0;
+    /* ★★★ 2026-09-25（同一条「一套系统」的账）：**作废当前符卡奖励**（一手 `th10:0x405500`，
+     *   `Bomb::start` 在 `th10:0x405982` 无条件调它）也是**系统级**规则 ⇒ 搬进机器，
+     *   于是「谁发起的那一发」不影响它（旧写法只在 110 的 `on_start` 里 ⇒ **只装 111 时从来不作废**，
+     *   只装 110 时才作废 ⇒ 同一套系统两种行为）。
+     *   owner 口径：「河童特技 = 按 Bomb 不 bonus failed，**除非你真撞了**」⇒ 罩子形态这一发跳过；
+     *   真被弹那一下由 111 的罩子路径补（`signal_shield_note_real_hit()`）。*/
+    if (!s_run.nitori_form) {
+        bomb10_void_spell_bonus();
+        if (ce_spell_active() && bomb10_spell_frames() >= (int32_t)MOF_BOMB_BIG_BOMB_FRAMES)
+            ce_log("%s: **bonus failed**（按 Bomb 作废当前符卡奖励：奖励值归零 + 清存活位；"
+                   "一手 `th10:0x405500`，门 = 本次攻击已过 ≥60 帧）—— 非河童罩子形态才走这条",
+                   host->log_tag);
+    } else {
+        ce_log("%s: 罩子形态（河童）⇒ **不作废符卡奖励**（owner：按 Bomb 不 bonus failed，"
+               "除非真撞；failed 只可能来自「罩子挡下中弹」那一条路）", host->log_tag);
+    }
     s_run.small        = mof_core_bomb_suppressed(ce_spell_id());
     /* ★★ 一手 `Bomb::start` 的三条分支（脚本 400/407/441）＝ 灵梦 / 魔理沙 / 小灵击：
      *   判据与下面选半径的那一条**必须同源**（`s_run.small` 优先，再看 `CHARACTER == 0`）⇒

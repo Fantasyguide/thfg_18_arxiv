@@ -983,9 +983,9 @@ typedef struct {
  *     否则「原生 B 起泡、B 的无敌期里寿命不推进」会让泡永远停在 scale 0 / alpha 0 ⇒ **看不见**
  *     （实跑日志实证：`暴露 0 帧、暂停 300+ 帧` 而 scale/alpha 还是第 0 帧的值）。
  *   · 视觉年龄 = `intro + 暴露帧`（`intro` 封顶 20）⇒ 无敌期里泡是**长大到 1.0 后冻住**，不是没出现。*/
-/* ★ 罩子还在时按 B 怎么办：0 = **拒绝**（一手 TH11 `th11:0x40651b`；owner 后来实跑确认「第一个罩子时
- *   确实不能再放灵击了」）；1 = 放行并**刷新**罩子 920 帧（owner 较早口径）。改这里即可，别改逻辑。*/
-#define SIGNAL_NITORI_BOMB_WHILE_SHIELD  0
+/* ★★★ 2026-09-25：原来本文件有一份自己的 `SIGNAL_NITORI_BOMB_WHILE_SHIELD` 开关 —— **删掉**，
+ *   改用机器的 `BOMB10_NITORI_BOMB_WHILE_SHIELD`（同一个口径只有一个出处的**位置**也必须只有一处：
+ *   否则「两张卡是不是一套系统」这件事又会被两个开关各说一遍）。*/
 #define SIGNAL_SHIELD_REFUND_SE      0x30   /* `se_bonus2.wav`（一手 TH11 id 0x33 ↔ TH18 0x30）*/
 #define SIGNAL_SHIELD_BREAK_SE       0x2c   /* `se_slash.wav`（一手 TH11 id 0x26 ↔ TH18 0x2c，与灵击同 wav）*/
 #define SIGNAL_SHIELD_ROT_STEP       (-0.05235988f)
@@ -1154,6 +1154,8 @@ static void signal_nitori_break_invuln_tick(void)
  *   ② 若**已经有一发灵击在跑**（可能是 **110** 放的）而本卡还没起泡 ⇒ 现在补上
  *      （真值扣款取 `bomb10_last_cost()`，退款窗按它算 —— 110 放的那一发 111 拿不到 `cost` 参数）。
  *   幂等：罩子已经在 ⇒ 什么都不做。*/
+static int signal_shield_busy(void);   /* 定义在下面；join_bomb 每帧声明状态要用它 */
+
 static void signal_nitori_join_bomb(signal_card_t *s)
 {
     /* 诊断（节流）：只在「有灵击在跑、但本卡没泡」的帧里打一行，说清每一道门的状态 ——
@@ -1163,6 +1165,11 @@ static void signal_nitori_join_bomb(signal_card_t *s)
     int32_t cost;
 
     bomb10_nitori_declare(SIGNAL_ID_NUM, 1);          /* ① 在场声明（每帧，粘性）*/
+    /* ★★★ 2026-09-25（owner：「你对这两个是一套系统的理解有问题」）：**「罩子还在演」也走声明通道**，
+     *   闸归**机器**（`bomb10_start()` 里判）—— 这样 110 发起的那一发同样被拒。
+     *   状态 = `signal_shield_busy()`（泡在 / 本帧要起泡 / 破罩演出未走完），与一手
+     *   `[bomb+0x3c] != 0` 的语义对齐（一手那只 bomb 对象在破罩演出那 30 帧里也还活着）。*/
+    bomb10_nitori_busy_declare(SIGNAL_ID_NUM, signal_shield_busy());
     /* ★★★ 2026-09-25 订正（owner 实跑：「**破罩之后依旧永久无敌**」）：
      *   上一版把「破罩 40 帧无敌」写成这里**每帧** `(break_left > 0) ? 40 : 0` —— 落点是对的
      *   （每帧必然经过），但**量**取错了：`break_left` 当时因为一处早退**永远停在 29**
@@ -1520,7 +1527,8 @@ static void signal_shield_dump(const char *tag)
  *   · 消耗之后的写 `CURRENT_POWER` + `ce_repopulate_options()`；决死救命；曲线参数；环 + 电流边 VM；
  *     音效（`se_slash.wav`）；RANK；每帧消弹 + 每敌每帧伤害 + 环推进 + 火星 + 收尾日志。
  * 留在本卡的只有四项（= 与 110 确实不一样的那一半，见 `bomb10_host_t`）：
- *   ① `signal_bomb_gate()`        —— **河童罩子没破不让放**（一手 `th11:0x40651b`）；
+ *   ① （已搬走）**河童罩子没破不让放** —— 现在在**机器**里（`bomb10_start()`，见 `bomb10.h` 的
+ *      `bomb10_nitori_busy_declare()` 那一节）；本卡只负责每帧声明状态；
  *   ② `signal_bomb_power_spend()` —— 魔理沙 = **爱丽丝 0.5 档**（`signal_core_alice_power_spend()`），
  *                                    其余机体原样转发 `mof_core_power_spend()`；
  *   ③ `signal_bomb_on_start()`    —— 记形态 + **河童罩子**（`signal_shield_arm`）+ 诊断 + 计分声明 + 日志；
@@ -1529,42 +1537,13 @@ static void signal_shield_dump(const char *tag)
  * ⚠ 「进行中不放」那道门**不是新闸**（一手 `th11:0x4311c7 cmp [eax+0x3c],0 / jne`）——
  *   它同时就是「两张卡同装不叠加」的机制（`bomb10.h` 硬语义 ②）。*/
 
-/* ① 卡私有前置闸 = **河童罩子还在进行中**（一手 `th11:0x40651b`：`Player::do_bomb` 见
- * `[bomb+0x3c] != 0` 直接 `or eax,-1` 返回 −1，调用侧 `th11:0x4311c7 cmp …,0 / jne 跳过`；
- * 而荷取的「bomb 进行中」**就是那支水泡还在**）⇒ 罩子没破时放不出第二发。
- * 用户口径逐字：「**如果放的是灵击，那么罩子没破不让放**」（2026-09-16v）。
- *   · 只管**魔理沙机体**（`alice` = `CHARACTER == SIGNAL_CHAR_MARISA`）：别的机体没有罩子这一层；
- *   · 拒绝 = **什么都不做**：不扣火力、不消弹、不落 RANK、不响音效（机器在调本闸时还没动手）。
- *   · ⚠ 原生 B 那条路不受本闸管（它走 `on_bomb_spent`，按用户前一条口径「能放 B ⇒ 罩子自动破掉换新的」）。*/
-static int32_t signal_bomb_gate(void *user)
-{
-    signal_card_t *s = (signal_card_t *)user;
-
-    if (!s) return 1;
-    if (*(const int32_t *)CE_ADDR_CHARACTER != SIGNAL_CHAR_MARISA) return 0;
-    /* ★★★ 2026-09-24 owner 口径（逐字）：「**魔理沙的罩子持续当中不应该能发灵击**（B 能放，
-     *   **会刷新罩子的持续时间**）」⇒ 这道闸**不再是拒绝**：B 照放，`signal_shield_arm()` 会把
-     *   旧的泡顶掉并**重新计 920 帧**（= 刷新）。
-     *   ⚠ 与一手 TH11 的 `[bomb+0x3c] != 0 ⇒ do_bomb 返回 −1`（拒绝）不同 —— 按 owner 口径走，
-     *     差别登记在 `TUNING.md` §2.0zzy-5。*/
-    /* ★★ 2026-09-24 夜：owner 两条口径**互相矛盾**，所以做成**一个开关**，别再来回改代码：
-     *     · 较早口径（§2.0zzy-2）：「罩子持续当中**不应该能发灵击**（B 能放，会刷新罩子时长）」
-     *       ⇒ 放行 + 刷新；
-     *     · 后来的实跑观察：「**第一个罩子的时候确实不能再放灵击了**」（= 一手 TH11 的行为）。
-     *   默认按**一手**（拒绝）走 —— `SIGNAL_NITORI_BOMB_WHILE_SHIELD = 0`；
-     *   要「放行 + 刷新」把它改 1（日志会打出当前走的是哪一支）。*/
-    if (signal_shield_busy()) {
-        ce_log("signal: 罩子还在（暴露 %d 帧 / 暂停 %d 帧 / 破罩演出剩 %d 帧）⇒ 这一发 B %s"
-               "（开关 SIGNAL_NITORI_BOMB_WHILE_SHIELD=%d）",
-               (int)s_shield.frames, (int)s_shield.paused, (int)s_shield.break_left,
-               SIGNAL_NITORI_BOMB_WHILE_SHIELD ? "**照放、刷新罩子时长**" : "**被拒**（一手 th11:0x40651b）",
-               (int)SIGNAL_NITORI_BOMB_WHILE_SHIELD);
-#if !SIGNAL_NITORI_BOMB_WHILE_SHIELD
-        return 1;                      /* 拒绝：一手 TH11 `[bomb+0x3c] != 0 ⇒ do_bomb 返回 −1` */
-#endif
-    }
-    return 0;
-}
+/* ① 卡私有前置闸 —— ★★★ 2026-09-25 **已搬进共用机器**（`bomb10_start()` 的「罩子还在 ⇒ 拒绝」那一段）。
+ *   一手依据（`th11:0x40651b` / `th11:0x4311c7`）与 owner 口径原样搬去 `bomb10.h` 的
+ *   `BOMB10_NITORI_BOMB_WHILE_SHIELD` 与 `bomb10_nitori_busy_declare()` 的注释块。
+ *   ⚠ **为什么必须搬**：写在卡私有闸里 ⇒ 只有 111 发起的那一发会被拒，**110 一发起就绕过去了**
+ *     （两张同装时「罩子还在也能按 C」，还会把旧罩子顶掉重开）。
+ *   本卡现在**没有**卡私有前置闸（`.gate = 0`）——TH10/TH11 那两道「对话 VM 忙」门是 110 侧的复刻，
+ *   111 一手没有它；其余系统级闸全在机器里。*/
 
 /* ② 火力扣法：**魔理沙机体的灵击消耗 = 0.5 档**（爱丽丝那条，🟡 用户口径 2026-09-16m 追加：
  * 「**爱丽丝也得是 0.5P**，这个我忘说了」）；其余机体与 110 **一字不变**。
@@ -1630,7 +1609,7 @@ static void signal_bomb_on_cancel(void *user, int32_t bullets)
 static const bomb10_host_t s_bomb_host = {
     .card_id     = SIGNAL_ID_NUM,
     .log_tag     = "signal",
-    .gate        = signal_bomb_gate,
+    .gate        = 0,   /* ★ 系统级闸（含罩子门）全在机器里，本卡不留卡私有闸 */
     .power_spend = signal_bomb_power_spend,
     .on_start    = signal_bomb_on_start,
     .on_cancel   = signal_bomb_on_cancel,
@@ -3832,7 +3811,8 @@ static void on_bomb_spent(ce_card_t *c)
  *   | 火力门槛 / 消耗 | `signal_core_alice_power_spend()` → `mof_core_power_spend()`（≥2.00 档 / 扣 1 档 / 下限 1.05；魔理沙 = 爱丽丝 0.5 档）| 同（都在 `bomb10_start()` / 本卡的 `signal_bomb_power_spend()` 里）|
  *   | 伤害 / 帧数 / 判定框 / 消弹 / 音效 / 视觉 | `bomb10_start()` + `bomb10_tick()` | 同（**同一个函数**）|
  *   | 决死（B 形态）语义 | `by_hit` ⇒ 救命 `bomb10_cancel_impending_death()` + 消弹照常记账 | 同 |
- *   | 魔理沙的特殊灵击（河童罩子）/ 罩子没破不让放 | 本卡的 `signal_bomb_gate()` / `signal_bomb_on_start()`（机体门原样）| 同 |
+ *   | 魔理沙的特殊灵击（河童罩子）| 本卡的 `signal_shield_arm()` / `signal_bomb_on_start()`（机体门原样）|
+ *   | 罩子没破不让放 | **机器**（`bomb10_start()` 读 `bomb10_nitori_busy()`）—— 与哪张卡发起无关 |
  *   | 火力不足时 | **静默什么都不做**（不扣 P / 不消弹 / 不响音效）| 同（这里**不**加 `ce_refuse()` —— 拒绝音 + 日志是 X 路径没有的行为）|
  *
  * ## 三条口径说明（为什么这样写才对得上 owner 的话）
