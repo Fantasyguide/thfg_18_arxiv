@@ -201,6 +201,37 @@ const mof_green_pair_t *mof_green_lookup(uint32_t applied, int32_t anm_src, int3
     return mof_green_lookup_tbl(mof_green_pairs, MOF_GREEN_PAIR_MAX, applied, anm_src, anm_script);
 }
 
+/* ============================ ★★★ 2026-09-25：实例级「改妖精」的纯判据 ============================
+ * 依据与口径见 `.h` 那一节。这三个函数都**不认任何引擎地址**（纯算术）⇒ 主机单测钉住。*/
+int32_t mof_green_green_script(const mof_green_pair_t *p, int32_t blue_script)
+{
+    int32_t pose;
+    if (!p) return -1;
+    pose = blue_script - p->src_script;
+    if (pose < 0 || pose >= MOF_GREEN_POSE_MAX) return -1;   /* 不在该变体的 5 个 pose 里 ⇒ 不是我们要改的 */
+    return p->dst_script + pose;
+}
+
+int mof_green_is_green_script(const mof_green_pair_t *p, int32_t script)
+{
+    if (!p) return 0;
+    return (script >= p->dst_script && script < p->dst_script + MOF_GREEN_POSE_MAX) ? 1 : 0;
+}
+
+int mof_green_mirror_ok(float x1, float y1, float x2, float y2)
+{
+    float dx = x1 + x2, dy = y1 - y2;
+    if (dx < 0.0f) dx = -dx;
+    if (dy < 0.0f) dy = -dy;
+    return (dx <= MOF_GREEN_SYM_XTOL && dy <= MOF_GREEN_SYM_YTOL) ? 1 : 0;
+}
+
+int mof_green_row_armed(const mof_green_pair_t *p, int32_t stage)
+{
+    if (!p || !p->enabled) return 0;
+    return mof_green_pair_in_stage(p, stage);
+}
+
 static const uint8_t *entry_at(const uint8_t *tbl, int sprite)
 {
     return tbl + (size_t)sprite * MOF_GREEN_ENTRY;

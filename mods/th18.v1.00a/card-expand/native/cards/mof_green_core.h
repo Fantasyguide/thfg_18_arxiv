@@ -46,6 +46,9 @@
 
 /* 每个变体 = 12 个连续 sprite（一手：`thanm -l` 逐条；5 个脚本共用这一块）。*/
 #define MOF_GREEN_SPRITES 12
+/* 每个变体 = 5 个**连续脚本**（pose 0..4）——「+10 脚本 ⟺ +24 sprite」那条不变式的步长就是它。
+ * 一手：三组变体的脚本基址差都能被 5 整除（`mof_green_core.c` 的表 + 头注释那张色相表）。*/
+#define MOF_GREEN_POSE_MAX 5
 /* 一个 sprite 表项的字节数（一手 `0x477b1d`：`ecx = id*0x11` 个 dword ⇒ id*0x44）。*/
 #define MOF_GREEN_ENTRY   0x44
 /* 一项里「宽/高」两个 float 的位移（一手 `0x477b86 movss xmm3,[eax+ecx*4+0x38]` /
@@ -160,5 +163,25 @@ void mof_green_pair_apply(uint8_t *tbl, const mof_green_pair_t *p);
 
 /* 还原（删卡 / 换局）：把备份写回去。*/
 void mof_green_pair_restore(uint8_t *tbl, const mof_green_pair_t *p, const uint8_t *backup);
+
+/* ============================ ★★★ 2026-09-25：**实例级「改妖精」**（owner 口径） ============================
+ * owner（逐字）：「绿妖精我放弃了，**走改妖精路线**吧，改的数量就是**只有杂鱼绿色妖精**，记得和 th12 卡得
+ *   **错开改，别改成同一只**」+「数量就按照**改一只（对）**就行，和 th12 基本一致」。
+ * ⇒ 不再整组换 sprite 表（那样「蓝妖精全变绿」，owner 实跑当场否掉），而是**按波挑 1~2 只**
+ *   把那一只的**外观脚本**换成同一形状的绿色变体（下面前三个纯函数就是这件事的判据）。
+ *
+ * 一手不变式（`mof_green_core.h` 头注释那张表）：**一个变体占 5 个脚本 + 12 个 sprite**，
+ * 蓝→绿 = **脚本 +10 ⟺ sprite +24**（红→绿 +5 / 第四色→绿 −5）⇒「第 k 个 pose」保持一一对应。
+ * 所以「把这只妖精变绿」= 让它的皮播 `dst_script + (当前蓝脚本 − src_script)`。*/
+int32_t mof_green_green_script(const mof_green_pair_t *p, int32_t blue_script);
+/* 反过来问：`script` 是不是这一行**已经变绿**的那 5 个之一（幂等闩锁）。*/
+int     mof_green_is_green_script(const mof_green_pair_t *p, int32_t script);
+/* 「镜像伙伴」判据（112 的星莲船载体用的同一对容差：`|x1+x2| ≤ 16`、`|y1−y2| ≤ 24`）——
+ * owner 口径「改一只（对）」，那一**对**就是波里左右对称的那两只。*/
+#define MOF_GREEN_SYM_XTOL 16.0f
+#define MOF_GREEN_SYM_YTOL 24.0f
+int     mof_green_mirror_ok(float x1, float y1, float x2, float y2);
+/* 「本关能改的行」：`enabled` ∧ 关掩码命中（纯函数；卡侧用它决定扫不扫）。*/
+int     mof_green_row_armed(const mof_green_pair_t *p, int32_t stage);
 
 #endif /* MOF_GREEN_CORE_H */

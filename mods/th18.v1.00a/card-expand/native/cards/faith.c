@@ -2083,9 +2083,389 @@ static uint8_t *faith_enemy_sprite_table(void)
     return tbl;
 }
 
+
+/* ======================================================================================
+ * ★★★ 2026-09-25：**实例级「改妖精」**（owner 实跑否掉整组换皮之后重写的那一套）
+ * ======================================================================================
+ * owner 口径（逐字）：「绿妖精我放弃了，**走改妖精路线**吧，改的数量就是**只有杂鱼绿色妖精**，
+ *   记得和 th12 卡得**错开改，别改成同一只**」+「数量就按照**改一只（对）**就行，和 th12 基本一致」；
+ *   实跑又补一刀：「**依旧蓝妖精全绿**」—— 那是旧路线（整组覆盖 sprite 表项）的必然结果
+ *   （表是**全局**的：改一行 ⇒ 那一支妖精**全部**变绿）⇒ 本条路线把它换成**按实例**：
+ *
+ *   · **选**：按 **ECL 波号**（`MainSubNN` 的数字，与 112 星莲船载体同一个键）分组，
+ *     每组取**最先到的那一只** = 宿主 #1；同组里与它**镜像对称**的那只 = 宿主 #2
+ *     （`|x1+x2| ≤ 16` ∧ `|y1−y2| ≤ 24`，112 同值）⇒ **一波 1~2 只**。
+ *   · **改**：只把这一只的外观换成**同一形状的绿色变体** —— 原生槽 0 的 VM 每帧把
+ *     `color_1` 的 alpha 写 0（隐掉原生贴图，112 同法），另起一支自己的 VM 播**绿脚本**
+ *     （`mof_green_green_script()`：蓝 pose k → 绿 pose k），每帧跟随它的坐标。
+ *     ⇒ 其余同类妖精**原样**（这就是 owner 要的「只有那一只（对）是绿的」）。
+ *   · **掉**：这一只死时给**绿点**（判据 = `faith_green_node_owns(enemy_id)`，见 `mof.c` 的死亡回调）。
+ *   · **错开 112**：每帧对「本关启用的那一行」的 **5 个 pose 全量**重申护栏位
+ *     （`ce_fairy_claim_group(110, 2, src_script + k)`）—— 112 读到就**整组避开**（他们只读组级位，
+ *     所以我们必须按组通报；实例位也一并通报，将来他们想精确避开时可以直接读）。
+ *
+ * ⚠ 与旧路线的关系：旧的「整组覆盖 sprite 表项」的机制**一行都没删**（`mof_green_pair_*` 与
+ *   `mof_green_plan()` 仍被单测钉住，`faith_green_applied()` 仍是那条路线的「改上了」位），
+ *   但**驱动的这一处**现在不再走它 ⇒ `faith_green_applied()` 恒 0 ⇒ `mof.c` 里那条按
+ *   「组」判绿的掉点路径自然静默（改由实例判据接管）。
+ * ⚠ 建 VM 只在**帧门卫**位次（`faith_pool_tick()` 每帧一次，自带帧守卫）⇒ 不在死亡栈上。*/
+#define FAITH_GF_NODE_MAX      6          /* 同时改的实例上限（一波 2 只 + 换波残影 + 余量）*/
+#define FAITH_GF_PER_WAVE      2          /* 一波最多改几只：owner「改一只（对）」*/
+#define FAITH_GF_WAVE_GAP      20         /* 读不到 ECL 波号时：相邻两只到达间隔 > 它 ⇒ 算新的一波（帧）*/
+#define FAITH_GF_WAVE_SETTLE   60         /* 有波号时：一波静默 > 它 ⇒ 关组（防最后一波永远不判）*/
+#define FAITH_GF_STALE_TICKS   3          /* 连着这么多帧没在敌人表里见到 ⇒ 收掉这一条的跟皮 */
+#define FAITH_GF_HIDE_COLOR    0x00ffffffu/* VM `color_1` 写它 = alpha 0、RGB 白 ⇒ 原生贴图不可见（112 同值）*/
+
+/* ECL 侧字段（与 112 的 `ufo.c` 同源：`lolk.c` / `animal.c` 也是这一套 —— 关卡脚本那只敌人的
+ * 当前子程序名，名字里的 `MainSubNN` 数字就是波号）。两处各留一份：112 那条线不共享本文件。*/
+#define FAITH_GF_ENEMY_PARENT_ID  0x6834   /* zEnemy.parent_enemy_id（引擎建的关卡脚本 = 0）*/
+#define FAITH_GF_ENEMY_ECL_CTX    0x0c     /* zEnemy.ecl.context.current_context */
+#define FAITH_GF_ECL_CTX_SUB      0x04     /* zEclRunContext.cur_location.subroutine_index */
+#define FAITH_GF_ENEMY_ECL_FM     0x1218   /* zEnemy.ecl.file_manager */
+#define FAITH_GF_ECL_FM_SUB_TABLE 0x8c     /* zEclFileManager.subroutines */
+#define FAITH_GF_ECL_FM_SUB_COUNT 0x08     /* zEclFileManager 子程序个数 */
+#define FAITH_GF_ANM_VM0          0x124    /* zEnemyData.anm_vm_ids[0]（`CE_ENEMY_DATA + 0x124`）*/
+#define FAITH_GF_ANM_LAYERS       0x27c    /* zEnemyData.anm_layers（引擎的 layer 表达式 = `[+0x27c] + 7`）*/
+
+typedef struct {
+    int32_t  id;            /* 敌机 id（`CE_ENEMY_ID`，每个实例唯一、单调递增）*/
+    int32_t  row;           /* 命中的 `mof_green_pairs` 行号 */
+    int32_t  blue_script;   /* 被换掉的蓝脚本（ECL 每换一次动画就更新一次）*/
+    int32_t  green_script;  /* 我们的皮 VM 正在播的绿脚本 */
+    uint32_t vm;            /* 我们起的皮 VM（`enemy.anm` 的绿脚本）*/
+    uint32_t native_vm;     /* 原生槽 0 的 VM（隐它用；ECL 重起 VM 时会变）*/
+    uint32_t native_color;  /* 原生 VM 被我们盖掉之前 `color_1` 的原值（撤离时还回去）*/
+    int32_t  skin_count;    /* 诊断：这条起过几次皮（>1 = ECL 中途换过动画）*/
+    int32_t  seen_tick;     /* 最后一次在敌人表里见到的 tick（mark & sweep）*/
+    float    x, y;          /* 最后一次见到的坐标（诊断 + 镜像判据的组锚点）*/
+} faith_gf_node_t;
+
+static faith_gf_node_t s_gf_node[FAITH_GF_NODE_MAX];
+static int32_t s_gf_tick_no;             /* 跟皮的 tick 计数（与关卡无关，单调）*/
+static int32_t s_gf_cur_wave = -2;       /* 当前组的波号（−2 = 没开组；−1 = 读不到波号）*/
+static int32_t s_gf_grp_id;              /* 组锚点（宿主 #1 的 id）*/
+static int32_t s_gf_grp_n, s_gf_grp_s;   /* 组锚点的 (N,S)：镜像伙伴必须同一支变体 */
+static float   s_gf_grp_x, s_gf_grp_y;
+static int32_t s_gf_grp_last;            /* 组里最后一只到达的 tick（静默超时用）*/
+static int32_t s_gf_grp_mirror;          /* 已经选到镜像伙伴了 */
+static int32_t s_gf_grp_count;           /* 本组见过的候选数（诊断）*/
+
+/* 关卡脚本那只敌人（引擎建的：`parent_enemy_id == 0` 且子程序名以 `Main` 开头）。指针不跨帧缓存。*/
+static int32_t s_gf_stage_id;
+
+static const char *faith_gf_sub_name(const uint8_t *e, int32_t *out_sub)
+{
+    uint8_t *ctx, *fm, **subs;
+    int32_t sub;
+    if (out_sub) *out_sub = -1;
+    if (!e) return 0;
+    ctx = *(uint8_t **)(e + FAITH_GF_ENEMY_ECL_CTX);
+    fm  = *(uint8_t **)(e + FAITH_GF_ENEMY_ECL_FM);
+    if (!ctx || !fm) return 0;
+    sub = *(int32_t *)(ctx + FAITH_GF_ECL_CTX_SUB);
+    if (sub < 0 || sub >= *(int32_t *)(fm + FAITH_GF_ECL_FM_SUB_COUNT)) return 0;
+    subs = *(uint8_t ***)(fm + FAITH_GF_ECL_FM_SUB_TABLE);
+    if (!subs) return 0;
+    if (out_sub) *out_sub = sub;
+    return (const char *)subs[sub * 2];
+}
+
+static int32_t faith_gf_parse_mainsub(const char *n)
+{
+    int32_t v = 0;
+    int i;
+    if (!n || strncmp(n, "MainSub", 7) != 0) return -1;
+    n += 7;
+    if (*n < '0' || *n > '9') return -1;
+    for (i = 0; i < 6 && n[i] >= '0' && n[i] <= '9'; ++i) {
+        v = v * 10 + (n[i] - '0');
+        if (v > 99999) { v = 99999; break; }
+    }
+    return v;
+}
+
+/* 本帧的 ECL 波号（`MainSubNN` 的数字；读不到 = −1 ⇒ 上层退回「到达间隔」启发式）。*/
+static int32_t faith_gf_wave_now(uint8_t *em)
+{
+    uint8_t *e;
+    const char *name;
+    if (!em) return -1;
+    if (s_gf_stage_id) {
+        e = ce_enemy_by_id(em, s_gf_stage_id);
+        if (e) name = faith_gf_sub_name(e, 0);
+        else { s_gf_stage_id = 0; name = 0; }
+        if (name) return faith_gf_parse_mainsub(name);
+    }
+    CE_ENEMY_FOREACH(em, e) {
+        if (!e) continue;
+        if (*(const int32_t *)(e + FAITH_GF_ENEMY_PARENT_ID) != 0) continue;
+        name = faith_gf_sub_name(e, 0);
+        if (name && (strncmp(name, "Main", 4) == 0 || strcmp(name, "main") == 0)) {
+            s_gf_stage_id = *(const int32_t *)(e + CE_ENEMY_ID);
+            return faith_gf_parse_mainsub(name);
+        }
+    }
+    return -1;
+}
+
+static faith_gf_node_t *faith_gf_node_find(int32_t id)
+{
+    int i;
+    for (i = 0; i < FAITH_GF_NODE_MAX; ++i)
+        if (s_gf_node[i].id == id) return &s_gf_node[i];
+    return 0;
+}
+
+/* 收掉一条跟皮：删我们的 VM + 把原生 VM 的 `color_1` 还回去（`restore` = 0 时只删 VM，
+ * 因为那只敌人已经不在了）。幂等。*/
+static void faith_gf_node_release(faith_gf_node_t *nd, int restore)
+{
+    if (!nd || !nd->id) return;
+    if (nd->vm) { ce_anm_delete(nd->vm); nd->vm = 0; }
+    if (restore && nd->native_vm) {
+        uint8_t *vm = ce_anm_get_vm(nd->native_vm);
+        if (vm) *(uint32_t *)(vm + CE_ANM_VM_COLOR1) = nd->native_color;
+    }
+    memset(nd, 0, sizeof *nd);
+}
+
+/* 给这一只起皮（或**重起**：ECL 中途换了动画 ⇒ 我们的绿脚本必须跟着换 pose）。
+ * 起皮三件：① 自己的 VM 播绿脚本（`enemy.anm` = N=2 那一份）；② 每帧把原生槽 0 的 VM 隐掉；
+ * ③ 记住原生颜色原值（撤离时还回去）。返回 1 = 皮起来了。*/
+static int faith_gf_skin_up(faith_gf_node_t *nd, uint8_t *e, int32_t green_script)
+{
+    uint8_t *em_mgr = (uint8_t *)CE_ENEMY_MGR();
+    uint8_t *enemy_anm = em_mgr ? *(uint8_t **)(em_mgr + CE_EM_ANM_ENEMY) : 0;   /* N=2 那一份 */
+    uint8_t *data = e + CE_ENEMY_DATA;
+    int32_t layer = *(const int32_t *)(data + FAITH_GF_ANM_LAYERS) + 7;
+
+    if (!enemy_anm) return 0;
+    if (layer < 1 || layer > 30) layer = 8;      /* 兜底 = 一手妖精脚本自己的 `layer(8)`（112 同值）*/
+    if (nd->vm) { ce_anm_delete(nd->vm); nd->vm = 0; }
+    nd->vm = ce_anm_spawn(enemy_anm, (int)green_script, (int)layer);
+    if (!nd->vm) {
+        ce_log("faithgf/skin: 起皮失败（enemy.anm 脚本 %d，layer %d）—— VM 池满？",
+               (int)green_script, (int)layer);
+        return 0;
+    }
+    nd->green_script = green_script;
+    ++nd->skin_count;
+    ce_fairy_claim_instance(110, nd->id);       /* 实例护栏（每帧重申；112 读得到）*/
+    ce_log("faithgf/skin: #%d **改为绿妖精**（(N,S)=(2,%d) → 皮脚本 %d；第 %d 次起皮）"
+           "（owner：一波改一只/一对，别和 112 改同一只）",
+           (int)nd->id, (int)nd->blue_script, (int)green_script, (int)nd->skin_count);
+    return 1;
+}
+
+/* 新到一只候选（本波第一只 / 它的镜像伙伴）⇒ 记进跟皮表并起皮。
+ * 返回 1 = 这一只成了宿主。`wave` = 本帧波号（−1 = 读不到）。*/
+static int faith_gf_host_take(int32_t id, int32_t row, int32_t n, int32_t s,
+                              float x, float y, int32_t wave)
+{
+    faith_gf_node_t *nd = 0;
+    uint8_t *e;
+    int32_t green;
+    int i;
+
+    green = mof_green_green_script(&mof_green_pairs[row], s);
+    if (green < 0) return 0;                     /* 不在这一行的源窗口里（不该发生：调用方已判过）*/
+    e = ce_enemy_by_id((uint8_t *)CE_ENEMY_MGR(), id);
+    if (!e) return 0;
+    for (i = 0; i < FAITH_GF_NODE_MAX; ++i)      /* 空槽（或被回收的槽）*/
+        if (!s_gf_node[i].id) { nd = &s_gf_node[i]; break; }
+    if (!nd) {
+        ce_log("faithgf/skin: 跟皮表满（%d 条）⇒ 这一波多出来的宿主不改（#%d）", (int)FAITH_GF_NODE_MAX, (int)id);
+        return 0;
+    }
+    memset(nd, 0, sizeof *nd);
+    nd->id = id;
+    nd->row = row;
+    nd->blue_script = s;
+    nd->seen_tick = s_gf_tick_no;
+    nd->x = x;
+    nd->y = y;
+    nd->native_vm = *(const uint32_t *)(e + CE_ENEMY_DATA + FAITH_GF_ANM_VM0);
+    if (nd->native_vm) {
+        uint8_t *vm = ce_anm_get_vm(nd->native_vm);
+        nd->native_color = vm ? *(const uint32_t *)(vm + CE_ANM_VM_COLOR1) : 0;
+    }
+    if (!faith_gf_skin_up(nd, e, green)) { memset(nd, 0, sizeof *nd); return 0; }
+    (void)n; (void)wave;
+    return 1;
+}
+
+/* 组闭合（换波 / 静默超时）：只为诊断与状态复位 —— 宿主早就选好了。*/
+static void faith_gf_group_close(const char *why)
+{
+    if (s_gf_cur_wave == -2) return;
+    ce_log("faithgf/skin: 波关闭（%s）—— 波号 %d、候选 %d 只、宿主 #%d%s",
+           why, (int)s_gf_cur_wave, (int)s_gf_grp_count, (int)s_gf_grp_id,
+           s_gf_grp_mirror ? " + 镜像伙伴" : "");
+    s_gf_cur_wave = -2;
+    s_gf_grp_mirror = 0;
+    s_gf_grp_count = 0;
+}
+
+/* 一只候选妖精到达：决定它是不是宿主（= 112 的 `ufo_carrier_arrival()` 的同一套规则）。
+ * 返回 1 = 它是宿主（要起皮）。*/
+static int faith_gf_arrival(int32_t id, int32_t n, int32_t s, float x, float y, int32_t wave)
+{
+    int new_group;
+
+    if (s_gf_cur_wave == -2)                          new_group = 1;
+    else if (wave >= 0 && s_gf_cur_wave >= 0)         new_group = (wave != s_gf_cur_wave);
+    else                                              new_group = (s_gf_tick_no - s_gf_grp_last) > FAITH_GF_WAVE_GAP;
+    ++s_gf_grp_count;
+    s_gf_grp_last = s_gf_tick_no;
+    if (new_group) {
+        if (s_gf_cur_wave != -2) faith_gf_group_close("next wave");
+        s_gf_cur_wave = wave;
+        s_gf_grp_id = id;
+        s_gf_grp_n = n;
+        s_gf_grp_s = s;
+        s_gf_grp_x = x;
+        s_gf_grp_y = y;
+        s_gf_grp_mirror = 0;
+        s_gf_grp_count = 1;
+        return 1;                                     /* ★ 组里第一只 = 宿主 #1 */
+    }
+    if (FAITH_GF_PER_WAVE >= 2 && !s_gf_grp_mirror && n == s_gf_grp_n && s == s_gf_grp_s
+        && mof_green_mirror_ok(x, y, s_gf_grp_x, s_gf_grp_y)) {
+        s_gf_grp_mirror = 1;
+        return 1;                                     /* ★ 它的**镜像伙伴** = 宿主 #2 */
+    }
+    return 0;                                         /* 同波其余同类：原样、不掉绿点 */
+}
+
+/* 「这一只（id）是我们改绿的那只吗」—— 给 `mof.c` 的死亡回调判掉落用（**实例级**，
+ * 取代原来那条按「组」判的 `mof_green_lookup()`）。*/
+int faith_green_node_owns(int32_t enemy_id)
+{
+    return faith_gf_node_find(enemy_id) ? 1 : 0;
+}
+
+/* 撤离全部跟皮（删卡 / 换关 / 换局）：**把改过的妖精还回原色**，VM 一并删掉。
+ * 删卡发生在商店里（帧钩子不跑）⇒ 这里必须当场做完，不能等 tick。*/
+void faith_green_nodes_release_all(void)
+{
+    int i, n = 0;
+    for (i = 0; i < FAITH_GF_NODE_MAX; ++i) {
+        if (!s_gf_node[i].id) continue;
+        faith_gf_node_release(&s_gf_node[i], 1);
+        ++n;
+    }
+    s_gf_cur_wave = -2;
+    s_gf_grp_mirror = 0;
+    s_gf_grp_count = 0;
+    if (n) ce_log("faithgf/skin: 撤离 %d 条跟皮（改过的妖精已还回原色）", n);
+}
+
+/* 每帧：① 波簿记；② 扫敌人选宿主/换皮/跟随；③ mark & sweep 收掉死掉的。*/
+static void faith_gf_skin_tick(uint8_t *em)
+{
+    int32_t wave, stage = CE_CURRENT_STAGE();
+    uint32_t armed = 0;                 /* 本关启用的行位掩码（同一个 `mof_green_plan()` 口径）*/
+    uint8_t *e;
+    int i;
+
+    ++s_gf_tick_no;
+    for (i = 0; i < MOF_GREEN_PAIR_MAX; ++i)
+        if (mof_green_row_armed(&mof_green_pairs[i], stage)) armed |= (1u << i);
+    if (!armed) {                        /* 本关一行都没启用 ⇒ 把上一条路改过的收干净 */
+        faith_green_nodes_release_all();
+        return;
+    }
+    wave = faith_gf_wave_now(em);
+    /* 护栏位：对启用的每一行的 **5 个 pose 全量**重申（112 读的是「这只妖精的当前 (N,S)」，
+     * 所以只报基址会漏掉 pose 1..4 ⇒ 他们可能仍然挑到同一只）。*/
+    for (i = 0; i < MOF_GREEN_PAIR_MAX; ++i) {
+        int k;
+        if (!(armed & (1u << i))) continue;
+        for (k = 0; k < MOF_GREEN_POSE_MAX; ++k)
+            ce_fairy_claim_group(110, 2, mof_green_pairs[i].src_script + k);
+    }
+    /* 静默超时 ⇒ 关组（只为日志）。*/
+    if (s_gf_cur_wave != -2) {
+        uint32_t quiet = (s_gf_cur_wave >= 0) ? FAITH_GF_WAVE_SETTLE : FAITH_GF_WAVE_GAP;
+        if ((uint32_t)(s_gf_tick_no - s_gf_grp_last) > quiet) faith_gf_group_close("quiet");
+    }
+    /* 敌人扫描：只认「杂鱼妖精 ∧ 落在启用的行里」。*/
+    CE_ENEMY_FOREACH(em, e) {
+        faith_gf_node_t *nd;
+        int32_t id, n, s;
+        float x, y;
+        int32_t row = -1;
+        if (!e) continue;
+        n = *(const int32_t *)(e + CE_ENEMY_ANM_SRC);
+        s = *(const int32_t *)(e + CE_ENEMY_ANM_SCRIPT);
+        if (!mof_green_is_fairy(n, s)) continue;                  /* 中妖精/大妖精/阴阳玉一律不碰 */
+        for (i = 0; i < MOF_GREEN_PAIR_MAX; ++i) {
+            if (!(armed & (1u << i))) continue;
+            if (mof_green_green_script(&mof_green_pairs[i], s) >= 0) { row = i; break; }
+        }
+        if (row < 0) continue;                                    /* 不是那一支蓝妖精（例如绿/红/橄榄）*/
+        id = *(const int32_t *)(e + CE_ENEMY_ID);
+        x = *(const float *)(e + CE_ENEMY_POS_X);
+        y = *(const float *)(e + CE_ENEMY_POS_Y);
+        nd = faith_gf_node_find(id);
+        if (!nd) {
+            if (faith_gf_arrival(id, n, s, x, y, wave))
+                (void)faith_gf_host_take(id, row, n, s, x, y, wave);
+            continue;
+        }
+        /* 已经在跟皮：① 跟随坐标；② 原生贴图每帧隐；③ ECL 换了动画 ⇒ 重起一次皮。*/
+        nd->seen_tick = s_gf_tick_no;
+        nd->x = x; nd->y = y;
+        if (nd->vm) ce_anm_set_pos(nd->vm, x, y, 0.0f);
+        {
+            uint32_t nv = *(const uint32_t *)(e + CE_ENEMY_DATA + FAITH_GF_ANM_VM0);
+            uint8_t *vm;
+            if (nv && nv != nd->native_vm) {                      /* ECL 重起了槽 0 的 VM ⇒ 重新记原色 */
+                if (nd->native_vm) {                              /* 旧的那只（若还在）还回去 */
+                    uint8_t *old = ce_anm_get_vm(nd->native_vm);
+                    if (old) *(uint32_t *)(old + CE_ANM_VM_COLOR1) = nd->native_color;
+                }
+                nd->native_vm = nv;
+                vm = ce_anm_get_vm(nv);
+                nd->native_color = vm ? *(const uint32_t *)(vm + CE_ANM_VM_COLOR1) : 0;
+            }
+            if (nd->native_vm) {
+                vm = ce_anm_get_vm(nd->native_vm);
+                if (vm) *(uint32_t *)(vm + CE_ANM_VM_COLOR1) = FAITH_GF_HIDE_COLOR;
+            }
+        }
+        if (!mof_green_is_green_script(&mof_green_pairs[nd->row], s)) {
+            int32_t green = mof_green_green_script(&mof_green_pairs[nd->row], s);
+            if (green >= 0) {                                     /* 蓝 pose 变了 ⇒ 跟到对应的绿 pose */
+                nd->blue_script = s;
+                (void)faith_gf_skin_up(nd, e, green);
+            } else {
+                ce_log("faithgf/skin: #%d 的外观脚本变成了 (N,S)=(%d,%d)（不在那一行里）⇒ 不再跟皮",
+                       (int)id, (int)n, (int)s);
+                faith_gf_node_release(nd, 1);
+            }
+        }
+        ce_fairy_claim_instance(110, id);                          /* 实例护栏每帧重申 */
+    }
+    /* mark & sweep：连着几帧没见到 ⇒ 那只已经不在了（被打死/自删）⇒ 收掉这一条。*/
+    for (i = 0; i < FAITH_GF_NODE_MAX; ++i) {
+        faith_gf_node_t *nd = &s_gf_node[i];
+        if (!nd->id) continue;
+        if (s_gf_tick_no - nd->seen_tick > FAITH_GF_STALE_TICKS) {
+            ce_log("faithgf/skin: #%d 不在了（改绿的那只被打死/自删；起皮 %d 次）⇒ 收掉跟皮",
+                   (int)nd->id, (int)nd->skin_count);
+            faith_gf_node_release(nd, 0);
+        }
+    }
+}
+
 /* 每帧幂等：按「当前关 ⇒ 该改哪些行」逐行 apply / restore（`mof_green_plan()` 是纯函数，单测钉住）。
  * ⚠ 只由 `on_tick_2` 调 ⇒ **卡不在场时根本不会跑**（用户「没有卡的时候不改」）。*/
-void faith_green_swap_tick(void)
+/* ⛔ 旧路线（整组换 sprite 表项）—— 见上面那一节，**已不再被驱动**（owner 实跑否掉：整组换 ⇒ 全变绿）。
+ *   机制本身一行没删（`mof_green_pair_*` 仍被单测钉住、随时可以切回来）⇒ 用 `unused` 标注压掉告警，
+ *   而不是删掉它（删了就没人记得这条路存在过）。*/
+static void faith_green_group_swap_tick(void) __attribute__((unused));
+static void faith_green_group_swap_tick(void)
 {
     uint8_t *tbl = faith_enemy_sprite_table();
     uint32_t want_apply = 0, want_restore = 0;
@@ -2138,6 +2518,27 @@ void faith_green_swap_tick(void)
     if (applied_now) s_fgreen_logged = 1;
 }
 
+/* ★★★ 2026-09-25：**换皮驱动的入口**（名字保留 —— `mof.c` / `signal.c` 的调用点不动）。
+ *   现在走的是**实例级**那一套（`faith_gf_skin_tick()`）：按波挑 1~2 只改成绿妖精，其余原样。*/
+void faith_green_swap_tick(void)
+{
+    uint8_t *em = (uint8_t *)CE_ENEMY_MGR();
+    /* ★★ 帧守卫：本函数由 `faith_pool_tick()` 调，而**两张卡都会调那张池子**
+     *   （110/111 同装 ⇒ 同一帧两次）⇒ 这里必须自己防重，否则波簿记一帧走两步
+     *   （`s_gf_tick_no` 双倍 ⇒ 「到达间隔」启发式的阈值等效减半、诊断计数翻倍）。
+     *   与 `faith_pool_tick()` 里那道守卫同一个口径（帧号取引擎的当前帧计数）。*/
+    {
+        static uint32_t s_last;
+        static int      s_have;
+        uint32_t now = ce_sdk_frame();
+        if (s_have && now == s_last) return;
+        s_last = now;
+        s_have = 1;
+    }
+    if (!em) return;
+    faith_gf_skin_tick(em);
+}
+
 /* 还原全部（删卡 / 换局 / 换关清场）。`mof_clear()` 调它 —— 删卡发生在商店里，那一刻只有
  * `on_delete`（虚表 `+0x50`）跑得到（`METHOD.md` 铁律二：长持续效果必须交代「被删掉会怎样」）。*/
 void faith_green_restore_all(void)
@@ -2154,6 +2555,7 @@ void faith_green_restore_all(void)
     }
     if (n) ce_log("faith: green fairy restore (%d 行，sprite 表已还原)", n);
     s_fgreen_applied = 0;
+    faith_green_nodes_release_all();   /* ★ 2026-09-25：实例级的跟皮也一并撤（还回原色 + 删我们的 VM）*/
     ce_fairy_claim_clear(110);   /* ★ 护栏位一并撤（删卡/换局）*/
 }
 

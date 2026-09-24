@@ -199,6 +199,12 @@ void     faith_green_swap_tick(void);
 void     faith_green_restore_all(void);
 uint32_t faith_green_applied(void);          /* 此刻真的改上的行位掩码（= s_fgreen_applied）*/
 int      faith_green_row_green(int i);       /* 第 i 行此刻既改上、表里也仍是绿 */
+/* ★★★ 2026-09-25：**实例级「改妖精」**（owner：「走改妖精路线…数量就按照**改一只（对）**就行」）。
+ * `faith_green_node_owns(id)` = 「这一只就是被我们改成绿妖精的那只」—— 110 的死亡回调用它判掉落
+ * （**实例级**；原来那条按「组」判的 `mof_green_lookup(faith_green_applied(), …)` 保留但恒 0）。*/
+int      faith_green_node_owns(int32_t enemy_id);
+/* 撤离全部跟皮（删卡 / 换关 / 换局）：把改过的妖精还回原色 + 删我们的 VM。幂等。*/
+void     faith_green_nodes_release_all(void);
 
 int32_t faith_p_topup_take(void);
 /* 只读诊断（**任何卡都可以调**，不推进相位）：相位 / 已推进颗数 / LO、HI 两侧计数；任一 `out` 可为 NULL。

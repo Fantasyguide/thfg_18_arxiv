@@ -717,7 +717,16 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
      * ⚠ 判据只看 `faith_green_applied()`（**此刻真的改上了**）—— 体检没过 / 不在这一关的妖精
      *   看着仍是原色 ⇒ 不许按宿主给点（否则就是「蓝妖精掉绿点」）。*/
     is_green = 0;
-    if (!want_big && mof_green_lookup(faith_green_applied(), anm_src, anm_script)) {
+    /* ★★★ 2026-09-25：判据从「**整组换皮**上了没有」改成「**这一只（实例）**是不是我们改绿的那只」
+     *   —— 旧路线是覆盖 sprite 表项（全局）⇒ 一改就**整支妖精全变绿**（owner 实跑当场否掉）；
+     *   现在换皮是**按实例**做的（`faith.c` 的 `faith_gf_skin_tick()`：按波挑 1~2 只）⇒ 掉落也必须
+     *   按实例判，否则「同一波里没被改的那几只蓝妖精也会掉绿点」。
+     *   ⚠ 旧的那条 `mof_green_lookup()` 路径保留（`faith_green_applied()` 现在恒 0 ⇒ 恒不命中），
+     *     万一将来要把「整支变绿」切回来，两条判据可以并存。*/
+    if (!want_big && faith_green_node_owns((int32_t)ev->id)) {
+        want_big = mof_core_wants_big_green(ev->kind, ev->flags, is_boss, mof_difficulty(), &v);
+        is_green = want_big;
+    } else if (!want_big && mof_green_lookup(faith_green_applied(), anm_src, anm_script)) {
         want_big = mof_core_wants_big_green(ev->kind, ev->flags, is_boss, mof_difficulty(), &v);
         is_green = want_big;
     }

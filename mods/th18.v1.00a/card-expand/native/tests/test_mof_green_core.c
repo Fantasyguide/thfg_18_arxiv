@@ -404,6 +404,43 @@ static void test_extra_slots(void)
     CHECK(n == 1 && out[0] == 0.0f);
 }
 
+/* ============ ★★★ 2026-09-25：**实例级「改妖精」**的三个纯判据 ============
+ * owner 口径：「走改妖精路线…数量就按照**改一只（对）**就行，和 th12 基本一致」
+ * ⇒ 「改哪一只」= 按 ECL 波分组 + 取镜像伙伴；「怎么改」= 蓝 pose k → 绿 pose k。*/
+static void test_instance_helpers(void)
+{
+    const mof_green_pair_t *p = &mof_green_pairs[0];     /* A 组蓝妖精：src_script 0 → dst_script 10 */
+    int i;
+
+    /* 蓝 pose 0..4 → 绿 pose 0..4（同一 pose，只有色相不同）——这就是「改妖精」的全部算术。*/
+    for (i = 0; i < MOF_GREEN_POSE_MAX; ++i)
+        CHECK(mof_green_green_script(p, p->src_script + i) == p->dst_script + i);
+    /* 不在这一行的源窗口里 ⇒ −1（调用方据此判断「这只不是我们要改的那一支」）。*/
+    CHECK(mof_green_green_script(p, p->src_script - 1) == -1);
+    CHECK(mof_green_green_script(p, p->src_script + MOF_GREEN_POSE_MAX) == -1);
+    CHECK(mof_green_green_script(p, p->dst_script) == -1);   /* 已经是绿的那一支 ⇒ 不再改（幂等）*/
+    CHECK(mof_green_green_script(0, 0) == -1);
+    /* 「已经绿了吗」：只认该行 dst 窗口那 5 个 pose。*/
+    for (i = 0; i < MOF_GREEN_POSE_MAX; ++i)
+        CHECK(mof_green_is_green_script(p, p->dst_script + i) == 1);
+    CHECK(mof_green_is_green_script(p, p->dst_script - 1) == 0);
+    CHECK(mof_green_is_green_script(p, p->dst_script + MOF_GREEN_POSE_MAX) == 0);
+    CHECK(mof_green_is_green_script(p, p->src_script) == 0);
+    /* 镜像判据（112 星莲船载体的同一对容差）：
+     *   |x1+x2| ≤ 16 ∧ |y1−y2| ≤ 24 ⇒ 是「一对」；超一点点就不是。*/
+    CHECK(mof_green_mirror_ok(-40.0f, 100.0f, 40.0f, 100.0f) == 1);   /* 左 40 / 右 40：正中一对 */
+    CHECK(mof_green_mirror_ok(-8.0f, 100.0f, 8.0f, 124.0f) == 1);     /* 边界：16 与 24 都取等号 */
+    CHECK(mof_green_mirror_ok(-9.0f, 100.0f, 26.0f, 100.0f) == 0);    /* |−9+26| = 17 > 16 ⇒ 不是一对 */
+    CHECK(mof_green_mirror_ok(-40.0f, 100.0f, 40.0f, 125.0f) == 0);   /* y 差 25 > 24 ⇒ 不是一**对**（另一波）*/
+    CHECK(mof_green_mirror_ok(-40.0f, 100.0f, 40.0f, 124.0f) == 1);   /* y 差 24 取等号 ⇒ 仍是那一对 */
+    /* 行启用判据（= `enabled` ∧ 关掩码）：只有第 0 行是「开着且只 st01」。*/
+    CHECK(mof_green_row_armed(&mof_green_pairs[0], 1) == 1);
+    CHECK(mof_green_row_armed(&mof_green_pairs[0], 2) == 0);
+    CHECK(mof_green_row_armed(&mof_green_pairs[1], 3) == 0);   /* 这一行 enabled = 0 */
+    CHECK(mof_green_row_armed(0, 1) == 0);
+}
+
+
 int main(void)
 {
     printf("test_mof_green_core —— 变绿（110）纯逻辑\n");
@@ -415,6 +452,7 @@ int main(void)
     test_extra_slots();
     test_is_fairy();
     test_follow_offset();
+    test_instance_helpers();
     printf("test_mof_green_core: %d passed, %d failed\n", s_pass, s_fail);
     return s_fail ? 1 : 0;
 }
