@@ -2020,11 +2020,18 @@ static uint32_t s_summon_debris_id;        /* 闪电碎屑发射器 VM（脚本 
  *   50 帧）—— 一手只造**一颗**（旧口径的"316+317 一对"是我的猜想，已退役）；
  *   ⇒ 蓝闪 = 脚本 **318**（一手每帧 2 条 × 50 帧 ≈ 100 条、每条 16 帧自删、LINESTRIP 单像素）。*/
 #define UFO_RING_FX_COUNT 1                       /* ★ 一手：一颗紫圆（第 44 轮前是"一对"= 猜想）*/
-#define UFO_BOLT_FX_ENABLE 0                      /* ★ 第 46 轮：改由紫圆脚本 316 自己
-                                                     `scriptNewRoot` 每帧起两条（一手就是效果自己起）；
-                                                     这一支 C 路保留备用 */
+#define UFO_BOLT_FX_ENABLE 1                      /* ★ 第 47 轮：蓝闪 = **首尾相接的随机游走折线** */
 #define UFO_BOLT_FX_PER_FRAME 2                   /* 一手：effect #2 的 on_tick 里 `push 0x1` ×2 */
 #define UFO_BOLT_FX_FRAMES 50u                    /* 一手：与紫圆同寿命 50 帧 ⇒ 合计约 100 条 */
+#define UFO_BOLT_SEGS 16                          /* 一手：一条闪电 16 段（每帧长一段）*/
+#define UFO_BOLT_STEP_MIN 8.0f                    /* 一手：步长 8–12（`0x4a4078`=8.0 + rand·8）*/
+#define UFO_BOLT_STEP_VAR 4.0f
+#define UFO_BOLT_TURN_MAX 0.31415927f             /* 一手：每步转 −0°..−18°（rand·π/10）*/
+#define UFO_BOLT_LEN 12.0f                        /* 本段画多长（略长于步长 ⇒ 相邻段重叠、无缝隙）*/
+#define UFO_BOLT_CAP (UFO_BOLT_FX_PER_FRAME * UFO_BOLT_SEGS + 4)   /* 同时在走的折线条数 */
+typedef struct { float x, y, ang; int left; } ufo_bolt_t;
+static ufo_bolt_t s_bolt[UFO_BOLT_CAP];
+static uint32_t s_bolt_rng = 0x1234567u;
 static uint32_t s_summon_burst_id;         /* 一手爆闪/雷（脚本 362，自己 +51 帧 delete）*/
 /* ★★★ 2026-09-26 第 34 轮（owner）：「**最后一条是不应该存在青六边形**」——
  *   319/320（← TH12 `enemy.anm` 102/104）当年是**我们自己按「全 enemy.anm 里只有 4 支用 drawPoly」
@@ -2101,16 +2108,81 @@ static void ufo_ring_fx_spawn(const uint8_t *e)
  *   逐条差异与登记见该脚本文件头 + `TUNING.md` §2.0zzx-10。
  *   ⚠ **不记句柄**：每条 16 帧自删 ⇒ 删卡/换关时最多多活 16 帧，没有跨帧残留
  *   （`.long-effect` 铁律要的"被删掉会怎样" = 自己消失；窗口计数在 `ufo_summon_fx_kill` 里清零）。*/
-static void ufo_bolt_fx_spawn_frame(const uint8_t *e)
+/* ❓ 自定：本地 sin/cos（泰勒到 6/7 阶；|a| ≤ π 时误差 < 0.5%）—— 本仓 `.c` 不引 libm，
+ *   与 `cards/youkai.c` 的 `yk_sin_approx` 同一套写法（纯 `* / +` ⇒ 不引 x87，`dllx87` 门安全）。*/
+static float ufo_cos_approx(float a)
 {
-    void *anm = CE_ABILITY_ANM();
-    int i;
-    if (!anm || !e) return;
-    for (i = 0; i < UFO_BOLT_FX_PER_FRAME; ++i) {
-        uint32_t id = ce_anm_spawn(anm, CE_ANM_ABILITY_SCRIPT_UFO_SUMMON_RING, UFO_SUMMON_DEBRIS_LAYER);
-        if (id)
-            ce_anm_set_pos(id, *(const float *)(e + CE_ENEMY_POS_X),
-                               *(const float *)(e + CE_ENEMY_POS_Y), 0.0f);
+    float s;
+    while (a > 3.14159265f) a -= 6.28318531f;
+    while (a < -3.14159265f) a += 6.28318531f;
+    s = a * a;
+    return 1.0f - s * 0.5f + s * s * (1.0f / 24.0f) - s * s * s * (1.0f / 720.0f);
+}
+static float ufo_sin_approx(float a)
+{
+    float s;
+    while (a > 3.14159265f) a -= 6.28318531f;
+    while (a < -3.14159265f) a += 6.28318531f;
+    s = a * a;
+    return a * (1.0f - s * (1.0f / 6.0f) + s * s * (1.0f / 120.0f) - s * s * s * (1.0f / 5040.0f));
+}
+static float ufo_bolt_rand01(void)
+{
+    s_bolt_rng = s_bolt_rng * 1664525u + 1013904223u;      /* LCG；只用高 16 位 */
+    return (float)((s_bolt_rng >> 16) & 0xffffu) / 65535.0f;
+}
+
+/* ★★★ 第 47 轮（owner：「**棍子的起点应当接在上一个棍子末尾**……但是你所有棍子的起点都是原点」）：
+ *   蓝闪 = **首尾相接的随机游走折线**（一手 effect #1 的做法，见 §10d (c)）：
+ *   一条折线每帧长一段、共 `UFO_BOLT_SEGS`(16) 段；每步长 8–12、方向再转 −0°..−18°；
+ *   一条活 16 帧后消失；每帧起 `UFO_BOLT_FX_PER_FRAME`(2) 条（一手 `push 0x1` ×2）。
+ *   本引擎没有 `drawLine` ⇒ **一段 = 一个 318 VM**（细长 `drawRect`），
+ *   `ce_anm_set_pos` 写**本段中点**、`ce_anm_set_rotation` 写**本段方向**
+ *   ⇒ 上一段的末端 = 下一段的起点（首尾相接）。*/
+static void ufo_bolt_fx_frame(const uint8_t *e)
+{
+    void *anm;
+    float bx, by;
+    int i, n;
+    if (!e) return;
+    bx = *(const float *)(e + CE_ENEMY_POS_X);
+    by = *(const float *)(e + CE_ENEMY_POS_Y);
+    /* ① 起新折线（从 UFO 本体出发，方向随机）*/
+    for (n = 0; n < UFO_BOLT_FX_PER_FRAME; ++n) {
+        for (i = 0; i < UFO_BOLT_CAP; ++i) {
+            if (s_bolt[i].left <= 0) {
+                s_bolt[i].x = bx;
+                s_bolt[i].y = by;
+                s_bolt[i].ang = (ufo_bolt_rand01() * 2.0f - 1.0f) * 3.14159265f;  /* ∈ [−π, π) */
+                s_bolt[i].left = UFO_BOLT_SEGS;
+                break;
+            }
+        }
+    }
+    anm = CE_ABILITY_ANM();
+    if (!anm) return;
+    /* ② 每条在走的折线往前长一段 */
+    for (i = 0; i < UFO_BOLT_CAP; ++i) {
+        ufo_bolt_t *b = &s_bolt[i];
+        float step, half, ca, sa, id_f;
+        uint32_t id;
+        if (b->left <= 0) continue;
+        step = UFO_BOLT_STEP_MIN + ufo_bolt_rand01() * UFO_BOLT_STEP_VAR;   /* 一手 8–12 */
+        half = step * 0.5f;
+        ca = ufo_cos_approx(b->ang);
+        sa = ufo_sin_approx(b->ang);
+        id = ce_anm_spawn(anm, CE_ANM_ABILITY_SCRIPT_UFO_SUMMON_RING, UFO_SUMMON_DEBRIS_LAYER);
+        if (id) {
+            ce_anm_set_pos(id, b->x + ca * half, b->y + sa * half, 0.0f);   /* 本段中点 */
+            ce_anm_set_rotation(id, 0.0f, 0.0f, b->ang);                     /* 本段方向 */
+        }
+        /* 下一步：端点接上（起点 = 本段末端），方向再随机转一点 */
+        b->x += ca * step;
+        b->y += sa * step;
+        b->ang -= ufo_bolt_rand01() * UFO_BOLT_TURN_MAX;      /* 一手：每步 −0°..−18° */
+        --b->left;
+        id_f = 0.0f;                                          /* 保持 `-Wunused` 干净 */
+        (void)id_f;
     }
 }
 #endif
@@ -5483,7 +5555,7 @@ static void on_item_frame(ce_card_t *c)
      *   每条 16 帧自删（一手也是这个节奏：2 条/帧 × 50 帧 ≈ 100 条）。*/
     if (s_bolt_fx_left) {
         --s_bolt_fx_left;
-        ufo_bolt_fx_spawn_frame(ufo_enemy_by_id(s->u.ufo_id));
+        ufo_bolt_fx_frame(ufo_enemy_by_id(s->u.ufo_id));
     }
 #endif
 #if UFO_DROP_ANM_LOG_EVERY
