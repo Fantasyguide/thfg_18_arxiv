@@ -119,6 +119,7 @@ idx = (color == -1) ? 3 : color - 1;
 enemy = EnemyManager__allocate_new_enemy((&PTR_s_UFO_Red_004b33e0)[idx], &spawn);
 this->enemy = enemy;  this->id = enemy->enemy_id;  this->color = color;
 enemy->on_death_callback = 0x44a890;             // ★ 击破奖励入口
+EffectManager__spawn_effect(&vm, 2, &spawn);     // ★★ 0x44a947 第 5 处创建点：召唤特效（紫圆+蓝闪），见 §10d
 ... 新建 front.anm 脚本 0x52 的 VM，pending_interrupt = (color==-1?3:color-1) + 7
 ... 新建 bullet.anm 脚本 0xcf 的 VM（layer 0x17），entity_pos = enemy + (224, 16)
 this->timer = 0;  this->fill = 0;  this->cntA = 0;  this->cntB = 0;
@@ -134,6 +135,7 @@ play_sound_centered(0x34);  play_sound_at_position(0x36, enemy->x);   // 0x36 �
 | 出生位置 | rel_pos = **(0, 128, 0)** | `0x44a8a0`（`local_54 = 0x43000000` = 128.0f） |
 | **HP 表**（按火力档） | `0x4b33f0` = `{1600, 1900, 2100, 2300, 2500}`，档 = `CURRENT_POWER / POWER_PER_LEVEL` | `0x44a8f3`、`EnemyManager__allocate_new_enemy` `0x412990` 写 `life.cur = life.max = param[5]` |
 | 存活上限 | `this+0x28 = 720`（ECL 在 `timer == 420` 时离开，见 §6） | `0x44a8a0`、`0x44a3b6` |
+| **召唤特效**（第 5 处创建点）| `EffectManager` **effect #2** = 紫圆(32 边实心、`0xFF00FF`、半径 128→−1.5/帧、50F) + 每帧 2 条蓝闪(1px LINESTRIP)。**不是 anm** | `0x44a947`、效果表 `0x4af160`，见 §10d |
 
 > ★ **HP 表不是分数表**：`EnemyManager__allocate_new_enemy` 把 `param_2[5]` 同时写进
 > `zEnemyData+0x1608`（`life.current`）和 `+0x160c`（`life.maximum`）——所以 `0x4b33f0` 是 UFO 的
@@ -424,15 +426,20 @@ HUD 画到场地外（我们 112 的槽就踩过：见 `mods/th18.v1.00a/card-ex
 | `0x44a953` | `front.anm` | **82**(`0x52`) | 横幅：`sprite(68)`(304×32)、`layer 6`、`type 2`、`pos(224,208)`、`alpha 0→128`/20F、`+30 scaleTime(30,2,2,2)`+淡出、`+5/+10/+15 scriptNew(84)`、`+30 delete()`；`interruptLabel 7..10` = 四色 |
 | 同上 | `front.anm` | 83 / 84 | 碎笔触：83 = `sprite(69)` 由 x=88 扫到 360(`scrollX(0.0297)`)；84 = `sprite(68)` 放大 2× 淡出 |
 | `0x44aabe` | `bullet.anm` | **207**(`0xcf`) | 只三件事：`alpha(0)`、`scriptNew(204)`、`scriptNew(205)`、`scriptNew(206)`、`stop()`；`interruptLabel 1` → `+20 delete()` |
-| 子 | `bullet.anm` | 204 / 205 | **紫环本体**：`drawPolyBorder(62,48)` / `(55,48)` + `blendMode(1)` + `color(96,96,224)` + `alpha(0)→alphaTime(60,0,255)`；`interruptLabel 2` 每 2 帧轮 `(255,255,0)/(255,0,0)/(0,255,0)/(0,255,255)` = 吸收时七彩闪 |
+| 子 | `bullet.anm` | 204 / 205 | **常驻光环**（⚠ 不是"召唤瞬间那个缩小的紫圆"——那是 §10d 的 C 侧 effect #2）：`drawPolyBorder(62,48)`/`(55,48)` + `blendMode(1)` + `color(96,96,224)` + `alphaTime(60,0,255)`——**只渐入、半径固定、不缩**；`interruptLabel 2` = 吸收时七彩闪 |
 | 子 | `bullet.anm` | 206 | 旋转光环：`iset($I0,32)`+`iset($I1,2)`+`ins_101($I0)`(texCircle 家族) + `sprite(404)`、`scale(6,59)`、`scrollY(0.025)`、`rotate(π,0,π/2)`；角度由 C 代码逐帧覆写（见 (b)） |
 | `0x44ab01` | `front.anm` | **134**(`0x86`) | 碟体贴图：`sprite(102)`(96×96，`front/front_ufo.png`)、`layer 23`、`resampleMode(1)`、`scale(0,0)→scaleTime(20,0,1,1)`、`+60 alphaTime(20,0,255)`；`interruptLabel 1` → `scaleTime(20,0,0,0)` `+20 delete()` |
 | 同上 | `front.anm` | 135 | `sprite(103)`(96×96 第二帧) 同节奏，`layer 24` |
 | `0x44ab2c` | `front.anm` | **136**(`0x88`) | 血槽底：`sprite(-1)`+`drawRect(32,4)`、`layer 10`、`color(255,96,96)`、`pos(0,-28)` |
 | 同上 | `front.anm` | 137 | 血槽黑边：`drawRect(32,4)`、`layer 9`、`color(0,0,0)`、`pos(1,1)` |
 
-⇒ 一手的召唤画面 = **横幅(front 82/83/84) + 紫环(bullet 204/205) + 旋转光环(bullet 206) + 碟体(front 134/135) + 血槽(front 136/137)**。
-**四处没有一处是贴图粒子爆闪**：204/205/206 全是几何体（`drawPolyBorder` / texCircle 家族）。
+⇒ 一手的召唤画面 = **横幅(front 82/83/84) + 常驻光环(bullet 204/205/206) + 碟体(front 134/135) + 血槽(front 136/137)**
+**+ C 侧程序化特效（§10d：紫圆 + 蓝闪，这两样不在 anm 里）**。
+**anm 这四处没有一处是贴图粒子爆闪**：204/205/206 全是几何体（`drawPolyBorder` / texCircle 家族）。
+
+> ⚠ 上表压掉的两处 204/205 细节写在这里：`interruptLabel 2` 的循环色 = `(255,255,0)` → `(255,0,0)` →
+> `(0,255,0)` → `(0,255,255)`（每 2 帧换一个 = 吸收时的七彩闪）；`interruptLabel 1` = `alphaTime(20,0,0)`
+> 再 `+20 delete()`（UFO 离场时收掉）。
 
 ### (b) 206 的角度由 C 代码逐帧写 ✅
 
@@ -442,14 +449,17 @@ HUD 画到场地外（我们 112 的槽就踩过：见 `mods/th18.v1.00a/card-ex
 ### (c) ⚠ 订正：`enemy.anm` 139/140/141 在 v1.00b 里**找不到调用者**
 
 139/140 = `drawPoly(192,3)` + `color(0,0,0)` + `color2(255,128,255)` + `scaleTime(60,5,0,0)`（大→小）
-+ `alpha2Time(60,0,255)`（透明→实）；141 = 造 3 对 139/140。**形状/节奏与「紫色圆」的目击描述吻合**，但是：
++ `alpha2Time(60,0,255)`（透明→实）；141 = 造 3 对 139/140。**"缩小 + 变实"的节奏看着像**，但形状是 3 边（三角），且：
 
 - 全 exe 没有把 139/140/141 当脚本号传给 anm 的地方（`push $0x8d` / `$0x8b` / `$0x8c` 均不存在）。
 - 8 关 ECL + `default.ecl` 用 `thecl -d 12 -m th12.eclm` 全解：`anmPlay(0,N)` 最大 N = **130**，
   `anmSetSprite(0,N)` 只到 158，**139/140/141 一次都没出现**。
 
 ⇒ 这三个脚本在 v1.00b 属**孤立数据**（🟡 疑旧 revision 残留）。**据此，把从 139/140 抄来的实现标成
-「复刻」是不成立的**，必须改标「自定」或换成 (a) 表里的 `bullet.anm` 204/205。
+「复刻」是不成立的**，必须改标「自定」。
+★ **2026-09-26 二次订正**：一手的那道"缩小的紫圆"**既不是 139/140/141，也不是本节的 204/205** ——
+它根本不在 anm 里，是 C 侧的 `EffectManager` effect #2（见 **§10d**）。204/205 是同一次召唤里**另一层**
+常驻光环（只渐入、不缩）。
 
 > **2026-09-26 补验（owner 的实机口径）**：owner 手上的 `[th12] 东方星莲船 (汉化版+日文版)` 与本文样本**逐字节同一份**
 > —— `th12.exe` md5 `212f187591f4f1fa99eb2845d1b3cf20` 相同，`enemy.anm`/`bullet.anm`/`front.anm`/`default.ecl`/`stage01.ecl`
@@ -475,6 +485,108 @@ HUD 画到场地外（我们 112 的槽就踩过：见 `mods/th18.v1.00a/card-ex
 UFO 本体动画 = `default.ecl` 的 `anmSetSprite(0, 135..138)`（= `enemy.anm` 135..138：`rotateTime(96,9,…)`
 转着播 `sprite205..220` = `enemy/ufo_anim.png`）。
 
+## 10d. ★★★ 召唤特效的真正来源：`EffectManager` **effect #2**（紫圆）/ **#1**（蓝闪）—— **不在 anm 里** ✅（2026-09-26）
+
+> **触发本节的实机口径（owner）**：召唤 UFO 时是「一个**一边缩小一边变实**的紫圆 + **单像素粗细**的蓝色闪电」，
+> 且「`bullet/etama3.png` 里的东西不会在召唤时出现」。
+> **方法**：`objdump -d` 逐指令直读 `0x44a8a0` 的**第 5 处创建点**（`0x44a947` → `0x40fbe0`）+ 效果表 `0x4af160`
+> 静态直读（PE 节映射）+ 两条回调链全反汇编；符号交叉用 `th-re-data` v1.00b 表。
+> **可信度**：地址链 ✅ / 常量 ✅ / 绘制原语（`DrawPrimitiveUP` 的类型）✅ —— 三层互证。
+
+### (a) 发现：召唤函数其实是**五**处创建点，第 5 处不是 VM 而是 effect
+
+| 创建点 | 调用 | 造出什么 |
+| --- | --- | --- |
+| `0x44a953` | `0x4615a0`(`front_anm`, 82) | 横幅 VM（§10c）|
+| `0x44aabe` | `0x454d10`(`bullet_anm`, 207) | 常驻光环 VM（§10c）|
+| `0x44ab01` | `0x4615a0`(`front_anm`, 134) | 碟体 VM |
+| `0x44ab2c` | `0x4615a0`(`front_anm`, 136) | 血槽 VM |
+| **`0x44a947`** | **`0x40fbe0`(index `2`)** | **召唤特效本体（紫圆 + 蓝闪）← 本节** |
+
+- `0x40fbe0` = `EffectManager::spawn_effect(out, index, params)`：新 VM 的脚本号来自**静态表 `0x4af160`**，
+  每项 `0x18` 字节 = `{int16 脚本号; (pad); 预回调; on_tick; on_draw; on_destroy; on_interrupt}`，
+  后四个写进 VM 的 `+0x488/+0x48c/+0x490/+0x494`。
+- 表的 VM 一律用 **EffectManager 自己的 anm** 创建：`EffectManager::initialize` `0x40f947`
+  `mov ebx,0x49f69c; call 0x45fe60`，字符串 `0x49f69c` 内容 = **`"bullet.anm"`**（存在 `[mgr+0x10]`）。
+- effect #2 @ `0x4af190` = `{script 0, 0x410720, 0x4107e0, 0x410840, 0x410890, 0x4108a0}`；
+  **`bullet.anm` script 0 是空桩**（全文 = `alpha(0); stop();`）⇒ **画面 100% 来自 C 回调，anm 库里永远查不到**。
+- 另：`Ufo::on_break` `0x44b092` 也 spawn 一条 **effect #1**（`push 0x1`）⇒ **击破时那一条蓝闪**即此。
+
+### (b) 紫圆 = effect #2 的 `0x410720` / `0x4107e0` / `0x410840` ✅
+
+| 阶段 | 一手指令 | 值 |
+| --- | --- | --- |
+| 预回调 `0x410720` | `malloc(0x2c)`（`0x46d04a`）+ `memset`（`0x477420`）| 44B 实例 = pos(12) + `zTimer`(20) + 三个字段 |
+| | pos = 出生点 `+(32+192, 16)`（`0x4a3d70`/`0x4a3d28`/`0x4a3d68`）| 同一套 anm 世界空间换算（§10b(a)）|
+| | `[+0x20] = 128.0f`（`0x4a3db8`）| 初始半径 **128** |
+| | `[+0x28] = 0x00FF00FF` | **纯紫 (R255,G0,B255)，A 从 0 起**（写死的立即数）|
+| | `[vm+0x20] = 0xd` | 层 **13**（世界层）|
+| on_tick `0x4107e0` | `cmp [inst+0x10],0x32` → `return 1` | 满 **50 帧**自毁 |
+| | `[+0x20] -= 1.5`（常量 `0x4a4220` = double 1.5）| 半径 **−1.5/帧** ⇒ 128 − 75 = **≈53 就消失** |
+| | `add BYTE [inst+0x2b],3` | **A 每帧 +3**（0 → 150，永不到 255）|
+| | `push 0x1` ×2 @ `0x410802`/`0x41080f` | **每帧 spawn 两条 effect #1（蓝闪）** |
+| on_draw `0x410840` | `call 0x45d430`（= anm `drawPoly` 用的同一个绘制器）| `sides = 0x20`(32)、半径 `[+0x20]`、起始角 `0.0`、色 `[+0x28]` |
+
+- **④ 结论** ✅（TH12 v1.00b）：**32 边实心多边形、纯紫 `(255,0,255)`、半径 128 每帧 −1.5、
+  alpha 每帧 +3、存活 50 帧**。
+- **与 owner 口径逐条对上**：「一边缩小一边变实」= 半径递减 + alpha 递增 ✅；
+  「**有 r_min**」= 50 帧 × 1.5 = 75 ⇒ **半径停在 ≈53（53/128 ≈ 0.41）随实例一起消失，永远缩不到 0** ✅；
+  「紫色」= `0xFF00FF` 立即数（anm 库里任何一支脚本都没有这个颜色）。
+- 🟡 `[+0x24] = 0x40FF0000`(=7.96875f) 写了但**两条回调都不读**（`0x41085f` 载入 eax 后立刻被 `push 0x20`
+  覆盖）⇒ 残留字段。
+
+### (c) 蓝闪 = effect #1 的 `0x4102b0` / `0x4103f0` / `0x410590` ✅
+
+| 阶段 | 一手指令 | 值 |
+| --- | --- | --- |
+| 预回调 `0x4102b0` | `malloc(0xd8)` | 216B = **16 顶点×8B**(`+0x00..0x7f`) + **16 顶点色×4B**(`+0x80..0xbf`) + 当前角(`+0xc0`) + `zTimer`(`+0xc4..`) |
+| | 基色 `0xff0040ff` 铺 16 项 | **A255 R0 G64 B255 = 蓝**；逐项改字节（前 8 项 `R` 累计 −0x20、后 8 项 `A` 累计 −0x10，**uint8 回绕** 🟡 别当干净渐变）|
+| | 初始角 = `(rand·2⁻³¹ − 1)·π` | ∈ **[−π, 0)**（`0x4a3cd8` 是 **float π 被当 double 读** —— ZUN 混合精度）|
+| on_tick `0x4103f0` | `cmp [inst+0xc8],0x10` → `return 1` | 寿命 **16 帧**（= 16 段，每帧长一段）|
+| | 已生成段 `[+0x83+i*4] -= 0x10` | 尾部**逐帧淡出**（A 字节，下限 0）|
+| | `Rng::rand_int` `0x464440` → 步长 = `8 + rand·8` | `0x4a4078`=8.0、`0x4a3eb0`=2⁻³² ⇒ **步长 ∈ [8, 12)** |
+| | 顶点 = `0x4108e0`（`fsincos` × 步长）再**累加到上一顶点** | **随机游走折线**（不是圆弧）|
+| | 每步转角 = `(rand·2⁻³¹ − 1)·π/10`，经 `0x464640`(`math_reduce_angle`) 归约 | ∈ **[−π/10, 0)** ⇒ 每步 −0°..−18°，折线锯齿化 |
+| on_draw `0x410590` | `call 0x45d5d0`，收尾 `push 0x3` | **`D3DPT_LINESTRIP`** ⇒ **天生单像素**（stride `0x14`）|
+
+- **④ 结论** ✅（TH12 v1.00b）：**每帧 2 条、共 16 段、步长 8–12、每步转 −0°..−18°、`LINESTRIP` 单像素、
+  蓝色渐变、存活 16 帧**；一次召唤约 spawn 100 条。
+- 「**单像素粗细**」这条现在是**代码级判据**：effect #1 的折线（`0x45d5d0`）与 `drawPolyBorder`
+  （`0x45d710`）收尾都是 `push 0x3` = **LINESTRIP**；而 anm 的 `drawPoly`（`0x45d430`）是 `push 0x6` =
+  **TRIANGLEFAN**。⇒ **「细线/圆环」观感 = LINESTRIP，「实心盘」观感 = TRIANGLEFAN**，可当场判一支
+  anm 脚本画出来是哪种。
+
+### (d) 订正：§10c 的「紫环本体 = `bullet.anm` 204/205」说的是**另一件东西** ✅
+
+`bullet.anm` **207** 那支 VM 确实在召唤时创建，但它是**常驻光环**：204/205 只 `alphaTime(60,0,255)` **渐入、
+半径固定 62/55、不缩**，207 一直挂到 UFO 离场才 `interrupt 1` 淡出（§9）。
+⇒ **玩家在召唤瞬间看到的"缩小的紫圆"来自本节 (b) 的 C 侧 effect #2，不是 204/205**；204/205 是它身下
+**一直转的那层细线光环**（旋转角 = 吸收进度 `fill`）。两件事在同一次召唤里同时存在，此前被混为一谈。
+
+### (e) 否证（顺手排掉的候选）
+
+| 候选 | 一手原文 | 判掉的理由 |
+| --- | --- | --- |
+| `enemy.anm` 139/140/141 | `drawPoly(192,3)` + `color2(255,128,255)`、`scaleTime(60→0)` + `alpha2Time(60→255)` | **3 边（三角）**；且 v1.00b 全 exe 无调用者（§10c(c)）|
+| `bullet.anm` 118 | `drawPoly(256,48)` + `scaleTime(40→0,0)` + `alpha2Time(40,0,255)`，颜色 `(255,80,80)/(255,255,192)` | 填充 48 边、**缩到 0（没有 r_min）**、颜色也不对；不在召唤链上 |
+| `bullet.anm` 204/205 | `drawPolyBorder(62/55,48)` + `color(96,96,224)` | 见 (d)：常驻光环、**不缩** |
+| `bullet.anm` 206 | `ins_101(32)` + `sprite(404)` + `scale(6,59)` | `sprite404` = `bullet/etama3.png` 的一块 14×128 竖条 ⇒ **与 owner「etama3.png 里的东西不会在召唤时出现」冲突**，见 §12 未答 9 |
+
+### (f) 证据（可独立复核）
+
+- 反汇编：`objdump -d --start-address=0x44a8a0 --stop-address=0x44ab60`（summon，含 `0x44a947`）；
+  `0x40fbe0`（spawn_effect）；`0x40f940`（initialize，字符串 `0x49f69c`）；`0x410720`/`0x4107e0`/`0x410840`（effect #2）；
+  `0x4102b0`/`0x4103f0`/`0x410590`/`0x4108e0`（effect #1）；`0x45d430`/`0x45d5d0`/`0x45d710`（三个绘制器）。
+- 静态表/常量（PE 节映射直读）：效果表 `0x4af160`（stride `0x18`）；`0x4a4220`=1.5、`0x4a3db8`=128.0、
+  `0x4a4078`=8.0、`0x4a3eb0`=2⁻³²、`0x4a3ea8`=2⁻³¹、`0x4a3cd8`=float π、`0x4a3e40`=10.0、
+  `0x4a3d70`/`0x4a3d28`/`0x4a3d68`=32/192/16。
+- 符号交叉（`th-re-data` v1.00b）：`0x4b43d4 = EFFECT_MANAGER_PTR`、`0x4b43c8 = BULLET_MANAGER_PTR`
+  （`zBulletManager.bullet_anm@+0x4debdc`）、`0x4b43e4 = GUI_PTR`（`zGui.front_anm@+0x6d44`）、
+  `0x454d10 = AnmLoaded::load_script_into_vm`、`0x4621c0 = AnmManager::allocate_vm`、
+  `0x464440 = Rng::rand_int`、`0x464640 = math_reduce_angle`、`0x45c3a0 = AnmManager::draw_vm__mode_9__texCircle`。
+- 中间产物：`local/_scratch/ufo-ring-verify/`（`summon.asm`、`effect2_callbacks.asm`、
+  `effect1_callbacks.asm`、`texcircle_handlers.asm`、`{bullet,front,enemy}.list.txt`）。
+
 ## 11. 一句话模型（地址串）
 
 ```
@@ -484,6 +596,9 @@ UFO 本体动画 = `default.ecl` 的 `anmSetSprite(0, 135..138)`（= `enemy.anm`
    → FUN_004270b0 0x4270b0 → FUN_00422e80 0x422e80 记 3 个槽
    → 三同色/三异色 → GLOBALS.__field_24 0x4b0c64 + __UFO_COUNT__COPY_1C 0x4b0c5c = 3
    → Ufo__on_tick 0x44a2d0 检测到 → FUN_0044a8a0 0x44a8a0 生成 ECL 敌机 UFO_Red/Blue/Green/Rainbow
+     + EffectManager__spawn_effect(idx=2) 0x44a947 ⇒ 紫圆(effect #2: 32 边实心 0xFF00FF, 半径 128→−1.5/帧, 50F)
+       + 每帧 2 条蓝闪(effect #1: 16 段随机折线, LINESTRIP 单像素, 0xFF0040FF 蓝)              ← §10d
+     + front.anm 82 横幅 / bullet.anm 207 常驻光环 / front.anm 134 碟体 / front.anm 136 血槽   ← §10c
    → 敌机每帧把 int_vars[0] 写成 999/-999（0x44a3af）驱动 default.ecl 的状态机
    → 类型 1/2 的道具被吸走（0x4271c0 + 0x44aca0），fill(+0x50) 涨；光环旋转 = fill（0x44a499）
    → 击破（Enemy__die 0x414c40 → 回调 0x44a890）→ FUN_0044af00 0x44af00 吐赏金道具 16/17/18
@@ -503,6 +618,17 @@ UFO 本体动画 = `default.ecl` 的 `anmSetSprite(0, 135..138)`（= `enemy.anm`
 7. ❓ `ItemManager.ufos_spawned_since_stage_begin`（`+0x666fe0`）的消费者没找到。
 8. ❓ 敌人 ECL 里令牌掉落只出现在 `dropExtra(10,1)`（stage01）与 `dropExtra(11,1)`（stage02）；
    大量令牌实际来自「UFO 向日葵」一类敌人的**别的**掉落路径（本文未逐关普查 ECL 子程序）。
+9. 🟡 **`bullet.anm` 206（召唤光环里那支 texCircle 环带）到底画不画得出来**：它的 `sprite(404)` 指向
+   `bullet/etama3.png`（该 sprite = 14×128、全不透明浅蓝竖条；同一张贴图其余部分是 TH07 时代
+   「Border of Life / Spell Card Attack」竖排文字条）⇒ 与 owner 实机口径「`etama3.png` 里的东西
+   不会在召唤时出现」**冲突**。待验方向：mode 9/12/13（`AnmManager::draw_vm__mode_9__texCircle`
+   `0x45c3a0`）把 `vm+0x478` 当作**已排好的** TRIANGLESTRIP 直接画掉，而全 exe 的 49 处 `+0x478`
+   读写里**只有 mode 10 自带填充**（`type()` handler `0x456e29` → `0x45d9a0`：`malloc(0x4b0)`
+   装 11×84B 表 + 覆写 `+0x488/+0x48c` = `0x45dcd0`/`0x45df30`）—— **mode 9/12/13 的缓冲填充者没定位**，
+   所以 206 有可能实际画不出东西（🟡 与 owner 观察方向一致，但未坐实）。
+10. ❓ `enemy.anm` 139/140/141（紫三角）在 v1.00b 无调用者（§10c(c)）—— 是否旧 revision 残留未定；
+   顺便：`drawPoly` 的**两个**颜色（`color()`/`color2()`）各管哪一段顶点（中心 vs 边缘）没逐字节核，
+   复刻用色时会用到（🟡）。
 
 ## 13. ExpHP 符号对账（🟡 → ✅ / 证伪）
 
@@ -531,10 +657,15 @@ UFO 本体动画 = `default.ecl` 的 `anmSetSprite(0, 135..138)`（= `enemy.anm`
 
 - ✅ **一手**：§2 全局字段、§3 `0x422e80`、§4 zUfo 字段、§5 `0x44a8a0` + HP 表、§6 ECL 全 4 个
   子程序与 `moveLimit`/`flagSet` 的 handler、§7 `0x4271c0`/`0x44aca0` + 阈值表、§8 `0x44af00`、
-  §9 道具/脚本号/换色、§10 两个 draw 函数。
+  §9 道具/脚本号/换色、§10 两个 draw 函数、§10c 召唤的 anm 侧四棵 VM、**§10d C 侧 effect #2/#1
+  （含三个绘制器的 `DrawPrimitiveUP` 类型）**。
 - 🟡 **推断/未定**：§6 的设计意图读法、§10 调试读数可见性、§12 全部条目。
 - 复核入口：Ghidra 工程 `local/th12.v1.00b/ghidra_projects/th12.exe.gpr`（程序名 `/th12.exe`），或
   `python3 tooling/ghidra/scripts/decompile_funcs.py th12 0x44a2d0 0x44a8a0 0x44aca0 0x44af00 0x422e80`。
+- §10d 的复核**不需要 Ghidra**（全是静态直读）：
+  `objdump -d --start-address=0x44a8a0 --stop-address=0x44ab60 -M intel local/th12.v1.00b/th12.exe`
+  （看 `0x44a947` 的 `push 0x2`）；同理 `0x410720`–`0x4108b0`（effect #2/#1 六个回调）、
+  `0x45d430` / `0x45d5d0` / `0x45d710`（三个绘制器的收尾 `push 0x6` / `0x3` / `0x3`）。
 - 数据侧复核：`thdat -x 12 -C <dir> local/th12.v1.00b/th12.dat`；
   `thecl -d 12 -m local/vendor/eclmap/eclmap/th12.eclm default.ecl`；
   `thanm -l 12 -m local/vendor/thpages/static/mapfile/v4.anmm front.anm`。

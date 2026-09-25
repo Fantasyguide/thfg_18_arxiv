@@ -43,6 +43,9 @@ TH12 的「UFO」是**第三条资源轴**，与 Bomb / 火力平行：敌人掉
 ## 版本脉络
 
 - **TH12**：完整实现（令牌槽状态机 + 4 色 UFO + 吸收充能 + 击破奖励 + 彩虹令牌换色）。
+  召唤瞬间的「缩小的紫圆 + 单像素蓝闪」是 **C 侧 `EffectManager` 的程序化特效**（`th12:0x44a947` spawn
+  effect #2），**不在 anm 里**；同一次召唤另有四棵 anm VM（横幅 / 常驻光环 / 碟体 / 血槽）—— 见
+  [`ufo/th12/01`](th12/01-ufo-system.md) §10c、§10d。
 - **TH13 / TH15 / TH16 / TH17 / TH18**：没有这套系统（见上表 ❌ 的证据）。
   各作的「第三条轴」是别的东西：TH13 是灵界/trance，TH16 是季节（[`season/OVERVIEW.md`](../season/OVERVIEW.md)），
   TH18 是卡牌（[`card/`](../card/)）。
@@ -54,6 +57,8 @@ TH12 的「UFO」是**第三条资源轴**，与 Bomb / 火力平行：敌人掉
 
 - TH12 UFO **全链一手**（令牌槽状态机 / `zUfo` 字段表 / 召唤 / 吸收阈值 / 击破奖励 / anm 脚本号）：
   [`ufo/th12/01`](th12/01-ufo-system.md)
+- 召唤特效的**引擎侧**（紫圆 + 蓝闪 = `EffectManager` 的 effect #2/#1）：一手的颜色是 exe 里的立即数
+  ——纯紫 RGB(255,0,255)、蓝 RGB(0,64,255)——anm 库里查不到；见同文 **§10d**
 - 样本与工程登记：[`games/th12.v1.00b/INDEX.md`](../../games/th12.v1.00b/INDEX.md)
 - 相邻子系统：ECL VM [`ecl/OVERVIEW.md`](../ecl/OVERVIEW.md)、
   道具/道具管理器（th12 侧尚未单独成文）、社区来源 [`_shared/community-sources.md`](../_shared/community-sources.md)
