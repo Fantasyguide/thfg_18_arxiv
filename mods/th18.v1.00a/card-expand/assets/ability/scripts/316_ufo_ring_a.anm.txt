@@ -12,7 +12,7 @@ script script316 {
     //   `sprite(-1)` = 无贴图（纯多边形）⇒ **本组不需要任何贴图 / 图集**。
     layer(7);
     sprite(-1);
-    drawPoly(192.0f, 3);
+    drawPoly(192.0f, 32);                              /* ★ owner 第 38 轮：「把三角形改成圆反而直接对了」*/ 
     color(0, 0, 0);
     color2(255, 128, 255);
     angleVel(0.0f, 0.0f, 0.09817477f);
