@@ -21567,3 +21567,47 @@ TH16 的季节档 `k` = 子机数（set k ⇒ k 台），而本卡早苗的妖�
 每行 **5 帧…8/12 帧一发**、初速 0 然后**越飞越快**（`tick3`）；日志里 `claiming main-cannon shot set 0x63..0x67`
 （档 0 那一下则是 `NOT claiming our shot set either`）。⚠ 若子弹「不动」⇒ `func_on_tick` 没生效
 （引擎行循环那条路要复核 `+0x30`），此时先记一行再看。
+
+### §BE 详录 #96 续（2026-09-26 静态复核）：把上面两条「等实跑才知道」的假设**先在代码里坐实**
+
+本轮（第 2 轮）没有新的实跑日志可读，于是把这一批依赖的两个**代码内假设**逐指令核了一遍 —— 两条都成立，
+于是「早苗的弹会不会加速」「妖侧弹是不是真从看得见的子机出膛」这两件事**不再依赖实跑才知道**。
+
+**① `func_on_tick` 是**装载期**解析成指针的 ⇒ 与「谁发的这一行」无关**
+一手（`th18:0x45a830`–`0x45a89c` = `.sht` 装载器里那一圈逐组逐行）：
+```
+45a836  add DWORD PTR [esi+edx*1],eax        ; 组偏移就地重定位（base = edx+0x180）
+45a850  mov eax,[ecx+0x2c]                   ; row+0x2c = func_on_init 的**索引**
+45a856  mov eax,[eax*4+0x4b4230]             ; → 表 idx→指针
+45a85d  mov [ecx-0x30],eax                   ; 写回 row+0x2c（ecx = row+0x5c）
+45a860  mov eax,[ecx-0x2c]                   ; row+0x30 = func_on_tick 的索引
+45a863  mov eax,[eax*4+0x4b4210]             ; ★ 表 0x4b4210
+45a86a  mov [ecx-0x2c],eax                   ; 写回 row+0x30
+45a86d/45a874/45a87d                          ; row+0x34（画）/ row+0x38（命中）同理（表 0x4cf414 / 0x4b41f0）
+```
+⇒ 我们在行里写的 **索引 `3`** 在装载时变成 `0x4b4210[3]` = **`0x4609a0` = 「活动态 `+0x60 += 0.3` 匀加速」**
+（一手表见 `engine/sht/th18/03` §6 第 114 行）⇒ **引擎行循环（主炮）发的弹照样吃这一支**（不需要卡路径）。
+另外 `PlayerBullet__create` 起手就把 row 的四个 func 指针拷进弹体（`0x45e3d4`/`0x45e3dd`/`0x45e3e6`/`0x45e3ef`
+→ `bullet+0xe8/+0xec/+0xf0/+0xf4`），而弹的每帧 tick 调的就是它们（`engine/sht/th18/02` 第 38 行）。
+
+**② 弹的**出膛坐标**就是「槽的 `+0x5c/+0x60`」⇒ 卡侧那支「原生膛口镜像」被第二条独立路径印证**
+一手（`PlayerBullet__create` = `th18:0x45e320`，逐条）：
+```
+45e401  mov al,BYTE PTR [esi+0x20]           ; row+0x20 = 我们写的 slot
+45e407  mov ecx,DWORD PTR ds:0x4cf410        ; ecx = zPlayer*（CE_ADDR_PLAYER_PTR）
+45e40d  test al,0x0f ; 45e40f jne 0x45e422   ; slot（低 4 位）== 0 ⇒ 走**自机位**那一支
+45e411  mov eax,[ebp+0x10] ; movq xmm0,[eax]  ;    bullet.pos = 自机坐标
+45e422  movsx eax,al ; and eax,0xf ; imul eax,0xf0
+45e436  movd xmm2,DWORD PTR [eax+ecx*1+0x5dc]   ; ★ [player + slot*0xf0 + 0x5dc]
+45e43f  movd xmm1,DWORD PTR [eax+ecx*1+0x5e0]   ;   [player + slot*0xf0 + 0x5e0]
+45e44c  cvtdq2ps … mulss [0x4b908c]（=1/128）… movq [edi+0x48]
+```
+而行循环给的槽指针是 `player+0x580+slot*0xf0`（`th18:0x45ec58`）⇒
+**`player + slot*0xf0 + 0x5dc` = 槽指针 + `0x5c`**（slot 1：`0x670+0x5c = 0x6cc = 0xf0+0x5dc` ✓；
+slot 5（卡池第 0 格）：`0xa30+0x5c = 0xa8c = 5*0xf0+0x5dc` ✓）⇒ **出膛坐标 = 该槽的 `+0x5c/+0x60`**，
+正是「原生膛口镜像」每帧写的那一对（§BE #93）⇒ 「弹从看得见的那台子机出膛」**在代码里成立**，
+且与「我们那几台落在卡池哪几格」无关（行里写的是固定的原生槽号）。
+
+**③ 顺带复核 `type(1)` 不会改几何**：模式 0 的角点函数 `0x47e8f0` 与模式 1/3 的 `0x47ed50`
+**用的是同一对角点表**（`0x47e90b add ecx,0x4cdb00` / `0x47e940 add ecx,0x4cdb30`，模式 1/3 那支同址各一次）
+⇒ 模式 1/3 只是在同一套角点上再乘一次旋转矩阵 ⇒ **rz = 0 时两者几何完全相同**（不会位移 / 缩放）。
