@@ -2007,7 +2007,12 @@ static uint32_t s_summon_debris_id;        /* 闪电碎屑发射器 VM（脚本 
 /* ★★★ 第 38 轮「**依旧没有闪电**」⇒ 开回来：owner 记忆里"紫色圆 + 闪电没问题的那个很早的版本"
  *   就是 `6e4e8b8`（第 9 轮）这一支（蓝碎屑 + 中心洋红）；我上一轮刚把它关掉。
  *   （一手那支爆闪/雷 = 362/363 也还在，上一轮已修好 `scriptNewRoot`。）*/
-#define UFO_SUMMON_DEBRIS_ENABLE 1               /* 1 = 撒 TH18 etbreak 碎屑（owner 要回）*/
+/* ★★★ 第 45 轮（owner）：「**并非蓝色闪电，你画的似乎是击破特效的贴图**」——
+ *   这一支撒的正是 **TH18 etbreak 的贴图粒子**（346←347/348，图集 ATLAS_UFO_SUMMON）
+ *   ⇒ 它就是 owner 说的"击破特效的贴图"，**关掉**。一手那边**根本没有贴图粒子**：
+ *   紫圆（effect #2）+ 蓝闪（effect #1）都是纯几何（`drawPoly` / `LINESTRIP`）。
+ *   ⚠ 这一支是第 9 轮 owner 点名要的（"蓝碎屑"）⇒ 只改这一个宏就能回。*/
+#define UFO_SUMMON_DEBRIS_ENABLE 0               /* ★ 第 45 轮：owner 判「像击破特效的贴图」⇒ 关 */
 /* ★★★ 第 44 轮：一手找到了（`engine/ufo/th12/01-ufo-system.md` §10d）—— 召唤的紫圆 + 蓝闪
  *   是 **C 侧 `EffectManager` effect #2 / #1**（`Ufo::summon` 的第 5 处创建点 `0x44a947`
  *   `push 0x2; call 0x40fbe0`），anm 库里根本没有。
@@ -2050,6 +2055,7 @@ static void ufo_summon_debris_spawn(const uint8_t *e)
            "self-deletes)",
            CE_ANM_ABILITY_SCRIPT_UFO_SUMMON_DEBRIS);
 }
+#endif /* UFO_SUMMON_DEBRIS_ENABLE —— ★ 第 45 轮起 = 0：owner「像击破特效的贴图」⇒ 整支不编 */
 
 #if defined(CE_ANM_ABILITY_SCRIPT_UFO_RING_A) && UFO_RING_FX_ENABLE
 /* ★ 第 32 轮：**紫环 + 六边形**（一手 TH12 `enemy.anm` 139/140 与 102/104 ⇒ 卡侧 316/317/319/320）。
@@ -2101,8 +2107,6 @@ static void ufo_bolt_fx_spawn_frame(const uint8_t *e)
     }
 }
 #endif
-
-#endif  /* UFO_SUMMON_DEBRIS_ENABLE */
 
 /* 收尾（**长持续效果铁律**）：横幅 / 碎屑都绑在 UFO 上，但两条路都必须收得掉 ——
  * `ufo_withdraw_all()`（`on_delete` / `on_run_reset`）与 `on_stage_start()` 各调一次（幂等）。
