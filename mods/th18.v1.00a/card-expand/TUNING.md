@@ -6914,3 +6914,15 @@ sprite 561、script 364）/ `dllx87=0` 全过。发布：DLL `908be5cc…` → *
 **回归面**：`native/cards/ufo.c` + 316/318 两支自己的脚本（未碰共享件）；门禁 `check` / `anm`（entry 79、
 sprite 561、script 364）/ `dllx87=0` 全过。发布：DLL `c8165377…` → **`af32adb2324e04312997e2a3aa75ee84`**、
 `ability.anm` `7d62beb7…` → **`3d687c1c2784c3454a9592d491b81d40`**（四处已部署同一份）。
+
+### 2.0zzx-13 ★★ 第 **四十六** 轮（2026-09-26）：owner「**缺少闪电特效**」⇒ 蓝闪改由紫圆脚本自己起 + 换成确定可见的细长条
+
+| # | 现象 | 真因（推测→已改）| 本轮动作 |
+| --- | --- | --- | --- |
+| ① | 蓝闪完全看不见 | 上一版由**卡侧 C 代码**每帧 `ce_anm_spawn` 撒（静默、无名，失败也查不出来），且脚本用的是 `drawPolyBorder` + `scale(0.09, 8..16)` 的"压扁 3 边形" | 改由**紫圆脚本 316 自己 `scriptNewRoot(script318)` 每帧起两条**（一手正是效果自己起；`scriptNewRoot` 才不会继承本体的 scale/alpha，第 37 轮踩过）；C 那条路 `UFO_BOLT_FX_ENABLE 0` 保留备用 |
+| ② | 形状不可靠 | 压扁的描边既细又怪 | 换成 **`drawRect(1.6, 40..90)`**（一手 `front.anm` 136 血槽同款原语）= 极窄长条 + 随机朝向 ⇒ 单像素级直线；蓝 `(0,64,255)`、16 帧淡出、每帧 2 条不变 |
+
+**一手对照**：effect #1 = 16 段随机游走折线、`LINESTRIP`（v8 无 `drawLine`）⇒ 仍是**近似**；
+effect #2 的 on_tick 里 `push 0x1` ×2 = 每帧两条（本轮的起法与之同形）。
+**回归面**：`native/cards/ufo.c` + 316/318（未碰共享件）；`check` / `anm`（entry 79、sprite 561、script 364）/ `dllx87=0` 全过。
+发布：DLL `af32adb2…` → **`f682807d8281fab77f4bfa9f65e5cb5b`**、`ability.anm` `3d687c1c…` → **`bbddbdc56341f2bad5ad8a957d1ded82`**（四处已部署同一份）。

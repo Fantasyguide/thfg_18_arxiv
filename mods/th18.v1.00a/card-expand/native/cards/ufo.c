@@ -2020,7 +2020,9 @@ static uint32_t s_summon_debris_id;        /* 闪电碎屑发射器 VM（脚本 
  *   50 帧）—— 一手只造**一颗**（旧口径的"316+317 一对"是我的猜想，已退役）；
  *   ⇒ 蓝闪 = 脚本 **318**（一手每帧 2 条 × 50 帧 ≈ 100 条、每条 16 帧自删、LINESTRIP 单像素）。*/
 #define UFO_RING_FX_COUNT 1                       /* ★ 一手：一颗紫圆（第 44 轮前是"一对"= 猜想）*/
-#define UFO_BOLT_FX_ENABLE 1                      /* ★ 第 44 轮：蓝闪（一手 effect #1）*/
+#define UFO_BOLT_FX_ENABLE 0                      /* ★ 第 46 轮：改由紫圆脚本 316 自己
+                                                     `scriptNewRoot` 每帧起两条（一手就是效果自己起）；
+                                                     这一支 C 路保留备用 */
 #define UFO_BOLT_FX_PER_FRAME 2                   /* 一手：effect #2 的 on_tick 里 `push 0x1` ×2 */
 #define UFO_BOLT_FX_FRAMES 50u                    /* 一手：与紫圆同寿命 50 帧 ⇒ 合计约 100 条 */
 static uint32_t s_summon_burst_id;         /* 一手爆闪/雷（脚本 362，自己 +51 帧 delete）*/
@@ -2078,11 +2080,16 @@ static void ufo_ring_fx_spawn(const uint8_t *e)
             ce_anm_set_pos(s_ring_fx_id[i], *(const float *)(e + CE_ENEMY_POS_X),
                                              *(const float *)(e + CE_ENEMY_POS_Y), 0.0f);
     }
+#if UFO_BOLT_FX_ENABLE
     s_bolt_fx_left = UFO_BOLT_FX_FRAMES;   /* ★ 蓝闪窗口与紫圆同寿命（一手：两者同在一段 on_tick 里）*/
+#endif
     ce_log("ufo: summon ring fx up (purple disc = ability.anm script %d <= TH12 EffectManager effect #2 "
-           "(0x44a947 push 0x2): 32-gon, pure (255,0,255), radius 128 -1.5/frame -> 53, alpha +3/frame, "
-           "50 frames) at the body position; script %d retired (one-hand makes exactly ONE disc)",
-           CE_ANM_ABILITY_SCRIPT_UFO_RING_A, CE_ANM_ABILITY_SCRIPT_UFO_RING_B);
+           "(0x44a947 push 0x2): 32-gon, pure (255,0,255), radius 192 -> 50 linear (= owner-calibrated "
+           "start/end; one-hand 128 -> 53 in the EffectManager space), alpha 0 -> 150, 50 frames; "
+           "bolts = script %d x2 per frame via scriptNewRoot) at the body position; script %d retired "
+           "(one-hand makes exactly ONE disc)",
+           CE_ANM_ABILITY_SCRIPT_UFO_RING_A, CE_ANM_ABILITY_SCRIPT_UFO_SUMMON_RING,
+           CE_ANM_ABILITY_SCRIPT_UFO_RING_B);
 }
 #endif
 
@@ -2130,7 +2137,9 @@ static void ufo_summon_fx_kill(void)
     s_summon_fx_id = 0;
     s_summon_debris_id = 0;
     s_summon_fx_left = 0;
+#if UFO_BOLT_FX_ENABLE
     s_bolt_fx_left = 0;                    /* ★ 第 44 轮：蓝闪窗口（已撒出去的每条 16 帧自删）*/
+#endif
     s_summon_debris_left = 0;
 }
 

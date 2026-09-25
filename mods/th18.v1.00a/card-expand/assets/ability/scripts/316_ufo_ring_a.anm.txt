@@ -28,6 +28,15 @@ script script316 {
     scale(1.0f, 1.0f);
     scaleTime(50, 0, 0.26041666f, 0.26041666f); /* ★ 终点 192×0.2604 = **50**（owner 第 43 轮定下的 r_min）；
                                                   曲线 mode 0 = **线性**，与一手"每帧 −1.5"同形 */
-+50: // 50
-    delete();                         /* 一手：满 50 帧自毁，**没有额外的尾巴** */
+    /* ★ 第 46 轮（owner「**缺少闪电特效**」）：蓝闪改由**本脚本自己每帧起两条**（一手就是这么干的：
+     *   effect #2 的 on_tick 里 `push 0x1` ×2），不再从卡侧 C 代码撒（C 那条路静默无名，出了问题查不出）。
+     *   ⚠ 必须用 `scriptNewRoot`（一手 `EffectManager` 起的是**独立 VM**）：`scriptNew` 的子会把本体的
+     *   `scale`/`alpha` 继承走 ⇒ 蓝闪会跟着紫圆一起缩小、一起变淡（第 37 轮踩过同一个坑）。*/
+    iset($I4, 50);                   /* 一手：与紫圆同寿命 50 帧 */
+offset_spawn_bolts:
+    scriptNewRoot(script318);        /* 一手：每帧 2 条 ⇒ 一次召唤约 100 条 */
+    scriptNewRoot(script318);
+    wait(1);
+    jmpDec($I4, offset_spawn_bolts, 0);
+    delete();                        /* 一手：满 50 帧自毁，**没有额外的尾巴** */
 }
