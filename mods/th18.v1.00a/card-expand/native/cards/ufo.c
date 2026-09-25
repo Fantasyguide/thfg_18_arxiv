@@ -1085,7 +1085,20 @@ static uint32_t s_penta_id[UFO_TOKEN_CAP];
  *   ⇒ 「下落态」画的是 **vm2**、「上升/吸收态」画的是 **vm1**。第 24 轮只把 `color_1` 的 alpha 写 0：
  *   vm1 的 `color_2` 本来就是 0 ⇒ 那两态**当场藏住** ✓；vm2 的 `color_2` 还带 255 ⇒ **下落态照画** ✗。
  *   第 25 轮补上两个 `color_2` 的 alpha ⇒ 四条支路全覆盖（本轮再补 vm2 的 pre 值诊断）。 */
+/* ★★★ 2026-09-25 第 28 轮（owner 第 27 轮复报「**依旧是下落态有整 B 五角星**」）：
+ *   实跑日志已证**两个内嵌 VM 的四个 alpha 全是 0**（`vm1 c1 0x00ffffff c2 0x00000000`、
+ *   `vm2 c1 0x00ffffff c2 0x00000000`），而引擎的绘制函数 `0x481210` 里 colorMode 0 那一支
+ *   的判据就是"两个 alpha 都 0 ⇒ `je 0x48134d` 直接返回"（我逐指令读过）⇒ **vm1/vm2 自己画不出来**。
+ *   ⇒ 本轮再加一道**更早的门**（一手：`0x48124e test al,1 / je 0x48134d`、
+ *     `0x481256 test al,2 / je 0x48134d`，`al` = `flags_lo` 的低字节 —— `engine.h` 记的就是
+ *     "bit0/1 绘制门槛"，在 colorMode 分派**之前**）⇒ 每帧把 vm1/vm2 的 `flags_lo` bit0/bit1 清掉，
+ *     无论颜色/色模式怎么变，这一支都不会再画。位置与颜色是两套独立的门，双保险。
+ *   ⚠ 同时加**扫描诊断**（`UFO_DROP_VM_SCAN`）：每 60 帧走一遍引擎的 world/ui VM 链表，
+ *     把 sprite = 512/513（= 一手 type 7 那两颗星的贴图）的 VM 连地址一起打出来 ——
+ *     如果那颗星真的不是 vm1/vm2，这一行会把它指出来（这就是本轮要的答案）。*/
 #define UFO_ITEM_HIDE_ICON  1
+#define UFO_ITEM_HIDE_FLAGS 1       /* ★ 第 28 轮：清 flags_lo 的绘制门槛（bit0/bit1） */
+#define UFO_DROP_VM_SCAN    1       /* ★ 第 28 轮：每 60 帧扫 world/ui 链表里的星形 VM（诊断）*/
 #define UFO_DROP_ANM_LOG_EVERY 60   /* 满 B 的诊断行节奏（0 = 关）；验证摇摆/隐藏星用 */
 /* 引擎读数（照 110 `mof.c` 的同名宏）：满火力判据 = `CURRENT_POWER >= MAX_POWER` */
 #define CE_MAX_POWER_VAL()       (*(int32_t *)CE_ADDR_MAX_POWER)
@@ -4098,6 +4111,11 @@ static void ufo_drops_tick(ufo_card_t *s)
             *(uint8_t *)(it + UFO_ITEM_VM1 + UFO_ITEM_VM_COLOR2 + 3) = 0u;  /* ★ color_2 的 A 也要 0 */
             *(uint32_t *)(it + UFO_ITEM_VM2 + CE_ANM_VM_COLOR1) = 0x00ffffffu;
             *(uint8_t *)(it + UFO_ITEM_VM2 + UFO_ITEM_VM_COLOR2 + 3) = 0u;
+#if UFO_ITEM_HIDE_FLAGS
+            /* ★ 第 28 轮：`flags_lo` 的 bit0/bit1 是引擎**最早**那道绘制门槛（`0x48124e`/`0x481256`）*/
+            *(uint32_t *)(it + UFO_ITEM_VM1 + CE_ANM_VM_FLAGS_LO) &= ~3u;
+            *(uint32_t *)(it + UFO_ITEM_VM2 + CE_ANM_VM_FLAGS_LO) &= ~3u;
+#endif
 #endif
             continue;
         }
@@ -4120,6 +4138,45 @@ static void ufo_drops_tick(ufo_card_t *s)
  *   `entity_pos`"（`VM+0x5f0`）再 `call 0x481210` ⇒ 我们照同一条路走，只是 VM 换成自己的卡面。
  * ⚠ 道具已被收走 ⇒ 顺手把槽收干净（`ufo_drops_tick` 那条也会收，这里兜一拍）。*/
 static uint32_t s_drop_log_tick;      /* 满 B 诊断行的节拍（本函数没有卡状态参数）*/
+
+#if UFO_DROP_VM_SCAN
+/* ★★★ 2026-09-25 第 28 轮（owner 第 27 轮复报「依旧是下落态有整 B 五角星」）：**找那颗星到底谁画的**。
+ *   实跑日志已证 vm1/vm2 的四个 alpha 全 0（引擎那一支必然 return），可下落态仍有星 ⇒ 它**不是**这两个
+ *   内嵌 VM。本函数每 60 帧走一遍引擎的 **world / ui VM 链表**（一手：`th18:0x488b40` 的两条 fallback 支，
+ *   链表头 `[mgr+0x6f0]` / `[mgr+0x6f8]`，节点里 `[node]` = VM 指针、`[node+4]` = next），
+ *   把 **sprite = 512/513**（一手 type 7 那两个图标：脚本 118/140 画的 `bullet/item.png` 绿星）
+ *   的 VM 连**地址与相对道具的偏移**打出来 —— 落不到 `item+0x10` / `item+0x61c` 上的就是第三条路。
+ *   ⚠ 有界循环（每条链表最多 4096 节点）：链表若被写坏也不能无界走。*/
+static void ufo_drop_vm_scan(const uint8_t *it, uint32_t parent_id)
+{
+    uint8_t *mgr = CE_ANM_MANAGER();
+    int li, n, hits = 0;
+    if (!mgr) return;
+    for (li = 0; li < 2; ++li) {
+        uint8_t *node = *(uint8_t **)(mgr + (li == 0 ? 0x6f0 : 0x6f8));
+        for (n = 0; node && n < 4096; ++n) {
+            uint8_t *vm = *(uint8_t **)node;
+            if (vm) {
+                int spr = *(const int32_t *)(vm + CE_ANM_VM_SPRITE_ID);
+                if (spr == 512 || spr == 513) {
+                    ++hits;
+                    ce_log("ufo/drop.scan: %s-list VM %p spr %d flags_lo 0x%08x c1 0x%08x c2 0x%08x "
+                           "| off_item %+d off_vm1 %+d off_vm2 %+d%s",
+                           li == 0 ? "world" : "ui", (void *)vm, spr,
+                           *(const uint32_t *)(vm + CE_ANM_VM_FLAGS_LO),
+                           *(const uint32_t *)(vm + CE_ANM_VM_COLOR1),
+                           *(const uint32_t *)(vm + CE_ANM_VM_COLOR2),
+                           (int)(vm - it), (int)(vm - (it + UFO_ITEM_VM1)),
+                           (int)(vm - (it + UFO_ITEM_VM2)),
+                           (*(const uint32_t *)(vm + 0x544) == parent_id) ? "  <= THIS DROP" : "");
+                }
+            }
+            node = *(uint8_t **)(node + 4);
+        }
+    }
+    ce_log("ufo/drop.scan: done - %d star-shaped VM(s) in the world/ui lists (sprite 512/513)", hits);
+}
+#endif
 static void ufo_drops_draw_follow(void)
 {
     int i;
@@ -4150,6 +4207,10 @@ static void ufo_drops_draw_follow(void)
             *(uint8_t *)(it + UFO_ITEM_VM1 + UFO_ITEM_VM_COLOR2 + 3) = 0u;
             *(uint32_t *)(it + UFO_ITEM_VM2 + CE_ANM_VM_COLOR1) = 0x00ffffffu;
             *(uint8_t *)(it + UFO_ITEM_VM2 + UFO_ITEM_VM_COLOR2 + 3) = 0u;
+#if UFO_ITEM_HIDE_FLAGS
+            *(uint32_t *)(it + UFO_ITEM_VM1 + CE_ANM_VM_FLAGS_LO) &= ~3u;   /* ★ 第 28 轮：绘制门槛 */
+            *(uint32_t *)(it + UFO_ITEM_VM2 + CE_ANM_VM_FLAGS_LO) &= ~3u;
+#endif
 #endif
 #if UFO_DROP_ANM_LOG_EVERY
         /* ★ 2026-09-24 第 21 轮诊断（owner：「**没有左右摇摆**」）：每 60 帧把**父 VM**的
@@ -4167,10 +4228,13 @@ static void ufo_drops_draw_follow(void)
                  *   `th18:0x446d60`）：`lea [item+0x10]`（= **vm1**）与 `lea [item+0x61c]`（= **vm2**，
                  *   还要 `vm2.flags_lo`（`item+0xb50`）bit0 置位才画）⇒ owner 观察到的"**自然下落态有星、
                  *   上升/吸收态没有**"正好对上"下落画的是 vm2"。`pre` = 引擎这一帧还原成的值、`post` = 我们写的。*/
-                ce_log("ufo/drop.bomb: parent vm %u rot (%.4f, %.4f, %.4f) scale (%.3f, %.3f) | icon vm1 "
-                       "c1 0x%08x->0x%08x c2 0x%08x->0x%08x spr %d fl 0x%08x | vm2 "
-                       "c1 0x%08x->0x%08x c2 0x%08x->0x%08x spr %d fl 0x%08x "
-                       "(pre->post; 4 个 alpha 都必须 00 = star hidden)",
+                ce_log("ufo/drop.bomb: state %d pos (%.0f, %.0f) | parent vm %u rot (%.4f, %.4f, %.4f) "
+                       "scale (%.3f, %.3f) | icon vm1 c1 0x%08x->0x%08x c2 0x%08x->0x%08x spr %d fl 0x%08x | "
+                       "vm2 c1 0x%08x->0x%08x c2 0x%08x->0x%08x spr %d fl 0x%08x "
+                       "(pre->post; both alphas 00 + flags bit0/1 clear = star hidden)",
+                       (int)*(const int32_t *)(it + UFO_ITEM_STATE),
+                       (double)*(const float *)(it + UFO_ITEM_POS),
+                       (double)*(const float *)(it + UFO_ITEM_POS + 4),
                        d->anm_id, (double)rv[0], (double)rv[1], (double)rv[2],
                        (double)sv[0], (double)sv[1],
                        pre1, *(const uint32_t *)(it + UFO_ITEM_VM1 + CE_ANM_VM_COLOR1),
@@ -4181,6 +4245,9 @@ static void ufo_drops_draw_follow(void)
                        pre2b, *(const uint32_t *)(it + UFO_ITEM_VM2 + UFO_ITEM_VM_COLOR2),
                        (int)*(const int32_t *)(it + UFO_ITEM_VM2 + CE_ANM_VM_SPRITE_ID),
                        *(const uint32_t *)(it + UFO_ITEM_VM2 + CE_ANM_VM_FLAGS_LO));
+#if UFO_DROP_VM_SCAN
+                ufo_drop_vm_scan(it, d->anm_id);
+#endif
             }
 #endif
         }
