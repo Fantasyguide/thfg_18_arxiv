@@ -21232,3 +21232,26 @@ scriptNew 检查全绿、卡框图集逐像素等于原生）→ `make -C native
 发版 + `local/sync_modkit_dll.sh`（4 处同 md5，见 `RELEASE-STATE.json`）。**实跑判据**：
 `youkai: option #N reclaimed …` 只在档数下降那帧各一次；子机数恒 = 档数；反复扣/加火力 10 次
 `option allocated FAILED (pool full)` 永不出现。
+
+## §BE 详录 #90（2026-09-25）：★ **共享件** `assets/ability/**` + `CAPACITY.md` —— 112 星莲船第**二十四**轮：星的**覆盖源**（引擎每帧还原）+ 卡面定回 `BOMB_max.png`
+
+**为什么必须登记**：本轮又动了 `assets/ability/entries/ORDER.txt`（我们那一段：`ATLAS_UFO_DROP` 的画布与
+`DROP_BOMB` 的行）与 `native/cards/ufo.c` / `CAPACITY.md`。owner 原话与判据见 `SINGLE-CARD-TEST.md`
+§本批24-1，一手与量法见 `TUNING.md` §2.0zzx-4。
+
+| 文件 | 改了什么 | 为什么 | 怎么验的 |
+| --- | --- | --- | --- |
+| `assets/ability/entries/ORDER.txt`（**共享件**）| 只改我们自己那一段（数据行 432..437）：`ATLAS_UFO_DROP 128x128` → **`320x384`**、`DROP_BOMB …@0,32,`**`256x320`**、`CARD_GLOW …@256,0,40x44`。**行数、行序、名字一字未变** | owner 点名"卡图应该是 `BOMB_max.png`（自带黑框）" ⇒ 卡面用它的 sprite8 1:1 | 构建期重排检测只覆盖前 187 行（本段在其后）；`git diff native/anm_ids.h` **只有一行画布注释变化** ⇒ sprite 号 `DROP_BOMB` 仍 456、`CARD_GLOW` 457、`DROP_FRAME` 537，既有号零改动 |
+| `assets/ability/ufo_drop/DROP_BOMB.png`（112 自己的美术）| 换成原生 `abcard/ability/BOMB_max.png` sprite8 (0,0,256,320) 的 **1:1 切图** | 同上（原生切图，不自己画）| 构建期图集回读：与原生源图**逐字节相同** |
+| `assets/ability/scripts/345_ufo_card_face.anm.txt`（112 自己的）| `scale(0.3)` → **`scale(0.075)`**（= 一手 0.3 ÷ 4，`_max` 是 `_min` 的 4 倍画布）⇒ 屏显仍 19.2×24 | 保持"和 B 碎一样大" | `make -C native anm` 绿；屏显尺寸 = 256×320 × 0.075 = 19.2×24 |
+| `assets/ability/make_ufo_drop_art.py`（112 生成器）| 源图与 entry 换成 `BOMB_max.png`（矩形仍从 `abcard.anm.txt` 现读 + 断言 `(0,0,256,320)`）、图集排布改 320×384 | 美术要能重跑生成 | 重跑幂等；断言在矩形漂移时当场红 |
+| `native/cards/ufo.c`（本卡自己的）| ★ 藏星**搬到 draw 相位**再写一次（`ufo_drops_draw_follow`）：一手 `th18:0x445dd8`/`0x445ddf` 每帧把 vm1 `color_1` 的 A/B 字节还原成 `0xff`，而 tick 跑在道具 body **之前** ⇒ 写完即被覆盖。诊断行改成 `pre -> post` 两段 | owner 第 23 轮复报「依旧有满B的那个遗产五角星」 | `dllx87` 零告警；实跑日志 `pre = 0xffffffff`、`post = 0x00ffffff` |
+| `CAPACITY.md`（**共享台账**）| `ATLAS_UFO_DROP` 那一格补第 24 轮：画布 **320×384**、`DROP_BOMB` 256×320 的出处 | 台账不许过期 | `make check` 全绿 |
+
+**对既有卡的影响面**：**零编号变化** —— `ORDER.txt` 只改我们这一段的行内尺寸（行数/行序/名字不变），
+`anm_ids.h` 的 `git diff` 只有一行注释 ⇒ 别的卡引用的 entry/sprite 号一个都没动。
+`ufo.c` 与生成器是 112 自己的文件；没有动 `sdk.*` / `engine.h` / `sites.py` / `Makefile` / `patch/**` / `cards/faith.*`。
+
+**回归跑了什么**：`make -C native anm`（entry 75 / sprite 538 / script 359；`ATLAS_UFO_DROP` 320×384、
+卡面 texel 与原生 `BOMB_max.png` **逐字节相同**；`ATLAS_UFO_FRAME` 不变）→ `make -C native dllx87`（rc=0）→
+`make -C native check`（capcheck + check-docs 全绿）。**实跑判据**见 `TUNING.md` §2.0zzx-4 末尾四条。

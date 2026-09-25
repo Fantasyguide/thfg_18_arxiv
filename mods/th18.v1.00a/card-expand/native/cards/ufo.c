@@ -4051,25 +4051,42 @@ static void ufo_drops_draw_follow(void)
         if (!d->anm_id || !ce_anm_get_vm(d->anm_id)) { d->anm_id = 0; continue; }
         ce_anm_set_pos(d->anm_id, *(const float *)(it + UFO_ITEM_POS),
                                    *(const float *)(it + UFO_ITEM_POS + 4), 0.0f);
+        /* ★★★ 2026-09-24 第 24 轮（owner 第 23 轮复报「**依旧有满B的那个遗产五角星**」）：
+         *   `ufo_drops_tick` 里那次藏星写入**会被引擎同帧覆盖掉** —— 一手 `th18:0x445dd8`/`0x445ddf`
+         *   在道具 body 每次走到"正常状态"那一支时把 `item+0x537`（= vm1 `color_1` 的 **A** 字节）
+         *   与 `item+0x534`（**B** 字节）都写回 `0xff`（实跑日志实证：`vm1 … 0xffffffff`）。
+         *   而我们的 tick 跑在**道具 body 之前** ⇒ 写完就被还原 ⇒ 那颗星照画。
+         *   ⇒ 这里在**draw 相位**再写一次（body 之后、渲染之前）—— 与本函数写 `entity_pos` 同一个
+         *   道理，铁证：卡面能跟着道具走就是这一相位写的（见上面那段注）。tick 里那次保留（无害）。*/
+        {
+            uint32_t pre1 = *(const uint32_t *)(it + UFO_ITEM_VM1 + CE_ANM_VM_COLOR1);
+            uint32_t pre2 = *(const uint32_t *)(it + UFO_ITEM_VM2 + CE_ANM_VM_COLOR1);
+#if UFO_ITEM_HIDE_ICON
+            *(uint32_t *)(it + UFO_ITEM_VM1 + CE_ANM_VM_COLOR1) = 0x00ffffffu;
+            *(uint32_t *)(it + UFO_ITEM_VM2 + CE_ANM_VM_COLOR1) = 0x00ffffffu;
+#endif
 #if UFO_DROP_ANM_LOG_EVERY
         /* ★ 2026-09-24 第 21 轮诊断（owner：「**没有左右摇摆**」）：每 60 帧把**父 VM**的
          *   `rotation`（`+0x38/3c/40`）与 `scale`（`+0x54/58`）打一行 ——
          *   摇摆是脚本 301 的 `rotateTime(30,9,±0.17453292)` 在跑（第 22 轮换成**一手 script14 的原值**：
          *   ±10°、30 帧一个单程）；日志里 `rot` 在 ±0.17 之间来回 = 动画在跑。
-         *   ⚠ `scale` 恒 1.000 —— 父 VM 不缩放；卡面那 0.3 在**子 VM**（脚本 345）身上（一手同构）。
-         *   ★ 第 23 轮：同一行再打**两个内嵌图标 VM 的颜色**（`item+0x534` / `item+0xb40`）——
-         *   藏星星就是往这两处写 alpha=0（见 `UFO_ITEM_HIDE_ICON`），日志里两个都应是 `0x00ffffff`。*/
-        if ((++s_drop_log_tick % UFO_DROP_ANM_LOG_EVERY) == 0u) {
-            float *rv = (float *)(ce_anm_get_vm(d->anm_id) + CE_ANM_VM_ROTATION);
-            float *sv = (float *)(ce_anm_get_vm(d->anm_id) + CE_ANM_VM_SCALE);
-            uint32_t vm1c = *(const uint32_t *)(it + UFO_ITEM_VM1 + CE_ANM_VM_COLOR1);
-            uint32_t vm2c = *(const uint32_t *)(it + UFO_ITEM_VM2 + CE_ANM_VM_COLOR1);
-            ce_log("ufo/drop.bomb: parent vm %u rot (%.4f, %.4f, %.4f) scale (%.3f, %.3f) | native icon "
-                   "vm1(item+0x534) 0x%08x vm2(item+0xb40) 0x%08x (both alpha must be 00 = star hidden)",
-                   d->anm_id, (double)rv[0], (double)rv[1], (double)rv[2],
-                   (double)sv[0], (double)sv[1], vm1c, vm2c);
-        }
+         *   ⚠ `scale` 恒 1.000 —— 父 VM 不缩放；卡面那 0.075 在**子 VM**（脚本 345）身上。
+         *   ★ 第 23/24 轮：同一行打**两个内嵌图标 VM 的颜色**，`pre → 我们写的值` ——
+         *   `pre` 是**引擎这一帧还原成的值**（会是 `0xffffffff`，那就是它盖掉我们的证据），
+         *   后半段是**我们写完之后**的值（必须是 `0x00ffffff` = 星藏掉）。*/
+            if ((++s_drop_log_tick % UFO_DROP_ANM_LOG_EVERY) == 0u) {
+                float *rv = (float *)(ce_anm_get_vm(d->anm_id) + CE_ANM_VM_ROTATION);
+                float *sv = (float *)(ce_anm_get_vm(d->anm_id) + CE_ANM_VM_SCALE);
+                ce_log("ufo/drop.bomb: parent vm %u rot (%.4f, %.4f, %.4f) scale (%.3f, %.3f) | native icon "
+                       "vm1(item+0x534) 0x%08x -> 0x%08x, vm2(item+0xb40) 0x%08x -> 0x%08x "
+                       "(pre = engine's restore this frame; post must be 0x00ffffff = star hidden)",
+                       d->anm_id, (double)rv[0], (double)rv[1], (double)rv[2],
+                       (double)sv[0], (double)sv[1],
+                       pre1, *(const uint32_t *)(it + UFO_ITEM_VM1 + CE_ANM_VM_COLOR1),
+                       pre2, *(const uint32_t *)(it + UFO_ITEM_VM2 + CE_ANM_VM_COLOR1));
+            }
 #endif
+        }
     }
 }
 

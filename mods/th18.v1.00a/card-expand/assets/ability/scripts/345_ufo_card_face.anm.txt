@@ -6,11 +6,11 @@ script script345 {
     //       `sprite(sprite11); ins_431(1); randMode(1); pos(0,0,0); layer(16);
     //        color(255,255,255); scale(0.3f, 0.3f); type(1); resampleMode(0); stop();`
     //     其中 `sprite11` = entry11 `ability/EXTEND2_min.png`（命碎卡）—— **引擎按卡 id 换成对应那张**：
-    //       B 碎卡用 `BOMB2_min.png`、整颗 B 用 **`BOMB_min.png`**（同一张 64×80 画布、同一个 0.3 倍率）。
+    //       B 碎卡用 `BOMB2_min.png`（64×80）、整颗 B 用 **`BOMB_max.png`（256×320，自带黑框）**。
     //
-    //   ⇒ 「一样大」不是我们量出来的，而是**同一张 64×80 × 同一个 0.3 = 屏显 19.2×24**，
-    //     与 owner 场里看到的 B 碎卡**逐像素同尺寸**（贴图成员 `DROP_BOMB` = 原生 `BOMB_min.png`
-    //     sprite9 (0,0,64,80) 的 1:1 切图，见 `assets/ability/make_ufo_drop_art.py`）。
+    //   ⇒ 「一样大」= **屏显尺寸对齐**：`_max` 正好是 `_min` 的 **4 倍画布** ⇒ 倍率写 **0.075**（不是 0.3），
+    //     两条路都落在 **19.2×24**（owner 场里 B 碎卡的尺寸）。贴图成员 `DROP_BOMB` = 原生
+    //     `BOMB_max.png` sprite8 (0,0,256,320) 的 **1:1 切图**（见 `assets/ability/make_ufo_drop_art.py`）。
     //
     // **Δ（两条，都不改外观）**：
     //   · `ins_431(1)`（v8 未知 flag，一手 `engine/anm/th16/07-general.md` §8 标 ❓）本卡不写 ——
@@ -23,7 +23,11 @@ script script345 {
     type(1);
     layer(16);                      /* 一手 script15：世界层 16（掉落物该在的层）*/
     color(255, 255, 255);
-    scale(0.3f, 0.3f);              /* ★ 一手原值：64×80 texel × 0.3 ⇒ 屏显 19.2×24（= B 碎卡尺寸）*/
+    /* ★★ 2026-09-25 第 24 轮（owner：「卡图不应该是 `BOMB_max.png` 吗？这张图自带黑框啊」）：
+     *   成员换成 **`BOMB_max.png` 的 sprite8 (0,0,256,320)**（1:1 原生 texel）⇒ 倍率要跟着换成
+     *   **0.075**（= 一手 0.3 ÷ 4，因为 `_max` 正好是 `_min` 的 4 倍画布）⇒ 屏显仍是 **19.2×24**
+     *   = 与 B 碎卡同尺寸；而 `_max` 自带的外圈黑边 + 灰带（约 1 px）就跟着画出来了。*/
+    scale(0.075f, 0.075f);          /* 一手 0.3 × (_min 64 / _max 256) = 0.075 ⇒ 屏显 19.2×24 */
     resampleMode(0);                /* ★ 一手原值（`engine/anm/th16/06-settings.md` §3.5：bit11 = 0 线性）*/
     stop();
 }

@@ -75,16 +75,24 @@ SRC_PNG = REPO / "local/th12.v1.00b/anm/bullet/bullet/etama8.png"
 # ★★★ 2026-09-24 第 22 轮（owner 终局口径）：「**我要和 B 碎一样大**」「**它得在各方面 == B 碎卡**」
 #   ⇒ 满 B 的外观**不再是我们的二次加工**，而是**原生卡道具那一套逐条复刻**：
 #     一手 `abcard.anm`：**场地里那张卡道具**的显示配方 = script14（父，摆动）→ script16（背光，
-#     加算 + 呼吸）/ script15（**卡面**，`scale(0.3,0.3)` + `resampleMode(0)`）/ script17（暗卡框）。
-#     · **卡面** `DROP_BOMB` = 原生**整 B 卡图** `abcard/ability/BOMB_min.png` 的 sprite9 (0,0,64,80)
-#       **1:1 原样**（不缩放！脚本里写 `scale(0.3,0.3)` —— 与原生同一张 texel、同一个倍率、
-#       同一个采样模式 ⇒ 屏显 **19.2×24**，与 B 碎卡（`BOMB2_min.png`，同 64×80 同倍率）**逐像素同尺寸**）。
+#     加算 + 呼吸）/ script15（**卡面**，`scale` + `resampleMode(0)`）/ script17（**卡框**，黑边）。
+#     · **卡面** `DROP_BOMB` = 原生**整 B 卡图** `abcard/ability/BOMB_max.png` 的 sprite8 (0,0,256,320)
+#       **1:1 原样**（不缩放！倍率写在脚本 345 里 = **0.075** ⇒ 屏显 **19.2×24** —— 与 B 碎卡
+#       （`BOMB2_min.png` 64×80 × 0.3）**逐像素同尺寸**，因为 `_max` 正好是 `_min` 的 **4 倍画布**）。
 #     · **背光** `CARD_GLOW` = 原生光晕 `abitem.png` sprite1 (0,0,40,44) **1:1 原样**（脚本 `scale(1,1)`
 #       ⇒ 屏显 40×44，与原生 script16 同值）。
-#   ⚠ 为什么从 `BOMB_max.png`（256×320）换回 `_min`：owner 第 5 轮要的「**有黑边那版**」是**在卡被画大**
-#     （40×50 / 26×32）时才有意义 —— `_max` 外圈 3 texel 纯黑，缩到 **19.2 px 宽**只有 **0.22 px**，
-#     与 `_min`（浅绿描边）**肉眼无差**；而「和 B 碎一样大」只能靠原生那对同尺寸的 `_min` 卡图做到。
-SRC_TH18_BOMB_CARD = REPO / "local/th18.v1.00a/anm/abcard/ability/BOMB_min.png"
+#     · **卡框** `DROP_FRAME` = 原生 `abframe.png` sprite0 (0,0,64,80) **1:1**（脚本 358：`scale(0.3)` +
+#       `color(0,32,0)` ⇒ 卡沿那圈近黑细边）。
+#   ★★★ 2026-09-25 owner 第 24 轮（实跑后的一句话）：「**卡图不应该是那个吗？`…/ability/BOMB_max.png`
+#     这张图自带黑框啊**」⇒ 卡面定回 **`BOMB_max.png`**。这与前一条"和 B 碎一样大"**不冲突**：
+#     `_max`(256×320) 与 `_min`(64×80) 是**同一张画的 1× / 4× 两个版本** ⇒ 用 `_max` 并写 0.075 的倍率，
+#     屏显尺寸与 `_min`@0.3 **完全相同**，但多出 `_max` 自带的**外圈 3 texel 纯黑 + 一条灰色斜切带 +
+#     内圈黑线**（逐像素量过：中间行 x=0..2 纯黑、x=3..15 灰带 95→128、x=16..17 纯黑、x≥18 卡面）
+#     ⇒ 那正是 owner 说"自带黑框"的那部分，在 19.2 px 宽上是**一条约 1 px 的暗边**。
+#     ⚠ 早先（第 22 轮）我从 `_max` 换到 `_min` 的理由是"19.2 px 宽上 3 texel 只剩 0.22 px、与 `_min`
+#     肉眼无差" —— 那只算了最外那 3 texel，**漏算了后面 13 texel 的灰带**（合起来约 1 px 的暗边）⇒ owner
+#     看得见差别，是我量错了对象。
+SRC_TH18_BOMB_CARD = REPO / "local/th18.v1.00a/anm/abcard/ability/BOMB_max.png"
 # ★★ 2026-09-24（owner 第三轮）：「**你画的满B卡是 smjb，不会用这个？**」+ 给了 modkit 里的
 #   `cardart/native/ability/BOMB_max.png`（**与本机 `local/` 那份逐字节同一 md5** `ed6b9481…`）
 #   + 「**发光也不是 tm 这么发的啊**」 ⇒ 本轮把「卡面」与「背光」拆成**两个图集成员**：
@@ -108,9 +116,9 @@ SRC_TH18_BOMB_CARD = REPO / "local/th18.v1.00a/anm/abcard/ability/BOMB_min.png"
 #     · 发光 = **真加算**（脚本 331 的 `blendMode(1)` + 呼吸，= 一手 `abcard.anm` script16 的配方）。
 SRC_ABITEM = REPO / "local/th18.v1.00a/anm/abcard/ability/abitem.png"     # ★ 原生**光晕**（背光层用它）
 SRC_ABCARD_TXT = REPO / "local/th18.v1.00a/anm/abcard/abcard.anm.txt"     # ★ 原生矩形（现读，见下）
-# 原生卡图（卡面层）：`BOMB_min.png` = **整颗 B 的卡面**（`BOMB2_min.png` = B 碎的卡面，同 64×80 同倍率）
-#   ⇒ owner「和 B 碎一样大」靠的是**同一张画布的同一倍率**，不是我们手调的像素数。
-ABCARD_CARD_ENTRY = "ability/BOMB_min.png"
+# 原生卡图（卡面层）：**`BOMB_max.png`（256×320）= 整颗 B 的卡面，自带黑框**（owner 第 24 轮点名要它）；
+#   `BOMB2_min.png`（64×80）= B 碎的卡面 —— 两者是同一张画的 4× / 1× 版本 ⇒ 屏显尺寸靠"倍率换算"对齐。
+ABCARD_CARD_ENTRY = "ability/BOMB_max.png"
 ABCARD_GLOW_ENTRY = "ability/abitem.png"
 # ★★ 2026-09-24 第 23 轮（owner：「**缺少一个黑色的边框**」）：原生卡道具那棵树的第三支
 #   `abcard.anm` **script17** 画的是 **`ability/abframe.png`**（64×80，**外圈 4 px 白环、内部全透明**
@@ -132,7 +140,7 @@ SPRITES = [
     ("DROP_ICON_P",     426, (16, 16), (16, 16)),
     ("DROP_ICON_POINT", 427, (16, 16), (16, 16)),
     # ★ DROP_BOMB 的源不是 TH12 的 sprite432（见 `SRC_TH18_BOMB_CARD`）：owner 口径 = TH18 原生整 B 卡面
-    ("DROP_BOMB",       None, None,    (64, 80)),   # ★ 原生卡图 `BOMB_min.png` sprite9 (0,0,64,80) **1:1**
+    ("DROP_BOMB",       None, None,    (256, 320)),   # ★ 原生卡图 `BOMB_min.png` sprite9 (0,0,64,80) **1:1**
                                                     #   （脚本 345 写 `scale(0.3,0.3)` ⇒ 屏显 19.2×24 =
                                                     #    与原生 B 碎卡同尺寸，见本文件头 2026-09-24 第 22 轮）
     ("CARD_GLOW",       None, None,    (40, 44)),   # ★ 原生光晕 `abitem.png` sprite1 (0,0,40,44) **1:1**
@@ -146,13 +154,13 @@ SPRITES = [
 
 # 图集排布（★ 2026-09-24 第 22 轮：卡面 20×25 → 64×80、背光 28×35 → 40×44 ⇒ 画布 80×96 → 128×128）
 ATLAS_NAME = "ATLAS_UFO_DROP"
-ATLAS_W, ATLAS_H = 128, 128
+ATLAS_W, ATLAS_H = 320, 384
 ATLAS_POS = {                       # 输出名 → (x, y)
     "BOUNTY_BAG":      (0, 0),
     "DROP_ICON_P":     (32, 0),
     "DROP_ICON_POINT": (48, 0),
-    "DROP_BOMB":       (0, 32),     # 0+64=64 ≤ 128、32+80=112 ≤ 128 ✓
-    "CARD_GLOW":       (64, 32),    # 64+40=104 ≤ 128、32+44=76 ≤ 128 ✓（与 DROP_BOMB 不重叠）
+    "DROP_BOMB":       (0, 32),     # 0+256=256 ≤ 320、32+320=352 ≤ 384 ✓
+    "CARD_GLOW":       (256, 0),    # 256+40=296 ≤ 320、0+44=44 ≤ 384 ✓（与 DROP_BOMB 不重叠）
 }
 # ★ 第 23 轮：`DROP_FRAME` 走**独立的图集**，ORDER 行 **append 在本文件最末尾** ——
 #   行序 = sprite 号，插进中间会让后面所有卡的 sprite 号平移（本仓明令避免）。
@@ -258,7 +266,7 @@ def make_sprites() -> tuple[list[str], list[str]]:
     if src.size != (256, 256):
         raise SystemExit(f"{SRC_PNG}: 期望 256×256，实际 {src.size}")
     # 原生矩形断言（一手 `abcard.anm`：卡面 64×80、光晕 40×44、卡框 64×80）
-    for ent, want in ((ABCARD_CARD_ENTRY, (0, 0, 64, 80)), (ABCARD_GLOW_ENTRY, (0, 0, 40, 44)),
+    for ent, want in ((ABCARD_CARD_ENTRY, (0, 0, 256, 320)), (ABCARD_GLOW_ENTRY, (0, 0, 40, 44)),
                       (ABCARD_FRAME_ENTRY, (0, 0, 64, 80))):
         got = abrects.get(ent)
         if got != want:

@@ -688,12 +688,12 @@ CONV_BURST             ability/mof/CONV_BURST.png                     32x32
 # ============================================================================================
 # 卡 112 的掉落物实体贴图（TH12 bullet.anm entry5 = bullet/etama8.png 的 1:1 切图）
 #   生成器 = assets/ability/make_ufo_drop_art.py（矩形从 anm 文本读 + 断死）
-ATLAS ATLAS_UFO_DROP 128x128
+ATLAS ATLAS_UFO_DROP 320x384
 BOUNTY_BAG         ability/ufo_drop/BOUNTY_BAG.png   @0,0,32x32
 DROP_ICON_P        ability/ufo_drop/DROP_ICON_P.png   @32,0,16x16
 DROP_ICON_POINT    ability/ufo_drop/DROP_ICON_POINT.png   @48,0,16x16
-DROP_BOMB          ability/ufo_drop/DROP_BOMB.png   @0,32,64x80
-CARD_GLOW          ability/ufo_drop/CARD_GLOW.png   @64,32,40x44
+DROP_BOMB          ability/ufo_drop/DROP_BOMB.png   @0,32,256x320
+CARD_GLOW          ability/ufo_drop/CARD_GLOW.png   @256,0,40x44
 
 # 卡 112 的飞碟槽 HUD 贴图（TH12 front.anm 的 1:1 切图）
 #   生成器 = assets/ability/make_ufo_hud_art.py（矩形从 anm 文本读 + 断死）
