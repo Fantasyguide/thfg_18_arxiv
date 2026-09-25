@@ -373,7 +373,8 @@ typedef struct {
                                    * （旧语义「本卡不实现 ⇒ 恒 0」作废：用户口径把这一条改成两条真·效果，
                                    *  见 `signal_core.h` ④(b)；「子机上限 8」那条**仍不实现**）*/
     int32_t       stat_patchouli; /* 诊断：帕秋莉换档次数 */
-    uint32_t      flan_ring_vm;   /* ★ 2026-09-16：二小姐蓄力光环的 VM id（脚本 277；0 = 没起）*/
+    uint32_t      flan_ring_vm;   /* 二小姐蓄力光圈的**外圈粗环** VM（脚本 359，贴图环；0 = 没起）*/
+    uint32_t      flan_inner_vm;  /* ★ 2026-09-25：**内圈淡白**那一层 VM（脚本 277，`drawPoly` 低 alpha 白盘）*/
     /* ★★ 2026-09-16m：灵击的跨帧状态**不在这里**了 —— 它搬进了本文件的文件静态
      *   `s_b10`（`signal_bomb10_t`，2026-09-21 已整体搬进 `cards/bomb10.c`）。理由：卡的 `ce_state` 有 **496 字节硬上限**
      *   （`static_assert`，超了会静默拿不到状态），而 110 型灵击要 11 个字段。
@@ -2219,7 +2220,13 @@ static void signal_step_mod_fill(signal_card_t *s, signal_step_mod_t *mod)
  *   白环/色环；色环每 3 帧切一色、6 等份色相**」⇒ 脚本 277 回到 `drawPoly(1.0f, 32)` 的
  *   **渐变盘**（中心淡白 / 边缘 6 色相循环）——
  *   ⇒ 半径契约也回到最简的那一半：**局部半径 1.0 × 卡侧 scale = 可见半径(px)**（本常量 = 1.0）。*/
-#define SIGNAL_FLAN_RING_LOCAL_R    1.0f
+#define SIGNAL_FLAN_RING_LOCAL_R    1.0f    /* 内圈白盘（脚本 277）的局部半径 ⇒ scale = 可见半径 */
+/* ★ 2026-09-25：**外圈粗环**是贴图（`ATLAS_FLAN_RING` / sprite `FLAN_RING`，128×128、外径 62 ≈ 64）
+ *   ⇒ 可见外径 = `64 × scale` ⇒ 卡侧 `scale = 可见半径 / 64`。改贴图尺寸必须同步改这里。
+ *   ⚠ 为什么不用 `drawPolyBorder`：它的线宽在**局部空间**不可控（owner：「不要细环，要粗环」），
+ *     贴图环的粗细就是像素（环带 20px = 外径的 32%），而且整张图是白的 ⇒ `color` 直接染色
+ *     （「充能中是白的、满充能才是彩虹变色」就是这么实现的：染色放脚本的中断 2 里）。*/
+#define SIGNAL_FLAN_RING_TEX_R      64.0f
 
 /* ★★ 2026-10-01（P7 = `SINGLE-CARD-TEST.md` §th11 #8「咲夜蓄满光圈应该闪烁」）：
  *   蓄满那一帧给范围环（脚本 277）发的**中断号** —— `2` 是**一手的语义位**（三作一致）：
@@ -2751,39 +2758,64 @@ static void signal_support_flandre(signal_card_t *s)
                     (int32_t)(*(const float *)(pl + CE_PLAYER_HITBOX_R_NF) * 100.0f));
                 float ring_r = (float)ring_x100 / 100.0f;
 
-                if (!s->flan_ring_vm || !ce_anm_get_vm(s->flan_ring_vm)) {
+                /* ★★★ 2026-09-25：**两层**（owner：「内圈来一个淡的白叠加就行，外圈是相对实一点的
+                 *   白环 or 色环」）——
+                 *     · `flan_inner_vm`（脚本 277）= 内圈**淡白**白盘（低 alpha、不换色）；
+                 *     · `flan_ring_vm` （脚本 359）= 外圈**贴图粗环**（充能中白；满蓄力才彩虹循环）。*/
+                {
                     const float *pp0 = ce_player_pos();
-                    s->flan_ring_vm = ce_anm_spawn(CE_ABILITY_ANM(),
-                                                   CE_ANM_ABILITY_SCRIPT_FLAN_CHARGE_RING, 13);
-                    if (s->flan_ring_vm && pp0) {
-                        ce_anm_set_pos(s->flan_ring_vm, pp0[0], pp0[1], pp0[2]);
+                    if (!s->flan_inner_vm || !ce_anm_get_vm(s->flan_inner_vm)) {
+                        s->flan_inner_vm = ce_anm_spawn(CE_ABILITY_ANM(),
+                                                        CE_ANM_ABILITY_SCRIPT_FLAN_CHARGE_RING, 13);
+                        if (s->flan_inner_vm && pp0) {
+                            ce_anm_set_pos(s->flan_inner_vm, pp0[0], pp0[1], pp0[2]);
+                        }
                     }
-                    ce_log("signal: 二小姐·范围环起 VM（id %u，脚本 %d，层 13，满半径 %.2f px，"
-                           "比例 %.2f→1.00 —— 跟着蓄力长大；**描边环**：scale = 半径/%.0f）",
-                           (unsigned)s->flan_ring_vm, (int)CE_ANM_ABILITY_SCRIPT_FLAN_CHARGE_RING,
+                    if (!s->flan_ring_vm || !ce_anm_get_vm(s->flan_ring_vm)) {
+                        s->flan_ring_vm = ce_anm_spawn(CE_ABILITY_ANM(),
+                                                       CE_ANM_ABILITY_SCRIPT_FLAN_RING_BAND, 13);
+                        if (s->flan_ring_vm && pp0) {
+                            ce_anm_set_pos(s->flan_ring_vm, pp0[0], pp0[1], pp0[2]);
+                        }
+                    }
+                    ce_log("signal: 二小姐·光圈起 VM（内圈白盘 id %u / 脚本 %d；外圈粗环 id %u / 脚本 %d；"
+                           "层 13，满半径 %.2f px，比例 %.2f→1.00 —— 跟着蓄力长大；"
+                           "外圈 scale = 半径/%.0f，充能中白、满蓄力才彩虹）",
+                           (unsigned)s->flan_inner_vm, (int)CE_ANM_ABILITY_SCRIPT_FLAN_CHARGE_RING,
+                           (unsigned)s->flan_ring_vm,  (int)CE_ANM_ABILITY_SCRIPT_FLAN_RING_BAND,
                            (double)ring_r,
                            (double)((float)signal_flandre_ring_ratio_permille(s->flandre.charge) * 0.001f),
-                           (double)SIGNAL_FLAN_RING_LOCAL_R);
+                           (double)SIGNAL_FLAN_RING_TEX_R);
+                }
+                {   /* 每帧驱动两层（位置 + 半径）*/
+                    const float *pp0 = ce_player_pos();
+                    float k = (float)signal_flandre_ring_ratio_permille(s->flandre.charge) * 0.001f;
+                    float vis = ring_r * k;
+                    if (pp0 && s->flan_inner_vm) ce_anm_set_pos(s->flan_inner_vm, pp0[0], pp0[1], pp0[2]);
+                    if (s->flan_inner_vm) {
+                        float sc = vis / SIGNAL_FLAN_RING_LOCAL_R;      /* 白盘：局部半径 1.0 */
+                        (void)ce_anm_set_scale(s->flan_inner_vm, sc, sc);
+                    }
+                    if (pp0 && s->flan_ring_vm) ce_anm_set_pos(s->flan_ring_vm, pp0[0], pp0[1], pp0[2]);
+                    if (s->flan_ring_vm) {
+                        float sc = vis / SIGNAL_FLAN_RING_TEX_R;        /* 粗环：贴图外径 64 */
+                        (void)ce_anm_set_scale(s->flan_ring_vm, sc, sc);
+                    }
                 }
                 if (s->flan_ring_vm) {
-                    /* ★★ 2026-09-18（用户口径）：「咲夜蓄力最好张开一个**逐渐变大的圆**，
+                    /* ⚠ 位置 / 半径的逐帧驱动**已经在上面那一段统一做了**（两层一起），
+                     *   这里只剩「蓄满那一帧给外圈发中断 2」这一件事。
+                     *   ★★ 2026-09-18（用户口径）：「咲夜蓄力最好张开一个**逐渐变大的圆**，
                      *   这样**最大了就知道满了**」⇒ 半径 = 清屏半径 × `signal_flandre_ring_ratio(charge)`
                      *   （0.12 → 1.0 线性）：长满那一刻既报"满"，又正好等于松手会消掉的那一圈。
                      *   ⚠ 判定半径**不跟着变小**（`r_x100` 仍是满值）—— 比例只用于画。*/
-                    const float *pp0 = ce_player_pos();
-                    /* 千分比 → 倍率（本仓口径：浮点**只在卡里算**，core 一律走定点）*/
-                    float k = (float)signal_flandre_ring_ratio_permille(s->flandre.charge) * 0.001f;
-                    if (pp0) ce_anm_set_pos(s->flan_ring_vm, pp0[0], pp0[1], pp0[2]);
-                    /* ★ 2026-09-25：脚本的局部半径是 `SIGNAL_FLAN_RING_LOCAL_R`(100) ⇒
-                     *   scale = 可见半径 / 100（描边环的半径契约，见那个常量的注释）。*/
-                    {
-                        float sc = (ring_r * k) / SIGNAL_FLAN_RING_LOCAL_R;
-                        (void)ce_anm_set_scale(s->flan_ring_vm, sc, sc);
-                    }
 
-                    /* ★★★ 2026-10-01（工单 P7 = `SINGLE-CARD-TEST.md` §th11 #8「咲夜蓄满光圈应该闪烁」）：
-                     *   **蓄满那一帧**给光环发 **中断 2** ⇒ 脚本 277 的 `interruptLabel(2)` 进
-                     *   「每 2 帧换一色（黄→红→绿→青）、`jmp(…, 0)` 无限循环」，满着就一直闪、直到松手。
+                    /* ★★★ 2026-09-25（owner 定稿）：「**满充能才是彩虹变色，充能中是白的**」+
+                     *   「彩虹的**饱和度降低，明度提高，更透明**」——
+                     *   **蓄满那一帧**给**外圈粗环**（脚本 359）发中断 2 ⇒ 它的 `interruptLabel(2)`
+                     *   进「6 等份色相 × 每色 3 帧 + `jmp` 无限循环」（低饱和高明度的彩虹），
+                     *   满着就一直循环到松手；**充能中它是纯白**（脚本的静态属性）。
+                     *   ⚠ 内圈那层淡白（脚本 277）**不换色**（它没有 label 2）。
                      *
                      *   ## 一手（逐条；完整推导在脚本 277 文件头的 §蓄满闪烁）
                      *   · **触发（TH17）**：`th17:0x44aa38`–`0x44aa56`（蓄力满那一支，判据
@@ -2803,22 +2835,30 @@ static void signal_support_flandre(signal_card_t *s)
                     if (charged_before < SIGNAL_FLANDRE_CHARGE_FRAMES &&
                         s->flandre.charge >= SIGNAL_FLANDRE_CHARGE_FRAMES) {
                         (void)ce_anm_interrupt(s->flan_ring_vm, SIGNAL_FLAN_RING_INT_FLASH);
-                        ce_log("signal: 二小姐·蓄满 ⇒ 范围环进入闪烁（VM %u，中断 %d，脚本 277 的 "
-                               "interruptLabel(2)：每 2 帧换色…一手 th17:0x44aa56 触发 / th12 闪色配方）",
-                               (unsigned)s->flan_ring_vm, SIGNAL_FLAN_RING_INT_FLASH);
+                        ce_log("signal: 二小姐·蓄满 ⇒ **外圈粗环进彩虹循环**（VM %u，中断 %d，"
+                               "脚本 %d 的 interruptLabel(2)：6 等份色相 × 每色 3 帧、低饱和高明度；"
+                               "触发号沿用一手 th17:0x44aa56）",
+                               (unsigned)s->flan_ring_vm, SIGNAL_FLAN_RING_INT_FLASH,
+                               (int)CE_ANM_ABILITY_SCRIPT_FLAN_RING_BAND);
                     }
                 }
-            } else if (s->flan_ring_vm) {
-                /* 蓄力掉了（中弹打断 / 没满就松手）⇒ 收光环（脚本 277 的中断 1 = 20 帧淡出后自删）。*/
-                if (ce_anm_get_vm(s->flan_ring_vm)) ce_anm_interrupt(s->flan_ring_vm, 1);
+            } else if (s->flan_ring_vm || s->flan_inner_vm) {
+                /* 蓄力掉了（中弹打断 / 没满就松手）⇒ 收两层（中断 1 = 20 帧淡出后自删）。*/
+                if (s->flan_ring_vm  && ce_anm_get_vm(s->flan_ring_vm))  ce_anm_interrupt(s->flan_ring_vm, 1);
+                if (s->flan_inner_vm && ce_anm_get_vm(s->flan_inner_vm)) ce_anm_interrupt(s->flan_inner_vm, 1);
                 s->flan_ring_vm = 0;
+                s->flan_inner_vm = 0;
             }
             return;
         }
-        /* 松手且蓄满 ⇒ 收光环（淡出），随后由下面那一段放爆闪 */
+        /* 松手且蓄满 ⇒ 收两层（淡出），随后由下面那一段放爆闪 */
         if (s->flan_ring_vm) {
             if (ce_anm_get_vm(s->flan_ring_vm)) ce_anm_interrupt(s->flan_ring_vm, 1);
             s->flan_ring_vm = 0;
+        }
+        if (s->flan_inner_vm) {
+            if (ce_anm_get_vm(s->flan_inner_vm)) ce_anm_interrupt(s->flan_inner_vm, 1);
+            s->flan_inner_vm = 0;
         }
         /* ★★ 2026-09-20（P1 th11 #7）：蓄力音那一块**已经上移到本分支之前**（见那里的长注）——
          *   它必须每帧求值；放在这里等于死代码（`fired == 1` 只在松手蓄满那一帧成立，
@@ -2994,10 +3034,15 @@ static void signal_support_reset(ce_card_t *c, signal_card_t *s)
     signal_flandre_reset(&s->flandre);
     signal_kanako_reset(&s->kanako);
     signal_koishi_reset(&s->koishi);
-    /* ★ 2026-09-16：二小姐蓄力光环（长持续效果铁律：删卡/换关都得把它收干净）。*/
+    /* ★ 2026-09-16：二小姐蓄力光圈（长持续效果铁律：删卡/换关都得把它收干净）。
+     * ★ 2026-09-25：现在是**两层**（内圈白盘 277 + 外圈粗环 359）⇒ 两层都要收。*/
     if (s->flan_ring_vm) {
         if (ce_anm_get_vm(s->flan_ring_vm)) ce_anm_interrupt(s->flan_ring_vm, 1);
         s->flan_ring_vm = 0;
+    }
+    if (s->flan_inner_vm) {
+        if (ce_anm_get_vm(s->flan_inner_vm)) ce_anm_interrupt(s->flan_inner_vm, 1);
+        s->flan_inner_vm = 0;
     }
     /* ★★ 2026-09-16k/m / 2026-09-21：**灵击的范围环 + 电流边**（脚本 279 / 293）—— 它们自己不会死
      *   （`stop()` 之后只画）⇒ 删卡 / 换关 / 局末三条路都必须显式删（`METHOD.md` 的长持续效果铁律）。
@@ -3018,6 +3063,7 @@ static void signal_support_reset(ce_card_t *c, signal_card_t *s)
     s->shift_held = 0;
     s->patch_latch = 0;
     s->flan_ring_vm = 0;
+    s->flan_inner_vm = 0;
     signal_tint_restore_all();     /* ★ 2026-09-16：把自己染红的弹还回原色（删卡/换关/换机体都走这里）*/
     if (pl) *(float *)(pl + CE_PLAYER_SPEED_MULT) = 1.0f;
 }

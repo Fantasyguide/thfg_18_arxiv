@@ -257,6 +257,16 @@ cards: 35 registered from cards.js; shop pool 700/8192 slots, guaranteed offers 
   **既有号一个没动**。切图 = `assets/ability/make_font2_art.py`（同一批字形同时落 `font2/` 与 `font2b/`）。
   只占 1 个 entry（53/256，余量 203）；生成器 `assets/ability/make_faith_hud_art.py`，
   合并块的几何与逐项判定见 `engine/player/th11/04-merged-hud-spec.md` 与 `AUDIT` §DB/§DC。
+- **★ 2026-09-25 新增 `ATLAS_FLAN_RING`（`ability.anm` 的 entry 75）**：111 咲夜蓄力光圈的
+  **外圈粗环**（owner：「我不想要细环，我就想要粗环…满充能才是彩虹变色，充能中是白的」）。
+  **自绘**（不是原生切图）：128×128 纯白粗环，外径 62 / 内径 42 ⇒ 环带厚 **20 px = 外径的 32%**；
+  生成器 `assets/ability/make_flan_art.py` 同目录的 **`make_flan_ring_art.py`**（可复现）。
+  画布 **128×128**、**1 个成员**（`FLAN_RING`）；**追加在 ORDER.txt 末尾** ⇒ 新 sprite = **538**、
+  同批新脚本 = **359**（`CE_ANM_ABILITY_SCRIPT_FLAN_RING_BAND`）；既有 sprite / 脚本号一个都没动。
+  只占 1 个 entry（**75/256，余量 181**；`anm_ids.h` 里 = `CE_ANM_ABILITY_ATLAS_ATLAS_FLAN_RING` = **75**、
+  `CE_ANM_ABILITY_SPRITE_FLAN_RING` = **538**）。
+  白色贴图 ⇒ 脚本用 `color` 就能染色（充能中纯白、满蓄力走 6 等份色相循环）。
+  ⚠ 契约：可见外径 = `64 × VM scale` ⇒ 卡侧 `scale = 半径 / 64`（`signal.c` 的 `SIGNAL_FLAN_RING_TEX_R`）。
 - **★ 2026-09-16 新增 `ATLAS_FLAN`（`ability.anm` 的 entry 53）**：111 的二小姐蓄力特技
   （`NEXT.md` §2N）「松手清屏」那一下的爆闪 = **TH18 原生卡 42（小槌）挥击的 4 个 sprite 的 1:1 切图**
   （原生 `ability.anm` entry0 `player/option/op00.png` 的 sprite41 `(32,80,32,16)` 与
