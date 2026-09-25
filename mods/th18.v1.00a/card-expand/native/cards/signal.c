@@ -2215,6 +2215,13 @@ static void signal_step_mod_fill(signal_card_t *s, signal_step_mod_t *mod)
  * ⚠ 蓄力 300 帧 ⇒ 触发在 1 / 120 / 239 帧；最后一次的尾音会越过「蓄满」约 1 秒
  *   （没有停播 API ⇒ 只能让它自然放完；owner 口径「循环播放至充满」在这条上只能做到近似）。*/
 #define SIGNAL_SE_FLAN_LOOP_EVERY   119
+/* ★★★ 2026-09-25（owner：「对比 116 的季节解放，能不能做一个圆环（外描边）？」）：
+ *   范围环的图元从**实心盘**换成**描边环**（脚本 277 现在用 `drawPolyBorder(100.0f, 64)`）。
+ *   ⇒ 契约跟着改成两半：**脚本的局部半径 100.0 × 卡侧 scale = 可见半径(px)**。
+ *     本常量就是那个 100.0（脚本与卡侧**同源**，改一处必须改另一处）。
+ *   ⚠ 为什么局部半径不是 1.0：`drawPolyBorder` 的**线宽在局部空间**（≈1 px 量级）——
+ *     局部半径 1.0 × 86 倍缩放会把线宽也乘 86 ⇒ 变成粗带；取 100 ⇒ 缩放 ≈0.86，线宽与原作同量级。*/
+#define SIGNAL_FLAN_RING_LOCAL_R    100.0f
 
 /* ★★ 2026-10-01（P7 = `SINGLE-CARD-TEST.md` §th11 #8「咲夜蓄满光圈应该闪烁」）：
  *   蓄满那一帧给范围环（脚本 277）发的**中断号** —— `2` 是**一手的语义位**（三作一致）：
@@ -2754,10 +2761,11 @@ static void signal_support_flandre(signal_card_t *s)
                         ce_anm_set_pos(s->flan_ring_vm, pp0[0], pp0[1], pp0[2]);
                     }
                     ce_log("signal: 二小姐·范围环起 VM（id %u，脚本 %d，层 13，满半径 %.2f px，"
-                           "比例 %.2f→1.00 —— 跟着蓄力长大）",
+                           "比例 %.2f→1.00 —— 跟着蓄力长大；**描边环**：scale = 半径/%.0f）",
                            (unsigned)s->flan_ring_vm, (int)CE_ANM_ABILITY_SCRIPT_FLAN_CHARGE_RING,
                            (double)ring_r,
-                           (double)((float)signal_flandre_ring_ratio_permille(s->flandre.charge) * 0.001f));
+                           (double)((float)signal_flandre_ring_ratio_permille(s->flandre.charge) * 0.001f),
+                           (double)SIGNAL_FLAN_RING_LOCAL_R);
                 }
                 if (s->flan_ring_vm) {
                     /* ★★ 2026-09-18（用户口径）：「咲夜蓄力最好张开一个**逐渐变大的圆**，
@@ -2768,7 +2776,12 @@ static void signal_support_flandre(signal_card_t *s)
                     /* 千分比 → 倍率（本仓口径：浮点**只在卡里算**，core 一律走定点）*/
                     float k = (float)signal_flandre_ring_ratio_permille(s->flandre.charge) * 0.001f;
                     if (pp0) ce_anm_set_pos(s->flan_ring_vm, pp0[0], pp0[1], pp0[2]);
-                    (void)ce_anm_set_scale(s->flan_ring_vm, ring_r * k, ring_r * k);
+                    /* ★ 2026-09-25：脚本的局部半径是 `SIGNAL_FLAN_RING_LOCAL_R`(100) ⇒
+                     *   scale = 可见半径 / 100（描边环的半径契约，见那个常量的注释）。*/
+                    {
+                        float sc = (ring_r * k) / SIGNAL_FLAN_RING_LOCAL_R;
+                        (void)ce_anm_set_scale(s->flan_ring_vm, sc, sc);
+                    }
 
                     /* ★★★ 2026-10-01（工单 P7 = `SINGLE-CARD-TEST.md` §th11 #8「咲夜蓄满光圈应该闪烁」）：
                      *   **蓄满那一帧**给光环发 **中断 2** ⇒ 脚本 277 的 `interruptLabel(2)` 进
