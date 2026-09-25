@@ -1329,7 +1329,10 @@ typedef struct {
     int64_t     slot_full_piv;                         /* 一手的原始加值累计（×100 定点；日志/对账用）*/
     /* —— ★ ④（2026-09-18）：Boss / 对话两条离场路的闩 —— */
     int32_t     dbg_key_prev;                          /* ★ 调试键（空格）上一帧按着没有 —— 边沿检测（照 117 同款）*/
-    uint8_t     boss_leave_logged;                     /* 「Boss 在场 ⇒ 静默撤」只报一次 */
+    uint8_t     boss_leave_logged;                     /* 「Boss 在场 ⇒ 飞走」只报一次 */
+    uint8_t     boss_prev;                             /* ★ 第 29 轮：上一帧有没有 Boss（上升沿检测）*/
+    uint8_t     boss_summon;                           /* ★ 第 29 轮：本只 UFO 是**在 Boss 期间召唤的** */
+    uint8_t     boss_edge;                             /* ★ 第 29 轮：这一帧 Boss 刚出现（上升沿）*/
     uint8_t     dialogue_break_logged;                 /* 「对话 ⇒ 原地自爆发奖」只报一次 */
 } ufo_card_t;
 
@@ -1350,10 +1353,33 @@ static int ufo_boss_alive(void)
     return 0;
 }
 
-/* ★ ④：Boss 在场时 UFO 的「离场延迟」。一手 = ECL 轮询周期（`$B`/`$C` 两圈 60 帧 + `goto @60`
- * + `wait(1)`）⇒ 首轮轮询落在召唤后 **≈301 帧**（若 `moveCircleRelTime(60,…)` 阻塞脚本则 ≈361）
- * ⇒ 本卡取 **301**（🟡 两个读法的下界；改这一个常量即可对齐另一种读法）。 */
-#define UFO_BOSS_LEAVE_FRAMES 301
+/* ★★★ 2026-09-26 owner 第 29 轮（两条口径）：
+ *   ①「**在 boss 期间，无论道中关底，召唤的 UFO 应该召唤出来之后直接开始飞走**」
+ *   ②「**因为 boss 出现而被击破的 UFO 也应该掉落击破奖励**」
+ *
+ * **一手（TH12）**：Boss 在场时**引擎自己**把 UFO 敌机的 `int_vars[0]` 写成 `999`
+ *   （`th12:0x44a3af`，本卡 `assets/ecl/ufo.ecl.txt` 的注释里记着这一条）；ECL **轮询**这个值
+ *   （`unless ($I0 == 999) goto … @ 60`）⇒ 看到就 `movePosTime(300, 1, …, −64)` **飞走** + `delete()`
+ *   ⇒ 「飞走」这件事是 **ECL 干的**，卡侧只要把那个变量写上。
+ * ⚠ TH18 里**没有任何人**写它（UFO 是本卡从 TH12 移植的 ECL，TH18 引擎不认识 UFO）⇒ 之前卡的实现
+ *   只能自己"301 帧后静默删掉"（那时 `int_vars[0]` 的偏移还没提炼进 `engine.h`）。
+ *   **现在偏移有了**：`zEnemy.data`（`CE_ENEMY_DATA` = 0x122c）里的 `ecl_int_vars` 在 **+0x28c**
+ *   （vendor `type-structs-own.json` 的 `zEnemyData`）⇒ `$I0` = `enemy + 0x122c + 0x28c`。
+ * ⇒ 本轮改成**让 ECL 自己飞**（那才是原版的样子），并按 owner 口径补两条：
+ *   ① **Boss 期间召唤的** UFO：起手就标 `boss_summon`，之后每帧写 `$I0 = 999` ⇒ ECL 下一个轮询点
+ *      （≤60 帧）就起飞；
+ *   ② **Boss 出现之前就在场的** UFO：在 Boss 的**上升沿**按**击破**收尾（开奖 + 爆炸特效），
+ *      而不是无声消失 —— owner 要的"因为 boss 出现而被击破 ⇒ 掉落击破奖励"。
+ * ⚠ 回退：`UFO_BOSS_EDGE_REWARD` 改 0 就回到"静默撤"（旧版=301 帧后删）；`UFO_BOSS_LEAVE_FRAMES`
+ *   只作为**兜底看门狗**（万一某个 ECL 轮询点迟迟不来，别让 UFO 永久赖在场上）。*/
+#define UFO_BOSS_EDGE_REWARD   1        /* 1 = Boss 上升沿把在场的 UFO 按击破开奖（owner 口径②）*/
+#define UFO_BOSS_LEAVE_FRAMES 301       /* 兜底看门狗（ECL 自己会在 ≤60 帧内起飞 ⇒ 平时用不到）*/
+#define UFO_ENEMY_INT_VAR0   (CE_ENEMY_DATA + 0x28c)   /* `$I0` = zEnemyData.ecl_int_vars[0] */
+
+static void ufo_ecl_ask_leave(uint8_t *e)
+{
+    if (e) *(int32_t *)(e + UFO_ENEMY_INT_VAR0) = 999;      /* 一手 th12:0x44a3af 的那个值 */
+}
 
 /* ============================== 小工具 ============================== */
 static uint8_t *ufo_enemy_by_id(uint32_t id)
@@ -3265,6 +3291,14 @@ static void ufo_try_summon(ufo_card_t *s)
     }
     ++s->ufos_spawned;
     s->logged_lifetime = 0;                            /* 新一个 UFO：存活上限日志重新允许报一次 */
+    /* ★ 2026-09-26 owner 第 29 轮①：「在 boss 期间，无论道中关底，召唤的 UFO 应该召唤出来之后
+     *   **直接开始飞走**」—— 判据 = **出生这一刻**有没有 Boss（道中 Boss 与关底 Boss 走同一个
+     *   `ufo_boss_alive()`，见它的注）。标记在这里落，离场路按它决定"飞走"还是"按击破开奖"。*/
+    s->boss_summon = (uint8_t)(ufo_boss_alive() ? 1 : 0);
+    if (s->boss_summon)
+        ce_log("ufo: summoned WHILE A BOSS IS ON THE FIELD - this one will fly away right after "
+               "spawning (owner ruling; $I0 = 999 is written every frame so the ECL's poll takes the "
+               "flight path within ~60 frames)");
     /* ★★ P2 #6：**回写真血量**（> 999 也合法 —— 位 30 只在 spawn 那一刻按 `spawn+0x14` 置）。
      *   放在 `ufo_spawn()` 成功之后：所有失败 / 孤儿路径都在它上面返回 ⇒ 只对**真活的**那只写。 */
     ufo_body_apply_real_hp(body, hp);
@@ -3630,7 +3664,11 @@ static int ufo_drop_spawn(ufo_card_t *s, int32_t kind, float x, float y,
  *   （1280 档截图；"具体得再调"）⇒ 本位置是 **640 空间**（`x = 320 + wx`、`y = 16 + wy`，到屏幕 ×2）：
  *     右 180 表面 px = **+90 单位**、上 32 表面 px = **−16 单位**。
  *   旧值 24（下方 24 单位 = 下方 48 表面 px）⇒ 24 − 16 = **8**。得分那行挂在同一个 x/y 上（+32 单位）。*/
-#define UFO_XN_DX640      90.0f          /* ★ owner 第 27 轮"往右 180px" = +90 单位 */
+/* ★★★ 2026-09-26 owner 第 29 轮：「**相比于正确的位置，弹字的位置大概向右了大概半个游玩区屏幕**」
+ *   ⇒ 半个游玩区 = 场地宽 384 单位的一半 = **192 单位**（屏幕 384 px）⇒ 在上一条 +90 的基础上再 −192：
+ *     +90 − 192 = **−102 单位**（相对 UFO 中心左 102 单位 = 屏幕 204 px）。
+ *   ⚠ 这是唯一的旋钮：要再挪 X 屏幕 px，把这里的数改 X/2（1 单位 = 2 屏幕 px）。*/
+#define UFO_XN_DX640    (-102.0f)        /* owner 第 27 轮 +90 → 第 29 轮"再往左半个游玩区" −192 */
 #define UFO_XN_DY          8.0f          /* ❓自定：UFO 下方 24 → **8**（owner 第 27 轮"往上 32px"）*/
 #define UFO_XN_SCALE      2.0f           /* ✅ 一手 `fld [0x4a4014]` = 2.0 */
 #define UFO_XN_COLOR_GREY 0xff808080u    /* ✅ 一手 `rem%10 >= 5` 那一支（dword 直读 0xff808080）*/
@@ -3668,7 +3706,16 @@ static int ufo_play_frame(void)
     uint32_t f;
     if (!gt) return 0;
     f = *(const uint32_t *)(gt + CE_GT_FLAGS);
-    return (f & 0x3u) == 0u && (f & 0x400u) == 0u;
+    /* ★★★ 2026-09-26 owner 第 29 轮：「**暂停这个字符仍动和消失**」—— 真因就在这一行：
+     *   原来写的是 `(f & 0x3) == 0 && (f & 0x400) == 0`，而引擎自己那条**道具池 body 门**
+     *   （`th18:0x446ec0`，逐指令）是：
+     *     `446ed0 mov eax,edx / 446ed2 shr eax,2 / 446ed5 or eax,edx / 446ed7 test al,1 / jne <跳过>`
+     *     `446edb test edx,0x400 / jne <跳过>`
+     *   ⇒ 引擎跳过（冻结）的条件 = **`(f & 1) || (f & 4) || (f & 0x400)`** —— 是 **bit2（0x4）**，不是 bit1！
+     *   我原来查错了位：漏了 bit2（= 暂停）、多查了 bit1 ⇒ **暂停期间照样在推进 ×N 的寿命与闪色**
+     *   ⇒ 字在动、120 帧一到整条消失（owner 看到的就是这两件事）。
+     *   ⇒ 现在逐位照抄引擎：三个位任一置起 = 非游玩帧（不推进寿命、不重建 VM、不写位置）。*/
+    return (f & (1u | 4u | 0x400u)) == 0u;
 }
 
 static void ufo_xn_kill(void)
@@ -4433,6 +4480,8 @@ static void ufo_teardown(ufo_card_t *s, const char *why)
                why ? why : "?", (int)s->grp.filled, (int)s->grp.last_group);
     ufo_group_clear(&s->grp);
     s->boss_leave_logged = 0;
+    s->boss_summon = 0;                                /* ★ 第 29 轮（新一只 UFO 重新判）*/
+    s->boss_edge = 0;
     s->dialogue_break_logged = 0;
     ufo_finish(&s->u);                                 /* 纯逻辑侧：清 id / 计数 / fill */
 }
@@ -5276,6 +5325,13 @@ static void on_item_frame(ce_card_t *c)
      *     （`ECL delete()` 不经过 `Enemy::die`，一手有两条独立的负向证明）。
      *     ⇒ 本卡按「活了 `UFO_BOSS_LEAVE_FRAMES` 帧且 Boss 在场 ⇒ **静默撤退、不发奖**」实现
      *     （延迟取一手首轮轮询帧数；`UFO_FLAGS_DELETE_NOW` 与 ECL `delete()` 同效：不跑死亡处理）。 */
+    /* ★ 第 29 轮：Boss 的**上升沿**要在这一支里先记下来（下面两条离场路要用）——
+     *   `boss_prev` = 上一帧有没有 Boss；同帧新出现的 Boss 且场上已有 UFO ⇒ 那一支按击破开奖。*/
+    {
+        int boss_now = ufo_boss_alive();
+        s->boss_edge = (uint8_t)(boss_now && !s->boss_prev);
+        s->boss_prev = (uint8_t)boss_now;
+    }
     if (ufo_present(&s->u)) {
         uint8_t *be = ufo_enemy_by_id(s->u.ufo_id);
         if (CE_GUI_MSG_ACTIVE()) {
@@ -5293,17 +5349,36 @@ static void on_item_frame(ce_card_t *c)
             }
             if (be) { s->last_x = *(float *)(be + CE_ENEMY_POS_X); s->last_y = *(float *)(be + CE_ENEMY_POS_Y); }
             s->pending_break = 1;                      /* 帧末按击破兑现（不在本处建 VM / 开奖）*/
-        } else if (ufo_boss_alive() && s->u.frames >= UFO_BOSS_LEAVE_FRAMES && be) {
-            /* Boss 在场 ⇒ 静默撤退（一手：ECL 飞走 + delete，**不发奖**）。 */
+        } else if (ufo_boss_alive() && be) {
+            /* ★★ owner 第 29 轮两条口径（上面 `UFO_BOSS_EDGE_REWARD` 那段注里有完整一手）。
+             *   ① Boss 期间召唤的 ⇒ 每帧写 `$I0 = 999`，ECL 下一个轮询点就起飞（"直接开始飞走"）。
+             *   ② Boss 出现那一帧，场上原有的 UFO ⇒ 按**击破**收尾（帧末 `ufo_break()` 开奖）。*/
+            ufo_ecl_ask_leave(be);
             if (!s->boss_leave_logged) {
                 s->boss_leave_logged = 1;
-                ce_log("ufo: a BOSS is on the field - silent withdrawal after %d frames (one-hand: the "
-                       "engine writes int_vars[0]=999 and the ECL flies off + delete()s, no reward)",
-                       UFO_BOSS_LEAVE_FRAMES);
+                ce_log("ufo: a BOSS is on the field - ECL flight-away requested ($I0 = 999 at enemy+0x%x, "
+                       "the ECL polls it within ~60 frames), summon-time=%d, edge-reward=%d",
+                       (unsigned)UFO_ENEMY_INT_VAR0, (int)s->boss_summon, (int)UFO_BOSS_EDGE_REWARD);
             }
-            ufo_teardown(s, "boss on field (silent leave, no reward)");
+            if (s->boss_summon) {
+                /* ① 这只本来就是 Boss 期间召唤的 ⇒ 只让它飞走，不发奖 */
+            } else if (UFO_BOSS_EDGE_REWARD) {
+                /* ② 已在场 ⇒ 按击破兑现（位置 = 它此刻的坐标，帧末统一开奖）*/
+                s->last_x = *(float *)(be + CE_ENEMY_POS_X);
+                s->last_y = *(float *)(be + CE_ENEMY_POS_Y);
+                s->pending_break = 1;
+                /* 本体也要收掉：击破路平时由玩家打死它，这一次是**我们**判定 ⇒ 用引擎的
+                 * `DELETE_NOW`（= ECL `delete()` 同效、不跑死亡回调）把它静默移除，
+                 * 免得"卡已经结账了、场上还飘着一只 UFO"。奖励由上面的 `pending_break` 给。*/
+                *(uint32_t *)(be + CE_ENEMY_FLAGS) |= UFO_FLAGS_DELETE_NOW;
+                ce_log("ufo: the UFO was on the field when the BOSS appeared - treated as a BREAK "
+                       "(owner ruling: 'a UFO destroyed because the boss showed up should drop the "
+                       "break reward')");
+            }
+        } else if (ufo_boss_alive() && !be && s->u.frames >= UFO_BOSS_LEAVE_FRAMES) {
+            /* 兜底看门狗：Boss 还在、敌机却已经不在（ECL 已经 delete）⇒ 收尾（不发奖，一手）*/
+            ufo_teardown(s, "boss on field - ECL already deleted the body");
             ++s->ufos_vanished;
-            *(uint32_t *)(be + CE_ENEMY_FLAGS) |= UFO_FLAGS_DELETE_NOW;
         }
     }
     /* 伪磁场（只在 UFO 在场且过了 60 帧暂停时扫池）*/

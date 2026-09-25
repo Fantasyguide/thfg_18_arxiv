@@ -57,6 +57,28 @@
 | 6 | 「**击破 UFO 的音效不对**」| 重读一手 ⇒ `se_power1`（TH18 `0x1d`）；「击破那发 `EtBreak2`」那一格静音（一手只有一声）| `ufo/se: "ufo-break" -> th18 id 0x1d`；耳朵：一声"碎" |
 | 7 | 「**最后一个 UFO 收满却没进入收满状态**（没掉 B、没变炫彩）」| 真因：吸满可以由**信仰点**（不是道具）补满 —— 那条路的返回值被 `(void)` 丢掉了 ⇒ 收满回调（掉 B / 变炫彩 / 播吸满音）不触发。已改成 `if (ufo_absorb_item(...)) ufo_fill_complete(...)` | 最后一只 UFO 靠**信仰点**吸满时，日志出现 `ufo: fill COMPLETE (…)` 且**照样掉 B / 变炫彩** |
 
+## ★ 本批（2026-09-26 · 最新）已改 · 待实跑 —— **owner 第 29 轮：击破弹字（大小/间距/暂停/位置）+ Boss 期间两条口径**
+
+> **部署**：DLL 见 `RELEASE-STATE.json`（modkit **4 路径同 md5**）。本轮**只改 DLL**（`ufo.c` / `sdk.c`）。
+
+| # | owner 原话（要点）| 改了什么 | 实跑看什么 |
+| --- | --- | --- | --- |
+| 1 | 「两个的大小都得**大至少 1 倍多**」| TH12 字形那一档的 `size` **1.0 → 2.0**（本仓 UI 字形美术被 DAT×0.5 折半，×2 才是 TH12 原生 16 px）| 两行都**大了一倍** |
+| 2 | 「字符间距**极宽**」| 字距 **16 → 12**、`.`/`,` **→ 4**（一手：TH12 `draw_string` font 4 的 `scale×12.0` 与 `scale×4.0`）| 字符**贴在一起**（TH12 那种密排）|
+| 3 | 「**暂停这个字符仍动和消失**」| ★ 真因：`ufo_play_frame()` 查错了位（漏了**暂停位 bit2**、多查了 bit1）⇒ 逐位照抄引擎 `th18:0x446ec0` 的判据 `(f & (1\|4\|0x400)) == 0` | 暂停时弹字**不动也不消失**（被模糊罩住）|
+| 4 | 「弹字大概**向右了半个游玩区屏幕**」| `UFO_XN_DX640` +90 → **−102 单位**（半个游玩区 = 192 单位 = 屏幕 384 px 的再修正）| 弹字比上一版**左 384 px** |
+| 5 | 「boss 期间召唤的 UFO 应该**直接开始飞走**」| 召唤时记 `boss_summon`，之后每帧写 `$I0 = 999`（`= enemy + CE_ENEMY_DATA + 0x28c`，vendor `zEnemyData.ecl_int_vars`）⇒ ECL 自己起飞 | Boss 战里召唤 ⇒ UFO**立刻起飞离场**（不再原地消失）|
+| 6 | 「因为 boss 出现而被**击破**的 UFO 也应该**掉落击破奖励**」| Boss **上升沿** + 场上已有 UFO ⇒ 按击破收尾（`pending_break` ⇒ `ufo_break()` 全额开奖 + `DELETE_NOW` 静默移除本体）| Boss 登场那一刻的 UFO ⇒ **爆炸 + 掉落**（不是无声消失）|
+
+### §本批29-1 一手出处
+
+- **字距/字号**：TH12 `AsciiManager::draw_string` `th12:0x4018f0` —— font 4 走 `4019e4` → `4019d0`
+  （`fld [edi+0x110]; fmul st,st(2)`，st(2) = 常量 `0x4a4128` = **12.0**）；`.`/`,` 走 `401a73`/`401aa8`
+  （乘 `0x4a4108` = **4.0**）。`size = 2.0` 的理由同第 1 档 TH13（`resolutionMode(2)` 折半）。
+- **暂停位**：引擎道具池 body 门 `th18:0x446ec0`（`shr eax,2 / or eax,edx / test al,1` + `test edx,0x400`）
+  ⇒ 冻结 = `bit0 | bit2 | 0x400`。
+- **`$I0`**：`zEnemy.data` = `CE_ENEMY_DATA`（0x122c）+ `zEnemyData.ecl_int_vars` 0x28c（vendor struct）。
+
 ## ★ 本批（2026-09-25 第 2 批 · 最新）已改 · 待实跑 —— **owner 第 27 轮：HUD 五处位移 + 压缩包音 + TH12 击破弹字 + 召唤特效真因**
 
 > **部署**：DLL 见 `RELEASE-STATE.json`（modkit **4 路径同 md5**）+ **同批 `ability.anm`**（新增 `ATLAS_FONT_TH12`）。
