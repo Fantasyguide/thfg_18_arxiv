@@ -774,7 +774,13 @@ enum { CE_HUD_FONT_TH18_FONT2  = 0,  /* TH18 font 2（16×32 画布、7 px 步�
         *   度量与第 0 档逐值相同 ⇒ 只是"认得的字符"多两个、贴图来自另一个 entry。
         *   为什么要另一档：字形 VM 绑在固定脚本上，sprite 号按**该脚本所属 entry** 解析 ——
         *   第 0 档那个图集（`ATLAS_FONT2`）在 ORDER 的已定稿段、不能插行，所以另起一套。*/
-       CE_HUD_FONT_TH18_FONT2B = 2 };
+       CE_HUD_FONT_TH18_FONT2B = 2,
+       /* ★★ 2026-09-25 第 4 档：**TH12 `ascii/ascii.png` 的数字字形**（`ATLAS_FONT_TH12`，16×16 字格、
+        *   均匀 16 px 步进）。owner 第 27 轮口径：「爆炸后的 **×n.0** 和**点数**的字体完全不对，应该用的是
+        *   `…\[th12] 东方星莲船\ascii\ascii.png` 里面**倒数第三行的数字**」—— 那一行（y=216）的
+        *   16×16 那族正是 `0-9`（sprite 243..252）+ `.`(254) + `,`(257) + 乘号(256)。
+        *   切图/断死见 `assets/ability/make_th12_font_art.py`；脚本 = 362（136/332 的孪生）。*/
+       CE_HUD_FONT_TH12_DIGITS = 3 };
 
 void ce_hud_vm_text_set_font(ce_hud_vm_text_t *t, float x, float y, uint32_t bgra,
                              int align_h, float scale, const char *s, const char *tag, int font);

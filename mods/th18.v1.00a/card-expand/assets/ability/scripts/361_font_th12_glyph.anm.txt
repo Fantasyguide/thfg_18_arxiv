@@ -1,0 +1,17 @@
+script script361 {
+    // 卡 112 击破弹字的字形 VM（**TH12 ascii 数字**版，图集 `ATLAS_FONT_TH12`）——
+    // 脚本 136（`ATLAS_FONT2`）/ 332（`ATLAS_FONT2B`）的孪生：只有 sprite 名与图集不同。
+    // ★ 为什么必须每套字形各一支脚本：`ce_hud_vm_text_*` 的字形 VM 绑在固定脚本上，
+    //   引擎按**该脚本所属 entry 的精灵表**解析 `vm->sprite` ⇒ 跨 entry 指号会越界。
+    // 由 `assets/ability/make_th12_font_art.py` 生成（改就改那里再跑一遍）。
+    sprite(@F12_D0@);
+    ins_431(1);
+    type(1);
+    layer(25);          // 与另外两套字形同层：UI 层 25 → 折到绘制桩 38（暂停时被模糊罩住）
+    resolutionMode(2);
+    pos(0.0f, 0.0f, 0.0f);
+    alpha(255);
+    stop();
+    interruptLabel(1);
+    delete();
+}

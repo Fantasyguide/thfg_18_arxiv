@@ -21255,3 +21255,33 @@ scriptNew 检查全绿、卡框图集逐像素等于原生）→ `make -C native
 **回归跑了什么**：`make -C native anm`（entry 75 / sprite 538 / script 359；`ATLAS_UFO_DROP` 320×384、
 卡面 texel 与原生 `BOMB_max.png` **逐字节相同**；`ATLAS_UFO_FRAME` 不变）→ `make -C native dllx87`（rc=0）→
 `make -C native check`（capcheck + check-docs 全绿）。**实跑判据**见 `TUNING.md` §2.0zzx-4 末尾四条。
+
+## §BE 详录 #91（2026-09-25）：★ **共享件** `native/sdk.{h,c}` + `assets/ability/**` + `CAPACITY.md` —— 112 星莲船第**二十七**轮：HUD 五处位移 / 压缩包音 / **TH12 击破弹字字形**（SDK 第 4 档字体）/ 召唤特效真因
+
+**为什么必须登记**：本轮往**共享的 HUD 文字系统**里加了**第 4 档字体**（`native/sdk.h` 的枚举 +
+`native/sdk.c` 的 `HUD_FONTS[]` 与派发 —— 这两份文件在共享件清单里），并 `append` 了新图集
+（`assets/ability/entries/ORDER.txt`，也在清单里）+ 新字形脚本，另动了共享台账 `CAPACITY.md`。
+owner 原话、换算与判据见 `SINGLE-CARD-TEST.md` §本批27-1 / `TUNING.md` §2.0zzx-6。
+
+| 文件 | 改了什么 | 为什么 | 怎么验的 |
+| --- | --- | --- | --- |
+| `native/sdk.h`（**共享件**）| `CE_HUD_FONT_*` 枚举**末尾**加一档 `CE_HUD_FONT_TH12_DIGITS = 3` | owner「×n.0 与点数的字体应该用 TH12 `ascii.png` 倒数第三行的数字」| 枚举是**只追加**（既有三档的编号 0/1/2 不变）；`make check` 全绿 |
+| `native/sdk.c`（**共享件**）| ① 新增 `hud_vm_glyph_th12()`（字符→TH12 字形，13 个字符）；② `HUD_FONTS[]` **末尾**加一行（16 px 步进 / 16×16 字格 / 脚本 361）；③ `ce_hud_vm_text_set_font` 的派发多一个分支 | 同上 | 既有三档的表项与派发**一个字节没动**（新分支只在 `font == 3` 时命中）；`dllx87` 零告警 |
+| `assets/ability/entries/ORDER.txt`（**共享件**）| **只 append**：末尾加 `ATLAS ATLAS_FONT_TH12 128x32@8x2` + 13 个成员（`F12_D0..D9 / DOT / COMMA / X`）| 新字形要有 sprite 号 | 构建期重排检测：冻结前 186 行逐行未变；`make -C native anm` 报 **entry 77 / sprite 553 / script 362**，既有号零改动 |
+| `assets/ability/scripts/361_font_th12_glyph.anm.txt`（**新文件**）| 字形 VM 脚本（脚本 136/332 的孪生：只有 sprite 名与图集不同）| `ce_hud_vm_text_*` 的字形 VM 绑在固定脚本上、按该脚本所属 entry 解析 sprite 号 ⇒ 跨 entry 指号会越界 | `make -C native anm` 绿（脚本按文件名连续追加 = 361）|
+| `assets/ability/font_th12/*.png`（**新美术**）| TH12 `ascii.png` 里 **y=216（倒数第三行）** 那族 16×16 的 13 格 1:1 切图 | 借原生素材，不自己画 | 构建期图集回读逐像素等于源图；生成器断死 16×16 与 y=216 |
+| `assets/ability/make_th12_font_art.py` + `entries/ORDER.font_th12.txt`（**新文件**）| 切图器（矩形从 `ascii.anm.txt` 现读）+ ORDER 片段 | 美术要能重跑生成 | 重跑幂等；矩形漂了当场红 |
+| `CAPACITY.md`（**共享台账**）| 新增 `ATLAS_FONT_TH12` 那一格（完整宏名、entry 77、成员、一手出处、余量 179）| capcheck 硬门（新图集必须登记）| `make check` 全绿 |
+| `native/cards/ufo.c`（本卡自己的）| ① 槽 +12 / 横幅 −12 / 血槽 +13−2 / 计时 −40+1 / ×N 与点数 +90−16（表面 px 与单位换算见 TUNING）；② 压缩包音 `0x10` → `0x4c`；③ 两行文字换 `CE_HUD_FONT_TH12_DIGITS` + 点数加千分位逗号；④ ★ 召唤特效的门从**句柄活性**改成**帧计数器** | owner 第 27 轮 8 条 | `dllx87` 零告警；实跑判据见 TUNING §2.0zzx-6 |
+
+**对既有卡的影响面**：
+- `native/sdk.{h,c}` 是**只追加**（新枚举值 = 3、新表项在末尾、派发多一个 `font == 3` 分支）
+  ⇒ 既有三档字体的**编号、度量、字形表、脚本**全部不变，113/110/111 等用 `ce_hud_vm_text_*` 的卡
+  **行为零变化**（它们传的 font 参数仍是 0/1/2）。
+- `ORDER.txt` 只在**最末尾 append** 一个 entry（77）与 13 个 sprite（540..552）⇒ 既有卡的
+  entry / sprite / script 号一个都没动（重排检测 + `git diff native/anm_ids.h` 里只有新增行）。
+- `ufo.c` 是本卡自己的文件；没有动 `engine.h` / `sites.py` / `Makefile` / `patch/**` / `cards/faith.*`。
+
+**回归跑了什么**：`make -C native anm`（entry 78 / sprite 553 / script 362；45+ 个图集逐像素回读全绿）→
+`make -C native dllx87`（rc=0、`x87 in our objects: 0`）→ `make -C native check`（capcheck + check-docs 全绿）。
+发布：DLL `451d8a09…`（modkit 4 路径同 md5）+ 同批 `ability.anm` `d264ead7…`。

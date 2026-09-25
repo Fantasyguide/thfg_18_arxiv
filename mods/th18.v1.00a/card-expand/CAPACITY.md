@@ -366,6 +366,16 @@ cards: 35 registered from cards.js; shop pool 700/8192 slots, guaranteed offers 
   同批新脚本 = **358**（`CE_ANM_ABILITY_SCRIPT_UFO_CARD_FRAME`），既有号一个没动（entry 74/256，余量 182）。
   生成器 `assets/ability/make_ufo_drop_art.py`（片段 `entries/ORDER.ufo_frame.txt`）。
 
+- **★ 2026-09-25 第 27 轮新增 `ATLAS_FONT_TH12`（entry **77**，`CE_ANM_ABILITY_ATLAS_ATLAS_FONT_TH12`）**：
+  卡 112 的**击破弹字字形**（owner 口径：「×n.0 和点数的字体应该用 TH12 `ascii/ascii.png`
+  **倒数第三行的数字**」）= TH12 `ascii/ascii.png` 里 **y=216（从底下数第三行）那族 16×16** 的 13 格 1:1 切图
+  （一手：`0-9` = sprite 243..252、`.` = 254、`,` = 257、乘号 = 256 —— 逐格渲染核对）。
+  画布 **128×32@8x2**、13 个成员（`F12_D0..F12_D9` / `F12_DOT` / `F12_COMMA` / `F12_X`）；
+  **append 在最末尾** ⇒ 新 sprite = **540..552**、同批新脚本 = **361**
+  （`CE_ANM_ABILITY_SCRIPT_FONT_TH12_GLYPH`），既有号一个没动（entry 77/256，余量 179）。
+  生成器 `assets/ability/make_th12_font_art.py`（片段 `entries/ORDER.font_th12.txt`）；
+  SDK 侧 = `CE_HUD_FONT_TH12_DIGITS`（`native/sdk.{h,c}` 的第 4 档字体，登记见 `AUDIT.md` §BE #91）。
+
 - **★ 2026-09-18 新增 `ATLAS_UFO_HUD`（entry **62**，`CE_ANM_ABILITY_ATLAS_ATLAS_UFO_HUD`）**：
   卡 112 的**飞碟槽 HUD** 贴图（用户 2026-09-18 实跑 ⑤：「**飞碟槽 HUD 你没按照原版做**」）
   = **TH12 `front.anm` 的 10 张 1:1 切图**：令牌槽四态 `front/front00.png` sprite59/60/61/62

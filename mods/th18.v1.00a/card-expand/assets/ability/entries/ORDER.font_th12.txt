@@ -1,0 +1,18 @@
+# 卡 112 击破弹字的 **TH12 数字字形**（TH12 `ascii/ascii.png` 倒数第三行 = y=216 的 16×16 那族）
+#   生成器 = assets/ability/make_th12_font_art.py（矩形从 `ascii.anm.txt` 现读 + 断死 16×16 / y=216）
+#   owner 2026-09-25 第 27 轮：「×n.0 和点数的字体应该用 ascii.png 里面倒数第三行的数字」
+#   ★ 本块 **append 在 ORDER.txt 最末尾**（行序 = sprite 号，插中间会平移全库）
+ATLAS ATLAS_FONT_TH12 128x32@8x2
+F12_D0             ability/font_th12/F12_D0.png
+F12_D1             ability/font_th12/F12_D1.png
+F12_D2             ability/font_th12/F12_D2.png
+F12_D3             ability/font_th12/F12_D3.png
+F12_D4             ability/font_th12/F12_D4.png
+F12_D5             ability/font_th12/F12_D5.png
+F12_D6             ability/font_th12/F12_D6.png
+F12_D7             ability/font_th12/F12_D7.png
+F12_D8             ability/font_th12/F12_D8.png
+F12_D9             ability/font_th12/F12_D9.png
+F12_DOT            ability/font_th12/F12_DOT.png
+F12_COMMA          ability/font_th12/F12_COMMA.png
+F12_X              ability/font_th12/F12_X.png

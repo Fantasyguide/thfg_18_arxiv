@@ -796,6 +796,20 @@ static uint32_t hud_vm_glyph_font2b(char ch)
     }
 }
 
+/* ★★ 2026-09-25 第 4 档：TH12 的数字字形（16×16 那一族，见 `CE_HUD_FONT_TH12_DIGITS`）。
+ *   字符→sprite 的对应 = 逐格渲染核对过的**图形**（不是猜）：243..252 = `0..9`、254 = `.`、
+ *   257 = `,`、256 = 乘号字形（一手 TH12 `on_draw_16` 的格式串 `"*%1.1f"` 里的 `*`）。*/
+static uint32_t hud_vm_glyph_th12(char ch)
+{
+    if (ch >= '0' && ch <= '9') return CE_ANM_ABILITY_SPRITE_F12_D0 + (uint32_t)(ch - '0');
+    switch (ch) {
+    case '.': return CE_ANM_ABILITY_SPRITE_F12_DOT;
+    case ',': return CE_ANM_ABILITY_SPRITE_F12_COMMA;
+    case '*': return CE_ANM_ABILITY_SPRITE_F12_X;
+    default:  return 0;                      /* 空格等：按字距跳过（这套只有 13 个字形）*/
+    }
+}
+
 static uint32_t hud_vm_glyph_th13(char ch)
 {
     if (ch >= '0' && ch <= '9') return CE_ANM_ABILITY_SPRITE_TH13ASCII_D0 + (uint32_t)(ch - '0');
@@ -854,6 +868,12 @@ static const hud_font_t HUD_FONTS[] = {
     /* ★ 2026-09-24 第三档：TH18 font 2 的**完整字形集**（`ATLAS_FONT2B`）+ `:` `*`；
      *   度量与第 0 档逐值相同（7 / 4 / 10 / 5 / size 1.0）⇒ 换过去字号不变。*/
     { hud_vm_glyph_font2b, 7.0f, 4.0f, CE_ANM_ABILITY_SCRIPT_FONT2B_GLYPH, 5.0f, 10.0f, 5.0f, 1.0f },
+    /* ★ 2026-09-25 第 4 档：TH12 数字字形（`ATLAS_FONT_TH12`，16×16 字格）。
+     *   度量：字格与墨迹同宽 ⇒ **均匀 16 px 步进**（`.`/`,` 也一样，不像 TH18 font 2 那样收窄）；
+     *   半行高 8 / 整行高 16；`vm_dy` = 8（贴图画布就是 16×16，精灵中心 = 墨迹中心）；
+     *   `size` = 1.0（与 TH18 font 2 同档；调用点的 `scale` 决定绝对大小 —— 卡 112 的 ×N 用 2.0、
+     *   底下那行点数用 1.0，正是 owner 说的「×n.0 是 scale 了一倍」）。*/
+    { hud_vm_glyph_th12, 16.0f, 16.0f, CE_ANM_ABILITY_SCRIPT_FONT_TH12_GLYPH, 8.0f, 16.0f, 8.0f, 1.0f },
 };
 
 /* 默认字形集 = TH18 font 2（所有既有调用点走这里，行为一个字节不变）。*/
@@ -874,9 +894,10 @@ void ce_hud_vm_text_clear(ce_hud_vm_text_t *t)
 void ce_hud_vm_text_set_font(ce_hud_vm_text_t *t, float x, float y, uint32_t bgra,
                              int align_h, float scale, const char *s, const char *tag, int font)
 {
-    const hud_font_t *f = (font == CE_HUD_FONT_TH13_BIG)   ? &HUD_FONTS[1]
-                        : (font == CE_HUD_FONT_TH18_FONT2B) ? &HUD_FONTS[2]
-                                                            : &HUD_FONTS[0];
+    const hud_font_t *f = (font == CE_HUD_FONT_TH13_BIG)      ? &HUD_FONTS[1]
+                        : (font == CE_HUD_FONT_TH18_FONT2B)   ? &HUD_FONTS[2]
+                        : (font == CE_HUD_FONT_TH12_DIGITS)   ? &HUD_FONTS[3]
+                                                              : &HUD_FONTS[0];
     const char *p;
     uint8_t *mgr = *(uint8_t **)CE_ADDR_ASCII_MANAGER_PTR;
     void *anm = CE_ABILITY_ANM();
