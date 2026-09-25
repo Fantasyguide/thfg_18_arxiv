@@ -57,6 +57,27 @@
 | 6 | 「**击破 UFO 的音效不对**」| 重读一手 ⇒ `se_power1`（TH18 `0x1d`）；「击破那发 `EtBreak2`」那一格静音（一手只有一声）| `ufo/se: "ufo-break" -> th18 id 0x1d`；耳朵：一声"碎" |
 | 7 | 「**最后一个 UFO 收满却没进入收满状态**（没掉 B、没变炫彩）」| 真因：吸满可以由**信仰点**（不是道具）补满 —— 那条路的返回值被 `(void)` 丢掉了 ⇒ 收满回调（掉 B / 变炫彩 / 播吸满音）不触发。已改成 `if (ufo_absorb_item(...)) ufo_fill_complete(...)` | 最后一只 UFO 靠**信仰点**吸满时，日志出现 `ufo: fill COMPLETE (…)` 且**照样掉 B / 变炫彩** |
 
+## ★ 本批（2026-09-25 · 最新）已改 · 待实跑 —— **owner 第 25 轮：五角星的最后一颗扣子（一个 VM 两个颜色）**
+
+> **部署**：DLL 见 `RELEASE-STATE.json`（modkit **4 路径同 md5**）。本轮**只改 DLL**，`ability.anm` 不变。
+
+| # | owner 原话（要点）| 真因 / 改了什么 | 实跑看什么 |
+| --- | --- | --- | --- |
+| 1 | 「**就差那个满B五角星了，还是画出来了**」| ★ 上一轮日志已证 `vm1 … 0xffffffff -> 0x00ffffff`（写进去了、星还在）⇒ 缺的是**第二个颜色**：VM 有 `color_1`（`VM+0x524`）与 **`color_2`（`VM+0x528`）**，而引擎的绘制**两个 alpha 都 0 才跳过**（`th18:0x481210`，成对判断 18 处）⇒ 本轮把 `color_2` 的 A 也写 0 | **一颗星都没有**；日志 `-> c1 0x00…… c2 0x00……` |
+
+### §本批25-1 一手与自我订正
+
+- **两个颜色**：`zAnmVmPrefix` 0x524 `color_1` / 0x528 `color_2`；绘制跳过条件逐指令
+  `cmp BYTE [edi+0x527],0 → jne 画` + `cmp BYTE [edi+0x52b],0 → je 跳过`（`th18:0x48129b`–`0x4812ad`，
+  各 colorMode 分支各一份，共 18 处）。
+- **基址订正**：绘制调用传的就是 **VM 基址** —— `lea esi,[ecx+0x558]` 里的 `esi` 是
+  `ItemManager+0x558` = **item+0x544**（item0 = manager+0x14）⇒ `[esi-0x534]` = **item+0x10 = vm1**、
+  `[esi+0xd8]` = **item+0x61c = vm2** ⇒ 平时画的那颗星 = **vm1**（脚本 118 → `sprite512`）。
+- **诊断再扩**：同一行现在也打两个 VM 的 `sprite_id`（`VM+0x24`）与 `flags_lo`（`VM+0x534`）——
+  应看到 vm1 `spr 512` / vm2 `spr 513`。
+- **兜底（本版不做）**：若仍画星，改清 `vm1.flags_lo`（`item+0x544`）的 bit0/bit1（`0x481210` 开头的
+  绘制门槛 `test al,1` / `test al,2`）；风险 = 那两位可能被道具自己的生命周期代码用到。
+
 ## ★ 本批（2026-09-25 · 最新）已改 · 待实跑 —— **owner 第 24 轮：星的覆盖源 + 卡面定回 `BOMB_max.png`**
 
 > **部署**：DLL 见 `RELEASE-STATE.json`（modkit **4 路径同 md5**）+ **同批 `ability.anm`**（`ATLAS_UFO_DROP` 画布 → 320×384）。

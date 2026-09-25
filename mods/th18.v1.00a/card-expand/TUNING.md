@@ -6445,3 +6445,48 @@ owner 指的那张图确实是**自带黑框**的那版：`BOMB_max.png`（256×
 **回归**：`make -C native anm`（`ATLAS_UFO_DROP` 320×384 / 5 成员；**`anm_ids.h` 的 sprite 号一个都没动** ——
 `DROP_BOMB` 仍 456、`CARD_GLOW` 457、`DROP_FRAME` 537，`git diff` 只有一行画布注释变化）→
 `make -C native dllx87` = 0 → `make -C native check` 全绿。共享件登记：`AUDIT.md` §BE 详录 #90。
+
+### 2.0zzx-5 ★★★ 112 的第**二十五轮**（2026-09-25）：五角星的**最后一颗扣子** —— 一个 VM 有**两个颜色**
+
+> owner 原话：「**就差那个满B五角星了，还是画出来了**」。上一轮的实跑日志已经把范围缩到一句话：
+> `native icon vm1(item+0x534) 0xffffffff -> 0x00ffffff` —— **我们写进去了**（`post` 是 0），**星却还在**。
+
+**真因（一手，逐指令）**：`zAnmVmPrefix` 里一个 VM 有**两个颜色**：`0x524 color_1`、`0x528 color_2`。
+而引擎的绘制函数 `AnmManager__DrawVm`（`th18:0x481210`）**只有两个 alpha 都是 0 才跳过这一支 VM**：
+
+```
+48129b: cmp BYTE PTR [edi+0x527],0x0 / jne 0x4812b1   ; color_1 的 A ≠ 0 ⇒ 去画
+4812a4: cmp BYTE PTR [edi+0x52b],0x0 / je  0x48134d   ; color_2 的 A = 0 ⇒ 才跳过
+```
+
+同样的成对判断在 `0x481210` 里**共 18 处**（我逐条数过，覆盖各个 colorMode 的分支）⇒ 我们上一轮只把
+`color_1` 的 alpha 写成 0，**`color_2` 还带着 alpha=255** ⇒ 引擎照画。**必须两个都写**：
+
+| VM | color_1（A 字节）| **color_2（A 字节）** |
+| --- | --- | --- |
+| vm1（`item+0x10`）| `item+0x537`（随 dword 写 `0x00ffffff`）| **`item+0x53b`（本轮新增）** |
+| vm2（`item+0x61c`）| `item+0xb43`（随 dword 写）| **`item+0xb47`（本轮新增）** |
+
+⚠ **顺带订正我上一轮算错的基址**：绘制调用传的**就是 VM 基址**（`0x481210` 里 `edi` 直接按 `+0x534`
+flags_lo / `+0x527` color_1 的 A 读）。我先前把 `lea esi,[ecx+0x558]` 的 `esi` 当成了 "item+0x558"，
+其实那是 `ItemManager+0x558` = **item+0x544**（item0 = manager+0x14）⇒ `[esi-0x534]` = **item+0x10 =
+vm1**、`[esi+0xd8]` = **item+0x61c = vm2** —— 两条正好对上，也就是说**平时画面上那颗星就是 vm1**
+（`jbe` 那一支），我们从头到尾打的字段都是它，缺的只是 `color_2` 那一个 alpha 字节。
+
+**本轮诊断再扩一格**（`sprite_id` = `VM+0x24`、`flags_lo` = `VM+0x534`，见 `engine.h` 的
+`CE_ANM_VM_SPRITE_ID` / `CE_ANM_VM_FLAGS_LO`）：日志里应看到 vm1 的 `spr 512`、vm2 的 `spr 513`
+（= 一手 type 7 那两支脚本 118/140 画的 sprite），`fl` 的 bit0/bit1 = 绘制门槛。
+
+**实跑判据（Ctrl+空格掉满 B）**：
+1. **一颗星都没有**；
+2. 日志 `ufo/drop.bomb: … icon vm1 c1 0x%08x c2 0x%08x -> c1 0x%08x c2 0x%08x spr … fl … | vm2 c1 … c2 …
+   spr … fl …` —— `->` 后面的 **c1 与 c2 最高两位（alpha）都必须是 `00`**；
+3. 卡面（`BOMB_max` 自带黑框 + 卡框层）、尺寸 19.2×24、摆动、光晕、收下 **Bomb +1** 全都不变。
+
+**⏭ 若这一版仍然画星**（兜底方案，已写进注释）：`0x481210` 开头还有一道**绘制门槛**
+（`48124e: test al,0x1 / je skip`、`481256: test al,0x2 / je skip`，`al` = `flags_lo` 的低字节，
+`engine.h` 记的就是 "bit0/1 绘制门槛"）⇒ 那时改清 `vm1.flags_lo`（`item+0x544`）的 bit0/bit1。
+本轮**不做**它：那两位可能同时被道具自己的生命周期代码用到（清掉有连带风险），先走"只改颜色"这条。
+
+**回归**：`make -C native dllx87` = 0（`ufo.c` 零告警）→ `make -C native check` 全绿。
+本轮**只改 `ufo.c`**（不动 `assets/**`）⇒ 无共享件登记；发布 DLL `a3456858…`（modkit 4 路径同 md5）。

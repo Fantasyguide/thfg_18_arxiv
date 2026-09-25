@@ -1022,6 +1022,7 @@ static uint32_t s_penta_id[UFO_TOKEN_CAP];
 #define UFO_ITEM_STATE_OFF  0
 #define UFO_ITEM_VM1        0x10        /* zItem.__vm_1（内嵌 zAnmVm，脚本 118 = sprite512 那颗星）*/
 #define UFO_ITEM_VM2        0x61c       /* zItem.__vm_2（内嵌 zAnmVm，脚本 140 = sprite513）*/
+#define UFO_ITEM_VM_COLOR2  0x528       /* ★ VM 的**第二个颜色**（`zAnmVmPrefix` 0x528 = color_2）*/
 /* ★★★ 2026-09-24（owner）：那颗「**五角星**」的来历查清了 —— 它**不是**我们的贴图，而是
  *   **引擎自己画的原生整 B 道具图标**（type 7 的两个内嵌 VM：脚本 118 → `bullet/item.png` sprite512、
  *   脚本 140 → sprite513，都是 32×32 的绿星）—— ZUN 从早期作品层垒下来的**整 B 美术**
@@ -1041,7 +1042,23 @@ static uint32_t s_penta_id[UFO_TOKEN_CAP];
  *   真正画那颗星的是**两个内嵌 VM**（`item+0x10` / `item+0x61c`，spawn 一手 `th18:0x4470d4` 起、
  *   `0x41f920(脚本, 目的指针)` 两次）⇒ 颜色就在它们自己的 `+0x524` 上，也就是 `item+0x534` /
  *   `item+0xb40`（一手也在 `0x447115` 出生时写 `[esi+0x534] = 0xffffffff` 证实第一条）。
- *   ⇒ 现在**两个都写** 0（幂等、每游玩帧一次）。 */
+ *   ⇒ 现在**两个都写** 0（幂等、每游玩帧一次）。
+ *   ★★★ 2026-09-25 第 25 轮**再修**（owner 第 24 轮复报「**就差那个满B五角星了，还是画出来了**」，
+ *   实跑日志 `vm1 … 0xffffffff -> 0x00ffffff` ⇒ 我们写进去了、星却还在）：
+ *   **一个 VM 有两个颜色**（`zAnmVmPrefix`：`0x524 color_1`、`0x528 color_2`），而引擎的绘制函数
+ *   `AnmManager__DrawVm`（`th18:0x481210`）**只有两个 alpha 都是 0 才跳过这一支** —— 逐指令：
+ *     `48129b: cmp BYTE [edi+0x527],0 / jne <画>     ; color_1 的 A`
+ *     `4812a4: cmp BYTE [edi+0x52b],0 / je  <跳过>   ; color_2 的 A`
+ *   同样的成对判断在 `0x481210` 里**共 18 处**（我逐条数过，覆盖各 colorMode 分支）⇒ 只把 color_1 的
+ *   alpha 写 0、`color_2` 还带 alpha=255 ⇒ **照画**。必须两个都写：
+ *     · vm1：`item+0x537`（color_1 的 A，随 dword 写）+ **`item+0x53b`（color_2 的 A）**
+ *     · vm2：`item+0xb43`（color_1 的 A，随 dword 写）+ **`item+0xb47`（color_2 的 A）**
+ *   ⚠ 顺带订正我上一轮**算错基址**的地方：绘制调用传的**就是 VM 基址**（`0x481210` 里 `edi` 直接按
+ *   `+0x534 flags_lo` / `+0x527 color_1 的 A` 读）。我先前把 `lea esi,[ecx+0x558]` 的 `esi` 当成了
+ *   "item+0x558"，其实那是 `ItemManager+0x558` = **item+0x544**（item0 = manager+0x14）⇒
+ *   `[esi-0x534]` = **item+0x10 = vm1 基址**、`[esi+0xd8]` = **item+0x61c = vm2 基址**（两条都对上了）。
+ *   ⇒ 也就是说：**平时画面上那颗星就是 vm1**（走 `jbe` 那一支），我们打的字段从头到尾都是它，
+ *     缺的只是 color_2 那一个 alpha 字节。 */
 #define UFO_ITEM_HIDE_ICON  1
 #define UFO_DROP_ANM_LOG_EVERY 60   /* 满 B 的诊断行节奏（0 = 关）；验证摇摆/隐藏星用 */
 /* 引擎读数（照 110 `mof.c` 的同名宏）：满火力判据 = `CURRENT_POWER >= MAX_POWER` */
@@ -4016,7 +4033,9 @@ static void ufo_drops_tick(ufo_card_t *s)
              *   ⚠ 第 21 轮那版走的 `ce_anm_get_vm(item+0xc28)` 对我们**恒是空操作**（那个 id 只有卡道具
              *   才写，普通道具在 `0x44710b` 被写 0）—— 实跑日志 `native icon vm 0` 就是证据。 */
             *(uint32_t *)(it + UFO_ITEM_VM1 + CE_ANM_VM_COLOR1) = 0x00ffffffu;
+            *(uint8_t *)(it + UFO_ITEM_VM1 + UFO_ITEM_VM_COLOR2 + 3) = 0u;  /* ★ color_2 的 A 也要 0 */
             *(uint32_t *)(it + UFO_ITEM_VM2 + CE_ANM_VM_COLOR1) = 0x00ffffffu;
+            *(uint8_t *)(it + UFO_ITEM_VM2 + UFO_ITEM_VM_COLOR2 + 3) = 0u;
 #endif
             continue;
         }
@@ -4060,10 +4079,13 @@ static void ufo_drops_draw_follow(void)
          *   道理，铁证：卡面能跟着道具走就是这一相位写的（见上面那段注）。tick 里那次保留（无害）。*/
         {
             uint32_t pre1 = *(const uint32_t *)(it + UFO_ITEM_VM1 + CE_ANM_VM_COLOR1);
-            uint32_t pre2 = *(const uint32_t *)(it + UFO_ITEM_VM2 + CE_ANM_VM_COLOR1);
+            uint32_t pre1b = *(const uint32_t *)(it + UFO_ITEM_VM1 + UFO_ITEM_VM_COLOR2);
 #if UFO_ITEM_HIDE_ICON
+            /* ★ 第 25 轮：color_1 **和** color_2 的 alpha 都要 0（逐指令见 `UFO_ITEM_HIDE_ICON` 上面）*/
             *(uint32_t *)(it + UFO_ITEM_VM1 + CE_ANM_VM_COLOR1) = 0x00ffffffu;
+            *(uint8_t *)(it + UFO_ITEM_VM1 + UFO_ITEM_VM_COLOR2 + 3) = 0u;
             *(uint32_t *)(it + UFO_ITEM_VM2 + CE_ANM_VM_COLOR1) = 0x00ffffffu;
+            *(uint8_t *)(it + UFO_ITEM_VM2 + UFO_ITEM_VM_COLOR2 + 3) = 0u;
 #endif
 #if UFO_DROP_ANM_LOG_EVERY
         /* ★ 2026-09-24 第 21 轮诊断（owner：「**没有左右摇摆**」）：每 60 帧把**父 VM**的
@@ -4077,13 +4099,20 @@ static void ufo_drops_draw_follow(void)
             if ((++s_drop_log_tick % UFO_DROP_ANM_LOG_EVERY) == 0u) {
                 float *rv = (float *)(ce_anm_get_vm(d->anm_id) + CE_ANM_VM_ROTATION);
                 float *sv = (float *)(ce_anm_get_vm(d->anm_id) + CE_ANM_VM_SCALE);
-                ce_log("ufo/drop.bomb: parent vm %u rot (%.4f, %.4f, %.4f) scale (%.3f, %.3f) | native icon "
-                       "vm1(item+0x534) 0x%08x -> 0x%08x, vm2(item+0xb40) 0x%08x -> 0x%08x "
-                       "(pre = engine's restore this frame; post must be 0x00ffffff = star hidden)",
+                ce_log("ufo/drop.bomb: parent vm %u rot (%.4f, %.4f, %.4f) scale (%.3f, %.3f) | icon vm1 "
+                       "c1 0x%08x c2 0x%08x -> c1 0x%08x c2 0x%08x spr %d fl 0x%08x | vm2 c1 0x%08x c2 0x%08x "
+                       "spr %d fl 0x%08x (pre = engine's restore; post: **both** alphas 00 = star hidden)",
                        d->anm_id, (double)rv[0], (double)rv[1], (double)rv[2],
                        (double)sv[0], (double)sv[1],
-                       pre1, *(const uint32_t *)(it + UFO_ITEM_VM1 + CE_ANM_VM_COLOR1),
-                       pre2, *(const uint32_t *)(it + UFO_ITEM_VM2 + CE_ANM_VM_COLOR1));
+                       pre1, pre1b,
+                       *(const uint32_t *)(it + UFO_ITEM_VM1 + CE_ANM_VM_COLOR1),
+                       *(const uint32_t *)(it + UFO_ITEM_VM1 + UFO_ITEM_VM_COLOR2),
+                       (int)*(const int32_t *)(it + UFO_ITEM_VM1 + CE_ANM_VM_SPRITE_ID),
+                       *(const uint32_t *)(it + UFO_ITEM_VM1 + CE_ANM_VM_FLAGS_LO),
+                       *(const uint32_t *)(it + UFO_ITEM_VM2 + CE_ANM_VM_COLOR1),
+                       *(const uint32_t *)(it + UFO_ITEM_VM2 + UFO_ITEM_VM_COLOR2),
+                       (int)*(const int32_t *)(it + UFO_ITEM_VM2 + CE_ANM_VM_SPRITE_ID),
+                       *(const uint32_t *)(it + UFO_ITEM_VM2 + CE_ANM_VM_FLAGS_LO));
             }
 #endif
         }
