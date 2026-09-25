@@ -1985,6 +1985,7 @@ static uint32_t s_summon_debris_id;        /* 闪电碎屑发射器 VM（脚本 
  *   两支都**自己在 ~70 帧 `delete()`**（见各脚本尾），所以起完就不用管；这里仍记句柄，
  *   好在删卡 / 换关时统一收干净（长持续效果铁律）。*/
 #define UFO_RING_FX_COUNT 4
+static uint32_t s_summon_burst_id;         /* 一手爆闪/雷（脚本 362，自己 +51 帧 delete）*/
 static uint32_t s_ring_fx_id[UFO_RING_FX_COUNT];   /* [0..1] = 紫环对（316/317）、[2..3] = 六边形对（319/320）*/
 static uint16_t s_summon_fx_left;          /* 横幅"还在放"的剩余帧（0 = 可以再起）*/
 static uint16_t s_summon_debris_left;      /* 碎屑同上 */
@@ -2058,6 +2059,7 @@ static void ufo_summon_fx_kill(void)
         }
     }
 #endif
+    if (s_summon_burst_id) { ce_anm_delete(s_summon_burst_id); s_summon_burst_id = 0; }
     s_summon_fx_id = 0;
     s_summon_debris_id = 0;
     s_summon_fx_left = 0;
@@ -2588,6 +2590,26 @@ static void ufo_summon_fx_try(ufo_card_t *s, const uint8_t *e)
     ufo_summon_debris_spawn(e);                                      /* ★ 闪电碎屑（脚本 346）*/
 #ifdef CE_ANM_ABILITY_SCRIPT_UFO_RING_A
     ufo_ring_fx_spawn(e);                                            /* ★★ 紫环 + 六边形（316/317/319/320）*/
+#endif
+#ifdef CE_ANM_ABILITY_SCRIPT_UFO_SUMMON_BURST
+    /* ★★★ 2026-09-26 第 33 轮（owner 选「把 TH12 的 script134/112 原样搬过来」）：
+     *   一手 TH12 `Ufo::spawn` 里那一发 **爆闪 + 雷**（`enemy.anm` script134 + 每帧 3 次子 script112）
+     *   ⇒ 卡侧脚本 **362 / 363**（逐条移植，贴图 = `enemy2.png` sprite197..204 的 1:1 切图）。
+     *   位置 = UFO 本体坐标；自己 +51 帧 `delete()`。*/
+    if (s_summon_burst_id && !ce_anm_get_vm(s_summon_burst_id)) s_summon_burst_id = 0;
+    if (!s_summon_burst_id) {
+        s_summon_burst_id = ce_anm_spawn(anm, CE_ANM_ABILITY_SCRIPT_UFO_SUMMON_BURST, UFO_SUMMON_FX_LAYER);
+        if (s_summon_burst_id) {
+            if (e) ce_anm_set_pos(s_summon_burst_id, *(const float *)(e + CE_ENEMY_POS_X),
+                                                     *(const float *)(e + CE_ENEMY_POS_Y), 0.0f);
+            ce_log("ufo: summon BURST up (ability.anm script %d <= TH12 enemy.anm script134 + child %d "
+                   "<= script112; 8 textures = enemy2.png sprite197..204, 1:1)",
+                   CE_ANM_ABILITY_SCRIPT_UFO_SUMMON_BURST, CE_ANM_ABILITY_SCRIPT_UFO_SUMMON_SPARK);
+        } else {
+            ce_log("ufo: summon BURST spawn FAILED (script %d)",
+                   CE_ANM_ABILITY_SCRIPT_UFO_SUMMON_BURST);
+        }
+    }
 #endif
     if (s_summon_fx_left) return;                                    /* ★ 帧计数器门（同上）*/
     s_summon_fx_id = ce_anm_spawn(anm, CE_ANM_ABILITY_SCRIPT_UFO_SUMMON_BANNER, UFO_SUMMON_FX_LAYER);

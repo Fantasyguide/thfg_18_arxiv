@@ -1,0 +1,13 @@
+# 卡 112 的 UFO 召唤**爆闪/雷**（TH12 `enemy.anm` entry1 `enemy2.png` sprite197..204 的 1:1 切图）
+#   生成器 = assets/ability/make_ufo_summon_burst_art.py（矩形从 anm 文本现读 + 断死 32×32/y=96）
+#   owner 2026-09-26：「把 TH12 的 script134/112 原样搬过来」
+#   ★ 本块 **append 在 ORDER.txt 最末尾**（行序 = sprite 号）
+ATLAS ATLAS_UFO_BURST 256x32@8x1
+UFO_BURST_0          ability/ufo_burst/UFO_BURST_0.png
+UFO_BURST_1          ability/ufo_burst/UFO_BURST_1.png
+UFO_BURST_2          ability/ufo_burst/UFO_BURST_2.png
+UFO_BURST_3          ability/ufo_burst/UFO_BURST_3.png
+UFO_BURST_4          ability/ufo_burst/UFO_BURST_4.png
+UFO_BURST_5          ability/ufo_burst/UFO_BURST_5.png
+UFO_BURST_6          ability/ufo_burst/UFO_BURST_6.png
+UFO_BURST_7          ability/ufo_burst/UFO_BURST_7.png

@@ -21285,3 +21285,20 @@ owner 原话、换算与判据见 `SINGLE-CARD-TEST.md` §本批27-1 / `TUNING.m
 **回归跑了什么**：`make -C native anm`（entry 78 / sprite 553 / script 362；45+ 个图集逐像素回读全绿）→
 `make -C native dllx87`（rc=0、`x87 in our objects: 0`）→ `make -C native check`（capcheck + check-docs 全绿）。
 发布：DLL `451d8a09…`（modkit 4 路径同 md5）+ 同批 `ability.anm` `d264ead7…`。
+
+## §BE 详录 #92（2026-09-26）：★ **共享件** `assets/ability/**` + `CAPACITY.md` —— 112 星莲船第**三十三**轮：TH12 `enemy.anm` script134/112（召唤爆闪/雷）原样移植 + 紫环/六边形接线
+
+**为什么必须登记**：本轮 `append` 了新图集（`assets/ability/entries/ORDER.txt`）、新增两支脚本、
+新增切图器与美术，并动了共享台账 `CAPACITY.md`。
+
+| 文件 | 改了什么 | 为什么 | 怎么验的 |
+| --- | --- | --- | --- |
+| `assets/ability/entries/ORDER.txt`（**共享件**）| **只 append**：末尾加 `ATLAS ATLAS_UFO_BURST 256x32@8x1` + 8 个成员（`UFO_BURST_0..7`）| owner：「把 TH12 的 script134/112 原样搬过来」| 重排检测前 186 行逐行未变；`make -C native anm` 报 **entry 79 / sprite 561 / script 364**，`ATLAS_UFO_BURST` = entry 78 / sprite 553..560，既有号零改动 |
+| `assets/ability/scripts/362_ufo_summon_burst.anm.txt`、`363_ufo_summon_spark.anm.txt`（**新文件**）| TH12 `enemy.anm` script134 / script112 逐条移植（`scriptNewRoot` → `scriptNew`、sprite 名换成我们的图集成员）| 同上 | `make -C native anm` 绿（脚本按文件名连续追加 = 362/363）|
+| `assets/ability/ufo_burst/UFO_BURST_0..7.png` + `make_ufo_summon_burst_art.py` + `entries/ORDER.ufo_burst.txt`（**新文件**）| TH12 `enemy2.png` sprite197..204（8 格 32×32）的 1:1 切图 + 切图器 + ORDER 片段 | 借原生素材，不自己画 | 构建期图集回读逐像素等于源图；生成器断死 32×32 / y=96 |
+| `native/cards/ufo.c`（本卡自己的）| 召唤时多起一件（脚本 362，位置 = UFO 本体）+ 收尾句柄 | owner 方案① | `dllx87` 零告警 |
+| `CAPACITY.md`（**共享台账**）| 新增 `ATLAS_UFO_BURST` 那一格 | capcheck 硬门 | `make check` 全绿 |
+
+**对既有卡的影响面**：`ORDER.txt` 只 append（entry 78 / sprite 553..560）⇒ 既有 entry / sprite / script 号
+一个都没动；新脚本两支只被 `ufo.c` 引用。发布：DLL `4edc29ea…` + 同批 `ability.anm` `5b73bf02…`。
+

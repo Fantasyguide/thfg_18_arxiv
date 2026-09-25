@@ -1,0 +1,28 @@
+script script363 {
+    // 112 星莲船 —— **UFO 召唤的一根"雷"**（一手：TH12 v1.00b `enemy.anm` **script112** 逐条移植）
+    //
+    // 由脚本 **362**（← 一手 script134）每帧 `scriptNew` 三次撒出来；一手正文：
+    //   `layer(9); type(0); blendMode(1); spriteRand(sprite197, 8);`
+    //   `fsetMul(%F0, %RANDF2, 8.0f); fsetMul(%F1, %RANDF, 8.0f); fsub(%F1, 4.0f); pos(%F0, %F1, 0);`
+    //   `fsetMul(%F0, %RANDF2, 8.0f); fsetMul(%F1, %RANDF, -16.0f); fsub(%F1, 16.0f);`
+    //   `posTime(10, 0, %F0, %F1, 0); scale(0.5,0.5); scaleTime(10,1, 0,0); +10: delete();`
+    //
+    // **Δ**：`spriteRand(sprite197, 8)` → `spriteRand(@UFO_BURST_0@, 8)`（同样从 197..204 那 8 张里随机）；
+    //   其余逐条照抄（随机起点 ±8、往上偏 −4、10 帧飞到 (±8, −16..−32)、0.5→0 缩没）。
+    layer(9);
+    type(0);
+    blendMode(1);
+    spriteRand(@UFO_BURST_0@, 8);
+    fsetMul(%F0, %RANDF2, 8.0f);
+    fsetMul(%F1, %RANDF, 8.0f);
+    fsub(%F1, 4.0f);
+    pos(%F0, %F1, 0.0f);
+    fsetMul(%F0, %RANDF2, 8.0f);
+    fsetMul(%F1, %RANDF, -16.0f);
+    fsub(%F1, 16.0f);
+    posTime(10, 0, %F0, %F1, 0.0f);
+    scale(0.5f, 0.5f);
+    scaleTime(10, 1, 0.0f, 0.0f);
++10: // 10
+    delete();
+}

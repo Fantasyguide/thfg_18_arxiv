@@ -374,6 +374,12 @@ cards: 35 registered from cards.js; shop pool 700/8192 slots, guaranteed offers 
   **append 在最末尾** ⇒ 新 sprite = **540..552**、同批新脚本 = **361**
   （`CE_ANM_ABILITY_SCRIPT_FONT_TH12_GLYPH`），既有号一个没动（entry 77/256，余量 179）。
   生成器 `assets/ability/make_th12_font_art.py`（片段 `entries/ORDER.font_th12.txt`）；
+- **★ 2026-09-26 第 33 轮新增 `ATLAS_UFO_BURST`（entry **78**，`CE_ANM_ABILITY_ATLAS_ATLAS_UFO_BURST`）**：
+  卡 112 的 **UFO 召唤爆闪/雷**（owner：「把 TH12 的 script134/112 原样搬过来」）= TH12
+  `enemy.anm` entry1 **`enemy/enemy2.png` 的 sprite197..204**（一行 8 格 **32×32**，y=96）的 1:1 切图。
+  画布 **256×32@8x1**、8 个成员（`UFO_BURST_0..7`）；**append 在最末尾** ⇒ 新 sprite = **553..560**、
+  同批新脚本 = **362 / 363**（`CE_ANM_ABILITY_SCRIPT_UFO_SUMMON_BURST` / `_SPARK`），
+  既有号一个没动（entry 78/256，余量 178）。生成器 `assets/ability/make_ufo_summon_burst_art.py`。
   SDK 侧 = `CE_HUD_FONT_TH12_DIGITS`（`native/sdk.{h,c}` 的第 4 档字体，登记见 `AUDIT.md` §BE #91）。
 
 - **★ 2026-09-18 新增 `ATLAS_UFO_HUD`（entry **62**，`CE_ANM_ABILITY_ATLAS_ATLAS_UFO_HUD`）**：

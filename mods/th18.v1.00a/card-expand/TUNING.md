@@ -6747,3 +6747,29 @@ TH12 那套 12/4 的窄步进是配它自己**带留白**的字形用的（16 �
 本卡**还没移植**（现在的"闪电"是第 9 轮按 owner 口径借的 **TH18 etbreak** 碎屑 = 脚本 346–350，
 日志证实每次召唤都在起、但视觉上很淡）。要不要把它也按一手搬过来（`enemy.anm` 134/112 + 对应贴图），
 等 owner 一句话 —— 这是"闪电"那一半唯一还差的东西。
+
+#### §2.0zzx-8f 第 33 轮（2026-09-26）：**TH12 `enemy.anm` script134 / 112 原样搬过来**（owner 选的方案 ①）
+
+**一手**（`local/th12.v1.00b/anm/enemy/enemy.anm.txt`）：
+
+* **script134**（召唤那一发的爆闪主体）：`layer(9); type(0); blendMode(1); scale(0,0); scaleTime(6,4,2.0,2.0);`
+  然后每 3 帧推一张 `sprite197..204`、`scaleTime(6,1,1.0,1.0)`；接着 `iset($I4,2)` 起两轮循环 ——
+  **每帧推一张贴图并 `scriptNewRoot(script112)` 三次**（共 ~72 根雷）；收尾 `scaleTime(15,4,4.0,4.0)` +
+  `alphaTime(15,4,0)` + `+15: delete()`（总寿命 51 帧）。
+* **script112**（每一根雷）：`layer(9); type(0); blendMode(1); spriteRand(sprite197, 8);` 随机起点
+  (`±8`, `-4`) → `posTime(10,0, ±8, -16..-32)` 向外上方飞、`scale(0.5)→scaleTime(10,1, 0)` 缩没、`+10: delete()`。
+
+**贴图**：那 8 张 = `enemy.anm` entry1 **`enemy/enemy2.png` 的 sprite197..204**（一行 8 格 **32×32**，y=96）
+⇒ 生成器 `assets/ability/make_ufo_summon_burst_art.py` 1:1 切图 + 断死矩形 ⇒ 图集 `ATLAS_UFO_BURST`
+（entry **78**、sprite **553..560**，**append 在 ORDER.txt 末尾**）。
+
+**落地**：卡侧脚本 **362**（← 134，`scriptNewRoot(script112)` → `scriptNew(@SCRIPT_UFO_SUMMON_SPARK@)` =
+脚本 **363**）、**`layer(9)` 原值保留**（TH18 的 3–19 同属游玩区相机；UFO 本体是 7 ⇒ 这一发**在本体之上**
+—— 正是"看得见"与一手一致的关键）。召唤时在 **UFO 本体坐标**起一支（`ufo_summon_fx_try` 里，与
+紫环 316/317、六边形 319/320、横幅 324 同一拍），句柄记着、删卡/换关由 `ufo_summon_fx_kill()` 收干净。
+日志新增 `ufo: summon BURST up (ability.anm script 362 <= TH12 enemy.anm script134 + child 363 <= script112 …)`。
+
+**⏳ 现在召唤一共有四件**：横幅（324 ✓ 一手 front.anm 82/83/84）+ 紫环（316/317 ✓ 一手 enemy.anm 139/140）
++ 六边形（319/320 ✓ 一手 102/104）+ **爆闪/雷（362/363 ✓ 一手 134/112）**；原来那支 TH18 etbreak 碎屑
+（346–350）**保留不动**（owner 第 9 轮点名要的"蓝碎屑 + 中心洋红"），若要撤掉只需不再调
+`ufo_summon_debris_spawn()`（一处）。
