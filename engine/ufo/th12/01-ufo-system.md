@@ -410,6 +410,62 @@ HUD 画到场地外（我们 112 的槽就踩过：见 `mods/th18.v1.00a/card-ex
 - **证据**：`0x44a6e3`–`0x44a7e8` 全段反汇编 + `"%2d:%.2d"`（`0x4a215c`）/ `0xc080ffc0`（`0x44a778`）
   两个立即数 + 三个 double 常量（60.0 / 100.0 / 20.0 / 12.0）。
 
+## 10c. ★ 召唤特效的 anm 侧：哪一行代码 → 哪份 anm → 哪支脚本画什么 ✅（2026-09-26）
+
+> **方法**：`objdump -d` 直读 `0x44a8a0` 里四条「造 VM」调用（anm 指针来自哪个全局 + 推入的脚本号），
+> 再把 `dat/{front,bullet,enemy}.anm` 用 `thanm -l 12 -m v4.anmm` 逐脚本读原文。
+> **可信度**：地址链 ✅ 一手；脚本体 ✅ 一手（`.dat` 原文）。
+> **本节存在的理由**：把「召唤的 134」当成 `enemy.anm` 134 会让整支特效全错 —— 槽位属于 `front.anm`。
+
+### (a) 创建点 → 文件 → 脚本 → 画什么
+
+| 创建点 | 文件 | 脚本 | 脚本原文要点 |
+| --- | --- | --- | --- |
+| `0x44a953` | `front.anm` | **82**(`0x52`) | 横幅：`sprite(68)`(304×32)、`layer 6`、`type 2`、`pos(224,208)`、`alpha 0→128`/20F、`+30 scaleTime(30,2,2,2)`+淡出、`+5/+10/+15 scriptNew(84)`、`+30 delete()`；`interruptLabel 7..10` = 四色 |
+| 同上 | `front.anm` | 83 / 84 | 碎笔触：83 = `sprite(69)` 由 x=88 扫到 360(`scrollX(0.0297)`)；84 = `sprite(68)` 放大 2× 淡出 |
+| `0x44aabe` | `bullet.anm` | **207**(`0xcf`) | 只三件事：`alpha(0)`、`scriptNew(204)`、`scriptNew(205)`、`scriptNew(206)`、`stop()`；`interruptLabel 1` → `+20 delete()` |
+| 子 | `bullet.anm` | 204 / 205 | **紫环本体**：`drawPolyBorder(62,48)` / `(55,48)` + `blendMode(1)` + `color(96,96,224)` + `alpha(0)→alphaTime(60,0,255)`；`interruptLabel 2` 每 2 帧轮 `(255,255,0)/(255,0,0)/(0,255,0)/(0,255,255)` = 吸收时七彩闪 |
+| 子 | `bullet.anm` | 206 | 旋转光环：`iset($I0,32)`+`iset($I1,2)`+`ins_101($I0)`(texCircle 家族) + `sprite(404)`、`scale(6,59)`、`scrollY(0.025)`、`rotate(π,0,π/2)`；角度由 C 代码逐帧覆写（见 (b)） |
+| `0x44ab01` | `front.anm` | **134**(`0x86`) | 碟体贴图：`sprite(102)`(96×96，`front/front_ufo.png`)、`layer 23`、`resampleMode(1)`、`scale(0,0)→scaleTime(20,0,1,1)`、`+60 alphaTime(20,0,255)`；`interruptLabel 1` → `scaleTime(20,0,0,0)` `+20 delete()` |
+| 同上 | `front.anm` | 135 | `sprite(103)`(96×96 第二帧) 同节奏，`layer 24` |
+| `0x44ab2c` | `front.anm` | **136**(`0x88`) | 血槽底：`sprite(-1)`+`drawRect(32,4)`、`layer 10`、`color(255,96,96)`、`pos(0,-28)` |
+| 同上 | `front.anm` | 137 | 血槽黑边：`drawRect(32,4)`、`layer 9`、`color(0,0,0)`、`pos(1,1)` |
+
+⇒ 一手的召唤画面 = **横幅(front 82/83/84) + 紫环(bullet 204/205) + 旋转光环(bullet 206) + 碟体(front 134/135) + 血槽(front 136/137)**。
+**四处没有一处是贴图粒子爆闪**：204/205/206 全是几何体（`drawPolyBorder` / texCircle 家族）。
+
+### (b) 206 的角度由 C 代码逐帧写 ✅
+
+`Ufo__on_tick` `0x44a476`–`0x44a4b8`：在世界 VM 链里按 `vm+0x3ea == 0xce`(=206) 找到 VM，写
+`vm.flags |= 4` 与 `vm+0x24 = ufo.field_0x50 × 2π` ⇒ 206 的旋转 = UFO 自身角度。
+
+### (c) ⚠ 订正：`enemy.anm` 139/140/141 在 v1.00b 里**找不到调用者**
+
+139/140 = `drawPoly(192,3)` + `color(0,0,0)` + `color2(255,128,255)` + `scaleTime(60,5,0,0)`（大→小）
++ `alpha2Time(60,0,255)`（透明→实）；141 = 造 3 对 139/140。**形状/节奏与「紫色圆」的目击描述吻合**，但是：
+
+- 全 exe 没有把 139/140/141 当脚本号传给 anm 的地方（`push $0x8d` / `$0x8b` / `$0x8c` 均不存在）。
+- 8 关 ECL + `default.ecl` 用 `thecl -d 12 -m th12.eclm` 全解：`anmPlay(0,N)` 最大 N = **130**，
+  `anmSetSprite(0,N)` 只到 158，**139/140/141 一次都没出现**。
+
+⇒ 这三个脚本在 v1.00b 属**孤立数据**（🟡 疑旧 revision 残留）。**据此，把从 139/140 抄来的实现标成
+「复刻」是不成立的**，必须改标「自定」或换成 (a) 表里的 `bullet.anm` 204/205。
+
+> **旧 build 的坑**：本仓遗留的 `/tmp/stage01_raw.txt`（2026-09-18 另一会话）里 `BossDead` 是
+> `anmPlay(0,76) / playSound(18) / anmPlay(0,141)`，看着像「141 有主」。但我们的 v1.00b `stage01.ecl`
+> 从 `0x8d18` 起**逐字节**解出来是 `flagSet(140) / anmPlay(0,79) / playSound(5) / anmPlay(0,129) /
+> moveVel(RANDRAD,0.4)`（opcode `0x0192 / 0x0107 / 0x01a0 / 0x0107 / 0x0130`）。旧 dump 的 `BossDead`
+> 落在文件 `0x4bb0`、我们的在 `0x8d08` ⇒ **那是另一个 revision 的 stage01.ecl，不能当 v1.00b 的证据**。
+
+### (d) 附带一手：`enemy.anm` 是被 **ECL 头**加载的 ✅
+
+`th12.exe` 里**没有** `enemy.anm` / `stageNN.anm` 字符串（只有 ascii/bullet/front/text/pl0N/stgenmNN/stNNlogo/title 等）。
+它们在 ECL 头里：`default.ecl` 开头 = `ANIM` magic + count=1 + `"enemy.anm"`；`stageNN.ecl` = count=2 +
+`"enemy.anm"` + `"stgenmNN.anm"`（两串分别在文件偏移 44 / 54）。⇒ 敌人 anm **索引 0 = `enemy.anm`、
+索引 1 = 本关 `stgenmNN.anm`**，正是 `anmPlay/anmSetSprite` 第一参的含义。
+UFO 本体动画 = `default.ecl` 的 `anmSetSprite(0, 135..138)`（= `enemy.anm` 135..138：`rotateTime(96,9,…)`
+转着播 `sprite205..220` = `enemy/ufo_anim.png`）。
+
 ## 11. 一句话模型（地址串）
 
 ```
