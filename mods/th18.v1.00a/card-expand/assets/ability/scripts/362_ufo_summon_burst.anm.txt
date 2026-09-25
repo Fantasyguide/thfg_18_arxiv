@@ -1,4 +1,9 @@
 script script362 {
+    // ★★★ 2026-09-26 第 37 轮订正（owner：「完全不对 … 甚至召唤的时候好像还有**额外的像火焰一样的特效
+    //   在正中心」）：子脚本必须用**一手那个 opcode** `scriptNewRoot`（撒成**根 VM**），
+    //   上一版我换成了 `scriptNew`（**子** VM）⇒ 那 72 根雷挂在正在 `scaleTime(6,4, 2.0)` 的父 VM 上、
+    //   被父的缩放与变换吃掉 ⇒ 画面上只剩**正中心一团黄白火**、看不到四散的雷。
+    //   （同轮：另把第 9 轮那支 TH18 etbreak 碎屑 346–350 默认关掉 —— 那团"额外的火"就是它。）
     // 112 星莲船 —— **UFO 召唤的爆闪/雷**（一手：TH12 v1.00b `enemy.anm` **script134** 逐条移植）
     //
     // owner 2026-09-26：「**把 TH12 的 script134/112 原样搬过来**（最忠实一手，工作量中等）」。
@@ -33,60 +38,60 @@ script script362 {
     iset($I4, 2);
 offset176:
     sprite(@UFO_BURST_0@);
-    scriptNew(@SCRIPT_UFO_SUMMON_SPARK@);
+    scriptNewRoot(@SCRIPT_UFO_SUMMON_SPARK@);
 +1: // 13
-    scriptNew(@SCRIPT_UFO_SUMMON_SPARK@);
+    scriptNewRoot(@SCRIPT_UFO_SUMMON_SPARK@);
 +1: // 14
-    scriptNew(@SCRIPT_UFO_SUMMON_SPARK@);
+    scriptNewRoot(@SCRIPT_UFO_SUMMON_SPARK@);
 +1: // 15
     sprite(@UFO_BURST_1@);
-    scriptNew(@SCRIPT_UFO_SUMMON_SPARK@);
+    scriptNewRoot(@SCRIPT_UFO_SUMMON_SPARK@);
 +1: // 16
-    scriptNew(@SCRIPT_UFO_SUMMON_SPARK@);
+    scriptNewRoot(@SCRIPT_UFO_SUMMON_SPARK@);
 +1: // 17
-    scriptNew(@SCRIPT_UFO_SUMMON_SPARK@);
+    scriptNewRoot(@SCRIPT_UFO_SUMMON_SPARK@);
 +1: // 18
     sprite(@UFO_BURST_2@);
-    scriptNew(@SCRIPT_UFO_SUMMON_SPARK@);
+    scriptNewRoot(@SCRIPT_UFO_SUMMON_SPARK@);
 +1: // 19
-    scriptNew(@SCRIPT_UFO_SUMMON_SPARK@);
+    scriptNewRoot(@SCRIPT_UFO_SUMMON_SPARK@);
 +1: // 20
-    scriptNew(@SCRIPT_UFO_SUMMON_SPARK@);
+    scriptNewRoot(@SCRIPT_UFO_SUMMON_SPARK@);
 +1: // 21
     sprite(@UFO_BURST_3@);
-    scriptNew(@SCRIPT_UFO_SUMMON_SPARK@);
+    scriptNewRoot(@SCRIPT_UFO_SUMMON_SPARK@);
 +1: // 22
-    scriptNew(@SCRIPT_UFO_SUMMON_SPARK@);
+    scriptNewRoot(@SCRIPT_UFO_SUMMON_SPARK@);
 +1: // 23
-    scriptNew(@SCRIPT_UFO_SUMMON_SPARK@);
+    scriptNewRoot(@SCRIPT_UFO_SUMMON_SPARK@);
 +1: // 24
     sprite(@UFO_BURST_4@);
-    scriptNew(@SCRIPT_UFO_SUMMON_SPARK@);
+    scriptNewRoot(@SCRIPT_UFO_SUMMON_SPARK@);
 +1: // 25
-    scriptNew(@SCRIPT_UFO_SUMMON_SPARK@);
+    scriptNewRoot(@SCRIPT_UFO_SUMMON_SPARK@);
 +1: // 26
-    scriptNew(@SCRIPT_UFO_SUMMON_SPARK@);
+    scriptNewRoot(@SCRIPT_UFO_SUMMON_SPARK@);
 +1: // 27
     sprite(@UFO_BURST_5@);
-    scriptNew(@SCRIPT_UFO_SUMMON_SPARK@);
+    scriptNewRoot(@SCRIPT_UFO_SUMMON_SPARK@);
 +1: // 28
-    scriptNew(@SCRIPT_UFO_SUMMON_SPARK@);
+    scriptNewRoot(@SCRIPT_UFO_SUMMON_SPARK@);
 +1: // 29
-    scriptNew(@SCRIPT_UFO_SUMMON_SPARK@);
+    scriptNewRoot(@SCRIPT_UFO_SUMMON_SPARK@);
 +1: // 30
     sprite(@UFO_BURST_6@);
-    scriptNew(@SCRIPT_UFO_SUMMON_SPARK@);
+    scriptNewRoot(@SCRIPT_UFO_SUMMON_SPARK@);
 +1: // 31
-    scriptNew(@SCRIPT_UFO_SUMMON_SPARK@);
+    scriptNewRoot(@SCRIPT_UFO_SUMMON_SPARK@);
 +1: // 32
-    scriptNew(@SCRIPT_UFO_SUMMON_SPARK@);
+    scriptNewRoot(@SCRIPT_UFO_SUMMON_SPARK@);
 +1: // 33
     sprite(@UFO_BURST_7@);
-    scriptNew(@SCRIPT_UFO_SUMMON_SPARK@);
+    scriptNewRoot(@SCRIPT_UFO_SUMMON_SPARK@);
 +1: // 34
-    scriptNew(@SCRIPT_UFO_SUMMON_SPARK@);
+    scriptNewRoot(@SCRIPT_UFO_SUMMON_SPARK@);
 +1: // 35
-    scriptNew(@SCRIPT_UFO_SUMMON_SPARK@);
+    scriptNewRoot(@SCRIPT_UFO_SUMMON_SPARK@);
 +1: // 36
     jmpDec($I4, offset176, 12);
     scaleTime(15, 4, 4.0f, 4.0f);

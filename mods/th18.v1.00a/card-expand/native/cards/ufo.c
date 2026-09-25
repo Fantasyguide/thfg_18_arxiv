@@ -1997,6 +1997,11 @@ static uint32_t s_summon_debris_id;        /* 闪电碎屑发射器 VM（脚本 
  *   ⇒ **下一轮**把它（要不要连 `alpha/scaleTime` 一起）按 316 的方式逐条移植 + 切图集以外无需贴图
  *     （`drawPolyBorder` 也是程序画）后接上召唤。*/
 #define UFO_RING_FX_ENABLE 0                      /* 0 = 不召唤（316/317 是三角形，owner 第 2 轮已否）*/
+/* ★★★ 2026-09-26 第 37 轮（owner）：「**完全不对**，甚至召唤的时候好像还有**额外的像火焰一样的特效
+ *   **在正中心」—— 那团「额外的火」就是**第 9 轮按他当时口径借的 TH18 etbreak 碎屑**（脚本 346–350：
+ *   蓝碎屑 + 中心洋红）。现在一手的爆闪/雷（362/363）也接上了，两套叠在一起就是「正中心多一团火」。
+ *   ⇒ 默认**关掉**（要回改这一个宏）。*/
+#define UFO_SUMMON_DEBRIS_ENABLE 0               /* 0 = 不撒 TH18 etbreak 碎屑（一手用 362/363）*/
 #define UFO_RING_FX_COUNT 2                       /* 紫环那一对（316/317），仅在 ENABLE=1 时用 */
 static uint32_t s_summon_burst_id;         /* 一手爆闪/雷（脚本 362，自己 +51 帧 delete）*/
 /* ★★★ 2026-09-26 第 34 轮（owner）：「**最后一条是不应该存在青六边形**」——
@@ -2007,6 +2012,7 @@ static uint32_t s_ring_fx_id[UFO_RING_FX_COUNT];   /* 紫环对（316/317 ← �
 static uint16_t s_summon_fx_left;          /* 横幅"还在放"的剩余帧（0 = 可以再起）*/
 static uint16_t s_summon_debris_left;      /* 碎屑同上 */
 
+#if UFO_SUMMON_DEBRIS_ENABLE
 static void ufo_summon_debris_spawn(const uint8_t *e)
 {
     void *anm = CE_ABILITY_ANM();
@@ -2055,6 +2061,8 @@ static void ufo_ring_fx_spawn(const uint8_t *e)
            CE_ANM_ABILITY_SCRIPT_UFO_RING_A, CE_ANM_ABILITY_SCRIPT_UFO_RING_B);
 }
 #endif
+
+#endif  /* UFO_SUMMON_DEBRIS_ENABLE */
 
 /* 收尾（**长持续效果铁律**）：横幅 / 碎屑都绑在 UFO 上，但两条路都必须收得掉 ——
  * `ufo_withdraw_all()`（`on_delete` / `on_run_reset`）与 `on_stage_start()` 各调一次（幂等）。
@@ -2602,7 +2610,9 @@ static void ufo_summon_fx_try(ufo_card_t *s, const uint8_t *e)
      *   整条返回"的写法，第二只 UFO 来得快时连碎屑也起不来 —— 而两件东西的时长并不相等。 */
     if (s->u.ufo_id && s->summon_fx_for == s->u.ufo_id) return;      /* 这只已经起过两件 */
     s->summon_fx_for = s->u.ufo_id;
-    ufo_summon_debris_spawn(e);                                      /* ★ 闪电碎屑（脚本 346）*/
+#if UFO_SUMMON_DEBRIS_ENABLE
+    ufo_summon_debris_spawn(e);                                      /* 第 9 轮那支（见宏注）*/
+#endif
 #if defined(CE_ANM_ABILITY_SCRIPT_UFO_RING_A) && UFO_RING_FX_ENABLE
     ufo_ring_fx_spawn(e);                                            /* 见下面 UFO_RING_FX_ENABLE 的说明 */
 #endif
