@@ -1984,7 +1984,20 @@ static uint32_t s_summon_debris_id;        /* 闪电碎屑发射器 VM（脚本 
  *       ⇒ 卡侧脚本 **319 / 320**。
  *   两支都**自己在 ~70 帧 `delete()`**（见各脚本尾），所以起完就不用管；这里仍记句柄，
  *   好在删卡 / 换关时统一收干净（长持续效果铁律）。*/
-#define UFO_RING_FX_COUNT 2                       /* 只剩紫环那一对 */
+/* ★★★ 2026-09-26 第 35 轮（owner）：「**又是紫色三角形何意味呢？**」——
+ *   答案就在数字里：316/317 = TH12 `enemy.anm` 139/140，而它们的正文是 **`drawPoly(192.0f, 3)`**
+ *   = **3 边形 = 三角形**（不是圆！）。这正是 owner **第 2 轮**就已经否掉的那件
+ *   （当时原话：「召唤动画是**紫色三角**（不对）」）—— 我上一轮把"紫色圆"读成了它，**错了**。
+ *   ⇒ 本轮**停用**（`UFO_RING_FX_ENABLE = 0`；脚本与代码都留着，要回就改这一个宏）。
+ *
+ *   **真正的"紫色圆"在 `bullet.anm`：script204 / script205**
+ *     `layer(7)` + `blendMode(1)` + **`drawPolyBorder(62.0f, 48)` / `(55.0f, 48)`**（48 边形 ≈ 圆）
+ *     + `color(96, 96, 224)`（紫蓝）+ 一串按 UFO 颜色改 `color(...)` 的 `interruptLabel`
+ *     —— 层号 7 = UFO 本体同层、48 边 = 圆、颜色 = 紫 ⇒ 三条都对得上 owner 说的"紫色圆"。
+ *   ⇒ **下一轮**把它（要不要连 `alpha/scaleTime` 一起）按 316 的方式逐条移植 + 切图集以外无需贴图
+ *     （`drawPolyBorder` 也是程序画）后接上召唤。*/
+#define UFO_RING_FX_ENABLE 0                      /* 0 = 不召唤（316/317 是三角形，owner 第 2 轮已否）*/
+#define UFO_RING_FX_COUNT 2                       /* 紫环那一对（316/317），仅在 ENABLE=1 时用 */
 static uint32_t s_summon_burst_id;         /* 一手爆闪/雷（脚本 362，自己 +51 帧 delete）*/
 /* ★★★ 2026-09-26 第 34 轮（owner）：「**最后一条是不应该存在青六边形**」——
  *   319/320（← TH12 `enemy.anm` 102/104）当年是**我们自己按「全 enemy.anm 里只有 4 支用 drawPoly」
@@ -2016,7 +2029,7 @@ static void ufo_summon_debris_spawn(const uint8_t *e)
            CE_ANM_ABILITY_SCRIPT_UFO_SUMMON_DEBRIS);
 }
 
-#ifdef CE_ANM_ABILITY_SCRIPT_UFO_RING_A
+#if defined(CE_ANM_ABILITY_SCRIPT_UFO_RING_A) && UFO_RING_FX_ENABLE
 /* ★ 第 32 轮：**紫环 + 六边形**（一手 TH12 `enemy.anm` 139/140 与 102/104 ⇒ 卡侧 316/317/319/320）。
  *   位置 = UFO 本体那一刻的坐标（与碎屑同一条口径）；四支都是"放完自删"的一次性效果。
  *   ⚠ 它们的脚本自己写 `layer(7)` —— 与 UFO 本体同层、在碎屑（5/6）之上 ⇒ 画面上是
@@ -2053,7 +2066,7 @@ static void ufo_summon_fx_kill(void)
      *   —— id 会被引擎复用，无条件删旧句柄有可能删到别的 VM。*/
     if (s_summon_fx_left && s_summon_fx_id)         ce_anm_delete(s_summon_fx_id);
     if (s_summon_debris_left && s_summon_debris_id) ce_anm_delete(s_summon_debris_id);
-#ifdef CE_ANM_ABILITY_SCRIPT_UFO_RING_A
+#if defined(CE_ANM_ABILITY_SCRIPT_UFO_RING_A) && UFO_RING_FX_ENABLE
     {
         int i;
         for (i = 0; i < UFO_RING_FX_COUNT; ++i) {
@@ -2590,8 +2603,8 @@ static void ufo_summon_fx_try(ufo_card_t *s, const uint8_t *e)
     if (s->u.ufo_id && s->summon_fx_for == s->u.ufo_id) return;      /* 这只已经起过两件 */
     s->summon_fx_for = s->u.ufo_id;
     ufo_summon_debris_spawn(e);                                      /* ★ 闪电碎屑（脚本 346）*/
-#ifdef CE_ANM_ABILITY_SCRIPT_UFO_RING_A
-    ufo_ring_fx_spawn(e);                                            /* ★★ 紫环 + 六边形（316/317/319/320）*/
+#if defined(CE_ANM_ABILITY_SCRIPT_UFO_RING_A) && UFO_RING_FX_ENABLE
+    ufo_ring_fx_spawn(e);                                            /* 见下面 UFO_RING_FX_ENABLE 的说明 */
 #endif
 #ifdef CE_ANM_ABILITY_SCRIPT_UFO_SUMMON_BURST
     /* ★★★ 2026-09-26 第 33 轮（owner 选「把 TH12 的 script134/112 原样搬过来」）：
