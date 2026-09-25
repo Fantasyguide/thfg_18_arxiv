@@ -1057,8 +1057,15 @@ static uint32_t s_penta_id[UFO_TOKEN_CAP];
  *   `+0x534 flags_lo` / `+0x527 color_1 的 A` 读）。我先前把 `lea esi,[ecx+0x558]` 的 `esi` 当成了
  *   "item+0x558"，其实那是 `ItemManager+0x558` = **item+0x544**（item0 = manager+0x14）⇒
  *   `[esi-0x534]` = **item+0x10 = vm1 基址**、`[esi+0xd8]` = **item+0x61c = vm2 基址**（两条都对上了）。
- *   ⇒ 也就是说：**平时画面上那颗星就是 vm1**（走 `jbe` 那一支），我们打的字段从头到尾都是它，
- *     缺的只是 color_2 那一个 alpha 字节。 */
+ *   ⇒ 也就是说：**平时画面上那颗星 = 这两个内嵌 VM 之一**，我们打的字段从头到尾都是它们。
+ *   ★★ 2026-09-25 第 26 轮（owner：「**在自然下落态，五角星又出现；在上升态和吸收态不出现**」）：
+ *   这正好对上 `ItemManager__on_draw__body`（`th18:0x446d60`）里**唯二**的两条绘制支 ——
+ *     · 支 A：`446e3c lea eax,[esi+0xd8]`（`esi` = item+0x544）⇒ **&item+0x61c = vm2**，
+ *       条件 = `const > item+0x44` **且** `item+0xb50`（= **vm2.flags_lo**）bit0 置位；
+ *     · 支 B：`446e60 lea eax,[esi-0x534]` ⇒ **&item+0x10 = vm1**（其余情况）。
+ *   ⇒ 「下落态」画的是 **vm2**、「上升/吸收态」画的是 **vm1**。第 24 轮只把 `color_1` 的 alpha 写 0：
+ *   vm1 的 `color_2` 本来就是 0 ⇒ 那两态**当场藏住** ✓；vm2 的 `color_2` 还带 255 ⇒ **下落态照画** ✗。
+ *   第 25 轮补上两个 `color_2` 的 alpha ⇒ 四条支路全覆盖（本轮再补 vm2 的 pre 值诊断）。 */
 #define UFO_ITEM_HIDE_ICON  1
 #define UFO_DROP_ANM_LOG_EVERY 60   /* 满 B 的诊断行节奏（0 = 关）；验证摇摆/隐藏星用 */
 /* 引擎读数（照 110 `mof.c` 的同名宏）：满火力判据 = `CURRENT_POWER >= MAX_POWER` */
@@ -4080,6 +4087,8 @@ static void ufo_drops_draw_follow(void)
         {
             uint32_t pre1 = *(const uint32_t *)(it + UFO_ITEM_VM1 + CE_ANM_VM_COLOR1);
             uint32_t pre1b = *(const uint32_t *)(it + UFO_ITEM_VM1 + UFO_ITEM_VM_COLOR2);
+            uint32_t pre2 = *(const uint32_t *)(it + UFO_ITEM_VM2 + CE_ANM_VM_COLOR1);
+            uint32_t pre2b = *(const uint32_t *)(it + UFO_ITEM_VM2 + UFO_ITEM_VM_COLOR2);
 #if UFO_ITEM_HIDE_ICON
             /* ★ 第 25 轮：color_1 **和** color_2 的 alpha 都要 0（逐指令见 `UFO_ITEM_HIDE_ICON` 上面）*/
             *(uint32_t *)(it + UFO_ITEM_VM1 + CE_ANM_VM_COLOR1) = 0x00ffffffu;
@@ -4099,18 +4108,22 @@ static void ufo_drops_draw_follow(void)
             if ((++s_drop_log_tick % UFO_DROP_ANM_LOG_EVERY) == 0u) {
                 float *rv = (float *)(ce_anm_get_vm(d->anm_id) + CE_ANM_VM_ROTATION);
                 float *sv = (float *)(ce_anm_get_vm(d->anm_id) + CE_ANM_VM_SCALE);
+                /* ★ 第 26 轮：vm1/vm2 **各打 pre 与 post**。一手两条绘制支（`ItemManager__on_draw__body`
+                 *   `th18:0x446d60`）：`lea [item+0x10]`（= **vm1**）与 `lea [item+0x61c]`（= **vm2**，
+                 *   还要 `vm2.flags_lo`（`item+0xb50`）bit0 置位才画）⇒ owner 观察到的"**自然下落态有星、
+                 *   上升/吸收态没有**"正好对上"下落画的是 vm2"。`pre` = 引擎这一帧还原成的值、`post` = 我们写的。*/
                 ce_log("ufo/drop.bomb: parent vm %u rot (%.4f, %.4f, %.4f) scale (%.3f, %.3f) | icon vm1 "
-                       "c1 0x%08x c2 0x%08x -> c1 0x%08x c2 0x%08x spr %d fl 0x%08x | vm2 c1 0x%08x c2 0x%08x "
-                       "spr %d fl 0x%08x (pre = engine's restore; post: **both** alphas 00 = star hidden)",
+                       "c1 0x%08x->0x%08x c2 0x%08x->0x%08x spr %d fl 0x%08x | vm2 "
+                       "c1 0x%08x->0x%08x c2 0x%08x->0x%08x spr %d fl 0x%08x "
+                       "(pre->post; 4 个 alpha 都必须 00 = star hidden)",
                        d->anm_id, (double)rv[0], (double)rv[1], (double)rv[2],
                        (double)sv[0], (double)sv[1],
-                       pre1, pre1b,
-                       *(const uint32_t *)(it + UFO_ITEM_VM1 + CE_ANM_VM_COLOR1),
-                       *(const uint32_t *)(it + UFO_ITEM_VM1 + UFO_ITEM_VM_COLOR2),
+                       pre1, *(const uint32_t *)(it + UFO_ITEM_VM1 + CE_ANM_VM_COLOR1),
+                       pre1b, *(const uint32_t *)(it + UFO_ITEM_VM1 + UFO_ITEM_VM_COLOR2),
                        (int)*(const int32_t *)(it + UFO_ITEM_VM1 + CE_ANM_VM_SPRITE_ID),
                        *(const uint32_t *)(it + UFO_ITEM_VM1 + CE_ANM_VM_FLAGS_LO),
-                       *(const uint32_t *)(it + UFO_ITEM_VM2 + CE_ANM_VM_COLOR1),
-                       *(const uint32_t *)(it + UFO_ITEM_VM2 + UFO_ITEM_VM_COLOR2),
+                       pre2, *(const uint32_t *)(it + UFO_ITEM_VM2 + CE_ANM_VM_COLOR1),
+                       pre2b, *(const uint32_t *)(it + UFO_ITEM_VM2 + UFO_ITEM_VM_COLOR2),
                        (int)*(const int32_t *)(it + UFO_ITEM_VM2 + CE_ANM_VM_SPRITE_ID),
                        *(const uint32_t *)(it + UFO_ITEM_VM2 + CE_ANM_VM_FLAGS_LO));
             }

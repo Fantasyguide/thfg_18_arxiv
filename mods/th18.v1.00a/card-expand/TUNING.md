@@ -6490,3 +6490,27 @@ vm1**、`[esi+0xd8]` = **item+0x61c = vm2** —— 两条正好对上，也就�
 
 **回归**：`make -C native dllx87` = 0（`ufo.c` 零告警）→ `make -C native check` 全绿。
 本轮**只改 `ufo.c`**（不动 `assets/**`）⇒ 无共享件登记；发布 DLL `a3456858…`（modkit 4 路径同 md5）。
+
+#### §2.0zzx-5b 两条绘制支的映射（owner 2026-09-25 追加观察："**自然下落态有星，上升态/吸收态没有**"）
+
+这条观察正好把上一轮的诊断补完 —— 一手：`ItemManager__on_draw__body`（`th18:0x446d60`）里**只有两条**
+绘制调用，各画**一个内嵌 VM**（`esi` = `ItemManager+0x558` = item+0x544）：
+
+| 支 | 一手 | 画谁 | 条件 |
+| --- | --- | --- | --- |
+| A | `446e3c lea eax,[esi+0xd8]` ⇒ `&item+0x61c` | **vm2**（脚本 140 → `sprite513`）| `const > item+0x44` **且** `item+0xb50`（= vm2.flags_lo）bit0 置位 |
+| B | `446e60 lea eax,[esi-0x534]` ⇒ `&item+0x10` | **vm1**（脚本 118 → `sprite512`）| 其余情况 |
+
+⇒ owner 说的三态对应：**自然下落 = 支 A（vm2）**、**上升 / 吸收 = 支 B（vm1）**。
+第 24 轮只写 `color_1` 的 alpha：vm1 的 `color_2` 本来就是 0 ⇒ 那两态**当场藏住**；vm2 的 `color_2` 带 255
+⇒ **下落态照画** —— 与 owner 的观察逐字对上。第 25 轮补的两个 `color_2` alpha 正好覆盖支 A。
+
+**本轮（第 26 轮）只加诊断**：`ufo/drop.bomb` 那行改成 vm1/vm2 **各打 pre 与 post**，四个 alpha 一起看：
+
+```
+ufo/drop.bomb: parent vm N rot (…) scale (…) | icon vm1 c1 0x…->0x… c2 0x…->0x… spr 512 fl 0x… |
+                                              vm2 c1 0x…->0x… c2 0x…->0x… spr 513 fl 0x…
+```
+
+判读：`->` 后**四个最高两位都必须是 `00`**；`spr` = 512 / 513（一手那两颗星）；下落态里 `vm2.fl` 的
+bit0 应是**置位**（否则引擎那一支根本不画）。发布：DLL `7589894c…`（modkit 4 路径同 md5）。
