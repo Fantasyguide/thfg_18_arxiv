@@ -1974,6 +1974,18 @@ static uint32_t s_summon_debris_id;        /* 闪电碎屑发射器 VM（脚本 
  *   寿命一手：横幅脚本 324 在 +75 帧 `delete()`、碎屑驱动器 346 约 90 帧自删 ⇒ 留 24 帧余量。*/
 #define UFO_SUMMON_FX_FRAMES     90u       /* 横幅：脚本 324 自己 +75 帧删 ⇒ 90 帧门 */
 #define UFO_SUMMON_DEBRIS_FRAMES 120u      /* 碎屑：驱动器 346 约 90 帧删 ⇒ 120 帧门 */
+/* ★★★ 2026-09-26 第 32 轮（owner：「**在视觉侧是既不存在紫色圆，也不存在闪电** ——
+ *   它**一手**是存在紫色圆和闪电的，也有横幅」）——
+ *   一手（TH12 `Ufo::spawn` 那一段 `th12:0x44a8a0` 一带）除了 `front.anm` script82/83/84 的大横幅，
+ *   还建了两族 **`enemy.anm` 的 `drawPoly` 效果**（本卡**第 1 轮就移植好了、却一直没接线**）：
+ *     · **紫环** = `enemy.anm` **script139 / script140**（`drawPoly(192,3)` + `color2(255,128,255)`
+ *       + `angleVel` 自转 + `alpha2Time(60,0,255)`）⇒ 卡侧脚本 **316 / 317**（逐条移植）；
+ *     · **六边形爆闪** = `enemy.anm` **script102 / script104**（`drawPoly(96,6)` + `color2(0,128,128)`）
+ *       ⇒ 卡侧脚本 **319 / 320**。
+ *   两支都**自己在 ~70 帧 `delete()`**（见各脚本尾），所以起完就不用管；这里仍记句柄，
+ *   好在删卡 / 换关时统一收干净（长持续效果铁律）。*/
+#define UFO_RING_FX_COUNT 4
+static uint32_t s_ring_fx_id[UFO_RING_FX_COUNT];   /* [0..1] = 紫环对（316/317）、[2..3] = 六边形对（319/320）*/
 static uint16_t s_summon_fx_left;          /* 横幅"还在放"的剩余帧（0 = 可以再起）*/
 static uint16_t s_summon_debris_left;      /* 碎屑同上 */
 
@@ -1999,6 +2011,35 @@ static void ufo_summon_debris_spawn(const uint8_t *e)
            CE_ANM_ABILITY_SCRIPT_UFO_SUMMON_DEBRIS);
 }
 
+#ifdef CE_ANM_ABILITY_SCRIPT_UFO_RING_A
+/* ★ 第 32 轮：**紫环 + 六边形**（一手 TH12 `enemy.anm` 139/140 与 102/104 ⇒ 卡侧 316/317/319/320）。
+ *   位置 = UFO 本体那一刻的坐标（与碎屑同一条口径）；四支都是"放完自删"的一次性效果。
+ *   ⚠ 它们的脚本自己写 `layer(7)` —— 与 UFO 本体同层、在碎屑（5/6）之上 ⇒ 画面上是
+ *     "紫环从飞碟身上绽开 + 青色六边形跟着闪"，正是 owner 说一手有的那两件。*/
+static void ufo_ring_fx_spawn(const uint8_t *e)
+{
+    void *anm = CE_ABILITY_ANM();
+    static const int k_scripts[UFO_RING_FX_COUNT] = {
+        CE_ANM_ABILITY_SCRIPT_UFO_RING_A,  CE_ANM_ABILITY_SCRIPT_UFO_RING_B,
+        CE_ANM_ABILITY_SCRIPT_UFO_HEX_SHRINK, CE_ANM_ABILITY_SCRIPT_UFO_HEX_GROW,
+    };
+    int i;
+    if (!anm) return;
+    for (i = 0; i < UFO_RING_FX_COUNT; ++i) {
+        if (s_ring_fx_id[i] && !ce_anm_get_vm(s_ring_fx_id[i])) s_ring_fx_id[i] = 0;
+        if (s_ring_fx_id[i]) continue;                       /* 上一发还在 ⇒ 不叠 */
+        s_ring_fx_id[i] = ce_anm_spawn(anm, k_scripts[i], UFO_SUMMON_DEBRIS_LAYER);
+        if (s_ring_fx_id[i] && e)
+            ce_anm_set_pos(s_ring_fx_id[i], *(const float *)(e + CE_ENEMY_POS_X),
+                                             *(const float *)(e + CE_ENEMY_POS_Y), 0.0f);
+    }
+    ce_log("ufo: summon ring fx up (purple ring = ability.anm scripts %d/%d <= TH12 enemy.anm 139/140; "
+           "hex flash = %d/%d <= 102/104) at the body position",
+           CE_ANM_ABILITY_SCRIPT_UFO_RING_A, CE_ANM_ABILITY_SCRIPT_UFO_RING_B,
+           CE_ANM_ABILITY_SCRIPT_UFO_HEX_SHRINK, CE_ANM_ABILITY_SCRIPT_UFO_HEX_GROW);
+}
+#endif
+
 /* 收尾（**长持续效果铁律**）：横幅 / 碎屑都绑在 UFO 上，但两条路都必须收得掉 ——
  * `ufo_withdraw_all()`（`on_delete` / `on_run_reset`）与 `on_stage_start()` 各调一次（幂等）。
  * ⚠ 为什么不能只靠"它们自己会 delete()"：删卡那一刻卡的 tick 全停（`on_delete`），
@@ -2009,6 +2050,14 @@ static void ufo_summon_fx_kill(void)
      *   —— id 会被引擎复用，无条件删旧句柄有可能删到别的 VM。*/
     if (s_summon_fx_left && s_summon_fx_id)         ce_anm_delete(s_summon_fx_id);
     if (s_summon_debris_left && s_summon_debris_id) ce_anm_delete(s_summon_debris_id);
+#ifdef CE_ANM_ABILITY_SCRIPT_UFO_RING_A
+    {
+        int i;
+        for (i = 0; i < UFO_RING_FX_COUNT; ++i) {
+            if (s_ring_fx_id[i]) { ce_anm_delete(s_ring_fx_id[i]); s_ring_fx_id[i] = 0; }
+        }
+    }
+#endif
     s_summon_fx_id = 0;
     s_summon_debris_id = 0;
     s_summon_fx_left = 0;
@@ -2537,6 +2586,9 @@ static void ufo_summon_fx_try(ufo_card_t *s, const uint8_t *e)
     if (s->u.ufo_id && s->summon_fx_for == s->u.ufo_id) return;      /* 这只已经起过两件 */
     s->summon_fx_for = s->u.ufo_id;
     ufo_summon_debris_spawn(e);                                      /* ★ 闪电碎屑（脚本 346）*/
+#ifdef CE_ANM_ABILITY_SCRIPT_UFO_RING_A
+    ufo_ring_fx_spawn(e);                                            /* ★★ 紫环 + 六边形（316/317/319/320）*/
+#endif
     if (s_summon_fx_left) return;                                    /* ★ 帧计数器门（同上）*/
     s_summon_fx_id = ce_anm_spawn(anm, CE_ANM_ABILITY_SCRIPT_UFO_SUMMON_BANNER, UFO_SUMMON_FX_LAYER);
     if (!s_summon_fx_id) {
