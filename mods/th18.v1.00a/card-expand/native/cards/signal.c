@@ -2195,15 +2195,26 @@ static void signal_step_mod_fill(signal_card_t *s, signal_step_mod_t *mod)
  *     ① 它借的是 **TH17** 妖梦蓄力的「蓄力中嗡鸣」层（`th17:0x44a8d0`），**TH09 的 charge 族里没有对应物**；
  *     ② 更要命的是**用法** —— 原版那一层是**每帧一声的持续音**，我们改成「每 30 帧把一枚 *release*
  *        音重放一次」⇒ 听感是「隔半秒放一次放招音」，与蓄力毫无关系（"完全不对"就是它）。
- *   · **改成一手的用法**（TH09 全套两条，逐条都是 `th09` 的调用点）：
- *       ① 起手那一帧（`player+0x30384 == 0`）⇒ `se_charge00` —— **保留**；
- *       ② `floor(charge/100)` 变大那一帧 ⇒ `se_chargeup` —— **每升一格一声**（不再只在满时一声）。
- *     本卡蓄力 300 帧 ⇒ 100/200/300 各一声，「一路叮上去」= 原作的感觉；最后一声正好落在**蓄满**。
- *     ⚠ 一格 = 100 帧 = TH09 的 100 单位（`th09:0x41fa88 imul 0x51eb851f; sar edx,5` 就是 /100）；
- *       起手那一声的一手判据也是同一个计时器 ⇒ 两条同源。*/
-#define SIGNAL_SE_FLAN_CHARGE       CE_VOICE_CHARGE00
-#define SIGNAL_SE_FLAN_FULL         CE_VOICE_CHARGEUP
-#define SIGNAL_FLAN_LEVEL_FRAMES    100     /* ★ 一格 = 100 帧（一手 TH09 的 /100 判级）*/
+ *   ★★★ 2026-09-25 二次订正（owner **点名**两枚 wav，文件路径写死在工单里）：
+ *     · **充能中** = `se_power0.wav`，**循环播放至充满**；
+ *     · **消弹（清屏）那一下** = `se_slash.wav`。
+ *     ✅ 两枚都**已经在 TH18 的音效表里**，而且与 owner 给的 TH17 那份**逐字节相同**
+ *       （`md5 local/th17.v1.00b/dat/se_power0.wav` = `82fe761226147d097890b4f399e82a58` =
+ *        `local/th18.v1.00a/dat/se_power0.wav`；`se_slash.wav` 同理 = `a8f5d99ea4d266c1ccb77b1193033bec`）
+ *       ⇒ **一个字节的音频资产都不用新增**，直接用 TH18 的 id：
+ *         `se_power0.wav` = **`0x1c`**（表 `engine/_shared/th18-sound-table.md` 第 188 行）、
+ *         `se_slash.wav` = **`0x2c`**（与本卡 TH10 灵击那枚同一个 wav，`bomb10.h` 的 `BOMB10_SE`）。
+ *     ⚠ 因此 **TH09 的 charge 族（`CHARGE00`/`CHARGEUP`）在本卡**不再使用 ——
+ *       连同「起手一声」「每升一格一声」一起撤掉（owner 的口径里充能期只有 `se_power0` 的循环）。
+ *       ⚠ 那两枚 wav 仍留在 `assets/voice/`（**不许删**：`ORDER.txt` 的行号 = 音效 id，
+ *         删一行会把后面所有 id 全挪位；109 也还在用 `CHARGEUP`）。*/
+#define SIGNAL_SE_FLAN_LOOP         0x1c    /* `se_power0.wav`（充能中，循环）*/
+#define SIGNAL_SE_FLAN_SLASH        0x2c    /* `se_slash.wav`（消弹/清屏那一下）*/
+/* 循环节流：`se_power0.wav` 本身 **1.982 s**（22050 Hz / 43711 帧，见 `wave` 头）
+ * ⇒ 60 fps 下 = **118.9 帧** ⇒ 取 **119 帧**重放一次，两枚首尾相接（听感是**连续**的充能音）。
+ * ⚠ 蓄力 300 帧 ⇒ 触发在 1 / 120 / 239 帧；最后一次的尾音会越过「蓄满」约 1 秒
+ *   （没有停播 API ⇒ 只能让它自然放完；owner 口径「循环播放至充满」在这条上只能做到近似）。*/
+#define SIGNAL_SE_FLAN_LOOP_EVERY   119
 
 /* ★★ 2026-10-01（P7 = `SINGLE-CARD-TEST.md` §th11 #8「咲夜蓄满光圈应该闪烁」）：
  *   蓄满那一帧给范围环（脚本 277）发的**中断号** —— `2` 是**一手的语义位**（三作一致）：
@@ -2704,19 +2715,12 @@ static void signal_support_flandre(signal_card_t *s)
             const float *px = ce_player_pos();
             const float sx = px ? px[0] : 0.0f;
 
-            if (charged_before == 0 && s->flandre.charge > 0) {
-                ce_play_sound(SIGNAL_SE_FLAN_CHARGE, sx);          /* 起手：TH09 se_charge00（一手 `th09:0x41fa5e`）*/
-            }
-            /* ★★★ 2026-09-25：**每升一格一声**（一手 `th09:0x41fb31`：`floor(charge/100)` 变大那一帧）。
-             *   300 帧 ⇒ 100/200/300 三声；最后一声与「蓄满」同帧 ⇒ 满的那一记 `se_chargeup` 就长在这里，
-             *   不再单独判一次（原来那条「只在满时一声」= 一手里没有的用法）。*/
-            if (s->flandre.charge > 0 && charged_before > 0 &&
-                (s->flandre.charge / SIGNAL_FLAN_LEVEL_FRAMES) >
-                (charged_before / SIGNAL_FLAN_LEVEL_FRAMES)) {
-                ce_play_sound(SIGNAL_SE_FLAN_FULL, sx);            /* TH09 se_chargeup（`CE_VOICE_CHARGEUP`）*/
-                ce_log("signal: 二小姐·蓄力升格 %d/%d 帧 ⇒ 一声 `se_chargeup`"
-                       "（一手 th09:0x41fb31：`floor(charge/100)` 变大那一帧）",
-                       (int)s->flandre.charge, (int)SIGNAL_FLANDRE_CHARGE_FRAMES);
+            /* ★★★ 2026-09-25（owner 点名）：**充能中 = `se_power0.wav` 循环播放至充满**。
+             *   触发点 = 蓄力的第 1 帧 + 之后每 `SIGNAL_SE_FLAN_LOOP_EVERY` 帧（= wav 自身长度 118.9 帧，
+             *   取 119 ⇒ 首尾相接、听感连续）。`charge` 被钳在 300 ⇒ 蓄满后不再触发新的循环。*/
+            if (s->flandre.charge > 0 &&
+                (charged_before == 0 || (s->flandre.charge % SIGNAL_SE_FLAN_LOOP_EVERY) == 0)) {
+                ce_play_sound(SIGNAL_SE_FLAN_LOOP, sx);            /* `se_power0.wav`（TH18 id 0x1c）*/
             }
         }
 
@@ -2829,6 +2833,10 @@ static void signal_support_flandre(signal_card_t *s)
             uint32_t bv = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_FLAN_CLEAR_BURST, 13);
             if (bv) ce_anm_set_pos(bv, pos[0], pos[1], pos[2]);
         }
+        /* ★★★ 2026-09-25（owner 点名）：**消弹那一下 = `se_slash.wav`**（TH18 id `0x2c`，
+         *   与 owner 给的 `th17/data/se_slash.wav` **逐字节相同**）⇒ 与爆闪同帧、同样只在
+         *   「松手且蓄满（= 真的清屏）」这一帧。⚠ 早松手/被打断**不响**（那一下没消弹）。*/
+        ce_play_sound(SIGNAL_SE_FLAN_SLASH, pos[0]);
         if (ce_cancel_latch_claim((uint32_t)SIGNAL_ID_NUM)) {
             n = ce_cancel_radius(pos, r, SIGNAL_BOMB_CANCEL_MAX, 0);
             if (n > 0) {
