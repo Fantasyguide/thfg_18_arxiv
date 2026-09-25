@@ -883,7 +883,16 @@ static const hud_font_t HUD_FONTS[] = {
      *   `size`：本仓 UI 字形美术走 `resolutionMode(2)` 会被 DAT×0.5 折半（第 1 档 TH13 的先例）
      *   ⇒ 要让 16×16 texel 的字形在 **640 空间**里就是 16 单位（= TH12 原生大小），`size` 必须 **2.0**
      *   （上一版 1.0 ⇒ 字形只有一半大 = "得大至少 1 倍多"）。*/
-    { hud_vm_glyph_th12, 12.0f, 4.0f, CE_ANM_ABILITY_SCRIPT_FONT_TH12_GLYPH, 8.0f, 16.0f, 8.0f, 2.0f },
+    /* ★★★ 2026-09-26 第 30 轮（owner 复报「**间距依旧很宽**」）—— 上一版把 TH12 的 12 直接抄进来，
+     *   忘了本表的度量会**再乘一遍 `size`**（`adv_screen = adv × size × scale × dat`，dat = 2）：
+     *     · 上一版：adv 12 × size 2 × dat 2 = **48 px**，而字形自己只有 16 texel × size 2 = **32 px**
+     *       ⇒ 每字之间空 16 px（半个字宽）= owner 说的"依旧很宽" ✗；
+     *     · 本轮：TH12 的原值 12 px（640 空间）要落在屏幕上就是 12 × dat 2 = **24 px**
+     *       ⇒ `adv = 24 / (size × dat) = 24 / 4 =` **6.0**；`.`/`,` 同 4 → **2.0**。
+     *   ⚠ 行高/VM 偏移同理都要除以 (size) 这一层：`half_line` 8 → **4**、`full_line` 16 → **8**、
+     *     `vm_dy` 8 → **4**（它们也是 × sy 用的）。
+     *   ⇒ 结果：字形 32 px 宽、步进 24 px ⇒ **互相压 8 px**（TH12 就是 16 与 12 的关系，同一比例）。*/
+    { hud_vm_glyph_th12, 6.0f, 2.0f, CE_ANM_ABILITY_SCRIPT_FONT_TH12_GLYPH, 4.0f, 8.0f, 4.0f, 2.0f },
 };
 
 /* 默认字形集 = TH18 font 2（所有既有调用点走这里，行为一个字节不变）。*/

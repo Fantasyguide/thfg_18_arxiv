@@ -3700,12 +3700,29 @@ static ce_hud_vm_text_t s_timer_text;    /* `11:00` 的那 5 个字形 VM */
  *   ⇒ 本卡的 HUD 文字照同一条门：**非游玩帧什么都不画**（不建 VM、也不清 —— 解除后下一帧照旧）。
  *   ⚠ 不影响别的路径：令牌 / 掉落物是**世界层** VM（引擎自己的道具池用同一条门），位置与生命周期
  *     都不依赖这里。*/
+/* ★ 第 30 轮：**这次绘制属不属于一个新的游玩帧**（`on_draw` 开头算一次，两处 HUD 文字共用）。*/
+static uint32_t s_play_clock_seen;     /* 上一次"消费掉"的 `ce_sdk_frame()` */
+static uint8_t  s_this_draw_is_play;   /* 本帧答案（1 = 新的游玩帧）*/
+static void ufo_note_draw_frame(void)
+{
+    uint32_t now = ce_sdk_frame();
+    if (now == s_play_clock_seen) { s_this_draw_is_play = 0; return; }
+    s_play_clock_seen = now;
+    s_this_draw_is_play = 1;
+}
 static int ufo_play_frame(void)
 {
     const uint8_t *gt = (const uint8_t *)CE_GAME_THREAD();
     uint32_t f;
     if (!gt) return 0;
     f = *(const uint32_t *)(gt + CE_GT_FLAGS);
+    /* ★★★ 2026-09-26 第 30 轮（owner 复报「**依旧暂停还会闪烁消失**」）—— 光查 `gt+0xb0` 的位不够：
+     *   实跑里暂停时那些位并没有置起（或置的不是那一位）⇒ 门照样放行。
+     *   ⇒ 再加一条**游玩帧钟**判据：`ce_sdk_frame()` 只在引擎的 **`0x446ee3` 道具帧分派**上自增
+     *     （本仓 SDK 的 `BP_ce_item_frame` 是唯一递增处），而**冻结帧 / 商店 / 暂停 / 对话帧根本到不了
+     *     那个门卫**（`trance.c` / `collect2x.c` 都记着同一条）⇒ 「钟没动」= 这一帧不是游玩帧。
+     *   `s_this_draw_is_play` 在 `on_draw` 开头**每帧算一次**（同一帧里两处文字共享答案，不互相吃）。*/
+    (void)f;
     /* ★★★ 2026-09-26 owner 第 29 轮：「**暂停这个字符仍动和消失**」—— 真因就在这一行：
      *   原来写的是 `(f & 0x3) == 0 && (f & 0x400) == 0`，而引擎自己那条**道具池 body 门**
      *   （`th18:0x446ec0`，逐指令）是：
@@ -3715,7 +3732,7 @@ static int ufo_play_frame(void)
      *   我原来查错了位：漏了 bit2（= 暂停）、多查了 bit1 ⇒ **暂停期间照样在推进 ×N 的寿命与闪色**
      *   ⇒ 字在动、120 帧一到整条消失（owner 看到的就是这两件事）。
      *   ⇒ 现在逐位照抄引擎：三个位任一置起 = 非游玩帧（不推进寿命、不重建 VM、不写位置）。*/
-    return (f & (1u | 4u | 0x400u)) == 0u;
+    return s_this_draw_is_play && (f & (1u | 4u | 0x400u)) == 0u;
 }
 
 static void ufo_xn_kill(void)
@@ -5476,6 +5493,7 @@ static int on_hud_anm(ce_card_t *c, uint32_t icon_id)
  *   （`SDK.md` §14）⇒ 位置与闸门天然对上。 */
 static int on_draw(ce_card_t *c)
 {
+    ufo_note_draw_frame();                            /* ★ 第 30 轮：本帧是不是新的游玩帧 */
     ufo_card_t *s = ce_state(c, ufo_card_t);
     if (!s) return 0;
     if (!CE_PLAYER() || !CE_GAME_THREAD()) { ufo_hud_kill(); s_timer_logged = 0; return 0; }
