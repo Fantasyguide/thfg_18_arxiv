@@ -425,6 +425,25 @@ void yk_emit_world_pos(const float enemy_xy[2], const float off3[3], const float
 /* 活跃判据：`props[i].type != 0`（`etNew` 清零、只有 `etSprite` 写它，spec §6.3）。 */
 int  yk_emit_active(uint16_t prop_type);
 
+/* ★★★ 2026-09-26（owner #37 两次实跑：「**发射口与敌人重合不应该建立使魔**」「依旧能看见敌人的身上
+ *   有魔法阵」）：这条槽**是不是敌人自己的炮口**（= 发射点就在本体上）⇒ 卡侧**跳过整格**、不建使魔。
+ *
+ * **为什么这条判据是「相对模式 + 偏移恰好 (0,0)」**（一手，两条独立证据）：
+ *   · 几何：`etOn` 相对模式下 `发射点 = enemy.pos + offsets[i].xy`（一手 `th18:0x433f34` 一带；
+ *     本文件的 `yk_emit_world_pos()` 就是它的复刻）⇒ 偏移 (0,0) = **打在本体上**。
+ *   · 数据：`offsets[i]` 只有两个来源 —— `etNew` 的 `memset`（清零）与三条偏移指令
+ *     （`etOffset` `th18:0x434066`、`etOffsetRad` `th18:0x43409b` 写 `+0x4e58/+0x4e5c`；
+ *     `etOffsetAbs` `th18:0x43414e` 写 `+0x4f18/+0x4f1c` 并置模式位）**中间没有任何算术**
+ *     ⇒ 「恰好 0」就等于「这条槽从没声明过位置」。TH18 原生 ECL 里 `etNew` **282** 处、
+ *     而声明位置的指令合计 **79** 处（`etOffsetRad` 36 + `etOffset` 21 + `etOffsetAbs` 22）
+ *     ⇒ **绝大多数槽就是体上炮口**（这正是 owner 每按 Shift 都看见魔法阵的原因）。
+ *   · **绝对模式不算本体**（`org3[2] > YK_ORIGIN_ABS_THRESHOLD`）：那种槽的位置是脚本显式给的
+ *     （`etOffsetAbs`），跟本体在哪无关。
+ *   ❓ 目前**不设容差**（严格 `== 0.0f`）：原生语料里最小的显式偏移是 16 px（`etOffset` 的
+ *     `(0,-16)` / `etOffsetRad` 半径 32），那些是**有意摆远**的发射口、**应当**留下使魔。
+ *     实跑若发现「本体炮口」用了几 px 的小偏移，再加 `YK_EMIT_BODY_EPS`（登记 `TUNING.md`）。 */
+int  yk_emit_on_body(const float off3[3], const float org3[3]);
+
 enum { YK_ACT_NONE = 0, YK_ACT_CREATE = 1, YK_ACT_WITHDRAW = 2 };
 
 typedef struct {

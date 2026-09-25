@@ -19875,10 +19875,16 @@ opt_slot 都写成 0 ⇒ 每一行都从**使魔**发射。
   （一手 `th08:0x4409f2`–`0x4409ff`：`cmp [item+0x2d7],3 / je 跳过` = owner 记忆里的「无敌」）。
 - ✅ **拾取半径回到一手 20/24**：一手唯一的吸收判据是抓取盒相交（`0x440a17 call 0x44a5a0`），
   「TH18 适配 70」那条**作废**（它补偿的是「所有刻符都走上抛」这个错，不是半径不够）。
-- ✅ **Shift 两枚 SE**：人→妖 = TH08 id 0x28 → wav 33 = `se_invalid.wav`（**与 TH18 自己的同名字节相同**
+- ~~✅ **Shift 两枚 SE**：人→妖 = TH08 id 0x28 → wav 33 = `se_invalid.wav`（**与 TH18 自己的同名字节相同**
   ⇒ 直接用 `0x0c`，不占槽）；妖→人 = id 0x27 → wav 32 = **`se_ophide.wav`**（TH08 独有 ⇒ 新槽
   `CE_VOICE_YOUKAI_FAM_SHIFT` = `0x5d`，构建期从 `local/th08.v1.00d/dat/` 现取）。
-  ⚠ 与 owner 记忆的出入已登记（他记的是「人→妖那一枚不存在于后续」；一手是「妖→人那枚 se_ophide 才独有」）。
+  ⚠ 与 owner 记忆的出入已登记（他记的是「人→妖那一枚不存在于后续」；一手是「妖→人那枚 se_ophide 才独有」）。~~
+  ⇒ ⛔ **本条整体作废（2026-09-26）**：它建在**错位一格的声音表基准**上（旧文用 `0x4c8046+id*8` 的「第二格」，
+  真基准是 **`0x4c8040 + id*8` 的 `+0x00`**；自证 `th08:0x45d4ce mov ecx,[eax*8+0x4c8040]` + 名表起点
+  `0x4c8040+46*8 = 0x4c81b0`）。订正后：**人→妖 = id `0x28` → wav 32 = `se_ophide.wav`**（TH18 没有 ⇒
+  就是我们那个新槽 `0x5d`，**owner 的记忆是对的**）、**妖→人 = id `0x27` → wav 31 = `se_opshow.wav`**
+  （TH18 也没有）；「人→妖 用 TH18 `0x0c`（= se_invalid、字节相同）」也不成立（`0x0c` = `se_select00.wav`，
+  TH18 的 `se_invalid` 是 `0x05`）。卡侧现在只播人→妖那一侧、门 = 本帧使魔表非空，见 §BE 详录 #94。
 - ❌ **欠账（下批）**：① **击破符卡的螺旋撒点**（颗数/角步/初速/半径全要一手，进
   `engine/item/th08/01-time-orbs.md`）；② 三条来源的**「无敌」帧数**逐条给一手数（state 3/5 的上抛
   帧数 = `vy` 从 −2.0−rand(0.2) 以 +0.05/帧 过零 ⇒ ≈40–44 帧，需按 source 逐条核）；
@@ -21302,3 +21308,144 @@ owner 原话、换算与判据见 `SINGLE-CARD-TEST.md` §本批27-1 / `TUNING.m
 **对既有卡的影响面**：`ORDER.txt` 只 append（entry 78 / sprite 553..560）⇒ 既有 entry / sprite / script 号
 一个都没动；新脚本两支只被 `ufo.c` 引用。发布：DLL `4edc29ea…` + 同批 `ability.anm` `5b73bf02…`。
 
+
+## §BE 详录 #93（2026-09-26）：108 永夜抄 —— 妖侧「子机不发弹 / 只有一行 / 形式不对」的**真因**（膛口没人喂）+ 灵梦子机**不旋转**的真因（VM 重建后标签不补发）
+
+**为什么登记**：改的是 108 自己的文件（`cards/youkai.c`）与 108 自己的生成器
+（`assets/sht/append_shooterset.py`）——**零共享件**（没动 `sdk.*` / `engine.h` / `sites.py` /
+`Makefile` / `patch/**` / `assets/ability/**`）。**判据来源**：owner 2026-09-26 实跑原话
+（逐字见下）+ 本机日志 `/mnt/d/项目/幻想指南/18/th18_modkit/game/th18_card_expand.log` 里那几条
+`youkai: native opt slot N: state N vm N muzzle (…)` 探针行 + 一手反汇编。
+
+### 1. 妖侧弹：**行里的膛口是原生槽 1..4，而没人给它们喂位置**
+
+owner 逐字：「依旧妖侧不出弹，**灵梦**的妖子机不发弹，自机倒是发，但是发的不是 th08 的形式 /
+**魔理沙和咲夜**的发的是只有一行的**人形态**自机弹幕（正常是两行），子机不发弹 /
+**早苗**妖子机发一堆弹幕，自机发 5 条扇形散射弹幕，子机发一条」。
+
+一手（`local/_scratch/th18_full.asm` 逐指令）：行循环 `th18:0x45ec41 mov al,[edi+0x20]` →
+`0` ⇒ 膛口 = 自机本体（`xor eax,eax` + `push eax`）；非 0 ⇒ `0x45ec4c movsx` + `0x45ec4f and eax,0xf`
++ `0x45ec52 imul eax,eax,0xf0` + `0x45ec58 add eax,0x580` + `0x45ec5d add eax,esi`(= player)
+⇒ **槽 n 的指针 = `player+0x580+n*0xf0`**：槽 1..4 = `player+0x670..0x940` = **引擎原生 4 格**
+（`engine.h` 的 `CE_NATIVE_OPT_PLAYER_MUZ0`/`CE_NATIVE_OPT_COUNT`），槽 5..16 = `player+0xa30..` = 卡池。
+我们的 TH08 行照抄 `rec[+0x20]` ⇒ 非 0 的行读**原生槽 1..4**。
+
+**两个病灶**：
+1. 原生那 4 格的**记录数只有 `lvl` = `CURRENT_POWER/100` 格**（`repopulate` 只建 `i < lvl`）⇒ 档 1 时
+   槽 2/3/4 是 `state 0`、膛口停在 `(0,-400)`（实跑日志原文）⇒ 那些行**发到屏幕外**（咲夜档 0/1 的行
+   正是原点 2/3 ⇒ 那一列整列消失；魔理沙/灵梦档 1 只有槽 1 活着 ⇒ 弹从**贴着自机的原生子机**出来
+   ⇒ 看着像「只有一行」）。
+2. 引擎那支跟随更新**跳过 `state == 0` 的格子**（一手 `th18:0x45bcc0 cmp DWORD PTR [esi-0x60],0x0; je`）
+   ⇒ 只写偏移没用，**必须直写膛口**。
+
+**修法**（`cards/youkai.c` 的 `on_option_pose_apply()`，段名「原生膛口镜像」）：每帧把原生槽 1..4 的
+- 聚焦偏移 `+0x6c/+0x70` 照抄成我们那台子机自己的那对（引擎算出的 target 因此与我们一致），
+- 膛口 `+0x5c/+0x60` **直接写成**那台子机**此刻**的坐标（读它自己的 `+0x5c/+0x60`；刚申请还没算过时
+  用「自机 + 偏移」兜底），机位数不够时沿用最后一台的坐标（不让任何行从 `(0,-400)` 或屏幕外冒）。
+
+⚠ 为什么**不**把行改指向卡池（本轮试过又撤回）：卡池分配器取的是**第一个空格**
+（`Player__allocate_option` `0x40a790` 扫 `+0x00 == 0`），而我们那几台落在哪几格取决于
+71/77/111/116 谁先申请 ⇒ 行里写死「卡池第 k 格」会指到**别人的子机**上。原生槽是固定地址 ⇒ 确定。
+生成器里那段长注释（`append_shooterset.py` 的「行里的 `+0x20` 保持 TH08 原值」）把这个结论写下来了，
+**下次别再翻转**。`make sht` 的产物**逐字节未变**（`git status` 可证：只动了 `.py`）。
+
+### 2. 灵梦妖子机**不旋转**：VM 被引擎删掉重建，而旋转只在「边沿」发过一次
+
+owner 逐字：「以及**灵梦的妖子机本身**说了多少次了，**应当旋转，应当旋转**」。
+真因：引擎会把这格的 VM **删掉重建**（实跑日志原文：**同一个 `ptr`** 配**不同**的 anm id ——
+`youkai: option allocated (ptr 22bbcfc0, anm id 15f0ff8f)` → 后来 `18397e18` → `1ed7fe69`），
+重建出来的 VM 从脚本第 0 条开始 = **待机循环**；而我们的旋转/待机标签只在 `opt_chase` 的**边沿**
+（0→1 / 1→0）发一次 ⇒ VM 一换标签就再也没人发 ⇒ 子机在敌人面前**不转**。
+修法：新增 `yk_card_t::opt_spin_vm`（上一次把标签发给哪一支 VM），**只要当前 VM 不等于它**就按当前状态
+补发一次（幂等），并在补发时打一行 `youkai: youkai option VM was REBUILT (same slot, new anm id …)`
+—— 那一行就是实跑判据。释放/撤卡/高速那条兜底路径都把 `opt_spin_vm` 清零。
+
+### 3. 顺带查出的一处矛盾：「0 个子机 ⇒ 放行原生弹」这条口径**从来没生效过**
+
+SDK 的止射闸只在**没有卡认领 set** 时才被问到（`sdk.c`：先问 `on_shot_set_index`，有卡覆盖了就不抑制），
+而我们**只要聚焦就认领** ⇒ 用户 2026-09-12 拍的「0 个子机时宁可打原生弹、也别一发都没有」在聚焦态
+死掉了（早苗档 0 = 0 台 ⇒ 认领了我们的行、行里的膛口一台都没有 ⇒ **一发不发**）。
+修法：`on_shot_set_index()` 加同一张表同一个判据 `yk_option_wanted()` ⇒ **认领 ⟺ 有膛口 ⟺ 不抑制**
+（不认领时打一行 `youkai: focused with 0 youkai options at tier N … NOT claiming our shot set either`）。
+
+### 4. 判据（本次新加的一行诊断）
+
+`on_tick_2()` 里每 120 帧（只在低速且手里有子机时）打 `youkai/opt:` 两行：
+`char/want/have/age/chase/enters/set` + 逐格 `state opt(x,y) muz(x,y) rz spr vm`。
+- `muz` = 行循环真正会用的那一对膛口 ⇒ 应当与 `opt` **逐帧几乎相等**（差几 px = 引擎那支 lerp 的滞后）；
+  仍是 `(0,-400)` 或差很远 ⇒ 镜像没生效（跑的是旧 DLL）。
+- `rz` = 子机 VM 的当前旋转角（`engine.h` 的 `CE_ANM_VM_ROTATION 0x3c` + 8）⇒ 灵梦那支在追踪态应
+  **每帧 +0.628**（`angleVel(0,0,0.62831855)` = 10 帧一圈）；不涨 ⇒ 旋转段没进（再看 `chase`/`enters`）。
+
+**回归跑了什么**：`make cards/youkai.o`（`-O2 -Wall -Wextra` **零警告**）→ `make quick`（主机单测 + pytest
+全绿）→ `make check`（rc=0，含 `capcheck` / `engine_abi_check` / `anm_hud_alpha_check` / `check-docs`）。
+**实跑判据**：见上面 §4；另外「子机数 = 档数、没有冻住的那一台」那一条沿用 `HANDOVER-108.md` §3 第 8 行。
+
+## §BE 详录 #94（2026-09-26）：108 永夜抄第二轮 —— ① 「敌人身上有魔法阵」= **体上炮口不该建使魔**（owner #37 复报）② Shift 切换音**两向接反**（真因 = 本仓 TH08 声音表**基准错位一格**）
+
+**为什么登记**：① 只动 108 自己的文件（`cards/youkai.c` / `cards/youkai_core.{h,c}` + 单测）；
+② 动了**共享件**的**注释**（`assets/voice/ORDER.txt`、`assets/voice/derive_retail_se.py` 的出处注、
+`CAPACITY.md` 的音效槽台账）—— 三者都是**注释/台账**，零行为变化、零字节变化（`ORDER.txt` 只被构建期当
+清单读，`derive_retail_se.py` 按**文件名**取 wav，取到的仍是 `se_ophide.wav`）。
+
+### 1. 使魔：**体上炮口跳过整格**（owner 逐字：「依旧能看见敌人的身上有魔法阵——**发射口与敌人重合不应该建立使魔**」）
+
+- **一手（TH08 侧，本轮复核）**：原作**从不**把发射口翻译成使魔 —— `etOn` handler `th08:0x41b883`
+  只有「清 `enemy+0x3324` bit17」两条指令 + 跳尾；全 exe 只有 5 处 `call 0x42a680`（`create_enemy`），
+  **没有一处在 `et*` 家族**里。使魔只由 ECL 的 `familiarCreateA/`/`F`（op90/91/92）显式产生；
+  而「体上发射口」在原作是**常态**（`ecldata8` 的 `Sub14` 整族是 `etOffset/etEx/etRing`，
+  **一只使魔都不建**）⇒ 「体上发射口不建使魔」是**复刻原作的默认行为**。
+- **一手（TH18 侧，为什么体上炮口这么多）**：`offsets[i]` 只有两个来源 —— `etNew` 的 `memset`（清零）
+  与三条偏移指令（`etOffset` `th18:0x434066`、`etOffsetRad` `th18:0x43409b` 写 `+0x4e58/+0x4e5c`；
+  `etOffsetAbs` `th18:0x43414e` 写 `+0x4f18/+0x4f1c` 并置模式位），**中间没有算术** ⇒ 「偏移恰好 (0,0)」
+  ⇔ 「这条槽从没声明过位置」⇔ **它就是敌人自己的炮口**（发射点 = `enemy.pos + offset`）。
+  原生 ECL 统计：`etNew` **282** 处 vs 三种偏移指令合计 **79** 处（36+21+22）。
+- **修法**：新增纯判据 `yk_emit_on_body(off3, org3)`（`youkai_core.{h,c}`，单测 4 条）——
+  相对模式（`org.z <= 0.9`）且 `off == (0,0)` ⇒ 真；`yk_familiars_tick()` 的槽循环里**在
+  `yk_note_slot()` 之前 `continue`**（跳过整格）。
+- **为什么必须 `continue` 而不是「建的时候拒掉」**（三条，写进代码注释）：① 在 `yk_note_slot` 之后拒建
+  会在表里留下 `active=1/fam_id=0/broken=0` 的条目 ⇒ 同一个 `CREATE` 分支**每帧**再命中（日志刷屏）；
+  ② 只「不建但不清」则一旦该格曾建过壳（`fam_seen=1`），撤壳后闸会**夹住敌人本体炮**直到
+  `YK_EMIT_BROKEN_TTL`(120 帧)；③ `continue` ⇒ 本帧没扫到该格 ⇒ `yk_frame_end` 当场退休条目
+  （有壳就发一次 `WITHDRAW` 把壳与跟随 VM 一起收掉），`fam_seen` 归零、闸恒放行。
+- **不设容差**（严格 `== 0.0f`）：原生语料里最小的**显式**偏移是 16 px，那些是**有意摆远**的发射口、
+  应当保留使魔。实跑若发现「本体炮口」用了小偏移，再加 `YK_EMIT_BODY_EPS` 并登记 `TUNING.md`。
+- **诊断**：`youkai: emitter slot %d of enemy_id %u IS the enemy's own body … NO familiar built (#37)`
+  （最多 8 行）+ `youkai: ledger` 尾部追加 `%u body-emitter slot(s) skipped`。
+
+### 2. Shift 切换音：**人→妖 = `se_ophide`**（真因是**声音表基准错位一格**，owner 的记忆是对的）
+
+- **旧结论作废**：本仓 `AUDIT.md`（19878 行那一段）/ `ORDER.txt` / `derive_retail_se.py` /
+  `CAPACITY.md` 都写「TH08 id `0x27` → 声音表 `0x4c8046+id*8` 第二格 = wav 32 = `se_ophide`（妖→人）」。
+- **真基准（本轮自证，两条独立路径）**：表 = **`th08:0x4c8040 + id*8`**，行内 `+0x00` = wav 号
+  （`0x45d4ce mov ecx,DWORD PTR [eax*8+0x4c8040]`）、`+0x04` = 音量（`0x45d512 movsx …,word [edx*8+0x4c8044]`）、
+  `+0x06` = 第三格（**播放入口读的是它**：`0x45d55c movsx ecx,word [eax*8+0x4c8046]`）⇒ 旧注把第三格当 wav 号
+  ⇒ **每行读成下一行的**。交叉自证：46 行 × 8 = `0x170` ⇒ `0x4c8040+0x170 = 0x4c81b0` = **名表起点**；
+  直读 exe：`id 0x27 → wav 31 → 名表[31] = se_opshow.wav`、`id 0x28 → wav 32 → [32] = se_ophide.wav`、
+  `id 0x29 → wav 33 = se_invalid.wav`（其余具名项 `0x1c→se_extend`、`0x1e→se_graze`、`0x22→se_pause`
+  `0x24→se_option` 全对）。
+- **一手方向**（`FUN_0042c420` = `th08:0x42c420`–`0x42c58e`，**敌人的方法**；调用点 `0x42c98a` 在
+  `EnemyManager::OnUpdate` 逐敌循环、门 = `enemy->flags` bit8）：
+  **人→妖**（`0x42c440 call 0x40bc40` 判已是妖）`0x42c489 push 0x28` ⇒ **se_ophide**、
+  尾 `0x42c498 mov BYTE [this+0x332f],0`（enemyType 妖）；
+  **妖→人**（`0x42c4e1`）`0x42c529 push 0x27` ⇒ se_opshow、尾 `0x42c538 … ,2`（enemyType 人）。
+  两支的 enemyType 写值与 `IsYoukai()` 互证 ⇒ 方向不会读反。自机自己那支
+  （`th08:0x44aec0`–`0x44b437`）**不播任何 SE**（`0x44a000–0x44c900` 内 0 处 `call 0x45d550`）。
+- **另一处错**：人→妖 旧版播 TH18 `0x0c` 并注成 `se_invalid` —— 直读 TH18 自己的表
+  （`th18:0x4c9b80` stride `0x14`、名表 `th18:0x4b47a0`）：`0x0c` = **`se_select00.wav`**（音量 10），
+  TH18 的 `se_invalid` 是 `0x05` ⇒ 「字节与 TH18 同名文件相同」不成立。
+- **修法**：`se_ophide`（扩表槽 `0x5d`，**不用重取**：`derive_retail_se.py` 按文件名取 wav，内容本来就对）
+  只在**人→妖**播，且**延到本帧 `yk_familiars_tick()` 之后**消费 —— 门 = 本帧使魔表非空
+  （一手语义：那一声由**在场的**使魔实体发出；旧版在边沿分支里读的是上一帧的表 ⇒ 该响的被吞、
+  不该响的（妖→人）反倒响 = owner 的「正好是反的」）。**妖→人**不播（TH08 那枚 `se_opshow` TH18 没有；
+  要补得再开一个扩表槽，登记为 🟡）。
+- **一刀未动的**：环（脚本 309）、爆闪（310/311/313/314）、光环、转嫁、`voice.js` 的槽定义。
+
+### 3. 回归 / 判据
+
+`make cards/youkai.o` + `cards/youkai_core.o`（`-O2 -Wall -Wextra` **零警告**）→ `make test-host`
+（`youkai_core: 4664 checks, 0 failed`，含本轮新增的 4 条 `yk_emit_on_body`）→ `make quick`（pytest 8 passed）→
+`make check`（rc=0）→ 发版 + `local/sync_modkit_dll.sh`（4 处同 md5）。
+**实跑判据**：`youkai: ledger - … body-emitter slot(s) skipped` > 0 且**敌人身上不再有魔法阵**；
+`youkai: shift SE 人→妖 played (se_ophide …)` 只出现在**有使魔**的那次切换、`妖→人` 只留
+`silent by design` 一行（详见 `HANDOFF-108.md` §3）。

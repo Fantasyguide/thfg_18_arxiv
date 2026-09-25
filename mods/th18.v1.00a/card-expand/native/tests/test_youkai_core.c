@@ -443,6 +443,25 @@ int main(void)
     CHECK(yk_emit_active(1) == 1);
     CHECK(yk_emit_active(0x1234) == 1);              /* `props[i].type != 0` = 活跃 */
 
+    /* ★★★ 2026-09-26（owner #37「发射口与敌人重合不应该建立使魔」）：体上炮口的判据。
+     *   相对模式 + 偏移恰好 (0,0) ⇒ 1（跳过这一格、不建使魔）；绝对模式（org.z > 阈值）恒 0
+     *   （位置是脚本 `etOffsetAbs` 给的，与本体无关）；任何非 0 偏移 ⇒ 0（那是**有意摆远**的发射口，
+     *   原生语料里最小是 16 px）。*/
+    off[0] = 0.0f; off[1] = 0.0f; off[2] = 0.0f;
+    org[0] = 100.0f; org[1] = 200.0f; org[2] = 0.0f;
+    CHECK(yk_emit_on_body(off, org) == 1);           /* 相对 + (0,0) = 本体 */
+    org[2] = 1.0f;                                   /* etOffsetAbs ⇒ 脚本给的位置，不算本体 */
+    CHECK(yk_emit_on_body(off, org) == 0);
+    org[2] = YK_ORIGIN_ABS_THRESHOLD;                /* 阈值本身仍算相对（判据是 > 0.9）*/
+    CHECK(yk_emit_on_body(off, org) == 1);
+    off[1] = -16.0f;                                 /* 原生最小显式偏移 = 16 px ⇒ 保留使魔 */
+    CHECK(yk_emit_on_body(off, org) == 0);
+    off[1] = 0.0f; off[0] = 32.0f;
+    CHECK(yk_emit_on_body(off, org) == 0);
+    off[0] = 0.0f;
+    CHECK(yk_emit_on_body(off, 0) == 1);             /* 没有 origins 段（全 0）也按相对处理 */
+    CHECK(yk_emit_on_body(0, org) == 0);             /* 空指针安全 */
+
     /* 槽 → 皮肤变体（四色一套一槽，用户定案；脚本宏在 cards/youkai.c，这里只钉映射）：
      * 槽 0..3 ⇒ 变体 0..3（= S53..S56，红/绿/蓝白/黄）；槽 >= 4 走 `& 3` 兜底（规格说走不到）。*/
     CHECK(yk_fam_variant(0) == 0);

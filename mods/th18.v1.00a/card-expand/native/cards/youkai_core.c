@@ -323,6 +323,15 @@ void yk_emit_world_pos(const float enemy_xy[2], const float off3[3], const float
 
 int yk_emit_active(uint16_t prop_type) { return prop_type != 0; }
 
+/* ★★★ 2026-09-26（owner #37，两次实跑同一条）：**这条槽的发射点是不是就在敌人本体上**
+ *   （一手依据与「为什么严格 == 0」写在 `youkai_core.h` 的声明那段）。*/
+int yk_emit_on_body(const float off3[3], const float org3[3])
+{
+    if (!off3) return 0;
+    if (org3 && org3[2] > YK_ORIGIN_ABS_THRESHOLD) return 0;   /* 绝对模式：位置是脚本给的，不算本体 */
+    return off3[0] == 0.0f && off3[1] == 0.0f;
+}
+
 /* 槽 → 皮肤变体（出处 / 语义在 youkai_core.h）。**纯查表逻辑**，卡侧只把它换成脚本宏。*/
 int yk_fam_variant(int slot)
 {

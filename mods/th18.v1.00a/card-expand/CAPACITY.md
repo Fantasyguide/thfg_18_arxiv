@@ -157,10 +157,14 @@
 #### 音效表扩容：新 SE 槽的具名登记（2026-09-22）
 
 - **`0x5d` `YOUKAI_FAM_SHIFT`**（`assets/voice/ORDER.txt` 第 9 个新行；`patch/th18/voice.js` 里 id 显式写 93）
-  —— 一手 = TH08 `se_ophide.wav`（`th08:0x42c529 push 0x27` → wav 32），**妖→人**那一支的 Shift 音；
-  TH18 71 枚里没有它 ⇒ 构建期从 `local/th08.v1.00d/dat/` 现取（`derive_retail_se.py` 的 TABLE）。
-- 同一处的**人→妖**那一枚（`th08:0x42c489 push 0x28` → wav 33 = `se_invalid.wav`）**不占新槽**：
-  它的字节与 TH18 自己的 `se_invalid.wav` 完全相同（md5 `464ff70287f1c06a030a33c50ee969a9`）⇒ 卡侧直接播 `0x0c`。
+  —— 一手 = TH08 `se_ophide.wav`（**`th08:0x42c489 push 0x28`** → 声音表 `0x4c8040+id*8` 的 `+0x00` = wav 32），
+  **人→妖（高速→低速）**那一支的 Shift 音；TH18 71 枚里没有它 ⇒ 构建期从 `local/th08.v1.00d/dat/` 现取
+  （`derive_retail_se.py` 的 TABLE）。★ **2026-09-26 订正**：上一版把声号/方向都记反了
+  （旧文写「妖→人 + `0x4c8046+id*8` 第二格」= 表基准错位一格所致，两处都已改；卡侧现在也只播人→妖那一侧）。
+- 反方向（**妖→人**，`th08:0x42c529 push 0x27` → wav 31 = `se_opshow.wav`）TH18 也没有，但按 owner 口径
+  2026-09-26「只要人→妖那一声」⇒ **不占新槽、不播**。以后要补就得再开一个扩表槽（余量见下）。
+- 旧注「人→妖 直接用 TH18 `0x0c`（= se_invalid，字节相同）」**作废**：直读 TH18 自己的表
+  （`th18:0x4c9b80` stride `0x14`、名表 `th18:0x4b47a0`）`0x0c` = `se_select00.wav`，TH18 的 `se_invalid` 是 `0x05`。
 - 余量：新 id 空间 `0x54..0x73` 共 32 格 ⇒ 已用 10 格（`0x54`–`0x5d`）、**余 22 格**。
 
 **余量最小的四条**（按余量% 排序）：shooterset 组数组 **0.0%**（40/40，有 §1w 计划）·

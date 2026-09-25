@@ -54,11 +54,15 @@ TABLE = (
      "th10:0x41b446（小 P）/ 0x41b68c（大 P）`mov ebx,0x1d; call 0x43dd10` —— 满 P 那一帧的上涨音；"
      "TH10 的 `0x1d`→`se_powerup.wav`，与 TH18 的**同名不同录音**（77278 B vs 367106 B）"),
     ("YOUKAI_FAM_SHIFT", "th08.v1.00d", "se_ophide.wav",
-     "th08:0x42c529 `push 0x27` + 0x42c530 `call 0x45d550` = `FUN_0042c420` 的「**妖→人**」分支"
-     "（`flags` bit11 != 0 且玩家已不是妖；同支还有 `0x42c517 push 0x1` = 环换人侧）。"
-     "TH08 id 0x27 → 声音表 0x4c8046+id*8 第二格 = wav 32 → 名表 0x4c81b0[32] = se_ophide.wav。"
-     "TH18 没有它（同名文件/波形都没有）⇒ 现取；反方向（人→妖，id 0x28）→ wav 33 = se_invalid.wav，"
-     "与 TH18 自己的同名文件**逐字节相同**（md5 464ff70287f1c06a030a33c50ee969a9）⇒ 不占新槽"),
+     "th08:0x42c489 `push 0x28` + 0x42c490 `call 0x45d550` = `FUN_0042c420` 的「**人→妖**」分支"
+     "（`flags` bit11 == 0 且玩家已是妖；同支还有 `0x42c477 push 0x2` = 环换妖侧、"
+     "尾 `0x42c498 mov [enemy+0x332f],0` = enemyType 妖）。"
+     "★ **2026-09-26 表基准订正**：TH08 声音表 = **`0x4c8040 + id*8`**（`+0x00` wav 号 "
+     "`0x45d4ce mov ecx,[eax*8+0x4c8040]`；`+0x04` 音量；`+0x06` 第三格 = 播放入口读的那一格 "
+     "`0x45d55c`）⇒ **id 0x28 → wav 32 → 名表 `0x4c81b0[32]` = se_ophide.wav**"
+     "（旧注写的 `0x4c8046+id*8` 是**错位一格**的假基准，已作废）。"
+     "TH18 没有它（同名文件/波形都没有）⇒ 现取；反方向（妖→人，id **0x27**）→ wav 31 = **se_opshow.wav**"
+     "（TH18 同样没有 ⇒ 卡侧按 owner 口径**不播**，见 `youkai.c` 的 SE 段）"),
     ("PCB_BORDER", "th07.v1.00b", "se_border.wav",
      "th07:0x441b91 `push 0x20`（结界展开支，函数 `th07:0x441960`）→ TH07 `0x20` = `se_border.wav`；"
      "TH07 独有（TH18 71 枚里没有同名也没有同 md5 的波形）"),

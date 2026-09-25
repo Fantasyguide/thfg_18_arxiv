@@ -185,6 +185,13 @@ typedef struct {
     uint32_t      transferred;         /* 本局累计转嫁的伤害 */
     uint32_t      dropped;             /* 取不到 boss 而丢掉的转嫁量（研究 §4：本帧不转嫁）*/
     uint32_t      fam_full;            /* 使魔表满 / 堆分配失败而放弃的槽数 */
+    uint32_t      emit_body_skipped;   /* ★★★ 2026-09-26（owner #37）：**体上炮口**被跳过的槽次数
+                                        *   （发射口与敌人本体重合 ⇒ 不建使魔；判据见 core 的
+                                        *   `yk_emit_on_body()`）。进 ledger 一行，实跑能看总量。*/
+    uint8_t       se_fam_press;        /* ★★★ 2026-09-26：本帧是「人→妖」边沿 ⇒ 待播那声 `se_ophide`。
+                                        *   延到 `yk_familiars_tick()` 之后再消费（门要读本帧的使魔表）。*/
+    float         se_fam_press_x;      /* 上面那一发 SE 的自机 x（一手那声是定位音）*/
+    uint8_t       logged_emit_body;    /* 「这一格是体上炮口」日志最多 8 行（避免刷屏）*/
     uint8_t       logged_opt;          /* 「子机声明停用（资产未到）」只记一次 */
     uint8_t       logged_sht;          /* 「妖侧 shooterset 没装」只记一次 */
     uint8_t       logged_noshot;       /* 「压了原生弹但自己也没弹」只记一次 */
@@ -239,7 +246,11 @@ typedef struct {
     uint32_t      chase_id;            /* 目标 enemy_id（0 = 没有；诊断日志用）*/
     float         chase_x, chase_y;    /* 目标坐标（640 空间 = `final_pos`）*/
     uint32_t      chase_enters;        /* 本局进过几次追踪态（诊断）*/
+    uint32_t      opt_spin_vm;         /* ★★★ 2026-09-26：**上一次把旋转/待机标签发给哪一支 VM**。
+                                        *   引擎会把这格的 VM 删掉重建（实跑日志：同一个 `ptr` 配不同的
+                                        *   anm id），重建后的 VM 从脚本第 0 条开始 ⇒ 只发一次的旋转会丢。*/
     uint8_t       logged_chase;        /* 「追踪生效」只记一次 */
+    uint8_t       logged_spin_resend;  /* 「VM 换了、补发旋转」只记一次（实跑判据）*/
     uint8_t       logged_natopt;       /* 「隐藏原生子机」只记一次 */
     uint8_t       _pad[2];             /* 对齐（保持结构布局稳定；新增位一律从 `_pad` 里拿）*/
     uint32_t      heals_seen;          /* ★ 2026-09-22（#7）：上一帧读到的闸自愈计数（`yk_map_heals`）
@@ -1014,6 +1025,31 @@ static void yk_familiars_tick(yk_card_t *s)
             if (!active && !yk_map_find(&s_map, id, i)) continue;
             yk_slot_offsets(e, i, off3, org3);
             yk_emit_world_pos(epos, off3, org3, wxy);
+            /* ★★★ 2026-09-26（owner #37，两次实跑同一条：「**发射口与敌人重合不应该建立使魔**」/
+             *   「依旧能看见敌人的身上有魔法阵」）：**体上炮口直接跳过整格**。
+             *   为什么是 `continue`（跳过）而不是「建的时候拒掉」：
+             *     ① 若在 `yk_note_slot` **之后**拒建 ⇒ 表里留下 `active=1 / fam_id=0 / broken=0` 的条目
+             *        ⇒ 同一个 `CREATE` 分支**每帧**再命中一次（每帧一次失败 + 日志刷屏）；
+             *     ② 若在 `yk_note_slot` 里「不建但不清」⇒ 这一格一旦曾经建过壳（`fam_seen=1`），
+             *        壳撤掉后闸会**夹住敌人本体炮**（`yk_shot_slot_suppressed` 只看 `fam_seen`），
+             *        要等 `YK_EMIT_BROKEN_TTL`（120 帧）才自愈；
+             *     ③ 跳过 ⇒ 本帧「没扫到这一格」⇒ `yk_frame_end` 当场退休该条目（原来有壳就发一次
+             *        `WITHDRAW`，壳与跟随 VM 一起收掉），`fam_seen` 归零、闸恒放行。
+             *   判据 = `yk_emit_on_body()`（相对模式 + 偏移恰好 (0,0)；一手与数据统计见 core 的声明段）。
+             *   ⚠ 与 TH08 的关系：原作**从不**把发射口翻译成使魔（`etOn` handler `th08:0x41b883` 只有
+             *     两条指令 + 跳尾；全 exe 5 处 `create_enemy` 没一处在 `et*` 家族里），使魔只由 ECL 的
+             *     `familiarCreate*` 显式产生，而「体上发射口」在原作是**常态**（`ecldata8` 的 `Sub14`
+             *     整族一只使魔都不建）⇒ 这条跳过是**复刻原作的默认行为**，不是我们发明的门。*/
+            if (yk_emit_on_body(off3, org3)) {
+                if (s->emit_body_skipped < 0xffffu) ++s->emit_body_skipped;
+                if (s->logged_emit_body < 8) {
+                    ++s->logged_emit_body;
+                    ce_log("youkai: emitter slot %d of enemy_id %u IS the enemy's own body "
+                           "(relative offsets 0,0) - NO familiar built (owner #37); TH08 never "
+                           "turns body emitters into familiars either", i, (unsigned)id);
+                }
+                continue;
+            }
             if (yk_note_slot(&s_map, id, i, active, wxy, &act)) yk_run_action(s, &act);
         }
     }
@@ -1258,6 +1294,7 @@ static void yk_option_release(ce_card_t *c, yk_card_t *s)
     s->opt_spring_live = 0;                /* ★ th08 #1：松手 ⇒ 下次再要子机时重新从自机位置起 */
     s->opt_age = 0;                        /* ★ 2026-09-22 晚：出场计时从 0 起（TH08 的 `Timer(&option+0x2e0)`）*/
     s->opt_chase = 0;                      /* 手里没子机 ⇒ 追踪态自然结束（旋转标签由新 VM 自己的脚本起手）*/
+    s->opt_spin_vm = 0;                    /* ★ 2026-09-26：VM 没了 ⇒ 忘了「发给谁」*/
 }
 
 /* ★ 被选举者落笔（SDK 每帧调**恰好一次**；spec §3.3.1 的 `on_option_pose_apply`）。
@@ -1345,8 +1382,29 @@ static int on_option_pose_apply(ce_card_t *c)
                 uint32_t vm = *(const uint32_t *)(o + CE_OPT_ANM_ID);
                 int want_chase = yk_option_chase_want((int)s->chase_have, (int)s->opt_age);
                 chasing = want_chase;
+                /* ★★★ 2026-09-26（owner：「灵梦的妖子机**应当旋转**」报了多次 —— 真因在这一格）：
+                 *   **判据不能只看 `opt_chase` 这个边沿，必须盯 VM 身份**。引擎会在火力变化等时机
+                 *   把这一格的 VM **删掉重建**（实跑日志原文：**同一个 `ptr`** 配**不同**的 anm id ——
+                 *   `youkai: option allocated (ptr 22bbcfc0, anm id 15f0ff8f)` → 后来 `18397e18` →
+                 *   `1ed7fe69`），而重建出来的 VM 从脚本第 0 条开始 = **待机循环**。
+                 *   我们的旋转/待机只在**边沿**发一次（`opt_chase` 0→1 / 1→0）⇒ VM 一换，
+                 *   旋转就再也没人发 ⇒ 子机在敌人面前**不转**（观感 = 「说了多少次了」）。
+                 *   修法：记下 `opt_spin_vm`（上一次把标签发给哪一支 VM），**只要当前 VM 不是它**，
+                 *   就按当前应有的状态补发一次（幂等：同一支 VM 每帧只发一次、只发一次标签）。*/
+                if (vm && vm != s->opt_spin_vm) {
+                    const int resend = (s->opt_spin_vm != 0);
+                    ce_anm_interrupt(vm, want_chase ? YK_OPT_SPIN_LABEL : YK_OPT_IDLE_LABEL);
+                    s->opt_spin_vm = vm;
+                    if (resend && !s->logged_spin_resend) {
+                        s->logged_spin_resend = 1;
+                        ce_log("youkai: youkai option VM was REBUILT (same slot, new anm id %08x) - "
+                               "re-sent label %d (spin %d / idle %d) so the rotation is not lost; "
+                               "this is why the option used to sit still",
+                               (unsigned)vm, want_chase ? (int)YK_OPT_SPIN_LABEL : (int)YK_OPT_IDLE_LABEL,
+                               (int)YK_OPT_SPIN_LABEL, (int)YK_OPT_IDLE_LABEL);
+                    }
+                }
                 if (want_chase && !s->opt_chase) {
-                    if (vm) ce_anm_interrupt(vm, YK_OPT_SPIN_LABEL);      /* TH08 `push 3`（`0x44e8a6`）*/
                     s->opt_chase = 1;
                     ++s->chase_enters;
                     if (!s->logged_chase) {
@@ -1357,7 +1415,6 @@ static int on_option_pose_apply(ce_card_t *c)
                                s->chase_id, (int)YK_OPT_SPIN_LABEL, (double)YK_OPT_CHASE_GOAL_DY);
                     }
                 } else if (!want_chase && s->opt_chase) {
-                    if (vm) ce_anm_interrupt(vm, YK_OPT_IDLE_LABEL);      /* TH08 `push 1`（`0x44e6dd`）*/
                     s->opt_chase = 0;
                 }
             }
@@ -1389,6 +1446,65 @@ static int on_option_pose_apply(ce_card_t *c)
         *(int32_t *)(o + CE_OPT_OFF_NF_Y) = (int32_t)(pose->cell[i].uy * YK_SUBPIXEL);
         *(int32_t *)(o + CE_OPT_OFF_F_X)  = (int32_t)(fx * YK_SUBPIXEL);
         *(int32_t *)(o + CE_OPT_OFF_F_Y)  = (int32_t)(fy * YK_SUBPIXEL);
+    }
+    /* ★★★ 2026-09-26（owner 实跑：「妖侧子机不发弹 / 只有一行 / 形式不对」）：**原生膛口镜像** ----
+     *
+     * **谁在什么时候用这几格**：妖侧弹由**引擎的行循环**发（本卡 `on_shot_set_index` 认领 set，
+     * `th18:0x45ebfb`–`0x45ec9f`），行里的 `+0x20` 选膛口（一手 `th18:0x45ec41 mov al,[edi+0x20]` →
+     * `0` = 自机本体；非 0 ⇒ `0x45ec4f and eax,0xf` → `imul 0xf0` → `+0x580` → `+ esi`(= player)）。
+     * 我们的行照抄 TH08 的 `rec[+0x20]`（`assets/sht/append_shooterset.py` 的 `YOUKAI_TIER_ORIGINS`）
+     * ⇒ **非 0 的那些行读的是原生槽 1..4**（`player+0x670 + (n-1)*0xf0`）。
+     *
+     * **为什么必须由我们喂**（两条，都是这一轮实跑/一手定案的）：
+     *   ① 原生那 4 格的**记录数只有 `lvl` = `CURRENT_POWER/100` 格**（`repopulate` 只建 `i < lvl`），
+     *      档 1 时槽 2/3/4 是 `state 0`、膛口停在 `(0,-400)`（实跑日志原文：`native opt slot 2/3/4:
+     *      state 0 vm 00000000 muzzle (0.0, -400.0)`）⇒ 那些行**发到屏幕外** = owner 的「子机不发弹」
+     *      （咲夜档 0/1 的行正是原生槽 2/3 ⇒ 整列消失；魔理沙/灵梦档 1 的行只有槽 1 活着 ⇒
+     *      弹从**引擎那台看不见的子机**（原生阵型、贴着自机）出来 ⇒ owner 的「只有一行」）。
+     *   ② 就算记录活着，它的位置也是**原生阵型**（`sht[0x90 + k*8]`，贴着自机），
+     *      而不是 TH08 的子机位（我们那台**看得见的**子机所在处）。
+     * ⇒ 卡侧每帧把这 4 格的**聚焦偏移与膛口**都写成我们那台子机的当前坐标：
+     *    · 偏移（`+0x6c/+0x70`）⇒ 引擎那支跟随更新（`0x45bce8`–`0x45bd08`）算出的 target 与我们一致；
+     *    · 膛口（`+0x5c/+0x60`）⇒ **直接写死**。为什么不能只写偏移：`state == 0` 的格子被跟随更新
+     *      **整格跳过**（一手 `th18:0x45bcc0 cmp DWORD PTR [esi-0x60],0x0; je`），而那几格正是
+     *      低档要用的 ⇒ 只写偏移的话它们的膛口永远停在 `(0,-400)`。
+     * ⚠ 只写**聚焦**那一对（`+0x6c/+0x70`）：高速（人侧）用的是非聚焦对（`+0x64/+0x68`），
+     *   一个字节都不碰 ⇒ 「人侧和不装 th08 完全一样」不受影响；下次火力变化时 `repopulate` 会把
+     *   两份都按 `pl0X.sht` 重写，我们下一帧再镜像一次即可（幂等）。
+     * ⚠ 机位数不够时（例：早苗档 1 只有 1 台，而她的回落组有原点 2 的行）**沿用最后一台的坐标**
+     *   ⇒ 那些行与已有的那台同点出膛，而不是从 `(0,-400)` 或屏幕外冒出。*/
+    {
+        uint8_t *pl = CE_PLAYER();
+        if (pl) {
+            const int have = (want > 0) ? want : 0;
+            int32_t mx = 0, my = 0;                     /* 最后一台的**绝对**膛口（定点）*/
+            for (i = 0; i < CE_NATIVE_OPT_COUNT; ++i) {
+                uint8_t *ns;
+                int cell = (i < have) ? i : (have > 0 ? have - 1 : -1);
+                if (cell < 0) break;                     /* 手里一台都没有 ⇒ 这几格不碰 */
+                ns = pl + CE_NATIVE_OPT_PLAYER_MUZ0 + (size_t)i * CE_NATIVE_OPT_STRIDE;
+                if (i < have) {
+                    /* 这一格有对应的子机 ⇒ 偏移照抄我们刚写进它自己那对字段的值（引擎算出的 target
+                     * 因此与我们一致），膛口优先取**引擎已经 lerp 过的当前位置**（`+0x5c/+0x60`）
+                     * —— 弹从「看得见的那台子机**此刻**在哪」出膛，而不是从它的目标点提前冒出。*/
+                    uint8_t *o = s->opt[i].ptr;
+                    if (!o) continue;
+                    *(int32_t *)(ns + CE_OPT_OFF_F_X) = *(const int32_t *)(o + CE_OPT_OFF_F_X);
+                    *(int32_t *)(ns + CE_OPT_OFF_F_Y) = *(const int32_t *)(o + CE_OPT_OFF_F_Y);
+                    mx = *(const int32_t *)(o + CE_OPT_POS_X);
+                    my = *(const int32_t *)(o + CE_OPT_POS_Y);
+                    if (!mx && !my) {                     /* 刚申请、引擎还没算过 ⇒ 用目标点兜底 */
+                        mx = (int32_t)((pp ? pp[0] : 0.0f) * YK_SUBPIXEL)
+                           + *(const int32_t *)(o + CE_OPT_OFF_F_X);
+                        my = (int32_t)((pp ? pp[1] : 0.0f) * YK_SUBPIXEL)
+                           + *(const int32_t *)(o + CE_OPT_OFF_F_Y);
+                    }
+                }
+                /* 多余的原生格（没有对应子机）⇒ 与最后一台同点（见上 ⚠）*/
+                *(int32_t *)(ns + CE_OPT_POS_X) = mx;
+                *(int32_t *)(ns + CE_OPT_POS_Y) = my;
+            }
+        }
     }
     s->opt_spring_live = 1;                /* 本帧起过步 ⇒ 下一帧不再回到自机位置 */
     return 0;
@@ -2508,12 +2624,15 @@ static int on_ctor(ce_card_t *c)
      * ★ 2026-09-22 晚（owner 第 1 条）：原生子机隐藏声明的「只记一次」闩 */
     s->opt_age = 0;
     s->opt_chase = 0;
+    s->opt_spin_vm = 0;
     s->chase_have = 0;
     s->chase_id = 0;
     s->chase_x = 0.0f;
     s->chase_y = 0.0f;
     s->chase_enters = 0;
     s->logged_chase = 0;
+    s->logged_spin_resend = 0;
+    s->opt_spin_vm = 0;
     s->logged_natopt = 0;
     __builtin_memset(s->opt_pos, 0, sizeof s->opt_pos);
     __builtin_memset(s->opt_vel, 0, sizeof s->opt_vel);
@@ -2898,6 +3017,21 @@ static int on_shot_set_index(ce_card_t *c, int power_level)
     yk_card_t *s = ce_state(c, yk_card_t);
     if (!s) return -1;
     if (!CE_PLAYER_FOCUSED()) return -1;                      /* 人侧：原生 set */
+    /* ★ 2026-09-26（ownner 实跑「灵梦/魔理沙/咲夜 妖侧不出弹」那一批时一并查出来的矛盾）：
+     *   **本帧一台妖侧子机都没有时不许认领 set**。理由：SDK 的止射闸（`on_native_shot_suppress`）
+     *   只在**没有卡认领 set** 时才会被问到（`sdk.c`：先问 `on_shot_set_index`，有卡覆盖了就不抑制）
+     *   ⇒ 今天只要聚焦就认领 ⇒ 用户 2026-09-12 那条口径「**0 个子机时宁可打原生弹、也别一发都没有**」
+     *   在聚焦态**从来没生效过**（早苗档 0 = 0 台：认领了我们的行，行里的膛口一台都没有 ⇒ 一发不发）。
+     *   现在两处用**同一个判据**（`yk_option_wanted`，与子机声明层同表同帧）⇒ 认领 ⟺ 有膛口 ⟺ 不抑制。*/
+    if (!yk_option_wanted(1, yk_current_character(), yk_current_power_level())) {
+        if (!s->logged_pass0) {
+            s->logged_pass0 = 1;                              /* 只记一次（否则每帧一行）*/
+            ce_log("youkai: focused with 0 youkai options at tier %d (char %d) - NOT claiming our "
+                   "shot set either, so the NATIVE rows keep firing (user ruling 2026-09-12); "
+                   "our option rows would have no muzzle at all", power_level, yk_current_character());
+        }
+        return -1;
+    }
     /* ⚠ `power_level` 这个形参是 SDK 传进来的**主炮档**（`BP_ce_shot_set_index` 的 eax），
      *   与 `yk_current_power_level()` 同源（`CURRENT_POWER / 100`）⇒ 直接用引擎给的那个值，
      *   不做二次读法（少一条可能与引擎不同步的路径）。越界一律钳进表内。*/
@@ -3262,11 +3396,54 @@ static int on_tick_2(ce_card_t *c)
     int focused;
     if (!s) return 0;
     if ((++s_ledger_frame % 600u) == 0u && (s->spawns || s->broken || s->lost || s->silent))
-        ce_log("youkai: ledger - %u spawned, %u killed, %u withdrew, %u silent, %u dropped",
-               s->spawns, s->broken, s->lost, s->silent, s->dropped);
+        ce_log("youkai: ledger - %u spawned, %u killed, %u withdrew, %u silent, %u dropped, "
+               "%u body-emitter slot(s) skipped (#37: no familiar when the emitter is the enemy itself)",
+               s->spawns, s->broken, s->lost, s->silent, s->dropped, s->emit_body_skipped);
     if (s_ring_failed && (s_ledger_frame % 600u) == 0u)
         ce_log("youkai: switch ring VM spawn FAILED %u time(s) total (cosmetic only - the Shift "
                "magic circle was missing)", s_ring_failed);
+    /* ★★★ 2026-09-26（owner 实跑「妖侧子机不发弹 / 只有一行 / 灵梦子机不旋转」那一批）：
+     *   **逐格实况行**（每 120 帧一行、只在低速且手里有子机时打）—— 这一批的判据全在这一行里：
+     *     · `want/have`：本帧该有几台 / 真拿到几台（**行里的膛口就靠这两半**）；
+     *     · 每格的 `opt`（我们那台子机**看得见的**位置，`option+0x5c/+0x60`）与
+     *       `muz`（**原生槽 n 的膛口**，= 行循环 `th18:0x45ec41` 真正会用的那一对）
+     *       ⇒ 两者应当**逐帧几乎相等**（原生槽是每帧镜像过来的，差几 px 是引擎那支 lerp 的滞后）；
+     *     · `state`：原生槽 n 的 `+0x00`（`0` = 引擎没给这一档建记录 ⇒ 全靠我们写的膛口）；
+     *     · `chase`/`age`/`enters`：灵梦那支的追敌/旋转门（`age >= 10` 才准进）；
+     *     · `set`：本帧认领的妖侧 shooterset 槽号（认领没生效 ⇒ 打的是原生 set）。
+     *   ⚠ 判「子机不发弹」时看 `muz`：仍是 `(0,-400)` 或与 `opt` 差很远 ⇒ 镜像没生效；
+     *     `want>0` 而 `have==0` ⇒ 池满（日志会有 `option allocated FAILED (pool full)`）。*/
+    if ((s_ledger_frame % 120u) == 0u && CE_PLAYER_FOCUSED()) {
+        int nopt = 0, k;
+        uint8_t *pl = CE_PLAYER();
+        for (k = 0; k < YK_OPTION_MAX; ++k) if (s->opt[k].ptr) ++nopt;
+        if (nopt) {
+            ce_log("youkai/opt: char %d want %d have %d age %u chase %d/%d(id %u) enters %u set 0x%02x",
+                   yk_current_character(),
+                   yk_option_count(1, yk_current_character(), yk_current_power_level()), nopt,
+                   (unsigned)s->opt_age,
+                   (int)s->opt_chase, (int)s->chase_have, (unsigned)s->chase_id,
+                   (unsigned)s->chase_enters, (unsigned)s->claimed_set);
+            if (pl) {
+                for (k = 0; k < nopt && k < CE_NATIVE_OPT_COUNT; ++k) {
+                    const uint8_t *o = s->opt[k].ptr;
+                    const uint8_t *ns = pl + CE_NATIVE_OPT_PLAYER_MUZ0
+                                      + (size_t)k * CE_NATIVE_OPT_STRIDE;
+                    /* ★ 子机 VM 的**当前旋转角**（`zAnmVmPrefix` 的 `rz` —— 一手 `engine.h` 的
+                     *   `CE_ANM_VM_ROTATION 0x3c`，自机弹那条写 `+0x44`）。灵梦那支「应当旋转」的
+                     *   判据就是**这一格在不在涨**：旋转段 `angleVel(0,0,0.62831855)` ⇒ 每帧 +0.628。*/
+                    const uint8_t *vm = ce_anm_get_vm(*(const uint32_t *)(o + CE_OPT_ANM_ID));
+                    ce_log("youkai/opt #%d state %d opt(%d,%d) muz(%d,%d) rz %.3f spr %d vm %08x",
+                           k, *(const int32_t *)(ns + CE_OPT_IN_USE),
+                           *(const int32_t *)(o + CE_OPT_POS_X), *(const int32_t *)(o + CE_OPT_POS_Y),
+                           *(const int32_t *)(ns + CE_OPT_POS_X), *(const int32_t *)(ns + CE_OPT_POS_Y),
+                           vm ? (double)*(const float *)(vm + CE_ANM_VM_ROTATION + 8) : 0.0,
+                           vm ? *(const int32_t *)(vm + CE_ANM_VM_SPRITE_ID) : -1,
+                           (unsigned)*(const uint32_t *)(o + CE_OPT_ANM_ID));
+                }
+            }
+        }
+    }
     /* ★ 人妖槽 / 永点的账（每 ~600 帧一行）：实跑要看见的四件 —— 槽值、刻符收了几颗、
      * PIV 当前值、池里还剩几颗活着。VERIFY 的判据就取这一行（见 `SINGLE-CARD-TEST.md` §th08）。*/
     if ((s_ledger_frame % 600u) == 0u && (s->orb_taken || s->gauge || s->piv))
@@ -3494,20 +3671,42 @@ static int on_tick_2(ce_card_t *c)
         }
         s->graze_seen = graze;
     }
-    /* ★★★ 2026-09-22（P4 / owner：「人转妖的时候，敌方使魔会有一个 wav，这个不存在于后续音效当中」）：
-     * **Shift 那一下的两枚 SE** —— 一手 `FUN_0042c420`（`th08:0x42c420`）两支各播一枚（逐指令）：
-     *   · **人→妖**（`0x42c43a` 起：`flags` bit11 == 0 且玩家已是妖，同支把环换成 interrupt 2）：
-     *     `0x42c489 push 0x28` → id 0x28 → 声音表第二格 wav **33** = **`se_invalid.wav`**；
-     *     而这一枚的字节**与 TH18 自己的 `se_invalid.wav` 完全相同**（md5 `464ff702…`）
-     *     ⇒ 直接播 TH18 原生那一格（`0x0c`），**不占新槽**。
-     *   · **妖→人**（`0x42c4e1` 起：bit11 != 0 且玩家已不是妖，同支把环换成 interrupt 1）：
-     *     `0x42c529 push 0x27` → wav **32** = **`se_ophide.wav`**（= option hide「子机收起来」那一声）；
-     *     TH18 没有这一枚 ⇒ 走扩表 `CE_VOICE_YOUKAI_FAM_SHIFT`（`0x5d`，构建期从 TH08 现取）。
-     * ⚠ 口径出入照实登记：owner 记的是「**人→妖**那一枚不存在于后续」，一手是「**妖→人**那枚
-     *   （se_ophide）才是 TH08 独有」（人→妖那枚 = se_invalid，TH18 一直有）⇒ 两向都播，各用一手那一枚。
-     * ⚠ 我们的使魔只在低速（妖）存在 ⇒ 妖→人那一下正是「把它们收起」= 与 se_ophide 的语义完全对上；
-     *   人→妖那一下（TH18 里 se_invalid 同时是**符卡超时**音）只在**当时场上有我们的使魔**（= 一次形态
-     *   切换真的发生）时才播，免得每次按 Shift 都像超时。*/
+    /* ★★★ 2026-09-22 建、**2026-09-26 订正**（owner：「音效应当是**从高速进入低速**，**在有使魔的情况下**
+     *   才有的，现在正好是**低速进高速**有」）：**Shift 那一下的两枚 SE**。
+     *
+     * 一手（`FUN_0042c420` = `th08:0x42c420`–`0x42c58e`，**这是敌人的方法**：`this` 用 `+0x2d88` 位置 /
+     *   `+0x3324` flags / `+0x332f` enemyType / `+0x53c8` linkedEffect；调用点 `th08:0x42c98a`
+     *   在 `EnemyManager::OnUpdate` 的逐敌循环里，门 = `enemy->flags` bit8）：
+     *   · **人→妖**（`0x42c440 call 0x40bc40` 判当前已是妖）：
+     *     `0x42c45f SpawnEffect(0x1f, 色 0x80303080)` + `0x42c477 push 2` → `0x42c482 call 0x407120`
+     *     （= `AnmVm::SetInterrupt`，作用在该敌人的 `linkedEffect` 上）+ **`0x42c489 push 0x28`** →
+     *     `0x42c490 call 0x45d550`；尾部 `0x42c498 mov BYTE [this+0x332f],0`（enemyType = 0 = 妖）。
+     *   · **妖→人**（`0x42c4e1` 判当前不是妖）：`0x42c4ff SpawnEffect(0x1e, 色 0x80803030)` +
+     *     `0x42c517 push 1` → SetInterrupt(linkedEffect, 1) + **`0x42c529 push 0x27`** → `0x42c530 call`；
+     *     尾部 `0x42c538 mov BYTE [this+0x332f],2`（enemyType = 2 = 人）。
+     *
+     * ★★ **声号 → wav 名的表基准本轮订正**（这是当年把两向接反的**总根因**）：
+     *   TH08 的声音表 = **`th08:0x4c8040` + id*8**，行内 `+0x00` = wav 号（`0x45d4ce mov ecx,[eax*8+0x4c8040]`）、
+     *   `+0x04` = 音量（`0x45d512 movsx eax,word [edx*8+0x4c8044]`）、`+0x06` = 第三格
+     *   （播放入口 `0x45d550` 读的是它：`0x45d55c movsx ecx,word [eax*8+0x4c8046]`）。
+     *   **本仓原来把 `+0x06` 那张表头当成了「第二格的 wav 号」**（写 `0x4c8046`）⇒ 每一行都读成**下一行**的
+     *   wav ⇒ `se_opshow` / `se_ophide` 整体错位一格。本轮自证（`python` 直读 `local/th08.v1.00d/th08.exe`）：
+     *   `id 0x27 → wav 31 → 名表 0x4c81b0[31] = se_opshow.wav`、`id 0x28 → wav 32 → [32] = se_ophide.wav`、
+     *   `id 0x29 → wav 33 = se_invalid.wav`（名表起点也自证：46 行 × 8 = `0x170`，`0x4c8040+0x170 = 0x4c81b0`）。
+     *   ⇒ **人→妖 = id `0x28` = `se_ophide`**（TH18 没有这一枚 ⇒ 扩表 `CE_VOICE_YOUKAI_FAM_SHIFT` = `0x5d`）、
+     *     **妖→人 = id `0x27` = `se_opshow`**（TH18 也没有）。
+     *   ⇒ **owner 的记忆是对的**（「人转妖时敌方使魔有一枚 wav，这枚不存在于后续」），
+     *     本文档此前记的「口径出入：一手是妖→人那枚才独有」是**建在错位表上的假登记**，作废。
+     *
+     * ⚠ 旧版还有第二处错：人→妖播的 TH18 `0x0c` **不是** `se_invalid`（本轮直读 TH18 自己的表
+     *   `th18:0x4c9b80` + stride `0x14` + 名表 `th18:0x4b47a0`：`0x0c` → wav 10 = `se_select00.wav`；
+     *   TH18 的 `se_invalid` 是 id `0x05`）⇒ 那句「字节与 TH18 一致」也不成立，已删。
+     *
+     * **播法**（本轮）：那声 `se_ophide` 由**在场的形态响应敌人**发出（一手：它是敌人的方法、门 = 使魔实体
+     *   存在）⇒ 只播**人→妖**，并且门的读数必须在 `yk_familiars_tick()`（本帧真的建/撤使魔）**之后** ——
+     *   旧版放在边沿分支里，那一刻读到的是上一帧（人侧）的表 ⇒ 该响的被吞、不该响的（妖→人）反倒响。
+     *   妖→人一侧 TH08 播 `se_opshow`（id 0x27），TH18 没有这一枚 ⇒ 按 owner 口径**先不播**（要补就得再开一个
+     *   扩表槽，登记为 🟡 待 owner 拍板；见 `TUNING.md`）。*/
     if (focused != (int)s->gauge_focus_prev) {
         float px = *(const float *)(CE_PLAYER() + CE_PLAYER_X);
         float py = *(const float *)(CE_PLAYER() + CE_PLAYER_Y);
@@ -3516,10 +3715,10 @@ static int on_tick_2(ce_card_t *c)
          * 读的是**这次边沿之前**的 `focus_age` ⇒ 语义与一手一致；读完这一帧归零。*/
         int flash_ok = (s->focus_age >= YK_AURA_FLASH_MIN_AGE);
         if (focused) {
-            if (yk_map_fam_live_count(&s_map))
-                ce_log("youkai: shift SE 人→妖 (se_invalid, th18 0x0c) played; familiar live count = %d",
-                       (int)yk_map_fam_live_count(&s_map));
-            if (yk_map_fam_live_count(&s_map)) ce_play_sound(0x0cu, px);   /* 人→妖：TH08 id 0x28 = se_invalid */
+            /* ★ 2026-09-26：**这一声延到本帧 `yk_familiars_tick()` 之后再播**（门要读本帧的表）。
+             *   只置一个待播标记 + 记下当时的自机坐标。*/
+            s->se_fam_press = 1;
+            s->se_fam_press_x = px;
             s->flash_pending = 1;                 /* ★ #22：使魔重建时在它身上补一支爆闪（310）*/
             /* ★ #23：本体那一下（一手 `0x44b155 SpawnEffect(0x1d, …, 0x80ff8080)` = 我们的 313）
              * —— 一手起在**自机**坐标上（`&player+0x2b4`），不是使魔身上。*/
@@ -3541,19 +3740,12 @@ static int on_tick_2(ce_card_t *c)
                     }
             }
             yk_aura_kill(s);                      /* 光环收到 interrupt 1（30 帧淡出后自删）*/
-            /* ★★★ 2026-09-23（owner #36 原话：「是**进** shift 有『使魔→魔法阵』的音效，**退出没有**」）：
-             *   上一版把这声 `se_ophide`（扩展表 `0x5d`）放在 `if (yk_map_fam_live_count(...))` 里
-             *   —— 「真有使魔被收起才响」。可退出那一刻我们记的使魔表**未必非空**（使魔被打掉 / 被闸挡住 /
-             *   上一帧刚撤过），于是**该响的时候一声不响** = owner 听到的「退出没有」。
-             *   ⇒ 改成**形态边沿无条件播**（TH08 一手也是「形态切换就播」，不是「有使魔才播」）。
-             *   ⚠ 下面那支爆闪（起在使魔坐标上）仍然要门 —— 没有使魔就没有坐标可起。
-             *   实跑判据：`youkai: shift SE ` 两向各一行（见下面两条日志）。*/
-            {
-                ce_log("youkai: shift SE 妖→人 (se_ophide, ext 0x%02x) played at the form edge; "
-                       "familiar live count = %d (this used to gate the sound and swallow it)",
-                       (unsigned)CE_VOICE_YOUKAI_FAM_SHIFT, (int)yk_map_fam_live_count(&s_map));
-                ce_play_voice(YOUKAI_FAM_SHIFT, px);   /* 妖→人：TH08 id 0x27 = se_ophide */
-            }
+            /* ★★ 2026-09-26（订正 #36）：**妖→人这一侧不播**。一手那一枚是 `se_opshow`（id 0x27），
+             *   TH18 里没有 ⇒ 按 owner 口径（「音效应当是从高速进入低速，在有使魔的情况下才有的」）
+             *   这一侧保持安静；日志照打，**判据从「两向各一行」改成「人→妖一行（有使魔时）」**。*/
+            ce_log("youkai: shift SE 妖→人 - silent by design (TH08 would play id 0x27 = se_opshow, "
+                   "which TH18 does not ship); owner ruling 2026-09-26: only the 人→妖 one is wanted; "
+                   "familiar live count = %d", (int)yk_map_fam_live_count(&s_map));
             if (yk_map_fam_live_count(&s_map)) {
                 unsigned fi;
                 /* ★ #22：妖→人那一支的爆闪（311）起在**撤走前最后记下的使魔坐标**上
@@ -3648,12 +3840,13 @@ static int on_tick_2(ce_card_t *c)
     if (focused) {
         yk_chase_target_resolve(s);
         if (s->opt_script >= 0 && s->opt[0].ptr) { if (s->opt_age < 0xffffu) ++s->opt_age; }
-        else { s->opt_age = 0; s->opt_chase = 0; }
+        else { s->opt_age = 0; s->opt_chase = 0; s->opt_spin_vm = 0; }
     } else {
         s->chase_have = 0;
         s->chase_id = 0;
         s->opt_age = 0;
         s->opt_chase = 0;
+        s->opt_spin_vm = 0;
     }
     yk_option_refresh(c, s, focused);                     /* 每帧声明（低速才有货；落笔由 SDK 在帧界叫）*/
     if (!focused) {
@@ -3685,6 +3878,23 @@ static int on_tick_2(ce_card_t *c)
         s_natopt_probe_done = 0;      /* ★ 诊断：下次再进妖侧再打一行 */
     }
     yk_familiars_tick(s);
+    /* ★★ 2026-09-26（owner：那声切换音「**在有使魔的情况下才有**」）：人→妖那一下的 `se_ophide`
+     *   **延到这里才播** —— 门要读**本帧**使魔表（`yk_familiars_tick()` 刚在上面建/撤完）。
+     *   一手语义也是这个：那一声是**敌人的方法**（`FUN_0042c420`）在「形态变了」时发的，
+     *   所以只有当场真的有那些使魔实体时才听得见（详见上面 SE 那一段的长注释）。*/
+    if (s->se_fam_press) {
+        const int fam_now = (int)yk_map_fam_live_count(&s_map);
+        s->se_fam_press = 0;
+        if (fam_now) {
+            ce_play_voice(YOUKAI_FAM_SHIFT, s->se_fam_press_x);   /* TH08 id 0x28 = se_ophide */
+            ce_log("youkai: shift SE 人→妖 played (se_ophide = TH08 id 0x28, ext 0x%02x); "
+                   "familiar live count = %d (read AFTER this frame's familiar tick)",
+                   (unsigned)CE_VOICE_YOUKAI_FAM_SHIFT, fam_now);
+        } else {
+            ce_log("youkai: shift SE 人→妖 NOT played - no familiar live this frame "
+                   "(TH08 shape: the sound comes from the familiars themselves)");
+        }
+    }
     yk_fam_collide_tick(s);              /* ★ 批次 3：**人侧**撞到使魔 ⇒ MISS（妖侧可穿梭）*/
     yk_transfer_tick(s);
     /* ★★★ 2026-09-22（P1）：跟随 VM 表的**每帧不变式检查**（32 次比较，成本可忽略）。
