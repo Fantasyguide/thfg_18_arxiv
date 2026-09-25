@@ -1544,9 +1544,9 @@ static int on_option_pose_apply(ce_card_t *c)
  *   ⇒ 她**回落**到 `YK_SHOT_SET_YOUKAI`（0x16，那一格保留着；内容仍是 `ply03as` 满 P 档）。
  *   这是**已知缺口**，见报告的 🔴（要补需要一轮 TH16 `pl03*.sht` 的抽取）。*/
 static const yk_sets_t s_yk_sets = {
-    YK_SHOT_SET_YOUKAI,            /* 0x16：早苗的回落格（也是「生成物没到」时的唯一格）*/
-    CE_SHT_SET_YOUKAI_R0,          /* 15 格的第一格（逐档组）*/
-    YK_YOUKAI_TIER_SETS            /* = 3 角色 × YK_SHOT_TIERS */
+    YK_SHOT_SET_YOUKAI,            /* 0x16：**最后一层兜底**（生成物没到 / 逐档组是空组时用）*/
+    CE_SHT_SET_YOUKAI_R0,          /* 20 格的第一格（逐档组）*/
+    YK_YOUKAI_TIER_SETS            /* = 4 角色 × YK_SHOT_TIERS */
 };
 /* 槽号布局是**生成物**给的（`sht_ids.h`）⇒ 用编译期断言把「下标 = 槽号」钉死：
  * 卡侧按 `first + 角色*档数 + 档` 算，生成序列一旦重排（插在中间）这里当场编译失败，
@@ -1555,13 +1555,18 @@ _Static_assert(CE_SHT_SET_YOUKAI_M0 == CE_SHT_SET_YOUKAI_R0 + YK_SHOT_TIERS,
                "youkai tier sets must be laid out R0..R4, M0..M4, S0..S4 in this exact order");
 _Static_assert(CE_SHT_SET_YOUKAI_S0 == CE_SHT_SET_YOUKAI_M0 + YK_SHOT_TIERS,
                "youkai tier sets must be laid out R0..R4, M0..M4, S0..S4 in this exact order");
-_Static_assert(YK_YOUKAI_TIER_SETS == 3 * YK_SHOT_TIERS,
-               "YK_YOUKAI_TIER_SETS must cover 3 characters x YK_SHOT_TIERS tiers");
+_Static_assert(CE_SHT_SET_YOUKAI_A0 == CE_SHT_SET_YOUKAI_S0 + YK_SHOT_TIERS,
+               "youkai tier sets must be laid out R0..R4, M0..M4, S0..S4, A0..A4 in this exact order");
+_Static_assert(YK_YOUKAI_TIER_SETS == 4 * YK_SHOT_TIERS,
+               "YK_YOUKAI_TIER_SETS must cover 4 characters x YK_SHOT_TIERS tiers");
 
-/* 本帧该用哪一格。**只读表，不做运行期探测**（探测在 `yk_youkai_shotset_installed` 里）。*/
+/* 本帧该用哪一格。**只读表，不做运行期探测**（探测在 `yk_youkai_shotset_installed` 里）。
+ * 四个角色一律走逐档组：0/1/2 = TH08 的三份 `plyNNas.sht`，**3 = 早苗 = TH16 `pl03sub`（秋/文）**
+ * （2026-09-26 补上；此前她恒回落到 `0x16` = TH08 妖夢那一组 —— 那就是 owner 报的
+ * 「早苗自机发 5 条扇形、子机发一条」）。只有**越界**（不该发生）与「那一格是空组」才回落。*/
 static int yk_shot_set_for(int character, int tier)
 {
-    if (character < 0 || character >= 3) return YK_SHOT_SET_YOUKAI;   /* 早苗 / 越界 ⇒ 回落格 */
+    if (character < 0 || character >= YK_OPTION_CHARS) return YK_SHOT_SET_YOUKAI;  /* 越界 ⇒ 回落格 */
     if (tier < 0) tier = 0;
     if (tier >= YK_SHOT_TIERS) tier = YK_SHOT_TIERS - 1;
     return (int)s_yk_sets.tier_first + character * YK_SHOT_TIERS + tier;

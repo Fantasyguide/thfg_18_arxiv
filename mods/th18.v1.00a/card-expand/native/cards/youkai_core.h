@@ -314,10 +314,13 @@ int yk_option_chase_want(int target_present, int age_frames);
 #define YK_SHOT_SET_YOUKAI       0x16
 #define YK_SHOT_SET_YOUKAI_ROWS  9      /* 那组有几行（行号进 `packed_id` 低 8 位；认出妖侧弹只看 set 字节）*/
 
-/* ★★ 2026-09-22（P4 · th08 #5「妖侧子机发射的弹幕都相同、火力约 4P」）：
- * **妖侧不再只有一格** —— 现在是「**逐角色 × 逐火力档**」的 15 格（照抄 TH08 `plyNNas.sht`
- * 的 slot 0..4，一手见 `engine/sht/th08/01-youkai-shootersets.md`），`0x16` 那一格**保留**
- * （早苗的妖侧是 TH16 射命丸文，本批没有一手行数据 ⇒ 她回落到 `0x16`）。
+/* ★★ 2026-09-22（P4 · th08 #5「妖侧子机发射的弹幕都相同、火力约 4P」）／★ 2026-09-26 扩到 20 格：
+ * **妖侧不再只有一格** —— 现在是「**逐角色 × 逐火力档**」的 **20** 格：
+ *   灵梦/魔理沙/咲夜 照抄 TH08 `plyNNas.sht` 的 slot 0..4（一手见 `engine/sht/th08/01-youkai-shootersets.md`），
+ *   **早苗照抄 TH16 `pl03sub.sht`（秋 = 射命丸文）的 set1..set4**（一手见 `engine/season/th16/01-…md` §5.5
+ *   与 `assets/sht/append_shooterset.py` 的 `YOUKAI_TIERS_A` 段）——
+ *   `TH18 档 k（= 她的子机数 floor(P/100)）⇒ TH16 季节档 k`，k = 1..4；k = 0 = 空组（她那时也不出妖侧弹）。
+ *   `0x16` 那一格**仍然保留**为最后一层兜底（资产没装 / 空组 ⇒ `yk_youkai_shotset_pick()` 回落）。
  *
  * 槽号由生成物 `native/sht_ids.h` 给出（`CE_SHT_SET_YOUKAI_R0..S4`），纯逻辑层**不 include
  * 生成物**（要保持「只 <stdint.h>、能主机单测」）⇒ 把这三个数**由调用者传进来**。
@@ -329,10 +332,10 @@ typedef struct {
 } yk_sets_t;
 
 #define YK_SETS_SINGLE_ONLY(single_)  { (single_), 0u, 0u }
-/* 逐档组的格数 = 3 个 TH08 角色（霊夢/魔理沙/咲夜）× YK_SHOT_TIERS 档。
+/* 逐档组的格数 = 4 个角色（霊夢/魔理沙/咲夜 = TH08 各一份；早苗 = TH16 `pl03sub` 秋）× YK_SHOT_TIERS 档。
  * ⚠ 生成器（`assets/sht/append_shooterset.py` 的 `_youkai_tier_sets`）与卡侧**各自**写死
  *   这个布局 ⇒ 两边各有一条对账：Python 侧按名字顺序生成、C 侧用 `_Static_assert` 钉槽号。*/
-#define YK_YOUKAI_TIER_SETS  (3 * YK_SHOT_TIERS)
+#define YK_YOUKAI_TIER_SETS  (4 * YK_SHOT_TIERS)
 
 /* `set` 是不是本卡的妖侧组（`s == NULL` ⇒ 退回「只看 `single`」）。 */
 int     yk_set_is_youkai(uint32_t set, const yk_sets_t *s);

@@ -97,6 +97,7 @@
 | 卡 / 用途 | 占格 |
 | --- | --- |
 | 108 妖侧逐角色×逐档（2026-09-21，P4 第 1 批） | `0x48`–`0x56`（15 格） |
+| 108 妖侧**早苗那一组**（★ 2026-09-26：TH16 `pl03sub` 秋/文） | `0x63`–`0x67`（5 格，接在 S4 之后） |
 
 组宏逐条（`sht_ids.h` 里的号）：
 
@@ -106,6 +107,11 @@
   `CE_SHT_SET_YOUKAI_M3` `0x50` · `CE_SHT_SET_YOUKAI_M4` `0x51`
 - `CE_SHT_SET_YOUKAI_S0` `0x52` · `CE_SHT_SET_YOUKAI_S1` `0x53` · `CE_SHT_SET_YOUKAI_S2` `0x54` ·
   `CE_SHT_SET_YOUKAI_S3` `0x55` · `CE_SHT_SET_YOUKAI_S4` `0x56`
+- ★ **早苗（TH16 秋/文）** `CE_SHT_SET_YOUKAI_A0` `0x63`（**空组** = 0 台子机那一档）·
+  `CE_SHT_SET_YOUKAI_A1` `0x64` · `CE_SHT_SET_YOUKAI_A2` `0x65` · `CE_SHT_SET_YOUKAI_A3` `0x66` ·
+  `CE_SHT_SET_YOUKAI_A4` `0x67` —— 一手 = TH16 `pl03sub.sht` 的 set1..set4（秋 = 射命丸文；
+  `engine/season/th16/01-…md` §5.5），槽号取自 `CE_SHT_SET_YOUKAI_S4 + 1`（**只在末尾追加**，
+  R/M/S 的号不变 —— `youkai.c` 有 `_Static_assert` 钉死），见 `AUDIT.md` §BE #96。
 
 #### 108 使魔的**魔法阵环**（2026-09-22，P4）—— 具名登记
 

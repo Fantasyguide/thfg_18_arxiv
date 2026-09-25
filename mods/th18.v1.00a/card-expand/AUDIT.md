@@ -21505,3 +21505,65 @@ script18 的标签 3 段）、225（アリス，原值全 0 ⇒ 加了也无害�
 要么源脚本本就没写），按同一机制**画面上不会转**（`angleVel` 只在 VM 里积分）。
 ⇒ 各自的效果是否**本来就要转**要回一手核；**本轮只动 108 那六支**，其余留给对应 owner（改动面是
 `assets/ability/**` = 全员共用产物，且会改变别人的观感）。
+
+## §BE 详录 #96（2026-09-26）：108 永夜抄第四批 —— **早苗的妖侧弹补齐**（TH16 `pl03sub.sht` = 秋/射命丸文，5 个新 shooterset 槽 `0x63`–`0x67`）
+
+**为什么登记**：动了 **shooterset 生成器**（`assets/sht/append_shooterset.py`：新增 `YOUKAI_TIERS_A`
+与 `pl03.sht → "A"`）与 **`pl03.sht`（全四份 .sht 都长了 5 个组）**、`CAPACITY.md`（新组登记）、
+卡侧 `cards/youkai.c`（`yk_shot_set_for()` 允许角色 3 走逐档组）+ `cards/youkai_core.h`（`YK_YOUKAI_TIER_SETS` 15→20）
++ 单测（`tests/test_youkai_core.c`）。**槽位是末尾追加**（`CE_SHT_FREE_FIRST` 由 `0x63` 抬到 `0x68`），
+R/M/S 那 15 格与 113/111 的槽号**一个都没动**（`sht-verify` 的「既有组逐字节不变」+ 卡侧 `_Static_assert`）。
+
+### 1. 为什么是这一份数据（owner 口径 + 一手）
+
+owner（spec 第 4 条）：「**早苗的妖机体 == th16 文自机**」。TH16 的**副 .sht**（`plNNsub.sht`）就是
+「副季节子机打的弹」，五副季节各一份（春 `pl00sub` / 夏 `pl02sub` / **秋 `pl03sub`** / 冬 `pl01sub` /
+土用 `pl04sub`，一手表见 `engine/season/th16/01-season-data-and-tables.md` §5.5），而早苗的搭档 = **文（秋）**
+⇒ **她的妖侧弹 = `pl03sub` 的秋弹**。`engine/sht/th08/01-youkai-shootersets.md` §5 早就把这条列成
+「🔴 缺一轮 TH16 `pl03*.sht` 抽取」——本轮就是那一轮（该处已更新为 §5bis）。
+
+### 2. 一手读数（本机 `local/th16.v1.00a/dat/pl03sub.sht` 逐字节；布局 = 偏移数组 `+0x190`、数据基址 `+0x1b8`、stride `0x58`）
+
+| TH16 set | 行数 | `opt`（= 第几台子机）| fire 节奏 `fr2` | dmg | angle | speed | `f_tick` |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | 2 | 101,101 | 12 | 16 | −1.745329 / −1.396263 | 0 | 5 |
+| 2 | 2 | 101,102 | 8 | 13 | −1.570796 | 0 | 5 |
+| 3 | 4 | 101,101,102,103 | 12,12,8,8 | 8,8,12,12 | −1.745329 / −1.396263 / −1.570796 ×2 | 0 | 5 |
+| 4 | 4 | 101,102,103,104 | 8 | 12 | −1.570796 | 0 | 5 |
+| 5,6 | 6 | 101..105 / 101..106 | 8/12 | 12/8 | 同上 | 0 | 5 |
+
+⇒ 本卡早苗最多 4 台子机（`YK_OPTION_BY_CHAR[3] = {0,1,2,3,4}`）⇒ 只用到 set1..set4。
+
+### 3. 两处**偏离**（照实登记，不硬凑）
+
+1. **发射节奏**：TH16 这几行 `+0x00 rate = 5` 而 `+0x26 fr2 = 8/12` ⇒ 按 `07` §1 的判据，
+   `fr2 != 0` 时**发射**走 120 帧备用计时器（`frame_120 % fr2 == ph2`）⇒ 等效周期 = **8 / 12 帧**。
+   TH18 侧直接写成 `fire_rate = 8/12`（主计时器那一路），语义等价、少一条依赖。
+2. **加速度**：`+0x2c f_tick = 5` = TH16 的 **tick5 = 匀加速 +0.5/帧**（§5.5 表「秋：匀加速 +0.5/帧」）；
+   TH18 同族的是 **`tick3` = +0.3/帧**（`engine/sht/th18/03` §6 的对照表；TH18 的 `tick5` 是**别的行为** = 左右墙反弹）
+   ⇒ 取 `func_on_tick = 3`。**常量不同**（+0.5 vs +0.3），这是 TH18 侧能做到的最接近的一支。
+3. 弹贴图沿用**本文件原生主炮那一支**（`YK_BULLET_ANM["pl03.sht"] = 5`）—— 文自己的弹贴图没切进
+   `ability.anm`（与 TH08 那三支同一个缺口，见 `engine/sht/th08/01` §3）。
+
+### 4. 档位映射（**这一层是我们的决定**）
+
+TH16 的季节档 `k` = 子机数（set k ⇒ k 台），而本卡早苗的妖侧子机数 = `floor(P/100)`（TH18 档 0..4）
+⇒ **两边天然对齐：TH18 档 k ⇒ TH16 sub set k**（k = 1..4；k = 0 ⇒ 空组，卡侧本来就不认领 set、不建子机，
+止射闸那时放行原生弹）。这**不是**「P ↔ 季节能量」的换算，而是「子机数 ↔ 子机数」的对齐（两边各 1 行/台）。
+
+### 5. 回归 / 判据
+
+`make sht`（生成 20 组；`capcheck` 首跑就红在「新组没登记进 `CAPACITY.md`」—— 那座闸按设计拦下了本轮，
+台账已补）→ `make sht-verify`（既有组逐字节不变）→ `make test-host`（`youkai_core: 4675 checks, 0 failed`，
+含更新后的槽号断言 `CE_SHT_SET_YOUKAI_A0 == S0 + 5` / `YK_YOUKAI_TIER_SETS == 20`）→ `make check` rc=0 →
+`make dllx87` 0 → `sites.py verify` ✅ → 发版（**DLL 与 sht 必须同批**：`release-check` 的
+`check_deploy_pair.py` 会把「游戏里的 `pl0X.sht` ≠ 当前构建」判红 ⇒ 本轮先把四份 `pl0X.sht` 推到 modkit、
+再整批 release，两边同 md5）。
+发布：DLL **69987937e5a3764cb3e7e707e2d52802**、sht `caf3b43d…/61f39c51…/1e1ca165…/409fc0d4…`、
+`ability.anm` `7a7adcca…`（modkit 四处 DLL 同 md5）。
+
+**实跑判据**：装 108 用**早苗**，按 Shift 进低速 —— 子机数 = `floor(P/100)`，**每台子机各发自己那一列**
+（档 1：1 台 × 2 个角；档 2：2 台；档 3：4 行（第 1 台两个角）；档 4：4 台各一行），
+每行 **5 帧…8/12 帧一发**、初速 0 然后**越飞越快**（`tick3`）；日志里 `claiming main-cannon shot set 0x63..0x67`
+（档 0 那一下则是 `NOT claiming our shot set either`）。⚠ 若子弹「不动」⇒ `func_on_tick` 没生效
+（引擎行循环那条路要复核 `+0x30`），此时先记一行再看。

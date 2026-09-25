@@ -77,6 +77,11 @@
 #define CE_SHT_SET_YOUKAI_S2                0x60   /* 追加，0 shooter */
 #define CE_SHT_SET_YOUKAI_S3                0x61   /* 追加，0 shooter */
 #define CE_SHT_SET_YOUKAI_S4                0x62   /* 追加，0 shooter */
+#define CE_SHT_SET_YOUKAI_A0                0x63   /* 追加，0 shooter */
+#define CE_SHT_SET_YOUKAI_A1                0x64   /* 追加，0 shooter */
+#define CE_SHT_SET_YOUKAI_A2                0x65   /* 追加，0 shooter */
+#define CE_SHT_SET_YOUKAI_A3                0x66   /* 追加，0 shooter */
+#define CE_SHT_SET_YOUKAI_A4                0x67   /* 追加，0 shooter */
 #define CE_SHT_SET_YOUKAI                   0x16   /* ★ 覆盖原生空槽，9 shooter */
 
 /* ---- 组数扩容：宣布可用 128 格 / 数组区预留 256 格（2026-09-14；AUDIT.md §CQ、NEXT.md §1w）----
@@ -99,14 +104,14 @@
 #define CE_SHT_SLOTS               128          /* 宣布可用格数 = 影像头 +0x02 = 加载器解析循环上界 */
 #define CE_SHT_SLOTS_RESERVED      256         /* 数组区容量（预留）：用 `0x80`+ 的槽时抬 CE_SHT_SLOTS，**exe 不用动** */
 #define CE_SHT_DATA_BASE           0x04e0   /* 数据区起点（原 0x0180）= `th18:0x45a830` 的立即数 */
-#define CE_SHT_FREE_FIRST          0x63   /* 第一个空槽（0x00–0x62 已分配）*/
+#define CE_SHT_FREE_FIRST          0x68   /* 第一个空槽（0x00–0x67 已分配）*/
 #define CE_SHT_FREE_LAST           0x7f   /* 计数内最后一个空槽 */
 #define CE_SHT_FREE_LAST_RESERVED  0xff   /* 预留区最后一格（抬计数后可用，不用改 exe）*/
 /* 分配表（**由生成序列算出来，别再手写数字**）：
  *   0x28            113 灵界主炮（1 格，四角色共用）= `CE_SHT_SET_TRANCE`（2026-09-15 §1w 第 5 步落地，正常追加组）
  *   0x29–0x4b      111 魔理沙B **子机组**（35 格，TH11 `pl01b.sht` 逐字段复刻 ⇒ `MARISA_OPT_*` / 卡侧按「元素×档×格」选组）
  *   0x4c–0x53      111 魔理沙B **主炮组**（8 格 = 8 个不同的单发伤害；`MARISA_MAIN_*`，由卡侧 `on_shot_set_index` 整组覆盖）
- *   0x63–…         108 使魔 / 106·107·109·110·112·114·115 各自子系统 / 58–80 那批的备用
+ *   0x68–…         108 使魔 / 106·107·109·110·112·114·115 各自子系统 / 58–80 那批的备用
  * ------------------------------------------------------------------------------------ */
 
 /* ---- 卡 113「灵界」的主炮弹组（TH13 灵界 set10 复刻）------------------------------------
