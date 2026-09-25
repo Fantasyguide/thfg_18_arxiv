@@ -1984,9 +1984,13 @@ static uint32_t s_summon_debris_id;        /* 闪电碎屑发射器 VM（脚本 
  *       ⇒ 卡侧脚本 **319 / 320**。
  *   两支都**自己在 ~70 帧 `delete()`**（见各脚本尾），所以起完就不用管；这里仍记句柄，
  *   好在删卡 / 换关时统一收干净（长持续效果铁律）。*/
-#define UFO_RING_FX_COUNT 4
+#define UFO_RING_FX_COUNT 2                       /* 只剩紫环那一对 */
 static uint32_t s_summon_burst_id;         /* 一手爆闪/雷（脚本 362，自己 +51 帧 delete）*/
-static uint32_t s_ring_fx_id[UFO_RING_FX_COUNT];   /* [0..1] = 紫环对（316/317）、[2..3] = 六边形对（319/320）*/
+/* ★★★ 2026-09-26 第 34 轮（owner）：「**最后一条是不应该存在青六边形**」——
+ *   319/320（← TH12 `enemy.anm` 102/104）当年是**我们自己按「全 enemy.anm 里只有 4 支用 drawPoly」
+ *   挑的候选**、从没被一手证实是召唤的一部分（脚本 318/321 的头注里就写着「不是它」）
+ *   ⇒ 按 owner 口径**从召唤里摘掉**（脚本与图集留在库里，不再引用）。*/
+static uint32_t s_ring_fx_id[UFO_RING_FX_COUNT];   /* 紫环对（316/317 ← 一手 enemy.anm 139/140）*/
 static uint16_t s_summon_fx_left;          /* 横幅"还在放"的剩余帧（0 = 可以再起）*/
 static uint16_t s_summon_debris_left;      /* 碎屑同上 */
 
@@ -2022,7 +2026,6 @@ static void ufo_ring_fx_spawn(const uint8_t *e)
     void *anm = CE_ABILITY_ANM();
     static const int k_scripts[UFO_RING_FX_COUNT] = {
         CE_ANM_ABILITY_SCRIPT_UFO_RING_A,  CE_ANM_ABILITY_SCRIPT_UFO_RING_B,
-        CE_ANM_ABILITY_SCRIPT_UFO_HEX_SHRINK, CE_ANM_ABILITY_SCRIPT_UFO_HEX_GROW,
     };
     int i;
     if (!anm) return;
@@ -2035,9 +2038,8 @@ static void ufo_ring_fx_spawn(const uint8_t *e)
                                              *(const float *)(e + CE_ENEMY_POS_Y), 0.0f);
     }
     ce_log("ufo: summon ring fx up (purple ring = ability.anm scripts %d/%d <= TH12 enemy.anm 139/140; "
-           "hex flash = %d/%d <= 102/104) at the body position",
-           CE_ANM_ABILITY_SCRIPT_UFO_RING_A, CE_ANM_ABILITY_SCRIPT_UFO_RING_B,
-           CE_ANM_ABILITY_SCRIPT_UFO_HEX_SHRINK, CE_ANM_ABILITY_SCRIPT_UFO_HEX_GROW);
+           "no hexagon - owner 34: one-hand has none) at the body position",
+           CE_ANM_ABILITY_SCRIPT_UFO_RING_A, CE_ANM_ABILITY_SCRIPT_UFO_RING_B);
 }
 #endif
 
@@ -5394,6 +5396,22 @@ static void on_item_frame(ce_card_t *c)
      *   `on_item_frame` = 每个正常游玩帧恰好一次（与 `ufo_tick_advance` 同一拍）。*/
     if (s_summon_fx_left) --s_summon_fx_left;
     if (s_summon_debris_left) --s_summon_debris_left;
+#if UFO_DROP_ANM_LOG_EVERY
+    /* probe: ring/burst VM liveness every 20 frames (owner: purple flashes once / lightning invisible) */
+    if ((ce_sdk_frame() % 20u) == 0u) {
+        int i;
+        for (i = 0; i < UFO_RING_FX_COUNT; ++i) {
+            uint8_t *vm = s_ring_fx_id[i] ? ce_anm_get_vm(s_ring_fx_id[i]) : 0;
+            if (s_ring_fx_id[i])
+                ce_log("ufo/ringfx: ring[%d] vm %u alive=%d%s", i, s_ring_fx_id[i], vm ? 1 : 0,
+                       vm ? "" : " (already deleted)");
+        }
+        if (s_summon_burst_id)
+            ce_log("ufo/ringfx: burst vm %u alive=%d%s", s_summon_burst_id,
+                   ce_anm_get_vm(s_summon_burst_id) ? 1 : 0,
+                   ce_anm_get_vm(s_summon_burst_id) ? "" : " (already deleted)");
+    }
+#endif
     ufo_body_vm_follow(s);
     /* ★★ 2026-09-24（owner「还得给掉的那个改帖图」）：每游玩帧给**宿主敌机**挂皮 + 头顶旋转飞碟
      * （扫 `(N,S)` 命中 `UFO_CARRIER_KEYS[]` 的敌机；皮/标记/还原原生色全在那一支里，见它的注释块）。*/
