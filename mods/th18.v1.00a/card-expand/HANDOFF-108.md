@@ -77,7 +77,7 @@
 | 7 | `youkai/orb.vm … scale` | **1.00**（#42；19:02 那局已验）| 若 2.00 ⇒ 跑的是旧 DLL |
 | 8 | `youkai: option #N reclaimed (only M wanted now; frame F)` | **只在档数下降的那一帧各一次**（例：装 108+110 用魔理沙按 C 放灵击 ⇒ 3→2 时恰好一行 `#2 reclaimed`）；子机数应恒 = 档数、**没有冻在旧位置的那一台** | 一行都不出 ⇒ 回收循环没生效（跑的是旧 DLL）；反复出现 ⇒ `want` 每帧在抖（查 `yk_option_pose` 的声明）；出现 `option allocated FAILED (pool full)` ⇒ 漏槽 |
 | 9 | `youkai/opt #N state S opt(a,b) muz(c,d) rz …` | 同一行的 `muz` 与 `opt` **几乎相等**（差几 px = 引擎那支 lerp 的滞后）；`state` 可以是 0（低档原生槽多半是 0）| `muz` 还是 `(0,-400)` 或差很远 ⇒ 镜像没生效（旧 DLL）；`want>0` 而 `have=0` ⇒ 池满 |
-| 10 | 灵梦（机体 0）低速时 `youkai/opt #0 … rz R mode M` | 追敌态下 **`mode 1`** 且 `rz` **逐帧在涨**（约 +0.628/帧 = 10 帧一圈）；`chase 1/1`、`enters ≥ 1`；画面：子机明显自转 | **`mode 0` ⇒ 脚本没换上 `type(1)`**（跑的是旧 `ability.anm`）；`rz` 涨但画面不转 ⇒ 也是模式 0；`rz` 不动 ⇒ 标签没落地（看 `vm` 是不是 0 / `enters`）|
+| 10 | 灵梦（机体 0）低速时 `youkai/opt #0 … rz R wz W mode M` | 追敌态下 **`wz ≈ 0.628`**（旋转段在跑）**且 `mode 1`**（绘制会读 rz）；`chase 1/1`、`enters ≥ 1`；画面：子机 36°/帧 自转 | ⚠ **别看 `rz`**：它 ±π wrap、而我们 120 帧打一行 = 正好 12 圈整 ⇒ 逐次读数几乎不变（不是没转）；`wz = 0` ⇒ 标签没落地（看 `vm` 是否 0 / `enters`）；`wz ≈ 0.628` 但画面不转 ⇒ `mode 0`（资产没换上）|
 | 11 | `youkai: ledger - … %u body-emitter slot(s) skipped` | **> 0**（原生 ECL 里绝大多数槽是体上炮口）；同时**敌人身上不应再有魔法阵**（按住 Shift 全程）| 恒 0 且魔法阵还在 ⇒ 跑的是旧 DLL；数字很大但仍有魔法阵 ⇒ 那圈环不是使魔的（查 `switch ring` / 光环）|
 | 12 | `youkai: claiming main-cannon shot set 0x63..0x67`（**早苗**机体）| 档 k = `floor(P/100)` 时认领 `A0+k`；子机列数与台数一致、每行 8/12 帧一发、**初速 0 然后越飞越快** | 仍认领 `0x16` ⇒ 跑的是旧 DLL（新组没装）；子弹**不动** ⇒ （已静态排除：装载器 `th18:0x45a863` 会把行里的索引解析成 `0x4b4210[3]` = 匀加速 +0.3，见 `AUDIT.md` §BE #96 续）此时看 `muz` 是不是 `(0,-400)` |
 

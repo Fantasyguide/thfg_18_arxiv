@@ -3452,12 +3452,20 @@ static int on_tick_2(ce_card_t *c)
                      *   `0x47e8f0`（整段没有旋转读取、没有 fsincos ⇒ 永远轴对齐），**模式 1/3** 走
                      *   `0x47ed50`（读 rz + fsincos ⇒ 真的转）。我们的脚本是从 TH08（v3 没有渲染模式）
                      *   照抄的 ⇒ 必须显式 `type(1)`（见 `assets/ability/make_youkai_option_art.py` 的文件头）。*/
+                    /* ★★ 2026-09-26：**`wz` 才是「旋转有没有在跑」的判据，`rz` 不是** —— 引擎每帧
+                     *   把 ωz 积分进 rz（`0x47bdad`→`0x47bdc5`→`0x47bdfe`）并按 ±π wrap 回绕，
+                     *   而我们每 120 帧才打一行：灵梦那支 ωz = 0.6283/帧 = **10 帧一圈** ⇒ 120 帧正好
+                     *   **12 圈整** ⇒ `rz` 逐次读数几乎不变（不是说没转）。判据是两条一起看：
+                     *     · `wz ≈ 0.628` ⇒ 旋转段（`interruptLabel(5)` 那段 `angleVel`）**在跑**；
+                     *     · `mode == 1` ⇒ 绘制走的是**会读 rz 的那条路**（模式 0 完全忽略旋转，见 §BE #95）。
+                     *   两条同时成立 = 画面上确实在转（36°/帧）。*/
                     const uint8_t *vm = ce_anm_get_vm(*(const uint32_t *)(o + CE_OPT_ANM_ID));
-                    ce_log("youkai/opt #%d state %d opt(%d,%d) muz(%d,%d) rz %.3f mode %d spr %d vm %08x",
+                    ce_log("youkai/opt #%d state %d opt(%d,%d) muz(%d,%d) rz %.3f wz %.4f mode %d spr %d vm %08x",
                            k, *(const int32_t *)(ns + CE_OPT_IN_USE),
                            *(const int32_t *)(o + CE_OPT_POS_X), *(const int32_t *)(o + CE_OPT_POS_Y),
                            *(const int32_t *)(ns + CE_OPT_POS_X), *(const int32_t *)(ns + CE_OPT_POS_Y),
                            vm ? (double)*(const float *)(vm + CE_ANM_VM_ROTATION + 8) : 0.0,
+                           vm ? (double)*(const float *)(vm + CE_ANM_VM_ANGVEL + 8) : 0.0,
                            vm ? (int)((*(const uint32_t *)(vm + CE_ANM_VM_FLAGS_LO) >> 26) & 0x1fu) : -1,
                            vm ? *(const int32_t *)(vm + CE_ANM_VM_SPRITE_ID) : -1,
                            (unsigned)*(const uint32_t *)(o + CE_OPT_ANM_ID));

@@ -295,6 +295,12 @@
 #define CE_ANM_VM_POST_LOAD_B      0x5bc      /* int32，同上 */
 #define CE_ANM_VM_FVARS            0x4b4      /* float[4] 脚本变量 %F0–%F3（ExpHP zAnmVmPrefix float_script_vars）；C 写、脚本 scale(%F0, …) 读 */
 #define CE_ANM_VM_ROTATION         0x3c       /* zFloat3 rx/ry/rz（zAnmVmPrefix；自机弹每帧更新 `0x45edb0` 写 +0x44 = rz = 弹的实时角度）*/
+#define CE_ANM_VM_ANGVEL           0x48       /* ★ 2026-09-26：zFloat3 **角速度** ωx/ωy/ωz（`angleVel()` opcode 415 写它）。
+                                              *   积分器 `th18:0x47bce0`：`movss xmm0,[ecx+0x48/0x4c/0x50]`（ωx、ωy、**ωz**）
+                                              *   × GAME_SPEED + `addss [ecx+0x3c/0x40/0x44]`（rx、ry、**rz**，±π wrap）
+                                              *   ⇒ `+0x50` 就是 **z 轴角速度**：诊断时看它比看 `rz` 好 ——
+                                              *   `rz` 会被 wrap 掉（我们每 120 帧打一次，而灵梦那支是
+                                              *   0.6283/帧 = 10 帧一圈 ⇒ 120 帧正好 12 圈整，逐次读数几乎不变）。*/
 #define CE_ANM_VM_SCALE            0x54       /* zFloat2 scale x/y：HUD 充能条 0x408a53 写 +0x58 = fill 比例（thpages drawRect：动态尺寸就改 scale）；ExpHP zAnmVmPrefix（AUDIT O29k）*/
 #define CE_FN_SCREEN_EFFECT_NEW    0x476060   /* ScreenEffect 工厂：★fastcall(ecx = type, edx = time; start, end, p5, draw_prio) ret 0x10（尾 0x4760a8）。
                                                  * new(0x40) + ScreenEffect__operator_new 0x4760b0：type 1 = 震屏（on_tick 0x475c70：强度按 time 从 start 线性到 end，
