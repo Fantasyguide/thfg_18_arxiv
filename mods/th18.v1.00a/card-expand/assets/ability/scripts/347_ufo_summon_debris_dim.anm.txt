@@ -22,7 +22,7 @@ script script347 {
     layer(5);                                     // Δ1：一手 225 是 20
     color(80, 80, 255);                           // 一手 225：蓝
     sprite(@DEBRIS_0@);                           // 一手 sprite540
-    alpha(64);                                    // 一手
+    alpha(170);                                   // 一手 64 → 170（owner 第 39 轮「没有雷电」：提亮）
 0: // 0
     fset(%F0, %RANDRAD);                          // Δ2：随机方向（一手这里是 ±6 的固定随机偏移）
     fcos(%F1, %F0);
@@ -33,8 +33,8 @@ script script347 {
     fmul(%F2, 44.0f);
     pos(%F3, %F0, 0.0f);
     posTime(24, 0, %F1, %F2, 0.0f);               // Δ2：飞出去（时长同下面的 scaleTime = 24 帧）
-    scale(0.5f, 0.5f);                            // 一手
-    scaleTime(24, 0, 0.7f, 0.7f);                 // 一手
+    scale(0.9f, 0.9f);                            // 一手 0.5 → 0.9（同上：放大一点才看得见）
+    scaleTime(24, 0, 1.2f, 1.2f);                 // 一手 0.7 → 1.2
     rotate(0.0f, 0.0f, %RANDRAD);                 // 一手：随机自转
 +3: // 3
     sprite(@DEBRIS_1@);

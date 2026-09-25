@@ -40,9 +40,12 @@ script script346 {
     layer(6);                                     // Δ1：驱动器自己不画东西，层号只让它跟着世界相机走
     /* ★ 中心那颗洋红：在撒碎屑**之前**起（Δ3）。一手 227 的首帧是"随机等几帧 → 撒一只暗层"；
      *   本件把"立刻、而且在正中心"那一件事换成洋红的一对。 */
-    scriptNew(@SCRIPT_UFO_SUMMON_CORE_DIM@);
-    scriptNew(@SCRIPT_UFO_SUMMON_CORE_GLOW@);
-    iset($I4, 12);                                // Δ4：撒 12 轮（一手 2 轮）
+    /* ★★★ 2026-09-26 第 39 轮（owner：「**火确实不对**」）——**中心那团火（洋红核心对 349/350）撤掉**。
+     *   它本来是第 9 轮按 owner 当时口径加的（"中间是洋红色"），但他现在明确说不对；
+     *   保留的只有**蓝色碎屑/雷电**（347/348，每轮成对撒）。要回就把下面两行放回来。 */
+    /* scriptNew(@SCRIPT_UFO_SUMMON_CORE_DIM@); */
+    /* scriptNew(@SCRIPT_UFO_SUMMON_CORE_GLOW@); */
+    iset($I4, 20);                                // Δ4：撒 20 轮（一手 2 轮；owner 第 39 轮「没有雷电」⇒ 撒密一点）
 0: // 0
     isetMod($I0, $RAND, 8);                       // 一手 227：随机等 0..7 帧
     wait($I0);
