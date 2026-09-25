@@ -2008,15 +2008,25 @@ static uint32_t s_summon_debris_id;        /* 闪电碎屑发射器 VM（脚本 
  *   就是 `6e4e8b8`（第 9 轮）这一支（蓝碎屑 + 中心洋红）；我上一轮刚把它关掉。
  *   （一手那支爆闪/雷 = 362/363 也还在，上一轮已修好 `scriptNewRoot`。）*/
 #define UFO_SUMMON_DEBRIS_ENABLE 1               /* 1 = 撒 TH18 etbreak 碎屑（owner 要回）*/
-#define UFO_RING_FX_COUNT 2                       /* 紫环那一对（316/317），仅在 ENABLE=1 时用 */
+/* ★★★ 第 44 轮：一手找到了（`engine/ufo/th12/01-ufo-system.md` §10d）—— 召唤的紫圆 + 蓝闪
+ *   是 **C 侧 `EffectManager` effect #2 / #1**（`Ufo::summon` 的第 5 处创建点 `0x44a947`
+ *   `push 0x2; call 0x40fbe0`），anm 库里根本没有。
+ *   ⇒ 紫圆 = 脚本 **316**（32 边实心 / 纯紫 (255,0,255) / 半径 128 每帧 −1.5 ⇒ 停 53 / alpha 每帧 +3 /
+ *   50 帧）—— 一手只造**一颗**（旧口径的"316+317 一对"是我的猜想，已退役）；
+ *   ⇒ 蓝闪 = 脚本 **318**（一手每帧 2 条 × 50 帧 ≈ 100 条、每条 16 帧自删、LINESTRIP 单像素）。*/
+#define UFO_RING_FX_COUNT 1                       /* ★ 一手：一颗紫圆（第 44 轮前是"一对"= 猜想）*/
+#define UFO_BOLT_FX_ENABLE 1                      /* ★ 第 44 轮：蓝闪（一手 effect #1）*/
+#define UFO_BOLT_FX_PER_FRAME 2                   /* 一手：effect #2 的 on_tick 里 `push 0x1` ×2 */
+#define UFO_BOLT_FX_FRAMES 50u                    /* 一手：与紫圆同寿命 50 帧 ⇒ 合计约 100 条 */
 static uint32_t s_summon_burst_id;         /* 一手爆闪/雷（脚本 362，自己 +51 帧 delete）*/
 /* ★★★ 2026-09-26 第 34 轮（owner）：「**最后一条是不应该存在青六边形**」——
  *   319/320（← TH12 `enemy.anm` 102/104）当年是**我们自己按「全 enemy.anm 里只有 4 支用 drawPoly」
  *   挑的候选**、从没被一手证实是召唤的一部分（脚本 318/321 的头注里就写着「不是它」）
  *   ⇒ 按 owner 口径**从召唤里摘掉**（脚本与图集留在库里，不再引用）。*/
-static uint32_t s_ring_fx_id[UFO_RING_FX_COUNT];   /* 紫环对（316/317 ← 一手 enemy.anm 139/140）*/
+static uint32_t s_ring_fx_id[UFO_RING_FX_COUNT];   /* 紫圆（316 ← 一手 effect #2）*/
 static uint16_t s_summon_fx_left;          /* 横幅"还在放"的剩余帧（0 = 可以再起）*/
 static uint16_t s_summon_debris_left;      /* 碎屑同上 */
+static uint16_t s_bolt_fx_left;            /* ★ 蓝闪窗口：还剩多少帧要每帧撒 2 条（0 = 停）*/
 
 #if UFO_SUMMON_DEBRIS_ENABLE
 static void ufo_summon_debris_spawn(const uint8_t *e)
@@ -2050,7 +2060,7 @@ static void ufo_ring_fx_spawn(const uint8_t *e)
 {
     void *anm = CE_ABILITY_ANM();
     static const int k_scripts[UFO_RING_FX_COUNT] = {
-        CE_ANM_ABILITY_SCRIPT_UFO_RING_A,  CE_ANM_ABILITY_SCRIPT_UFO_RING_B,
+        CE_ANM_ABILITY_SCRIPT_UFO_RING_A,
     };
     int i;
     if (!anm) return;
@@ -2062,9 +2072,33 @@ static void ufo_ring_fx_spawn(const uint8_t *e)
             ce_anm_set_pos(s_ring_fx_id[i], *(const float *)(e + CE_ENEMY_POS_X),
                                              *(const float *)(e + CE_ENEMY_POS_Y), 0.0f);
     }
-    ce_log("ufo: summon ring fx up (purple ring = ability.anm scripts %d/%d <= TH12 enemy.anm 139/140; "
-           "no hexagon - owner 34: one-hand has none) at the body position",
+    s_bolt_fx_left = UFO_BOLT_FX_FRAMES;   /* ★ 蓝闪窗口与紫圆同寿命（一手：两者同在一段 on_tick 里）*/
+    ce_log("ufo: summon ring fx up (purple disc = ability.anm script %d <= TH12 EffectManager effect #2 "
+           "(0x44a947 push 0x2): 32-gon, pure (255,0,255), radius 128 -1.5/frame -> 53, alpha +3/frame, "
+           "50 frames) at the body position; script %d retired (one-hand makes exactly ONE disc)",
            CE_ANM_ABILITY_SCRIPT_UFO_RING_A, CE_ANM_ABILITY_SCRIPT_UFO_RING_B);
+}
+#endif
+
+#if defined(CE_ANM_ABILITY_SCRIPT_UFO_SUMMON_RING) && UFO_BOLT_FX_ENABLE
+/* ★★★ 第 44 轮：**蓝闪**（一手 `EffectManager` **effect #1**，`0x4102b0`/`0x4103f0`/`0x410590`）。
+ *   一手：紫圆（effect #2）的 on_tick 每帧 `push 0x1` ×2 ⇒ **每帧两条**；一条存活 **16 帧**
+ *   （16 顶点随机游走折线、步长 8–12、`D3DPT_LINESTRIP` ⇒ **单像素**）⇒ 一次召唤合计约 100 条。
+ *   脚本 318 = 本引擎里的**等价近似**（v8 没有 `drawLine`，改用同为 LINESTRIP 的 `drawPolyBorder`），
+ *   逐条差异与登记见该脚本文件头 + `TUNING.md` §2.0zzx-10。
+ *   ⚠ **不记句柄**：每条 16 帧自删 ⇒ 删卡/换关时最多多活 16 帧，没有跨帧残留
+ *   （`.long-effect` 铁律要的"被删掉会怎样" = 自己消失；窗口计数在 `ufo_summon_fx_kill` 里清零）。*/
+static void ufo_bolt_fx_spawn_frame(const uint8_t *e)
+{
+    void *anm = CE_ABILITY_ANM();
+    int i;
+    if (!anm || !e) return;
+    for (i = 0; i < UFO_BOLT_FX_PER_FRAME; ++i) {
+        uint32_t id = ce_anm_spawn(anm, CE_ANM_ABILITY_SCRIPT_UFO_SUMMON_RING, UFO_SUMMON_DEBRIS_LAYER);
+        if (id)
+            ce_anm_set_pos(id, *(const float *)(e + CE_ENEMY_POS_X),
+                               *(const float *)(e + CE_ENEMY_POS_Y), 0.0f);
+    }
 }
 #endif
 
@@ -2092,6 +2126,7 @@ static void ufo_summon_fx_kill(void)
     s_summon_fx_id = 0;
     s_summon_debris_id = 0;
     s_summon_fx_left = 0;
+    s_bolt_fx_left = 0;                    /* ★ 第 44 轮：蓝闪窗口（已撒出去的每条 16 帧自删）*/
     s_summon_debris_left = 0;
 }
 
@@ -5430,6 +5465,14 @@ static void on_item_frame(ce_card_t *c)
      *   `on_item_frame` = 每个正常游玩帧恰好一次（与 `ufo_tick_advance` 同一拍）。*/
     if (s_summon_fx_left) --s_summon_fx_left;
     if (s_summon_debris_left) --s_summon_debris_left;
+#if defined(CE_ANM_ABILITY_SCRIPT_UFO_SUMMON_RING) && UFO_BOLT_FX_ENABLE
+    /* ★ 第 44 轮：蓝闪（一手 effect #1）—— 紫圆在世的 50 帧里，每帧撒 `UFO_BOLT_FX_PER_FRAME` 条，
+     *   每条 16 帧自删（一手也是这个节奏：2 条/帧 × 50 帧 ≈ 100 条）。*/
+    if (s_bolt_fx_left) {
+        --s_bolt_fx_left;
+        ufo_bolt_fx_spawn_frame(ufo_enemy_by_id(s->u.ufo_id));
+    }
+#endif
 #if UFO_DROP_ANM_LOG_EVERY
     /* probe: ring/burst VM liveness every 20 frames (owner: purple flashes once / lightning invisible) */
     if ((ce_sdk_frame() % 20u) == 0u) {
