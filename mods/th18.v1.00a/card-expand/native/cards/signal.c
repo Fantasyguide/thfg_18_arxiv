@@ -2021,10 +2021,11 @@ static int32_t signal_graze_scan(signal_card_t *s)
  *     · 表里但已不在圈内（或槽已空 / 已消）⇒ 写回原色 + 移出表。
  *   ⚠ 指针是**池槽地址**（稳定），不是弹对象；槽被复用时 state 会变，靠上面的判据先还原。
  *   `on_delete` / `on_run_reset` 走 `signal_tint_restore_all()` 兜底。*/
-/* ★ 2026-09-16 用户实跑：「**红染有点太红，参考染橙的力度**」——
- *   115 那条橙是 `0xffffd080`（R255 G208 B128：**掺白**的暖色，不是饱和色）⇒ 这里取同样「掺白」的力度：
- *   R 满、G/B 抬到一半 ⇒ `0xffff8080`。想更淡/更艳就改这一个常量（`TUNING.md` §2.1h）。*/
-#define SIGNAL_REMILIA_TINT_COLOR   0xffff8080u   /* ❓ 自定：掺白红（只写 RGB，alpha 保留）*/
+/* ★ 2026-09-16 用户实跑：「红染有点太红，参考染橙的力度」⇒ 当时取「掺白」的力度（`0xffff8080`）。
+ * ★★★ 2026-09-26 用户改口（逐字）：「**把擦弹的弹侧红色改成纯红，现在的有些淡**」
+ *   ⇒ 改回**纯红** `0xffff0000`（A=ff R=ff G=00 B=00；只写 RGB，alpha 仍由引擎的插值器管）。
+ *   ⚠ 与 115 那条「掺白橙」（`0xffffd080`）不再同力度 —— 这是 owner 点名要的观感，登记 `TUNING.md` §2.1h。*/
+#define SIGNAL_REMILIA_TINT_COLOR   0xffff0000u   /* 纯红（owner 2026-09-26：原来那版「有些淡」）*/
 #define SIGNAL_REMILIA_TINT_MAX     64            /* 表容量（同屏圈内弹的常见上限）*/
 #define SIGNAL_BULLET_VM_OFF        0x28          /* `zBullet.vm`（= `lolk.c` 的 `CE_BULLET_VM`）*/
 static uint8_t  *s_tint_b[SIGNAL_REMILIA_TINT_MAX];
