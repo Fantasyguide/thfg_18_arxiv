@@ -339,6 +339,27 @@ def header_comment(anm_name, src_num, mapping, nframes, mean):
             f"挂独立 VM 时由挂它的那一方自己补 layer（世界层 3–19，别用 HUD 的 24/25）。")
 
 
+# ★★★ 2026-09-26（owner：「灵梦的妖子机应当旋转」/「敌人身上有魔法阵」那一批的连带发现）：
+#   **TH18 的 anm v8 有渲染模式，TH08 那代没有** —— 这是「脚本逐条照抄进 v8 之后画面上不转」的总根因。
+#   一手：`type()`（opcode 302）→ `th18:0x47b12c`：`mov eax,[edi+8]; shl eax,0x1a; and/xor 0x7c000000`
+#     ⇒ 写 `flags_lo`（`vm+0x534`）的 **bit26–30**；
+#   `AnmManager::draw_vm` `th18:0x481210` 按 `(flags>>26)&0x1f` 分派（跳表 `0x481cc4`/`0x481c88`）：
+#     · **模式 0（默认）** → 角点函数 **`0x47e8f0`**：逐行筛过 `0x47e8f0`–`0x47ed4f`，**没有任何旋转读取、
+#       没有 fsincos**（只有一个 `call 0x4065a0` = pos 求和）⇒ sprite 四边形**永远轴对齐**（定格）；
+#     · **模式 1 / 3** → **`0x47ed50`**：`call 0x4097d0`（把 rz 累加进 `vm+0x600`）→
+#       `0x47ed7d movss xmm0,[eax+8]`（rz）→ `0x47ed8c fsincos` ⇒ 四边形按 rz 真的转。
+#   证据（普查 + 原生先例）：含 `angleVel` 的 TH18 原生脚本 **153** 支，其中 **145** 支带 `type()`；
+#     「sprite 四边形 + 非 0 `angleVel` + 无 `type()`」的原生脚本 **0** 支。
+#     引擎自己的子机脚本（`ability.anm` script2/6，`Player__repopulate…` 建那 4 格用的就是它们）
+#     第一段就是 `-1: layer(13); blendMode(1); type(1);` + `angleVel(…)+stop()`。
+#   TH08 侧：全量 anm dump 里 `type(` 出现 **0** 次 ⇒ 那代的绘制一律带旋转，**没有「模式」这个概念**。
+#   ⇒ 本文件生成的两支**会转**的脚本（环 309 自转 −3°/帧、光环 312 自转 1.5°/帧）必须显式补 `type(1);`；
+#     其余的（使魔本体 S53..S56、爆闪 310/311/313/314）源脚本里就没有 `angleVel` ⇒ 不补、保持逐条照抄。
+_TYPE_MODE_FIX = ("    // ★ TH18 v8 的渲染模式：不写 `type(1)` 就落进**模式 0** = 绘制定格（画面上不会转）；\n"
+                  "    //   TH08 那代没有这个概念 ⇒ 照抄进 v8 必须补这一行。一手见生成器文件头。\n"
+                  "    type(1);\n")
+
+
 def gen_scripts(spec_text, cycles, order_names):
     """→ ({文件名: (正文, 期望正文, 原文, 脚本号, 源脚本号)}, {文件名: {sprite号 → ORDER 名}})。"""
     OUT_SCRIPTS.mkdir(parents=True, exist_ok=True)
@@ -603,11 +624,11 @@ def gen_ring(tmp: Path):
             f"    // ⚠ 唯一一处指令翻译：TH08 的 `blendAdditiveSet(1)` 在 v8 anmm 里没有 ⇒ `blendMode(1)`\n"
             f"    //   （一手：两个 raw handler 写同一个字段 vm+0x1f8 的 bit4-5：`th08:0x45f2a5` / `:0x45f2d3`）。")
     body = original.replace(f"script script{RING_SRC_SCRIPT} {{",
-                            f"script script{RING_SCRIPT_NO} {{\n{head}", 1)
+                            f"script script{RING_SCRIPT_NO} {{\n{head}\n{_TYPE_MODE_FIX.rstrip()}", 1)
     body = body.replace(f"sprite(sprite{RING_SPRITE})", f"sprite(@{RING_NAME})")
     body = body.replace("blendAdditiveSet(1);", "blendMode(1);")
     want = original.replace(f"script script{RING_SRC_SCRIPT} {{",
-                            f"script script{RING_SCRIPT_NO} {{\n{head}", 1)
+                            f"script script{RING_SCRIPT_NO} {{\n{head}\n{_TYPE_MODE_FIX.rstrip()}", 1)
     want = want.replace(f"sprite(sprite{RING_SPRITE})", f"sprite(@{RING_NAME})")
     # 只看**非注释行**（注释头里会写到 `blendAdditiveSet` 这个名字，那是说明不是指令）
     code = "\n".join(l for l in body.splitlines() if not l.strip().startswith("//"))
@@ -756,10 +777,10 @@ def gen_aura(tmp: Path):
             f"    //   淡红·粉白火花云；`%F0` 那个随机角速度 = 自转 1.5°/帧）。\n"
             f"    // ⚠ 颜色参是 `-1` = `zAnmVm.color_1` **中性** ⇒ 原生**不**逐机体变色（一手负结论，见 TUNING §2.0zd）。")
     body = original.replace(f"script script{AURA_SRC_SCRIPT} {{",
-                            f"script script{AURA_SCRIPT_NO} {{\n{head}", 1)
+                            f"script script{AURA_SCRIPT_NO} {{\n{head}\n{_TYPE_MODE_FIX.rstrip()}", 1)
     body = body.replace(f"sprite(sprite{AURA_SPRITE})", f"sprite(@{AURA_NAME})")
     want = original.replace(f"script script{AURA_SRC_SCRIPT} {{",
-                            f"script script{AURA_SCRIPT_NO} {{\n{head}", 1)
+                            f"script script{AURA_SCRIPT_NO} {{\n{head}\n{_TYPE_MODE_FIX.rstrip()}", 1)
     want = want.replace(f"sprite(sprite{AURA_SPRITE})", f"sprite(@{AURA_NAME})")
     code = "\n".join(l for l in body.splitlines() if not l.strip().startswith("//"))
     if _SCRIPT_SPRITE_RE.search(code):

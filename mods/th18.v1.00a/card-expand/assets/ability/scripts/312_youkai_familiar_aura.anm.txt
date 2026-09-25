@@ -8,6 +8,9 @@ script script312 {
     // 贴图 = entry1 `data/etama/etama2.png` sprite218 64×64（可见像素均值 RGB≈(229, 136, 136)，
     //   淡红·粉白火花云；`%F0` 那个随机角速度 = 自转 1.5°/帧）。
     // ⚠ 颜色参是 `-1` = `zAnmVm.color_1` **中性** ⇒ 原生**不**逐机体变色（一手负结论，见 TUNING §2.0zd）。
+    // ★ TH18 v8 的渲染模式：不写 `type(1)` 就落进**模式 0** = 绘制定格（画面上不会转）；
+    //   TH08 那代没有这个概念 ⇒ 照抄进 v8 必须补这一行。一手见生成器文件头。
+    type(1);
     sprite(@YOUKAI_FAM_AURA);
     zWriteDisable(1);
     alpha(0);

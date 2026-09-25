@@ -21449,3 +21449,59 @@ SDK 的止射闸只在**没有卡认领 set** 时才被问到（`sdk.c`：先问
 **实跑判据**：`youkai: ledger - … body-emitter slot(s) skipped` > 0 且**敌人身上不再有魔法阵**；
 `youkai: shift SE 人→妖 played (se_ophide …)` 只出现在**有使魔**的那次切换、`妖→人` 只留
 `silent by design` 一行（详见 `HANDOFF-108.md` §3）。
+
+## §BE 详录 #95（2026-09-26）：★ **共享资产层** `assets/ability/scripts/**` —— 108 的 6 支脚本补 `type(1)`（**TH18 v8 的渲染模式**）：「脚本里写了 `angleVel` 却画面上不转」的**总根因**
+
+**为什么登记**：改的是**共享资产层**（`assets/ability/scripts/224/225/226/227/309/312_*.anm.txt` 六支脚本
++ 两个生成器 `assets/ability/make_youkai_option_art.py`、`make_youkai_familiar_art.py`），并且重建了
+`ability.anm`（md5 由 `463840c0…` → **`7a7adcca…`**）。这六支**只被卡 108 引用**（`youkai.c` 的
+`CE_ANM_ABILITY_SCRIPT_YOUKAI_OPT_*` / `..._FAMILIAR_RING` / `..._FAMILIAR_AURA`）⇒ 对其他卡的**引用面为零**；
+但 `ability.anm` 是全员共用的产物 ⇒ 按纪律登记。
+
+### 1. 根因：**TH18 的 anm v8 有「渲染模式」，TH08 那代没有** ⇒ 逐条照抄的脚本落进模式 0 = 定格
+
+owner 逐字（本轮第 N 次）：「**灵梦的妖子机本身**说了多少次了，**应当旋转，应当旋转**」。
+前几轮一直在 C 侧找（门 / 标签 / VM 重建），都对但都不是根因 —— 真因在**绘制侧**：
+
+| 环节 | 一手（`local/_scratch/th18_full.asm`，本轮逐条复核）|
+| --- | --- |
+| 模式只由 `type()` 写 | opcode 302 → `th18:0x47b12c`：`mov eax,[edi+8]; shl eax,0x1a;` + `xor/and 0x7c000000` ⇒ 写 `flags_lo`（`vm+0x534`）的 **bit26–30** |
+| 绘制按模式分派 | `AnmManager::draw_vm` `th18:0x481210`：`(flags>>26)&0x1f`，跳表 = 字节表 `0x481cc4` + dword 表 `0x481c88` |
+| **模式 0（默认）⇒ 不转** | 角点函数 **`0x47e8f0`**：本人筛过 `0x47e8f0`–`0x47ed4f` 整段 —— **零旋转读取、零 `fsincos`**（只有一个 `call 0x4065a0` = pos 求和）⇒ sprite 四边形**永远轴对齐** |
+| **模式 1 / 3 ⇒ 转** | 角点函数 **`0x47ed50`**：`0x47ed78 call 0x4097d0`（把 rz 累加进 `vm+0x600`）→ `0x47ed7d movss xmm0,[eax+8]`（= rz）→ `0x47ed8c fsincos` ⇒ 四边形按 rz 转 |
+| 原生先例 | TH18 引擎自己的子机脚本 `ability.anm` script2/6（`repopulate` 建那 4 格用的就是它们）第一段就是 `layer(13); blendMode(1); type(1);` + `angleVel(…)+stop()` |
+| 普查 | 含 `angleVel` 的原生脚本 **153** 支，其中 **145** 支带 `type()`；「sprite 四边形 + 非 0 `angleVel` + 无 `type()`」的原生脚本 **0** 支 |
+| TH08 侧为什么没有 | TH08 全量 anm dump 里 `type(` 出现 **0** 次（v3 没有渲染模式，绘制一律带旋转）⇒ **照抄必落模式 0** |
+
+⇒ 六支脚本的 `angleVel(...)+stop()` 只是让 VM 自己积分角度（`0x47bce0` 那个积分器照跑），
+**画面纹丝不动** —— 这正是 owner 反复看到的「不转」（`rz` 探针在涨 ≠ 画面上转了）。
+
+### 2. 修法（**唯一一处偏离逐条照抄**，写进两个生成器的文件头）
+
+六支脚本在正文最前面补 `type(1);`（+ 一行注释说明为什么必须补）：224（霊夢・八雲紫，TH08 `player00`
+script18 的标签 3 段）、225（アリス，原值全 0 ⇒ 加了也无害）、226（レミリア，TH08 `pl02` script24 有非 0
+`angleVel`）、227（射命丸文）、309（使魔魔法阵，自转 −3°/帧）、312（本体光环，自转 1.5°/帧）。
+模式 1 与模式 0 在**旋转角为 0** 时四边形几何相同（同一套角点表 + cos/sin 缩放）⇒ 不会位移/缩放。
+
+### 3. C 侧加固（同一根因链上的第二处，`cards/youkai.c`）
+
+引擎有**一次性**广播 `th18:0x416d50`（给原生 4 格 + **卡池 12 格**逐格发 `interrupt 2`；调用点 3 处：
+复活/恢复 `0x45ad3c`·`0x4179e7`、贴墙子状态结束 `0x45b2af`）⇒ 会把我们的子机 VM 打回**标签 2**
+（`rotate(0,0,0)+angleVel(0,0,0)`）而 **VM id 不变** ⇒ §BE #93 那条「盯 VM 身份补发」救不了。
+⇒ 追踪态里每 32 帧**重申**一次标签 5（幂等：标签 5 段没有 `rotate()`，重进不跳相位）。
+
+### 4. 诊断（判据必须打「模式」，只打 rz 会误判）
+
+`youkai/opt #N state S opt(a,b) muz(c,d) rz R mode M spr X vm …` —— **`mode` 才是「画面上会不会转」
+的判据**（`mode == 0` ⇒ 脚本没换上 `type(1)`；`rz` 在涨只证明积分器在跑，两者要一起看）。
+实跑判据：灵梦低速按 Shift 靠近敌人 ⇒ `mode 1` + `rz` 每帧 +0.628（10 帧一圈）+ 画面上子机明显自转。
+
+### 5. ⚠ 顺带查出的**系统性发现（本轮未改，交各卡 owner 决定）**
+
+同一判据扫我们全部生成脚本：**「sprite 四边形 + 非 0 `angleVel` + 无 `type()`」的还有一批**
+（`135_season_ring_in12` / `154_slot_soul` / `185_faith_dot` / `187_sakura_small` / `204_senro_field` /
+`205_senro_ring` / `223_ufo_pentagon` / `317_ufo_ring_b` / `319_ufo_hex_shrink` / `320_ufo_hex_grow` /
+`327`–`340` 的 `mof_bomb_ring*` …）—— 它们**同样是照抄旧作**（TH12/TH16 那几代要么没有模式概念、
+要么源脚本本就没写），按同一机制**画面上不会转**（`angleVel` 只在 VM 里积分）。
+⇒ 各自的效果是否**本来就要转**要回一手核；**本轮只动 108 那六支**，其余留给对应 owner（改动面是
+`assets/ability/**` = 全员共用产物，且会改变别人的观感）。

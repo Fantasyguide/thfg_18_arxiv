@@ -9,6 +9,9 @@ script script309 {
     // 贴图 = entry1 `data/etama/etama2.png` 的 sprite197 62×62（空心环；自转 −3°/帧）。
     // ⚠ 唯一一处指令翻译：TH08 的 `blendAdditiveSet(1)` 在 v8 anmm 里没有 ⇒ `blendMode(1)`
     //   （一手：两个 raw handler 写同一个字段 vm+0x1f8 的 bit4-5：`th08:0x45f2a5` / `:0x45f2d3`）。
+    // ★ TH18 v8 的渲染模式：不写 `type(1)` 就落进**模式 0** = 绘制定格（画面上不会转）；
+    //   TH08 那代没有这个概念 ⇒ 照抄进 v8 必须补这一行。一手见生成器文件头。
+    type(1);
     sprite(@YOUKAI_FAM_RING);
     blendMode(1);
     scale(0.0f, 0.0f);

@@ -1404,6 +1404,15 @@ static int on_option_pose_apply(ce_card_t *c)
                                (int)YK_OPT_SPIN_LABEL, (int)YK_OPT_IDLE_LABEL);
                     }
                 }
+                /* ★★ 2026-09-26：**追踪态里周期性重申旋转标签**。为什么需要（一手）：引擎有一次性广播
+                 *   `th18:0x416d50`（给原生 4 格 + **卡池 12 格**逐格发 `interrupt 2`；调用点 3 处：
+                 *   复活/恢复 `0x45ad3c`·`0x4179e7`、贴墙子状态结束 `0x45b2af`）⇒ 我们的 VM 会被打回
+                 *   标签 2（`rotate(0,0,0)+angleVel(0,0,0)`）而 **VM id 不变** ⇒ 上面那条「盯身份」的补发
+                 *   救不了（旋转从此永久丢失）。重申是**幂等**的：标签 5 段里**没有 `rotate()`**，
+                 *   只有 `sprite(S30)` + `angleVel(0,0,0.62831855)` + `stop()` ⇒ 重进不会让相位跳变
+                 *   （每 32 帧一次，肉眼无感；也顺手覆盖「别的原因把标签顶掉」这类没查到的路径）。*/
+                if (want_chase && vm && (ce_sdk_frame() % 32u) == 0u)
+                    ce_anm_interrupt(vm, YK_OPT_SPIN_LABEL);
                 if (want_chase && !s->opt_chase) {
                     s->opt_chase = 1;
                     ++s->chase_enters;
@@ -3431,13 +3440,20 @@ static int on_tick_2(ce_card_t *c)
                                       + (size_t)k * CE_NATIVE_OPT_STRIDE;
                     /* ★ 子机 VM 的**当前旋转角**（`zAnmVmPrefix` 的 `rz` —— 一手 `engine.h` 的
                      *   `CE_ANM_VM_ROTATION 0x3c`，自机弹那条写 `+0x44`）。灵梦那支「应当旋转」的
-                     *   判据就是**这一格在不在涨**：旋转段 `angleVel(0,0,0.62831855)` ⇒ 每帧 +0.628。*/
+                     *   判据就是**这一格在不在涨**：旋转段 `angleVel(0,0,0.62831855)` ⇒ 每帧 +0.628。
+                     * ★★ 2026-09-26 **追加「渲染模式」**（`mode`）—— 这才是「rz 在涨但画面上不转」的判据：
+                     *   模式 = `flags_lo(+0x534)` 的 bit26-30（只有 `type()` opcode 写它，
+                     *   一手 `th18:0x47b12c`）；`draw_vm` `th18:0x481210` 按它分派 —— **模式 0** 走
+                     *   `0x47e8f0`（整段没有旋转读取、没有 fsincos ⇒ 永远轴对齐），**模式 1/3** 走
+                     *   `0x47ed50`（读 rz + fsincos ⇒ 真的转）。我们的脚本是从 TH08（v3 没有渲染模式）
+                     *   照抄的 ⇒ 必须显式 `type(1)`（见 `assets/ability/make_youkai_option_art.py` 的文件头）。*/
                     const uint8_t *vm = ce_anm_get_vm(*(const uint32_t *)(o + CE_OPT_ANM_ID));
-                    ce_log("youkai/opt #%d state %d opt(%d,%d) muz(%d,%d) rz %.3f spr %d vm %08x",
+                    ce_log("youkai/opt #%d state %d opt(%d,%d) muz(%d,%d) rz %.3f mode %d spr %d vm %08x",
                            k, *(const int32_t *)(ns + CE_OPT_IN_USE),
                            *(const int32_t *)(o + CE_OPT_POS_X), *(const int32_t *)(o + CE_OPT_POS_Y),
                            *(const int32_t *)(ns + CE_OPT_POS_X), *(const int32_t *)(ns + CE_OPT_POS_Y),
                            vm ? (double)*(const float *)(vm + CE_ANM_VM_ROTATION + 8) : 0.0,
+                           vm ? (int)((*(const uint32_t *)(vm + CE_ANM_VM_FLAGS_LO) >> 26) & 0x1fu) : -1,
                            vm ? *(const int32_t *)(vm + CE_ANM_VM_SPRITE_ID) : -1,
                            (unsigned)*(const uint32_t *)(o + CE_OPT_ANM_ID));
                 }

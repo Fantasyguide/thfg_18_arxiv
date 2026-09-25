@@ -369,7 +369,24 @@ def gen_script(src_text, src_num, new_num, char, cn, kind, anm_name, sprite_map,
         if missing:
             raise SystemExit(f"{char}: 映射表里的 {missing} 在原生脚本里没出现 ⇒ 映射表/脚本号要重核")
     head = header_lines(char, cn, kind, anm_name, src_num, sprite_map, engine_note)
-    text = "\n".join(body[:1] + head + body[1:]) + "\n"
+    # ★★★ 2026-09-26（owner：「灵梦的妖子机本身……**应当旋转**」报了多次；真因**不在 C 侧**）：
+    #   TH18 的 anm v8 **有渲染模式**：`type()`（opcode 302）→ `th18:0x47b12c` 写 `flags_lo(+0x534)`
+    #   的 bit26–30；`AnmManager::draw_vm` `th18:0x481210` 按它分派 ——
+    #     · **模式 0（默认）** → 角点函数 `0x47e8f0`：整段**没有一次旋转读取、没有 fsincos**
+    #       （我逐行筛过 `0x47e8f0`–`0x47ed4f`）⇒ sprite 四边形**永远轴对齐**；
+    #     · **模式 1 / 3** → `0x47ed50`：`call 0x4097d0`（把 rz 累加进 `vm+0x600`）→ `movss xmm0,[eax+8]`
+    #       → `fsincos` ⇒ 四边形真的按 rz 转。
+    #   TH08 那代（anm v3）**没有渲染模式这个概念**（TH08 全量 dump 里 `type(` 出现 **0** 次，
+    #   绘制一律带旋转）⇒ **把 TH08 的脚本逐条照抄进 v8 必然落进模式 0**：标签 5 那一段
+    #   `angleVel(0,0,0.62831855)+stop()` 只是让 VM 自己积分角度，**画面纹丝不动**。
+    #   原生先例：TH18 自己会转的子机脚本都写着 `type(1)`（`ability.anm` script2/6 = 原生那 4 格子机，
+    #   第一段就是 `layer(13); blendMode(1); type(1);`）；普查：含 `angleVel` 的原生脚本 153 个、
+    #   其中 **145 个**带 `type()`，而「sprite 四边形 + 非 0 `angleVel` + 无 `type()`」的原生脚本 **0 个**。
+    #   ⇒ 本生成器在脚本体最前面补一行 `type(1);`：**唯一一处偏离逐条照抄**，理由与一手见上。
+    extra = ["    // ★ TH18 v8 的渲染模式：不写 `type(1)` 就落进模式 0 = 绘制定格（画面上不会转）。",
+             "    //   一手与普查见生成器文件头「渲染模式」那一段；TH08 那代没有这个概念。",
+             "    type(1);"]
+    text = "\n".join(body[:1] + head + extra + body[1:]) + "\n"
     return text, dropped
 
 
