@@ -1022,7 +1022,9 @@ int32_t signal_bomb_form_is_deathbomb(const signal_bomb_form_t *f);
 /* ★★ 2026-09-16 用户改口径（逐字）：「**目前擦弹频率有点超模，改成一颗弹幕每 6 帧擦一次**」——
  *   原口径是「擦弹 1 帧、然后不计算擦弹 2 帧」（周期 3）⇒ 现在周期 **6**（有效仍是 1 帧）。
  *   ⇒ 计不计的分支一字未改，只把这个常数从 2 改成 5。*/
-#define SIGNAL_REMILIA_GRAZE_OFF_FRAMES  5   /* 用户口径：每颗弹 5 帧不计 ⇒ 周期 6（每 6 帧擦 1 次）*/
+/* ★ 2026-09-26（owner：「**再削弱一下擦弹频率，改成现在的一半**」）：
+ *   每颗弹「不计」的帧数 **5 → 11** ⇒ 周期 **6 → 12**（原来每 6 帧擦 1 次，现在每 12 帧 1 次）。*/
+#define SIGNAL_REMILIA_GRAZE_OFF_FRAMES 11   /* 用户口径（2026-09-26 减半）：每颗弹 11 帧不计 ⇒ 周期 12 */
 #define SIGNAL_REMILIA_GRAZE_PERIOD \
         (SIGNAL_REMILIA_GRAZE_ON_FRAMES + SIGNAL_REMILIA_GRAZE_OFF_FRAMES)   /* = 6 */
 #define SIGNAL_REMILIA_TRACK_MAX         36  /* ❓ 自定：同时跟踪的弹数上限（超出的当帧**不计**、也不进表）。

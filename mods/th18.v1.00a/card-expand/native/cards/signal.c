@@ -407,7 +407,8 @@ typedef struct {
     /* ---- ★★ 2026-09-15i：**咲夜(2) 三条 + 早苗(3) 三条**（用户拍板的伙伴映射，不是复刻）----
      * 判据 / 一手 / 用户口径的分层全在 `signal_core.h` 的「咲夜 / 早苗」那一段；
      * 卡侧只做「读引擎 → 调 core → 落效果」。诊断数一律从 core 结构里取（不另开标量）。*/
-    signal_remilia_t remilia;     /* 咲夜×大小姐：逐弹 3 帧循环（1 帧计入 + 2 帧不计）的状态 + 累计 */
+    signal_remilia_t remilia;     /* 咲夜×大小姐：逐弹周期擦（每 `SIGNAL_REMILIA_GRAZE_CYCLE` 帧计入 1 次）+ 累计 */
+    uint32_t      remilia_ring;   /* ★ 2026-09-26：大小姐那条的**擦弹圈 VM**（115 的同款脚本 360；0 = 没起）*/
     signal_flandre_t flandre;     /* 咲夜×二小姐：蓄力 300 帧 ⇒ 松手清屏 */
     signal_kanako_t  kanako;      /* 早苗×神奈子：收点线的「快照基准 + 相对下移」（✅ 已接共享 PoC 高度层）*/
     signal_koishi_t  koishi;      /* 早苗×恋恋：放开键 ⇒ 4 帧无敌（载体与量都照抄原生 29 Aya 卡）*/
@@ -2048,6 +2049,55 @@ void signal_tint_restore_all(void)
     s_tint_n = 0;
 }
 
+/* ★★★ 2026-09-26（owner：「**115 的那个靠近弹幕会出现的扩展擦弹范围…给大小姐的那个变红特效也来一个，
+ *   代码一模一样**」）—— 本函数**逐条照抄** `cards/lolk.c` 的 `ring_sync()`（115 的擦弹圈）：
+ *   圈里**有弹**就起 VM 并每帧钉在自机；弹出圈 ⇒ `interruptLabel(1)`（脚本自己 12 帧渐隐后自删）。
+ *   ⚠ 脚本不是 106 而是 **360**（`…_LOLK_RING_NORMAL`）：owner 另要「**根据那个擦弹范围 = 那个记载的
+ *     半径，等比缩小到普通的擦弹半径**」⇒ 360 = 106 的逐条副本、只把落定 scale 由 1.155（TH15 的
+ *     50.8 px 大圈）改成 **1.0**（亮环 44 px = TH18 的普通擦弹圈），起始按同一比例 2.48 → 2.15。
+ *   ⚠ 贴图暂借 `@LOLK_RING@`（owner 要 P 成红的 ⇒ 到时换成新图集里的红色那份，115 保持原色）。*/
+static void signal_remilia_ring_sync(signal_card_t *s, int visible)
+{
+    const float *pp = ce_player_pos();
+
+    if (visible) {
+        if (!s->remilia_ring || !ce_anm_get_vm(s->remilia_ring)) {
+            s->remilia_ring = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_LOLK_RING_NORMAL, 12);
+            if (!s->remilia_ring) return;
+            ce_log("signal: 大小姐·擦弹圈 spawned (anm id %u)", (unsigned)s->remilia_ring);
+        }
+        if (pp) ce_anm_set_pos(s->remilia_ring, pp[0], pp[1], 0.0f);
+    } else if (s->remilia_ring) {
+        ce_anm_interrupt(s->remilia_ring, 1);        /* 渐隐交给脚本 */
+        s->remilia_ring = 0;
+    }
+}
+
+/* 圈里有弹吗（= 115 的 `bullet_in_graze_zone()` 的同一件事，用本卡已有的判据）*/
+static int signal_remilia_ring_want(const uint8_t *pl)
+{
+    uint8_t *mgr = CE_BULLET_MGR();
+    int focus = 0;
+    unsigned k;
+
+    if (!mgr || !pl) return 0;
+    focus = *(const int32_t *)(pl + SIGNAL_OFF_PLAYER_FOCUS) != 0;
+    for (k = 0; k <= (unsigned)CE_BM_BULLET_COUNT; ++k) {
+        uint8_t *b = mgr + CE_BM_BULLETS + (size_t)k * CE_BULLET_STRIDE;
+        uint16_t st = *(const uint16_t *)(b + CE_BULLET_STATE);
+        uint32_t flags;
+        float br;
+        if (st == 0 || st == 3 || st == 4) continue;
+        flags = *(const uint32_t *)(b + CE_BULLET_FLAGS);
+        if (!(flags & SIGNAL_BULLET_FLAG_COLLIDE)) continue;
+        br = *(const float *)(b + SIGNAL_BULLET_RADIUS);
+        if (!(br > 0.0f)) continue;
+        if (flags & SIGNAL_BULLET_FLAG_SCALED) br *= *(const float *)(b + SIGNAL_BULLET_SIZE_SCALE);
+        if (signal_bullet_in_graze(b, pl, flags, br, focus)) return 1;
+    }
+    return 0;
+}
+
 /* 每帧（在 `on_draw` 里跑）：圈内染红、出圈还原。`mgr`/`pl` 为空 ⇒ 只做还原。*/
 static void signal_tint_tick(void)
 {
@@ -3070,6 +3120,10 @@ static void signal_support_reset(ce_card_t *c, signal_card_t *s)
     }
     ce_invuln_request((uint32_t)SIGNAL_ID_NUM, 0);
     signal_remilia_reset(&s->remilia);
+    if (s->remilia_ring) {                       /* ★ 长持续效果铁律：擦弹圈也要收 */
+        if (ce_anm_get_vm(s->remilia_ring)) ce_anm_interrupt(s->remilia_ring, 1);
+        s->remilia_ring = 0;
+    }
     signal_flandre_reset(&s->flandre);
     signal_kanako_reset(&s->kanako);
     signal_koishi_reset(&s->koishi);
@@ -3658,6 +3712,15 @@ static int on_draw(ce_card_t *c)
         if (now != s_tint_frame) {
             s_tint_frame = now;
             signal_tint_tick();
+            /* ★ 2026-09-26（owner）：擦弹圈与红染同一条特技 —— 逐条照 115 的 `ring_sync(s, in_box)`
+             *   （那里也在 tick 里、拿到「圈里有弹」之后立刻调）。机体门与红染一致（咲夜）。*/
+            {
+                signal_card_t *sc = st(c);
+                uint8_t *pl2 = CE_PLAYER();
+                if (sc && pl2 && *(const volatile int32_t *)CE_ADDR_CHARACTER == SIGNAL_CHAR_SAKUYA)
+                    signal_remilia_ring_sync(sc, signal_remilia_ring_want(pl2));
+                else if (sc && sc->remilia_ring) signal_remilia_ring_sync(sc, 0);
+            }
         }
     }
     return 0;

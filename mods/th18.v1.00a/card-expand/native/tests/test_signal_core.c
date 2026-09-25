@@ -1406,38 +1406,39 @@ int main(void)
         uint16_t k1[1], k2[2];
         int f;
 
-        /* ★★ 2026-09-16 用户改口径：「**目前擦弹频率有点超模，改成一颗弹幕每 6 帧擦一次**」
-         *   ⇒ 周期从 3 改成 6（有效仍是 1 帧、计不计的分支一字未改）。*/
+        /* ★ 2026-09-16 用户口径：「目前擦弹频率有点超模，改成一颗弹幕每 6 帧擦一次」⇒ 周期 6；
+         * ★★ 2026-09-26 再改：「**再削弱一下擦弹频率，改成现在的一半**」⇒ 周期 **12**
+         *   （不计帧 5 → 11；有效仍是 1 帧，计不计的分支一字未改）。*/
         CHECK(SIGNAL_REMILIA_GRAZE_ON_FRAMES == 1);
-        CHECK(SIGNAL_REMILIA_GRAZE_OFF_FRAMES == 5);
-        CHECK(SIGNAL_REMILIA_GRAZE_PERIOD == 6);
+        CHECK(SIGNAL_REMILIA_GRAZE_OFF_FRAMES == 11);
+        CHECK(SIGNAL_REMILIA_GRAZE_PERIOD == 12);
 
         k1[0] = 7; k2[0] = 7; k2[1] = 9;
         memset(&r, 0, sizeof r);
-        /* 一颗弹连着 13 帧在圈里 ⇒ 在它的第 1 / 7 / 13 帧各计一次（周期 6、中间 5 帧不计）*/
+        /* 一颗弹连着 25 帧在圈里 ⇒ 在它的第 1 / 13 / 25 帧各计一次（周期 12、中间 11 帧不计）*/
         CHECK(signal_remilia_tick(&r, k1, 1, 0, 0) == 1);      /* 第 1 帧：计入 */
-        for (f = 2; f <= 6; ++f) CHECK(signal_remilia_tick(&r, k1, 1, 0, 0) == 0);   /* 第 2..6 帧：不计 */
-        CHECK(signal_remilia_tick(&r, k1, 1, 0, 0) == 1);      /* 第 7 帧：再计入 */
-        for (f = 8; f <= 12; ++f) CHECK(signal_remilia_tick(&r, k1, 1, 0, 0) == 0);
-        CHECK(signal_remilia_tick(&r, k1, 1, 0, 0) == 1);      /* 第 13 帧 */
-        CHECK(r.total == 3 && r.n == 1 && r.frames == 13);
+        for (f = 2; f <= 12; ++f) CHECK(signal_remilia_tick(&r, k1, 1, 0, 0) == 0);  /* 第 2..12 帧：不计 */
+        CHECK(signal_remilia_tick(&r, k1, 1, 0, 0) == 1);      /* 第 13 帧：再计入 */
+        for (f = 14; f <= 24; ++f) CHECK(signal_remilia_tick(&r, k1, 1, 0, 0) == 0);
+        CHECK(signal_remilia_tick(&r, k1, 1, 0, 0) == 1);      /* 第 25 帧 */
+        CHECK(r.total == 3 && r.n == 1 && r.frames == 25);
 
         /* ★ 逐弹独立：第 3 帧才进圈的那颗有自己的相位（当帧就计入）*/
         memset(&r, 0, sizeof r);
-        CHECK(signal_remilia_tick(&r, k1, 1, 0, 0) == 1);      /* 帧1：7 计入（cd = 5）*/
+        CHECK(signal_remilia_tick(&r, k1, 1, 0, 0) == 1);      /* 帧1：7 计入（cd = 11）*/
         CHECK(signal_remilia_tick(&r, k1, 1, 0, 0) == 0);      /* 帧2：7 冷 */
         CHECK(signal_remilia_tick(&r, k2, 2, 0, 0) == 1);      /* 帧3：9 是新弹 ⇒ 计入；7 还在冷（不计）*/
         CHECK(r.n == 2);
-        CHECK(signal_remilia_tick(&r, k2, 2, 0, 0) == 0);      /* 帧4：7 冷（剩 3）、9 冷（剩 4）*/
+        CHECK(signal_remilia_tick(&r, k2, 2, 0, 0) == 0);      /* 帧4：7 冷（剩 9）、9 冷（剩 10）*/
         CHECK(r.n == 2 && r.total == 2);   /* 到这一帧为止：7 计 1 次、9 计 1 次 */
 
         /* 取不到弹池 ⇒ 安全返回 0，且**表与冷却一个都不动**（见 .h）*/
         memset(&r, 0, sizeof r);
-        CHECK(signal_remilia_tick(&r, k1, 1, 0, 0) == 1);      /* 帧1：计入（cd 置 5）*/
+        CHECK(signal_remilia_tick(&r, k1, 1, 0, 0) == 1);      /* 帧1：计入（cd 置 11）*/
         f = signal_remilia_tick(&r, NULL, 0, 0, 0);
         CHECK(f == 0 && r.n == 1 && r.frames == 1);
-        for (f = 2; f <= 6; ++f) CHECK(signal_remilia_tick(&r, k1, 1, 0, 0) == 0);   /* 帧2..6：冷 */
-        CHECK(signal_remilia_tick(&r, k1, 1, 0, 0) == 1);      /* 帧7：再计入 */
+        for (f = 2; f <= 12; ++f) CHECK(signal_remilia_tick(&r, k1, 1, 0, 0) == 0);  /* 帧2..12：冷 */
+        CHECK(signal_remilia_tick(&r, k1, 1, 0, 0) == 1);      /* 帧13：再计入 */
 
         /* 表满 ⇒ 记 dropped、当帧不计（也不进表）*/
         memset(&r, 0, sizeof r);
