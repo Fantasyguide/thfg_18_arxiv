@@ -5419,10 +5419,25 @@ static void on_item_frame(ce_card_t *c)
                 ce_log("ufo/ringfx: ring[%d] vm %u alive=%d%s", i, s_ring_fx_id[i], vm ? 1 : 0,
                        vm ? "" : " (already deleted)");
         }
-        if (s_summon_burst_id)
-            ce_log("ufo/ringfx: burst vm %u alive=%d%s", s_summon_burst_id,
-                   ce_anm_get_vm(s_summon_burst_id) ? 1 : 0,
-                   ce_anm_get_vm(s_summon_burst_id) ? "" : " (already deleted)");
+        if (s_summon_burst_id) {
+            uint8_t *vm = ce_anm_get_vm(s_summon_burst_id);
+            if (!vm) ce_log("ufo/ringfx: burst vm %u alive=0 (already deleted)", s_summon_burst_id);
+            else {
+                /* ★★★ 第 36 轮：**把关键字段打全** —— owner 说"闪电看不见"，而探针已证 VM 活满寿命
+                 *   （见 23:34 那批日志：ring/burst 都是 alive=1 连 4 拍才自删）⇒ 现在要看的是
+                 *   **它到底画了什么**：sprite（-1 = 不画贴图）/ scale（0 = 缩没了）/ color_1（A=0 = 全透明）
+                 *   / layer（层号决定它落在哪个相机，3–19 = 游玩区）/ flags_lo（bit0/1 = 绘制门槛）。*/
+                const float *sv = (const float *)(vm + CE_ANM_VM_SCALE);
+                ce_log("ufo/ringfx: burst vm %u alive=1 spr %d scale (%.3f, %.3f) c1 0x%08x c2 0x%08x "
+                       "layer %u flags_lo 0x%08x",
+                       s_summon_burst_id, (int)*(const int32_t *)(vm + CE_ANM_VM_SPRITE_ID),
+                       (double)sv[0], (double)sv[1],
+                       *(const uint32_t *)(vm + CE_ANM_VM_COLOR1),
+                       *(const uint32_t *)(vm + CE_ANM_VM_COLOR2),
+                       *(const uint32_t *)(vm + CE_ANM_VM_LAYER),
+                       *(const uint32_t *)(vm + CE_ANM_VM_FLAGS_LO));
+            }
+        }
     }
 #endif
     ufo_body_vm_follow(s);
