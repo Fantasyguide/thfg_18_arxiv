@@ -451,6 +451,15 @@ HUD 画到场地外（我们 112 的槽就踩过：见 `mods/th18.v1.00a/card-ex
 ⇒ 这三个脚本在 v1.00b 属**孤立数据**（🟡 疑旧 revision 残留）。**据此，把从 139/140 抄来的实现标成
 「复刻」是不成立的**，必须改标「自定」或换成 (a) 表里的 `bullet.anm` 204/205。
 
+> **2026-09-26 补验（owner 的实机口径）**：owner 手上的 `[th12] 东方星莲船 (汉化版+日文版)` 与本文样本**逐字节同一份**
+> —— `th12.exe` md5 `212f187591f4f1fa99eb2845d1b3cf20` 相同，`enemy.anm`/`bullet.anm`/`front.anm`/`default.ecl`/`stage01.ecl`
+> 五份 md5 也全同 ⇒ **本节结论就是 owner 实机看到的版本的结论**（不存在"他玩的是另一版"这条路）。
+> 唯一的补丁：`anmPlay(1, 141)` 确实存在——stage05/06 的 `Cir00`（琪露诺）出生串
+> （`flagSet(3); playSound(40); anmSelect(1); anmPlay(1, 141); wait(40); anmSetSprite(0, $A)`）。
+> 但**索引 1 = `stgenmNN.anm`**（ECL 头 `anim { "enemy.anm"; "stgenmNN.anm"; }` 的第二项），
+> 而 `stgenm05` 只有 68 支脚本、`stgenm06` 只有 83 支 ⇒ **脚本 141 在那两份文件里不存在，这条调用是空放**
+> （同类空放还有每关都有的 `anmPlay(1, 95)` / `anmPlay(2, 158)`）。**且它属于琪露诺，不属于飞碟召唤路径。**
+
 > **旧 build 的坑**：本仓遗留的 `/tmp/stage01_raw.txt`（2026-09-18 另一会话）里 `BossDead` 是
 > `anmPlay(0,76) / playSound(18) / anmPlay(0,141)`，看着像「141 有主」。但我们的 v1.00b `stage01.ecl`
 > 从 `0x8d18` 起**逐字节**解出来是 `flagSet(140) / anmPlay(0,79) / playSound(5) / anmPlay(0,129) /
