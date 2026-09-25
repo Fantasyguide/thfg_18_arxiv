@@ -1,4 +1,8 @@
 script script317 {
+    // ★★★ 2026-09-26 第 40 轮（owner 逐帧数录屏）：「**原生的紫色圆从出现到消失是 25 帧**，
+    //   是一个**从大的透明到小的不透明**的过程」⇒ 把一手那三个 60 帧的量**压到 25 帧**
+    //   （`alpha2Time` / `scaleTime` / 尾部 `alphaTime`）—— 这是 owner 的实测口径，不是一手值
+    //   （一手 `enemy.anm` 139/140 写的是 60 帧；边数 3 → 32 亦是 owner 口径）。
     // ❌ 2026-09-23 起停用：只被上面那支候选脚本 `scriptNew`（owner 判"不对"，见其文件头）。
     // 112 星莲船 —— **UFO 召唤时的紫环**（一手：TH12 v1.00b `enemy.anm` **script140** 逐条移植）
     //   原文（local/th12.v1.00b/anm/enemy/enemy.anm.txt）：
@@ -17,12 +21,12 @@ script script317 {
     color2(255, 128, 255);
     angleVel(0.0f, 0.0f, -0.09817477f);
     alpha(0);
-    alphaTime(10, 0, 15);
+    alphaTime(5, 0, 15);
     alpha2(0);
-    alpha2Time(60, 0, 255);
-    scaleTime(60, 5, 0.0f, 0.0f);
-+10: // 10
-    alphaTime(30, 0, 0);
-+60: // 70
+    alpha2Time(25, 0, 255);          /* ★ owner 第 40 轮：逐帧数出来是 **25 帧** */
+    scaleTime(25, 5, 0.0f, 0.0f);   /* 同上：60 → 25（大而透明 → 小而实）*/
++5: // 5
+    alphaTime(15, 0, 0);
++25: // 25
     delete();
 }

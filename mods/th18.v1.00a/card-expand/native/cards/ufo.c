@@ -2622,7 +2622,12 @@ static void ufo_summon_fx_try(ufo_card_t *s, const uint8_t *e)
 #if defined(CE_ANM_ABILITY_SCRIPT_UFO_RING_A) && UFO_RING_FX_ENABLE
     ufo_ring_fx_spawn(e);                                            /* 见下面 UFO_RING_FX_ENABLE 的说明 */
 #endif
-#ifdef CE_ANM_ABILITY_SCRIPT_UFO_SUMMON_BURST
+#if defined(CE_ANM_ABILITY_SCRIPT_UFO_SUMMON_BURST) && UFO_SUMMON_BURST_ENABLE
+/* ★★★ 2026-09-26 第 40 轮（owner）：「**闪电应该是拿带有残影的粒子画出来的，和贴图完全无关**」
+ *   ⇒ 贴图粒子那支（362/363 ← TH12 enemy.anm 134/112）**从召唤里撤掉**（默认 0；脚本与代码都留着），
+ *     召唤的雷电交给**碎屑那一支**（346/347/348 = 带残影的粒子，第 39 轮已提亮放大撒密）。*/
+#define UFO_SUMMON_BURST_ENABLE 0
+
     /* ★★★ 2026-09-26 第 33 轮（owner 选「把 TH12 的 script134/112 原样搬过来」）：
      *   一手 TH12 `Ufo::spawn` 里那一发 **爆闪 + 雷**（`enemy.anm` script134 + 每帧 3 次子 script112）
      *   ⇒ 卡侧脚本 **362 / 363**（逐条移植，贴图 = `enemy2.png` sprite197..204 的 1:1 切图）。
