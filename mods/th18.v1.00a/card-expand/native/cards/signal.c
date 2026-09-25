@@ -1157,6 +1157,10 @@ static void signal_nitori_break_invuln_tick(void)
  *   幂等：罩子已经在 ⇒ 什么都不做。*/
 static int signal_shield_busy(void);   /* 定义在下面；join_bomb 每帧声明状态要用它 */
 
+/* ★ 2026-09-25：咲夜蓄力彩虹的**帧钟**（只在这个特技里用；每帧 +1，`/3 % 6` 取色相
+ *   ⇒ **每 3 帧一色、18 帧一周期**，与 owner 口径一一对应。卡侧算色比脚本时间线稳。）*/
+static int32_t s_gf_flash_tick;
+
 static void signal_nitori_join_bomb(signal_card_t *s)
 {
     /* 诊断（节流）：只在「有灵击在跑、但本卡没泡」的帧里打一行，说清每一道门的状态 ——
@@ -2226,7 +2230,21 @@ static void signal_step_mod_fill(signal_card_t *s, signal_step_mod_t *mod)
  *   ⚠ 为什么不用 `drawPolyBorder`：它的线宽在**局部空间**不可控（owner：「不要细环，要粗环」），
  *     贴图环的粗细就是像素（环带 20px = 外径的 32%），而且整张图是白的 ⇒ `color` 直接染色
  *     （「充能中是白的、满充能才是彩虹变色」就是这么实现的：染色放脚本的中断 2 里）。*/
-#define SIGNAL_FLAN_RING_TEX_R      64.0f
+/* ★★★ 2026-09-25 第三版（owner：「**我希望是固定描边宽度，对齐 116，而不是 scale**」+
+ *   「我看到描边的外侧似乎还有一点浅白色」）：
+ *   外圈改用原生 **`drawRing(半径, 半宽, 段数)`**（一手 `ability.anm` script33/34）——
+ *   **半径写 1.0、scale 保持 1，可见半径由卡侧直接写 VM 的 `sprite_size`(+0x74/+0x78)**
+ *   ⇒ 环带半宽 = 脚本里的常量 = **固定像素**（不随半径长大）；这就是「固定描边宽度」。
+ *   ⚠ `sprite_size` 偏移的一手：引擎 `anmSetSprite` 的收尾
+ *     `movss xmm0,[eax+0x78] / mulss xmm0,[eax+0x58]`（= size.y × scale.y）与
+ *     `[eax+0x74] × [eax+0x54]`（size.x × scale.x）——`CE_ANM_VM_SCALE` 是 +0x54/+0x58，
+ *     那么 size 就是 **+0x74/+0x78**（同一条乘法两端的另一头）。*/
+#define SIGNAL_FLAN_VM_SPRITE_SIZE  0x74
+/* 内圈那层淡白盘要**缩进到环带内侧**（否则它会从环的外侧露出来一圈浅白 —— owner 实跑看到的就是它）：
+ *   环带 = 半径 ± 半宽（原生 `drawRing` 的「半径 ± 半宽」语义，见 14-clear-range-barrier.md §0）
+ *   ⇒ 环的内沿 = R − 半宽 ⇒ 白盘半径取 `R − 半宽 − 2`（再留 2 px 余量）。*/
+#define SIGNAL_FLAN_RING_HALF_W     24.0f   /* 与脚本 359 的 `drawRing(1.0f, 24.0f, 64)` 同源，改一处必须改另一处 */
+#define SIGNAL_FLAN_INNER_INSET     2.0f
 
 /* ★★ 2026-10-01（P7 = `SINGLE-CARD-TEST.md` §th11 #8「咲夜蓄满光圈应该闪烁」）：
  *   蓄满那一帧给范围环（脚本 277）发的**中断号** —— `2` 是**一手的语义位**（三作一致）：
@@ -2778,29 +2796,56 @@ static void signal_support_flandre(signal_card_t *s)
                             ce_anm_set_pos(s->flan_ring_vm, pp0[0], pp0[1], pp0[2]);
                         }
                     }
-                    ce_log("signal: 二小姐·光圈起 VM（内圈白盘 id %u / 脚本 %d；外圈粗环 id %u / 脚本 %d；"
+                    ce_log("signal: 二小姐·光圈起 VM（内圈白盘 id %u / 脚本 %d；外圈 drawRing id %u / 脚本 %d；"
                            "层 13，满半径 %.2f px，比例 %.2f→1.00 —— 跟着蓄力长大；"
-                           "外圈 scale = 半径/%.0f，充能中白、满蓄力才彩虹）",
+                           "**固定半宽 %.0f px**（半径写 sprite_size、scale 恒 1）；充能中白、满蓄力才彩虹）",
                            (unsigned)s->flan_inner_vm, (int)CE_ANM_ABILITY_SCRIPT_FLAN_CHARGE_RING,
                            (unsigned)s->flan_ring_vm,  (int)CE_ANM_ABILITY_SCRIPT_FLAN_RING_BAND,
                            (double)ring_r,
                            (double)((float)signal_flandre_ring_ratio_permille(s->flandre.charge) * 0.001f),
-                           (double)SIGNAL_FLAN_RING_TEX_R);
+                           (double)SIGNAL_FLAN_RING_HALF_W);
                 }
-                {   /* 每帧驱动两层（位置 + 半径）*/
+                {   /* 每帧驱动两层（位置 + 半径/带宽 + 颜色）*/
                     const float *pp0 = ce_player_pos();
                     float k = (float)signal_flandre_ring_ratio_permille(s->flandre.charge) * 0.001f;
-                    float vis = ring_r * k;
+                    float vis = ring_r * k;                    /* 本帧的可见半径（px）*/
                     if (pp0 && s->flan_inner_vm) ce_anm_set_pos(s->flan_inner_vm, pp0[0], pp0[1], pp0[2]);
                     if (s->flan_inner_vm) {
-                        float sc = vis / SIGNAL_FLAN_RING_LOCAL_R;      /* 白盘：局部半径 1.0 */
-                        (void)ce_anm_set_scale(s->flan_inner_vm, sc, sc);
+                        /* 内圈淡白盘：缩进到环带内侧（owner 报的「描边外侧露一圈浅白」就是它）*/
+                        float ri = vis - SIGNAL_FLAN_RING_HALF_W - SIGNAL_FLAN_INNER_INSET;
+                        if (ri < 0.0f) ri = 0.0f;
+                        (void)ce_anm_set_scale(s->flan_inner_vm, ri, ri);   /* 白盘局部半径 1.0 */
                     }
                     if (pp0 && s->flan_ring_vm) ce_anm_set_pos(s->flan_ring_vm, pp0[0], pp0[1], pp0[2]);
                     if (s->flan_ring_vm) {
-                        float sc = vis / SIGNAL_FLAN_RING_TEX_R;        /* 粗环：贴图外径 64 */
-                        (void)ce_anm_set_scale(s->flan_ring_vm, sc, sc);
+                        /* ★ 外圈：**不写 scale**（保持 1）—— 半径写进 `sprite_size`，于是
+                         *   环带半宽 = 脚本常量（固定像素），不随半径长大。*/
+                        uint8_t *rvm = ce_anm_get_vm(s->flan_ring_vm);
+                        if (rvm) {
+                            *(float *)(rvm + SIGNAL_FLAN_VM_SPRITE_SIZE)     = vis;
+                            *(float *)(rvm + SIGNAL_FLAN_VM_SPRITE_SIZE + 4) = vis;
+                            /* ★ 颜色：充能中白；**蓄满才彩虹**（卡侧按帧号算：6 等份色相 × 每色 3 帧）
+                             *   —— owner 实跑过脚本那套 `interruptLabel(2)+jmp` 的换色，表现是
+                             *   「大部分时间一个色、偶尔跳一下」⇒ 换色搬到这里，逐帧确定。
+                             *   ⚠ 两路颜色一起写（colorMode 走哪一路都画得出来）。*/
+                            {
+                                uint32_t rgb = 0xffffffu;
+                                int32_t a = 150;
+                                if (s->flandre.charge >= SIGNAL_FLANDRE_CHARGE_FRAMES) {
+                                    static const uint8_t hue[6][3] = {
+                                        {255, 150, 150}, {255, 255, 150}, {150, 255, 150},
+                                        {150, 255, 255}, {150, 150, 255}, {255, 150, 255}
+                                    };
+                                    int32_t idx = (int32_t)((s_gf_flash_tick / 3) % 6);
+                                    const uint8_t *c = hue[idx];
+                                    rgb = ((uint32_t)c[0] << 16) | ((uint32_t)c[1] << 8) | (uint32_t)c[2];
+                                }
+                                *(uint32_t *)(rvm + CE_ANM_VM_COLOR1) = (uint32_t)((a << 24) | rgb);
+                                *(uint32_t *)(rvm + CE_ANM_VM_COLOR1 + 4) = (uint32_t)((a << 24) | rgb);
+                            }
+                        }
                     }
+                    ++s_gf_flash_tick;
                 }
                 if (s->flan_ring_vm) {
                     /* ⚠ 位置 / 半径的逐帧驱动**已经在上面那一段统一做了**（两层一起），
@@ -2834,12 +2879,9 @@ static void signal_support_flandre(signal_card_t *s)
                      *     多发一次也无害（脚本那段是无限循环，重入只把相位打回第一色）。*/
                     if (charged_before < SIGNAL_FLANDRE_CHARGE_FRAMES &&
                         s->flandre.charge >= SIGNAL_FLANDRE_CHARGE_FRAMES) {
-                        (void)ce_anm_interrupt(s->flan_ring_vm, SIGNAL_FLAN_RING_INT_FLASH);
-                        ce_log("signal: 二小姐·蓄满 ⇒ **外圈粗环进彩虹循环**（VM %u，中断 %d，"
-                               "脚本 %d 的 interruptLabel(2)：6 等份色相 × 每色 3 帧、低饱和高明度；"
-                               "触发号沿用一手 th17:0x44aa56）",
-                               (unsigned)s->flan_ring_vm, SIGNAL_FLAN_RING_INT_FLASH,
-                               (int)CE_ANM_ABILITY_SCRIPT_FLAN_RING_BAND);
+                        ce_log("signal: 二小姐·蓄满 ⇒ **外圈开始彩虹循环**（VM %u，卡侧按帧号写颜色："
+                               "6 等份色相 × 每色 3 帧 = 18 帧一周期；充能中保持白）",
+                               (unsigned)s->flan_ring_vm);
                     }
                 }
             } else if (s->flan_ring_vm || s->flan_inner_vm) {
