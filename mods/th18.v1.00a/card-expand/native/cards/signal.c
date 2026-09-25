@@ -2812,7 +2812,8 @@ static void signal_support_flandre(signal_card_t *s)
                     if (pp0 && s->flan_inner_vm) ce_anm_set_pos(s->flan_inner_vm, pp0[0], pp0[1], pp0[2]);
                     if (s->flan_inner_vm) {
                         /* 内圈淡白盘：缩进到环带内侧（owner 报的「描边外侧露一圈浅白」就是它）*/
-                        float ri = vis - SIGNAL_FLAN_RING_HALF_W - SIGNAL_FLAN_INNER_INSET;
+                        /* 环带内沿 = 中线 − 半宽 = vis − 2×半宽 ⇒ 白盘再缩进 2 px 余量 */
+                        float ri = vis - 2.0f * SIGNAL_FLAN_RING_HALF_W - SIGNAL_FLAN_INNER_INSET;
                         if (ri < 0.0f) ri = 0.0f;
                         (void)ce_anm_set_scale(s->flan_inner_vm, ri, ri);   /* 白盘局部半径 1.0 */
                     }
@@ -2822,8 +2823,17 @@ static void signal_support_flandre(signal_card_t *s)
                          *   环带半宽 = 脚本常量（固定像素），不随半径长大。*/
                         uint8_t *rvm = ce_anm_get_vm(s->flan_ring_vm);
                         if (rvm) {
-                            *(float *)(rvm + SIGNAL_FLAN_VM_SPRITE_SIZE)     = vis;
-                            *(float *)(rvm + SIGNAL_FLAN_VM_SPRITE_SIZE + 4) = vis;
+                            /* ★★★ 2026-09-26 订正（owner 实跑：「**描边的宽度极宽**」）：
+                             *   `drawRing(r, hw, n)` 把 **半径与半宽** 分别写进 `sprite_size` 的
+                             *   **x / y 两个分量**（不是同一个数）—— 上一版两个分量都写了半径
+                             *   ⇒ **半宽 = 半径 = 86 px** ⇒ 环带厚 172 px（"极宽"就是这个）。
+                             *   ⇒ x = **环带中线半径**、y = **半宽常量**。
+                             *   ⚠ 环带按原生活义是「**中线 ± 半宽**」（`14-clear-range-barrier.md` §0 /
+                             *     TH09 `0x40dc70`）⇒ 要「外沿 = 清屏半径」就得把中线放到 `R − 半宽`。*/
+                            float r_mid = vis - SIGNAL_FLAN_RING_HALF_W;
+                            if (r_mid < 0.0f) r_mid = 0.0f;
+                            *(float *)(rvm + SIGNAL_FLAN_VM_SPRITE_SIZE)     = r_mid;
+                            *(float *)(rvm + SIGNAL_FLAN_VM_SPRITE_SIZE + 4) = SIGNAL_FLAN_RING_HALF_W;
                             /* ★ 颜色：充能中白；**蓄满才彩虹**（卡侧按帧号算：6 等份色相 × 每色 3 帧）
                              *   —— owner 实跑过脚本那套 `interruptLabel(2)+jmp` 的换色，表现是
                              *   「大部分时间一个色、偶尔跳一下」⇒ 换色搬到这里，逐帧确定。
