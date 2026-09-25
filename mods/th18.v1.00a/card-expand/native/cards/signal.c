@@ -2245,8 +2245,11 @@ static void signal_step_mod_fill(signal_card_t *s, signal_step_mod_t *mod)
  *       所以**不借 120、只借 121**；两层的差异全在卡侧参数（scale / alpha / 颜色）。
  *   · 层号：121 自己写 `layer(12)`；两支同层 + 都加算 ⇒ 叠放顺序不影响结果。*/
 #define SIGNAL_FLAN_RING_BAND       16.0f   /* ★ 环带宽度（px）= 两盘半径差（一手：116 `si = sc + 16.0f`）*/
-#define SIGNAL_FLAN_INNER_ALPHA     45      /* 内圈淡白的 alpha（owner：「淡的白叠加」）*/
-#define SIGNAL_FLAN_RING_ALPHA      150     /* 外圈白环 / 彩环的 alpha（owner：「相对实一点」）*/
+/* ★ 2026-09-26（owner：「**整体再透明 50% 即可**」）：两层 alpha **各减半** —— 45→22、150→75。
+ *   加算混合下亮度 ∝ alpha ⇒ 减半就是「整体透明度再降一半」；两层的**相对**关系保持不变
+ *   （内盘仍比外环淡约 3 倍），几何/颜色一律未动。*/
+#define SIGNAL_FLAN_INNER_ALPHA     22      /* 内圈淡白的 alpha（原 45 → 减半）*/
+#define SIGNAL_FLAN_RING_ALPHA      75      /* 外圈白环 / 彩环的 alpha（原 150 → 减半）*/
 
 /* ★★ 2026-10-01（P7 = `SINGLE-CARD-TEST.md` §th11 #8「咲夜蓄满光圈应该闪烁」）：
  *   蓄满那一帧给范围环（脚本 277）发的**中断号** —— `2` 是**一手的语义位**（三作一致）：
