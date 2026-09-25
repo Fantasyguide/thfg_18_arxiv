@@ -882,6 +882,9 @@
 #define CE_ANM_ABILITY_ATLAS_ATLAS_FLAN_RING         75   /* 画布 128x128，1 个 sprite */
 #define CE_ANM_ABILITY_SPRITE_FLAN_RING             538   /* entry75 ATLAS_FLAN_RING[0] */
 #define CE_ANM_ABILITY_SPRITE_ATLAS_FLAN_RING_0     538   /* = FLAN_RING */
+#define CE_ANM_ABILITY_ATLAS_ATLAS_LOLK_RING_RED     76   /* 画布 128x128，1 个 sprite */
+#define CE_ANM_ABILITY_SPRITE_LOLK_RING_RED         539   /* entry76 ATLAS_LOLK_RING_RED[0] */
+#define CE_ANM_ABILITY_SPRITE_ATLAS_LOLK_RING_RED_0  539   /* = LOLK_RING_RED */
 #define CE_ANM_ABILITY_SPRITE_YOUKAI_ALICE_S11      415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
 #define CE_ANM_ABILITY_SPRITE_YOUKAI_ALICE_S12      415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
 #define CE_ANM_ABILITY_SPRITE_YOUKAI_ALICE_S13      415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/

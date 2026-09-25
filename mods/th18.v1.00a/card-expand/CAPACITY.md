@@ -257,6 +257,12 @@ cards: 35 registered from cards.js; shop pool 700/8192 slots, guaranteed offers 
   **既有号一个没动**。切图 = `assets/ability/make_font2_art.py`（同一批字形同时落 `font2/` 与 `font2b/`）。
   只占 1 个 entry（53/256，余量 203）；生成器 `assets/ability/make_faith_hud_art.py`，
   合并块的几何与逐项判定见 `engine/player/th11/04-merged-hud-spec.md` 与 `AUDIT` §DB/§DC。
+- **★ 2026-09-26 新增 `ATLAS_LOLK_RING_RED`（`ability.anm` 的 entry 76）**：111 咲夜×大小姐那条支援的
+  **擦弹圈贴图**（owner 亲手 P 的图，内容**青蓝** ⇒ 脚本 360 是 `blendMode(2)` 反向减算 ⇒ 看起来是红）。
+  画布 **128×128**、**1 个成员**（`LOLK_RING_RED`）；**追加在 ORDER.txt 末尾** ⇒ 新 sprite = **539**；
+  115 自己那支仍用原色 `RING.png`（同一个形状、两个 sprite，互不影响）。
+  只占 1 个 entry（**76/256，余量 180**；`anm_ids.h` 里 = `CE_ANM_ABILITY_ATLAS_ATLAS_LOLK_RING_RED` = **76**、
+  `CE_ANM_ABILITY_SPRITE_LOLK_RING_RED` = **539**）。
 - **★ 2026-09-25 新增 `ATLAS_FLAN_RING`（`ability.anm` 的 entry 75）**：111 咲夜蓄力光圈的
   **外圈粗环**（owner：「我不想要细环，我就想要粗环…满充能才是彩虹变色，充能中是白的」）。
   **自绘**（不是原生切图）：128×128 纯白粗环，外径 62 / 内径 42 ⇒ 环带厚 **20 px = 外径的 32%**；
