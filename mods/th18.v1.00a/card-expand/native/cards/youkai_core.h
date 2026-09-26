@@ -885,7 +885,15 @@ int32_t yk_orb_score(int32_t stage_point_items_in_game, int32_t point_items_in_g
  *   · 中弹/暴毙那一刻：`state 1 → 0`，`vx = 0`、`vy = −0.9`（`th08:0x441574` 批量版）/ `−0.7`（`th08:0x4408e0` 每帧版）。*/
 #define YK_ORB_STATE_FALL       0      /* 一手 `ITEM_STATE_DEFAULT`：普通下落 */
 #define YK_ORB_STATE_HOMING     1      /* 一手 `ITEM_STATE_UNK1`：归航（当帧满速）*/
-#define YK_ORB_STATE_SPAWN      3      /* 一手 `ITEM_STATE_UNK3`：出生上浮（不可收）*/
+#define YK_ORB_STATE_SPAWN      3      /* 一手 `ITEM_STATE_UNK3`：出生上浮 —— **不可收**（见下）*/
+/* ★★★ 2026-09-27（一手订正，§BE #111）：TH08 的 **state 5** 与 state 3 **不是**同一档 ——
+ *   两者运动同形（都上抛、`vy > 0` 转归航），但**收集分派只排除 state 3**：
+ *   `th08:0x4409f2`–`0x4409ff` 是 `movsx ecx,BYTE [item+0x2d7]; cmp ecx,3; je 0x440c37`
+ *   —— **只比 3**（5 会继续往下走到抓取盒判定 `call 0x44a5a0`）⇒ **state 5 在上抛期间就能被收**。
+ *   一手再往前：擦弹/符卡螺旋那几路是 `spawn_item(type 0xa, state 1)` 被 `th08:0x440124`
+ *   改写成 **type 7 + state 5**（`engine/item/th08/01-time-orbs.md` §2.0zs 一族）。
+ *   ⇒ 本卡必须**分成两个常量**：state 3（击破批，不可收）与 state 5（螺旋 / 擦弹，可收）。*/
+#define YK_ORB_STATE_SPAWN5     5      /* 一手 `ITEM_STATE_UNK5`：上抛但**可收**（螺旋 / 擦弹）*/
 #define YK_ORB_FALL_GRAVITY     0.03f  /* `ds:0x4b44c0`（`th08:0x4409c8`）*/
 #define YK_ORB_FALL_TERMINAL    3.0f   /* `0x40400000`（`th08:0x4409bb`）*/
 #define YK_ORB_FALL_VY_MIN     (-2.2f) /* `ds:0x4b5b2c`（`th08:0x44091c`）*/

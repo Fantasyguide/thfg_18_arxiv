@@ -22275,3 +22275,34 @@ TH18 没有等价指令；TH18 原生弹脚本在同一位置的 `type(1)` 已�
 **可见后果**：放符卡/炸弹期间的击破 ±200、收刻符 ±111、擦弹 +100 **现在照加**（这正是 TH08 的行为）；
 `make check` rc=0（`youkai_core: 4694 checks, 0 failed`）+ `python3 sites.py verify` rc=0 + `check-docs` 全绿。
 ⚠ 与 §BE #102 的结论一致（那条只登记），本条把它落地。
+
+## §BE 详录 #111（2026-09-26 第十八批）：**TH08 的 state 5 与 state 3 不是一档** —— 螺旋 / 擦弹的永点在上抛期间**本来就能收**
+
+**怎么发现的**：这一轮复核「刻符三路的出生态」时，把 `ItemManager` 的收集分派逐条读了一遍 —— 发现
+本卡（以及仓内 `engine/item/th08/01-time-orbs.md` 与 `youkai.c` 的注释）都把 state 3 与 state 5 当成
+**同一档「上抛期间不可收」**，而指令只排除 3。
+
+**一手**：
+```
+4409f2  mov eax,[ebp-0x24]                 ; = item
+4409f5  movsx ecx,BYTE PTR [eax+0x2d7]     ; item->state
+4409fc  cmp ecx,0x3 / je 0x440c37          ; ★ **只比 3** ⇒ state 5 继续往下走
+440a05  lea edx,[ebp-0x1c] / push edx
+440a09  mov eax,[ebp-0x24] / add eax,0x2a4 ; &item->pos
+440a12  mov ecx,0x17d5ef8                  ; g_Player
+440a17  call 0x44a5a0                      ; 抓取盒判定（state 5 会上这里）
+```
+⇒ **上抛期间进不了收集判定的只有 state 3**；**state 5（符卡螺旋 / 擦弹那两路）在上抛期间就能被收**。
+两条路径的出生态（一手，见 `engine/item/th08/01-time-orbs.md` §2.0zs）：
+`spawn_item(type 0xa, state 1)` → `th08:0x440124` 改写成 **type 7 + state 5**。
+
+**改了什么**：`youkai_core.h` 新增 `YK_ORB_STATE_SPAWN5`(5)（与 `YK_ORB_STATE_SPAWN`(3) 并列，
+注释写明差别与一手地址）；`youkai.c` 里
+· `yk_orb_spawn()` 的三态映射（1 / 3 / 5）；
+· `yk_orbs_tick()` 的上抛支**两态共用**（逐指令同形），而收集闸只排除 3（`o->state != YK_ORB_STATE_SPAWN`）；
+· **螺旋两段 + 擦弹**那三处 spawn 改成 state 5；
+· 顺带订正 4 处把两者当同一档的注释/表格行（含那句错的「且都被收集分派排除」）。
+
+**可见后果**：击破符卡后的螺旋永点、以及擦弹给的永点，**在自己贴近它们时会被立刻吸走**（TH08 的行为）；
+击破敌机那一批（state 3）仍然上抛期间不可收 ✓。
+**回归**：`make check` rc=0（`youkai_core: 4694 checks, 0 failed`）+ `sites.py verify` rc=0 + `check-docs` 全绿。

@@ -1683,7 +1683,7 @@ static void *yk_player_anm(void)
  *     **与擦弹无关**。擦弹（判定 `eax == 1`）在 `th08:0x431603` 只置 `bullet+0xdbd` 闩；
  *     出货在 `Player::sub_44a930` 的 `th08:0x44aac9`/`:0x44aaef`/`:0x44ab0f`（`type 0xa, state 1`
  *     ⇒ 被 `th08:0x440124` 改写成 **type 7 + state 5**）。
- *     ⇒ 擦弹那一路**不是**「生成即满速」，我们按 state 5 生（= `YK_ORB_STATE_SPAWN`，先上抛）。
+ *     ⇒ 擦弹那一路**不是**「生成即满速」，我们按 state 5 生（= `YK_ORB_STATE_SPAWN5`：先上抛、**且可收**）。
  *     「击破敌机」那一路一手是 state 3（`th08:0x42b048`）⇒ 与之同形，保持不变。
  *   · **拾取**：一手是**接触玩家的抓取盒**（`Player::CalcItemBoxCollision`，`ItemManager.cpp:288`），
  *     盒半宽 = `[.sht+0x18]/2`（12 / 16）+ 刻符半宽 8 ⇒ 半径口径 **20 / 24**。
@@ -1748,17 +1748,18 @@ static void yk_orb_kill_all(void)
  *
  * | 来源 | 出生态（我们） | 上抛/「无敌」 | 何时可被收 |
  * | --- | --- | --- | --- |
- * | 通用击破（`th08:0x42b03b push 3`）| `YK_ORB_STATE_SPAWN` | **≈40–44 帧**（`vy = −2.0 − rand(0.2)`、`+0.05/帧`）| `vy > 0` 转归航之后 |
+ * | 通用击破（`th08:0x42b03b push 3`）| `YK_ORB_STATE_SPAWN`(**不可收**) | **≈40–44 帧**（`vy = −2.0 − rand(0.2)`、`+0.05/帧`）| `vy > 0` 转归航之后 |
  * | **極端人/妖那一颗**（`0x42da41 push 1`）| `YK_ORB_STATE_HOMING` | **0 帧** | **生成当帧**（若已在抓取盒内）|
- * | 击破符卡螺旋 / 擦弹（type 0xa → type 7）| `YK_ORB_STATE_SPAWN` | ≈40–44 帧 | `vy > 0` 之后 |
+ * | 击破符卡螺旋 / 擦弹（type 0xa → type 7）| `YK_ORB_STATE_SPAWN5`(**可收**) | ≈40–44 帧 | **上抛期间也能收** |
  * | 消弹 / `cancel_autocollect` | `YK_ORB_STATE_HOMING` | 0 帧 | 生成当帧 |
  *
- * ⚠ **「无敌」的正确含义（别写成无敌帧）**：state 3/5 被**收集分派显式排除**
- *   （`th08:0x4409f2`–`0x4409ff`：`movsx ecx,[item+0x2d7]; cmp ecx,3; je 0x440c37`）——
+ * ⚠ **「无敌」的正确含义（别写成无敌帧）**：**只有 state 3** 被收集分派排除
+ *   （`th08:0x4409f2`–`0x4409ff`：`movsx ecx,[item+0x2d7]; cmp ecx,3; je 0x440c37` —— **只比 3**）——
  *   上抛期间**吸收判定根本不会跑**，但道具本身仍是普通道具（会掉出下沿被丢失线吃掉、也会被清屏）。
- * ⚠ 我们的 `YK_ORB_STATE_SPAWN`(3) 同时覆盖 TH08 的 **state 3 与 state 5**：两者逐指令同形
- *   （`0x42b03b` 的 state 3 与 `0x440124` 改写出的 state 5 都是「vy 上抛 → `vy > 0` 转归航」，
- *   且都被收集分派排除）⇒ 一个常量就够，不必再造一个 5。*/
+ * ★★★ 2026-09-27 订正（§BE #111）：**state 5 与 state 3 不是同一档** —— 两者运动同形（都上抛、
+ *   `vy > 0` 转归航），但 **state 5 在上抛期间就能被收**（上面那条 `cmp ecx,3` 只排除 3）。
+ *   本卡原来把两者并成一个 `YK_ORB_STATE_SPAWN` ⇒ **螺旋 / 擦弹那两路白丢了一段可收时间**。
+ *   现在分开：击破批 = `YK_ORB_STATE_SPAWN`(3，不可收)、螺旋/擦弹 = `YK_ORB_STATE_SPAWN5`(5，可收)。*/
 static void yk_orb_spawn(yk_card_t *s, float x, float y, int state)
 {
     yk_orb_t *o = 0;
@@ -1787,7 +1788,9 @@ static void yk_orb_spawn(yk_card_t *s, float x, float y, int state)
     }
     o->anm_id = id;
     o->used = 1;
-    o->state = (uint8_t)((state == YK_ORB_STATE_HOMING) ? YK_ORB_STATE_HOMING : YK_ORB_STATE_SPAWN);
+    /* 三种出生态：1 = 生成即满速归航、3 = 上抛**不可收**（击破批）、5 = 上抛**可收**（螺旋/擦弹）。*/
+    o->state = (uint8_t)((state == YK_ORB_STATE_HOMING || state == YK_ORB_STATE_SPAWN5)
+                         ? state : YK_ORB_STATE_SPAWN);
     o->x = x;
     o->y = y;
     /* 一手初速（`th08:0x4402cb`–`0x4402e9`）：`vx = rand(±0.6)`、`vy = −2.0 − rand(0.2)`。
@@ -2125,8 +2128,9 @@ static int yk_orbs_tick(yk_card_t *s)
             o->vx = 0.0f;
             o->vy = YK_ORB_VY_DEAD_FRAME;                /* 每帧路径：一手 `th08:0x4408e0` / `:0x440711` = −0.7 */
         }
-        if (o->state == YK_ORB_STATE_SPAWN) {
-            /* 出生上浮：`vy += 0.05`；`vy > 0` 那一刻转归航（一手 `th08:0x4406ac` / `:0x4406e4`）。*/
+        if (o->state == YK_ORB_STATE_SPAWN || o->state == YK_ORB_STATE_SPAWN5) {
+            /* 出生上浮：`vy += 0.05`；`vy > 0` 那一刻转归航（一手 `th08:0x4406ac` / `:0x4406e4`）。
+             * ⚠ 3 与 5 在这一支**逐指令同形**，差别只在下面那道「能不能收」的闸（§BE #111）。*/
             o->vy += YK_ORB_GRAVITY;
             if (o->vy > 0.0f) o->state = YK_ORB_STATE_HOMING;
         }
@@ -2147,6 +2151,8 @@ static int yk_orbs_tick(yk_card_t *s)
          * `Player__die th18:0x45d3a0` 置 4；`th18:0x45d090` → 2 = 死亡段）⇒ 被挡的是 `{0, 2}`。
          * ⚠ 与「每帧把刻符打回下落」（上一批那两处订正）**是两条独立规矩**，一起才等于 owner 那条
          *   「恰好在损命时出现的那颗不能自动吸收」。*/
+        /* ★ 2026-09-27（§BE #111）：一手**只排除 state 3**（`th08:0x4409fc cmp ecx,3 / je`）
+         * ⇒ state 5（螺旋/擦弹）**上抛期间照收**。*/
         if (o->state != YK_ORB_STATE_SPAWN && yk_item_box_open(*(const int32_t *)(CE_PLAYER() + CE_PLAYER_STATE))) {
             dx = px - o->x;
             dy = py - o->y;
@@ -2190,7 +2196,7 @@ static int yk_orbs_tick(yk_card_t *s)
  * 一手（`th08:0x416b10` 的喷点主体 `0x417533`–`0x4176e1`，逐指令）：每 **8** 帧一批；
  * `θ(t) = ((t − 10) × 2π/40) − π/2`（**9°/帧、40 帧一圈**、`t = 10` 正上方）；半径 **128**；
  * 绕**符卡所有者（boss）的位置**；一批 = `min(额度, 7)` 同角 + **固定 6 颗 +π**；
- * 额度两段扣减；出生态 = `type 0xa → type 7 + state 5`（我们的 `YK_ORB_STATE_SPAWN`）。
+ * 额度两段扣减；出生态 = `type 0xa → type 7 + state 5`（我们的 `YK_ORB_STATE_SPAWN5`，**上抛但可收**）。
  *
  * ⚠ **「无敌」这个词的正确含义**（别写成无敌帧）：state 5/3 只是被**收集分派显式排除**
  *   （`th08:0x4409f2`–`0x4409ff`：`cmp [item+0x2d7],3 / je 跳过`）⇒ 上抛期间**收不到**它，
@@ -2220,7 +2226,7 @@ static void yk_spiral_tick(yk_card_t *s)
     sn = yk_sin_approx(th);
     for (i = 0; i < k; ++i)                          /* 第一段：同一角、k 颗 */
         yk_orb_spawn(s, bp[0] + cs * YK_SPIRAL_RADIUS, bp[1] + sn * YK_SPIRAL_RADIUS,
-                     YK_ORB_STATE_SPAWN);
+                     YK_ORB_STATE_SPAWN5);   /* ★ state 5：上抛但**可收**（一手见 core 的常量注）*/
     if (k) s->spiral_quota = (uint32_t)((int)s->spiral_quota - k);
     /* 第二段：**固定 6 颗**、角 = 第一段 **+π**（一手 `0x417639 push 0x40490fdb` = π；
      * ⚠ 不是 π/2 —— `engine/item/th08/01-time-orbs.md` 的旧值已订正）。*/
@@ -2228,7 +2234,7 @@ static void yk_spiral_tick(yk_card_t *s)
     sn = yk_sin_approx(th + 3.14159265f);
     for (i = 0; i < YK_SPIRAL_SECOND_N; ++i)
         yk_orb_spawn(s, bp[0] + cs * YK_SPIRAL_RADIUS, bp[1] + sn * YK_SPIRAL_RADIUS,
-                     YK_ORB_STATE_SPAWN);
+                     YK_ORB_STATE_SPAWN5);
     s->spiral_quota = (s->spiral_quota > (uint32_t)YK_SPIRAL_SECOND_N)
                         ? (s->spiral_quota - (uint32_t)YK_SPIRAL_SECOND_N) : 0u;   /* 夹到 0 */
     if (!s->spiral_logged) {
@@ -3733,7 +3739,7 @@ static int on_tick_2(ce_card_t *c)
             if (focused) {
                 for (i = 0; i < d; ++i)
                     for (k = 0; k < orbs; ++k)
-                        yk_orb_spawn(s, px, py, YK_ORB_STATE_SPAWN);
+                        yk_orb_spawn(s, px, py, YK_ORB_STATE_SPAWN5);   /* ★ state 5：可收 */
                 /* ★ 实跑判据（统筹要的那一条）：`gate=` 一眼看出**这次擦弹为什么没给**
                  * （`ok` 全过 / `boss` 场上没 boss / `gauge` 槽没到 +8000 / `shottype` 人単独非妖夢 /
                  * `off` 开关关掉），`n=` 是**过了门之后每颗弹给几颗**（0 = 被门挡）。
