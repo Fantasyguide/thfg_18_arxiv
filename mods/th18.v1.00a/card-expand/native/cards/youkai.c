@@ -1256,6 +1256,8 @@ static void yk_option_refresh(ce_card_t *c, yk_card_t *s, int focused)
 static void yk_option_release(ce_card_t *c, yk_card_t *s)
 {
     int i;
+    uint32_t vmids[YK_OPTION_MAX];              /* ★ §BE #118：交出前逐个记下 VM id，交出后验尸 */
+    for (i = 0; i < YK_OPTION_MAX; ++i) vmids[i] = 0;
     /* ★★ 2026-09-23（owner：「依旧子机滞留」）：**交出子机那一刻记一行** ——
      *   owner 那局日志里 `youkai: option allocated (ptr 183eb908, anm id …)` 反复出现、**ptr 恒定而 anm id
      *   每次都是新的** ⇒ 两种可能必须分开：① 我们在反复重申请同一格而**旧 VM 没被删**（= 滞留 VMs 越积越多）；
@@ -1267,6 +1269,7 @@ static void yk_option_release(ce_card_t *c, yk_card_t *s)
         for (i = 0; i < YK_OPTION_MAX; ++i) {
             if (!s->opt[i].ptr) continue;
             uint32_t vm = *(const uint32_t *)(s->opt[i].ptr + CE_OPT_ANM_ID);
+            vmids[i] = vm;                          /* ★ §BE #118：留到删完复查 */
             if (n == 0) vm0 = vm; else if (n == 1) vm1 = vm;
             else if (n == 2) vm2 = vm; else vm3 = vm;
             ++n;
@@ -1286,6 +1289,21 @@ static void yk_option_release(ce_card_t *c, yk_card_t *s)
         if (s->opt[i].ptr) ce_option_drop(c, &s->opt[i]);
         s->opt[i].ptr = 0;
         s->opt[i].retry = 0;
+    }
+    /* ★★★ 2026-09-27（§BE #118，owner：「**灵梦变回来的人子机变虚了，并且似乎大了 1.5-2 倍**」）：
+     *   **交出之后要验尸**。我们只知道「点名删了哪个 id」，不知道那个 VM 是否真的死了 ——
+     *   而上面那行日志自带的自检提示（「同一个 ptr、每次都是新的 anm id ⇒ 旧 VM 没死」）
+     *   正是为这个疑问写的。这里把它变成硬判据：`ce_anm_get_vm(id)` 复查，**还活着就报出来**。
+     *   ⚠ 判据要看**它是否是我们自己的贴图**：如果活着的那一支正是妖侧那一份（alpha 128/scale 2.0
+     *   的 TH08 使魔贴图），它在高速下被人侧当成子机画出来 = 「虚 + 大 1.5–2 倍」。
+     *   只在真有问题时打（每帧一行会淹掉现场）。*/
+    if (s) {
+        for (i = 0; i < YK_OPTION_MAX; ++i) {
+            if (vmids[i] && ce_anm_get_vm(vmids[i]))
+                ce_log("youkai: option release - VM %08x is STILL ALIVE after drop() (slot index %d) - "
+                       "if it keeps drawing, that is very likely the 'faint + 1.5-2x bigger option' "
+                       "the owner sees at high speed", (unsigned)vmids[i], i);
+        }
     }
     /* 兜底：所有槽都不在我们手里、但 `card+0x1c` 还挂着 VM（引擎分配过而认领失败 / 池刚被重建）
      * ⇒ 补一次原生的单子机收尾；上面已经清过那一格时它是 no-op。

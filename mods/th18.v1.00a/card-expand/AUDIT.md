@@ -22601,3 +22601,37 @@ if (state == ITEM_STATE_UNK3) { vy = -2.0 - rand(0.2); vx = rand(±0.6); … }
 **回归**：`make check` rc=0（4790 checks）+ `dllx87` = 0 + `sites.py verify` rc=0 + `check-docs` 全绿。
 **实跑判据**：逢魔时击破敌机 ⇒ 掉出来的永点**先往上跳一小段**（约 40 帧）再落回自机身上消失；
 若仍是从敌机位置**直线飞向自机** ⇒ 跑的是 §BE #117 之前那一版 DLL。
+
+## §BE 详录 #118（2026-09-27 第十九批）：「**灵梦变回来的人子机变虚了、似乎大了 1.5–2 倍**」—— 先上验尸探针
+
+**owner 原话**：「灵梦变回来的人子机变虚了，并且似乎大了 1.5-2 倍」。
+
+**这一批只加探针，不改行为**（根因还没定罪 —— 见下面的日志证据与两种可能）。
+
+**现场日志（owner 02:09 那局，`local/GAME-LOG.md` 那个文件）里已经能看到的事实**：
+- 我们手里那一格**每次都是同一个 ptr**（`1869e830`）而 **anm id 每轮都换**
+  （`a815fe49` → `aeec7cde` → …）⇒ SDK 那行日志自带的判据「同一个 ptr、新的 anm id ⇒ 旧 VM 没死」**成立或不成立都还没分开**；
+- 高速时**原生 4 格**的探针全是 `state 2 vm 00000000`（= 人侧子机**没有 VM 可画**），
+  而 `sdk: native options restored` 只在 frame 377/1090/1963/3450/**4311** 各出现一次，
+  **4311 之后的高速探针（44905+ 行）仍然全是 `vm 00000000`** ⇒ 那次重建**没有把那 4 格的 VM 长回来**
+  （或者长在了我们没读的那一格上，见下）。
+
+**两种可能（本批的探针就是为了分开它们）**：
+1. **我们的 VM 没死**：`ce_option_drop` 点名删了 id，但 VM 仍活着 ⇒ 它在高速下继续按**妖侧贴图**
+   （alpha 128 / scale 2.0）画在最后的位置上 = 「**虚 + 大 1.5–2 倍**」。
+2. **原生子机的「满火力形」那一格**（`+0xb4`，见 `sdk.h` 的 `CE_NATOPT_VM_MAX`）还在：
+   我们的 keep-state sweep 会把两格都清，但引擎的 `repopulate` 重建时按当前火力只长其中一支；
+   高速探针只打 `+0xb0` ⇒ 看起来「没 VM」，实际画的是另一支（形态/尺寸不同）。
+
+**改了什么（只加探针）**：`cards/youkai.c` 的 `yk_option_release()`：
+① 交出前把每格的 VM id 记进 `vmids[]`；② 全部 `ce_option_drop` 走完之后用
+`ce_anm_get_vm(vmids[i])` **验尸** —— 还活着就打一行
+`youkai: option release - VM … is STILL ALIVE after drop() (slot index k)`。
+（行为零变化；只在这条路上、且**只在真有问题时**打。）
+
+**下一批要看的两件事（owner 再跑一次即可）**：
+① 出现 `STILL ALIVE after drop` ⇒ 走可能 1（我去查 `ce_option_drop` 的删 VM 路径 / 改按「我们自己记的 id」删）；
+② 不出现，而高速下仍看得见虚/大的子机 ⇒ 走可能 2（把高速探针补上 `+0xb4`，并核 `repopulate` 那一支）。
+
+**回归**：`make check` rc=0（4790 checks）+ `dllx87` = 0 + `sites.py verify` rc=0 + `check-docs` 384 全绿。
+DLL `0592750c02af3bc5de7090545819e23e`（modkit 四处同 md5）。
