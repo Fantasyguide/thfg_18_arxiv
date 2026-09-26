@@ -97,8 +97,9 @@ TH18 的 `zEnemy.parent_enemy_id`（`enemy+0x6834`）= **「谁跑的 ECL 把我
 判据：把 `enmCreate*("X")` 建出来的子程序名当作「由敌人跑的 sub」的根，
 沿 `@Sub()` / `callSTD("Sub")` / `setInterrupt(..., "Sub")` 等**字符串子程序名**做传递闭包，
 再看哪些**可达**的敌人 sub 里又出现了 `enmCreate*`。
-（⚠ `GirlC02` / `ECir00*` 这类 sub 在全 22 个文件里**没有任何 `enmCreate` 建它们** ⇒ 是不可达的死代码，
-不算。）
+（⚠ `GirlC02` / `ECir00*` / `GirlA01` 这类 sub 在全 22 个文件里**没有任何 `enmCreate` 建它们**
+⇒ 从 ECL 这一侧到不了（多半是旧版本残留的 sub）；本作 exe 里的硬编码创建点只有 `ItemCarryLily`/`ItemCarryLily2`
+与 `BossCard6_et`/`BossCard6_et2` 那几处（§1 末），都不是它们 ⇒ 它们不算「母机」。）
 
 | 关卡 | 「母机」 | 它造什么（条数）| 触发时机 |
 | --- | --- | --- | --- |

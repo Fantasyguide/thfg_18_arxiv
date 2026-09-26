@@ -22487,6 +22487,10 @@ ECL 的 `enemyCreate` 会把**当前敌人的 `enemy_id` 写进子敌人的 `par
 ⇒ 实跑预期：**「母机带着活零件死掉」只有那几张符卡 / 那几个瞬间**（st03 的幽灵符卡最明显）；
 `GirlC02` / `ECir00*` 这类 sub 在 22 个文件里**没有任何 `enmCreate` 建它们** = 不可达死代码，不算。
 
+**共享件**：`native/engine.h` 的 `CE_SPAWN_PARENT` 注释**只加说明**（指向
+[`engine/enemy/th18/08`](../../../engine/enemy/th18/08-parent-enemy-id-and-sub-enemies.md) 的「别拿非 0 当零件」
+警告），**定义与数值一字未动** ⇒ 对其它 117 张卡零影响。
+
 **本轮唯一的行为改动**：把 §4.3 ⑧ 的「单颗」从「无条件（只要父非 0）」改成
 **「只在 `N == 0`（自己没有孩子）时」** —— 一手那条链根判据 `IsSubEnemyChainRoot` 要求
 `ownerEnemy == 0`，即**有链条的敌机自己不是子敌人**、不该再拿这一颗；`N == 0` 与它同形。

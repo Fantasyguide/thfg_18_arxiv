@@ -556,7 +556,11 @@ typedef struct { int32_t prev; int32_t cur; float cur_f; } ce_timer_t;   /* zTim
 #define CE_SPAWN_FLAG_B     0x1c   /* int32，仅 bit0 → `flags_lo |= 0x4000000`*/
 #define CE_SPAWN_ECL_I      0x20   /* int32[8]  → ECL `$I0..$I7`*/
 #define CE_SPAWN_ECL_F      0x40   /* float[4]  → ECL `$F0..$F3`*/
-#define CE_SPAWN_PARENT     0x50   /* int32 parent_enemy_id → `enemy+0x6834`*/
+#define CE_SPAWN_PARENT     0x50   /* int32 parent_enemy_id → `enemy+0x6834`。
+                                     * ⚠ **别拿「非 0」当「它是别人的零件」**：TH18 的关卡时间轴**本身是一只敌人**
+                                     * （`th18:0x444228` 用 ECL 名 `"main"` 建），而 `enemy_id` 从 **1** 分配
+                                     * ⇒ 时间轴刷出来的敌机父字段**恒非 0**。字段语义、分配点、「谁会造孩子」的全表见
+                                     * `engine/enemy/th18/08-parent-enemy-id-and-sub-enemies.md`。*/
 #define CE_SPAWN_SIZE       0x54
 
 #define CE_FN_TICK_SHOOTERS_FOR_CARD 0x40a9c0 /* stdcall(option, short_timer, long_timer, sht_set_index) ret 0x10：
