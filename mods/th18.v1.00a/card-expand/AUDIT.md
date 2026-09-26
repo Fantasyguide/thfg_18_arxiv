@@ -22175,3 +22175,34 @@ TH18 没有等价指令；TH18 原生弹脚本在同一位置的 `type(1)` 已�
 - `pl0X.anm` 侧不受影响：pl00 script54 = `sprite116 + rotateAuto(1)`、pl03 script45 = `sprite140..143 + rotateAuto(1)` ✓；
   `check_player_anm_bounds.py`（含上一批补的**妖侧组**检查）全绿；`sht` 的 `anm` 全在表内 ✓
 - 闸：`make check` rc=0（全部门）+ `python3 sites.py verify` rc=0 + `tooling/check-docs.py` 全绿。
+
+## §BE 详录 #108（2026-09-26 第十五批）：`ins_83(2)` 定案 —— **TH08 的自机弹绘制变体选择子**，TH18 无对应且**不需要**（① 的最后一条未决指令收口）
+
+**缘起**：`§BE #106` 把 `ins_25` 翻成 `rotateAuto` 之后，源脚本里只剩 `ins_83(2)` 还没翻（当时标成
+「v2 的 dword field，TH18 无对应，只登记不翻译」）。本轮把它查到落点，结论是**不翻是对的**。
+
+**一手（`th08.exe`）**：
+- 分发表 `0x45ea95 jmp DWORD PTR [edx*4+0x46206d]`（`edx = opcode + 1`，上界 `cmp ecx,0x5a`）⇒
+  解表得 `op 83 → 0x460314`（校验：`op 82 → 0x45f2d3` = `blendMode`、`op 25 → 0x45f8d7` = §BE #106 那条）。
+- handler `0x460314`：`mov eax,[edx+0x8]`（32 位参数）→ **`mov [vm+0x200],eax`**。
+- `vm+0x200` = `AnmPrefix.playerBulletHitAnimationType`（结构体尾部，`AnmManager.hpp`）——**名字误导**：
+  它由 `AnmManager::DrawPlayerBullet 0x45e960` 读，`cmp ecx,0x5 / ja 45e9d7`（**>5 ⇒ 通用 anm 绘制**），
+  否则进 `jmp DWORD PTR [ecx*4+0x45e9dd]` 的 **0..5 六个专用绘制例程**（`0x462ff0` / `0x463800` /
+  `0x463210` / `0x463470` / `0x463cf0` / …）。
+- 读 `0x462ff0` 正文：用 `spriteSize(+0x28) × scale(+0x18) / 2.0`（常量 `0x4b42ec` = **2.0**）算半边长，
+  按 `flags(+0x1f8)` 的 flip 位算四角，把顶点写进全局四边形缓冲（`0x18bdcd0` 一族）⇒
+  **`ins_83(N)` = 「这颗自机弹用第 N 号四边形变体来画」**，六个变体画的是**同一张 sprite、同一位置与尺寸**，
+  差别只在 flip/anchor 处理。
+
+**结论（落笔）**：TH18 既没有这个字段、也没有这套手搓四边形路径（TH18 的弹一律走
+`AnmManager__draw_vm`，配脚本的 `type()`/`rotateAuto`/`flipX`/`flipY`）⇒ **不翻译 `ins_83` 没有可见后果**
+（生成器仍按「v8 没有这个助记符 ⇒ 省略」处理，并把这句理由写在产物脚本的注释里）。
+⇒ ① 的「源脚本 → 我们的脚本」这条链**至此逐条对齐**：`sprite` 换名 ✓、`type(1)` 注入 ✓、
+`ins_25 → rotateAuto` ✓、`ins_83` 省略（有据）✓、`scrollX` 省略（v8 无；魔理沙子机那条 448×32 滚动带
+改用固定 `rotate(0,0,π/2)`，源脚本本来也这么写）✓。
+
+**文档回流**：新增 [`engine/anm/th08/01-v2-opcode-25-83.md`](../../../engine/anm/th08/01-v2-opcode-25-83.md)
+（两条指令的 handler / 读者 / TH18 对位一次写清），并在
+[`engine/enemy/th08/02-familiar-anm-57-58.md`](../../../engine/enemy/th08/02-familiar-anm-57-58.md) §3.2
+留了**范围订正**（那份文档的「`ins_25` 是 dead store」只适用于使魔那几支脚本；对自机弹是活的）。
+**本批只改文档**，无代码/资产变化 ⇒ 不需要发版（当前部署仍是 §BE #107 那一批）。

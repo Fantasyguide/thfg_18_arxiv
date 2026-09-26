@@ -129,6 +129,11 @@ thtk 的 `v2.anmm` 里 **raw 25 是空白行**（上一条 24 `posMode`、下一
 `th08::Player::UpdateBulletVms`、`th08::Player::DrawBulletVms`。
 
 ⇒ **anm 的更新 / 绘制路径里没有任何一处读 `zAnmVm+0x1fc`**；其余 34 处是**别的结构体**在同一偏移上的字段
+> ⚠⚠ **2026-09-26 范围订正**（卡 108 的妖侧弹）：上表里的 `Player::UpdateBulletVms` / `Player::DrawBulletVms`
+> **读的就是 `AnmVm+0x1fc`** —— `PlayerBulletVm` 的结构是 `AnmVm(0x2a4) + …`（`Player.hpp:73-78`）
+> ⇒ **对「自机弹」这一类 VM 这个字段是活的**（非 0 时把 VM 的 rotation 交给绘制），
+> 也就是 TH18 的 `rotateAuto` 的对位。本节结论**只适用于使魔那几支脚本**（那类 VM 不走
+> `AnmManager::DrawPlayerBullet`）。逐条证据与新对位见 [`anm/th08/01`](../../anm/th08/01-v2-opcode-25-83.md) §1。
 （背景对象 / 敌人 / 弹 / 激光 / 自机 VM）。**推论**：`ins_25(N)` 对这些脚本是一次**死存（dead store）**，
 删掉它在画面上等价。⚠ 这是**否定结论**，边界见 §6。
 
