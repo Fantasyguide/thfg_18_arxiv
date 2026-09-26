@@ -22043,3 +22043,57 @@ entry entry1 { name: "player/pl03/pl03.png", width: 128, height: 16, yOffset: 14
   `灵梦 +1.3/+0.0/+1.4/+1.1/−1.1%`、`魔理沙 +1.3/−0.4/+0.0/+0.7/+0.4%`、
   `咲夜 −0.6/+0.7/+0.6/+0.3/−0.0%`、`早苗（档 1..4）+0.4/−0.1/+0.0/+0.1%`（档 0 = 空组、走原生）
   ⇒ **全部落在 ±1.4% 内**（生成器的容差是 2%）。
+
+## §BE 详录 #105（2026-09-26 第十二批）：★★★ **妖侧弹的弹体脚本放错文件了** —— `+0x22` 按 `pl0X.anm` 解析，不是 `ability.anm`（① 的**真根因**）+ 补一道闸
+
+**怎么发现的**：第 8 轮修完「早苗白方块」之后，继续追问「① 真的生效了吗」——把**弹是怎么被创建的**
+那条链从 TH18 里逐条读出来，发现 §BE #98 选的 anm 文件从根上就不对。
+
+### 1. 一手（`th18.exe` 逐条，判定链）
+
+```
+45e719  MOV EAX,[0x004cf410]        ; = zPlayer
+45e723  MOV EAX,[EAX+0x10]          ; ★ 弹的 anm 指针 = player+0x10
+45e726  MOV [EDI+0xe0],EAX          ; 写进弹对象
+45e733  MOVSX ECX,word ptr [ESI+0x22]   ; ★ 脚本号 = 行里 +0x22
+45e76c  CALL 0x00407420             ; 用 (anm, 脚本号) 起 VM
+```
+`player+0x10` 的写点只有两处：
+- `Player__tick_shooters_for_ability_card 0x40a9c0` **开头**：`0x40a9fe MOV EAX,[0x004cf298]`（= AbilityManager）
+  → `[EAX+0xc]`（= `ability_anm`）→ `0x40aa06 MOV [EBX+0x10],EAX`；
+- 同一个函数**收尾**：`0x40aa95 MOV EAX,[EBX+0xc]` → `0x40aa9a MOV [EBX+0x10],EAX` ⇒ **还原成 `pl0X.anm`**。
+
+⇒ **主炮路径（`Player__tick_shooting_state 0x45ea00` 的行循环 `0x45ebfb`–`0x45ec9f`）里的弹，
+anm = `player+0xc` = `pl0X.anm`**；只有**装备卡的子机组**（走 `tick_shooters_for_ability_card`）
+才是 `ability.anm`。旁证（`engine/sht/th18/02-shooter-record.md` §4）：原生主炮 10 组的 `+0x22`
+= `{5,6,7,8,9}`（pl0X 的自机弹脚本），卡子机那 13 组才是 `ability.anm` 的号。
+**我们认领的正是主炮 set**（`on_shot_set_index` → 引擎的行循环）⇒ **行里的 `+0x22` 必须是 `pl0X.anm` 的脚本号**。
+
+### 2. 因此 §BE #98 那一版是坏的
+
+它把 `+0x22` 填成了 `ability.anm` 的 **364..370**，而 `pl0X.anm` 只有 **51..60** 支脚本
+⇒ 运行期**越界**（弹的 VM 拿到的脚本号在表外）⇒ 观感仍然是「弹幕样式不对」。
+`AUDIT.md` §BE #104 修掉的是**贴图源头**（早苗白方块），这一条修的是**脚本号放错文件**：两处都错，缺一条都看不见正确弹幕。
+
+### 3. 改了什么
+
+| 文件 | 改动 | 怎么验的 |
+| --- | --- | --- |
+| `assets/build_player_anm.py` | 新增第 4 类追加件 `bullet`（**排在最后**，不动既有脚本号）：逐机体把弹体 entry + 弹体脚本追加进 **pl0X.anm**；脚本正文直接读那 7 支生成的 spec（`@名字@`→sprite 号、脚本号→本文件追加号、去 `//` 注释） | 回读：pl00 54/55→sprite116/117；pl01 60/61→126/127；pl02 43/44→129/130；pl03 45→140..143 ✓；贴图逐像素回读闸全过 |
+| `assets/sht/append_shooterset.py` | `YOUKAI_BULLET_ANM` 换成 **pl0X 的宏**（`CE_PL_ANM_SCRIPT_YKBULLET_*_PL0X`）；`read_anm_ids()` 改成**同时读 `anm_ids.h` + `pl_anm_ids.h`**（两族宏名不重名 ⇒ 合表安全） | `make sht` 回读：妖侧行 anm = 54/55（pl00）、60/61（pl01）、43/44（pl02）、45（pl03）✓ 全部落在各自 `pl0X.anm` 的脚本表内 |
+| `assets/check_player_anm_bounds.py` | ★ **补闸**：`sht` 的 `anm/hit_fx` 存在性检查原来只覆盖 `0x1e..0x27`（咆哮组）⇒ 妖侧组（`CE_SHT_SET_YOUKAI*`）**从来没被查过** ⇒ 旧值 364..370 假绿；现在从 `sht_ids.h` 现读索引一起查 | **负向测试**：pl00 set 0x54 row0 的 anm 改回 364 ⇒ 闸当场红（`set 0x54 anm=364 不在 pl00.anm（脚本数 56）`）✓ |
+
+**影响面**：`build_player_anm.py` / `append_shooterset.py` / `check_player_anm_bounds.py` 都是**生成器与闸**
+（不是卡侧共享件）；`bullet` 追加件排在最后 ⇒ 既有的 entry/sprite/脚本号一个都没动
+（回读：pl00 仍是 118 sprites / 56 scripts，前 5 支追加脚本号不变 ✓）。
+`ability.anm` 里那份旧的（7 支脚本 + `ATLAS_YK_BULLET`）**本批先留着**：它与其他卡共用同一份 ORDER 机制，
+删除要单独一轮（改 `ORDER.txt` + `CAPACITY.md` 台账 + 全量回读），登记为下一轮的收尾项。
+**回归**：`make check` rc=0（`anm-verify` / `sht-verify` / `dllx87` / `dllverify` / `capcheck` /
+`engine_abi_check` / `check-docs`）+ `python3 sites.py verify` rc=0。
+
+### 4. 给 owner 的实跑判据（③ 之外的 ① 收口）
+
+妖侧弹的**样子**应当是：灵梦 = 原作那支细白/彩弹、魔理沙 = 主炮细弹 + 子机那条 256×32 长纹理、
+咲夜 = 主炮小弹 + 子机 16×32、早苗 = 四帧循环的**月牙**（`§BE #104` 修的白方块之后）。
+若**一发弹都看不见**（不是样式不对，而是完全不出）⇒ 说明 anm 号仍越界，先跑
+`python3 assets/check_player_anm_bounds.py`（它现在会红）。

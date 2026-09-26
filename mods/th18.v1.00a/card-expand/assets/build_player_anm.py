@@ -506,7 +506,7 @@ _YK_EXTRA_LAYOUT = {"orb": [(0, 0)], "gauge": [(0, 0), (8, 0), (24, 0), (40, 0)]
                     "gaugefont": [(i * 8, 0) for i in range(14)]}
 # entry 名（每机各一份，故名字里不带机体号也可以；贴图按 entry 名去 tex 目录找）
 YK_EXTRA_NAME = {"orb": "player/yk_orb.png", "gauge": "player/yk_gauge.png",
-                 "gaugefont": "player/yk_gaugefont.png"}
+                 "gaugefont": "player/yk_gaugefont.png", "bullet": "player/yk_bullet.png"}
 # 每机的新 entry 号 / 首个 sprite 号 / 首个脚本号（接在「妖侧本体」之后，只追加）
 YK_EXTRA_IDS = {
     "pl00": dict(entry0=16, sprite0=97,  script0=48),
@@ -530,8 +530,55 @@ YK_EXTRA_SCRIPTS = (
 )
 
 
+# ════════════════════════════════════════════════════════════════════════════════════════════
+# ★★★ 2026-09-26 第十一批（owner：「妖机体的弹幕样式应该都不对，发的弹幕**本身**得搬过来」）：
+#   **妖侧弹的弹体脚本必须追加进 `pl0X.anm`，不是 `ability.anm`** —— 一手（`th18.exe` 逐条）：
+#     · `PlayerBullet__create 0x45e320` 里 `0x45e719 MOV EAX,[0x004cf410]`（= zPlayer）
+#       → `0x45e723 MOV EAX,[EAX+0x10]`（**anm = `player+0x10`**）→ `0x45e726 MOV [EDI+0xe0],EAX`；
+#       脚本号 = 行里 `+0x22`（`0x45e733 MOVSX ECX,word ptr [ESI+0x22]`）→ `0x45e76c CALL 0x407420`。
+#     · `player+0x10` 只在 `Player__tick_shooters_for_ability_card 0x40a9c0` **期间** = 装备卡的
+#       `ability_anm`（`0x40a9fe MOV EAX,[0x004cf298]` → `[EAX+0xc]`），收尾 `0x40aa95`–`0x40aa9a`
+#       `MOV EAX,[EBX+0xc] / MOV [EBX+0x10],EAX` **还原成 `player+0xc` = `pl0X.anm`**。
+#     · 我们认领的 set 是**主炮 set**（`on_shot_set_index` → `Player__tick_shooting_state 0x45ea00`
+#       的行循环 `0x45ebfb`–`0x45ec9f`）⇒ 弹由**主炮路径**创建 ⇒ **`+0x22` 按 `pl0X.anm` 解析**。
+#   一手旁证：原生主炮 10 组的 `+0x22` = `{5,6,7,8,9}`（pl0X.anm 的自机弹脚本），而卡子机那 13 组
+#   才是 `ability.anm` 的号（`engine/sht/th18/02-shooter-record.md` §4）。
+#   ⚠ **旧实现错了**（`AUDIT.md` §BE #98）：行里写的是 `ability.anm` 的脚本号 364..370，而
+#     `pl0X.anm` 只有 51..60 支脚本 ⇒ 运行期**越界**（弹的 VM 拿不到脚本）。本批把它们**逐机体
+#     追加进各自 pl0X.anm**（entry 用 `make_youkai_bullet_art.py` 切好的成员图，脚本正文用它生成的
+#     spec 文本 ⇒ 「切图与脚本文本」仍只有一处来源）。
+#   ⚠ `ability.anm` 里那份（7 支脚本 + `ATLAS_YK_BULLET`）**本批先留着不动**：它与其他卡共享、
+#     删除要单独一轮（改 `ORDER.txt` + `CAPACITY.md` 台账 + 全量回读），登记在 §BE #105。
+YK_BULLET_ART = HERE / "ability" / "yk_bullet"
+YK_BULLET_SCRIPT_DIR = HERE / "ability" / "scripts"
+# 该机体 entry 的成员（= `make_youkai_bullet_art.py` 的产物名；尺寸 = 那张 PNG 的实际尺寸）
+YK_BULLET_MEMBERS = {
+    "pl00": (("YKB_R_MAIN", 64, 16), ("YKB_R_OPT", 64, 16)),
+    "pl01": (("YKB_M_MAIN", 64, 16), ("YKB_M_OPT", 256, 32)),
+    "pl02": (("YKB_S_MAIN", 64, 16), ("YKB_S_OPT", 16, 32)),
+    "pl03": (("YKB_A_0", 64, 64), ("YKB_A_1", 64, 64), ("YKB_A_2", 64, 64), ("YKB_A_3", 64, 64)),
+}
+# entry 画布尺寸 + 成员在画布内的落点（左到右、顶对齐；矩形 = 成员 PNG 的原尺寸）
+YK_BULLET_CANVAS = {
+    "pl00": ((128, 16), ((0, 0), (64, 0))),
+    "pl01": ((320, 32), ((0, 0), (64, 0))),
+    "pl02": ((80, 32), ((0, 0), (64, 0))),
+    "pl03": ((256, 64), ((0, 0), (64, 0), (128, 0), (192, 0))),
+}
+# 该机体用哪几支生成脚本（源脚本号 → 宏后缀 → 成员名）：成员名 → 源 sprite 名（`@名字@` 替换用）
+YK_BULLET_SCRIPTS = {
+    "pl00": ((364, "BULLET_R_MAIN", "YKB_R_MAIN"), (365, "BULLET_R_OPT", "YKB_R_OPT")),
+    "pl01": ((366, "BULLET_M_MAIN", "YKB_M_MAIN"), (367, "BULLET_M_OPT", "YKB_M_OPT")),
+    "pl02": ((368, "BULLET_S_MAIN", "YKB_S_MAIN"), (369, "BULLET_S_OPT", "YKB_S_OPT")),
+    # 早苗那支在源里一个脚本连着引用 4 张图（四帧循环）⇒ 一支脚本、四个成员
+    "pl03": ((370, "BULLET_A", ("YKB_A_0", "YKB_A_1", "YKB_A_2", "YKB_A_3")),),
+}
+
+
 def _yk_extra_order():
-    return ("orb", "gauge", "gaugefont")
+    """追加 entry/脚本的**顺序**。⚠ `bullet` 必须**排在最后** —— 前面三项的 entry/sprite/脚本号
+    是既有产物（C 侧宏、`_assert_pinned_numbers` 都钉着），插在前面会让它们整体后移。"""
+    return ("orb", "gauge", "gaugefont", "bullet")
 
 
 def _yk_extra_entries(player: str):
@@ -539,13 +586,22 @@ def _yk_extra_entries(player: str):
     ids = YK_EXTRA_IDS[player]
     out, k = [], 0
     for name in _yk_extra_order():
-        src_anm, src_png, sprites, size = YK_EXTRA_PLAN[name]
-        lay = _YK_EXTRA_LAYOUT[name]
-        ps = []
-        for i, (_sid, sx, sy, w, h) in enumerate(sprites):
-            cx, cy = lay[i]
-            ps.append((ids["sprite0"] + k, cx, cy, w, h, src_anm, src_png, sx, sy))
-            k += 1
+        if name == "bullet":
+            # 源 = `make_youkai_bullet_art.py` 切好的成员 PNG（`@yk_bullet` 这个伪 anm 名 = 走自家图）
+            size, lay = YK_BULLET_CANVAS[player]
+            ps = []
+            for i, (member, w, h) in enumerate(YK_BULLET_MEMBERS[player]):
+                cx, cy = lay[i]
+                ps.append((ids["sprite0"] + k, cx, cy, w, h, "@yk_bullet", f"{member}.png", 0, 0))
+                k += 1
+        else:
+            src_anm, src_png, sprites, size = YK_EXTRA_PLAN[name]
+            lay = _YK_EXTRA_LAYOUT[name]
+            ps = []
+            for i, (_sid, sx, sy, w, h) in enumerate(sprites):
+                cx, cy = lay[i]
+                ps.append((ids["sprite0"] + k, cx, cy, w, h, src_anm, src_png, sx, sy))
+                k += 1
         out.append(dict(idx=ids["entry0"] + len(out), name=YK_EXTRA_NAME[name],
                         size=size, sprites=ps))
     return out
@@ -559,7 +615,8 @@ def _yk_extra_plan(player: str):
     k = 0
     for name in order:
         base[name] = ids["sprite0"] + k
-        k += len(YK_EXTRA_PLAN[name][2])
+        k += (len(YK_BULLET_MEMBERS[player]) if name == "bullet"
+              else len(YK_EXTRA_PLAN[name][2]))
     out = []
     for i, (name, src, sid, macro, smap_src) in enumerate(YK_EXTRA_SCRIPTS):
         smap = {s: base[name] + idx for s, idx in smap_src.items()}
@@ -589,6 +646,18 @@ def _yk_extra_plan(player: str):
                         #   `set_layer` 派生的 resolutionMode 1 乘 2 ⇒ 整块画到屏外，见
                         #   `_inject_hud_layer` 的一手理由）。
                         hud_layer=(None if name == "orb" else 25)))
+    # ★ 妖侧弹那一批**排在最后**（前面 5 支的脚本号是既有产物，不能被挤动）。正文来自
+    #   `make_youkai_bullet_art.py` 生成的 spec：`@名字@` → 本 entry 的 sprite 号，脚本号 → 本文件
+    #   的追加号。按机体只取自己那几支（早苗那支一脚本连引 4 张图）。
+    for (src_num, macro, members) in YK_BULLET_SCRIPTS[player]:
+        if not isinstance(members, tuple):
+            members = (members,)
+        # ⚠ 基址要接在**前面三项之后**（`base["bullet"]` = 刻符 1 + 人妖槽 4 + 字形 14 之后的第一个
+        #   sprite 号）—— 用 `ids["sprite0"]` 直接开算会落到刻符/槽条那几个号上（静默画错图）。
+        names = {m: base["bullet"] + k
+                 for k, (m, _w, _h) in enumerate(YK_BULLET_MEMBERS[player]) if m in members}
+        out.append(dict(macro=f"YK{macro}_{player.upper()}", spec_file=src_num,
+                        sprite_names=names, new_sid=ids["script0"] + len(out)))
     return out
 
 APPEND_PLAN = {
@@ -1065,12 +1134,19 @@ def _append_spec(player: str, retail_text: str, tools, anmmap) -> str:
     n_scripts = len(L.parse_scripts(retail_text))
     blocks = []
     for spec in APPEND_PLAN[player]:
-        macro, src_sid, new_sid = spec["macro"], spec["sid"], spec["new_sid"]
+        macro, new_sid = spec["macro"], spec["new_sid"]
+        src_sid = spec.get("sid", spec.get("spec_file"))   # bullet 那几支没有 sid，只有 spec_file
         # 追加脚本号 = 出现顺序 ⇒ 必须**正好**接在已排好的后面（不连续会让 pl_anm_ids.h 里的
         # 宏指向别的脚本，而 sht 正是照那个号发弹 —— 那是最难查的一类静默错）。
         if new_sid != n_scripts + len(blocks):
             raise SystemExit(f"{player}: {macro} 计划 script{new_sid}，但下一条必须是 "
                              f"script{n_scripts + len(blocks)}（脚本号必须**连续**追加）")
+        if spec.get("spec_file") is not None:
+            # ★ 妖侧弹那几支：正文取自 `make_youkai_bullet_art.py` 生成的 spec 文件（已经是 v8 语法、
+            #   已经补过 `type(1)`/`layer(13)`）⇒ **不做** opcode 翻译 / scale 注入 / sprite 号重排，
+            #   只做「`@名字@` → 本 entry 的 sprite 号」+ 「脚本号 → 本文件的追加号」。
+            blocks.append(_yk_bullet_block(player, spec))
+            continue
         src_text = _source_spec(spec, player, retail_text, tools, anmmap)
         src_block = _script_block(src_text, src_sid)
         if not src_block:
@@ -1097,6 +1173,34 @@ def _append_spec(player: str, retail_text: str, tools, anmmap) -> str:
         body = _rename_script(body, src_sid, new_sid)
         blocks.append(body)
     return L.append_scripts(text, blocks) if blocks else text
+
+
+def _yk_bullet_block(player: str, spec: dict) -> str:
+    """把 `assets/ability/scripts/<N>_yk_bullet_*.anm.txt` 变成「可直接追加进 pl0X.anm」的脚本块。
+
+    三件事（**别的都不动**，正文与 `make_youkai_bullet_art.py` 生成的那一份逐字相同）：
+      ① `@成员名@` → 本 entry 的 sprite 号；
+      ② 脚本头 `script scriptN` → 本文件的追加脚本号；
+      ③ **去掉 `//` 注释行** —— `_verify_appended` 会把计划文本与「编译后再反解回来」的文本逐字符比，
+         而反解出来的正文没有注释（2026-09-26 那次的假红就是这么来的）。"""
+    hits = sorted(YK_BULLET_SCRIPT_DIR.glob(f"{spec['spec_file']}_yk_bullet_*.anm.txt"))
+    if len(hits) != 1:
+        raise SystemExit(f"{player}: 找不到唯一的弹体 spec（{spec['spec_file']}_yk_bullet_*.anm.txt，"
+                         f"命中 {len(hits)} 个）—— 先跑 `python3 assets/ability/make_youkai_bullet_art.py`")
+    text = hits[0].read_text(encoding="utf-8")
+    body = _script_block(text, spec["spec_file"])
+    if not body:
+        raise SystemExit(f"{player}: {hits[0].name} 里没有 script{spec['spec_file']}")
+    kept = [l for l in body.splitlines() if not l.strip().startswith("//")]
+    body = "\n".join(kept)
+    # ⚠ 拼成 `sprite97` 而不是 `97`：本仓的 spec 文本里 sprite 操作数一律是 `sprite(spriteN)`
+    #   （`thanm` 带 mapfile 时的写法，`_SPRITE_REF` 也是照这个写的）—— 目标是「与反解回来的文本逐字相同」。
+    for name, sid in spec["sprite_names"].items():
+        body = body.replace(f"@{name}@", f"sprite{sid}")
+    if "@" in body.replace("@", "@", 1) and re.search(r"@[A-Za-z_]", body):
+        raise SystemExit(f"{player}: 弹体脚本里还有没替换掉的 `@名字@`：{body[:200]}")
+    return body.replace(f"script script{spec['spec_file']} {{",
+                        f"script script{spec['new_sid']} {{", 1)
 
 
 def _verify_appended(player: str, text: str, planned_text: str):
@@ -1359,10 +1463,17 @@ def _yk_extra_canvas(ent: dict):
     from PIL import Image
     canvas = Image.new("RGBA", ent["size"], (0, 0, 0, 0))
     for (_sid, x, y, w, h, src_anm, src_png, sx, sy) in ent["sprites"]:
-        p = TH08_ANM / src_anm / src_png
-        if not p.is_file():
-            raise SystemExit(f"缺 TH08 解包贴图 {p}\n"
-                             f"（先 `python3 tooling/thtk/unpack.py th08.v1.00d`）")
+        if src_anm == "@yk_bullet":
+            # 妖侧弹的成员图：`make_youkai_bullet_art.py` 切好并自检过（含「整块白 ⇒ 失败」判据）
+            p = YK_BULLET_ART / src_png
+            if not p.is_file():
+                raise SystemExit(f"缺弹体成员图 {p}\n"
+                                 f"（先 `python3 assets/ability/make_youkai_bullet_art.py`）")
+        else:
+            p = TH08_ANM / src_anm / src_png
+            if not p.is_file():
+                raise SystemExit(f"缺 TH08 解包贴图 {p}\n"
+                                 f"（先 `python3 tooling/thtk/unpack.py th08.v1.00d`）")
         tile = Image.open(p).convert("RGBA").crop((sx, sy, sx + w, sy + h))
         if tile.size != (w, h):
             raise SystemExit(f"{p.name}: 源矩形 ({sx},{sy},{w},{h}) 切不出来")
@@ -1498,11 +1609,13 @@ def _do_appended(player: str, a, tools, anmmap):
                                                                   _yk_extra_readback(player, td)))
     n_sprites, n_scripts, used = _verify_appended(player, built_text, spec_text)
     plan = " ".join(f"script{s['new_sid']}={s['macro']}("
-                    + (f"{s['game']} {s['src']}" if s.get("game") else s["src"])
-                    + f" script{s['sid']}"
-                    + (f", scale×{s['k']}" if s["k"] != 1.0 else "")
-                    + (", alpha255" if s["alpha255"] else "")
-                    + (", scaleInj" if s["scale_inject"] else "")
+                    + (f"yk_bullet spec{s['spec_file']}" if s.get("spec_file") is not None
+                       else (f"{s['game']} {s['src']}" if s.get("game") else s["src"]))
+                    + (f" script{s['spec_file']}" if s.get("spec_file") is not None
+                       else f" script{s['sid']}")
+                    + (f", scale×{s['k']}" if s.get("k", 1.0) != 1.0 else "")
+                    + (", alpha255" if s.get("alpha255") else "")
+                    + (", scaleInj" if s.get("scale_inject") else "")
                     + (", prologue" if s.get("prologue") else "") + ")"
                     for s in APPEND_PLAN[player])
     entries = " ".join(f"entry{e['idx']}({len(e['sprites'])} sprites, {e['size'][0]}x{e['size'][1]})"

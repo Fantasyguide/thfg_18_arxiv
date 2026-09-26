@@ -1592,12 +1592,23 @@ DPS_TOLERANCE = 0.02          # 逐行取整后的允许偏差（2%）
 #   （脚本 364..370、图集 `ATLAS_YK_BULLET`）⇒ 这里按 **(角色, 是不是子机行)** 填宏名。
 #   ⚠ 两处偏离照实登记：① 魔理沙子机的逐档脚本（TH08 s24/25/26/27）只差 `scale.y` 0.5/0.6/0.7/0.8
 #     ⇒ 本卡统一用 s24（0.5）；② 原脚本里 v8 没有的 `ins_83`/`ins_25`/`scrollX` 已省（见生成器产物）。
+# ★★★ 2026-09-26 第十一批**订正**：这些号必须是 **`pl0X.anm`** 的脚本号，不是 `ability.anm` 的。
+#
+# 一手（`th18.exe` 逐条，见 `assets/build_player_anm.py` 的同一段注）：弹的 anm 取 `player+0x10`
+# （`PlayerBullet__create 0x45e719`–`0x45e726`），而它只在 `Player__tick_shooters_for_ability_card`
+# （`0x40a9c0`）**期间** = 装备卡的 `ability_anm`，函数收尾（`0x40aa95`–`0x40aa9a`）**还原成
+# `player+0xc` = `pl0X.anm`** ⇒ **我们认领的主炮 set 由引擎的行循环发（`0x45ebfb`–`0x45ec9f`）
+# ⇒ 行里的 `+0x22` 按 `pl0X.anm` 解析**。旁证：原生主炮 10 组的 `+0x22` = `{5,6,7,8,9}`（pl0X 的
+# 自机弹脚本），只有**卡子机**那 13 组才是 `ability.anm` 的号（`engine/sht/th18/02-shooter-record.md` §4）。
+# ⚠ 上一版（`AUDIT.md` §BE #98）填的是 `ability.anm` 的 364..370 ⇒ 在 `pl0X.anm`（51..60 支脚本）
+# 里**越界**、弹的 VM 拿不到脚本。本批把弹体脚本逐机体追加进 `pl0X.anm`
+# （宏 = `CE_PL_ANM_SCRIPT_YKBULLET_*_PL0X`，由 `build_player_anm.py` 写进 `pl_anm_ids.h`）。
 YOUKAI_BULLET_ANM = {
-    "R": ("CE_ANM_ABILITY_SCRIPT_YK_BULLET_YKB_R_MAIN", "CE_ANM_ABILITY_SCRIPT_YK_BULLET_YKB_R_OPT"),
-    "M": ("CE_ANM_ABILITY_SCRIPT_YK_BULLET_YKB_M_MAIN", "CE_ANM_ABILITY_SCRIPT_YK_BULLET_YKB_M_OPT"),
-    "S": ("CE_ANM_ABILITY_SCRIPT_YK_BULLET_YKB_S_MAIN", "CE_ANM_ABILITY_SCRIPT_YK_BULLET_YKB_S_OPT"),
+    "R": ("CE_PL_ANM_SCRIPT_YKBULLET_R_MAIN_PL00", "CE_PL_ANM_SCRIPT_YKBULLET_R_OPT_PL00"),
+    "M": ("CE_PL_ANM_SCRIPT_YKBULLET_M_MAIN_PL01", "CE_PL_ANM_SCRIPT_YKBULLET_M_OPT_PL01"),
+    "S": ("CE_PL_ANM_SCRIPT_YKBULLET_S_MAIN_PL02", "CE_PL_ANM_SCRIPT_YKBULLET_S_OPT_PL02"),
     # 早苗那支本身就是四帧循环（脚本里连着引用 4 张图）⇒ 主炮/子机同一个脚本。
-    "A": ("CE_ANM_ABILITY_SCRIPT_YK_BULLET_YKB_A_0", "CE_ANM_ABILITY_SCRIPT_YK_BULLET_YKB_A_0"),
+    "A": ("CE_PL_ANM_SCRIPT_YKBULLET_A_PL03", "CE_PL_ANM_SCRIPT_YKBULLET_A_PL03"),
 }
 
 
@@ -1718,13 +1729,23 @@ def check_card_constants(repl: list):
 
 
 def read_anm_ids() -> dict:
-    if not ANM_IDS_H.is_file():
-        raise SystemExit(f"缺 {ANM_IDS_H}：先跑 make anm")
+    """两份**互不重名**的头合成一张宏名 → 号表：`anm_ids.h`（`ability.anm` 的 `CE_ANM_ABILITY_*`）
+    + `pl_anm_ids.h`（四个 `pl0X.anm` 的 `CE_PL_ANM_*`）。
+
+    ★ 2026-09-26 第十一批：**主炮行（含本卡认领的妖侧组）的 `+0x22` 是 `pl0X.anm` 的脚本号**
+    （一手见 `YOUKAI_BULLET_ANM` 上面那段）⇒ 生成器必须能解析 `CE_PL_ANM_SCRIPT_*` 这两族名字。
+    两个头都缺 ⇒ 报错；`pl_anm_ids.h` 单独缺时提示（`make sht` 单独跑过的情况）。"""
     out = {}
-    for line in ANM_IDS_H.read_text(encoding="utf-8").splitlines():
-        parts = line.split()
-        if len(parts) >= 3 and parts[0] == "#define" and parts[2].rstrip("/*").strip().isdigit():
-            out[parts[1]] = int(parts[2])
+    for path, hard in ((ANM_IDS_H, True), (PL_IDS_H, False)):
+        if not path.is_file():
+            if hard:
+                raise SystemExit(f"缺 {path}：先跑 make anm")
+            print(f"  ⚠ 缺 {path.name}：pl0X 的脚本号解析不了（先跑 `make anm`）")
+            continue
+        for line in path.read_text(encoding="utf-8").splitlines():
+            parts = line.split()
+            if len(parts) >= 3 and parts[0] == "#define" and parts[2].rstrip("/*").strip().isdigit():
+                out[parts[1]] = int(parts[2])
     return out
 
 

@@ -122,8 +122,18 @@ def main():
         if not sht_path.is_file():
             raise SystemExit(f"缺 {sht_path}：先跑 python3 assets/sht/append_shooterset.py")
         n_ref = 0
+        # ★★★ 2026-09-26 第十一批（补闸）：**妖侧的逐档组 + 兜底组也按 `pl0X.anm` 解析**，
+        #   必须一起查。这一条缺口是实打实漏过 bug 的：`AUDIT.md` §BE #98 把妖侧行的 `+0x22`
+        #   填成了 `ability.anm` 的 364..370，而 `pl0X.anm` 只有 51..60 支脚本 ⇒ 运行期越界、
+        #   弹的 VM 拿不到脚本；旧版这里只查 `0x1e..0x27`（咆哮组）⇒ **假绿**。
+        #   一手（`th18:0x45e719`–`0x45e76c` + `0x40aa95`–`0x40aa9a`）：主炮路径的弹 anm =
+        #   `player+0xc` = `pl0X.anm`（`engine/sht/th18/02-shooter-record.md` §4）。
+        yk_idx = set()
+        for mm in re.finditer(r"^#define\s+(CE_SHT_SET_YOUKAI\w*)\s+(0[xX][0-9a-fA-F]+|\d+)",
+                              (L.BUILD.parent / "sht_ids.h").read_text(), re.M):
+            yk_idx.add(int(mm.group(2), 0))
         for idx, rows in _read_sht(sht_path).items():
-            if not (0x1E <= idx <= 0x27):
+            if not (0x1E <= idx <= 0x27 or idx in yk_idx):
                 continue   # 0x17..0x1d 是 PEA/SEASON，anm 指 ability.anm，不归本文件
             # ⚠ 113 的灵界组**不在这里查**：它借用原生槽 0x0e，但槽里的 40 项偏移数组**没变**
             #   （运行时才指向孤儿段）⇒ 照偏移读出来的是原生早苗子机组，不是灵界行。
@@ -136,7 +146,8 @@ def main():
                     bad.append(f"{player}.sht: set {idx:#x} anm={anm} 不在 {player}.anm（脚本数 {len(scripts)}）")
                 if hfx and hfx not in scripts:
                     bad.append(f"{player}.sht: set {idx:#x} hit_fx={hfx} 不在 {player}.anm")
-        print(f"  sht(0x1e..0x27): {n_ref} 条 shooter 的 anm/hit_fx 全部落在 {player}.anm 的 script 表内")
+        print(f"  sht(0x1e..0x27 + 妖侧组): {n_ref} 条 shooter 的 anm/hit_fx 全部落在 "
+              f"{player}.anm 的 script 表内")
 
     if bad:
         print("FAIL:")

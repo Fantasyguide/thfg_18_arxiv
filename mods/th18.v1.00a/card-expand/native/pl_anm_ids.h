@@ -14,6 +14,8 @@
 #define CE_PL_ANM_SCRIPT_YKGAUGE_YOUKAI_PL00  51   /* pl00.anm 追加 */
 #define CE_PL_ANM_SCRIPT_YKGAUGE_CURSOR_PL00  52   /* pl00.anm 追加 */
 #define CE_PL_ANM_SCRIPT_YKGAUGEFONT_PL00  53   /* pl00.anm 追加 */
+#define CE_PL_ANM_SCRIPT_YKBULLET_R_MAIN_PL00  54   /* pl00.anm 追加 */
+#define CE_PL_ANM_SCRIPT_YKBULLET_R_OPT_PL00  55   /* pl00.anm 追加 */
 #define CE_PL_ANM_SCRIPT_PL01_TRANCE       47   /* pl01.anm 追加 */
 #define CE_PL_ANM_SCRIPT_PL01_TRANCE_GLINT  48   /* pl01.anm 追加 */
 #define CE_PL_ANM_SCRIPT_YKBODY_PL01_IDLE  49   /* pl01.anm 追加 */
@@ -27,6 +29,8 @@
 #define CE_PL_ANM_SCRIPT_YKGAUGE_YOUKAI_PL01  57   /* pl01.anm 追加 */
 #define CE_PL_ANM_SCRIPT_YKGAUGE_CURSOR_PL01  58   /* pl01.anm 追加 */
 #define CE_PL_ANM_SCRIPT_YKGAUGEFONT_PL01  59   /* pl01.anm 追加 */
+#define CE_PL_ANM_SCRIPT_YKBULLET_M_MAIN_PL01  60   /* pl01.anm 追加 */
+#define CE_PL_ANM_SCRIPT_YKBULLET_M_OPT_PL01  61   /* pl01.anm 追加 */
 #define CE_PL_ANM_SCRIPT_PL02_WOLF         30   /* pl02.anm 追加 */
 #define CE_PL_ANM_SCRIPT_PL02_EAGLE        31   /* pl02.anm 追加 */
 #define CE_PL_ANM_SCRIPT_YKBODY_PL02_IDLE  32   /* pl02.anm 追加 */
@@ -40,6 +44,8 @@
 #define CE_PL_ANM_SCRIPT_YKGAUGE_YOUKAI_PL02  40   /* pl02.anm 追加 */
 #define CE_PL_ANM_SCRIPT_YKGAUGE_CURSOR_PL02  41   /* pl02.anm 追加 */
 #define CE_PL_ANM_SCRIPT_YKGAUGEFONT_PL02  42   /* pl02.anm 追加 */
+#define CE_PL_ANM_SCRIPT_YKBULLET_S_MAIN_PL02  43   /* pl02.anm 追加 */
+#define CE_PL_ANM_SCRIPT_YKBULLET_S_OPT_PL02  44   /* pl02.anm 追加 */
 #define CE_PL_ANM_SCRIPT_PL03_FROG         29   /* pl03.anm 追加 */
 #define CE_PL_ANM_SCRIPT_PL03_SNAKE        30   /* pl03.anm 追加 */
 #define CE_PL_ANM_SCRIPT_PL03_GLINT        31   /* pl03.anm 追加 */
@@ -56,6 +62,7 @@
 #define CE_PL_ANM_SCRIPT_YKGAUGE_YOUKAI_PL03  42   /* pl03.anm 追加 */
 #define CE_PL_ANM_SCRIPT_YKGAUGE_CURSOR_PL03  43   /* pl03.anm 追加 */
 #define CE_PL_ANM_SCRIPT_YKGAUGEFONT_PL03  44   /* pl03.anm 追加 */
+#define CE_PL_ANM_SCRIPT_YKBULLET_A_PL03   45   /* pl03.anm 追加 */
 
 #define CE_PL_ANM_FORM_BASE_PL00   62   /* pl00.anm 灵界形态 sprite 62..85（24 帧）= 本体帧号 0..23 的加数 */
 #define CE_PL_ANM_FORM_BASE_PL01   72   /* pl01.anm 灵界形态 sprite 72..95（24 帧）= 本体帧号 0..23 的加数 */
