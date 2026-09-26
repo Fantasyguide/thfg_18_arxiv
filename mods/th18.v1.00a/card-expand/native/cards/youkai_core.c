@@ -871,6 +871,15 @@ int yk_gauge_shoot_delta(int focused)
  * 本函数只回答「现在过不过闸」，条件由卡侧提供（TH18 侧 = 射击键按住）。*/
 int yk_gauge_gate_blocks(int shooting)
 {
+    /* ★★★ 2026-09-27 订正（§BE #110）：本函数**只剩一个调用点** —— `yk_gauge_advance()` 里那道
+     * **推进支**的闸，它对应 TH08 `player+0xfdc`（`shotActive`，`th08:0x44be0f` 的 `cmp [edx+0xfdc],0`；
+     * 放符卡/炸弹时跳过推进支、只走 `±26/帧`）⇒ 参数就是 `shotActive`，由卡侧用 `yk_bomb_active()`
+     * （`[bomb_mgr+0x30] != 0`）喂进来 ✓。
+     *
+     * ⚠ 另外三笔加数（击破 ±200 / 收刻符 ±111 / 擦弹 +100）**曾经**也走这里 —— 那是错的：
+     *   它们对应的是 `AddToYoukaiGauge` 的第一道闸 `th08:0x43c0c2`（`ds:0x17d6ed4` + `param2 == 0`），
+     *   而 `0x17d6ed4` **全 exe 没有任何写点**（同页 11 处引用全是读）且落在 BSS ⇒ 恒为 0
+     *   ⇒ 那道闸永不生效 ⇒ 三笔加数**无条件照加**。卡侧已改成不做闸。*/
     return shooting ? 1 : 0;
 }
 

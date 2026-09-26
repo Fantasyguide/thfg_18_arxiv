@@ -898,9 +898,11 @@ int main(void)
     /* 收刻符的增量：聚焦 = +111、否则 −111（`th08:0x44139e`/`:0x4413b0`）。*/
     CHECK(yk_gauge_orbs_delta(1) == 111 && yk_gauge_orbs_delta(0) == -111);
     /* ★★★ 2026-09-22（P3 第二批）：射击中每帧 ±26（一手 `Player.cpp:445-452` + `:541`
-     * `0x6590 / 0x3e7` = 26000/999 = 26，方向 = `shotType & 1` = isYoukaiMode ⇒ 本卡口径的低速位）
-     * 与 `AddToYoukaiGauge` 的第一道闸（一手 `th08:0x43c0c2`/`:0x43c0cb`：`shotActive != 0` 且
-     * `param_2 == 0` ⇒ 丢掉 ⇒ 击破 ±200 / 收刻符 ±111 在射击中不算）。*/
+     * `0x6590 / 0x3e7` = 26000/999 = 26，方向 = `shotType & 1` = isYoukaiMode ⇒ 本卡口径的低速位）。
+     * ★ 2026-09-27 订正（§BE #110）：`yk_gauge_gate_blocks` 现在**只**给推进支用（参数 = `shotActive`
+     *   = TH08 `player+0xfdc`）；击破 ±200 / 收刻符 ±111 / 擦弹 +100 三笔**不再过闸** ——
+     *   它们对应的是 `AddToYoukaiGauge` 的第一道闸 `th08:0x43c0c2`，而它读的 `ds:0x17d6ed4`
+     *   全 exe 无写点又是 BSS ⇒ 恒为 0 ⇒ 那道闸永不生效。*/
     CHECK(YK_GAUGE_SHOOT_DELTA == 26);
     CHECK(yk_gauge_shoot_delta(1) == 26 && yk_gauge_shoot_delta(0) == -26);
     CHECK(yk_gauge_gate_blocks(1) == 1 && yk_gauge_gate_blocks(0) == 0);
@@ -911,9 +913,11 @@ int main(void)
     CHECK(yk_orb_instant_absorb(-3000) == 0);      /* 中人：不成立 */
     CHECK(yk_orb_instant_absorb(0) == 0);
     /* ★★★ 2026-09-22（P3 第二批）：射击中每帧 ±26（一手 `Player.cpp:445-452` + `:541`
-     * `0x6590 / 0x3e7` = 26000/999 = 26，方向 = `shotType & 1` = isYoukaiMode ⇒ 本卡口径的低速位）
-     * 与 `AddToYoukaiGauge` 的第一道闸（一手 `th08:0x43c0c2`/`:0x43c0cb`：`shotActive != 0` 且
-     * `param_2 == 0` ⇒ 丢掉 ⇒ 击破 ±200 / 收刻符 ±111 在射击中不算）。*/
+     * `0x6590 / 0x3e7` = 26000/999 = 26，方向 = `shotType & 1` = isYoukaiMode ⇒ 本卡口径的低速位）。
+     * ★ 2026-09-27 订正（§BE #110）：`yk_gauge_gate_blocks` 现在**只**给推进支用（参数 = `shotActive`
+     *   = TH08 `player+0xfdc`）；击破 ±200 / 收刻符 ±111 / 擦弹 +100 三笔**不再过闸** ——
+     *   它们对应的是 `AddToYoukaiGauge` 的第一道闸 `th08:0x43c0c2`，而它读的 `ds:0x17d6ed4`
+     *   全 exe 无写点又是 BSS ⇒ 恒为 0 ⇒ 那道闸永不生效。*/
     CHECK(YK_GAUGE_SHOOT_DELTA == 26);
     CHECK(yk_gauge_shoot_delta(1) == 26 && yk_gauge_shoot_delta(0) == -26);
     CHECK(yk_gauge_gate_blocks(1) == 1 && yk_gauge_gate_blocks(0) == 0);

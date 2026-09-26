@@ -1933,12 +1933,17 @@ static int yk_orb_collect(yk_card_t *s, float x, float y)
         int32_t hl, yl;                                     /* ★ P-E：单人反向封顶（见 core 的同名小节）*/
         yk_gauge_limits_solo(CE_PLAYER_FOCUSED() ? 1 : 0, &hl, &yl);
         yk_piv_add(&s->piv, &s->orbs, 1);
-    /* ★★★ 2026-09-22（P3 第二批）：`AddToYoukaiGauge` 的**第一道闸** —— 射击中（TH08 的
-     * `shotActive != 0`）带 `param_2 == 0` 的加数**整条丢掉**（一手 `th08:0x43c0c2`/`:0x43c0cb`，
-     * `0x17d6ed4` = `g_Player.shotActive`）⇒ 本卡这里照抄：射击中不收槽（PIV 那笔照记）。*/
+    /* ★★★ 2026-09-27 订正（第十六批，一手）：**这道闸不存在** —— `AddToYoukaiGauge` 的第一道闸
+     * （`th08:0x43c0c2`：`cmp ds:0x17d6ed4,0 / je 加数` + `cmp [ebp+0xc],0`）读的是一个
+     * **全 exe 没有任何写点的全局**：`0x17d6ed4` 在同一页（`0x17d6e00..0x17d6eff`）里只有 **11 处引用、
+     * 全是读**（`cmp` ×10 + `mov eax` ×1），而且它落在 PE 的 **BSS 空档**（`.data` 结束于 `0x4cce00`、
+     * `.data1` 起于 `0x18da000`）⇒ 加载器零填充 ⇒ **运行期恒为 0** ⇒ 那道「整形中丢掉加数」的分支
+     * **永不成立**。⚠ 与 `shotActive`（`player+0xfdc`，`0x44be0f` 那道**推进支**的闸）是**两个东西**：
+     * 后者有写点、是活的（本卡 `yk_bomb_active()` 映射的是它，保留）。⇒ 这三笔加数**不做闸**。*/
+
         /* ★ P-D：击破魔使后 **50 帧内收刻符不给槽**（一手 `th08:0x42b240 Timer(0x18b89d4).set(50)`，
-         * 门住 `Item::collect_time_orb` 的 ±111：`th08:0x44138e`–`0x44139c`）。*/
-        if (s->orb_silence == 0 && !yk_gauge_gate_blocks(yk_bomb_active()))
+         * 门住 `Item::collect_time_orb` 的 ±111：`th08:0x44138e`–`0x44139c`）—— **这一道是真的**（有写点）。*/
+        if (s->orb_silence == 0)
             s->gauge = yk_gauge_add2(s->gauge, yk_gauge_orbs_delta(CE_PLAYER_FOCUSED()), hl, yl);
     }
     ++s->orb_taken;
@@ -2357,10 +2362,10 @@ static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
     if (!s || !ev) return;
     focused = CE_PLAYER_FOCUSED();
     yk_gauge_limits_solo(focused, &hl, &yl);
-    /* ★★★ 2026-09-22（P3 第二批）：同刻符那一笔 —— 射击中 ±200 也被 `AddToYoukaiGauge`
-     * 的第一道闸丢掉（一手 `th08:0x43c0c2`；decomp `EnemyManager.cpp:670-677` 传的正是 `param_2 = 0`）。*/
-    if (!yk_gauge_gate_blocks(yk_bomb_active()))
-        s->gauge = yk_gauge_add2(s->gauge, focused ? 200 : -200, hl, yl);
+    /* ★★★ 2026-09-27 订正（同 §BE #110）：`AddToYoukaiGauge` 的第一道闸（`th08:0x43c0c2`）读的
+     * `ds:0x17d6ed4` **全 exe 没有写点、又是 BSS**（⇒ 恒为 0）⇒ 「整形中丢掉 ±200」那条分支永不成立
+     * ⇒ 击破 ±200 **无条件照加**（decomp `EnemyManager.cpp:670-677` 传的 `param_2 = 0` 只对那条死分支有意义）。*/
+    s->gauge = yk_gauge_add2(s->gauge, focused ? 200 : -200, hl, yl);
     /* ★★★ 2026-09-22 夜（P-B）：**逢魔那一颗刻符与聚焦无关** —— 一手它在死亡公共尾
      *（`EnemyManager::on_tick` 的 `th08:0x42da2a`/`th08:0x42da38` ⇒ `th08:0x42da41 push 1` /
      * `th08:0x42da54 spawn_item(type 7, state 1)`），人侧（未聚焦）一样掉。
@@ -3753,11 +3758,12 @@ static int on_tick_2(ce_card_t *c)
              * ⚠ 两条必须照抄的差别：① **`IsYoukai()`（`player+5`）要等换形 7 帧才置位**
              *   （`th08:0x44b1d0 cmp [player+8],7` / `:0x44b1d9 mov BYTE [player+5],1`）⇒ 我们读 **`focus_age >= 7`**；
              *   ② **刻符那笔用的是 `player+3`（`isYoukaiMode`，立即生效）** ⇒ 两笔**不同步**，别合成一条。
-             * 一手恒 **+100（= 1%）**、永不取负；`param_2 = 0` ⇒ 受 `shotActive` 那道闸（= 放符卡中不给）。*/
+             * 一手恒 **+100（= 1%）**、永不取负；`param_2 = 0` 对应的是 `0x43c0c2` 那道闸 ——
+             * ★ 2026-09-27 订正：那道闸读的全局**恒为 0**（见 §BE #110）⇒ 擦弹这一笔也**不做闸**。*/
             {
                 int32_t hl2, yl2;
                 yk_gauge_limits_solo(focused ? 1 : 0, &hl2, &yl2);
-                if (focused && s->focus_age >= 7 && !yk_gauge_gate_blocks(yk_bomb_active()))
+                if (focused && s->focus_age >= 7)
                     s->gauge = yk_gauge_add2(s->gauge, 100, hl2, yl2);
             }
         }
