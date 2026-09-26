@@ -159,6 +159,53 @@
 原生把 `type(8)` 放层 20（`effect.anm` 7 处）/ 2 / 6 仍是事实，照抄即可；层 12–19 放模式 8 理论可行、未实测。
 **透视**：exe 只导入 `D3DXMatrixPerspectiveFovLH`（无 Ortho），所有相机都是透视投影 ✅——绕 Y 转有近大远小。
 
+## 3c. ★★★ `layer(n)` 会**派生 `resolutionMode`**（`set_layer` `0x4066b0`）—— 一个静默放大 2 倍的坑
+
+> **一手（2026-09-26，卡 108 owner #39「人妖槽我是完全看不到」的真根因）**。过程：
+> `304 layer` 的 handler `0x47b67b` 只有三条指令就把参数交给 `0x4066b0`；把 `0x4066b0` 读完才看到
+> 它**顺手改 `flags_hi`**，而 `resolutionMode` 就住在 `flags_hi` 的同一批位里（掩码 `0x1c00000`）。
+
+```asm
+; 304 layer 的 handler（AnmVm__run 内联，跳表 0x47ba4c 的下标 3 —— 下标 = opcode − 301）
+47b67b  MOVZX EAX,byte ptr [EDI+8]      ; 参数低 8 位
+47b682  CALL 0x4066b0                   ; set_layer(vm, layer)
+
+; set_layer  0x4066b0（thiscall(vm; layer) ret 4）
+4066b6  MOV [ECX+0x18],EDX              ; vm.layer = layer
+4066ba  CMP EDX,0x3  / JL 4066dc        ; 3..19：
+4066ca  flags_hi = (f & ~0x200000) | 0x100000        ; bit20 = 1
+4066dc  CMP (layer-0x14),0x3 / JA 4066fd ; 20..23：
+4066ef  flags_hi = (f & ~0x100000) | 0x200000        ; bit21 = 1
+4066fd  flags_hi &= ~0x300000                        ; 其余：bit20/21 清零
+406708  CMP EDX,0x14 / JL 406712 ; ...; CMP EDX,0x20 / JLE 40671a   ; 20..32 →
+406712  LEA EAX,[EDX-0x25] / CMP EAX,0x8 / JA 406728                 ; 或 37..45 →
+40671a  flags_hi = (f & ~0x1800000) | 0x400000        ; ★ bit22 = 1
+```
+
+- `0x400000` **正是 `resolutionMode` 的模式 1**：位归属与 `th18:0x47b5de`（`313 resolutionMode` 的
+  handler：`(f & ~0x1c00000) | (arg << 22 & 0x1c00000)`）逐位一致，与 `0x4063d0` 的读法也逐位一致
+  （`and eax,0x1c00000` / `cmp 0x400000` = 模式 1）。⇒ **模式 0 = 脚本没写且没人写过 `layer(20..32|37..45)`。**
+- 模式 1 的后果（`th18:0x4063d0`，见 §3b 的同一条链）：**VM 位置三个分量全体 × `DAT_0056aca0`**
+  （1280×960 下 = 2.0），尺寸那一支在 `th18:0x4817c6` 同样 ×2。模式 2 = `DAT × 0.5` = **×1**、
+  模式 0 = 不乘、模式 3/4 同 1/2。⇒ 于是有这条**硬规则**：
+
+> **★ 任何写 `layer(20..32)` 或 `layer(37..45)` 的脚本，都必须在同一脚本里、紧跟其后显式写回
+> `resolutionMode(2)`**（顺序不能反：`layer` 先清 bit23/24 再置 bit22，`resolutionMode` 最后整段覆盖）。
+> 否则该 VM 的**位置与尺寸都按 ×DAT 走** —— 而卡侧（`ce_anm_spawn`/`ce_anm_spawn_ui` + `ce_anm_set_pos`）
+> 写的一般是**表面 px** ⇒ 位置翻倍、整块画到屏外（960 高的屏上 y 864 → 1728），**一个像素都看不见**，
+> 而所有"这 VM 还活着、alpha 255、层也对"的诊断都会显示正常。
+
+- **实跑合证（卡 108）**：`0bc213c` 给 TH08 的人妖槽 HUD 五支脚本注入 `layer(25)`（**目的**是让暂停
+  模糊罩盖得住、能进 P 键截图 —— 那个目的本身是对的）之后，owner 连续三轮都报"人妖槽看不见"；
+  中间两轮都在改**位置**（脚本 `pos` 归零、锚点照抄 113）⇒ 无效。补上 `resolutionMode(2)` 之后
+  才回到 ×1。**反向样本（看得见的那些）**：112 的飞碟槽、113 的灵界槽都写着
+  `layer(25|24); resolutionMode(2);`（`assets/ability/scripts/302_ufo_hud_slot.anm.txt:30-32`、
+  `174_trance_gauge.anm.txt:19-21`）—— 它们当初写这行是为了"值以 2× 设计空间为准"，**顺带**躲过了这个坑。
+- ⚠ 层 **3..19** 只置 bit20、层 **20..23** 只置 bit21，两者都**不在** `resolutionMode` 的掩码
+  （`0x1c00000` = bits 22–24）里 ⇒ 世界层 VM（`YK_ORB_ANM_LAYER 7`、`YK_POPUP_ANM_LAYER 11` 等）
+  **不受影响**（TH16 的掩码是 `0x700000` = bits 20–22，**别把 TH16 的结论搬过来**：在 TH16 里层 3–19
+  反而会踩到模式 1）。
+
 ## 4. 用法（card-expand）
 
 `mods/th18.v1.00a/card-expand/native/sdk.h` 的 `ce_anm_spawn(anm, script, layer)` 只包 `0x405bf0`；
@@ -171,5 +218,8 @@
 - ~~世界层投影是否透视~~ → 全透视 ✅（§3b）。
 - ~~层号 → 渲染阶段 → 相机的精确表~~ → [02-render-stages.md](02-render-stages.md) ✅（两个大桩的层号 41/42 🟡）。
 - 模式 8 的 9 块预制四边形已读（[02 §4](02-render-stages.md)）：几何居中；实跑顶边对齐的原因仍未定位，用 `pos` 上移半张补偿 🟡。
-- `layer(n)` 指令对 originMode / resolutionMode 的默认设置：未反，沿用原生层 20 脚本的写法。
+- ~~`layer(n)` 指令对 originMode / resolutionMode 的默认设置~~ → **`layer` 会派生 `resolutionMode`**：
+  层 20–32 / 37–45 ⇒ 模式 1（位置/尺寸 ×DAT），层 3–19 ⇒ 只置 bit20（与 `resolutionMode` 无关）；
+  修法 = 紧跟一行 `resolutionMode(2)`（§3c，一手 + 实跑）。⚠ `originMode` 那一半仍未反（暂时只靠
+  原生脚本的写法对齐）。
 - `AnmManager__interrupt_tree` 的 ABI 没看（未用）。

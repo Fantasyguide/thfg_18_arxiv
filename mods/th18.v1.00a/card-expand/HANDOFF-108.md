@@ -45,11 +45,11 @@
 | **子机 第 0 步（B-1）** | 108 **不再声明隐藏** + 低速改用**新增的** `ce_native_option_sweep_keep_state()`（只杀 VM 的显示、`state`/坐标不动）| 待实跑（§3）；`AUDIT §BE #78` |
 | **子机 第 2 步** | 膛口断点加早退「**本帧已有卡认领 set ⇒ 放行**」—— 原来它会把**我们那些行**的弹也拦掉（膛口正是原生那 4 格）| 待实跑；`§BE #79` |
 | **子机 第 1+3 步** | 新增每卡声明 `ce_native_option_keep_records()`（108 低速声明）⇒ 构建断点**什么都不做**（不压 `lvl`）⇒ 连 **111 同时声明隐藏（魔理沙机体）**时记录/坐标也照建 | 待实跑（魔理沙那一路）；`§BE #80` |
-| **人妖槽定位** | 按 owner「**照着 113** 定位」：锚点写死 **`YK_GAUGE_BASE_X/Y = 248/928`**（= 113 的 `TRANCE_HUD_BASE_*`），**不再吃货架锚点** | 待实跑（§3）；`TUNING §2.0zy` |
+| **人妖槽定位**（2026-09-26 订正）| 锚点不再抄 113，改成**一手换算的游玩区左下角 `(257,928)`**；y 基准从自造的 481 改成 **TH08 游玩区下沿 464** ⇒ 槽条 `(257,898)`、妖怪图标 `(481,898)`、夜点 `(353,920)`（算法见 [`AUDIT.md`](AUDIT.md) §BE #100）| 单测 12 条 + `make check` rc=0；实跑判据 = §3 第 3/4 行 |
 | **#42 刻符尺寸** | 先补 `scale(2.0)`（错，抄了 UI 层规矩）→ owner 报「大了 3 倍」→ 改成**不注入**（刻符是**世界层**，本来就吃 `×DAT=2`）| ✅ **实跑已验**：`youkai/orb.vm … scale 1.00 / alpha 255 / layer 7 / draw = (87,216)` |
 | **#26 决死弹幕变红** | 染色链照 115 的**机制**（记原色 / 每帧还原 / 只动 RGB 不碰 alpha）；颜色按 owner 口径改**纯红 `0xffff0000`** | ✅ 链已验（`youkai: deathbomb window - tinted N …`）；够不够红待眼判 |
 | **#29 / #32 光环持续触发** | 改成**每个形态边沿只起一次** | ✅ **实跑已验**：`youkai: body Shift aura ON` 每进一次妖侧**恰好一行** |
-| **#30 人妖槽看不见** | 生成器给四支 HUD 脚本注入 `layer(25)` + 脚本 `pos`/`posTime` **归零**（位置全归 C 侧写）| 资产侧已验（产物 `script49` = `layer(25)+pos(0,0,0)`）；定位法见上（照 113）|
+| **#30/#39 人妖槽看不见**（2026-09-26 **定案**）| 真根因 = 注入的 `layer(25)` 经 `set_layer th18:0x4066b0` 置 `flags_hi` bit22 = `resolutionMode 1` ⇒ **位置与尺寸 ×DAT=2 ⇒ 画到屏外**；修法 = 紧跟一行 `resolutionMode(2);`（详见 [`AUDIT.md`](AUDIT.md) §BE #100）| 回读产物：五支脚本首两条 = `ins_304(25)` + `ins_313(2)`（四机体共 20 支）；`make check` rc=0 |
 | **#34 / #35 灵梦妖侧弹** | 妖侧弹脚本改**逐机体**（`YK_BULLET_ANM` = pl00/01/03→5、pl02→9）| 资产侧已验（`make sht` 回读 + 产物 `script5` = `layer(13)+sprite(24/25)`）；行为面取决于子机那条 |
 | **#36 切换音效方向** | ★ **2026-09-26 订正（上一版是反的）**：一手声音表基准错位一格 ⇒ 那枚 TH08 独有音 `se_ophide` 属于**人→妖**（id `0x28`），不是妖→人。现在只在**人→妖**播，门 = 本帧使魔表非空；妖→人 TH08 是 `se_opshow`（TH18 没有）⇒ 按 owner 口径不播 | 待实跑（§3 第 5 行）|
 | **#37 第一半 人侧火焰使魔** | **自查：资产 / 脚本 / 层 / alpha 四项都没问题**（贴图浅粉 219,164,164、无 `layer()` 由 C 补 7、人侧 alpha 0xff）| 待实跑重看；若仍不见再加逐 VM 实况行 |
@@ -73,8 +73,8 @@
 | --- | --- | --- | --- |
 | 1 | `youkai: native option slots at low speed - N/4 live` | **不再是 `0/4`**（灵梦与**魔理沙**都应 ≠0/4；预期 = 当前火力档格数）| 仍 0/4 ⇒ `keep_records` 没生效（§BE #80）或 sweep 仍清 `state`（#78）|
 | 2 | 妖侧弹幕 | 应出现**子机那一列**，且**从看得见的那台子机出膛**（判据行 `youkai/opt #N … muz(x,y)` 应 ≈ 同一行的 `opt(x,y)`）| 无第二列 ⇒ 看 `muz` 是不是 `(0,-400)`（镜像没生效 = 旧 DLL）；有第二列但位置怪 ⇒ 看 `opt` 与 `muz` 差多少 |
-| 3 | `youkai: gauge HUD geometry … anchor` | **248/928**（照 113 的常量）| 还是 257/924 ⇒ 跑的是旧 DLL |
-| 4 | `youkai/hud.vm bar/human/youkai/cursor … draw = pos+pos2+ent = 表面 (…)` | 四件 `draw` ≈ 左下角（y 约 860–930）| `draw` 对却看着在上方 ⇒ 绘制组/pass；`draw` = (0,0) ⇒ 句柄陈旧 |
+| 3 | `youkai: gauge HUD geometry … anchor` | **257/928、bar (257,898)、text (385,892)**（一手换算的游玩区左下角）| 仍是 `248/928` 或 `248,864` ⇒ 跑的是旧 DLL；是 `257,924` ⇒ 只换了 x（半个修）|
+| 4 | `youkai/hud.vm bar/human/youkai/cursor … draw = pos+pos2+ent = 表面 (…)` | 四件 `draw` = 槽条/人间 `(257,898)`、妖怪 `(481,898)`、游标 `(385,906)`——**而且屏上真看得见**（层 25 + `resolutionMode(2)` ⇒ `draw` 就是落点）| 日志对但屏上仍没有 ⇒ 回到 §BE #100：先确认资产已同批部署（`md5sum` 四份 `pl0X.anm`）；`draw` = (0,0) ⇒ 句柄陈旧 |
 | 5 | `youkai: shift SE 人→妖 played (se_ophide …)` 与 `… shift SE 妖→人 - silent by design …` | **人→妖**在有使魔的那一次**响**（日志 `familiar live count = N≥1`）；**妖→人**只留「silent by design」那一行、不出声 | 人→妖 打的是 `NOT played - no familiar live this frame` ⇒ 那一刻真的没有使魔（看 `ledger` 的 `spawned`/`body-emitter slot(s) skipped`）；响是响了但听不见 ⇒ 音量/wav |
 | 6 | `youkai: HIGH-SPEED safety release #N …` | **一行都没有**最好（有 ⇒ 帧界那条退位交回没跑到 = 「滞留」的机制）| 反复出现 ⇒ 修 `yk_option_release` / `on_option_pose_apply` 的退位分支 |
 | 7 | `youkai/orb.vm … scale` | **1.00**（#42；19:02 那局已验）| 若 2.00 ⇒ 跑的是旧 DLL |
@@ -120,7 +120,7 @@ youkai: native option slots at low speed - 0/4 live
 | 妖侧机体的 anm（本体 / 刻符 / 人妖槽 / 字形）| `assets/build_player_anm.py`（`YK_EXTRA_SCRIPTS` / `_YK_EXTRA_LAYOUT`）|
 | 原生子机的「藏 / 恢复 / 保留记录」层 | `native/sdk.c`（两支断点 + 两支 sweep）+ `native/sdk_core.c` 的两个声明层 |
 | 子机阵型与声明 | `youkai_core.h` 的 `YK_OPTION_BY_CHAR` / `yk_option_offsets`；`youkai.c` 的 `yk_option_declare` |
-| 人妖槽定位常量 | `youkai.c` 的 `YK_GAUGE_BASE_X/Y`（= 248/928，照 113）|
+| 人妖槽定位常量 | `youkai.c` 的 `YK_GAUGE_BASE_X/Y`（= **257/928** = 游玩区左下角）+ `youkai_core.c` 的 `YK_GAUGE_640_FLOOR`（= 464 = TH08 游玩区下沿）|
 
 ## §6 owner 口径（逐字，最高优先）
 
@@ -134,7 +134,7 @@ youkai: native option slots at low speed - 0/4 live
 - 快速高低切：「原本 th08 按 shift **延迟 8 帧**切机体，因此魔理沙演化出快速高低切技巧；**不一定要照着 8 帧复刻**，
   要求不高，主要是**快速高低切不能出显著的 bug**」⇒ 已按此加固（真杀过才补 + 20 帧冷却）。
 - 决死染色：「TH08 决死时场上弹幕的 color **完全是变成红色**，目前的颜色似乎是照着 115 卡复刻的」⇒ 已改**纯红**。
-- 定位：「人妖槽好像在整个画面的**上方**被挡住了……你难道就不能照着 **113 116 117** 定位吗？」⇒ 已按 113 的常量口径。
+- 定位：「人妖槽好像在整个画面的**上方**被挡住了……你难道就不能照着 **113 116 117** 定位吗？」⇒ 当年按 113 的常量口径；2026-09-26 进一步：「**参考一下 th12、th13、th16、th17 以及 th18 原生的左下角框**，看一下人妖槽的左下角位置应该是哪样的坐标」⇒ 已改成**一手换算的游玩区左下角 (257,928)**（见 §2 第一行的算法；113 的 248 是 TH13 的槽根，不是本卡的一手值）。
 - 已定不做 / 不动：108 的 Power / Point 不动；奖命梯只记录；收点线 107/108 不补一手。
 - 规格第 3 条「跟随 P 点等级」**已静态核过成立**：机体 0/1/2 走手写死的 TH08 妖侧家位置（TH08 里就是 1/1/4 格、与 P 无关）；
   机体 3 早苗走 TH18 原生阵型表，格数 = `floor(P/100)`（TH16 文文口径）⇒ P 涨一格多一个子机、站位换档。

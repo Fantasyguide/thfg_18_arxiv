@@ -926,28 +926,32 @@ int main(void)
     CHECK(yk_gauge_color(-8000) == 0x7070ffu);      /* 极人优先于中人 */
     CHECK(yk_gauge_color(8000) == 0xff7070u);       /* 极妖优先于中妖 */
     /* HUD 几何（一手 `AsciiManager`，**640 空间的字面量**）：**输出一律表面 px** ——
-     * `px = 1/to640 = 2`（TH18）。2026-09-22（P2）实跑定案：那批 VM 的脚本没有 `resolutionMode`
-     * ⇒ `th18:0x4063d0` 的 mode 0 支**一分量都不乘**（= 1 单位 = 1 表面 px），写 640 空间的数会
+     * `px = 1/to640 = 2`（TH18）。2026-09-22（P2）实跑定案：那批 VM 的脚本**显式写 `resolutionMode(2)`**
+     * ⇒ `th18:0x4063d0` 的 mode 2 支 = `DAT × 0.5` = **×1**（= 1 单位 = 1 表面 px），写 640 空间的数会
      * 「位置高半个屏幕 + 整体缩小 50%」（owner th08 #14/#15）。全文见 `youkai_core.h` 的注。
-     * 锚点 = 货架那一格左下角（表面 px）(257,924)。*/
+     * 锚点 = **游玩区左下角**（表面 px）——2026-09-26（#39）改成一手换算的 `(257,928)`，
+     * 所有 y = `ay − (464 − y640)·k`（464 = TH08 游玩区的下沿，见 `YK_GAUGE_640_FLOOR`）。*/
     {
         yk_gauge_hud_t h;
         float a[2];
-        const float ax = 257.0f, ay = 924.0f;                       /* 表面 px（锚点直接用）*/
+        const float ax = 257.0f, ay = 928.0f;                       /* 表面 px（锚点直接用）*/
         const float k  = 2.0f;                                      /* 640 空间 → 表面 px */
-        a[0] = 257.0f; a[1] = 924.0f;
+        a[0] = 257.0f; a[1] = 928.0f;
         yk_gauge_hud(0, a, 0.5f, &h);
         CHECK(h.px == k);                                           /* ★ P2：倍数出口 = 2 */
         /* ★ 2026-09-22 晚订正：槽条的停稳 y = **449**（`ascii.anm` script5 的 `posTime` 终点），
-         * 465 只是滑入动画的起点 ⇒ 与两个图标同高（原来写 465 ⇒ 条比图标低 16 px）。*/
-        CHECK(h.bar_x == ax && h.bar_y == ay - 32.0f * k);          /* 槽条 128×16，左上 ⇒ 表面 860 */
+         * 465 只是滑入动画的起点 ⇒ 与两个图标同高（原来写 465 ⇒ 条比图标低 16 px）。
+         * ★ 2026-09-26（#39）：基准从 481 改成 464（TH08 游玩区下沿）⇒ 整块下移 34 px。*/
+        CHECK(h.bar_x == ax && h.bar_y == ay - 15.0f * k);          /* 槽条 128×16，左上 ⇒ 表面 (257,898) */
         CHECK(h.bar_y == h.human_y);                                /* ★ 条与图标同高（一手 449）*/
-        CHECK(h.human_x == ax && h.human_y == ay - 32.0f * k);      /* 人间图标在条左端（88−56−32=0） */
+        CHECK(h.human_x == ax && h.human_y == ay - 15.0f * k);      /* 人间图标在条左端（88−56−32=0） */
         CHECK(h.youkai_x == ax + 112.0f * k);                       /* 妖怪图标在条右端（88+56−32=112） */
         CHECK(h.cursor_x == ax + 64.0f * k);                        /* g=0 ⇒ 96−32=64 */
-        CHECK(h.cursor_y == ay - 28.0f * k);
+        CHECK(h.cursor_y == ay - 11.0f * k);
         CHECK(h.text_x == ax + 64.0f * k);
-        CHECK(h.text_y == ay - 35.0f * k);
+        CHECK(h.text_y == ay - 18.0f * k);
+        CHECK(h.night_x == ax + 48.0f * k);                         /* 一手 x = 80 ⇒ 80 − 32 = 48 */
+        CHECK(h.night_y == ay - 4.0f * k);
         /* 满妖侧：游标走到条右端（96+56−32 = 120）。*/
         yk_gauge_hud(10000, a, 0.5f, &h);
         CHECK(h.cursor_x == ax + 120.0f * k);
@@ -960,7 +964,7 @@ int main(void)
         CHECK(h.cursor_x == ax + 120.0f * k);
         /* 锚点 NULL / to640 非法 ⇒ 锚点当 0、比例回默认 2（不崩）。*/
         yk_gauge_hud(0, 0, 0.5f, &h);
-        CHECK(h.bar_x == 0.0f && h.bar_y == -(481.0f - 449.0f) * k);
+        CHECK(h.bar_x == 0.0f && h.bar_y == -(464.0f - 449.0f) * k);
         yk_gauge_hud(0, a, 0.0f, &h);
         CHECK(h.px == 2.0f && h.bar_x == 257.0f);                   /* to640 = 0 ⇒ 倍数回 2，锚点仍是表面 px */
         yk_gauge_hud(0, a, 0.5f, 0);                                /* out = NULL：什么都不做 */

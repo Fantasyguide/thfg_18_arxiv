@@ -582,10 +582,12 @@ def _yk_extra_plan(player: str):
                         scale_inject=False, th08_opcodes=True,
                         # ★ #30：人妖槽四支 + 字形要**归零脚本 pos**（否则与 C 侧锚点叠加 ⇒ y 翻倍画到屏外）
                         zero_pos=(name in ("gauge", "gaugefont")),
-                        # ★ 2026-09-23（#th11-3 同源缺口）：刻符（`orb`）走**世界列表**且自带层
-                        #   （`YK_ORB_ANM_LAYER`，由 C 侧传）⇒ 不注入；四支人妖槽 HUD + 字形
-                        #   走 `ce_anm_spawn_ui`（UI 列表）⇒ 必须自带 `layer(25)`，见
-                        #   `_inject_hud_layer` 的一手理由。
+                        # ★ 2026-09-23（#th11-3 同源缺口）+ 2026-09-26（#39 真根因）：刻符（`orb`）
+                        #   走**世界列表**且自带层（`YK_ORB_ANM_LAYER`，由 C 侧传）⇒ 不注入；
+                        #   四支人妖槽 HUD + 字形走 `ce_anm_spawn_ui`（UI 列表）⇒ 必须自带
+                        #   `layer(25)` **并且紧跟一行 `resolutionMode(2)`**（少了后半句 = 位置被
+                        #   `set_layer` 派生的 resolutionMode 1 乘 2 ⇒ 整块画到屏外，见
+                        #   `_inject_hud_layer` 的一手理由）。
                         hud_layer=(None if name == "orb" else 25)))
     return out
 
@@ -982,7 +984,8 @@ def _inject_body_prologue(body: str) -> str:
 
 
 def _inject_hud_layer(body: str, layer: int) -> str:
-    """给「追加进 `pl0X.anm` 的 **HUD** 脚本」补一行 `layer(N)`（2026-09-23 立）。
+    """给「追加进 `pl0X.anm` 的 **HUD** 脚本」补 `layer(N);` **+ `resolutionMode(2);`**（2026-09-23 立、
+    2026-09-26 补后半句 —— 见下面「★ 陷阱」）。
 
     为什么必需（一手）：`AnmManager__render_layer` `0x4882b8` 的 UI 列表那一段把 layer 24..32
     折到绘制组 layer+13、**其余任何层一律兜底折到组 39**；而暂停模糊罩 = `text.anm` script59 的
@@ -992,6 +995,31 @@ def _inject_hud_layer(body: str, layer: int) -> str:
     （观感差异；同一条规则害过 99/104/105 三支，它们写的是 26 也照红过）。
     ⇒ TH18 侧一律 24 或 25（推荐 25，与 `ce_hud_vm_text_*` 一致）。
 
+    ★★★ **陷阱（2026-09-26，owner #39「人妖槽我是完全看不到」的真根因，一手逐条）**：
+    `layer()` **不是只写 `vm+0x18`** —— 它调 `set_layer` `th18:0x4066b0`，那个函数还会**派生
+    `flags_hi(+0x538)` 的位**，而 `resolutionMode` 就住在同一批位里（掩码 `0x1c00000` = bits 22–24）：
+
+    ```
+    40667b MOVZX EAX,byte [EDI+8] / PUSH EAX / CALL 0x4066b0      ; 304 layer 的 handler
+    4066b0 set_layer: [ecx+0x18] = layer
+    4066b6..4066da  3..19   → flags_hi = (f & ~0x200000) | 0x100000      ; bit20（不在 resolutionMode 掩码里）
+    4066dc..4066fd  20..23  → flags_hi = (f & ~0x100000) | 0x200000      ; bit21（同上，无害）
+    4066fd          其余    → flags_hi &= ~0x300000
+    406708..406726  layer ∈ 20..32 **或** 37..45 → flags_hi = (f & ~0x1800000) | 0x400000  ; ★ bit22！
+    ```
+    `0x400000` = `resolutionMode` 的**模式 1** ⇒ `th18:0x4063d0` 那一步把 VM 的位置**三个分量全体
+    × `DAT_0056aca0`**（1280×960 下 = **×2**；尺寸那一支在 `th18:0x4817c6` 同样 ×2）
+    ⇒ 我们 C 侧按**表面 px** 写的 `(248,864)` 会被画到 `(496,1728)` —— **屏只有 960 高 ⇒ 整个人妖槽
+    一个像素都不显示**。这就是「脚本里加了 `layer(25)` 之后 HUD 又看不见」的全部原因
+    （`0bc213c` 注入层 → 之后每一版 owner 都报看不见；`youkai/hud.vm` 的诊断行把 `pos+pos2+ent`
+    当成了「表面坐标」，而那个和**还要再乘一次 DAT**，所以日志看着一直是对的）。
+
+    ⇒ 修法：**层之后立刻写回 `resolutionMode(2)`**（= `(f & ~0x1c00000) | 0x800000`，`0x47b5de` 的
+    handler）—— 模式 2 在 1280×960 下是 `DAT × 0.5 = ×1`，也就是「脚本没写 `resolutionMode` 时」的
+    那套表面 px 口径 ⇒ **C 侧的数值一个都不用动**。112 的飞碟槽 / 113 的灵界槽本来就是
+    `layer(25|24); resolutionMode(2);` 这个顺序（它们看得见正是因为这个）。⚠ 顺序不能反。
+    一手全文与实跑合证见 `engine/anm/th18/01-vm-instantiate.md` §3c。
+
     插入点：脚本头之后的第一条**指令**之前。若头后面紧跟的是标签（`-1:` / `0:` 那种）就插到标签之后 ——
     thanm 的 `layer()` 是脚本级指令，放进 `-1:` 块里会改不到 VM 的层。
     """
@@ -999,10 +1027,13 @@ def _inject_hud_layer(body: str, layer: int) -> str:
     if not m:
         raise SystemExit("注入 HUD 层失败：脚本头没找到")
     head, rest = body[:m.end()], body[m.end():]
+    # ⚠ 注入的正文里**不许写注释**：`_verify_appended` 会拿计划正文与「编译后再反解回来」的正文
+    #   逐字符比（注释在往返里必然丢）⇒ 加一行 `//` 就会假红。理由全写在本函数的 docstring 里。
+    note = f"    layer({layer});\n    resolutionMode(2);\n"
     lm = re.match(r"[ \t]*(-?\d+:)[ \t]*\n", rest)
     if lm:                                            # 头后面是标签 ⇒ 插到标签之后
-        return head + rest[:lm.end()] + f"    layer({layer});\n" + rest[lm.end():]
-    return head + f"    layer({layer});\n" + rest
+        return head + rest[:lm.end()] + note + rest[lm.end():]
+    return head + note + rest
 
 
 

@@ -21794,3 +21794,67 @@ owner 逐字（2026-09-26，接着 15:05 实跑）：
   那与这条不符；若是**铺开的范围大**，则要看**上抛→归航的时机**（state 3 的 `vy` 从 −2.0 每帧 +0.05 过零 ≈ 40 帧
   之后才归航 —— 我们的 `YK_ORB_VY0/VY0_RAND` 与 `yk_orbs_tick` 的转换点要逐帧对一次）。
   ⇒ 这条**要 owner 再描一句**：是"**同时看到的颗数太多**"还是"**从敌机铺出去的范围太大**"。
+
+## §BE 详录 #100（2026-09-26 第八批）：108 人妖槽「**完全看不见**」的真根因 = `layer()` 派生 `resolutionMode`（一手）+ 定位改成「游玩区左下角」
+
+owner 逐字（2026-09-26，接 15:05 实跑）：
+> 「**人妖槽我是完全看不到**」
+> 「你**参考一下 th12、th13、th16、th17 以及 th18 原生的左下角框**看一下人妖槽的左下角位置应该是哪样的坐标，目前我是完全看不见」
+
+### 1. 真根因（一手 + 时间线合证）：注入的 `layer(25)` 顺手把 `resolutionMode` 改成了 **1**（位置 ×DAT）
+
+**一手**（本轮新读，逐条）：
+- `304 layer` 的 handler = `th18:0x47b67b`（`AnmVm__run` 内联；跳表 `0x47ba4c` 下标 3，**下标 = opcode − 301**
+  —— 用 `0x47b12c` = `302 type` 反推出来的）⇒ `MOVZX EAX,byte [EDI+8]; CALL 0x4066b0`。
+- `set_layer` `th18:0x4066b0` 除了写 `vm+0x18`，还**派生 `flags_hi(+0x538)` 的位**：
+  层 3–19 ⇒ bit20；层 20–23 ⇒ bit21；**层 20–32 或 37–45 ⇒ `(f & ~0x1800000) | 0x400000`**（bit22）。
+- `0x400000` 就是 **`resolutionMode` 的模式 1**：`313 resolutionMode` 的 handler `th18:0x47b5de` 写的是
+  `(f & ~0x1c00000) | (arg<<22 & 0x1c00000)`（掩码 bits 22–24 与 `set_layer` 的 bit22 同域）；
+  `th18:0x4063d0` 读的也是 `and eax,0x1c00000 / cmp 0x400000` ⇒ 模式 1 分支
+  ⇒ **位置三分量全体 × `DAT_0056aca0`（1280×960 下 = 2.0）**，尺寸那一支（`th18:0x4817c6`）同样 ×2。
+- ⇒ 我们 C 侧按**表面 px** 写的 `(248,864)` 被画到 `(496,1728)` —— 屏只有 960 高 ⇒
+  **整个人妖槽一个像素都不显示**；而 `youkai/hud.vm` 那行诊断打的是 `pos+pos2+ent`（未再乘 DAT）
+  ⇒ **日志一路看着都对**（诊断口径本身也要修，见 §4）。
+
+**时间线（合证）**：`0bc213c`（2026-09-23）给五支 HUD 脚本注入 `layer(25)`（目的是让暂停模糊罩盖得住、
+能进 P 键截图 —— 目的正确）⇒ 之后 owner **连续三轮**报"人妖槽看不见"（#30 那一批：`043d5b1` 脚本 pos 归零、
+`d9d10f8`、`e3eecca` 连 `posTime` 一起删、`da72bed` 锚点照抄 113）—— 三轮改的都是**位置**，所以都没用。
+**反向样本（看得见的）**：112 的飞碟槽（`302_ufo_hud_slot.anm.txt:30-32`）与 113 的灵界槽
+（`174_trance_gauge.anm.txt:19-21`）都写着 `layer(25|24);` **紧接着** `resolutionMode(2);`
+—— 它们当初写这行的理由是"值以 2× 设计空间为准"（在**没有 layer 的情况下**那句是对的、是 no-op），
+**顺带**把这个坑躲过去了。
+
+### 2. 改了什么
+
+| 文件 | 改动 | 为什么 | 谁改的 | 怎么验的 |
+| --- | --- | --- | --- | --- |
+| `assets/build_player_anm.py` | `_inject_hud_layer()` 注入的两行从 `layer(N);` 变成 `layer(N);` **+ `resolutionMode(2);`**（顺序不可反） | 见上：`set_layer` 派生 bit22 ⇒ 必须紧跟写回模式 2（= `DAT × 0.5` = ×1） | 108 owner | `make anm` 回读产物：五支脚本首两条 = `ins_304(25)`、`ins_313(2)`（四机体各 5 支，共 20 支）；`anm-verify` / `make check` rc=0 |
+| `native/cards/youkai_core.c` | 新增 `#define YK_GAUGE_640_FLOOR 464.0f`（TH08 游玩区下沿）并把 4 处 y 基准 `481` → 它 | 旧值 481 是自造值 ⇒ 折算到表面**整块高 34 px**（`(481−464)×2`） | 108 owner | `yk_gauge_hud` 单测更新（`bar_y == ay − 15k` 等 12 条）+ `make check` 全绿 |
+| `native/cards/youkai.c` | `YK_GAUGE_BASE_X 248 → 257`（= 游玩区左沿）、`YK_GAUGE_BASE_Y 928` 不变；块尺寸 `256×78 → 256×64`（只影响"这块归我"的记账，不参与定位） | owner #39 要求"参考原生左下角框"：TH08 的槽条 x = 32 = **TH08 游玩区左沿**（相机 0 视口 `scale×(32,16,384,448)`）⇒ 折算到 TH18 表面 = 257；旧值 248 是抄 **113（TH13 灵界槽）** 的，不是本卡的一手 | 108 owner | 同上；落点 = 槽条 `(257,898)`、人间 `(257,898)`、妖怪 `(481,898)`、游标中心 `(385..497,906)`、百分比 `(385..465,892)`、夜点 `(353,920)` |
+
+**共享件影响面**：`assets/build_player_anm.py` 是"生成 `pl0X.anm`"的生成器（113/117/112 的追加脚本也走它），
+但本轮动的 `_inject_hud_layer()` **只被 108 的 `YK_EXTRA_SCRIPTS` 那条路（`hud_layer=`）调用** ⇒
+其余卡的脚本号 / sprite / 脚本文本**一个字都没变**（回读对账：`anm-verify` 的 20 支 YK 脚本 + 四支
+`pl0X.anm` 的原生部分逐 entry/脚本/贴图块一致）。`native/cards/youkai_core.{h,c}` / `youkai.c` 是 108 自己的文件。
+**回归跑了什么**：`make anm`（含 `verify_rebuilt` 全量回读）+ `make check`（rc=0，含 `youkai_core: 4677 checks,
+0 failed`）+ `make dllx87` + `python3 sites.py verify` + `python3 tooling/check-docs.py` 全绿。
+
+### 3. 给 owner 的验收（下一跑实跑）
+
+日志里那两行应当变成：
+```
+youkai: gauge HUD geometry (surface px; …) - anchor (257,928) bar (257,898) text (385,892) scale x2.0
+youkai/hud.vm bar  … ent(0x5f0)(257,898) = 表面 (257,898); sprite … scale 2.00 alpha 255 layer 25 …
+```
+**屏上应当看见**：游玩区左下角一条 256×32 的槽条（槽条左端一颗"人"字图标、右端一颗"妖"字图标、
+条上有游标）、条上方偏左的百分比数字、条下方更左的夜点数字 —— 整块比这一版**低 34 px、右 9 px**。
+⚠ 诊断行里的 `draw` 仍是 `pos+pos2+ent`：**它在模式 1 下不等于屏上落点**（要再乘 DAT）——
+本轮没改探针的算法，因为模式 2 恢复后两者重新相等（已在 `engine/anm/th18/01-vm-instantiate.md` §3c 写清）。
+
+### 4. 回流到 engine 层
+
+- [`engine/anm/th18/01-vm-instantiate.md`](../../../engine/anm/th18/01-vm-instantiate.md) **新增 §3c**
+  （`layer()` ⇒ `resolutionMode` 的硬规则，含 `0x47b67b` / `0x4066b0` / `0x47b5de` / `0x4063d0` 四段逐条）；
+  §5「未答」里那条 ❓「`layer(n)` 对 originMode/resolutionMode 的默认设置：未反」**已销账**。
+- [`engine/player/th08/03-youkai-body-and-gauge.md`](../../../engine/player/th08/03-youkai-body-and-gauge.md)
+  §2.3b ③ 补订正：「写 `(2)` 与不写等价」**只在脚本里没有 `layer(20..32|37..45)` 时成立**。
