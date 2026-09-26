@@ -461,7 +461,15 @@ void ce_option_pose_drop(ce_card_t *c)
 /* ★ 2026-09-23：**这一轮隐藏期内真的收掉过原生子机 VM** 的旗子（由 sweep 置、由可见化补重建清）。
  *   `BP_ce_item_frame` 只在它立着时才补 `repopulate` ⇒ **没杀过就一次都不重建**（快速高低切时不会
  *   按帧触发重建 / 广播；见那里的长注）。*/
+/* 判定「扫描停手了」的静默帧数：必须 > 0（同帧内卡 tick 与这里的先后不保证）且足够小
+ * （松 Shift 之后原生子机要立刻回来；4 帧 = 66 ms，肉眼看不见延迟）*/
+#define SDK_NATOPT_SWEEP_QUIET 4u
 static int s_natopt_swept;
+/* ★★★ 2026-09-26（owner 实跑：「咲夜妖机体的子机一直在重建」）：**本帧有没有卡在主动收原生子机**。
+ *   两个 sweep（老的 `ce_native_option_sweep()` 与 108 用的 `..._keep_state()`）在**被调用**时都盖一个
+ *   帧号戳（不只是「真收掉了」才盖）—— 因为「卡在躲这个」这件事本身才是判据（收干净之后每帧返回 0，
+ *   只看「收掉过」就看不见它还在扫）。用途见下面 restore 那一段。*/
+static uint32_t s_natopt_sweep_frame;
 
 int ce_native_option_sweep(void)
 {
@@ -484,6 +492,7 @@ int ce_native_option_sweep(void)
     if (n) {
         static int s_logged;
         s_natopt_swept = 1;        /* ★ 见 `BP_ce_item_frame` 的「可见化补重建」：真收掉过才需要补 */
+        s_natopt_sweep_frame = ce_sdk_frame();   /* ★ 2026-09-26：本帧有人在扫（见 restore 那一段）*/
         if (!s_logged) {
             s_logged = 1;
             ce_log("sdk: 原生子机自愈清理：本帧收掉 %d 支 VM（声明者 id %d）",
@@ -510,6 +519,7 @@ int ce_native_option_sweep_keep_state(void)
         /* ★ 与 `ce_native_option_sweep()` 的**唯一区别**：`state`（`+0x00`）与坐标**不动** */
     }
     if (n) s_natopt_swept = 1;      /* 与老 sweep 共用同一个旗子（可见化时补 repopulate） */
+    s_natopt_sweep_frame = ce_sdk_frame();       /* ★ 2026-09-26：本帧有人在扫（**无条件**盖戳，见 restore）*/
     return n;
 }
 
@@ -2253,8 +2263,24 @@ int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
         const int ch_now = *(const int32_t *)CE_ADDR_CHARACTER;
         const int hid_now = ce_native_option_hidden(ch_now);
         const uint32_t f_now = ce_sdk_frame();
-        if (!hid_now && s_natopt_swept && (s_natopt_fix_frame == 0u ||
-                                           f_now - s_natopt_fix_frame >= 20u)) {
+        /* ★★★ 2026-09-26：**还在扫就别补**（这是「子机一直在重建」的真根因）。
+         *   实跑日志（本机 `game/th18_card_expand.log`，char 2 = 咲夜）：
+         *     `native options restored (char 2, …, frame 13078/13754/13834/13888/13908/13928/…)`
+         *     —— 从 13908 起**每 20 帧一次**（= 下面那个冷却常数），每次后面紧跟四行
+         *     `youkai: option allocated (ptr …, anm id …)`（同一个 ptr、**新的** anm id ⇒ VM 被删重建）。
+         *   机制：108 在低速每帧调 `ce_native_option_sweep_keep_state()`（杀原生子机的显示，
+         *   但 `state`/坐标保留）⇒ 真收掉过 ⇒ `s_natopt_swept = 1`；而 `hid_now` 对**没声明隐藏的机体**
+         *   （咲夜/灵梦/早苗）恒为 0 ⇒ 这一段在**仍然按着 Shift**的时候就判「隐藏期结束了」⇒
+         *   `ce_repopulate_options()` 把原生那 4 格重建（VM 又长出来）⇒ 我们下一帧再扫掉 ⇒ 旗子又立起
+         *   ⇒ **20 帧一轮的自持循环**；而那次重建会**广播 `on_power_level_change`**（引擎的语义），
+         *   108 在那个回调里会把手里子机的指针清掉 ⇒ 四台子机被重建 ⇒ owner 看到的「一直在重建」。
+         *   （附带伤害：这个循环每 20 帧给**所有**卡广播一次 `on_power_level_change`，116 等卡会在里面
+         *     重分母机 ⇒ 不止 108 受影响。）
+         *   ⇒ 判据补一条：**本帧（或最近几帧）还有人在扫 ⇒ 不补**。停手之后（松开 Shift）才补，
+         *     语义与原来的「隐藏期结束」完全一致，只是不再被自己的 keep_state 扫描误触发。*/
+        if (!hid_now && s_natopt_swept &&
+            (s_natopt_sweep_frame == 0u || f_now - s_natopt_sweep_frame >= SDK_NATOPT_SWEEP_QUIET) &&
+            (s_natopt_fix_frame == 0u || f_now - s_natopt_fix_frame >= 20u)) {
             s_natopt_swept = 0;
             s_natopt_fix_frame = f_now ? f_now : 1u;
             *(volatile int32_t *)(uintptr_t)(CE_ADDR_GLOBALS_INNER + CE_OFF_OPT_LAST_LEVEL) = -1;

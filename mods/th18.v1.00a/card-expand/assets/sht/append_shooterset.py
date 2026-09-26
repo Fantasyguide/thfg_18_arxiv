@@ -1542,6 +1542,46 @@ YOUKAI_TIER_TABLES = {"R": YOUKAI_TIERS_R, "M": YOUKAI_TIERS_M, "S": YOUKAI_TIER
                       "A": YOUKAI_TIERS_A}
 
 
+# ============================================================================
+# ★★★ 2026-09-26（owner 实跑：「**整体妖机体的火力似乎有点弱**」）：妖侧弹的**绝对 DPS 对齐 TH18 本机**。
+#
+# 规格依据：owner 2026-09-23 的完整规格第 3 条 —— 「妖主机和子机按照 th08 里面的一手来做（包括跟随 p 点等级
+# 的行为），**除绝对 dps**」⇒ **形态/节奏/角度/子机数照抄一手，DPS 不照抄**，按本作同机体同档对齐
+# （先例：111 在 2026-09-23 也是这么做的，见 `AUDIT.md` §BE #75）。
+#
+# 实测差（本脚本在**构建期**从零售 `pl0X.sht` 现读，不是抄进来的数）：
+#   灵梦  妖侧比原生低速弱 10%–28%；魔理沙 **弱 55%–77%**；咲夜 弱 20%–33%；早苗 **弱 75%–85%**。
+#   ⇒ 每行伤害乘一个**逐（机体, 档）**的系数 `k = 原生低速 DPS / 妖侧 DPS`，然后**核对**回读值。
+#   · 目标 = 该文件**低速**主炮组 `set 5 + tier`（TH18 的 `set = 档 + (聚焦 ? 5 : 0)`；
+#     一手 `engine/sht/th16/07` §1 与 `th18` 侧同一套，实读 0x00–0x04 高速 / 0x05–0x09 低速）；
+#   · 妖侧占的就是**低速**那一态（按 Shift 时原生低速组被我们认领的组顶掉）⇒ 对齐它才是「手感不变」；
+#   · 伤害是 i16 整数 ⇒ 逐行 `round(dmg * k)` 后**回读实际 DPS** 并打印偏差（|偏差| > 2% 时构建期告警）。
+def _retail_dps(data: bytes, set_index: int) -> float:
+    """零售 `.sht` 里第 `set_index` 组的 Σ(damage / fire_rate)（每帧伤害，一手口径）。"""
+    offs = list(struct.unpack_from(f"<{N_SLOTS_RETAIL}I", data, OFF_ARRAY))
+    if set_index >= len(offs):
+        return 0.0
+    p = DATA_BASE_RETAIL + offs[set_index]
+    total = 0.0
+    while struct.unpack_from("<i", data, p)[0] != -1:
+        rate = struct.unpack_from("<b", data, p)[0]
+        dmg = struct.unpack_from("<h", data, p + 0x02)[0]
+        if rate > 0 and dmg > 0:
+            total += dmg / rate
+        p += STRIDE
+    return total
+
+
+def _rows_dps(rows) -> float:
+    total = 0.0
+    for r in rows:
+        if r["fire_rate"] > 0 and r["damage"] > 0:
+            total += r["damage"] / r["fire_rate"]
+    return total
+
+
+DPS_TOLERANCE = 0.02          # 逐行取整后的允许偏差（2%）
+
 def _youkai_tier_sets(target_file: str, anm_ids: dict) -> list:
     """该文件的 15 组（3 角色 × 5 档）。pl03 上全是**空组**（只有终止符）⇒
     卡侧 `yk_shotset_usable()` 读到 −1 ⇒ 回落到 `CE_SHT_SET_YOUKAI`（0x16）。"""
@@ -1554,6 +1594,24 @@ def _youkai_tier_sets(target_file: str, anm_ids: dict) -> list:
             rows = (tiers[t] if tiers is not None else [])
             if rows:
                 rows = [dict(r, anm=_yk_anm_for(target_file)) for r in rows]
+            # ★ 2026-09-26：绝对 DPS 对齐本机（见上面 `_retail_dps` 那一段）。只对**本文件的角色**做；
+            #   空组（早苗 tier 0）跳过；对齐后**回读核对**。
+            if rows and k == suf:
+                retail_path = RETAIL / target_file
+                if not retail_path.is_file():
+                    raise SystemExit(f"对齐 DPS 需要零售样本 {retail_path}（本脚本本来就要读它来追加）")
+                want = _retail_dps(retail_path.read_bytes(), 5 + t)      # 原生**低速**同档
+                got = _rows_dps(rows)
+                if want > 0.0 and got > 0.0:
+                    kk = want / got
+                    rows = [dict(r, damage=max(1, int(round(r["damage"] * kk)))) for r in rows]
+                    back = _rows_dps(rows)
+                    dev = (back - want) / want
+                    if abs(dev) > DPS_TOLERANCE:
+                        print(f"   ⚠ 108 妖侧 DPS 对齐 {target_file} tier{t}: 目标 {want:.2f} / 实际 "
+                              f"{back:.2f}（偏差 {dev * 100:+.1f}%）—— 逐行取整做不到更准，登记在案")
+                    print(f"   108 妖侧 DPS 对齐 {target_file} {k} tier{t}: 原生低速 {want:.2f} ← "
+                          f"妖侧 {got:.2f} × {kk:.3f} ⇒ {back:.2f}（{dev * 100:+.1f}%）")
             if orig is not None:
                 # ★ 2026-09-22（P7）：逐行套上 TH08 的 `+0x20`；★ **2026-09-26 复核**：**原值即 TH18 行槽号**
                 #   （TH08 n ⇒ TH18 原生槽 n）—— 卡侧每帧把原生槽 1..4 的膛口镜像成自己那几台子机的

@@ -2996,7 +2996,17 @@ static int on_power_level_change(ce_card_t *c)
     /* 池刚被 `Player__repopulate_options_and_notify_cards` `0x45d5e0` 整池重建：
      * 手里的槽指针全作废、重试倒计时也要清掉（否则要等 60 帧才补申请）。
      * 照原生 / 77：不 drop（引擎已经重建过），直接清指针再去要一个。*/
-    for (i = 0; i < YK_OPTION_MAX; ++i) { s->opt[i].ptr = 0; s->opt[i].retry = 0; }
+    /* ★★★ 2026-09-26（owner：「咲夜妖机体的子机一直在重建」）：**逐槽核实，而不是无脑清空**。
+     *   上面那条「引擎整池重建 ⇒ 我们的指针全作废」只在**真的**重建过时成立；而引擎的
+     *   `repopulate` 一手（`0x45d5e0`）只拆**原生那 4 格**（`lea ebx,[ecx+0x50]`；清 `in_use` 的那一圈
+     *   `0x45dbe0` 用的也是同一个基址）——**它根本不碰卡池**（`inner+0x410`）。于是无脑清指针会让我们
+     *   把还活着的子机当成丢了、去重新申请（同一个池格、新 VM）⇒ 每次广播都白重建一次。
+     *   ⇒ 改成用 `ce_option_claim()` 逐槽问一句「这一格还是我的吗」：是我的就留着（VM 照跑），
+     *     被回收/被别的卡拿走了它自己会清（`sdk.c` 的 `ce_option_claim`）。 */
+    for (i = 0; i < YK_OPTION_MAX; ++i) {
+        s->opt[i].retry = 0;
+        (void)ce_option_claim(c, &s->opt[i]);   /* 还是我们的 ⇒ 原样留着；丢了 ⇒ 它自己清 ptr */
+    }
     s->opt_script = -1;
     /* ★ th08 #1：整池重建 ⇒ 我们手里那几格已经作废（引擎重建的子机在新位置）⇒
      * 弹簧也从头起（否则会从**旧偏移**滑进来，看起来像"从别处飞回来"）。*/
