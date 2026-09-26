@@ -2517,8 +2517,10 @@ static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
             if (!s_kill_gated_logged) {
                 s_kill_gated_logged = 1;
                 ce_log("youkai: kill burst GATED OUT (enemy #%u has no ECL child part) - TH08 "
-                       "`th08:0x42adc4 je` would skip the whole burst; only the extreme-gauge orb "
-                       "drops from a plain enemy (further gated kills stay silent)",
+                       "`th08:0x42adc4 je` skips the whole burst, so no disc; a plain enemy still "
+                       "gets the SINGLE HasOwnerEnemy orb (`th08:0x42b29b`) because TH18's stage "
+                       "timeline is itself an enemy (`th18:0x444228` \"main\") - see "
+                       "engine/enemy/th18/08 (further gated kills stay silent)",
                        (unsigned)ev->id);
             }
         } else {
