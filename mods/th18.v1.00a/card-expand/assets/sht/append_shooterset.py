@@ -1617,6 +1617,30 @@ def _yk_bullet_anm(suffix: str, origin: int):
     main, opt = YOUKAI_BULLET_ANM[suffix]
     return main if origin <= 0 else opt
 
+def read_yk_option_counts() -> dict:
+    """从 `youkai_core.h` 现读 `YK_OPTION_BY_CHAR`（每机体每档的**子机台数**）→ {后缀: [5 个整数]}。
+
+    ★ 2026-09-26 第十五批（本批新增的**跨层不变式**）：行里的 `+0x20`（origin，= 用第几台子机的膛口）
+    必须 **≤ 该档的台数** —— 否则那一行会去读**不存在的那台子机**的膛口坐标（`player+0x580+n*0xf0`），
+    观感就是「子机不发弹 / 弹从屏外出来」（正是 owner 报过的那一类）。
+    一手：`th18:0x45ec41` 的行循环按 `+0x20` 选膛口；台数由卡侧声明（`YK_OPTION_BY_CHAR`）。
+    ⇒ 这条不变式横跨「sht 产物」与「卡侧常量」两个文件，两边都对不上时**构建期就红**，别等到实跑。
+    """
+    txt = YOUKAI_CORE_H.read_text(encoding="utf-8")
+    m = re.search(r"YK_OPTION_BY_CHAR\[[^\]]*\]\[[^\]]*\]\s*=\s*\{(.*?)\};", txt, re.S)
+    if not m:
+        raise SystemExit(f"{YOUKAI_CORE_H.name}: 找不到 `YK_OPTION_BY_CHAR` 表")
+    out = {}
+    # 表体每行一条注释 + 一行初值；后缀按出现顺序 = R/M/S/A（与 YOUKAI_TIER_SUFFIXES 同序）
+    rows = [l for l in m.group(1).splitlines() if "{" in l]
+    for suf, line in zip(YOUKAI_TIER_SUFFIXES, rows):
+        out[suf] = [int(x) for x in re.findall(r"\d+", line.split("{", 1)[1])]
+    if len(out) != len(YOUKAI_TIER_SUFFIXES):
+        raise SystemExit(f"{YOUKAI_CORE_H.name}: YK_OPTION_BY_CHAR 只解析到 {len(out)} 行"
+                         f"（预期 4）")
+    return out
+
+
 def _youkai_tier_sets(target_file: str, anm_ids: dict) -> list:
     """该文件的 15 组（3 角色 × 5 档）。pl03 上全是**空组**（只有终止符）⇒
     卡侧 `yk_shotset_usable()` 读到 −1 ⇒ 回落到 `CE_SHT_SET_YOUKAI`（0x16）。"""
@@ -1647,6 +1671,19 @@ def _youkai_tier_sets(target_file: str, anm_ids: dict) -> list:
                               f"{back:.2f}（偏差 {dev * 100:+.1f}%）—— 逐行取整做不到更准，登记在案")
                     print(f"   108 妖侧 DPS 对齐 {target_file} {k} tier{t}: 原生低速 {want:.2f} ← "
                           f"妖侧 {got:.2f} × {kk:.3f} ⇒ {back:.2f}（{dev * 100:+.1f}%）")
+            if orig is not None and rows:
+                # ★ 跨层不变式（见 `read_yk_option_counts`）：origin ≤ 该档子机台数
+                counts = read_yk_option_counts().get(k)
+                if not counts or len(counts) != 5:
+                    raise SystemExit(f"youkai_core.h 的 YK_OPTION_BY_CHAR[{k}] 不是 "
+                                     f"5 档：{counts}")
+                mx = max(orig[t]) if orig[t] else 0
+                if mx > counts[t]:
+                    raise SystemExit(
+                        f"YOUKAI_TIERS_{k} tier{t}: 行里最大 origin = {mx}，但该档只有 "
+                        f"{counts[t]} 台子机（`youkai_core.h` 的 YK_OPTION_BY_CHAR）"
+                        f" ⇒ 那一行会读不存在的子机膛口（= 「子机不发弹」那一类观感）。"
+                        f"要么改行表的 origin，要么改台数表（两处必须一致）")
             if orig is not None:
                 # ★ 2026-09-22（P7）：逐行套上 TH08 的 `+0x20`；★ **2026-09-26 复核**：**原值即 TH18 行槽号**
                 #   （TH08 n ⇒ TH18 原生槽 n）—— 卡侧每帧把原生槽 1..4 的膛口镜像成自己那几台子机的

@@ -22206,3 +22206,29 @@ TH18 没有等价指令；TH18 原生弹脚本在同一位置的 `type(1)` 已�
 [`engine/enemy/th08/02-familiar-anm-57-58.md`](../../../engine/enemy/th08/02-familiar-anm-57-58.md) §3.2
 留了**范围订正**（那份文档的「`ins_25` 是 dead store」只适用于使魔那几支脚本；对自机弹是活的）。
 **本批只改文档**，无代码/资产变化 ⇒ 不需要发版（当前部署仍是 §BE #107 那一批）。
+
+## §BE 详录 #109（2026-09-26 第十六批）：补一道**跨层不变式闸** —— 妖侧行里的 `origin` 必须 ≤ 该档子机台数
+
+**为什么加**：`AUDIT.md` §BE #105 那类「ID/编号指错地方」的静默错，前面两批已经补了两道闸
+（贴图整块白 ⇒ `make_youkai_bullet_art.py` 的自检；sht 的 `anm` 越界 ⇒ `check_player_anm_bounds.py`）。
+还剩一条同族的：**行里的 `+0x20`（origin = 用第几台子机的膛口）** 与**卡侧声明的台数**
+（`youkai_core.h` 的 `YK_OPTION_BY_CHAR`）分处两个文件 —— 一旦某档的 origin 超过台数，那一行就会去读
+**不存在的那台子机**的膛口（`player+0x580+n*0xf0`，一手 `th18:0x45ec41`），观感正是 owner 报过的
+「子机不发弹 / 弹从屏外出来」。
+
+**现状核对（本轮从 build/sht 回读，20 组全表）**：全部满足 ✓
+
+| 机体 | 台数（`YK_OPTION_BY_CHAR`）| 各档最大 origin | 判定 |
+| --- | --- | --- | --- |
+| 灵梦（pl00）| 1 / 1 / 1 / 1 / 1 | 1 / 1 / 1 / 1 / 1 | ✅ |
+| 魔理沙（pl01）| 1 / 1 / 1 / 1 / 1 | 1 / 1 / 1 / 1 / 1 | ✅ |
+| 咲夜（pl02）| 4 / 4 / 4 / 4 / 4 | 3 / 3 / 4 / 4 / 4 | ✅ |
+| 早苗（pl03）| 0 / 1 / 2 / 3 / 4 | — / 1 / 2 / 3 / 4 | ✅（档 0 空组）|
+
+**改了什么**：`assets/sht/append_shooterset.py` 新增 `read_yk_option_counts()`（从 `youkai_core.h` 现读
+`YK_OPTION_BY_CHAR`，**不写死**）并在 `_youkai_tier_sets()` 里逐档比对 —— 越界时**构建期报错**并指出
+「要么改行表 origin，要么改台数表（两处必须一致）」。
+**验证**：`make sht` 通过且**产出的四个 `.sht` md5 与上一批完全一致**（纯闸，不动字节 ⇒
+不需要重新发版）；**负向测试**：把早苗 tier1 的台数 1 改成 0 ⇒ 当场红
+（`YOUKAI_TIERS_A tier1: 行里最大 origin = 1，但该档只有 0 台子机 …`）。
+**回归**：`make check` rc=0 + `python3 sites.py verify` rc=0 + `tooling/check-docs.py` 全绿。
