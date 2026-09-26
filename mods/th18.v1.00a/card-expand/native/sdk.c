@@ -2297,7 +2297,15 @@ int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
             (s_natopt_fix_frame == 0u || f_now - s_natopt_fix_frame >= 20u)) {
             s_natopt_swept = 0;
             s_natopt_fix_frame = f_now ? f_now : 1u;
-            *(volatile int32_t *)(uintptr_t)(CE_ADDR_GLOBALS_INNER + CE_OFF_OPT_LAST_LEVEL) = -1;
+            /* ★★★ 2026-09-27（§BE #120）：**原来这里写错地址了** —— 引擎的短路缓存是
+             *   `player+0x476f8`（一手 `0x45d84d cmp [esi+0x476f8],eax / je`，`esi = [0x4cf410]`），
+             *   而旧代码写的是 `GlobalsInner + 0x470d8`（0x514db4，引擎根本不读）⇒ 这次
+             *   `ce_repopulate_options()` **直接短路返回**，原生子机的 VM 一个都没重建回来
+             *   ⇒ owner 的「人子机消失、发弹点正常」（记录在、所以膛口照发；VM 没了、所以看不见）。*/
+            {
+                uint8_t *pl2 = CE_PLAYER();
+                if (pl2) *(volatile int32_t *)(pl2 + CE_PLAYER_OPT_LAST_LEVEL) = -1;
+            }
             ce_repopulate_options();
             ce_log("sdk: native options restored (char %d, owner card %d, frame %u) - swept VMs were "
                    "rebuilt (last-level cache reset first); this fires only after a hide that really "

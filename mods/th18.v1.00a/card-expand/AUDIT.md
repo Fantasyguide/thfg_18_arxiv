@@ -22670,3 +22670,53 @@ DLL `0592750c02af3bc5de7090545819e23e`（modkit 四处同 md5）。
 若还看得见「虚 + 大」的一台 ⇒ 它可能是**上一次**留下的僵尸 VM（本版之前产生的），
 换个关卡/重启一局即可确认；同时日志里若出现
 `youkai: option VM … still alive 30 frames after release` ⇒ 那条路还有没回收的 VM，把那行发我。
+
+## §BE 详录 #120（2026-09-27 第十九批）：**「可见化补重建」写错了缓存地址** ⇒ 原生（人侧）子机的 VM 永远长不回来
+
+**症状（owner）**：「**人子机消失，发弹点正常**」—— 松开 Shift 回到人侧，子机看不见、但弹照发。
+
+**一手（本轮新读，逐指令）**：
+```
+45d843  mov eax,[esp+0x10]          ; eax = 本帧的火力档
+45d847  mov esi,DWORD PTR ds:0x4cf410   ; esi = g_Player（= CE_ADDR_PLAYER_PTR）
+45d84d  cmp DWORD PTR [esi+0x476f8],eax ; ★ 短路缓存：**上次按哪一档建过**
+45d853  je 0x45dc31                      ; 相等 ⇒ **直接跳过整个重建**
+```
+同一格另有 `0x45ab07` / `0x45b913` / `0x45d2fb` 三处写 0（初始化 / 强制重建）
+⇒ **「让引擎无条件重建一次」= 把 `player+0x476f8` 写 −1**。
+
+**错在哪**：SDK 的「可见化补重建」那一支写的是
+`*(GlobalsInner + CE_OFF_OPT_LAST_LEVEL) = -1`（= `0x4cccdc + 0x470d8` = **`0x514db4`**）——
+**那是另一个地址，引擎根本不读** ⇒ 那次 `ce_repopulate_options()` 一进门就短路返回
+⇒ 原生 4 格的**记录**照旧（`state` 还是 2、膛口照算 ⇒ 弹照发），但**两支 VM 一个都没重建**
+⇒ 看不见。日志侧的证据链：`sdk: native options restored (… frame 134)` 之后紧跟的高速探针
+仍然是 `native opt slot 1: state 2 vm 00000000`（同一局、`restored` 只出现 1 次）。
+
+**改法**：
+- `engine.h` 新增 `CE_PLAYER_OPT_LAST_LEVEL = 0x476f8`（带上面那三行一手）；
+- `sdk.c` 的补重建改成 `*(volatile int32_t *)(CE_PLAYER() + CE_PLAYER_OPT_LAST_LEVEL) = -1;`
+  （**旧那行写 `0x514db4` 的删掉** —— 它还可能在写别人的全局）。
+- **影响面**：这一支是**所有**靠「隐藏原生子机」的卡共用的（108 与 111 都走它）⇒ 修完 111
+  的魔理沙侧同样受益；对不声明隐藏的卡这条根本不会进（`hid_now` 门）。
+- 同批把 §BE #118 那条假阳性探针（`STILL ALIVE after drop`，一手证明 `0x488cf0` 只是**标记删除**）
+  改成**隔 30 帧**复查（`youkai: option VM … still alive 30 frames after release`）。
+
+**实跑判据**：按住 Shift 再松开 ⇒ 人侧那几台子机**立刻回来、形态正常**；
+若仍不回，看日志里 `native options restored` 之后同一帧/下一帧的
+`native opt slot N: … vm …` 是否为非 0（还是 0 ⇒ 我们连这条都没走到，把那两行发我）。
+
+**回归**：`make check` rc=0（4790 checks）+ `dllx87` = 0 + `sites.py verify` rc=0 + `check-docs` 384 全绿。
+
+### 附：owner 指路的「参考 TH17 / 117 卡」读后结论（下一批的候选方向）
+
+`cards/animal.c`（117 = TH17 鬼形兽）**完全不用** `ce_native_option_*` 那一层（全仓只有 108 与 111 用）。
+它走的是另一条路：
+- 自己的行**自己发** —— `ce_tick_shooters_for_card`（`Player__tick_shooters_for_ability_card` `0x40a9c0`）
+  / `Player__shoot_one_bullet` `0x45e930`，**把膛口与 option 指针当参数传进去**（`animal.c:2771`–`2776`）；
+- 对零售那几组装备子机的普通弹只做**拦**（`on_option_shot_gate`，断点 `0x40a9c3`）。
+
+⇒ 这条路**根本不需要动原生 4 格**（也就不需要「藏它 / 喂它膛口 / 补重建」这一整串）。
+**但**：装备卡路径解析 `+0x22` 用的是 **`ability.anm`**（`player+0x10`），而我们的妖侧弹体贴图
+按 §BE #105 已**搬进 `pl0X.anm`**（§BE #107 从 ability 撤出）⇒ 要走 117 这条路，得把那批弹体脚本
+与图集搬回 `ability.anm`（或改成卡侧自己 spawn 弹 + 自己贴图）。这是**一次结构性改动**，
+需要 owner 拍板后再动，本轮只登记不实施。

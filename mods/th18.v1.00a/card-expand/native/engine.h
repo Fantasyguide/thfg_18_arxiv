@@ -610,6 +610,15 @@ typedef struct { int32_t prev; int32_t cur; float cur_f; } ce_timer_t;   /* zTim
 #define CE_NATOPT_VM_MAIN          0xb0       /* 普通形子机 VM id（脚本表 `0x4b7020`）*/
 #define CE_NATOPT_VM_MAX           0xb4       /* **满火力形**子机 VM id（表 `0x4b7030`；`CURRENT_POWER >= MAX_POWER` 才建）*/
 #define CE_NATOPT_INDEX            0xd0       /* 格序号 */
+/* ★★★ 2026-09-27（§BE #120）：**子机「上次按哪一档建过」的短路缓存 = `player+0x476f8`**。
+ *  一手：`Player__repopulate_options_and_notify_cards` `0x45d84d` `cmp DWORD PTR [esi+0x476f8],eax`
+ *  / `je 0x45dc31`（相等 ⇒ **直接跳过重建**），其中 `esi = [0x4cf410]` = `CE_ADDR_PLAYER_PTR` ⇒ 缓存
+ *  在**玩家对象**里；同址还有 `0x45ab07` / `0x45b913` / `0x45d2fb` 三处写 0（初始化 / 强制重建）。
+ *  ⇒ 想让引擎「无论如何重建一次」必须把**这一格**写 −1。
+ *  ⚠ 曾经写成 `CE_ADDR_GLOBALS_INNER + CE_OFF_OPT_LAST_LEVEL`（0x514db4）——那是**另一个地址**，
+ *    引擎根本不读 ⇒ 「可见化补重建」那次 repopulate 直接短路返回、原生子机的 VM 再也长不回来
+ *    （owner 实测：「人子机消失、发弹点正常」）。*/
+#define CE_PLAYER_OPT_LAST_LEVEL   0x476f8
 #define CE_OFF_OPT_LAST_LEVEL      0x470d8    /* inner：**上次按哪一档建过子机**（repopulate 的短路缓存；
                                                * 读点 `0x45d84d cmp [esi+0x476f8],eax`（esi = PLAYER）；
                                                * 写 -1 ⇒ 下一次一定重走「重建 / 清空」那条路）*/
