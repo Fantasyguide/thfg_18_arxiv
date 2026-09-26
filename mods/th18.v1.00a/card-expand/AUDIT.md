@@ -22306,3 +22306,46 @@ TH18 没有等价指令；TH18 原生弹脚本在同一位置的 `type(1)` 已�
 **可见后果**：击破符卡后的螺旋永点、以及擦弹给的永点，**在自己贴近它们时会被立刻吸走**（TH08 的行为）；
 击破敌机那一批（state 3）仍然上抛期间不可收 ✓。
 **回归**：`make check` rc=0（`youkai_core: 4694 checks, 0 failed`）+ `sites.py verify` rc=0 + `check-docs` 全绿。
+
+## §BE 详录 #112（2026-09-27 第十八批）：**损命当帧还有一次「批量打回下落」**（`th08:0x441530`，vy 是 **−0.9**）
+
+**怎么发现的**：复核「玩家死亡时刻符怎么动」时，本卡只有**每帧**那一条路
+（`dead` 期间逐颗把归航/上抛的刻符打成下落，vy = −0.7）。但 TH08 里搜 `state == 1` 的写入点，除了
+每帧的 `ItemManager::on_tick`，**还有一个独立的小函数**，只在损命那一刻跑一次，常量还跟每帧不同。
+本卡当时只把这个常量**定义了却没用**（`YK_ORB_VY_DEAD` 是死代码）⇒ 两处观感差别：TH08 损命当帧
+归航中的刻符是**被一次性甩下去**的（−0.9），不是下一帧才按 −0.7 慢慢掉。
+
+**一手**（`Player::begin_death` `th08:0x44ab40` 的最后一条 `call`，`0x44aeae`）：
+```
+441530  push ebp / mov ebp,esp
+44153c  mov ecx,[eax+0x17b088]       ; g_ItemManager 的道具链表头（ItemManager 单例 = 0x1653648）
+441545  cmp [ebp-0x4],0x0 / je 0x441599   ; 空链 ⇒ 直接返回
+44154e  movsx eax,BYTE PTR [edx+0x2d7]    ; item->state
+441555  cmp eax,0x1 / jne 0x44158b        ; ★ **只动 state == 1**（归航），state 3/5 都不管
+44155d  mov BYTE PTR [ecx+0x2d7],0x0      ; state = 0（下落）
+441567  mov DWORD PTR [edx+0x2b0],0x0     ; vx = 0
+441574  mov DWORD PTR [eax+0x2b4],0xbf666666  ; vy = **−0.9**
+441581  mov DWORD PTR [ecx+0x2b8],0x0     ; vz = 0
+44158e  mov eax,[edx+0x2dc] / jmp 0x441545 ; 走 next 指针，逐颗
+```
+调用点两个：`th08:0x44aeae`（= `Player::begin_death` 收尾，**损命当帧**）与 `th08:0x44ceaa`
+（`Player::sub_44cbf0`，前面在比 `ds:0x164d0b1` ∈ {2, 8, 9} ⇒ 进死亡/死符段的另一条路；第二次跑
+时 state 1 已经没了 ⇒ **空转**，不叠加）。
+⇒ 与每帧那条路**是两个常量、两个时机**。每帧那三处写 −0.7 分别是
+`th08:0x4408e3`（state 1 支）、`th08:0x440711`（state 3 支）、`th08:0x4407d0`（state 5 支里
+`vy > 0` 当帧转 state 1 之后紧接着的那次）—— 也就是**按 state 分叉的 if/else 链，每支各自在末尾查一次**
+`player_state == 2`（`ds:0x17d5ef8`）。⚠ 顺带订正一处判据：state 5 在**上抛期间**（`vy ≤ 0`）走的是
+`th08:0x440797` `jne 0x4407a5` ⇒ `jmp 0x440c37`（整支跳过、连 `vy` 都刚加完就返回），**不打**；
+只有 `vy > 0` 那一支才会被打 ⇒ 判据是「**这一帧结束时会不会落到归航**」。
+
+**改了什么**：`youkai.c` 的 `yk_orbs_tick()` 开头加**损命边沿**那一次批量：
+新增静态闩 `s_orb_dying_edge`，`dead && !s_orb_dying_edge` 时把 `YK_ORB_STATE_HOMING` 的刻符
+置 `FALL` / `vx = 0` / `vy = YK_ORB_VY_DEAD`（−0.9）；随后每帧那条路照旧跑（此时它们已是 state 0，
+只剩 state 3 可打 ⇒ **与一手的先后顺序同形**）。同时按上面的判据把每帧那条路的条件补全到
+`HOMING || SPAWN || (SPAWN5 && vy > 0)`（原来只有前两项）。`YK_ORB_VY_DEAD` 由死代码变成在用；
+`youkai_core.h` 的两个常量注释补上各自的调用时机。
+
+**可见后果**：中弹那一刻还**在归航路上**的刻符会当场被甩下去（−0.9，比每帧的 −0.7 更陡），
+上抛中的那一批（state 3）不受当帧批量影响、仍走每帧的 −0.7 ✓；还在上抛半途的螺旋/擦弹永点
+（state 5 且 `vy ≤ 0`）**不受影响**、落点仍是自己那条抛物线 ✓。
+**回归**：`make check` rc=0（`youkai_core: 4694 checks, 0 failed`）+ `sites.py verify` rc=0 + `check-docs` 全绿。

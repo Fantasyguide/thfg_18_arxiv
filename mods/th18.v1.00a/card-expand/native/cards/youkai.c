@@ -1719,6 +1719,7 @@ typedef struct {
 
 static yk_orb_t s_orb[YK_ORB_MAX];
 static unsigned s_orb_live;                 /* 诊断用：当前活着几颗 */
+static uint8_t  s_orb_dying_edge;           /* 「损命当帧」的边沿闩（`§BE #112`，见 `yk_orbs_tick`）*/
 
 static void yk_orb_kill(yk_orb_t *o)
 {
@@ -2098,6 +2099,23 @@ static int yk_orbs_tick(yk_card_t *s)
      * 下落态（「中途暴毙 ⇒ 变成类 P 点」）。TH18 的玩家状态机在 `player+0x476ac`，**state 2 = 死亡段**
      * （`Player__commit_death_and_enter_state2` `th18:0x45d090`）。*/
     dead = (*(const int32_t *)(p + CE_PLAYER_STATE) == 2);   /* TH18 的 state 2 = 死亡/复活段 */
+    /* ★★★ 2026-09-27（§BE #112）：**损命当帧的那一次批量收尾**（一手 `th08:0x441530`，逐条）：
+     *   遍历道具链表，**只动 `state == 1`**（归航）的那些 —— `state = 0`、`vx = 0`、**`vy = −0.9`**
+     *   （`0x441574` 的字面量 `0xbf666666`）、`vz = 0`；而**每帧**路径（玩家非存活时）是 −0.7
+     *   （`0x4408e0`/`:0x440711`，跑在 item tick 里）。⇒ 两条路的常量不同，本函数里**先**跑这一支
+     *   （把 state 1 变成 state 0 之后，下面那条每帧判定就只剩 state 3 可打）✓ 与一手同序。
+     *   ⚠ 这一支原来只定义了常量没接上（`YK_ORB_VY_DEAD` 是死代码）——`§BE #112` 补上。*/
+    if (dead && !s_orb_dying_edge) {
+        for (i = 0; i < YK_ORB_MAX; ++i) {
+            yk_orb_t *o = &s_orb[i];
+            if (o->used && o->state == YK_ORB_STATE_HOMING) {
+                o->state = YK_ORB_STATE_FALL;
+                o->vx = 0.0f;
+                o->vy = YK_ORB_VY_DEAD;                 /* −0.9（损命当帧的批量值）*/
+            }
+        }
+    }
+    s_orb_dying_edge = (uint8_t)(dead ? 1 : 0);
     for (i = 0; i < YK_ORB_MAX; ++i) {
         yk_orb_t *o = &s_orb[i];
         float dx, dy, dist;
@@ -2118,15 +2136,22 @@ static int yk_orbs_tick(yk_card_t *s)
             else if (s) ++s->orb_full;              /* 重起也失败 ⇒ 这颗只当「看不见但仍在飞」*/
         }
         /* ★★★ 2026-09-22 夜（Time 的一手订正）：**损命窗口内的两颗都要打回下落**，不只是归航的：
-         *   · 一手每帧路径 = `ItemManager::on_tick`：state 1（归航）⇒ `state=0 / vy = −0.7`（`th08:0x4408e0`
-         *     / `:0x4408f0`）；**state 3（上抛中）也会被打**（`th08:0x4406eb`–`0x44071e`：`state=0`、`vx=0`、
-         *     `vy=−0.7`、`vz=0`）；只有 state 5（符卡螺旋 / 擦弹）在**上抛期间不动**（`th08:0x4407a5`）。
-         *   ⇒ 我们原来是「只打 `YK_ORB_STATE_HOMING`」= 漏了 state 3 那一支（我们的 `YK_ORB_STATE_SPAWN`）。
-         *   ⚠ 损命**当帧**的批量收尾（`th08:0x441530`，只动 state 1）用 **−0.9**，与每帧的 −0.7 是两个常量。*/
-        if (dead && (o->state == YK_ORB_STATE_HOMING || o->state == YK_ORB_STATE_SPAWN)) {
+         *   · 一手每帧路径 = `ItemManager::on_tick`（一个按 state 分叉的 if/else 链，**每支各自**在末尾
+         *     查一次 `player_state == 2`）：
+         *     – state 1（归航）⇒ `vy = −0.7`（`th08:0x4408e3`）然后 `state = 0`（`:0x4408f0`）；
+         *     – state 3（上抛中）⇒ 整支照抄（`th08:0x4406f7`–`:0x440725`：`state=0`、`vx=0`、`vy=−0.7`、`vz=0`）；
+         *     – state 5（符卡螺旋 / 擦弹）⇒ **上抛期间整支跳过**（`th08:0x440797` `jne 0x4407a5` ⇒ `jmp 0x440c37`，
+         *       连 `vy` 都刚加完就返回）；**但 `vy > 0` 当帧转 state 1 之后，同一个分支里紧接着又查一次**，
+         *       `vy = −0.7`（`th08:0x4407d0`）⇒ 所以 5 的判据是「**这一帧结束时会不会落到归航**」。
+         *   ⇒ 我们原来是「只打 `YK_ORB_STATE_HOMING`」= 漏了 state 3 那一支（我们的 `YK_ORB_STATE_SPAWN`），
+         *     而 state 5 那一支要**带上 `vy > 0` 的条件**（否则会把还在上抛的也打下去，与一手不符）。
+         *   ⚠ 损命**当帧**的批量收尾（`th08:0x441530`，只动 state 1）用 **−0.9**，与每帧的 −0.7 是两个常量；
+         *     那里的顺序是「先 `vy` 后 `state`」（`th08:0x441574` / `:0x44155d`），本支只求结果同值。*/
+        if (dead && (o->state == YK_ORB_STATE_HOMING || o->state == YK_ORB_STATE_SPAWN ||
+                     (o->state == YK_ORB_STATE_SPAWN5 && o->vy > 0.0f))) {
             o->state = YK_ORB_STATE_FALL;
             o->vx = 0.0f;
-            o->vy = YK_ORB_VY_DEAD_FRAME;                /* 每帧路径：一手 `th08:0x4408e0` / `:0x440711` = −0.7 */
+            o->vy = YK_ORB_VY_DEAD_FRAME;                /* 每帧路径：一手 `th08:0x4408e3` / `:0x440711` / `:0x4407d0` = −0.7 */
         }
         if (o->state == YK_ORB_STATE_SPAWN || o->state == YK_ORB_STATE_SPAWN5) {
             /* 出生上浮：`vy += 0.05`；`vy > 0` 那一刻转归航（一手 `th08:0x4406ac` / `:0x4406e4`）。
