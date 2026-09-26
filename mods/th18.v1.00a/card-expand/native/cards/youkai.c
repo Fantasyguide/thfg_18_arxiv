@@ -1253,6 +1253,26 @@ static void yk_option_refresh(ce_card_t *c, yk_card_t *s, int focused)
 
 /* 收掉本卡手里所有子机。★ `ce_option_drop` 自己会**把池槽松开**（`option+0x00 = 0`，一手：
  * sdk.c 的注释与 `0x40a790` 的空位判据）⇒ 不需要再调 `ce_repopulate_options` 去回收。*/
+static uint32_t s_opt_released_vm[YK_OPTION_MAX];   /* ★ §BE #118：交出时点名删掉的 VM id */
+static uint32_t s_opt_released_frame;              /* 交出那一帧（隔 30 帧再复查）*/
+
+/* 交出子机 **30 帧后**回头看那几支 VM 是否真的被回收了（一手：`0x488cf0` 是标记删除，
+ * 同帧一定还查得到 ⇒ 必须延迟判）。只在真没回收时打一行。*/
+static void yk_opt_released_check(void)
+{
+    uint32_t f = ce_sdk_frame();
+    int i;
+    if (!s_opt_released_frame || f < s_opt_released_frame + 30u) return;
+    for (i = 0; i < YK_OPTION_MAX; ++i) {
+        if (!s_opt_released_vm[i]) continue;
+        if (ce_anm_get_vm(s_opt_released_vm[i]))
+            ce_log("youkai: option VM %08x still alive 30 frames after release (slot %d) - the drop did "
+                   "not free it", (unsigned)s_opt_released_vm[i], i);
+        s_opt_released_vm[i] = 0;
+    }
+    s_opt_released_frame = 0u;
+}
+
 static void yk_option_release(ce_card_t *c, yk_card_t *s)
 {
     int i;
@@ -1290,19 +1310,17 @@ static void yk_option_release(ce_card_t *c, yk_card_t *s)
         s->opt[i].ptr = 0;
         s->opt[i].retry = 0;
     }
-    /* ★★★ 2026-09-27（§BE #118，owner：「**灵梦变回来的人子机变虚了，并且似乎大了 1.5-2 倍**」）：
-     *   **交出之后要验尸**。我们只知道「点名删了哪个 id」，不知道那个 VM 是否真的死了 ——
-     *   而上面那行日志自带的自检提示（「同一个 ptr、每次都是新的 anm id ⇒ 旧 VM 没死」）
-     *   正是为这个疑问写的。这里把它变成硬判据：`ce_anm_get_vm(id)` 复查，**还活着就报出来**。
-     *   ⚠ 判据要看**它是否是我们自己的贴图**：如果活着的那一支正是妖侧那一份（alpha 128/scale 2.0
-     *   的 TH08 使魔贴图），它在高速下被人侧当成子机画出来 = 「虚 + 大 1.5–2 倍」。
-     *   只在真有问题时打（每帧一行会淹掉现场）。*/
+    /* ★★★ 2026-09-27（§BE #118 → 同日订正）：**这一支原来是假阳性，已作废**。
+     *   一手 `0x488cf0` 证明 `ce_anm_delete` 只是**标记删除**（置 `vm+0x538` bit7，随后由 anm 管理器回收）
+     *   ⇒ 调用返回后 `ce_anm_get_vm(id)` 当然还查得到 ⇒ 「STILL ALIVE」这条判据不成立。
+     *   （owner 那局日志里它报了 7 次，全是同一格 —— 那是**预期行为**，不是证据。）
+     *   ⇒ 现在只把 id 记进 `s_opt_released_vm[]`，交给 `yk_opt_released_check()` 在**隔 30 帧**时复查：
+     *     那时还活着才算「VM 真的没被回收」。*/
     if (s) {
         for (i = 0; i < YK_OPTION_MAX; ++i) {
-            if (vmids[i] && ce_anm_get_vm(vmids[i]))
-                ce_log("youkai: option release - VM %08x is STILL ALIVE after drop() (slot index %d) - "
-                       "if it keeps drawing, that is very likely the 'faint + 1.5-2x bigger option' "
-                       "the owner sees at high speed", (unsigned)vmids[i], i);
+            if (!vmids[i]) continue;
+            s_opt_released_vm[i] = vmids[i];
+            s_opt_released_frame = ce_sdk_frame() ? ce_sdk_frame() : 1u;
         }
     }
     /* 兜底：所有槽都不在我们手里、但 `card+0x1c` 还挂着 VM（引擎分配过而认领失败 / 池刚被重建）
@@ -4212,6 +4230,7 @@ static int on_tick_2(ce_card_t *c)
      *   `ce_damage_rect`（`sdk.h:172` 那段内联汇编）—— 往它身上再加几路活值，i686 的寄存器就不够，
      *   编译器会报「inline assembly requires more registers than available」（2026-09-22 实测）。*/
     yk_fam_vm_check();
+    yk_opt_released_check();      /* ★ §BE #118：交出子机 30 帧后复查 VM 是否真的被回收 */
     /* ★★★ #25：**符卡结束的下降沿**开一轮螺旋（一手：TH08 在符卡结算时给额度、之后分批吐）。*/
     {
         int sp = ce_spell_active();

@@ -515,7 +515,21 @@ int ce_native_option_sweep_keep_state(void)
         vm[0] = (uint32_t *)(slot + CE_NATOPT_VM_MAIN);
         vm[1] = (uint32_t *)(slot + CE_NATOPT_VM_MAX);
         for (k = 0; k < 2; ++k)
-            if (*vm[k]) { ce_anm_interrupt(*vm[k], 1); *vm[k] = 0; ++n; }
+            if (*vm[k]) {
+                /* ★★★ 2026-09-27（§BE #119，owner：「**灵梦变回来的人子机变虚了，并且似乎大了 1.5-2 倍**」）：
+                 *   这里原来发的是 `interrupt(1)` + 把 id 写 0。**`interrupt(1)` 不是「删掉 / 藏起来」**，
+                 *   而是让那支 VM 去跑它的**中断支脚本**（TH18 原生子机脚本的 1 号支 = 一段缩放/淡出动画）
+                 *   —— 而 id 已经被写 0 ⇒ **引擎再也不会回收这支 VM，也没人会把它恢复成正常形态**
+                 *   ⇒ 它就停在那段动画的状态里：**半透明 + 放大 1.5–2 倍**，正是 owner 看到的那一台。
+                 *   ⇒ 改成 **标记删除**（一手 `0x488cf0`：置 `vm+0x538` bit7，随后由 anm 管理器真正回收）
+                 *   —— 显示立刻没了、记录（`state`/坐标）照旧保留（= 本函数存在的全部意义），
+                 *   松 Shift 之后仍由 `ce_repopulate_options()` 把两支 VM 重建回来（那条路已经在跑，
+                 *   见本文件上面的「可见化补重建」那一段）。
+                 *   ⚠ 与老 `ce_native_option_sweep()` 的差别因此仍然只有一条：**不碰 `state` 与坐标**。*/
+                ce_anm_delete(*vm[k]);
+                *vm[k] = 0;
+                ++n;
+            }
         /* ★ 与 `ce_native_option_sweep()` 的**唯一区别**：`state`（`+0x00`）与坐标**不动** */
     }
     if (n) s_natopt_swept = 1;      /* 与老 sweep 共用同一个旗子（可见化时补 repopulate） */

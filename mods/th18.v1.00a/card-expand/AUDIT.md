@@ -22635,3 +22635,38 @@ if (state == ITEM_STATE_UNK3) { vy = -2.0 - rand(0.2); vx = rand(±0.6); … }
 
 **回归**：`make check` rc=0（4790 checks）+ `dllx87` = 0 + `sites.py verify` rc=0 + `check-docs` 384 全绿。
 DLL `0592750c02af3bc5de7090545819e23e`（modkit 四处同 md5）。
+
+## §BE 详录 #119（2026-09-27 第十九批）：**子机 sweep 用的是 `interrupt(1)`，不是「删掉/藏起来」** —— 「人子机变虚、大 1.5–2 倍」
+
+**owner 原话**：「灵梦变回来的人子机变虚了，并且似乎大了 1.5-2 倍」（＋本批前的「子机本体消失、发弹正常」）。
+
+**一手（本轮新读）**：
+```
+488cf0  push [ebp+0x8]; call 0x488b40      ; 按 id 查 VM；查不到 ⇒ 干净返回
+488d09  ecx = [vm+0x538]                   ; flags_hi
+488d0f  test ecx,0x10000000 / jne 返回      ; 已经标记过 ⇒ 返回
+488d17  and ecx,~0x100 / or ecx,0x80       ; ★ **只是置 bit7 = 标记删除**，由 anm 管理器稍后回收
+```
+⇒ `ce_anm_delete` = **标记删除**，**同帧 `ce_anm_get_vm(id)` 一定还查得到**
+（§BE #118 那条「STILL ALIVE」探针因此是**假阳性**，已作废、改成隔 30 帧复查）。
+
+**真根因（本批定罪）**：`ce_native_option_sweep_keep_state()`（108 低速时每帧调，用来「杀显示、留记录」）
+原来对原生子机的两支 VM 发的是 **`ce_anm_interrupt(vm, 1)` + 把 id 写 0**。
+**`interrupt(1)` 不是隐藏**，而是让那支 VM 去跑它的**中断支脚本**（TH18 原生子机脚本的 1 号支
+= 一段缩放/淡出动画）；id 又被写 0 ⇒ **引擎再也不会回收它、也没人会把它恢复成正常形态**
+⇒ 它就停在那段动画的状态里：**半透明 + 放大 1.5–2 倍** —— 正是 owner 看到的那一台
+（日志侧对应：`hidden in low speed - swept N stale VM(s)` 每局只出一次，而这台「僵尸子机」会一直留在场上）。
+
+**改法**：同一处改成 **标记删除**（`ce_anm_delete(*vm[k])`），仍然**不碰 `state` 与坐标**
+（= 本函数存在的全部意义：记录留着 ⇒ 行循环的膛口照旧活）。
+显示立刻消失、松 Shift 后由既有的 `ce_repopulate_options()` 把两支 VM 重建回来。
+
+**影响面（共享件 `sdk.c` 已按纪律登记）**：`ce_native_option_sweep_keep_state()` 只有 108 在用
+（111 用的是老的 `ce_native_option_sweep()` = 删 VM + 清 state，那个函数**一个字没动**）
+⇒ 对其它卡零影响。**回归**：`make check` rc=0（4790 checks）+ `dllx87` = 0 + `sites.py verify` rc=0
++ `check-docs` 384 全绿。
+
+**实跑判据**：按住 Shift 再松开 ⇒ 人侧那几台子机**是正常形态**（不是半透明放大的那一台）；
+若还看得见「虚 + 大」的一台 ⇒ 它可能是**上一次**留下的僵尸 VM（本版之前产生的），
+换个关卡/重启一局即可确认；同时日志里若出现
+`youkai: option VM … still alive 30 frames after release` ⇒ 那条路还有没回收的 VM，把那行发我。
