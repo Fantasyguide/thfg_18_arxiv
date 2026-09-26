@@ -4745,6 +4745,10 @@ owner 2026-09-23 18:14 的「偏右 1/3 个游玩区宽」是**相对屏幕左�
   （现在的候选字段：`enemy_id +0x6830` / `parent_enemy_id +0x6834` = `CE_SPAWN_PARENT`，
   但「同一次 ECL 调用建出来的那一组」在 TH18 里怎么连、还没验）。
 
+**❓ 待办 #3（不是自定值，是**代码可能对着死分支**）**：`ds:0x17d6ed4` 在 v1.00d 里**全库无写**
+（11 处引用全是读，逐条见 [`AUDIT.md`](AUDIT.md) §BE #102）⇒ 它恒为 0 ⇒ TH08 的「击破 ±200 / 收刻符 ±111」
+**在炸弹期间也照加**，而本卡的 `yk_gauge_gate_blocks(yk_bomb_active())` 会跳过。写点没找到之前不动代码。
+
 **❓ 待 owner 拍 #2（颗数的分支）**：三条公式按 `GameManager::fullShotType`（`+0x3dba9`）分支 ——
 `IsSoloHuman th08:0x42f230` / `IsSoloYoukai th08:0x42f270` 的真身是
 `fullShotType >= 4 && (fullShotType & 1) == 0 / != 0`（`ScoreDat.hpp:47` 的 `ShotType`：0–3 = 四组
