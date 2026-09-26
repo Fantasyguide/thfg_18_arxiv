@@ -79,6 +79,10 @@ MEMBERS = [
     # 咲夜・レミリア（TH08 player02 script12/14，sprite22 = 48×16、sprite23 = 16×32）
     ("YKB_S_MAIN", "th08", "player02", 22, None),
     ("YKB_S_OPT",  "th08", "player02", 23, None),
+    # ★★★ 2026-09-27（owner：咲夜弹「打到敌人之后不消失、匀速慢速上升」）：**命中贴图**
+    #   魔理沙主炮的命中脚本（`player01` script23）用的是**另一张**图（sprite31，64×16），
+    #   其余角色的命中脚本复用弹体那张 ⇒ 只有这一张要新切。见下面 `SCRIPTS` 的 `hit` 字段。
+    ("YKB_M_HIT",  "th08", "player01", 31, None),
     # 早苗（TH16 pl03sub script0，sprite0..3 = 64×64，四个成员一位一图）
     ("YKB_A_0", "th16", "pl03sub", 0, None),
     ("YKB_A_1", "th16", "pl03sub", 1, None),
@@ -86,15 +90,29 @@ MEMBERS = [
     ("YKB_A_3", "th16", "pl03sub", 3, None),
 ]
 
-# 脚本：ORDER 名 → (作品, anm 名, 源脚本号, [sprite 号…], 说明)
+# 脚本：ORDER 名 → (作品, anm 名, 源脚本号, [sprite 号…], 说明, 命中=(命中脚本号, [命中 sprite 号…]) 或 None)
+#
+# ★★★ 2026-09-27（owner 实跑：「**咲夜妖机体的所有弹幕打到敌人之后不消失，匀速慢速上升**」，
+#   并指出这是「改攻击方式的老 bug」）：**TH08 的每一支弹都配一支「命中脚本」**——
+#   行里的 `+0x24` 是**基号**：命中 = 基号 **+11**（弹体 = +10，见 `engine/sht/th08/01` §3
+#   与 `th08:0x44fd32`/`0x44fd36`）。TH18 没有「换脚本」这条路（AL31 已证），
+#   对位 = **同一个 VM 的 `interruptLabel(1)` 支**：引擎默认命中路径
+#   （`th18:0x45f6a0` → 取 `bullet+8` 的 VM → 若 `vm+0x5e0 != 0` 就 `table[0x4b4308+…]` 发 interrupt
+#   → `0x45f6f0`）只想得动「VM 的 interrupt 支」；**没有那一支**时它照样写
+#   `bullet+0x8c = 2` 与 `bullet+0x60 *= 0.125`（= 速度变成 1/8）——
+#   于是弹**不消失**、继续以 **1/8 的速度**往上飘 ⇒ 正是 owner 看到的
+#   「不消失 + 匀速慢速上升」（咲夜主炮 20 ⇒ 2.5、子机 12 ⇒ 1.5，最显眼）。
+#   ⇒ 现在把 TH08 的命中脚本（`+0x24+11`）逐条翻进 `interruptLabel(1)` 支，末尾 `delete()`。
+#   `None` = 源里那一支**自带** `interruptLabel(1)`（TH08 player01 script24/25、TH16 pl03sub script0），
+#   已经在正文里，不重复加。
 SCRIPTS = [
-    ("YKB_R_MAIN", "th08", "player00", 14, [35],        "霊夢・紫 妖侧**主炮**弹（`ply00as` 主炮行 `+0x24`=4 ⇒ +10）"),
-    ("YKB_R_OPT",  "th08", "player00", 16, [36],        "霊夢・紫 妖侧**子机**弹（`ply00as` 子机行 `+0x24`=6 ⇒ +10）"),
-    ("YKB_M_MAIN", "th08", "player01", 22, [30],        "魔理沙・アリス 妖侧主炮弹（`+0x24`=12 ⇒ +10）"),
-    ("YKB_M_OPT",  "th08", "player01", 24, [32],        "魔理沙・アリス 妖侧子机弹（`+0x24`=14 ⇒ +10；逐档 25/26/27 只差 `scale.y`）"),
-    ("YKB_S_MAIN", "th08", "player02", 12, [22],        "咲夜・レミリア 妖侧主炮弹（`+0x24`=2 ⇒ +10）"),
-    ("YKB_S_OPT",  "th08", "player02", 14, [23],        "咲夜・レミリア 妖侧子机弹（`+0x24`=4 ⇒ +10）"),
-    ("YKB_A_0",    "th16", "pl03sub",   0, [0, 1, 2, 3], "早苗（TH16 秋/文）妖侧弹（`pl03sub` script0，四帧循环）"),
+    ("YKB_R_MAIN", "th08", "player00", 14, [35],        "霊夢・紫 妖侧**主炮**弹（`ply00as` 主炮行 `+0x24`=4 ⇒ +10）",        (15, [35])),
+    ("YKB_R_OPT",  "th08", "player00", 16, [36],        "霊夢・紫 妖侧**子机**弹（`ply00as` 子机行 `+0x24`=6 ⇒ +10）",        (17, [36])),
+    ("YKB_M_MAIN", "th08", "player01", 22, [30],        "魔理沙・アリス 妖侧主炮弹（`+0x24`=12 ⇒ +10）",                    (23, [31])),
+    ("YKB_M_OPT",  "th08", "player01", 24, [32],        "魔理沙・アリス 妖侧子机弹（`+0x24`=14 ⇒ +10；逐档 25/26/27 只差 `scale.y`）", None),
+    ("YKB_S_MAIN", "th08", "player02", 12, [22],        "咲夜・レミリア 妖侧主炮弹（`+0x24`=2 ⇒ +10）",                     (13, [22])),
+    ("YKB_S_OPT",  "th08", "player02", 14, [23],        "咲夜・レミリア 妖侧子机弹（`+0x24`=4 ⇒ +10）",                     (15, [23])),
+    ("YKB_A_0",    "th16", "pl03sub",   0, [0, 1, 2, 3], "早苗（TH16 秋/文）妖侧弹（`pl03sub` script0，四帧循环）",         None),
 ]
 
 _SPRITE_DEF_RE = re.compile(r"sprite(\d+):\s*\{\s*x:\s*(\d+),\s*y:\s*(\d+),\s*w:\s*(\d+),\s*h:\s*(\d+)\s*\}")
@@ -239,10 +257,34 @@ def cut_sprites(workdir: Path):
     return made
 
 
-def gen_script(name: str, kind: str, anm: str, src_num: int, sids, note: str, sprite_map: dict) -> str:
-    """逐条照抄 TH08/TH16 那一支；只做三件事（换 sprite 名 / 补 type(1) / 省掉 v8 没有的助记符）。"""
-    workdir = Path(tempfile.mkdtemp(prefix="ykbullet."))
-    src = extract_script(read_anm(kind, anm, workdir), src_num)
+def _translate(src_lines, sprite_map, drop_log):
+    """v2/v16 → v8 的逐行翻译（三个动作，见 `gen_script` 的注）。命中支与弹体支共用。"""
+    out = []
+    for line in src_lines:
+        s = line.strip()
+        m25 = _INS25_RE.match(s)
+        if m25:                                        # ★ TH08 `ins_25(N)` ≡ TH18 `rotateAuto(N)`
+            out.append(f"    rotateAuto({m25.group(1)});")
+            continue
+        m = _DROP_RE.match(s)
+        if m:
+            indent = line[:len(line) - len(line.lstrip())]
+            drop_log.append(s)
+            out.append(f"{indent}// ★ 原生原文此处为 `{s}` —— TH18 的 anm v8 没有这个助记符 ⇒ 省略")
+            continue
+        out.append(_SPRITE_CALL_RE.sub(lambda mm: f"sprite(@{sprite_map[int(mm.group(1))]}@)", line))
+    return out
+
+
+def gen_script(name: str, kind: str, anm: str, src_num: int, sids, note: str, sprite_map: dict,
+               hit=None, hit_map=None, workdir=None) -> str:
+    """逐条照抄 TH08/TH16 那一支；只做三件事（换 sprite 名 / 补 type(1) / 省掉 v8 没有的助记符）。
+
+    ★ `hit = (命中脚本号, [命中 sprite…])`：TH08 的命中脚本（行 `+0x24` + **11**）翻成
+      TH18 的 `interruptLabel(1)` 支（`None` = 源脚本自带那一支，不重复加）。见 `SCRIPTS` 的注。"""
+    workdir = workdir or Path(tempfile.mkdtemp(prefix="ykbullet."))
+    anm_text = read_anm(kind, anm, workdir)
+    src = extract_script(anm_text, src_num)
     out, dropped = [], []
     for line in src.splitlines():
         s = line.strip()
@@ -264,19 +306,42 @@ def gen_script(name: str, kind: str, anm: str, src_num: int, sids, note: str, sp
             ]
             continue
         if s == "}":
+            # ★ 命中支插在收尾 `}` **之前**（形状照 TH18 原生弹脚本：冻结 → interruptLabel(1) → delete）。
+            if hit is not None:
+                hit_num, hit_sids = hit
+                out += [
+                    "    // ★★★ 2026-09-27：**命中支** = TH08 的命中脚本（行 `+0x24` + 11）逐条照抄。",
+                    "    //   为什么必须有（owner：「弹打到敌人之后不消失、匀速慢速上升」）：TH18 的默认命中",
+                    "    //   路径（`th18:0x45f6a0` → `0x45f6f0`）只做「给弹的 VM 发 interrupt(1)」＋",
+                    "    //   `bullet+0x8c = 2` ＋ `bullet+0x60 *= 0.125`；**VM 里没有 interrupt 支时**",
+                    "    //   弹既不消失、又只剩 1/8 速度地继续飞（`AUDIT.md` §AL31 是同一类；",
+                    "    //   形状照 TH18 原生弹脚本 `pl00.anm` script5..11）。",
+                    "    stop();",
+                    "    interruptLabel(1);",
+                    "    layer(15);",
+                    "    type(1);",
+                ]
+                hbody = extract_script(anm_text, hit_num).splitlines()
+                # ⚠ **标签注释要改成绝对帧**：命中支接在弹体支之后，而 `thanm` 解回来的文本里
+                #   标签注释是**绝对帧**（`+10: // 10010`）⇒ 直接抄源脚本的 `// 10` 会被
+                #   `build_player_anm.py` 的「编出来 ↔ 计划」逐字符闸当场拦下（实测踩过一次）。
+                #   基准 = 弹体支最后一个标签的绝对帧（我们这几支都是 `+10000`）。
+                _base = 0
+                for _l in out:
+                    _m = re.match(r"^\+(\d+):\s*//\s*(\d+)\s*$", _l.strip())
+                    if _m: _base = int(_m.group(2))
+                for _l in _translate(hbody[1:-1], hit_map or sprite_map, dropped):
+                    _m = re.match(r"^(\s*)\+?(\d+):\s*//\s*(\d+)\s*$", _l)
+                    if _m:
+                        out.append(f"{_m.group(1)}+{_m.group(2)}: // {_base + int(_m.group(3))}")
+                    else:
+                        out.append(_l)
+                for hs in hit_sids or ():
+                    if not any(f"@{sprite_map[hs]}@" in l for l in out):
+                        raise SystemExit(f"{name}: 命中支里没有引用 sprite{hs}")
             out.append(line)
             continue
-        m25 = _INS25_RE.match(s)
-        if m25:                                        # ★ TH08 `ins_25(N)` ≡ TH18 `rotateAuto(N)`
-            out.append(f"    rotateAuto({m25.group(1)});")
-            continue
-        m = _DROP_RE.match(s)
-        if m:
-            indent = line[:len(line) - len(line.lstrip())]
-            dropped.append(s)
-            out.append(f"{indent}// ★ 原生原文此处为 `{s}` —— TH18 的 anm v8 没有这个助记符 ⇒ 省略")
-            continue
-        out.append(_SPRITE_CALL_RE.sub(lambda mm: f"sprite(@{sprite_map[int(mm.group(1))]}@)", line))
+        out += _translate([line], sprite_map, dropped)
     for sid in sids:
         if not any(f"@{sprite_map[sid]}@" in l for l in out):
             raise SystemExit(f"{name}: 产物里没有引用 sprite{sid}（sprite 表或源脚本对不上）")
@@ -376,14 +441,14 @@ def main():
     #   否则 `make anm` 会在占位符替换那一步报「引用了不存在的成员」。）
     member_of = {(k, a, sid): nm for nm, k, a, sid, _c in MEMBERS}
     scripts = {}
-    for name, kind, anm, src_num, sids, note in SCRIPTS:
+    for name, kind, anm, src_num, sids, note, hit in SCRIPTS:
         smap = {}
-        for sid in sids:
+        for sid in list(sids) + (list(hit[1]) if hit else []):
             key = (kind, anm, sid)
             if key not in member_of:
                 raise SystemExit(f"{name}: sprite{sid} 没有对应的 ORDER 成员（MEMBERS 要补一行）")
             smap[sid] = member_of[key]
-        scripts[name] = gen_script(name, kind, anm, src_num, sids, note, smap)
+        scripts[name] = gen_script(name, kind, anm, src_num, sids, note, smap, hit=hit, hit_map=smap)
 
     OUT_SCRIPTS.mkdir(parents=True, exist_ok=True)
     for i, (name, *_rest) in enumerate(SCRIPTS):

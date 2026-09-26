@@ -556,21 +556,24 @@ YK_BULLET_SCRIPT_DIR = HERE / "yk_bullet" / "scripts"
 # 该机体 entry 的成员（= `make_youkai_bullet_art.py` 的产物名；尺寸 = 那张 PNG 的实际尺寸）
 YK_BULLET_MEMBERS = {
     "pl00": (("YKB_R_MAIN", 64, 16), ("YKB_R_OPT", 64, 16)),
-    "pl01": (("YKB_M_MAIN", 64, 16), ("YKB_M_OPT", 256, 32)),
+    # ★ 2026-09-27：魔理沙那一格**多一张命中贴图**（TH08 `player01` sprite31）——
+    #   它的命中脚本（script23）用的不是弹体那张 sprite30。其余三名复用弹体图。
+    "pl01": (("YKB_M_MAIN", 64, 16), ("YKB_M_OPT", 256, 32), ("YKB_M_HIT", 64, 16)),
     "pl02": (("YKB_S_MAIN", 64, 16), ("YKB_S_OPT", 16, 32)),
     "pl03": (("YKB_A_0", 64, 64), ("YKB_A_1", 64, 64), ("YKB_A_2", 64, 64), ("YKB_A_3", 64, 64)),
 }
 # entry 画布尺寸 + 成员在画布内的落点（左到右、顶对齐；矩形 = 成员 PNG 的原尺寸）
 YK_BULLET_CANVAS = {
     "pl00": ((128, 16), ((0, 0), (64, 0))),
-    "pl01": ((320, 32), ((0, 0), (64, 0))),
+    "pl01": ((384, 32), ((0, 0), (64, 0), (128, 0))),
     "pl02": ((80, 32), ((0, 0), (64, 0))),
     "pl03": ((256, 64), ((0, 0), (64, 0), (128, 0), (192, 0))),
 }
 # 该机体用哪几支生成脚本（源脚本号 → 宏后缀 → 成员名）：成员名 → 源 sprite 名（`@名字@` 替换用）
 YK_BULLET_SCRIPTS = {
     "pl00": ((364, "BULLET_R_MAIN", "YKB_R_MAIN"), (365, "BULLET_R_OPT", "YKB_R_OPT")),
-    "pl01": ((366, "BULLET_M_MAIN", "YKB_M_MAIN"), (367, "BULLET_M_OPT", "YKB_M_OPT")),
+    # ⚠ pl01 的主炮弹一支脚本引用两张图（弹体 + 命中），其余每支只引一张。
+    "pl01": ((366, "BULLET_M_MAIN", ("YKB_M_MAIN", "YKB_M_HIT")), (367, "BULLET_M_OPT", "YKB_M_OPT")),
     "pl02": ((368, "BULLET_S_MAIN", "YKB_S_MAIN"), (369, "BULLET_S_OPT", "YKB_S_OPT")),
     # 早苗那支在源里一个脚本连着引用 4 张图（四帧循环）⇒ 一支脚本、四个成员
     "pl03": ((370, "BULLET_A", ("YKB_A_0", "YKB_A_1", "YKB_A_2", "YKB_A_3")),),

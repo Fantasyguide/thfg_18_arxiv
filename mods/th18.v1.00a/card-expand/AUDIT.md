@@ -22497,3 +22497,47 @@ ECL 的 `enemyCreate` 会把**当前敌人的 `enemy_id` 写进子敌人的 `par
 （`youkai.c::yk_on_enemy_killed` 的 `!n2 &&` 一个条件 + 注释。）
 **回归**：`make check` rc=0（`youkai_core: 4790 checks, 0 failed`）+ `dllx87` = 0 + `sites.py verify` rc=0
 + `check-docs`（384 文件）全绿。
+
+## §BE 详录 #115（2026-09-27 第十九批）：**弹的「命中支」漏了** ⇒ 打到敌人不消失、只剩 1/8 速度往上飘
+
+**owner 原话**：「咲夜妖机体的**所有弹幕打到敌人之后不消失，匀速慢速上升** —— 这是一个**改攻击方式的老 bug**，
+之前其他卡触发过很多次」。
+
+**一手（根因）**：TH18 的默认命中路径（`th18:0x45f6a0` → **`0x45f6f0`**，`AUDIT §AL31` 已读过一次）：
+
+```
+取 bullet+8 的 VM；若 vm+0x5e0 != 0 ⇒ 调 table[0x4b4308 + vm[0x5e0]*4]（= 给弹的 anm VM 发 interrupt）
+随后：bullet+0x8c = 2（完成）· bullet+0x60 *= 0.125（**速度变成 1/8**）· 关掉 bullet+0xb0 的伤害源
+```
+⇒ **弹的「消失」是由它自己 VM 的 `interruptLabel(1)` 支完成的**（那一支末尾 `delete()`）。
+本卡这一批弹（`yk_bullet` 的 7 支）是**直接照抄 TH08 的弹体脚本**（行 `+0x24` **+10**）生成的，
+**没有翻命中脚本**（行 `+0x24` **+11**）⇒ VM 里没有 interrupt 支 ⇒ 引擎照样写
+`+0x8c = 2` 与 `+0x60 *= 0.125`：弹**不消失**、并继续以 **1/8 速度**沿原角度飞
+（咲夜主炮 speed 20 ⇒ 2.5、子机 12 ⇒ 1.5，所以「**匀速慢速上升**」最明显；其余三名同样中招，
+只是 12 ⇒ 1.5 / 10 ⇒ 1.25 更慢、更容易被当成「停住了」）。
+
+**修法（照一手，不是自定）**：`assets/ability/make_youkai_bullet_art.py` 的 `SCRIPTS` 增一列
+`hit = (命中脚本号, [命中 sprite…])`（= TH08 行 `+0x24 + 11`，逐角色读出来）：
+霊夢主炮 14→15、霊夢子机 16→17、魔理沙主炮 22→23、咲夜主炮 12→13、咲夜子机 14→15；
+**魔理沙子机（24/25）与早苗（TH16 `pl03sub` script0）源脚本自带 `interruptLabel(1)`** ⇒ 不动。
+生成器把命中脚本**逐条翻译**进弹体脚本末尾的 `stop(); interruptLabel(1); layer(15); type(1);` 之后
+（形状 = TH18 原生弹脚本 `pl0X.anm` script5..11，带 `delete()`）。
+- **新贴图**：魔理沙主炮的命中脚本用的是**另一张图**（`player01` sprite31，64×16）
+  ⇒ 新成员 `YKB_M_HIT`（`MEMBERS` + `pl01` 的 `YK_BULLET_MEMBERS/CANVAS`：320x32 → **384x32**）。
+  其余四支复用弹体那张图（TH08 就是复用）。
+- ⚠ 生成器踩过的一个坑（已修）：命中支的标签注释必须写**绝对帧**（`+30: // 10030`），
+  直接抄源脚本的 `// 30` 会被 `build_player_anm.py` 的「编出来 ↔ 计划」逐字符闸拦下。
+
+**改动面**：`assets/ability/make_youkai_bullet_art.py`（`hit` 字段 + `_translate()` 抽出来共用）、
+`assets/build_player_anm.py`（pl01 多一个成员/加宽画布/M_MAIN 一支脚本引两张图）、
+`assets/yk_bullet/**`（重生成的 spec + 新 PNG）、`native/build/pl0[0-3].anm`（重编）。
+**共享件**：`ability.anm` **没动**（这批资产早已撤出 ability 管线，见 §BE #107）。
+
+**部署（本次）**：`pl00/pl01/pl02.anm` 三份进了 modkit 的 thcrap 仓库目录（**实测 md5 与 `native/build/` 一致**）；
+`pl03.anm` 无变化（早苗那支本来就有 interrupt 支）；DLL 未变（`27d45bc6…`，C 侧一个字没改）。
+**回归**：`make check` rc=0（含 `anm-verify`：四个 pl0X.anm 原生部分逐 entry/script/贴图块一致、
+追加脚本逐字符等于计划）+ `dllx87` = 0 + `sites.py verify` rc=0 + `check-docs`（384 文件）全绿。
+
+**实跑判据**：按住 Shift 打敌人时，**弹一命中就消失**（并播 TH08 的命中动画：咲夜 = 沿原角度放大淡出 30 帧、
+霊夢 = 放大到 8 倍缩回 10 帧、魔理沙主炮 = 边转边放大 30 帧、魔理沙子机 = 20 帧淡出）。
+若仍看到「不消失 + 慢慢往上飘」⇒ 装的还是旧 `pl0X.anm`（**对 md5**：pl00 `b6119838…`、pl01 `8dc9c06a…`、pl02 `3a64563d…`）。

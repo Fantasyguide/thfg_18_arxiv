@@ -17,4 +17,23 @@ script script369 {
     zWriteDisable(1);
 +10000: // 10000
     static();
+    // ★★★ 2026-09-27：**命中支** = TH08 的命中脚本（行 `+0x24` + 11）逐条照抄。
+    //   为什么必须有（owner：「弹打到敌人之后不消失、匀速慢速上升」）：TH18 的默认命中
+    //   路径（`th18:0x45f6a0` → `0x45f6f0`）只做「给弹的 VM 发 interrupt(1)」＋
+    //   `bullet+0x8c = 2` ＋ `bullet+0x60 *= 0.125`；**VM 里没有 interrupt 支时**
+    //   弹既不消失、又只剩 1/8 速度地继续飞（`AUDIT.md` §AL31 是同一类；
+    //   形状照 TH18 原生弹脚本 `pl00.anm` script5..11）。
+    stop();
+    interruptLabel(1);
+    layer(15);
+    type(1);
+    sprite(@YKB_S_OPT@);
+    rotateAuto(1);
+    alpha(128);
+    alphaTime(30, 0, 0);
+    scaleTime(30, 0, 5.0f, 5.0f);
+    blendMode(1);
+    // ★ 原生原文此处为 `ins_83(2);` —— TH18 的 anm v8 没有这个助记符 ⇒ 省略
++30: // 10030
+    delete();
 }
