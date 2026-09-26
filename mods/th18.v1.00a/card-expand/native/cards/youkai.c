@@ -2273,6 +2273,47 @@ static void yk_spiral_tick(yk_card_t *s)
     ++s->spiral_t;
 }
 
+/* ★★★ 2026-09-27（§BE #113）：**符卡口径的探针**（`TUNING.md` §2.0zy-ter 那道额度公式的前置作业）。
+ *
+ * 目的：TH08 的额度是 `1000 / 700 / 100 / 按比例`（`th08:0x4162ae`–`0x416347`，两个计时器
+ * `spellcard[+0x114]`（`t`）与 `spellcard[+0x108]`（`e`）），本卡现在**恒取满额 1000**。
+ * 要照搬需要 TH18 侧的**两个量**：① `zSpellcard+0x24` = 符卡经过帧（已升 ✅，见 `engine.h`
+ * 的 `CE_SPELL_ELAPSED`）；② 该符卡的**限时** —— 候选 = boss 的第一个活动中断槽的 `time`。
+ * 「哪个槽属于当前符卡」**静态定不下来**（符卡是在某个攻击段里宣言的，而收尾那一刻槽可能已经
+ * 被下一段 `setInterrupt` 换掉）⇒ 先在实跑里打一次两行日志对出来，**本函数不改任何行为**。
+ *
+ * 读法（owner 实跑）：
+ *   · `start` 行：`elapsed` 应为 0；`slots` 里 `hp > -1 && time > 0` 的**第一个**就是候选限时；
+ *   · `end` 行：`elapsed` 应 ≈ 这张符卡**实际打了多少帧**（拿它反查 `+0x24` 是不是经过帧）；
+ *     若这次是**超时**（`flags` 带 `0x80`）⇒ `elapsed ≈ 该槽 time` ⇒ 槽与限时的对应关系成立。
+ * ⚠ `noinline` 的理由同 `yk_fam_vm_check`（`on_tick_2` 里内联着 `ce_damage_rect` 那段汇编，
+ *   别再往它身上加活值）。*/
+static void __attribute__((noinline)) yk_spell_probe(const char *tag)
+{
+    uint8_t *sc = CE_SPELLCARD();
+    uint8_t *boss = yk_boss();
+    uint8_t *ed = boss ? (boss + CE_ENEMY_DATA) : 0;
+    uint32_t flags = sc ? *(uint32_t *)(sc + CE_SPELL_FLAGS) : 0u;
+    int i, hp[CE_ED_INTERRUPT_SLOTS], tm[CE_ED_INTERRUPT_SLOTS];
+    for (i = 0; i < CE_ED_INTERRUPT_SLOTS; ++i) {
+        const uint8_t *sl = ed ? (ed + CE_ED_INTERRUPTS + (unsigned)i * CE_ED_INTERRUPT_STRIDE) : 0;
+        hp[i] = sl ? *(const int32_t *)sl : -2;
+        tm[i] = sl ? *(const int32_t *)(sl + 4) : 0;
+    }
+    ce_log("youkai: spell probe %s - flags 0x%x id %d elapsed(+0x24) %d (+0x28 int %d / f %.1f) | "
+           "boss %d time_in_ecl %d alive %d | slot hp [%d %d %d %d %d %d %d %d] "
+           "slot time [%d %d %d %d %d %d %d %d]",
+           tag, (unsigned)flags, sc ? *(const int32_t *)(sc + CE_SPELL_ID) : 0,
+           sc ? *(const int32_t *)(sc + CE_SPELL_ELAPSED) : -1,
+           sc ? *(const int32_t *)(sc + (CE_SPELL_ELAPSED + 4)) : -1,
+           sc ? (double)*(const float *)(sc + (CE_SPELL_ELAPSED + 4)) : 0.0,
+           ed ? *(const int32_t *)(boss + CE_ENEMY_ID) : 0,
+           ed ? *(const int32_t *)(ed + CE_ED_TIME_IN_ECL + 4) : -1,
+           ed ? *(const int32_t *)(ed + CE_ED_TIME_ALIVE) : -1,
+           hp[0], hp[1], hp[2], hp[3], hp[4], hp[5], hp[6], hp[7],
+           tm[0], tm[1], tm[2], tm[3], tm[4], tm[5], tm[6], tm[7]);
+}
+
 /* ---- 人妖槽 HUD（TH08 `ascii.anm` 的 4 支脚本 + 百分比数字）--------------------------------
  * 一手（`AsciiManager::InitializeVms` + `AsciiManager::on_draw`）：
  *   槽条 = script5（sprite155，128×16，`anchorTopLeft`）、人间图标 = script6（sprite153，16×16）、
@@ -4040,6 +4081,8 @@ static int on_tick_2(ce_card_t *c)
             s->spiral_quota = YK_SPIRAL_QUOTA_FULL;
             s->spiral_t = 0;
         }
+        if (s->spell_was != (uint8_t)(sp ? 1 : 0))      /* ★ §BE #113：两个边沿各打一行探针 */
+            yk_spell_probe(sp ? "start" : "end");
         s->spell_was = (uint8_t)(sp ? 1 : 0);
     }
     yk_spiral_tick(s);

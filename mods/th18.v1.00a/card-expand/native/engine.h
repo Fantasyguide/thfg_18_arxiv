@@ -138,6 +138,13 @@
 #define CE_SPELL_FLAG_SURVIVAL     0x8
 #define CE_SPELL_FLAG_TIMED_OUT    0x80
 #define CE_SPELL_BONUS             0x7c       /* int：符卡奖励（0x42a320 写，超时 0x42f00c 清零，收符卡 0x42a780 计分）*/
+#define CE_SPELL_ELAPSED           0x24       /* ★ int32：**符卡已经经过的帧数**（`Spellcard__start` `0x42a356` 写 0、
+                                              * 每帧由符卡自己的 tick 累加）。一手判据：超时那一段 `0x42efb0` 先把
+                                              * `[0x4cf2c0]` 装进 `edx`，紧接着 `0x42efd2 cmp DWORD PTR [edx+0x24],0x3c`
+                                              * / `jl` —— **按 int 与 60 比**（就是「超时后 60 帧内不清奖励」那条），
+                                              * 同段还用 `[edx+0x78]`（flags）/`[edx+0x7c]`（bonus）⇒ `edx` 确实是
+                                              * zSpellcard、`+0x24` 确实是经过帧（**不是** zTimer 结构体基址 ——
+                                              * `engine/ecl/th18/01` §1 的 🟡 到此升 ✅）。108 的符卡额度探针读它。*/
 #define CE_EM_CAN_CAPTURE          0x44       /* zEnemyManager.can_still_capture_spell（ExpHP；超时路径清 0）*/
 #define CE_EM_BOSS_IDS             0x48       /* int[4] boss enemy_id（get_boss_enemy_full 0x4237f0 按它走链表）*/
 #define CE_EM_BOSS_SLOTS           4

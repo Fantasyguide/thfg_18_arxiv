@@ -22349,3 +22349,32 @@ TH18 没有等价指令；TH18 原生弹脚本在同一位置的 `type(1)` 已�
 上抛中的那一批（state 3）不受当帧批量影响、仍走每帧的 −0.7 ✓；还在上抛半途的螺旋/擦弹永点
 （state 5 且 `vy ≤ 0`）**不受影响**、落点仍是自己那条抛物线 ✓。
 **回归**：`make check` rc=0（`youkai_core: 4694 checks, 0 failed`）+ `sites.py verify` rc=0 + `check-docs` 全绿。
+
+## §BE 详录 #113（2026-09-27 第十八批）：`engine.h` 加 `CE_SPELL_ELAPSED`（**共享件**）+ 108 的符卡额度探针
+
+**为什么动共享件**：`engine.h` 里已有 `CE_SPELL_ID`(0x74) / `CE_SPELL_FLAGS`(0x78) / `CE_SPELL_BONUS`(0x7c)，
+但**没有**「符卡经过帧」那个字段 —— 而它是 `TUNING.md` §2.0zy-ter 那道额度公式（TH08 的
+1000 / 700 / 100 三档）在 TH18 侧要读的**两个量**之一。加一个**只增不改**的常量，对既有卡零影响。
+
+**一手（本轮补的，把 `engine/ecl/th18/01` §1 的 🟡 升 ✅）**：
+```
+42ef7b  mov edx,DWORD PTR ds:0x4cf2c0      ; edx = SPELLCARD_PTR（zSpellcard*）
+42efb0  mov ecx,DWORD PTR [edx+0x78]       ; flags（同段 0x42efc0 or [edx+0x78],0x80）
+42efd2  cmp DWORD PTR [edx+0x24],0x3c      ; ★ **按 int 与 60 比**
+42efd6  jl 0x42eff3                        ; < 60 帧 ⇒ 走另一支（不清奖励）
+42efd8  and eax,0xffffffdd / mov [edx+0x7c],0 ; ≥ 60 帧 ⇒ 清 bonus + 清 flags 0x22
+```
+⇒ `zSpellcard+0x24` = **符卡经过帧（int32）**，`+0x28` 是与之成对的另一个 int（宣言时一并清零）。
+`Spellcard__start` `0x42a320` 写 `+0x24 = 0`（`0x42a356`）、`+0x28 = 0`（`0x42a35f`）⇒ 宣言即起算 ✅。
+
+**改了什么**：`native/engine.h` 新增 `CE_SPELL_ELAPSED 0x24`（注释带上面那三行一手）；
+`native/cards/youkai.c` 新增 `yk_spell_probe()`（`noinline`，同 `yk_fam_vm_check` 的理由）并在
+**符卡的两个边沿**各调一次（`spell_was` 变化处）。**探针不改任何行为** —— 额度仍取满额 1000。
+
+**它打什么**：`flags` / `id` / `+0x24` / `+0x28`（int + float）/ boss 的 `enemy_id`、`time_in_ecl.cur`、
+`time_alive` / 八个中断槽的 `hp_value` 与 `time`。用来一次实跑对出：「哪个槽属于当前这张符卡」
+（⇒ 限时），以及 `+0x24` 是否真等于「这张符卡打了多少帧」。
+
+**对既有卡的影响面**：`engine.h` 只加常量，不删不改任何既有宏 ⇒ 其它 117 张卡**无需回归**；
+`youkai.c` 是本卡自己的文件。**回归**：`make check` rc=0（`youkai_core: 4694 checks, 0 failed`）+
+`make dllx87` = `x87 in our objects: 0` + `sites.py verify` rc=0 + `check-docs` 全绿。

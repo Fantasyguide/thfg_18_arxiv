@@ -27,7 +27,7 @@ boss 的每段攻击是敌人对象里的一个**中断槽** `{hp_value, time, s
 | `zEnemyManager` | `+0x44` | `can_still_capture_spell` |
 | `zEnemyManager` | `+0x48` | `boss_ids[4]`（`enemy_id`；0 = 空）|
 | `zEnemyManager` | `+0x18c` | 活动敌人链表头 `{entry, next, prev}` |
-| `zSpellcard` | `+0x24` | zTimer（符卡经过帧）🟡 用途只见于「超时 60 帧内不清奖励」 |
+| `zSpellcard` | `+0x24` | **int32：符卡已经经过的帧数** ✅ 用途 =「超时 60 帧内不清奖励」那个门（见 §2 ①）|
 | `zSpellcard` | `+0x74` | 符卡 id |
 | `zSpellcard` | `+0x78` | 标志：bit0 进行中、bit1 奖励存活、bit3 耐久符卡（ECL 542）、bit4（ECL 另一 case）、bit5 用过炸弹、bit7 已超时、bit8 ECL 开关 |
 | `zSpellcard` | `+0x7c` / `+0x80` | 奖励分（`0x42A320` 按难度表 × 关卡号；`+0x80` 封顶 999999999）|
@@ -66,7 +66,7 @@ if (slot.time <= data.time_in_ecl.cur) {
     time_in_ecl 归零；enemy+0x635c |= 0x1000000（超时标志）
     if (!(spell.flags & 8)) {                                  // 非耐久符卡
         spell.flags |= 0x80;                                   // 已超时
-        if (spell.flags & 1 && spell.timer(+0x24) > 0x3b) { spell.bonus = 0; spell.flags &= ~0x22; }
+        if (spell.flags & 1 && spell.elapsed(+0x24) > 0x3b) { spell.bonus = 0; spell.flags &= ~0x22; }
         enemy_mgr.can_still_capture_spell = 0;
     } else if ((spell.flags & 9) == 9) { … 耐久符卡超时 = 收下 … }
     跑 slot.sub_timeout（Enemy__ecl_run）
@@ -123,6 +123,13 @@ boss 找法照 `0x4237F0`：`boss_ids[i]` → 走 `+0x18c` 链表比 `enemy+0x68
 ## 6. Follow-up
 
 - 🟡 `0x4cf280` = REPLAY_UNSAFE_RNG、`0x4cf288` = REPLAY_SAFE_RNG（ExpHP 相邻命名规律 + 使用者分布），未登记进 `engine.h`。
-- 🟡 `zSpellcard+0x24` 的语义（超时 60 帧内不清奖励的那个门）未追。
+- ✅ ~~🟡 `zSpellcard+0x24` 的语义（超时 60 帧内不清奖励的那个门）未追。~~ 2026-09-27 结案：`+0x24` 是
+  **int 的经过帧**（`0x42a356` 宣言清零；`0x42efb0` 先把 `[0x4cf2c0]` 装进 `edx`，`0x42efd2` 紧接着
+  `cmp DWORD PTR [edx+0x24],0x3c` / `jl`；同段读 `[edx+0x78]`/`[edx+0x7c]` ⇒ `edx` 确为 zSpellcard）——
+  **不是** zTimer 结构体基址（若按 zTimer 解，`cur` 该在 `+0x28`，而 `+0x28` 在宣言时也被清零、
+  目前只见于「与 `+0x24` 成对」）。`engine.h` 增 `CE_SPELL_ELAPSED`；卡 108 的符卡额度探针读它。
+- 🟡 **「限时」存不存在于 zSpellcard 里未定**：`Spellcard__start` `0x42a320` 只写 `+0x20`(-1)/`+0x24`(0)/
+  `+0x28`(0)/`+0x74`(id)/`+0x78`(flags)/`+0x7c`+`+0x80`(bonus)/名字；**没看到任何限时字段** ⇒ 限时只有
+  中断槽的 `time` 一处。但「收尾那一刻哪个槽属于这张符卡」尚未实跑核对（见卡 108 的探针）。
 - ⏳ ECL 522（宣言）case 的参数表与 `boss_idx` 的来源未逐行反。
 - ⏳ 中断槽由 ECL `setInterrupt(槽, 血量, 超时, 子)` 写入（`mods/…/assets/ecl/make_dev_ecl.py` 已在改它）；指令号未在本文核对。
