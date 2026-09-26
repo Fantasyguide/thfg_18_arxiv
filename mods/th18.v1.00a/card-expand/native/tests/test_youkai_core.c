@@ -1097,6 +1097,37 @@ int main(void)
             yk_orb_motion_params(0, 0, &r);
             CHECK(r == 20.0f);
             yk_orb_motion_params(0, 0, 0);                        /* 双 NULL：什么都不做、不崩 */
+            /* ★★★ 2026-09-26（#41「从敌机铺出去的范围太大」）：**击破批的落点算式**
+             * 一手（`th08:0x42aff0`–`0x42b048`）= 圆盘内均匀撒：
+             *   `angle = rand_signed(π) ∈ [−π, π)`、`radius = rand(2·count) ∈ [0, 2·count)`。
+             * 旧实现是**固定半径 128 的环** ⇒ 12 颗时是圆盘上界（24）的 5.3 倍。*/
+            {
+                float a = 9.0f, rad = 9.0f;
+                const float PI = 3.14159265f;
+                yk_orb_burst_polar(12, 0.0f, 0.0f, &a, &rad);     /* r=0 ⇒ 角 = −π、半径 0 */
+                CHECK(a == -PI && rad == 0.0f);
+                yk_orb_burst_polar(12, 0.5f, 0.5f, &a, &rad);     /* 中值 ⇒ 角 0、半径 = count */
+                CHECK(a == 0.0f && rad == 12.0f);
+                yk_orb_burst_polar(12, 1.0f, 1.0f, &a, &rad);     /* 上界 ⇒ 角 π、半径 2·count */
+                CHECK(a == PI && rad == 24.0f);
+                yk_orb_burst_polar(12, 0.25f, 0.1f, &a, &rad);    /* 角 = −π/2（正下方）*/
+                CHECK(rad == 0.1f * 24.0f);
+                CHECK(a < 0.0f && a > -PI);                       /* ★ 恒在 [−π, π) 内 */
+                yk_orb_burst_polar(0, 0.9f, 1.0f, &a, &rad);      /* count = 0 ⇒ 半径 0（不崩）*/
+                CHECK(rad == 0.0f);
+                yk_orb_burst_polar(-3, 0.9f, 1.0f, &a, &rad);     /* 负 count 也夹到 0 */
+                CHECK(rad == 0.0f);
+                yk_orb_burst_polar(12, 0.3f, 0.7f, &a, 0);        /* 单出口 */
+                CHECK(a < 0.0f && a > -PI);
+                yk_orb_burst_polar(12, 0.3f, 0.7f, 0, &rad);
+                CHECK(rad > 0.0f);
+                yk_orb_burst_polar(12, 0.3f, 0.7f, 0, 0);         /* 双 NULL：不崩 */
+                for (a = 0.0f; a < 1.0f; a += 0.125f) {           /* 半径上界恒 = 2·count */
+                    float t = 0.0f;
+                    yk_orb_burst_polar(26, 0.5f, a, 0, &t);
+                    CHECK(t >= 0.0f && t < 52.0f);
+                }
+            }
             /* ★★★ 2026-09-22（#25 击破符卡的螺旋）：一手参数（`engine/item/th08/01-time-orbs.md` §5.3）
              * 角度闭式 `θ(t) = ((t − 10) × 2π/40) − π/2`：`t = 10` 正上方（−π/2）、每 +1 帧 +9°（2π/40）。*/
             {

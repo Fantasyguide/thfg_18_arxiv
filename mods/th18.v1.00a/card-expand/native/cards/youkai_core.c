@@ -1150,6 +1150,40 @@ void yk_orb_motion_params(int character, float *home_speed, float *pick_r)
     if (pick_r)     *pick_r     = marisa ? 24.0f : 20.0f;     /* 16+8 / 12+8（TH08 一手）*/
 }
 
+/* ★★★ 2026-09-26（owner：「打爆敌人爆的永点，就永点出现的**画面位置分布**而言，似乎大了」；
+ *   本轮补一句「**从敌机铺出去的范围太大**」）—— 击破批的**落点算式**照一手重写。
+ *
+ * **一手（`th08:0x42aff0`–`0x42b048` 逐条，本轮新读）**：那是 `Enemy::FUN_0042adb0`
+ * （= 敌人死亡处理，0x42adb0）里撒刻符的循环体：
+ * ```
+ * 42aff0  fild  [ebp-0x2c]              ; = count（本帧要撒几颗）
+ * 42aff3  fadd  st(0),st                ; = 2·count  ★
+ * 42affe  call  0x40d390                ; Rng::GetRandomF32InRange(rng, 2·count)   → ∈ [0, 2·count)
+ * 42b011  call  0x4143c0                ; Rng::GetRandomF32SignedInRange(rng, π)  → ∈ [−π, π)
+ * 42b01d  call  0x4286e0                ; Float3::FromAngleMagnitude(&v, angle, magnitude)
+ * 42b036  call  0x410a70                ; Float3::operator+=  → v += &enemy->final_pos(+0x2d88)
+ * 42b048  call  0x4400a0                ; ItemManager::SpawnItem(&v, type 7, state 3)
+ * ```
+ * 参数顺序由 `FromAngleMagnitude` 自己的正文定死（`0x4286e0`：`fld [ebp+8]; fsincos;
+ * fmul [ebp+0xc] → x; fmul [ebp+0xc] → y` ⇒ **[ebp+8] = 角度、[ebp+0xc] = 模长**），
+ * 与符卡螺旋那一处（`0x417593` `push 128; push angle; call 0x4286e0` —— 常量 128 落在**模长**位）
+ * 逐位同形 ⇒ **击破批 = 半径上界 `2·count` 的圆盘内均匀撒**，
+ * ⚠ **不是**固定半径 128 的环（本卡旧实现写的就是 128 的环 —— owner 报的「范围太大」正是它：
+ *   同样的 12 颗，环半径 128 = 圆盘上界 24 的 **5.3 倍**）。
+ * ⚠ 符卡螺旋那一支（`0x417593`）**确实**是固定 128 ⇒ 那边的 `YK_SPIRAL_RADIUS` 不动。
+ * ⚠ 圆盘 ≠ 均匀面积分布：`radius` 本身就是均匀随机的（不取 √）⇒ 越靠圆心越密，与一手同构。
+ *
+ * `r1`/`r2` = 卡侧给的两个**独立均匀**随机数（∈ [0,1)）—— 纯逻辑不做 RNG（回放安全与单测都靠这条）。*/
+void yk_orb_burst_polar(int count, float r1, float r2, float *out_angle, float *out_radius)
+{
+#define YK_PI 3.14159265f
+    float c = (float)count;
+    if (c < 0.0f) c = 0.0f;
+    if (out_angle)  *out_angle  = (r1 * 2.0f - 1.0f) * YK_PI;   /* rand_signed(π) ∈ [−π, π) */
+    if (out_radius) *out_radius = r2 * 2.0f * c;                /* rand(2·count) ∈ [0, 2·count) */
+#undef YK_PI
+}
+
 /* ============ ★★★ 2026-09-22（owner #26 · 风味选项）决死窗口全屏敌弹变红：三条纯逻辑 ============
  * 依据、一手与「为什么留在卡内」全在 `youkai_core.h` 的同名小节；这里只有算式。*/
 int yk_deathbomb_window(int32_t player_state)

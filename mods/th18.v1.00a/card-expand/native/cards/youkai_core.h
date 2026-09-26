@@ -900,6 +900,17 @@ int32_t yk_orb_score(int32_t stage_point_items_in_game, int32_t point_items_in_g
  *   的先例用**指针出口**。任一指针为 NULL ⇒ 跳过那一项；两个都 NULL ⇒ 什么都不做。*/
 void yk_orb_motion_params(int character, float *home_speed, float *pick_r);
 
+/* ============ ★★★ §3.11c **击破敌机那一批刻符的落点**（一手算式；owner 2026-09-26「从敌机铺出去的范围太大」）===
+ * 一手（`th08:0x42aff0`–`0x42b048`，`Enemy::FUN_0042adb0` 的撒点循环，逐条见 `.c` 的同名函数）：
+ *   `angle = Rng::GetRandomF32SignedInRange(π) ∈ [−π, π)`、
+ *   `radius = Rng::GetRandomF32InRange(2·count) ∈ [0, 2·count)`、
+ *   落点 = `enemy->final_pos + FromAngleMagnitude(angle, radius)`，出生态 = type 7 / state 3。
+ * ⇒ **半径上界 = `2·count`（count = 本帧撒几颗）**，不是固定半径。
+ * ⚠ 与符卡螺旋那一支（固定 `YK_SPIRAL_RADIUS 128`）**是两条不同的算式，别互相套用**。
+ *   `r1`/`r2` = 两个独立均匀随机数 ∈ [0,1)（纯逻辑不做 RNG ⇒ 回放安全、可单测）；
+ *   角度→(cos,sin) 的近似留在卡侧（`yk_cos_approx`/`yk_sin_approx`），core 只管这两条算式。*/
+void yk_orb_burst_polar(int count, float r1, float r2, float *out_angle, float *out_radius);
+
 /* ============ ★★★ §3.11b 击破符卡的「螺旋撒点」（一手参数，见 engine/item/th08/01-time-orbs.md §5.3）===
  * owner 口径：「击破符卡会有一个**螺旋式**的撒永点，无敌一段时间后自动满速吸收」。
  *

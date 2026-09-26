@@ -17,7 +17,7 @@ TH08 的「时点」在引擎里就是一个**普通道具**：**类型 7**（�
 | 触发 | 数量 | 证据 |
 | --- | --- | --- |
 | **击破 boss / 符卡结束** | **100 / 700 / 1000**（按用时比例，见 §5） | `Spellcard::ecl_spell_end` `th08:0x4161b0` 写 `spellcard+0x10`；`Spellcard::sub_416b10` `th08:0x416b10` 按 ≤7+≤6 每 8 帧喷出 |
-| **击破敌怪**（含它 ECL 连锁出来的子敌机） | **6..26**（某分支到 **40**），按「连锁段数」算 | `Enemy::sub_42adb0` `th08:0x42adb0` 的 `th08:0x42aec9`–`th08:0x42af45` 三条公式 |
+| **击破敌怪**（含它 ECL 连锁出来的子敌机） | **6..26**（某分支到 **40**），按「连锁段数」算；另有尾支 `2 × subEnemyCount` | `Enemy::sub_42adb0` `th08:0x42adb0` 的 `th08:0x42aec9`–`th08:0x42af45` 三条公式；落点见 **§4.1**（圆盘 `2N`）/ **§4.2**（128 环 × state 1） |
 
 **「一定会被自动收集」体现在 state 3**：`spawn_item` 对类型 7 强制 `state = 3`（`th08:0x440115`），
 state 3 是**时点专属的应收分支**（`th08:0x4409f2` `cmp state,3` → `th08:0x440c37`），
@@ -200,8 +200,45 @@ if (*(uint8_t *)0x17d5ef8 == 2) {          // 0x17d5ef8 = PLAYER 基址，+0 = s
     N = 时点数（下面三条公式）
     if (ds:0x17d6ed4 != 0) N = N / 3          ; th08:0x42af48 —— 某个「减半/练习」模式的开关
     for (i = 0; i < N; i++)
-        spawn_item(敌人位置 + 半径 128 的环上, type=7, state=3)   ; th08:0x42b03b
+        spawn_item(敌人位置 + 圆盘内随机一点, type=7, state=3)   ; th08:0x42b03b
 ```
+
+### 4.1 ★★★ 落点公式的**订正**（2026-09-26，owner 报「从敌机铺出去的范围太大」时逐指令重读）
+
+⚠ 本节旧版写的是「**半径 128 的环上**，角度 = `randf(2π)` 后 `+ π/2`」—— **两处都错**，
+而且那个 128 其实属于**另一条支路**（§4.2）。逐条（`th08:0x42aff0`–`0x42b048`）：
+
+```asm
+42aff0  fild  [ebp-0x2c]      ; = N（本帧撒几颗）
+42aff3  fadd  st(0),st        ; = 2·N
+42affe  call  0x40d390        ; Rng::GetRandomF32InRange(rng, 2N)        → ∈ [0, 2N)
+42b011  call  0x4143c0        ; Rng::GetRandomF32SignedInRange(rng, π)  → ∈ [−π, π)
+42b01d  call  0x4286e0        ; Float3::FromAngleMagnitude(&v, angle, magnitude)
+42b036  call  0x410a70        ; Float3::operator+=  → v += enemy->final_pos (+0x2d88)
+42b048  call  0x4400a0        ; SpawnItem(&v, type 7, state 3)
+```
+
+- **参数位次**由 `FromAngleMagnitude` `th08:0x4286e0` 的正文定死：`fld [ebp+8]; fsincos; fmul [ebp+0xc] → x;
+  fmul [ebp+0xc] → y` ⇒ **`[ebp+8]` = 角度、`[ebp+0xc]` = 模长**。cdecl 下最后压栈的那个落在 `[ebp+8]`
+  ⇒ 上面**先压的 `rand(2N)` 是模长、后压的 `rand_signed(π)` 是角度**（`0x40490fdb` 是 **π**、不是 π/2 —— 它只是
+  `GetRandomF32SignedInRange` 的**参数**，不是角度偏移）。
+- ⇒ **落点 = 半径上界 `2·N` 的圆盘内均匀撒**（`radius` 本身均匀随机 ⇒ 越靠圆心越密，与一手同构），
+  **不是固定 128 的环**。N = 12 时上界 = 24。
+- **同一函数的另一条支路（`0x42b15d`）才是 128**：见 §4.2。卡 108 旧实现把两处混成了
+  「12 颗 + 固定 128 环 + state 3」⇒ 范围是正确值的 5.3 倍（owner 的「范围太大」）。
+
+### 4.2 尾巴（`0x42b0e5`，**函数参数 `[ebp+8] != 0` 才有**）：`2 × enemy[0x3380]` 颗、**半径 128 环**、**state 1**
+
+```
+for (i = 0; i < enemy[0x3380] * 2; i++)      ; 0x42b156 shl eax,1 / cmp
+    radius = 128 (0x43000000)                 ; 0x42b15d
+    angle  = Rng::GetRandomF32SignedInRange(π) ; 0x42b17a
+    SpawnItem(enemy->final_pos + FromAngleMagnitude(angle, 128), type 7, state 1)   ; 0x42b1b1
+```
+`enemy+0x3380` = `subEnemyCount`（`EnemyManager.hpp:214`）⇒ **这条是「有子部件的敌人」那一批**：
+子部件数 ×2 颗、丢在**半径 128 的环**上、**state 1（生成即满速归航 = 自动吸收）**。
+同一段还会 `CreatePopup(敌人位置, value = enemy[0x3380], 0xfff0f00f)`（`0x403460`）——
+即 TH08 在「这个敌人有几个子部件」时会有一次弹字。
 
 `N` 的三条公式（**按 `shottype_is_*` 分支**，`ecx = 0x160f508` = GameManager）：
 

@@ -21779,12 +21779,17 @@ owner 逐字（2026-09-26，接着 15:05 实跑）：
 ⚠ 注意钩子给的是**敌机的**世界坐标（不是弹的接触点）⇒ 要复刻 `player+0x2a4` 还得先钉死那个字段
 （或退一步：用"被命中那只敌人"的坐标 —— 部件级已经比现在准）。
 
-### 2. 「打爆敌人爆的永点、画面位置分布大了」—— 一手对位，**半径不是问题，颗数才是**
+### 2. 「打爆敌人爆的永点、画面位置分布大了」—— 一手对位
+
+> ⚠⚠ **本节当时的结论「半径不是问题，颗数才是」已被 `§BE #101`（2026-09-26 第九批）推翻** ——
+> 下面第一颗子弹（「环半径 128 绕敌机 ✓ 与我们一致」）**读错了**：`0x42aff0`–`0x42b048` 那条循环里
+> **没有常量 128**，它是 `radius = rand(0, 2N)` 的**圆盘**；128 属于同一个函数里**另一条支路**
+> （`0x42b0e5` 尾巴 = `subEnemyCount × 2` 颗、state 1）。owner 随后的那句
+> 「**从敌机铺出去的范围太大**」正是这一处。**保留原文与订正**，别删。
 
 一手（`engine/item/th08/01-time-orbs.md` §4 全表 + 本轮复核 `0x42b01d`/`0x42b032`/`0x42b048`）：
-- **位置**：`spawn_item(敌人位置 + dir × 128, type 7, state 3)` —— `0x4286e0`（角度,模长）造向量、
-  `0x410a70` **加到 `enemy+0x2d88`（final_pos）** ⇒ **环半径 128 绕敌机** ✓ 与我们一致（`YK_SPIRAL_RADIUS` /
-  死亡批的 `yk_cos_approx(ang)*128`）⇒ **"大了"不是半径**。
+- ~~**位置**：`spawn_item(敌人位置 + dir × 128, type 7, state 3)` ⇒ **环半径 128 绕敌机** ✓ 与我们一致~~
+  ⇒ **见上订正**：实际是 `敌机 final_pos + FromAngleMagnitude(rand_signed(π), rand(0, 2N))`（圆盘）。
 - **颗数**：TH08 是**连锁段数**公式（`0x42aec9`–`0x42af45` 三条分支）：
   妖単独 `N = n*2 + 6`（`n >= 0xa` ⇒ 26）· **人単独 `N = n*6 + 16`（`n >= 4` ⇒ 40）** ·
   双人组 `N = n*2 + 0xa`（`n >= 8` ⇒ 26）；另有 `ds:0x17d6ed4 != 0` 时 **N /= 3**。
@@ -21858,3 +21863,65 @@ youkai/hud.vm bar  … ent(0x5f0)(257,898) = 表面 (257,898); sprite … scale 
   §5「未答」里那条 ❓「`layer(n)` 对 originMode/resolutionMode 的默认设置：未反」**已销账**。
 - [`engine/player/th08/03-youkai-body-and-gauge.md`](../../../engine/player/th08/03-youkai-body-and-gauge.md)
   §2.3b ③ 补订正：「写 `(2)` 与不写等价」**只在脚本里没有 `layer(20..32|37..45)` 时成立**。
+
+## §BE 详录 #101（2026-09-26 第九批）：108 永点「从敌机铺出去的范围太大」—— 击破批的**落点算式**照一手重写（圆盘 `2N`，不是固定 128 的环）
+
+owner 逐字（2026-09-26，接着 #99 的两条口径）：**「从敌机铺出去的范围太大」**
+（= #99 §2 里那条 `待 owner 再描一句` 的答案：不是颗数，是**铺开的范围**）。
+
+### 1. 真根因（一手逐条，本轮新读）
+
+`Enemy::FUN_0042adb0`（`th08:0x42adb0` = 敌人死亡处理）的撒点循环体 `th08:0x42aff0`–`0x42b048`：
+
+```asm
+42aff0  fild  [ebp-0x2c] / 42aff3 fadd st(0),st   ; = 2·N（N = 本帧撒几颗）
+42affe  call  0x40d390                            ; Rng::GetRandomF32InRange(rng, 2N)        → [0, 2N)
+42b011  call  0x4143c0                            ; Rng::GetRandomF32SignedInRange(rng, π)   → [−π, π)
+42b01d  call  0x4286e0                            ; Float3::FromAngleMagnitude(&v, angle, magnitude)
+42b036  call  0x410a70                            ; v += enemy->final_pos (+0x2d88)
+42b048  call  0x4400a0                            ; SpawnItem(&v, type 7, state 3)
+```
+
+- **参数位次**由 `FromAngleMagnitude th08:0x4286e0` 正文定死（`fld [ebp+8]; fsincos; fmul [ebp+0xc] → x/y`
+  ⇒ `[ebp+8]` = 角度、`[ebp+0xc]` = 模长），并与符卡螺旋那处（`0x417593` 把常量 128 压在**模长**槽）
+  双向同形 ⇒ **角度 = `rand_signed(π)`、半径 = `rand(2N)`**。
+- ⇒ 一手是**半径上界 `2·N` 的圆盘内均匀撒**（N = 12 时上界 24），**不是固定 128 的环**。
+- **本卡旧实现** = `12 颗 + 固定半径 128 的环`（`youkai.c` 的 `yk_on_enemy_killed`）⇒ 范围是正确值的
+  **5.3 倍**，正是 owner 报的「从敌机铺出去的范围太大」。
+- ⚠ **那个 128 确实存在于同一个函数里，但属于另一条支路**（`0x42b0e5` 尾巴，函数参数 `[ebp+8] != 0` 才有）：
+  `for (i < enemy[0x3380] * 2)` 颗、**半径 128 环**、**state 1（生成即满速归航）**，`enemy+0x3380` =
+  `subEnemyCount`（`EnemyManager.hpp:214`）⇒ 那是「**有子部件的敌人**」那一批（boss 部件），
+  还顺带 `CreatePopup(位置, subEnemyCount, 0xfff0f00f)`。旧版把两条支路的参数混成了一套。
+- ⚠ 顺带订正：`engine/item/th08/01-time-orbs.md` §4 旧版写的「半径 128 的环上，角度 = `randf(2π)` 后 `+π/2`」
+  **两处都错**（`0x40490fdb` 是 **π**、且它只是 RNG 的参数）⇒ 本轮在该文补 §4.1 / §4.2 两节并改了汇总行。
+
+### 2. 改了什么
+
+| 文件 | 改动 | 为什么 | 谁改的 | 怎么验的 |
+| --- | --- | --- | --- | --- |
+| `native/cards/youkai_core.{h,c}` | 新增纯逻辑 `yk_orb_burst_polar(count, r1, r2, &angle, &radius)` = 一手的 `angle = (2r₁−1)·π`、`radius = r₂·2·count` | 算式要能单测、要回放安全（RNG 由卡侧喂两个均匀数） | 108 owner | 新增 17 条单测（边界 `r=0/0.5/1`、`count=0`、负 count、双 NULL、上界 < 2N）⇒ `youkai_core: 4694 checks, 0 failed` |
+| `native/cards/youkai.c` | `yk_on_enemy_killed` 的击破批：**去掉固定 128 环**，改成喂两个随机数给上面那个 helper、再用 `yk_cos_approx/sin_approx` 落点 | 见 §1 | 108 owner | `make cards/youkai.o` 零警告；`make check` rc=0 |
+| `engine/item/th08/01-time-orbs.md` | §4.1（订正落点公式）+ §4.2（尾巴那条 128 环 × state 1）+ 汇总行 | 一手结论回流 engine 层 | 108 owner | `tooling/check-docs.py` 全绿（382 文件） |
+
+**影响面**：`native/cards/youkai_core.*` / `youkai.c` 都是 108 自己的文件；
+**共享件一个都没动**。回归 = `make check` rc=0（含 `anm-verify` / `sht-verify` / `dllx87` / `dllverify` /
+`capcheck` / `engine_abi_check`）+ `python3 sites.py verify` + `python3 tooling/check-docs.py`。
+
+### 3. 实跑判据
+
+击破敌机时，刻符应当**贴着敌机铺出一个小圆盘**（12 颗时最远 24 个 640 空间单位 = 48 表面 px），
+而不是原来那种「12 颗均匀铺在半径 128（= 256 表面 px）的环上」。日志侧没有新增探针
+（`youkai/orb.vm … draw` 仍在），若要量：连打两只敌机，看 `orb.vm` 的 `draw` 与敌机坐标的差值应 < 48 px。
+
+### 4. 仍未做（等 owner 口径，两条都登记在 `TUNING.md` §2.0zy-bis）
+
+1. **门**：一手那条循环只在 `Enemy::GetSubEnemyChainCount() != 0`（`th08:0x41fd40`，判据 =
+   `IsSubEnemyChainRoot` `th08:0x41f000`：`ownerEnemy == 0 && nextSubEnemy != 0`）时才跑
+   ⇒ **TH08 里「单只、无兄弟」的敌机根本不喷这一批**（只掉極端人/妖那 1 颗 + 尾巴那批）。
+   本卡目前**对每次击破都喷**（`YK_ORB_PER_KILL_CHAIN` = 1 ⇒ 12 颗）。要不要照一手加这道门
+   （代价：普通妖精只剩 1 颗）需要 owner 拍 —— TH18 侧的对位字段是 `parent_enemy_id`（`enemy+0x6834`，
+   见 `native/engine.h` 的 `CE_SPAWN_PARENT`）与 `enemy_id`（`+0x6830`），但**同组兄弟**的链表语义未验。
+2. **颗数的分支**：三条公式按 `GameManager::fullShotType`（`+0x3dba9`）选 ——
+   `IsSoloHuman th08:0x42f230` / `IsSoloYoukai th08:0x42f270` 的真身是
+   `fullShotType >= 4 && (fullShotType & 1) == 0 / != 0`（`ShotType` 枚举 0–3 = 四组**双人组**、
+   4–11 = 八个**単独**角色，`ScoreDat.hpp:47`）⇒ **本卡现在走的是「双人组」那一支 `2n+10`**（n 取 1 ⇒ 12）。

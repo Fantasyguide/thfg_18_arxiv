@@ -4720,6 +4720,39 @@ owner 2026-09-23 18:14 的「偏右 1/3 个游玩区宽」是**相对屏幕左�
 （位置 ×DAT ⇒ 画到屏外），少了那行 `resolutionMode(2)` 就是「日志全对、屏上一个像素都没有」
 （[`AUDIT.md`](AUDIT.md) §BE #100、`engine/anm/th18/01-vm-instantiate.md` §3c）。
 
+### 2.0zy-bis ★ 108 击破批刻符的**落点算式**（2026-09-26 定案，一手）+ 两条**待 owner 拍**的口径
+
+**owner 逐字**：「打爆敌人爆的永点，就永点出现的**画面位置分布**而言，似乎大了」＋补一句
+**「从敌机铺出去的范围太大」**。
+
+**一手（`th08:0x42aff0`–`0x42b048`，逐条）**：击破批（type 7 / state 3）每一颗的落点 =
+`敌机 final_pos + FromAngleMagnitude(angle, radius)`，其中
+`angle = Rng::GetRandomF32SignedInRange(π) ∈ [−π,π)`、`radius = Rng::GetRandomF32InRange(2·N) ∈ [0,2N)`
+（`N` = 这一帧撒几颗）⇒ **半径上界 `2N` 的圆盘内均匀撒**。
+参数位次由 `FromAngleMagnitude th08:0x4286e0` 正文（`[ebp+8]` 进 `fsincos`、`[ebp+0xc]` 当乘数）
+＋符卡螺旋那处（`0x417593` 常量 128 压在同一槽）双向钉死。
+
+- **本卡旧值** = 固定半径 **128 的环** ⇒ 12 颗时是正确上界（24）的 **5.3 倍** ⇒ 已改成上面的算式
+  （`yk_orb_burst_polar`，纯逻辑 + 17 条单测）。**这一条是复刻，不是自定。**
+- ⚠ 128 确实存在于同一函数里，但属于**尾支**（`0x42b0e5`，`[ebp+8] != 0` 才有）：
+  `subEnemyCount(+0x3380) × 2` 颗、半径 128 环、**state 1**（生成即满速归航）—— 那是「有子部件的敌人」。
+
+**❓ 待 owner 拍 #1（门）**：一手那条循环只在 `GetSubEnemyChainCount() != 0`
+（`th08:0x41fd40`；判据 `IsSubEnemyChainRoot th08:0x41f000` = `ownerEnemy == 0 && nextSubEnemy != 0`）时跑
+⇒ **TH08 里单只、无兄弟的敌机不喷这一批**（只掉極端人/妖那 1 颗）。本卡**对每次击破都喷 12 颗**。
+- 选 **A（保持现状）**：妖側永点供给足；与一手在这点上不同（已登记）。
+- 选 **B（照一手加门）**：普通妖精只剩 1 颗 ⇒ 更像原作，但**要先把 TH18 的同组兄弟语义验出来**
+  （现在的候选字段：`enemy_id +0x6830` / `parent_enemy_id +0x6834` = `CE_SPAWN_PARENT`，
+  但「同一次 ECL 调用建出来的那一组」在 TH18 里怎么连、还没验）。
+
+**❓ 待 owner 拍 #2（颗数的分支）**：三条公式按 `GameManager::fullShotType`（`+0x3dba9`）分支 ——
+`IsSoloHuman th08:0x42f230` / `IsSoloYoukai th08:0x42f270` 的真身是
+`fullShotType >= 4 && (fullShotType & 1) == 0 / != 0`（`ScoreDat.hpp:47` 的 `ShotType`：0–3 = 四组
+**双人组**、4–11 = 八个**単独**角色）⇒ 分支表：**妖単独** `n>=10 ? 26 : 2n+6`、
+**人単独** `n>=4 ? 40 : 6n+16`、**双人组** `n>=8 ? 26 : 2n+10`，另 `[0x17d6ed4] != 0` 时 `N /= 3`。
+本卡现在走**双人组**那一支（`YK_ORB_PER_KILL_CHAIN` 取 1 ⇒ `N = 12`）。你在 TH08 里习惯用哪种
+（组队 / 単独）就照哪一支 —— 只影响「一次喷几颗」与圆盘上界 `2N`。
+
 ### 2.0zz ★ 112 #22 吸收数记录面板（2026-09-23 接上；一手面板参数 + 5 个自定）
 
 **一手**（`front.anm`）：父 **134** = `sprite(sprite102)`（`front_ufo.png` 96×96）+ `scriptNew(135)` + `layer(23)` +

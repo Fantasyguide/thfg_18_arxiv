@@ -2329,7 +2329,6 @@ static void yk_gauge_tick(yk_card_t *s, int focused)
 static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
 {
     int focused, i, n;
-    float ang;
     int32_t hl, yl;                                     /* ★ P-E：当前形态的同一对 limit */
     if (!s || !ev) return;
     focused = CE_PLAYER_FOCUSED();
@@ -2371,9 +2370,22 @@ static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
      *   （`th08:0x440a17 call 0x44a5a0`，盒 = `[.sht+0x18]/2` = 20/24）；「自动」的意思是
      *   道具自己飞过来（state 1 当帧满速），玩家不用去够。*/
     n = YK_ORB_PER_KILL_CHAIN * 2 + 10;
+    /* ★★★ 2026-09-26 第八批（owner：「打爆敌人爆的永点，就永点出现的**画面位置分布**而言，
+     *   似乎大了」+ 补「**从敌机铺出去的范围太大**」）：**旧版是半径 128 的环，一手是半径 2n 的圆盘**。
+     *   一手逐条（`th08:0x42aff0`–`0x42b048`，本轮新读）：
+     *     `angle = GetRandomF32SignedInRange(π)`、`radius = GetRandomF32InRange(2·count)`
+     *     ⇒ 落点 = `enemy->final_pos + FromAngleMagnitude(angle, radius)`
+     *   参数位次由 `FromAngleMagnitude` 正文（`0x4286e0`：`[ebp+8]` 进 `fsincos`、`[ebp+0xc]` 当乘数）
+     *   + 符卡螺旋那一处（`0x417593` 把常量 128 压在同一个「模长」槽）双向钉死。
+     *   ⇒ 12 颗时上界 = **24**（旧版固定 128 = **5.3 倍**）⇒ 观感正是「从敌机铺出去的范围太大」。
+     *   算式在纯逻辑里（`yk_orb_burst_polar`，带单测）；这里只把两个均匀随机数喂进去。*/
     for (i = 0; i < n; ++i) {
-        ang = (float)(ce_rand() % 62832u) / 10000.0f;   /* 0..2π 的近似 */
-        yk_orb_spawn(s, ev->x + yk_cos_approx(ang) * 128.0f, ev->y + yk_sin_approx(ang) * 128.0f,
+        float ang, rad;
+        yk_orb_burst_polar(n,
+                           (float)(ce_rand() % 1000u) / 1000.0f,   /* r1 → angle ∈ [−π, π) */
+                           (float)(ce_rand() % 1000u) / 1000.0f,   /* r2 → radius ∈ [0, 2n) */
+                           &ang, &rad);
+        yk_orb_spawn(s, ev->x + yk_cos_approx(ang) * rad, ev->y + yk_sin_approx(ang) * rad,
                      YK_ORB_STATE_SPAWN);   /* 一手 `th08:0x42b048`：state 3（上抛，期间收不到）*/
     }
     /* ② 極端人/妖的那一颗**已挪到上面**（`!focused` 之前）—— 一手它与聚焦无关，见那里的注。*/
