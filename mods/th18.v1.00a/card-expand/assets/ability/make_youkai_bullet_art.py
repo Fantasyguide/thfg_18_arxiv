@@ -137,13 +137,32 @@ def sheet_path(kind: str, name: str) -> Path:
     return TH16_ANM / name / "player" / "pl03" / "pl03.png"
 
 
-def entry_rects(text: str, name: str) -> dict:
-    """该 anm 里 **entry0** 的 sprite 矩形（子弹都在 entry0）。"""
+def entry_rects(text: str, name: str):
+    """该 anm 里 **entry0** 的 sprite 矩形 + **`yOffset`**（子弹都在 entry0）。
+
+    ★★★ 2026-09-26（owner：「妖机体的弹幕样式应该都不对」→ 复核发现**早苗那四张是白方块**）：
+    **`yOffset` 必须加进裁图原点**。一手（`thanm -l 16 -m v8.anmm th16.v1.00a/dat/pl03sub.anm`）：
+    ```
+    entry entry0 { name: "player/pl03/pl03.png", width: 256, height: 64, yOffset: 176, THTXHeight: 64 }
+    entry entry1 { name: "player/pl03/pl03.png", width: 128, height: 16, yOffset: 144, THTXHeight: 16 }
+    ```
+    两个 entry **共用同一个贴图名**，各自只是那张大盘里的一段 ⇒ 引擎按 `yOffset` 定位，
+    而 `thanm -x` 解出来的是**整段大盘**（`player/pl03/pl03.png` = 256×240）：
+      · entry0 的 256×64 在 **y = 176..240**（= 那四个「月牙」= script0 的 sprite0..3 真身）；
+      · 大盘 y = 0..176 是**空白**。
+    旧版按 `y = 矩形.y`（= 0）裁 ⇒ 裁到空白 ⇒ 四张全白、`vis` 还是 4096（不透明白）
+    ⇒ 旧自检「`vis == 0` 才算空图」抓不到（见下面新增的「白图」判据）。
+    **其它源的 `yOffset` 全是 0**（2026-09-26 实测：TH08 `player00/01/02`、`ascii`、`etama`、
+    TH16 `pl03`、TH18 `pl0X` 全表都没有非零 `yOffset`）⇒ 只有 `pl03sub` 吃这一条。"""
     m = re.search(r"entry entry0 \{(.*?)^\}", text, re.S | re.M)
     if not m:
         raise SystemExit(f"{name}: 找不到 entry0")
-    return {int(x.group(1)): (int(x.group(2)), int(x.group(3)), int(x.group(4)), int(x.group(5)))
-            for x in _SPRITE_DEF_RE.finditer(m.group(1))}
+    body = m.group(1)
+    yo = re.search(r"yOffset:\s*(-?\d+)", body)
+    y_off = int(yo.group(1)) if yo else 0
+    rects = {int(x.group(1)): (int(x.group(2)), int(x.group(3)) + y_off, int(x.group(4)), int(x.group(5)))
+             for x in _SPRITE_DEF_RE.finditer(body)}
+    return rects, y_off
 
 
 def extract_script(text: str, n: int):
@@ -170,7 +189,7 @@ def cut_sprites(workdir: Path):
     made = {}
     for name, kind, anm, sid, crop in MEMBERS:
         text = read_anm(kind, anm, workdir)
-        rects = entry_rects(text, anm)
+        rects, y_off = entry_rects(text, anm)
         if sid not in rects:
             raise SystemExit(f"{anm}: 没有 sprite{sid}（源 ank 变了？）")
         x, y, w, h = rects[sid]
@@ -186,8 +205,19 @@ def cut_sprites(workdir: Path):
         canvas.paste(cell, ((cw - w) // 2, (ch - h) // 2))     # 居中 = 原生的中心锚点
         path = OUT_ART / f"{name}.png"
         canvas.save(path)
-        vis = sum(1 for a in canvas.getchannel("A").get_flattened_data() if a > 32)
-        made[name] = (path, (cw, ch), vis, cell.tobytes())
+        # 用**逐通道**展平（`get_flattened_data` 不回元组、也不触发 Pillow 的弃用告警）。
+        a_ch = list(canvas.getchannel("A").get_flattened_data())
+        rgb_ch = [list(canvas.getchannel(c).get_flattened_data()) for c in ("R", "G", "B")]
+        vis = sum(1 for a in a_ch if a > 32)
+        # ★★★ 2026-09-26（`pl03sub` 那个坑的**防复发判据**）：裁到「整块不透明白」= 源矩形落在了
+        #   大盘的空白段（`yOffset` 没加、或加错）—— 旧的 `vis == 0` 判据对它无效（白图 vis 满格）。
+        ink = sum(1 for i, a in enumerate(a_ch)
+                  if a > 32 and (rgb_ch[0][i], rgb_ch[1][i], rgb_ch[2][i]) != (255, 255, 255))
+        if vis > 0 and ink == 0:
+            raise SystemExit(f"{name}: 切出来是**整块白**（{cw}x{ch}，{vis} 个不透明像素、0 个非白）"
+                             f" —— 源矩形 ({x},{y},{w},{h}) 大概落在源图空白段："
+                             f"{anm} 的 entry0 yOffset={y_off}（本函数已把它加进 y）")
+        made[name] = (path, (cw, ch), vis, cell.tobytes(), ink)
     return made
 
 
@@ -304,10 +334,10 @@ def main():
     made = cut_sprites(workdir)
 
     print("== 切图（1:1，居中补到 2 的幂）")
-    for name, (path, (w, h), vis, _cell) in made.items():
+    for name, (path, (w, h), vis, _cell, ink) in made.items():
         if vis == 0:
             raise SystemExit(f"{name}: 切出来是空图（源矩形错了？）")
-        print(f"   {name:<12} {w}x{h}  可见像素 {vis:<6} ← {path.relative_to(HERE)}")
+        print(f"   {name:<12} {w}x{h}  可见像素 {vis:<6} 非白 {ink:<6} ← {path.relative_to(HERE)}")
 
     # sprite → ORDER 成员名（按 **(作品, anm 名, sprite 号)** 查；早苗那支一个脚本用 4 张图，
     #   四张各有自己的成员名 ⇒ 不能用「脚本名 + 序号」现编 —— 名字必须与 ORDER 片段逐字一致，
