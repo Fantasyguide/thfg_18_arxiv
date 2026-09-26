@@ -22148,3 +22148,30 @@ script6 { -1: layer(13); type(1); alpha(64);  zWriteDisable(1); rotateAuto(1); s
 TH18 没有等价指令；TH18 原生弹脚本在同一位置的 `type(1)` 已由生成器补上。若实跑仍觉得弹的观感有差，
 它就是下一个候选（要先把 TH08 那个 dword 字段读出来是哪个 `zAnmVm` 偏移）。
 **回归**：`make check` rc=0（全部门）+ `python3 sites.py verify` rc=0 + `tooling/check-docs.py` 全绿。
+
+## §BE 详录 #107（2026-09-26 第十四批）：**收尾** —— 把那批已无人引用的 `ability.anm` 弹体贴图/脚本**撤出**（`assets/yk_bullet/`）
+
+**缘起**：§BE #105 把妖侧弹的弹体脚本改到 `pl0X.anm`（`+0x22` 按主炮路径解析）之后，`ability.anm` 里那份
+（`ATLAS_YK_BULLET` entry 79 + 脚本 364..370）就**没有任何读者**了 —— 但生成器每次都还在重写它
+⇒ ① 死资产（29 KB 图集 + 7 支脚本）② 每次改弹体脚本都让 `ability.anm` 无故变 md5（部署噪声）。
+本批把它撤干净（`§BE #105` §3 里登记的收尾项）。
+
+### 1. 改了什么
+
+| 文件 | 改动 |
+| --- | --- |
+| `assets/yk_bullet/`（**新目录**）| 成员图 10 张从 `assets/ability/yk_bullet/` 挪过来；7 支 spec 从 `assets/ability/scripts/364..370_*.anm.txt` 挪到 `assets/yk_bullet/scripts/` |
+| `assets/ability/entries/ORDER.txt` | **删掉**追加的那一段（12 数据行 + 注释；只删自己的段，`UFO_BURST_*` 等一行没动）。`ORDER.frozen.txt` 冻结的是**前 186 个数据行**，我们的段在第 554 行之后 ⇒ 删掉后仍有 553 行 ≥ 186 ✓（冻结闸的口径就是「不许少于冻结行数」）|
+| `assets/ability/entries/ORDER.yk_bullet.txt` | 删除（旧版是要 append 进 ORDER.txt 的片段）|
+| `assets/ability/make_youkai_bullet_art.py` | 产物路径改到 `assets/yk_bullet/`；`write_order()` → **`write_layout()`**（只写 `assets/yk_bullet/LAYOUT.txt` 纯文档，不再产出 ability 的 ORDER 片段）；去掉「与 ability 主表撞名」那道检查（名字已不在同一张表里）；脚本头注释同步 |
+| `assets/build_player_anm.py` | `YK_BULLET_ART` / `YK_BULLET_SCRIPT_DIR` 指向新目录（`bullet` 追加件的行为**一字未改**）|
+| `CAPACITY.md` | 那条 `ATLAS_YK_BULLET` 登记改成「**已撤出**」并写清现在的落点（四个 `pl0X.anm` 的小画布 + 脚本号）|
+
+### 2. 验证（撤出＝回到加它之前那一版）
+
+- `ability.anm`：entry **80 → 79**、脚本 **371 → 364**（`364..370` 本来就是最后 7 支 ⇒ 别的脚本号一个没动），
+  md5 `844a132f…` → **`7a7adcca6f0b0f5695c019e5fab40042`** —— 与 §BE #95 那一轮（加这批**之前**）记录的
+  `ability.anm` md5 **逐字节相同** ⇒ 「撤出」是干净的、没有连带改动 ✓
+- `pl0X.anm` 侧不受影响：pl00 script54 = `sprite116 + rotateAuto(1)`、pl03 script45 = `sprite140..143 + rotateAuto(1)` ✓；
+  `check_player_anm_bounds.py`（含上一批补的**妖侧组**检查）全绿；`sht` 的 `anm` 全在表内 ✓
+- 闸：`make check` rc=0（全部门）+ `python3 sites.py verify` rc=0 + `tooling/check-docs.py` 全绿。

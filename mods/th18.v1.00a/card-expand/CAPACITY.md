@@ -367,12 +367,12 @@ cards: 35 registered from cards.js; shop pool 700/8192 slots, guaranteed offers 
   逐值同原生 `abcard.anm` script15/16）⇒ 满 B 与 B 碎卡**同尺寸同配方**。
   sprite 号仍是 **453..457**（行序没动，只是画布变大）、entry 61 不变；明细见 `TUNING.md` §2.0zzx-2。
 
-- **★ 2026-09-26 新增 `ATLAS_YK_BULLET`（entry **79**，`CE_ANM_ABILITY_ATLAS_ATLAS_YK_BULLET`；画布 512×128、10 个成员）**：
-  卡 108 的**妖侧弹体贴图**（owner：「妖机体的弹幕样式应该都不对，**发的弹幕本身得搬过来**」）。
-  一手 = TH08 行里 `+0x24` **+10** 的弹体脚本所用 sprite：霊夢 s14/s16（sprite35/36）· 魔理沙
-  s22/s24（sprite30/32）· 咲夜 s12/s14（sprite22/23）· 早苗 = TH16 `pl03sub.anm` script0（sprite0..3）。
-  生成器 = `assets/ability/make_youkai_bullet_art.py`（幂等整段重写）；脚本 **364..370**
-  （`CE_ANM_ABILITY_SCRIPT_YK_BULLET_*`）。子机成员 `YKB_R_MAIN/R_OPT/M_MAIN/M_OPT/S_MAIN/S_OPT/A_0..A_3`。
+- **2026-09-26 已撤出：`ATLAS_YK_BULLET`（原 entry 79）+ 脚本 364..370** —— 卡 108 的妖侧弹体贴图
+  **不在 `ability.anm` 里了**（一手：行里 `+0x22` 按 **`pl0X.anm`** 解析，见 `AUDIT.md` §BE #105）。
+  现在：成员图 `assets/yk_bullet/*.png` + 7 支 spec `assets/yk_bullet/scripts/`，
+  由 `assets/build_player_anm.py` 的 `bullet` 追加件摆进**四个 `pl0X.anm` 各一张小画布**
+  （128×16 / 320×32 / 80×32 / 256×64，脚本号 54/55 · 60/61 · 43/44 · 45）。
+  ⇒ `ability.anm` 的 entry/sprite/脚本号**全部回到撤出前的状态**（那 7 支本来是最后的 7 支脚本）。
 
 - **★ 2026-09-24 第 23 轮新增 `ATLAS_UFO_FRAME`（entry **74**，`CE_ANM_ABILITY_ATLAS_ATLAS_UFO_FRAME`）**：
   卡 112 的**满 B 卡框**（owner 实跑「**缺少一个黑色的边框**」）= TH18 `abcard/ability/abframe.png`

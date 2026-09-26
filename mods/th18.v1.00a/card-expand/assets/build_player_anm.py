@@ -549,8 +549,10 @@ YK_EXTRA_SCRIPTS = (
 #     spec 文本 ⇒ 「切图与脚本文本」仍只有一处来源）。
 #   ⚠ `ability.anm` 里那份（7 支脚本 + `ATLAS_YK_BULLET`）**本批先留着不动**：它与其他卡共享、
 #     删除要单独一轮（改 `ORDER.txt` + `CAPACITY.md` 台账 + 全量回读），登记在 §BE #105。
-YK_BULLET_ART = HERE / "ability" / "yk_bullet"
-YK_BULLET_SCRIPT_DIR = HERE / "ability" / "scripts"
+# ⚠ 2026-09-26 第十三批：产物**不在 `assets/ability/**` 里**（那批成员图与 spec 已从 ability 管线撤出，
+#   见 `AUDIT.md` §BE #107）——`assets/yk_bullet/` 存成员 PNG，`assets/yk_bullet/scripts/` 存 7 支 spec。
+YK_BULLET_ART = HERE / "yk_bullet"
+YK_BULLET_SCRIPT_DIR = HERE / "yk_bullet" / "scripts"
 # 该机体 entry 的成员（= `make_youkai_bullet_art.py` 的产物名；尺寸 = 那张 PNG 的实际尺寸）
 YK_BULLET_MEMBERS = {
     "pl00": (("YKB_R_MAIN", 64, 16), ("YKB_R_OPT", 64, 16)),

@@ -1,0 +1,18 @@
+# 卡 108 妖侧弹的成员图（`assets/yk_bullet/*.png`）+ 它们的来源与摆放。
+# 由 assets/ability/make_youkai_bullet_art.py 生成（幂等，整段重写）；**纯文档**。
+# 一手：弹体脚本 = 行里 `+0x22` 的 anm 脚本，按 **pl0X.anm** 解析（`+0x24`/`+10` 那条是 TH08 的算法）；
+#   霊夢 s14/s16（sprite35/36）· 魔理沙 s22/s24（sprite30/sprite32）· 咲夜 s12/s14（sprite22/23）·
+#   早苗 = TH16 `pl03sub.anm` script0（sprite0..3）。
+# 本文件里那张 512x128 的排布只是「切图时用过的画布」；真正落进 pl0X.anm 的摆放见
+#   assets/build_player_anm.py 的 YK_BULLET_CANVAS（每机体一张小画布）。
+YkBULLET_LAYOUT 512x128
+YKB_R_MAIN        YKB_R_MAIN.png   @0,0,64x16
+YKB_R_OPT         YKB_R_OPT.png   @64,0,64x16
+YKB_M_MAIN        YKB_M_MAIN.png   @128,0,64x16
+YKB_M_OPT         YKB_M_OPT.png   @0,16,256x32
+YKB_S_MAIN        YKB_S_MAIN.png   @256,24,64x16
+YKB_S_OPT         YKB_S_OPT.png   @320,16,16x32
+YKB_A_0           YKB_A_0.png   @0,48,64x64
+YKB_A_1           YKB_A_1.png   @64,48,64x64
+YKB_A_2           YKB_A_2.png   @128,48,64x64
+YKB_A_3           YKB_A_3.png   @192,48,64x64

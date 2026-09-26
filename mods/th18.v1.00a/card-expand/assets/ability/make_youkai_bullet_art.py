@@ -45,12 +45,17 @@ from pathlib import Path
 
 from PIL import Image
 
-HERE = Path(__file__).resolve().parent          # assets/ability
+HERE = Path(__file__).resolve().parent          # assets/ability（本脚本仍住在这里，产物不放这里）
 REPO = HERE.parents[4]                          # → renkolab
-OUT_ART = HERE / "yk_bullet"
-OUT_SCRIPTS = HERE / "scripts"
-OUT_ORDER = HERE / "entries" / "ORDER.yk_bullet.txt"
-MAIN_ORDER = HERE / "entries" / "ORDER.txt"
+# ★★★ 2026-09-26 第十三批收尾：产物**整体挪出 `assets/ability/**`**。
+#   原因（§BE #105）：妖侧行里的 `+0x22` 由**主炮路径**按 `pl0X.anm` 解析 ⇒ 这 7 支脚本的真正落地处是
+#   四个 `pl0X.anm`（由 `assets/build_player_anm.py` 的 `bullet` 追加件读本目录的 spec 文本）。
+#   留在 `assets/ability/scripts/` 会有两个坏处：① `build_ability.py` 会把它们编进 `ability.anm`
+#   （**死资产**，还占 29 KB 图集）；② 每次重生成都会让 `ability.anm` 无缘无故变 md5（部署噪声）。
+#   ⇒ 现在：`assets/yk_bullet/` = 成员 PNG + `scripts/` 里的 7 支 spec；**不再写任何 ability 侧文件**。
+YKB_ROOT = HERE.parent / "yk_bullet"            # assets/yk_bullet
+OUT_ART = YKB_ROOT
+OUT_SCRIPTS = YKB_ROOT / "scripts"
 
 THANM = REPO / "local/vendor/thtk/build/thanm/thanm"
 TH08_DAT = REPO / "local/th08.v1.00d/dat"
@@ -309,21 +314,29 @@ def pack_atlas(made):
     return place, (W, H)
 
 
-def write_order(made):
+def write_layout(made):
+    """把图集布局写成 `assets/yk_bullet/LAYOUT.txt`（**纯文档**：`build_ability.py` 不再读它）。
+
+    旧版这里产出的是要 append 进 `assets/ability/entries/ORDER.txt` 的片段 —— 2026-09-26 第十三批
+    把那 10 个成员从 ability 图集里撤掉了（真正需要它们的是四个 `pl0X.anm` 的新 entry，
+    由 `build_player_anm.py` 的 `YK_BULLET_MEMBERS` / `YK_BULLET_CANVAS` 重新摆放）。
+    """
     place, (W, H) = pack_atlas(made)
     lines = [
-        "# 卡 108（TH08 永夜抄）**妖侧弹的弹体贴图** —— 原作的弹，逐张 1:1 切图。",
-        "# 本片段由 assets/ability/make_youkai_bullet_art.py 生成（幂等，整段重写）；主 agent 已 append 进 ORDER.txt 末尾。",
-        "# 一手：弹体脚本 = 行里 `+0x24` **+10**（`th08:0x44fd32`/`0x44fd36` ⇒ `AnmLoaded::SetAndExecuteScriptIdx`）；",
+        "# 卡 108 妖侧弹的成员图（`assets/yk_bullet/*.png`）+ 它们的来源与摆放。",
+        "# 由 assets/ability/make_youkai_bullet_art.py 生成（幂等，整段重写）；**纯文档**。",
+        "# 一手：弹体脚本 = 行里 `+0x22` 的 anm 脚本，按 **pl0X.anm** 解析（`+0x24`/`+10` 那条是 TH08 的算法）；",
         "#   霊夢 s14/s16（sprite35/36）· 魔理沙 s22/s24（sprite30/sprite32）· 咲夜 s12/s14（sprite22/23）·",
         "#   早苗 = TH16 `pl03sub.anm` script0（sprite0..3）。",
-        f"ATLAS {ATLAS} {W}x{H}",
+        f"# 本文件里那张 512x128 的排布只是「切图时用过的画布」；真正落进 pl0X.anm 的摆放见",
+        f"#   assets/build_player_anm.py 的 YK_BULLET_CANVAS（每机体一张小画布）。",
+        f"YkBULLET_LAYOUT {W}x{H}",
     ]
     for name, _kind, _anm, _sid, _crop in MEMBERS:
         x, y, w, h = place[name]
-        lines.append(f"{name:<17} ability/yk_bullet/{name}.png   @{x},{y},{w}x{h}")
+        lines.append(f"{name:<17} {name}.png   @{x},{y},{w}x{h}")
     text = "\n".join(lines) + "\n"
-    OUT_ORDER.write_text(text, encoding="utf-8")
+    (OUT_ART / "LAYOUT.txt").write_text(text, encoding="utf-8")
     return text, (W, H)
 
 
@@ -356,7 +369,7 @@ def main():
     for name, (path, (w, h), vis, _cell, ink) in made.items():
         if vis == 0:
             raise SystemExit(f"{name}: 切出来是空图（源矩形错了？）")
-        print(f"   {name:<12} {w}x{h}  可见像素 {vis:<6} 非白 {ink:<6} ← {path.relative_to(HERE)}")
+        print(f"   {name:<12} {w}x{h}  可见像素 {vis:<6} 非白 {ink:<6} ← {path.relative_to(HERE.parent)}")
 
     # sprite → ORDER 成员名（按 **(作品, anm 名, sprite 号)** 查；早苗那支一个脚本用 4 张图，
     #   四张各有自己的成员名 ⇒ 不能用「脚本名 + 序号」现编 —— 名字必须与 ORDER 片段逐字一致，
@@ -378,21 +391,17 @@ def main():
         (OUT_SCRIPTS / fname).write_text(scripts[name], encoding="utf-8")
     print(f"== 脚本 {len(SCRIPTS)} 支 → {OUT_SCRIPTS}（编号 {SCRIPT0}..{SCRIPT0 + len(SCRIPTS) - 1}）")
 
-    order, (AW, AH) = write_order(made)
+    order, (AW, AH) = write_layout(made)
     used = sum(made[n][1][0] * made[n][1][1] for n, *_ in MEMBERS)
-    print(f"== ORDER 片段 → {OUT_ORDER.relative_to(HERE)}（图集 {ATLAS} {AW}x{AH}；成员总面积 {used} ≤ {AW*AH} ✓）")
+    print(f"== 布局说明 → {(OUT_ART / 'LAYOUT.txt').relative_to(HERE.parent)}（切图画布 {AW}x{AH}；成员总面积 {used} ✓）")
+    print(f"   ⚠ 这 7 支 spec 的真正落地处 = 四个 pl0X.anm（`build_player_anm.py` 的 bullet 追加件读 {OUT_SCRIPTS.name}/）")
 
-    # 名字查重（对主表）
-    main_names = {l.split()[0] for l in MAIN_ORDER.read_text(encoding="utf-8").splitlines()
-                  if l.strip() and not l.strip().startswith("#") and not l.startswith("ATLAS")}
-    dup = [n for n, *_ in MEMBERS if n in main_names]
-    if dup:
-        raise SystemExit(f"主表里已经有这些名字了：{dup}（改名或先合并）")
-
+    # ★ 2026-09-26 第十三批：**不再有「与 ability 主表撞名」这一步** —— 成员图与 spec 都挪出了
+    #   ability 管线（见文件头与 `LAYOUT.txt` 的注），撞名与否已无关。
     ok = check_compile(scripts)
     print(f"== 自检：{ok}/{len(scripts)} 支脚本能编过（thanm -c 18）；名字无重复；空图 0")
     print(f"== md5（幂等判据）：{hashlib.md5((order + ''.join(scripts.values())).encode()).hexdigest()}")
-    print("== 下一步：把这些行 append 进 entries/ORDER.txt 末尾，再 `make -C native anm`")
+    print("== 下一步：`make -C native anm`（ability.anm 不再含这批；pl0X.anm 会带上它们）")
 
 
 if __name__ == "__main__":
