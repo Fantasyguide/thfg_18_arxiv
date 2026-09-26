@@ -22232,3 +22232,13 @@ TH18 没有等价指令；TH18 原生弹脚本在同一位置的 `type(1)` 已�
 不需要重新发版）；**负向测试**：把早苗 tier1 的台数 1 改成 0 ⇒ 当场红
 （`YOUKAI_TIERS_A tier1: 行里最大 origin = 1，但该档只有 0 台子机 …`）。
 **回归**：`make check` rc=0 + `python3 sites.py verify` rc=0 + `tooling/check-docs.py` 全绿。
+
+### 续（同一批）：顺手核了「origin 序号 ↔ 我们那台子机」的**下标映射**，没有 off-by-one
+
+`yk_option_pose_apply()` 的镜像循环（`youkai.c` 里那一段）：
+`cell = i < have ? i : have-1`，然后 `ns = player + CE_NATIVE_OPT_PLAYER_MUZ0 + i*STRIDE`
+（= 原生槽 i，0 基）写 `CE_OPT_POS_X/POS_Y`（膛口 `+0x5c/+0x60`）与聚焦偏移 `+0x6c/+0x70`。
+引擎侧读 origin 的公式是 **`player+0x670 + (n-1)*0xf0`**（`th18:0x45ec41`–`0x45ec5d`，见 `engine.h` 那一段）
+⇒ **origin `n` ↔ 原生槽 `i = n-1` ↔ 我们的第 `i` 台子机（0 基）** ✓ 三处一致、没有 off-by-one。
+`origin > have` 那一档也**不会从屏外冒弹**：镜像循环对「没有对应子机的多余原生格」写**最后一台的坐标**
+（与 `§BE #109` 新增的那道闸双保险：闸保证不会出现这种行，代码也保证即使出现也不出屏外子弹）。
