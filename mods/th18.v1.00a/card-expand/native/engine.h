@@ -619,9 +619,10 @@ typedef struct { int32_t prev; int32_t cur; float cur_f; } ce_timer_t;   /* zTim
  *    引擎根本不读 ⇒ 「可见化补重建」那次 repopulate 直接短路返回、原生子机的 VM 再也长不回来
  *    （owner 实测：「人子机消失、发弹点正常」）。*/
 #define CE_PLAYER_OPT_LAST_LEVEL   0x476f8
-#define CE_OFF_OPT_LAST_LEVEL      0x470d8    /* inner：**上次按哪一档建过子机**（repopulate 的短路缓存；
-                                               * 读点 `0x45d84d cmp [esi+0x476f8],eax`（esi = PLAYER）；
-                                               * 写 -1 ⇒ 下一次一定重走「重建 / 清空」那条路）*/
+/* ⚠ **作废（2026-09-27，§BE #120）**：这里曾经写「inner 里那一格 = repopulate 的短路缓存」——
+ *  一手证明是错的：缓存真正在 **`player+0x476f8`**（见下面的 `CE_PLAYER_OPT_LAST_LEVEL`）。
+ *  写 `0x4cccdc + 0x470d8`（= 0x514db4）**引擎根本不读**，而且可能踩到别人的全局。
+ *  定义已删（全仓不再引用），别再拿它当「强制重建」的开关。*/
 /* ⚠ `Player__shoot_one_bullet` `0x45e930`（stdcall(player*, packed_id, timer, pos*, option*) **ret 0x10**；
  *   packed_id = (set<<8)|行号；`option` = 膛口（NULL = 自机本体）；返回 0 = 发了 / -1 = 没发 —
  *   **调用方不检查返回值**；一手调用点三处：主炮行循环 `0x45ec73`、卡路径 `0x40aa80`、
