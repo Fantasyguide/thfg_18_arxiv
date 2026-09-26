@@ -2557,9 +2557,19 @@ static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
                              YK_ORB_STATE_HOMING);      /* state 1 = 生成即满速归航 */
             }
         }
-        /* 一手 `0x42b1e5` 起：**被杀者自己有主**（它是别人的子敌人）⇒ 单颗 state 1。
-         * ⚠ 一手这一支还带「槽 -= 槽/12」（`0x42b223`）；本卡**没做**那一笔（登记 `TUNING.md`）。*/
-        if (ev->enemy && *(const int32_t *)((const uint8_t *)ev->enemy + CE_SPAWN_PARENT) != 0)
+        /* 一手 `0x42b1e5` 起：**被杀者自己有主**（它是别人的子敌人）⇒ 单颗 state 1（`0x42b29b`）。
+         * ⚠ 一手它**只在自己不是链根时**才轮到 —— 链根按定义 `ownerEnemy == 0`（`0x41f000`），
+         *   所以「有链条的敌机」不会同时拿这一颗；用 `N == 0`（= 没有子敌人）当判据与此同形。
+         * ⚠ 一手这一支还带「槽 -= 槽/12」（`0x42b223`）；本卡**没做**那一笔（登记 `TUNING.md`）。
+         * ★★★ 2026-09-27 本轮新验（**TH18 架构差异，必须知道**）：TH18 的**关卡时间轴本身就是一个敌人**
+         *   （`GameThread::on_tick` `th18:0x444228` 用 ECL 名 `"main"` 调 `allocate_new_enemy`）⇒
+         *   时间轴建的每一只敌机，其 `parent_enemy_id` **都是那个载体的 enemy_id（非 0）**；
+         *   而 `enmCreate` 写父字段是显式的（`th18:0x436b82` 把施放者的 `enemy_id` 存进 params+0x50，
+         *   `0x42d8e7` 落到 `+0x6834`）。⇒ **普通妖精在这一支下会掉 1 颗**（不是 0 颗）——
+         *   这正是 owner 选 B 时说的「普通妖精只剩 1 颗」；与 TH08（普通敌机 `ownerEnemy == 0` ⇒ 0 颗）
+         *   的差别已登记 `TUNING.md` / `AUDIT.md` §BE #114。*/
+        if (!n2 && ev->enemy &&
+            *(const int32_t *)((const uint8_t *)ev->enemy + CE_SPAWN_PARENT) != 0)
             yk_orb_spawn(s, ev->x, ev->y, YK_ORB_STATE_HOMING);
     }
     /* ② 極端人/妖的那一颗**已挪到上面**（`!focused` 之前）—— 一手它与聚焦无关，见那里的注。*/

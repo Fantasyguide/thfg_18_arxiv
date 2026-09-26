@@ -4748,7 +4748,10 @@ owner 2026-09-23 18:14 的「偏右 1/3 个游玩区宽」是**相对屏幕左�
 **★★★ 2026-09-27 已拍板并落地（owner 选 B）**：见 [`AUDIT.md`](AUDIT.md) §BE #114。要点：
 - **门**：TH18 的对位 = 「有没有活着的 `parent_enemy_id == 被杀者 enemy_id` 的敌人」（一手
   `th18:0x436b64`–`0x436b82` + `th18:0x42d8e7`：ECL `enemyCreate` 写的就是施放者的 `enemy_id`）
-  ⇒ 没有子敌人的普通妖精**不再喷**（只在**第一次**被拦时打一行 `kill burst GATED OUT`）；
+  ⇒ 没有子敌人的普通妖精**不再喷那片盘子**、只掉 **1 颗**（state 1；走 `HasOwnerEnemy` 那一支 ——
+  ⚠ TH18 的时间轴载体本身是一只 id ≥ 1 的敌人 ⇒ 父字段恒非 0，见
+  [`08-parent-enemy-id-and-sub-enemies`](../../../engine/enemy/th18/08-parent-enemy-id-and-sub-enemies.md)）；
+  只在**第一次**被拦时打一行 `kill burst GATED OUT`；
 - **结构**：一手撒点是**每个子敌人的位置**各一个圆盘（不是被杀者身上），被杀者自己另有
   `subEnemyCount × 2` 颗 state 1、半径上界 **128**；
 - **颗数**：owner 选**双人组**那一支 `n >= 8 ? 26 : 2n+10`（`n` = 子敌人个数）。

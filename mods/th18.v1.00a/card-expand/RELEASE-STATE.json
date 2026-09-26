@@ -8,11 +8,11 @@
     "by": "Nipporita@DESKTOP-H16AD78"
   },
   "last_release": {
-    "at": "2026-09-26 20:28:53+0800",
+    "at": "2026-09-26 20:36:35+0800",
     "agent": "Nipporita@DESKTOP-H16AD78",
     "modkit": "/mnt/d/项目/幻想指南/18/th18_modkit",
     "patch_md5": "df14d5707689ca4b66cdfab2b0f642b3",
-    "dll_md5": "2b78c2cfa5cd9115d2d6024819c9b2d3",
+    "dll_md5": "2b6c43d9eaf0cf7513ff579020db6bf8",
     "sht_md5": [
       "c53fddc93c96fb3ff0accdc4948fb861",
       "f813ae41f663e6ea9ca7c8eb987bcf80",
@@ -25,6 +25,23 @@
     "files_md5": "a49b35cc513fd2f896fe6ca857a1ed03"
   },
   "history": [
+    {
+      "at": "2026-09-26 20:36:35+0800",
+      "agent": "Nipporita@DESKTOP-H16AD78",
+      "modkit": "/mnt/d/项目/幻想指南/18/th18_modkit",
+      "patch_md5": "df14d5707689ca4b66cdfab2b0f642b3",
+      "dll_md5": "2b6c43d9eaf0cf7513ff579020db6bf8",
+      "sht_md5": [
+        "c53fddc93c96fb3ff0accdc4948fb861",
+        "f813ae41f663e6ea9ca7c8eb987bcf80",
+        "bed0ecac3488b49f5c418de3cb6b7905",
+        "5984d0c9f9ff0440596f18109108b998"
+      ],
+      "abcard_md5": "bf91a0f5c0dc4b96f2a51c27f134222e",
+      "ability_md5": "7a7adcca6f0b0f5695c019e5fab40042",
+      "cards_md5": "a613db18a4ac1394c429346d31d09847",
+      "files_md5": "a49b35cc513fd2f896fe6ca857a1ed03"
+    },
     {
       "at": "2026-09-26 20:28:53+0800",
       "agent": "Nipporita@DESKTOP-H16AD78",
@@ -175,23 +192,6 @@
       ],
       "abcard_md5": "bf91a0f5c0dc4b96f2a51c27f134222e",
       "ability_md5": "58983d2b82ce2735a2c85d5c141cb06c",
-      "cards_md5": "a613db18a4ac1394c429346d31d09847",
-      "files_md5": "a49b35cc513fd2f896fe6ca857a1ed03"
-    },
-    {
-      "at": "2026-09-26 15:56:54+0800",
-      "agent": "Nipporita@DESKTOP-H16AD78",
-      "modkit": "/mnt/d/项目/幻想指南/18/th18_modkit",
-      "patch_md5": "df14d5707689ca4b66cdfab2b0f642b3",
-      "dll_md5": "16a24cef100f7715ae1617ff432de74d",
-      "sht_md5": [
-        "1ba1da38bfa32e33348c67cf47cc5270",
-        "30b6d3301ae6c03d4a986deb7a313592",
-        "a04746363a833d732f148ee11970cb81",
-        "7389c1f66289678e28e243e35a3907d8"
-      ],
-      "abcard_md5": "bf91a0f5c0dc4b96f2a51c27f134222e",
-      "ability_md5": "2509dcb4bfb3f69f8e6fe226c59bd1eb",
       "cards_md5": "a613db18a4ac1394c429346d31d09847",
       "files_md5": "a49b35cc513fd2f896fe6ca857a1ed03"
     }

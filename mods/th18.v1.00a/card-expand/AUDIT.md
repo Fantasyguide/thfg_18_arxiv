@@ -22432,8 +22432,13 @@ ECL 的 `enemyCreate` 会把**当前敌人的 `enemy_id` 写进子敌人的 `par
 - 观测：`YK_ORB_PER_KILL_CHAIN` 这个写死的宏**删除**（不再有「n = 1」这个自定值）。
 
 **可见后果（= 实跑判据）**：
-- **普通道中敌机**（没有 ECL 子敌人）⇒ **不再喷永点**（只剩人妖槽 ±200 与逢魔那一颗）——
-  这正是 owner 选 B 时接受的代价；日志会出现一行 `kill burst GATED OUT`。
+- **普通道中敌机**（没有活子敌人）⇒ **不再喷那片盘子**、只掉 **1 颗**（走 §4.3 ⑧ 的
+  `HasOwnerEnemy` 那一支）；日志会出现一行 `kill burst GATED OUT`。⚠ **为什么还有 1 颗**：
+  TH18 的**关卡时间轴本身是一只敌人**（`GameThread::on_tick` `th18:0x444228` 用 ECL 名 `"main"` 建），
+  而 `enemy_id` 从 **1** 开始分配（`EnemyManager::operator new` `0x42dc20` 把 `next_enemy_id` 初始化成 1）
+  ⇒ 时间轴刷出来的每一只敌机 `parent_enemy_id` 都非 0 ⇒ 那一支对**普通妖精**也成立。
+  TH08 里时间轴不是敌人（普通敌机 `ownerEnemy == 0` ⇒ **0 颗**）⇒ 这是**两作架构差**，已单列
+  [`engine/enemy/th18/08`](../../../engine/enemy/th18/08-parent-enemy-id-and-sub-enemies.md) 并登记 `TUNING.md`。
 - **带部件/召唤物的敌机**（boss、召小怪的敌机）⇒ 击破时在**每个部件的位置**上喷一个圆盘，
   颗数 `2n+10`（`n ≥ 8` 时 26），被杀者自己还有一圈 `2n` 颗 128 半径的。
 - 一行 `kill burst ON …` 会报出这局的 `n` 与每处颗数 ⇒ 用来核对 TH18 里到底有没有这种敌人。
@@ -22445,3 +22450,46 @@ ECL 的 `enemyCreate` 会把**当前敌人的 `enemy_id` 写进子敌人的 `par
 **仍未做（登记 `TUNING.md`）**：① 弹消圈两条（TH18 的 `CE_FN_BULLET_CANCEL_RADIUS_AS_BOMB` 与
 `0x44df00` 参数语义不是一一对应）；② 槽 `-= 槽/12` 那一笔；③ 池容量（`YK_ORB_MAX` = 64）
 在 `n ≥ 4` 时会溢出（一手没有这个上限）；④ 三条 shottype 分支里只实装了 owner 选的「双人组」那一支。
+
+### §BE #114 续（同日）：**「1 颗」是怎么来的** + 「谁会造孩子」的静态全表（不涉代码改动）
+
+**为什么加这一节**：上一节把门与结构照一手重写完之后，只有一句「普通妖精不再喷」——
+但一手的尾部 `0x42b1e5` 还有一支「**被杀者自己有主 ⇒ 单颗**」（§4.3 ⑧），
+而这一支在 TH18 到底会不会对**普通道中妖精**成立，直接决定实跑看到的数量。
+本轮把它静态查清了，结论是「**会**」，并顺带产出两张可复用的表。
+
+**一手（TH18 侧，本轮新读）**：
+
+| 事实 | 一手 |
+| --- | --- |
+| `enemy_id` 从 **1** 开始（不是 0）| `EnemyManager::operator new` `th18:0x42dc20`：`memset(this,0,0x1098)` 后 `0x42dc59`–`0x42dc77` 把 `last=0`、`next=1` |
+| 分配 = `id = next++` | `th18:0x42e3f0`–`0x42e40b`（`[+0x6830] = [+0x90]`，`[+0x94] = [+0x90]`，`[+0x90] += 1`）|
+| `destroy_all` **不重置** ID ⇒ 整局单调 | `EnemyManager::destroy_all` `th18:0x42ab40` 只清 `+0x48..+0x88`，不碰 `+0x90/0x94` |
+| **关卡时间轴 = 一只敌人**（ECL 名 `"main"`）| `GameThread::on_tick` `th18:0x444228`（前面刚 destroy 掉四个管理器 + `Player::reset`，`params` 是 memset 0 的 0x54 字节）|
+| `enmCreate*` 把它自己写进孩子的父亲 | `th18:0x436b76`（取 `[zEnemyData+0x5588].enemy_id`）→ `0x436b82`（存 params+0x50）→ `0x42d8e7`（落 `+0x6834`）|
+
+⇒ **普通妖精的 `parent_enemy_id` = 时间轴载体（≥ 1）≠ 0** ⇒ §4.3 ⑧ 那一支对它成立 ⇒ **掉 1 颗**。
+（TH08 的普通敌机 `ownerEnemy == 0` ⇒ 0 颗 —— 差别源于「时间轴是不是敌人」，见
+[`engine/enemy/th18/08`](../../../engine/enemy/th18/08-parent-enemy-id-and-sub-enemies.md) §2。）
+⚠ 因此本卡**不能**把「父非 0」当作「它是别人的零件」的判据；门的判据用的是
+**「有没有 `parent_enemy_id == 被杀者 enemy_id` 的活敌」**（= 反向查孩子）✓。
+
+**「谁会造孩子」全表**（`thecl` 反编译 22 个 `.ecl` + 跨文件调用图；方法与命令见那篇 §4/§5）：
+
+| 关卡 | 母机 | 造什么 | 时机 |
+| --- | --- | --- | --- |
+| 每关 | `Boss` | `Ecl_EtBreak2` / `…_ni` 各 1 | `BossDead`（**死时**）|
+| 每关 | `MBoss` | `Ecl_EtBreak` / `…_ni` 各 1 | 死亡 / 体内 |
+| **st03** | `Boss`（`BossCard3_at2`）| `BossPhantom01` **×6**（life 300）| **符卡进行中** |
+| **st05** | `Boss`（`BossCard1/2/4`）| `BossCard1/2/4_Et` 各 ×2 | 符卡进行中 |
+| **st07** | `Boss`（`BossCard2` / `BossCard8_at`）| `BossCard2_Et` ×3、`BossCard8_et` ×5 | 符卡进行中 |
+
+⇒ 实跑预期：**「母机带着活零件死掉」只有那几张符卡 / 那几个瞬间**（st03 的幽灵符卡最明显）；
+`GirlC02` / `ECir00*` 这类 sub 在 22 个文件里**没有任何 `enmCreate` 建它们** = 不可达死代码，不算。
+
+**本轮唯一的行为改动**：把 §4.3 ⑧ 的「单颗」从「无条件（只要父非 0）」改成
+**「只在 `N == 0`（自己没有孩子）时」** —— 一手那条链根判据 `IsSubEnemyChainRoot` 要求
+`ownerEnemy == 0`，即**有链条的敌机自己不是子敌人**、不该再拿这一颗；`N == 0` 与它同形。
+（`youkai.c::yk_on_enemy_killed` 的 `!n2 &&` 一个条件 + 注释。）
+**回归**：`make check` rc=0（`youkai_core: 4790 checks, 0 failed`）+ `dllx87` = 0 + `sites.py verify` rc=0
++ `check-docs`（384 文件）全绿。
