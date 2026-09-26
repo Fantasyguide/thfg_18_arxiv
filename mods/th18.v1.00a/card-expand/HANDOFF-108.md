@@ -60,6 +60,7 @@
 | **灵梦子机旋转**（2026-09-26）| owner 复报「应当旋转」的**真因不在 C 侧**：TH18 v8 的 anm **渲染模式**（模式 0 的绘制路径完全不读旋转），而脚本是从 TH08（无此概念）照抄的 ⇒ 6 支脚本补 `type(1)` + 追踪态定期重申标签 5（明细见 [`AUDIT.md`](AUDIT.md) §BE #95）| `ability.anm` 重建（`7a7adcca…`）；实跑判据 = §3 第 10 行（`mode 1` + `rz` 在涨）|
 | **体上炮口不建使魔**（2026-09-26）| owner 两次报的「敌人身上有魔法阵」：发射口与敌人重合（相对偏移 (0,0)）时**跳过整格**、不建使魔（`yk_emit_on_body()`）| 单测 4 条（`test_youkai_core`）；实跑判据 = §3 第 11 行 |
 | **认领闸对齐**（2026-09-26）| 顺带查出：聚焦时我们**总是**认领 set，于是「0 个子机 ⇒ 放行原生弹」那条 2026-09-12 口径从来没生效 ⇒ 认领与止射闸改用同一个判据 `yk_option_wanted()` | `make check` 全绿；实跑看 `NOT claiming our shot set either` |
+| **诊断补课**（2026-09-26 第十批）| `engine.h` 新增 `CE_ANM_VM_FLAGS_HI`（`vm+0x538`）+ 人妖槽/永点两个探针加打 `resMode`（`0=x1 / 1=xDAT(★画到屏外) / 2=x1 / 3=xDAT(★) / 4=x1`）—— `#39` 那一轮五项全对却看不见，缺的正是这一项（[`AUDIT.md`](AUDIT.md) §BE #103）| `make check` rc=0；实跑判据 = §3 第 4 行 |
 | **永点「范围太大」**（2026-09-26 第九批）| owner 补的「**从敌机铺出去的范围太大**」⇒ 一手重读 `th08:0x42aff0`–`0x42b048`：落点 = **半径上界 `2N` 的圆盘**，不是固定 128 的环（旧值是 5.3 倍）⇒ 纯逻辑 `yk_orb_burst_polar` + 17 条单测（[`AUDIT.md`](AUDIT.md) §BE #101）| `make check` rc=0；实跑判据 = §3 第 15 行 |
 | **妖侧弹体贴图**（2026-09-26 第六批）| owner「发的弹幕本身得搬过来」：一手 = 行里 `+0x24` **+10** 的弹体脚本 ⇒ 图集 `ATLAS_YK_BULLET`（entry 79、sprite 561..570）+ 脚本 364..370，逐机体（主炮/子机）接上；细节见 [`AUDIT.md`](AUDIT.md) §BE #98 | 实跑判据 = §3 第 14 行 |
 | **子机一直重建**（2026-09-26 第五批）| owner 报「咲夜妖机体的子机一直在重建」：根因 = 「可见化补 repopulate」被 108 自己的 keep_state 扫描**每 20 帧**误触发；修法两条见 [`AUDIT.md`](AUDIT.md) §BE #97 §1 | 实跑判据 = §3 第 13 行 |
@@ -75,7 +76,7 @@
 | 1 | `youkai: native option slots at low speed - N/4 live` | **不再是 `0/4`**（灵梦与**魔理沙**都应 ≠0/4；预期 = 当前火力档格数）| 仍 0/4 ⇒ `keep_records` 没生效（§BE #80）或 sweep 仍清 `state`（#78）|
 | 2 | 妖侧弹幕 | 应出现**子机那一列**，且**从看得见的那台子机出膛**（判据行 `youkai/opt #N … muz(x,y)` 应 ≈ 同一行的 `opt(x,y)`）| 无第二列 ⇒ 看 `muz` 是不是 `(0,-400)`（镜像没生效 = 旧 DLL）；有第二列但位置怪 ⇒ 看 `opt` 与 `muz` 差多少 |
 | 3 | `youkai: gauge HUD geometry … anchor` | **257/928、bar (257,898)、text (385,892)**（一手换算的游玩区左下角）| 仍是 `248/928` 或 `248,864` ⇒ 跑的是旧 DLL；是 `257,924` ⇒ 只换了 x（半个修）|
-| 4 | `youkai/hud.vm bar/human/youkai/cursor … draw = pos+pos2+ent = 表面 (…)` | 四件 `draw` = 槽条/人间 `(257,898)`、妖怪 `(481,898)`、游标 `(385,906)`——**而且屏上真看得见**（层 25 + `resolutionMode(2)` ⇒ `draw` 就是落点）| 日志对但屏上仍没有 ⇒ 回到 §BE #100：先确认资产已同批部署（`md5sum` 四份 `pl0X.anm`）；`draw` = (0,0) ⇒ 句柄陈旧 |
+| 4 | `youkai/hud.vm … resMode` | **`resMode 2=x1`**（十批起这行会打出来）；四件 `draw` = 槽条/人间 `(257,898)`、妖怪 `(481,898)`、游标 `(385,906)` 且屏上看得见 | `resMode 1=xDAT(★画到屏外)` ⇒ 资产的 `resolutionMode(2)` 没了（查 `pl0X.anm` 的 md5）；`draw`=(0,0) ⇒ 句柄陈旧 |
 | 5 | `youkai: shift SE 人→妖 played (se_ophide …)` 与 `… shift SE 妖→人 - silent by design …` | **人→妖**在有使魔的那一次**响**（日志 `familiar live count = N≥1`）；**妖→人**只留「silent by design」那一行、不出声 | 人→妖 打的是 `NOT played - no familiar live this frame` ⇒ 那一刻真的没有使魔（看 `ledger` 的 `spawned`/`body-emitter slot(s) skipped`）；响是响了但听不见 ⇒ 音量/wav |
 | 6 | `youkai: HIGH-SPEED safety release #N …` | **一行都没有**最好（有 ⇒ 帧界那条退位交回没跑到 = 「滞留」的机制）| 反复出现 ⇒ 修 `yk_option_release` / `on_option_pose_apply` 的退位分支 |
 | 7 | `youkai/orb.vm … scale` | **1.00**（#42；19:02 那局已验）| 若 2.00 ⇒ 跑的是旧 DLL |

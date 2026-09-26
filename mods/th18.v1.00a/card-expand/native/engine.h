@@ -272,6 +272,16 @@
 #define CE_ANM_VM_POS_2            0x4e4      /* float3：ExpHP `__pos_2`（绘制点第三项，装载时从模板 VM 的 pos 拷来）*/
 #define CE_ANM_VM_SCRIPT_ID        0x28       /* int32：当前脚本号（zAnmVmPrefix；诊断用）*/
 #define CE_ANM_VM_FLAGS_LO         0x534      /* int32：flags_lo（bit0/1 绘制门槛、bit21 = 脚本停、bit10(0x400) = `pos` 走 `__pos_2`）*/
+/* ★★★ 2026-09-26（#39 人妖槽「看不见」的**诊断缺口**）：`flags_hi`（`vm+0x538`）里住着
+ * **`resolutionMode`（掩码 `0x1c00000` = bits 22–24）**，而它**决定这个 VM 的坐标/尺寸要不要 ×DAT**：
+ *   · 0（没写）= ×1；1（`0x400000`）= **×DAT（1280×960 下 = ×2）**；2（`0x800000`）= ×DAT×0.5 = **×1**；
+ *     3 = ×DAT；4 = ×1（一手 `th18:0x4063d0` 位置 / `th18:0x4817c6` 尺寸，逐条见
+ *     `engine/anm/th18/01-vm-instantiate.md` §3c）。
+ *   · ★ **`layer(20..32|37..45)` 会把这个字段置成 1**（`set_layer 0x4066b0` 派生 bit22）——
+ *     于是「按表面 px 写的坐标」被 ×2 画到屏外，**而 alpha/层/sprite 全部看着正常**
+ *     ⇒ 探针必须把这个字段打出来，否则下一次照样要花四轮才能定位（见 `AUDIT.md` §BE #100）。
+ * 读出模式值：`(*(const uint32_t *)(vm + CE_ANM_VM_FLAGS_HI) & 0x1c00000u) >> 22`。*/
+#define CE_ANM_VM_FLAGS_HI         0x538      /* int32：flags_hi（bits22–24 = resolutionMode；bit20/21 = layer 区间派生位）*/
 #define CE_ANM_VM_COLOR2           0x528      /* D3DCOLOR：`color2()` 写的第二个色（渐变条靠它）*/
 #define CE_ANM_VM_COLOR1           0x524      /* D3DCOLOR 0xAARRGGBB：Tenshi 0x40eb4c 无命中写 0xffffffff、0x40eb60 有命中写 0xff0080ff（= 蓝 (0,128,255)）*/
 #define CE_ANM_VM_LAYER            0x18       /* ★ int32：**绘制层**（世界列表成员按它分桶）。

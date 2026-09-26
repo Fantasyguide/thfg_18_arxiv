@@ -2017,6 +2017,27 @@ static float yk_fsqrt(float v)
 /* ★ 2026-09-23（#42「永点没看见」）：**永点 VM 的逐 VM 实况** —— 与 `yk_hud_vm_log` / 112 的
  * `ufo/slot.vm` 同一套读法（spr/scale/alpha/layer/draw）。每 60 帧给前两颗**在飞**的刻符各打一行，
  * 一次实跑即可判定「没建 / alpha=0 / 画错层 / 画在屏外」——这是 #42 收口缺的最后一块证据。*/
+
+static const char *yk_resmode_note(uint32_t flags_hi);
+
+/* ★★★ 2026-09-26（#39 的**诊断缺口补课**）：`resolutionMode`（`flags_hi` bits22–24）必须打出来。
+ * 为什么：人妖槽「完全看不见」那一轮，`spr/scale/alpha/layer/draw` **五项全对**，唯独
+ * `layer(25)` 顺手把 `resolutionMode` 置成了 1（= 坐标 ×DAT ⇒ 画到屏外）—— 那一项当时没打，
+ * 于是花了四轮（改脚本 pos、改锚点、照抄 113、再挪位置）才定位。这个函数现在把模式值与
+ * 「×1 / ×DAT」的判读一起打出来，**下一次一眼就能定案**。判读表（一手见 `engine.h` 的注）：
+ *   0 = ×1 · 1 = **×DAT（危险）** · 2 = ×1 · 3 = ×DAT · 4 = ×1；模式 1 直接标 `★×`。*/
+static const char *yk_resmode_note(uint32_t flags_hi)
+{
+    switch ((flags_hi & 0x1c00000u) >> 22) {
+    case 0: return "0=x1";
+    case 1: return "1=xDAT(★画到屏外)";
+    case 2: return "2=x1";
+    case 3: return "3=xDAT(★)";
+    case 4: return "4=x1";
+    default: return "?";
+    }
+}
+
 static void yk_orb_vm_log(yk_card_t *s)
 {
     unsigned i, n = 0;
@@ -2032,14 +2053,15 @@ static void yk_orb_vm_log(yk_card_t *s)
         p2 = (const float *)(vm + CE_ANM_VM_POS_2);
         ep = (const float *)(vm + CE_ANM_VM_POS);
         ce_log("youkai/orb.vm #%u id %u script %d state %d: draw = (%.0f,%.0f) [= pos+pos2+ent]; "
-               "sprite %d scale %.2f alpha %u layer %d flags_lo %08x",
+               "sprite %d scale %.2f alpha %u layer %d flags_lo %08x resMode %s",
                i, o->anm_id, (int)*(const int32_t *)(vm + CE_ANM_VM_SCRIPT_ID), (int)o->state,
                (double)(sp[0] + p2[0] + ep[0]), (double)(sp[1] + p2[1] + ep[1]),
                (int)*(const int32_t *)(vm + CE_ANM_VM_SPRITE_ID),
                (double)*(const float *)(vm + CE_ANM_VM_SCALE),
                (unsigned)((*(const uint32_t *)(vm + CE_ANM_VM_COLOR1) >> 24) & 0xffu),
                (int)*(const int32_t *)(vm + CE_ANM_VM_LAYER),
-               (unsigned)*(const uint32_t *)(vm + CE_ANM_VM_FLAGS_LO));
+               (unsigned)*(const uint32_t *)(vm + CE_ANM_VM_FLAGS_LO),
+               yk_resmode_note(*(const uint32_t *)(vm + CE_ANM_VM_FLAGS_HI)));
         ++n;
     }
 }
@@ -2507,7 +2529,8 @@ static void yk_hud_vm_log(const char *tag, uint32_t id)
     p2 = (const float *)(vm + CE_ANM_VM_POS_2);
     ep = (const float *)(vm + CE_ANM_VM_POS);
     ce_log("youkai/hud.vm %s id %u script %d instr %d: draw = pos(0x30)(%.0f,%.0f) + pos2(0x4e4)(%.0f,%.0f) "
-           "+ ent(0x5f0)(%.0f,%.0f) = 表面 (%.0f,%.0f); sprite %d scale %.2f alpha %u layer %d flags_lo %08x",
+           "+ ent(0x5f0)(%.0f,%.0f) = 表面 (%.0f,%.0f); sprite %d scale %.2f alpha %u layer %d flags_lo %08x "
+           "resMode %s flags_hi %08x",
            tag, id, (int)*(const int32_t *)(vm + CE_ANM_VM_SCRIPT_ID),
            (int)*(const int32_t *)(vm + 0x2c),
            (double)sp[0], (double)sp[1], (double)p2[0], (double)p2[1], (double)ep[0], (double)ep[1],
@@ -2516,7 +2539,9 @@ static void yk_hud_vm_log(const char *tag, uint32_t id)
            (double)*(const float *)(vm + CE_ANM_VM_SCALE),
            (unsigned)((*(const uint32_t *)(vm + CE_ANM_VM_COLOR1) >> 24) & 0xffu),
            (int)*(const int32_t *)(vm + CE_ANM_VM_LAYER),
-           (unsigned)*(const uint32_t *)(vm + CE_ANM_VM_FLAGS_LO));
+           (unsigned)*(const uint32_t *)(vm + CE_ANM_VM_FLAGS_LO),
+           yk_resmode_note(*(const uint32_t *)(vm + CE_ANM_VM_FLAGS_HI)),
+           (unsigned)*(const uint32_t *)(vm + CE_ANM_VM_FLAGS_HI));
 }
 
 /* ★★★ 2026-09-22 夜（#27/#28）：**夜点数字**（一手几何：y=460、x 从 80 起、左对齐 7 px/字、
