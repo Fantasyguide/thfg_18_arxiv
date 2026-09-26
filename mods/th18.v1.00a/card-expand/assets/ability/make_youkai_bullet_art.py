@@ -96,7 +96,20 @@ _SPRITE_DEF_RE = re.compile(r"sprite(\d+):\s*\{\s*x:\s*(\d+),\s*y:\s*(\d+),\s*w:
 _SPRITE_CALL_RE = re.compile(r"sprite\(sprite(\d+)\)")
 _NAME_RE = re.compile(r"@([A-Za-z_][A-Za-z0-9_]*)@")
 # v8 里没有的助记符（逐条在产物脚本里点名；不要静默丢）
-_DROP_RE = re.compile(r"^\s*(ins_83\(\d+\);|ins_25\(\d+\);|scrollX\([^;]*\);)\s*$")
+# ★★★ 2026-09-26 第十二批：**`ins_25(N)` 不再丢** —— 它是 TH08 的「按 VM 的旋转画」开关，
+#   在 TH18 里的对位就是 **`rotateAuto(N)`**。一手（本轮新读，订正 `engine/enemy/th08/02` §3.2 的
+#   「dead store」结论）：`Player::UpdateBulletVms 0x4512f0` 在循环里读 **`bullets[i]+0x1fc`**
+#   （`0x451343 movsx eax,WORD PTR [edx+0x1fc]` / `test eax,eax / je`），非 0 时
+#   `0x45134e mov edx,[ecx+0x450]`（= 那颗弹 VM 的 rotation）→ `0x45135b call 0x40ec00`
+#   ⇒ **`+0x1fc` 正是 `ins_25` 写的那一格，而且自机弹的更新路径真的读它**
+#   （`PlayerBulletVm` 的结构是 `AnmVm(0x2a4) + …` ⇒ 该偏移就是 VM 自己的字段）。
+#   ⚠ 上一版把 `ins_25(1)` 当死存丢掉 ⇒ 弹的贴图**不跟着飞行方向转**：我们切来的弹体贴图是
+#   **横向**的（64×16，尖头朝 +x），而妖侧行是垂直向上飞（angle = −π/2）⇒ 观感就是「样式不对」
+#   （owner 报的那条，在贴图搬对之后仍然存在的原因之一）。TH18 的原生弹脚本同样写 `rotateAuto(1)`
+#   （`pl00.anm` script5/6 逐条），⇒ 翻译过来即与原生同构。
+#   `ins_83(N)` 仍然**只登记不翻译**（v2 的「dword field」，TH18 无对应；见 §BE #105 的未决项）。
+_DROP_RE = re.compile(r"^\s*(ins_83\(\d+\);|scrollX\([^;]*\);)\s*$")
+_INS25_RE = re.compile(r"^\s*ins_25\((\d+)\);\s*$")
 
 
 def _require(p, what):
@@ -234,9 +247,11 @@ def gen_script(name: str, kind: str, anm: str, src_num: int, sids, note: str, sp
                 f"    // 由 assets/ability/make_youkai_bullet_art.py 从 "
                 f"{'TH08 v1.00d' if kind == 'th08' else 'TH16 v1.00a'} `{anm}` script{src_num} 生成，别手改。",
                 f"    // {note}。",
-                "    // 指令逐条照抄（段序/时序/数值一字未动），只做三件事：",
+                "    // 指令逐条照抄（段序/时序/数值一字未动），只做四件事：",
                 "    //   ① `sprite(N)` → `sprite(@名字@)`；② 补 `type(1)`（TH18 v8 的**渲染模式**：不写就落进",
-                "    //   模式 0 = 绘制定格 ⇒ `AUDIT.md` §BE #95）；③ 省掉 v8 里不存在的助记符（下面逐条点名）。",
+                "    //   模式 0 = 绘制定格 ⇒ `AUDIT.md` §BE #95）；③ `ins_25(N)` → `rotateAuto(N)`",
+                "    //   （TH08 的「按 VM 旋转画」开关 ⇔ TH18 的 `rotateAuto`，一手见 `_DROP_RE` 上面那段）；",
+                "    //   ④ 省掉 v8 里确实没有的助记符（下面逐条点名）。",
                 "    // ★ 为什么补 `layer(13)`：原脚本没有（TH08 那代由 VM 自带层），TH18 的原生弹脚本都显式写",
                 "    //   （`ability.anm` script21 起手 `layer(13)`）⇒ 照原生那一支写。",
                 "    layer(13);",
@@ -245,6 +260,10 @@ def gen_script(name: str, kind: str, anm: str, src_num: int, sids, note: str, sp
             continue
         if s == "}":
             out.append(line)
+            continue
+        m25 = _INS25_RE.match(s)
+        if m25:                                        # ★ TH08 `ins_25(N)` ≡ TH18 `rotateAuto(N)`
+            out.append(f"    rotateAuto({m25.group(1)});")
             continue
         m = _DROP_RE.match(s)
         if m:

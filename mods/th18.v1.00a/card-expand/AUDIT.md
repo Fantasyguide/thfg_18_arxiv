@@ -22097,3 +22097,54 @@ anm = `player+0xc` = `pl0X.anm`**；只有**装备卡的子机组**（走 `tick_
 咲夜 = 主炮小弹 + 子机 16×32、早苗 = 四帧循环的**月牙**（`§BE #104` 修的白方块之后）。
 若**一发弹都看不见**（不是样式不对，而是完全不出）⇒ 说明 anm 号仍越界，先跑
 `python3 assets/check_player_anm_bounds.py`（它现在会红）。
+
+## §BE 详录 #106（2026-09-26 第十三批）：**弹体贴图不跟着飞行方向转** —— 订正 §BE #98 的「`ins_25` 是死存、丢掉」并翻译成 `rotateAuto`
+
+**缘起**：第 12 批把弹体脚本搬进 `pl0X.anm` 之后，继续核对「脚本正文与 TH18 原生弹脚本同构吗」——
+把 `local/th18.v1.00a/dat/pl00.anm` 的**原生主炮弹脚本**（行里 `+0x22` = 5/6 的那两支）逐条读出来比：
+
+```
+script5 { -1: layer(13); type(1); alpha(160); zWriteDisable(1); rotateAuto(1);  0: sprite… 动画 }
+script6 { -1: layer(13); type(1); alpha(64);  zWriteDisable(1); rotateAuto(1); scale(0.2,1.0); … }
+```
+
+⇒ 原生弹脚本都有 **`rotateAuto(1)`**，而我们的（TH08 搬来的）**没有** —— 差的正是 TH08 的 `ins_25(1)`
+（生成器当时按「v8 没有这个助记符」把它连注释一起丢了）。
+
+### 1. 一手：`ins_25(N)` **不是死存**，它就是「按 VM 的旋转画」的开关
+
+`engine/enemy/th08/02-familiar-anm-57-58.md` §3.2 当年的结论是「TH08 的 anm 更新/绘制路径里没人读
+`zAnmVm+0x1fc`」⇒ 当成 dead store。**本轮订正**：那份清单里其实已经列到了 `Player::UpdateBulletVms` /
+`Player::DrawBulletVms`，只是被归成了「别的结构体在同一偏移上的字段」—— 而 `PlayerBulletVm` 的结构是
+**`AnmVm(0x2a4) + …`**（`Player.hpp:73-78`）⇒ `bullets[i]+0x1fc` **就是那颗弹 VM 自己的字段**：
+
+```
+4512f0  Player::UpdateBulletVms   （循环 0x80 个槽、stride 0x484）
+45132f  eax = &bullets[i]
+451332  movsx ecx,WORD [eax+0x462]        ; 只处理 state == 1（在飞）
+451343  movsx eax,WORD PTR [edx+0x1fc]    ; ★ ins_25 写的那一格
+45134a  test eax,eax / je 451360          ; 为 0 ⇒ 不做下面这件事
+45134e  ecx = &bullets[i]
+451351  edx = [ecx+0x450]                 ; = 该 VM 的 rotation
+451357  push edx
+45135b  call 0x40ec00                     ; ← 把 rotation 交给绘制（应用旋转）
+```
+⇒ `ins_25(非 0)` = **启用「按 VM 的 rotation 画」**，与 TH18 的 `rotateAuto`（`424`，TH16 文档：写
+`flags_hi` bit7）同义。TH08 自机弹的 rotation 由引擎按飞行角维护（`+0x450`），所以贴图会跟着方向转。
+
+### 2. 为什么这条**看得见**（不是纸面差异）
+
+我们切来的弹体贴图是**横向**的（`YKB_R_MAIN.png` = 64×16，尖头朝 +x），而妖侧行是**垂直向上**飞
+（`angle = −π/2`）⇒ 少了 `rotateAuto` 就是「一根横着的针往上飞」——**正是 owner 报的「样式不对」**
+在贴图搬对（#104）与脚本号搬对（#105）之后**仍然存在**的最后一块。
+
+### 3. 改了什么（只动生成器 + 资产）
+
+| 文件 | 改动 | 怎么验的 |
+| --- | --- | --- |
+| `assets/ability/make_youkai_bullet_art.py` | `_DROP_RE` 里**去掉 `ins_25`**，新增 `_INS25_RE` ⇒ `ins_25(N);` 翻成 **`rotateAuto(N);`**；脚本头注释改成「四件事」 | 回读产物：pl00 54/55、pl01 60、pl02 43/44、pl03 45 都有 `ins_424(1)`；**pl01 61 没有** —— 与源脚本逐条相符（TH08 `player01` script24 本来就没有 `ins_25`，它是那条 448×32 滚动带、用固定 `rotate(0,0,π/2)`）✓ |
+
+**`ins_83(2)` 仍然只登记不翻译**：v2 的 `83` 是「写一个 dword 字段」（thtk 原注 `# 83 dword field`），
+TH18 没有等价指令；TH18 原生弹脚本在同一位置的 `type(1)` 已由生成器补上。若实跑仍觉得弹的观感有差，
+它就是下一个候选（要先把 TH08 那个 dword 字段读出来是哪个 `zAnmVm` 偏移）。
+**回归**：`make check` rc=0（全部门）+ `python3 sites.py verify` rc=0 + `tooling/check-docs.py` 全绿。

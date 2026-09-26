@@ -1,16 +1,18 @@
 script script368 {
     // 由 assets/ability/make_youkai_bullet_art.py 从 TH08 v1.00d `player02` script12 生成，别手改。
     // 咲夜・レミリア 妖侧主炮弹（`+0x24`=2 ⇒ +10）。
-    // 指令逐条照抄（段序/时序/数值一字未动），只做三件事：
+    // 指令逐条照抄（段序/时序/数值一字未动），只做四件事：
     //   ① `sprite(N)` → `sprite(@名字@)`；② 补 `type(1)`（TH18 v8 的**渲染模式**：不写就落进
-    //   模式 0 = 绘制定格 ⇒ `AUDIT.md` §BE #95）；③ 省掉 v8 里不存在的助记符（下面逐条点名）。
+    //   模式 0 = 绘制定格 ⇒ `AUDIT.md` §BE #95）；③ `ins_25(N)` → `rotateAuto(N)`
+    //   （TH08 的「按 VM 旋转画」开关 ⇔ TH18 的 `rotateAuto`，一手见 `_DROP_RE` 上面那段）；
+    //   ④ 省掉 v8 里确实没有的助记符（下面逐条点名）。
     // ★ 为什么补 `layer(13)`：原脚本没有（TH08 那代由 VM 自带层），TH18 的原生弹脚本都显式写
     //   （`ability.anm` script21 起手 `layer(13)`）⇒ 照原生那一支写。
     layer(13);
     type(1);
     sprite(@YKB_S_MAIN@);
     // ★ 原生原文此处为 `ins_83(2);` —— TH18 的 anm v8 没有这个助记符 ⇒ 省略
-    // ★ 原生原文此处为 `ins_25(1);` —— TH18 的 anm v8 没有这个助记符 ⇒ 省略
+    rotateAuto(1);
     alpha(128);
     zWriteDisable(1);
 +10000: // 10000
