@@ -2422,14 +2422,32 @@ static void yk_gauge_tick(yk_card_t *s, int focused)
 }
 
 /* 涨源①：**击破敌机** ⇒ 人妖槽 ±200（一手 `th08:0x42da2a` 一带：`isYoukaiMode ? +200 : -200`）；
- * 同时（仅在妖侧）撒刻符 —— 一手 `Enemy::sub_42adb0` `th08:0x42b048`（type 7 / state 3）。
- * 数量：一手有**三条按 `shottype` 分的公式**（§4），共用变量 `n` = 该敌的**连锁段数**（`th08:0x41fd40`
- * 沿 `enemy+0x8` 数）。TH18 侧我们读不到那个连锁计数 ⇒ ❓ **自定：取 n = 1**，
- * 走「双人组」那一支 `N = n*2 + 10 = 12`（TH08 的默认档；妖単独同式但常数是 +6）。登记 `TUNING.md`。*/
-#define YK_ORB_PER_KILL_CHAIN 1
+ * 同时（仅在妖侧）撒刻符 —— 一手 `Enemy::sub_42adb0`（`th08:0x42adb0`，这一轮读全，见 §BE #114）。
+ *
+ * ★★★ 2026-09-27（owner 拍板 **B：照一手加门**）：**结构整个订正**了三处：
+ *   ① **门**：一手 `n = GetSubEnemyChainCount(this)`（`th08:0x42adbc`），`n == 0` ⇒ `0x42adc4 je`
+ *      **跳过整段撒点** ⇒ **单只、无兄弟的敌机一颗都不给**（旧版对每次击破都撒 12 颗 = 与一手不同）。
+ *      TH18 侧的对位：**「这个敌人自己建出来的活子敌人」**——ECL 的 `enemyCreate` 会把
+ *      当前敌人的 `enemy_id` 写进子敌人的 `parent_enemy_id`（一手 `th18:0x436b64`–`0x436b82`：
+ *      `eax = [esi+0x5588]`（= zEnemyData 反查所属 zEnemy）→ `[eax+0x6830]` = 施放者的 enemy_id
+ *      → `allocate_new_enemy` 里写进 `+0x6834`（`th18:0x42d8e7`）⇒ 就是 TH18 的「子敌人链」）。
+ *   ② **撒点位置**：一手是撒在**每个子敌人的位置**上（`0x42af6c add ecx,0x2d88` = 该链结点的
+ *      `final_pos`），**不是**被杀者身上（旧版撒在被杀者位置 = 与一手不同）。颗数 = 同一算式。
+ *   ③ **被杀者自己那一环**：链走完之后（`0x42b0e5`）才是 `subEnemyCount * 2` 颗、
+ *      **state 1**（生成即归航）、**固定半径 128 的环**（`0x42b15d push 0x43000000`）——
+ *      这一支才是我早先记的那条「128 环」，且它与上面那批是**两套常量**（旧版混成了一套）。
+ *   ⚠ `param != 0`（= 死亡路径）才撒；`0x42b1e5` 起还有一支：**被杀者自己有主**（它是别人的子敌人）
+ *     ⇒ 槽 `-= 槽/12`（`0x42b223`）＋**单颗** state 1 刻符（`0x42b29b` 的 `spawn_item`）。
+ *   ⚠ 弹消圈（`Player::make_bomb_cancel_area_circle` `th08:0x44df00`，每个子敌人一处 radius 32
+ *     ×8 颗 / 被杀者一处 radius 32 ×16 颗）**本期未做**：TH18 的对应面是
+ *     `engine.h` 的 `CE_FN_BULLET_CANCEL_RADIUS_AS_BOMB`，参数语义与 `0x44df00` 不是一一对应
+ *     ⇒ 按纪律记 ❓ 待验（`TUNING.md` §2.0zy-bis 的续），不硬凑。*/
+#define YK_KILL_CHILD_MAX 16        /* ❓ 自定：子敌人位置缓存的容量（一对位，一手无上限）*/
+static int s_kill_burst_logged;     /* 首次「带子敌人」的击破打一行（自定诊断，不参与逻辑）*/
+static int s_kill_gated_logged;     /* 首次「被门拦下」的击破打一行（同上）*/
 static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
 {
-    int focused, i, n;
+    int focused, i, n2;
     int32_t hl, yl;                                     /* ★ P-E：当前形态的同一对 limit */
     if (!s || !ev) return;
     focused = CE_PLAYER_FOCUSED();
@@ -2470,24 +2488,79 @@ static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
      * ⚠ 一句口径：**「自动」≠「免半径」** —— 一手唯一吸收判据仍是抓取盒相交
      *   （`th08:0x440a17 call 0x44a5a0`，盒 = `[.sht+0x18]/2` = 20/24）；「自动」的意思是
      *   道具自己飞过来（state 1 当帧满速），玩家不用去够。*/
-    n = YK_ORB_PER_KILL_CHAIN * 2 + 10;
-    /* ★★★ 2026-09-26 第八批（owner：「打爆敌人爆的永点，就永点出现的**画面位置分布**而言，
-     *   似乎大了」+ 补「**从敌机铺出去的范围太大**」）：**旧版是半径 128 的环，一手是半径 2n 的圆盘**。
-     *   一手逐条（`th08:0x42aff0`–`0x42b048`，本轮新读）：
-     *     `angle = GetRandomF32SignedInRange(π)`、`radius = GetRandomF32InRange(2·count)`
-     *     ⇒ 落点 = `enemy->final_pos + FromAngleMagnitude(angle, radius)`
-     *   参数位次由 `FromAngleMagnitude` 正文（`0x4286e0`：`[ebp+8]` 进 `fsincos`、`[ebp+0xc]` 当乘数）
-     *   + 符卡螺旋那一处（`0x417593` 把常量 128 压在同一个「模长」槽）双向钉死。
-     *   ⇒ 12 颗时上界 = **24**（旧版固定 128 = **5.3 倍**）⇒ 观感正是「从敌机铺出去的范围太大」。
-     *   算式在纯逻辑里（`yk_orb_burst_polar`，带单测）；这里只把两个均匀随机数喂进去。*/
-    for (i = 0; i < n; ++i) {
-        float ang, rad;
-        yk_orb_burst_polar(n,
-                           (float)(ce_rand() % 1000u) / 1000.0f,   /* r1 → angle ∈ [−π, π) */
-                           (float)(ce_rand() % 1000u) / 1000.0f,   /* r2 → radius ∈ [0, 2n) */
-                           &ang, &rad);
-        yk_orb_spawn(s, ev->x + yk_cos_approx(ang) * rad, ev->y + yk_sin_approx(ang) * rad,
-                     YK_ORB_STATE_SPAWN);   /* 一手 `th08:0x42b048`：state 3（上抛，期间收不到）*/
+    /* ★★★ 2026-09-27（§BE #114）：**照一手的结构撒** —— 门 + 每个子敌人一处 + 被杀者自己那一环。
+     *   `child[]` 先扫出「自己建出来的活子敌人」（`parent_enemy_id == ev->id`，见函数头的注 ①），
+     *   `n` = 个数；`n == 0` ⇒ `yk_kill_burst_count` 给 0 ⇒ **一颗都不撒**（一手 `0x42adc4` 的门）。*/
+    {
+        float cx[YK_KILL_CHILD_MAX], cy[YK_KILL_CHILD_MAX];
+        unsigned n = 0, k;
+        uint8_t *em = CE_ENEMY_MGR();
+        uint8_t *e = 0;
+        if (em) {
+            CE_ENEMY_FOREACH(em, e) {
+                /* ⚠ **不过 `ce_enemy_lockable`**：一手数的是「链上还在的结点」，与能不能锁定无关
+                 *   （TH18 的 boss 部件常常不可锁定；用可锁定当筛子会漏数、颗数公式就跟着偏）。*/
+                if (!e) continue;
+                if (*(const int32_t *)(e + CE_SPAWN_PARENT) != (int32_t)ev->id) continue;
+                ++n;                                        /* 计数不封顶（颗数公式要真个数）*/
+                if (n <= YK_KILL_CHILD_MAX) {
+                    const float *cp = ce_enemy_pos(e);
+                    cx[n - 1] = cp ? cp[0] : ev->x;
+                    cy[n - 1] = cp ? cp[1] : ev->y;
+                }
+            }
+        }
+        n2 = (int)yk_kill_burst_count(n);
+        if (!n2) {
+            /* 门拦下（TH08 的常态：绝大多数道中敌机没有子敌人）—— 只在**第一次**打一行，
+             * 让实跑日志能一眼看出「门在生效」而不是「刻符没了」。*/
+            if (!s_kill_gated_logged) {
+                s_kill_gated_logged = 1;
+                ce_log("youkai: kill burst GATED OUT (enemy #%u has no ECL child part) - TH08 "
+                       "`th08:0x42adc4 je` would skip the whole burst; only the extreme-gauge orb "
+                       "drops from a plain enemy (further gated kills stay silent)",
+                       (unsigned)ev->id);
+            }
+        } else {
+            unsigned nc = (n > YK_KILL_CHILD_MAX) ? YK_KILL_CHILD_MAX : n;
+            if (!s_kill_burst_logged) {
+                s_kill_burst_logged = 1;
+                ce_log("youkai: kill burst ON - enemy #%u has %u live ECL child part(s) => "
+                       "%d orbs per part (TH08 `Enemy::FUN_0042adb0`: shottype branch n>=%u ? %u : "
+                       "2n+10), scattered in a disc of radius 2N around EACH part; plus %u ring orbs "
+                       "(state 1, radius %.0f) around the enemy itself",
+                       (unsigned)ev->id, n, n2, (unsigned)YK_KILL_BURST_CAP_N, (unsigned)YK_KILL_BURST_CAP,
+                       (unsigned)yk_kill_ring_count(n), (double)YK_KILL_RING_RADIUS);
+            }
+            for (k = 0; k < nc; ++k) {                      /* 一手：每个链结点各撒 N 颗（`0x42aff0`）*/
+                for (i = 0; i < n2; ++i) {
+                    float ang, rad;
+                    /* ⚠ 两个随机数**先取到局部**（一手顺序是「先半径 `0x40d390`、后角度 `0x4143c0`」；
+                     *   写成函数实参求值顺序在 C 里未定义 ⇒ 会破坏回放确定性）。*/
+                    float rr = (float)(ce_rand() % 1000u) / 1000.0f;   /* → 半径 ∈ [0, 2N) */
+                    float ra = (float)(ce_rand() % 1000u) / 1000.0f;   /* → 角 ∈ [−π, π) */
+                    yk_orb_burst_polar(n2, ra, rr, &ang, &rad);
+                    yk_orb_spawn(s, cx[k] + yk_cos_approx(ang) * rad,
+                                    cy[k] + yk_sin_approx(ang) * rad,
+                                 YK_ORB_STATE_SPAWN);   /* 一手 `0x42b048`：state 3（上抛，期间收不到）*/
+                }
+            }
+            /* 被杀者自己那一环（一手 `0x42b13b`–`0x42b1b1`）：`subEnemyCount * 2` 颗、**state 1**、
+             * 半径上界 **128**（`0x42b15d` —— ⚠ 同样走 `GetRandomF32InRange` ⇒ **圆盘**，不是固定环）。*/
+            for (k = 0; k < yk_kill_ring_count(n); ++k) {
+                float ang, rad;
+                float rr = (float)(ce_rand() % 1000u) / 1000.0f;       /* → 半径 ∈ [0, 128) */
+                float ra = (float)(ce_rand() % 1000u) / 1000.0f;       /* → 角 ∈ [−π, π) */
+                yk_orb_burst_polar_range(YK_KILL_RING_RADIUS, ra, rr, &ang, &rad);
+                yk_orb_spawn(s, ev->x + yk_cos_approx(ang) * rad,
+                                ev->y + yk_sin_approx(ang) * rad,
+                             YK_ORB_STATE_HOMING);      /* state 1 = 生成即满速归航 */
+            }
+        }
+        /* 一手 `0x42b1e5` 起：**被杀者自己有主**（它是别人的子敌人）⇒ 单颗 state 1。
+         * ⚠ 一手这一支还带「槽 -= 槽/12」（`0x42b223`）；本卡**没做**那一笔（登记 `TUNING.md`）。*/
+        if (ev->enemy && *(const int32_t *)((const uint8_t *)ev->enemy + CE_SPAWN_PARENT) != 0)
+            yk_orb_spawn(s, ev->x, ev->y, YK_ORB_STATE_HOMING);
     }
     /* ② 極端人/妖的那一颗**已挪到上面**（`!focused` 之前）—— 一手它与聚焦无关，见那里的注。*/
 }

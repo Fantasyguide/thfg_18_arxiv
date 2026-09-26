@@ -17,7 +17,7 @@ TH08 的「时点」在引擎里就是一个**普通道具**：**类型 7**（�
 | 触发 | 数量 | 证据 |
 | --- | --- | --- |
 | **击破 boss / 符卡结束** | **100 / 700 / 1000**（按用时比例，见 §5） | `Spellcard::ecl_spell_end` `th08:0x4161b0` 写 `spellcard+0x10`；`Spellcard::sub_416b10` `th08:0x416b10` 按 ≤7+≤6 每 8 帧喷出 |
-| **击破敌怪**（含它 ECL 连锁出来的子敌机） | **6..26**（某分支到 **40**），按「连锁段数」算；另有尾支 `2 × subEnemyCount` | `Enemy::sub_42adb0` `th08:0x42adb0` 的 `th08:0x42aec9`–`th08:0x42af45` 三条公式；落点见 **§4.1**（圆盘 `2N`）/ **§4.2**（128 环 × state 1） |
+| **击破敌怪**（⚠ **只在它带着「弹幕子敌人」链死掉时**；单只敌机 `n == 0` ⇒ **不掉**，见 §4.3） | 每个子敌 **12..26**（某分支到 **40**），按「子敌个数」算；另有尾支 `2 × subEnemyCount` 颗（state 1） | `Enemy::sub_42adb0` `th08:0x42adb0`：门 `0x42adc4`、三条公式 `0x42aec9`–`0x42af45`；落点见 **§4.1**（每个子敌位置、圆盘上界 `2N`）/ **§4.2**（被杀者自己、圆盘上界 128、state 1）|
 
 ≥ **2026-09-27 订正**：`ItemManager` 的收集分派**只排除 state 3**
 （`th08:0x4409f2`–`0x4409ff`：`cmp ecx,3` / `je 0x440c37`）⇒ **state 5（符卡螺旋 / 擦弹）在上抛期间就能被收**；
@@ -194,17 +194,16 @@ if (*(uint8_t *)0x17d5ef8 == 2) {          // 0x17d5ef8 = PLAYER 基址，+0 = s
 
 ## 4. 敌机死亡掉多少 —— `Enemy::sub_42adb0` `th08:0x42adb0`
 
-结构（一手）：
+**⚠ 2026-09-27 全函数重读**（起因：owner 拍板「照一手加门」；逐条与订正见 §4.3）。
+下面 197–208 行那段是**旧版的结构速写**（方向对、名字错），完整结构以 §4.3 为准：
 
 ```
-[enemy] 起沿 enemy+0x8 连锁遍历（每个连环子机各掉一次）：
-    n = Enemy::sub_41fd40(enemy)     ; th08:0x41fd40 = 沿 enemy+0x8 数连锁段数（th08:0x41f000 判「算不算」）
-    if (n == 0) goto 尾巴(0x42b1e5)
-    ... 主道具掉落 ...
-    N = 时点数（下面三条公式）
-    if (ds:0x17d6ed4 != 0) N = N / 3          ; th08:0x42af48 —— 某个「减半/练习」模式的开关
-    for (i = 0; i < N; i++)
-        spawn_item(敌人位置 + 圆盘内随机一点, type=7, state=3)   ; th08:0x42b03b
+n = GetSubEnemyChainCount(this)               ; 0x42adbc
+if (n == 0) goto 尾部(0x42b1e5)               ; ★ 门：没有弹幕子敌人链 ⇒ 整段撒点跳过
+for (每个链结点 s = this->nextSubEnemy …)：    ; 0x42ae23 起（注意：撒点是**在 s 的位置**上）
+    弹字 + 弹消圈(s) + N 颗 state 3（半径上界 2N 的圆盘）
+链走完（0x42b0e5 / param != 0）：弹字 + (subEnemyCount×2) 颗 state 1（半径上界 128 的圆盘）+ 弹消圈(this)
+尾部（0x42b1e5）：this 自己有主 ⇒ 槽 -= 槽/12 ＋ 1 颗 state 1
 ```
 
 ### 4.1 ★★★ 落点公式的**订正**（2026-09-26，owner 报「从敌机铺出去的范围太大」时逐指令重读）
@@ -231,16 +230,24 @@ if (*(uint8_t *)0x17d5ef8 == 2) {          // 0x17d5ef8 = PLAYER 基址，+0 = s
 - **同一函数的另一条支路（`0x42b15d`）才是 128**：见 §4.2。卡 108 旧实现把两处混成了
   「12 颗 + 固定 128 环 + state 3」⇒ 范围是正确值的 5.3 倍（owner 的「范围太大」）。
 
-### 4.2 尾巴（`0x42b0e5`，**函数参数 `[ebp+8] != 0` 才有**）：`2 × enemy[0x3380]` 颗、**半径 128 环**、**state 1**
+### 4.2 尾巴（`0x42b0e5`，**连锁走完之后**、且 `param != 0`）：`2 × enemy[0x3380]` 颗、**半径上界 128 的圆盘**、**state 1**
+
+⚠ **2026-09-27 两处订正**：① 这条不是「另一类敌人」的分支 —— 它接在**连锁循环走完之后**
+（循环末尾 `0x42b0d1` 取下一点、`jmp 0x42ae23`；下一点为空 ⇒ 落到 `0x42b0e5`），
+所以**只有 `n != 0` 时才可能走到**（`n == 0` 在 `0x42adc4` 就直接跳到 `0x42b1e5` 去了）；
+② 半径 **128 是上界不是固定值**：`0x43000000` 是 `Rng::GetRandomF32InRange` 的**实参**
+（`0x40d390` = `GetRandomF32() * arg`，而 `GetRandomF32` = `u / ds:0x4b5b10` = `u / 2³²` ∈ [0,1)）
+⇒ 落点在**半径 128 的圆盘内均匀**，与主循环同构、只是把 `2N` 换成常量 128。
 
 ```
 for (i = 0; i < enemy[0x3380] * 2; i++)      ; 0x42b156 shl eax,1 / cmp
-    radius = 128 (0x43000000)                 ; 0x42b15d
-    angle  = Rng::GetRandomF32SignedInRange(π) ; 0x42b17a
-    SpawnItem(enemy->final_pos + FromAngleMagnitude(angle, 128), type 7, state 1)   ; 0x42b1b1
+    radius = Rng::GetRandomF32InRange(128.0f) ; 0x42b15d push 0x43000000 → 0x40d390
+    angle  = Rng::GetRandomF32SignedInRange(π) ; 0x42b17a → 0x4143c0
+    SpawnItem(enemy->final_pos + FromAngleMagnitude(angle, radius), type 7, state 1)   ; 0x42b1b1
 ```
-`enemy+0x3380` = `subEnemyCount`（`EnemyManager.hpp:214`）⇒ **这条是「有子部件的敌人」那一批**：
-子部件数 ×2 颗、丢在**半径 128 的环**上、**state 1（生成即满速归航 = 自动吸收）**。
+`enemy+0x3380` = `subEnemyCount`（`EnemyManager.hpp:214`，opcode 90/91 每建一个子敌人 +1、
+子敌人死亡时 −1 ⇒ 死亡那一刻它 = **还活着的子敌人个数**）⇒ 这一环丢的是
+「**被杀者自己身上**的子敌人个数 ×2 颗」、state 1（生成即满速归航 = 自动吸收）。
 同一段还会 `CreatePopup(敌人位置, value = enemy[0x3380], 0xfff0f00f)`（`0x403460`）——
 即 TH08 在「这个敌人有几个子部件」时会有一次弹字。
 
@@ -253,14 +260,40 @@ for (i = 0; i < enemy[0x3380] * 2; i++)      ; 0x42b156 shl eax,1 / cmp
 | 双人组 | 都不真 | `n >= 8` ⇒ **N = 26** | `N = n*2 + 0xa`（`th08:0x42af3b` `lea eax,[edx+edx*1+0xa]`） |
 
 ⇒ **击破一个带 8 段以上连锁的敌机（boss 部件、大妖精群）会一次喷 26 个时点**；人単独时阈值只要 4 段就满 40。
+（`n` = **子敌人链上的结点个数**，见 §4.3；不是「同一波刷出来的敌人数」。）
 
-环上喷射的角度：`Rng::randf_0_to_x(2π)`（`th08:0x40d390` 传 `0x164d520` 这个 RNG）后 `+ π/2`（`th08:0x40490fdb`），
-半径 `0x43000000` = **128.0f**（`th08:0x4286e0` 造 Float3 → `th08:0x410a70` 加到敌人位置）。
+⚠ **2026-09-27 订正**：本节旧版这段写「角度 = `randf(2π)` 后 `+ π/2`、半径 128」—— 与 §4.1 重复且两处都错，
+已删。每个链结点的撒点参数见 §4.1（半径上界 `2N` 的圆盘 + `rand_signed(π)` 的角度）。
 
-尾巴（`n == 0` 或连锁走完后 `[ebp+8] != 0`，`th08:0x42b0e5`）：用 `enemy+0x3380` 弹一个
+尾巴（`0x42b0e5`；⚠ 只有 `n != 0` 才走得到，见 §4.2）：用 `enemy+0x3380` 弹一个
 `AsciiManager::sub_403460_makes_familiar_popup`（`th08:0x403460`），再按 `i < enemy[0x3380] * 2` 的循环各喷 1 个 type 7 / state 1
-（`th08:0x42b1a4`），最后再补 1 个（`th08:0x42b29b`）。🟡 `enemy+0x3380` 的语义未定名（在 `zEnemyData` 里落在
-`+0x3380−0x122c = 0x2154`，超出 ExpHP 现有字段图）。
+（`th08:0x42b1a4`）。`enemy+0x3380` = `subEnemyCount`（`EnemyManager.hpp:214`：opcode 90/91 每建一个子敌人 +1、
+子敌人死亡时 `EnemyManager.cpp:665` 里 −1）—— **不是**「未定名的字段」。
+
+### 4.3 ★★★ 全函数结构（2026-09-27 重读；owner 拍「照一手加门」时的依据）
+
+`Enemy::FUN_0042adb0(this, param)`：死亡路径传 `param = 1`（`EnemyManager.cpp:668`，就在
+`AddToYoukaiGauge(±200)` 之前）；`param = 0` 的那条来自 `Player.cpp:428`。
+
+| # | 做什么 | 地址 |
+| --- | --- | --- |
+| ① | `n = this->GetSubEnemyChainCount()` —— **链根**（`ownerEnemy(+0x2da4) == 0 && nextSubEnemy(+0x8) != 0`）才计数（沿 `nextSubEnemy` 数，⇒ `n` = 链长 − 1 = 子敌个数） | `0x42adbc` → `0x41fd40` / `0x41f000` |
+| ② | **`n == 0` ⇒ 直接跳到 `0x42b1e5`（门）** ⇒ 单只、无兄弟的敌机**一颗都不给** | `0x42adc4` |
+| ③ | 主循环：`[ebp-0xc] = this->nextSubEnemy`，逐结点处理（把该结点从链上摘掉：`owner=0`/`next=0`/`[+4]=0`） | `0x42addd`–`0x42ae23` |
+| ④ | 每个结点：`CreateFamiliarPopup(结点位置, n, 0, …)` ＋ `make_bomb_cancel_area_circle(结点位置, 32.0f, 2.0f, 8, 9/7)` | `0x42af78` / `0x42afd1` |
+| ⑤ | 每个结点：`N` 颗 `type 7 / state 3`，落点 = **结点位置** + 半径上界 `2N` 的圆盘内随机 | `0x42aff0`–`0x42b048` |
+| ⑥ | 链走完 ⇒ 尾巴（§4.2）：`subEnemyCount × 2` 颗 `type 7 / state 1`、半径上界 128 的圆盘、绕**被杀者自己** | `0x42b0e5`–`0x42b1b1` |
+| ⑦ | 被杀者自己也有一次 `make_bomb_cancel_area_circle(位置, 32.0f, 1.0f, 16, 7)` | `0x42b1d4` |
+| ⑧ | `0x42b1e5`：若 `this->HasOwnerEnemy()`（**自己就是别人的子敌人**）且 `param != 0` ⇒ 槽 `-= 槽/12`（`AddToYoukaiGauge`）＋ **1 颗** `type 7 / state 1`（在自己位置） | `0x42b1e5` / `0x42b223` / `0x42b29b` |
+
+⇒ **一句话**：这是「**母机带着弹幕子敌人一起死**」的收尾 —— 每个子敌人变成一小盘时点，
+子敌人越多每盘越大（`2n+10` 起，人单独 `6n+16`），母机自己再掉 `2×子敌数` 颗自动吸收的。
+**普通单只敌机在这条路上什么都不掉**（`n == 0` 的门）。
+
+⚠ 术语：TH08 的 `subEnemy`（opcode 90/91「生成弹幕子敌人」建的）**不是** ECL `enemyCreate` 建的那种普通敌人；
+`GetSubEnemyChainCount` 也不数「同一波」的敌人。TH18 没有这一层 ⇒ 卡 108 用
+「`parent_enemy_id` 指向被杀者的活敌」（= ECL `enemyCreate` 的父子关系）做**对位映射**
+（一手 `th18:0x436b64`–`0x436b82` / `0x42d8e7`），登记在 `AUDIT.md` §BE #114。
 
 ## 5. 击破 boss / 符卡结束掉多少 —— `th08:0x416b10` + `th08:0x4161b0`
 

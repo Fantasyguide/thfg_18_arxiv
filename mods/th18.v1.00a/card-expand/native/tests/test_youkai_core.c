@@ -1408,6 +1408,54 @@ int main(void)
         }
     }
 
+    /* ★★★ 2026-09-27（§BE #114）：击破批的**门**与**颗数**（一手 `Enemy::FUN_0042adb0`）。
+     * 门的地址：`th08:0x42adbc call 0x41fd40`（数连锁）→ `0x42adc4 cmp [ebp-0x4],0 je 0x42b1e5`
+     * （连锁为空 ⇒ **整段撒点跳过**）⇒ `n == 0` 必须给 **0 颗**（不是公式在 n=0 时的 10）。*/
+    {
+        unsigned k;
+        yk_map_t t;
+        memset(&t, 0, sizeof t);
+        CHECK(yk_kill_burst_count(0) == 0);
+        CHECK(yk_kill_ring_count(0) == 0);
+        /* 双人组那一支（owner 2026-09-27 拍板）：`n >= 8 ? 26 : 2n+10`。
+         * 一手边界两条：`0x42af29 cmp [ebp-0x4],0x8` / `0x42af2f mov [ebp-0x68],0x1a`。*/
+        CHECK(yk_kill_burst_count(1) == 12);       /* ← 旧版写死的 12（这一档正好与一手同值）*/
+        CHECK(yk_kill_burst_count(2) == 14);
+        CHECK(yk_kill_burst_count(7) == 24);
+        CHECK(yk_kill_burst_count(8) == 26);       /* 封顶那一档 */
+        CHECK(yk_kill_burst_count(9) == 26);
+        CHECK(yk_kill_burst_count(9999u) == 26);
+        /* 被杀者自己那一环：`0x42b150 shl eax,1` ⇒ `2 · subEnemyCount`。*/
+        CHECK(yk_kill_ring_count(1) == 2);
+        CHECK(yk_kill_ring_count(4) == 8);
+        CHECK(yk_kill_ring_count(9999u) == 19998u);
+        /* 单调不减（防将来把常数写成 +6 / +16 那两支时手滑）。*/
+        for (k = 1u; k < 40u; ++k) {
+            CHECK(yk_kill_burst_count(k) <= yk_kill_burst_count(k + 1u));
+            CHECK(yk_kill_burst_count(k) >= 12u);
+        }
+        /* ★ 半径上界可换（一手尾巴那一支把 `2N` 换成常量 128 的实参）：
+         *   `yk_orb_burst_polar_range(range, …)` ≡ `yk_orb_burst_polar(range/2, …)`；
+         *   `0x42b15d push 0x43000000` 是 `GetRandomF32InRange(128.0f)` 的**实参** ⇒ 圆盘上界。*/
+        {
+            float a1, r1, a2, r2;
+            yk_orb_burst_polar(64, 0.25f, 0.5f, &a1, &r1);
+            yk_orb_burst_polar_range(128.0f, 0.25f, 0.5f, &a2, &r2);
+            CHECK(a1 == a2);
+            CHECK(r1 == 64.0f);                    /* 0.5 × 128 */
+            CHECK(r2 == 64.0f);
+            yk_orb_burst_polar_range(128.0f, 0.0f, 1.0f, &a2, &r2);
+            CHECK(r2 == 128.0f);                   /* 上界（真实 RNG 的 r2 < 1 ⇒ 取不到，这里喂 1.0）*/
+            yk_orb_burst_polar_range(128.0f, 1.0f, 0.0f, &a2, &r2);
+            CHECK(a2 > 3.14159f - 1e-4f && a2 < 3.14159f + 1e-4f);   /* 角上界 = π（≈ 满一圈）*/
+            CHECK(r2 == 0.0f);
+            yk_orb_burst_polar_range(-5.0f, 0.5f, 1.0f, &a2, &r2);    /* 负上界夹到 0 */
+            CHECK(r2 == 0.0f);
+            yk_orb_burst_polar_range(128.0f, 0.5f, 0.5f, 0, 0);       /* 双 NULL：不崩 */
+        }
+        (void)t;
+    }
+
     printf("youkai_core: %d checks, %d failed\n", s_pass + s_fail, s_fail);
     return s_fail ? 1 : 0;
 }

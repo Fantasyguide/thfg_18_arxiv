@@ -22378,3 +22378,70 @@ TH18 没有等价指令；TH18 原生弹脚本在同一位置的 `type(1)` 已�
 **对既有卡的影响面**：`engine.h` 只加常量，不删不改任何既有宏 ⇒ 其它 117 张卡**无需回归**；
 `youkai.c` 是本卡自己的文件。**回归**：`make check` rc=0（`youkai_core: 4694 checks, 0 failed`）+
 `make dllx87` = `x87 in our objects: 0` + `sites.py verify` rc=0 + `check-docs` 全绿。
+
+## §BE 详录 #114（2026-09-27 第十八批）：**击破批刻符的「门」与「结构」照一手重写**（owner 拍板选 B）
+
+**owner 裁决（2026-09-27）**：口径 A（门）= **B「照一手加门」**；口径 B（颗数分支）= **双人组**（不变）。
+
+**为什么会有这一批**：§BE #101 只订正了「落点算式」（半径 128 的环 → 半径 `2N` 的圆盘），
+但把**门**与**撒在哪儿**都留着旧实现。这一轮把 `Enemy::FUN_0042adb0`（`th08:0x42adb0`，死亡路径
+`param = 1`）从头读到尾，发现结构完全不是我先前记的那样 —— 三处都要改。
+
+**一手（逐条，`local/_scratch/th08_full.asm` + `local/vendor/th08_dec` 交叉核对）**：
+
+| # | 一手 | 地址 |
+| --- | --- | --- |
+| ① **门** | `n = this->GetSubEnemyChainCount()`；`if (n == 0) goto 尾部` ⇒ **整段撒点跳过** | `0x42adbc` call `0x41fd40`；`0x42adc4 cmp [ebp-0x4],0 je 0x42b1e5` |
+| ② 链根判据 | `IsSubEnemyChainRoot` = `ownerEnemy(+0x2da4) == 0 && nextSubEnemy(+0x8) != 0` | `0x41f000` |
+| ③ 链计数 | 沿 `nextSubEnemy` 步进计数（⇒ 链长 − 1 = 子敌个数） | `0x41fd40` 的 `0x41fd62`–`0x41fd7d` |
+| ④ **撒在每个子敌人的位置** | 循环体取的是**链结点**的 `final_pos`（`add ecx,0x2d88`） | `0x42ae83`–`0x42af6c` |
+| ⑤ 颗数（三条分支） | `n>=8 ? 26 : 2n+10`（双人组）· `n>=4 ? 40 : 6n+16`（人单独）· `n>=10 ? 26 : 2n+6`（妖单独） | `0x42aec9`–`0x42af45` |
+| ⑥ 圆盘半径 | `GetRandomF32InRange(2·N)`：`fild N; fadd st,st` ⇒ 上界 `2N` | `0x42aff0`–`0x42affe` |
+| ⑦ 角度 | `GetRandomF32SignedInRange(π)` = `(u/2³¹ − 1) × π` ∈ **[−π, π)** | `0x4143c0` + `0x43ed80` + `ds:0x4b5b14` = 2³¹、`ds:0x4b4338` = 1.0 |
+| ⑧ **被杀者自己那一环** | 链走完后：`for (i < subEnemyCount(+0x3380) * 2)` 各 1 颗 **state 1**，半径上界 **128** | `0x42b13b`–`0x42b1b1`（`0x42b150 shl eax,1`、`0x42b15d push 0x43000000`）|
+| ⑨ **有主时单颗** | 若被杀者**自己是别人的子敌人**（`HasOwnerEnemy`）⇒ 槽 `-= 槽/12` ＋ **单颗 state 1** | `0x42b1e5`/`0x42b21e`/`0x42b29b` |
+| ⑩ 弹消圈（未做） | 每个子敌一处 `make_bomb_cancel_area_circle(pos, 32, 2, 8, 9\|7)`、被杀者一处 `(pos, 32, 1, 16, 7)` | `0x42afd1` / `0x42b1d4` |
+
+⚠ **我上一轮记错的两处**（本轮订正）：旧注把 ⑦ 的结果写成「击破批撒在被杀者位置」、
+把 ⑧ 的 128 当成「固定半径的环」—— 前者的撒点主体是**子敌人**，后者走的是
+`GetRandomF32InRange(128)`（⇒ **半径上界 128 的圆盘**，不是环）。⑩ 那两条是本轮新读出来的。
+
+**TH18 侧的对位（本轮新验，一手）**：TH18 没有 TH08 那种「弹幕子敌人」链表，但有**同构的一层** ——
+ECL 的 `enemyCreate` 会把**当前敌人的 `enemy_id` 写进子敌人的 `parent_enemy_id`**：
+```
+436b64  mov eax,DWORD PTR [esi+0x5588]   ; zEnemyData.full → 所属 zEnemy
+436b76  mov eax,DWORD PTR [eax+0x6830]   ; = 施放者的 enemy_id
+436b9c  call 0x42d7d0                     ; EnemyManager::allocate_new_enemy
+42d8e4  mov eax,DWORD PTR [edx+0x50]      ; 创建参数里的 parent 字段
+42d8e7  mov DWORD PTR [esi+0x6834],eax    ; → zEnemy.parent_enemy_id
+```
+⇒ 本卡的门 = **「有没有活着的 `parent_enemy_id == 被杀者 enemy_id` 的敌人」**，`n` = 这个个数；
+`n == 0` ⇒ 一颗都不撒（照门）。这是**对位映射**（TH08 的链 vs TH18 的父子），不是逐指令同构 ⇒ 已登记。
+
+**改了什么**：
+- `native/cards/youkai_core.{h,c}`：新增纯逻辑 `yk_kill_burst_count(n)`（门 + 双人组那一支的算式，
+  `n == 0 ⇒ 0`）、`yk_kill_ring_count(n)`（`2n`）、常量 `YK_KILL_BURST_CAP_N/CAP`、
+  `YK_KILL_RING_RADIUS`；并把落点算式拆成 `yk_orb_burst_polar_range(range, …)`
+  （`yk_orb_burst_polar(count,…)` ≡ 传 `2·count`，既有调用点语义不变）。
+- `native/cards/youkai.c` 的 `yk_on_enemy_killed`：**删掉写死的 `n = 12`**，改成
+  ① 扫活子敌人（`parent_enemy_id == ev->id`，**不过可锁定筛**）→ `n`；② `N = yk_kill_burst_count(n)`，
+  `N == 0` ⇒ 不撒（首次被拦打一行日志，便于实跑分辨「门生效」与「刻符没了」）；
+  ③ 每个子敌人位置各撒 `N` 颗（state 3、圆盘半径 `2N`）；④ 被杀者自己撒 `2n` 颗（state 1、圆盘半径 128）；
+  ⑤ 被杀者**自己有主** ⇒ 再补 1 颗（state 1）。两个随机数**先落局部再算**（一手顺序 = 先半径后角度；
+  写成函数实参的求值顺序在 C 里未定义 ⇒ 会破坏回放确定性）。
+- 观测：`YK_ORB_PER_KILL_CHAIN` 这个写死的宏**删除**（不再有「n = 1」这个自定值）。
+
+**可见后果（= 实跑判据）**：
+- **普通道中敌机**（没有 ECL 子敌人）⇒ **不再喷永点**（只剩人妖槽 ±200 与逢魔那一颗）——
+  这正是 owner 选 B 时接受的代价；日志会出现一行 `kill burst GATED OUT`。
+- **带部件/召唤物的敌机**（boss、召小怪的敌机）⇒ 击破时在**每个部件的位置**上喷一个圆盘，
+  颗数 `2n+10`（`n ≥ 8` 时 26），被杀者自己还有一圈 `2n` 颗 128 半径的。
+- 一行 `kill burst ON …` 会报出这局的 `n` 与每处颗数 ⇒ 用来核对 TH18 里到底有没有这种敌人。
+
+**影响面**：`youkai_core.{h,c}` / `youkai.c` 都是 108 自己的文件（**共享件一个都没动**）。
+**回归**：`make check` rc=0（`youkai_core: 4790 checks, 0 failed`，本轮新增 96 条）+
+`make dllx87` = `x87 in our objects: 0` + `sites.py verify` rc=0 + `check-docs` 全绿。
+
+**仍未做（登记 `TUNING.md`）**：① 弹消圈两条（TH18 的 `CE_FN_BULLET_CANCEL_RADIUS_AS_BOMB` 与
+`0x44df00` 参数语义不是一一对应）；② 槽 `-= 槽/12` 那一笔；③ 池容量（`YK_ORB_MAX` = 64）
+在 `n ≥ 4` 时会溢出（一手没有这个上限）；④ 三条 shottype 分支里只实装了 owner 选的「双人组」那一支。

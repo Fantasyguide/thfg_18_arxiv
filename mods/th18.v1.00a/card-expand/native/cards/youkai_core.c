@@ -1185,12 +1185,43 @@ void yk_orb_motion_params(int character, float *home_speed, float *pick_r)
  * `r1`/`r2` = 卡侧给的两个**独立均匀**随机数（∈ [0,1)）—— 纯逻辑不做 RNG（回放安全与单测都靠这条）。*/
 void yk_orb_burst_polar(int count, float r1, float r2, float *out_angle, float *out_radius)
 {
-#define YK_PI 3.14159265f
     float c = (float)count;
     if (c < 0.0f) c = 0.0f;
+    yk_orb_burst_polar_range(2.0f * c, r1, r2, out_angle, out_radius);
+}
+
+/* ⚠ 一式两用：一手里**击破批**的半径上界是 `2·N`（`0x42aff0 fild/fadd st(0),st`），
+ *   **被杀者自己那一环**却是常量 `128.0f`（`0x42b15d`）—— 两条都走 `GetRandomF32InRange`
+ *   这一个函数（`0x40d390` = `GetRandomF32() * arg`）⇒ 差别只在实参。这里把实参开放出来。*/
+void yk_orb_burst_polar_range(float radius_range, float r1, float r2,
+                              float *out_angle, float *out_radius)
+{
+#define YK_PI 3.14159265f
+    if (radius_range < 0.0f) radius_range = 0.0f;
     if (out_angle)  *out_angle  = (r1 * 2.0f - 1.0f) * YK_PI;   /* rand_signed(π) ∈ [−π, π) */
-    if (out_radius) *out_radius = r2 * 2.0f * c;                /* rand(2·count) ∈ [0, 2·count) */
+    if (out_radius) *out_radius = r2 * radius_range;            /* rand(range) ∈ [0, range) */
 #undef YK_PI
+}
+
+/* ============ §3.11d 击破批的「门」与「颗数」（一手逐条见 `youkai_core.h` 的同名小节）================
+ * 一手的结构（`Enemy::FUN_0042adb0`，这一轮读全；地址逐条在头文件的引用块里）：
+ *   · **门**：`n = GetSubEnemyChainCount(this)`（`th08:0x42adbc`），`n == 0` ⇒
+ *     `0x42adc4 je 0x42b1e5` **跳过整段撒点**（单只无兄弟的敌机一颗都不给）；
+ *   · **颗数**（三条按 shottype 的分支，owner 选双人组那一支）：`n >= 8 ? 26 : 2n+10`；
+ *   · **被杀者自己那一环**：`subEnemyCount * 2` 颗（`0x42b150 shl eax,1`），state 1、半径 128。
+ * ⚠ `n == 0` 返回 **0**（而不是公式在 n=0 时的 10）—— 一手根本不会用 n=0 调这条公式
+ *   （门在前），把门写进这个出口就不会有「忘了判 0」的调用点。*/
+unsigned yk_kill_burst_count(unsigned chain_n)
+{
+    if (!chain_n) return 0u;                                   /* 门：无连锁 ⇒ 不给 */
+    return (chain_n >= YK_KILL_BURST_CAP_N)
+             ? YK_KILL_BURST_CAP
+             : (2u * chain_n + 10u);
+}
+
+unsigned yk_kill_ring_count(unsigned chain_n)
+{
+    return 2u * chain_n;
 }
 
 /* ============ ★★★ 2026-09-22（owner #26 · 风味选项）决死窗口全屏敌弹变红：三条纯逻辑 ============

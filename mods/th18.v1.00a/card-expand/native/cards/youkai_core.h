@@ -919,6 +919,45 @@ void yk_orb_motion_params(int character, float *home_speed, float *pick_r);
  *   角度→(cos,sin) 的近似留在卡侧（`yk_cos_approx`/`yk_sin_approx`），core 只管这两条算式。*/
 void yk_orb_burst_polar(int count, float r1, float r2, float *out_angle, float *out_radius);
 
+/* 同一条算式、但**半径上界直接给**（一手里另一处是常量 128 而不是 `2N`，见 §3.11d 的尾巴那一环）。
+ * ⇒ `yk_orb_burst_polar(count, …)` ≡ `yk_orb_burst_polar_range(2·count, …)`。*/
+void yk_orb_burst_polar_range(float radius_range, float r1, float r2,
+                              float *out_angle, float *out_radius);
+
+/* ============ ★★★ §3.11d **击破批的「门」与「颗数」**（一手 `Enemy::FUN_0042adb0`；§BE #114）===
+ * owner 2026-09-27 拍板选 **B：照一手加门**。一手的完整结构（这一轮才逐条读全）：
+ *   ```
+ *   n = this->GetSubEnemyChainCount()          ; th08:0x42adbc
+ *   if (n == 0) goto 尾部                      ; 0x42adc4 je 0x42b1e5 ★ **门**
+ *   for (每个链结点 s = this->nextSubEnemy …) {  ; 0x42ae23 起
+ *       CreateFamiliarPopup(s->pos, n, 0, …)   ; 0x42af78
+ *       弹消圈(s->pos, 32.0f, 2.0f, 8, 9|7)    ; 0x42afd1（Player::make_bomb_cancel_area_circle）
+ *       N = 颗数(n)                            ; 0x42aea4–0x42af45 三条按 shottype 的分支
+ *       for (i < N) spawn_item(type 7, state 3, s->pos + 半径 2N 圆盘内随机)   ; 0x42aff0–0x42b048
+ *   }
+ *   ; 链走完（0x42b0e5 尾巴，仍要求 param != 0）：
+ *   CreateFamiliarPopup(this->pos, this->subEnemyCount, …)
+ *   for (i < this->subEnemyCount * 2) spawn_item(type 7, state 1, this->pos + 半径 128 环上随机)
+ *   弹消圈(this->pos, 32.0f, 1.0f, 16, 7)      ; 0x42b1b8
+ *   ; 尾部 0x42b1e5：若 this 自己**有主**（`HasOwnerEnemy`）且 param != 0：
+ *   槽 -= 槽/12（0x42b223 → AddToYoukaiGauge）＋ spawn_item(type 7, state 1, this->pos)  ← 单颗
+ *   ```
+ * ⇒ **三件事**：① 门在**连锁非空**；② 每颗是撒在**每个子敌人的位置**上（不是被杀者身上）；
+ * ③ 被杀者自己那一环是 `subEnemyCount * 2` 颗、**state 1（生成即归航）**、固定半径 128。
+ * 本卡的对位（§BE #114 登记）：子敌人 = **`parent_enemy_id == 被杀者 enemy_id` 的活敌**，
+ * `subEnemyCount` ≈ 这个个数；`chain_n == 0` ⇒ **不给**（照门）。
+ * ⚠ 颗数的三条分支（`ShotType`：0–3 = 双人组 / 4–11 = 八个単独）owner 选**双人组**那一支
+ *   （`n >= 8 ? 26 : 2n+10`），所以这里只实现这一支 —— 另两支要动就照 `.c` 的注加参数。*/
+#define YK_KILL_BURST_CAP_N  8u     /* 一手 `th08:0x42af29 cmp [ebp-0x4],0x8` */
+#define YK_KILL_BURST_CAP   26u     /* 一手 `th08:0x42af2f mov [ebp-0x68],0x1a` */
+/* ⚠ 尾巴那一环的 `128.0f`（`th08:0x42b15d push 0x43000000`）**是半径的上界不是固定半径**：
+ *   它是 `Rng::GetRandomF32InRange(128.0f)` 的实参（`0x40d390` 正文 = `GetRandomF32() * arg`，
+ *   `GetRandomF32` = `u / ds:0x4b5b10` = `u / 2³²` ∈ [0,1)）⇒ **落点在半径 128 的圆盘内均匀**，
+ *   与上面那批 `rand(2N)` 同构，只是把 `2N` 换成常量 128。*/
+#define YK_KILL_RING_RADIUS 128.0f  /* 一手 `th08:0x42b15d`（被杀者自己那一环的半径上界）*/
+unsigned yk_kill_burst_count(unsigned chain_n);   /* 门：`chain_n == 0` ⇒ 0；否则 `min(2n+10, 26)` */
+unsigned yk_kill_ring_count(unsigned chain_n);    /* 被杀者自己那一环：`2 · chain_n`（state 1）*/
+
 /* ============ ★★★ §3.11b 击破符卡的「螺旋撒点」（一手参数，见 engine/item/th08/01-time-orbs.md §5.3）===
  * owner 口径：「击破符卡会有一个**螺旋式**的撒永点，无敌一段时间后自动满速吸收」。
  *
