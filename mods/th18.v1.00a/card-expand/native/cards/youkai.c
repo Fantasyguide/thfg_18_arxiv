@@ -2495,8 +2495,17 @@ static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
         int human_fm = (s->gauge <= YK_GAUGE_HUMAN_EFFECTS) ? 1 : 0;
         int norbs = yk_fengma_kill_orbs(fm, human_fm, ev->by_player_bullet ? 1 : 0);
         int oi;
+        /* ★★★ 2026-09-27（§BE #117，owner：「人妖逢魔的永点……应当是下落一小段之后直接消失
+         *   （= 直接吃掉），而不是现在还走一个自动吸收的中间路程」）：**改成上抛态（state 3）**。
+         *   一手（`ItemManager::SpawnItem` 正文）：`if (itemType == ITEM_TIME) state = ITEM_STATE_UNK3;`
+         *   `else if (itemType == ITEM_TIME2) { state = ITEM_STATE_UNK5; itemType = ITEM_TIME; }`
+         *   ⇒ **type 7（时点）的实参 state 被强制覆写成 3**（type 0xa ⇒ 强制 5）——
+         *   调用点写的 `push 1`（`th08:0x42da41`）**根本到不了 item**；真正会落在 state 1 的
+         *   只有「消弹 / `cancel_autocollect`」那一支（`th08:0x4308e5` / `0x4413e0`）。
+         *   ⇒ 出生态 3：初速 `vy = −2.0 − rand(0.2)`、`vx = rand(±0.6)`、每帧 `vy += 0.05`，
+         *     `vy > 0` 才转归航 ⇒ 画面上是**先上抛一小段、再落下来被收**。*/
         for (oi = 0; oi < norbs; ++oi)
-            yk_orb_spawn(s, ev->x, ev->y, YK_ORB_STATE_HOMING);
+            yk_orb_spawn(s, ev->x, ev->y, YK_ORB_STATE_SPAWN);
     }
     if (!focused) return;                               /* 妖逢魔才撒刻符 */
     /* ★★★ 2026-09-22 深夜（owner 口径细化）：**两条一手来源分开实现**（各带自己的出处）。
@@ -2582,7 +2591,7 @@ static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
                 yk_orb_burst_polar_range(YK_KILL_RING_RADIUS, ra, rr, &ang, &rad);
                 yk_orb_spawn(s, ev->x + yk_cos_approx(ang) * rad,
                                 ev->y + yk_sin_approx(ang) * rad,
-                             YK_ORB_STATE_HOMING);      /* state 1 = 生成即满速归航 */
+                             YK_ORB_STATE_SPAWN);       /* ★ §BE #117：type 7 ⇒ 实参被覆写成 state 3 */
             }
         }
         /* 一手 `0x42b1e5` 起：**被杀者自己有主**（它是别人的子敌人）⇒ 单颗 state 1（`0x42b29b`）。
@@ -2598,7 +2607,7 @@ static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
          *   的差别已登记 `TUNING.md` / `AUDIT.md` §BE #114。*/
         if (!n2 && ev->enemy &&
             *(const int32_t *)((const uint8_t *)ev->enemy + CE_SPAWN_PARENT) != 0)
-            yk_orb_spawn(s, ev->x, ev->y, YK_ORB_STATE_HOMING);
+            yk_orb_spawn(s, ev->x, ev->y, YK_ORB_STATE_SPAWN);   /* ★ §BE #117：type 7 ⇒ 强制 state 3 */
     }
     /* ② 極端人/妖的那一颗**已挪到上面**（`!focused` 之前）—— 一手它与聚焦无关，见那里的注。*/
 }
@@ -3548,7 +3557,7 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
         int32_t hl3, yl3;
         yk_gauge_limits_solo(CE_PLAYER_FOCUSED() ? 1 : 0, &hl3, &yl3);
         s->gauge = yk_gauge_add2(s->gauge, yk_gauge_fam_kill_delta(s->gauge), hl3, yl3);
-        yk_orb_spawn(s, ev->x, ev->y, YK_ORB_STATE_HOMING);
+        yk_orb_spawn(s, ev->x, ev->y, YK_ORB_STATE_SPAWN);   /* ★ §BE #117：type 7 ⇒ 强制 state 3 */
         s->orb_silence = YK_ORB_SILENCE_FRAMES;
     }
     /* ★ #27 支 1：**「+1」弹字**（一手 `Enemy::sub_42adb0 th08:0x42b296 CreateTimePopup(&enemy+0x2d88, 1, 0, 0xFFFFFFFF)`

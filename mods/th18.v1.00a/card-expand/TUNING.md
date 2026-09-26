@@ -4828,6 +4828,11 @@ youkai: spell probe start|end - flags 0x.. id .. elapsed(+0x24) .. (+0x28 int ..
 本卡走**双人组**那一支（`yk_kill_burst_count()`；`n` = 子敌人个数 ⇒ `n = 1` 时正好 12）。
 （`[0x17d6ed4] != 0` 那一条**不做** —— §BE #102 已证它在 v1.00d 恒为 0。）
 
+**✅ 2026-09-27 定案（§BE #117）**：`SpawnItem` 对 **type 7 会把实参 state 强制覆写成 3**、
+对 type 0xa 强制 5 ⇒「type 7 的 state 1 = 生成即满速归航」这个旧口径是错的（state 1 只属于
+`cancel_autocollect`）。逢魔那一颗 / 被杀者自己那一环 / 「自己有主」那一颗 / 击破魔使那一颗
+四处已改成上抛态 ⇒ 观感 = **先上抛一小段、再落回自机被收**。
+
 ### 2.0zz ★ 112 #22 吸收数记录面板（2026-09-23 接上；一手面板参数 + 5 个自定）
 
 **一手**（`front.anm`）：父 **134** = `sprite(sprite102)`（`front_ufo.png` 96×96）+ `scriptNew(135)` + `layer(23)` +

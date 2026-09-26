@@ -22565,3 +22565,39 @@ ECL 的 `enemyCreate` 会把**当前敌人的 `enemy_id` 写进子敌人的 `par
 **实跑判据**：按住 Shift 再松开（妖→人）⇒ 人侧那几台子机**仍然看得见**、照常发弹；
 若日志出现上面那一行 ⇒ 落到了收窄那一支（把那一行发我，我据此再定「那一格到底该归谁」）。
 **回归**：`make check` rc=0（4790 checks）+ `dllx87` = 0 + `sites.py verify` rc=0 + `check-docs` 384 全绿。
+
+## §BE 详录 #117（2026-09-27 第十九批）：**type 7 的实参 state 会被 `SpawnItem` 覆写** ⇒ 那几颗永点该走「上抛」
+
+**owner 原话**：「人妖逢魔的永点，它至少在画面上应当是**下落一小段之后直接消失**（消失 = 直接吃掉），
+而不是现在的**还走一个自动吸收的中间路程**」。
+
+**一手（`ItemManager::SpawnItem` 正文；`th08:0x4400a0` 就是它）**：
+```c
+if (itemType == ITEM_POWER_SMALL || itemType == ITEM_POWER_BIG) { … 满 P 改写 … }
+if (itemType == ITEM_TIME) { state = ITEM_STATE_UNK3; }                 // ★ type 7 ⇒ 强制 state 3
+else if (itemType == ITEM_TIME2) { state = ITEM_STATE_UNK5; itemType = ITEM_TIME; }   // type 0xa ⇒ 5
+…
+item->startPositionOrVelocity = (0, -2.2, 0);
+if (state == ITEM_STATE_UNK3) { vy = -2.0 - rand(0.2); vx = rand(±0.6); … }
+```
+⇒ **type 7（时点）的调用实参 `state` 会被强制覆写成 3**（type 0xa 则强制 5）；
+**真正会落在 state 1（AUTOCOLLECT）的只有 `ItemManager::cancel_autocollect` 那一支**
+（全屏消弹 / PoC 自动收，`th08:0x4413e0`；调用点见 `th08:0x4308e5` 一族）。
+
+**本卡原来的四处「state 1」都错了**（我们都按「生成即满速归航」实现 —— 那是
+`cancel_autocollect` 的语义，不是这几处的）：
+
+| 站点 | 一手 | 原实现 | 现在 |
+| --- | --- | --- | --- |
+| 逢魔击破那一颗（`th08:0x42da54`，调用点写 `push 1`）| type 7 ⇒ **state 3** | HOMING | **SPAWN**(3) |
+| 被杀者自己那一环（`th08:0x42b1b1`）| type 7 ⇒ **state 3** | HOMING | **SPAWN**(3) |
+| 被杀者「自己有主」那一颗（`th08:0x42b29b`）| type 7 ⇒ **state 3** | HOMING | **SPAWN**(3) |
+| 击破魔使那一颗（`th08:0x42b29b` 同一处）| type 7 ⇒ **state 3** | HOMING | **SPAWN**(3) |
+
+⇒ 观感：这几颗**先上抛一小段（初速 `vy = −2.0 − rand(0.2)`、每帧 `+0.05`）再落下来被收**；
+「消失」发生在抓取盒碰到自机那一刻（= 直接吃掉），**不再是从出生点直接飞向自机的那条中间路程**。
+（`YK_ORB_STATE_HOMING` 现在只留给「消弹 / `cancel_autocollect`」那一支；本卡目前没有那条路。）
+
+**回归**：`make check` rc=0（4790 checks）+ `dllx87` = 0 + `sites.py verify` rc=0 + `check-docs` 全绿。
+**实跑判据**：逢魔时击破敌机 ⇒ 掉出来的永点**先往上跳一小段**（约 40 帧）再落回自机身上消失；
+若仍是从敌机位置**直线飞向自机** ⇒ 跑的是 §BE #117 之前那一版 DLL。
