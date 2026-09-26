@@ -21692,3 +21692,54 @@ sht `a77197f0…/26f0d342…/18d4281b…/618f81f2…`（modkit 同 md5）。
 **实跑判据**：① 按住 Shift 期间 `option allocated` **不应再成串出现**（只有 `shift SE 人→妖` 之后那一次）；
 `sdk: native options restored` 的帧号不应再是 20 帧等差。② 妖侧打同一只杂鱼的时间应与**低速人侧**相当
 （灵梦/咲夜变化不大；**魔理沙/早苗应明显变强**）。
+
+## §BE 详录 #98（2026-09-26 第六批）：★ **共享资源** `assets/ability/**` —— 卡 108 的**妖侧弹体贴图照搬原作**（`ATLAS_YK_BULLET` + 脚本 364..370）
+
+**为什么登记**：owner 逐字（2026-09-26 15:05 实跑）：「**妖机体的弹幕样式应该都不对，发的弹幕本身得搬过来**」。
+此前所有妖侧行的 `anm` 都填本作 `ability.anm` 的通用弹 ⇒ 样式全是**本作**的、不是永夜抄的。
+
+### 1. 一手：HT08 的弹体脚本 = 行里 `+0x24` **+10**
+
+`th08:0x44fd32 movsx edx,WORD PTR [ecx+0x24]` → `0x44fd36 add edx,0xa` → `push edx` → `call 0x4069f0`
+（`AnmLoaded::SetAndExecuteScriptIdx`）⇒ 逐档读出（`local/th08.v1.00d/dat/plyNNas.sht` 直读）：
+
+| 角色 | 主炮行 → 脚本 | 子机行 → 脚本 | sprite |
+| --- | --- | --- | --- |
+| 霊夢・紫（pl00）| `+0x24`=4 → **s14** | 6 → **s16** | 35 / 36（各 64×16）|
+| 魔理沙・アリス（pl01）| 12 → **s22** | 14/15/16/17 → **s24/25/26/27** | 30（64×16）/ 32（448×32）|
+| 咲夜・レミリア（pl02）| 2 → **s12** | 4 → **s14** | 22（48×16）/ 23（16×32）|
+| 早苗（TH16 秋/文）| — | `pl03sub.sht` 行 `+0x22`=0 → **`pl03sub.anm` script0** | 0..3（各 64×64）|
+
+### 2. 产物（`assets/ability/`；**只追加**，既有 entry/sprite 号一字未动）
+
+- **图集 `ATLAS_YK_BULLET`**（entry **79**，512×128，10 个成员 `YKB_R_MAIN/R_OPT/M_MAIN/M_OPT/S_MAIN/S_OPT/A_0..A_3`，
+  sprite 561..570）—— 源图里那一张 sprite **1:1 切图 + 居中补到 2 的幂画布**（与 option 那批同一条公式）。
+- **脚本 364..370**（`CE_ANM_ABILITY_SCRIPT_YK_BULLET_*`）：逐条照抄原脚本，只做三件事
+  —— ① `sprite(N)` → `sprite(@名字@)`；② 补 `layer(13)` + **`type(1)`**（TH18 v8 的渲染模式，见 §BE #95；
+  原生弹脚本 `ability.anm` script21 也是这么写的）；③ 省掉 v8 里**不存在**的 `ins_83` / `ins_25` / `scrollX`
+  （逐条在产物脚本里点名，不静默丢）。
+- 新生成器 **`assets/ability/make_youkai_bullet_art.py`**（幂等整段重写；自带「切图非空 / 引用名一致 /
+  `thanm -c 18` 能编过 / 主表重名 / 图集放得下」五道自检 —— 第一版就是被「图集 512×64 放不下」那道拦下的）。
+- `entries/ORDER.txt` **末尾 append**（本生成器同时写 `entries/ORDER.yk_bullet.txt` 片段）；`CAPACITY.md` 登记一格。
+
+### 3. 卡侧接线（`assets/sht/append_shooterset.py`）
+
+`YOUKAI_BULLET_ANM`（按角色给「主炮行 / 子机行」两个宏名）在装配行时覆盖 `anm`：
+**origin 0（主炮行）→ `*_MAIN`、origin ≥1（子机行）→ `*_OPT`**（与 TH08 的 `opt` 同义）⇒
+`make sht` 后逐行核对：`pl00` 364/365、`pl01` 366/367、`pl02` 368/369、`pl03` 370（早苗那支四帧循环，主/子机共用）。
+
+⚠ 两处偏离照实登记：① 魔理沙子机的逐档脚本（TH08 s24/25/26/27）**只差 `scale.y`** 0.5/0.6/0.7/0.8
+⇒ 本卡统一用 s24；② `scrollX`（v8 无）省掉 ⇒ `YKB_M_OPT` 取的是那条 448×32 滚动纹理的**前 256×32**
+（那张图非空像素本来就在 0..255）静止显示。
+
+### 4. 回归 / 判据
+
+`make_youkai_bullet_art.py`（7/7 编过、幂等 md5）→ `make anm`（entry 79 / sprite 561..570 / script 364..370；
+`verify_rebuilt` 与越界 / scriptNew 检查全绿）→ `make sht`（DPS 对齐行照旧）→ `make check` rc=0 →
+`dllx87` 0 → `sites.py verify` ✅ → `check-docs` 全绿。
+发布（DLL + sht + **ability.anm** 三者同批）：DLL `39a877be65575cb02a8a2d619fd39152`、
+sht `1ba1da38…/30b6d330…/a0474636…/7389c1f6…`、`ability.anm` `2509dcb4bfb3f69f8e6fe226c59bd1eb`
+（modkit 四处 DLL 同 md5、anm 同 md5）。
+
+**实跑判据**：四个机体的妖侧弹**贴图应从本作通用弹变成永夜抄那一支**（细长的白色/彩色弹，
+而不是 TH18 的小圆弹）；魔理沙子机那一列是那条**长条纹理**（静止）；咲夜/灵梦的弹明显更"细长"。

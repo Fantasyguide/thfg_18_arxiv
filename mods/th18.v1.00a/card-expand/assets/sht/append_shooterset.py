@@ -1582,6 +1582,30 @@ def _rows_dps(rows) -> float:
 
 DPS_TOLERANCE = 0.02          # 逐行取整后的允许偏差（2%）
 
+# ★★★ 2026-09-26（owner：「**妖机体的弹幕样式应该都不对，发的弹幕本身得搬过来**」）：
+#   **弹体贴图逐机体换成原作那一支**（此前一律填本作 `ability.anm` 的通用弹 `anm=21`/原生主炮弹）。
+#   一手：TH08 的行里 `+0x24` = anm 脚本基号，引擎**用它 +10** 装进弹的 VM
+#     （`th08:0x44fd32 movsx edx,WORD PTR [ecx+0x24]` → `0x44fd36 add edx,0xa` → `call 0x4069f0`）
+#     ⇒ 霊夢 主炮 14 / 子机 16（sprite35/36）· 魔理沙 主炮 22 / 子机 24（sprite30/32）·
+#       咲夜 主炮 12 / 子机 14（sprite22/23）；早苗 = TH16 `pl03sub.anm` script0（sprite0..3）。
+#   那些 sprite 与脚本已由 `assets/ability/make_youkai_bullet_art.py` 搬进 `ability.anm`
+#   （脚本 364..370、图集 `ATLAS_YK_BULLET`）⇒ 这里按 **(角色, 是不是子机行)** 填宏名。
+#   ⚠ 两处偏离照实登记：① 魔理沙子机的逐档脚本（TH08 s24/25/26/27）只差 `scale.y` 0.5/0.6/0.7/0.8
+#     ⇒ 本卡统一用 s24（0.5）；② 原脚本里 v8 没有的 `ins_83`/`ins_25`/`scrollX` 已省（见生成器产物）。
+YOUKAI_BULLET_ANM = {
+    "R": ("CE_ANM_ABILITY_SCRIPT_YK_BULLET_YKB_R_MAIN", "CE_ANM_ABILITY_SCRIPT_YK_BULLET_YKB_R_OPT"),
+    "M": ("CE_ANM_ABILITY_SCRIPT_YK_BULLET_YKB_M_MAIN", "CE_ANM_ABILITY_SCRIPT_YK_BULLET_YKB_M_OPT"),
+    "S": ("CE_ANM_ABILITY_SCRIPT_YK_BULLET_YKB_S_MAIN", "CE_ANM_ABILITY_SCRIPT_YK_BULLET_YKB_S_OPT"),
+    # 早苗那支本身就是四帧循环（脚本里连着引用 4 张图）⇒ 主炮/子机同一个脚本。
+    "A": ("CE_ANM_ABILITY_SCRIPT_YK_BULLET_YKB_A_0", "CE_ANM_ABILITY_SCRIPT_YK_BULLET_YKB_A_0"),
+}
+
+
+def _yk_bullet_anm(suffix: str, origin: int):
+    """该行的弹体脚本宏名：origin == 0 = 主炮行，≥1 = 子机行（与 TH08 的 `opt` 同义）。"""
+    main, opt = YOUKAI_BULLET_ANM[suffix]
+    return main if origin <= 0 else opt
+
 def _youkai_tier_sets(target_file: str, anm_ids: dict) -> list:
     """该文件的 15 组（3 角色 × 5 档）。pl03 上全是**空组**（只有终止符）⇒
     卡侧 `yk_shotset_usable()` 读到 −1 ⇒ 回落到 `CE_SHT_SET_YOUKAI`（0x16）。"""
@@ -1621,7 +1645,10 @@ def _youkai_tier_sets(target_file: str, anm_ids: dict) -> list:
                 if len(rows) != len(orig[t]):
                     raise SystemExit(f"YOUKAI_TIERS_{k} tier{t}: {len(rows)} 行 与烘焙的 origin 表 "
                                      f"{len(orig[t])} 项不等（TH08 ply{suf}as.sht 的实测行数）")
-                rows = [dict(r, opt_slot=o, anm=_yk_anm_for(target_file)) for r, o in zip(rows, orig[t])]
+                # ★ 2026-09-26：`anm` 从「本文件原生主炮那一支」换成**原作那一支弹体脚本**
+                #   （宏名，`pack_shooter` 会经 `anm_ids` 解成号 —— 与 `make anm` 写的 `anm_ids.h` 同源）。
+                rows = [dict(r, opt_slot=o, anm=_yk_bullet_anm(k, o) if k in YOUKAI_BULLET_ANM
+                             else _yk_anm_for(target_file)) for r, o in zip(rows, orig[t])]
                 for o in orig[t]:
                     if not 0 <= o <= 4:
                         raise SystemExit(f"YOUKAI_TIERS_{k} tier{t}: origin {o} 越界（TH08 只会有 0..4）")
