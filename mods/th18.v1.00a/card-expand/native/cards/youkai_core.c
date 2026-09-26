@@ -1326,6 +1326,18 @@ int yk_night_text_glyphs(int32_t night, yk_gauge_glyph_t *out)
         if (out) { out[0].glyph = 0; out[0].dx = 0.0f; out[0].dy = 0.0f; out[0].scale = 1.0f; }
         return 1;
     }
+    /* ★★★ 2026-09-27（owner：「人妖槽的那个 100000 东西要**按照额外最大得点的方法 plot**，
+     *   也就是说**初始得 plot 000000**」）：**补前导零到 6 位**。
+     *   即：与 110/111 那一族「最大得点」的 6 位数字**同一画法**（`faith_hud.c` 的
+     *   `faith_hud_digits6()` + 6 个字形位全画）—— 不是原来那套「前导零不画也不占位」。
+     *   ⚠ 这是**owner 口径**（不是一手）：TH08 的 `DrawPercentage` 一族对夜点确实是「前导零不占位」，
+     *     但面板上那 6 格与最大得点同构 ⇒ 按 owner 的要求对齐最大得点的画法。
+     *   实现 = 在低位数字前面把 `'0'` 补满 `YK_NIGHT_TEXT_DIGITS` 位（低位在右，见下面的 dx 递增）。*/
+    while (n < (int)YK_NIGHT_TEXT_DIGITS) {
+        for (i = n; i > 0; --i) dg[i] = dg[i - 1];
+        dg[0] = 0;                                  /* glyph 0 = '0' */
+        ++n;
+    }
     for (i = 0; i < n; ++i) {
         if (!out) break;
         out[i].glyph = dg[i];

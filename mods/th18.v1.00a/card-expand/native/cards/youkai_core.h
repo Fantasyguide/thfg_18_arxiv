@@ -826,6 +826,8 @@ int yk_gauge_text_glyphs(int gauge, yk_gauge_glyph_t *out);
 /* ★★★ 2026-09-22 夜（#27/#28）：**夜点数字的字形**（一手 `AsciiManager::OnDrawHighPriImpl th08:0x405d11`–`0x405e01`）。
  * 布局 = **左对齐、7 px/字、前导零不画也不占位**（一手：每画出一位才 `pos.x += 7.0`）⇒ `dx = i*7`、`dy = 0`、`scale = 1.0`。
  * 返回位数（1..`YK_NIGHT_TEXT_MAX`；`night <= 0` ⇒ 1 位 '0'）。**无浮点库调用**。*/
+#define YK_NIGHT_TEXT_DIGITS  6   /* ★ §BE #121：夜点数字的**固定位数**（owner：按最大得点的画法画，
+                                   *   初始要看得见 `000000`）—— 与 110/111 的 6 位最大得点同一口径 */
 #define YK_NIGHT_TEXT_MAX 8
 int yk_night_text_glyphs(int32_t night, yk_gauge_glyph_t *out);
 

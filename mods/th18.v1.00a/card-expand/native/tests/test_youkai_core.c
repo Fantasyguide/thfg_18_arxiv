@@ -1302,17 +1302,21 @@ int main(void)
                 int n2;
                 CHECK(YK_NIGHT_TEXT_MAX == 8);
                 n2 = yk_night_text_glyphs(60000, ng);
-                CHECK(n2 == 5 && ng[0].glyph == 6 && ng[4].glyph == 0);   /* 60000 ⇒ 5 位 */
-                CHECK(ng[1].dx == 7.0f && ng[4].dx == 28.0f);             /* 每字 +7（一手 `pos.x += 7.0`）*/
+                /* ★ 2026-09-27（§BE #121）：补前导零到 6 位 ⇒ 60000 变成 `060000`（旧断言「5 位」作废）*/
+                CHECK(n2 == (int)YK_NIGHT_TEXT_DIGITS);
+                CHECK(ng[0].glyph == 0 && ng[1].glyph == 6 && ng[5].glyph == 0);
+                CHECK(ng[1].dx == 7.0f && ng[5].dx == 35.0f);             /* 每字 +7（一手 `pos.x += 7.0`）*/
                 CHECK(ng[0].dy == 0.0f && ng[0].scale == 1.0f);
                 n2 = yk_night_text_glyphs(300000, ng);
                 CHECK(n2 == 6 && ng[0].glyph == 3);
+                /* ★ 2026-09-27（§BE #121，owner 口径）：**改成补前导零到 6 位**（按「额外最大得点」
+                 *   的画法）⇒ 下面三条旧断言（前导零不占位 / 0 只画一位）已作废并改掉。*/
                 n2 = yk_night_text_glyphs(123456789, ng);                 /* 超过 8 位 ⇒ 留高位、截 8 位 */
                 CHECK(n2 == 8 && ng[0].glyph == 1 && ng[7].glyph == 8);
                 n2 = yk_night_text_glyphs(0, ng);
-                CHECK(n2 == 1 && ng[0].glyph == 0);
+                CHECK(n2 == (int)YK_NIGHT_TEXT_DIGITS && ng[0].glyph == 0 && ng[5].glyph == 0);
                 n2 = yk_night_text_glyphs(-5, ng);
-                CHECK(n2 == 1 && ng[0].glyph == 0);
+                CHECK(n2 == (int)YK_NIGHT_TEXT_DIGITS && ng[0].glyph == 0 && ng[5].glyph == 0);
                 CHECK(yk_night_text_glyphs(60000, 0) >= 1);               /* NULL 出口不崩 */
             /* ★★★ 2026-09-22 夜（批次 3）：人侧撞使魔 = 圆 vs 圆
              * （一手：自机判定半径 3.0 @`player+0x4799c`；使魔 hurtbox 半宽 12.0 = 默认 24 的一半）。*/
@@ -1406,6 +1410,26 @@ int main(void)
             }
             }
         }
+    }
+
+    /* ★★★ 2026-09-27（§BE #121）：夜点数字**补前导零到 6 位**（owner：按额外最大得点的画法，
+     *   初始要看得见 `000000`）。`glyph 0` = '0'、dx = i×7（一手：每位 `pos.x += 7.0`）。*/
+    {
+        yk_gauge_glyph_t gg[YK_NIGHT_TEXT_MAX];
+        int n = yk_night_text_glyphs(0, gg);
+        CHECK(n == (int)YK_NIGHT_TEXT_DIGITS);
+        CHECK(gg[0].glyph == 0 && gg[5].glyph == 0);
+        CHECK(gg[5].dx > gg[0].dx);                       /* 低位在右 */
+        n = yk_night_text_glyphs(1234, gg);
+        CHECK(n == (int)YK_NIGHT_TEXT_DIGITS);
+        CHECK(gg[0].glyph == 0 && gg[1].glyph == 0);       /* 前导零补满 */
+        CHECK(gg[2].glyph == 1 && gg[3].glyph == 2 && gg[4].glyph == 3 && gg[5].glyph == 4);
+        n = yk_night_text_glyphs(-5, gg);
+        CHECK(n == (int)YK_NIGHT_TEXT_DIGITS && gg[5].glyph == 0);   /* 负数按 0 */
+        n = yk_night_text_glyphs(999999, gg);
+        CHECK(n == (int)YK_NIGHT_TEXT_DIGITS && gg[0].glyph == 9);
+        n = yk_night_text_glyphs(1234567, gg);             /* 7 位（补零只在不足 6 位时）*/
+        CHECK(n == 7 && gg[0].glyph == 1 && gg[6].glyph == 7);
     }
 
     /* ★★★ 2026-09-27（§BE #114）：击破批的**门**与**颗数**（一手 `Enemy::FUN_0042adb0`）。
