@@ -1288,8 +1288,34 @@ static void yk_option_release(ce_card_t *c, yk_card_t *s)
         s->opt[i].retry = 0;
     }
     /* 兜底：所有槽都不在我们手里、但 `card+0x1c` 还挂着 VM（引擎分配过而认领失败 / 池刚被重建）
-     * ⇒ 补一次原生的单子机收尾；上面已经清过那一格时它是 no-op。*/
-    ce_option_drop(c, 0);
+     * ⇒ 补一次原生的单子机收尾；上面已经清过那一格时它是 no-op。
+     *
+     * ★★★ 2026-09-27（owner：「**灵梦从妖机体退回来，子机本体消失，发弹正常**」）：**这一支要收窄**。
+     *   `ce_option_drop(c, 0)`（= `sdk.c` 的 `o == NULL` 支）是**无条件**删 `card+0x1c` 那个 VM
+     *   （`sdk.c:665-667`），它假设那一格一定是我们自己的子机。但对**人侧**（松 Shift 之后）来说，
+     *   引擎原生那 4 格子机（`player+0x670 + i*0xf0`，`CE_NATIVE_OPT_*`）的 VM 也可能正挂在
+     *   `card+0x1c` 上（`Player__allocate_option` 每次分配都写它）—— 删掉之后：**子机的记录还在**
+     *   （`in_use` 仍 1 ⇒ 行循环照发弹、膛口照镜像），但**画不出东西了** ⇒ 正是 owner 看到的那一幕。
+     *   ⇒ 现在先**排除「这一格 VM 属于原生 4 格」**再删；命中就只打一行日志、不动手。*/
+    {
+        uint32_t *card_vm = (uint32_t *)((uint8_t *)c + CE_CARD_OPTION_ANM_ID);
+        uint8_t *pl = CE_PLAYER();
+        int native_uses = 0;
+        if (*card_vm && pl) {
+            int k;
+            for (k = 0; k < CE_NATIVE_OPT_COUNT; ++k) {
+                const uint8_t *ns = pl + CE_NATIVE_OPT_PLAYER_MUZ0 + (size_t)k * CE_NATIVE_OPT_STRIDE;
+                if (*(const uint32_t *)(ns + CE_OPT_ANM_ID) == *card_vm) { native_uses = 1; break; }
+            }
+        }
+        if (*card_vm && native_uses) {
+            ce_log("youkai: option release fallback - card+0x1c VM %08x belongs to a NATIVE option slot "
+                   "(human side) => NOT deleting it (that is the 'option body vanishes but keeps firing' "
+                   "case); the field is left alone", (unsigned)*card_vm);
+        } else {
+            ce_option_drop(c, 0);
+        }
+    }
     s->opt_script = -1;
     s->opt_spring_live = 0;                /* ★ th08 #1：松手 ⇒ 下次再要子机时重新从自机位置起 */
     s->opt_age = 0;                        /* ★ 2026-09-22 晚：出场计时从 0 起（TH08 的 `Timer(&option+0x2e0)`）*/
