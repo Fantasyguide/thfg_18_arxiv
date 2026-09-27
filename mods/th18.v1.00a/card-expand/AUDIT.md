@@ -23049,3 +23049,53 @@ owner 实跑原文：「**目前真激光没有被射出去，是一个十分短
 
 **回归**：`make check` rc=0（`youkai_core: 4851 checks` / `dllx87 = 0` / `sites` / 文档 384）。
 **实跑判据**：见 `HANDOFF-108.md` §3 第 26 行。
+
+## §BE 详录 #128（2026-09-27 第二十三批）：**索敌读错的订正**（owner：「灵梦妖子机没有 boss 的时候也应当追踪，你一手代码肯定读错了」）+ 两条实跑反馈的探针
+
+### ① 订正 §BE #127：`g_EclExitLeftBound` **就是「玩家 x」**，不是固定边界
+
+owner 是对的。上一版我把 `g_EclExitLeftBound`（`0x17d61ac`）读成「ECL 里的一个固定 x」，于是把
+`th08:0x42d481` 的门理解成「boss 附近的敌人」并把目标收成**只有 boss** ⇒ 实跑「灵梦妖子机完全不索敌了」。
+
+**一手订正**（社区反编译 `local/vendor/th08_dec/src/`，逐字）：
+
+```c
+/* EnemyManager.cpp 的逐敌循环（二进制 th08:0x42d481–0x42d4d9） */
+if (fabsf(enemy->movePos.x - g_EclExitLeftBound) < 64.0f && enemy->HasOwnerEnemy() == 0 &&
+    (g_BossEnemy == NULL || g_BossEnemy->pos.y <= enemy->movePos.y))
+    g_BossEnemy = enemy;
+```
+
+- `g_EclExitLeftBound` 在同一个反编译里被两处直接注解成**玩家 x**：`AsciiManager.cpp:854`
+  「距玩家（**`g_EclExitLeftBound` 即玩家 x**）越远 alpha 越高」、`:958`
+  `boundaryIndicatorVm.pos.x = g_EclExitLeftBound`（边界指示 VM 就摆在玩家那一列）。
+- ⇒ 真语义 = **「链根（`HasOwnerEnemy() == 0`）敌人里，横向离**自机** 64 px 以内、取 y 最大（离自机最近）的那一只」**
+  —— **与 boss 无关**（boss 只是「通常正好在你头上那一列」）。全员都不在带内 ⇒ `g_BossEnemy == 0`
+  ⇒ 定向整段跳过（子机行直上）、追敌/旋转也停。
+
+**改法**：`yk_chase_target_resolve` 按上面那条门重写 —— 遍历可锁定敌人，门 =
+`|enemy.x − 自机 x| < 64` 且 `CE_SPAWN_PARENT(enemy+0x6834) == 0`（链根）且不是我们自己的使魔；
+胜者 = **y 最大**（= 离自机最近）。不再有 boss 偏好、也不再有全屏最近敌。
+
+### ② 两条实跑反馈（owner ③④）的**读数探针**（先取数、再改）
+
+owner：「**魔理沙妖子机激光依旧没有射出去只有一小节就截断了**」「**咲夜妖子机的魔法阵没有动**」
+「**在切换移动方向的时候，咲夜妖子机会动一帧**」。三条里第二条的机制落在引擎内部
+（束的几何到底由 `bullet+0xa0` 驱动、还是由 tick2 写进 `player+0x47610+…` 的**每槽表**驱动；
+子机的旋转到底走不走 VM 的 `rotation` 字段），静态读码到这里已经无法再收窄 ⇒ 上探针：
+
+- `youkai/probe char N age A: opt0 vm XXXXXXXX live L rot(rx,ry,rz) scale(sx,sy) face F frozen Z pos(x,y)`
+  —— 每 120 帧一行（只在妖侧）。**看 `rot.z` 有没有在转**：在转 ⇒ 字段没被覆盖、问题在渲染模式；
+  恒 0 ⇒ 我们的写入被脚本/引擎覆盖 ⇒ 换成「脚本标签驱动旋转」（灵梦那支已实跑验收的做法）。
+- `youkai/probe beam: state S len(+0xa0) L width(+0xa4) W`（机体 1 才有）——
+  **看 `+0xa0` 的实际值**：若它已经 ≈448 而画面只有一小节 ⇒ 画出来的长度**不是**由 `+0xa0` 驱动
+  （下一步查每槽表 + 束的绘制通路）；若它很小 ⇒ `tick2` 没在长。
+
+### ③ 顺带修掉「换向那一帧动一下」（owner ④）
+
+冻结型（咲夜）原来只写**偏移**，而引擎每帧自己算 `pos = 自机位 + 偏移`（`th18:0x45bce8`），
+我们读到的自机位与引擎那一刻读到的**可能差一帧** ⇒ 冻结的绝对坐标被 `(pp_引擎 − pp_我们)` 顶一下，
+**换向那一帧**这个差最大 ⇒「动一帧」。现在**同时把该子机自己的位置字段写死**
+（`CE_OPT_POS_X/Y`，定点 1/128；与槽 1..4 的膛口镜像同一手法）⇒ 谁后写谁赢、观感钉住。
+
+**回归**：`make check` rc=0（`youkai_core: 4851 checks` / `dllx87 = 0` / `sites` / 文档 384）。

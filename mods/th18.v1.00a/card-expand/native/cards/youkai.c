@@ -1201,27 +1201,48 @@ static void yk_chase_target_resolve(yk_card_t *s)
             return;
         }
     }
-    /* ★★★ 2026-09-27（owner：「**原版灵梦妖子机的索敌你核一下，可能不是全屏索敌而是只有一个索敌范围**」）：
-     * **owner 的怀疑成立，而且一手比「有范围」更严** —— TH08 根本**不做范围搜索**：
-     * 目标是一个**全局** `g_BossEnemy`（绝对地址 `th08:0x18b89b4`，也就是 `g_Player+0xe2abc`），
-     * 由**逐敌钩子**写：`th08:0x42d481`–`0x42d4d9` 逐指令 ——
-     *   ① `call 0x4031e0`（取绝对值）比较 `|enemy.final_pos.x − g_EclExitLeftBound(0x17d61ac)| < 64.0`
-     *      （`ds:0x4b42c8`）⇒ 只有落在那条 **±64 px 的窄带**里的敌人才是候选；
-     *   ② `call 0x41fd20` 返回 `enemy+0x2da4 != 0`，而 `0x2da4` = **`ownerEnemy`**（`EnemyManager.hpp`，
-     *      被弹生成时写）⇒ 门要求 `ownerEnemy == 0` = **链根**（ECL 直接生成的敌人，不是弹生成的子敌人）；
-     *   ③ 已有目标时保留 `y` 更靠上的那一只。
-     * ⇒ 没有这样的敌人时 `g_BossEnemy == 0`，而 `th08:0x450240` 的第一件事就是
-     *   `cmp DWORD PTR [eax+0xe2abc],0x0 / je 0x450310` ⇒ **整段定向被跳过：子机行照行里的 `−π/2` 直上**。
+    /* ★★★ 2026-09-27 第二十二批（owner 两次追问后的**订正**）：「**灵梦妖子机没有 boss 的时候也应当追踪，
+     *   你一手代码肯定读错了**」—— owner 是对的，我上一版把 `g_EclExitLeftBound` 读成了「ECL 里的一个固定 x」，
+     *   于是把门理解成「boss 附近的敌人」。**一手订正**（社区反编译 `local/vendor/th08_dec/src/`）：
      *
-     * 我们原来那一支「没有 boss 就取**最近的敌人**」是**本卡自定**（旧注释也这么写着 ❓）⇒ 那就是
-     * owner 看到的「全屏索敌」。现在**按一手收掉**：目标**只有 boss**（TH18 侧的对位 = 引擎自己的 boss
-     * 槽 `CE_ENEMY_MGR()+0x48` 那 4 个 id，`yk_boss()`），**没有 boss ⇒ 就当没有目标**（定向不写、
-     * 子机不追、子弹直上）—— 这正是 TH08 的行为。
-     * ⚠ 一手那两条门在 TH18 没有逐字对位，登记为 ❓（`TUNING.md` 2.1ddd-1）：
-     *   ① 「±64 px 窄带」的 `g_EclExitLeftBound` 是 TH08 的 ECL 全局，TH18 侧没有同名量 ⇒ 我们用
-     *      「引擎认定的 boss 槽」代替（比 ±64 px 宽，但**远窄于**原来的全屏最近敌）；
-     *   ② 「链根（`ownerEnemy == 0`）」在 TH18 有对位（`parent_enemy_id`，见 §BE #114），但 boss 槽里的
-     *      敌人本来就都是 ECL 直接生成的 ⇒ 这一条不必额外加门。*/
+     *   · 门逐字（`EnemyManager.cpp` 的逐敌循环，二进制 `th08:0x42d481`–`0x42d4d9`）：
+     *     `if (fabsf(enemy->movePos.x − g_EclExitLeftBound) < 64.0f && enemy->HasOwnerEnemy() == 0 &&
+     *          (g_BossEnemy == NULL || g_BossEnemy->pos.y <= enemy->movePos.y)) g_BossEnemy = enemy;`
+     *   · **`g_EclExitLeftBound`（`0x17d61ac`）就是「玩家 x」**，不是固定边界：同一个反编译里
+     *     `AsciiManager.cpp:854` 原文注「距玩家（**g_EclExitLeftBound 即玩家 x**）越远 alpha 越高」、
+     *     `:958` 把边界指示 VM 直接摆在 `pos.x = g_EclExitLeftBound`（= 玩家那一列）。
+     *   · ⇒ 真语义 = **「无主的（链根）敌人里，横向离自机 64 px 以内的那一个，取 y 最大（= 离自机最近）的」**，
+     *     **和 boss 无关** —— boss 只是「通常正好落在你头上那一列」而已。
+     *   · 一个候选都没有 ⇒ `g_BossEnemy == 0` ⇒ 定向那一支（`th08:0x450240`）第一句
+     *     `cmp DWORD PTR [eax+0xe2abc],0x0 / je 0x450310` 就跳过 ⇒ 子机行照 `−π/2` 直上；**追敌/旋转也停**。
+     *
+     * ⚠ 上一版那支「只有 boss」是**错的**（owner 实跑：「灵梦妖子机完全不索敌了」）⇒ 本版按上面那条订正的门重写。
+     * ⚠ TH18 侧的两处对位（登记 `TUNING.md` 2.1ddd-1）：① 「链根」= `CE_SPAWN_PARENT(enemy+0x6834) == 0`
+     *   （TH18 的 `parent_enemy_id`，§BE #114 用过同一格）；② TH08 的 y 是「屏幕向下为正」，
+     *   取**最大 y** = 离自机最近的那一只（与一手同一套坐标）。*/
+    if (CE_PLAYER()) {
+        const float *pp = ce_player_pos();
+        float best_y = 0.0f;
+        uint32_t best_id = 0;
+        float best_x = 0.0f;
+        const float px = pp ? pp[0] : 0.0f;
+        CE_ENEMY_FOREACH(CE_ENEMY_MGR(), e) {
+            const float *ep;
+            uint32_t id;
+            if (!ce_enemy_lockable(e)) continue;
+            if (*(const int32_t *)(e + CE_SPAWN_PARENT) != 0) continue;   /* 链根：不是别人生成的子敌人 */
+            id = *(const uint32_t *)(e + CE_ENEMY_ID);
+            if (!id) continue;
+            if (yk_map_is_fam(&s_map, id)) continue;                       /* 我们自己的使魔不当目标 */
+            ep = ce_enemy_pos(e);
+            if (!ep) continue;
+            if (ep[0] - px >= 64.0f || px - ep[0] >= 64.0f) continue;      /* 一手：|x − 玩家 x| < 64 */
+            if (!best_id || ep[1] >= best_y) {                             /* 一手：y 最大者胜 */
+                best_id = id; best_y = ep[1]; best_x = ep[0];
+            }
+        }
+        if (best_id) { s->chase_have = 1; s->chase_id = best_id; s->chase_x = best_x; s->chase_y = best_y; }
+    }
 }
 
 static void yk_option_declare(ce_card_t *c, yk_card_t *s, int focused)
@@ -1560,6 +1581,14 @@ static int on_option_pose_apply(ce_card_t *c)
             }
             fx = s->opt_pos[i][0] - pp[0];
             fy = s->opt_pos[i][1] - pp[1];
+            /* ★★★ 2026-09-27（owner ③④：「**在切换移动方向的时候，咲夜妖子机会动一帧**」）：
+             * 光写偏移**不够** —— 引擎每帧自己算 `pos = 自机位 + 偏移`（`th18:0x45bce8`），
+             * 而我们的 `pp`（`ce_player_pos()`）与引擎那一刻读到的自机位**可能差一帧** ⇒ 冻结的绝对坐标
+             * 会被 `(pp_引擎 − pp_我们)` 顶一下；**换向那一帧**这个差最大（速度反向）⇒「动一帧」。
+             * ⇒ 再把**这一格自己的位置字段**也写死（`CE_OPT_POS_X/Y`，定点 1/128），谁后写谁赢
+             * ⇒ 观感上钉住（槽 1..4 的膛口镜像本来就是这个手法，见下面「原生膛口镜像」那段）。*/
+            *(int32_t *)(o + CE_OPT_POS_X) = (int32_t)(s->opt_pos[i][0] * YK_SUBPIXEL);
+            *(int32_t *)(o + CE_OPT_POS_Y) = (int32_t)(s->opt_pos[i][1] * YK_SUBPIXEL);
             vm = *(const uint32_t *)(o + CE_OPT_ANM_ID);
             if (vm) {
                 if (s->opt_age >= YK_OPT_FREEZE_SPIN_START) {  /* `th08:0x44ed03 push 0xc` */
@@ -3868,6 +3897,45 @@ static void yk_pin_our_beam_len(void)
     }
 }
 
+/* ★★★ 2026-09-27（owner ②③ 实跑：「**魔理沙妖子机激光依旧没有射出去只有一小节就截断了**」+
+ * 「**咲夜妖子机的魔法阵没有动**」）：这两条都在引擎内部（束的几何由 tick2 的 `+0xa0` 驱动；
+ * 子机的旋转到底走不走 VM 的 rotation 字段）—— 静态读码到头了 ⇒ 按本仓的探针纪律打**读数**，
+ * 让 owner 那一局把数字带回来（一次跑就能定案）。每 120 帧一行、只在妖侧。*/
+static void yk_probe_tick(yk_card_t *s, int character)
+{
+    uint32_t fr = ce_sdk_frame();
+    if (!s || (fr % 120u) || fr < 240u) return;
+    if (s->opt[0].ptr) {
+        uint8_t *o = s->opt[0].ptr;
+        uint32_t vm = *(const uint32_t *)(o + CE_OPT_ANM_ID);
+        uint8_t *v = vm ? (uint8_t *)ce_anm_get_vm(vm) : 0;
+        ce_log("youkai/probe char %d age %u: opt0 vm %08x live %d rot(%.3f,%.3f,%.3f) scale(%.2f,%.2f) "
+               "face %.3f frozen %d pos(%d,%d)", character, (unsigned)s->opt_age, (unsigned)vm, v ? 1 : 0,
+               v ? (double)*(const float *)(v + CE_ANM_VM_ROTATION) : 0.0,
+               v ? (double)*(const float *)(v + CE_ANM_VM_ROTATION + 4) : 0.0,
+               v ? (double)*(const float *)(v + CE_ANM_VM_ROTATION + 8) : 0.0,
+               v ? (double)*(const float *)(v + CE_ANM_VM_SCALE) : 0.0,
+               v ? (double)*(const float *)(v + CE_ANM_VM_SCALE + 4) : 0.0,
+               (double)s->opt_face[0], (int)s->opt_frozen[0],
+               (int)*(const int32_t *)(o + CE_OPT_POS_X), (int)*(const int32_t *)(o + CE_OPT_POS_Y));
+    }
+    if (character == 1) {                     /* 魔理沙那一支：束的读数（长度 / 宽度 / 状态）*/
+        uint8_t *pl = CE_PLAYER();
+        int i;
+        for (i = 0; i < CE_PB_COUNT; ++i) {
+            uint8_t *b = pl + CE_PB_POOL + (size_t)i * CE_PB_STRIDE;
+            uint32_t packed;
+            if (*(int32_t *)(b + CE_PB_STATE) == 0) continue;
+            packed = *(const uint32_t *)(b + CE_PB_PACKED_ID);
+            if (!yk_marisa_laser_row((int)(packed >> 8), (int)(packed & 0xffu))) continue;
+            ce_log("youkai/probe beam: state %d len(+0xa0) %.1f width(+0xa4) %.1f",
+                   (int)*(const int32_t *)(b + CE_PB_STATE),
+                   (double)*(const float *)(b + CE_PB_LASER_LEN),
+                   (double)*(const float *)(b + CE_PB_LASER_LEN + 4));
+        }
+    }
+}
+
 static int yk_kill_our_lasers(void)
 {
     uint8_t *pl = CE_PLAYER();
@@ -4428,6 +4496,7 @@ static int on_tick_2(ce_card_t *c)
     if (focused) {
         yk_chase_target_resolve(s);
         yk_pin_our_beam_len();       /* ★ 2026-09-27（owner ⑥）：束长钳回一手的 448 */
+        yk_probe_tick(s, yk_current_character());   /* ★ owner ②③ 的读数探针（每 120 帧一行）*/
         if (s->opt_script >= 0 && s->opt[0].ptr) { if (s->opt_age < 0xffffu) ++s->opt_age; }
         else { s->opt_age = 0; s->opt_chase = 0; s->opt_spin_vm = 0; }
     } else {
