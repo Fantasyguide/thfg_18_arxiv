@@ -1174,19 +1174,17 @@ static int yk_current_power_level(void)
 }
 
 /* ---- ★★ 2026-09-22 晚（owner 第 2 条）：本帧的**追踪目标**（`on_tick_2` 每帧解析一次）---------
- * 一手：TH08 的目标是 `player+0xe2abc` 里的**一只敌人的指针**（`th08:0x44e8f1` 读它、取
- * `final_pos` = `zEnemy+0x2d88`）。那个指针在本 build 里没有任何非 0 写点（见 `youkai_core.h` 的长注释）
- * ⇒ 目标选择这一格 ❓ **自定**，取「先 boss、没有就最近的敌人」：
- *   ① boss = `mgr+0x48` 的 4 个 id 里**可锁定**的那只（与伤害转嫁用同一个 `yk_boss()`，零新增读法）；
- *   ② 没有 boss ⇒ 遍历敌人链表取**离自机最近**的一只（`ce_enemy_lockable` 过滤），
- *      并**排除我们自己的使魔**（它们是真敌人，会把目标吸到自己身上）。
+ * 一手：TH08 的目标 = **全局 `g_BossEnemy`**（= `g_Player+0xe2abc`，绝对地址 `th08:0x18b89b4`；
+ * 定向侧 `th08:0x44e8f1` / `th08:0x450279` 都读它、取 `final_pos` = `zEnemy+0x2d88`）。
+ * ⚠ 2026-09-27 订正（owner：「原版灵梦妖子机的索敌你核一下，可能不是全屏索敌」）：它**不是**任何形式
+ * 的范围搜索 —— 写点是 `th08:0x42d4d9`，门见下面 `yk_chase_target_resolve` 尾部的长注
+ *（±64 px 窄带 + 链根）。我们此前那一支「没有 boss ⇒ 最近的敌人」是**本卡自定** ⇒ 已按一手收掉。
+ * 现在：**只有 boss**（`mgr+0x48` 的 4 个 id 里可锁定的那只，与伤害转嫁共用 `yk_boss()`）；没有 boss
+ * ⇒ `chase_have = 0`（= 一手「`g_BossEnemy == 0`」）⇒ 子机不追、定向不写、子机行照 `−π/2` 直上。
  * 目标只在本帧有效（`on_tick_2` 写进卡状态、帧界的 `on_option_pose_apply` 读）——**绝不缓存指针**。*/
 static void yk_chase_target_resolve(yk_card_t *s)
 {
     uint8_t *e;
-    float px = 0.0f, py = 0.0f;
-    float best = 0.0f;
-    uint32_t best_id = 0;
     const float *bp;
 
     if (!s) return;
@@ -1203,35 +1201,27 @@ static void yk_chase_target_resolve(yk_card_t *s)
             return;
         }
     }
-    /* 没有 boss：最近的敌人。`best == 0` 表示还没选到（距离 0 也可能命中 ⇒ 用 `best_id` 判）。*/
-    if (CE_PLAYER()) {
-        const float *pp = ce_player_pos();
-        if (pp) { px = pp[0]; py = pp[1]; }
-    }
-    CE_ENEMY_FOREACH(CE_ENEMY_MGR(), e) {
-        const float *ep;
-        float dx, dy, d;
-        uint32_t id;
-        if (!ce_enemy_lockable(e)) continue;
-        id = *(const uint32_t *)(e + CE_ENEMY_ID);
-        if (!id) continue;
-        /* ★★★ 2026-09-22（P1 / 实跑日志直证）：这里原来调的是 `yk_fam_broken` —— 那是**事件**
-         * （清 `fam_id` + 置 `broken`），**不是判据** ⇒ 每帧对每一只活使魔都走了一次「被打死」：
-         *   ① 表条目被清 ⇒ 那只真敌人变**孤儿**（不再钉位置、松 Shift 也不撤 = owner「敌方使魔滞留」）；
-         *   ② 跟随 VM 记录再没人收 ⇒ 32 格 `s_fam_vm` 泄漏 ⇒ 之后 `ce_anm_spawn` 拿不到格子
-         *      （日志 `familiar follow-VM table full (32) - familiar 193/… stays invisible`）；
-         *   ③ 槽被标 `broken` ⇒ 发射口闸夹上 ⇒ route A 重建一只**新**使魔（新 `fam_id`）⇒ ①逐波累积。
-         * 修法 = 判据换成**只读**的 `yk_map_is_fam`；事件那两条路（`on_enemy_death` / 静默消失）
-         * 仍走 `yk_fam_broken` / `yk_fam_gone`。全文见 `youkai_core.h` 的 `yk_map_is_fam`。*/
-        if (yk_map_is_fam(&s_map, id)) continue;          /* 我们自己的使魔不当目标 */
-        ep = ce_enemy_pos(e);
-        if (!ep) continue;
-        dx = ep[0] - px;
-        dy = ep[1] - py;
-        d = dx * dx + dy * dy;
-        if (!best_id || d < best) { best = d; best_id = id; s->chase_x = ep[0]; s->chase_y = ep[1]; }
-    }
-    if (best_id) { s->chase_have = 1; s->chase_id = best_id; }
+    /* ★★★ 2026-09-27（owner：「**原版灵梦妖子机的索敌你核一下，可能不是全屏索敌而是只有一个索敌范围**」）：
+     * **owner 的怀疑成立，而且一手比「有范围」更严** —— TH08 根本**不做范围搜索**：
+     * 目标是一个**全局** `g_BossEnemy`（绝对地址 `th08:0x18b89b4`，也就是 `g_Player+0xe2abc`），
+     * 由**逐敌钩子**写：`th08:0x42d481`–`0x42d4d9` 逐指令 ——
+     *   ① `call 0x4031e0`（取绝对值）比较 `|enemy.final_pos.x − g_EclExitLeftBound(0x17d61ac)| < 64.0`
+     *      （`ds:0x4b42c8`）⇒ 只有落在那条 **±64 px 的窄带**里的敌人才是候选；
+     *   ② `call 0x41fd20` 返回 `enemy+0x2da4 != 0`，而 `0x2da4` = **`ownerEnemy`**（`EnemyManager.hpp`，
+     *      被弹生成时写）⇒ 门要求 `ownerEnemy == 0` = **链根**（ECL 直接生成的敌人，不是弹生成的子敌人）；
+     *   ③ 已有目标时保留 `y` 更靠上的那一只。
+     * ⇒ 没有这样的敌人时 `g_BossEnemy == 0`，而 `th08:0x450240` 的第一件事就是
+     *   `cmp DWORD PTR [eax+0xe2abc],0x0 / je 0x450310` ⇒ **整段定向被跳过：子机行照行里的 `−π/2` 直上**。
+     *
+     * 我们原来那一支「没有 boss 就取**最近的敌人**」是**本卡自定**（旧注释也这么写着 ❓）⇒ 那就是
+     * owner 看到的「全屏索敌」。现在**按一手收掉**：目标**只有 boss**（TH18 侧的对位 = 引擎自己的 boss
+     * 槽 `CE_ENEMY_MGR()+0x48` 那 4 个 id，`yk_boss()`），**没有 boss ⇒ 就当没有目标**（定向不写、
+     * 子机不追、子弹直上）—— 这正是 TH08 的行为。
+     * ⚠ 一手那两条门在 TH18 没有逐字对位，登记为 ❓（`TUNING.md` 2.1ddd-1）：
+     *   ① 「±64 px 窄带」的 `g_EclExitLeftBound` 是 TH08 的 ECL 全局，TH18 侧没有同名量 ⇒ 我们用
+     *      「引擎认定的 boss 槽」代替（比 ±64 px 宽，但**远窄于**原来的全屏最近敌）；
+     *   ② 「链根（`ownerEnemy == 0`）」在 TH18 有对位（`parent_enemy_id`，见 §BE #114），但 boss 槽里的
+     *      敌人本来就都是 ECL 直接生成的 ⇒ 这一条不必额外加门。*/
 }
 
 static void yk_option_declare(ce_card_t *c, yk_card_t *s, int focused)
