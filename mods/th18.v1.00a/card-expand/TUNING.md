@@ -7163,3 +7163,17 @@ effect #2 的 on_tick 里 `push 0x1` ×2 = 每帧两条（本轮的起法与之�
 `fset(%F0,%RANDF); scrollX(%F0); +1: scrollX(-0.04761905)`）。当年那次「实测报错」大概率是
 **字面量写法**（缺 `f` 后缀）被误读成 opcode 不存在。⇒ 别处的丢弃本批**不动**（那些脚本的行为
 已实跑验收过），要重新启用请单开一批并写清回归面。
+
+### 2.0zzx-16 ★★ 第 **四十九** 轮（2026-09-26）：两个**调试便利**（owner 要对比用）—— 冻结 UFO 敌人 + 空格给三个同色碟子
+
+| 项 | 做法 | 开关 / 位置 |
+| --- | --- | --- |
+| **冻结 UFO 敌人的移动**（owner：「暂时禁用 UFO 敌人的移动，我好对比」）| 每游玩帧把敌机的 `final_pos`（`0x1270/0x1274`）钉回它**现身那一刻**的位置；现身时打一条日志 | `native/cards/ufo.c` 的 `UFO_DEBUG_FREEZE_ENEMY`（改 0 即恢复）|
+| **空格 = 三个同色碟子**（owner：「把空格改成直接给我三个同色碟子」）| 一帧内起 **3 枚**令牌，**同一个 display color + 同一个 cycler state**（换色计时器同起点 ⇒ 三枚始终同色），落点错开 24 单位 | `on_item_frame` 的调试键分支（`UFO_DEBUG_KEY`）；原「1 枚变色令牌」退役 |
+
+**⚠ 为什么冻结没有改 ECL**：`assets/ecl/ufo.ecl.txt` 受 `make ecl-ufo` 的**往返行数对账**保护
+（一手保真：把文本编成 `default.ecl` 再回读，指令行数必须与源一致）。我第一版去注释 `moveCircleRel` /
+`moveCircleRelTime` / `movePosTime`（32 行）⇒ 立刻报 `UFO_Red 的指令行数变了：源 42 → 往返 41` ⇒
+**已 `git checkout` 还原**。调试开关放卡侧（C）才不破坏一手保真。
+**回归面**：只动 `native/cards/ufo.c`；`check`（384 文件）/ `dllx87=0` 全过。
+发布：DLL `01c3fa94…` → **`6514604666400fb59e0b0df720e7ca1f`**（ability.anm 未变 `3415effb…`，四处已部署同一份）。

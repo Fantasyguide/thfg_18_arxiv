@@ -5521,18 +5521,49 @@ static void on_item_frame(ce_card_t *c)
              *   用途：不用真去打 UFO，一眼就能验"满 B"的**摇摆 / 尺寸 / 那颗原生星有没有藏掉 / 光晕**。*/
             ufo_drop_spawn_bomb(s, UFO_DEBUG_X, UFO_DEBUG_Y);
         } else if (down && !s->dbg_key_prev) {
-            if (ufo_tok_spawn(s, UFO_DEBUG_X, UFO_DEBUG_Y))
-                ce_log("ufo: DEBUG spawn token #%u at (%.0f, %.0f) by SPACE (color %d, %s)",
-                       s->token_serial - 1u, (double)UFO_DEBUG_X, (double)UFO_DEBUG_Y,
-                       (int)s_tokpool.tok[s_tokpool.n - 1].color,
-                       s_tokpool.tok[s_tokpool.n - 1].cycler ? "cycler" : "plain");
-            else
-                ce_log("ufo: DEBUG spawn token by SPACE failed (pool full? %d slots)", UFO_TOKEN_CAP);
+            /* ★★★ 2026-09-26 第 49 轮（owner）：「**把空格改成直接给我三个同色碟子**」
+             *   ⇒ 一次给 **3 枚同色令牌**（同色 = 一次就能召唤），并且**同一帧起**：
+             *   cycling 令牌的换色计时器同起点 ⇒ 三枚始终同色（等价于"三个同色碟子"）。
+             *   落点错开 24 单位，免得三枚叠在一起看不清。原"1 枚变色令牌"退役。*/
+            uint32_t roll = (s_rng_seed = ufo_rand_next(s_rng_seed));
+            int st = (int)(roll % UFO_TOK_RB_STATES);
+            int32_t col = ufo_token_display_color(UFO_COLOR_RED, 1, st);
+            int k, made = 0;
+            for (k = 0; k < 3; ++k)
+                if (ufo_tok_spawn_ex(s, UFO_DEBUG_X + (float)(k - 1) * 24.0f, UFO_DEBUG_Y,
+                                     col, st, 1))
+                    ++made;
+            ce_log("ufo: DEBUG spawn 3 SAME-COLOR tokens by SPACE - %d/3 ok at (%.0f, %.0f), "
+                   "display color %d (cycler state %d) => summon immediately",
+                   made, (double)UFO_DEBUG_X, (double)UFO_DEBUG_Y, (int)col, st);
         }
         s->dbg_key_prev = down;
     }
 #endif
 
+#define UFO_DEBUG_FREEZE_ENEMY 1   /* ★★★ 2026-09-26 第 49 轮（owner）：「**暂时禁用 UFO 敌人的移动**，我好对比」
+                                    *   ⇒ 每游玩帧把 UFO 敌机的 `final_pos`（`0x1270/0x1274`）钉回它现身时
+                                    *   的那一点。**为什么不在 ECL 里删 `movePosTime`**：`assets/ecl/ufo.ecl.txt`
+                                    *   受 `make ecl-ufo` 的**往返行数对账**保护（一手保真），删一行就编译不过 —
+                                    *   调试开关放卡侧才对。要恢复：改这一个 1 → 0。*/
+#if UFO_DEBUG_FREEZE_ENEMY
+    {
+        uint8_t *fe = ufo_enemy_by_id(s->u.ufo_id);
+        static float fx, fy;                                   /* 0,0 = 还没钉 */
+        static int pinned;
+        if (fe) {
+            if (!pinned) {
+                fx = *(const float *)(fe + CE_ENEMY_POS_X);
+                fy = *(const float *)(fe + CE_ENEMY_POS_Y);
+                pinned = 1;
+                ce_log("ufo: DEBUG enemy movement FROZEN at (%.1f, %.1f) - UFO_DEBUG_FREEZE_ENEMY=1",
+                       (double)fx, (double)fy);
+            }
+            *(float *)(fe + CE_ENEMY_POS_X) = fx;
+            *(float *)(fe + CE_ENEMY_POS_Y) = fy;
+        }
+    }
+#endif
     /* ★★ 2026-09-18：每游玩帧补一次 HUD 槽认领（幂等，稳态一次比较）。
      *   为什么必须在这里：中盘拿到卡（卡 118 的十二合一）时引擎**只调 `ctor`、不调 `on_load`**
      *   ⇒ 认领从没发生过 ⇒ HUD 不出现，要等换面才补上（用户实跑 B4）。
