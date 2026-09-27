@@ -22803,3 +22803,50 @@ if (item->state == ITEM_STATE_AUTOCOLLECT ||
 **回归**：`make check` rc=0（`youkai_core: 4800 checks`）+ `dllx87` = 0 + `sites.py verify` rc=0。
 **实跑判据**：妖侧自机飞在游玩区上方（PoC 线以上）时，场上**下落中**的永点应当直接朝自机飞过来
 （不再继续往下掉）；自机在线以下时行为不变。
+
+## §BE 详录 #124（2026-09-27 第二十批）：**文（早苗妖侧）那批整批换成 TH16 `pl03.sht` 的低速半** —— 形状 + 贴图
+
+**由来**：owner 三条实跑偏差 —— 「**文文子机子弹应当是红色的，并且没有分叉**」「**th16 在 P=1 的时候
+应当是只有一列红色类秋子机弹幕**」「**同时缺乏文文自机弹幕**」。（上一批我只把 §5.7b/§5.7c 挖出来，
+本批落地。）
+
+**一手**：`local/th16.v1.00a/dat/pl03.sht`（偏移数组 `+0x190`、项 = 相对 `+0x1b8` 的偏移、
+stride `0x58`、`+0x20 pwr_lvl_cnt = 4` ⇒ 低速 = **set 5..9**）+ `pl03.anm`（`thanm -l 16 -m v8.anmm`）。
+逐行数据与判据全部写在 `engine/sht/th16/01-season-data-and-tables.md` §5.7b/§5.7c（本批补了
+「`+0x28..+0x34` 四个回调 = init/tick/draw/hit」与「**贴图落在 `pl03.anm` script5/6..9**」两条坐实）。
+
+**改了什么（四处，全是本卡自己的表 + 两个生成器表）**：
+
+| 文件 | 改动 |
+| --- | --- |
+| `assets/sht/append_shooterset.py` | `YOUKAI_TIERS_A` 按 set 5..9 重写（本体 **2 列** + 子机 **1 行**）；`YOUKAI_TIER_ORIGINS["A"] = [[0,0],[0,0,1],…]` |
+| 同上 | `YOUKAI_BULLET_ANM["A"]` 第二格改**按档元组**（子机逐档一支）；`_yk_bullet_anm()` 多收 `tier`；`_yk_row()` 加 `func_hit` |
+| `assets/ability/make_youkai_bullet_art.py` | 早苗那一族从 `pl03sub`（季节弹）换成 **TH16 `pl03.anm`**：8 个成员（sprite24..31）、5 支 spec（script5/6..9） |
+| `assets/build_player_anm.py` | `pl03` 的 `YK_BULLET_MEMBERS`/`CANVAS`/`SCRIPTS` 换成 8 成员 / `384x64` / 5 支（宏 `YKBULLET_A_BODY`、`YKBULLET_A_OPT1..4`） |
+
+- **形状**：本体行 `rate 3 / dmg 16（tier0）或 14 / dx ∓10 / dy −8 / ang −π/2 / spd 24`、
+  子机行 `rate 5,5,4,4 / dmg 3,8,16,20 / dx 0 / dy −20 / ang −π/2 / spd 0`、每档**只有 1 行**子机
+  ⇒ 「一列红色弹、没有分叉」✓，而本体那两列**回来了** ✓。
+- **贴图**：本体 = `pl03.anm` script5（sprite24 + 命中 25/26/27）；子机 = script6/7/8/9
+  （sprite28 + 命中 29/30/31、**`alpha(170)` + `color(255,48,48)` 红**、逐档只差 `scale.y` 0.3/0.6/1.0/1.4）
+  —— 与秋季节弹**同族贴图**、只是染色不同 ⇒ owner 说的「和秋季节子机一致但是红色」✓。
+- **回调**：本体 `+0x34 hit = 5`（TH16 hit5 ≡ TH18 hit5 ⇒ 照搬）；子机 `+0x2c tick = 5`
+  （TH16 匀加速 +0.5）⇒ TH18 同族 `tick3`（+0.3）；子机 `init4` **不搬**（两作不同族）。
+- **不照抄、登记在案的**：判定盒（本体 48×16 / 子机 48×8..48）暂时保留 `(16,16)`；
+  TH16 的 `mode = 4` 不搬（TH18 的 origin 1 行原生就是 `mode 0`）。两条都写进 `TUNING.md`。
+
+**跨层注意（改共享件的部分）**：`assets/sht/append_shooterset.py` / `assets/build_player_anm.py` /
+`assets/ability/make_youkai_bullet_art.py` 是**共享件**，但本批只动**卡 108 自己那几张表**里的
+`pl03` 一格与 `YKB_A*` 名；`pl00/pl01/pl02` 的行表、entry、脚本号（364..369 与 R/M/S 的宏）**逐字节未动**
+（`make check` 的 `verify_rebuilt` 会逐 entry/逐 script 对账，原生部分不变即证）。
+早苗那一族的旧 4 个成员（`YKB_A_0..3`）与旧 spec（`370_yk_bullet_ykb_a_0.anm.txt`）**已删除**；
+生成器新增「清掉上一批的过期产物」一步（同号两个 spec 会让 `_yk_bullet_block()` 报「找不到唯一的弹体 spec」，
+本批实测踩到过）。
+
+**回归**：`make check` rc=0（check 4800 / dllx87 0 / sites / capcheck / engine_abi / 文档 384 全绿）、
+`sites.py verify` rc=0、`make release` 闸全过（冻结未生效 + DLL↔sht 同批）。
+**部署**：`pl03.sht 3d06fedded337adb0c2da2e4f312ad75`、`pl03.anm a98df6dc4f6adb24c67a6a07c68d6c30`、
+DLL `6adeff228cc369acbbd4a96125908de1`（**本批没动 C 代码**，DLL 与前一批同一个 md5）。
+**实跑判据**：妖侧（按 Shift）时 —— ① 本体出**两列**（新贴图、白底那条弹）；② 档 ≥1 时子机位置出
+**一列红色**弹、**没有分叉**；③ 红的这一列**先停在子机处再越飞越快**（`spd 0` + 匀加速）；
+④ 档 0（P<100）**没有**那一列红弹（原作就是如此）。打到敌人时应出现**命中特效**（`hit5`）。

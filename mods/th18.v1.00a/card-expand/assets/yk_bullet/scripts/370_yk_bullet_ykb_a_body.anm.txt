@@ -1,6 +1,6 @@
 script script370 {
-    // 由 assets/ability/make_youkai_bullet_art.py 从 TH16 v1.00a `pl03sub` script0 生成，别手改。
-    // 早苗（TH16 秋/文）妖侧弹（`pl03sub` script0，四帧循环）。
+    // 由 assets/ability/make_youkai_bullet_art.py 从 TH16 v1.00a `pl03` script5 生成，别手改。
+    // 文（TH16 pl03）妖侧**本体**弹（script5，两列共用；命中支 25/26/27 自带）。
     // 指令逐条照抄（段序/时序/数值一字未动），只做四件事：
     //   ① `sprite(N)` → `sprite(@名字@)`；② 补 `type(1)`（TH18 v8 的**渲染模式**：不写就落进
     //   模式 0 = 绘制定格 ⇒ `AUDIT.md` §BE #95）；③ `ins_25(N)` → `rotateAuto(N)`
@@ -12,26 +12,23 @@ script script370 {
     type(1);
 -1:
     layer(13);
-    sprite(@YKB_A_0@);
+    sprite(@YKB_A_BODY@);
     type(1);
     zWriteDisable(1);
     rotateAuto(1);
-    scale(1.0f, 0.3f);
-    scaleTime(8, 0, 1.0f, 0.3f);
-    alpha(160);
-    color(224, 192, 64);
 0:
     stop();
     interruptLabel(1);
     layer(15);
+    alpha(192);
     blendMode(1);
-    sprite(@YKB_A_1@);
+    sprite(@YKB_A_BODY_H1@);
 +3: // 3
-    sprite(@YKB_A_2@);
+    sprite(@YKB_A_BODY_H2@);
 +3: // 6
-    sprite(@YKB_A_3@);
+    sprite(@YKB_A_BODY_H3@);
 +3: // 9
     alpha(0);
-+1: // 10
++20: // 29
     delete();
 }

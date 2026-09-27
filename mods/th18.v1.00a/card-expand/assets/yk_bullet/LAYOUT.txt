@@ -13,7 +13,11 @@ YKB_M_OPT         YKB_M_OPT.png   @0,16,256x32
 YKB_S_MAIN        YKB_S_MAIN.png   @256,24,64x16
 YKB_S_OPT         YKB_S_OPT.png   @320,16,16x32
 YKB_M_HIT         YKB_M_HIT.png   @336,24,64x16
-YKB_A_0           YKB_A_0.png   @0,48,64x64
-YKB_A_1           YKB_A_1.png   @64,48,64x64
-YKB_A_2           YKB_A_2.png   @128,48,64x64
-YKB_A_3           YKB_A_3.png   @192,48,64x64
+YKB_A_BODY        YKB_A_BODY.png   @400,24,32x16
+YKB_A_BODY_H1     YKB_A_BODY_H1.png   @432,24,32x16
+YKB_A_BODY_H2     YKB_A_BODY_H2.png   @464,24,32x16
+YKB_A_BODY_H3     YKB_A_BODY_H3.png   @0,48,32x16
+YKB_A_OPT         YKB_A_OPT.png   @0,64,64x64
+YKB_A_OPT_H1      YKB_A_OPT_H1.png   @64,64,64x64
+YKB_A_OPT_H2      YKB_A_OPT_H2.png   @128,64,64x64
+YKB_A_OPT_H3      YKB_A_OPT_H3.png   @192,64,64x64

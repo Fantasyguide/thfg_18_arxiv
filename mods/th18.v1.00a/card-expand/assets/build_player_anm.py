@@ -560,14 +560,18 @@ YK_BULLET_MEMBERS = {
     #   它的命中脚本（script23）用的不是弹体那张 sprite30。其余三名复用弹体图。
     "pl01": (("YKB_M_MAIN", 64, 16), ("YKB_M_OPT", 256, 32), ("YKB_M_HIT", 64, 16)),
     "pl02": (("YKB_S_MAIN", 64, 16), ("YKB_S_OPT", 16, 32)),
-    "pl03": (("YKB_A_0", 64, 64), ("YKB_A_1", 64, 64), ("YKB_A_2", 64, 64), ("YKB_A_3", 64, 64)),
+    # ★★★ 2026-09-27：早苗那一格整批换成 **TH16 `pl03.anm` 主炮弹族**（见 `make_youkai_bullet_art.py`
+    #   的 `MEMBERS` 注）：本体弹 32×16（+ 命中三帧）、子机弹 64×64（+ 命中三帧）⇒ **8 个成员**。
+    "pl03": (("YKB_A_BODY", 32, 16), ("YKB_A_BODY_H1", 32, 16), ("YKB_A_BODY_H2", 32, 16),
+             ("YKB_A_BODY_H3", 32, 16), ("YKB_A_OPT", 64, 64), ("YKB_A_OPT_H1", 64, 64),
+             ("YKB_A_OPT_H2", 64, 64), ("YKB_A_OPT_H3", 64, 64)),
 }
 # entry 画布尺寸 + 成员在画布内的落点（左到右、顶对齐；矩形 = 成员 PNG 的原尺寸）
 YK_BULLET_CANVAS = {
     "pl00": ((128, 16), ((0, 0), (64, 0))),
     "pl01": ((384, 32), ((0, 0), (64, 0), (128, 0))),
     "pl02": ((80, 32), ((0, 0), (64, 0))),
-    "pl03": ((256, 64), ((0, 0), (64, 0), (128, 0), (192, 0))),
+    "pl03": ((384, 64), ((0, 0), (32, 0), (64, 0), (96, 0), (128, 0), (192, 0), (256, 0), (320, 0))),
 }
 # 该机体用哪几支生成脚本（源脚本号 → 宏后缀 → 成员名）：成员名 → 源 sprite 名（`@名字@` 替换用）
 YK_BULLET_SCRIPTS = {
@@ -575,8 +579,13 @@ YK_BULLET_SCRIPTS = {
     # ⚠ pl01 的主炮弹一支脚本引用两张图（弹体 + 命中），其余每支只引一张。
     "pl01": ((366, "BULLET_M_MAIN", ("YKB_M_MAIN", "YKB_M_HIT")), (367, "BULLET_M_OPT", "YKB_M_OPT")),
     "pl02": ((368, "BULLET_S_MAIN", "YKB_S_MAIN"), (369, "BULLET_S_OPT", "YKB_S_OPT")),
-    # 早苗那支在源里一个脚本连着引用 4 张图（四帧循环）⇒ 一支脚本、四个成员
-    "pl03": ((370, "BULLET_A", ("YKB_A_0", "YKB_A_1", "YKB_A_2", "YKB_A_3")),),
+    # ★★★ 2026-09-27：早苗 = 5 支 —— **本体 1 支**（`pl03.anm` script5）+ **子机逐档 1 支**
+    #   （script6/7/8/9，逐档只差 `scale.y`）。每支都引用「弹体 + 命中三帧」= 同一 entry 里 4 个成员。
+    "pl03": ((370, "BULLET_A_BODY", ("YKB_A_BODY", "YKB_A_BODY_H1", "YKB_A_BODY_H2", "YKB_A_BODY_H3")),
+             (371, "BULLET_A_OPT1", ("YKB_A_OPT", "YKB_A_OPT_H1", "YKB_A_OPT_H2", "YKB_A_OPT_H3")),
+             (372, "BULLET_A_OPT2", ("YKB_A_OPT", "YKB_A_OPT_H1", "YKB_A_OPT_H2", "YKB_A_OPT_H3")),
+             (373, "BULLET_A_OPT3", ("YKB_A_OPT", "YKB_A_OPT_H1", "YKB_A_OPT_H2", "YKB_A_OPT_H3")),
+             (374, "BULLET_A_OPT4", ("YKB_A_OPT", "YKB_A_OPT_H1", "YKB_A_OPT_H2", "YKB_A_OPT_H3"))),
 }
 
 

@@ -83,11 +83,24 @@ MEMBERS = [
     #   魔理沙主炮的命中脚本（`player01` script23）用的是**另一张**图（sprite31，64×16），
     #   其余角色的命中脚本复用弹体那张 ⇒ 只有这一张要新切。见下面 `SCRIPTS` 的 `hit` 字段。
     ("YKB_M_HIT",  "th08", "player01", 31, None),
-    # 早苗（TH16 pl03sub script0，sprite0..3 = 64×64，四个成员一位一图）
-    ("YKB_A_0", "th16", "pl03sub", 0, None),
-    ("YKB_A_1", "th16", "pl03sub", 1, None),
-    ("YKB_A_2", "th16", "pl03sub", 2, None),
-    ("YKB_A_3", "th16", "pl03sub", 3, None),
+    # ★★★ 2026-09-27（owner：「**文文子机子弹应当是红色的，并且没有分叉**」「**缺乏文文自机弹幕**」）：
+    #   早苗那一侧整批换成 **TH16 `pl03.anm`**（= 文自己的主炮弹族），**不再用 `pl03sub.anm`**
+    #   （那是季节弹：金黄 + 四帧循环，正是 owner 三条偏差里「不是红色」的那一族）。
+    #   一手（`thanm -l 16 -m v8.anmm local/th16.v1.00a/dat/pl03.anm`，entry0，`yOffset` = 0）：
+    #     · 本体弹 = **script5**：`sprite24`（32×16）+ 命中支 `sprite25/26/27`（32×16、`alpha 192`）。
+    #     · 子机弹 = **script6/7/8/9**：`sprite28`（64×64）+ 命中支 `sprite29/30/31`；
+    #       **`alpha(170)` + `color(255, 48, 48)` = 红**（对照 `script10` 同族写的是 `(224,192,64)`
+    #       金黄）⇒ owner 说的「和秋季节子机一致但是**红色**」= **同一族贴图 + 红染色** ✓；
+    #       四支逐档只差 `scale(1.0, 0.3/0.6/1.0/1.4)` ⇒ 与行里递增的判定盒 48×8/16/32/48 对上 ✓。
+    #   ⚠ 命中支引用的就是 25..31 这几张 ⇒ 它们必须是**成员**（`sprite(@名字@)` 要替换得到），不能省。
+    ("YKB_A_BODY",    "th16", "pl03", 24, None),
+    ("YKB_A_BODY_H1", "th16", "pl03", 25, None),
+    ("YKB_A_BODY_H2", "th16", "pl03", 26, None),
+    ("YKB_A_BODY_H3", "th16", "pl03", 27, None),
+    ("YKB_A_OPT",     "th16", "pl03", 28, None),
+    ("YKB_A_OPT_H1",  "th16", "pl03", 29, None),
+    ("YKB_A_OPT_H2",  "th16", "pl03", 30, None),
+    ("YKB_A_OPT_H3",  "th16", "pl03", 31, None),
 ]
 
 # 脚本：ORDER 名 → (作品, anm 名, 源脚本号, [sprite 号…], 说明, 命中=(命中脚本号, [命中 sprite 号…]) 或 None)
@@ -112,7 +125,15 @@ SCRIPTS = [
     ("YKB_M_OPT",  "th08", "player01", 24, [32],        "魔理沙・アリス 妖侧子机弹（`+0x24`=14 ⇒ +10；逐档 25/26/27 只差 `scale.y`）", None),
     ("YKB_S_MAIN", "th08", "player02", 12, [22],        "咲夜・レミリア 妖侧主炮弹（`+0x24`=2 ⇒ +10）",                     (13, [22])),
     ("YKB_S_OPT",  "th08", "player02", 14, [23],        "咲夜・レミリア 妖侧子机弹（`+0x24`=4 ⇒ +10）",                     (15, [23])),
-    ("YKB_A_0",    "th16", "pl03sub",   0, [0, 1, 2, 3], "早苗（TH16 秋/文）妖侧弹（`pl03sub` script0，四帧循环）",         None),
+    # ★★★ 2026-09-27（owner 三条口径的收口）：早苗 = **TH16 的文**，取它 **`pl03.anm` 主炮那一族**
+    #   （`pl03sub.anm` 是季节弹，owner 明确说「只取其低速部分复刻」而低速那半的子机行
+    #   `anm = 1..4` 按 **+5** 落在 `pl03.anm` script6..9 ⇒ 见 `engine/sht/th16/01` §5.7c）。
+    #   五支都**自带** `stop(); interruptLabel(1); … delete()` ⇒ `hit=None`（不重复加）。
+    ("YKB_A_BODY", "th16", "pl03", 5, [24, 25, 26, 27], "文（TH16 pl03）妖侧**本体**弹（script5，两列共用；命中支 25/26/27 自带）", None),
+    ("YKB_A_OPT1", "th16", "pl03", 6, [28, 29, 30, 31], "文 妖侧**子机**弹 档1（script6：红 `color(255,48,48)`、`scale.y` 0.3）", None),
+    ("YKB_A_OPT2", "th16", "pl03", 7, [28, 29, 30, 31], "文 妖侧**子机**弹 档2（script7：同上、`scale.y` 0.6）", None),
+    ("YKB_A_OPT3", "th16", "pl03", 8, [28, 29, 30, 31], "文 妖侧**子机**弹 档3（script8：同上、`scale.y` 1.0）", None),
+    ("YKB_A_OPT4", "th16", "pl03", 9, [28, 29, 30, 31], "文 妖侧**子机**弹 档4（script9：同上、`scale.y` 1.4）", None),
 ]
 
 _SPRITE_DEF_RE = re.compile(r"sprite(\d+):\s*\{\s*x:\s*(\d+),\s*y:\s*(\d+),\s*w:\s*(\d+),\s*h:\s*(\d+)\s*\}")
@@ -451,15 +472,28 @@ def main():
         scripts[name] = gen_script(name, kind, anm, src_num, sids, note, smap, hit=hit, hit_map=smap)
 
     OUT_SCRIPTS.mkdir(parents=True, exist_ok=True)
+    want = {f"{SCRIPT0 + i}_yk_bullet_{name.lower()}.anm.txt" for i, (name, *_r) in enumerate(SCRIPTS)}
     for i, (name, *_rest) in enumerate(SCRIPTS):
         fname = f"{SCRIPT0 + i}_yk_bullet_{name.lower()}.anm.txt"
         (OUT_SCRIPTS / fname).write_text(scripts[name], encoding="utf-8")
+    # ★★★ 2026-09-27：**清掉上一批留下的 spec** —— 文件名带序号（`370_yk_bullet_<名字>.anm.txt`），
+    #   而 `build_player_anm.py` 是按**序号** glob 的（`{spec_file}_yk_bullet_*.anm.txt` 必须唯一）。
+    #   本批把 `YKB_A_0` 换成 `YKB_A_BODY` 时实测踩到：旧的 `370_…_a_0.anm.txt` 留在盘上 ⇒
+    #   同号两个文件 ⇒ `_yk_bullet_block()` 报「找不到唯一的弹体 spec」。成员 PNG 同理。
+    stale = sorted(p for p in OUT_SCRIPTS.glob(f"{SCRIPT0}_yk_bullet_*.anm.txt") if p.name not in want)
+    stale += sorted(p for p in OUT_SCRIPTS.glob("*_yk_bullet_*.anm.txt")
+                    if p.name not in want and p not in stale)
+    stale += sorted(p for p in OUT_ART.glob("YKB_*.png") if p.name not in {f"{n}.png" for n, *_ in MEMBERS})
+    for p in stale:
+        p.unlink()
+    if stale:
+        print(f"== 清掉上一批的 {len(stale)} 个过期产物：" + ", ".join(p.name for p in stale))
     print(f"== 脚本 {len(SCRIPTS)} 支 → {OUT_SCRIPTS}（编号 {SCRIPT0}..{SCRIPT0 + len(SCRIPTS) - 1}）")
 
     order, (AW, AH) = write_layout(made)
     used = sum(made[n][1][0] * made[n][1][1] for n, *_ in MEMBERS)
     print(f"== 布局说明 → {(OUT_ART / 'LAYOUT.txt').relative_to(HERE.parent)}（切图画布 {AW}x{AH}；成员总面积 {used} ✓）")
-    print(f"   ⚠ 这 7 支 spec 的真正落地处 = 四个 pl0X.anm（`build_player_anm.py` 的 bullet 追加件读 {OUT_SCRIPTS.name}/）")
+    print(f"   ⚠ 这批 spec 的真正落地处 = 四个 pl0X.anm（`build_player_anm.py` 的 bullet 追加件读 {OUT_SCRIPTS.name}/）")
 
     # ★ 2026-09-26 第十三批：**不再有「与 ability 主表撞名」这一步** —— 成员图与 spec 都挪出了
     #   ability 管线（见文件头与 `LAYOUT.txt` 的注），撞名与否已无关。

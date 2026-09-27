@@ -277,7 +277,8 @@ def _yk_anm_for(target_file: str) -> int:
     return YK_BULLET_ANM[key]
 
 
-def _yk_row(rate, damage, dx, angle, sfx, speed=12.0, dy=0.0, opt_slot=0, anm=None, func_tick=0):
+def _yk_row(rate, damage, dx, angle, sfx, speed=12.0, dy=0.0, opt_slot=0, anm=None, func_tick=0,
+            func_hit=0):
     """一行 = 一个 TH18 shooter 记录 dict（字段名见 pack_shooter）。
 
     ★ 2026-09-22：加了 `speed` / `dy` 两个可选参数 —— 原版 TH08 的 `plyNNas.sht` **每行有自己的
@@ -288,12 +289,15 @@ def _yk_row(rate, damage, dx, angle, sfx, speed=12.0, dy=0.0, opt_slot=0, anm=No
     的秋/文弹）自带 `func = tick5`（TH16 的**匀加速 +0.5/帧**）⇒ 翻译成 TH18 的 `tick3`（**匀加速 +0.3/帧**，
     一手对照表见 `engine/sht/th18/03-func-tables-timers-and-dead-fields.md` §6：`tick3` TH16 `+1.0` / TH18 `+0.3`、
     `tick5` TH16 `+0.5` / TH18 是**别的行为**＝左右墙反弹 ⇒ 只有 `tick3` 同族）。
-    其余调用点不传 ⇒ 行为逐字节不变。"""
+    ★ 2026-09-27：加 `func_hit`（`+0x38`）—— 文（TH16）低速组的**本体行**四个回调是 `[0,0,0,5]`
+    （`+0x28/+0x2c/+0x30/+0x34` = init/tick/draw/hit，一手字段图 `engine/sht/th16/05` §2），而
+    **TH16 hit5 ≡ TH18 hit5**（都是「命中生成 `0x95` 号特效、朝向 ±20°」，对照表见同一篇 §6）
+    ⇒ 照搬 5。其余调用点不传 ⇒ 行为逐字节不变。"""
     return dict(fire_rate=rate, start_delay=0, damage=damage,
                 spawn_dx=dx, spawn_dy=dy, hit_w=16.0, hit_h=16.0,
                 angle=angle, speed=speed, opt_slot=opt_slot, mode=0,
                 anm=(21 if anm is None else anm), sfx=sfx, hit_fx=0, fire_rate2=0, start_delay2=0,
-                func_on_init=0, func_on_tick=func_tick, func_on_draw=0, func_on_hit=0)
+                func_on_init=0, func_on_tick=func_tick, func_on_draw=0, func_on_hit=func_hit)
 
 
 # ---- ★★★ 2026-09-26（owner 实跑：「妖侧子机不发弹 / 只有一行 / 形式不对」）：-----------
@@ -424,9 +428,15 @@ YOUKAI_TIER_ORIGINS = {
     "M": [[1, 0], [1, 0], [1, 0], [1, 0], [1, 0]],
     # 咲夜・レミリア：三档起就是 1 本体 + 4 架子机各一路
     "S": [[0, 2, 3], [0, 2, 3], [0, 1, 2, 3, 4], [0, 1, 2, 3, 4], [0, 1, 2, 3, 4]],
-    # ★ 2026-09-26 早苗（TH16 秋/文，`pl03sub.sht` 的 set1..set4）：**每一行都从某台子机发**
-    #   （TH16 那几行的 `opt = 101..106` ⇒ 原点 1..6；本卡最多 4 台 ⇒ 用到 1..4）。tier 0 = 空。
-    "A": [[], [1, 1], [1, 2], [1, 1, 2, 3], [1, 2, 3, 4]],
+    # ★ 2026-09-27 早苗（TH16 文，`pl03.sht` set 5..9）：**本体恒两列 + 子机一行**（档 0 没有子机行）。
+    #   一手逐行（`local/th16.v1.00a/dat/pl03.sht`，见下面 `YOUKAI_TIERS_A` 的长注）：
+    #     `+0x20` 本体 = 0（= TH18 的 origin 0）；子机行 = **0 / `+0x21 mode` = 4** ——
+    #     TH16 那一格**不是** TH18 的「第几台子机」语义（TH16 的 option 组是另一套槽，见
+    #     `engine/sht/th16/04` §0/§2：`player+0x660`×4 与 `player+0x9f0`×8 两组），
+    #     而 TH18 的 origin 1 = 原生槽 1（卡侧每帧把膛口镜像到自己那台子机）。
+    #   ⇒ 这里按 **TH18 的语义**写 1（= 那一行从子机出），而不是照抄 TH16 的 0：
+    #     owner 的实跑描述「P=1 时**一列**红色类秋子机弹幕」要求它从子机出（否则会叠在本体那两列上）。
+    "A": [[0, 0], [0, 0, 1], [0, 0, 1], [0, 0, 1], [0, 0, 1]],
 }
 # 既有 `REPLACE(YOUKAI, 0x16)` = ply03as slot4（9 行）的原点同样照抄（早苗的回落档也走引擎行循环）
 YOUKAI_0X16_ORIGINS = [0, 0, 0, 0, 0, 1, 1, 2, 2]
@@ -519,64 +529,72 @@ YOUKAI_TIERS_S = [
 ]
 
 # ============================================================================
-# ★★★ 2026-09-26：**早苗那一组（"A" = 射命丸文 / TH16 秋）** —— 换掉原来那格「妖夢的回落档」。
+# ★★★ 2026-09-27：**早苗那一组（"A" = 射命丸文）整批换成 TH16 `pl03.sht` 的「低速那一半」= set 5..9**。
+#   （老版取自 `pl03sub.sht` = **季节弹**，形状与贴图都不对；owner 三条实跑偏差逐条对上：
+#     ① 「**缺乏文文自机弹幕**」：季节弹那些组是「本体 1 行 + 子机 1..4 行」，而**文自己的低速组是
+#        「本体 2 行 + 子机 1 行」** ⇒ 老表里一行 origin 0 都没有 ⇒ 本体那两列整批不见了 ✓；
+#     ② 「**只有一列**」：老表的行全从子机出、两行叠在同一台子机上 ✓；
+#     ③ 「**不是红色**」：`pl03sub.anm` script0 是秋的**金黄**（`color(224,192,64)`），而文自己的子机弹
+#        在 `pl03.anm` script6..9 —— **同一族贴图 + `color(255,48,48)` 红染色**
+#        （一手见 `engine/sht/th16/01-season-data-and-tables.md` §5.7b/§5.7c）✓。）
 #
-# ## 为什么是 TH16 `pl03sub.sht`
-#   owner 口径（spec §第 4 条）：「**早苗的妖机体 == th16 文自机**」。TH16 的**副 .sht**（`plNNsub.sht`）
-#   就是「副季节子机打的弹」，而 `pl03sub` = **秋（Fall）** 那一组（一手：`engine/season/th16/01-…md` §5.5
-#   的五副季节表 —— 春 `pl00sub` / 夏 `pl02sub` / **秋 `pl03sub`** / 冬 `pl01sub` / 土用 `pl04sub`），
-#   而 早苗 的搭档正是 **文（秋）** ⇒ **她的妖侧弹 = pl03sub 的秋弹**。
-#   （`engine/sht/th08/01-youkai-shootersets.md` §5 早就在待办里写「🔴 缺一轮 TH16 `pl03*.sht` 抽取」——
-#     这一节就是那一轮。）
-#
-# ## 一手（本机 `local/th16.v1.00a/dat/pl03sub.sht` 直读；同 §5.5 的表逐字段相符）
-#   文件布局与 TH16 主表同一套：偏移数组 `+0x190`（10 项，项 = 相对 `+0x1b8` 的偏移）、
-#   shooter stride `0x58`；**每个「季节档」= 一个 shooterset**，`set = 季节档`（0..6）。
-#   逐档读数（我逐字节 dump，字段名见 `engine/sht/th16/05` §2）：
-#     set1: 2 行（都指 `opt=101`）rate 5 / dmg 16 / ang −1.745329 & −1.396263 / spd 0 / `f_tick=5` / `fr2=12`
-#     set2: 2 行（`101,102`）      rate 5 / dmg 13 / ang −1.570796 / spd 0 / `f_tick=5` / `fr2=8`
-#     set3: 4 行（`101,101,102,103`）rate 5 / dmg 8,8,12,12 / ang 同上三个 / spd 0 / `fr2=12,12,8,8`
-#     set4: 4 行（`101..104`）     rate 5 / dmg 12 / ang −1.570796 / spd 0 / `fr2=8`
-#     set5/6: 6 行（`101..105` / `101..106`）—— 本卡用不到（早苗最多 4 台，见 `YK_OPTION_BY_CHAR[3]`）
-#   · `opt = 101..106` = **第 1..6 颗副子机**（§5.5 原文）；in TH18 的写法 = 行槽 `1..`（与 TH08 那三支
-#     同一套约定：原点 n ⇒ 原生槽 n，卡侧每帧把膛口镜像到自己那台子机的位置，见 `_yk_opt_slot` 上那一段）。
-#   · `+0x26 fr2 = 8/12` ⇒ TH16 的**发射节奏走 120 帧备用计时器**（`07` §1：`shooter[0x26] != 0` 时
-#     判据换成 `frame_120 % fr2 == ph2`）⇒ 等效周期 = **8 / 12 帧** ⇒ 这里直接写成 TH18 的
-#     `fire_rate`（主计时器，`fr2` 那一支在 TH18 是另一套语义）。**等效替换，登记在案**。
-#   · `+0x2c f_tick = 5` = TH16 的 **tick5 = 匀加速 +0.5/帧**（§5.5 表里「秋：匀加速 +0.5/帧」）
-#     ⇒ TH18 同族的是 **`tick3` = 匀加速 +0.3/帧**（一手对照表 `engine/sht/th18/03` §6）⇒ `func_tick=3`。
-#     ⚠ 加速度常量不同（+0.5 vs +0.3）：TH18 没有 +0.5 那一支，取同族里最接近的 ⇒ 记 ❓（不改数字硬凑）。
-#   · `spd = 0.0` + 加速度 = 原作的观感（**先停在子机位置、再越飞越快**）⇒ 照抄。
-#   · 贴图：TH16 这几行的 `+0x22 anm = 0`（走 `pl03sub.anm` script0 的 sprite，数字空间与本作不同）
-#     ⇒ 与 TH08 那三支同一处理：用**本文件原生主炮那一支**（`YK_BULLET_ANM["pl03.sht"] = 5`，见上文），
-#     ❓ 文自己的弹贴图没切进 `ability.anm`（同 TH08 那三支的缺口）。
+# ## 一手（本机 `local/th16.v1.00a/dat/pl03.sht` 逐字节 dump；布局见该文 §5.7）
+#   · 偏移数组 `+0x190`（10 项，**项 = 相对 `+0x1b8` 的偏移**）、shooter stride `0x58`；
+#     `+0x20`（TH18 的 `pwr_lvl_cnt`）= **4** ⇒ `set = 档`（高速）/ `档 + 1 + 4` = **5..9**（低速）。
+#   · owner 口径「**th16 的文文机体，只取其低速部分复刻**」（低速 = 妖机体）⇒ 本表 = set 5..9 逐行照抄：
+#     set5   ：**本体 2 行**（rate 3 / dmg **16** / dx ∓10 / dy −8 / ang −π/2 / spd 24）——**无子机行**；
+#     set6..9：本体 2 行（其余同，dmg **14**）+ **子机 1 行**（rate 5,5,4,4 / dmg 3,8,16,20 / dx 0 /
+#              dy **−20** / ang −π/2 / **spd 0** / 判定盒 48×8/16/32/48 / `anm` = **1,2,3,4**）。
+#   · 弹体脚本：本体行 `anm = 0` ⇒ `pl03.anm` script **5**（TH16 主炮路径 = `anm + 5`）；
+#     子机行 `anm = 1..4` ⇒ `pl03.anm` script **6/7/8/9**（同一族贴图、逐档只差 `scale.y`
+#     0.3/0.6/1.0/1.4 ⇒ 与递增的判定盒对上）⇒ **本体与子机各一支**（老版是一支四帧循环给两边共用）。
+#   · 四个回调（`+0x28/+0x2c/+0x30/+0x34` = init/tick/draw/hit，一手字段图 `engine/sht/th16/05` §2）：
+#     本体 = `[0,0,0,5]`、子机 = `[4,5,0,0]`。翻译（两作的 init/tick 编号**不同族**，逐条对照见
+#     `engine/sht/th18/03-func-tables-timers-and-dead-fields.md` §6）：
+#       - 本体 `hit5`：TH16 hit5 **≡** TH18 hit5（都是「命中生成 `0x95` 特效、朝向 ±20°」）⇒ **照搬**
+#         （`func_hit=5`）。
+#       - 子机 `tick5` = TH16 的**匀加速 +0.5/帧**（原作的观感：先停在子机位置、再越飞越快）
+#         ⇒ TH18 同族的是 `tick3` = **匀加速 +0.3/帧** ⇒ `func_tick=3`。⚠ 加速度常量不同 ⇒ 记 ❓。
+#       - 子机 `init4`：TH16 init4（置池对象 `+0xd110`）与 TH18 init4（清子状态位、清 `+0x90`）
+#         **不同族** ⇒ **不搬**；TH18 原生「魔理沙低速」用的也是 `init0 + tick3` 这一对（同篇 §5）。
+#   · `mode`（TH18 `+0x21`）：TH16 那几行是 4，**不照抄** —— TH18 里 `mode = 4` 是「装备卡子机那 13 组」
+#     的用法（原生 `(origin, mode) = (5,4)` 只出现在卡组），而**原生 origin 1..4 的行 mode 全是 0**
+#     （本轮扫过零售 `pl03.sht` 的 40 组）⇒ 我们照原生 origin 1 的写法用 **0**（`_yk_row` 默认）。
+#   · 判定盒 `+0x0c/+0x10`（本体 48×16 / 子机 48×8..48）：**暂不照抄**，与 TH08 那三支同口径填 `(16,16)`。
+#     理由：TH18 侧这两个字段的去向是 `bullet+0xa0/+0xa4`（`PlayerBullet__create`），但**运行语义没坐实**
+#     （`+0xa0` 在激光那一路是「激光长度」，见 `engine/sht/th18/03` §5.1）——若是**绘制尺寸**，
+#     照抄会把贴图压扁。一手值就留在本注里，随时可换 ⇒ 记 ❓ 待考。
+#   · 音效 `+0x24`：本体行 = `0 / −1`（成对只响一次）、子机行 = `−1`（静音）⇒ 照抄。
 #
 # ## 档位映射（**这一层是我们的决定，写清楚**）
-#   早苗的妖侧子机数 = `floor(P/100)`（= TH18 火力档 0..4，`YK_OPTION_BY_CHAR[3]`），而 TH16 的
-#   「季节档」= 子机数（set k ⇒ k 台）⇒ **两边天然对齐：TH18 档 k ⇒ TH16 sub set k**（k = 1..4；
-#   k = 0 ⇒ 空组，卡侧本来就不认领 set、也不建子机）。这不是「P ↔ 季节能量」的换算，
-#   而是「子机数 ↔ 子机数」的对齐（两边各 1 行/台）。
+#   TH16 的「低速档」= `set 5 + 档`（档 0..4），TH18 的火力档 = `CURRENT_POWER / 100`（0..4）
+#   ⇒ **一一对应：TH18 档 k ⇒ TH16 `pl03.sht` set 5+k**（`n.00 = n 档`，owner 2026-09-26 拍）。
+#   子机台数由卡侧 `YK_OPTION_BY_CHAR[3]` 给（0/1/2/3/4），行里的 origin 只用 1 ⇒ 与该表相容
+#   （`_youkai_tier_sets` 里有「origin ≤ 该档台数」的跨层断言）。
 YOUKAI_TIERS_A = [
-    [],                                     # tier 0：0 台子机 ⇒ 空组（卡侧的认领闸也在这里放行原生弹）
-    [   # tier 1（TH16 sub set1：2 行都打第 1 台）
-        _yk_row(rate=12, damage=16, dx=0.0, angle=-1.745329, sfx=-1, speed=0.0, func_tick=3),
-        _yk_row(rate=12, damage=16, dx=0.0, angle=-1.396263, sfx=-1, speed=0.0, func_tick=3),
+    [   # tier 0（TH16 set5）：**本体两列、无子机行** —— 原作档 0 就是这样（不是空组）
+        _yk_row(rate=3, damage=16, dx=-10.0, dy=-8.0, angle=-1.570796, sfx=0,  speed=24.0, func_hit=5),
+        _yk_row(rate=3, damage=16, dx=+10.0, dy=-8.0, angle=-1.570796, sfx=-1, speed=24.0, func_hit=5),
     ],
-    [   # tier 2（TH16 sub set2：第 1、2 台各一行）
-        _yk_row(rate=8, damage=13, dx=0.0, angle=-1.570796, sfx=-1, speed=0.0, func_tick=3),
-        _yk_row(rate=8, damage=13, dx=0.0, angle=-1.570796, sfx=-1, speed=0.0, func_tick=3),
+    [   # tier 1（TH16 set6）：本体两列 + 子机一行（红、最小 `scale.y` 0.3）
+        _yk_row(rate=3, damage=14, dx=-10.0, dy=-8.0, angle=-1.570796, sfx=0,  speed=24.0, func_hit=5),
+        _yk_row(rate=3, damage=14, dx=+10.0, dy=-8.0, angle=-1.570796, sfx=-1, speed=24.0, func_hit=5),
+        _yk_row(rate=5, damage=3,  dx=0.0,   dy=-20.0, angle=-1.570796, sfx=-1, speed=0.0, func_tick=3),
     ],
-    [   # tier 3（TH16 sub set3：第 1 台两行（两个角）+ 第 2、3 台各一行）
-        _yk_row(rate=12, damage=8, dx=0.0, angle=-1.745329, sfx=-1, speed=0.0, func_tick=3),
-        _yk_row(rate=12, damage=8, dx=0.0, angle=-1.396263, sfx=-1, speed=0.0, func_tick=3),
-        _yk_row(rate=8, damage=12, dx=0.0, angle=-1.570796, sfx=-1, speed=0.0, func_tick=3),
-        _yk_row(rate=8, damage=12, dx=0.0, angle=-1.570796, sfx=-1, speed=0.0, func_tick=3),
+    [   # tier 2（TH16 set7）：同上，子机弹大一号（`scale.y` 0.6、盒 48×16）
+        _yk_row(rate=3, damage=14, dx=-10.0, dy=-8.0, angle=-1.570796, sfx=0,  speed=24.0, func_hit=5),
+        _yk_row(rate=3, damage=14, dx=+10.0, dy=-8.0, angle=-1.570796, sfx=-1, speed=24.0, func_hit=5),
+        _yk_row(rate=5, damage=8,  dx=0.0,   dy=-20.0, angle=-1.570796, sfx=-1, speed=0.0, func_tick=3),
     ],
-    [   # tier 4（TH16 sub set4：第 1..4 台各一行）
-        _yk_row(rate=8, damage=12, dx=0.0, angle=-1.570796, sfx=-1, speed=0.0, func_tick=3),
-        _yk_row(rate=8, damage=12, dx=0.0, angle=-1.570796, sfx=-1, speed=0.0, func_tick=3),
-        _yk_row(rate=8, damage=12, dx=0.0, angle=-1.570796, sfx=-1, speed=0.0, func_tick=3),
-        _yk_row(rate=8, damage=12, dx=0.0, angle=-1.570796, sfx=-1, speed=0.0, func_tick=3),
+    [   # tier 3（TH16 set8）：子机 rate 4、`scale.y` 1.0、盒 48×32
+        _yk_row(rate=3, damage=14, dx=-10.0, dy=-8.0, angle=-1.570796, sfx=0,  speed=24.0, func_hit=5),
+        _yk_row(rate=3, damage=14, dx=+10.0, dy=-8.0, angle=-1.570796, sfx=-1, speed=24.0, func_hit=5),
+        _yk_row(rate=4, damage=16, dx=0.0,   dy=-20.0, angle=-1.570796, sfx=-1, speed=0.0, func_tick=3),
+    ],
+    [   # tier 4（TH16 set9）：子机 rate 4、`scale.y` 1.4、盒 48×48
+        _yk_row(rate=3, damage=14, dx=-10.0, dy=-8.0, angle=-1.570796, sfx=0,  speed=24.0, func_hit=5),
+        _yk_row(rate=3, damage=14, dx=+10.0, dy=-8.0, angle=-1.570796, sfx=-1, speed=24.0, func_hit=5),
+        _yk_row(rate=4, damage=20, dx=0.0,   dy=-20.0, angle=-1.570796, sfx=-1, speed=0.0, func_tick=3),
     ],
 ]
 
@@ -1607,15 +1625,27 @@ YOUKAI_BULLET_ANM = {
     "R": ("CE_PL_ANM_SCRIPT_YKBULLET_R_MAIN_PL00", "CE_PL_ANM_SCRIPT_YKBULLET_R_OPT_PL00"),
     "M": ("CE_PL_ANM_SCRIPT_YKBULLET_M_MAIN_PL01", "CE_PL_ANM_SCRIPT_YKBULLET_M_OPT_PL01"),
     "S": ("CE_PL_ANM_SCRIPT_YKBULLET_S_MAIN_PL02", "CE_PL_ANM_SCRIPT_YKBULLET_S_OPT_PL02"),
-    # 早苗那支本身就是四帧循环（脚本里连着引用 4 张图）⇒ 主炮/子机同一个脚本。
-    "A": ("CE_PL_ANM_SCRIPT_YKBULLET_A_PL03", "CE_PL_ANM_SCRIPT_YKBULLET_A_PL03"),
+    # ★★★ 2026-09-27 早苗（TH16 文）：**本体一支 + 子机逐档一支**（TH16 set6..9 的子机行
+    #   `anm` = 1/2/3/4 ⇒ `pl03.anm` script6/7/8/9，逐档只差 `scale.y`）
+    #   ⇒ 第二格是**按档的元组**（子机档 = TH18 火力档，`_yk_bullet_anm` 按 `tier` 取）。
+    "A": ("CE_PL_ANM_SCRIPT_YKBULLET_A_BODY_PL03",
+          ("CE_PL_ANM_SCRIPT_YKBULLET_A_OPT1_PL03", "CE_PL_ANM_SCRIPT_YKBULLET_A_OPT2_PL03",
+           "CE_PL_ANM_SCRIPT_YKBULLET_A_OPT3_PL03", "CE_PL_ANM_SCRIPT_YKBULLET_A_OPT4_PL03")),
 }
 
 
-def _yk_bullet_anm(suffix: str, origin: int):
-    """该行的弹体脚本宏名：origin == 0 = 主炮行，≥1 = 子机行（与 TH08 的 `opt` 同义）。"""
+def _yk_bullet_anm(suffix: str, origin: int, tier: int):
+    """该行的弹体脚本宏名：origin == 0 = 主炮行，≥1 = 子机行（与 TH08 的 `opt` 同义）。
+
+    ★ 2026-09-27：第二格可以是**按档的元组**（早苗那一侧逐档换子机弹：TH16 set6..9 的
+    `anm` = 1..4 ⇒ 红弹的四支 `scale.y`）；`tier` = TH18 火力档 0..4，取 `tier - 1` 那一支
+    （档 0 没有子机行 ⇒ 不会被取到；越界时钳到最后一支，不静默发错弹）。"""
     main, opt = YOUKAI_BULLET_ANM[suffix]
-    return main if origin <= 0 else opt
+    if origin <= 0:
+        return main
+    if isinstance(opt, tuple):
+        return opt[min(max(tier - 1, 0), len(opt) - 1)]
+    return opt
 
 def read_yk_option_counts() -> dict:
     """从 `youkai_core.h` 现读 `YK_OPTION_BY_CHAR`（每机体每档的**子机台数**）→ {后缀: [5 个整数]}。
@@ -1695,7 +1725,8 @@ def _youkai_tier_sets(target_file: str, anm_ids: dict) -> list:
                                      f"{len(orig[t])} 项不等（TH08 ply{suf}as.sht 的实测行数）")
                 # ★ 2026-09-26：`anm` 从「本文件原生主炮那一支」换成**原作那一支弹体脚本**
                 #   （宏名，`pack_shooter` 会经 `anm_ids` 解成号 —— 与 `make anm` 写的 `anm_ids.h` 同源）。
-                rows = [dict(r, opt_slot=o, anm=_yk_bullet_anm(k, o) if k in YOUKAI_BULLET_ANM
+                #   ★ 2026-09-27：多传 `t`（火力档）—— 早苗那一侧的子机弹**逐档一支**（见 `_yk_bullet_anm`）。
+                rows = [dict(r, opt_slot=o, anm=_yk_bullet_anm(k, o, t) if k in YOUKAI_BULLET_ANM
                              else _yk_anm_for(target_file)) for r, o in zip(rows, orig[t])]
                 for o in orig[t]:
                     if not 0 <= o <= 4:

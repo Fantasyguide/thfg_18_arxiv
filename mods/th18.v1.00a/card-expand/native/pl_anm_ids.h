@@ -62,7 +62,11 @@
 #define CE_PL_ANM_SCRIPT_YKGAUGE_YOUKAI_PL03  42   /* pl03.anm 追加 */
 #define CE_PL_ANM_SCRIPT_YKGAUGE_CURSOR_PL03  43   /* pl03.anm 追加 */
 #define CE_PL_ANM_SCRIPT_YKGAUGEFONT_PL03  44   /* pl03.anm 追加 */
-#define CE_PL_ANM_SCRIPT_YKBULLET_A_PL03   45   /* pl03.anm 追加 */
+#define CE_PL_ANM_SCRIPT_YKBULLET_A_BODY_PL03  45   /* pl03.anm 追加 */
+#define CE_PL_ANM_SCRIPT_YKBULLET_A_OPT1_PL03  46   /* pl03.anm 追加 */
+#define CE_PL_ANM_SCRIPT_YKBULLET_A_OPT2_PL03  47   /* pl03.anm 追加 */
+#define CE_PL_ANM_SCRIPT_YKBULLET_A_OPT3_PL03  48   /* pl03.anm 追加 */
+#define CE_PL_ANM_SCRIPT_YKBULLET_A_OPT4_PL03  49   /* pl03.anm 追加 */
 
 #define CE_PL_ANM_FORM_BASE_PL00   62   /* pl00.anm 灵界形态 sprite 62..85（24 帧）= 本体帧号 0..23 的加数 */
 #define CE_PL_ANM_FORM_BASE_PL01   72   /* pl01.anm 灵界形态 sprite 72..95（24 帧）= 本体帧号 0..23 的加数 */

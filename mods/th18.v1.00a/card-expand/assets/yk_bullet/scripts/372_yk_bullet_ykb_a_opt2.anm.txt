@@ -1,0 +1,37 @@
+script script372 {
+    // 由 assets/ability/make_youkai_bullet_art.py 从 TH16 v1.00a `pl03` script7 生成，别手改。
+    // 文 妖侧**子机**弹 档2（script7：同上、`scale.y` 0.6）。
+    // 指令逐条照抄（段序/时序/数值一字未动），只做四件事：
+    //   ① `sprite(N)` → `sprite(@名字@)`；② 补 `type(1)`（TH18 v8 的**渲染模式**：不写就落进
+    //   模式 0 = 绘制定格 ⇒ `AUDIT.md` §BE #95）；③ `ins_25(N)` → `rotateAuto(N)`
+    //   （TH08 的「按 VM 旋转画」开关 ⇔ TH18 的 `rotateAuto`，一手见 `_DROP_RE` 上面那段）；
+    //   ④ 省掉 v8 里确实没有的助记符（下面逐条点名）。
+    // ★ 为什么补 `layer(13)`：原脚本没有（TH08 那代由 VM 自带层），TH18 的原生弹脚本都显式写
+    //   （`ability.anm` script21 起手 `layer(13)`）⇒ 照原生那一支写。
+    layer(13);
+    type(1);
+-1:
+    layer(13);
+    sprite(@YKB_A_OPT@);
+    type(1);
+    zWriteDisable(1);
+    rotateAuto(1);
+    scale(1.0f, 0.6f);
+    scaleTime(8, 0, 1.0f, 0.6f);
+    alpha(170);
+    color(255, 48, 48);
+0:
+    stop();
+    interruptLabel(1);
+    layer(15);
+    blendMode(1);
+    sprite(@YKB_A_OPT_H1@);
++3: // 3
+    sprite(@YKB_A_OPT_H2@);
++3: // 6
+    sprite(@YKB_A_OPT_H3@);
++3: // 9
+    alpha(0);
++1: // 10
+    delete();
+}
