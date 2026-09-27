@@ -81,6 +81,30 @@ static int yk_define_int(const char *text, const char *key, int *out)
  * 还写着 `layer(13)`，而 `make check` **全绿**（没有任何闸看得见它）⇒ 束一直画在与自机弹同层。
  * 这里把它搬进 `make check` 跑得到的宿主机单测；生成器那一份保持不动（两边都拦）。
  * 遍历 spec 目录时**按子串找**（`ykb_m_beam`）而不是硬编码「375 号」—— 生成物的编号会随新脚本平移。*/
+/* 束 spec 正文里有没有这个子串 —— **只看非注释行**。
+ * ★ 第三十二批：本闸的反向判据是「正文里不许出现 `%RANDF`」，而我们的注释**会写到**它
+ * （正是为了讲清「为什么不写它」）⇒ 拿 `strstr` 扫全文会把自己的说明读成违规。正反两向都只认正文，
+ * 闸才真的钉在**指令**上（顺带也修掉一个既有的弱点：`scale(1.0f, 0.5f);` 原先能被注释行满足）。*/
+static int spec_has_live(const char *t, const char *needle)
+{
+    char line[1024];
+    const char *p = t;
+    if (!t || !needle) return 0;
+    while (*p) {
+        const char *eol = strchr(p, '\n');
+        size_t len = eol ? (size_t)(eol - p) : strlen(p);
+        size_t k = 0;
+        if (len >= sizeof line) len = sizeof line - 1;
+        memcpy(line, p, len);
+        line[len] = 0;
+        while (k < len && (line[k] == ' ' || line[k] == '\t')) ++k;
+        if (!(k + 1 < len && line[k] == '/' && line[k + 1] == '/') && strstr(line, needle)) return 1;
+        if (!eol) break;
+        p = eol + 1;
+    }
+    return 0;
+}
+
 static void check_beam_spec_files(void)
 {
     DIR *d = opendir("../assets/yk_bullet/scripts");
@@ -108,22 +132,29 @@ static void check_beam_spec_files(void)
         t = yk_slurp(path);
         CHECK(t != 0);
         if (!t) continue;
-        CHECK(strstr(t, want_layer) != 0);              /* ← 上面那场漂移在这儿被拦下 */
-        CHECK(strstr(t, "scrollX(-0.04761905f);") != 0);/* `YK_M_LASER_BEAM_SCROLL`（**取负**：朝远端流）*/
-        CHECK(YK_M_LASER_BEAM_SCROLL == 0.04761905f);   /* …与卡侧那个数（两边一起钉）—— 1/21，照 117 script163 */
-        CHECK(strstr(t, "alpha(176);") != 0);
+        CHECK(spec_has_live(t, want_layer) != 0);       /* ← 上面那场漂移在这儿被拦下 */
+        /* ★★ 第三十二批：流速按**一手的 16 texel/帧**重算（我们的 entry 宽 768 ⇒ 16/768 = 1/48）。
+         * 为什么不是 163 的 1/21：163 按它自己的图集宽（512）归一化 ⇒ 照字面搬进来会快 2.29 倍
+         * （1.75 帧/纹样周期 = 超奈奎斯特的频闪）。换算链见 `youkai_core.h` 的同名长注。*/
+        CHECK(spec_has_live(t, "scrollX(-0.02083333f);") != 0);
+        CHECK(YK_M_LASER_BEAM_SCROLL == 0.02083333f);   /* …与卡侧那个数（两边一起钉）—— 一手 16 texel/帧 */
+        CHECK(spec_has_live(t, "alpha(176);") != 0);
         CHECK(YK_M_LASER_BEAM_ALPHA == 176);            /* 也照 163 的 `alpha(176)` */
-        CHECK(strstr(t, "anchor(1, 0);") != 0);         /* 左端锚（`engine/anm/th16/10` §2：h=1 ⇒ 四角 x=0,+1,0,+1）*/
-        CHECK(strstr(t, "rotateAuto(") == 0);           /* 方向只有一个来源 = 卡侧每帧写（注释里提到名字不算）*/
-        CHECK(strstr(t, "scaleTime") != 0);             /* 只有收束段 interruptLabel(1) 里那一条 */
+        CHECK(spec_has_live(t, "anchor(1, 0);") != 0);  /* 左端锚（`engine/anm/th16/10` §2：h=1 ⇒ 四角 x=0,+1,0,+1）*/
+        CHECK(spec_has_live(t, "rotateAuto(") == 0);    /* 方向只有一个来源 = 卡侧每帧写（注释里提到名字不算）*/
+        CHECK(spec_has_live(t, "scaleTime") != 0);      /* 只有收束段 interruptLabel(1) 里那一条 */
         /* ★ 第三十一批：**照抄 117 `script163`** 的那几句逐句钉住 —— `rotate` 那一行正是我们前两批
          * 缺的（`gen_beam` 里从来没有它，而两批都没有闸看得见 ⇒ 这才是本闸扩容的理由）。*/
-        CHECK(strstr(t, "rotate(0.0f, 0.0f, -1.5707964f);") != 0);
-        CHECK(strstr(t, "fset(%F0, %RANDF);") != 0);    /* 随机起始相位（v8 实测编得过 ⇒ 不省）*/
-        CHECK(strstr(t, "scrollX(%F0);") != 0);
-        CHECK(strstr(t, "+1: // 1") != 0);              /* 163 的 `+1:` 起每帧定值流速 */
-        CHECK(strstr(t, "type(1);") != 0);
-        CHECK(strstr(t, "blendMode(1);") != 0);
+        CHECK(spec_has_live(t, "rotate(0.0f, 0.0f, -1.5707964f);") != 0);
+        /* ★★ 第三十二批（**反向闸**）：`fset(%F0, %RANDF)` 必须**不在正文里** ——
+         * 一手的 `rate` 份副本是**同一支 VM**（`th08:0x450ad0` 的循环不重算 UV）⇒ 共享 UV 相位；
+         * 我们的副本各是一支 VM，12 个随机相位会互相平均掉 ⇒ 纹样被抹平、看不出贴图在流
+         * （owner 第三十二批：「至于贴图本身，我实际看不太清它到底是不是往外发射」）。*/
+        CHECK(spec_has_live(t, "%RANDF") == 0);
+        CHECK(spec_has_live(t, "scrollX(%F0)") == 0);
+        CHECK(spec_has_live(t, "+1: // 1") != 0);       /* 163 的 `+1:` 起每帧定值流速 */
+        CHECK(spec_has_live(t, "type(1);") != 0);
+        CHECK(spec_has_live(t, "blendMode(1);") != 0);
         ++n;
         free(t);
     }

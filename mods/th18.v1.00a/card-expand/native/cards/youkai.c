@@ -4076,7 +4076,20 @@ static int yk_beam_kill(int fade)
 
 /* 把一条残影摆到 `(x,y)`：位置 / −π/2 / 两轴 scale（**都乘展开系数**）/ 逐条 alpha / 极妖染红。
  * 拆成独立函数只为**压寄存器压力**（`ce_anm_set_*` 是内联函数，每个都要在 i686 上凑寄存器）。
- * `tint` = 极妖（`s->gauge >= YK_GAUGE_YOUKAI_EFFECTS`）⇒ 低 24 位染红、alpha 不动（一手 `th08:0x450bf2`）。*/
+ * `tint` = 极妖（`s->gauge >= YK_GAUGE_YOUKAI_EFFECTS`）⇒ 低 24 位染红、alpha 不动（一手 `th08:0x450bf2`）。
+ *
+ * ★★★ 2026-09-27 第三十二批：owner 报「**看起来不是从发射端长出**」（「117 的贴图是正确地从发射端长出的」）
+ * 之后，本函数与 117 的 `eagle_beam_tick()` **逐行对照过一遍**（表在 `AUDIT.md` §BE #133 §5）：
+ *   · **VM 位置 = 近端**（传进来的 `(x,y)` 是**轨迹点** = 上一帧的膛口；束心只出现在**判定盒**的
+ *     `center = y − BAR_H/2`，那是 `ce_damage_rect`、不是 VM） —— 与 117 的「束建在本体位置」同形 ✓
+ *   · **`scale.x` = 长度 ÷ 贴图逻辑宽**（`YK_LASER_LEN / SPRITE_W`，满长 4.0）—— 与 117 的
+ *     `vis / SPRITE_W` 同形 ✓
+ *   · **每帧 rotation = −π/2**，与脚本烘的 `rotate(0.0f, 0.0f, -1.5707964f)` 同向（脚本初值被覆盖）✓
+ *   · 锚点在**图左端**（脚本 `anchor(1, 0)`）⇒ 近端钉在膛口、远端往外伸；`grow` 两轴同乘 ⇒ **从膛口往外长** ✓
+ * ⇒ 「不像从发射端长出」的成因**不在这三处**，而在**贴图那一层**：每条残影各拿一个**随机 UV 相位**
+ *   （12 份纹样互相平均 ⇒ 一条光滑亮条）+ 流速照抄 163 时超奈奎斯特（0.57 周期/帧的频闪）。
+ *   两条都在**束脚本 + 卡侧常量**里改掉了（`YK_M_LASER_BEAM_SCROLL` / 生成器），**本函数因此一个字节没动**。
+ *   ⚠ 下次若要再动本函数，先读 §BE #133 §5 —— 那里已经证明几何是 117 同形的，别再从几何猜病因。*/
 static void __attribute__((noinline)) yk_beam_bar_place(uint32_t id, float x, float y,
                                                        float grow, float w_px, int alpha, int tint)
 {

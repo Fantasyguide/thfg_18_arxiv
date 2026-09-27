@@ -519,9 +519,10 @@ def gen_beam(name, spr_member, width_px, scale_y, src_num):
     | `sprite` / `type(1)` | 同 | 同 | 逐字 |
     | `anchor(1, 0)` | 同 | 同 | **左端锚**（`engine/anm/th16/10` §2：`h=1` ⇒ 四角 x = `0,+1,0,+1`）⇒ 图左端贴 VM、本地 +x 往外伸 |
     | `blendMode(1)` / `alpha(176)` | 同 | 同 | alpha 也照 163 取 **176**（不再用我们自算的 160）|
-    | **`rotate(0.0f, 0.0f, -1.5707964f)`** | 有 | **本批补上** | ★ 这就是前两批缺的那一行（见上）|
+    | **`rotate(0.0f, 0.0f, -1.5707964f)`** | 有 | **第三十一批补上** | ★ 这就是那两批缺的那一行 |
     | `scale(1.0f, X)` | `4.0` | **逐档** | 本卡宽度逐档（一手 TH08 `player01.anm` script24..28 的 0.5/0.6/0.7/0.8）；x 由卡侧每帧写（`2048/512 = 4.0` × 展开系数）|
-    | `fset(%F0, %RANDF); scrollX(%F0);` + `+1: scrollX(-0.04761905f);` | 同 | 同 | 逐字（= 随机起始相位 + 每帧 −1/21 ⇒ 贴图沿束方向**往外流**）。⚠ `fset`/`%RANDF` 在 v8 **实测编得过**（本文件的自检 `check_compile` 每轮 `thanm -c 18` 编一遍）⇒ **不省这一行** |
+    | `fset(%F0, %RANDF); scrollX(%F0);` | 有 | ★ **第三十二批删掉** | **差异⑤之一**：一手的 `rate` 份副本是**同一支 VM**（`th08:0x450ad0`）⇒ 共享相位；我们的副本各是一支 VM，随机相位会互相平均掉 ⇒ 纹样被抹平（见 `cards/youkai_core.h` 的「每条残影的 UV 相位必须相同」）|
+    | `+1: scrollX(-0.04761905f);` | 同 | **`+1: scrollX(-0.02083333f);`** | **差异⑤之二**：163 的 −1/21 是**按 163 自己 512 宽的图集**归一化的；我们的 entry 是 **768** 宽 ⇒ 照字面搬会快 1.5 倍、且比一手快 2.29 倍（1.75 帧/纹样周期 = 超奈奎斯特的频闪）。本支取回**一手的 16 texel/帧**（换算链见 `youkai_core.h` 的同名长注）|
     | `stop(); interruptLabel(1); scaleTime(…); +N: delete();` | 6 帧 | **8 帧** | 收束段 = `YK_M_LASER_BEAM_GROW_FRAMES`（「如收回般展开」的倒放，§2.1ccc-4 ❓）|
 
     ⚠ **仍不写 `rotateAuto`**：那是「朝**运动方向**」的绘制位（`flags_hi` bit7）—— 我们这支 VM 是
@@ -537,9 +538,10 @@ def gen_beam(name, spr_member, width_px, scale_y, src_num):
     //   （`cards/youkai.c` 的 `yk_beam_tick`）。
     // ★★★ 2026-09-27 第三十一批：**正文逐行照抄 117 的 `163_eagle_beam.anm.txt`**
     //   （owner：「117 的激光也是向外流动的，你是怎么弄成这个样子的」）——
-    //   `anchor` / `rotate` 初值 / `alpha` / `scrollX` 的形态（随机起始相位 + 每帧 −1/21）全照它。
-    //   只有两处是本卡自己的口径：① `layer(14)`（层序见下）；② `scale(1.0f, {scale_y}f)` 的
-    //   **逐档宽度**（一手 TH08）—— 117 那里两轴共用它自己的 SCALE 4.0。
+    //   `anchor` / `rotate` 初值 / `alpha` 全照它。三处是本卡自己的口径：
+    //   ① `layer(14)`（层序见下）；② `scale(1.0f, {scale_y}f)` 的**逐档宽度**（一手 TH08）
+    //   —— 117 那里两轴共用它自己的 SCALE 4.0；③ ★ **第三十二批**：`scrollX` 的**随机相位删掉**、
+    //   流速换成一手那一档（**差异⑤**，理由见下与 `cards/youkai_core.h` 的同名长注）。
     // ★ 2026-09-27 第二十七批定的层序 / 第二十八批订正：`layer(13)` → **`layer(14)`**。
     //   owner 的最终口径（`TUNING.md` §2.1ccc-7）：**自机弹 13 < 束 14 < 妖侧子机 15** ——
     //   我们那三支妖侧子机脚本显式写 `layer(15)` 把 14 让给束。一手：自机弹 VM 层 = 13
@@ -571,16 +573,21 @@ def gen_beam(name, spr_member, width_px, scale_y, src_num):
     // 宽度初值 = 逐档（一手 TH08 `player01.anm` script{src_num} 的 `scale.y`）；
     //   x 由卡侧每帧写（`YK_LASER_LEN 2048 / 512 = 4.0` × 展开系数 —— 与 163 的 `4.0` 同数）。
     scale(1.0f, {scale_y}f);
-    // ★★★ 贴图**往外流**的形态照 163 逐字：`fset` 给一个**随机起始相位**、`+1:` 起每帧 −1/21。
-    //   （163/TH17 script16 的 `-0.04761905f` = −1/21；本卡不再自己算步长。）
-    //   ⚠ `fset` / `%RANDF` 在 v8 **实测编得过**（`thanm -c 18`，本文件的自检每轮都编）⇒ 不省这一行。
-    // ⚠ `+8: // 9` 的那个 **9 是 thanm 反解出来的绝对时间**（`+1:` 起的时间轴 ⇒ 1 + 8）；
+    // ★★★ 贴图**往外流**：`+1:` 起每帧一个**定值**流速（v8 opcode 425 `uVel` ⇒ `uv_scroll_vel.x`，
+    //   单位 = 一整幅图集宽；一手的 opcode 80 同理 —— 换算链见 `cards/youkai_core.h` 的
+    //   `YK_M_LASER_BEAM_SCROLL` 长注）。
+    //   ★ 第三十二批：**删掉 163 的 `fset(%F0, %RANDF); scrollX(%F0);`（随机起始相位）** ——
+    //   一手 draw 把**同一支 VM** 画 `rate` 次（`th08:0x450ad0` 的循环里只改位置与 alpha、
+    //   **UV 从不重算**）⇒ 一条束的 `rate` 份副本**共享同一个相位**、彼此只差位置；
+    //   而我们的副本是**各自一支 VM**，12 个随机相位会互相**平均**掉 ⇒ 纹样（64 texel 的菱形格）
+    //   被抹平，看上去是一条光滑亮条、看不出贴图在流（owner 第三十二批原话：
+    //   「至于贴图本身，我实际看不太清它到底是不是往外发射」）。
+    //   163 那句是给 117 的 **5 条独立束**去相关的；我们这 12 份是**叠在同一条线上**的副本。
+    //   ⚠ `+8: // 9` 的那个 **9 是 thanm 反解出来的绝对时间**（`+1:` 起的时间轴 ⇒ 1 + 8）；
     //   `build_player_anm.py` 的 `_verify_appended` 把「计划文本 vs 编出来再反解的文本」**逐字符**比
     //   （只归一化 `offsetNN`）⇒ 这个注释必须与 thanm 打印的一模一样，否则 `make anm` 当场红。
-    fset(%F0, %RANDF);
-    scrollX(%F0);
 +1: // 1
-    scrollX(-0.04761905f);
+    scrollX(-0.02083333f);
     stop();
     interruptLabel(1);
     scaleTime(8, 1, 1.0f, 0.0f);
@@ -595,8 +602,11 @@ def gen_beam(name, spr_member, width_px, scale_y, src_num):
 #   上一批把成员从 256 镜像平铺成 512，却没把步长减半 ⇒ 屏上流速翻倍、变成每帧半个钻石周期的**频闪**。
 #   这类「两个文件各写一个数」的漂移构建期看不出来（脚本能编过、anm 校验也过）⇒ 这里现读卡侧的
 #   `YK_M_LASER_BEAM_SCROLL`（`youkai_core.h`）与 `YK_BEAM_ANM_LAYER`（`youkai.c`）逐字比对。
-#   ★ 第三十一批扩容：连「照抄 163 的 6 句」（`blendMode` / `type` / `rotate` / `fset` / `scrollX(%F0)` /
-#   `+1:`）一起钉 —— `rotate(0.0f, 0.0f, -1.5707964f)` 从来没进过脚本，而前两批**没有任何闸看得见它**。
+#   ★ 第三十一批扩容：连「照抄 163 的 6 句」（`blendMode` / `type` / `rotate` / `+1:` …）一起钉 ——
+#   `rotate(0.0f, 0.0f, -1.5707964f)` 从来没进过脚本，而前两批**没有任何闸看得见它**。
+#   ★★ 第三十二批：**`fset(%F0, %RANDF); scrollX(%F0);` 从「必须有」翻成「必须没有」** ——
+#   一手的 `rate` 份副本是同一支 VM（共享 UV 相位），我们的副本各是一支 VM ⇒ 随机相位会把
+#   12 份纹样平均掉（看不出贴图在流）。同时流速按**一手的 16 texel/帧**重算（entry 宽 768）。
 YOUKAI_CORE_H = REPO / "mods/th18.v1.00a/card-expand/native/cards/youkai_core.h"
 YOUKAI_C = REPO / "mods/th18.v1.00a/card-expand/native/cards/youkai.c"
 
@@ -608,25 +618,40 @@ def _read_define(path: Path, name: str) -> str:
     return m.group(1)
 
 
+def _live_body(body: str) -> str:
+    """脚本正文的**非注释行**（`//` 起头的行不算）。
+
+    ★ 第三十二批：反向闸（「不许出现 `%RANDF`」）必须只看正文 —— 我们的注释里**会写到**它
+    （正是为了讲清「为什么不写它」），拿 `strstr` 扫全文会把自己的说明当成违规
+    （本批实测：第一版闸就是这么红掉的）。正反两向都只认正文，闸才真的钉在指令上。"""
+    return "\n".join(ln for ln in body.splitlines() if not ln.lstrip().startswith("//"))
+
+
 def check_beam_script_constants(scripts: dict):
     scroll = _read_define(YOUKAI_CORE_H, "YK_M_LASER_BEAM_SCROLL")
     layer = _read_define(YOUKAI_C, "YK_BEAM_ANM_LAYER")
     alpha = _read_define(YOUKAI_CORE_H, "YK_M_LASER_BEAM_ALPHA")
     # ★ 第三十一批：除了三个卡侧常量，再把「照抄 163」的那几句也钉住 —— 上一批漏的就是这一类的行
     #   （`rotate(…)` 从来没进过脚本，两批都没人看得见）。
+    # ★★ 第三十二批：**去掉** `fset(%F0, %RANDF);` / `scrollX(%F0);` 两句，并改成**反向闸**
+    #   （脚本正文里出现 `%RANDF` 就是回归到了「12 个随机相位互相平均掉」那个形态）。
     want = (f"scrollX(-{scroll});", f"layer({layer});", f"alpha({alpha});", "anchor(1, 0);",
-            "blendMode(1);", "type(1);", "rotate(0.0f, 0.0f, -1.5707964f);",
-            "fset(%F0, %RANDF);", "scrollX(%F0);", "+1: // 1")
+            "blendMode(1);", "type(1);", "rotate(0.0f, 0.0f, -1.5707964f);", "+1: // 1")
     for k, (_bname, _w, _y) in enumerate(BEAMS):
         num = SCRIPT0 + len(SCRIPTS) + k
         name = f"YKB_M_BEAM{k}"
-        body = scripts[name].replace("{N}", str(num))
+        body = _live_body(scripts[name].replace("{N}", str(num)))
         for line in want + (f"scale(1.0f, {_y}f);",):
             if line not in body:
-                raise SystemExit(f"{name}: 脚本里没有 `{line}` —— 与 `youkai_core.h`/`youkai.c` 的"
+                raise SystemExit(f"{name}: 脚本正文里没有 `{line}` —— 与 `youkai_core.h`/`youkai.c` 的"
                                  f"同名常量脱钩了，或没照 163 的同形写（这正是「一节一节」那个 bug 的形状）")
+        for bad in ("%RANDF", "scrollX(%F0)"):
+            if bad in body:
+                raise SystemExit(f"{name}: 脚本正文里还有 `{bad}` —— 一手的 `rate` 份残影是**同一支 VM**"
+                                 f"（共享 UV 相位），我们的副本各是一支 VM ⇒ 随机相位会把 12 份纹样"
+                                 f"平均掉（owner 报的「看不出贴图往外发射」）。见 `TUNING.md` §2.1ccc-12")
     print(f"== 对账：束脚本的壳常量 == 卡侧（`scrollX({scroll})` / `layer({layer})` / `alpha({alpha})`）"
-          f"+ 照抄 163 的 6 句 ✓")
+          f"+ 照抄 163 的形状；**无随机相位**（第三十二批）✓")
 
 
 def main():
