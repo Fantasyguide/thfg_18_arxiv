@@ -179,7 +179,10 @@ typedef struct {
     /* ★★★ 2026-09-27（owner ①②）：咲夜（机体 2）的妖侧子机是**放置型** —— 位置在创建那一刻冻结
      * （`opt_pos` 存的就是那个**绝对**坐标，`opt_frozen` = 这一格已经冻好了），朝向每帧自转。
      * 一手：`th08:0x44eb70` 的 state 2 整段不碰位置 + 共尾 `face = norm(face + step)`（见 `youkai_core.h`）。*/
-    float         opt_face[YK_OPTION_MAX];   /* 冻住的自转角（弧度，TH08 `option+0x2d8`）*/
+    float         opt_face[YK_OPTION_MAX];   /* 公转相位（弧度，TH08 `option+0x2d8` 的对应物）*/
+    /* ★ 2026-09-27（owner「4 个小魔法阵得移动绕转」）：公转向量（单位向量；每帧按本格的角度增量
+     * 用旋转矩阵转一点，**不引 libm**）。VM 的绘制位置 = 冻结锚点 + `YK_OPT_ORBIT_R` × 这个向量。*/
+    float         opt_orbit[YK_OPTION_MAX][2];
     uint8_t       opt_frozen[YK_OPTION_MAX]; /* 1 = 这一格的位置已按创建那一刻冻好 */
     uint8_t       logged_aim;                /* ★ owner ⑤：朝敌角那一行只记一次 */
     yk_transfer_t tr;                  /* 1/2 转嫁累加器 */
@@ -1405,6 +1408,7 @@ static void yk_option_release(ce_card_t *c, yk_card_t *s)
      * `memset` 重建，state 回到 1 ⇒ 位置重新写一遍）。*/
     __builtin_memset(s->opt_frozen, 0, sizeof s->opt_frozen);
     __builtin_memset(s->opt_face, 0, sizeof s->opt_face);
+    __builtin_memset(s->opt_orbit, 0, sizeof s->opt_orbit);
 }
 
 /* ★ 被选举者落笔（SDK 每帧调**恰好一次**；spec §3.3.1 的 `on_option_pose_apply`）。
@@ -1464,6 +1468,7 @@ static int on_option_pose_apply(ce_card_t *c)
         s->opt_vel[i][0] = 0.0f; s->opt_vel[i][1] = 0.0f;
         s->opt_frozen[i] = 0;              /* ★ 咲夜那支：这一格下次重申请要重新定型 */
         s->opt_face[i] = 0.0f;
+        s->opt_orbit[i][0] = 0.0f; s->opt_orbit[i][1] = 0.0f;
         ce_log("youkai: option #%d reclaimed (only %d wanted now; frame %u) - "
                "the slot is handed back to the pool, its VM deleted",
                i, want, (unsigned)ce_sdk_frame());
@@ -1577,6 +1582,8 @@ static int on_option_pose_apply(ce_card_t *c)
                     s->opt_pos[i][1] = pp[1];
                 }
                 yk_option_freeze_face0(i, &s->opt_face[i]);
+                s->opt_orbit[i][0] = (s->opt_face[i] == 0.0f) ? 1.0f : -1.0f;   /* polar(1, face0) */
+                s->opt_orbit[i][1] = 0.0f;
                 s->opt_frozen[i] = 1;
             }
             fx = s->opt_pos[i][0] - pp[0];
@@ -1591,15 +1598,29 @@ static int on_option_pose_apply(ce_card_t *c)
             *(int32_t *)(o + CE_OPT_POS_Y) = (int32_t)(s->opt_pos[i][1] * YK_SUBPIXEL);
             vm = *(const uint32_t *)(o + CE_OPT_ANM_ID);
             if (vm) {
-                if (s->opt_age >= YK_OPT_FREEZE_SPIN_START) {  /* `th08:0x44ed03 push 0xc` */
+                /* ★★★ 2026-09-27（owner：「子机魔法阵不是说不转，而是说它 **4 个小魔法阵得移动绕转**」）：
+                 * 一手的 `face` 是**公转相位**不是自转角（见 `youkai_core.h` 的 `YK_OPT_ORBIT_R` 段：
+                 * `0x4286e0(&+0x2a4, face, 8.0)` = 极坐标 → 向量、`0x410a70` 再用它算 VM 的位置）
+                 * ⇒ 每帧把单位向量按本格的增量转一点，VM 就绕**冻结锚点**画半径 8 px 的圆；
+                 *   锚点（= 发弹点、`CE_OPT_POS_X/Y`）一个字节都不动 ✓。*/
+                float c, sn;
+                if (s->opt_age >= YK_OPT_FREEZE_SPIN_START) {   /* `th08:0x44ed03 push 0xc` */
                     float step = 0.0f;
-                    yk_option_freeze_spin(i, &step);             /* 跳表 `th08:0x44ee5b` */
+                    float nx;
+                    yk_option_freeze_spin(i, &step);               /* 跳表 `th08:0x44ee5b` 的符号与档 */
+                    if (step > 0.030f)        { c = YK_OPT_ORBIT_COS_INNER; sn =  YK_OPT_ORBIT_SIN_INNER; }
+                    else if (step > 0.0f)     { c = YK_OPT_ORBIT_COS_OUTER; sn =  YK_OPT_ORBIT_SIN_OUTER; }
+                    else if (step < -0.030f)  { c = YK_OPT_ORBIT_COS_INNER; sn = -YK_OPT_ORBIT_SIN_INNER; }
+                    else if (step < 0.0f)     { c = YK_OPT_ORBIT_COS_OUTER; sn = -YK_OPT_ORBIT_SIN_OUTER; }
+                    else                      { c = 1.0f; sn = 0.0f; }
+                    nx = s->opt_orbit[i][0] * c - s->opt_orbit[i][1] * sn;
+                    s->opt_orbit[i][1] = s->opt_orbit[i][0] * sn + s->opt_orbit[i][1] * c;
+                    s->opt_orbit[i][0] = nx;
                     yk_opt_angle_norm(s->opt_face[i], step, &s->opt_face[i]);
                 }
-                /* TH08 是 `0x4286e0(&option+0x2a4, face, 8.0)`（把 VM 的旋转推向 face）；
-                 * TH18 侧直接写旋转字段即可（本卡那支脚本的 `angleVel` 只在前 8 帧自转，
-                 * 之后没人推 —— 这正是 owner 看到「不动的魔法阵」的根因）。*/
-                ce_anm_set_rotation(vm, 0.0f, 0.0f, s->opt_face[i]);
+                ce_anm_set_pos(vm,
+                               s->opt_pos[i][0] + YK_OPT_ORBIT_R * s->opt_orbit[i][0],
+                               s->opt_pos[i][1] + YK_OPT_ORBIT_R * s->opt_orbit[i][1], 0.0f);
             }
         }
         /* 写**这一格**的阵型（原生 `0x40b8c1` 也这么自己摆；单位 = 原生 1/128 定点）。
@@ -3104,6 +3125,7 @@ static int on_ctor(ce_card_t *c)
     __builtin_memset(s->opt_vel, 0, sizeof s->opt_vel);
     __builtin_memset(s->opt_face, 0, sizeof s->opt_face);
     __builtin_memset(s->opt_frozen, 0, sizeof s->opt_frozen);
+    __builtin_memset(s->opt_orbit, 0, sizeof s->opt_orbit);
     /* ★★ 本体外观（路 A）：本函数在**属性点变化 / 局中重建**时也会跑 ⇒ 本体脚本的跟踪也要复位。
      * `body_focused = 0` + `body_script = -1` 的组合语义 =「现在跑的不是我们装的脚本、上一帧不在低速」
      * ⇒ 下一次进低速那一帧**必定**走一次「换形」分支装载妖侧 idle（与 TH08 进妖侧时显式设脚本 5 同效）。
@@ -3910,14 +3932,18 @@ static void yk_probe_tick(yk_card_t *s, int character)
         uint32_t vm = *(const uint32_t *)(o + CE_OPT_ANM_ID);
         uint8_t *v = vm ? (uint8_t *)ce_anm_get_vm(vm) : 0;
         ce_log("youkai/probe char %d age %u: opt0 vm %08x live %d rot(%.3f,%.3f,%.3f) scale(%.2f,%.2f) "
-               "face %.3f frozen %d pos(%d,%d)", character, (unsigned)s->opt_age, (unsigned)vm, v ? 1 : 0,
+               "face %.3f orbit(%.2f,%.2f) vmPos(%.1f,%.1f) anchor(%d,%d) frozen %d",
+               character, (unsigned)s->opt_age, (unsigned)vm, v ? 1 : 0,
                v ? (double)*(const float *)(v + CE_ANM_VM_ROTATION) : 0.0,
                v ? (double)*(const float *)(v + CE_ANM_VM_ROTATION + 4) : 0.0,
                v ? (double)*(const float *)(v + CE_ANM_VM_ROTATION + 8) : 0.0,
                v ? (double)*(const float *)(v + CE_ANM_VM_SCALE) : 0.0,
                v ? (double)*(const float *)(v + CE_ANM_VM_SCALE + 4) : 0.0,
-               (double)s->opt_face[0], (int)s->opt_frozen[0],
-               (int)*(const int32_t *)(o + CE_OPT_POS_X), (int)*(const int32_t *)(o + CE_OPT_POS_Y));
+               (double)s->opt_face[0], (double)s->opt_orbit[0][0], (double)s->opt_orbit[0][1],
+               v ? (double)*(const float *)(v + CE_ANM_VM_POS) : 0.0,
+               v ? (double)*(const float *)(v + CE_ANM_VM_POS + 4) : 0.0,
+               (int)*(const int32_t *)(o + CE_OPT_POS_X), (int)*(const int32_t *)(o + CE_OPT_POS_Y),
+               (int)s->opt_frozen[0]);
     }
     if (character == 1) {                     /* 魔理沙那一支：束的读数（长度 / 宽度 / 状态）*/
         uint8_t *pl = CE_PLAYER();

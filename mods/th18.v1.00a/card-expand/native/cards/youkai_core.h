@@ -248,9 +248,26 @@ int yk_option_home_from_player(int character, int cell, const float player_xy[2]
  *
  * **TH18 落点**：位置靠「冻结的绝对坐标 − 自机坐标」写进聚焦偏移（引擎每帧 `pos = 自机 + 偏移`，
  * `th18:0x45bce8`）；旋转直接写 VM 的 rotation（`ce_anm_set_rotation`，`sdk.h`）。*/
-#define YK_OPT_FREEZE_SPIN_START   12            /* `th08:0x44ed03 push 0xc`：满 12 帧才开始自转 */
+#define YK_OPT_FREEZE_SPIN_START   12            /* `th08:0x44ed03 push 0xc`：满 12 帧才开始转 */
 #define YK_OPT_FREEZE_SPIN_OUTER   0.026179939f  /* `0x3cd67750` = 1.5°/帧（外两格：idx0 正 / idx3 负）*/
 #define YK_OPT_FREEZE_SPIN_INNER   0.034906585f  /* `0x3d0efa35` = 2°/帧（内两格：idx1 负 / idx2 正）*/
+
+/* ★★★ 2026-09-27 第二十三批（owner：「**子机魔法阵不是说不转，而是说它 4 个小魔法阵得移动绕转**」）：
+ * **订正**：那个「face」不是 VM 的**旋转角**，而是 **VM 绕锚点公转的相位** —— 一手
+ * `th08:0x44edb5`–`0x44ede5` 逐指令：
+ *   ① `push 0x41000000`（= **8.0**）`push [option+0x2d8]`、`ecx = &option+0x2a4`、`call 0x4286e0`
+ *      ⇒ `(+0x2a4, +0x2a8) = 极坐标(半径 8, 角 face)`（`0x4286e0` 就是 polar→cartesian）；
+ *   ② `push &option+0x2b0`（**锚点**）、`ecx = &option+0x2a4`、`call 0x410a70`
+ *      ⇒ 用「锚点 + 那个向量」算出 **VM 的绘制位置**。
+ * ⇒ 观感 = 小魔法阵**围着它自己的锚点（= 发弹点）画一个半径 8 px 的圆**，转速就是上面那两档
+ *   （±1.5° / ±2° 每帧、内外圈反向）；**锚点/发弹点一动不动** —— 这正是 owner 的两条口径
+ *   （「在动的四个小魔法阵」+「发弹点不动，只动 vm」）。
+ * ⚠ 我们上一版写成「写 VM 的 rotation」⇒ 只是原地自转，owner 说「没有动」是对的。*/
+#define YK_OPT_ORBIT_R             8.0f          /* `0x41000000` = 8.0（公转半径，四个格子同一个值）*/
+#define YK_OPT_ORBIT_COS_OUTER     0.99965732f   /* cos(1.5°/帧) —— 用递推转向，不引 libm/cos */
+#define YK_OPT_ORBIT_SIN_OUTER     0.02617695f   /* sin(1.5°) */
+#define YK_OPT_ORBIT_COS_INNER     0.99939083f   /* cos(2°/帧) */
+#define YK_OPT_ORBIT_SIN_INNER     0.03489950f   /* sin(2°) */
 
 /* 这一机体是不是「放置型」（只有机体 2 = 咲夜・レミリア）。*/
 int yk_option_uses_freeze(int character);
