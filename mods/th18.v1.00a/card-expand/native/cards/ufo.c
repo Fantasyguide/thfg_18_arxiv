@@ -2024,10 +2024,12 @@ static uint32_t s_summon_debris_id;        /* 闪电碎屑发射器 VM（脚本 
 #define UFO_BOLT_FX_PER_FRAME 2                   /* 一手：effect #2 的 on_tick 里 `push 0x1` ×2 */
 #define UFO_BOLT_FX_FRAMES 50u                    /* 一手：与紫圆同寿命 50 帧 ⇒ 合计约 100 条 */
 #define UFO_BOLT_SEGS 16                          /* 一手：一条闪电 16 段（每帧长一段）*/
-#define UFO_BOLT_STEP_MIN 8.0f                    /* 一手：步长 8–12（`0x4a4078`=8.0 + rand·8）*/
-#define UFO_BOLT_STEP_VAR 4.0f
-#define UFO_BOLT_TURN_MAX 0.31415927f             /* 一手：每步转 −0°..−18°（rand·π/10）*/
-#define UFO_BOLT_LEN 12.0f                        /* 本段画多长（略长于步长 ⇒ 相邻段重叠、无缝隙）*/
+#define UFO_BOLT_STEP_MIN 8.0f                    /* 一手：步长 = `8 + rand·8` ⇒ **[8, 16)**
+                                                     （`0x41046c fldl 0x4a4078`=8.0 → `fmul` → `faddp`：
+                                                     是"8 + 8u"，不是早前记的"8 + 4u"）*/
+#define UFO_BOLT_STEP_VAR 8.0f
+#define UFO_BOLT_TURN_MAX 0.31415927f             /* 一手：每步转 **(rand·2⁻³¹ − 1)·π/10 ⇒ ±18° 双向** */
+#define UFO_BOLT_LEN 16.0f                        /* 本段画多长（≥ 最大步长 ⇒ 相邻段重叠、无缝隙）*/
 #define UFO_BOLT_CAP (UFO_BOLT_FX_PER_FRAME * UFO_BOLT_SEGS + 4)   /* 同时在走的折线条数 */
 typedef struct { float x, y, ang; int left; } ufo_bolt_t;
 static ufo_bolt_t s_bolt[UFO_BOLT_CAP];
@@ -2167,7 +2169,7 @@ static void ufo_bolt_fx_frame(const uint8_t *e)
         float step, half, ca, sa, id_f;
         uint32_t id;
         if (b->left <= 0) continue;
-        step = UFO_BOLT_STEP_MIN + ufo_bolt_rand01() * UFO_BOLT_STEP_VAR;   /* 一手 8–12 */
+        step = UFO_BOLT_STEP_MIN + ufo_bolt_rand01() * UFO_BOLT_STEP_VAR;   /* 一手 8..16 */
         half = step * 0.5f;
         ca = ufo_cos_approx(b->ang);
         sa = ufo_sin_approx(b->ang);
@@ -2176,10 +2178,15 @@ static void ufo_bolt_fx_frame(const uint8_t *e)
             ce_anm_set_pos(id, b->x + ca * half, b->y + sa * half, 0.0f);   /* 本段中点 */
             ce_anm_set_rotation(id, 0.0f, 0.0f, b->ang);                     /* 本段方向 */
         }
-        /* 下一步：端点接上（起点 = 本段末端），方向再随机转一点 */
+        /* 下一步：端点接上（起点 = 本段末端），方向再随机转一点
+         * ★★ 第 48 轮（owner：「th12 闪电是螺旋状的，你可能只取了 theta += 正数」）——
+         *   逐字节复核一手 `0x4104a5`–`0x4104f3`：`call 0x464440`(rand_int) → `fild` →
+         *   `(if<0) fadds 0x4a3e10`(=2³²) → `fmull 0x4a3ea8`(=**2⁻³¹**) ⇒ u ∈ **[0,2)** →
+         *   `fsubl 0x4a3ce0`(=1) ⇒ **[−1,1)** → `fmull 0x4a3cd8`(=π) → `fdivl 0x4a3e40`(=10)
+         *   ⇒ 转角 ∈ **[−18°, +18°)**，**正负都取**（我上一版写成单向 −18°..0°，错了）。*/
         b->x += ca * step;
         b->y += sa * step;
-        b->ang -= ufo_bolt_rand01() * UFO_BOLT_TURN_MAX;      /* 一手：每步 −0°..−18° */
+        b->ang += (ufo_bolt_rand01() * 2.0f - 1.0f) * UFO_BOLT_TURN_MAX;
         --b->left;
         id_f = 0.0f;                                          /* 保持 `-Wunused` 干净 */
         (void)id_f;
