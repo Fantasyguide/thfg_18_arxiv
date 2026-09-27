@@ -9,7 +9,7 @@ YkBULLET_LAYOUT 512x256
 YKB_R_MAIN        YKB_R_MAIN.png   @0,0,64x16
 YKB_R_OPT         YKB_R_OPT.png   @64,0,64x16
 YKB_M_MAIN        YKB_M_MAIN.png   @128,0,64x16
-YKB_M_OPT         YKB_M_OPT.png   @0,16,512x32
+YKB_M_OPT         YKB_M_OPT.png   @0,16,768x32
 YKB_S_MAIN        YKB_S_MAIN.png   @0,48,64x16
 YKB_S_OPT         YKB_S_OPT.png   @0,64,16x32
 YKB_M_HIT         YKB_M_HIT.png   @16,72,64x16

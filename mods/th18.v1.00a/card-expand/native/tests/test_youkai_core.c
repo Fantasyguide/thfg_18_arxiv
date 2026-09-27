@@ -105,6 +105,44 @@ static int spec_has_live(const char *t, const char *needle)
     return 0;
 }
 
+/* ★★★ 第三十三批闸：**束贴图必须独占它那条 entry 行带、且横跨整条行宽**。
+ *
+ * 这条闸修的是一个**两道既有闸都看不见**的 bug（owner 2026-09-27：「**激光是一缕一缕的，形成脉冲**」）：
+ *   · 一手（`engine/anm/th16/10-sprite-geometry.md` §4）：`scrollX` 写 `uv_scroll_pos`，绘制时**加到
+ *     sprite 四角的 u 上** ⇒ 采样按**整幅贴图宽**取模（`1.0` = 一整幅图集宽）。
+ *     ⇒ 绕回那把尺子是 **entry 的宽**，**不是 sprite 的宽**。我们的束贴在 `pl01.anm entry20`
+ *     （`player/yk_bullet.png`，768 宽）里只占 `(96,0,512,32)` ⇒ 每 48 帧（768/16）相位扫过那 256
+ *     texel 的 **MAIN/HIT/透明带**：束从膛口那端起变透明 → 整条消失 → 再从膛口长回来。
+ *   · 三处参照都是「束 sprite 铺满整条图集行」：一手 TH08 `player01` sprite32 = `(0,224,448,32)`
+ *     （图集 256 宽，sprite 宽过整幅）、**本作原生** `pl01` sprite29 = `(0,288,512,32)`（同上）、
+ *     117 `ATLAS_ANIMAL_BEAM` sprite284 = `(0,64,512,32)`（entry 512 宽 = sprite 宽）。
+ *   ⇒ 闸必须同时钉住**资产侧两处**（`YK_BULLET_MEMBERS` 的尺寸 == `YK_M_LASER_BEAM_SPRITE_W/H`、
+ *     `YK_BULLET_CANVAS` 的画布宽 == 束成员宽 且 MAIN/HIT 不在束那 32 行里）—— 只看 C 常量看不见。*/
+static void check_beam_member_covers_entry(void)
+{
+    char *py = yk_slurp("../assets/build_player_anm.py");
+    char want_member[128], want_canvas[128], want_lay0[64], want_lay2[64];
+    CHECK(py != 0);
+    if (!py) return;
+    /* 成员表：尺寸必须与卡侧那两个常量逐字相等（`(int)` 转换 —— 这两个宏都是整数像素）*/
+    (void)snprintf(want_member, sizeof want_member, "\"YKB_M_OPT\", %d, %d)",
+                   (int)YK_M_LASER_BEAM_SPRITE_W, (int)YK_M_LASER_BEAM_SPRITE_H);
+    CHECK(spec_has_live(py, want_member) != 0);
+    /* 画布：宽 = 束成员宽（**这就是「绕回那把尺子」**），高 ≥ 2×32（束那 32 行之外还要放 MAIN/HIT）*/
+    (void)snprintf(want_canvas, sizeof want_canvas, "\"pl01\": ((%d, 64), ",
+                   (int)YK_M_LASER_BEAM_SPRITE_W);
+    CHECK(spec_has_live(py, want_canvas) != 0);
+    /* MAIN/HIT 的落点必须在**第 40 行**（束是 0..31，第 32..39 留空当双线性缓冲）*/
+    (void)snprintf(want_lay0, sizeof want_lay0, "((0, 40), (0, 0), (640, 40))");
+    (void)snprintf(want_lay2, sizeof want_lay2, "(640, 40))");
+    CHECK(spec_has_live(py, want_lay0) != 0);
+    CHECK(spec_has_live(py, want_lay2) != 0);
+    free(py);
+    /* 卡侧那两个常量本身：宽必须 = entry 宽（生成器 `ROW_FILL_MEMBERS` 铺的就是这个数）*/
+    CHECK(YK_M_LASER_BEAM_SPRITE_W == 768.0f);      /* ★ 第三十三批：512 → 768 = 整条 entry 行宽 */
+    CHECK(YK_M_LASER_BEAM_SPRITE_H == 32.0f);
+}
+
 static void check_beam_spec_files(void)
 {
     DIR *d = opendir("../assets/yk_bullet/scripts");
@@ -1470,9 +1508,15 @@ int main(void)
             CHECK(yk_m_laser_beam_grow_permille(9999) == 1000);   /* 不溢出、不回头 */
             /* 束的条数上限 = 每台我们的子机一条 + 回退本体的那一条（117 的同款形状）*/
             CHECK(YK_M_LASER_BEAM_UNITS == YK_OPTION_CELLS + 1);
-            /* 贴图逻辑尺寸（`YKB_M_OPT.png` = 256×32；`scale.x = 448/256`、`scale.y = w/32`）*/
-            CHECK(YK_M_LASER_BEAM_SPRITE_W == 512.0f);   /* ★ 镜像平铺后 = 2×256（为了能无缝滚动）*/
+            /* 贴图逻辑尺寸（★ 第三十三批：`YKB_M_OPT.png` = **768×32** —— 那条 256 texel 源行
+             * 原样 ×3，**铺满 entry20 的整条行宽**；旧值 512 = 镜像平铺 —— 镜像那一圈压根不是
+             * UV 绕回的那一圈，`scrollX` 的绕回按 **entry 宽（768）** 取模 ⇒ 会把 MAIN/HIT/透明带
+             * 扫进束里（owner 报的「一缕一缕/脉冲」）。完整链条见 `youkai_core.h` 的同名长注）。*/
+            CHECK(YK_M_LASER_BEAM_SPRITE_W == 768.0f);
             CHECK(YK_M_LASER_BEAM_SPRITE_H == 32.0f);
+            /* 满长系数 = 2048/768（脚本初值那一行只写 y，x 每帧由卡侧写）*/
+            CHECK(YK_LASER_LEN / YK_M_LASER_BEAM_SPRITE_W > 2.66f);
+            CHECK(YK_LASER_LEN / YK_M_LASER_BEAM_SPRITE_W < 2.67f);
 
             /* ★★★ 2026-09-27 第二十七批：**残影多束**的五个纯函数（一手逐指令见 `youkai_core.h`）。
              * 一手三支回调：init `th08:0x44fe20` / tick `th08:0x450840` / draw `th08:0x450ad0`。*/
@@ -1913,6 +1957,7 @@ int main(void)
         CHECK(YK_BEAM_HIT_FX_LAYER == YK_BEAM_CORE_ANM_LAYER + 2);   /* 原生那一对（15 与 13）的相对位置 */
         CHECK(YK_BEAM_CORE_ANM_LAYER == 13);                        /* = 自机弹那一层（原生 script4 自己写的值）*/
     }
+    check_beam_member_covers_entry();       /* ★ 第三十三批：束贴图铺满整条 entry 行宽（「一缕一缕」的闸）*/
     check_beam_spec_files();
 
     printf("youkai_core: %d checks, %d failed\n", s_pass + s_fail, s_fail);

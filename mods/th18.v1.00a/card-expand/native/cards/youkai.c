@@ -3923,7 +3923,10 @@ static const char *yk_graze_gate_name(int g)
  *   · 每帧写：位置 = **该条残影对应的历史膛口**（一手 `trail[k]`；`k = 0` 就是本帧的膛口）、
  *     方向 = **−π/2**（一手 `ply01as.sht` 那一行的 `+0x14`；脚本**烘了** `rotate(-90°)` 当初值、
  *     卡侧每帧用真实角度覆盖它 —— 第三十一批起与 117 `script163` 逐行同形；仍**不写** `rotateAuto`）、
- *     长度 = **`YK_LASER_LEN`（2048）× 展开系数** ⇒ `scale.x = (2048·grow)/512 = 4.0·grow`
+ *     长度 = **`YK_LASER_LEN`（2048）× 展开系数** ⇒ `scale.x = (2048·grow)/768 = 2.6667·grow`
+ *     （★ 第三十三批：分母从 512 改成 **768** = 贴图宽 = **整条 entry 行宽** ——
+ *      为什么必须同宽见 `youkai_core.h` 的 `YK_M_LASER_BEAM_SPRITE_W` 长注：
+ *      `scrollX` 的绕回按 **entry 宽**取模，贴图窄于 entry 就会把邻居的像素扫进束里）；
  *     （★ `anchor(1,0)` = **左端锚**，见 `engine/anm/th16/10` §2
  *     ⇒ 近端钉在膛口、**远端往外伸**，与 117 的 `eagle_beam_tick` 逐行同形）；
  *     宽度 = **逐档**（`YK_M_LASER_BEAM_W_PX100 / 32`）× 展开系数。
@@ -4082,8 +4085,8 @@ static int yk_beam_kill(int fade)
  * 之后，本函数与 117 的 `eagle_beam_tick()` **逐行对照过一遍**（表在 `AUDIT.md` §BE #133 §5）：
  *   · **VM 位置 = 近端**（传进来的 `(x,y)` 是**轨迹点** = 上一帧的膛口；束心只出现在**判定盒**的
  *     `center = y − BAR_H/2`，那是 `ce_damage_rect`、不是 VM） —— 与 117 的「束建在本体位置」同形 ✓
- *   · **`scale.x` = 长度 ÷ 贴图逻辑宽**（`YK_LASER_LEN / SPRITE_W`，满长 4.0）—— 与 117 的
- *     `vis / SPRITE_W` 同形 ✓
+ *   · **`scale.x` = 长度 ÷ 贴图逻辑宽**（`YK_LASER_LEN / SPRITE_W`，满长 2.6667；第三十三批前是 4.0）
+ *     —— 与 117 的 `vis / SPRITE_W` 同形 ✓
  *   · **每帧 rotation = −π/2**，与脚本烘的 `rotate(0.0f, 0.0f, -1.5707964f)` 同向（脚本初值被覆盖）✓
  *   · 锚点在**图左端**（脚本 `anchor(1, 0)`）⇒ 近端钉在膛口、远端往外伸；`grow` 两轴同乘 ⇒ **从膛口往外长** ✓
  * ⇒ 「不像从发射端长出」的成因**不在这三处**，而在**贴图那一层**：每条残影各拿一个**随机 UV 相位**
@@ -4098,7 +4101,8 @@ static void __attribute__((noinline)) yk_beam_bar_place(uint32_t id, float x, fl
     /* ★★ 117 的形状（`eagle_beam_tick`）：**两轴同乘展开系数**、`anchor(1,0)` 在近端
      * ⇒ 束从膛口**连续**往外伸到满长（上一版只乘 `scale.y` ⇒ 一出生就全长、只变粗）。
      * 束长 = `YK_LASER_LEN`（2048，第三十一批按 owner 口径不再照抄一手的 448）
-     * ⇒ 系数里的 `YK_LASER_LEN / SPRITE_W` = 4.0 就是满长那一端（与 117 的 SCALE 4.0 同数）。*/
+     * ⇒ 系数里的 `YK_LASER_LEN / SPRITE_W` = **2.6667** 就是满长那一端
+     *   （第三十三批：`SPRITE_W` 512 → 768 = 贴图铺满整条 entry 行宽；117 那边是它自己的 512×4.0）。*/
     (void)ce_anm_set_scale(id, YK_LASER_LEN / YK_M_LASER_BEAM_SPRITE_W * grow,
                            w_px / YK_M_LASER_BEAM_SPRITE_H * grow);
     /* 一手 `0x450ad0` 每画一条就改一次 `vm+0x1f3`（越旧越淡），画完再还原 ⇒ 这里等价于

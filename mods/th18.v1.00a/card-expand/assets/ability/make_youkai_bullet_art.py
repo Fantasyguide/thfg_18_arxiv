@@ -73,8 +73,11 @@ MEMBERS = [
     ("YKB_R_OPT",  "th08", "player00", 36, None),
     # 魔理沙・アリス（TH08 player01 script22/24..27，sprite30 = 64×16；sprite32 = 448×32）
     ("YKB_M_MAIN", "th08", "player01", 30, None),
-    # ★ sprite32 是**一条 448×32 的滚动纹理**（原脚本 `scrollX(0.0625)` 让它横向流动；v8 没有 scrollX）
-    #   ⇒ 只切**前 256×32**（那一张里非空像素就在 0..255，见生成器自检），静止显示。
+    # ★ sprite32 是**一条 448×32 的滚动纹理**（住在 256 宽的图集里 ⇒ 原版就是**靠 256 取模滚动**的；
+    #   `scrollX(0.0625)` 让它横向流动）。
+    #   ⇒ 只切**前 256×32**（= 一整圈图集行；那一圈里非空像素就在 0..255，见生成器自检），
+    #     再由 `ROW_FILL_MEMBERS` **原样重复 3 份 = 768×32** 铺满它在 entry 里的整条行宽
+    #     —— 第三十三批的修法，为什么必须铺满见 `ROW_FILL_MEMBERS` / `fill_row` 的长注。
     ("YKB_M_OPT",  "th08", "player01", 32, (0, 0, 256, 32)),
     # 咲夜・レミリア（TH08 player02 script12/14，sprite22 = 48×16、sprite23 = 16×32）
     ("YKB_S_MAIN", "th08", "player02", 22, None),
@@ -240,25 +243,59 @@ def canvas_size(w, h):
     return pow2_ceil(w), pow2_ceil(h)
 
 
-# ★★★ 2026-09-27（owner：「**先搞滚动的**」）：**可无缝平铺**的成员。
-#   一手 TH08 的束脚本有 `scrollX(0.0625f)`（每帧滚 1/16 宽），而那张条状纹理是**一次性**的
-#   （左右边缘接不上）⇒ 滚到接缝会在束上留一条移动的缝（owner 实跑「一节一节消失」）。
-#   这里把指定成员改成**镜像平铺**：`[内容 | 内容镜像]` ⇒ 新图**左右边缘像素相同**
-#   （右端 = 镜像段的末尾 = 内容的第 0 列；左端 = 内容的第 0 列）⇒ UV 绕回时**无缝** ✓。
-#   代价：贴图宽翻倍 ⇒ 卡侧的 `YK_M_LASER_BEAM_SPRITE_W` 要跟着改（`448/512 = 0.875` 的拉伸），
-#   成员在 entry 里也占更宽的位置（`assets/build_player_anm.py` 的 `YK_BULLET_CANVAS`）。
-MIRROR_MEMBERS = {
-    "YKB_M_OPT",      # 魔理沙妖侧子机的束（唯一一条需要滚动的贴图）
+# ★★★ 2026-09-27 第三十三批（owner：「**激光是一缕一缕的，形成脉冲**」= bug）：
+#   **滚动贴图必须铺满整条 entry 行宽**（= 把「可无缝平铺」做对）。
+#
+# ## 为什么上一版（镜像平铺）没能修好（一手 + 逐帧模拟，两条独立证据）
+#   · 引擎侧：`scrollX`（v8 opcode 425）写的是 `uv_scroll_pos`，绘制时**统一加到四角的 u 上**
+#     （`engine/anm/th16/10-sprite-geometry.md` §4：`u = uv_scroll_pos.x + sprite_uv[·].u`）⇒
+#     采样以**整幅贴图宽**取模（`1.0` = 一整幅图集宽）。**取模的那把尺子是 entry 的宽，不是 sprite 的宽。**
+#   · 上一版按「sprite 宽 512」把成员做成镜像平铺（`[S | S 镜像]`），本意是让它 `512` 绕回无缝
+#     —— 但我们这张贴图住在 **768 宽**的 `pl01.anm entry20`（`player/yk_bullet.png`）里，
+#     真正的绕回发生在 **768**：一圈 768 texel 里有 **256 texel 不是束**（`YKB_M_MAIN` 那颗弹、
+#     `YKB_M_HIT` 那颗火花、以及它们之间的透明带）⇒ 相位每转一圈（768/16 = **48 帧**），
+#     采样窗就横扫过那 256 texel：束从膛口那端开始变成透明/别人的像素，然后整条看不见，再从膛口长回来。
+#     逐帧模拟（`TUNING.md` §2.1ccc-13 有表）：48 帧里 **19 帧**可见段至少有一列采到非束texel，
+#     其中 **13 帧整条可见束都不在束贴图上** —— 这就是 owner 看到的「一缕一缕 / 脉冲」。
+#   · **三处参照全都是「束 sprite 铺满整条图集行」**（详见 `check_row_fill()` 的报错文案）：
+#     一手 TH08 `player01` sprite32 = `(0,224,448,32)`（图集宽 256，sprite **宽过整幅**，绕回仍在同一行）、
+#     **本作原生**激光 `pl01` sprite29 = `(0,288,512,32)`（同上，2×）、
+#     117 照抄的 `ATLAS_ANIMAL_BEAM` sprite284 = `(0,64,512,32)`（entry 宽 512 = sprite 宽）。
+#     ⇒ 不变量是「**这一条行带整幅宽都是这张贴图**」，而不是「sprite 自己的左右边缘对上」。
+#
+# ## 本批做法（照 117 的资产配方，一行代码都不新发明）
+#   `make_animal_art.py` 给 117 切 `EAGLE_BEAM` 时写的就是
+#   `strip = im.crop((0,288,256,320))` + `pad.paste(strip,(0,0)); pad.paste(strip,(256,0))`
+#   —— **把源图那条无缝的 256 texel 行原样重复到铺满 entry 宽**。这里照同一配方：
+#   `YKB_M_OPT` = TH08 sprite32 的 256 texel 行 × **3** = **768×32**（= entry20 的宽）。
+#   源行是**精确的 64 texel 周期**（对源行做自相关，lag 64 的相关系数 = **1.0000**）
+#   且 256 = 4×64 ⇒ 三份拼接在 256、512（内部接缝）与 768（绕回缝）三处都**无缝**；
+#   绕回缝的逐行 |Δα| 均值 = **1/255**，与随机相邻列同级（`check_row_fill()` 每次生成都验）。
+#   ⇒ 不再需要镜像（镜像只是「让 sprite 宽度那一圈对上」，而那一圈压根不是绕回的那一圈）。
+ROW_FILL_MEMBERS = {
+    # 名字 : 目标宽度（texel）—— **必须 = 该成员所在 entry 的宽**，且能被源行宽整除。
+    #   `build_player_anm.py` 的 `YK_BULLET_CANVAS["pl01"]` 把它摆在 `(0, 0)` 且画布宽 = 768
+    #   （`native/tests/test_youkai_core.c` 的 `check_beam_member_covers_entry()` 两边一起钉）。
+    "YKB_M_OPT": 768,     # 魔理沙妖侧子机的束（唯一一条需要滚动的贴图）
 }
 
 
-def mirror_tile(canvas):
-    """把画布变成「内容 + 自身镜像」⇒ 左右边缘像素相同、可无缝滚动。"""
+def fill_row(canvas, width):
+    """把画布**原样横向重复**到宽 = `width`（`width` 必须是画布宽的整数倍）。
+
+    为什么是「原样重复」而不是「镜像平铺」：源行（TH08 sprite32 的 256 texel）本身就是**周期行**
+    —— TH08 那张 sprite 声明 448 宽、住在 256 宽的图集里，引擎每帧 `scrollX(0.0625f)` ⇒
+    它在**原版里就是靠 256 取模滚动的**，所以它的第 0 列与第 255 列本来就接得上
+    （实测逐行 |Δα| = 1）。重复一个周期行 ⇒ 任何整数倍宽都无缝；镜像反而会在接缝处翻一次斜率
+    （纹样是斜的菱形格 ⇒ 会看出「人」字）。117 的 `EAGLE_BEAM` 资产用的也正是**原样重复**。
+    """
     from PIL import Image as _I
     w, h = canvas.size
-    out = _I.new("RGBA", (w * 2, h), (0, 0, 0, 0))
-    out.paste(canvas, (0, 0))
-    out.paste(canvas.transpose(_I.FLIP_LEFT_RIGHT), (w, 0))
+    if w <= 0 or width % w != 0:
+        raise SystemExit(f"fill_row: 目标宽 {width} 不是源宽 {w} 的整数倍（无缝拼不齐）")
+    out = _I.new("RGBA", (width, h), (0, 0, 0, 0))
+    for x in range(0, width, w):
+        out.paste(canvas, (x, 0))
     return out
 
 
@@ -282,8 +319,8 @@ def cut_sprites(workdir: Path):
         cw, ch = canvas_size(w, h)
         canvas = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
         canvas.paste(cell, ((cw - w) // 2, (ch - h) // 2))     # 居中 = 原生的中心锚点
-        if name in MIRROR_MEMBERS:                      # ★ 可无缝平铺（见 MIRROR_MEMBERS 的注）
-            canvas = mirror_tile(canvas)
+        if name in ROW_FILL_MEMBERS:                    # ★ 铺满整条 entry 行宽（见 ROW_FILL_MEMBERS 的注）
+            canvas = fill_row(canvas, ROW_FILL_MEMBERS[name])
             cw, ch = canvas.size
         path = OUT_ART / f"{name}.png"
         canvas.save(path)
@@ -654,6 +691,43 @@ def check_beam_script_constants(scripts: dict):
           f"+ 照抄 163 的形状；**无随机相位**（第三十二批）✓")
 
 
+def check_row_fill(made):
+    """★ 第三十三批：**滚动贴图的内容闸** —— 每次生成都验「一行铺满 + 无缝 + 处处不透明」。
+
+    为什么要有它：owner 报的「一缕一缕 / 脉冲」**不是**贴图里有透明空档（逐列统计：本成员
+    与 117 的 `EAGLE_BEAM` **没有任何一列** max-alpha = 0），而是 UV 绕回时**采样跑出了这张贴图**
+    （见 `ROW_FILL_MEMBERS` 的长注）。⇒ 闸必须钉三件（缺任一条那种 bug 就回来了）：
+
+      ① **宽 = 目标宽**（= 所在 entry 的宽）、高 = 源行高 —— 铺满整条行带；
+      ② **绕回缝无阶跃**：第 `W-1` 列 → 第 0 列的逐行 |Δα| 均值 ≤ **这张图内部相邻列差的中位数**。
+         绝对阈值不管用：这格纹样本身就一格一跳（内部相邻差中位数 ≈ 3.7），而绕回缝实测 **1.59**
+         —— 比中位数还平滑 ⇒ 绕回看不出缝。判据写成「相对自己的粗糙度」才既不过松也不过紧。
+      ③ **每一列都有不透明像素**（`max-alpha` 恒 255）—— 只要有一列全透明，绕回到它就是一缕黑缝。
+     """
+    import numpy as _np
+    for name, width in sorted(ROW_FILL_MEMBERS.items()):
+        path, (w, h), _vis, raw_cell, _ink = made[name]
+        cell_w = (len(raw_cell) // (4 * h)) if h else 0     # 铺满**之前**那张小画布的宽
+        al = _np.array(Image.open(path).convert("RGBA")).astype(_np.int32)[:, :, 3]
+        if w != width:
+            raise SystemExit(f"{name}: 宽 {w} != 目标 {width}（ROW_FILL_MEMBERS）—— 没铺满 entry 行宽")
+        if cell_w <= 0 or w % cell_w != 0:
+            raise SystemExit(f"{name}: 宽 {w} 不是源宽 {cell_w} 的整数倍 —— 拼不齐，绕回必有缝")
+        blank = [int(x) for x in _np.where(al.max(axis=0) == 0)[0]]
+        if blank:
+            raise SystemExit(f"{name}: 第 {blank[:8]} 列**整列全透明** —— UV 绕回扫到它就是一缕黑缝")
+        seam = float(_np.abs(al[:, w - 1] - al[:, 0]).mean())
+        med = float(_np.median([_np.abs(al[:, i + 1] - al[:, i]).mean() for i in range(w - 1)]))
+        if seam > med:
+            raise SystemExit(f"{name}: 绕回缝（第 {w-1} 列 → 第 0 列）逐行 |Δα| 均值 {seam:.2f} > "
+                             f"内部相邻列差的中位数 {med:.2f} —— 这一行没接上，滚动时会有移动的缝"
+                             f"（owner 2026-09-27 的「一节一节」形状）")
+        print(f"== 闸：{name} {w}x{h}（= 源行 {cell_w}x{h} **原样** ×{w // cell_w}）铺满 entry 行宽 ✓；"
+              f"每列 max-alpha ≥ {int(al.max(axis=0).min())}（无空档列）✓；"
+              f"绕回缝 |Δα| {seam:.2f} ≤ 内部相邻中位数 {med:.2f} ✓"
+              f"（两条 256 内部接缝同为 {float(_np.abs(al[:, 256] - al[:, 255]).mean()):.2f}）")
+
+
 def main():
     workdir = Path(tempfile.mkdtemp(prefix="ykbullet."))
     made = cut_sprites(workdir)
@@ -717,6 +791,7 @@ def main():
     ok = check_compile({k: v.replace("{N}", str(SCRIPT0)) for k, v in scripts.items()})
     print(f"== 自检：{ok}/{len(scripts)} 支脚本能编过（thanm -c 18）；名字无重复；空图 0")
     check_beam_script_constants(scripts)
+    check_row_fill(made)
     print(f"== md5（幂等判据）：{hashlib.md5((order + ''.join(scripts.values())).encode()).hexdigest()}")
     print("== 下一步：`make -C native anm`（ability.anm 不再含这批；pl0X.anm 会带上它们）")
 

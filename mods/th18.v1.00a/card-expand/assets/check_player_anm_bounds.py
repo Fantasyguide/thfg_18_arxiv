@@ -31,6 +31,32 @@ FILES = ("pl00", "pl01", "pl02", "pl03")
 _SCRIPTS = re.compile(r"^script script(\d+) \{\n(.*?)^\}", re.M | re.S)
 _SPRITE_REF = re.compile(r"\bsprite\(sprite(\d+)\)")
 _SPRITE_DEF = re.compile(r"\bsprite(\d+):")
+# ★★★ 第三十三批（owner：「激光是一缕一缕的，形成脉冲」）：**绕回闸**要用到 entry 结构与矩形。
+_ENTRY = re.compile(r"^entry entry(\d+) \{\n(.*?)^\}", re.M | re.S)
+_ENTRY_W = re.compile(r"^\s*width:\s*(\d+)", re.M)
+_SPRITE_RECT = re.compile(r"^\s*sprite(\d+):\s*\{\s*x:\s*(\d+),\s*y:\s*(\d+),\s*w:\s*(\d+),\s*h:\s*(\d+)",
+                          re.M)
+# 会滚动 UV 的指令（产物一律 v8 ⇒ 只可能是这几个助记符；v3 的号 80 不会出现在这里）
+_SCROLL = re.compile(r"^\s*(scrollX|uVel|uVelTime)\s*\(", re.M)
+
+
+def _entry_of_sprite(text: str):
+    """→ {sprite_id: (entry_idx, entry_width, x, y, w, h)}。
+
+    ★ 第三十三批：本文件原先只查「sprite 号存在与否」，**看不见矩形**。而 UV 绕回的正确性
+    恰恰只活在矩形/entry 宽这一层 ⇒ 「束贴图比 entry 窄」那个 bug 在两道既有闸下全绿。
+    """
+    out = {}
+    for em in _ENTRY.finditer(text):
+        idx, body = int(em.group(1)), em.group(2)
+        mw = _ENTRY_W.search(body)
+        if not mw:
+            continue
+        ew = int(mw.group(1))
+        for sm in _SPRITE_RECT.finditer(body):
+            sid, x, y, w, h = (int(g) for g in sm.groups())
+            out[sid] = (idx, ew, x, y, w, h)
+    return out
 
 
 def _declared_slots() -> int:
@@ -94,7 +120,35 @@ def main():
         ids = [int(m.group(1)) for m in _SPRITE_DEF.finditer(text)]
         total = (max(ids) + 1) if ids else 0
         scripts = {int(m.group(1)): m.group(2) for m in _SCRIPTS.finditer(text)}
+        rect = _entry_of_sprite(text)
         print(f"{player}.anm: sprites={total} (ids {min(ids)}..{max(ids)}), scripts={len(scripts)}")
+
+        # ★★★ 4. **绕回闸**（第三十三批新增）：凡正文里滚动 UV 的脚本，它画的 sprite 必须
+        #   **铺满所在 entry 的整条宽度**。理由与三个参照的对照见 `TUNING.md` §2.1ccc-13。
+        #   为什么这条闸必须存在：`scrollX` 写 `uv_scroll_pos`，绘制时**加到四角 u 上**
+        #   （`engine/anm/th16/10-sprite-geometry.md` §4）⇒ 采样按**整幅贴图宽**取模。
+        #   贴图比 entry 窄 ⇒ 相位转一圈就会把同一行带里**别人的像素**扫进这张图里
+        #   （2026-09-27 卡 108 的束：48 帧里 19 帧可见段采到 MAIN/HIT/透明带、13 帧整条不在束上
+        #   = owner 报的「一缕一缕 / 脉冲」）。修法 = 把贴图铺满整条行宽（TH08 的 448/256、
+        #   本作原生的 512/256、117 的 512/512 三处都是这个形状）。
+        n_scr = 0
+        for sid, body in sorted(scripts.items()):
+            if not _SCROLL.search(body):
+                continue
+            n_scr += 1
+            for m in _SPRITE_REF.finditer(body):
+                r = int(m.group(1))
+                if r not in rect:
+                    continue                      # 越界那条上面已经报过了
+                eidx, ew, x, y, w, h = rect[r]
+                if x != 0 or w < ew:
+                    bad.append(f"{player}.anm: script{sid} 滚动 UV（`{_SCROLL.search(body).group(1)}`）"
+                               f"却用 sprite{r} = ({x},{y},{w},{h})，entry{eidx} 宽 {ew}"
+                               f" ⇒ **绕回会采到这张图以外的像素**（贴图必须 x=0 且 w ≥ entry 宽）")
+            print(f"  script{sid}: 滚动 UV（{_SCROLL.search(body).group(1)}）→ 引用的 sprite 必须铺满 "
+                  f"所在 entry 整宽（绕回闸）")
+        if n_scr:
+            print(f"  ⤷ 本文件共 {n_scr} 支滚动 UV 的脚本，全部过了绕回闸（贴图 = 整条 entry 行宽）")
 
         # 1. sprite 越界（全脚本穷举）
         for sid, body in scripts.items():
