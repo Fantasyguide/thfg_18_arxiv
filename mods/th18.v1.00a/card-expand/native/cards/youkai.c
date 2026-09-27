@@ -3946,7 +3946,7 @@ static const char *yk_graze_gate_name(int g)
  *   · **子机撤走**（`yk_option_release`）⇒ **硬删**（`ce_anm_delete`）：膛口没了，束不能留在原地；
  *   · **删卡 / 换关**（`on_delete` / `on_run_reset` 都调 `yk_option_release`）⇒ 硬删 ——
  *     商店里 tick 全停，只有 `on_delete` 跑得到 ⇒ 收尾**不依赖 tick**。*/
-#define YK_BEAM_ANM_LAYER 13    /* 世界层 3..19（一手 `engine/anm/th18/02-render-stages.md`）。
+#define YK_BEAM_ANM_LAYER 15    /* 世界层 3..19（一手 `engine/anm/th18/02-render-stages.md`）。
                                  * 13 = 与 117 的鹫束（`ability.anm` script163）同层，那条已实跑验收过 */
 /* 逐档束脚本（`pl01.anm` 追加 62..66；宏名由 `make anm` 写进 `pl_anm_ids.h`）。
  * 下标 = 火力档 0..4，与 `append_shooterset.py` 的 `M_BEAM_ANM` 同序（不是 `tier-1` —— 那条约定是早苗的）。*/

@@ -5,14 +5,20 @@ script script376 {
     //   ⇒ 屏上宽度 ≈ 16.0 px（贴图高 32）；渲染壳 = TH18 原生束（`anchor(1,0)` + `type(1)` + 收束段）。
     // ⚠ 不写 `rotateAuto`（那是给有速度的弹用的「朝运动方向」位）；方向/长度/宽度全由卡侧每帧写
     //   （`cards/youkai.c` 的 `yk_beam_tick`），所以 `scale` 与 `rotate` 这里都只留中性初值。
-    layer(13);
+    // ★ 2026-09-27（owner 实跑：「激光…很淡，并且 layer 上来讲被自机弹幕盖住了」）：两个壳参数
+    //   **取 TH18 原生束的值**（`ability.anm` script3）：`layer(15)` + `alpha(160)`。
+    //   原来照弹体脚本写 `layer(13)` + TH08 的 `alpha(70)` ⇒ 与自机弹同层、被盖住且过淡。
+    layer(15);
     sprite(@YKB_M_OPT@);
     type(1);
     anchor(1, 0);
     scale(1.0f, 1.0f);
-    alpha(70);
+    alpha(160);
     blendMode(1);
-    scrollX(0.0625f);
+    // ★ 一手 TH08 script24..28 有 `scrollX(0.0625f)`（每帧 1/16 宽），但我们的贴图是**一次性长条**
+    //   （不是可无缝平铺的循环纹理）⇒ 滚动到接缝那一刻会在束上看到一条移动的缝/断节
+    //   （owner 实跑：「能看出来在画面边缘**一节一节**消失」）。本批**关掉滚动**（静止贴图），
+    //   登记 `TUNING.md` §2.1ccc-2。
     stop();
     interruptLabel(1);
     scaleTime(8, 1, 1.0f, 0.0f);
