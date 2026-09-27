@@ -109,11 +109,11 @@ static void check_beam_spec_files(void)
         CHECK(t != 0);
         if (!t) continue;
         CHECK(strstr(t, want_layer) != 0);              /* ← 上面那场漂移在这儿被拦下 */
-        CHECK(strstr(t, "scrollX(0.03125f);") != 0);    /* `YK_M_LASER_BEAM_SCROLL` 的脚本文本 */
+        CHECK(strstr(t, "scrollX(-0.03125f);") != 0);   /* `YK_M_LASER_BEAM_SCROLL`（**取负**：朝远端流）*/
         CHECK(YK_M_LASER_BEAM_SCROLL == 0.03125f);      /* …与卡侧那个数（两边一起钉）*/
         CHECK(strstr(t, "alpha(160);") != 0);
         CHECK(YK_M_LASER_BEAM_ALPHA == 160);
-        CHECK(strstr(t, "anchor(1, 0);") != 0);         /* 近端锚（束从膛口往外伸）*/
+        CHECK(strstr(t, "anchor(0, 0);") != 0);         /* 左端锚（束沿 +x 从膛口单侧往外伸，见生成器注）*/
         CHECK(strstr(t, "rotateAuto(") == 0);           /* 方向只有一个来源 = 卡侧每帧写（注释里提到名字不算）*/
         CHECK(strstr(t, "scaleTime") != 0);             /* 只有收束段 interruptLabel(1) 里那一条 */
         ++n;
