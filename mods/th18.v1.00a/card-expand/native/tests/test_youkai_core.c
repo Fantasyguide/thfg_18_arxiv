@@ -113,7 +113,7 @@ static void check_beam_spec_files(void)
         CHECK(YK_M_LASER_BEAM_SCROLL == 0.03125f);      /* …与卡侧那个数（两边一起钉）*/
         CHECK(strstr(t, "alpha(160);") != 0);
         CHECK(YK_M_LASER_BEAM_ALPHA == 160);
-        CHECK(strstr(t, "anchor(0, 0);") != 0);         /* 左端锚（束沿 +x 从膛口单侧往外伸，见生成器注）*/
+        CHECK(strstr(t, "anchor(1, 0);") != 0);         /* 右端锚（束朝屏幕上方铺，见生成器注）*/
         CHECK(strstr(t, "rotateAuto(") == 0);           /* 方向只有一个来源 = 卡侧每帧写（注释里提到名字不算）*/
         CHECK(strstr(t, "scaleTime") != 0);             /* 只有收束段 interruptLabel(1) 里那一条 */
         ++n;
