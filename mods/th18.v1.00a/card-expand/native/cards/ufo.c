@@ -2024,12 +2024,12 @@ static uint32_t s_summon_debris_id;        /* 闪电碎屑发射器 VM（脚本 
 #define UFO_BOLT_FX_PER_FRAME 2                   /* 一手：effect #2 的 on_tick 里 `push 0x1` ×2 */
 #define UFO_BOLT_FX_FRAMES 50u                    /* 一手：与紫圆同寿命 50 帧 ⇒ 合计约 100 条 */
 #define UFO_BOLT_SEGS 16                          /* 一手：一条闪电 16 段（每帧长一段）*/
-#define UFO_BOLT_STEP_MIN 8.0f                    /* 一手：步长 = `8 + rand·8` ⇒ **[8, 16)**
+#define UFO_BOLT_STEP_MIN 4.0f                    /* 一手：步长 = `8 + rand·8` ⇒ **[8, 16)**
                                                      （`0x41046c fldl 0x4a4078`=8.0 → `fmul` → `faddp`：
                                                      是"8 + 8u"，不是早前记的"8 + 4u"）*/
-#define UFO_BOLT_STEP_VAR 8.0f
+#define UFO_BOLT_STEP_VAR 4.0f
 #define UFO_BOLT_TURN_MAX 0.31415927f             /* 一手：每步转 **(rand·2⁻³¹ − 1)·π/10 ⇒ ±18° 双向** */
-#define UFO_BOLT_LEN 16.0f                        /* 本段画多长（≥ 最大步长 ⇒ 相邻段重叠、无缝隙）*/
+#define UFO_BOLT_LEN 8.0f                        /* 本段画多长（≥ 最大步长 ⇒ 相邻段重叠、无缝隙）*/
 #define UFO_BOLT_CAP (UFO_BOLT_FX_PER_FRAME * UFO_BOLT_SEGS + 4)   /* 同时在走的折线条数 */
 typedef struct { float x, y, ang; int left; } ufo_bolt_t;
 static ufo_bolt_t s_bolt[UFO_BOLT_CAP];
@@ -2169,7 +2169,10 @@ static void ufo_bolt_fx_frame(const uint8_t *e)
         float step, half, ca, sa, id_f;
         uint32_t id;
         if (b->left <= 0) continue;
-        step = UFO_BOLT_STEP_MIN + ufo_bolt_rand01() * UFO_BOLT_STEP_VAR;   /* 一手 8..16 */
+        /* ★★ 第 50 轮（owner：「**闪电的范围打了一倍**」）⇒ 步长按 0.5 缩放：一手 8..16 → 4..8
+         *   （一段画 8 ⇒ 全程 ≈ 16×6 = 96 单位）。**一手值（8..16）仍在**，差别在取景空间：
+         *   一手是 `EffectManager` 的 C 侧空间，我们是 anm 世界层（紫圆的 128→192 也是同一个系数问题）。*/
+        step = UFO_BOLT_STEP_MIN + ufo_bolt_rand01() * UFO_BOLT_STEP_VAR;   /* 实测 4..8（一手 8..16 的 0.5×）*/
         half = step * 0.5f;
         ca = ufo_cos_approx(b->ang);
         sa = ufo_sin_approx(b->ang);
