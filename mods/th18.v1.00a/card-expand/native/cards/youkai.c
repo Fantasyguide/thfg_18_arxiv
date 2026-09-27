@@ -1582,10 +1582,10 @@ static int on_option_pose_apply(ce_card_t *c)
                     s->opt_pos[i][1] = pp[1];
                 }
                 yk_option_freeze_face0(i, &s->opt_face[i]);
-                /* 出生位形照一手：偏移 = `(sin(face0), cos(face0)) × r` ⇒ face0 = 0 的格子起在 **+y**
-                 * （锚点正下方）、face0 = π 的起在 **−y**（正上方）—— 内外圈一开始就上下相对。*/
-                s->opt_orbit[i][0] = 0.0f;
-                s->opt_orbit[i][1] = (s->opt_face[i] == 0.0f) ? 1.0f : -1.0f;
+                /* 出生位形照一手：偏移 = `(cos(face0), sin(face0)) × r` ⇒ face0 = 0 的格子起在 **+x**、
+                 * face0 = π 的起在 **−x** ⇒ 左右两边的格子从一开始就**镜像对称** ✓（owner 的口径）。*/
+                s->opt_orbit[i][0] = (s->opt_face[i] == 0.0f) ? 1.0f : -1.0f;
+                s->opt_orbit[i][1] = 0.0f;
                 s->opt_frozen[i] = 1;
             }
             fx = s->opt_pos[i][0] - pp[0];
@@ -1610,13 +1610,16 @@ static int on_option_pose_apply(ce_card_t *c)
                     float step = 0.0f;
                     float nx;
                     yk_option_freeze_spin(i, &step);               /* 跳表 `th08:0x44ee5b` 的符号与档 */
-                    /* ⚠ 符号取反：一手的偏移向量是 `(sin(face), cos(face)) × r`（`0x4286e0` 的两条
-                     * `fstp`：先 sin 后 cos，见 `AUDIT.md` §BE #128 追补），也就是「face 增大 = 顺时针」；
-                     * 而我们的单位向量走标准旋转矩阵（+x → +y = 逆时针）⇒ 这里**用 −step** 才能同向。*/
-                    if (step > 0.030f)        { c = YK_OPT_ORBIT_COS_INNER; sn = -YK_OPT_ORBIT_SIN_INNER; }
-                    else if (step > 0.0f)     { c = YK_OPT_ORBIT_COS_OUTER; sn = -YK_OPT_ORBIT_SIN_OUTER; }
-                    else if (step < -0.030f)  { c = YK_OPT_ORBIT_COS_INNER; sn =  YK_OPT_ORBIT_SIN_INNER; }
-                    else if (step < 0.0f)     { c = YK_OPT_ORBIT_COS_OUTER; sn =  YK_OPT_ORBIT_SIN_OUTER; }
+                    /* ★★★ 2026-09-27 第二十五批（owner：「**相位不对，它两边的魔法阵是对称的**」）：
+                     * **订正上一版的 `fsincos` 次序** —— x86 的 `fsincos` 是 **cos 落在 ST(0)、sin 落在 ST(1)**
+                     * ⇒ `0x4286e0` 的两条 `fstp` 存出来是 `(cos(face), sin(face)) × r`（不是我上一版写的
+                     * `(sin, cos)`）。用 `(cos, sin)` 时，`face0 = 0 / π` 的两格偏移互为**相反数**
+                     * ⇒ 左右两边的格子**恒为镜像**（owner 看到的就是这个对称）；上一版那样写会把对称破掉。
+                     * ⇒ 方向也回到标准旋转矩阵（+x → +y，与 face 增大同向）。*/
+                    if (step > 0.030f)        { c = YK_OPT_ORBIT_COS_INNER; sn = YK_OPT_ORBIT_SIN_INNER; }
+                    else if (step > 0.0f)     { c = YK_OPT_ORBIT_COS_OUTER; sn = YK_OPT_ORBIT_SIN_OUTER; }
+                    else if (step < -0.030f)  { c = YK_OPT_ORBIT_COS_INNER; sn = -YK_OPT_ORBIT_SIN_INNER; }
+                    else if (step < 0.0f)     { c = YK_OPT_ORBIT_COS_OUTER; sn = -YK_OPT_ORBIT_SIN_OUTER; }
                     else                      { c = 1.0f; sn = 0.0f; }
                     nx = s->opt_orbit[i][0] * c - s->opt_orbit[i][1] * sn;
                     s->opt_orbit[i][1] = s->opt_orbit[i][0] * sn + s->opt_orbit[i][1] * c;

@@ -8,11 +8,11 @@
     "by": "Nipporita@DESKTOP-H16AD78"
   },
   "last_release": {
-    "at": "2026-09-27 14:48:33+0800",
+    "at": "2026-09-27 14:52:50+0800",
     "agent": "Nipporita@DESKTOP-H16AD78",
     "modkit": "/mnt/d/项目/幻想指南/18/th18_modkit",
     "patch_md5": "df14d5707689ca4b66cdfab2b0f642b3",
-    "dll_md5": "297a2e7f1efa146833a603ba65d142ff",
+    "dll_md5": "a6947d80622187bcc74010bcc5762624",
     "sht_md5": [
       "8c90f0e62929327add45a0976e3c9753",
       "b7a6f3b8e5a0ba5e03269545165aa32c",
@@ -25,6 +25,23 @@
     "files_md5": "a49b35cc513fd2f896fe6ca857a1ed03"
   },
   "history": [
+    {
+      "at": "2026-09-27 14:52:50+0800",
+      "agent": "Nipporita@DESKTOP-H16AD78",
+      "modkit": "/mnt/d/项目/幻想指南/18/th18_modkit",
+      "patch_md5": "df14d5707689ca4b66cdfab2b0f642b3",
+      "dll_md5": "a6947d80622187bcc74010bcc5762624",
+      "sht_md5": [
+        "8c90f0e62929327add45a0976e3c9753",
+        "b7a6f3b8e5a0ba5e03269545165aa32c",
+        "bed0ecac3488b49f5c418de3cb6b7905",
+        "3d06fedded337adb0c2da2e4f312ad75"
+      ],
+      "abcard_md5": "bf91a0f5c0dc4b96f2a51c27f134222e",
+      "ability_md5": "1d3deb4da96b18a4c0e60effd2b5d199",
+      "cards_md5": "a613db18a4ac1394c429346d31d09847",
+      "files_md5": "a49b35cc513fd2f896fe6ca857a1ed03"
+    },
     {
       "at": "2026-09-27 14:48:33+0800",
       "agent": "Nipporita@DESKTOP-H16AD78",
@@ -170,23 +187,6 @@
       "sht_md5": [
         "8c90f0e62929327add45a0976e3c9753",
         "0b1c5fe7ab5acfaa877350efeb96b330",
-        "bed0ecac3488b49f5c418de3cb6b7905",
-        "3d06fedded337adb0c2da2e4f312ad75"
-      ],
-      "abcard_md5": "bf91a0f5c0dc4b96f2a51c27f134222e",
-      "ability_md5": "3415effb89e667f3e5fb421eb841dbe8",
-      "cards_md5": "a613db18a4ac1394c429346d31d09847",
-      "files_md5": "a49b35cc513fd2f896fe6ca857a1ed03"
-    },
-    {
-      "at": "2026-09-27 13:33:35+0800",
-      "agent": "Nipporita@DESKTOP-H16AD78",
-      "modkit": "/mnt/d/项目/幻想指南/18/th18_modkit",
-      "patch_md5": "df14d5707689ca4b66cdfab2b0f642b3",
-      "dll_md5": "fd94997d6419db7b508e21efe2783c0f",
-      "sht_md5": [
-        "8c90f0e62929327add45a0976e3c9753",
-        "f813ae41f663e6ea9ca7c8eb987bcf80",
         "bed0ecac3488b49f5c418de3cb6b7905",
         "3d06fedded337adb0c2da2e4f312ad75"
       ],
