@@ -555,7 +555,7 @@ def gen_beam(name, spr_member, width_px, scale_y, src_num):
     | `layer(...)` | 13 | **14** | 层号是各卡自己的口径（本卡 owner 定序：自机弹 13 < 束 14 < 妖侧子机 15，§2.1ccc-7）|
     | `sprite` / `type(1)` | 同 | 同 | 逐字 |
     | `anchor(1, 0)` | 同 | 同 | **左端锚**（`engine/anm/th16/10` §2：`h=1` ⇒ 四角 x = `0,+1,0,+1`）⇒ 图左端贴 VM、本地 +x 往外伸 |
-    | `blendMode(1)` / `alpha(176)` | 同 | 同 | alpha 也照 163 取 **176**（不再用我们自算的 160）|
+    | `blendMode(1)` / `alpha(70)` | 同 / **不同** | **第三十四批：176 → 70** | 一手 TH08 `player01.anm` script24..28 写的就是 `alpha(70)`；163 那个 176 是 **TH17** 的数，抄到本卡上实跑 = 「贼亮、看不清纹理」（owner 第一条）。叠加重量的账见 `TUNING.md` §2.1ccc-14 |
     | **`rotate(0.0f, 0.0f, -1.5707964f)`** | 有 | **第三十一批补上** | ★ 这就是那两批缺的那一行 |
     | `scale(1.0f, X)` | `4.0` | **逐档** | 本卡宽度逐档（一手 TH08 `player01.anm` script24..28 的 0.5/0.6/0.7/0.8）；x 由卡侧每帧写（`2048/512 = 4.0` × 展开系数）|
     | `fset(%F0, %RANDF); scrollX(%F0);` | 有 | ★ **第三十二批删掉** | **差异⑤之一**：一手的 `rate` 份副本是**同一支 VM**（`th08:0x450ad0`）⇒ 共享相位；我们的副本各是一支 VM，随机相位会互相平均掉 ⇒ 纹样被抹平（见 `cards/youkai_core.h` 的「每条残影的 UV 相位必须相同」）|
@@ -575,7 +575,8 @@ def gen_beam(name, spr_member, width_px, scale_y, src_num):
     //   （`cards/youkai.c` 的 `yk_beam_tick`）。
     // ★★★ 2026-09-27 第三十一批：**正文逐行照抄 117 的 `163_eagle_beam.anm.txt`**
     //   （owner：「117 的激光也是向外流动的，你是怎么弄成这个样子的」）——
-    //   `anchor` / `rotate` 初值 / `alpha` 全照它。三处是本卡自己的口径：
+    //   `anchor` / `rotate` 初值 全照它（★ **`alpha` 例外**：第三十四批按**一手 TH08** 取 70，见下）。
+    //   三处是本卡自己的口径：
     //   ① `layer(14)`（层序见下）；② `scale(1.0f, {scale_y}f)` 的**逐档宽度**（一手 TH08）
     //   —— 117 那里两轴共用它自己的 SCALE 4.0；③ ★ **第三十二批**：`scrollX` 的**随机相位删掉**、
     //   流速换成一手那一档（**差异⑤**，理由见下与 `cards/youkai_core.h` 的同名长注）。
@@ -599,9 +600,13 @@ def gen_beam(name, spr_member, width_px, scale_y, src_num):
     //     行为一个字都没改（照抄 163 就对了），这里只把名字对齐一手。
     anchor(1, 0);
     blendMode(1);
-    // alpha 也照 163 取 **176**（此前是我们自算的 160）。卡侧 `YK_M_LASER_BEAM_ALPHA` 同步改 176；
+    // alpha 照**一手**取 **70**（TH08 `player01.anm` script24..28 的 `alpha(70)`；卡侧
+    //   `YK_M_LASER_BEAM_ALPHA` 同步、两道闸钉着）。★ 第三十四批：此前是 **176** —— 那是照
+    //   117 的 `163`（TH17 的束）抄的**别作的数**，加上我们 12 条残影**加算**叠加（`Σalpha` 176 档
+    //   到 902 = 3.54× 满亮）⇒ 束心被钳成纯白、纹理看不见（owner 第一条实跑反馈）。
+    //   一手值 70 在 12 条时 `Σalpha` = 360 = 1.41×；逐条账见 `TUNING.md` §2.1ccc-14。
     //   「越旧越淡」的逐条 alpha 仍由卡侧按一手 `0x450ad0` 算（`yk_m_laser_beam_bar_alpha`）。
-    alpha(176);
+    alpha(70);
     // ★★★ **这一行就是本卡前两批缺的那一行**：163 把 −90° 烘进脚本当初值，我们此前一个角度都不写
     //   （注释里还写着「角度也不 bake」）⇒ 束的初值与 117 不同。现在逐字照抄；
     //   卡侧每帧的 `ce_anm_set_rotation`（5 条扇形 + 残影）仍然覆盖它 —— 117 的 `eagle_beam_tick`

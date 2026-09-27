@@ -1428,6 +1428,15 @@ void yk_m_laser_beam_trail_step(float *trail, int n, float mx, float my)
     trail[1] = my;
 }
 
+/* ★★★ 第三十四批：本帧该常驻几支残影 VM —— 见 `youkai_core.h` 同名的长注。
+ * 只要这一帧已经有活点（`live_bars > 0`）就**把整档都起满**（一手是同一支 VM 画 `rate` 次 ⇒ 共享相位）。*/
+int yk_m_laser_beam_bars_resident(int live_bars, int rate)
+{
+    if (live_bars <= 0 || rate <= 0) return 0;
+    if (rate > (int)YK_M_LASER_BEAM_BARS_MAX) rate = (int)YK_M_LASER_BEAM_BARS_MAX;
+    return rate;
+}
+
 /* --------------------------------- ★★★ owner ④：逢魔染色的两个纯函数（一手见 `youkai_core.h`）*/
 int yk_fengma_tint_set(int set_index)
 {

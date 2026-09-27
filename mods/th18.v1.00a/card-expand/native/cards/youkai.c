@@ -3920,7 +3920,8 @@ static const char *yk_graze_gate_name(int g)
  *   · 脚本 = `pl01.anm` 追加的 `62..66`（`YK_BEAM_SCRIPT[tier]`，形状见
  *     `assets/ability/make_youkai_bullet_art.py` 的 `gen_beam`）；**从 `pl01.anm` 起**
  *     （`yk_player_anm()` = `player+0x0c`）—— 贴图 `YKB_M_OPT.png` 就长在那个文件的图集里。
- *   · 每帧写：位置 = **该条残影对应的历史膛口**（一手 `trail[k]`；`k = 0` 就是本帧的膛口）、
+ *   · 每帧写：位置 = **该条残影对应的历史膛口**（一手 `trail[k]`；★ **第三十四批起 `k = 0` 就是
+ *     「本帧」的膛口** —— 一手那里写的是 `vm+0x2a4` = 上一帧的膛口，见下面「跟随」一节）、
  *     方向 = **−π/2**（一手 `ply01as.sht` 那一行的 `+0x14`；脚本**烘了** `rotate(-90°)` 当初值、
  *     卡侧每帧用真实角度覆盖它 —— 第三十一批起与 117 `script163` 逐行同形；仍**不写** `rotateAuto`）、
  *     长度 = **`YK_LASER_LEN`（2048）× 展开系数** ⇒ `scale.x = (2048·grow)/768 = 2.6667·grow`
@@ -3942,15 +3943,32 @@ static const char *yk_graze_gate_name(int g)
  *   · 每帧出 **`YK_M_LASER_BEAM_RATE[tier]`** 条（2/4/6/8/12）：`k = 0` 是本帧膛口、越 `k` 越旧越淡
  *     （alpha 递减照一手 `0x450ad0`，见 `yk_m_laser_beam_bar_alpha`）。**玩家不动时它们几乎重合**、
  *     **横向移动时散成好几条** —— 这就是 owner 要的那条机制。
- *   · 束 VM 是**按需长大**的：历史填到第几条就起几条 VM（一手也是一帧多一条），不预先开 12 支。
+ *   · ★★★ **第三十四批：整档 `rate` 支 VM 在这条轨迹的「第一个活点那一帧」一起起出来**
+ *     （`yk_m_laser_beam_bars_resident()`），还没轮到条数的那几支写 `alpha 0`。
+ *     上一版是「历史填到第几条就起几条」（一手也是这个节奏），但**我们的副本各是一支独立 VM、
+ *     各自从出生帧开始积分 `scrollX`** ⇒ 按需长大时相邻副本的 UV 相位差 16 texel = ¼ 纹样周期，
+ *     12 份互相平均 ⇒ 纹样对比从 0.384 掉到 0.085（owner 第三十四批第一条「看不清纹理」的**另一半**成因，
+ *     另一半是 `YK_M_LASER_BEAM_ALPHA` 的 176 过曝）。一手是**同一支 VM 画 rate 次**（UV 不重算）
+ *     ⇒ 必须同帧起才同形。**伤害与 `bars` 完全不受本改动影响**（`bars` 仍只由轨迹决定）。
  *   · **每台子机一条轨迹**（一手只用 `options[0]`；本卡 M 恒 1 台 ⇒ 逐字同形），
  *     一台都没有时回退本体 1 条（117 的同款兜底）。
  *
- * ## 伤害（矩形伤害源，每 2 帧一笔 × 当帧那几条残影）
+ * ## ★★★ 跟随（第三十四批，owner 第 4 条）：「**本体（以及伤害源）应当完全跟着子机定死**」
+ *   · **一手**（`th08:0x450840`，逐指令）：先 `trail[i] = trail[i-1]; trail[i].y -= 1`，**再**把
+ *     `vm+0x2a4`（= 上一帧存下的膛口）写进 `trail[0]`，**最后**把本帧膛口存回 `vm+0x2a4`
+ *     ⇒ 一手那条束的**本体慢一帧**，横移时与子机错位（owner 报的正是这个）。
+ *   · **本批**：第 0 格写**本帧**膛口（历史点的推进顺序与一手一致，只是整条历史不再延迟一帧）；
+ *     **伤害源全部落在本帧膛口**（`yk_beam_bar_hit(mux, muy, d)`）。
+ *     ⓘ 静止时两者**逐像素等价**（12 个轨迹点只差 1 px、判定盒 2048 长本来就互相重叠）⇒
+ *     这只改「移动时判定跟着残影往后拖」那半，**逐条份额 / Σ = dmg / 一源一敌一次结算都不变**。
+ *   · **判据**（可判、进 `HANDOFF-108.md` §3）：探针那一行 `trail0 (…) muzzle (…)` 的**两个数必须相等**，
+ *     且每条残影行的 `pos`（`k = 0` 那条）读出来 = 同一个数；改前 `trail0` 会比 `muzzle` 落后一帧。
+ *
+ * ## 伤害（矩形伤害源，每 2 帧一笔 × 当帧那几条残影，**位置 = 本帧膛口**）
  *   · `ce_damage_rect(center, 0.0f, 2, dmg_k, 16, YK_LASER_LEN)`（`th18:0x45dfa0`）：`h = YK_LASER_LEN`
  *     沿 y、`w = 16` 沿 x，angle 0 ⇒ 竖直的长条（判定轴约定见 `AUDIT.md` §U10）。
  *     宽 16 照一手每条残影的 `SpawnShot(…, 16.0, 448.0, …)`；**长跟着视觉走**（`YK_LASER_LEN` = 2048，
- *     第三十一批起不再是硬写的 448）；`center = 轨迹点 − YK_LASER_LEN/2·ŷ`（居中的盒心）。
+ *     第三十一批起不再是硬写的 448）；`center = 本帧膛口 − YK_LASER_LEN/2·ŷ`（居中的盒心）。
  *   · 节奏 = **每 2 帧新建一笔**（一手 type 4/5/6 的 `vm[0x454+8] % 2`，`th08:0x4517b5`）；
  *     而一个源对**每个敌人一辈子只结算一次**（`0x45f0f0` 的 `+0x84` tag，一手
  *     `engine/enemy/th18/06-enemy-inert-flag.md` §③ 的 `0x45f45a`）⇒ 平均 = 表值 / 2 每帧。
@@ -4189,9 +4207,10 @@ static void __attribute__((noinline)) yk_beam_tick(yk_card_t *s)
     float mux[YK_M_LASER_BEAM_UNITS];/* 本帧的膛口 x（下一帧才进轨迹 —— 一手 `vm+0x2a4` 的时序）*/
     float muy[YK_M_LASER_BEAM_UNITS];/* 同上 y */
     int nunit = 0, i, n = 0;
-    /* ★ 第二十八批（A 类第 3 条「池压力要可测」）：本帧想要的常驻 VM 数 = Σ_trail(bars) + 每 trail 一支光斑；
-     *   `n` = 真摆出来的（含复用）。`ncore` 从中拆出来，只为让 on 那一行把「残影 / 光斑」分开报。*/
-    int want = 0, ncore = 0;
+    /* ★ 第二十八批（A 类第 3 条「池压力要可测」）：本帧想要的常驻 VM 数 = 整档条数 + 每 trail 一支光斑；
+     *   `n` = 真摆出来的**看得见**的（含复用，含光斑），`nres` = 摆出来的**常驻残影**（含 alpha 0 的那几支，
+     *   见 `yk_m_laser_beam_bars_resident()`）。`ncore` 从中拆出来，只为让 on 那一行把「残影 / 光斑」分开报。*/
+    int want = 0, ncore = 0, nres = 0;
 
     if (!s || !CE_PLAYER() || !CE_PLAYER_FOCUSED() || character != YK_CHAR_MARISA || !yk_shooting()) {
         yk_beam_kill(1);
@@ -4216,9 +4235,10 @@ static void __attribute__((noinline)) yk_beam_tick(yk_card_t *s)
     /* ---- 1. 本帧的膛口（每条轨迹一个）---------------------------------------------------
      * 一手只有 `options[0]` 一个源（`th08:0x450a21 add edx,0x6b0` 硬取 options[0]）；我们按
      * 「每台我们自己的子机各一条轨迹」展开（本卡 M 恒 1 台 ⇒ 与一手逐字同形）。
-     * ⚠ 取到的是**本帧**的膛口，但推轨迹用的是**上一帧**那一份（一手 `vm+0x2a4` 的写法：
-     *   `trail[0] = vm+0x2a4` 在前、`vm+0x2a4 = 本帧膛口` 在后 ⇒ 轨迹整体慢一帧）。
-     *   所以本帧的值先进 `mux/muy`，到第 3 步才落到 `s_beam_muz`。*/
+     * ⚠ 取到的是**本帧**的膛口；★ 第三十四批起它**当帧**就进 `trail[0]`（一手 `vm+0x2a4` 的写法是
+     *   `trail[0] = vm+0x2a4` 在前、`vm+0x2a4 = 本帧膛口` 在后 ⇒ 轨迹整体慢一帧 —— owner 要的是
+     *   「定死」，见本节「跟随」那一段）。本帧的值先进 `mux/muy`，第 3 步同时落到 `trail[0]` 与
+     *   `s_beam_muz`（后者只是探针那一行的 `muzzle` 读数）。*/
     for (i = 0; i < YK_OPTION_MAX; ++i) {
         const uint8_t *o = s->opt[i].ptr;
         float x, y;
@@ -4243,38 +4263,53 @@ static void __attribute__((noinline)) yk_beam_tick(yk_card_t *s)
     }
 
     /* ---- 2. 激活那一帧：整条轨迹清成哨兵（一手 `0x44fe20` 把 32 格的 x 全写 −999，
-     *         并把 `vm+0x2a4.x` 也清成 −999 ⇒ **第一帧推不出活点**、一条残影都不出）------------*/
+     *         并把 `vm+0x2a4.x` 也清成 −999 ⇒ **第一帧推不出活点**、一条残影都不出）------------
+     * （`s_beam_muz` 不再是「留给下一帧的膛口」，它是**本帧膛口**的记录 = 探针那一行的 `muzzle`；
+     *   第 0 帧也照写本帧真值 ⇒ 与 `trail[0]` 的对比在激活帧就有意义。）*/
     if (s_beam_age == 0u) {
         int u, k;
-        for (u = 0; u < (int)YK_M_LASER_BEAM_UNITS; ++u) {
+        for (u = 0; u < (int)YK_M_LASER_BEAM_UNITS; ++u)
             for (k = 0; k < (int)YK_M_LASER_BEAM_TRAIL_MAX; ++k)
                 s_beam_trail[u][k][0] = YK_M_LASER_BEAM_TRAIL_NONE;
-            s_beam_muz[u][0] = YK_M_LASER_BEAM_TRAIL_NONE;
-        }
     }
 
     /* ---- 3. 每条轨迹：推一格 → 摆残影 + 束根光斑 → （按节拍）分摊伤害 + 束端命中特效 ---------*/
     for (i = 0; i < nunit; ++i) {
         const int u = units[i];
         float *trail = &s_beam_trail[u][0][0];
-        int bars, k;
+        int bars, resident, k;
 
-        /* 一手 `0x450840`：先整体上移一格、每点 y −1，再把**上一帧的膛口**写进第 0 格。*/
-        yk_m_laser_beam_trail_step(trail, (int)YK_M_LASER_BEAM_TRAIL_MAX,
-                                   s_beam_muz[u][0], s_beam_muz[u][1]);
-        s_beam_muz[u][0] = mux[u];        /* 本帧的膛口留到下一帧才进轨迹（一手同序）*/
+        /* ★★★ 第三十四批（owner 第 4 条「**本体以及伤害源完全跟着子机定死**」）：
+         * 一手 `0x450840` 的顺序是「先整体上移一格、再把 `vm+0x2a4`（= **上一帧**存下的膛口）写进第 0 格」，
+         * 之后才把本帧膛口存回 `vm+0x2a4` ⇒ 一手那条束的**本体慢一帧**（横移时与子机错位，
+         * owner 报的就是这个）。本批把第 0 格改成写**本帧**膛口：历史点的推进仍是
+         * 「先 `trail[i] = trail[i-1]` 再写本帧」（与一手同序），只是整条历史**不再延迟一帧**。
+         * ⇒ 不变量：同一帧里 `trail[0] == s_beam_muz[u] ==` 本帧膛口（探针行 `trail0 … muzzle …` 必须相等）。
+         * 第 0 帧不推（轨迹全是哨兵 ⇒ 一条都不出，与一手「激活帧不出」同形）。*/
+        if (s_beam_age != 0u)
+            yk_m_laser_beam_trail_step(trail, (int)YK_M_LASER_BEAM_TRAIL_MAX, mux[u], muy[u]);
+        s_beam_muz[u][0] = mux[u];        /* 本帧膛口（探针的 `muzzle`；历史已在上面落进 trail[0]）*/
         s_beam_muz[u][1] = muy[u];
         /* 本帧出几条：从第 0 格起数**连续**的活点（一手 draw 遇哨兵就 break），上限 = 本档 rate。*/
         bars = yk_m_laser_beam_bar_count(trail, (int)YK_M_LASER_BEAM_TRAIL_MAX, rate);
         if (bars > (int)YK_M_LASER_BEAM_BARS_MAX) bars = (int)YK_M_LASER_BEAM_BARS_MAX;
 
-        /* ★ 第二十八批（池压力可测）：本帧「想要几支常驻 VM」= 残影条数 + （下面）一支光斑。
+        /* ★★★ 第三十四批：**本帧要常驻几支 VM** = 整档 `rate`（不是「历史填到几条」，`bars` 只管
+         * 「哪几条看得见」）。理由（一手 + 逐像素模拟，两条独立证据）写在
+         * `yk_m_laser_beam_bars_resident()` 的长注里：一手 `0x450ad0` 把**同一支 VM** 画 `rate` 次、
+         * **UV 从不重算** ⇒ 一手的副本共享相位；我们各支各自积分 ⇒ 若按需长大，相邻副本相位差
+         * 16 texel = ¼ 纹样周期、12 份互相平均 ⇒ 纹样对比从 0.384 掉到 0.085（owner 的「看不清纹理」）。
+         * 还没轮到条数的那几支：位置照写轨迹（哨兵 = 屏外）、**alpha 写 0** ⇒ 加算下贡献恒 0。*/
+        resident = yk_m_laser_beam_bars_resident(bars, rate);
+
+        /* ★ 第二十八批（池压力可测）：本帧「想要几支常驻 VM」= 整档条数 + （下面）一支光斑。
          * ⚠ **只用来记账**，绝不参与 `bars` 的决定 —— `bars` 同时是伤害的分摊基数，
          *   拿计数器去钳它会**悄悄改伤害**（那是本仓最不该犯的错）。溢出在收尾统一钳。*/
-        want += bars;
-        for (k = 0; k < bars; ++k) {
+        want += resident;
+        for (k = 0; k < resident; ++k) {
             const float x = trail[k * 2 + 0];
             const float y = trail[k * 2 + 1];
+            const int vis = (k < bars);
             if (!s_beam_vm[u][k] || !ce_anm_get_vm(s_beam_vm[u][k])) {
                 s_beam_vm[u][k] = ce_anm_spawn(yk_player_anm(), YK_BEAM_SCRIPT[tier], YK_BEAM_ANM_LAYER);
                 if (!s_beam_vm[u][k]) {               /* 池满 ⇒ 这一帧到此为止 */
@@ -4283,17 +4318,18 @@ static void __attribute__((noinline)) yk_beam_tick(yk_card_t *s)
                 }
             }
             yk_beam_bar_place(s_beam_vm[u][k], x, y, grow, w_px,
-                              yk_m_laser_beam_bar_alpha(YK_M_LASER_BEAM_ALPHA, k, rate), tint);
-            ++n;
+                              vis ? yk_m_laser_beam_bar_alpha(YK_M_LASER_BEAM_ALPHA, k, rate) : 0, tint);
+            ++nres;
+            if (vis) ++n;
         }
         /* 收掉这一档用不到的尾巴（换档变小 / 激活重来时会留几支）*/
-        for (k = bars; k < (int)YK_M_LASER_BEAM_BARS_MAX; ++k) {
+        for (k = resident; k < (int)YK_M_LASER_BEAM_BARS_MAX; ++k) {
             if (!s_beam_vm[u][k]) continue;
             ce_anm_delete(s_beam_vm[u][k]);
             s_beam_vm[u][k] = 0;
         }
         /* ---- 束根那颗自转光斑（★ 第二十八批；原生 `ability.anm` script4）----------------------
-         * 每台我们自己的子机**一支**，钉在**本帧的束近端**（轨迹第 0 格 = 束本体那个锚点）。
+         * 每台我们自己的子机**一支**，钉在**本帧的束近端**（轨迹第 0 格 = 束本体那个锚点 = 本帧膛口）。
          * 一手的 script4 自带 `angleVel`（自转）与 `scaleTime` 脉动 ⇒ **我们只写位置**，
          * 旋转 / scale 一律不碰（一写就把积分器与插值器打掉，光斑就不转了）。*/
         if (bars > 0) {
@@ -4313,6 +4349,11 @@ static void __attribute__((noinline)) yk_beam_tick(yk_card_t *s)
             s_beam_core[u] = 0;
         }
         /* 伤害：每 `SETTLE` 帧把这一档的 `dmg` 点**摊到 bars 条**上（Σ = dmg ⇒ 总额与上一版同额）。
+         * ★★★ **伤害源的位置：全部落在「本帧膛口」**（owner 第 4 条「以及伤害源……跟着子机定死」）——
+         *   改前是逐条挂在各自的轨迹点上（= 一手 `0x450840` 那个「每条残影各发一发 `SpawnShot`」），
+         *   横移时判定跟着残影往后拖。ⓘ **这与「站着不动」时的判定完全等价**：静止时 12 个轨迹点
+         *   本来就只差 1 px（`TRAIL_DY`），12 个盒互相重叠 ⇒ 本批只是把「移动时也跟着漂」那半去掉。
+         *   ⇒ 逐条份额、`Σ = dmg`、每条对每个敌人一辈子结算一次（`0x45f0f0` 的 `+0x84` tag）**都不变**。
          * ★★ 池压力的判据就在这一段的「与 VM 无关」上：`bars` 来自**轨迹**（还没到的历史点不算），
          *   而 `ce_anm_spawn` 起不起得来**不参与**这个循环 ⇒ 池满时（探针里 `got < want`）
          *   **伤害一个点都不少**，少的只是画面上的残影。*/
@@ -4320,10 +4361,10 @@ static void __attribute__((noinline)) yk_beam_tick(yk_card_t *s)
             for (k = 0; k < bars; ++k) {
                 const int d = yk_m_laser_beam_bar_damage(dmg, bars, k);
                 if (d <= 0) continue;
-                yk_beam_bar_hit(trail[k * 2 + 0], trail[k * 2 + 1], d);
+                yk_beam_bar_hit(mux[u], muy[u], d);       /* ★ 本帧膛口（不再用 trail[k]）*/
             }
             /* 束端命中特效（★ 第二十八批；原生 `ability.anm` script5）：同一支节拍、同一处命中点。
-             * 用**判定盒的近端**（轨迹第 0 格）而不是视觉束端 —— 判定长恒 = `YK_LASER_LEN`
+             * 用**判定盒的近端**（轨迹第 0 格 = 本帧膛口）而不是视觉束端 —— 判定长恒 = `YK_LASER_LEN`
              * （TUNING §2.1ccc-6 第 10 行）。*/
             if (yk_m_laser_beam_fx_due(s_beam_age))
                 (void)yk_beam_hit_fx_try(trail[0], trail[1]);
@@ -4332,7 +4373,7 @@ static void __attribute__((noinline)) yk_beam_tick(yk_card_t *s)
 
     s_beam_live = (uint8_t)(n > 255 ? 255 : n);
     s_beam_vm_want = (uint8_t)(want > 255 ? 255 : want);
-    s_beam_vm_got = s_beam_live;
+    s_beam_vm_got = (uint8_t)(nres + ncore > 255 ? 255 : nres + ncore);
     s_beam_tier = tier;
     ++s_beam_age;
     /* ⚠ 日志**每次激活只打一行**，而且打在「第一条残影真的出来」的那一帧上（`n > 0`）——
@@ -4340,12 +4381,13 @@ static void __attribute__((noinline)) yk_beam_tick(yk_card_t *s)
      *   ⇒ 一次按 Z 会连打 `rate`（最多 12）行。判据行仍是 `youkai/beam: on (` … `)` 与 `off (` … `)` 成对。*/
     if (!s_beam_logged && n > 0) {
         s_beam_logged = 1;
-        ce_log("youkai/beam: on (%d afterimage beam(s) + %d root glow now, up to %d per trail over %d trail(s) "
+        ce_log("youkai/beam: on (%d afterimage beam(s) + %d root glow now, %d resident bar VM(s), "
+               "up to %d visible per trail over %d trail(s) "
                "at tier %d, script %d, layer %d; hit fx = ability.anm script %d every %d frame(s), tint %d) - "
                "visual %.0f x %.1f px (scale %.3f x %.3f), bar box %.0f x %.0f px, "
                "%d dmg spread over the bar(s) every %d frame(s), no cancel; trail %d points, dy -%.0f "
                "(TH08 `th08:0x450840`/`0x450ad0`/`0x450ee0`)",
-               n - ncore, ncore, rate, nunit, tier, (int)YK_BEAM_SCRIPT[tier], (int)YK_BEAM_ANM_LAYER,
+               n - ncore, ncore, nres, rate, nunit, tier, (int)YK_BEAM_SCRIPT[tier], (int)YK_BEAM_ANM_LAYER,
                (int)YK_BEAM_HIT_FX_SCRIPT, (int)YK_M_LASER_BEAM_FX_EVERY, tint,
                (double)YK_LASER_LEN, (double)w_px,
                (double)(YK_LASER_LEN / YK_M_LASER_BEAM_SPRITE_W),
@@ -4356,6 +4398,19 @@ static void __attribute__((noinline)) yk_beam_tick(yk_card_t *s)
     }
 }
 
+
+/* ★★★ 第三十四批：**「本体与判定钉在本帧膛口」的判据量** = `max(|Δx|, |Δy|)`（单位 = 1/100 px）。
+ * 返回值是**整数**：本仓 `make dllx87` 要求我们自己的目标文件里零 x87，而 i386 上 float 返回必然过 x87
+ * （`yk_m_laser_beam_fx_on_beam()` 是同一个形状：float 入参、整数返回）。
+ * **0 = 完全钉死**（探针那一行打出来的 `d(trail0,muzzle) 0.00`）。*/
+static int yk_beam_pin_delta100(float ax, float ay, float bx, float by)
+{
+    float dx = ax - bx, dy = ay - by, m;
+    if (dx < 0.0f) dx = -dx;
+    if (dy < 0.0f) dy = -dy;
+    m = (dx > dy) ? dx : dy;
+    return (int)(m * 100.0f + 0.5f);
+}
 
 /* ★★★ 2026-09-27（owner ②③ 实跑：「**魔理沙妖子机激光依旧没有射出去只有一小节就截断了**」+
  * 「**咲夜妖子机的魔法阵没有动**」）：这两条都在引擎内部（束的几何由 tick2 的 `+0xa0` 驱动；
@@ -4390,11 +4445,23 @@ static void yk_probe_tick(yk_card_t *s, int character)
          *      相邻两点 y 差 ≥ 1，x 相同则说明自机没横向移动）；
          *   ③ **载体行有没有被引擎发**：数一遍弹池里 packed set/row = 我们那条激光行的弹。
          *      必须恒 **0**（行里 `start_delay = 15` 不可达，`youkai_core.h` 那段有一手的充要证明）
-         *      —— 这一行就是「引擎不再产生任何东西」的实跑判据；一旦非 0 说明行被改回可发了。*/
+         *      —— 这一行就是「引擎不再产生任何东西」的实跑判据；一旦非 0 说明行被改回可发了。
+         *   ★★★ **第三十四批的三条判据行**（`HANDOFF-108.md` §3 第 36/37 行）：
+         *   · **跟随**：汇总行的 `trail0 (x,y)` 与 `muzzle (x,y)` **必须逐字相等**（同一帧同一对），
+         *     且 `bar 0` 那行的 `pos` 也等于它 —— 改前 `trail0` 恰好落后一帧的膛口；
+         *   · **亮度**：`c1` 的高字节 = 该条残影的 alpha ⇒ `bar 0` = `46ffffff`（= 70 = 一手 `alpha(70)`）、
+         *     `bar 1..rate-1` 逐条递减（档 0/1 = `46/1aff`）、**没轮到条数的那几支 = `00ffffff`**（alpha 0）；
+         *   · **相位**：同一档的所有副本必须**同一帧起**（⇒ 共享 `scrollX` 相位，与一手「同一支 VM
+         *     画 rate 次」同形）。判据 = 汇总行的 `resident` 在**束刚亮起那一帧就已经 = 整档**
+         *     （`on (…)` 那行的 `%d resident bar VM(s)`；本仓没有可读的 VM 年龄字段，
+         *     所以这条判据落在「起满的时机」上）。*/
         const int tier = yk_current_power_level();
         const int w100 = yk_m_laser_beam_w_px100(tier);
         const int dmg = yk_m_laser_beam_damage(tier);
         const int rate = yk_m_laser_beam_rate(tier);
+        /* ★ 跟随判据量（第三十四批）：同一帧里 `trail[0]`（本体锚）与 `muzzle`（子机膛口）的距离。*/
+        const int pin100 = yk_beam_pin_delta100(s_beam_trail[0][0][0], s_beam_trail[0][0][1],
+                                                s_beam_muz[0][0], s_beam_muz[0][1]);
         uint8_t *pl = CE_PLAYER();
         int u, i, k, nrow = 0;
 
@@ -4439,13 +4506,16 @@ static void yk_probe_tick(yk_card_t *s, int character)
                 ++nrow;
             }
         }
-        ce_log("youkai/probe beam: %d afterimage(s) live, tier %d (script %d, layer %d, w %.2f px, "
-               "%d dmg / %d frame spread over up to %d bar(s)), trail0 (%.1f,%.1f) muzzle (%.1f,%.1f), "
-               "engine bullets from our laser row = %d (MUST be 0)",
-               (int)s_beam_live, tier, (int)YK_BEAM_SCRIPT[tier], (int)YK_BEAM_ANM_LAYER,
+        ce_log("youkai/probe beam: %d afterimage(s) live, %d resident bar VM(s), tier %d "
+               "(script %d, layer %d, w %.2f px, "
+               "%d dmg / %d frame spread over up to %d bar(s) at the muzzle), trail0 (%.1f,%.1f) "
+               "muzzle (%.1f,%.1f) d(trail0,muzzle) %d.%02d px [body + damage are pinned to THIS frame's "
+               "muzzle => d MUST be 0.00], engine bullets from our laser row = %d (MUST be 0)",
+               (int)s_beam_live, (int)s_beam_vm_want, tier, (int)YK_BEAM_SCRIPT[tier], (int)YK_BEAM_ANM_LAYER,
                (double)w100 * 0.01, dmg, (int)YK_M_LASER_BEAM_SETTLE, rate,
                (double)s_beam_trail[0][0][0], (double)s_beam_trail[0][0][1],
-               (double)s_beam_muz[0][0], (double)s_beam_muz[0][1], nrow);
+               (double)s_beam_muz[0][0], (double)s_beam_muz[0][1],
+               pin100 / 100, pin100 % 100, nrow);
         /* ★★ 第二十八批（A 类第 3 条）：**池压力的可测判据** —— 「本帧想要几支 / 真拿到几支」。
          *   `resident` = 残影束 + 束根光斑（常驻，池满时 `got < want` ⇒ 画面少东西、**伤害不变**）；
          *   `fx` = 本帧的一次性束端命中特效（自删，20 帧）；`dropped` = **累计**起失败数。

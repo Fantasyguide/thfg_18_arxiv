@@ -176,8 +176,10 @@ static void check_beam_spec_files(void)
          * （1.75 帧/纹样周期 = 超奈奎斯特的频闪）。换算链见 `youkai_core.h` 的同名长注。*/
         CHECK(spec_has_live(t, "scrollX(-0.02083333f);") != 0);
         CHECK(YK_M_LASER_BEAM_SCROLL == 0.02083333f);   /* …与卡侧那个数（两边一起钉）—— 一手 16 texel/帧 */
-        CHECK(spec_has_live(t, "alpha(176);") != 0);
-        CHECK(YK_M_LASER_BEAM_ALPHA == 176);            /* 也照 163 的 `alpha(176)` */
+        CHECK(spec_has_live(t, "alpha(70);") != 0);
+        CHECK(YK_M_LASER_BEAM_ALPHA == 70);             /* ★ 第三十四批：176 → **70** = 一手 `player01.anm`
+                                                         * script24..28 的 `alpha(70)`（176 是照 117/TH17 抄的，
+                                                         * 实跑报「贼亮看不清纹理」——见 `TUNING.md` §2.1ccc-14）*/
         CHECK(spec_has_live(t, "anchor(1, 0);") != 0);  /* 左端锚（`engine/anm/th16/10` §2：h=1 ⇒ 四角 x=0,+1,0,+1）*/
         CHECK(spec_has_live(t, "rotateAuto(") == 0);    /* 方向只有一个来源 = 卡侧每帧写（注释里提到名字不算）*/
         CHECK(spec_has_live(t, "scaleTime") != 0);      /* 只有收束段 interruptLabel(1) 里那一条 */
@@ -1552,18 +1554,58 @@ int main(void)
             CHECK(YK_M_LASER_BEAM_BAR_H == YK_LASER_LEN);
             /* ④ alpha 递减（一手 `0x450af2` 起：`a34 = a0*3/4`、`k != 0` ⇒ `a34 − (a34/2)·2k/rate`）。
              * `k = 0` 那一支一手**不写** alpha ⇒ 返回原值（全场最亮的就是最新的那一条）。
-             * ⚠ 下面这几条传的是**字面量 160**（纯函数的输入），与本卡的基准宏值无关。*/
-            CHECK(YK_M_LASER_BEAM_ALPHA == 176);
+             * ⚠ 下面这几条传的是**字面量 160**（纯函数的输入），与本卡的基准宏值无关。
+             * ★★★ 第三十四批：基准宏 **176 → 70**（一手 TH08 `player01.anm` script24..28 的 `alpha(70)`；
+             *   176 是第三十一批照 **117/TH17** 的 `script163` 抄来的，两批实跑都报「贼亮、看不清纹理」）。*/
+            CHECK(YK_M_LASER_BEAM_ALPHA == 70);              /* ★ 一手值（`alpha(70)`），脚本正文也钉着它 */
+            CHECK(yk_m_laser_beam_bar_alpha(70, 0, 4) == 70);         /* 档 0/1（rate 2）：本条 + 26 */
+            CHECK(yk_m_laser_beam_bar_alpha(70, 1, 2) == 52 - 26 * 2 / 2);
+            CHECK(yk_m_laser_beam_bar_alpha(70, 0, 12) == 70);        /* 档 4：70/48/44/39/35/31/26/22/18/13/9/5 */
+            CHECK(yk_m_laser_beam_bar_alpha(70, 1, 12) == 52 - 26 * 2 / 12);
+            CHECK(yk_m_laser_beam_bar_alpha(70, 11, 12) == 52 - 26 * 22 / 12);
+            /* ★ 加算下「12 条重叠处」的等效亮度 = Σalpha/255（**加算**：`blendMode(1)` = `SRCALPHA/ONE/ADD`）
+             *   —— 近似闭式 `a0·(3·rate+5)/8`（整数截断会差几个点，故这里钉**逐档实测值**）：
+             *   176 @ rate 12 = 902 = **3.54×**（束心 82% 的像素被钳成纯白 = owner 的「贼 jb 亮」），
+             *   70 @ rate 12 = **360 = 1.41×**。逐条裁定见 `TUNING.md` §2.1ccc-14 与 `youkai_core.h`。*/
+            {
+                static const int sum70[5] = { 96, 148, 202, 254, 360 };   /* 档 0..4（rate 2/4/6/8/12）*/
+                int tt, kk, sum;
+                for (tt = 0; tt < 5; ++tt) {
+                    const int r = yk_m_laser_beam_rate(tt);
+                    sum = 0;
+                    for (kk = 0; kk < r; ++kk) sum += yk_m_laser_beam_bar_alpha(70, kk, r);
+                    CHECK(sum == sum70[tt]);
+                    CHECK(sum * 255 >= 96 * 255 / 2);     /* 任何一档都不再是「一条压满 255」*/
+                }
+                sum = 0;
+                for (kk = 0; kk < 12; ++kk) sum += yk_m_laser_beam_bar_alpha(176, kk, 12);
+                CHECK(sum == 902);                        /* 改前那一档的叠加总量（= 3.54 × 255）*/
+                CHECK(sum > 255 * 3);                     /* ★ 改前：三条满亮叠在一起 = 必然钳白 */
+                CHECK(sum70[4] < 255 * 2);                /* ★ 改后：连 2 倍都不到 */
+            }
             CHECK(yk_m_laser_beam_bar_alpha(160, 0, 4) == 160);
             CHECK(yk_m_laser_beam_bar_alpha(160, 1, 4) == 90);        /* a34 = 120；k=1 ⇒ 120 − 60·2/4 */
             CHECK(yk_m_laser_beam_bar_alpha(160, 3, 4) == 120 - 60 * 6 / 4);
             CHECK(yk_m_laser_beam_bar_alpha(160, 0, 12) == 160);
             CHECK(yk_m_laser_beam_bar_alpha(160, 11, 12) == 120 - 60 * 22 / 12);
             CHECK(yk_m_laser_beam_bar_alpha(160, 11, 12) > 0);        /* 最旧那条也要看得见（> 0）*/
+            CHECK(yk_m_laser_beam_bar_alpha(70, 11, 12) > 0);         /* ★ 基准 70 时最旧那条也 > 0（5）*/
             CHECK(yk_m_laser_beam_bar_alpha(160, 1, 0) == 160);       /* rate = 0 ⇒ 不递减（防除零）*/
             CHECK(yk_m_laser_beam_bar_alpha(255, 1, 4) == 191 - 95 * 2 / 4);
             CHECK(yk_m_laser_beam_bar_alpha(-5, 2, 4) == 0);          /* 基准钳进 0..255 */
             CHECK(yk_m_laser_beam_bar_alpha(300, 0, 4) == 255);
+            /* ★★★ 第三十四批：**副本必须同帧起**（一手是同一支 VM 画 rate 次 ⇒ 共享 UV 相位）。
+             * 上一版「历史填到几条就起几条」会让相邻副本的相位差 16 texel = ¼ 纹样周期 ⇒ 纹样被平均掉
+             * （逐像素模拟：沿束纹样对比 0.384 → 0.085）。判据 = 只要开局那一帧（bars = 1）就起满整档。*/
+            CHECK(yk_m_laser_beam_bars_resident(0, 12) == 0);   /* 还没有活点 ⇒ 一支都不起 */
+            CHECK(yk_m_laser_beam_bars_resident(0, 2) == 0);
+            CHECK(yk_m_laser_beam_bars_resident(1, 2) == 2);    /* ★ 第一个活点就起满整档 */
+            CHECK(yk_m_laser_beam_bars_resident(1, 12) == 12);
+            CHECK(yk_m_laser_beam_bars_resident(4, 8) == 8);
+            CHECK(yk_m_laser_beam_bars_resident(99, 12) == 12); /* 条数比 rate 多也不多起 */
+            CHECK(yk_m_laser_beam_bars_resident(-1, 12) == 0);
+            CHECK(yk_m_laser_beam_bars_resident(3, 0) == 0);    /* rate = 0 ⇒ 不起（防除零/防越界）*/
+            CHECK(yk_m_laser_beam_bars_resident(3, 99) == (int)YK_M_LASER_BEAM_BARS_MAX);  /* 钳进数组第二维 */
             /* alpha 单调不增（越旧越淡）——逐档全扫一遍，防将来手滑写反 */
             {
                 int tt, kk, prev;
@@ -1642,6 +1684,34 @@ int main(void)
                 CHECK(yk_m_laser_beam_bar_count(0, 32, 4) == 0);
                 CHECK(yk_m_laser_beam_bar_count(&tr[0][0], 32, 0) == 0);
                 CHECK(yk_m_laser_beam_bar_count(&tr[0][0], 0, 4) == 0);
+            }
+            /* ⑦ ★★★ 第三十四批：**跟随**（owner 第 4 条「本体以及伤害源完全跟着子机定死」）。
+             * 逐帧模拟「子机每帧横移 6 px」的 tick 顺序（先 `trail[i]=trail[i-1]` 再写本帧膛口）：
+             *   · 一手 `0x450840` 写的是 `vm+0x2a4` = **上一帧**膛口 ⇒ 本体慢一帧；
+             *   · 本卡写**本帧**膛口 ⇒ `trail[0] == 本帧膛口`（差 0），残影 `k >= 1` 才是历史点。
+             * 判据 = 下面那条「差 = 0」（实跑侧的同款判据 = 探针行 `d(trail0,muzzle) 0.00`）。*/
+            {
+                float tr[YK_M_LASER_BEAM_TRAIL_MAX][2];
+                float mx, my;
+                int k, f, bars;
+                for (k = 0; k < (int)YK_M_LASER_BEAM_TRAIL_MAX; ++k) {
+                    tr[k][0] = YK_M_LASER_BEAM_TRAIL_NONE;
+                    tr[k][1] = 0.0f;
+                }
+                for (f = 0; f < 8; ++f) {
+                    mx = 100.0f + 6.0f * (float)f;      /* 子机这一帧的膛口（横移 6 px/帧）*/
+                    my = 300.0f;
+                    yk_m_laser_beam_trail_step(&tr[0][0], 32, mx, my);
+                    CHECK(tr[0][0] == mx && tr[0][1] == my);       /* ★ 本帧膛口 = 本体锚（差 0）*/
+                    if (f >= 1)
+                        CHECK(tr[1][0] == mx - 6.0f && tr[1][1] == my - 1.0f);  /* 残影 = 上一帧 + y−1 */
+                    if (f >= 2)
+                        CHECK(tr[2][0] == mx - 12.0f && tr[2][1] == my - 2.0f);
+                }
+                /* 条数照旧（`bars` 只由轨迹决定 ⇒ 与「同帧起满整档」那条例外无关）*/
+                bars = yk_m_laser_beam_bar_count(&tr[0][0], 32, 12);
+                CHECK(bars == 8);
+                CHECK(yk_m_laser_beam_bars_resident(bars, 12) == 12);   /* 常驻 12、可见 8 */
             }
             /* ★★★ 2026-09-27（owner ④）：**妖逢魔染色**的两个纯函数。
              * 一手：只有霊夢（`ply00as`）与魔理沙（`ply01as`）的行 `+0x1e > 0` ⇒ 只有这两位的妖侧组染红。*/
