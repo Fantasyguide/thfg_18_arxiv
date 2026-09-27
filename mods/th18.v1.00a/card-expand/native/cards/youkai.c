@@ -1582,8 +1582,10 @@ static int on_option_pose_apply(ce_card_t *c)
                     s->opt_pos[i][1] = pp[1];
                 }
                 yk_option_freeze_face0(i, &s->opt_face[i]);
-                s->opt_orbit[i][0] = (s->opt_face[i] == 0.0f) ? 1.0f : -1.0f;   /* polar(1, face0) */
-                s->opt_orbit[i][1] = 0.0f;
+                /* 出生位形照一手：偏移 = `(sin(face0), cos(face0)) × r` ⇒ face0 = 0 的格子起在 **+y**
+                 * （锚点正下方）、face0 = π 的起在 **−y**（正上方）—— 内外圈一开始就上下相对。*/
+                s->opt_orbit[i][0] = 0.0f;
+                s->opt_orbit[i][1] = (s->opt_face[i] == 0.0f) ? 1.0f : -1.0f;
                 s->opt_frozen[i] = 1;
             }
             fx = s->opt_pos[i][0] - pp[0];
@@ -1608,10 +1610,13 @@ static int on_option_pose_apply(ce_card_t *c)
                     float step = 0.0f;
                     float nx;
                     yk_option_freeze_spin(i, &step);               /* 跳表 `th08:0x44ee5b` 的符号与档 */
-                    if (step > 0.030f)        { c = YK_OPT_ORBIT_COS_INNER; sn =  YK_OPT_ORBIT_SIN_INNER; }
-                    else if (step > 0.0f)     { c = YK_OPT_ORBIT_COS_OUTER; sn =  YK_OPT_ORBIT_SIN_OUTER; }
-                    else if (step < -0.030f)  { c = YK_OPT_ORBIT_COS_INNER; sn = -YK_OPT_ORBIT_SIN_INNER; }
-                    else if (step < 0.0f)     { c = YK_OPT_ORBIT_COS_OUTER; sn = -YK_OPT_ORBIT_SIN_OUTER; }
+                    /* ⚠ 符号取反：一手的偏移向量是 `(sin(face), cos(face)) × r`（`0x4286e0` 的两条
+                     * `fstp`：先 sin 后 cos，见 `AUDIT.md` §BE #128 追补），也就是「face 增大 = 顺时针」；
+                     * 而我们的单位向量走标准旋转矩阵（+x → +y = 逆时针）⇒ 这里**用 −step** 才能同向。*/
+                    if (step > 0.030f)        { c = YK_OPT_ORBIT_COS_INNER; sn = -YK_OPT_ORBIT_SIN_INNER; }
+                    else if (step > 0.0f)     { c = YK_OPT_ORBIT_COS_OUTER; sn = -YK_OPT_ORBIT_SIN_OUTER; }
+                    else if (step < -0.030f)  { c = YK_OPT_ORBIT_COS_INNER; sn =  YK_OPT_ORBIT_SIN_INNER; }
+                    else if (step < 0.0f)     { c = YK_OPT_ORBIT_COS_OUTER; sn =  YK_OPT_ORBIT_SIN_OUTER; }
                     else                      { c = 1.0f; sn = 0.0f; }
                     nx = s->opt_orbit[i][0] * c - s->opt_orbit[i][1] * sn;
                     s->opt_orbit[i][1] = s->opt_orbit[i][0] * sn + s->opt_orbit[i][1] * c;
@@ -3907,15 +3912,36 @@ static const char *yk_graze_gate_name(int g)
 static void yk_pin_our_beam_len(void)
 {
     uint8_t *pl = CE_PLAYER();
-    int i;
+    int i, live = 0;
     if (!pl) return;
     for (i = 0; i < CE_PB_COUNT; ++i) {
         uint8_t *b = pl + CE_PB_POOL + (size_t)i * CE_PB_STRIDE;
-        uint32_t packed;
+        uint32_t packed, dsidx;
         if (*(int32_t *)(b + CE_PB_STATE) != 1) continue;
         packed = *(uint32_t *)(b + CE_PB_PACKED_ID);
         if (!yk_marisa_laser_row((int)(packed >> 8), (int)(packed & 0xffu))) continue;
+        ++live;
         *(float *)(b + CE_PB_LASER_LEN) = YK_LASER_LEN;
+        /* ★★★ 2026-09-27 第二十四批（实跑日志定案后补）：**伤害源那一份长度也要顶回来**。
+         * 一手：`hit2`（`0x460320`）把束截到首个接触点时会**同时**截 `bullet+0xa0`（画出来的长度）
+         * 和伤害源矩形的那条边（`engine/player/th18/02-damage-sources.md`：矩形槽 `+0x14` = 宽）。
+         * 不顶这一份 ⇒ 只是「看着贯通」，**第一个敌人之后不再结算**（= 假贯通）。
+         * 索引 → 槽地址照同一篇：`槽 = player + 0x204d8 + idx*0x9c`，**1-based**（idx 0 = 哨兵）。
+         * ⚠ 只在 `flags` bit0（active）置位时写，免得碰空槽。*/
+        dsidx = *(const uint32_t *)(b + CE_PB_DAMAGE_IDX);
+        if (dsidx && dsidx <= 0x400u) {
+            uint8_t *ds = pl + (CE_PLAYER_DMGSRC_POOL - CE_PLAYER_DMGSRC_STRIDE)
+                             + (size_t)dsidx * CE_PLAYER_DMGSRC_STRIDE;
+            if (*(const uint32_t *)ds & 1u) *(float *)(ds + 0x14) = YK_LASER_LEN;
+        }
+    }
+    /* ★ 顺手解锁：`mode=2` 的「每槽一发」去重锁（`player+0x476fc+idx*4`）在**束被引擎判完成**时
+     * 不会自己清（`sdk.c` 的同一段记过这个坑：不解锁 ⇒ 那条 row 以后再也不发激光）。
+     * 我们这套只有一条束（行里 `+0x20 = 1` ⇒ idx = 1）⇒ 没有活束就清锁。*/
+    if (!live) {
+        const int idx = 1;
+        if (idx < CE_PLAYER_MODE2_LOCK_SLOTS)
+            *(int32_t *)(pl + CE_PLAYER_MODE2_LOCK_BASE + idx * 4) = 0;
     }
 }
 

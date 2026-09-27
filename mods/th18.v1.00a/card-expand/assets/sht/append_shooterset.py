@@ -1774,8 +1774,16 @@ def _youkai_tier_sets(target_file: str, anm_ids: dict) -> list:
                     #   「真激光没有被射出去，是一个十分短小的袖箭」）。
                     #   逐档宽度 = TH08 `player01.anm` script24..28 量出来的 16/16/19.2/22.4/25.6 px。
                     beam_w = (16.0, 16.0, 19.2, 22.4, 25.6)[min(max(t, 0), 4)]
+                    #   ★ 2026-09-27 第二十四批（**实跑日志定案**）：`func_on_hit` 必须是 **2**（原生值）。
+                    #   探针原文 `youkai/probe beam: state 2 len(+0xa0) 18.0 width(+0xa4) 16.0`
+                    #   ⇒ 束一出生就被标 `state = 2`（只长了一帧 = 18 px）—— 那是**引擎默认的命中路径**
+                    #   （`th18:0x45f6a0` → `0x45f6f0`：给弹的 VM 发 `interrupt 1` + `+0x8c = 2`）干的：
+                    #   **行里没有命中回调时**引擎走这条默认路 ⇒ 束一碰到敌人就被判完成（= owner 的「只有一小节」）。
+                    #   填 2 ⇒ 引擎改走 `hit2`（`0x460320`：几何求交 + 束端特效，**不销毁**）⇒ 束活着；
+                    #   代价 = hit2 会把长度截到首个接触点 ⇒ 卡侧每帧把长度（`+0xa0` **和伤害源的 `+0x14`**）
+                    #   都顶回一手的 448 ⇒ 观感/伤害都仍是**无限贯通**。
                     rows = [dict(r, mode=2, speed=0.0, hit_w=0.0, hit_h=beam_w, hit_fx=0,
-                                 func_on_init=2, func_on_tick=2, func_on_hit=0) if o >= 1 else r
+                                 func_on_init=2, func_on_tick=2, func_on_hit=2) if o >= 1 else r
                             for r, o in zip(rows, orig[t])]
                 for o in orig[t]:
                     if not 0 <= o <= 4:
