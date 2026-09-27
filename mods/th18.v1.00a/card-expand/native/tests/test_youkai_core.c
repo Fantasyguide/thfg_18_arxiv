@@ -1339,7 +1339,7 @@ int main(void)
             /* 束的条数上限 = 每台我们的子机一条 + 回退本体的那一条（117 的同款形状）*/
             CHECK(YK_M_LASER_BEAM_MAX == YK_OPTION_CELLS + 1);
             /* 贴图逻辑尺寸（`YKB_M_OPT.png` = 256×32；`scale.x = 448/256`、`scale.y = w/32`）*/
-            CHECK(YK_M_LASER_BEAM_SPRITE_W == 256.0f);
+            CHECK(YK_M_LASER_BEAM_SPRITE_W == 512.0f);   /* ★ 镜像平铺后 = 2×256（为了能无缝滚动）*/
             CHECK(YK_M_LASER_BEAM_SPRITE_H == 32.0f);
             /* ★★★ 2026-09-27（owner ④）：**妖逢魔染色**的两个纯函数。
              * 一手：只有霊夢（`ply00as`）与魔理沙（`ply01as`）的行 `+0x1e > 0` ⇒ 只有这两位的妖侧组染红。*/

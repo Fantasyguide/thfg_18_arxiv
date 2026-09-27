@@ -353,7 +353,7 @@ int yk_marisa_laser_row(int set_index, int row_index);
  *   · **不消弹**（一手：TH08 那条 `type = 5` 在碰撞 pass 里被显式跳过销毁 ⇒ 只打不消；与 117 bug-2(b) 同款）。
  *   · **无限贯通**：矩形源是**几何求交**，没有「截到首个接触点」这一步（那是引擎 `hit2` 的行为）⇒ 天然贯通。*/
 #define YK_M_LASER_BEAM_TIERS       5        /* = 火力档数（`YK_SHOT_TIERS`）*/
-#define YK_M_LASER_BEAM_SPRITE_W    256.0f   /* 束贴图 `YKB_M_OPT.png` 的逻辑宽（切图 = TH08 那条 448×32 滚动带的前 256）*/
+#define YK_M_LASER_BEAM_SPRITE_W    512.0f   /* 束贴图 `YKB_M_OPT.png` 的逻辑宽 —— **镜像平铺**后 = 2×256（为了能无缝滚动；拉伸系数随之变 448/512 = 0.875）*/
 #define YK_M_LASER_BEAM_SPRITE_H    32.0f    /* 同一个贴图的高 ⇒ 宽度系数 = 屏上宽 / 32 */
 #define YK_M_LASER_BEAM_SETTLE      2        /* 结算间隔（帧）—— 一手 TH08 每 2 帧结算一次（`th08:0x4517a1`）*/
 #define YK_M_LASER_BEAM_GROW_FRAMES 8        /* 「如收回般展开」的帧数 = 束脚本 `interruptLabel(1)` 收束段

@@ -15,10 +15,10 @@ script script378 {
     scale(1.0f, 1.0f);
     alpha(160);
     blendMode(1);
-    // ★ 一手 TH08 script24..28 有 `scrollX(0.0625f)`（每帧 1/16 宽），但我们的贴图是**一次性长条**
-    //   （不是可无缝平铺的循环纹理）⇒ 滚动到接缝那一刻会在束上看到一条移动的缝/断节
-    //   （owner 实跑：「能看出来在画面边缘**一节一节**消失」）。本批**关掉滚动**（静止贴图），
-    //   登记 `TUNING.md` §2.1ccc-2。
+    // ★ 2026-09-27（owner：「先搞滚动的」）：滚动**照一开放**（TH08 script24..28 的 `scrollX(0.0625f)`，
+    //   每帧滚 1/16 宽）。前提已就位：那一张成员在 `make_youkai_bullet_art.py` 里做了
+    //   **镜像平铺**（`MIRROR_MEMBERS`）⇒ 左右边缘像素相同 ⇒ 绕回无缝 ✓（不再有那条移动的缝）。
+    scrollX(0.0625f);
     stop();
     interruptLabel(1);
     scaleTime(8, 1, 1.0f, 0.0f);

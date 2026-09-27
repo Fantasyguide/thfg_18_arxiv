@@ -240,6 +240,28 @@ def canvas_size(w, h):
     return pow2_ceil(w), pow2_ceil(h)
 
 
+# ★★★ 2026-09-27（owner：「**先搞滚动的**」）：**可无缝平铺**的成员。
+#   一手 TH08 的束脚本有 `scrollX(0.0625f)`（每帧滚 1/16 宽），而那张条状纹理是**一次性**的
+#   （左右边缘接不上）⇒ 滚到接缝会在束上留一条移动的缝（owner 实跑「一节一节消失」）。
+#   这里把指定成员改成**镜像平铺**：`[内容 | 内容镜像]` ⇒ 新图**左右边缘像素相同**
+#   （右端 = 镜像段的末尾 = 内容的第 0 列；左端 = 内容的第 0 列）⇒ UV 绕回时**无缝** ✓。
+#   代价：贴图宽翻倍 ⇒ 卡侧的 `YK_M_LASER_BEAM_SPRITE_W` 要跟着改（`448/512 = 0.875` 的拉伸），
+#   成员在 entry 里也占更宽的位置（`assets/build_player_anm.py` 的 `YK_BULLET_CANVAS`）。
+MIRROR_MEMBERS = {
+    "YKB_M_OPT",      # 魔理沙妖侧子机的束（唯一一条需要滚动的贴图）
+}
+
+
+def mirror_tile(canvas):
+    """把画布变成「内容 + 自身镜像」⇒ 左右边缘像素相同、可无缝滚动。"""
+    from PIL import Image as _I
+    w, h = canvas.size
+    out = _I.new("RGBA", (w * 2, h), (0, 0, 0, 0))
+    out.paste(canvas, (0, 0))
+    out.paste(canvas.transpose(_I.FLIP_LEFT_RIGHT), (w, 0))
+    return out
+
+
 def cut_sprites(workdir: Path):
     """把每个成员 1:1 切出来、居中补到 2 的幂画布。→ {(名字): (路径, WxH, 可见像素, 源字节)}"""
     OUT_ART.mkdir(parents=True, exist_ok=True)
@@ -260,6 +282,9 @@ def cut_sprites(workdir: Path):
         cw, ch = canvas_size(w, h)
         canvas = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
         canvas.paste(cell, ((cw - w) // 2, (ch - h) // 2))     # 居中 = 原生的中心锚点
+        if name in MIRROR_MEMBERS:                      # ★ 可无缝平铺（见 MIRROR_MEMBERS 的注）
+            canvas = mirror_tile(canvas)
+            cw, ch = canvas.size
         path = OUT_ART / f"{name}.png"
         canvas.save(path)
         # 用**逐通道**展平（`get_flattened_data` 不回元组、也不触发 Pillow 的弃用告警）。
@@ -507,10 +532,10 @@ def gen_beam(name, spr_member, width_px, scale_y, src_num):
     scale(1.0f, 1.0f);
     alpha(160);
     blendMode(1);
-    // ★ 一手 TH08 script24..28 有 `scrollX(0.0625f)`（每帧 1/16 宽），但我们的贴图是**一次性长条**
-    //   （不是可无缝平铺的循环纹理）⇒ 滚动到接缝那一刻会在束上看到一条移动的缝/断节
-    //   （owner 实跑：「能看出来在画面边缘**一节一节**消失」）。本批**关掉滚动**（静止贴图），
-    //   登记 `TUNING.md` §2.1ccc-2。
+    // ★ 2026-09-27（owner：「先搞滚动的」）：滚动**照一开放**（TH08 script24..28 的 `scrollX(0.0625f)`，
+    //   每帧滚 1/16 宽）。前提已就位：那一张成员在 `make_youkai_bullet_art.py` 里做了
+    //   **镜像平铺**（`MIRROR_MEMBERS`）⇒ 左右边缘像素相同 ⇒ 绕回无缝 ✓（不再有那条移动的缝）。
+    scrollX(0.0625f);
     stop();
     interruptLabel(1);
     scaleTime(8, 1, 1.0f, 0.0f);
