@@ -1300,6 +1300,10 @@ static void yk_opt_released_check(void)
     s_opt_released_frame = 0u;
 }
 
+/* ★ 2026-09-27（owner ⑥）：定义在下面（弹池扫描那一段），这里先声明 —— `yk_option_release`
+ *（子机撤走）要用它把在飞的激光束一起收掉。*/
+static int yk_kill_our_lasers(void);
+
 static void yk_option_release(ce_card_t *c, yk_card_t *s)
 {
     int i;
@@ -1384,6 +1388,7 @@ static void yk_option_release(ce_card_t *c, yk_card_t *s)
     s->opt_age = 0;                        /* ★ 2026-09-22 晚：出场计时从 0 起（TH08 的 `Timer(&option+0x2e0)`）*/
     s->opt_chase = 0;                      /* 手里没子机 ⇒ 追踪态自然结束（旋转标签由新 VM 自己的脚本起手）*/
     s->opt_spin_vm = 0;                    /* ★ 2026-09-26：VM 没了 ⇒ 忘了「发给谁」*/
+    yk_kill_our_lasers();                  /* ★ 2026-09-27（owner ⑥）：子机撤走 ⇒ 束也必须收掉 */
     /* ★ 2026-09-27（owner ②）：**松 Shift ⇒ 放置型的那四个魔法阵解除冻结** —— 下一次进妖侧
      * 要按「创建那一刻」重新定型（一手：TH08 整个 option 对象在 `th08:0x44b0ac` 一带被
      * `memset` 重建，state 回到 1 ⇒ 位置重新写一遍）。*/
@@ -3845,6 +3850,72 @@ static const char *yk_graze_gate_name(int g)
     }
 }
 
+/* ============ ★★★ 2026-09-27（owner ⑥）：**收掉我们自己在飞的激光束**
+ *
+ * 为什么必须自己收（一手）：`mode=2` 激光的寿命**不跟 set 走** —— TH18 的 `tick2` 存活分支只看
+ * 射击短计时（松开 Z 才结束），而认领哪一组 row 是发射那一刻的事 ⇒ **松开 Shift 之后，旧束仍钉在
+ * 原来的子机上继续打**（116 在 2026-09-13 踩过同一件事，`sdk.c` 的 `ce_kill_retail_option_lasers`
+ * 是为它写的；那条只管原生 ≤ `0x15` 的组，**不碰我们的**）。
+ * 三步照引擎自己的自杀段（`th18:0x460296` / `:0x4602a0` / `:0x4602c1`，与 `sdk.c` 同一套）：
+ *   `state = 2` → 给束 VM 发 `interrupt 1`（束脚本的收束段：`scaleTime(8,1,1.0,0)` + `delete`）
+ *   → **清 `player+0x476fc+idx*4` 的 mode=2 去重锁**（不解锁的话 `Player__shoot_one_bullet`
+ *   `0x45e96e` 会一直早退，那条 row 以后再也不发激光 —— 只有重开一局才清）。
+ * 过滤只看 `yk_marisa_laser_row(set, row)` + 该行 `+0x21 == 2` ⇒ 别人的束、原生束都不碰。*/
+/* 每帧把**我们那几条束**的长度钳回一手的 448（见 `youkai_core.h` 的 `YK_LASER_LEN` 注）。
+ * 只碰 `yk_marisa_laser_row()` 认得出的格子 ⇒ 别人的束、原生束一动不动。*/
+static void yk_pin_our_beam_len(void)
+{
+    uint8_t *pl = CE_PLAYER();
+    int i;
+    if (!pl) return;
+    for (i = 0; i < CE_PB_COUNT; ++i) {
+        uint8_t *b = pl + CE_PB_POOL + (size_t)i * CE_PB_STRIDE;
+        uint32_t packed;
+        if (*(int32_t *)(b + CE_PB_STATE) != 1) continue;
+        packed = *(uint32_t *)(b + CE_PB_PACKED_ID);
+        if (!yk_marisa_laser_row((int)(packed >> 8), (int)(packed & 0xffu))) continue;
+        *(float *)(b + CE_PB_LASER_LEN) = YK_LASER_LEN;
+    }
+}
+
+static int yk_kill_our_lasers(void)
+{
+    uint8_t *pl = CE_PLAYER();
+    uint8_t *sht;
+    int i, n = 0;
+    if (!pl) return 0;
+    sht = *(uint8_t **)(pl + CE_PLAYER_SHT_PTR);
+    if (!sht) return 0;
+    for (i = 0; i < CE_PB_COUNT; ++i) {
+        uint8_t *b = pl + CE_PB_POOL + (size_t)i * CE_PB_STRIDE;
+        uint32_t packed, set, row;
+        uint8_t *sr;
+        int slot, idx;
+        if (*(int32_t *)(b + CE_PB_STATE) != 1) continue;              /* 只收活动弹 */
+        packed = *(uint32_t *)(b + CE_PB_PACKED_ID);
+        set = packed >> 8; row = packed & 0xffu;
+        if (!yk_marisa_laser_row((int)set, (int)row)) continue;        /* 只收我们自己那几条激光行 */
+        sr = *(uint8_t **)(sht + 0xe0 + set * 4);
+        if (!sr) continue;
+        sr += row * 0x5c;
+        if (*(const int8_t *)(sr + CE_SHT_ROW_MODE) != 2) continue;
+        *(int32_t *)(b + CE_PB_STATE) = 2;                             /* 引擎自杀段第一步 */
+        ce_anm_interrupt(*(const uint32_t *)(b + CE_PB_VM_ID), 1);     /* 束脚本 interrupt 1 */
+        slot = (int)*(const int8_t *)(sr + CE_SHT_ROW_OPT_SLOT);       /* 去重锁：解码同 `0x4602a8` */
+        if (slot != 0) {
+            idx = (slot < 0x10) ? (slot & 0xf) : (slot >> 4);
+            if (idx >= 0 && idx < CE_PLAYER_MODE2_LOCK_SLOTS)
+                *(int32_t *)(pl + CE_PLAYER_MODE2_LOCK_BASE + idx * 4) = 0;
+        }
+        ++n;
+    }
+    if (n > 0)
+        ce_log("youkai: killed %d of OUR laser beam(s) (state=2 + interrupt 1 + mode2 lock cleared) - "
+               "TH18 mode=2 beams outlive the shot set, so releasing Shift would otherwise leave them "
+               "firing from a dead option", n);
+    return n;
+}
+
 /* ============ ★★★ 2026-09-27（owner ④）：**妖逢魔 ⇒ 自机弹染红**（一手见 `youkai_core.h` 的同名小节）
  *
  * 一手：TH08 是「造弹那一刻按『极妖 + 该行 `+0x1e > 0`』置 `bullet+0x470`，然后**每次绘制前**
@@ -4366,6 +4437,7 @@ static int on_tick_2(ce_card_t *c)
      * ⚠ 只在低速解析（高速没有我们的子机、使魔也撤了，解析出来也没人用）。*/
     if (focused) {
         yk_chase_target_resolve(s);
+        yk_pin_our_beam_len();       /* ★ 2026-09-27（owner ⑥）：束长钳回一手的 448 */
         if (s->opt_script >= 0 && s->opt[0].ptr) { if (s->opt_age < 0xffffu) ++s->opt_age; }
         else { s->opt_age = 0; s->opt_chase = 0; s->opt_spin_vm = 0; }
     } else {

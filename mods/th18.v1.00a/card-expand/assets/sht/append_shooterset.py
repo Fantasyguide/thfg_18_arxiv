@@ -278,7 +278,7 @@ def _yk_anm_for(target_file: str) -> int:
 
 
 def _yk_row(rate, damage, dx, angle, sfx, speed=12.0, dy=0.0, opt_slot=0, anm=None, func_tick=0,
-            func_hit=0, func_init=0):
+            func_hit=0, func_init=0, mode=0, hit_fx=0, hit_w=16.0, hit_h=16.0):
     """一行 = 一个 TH18 shooter 记录 dict（字段名见 pack_shooter）。
 
     ★ 2026-09-22：加了 `speed` / `dy` 两个可选参数 —— 原版 TH08 的 `plyNNas.sht` **每行有自己的
@@ -301,9 +301,9 @@ def _yk_row(rate, damage, dx, angle, sfx, speed=12.0, dy=0.0, opt_slot=0, anm=No
     ⚠ `+0x28` 是 TH08 **回调表的下标**、`func_init` 是 TH18 的下标 ⇒ 只在 R 的**子机行**上按上面那条一手语义填 5
     （见 `_youkai_tier_sets` 里那一段）。其余调用点不传 ⇒ 行为逐字节不变。"""
     return dict(fire_rate=rate, start_delay=0, damage=damage,
-                spawn_dx=dx, spawn_dy=dy, hit_w=16.0, hit_h=16.0,
-                angle=angle, speed=speed, opt_slot=opt_slot, mode=0,
-                anm=(21 if anm is None else anm), sfx=sfx, hit_fx=0, fire_rate2=0, start_delay2=0,
+                spawn_dx=dx, spawn_dy=dy, hit_w=hit_w, hit_h=hit_h,
+                angle=angle, speed=speed, opt_slot=opt_slot, mode=mode,
+                anm=(21 if anm is None else anm), sfx=sfx, hit_fx=hit_fx, fire_rate2=0, start_delay2=0,
                 func_on_init=func_init, func_on_tick=func_tick, func_on_draw=0, func_on_hit=func_hit)
 
 
@@ -1630,7 +1630,12 @@ DPS_TOLERANCE = 0.02          # 逐行取整后的允许偏差（2%）
 # （宏 = `CE_PL_ANM_SCRIPT_YKBULLET_*_PL0X`，由 `build_player_anm.py` 写进 `pl_anm_ids.h`）。
 YOUKAI_BULLET_ANM = {
     "R": ("CE_PL_ANM_SCRIPT_YKBULLET_R_MAIN_PL00", "CE_PL_ANM_SCRIPT_YKBULLET_R_OPT_PL00"),
-    "M": ("CE_PL_ANM_SCRIPT_YKBULLET_M_MAIN_PL01", "CE_PL_ANM_SCRIPT_YKBULLET_M_OPT_PL01"),
+    # ★★★ 2026-09-27（owner ⑥）：魔理沙的子机行是**真激光**（TH08 `ply01as` 的 `type=5` 那一行）
+    #   ⇒ 第二格是**按档的元组**（5 支束脚本；一手宽度逐档 16/16/19.2/22.4/25.6 px）。
+    "M": ("CE_PL_ANM_SCRIPT_YKBULLET_M_MAIN_PL01",
+          ("CE_PL_ANM_SCRIPT_YKBULLET_M_BEAM0_PL01", "CE_PL_ANM_SCRIPT_YKBULLET_M_BEAM1_PL01",
+           "CE_PL_ANM_SCRIPT_YKBULLET_M_BEAM2_PL01", "CE_PL_ANM_SCRIPT_YKBULLET_M_BEAM3_PL01",
+           "CE_PL_ANM_SCRIPT_YKBULLET_M_BEAM4_PL01")),
     "S": ("CE_PL_ANM_SCRIPT_YKBULLET_S_MAIN_PL02", "CE_PL_ANM_SCRIPT_YKBULLET_S_OPT_PL02"),
     # ★★★ 2026-09-27 早苗（TH16 文）：**本体一支 + 子机逐档一支**（TH16 set6..9 的子机行
     #   `anm` = 1/2/3/4 ⇒ `pl03.anm` script6/7/8/9，逐档只差 `scale.y`）
@@ -1747,6 +1752,24 @@ def _youkai_tier_sets(target_file: str, anm_ids: dict) -> list:
                 #   全局角 ⇒ 这两行会与其它子机行同向（**丢掉 ±2° 散角**），登记 `TUNING.md` 的 ❓。
                 if k == "R":
                     rows = [dict(r, func_on_init=5, speed=r["speed"] * 1.5) if o >= 1 else r
+                            for r, o in zip(rows, orig[t])]
+                # ★★★ 2026-09-27（owner ⑥）：**魔理沙（M）的子机行 = 引擎原生的「激光」通路**。
+                #   一手（`ply01as.sht` + `th08:0x44fe20`/`0x450840`/`0x450ee0`）：
+                #     那一行 `type = 5`、四个回调 = init4/tick5/draw1/hit2（TH08 下标）⇒ 它是**一条长驻束**
+                #     （8 个激光槽、同 row 判重 ⇒ 不消耗弹槽），`type 5` 在碰撞 pass 里**被显式跳过销毁**
+                #     ⇒ **无限贯通**、每 2 帧结算 7 点；宽度逐档换脚本、长度恒 448。
+                #   TH18 的对位 = 原生「ミニ八卦炉」那一套（一手 `engine/sht/th18/03` §5.3）：
+                #     `mode = 2`（激光分支）+ `func init2/tick2/hit2` + 束脚本 `+0x22` + `hit_fx +0x26`。
+                #   ⚠ 三处**故意的偏差**（都登记 `TUNING.md`）：
+                #     ① `func_on_hit` 填 **0**（去掉 hit2 的「截到首个接触点」）—— 这才叫无限贯通；
+                #        代价 = 束端那圈命中特效没了（一手是 hit2 每 2 帧放一次）；
+                #     ② `hit_fx = 0`：`+0x26` 在我们这套**主炮行**里的解析 anm 与原生卡路径不同源，
+                #        填数会指到 pl01.anm 的同号脚本上（= 一颗普通弹）⇒ 宁可留空；
+                #     ③ 长度让引擎自己长到 512（一手恒 448）—— 一手那个 448 是 TH08 tick 里的常量。
+                #   速度必须 0（一手 10 是"发射速度"字段，TH18 的 tick2 每帧把束钉回子机；原生也是 0）。
+                if k == "M":
+                    rows = [dict(r, mode=2, speed=0.0, hit_w=0.0, hit_h=0.0, hit_fx=0,
+                                 func_on_init=2, func_on_tick=2, func_on_hit=0) if o >= 1 else r
                             for r, o in zip(rows, orig[t])]
                 for o in orig[t]:
                     if not 0 <= o <= 4:

@@ -457,6 +457,10 @@
 #define CE_PB_PACKED_ID            0xac       /* `PlayerBullet__create` `0x45e35c` 写 `(set<<8)|row`；`tick2`/命中回查都用它解 shooter 行 */
 #define CE_PB_OPTION               0xe4       /* 指向发射它的子机 zPlayerOption*（`PlayerBullet__create` `0x45e3ae` 从第 5 个栈参写）*/
 #define CE_PB_DAMAGE_IDX           0xb0       /* 伤害源下标（`tick_bullets` `0x45ee6f` 用它算 `PLAYER+0x204d8+idx*0x9c`）*/
+#define CE_PB_LASER_LEN            0xa0       /* ★ 2026-09-27 加：`mode=2` 激光的**长度**（一手：
+                                              * `tick2` `th18:0x45ff61`–`0x45ff84` 每帧 `+18.0` 累加到 512
+                                              * （`th18:0x4b93b0`）、`hit2` `th18:0x460320` 把它截到命中点；
+                                              * `init2` `th18:0x45fc20` 起始清 0）*/
 
 /* ---- mode=2 激光的「每槽一发」去重表（`player+0x476fc`，30 项，一手）----
  * `PlayerBullet__create` `0x45e49d` 写当前火力档；`Player__shoot_one_bullet` `0x45e96e` 见

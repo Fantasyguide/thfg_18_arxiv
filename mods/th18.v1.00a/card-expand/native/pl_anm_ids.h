@@ -31,6 +31,11 @@
 #define CE_PL_ANM_SCRIPT_YKGAUGEFONT_PL01  59   /* pl01.anm 追加 */
 #define CE_PL_ANM_SCRIPT_YKBULLET_M_MAIN_PL01  60   /* pl01.anm 追加 */
 #define CE_PL_ANM_SCRIPT_YKBULLET_M_OPT_PL01  61   /* pl01.anm 追加 */
+#define CE_PL_ANM_SCRIPT_YKBULLET_M_BEAM0_PL01  62   /* pl01.anm 追加 */
+#define CE_PL_ANM_SCRIPT_YKBULLET_M_BEAM1_PL01  63   /* pl01.anm 追加 */
+#define CE_PL_ANM_SCRIPT_YKBULLET_M_BEAM2_PL01  64   /* pl01.anm 追加 */
+#define CE_PL_ANM_SCRIPT_YKBULLET_M_BEAM3_PL01  65   /* pl01.anm 追加 */
+#define CE_PL_ANM_SCRIPT_YKBULLET_M_BEAM4_PL01  66   /* pl01.anm 追加 */
 #define CE_PL_ANM_SCRIPT_PL02_WOLF         30   /* pl02.anm 追加 */
 #define CE_PL_ANM_SCRIPT_PL02_EAGLE        31   /* pl02.anm 追加 */
 #define CE_PL_ANM_SCRIPT_YKBODY_PL02_IDLE  32   /* pl02.anm 追加 */

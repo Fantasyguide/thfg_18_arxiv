@@ -1289,6 +1289,15 @@ int main(void)
                 /* 换形空窗常量（一手 `th08:0x44be05` 的 `cmp …,0x1e`）*/
                 CHECK(YK_GAUGE_SHIFT_BLANK == 30);
             }
+            /* ★★★ 2026-09-27（owner ⑥）：**我们自己那几条激光**的判据（卡侧收束/钳长都按它过滤）。*/
+            CHECK(yk_marisa_laser_row(0x59, 0) == 1);
+            CHECK(yk_marisa_laser_row(0x5d, 0) == 1);
+            CHECK(yk_marisa_laser_row(0x59, 1) == 0);      /* 组内第 1 行 = 本体行（不是激光）*/
+            CHECK(yk_marisa_laser_row(0x58, 0) == 0);      /* 霊夢的组：不是我们的激光 */
+            CHECK(yk_marisa_laser_row(0x5e, 0) == 0);      /* 咲夜 */
+            CHECK(yk_marisa_laser_row(0x63, 0) == 0);      /* 早苗 */
+            CHECK(yk_marisa_laser_row(0x16, 0) == 0);      /* 兜底组 */
+            CHECK(YK_LASER_LEN == 448.0f);                 /* 一手 TH08 的恒定束长 */
             /* ★★★ 2026-09-27（owner ④）：**妖逢魔染色**的两个纯函数。
              * 一手：只有霊夢（`ply00as`）与魔理沙（`ply01as`）的行 `+0x1e > 0` ⇒ 只有这两位的妖侧组染红。*/
             CHECK(yk_fengma_tint_set(0x54) == 1);            /* 霊夢 A0..A4 */

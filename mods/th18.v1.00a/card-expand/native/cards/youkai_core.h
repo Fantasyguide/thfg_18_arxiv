@@ -268,6 +268,34 @@ int yk_option_freeze_spin(int cell, float *out);
  * `while (f >= π) f -= 2π`（迭代上限 16），然后 `if (f < −π) f += 2π`）。*/
 void yk_opt_angle_norm(float angle, float step, float *out);
 
+/* ============ ★★★ 2026-09-27（owner ⑥）：**魔理沙妖侧子机 = 真激光**（一手见下）============
+ *
+ * >> owner 逐字：「**魔理沙妖子机的激光是真激光，无限贯通，会随着 P 的增加而变宽**」。
+ *
+ * **一手**（子 agent 逐指令 + 本轮复核；`ply01as.sht` = TH08 魔理沙队妖侧 = **アリス**）：
+ *   · 每档**只有 1 条**子机行（`origin = 1`），`type = 5`，四个回调 = init `th08:0x44fe20` /
+ *     tick `th08:0x450840` / draw `th08:0x450ad0` / hit `th08:0x450ee0` ⇒ 它是**一条长驻束**
+ *     （8 个激光槽 + 同 row 判重：`fire_rate` 只是「重新起束」的节奏，不消耗弹槽）。
+ *   · **无限贯通**：碰撞 pass 里 `type ∈ {4,5,6}` 被**显式跳过销毁**（`th08:0x4518b3` 一族）
+ *     ⇒ 不置 `state = 2`、不放命中脚本、不减速；`type = 5` 的伤害**每 2 帧**结算一次（`0x4517a1`）。
+ *   · **随 P 变宽**：逐档换脚本 —— `player01.anm` script24..28 的
+ *     `scale(1.0, 0.5/0.6/0.7/0.8/1.0)`（贴图 sprite32 = 448×32）⇒ 屏上 **16 / 19.2 / 22.4 / 25.6 / 32 px**；
+ *     长度恒 **448**（`th08:0x450a4f` 的 `+0x434`）、判定盒 24×448、伤害 7。
+ *
+ * **TH18 落点**：走引擎**原生**的激光通路（一手 `engine/sht/th18/03` §5.3 = 原生「ミニ八卦炉」set 0xb）：
+ *   `mode = 2` + `func_on_init/tick = 2` + 束脚本 `+0x22` —— 字段值见 `append_shooterset.py` 里
+ *   `_youkai_tier_sets` 的 `k == "M"` 那一段（含三处**故意偏差**的登记）。*/
+#define YK_LASER_SET_M0   0x59      /* 魔理沙（M）的 5 组妖侧 set */
+#define YK_LASER_SET_M4   0x5d
+#define YK_LASER_ROW      0           /* 那一条激光行在组内恒为第 0 行（`YOUKAI_TIER_ORIGINS["M"]` 的第 0 项 = 1）*/
+/* 束长：一手 TH08 是**恒 448**（tick 里 `th08:0x450a4f` 写 `bullet+0x434 = 448.0`，而 TH08 的束贴图
+ * 本身就是 448 宽、`scale.x` 恒 1.0 ⇒ 画出来就是 448 px）。TH18 的引擎会让它 0→512 生长
+ * ⇒ 本卡每帧把它钳回 448（观感 = 一手：一出现就是全长）。*/
+#define YK_LASER_LEN      448.0f
+
+/* 这一发弹（packed set / row）是不是**我们自己那几条激光**（卡侧收束时要按它过滤；别去碰别人的束）。*/
+int yk_marisa_laser_row(int set_index, int row_index);
+
 /* ============ ★★★ 2026-09-27（owner ④）：**逢魔给自机弹染色**（一手：TH08 的 `+0x470` 旗 + 绘制前写色）
  *
  * >> owner 逐字：「**逢魔形态似乎会让对应的机体的子弹染色，妖逢魔就会让灵梦妖机体的所有子弹变成红色，

@@ -577,7 +577,13 @@ YK_BULLET_CANVAS = {
 YK_BULLET_SCRIPTS = {
     "pl00": ((364, "BULLET_R_MAIN", "YKB_R_MAIN"), (365, "BULLET_R_OPT", "YKB_R_OPT")),
     # ⚠ pl01 的主炮弹一支脚本引用两张图（弹体 + 命中），其余每支只引一张。
-    "pl01": ((366, "BULLET_M_MAIN", ("YKB_M_MAIN", "YKB_M_HIT")), (367, "BULLET_M_OPT", "YKB_M_OPT")),
+    # ★★★ 2026-09-27（owner ⑥）：魔理沙妖侧子机 = **真激光** ⇒ 逐档一支**束脚本**（375..379），
+    #   贴图复用同一个成员 `YKB_M_OPT`（TH08 `player01` sprite32 的 256×32 切图）。
+    #   为什么逐档一支：一手 TH08 的宽度就是逐档换脚本（`scale(1.0, 0.5/0.6/0.7/0.8/1.0)`）。
+    "pl01": ((366, "BULLET_M_MAIN", ("YKB_M_MAIN", "YKB_M_HIT")), (367, "BULLET_M_OPT", "YKB_M_OPT"),
+             (375, "BULLET_M_BEAM0", "YKB_M_OPT"), (376, "BULLET_M_BEAM1", "YKB_M_OPT"),
+             (377, "BULLET_M_BEAM2", "YKB_M_OPT"), (378, "BULLET_M_BEAM3", "YKB_M_OPT"),
+             (379, "BULLET_M_BEAM4", "YKB_M_OPT")),
     "pl02": ((368, "BULLET_S_MAIN", "YKB_S_MAIN"), (369, "BULLET_S_OPT", "YKB_S_OPT")),
     # ★★★ 2026-09-27：早苗 = 5 支 —— **本体 1 支**（`pl03.anm` script5）+ **子机逐档 1 支**
     #   （script6/7/8/9，逐档只差 `scale.y`）。每支都引用「弹体 + 命中三帧」= 同一 entry 里 4 个成员。

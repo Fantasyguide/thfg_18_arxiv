@@ -1331,6 +1331,12 @@ int32_t yk_blue_point_score(int32_t night, int32_t dist, int32_t is_max_value)
 /* ============ ★★★ 2026-09-22 夜（P-B 逢魔）：门与击破掉落的纯逻辑 ==============================
  * 一手（`th08:0x406d10`/`:0x406d70` 两个谓词、`th08:0x42da41` 那一支、`th08:0x45187f` 那第二颗）
  * 与 owner 的四条冲突裁决（一律按一手）全在 `youkai_core.h` 的同名小节。*/
+/* --------------------------------- ★★★ owner ⑥：我们那几条激光的判据（一手见 `youkai_core.h`）*/
+int yk_marisa_laser_row(int set_index, int row_index)
+{
+    return set_index >= YK_LASER_SET_M0 && set_index <= YK_LASER_SET_M4 && row_index == YK_LASER_ROW;
+}
+
 /* --------------------------------- ★★★ owner ④：逢魔染色的两个纯函数（一手见 `youkai_core.h`）*/
 int yk_fengma_tint_set(int set_index)
 {

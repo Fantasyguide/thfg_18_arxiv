@@ -447,6 +447,68 @@ def check_compile(scripts):
         return ok
 
 
+# ★★★ 2026-09-27（owner ⑥：「**魔理沙妖子机的激光是真激光，无限贯通，会随着 P 的增加而变宽**」）：
+#   魔理沙（TH08 `ply01as` = アリス）那一侧的**子机行**每档只有 1 行、`type = 5`，四个回调
+#   = init `th08:0x44fe20` / tick `th08:0x450840` / draw `th08:0x450ad0` / hit `th08:0x450ee0`
+#   ⇒ **不是一颗弹，是一条长驻的激光束 VM**（钉在子机上、每帧重画 + 32 点历史轨迹做伤害盒）。
+#   一手（子 agent 逐指令）：`type = 5` 在碰撞 pass 里被**显式跳过销毁**（`th08:0x4518b3` 一族）
+#   ⇒ **无限贯通、每 2 帧结算一次**；宽度**逐档靠不同号的 anm 脚本**（`player01.anm` script24..28 的
+#   `scale(1.0, 0.5/0.6/0.7/0.8/1.0)`，贴图 sprite32 = 448×32）⇒ 屏上宽度 16/19.2/22.4/25.6/32 px；
+#   长度恒 **448**、判定盒 24×448、伤害 7（`row+0x1c`）。
+#
+# **TH18 侧**（`engine/sht/th18/03` §5.3 = 原生「ミニ八卦炉」set 0xb）：一趟引擎原生的激光通路
+#   ——`mode = 2` + `func init2/tick2/hit2`（`th18:0x45fc20`/`0x45fc80`/`0x460320`）+ 束脚本。
+#   ⇒ 本卡把 5 支**束脚本**追加进 `pl01.anm`（我们的行由**主炮路径**发 ⇒ `+0x22` 按 `pl0X.anm` 解析，
+#     见 `AUDIT.md` §BE #105），形状照**原生束脚本**（引擎约定：`anchor(1, 0)` + `rotateAuto(1)`
+#     + `scale.x` 恒 1.0，长度由引擎的 `+0xa0` 驱动），贴图与**逐档宽度**照 TH08
+#     （同一个成员 `YKB_M_OPT` = TH08 `player01` sprite32 的 256×32 切图、`scale.y` = 一手的 5 档）。
+#   ⚠ v8 没有 `scrollX` ⇒ 贴图不流动（TH08 那支写的是 `scrollX(0.0625)`）；`ins_83(2)` 同前省。
+BEAMS = [
+    # (名字, 屏上目标宽度 px, scale.y = 目标宽度 / 贴图高 32)
+    ("YKB_M_BEAM0", 16.0, 0.5),
+    ("YKB_M_BEAM1", 16.0, 0.5),
+    ("YKB_M_BEAM2", 19.2, 0.6),
+    ("YKB_M_BEAM3", 22.4, 0.7),
+    ("YKB_M_BEAM4", 25.6, 0.8),
+]
+
+
+def gen_beam(name, spr_member, width_px, scale_y, src_num):
+    """生成一支**束脚本**（v8）。
+
+    形状**照 TH18 原生束**（`ability.anm` script3，一手见 `engine/sht/th18/03` §5.3）：
+      `layer` + `sprite` + `type(1)` + **`anchor(1, 0)`**（右端锚：束从子机往目标方向拉长）
+      + `scale(1.0, <y>)`（x 恒 1.0，长度由引擎的 `bullet+0xa0` 驱动）+ `blendMode(1)` + `rotateAuto(1)`，
+      收束那一支接 `interruptLabel(1)`：`scaleTime(8, 1, 1.0, 0.0)` 再 `delete()`
+      （一手：`tick2` 收束时对束 VM 发 `interrupt 1`，`th18:0x45fc80` 的 `+0x1fe` 那一族）。
+    数值侧（`scale.y` / `alpha`）照 **TH08**：`player01.anm` script{src_num} 的
+      `scale(1.0f, 0.5..0.8)`、`alpha(70)` ⇒ 屏上宽度 = 32 × scale.y = 一手量出来的
+      16 / 16 / 19.2 / 22.4 / 25.6 px（前两档在 TH08 里共用 script24）。"""
+    return f"""script script{{N}} {{
+    // 由 assets/ability/make_youkai_bullet_art.py 生成（{name}），别手改。
+    // 魔理沙（TH08 `ply01as` = アリス）妖侧**子机激光的束脚本**（owner ⑥）。
+    // 形状 = TH18 原生束（`ability.anm` script3：`anchor(1,0)` + `rotateAuto(1)` + `scale.x` 恒 1.0，
+    //   长度由引擎 `bullet+0xa0` 驱动；一手 `engine/sht/th18/03` §5.3）；
+    // 数值 = TH08 `player01.anm` script{src_num}（`scale(1.0f, {scale_y}f)`、`alpha(70)`）
+    //   ⇒ 屏上宽度 ≈ {width_px} px（贴图高 32）。
+    // ⚠ 与 TH08 的差别（登记在案）：① v8 无 `scrollX` ⇒ 贴图不流动；② TH08 那支还有 `ins_83(2)`（省略）。
+    layer(13);
+    sprite(@{spr_member}@);
+    type(1);
+    anchor(1, 0);
+    scale(1.0f, {scale_y}f);
+    alpha(70);
+    blendMode(1);
+    rotateAuto(1);
+    stop();
+    interruptLabel(1);
+    scaleTime(8, 1, 1.0f, 0.0f);
++8: // 8
+    delete();
+}}
+"""
+
+
 def main():
     workdir = Path(tempfile.mkdtemp(prefix="ykbullet."))
     made = cut_sprites(workdir)
@@ -472,7 +534,17 @@ def main():
         scripts[name] = gen_script(name, kind, anm, src_num, sids, note, smap, hit=hit, hit_map=smap)
 
     OUT_SCRIPTS.mkdir(parents=True, exist_ok=True)
+    # ★ 2026-09-27（owner ⑥）：5 支**束脚本**（魔理沙的激光），编号接在 SCRIPTS 之后。
+    for k, (bname, bwidth, by) in enumerate(BEAMS):
+        num = SCRIPT0 + len(SCRIPTS) + k
+        # 前两档在 TH08 里共用 script24 ⇒ 源脚本号 = 24 + max(k-1, 0)
+        scripts[bname] = gen_beam(bname, "YKB_M_OPT", bwidth, by, 24 + max(k - 1, 0))
+        scripts[bname] = scripts[bname].replace("{N}", str(num))
+        (OUT_SCRIPTS / f"{num}_yk_bullet_{bname.lower()}.anm.txt").write_text(
+            scripts[bname].replace("{N}", str(num)), encoding="utf-8")
     want = {f"{SCRIPT0 + i}_yk_bullet_{name.lower()}.anm.txt" for i, (name, *_r) in enumerate(SCRIPTS)}
+    want |= {f"{SCRIPT0 + len(SCRIPTS) + k}_yk_bullet_{b.lower()}.anm.txt"
+             for k, (b, _w, _y) in enumerate(BEAMS)}
     for i, (name, *_rest) in enumerate(SCRIPTS):
         fname = f"{SCRIPT0 + i}_yk_bullet_{name.lower()}.anm.txt"
         (OUT_SCRIPTS / fname).write_text(scripts[name], encoding="utf-8")
@@ -488,7 +560,8 @@ def main():
         p.unlink()
     if stale:
         print(f"== 清掉上一批的 {len(stale)} 个过期产物：" + ", ".join(p.name for p in stale))
-    print(f"== 脚本 {len(SCRIPTS)} 支 → {OUT_SCRIPTS}（编号 {SCRIPT0}..{SCRIPT0 + len(SCRIPTS) - 1}）")
+    print(f"== 脚本 {len(SCRIPTS)} 支 + 束 {len(BEAMS)} 支 → {OUT_SCRIPTS}"
+          f"（编号 {SCRIPT0}..{SCRIPT0 + len(SCRIPTS) + len(BEAMS) - 1}）")
 
     order, (AW, AH) = write_layout(made)
     used = sum(made[n][1][0] * made[n][1][1] for n, *_ in MEMBERS)
@@ -497,7 +570,7 @@ def main():
 
     # ★ 2026-09-26 第十三批：**不再有「与 ability 主表撞名」这一步** —— 成员图与 spec 都挪出了
     #   ability 管线（见文件头与 `LAYOUT.txt` 的注），撞名与否已无关。
-    ok = check_compile(scripts)
+    ok = check_compile({k: v.replace("{N}", str(SCRIPT0)) for k, v in scripts.items()})
     print(f"== 自检：{ok}/{len(scripts)} 支脚本能编过（thanm -c 18）；名字无重复；空图 0")
     print(f"== md5（幂等判据）：{hashlib.md5((order + ''.join(scripts.values())).encode()).hexdigest()}")
     print("== 下一步：`make -C native anm`（ability.anm 不再含这批；pl0X.anm 会带上它们）")
