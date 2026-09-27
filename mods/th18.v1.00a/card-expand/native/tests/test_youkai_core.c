@@ -1289,7 +1289,9 @@ int main(void)
                 /* 换形空窗常量（一手 `th08:0x44be05` 的 `cmp …,0x1e`）*/
                 CHECK(YK_GAUGE_SHIFT_BLANK == 30);
             }
-            /* ★★★ 2026-09-27（owner ⑥）：**我们自己那几条激光**的判据（卡侧收束/钳长都按它过滤）。*/
+            /* ★★★ 2026-09-27（owner ⑥）：**我们自己那条激光行**的判据。
+             * ★ 第二十六批起它**不再用于收束**（引擎不发这一行了，见下）—— 留着当**运行期判据**：
+             *   探针用它数「这一行的引擎弹有几发」，必须恒 0。*/
             CHECK(yk_marisa_laser_row(0x59, 0) == 1);
             CHECK(yk_marisa_laser_row(0x5d, 0) == 1);
             CHECK(yk_marisa_laser_row(0x59, 1) == 0);      /* 组内第 1 行 = 本体行（不是激光）*/
@@ -1298,6 +1300,47 @@ int main(void)
             CHECK(yk_marisa_laser_row(0x63, 0) == 0);      /* 早苗 */
             CHECK(yk_marisa_laser_row(0x16, 0) == 0);      /* 兜底组 */
             CHECK(YK_LASER_LEN == 448.0f);                 /* 一手 TH08 的恒定束长 */
+            CHECK(YK_CHAR_MARISA == 1);                    /* 机体表（`CE_ADDR_CHARACTER` 一手）*/
+            /* ★★★ 2026-09-27 第二十六批：**卡侧矩形束**的四个纯函数（一手见 `youkai_core.h`）。
+             * 宽度 = 一手 TH08 `player01.anm` script24..28 的 `scale.y` × 贴图高 32
+             *   （16 / 16 / 19.2 / 22.4 / 25.6 px；×100 存整数避免 float 表）。*/
+            CHECK(yk_m_laser_beam_w_px100(0) == 1600);
+            CHECK(yk_m_laser_beam_w_px100(1) == 1600);
+            CHECK(yk_m_laser_beam_w_px100(2) == 1920);
+            CHECK(yk_m_laser_beam_w_px100(3) == 2240);
+            CHECK(yk_m_laser_beam_w_px100(4) == 2560);
+            CHECK(yk_m_laser_beam_w_px100(-1) == 1600);           /* 越界钳进表内（不读表外）*/
+            CHECK(yk_m_laser_beam_w_px100(99) == 2560);
+            /* 伤害 = `round(2 × 该档对齐后的激光行伤害 / 该行的 rate)`（= 本卡既有 DPS 模型里那一行的份额 × 2）
+             * ⇒ 平均每帧 = 7.0 / 4.5 / 3.5 / 3.0 / 2.5（生成器逐档算 + 回读对账，见 `append_shooterset.py`）。*/
+            CHECK(yk_m_laser_beam_damage(0) == 14);
+            CHECK(yk_m_laser_beam_damage(1) == 9);
+            CHECK(yk_m_laser_beam_damage(2) == 7);
+            CHECK(yk_m_laser_beam_damage(3) == 6);
+            CHECK(yk_m_laser_beam_damage(4) == 5);
+            CHECK(yk_m_laser_beam_damage(-5) == 14);
+            CHECK(yk_m_laser_beam_damage(5) == 5);
+            /* 结算节拍 = 每 2 帧一笔（一手 TH08 `th08:0x4517a1` 每 2 帧结算一次）*/
+            CHECK(YK_M_LASER_BEAM_SETTLE == 2);
+            CHECK(yk_m_laser_beam_should_settle(0) == 1);         /* 出生那一帧就结算（age 从 0 起）*/
+            CHECK(yk_m_laser_beam_should_settle(1) == 0);
+            CHECK(yk_m_laser_beam_should_settle(2) == 1);
+            CHECK(yk_m_laser_beam_should_settle(3) == 0);
+            CHECK(yk_m_laser_beam_should_settle(120) == 1);
+            /* 展开系数：头 8 帧 0→1000 线性，之后恒 1000（117 的「如收回般倒放展开」，
+             * 帧数 = 束脚本 `interruptLabel(1)` 的 `scaleTime(8, 1, 1.0, 0.0)`）。*/
+            CHECK(YK_M_LASER_BEAM_GROW_FRAMES == 8);
+            CHECK(yk_m_laser_beam_grow_permille(0) == 0);
+            CHECK(yk_m_laser_beam_grow_permille(1) == 125);
+            CHECK(yk_m_laser_beam_grow_permille(4) == 500);
+            CHECK(yk_m_laser_beam_grow_permille(7) == 875);
+            CHECK(yk_m_laser_beam_grow_permille(8) == 1000);
+            CHECK(yk_m_laser_beam_grow_permille(9999) == 1000);   /* 不溢出、不回头 */
+            /* 束的条数上限 = 每台我们的子机一条 + 回退本体的那一条（117 的同款形状）*/
+            CHECK(YK_M_LASER_BEAM_MAX == YK_OPTION_CELLS + 1);
+            /* 贴图逻辑尺寸（`YKB_M_OPT.png` = 256×32；`scale.x = 448/256`、`scale.y = w/32`）*/
+            CHECK(YK_M_LASER_BEAM_SPRITE_W == 256.0f);
+            CHECK(YK_M_LASER_BEAM_SPRITE_H == 32.0f);
             /* ★★★ 2026-09-27（owner ④）：**妖逢魔染色**的两个纯函数。
              * 一手：只有霊夢（`ply00as`）与魔理沙（`ply01as`）的行 `+0x1e > 0` ⇒ 只有这两位的妖侧组染红。*/
             CHECK(yk_fengma_tint_set(0x54) == 1);            /* 霊夢 A0..A4 */

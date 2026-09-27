@@ -125,6 +125,12 @@ int yk_body_state(int dx, int prev_dx, int last);
  *   而 TH16/TH18 档 0 = 0（行 3 照抄）。*/
 #define YK_OPTION_TIERS   5      /* 列数 = TH18 火力档（= YK_SHOT_TIERS / `CE_ADDR_MAX_POWER`/100 + 1）*/
 #define YK_OPTION_CHARS   4      /* 行数 = `CE_ADDR_CHARACTER` 的 0..3 */
+/* `CE_ADDR_CHARACTER` 的取值（一手 `engine.h`：0..3 = 霊夢 / 魔理沙 / 咲夜 / 早苗）。
+ * 卡侧按机体分派的地方用它当名字，别再写裸 `1`（117 的 `ANIMAL_CHAR_MARISA` 同款）。*/
+#define YK_CHAR_REIMU     0
+#define YK_CHAR_MARISA    1
+#define YK_CHAR_SAKUYA    2
+#define YK_CHAR_SANAE     3
 
 static const unsigned char YK_OPTION_BY_CHAR[YK_OPTION_CHARS][YK_OPTION_TIERS] = {
     /* 霊夢   → th08 pl00 妖侧 = 八雲紫   */ { 1, 1, 1, 1, 1 },
@@ -299,19 +305,82 @@ void yk_opt_angle_norm(float angle, float step, float *out);
  *     `scale(1.0, 0.5/0.6/0.7/0.8/1.0)`（贴图 sprite32 = 448×32）⇒ 屏上 **16 / 19.2 / 22.4 / 25.6 / 32 px**；
  *     长度恒 **448**（`th08:0x450a4f` 的 `+0x434`）、判定盒 24×448、伤害 7。
  *
- * **TH18 落点**：走引擎**原生**的激光通路（一手 `engine/sht/th18/03` §5.3 = 原生「ミニ八卦炉」set 0xb）：
- *   `mode = 2` + `func_on_init/tick = 2` + 束脚本 `+0x22` —— 字段值见 `append_shooterset.py` 里
- *   `_youkai_tier_sets` 的 `k == "M"` 那一段（含三处**故意偏差**的登记）。*/
+ * **TH18 落点（★ 2026-09-27 第二十六批**改写**：不再走引擎的 `mode=2` 主炮路径）**：
+ *   一手对位本来是「原生「ミニ八卦炉」那一套」（`engine/sht/th18/03` §5.3：`mode = 2` +
+ *   `func init2/tick2/hit2` + 束脚本 `+0x22`）—— **实跑否掉了它**（owner 的探针：
+ *   `youkai/probe beam: state 2 len(+0xa0) 18.0 width(+0xa4) 16.0` ⇒ 束一出生就被引擎的默认命中路径
+ *   判 `state=2`、只长了一帧 = 「十分短小的袖箭」）。⇒ 与 117 当年同一条结论（见 `animal.c:283`–`300`）：
+ *   **引擎这一行不再发任何东西，束改由卡侧画 + 卡侧结算**（见下一条）。
+ *   行表侧只留一条**不可达的载体**（`start_delay = 15`：引擎的行循环判据是
+ *   `short_timer % fire_rate == start_delay`（`engine/sht/th18/02` §2 + `th18:0x45ec0e`–`0x45ec3b`），
+ *   而 `short_timer ∈ 0..14`（同篇 §1）⇒ `% rate ≤ rate-1 ≤ 11 < 15` **永不相等**）。*/
 #define YK_LASER_SET_M0   0x59      /* 魔理沙（M）的 5 组妖侧 set */
 #define YK_LASER_SET_M4   0x5d
 #define YK_LASER_ROW      0           /* 那一条激光行在组内恒为第 0 行（`YOUKAI_TIER_ORIGINS["M"]` 的第 0 项 = 1）*/
 /* 束长：一手 TH08 是**恒 448**（tick 里 `th08:0x450a4f` 写 `bullet+0x434 = 448.0`，而 TH08 的束贴图
- * 本身就是 448 宽、`scale.x` 恒 1.0 ⇒ 画出来就是 448 px）。TH18 的引擎会让它 0→512 生长
- * ⇒ 本卡每帧把它钳回 448（观感 = 一手：一出现就是全长）。*/
+ * 本身就是 448 宽、`scale.x` 恒 1.0 ⇒ 画出来就是 448 px ⇒ = 游玩区高度，整列贯通）。
+ * 卡侧的束 VM 用 `scale.x = 448 / 贴图逻辑宽 256` 写进同一几何。*/
 #define YK_LASER_LEN      448.0f
 
-/* 这一发弹（packed set / row）是不是**我们自己那几条激光**（卡侧收束时要按它过滤；别去碰别人的束）。*/
+/* 这一发弹（packed set / row）是不是**我们自己那条激光行**。
+ * ★ 本批起它**不再用于收束**（引擎不会再发这一行）；留着当**运行期判据**：
+ *   探针数「这一行的引擎弹有几发」—— 必须恒 0（= 载体那一行真的什么都不产生）。*/
 int yk_marisa_laser_row(int set_index, int row_index);
+
+/* ============ ★★★ 2026-09-27 第二十六批：**卡侧矩形束**（引擎那一行不再发弹）=================
+ *
+ * ## 为什么重做（一手 + 实跑，两条独立证据）
+ *   · **实跑**（owner 探针日志，已定案）：`youkai/probe beam: state 2 len(+0xa0) 18.0 width(+0xa4) 16.0`
+ *     ⇒ 引擎那条 `mode=2` 束**一出生就被判完成**（`+0x8c = 2`）、长度只长了一帧（18 px）。
+ *   · **一手**：`Player__shoot_one_bullet` `th18:0x45e930` 对 `mode=2` 只有一道「每槽一发」去重锁
+ *     （`player+0x476fc+idx*4`）；束的生死全在 `tick2`（`0x45fc80`）/ 命中路径里（`0x45f6a0`→`0x45f6f0`
+ *     给弹的 VM 发 `interrupt 1` + `+0x8c = 2`）⇒ **没有命中回调的行走默认命中路径，一碰敌人就死**。
+ *   · 117 当年在同一件事上有同一结论（`animal.c:283`–`300`），本卡照它的做法：**引擎不发、卡侧发**。
+ *
+ * ## 形状（一手几何，逐条给证据）
+ *   · **每条我们自己那台子机各一条束**（117 的口径：「魔理沙应该是普通子机激光，不是从机体射出来」）；
+ *     本卡只有 1 台（`YK_OPTION_BY_CHAR[1] = {1,1,1,1,1}`）⇒ 常态就是 1 条；一台都没有时回退本体 1 条
+ *     （`YK_M_LASER_BEAM_MAX = YK_OPTION_CELLS + 1` 就是这两半的和）。
+ *   · 位置 = **子机膛口**（`option+0x5c/+0x60`，定点 1/128 ⇒ 像素；一手：行循环按 `+0x20` 取膛口，
+ *     `th18:0x45ec41`–`0x45ec5d`）；方向 = **竖直向上 −π/2**（一手 `ply01as.sht` 那一行 `+0x14 = −π/2`）；
+ *     长度 = **恒 448**（`th08:0x450a4f`）；宽 = **逐档**（见下表）。
+ *   · 伤害 = `ce_damage_rect`（`th18:0x45dfa0`）：矩形源的 `+0x14 = 宽`、`+0x18 = 高`、`+0x74 = 每次结算的伤害`、
+ *     `+0x80 = 命中间隔 = 1`（`Player__create_damage_source_rect` 里**硬编码 1 = 每帧**）⇒ 一个源在每个存活帧都能结算，
+ *     但 `0x45f0f0` 在 `+0x84` 写「**一源一敌一辈子一次**」的 tag（一手 `engine/enemy/th18/06-enemy-inert-flag.md` §③
+ *     的 `0x45f45a`）⇒ **每个源对每个敌人只结算一次**。
+ *     ⇒ 本卡按一手的**每 2 帧结算**（`th08:0x4517a1`）节奏：**每 2 帧新建一个 `life = 2` 的源**，
+ *     每次伤害 `YK_M_LASER_BEAM_DAMAGE[tier]` ⇒ 平均 = 表值 / 2 每帧（见 `TUNING.md` §2.1ccc-2 的算式）。
+ *   · **不消弹**（一手：TH08 那条 `type = 5` 在碰撞 pass 里被显式跳过销毁 ⇒ 只打不消；与 117 bug-2(b) 同款）。
+ *   · **无限贯通**：矩形源是**几何求交**，没有「截到首个接触点」这一步（那是引擎 `hit2` 的行为）⇒ 天然贯通。*/
+#define YK_M_LASER_BEAM_TIERS       5        /* = 火力档数（`YK_SHOT_TIERS`）*/
+#define YK_M_LASER_BEAM_SPRITE_W    256.0f   /* 束贴图 `YKB_M_OPT.png` 的逻辑宽（切图 = TH08 那条 448×32 滚动带的前 256）*/
+#define YK_M_LASER_BEAM_SPRITE_H    32.0f    /* 同一个贴图的高 ⇒ 宽度系数 = 屏上宽 / 32 */
+#define YK_M_LASER_BEAM_SETTLE      2        /* 结算间隔（帧）—— 一手 TH08 每 2 帧结算一次（`th08:0x4517a1`）*/
+#define YK_M_LASER_BEAM_GROW_FRAMES 8        /* 「如收回般展开」的帧数 = 束脚本 `interruptLabel(1)` 收束段
+                                              * `scaleTime(8, 1, 1.0, 0.0)` 的**倒放**（117 的同款细节，
+                                              * 见 `animal.c` 的 `ANIMAL_EAGLE_BEAM_GROW_FRAMES`）。
+                                              * ⚠ 只作用在**宽度**（`scale.y`）上：一手的束长是**常量 448**
+                                              * ⇒ 不像 117 那样两轴同涨（那是 TH17 的束，长度本来就在长）。*/
+/* **逐档宽度**（屏上 px × 100，避免 float 表）：一手 = TH08 `player01.anm` script24..28 的
+ * `scale(1.0, 0.5/0.6/0.7/0.8/1.0)` × 贴图高 32 ⇒ 16 / 16 / 19.2 / 22.4 / 25.6 px。*/
+#define YK_M_LASER_BEAM_W_PX100     { 1600, 1600, 1920, 2240, 2560 }
+/* **逐档每次结算的伤害**（每 `YK_M_LASER_BEAM_SETTLE` 帧一次）
+ *   = `round(2 × 该档对齐后的激光行伤害 / 该行的 rate)`（生成器算、本节末对账），
+ *   ⇒ 平均每帧伤害 = 该行在**本卡既有 DPS 对齐模型**里的份额（`Σ damage/fire_rate`）。
+ *   ⚠ 分母用的是行里的 `rate`（2/4/6/8/12）。一手指出：**Alice 那一行的 `rate` 其实是「残影条数」**
+ *     （`engine/player/th08/01-youkai-familiars-first-hand.md`：`0x44fe20` 不做 `%rate`）⇒ 这个分母
+ *     是**沿用本卡既有对齐口径**（不是一手节奏）；要换口径属新设计，登记 `TUNING.md` §2.1ccc-2 ❓。*/
+#define YK_M_LASER_BEAM_DAMAGE      { 14, 9, 7, 6, 5 }
+#define YK_M_LASER_BEAM_MAX         (YK_OPTION_CELLS + 1)   /* 每台我们的子机一条 + 回退本体的那一条 */
+
+/* 这一档的束宽（屏上 px × 100）。tier 越界一律钳进表内。*/
+int yk_m_laser_beam_w_px100(int tier);
+/* 这一档每次结算的伤害（每 `YK_M_LASER_BEAM_SETTLE` 帧一次）。tier 越界一律钳进表内。*/
+int yk_m_laser_beam_damage(int tier);
+/* 本次激活的第 `age` 帧要不要挂伤害源（`age % SETTLE == 0`；age = 0 是出生的那一帧）。*/
+int yk_m_laser_beam_should_settle(unsigned age);
+/* 展开系数 ×1000（0..1000）：激活头 `GROW_FRAMES` 帧里从 0 线性涨到 1000，之后恒 1000。*/
+int yk_m_laser_beam_grow_permille(unsigned age);
 
 /* ============ ★★★ 2026-09-27（owner ④）：**逢魔给自机弹染色**（一手：TH08 的 `+0x470` 旗 + 绘制前写色）
  *

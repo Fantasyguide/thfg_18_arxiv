@@ -1,20 +1,18 @@
 script script379 {
     // 由 assets/ability/make_youkai_bullet_art.py 生成（YKB_M_BEAM4），别手改。
-    // 魔理沙（TH08 `ply01as` = アリス）妖侧**子机激光的束脚本**（owner ⑥）。
-    // 形状 = TH18 原生束（`ability.anm` script3：`anchor(1,0)` + `rotateAuto(1)` + `scale.x` 恒 1.0，
-    //   长度由引擎 `bullet+0xa0` 驱动；一手 `engine/sht/th18/03` §5.3）；
-    // 数值 = TH08 `player01.anm` script27（`scale(1.0f, 0.8f)`、`alpha(70)`）
-    //   ⇒ 屏上宽度 ≈ 25.6 px（贴图高 32）。
-    // ⚠ 与 TH08 的差别（登记在案）：① v8 无 `scrollX` ⇒ 贴图不流动；② TH08 那支还有 `ins_83(2)`（省略）。
+    // 魔理沙（TH08 `ply01as` = アリス）妖侧**子机激光的束脚本**（owner ⑥；第二十六批改成卡侧 VM 专用）。
+    // 几何 = TH08 `player01.anm` script27（`scale(1.0f, 0.8f)`、`alpha(70)`、`scrollX(0.0625f)`）
+    //   ⇒ 屏上宽度 ≈ 25.6 px（贴图高 32）；渲染壳 = TH18 原生束（`anchor(1,0)` + `type(1)` + 收束段）。
+    // ⚠ 不写 `rotateAuto`（那是给有速度的弹用的「朝运动方向」位）；方向/长度/宽度全由卡侧每帧写
+    //   （`cards/youkai.c` 的 `yk_beam_tick`），所以 `scale` 与 `rotate` 这里都只留中性初值。
     layer(13);
     sprite(@YKB_M_OPT@);
     type(1);
     anchor(1, 0);
-    // ⚠ `scale.y` 保持 1.0：宽度在**行里**的 `+0x10`（`bullet+0xa4`），见文件头，别在这里再缩一次。
     scale(1.0f, 1.0f);
     alpha(70);
     blendMode(1);
-    rotateAuto(1);
+    scrollX(0.0625f);
     stop();
     interruptLabel(1);
     scaleTime(8, 1, 1.0f, 0.0f);

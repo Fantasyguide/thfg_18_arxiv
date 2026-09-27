@@ -456,15 +456,16 @@ def check_compile(scripts):
 #   `scale(1.0, 0.5/0.6/0.7/0.8/1.0)`，贴图 sprite32 = 448×32）⇒ 屏上宽度 16/19.2/22.4/25.6/32 px；
 #   长度恒 **448**、判定盒 24×448、伤害 7（`row+0x1c`）。
 #
-# **TH18 侧**（`engine/sht/th18/03` §5.3 = 原生「ミニ八卦炉」set 0xb）：一趟引擎原生的激光通路
-#   ——`mode = 2` + `func init2/tick2/hit2`（`th18:0x45fc20`/`0x45fc80`/`0x460320`）+ 束脚本。
-#   ⇒ 本卡把 5 支**束脚本**追加进 `pl01.anm`（我们的行由**主炮路径**发 ⇒ `+0x22` 按 `pl0X.anm` 解析，
-#     见 `AUDIT.md` §BE #105），形状照**原生束脚本**（引擎约定：`anchor(1, 0)` + `rotateAuto(1)`
-#     + `scale.x` 恒 1.0，长度由引擎的 `+0xa0` 驱动），贴图与**逐档宽度**照 TH08
-#     （同一个成员 `YKB_M_OPT` = TH08 `player01` sprite32 的 256×32 切图、`scale.y` = 一手的 5 档）。
-#   ⚠ v8 没有 `scrollX` ⇒ 贴图不流动（TH08 那支写的是 `scrollX(0.0625)`）；`ins_83(2)` 同前省。
+# **TH18 侧**（第二十六批**改写**）：**引擎**那一行不再发任何东西（实跑定案：`mode=2` 在主炮路径下
+#   一出生就被判完成；117 在 TH17 上有同一结论 —— 见 `cards/animal.c:283`-`300`），
+#   束改由**卡侧**画（`cards/youkai.c` 的 `yk_beam_tick`）+ 卡侧结算（`ce_damage_rect`）。
+#   ⇒ 本卡把 5 支**束脚本**追加进 `pl01.anm`（卡侧从 `yk_player_anm()` = `pl01.anm` 起脚本，
+#     贴图 `YKB_M_OPT` 就长在那个文件的图集里），形状见 `gen_beam` 的 docstring：
+#     几何照 TH08（含它那条 `scrollX(0.0625)` 的滚动）、渲染壳照 TH18 原生束。
+#   ⚠ 逐档宽度仍然逐档一支脚本（下列表），但**宽度值由卡侧写**（`YK_M_LASER_BEAM_W_PX100`）；
+#     脚本之间目前**逐字节相同**，五支都留着是为了「行里的 `+0x22` 逐档映射」与卡侧下标一一对应。
 BEAMS = [
-    # (名字, 屏上目标宽度 px, scale.y = 目标宽度 / 贴图高 32)
+    # (名字, 屏上目标宽度 px, scale.y = 目标宽度 / 贴图高 32 —— 一手值，现由卡侧表执行)
     ("YKB_M_BEAM0", 16.0, 0.5),
     ("YKB_M_BEAM1", 16.0, 0.5),
     ("YKB_M_BEAM2", 19.2, 0.6),
@@ -474,36 +475,36 @@ BEAMS = [
 
 
 def gen_beam(name, spr_member, width_px, scale_y, src_num):
-    """生成一支**束脚本**（v8）。
+    """生成一支**束脚本**（v8）—— ★ 2026-09-27 第二十六批：它现在是**卡侧独立 VM** 的脚本
+    （引擎那一行不再发弹，见 `append_shooterset.py` 的 M 段与 `youkai_core.h` 的同一段）。
 
-    形状**照 TH18 原生束**（`ability.anm` script3，一手见 `engine/sht/th18/03` §5.3）：
-      `layer` + `sprite` + `type(1)` + **`anchor(1, 0)`**（右端锚：束从子机往目标方向拉长）
-      + `scale(1.0, <y>)`（x 恒 1.0，长度由引擎的 `bullet+0xa0` 驱动）+ `blendMode(1)` + `rotateAuto(1)`，
-      收束那一支接 `interruptLabel(1)`：`scaleTime(8, 1, 1.0, 0.0)` 再 `delete()`
-      （一手：`tick2` 收束时对束 VM 发 `interrupt 1`，`th18:0x45fc80` 的 `+0x1fe` 那一族）。
-    **宽度不走这里的 `scale`**：TH18 的束**几何**由引擎按行里的两个字段搭
-      （`+0x0c → bullet+0xa0` = **长度**、`+0x10 → bullet+0xa4` = **宽度**；一手：四个零售文件的
-      `pl0X.sht` set `0xb` 都是 `hit_w = 0.0 / hit_h = 16.0`，而原生束贴图正好 16 px 高）
-      ⇒ 宽度必须写进行里（本卡按 TH08 逐档量出来的 16 / 16 / 19.2 / 22.4 / 25.6 px 填 `hit_h`），
-      脚本里的 `scale.y` 保持 **1.0** 以免与那一个字段**双重缩放**
-      （⚠ 2026-09-27 实测教训：先按「宽度走脚本 scale」填了 `hit_h = 0` ⇒ 束被画成一条极细的小箭）。"""
+    形状一手的两个来源，分开写清：
+      · **几何**照 TH08 `player01.anm` script24..28：`scale(1.0, <逐档 y>)` + `alpha(70)` + `scrollX(0.0625)`
+        （那条 448×32 的**滚动**纹理；`YKB_M_OPT` 就是它的前 256×32 ⇒ 同一套 uv 流速，屏上 ≈ 28 px/帧）；
+      · **渲染壳**照 TH18 原生束（`ability.anm` script3）：`type(1)` + **`anchor(1, 0)`**（左端锚 ⇒ 束从子机往
+        方向外侧伸）+ `blendMode(1)` + 收束段 `interruptLabel(1)` 的 `scaleTime(8, 1, 1.0, 0.0)` → `delete()`。
+      ⚠ **不写 `rotateAuto(n)`**（原生束脚本有它）：那是「朝**运动方向**」的绘制位（`flags_hi` bit7，
+        `engine/anm/th16/07-general.md` §… 的 424）—— 我们这支 VM 是**没有速度的世界 VM**，
+        方向由卡侧每帧 `ce_anm_set_rotation` 写（= 117 的 `ability.anm` script163 那一套，已实跑验收）。
+      ⚠ **角度也不 bake**（117 是 bake `rotate(-90°)` + 每帧覆盖）：这里两件都不做，方向只有一个来源
+        = 卡侧写入 ⇒ 不会出现「脚本与 C 各说一套」。
+      ⚠ `scale.y` 保持 **1.0**：宽度由卡侧每帧写（`YK_M_LASER_BEAM_W_PX100 / 32` × 展开系数）——
+        脚本里写死会在「展开动画」的头 8 帧被覆盖、之后也不再变（看不出逐档宽度）。"""
     return f"""script script{{N}} {{
     // 由 assets/ability/make_youkai_bullet_art.py 生成（{name}），别手改。
-    // 魔理沙（TH08 `ply01as` = アリス）妖侧**子机激光的束脚本**（owner ⑥）。
-    // 形状 = TH18 原生束（`ability.anm` script3：`anchor(1,0)` + `rotateAuto(1)` + `scale.x` 恒 1.0，
-    //   长度由引擎 `bullet+0xa0` 驱动；一手 `engine/sht/th18/03` §5.3）；
-    // 数值 = TH08 `player01.anm` script{src_num}（`scale(1.0f, {scale_y}f)`、`alpha(70)`）
-    //   ⇒ 屏上宽度 ≈ {width_px} px（贴图高 32）。
-    // ⚠ 与 TH08 的差别（登记在案）：① v8 无 `scrollX` ⇒ 贴图不流动；② TH08 那支还有 `ins_83(2)`（省略）。
+    // 魔理沙（TH08 `ply01as` = アリス）妖侧**子机激光的束脚本**（owner ⑥；第二十六批改成卡侧 VM 专用）。
+    // 几何 = TH08 `player01.anm` script{src_num}（`scale(1.0f, {scale_y}f)`、`alpha(70)`、`scrollX(0.0625f)`）
+    //   ⇒ 屏上宽度 ≈ {width_px} px（贴图高 32）；渲染壳 = TH18 原生束（`anchor(1,0)` + `type(1)` + 收束段）。
+    // ⚠ 不写 `rotateAuto`（那是给有速度的弹用的「朝运动方向」位）；方向/长度/宽度全由卡侧每帧写
+    //   （`cards/youkai.c` 的 `yk_beam_tick`），所以 `scale` 与 `rotate` 这里都只留中性初值。
     layer(13);
     sprite(@{spr_member}@);
     type(1);
     anchor(1, 0);
-    // ⚠ `scale.y` 保持 1.0：宽度在**行里**的 `+0x10`（`bullet+0xa4`），见文件头，别在这里再缩一次。
     scale(1.0f, 1.0f);
     alpha(70);
     blendMode(1);
-    rotateAuto(1);
+    scrollX(0.0625f);
     stop();
     interruptLabel(1);
     scaleTime(8, 1, 1.0f, 0.0f);

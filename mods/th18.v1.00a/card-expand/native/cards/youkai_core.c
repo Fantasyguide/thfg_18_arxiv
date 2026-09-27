@@ -1337,6 +1337,36 @@ int yk_marisa_laser_row(int set_index, int row_index)
     return set_index >= YK_LASER_SET_M0 && set_index <= YK_LASER_SET_M4 && row_index == YK_LASER_ROW;
 }
 
+/* --------------------------------- ★★★ 第二十六批：卡侧矩形束的四个纯函数（一手见 `youkai_core.h`）--
+ * 全部是整数运算：卡侧只把它们的结果乘一个常数换成像素 / 系数（float 的返回一律避开 ——
+ * i386 上返回 float 必然过 x87，本仓的 `dllx87` 闸要求我们自己的目标文件里零 x87）。*/
+int yk_m_laser_beam_w_px100(int tier)
+{
+    static const int32_t w[YK_M_LASER_BEAM_TIERS] = YK_M_LASER_BEAM_W_PX100;
+    if (tier < 0) tier = 0;
+    if (tier >= YK_M_LASER_BEAM_TIERS) tier = YK_M_LASER_BEAM_TIERS - 1;
+    return (int)w[tier];
+}
+
+int yk_m_laser_beam_damage(int tier)
+{
+    static const int32_t d[YK_M_LASER_BEAM_TIERS] = YK_M_LASER_BEAM_DAMAGE;
+    if (tier < 0) tier = 0;
+    if (tier >= YK_M_LASER_BEAM_TIERS) tier = YK_M_LASER_BEAM_TIERS - 1;
+    return (int)d[tier];
+}
+
+int yk_m_laser_beam_should_settle(unsigned age)
+{
+    return (age % (unsigned)YK_M_LASER_BEAM_SETTLE) == 0u;
+}
+
+int yk_m_laser_beam_grow_permille(unsigned age)
+{
+    if (age >= (unsigned)YK_M_LASER_BEAM_GROW_FRAMES) return 1000;
+    return (int)(age * 1000u / (unsigned)YK_M_LASER_BEAM_GROW_FRAMES);
+}
+
 /* --------------------------------- ★★★ owner ④：逢魔染色的两个纯函数（一手见 `youkai_core.h`）*/
 int yk_fengma_tint_set(int set_index)
 {

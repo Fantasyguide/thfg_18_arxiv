@@ -1607,6 +1607,91 @@ def _rows_dps(rows) -> float:
 
 DPS_TOLERANCE = 0.02          # 逐行取整后的允许偏差（2%）
 
+# ============================================================================
+# ★★★ 2026-09-27 第二十六批（卡 108 · owner ⑥ 的**第二轮**）：**魔理沙妖侧子机的束 = 卡侧矩形束**。
+#
+# ## 一手：TH08 那条激光行的真面目（`ply01as.sht` 的**子机行**，origin ≥ 1）
+#   一手（`engine/player/th08/01-youkai-familiars-first-hand.md` §+0x28/+0x2c 两条）：
+#     · `+0x28 = 0x44fe20` **不做 `frames % rate`** —— 文档原文：「`rate` 是**残影条数**」；
+#     · `+0x2c = 0x450840` 每帧沿 32 点残影轨迹、对每个 `x ≥ −900` 的点
+#       `SpawnShot(pos, 16.0, 448.0, unk2c=1, lifespan=0)` ⇒ **16×448 的贯穿竖条判定**；
+#       `vm+0x434 = 448.0f` ⇒ 视觉长度恒 448；逐档宽度在 `player01.anm` script24..28 的 `scale.y`。
+#   ⇒ 「真激光、无限贯通、随 P 变宽」逐条对上 ✓（owner 的三条口径）。
+#
+# ## TH18 落点：**引擎这一行不再发任何东西**
+#   上一版让它走引擎原生的 `mode=2` 激光通路 —— **实跑否掉了**（探针：
+#   `youkai/probe beam: state 2 len(+0xa0) 18.0 width(+0xa4) 16.0` ⇒ 一出生就被判完成、
+#   只长了一帧 = owner 报的「十分短小的袖箭」）。117 在 TH17 上有同一结论（`cards/animal.c:283`-`300`）。
+#   ⇒ 本卡照 117 的做法：**引擎不发、卡侧发**（视觉 = `pl01.anm` script62..66 的束 VM；
+#   伤害 = `ce_damage_rect` 每 2 帧一个矩形源）。行表里只留一条**不可达的载体**（见 `_youkai_tier_sets`
+#   的 `k == "M"` 段：`start_delay = M_OPT_LASER_DEAD_DELAY` ⇒ 引擎的行循环判据恒不成立）。
+M_OPT_LASER_DEAD_DELAY = 15    # 「不可达的 start_delay」：行循环判据 = `short_timer % fire_rate == start_delay`，
+                               # 短计时器 ∈ {-1, 0..14}（`engine/sht/th18/02` §1）、`fire_rate ≤ 12` ⇒ 余数 ≤ 11 < 15
+                               # ⇒ 这一行**永远不会**被发（引擎不会建弹、不会建伤害源）。换任何更小的值都要重算这条不等式。
+# 逐档束脚本的宏名（下标 = 火力档 0..4；与 `pl_anm_ids.h` 的 `CE_PL_ANM_SCRIPT_YKBULLET_M_BEAM{0..4}_PL01`
+# 逐字对应、与 `youkai.c` 的 `YK_M_LASER_BEAM_SCRIPT` 同序）。⚠ 用**下标 t**取，不是 `t-1`（见下面 M 段）。
+M_BEAM_ANM = ("CE_PL_ANM_SCRIPT_YKBULLET_M_BEAM0_PL01", "CE_PL_ANM_SCRIPT_YKBULLET_M_BEAM1_PL01",
+              "CE_PL_ANM_SCRIPT_YKBULLET_M_BEAM2_PL01", "CE_PL_ANM_SCRIPT_YKBULLET_M_BEAM3_PL01",
+              "CE_PL_ANM_SCRIPT_YKBULLET_M_BEAM4_PL01")
+M_BEAM_W_PX100 = (1600, 1600, 1920, 2240, 2560)   # 逐档宽度（屏上 px × 100）= 一手 TH08
+                                                  # `player01.anm` script24..28 的 `scale(1.0, 0.5/0.6/0.7/0.8/1.0)` × 贴图高 32。
+                                                  # 与 `youkai_core.h` 的 `YK_M_LASER_BEAM_W_PX100` 对账（下面 `check_m_beam_tables`）。
+M_BEAM_INFO = {}               # tier → 本档的算术账（打印 + 与卡侧常量对账；只在 pl01 那一趟填满 5 档）
+
+
+def _read_int_table(name: str) -> list:
+    """从 `youkai_core.h` 现读一个 `#define NAME { a, b, c }` 形状的整数表（跨层对账用）。"""
+    txt = YOUKAI_CORE_H.read_text(encoding="utf-8")
+    m = re.search(rf"^#define\s+{name}\s*\{{([^}}]*)\}}", txt, re.M)
+    if not m:
+        raise SystemExit(f"{YOUKAI_CORE_H.name}: 找不到 `#define {name} {{ … }}` —— 卡侧常量与生成器"
+                         f"必须成对（改了名字两边一起改）")
+    return [int(x) for x in re.findall(r"-?\d+", m.group(1))]
+
+
+def _register_m_beam(t: int, d_opt: int, rate: int, hit: int, rows: list, orig: list, want: float):
+    """把这一档的账记下来（本体 DPS + 卡侧束 DPS 对目标的偏差），并逐档打印。"""
+    body = [r for r, o in zip(rows, orig) if o == 0]
+    body_dps = sum(r["damage"] / r["fire_rate"] for r in body)
+    beam_dps = hit / 2.0                                   # 每 2 帧一次 ⇒ 每帧 hit/2
+    total = body_dps + beam_dps
+    dev = (total - want) / want if want > 0 else 0.0
+    M_BEAM_INFO[t] = dict(w100=M_BEAM_W_PX100[t], d_opt=d_opt, rate=rate, hit=hit, body=body_dps,
+                          beam=beam_dps, total=total, want=want, dev=dev)
+    print(f"   108 魔理沙卡侧束 tier{t}: 载体行 damage {d_opt} / rate {rate} ⇒ 每次结算 {hit}"
+          f"（每 {2} 帧）= {beam_dps:.2f}/帧；本体 {body_dps:.3f}/帧 ⇒ 合计 {total:.3f}"
+          f"（目标 {want:.3f}，{dev * 100:+.2f}%）")
+
+
+def check_m_beam_tables():
+    """跨层对账：生成器算出来的两个表 == `youkai_core.h` 里卡侧那两个表（防两边静默漂移）。
+
+    为什么要闸（同 `read_yk_option_counts` / `check_card_constants` 的理由）：宽度与伤害现在**只在卡侧**用
+    （行里的字段已经没人读），一旦有人改了一边而另一边没跟上，观感/伤害就会与「对齐本机同档低速 DPS」
+    这个口径脱钩，而**构建期什么都看不出来**。"""
+    if len(M_BEAM_INFO) != 5:
+        raise SystemExit(f"魔理沙卡侧束的账只记到 {len(M_BEAM_INFO)} 档（预期 5）—— "
+                         f"pl01 那一趟的 `YOUKAI_TIERS_M` 是不是漏了档？")
+    got_w = tuple(M_BEAM_INFO[t]["w100"] for t in range(5))
+    if got_w != M_BEAM_W_PX100:
+        raise SystemExit(f"束宽表自相矛盾：{got_w} != {M_BEAM_W_PX100}")
+    hdr_w = _read_int_table("YK_M_LASER_BEAM_W_PX100")
+    hdr_d = _read_int_table("YK_M_LASER_BEAM_DAMAGE")
+    if tuple(hdr_w) != M_BEAM_W_PX100:
+        raise SystemExit(f"{YOUKAI_CORE_H.name}: YK_M_LASER_BEAM_W_PX100 = {tuple(hdr_w)}，"
+                         f"但生成器/一手的逐档宽度是 {M_BEAM_W_PX100} —— 两边必须一致")
+    got_d = tuple(M_BEAM_INFO[t]["hit"] for t in range(5))
+    if tuple(hdr_d) != got_d:
+        raise SystemExit(f"{YOUKAI_CORE_H.name}: YK_M_LASER_BEAM_DAMAGE = {tuple(hdr_d)}，"
+                         f"但按 `round(2 × 对齐后行伤害 / rate)` 算出来是 {got_d} —— 两边必须一致")
+    worst = max(abs(M_BEAM_INFO[t]["dev"]) for t in range(5))
+    if worst > DPS_TOLERANCE:
+        raise SystemExit(f"魔理沙卡侧束的逐档总 DPS 偏差 {worst * 100:.1f}% > {DPS_TOLERANCE * 100:.0f}%"
+                         f"（取整做不到更准 ⇒ 调 `YK_M_LASER_BEAM_DAMAGE` 或行伤害）")
+    print(f"  {YOUKAI_CORE_H.name}: 卡侧束的宽度/伤害与生成器一致（宽 {hdr_w} px×100、"
+          f"每 2 帧 {hdr_d} 点；逐档总 DPS 偏差最大 {worst * 100:.2f}%）")
+
+
 # ★★★ 2026-09-26（owner：「**妖机体的弹幕样式应该都不对，发的弹幕本身得搬过来**」）：
 #   **弹体贴图逐机体换成原作那一支**（此前一律填本作 `ability.anm` 的通用弹 `anm=21`/原生主炮弹）。
 #   一手：TH08 的行里 `+0x24` = anm 脚本基号，引擎**用它 +10** 装进弹的 VM
@@ -1632,6 +1717,8 @@ YOUKAI_BULLET_ANM = {
     "R": ("CE_PL_ANM_SCRIPT_YKBULLET_R_MAIN_PL00", "CE_PL_ANM_SCRIPT_YKBULLET_R_OPT_PL00"),
     # ★★★ 2026-09-27（owner ⑥）：魔理沙的子机行是**真激光**（TH08 `ply01as` 的 `type=5` 那一行）
     #   ⇒ 第二格是**按档的元组**（5 支束脚本；一手宽度逐档 16/16/19.2/22.4/25.6 px）。
+    #   ⚠ **第二十六批起这一行不再被引擎发**（M 段：`start_delay` 不可达）⇒ 这里的映射只作**记录**，
+    #     实际画束的是卡侧（`youkai.c` 的 `YK_M_LASER_BEAM_SCRIPT`，同一组宏名、同一套下标）。
     "M": ("CE_PL_ANM_SCRIPT_YKBULLET_M_MAIN_PL01",
           ("CE_PL_ANM_SCRIPT_YKBULLET_M_BEAM0_PL01", "CE_PL_ANM_SCRIPT_YKBULLET_M_BEAM1_PL01",
            "CE_PL_ANM_SCRIPT_YKBULLET_M_BEAM2_PL01", "CE_PL_ANM_SCRIPT_YKBULLET_M_BEAM3_PL01",
@@ -1753,43 +1840,87 @@ def _youkai_tier_sets(target_file: str, anm_ids: dict) -> list:
                 if k == "R":
                     rows = [dict(r, func_on_init=5, speed=r["speed"] * 1.5) if o >= 1 else r
                             for r, o in zip(rows, orig[t])]
-                # ★★★ 2026-09-27（owner ⑥）：**魔理沙（M）的子机行 = 引擎原生的「激光」通路**。
-                #   一手（`ply01as.sht` + `th08:0x44fe20`/`0x450840`/`0x450ee0`）：
-                #     那一行 `type = 5`、四个回调 = init4/tick5/draw1/hit2（TH08 下标）⇒ 它是**一条长驻束**
-                #     （8 个激光槽、同 row 判重 ⇒ 不消耗弹槽），`type 5` 在碰撞 pass 里**被显式跳过销毁**
-                #     ⇒ **无限贯通**、每 2 帧结算 7 点；宽度逐档换脚本、长度恒 448。
-                #   TH18 的对位 = 原生「ミニ八卦炉」那一套（一手 `engine/sht/th18/03` §5.3）：
-                #     `mode = 2`（激光分支）+ `func init2/tick2/hit2` + 束脚本 `+0x22` + `hit_fx +0x26`。
-                #   ⚠ 三处**故意的偏差**（都登记 `TUNING.md`）：
-                #     ① `func_on_hit` 填 **0**（去掉 hit2 的「截到首个接触点」）—— 这才叫无限贯通；
-                #        代价 = 束端那圈命中特效没了（一手是 hit2 每 2 帧放一次）；
-                #     ② `hit_fx = 0`：`+0x26` 在我们这套**主炮行**里的解析 anm 与原生卡路径不同源，
-                #        填数会指到 pl01.anm 的同号脚本上（= 一颗普通弹）⇒ 宁可留空；
-                #     ③ 长度让引擎自己长到 512（一手恒 448）—— 一手那个 448 是 TH08 tick 里的常量。
-                #   速度必须 0（一手 10 是"发射速度"字段，TH18 的 tick2 每帧把束钉回子机；原生也是 0）。
+                # ★★★ 2026-09-27 第二十六批（**实跑定案 + 一手**）：**魔理沙（M）的子机行什么都不发**
+                #   —— 引擎的 `mode=2` 主炮路径走不通，束改由**卡侧**画（见 `youkai_core.h` 的新小节）。
+                #
+                # ## 为什么放弃引擎那条路（两条独立证据）
+                #   · **实跑**（owner 的探针日志，已定案）：
+                #     `youkai/probe beam: state 2 len(+0xa0) 18.0 width(+0xa4) 16.0`
+                #     ⇒ 束一出生就被判 `state = 2`（只长了一帧 = 18 px）= owner 报的「十分短小的袖箭」。
+                #   · **一手**：`Player__shoot_one_bullet` `th18:0x45e930` 对 `mode=2` 只有一道
+                #     「每槽一发」的去重锁；束的生死在 `tick2`（`0x45fc80`）与命中路径里
+                #     （`0x45f6a0` → `0x45f6f0`：给弹的 VM 发 `interrupt 1` + `+0x8c = 2`）。
+                #   ⇒ **117 当年在同一件事上有同一结论**（`cards/animal.c:283`–`300`，TH17 的
+                #     `mode=2` 在主炮路径下会变成「带激光贴图的移动 sprite-bullet」）⇒ 照它的做法：
+                #     引擎这一行**不产生任何东西**，视觉与伤害都归卡侧。
+                #
+                # ## 本卡不能整组留空（117 是整组留空）—— 改用「**不可达的射击时刻**」
+                #   本组里**还有一条本体行**（`origin = 0`）必须照旧由引擎发 ⇒ 只能让**那一行**哑掉。
+                #   一手判据（引擎的行循环 `Player__tick_shooting_state` `0x45ea00`，本次逐指令回读）：
+                #       `if (fire_rate == 0) fire = 1;                      // ★ 显式的 0 分支
+                #        else { i = short_timer % fire_rate; fire = (i == (signed char)row[+0x01]); }`
+                #   （`engine/sht/th18/02` §2 同款；`0x45ea00` 的 `local_10 = player+0x476d4` = **短计时器**，
+                #    `pcVar5[0x01]` = `start_delay`；`fire_rate == 0` 会**每帧**发 ⇒ 不能填 0）
+                #   `short_timer ∈ {-1, 0..14}`（同篇 §1：`< 14` 就 ++、否则 `-= 14`）
+                #   ⇒ `i = short % rate ∈ [0, rate-1]`、`rate ≤ 12` ⇒ **`i ≤ 11`**
+                #   ⇒ 只要 `start_delay = 15`，这条判据**恒不成立** ⇒ 引擎**永不**为这一行建弹。
+                #   为什么不用别的写法（都试过/评估过，逐条否决见 `AUDIT.md` §BE #129 §2；口径登记 `TUNING.md` §2.1ccc-2 第 0 行）：
+                #     ① `damage = 0` / 判定盒 0：**挡不住建弹** —— 行循环不看这两个字段，
+                #        `PlayerBullet__create` 照样建 VM + 建伤害源（`+0x74 = damage`）⇒ 仍会有东西飞；
+                #     ② 把 `anm` 指到一支什么都不画的脚本：VM 与伤害源**照样存在**（只是看不见），
+                #        比 ① 更糟（隐形伤害）；而且 pl0X.anm 追加脚本号是**钉死**的（加一支要动共享资产计划）；
+                #     ③ 靠 `mode=2` 的去重锁（`player+0x476fc+idx*4`）当闸：**要每帧写引擎的全局表** ——
+                #        那张表是**原生卡（ミニ八卦炉）也用的**（idx 由行里 `+0x20` 低 4 位算 ⇒ 我们占 1、
+                #        原生占 0），一旦写错位就把别人的束锁死；而「不可达的 start_delay」**一个字节的
+                #        运行期副作用都没有** ⇒ 选它。
+                #   载体里仍留着**一手字段值**（damage 7 / angle −π/2 / speed 0 / 盒 24×448 / mode 2 /
+                #   init2-tick2-hit2 / 逐档束脚本）当**文档**（改了哪几个字段一眼看得出），
+                #   外加一条**构建期断言**：`start_delay >= fire_rate`（= 上面那条「不可达」的充要条件）。
                 if k == "M":
-                    # ⚠ 宽度必须写进 `hit_h`（`+0x10 → bullet+0xa4`）：一手四个零售文件的 set 0xb
-                    #   都是 `hit_w = 0.0 / hit_h = 16.0`（`+0xa0` 才是长度，由 tick2 长到 512 / 被 hit2 截断）。
-                    #   2026-09-27 实测教训：把两个都填 0 ⇒ 束被画成**一条极细的小箭**（owner 报的
-                    #   「真激光没有被射出去，是一个十分短小的袖箭」）。
-                    #   逐档宽度 = TH08 `player01.anm` script24..28 量出来的 16/16/19.2/22.4/25.6 px。
-                    beam_w = (16.0, 16.0, 19.2, 22.4, 25.6)[min(max(t, 0), 4)]
-                    #   ★ 2026-09-27 第二十四批（**实跑日志定案**）：`func_on_hit` 必须是 **2**（原生值）。
-                    #   探针原文 `youkai/probe beam: state 2 len(+0xa0) 18.0 width(+0xa4) 16.0`
-                    #   ⇒ 束一出生就被标 `state = 2`（只长了一帧 = 18 px）—— 那是**引擎默认的命中路径**
-                    #   （`th18:0x45f6a0` → `0x45f6f0`：给弹的 VM 发 `interrupt 1` + `+0x8c = 2`）干的：
-                    #   **行里没有命中回调时**引擎走这条默认路 ⇒ 束一碰到敌人就被判完成（= owner 的「只有一小节」）。
-                    #   填 2 ⇒ 引擎改走 `hit2`（`0x460320`：几何求交 + 束端特效，**不销毁**）⇒ 束活着；
-                    #   代价 = hit2 会把长度截到首个接触点 ⇒ 卡侧每帧把长度（`+0xa0` **和伤害源的 `+0x14`**）
-                    #   都顶回一手的 448 ⇒ 观感/伤害都仍是**无限贯通**。
-                    rows = [dict(r, mode=2, speed=0.0, hit_w=0.0, hit_h=beam_w, hit_fx=0,
-                                 func_on_init=2, func_on_tick=2, func_on_hit=2) if o >= 1 else r
-                            for r, o in zip(rows, orig[t])]
+                    # 一手：判据盒 24×448（`ply01as.sht` 那一行；本次载体里**没人读**它，只作记录）。
+                    # ★ 逐档束脚本**按下标 `t` 取**（0..4 = BEAM0..4），不走 `_yk_bullet_anm` 的
+                    #   「元组取 `tier-1`」那条约定（那是早苗的形态）：卡侧 `YK_M_LASER_BEAM_SCRIPT`
+                    #   也用同一套下标 ⇒ 两边同档同脚本，不会被 `t-1` 悄悄错开一格。
+                    #   （引擎反正不发这一行 ⇒ 它只作记录；但错开一格会让「行里记的宽度档」与卡侧对不上。）
+                    rows_opt = []
+                    for r, o in zip(rows, orig[t]):
+                        if o >= 1:
+                            r = dict(r, anm=M_BEAM_ANM[t],
+                                     mode=2, speed=0.0, hit_w=24.0, hit_h=448.0, hit_fx=0,
+                                     func_on_init=2, func_on_tick=2, func_on_hit=2,
+                                     start_delay=M_OPT_LASER_DEAD_DELAY)
+                        rows_opt.append(r)
+                    rows = rows_opt
+                    for r, o in zip(rows, orig[t]):
+                        if o < 1:
+                            continue
+                        if not r["start_delay"] >= r["fire_rate"]:
+                            raise SystemExit(
+                                f"YOUKAI_TIERS_M tier{t}: 子机行的 start_delay="
+                                f"{r['start_delay']} < fire_rate={r['fire_rate']} ⇒ 引擎**会**发这一行"
+                                f"（行循环判据 `short_timer % rate == start_delay`，短计时器 0..14）"
+                                f" ⇒ 那条 `mode=2` 束会当场被引擎判完成（实跑已定案）⇒ 必须不可达")
+                    # ---- 卡侧束的**逐档伤害**：从「本卡既有的 DPS 对齐结果」里分配 ------------------
+                    # 口径（`TUNING.md` §2.1ccc-2）：这一行被对齐后的伤害 = `d`（上面那段 kk 缩放的结果），
+                    # 它的 DPS 份额在本卡模型里就是 `d / rate`（`_rows_dps` 对每一行都这么算）
+                    # ⇒ 卡侧按一手的**每 2 帧结算**（`th08:0x4517a1`）交付：每次 `round(2·d/rate)`。
+                    # ⚠ 分期只影响**取整**：本体行一个数都不动（本体那一列的伤害与产物 md5 里
+                    #   除这一行之外的部分全部不变），总 DPS 仍在 ±2% 内（下面逐档打印）。
+                    opt = [r for r, o in zip(rows, orig[t]) if o >= 1]
+                    if len(opt) != 1:
+                        raise SystemExit(f"YOUKAI_TIERS_M tier{t}: 子机行有 {len(opt)} 条"
+                                         f"（一手 `ply01as.sht` 每档只有 1 条）")
+                    d_opt = opt[0]["damage"]
+                    rate = opt[0]["fire_rate"]
+                    hit = max(1, int(round(2.0 * d_opt / rate)))
+                    _register_m_beam(t, d_opt, rate, hit, rows, orig[t], want)
                 for o in orig[t]:
                     if not 0 <= o <= 4:
                         raise SystemExit(f"YOUKAI_TIERS_{k} tier{t}: origin {o} 越界（TH08 只会有 0..4）")
             out.append((f"YOUKAI_{k}{t}",
                         b"".join(pack_shooter(r, anm_ids) for r in rows) + TERMINATOR))
+    if suf == "M":
+        check_m_beam_tables()          # 卡侧那两个表（宽度/伤害）必须与这里算出来的一致
     return out
 
 
