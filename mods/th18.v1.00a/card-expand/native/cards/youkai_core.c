@@ -1462,7 +1462,7 @@ int yk_m_laser_beam_fx_on_beam(float ex, float ey, float bx, float by)
     if (dx < 0.0f) dx = -dx;
     if (dx > YK_M_LASER_BEAM_FX_HALF_W) return 0;
     if (ey > by) return 0;                                    /* 在膛口下方 = 束的反方向 */
-    if (ey < by - YK_M_LASER_BEAM_BAR_H) return 0;            /* 超出束长（判定恒 448）*/
+    if (ey < by - YK_M_LASER_BEAM_BAR_H) return 0;            /* 超出束长（= `YK_LASER_LEN`）*/
     return 1;
 }
 

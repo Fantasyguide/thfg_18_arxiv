@@ -486,9 +486,10 @@ def check_compile(scripts):
 #   束改由**卡侧**画（`cards/youkai.c` 的 `yk_beam_tick`）+ 卡侧结算（`ce_damage_rect`）。
 #   ⇒ 本卡把 5 支**束脚本**追加进 `pl01.anm`（卡侧从 `yk_player_anm()` = `pl01.anm` 起脚本，
 #     贴图 `YKB_M_OPT` 就长在那个文件的图集里），形状见 `gen_beam` 的 docstring：
-#     几何照 TH08（含它那条 `scrollX(0.0625)` 的滚动）、渲染壳照 TH18 原生束。
+#     ★ 第三十一批起**正文逐行照抄 117 的 `script163`**（渲染壳、`rotate` 初值、`scrollX` 的
+#     `fset` 随机相位 + −1/21 全照它）；只有「宽度逐档」与「层号 14」是本卡自己的口径。
 #   ⚠ 逐档宽度仍然逐档一支脚本（下列表），但**宽度值由卡侧写**（`YK_M_LASER_BEAM_W_PX100`）；
-#     脚本之间目前**逐字节相同**，五支都留着是为了「行里的 `+0x22` 逐档映射」与卡侧下标一一对应。
+#     脚本之间只差 `scale(1.0f, <逐档>)` 那一行，五支都留着是为了「行里的 `+0x22` 逐档映射」与卡侧下标一一对应。
 BEAMS = [
     # (名字, 屏上目标宽度 px, scale.y = 目标宽度 / 贴图高 32 —— 一手值，现由卡侧表执行)
     ("YKB_M_BEAM0", 16.0, 0.5),
@@ -500,30 +501,45 @@ BEAMS = [
 
 
 def gen_beam(name, spr_member, width_px, scale_y, src_num):
-    """生成一支**束脚本**（v8）—— ★ 2026-09-27 第二十六批：它现在是**卡侧独立 VM** 的脚本
-    （引擎那一行不再发弹，见 `append_shooterset.py` 的 M 段与 `youkai_core.h` 的同一段）。
+    """生成一支**束脚本**（v8）—— ★★★ 2026-09-27 第三十一批：**正文逐行照抄 117 的束脚本**
+    `assets/ability/scripts/163_eagle_beam.anm.txt`（它自己抄的是 TH17 `pl01.anm` script16）。
 
-    形状一手的两个来源，分开写清：
-      · **几何**照 TH08 `player01.anm` script24..28：`scale(1.0, <逐档 y>)`；壳取原生束
-        （`alpha(160)`）、滚动**照一开放**但步长减半（见 `scrollX` 那一行的长注）；
-      · **渲染壳**照 TH18 原生束（`ability.anm` script3）：`type(1)` + **`anchor(1, 0)`**（右端锚 ⇒ 束从子机往
-        方向外侧伸）+ `blendMode(1)` + 收束段 `interruptLabel(1)` 的 `scaleTime(8, 1, 1.0, 0.0)` → `delete()`。
-      ⚠ **不写 `rotateAuto(n)`**（原生束脚本有它）：那是「朝**运动方向**」的绘制位（`flags_hi` bit7，
-        `engine/anm/th16/07-general.md` §… 的 424）—— 我们这支 VM 是**没有速度的世界 VM**，
-        方向由卡侧每帧 `ce_anm_set_rotation` 写（= 117 的 `ability.anm` script163 那一套，已实跑验收）。
-      ⚠ **角度也不 bake**（117 是 bake `rotate(-90°)` + 每帧覆盖）：这里两件都不做，方向只有一个来源
-        = 卡侧写入 ⇒ 不会出现「脚本与 C 各说一套」。
-      ⚠ `scale` 保持 **1.0**：长度与宽度都由卡侧每帧写（长度 = `448 × 展开系数 / 512`、
-        宽度 = `YK_M_LASER_BEAM_W_PX100 / 32 × 展开系数`）—— 脚本里写死会在「展开动画」的头 8 帧被覆盖、
-        之后也不再变（看不出逐档宽度与「从近端连续长出」）。"""
+    **为什么改成「照抄」**：owner 的口径是「**问题依旧是，117 的激光也是向外流动的，你是怎么弄成这个样子的**」
+    ⇒ 他要的就是 117 那个形状。此前两批我把「从外向内」分别归给**锚点**（`TUNING.md` §2.1ccc-9：把
+    `anchor(1, 0)` 改成 `anchor(0, 0)`）与**滚动符号**（§2.1ccc-10），两次都没对。与 163 逐行比对后
+    看到的**客观差别**只有一条：**163 把 `rotate(0.0f, 0.0f, -1.5707964f)` 烘进了脚本，我们一个角度都没写**
+    （`scrollX` 的形态也不同：163 是「`fset` 随机起始相位 + `+1:` 起每帧 `-1/21`」）。
+    本批不再推理成因，只把**正文对齐**成 163 的同形；能不能让 owner 满意由实跑判。
+
+    逐行对照（左 = 163，右 = 本支）：
+
+    | 行 | 163 | 本支 | 说明 |
+    | --- | --- | --- | --- |
+    | `layer(...)` | 13 | **14** | 层号是各卡自己的口径（本卡 owner 定序：自机弹 13 < 束 14 < 妖侧子机 15，§2.1ccc-7）|
+    | `sprite` / `type(1)` | 同 | 同 | 逐字 |
+    | `anchor(1, 0)` | 同 | 同 | **左端锚**（`engine/anm/th16/10` §2：`h=1` ⇒ 四角 x = `0,+1,0,+1`）⇒ 图左端贴 VM、本地 +x 往外伸 |
+    | `blendMode(1)` / `alpha(176)` | 同 | 同 | alpha 也照 163 取 **176**（不再用我们自算的 160）|
+    | **`rotate(0.0f, 0.0f, -1.5707964f)`** | 有 | **本批补上** | ★ 这就是前两批缺的那一行（见上）|
+    | `scale(1.0f, X)` | `4.0` | **逐档** | 本卡宽度逐档（一手 TH08 `player01.anm` script24..28 的 0.5/0.6/0.7/0.8）；x 由卡侧每帧写（`2048/512 = 4.0` × 展开系数）|
+    | `fset(%F0, %RANDF); scrollX(%F0);` + `+1: scrollX(-0.04761905f);` | 同 | 同 | 逐字（= 随机起始相位 + 每帧 −1/21 ⇒ 贴图沿束方向**往外流**）。⚠ `fset`/`%RANDF` 在 v8 **实测编得过**（本文件的自检 `check_compile` 每轮 `thanm -c 18` 编一遍）⇒ **不省这一行** |
+    | `stop(); interruptLabel(1); scaleTime(…); +N: delete();` | 6 帧 | **8 帧** | 收束段 = `YK_M_LASER_BEAM_GROW_FRAMES`（「如收回般展开」的倒放，§2.1ccc-4 ❓）|
+
+    ⚠ **仍不写 `rotateAuto`**：那是「朝**运动方向**」的绘制位（`flags_hi` bit7）—— 我们这支 VM 是
+      **没有速度的世界 VM**，方向由卡侧每帧 `ce_anm_set_rotation` 写（117 的 `eagle_beam_tick` 同款：
+      bake 一个 −90° 当初值、每帧再覆盖）。"""
     return f"""script script{{N}} {{
     // 由 assets/ability/make_youkai_bullet_art.py 生成（{name}），别手改。
     // 魔理沙（TH08 `ply01as` = アリス）妖侧**子机激光的束脚本**（owner ⑥；第二十六批改成卡侧 VM 专用，
     // 第二十七批起同一帧摆 `rate` 条残影 —— 见 `cards/youkai.c` 的 `yk_beam_tick`）。
-    // 几何 = TH08 `player01.anm` script{src_num}（`scale(1.0f, {scale_y}f)`、`alpha(70)`、`scrollX(0.0625f)`）
-    //   ⇒ 屏上宽度 ≈ {width_px} px（贴图高 32）；渲染壳 = TH18 原生束（`anchor(1,0)` + `type(1)` + 收束段）。
-    // ⚠ 不写 `rotateAuto`（那是给有速度的弹用的「朝运动方向」位）；方向/长度/宽度全由卡侧每帧写
-    //   （`cards/youkai.c` 的 `yk_beam_tick`），所以 `scale` 与 `rotate` 这里都只留中性初值。
+    // 几何 = TH08 `player01.anm` script{src_num}（`scale(1.0f, {scale_y}f)` ⇒ 屏上宽度 ≈ {width_px} px，
+    //   贴图高 32）；**其余每一句照抄 117 的 `163_eagle_beam.anm.txt`**（第三十一批起，见下）。
+    // ⚠ 不写 `rotateAuto`（那是给有速度的弹用的「朝运动方向」位）；长度/宽度每帧由卡侧写
+    //   （`cards/youkai.c` 的 `yk_beam_tick`）。
+    // ★★★ 2026-09-27 第三十一批：**正文逐行照抄 117 的 `163_eagle_beam.anm.txt`**
+    //   （owner：「117 的激光也是向外流动的，你是怎么弄成这个样子的」）——
+    //   `anchor` / `rotate` 初值 / `alpha` / `scrollX` 的形态（随机起始相位 + 每帧 −1/21）全照它。
+    //   只有两处是本卡自己的口径：① `layer(14)`（层序见下）；② `scale(1.0f, {scale_y}f)` 的
+    //   **逐档宽度**（一手 TH08）—— 117 那里两轴共用它自己的 SCALE 4.0。
     // ★ 2026-09-27 第二十七批定的层序 / 第二十八批订正：`layer(13)` → **`layer(14)`**。
     //   owner 的最终口径（`TUNING.md` §2.1ccc-7）：**自机弹 13 < 束 14 < 妖侧子机 15** ——
     //   我们那三支妖侧子机脚本显式写 `layer(15)` 把 14 让给束。一手：自机弹 VM 层 = 13
@@ -536,31 +552,39 @@ def gen_beam(name, spr_member, width_px, scale_y, src_num):
     layer(14);
     sprite(@{spr_member}@);
     type(1);
-    // ★★★ 2026-09-27 第三十批（**订正上一批的误修**）：锚点回到 **`anchor(1, 0)`**（右端锚）。
-    //   上一批 owner 说「从外向内」，我判成锚点反了就改成左端锚 —— 实测**错了**：改完 owner 报
-    //   「**激光发射的位置变成板底了**」+「2/3 是激光、1/3 什么都没有」⇒ 那说明这个 sprite 的局部 +x
-    //   在 −π/2 旋转下映射到屏幕**下方**：右端锚 ⇒ 主体朝**上**铺（✓ 要的）；左端锚 ⇒ 主体朝**下**铺
-    //   （= 从膛口一路铺到板底、屏幕上半截空着 = owner 那两条）。
-    //   ⇒ 「从外向内」的真因**不是锚点，是滚动的方向**（已由下面的 `scrollX(-…)` 修正）：
-    //     锚点 = 束往哪边长；滚动符号 = 纹理往哪边流（观感上「从哪往哪射」）。
+    // ★★★ 2026-09-27 第三十一批：**照抄 163**。`anchor(1, 0)` = **左端锚**
+    //   （`engine/anm/th16/10` §2 的 x 系数表：`h=1` ⇒ 四角 x = `0,+1,0,+1` ⇒ 原点在图的**左端**、
+    //   图朝本地 +x 铺）⇒ 配合卡侧的 −π/2 覆盖，VM 落在束的**近端**、远端朝屏幕上方。
+    //   ⚠ 命名订正：本文件第二十九/三十批把这两个值叫反了（`anchor(1,0)` 写成「右端锚」、
+    //     `anchor(0,0)` 写成「左端锚」）。按 §2 的表 `h=0` 是**居中**（四角 x = `−0.5,+0.5,−0.5,+0.5`）。
+    //     行为一个字都没改（照抄 163 就对了），这里只把名字对齐一手。
     anchor(1, 0);
-    scale(1.0f, 1.0f);
-    alpha(160);
     blendMode(1);
-    // ★ 2026-09-27 第二十七批（owner：「**图依旧在一节一节长出**」）：滚动步长 **0.0625 → 0.03125**。
-    //   一手是 0.0625（TH08 script24..28），但那个数**按图集宽度归一化**：TH08 的图集宽 256
-    //   （sprite32 = 448×32 靠 UV 绕回）⇒ 0.0625×256 = 16 texel/帧；我们的成员被**镜像平铺**成 512 宽
-    //   （`MIRROR_MEMBERS`，为了绕回无缝）⇒ 同样写 0.0625 就是 32 texel/帧、屏上 32×0.875 = 28 px/帧。
-    //   钻石纹的周期 = 64 texel（本机量：TH08 那条 strip 的峰值间距 ≈ 64 px）⇒ 屏上 TH08 是 64 px、
-    //   我们是 56 px ⇒ **28 px/帧 = 正好半个周期/帧**（60 Hz 下的奈奎斯特频闪：纹样在两相位间跳，
-    //   看着就是「一节一节」而不是流动，画面边缘那一条也变成「一节一节消失」）。减半 ⇒ 16 texel/帧、
-    //   14 px/帧、**56/14 = 4 帧一个钻石**，与 TH08 的 64/16 = 4 帧**同节奏**。
-    // ★ 同上：滚动**取负** ⇒ 纹理朝束的远端（上方）流动，而不是朝膛口流（owner：「从外向内」）。
-    scrollX(-0.03125f);
+    // alpha 也照 163 取 **176**（此前是我们自算的 160）。卡侧 `YK_M_LASER_BEAM_ALPHA` 同步改 176；
+    //   「越旧越淡」的逐条 alpha 仍由卡侧按一手 `0x450ad0` 算（`yk_m_laser_beam_bar_alpha`）。
+    alpha(176);
+    // ★★★ **这一行就是本卡前两批缺的那一行**：163 把 −90° 烘进脚本当初值，我们此前一个角度都不写
+    //   （注释里还写着「角度也不 bake」）⇒ 束的初值与 117 不同。现在逐字照抄；
+    //   卡侧每帧的 `ce_anm_set_rotation`（5 条扇形 + 残影）仍然覆盖它 —— 117 的 `eagle_beam_tick`
+    //   也是「bake 初值 + 每帧覆盖」这个形状。
+    rotate(0.0f, 0.0f, -1.5707964f);
+    // 宽度初值 = 逐档（一手 TH08 `player01.anm` script{src_num} 的 `scale.y`）；
+    //   x 由卡侧每帧写（`YK_LASER_LEN 2048 / 512 = 4.0` × 展开系数 —— 与 163 的 `4.0` 同数）。
+    scale(1.0f, {scale_y}f);
+    // ★★★ 贴图**往外流**的形态照 163 逐字：`fset` 给一个**随机起始相位**、`+1:` 起每帧 −1/21。
+    //   （163/TH17 script16 的 `-0.04761905f` = −1/21；本卡不再自己算步长。）
+    //   ⚠ `fset` / `%RANDF` 在 v8 **实测编得过**（`thanm -c 18`，本文件的自检每轮都编）⇒ 不省这一行。
+    // ⚠ `+8: // 9` 的那个 **9 是 thanm 反解出来的绝对时间**（`+1:` 起的时间轴 ⇒ 1 + 8）；
+    //   `build_player_anm.py` 的 `_verify_appended` 把「计划文本 vs 编出来再反解的文本」**逐字符**比
+    //   （只归一化 `offsetNN`）⇒ 这个注释必须与 thanm 打印的一模一样，否则 `make anm` 当场红。
+    fset(%F0, %RANDF);
+    scrollX(%F0);
++1: // 1
+    scrollX(-0.04761905f);
     stop();
     interruptLabel(1);
     scaleTime(8, 1, 1.0f, 0.0f);
-+8: // 8
++8: // 9
     delete();
 }}
 """
@@ -571,6 +595,8 @@ def gen_beam(name, spr_member, width_px, scale_y, src_num):
 #   上一批把成员从 256 镜像平铺成 512，却没把步长减半 ⇒ 屏上流速翻倍、变成每帧半个钻石周期的**频闪**。
 #   这类「两个文件各写一个数」的漂移构建期看不出来（脚本能编过、anm 校验也过）⇒ 这里现读卡侧的
 #   `YK_M_LASER_BEAM_SCROLL`（`youkai_core.h`）与 `YK_BEAM_ANM_LAYER`（`youkai.c`）逐字比对。
+#   ★ 第三十一批扩容：连「照抄 163 的 6 句」（`blendMode` / `type` / `rotate` / `fset` / `scrollX(%F0)` /
+#   `+1:`）一起钉 —— `rotate(0.0f, 0.0f, -1.5707964f)` 从来没进过脚本，而前两批**没有任何闸看得见它**。
 YOUKAI_CORE_H = REPO / "mods/th18.v1.00a/card-expand/native/cards/youkai_core.h"
 YOUKAI_C = REPO / "mods/th18.v1.00a/card-expand/native/cards/youkai.c"
 
@@ -586,16 +612,21 @@ def check_beam_script_constants(scripts: dict):
     scroll = _read_define(YOUKAI_CORE_H, "YK_M_LASER_BEAM_SCROLL")
     layer = _read_define(YOUKAI_C, "YK_BEAM_ANM_LAYER")
     alpha = _read_define(YOUKAI_CORE_H, "YK_M_LASER_BEAM_ALPHA")
-    want = (f"scrollX(-{scroll});", f"layer({layer});", f"alpha({alpha});", "anchor(1, 0);")
+    # ★ 第三十一批：除了三个卡侧常量，再把「照抄 163」的那几句也钉住 —— 上一批漏的就是这一类的行
+    #   （`rotate(…)` 从来没进过脚本，两批都没人看得见）。
+    want = (f"scrollX(-{scroll});", f"layer({layer});", f"alpha({alpha});", "anchor(1, 0);",
+            "blendMode(1);", "type(1);", "rotate(0.0f, 0.0f, -1.5707964f);",
+            "fset(%F0, %RANDF);", "scrollX(%F0);", "+1: // 1")
     for k, (_bname, _w, _y) in enumerate(BEAMS):
         num = SCRIPT0 + len(SCRIPTS) + k
         name = f"YKB_M_BEAM{k}"
         body = scripts[name].replace("{N}", str(num))
-        for line in want:
+        for line in want + (f"scale(1.0f, {_y}f);",):
             if line not in body:
                 raise SystemExit(f"{name}: 脚本里没有 `{line}` —— 与 `youkai_core.h`/`youkai.c` 的"
-                                 f"同名常量脱钩了（这正是「一节一节」那个 bug 的形状）")
-    print(f"== 对账：束脚本的壳常量 == 卡侧（`scrollX({scroll})` / `layer({layer})` / `alpha({alpha})`）✓")
+                                 f"同名常量脱钩了，或没照 163 的同形写（这正是「一节一节」那个 bug 的形状）")
+    print(f"== 对账：束脚本的壳常量 == 卡侧（`scrollX({scroll})` / `layer({layer})` / `alpha({alpha})`）"
+          f"+ 照抄 163 的 6 句 ✓")
 
 
 def main():

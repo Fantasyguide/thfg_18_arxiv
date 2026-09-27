@@ -109,13 +109,21 @@ static void check_beam_spec_files(void)
         CHECK(t != 0);
         if (!t) continue;
         CHECK(strstr(t, want_layer) != 0);              /* ← 上面那场漂移在这儿被拦下 */
-        CHECK(strstr(t, "scrollX(-0.03125f);") != 0);   /* `YK_M_LASER_BEAM_SCROLL`（**取负**：朝远端流）*/
-        CHECK(YK_M_LASER_BEAM_SCROLL == 0.03125f);      /* …与卡侧那个数（两边一起钉）*/
-        CHECK(strstr(t, "alpha(160);") != 0);
-        CHECK(YK_M_LASER_BEAM_ALPHA == 160);
-        CHECK(strstr(t, "anchor(1, 0);") != 0);         /* 右端锚（束朝屏幕上方铺，见生成器注）*/
+        CHECK(strstr(t, "scrollX(-0.04761905f);") != 0);/* `YK_M_LASER_BEAM_SCROLL`（**取负**：朝远端流）*/
+        CHECK(YK_M_LASER_BEAM_SCROLL == 0.04761905f);   /* …与卡侧那个数（两边一起钉）—— 1/21，照 117 script163 */
+        CHECK(strstr(t, "alpha(176);") != 0);
+        CHECK(YK_M_LASER_BEAM_ALPHA == 176);            /* 也照 163 的 `alpha(176)` */
+        CHECK(strstr(t, "anchor(1, 0);") != 0);         /* 左端锚（`engine/anm/th16/10` §2：h=1 ⇒ 四角 x=0,+1,0,+1）*/
         CHECK(strstr(t, "rotateAuto(") == 0);           /* 方向只有一个来源 = 卡侧每帧写（注释里提到名字不算）*/
         CHECK(strstr(t, "scaleTime") != 0);             /* 只有收束段 interruptLabel(1) 里那一条 */
+        /* ★ 第三十一批：**照抄 117 `script163`** 的那几句逐句钉住 —— `rotate` 那一行正是我们前两批
+         * 缺的（`gen_beam` 里从来没有它，而两批都没有闸看得见 ⇒ 这才是本闸扩容的理由）。*/
+        CHECK(strstr(t, "rotate(0.0f, 0.0f, -1.5707964f);") != 0);
+        CHECK(strstr(t, "fset(%F0, %RANDF);") != 0);    /* 随机起始相位（v8 实测编得过 ⇒ 不省）*/
+        CHECK(strstr(t, "scrollX(%F0);") != 0);
+        CHECK(strstr(t, "+1: // 1") != 0);              /* 163 的 `+1:` 起每帧定值流速 */
+        CHECK(strstr(t, "type(1);") != 0);
+        CHECK(strstr(t, "blendMode(1);") != 0);
         ++n;
         free(t);
     }
@@ -1389,7 +1397,10 @@ int main(void)
             CHECK(yk_marisa_laser_row(0x5e, 0) == 0);      /* 咲夜 */
             CHECK(yk_marisa_laser_row(0x63, 0) == 0);      /* 早苗 */
             CHECK(yk_marisa_laser_row(0x16, 0) == 0);      /* 兜底组 */
-            CHECK(YK_LASER_LEN == 448.0f);                 /* 一手 TH08 的恒定束长 */
+            /* ★ 第三十一批：**不再照抄一手的 448**（owner：「th08 长 448 能保证激光射出画面 …
+             *   你有必要完全复刻吗？」+「两边坐标系统又不一样」）⇒ 取 117 的口径 2048
+             *   （`ANIMAL_EAGLE_BEAM_LEN = 512 × 4.0`）；一手值 448 的出处 = `th08:0x450a4f`。*/
+            CHECK(YK_LASER_LEN == 2048.0f);
             CHECK(YK_CHAR_MARISA == 1);                    /* 机体表（`CE_ADDR_CHARACTER` 一手）*/
             /* ★★★ 2026-09-27 第二十六批：**卡侧矩形束**的四个纯函数（一手见 `youkai_core.h`）。
              * 宽度 = 一手 TH08 `player01.anm` script24..28 的 `scale.y` × 贴图高 32
@@ -1459,13 +1470,15 @@ int main(void)
             CHECK(yk_m_laser_beam_bar_live(-900.0f) == 1);        /* 门是 `>=`（一手 `fcomp` 只跳「小于」）*/
             CHECK(yk_m_laser_beam_bar_live(-900.5f) == 0);
             CHECK(yk_m_laser_beam_bar_live(YK_M_LASER_BEAM_TRAIL_NONE) == 0);   /* 哨兵要被门挡掉 */
-            /* ③ 每条残影的判定盒 = 一手 `SpawnShot(…, 16.0, 448.0, …)`（半尺寸约定 ⇒ 屏上 16×448）*/
+            /* ③ 每条残影的判定盒：宽 = 一手 `SpawnShot(…, 16.0, 448.0, …)` 的 16（半尺寸约定 ⇒ 屏上 16 px）；
+             *    长 = 跟着视觉走（`YK_LASER_LEN`）—— 第三十一批起不再是硬写的 448。*/
             CHECK(YK_M_LASER_BEAM_BAR_W == 16.0f);
-            CHECK(YK_M_LASER_BEAM_BAR_H == 448.0f);
+            CHECK(YK_M_LASER_BEAM_BAR_H == 2048.0f);
             CHECK(YK_M_LASER_BEAM_BAR_H == YK_LASER_LEN);
             /* ④ alpha 递减（一手 `0x450af2` 起：`a34 = a0*3/4`、`k != 0` ⇒ `a34 − (a34/2)·2k/rate`）。
-             * `k = 0` 那一支一手**不写** alpha ⇒ 返回原值（全场最亮的就是最新的那一条）。*/
-            CHECK(YK_M_LASER_BEAM_ALPHA == 160);
+             * `k = 0` 那一支一手**不写** alpha ⇒ 返回原值（全场最亮的就是最新的那一条）。
+             * ⚠ 下面这几条传的是**字面量 160**（纯函数的输入），与本卡的基准宏值无关。*/
+            CHECK(YK_M_LASER_BEAM_ALPHA == 176);
             CHECK(yk_m_laser_beam_bar_alpha(160, 0, 4) == 160);
             CHECK(yk_m_laser_beam_bar_alpha(160, 1, 4) == 90);        /* a34 = 120；k=1 ⇒ 120 − 60·2/4 */
             CHECK(yk_m_laser_beam_bar_alpha(160, 3, 4) == 120 - 60 * 6 / 4);
@@ -1842,17 +1855,20 @@ int main(void)
         CHECK(!yk_m_laser_beam_fx_due(3));
         CHECK(!yk_m_laser_beam_fx_due(121));
 
-        /* ③ **命中判据那条带**：横向 ±（束半宽 8 + 特效半宽 16）、纵向 = 束那一列（判定恒 448）。*/
+        /* ③ **命中判据那条带**：横向 ±（束半宽 8 + 特效半宽 16）；纵向 = 束那一列，
+         *   远端 = `by − YK_M_LASER_BEAM_BAR_H`（= `YK_LASER_LEN`，**函数读的是宏、不是第 4 个实参**）。
+         *   ★ 第三十一批：束长 448 → 2048 ⇒ 下面的远端边界从 0 挪到 `448 − 2048 = −1600`。
+         *   实参 `(ex, ey, bx, by)` 里的 `by` = **膛口 y**（调用点传的是轨迹点）。*/
         CHECK(YK_M_LASER_BEAM_FX_HALF_W == 24.0f);
         CHECK(YK_M_LASER_BEAM_FX_HALF_W == YK_M_LASER_BEAM_BAR_W * 0.5f + 16.0f);
-        CHECK(yk_m_laser_beam_fx_on_beam(100.0f, 200.0f, 100.0f, 448.0f));    /* 正中轴上 */
-        CHECK(yk_m_laser_beam_fx_on_beam(124.0f, 200.0f, 100.0f, 448.0f));    /* 边界 |dx| = 24 */
+        CHECK(yk_m_laser_beam_fx_on_beam(100.0f, 200.0f, 100.0f, 448.0f));      /* 正中轴上 */
+        CHECK(yk_m_laser_beam_fx_on_beam(124.0f, 200.0f, 100.0f, 448.0f));      /* 边界 |dx| = 24 */
         CHECK(!yk_m_laser_beam_fx_on_beam(125.0f, 200.0f, 100.0f, 448.0f));
-        CHECK(!yk_m_laser_beam_fx_on_beam(75.0f, 200.0f, 100.0f, 448.0f));    /* 另一侧同样（|dx| = 25）*/
-        CHECK(!yk_m_laser_beam_fx_on_beam(100.0f, 449.0f, 100.0f, 448.0f));   /* 在膛口**下方** = 束反方向 */
-        CHECK(yk_m_laser_beam_fx_on_beam(100.0f, 448.0f, 100.0f, 448.0f));    /* 近端边界（含）*/
-        CHECK(yk_m_laser_beam_fx_on_beam(100.0f, 0.0f, 100.0f, 448.0f));      /* 远端边界（含）*/
-        CHECK(!yk_m_laser_beam_fx_on_beam(100.0f, -1.0f, 100.0f, 448.0f));    /* 超出 448 */
+        CHECK(!yk_m_laser_beam_fx_on_beam(75.0f, 200.0f, 100.0f, 448.0f));      /* 另一侧同样（|dx| = 25）*/
+        CHECK(!yk_m_laser_beam_fx_on_beam(100.0f, 449.0f, 100.0f, 448.0f));     /* 在膛口**下方** = 束反方向 */
+        CHECK(yk_m_laser_beam_fx_on_beam(100.0f, 448.0f, 100.0f, 448.0f));      /* 近端边界（含）*/
+        CHECK(yk_m_laser_beam_fx_on_beam(100.0f, -1600.0f, 100.0f, 448.0f));    /* 远端边界（含）= 448 − 2048 */
+        CHECK(!yk_m_laser_beam_fx_on_beam(100.0f, -1601.0f, 100.0f, 448.0f));   /* 超出 2048 */
         CHECK(yk_m_laser_beam_fx_on_beam(124.0f, 0.0f, 100.0f, 448.0f));
 
         /* ④ 束根光斑 / 命中特效用的**原生脚本号与层号**（一手见 `youkai_core.h`）：

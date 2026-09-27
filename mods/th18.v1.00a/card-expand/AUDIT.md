@@ -23580,3 +23580,63 @@ TH08 那一手（`0x450ee0`）本来就是摆在命中点上的 ⇒ 取这个口
 `YK_M_LASER_BEAM_RATE`、`YK_M_LASER_BEAM_BAR_W/H`、节拍、行表**全部未动**（生成器的逐档对账输出与 #130 逐格相同）。
 
 **实跑判据**：见 `HANDOFF-108.md` §3 第 30–32 行。
+
+## §BE 详录 #132（2026-09-27 第三十一批）：owner「**117 的激光也是向外流动的，你是怎么弄成这个样子的**」—— 卡 108 魔理沙妖侧**束脚本照抄 117 `script163`** + 束长 448 → 2048
+
+> **一句话**：不再推理方向成因，把 `pl01.anm` script62..66 的正文**照 117 的 `ability.anm` script163 逐指令对齐**
+> （缺的那一行 = `rotate(0.0f, 0.0f, -1.5707964f)`；`scrollX` 换成 163 的 `fset` 随机相位 + 每帧 −1/21；`alpha` 也照 176）；
+> 同时按 owner 另一条口径把束长从一手的 **448** 改成 **2048**（「长度只需保证射出画面」+ 照 117 的 `ANIMAL_EAGLE_BEAM_LEN`）。
+> 两道闸（生成器 + `make check` 里的宿主机单测）同步扩容，把「照抄 163 的 6 句」钉住。取舍与**可复用的跨作判据**登记 `TUNING.md` §2.1ccc-11。
+
+### 1. owner 三条口径（逐字）
+
+①「问题依旧是，**117 的激光也是向外流动的**，你是怎么弄成这个样子的」②「**th08 长 448 能保证激光射出画面，
+能射出去。你是 1919 还是 114514，你有必要完全复刻吗？**」③「**两边坐标系统又不一样**」。
+
+### 2. 改了什么（本卡自己的文件，逐条）
+
+| 文件 | 改动 | 影响面 |
+| --- | --- | --- |
+| `assets/ability/make_youkai_bullet_art.py`（本卡资产生成器）| `gen_beam` 正文重写为 **163 同形**（新增 `rotate(0.0f, 0.0f, -1.5707964f)`、`alpha(176)`、`fset/scrollX` 的 163 形态 —— 逐句见 §3 表）；`check_beam_script_constants()` 扩容| ⚠ 产物 `assets/yk_bullet/scripts/375..379` 变（只有这 5 支）⇒ `pl01.anm` script62..66 变（**只有这 5 支**）；`ability.anm` / 其余机体 anm **不变**（`anm-verify` 逐 entry/逐 script 对账 ✓）|
+| `native/cards/youkai_core.h`（本卡纯逻辑）| 4 个常量：`ALPHA` 160→**176**、`SCROLL` 0.03125f→**0.04761905f**（都照 163）、`YK_LASER_LEN` 448→**2048**（❓自定，一手值留档）、`BAR_H` → **`YK_LASER_LEN`**（长跟视觉走） | 只此一卡 |
+| `native/cards/youkai.c`（本卡）| 仅注释对齐新值 + 探针日志 `visual 448` → `visual %.0f`（现打 `YK_LASER_LEN`，**一个数都不再写死**）| 只此一卡；`YK_BEAM_ANM_LAYER`（14）**未动** |
+| `native/cards/youkai_core.c`（本卡纯逻辑）| 仅 1 行注释（`yk_m_laser_beam_fx_on_beam` 的远端门不再是「恒 448」）| 只此一卡 |
+| `native/tests/test_youkai_core.c` | `check_beam_spec_files()` 扩容（照抄的 6 句 + 新的 scrollX/alpha）；常量闸改 2048/176/0.04761905f；`fx_on_beam` 的远端边界改到 `448 − 2048` | `youkai_core: 5133 checks, 0 failed`（上一版 5103）|
+| `TUNING.md` / `AUDIT.md` / `HANDOFF-108.md` | 本批取舍（§2.1ccc-11，含**跨作空间量**的可复用判据）/ 本详录 / §3 加一行判据 | 文档；`tooling/check-docs.py` 384 文件全绿 |
+| `native/sdk.*` / `sdk_core.*` / `engine.h` / `sites.py` / `Makefile` / `patch/**` / `assets/build_player_anm.py` / **别人的卡（含只读的 `animal.c`）** | **本批一个字节都没动** | — |
+
+### 3. 证据：编出来的字节逐指令对照（`thanm -l 18`，不带 `-m` 的裸 opcode）
+
+| 163（117 的束，`build/ability.anm`）| 62（本卡，`build/pl01.anm`）| 判定 |
+| --- | --- | --- |
+| `ins_304(13)` | `ins_304(14)` | 差异① 层号（owner 定序，§2.1ccc-7）|
+| `ins_300(sprite284)` | `ins_300(sprite127)` | 差异② 贴图成员（不同图集）|
+| `ins_302(1)` / `ins_421(1, 0)` / `ins_303(1)` / `ins_403(176)` | 同 | 照抄 |
+| `ins_401(0.0f, 0.0f, -1.5707964f)` | 同 | ★ **本卡前两批缺的那一行** |
+| `ins_402(1.0f, 4.0f)` | `ins_402(1.0f, 0.5f)`（逐档 0.5/0.6/0.7/0.8）| 差异③ 逐档宽度 = 本卡的一手 |
+| `ins_101([10004.0f], [10011.0f])` / `ins_425([10004.0f])` / `ins_425(-0.04761905f)` | 同 | 照抄（`fset` 随机相位 + 每帧 −1/21）|
+| `ins_412(6, 1, 1.0f, 0.0f)` | `ins_412(8, 1, 1.0f, 0.0f)` | 差异④ 收束段 8 帧 |
+| `ins_3()` / `ins_5(1)` / `ins_1()` | 同 | 照抄 |
+
+**`fset(%F0, %RANDF)` 的 v8 可编性 = 实测**：`thanm -c 18 out.anm spec.txt -m v8.anmm` **rc=0**（生成器自检 `16/16 支脚本能编过`
+每轮都跑这条）；反解回来是 `ins_101([10004.0f], [10011.0f])` ⇒ **省掉随机偏移那一行的分支没有触发**，保留。
+
+### 4. 踩到的一个坑（新闸拦下的）
+
+`+8: // N` 里的 N 是 **thanm 反解出来的绝对时间**：正文加了 `+1:` 之后，`+8:` 对应的绝对时间 = 1 + 8 = **9**
+⇒ 本批第一次 `make -s anm` 被 `build_player_anm.py` 的 `_verify_appended`（计划文本 vs 编出来再反解的文本**逐字符**比）
+拦下：`pl01.anm: YKBULLET_M_BEAM0_PL01 script62 与计划不一致`。把 spec 里的注释改成 `+8: // 9` 后 rc=0。
+
+### 5. 回归跑了什么
+
+`python3 assets/ability/make_youkai_bullet_art.py`（幂等 md5 `5c3b6140…`）→ **`rm -f build/pl01.anm`** →
+`make -s anm` → `make -s sht` → `make -s check` **rc=0**（`youkai_core: 5133 checks, 0 failed` /
+`x87 in our objects: 0` / `engine_abi_check` / `anm_hud_alpha_check` / 384 文件全绿）+
+`python3 native/sites.py verify`（213 条 binhack 全对上）+ `python3 tooling/check-docs.py`（384 文件全绿）+
+产物回读（`pl01.anm` script62..66 逐条同形，见 §3 表；只有 `scale(1.0f, <档>)` 那一行逐档不同）。
+
+**伤害/几何里没被本批动的**：`YK_M_LASER_BEAM_DAMAGE` / `RATE` / `TRAIL_*` / `SETTLE` / `BAR_W` / 行表
+**全部未动**；判定**长**只因「跟视觉走」这条既有口径随 `YK_LASER_LEN` 一起变成 2048（在屏命中行为不变：
+盒近端仍在膛口、远端本来就已经盖过屏顶）。
+
+**实跑判据**：见 `HANDOFF-108.md` §3 第 33 行。

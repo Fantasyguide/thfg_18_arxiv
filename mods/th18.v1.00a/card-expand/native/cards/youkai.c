@@ -3921,8 +3921,10 @@ static const char *yk_graze_gate_name(int g)
  *     `assets/ability/make_youkai_bullet_art.py` 的 `gen_beam`）；**从 `pl01.anm` 起**
  *     （`yk_player_anm()` = `player+0x0c`）—— 贴图 `YKB_M_OPT.png` 就长在那个文件的图集里。
  *   · 每帧写：位置 = **该条残影对应的历史膛口**（一手 `trail[k]`；`k = 0` 就是本帧的膛口）、
- *     方向 = **−π/2**（一手 `ply01as.sht` 那一行的 `+0x14`；脚本里不 bake 角度、也不写 `rotateAuto`）、
- *     长度 = **448 × 展开系数** ⇒ `scale.x = (448·grow)/512`（★ `anchor(1,0)` = **左端锚**
+ *     方向 = **−π/2**（一手 `ply01as.sht` 那一行的 `+0x14`；脚本**烘了** `rotate(-90°)` 当初值、
+ *     卡侧每帧用真实角度覆盖它 —— 第三十一批起与 117 `script163` 逐行同形；仍**不写** `rotateAuto`）、
+ *     长度 = **`YK_LASER_LEN`（2048）× 展开系数** ⇒ `scale.x = (2048·grow)/512 = 4.0·grow`
+ *     （★ `anchor(1,0)` = **左端锚**，见 `engine/anm/th16/10` §2
  *     ⇒ 近端钉在膛口、**远端往外伸**，与 117 的 `eagle_beam_tick` 逐行同形）；
  *     宽度 = **逐档**（`YK_M_LASER_BEAM_W_PX100 / 32`）× 展开系数。
  *   · **展开**照 117 的细节「如收回般（倒放）展开」：束脚本 `interruptLabel(1)` 的收束段是
@@ -3942,9 +3944,10 @@ static const char *yk_graze_gate_name(int g)
  *     一台都没有时回退本体 1 条（117 的同款兜底）。
  *
  * ## 伤害（矩形伤害源，每 2 帧一笔 × 当帧那几条残影）
- *   · `ce_damage_rect(center, 0.0f, 2, dmg_k, 16, 448)`（`th18:0x45dfa0`）：`h = 448` 沿 y、
- *     `w = 16` 沿 x，angle 0 ⇒ 竖直的长条（判定轴约定见 `AUDIT.md` §U10）。
- *     尺寸照一手每条残影的 `SpawnShot(…, 16.0, 448.0, …)`；`center = 轨迹点 − 224·ŷ`（居中的盒心）。
+ *   · `ce_damage_rect(center, 0.0f, 2, dmg_k, 16, YK_LASER_LEN)`（`th18:0x45dfa0`）：`h = YK_LASER_LEN`
+ *     沿 y、`w = 16` 沿 x，angle 0 ⇒ 竖直的长条（判定轴约定见 `AUDIT.md` §U10）。
+ *     宽 16 照一手每条残影的 `SpawnShot(…, 16.0, 448.0, …)`；**长跟着视觉走**（`YK_LASER_LEN` = 2048，
+ *     第三十一批起不再是硬写的 448）；`center = 轨迹点 − YK_LASER_LEN/2·ŷ`（居中的盒心）。
  *   · 节奏 = **每 2 帧新建一笔**（一手 type 4/5/6 的 `vm[0x454+8] % 2`，`th08:0x4517b5`）；
  *     而一个源对**每个敌人一辈子只结算一次**（`0x45f0f0` 的 `+0x84` tag，一手
  *     `engine/enemy/th18/06-enemy-inert-flag.md` §③ 的 `0x45f45a`）⇒ 平均 = 表值 / 2 每帧。
@@ -4081,7 +4084,8 @@ static void __attribute__((noinline)) yk_beam_bar_place(uint32_t id, float x, fl
     (void)ce_anm_set_rotation(id, 0.0f, 0.0f, -YK_ATAN_HALF_PI);
     /* ★★ 117 的形状（`eagle_beam_tick`）：**两轴同乘展开系数**、`anchor(1,0)` 在近端
      * ⇒ 束从膛口**连续**往外伸到满长（上一版只乘 `scale.y` ⇒ 一出生就全长、只变粗）。
-     * 一手的束长是常量 448 ⇒ 系数里的 `YK_LASER_LEN / SPRITE_W` 就是满长那一端。*/
+     * 束长 = `YK_LASER_LEN`（2048，第三十一批按 owner 口径不再照抄一手的 448）
+     * ⇒ 系数里的 `YK_LASER_LEN / SPRITE_W` = 4.0 就是满长那一端（与 117 的 SCALE 4.0 同数）。*/
     (void)ce_anm_set_scale(id, YK_LASER_LEN / YK_M_LASER_BEAM_SPRITE_W * grow,
                            w_px / YK_M_LASER_BEAM_SPRITE_H * grow);
     /* 一手 `0x450ad0` 每画一条就改一次 `vm+0x1f3`（越旧越淡），画完再还原 ⇒ 这里等价于
@@ -4096,7 +4100,7 @@ static void __attribute__((noinline)) yk_beam_bar_hit(float x, float y, int dmg)
     float center[3];
     if (dmg <= 0) return;                       /* 分摊到 0 的条不占伤害源池 */
     center[0] = x;
-    center[1] = y - YK_M_LASER_BEAM_BAR_H * 0.5f;   /* 盒心 = 轨迹点 − 448/2（束向上伸）*/
+    center[1] = y - YK_M_LASER_BEAM_BAR_H * 0.5f;   /* 盒心 = 轨迹点 − BAR_H/2（束向上伸）*/
     center[2] = 0.0f;
     (void)ce_damage_rect(center, 0.0f, YK_M_LASER_BEAM_SETTLE, dmg,
                          YK_M_LASER_BEAM_BAR_W, YK_M_LASER_BEAM_BAR_H);
@@ -4108,7 +4112,7 @@ static void __attribute__((noinline)) yk_beam_bar_hit(float x, float y, int dmg)
  * 返回 1 = 这一帧算「有命中」（起到了或起失败但本该有），0 = 没有目标。
  *
  * ⚠ 为什么不用「几何束端」：TH18 那条束命中时会被 `hit2` **截到接触点**，所以它的「束端」就是命中点；
- *   我们的束**不截断**（恒 448 = 整列贯通）⇒ 几何束端在画面顶端，照它摆会是一颗**飘在空中的火花**。
+ *   我们的束**不截断**（`YK_LASER_LEN` = 2048 ⇒ 整列贯通）⇒ 几何束端在画面顶端，照它摆会是一颗**飘在空中的火花**。
  *   TH08 那一手（`th08:0x450ee0`）正是把特效摆在**命中点**上（x 取束轴）⇒ 这里两个一手口径都指向
  *   「命中点」，故用敌人位置建判据。
  * ❓ 判据的两个近似（登记 `TUNING.md` §2.1ccc-8）：① 横向带宽 = 束半宽 8 + 特效半宽 16（TH18 的敌人
@@ -4302,7 +4306,8 @@ static void __attribute__((noinline)) yk_beam_tick(yk_card_t *s)
                 yk_beam_bar_hit(trail[k * 2 + 0], trail[k * 2 + 1], d);
             }
             /* 束端命中特效（★ 第二十八批；原生 `ability.anm` script5）：同一支节拍、同一处命中点。
-             * 用**判定盒的近端**（轨迹第 0 格）而不是视觉束端 —— 判定恒 448（TUNING §2.1ccc-6 第 10 行）。*/
+             * 用**判定盒的近端**（轨迹第 0 格）而不是视觉束端 —— 判定长恒 = `YK_LASER_LEN`
+             * （TUNING §2.1ccc-6 第 10 行）。*/
             if (yk_m_laser_beam_fx_due(s_beam_age))
                 (void)yk_beam_hit_fx_try(trail[0], trail[1]);
         }
@@ -4320,12 +4325,12 @@ static void __attribute__((noinline)) yk_beam_tick(yk_card_t *s)
         s_beam_logged = 1;
         ce_log("youkai/beam: on (%d afterimage beam(s) + %d root glow now, up to %d per trail over %d trail(s) "
                "at tier %d, script %d, layer %d; hit fx = ability.anm script %d every %d frame(s), tint %d) - "
-               "visual 448 x %.1f px (scale %.3f x %.3f), bar box %.0f x %.0f px, "
+               "visual %.0f x %.1f px (scale %.3f x %.3f), bar box %.0f x %.0f px, "
                "%d dmg spread over the bar(s) every %d frame(s), no cancel; trail %d points, dy -%.0f "
                "(TH08 `th08:0x450840`/`0x450ad0`/`0x450ee0`)",
                n - ncore, ncore, rate, nunit, tier, (int)YK_BEAM_SCRIPT[tier], (int)YK_BEAM_ANM_LAYER,
                (int)YK_BEAM_HIT_FX_SCRIPT, (int)YK_M_LASER_BEAM_FX_EVERY, tint,
-               (double)w_px,
+               (double)YK_LASER_LEN, (double)w_px,
                (double)(YK_LASER_LEN / YK_M_LASER_BEAM_SPRITE_W),
                (double)(w_px / YK_M_LASER_BEAM_SPRITE_H),
                (double)YK_M_LASER_BEAM_BAR_W, (double)YK_M_LASER_BEAM_BAR_H,
