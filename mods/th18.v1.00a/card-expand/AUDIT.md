@@ -22743,3 +22743,36 @@ owner 现在要求与**面板上那 6 格最大得点同构** ⇒ 以 owner 口�
 读一遍那族公式再定 —— 这一条**没动代码**，登记为待办。
 
 **回归**：`make check` rc=0（`youkai_core: 4800 checks, 0 failed`，本轮 +6 条）+ `dllx87` = 0。
+
+## §BE 详录 #122（2026-09-27 第十九批）：人妖槽那个数 = **「额外最大得点」池**（初值 0 ⇒ 初始画 `000000`）
+
+**owner 逐字**：「人妖槽的那个 **100000** 东西要**按照额外最大得点的方法 plot**，也就是说**初始得 plot 000000**」
+＋「我们**有一系列的额外最大得点公式**」。
+
+**「额外最大得点」这一族的公式在哪（answering owner 的问题，四处）**：
+1. **层规格 + 公式**：[`SCORE-LAYER-REWORK.md`](SCORE-LAYER-REWORK.md) §1（`G = G_0 + Σ G_i`，= 用户 2026-09-13
+   给的原话逐条）＋ §3 的接口表（**未耦合** `ce_score_declare_delta` = 107 的最大得点走这条；
+   **耦合** `ce_score_declare_coupled` = 110/111 的信仰 / 绿点走这条）。
+2. **实现（SDK）**：`native/sdk_core.h` 的「额外最大得点」池一节 —— 用户逐字「**初值是 0**，
+   因为只有**加进去的**才是『额外』最大得点」；读值 = `ce_piv_pool()`。
+3. **各卡自己的公式（声明点）**：107 `cards/senro.c:802`（`senro_point_item_value()`）、
+   110 `cards/mof.c:381`、111 `cards/signal.c:438`（后两者耦合通道）、**108 就是本卡**；
+   面板显示 = `cards/faith_hud.c`（`faith_hud_maxpoint()` + `faith_hud_digits6()`）。
+4. **审计表**：`CARD-NUMERIC-INTERACTION-AUDIT.md` §1.6（得分 / 最大得点 / PIV）与 §5.5
+   （TH18 的最大得点是 `MONEY` 的派生量、**没有独立可写计数器**）。
+
+**改了什么（两处，都在本卡）**：
+- **声明**：`ce_score_declare_delta(ce_card_id(c), s->piv)` → **`s->piv - s->piv_base`**
+  （新增状态格 `piv_base` = `yk_night_point_init(难度)` 那一格）。原来把**整个夜点**（NORMAL = **100000**）
+  声明成「额外」⇒ 池初值就是 100000 ⇒ 屏上那个数 = owner 说的「**那个 100000 东西**」。
+  改成增量之后池初值 = **0** ✓ 与「只有加进去的才算额外」这条用户口径一致。
+- **显示**：`yk_night_text_glyphs(s->piv, …)` → **`yk_night_text_glyphs(ce_piv_pool(), …)`**
+  ⇒ 画的是**那一族同一份数**（与 110/111 的 `faith_hud_maxpoint()` 读的是同一个池），
+  初值 0 ⇒ 配合 §BE #121 的 6 位补零，初始就是 **`000000`** ✓。
+
+**⚠ 一处口径要说清**：`s->piv` 本身仍是 TH08 的 `pointItemValue`（带难度初值，用来算蓝点上限等），
+**没有动**；变的只是「声明出去的量」与「屏上画哪个数」。
+
+**回归**：`make check` rc=0（`youkai_core: 4800 checks, 0 failed`）+ `dllx87` = 0 + `sites.py verify` rc=0。
+**实跑判据**：开局（什么都没吃）屏上那个数应当是 **`000000`**；吃刻符/夜点涨起来之后，
+它与 110/111 的「最大得点」是**同一个数**（同时装那两张卡时应当一起涨）。

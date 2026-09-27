@@ -212,7 +212,9 @@ typedef struct {
      *   —— 用它挡「状态没变还重装」（重装 = 动画从第 0 帧起，会看出来一顿一顿的）。
      * `body_prev_dx` = 上一次看到的 `player+0x47934`（引擎拿它当「上一帧输入速度」）。*/
     /* ★★ 2026-09-22（人妖槽 + 永点）：见文件里那一节的长注释。 */
-    int32_t       piv;                 /* 永点：PIV 累加器（= 额外最大得点，点）—— 每帧声明给计分层 */
+    int32_t       piv;                 /* 永点：PIV 累加器（TH08 的 `pointItemValue`，含难度初值）*/
+    int32_t       piv_base;            /* ★ §BE #122：难度初值（`yk_night_point_init`）—— 声明给计分层的是
+                                        *   **`piv − piv_base`**（「额外」），池初值才是 0（owner 口径）*/
     int32_t       orbs;                /* 累计刻符数（一手公式里的 `total_time_orbs`，`th08:0x41825c`）*/
     int32_t       gauge;               /* 人妖槽（i16 语义；负 = 人侧、正 = 妖侧，量程 ±10000）*/
     uint16_t      gauge_focus_run;     /* 一手 `unkE2ad0`：聚焦状态**保持不变**的帧数（TH08 的 4 / 30 两档门）*/
@@ -2791,7 +2793,11 @@ static void yk_night_text_sync(yk_card_t *s, const yk_gauge_hud_t *h, uint32_t c
     ch = yk_current_character();
     if (ch < 0 || ch > 3) ch = 0;
     anm = yk_player_anm();
-    n = yk_night_text_glyphs(s->piv, g);
+    /* ★ §BE #122：显示「额外最大得点」池（`ce_piv_pool()`，**初值 0** ⇒ 初始画 `000000`），
+     *   而不是 TH08 那个带难度初值（NORMAL 100000）的夜点本体 —— 后者正是 owner 说的「那个 100000 东西」。
+     *   池 = Σ 各卡的 `ce_score_declare_delta()`（本卡那笔见 `on_tick_2` 里的声明）⇒ 与 110/111
+     *   那一族「最大得点」**同一份数**（`cards/faith_hud.c` 的 `faith_hud_maxpoint()` 也是读它）。*/
+    n = yk_night_text_glyphs(ce_piv_pool(), g);
     for (i = 0; i < YK_NIGHT_TEXT_MAX; ++i) {
         uint32_t id = s->hud_night[i];
         if (!id) continue;
@@ -2958,6 +2964,7 @@ static int on_ctor(ce_card_t *c)
      * 也就是我们这套 `piv`（永点/最大得点）：屏幕中间下方那个数 + 「蓝点的最大分」。
      * 难度一手编码 = `CE_ADDR_DIFFICULTY`（0 EASY/1 NORMAL/2 HARD/3 LUNATIC/4 EXTRA），与 TH08 同序。*/
     s->piv = yk_night_point_init(*(const int32_t *)(uintptr_t)CE_ADDR_DIFFICULTY);
+    s->piv_base = s->piv;              /* ★ §BE #122：这一格是**基准**，不进「额外最大得点」池 */
     if (!s->night_logged) {
         s->night_logged = 1;
         ce_log("youkai: night point init = %d (difficulty %d; TH08 `pointItemValue` globals+0x24, "
@@ -4126,7 +4133,13 @@ static int on_tick_2(ce_card_t *c)
     (void)yk_deathbomb_tint();
     yk_gauge_tick(s, focused);
     ce_score_family_declare(ce_card_id(c), CE_COEFF_FAMILY_08);
-    ce_score_declare_delta(ce_card_id(c), s->piv);
+    /* ★★★ 2026-09-27（§BE #122，owner：「人妖槽的那个 100000 东西要**按照额外最大得点的方法 plot**，
+     *   也就是说**初始得 plot 000000**」＋「我们**有一系列的额外最大得点公式**」）：
+     *   **声明给计分层的必须是「额外」量** —— `sdk_core.h` 的池一节写着用户逐字
+     *   「初值是 0，因为只有**加进去的**才是『额外』最大得点」⇒ 这里从「整个夜点」改成
+     *   **`piv − piv_base`**（难度初值那一格是基准、不进池）⇒ 池初值 = 0 ✓
+     *   （显示侧同步改成读池：见 `yk_night_text_sync()`）。*/
+    ce_score_declare_delta(ce_card_id(c), s->piv - s->piv_base);
     /* ★★ 2026-09-22 晚（owner 第 1 条）：**低速隐藏原生（人侧）子机**。
      * 一手：TH08 进低速那一帧把同一个子机对象的脚本换成妖侧那一支（`th08:0x44b12b push 0x5` 是本体、
      *   子机是各机体回调里的 `SetAndExecuteScriptIdx(option, 0x12/0x1d/0x18)`）⇒ **人侧那套子机不该同时存在**。
