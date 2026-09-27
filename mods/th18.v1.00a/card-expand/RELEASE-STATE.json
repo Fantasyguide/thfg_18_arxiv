@@ -8,7 +8,7 @@
     "by": "Nipporita@DESKTOP-H16AD78"
   },
   "last_release": {
-    "at": "2026-09-27 15:19:06+0800",
+    "at": "2026-09-27 15:25:00+0800",
     "agent": "Nipporita@DESKTOP-H16AD78",
     "modkit": "/mnt/d/项目/幻想指南/18/th18_modkit",
     "patch_md5": "df14d5707689ca4b66cdfab2b0f642b3",
@@ -25,6 +25,23 @@
     "files_md5": "a49b35cc513fd2f896fe6ca857a1ed03"
   },
   "history": [
+    {
+      "at": "2026-09-27 15:25:00+0800",
+      "agent": "Nipporita@DESKTOP-H16AD78",
+      "modkit": "/mnt/d/项目/幻想指南/18/th18_modkit",
+      "patch_md5": "df14d5707689ca4b66cdfab2b0f642b3",
+      "dll_md5": "be2fdab0c99f15bc259d7d636b8e07c0",
+      "sht_md5": [
+        "8c90f0e62929327add45a0976e3c9753",
+        "032cef0a58b294d7f0943c17193c30b4",
+        "bed0ecac3488b49f5c418de3cb6b7905",
+        "3d06fedded337adb0c2da2e4f312ad75"
+      ],
+      "abcard_md5": "bf91a0f5c0dc4b96f2a51c27f134222e",
+      "ability_md5": "1d3deb4da96b18a4c0e60effd2b5d199",
+      "cards_md5": "a613db18a4ac1394c429346d31d09847",
+      "files_md5": "a49b35cc513fd2f896fe6ca857a1ed03"
+    },
     {
       "at": "2026-09-27 15:19:06+0800",
       "agent": "Nipporita@DESKTOP-H16AD78",
@@ -167,23 +184,6 @@
       "modkit": "/mnt/d/项目/幻想指南/18/th18_modkit",
       "patch_md5": "df14d5707689ca4b66cdfab2b0f642b3",
       "dll_md5": "5296f13b331da061be636dd1838fef96",
-      "sht_md5": [
-        "8c90f0e62929327add45a0976e3c9753",
-        "f7ce013560fc3930c57273fb18693f51",
-        "bed0ecac3488b49f5c418de3cb6b7905",
-        "3d06fedded337adb0c2da2e4f312ad75"
-      ],
-      "abcard_md5": "bf91a0f5c0dc4b96f2a51c27f134222e",
-      "ability_md5": "3415effb89e667f3e5fb421eb841dbe8",
-      "cards_md5": "a613db18a4ac1394c429346d31d09847",
-      "files_md5": "a49b35cc513fd2f896fe6ca857a1ed03"
-    },
-    {
-      "at": "2026-09-27 13:44:48+0800",
-      "agent": "Nipporita@DESKTOP-H16AD78",
-      "modkit": "/mnt/d/项目/幻想指南/18/th18_modkit",
-      "patch_md5": "df14d5707689ca4b66cdfab2b0f642b3",
-      "dll_md5": "6514604666400fb59e0b0df720e7ca1f",
       "sht_md5": [
         "8c90f0e62929327add45a0976e3c9753",
         "f7ce013560fc3930c57273fb18693f51",
