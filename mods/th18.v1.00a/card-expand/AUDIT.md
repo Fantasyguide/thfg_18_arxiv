@@ -22776,3 +22776,30 @@ owner 现在要求与**面板上那 6 格最大得点同构** ⇒ 以 owner 口�
 **回归**：`make check` rc=0（`youkai_core: 4800 checks, 0 failed`）+ `dllx87` = 0 + `sites.py verify` rc=0。
 **实跑判据**：开局（什么都没吃）屏上那个数应当是 **`000000`**；吃刻符/夜点涨起来之后，
 它与 110/111 的「最大得点」是**同一个数**（同时装那两张卡时应当一起涨）。
+
+## §BE 详录 #123（2026-09-27 第二十批）：**PoC 线以上自动收**（一手 `ItemManager::on_tick` 的 `else` 支）
+
+**由来**：owner 「1 2 继续开工」的第 2 条（第 1 条 = 文文那批，见 §5.7b/§5.7c，另批做）。
+
+**一手（decomp `ItemManager::on_tick`，逐条照抄）**：
+```c
+if (item->state == ITEM_STATE_AUTOCOLLECT ||
+    (g_Player.positionCenter.y < g_PlayerShtFile->pocY &&
+     (g_GameManager.GetPower() >= 128.0 || g_Player.isYoukaiMode ||
+      g_GameManager.shotType == 1 || g_GameManager.shotType == 6)))
+    ⇒ 转 AUTOCOLLECT（满速飞向自机）
+```
+这条在**状态链的 `else`** 里 ⇒ 只对 **state 0（下落）/ 1（归航）** 生效（2/3/5 各有自己的支）。
+`pocY` = TH08 表头 `+0x1c` = **128.0**；TH18 同名量 = `player+0x47998`
+（`CE_PLAYER_POC_HEIGHT`，`Player__reset` 写 128.0，`th18:0x45ae8f`）⇒ **两作同一把尺子**。
+
+**改法**：`yk_orbs_tick()` 的 FALL 支之前加一段：`state == FALL` 且**自机未在死亡段**且
+`自机 y < ce_poc_height_semantic()` ⇒ **转 `YK_ORB_STATE_HOMING`**（= TH08 的 AUTOCOLLECT）。
+⚠ 本卡永点只在妖侧（聚焦）生成 ⇒ `isYoukaiMode` 恒真 ⇒ 一手那个括号里三项退化成「只看 PoC 线」，
+与一手同构（另两项是给人侧其它 `shotType` 留的）。
+⚠ 为什么需要它：type 7 被强制 state 3（§BE #117）之后，若被损命那一批打回 state 0（§BE #112），
+原来会一路掉出下沿**整颗丢掉**；TH08 在自机位于 PoC 线以上时把它吸走 —— 这条补的就是那一路。
+
+**回归**：`make check` rc=0（`youkai_core: 4800 checks`）+ `dllx87` = 0 + `sites.py verify` rc=0。
+**实跑判据**：妖侧自机飞在游玩区上方（PoC 线以上）时，场上**下落中**的永点应当直接朝自机飞过来
+（不再继续往下掉）；自机在线以下时行为不变。

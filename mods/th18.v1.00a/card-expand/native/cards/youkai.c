@@ -2223,6 +2223,29 @@ static int yk_orbs_tick(yk_card_t *s)
             o->vy += YK_ORB_GRAVITY;
             if (o->vy > 0.0f) o->state = YK_ORB_STATE_HOMING;
         }
+        /* ★★★ 2026-09-27（§BE #123，owner「1 2 继续开工」的第 2 条）：**PoC 线以上自动收**。
+         *   一手（`ItemManager::on_tick` 的 `else` 支，decomp 原文 —— 只对 **state 0/1** 生效）：
+         *   ```
+         *   if (item->state == AUTOCOLLECT ||
+         *       (g_Player.positionCenter.y < g_PlayerShtFile->pocY &&
+         *        (g_GameManager.GetPower() >= 128.0 || g_Player.isYoukaiMode ||
+         *         shotType == 1 || shotType == 6)))
+         *       ⇒ 转 AUTOCOLLECT（= 满速飞向自机）
+         *   ```
+         *   `g_PlayerShtFile->pocY` = **128.0**（TH08 表头 `+0x1c`）；TH18 的同名量 =
+         *   `player+0x47998`（`CE_PLAYER_POC_HEIGHT`，`Player__reset` 写 **128.0**，`th18:0x45ae8f`）
+         *   ⇒ 两作**同一把尺子**（都是「游玩区 448 高中的 128」）。
+         *   ⚠ 本卡的永点**只在妖侧（聚焦）生成** ⇒ `isYoukaiMode` 恒真 ⇒ 那三个括号项退化成
+         *     「只看 PoC 线」，与一手同构（另外两项是给人侧的其它 shotType 留的）。
+         *   ⚠ 为什么需要它：`SpawnItem` 对 type 7 会强制 state 3（§BE #117），而 state 3 之后若被
+         *     损命那一批打回 state 0（§BE #112），原来会一路掉出下沿**被丢掉**；TH08 在自机位于
+         *     PoC 线以上时会把它**吸走**（这条就是那一路）。*/
+        if (o->state == YK_ORB_STATE_FALL && !dead) {
+            const float *pp2 = ce_player_pos();
+            if (pp2 && pp2[1] < ce_poc_height_semantic()) {
+                o->state = YK_ORB_STATE_HOMING;                 /* 转归航（= TH08 的 AUTOCOLLECT）*/
+            }
+        }
         if (o->state == YK_ORB_STATE_FALL) {
             /* 一手（`ItemManager.cpp:268-276` / `th08:0x44093e` 族）：`vx = 0`、`vy` 夹 `>= −2.2`、
              * `vy += 0.03`（终速 3.0）。**掉出游玩区下沿 + 16 就整颗删掉、不给分**（= 损失）。*/
