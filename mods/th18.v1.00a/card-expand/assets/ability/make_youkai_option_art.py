@@ -43,13 +43,15 @@
       `engine/player/th16/02` §1）⇒ **CHARACTER=2（文）→ pl03.anm → script 11**。
     · pl03 script11 自带 `layer(13); type(0); resampleMode(1);`，8 格 16×16 = sprite32..39（一只拍翅的鴉）。
 
-── ★ 层（`layer`）：**照抄原生**，不自己编 ──────────────────────────────────────────────
-  · TH16 那支**原版原本就写 `layer(13)`**（v8 的脚本自带）⇒ 照抄。
-  · TH08 那三支**原版一行 layer 都没有**（v3 那一代 VM 的层由引擎/创建方给）。TH18 引擎在
-    `Player__allocate_option` `0x40a790` 里**无条件**把子机 VM 的层设成 14：
-    `th18:0x40a8bc mov DWORD PTR [esi+0x18],0xe`（`zAnmVmPrefix+0x18 = layer`）⇒
-    **不需要 C 侧补、也不该在这里编一个层号**：脚本不写 layer ⇒ 保持引擎给的 14（世界层）。
-    （对照：TH18 原生本体子机脚本 `pl00.anm` script15/16 自己写 `layer(13)`；本 mod 的 102/113 同层。）
+── ★ 层（`layer`）：**TH08 那三支现在显式写 `layer(15)`**（2026-09-27 owner 口径）────────────
+  · 一手：TH08 的 v3 脚本**一行 layer 都没有**（那一代由引擎/创建方给层）；TH18 引擎在
+    `Player__allocate_option` `0x40a790` 里把子机 VM 的层设成 **14**（`th18:0x40a8bc mov DWORD PTR [esi+0x18],0xe`）。
+  · **owner 2026-09-27 口径**：「子机 VM 层一定得是 14 吗？…反正这个子机也没动画」——
+    我们要的是「**妖侧束画在自机弹之上、子机之下**」，而 13（自机弹）/14（子机）相邻、没有整数层可插
+    ⇒ 把**我们这三支（静态、本来就没动画）的妖侧子机脚本**抬到 **`layer(15)`**，
+    把 14 让给束 ⇒ 顺序变成 自机弹 13 < **束 14** < 子机 15 ✓
+    （脚本里的 `layer()` 在脚本执行时写 `vm+0x18`，晚于 allocate 时的写入 ⇒ 生效）。
+  · TH16 那支（早苗的鸦）**原版原本就写 `layer(13)`** ⇒ 照抄不动（它有自己的姿态动画、也没束）。
 
 ── ★ `ins_83`：TH08 脚本里唯一**没法逐条照抄**的一行（已实测）────────────────────────────
   TH08 三支子机脚本里都有一行 `ins_83(2);`（v2.anmm 把它译成 `ins_83`，原文是
@@ -345,6 +347,9 @@ def gen_script(src_text, src_num, new_num, char, cn, kind, anm_name, sprite_map,
         s = line.strip()
         if s == f"script script{src_num} {{":
             body.append(f"script script{new_num} {{")
+            if kind == "th08":
+                # ★ owner 2026-09-27：TH08 那三支妖侧子机脚本**显式抬到 layer(15)**（理由见文件头的「层」一节）
+                body.append("    layer(15);")
             continue
         m = _INS83_RE.match(s)
         if m:

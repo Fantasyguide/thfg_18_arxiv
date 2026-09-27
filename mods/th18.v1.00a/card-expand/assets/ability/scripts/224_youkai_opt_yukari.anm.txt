@@ -30,6 +30,7 @@ script script224 {
     // ★ TH18 v8 的渲染模式：不写 `type(1)` 就落进模式 0 = 绘制定格（画面上不会转）。
     //   一手与普查见生成器文件头「渲染模式」那一段；TH08 那代没有这个概念。
     type(1);
+    layer(15);
     sprite(@YOUKAI_OPT_YUKARI_S25@);
     alpha(0);
     alphaTime(8, 0, 255);
