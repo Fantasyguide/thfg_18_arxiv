@@ -23430,3 +23430,153 @@ init `0x44fe20` / tick `0x450840` / draw `0x450ad0` / hit `0x450ee0`。
 脚本 `interruptLabel(1)` 的 `scaleTime(8, 1, 1.0f, 0.0f)` 把 `scale.x` 先置 **1.0**（= 512 单位）再插值到 0，
 而我们的满长系数是 `448/512 = 0.875` ⇒ 松 Z 那一瞬束会先长 14% 再缩（上一批就有，属观感小瑕疵；
 要修 = 把收束段的起始值改成 0.875，但那是**脚本正文**、属“改已追加件”，等 owner 发话）。
+
+## §BE 详录 #131（2026-09-27 第二十八批）：owner「**遗留的 ? 一起做了吧**」—— 束的三条观感件补齐 + 一场「**闸看不见的漂移**」的订正
+
+> **一句话**：卡 108「魔理沙妖侧激光」这一串遗留的 11 行 ❓ 全部收口（`TUNING.md` §2.1ccc-6 逐行标状态）；
+> A 类三条（极妖染红 / 束根光斑 / 束端命中特效）**全部借原生那一套脚本做出来，零新资产**；
+> 顺带查出**第二十七批的层号修复根本没生效**（生成器改漏 + 那条闸不在 `make check` 路径上），
+> 并把等价闸搬进了宿主机单测。
+
+### 1. 极妖时残影整条染红（`TUNING.md` §2.1ccc-6 第 9 行）
+
+| 件 | 内容 |
+| --- | --- |
+| 一手 | `th08:0x450ad0`（那条激光行的 draw）的 `k` 循环里 `0x450bf2`–`0x450c1c` 把 VM 的 RGB 写成 **(255,64,64)**、`+0x1f3`（alpha）不动 ⇒ 与本卡 owner ④「妖逢魔染自机弹」**同一支红** |
+| 做法 | `youkai_core.h` 新增纯函数 `yk_m_laser_beam_bar_color(alpha, extreme_youkai)`：基准 = `alpha<<24 | 0xffffff`，极妖时**复用** `yk_fengma_tint_dword()`（只换低 24 位）⇒ 与自机弹染色同一个红、同一段代码 |
+| 卡侧 | `yk_beam_bar_place(..., int tint)` 每帧重写颜色（`tint = yk_gauge_is_extremely_youkai(s->gauge)`）⇒ **中途进/出极妖当帧变色**（一手是绘制前写，同款） |
+| ⚠ 光斑不染 | 束根光斑是 TH18 原生的**另一支 VM**（script4，见下）；原生对它的染色走 `interrupt 2/3` 的 `colorTime(…64,64,255)` / `(…255,255,255)`，与「极妖」无关。TH08 那条激光**根本没有光斑** ⇒ 没有一手依据说极妖要染它 ⇒ **不染**（要染属自定）|
+
+### 2. 束根自转光斑（`TUNING.md` §2.1ccc-2 第 9 行 / §2.1ccc-6）
+
+**一手（本批新读，本机 `local/th18.v1.00a/anm/ability/ability.anm.txt` 直读）**：
+原生那条束脚本 **script3**（= 四个 `pl0X.sht` set `0xb` 的 `+0x22 = 3`）**第一句就是 `scriptNew(script4)`**；
+script4 全文：
+
+```
+script script4 {
+    layer(13); type(1); alpha(224); blendMode(1);
+    angleVel(0.0f, 0.0f, 0.5067085f);        // 自转 29°/帧 ≈ 12.4 帧一圈
+    sprite(sprite9);                          // 32×32，ability.anm entry0 = player/option/op00.png
+offset80:
+    scaleTime(4, 9, 1.0f, 1.0f); +4:
+    scaleTime(4, 9, 0.5f, 0.5f); +4: jmp(offset80, 0);   // 脉动 1.0↔0.5，8 帧一周期
+    interruptLabel(1); scaleTime(8, 1, 0.0f, 0.0f); +8: delete();   // 与我们的束同一支 8 帧收束
+}
+```
+
+**落点**：卡侧**直接起这支原生脚本**（`ce_anm_spawn(CE_ABILITY_ANM(), 4, 13)`），每台我们自己的子机一支，
+位置**每帧**写在本帧的束近端（轨迹第 0 格）；**旋转与 scale 一律不碰**（自转/脉动都在脚本里，
+一写就把积分器与插值器打掉）。收束走 `ce_anm_interrupt(id, 1)`（script4 的收束段同样 8 帧），
+硬删走 `ce_anm_delete` —— 与残影束**同一个 `yk_beam_kill`**（`METHOD.md` 铁律二的落点）。
+
+**❓ TH08 侧查不到对应物（已试过的手段逐条列出）**：
+本机 `local/th08.v1.00d/anm/player01/player01.anm.txt` 的 **script24..28**（那条激光逐档的 5 支脚本）
+**全文直读** —— 每支只有 `sprite(sprite32) / ins_83(2) / alpha(70) / scale(1.0, 逐档 y) /
+zWriteDisable(1) / rotate(0,0,1.5707964) / scrollX(0.0625) / nop / jmp / interruptLabel(1) /
+alphaTime(20,0,0) / delete()`；
+**没有 `scriptNew`、没有第二支 VM、也没有任何子脚本**。⇒ 「束根光斑」在 TH08 那条激光里**不存在**，
+本卡按 **TH18 原生**补（owner 口径「能照一手就照一手」：这一件的一手就是本作原生的那一支）。
+
+### 3. 束端命中特效（`TUNING.md` §2.1ccc-2 第 9 行）
+
+**一手甲（TH18，本批自己逐指令读的）**：`hit2` `th18:0x460320`
+
+| # | 逐指令 | 地址 |
+| --- | --- | --- |
+| ① | `movsx eax,WORD PTR [eax+0x26]` —— 那条束行的 `hit_fx` 脚本号 | `0x46072c` |
+| ② | 节拍：`mov eax,[edi+0x10] / cmp eax,[edi+0xc] / je 返回` → **`test al,1 / jne 0x4608ff`** ⇒ **奇帧整段跳过**（建特效 + 建伤害源都在偶帧那一支）| `0x46066d`–`0x46067b` |
+| ③ | 束端 = `0x4615c0(out, angle=[edi+0x64], len=[edi+0xa0])`（命中时 `+0xa0` 已被截到接触点）| `0x4606a0` |
+| ④ | 取 VM `call 0x489320` → 设脚本 `call 0x407420(vm, sh+0x26)` → 位置写 `+0x5f0/+0x5f8` | `0x460751`/`0x460761`/`0x460778` |
+
+**一手乙（TH08，本批新读那条激光行的 hit 回调 `th08:0x450ee0`）**：
+
+```
+450eef  add cl,1 ; player[0xe2a94] = cl        ; 计数器（在 player 上）
+450f04  movzx ecx,[eax+0xe2a94] ; and ecx,7    ; 判 % 8 == 0
+450f1a  jne 0x450f58                            ; 不平就整段跳过
+450f24  edx = arg1 ; local = *(float3*)arg1     ; ← 命中点
+450f3b  ecx = [arg2+0x2a4] ; [ebp-0xc] = ecx   ; ← x 换成**束轴 x**（`vm+0x2a4`）
+450f44  push -1 ; push 1 ; push &local ; push 5 ; ecx = 0x4ece60 ; call 0x425430
+```
+
+`0x425430` = `EffectManager` 的 SpawnEffect（0x200 格 ×`0x360` 的池，`slot+0x351 = (u8)id`）
+⇒ **位置 = (束轴 x, 命中点 y)**、特效 id = **5**，约每 8 次命中回调一次。
+
+**一手丙（资产：`sh+0x26` 到底填几）**：本机 `local/th18.v1.00a/dat/pl01.sht` 的 **set 0xb row0 逐字节**：
+`rate 5 / delay 0 / dmg 13 / hit_w 0.0 / hit_h 16.0 / ang −1.5708 / speed 0 / opt 0x00 / mode 2 /
+anm 3 / sfx −1 / **hit_fx 5** / funcs 2,2,2` ⇒ **`+0x26 = 5`**（四个 `pl0X.sht` **全是 5**）。
+⚠ **订正**：`engine/sht/th18/02-shooter-record.md` 的 `+0x26` 那一行写「魔理沙 = 8」是**错的**
+（`03` §5.3 的「= 5」才对）。本批**没有改 `engine/` 下的文档**（那不属于本卡的文件）⇒ 在此登记，
+请 owner/主 agent 决定要不要回填那一行。
+
+**落点**：每 2 帧（`YK_M_LASER_BEAM_FX_EVERY`，与伤害源同相）沿束轴找**最近**（y 最大 = 先碰到）的一只
+**可打且可锁定**的敌人（`ce_enemy_lockable` + 非 `CE_ENEMY_FLAG_NO_DAMAGE`），在
+**(束轴 x, 那个敌人的 y)** 起一支原生 `ability.anm` **script5**（一次性：`alphaTime(20,0,0)` +
+`scaleTime(20,1,0,0)` + `+20: delete()` ⇒ **不记 id**，本仓既有的「脚本自己 delete() 的一次性特效不用记 id」）。
+
+**❓ 为什么不能照 TH18 那样无条件放在「几何束端」**：TH18 那条束命中时会被 `hit2` **截到接触点**，
+所以它的「束端」**就是**命中点；而且它不命中时长度长到 512 > 游玩区 448 ⇒ 端点被顶出画面（看不见）。
+我们的束**恒 448、不截断**（无限贯通）⇒ 照抄会得到**一颗飘在画面顶端的火花**。
+TH08 那一手（`0x450ee0`）本来就是摆在命中点上的 ⇒ 取这个口径。
+
+**❓ 本批新增的两处自定（都只影响火花画在哪，不参与伤害）**：
+① 横向带宽 `YK_M_LASER_BEAM_FX_HALF_W` = 24 = 束半宽 8 + 特效半宽 16（TH18 的敌人判定盒在 `hit2` 里
+走 `ds+0x18`，那个结构的字段图本批没解出来；`engine/enemy/th18/` 下也没有敌人碰撞尺寸的字段名）；
+② 纵向用**敌人中心**的 y（引擎用接触点，我们差一个敌人半高）。
+要精确得先做 `engine.h` 的**共享件新增**（敌人判定盒字段图 + 一手普查）—— 本卡单独立项做不了，登记在案。
+
+**❓ TH08 那个 `EffectManager` id 5 的模板没解出来**：试过 `0x4c6d30[n]`（**不是**它：那是*子机初始化
+回调表*，`[4] = 0x44e3a0` = 霊夢子机 init）与 `0x425430` 的两个 id 消费者 `0x427d4a` / `0x428297`
+（按 id 分支、没有集中表）⇒ 本批改用**一手丙**那个 TH18 值（同一件事、本作自带）。要「逐字用 TH08
+那张爆闪图」得再挖一层 EffectManager 的 id→模板表。
+
+### 4. ★★★ 顺带订正：**第二十七批的层号修复根本没生效**（本批发现）
+
+| 事实 | 依据 |
+| --- | --- |
+| commit `ada7dbf` 把 `YK_BEAM_ANM_LAYER` 改成 **14**，但**漏改生成器** `gen_beam`（仍是 `layer(13);`）⇒ 已部署的 `pl01.anm` script62..66 仍写 `ins_304(13)` | `thanm -l 18 build/pl01.anm` 回读（本批实测）；`make check` **全绿** |
+| 为什么没有任何闸拦住 | `check_beam_script_constants()` 只在**手动跑生成器**时执行，而生成器**不在 `make check` 的路径上**（`make anm` 只读 `assets/yk_bullet/scripts/` 里已写好的 spec）|
+| **脚本的 `layer()` 会覆盖 instantiate 的层参数**（所以「脚本里写 13」真的等于层 13）| 一手 `0x405bf0` 的指令顺序：`0x407420(vm, script)` 只设脚本指针（`ret 8`，不执行）→ `0x405c50 mov [esi+0x18],ecx` 写层参数 → `0x405c91 call 0x478580`（`AnmVm__run`）**才**执行脚本第一帧 |
+
+**修法（两步，都在本卡自己的文件里）**：
+① `gen_beam` 的 `layer(13);` → **`layer(14);`** + 注释写清层序与这次的教训；
+② 把那条闸的**等价物搬进 `make check` 跑得到的宿主机单测**：
+`native/tests/test_youkai_core.c` 新增 `check_beam_spec_files()` —— 遍历 `assets/yk_bullet/scripts/` 里
+`ykb_m_beam*` 的 5 支 spec，逐支对 `layer(N)`（N 从 `cards/youkai.c` 的 `#define` 现读）/ `scrollX(0.03125f)`
+/ `alpha(160)` / `anchor(1, 0)` / **不许有 `rotateAuto(`**，并要求**恰好 5 支**。
+（遍历时按**子串**找而不是硬编码「375 号」：生成物编号会随新脚本平移。）
+
+⇒ **产物变化**：`pl01.anm` script62..66 的 `ins_304(13)` → **`ins_304(14)`**（回读已确认）；
+`assets/yk_bullet/scripts/375..379` 的 spec 文本变（只有这 5 支）；生成器幂等 md5
+`b468a661…` → **`22714297…`**。`ability.anm` / `abcard.anm` / 四份 `.sht` **逐字节不变**。
+
+### 5. 池压力（owner 工单 A 类第 3 条）：可测判据 + 降级路径
+
+| 项 | 内容 |
+| --- | --- |
+| 峰值 | 常驻 = **`rate` 条残影（≤12）+ 1 支光斑 = ≤13**；一次性 = 命中特效 **≤10**（每 2 帧一支、存活 20 帧）⇒ **≤ 23 支** |
+| 探针 | `youkai/probe beam spawn: resident W/G (want/got this frame), fx W/G, dropped N total, tint T` —— **本帧要几支 / 真拿到几支**（`G < W` = 池满降级）；另每条残影行加打 `c1 %08x`（极妖时应读到 `aaff4040`）、光斑行加打 `rz`/`wz`（自转在跑的判据）|
+| 账 | 累计失败数 `s_beam_dropped` 进 600 帧的 ledger：`youkai/beam: N VM spawn FAILED so far (anm pool full?) - cosmetic only: …`（与 `s_ring_failed` 同一个形状）|
+| **伤害不丢** | 伤害循环用的是 **`bars`（来自轨迹）**，与 `ce_anm_spawn` 成功与否**无关** ⇒ 池满时只少残影、DPS 一点不少；宿主机单测把「Σ 分摊 = 总额」钉着 |
+
+### 6. 共享件 / 影响面 + 回归
+
+| 文件 | 改动 | 影响面 |
+| --- | --- | --- |
+| `native/cards/youkai.c`（本卡）| 染红参数进 `yk_beam_bar_place`；新增光斑（每台子机一支，记 id、随 `yk_beam_kill` 收）与命中特效（一次性、不记 id）；新增 `yk_beam_hit_fx_try()`；探针 + ledger 加池压力读数 | 只此一卡 |
+| `native/cards/youkai_core.{h,c}`（本卡纯逻辑）| 新增 `YK_BEAM_CORE_SCRIPT/HIT_FX_SCRIPT/CORE_ANM_LAYER/HIT_FX_LAYER`、`YK_M_LASER_BEAM_FX_EVERY/FX_HALF_W` + 3 个纯函数（染色 / 节拍 / 带内判定）| 只此一卡（主机单测覆盖）|
+| `native/tests/test_youkai_core.c` | +87 条断言（染色 dword 与 alpha 保真、节拍、带内判定的边界、脚本号/层号的关系）+ **新增 `check_beam_spec_files()`**（`make check` 里的脱钩闸）| `youkai_core: 5103 checks, 0 failed`（上一版 5016）|
+| `assets/ability/make_youkai_bullet_art.py`（**本卡资产生成器**）| `gen_beam`：`layer(13)` → **`layer(14)`** + 注释重写（层序 + 这次漂移的教训）| ⚠ 产物 `assets/yk_bullet/scripts/375..379` 变（只有这 5 支）⇒ `pl01.anm` script62..66 变（**只有这 5 支**）；`ability.anm` / 其余机体 anm **不变**（`anm-verify` 逐 entry/逐 script 对账 ✓）|
+| `native/engine.h` / `sdk.*` / `sdk_core.*` / `sites.py` / `Makefile` / `patch/**` / `cards_def.c` / `assets/sht/**` / `assets/build_player_anm.py` | **本批不动** | — |
+
+**回归跑了什么**：`python3 assets/ability/make_youkai_bullet_art.py`（幂等 md5 `22714297…`；只有那 5 支 spec 变）
+→ **`rm -f build/pl01.anm`** → `make -s anm` → `make -s sht` → `make -s check` **rc=0**
+（`youkai_core: 5103 checks, 0 failed` / `x87 in our objects: 0` / `sitecheck` / `capcheck` / `engine_abi` /
+文档 **384 文件全绿**）+ `python3 native/sites.py verify`（213 条 binhack 全对上）+ 产物回读
+（`thanm` 读回 `pl01.anm` script62 = **`ins_304(14)`** + `ins_425(0.03125f)` + `ins_421(1,0)`）。
+
+**逐档伤害一个数都没改**：本批只碰「颜色 / 两支新 VM / 判据近似」，`YK_M_LASER_BEAM_DAMAGE`、
+`YK_M_LASER_BEAM_RATE`、`YK_M_LASER_BEAM_BAR_W/H`、节拍、行表**全部未动**（生成器的逐档对账输出与 #130 逐格相同）。
+
+**实跑判据**：见 `HANDOFF-108.md` §3 第 30–32 行。

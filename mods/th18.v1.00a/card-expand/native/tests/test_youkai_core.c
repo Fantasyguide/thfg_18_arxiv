@@ -21,7 +21,12 @@
  *   只搬数字会让「P 越高越弱」，理由见 `cards/youkai_core.c` §3.4）
  *   ⇒ 这里只断言**档位映射**与「不覆盖」这个语义。 */
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+/* ★★★ 2026-09-27 第二十八批：本批新加的「**生成物不许与常量脱钩**」那一段闸要遍历 spec 目录
+ *   （`opendir`/`readdir` 是 POSIX；`-std=c11` 下必须自己开这个特性宏）。*/
+#define _DEFAULT_SOURCE 1
+#include <dirent.h>
 
 #include "../cards/youkai_core.h"
 #ifdef __has_include
@@ -32,6 +37,91 @@
 
 static int s_fail, s_pass;
 #define CHECK(cond) do { if (cond) ++s_pass; else { ++s_fail; printf("  FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); } } while (0)
+
+/* 读一个文本文件（cwd = native/，与 `tests/test_faith_core.c` 的 `faith_slurp` 同形）。失败返回 0。*/
+static char *yk_slurp(const char *path)
+{
+    FILE *f = fopen(path, "rb");
+    char *buf;
+    long n;
+    if (!f) return 0;
+    if (fseek(f, 0, SEEK_END) != 0) { fclose(f); return 0; }
+    n = ftell(f);
+    if (n < 0 || fseek(f, 0, SEEK_SET) != 0) { fclose(f); return 0; }
+    buf = (char *)malloc((size_t)n + 1u);
+    if (!buf) { fclose(f); return 0; }
+    if (fread(buf, 1u, (size_t)n, f) != (size_t)n) { free(buf); fclose(f); return 0; }
+    buf[n] = '\0';
+    fclose(f);
+    return buf;
+}
+
+/* 抠出 `#define <key> <十进制数>` 的值（只认十进制 —— 本批读的那两个键都是整数）。返回 1 = 找到。*/
+static int yk_define_int(const char *text, const char *key, int *out)
+{
+    const char *p = text;
+    size_t kl = strlen(key);
+    if (!text) return 0;
+    while ((p = strstr(p, "#define")) != 0) {
+        const char *q = p + 7;
+        while (*q == ' ' || *q == '\t') ++q;
+        if (strncmp(q, key, kl) == 0 && (q[kl] == ' ' || q[kl] == '\t')) {
+            q += kl;
+            while (*q == ' ' || *q == '\t') ++q;
+            if (*q >= '0' && *q <= '9') { *out = (int)strtol(q, 0, 10); return 1; }
+        }
+        p += 7;
+    }
+    return 0;
+}
+
+/* ★★★ 第二十八批闸甲：**束脚本的壳常量必须与卡侧对账**（这条闸原先只在
+ * `assets/ability/make_youkai_bullet_art.py` 里，而那个生成器**不在** `make check` 的路径上 ——
+ * 2026-09-27 真出过事：`YK_BEAM_ANM_LAYER` 改成 14，生成器没重跑 ⇒ `pl01.anm` 里那 5 支束脚本
+ * 还写着 `layer(13)`，而 `make check` **全绿**（没有任何闸看得见它）⇒ 束一直画在与自机弹同层。
+ * 这里把它搬进 `make check` 跑得到的宿主机单测；生成器那一份保持不动（两边都拦）。
+ * 遍历 spec 目录时**按子串找**（`ykb_m_beam`）而不是硬编码「375 号」—— 生成物的编号会随新脚本平移。*/
+static void check_beam_spec_files(void)
+{
+    DIR *d = opendir("../assets/yk_bullet/scripts");
+    struct dirent *de;
+    char want_layer[64];
+    char *yc;
+    int layer = -1, n = 0;
+
+    yc = yk_slurp("cards/youkai.c");
+    CHECK(yc != 0);
+    if (!yc) return;
+    CHECK(yk_define_int(yc, "YK_BEAM_ANM_LAYER", &layer));
+    CHECK(layer == 14);         /* owner 定的层序：自机弹 13 < 束 14 < 妖侧子机 15（`TUNING.md` §2.1ccc-7）*/
+    free(yc);
+    if (layer < 0) return;
+    (void)snprintf(want_layer, sizeof want_layer, "layer(%d);", layer);
+
+    CHECK(d != 0);
+    if (!d) return;
+    while ((de = readdir(d)) != 0) {
+        char path[512];
+        char *t;
+        if (!strstr(de->d_name, "ykb_m_beam") || !strstr(de->d_name, ".anm.txt")) continue;
+        (void)snprintf(path, sizeof path, "../assets/yk_bullet/scripts/%s", de->d_name);
+        t = yk_slurp(path);
+        CHECK(t != 0);
+        if (!t) continue;
+        CHECK(strstr(t, want_layer) != 0);              /* ← 上面那场漂移在这儿被拦下 */
+        CHECK(strstr(t, "scrollX(0.03125f);") != 0);    /* `YK_M_LASER_BEAM_SCROLL` 的脚本文本 */
+        CHECK(YK_M_LASER_BEAM_SCROLL == 0.03125f);      /* …与卡侧那个数（两边一起钉）*/
+        CHECK(strstr(t, "alpha(160);") != 0);
+        CHECK(YK_M_LASER_BEAM_ALPHA == 160);
+        CHECK(strstr(t, "anchor(1, 0);") != 0);         /* 近端锚（束从膛口往外伸）*/
+        CHECK(strstr(t, "rotateAuto(") == 0);           /* 方向只有一个来源 = 卡侧每帧写（注释里提到名字不算）*/
+        CHECK(strstr(t, "scaleTime") != 0);             /* 只有收束段 interruptLabel(1) 里那一条 */
+        ++n;
+        free(t);
+    }
+    closedir(d);
+    CHECK(n == YK_M_LASER_BEAM_TIERS);                  /* 逐档一支（5 支）*/
+}
 
 static yk_action_t s_acts[YK_FAM_MAX];
 
@@ -1722,6 +1812,61 @@ int main(void)
         }
         (void)t;
     }
+
+    /* ★★★ 2026-09-27 第二十八批（owner ⑥ 遗留 ❓ 收口）：**束根光斑 / 束端命中特效 / 极妖染红**。
+     * 一手链条（脚本全文、逐指令、TH08 查不到什么）写在 `cards/youkai_core.h` 的同一节。*/
+    {
+        /* ① **极妖 ⇒ 残影束整条染红**（一手 `th08:0x450ad0` 的 `0x450bf2`：RGB(255,64,64)、alpha 不动）。
+         *   我们复用 owner ④ 那套（`yk_fengma_tint_dword` / `YK_FENGMA_TINT_RGB`）。*/
+        CHECK(yk_m_laser_beam_bar_color(160, 0) == 0xa0ffffffu);
+        CHECK(yk_m_laser_beam_bar_color(160, 1) == 0xa0ff4040u);
+        CHECK((yk_m_laser_beam_bar_color(160, 1) & 0xff000000u) == (uint32_t)(160u << 24));
+        CHECK((yk_m_laser_beam_bar_color(160, 1) & 0x00ffffffu) == (YK_FENGMA_TINT_RGB & 0x00ffffffu));
+        CHECK(yk_m_laser_beam_bar_color(0, 1) == YK_FENGMA_TINT_RGB);        /* alpha 0 也保 */
+        CHECK(yk_m_laser_beam_bar_color(255, 0) == 0xffffffffu);
+        CHECK(yk_m_laser_beam_bar_color(255, 1) == 0xffff4040u);
+        CHECK(yk_m_laser_beam_bar_color(300, 0) == 0xffffffffu);             /* 越界钳到 0xff */
+        CHECK(yk_m_laser_beam_bar_color(-5, 0) == 0x00ffffffu);
+        /* 逐条 alpha（一手 `0x450ad0` 的递减结果）也照样染色，且**只换低 24 位**。*/
+        CHECK(yk_m_laser_beam_bar_color(yk_m_laser_beam_bar_alpha(160, 5, 12), 1) >> 24
+              == (uint32_t)yk_m_laser_beam_bar_alpha(160, 5, 12));
+
+        /* ② **束端命中特效的节拍**：一手两条不同的数（TH18 `hit2` 每 2 帧 / TH08 `0x450ee0` 约每 8 帧），
+         *   取 2 —— 它是**帧计数**判据，且与伤害源同相。*/
+        CHECK(YK_M_LASER_BEAM_FX_EVERY == 2);
+        CHECK(YK_M_LASER_BEAM_FX_EVERY == YK_M_LASER_BEAM_SETTLE);
+        CHECK(yk_m_laser_beam_fx_due(0));
+        CHECK(yk_m_laser_beam_fx_due(2));
+        CHECK(yk_m_laser_beam_fx_due(120));
+        CHECK(!yk_m_laser_beam_fx_due(1));
+        CHECK(!yk_m_laser_beam_fx_due(3));
+        CHECK(!yk_m_laser_beam_fx_due(121));
+
+        /* ③ **命中判据那条带**：横向 ±（束半宽 8 + 特效半宽 16）、纵向 = 束那一列（判定恒 448）。*/
+        CHECK(YK_M_LASER_BEAM_FX_HALF_W == 24.0f);
+        CHECK(YK_M_LASER_BEAM_FX_HALF_W == YK_M_LASER_BEAM_BAR_W * 0.5f + 16.0f);
+        CHECK(yk_m_laser_beam_fx_on_beam(100.0f, 200.0f, 100.0f, 448.0f));    /* 正中轴上 */
+        CHECK(yk_m_laser_beam_fx_on_beam(124.0f, 200.0f, 100.0f, 448.0f));    /* 边界 |dx| = 24 */
+        CHECK(!yk_m_laser_beam_fx_on_beam(125.0f, 200.0f, 100.0f, 448.0f));
+        CHECK(!yk_m_laser_beam_fx_on_beam(75.0f, 200.0f, 100.0f, 448.0f));    /* 另一侧同样（|dx| = 25）*/
+        CHECK(!yk_m_laser_beam_fx_on_beam(100.0f, 449.0f, 100.0f, 448.0f));   /* 在膛口**下方** = 束反方向 */
+        CHECK(yk_m_laser_beam_fx_on_beam(100.0f, 448.0f, 100.0f, 448.0f));    /* 近端边界（含）*/
+        CHECK(yk_m_laser_beam_fx_on_beam(100.0f, 0.0f, 100.0f, 448.0f));      /* 远端边界（含）*/
+        CHECK(!yk_m_laser_beam_fx_on_beam(100.0f, -1.0f, 100.0f, 448.0f));    /* 超出 448 */
+        CHECK(yk_m_laser_beam_fx_on_beam(124.0f, 0.0f, 100.0f, 448.0f));
+
+        /* ④ 束根光斑 / 命中特效用的**原生脚本号与层号**（一手见 `youkai_core.h`）：
+         *   两支脚本互不相同；光斑 13 < 束 14 < 子机 15 这条 owner 定的层序，光斑在束**之下**。*/
+        CHECK(YK_BEAM_CORE_SCRIPT == 4);
+        CHECK(YK_BEAM_HIT_FX_SCRIPT == 5);
+        CHECK(YK_BEAM_CORE_SCRIPT != YK_BEAM_HIT_FX_SCRIPT);
+        CHECK(YK_BEAM_CORE_ANM_LAYER == 13);
+        CHECK(YK_BEAM_HIT_FX_LAYER == 15);
+        CHECK(YK_BEAM_CORE_ANM_LAYER < YK_BEAM_HIT_FX_LAYER);
+        CHECK(YK_BEAM_HIT_FX_LAYER == YK_BEAM_CORE_ANM_LAYER + 2);   /* 原生那一对（15 与 13）的相对位置 */
+        CHECK(YK_BEAM_CORE_ANM_LAYER == 13);                        /* = 自机弹那一层（原生 script4 自己写的值）*/
+    }
+    check_beam_spec_files();
 
     printf("youkai_core: %d checks, %d failed\n", s_pass + s_fail, s_fail);
     return s_fail ? 1 : 0;

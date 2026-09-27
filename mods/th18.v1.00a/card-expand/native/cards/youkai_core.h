@@ -442,6 +442,83 @@ int yk_marisa_laser_row(int set_index, int row_index);
 #define YK_M_LASER_BEAM_SCROLL      0.03125f
 #define YK_M_LASER_BEAM_UNITS       (YK_OPTION_CELLS + 1)   /* 每台我们的子机一条轨迹 + 回退本体的那一条 */
 
+/* ============ ★★★ 2026-09-27（第二十八批：owner ⑥ 遗留 ❓ 一次性收口）：**束根光斑 + 束端命中特效 + 极妖染红**
+ *
+ * 三条都是 `AUDIT.md` §BE #129 / `TUNING.md` §2.1ccc-6 里挂着「未做（纯观感）」的项。
+ * **资产与脚本一律借原生**（TH18 自己那条激光用的**同一支**脚本、同一张切图）—— 一个新资产都不加。
+ * 一手的两个来源分开写清（TH08 的与 TH18 原生的**不是**同一件事，不许混着说）：
+ *
+ * ## ① 束根自转光斑 = 原生 `ability.anm` **script4**（一手：`local/th18.v1.00a/anm/ability/ability.anm.txt` 直读）
+ *   · 原生那条束脚本 **script3**（= 四个 `pl0X.sht` set `0xb` 的 `+0x22 = 3`，`engine/sht/th18/03` §5.3）
+ *     的**第一句**就是 `scriptNew(script4)` ⇒ 「束根那颗自转脉动的光斑」是**原生激光自带**的子 VM。
+ *   · script4 全文（逐条照抄，本卡侧**不重写**、直接起它）：
+ *       `layer(13); type(1); alpha(224); blendMode(1); angleVel(0,0,0.5067085f); sprite(sprite9);`
+ *       `offset80: scaleTime(4,9, 1.0,1.0); +4: scaleTime(4,9, 0.5,0.5); +4: jmp(offset80,0);`
+ *       `interruptLabel(1); scaleTime(8,1, 0.0,0.0); +8: delete();`
+ *     ⇒ **自转 0.5067085 rad/帧（= 29°/帧，12.4 帧一圈）+ 脉动 1.0↔0.5（8 帧一周期）**；
+ *       收束（`interrupt 1`）是**同一支 8 帧**（`scaleTime(8,1,0,0)`）⇒ 与我们的束脚本同拍。
+ *   · 贴图 = ability.anm 同一个 entry0（`player/option/op00.png`）的 **sprite9**（32×32）= 原生切图。
+ *   · ❓ **TH08 侧查不到对应物**：本机 `local/th08.v1.00d/anm/player01/player01.anm.txt` 的
+ *     script24..28（那条激光的 5 支逐档脚本）**全文直读** —— 只有
+ *     `sprite / ins_83 / alpha / scale / zWriteDisable / rotate(0,0,π/2) / scrollX / nop / jmp / interruptLabel(1)`，
+ *     **没有 `scriptNew`、没有任何子脚本、也没有第二支 VM**。⇒ TH08 那条激光**没有**束根光斑这件东西，
+ *     本卡这一条按 **TH18 原生**补（owner 口径「能照一手就照一手」：这一件的一手就是本作原生的那一支）。
+ *
+ * ## ② 束端命中特效 = 原生 `ability.anm` **script5**（一手：`hit2` 读 `sh+0x26`，原生值 = **5**）
+ *   · 一手（`local/th18.v1.00a/dat/pl01.sht` **set 0xb row0 逐字节直读**）：`+0x26 = 5`
+ *     （四个 `pl0X.sht` 的 set 0xb **全是 5**）⇒ 原生束的命中特效脚本就是 `ability.anm` script5。
+ *     ⚠ `engine/sht/th18/02-shooter-record.md` 写「魔理沙 = 8」是**错的**（`03` §5.3 的「= 5」才对；
+ *       本批逐文件回读定案，登记 `AUDIT.md` §BE #131）。
+ *   · 一手（`hit2` `th18:0x460320` 逐指令，本批自己读）：**偶数帧**在**束端**起它 ——
+ *     `0x46066d mov eax,[edi+0x10] / cmp [edi+0xc] / je 返回 / 0x460679 test al,1 / jne 0x4608ff`
+ *     ⇒ 奇帧**跳过**整段（含建这支 VM 与建伤害源）；偶帧那段
+ *     `0x4615c0(out, angle=[edi+0x64], len=[edi+0xa0])` 算出**束端**（命中时 `+0xa0` 已被截到接触点）
+ *     → `0x460751 call 0x489320`（取 VM）→ `0x460761 call 0x407420(vm, sh+0x26)`
+ *     → `0x460778`/`0x460784` 把那个点写进 VM 的 `+0x5f0/+0x5f8`（= 位置）。
+ *   · **TH08 侧另有一手佐证**（本批新读那条激光行的 hit 回调 `th08:0x450ee0`，逐指令）：
+ *     `450eef` 把 `player+0xe2a94` 这个计数器 +1 → `450f04`–`450f1a` 判 `% 8 == 0`（约每 8 **次调用**一次）
+ *     → `450f24`–`450f35` 取 arg1（**命中点** float3）→ `450f3b mov ecx,[eax+0x2a4]` 把 **x 换成束轴 x**
+ *     （`vm+0x2a4` 就是 §BE #130 那条「上一帧的膛口」）→ `450f44 push -1; push 1; push &pos; push 5;
+ *     ecx=0x4ece60; call 0x425430` = `EffectManager::SpawnEffect(id=**5**, pos, 1, -1)`
+ *     （`0x425430` = 0x200 格 ×0x360 的池，`slot+0x351 = (u8)id`）。
+ *     ⇒ **位置 = (束轴 x, 命中点 y)**，与我们下面这一支**同形** ✓。
+ *     ⚠ 那个 id 5 对应的**模板**（哪个 anm / 哪支脚本）**本批没有解出来** —— 要读 EffectManager 的
+ *       id→模板表；试过 `0x4c6d30[n]`（**不是**它：那是*子机初始化回调表*，`[4] = 0x44e3a0` = 霊夢子机 init）
+ *       与 `0x425430` 的消费者 `0x427d4a`/`0x428297`（按 id 分支，没有集中表）。⇒ 资产改用上面那条
+ *       **TH18 一手**（同一件事、本作自带），TH08 这一手只提供**触发/位置**的独立佐证。
+ *
+ * ## ③ 层号：**这两个脚本自己写 `layer()`，而且它晚于 instantiate 的层参数 ⇒ 参数不生效**
+ *   · 一手 `0x405bf0`（`CE_FN_ANM_INSTANTIATE_WORLD_BACK`）的**指令顺序**：
+ *     `0x407420(vm, script)` 只设脚本指针（它自己 `ret 8`，**不执行**脚本）→ `0x405c50 mov [esi+0x18],ecx`
+ *     写**层参数** → `0x405c91 call 0x478580`（`AnmVm__run`）**才**执行脚本第一帧 ⇒ 脚本里的 `layer(N)`
+ *     最后落地。**所以下面两个层宏必须与脚本里的那两句一致**（宿主机单测钉着；不一致时光斑/火花会
+ *     跑到别的层上去，而且看不出来）。层号本身：光斑 **13**（原生束 15 之下两层）、特效 **15**（同原生）。*/
+#define YK_BEAM_CORE_SCRIPT    4      /* 原生 ability.anm script4 = 束根自转光斑 */
+#define YK_BEAM_HIT_FX_SCRIPT  5      /* 原生 ability.anm script5 = 束端命中特效（`sh+0x26 = 5`）*/
+#define YK_BEAM_CORE_ANM_LAYER 13     /* script4 自己写 layer(13)：子机 15 / 束 14 / 自机弹 13 之下 */
+#define YK_BEAM_HIT_FX_LAYER   15     /* script5 自己写 layer(15) */
+/* 命中特效的节拍（帧）。一手两条**不同的**数：TH18 `hit2` = **每 2 帧**（上面 `test al,1` 是弹自己的帧计数）、
+ * TH08 `0x450ee0` = **约每 8 帧**（`player+0xe2a94 % 8`，按**命中回调次数**而不是帧数）。
+ * 取 **2**：它是**帧计数**的确定判据，且与本卡伤害源的节拍同相（`YK_M_LASER_BEAM_SETTLE`）
+ * ⇒ 一次命中只被看见一次。要更稀（更贴 TH08 那个计数器）就改这里。*/
+#define YK_M_LASER_BEAM_FX_EVERY 2
+/* 命中判据的横向带宽（±px）= 束半宽 8（`YK_M_LASER_BEAM_BAR_W / 2`）+ 特效自身半宽 16（32×32 的 `sprite10`）。
+ * ❓**自定**：TH18 的敌人判定盒在 `hit2` 内部走 `ds+0x18`（那个结构的字段图本批没解出来），
+ * `engine/enemy/th18/` 下也没有敌人碰撞尺寸的字段名 ⇒ 用「束半宽 + 特效半宽」近似。
+ * **只影响火花出现在哪**，不参与伤害（伤害照旧由 `ce_damage_rect` 的几何求交决定）。*/
+#define YK_M_LASER_BEAM_FX_HALF_W 24.0f
+
+/* 残影束的颜色 dword（TH18 口径 `0xAARRGGBB`）：**alpha 原样保留**，低 24 位按极妖染色。
+ * 一手 `th08:0x450ad0` 的 `k` 循环里（`0x450bf2`–`0x450c1c`）把 VM 的 RGB 写成 **(255,64,64)**、
+ * **alpha（`+0x1f3`）不动** ⇒ 复用本卡 owner ④ 那套（`yk_fengma_tint_dword` / `YK_FENGMA_TINT_RGB`，
+ * 自机弹染色已实跑验收）。`extreme_youkai` = `s->gauge >= YK_GAUGE_YOUKAI_EFFECTS`。*/
+uint32_t yk_m_laser_beam_bar_color(int alpha, int extreme_youkai);
+/* 本帧该不该放束端命中特效（`age % FX_EVERY == 0`；age 0 = 激活帧，那一帧还没有轨迹点 ⇒ 不会起）。*/
+int yk_m_laser_beam_fx_due(unsigned age);
+/* 敌人的中心在不在**束轴那条带**里：`|ex − bx| <= FX_HALF_W` 且 `by − BAR_H <= ey <= by`
+ * （`(bx,by)` = 束近端 = 轨迹第 0 格；束朝上射 ⇒ 只吃 y **小于等于**近端的那一段）。*/
+int yk_m_laser_beam_fx_on_beam(float ex, float ey, float bx, float by);
+
 /* 这一档的束宽（屏上 px × 100）。tier 越界一律钳进表内。*/
 int yk_m_laser_beam_w_px100(int tier);
 /* 这一档每次结算的伤害（每 `YK_M_LASER_BEAM_SETTLE` 帧一次）。tier 越界一律钳进表内。*/

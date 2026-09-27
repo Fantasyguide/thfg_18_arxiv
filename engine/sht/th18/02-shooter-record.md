@@ -30,7 +30,7 @@ stride `0x5c`。`th16:` 的 stride 是 `0x58`（[`../th16/05`](../th16/05-th16-f
 | `+0x21` | i8 | **mode**：`2` = 走子机火力分配（读写 `player+0x476fc+slot*4`）；`4`/`5`/`6` = 出膛不做 PosVel 修正减法。其余取值 🟡（原生出现 0/1/2/4/5/6/7）| 同上 |
 | `+0x22` | i16 | **ANM 脚本号** —— 主炮取 `pl0X.anm`，**装备卡子机取 `ability.anm`**（§4）| 同上 |
 | `+0x24` | i16 | **音效 id**（`< 0` = 不响）。原生取值 `-1` / `0` / `0x40`（`se_msl`）| 同上 |
-| `+0x26` | i16 | **激光命中特效的 anm 脚本号**（hit 表 idx2 `0x460320` 读；魔理沙 = 8）。原生取值 `{0, 5, 8}` | `playershot_hit_laser_idx2`（[`03`](03-func-tables-timers-and-dead-fields.md) §5.1）|
+| `+0x26` | i16 | **激光命中特效的 anm 脚本号**（hit 表 idx2 `0x460320` 读；**魔理沙 = 5**）。原生取值 `{0, 5}` | `playershot_hit_laser_idx2`（[`03`](03-func-tables-timers-and-dead-fields.md) §5.1）|
 | `+0x27`–`+0x29` | — | 🟡 268 条全 0 | — |
 | `+0x2a` | i8 | **fire_rate2**：非 0 时改用 long_timer（`long % fire_rate2 == start_delay2`）| 两处发射循环 |
 | `+0x2b` | i8 | start_delay2（原生 268 条全 0）| 同上 |
@@ -41,6 +41,10 @@ stride `0x5c`。`th16:` 的 stride 是 `0x58`（[`../th16/05`](../th16/05-th16-f
 | `+0x3c`–`+0x4b` | — | 🟡 268 条全 0 | — |
 | `+0x4c` | f32 | **横移倾斜系数**：`func_on_init = 3`（`0x460b60`）算 `角 = norm(PLAYER+0x4790c + angle) + PLAYER+0x47910 × 此值`；原生取值 `{0, ±3°…±20°, 1.3, 2.0}` | `playershot_init_tilt_by_move_idx3`（[`03`](03-func-tables-timers-and-dead-fields.md) §5.2）|
 | `+0x50`–`+0x5b` | — | 🟡 268 条全 0 | — |
+
+> ⚠ **2026-09-27 订正（卡 108 第二十八批复核）**：本行原来写「魔理沙 = 8、原生取值 `{0, 5, 8}`」是**错的** ——
+> 四个零售文件 `pl00..pl03.sht` 的 set `0xb`（原生ミニ八卦炉，那条 `mode=2` 激光）逐字节读出来都是
+> **`hit_fx = 5`**（与 [`03`](03-func-tables-timers-and-dead-fields.md) §5.3 的表一致），全表没有出现过 8。
 
 > `+0x3c` 起那 `0x20` 字节正是 [`../th16/05`](../th16/05-th16-flags-no-runtime-read.md) 里「运行时不读的 flags 段」
 > 所在的量级。**本文只断言「原生数据里除 `+0x4c` 外全 0」，不断言语义**——要下「不被读」的结论得走那篇的对抗证伪流程。

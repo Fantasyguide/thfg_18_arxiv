@@ -524,12 +524,16 @@ def gen_beam(name, spr_member, width_px, scale_y, src_num):
     //   ⇒ 屏上宽度 ≈ {width_px} px（贴图高 32）；渲染壳 = TH18 原生束（`anchor(1,0)` + `type(1)` + 收束段）。
     // ⚠ 不写 `rotateAuto`（那是给有速度的弹用的「朝运动方向」位）；方向/长度/宽度全由卡侧每帧写
     //   （`cards/youkai.c` 的 `yk_beam_tick`），所以 `scale` 与 `rotate` 这里都只留中性初值。
-    // ★ 2026-09-27 第二十七批：`layer` 从 15 改回 **13** —— owner「**激光应当被子机盖住**」。
-    //   一手：子机的 VM 层 = 14（`th18:0x40a8bc`）、自机弹的 VM 层 = 13（零售 `pl01.anm` 的弹体脚本
-    //   逐条 `layer(13)`）⇒ 层号小 = 先画 = 被盖住 ⇒ 13 < 14 ✓（13/14 之间没有别的整数层，取舍见
-    //   `cards/youkai.c` 的 `YK_BEAM_ANM_LAYER` 与 `TUNING.md` §2.1ccc-6）。
-    //   `alpha(160)` 保持（上一批按 TH18 原生束取的亮度；TH08 是 70，加算混合下过淡）。
-    layer(13);
+    // ★ 2026-09-27 第二十七批定的层序 / 第二十八批订正：`layer(13)` → **`layer(14)`**。
+    //   owner 的最终口径（`TUNING.md` §2.1ccc-7）：**自机弹 13 < 束 14 < 妖侧子机 15** ——
+    //   我们那三支妖侧子机脚本显式写 `layer(15)` 把 14 让给束。一手：自机弹 VM 层 = 13
+    //   （零售 `pl01.anm` 弹体脚本逐条 `layer(13)`）、子机 VM 层 = 14（`th18:0x40a8bc`）。
+    //   ⚠ **第二十七批那次改漏了本文件**（`youkai.c` 的 `YK_BEAM_ANM_LAYER` 改成 14、这里仍是 13）
+    //   ⇒ 构建期闸 `check_beam_script_constants` 当场报红，但**那个生成器不在 `make check` 的路径上**
+    //   ⇒ 实际部署出去的 `pl01.anm` 里还是 13（束与自机弹同层）。现在两道闸：
+    //   本文件的 `check_beam_script_constants()` + 宿主机单测
+    //   `native/tests/test_youkai_core.c` 的 `check_beam_spec_files()`（后者跑在 `make check` 里）。
+    layer(14);
     sprite(@{spr_member}@);
     type(1);
     anchor(1, 0);

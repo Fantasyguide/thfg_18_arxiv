@@ -1440,6 +1440,32 @@ uint32_t yk_fengma_tint_dword(uint32_t color_in)
     return (color_in & 0xff000000u) | YK_FENGMA_TINT_RGB;   /* 保 alpha（高 8 位），只换 BGR */
 }
 
+/* ------------- ★★★ 第二十八批：束根光斑 / 束端命中特效 / 极妖染红的三个纯函数（一手见 `youkai_core.h`）--
+ * 整数 + 比较，**不返回 float**（i386 上 float 返回必过 x87；`make dllx87` 要求零 x87）。*/
+uint32_t yk_m_laser_beam_bar_color(int alpha, int extreme_youkai)
+{
+    uint32_t c;
+    if (alpha < 0) alpha = 0;                                       /* 与 `yk_m_laser_beam_bar_alpha` 同一口径 */
+    if (alpha > 255) alpha = 255;
+    c = ((uint32_t)(unsigned)alpha << 24) | 0x00ffffffu;             /* 基准 = 全白 + 逐条 alpha */
+    return extreme_youkai ? yk_fengma_tint_dword(c) : c;            /* 极妖 ⇒ 只换低 24 位（一手 `0x450bf2`）*/
+}
+
+int yk_m_laser_beam_fx_due(unsigned age)
+{
+    return (age % (unsigned)YK_M_LASER_BEAM_FX_EVERY) == 0u;
+}
+
+int yk_m_laser_beam_fx_on_beam(float ex, float ey, float bx, float by)
+{
+    float dx = ex - bx;
+    if (dx < 0.0f) dx = -dx;
+    if (dx > YK_M_LASER_BEAM_FX_HALF_W) return 0;
+    if (ey > by) return 0;                                    /* 在膛口下方 = 束的反方向 */
+    if (ey < by - YK_M_LASER_BEAM_BAR_H) return 0;            /* 超出束长（判定恒 448）*/
+    return 1;
+}
+
 int yk_fengma(int32_t gauge, int32_t human_effects, int32_t youkai_effects)
 {
     /* 一手是 `setle` / `setge` ⇒ 两条都**含等号**；取或（`0x42da2a` / `0x42da38` 两问取或）*/
