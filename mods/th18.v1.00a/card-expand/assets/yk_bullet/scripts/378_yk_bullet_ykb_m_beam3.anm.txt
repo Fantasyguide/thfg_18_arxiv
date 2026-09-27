@@ -1,24 +1,32 @@
 script script378 {
     // 由 assets/ability/make_youkai_bullet_art.py 生成（YKB_M_BEAM3），别手改。
-    // 魔理沙（TH08 `ply01as` = アリス）妖侧**子机激光的束脚本**（owner ⑥；第二十六批改成卡侧 VM 专用）。
+    // 魔理沙（TH08 `ply01as` = アリス）妖侧**子机激光的束脚本**（owner ⑥；第二十六批改成卡侧 VM 专用，
+    // 第二十七批起同一帧摆 `rate` 条残影 —— 见 `cards/youkai.c` 的 `yk_beam_tick`）。
     // 几何 = TH08 `player01.anm` script26（`scale(1.0f, 0.7f)`、`alpha(70)`、`scrollX(0.0625f)`）
     //   ⇒ 屏上宽度 ≈ 22.4 px（贴图高 32）；渲染壳 = TH18 原生束（`anchor(1,0)` + `type(1)` + 收束段）。
     // ⚠ 不写 `rotateAuto`（那是给有速度的弹用的「朝运动方向」位）；方向/长度/宽度全由卡侧每帧写
     //   （`cards/youkai.c` 的 `yk_beam_tick`），所以 `scale` 与 `rotate` 这里都只留中性初值。
-    // ★ 2026-09-27（owner 实跑：「激光…很淡，并且 layer 上来讲被自机弹幕盖住了」）：两个壳参数
-    //   **取 TH18 原生束的值**（`ability.anm` script3）：`layer(15)` + `alpha(160)`。
-    //   原来照弹体脚本写 `layer(13)` + TH08 的 `alpha(70)` ⇒ 与自机弹同层、被盖住且过淡。
-    layer(15);
+    // ★ 2026-09-27 第二十七批：`layer` 从 15 改回 **13** —— owner「**激光应当被子机盖住**」。
+    //   一手：子机的 VM 层 = 14（`th18:0x40a8bc`）、自机弹的 VM 层 = 13（零售 `pl01.anm` 的弹体脚本
+    //   逐条 `layer(13)`）⇒ 层号小 = 先画 = 被盖住 ⇒ 13 < 14 ✓（13/14 之间没有别的整数层，取舍见
+    //   `cards/youkai.c` 的 `YK_BEAM_ANM_LAYER` 与 `TUNING.md` §2.1ccc-6）。
+    //   `alpha(160)` 保持（上一批按 TH18 原生束取的亮度；TH08 是 70，加算混合下过淡）。
+    layer(13);
     sprite(@YKB_M_OPT@);
     type(1);
     anchor(1, 0);
     scale(1.0f, 1.0f);
     alpha(160);
     blendMode(1);
-    // ★ 2026-09-27（owner：「先搞滚动的」）：滚动**照一开放**（TH08 script24..28 的 `scrollX(0.0625f)`，
-    //   每帧滚 1/16 宽）。前提已就位：那一张成员在 `make_youkai_bullet_art.py` 里做了
-    //   **镜像平铺**（`MIRROR_MEMBERS`）⇒ 左右边缘像素相同 ⇒ 绕回无缝 ✓（不再有那条移动的缝）。
-    scrollX(0.0625f);
+    // ★ 2026-09-27 第二十七批（owner：「**图依旧在一节一节长出**」）：滚动步长 **0.0625 → 0.03125**。
+    //   一手是 0.0625（TH08 script24..28），但那个数**按图集宽度归一化**：TH08 的图集宽 256
+    //   （sprite32 = 448×32 靠 UV 绕回）⇒ 0.0625×256 = 16 texel/帧；我们的成员被**镜像平铺**成 512 宽
+    //   （`MIRROR_MEMBERS`，为了绕回无缝）⇒ 同样写 0.0625 就是 32 texel/帧、屏上 32×0.875 = 28 px/帧。
+    //   钻石纹的周期 = 64 texel（本机量：TH08 那条 strip 的峰值间距 ≈ 64 px）⇒ 屏上 TH08 是 64 px、
+    //   我们是 56 px ⇒ **28 px/帧 = 正好半个周期/帧**（60 Hz 下的奈奎斯特频闪：纹样在两相位间跳，
+    //   看着就是「一节一节」而不是流动，画面边缘那一条也变成「一节一节消失」）。减半 ⇒ 16 texel/帧、
+    //   14 px/帧、**56/14 = 4 帧一个钻石**，与 TH08 的 64/16 = 4 帧**同节奏**。
+    scrollX(0.03125f);
     stop();
     interruptLabel(1);
     scaleTime(8, 1, 1.0f, 0.0f);

@@ -1367,6 +1367,67 @@ int yk_m_laser_beam_grow_permille(unsigned age)
     return (int)(age * 1000u / (unsigned)YK_M_LASER_BEAM_GROW_FRAMES);
 }
 
+/* ---------------- ★★★ 第二十七批：**残影多束**的五个纯函数（一手逐指令见 `youkai_core.h`）----
+ * 全是整数运算 / 就地写数组：**一律不返回 float**（i386 上 float 返回必过 x87，
+ * 本仓 `make dllx87` 要求我们自己的目标文件里零 x87）。*/
+int yk_m_laser_beam_rate(int tier)
+{
+    static const int32_t r[YK_M_LASER_BEAM_TIERS] = YK_M_LASER_BEAM_RATE;
+    if (tier < 0) tier = 0;
+    if (tier >= YK_M_LASER_BEAM_TIERS) tier = YK_M_LASER_BEAM_TIERS - 1;
+    return (int)r[tier];
+}
+
+int yk_m_laser_beam_bar_live(float x)
+{
+    return x >= YK_M_LASER_BEAM_TRAIL_MIN;   /* 一手 tick：`fcomp [0x4b6fe0]`（−900）不成立就跳过 */
+}
+
+int yk_m_laser_beam_bar_count(const float *trail, int n, int rate)
+{
+    int k;
+    if (!trail || n <= 0 || rate <= 0) return 0;
+    if (rate > n) rate = n;                  /* 轨迹只有 32 格：别越界 */
+    for (k = 0; k < rate; ++k)
+        if (!yk_m_laser_beam_bar_live(trail[k * 2])) break;   /* 一手 draw：遇哨兵 `break`（前缀连续）*/
+    return k;
+}
+
+int yk_m_laser_beam_bar_alpha(int base, int k, int rate)
+{
+    int a34, i, a;
+    if (base < 0) base = 0;
+    if (base > 255) base = 255;
+    if (k <= 0 || rate <= 0) return base;    /* 一手：`i == 0` 那一支**不写** alpha（保持原值）*/
+    a34 = base * 3 / 4;                      /* `0x450af2 imul eax,3` + `sar 2`（正数 = 向下取整）*/
+    i = 2 * k;                               /* 一手循环是 `i += 2`，偏移 `i*0xc` ≡ `k*0x18` */
+    a = a34 - (a34 / 2) * i / rate;          /* `0x450ba3 imul [ebp-8]` → `0x450bb2 idiv rate` */
+    if (a < 0) a = 0;
+    if (a > 255) a = 255;
+    return a;
+}
+
+int yk_m_laser_beam_bar_damage(int total, int bars, int k)
+{
+    int base, rem;
+    if (bars <= 0 || k < 0 || k >= bars || total <= 0) return 0;
+    base = total / bars;
+    rem = total % bars;
+    return base + (k < rem ? 1 : 0);         /* Σ_k = total（余数给最新的那几条）*/
+}
+
+void yk_m_laser_beam_trail_step(float *trail, int n, float mx, float my)
+{
+    int i;
+    if (!trail || n <= 0) return;
+    for (i = n - 1; i > 0; --i) {            /* 一手 `0x450992`–`0x4509fa`：i 从 31 递减到 1 */
+        trail[i * 2 + 0] = trail[(i - 1) * 2 + 0];
+        trail[i * 2 + 1] = trail[(i - 1) * 2 + 1] - YK_M_LASER_BEAM_TRAIL_DY;  /* `0x4b4338` = 1.0 */
+    }
+    trail[0] = mx;                           /* 一手 `0x4509fc`：`trail[0] = vm+0x2a4`（上一帧的膛口）*/
+    trail[1] = my;
+}
+
 /* --------------------------------- ★★★ owner ④：逢魔染色的两个纯函数（一手见 `youkai_core.h`）*/
 int yk_fengma_tint_set(int set_index)
 {

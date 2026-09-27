@@ -3916,24 +3916,40 @@ static const char *yk_graze_gate_name(int g)
  *     ⇒ 行表里那一条现在是**不可达的载体**（`start_delay = 15`，见 `append_shooterset.py` 的 M 段与
  *     `youkai_core.h` 的同一段），本文件负责**视觉 + 伤害**两件事。
  *
- * ## 视觉（每条我们自己那台子机一条束 VM）
+ * ## 视觉（每台我们自己那台子机一条**膛口轨迹** × 逐帧 `rate` 条残影束）
  *   · 脚本 = `pl01.anm` 追加的 `62..66`（`YK_BEAM_SCRIPT[tier]`，形状见
  *     `assets/ability/make_youkai_bullet_art.py` 的 `gen_beam`）；**从 `pl01.anm` 起**
  *     （`yk_player_anm()` = `player+0x0c`）—— 贴图 `YKB_M_OPT.png` 就长在那个文件的图集里。
- *   · 每帧写：位置 = **子机膛口**（`ce_option_x/y` = `option+0x5c/+0x60` 定点 → 像素）、
+ *   · 每帧写：位置 = **该条残影对应的历史膛口**（一手 `trail[k]`；`k = 0` 就是本帧的膛口）、
  *     方向 = **−π/2**（一手 `ply01as.sht` 那一行的 `+0x14`；脚本里不 bake 角度、也不写 `rotateAuto`）、
- *     长度 = **恒 448**（一手 `th08:0x450a4f`）⇒ `scale.x = 448/256`；
- *     宽度 = **逐档**（`YK_M_LASER_BEAM_W_PX100`）× 展开系数。
+ *     长度 = **448 × 展开系数** ⇒ `scale.x = (448·grow)/512`（★ `anchor(1,0)` = **左端锚**
+ *     ⇒ 近端钉在膛口、**远端往外伸**，与 117 的 `eagle_beam_tick` 逐行同形）；
+ *     宽度 = **逐档**（`YK_M_LASER_BEAM_W_PX100 / 32`）× 展开系数。
  *   · **展开**照 117 的细节「如收回般（倒放）展开」：束脚本 `interruptLabel(1)` 的收束段是
- *     `scaleTime(8, 1, 1.0, 0.0)`（8 帧里 `scale.y → 0`）⇒ 展开就是它的倒放（`YK_M_LASER_BEAM_GROW_FRAMES`
- *     = 8 帧、**只作用在宽度**上 —— 一手的束长是常量，不像 117 那样两轴同涨）。
+ *     `scaleTime(8, 1, 1.0, 0.0)`（8 帧里 `scale.y → 0`）⇒ 展开就是它的倒放
+ *     （`YK_M_LASER_BEAM_GROW_FRAMES` = 8 帧）。★★ 第二十七批起**两轴同涨** —— 上一版只涨宽度
+ *     ⇒ 束**一出生就是全长**、只是变粗，owner 报的「一节一节长出」观感就是这里（加上贴图滚动的频闪，
+ *     见 `YK_M_LASER_BEAM_SCROLL` 的长注）。
  *
- * ## 伤害（矩形伤害源，每 2 帧一笔）
- *   · `ce_damage_rect(center, 0.0f, 2, dmg, w, 448)`（`th18:0x45dfa0`）：`h = 448` 沿 y、`w` 沿 x，
- *     angle 0 ⇒ 竖直的长条（判定轴约定见 `AUDIT.md` §U10）。
- *   · 节奏 = **每 2 帧新建一笔**（一手 TH08 每 2 帧结算一次，`th08:0x4517a1`）；
+ * ## 残影多束（★ 第二十七批，owner ③；一手逐指令见 `youkai_core.h` 的同一节）
+ *   · 每条轨迹 = **32 格**的膛口历史（一手 `vm+0x2b0`）；每帧 `yk_m_laser_beam_trail_step()` 推一格
+ *     （`trail[i] = trail[i-1]` 且 `y -= 1`），未填的格是 **−999** 哨兵。
+ *   · 每帧出 **`YK_M_LASER_BEAM_RATE[tier]`** 条（2/4/6/8/12）：`k = 0` 是本帧膛口、越 `k` 越旧越淡
+ *     （alpha 递减照一手 `0x450ad0`，见 `yk_m_laser_beam_bar_alpha`）。**玩家不动时它们几乎重合**、
+ *     **横向移动时散成好几条** —— 这就是 owner 要的那条机制。
+ *   · 束 VM 是**按需长大**的：历史填到第几条就起几条 VM（一手也是一帧多一条），不预先开 12 支。
+ *   · **每台子机一条轨迹**（一手只用 `options[0]`；本卡 M 恒 1 台 ⇒ 逐字同形），
+ *     一台都没有时回退本体 1 条（117 的同款兜底）。
+ *
+ * ## 伤害（矩形伤害源，每 2 帧一笔 × 当帧那几条残影）
+ *   · `ce_damage_rect(center, 0.0f, 2, dmg_k, 16, 448)`（`th18:0x45dfa0`）：`h = 448` 沿 y、
+ *     `w = 16` 沿 x，angle 0 ⇒ 竖直的长条（判定轴约定见 `AUDIT.md` §U10）。
+ *     尺寸照一手每条残影的 `SpawnShot(…, 16.0, 448.0, …)`；`center = 轨迹点 − 224·ŷ`（居中的盒心）。
+ *   · 节奏 = **每 2 帧新建一笔**（一手 type 4/5/6 的 `vm[0x454+8] % 2`，`th08:0x4517b5`）；
  *     而一个源对**每个敌人一辈子只结算一次**（`0x45f0f0` 的 `+0x84` tag，一手
  *     `engine/enemy/th18/06-enemy-inert-flag.md` §③ 的 `0x45f45a`）⇒ 平均 = 表值 / 2 每帧。
+ *   · **总额不变**：`dmg_k` 由 `yk_m_laser_beam_bar_damage(dmg, bars, k)` 分摊，`Σ_k = dmg`
+ *     ⇒ 从「一条吃满」改成「几条分摊」，每帧平均与上一版**同额**（残影**不是** N 倍伤害）。
  *   · **不消弹**（一手：TH08 那条 `type=5` 在碰撞 pass 里被跳过销毁；同 117 的 bug-2(b)）。
  *   · **不抬每帧伤害上限**：一手 `pl01.sht+0x28` = **160/帧/敌**，我们这一档的束 ≤ 14 点/2 帧
  *     + 本体弹 ≤ 44 点/5 帧 ⇒ 远在额度内。117 抬到 300 是因为它 5 条 × 20/帧；
@@ -3946,8 +3962,18 @@ static const char *yk_graze_gate_name(int g)
  *   · **子机撤走**（`yk_option_release`）⇒ **硬删**（`ce_anm_delete`）：膛口没了，束不能留在原地；
  *   · **删卡 / 换关**（`on_delete` / `on_run_reset` 都调 `yk_option_release`）⇒ 硬删 ——
  *     商店里 tick 全停，只有 `on_delete` 跑得到 ⇒ 收尾**不依赖 tick**。*/
-#define YK_BEAM_ANM_LAYER 15    /* 世界层 3..19（一手 `engine/anm/th18/02-render-stages.md`）。
-                                 * 13 = 与 117 的鹫束（`ability.anm` script163）同层，那条已实跑验收过 */
+#define YK_BEAM_ANM_LAYER 13    /* 世界层 3..19（一手 `engine/anm/th18/02-render-stages.md` §1 的优先级表）。
+                                 * ★ 2026-09-27 第二十七批（owner：「**激光应当被子机盖住**」）：层号 = **13**。
+                                 * 一手依据：**子机的 VM 层 = 14**（`Player__allocate_option`，`th18:0x40a8bc`
+                                 * `mov DWORD PTR [esi+0x18],0xe`；同一支函数另两处 `0x40ce78`/`0x40d012` 也是
+                                 * `0xe`），而**自机弹的 VM 层 = 13**（零售 `pl01.anm` 的弹体脚本逐条 `layer(13)`：
+                                 * script5/7/9/11/16..20/22..28；本卡自己的妖侧弹脚本也是照它写的 `layer(13)`）。
+                                 * 层号小 = 先画 = 被后画的盖住（同层内才看生成顺序）⇒ **13 < 14 ⇒ 束在子机之下** ✓。
+                                 * ⚠ 取舍（两个要求不可兼得，**已登记并请 owner 定口径**）：世界层表里
+                                 * **13 与 14 之间没有别的整数层** ⇒ 「严格低于子机」**且**「在自机弹之上」
+                                 * 做不到。这里按 owner 的原话选 13（= 能达到的**最高**的、严格低于子机的层），
+                                 * 代价是**与自机弹同层** ⇒ 自机弹后生成、画在上面（上一批 owner 观察到的
+                                 * 「被自机弹幕盖住」就是这个）；要真正在自机弹之上只能新开一层，那要动引擎。*/
 /* 逐档束脚本（`pl01.anm` 追加 62..66；宏名由 `make anm` 写进 `pl_anm_ids.h`）。
  * 下标 = 火力档 0..4，与 `append_shooterset.py` 的 `M_BEAM_ANM` 同序（不是 `tier-1` —— 那条约定是早苗的）。*/
 static const int32_t YK_BEAM_SCRIPT[YK_M_LASER_BEAM_TIERS] = {
@@ -3960,26 +3986,38 @@ static const int32_t YK_BEAM_SCRIPT[YK_M_LASER_BEAM_TIERS] = {
 _Static_assert(YK_M_LASER_BEAM_TIERS == YK_SHOT_TIERS,
                "beam script table is indexed by the shot tier (0..YK_SHOT_TIERS-1)");
 /* 束的状态：文件级静态（照本卡 `s_ring` / `s_orb` / `yk_fam_vm_t` 那一族 —— 卡是单例）。
- * 不放 `yk_card_t`：那个结构已经 468 / 496 字节（`_Static_assert` 就在文件尾），只剩 28 字节。*/
-static uint32_t s_beam_vm[YK_M_LASER_BEAM_MAX];   /* 每条束的 VM id（0 = 没起来）*/
+ * 不放 `yk_card_t`：那个结构已经 468 / 496 字节（`_Static_assert` 就在文件尾），只剩 28 字节。
+ * ★ 第二十七批起是**二维**的：`[unit]` = 一条膛口轨迹（`YK_OPTION_CELLS` 台我们自己的子机
+ * + 最后那一格 = 「一台都没有」时回退本体的兜底轨迹）、`[k]` = 这条轨迹上的第 k 条残影。
+ * 本卡 M 恒 1 台（`YK_OPTION_BY_CHAR[1] = {1,1,1,1,1}`）⇒ 实际同时活着的只有 1×rate ≤ 12 支。*/
+static float    s_beam_muz[YK_M_LASER_BEAM_UNITS][2];   /* 本帧的膛口（每帧现取一次）*/
+static float    s_beam_trail[YK_M_LASER_BEAM_UNITS][YK_M_LASER_BEAM_TRAIL_MAX][2];  /* 膛口历史（x,y）*/
+static uint32_t s_beam_vm[YK_M_LASER_BEAM_UNITS][YK_M_LASER_BEAM_BARS_MAX];        /* 每条残影的 VM id */
 static uint16_t s_beam_age;                       /* 本次激活的帧数（展开系数 + 结算节拍都用它）*/
 static uint8_t  s_beam_live;                      /* 本帧起/刷了几条（诊断 + 日志判据）*/
 static uint8_t  s_beam_logged;                    /* 「束起来」只记一行（几何自述）*/
 static int32_t  s_beam_tier;                      /* 当前这几条束是按哪一档起的（-1 = 没起）*/
 
+/* 这一档的残影条数上限必须 ≥ 表里的最大值（`YK_M_LASER_BEAM_BARS_MAX` 是数组第二维）——
+ * 单位测试里还有一条「max(表) == BARS_MAX」的断言，两处一起兜。*/
+_Static_assert(YK_M_LASER_BEAM_BARS_MAX <= YK_M_LASER_BEAM_TRAIL_MAX,
+               "bars per trail can never exceed the trail length");
+
 /* 收干净（`fade=1` = 走脚本的收束段；`fade=0` = 当场删）。返回收掉几条。*/
 static int yk_beam_kill(int fade)
 {
-    int i, n = 0;
-    for (i = 0; i < (int)YK_M_LASER_BEAM_MAX; ++i) {
-        if (!s_beam_vm[i]) continue;
-        ++n;
-        if (fade) ce_anm_interrupt(s_beam_vm[i], 1);   /* 束脚本 interruptLabel(1)：scaleTime(8,1,1,0) → delete */
-        else      ce_anm_delete(s_beam_vm[i]);
-        s_beam_vm[i] = 0;
+    int u, i, n = 0;
+    for (u = 0; u < (int)YK_M_LASER_BEAM_UNITS; ++u) {
+        for (i = 0; i < (int)YK_M_LASER_BEAM_BARS_MAX; ++i) {
+            if (!s_beam_vm[u][i]) continue;
+            ++n;
+            if (fade) ce_anm_interrupt(s_beam_vm[u][i], 1);  /* 束脚本 interruptLabel(1)：scaleTime(8,1,1,0) → delete */
+            else      ce_anm_delete(s_beam_vm[u][i]);
+            s_beam_vm[u][i] = 0;
+        }
     }
     if (n)
-        ce_log("youkai/beam: off (%d beam(s), fade %d, age %u, tier %d) - "
+        ce_log("youkai/beam: off (%d afterimage beam(s), fade %d, age %u, tier %d) - "
                "mode=2 engine beams are gone for good, so this is the only place they are cleaned",
                n, fade, (unsigned)s_beam_age, (int)s_beam_tier);
     s_beam_age = 0;
@@ -3989,10 +4027,40 @@ static int yk_beam_kill(int fade)
     return n;
 }
 
-/* 每帧：妖侧（低速）+ 魔理沙 + 按住 Z ⇒ 在**每台我们自己的子机**的位置挂/刷新一条竖直束；
- * 一台都没有（池满 / 声明没落笔）⇒ 回退本体 1 条（117 的同款兜底：「否则看着像死掉」）。
+/* 把一条残影摆到 `(x,y)`：位置 / −π/2 / 两轴 scale（**都乘展开系数**）/ 逐条 alpha。
+ * 拆成独立函数只为**压寄存器压力**（`ce_anm_set_*` 是内联函数，每个都要在 i686 上凑寄存器）。*/
+static void __attribute__((noinline)) yk_beam_bar_place(uint32_t id, float x, float y,
+                                                       float grow, float w_px, int alpha)
+{
+    (void)ce_anm_set_pos(id, x, y, 0.0f);
+    (void)ce_anm_set_rotation(id, 0.0f, 0.0f, -YK_ATAN_HALF_PI);
+    /* ★★ 117 的形状（`eagle_beam_tick`）：**两轴同乘展开系数**、`anchor(1,0)` 在近端
+     * ⇒ 束从膛口**连续**往外伸到满长（上一版只乘 `scale.y` ⇒ 一出生就全长、只变粗）。
+     * 一手的束长是常量 448 ⇒ 系数里的 `YK_LASER_LEN / SPRITE_W` 就是满长那一端。*/
+    (void)ce_anm_set_scale(id, YK_LASER_LEN / YK_M_LASER_BEAM_SPRITE_W * grow,
+                           w_px / YK_M_LASER_BEAM_SPRITE_H * grow);
+    /* 一手 `0x450ad0` 每画一条就改一次 `vm+0x1f3`（越旧越淡），画完再还原 ⇒ 这里等价于
+     * 「每条 VM 常驻自己的 alpha」。RGB 保持全白（脚本里没有 color，只有 alpha）。*/
+    (void)ce_anm_set_color(id, ((uint32_t)(unsigned)alpha << 24) | 0x00ffffffu);
+}
+
+/* 在轨迹点上挂一笔矩形伤害源（`life = SETTLE` ⇒ 一源一敌一辈子只结算一次，见块首的长注）。*/
+static void __attribute__((noinline)) yk_beam_bar_hit(float x, float y, int dmg)
+{
+    float center[3];
+    if (dmg <= 0) return;                       /* 分摊到 0 的条不占伤害源池 */
+    center[0] = x;
+    center[1] = y - YK_M_LASER_BEAM_BAR_H * 0.5f;   /* 盒心 = 轨迹点 − 448/2（束向上伸）*/
+    center[2] = 0.0f;
+    (void)ce_damage_rect(center, 0.0f, YK_M_LASER_BEAM_SETTLE, dmg,
+                         YK_M_LASER_BEAM_BAR_W, YK_M_LASER_BEAM_BAR_H);
+}
+
+/* 每帧：妖侧（低速）+ 魔理沙 + 按住 Z ⇒ 对**每台我们自己的子机**推一格膛口轨迹，并在轨迹点上
+ * 摆出 `YK_M_LASER_BEAM_RATE[tier]` 条残影束（越旧越淡）、每 `SETTLE` 帧把这一档的伤害分摊到它们头上；
+ * 一台都没有（池满 / 声明没落笔）⇒ 回退本体 1 条轨迹（117 的同款兜底：「否则看着像死掉」）。
  * 其余情况全收（含松 Z）。
- * ⚠ `noinline` 是**必须**的（本仓踩过两次）：本函数内联着 `ce_damage_rect`（`sdk.h:172` 的内联汇编），
+ * ⚠ `noinline` 是**必须**的（本仓踩过两次）：本函数内联着 `ce_damage_rect`（`sdk.h:167` 的内联汇编），
  *   而唯一调用者 `on_tick_2` 已经很大 ⇒ 一内联就报
  *   「inline assembly requires more registers than available」（i686 寄存器不够）。
  *   先例 = 同文件的 `yk_fam_vm_check` / `yk_spiral_tick`。*/
@@ -4003,9 +4071,13 @@ static void __attribute__((noinline)) yk_beam_tick(yk_card_t *s)
     const float *pp;
     const int w100 = yk_m_laser_beam_w_px100(tier);
     const int dmg = yk_m_laser_beam_damage(tier);
+    const int rate = yk_m_laser_beam_rate(tier);
     const float w_px = (float)w100 * 0.01f;
     float grow;                      /* 展开系数（每次激活从 0 到 1）——**每帧重算**：见下面的 spawn 分支 */
-    int i, n = 0, spawned = 0;
+    int units[YK_M_LASER_BEAM_UNITS];/* 本帧要推哪几条轨迹（下标 = 子机格号；兜底 = YK_OPTION_CELLS）*/
+    float mux[YK_M_LASER_BEAM_UNITS];/* 本帧的膛口 x（下一帧才进轨迹 —— 一手 `vm+0x2a4` 的时序）*/
+    float muy[YK_M_LASER_BEAM_UNITS];/* 同上 y */
+    int nunit = 0, i, n = 0;
 
     if (!s || !CE_PLAYER() || !CE_PLAYER_FOCUSED() || character != YK_CHAR_MARISA || !yk_shooting()) {
         yk_beam_kill(1);
@@ -4019,7 +4091,7 @@ static void __attribute__((noinline)) yk_beam_tick(yk_card_t *s)
     }
     pp = ce_player_pos();
     if (!pp) { yk_beam_kill(1); return; }
-    /* 换档 ⇒ 脚本号变了（脚本内容一样，但别让「行里记的档」与卡侧悄悄错开）⇒ 先硬收，本帧重起。*/
+    /* 换档 ⇒ 脚本号与残影条数都变了 ⇒ 先硬收，本帧重起（历史一并从哨兵重来）。*/
     if (s_beam_tier >= 0 && s_beam_tier != tier) yk_beam_kill(0);
     /* ⚠ `grow` 必须在这里、**每帧**从 `s_beam_age` 现算（不能提到函数开头）：上面那几支
      *   「收掉 / 重起」都会把 age 归零 ⇒ 提前算出来的系数会是**上一段激活**的残留
@@ -4027,75 +4099,109 @@ static void __attribute__((noinline)) yk_beam_tick(yk_card_t *s)
      *   在 spawn 之后才取。*/
     grow = (float)yk_m_laser_beam_grow_permille(s_beam_age) * 0.001f;
 
-    {
-        int have = 0;
-        for (i = 0; i < YK_OPTION_MAX; ++i) if (s->opt[i].ptr) ++have;
-        if (have == 0) {
-            /* 回退：本体正上方（117：「子机数为 0（火力 <1.00）时才回退成自机本体的一条」）*/
-            uint32_t *id = &s_beam_vm[YK_M_LASER_BEAM_MAX - 1];
-            if (!*id || !ce_anm_get_vm(*id)) {
-                *id = ce_anm_spawn(yk_player_anm(), YK_BEAM_SCRIPT[tier], YK_BEAM_ANM_LAYER);
-                if (!*id) { s_beam_live = 0; s_beam_tier = tier; return; }   /* 起不出来 ⇒ 本帧没束 */
-                spawned = 1;
-                s_beam_age = 0;
-                grow = 0.0f;      /* 这一帧 = 激活的第 0 帧 ⇒ 展开系数 0（与 117 同款：出生帧不可见）*/
+    /* ---- 1. 本帧的膛口（每条轨迹一个）---------------------------------------------------
+     * 一手只有 `options[0]` 一个源（`th08:0x450a21 add edx,0x6b0` 硬取 options[0]）；我们按
+     * 「每台我们自己的子机各一条轨迹」展开（本卡 M 恒 1 台 ⇒ 与一手逐字同形）。
+     * ⚠ 取到的是**本帧**的膛口，但推轨迹用的是**上一帧**那一份（一手 `vm+0x2a4` 的写法：
+     *   `trail[0] = vm+0x2a4` 在前、`vm+0x2a4 = 本帧膛口` 在后 ⇒ 轨迹整体慢一帧）。
+     *   所以本帧的值先进 `mux/muy`，到第 3 步才落到 `s_beam_muz`。*/
+    for (i = 0; i < YK_OPTION_MAX; ++i) {
+        const uint8_t *o = s->opt[i].ptr;
+        float x, y;
+        if (!o) continue;
+        /* 膛口 = 引擎每帧算好的那一对（一手：行循环按行里 `+0x20` 取的就是它，`th18:0x45ec41`）。
+         * 还没算过（两格都是 0）⇒ 用「自机位 + 本格的聚焦偏移」兜底（与膛口镜像那一段同款）。*/
+        x = ce_option_x(o);
+        y = ce_option_y(o);
+        if (x == 0.0f && y == 0.0f) {
+            x = pp[0] + (float)*(const int32_t *)(o + CE_OPT_OFF_F_X) * CE_SUBPIXEL_TO_PIXEL;
+            y = pp[1] + (float)*(const int32_t *)(o + CE_OPT_OFF_F_Y) * CE_SUBPIXEL_TO_PIXEL;
+        }
+        mux[i] = x;
+        muy[i] = y;
+        units[nunit++] = i;
+    }
+    if (nunit == 0) {
+        /* 回退：本体正上方（117：「子机数为 0（火力 <1.00）时才回退成自机本体的一条」）*/
+        mux[YK_OPTION_CELLS] = pp[0];
+        muy[YK_OPTION_CELLS] = pp[1];
+        units[nunit++] = (int)YK_OPTION_CELLS;
+    }
+
+    /* ---- 2. 激活那一帧：整条轨迹清成哨兵（一手 `0x44fe20` 把 32 格的 x 全写 −999，
+     *         并把 `vm+0x2a4.x` 也清成 −999 ⇒ **第一帧推不出活点**、一条残影都不出）------------*/
+    if (s_beam_age == 0u) {
+        int u, k;
+        for (u = 0; u < (int)YK_M_LASER_BEAM_UNITS; ++u) {
+            for (k = 0; k < (int)YK_M_LASER_BEAM_TRAIL_MAX; ++k)
+                s_beam_trail[u][k][0] = YK_M_LASER_BEAM_TRAIL_NONE;
+            s_beam_muz[u][0] = YK_M_LASER_BEAM_TRAIL_NONE;
+        }
+    }
+
+    /* ---- 3. 每条轨迹：推一格 → 摆残影 → （按节拍）分摊伤害 ---------------------------------*/
+    for (i = 0; i < nunit; ++i) {
+        const int u = units[i];
+        float *trail = &s_beam_trail[u][0][0];
+        int bars, k;
+
+        /* 一手 `0x450840`：先整体上移一格、每点 y −1，再把**上一帧的膛口**写进第 0 格。*/
+        yk_m_laser_beam_trail_step(trail, (int)YK_M_LASER_BEAM_TRAIL_MAX,
+                                   s_beam_muz[u][0], s_beam_muz[u][1]);
+        s_beam_muz[u][0] = mux[u];        /* 本帧的膛口留到下一帧才进轨迹（一手同序）*/
+        s_beam_muz[u][1] = muy[u];
+        /* 本帧出几条：从第 0 格起数**连续**的活点（一手 draw 遇哨兵就 break），上限 = 本档 rate。*/
+        bars = yk_m_laser_beam_bar_count(trail, (int)YK_M_LASER_BEAM_TRAIL_MAX, rate);
+        if (bars > (int)YK_M_LASER_BEAM_BARS_MAX) bars = (int)YK_M_LASER_BEAM_BARS_MAX;
+
+        for (k = 0; k < bars; ++k) {
+            const float x = trail[k * 2 + 0];
+            const float y = trail[k * 2 + 1];
+            if (!s_beam_vm[u][k] || !ce_anm_get_vm(s_beam_vm[u][k])) {
+                s_beam_vm[u][k] = ce_anm_spawn(yk_player_anm(), YK_BEAM_SCRIPT[tier], YK_BEAM_ANM_LAYER);
+                if (!s_beam_vm[u][k]) break;      /* 池满 ⇒ 这一帧到此为止（判定照旧按 bars 分摊，不丢 DPS）*/
             }
-            (void)ce_anm_set_pos(*id, pp[0], pp[1], 0.0f);
-            (void)ce_anm_set_rotation(*id, 0.0f, 0.0f, -YK_ATAN_HALF_PI);
-            (void)ce_anm_set_scale(*id, YK_LASER_LEN / YK_M_LASER_BEAM_SPRITE_W,
-                                   w_px / YK_M_LASER_BEAM_SPRITE_H * grow);
-            if (yk_m_laser_beam_should_settle(s_beam_age)) {
-                float center[3] = { pp[0], pp[1] - YK_LASER_LEN * 0.5f, 0.0f };
-                (void)ce_damage_rect(center, 0.0f, YK_M_LASER_BEAM_SETTLE, dmg, w_px, YK_LASER_LEN);
-            }
-            n = 1;
-        } else {
-            for (i = 0; i < YK_OPTION_MAX; ++i) {
-                const uint8_t *o = s->opt[i].ptr;
-                float x, y;
-                if (!o) continue;
-                /* 膛口 = 引擎每帧算好的那一对（一手：行循环按行里 `+0x20` 取的就是它，`th18:0x45ec41`）。
-                 * 还没算过（两格都是 0）⇒ 用「自机位 + 本格的聚焦偏移」兜底（与膛口镜像那一段同款）。*/
-                x = ce_option_x(o);
-                y = ce_option_y(o);
-                if (x == 0.0f && y == 0.0f) {
-                    x = pp[0] + (float)*(const int32_t *)(o + CE_OPT_OFF_F_X) * CE_SUBPIXEL_TO_PIXEL;
-                    y = pp[1] + (float)*(const int32_t *)(o + CE_OPT_OFF_F_Y) * CE_SUBPIXEL_TO_PIXEL;
-                }
-                if (!s_beam_vm[i] || !ce_anm_get_vm(s_beam_vm[i])) {
-                    s_beam_vm[i] = ce_anm_spawn(yk_player_anm(), YK_BEAM_SCRIPT[tier], YK_BEAM_ANM_LAYER);
-                    if (!s_beam_vm[i]) continue;
-                    spawned = 1;
-                    s_beam_age = 0;
-                    grow = 0.0f;  /* 同上：这一帧就是激活的第 0 帧 */
-                }
-                (void)ce_anm_set_pos(s_beam_vm[i], x, y, 0.0f);
-                (void)ce_anm_set_rotation(s_beam_vm[i], 0.0f, 0.0f, -YK_ATAN_HALF_PI);
-                (void)ce_anm_set_scale(s_beam_vm[i], YK_LASER_LEN / YK_M_LASER_BEAM_SPRITE_W,
-                                       w_px / YK_M_LASER_BEAM_SPRITE_H * grow);
-                if (yk_m_laser_beam_should_settle(s_beam_age)) {
-                    float center[3] = { x, y - YK_LASER_LEN * 0.5f, 0.0f };
-                    (void)ce_damage_rect(center, 0.0f, YK_M_LASER_BEAM_SETTLE, dmg, w_px,
-                                         YK_LASER_LEN);
-                }
-                ++n;
+            yk_beam_bar_place(s_beam_vm[u][k], x, y, grow, w_px,
+                              yk_m_laser_beam_bar_alpha(YK_M_LASER_BEAM_ALPHA, k, rate));
+            ++n;
+        }
+        /* 收掉这一档用不到的尾巴（换档变小 / 激活重来时会留几支）*/
+        for (k = bars; k < (int)YK_M_LASER_BEAM_BARS_MAX; ++k) {
+            if (!s_beam_vm[u][k]) continue;
+            ce_anm_delete(s_beam_vm[u][k]);
+            s_beam_vm[u][k] = 0;
+        }
+        /* 伤害：每 `SETTLE` 帧把这一档的 `dmg` 点**摊到 bars 条**上（Σ = dmg ⇒ 总额与上一版同额）。*/
+        if (bars > 0 && yk_m_laser_beam_should_settle(s_beam_age)) {
+            for (k = 0; k < bars; ++k) {
+                const int d = yk_m_laser_beam_bar_damage(dmg, bars, k);
+                if (d <= 0) continue;
+                yk_beam_bar_hit(trail[k * 2 + 0], trail[k * 2 + 1], d);
             }
         }
     }
-    s_beam_live = (uint8_t)n;
+
+    s_beam_live = (uint8_t)(n > 255 ? 255 : n);
     s_beam_tier = tier;
     ++s_beam_age;
-    if (!s_beam_logged || spawned) {
+    /* ⚠ 日志**每次激活只打一行**，而且打在「第一条残影真的出来」的那一帧上（`n > 0`）——
+     *   第 0 帧（激活帧）按一手一条都不出（轨迹全是哨兵）；若照 `spawned` 打，条数逐帧长大
+     *   ⇒ 一次按 Z 会连打 `rate`（最多 12）行。判据行仍是 `youkai/beam: on (` … `)` 与 `off (` … `)` 成对。*/
+    if (!s_beam_logged && n > 0) {
         s_beam_logged = 1;
-        ce_log("youkai/beam: on (%d beam(s) at tier %d, script %d, layer %d) - visual 448 x %.1f px "
-               "(scale %.3f x %.3f), hit rect 448 x %.1f px, %d dmg every %d frame(s), no cancel; "
-               "one per our own option (TH08 shape: `th08:0x450840` spawns 16x448 bars every frame)",
-               n, tier, (int)YK_BEAM_SCRIPT[tier], (int)YK_BEAM_ANM_LAYER, (double)w_px,
+        ce_log("youkai/beam: on (%d afterimage beam(s) now, up to %d per trail over %d trail(s) at tier %d, "
+               "script %d, layer %d) - visual 448 x %.1f px (scale %.3f x %.3f), bar box %.0f x %.0f px, "
+               "%d dmg spread over the bar(s) every %d frame(s), no cancel; trail %d points, dy -%.0f "
+               "(TH08 `th08:0x450840`/`0x450ad0`)",
+               n, rate, nunit, tier, (int)YK_BEAM_SCRIPT[tier], (int)YK_BEAM_ANM_LAYER, (double)w_px,
                (double)(YK_LASER_LEN / YK_M_LASER_BEAM_SPRITE_W),
-               (double)(w_px / YK_M_LASER_BEAM_SPRITE_H), (double)w_px, dmg,
-               (int)YK_M_LASER_BEAM_SETTLE);
+               (double)(w_px / YK_M_LASER_BEAM_SPRITE_H),
+               (double)YK_M_LASER_BEAM_BAR_W, (double)YK_M_LASER_BEAM_BAR_H,
+               dmg, (int)YK_M_LASER_BEAM_SETTLE,
+               (int)YK_M_LASER_BEAM_TRAIL_MAX, (double)YK_M_LASER_BEAM_TRAIL_DY);
     }
 }
+
 
 /* ★★★ 2026-09-27（owner ②③ 实跑：「**魔理沙妖子机激光依旧没有射出去只有一小节就截断了**」+
  * 「**咲夜妖子机的魔法阵没有动**」）：这两条都在引擎内部（束的几何由 tick2 的 `+0xa0` 驱动；
@@ -4124,32 +4230,38 @@ static void yk_probe_tick(yk_card_t *s, int character)
                (int)s->opt_frozen[0]);
     }
     if (character == YK_CHAR_MARISA) {
-        /* ★ 2026-09-27 第二十六批：束改走卡侧 ⇒ 探针也换成**新路的读数**（两条一起看）：
-         *   ① 每条束 VM 的实况（id 在不在、位置、旋转、scale —— 期望 rz = −π/2、scale = 448/256 × 宽/32）；
-         *   ② **载体行有没有被引擎发**：数一遍弹池里 packed set/row = 我们那条激光行的弹。
+        /* ★ 2026-09-27（第二十六批起，第二十七批改成残影多束）：束走卡侧 ⇒ 探针读**新路**：
+         *   ① 每条残影 VM 的实况（轨迹下标 / 位置 / 旋转 / scale / alpha）；
+         *   ② 本档的**残影条数**与轨迹读数（`trail[k]`，期望：`k = 0` 与本帧膛口一致、
+         *      相邻两点 y 差 ≥ 1，x 相同则说明自机没横向移动）；
+         *   ③ **载体行有没有被引擎发**：数一遍弹池里 packed set/row = 我们那条激光行的弹。
          *      必须恒 **0**（行里 `start_delay = 15` 不可达，`youkai_core.h` 那段有一手的充要证明）
          *      —— 这一行就是「引擎不再产生任何东西」的实跑判据；一旦非 0 说明行被改回可发了。*/
         const int tier = yk_current_power_level();
         const int w100 = yk_m_laser_beam_w_px100(tier);
         const int dmg = yk_m_laser_beam_damage(tier);
+        const int rate = yk_m_laser_beam_rate(tier);
         uint8_t *pl = CE_PLAYER();
-        int i, k, nrow = 0;
+        int u, i, k, nrow = 0;
 
-        for (i = 0; i < (int)YK_M_LASER_BEAM_MAX; ++i) {
-            uint32_t id = s_beam_vm[i];
-            uint8_t *v = id ? (uint8_t *)ce_anm_get_vm(id) : 0;
-            if (!id) continue;
-            ce_log("youkai/probe beam #%d: vm %08x live %d pos(%.1f,%.1f) rot(%.3f,%.3f,%.3f) "
-                   "scale(%.3f,%.3f) age %u via=%s",
-                   i, (unsigned)id, v ? 1 : 0,
-                   v ? (double)*(const float *)(v + CE_ANM_VM_POS) : 0.0,
-                   v ? (double)*(const float *)(v + CE_ANM_VM_POS + 4) : 0.0,
-                   v ? (double)*(const float *)(v + CE_ANM_VM_ROTATION) : 0.0,
-                   v ? (double)*(const float *)(v + CE_ANM_VM_ROTATION + 4) : 0.0,
-                   v ? (double)*(const float *)(v + CE_ANM_VM_ROTATION + 8) : 0.0,
-                   v ? (double)*(const float *)(v + CE_ANM_VM_SCALE) : 0.0,
-                   v ? (double)*(const float *)(v + CE_ANM_VM_SCALE + 4) : 0.0,
-                   (unsigned)s_beam_age, (i == (int)YK_M_LASER_BEAM_MAX - 1) ? "body" : "option");
+        for (u = 0; u < (int)YK_M_LASER_BEAM_UNITS; ++u) {
+            for (i = 0; i < (int)YK_M_LASER_BEAM_BARS_MAX; ++i) {
+                uint32_t id = s_beam_vm[u][i];
+                uint8_t *v = id ? (uint8_t *)ce_anm_get_vm(id) : 0;
+                if (!id) continue;
+                ce_log("youkai/probe beam unit %d bar %d: vm %08x live %d pos(%.1f,%.1f) "
+                       "rot(%.3f,%.3f,%.3f) scale(%.3f,%.3f) trail(%.1f,%.1f) age %u via=%s",
+                       u, i, (unsigned)id, v ? 1 : 0,
+                       v ? (double)*(const float *)(v + CE_ANM_VM_POS) : 0.0,
+                       v ? (double)*(const float *)(v + CE_ANM_VM_POS + 4) : 0.0,
+                       v ? (double)*(const float *)(v + CE_ANM_VM_ROTATION) : 0.0,
+                       v ? (double)*(const float *)(v + CE_ANM_VM_ROTATION + 4) : 0.0,
+                       v ? (double)*(const float *)(v + CE_ANM_VM_ROTATION + 8) : 0.0,
+                       v ? (double)*(const float *)(v + CE_ANM_VM_SCALE) : 0.0,
+                       v ? (double)*(const float *)(v + CE_ANM_VM_SCALE + 4) : 0.0,
+                       (double)s_beam_trail[u][i][0], (double)s_beam_trail[u][i][1],
+                       (unsigned)s_beam_age, (u == (int)YK_OPTION_CELLS) ? "body" : "option");
+            }
         }
         if (pl) {
             for (k = 0; k < CE_PB_COUNT; ++k) {
@@ -4161,11 +4273,13 @@ static void yk_probe_tick(yk_card_t *s, int character)
                 ++nrow;
             }
         }
-        ce_log("youkai/probe beam: %d live / %d slot(s), tier %d (script %d, w %.2f px, %d dmg / %d frame), "
+        ce_log("youkai/probe beam: %d afterimage(s) live, tier %d (script %d, layer %d, w %.2f px, "
+               "%d dmg / %d frame spread over up to %d bar(s)), trail0 (%.1f,%.1f) muzzle (%.1f,%.1f), "
                "engine bullets from our laser row = %d (MUST be 0)",
-               (int)s_beam_live, (int)YK_M_LASER_BEAM_MAX, tier,
-               (int)YK_BEAM_SCRIPT[tier], (double)w100 * 0.01, dmg, (int)YK_M_LASER_BEAM_SETTLE,
-               nrow);
+               (int)s_beam_live, tier, (int)YK_BEAM_SCRIPT[tier], (int)YK_BEAM_ANM_LAYER,
+               (double)w100 * 0.01, dmg, (int)YK_M_LASER_BEAM_SETTLE, rate,
+               (double)s_beam_trail[0][0][0], (double)s_beam_trail[0][0][1],
+               (double)s_beam_muz[0][0], (double)s_beam_muz[0][1], nrow);
     }
 }
 

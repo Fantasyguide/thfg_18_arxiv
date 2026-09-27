@@ -338,9 +338,10 @@ int yk_marisa_laser_row(int set_index, int row_index);
  *   · 117 当年在同一件事上有同一结论（`animal.c:283`–`300`），本卡照它的做法：**引擎不发、卡侧发**。
  *
  * ## 形状（一手几何，逐条给证据）
- *   · **每条我们自己那台子机各一条束**（117 的口径：「魔理沙应该是普通子机激光，不是从机体射出来」）；
- *     本卡只有 1 台（`YK_OPTION_BY_CHAR[1] = {1,1,1,1,1}`）⇒ 常态就是 1 条；一台都没有时回退本体 1 条
- *     （`YK_M_LASER_BEAM_MAX = YK_OPTION_CELLS + 1` 就是这两半的和）。
+ *   · **每条我们自己那台子机各一条轨迹**（117 的口径：「魔理沙应该是普通子机激光，不是从机体射出来」）；
+ *     本卡只有 1 台（`YK_OPTION_BY_CHAR[1] = {1,1,1,1,1}`）⇒ 常态就是 1 条轨迹；一台都没有时回退本体 1 条
+ *     （`YK_M_LASER_BEAM_UNITS = YK_OPTION_CELLS + 1` 就是这两半的和）。
+ *     **每条轨迹每帧最多出 `YK_M_LASER_BEAM_RATE[tier]` 条残影束**（见下一节）。
  *   · 位置 = **子机膛口**（`option+0x5c/+0x60`，定点 1/128 ⇒ 像素；一手：行循环按 `+0x20` 取膛口，
  *     `th18:0x45ec41`–`0x45ec5d`）；方向 = **竖直向上 −π/2**（一手 `ply01as.sht` 那一行 `+0x14 = −π/2`）；
  *     长度 = **恒 448**（`th08:0x450a4f`）；宽 = **逐档**（见下表）。
@@ -348,19 +349,61 @@ int yk_marisa_laser_row(int set_index, int row_index);
  *     `+0x80 = 命中间隔 = 1`（`Player__create_damage_source_rect` 里**硬编码 1 = 每帧**）⇒ 一个源在每个存活帧都能结算，
  *     但 `0x45f0f0` 在 `+0x84` 写「**一源一敌一辈子一次**」的 tag（一手 `engine/enemy/th18/06-enemy-inert-flag.md` §③
  *     的 `0x45f45a`）⇒ **每个源对每个敌人只结算一次**。
- *     ⇒ 本卡按一手的**每 2 帧结算**（`th08:0x4517a1`）节奏：**每 2 帧新建一个 `life = 2` 的源**，
- *     每次伤害 `YK_M_LASER_BEAM_DAMAGE[tier]` ⇒ 平均 = 表值 / 2 每帧（见 `TUNING.md` §2.1ccc-2 的算式）。
+ *     ⇒ 本卡按一手的**每 2 帧结算**（`th08:0x4517b5` 的 `vm[0x454+8] % 2`，type 4/5/6 专用）
+ *     节奏：**每 2 帧在每条残影点上新建一个 `life = 2` 的源**，逐条伤害由
+ *     `yk_m_laser_beam_bar_damage()` 分摊 ⇒ Σ = `YK_M_LASER_BEAM_DAMAGE[tier]`、平均 = 表值 / 2 每帧
+ *     （**与上一版逐字节同额**，见 `TUNING.md` §2.1ccc-2 的算式）。
  *   · **不消弹**（一手：TH08 那条 `type = 5` 在碰撞 pass 里被显式跳过销毁 ⇒ 只打不消；与 117 bug-2(b) 同款）。
- *   · **无限贯通**：矩形源是**几何求交**，没有「截到首个接触点」这一步（那是引擎 `hit2` 的行为）⇒ 天然贯通。*/
+ *   · **无限贯通**：矩形源是**几何求交**，没有「截到首个接触点」这一步（那是引擎 `hit2` 的行为）⇒ 天然贯通。
+ *
+ * ## ★★★ 2026-09-27 第二十七批（owner ③「能不能复刻横向移动时候的多束？」）：**残影多束**
+ *
+ * 一手（TH08 v1.00d `th08.exe`，本轮**逐指令重读**三支回调；对手写的这一节负责把细节钉死）：
+ *   · **生成闸门** `th08:0x44fe20`（`ply01as` 行的 `+0x28`）：把 `row[+0x00]` 搬进 **`vm+0x46a`**
+ *     （`0x44ff28 mov dx,[ecx]` → `0x44ff2b mov [eax+0x46a],dx`）—— 即**行里的 `rate` 就是残影条数**
+ *     （不是发射节奏：本函数**不读** `[ebp+8]` 的帧计数）；随后把 **32 格**轨迹 `vm+0x2b0` 的 x 全写
+ *     **−999.0f**（`0x44ff59`–`0x44ff6d`，`0x4b4c7c` = −999）当「未填」哨兵。
+ *   · **每帧** `th08:0x450840`（行的 `+0x2c`）：
+ *     ① `for (i = 31; i > 0; --i) { trail[i] = trail[i-1]; trail[i].y -= 1.0f; }`（`0x450992`–`0x4509fa`；
+ *        `0x4b4338` = **1.0**，步长 0xc ⇒ 32 格）；
+ *     ② `trail[0] = vm+0x2a4`（上一帧的膛口），然后 `vm+0x2a4 = options[0].pos`（`player+0x6b0`）**再 y −= 208.0f**
+ *        （`0x4b48e4` = 208.0 = 448/2 − 16 ⇒ 那是**居中**锚才需要的半长偏移）；
+ *     ③ `vm+0x434 = 448.0f`（`0x450a4f`）；
+ *     ④ `for (k = 0; k < (i16)vm+0x46a; ++k)`：`trail[k].x < −900.0f`（`0x4b6fe0`）**跳过**，
+ *        否则 `SpawnShot(player, &trail[k], 16.0f, 448.0f, 伤害 1, 寿命 0)`（`0x450978`）+ `shot[+0x3d] = 1`。
+ *   · **绘制** `th08:0x450ad0`（行的 `+0x30`）：`a0 = (u8)vm+0x1f3`、`a34 = a0*3/4`（`0x450aef`–`0x450afe`），
+ *     然后 `for (i = 0; i < 2*rate; i += 2)`（= `k < rate`，偏移 `i*0xc` ≡ `k*0x18`）：
+ *     `trail[k].x == −999.0f` ⇒ **break**（`0x450b40 test ah,0x44 / jp`）；
+ *     位置写 `vm+0x208/0x20c/0x210 = trail[k]`（绘制时再加**游玩区原点** `0x164d2dc/e0`）；
+ *     `k != 0` ⇒ `vm+0x1f3 = a34 − (a34/2)·i/rate`（`0x450b9b`–`0x450bbc`）；最后把 `vm+0x1f3` 还原成 `a0`。
+ *     ⇒ **同一支 VM 在一帧里被画 `rate` 次**，位置取轨迹点、越旧越淡 ⇒ owner 说的「横向移动时的多束」。
+ *   · **判定盒**（`0x44dfa0` 的实参在两个调用点互证）：`arg2 = 宽`、`arg3 = 高`、`arg4 = 伤害`、`arg5 = 寿命`
+ *     （`0x411d9b` 那一族传 `96.0 / 448.0 / 100 / 60`、`0x411d0f` 那一族传 `16.0 / 448.0 / 1 / 0`）；
+ *     碰撞 `th08:0x451a42`–`0x451aab` 用的是 **半尺寸**（`slot[0x10]/2` 与 `slot[0x14]/2`，`0x4b42ec` = 2.0）
+ *     ⇒ 每条残影 = **16×448 居中**；`shot[0x24] % shot[0x38] == 0` 才结算（`0x451a02`，我们的寿命 0 / 分母 1 ⇒ 每帧）。
+ *
+ * **落点口径（本卡的决定，逐条写清）**：
+ *   · **轨迹 = 32 格、每步 y −1、哨兵 −999、门 −900** —— 全部照一手常量进卡侧（本节的宏）。
+ *   · **膛口不搬那个 −208**：一手的 −208 是把「居中锚的束」摆到膛口上方；我们的束是**近端锚**
+ *     （脚本 `anchor(1, 0)`）+ 判定盒**中心 = 束心**（`center = 膛口 − 448/2`）⇒ 同一个半长已经在几何里，
+ *     再减一次会整体上移 208 px。
+ *   · **条数 = `YK_M_LASER_BEAM_RATE[tier]`**（一手 `row[+0x00]` = 2/4/6/8/12，逐档与生成器对账）。
+ *   · **伤害总额一个数都不改**：每 `SETTLE` 帧把 `YK_M_LASER_BEAM_DAMAGE[tier]` 点**摊到当帧那几条残影上**
+ *     （`yk_m_laser_beam_bar_damage()`：前 `total % bars` 条各多 1）⇒ 平均每帧与上一版**逐字节同额**。
+ *     一手那个「每条残影各 1 点、每帧一次」的绝对量**不照搬**（那是「载体 7 点/2 帧 + 残影 rate 点/帧」的
+ *     两条通道叠加，本卡只有一条通道，且 DPS 必须落在既有对齐口径）⇒ 登记 `TUNING.md` §2.1ccc-2/-6 ❓。
+ *   · **判定宽 = 一手每条残影的 16 px**（不是逐档视觉宽）；视觉宽仍逐档（那是一手 `scale.y`）。
+ *     上一版「判定宽 = 逐档视觉宽」的口径随之作废，取舍见 `TUNING.md` §2.1ccc-6。*/
 #define YK_M_LASER_BEAM_TIERS       5        /* = 火力档数（`YK_SHOT_TIERS`）*/
 #define YK_M_LASER_BEAM_SPRITE_W    512.0f   /* 束贴图 `YKB_M_OPT.png` 的逻辑宽 —— **镜像平铺**后 = 2×256（为了能无缝滚动；拉伸系数随之变 448/512 = 0.875）*/
 #define YK_M_LASER_BEAM_SPRITE_H    32.0f    /* 同一个贴图的高 ⇒ 宽度系数 = 屏上宽 / 32 */
-#define YK_M_LASER_BEAM_SETTLE      2        /* 结算间隔（帧）—— 一手 TH08 每 2 帧结算一次（`th08:0x4517a1`）*/
+#define YK_M_LASER_BEAM_SETTLE      2        /* 结算间隔（帧）—— 一手 type 4/5/6 每 2 帧结算一次（`th08:0x4517b5`）*/
 #define YK_M_LASER_BEAM_GROW_FRAMES 8        /* 「如收回般展开」的帧数 = 束脚本 `interruptLabel(1)` 收束段
                                               * `scaleTime(8, 1, 1.0, 0.0)` 的**倒放**（117 的同款细节，
                                               * 见 `animal.c` 的 `ANIMAL_EAGLE_BEAM_GROW_FRAMES`）。
-                                              * ⚠ 只作用在**宽度**（`scale.y`）上：一手的束长是**常量 448**
-                                              * ⇒ 不像 117 那样两轴同涨（那是 TH17 的束，长度本来就在长）。*/
+                                              * ★ 第二十七批起**两轴同涨**（长度也从近端连续伸到满长，
+                                              * 与 117 逐行同形）—— 一手没有这一段（束一出现就是全长），
+                                              * 属 ❓自定，见 `TUNING.md` §2.1ccc-4。*/
 /* **逐档宽度**（屏上 px × 100，避免 float 表）：一手 = TH08 `player01.anm` script24..28 的
  * `scale(1.0, 0.5/0.6/0.7/0.8/1.0)` × 贴图高 32 ⇒ 16 / 16 / 19.2 / 22.4 / 25.6 px。*/
 #define YK_M_LASER_BEAM_W_PX100     { 1600, 1600, 1920, 2240, 2560 }
@@ -368,19 +411,60 @@ int yk_marisa_laser_row(int set_index, int row_index);
  *   = `round(2 × 该档对齐后的激光行伤害 / 该行的 rate)`（生成器算、本节末对账），
  *   ⇒ 平均每帧伤害 = 该行在**本卡既有 DPS 对齐模型**里的份额（`Σ damage/fire_rate`）。
  *   ⚠ 分母用的是行里的 `rate`（2/4/6/8/12）。一手指出：**Alice 那一行的 `rate` 其实是「残影条数」**
- *     （`engine/player/th08/01-youkai-familiars-first-hand.md`：`0x44fe20` 不做 `%rate`）⇒ 这个分母
- *     是**沿用本卡既有对齐口径**（不是一手节奏）；要换口径属新设计，登记 `TUNING.md` §2.1ccc-2 ❓。*/
+ *     （`0x44fe20` 不读帧计数）⇒ 这个分母是**沿用本卡既有对齐口径**（不是一手节奏）；
+ *     要换口径属新设计，登记 `TUNING.md` §2.1ccc-2 ❓。*/
 #define YK_M_LASER_BEAM_DAMAGE      { 14, 9, 7, 6, 5 }
-#define YK_M_LASER_BEAM_MAX         (YK_OPTION_CELLS + 1)   /* 每台我们的子机一条 + 回退本体的那一条 */
+/* **逐档残影条数** = 一手 `row[+0x00]`（`th08:0x44ff2b` 把它搬进 `vm+0x46a`，tick/draw 都拿它当循环上界）。
+ * 一手那 5 档 = 2 / 4 / 6 / 8 / 12（`ply01as.sht` 逐行直读；本卡的生成器里同一列 `fire_rate`）。*/
+#define YK_M_LASER_BEAM_RATE        { 2, 4, 6, 8, 12 }
+/* 一手轨迹 = **32 格**（`0x44fe20` 清 32 格、`0x450840` 移位 31 次）+ 未填哨兵 −999（`0x4b4c7c`）
+ * + tick 的门 −900（`0x4b6fe0`）+ 每步 y −1（`0x4b4338`）。*/
+#define YK_M_LASER_BEAM_TRAIL_MAX   32
+#define YK_M_LASER_BEAM_TRAIL_DY    1.0f
+#define YK_M_LASER_BEAM_TRAIL_NONE  (-999.0f)
+#define YK_M_LASER_BEAM_TRAIL_MIN   (-900.0f)
+/* 条数上限 = 逐档 rate 的最大值（一手 ply01as 的 5 档里最大是 12）—— 编译期与 RATE 表对账。*/
+#define YK_M_LASER_BEAM_BARS_MAX    12
+/* **每条残影的判定盒**：一手 = `SpawnShot(…, 16.0, 448.0, …)`（`0x45095d` / `0x450958` 两条 push 立即数）
+ * + 半尺寸约定（`0x4b42ec` = 2.0）⇒ 屏上 **16×448**（居中于轨迹点）。*/
+#define YK_M_LASER_BEAM_BAR_W       16.0f
+#define YK_M_LASER_BEAM_BAR_H       448.0f
+/* 束的基准 alpha（脚本里的 `alpha(160)`，取 TH18 原生束的亮度）：一手 draw 就是拿 VM 当前的
+ * `vm+0x1f3` 当基准算各条残影的 alpha（`0x450adf movzx ecx,BYTE [eax+0x1f3]`）。*/
+#define YK_M_LASER_BEAM_ALPHA       160
+/* 贴图滚动步长（UV / 帧）。**一手是 0.0625**（TH08 `player01.anm` script24..28），但那是**按图集宽度**
+ * 归一化的：TH08 的图集宽 256（sprite32 = 448×32 靠 UV 绕回）、滚动 = 0.0625×256 = **16 texel/帧**
+ * ⇒ 屏上 16 px/帧（1 texel = 1 px）；我们的成员被**镜像平铺**成 512 宽 ⇒ 同样的 0.0625 会变成
+ * 0.0625×512 = 32 texel/帧、屏上 32×0.875 = **28 px/帧**。钻石纹的周期是 64 texel
+ * （TH08 屏上 64 px、我们 56 px）⇒ 28 px/帧 = **正好半个周期/帧**（60 Hz 下的奈奎斯特频闪，
+ * 看着就是「一节一节」而不是流动）。**除以 2 = 0.03125** ⇒ 16 texel/帧、14 px/帧
+ * ⇒ 56/14 = **4 帧一个钻石**，与 TH08 的 64/16 = 4 帧**同节奏**。*/
+#define YK_M_LASER_BEAM_SCROLL      0.03125f
+#define YK_M_LASER_BEAM_UNITS       (YK_OPTION_CELLS + 1)   /* 每台我们的子机一条轨迹 + 回退本体的那一条 */
 
 /* 这一档的束宽（屏上 px × 100）。tier 越界一律钳进表内。*/
 int yk_m_laser_beam_w_px100(int tier);
 /* 这一档每次结算的伤害（每 `YK_M_LASER_BEAM_SETTLE` 帧一次）。tier 越界一律钳进表内。*/
 int yk_m_laser_beam_damage(int tier);
+/* 这一档的**残影条数**（= 一手行里的 `+0x00`）。tier 越界一律钳进表内。*/
+int yk_m_laser_beam_rate(int tier);
 /* 本次激活的第 `age` 帧要不要挂伤害源（`age % SETTLE == 0`；age = 0 是出生的那一帧）。*/
 int yk_m_laser_beam_should_settle(unsigned age);
 /* 展开系数 ×1000（0..1000）：激活头 `GROW_FRAMES` 帧里从 0 线性涨到 1000，之后恒 1000。*/
 int yk_m_laser_beam_grow_permille(unsigned age);
+/* 这一个轨迹点能不能画/挂判定（一手 tick 的门 `x >= −900`；`yk_m_laser_beam_trail_step` 的哨兵是 −999）。*/
+int yk_m_laser_beam_bar_live(float x);
+/* 本帧该出几条：从 `k = 0` 起数**连续**的活点，最多 `rate` 条（一手 draw 是遇到哨兵就 `break`）。*/
+int yk_m_laser_beam_bar_count(const float *trail, int n, int rate);
+/* 第 `k` 条残影的 alpha（一手 `0x450ad0`）：`k == 0` 保持基准；否则 `a34 − (a34/2)·(2k)/rate`，
+ * 其中 `a34 = base*3/4`（整数除，照一手）。结果钳在 0..255。*/
+int yk_m_laser_beam_bar_alpha(int base, int k, int rate);
+/* 把 `total` 点伤害**摊到 `bars` 条**残影上（第 `k` 条的份额）：前 `total % bars` 条各多 1
+ * ⇒ `Σ_k = total`（**总额与上一版一个数都不差**，只是从「一条吃满」改成「几条分摊」）。*/
+int yk_m_laser_beam_bar_damage(int total, int bars, int k);
+/* 一手 `0x450840` 的轨迹推进（逐指令等价）：`trail[i] = trail[i-1]` 且 `trail[i].y -= TRAIL_DY`
+ * （i 从 `n-1` 递减到 1），然后 `trail[0] = (mx, my)`。`trail` = `float[n][2]`。*/
+void yk_m_laser_beam_trail_step(float *trail, int n, float mx, float my);
 
 /* ============ ★★★ 2026-09-27（owner ④）：**逢魔给自机弹染色**（一手：TH08 的 `+0x470` 旗 + 绘制前写色）
  *

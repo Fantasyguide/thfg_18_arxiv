@@ -1337,10 +1337,134 @@ int main(void)
             CHECK(yk_m_laser_beam_grow_permille(8) == 1000);
             CHECK(yk_m_laser_beam_grow_permille(9999) == 1000);   /* 不溢出、不回头 */
             /* 束的条数上限 = 每台我们的子机一条 + 回退本体的那一条（117 的同款形状）*/
-            CHECK(YK_M_LASER_BEAM_MAX == YK_OPTION_CELLS + 1);
+            CHECK(YK_M_LASER_BEAM_UNITS == YK_OPTION_CELLS + 1);
             /* 贴图逻辑尺寸（`YKB_M_OPT.png` = 256×32；`scale.x = 448/256`、`scale.y = w/32`）*/
             CHECK(YK_M_LASER_BEAM_SPRITE_W == 512.0f);   /* ★ 镜像平铺后 = 2×256（为了能无缝滚动）*/
             CHECK(YK_M_LASER_BEAM_SPRITE_H == 32.0f);
+
+            /* ★★★ 2026-09-27 第二十七批：**残影多束**的五个纯函数（一手逐指令见 `youkai_core.h`）。
+             * 一手三支回调：init `th08:0x44fe20` / tick `th08:0x450840` / draw `th08:0x450ad0`。*/
+            /* ① 条数 = 一手行里的 `+0x00`（`0x44ff2b` 搬进 `vm+0x46a`）= ply01as 的 2/4/6/8/12。*/
+            CHECK(yk_m_laser_beam_rate(0) == 2);
+            CHECK(yk_m_laser_beam_rate(1) == 4);
+            CHECK(yk_m_laser_beam_rate(2) == 6);
+            CHECK(yk_m_laser_beam_rate(3) == 8);
+            CHECK(yk_m_laser_beam_rate(4) == 12);
+            CHECK(yk_m_laser_beam_rate(-1) == 2);        /* 越界钳进表内 */
+            CHECK(yk_m_laser_beam_rate(99) == 12);
+            /* 数组第二维必须容得下逐档最大条数（否则 `s_beam_vm[u][k]` 越界）*/
+            CHECK(YK_M_LASER_BEAM_BARS_MAX == 12);
+            CHECK(YK_M_LASER_BEAM_BARS_MAX <= YK_M_LASER_BEAM_TRAIL_MAX);
+            {
+                int t, mx = 0;
+                for (t = 0; t < 5; ++t) if (yk_m_laser_beam_rate(t) > mx) mx = yk_m_laser_beam_rate(t);
+                CHECK(mx == YK_M_LASER_BEAM_BARS_MAX);   /* 表里的最大值 == 上限常数 */
+            }
+            /* ② 轨迹常量：32 格、每步 y −1、哨兵 −999、门 −900（一手 `0x4b4c7c`/`0x4b6fe0`/`0x4b4338`）*/
+            CHECK(YK_M_LASER_BEAM_TRAIL_MAX == 32);
+            CHECK(YK_M_LASER_BEAM_TRAIL_DY == 1.0f);
+            CHECK(YK_M_LASER_BEAM_TRAIL_NONE == -999.0f);
+            CHECK(YK_M_LASER_BEAM_TRAIL_MIN == -900.0f);
+            CHECK(yk_m_laser_beam_bar_live(0.0f) == 1);
+            CHECK(yk_m_laser_beam_bar_live(-900.0f) == 1);        /* 门是 `>=`（一手 `fcomp` 只跳「小于」）*/
+            CHECK(yk_m_laser_beam_bar_live(-900.5f) == 0);
+            CHECK(yk_m_laser_beam_bar_live(YK_M_LASER_BEAM_TRAIL_NONE) == 0);   /* 哨兵要被门挡掉 */
+            /* ③ 每条残影的判定盒 = 一手 `SpawnShot(…, 16.0, 448.0, …)`（半尺寸约定 ⇒ 屏上 16×448）*/
+            CHECK(YK_M_LASER_BEAM_BAR_W == 16.0f);
+            CHECK(YK_M_LASER_BEAM_BAR_H == 448.0f);
+            CHECK(YK_M_LASER_BEAM_BAR_H == YK_LASER_LEN);
+            /* ④ alpha 递减（一手 `0x450af2` 起：`a34 = a0*3/4`、`k != 0` ⇒ `a34 − (a34/2)·2k/rate`）。
+             * `k = 0` 那一支一手**不写** alpha ⇒ 返回原值（全场最亮的就是最新的那一条）。*/
+            CHECK(YK_M_LASER_BEAM_ALPHA == 160);
+            CHECK(yk_m_laser_beam_bar_alpha(160, 0, 4) == 160);
+            CHECK(yk_m_laser_beam_bar_alpha(160, 1, 4) == 90);        /* a34 = 120；k=1 ⇒ 120 − 60·2/4 */
+            CHECK(yk_m_laser_beam_bar_alpha(160, 3, 4) == 120 - 60 * 6 / 4);
+            CHECK(yk_m_laser_beam_bar_alpha(160, 0, 12) == 160);
+            CHECK(yk_m_laser_beam_bar_alpha(160, 11, 12) == 120 - 60 * 22 / 12);
+            CHECK(yk_m_laser_beam_bar_alpha(160, 11, 12) > 0);        /* 最旧那条也要看得见（> 0）*/
+            CHECK(yk_m_laser_beam_bar_alpha(160, 1, 0) == 160);       /* rate = 0 ⇒ 不递减（防除零）*/
+            CHECK(yk_m_laser_beam_bar_alpha(255, 1, 4) == 191 - 95 * 2 / 4);
+            CHECK(yk_m_laser_beam_bar_alpha(-5, 2, 4) == 0);          /* 基准钳进 0..255 */
+            CHECK(yk_m_laser_beam_bar_alpha(300, 0, 4) == 255);
+            /* alpha 单调不增（越旧越淡）——逐档全扫一遍，防将来手滑写反 */
+            {
+                int tt, kk, prev;
+                for (tt = 0; tt < 5; ++tt) {
+                    const int r = yk_m_laser_beam_rate(tt);
+                    prev = 999;
+                    for (kk = 0; kk < r; ++kk) {
+                        const int a = yk_m_laser_beam_bar_alpha(160, kk, r);
+                        CHECK(a <= prev);
+                        prev = a;
+                    }
+                    CHECK(prev > 0);
+                }
+            }
+            /* ⑤ 伤害**分摊**：Σ_k = total（一手是「每条残影各 1 点」，本卡要保 DPS ⇒ 摊不改总额）。
+             * 与上一版逐档同额：每 2 帧 14 / 9 / 7 / 6 / 5 点。*/
+            {
+                int tt, kk, sum;
+                for (tt = 0; tt < 5; ++tt) {
+                    const int tot = yk_m_laser_beam_damage(tt);
+                    const int r = yk_m_laser_beam_rate(tt);
+                    sum = 0;
+                    for (kk = 0; kk < r; ++kk) {
+                        const int d = yk_m_laser_beam_bar_damage(tot, r, kk);
+                        CHECK(d >= 0);
+                        sum += d;
+                    }
+                    CHECK(sum == tot);                 /* ★ 残影**不是** N 倍伤害 */
+                }
+                CHECK(yk_m_laser_beam_bar_damage(14, 2, 0) == 7);
+                CHECK(yk_m_laser_beam_bar_damage(14, 2, 1) == 7);
+                CHECK(yk_m_laser_beam_bar_damage(9, 4, 0) == 3);    /* 9 = 3+2+2+2：余数给最新的两条 */
+                CHECK(yk_m_laser_beam_bar_damage(9, 4, 1) == 2);
+                CHECK(yk_m_laser_beam_bar_damage(9, 4, 3) == 2);
+                CHECK(yk_m_laser_beam_bar_damage(5, 12, 4) == 1);   /* 5 < 12 ⇒ 只有最新 5 条各 1 点 */
+                CHECK(yk_m_laser_beam_bar_damage(5, 12, 5) == 0);
+                CHECK(yk_m_laser_beam_bar_damage(5, 12, 11) == 0);
+                CHECK(yk_m_laser_beam_bar_damage(0, 4, 0) == 0);
+                CHECK(yk_m_laser_beam_bar_damage(9, 0, 0) == 0);    /* 没条数 ⇒ 0（不崩、不除零）*/
+                CHECK(yk_m_laser_beam_bar_damage(9, 4, 4) == 0);    /* k 越界 ⇒ 0 */
+                CHECK(yk_m_laser_beam_bar_damage(9, 4, -1) == 0);
+            }
+            /* ⑥ 轨迹推进（一手 `0x450840` 的移位 + `0x44fe20` 的清表）*/
+            {
+                float tr[YK_M_LASER_BEAM_TRAIL_MAX][2];
+                int k;
+                for (k = 0; k < (int)YK_M_LASER_BEAM_TRAIL_MAX; ++k) {
+                    tr[k][0] = YK_M_LASER_BEAM_TRAIL_NONE;
+                    tr[k][1] = 0.0f;
+                }
+                CHECK(yk_m_laser_beam_bar_count(&tr[0][0], 32, 4) == 0);   /* 全哨兵 ⇒ 一条都不出 */
+                yk_m_laser_beam_trail_step(&tr[0][0], 32, 100.0f, 200.0f);
+                CHECK(tr[0][0] == 100.0f && tr[0][1] == 200.0f);
+                CHECK(yk_m_laser_beam_bar_count(&tr[0][0], 32, 4) == 1);   /* 一手：一帧多一条 */
+                yk_m_laser_beam_trail_step(&tr[0][0], 32, 110.0f, 200.0f);
+                CHECK(tr[0][0] == 110.0f && tr[0][1] == 200.0f);
+                CHECK(tr[1][0] == 100.0f && tr[1][1] == 199.0f);           /* 老的点上移一格且 y −1 */
+                CHECK(yk_m_laser_beam_bar_count(&tr[0][0], 32, 4) == 2);
+                /* 填到第 5 格：条数被 rate 夹住（rate = 4 ⇒ 只出 4 条，第 5 格不参与）*/
+                for (k = 0; k < 6; ++k) yk_m_laser_beam_trail_step(&tr[0][0], 32, 100.0f + (float)k, 200.0f);
+                CHECK(yk_m_laser_beam_bar_count(&tr[0][0], 32, 4) == 4);
+                CHECK(yk_m_laser_beam_bar_count(&tr[0][0], 32, 12) == 8);  /* 现在有 8 格是活的 */
+                /* 32 格填满之后仍被 rate 夹住（rate = 12 < 32）*/
+                for (k = 0; k < 40; ++k) yk_m_laser_beam_trail_step(&tr[0][0], 32, 100.0f, 200.0f);
+                CHECK(yk_m_laser_beam_bar_count(&tr[0][0], 32, 12) == 12);
+                CHECK(yk_m_laser_beam_bar_count(&tr[0][0], 32, 32) == 32);
+                /* 自机静止 ⇒ 各点 x 全同、y 逐格 −1（横向不动时残影**重合**成一条）*/
+                CHECK(tr[0][0] == 100.0f && tr[5][0] == 100.0f);
+                CHECK(tr[5][1] == 200.0f - 5.0f);
+                /* 横向移动 ⇒ 各点 x 不同（这就是 owner 要的「多束」）*/
+                tr[0][0] = 300.0f;
+                CHECK(tr[0][0] != tr[5][0]);
+                /* 边界：n = 0 / NULL 不崩 */
+                yk_m_laser_beam_trail_step(0, 32, 1.0f, 2.0f);
+                yk_m_laser_beam_trail_step(&tr[0][0], 0, 1.0f, 2.0f);
+                CHECK(yk_m_laser_beam_bar_count(0, 32, 4) == 0);
+                CHECK(yk_m_laser_beam_bar_count(&tr[0][0], 32, 0) == 0);
+                CHECK(yk_m_laser_beam_bar_count(&tr[0][0], 0, 4) == 0);
+            }
             /* ★★★ 2026-09-27（owner ④）：**妖逢魔染色**的两个纯函数。
              * 一手：只有霊夢（`ply00as`）与魔理沙（`ply01as`）的行 `+0x1e > 0` ⇒ 只有这两位的妖侧组染红。*/
             CHECK(yk_fengma_tint_set(0x54) == 1);            /* 霊夢 A0..A4 */

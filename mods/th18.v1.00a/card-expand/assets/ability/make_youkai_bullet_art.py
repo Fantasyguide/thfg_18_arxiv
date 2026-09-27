@@ -504,8 +504,8 @@ def gen_beam(name, spr_member, width_px, scale_y, src_num):
     （引擎那一行不再发弹，见 `append_shooterset.py` 的 M 段与 `youkai_core.h` 的同一段）。
 
     形状一手的两个来源，分开写清：
-      · **几何**照 TH08 `player01.anm` script24..28：`scale(1.0, <逐档 y>)`；壳取原生束（`layer(15)`+`alpha(160)`）、滚动已关
-        （那条 448×32 的**滚动**纹理；`YKB_M_OPT` 就是它的前 256×32 ⇒ 同一套 uv 流速，屏上 ≈ 28 px/帧）；
+      · **几何**照 TH08 `player01.anm` script24..28：`scale(1.0, <逐档 y>)`；壳取原生束
+        （`alpha(160)`）、滚动**照一开放**但步长减半（见 `scrollX` 那一行的长注）；
       · **渲染壳**照 TH18 原生束（`ability.anm` script3）：`type(1)` + **`anchor(1, 0)`**（左端锚 ⇒ 束从子机往
         方向外侧伸）+ `blendMode(1)` + 收束段 `interruptLabel(1)` 的 `scaleTime(8, 1, 1.0, 0.0)` → `delete()`。
       ⚠ **不写 `rotateAuto(n)`**（原生束脚本有它）：那是「朝**运动方向**」的绘制位（`flags_hi` bit7，
@@ -513,29 +513,38 @@ def gen_beam(name, spr_member, width_px, scale_y, src_num):
         方向由卡侧每帧 `ce_anm_set_rotation` 写（= 117 的 `ability.anm` script163 那一套，已实跑验收）。
       ⚠ **角度也不 bake**（117 是 bake `rotate(-90°)` + 每帧覆盖）：这里两件都不做，方向只有一个来源
         = 卡侧写入 ⇒ 不会出现「脚本与 C 各说一套」。
-      ⚠ `scale.y` 保持 **1.0**：宽度由卡侧每帧写（`YK_M_LASER_BEAM_W_PX100 / 32` × 展开系数）——
-        脚本里写死会在「展开动画」的头 8 帧被覆盖、之后也不再变（看不出逐档宽度）。"""
+      ⚠ `scale` 保持 **1.0**：长度与宽度都由卡侧每帧写（长度 = `448 × 展开系数 / 512`、
+        宽度 = `YK_M_LASER_BEAM_W_PX100 / 32 × 展开系数`）—— 脚本里写死会在「展开动画」的头 8 帧被覆盖、
+        之后也不再变（看不出逐档宽度与「从近端连续长出」）。"""
     return f"""script script{{N}} {{
     // 由 assets/ability/make_youkai_bullet_art.py 生成（{name}），别手改。
-    // 魔理沙（TH08 `ply01as` = アリス）妖侧**子机激光的束脚本**（owner ⑥；第二十六批改成卡侧 VM 专用）。
+    // 魔理沙（TH08 `ply01as` = アリス）妖侧**子机激光的束脚本**（owner ⑥；第二十六批改成卡侧 VM 专用，
+    // 第二十七批起同一帧摆 `rate` 条残影 —— 见 `cards/youkai.c` 的 `yk_beam_tick`）。
     // 几何 = TH08 `player01.anm` script{src_num}（`scale(1.0f, {scale_y}f)`、`alpha(70)`、`scrollX(0.0625f)`）
     //   ⇒ 屏上宽度 ≈ {width_px} px（贴图高 32）；渲染壳 = TH18 原生束（`anchor(1,0)` + `type(1)` + 收束段）。
     // ⚠ 不写 `rotateAuto`（那是给有速度的弹用的「朝运动方向」位）；方向/长度/宽度全由卡侧每帧写
     //   （`cards/youkai.c` 的 `yk_beam_tick`），所以 `scale` 与 `rotate` 这里都只留中性初值。
-    // ★ 2026-09-27（owner 实跑：「激光…很淡，并且 layer 上来讲被自机弹幕盖住了」）：两个壳参数
-    //   **取 TH18 原生束的值**（`ability.anm` script3）：`layer(15)` + `alpha(160)`。
-    //   原来照弹体脚本写 `layer(13)` + TH08 的 `alpha(70)` ⇒ 与自机弹同层、被盖住且过淡。
-    layer(15);
+    // ★ 2026-09-27 第二十七批：`layer` 从 15 改回 **13** —— owner「**激光应当被子机盖住**」。
+    //   一手：子机的 VM 层 = 14（`th18:0x40a8bc`）、自机弹的 VM 层 = 13（零售 `pl01.anm` 的弹体脚本
+    //   逐条 `layer(13)`）⇒ 层号小 = 先画 = 被盖住 ⇒ 13 < 14 ✓（13/14 之间没有别的整数层，取舍见
+    //   `cards/youkai.c` 的 `YK_BEAM_ANM_LAYER` 与 `TUNING.md` §2.1ccc-6）。
+    //   `alpha(160)` 保持（上一批按 TH18 原生束取的亮度；TH08 是 70，加算混合下过淡）。
+    layer(13);
     sprite(@{spr_member}@);
     type(1);
     anchor(1, 0);
     scale(1.0f, 1.0f);
     alpha(160);
     blendMode(1);
-    // ★ 2026-09-27（owner：「先搞滚动的」）：滚动**照一开放**（TH08 script24..28 的 `scrollX(0.0625f)`，
-    //   每帧滚 1/16 宽）。前提已就位：那一张成员在 `make_youkai_bullet_art.py` 里做了
-    //   **镜像平铺**（`MIRROR_MEMBERS`）⇒ 左右边缘像素相同 ⇒ 绕回无缝 ✓（不再有那条移动的缝）。
-    scrollX(0.0625f);
+    // ★ 2026-09-27 第二十七批（owner：「**图依旧在一节一节长出**」）：滚动步长 **0.0625 → 0.03125**。
+    //   一手是 0.0625（TH08 script24..28），但那个数**按图集宽度归一化**：TH08 的图集宽 256
+    //   （sprite32 = 448×32 靠 UV 绕回）⇒ 0.0625×256 = 16 texel/帧；我们的成员被**镜像平铺**成 512 宽
+    //   （`MIRROR_MEMBERS`，为了绕回无缝）⇒ 同样写 0.0625 就是 32 texel/帧、屏上 32×0.875 = 28 px/帧。
+    //   钻石纹的周期 = 64 texel（本机量：TH08 那条 strip 的峰值间距 ≈ 64 px）⇒ 屏上 TH08 是 64 px、
+    //   我们是 56 px ⇒ **28 px/帧 = 正好半个周期/帧**（60 Hz 下的奈奎斯特频闪：纹样在两相位间跳，
+    //   看着就是「一节一节」而不是流动，画面边缘那一条也变成「一节一节消失」）。减半 ⇒ 16 texel/帧、
+    //   14 px/帧、**56/14 = 4 帧一个钻石**，与 TH08 的 64/16 = 4 帧**同节奏**。
+    scrollX(0.03125f);
     stop();
     interruptLabel(1);
     scaleTime(8, 1, 1.0f, 0.0f);
@@ -545,10 +554,41 @@ def gen_beam(name, spr_member, width_px, scale_y, src_num):
 """
 
 
+# ★★★ 2026-09-27 第二十七批：**束脚本的壳常量必须与卡侧对账**（构建期闸）。
+#   为什么加它：owner 报的「图依旧在一节一节长出」的**根因**正是「脚本里的 `scrollX` 与贴图宽度脱钩」——
+#   上一批把成员从 256 镜像平铺成 512，却没把步长减半 ⇒ 屏上流速翻倍、变成每帧半个钻石周期的**频闪**。
+#   这类「两个文件各写一个数」的漂移构建期看不出来（脚本能编过、anm 校验也过）⇒ 这里现读卡侧的
+#   `YK_M_LASER_BEAM_SCROLL`（`youkai_core.h`）与 `YK_BEAM_ANM_LAYER`（`youkai.c`）逐字比对。
+YOUKAI_CORE_H = REPO / "mods/th18.v1.00a/card-expand/native/cards/youkai_core.h"
+YOUKAI_C = REPO / "mods/th18.v1.00a/card-expand/native/cards/youkai.c"
+
+
+def _read_define(path: Path, name: str) -> str:
+    m = re.search(rf"^#define\s+{re.escape(name)}\s+([^\s/]+)", path.read_text(encoding="utf-8"), re.M)
+    if not m:
+        raise SystemExit(f"{path.name}: 找不到 `#define {name} …` —— 它与束脚本必须成对（改了名字两边一起改）")
+    return m.group(1)
+
+
+def check_beam_script_constants(scripts: dict):
+    scroll = _read_define(YOUKAI_CORE_H, "YK_M_LASER_BEAM_SCROLL")
+    layer = _read_define(YOUKAI_C, "YK_BEAM_ANM_LAYER")
+    alpha = _read_define(YOUKAI_CORE_H, "YK_M_LASER_BEAM_ALPHA")
+    want = (f"scrollX({scroll});", f"layer({layer});", f"alpha({alpha});")
+    for k, (_bname, _w, _y) in enumerate(BEAMS):
+        num = SCRIPT0 + len(SCRIPTS) + k
+        name = f"YKB_M_BEAM{k}"
+        body = scripts[name].replace("{N}", str(num))
+        for line in want:
+            if line not in body:
+                raise SystemExit(f"{name}: 脚本里没有 `{line}` —— 与 `youkai_core.h`/`youkai.c` 的"
+                                 f"同名常量脱钩了（这正是「一节一节」那个 bug 的形状）")
+    print(f"== 对账：束脚本的壳常量 == 卡侧（`scrollX({scroll})` / `layer({layer})` / `alpha({alpha})`）✓")
+
+
 def main():
     workdir = Path(tempfile.mkdtemp(prefix="ykbullet."))
     made = cut_sprites(workdir)
-
     print("== 切图（1:1，居中补到 2 的幂）")
     for name, (path, (w, h), vis, _cell, ink) in made.items():
         if vis == 0:
@@ -608,6 +648,7 @@ def main():
     #   ability 管线（见文件头与 `LAYOUT.txt` 的注），撞名与否已无关。
     ok = check_compile({k: v.replace("{N}", str(SCRIPT0)) for k, v in scripts.items()})
     print(f"== 自检：{ok}/{len(scripts)} 支脚本能编过（thanm -c 18）；名字无重复；空图 0")
+    check_beam_script_constants(scripts)
     print(f"== md5（幂等判据）：{hashlib.md5((order + ''.join(scripts.values())).encode()).hexdigest()}")
     print("== 下一步：`make -C native anm`（ability.anm 不再含这批；pl0X.anm 会带上它们）")
 

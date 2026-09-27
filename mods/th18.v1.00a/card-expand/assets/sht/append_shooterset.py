@@ -1684,12 +1684,20 @@ def check_m_beam_tables():
     if tuple(hdr_d) != got_d:
         raise SystemExit(f"{YOUKAI_CORE_H.name}: YK_M_LASER_BEAM_DAMAGE = {tuple(hdr_d)}，"
                          f"但按 `round(2 × 对齐后行伤害 / rate)` 算出来是 {got_d} —— 两边必须一致")
+    # ★★★ 2026-09-27 第二十七批：**残影条数**表（卡侧 `yk_m_laser_beam_rate()` 按它取循环上界）
+    #   也必须与行里的 `fire_rate` 逐档一致 —— 一手 `th08:0x44ff2b` 就是把 `row[+0x00]` 搬进
+    #   `vm+0x46a` 当残影条数的；两边漂移了卡侧会画错条数而构建期看不出来（同宽/伤害表的理由）。
+    hdr_r = _read_int_table("YK_M_LASER_BEAM_RATE")
+    got_r = tuple(M_BEAM_INFO[t]["rate"] for t in range(5))
+    if tuple(hdr_r) != got_r:
+        raise SystemExit(f"{YOUKAI_CORE_H.name}: YK_M_LASER_BEAM_RATE = {tuple(hdr_r)}，"
+                         f"但生成器的逐档 `fire_rate`（= 一手行 `+0x00` 的残影条数）是 {got_r} —— 两边必须一致")
     worst = max(abs(M_BEAM_INFO[t]["dev"]) for t in range(5))
     if worst > DPS_TOLERANCE:
         raise SystemExit(f"魔理沙卡侧束的逐档总 DPS 偏差 {worst * 100:.1f}% > {DPS_TOLERANCE * 100:.0f}%"
                          f"（取整做不到更准 ⇒ 调 `YK_M_LASER_BEAM_DAMAGE` 或行伤害）")
-    print(f"  {YOUKAI_CORE_H.name}: 卡侧束的宽度/伤害与生成器一致（宽 {hdr_w} px×100、"
-          f"每 2 帧 {hdr_d} 点；逐档总 DPS 偏差最大 {worst * 100:.2f}%）")
+    print(f"  {YOUKAI_CORE_H.name}: 卡侧束的宽度/伤害/条数与生成器一致（宽 {hdr_w} px×100、"
+          f"每 2 帧 {hdr_d} 点、逐档 {tuple(hdr_r)} 条残影；逐档总 DPS 偏差最大 {worst * 100:.2f}%）")
 
 
 # ★★★ 2026-09-26（owner：「**妖机体的弹幕样式应该都不对，发的弹幕本身得搬过来**」）：
