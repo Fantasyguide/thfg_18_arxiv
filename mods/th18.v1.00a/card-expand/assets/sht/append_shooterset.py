@@ -278,7 +278,7 @@ def _yk_anm_for(target_file: str) -> int:
 
 
 def _yk_row(rate, damage, dx, angle, sfx, speed=12.0, dy=0.0, opt_slot=0, anm=None, func_tick=0,
-            func_hit=0):
+            func_hit=0, func_init=0):
     """一行 = 一个 TH18 shooter 记录 dict（字段名见 pack_shooter）。
 
     ★ 2026-09-22：加了 `speed` / `dy` 两个可选参数 —— 原版 TH08 的 `plyNNas.sht` **每行有自己的
@@ -292,12 +292,19 @@ def _yk_row(rate, damage, dx, angle, sfx, speed=12.0, dy=0.0, opt_slot=0, anm=No
     ★ 2026-09-27：加 `func_hit`（`+0x38`）—— 文（TH16）低速组的**本体行**四个回调是 `[0,0,0,5]`
     （`+0x28/+0x2c/+0x30/+0x34` = init/tick/draw/hit，一手字段图 `engine/sht/th16/05` §2），而
     **TH16 hit5 ≡ TH18 hit5**（都是「命中生成 `0x95` 号特效、朝向 ±20°」，对照表见同一篇 §6）
-    ⇒ 照搬 5。其余调用点不传 ⇒ 行为逐字节不变。"""
+    ⇒ 照搬 5。
+    ★★★ 2026-09-27（owner ⑤「**灵梦妖子机的发弹方向实际上不是固定竖直朝上的，应该是向敌人的方向**」）：
+    加 `func_init` —— TH08 的**子机行**`+0x28 = 1`（= `g_PlayerShotTable1[1]` 的 `th08:0x450240`）干的就是
+    「**发射瞬间朝 boss 定向**」：`angle = wrap(atan2(boss − bullet) + row.angle + π/2)`，`speed = row.speed × 1.5`
+    （`ds:0x4b4438`）⇒ TH18 的原生对位 = **`func_on_init = 5`**（`th18:0x4612d0`：`bullet+0x64 = norm(PLAYER+0x479cc)`，
+    卡每帧把角度写进那一格；原生爱丽丝卡与 117 的 EAGLE 组都在用，一手见 `engine/sht/th18/02` §5）。
+    ⚠ `+0x28` 是 TH08 **回调表的下标**、`func_init` 是 TH18 的下标 ⇒ 只在 R 的**子机行**上按上面那条一手语义填 5
+    （见 `_youkai_tier_sets` 里那一段）。其余调用点不传 ⇒ 行为逐字节不变。"""
     return dict(fire_rate=rate, start_delay=0, damage=damage,
                 spawn_dx=dx, spawn_dy=dy, hit_w=16.0, hit_h=16.0,
                 angle=angle, speed=speed, opt_slot=opt_slot, mode=0,
                 anm=(21 if anm is None else anm), sfx=sfx, hit_fx=0, fire_rate2=0, start_delay2=0,
-                func_on_init=0, func_on_tick=func_tick, func_on_draw=0, func_on_hit=func_hit)
+                func_on_init=func_init, func_on_tick=func_tick, func_on_draw=0, func_on_hit=func_hit)
 
 
 # ---- ★★★ 2026-09-26（owner 实跑：「妖侧子机不发弹 / 只有一行 / 形式不对」）：-----------
@@ -1728,6 +1735,19 @@ def _youkai_tier_sets(target_file: str, anm_ids: dict) -> list:
                 #   ★ 2026-09-27：多传 `t`（火力档）—— 早苗那一侧的子机弹**逐档一支**（见 `_yk_bullet_anm`）。
                 rows = [dict(r, opt_slot=o, anm=_yk_bullet_anm(k, o, t) if k in YOUKAI_BULLET_ANM
                              else _yk_anm_for(target_file)) for r, o in zip(rows, orig[t])]
+                # ★★★ 2026-09-27（owner ⑤）：**霊夢（R）的子机行 = 发射瞬间朝敌定向**。
+                #   一手（`ply00as.sht` 逐行 + `th08:0x450240` 逐指令）：只有**子机行**（origin ≥ 1）的
+                #   `+0x28`（= 回调表下标）= 1，本体行 = 0；那支回调把
+                #   `angle = wrap(atan2(boss − bullet) + row.angle + π/2)`、`speed = row.speed × 1.5`
+                #   （`ds:0x4b4438` = 1.5）写回 ⇒ 子机行**对着 boss 飞**（本体行仍是 −π/2 直上）。
+                #   TH18 的对位 = `func_on_init = 5`（读卡写进 `PLAYER+0x479cc` 的角，`th18:0x4612d0`）
+                #   + 把 ×1.5 直接烘进行速度（TH08 那几行的 10.0 ⇒ 15.0）。
+                #   ⚠ 表里那两个 `angle = −1.535890 / −1.605703`（= 直上 ±2°）在 TH08 里是
+                #   「**朝敌 ±2°**」（同一算式里 `+ row.angle + π/2` 抵消了 −π/2）；TH18 的 init5 只有一个
+                #   全局角 ⇒ 这两行会与其它子机行同向（**丢掉 ±2° 散角**），登记 `TUNING.md` 的 ❓。
+                if k == "R":
+                    rows = [dict(r, func_on_init=5, speed=r["speed"] * 1.5) if o >= 1 else r
+                            for r, o in zip(rows, orig[t])]
                 for o in orig[t]:
                     if not 0 <= o <= 4:
                         raise SystemExit(f"YOUKAI_TIERS_{k} tier{t}: origin {o} 越界（TH08 只会有 0..4）")

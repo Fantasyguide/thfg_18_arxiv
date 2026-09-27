@@ -285,6 +285,40 @@ int main(void)
         yk_opt_spring_step(pos, 0, goal);
         yk_opt_spring_step(pos, vel, 0);
 
+        /* ★★★ 2026-09-27（owner ①② 咲夜）：**放置型**（`th08:0x44eb70` 的 state 2 不碰位置
+         * + 共尾的 `face = norm(face + step)` 自转）。逐条断言照抄那一手的常量。*/
+        {
+            float face = -1.0f, spin = 0.0f, ang = 0.0f;
+            CHECK(yk_option_uses_freeze(2) == 1);              /* 只有咲夜那一支 */
+            CHECK(yk_option_uses_freeze(0) == 0);
+            CHECK(yk_option_uses_freeze(1) == 0);
+            CHECK(yk_option_uses_freeze(3) == 0);
+            /* 出生朝向 `+0x2d8`：idx 0/2 = 0、idx 1/3 = π（`0x40490fdb`）*/
+            CHECK(yk_option_freeze_face0(0, &face) && face == 0.0f);
+            CHECK(yk_option_freeze_face0(1, &face) && face == 3.14159274101257324f);
+            CHECK(yk_option_freeze_face0(2, &face) && face == 0.0f);
+            CHECK(yk_option_freeze_face0(3, &face) && face == 3.14159274101257324f);
+            CHECK(!yk_option_freeze_face0(0, 0));
+            /* 每帧增量（跳表 `th08:0x44ee5b`）：+1.5° / −2° / +2° / −1.5°（内外圈反向）*/
+            CHECK(yk_option_freeze_spin(0, &spin) && spin > 0.0261799f && spin < 0.0261800f);
+            CHECK(yk_option_freeze_spin(1, &spin) && spin > -0.0349066f && spin < -0.0349065f);
+            CHECK(yk_option_freeze_spin(2, &spin) && spin > 0.0349065f && spin < 0.0349066f);
+            CHECK(yk_option_freeze_spin(3, &spin) && spin > -0.0261800f && spin < -0.0261799f);
+            CHECK(!yk_option_freeze_spin(4, &spin) && spin == 0.0f);   /* 越界 ⇒ 不转 */
+            CHECK(!yk_option_freeze_spin(0, 0));
+            /* `th08:0x43edb0` = `f = angle + step` 再绕回 `[−π, π)` */
+            yk_opt_angle_norm(0.0f, 0.5f, &ang);
+            CHECK(ang == 0.5f);                                          /* 没越界 ⇒ 原样 */
+            yk_opt_angle_norm(3.0f, 0.5f, &ang);
+            CHECK(ang < 3.14159274101257324f && ang > -3.14159274101257324f);
+            CHECK(ang > 3.0f - 6.2831855f + 0.49f);                      /* = 3.5 − 2π ≈ −2.783 */
+            yk_opt_angle_norm(0.0f, -4.0f, &ang);                        /* 负侧只加一次 2π */
+            CHECK(ang > 2.28f && ang < 2.29f);                           /* = −4 + 2π ≈ 2.2832 */
+            yk_opt_angle_norm(0.0f, 100.0f, &ang);                       /* 迭代上限 16（一手 `cmp eax,0x10`）*/
+            CHECK(ang < 0.0f && ang > -1.0f);
+            yk_opt_angle_norm(0.0f, 0.5f, 0);                            /* 空指针安全 */
+        }
+
         /* ★★ 2026-09-22 晚（owner 第 2 条）：**追敌**那一段（一手 `th08:0x44e8d0`）。
          * 家位置 = 目标 `final_pos` + (0, +32)，`y` 夹到 `>= YK_OPT_HOME_Y_MIN`。*/
         {
@@ -1240,7 +1274,40 @@ int main(void)
                 CHECK(yk_gauge_clamp2(99999, YK_GAUGE_HUMAN_LIMIT, YK_GAUGE_YOUKAI_LIMIT) ==
                       yk_gauge_clamp(99999));
                 CHECK(yk_gauge_clamp2(1234, YK_GAUGE_HUMAN_LIMIT, YK_GAUGE_YOUKAI_LIMIT) == 1234);
+                /* ★★★ 2026-09-27（owner ③「按/松 shift 不得让人妖值瞬间变化」）：
+                 * **夹取不许回收已经在区间外的值** —— 换形那一帧限值本身换了，若照旧直接夹，
+                 * 停在 −5000 的槽会被当帧拉成 −2000（+30% 的瞬跳）；一手没有任何一处这么做。*/
+                yk_gauge_limits_solo(1, &hl, &yl);        /* 妖侧：区间 = [−2000, +10000] */
+                CHECK(yk_gauge_add2(-5000, 0, hl, yl) == -5000);          /* ★ 换形当帧：一点不动 */
+                CHECK(yk_gauge_add2(-5000, +20, hl, yl) == -4980);        /* 只按 delta 走，不弹回 −2000 */
+                CHECK(yk_gauge_add2(-1900, -200, hl, yl) == -2000);       /* 区间内照旧夹（回归）*/
+                CHECK(yk_gauge_add2(-2100, -200, hl, yl) == -2300);       /* 区间外 ⇒ 不回收（同上）*/
+                yk_gauge_limits_solo(0, &hl, &yl);        /* 人侧：区间 = [−10000, +2000] */
+                CHECK(yk_gauge_add2(5000, 0, hl, yl) == 5000);            /* ★ 松 Shift 也不瞬跳 */
+                CHECK(yk_gauge_add2(5000, -20, hl, yl) == 4980);
+                CHECK(yk_gauge_add2(1900, 200, hl, yl) == 2000);          /* 区间内照旧夹 */
+                /* 换形空窗常量（一手 `th08:0x44be05` 的 `cmp …,0x1e`）*/
+                CHECK(YK_GAUGE_SHIFT_BLANK == 30);
             }
+            /* ★★★ 2026-09-27（owner ④）：**妖逢魔染色**的两个纯函数。
+             * 一手：只有霊夢（`ply00as`）与魔理沙（`ply01as`）的行 `+0x1e > 0` ⇒ 只有这两位的妖侧组染红。*/
+            CHECK(yk_fengma_tint_set(0x54) == 1);            /* 霊夢 A0..A4 */
+            CHECK(yk_fengma_tint_set(0x58) == 1);
+            CHECK(yk_fengma_tint_set(0x59) == 1);            /* 魔理沙 M0..M4 */
+            CHECK(yk_fengma_tint_set(0x5d) == 1);
+            CHECK(yk_fengma_tint_set(0x5e) == 0);            /* 咲夜：一手全是 0 ⇒ 不染 */
+            CHECK(yk_fengma_tint_set(0x62) == 0);
+            CHECK(yk_fengma_tint_set(0x63) == 0);            /* 早苗（TH16 数据）⇒ 一手口径下不染 */
+            CHECK(yk_fengma_tint_set(0x67) == 0);
+            CHECK(yk_fengma_tint_set(0x16) == 0);            /* 兜底组（幽々子）⇒ 不染 */
+            /* 染色 dword：只换低 24 位（BGR），**alpha 必须原样**（一手只写 `+0x1f0/1/2` 三个字节）*/
+            CHECK(yk_fengma_tint_dword(0x80000000u) == 0x80ff4040u);
+            CHECK(yk_fengma_tint_dword(0x00abcdefu) == 0x00ff4040u);
+            CHECK(yk_fengma_tint_dword(0xff123456u) == 0xffff4040u);
+            /* TH18 的 dword 是 `0xAARRGGBB` ⇒ 低字节 B=0x40、中 G=0x40、高 R=0xff = RGB(255,64,64) 红 */
+            CHECK((YK_FENGMA_TINT_RGB & 0xffu) == 0x40u);
+            CHECK(((YK_FENGMA_TINT_RGB >> 8) & 0xffu) == 0x40u);
+            CHECK(((YK_FENGMA_TINT_RGB >> 16) & 0xffu) == 0xffu);
             /* ★★★ 2026-09-22 夜（#27 弹字）：距离 alpha 三段 + 十进制字形。
              * 一手：`th08:0x4054e3`-`0x405545` / `:0x405983`-`0x4059f1`（`d = dx²+dy²` 整数）。*/
             CHECK(YK_POPUP_SCORE_LIFE == 60 && YK_POPUP_TIME_LIFE == 90);

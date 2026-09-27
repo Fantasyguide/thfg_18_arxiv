@@ -205,6 +205,54 @@ int yk_option_home_from_player(int character, int cell, const float player_xy[2]
     return 1;
 }
 
+/* ------------------------------------- ★★★ 咲夜（机体 2）的**放置型**子机 + 自转（owner 2026-09-27 ①②）
+ * 一手全文与逐指令对照写在 `youkai_core.h` 的同一段注释里（`th08:0x44eb70` / `0x43edb0` / 跳表）。*/
+int yk_option_uses_freeze(int character)
+{
+    return character == 2;      /* 只有 `th08:0x44eb70`（咲夜・レミリア）的 state 2 不碰位置 */
+}
+
+int yk_option_freeze_face0(int cell, float *out)
+{
+    /* `th08:0x44ec39`（idx0 = 0）/ `0x44ec7b`（idx1 = π = `0x40490fdb`）/ `0x44ecba`（idx2 = 0）/
+     * `0x44ecf9`（idx3 = π）：内圈朝 0、外圈朝 π（左右相对）。*/
+    if (!out) return 0;
+    *out = (cell == 1 || cell == 3) ? 3.14159274101257324f : 0.0f;
+    return 1;
+}
+
+int yk_option_freeze_spin(int cell, float *out)
+{
+    /* 跳表 `th08:0x44ee5b` 四支各自的立即数（浮点值照抄）：
+     * idx0 `0x3cd67750` = +0.026179939（1.5°）· idx1 `0xbd0efa35` = −0.034906585（−2°）
+     * idx2 `0x3d0efa35` = +0.034906585 ·   idx3 `0xbcd67750` = −0.026179939 */
+    if (!out) return 0;
+    switch (cell) {
+    case 0: *out =  YK_OPT_FREEZE_SPIN_OUTER; return 1;
+    case 1: *out = -YK_OPT_FREEZE_SPIN_INNER; return 1;
+    case 2: *out =  YK_OPT_FREEZE_SPIN_INNER; return 1;
+    case 3: *out = -YK_OPT_FREEZE_SPIN_OUTER; return 1;
+    default: *out = 0.0f; return 0;
+    }
+}
+
+void yk_opt_angle_norm(float angle, float step, float *out)
+{
+    /* `th08:0x43edb0` 逐指令：`f = angle + step`（`fadd [ebp+0xc]`）→
+     * `loop: if (f < π) goto exit; f -= 2π; if (++i > 0x10) goto exit; goto loop`
+     * （`fcomp ds:0x4b4334` = π、`fsub ds:0x4b4460` = 2π、`cmp eax,0x10`）;
+     * `exit: if (f < −π) f += 2π`（`fcomp ds:0x4b4464` = −π）。常量：π = `0x40490fdb`。*/
+    const float PI_F = 3.14159265358979f;
+    const float TWO_PI = 6.28318530717959f;
+    float f;
+    int i = 0;
+    if (!out) return;
+    f = angle + step;
+    while (f >= PI_F) { f -= TWO_PI; if (++i > 16) break; }
+    if (f < -PI_F) f += TWO_PI;
+    *out = f;
+}
+
 /* ------------------------------------------- ★★ 追敌（`th08:0x44e8d0`，一手见 youkai_core.h）
  * 与「跟随自机」**共用同一条弹簧**（`yk_opt_spring_step`），只有家位置换了：
  *   `goal = target->final_pos(+0x2d88)`，`goal.y += 32.0`（`0x4b42cc`），`goal.y` 夹到 `>= 32.0`。
@@ -808,7 +856,19 @@ int yk_gauge_clamp2(int gauge, int32_t human_limit, int32_t youkai_limit)
 int yk_gauge_add2(int gauge, int delta, int32_t human_limit, int32_t youkai_limit)
 {
     int32_t v = (int32_t)(int16_t)((int32_t)gauge + (int32_t)delta);   /* 先按 i16 截断（同 `yk_gauge_add`）*/
-    return yk_gauge_clamp2((int)v, human_limit, youkai_limit);
+    /* ★★★ 2026-09-27（owner ③：「**松开/按下 shift 不会导致人妖值瞬间变化**，甚至可能瞬间按下松开
+     *   or 松开按下 人妖值可能都不变」）：**夹取不许「回收」已经在区间外的值**。
+     *
+     * 为什么：本卡的限值跟形态走（`yk_gauge_limits_solo`，反侧封 2000），于是按/松 Shift 那一帧
+     * **限值本身就换了**；若照旧直接 `clamp2(v)`，一个停在 −5000 的槽会被当帧**拉成 −2000**
+     * （+30% 的瞬跳）—— 而一手**没有任何一处**在换形时改槽值：`Player::move` 的两条边沿
+     * （`th08:0x44b11f` / `th08:0x44b379`）只写 `player+8 = 0` 与 `player+0xe2ae8.SetCurrent(0)`，
+     * 全 exe 8 处 `AddToYoukaiGauge` 调用点一处都不在边沿里（穷举见 `youkai_core.h` 的同一段）。
+     * ⇒ 规则：**只有当传入值本来就在 [hl, yl] 内时才夹**；已经在外面时只让它按 `delta` 走。
+     *   （安全：本卡所有涨源的方向都由“当前形态”定 ⇒ 区间外的值只会朝区间**回来**，不会跑飞。）*/
+    if ((int32_t)gauge >= human_limit && (int32_t)gauge <= youkai_limit)
+        return yk_gauge_clamp2((int)v, human_limit, youkai_limit);
+    return (int)v;
 }
 
 int yk_gauge_add(int gauge, int delta)
@@ -1271,6 +1331,18 @@ int32_t yk_blue_point_score(int32_t night, int32_t dist, int32_t is_max_value)
 /* ============ ★★★ 2026-09-22 夜（P-B 逢魔）：门与击破掉落的纯逻辑 ==============================
  * 一手（`th08:0x406d10`/`:0x406d70` 两个谓词、`th08:0x42da41` 那一支、`th08:0x45187f` 那第二颗）
  * 与 owner 的四条冲突裁决（一律按一手）全在 `youkai_core.h` 的同名小节。*/
+/* --------------------------------- ★★★ owner ④：逢魔染色的两个纯函数（一手见 `youkai_core.h`）*/
+int yk_fengma_tint_set(int set_index)
+{
+    return (set_index >= YK_FENGMA_SET_R0 && set_index <= YK_FENGMA_SET_R4)
+        || (set_index >= YK_FENGMA_SET_M0 && set_index <= YK_FENGMA_SET_M4);
+}
+
+uint32_t yk_fengma_tint_dword(uint32_t color_in)
+{
+    return (color_in & 0xff000000u) | YK_FENGMA_TINT_RGB;   /* 保 alpha（高 8 位），只换 BGR */
+}
+
 int yk_fengma(int32_t gauge, int32_t human_effects, int32_t youkai_effects)
 {
     /* 一手是 `setle` / `setge` ⇒ 两条都**含等号**；取或（`0x42da2a` / `0x42da38` 两问取或）*/

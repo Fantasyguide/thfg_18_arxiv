@@ -176,6 +176,12 @@ typedef struct {
      * 静态偏移就够（`yk_option_uses_spring` 的注）。单位 = **像素（屏幕空间、+y = 下）**。*/
     float         opt_pos[YK_OPTION_MAX][2];
     float         opt_vel[YK_OPTION_MAX][2];
+    /* ★★★ 2026-09-27（owner ①②）：咲夜（机体 2）的妖侧子机是**放置型** —— 位置在创建那一刻冻结
+     * （`opt_pos` 存的就是那个**绝对**坐标，`opt_frozen` = 这一格已经冻好了），朝向每帧自转。
+     * 一手：`th08:0x44eb70` 的 state 2 整段不碰位置 + 共尾 `face = norm(face + step)`（见 `youkai_core.h`）。*/
+    float         opt_face[YK_OPTION_MAX];   /* 冻住的自转角（弧度，TH08 `option+0x2d8`）*/
+    uint8_t       opt_frozen[YK_OPTION_MAX]; /* 1 = 这一格的位置已按创建那一刻冻好 */
+    uint8_t       logged_aim;                /* ★ owner ⑤：朝敌角那一行只记一次 */
     yk_transfer_t tr;                  /* 1/2 转嫁累加器 */
     int32_t       opt_script;          /* 手里这几个子机是用哪个 anm 脚本申请的（-1 = 没有）*/
     uint32_t      shot_timer;          /* 我们自己的「射击帧」计数（引擎那个松开 Z 会跳，相位不可控）*/
@@ -701,15 +707,33 @@ static void yk_fam_vm_follow(uint32_t fam_id, int variant, const uint8_t *f)
  *   · **妖→人**：`0x42c4ef SpawnEffect(0x1e, …, 0x80803030)` ⇒ **script60**（`alpha(0)→96`、
  *     `scale(5.0→0.4)`）—— 我们的脚本 **311**。
  *   两支共用 sprite193（`etama2.png (65,209,30,30)`）⇒ 我们切了一张 `YOUKAI_FAM_FLASH.png`（32×32）。
+ *
+ * ★★★ 2026-09-27（owner ⑦：「**切换机体的时候，人->妖是红色圆特效，妖->人是蓝色，现在都是白色**」）：
+ *   **颜色是 `SpawnEffect` 的栈参**，不在 anm 脚本里 —— 两支 ported 脚本都没有 `color()`（零翻译照抄），
+ *   所以画面用的是贴图原色 ⇒ 白 ✗。一手把两个色号给了：
+ *     · 使魔身上：人→妖 `0x80303080`、妖→人 `0x80803030`（`th08:0x42c45f` / `:0x42c4ff`）；
+ *     · 本体那两下（`0x44b155` / `0x44b3af`，见下面 #23 那一段）：人→妖 `0x80ff8080`、妖→人 `0x808080ff`。
+ *   一手那两个立即数按**小端内存序 = R,G,B,A** 解释（`0x80303080` → R=0x80 G=0x30 B=0x30 A=0x80 = **红**，
+ *   与 owner 的「人→妖红 / 妖→人蓝」逐条吻合 ⇒ 这就是那条口径的一手证据）。
+ *   TH18 的 `ce_anm_set_color` 收的是 **`0xAARRGGBB`**（本卡别处用 `0x00ffffff` = 全透明白 ⇒ A 在高字节）
+ *   ⇒ 传参时**逐通道搬一次**：GRED = `0x80803030`、GBLUE = `0x80303080`（使魔那一对）、
+ *   BGRE = `0x808080ff`、BBLUE = `0x80ff8080`（本体那一对）。
  * ⚠ 两支脚本**自己 `delete()`**（`+10:` 那一步）⇒ **卡侧不跟踪句柄**，起完就不管（10 帧后自灭）；
  *   也因此**不需要**在 `on_delete` 里收尾（最坏情况是删卡后还飘 ≤10 帧的一闪）。
  * ⚠ 位置 = 使魔的位置（一手就是 `enemy+0x2d88`）；我们只在**那一帧真的有使魔**时起
  *   （人→妖 = 重建出来的那些使魔；妖→人 = 撤走前最后记下的坐标），免得在没使魔时凭空闪一下。*/
-static void yk_flash_spawn(int script, float x, float y)
+#define YK_FLASH_FAM_RED   0x80803030u   /* 使魔·人→妖（一手色 `0x80303080` 按 RGBA 内存序重排）*/
+#define YK_FLASH_FAM_BLUE  0x80303080u   /* 使魔·妖→人（一手色 `0x80803030`）*/
+#define YK_FLASH_BODY_BLUE 0x808080ffu   /* 本体·人→妖（一手色 `0x80ff8080`）*/
+#define YK_FLASH_BODY_RED  0x80ff8080u   /* 本体·妖→人（一手色 `0x808080ff`）*/
+
+static void yk_flash_spawn(int script, float x, float y, uint32_t color)
 {
     uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(), script, YK_FAM_ANM_LAYER);
-    if (id) ce_anm_set_pos(id, x, y, 0.0f);
-    /* 起不出来只影响观感（10 帧的一闪）⇒ 不记日志（每关都有若干次，会刷屏）。*/
+    if (!id) return;                    /* 起不出来只影响观感（10 帧的一闪）⇒ 不记日志 */
+    ce_anm_set_pos(id, x, y, 0.0f);
+    /* ★ 2026-09-27（owner ⑦）：颜色 = 一手 `SpawnEffect` 的栈参（脚本里没有 color()）*/
+    ce_anm_set_color(id, color);
 }
 
 /* ============ ★★★ 2026-09-22 夜（owner **二次订正**）：切换那一下的**短命魔法阵环** =============
@@ -882,7 +906,8 @@ static void yk_run_action(yk_card_t *s, const yk_action_t *act)   /* s 可为 NU
          * ★ owner 二次订正：同一下还要起一支**短命环**（一手里环是常驻的，owner 要切换那一下的形态）。*/
         if (s && s->flash_pending) {
             s->flash_pending = 0;
-            yk_flash_spawn(CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_FLASH59, act->x, act->y);
+            yk_flash_spawn(CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_FLASH59, act->x, act->y,
+                           YK_FLASH_FAM_RED);
             yk_ring_blink(act->x, act->y, 2);          /* 2 = 妖侧蓝（一手 `0x41b04e`）*/
         }
         if (s) ++s->spawns;
@@ -1359,6 +1384,11 @@ static void yk_option_release(ce_card_t *c, yk_card_t *s)
     s->opt_age = 0;                        /* ★ 2026-09-22 晚：出场计时从 0 起（TH08 的 `Timer(&option+0x2e0)`）*/
     s->opt_chase = 0;                      /* 手里没子机 ⇒ 追踪态自然结束（旋转标签由新 VM 自己的脚本起手）*/
     s->opt_spin_vm = 0;                    /* ★ 2026-09-26：VM 没了 ⇒ 忘了「发给谁」*/
+    /* ★ 2026-09-27（owner ②）：**松 Shift ⇒ 放置型的那四个魔法阵解除冻结** —— 下一次进妖侧
+     * 要按「创建那一刻」重新定型（一手：TH08 整个 option 对象在 `th08:0x44b0ac` 一带被
+     * `memset` 重建，state 回到 1 ⇒ 位置重新写一遍）。*/
+    __builtin_memset(s->opt_frozen, 0, sizeof s->opt_frozen);
+    __builtin_memset(s->opt_face, 0, sizeof s->opt_face);
 }
 
 /* ★ 被选举者落笔（SDK 每帧调**恰好一次**；spec §3.3.1 的 `on_option_pose_apply`）。
@@ -1416,6 +1446,8 @@ static int on_option_pose_apply(ce_card_t *c)
          * 而不是从这台子机冻住的旧坐标飞出来。*/
         s->opt_pos[i][0] = 0.0f; s->opt_pos[i][1] = 0.0f;
         s->opt_vel[i][0] = 0.0f; s->opt_vel[i][1] = 0.0f;
+        s->opt_frozen[i] = 0;              /* ★ 咲夜那支：这一格下次重申请要重新定型 */
+        s->opt_face[i] = 0.0f;
         ce_log("youkai: option #%d reclaimed (only %d wanted now; frame %u) - "
                "the slot is handed back to the pool, its VM deleted",
                i, want, (unsigned)ce_sdk_frame());
@@ -1510,6 +1542,41 @@ static int on_option_pose_apply(ce_card_t *c)
             yk_opt_spring_step(s->opt_pos[i], s->opt_vel[i], goal);
             fx = s->opt_pos[i][0] - pp[0];
             fy = s->opt_pos[i][1] - pp[1];
+        } else if (yk_option_uses_freeze(character) && pp) {
+            /* ★★★ 2026-09-27（owner ①②）：「**原版咲夜妖自机会固定在创建它的位置，直到松开 shift**」
+             *   + 「原版咲夜妖自机的**四个小魔法阵是在动的，发弹点不动，只动 vm**」。
+             *
+             * 一手（`th08:0x44eb70`，逐指令；全文见 `youkai_core.h` 的同一段）：
+             *   · state 1（出生）：`position = 自机位置 + 本机体阵型` + 朝向写 0/π；
+             *   · **state 2（活动）整段不碰位置**（`0x44eb92 je 0x44ed03`）⇒ 停在创建那一刻的绝对坐标；
+             *   · 共尾：满 12 帧后 `face = norm(face + step)`，再把 VM 的旋转推向 face
+             *     ⇒ 转的是**贴图**（那张魔法阵），膛口（`+0x2b0`）一动不动 = 「只动 vm」。
+             *
+             * TH18 侧：引擎每帧算 `pos = 自机 + 偏移`（`th18:0x45bce8`）⇒ 我们把**冻结的绝对坐标
+             * 减自机坐标**当偏移写下去，位置就冻住了（和机体 0 的弹簧同一个手法）；旋转直接写 VM。*/
+            uint32_t vm;
+            if (!was_held || !s->opt_frozen[i]) {          /* TH08 state 1：只在这一帧定型 */
+                if (!yk_option_home_from_player(character, i, pp, s->opt_pos[i])) {
+                    s->opt_pos[i][0] = pp[0];
+                    s->opt_pos[i][1] = pp[1];
+                }
+                yk_option_freeze_face0(i, &s->opt_face[i]);
+                s->opt_frozen[i] = 1;
+            }
+            fx = s->opt_pos[i][0] - pp[0];
+            fy = s->opt_pos[i][1] - pp[1];
+            vm = *(const uint32_t *)(o + CE_OPT_ANM_ID);
+            if (vm) {
+                if (s->opt_age >= YK_OPT_FREEZE_SPIN_START) {  /* `th08:0x44ed03 push 0xc` */
+                    float step = 0.0f;
+                    yk_option_freeze_spin(i, &step);             /* 跳表 `th08:0x44ee5b` */
+                    yk_opt_angle_norm(s->opt_face[i], step, &s->opt_face[i]);
+                }
+                /* TH08 是 `0x4286e0(&option+0x2a4, face, 8.0)`（把 VM 的旋转推向 face）；
+                 * TH18 侧直接写旋转字段即可（本卡那支脚本的 `angleVel` 只在前 8 帧自转，
+                 * 之后没人推 —— 这正是 owner 看到「不动的魔法阵」的根因）。*/
+                ce_anm_set_rotation(vm, 0.0f, 0.0f, s->opt_face[i]);
+            }
         }
         /* 写**这一格**的阵型（原生 `0x40b8c1` 也这么自己摆；单位 = 原生 1/128 定点）。
          * 引擎每帧自己按聚焦位取用：`pos = 自机位 + (聚焦 ? [+0x6c/+0x70] : [+0x64/+0x68])`
@@ -1577,6 +1644,37 @@ static int on_option_pose_apply(ce_card_t *c)
                 *(int32_t *)(ns + CE_OPT_POS_X) = mx;
                 *(int32_t *)(ns + CE_OPT_POS_Y) = my;
             }
+        }
+    }
+    /* ★★★ 2026-09-27（owner ⑤：「**灵梦妖子机的发弹方向实际上不是固定竖直朝上的，应该是向敌人的方向**」）：
+     * 把「朝敌的角」写进 TH18 的**原生瞄准格** `player+0x479cc`（`CE_PLAYER_AIM_ANGLE`）。
+     *
+     * 一手（`th08:0x450240` 逐指令，= `g_PlayerShotTable1[1]`；只有**子机行**的 `+0x28 = 1` 会走它）：
+     *   · 目标 = `g_BossEnemy`（`th08:0x18b89b4`，写点 `th08:0x42d4d9`）—— 为 0 时**整段跳过**（行原样发）；
+     *   · 否则 `angle = wrap(atan2(boss.y − bullet.y, boss.x − bullet.x) + row.angle + π/2)`
+     *     （`ds:0x4b4468` = +π/2）、`speed = row.speed × 1.5`（`ds:0x4b4438`）⇒ 子机行对着 boss 飞。
+     *   ⇒ 本卡：**每帧**把「从我们这台子机指向目标」的角写到那一格（原生的 `init5` `th18:0x4612d0`
+     *     在**发射那一刻**读它 ⇒ 效果 = 发射瞬间朝敌，不是每帧追踪 ✓ 与一手同形）。
+     *   · 我们的行角度基准就是 −π/2（竖直向上）= 一手里 `row.angle + π/2` 的抵消项 ⇒ 直接写 `atan2`
+     *     （那两个 ±2° 散角行在 init5 下会与其它子机行同向，登记 `TUNING.md` ❓）。
+     *   · 目标来源沿用本卡既有的解析（先 boss、否则最近的敌人 —— `yk_chase_target_resolve`，
+     *     就是 TH08 `g_BossEnemy` 那一格的 ❓ 对位）；**没有目标 ⇒ 写 −π/2**（= 一手「行原样」）。
+     *   · 只对**机体 0（霊夢・紫）**写：一手只有 `ply00as` 的子机行挂了那支回调（魔理沙是 init4/tick5、
+     *     咲夜是 init7，都不会朝敌定向）。*/
+    if (character == 0 && pp) {
+        float ax = pp[0], ay = pp[1] + YK_OPT_HOME_Y_REIMU;   /* 子机名义位置（没积分时用它）*/
+        float ang = -YK_ATAN_HALF_PI;                              /* 一手：目标为 0 ⇒ 行原样（竖直向上）*/
+        if (s->opt_spring_live && (s->opt_pos[0][0] != 0.0f || s->opt_pos[0][1] != 0.0f)) {
+            ax = s->opt_pos[0][0]; ay = s->opt_pos[0][1];     /* 弹簧积分过的**绝对**位置（更接近一手）*/
+        }
+        if (s->chase_have) ang = yk_atan2f(s->chase_y - ay, s->chase_x - ax);
+        *(float *)(CE_PLAYER() + CE_PLAYER_AIM_ANGLE) = ang;
+        if (!s->logged_aim) {
+            s->logged_aim = 1;
+            ce_log("youkai: aim angle written to PLAYER+0x%x = %.4f rad (target %s, TH08 "
+                   "`th08:0x450240` = option rows aim at `g_BossEnemy` at FIRE time; body rows stay -pi/2)",
+                   (unsigned)CE_PLAYER_AIM_ANGLE, (double)ang,
+                   s->chase_have ? "found" : "none => straight up");
         }
     }
     s->opt_spring_live = 1;                /* 本帧起过步 ⇒ 下一帧不再回到自机位置 */
@@ -2425,13 +2523,18 @@ static void __attribute__((noinline)) yk_spell_probe(const char *tag)
 /* ---- 人妖槽的每帧漂移（TH08 `Player::move` 的聚焦状态机，一手）--------------------------------
  * 一手形状（`th08_dec/src/Player.cpp` 那段，逐条地址见 `engine/player/th08/03-...md` §2.2 的
  * 「Player::UpdateMovement 聚焦漂移」一行）：
- *   · **按住低速**：状态保持 ≥ 4 帧后开始爬升，速率 = `min(按住帧数 / 15, 21)`，方向**朝妖**（+）；
- *   · **松开低速**：状态保持 ≥ 30 帧后开始回落，速率按当前档取 **−5 / −3 / −2 / +2 / +3 / +5**
- *     （极妖 −5、中妖 −3、正 −2、未到中人 +2、未到极人 +3、极人 +5）；`|g| <= 9` ⇒ 直接归零。
- * ❓ **自定**：TH08 那两条算式末尾都乘 `g_ShotSpeed`（本作聚焦的射击减速因子，≤ 1）；
- *   TH18 没有同一个全局 ⇒ 本卡取 1（登记 `TUNING.md`）。
- * ❓ **自定**：两个计时器的**精确**语义（`unkE2ad0` / `unkE2ae8` 的重置时机）按上式简化：
- *   换状态时两个都清。方向与速率表是一手的。*/
+ *   · **门（三道，缺一不过 ⇒ 整块跳过）**：`!Gui::IsMsgActive()` + **`player+8 >= 30`** +
+ *     `shotActive == 0`（`th08:0x44bdf0`–`0x44be19`）。`player+8` = 上一次换形之后的帧数。
+ *   · **按住射击键 ⇒ 推进支**：先看 `player+0xe2ad0`（连停火帧数，> 0 只减不加）；否则
+ *     `delta = (i32)(min(player+0xe2ae8 的帧数, 300) / 15)`（0..20）向**当前形态**推。
+ *   · **松开射击键 ⇒ 回中支**：`>= 4 帧` ⇒ `player+0xe2ae8 = 0`；`>= 30 帧` 才按档
+ *     **−5 / −3 / −2 / +2 / +3 / +5** 回中（极妖 −5、中妖 −3、正 −2、未到中人 +2、未到极人 +3、
+ *     极人 +5）；`|g| <= 9` ⇒ 直接归零。
+ *   ⚠ **订正两处旧注释（2026-09-27，逐指令复核 `th08:0x44bf04`）**：①「按住低速保持 ≥ 4 帧后开始
+ *     爬升」**错** —— `push 4` 属于**回中支**（停火 ≥ 4 帧 ⇒ 清推进计时器）；②「换状态时两个计时器
+ *     都清」**错** —— 一手的边沿只清 `player+0xe2ae8`（= 我们的 `gauge_ram`），**不清** `+0xe2ad0`。
+ * ❓ **自定**：TH08 那两条算式末尾都乘 `g_ShotSpeed`（聚焦的射击减速因子，≤ 1）；
+ *   TH18 没有同一个全局 ⇒ 本卡取 1（登记 `TUNING.md`）。*/
 static void yk_gauge_tick(yk_card_t *s, int focused)
 {
     int d, g2;
@@ -2440,7 +2543,7 @@ static void yk_gauge_tick(yk_card_t *s, int focused)
     if (!s) return;
     yk_gauge_limits_solo(focused, &hl, &yl);
     shooting = yk_shooting();
-    if (focused != (int)s->gauge_focus_prev) {          /* 换状态 ⇒ 两个计时器清零（❓ 简化）*/
+    if (focused != (int)s->gauge_focus_prev) {          /* 换状态 ⇒ 清推进计时器（一手）*/
         s->gauge_focus_prev = (uint8_t)(focused ? 1 : 0);
         s->gauge_focus_run = 0;
         s->gauge_hold = 0;
@@ -2480,6 +2583,16 @@ static void yk_gauge_tick(yk_card_t *s, int focused)
         }
         return;
     }
+    /* ★★★ 2026-09-27（owner ③）：**换形后 30 帧内，漂移那一块整块不进**。
+     * 一手 `th08:0x44be05 cmp DWORD PTR [ecx+0x8],0x1e` + `0x44be09 jl 0x44c012`
+     * （`ecx+0x8` = `player+8` = 上一次换形之后的帧数 = 我们的 `focus_age`，换形当帧刚被清 0）。
+     * ⇒ 「按一下马上松 ⇒ 槽一点不变」在一手里有**三条独立原因**，这是第二条（第一条 = 边沿当帧
+     *   就被这道门挡住；第三条 = 换形时 `gauge_ram` 清零后 `rate = frames/15` 还要 15 帧才 ≥ 1）。
+     * ⚠ **只挡漂移支**：一手这道门只包住 `Player::move` 那一块；`yk_on_enemy_killed` / 收刻符 /
+     *   擦弹 / 击破使魔都不受影响（它们的写点在自己的函数里），**别**把这道门搬过去。
+     * ⚠ 放符卡/炸弹那一支（上面）**不受这道门管**：它在 TH08 里属射击路径（`th08:0x44c820` 一族），
+     *   不在这道门的范围里。*/
+    if (s->focus_age < YK_GAUGE_SHIFT_BLANK) return;
     if (shooting) {                                     /* ② 推进支（射击键按住）*/
         if (s->gauge_idle > 0) {                        /* 预热：连停火帧数先减到 0（`th08:0x44be5d`）*/
             --s->gauge_idle;
@@ -2965,6 +3078,8 @@ static int on_ctor(ce_card_t *c)
     s->logged_natopt = 0;
     __builtin_memset(s->opt_pos, 0, sizeof s->opt_pos);
     __builtin_memset(s->opt_vel, 0, sizeof s->opt_vel);
+    __builtin_memset(s->opt_face, 0, sizeof s->opt_face);
+    __builtin_memset(s->opt_frozen, 0, sizeof s->opt_frozen);
     /* ★★ 本体外观（路 A）：本函数在**属性点变化 / 局中重建**时也会跑 ⇒ 本体脚本的跟踪也要复位。
      * `body_focused = 0` + `body_script = -1` 的组合语义 =「现在跑的不是我们装的脚本、上一帧不在低速」
      * ⇒ 下一次进低速那一帧**必定**走一次「换形」分支装载妖侧 idle（与 TH08 进妖侧时显式设脚本 5 同效）。
@@ -3730,6 +3845,41 @@ static const char *yk_graze_gate_name(int g)
     }
 }
 
+/* ============ ★★★ 2026-09-27（owner ④）：**妖逢魔 ⇒ 自机弹染红**（一手见 `youkai_core.h` 的同名小节）
+ *
+ * 一手：TH08 是「造弹那一刻按『极妖 + 该行 `+0x1e > 0`』置 `bullet+0x470`，然后**每次绘制前**
+ * 把弹 VM 的 `color_1` 的 B/G/R 三字节写成 `0x40/0x40/0xff`（红），alpha 不动」——
+ * 所以**在飞的弹也会当帧变色**（不是只染后发的）。
+ * TH18 侧：行表里的 `+0x1e` 带不过来（`+0x1c..+0x1f` 是死字段）⇒ 用**认领的组号**判
+ * （`yk_fengma_tint_set`：只有霊夢 `0x54..0x58` 与魔理沙 `0x59..0x5d` 染，与一手「只有这两位的行
+ * `+0x1e > 0`」一致），然后**每帧扫弹池**写色 —— 形状照 116 `signal.c` 的同一段扫描。
+ * ⚠ 只写低 24 位（保 alpha）：否则会把脚本自己的 `alphaTime` 淡出打坏。*/
+static void yk_fengma_tint_bullets(void)
+{
+    uint8_t *pl = CE_PLAYER();
+    uint8_t *pool;
+    int i, n = 0;
+    if (!pl) return;
+    pool = pl + CE_PB_POOL;
+    for (i = 0; i < CE_PB_COUNT; ++i) {
+        uint8_t *b = pool + (size_t)i * CE_PB_STRIDE;
+        uint32_t packed, vmid, want;
+        uint8_t *vm;
+        if (*(const int32_t *)(b + CE_PB_STATE) == 0) continue;         /* 空槽 */
+        packed = *(const uint32_t *)(b + CE_PB_PACKED_ID);
+        if (!yk_fengma_tint_set((int)((packed >> 8) & 0xffu))) continue; /* 不是那两位的妖侧组 */
+        vmid = *(const uint32_t *)(b + CE_PB_VM_ID);
+        vm = vmid ? (uint8_t *)ce_anm_get_vm(vmid) : 0;
+        if (!vm) continue;
+        want = yk_fengma_tint_dword(*(const uint32_t *)(vm + CE_ANM_VM_COLOR1));
+        if (*(const uint32_t *)(vm + CE_ANM_VM_COLOR1) == want) continue;   /* 已经染过（幂等）*/
+        ce_anm_set_color(vmid, want);
+        ce_anm_set_color2(vmid, want);                                   /* 两路同写（本仓纪律）*/
+        ++n;
+    }
+    (void)n;
+}
+
 static int on_tick_2(ce_card_t *c)
 {
     yk_card_t *s = ce_state(c, yk_card_t);
@@ -4078,12 +4228,14 @@ static int on_tick_2(ce_card_t *c)
             s->flash_pending = 1;                 /* ★ #22：使魔重建时在它身上补一支爆闪（310）*/
             /* ★ #23：本体那一下（一手 `0x44b155 SpawnEffect(0x1d, …, 0x80ff8080)` = 我们的 313）
              * —— 一手起在**自机**坐标上（`&player+0x2b4`），不是使魔身上。*/
-            if (flash_ok) yk_flash_spawn(CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_BODYFLASH58, px, py);
+            if (flash_ok) yk_flash_spawn(CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_BODYFLASH58, px, py,
+                                        YK_FLASH_BODY_BLUE);
             s->aura_on = 1;                       /* ★ #23：妖侧 ⇒ 光环应当在 */
             s_aura_edge_spawn = 1;                /* ★ #32/#29：**只在这个边沿**允许起一支（下一帧由 tick 消费）*/
         } else {
             /* ★ #23：妖→人那一下（一手 `0x44b3af SpawnEffect(0x1c, …, 0x808080ff)` = 我们的 314）。*/
-            if (flash_ok) yk_flash_spawn(CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_BODYFLASH57, px, py);
+            if (flash_ok) yk_flash_spawn(CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_BODYFLASH57, px, py,
+                                        YK_FLASH_BODY_RED);
             /* ★ owner 二次订正：使魔**撤走那一刻**在它们各自的位置上闪一圈魔法阵
              *（=`「随着 shift 消失变成魔法阵」那条 #12 的形态）；环短命、自删，不留常驻环。*/
             {
@@ -4110,12 +4262,20 @@ static int on_tick_2(ce_card_t *c)
                     if (s_map.e[fi].enemy_id && s_map.e[fi].fam_id &&
                         yk_familiar_by_id(s_map.e[fi].fam_id)) {
                         yk_flash_spawn(CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_FLASH60,
-                                       s_map.e[fi].x, s_map.e[fi].y);
+                                       s_map.e[fi].x, s_map.e[fi].y, YK_FLASH_FAM_BLUE);
                         break;                     /* 一手是每只使魔各一支；我们只起一支（画面上一闪）*/
                     }
             }
         }
         s->focus_age = 0;                     /* ★ #23：一手 `player+8` 在这一帧被清零（0x44b1a5 / 0x44b3f8）*/
+        /* ★★★ 2026-09-27（owner ③「松开/按下 shift 不会导致人妖值瞬间变化，甚至可能瞬间按下松开
+         *   or 松开按下 人妖值可能都不变」）：换形这一帧还要**清推进速率计时器**。
+         *   一手：两条边沿各有一句 `player+0xe2ae8.SetCurrent(0)`（人→妖 `th08:0x44b1b7`、
+         *   妖→人 `th08:0x44b40a`，`call 0x4065f0`）—— `player+0xe2ae8` 就是本卡的 `gauge_ram`。
+         *   不清的话：玩家一直按着 Z（推进支在跑、`gauge_ram` 早涨到 300 ⇒ rate = 20）时一换形，
+         *   下一帧就以 ±20/帧 反向推 ⇒ 手感上正是「一按 Shift 数值立刻动起来」。
+         *   ⚠ **不要**顺手清 `gauge_idle`：一手边沿**不清** `player+0xe2ad0`（它是回中支的自己那套）。*/
+        s->gauge_ram = 0;
     }
     /* ★★★ 2026-09-22 夜（owner #23）：本体的 Shift 光环 —— 每帧钉在自机（一手的 init `0x426c40`
      * 就是每帧读自机坐标）+ 自愈。`focus_age` = 上一次切换之后过了几帧（一手 `player+8` 的口径）。*/
@@ -4146,6 +4306,11 @@ static int on_tick_2(ce_card_t *c)
         if (pl2) {
             int fm = yk_fengma(s->gauge, YK_GAUGE_HUMAN_EFFECTS, YK_GAUGE_YOUKAI_EFFECTS);
             s->fengma = (uint8_t)fm;
+            /* ★★★ 2026-09-27（owner ④）：**妖逢魔（`gauge >= +8000`）⇒ 自机弹染红**。
+             * 一手判据就是「极妖」（`th08:0x406d70` 比 `+0x3dfde` = **+8000**）—— 与 `yk_fengma`
+             * 那个「极人 OR 极妖」的**取或**不同 ⇒ 这里必须单独判 `>= YK_GAUGE_YOUKAI_EFFECTS`
+             * （人逢魔那一路一手**不改色**，改的是「命中掉一颗刻符」，见 `youkai_core.h`）。*/
+            if (s->gauge >= YK_GAUGE_YOUKAI_EFFECTS) yk_fengma_tint_bullets();
             if (fm && !CE_GUI_MSG_ACTIVE()) {
                 CE_SCORE() += YK_FENGMA_SCORE_PER_FRAME;       /* 一手 100 显示分/帧、一档 */
                 s->fengma_score += YK_FENGMA_SCORE_PER_FRAME;

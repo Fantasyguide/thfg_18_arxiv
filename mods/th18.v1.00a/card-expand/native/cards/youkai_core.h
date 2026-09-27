@@ -229,6 +229,108 @@ void yk_opt_spring_step(float pos[2], float vel[2], const float goal[2]);
  *（TH08 `th08:0x44e770` 里那一步；`character` 没有一手数据 ⇒ 返回 0、`out` 不动）。*/
 int yk_option_home_from_player(int character, int cell, const float player_xy[2], float out[2]);
 
+/* ===================== ★★★ 咲夜（机体 2）的妖侧子机是**放置型**（owner 2026-09-27 ①②）
+ * >> owner 逐字：「原版咲夜妖自机的**四个小魔法阵是在动的，发弹点不动，只动 vm**」+
+ *    「原版咲夜妖自机会**固定在创建它的位置**，直到松开 shift」。
+ *
+ * **一手**（`th08:0x44eb70` 逐指令读完；笔记 `engine/player/th08/02-youkai-option-motion.md` §3.2）：
+ *   · state 1（出生，`0x44eba7`–`0x44ed03`）：装脚本 **`0x18`**（= `player02.anm` script24，那张
+ *     **魔法阵**贴图）、`position = 自机位置 + 本机体阵型`、朝向 `+0x2d8` 写 0 或 π（idx 1/3 写 π）；
+ *   · **state 2（活动）整段不碰位置**：`0x44eb92 je 0x44ed03` **直接跳共尾** ⇒ 四个魔法阵停在
+ *     **创建那一刻的绝对坐标**上，不再跟随自机 ✓（对照：机体 1 魔理沙的 state 2 **每帧**重写位置
+ *     `0x44eada`，机体 0 灵梦走弹簧 ⇒ 只有咲夜是放置型）；
+ *   · 共尾 `0x44ed03`：`Timer(&option+0x2e0)` 满 **12** 帧（`push 0xc`）后按格把朝向
+ *     `face = norm(face + step)`（`th08:0x43edb0` = 加完再绕回 `[−π, π)`，16 次迭代上限），
+ *     四格的 step 由跳表 `th08:0x44ee5b` 给（`0x3cd67750` = **+1.5°/帧**、`0xbd0efa35` = **−2°/帧**、
+ *     `0x3d0efa35` = +2°、`0xbcd67750` = −1.5°；内外圈反向）；然后
+ *     `0x4286e0(&option+0x2a4, face, 8.0)` 把 VM 的旋转推向 face ⇒ **贴图自己在转、位置不动**
+ *     = owner 的「只动 vm」✓。
+ *
+ * **TH18 落点**：位置靠「冻结的绝对坐标 − 自机坐标」写进聚焦偏移（引擎每帧 `pos = 自机 + 偏移`，
+ * `th18:0x45bce8`）；旋转直接写 VM 的 rotation（`ce_anm_set_rotation`，`sdk.h`）。*/
+#define YK_OPT_FREEZE_SPIN_START   12            /* `th08:0x44ed03 push 0xc`：满 12 帧才开始自转 */
+#define YK_OPT_FREEZE_SPIN_OUTER   0.026179939f  /* `0x3cd67750` = 1.5°/帧（外两格：idx0 正 / idx3 负）*/
+#define YK_OPT_FREEZE_SPIN_INNER   0.034906585f  /* `0x3d0efa35` = 2°/帧（内两格：idx1 负 / idx2 正）*/
+
+/* 这一机体是不是「放置型」（只有机体 2 = 咲夜・レミリア）。*/
+int yk_option_uses_freeze(int character);
+
+/* 出生朝向 `+0x2d8`（`th08:0x44ec39`/`0x44ec7b`/`0x44ecba`/`0x44ecf9`）：idx 0/2 = 0、idx 1/3 = π。
+ * ⚠ 这三个都走**出参**而不是返回 float —— 本仓的 `dllx87` 闸要求「我们自己的目标文件里零 x87」，
+ *   而 i386 上**返回 float 的函数**（含 libm）按 ABI 走 st0 ⇒ 编译器必然发一条 `flds`/`fstp`
+ *   （`Makefile` 第 160 行的注就是这个坑）。形状与既有的 `yk_option_home_xy(…, float out[2])` 一致。*/
+int yk_option_freeze_face0(int cell, float *out);
+
+/* 这一格每帧的朝向增量（弧度，跳表 `th08:0x44ee5b` 那四支）。`cell` 越界 ⇒ 写 0、返回 0。*/
+int yk_option_freeze_spin(int cell, float *out);
+
+/* `th08:0x43edb0`：`*out = angle + step`，再绕回 `[−π, π)`（照抄它自己的两段循环：
+ * `while (f >= π) f -= 2π`（迭代上限 16），然后 `if (f < −π) f += 2π`）。*/
+void yk_opt_angle_norm(float angle, float step, float *out);
+
+/* ============ ★★★ 2026-09-27（owner ④）：**逢魔给自机弹染色**（一手：TH08 的 `+0x470` 旗 + 绘制前写色）
+ *
+ * >> owner 逐字：「**逢魔形态似乎会让对应的机体的子弹染色，妖逢魔就会让灵梦妖机体的所有子弹变成红色，
+ *    把魔理沙妖机体的所有子弹变成红色**」—— 逐条对上，而且**不是**全局开关、**不是**换脚本：
+ *
+ * **一手**（子 agent 逐指令 + 本轮复核）：
+ *   · 旗在**造弹那一刻**定（`Player::sub_44fb70 th08:0x44fb70`）：`44fd53` 读
+ *     `GameManager::gauge_is_extremely_youkai`（`th08:0x406d70`：`youkaiGauge >= 阈值`，
+ *     阈值 `+0x3ddfe` 由 `0x44da12` 写 **+8000** = `0x1f40`）+ `44fd64 movsx ecx,[row+0x1e]` `jle` 跳过
+ *     ⇒ **「极妖」且该行 `+0x1e > 0`** ⇒ `bullet+0x470 = 1`（全 exe 只有 4 处访问这个字节）。
+ *   · 颜色**每帧在绘制前写**（`Player::draw_bullets_in_state_1/2` `th08:0x4512f0`/`0x451400`）：
+ *     `+0x1f0/1/2 = 0x40 / 0x40 / 0xff` = **RGB(255,64,64) 红**，**alpha（`+0x1f3`）不动**。
+ *   · 逐角色数据直读：`ply00as`（霊夢）行 `+0x1e` = 50/30/25/20/15、`ply01as`（魔理沙） = 5/40
+ *     ⇒ **两侧 100% 的行都 > 0 ⇒ 全弹染红**；`ply02as`（咲夜）与 `ply03as`（妖夢）**全是 0** ⇒ 一颗不染；
+ *     人侧四个文件全是**负**值 ⇒ 不染（人侧那一笔走的是 `0x451865` 一族：极**人**时**掉刻符**，不改色）。
+ *
+ * **TH18 侧落点**：TH18 的行表里 `+0x1c..+0x1f` 是**死字段**（268 条全 0）⇒ 那个 `+0x1e` 带不过来；
+ * 但「灵梦/魔理沙 = 全行 > 0、咲夜/妖夢 = 全行 0」恰好是**逐角色常量** ⇒ 用 **set 区间**判：
+ * 本卡认领的组里 `0x54..0x58`（霊夢）与 `0x59..0x5d`（魔理沙）染；`0x5e..0x62`（咲夜）、
+ * `0x63..0x67`（早苗）与兜底 `0x16`（幽々子）**不染**（= 一手口径；要染属 `❓ 自定`，未做）。*/
+#define YK_FENGMA_TINT_RGB   0x00ff4040u  /* TH18 的 color dword（`0xAARRGGBB`）：R=ff G=40 B=40 ⇒ 红 */
+#define YK_FENGMA_SET_R0     0x54
+#define YK_FENGMA_SET_R4     0x58
+#define YK_FENGMA_SET_M0     0x59
+#define YK_FENGMA_SET_M4     0x5d
+
+/* 这一组（shooter set 号）在妖逢魔时要不要染红（一手见上：只有霊夢/魔理沙那一侧的 `+0x1e > 0`）。*/
+int yk_fengma_tint_set(int set_index);
+
+/* 染色 dword：**只换低 24 位（BGR）**，alpha 原样保留（一手只写 `+0x1f0/1/2` 三个字节）。*/
+uint32_t yk_fengma_tint_dword(uint32_t color_in);
+
+/* ============ ★★★ 2026-09-27（owner ⑤）：**朝敌定向**用的 atan2（本卡自带、纯 SSE）
+ * 为什么要自带：① DLL 只链 kernel32 + msvcrt，**不引 libm**；② 游戏自己那个 atan2（`th08:0x4a94a0`）
+ * 走 x87 CRT ⇒ 一调就在我们的目标文件里留下 `fstp`，直接顶掉 `dllx87` 的「零 x87」闸。
+ * 多项式与 `cards/broken_core_core.h` 的 `bc_atan2f` **同一支**（最大误差 < 2e-5 rad；那个不能跨卡 include，
+ * 各卡各自 inline 一份是本仓的既有做法）。**故意写成 static inline**：i386 ABI 里返回 float 要走 st0 ⇒
+ * 内联掉才不会生成 `flds`。*/
+/* ⚠ 常量名**不能**叫 `YK_PI` / `YK_HALF_PI` —— `youkai_core.c` 的 `yk_orb_burst_polar_range` 里
+ * 已经有一个同名的**函数内** `#define YK_PI`（值一样但精度写法不同）⇒ 撞名会被 `-Werror` 拦下
+ * （2026-09-27 实测：`make check` 的宿主编译报 `"YK_PI" redefined`）。*/
+#define YK_ATAN_PI      3.14159265358979f
+#define YK_ATAN_HALF_PI 1.57079632679490f
+
+static inline float yk_atan_unit(float z)      /* atan(z)，|z| <= 1：Hastings 奇次多项式 */
+{
+    float z2 = z * z;
+    return z * (0.99986600f + z2 * (-0.33029950f + z2 * (0.18014100f
+              + z2 * (-0.08513300f + z2 * 0.02083510f))));
+}
+
+static inline float yk_atan2f(float y, float x)
+{
+    float ax = x < 0.0f ? -x : x;
+    float ay = y < 0.0f ? -y : y;
+    float ang;
+
+    if (ax == 0.0f && ay == 0.0f) return 0.0f;
+    ang = (ay <= ax) ? yk_atan_unit(ay / ax) : YK_ATAN_HALF_PI - yk_atan_unit(ax / ay);
+    if (x < 0.0f) ang = YK_ATAN_PI - ang;
+    return y < 0.0f ? -ang : ang;
+}
+
 /* 声明的脚本和手里那个子机的脚本不一样 ⇒ 必须重申请（脚本是申请时定死的）。
  * `have < 0` = 手里还没有子机 ⇒ 不算「变了」。 */
 int yk_option_script_changed(int want, int have);
@@ -672,6 +774,13 @@ int     yk_in_transfer_zone(float fx, float fy, float cx, float cy, float w, flo
  *   · 单人妖梦（shottype **10**，`th08:0x44da57`）：两侧 effects 都收到 ±3000、limit ±5000 ⇒ 两侧都能逢魔
  *     —— 但 **TH18 没有妖梦这个机体** ⇒ 本卡按默认（±8000 / 单人 2000 封顶）落，**不发明例外**（规格 §4）。*/
 #define YK_GAUGE_SOLO_OTHER_LIMIT   2000   /* 一手 `th08:0x44daa2` 0x7d0 / `th08:0x44dacd` 0xf830 */
+
+/* ★★★ 2026-09-27（owner ③）：「**松开/按下 shift 不会导致人妖值瞬间变化**」——
+ *   一手里换形之后 **30 帧内漂移那一整块不进**：`th08:0x44be05 cmp DWORD PTR [ecx+0x8],0x1e`
+ *   + `0x44be09 jl 0x44c012`（`player+8` = 上一次换形后的帧数，边沿当帧刚被清 0
+ *   `th08:0x44b1a5`/`0x44b3f8`）⇒ 连计时器都不 Tick。
+ *   本卡的对位量 = `yk_card_t.focus_age`（边沿清零、每帧 ++）。*/
+#define YK_GAUGE_SHIFT_BLANK          30
 
 /* 「当前形态」的同一对 limit（`focused` = 低速 = 妖侧）：
  *   妖侧（focused）⇒ human_limit = **−2000**、youkai_limit = **+10000**；
