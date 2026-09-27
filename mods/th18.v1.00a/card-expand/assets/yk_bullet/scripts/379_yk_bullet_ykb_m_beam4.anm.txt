@@ -10,7 +10,8 @@ script script379 {
     sprite(@YKB_M_OPT@);
     type(1);
     anchor(1, 0);
-    scale(1.0f, 0.8f);
+    // ⚠ `scale.y` 保持 1.0：宽度在**行里**的 `+0x10`（`bullet+0xa4`），见文件头，别在这里再缩一次。
+    scale(1.0f, 1.0f);
     alpha(70);
     blendMode(1);
     rotateAuto(1);

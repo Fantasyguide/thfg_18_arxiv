@@ -1768,7 +1768,13 @@ def _youkai_tier_sets(target_file: str, anm_ids: dict) -> list:
                 #     ③ 长度让引擎自己长到 512（一手恒 448）—— 一手那个 448 是 TH08 tick 里的常量。
                 #   速度必须 0（一手 10 是"发射速度"字段，TH18 的 tick2 每帧把束钉回子机；原生也是 0）。
                 if k == "M":
-                    rows = [dict(r, mode=2, speed=0.0, hit_w=0.0, hit_h=0.0, hit_fx=0,
+                    # ⚠ 宽度必须写进 `hit_h`（`+0x10 → bullet+0xa4`）：一手四个零售文件的 set 0xb
+                    #   都是 `hit_w = 0.0 / hit_h = 16.0`（`+0xa0` 才是长度，由 tick2 长到 512 / 被 hit2 截断）。
+                    #   2026-09-27 实测教训：把两个都填 0 ⇒ 束被画成**一条极细的小箭**（owner 报的
+                    #   「真激光没有被射出去，是一个十分短小的袖箭」）。
+                    #   逐档宽度 = TH08 `player01.anm` script24..28 量出来的 16/16/19.2/22.4/25.6 px。
+                    beam_w = (16.0, 16.0, 19.2, 22.4, 25.6)[min(max(t, 0), 4)]
+                    rows = [dict(r, mode=2, speed=0.0, hit_w=0.0, hit_h=beam_w, hit_fx=0,
                                  func_on_init=2, func_on_tick=2, func_on_hit=0) if o >= 1 else r
                             for r, o in zip(rows, orig[t])]
                 for o in orig[t]:

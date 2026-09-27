@@ -481,9 +481,12 @@ def gen_beam(name, spr_member, width_px, scale_y, src_num):
       + `scale(1.0, <y>)`（x 恒 1.0，长度由引擎的 `bullet+0xa0` 驱动）+ `blendMode(1)` + `rotateAuto(1)`，
       收束那一支接 `interruptLabel(1)`：`scaleTime(8, 1, 1.0, 0.0)` 再 `delete()`
       （一手：`tick2` 收束时对束 VM 发 `interrupt 1`，`th18:0x45fc80` 的 `+0x1fe` 那一族）。
-    数值侧（`scale.y` / `alpha`）照 **TH08**：`player01.anm` script{src_num} 的
-      `scale(1.0f, 0.5..0.8)`、`alpha(70)` ⇒ 屏上宽度 = 32 × scale.y = 一手量出来的
-      16 / 16 / 19.2 / 22.4 / 25.6 px（前两档在 TH08 里共用 script24）。"""
+    **宽度不走这里的 `scale`**：TH18 的束**几何**由引擎按行里的两个字段搭
+      （`+0x0c → bullet+0xa0` = **长度**、`+0x10 → bullet+0xa4` = **宽度**；一手：四个零售文件的
+      `pl0X.sht` set `0xb` 都是 `hit_w = 0.0 / hit_h = 16.0`，而原生束贴图正好 16 px 高）
+      ⇒ 宽度必须写进行里（本卡按 TH08 逐档量出来的 16 / 16 / 19.2 / 22.4 / 25.6 px 填 `hit_h`），
+      脚本里的 `scale.y` 保持 **1.0** 以免与那一个字段**双重缩放**
+      （⚠ 2026-09-27 实测教训：先按「宽度走脚本 scale」填了 `hit_h = 0` ⇒ 束被画成一条极细的小箭）。"""
     return f"""script script{{N}} {{
     // 由 assets/ability/make_youkai_bullet_art.py 生成（{name}），别手改。
     // 魔理沙（TH08 `ply01as` = アリス）妖侧**子机激光的束脚本**（owner ⑥）。
@@ -496,7 +499,8 @@ def gen_beam(name, spr_member, width_px, scale_y, src_num):
     sprite(@{spr_member}@);
     type(1);
     anchor(1, 0);
-    scale(1.0f, {scale_y}f);
+    // ⚠ `scale.y` 保持 1.0：宽度在**行里**的 `+0x10`（`bullet+0xa4`），见文件头，别在这里再缩一次。
+    scale(1.0f, 1.0f);
     alpha(70);
     blendMode(1);
     rotateAuto(1);
