@@ -40,7 +40,8 @@ TH20 的「异变石」（日文 **異変石**）是**一整套把「过往异�
 | 异变攻击的弹幕写在 `default.ecl` 的 20 个子程序里 | — | 🟡 | [th20/02](th20/02-attack-assets.md) |
 | 异变攻击抵消 Miss | — | ❓ | [th20/07](th20/07-miss-cancel-chain.md)（**引擎侧链路未坐实**）|
 | 异变敌人 = 竖直槽满召唤、同色升级、Miss 降级 | — | 🟡 | [th20/03](th20/03-stone-enemy.md) |
-| 异变值影响得分道具倍率 | — | 🟡 | [th20/04](th20/04-incident-value.md) |
+| 异变值影响得分道具倍率 | — | ✅ | [th20/04](th20/04-incident-value.md)：`+0x44`，倍率 = `1/2 + (+0x44)/(+0x48)`（owner 2026-09-28 实机排除两根槽后定案）|
+| 两根槽 = 异变敌召唤 + 异变攻击储存 | — | ✅ | [th20/03](th20/03-stone-enemy.md) / [th20/05](th20/05-shards-and-items.md)：`+0x5c/+0x60` vs `+0x4c/+0x50` |
 | 碎片道具 ≈ 季节道具（TH16 那条轴） | ✅ th16 | 🟡 | [th20/05](th20/05-shards-and-items.md)、[`season/OVERVIEW.md`](../season/OVERVIEW.md) |
 
 > **图例**：✅ 该版本一手验过 · 🟡 单源/推断 · ❌ 已知不同/不存在 · ❓ 存疑。
