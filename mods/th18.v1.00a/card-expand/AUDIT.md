@@ -20201,6 +20201,12 @@ type 1 的来路要先 grep `push 1` + `push <type>` 的调用点上下文）。
 而 `ce_enemy_death_t` **没有击杀者字段** ⇒ 当前传 `by_player_bullet = 0`（`yk_fengma_kill_orbs` 的算式已写好，
 接上事件字段即可生效）。
 
+> ★★★ **2026-09-27 订正（就地指向）**：上面这两句**已被同一份文档里的 §BE #66 取代** ——
+> #66 当晚就往 `ce_enemy_death_t` **尾部追加**了 `by_player_bullet` 并在 `sdk.c` 接线
+> （`ev.by_player_bullet = (ev.kind == CE_EDEATH_KILLED) ? 1 : 0;`）⇒ **字段有、也已经接上**，
+> 本卡 `youkai.c:2725` 正在读它。⚠ 别再照本段说「恒 0」（2026-09-27 我本人就照抄了这一段、
+> 在报告里说错了一次）—— 一手的真相与剩下的**语义差**（「每发命中」vs「每击破」）见 §BE #137bis ②。
+
 **怎么验证的**：`make check` **rc=0**（`x87 = 0`、`test_youkai_core` 4529/0、sites 双面、`sitecheck --all`、
 `contract_check`、`gen_drift`、`capcheck`、`sht-verify`、`anm-verify`、`snd-check`、`dllx87`、`dllverify`、
 `engine_abi_check`）；`python3 tooling/check-docs.py` 全部通过。
@@ -24197,7 +24203,7 @@ if (focused) {                                    /* ★ 这一层是一手没�
 | --- | --- | --- | --- |
 | 擦弹 1/2/3 颗 | 机体 / boss / **槽值极值** +（本批起）**不看形态** | 同 | ✅ |
 | 逢魔击破 1 颗（`yk_on_enemy_killed` 开头那一段） | **只看槽值极值**（`yk_fengma()`），在 `!focused` 早退**之前** | `0x42da2a`/`:0x42da38` 两问取或（只看槽） | ✅ |
-| 人间逢魔 + 自机弹击杀 再 1 颗 | `yk_fengma_kill_orbs(fm, human_fm, by_player_bullet)`；`by_player_bullet` 目前**恒 0**（`ce_enemy_death_t` 没有击杀者字段） | `0x451860` 极人 + `[enemy+0x480]+0x1e < 0` + 自机弹 | ❓待接（`§2.0 zg` #25 已登记） |
+| 人间逢魔 + 自机弹击杀 再 1 颗 | `yk_fengma_kill_orbs(fm, human_fm, by_player_bullet)`；`by_player_bullet` **已接线**（`sdk.c:3480` = `kind == CE_EDEATH_KILLED`，字段由 §BE #66 追加）⇒ 人间逢魔 + 主路打死 = **2 颗** | `0x451860`（极人）+ `[enemy+0x480]+0x1e < 0` ⇒ **每发自机弹各 1 颗**（`0x45187f`–`:0x451892`，type 7 / state 3）| ⚠ 语义**近似**：我们「每击破 1 颗」，一手「每发命中 1 颗」—— 见 §BE #137bis ② |
 | 通用击破批（子敌人圆盘 / 被杀者环） | **`if (!focused) return;` 早退之后** ⇒ **只看妖侧** | `0x42d652 push 1 / :0x42d657 call 0x42adb0` 在死亡路径里**无条件**（无形态门、无槽门） | ⚠ **本批不改**，登记见 §8 ❓#1 |
 
 ### 5. 实跑判据（原文形态）
@@ -24350,3 +24356,40 @@ youkai: graze orbs n=1 x2 bullet(s) gate=ok (spell=0 shottype=0 gauge=9xxx boss=
 2. 吃永点：**每 2 颗**那个数 **+10**（一手 `th08:0x4182bc` 的形状）。
 3. 日志台账行（每 600 帧一行）：`piv_pool=` 跟着 `piv=` 一起涨、`piv_wrote=` 追到 `piv − piv_base`；
    若 `piv=` 在涨而 `piv_pool=` 不动 ⇒ 装的是 `83c0138b…` 那版 DLL（对不上 `a7c2a0ff…`）。
+
+## §BE 详录 #137bis（2026-09-27 第三十六批 · 附）：两处「主人问到的」一手核 + 一处**订正**
+
+> 由来 = owner 让我把「通用击破批那条 `if (!focused) return;`」与「`by_player_bullet`」两件事展开讲
+> ⇒ 展开前先把两边的一手都**自己核一遍**（本轮我逐指令读的原文如下），核的过程里发现**我上一批的报告
+> 里有一句话是错的**（第 2 条）。
+
+**① 死亡路径确实**不看形态**（供「删不删 `!focused` 早退」用）**：
+`0x42d625 call 0x41fd20` → `0x42d62f je 0x42d652`（假则跳过「使魔计数 −1」）→
+`0x42d652 push 0x1` / `0x42d657 call 0x42adb0` —— **`0x42d652` 与 `0x42d657` 之间没有任何指令**，
+即这次调用在死亡路径里**无条件**。`0x42adb0`（`Enemy::sub_42adb0`）体内撒刻符的落点是
+`0x42b03d push 7` / `:0x42b048 call 0x4400a0`（`0x42b036` 一带算的是**半径 128 的环**角度）与
+`0x42b1a6`/`:0x42b1b1`、`:0x42b1b8` 那一族；它们旁边的门是**机体 / boss / 符卡**那一类
+（`:0x42aece call 0x42f270` = `shottype_is_solo_youkai`、`:0x42aefd call 0x42f230` = `solo_human`、
+`:0x42b054 call 0x42f1f0` = `is_boss_active`、`:0x42b062 call 0x4178a0` = 符卡中），
+而 `player+3` 的那 8 个读点（`0x42c6d7`/`0x42d197`/`0x42d1c5`/`0x42d217`/`0x42d65c`/`0x44054d`/`0x440838`/`0x4413a5`）
+**没有一个落在 `0x42adb0`–`0x42b1e8` 这段里** ⇒ **掉这几颗刻符与形态无关** ⇒
+本卡的 `if (!focused) return;`（人侧不撒通用击破批）确实是**多出来的形态门**（与 §136 §2 同源）。
+
+**② 订正：`by_player_bullet` **不是**恒 0 —— 它**已经接上了**（我上一批的报告说错了）**：
+- 事实：字段由 **§BE #66（2026-09-22 夜）**追加进 `ce_enemy_death_t` 尾部，填充点在 `sdk.c:3480`：
+  `ev.by_player_bullet = (ev.kind == CE_EDEATH_KILLED) ? 1 : 0;`（`KILLED` = `retaddr 0x42f3b7`，
+  TH18 的「被伤害打死」主路）；本卡 `youkai.c:2725` 就在读它 ⇒ **人间逢魔 + 主路打死 = 2 颗**是**通的**。
+- 我上一批错在照抄了 `AUDIT.md:20201`（**#66 之前**的旧段）与 `§2.0 zg` #25 的「没有击杀者字段」——
+  那两句已被 #66 自己取代（#66 就在同一份文档里，往下 130 行）。⇒ 旧段已就地改写指向 #66。
+- 真正剩下的差是**语义与颗数档**（`TUNING.md` §2.0zk #39 已登记）：一手的真信号是
+  「**极人期间，每一发自机弹碰到敌机**（`0x451860 call 0x406d10` 极人 + `:0x451871 mov eax,[bullet+0x480]` /
+  `:0x451877 movsx ecx,WORD [eax+0x1e]` / jge ⇒ 跳过；为负才给）就在**弹的位置**
+  （`0x451886 add edx,0x2a4`）撒 1 颗 type 7 / state 3（`:0x45187f` `push 3` / `:0x451881 push 7` /
+  `:0x451892 call 0x4400a0`）」；我们实现的是「**主路击破**时 +1」⇒ 一次击破只多 1 颗
+  （一手里「一敌被 N 发打中」= N 颗）。
+
+**③ 若 owner 要贴一手（不花站点预算的做法）**：把这一条从「击破」改成「**命中**」——
+SDK 已有 `BP_ce_shot_damage`（`0x45f0f0`，`on_shot_damage(card, dmg, pos)`，**每敌每帧一次**、
+只在可计分命中路径上）= 「本帧这个敌人被自机弹打到了」⇒ 极人时按「每敌每帧 +1 颗」撒，
+比「每击破 +1」近得多，且**不新增站点**（站点预算现在 44 > 42、余量 0，见 `RELEASE-STATE.json`）。
+⚠ 仍不是逐发（同帧多发塌成一发）⇒ 想要逐发得再挂子弹×敌人的接触点（新站点 = 先腾预算）。
