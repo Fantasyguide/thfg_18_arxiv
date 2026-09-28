@@ -924,7 +924,11 @@ static const hud_font_t HUD_FONTS[] = {
      *     `.` / `,` 也用 **8.0**（TH12 那个 4/12 的窄步进是配它自己**带留白**的小字形用的，我们的
      *     16×16 切图没有那份留白 ⇒ 照抄就会出现"点被数字压住"）。
      *   ⇒ 现在：字形 32 px、步进 32 px ⇒ 相邻字符**边贴边、不重叠**（`.` 后面那个数字也就正常落在右边）。*/
-    { hud_vm_glyph_th12, 8.0f, 8.0f, CE_ANM_ABILITY_SCRIPT_FONT_TH12_GLYPH, 4.0f, 8.0f, 4.0f, 2.0f },
+    { hud_vm_glyph_th12, 6.0f, 2.0f, CE_ANM_ABILITY_SCRIPT_FONT_TH12_GLYPH, 4.0f, 8.0f, 4.0f, 2.0f },   /* ★ 2026-09-26 第 51 轮（owner：「击破后 UI 还是间距宽」）——按一手 `AsciiManager::draw_string`
+      *   `th12:0x4018f0` 的比例收紧：font 4 的数字步进 = `scale×12.0`（`0x4a4128`）、
+      *   **`.` 与 `,` = `scale×4.0`**（`0x4a4108`）⇒ 相对字形格（16）是 **0.75 倍**、点/逗号是**数字的 1/3**。
+      *   ⇒ `adv` 8.0 → **6.0**（0.75×）、`adv_dot` 8.0 → **2.0**（= 6.0/3）；
+      *   并把 `hud_text_width/fill` 里只认 `'.'` 的窄步进**补上 `','`**（一手两者同宽）。*/
 };
 
 /* 默认字形集 = TH18 font 2（所有既有调用点走这里，行为一个字节不变）。*/
@@ -973,7 +977,7 @@ void ce_hud_vm_text_set_font(ce_hud_vm_text_t *t, float x, float y, uint32_t bgr
     sy *= f->size;
 
     /* ① 先量总宽（`.` 的字距是 4 而不是 7 —— 引擎的 `fVar11` 就是被它改掉的）*/
-    for (p = s; *p; ++p) total += ((*p == '.') ? f->adv_dot : f->adv) * sx * dat;
+    for (p = s; *p; ++p) total += ((*p == '.' || *p == ',') ? f->adv_dot : f->adv) * sx * dat;   /* ★ 第 51 轮：逗号也走窄步进（一手同宽）*/
     pen = x * dat + ((align_h == CE_ASCII_ALIGN_CENTER) ? -total * 0.5f
                    : (align_h == CE_ASCII_ALIGN_RIGHT)  ? -total
                                                         : 0.0f);
@@ -992,7 +996,7 @@ void ce_hud_vm_text_set_font(ce_hud_vm_text_t *t, float x, float y, uint32_t bgr
      *    折到「上沿 + 半个字形高」就是 +5（详见脚本 136 与 make_font2_art.py 的注释）。*/
     for (p = s; *p; ++p) {
         uint32_t spr = f->glyph(*p);
-        float adv = ((*p == '.') ? f->adv_dot : f->adv) * sx * dat;
+        float adv = ((*p == '.' || *p == ',') ? f->adv_dot : f->adv) * sx * dat;   /* ★ 第 51 轮：逗号同窄步进（一手 `0x4a4108` 两者同宽）*/
 
         if (spr && slot < CE_HUD_VM_TEXT_MAX) {
             uint32_t *id = &t->id[slot];
