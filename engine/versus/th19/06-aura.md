@@ -87,10 +87,11 @@
 | :-: | --- | --- |
 | 1 | ~~形状参数~~ ⇒ **已答**（§7 逐类：圆 / 单轴带 / 有向矩形 / 旋转椭圆 / 内圆+外矩形 / 三圆并集）| §7.3 |
 | 2 | 4 个类（`AuraYachieInf`/`AuraPL14Inf`/`AuraPL18Inf`/`AuraInf`）的槽 7 无函数体 | 跑 `create_missing_funcs.py` 后重落语料库 |
-| 3 | オーラ的**视觉**（哪个 anm / script，是否 `ability.anm`）| `ability.anm` 17 entry/51 script |
+| 3 | ~~オーラ的视觉~~ ⇒ **已答**（§9：画区域的是**角色自己的 `plXX.anm`**，不是 `ability.anm`；`aura.anm` 只负责蓄力槽 HUD 与段位リング）| §9 |
 | 4 | ~~命中链全貌~~ ⇒ **已答**（§8：敌弹走 `0x4f5130`→槽 7→弹速 `0.5f`；敌/霊走 `0x509030`→槽 7→`0.5f`/`-2`）| §8.1 / §8.2 |
-| 5 | 沈静化的「耐久骤降 / 自然成佛」实现层 | ECL 子 `GhostPureOrinDisable`（串 `0x599a14`）|
+| 5 | 「耐久骤降」**已答**（§10：`default.ecl` 的 `GhostPureOrinDisable` → `GhostPureHP_D` = `ins_511(50+I0*10)`，对照 enable 侧 `400+I0*400`）；**「自然成佛」仍未找到落点** ❓ | §10.3（三种候选解释）|
 | 6 | `S+0x9c`（`@ORIN2`）的实现点 | `FUN_00509980` |
+| 7 | ★ **自然成佛（沈静化后一段时间自灭）在 v1.10c 找不到落点** | §10.3：该 ECL 子 `wait` 后 `return` 不自毁；bit19 的 4 个读点全是命中判定；最接近的一手在另一条链 `FUN_0051b480` |
 
 ## 7. 形状参数（逐类）
 
@@ -261,3 +262,209 @@
 | 减速字段 | `EnemyInf+0x1528`/`+0x12F4`/`+0x133C` | 一致（子对象 `+0x2f8`/`+0xc4`/`+0x10c`，base = `EnemyInf+0x1230`） | ✅ 对上，无需改 |
 | 沈静化 flag | `EnemyInf+0x63A0` bit19 | 一致（`0x509213` `or [esi+0x5170],0x80000`，esi = `EnemyInf+0x1230`） | ✅ 对上 |
 | `FUN_004e9740` 的定位 | 「每帧更新」 | 实为 **AuraCtrl 槽 1**（建 aura 对象 + 4 组位置复位）；每帧本体是 `0x4e79e0` | 需改口径 |
+
+---
+
+## 9. オーラ的视觉
+
+> **一手面（本轮）**：`local/th19.v1.10c/decomp/all.c`（`tooling/ghidra/th20_show.py`）
+> + **指令级直读 PE**（capstone 按 VA 取字节，脚本一次性放 `/tmp/`，未入库、**未开 Ghidra 库**）
+> + `thanm -l 19` / `thdat -x 19`（`aura.anm` 与 `pl00..pl18.anm` 解到 `/tmp/th19x`、`/tmp/th19pl`，**未写回 `local/`**）。
+> 承接 §7.2 的 `sprite script` 列 —— 本节把那一列**落到文件名**。
+
+### 9.0 一句话结论
+
+| 项 | 结论 | 可信 |
+| --- | --- | --- |
+| 画オーラ**区域**的文件 | **角色自己的 anm**：`plXX.anm`（XX = 角色 id `00`..`18`）；**不是** `ability.anm` / `effect.anm` | ✅ |
+| script 号 | 每类一个**硬编码常量**（`8`..`16`），与 §7.2 的 `sprite script` 列逐个吻合；见 §9.3 | ✅ |
+| entry | **不选 entry**：脚本首行 `sprite(-1)`，形状全靠程序化图元（`drawPoly` / `drawRectGrad` / `drawRing` / `ins_617/623/628`） | ✅ |
+| 19 角色共用什么 | 只共用**配方**：`layer(6)` + 形状 + `color(0,32,128)`/`color2(64,192,255)` + `alpha(128)`/`alpha2(160)` + `case(1)`→`scaleTime(20,4,0,0)`→20 帧后 `delete()` | ✅ |
+| 谁画 | Aura 虚表**没有绘制槽**：槽 2 建 VM（id 写 `aura+0x60`）、槽 3 每帧写位置+**缩放=半径**、槽 6/10（`0x416fc0`）删 VM | ✅ |
+| `aura.anm` 是什么 | 归 `AuraCtrlInf`（载入 `+0x10`）：script `0` = 蓄力槽 HUD；script `29` = 蓄力段位リング（19 角色共用）| 🟡 |
+
+### 9.1 链：script 号是立即数，anm 来自「每玩家记录 → 玩家对象 → `+0x44`」
+
+```asm
+; AuraReimuInf 槽 2 = 0x416d50（其余 18 类同构）
+0x00416d5d  lea  ecx,[edi+0x60]     ; &aura->vm_id
+0x00416d60  call 0x4cb3d0           ; 先删旧 VM（置 +0x578=1）并把 id 清 0
+0x00416d7d  mov  eax,[edi+0x68]     ; aura+0x68 = 每玩家记录（槽 1 写 &DAT_005d1a60 + i*0xf）
+0x00416d80  mov  ecx,[eax+4]        ; 记录 +4 = 该玩家的对象
+0x00416d83  mov  ecx,[ecx+0x44]     ; 玩家对象 +0x44 = 已装载的 plXX.anm（AnmLoaded*）
+0x00416d79  push 0xf                ; ★ script 号（Reimu = 0xf；push 先于上面三条执行）
+0x00416d86  call 0x4cb960           ; 由该 anm 克隆一个 VM（≡ th18 的 0x405bf0，🟡）
+0x00416d93  mov  [edi+0x60],eax     ; VM id → aura+0x60
+```
+
+- **经验证的两端**（都是一手）：`FUN_005478f0`（`0x5478f0`，玩家对象初始化）
+  `0x547a5d call 0x4ce870` → `0x547a62 mov [ebx+0x44],eax`（文件名 `"pl%.2d.anm"`，anm 槽 id = 玩家序号 + 9），
+  第二支 `0x547aee` → `+0x48` = `"pl%.2df.anm"`；同函数 `0x547918 mov [eax*4+0x5d1a64],ebx`
+  把该对象挂进每玩家记录 `+4`。
+- `FUN_004cb960`（`0x4cb960`）＝「由 AnmLoaded 起一个 VM」：`FUN_004cacd0` 分配 **`0x634`** 字节 VM
+  → `FUN_00403d90` 按第 3 实参取**脚本模板**（模板表 = `AnmLoaded+0x210`，步长 `0x634`；th18 是 `+0x10c`/`0x60c`）
+  → `FUN_004bd660` 跑一帧。第 6 实参 = layer，aura 传 `0xffffffff` ⇒ **层号由脚本的 `layer(6)` 决定**。
+- **结论（✅）**：`aura+0x70` 一带**没有** sprite/script 号；script 号是槽 2 里的立即数，
+  文件由「玩家对象 `+0x44`」决定 ⇒ 19 个角色各自的 `plXX.anm`。
+
+### 9.2 每帧同步：缩放 = 判定半径（**顺带答 §7.1 的 ❓**）
+
+```asm
+; AuraReimuInf 槽 3 = 0x416e80
+0x00416e83  lea  ecx,[esi+0x6c]     ; aura+0x6c = 动画器（目标 +0x70、时长 +0x94、模式 +0x98）
+0x00416e86  call 0x402c30           ; 推进并返回当前半径 XMM0
+0x00416e97  call 0x4cb8b0           ; 由 id（aura+0x60）取 VM
+0x00416ea0  movss [eax+0x54],xmm1   ; VM scale.x = 半径
+0x00416ea5  movss [eax+0x58],xmm1   ; VM scale.y = 半径
+0x00416eb6  movq  xmm0,[eax+0x68c]  ; 玩家坐标（[aura+0x68]+4 → +0x68c）
+0x00416edd  movq  [eax+0x614],xmm0  ; VM entity_pos = 玩家坐标
+0x00416ef2  movss [esi+0x9c],xmm1   ; aura+0x9c = 当前半径（槽 7 判定用的就是它，§7.1）
+```
+
+- **`aura+0x70` 的读者找到了**：`FUN_00402c30`（`0x402c30`，ecx = `&aura+0x6c`）在 `0x402c96 movss xmm0,[esi+4]`
+  **直接返回 `aura+0x70`**；插值支在 `0x402db0`–`0x402dc2`（`(target−cur)×ease + cur`，`0x402dab call 0x4d5e10` 是缓动）。
+  ⇒ `+0x70` = 「动画**目标**半径」而不是死字段，`+0x9c` = 它的输出（§7.1 的 ❓ 解除，判定与绘制是同一个量 ✅）。
+- **结论（✅）**：画出来的多边形半径 = `drawPoly(1.0f, N)` 的 `1.0 × VM scale` = `aura+0x9c`
+  = 槽 7 的判定半径 ⇒ **视觉与判定同量**（Manual「オーラに触れた〜」的手感与画面自洽）。
+
+### 9.3 19 角色 → 文件 / script / 形状（★ 逐个角色不同）
+
+| 角色 (id) | anm 文件 | script | 形状（首个绘制指令，th18 anmmap 名 🟡）| VM 数 |
+| --- | --- | :-: | --- | :-: |
+| Reimu (0) | `pl00.anm` | `15` | `drawPoly(1.0,64)` 圆 | 1 |
+| Marisa (1) | `pl01.anm` | `15` + 子 `16`/`17` | 主 VM `alpha(0)` + 两条 `drawRectGrad(1,448)`（竖带）| 1+2 子 |
+| Sanae (2) | `pl02.anm` | `16` | `drawPoly(1.0,64)` 圆 | 1 |
+| Ran (3) | `pl03.anm` | `11` + 4 子 `12` | `drawRectGrad(1,1)` 本体 + ±0.5 偏移的十字（`scriptNewPos`）| 1+4 子 |
+| Aun (4) | `pl04.anm` | `11` | `ins_617(1.0,64)` ❓ | 1 |
+| Nazrin (5) | `pl05.anm` | `10` | `drawPoly(1.0,64)` 圆 | 1 |
+| Seiran (6) | `pl06.anm` | `11` | `drawPoly(1.0,64)` 圆 | 1 |
+| Orin (7) | `pl07.anm` | `13` | `ins_623(2,1,8,32)` ❓ | 1 |
+| Tsukasa (8) | `pl08.anm` | `8` | `ins_623(4,1,8,32)` ❓ | 1 |
+| Mamizou (9) | `pl09.anm` | `10` | `drawPoly(1.0,21)` 21 边形 | 3 |
+| Yachie (10) | `pl10.anm` | `13` | `drawPoly(1.0,6)` 六边形 + `scale(64,64)` | 1 |
+| Saki (11) | `pl11.anm` | `14` | `ins_617(1.0,64)` ❓ | 1 |
+| Toutetsu (12) | `pl12.anm` | `15` | `drawPoly(1.0,64)` 圆 | 1 |
+| Suika (13) | `pl13.anm` | `11` | `drawPoly(1.0,64)` 圆 | 2 |
+| PL14 (14) | `pl14.anm` | `10` | `drawRing(128,1,8)` | 1 |
+| PL15 (15) | `pl15.anm` | `11` | `drawPoly(1.0,64)` 圆 | 3 |
+| PL16 (16) | `pl16.anm` | `10` | `drawPoly(1.0,64)`，配色不同（`color(192,0,255)`）| 1 |
+| PL17 (17) | `pl17.anm` | `12` | `drawPoly(1.0,64)` 圆 | 1 |
+| PL18 (18) | `pl18.anm` | `11` | `ins_628(1.0,5)` + `scale(64,5)` ❓ | 1 |
+
+- 多 VM 类把**额外 id** 存进 `aura+0xa4` 起的数组（Suika 的 dtor 释放 **`0xc4`** 字节，单 VM 类是 `0xa0`）——
+  一手：`AuraSuikaInf` 槽 2 `0x426140` 的 `0x4261xx` 循环（`piVar5` 从 `+0xa4` 到 `+0xac`）。
+- 与 §7.2/§7.3 的自洽：单 VM 的圆（`drawPoly(...,64)`）↔ 槽 7 的圆；Mamizou 3 VM ↔ 三圆判定；
+  Ran 的十字 ↔ 两段有向矩形；Suika/PL15 的 2–3 VM ↔ 三圆并集。
+
+### 9.4 `aura.anm`（同系统的另一支，**不是**区域本体）
+
+| 段 | 一手 | 说明 |
+| --- | --- | --- |
+| 装载 | `FUN_004e8780`（`0x4e8780`）/ `FUN_004e9960`（`0x4e9960`）：`FUN_004ce870(0x3e,"aura.anm")` → `AuraCtrlInf+0x10` | 1 entry / 30 script，贴图 `bullet/aura.png`（256×128，8 个 64×64 sprite）|
+| script `0` | `FUN_004e9740` 尾部：`mov ecx,[edi+0x10]`（= aura.anm）→ 起 VM（script `0`）→ id 存 `AuraCtrl+0xb8` | 位置 `(296/2 + (玩家0 ? 328 : 16), 456, 0)`；随后 `FUN_004cb7a0(id,4)` = 中断 → `case(4)`|
+| script `0` 的子 `1`..`12` | `layer(34)` + `drawRectGrad(224,4)` / `drawRectBorder(224,4)`（6 组色） | ⇒ **蓄力槽 HUD** 🟡 |
+| script `29` | `FUN_004e79e0`（`0x4e79e0`）：`0x4e7ca0 push 0x1d`、`0x4e7ca3 mov ecx,[ebx+0x10]` → id 存 `AuraCtrl+0x64` | 位置 = `AuraCtrl+0x70`（玩家坐标）；`layer(13)` + `sprite(0..7)` |
+| script `29` 的分支 | `case(2)/(8)/(9)/(10)/(11)`：`pos(0,-8)→(0,-40)`、`scale(0.8)→(2.5)` | 跨段时 `FUN_004cb830(AuraCtrl+0x64, 8/9/10/11)`（`0x4e7dxx` 四处）⇒ 四段 ↔ 四 case，**蓄力段位リング** 🟡 |
+
+### 9.5 未解（本节）
+
+| # | 未解 | 线索 |
+| :-: | --- | --- |
+| 1 | `ins_617` / `ins_623` / `ins_628` 无名（Aun/Saki、Orin/Tsukasa、PL18）| thtk 的 `v8.anmm` 只到 613 ⇒ 这三个是 TH19 新增图元；需从 anm VM 的 handler 表反 |
+| 2 | 脚本自带 `scale(64,64)`（Yachie）/`scale(64,5)`（PL18）是否被槽 3 每帧覆盖 | 槽 3 写 `+0x54/+0x58`，脚本 `scale` 也写同一格 ⇒ 顺序需核 |
+| 3 | `aura.anm` script `0` 的确切身分（HUD？）与 `25`..`28`（296×448 黑罩）的生成者 | 未找到引用点 |
+| 4 | PL14..PL18 对应哪些角色 | 只知 id `14`..`18` → `pl14..pl18.anm` |
+
+---
+
+## 10. 沈静化的下游（ECL 侧）
+
+> 本节只答 ECL / 引擎侧「沈静化之后发生什么」：子程序在哪、改什么字段、有没有自毁计时器。
+
+### 10.0 结论速览
+
+| 问题 | 结论 | 可信 |
+| --- | --- | --- |
+| 子程序在哪个 ecl | **`default.ecl`**（43 个 ecl 全解包 grep，只有它含串 `GhostPureOrinDisable`）| ✅ |
+| 它改什么字段 | **HP（耐久）**，不是新字段：`@GhostPureHP_D()` = `ins_511(50 + I0*10)`；enable 侧是 `ins_511(400 + I0*400)` | 🟡 |
+| 「自然成仏」的计时器 | **该子程序内没有**：末尾 `wait(100)` + `wait(60)` 后 `return`，**不自毁** | ✅ |
+| 那它在哪 | ❓ **没找到**以沈静化 flag 为条件的计时器（exe 里 bit19 的读点只有 4 个函数，全在命中判定链）| ❓ |
+
+### 10.1 定位（找过的文件）
+
+- 解包：`thdat -l 19 …` 列出 **43 个 ecl**（`default.ecl`、`common.ecl`、`pl00..pl18.ecl`、`wave01..wave11(.f).ecl`），
+  全部 `thdat -x 19 -C /tmp/th19ecl` 后 `grep -rl GhostPureOrinDisable` ⇒ **命中唯一：`/tmp/th19ecl/default.ecl`**。
+- 字串一手：`"GhostPureOrinDisable"` 在 `0x599a14`（`.rdata`，紧邻 `BossDead`/`BossEscape`，注释指向 `enemy.cpp:411`）。
+  该 ecl 内嵌子程序名表（`thecl -d` 直接打印名字），所以 `default.ecl` 就是敌人 ECL 的公共库。
+- exe 侧入口（§8.2 步 5 的下游）：`FUN_00509030`（`0x509030`）`0x5091ee call 0x56bf30` → `FUN_00436a40`（`0x436a40`）
+  = 对该敌人 ECL 的**名字表二分查找**（`+0x1218`+8 计数、`+0x20c` 名字指针表）→ `0x5091f8 call 0x56b4e0` 跑一步 VM。
+
+### 10.2 指令列（`thecl -d 19 default.ecl`，🟡 名/参数义按 th18 eclmap）
+
+```text
+void GhostPureOrinDisable()                 // default.ecl
+{
+    ins_302(2);                             // anmSelect(2)?        🟡
+    ins_318();                              // anmReset()
+    ins_303(0, 91);                         // anmSetSprite(0, 91)：sprite 91 存在于 enemy.anm entry 0（48×48）
+    @GhostPureBlast();                      // 子：1028(80.0) 1031(40) 1029(10) 1030(10)
+    @GhostPureHP_D();                       // ★ 子：ins_511(50 + I0*10) = 耐久骤降
+    ins_500(24.0f, 24.0f);                  // setHurtbox
+    ins_501(16.0f, 16.0f);                  // setHitbox
+    ins_404(-1.5707964f, 0.02f);            // moveVel(-π/2, 0.02)
+    ins_405(2, 3, -1.5707964f, 0.02f);      // moveVelTime(2, 3, -π/2, 0.02)
+    ins_23(100);                            // wait(100)
+    ins_405(60, 3, -1.5707964f, 2.0f);      // moveVelTime(60, 3, -π/2, 2.0)
+    ins_23(60);                             // wait(60)
+    return;                                 // ★ 无 delete()、无 setInterrupt/setTimeout
+}
+```
+
+- 对照用的兄弟子程序（同文件、同族）：
+  - `GhostPureHP_D` = `ins_511(50 + I0*10)`；`GhostPureHP_E` = `ins_511(400 + I0*400)`，且 `I0 >= 5` 时改 `ins_511(50000)`；
+  - `GhostDisableMove` = `ins_404(-π/2,0.02)` + `ins_405(2,3,…)` + `wait(100)` + `ins_405(200,3,-π/2,2.0)` + `wait(200)`（比本子程序多 140 帧）。
+- `ins_511` 取**一个整数表达式**、值域 50..50000，与「耐久」量纲一致；`I0` = th18 eclmap 的全局变量名（`[-9985]`）。
+
+### 10.3 它改的是哪个字段
+
+- **ECL 侧只有 `ins_511`**（🟡 th18 eclmap 名 `lifeSet`）：`GhostPureOrinDisable` → `GhostPureHP_D`。
+  本子程序里**没有**其它数值字段写入（只有 anm/sprite、判定盒、速度、wait）。
+- **引擎侧 HP 字段（一手，TH19）**：`FUN_0050be30`（`0x50be30`，生成敌人）把 ECL 生成参数的同一个 `eax`
+  在 `0x50beb2` / `0x50bebb` / `0x50bec4` 同时写进 `EnemyInf+0x6238` / `+0x623c` / `+0x6240`
+  （另有 `0x50bea9` 写 `+0x6234`）；`FUN_00509980` 内多处把减血写 `+0x6240`
+  （`iVar2 = *(int *)(param_1 + 0x55c8)` 后 `+0x6240 = +0x6238 - …`），死亡/变色判据读 `+0x6240`（499/99、900/200 阈值）。
+- ⇒ **结论（🟡）**：沈静化把耐久按 `400 + I0*400` → `50 + I0*10` 砍下去
+  （I0=0 时 8 倍、I0=4 时约 22 倍）——与 Manual「耐久力も格段と低く」逐字对应。
+  ❓ 「上限」是否同改未在 TH19 侧坐实（「当前+上限同写」这一句来自 th16 文档）。
+
+### 10.4 「自然成仏」：计时器与条件 —— 本轮**没找到**
+
+1. **该子程序内部没有**：末尾 `wait(100)`/`wait(60)` 后 `return`，既无 `ins_1()`（delete）也无 `ins_514/521`（中断/超时）。
+   ⇒ §5/§6 里「耐久骤降 / 自然成仏**很可能**就在这个子程序里」这条推测**只有前半成立**（耐久成立、成仏不成立）。
+2. **exe 侧对沈静化 flag（内层 `+0x5170` bit19 = `EnemyInf+0x63A0` bit19）的读取点只有 4 个函数**：
+   `FUN_004f8930`（`0x4f8930`）、`FUN_004f8c50`（`0x4f8c50`）、`FUN_004f9810`（`0x4f9810`）、`FUN_00520450`（`0x520450`）
+   —— 全是「这一下是否命中该霊」的弹/攻击判定链（配合 `S+0x9c` = `@ORIN2`），
+   **没有任何计时器或致死读取** ⇒「沈静化 → 一定时间后自动成仏」**不是**以该 flag 为条件实现的 ❓。
+3. **唯一一手实现「计时到期 → 変身 + 自毁」的是另一条链**（🟡，且**不是**场上被沈静化的敌人）：
+   ghost（送出去的霊）池对象的每帧 `FUN_0051b480`（`0x51b480`）：`FUN_004026c0(ghost)` 推进计时 →
+   判 `ghost+0x28 <= ghost+0x38`（**计时器 `+0x28` vs 阈值 `+0x38`**）→ 超了就按 `ghost+0x20`
+   （1=ピュア / 2=Wolf / 3=Otter / 4=Eagle）跑 `FUN_0050d410("GhostWolf"/"GhostOtterR"/"GhostOtterL"/"GhostEagle")`
+   并 `return 1`；**调用方看到返回值非 0 立刻调 `FUN_0051b3d0`（`0x51b3d0`）= 该对象析构**。
+   （守卫条件里的 `0x80000` 是**全局**游戏状态位 `[0x5d1a54]+0x140`，不是霊的沈静化 flag。）
+4. **ECL 侧唯一的计时器都不成气候**：`GhostPureEnable` 里 `ins_514(0, -1, 600000, "GhostPureDisable")`
+   （🟡 = th18 的 `setInterrupt(槽, 血量, 超时帧, 子)`，`600000` 帧 ≈ 2.7 小时）+ `ins_521(0, …)`（`setTimeout`）；
+   `GhostPure` 主循环是 `wait(1000)` 的死循环 ⇒ **放着不管不会自己消失**。
+5. **如实结论**：v1.10c 的 `GhostPureOrinDisable` **没有**「wait 一段后自毁」；
+   也没有任何以沈静化 flag 为条件的成仏计时器。Manual 的「一定時間経つと自然成仏」在本轮**未找到落点**，
+   ❓ 候选解释（都未验证）：(a) 由「耐久砍到很低 → 被打掉」体现；
+   (b) 落在未查的上层（波次/回合推进按别的状态判）；(c) 本节第 3 条的 ghost 池寿命（对象不同）。
+
+### 10.5 未解（本节）
+
+| # | 未解 | 线索 |
+| :-: | --- | --- |
+| 1 | 「自然成仏」的实体 | 不以 flag19 为条件；可查波次结束/回合推进对沈静化敌人的处理 |
+| 2 | `ins_511` 是否同改 HP 上限 | 需定位 TH19 的 opcode 处理表（本轮未找到；`+0x6238` 的写点只有生成与复位）|
+| 3 | `ins_302(2)` / `ins_303(0,91)` 的参数义 | `91` 在 `enemy.anm` entry `0`（48×48）；`ghost.anm` 只有 32 sprite ⇒ 用的是 enemy.anm |
+| 4 | 被沈静化后 ECL 主线程的走向 | `FUN_0056bf30` 只把当前线程跳到该子程序；子程序 `return` 后主循环是否恢复未验证 |
+| 5 | `GhostPureOrinDisable` 的 160 帧里 sprite `91` 的实际画面 | 需实跑截图（`enemy.anm` entry `0`）|
