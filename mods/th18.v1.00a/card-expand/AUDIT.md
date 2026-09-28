@@ -24241,9 +24241,10 @@ youkai: graze orbs n=1 x2 bullet(s) gate=ok (spell=0 shottype=0 gauge=9xxx boss=
 `th08:0x406d70`（极妖 `[eax+0x3ddfe]` + `setge`）、中度档 `0x406d40`/`0x406da0`。
 **换形段（`0x44b180`–`0x44b437`）里一次都没写 `globals+0x22`** ⇒ 换形**不动槽**。
 
-**② 形态标志 `player+3`（isYoukaiMode）**：人→妖 `th08:0x44b1e0 mov BYTE [edx+0x3],0x1`、
+**② 形态标志 `player+3`（`0x17d5efb`；仓库两处既有命名：`isYoukaiMode` / `engine/item/th08/01-time-orbs.md` 的 `is_focused` —— 语义都是「当前侧」）**：人→妖 `th08:0x44b1e0 mov BYTE [edx+0x3],0x1`、
 妖→人 `th08:0x44b433 mov BYTE [edx+0x3],0x0` —— 两支都是**每帧无条件写**（在 `player+8` 的自增/判定**之外**）
-⇒ **换形第一帧就翻**。它的读点共 8 处（全 exe 穷举）：击破 ±200 方向 `0x42d65c`、收刻符 ±111 符号 `0x4413a5`、
+⇒ **换形第一帧就翻**。它的读点共 8 处（全 exe 穷举；`g_Player = 0x17d5ef8` 是静态对象 ⇒ 反汇编里一律**绝对寻址**）：
+击破 ±200 方向 `0x42d65c`、收刻符 ±111 符号 `0x4413a5`、
 道具/`.sht` 表选择 `0x44054d`、归航道闸 `0x440838`、统计与掉落 `0x42c6d7`/`0x42d197`/`0x42d1c5`/`0x42d217`。
 
 **③ 形态标志 `player+5`（`IsYoukai()`）**：置位/清位都在 `player+8` 的门里 ——
