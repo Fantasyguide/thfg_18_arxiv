@@ -233,6 +233,8 @@ typedef struct {
     uint32_t      graze_seen;          /* 上一帧的累计擦弹（`CE_ADDR_GRAZE` 0x4ccd0c）快照 */
     uint32_t      orb_taken;           /* 本局收了几颗刻符 */
     uint32_t      orb_full;            /* 池满 / VM 建不出来而放弃的颗数（诊断）*/
+    int32_t       score_seen;          /* ★ 2026-09-27（第四十一批）：上一行台账时的引擎分数（算 Δ 用）——
+                                        *   owner 报「什么都没干，得分一直在涨」⇒ 台账给出**实测涨速**。*/
     uint16_t      orb_peak;            /* ★ 2026-09-27（第三十八批）：本局**同时在飞的刻符峰值**（诊断）——
                                         *   符卡螺旋那一段应当打到 ~100（`YK_ORB_MAX` 就是按它定的）。*/
     uint32_t      hud_bar, hud_human, hud_youkai, hud_cursor;  /* 人妖槽 HUD 的 4 支 VM */
@@ -4792,11 +4794,12 @@ static int on_tick_2(ce_card_t *c)
             yk_orb_motion_params(ch, &sp, &rr);
             ce_log("youkai: gauge=%d piv=%d orbs=%d taken=%u live=%u peak=%u full=%u hud=%u "
                    "speed=%.0f pick=%.0f shoot=%d fengma=%u fscore=%d "
-                   "piv_pool=%d piv_show=%d pivw=%d bullet_hit_orbs=%u hitpos_swap=%u graze_pos_bullet=%u fengma_eaten=%u "
+                   "score=%d dscore=%d fengma=%d piv_pool=%d piv_show=%d pivw=%d bullet_hit_orbs=%u hitpos_swap=%u graze_pos_bullet=%u fengma_eaten=%u "
                    "graze_n 1/2/3=%u/%u/%u graze_gate ok/boss/gauge/shottype/off=%u/%u/%u/%u/%u clamped=%u",
                    (int)s->gauge, (int)s->piv, (int)s->orbs, s->orb_taken, s_orb_live,
                    (unsigned)s->orb_peak, s->orb_full, (unsigned)s->hud_ready, sp, rr, yk_shooting(),
-                   (unsigned)s->fengma, (int)s->fengma_score,
+                   (int)CE_SCORE(), (int)(CE_SCORE() - s->score_seen), (unsigned)s->fengma,
+                   (int)s->fengma_score,
                    /* ★ 2026-09-27（§BE #137）：这两个数 = owner 报的那条能不能过的**判据**
                     * （`piv_pool` = 左下角那个数画的东西、`piv_wrote` = 本卡写进去的那一份）。*/
                    (int)ce_piv_pool(), (int)(s->piv - s->piv_base),
@@ -4808,6 +4811,7 @@ static int on_tick_2(ce_card_t *c)
                    s_graze_gate[YK_GRAZE_GATE_OK], s_graze_gate[YK_GRAZE_GATE_BOSS],
                    s_graze_gate[YK_GRAZE_GATE_GAUGE], s_graze_gate[YK_GRAZE_GATE_SHOTTYPE],
                    s_graze_gate[YK_GRAZE_GATE_OFF], s_graze_clamped);
+            s->score_seen = (int32_t)CE_SCORE();      /* ★ 第四十一批：本行台账的分数基线 */
         }
     if (!CE_PLAYER()) {
         yk_drop_all(s, "no player");

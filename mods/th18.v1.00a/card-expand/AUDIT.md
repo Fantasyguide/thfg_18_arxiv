@@ -24752,3 +24752,51 @@ EIP 在 : mod_th18_card_expand.dll+fd1b
 闸：`make -s check` rc=0（`youkai_core: 5254 checks, 0 failed`；x87 = 0；33 个 BP_* 双向一致；
 生成物无漂移；393 个文档全过）；**并已用 `objdump -d` 确认重建后的 DLL 里再没有 `movhps 0x1270(...)`**
 （上一版那一条指令就是崩点）。
+
+## §BE 详录 #142（2026-09-27 第四十一批）：owner「我什么都没干，怎么得分一直在涨？」= **逢魔的一手收益**
+
+> **owner**：「我什么都没干，怎么得分一直在涨？」
+
+### 1. 结论：这是一手行为（不是我们加的）
+
+一手逐指令（`th08:0x44c52a`–`0x44c560`，在玩家的每帧更新里）：
+
+```
+44c52a  mov ecx,0x160f508 / 44c52f call 0x406d10      ; GaugeIsExtremelyHuman()（極人）
+44c534  test eax,eax / 44c536 je 0x44c562              ; 不是極人 ⇒ 去查極妖那一支
+44c554  push 0x64                                      ; ★ 100（= 100 显示分）
+44c556  mov ecx,0x160f508 / 44c55b call 0x4181f0       ; GameManager::add_to_score
+44c562  （極妖那一支）… 44c58c push 0x64 / 44c593 call 0x4181f0
+```
+`0x4181f0` 本体（`4181f8`–`418212`）：`mov eax,[ebp+8]`（= 100）→ `cdq / idiv 10` → `add [globals+8],eax`
+⇒ **+10 内部单位 = +100 显示分，每帧一次**（本仓早就记过：`HUMAN-YOUKAI-GAUGE.md` §「一档 100/帧」＋
+「全 exe 18 处 `call 0x4181f0`，只有 `th08:0x44c55b`/`:0x44c593` 是「逐帧 + 以槽位为门」」）。
+⇒ 本卡 `CE_SCORE() += YK_FENGMA_SCORE_PER_FRAME`（`youkai.c`，门 = `fm && !CE_GUI_MSG_ACTIVE()`，
+`fm` = 極人 **或** 極妖，if/else 语义 ⇒ 不会双算）**就是这一条的复刻**。
+
+### 2. 为什么「什么都没干」也涨：槽停在极档 = 逢魔没退出
+
+owner 那一局的台账（同一进程）：
+
+```
+youkai: gauge=-10000 piv=100150 … fengma=1 fscore=7300   shoot=1 …
+youkai: gauge=-5110  piv=100260 … fengma=0 fscore=16100  shoot=1 …
+youkai: gauge=-10000 piv=101040 … fengma=1 fscore=73100  shoot=1 …
+```
+- `gauge=-10000` = **人侧极档**（量程 ±10000）⇒ `fengma=1` ⇒ 每帧 +100 分 ⇒ **分数自己涨**；
+- 三行台账的 `shoot=` **都是 1** ⇒ 引擎的射击键位（`CE_INPUT_HELD()` bit0）当时是**按下**状态；
+  而「持续开火」本身就是把人妖槽往当前侧推的那一支（`th08:0x44be67`，峰值 20/帧）⇒
+  **按着 Z 站桩就会把槽顶到极档并停在那里** ⇒ 逢魔一直开着。
+⇒ 松开 Z（或把人妖槽拉回中位）分数就停。
+
+### 3. 本批只加诊断（不改行为）
+
+台账行新增 **`score=`（引擎当前分数）与 `dscore=`（距上一行台账的增量）** ⇒ 下一条台账就能一眼看出
+「涨速是不是正好 = 100×帧数」（逢魔那一档）还是别的来源。若要**改**这条（例如 owner 觉得太便宜），
+那是对一手的偏离，要 owner 明说 —— 一手值就摆在这里，地址可复读。
+
+### 4. 如果 owner 其实**没按任何键**
+
+那 `shoot=1` 就说明 `CE_INPUT_HELD()`（`engine.h` 的 `CE_ADDR_INPUT_HELD`）读到的位卡住了
+⇒ 那是**另一个 bug**（槽会被永久推向当前侧 ⇒ 永远逢魔）。判据：台账里 `shoot=` 恒 1 且
+`gauge` 恒在某一极。**本轮台账加了 `score=`/`dscore=`，下一条台账就能同时看出这两件事。**
