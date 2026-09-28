@@ -24281,3 +24281,71 @@ youkai: graze orbs n=1 x2 bullet(s) gate=ok (spell=0 shottype=0 gauge=9xxx boss=
 | **通用击破批那条 `if (!focused) return;`**（`yk_on_enemy_killed` 中段）：一手 `0x42d652 push 1 / :0x42d657 call 0x42adb0` 在死亡路径里**无条件**（既不看形态也不看槽）⇒ 本卡「人侧不撒击破批」是**多出来的形态门**，与 §2 那条同源 | 只影响「人侧击破带子敌人的敌机」。删它 = 人侧也会喷永点盘（更贴一手），但会撞 owner §6「人侧和不装 108 完全一样」那条口径 ⇒ **本批不动，等 owner 拍** |
 | 「妖逢魔 + **道中**（无 boss）擦弹」一手同样**一颗都不给**（`0x44aaac` + 社区「ボス戦のみ」）| owner 若在道中试的，就会看到「妖逢魔擦弹不掉」而这**正是原作行为**。判据看 `gate=boss`；要不要为手感放宽 = owner 拍 |
 | 擦弹刻符的**落点**仍是自机（拿不到被擦的那颗弹） | `ce_graze_take` 依赖的断点 `0x42497f` 在 `sites.py` 里被注释掉 ⇒ 恒返回 0；改观感不影响数值 |
+
+## §BE 详录 #137（2026-09-27 第三十六批）：owner「永点吃了之后**没有加刻符**，左下角**没显示额外最大得点**」—— 永点没接进**共享 PIV 池**
+
+> **owner 原话（验收标准）**：「永点吃了之后没有加刻符，左下角没显示额外最大得点」。
+
+### 1. 真因：本卡只做了「声明给计分层」那一半，**池一个字都没写**
+
+| 那份数 | 谁读 | 谁写 | 本卡原来 |
+| --- | --- | --- | --- |
+| **计分层** `ΔG_08` | 引擎计分（随 `coeff_18` 被高度折扣） | `ce_score_declare_delta(id, piv − piv_base)` | ✅ 有（§BE #122） |
+| **「额外最大得点」池**（左下角那 6 位数画的东西、110/111/112–117 共享的一份） | `ce_piv_pool()`：本卡 HUD `yk_night_text_sync()`、`faith_hud_maxpoint()` 一族 | **只有 `ce_piv_add()`**（且必须先 `ce_piv_claim()`） | ❌ **没有** |
+
+⇒ 池里从来没有本卡那一份 ⇒ **永点吃得再多，左下角那个数一动不动**（只有 112–117 在场上时由它们各自的事件贡献才动）。
+一手为什么同义：**§BE #43 口径 1（owner 2026-09-18 逐字）「时点 ≡ 额外 PIV ≡ 额外最大得点」**
+⇒ TH08 的 `PIV` 增量**就是**「额外最大得点」，本来就该进那一份数。
+（AUDIT 2026-09-22 的未决项逐字写着「等 owner 定『刻符载体』那一轮再按 `ce_piv_add(108, …)` + `FAMILY_08` 接」
+—— 本轮就是那一轮；`FAMILY_08` 早已接上，缺的是池这一笔。）
+
+### 2. 改了什么（只动卡 108 自己的文件）
+
+- `cards/youkai.c`（`on_tick_2`，紧接在 `ce_score_declare_delta()` 之后）：
+  `ce_piv_claim(cid, YK_PIV_POOL_CAP)`（每帧重申、幂等 ⇒ 与 112 在 `on_item_frame` 里的做法同形）
+  ＋ `ce_piv_add(cid, yk_piv_pool_step(s->piv − s->piv_base, ce_piv_written(cid)))`。
+- `cards/youkai_core.{h,c}`：新增 `YK_PIV_POOL_CAP 0x7ffffffe` 与纯函数 `yk_piv_pool_step(extra, written)`
+  （池是**累加**语义 ⇒ 每帧只补差额；目标不倒退、已写超出也不倒扣）。
+- `tests/test_youkai_core.c`：+8 条（`0/0 ⇒ 0`、负数目标 ⇒ 0、首笔整补、追平 ⇒ 0、只补差额、
+  已超 ⇒ 0（不倒扣）、写账被清后重补、`YK_PIV_POOL_CAP` 值）。
+- 台账日志（`youkai: gauge=… piv=…`）加 `piv_pool=` 与 `piv_wrote=` 两个字段 —— **本条工单的实跑判据**。
+
+**上限口径**（§BE #43 口径 2 逐字）：「**PIV 无原生上限** ⇒ 用 int32 安全上界（防溢出成负数），别去找 clamp」
+⇒ `YK_PIV_POOL_CAP = 0x7ffffffe`（`ce_piv_claim()` 自己会夹到同一值）。
+
+### 3. 一手数值链（本卡已实现的形状，逐条出处）
+
+| 事件 | 一手 | 本卡 |
+| --- | --- | --- |
+| 收 1 颗刻符 | `PIV += ((delta + (total&1)) / 2) × 10`（`th08:0x418294`–`:0x4182bc`）⇒ 每 2 颗 +10、平均 +5/颗 | `yk_piv_add()` ✓ |
+| SC 捕获那批刻符 | **再加**一笔 `PIV += count × 10`（`th08:0x41732c`–`:0x41733d`），owner 口径「有意无意就按照复刻即可」 | `yk_piv_spell_bonus()` 已写、**但还没有调用点** ⇒ 见 §4 ❓① |
+| 负数（miss / 决死） | `jle` ⇒ **不动 PIV** | `yk_piv_add` 的 `delta <= 0` 早退 ✓ |
+
+### 4. 剩余 ❓
+
+| ❓ | 影响面 |
+| --- | --- |
+| ① `yk_piv_spell_bonus()` **没有调用点**（SC 捕获结算那笔 `+count×10` 未接线）| 一手是**两笔都记**（§BE #43 口径 2）。要接就得在这里判「本次收的刻符来自 SC 捕获结算」—— 我们那批刻符由 `yk_spell_orb_*` 生成、带得出 count ⇒ 可以接，但属另一条线（本批不动） |
+| ② 「删卡再装回」会让本卡那一份**重复计入池**（`ce_piv_release()` 清 `s_piv_wrote`，而池**不回收**）| 只可能发生在商店里换卡组时（一手 TH08 没有「中途删卡」这个情形）；SDK 的既有语义就是「退场 = 写账一并清」。⚠ 牌组允许**同一张卡两份**时不会翻倍：每帧只补「相对**共享**已写账的差额」⇒ 收敛到 `max(各实例的额外量)` |
+| ③ 左下角那个数现在 = **池**（含 110/111/112–117 的贡献）| 这是 §BE #122 的 owner 口径（「同一份数」）；若 owner 想要「只显示本卡那一份」要改口径，属另一个决定 |
+
+### 5. 回归（原文）
+
+- `cd native && make -s check` ⇒ `youkai_core: **5220** checks, 0 failed`（改前 5212 ⇒ 本批 **+8**）；
+  `x87 in our objects: 0`；`✅ 全部对上（31 个 BP_* 双向一致）`；`✅ 生成物无漂移`；
+  `engine_abi_check：对账通过 ✅（8 条）`；`anm_hud_alpha_check: 24 项一致 ✅`。
+  ⚠ 同一次 `make check` 里 `[links]` 有 **5 处 RED，全部在别的 agent 的在制品里**
+  （`games/th20.v1.00a/INDEX.md` ×4 + `SINGLE-CARD-TEST.md` ×1 指向尚不存在的 `engine/stone/th20/*`
+  —— 那是 TH20 那一批刚写进去的链接，本批 4 个文件 0 违例；本批跑闸时工作树里还有他们的未提交改动）。
+- `python3 native/sites.py verify` ⇒ rc=0（`✅ 全部对上`；**零新增站点**：池读写全是 SDK 调用，不碰 exe）。
+- `make -s dllx87` ⇒ rc=0；`cards/youkai.c` 重编零警告。
+- 发布：DLL `83c0138b…` ⇒ **`a7c2a0ff3528212800669057566a71b0`**（`make -s release` rc=0；
+  patch / 四份 `pl0X.sht` / 两份 anm / cards / files 与上一批**逐项相同** ⇒ 又只动 DLL）；
+  `bash local/sync_modkit_dll.sh` ⇒ **4 份同一 md5**。
+
+### 6. 实跑判据（owner 下一次跑按这条判）
+
+1. 开局什么都不吃：左下角那个数应当是 **`000000`**（池初值 0）。
+2. 吃永点：**每 2 颗**那个数 **+10**（一手 `th08:0x4182bc` 的形状）。
+3. 日志台账行（每 600 帧一行）：`piv_pool=` 跟着 `piv=` 一起涨、`piv_wrote=` 追到 `piv − piv_base`；
+   若 `piv=` 在涨而 `piv_pool=` 不动 ⇒ 装的是 `83c0138b…` 那版 DLL（对不上 `a7c2a0ff…`）。

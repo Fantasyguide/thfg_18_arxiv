@@ -1099,6 +1099,21 @@ void yk_piv_spell_bonus(int32_t *piv, int32_t count)
     *piv += count * 10;                              /* `th08:0x41732c` imul ×10 / `:0x417334` add / `:0x41733d` */
 }
 
+int32_t yk_piv_pool_step(int32_t extra, int32_t written)
+{
+    /* ★★★ 2026-09-27（§BE #137，owner：「永点吃了之后**没有加刻符**，左下角**没显示额外最大得点**」）：
+     *   共享 PIV 池（`sdk_core.h` 的「额外最大得点」一节）是**累加**语义（`ce_piv_add` 只往池里加、
+     *   不回退），而我们的目标量是**绝对值** `extra = piv − piv_base` ⇒ 每帧只能补「还差多少」。
+     *   · `extra <= 0`（刚开局 / 还没吃）⇒ 补 0（池初值才 0 ✓ 用户口径「初值是 0」）。
+     *   · `written` 已经追平或**超过** `extra`（别的来源把池推高了、或本卡曾经写多过）⇒ 补 0，
+     *     **绝不倒扣**（池是「额外最大得点」的读数，不能因为多卡同装就往回走）。
+     *   · 一手：PIV 只会往上（`th08:0x418288` 负增量不碰 PIV；miss / 决死不减）⇒ 单调。*/
+    if (extra <= 0) return 0;
+    if (written < 0) written = 0;
+    if (extra <= written) return 0;
+    return extra - written;
+}
+
 int32_t yk_orb_score(int32_t stage_point_items_in_game, int32_t point_items_in_game)
 {
     int32_t v;

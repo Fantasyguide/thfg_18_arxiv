@@ -1268,6 +1268,20 @@ int main(void)
         yk_piv_spell_bonus(&piv, 7); CHECK(piv == 110);
         yk_piv_spell_bonus(&piv, 0); CHECK(piv == 110);               /* 非正不加 */
         yk_piv_spell_bonus(&piv, -3);CHECK(piv == 110);
+        /* ★★★ 2026-09-27（§BE #137，owner：「永点吃了之后没有加刻符，左下角没显示额外最大得点」）：
+         * **永点 → 共享「额外最大得点」池**的步进（池是累加语义 ⇒ 每帧只补差额）。
+         * 目标量 = `piv − piv_base`（本卡那笔；`piv_base` = 难度初值 6W/10W/20W/30W/30W）：
+         *   · 开局（extra = 0）⇒ 补 0（池初值 0 ✓「初值是 0」这条用户口径）；
+         *   · 吃 2 颗永点 ⇒ extra = 10 ⇒ 补 10（左下角那个数跟着 +10）；
+         *   · 追平之后 ⇒ 每帧补 0（不会重复加）； */
+        CHECK(yk_piv_pool_step(0, 0) == 0);
+        CHECK(yk_piv_pool_step(-5, 0) == 0);            /* 负数目标（不该出现，防御）⇒ 不写 */
+        CHECK(yk_piv_pool_step(10, 0) == 10);           /* 第一笔：整笔补 */
+        CHECK(yk_piv_pool_step(10, 10) == 0);           /* 追平：不再加（每帧重申也幂等）*/
+        CHECK(yk_piv_pool_step(470, 400) == 70);        /* 后续增量：只补差额 */
+        CHECK(yk_piv_pool_step(400, 470) == 0);         /* 已写**超过**目标 ⇒ 不倒扣（池只涨）*/
+        CHECK(yk_piv_pool_step(470, -3) == 470);        /* 已写账被清（新局 `ce_piv_reset`）⇒ 重新补 */
+        CHECK(YK_PIV_POOL_CAP == 0x7ffffffe);           /* 一手 PIV 无上限 ⇒ int32 安全上界 */
         /* 刻符的道具分值（`th08:0x4412c3`–`0x4412ee`）：本关蓝点 ≥ 2000 ⇒ 满值 10000。*/
         CHECK(yk_orb_score(2000, 0) == 10000);
         CHECK(yk_orb_score(5000, 10) == 10000);

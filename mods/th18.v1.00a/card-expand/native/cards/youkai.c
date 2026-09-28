@@ -4653,10 +4653,14 @@ static int on_tick_2(ce_card_t *c)
             yk_orb_motion_params(ch, &sp, &rr);
             ce_log("youkai: gauge=%d piv=%d orbs=%d taken=%u live=%u full=%u hud=%u "
                    "speed=%.0f pick=%.0f shoot=%d fengma=%u fscore=%d "
+                   "piv_pool=%d piv_wrote=%d "
                    "graze_n 1/2/3=%u/%u/%u graze_gate ok/boss/gauge/shottype/off=%u/%u/%u/%u/%u clamped=%u",
                    (int)s->gauge, (int)s->piv, (int)s->orbs, s->orb_taken, s_orb_live,
                    s->orb_full, (unsigned)s->hud_ready, sp, rr, yk_shooting(),
                    (unsigned)s->fengma, (int)s->fengma_score,
+                   /* ★ 2026-09-27（§BE #137）：这两个数 = owner 报的那条能不能过的**判据**
+                    * （`piv_pool` = 左下角那个数画的东西、`piv_wrote` = 本卡写进去的那一份）。*/
+                   (int)ce_piv_pool(), (int)ce_piv_written(ce_card_id(c)),
                    s_graze_n[1], s_graze_n[2], s_graze_n[3],
                    s_graze_gate[YK_GRAZE_GATE_OK], s_graze_gate[YK_GRAZE_GATE_BOSS],
                    s_graze_gate[YK_GRAZE_GATE_GAUGE], s_graze_gate[YK_GRAZE_GATE_SHOTTYPE],
@@ -5037,6 +5041,23 @@ static int on_tick_2(ce_card_t *c)
      *   **`piv − piv_base`**（难度初值那一格是基准、不进池）⇒ 池初值 = 0 ✓
      *   （显示侧同步改成读池：见 `yk_night_text_sync()`）。*/
     ce_score_declare_delta(ce_card_id(c), s->piv - s->piv_base);
+    /* ★★★ 2026-09-27（§BE #137，owner：「永点吃了之后**没有加刻符**，左下角**没显示额外最大得点**」）：
+     *   上面那一行声明的是**计分层**那一份（`ΔG_08`）；而**屏幕左下角那 6 位数**（`yk_night_text_sync()`）
+     *   读的是**共享「额外最大得点」池**（`ce_piv_pool()`，§BE #121/#122 的 owner 口径）——
+     *   池**只由 `ce_piv_add()` 写** ⇒ 我们没写它，所以永点吃得再多那个数也不动。
+     *   ⇒ 本卡作为**池的一个写入者**接上（owner 口径 §BE #43 口径 1 逐字：「**时点 ≡ 额外 PIV ≡
+     *   额外最大得点**」；口径 2：「**PIV 无原生上限** ⇒ 用 int32 安全上界」= `YK_PIV_POOL_CAP`）。
+     *   · `ce_piv_claim()` 每帧重申（112 在 `on_item_frame` 里就是这么做；它**不动**已写账 ⇒ 幂等）；
+     *   · 池是**累加**语义 ⇒ 每帧只补 `yk_piv_pool_step(piv − piv_base, ce_piv_written(id))`；
+     *   · 于是：吃 2 颗永点 ⇒ `piv += 10` ⇒ 左下角那个数跟着 +10（一手：每 2 颗时点 ⇒ 最大得点 +10），
+     *     同时装 110/111/112–117 时它仍是**同一份数**（池共享，不是各画各的）。*/
+    {
+        uint32_t cid = ce_card_id(c);
+        int32_t  step;
+        ce_piv_claim(cid, YK_PIV_POOL_CAP);
+        step = yk_piv_pool_step(s->piv - s->piv_base, ce_piv_written(cid));
+        if (step > 0) ce_piv_add(cid, step);
+    }
     /* ★★ 2026-09-22 晚（owner 第 1 条）：**低速隐藏原生（人侧）子机**。
      * 一手：TH08 进低速那一帧把同一个子机对象的脚本换成妖侧那一支（`th08:0x44b12b push 0x5` 是本体、
      *   子机是各机体回调里的 `SetAndExecuteScriptIdx(option, 0x12/0x1d/0x18)`）⇒ **人侧那套子机不该同时存在**。

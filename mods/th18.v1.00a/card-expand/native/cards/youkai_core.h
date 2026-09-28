@@ -1416,6 +1416,27 @@ void    yk_piv_reset(int32_t *piv, int32_t *orbs);
 void    yk_piv_add(int32_t *piv, int32_t *orbs, int32_t delta);
 /* SC 捕获那份额外账：`*piv += count × 10`（`th08:0x41732c`）。*/
 void    yk_piv_spell_bonus(int32_t *piv, int32_t count);
+/* ============ ★★★ 2026-09-27（§BE #137）：永点 → **共享「额外最大得点」池**（显示侧那一份数）
+ * owner 逐字（本条工单）：「永点吃了之后**没有加刻符**，左下角**没显示额外最大得点**」。
+ *
+ * **为什么「声明给计分层」还不够**（本卡原来只做了那一半）：
+ *   · `ce_score_declare_delta(id, piv − piv_base)` = **计分层**那一份（`ΔG_08`，随 `coeff_18`
+ *     被高度折扣；口径出处 = `AUDIT.md` §BE #43 口径 1，owner 2026-09-18 拍板）——**这条没动**。
+ *   · 屏幕左下角那个 6 位数（`yk_night_text_sync()`）读的是**共享 PIV 池**（`ce_piv_pool()`，
+ *     §BE #121/#122 owner 口径「按**额外最大得点**的方法 plot、初始 plot `000000`」）——
+ *     而池**只由 `ce_piv_add()` 写**（`ce_piv_claim()` 之外一律不加）。
+ *   ⇒ 我们没写池 ⇒ 池里从来没有本卡那一份 ⇒ **永点吃得再多，左下角那个数一动不动**（= owner 报的）。
+ *     （AUDIT 2026-09-22 的未决项逐字：「等 owner 定『刻符载体』那一轮再按 `ce_piv_add(108, …)` +
+ *     `FAMILY_08` 接」—— 本轮就是那一轮。）
+ *
+ * **一手为什么同义**（§BE #43 口径 1，owner 2026-09-18 逐字）：**时点 ≡ 额外 PIV ≡ 额外最大得点**
+ *   ⇒ TH08 的 `PIV` 增量就是「额外最大得点」，本来就该进那一份数（池是跨卡共享的一份，
+ *     110/111 的 `faith_hud_maxpoint()` / 112–117 的 `ce_piv_add` 都读它）。
+ * **上限**（§BE #43 口径 2 逐字：「**PIV 无原生上限** ⇒ 用 int32 安全上界（防溢出成负数），别去找 clamp」）
+ *   ⇒ 本卡的「可写上限」= 该安全上界，`ce_piv_claim()` 自己会夹到 `0x7ffffffe`。*/
+#define YK_PIV_POOL_CAP 0x7ffffffe
+/* 本帧应当往池里补多少（= 目标额外量 − 本卡已写量；不倒扣、不为负）。见 `.c` 的实现注释。*/
+int32_t yk_piv_pool_step(int32_t extra, int32_t written);
 /* 刻符的道具分值（`Item::collect_time_orb` 的分数那一段，`th08:0x4412c3`–`0x4412ee`）：
  * `stage_point_items >= 2000 ⇒ 10000`，否则 `max(100, (point_items / 2) × 10)`。 */
 int32_t yk_orb_score(int32_t stage_point_items_in_game, int32_t point_items_in_game);
