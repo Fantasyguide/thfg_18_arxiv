@@ -225,21 +225,7 @@ typedef struct {
     int32_t       piv_base;            /* ★ §BE #122：难度初值（`yk_night_point_init`）—— 声明给计分层的是
                                         *   **`piv − piv_base`**（「额外」），池初值才是 0（owner 口径）*/
     int32_t       orbs;                /* 累计刻符数（一手公式里的 `total_time_orbs`，`th08:0x41825c`）*/
-    /* ★★★ 2026-09-27（第三十九批 · owner 实跑：「**一上来人妖槽就写着 004200 —— retry 不清空值的**」）：
-     *   共享池是**进程级 static**（`sdk_core.c` 的 `s_piv_pool`），全 exe 只有一个复位点
-     *   `ce_sdk_setup()` = **插件装载时一次** ⇒ **新局 / retry 都不会清**。两处后果：
-     *     · 屏上那个数（画的就是池）retry 之后仍是旧值；
-     *     · 更糟：池的**写入账**（`s_piv_wrote[108]`）同样不清 ⇒ 我们的
-     *       `yk_piv_pool_step(piv − piv_base, ce_piv_written(id))` 会认为「已经写够了」⇒
-     *       **retry 之后这个池再也不会因为本卡而涨**。
-     *   修法（**无损**：绝不替别的卡清池）：
-     *     ① `piv_pool_base` = **本卡复位那一刻的池值**（retry/换关/新局都复位）⇒ 显示画
-     *        `池 − 基线` ⇒ retry 之后立刻回到 `000000`；
-     *     ② `piv_wrote_shadow` = **本卡自己的写账**（跟着复位归零）⇒ 新的增量照常补进池
-     *        （SDK 内部那道 cap 账仍然由 `ce_piv_add` 自己记，互不干扰）。*/
-    int32_t       piv_pool_base;       /* 本卡复位那一刻的**池值**（显示 = `ce_piv_pool() − 它`）*/
-    int32_t       piv_wrote_base;      /* 本卡复位那一刻的**写账**（`ce_piv_written(108)`）——
-                                        *   有效已写量 = `ce_piv_written(108) − 它`（跟卡状态一起复位）*/
+
     int32_t       gauge;               /* 人妖槽（i16 语义；负 = 人侧、正 = 妖侧，量程 ±10000）*/
     uint16_t      gauge_focus_run;     /* 一手 `unkE2ad0`：聚焦状态**保持不变**的帧数（TH08 的 4 / 30 两档门）*/
     uint16_t      gauge_hold;          /* 一手 `unkE2ae8`：按住聚焦的帧数（爬升速率 = min(帧数/15, 21)）*/
@@ -3089,9 +3075,11 @@ static void yk_night_text_sync(yk_card_t *s, const yk_gauge_hud_t *h, uint32_t c
      *   而不是 TH08 那个带难度初值（NORMAL 100000）的夜点本体 —— 后者正是 owner 说的「那个 100000 东西」。
      *   池 = Σ 各卡的 `ce_score_declare_delta()`（本卡那笔见 `on_tick_2` 里的声明）⇒ 与 110/111
      *   那一族「最大得点」**同一份数**（`cards/faith_hud.c` 的 `faith_hud_maxpoint()` 也是读它）。*/
-    /* ★ 2026-09-27（第三十九批）：画的是**池 − 本卡复位时的基线** —— 池是进程级 static、
-     *   retry 不清 ⇒ 直接画池会让 retry 之后仍显示上一局的数（owner：「一上来人妖槽就写着 004200」）。*/
-    n = yk_night_text_glyphs(ce_piv_pool() - s->piv_pool_base, g);
+    /* ★★★ 2026-09-27（第四十批 · owner：「这个值应该**只考虑 th08 所导致的**额外最大得点」）：
+     *   画**本卡自己的额外量** = `piv − piv_base`（难度初值那一格是基准）——
+     *   · 这同时解决了 retry 残留那条（`piv`/`piv_base` 都跟着卡状态复位 ⇒ 开局必然 `000000`，
+     *     不再依赖共享池的状态）；共享池那一份改由 SDK 在 retry/退场时清（§BE #139 §1）。*/
+    n = yk_night_text_glyphs(s->piv - s->piv_base, g);
     for (i = 0; i < YK_NIGHT_TEXT_MAX; ++i) {
         uint32_t id = s->hud_night[i];
         if (!id) continue;
@@ -3265,13 +3253,7 @@ static int on_ctor(ce_card_t *c)
      * 难度一手编码 = `CE_ADDR_DIFFICULTY`（0 EASY/1 NORMAL/2 HARD/3 LUNATIC/4 EXTRA），与 TH08 同序。*/
     s->piv = yk_night_point_init(*(const int32_t *)(uintptr_t)CE_ADDR_DIFFICULTY);
     s->piv_base = s->piv;              /* ★ §BE #122：这一格是**基准**，不进「额外最大得点」池 */
-    /* ★★★ 2026-09-27（第三十九批）：**retry / 新局的两条基线** —— 池与写账都是**进程级 static**
-     *   （唯一的复位点 `ce_sdk_setup()` 只在插件装载时跑一次）⇒ 这里各记一条基线，之后：
-     *   · 显示 = `ce_piv_pool() − piv_pool_base` ⇒ retry 之后立刻 `000000`（owner 报的 004200 消失）；
-     *   · 写账 = `ce_piv_written(id) − piv_wrote_base` ⇒ retry 之后本卡还能继续往池里补。
-     *   ⚠ **无损**：绝不去清那个共享池（别的卡 110/111/112–117 的贡献一个字节都不动）。*/
-    s->piv_pool_base  = ce_piv_pool();
-    s->piv_wrote_base = ce_piv_written(ce_card_id(c));
+
     if (!s->night_logged) {
         s->night_logged = 1;
         ce_log("youkai: night point init = %d (difficulty %d; TH08 `pointItemValue` globals+0x24, "
@@ -4808,15 +4790,15 @@ static int on_tick_2(ce_card_t *c)
             yk_orb_motion_params(ch, &sp, &rr);
             ce_log("youkai: gauge=%d piv=%d orbs=%d taken=%u live=%u peak=%u full=%u hud=%u "
                    "speed=%.0f pick=%.0f shoot=%d fengma=%u fscore=%d "
-                   "piv_pool=%d piv_show=%d piv_wrote=%d bullet_hit_orbs=%u hitpos_swap=%u graze_pos_bullet=%u fengma_eaten=%u "
+                   "piv_pool=%d piv_show=%d pivw=%d bullet_hit_orbs=%u hitpos_swap=%u graze_pos_bullet=%u fengma_eaten=%u "
                    "graze_n 1/2/3=%u/%u/%u graze_gate ok/boss/gauge/shottype/off=%u/%u/%u/%u/%u clamped=%u",
                    (int)s->gauge, (int)s->piv, (int)s->orbs, s->orb_taken, s_orb_live,
                    (unsigned)s->orb_peak, s->orb_full, (unsigned)s->hud_ready, sp, rr, yk_shooting(),
                    (unsigned)s->fengma, (int)s->fengma_score,
                    /* ★ 2026-09-27（§BE #137）：这两个数 = owner 报的那条能不能过的**判据**
                     * （`piv_pool` = 左下角那个数画的东西、`piv_wrote` = 本卡写进去的那一份）。*/
-                   (int)ce_piv_pool(), (int)(ce_piv_pool() - s->piv_pool_base),
-                   (int)(ce_piv_written(ce_card_id(c)) - s->piv_wrote_base),
+                   (int)ce_piv_pool(), (int)(s->piv - s->piv_base),
+                   (int)ce_piv_written(ce_card_id(c)),   /* 本卡往池里的写账：本批起应当恒 0 */
                    /* ★ 2026-09-27（第三十七批）：`bullet_hit_orbs` = 「人逢魔 + 自机弹命中」这条新来源
                     * 一共撒了几颗（一手 `th08:0x45187f`）。人侧击破那批的判据另看 `orbs`/`taken`。*/
                    s_bullet_hit_orbs, s_bullet_hit_pos_swap, s_graze_pos_from_bullet, s_fengma_eaten,
@@ -5216,27 +5198,18 @@ static int on_tick_2(ce_card_t *c)
      *   **`piv − piv_base`**（难度初值那一格是基准、不进池）⇒ 池初值 = 0 ✓
      *   （显示侧同步改成读池：见 `yk_night_text_sync()`）。*/
     ce_score_declare_delta(ce_card_id(c), s->piv - s->piv_base);
-    /* ★★★ 2026-09-27（§BE #137，owner：「永点吃了之后**没有加刻符**，左下角**没显示额外最大得点**」）：
-     *   上面那一行声明的是**计分层**那一份（`ΔG_08`）；而**屏幕左下角那 6 位数**（`yk_night_text_sync()`）
-     *   读的是**共享「额外最大得点」池**（`ce_piv_pool()`，§BE #121/#122 的 owner 口径）——
-     *   池**只由 `ce_piv_add()` 写** ⇒ 我们没写它，所以永点吃得再多那个数也不动。
-     *   ⇒ 本卡作为**池的一个写入者**接上（owner 口径 §BE #43 口径 1 逐字：「**时点 ≡ 额外 PIV ≡
-     *   额外最大得点**」；口径 2：「**PIV 无原生上限** ⇒ 用 int32 安全上界」= `YK_PIV_POOL_CAP`）。
-     *   · `ce_piv_claim()` 每帧重申（112 在 `on_item_frame` 里就是这么做；它**不动**已写账 ⇒ 幂等）；
-     *   · 池是**累加**语义 ⇒ 每帧只补 `yk_piv_pool_step(piv − piv_base, ce_piv_written(id))`；
-     *   · 于是：吃 2 颗永点 ⇒ `piv += 10` ⇒ 左下角那个数跟着 +10（一手：每 2 颗时点 ⇒ 最大得点 +10），
-     *     同时装 110/111/112–117 时它仍是**同一份数**（池共享，不是各画各的）。*/
-    {
-        uint32_t cid = ce_card_id(c);
-        int32_t  step, wrote;
-        ce_piv_claim(cid, YK_PIV_POOL_CAP);
-        /* ★ 2026-09-27（第三十九批）：写账用**相对基线**的量（见 `piv_wrote_base` 的注）——
-         *   否则 retry 之后 `ce_piv_written` 还记着上一局的量 ⇒ 本卡再也补不进池。*/
-        wrote = ce_piv_written(cid) - s->piv_wrote_base;
-        if (wrote < 0) wrote = 0;
-        step = yk_piv_pool_step(s->piv - s->piv_base, wrote);
-        if (step > 0) ce_piv_add(cid, step);
-    }
+    /* ⚠ 历史（§BE #137，2026-09-27 第三十六批）：这里曾经加过一支「本卡往共享 PIV 池里写」的代码，
+     *   好让屏上那个数（当时画的是池）跟着永点涨。**第四十批已整体撤掉** —— owner 改了口径
+     *   （「这个值应该**只考虑 th08** 所导致的额外最大得点」），而且那一支在计分里与本卡的
+     *   `ΔG_08` 声明**重复计了一遍**（池 = `ce_piv_family_points()` ⇒ `ce_score_total()` ×5/6）。*/
+    /* ★★★ 2026-09-27（第四十批 · **owner 口径变更**：「这个值应该**只考虑 th08 所导致的**额外最大得点」）：
+     *   **本卡不再往共享 PIV 池里写**（第三十六批加的那一支整体撤掉），原因两条：
+     *     · **显示**：屏上那个数改成画**本卡自己的额外量** `piv − piv_base`（= TH08 的时点带来的量），
+     *       不再画共享池 ⇒ 与 110/111/112–117 的贡献解耦（owner 就是要求这个）；
+     *     · **计分**：池是 `ce_piv_family_points()` 的族项、进 `ce_score_total()`（`×5/6`），而本卡的
+     *       PIV 早就按 §BE #43 的口径以 **`ΔG_08`** 声明进计分层了 ⇒ 两边都写 = **同一笔 PIV 在
+     *       计分里算两遍**（本轮发现并撤掉；一手口径见 `youkai_core.h` 的 `YK_PIV_POOL_CAP` 那一节）。
+     *   ⇒ 池里从此**只有** th12–th17 族与擦弹那一项 —— 那也正是它原本的语义。*/
     /* ★★ 2026-09-22 晚（owner 第 1 条）：**低速隐藏原生（人侧）子机**。
      * 一手：TH08 进低速那一帧把同一个子机对象的脚本换成妖侧那一支（`th08:0x44b12b push 0x5` 是本体、
      *   子机是各机体回调里的 `SetAndExecuteScriptIdx(option, 0x12/0x1d/0x18)`）⇒ **人侧那套子机不该同时存在**。
