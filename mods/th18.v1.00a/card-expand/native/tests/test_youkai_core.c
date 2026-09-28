@@ -341,8 +341,11 @@ int main(void)
         for (c = 0; c < YK_OPTION_CHARS; ++c) {
             /* ★ 2026-09-22（th08 #1）：机体 0/1 的妖侧子机在原作里**只有 1 个**（`YK_OPTION_BY_CHAR`
              *   的第 0/1 行全是 1）⇒ 它们那张表的 4 格是同一个值（同值的"备用格"）。
-             *   所以「同档内两格不重合」这条只能对**真的有多格**的机体（2 咲夜 / 3 早苗）断言。*/
-            const int multi = (c >= 2);
+             *   ★★ 2026-09-27（第四十七批 · owner 口径）：**机体 3（早苗 = th16 文文）也改成同值** ——
+             *   「VM 应当堆在正中间，我看到的是一左一右两个子机，只有左边的发弹」⇒ 那一行十格
+             *   全部 = (0, −18)。所以「同档内两格不重合」现在只对**咲夜（机体 2）**断言：
+             *   她的 TH08 一手阵型确实是左右分开的 4 格。*/
+            const int multi = (c == 2);
             for (k = 1; k <= YK_OPTION_CELLS; ++k) {
                 for (j = 0; j < k; ++j) {
                     CHECK(yk_option_offsets(c, k, j, &o1));           /* 每格都取得到 */
@@ -365,12 +368,18 @@ int main(void)
         CHECK(yk_option_offsets(2, 4, 1, &o1) && o1.fx == -10.0f && o1.fy == -32.0f);
         CHECK(yk_option_offsets(2, 4, 2, &o1) && o1.fx ==  10.0f && o1.fy == -32.0f);
         CHECK(yk_option_offsets(2, 4, 3, &o1) && o1.fx ==  30.0f && o1.fy == -16.0f);
-        /* 早苗 4 格 = 引擎给 4 个原生子机准备的那 4 个位置（k = 6..9 的 `+0x90` 块）*/
-        CHECK(yk_option_offsets(3, 4, 0, &o1) && o1.fx == -28.0f && o1.fy == -20.0f);
-        CHECK(yk_option_offsets(3, 4, 1, &o1) && o1.fx == 28.0f  && o1.fy == -20.0f);
-        CHECK(yk_option_offsets(3, 4, 2, &o1) && o1.fx == -8.0f  && o1.fy == -32.0f);
-        CHECK(yk_option_offsets(3, 4, 3, &o1) && o1.fx == 8.0f   && o1.fy == -32.0f);
-        CHECK(yk_option_offsets(3, 4, 0, &o1) && o1.nfx == -36.0f && o1.nfy == -34.0f);  /* 非聚焦块 */
+        /* ★★ 2026-09-27（第四十七批 · owner 口径）：早苗（= th16 文文）**十格同一点 = 正中间（身前）**。
+         *   owner 原话：「你的阵型不对，VM 应当堆在正中间，我看到的是一左一右两个子机，只有左边的发弹」。
+         *   为什么：文文那一路**只有一个发弹口**（`pl03.sht` 低速组恒 1 条 `slot>=1` 的行），
+         *   VM 台数按 P 变、但位置**都叠在一处** —— 不再用 TH18 原生 `pl03.sht` 的左右阵型。
+         *   ⚠ 数值 (0, −18) = ❓ 自定（owner 只给了「正中间/身前」）⇒ 一手块一到就换。*/
+        for (j = 0; j < YK_OPTION_CELLS; ++j) {
+            CHECK(yk_option_offsets(3, 4, j, &o1));
+            CHECK(o1.fx == 0.0f && o1.fy == -18.0f);              /* 四格完全重合 */
+            CHECK(o1.nfx == 0.0f && o1.nfy == -18.0f);            /* 非聚焦块同值 */
+        }
+        CHECK(yk_option_offsets(3, 4, 0, &o1) && yk_option_offsets(3, 4, 3, &o2) &&
+              o1.fx == o2.fx && o1.fy == o2.fy);                  /* 第 0 格与第 3 格同点 */
         /* ★ 咲夜（机体 2）：TH08 一手 = 4 格全在自机上方（y < 0）、左右分开、且**互不相同**
          *（具体数值在上面那组 CHECK 里逐格钉住 —— 那是 `th08:0x44eb70` 的跳表 `th08:0x44ee4b`）。*/
         for (j = 0; j < 4; ++j) {
