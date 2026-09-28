@@ -1378,11 +1378,13 @@ int main(void)
                 CHECK(yk_spiral_live_peak(13, 0, 65) == 0);
                 CHECK(yk_spiral_live_peak(13, 8, 0) == 0);
                 CHECK(YK_SPIRAL_LIVE_LIFE_FRAMES == 65);
-                /* ★ 池必须装得下螺旋：`YK_ORB_MAX`(128) ≥ 峰值(119) —— 这条把「池够不够」
-                 *   钉成回归，改小池或改这批参数（批次/时长）都会在这里红。*/
+                /* ★ 池必须装得下螺旋：`YK_ORB_MAX`(**256**) ≥ 峰值(119) —— 这条把「池够不够」
+                 *   钉成回归，改小池或改这批参数（批次/时长）都会在这里红。
+                 *   （2026-09-27 同一天：池从 128 抬到 256 —— 螺旋 119 只占一半不到，另一半留给
+                 *   「击破批」与「人逢魔每发命中」两路同时在飞。）*/
                 CHECK(yk_spiral_live_peak(YK_SPIRAL_FIRST_MAX + YK_SPIRAL_SECOND_N,
                                           YK_SPIRAL_BATCH_FRAMES,
-                                          YK_SPIRAL_LIVE_LIFE_FRAMES) <= 128);
+                                          YK_SPIRAL_LIVE_LIFE_FRAMES) <= 256);
             }
             /* 一手的状态号与常量（改了要在注释里同步改一手出处）*/
             CHECK(YK_ORB_STATE_FALL == 0 && YK_ORB_STATE_HOMING == 1 && YK_ORB_STATE_SPAWN == 3);
