@@ -24888,3 +24888,46 @@ youkai: gauge=-10000 piv=101040 … fengma=1 fscore=73100  shoot=1 …
 
 闸：`make -s check` rc=0（`youkai_core: 5261 checks, 0 failed`；x87 = 0；33 个 BP_* 双向一致；
 生成物无漂移；404 个文档全过）。
+
+## §BE 详录 #146（2026-09-27 第四十五批）：**开场就撒螺旋** —— `spell_was` 的初值极性写反了
+
+> **owner 逐字**：「bug，**刚一进游戏怎么撒了螺旋**」。
+
+### 1. 真因（一行）
+
+`on_ctor`（每次开场 / 换关 / 局末复位都走它）里：
+
+```c
+s->spiral_quota = 0;
+s->spiral_t     = 0;
+s->spell_was    = 1;   /* 注释写的是「开场当作『已经在符卡外』⇒ 不会误触发一次」—— 意图对、取值刚好相反 */
+```
+而触发器是 **下降沿**：
+
+```c
+int sp = ce_spell_active();
+if (s->spell_was && !sp) { s->spiral_quota = YK_SPIRAL_QUOTA_FULL; s->spiral_t = 0; }
+```
+⇒ `spell_was = 1` 的含义是「**上一帧在符卡里**」⇒ **开场第一帧**（`sp == 0`）就是一次
+「符卡 → 非符卡」的下降沿 ⇒ **立刻开一轮螺旋**。正确初值 = **0**（「上一帧不在符卡里」）。
+
+### 2. 为什么以前没露出来
+
+那条「**没有 boss ⇒ 整轮作废**」把它咽掉了：实测日志里那一对就是证据 ——
+`spiral ARMED (spell ended) - quota 1000` 紧跟着
+`spiral CANCELLED at batch 9 - no boss on the field (1000 orbs of quota left)`，
+以及紧随其后的 `spell probe end - flags 0x0 id 0 …`（**场上根本没有符卡**却报了「结束」）。
+第四十三批按 owner 口径删掉「作废」并把锚点改成画面中心 ⇒ 这个**假触发**当场可见 ✓。
+
+⇒ 顺带修正一条此前的判读：owner 21:30 那一局的「螺旋没生成」其实**不是**「真符卡结束时 boss 不在」，
+而是**这个假触发**（开场那一帧）被 boss 门咽掉 —— 两件事叠在一起，本批一次清掉。
+
+### 3. 改法与判据
+
+- `on_ctor`：`s->spell_was = 0;`（注释也改成「上一帧不在符卡里」）；
+- **判据**：新一局**开场不应该有任何** `spiral ARMED` / `spiral ON` 行；只有**真的**打到一张符卡
+  并让它结束（被时间捕获、被击破、boss 换阶段）之后，才会出现 `spiral ARMED (spell ended)`
+  那一行 + 中央螺旋；台账 `spiral_orbs=` 开局应当恒 0。
+
+闸：`make -s check` rc=0（`youkai_core: 5261 checks, 0 failed`；x87 = 0；33 个 BP_* 双向一致；
+生成物无漂移；404 个文档全过）。
