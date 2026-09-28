@@ -4828,27 +4828,46 @@ static int on_tick_2(ce_card_t *c)
             gate = yk_graze_field_gate(YK_GRAZE_FIELD_GATES, boss, (int)s->gauge, st);
             orbs = (unsigned)yk_graze_orbs_per_bullet(gate, 1 /* 弹路径（激光分不出来，见上面 ②）*/,
                                                       spell, st);
-            if (focused) {
-                for (i = 0; i < d; ++i)
-                    for (k = 0; k < orbs; ++k)
-                        yk_orb_spawn(s, px, py, YK_ORB_STATE_SPAWN5);   /* ★ state 5：可收 */
-                /* ★ 实跑判据（统筹要的那一条）：`gate=` 一眼看出**这次擦弹为什么没给**
-                 * （`ok` 全过 / `boss` 场上没 boss / `gauge` 槽没到 +8000 / `shottype` 人単独非妖夢 /
-                 * `off` 开关关掉），`n=` 是**过了门之后每颗弹给几颗**（0 = 被门挡）。
-                 * 限频：`gate` 或 `n` 一变就打一行；都不变时最多每 60 帧一行（免得密擦时刷屏）。*/
-                if (orbs <= 3u) ++s_graze_n[orbs];
-                if (gate >= 0 && gate <= 4) ++s_graze_gate[gate];
-                if (gate != s_graze_log_gate || orbs != (unsigned)s_graze_log_n
-                    || (uint32_t)(s_ledger_frame - s_graze_log_frame) >= 60u) {
-                    s_graze_log_gate = gate;
-                    s_graze_log_n = (int)orbs;
-                    s_graze_log_frame = s_ledger_frame;
-                    ce_log("youkai: graze orbs n=%u x%u bullet(s) gate=%s (spell=%d shottype=%d gauge=%d "
-                           "boss=%d) tally 1/2/3=%u/%u/%u clamped=%u - TH08 th08:0x44aac9+aaef+ab0f",
-                           orbs, d, yk_graze_gate_name(gate), spell, st, (int)s->gauge,
-                           boss, s_graze_n[1], s_graze_n[2], s_graze_n[3],
-                           s_graze_clamped);
-                }
+            /* ★★★ 2026-09-27（§BE #136 / owner 实跑反馈「**妖逢魔现在擦弹似乎不掉永点**」）：
+             *   ★ **本轮删掉了包在这里的那道 `if (focused)`** —— 它是「聚焦即撒」时代的遗留，
+             *   **一手没有这道门**，而且它正好把 owner 报的那种情形整段吞掉：
+             *
+             *   · **一手（逐指令）**：擦弹奖励函数 `Player::sub_44a930`（`th08:0x44a930`）里那道
+             *     `IsYoukai()` 闸（`th08:0x44aa6c call 0x40bc40` / `:0x44aa74 test eax,eax` /
+             *     `:0x44aa76 je 0x44aa86`）**只包住 +100 那一笔**；人侧／妖侧**在 `th08:0x44aa86`
+             *     会合**，而三处刻符生成（`th08:0x44aac9` / `:0x44aaef` / `:0x44ab0f`）全在会合点
+             *     **之后** ⇒ **刻符与人/妖形态无关**。真正决定给不给的是三道门：
+             *     `:0x44aa9e`（机体 · 本卡恒过）→ `:0x44aaac`（`is_boss_active`）→ `:0x44aaba`
+             *     （`GaugeIsExtremelyYoukai` = 槽 **≥ +8000**）。
+             *   · **社区交叉（独立第二源，スコアアタックまとめ wiki 的「刻符出現条件」）**：
+             *     「妖怪逢魔が時に敵弾にかする（**ボス戦のみ**）」＋小ネタ「カスリ時に刻符が出るのは
+             *     **妖怪逢魔が時であることが条件で、低速であることは関係ない**」
+             *     ⇒ 与上面逐指令**逐字同义**：要**极妖 + 有 boss**，**不要求低速**。
+             *   ⚠ 因此「低速」（本卡的 `focused`）在这一支里**不是**判据 —— 玩家的常规技巧
+             *     「人妖カスリ」（在弹列里**瞬间切高速**擦、再切回低速收）正是靠这一条成立的。
+             *   ⇒ 判据全在 `yk_graze_field_gate()` / `yk_graze_orbs_per_bullet()`（纯逻辑 + 单测），
+             *     卡侧这一支**不再自己加任何形态门**。*/
+            for (i = 0; i < d; ++i)
+                for (k = 0; k < orbs; ++k)
+                    yk_orb_spawn(s, px, py, YK_ORB_STATE_SPAWN5);   /* ★ state 5：上抛但可收 */
+            /* ★ 实跑判据（统筹要的那一条）：`gate=` 一眼看出**这次擦弹为什么没给**
+             * （`ok` 全过 / `boss` 场上没 boss / `gauge` 槽没到 +8000 / `shottype` 人単独非妖夢 /
+             * `off` 开关关掉），`n=` 是**过了门之后每颗弹给几颗**（0 = 被门挡）。
+             * ★ 2026-09-27（§BE #136）：这两本账**不再只在聚焦时记** —— 擦弹事件的账要能覆盖
+             *   「高速擦弹」那一路（否则 owner 报的那种情形日志里一行都没有，判不出来）。
+             * 限频：`gate` 或 `n` 一变就打一行；都不变时最多每 60 帧一行（免得密擦时刷屏）。*/
+            if (orbs <= YK_GRAZE_ORBS_MAX) ++s_graze_n[orbs];
+            if (gate >= 0 && gate <= 4) ++s_graze_gate[gate];
+            if (gate != s_graze_log_gate || orbs != (unsigned)s_graze_log_n
+                || (uint32_t)(s_ledger_frame - s_graze_log_frame) >= 60u) {
+                s_graze_log_gate = gate;
+                s_graze_log_n = (int)orbs;
+                s_graze_log_frame = s_ledger_frame;
+                ce_log("youkai: graze orbs n=%u x%u bullet(s) gate=%s (spell=%d shottype=%d gauge=%d "
+                       "boss=%d focus=%d) tally 1/2/3=%u/%u/%u clamped=%u - TH08 th08:0x44aac9+aaef+ab0f",
+                       orbs, d, yk_graze_gate_name(gate), spell, st, (int)s->gauge,
+                       boss, focused, s_graze_n[1], s_graze_n[2], s_graze_n[3],
+                       s_graze_clamped);
             }
             /* ★★★ 2026-09-22 夜（P-C ③）：**擦弹 +100 只给妖侧**（一手 `Player::sub_44a930 th08:0x44a930`：
              * `th08:0x44aa6c call 0x40bc40`（`IsYoukai()` = **`player+5`**）为真才

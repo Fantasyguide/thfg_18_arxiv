@@ -1891,6 +1891,25 @@ int main(void)
                 CHECK(yk_graze_orbs_per_bullet(YK_GRAZE_GATE_OK, 1, 0, (int)i) == 1);
                 CHECK(yk_graze_orbs_per_bullet(YK_GRAZE_GATE_OK, 1, 1, (int)i) == 3);
             }
+            /* ★★★ 2026-09-27（§BE #136，owner 实跑「**妖逢魔现在擦弹似乎不掉永点**」）：
+             *   **这一支的两个纯函数都没有「形态 / focus / 低速」入参 —— 这是照抄一手，不是漏写。**
+             *   ① 一手逐指令：那道 `IsYoukai()` 闸（`th08:0x44aa6c call 0x40bc40` → `:0x44aa76 je
+             *      th08:0x44aa86`）**只包住 +100 那一笔**，人 / 妖两侧在 `th08:0x44aa86` **会合**，
+             *      三处刻符生成（`th08:0x44aac9` / `:0x44aaef` / `:0x44ab0f`）全在会合点**之后**；
+             *   ② 社区第二源（スコアアタックまとめ wiki「刻符出現条件」）逐字：「妖怪逢魔が時に
+             *      敵弾にかする（**ボス戦のみ**）」＋小ネタ「…**低速であることは関係ない**」。
+             *   ⇒ 判据（妖逢魔 + 有 boss）下**必须给 ≥ 1 颗**；卡侧若在调用点再包一层 `if (focused)`
+             *     就正好把「妖逢魔 + 高速擦弹」整段吞掉 —— 旧代码就是那样（本轮已删）。*/
+            CHECK(YK_GRAZE_ORBS_MAX == 3);
+            for (i = 0; i < 4u; ++i) {                    /* 本卡四个机体各来一遍 */
+                CHECK(yk_graze_field_gate(1, 1, 10000, (int)i) == YK_GRAZE_GATE_OK);   /* 妖逢魔满槽 */
+                CHECK(yk_graze_field_gate(1, 1, 8000, (int)i) == YK_GRAZE_GATE_OK);    /* 门线含等号 */
+                CHECK(yk_graze_orbs_per_bullet(YK_GRAZE_GATE_OK, 1, 0, (int)i) == 1);
+                CHECK(yk_graze_orbs_per_bullet(YK_GRAZE_GATE_OK, 1, 1, (int)i) == YK_GRAZE_ORBS_MAX);
+            }
+            /* 边界：槽 7999（= 79%）仍不算极妖 ⇒ 过不了门 ⇒ 0 颗；且 0 **只能**来自没门过。*/
+            CHECK(yk_graze_orbs_per_bullet(yk_graze_field_gate(1, 1, 7999, 0), 1, 1, 0) == 0);
+            CHECK(yk_graze_orbs_per_bullet(YK_GRAZE_GATE_OK, 0, 0, 0) == 1);
             /* ★ 开关关掉（`OFF`）⇒ **回到老行为**：连「人単独非妖夢」也不再拦（只会被门 A/B 影响）。*/
             CHECK(yk_graze_orbs_per_bullet(YK_GRAZE_GATE_OFF, 1, 1, 4) == 3);
             CHECK(yk_graze_orbs_per_bullet(YK_GRAZE_GATE_OFF, 1, 0, 4) == 1);

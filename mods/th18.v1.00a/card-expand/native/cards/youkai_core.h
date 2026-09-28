@@ -1651,6 +1651,17 @@ int yk_shottype_is_solo_youkai(int shottype);  /* `shottype >= 4 && (shottype & 
  *   `th08:0x44aaac je 0x44ab14` ⇒ `EnemyManager::is_boss_active()`（`th08:0x42f1f0`）假 ⇒ 一颗都不给；
  *   `th08:0x44aaba je 0x44ab14` ⇒ `GaugeIsExtremelyYoukai()`（`th08:0x406d70`，阈值 `GM+0x3ddfe` = **+8000**）假。
  * 返回值**只用于判定与日志**（`OK` = 三条全过 = 放行）。`OFF` 那一档 = ❓ 开关（卡侧 `YK_GRAZE_FIELD_GATES`）。*/
+/* ★★★ 2026-09-27（§BE #136，owner「妖逢魔现在擦弹似乎不掉永点」）：**这一支的入参里没有
+ * 「形态 / focus / 低速」这一维 —— 这是照抄一手，不是漏写。**
+ *   · 一手（逐指令，`Player::sub_44a930`）：那道 `IsYoukai()` 闸（`th08:0x44aa6c call 0x40bc40`
+ *     → `:0x44aa76 je 0x44aa86`）**只包住 +100 那一笔**，人/妖两侧在 `th08:0x44aa86` **会合**；
+ *     三处刻符生成（`0x44aac9` / `0x44aaef` / `0x44ab0f`）全在会合点**之后**。
+ *   · 社区第二源（スコアアタックまとめ wiki「刻符出現条件」）逐字：「妖怪逢魔が時に敵弾にかする
+ *     （**ボス戦のみ**）」＋小ネタ「カスリ時に刻符が出るのは妖怪逢魔が時であることが条件で、
+ *     **低速であることは関係ない**」⇒ 要**极妖 + 有 boss**，**不要求低速**。
+ *   ⇒ 卡侧**不许**在调用点再包一层 `if (focused)`（旧代码就是这么写的 = 「聚焦即撒」时代的遗留，
+ *     会把「妖逢魔 + 高速擦弹」整段吞掉；卡侧的形态门已在 §BE #136 删掉）。*/
+#define YK_GRAZE_ORBS_MAX       3   /* 每擦到一颗弹**最多** 3 颗（三道门全过）；0 = 被场上门挡 */
 #define YK_GRAZE_GATE_OK        0   /* 三条门全过 ⇒ 第 1 颗照给 */
 #define YK_GRAZE_GATE_SHOTTYPE  1   /* `th08:0x44aa9e`：人単独且不是妖夢（0xa）—— 本卡映射下**恒不成立** */
 #define YK_GRAZE_GATE_BOSS      2   /* `th08:0x44aaac`：`is_boss_active()` 假（boss 槽全 0）*/

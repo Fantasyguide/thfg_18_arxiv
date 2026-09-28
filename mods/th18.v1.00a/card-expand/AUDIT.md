@@ -24088,3 +24088,194 @@ for base in (176, 70):
 | --- | --- |
 | **TH08 那条束的 `blendMode` 到底是什么** | 一手脚本**没写**（我们照 117 抄的是 `blendMode(1)` = 加算）；本批**没能一手定案** —— 手搓四边形路径的 flush（`0x462e40`）**只设纹理与 texture-stage state、不设 RGB 混合因子**，再挖一层不划算。仍偏亮的两个候选见 `TUNING.md` §2.1ccc-14(e) |
 | 「同帧起满整档」多占的**常驻 VM 数**（档 4 = 12 + 1）| 峰值与改前**相同**（改前也是逐帧长到 12），只是**提前到第一帧**；池满时仍按原口径只少观感（探针 `resident W/G`、`dropped`）。❓ 实跑请看一眼 `dropped` 有没有涨 |
+
+## §BE 详录 #136（2026-09-27 第三十五批）：owner「**妖逢魔现在擦弹似乎不掉永点**」—— 擦弹刻符那道的**形态门**是我们自己多出来的
+
+> **owner 原话（验收标准）**：「接下来就是**永点问题**：**妖逢魔现在擦弹似乎不掉永点**」
+> ⇒ 期望 = 「妖逢魔状态下擦弹应当掉永点（刻符 / time orb，type 7）」。
+> 本批同时并入 owner 的另一条同区域观察（**一手 bug 那条**，见 §7）：「在妖侧逢魔时松开 shift，
+> 那一小段时间还是妖侧逢魔，然后能够触发人逢魔的效果」——owner 澄清「**这是 th08 原作的 bug，
+> 应当归为 bug、你别把 bug 也抄过来**」。
+
+### 1. 一手结论：**这条规则存在**，而且是「极妖 + 有 boss」两道门（逐指令）
+
+一手 = TH08 v1.00d（`local/th08.v1.00d/th08.exe`），函数 = **`Player::sub_44a930`**（`th08:0x44a930`–`0x44ab36`，
+`ret 0x8` = 两参 `(Float3 *pos, i32 flag)`），本批**自己重读一遍**（`local/_scratch/th08_full.asm`）：
+
+```
+44aa6c  mov ecx,[ebp-0x30]          ; this = player
+44aa6f  call 0x40bc40               ; IsYoukai() = player+5
+44aa74  test eax,eax
+44aa76  je 0x44aa86                 ; ★ 不是妖侧 ⇒ 跳过下一条（只跳过「+100」这一笔）
+44aa78  push 0 / 44aa7a push 0x64
+44aa81  call 0x43c0bb               ; AddToYoukaiGauge(+100, 0)
+44aa86  mov ecx,0x160f508           ; ★★ 会合点：人/妖两侧都从这里继续
+44aa8b  call 0x42f230               ; shottype_is_solo_human
+44aa92  je 0x44aaa0                 ; 不是「人単独」⇒ 跳到 boss 门
+44aa94  movzx edx,BYTE ds:0x164d0b1 ; shottype
+44aa9b  cmp edx,0xa / 44aa9e jne 0x44ab14   ; 人単独且非妖夢 ⇒ 一颗都不给
+44aaa0  mov ecx,0x577f20 / 44aaa5 call 0x42f1f0   ; EnemyManager::is_boss_active
+44aaac  je 0x44ab14                 ; 场上没 boss ⇒ 一颗都不给
+44aaae  mov ecx,0x160f508 / 44aab3 call 0x406d70  ; GaugeIsExtremelyYoukai（槽 >= +8000）
+44aaba  je 0x44ab14                 ; 不是极妖 ⇒ 一颗都不给
+44aabc  push 1 / 44aabe push 0xa / 44aac9 call 0x4400a0      ; ★ 第 1 颗
+44aace  cmp DWORD [ebp+0xc],0 / 44aad2 jne 0x44ab14          ; 激光擦弹 ⇒ 只给这 1 颗
+44aad9  call 0x4178a0(0x4ea670) / 44aae0 je 0x44ab14         ; 不在符卡中 ⇒ 只给这 1 颗
+44aaef  call 0x4400a0                                        ; ★ 第 2 颗
+44aaf9  call 0x42f270 / 44ab00 jne 0x44ab14                  ; 「妖単独」机体 ⇒ 不给第 3 颗
+44ab0f  call 0x4400a0                                        ; ★ 第 3 颗
+44ab14  ...                                                  ; 三条 je 的共同出口（函数尾）
+```
+
+| 问题 | 答案 | 一手 |
+| --- | --- | --- |
+| 有没有「擦弹掉永点」？ | **有**（三处 `spawn_item`），出生态 `type 0xa` ⇒ 被 `0x440124` 改写成 **type 7 + state 5**（上抛但可收） | `0x44aac9` / `:0x44aaef` / `:0x44ab0f` + `0x440124` |
+| 只在极妖吗？ | **是** —— `GaugeIsExtremelyYoukai`（`0x406d70`，`setge`，阈值 `GM+0x3ddfe` = **+8000**）；这就是 owner 记忆的来源 | `0x44aab3` / `:0x44aaba` |
+| 还要什么？ | **场上要有 boss**（`0x42f1f0` 扫 8 个 boss 指针，任一非 0） | `0x44aaa5` / `:0x44aaac` |
+| **与形态（人/妖、低速）有关吗？** | **无关** —— `IsYoukai()` 那道闸（`0x44aa76 je`）**只包住 +100**；三处 `spawn_item` 全在会合点 `0x44aa86` **之后** | 逐指令见上面的块 |
+| 每颗弹几颗 | **1 / 2 / 3**（后三道门嵌套） | `0x44aace` / `:0x44aad9` / `:0x44aaf9` |
+| 与「逢魔击破掉 1 颗」的关系 | **两条独立来源**：擦弹 = 本函数（`type 0xa` ⇒ state 5）；逢魔击破 1 颗 = `EnemyManager::on_tick` 的死亡块（`0x42da2a`/`:0x42da38` ⇒ `0x42da41 push 1` / `0x42da54`）| 另见 §BE #114 / `HUMAN-YOUKAI-GAUGE.md` §3bis.3 |
+
+**社区第二源（独立）**：東方Projectスコアアタックまとめ wiki 的「刻符出現条件」逐字
+「**妖怪逢魔が時に敵弾にかする（ボス戦のみ）**」，同页小ネタ更写死形态无关：
+「カスリ時に刻符が出るのは**妖怪逢魔が時であることが条件で、低速であることは関係ない**」
+（并据此介绍「人妖カスリ」技巧：在弹列里**瞬间切高速**擦、再切回低速收）⇒ 与上面逐指令**逐字同义**。
+
+### 2. 本卡改前：**多包了一层 `if (focused)`**（= owner 报的那条的真因）
+
+`native/cards/youkai.c` 的擦弹支原来长这样（`on_tick_2` 内，差分 `graze = CE_ADDR_GRAZE - s->graze_seen`）：
+
+```c
+gate  = yk_graze_field_gate(YK_GRAZE_FIELD_GATES, boss, (int)s->gauge, st);   /* 一手三条门 */
+orbs  = yk_graze_orbs_per_bullet(gate, 1, spell, st);                          /* 一手 1/2/3  */
+if (focused) {                                    /* ★ 这一层是一手没有的 */
+    for (i = 0; i < d; ++i) for (k = 0; k < orbs; ++k) yk_orb_spawn(…);
+    …tally / log…
+}
+```
+
+- **它是「聚焦即撒」时代的遗留**：2026-09-23 那一批把一手三条场上门**加在**这条老规矩**之上**，
+  却没有把老规矩摘掉 ⇒ 变成「门过了**还得在低速**」。`TUNING.md` §2.0zs 当时把回退档写成
+  「翻 0 = 回到**聚焦即撒**」，说明那一批自己也把「聚焦」当成了默认行为 —— 但一手没有这一维。
+- **它正好整段吞掉 owner 报的情形**：在妖逢魔（槽 ≥ +8000）**松开 Shift / 高速擦弹**时
+  `focused == 0` ⇒ 三处 `yk_orb_spawn` 一次都不调、**连日志都不打**（tally/log 也在 `if` 里）
+  ⇒ 实跑「似乎不掉永点」且**无迹可查**。这也是那条「人妖カスリ」技巧在本卡不可能成立的原因。
+- ⚠ **连带一处旧结论的前提失效**：§BE #123 写「本卡永点**只在妖侧**（聚焦）生成 ⇒ `isYoukaiMode` 恒真」
+  —— 本批之后这个前提**不再成立**。该条的结论本身不受影响（我们的 PoC 线上自动收判据
+  `yk_orbs_tick()` 本来就没读形态位，比一手那个括号**更宽**，不会因为人侧也会有永点而漏收）。
+
+### 3. 改法（只动卡 108 自己的文件）
+
+| 文件 | 改了什么 | 为什么 | 怎么验的 |
+| --- | --- | --- | --- |
+| `native/cards/youkai.c` | 删掉擦弹支的 `if (focused)` 外壳：三处 `yk_orb_spawn` 与 tally / 日志都**无条件**跑 | 一手三处 `spawn_item` 在 `0x44aa86` 会合点之后 ⇒ 判据只有「机体 / boss / 极妖」 | `make -s check` rc=0；§3 第 38 行 |
+| 同上 | 擦弹日志行加 `focus=%d` | 判「这次擦弹是不是在高速发生的」，一眼区分两条成因 | 日志形态见 §5 |
+| `native/cards/youkai_core.h` | 新增 `YK_GRAZE_ORBS_MAX 3`；`§3.11c` 补「**入参里没有形态这一维**（照抄一手）」的取证 | 常量进 core、让「不许在调用点加形态门」有据可查 | `test_youkai_core` 断言 `YK_GRAZE_ORBS_MAX == 3` |
+| `native/cards/youkai_core.c` | `yk_graze_orbs_per_bullet()` 用新常量 + 同一段取证注释（**逻辑一字未改**） | 同上 | 同批单测全绿 |
+| `native/tests/test_youkai_core.c` | +19 条：四个机体 × (槽 8000 / 10000) 下 `gate == OK`、`orbs == 1`（平擦）/ `== 3`（符卡中）；槽 7999 ⇒ `0`；`YK_GRAZE_ORBS_MAX == 3` | 把「妖逢魔 + 有 boss ⇒ 必给 ≥1 颗」钉成不变量 | `make -s check` 的输出见 §5 |
+
+⚠ **没有动**：擦弹 +100 那笔（`yk_gauge_add2(s->gauge, 100, hl2, yl2)`）保持原样 ——
+它的门就是一手那道 `IsYoukai()`（`focused && focus_age >= 7`），**不在本批的改动面里**。
+
+### 4. 擦弹支的现状（逐条回答「我们这边到底门在哪」）
+
+| 件 | 本卡现状 | 一手 | 差 |
+| --- | --- | --- | --- |
+| 擦弹事件的**来源** | TH18 累计擦弹计数 `CE_ADDR_GRAZE`（`0x4ccd0c`）逐帧差分 | `BulletManager::on_tick` 逐弹判 (`0x44a470`)，每颗弹一生一次（`bullet+0xdbd`） | 同义（我们用计数差分；单帧上限 64 是 ❓自定护栏） |
+| **刻符三处生成** | `orbs = yk_graze_orbs_per_bullet(...)`，每颗弹 1 / 2 / 3 | 同上 | ✅（本批把外层的聚焦门删掉后才是逐字同形） |
+| **场上门** | 机体（映射下恒过）→ boss（`CE_EM_BOSS_IDS` 4 格任一非 0）→ **极妖（槽 ≥ +8000）** | 同顺序 | ✅ |
+| **形态门** | **无**（本批删掉） | **无** | ✅ |
+| 擦弹 **+100** | `focused && focus_age >= 7` ⇒ `+100`（上限夹在当帧那一对 limit 上） | `IsYoukai()` = `player+5`（进/退都滞后 7 帧） | ⚠ 故意**不**复刻退人那 7 帧尾（见 §7） |
+| 落点 | **自机**（拿不到被擦的那颗弹） | 被擦到的那颗弹的位置 | ❓自定，已登记（`§2.0y` #12） |
+| 出生态 | `YK_ORB_STATE_SPAWN5`(5) = 上抛但可收 | `type 0xa` ⇒ type 7 + state 5 | ✅ |
+
+**「逢魔相关掉点」各处判据（本卡自己的实现，逐条给）**：
+
+| 掉点来源 | 本卡的门 | 一手 | 差 |
+| --- | --- | --- | --- |
+| 擦弹 1/2/3 颗 | 机体 / boss / **槽值极值** +（本批起）**不看形态** | 同 | ✅ |
+| 逢魔击破 1 颗（`yk_on_enemy_killed` 开头那一段） | **只看槽值极值**（`yk_fengma()`），在 `!focused` 早退**之前** | `0x42da2a`/`:0x42da38` 两问取或（只看槽） | ✅ |
+| 人间逢魔 + 自机弹击杀 再 1 颗 | `yk_fengma_kill_orbs(fm, human_fm, by_player_bullet)`；`by_player_bullet` 目前**恒 0**（`ce_enemy_death_t` 没有击杀者字段） | `0x451860` 极人 + `[enemy+0x480]+0x1e < 0` + 自机弹 | ❓待接（`§2.0 zg` #25 已登记） |
+| 通用击破批（子敌人圆盘 / 被杀者环） | **`if (!focused) return;` 早退之后** ⇒ **只看妖侧** | `0x42d652 push 1 / :0x42d657 call 0x42adb0` 在死亡路径里**无条件**（无形态门、无槽门） | ⚠ **本批不改**，登记见 §8 ❓#1 |
+
+### 5. 实跑判据（原文形态）
+
+拿当前 DLL 跑一次，**在妖逢魔（槽 ≥ +80%）且场上有 boss 时擦弹**：
+
+```
+youkai: graze orbs n=1 x2 bullet(s) gate=ok (spell=0 shottype=0 gauge=9xxx boss=1 focus=1) tally 1/2/3=3/0/0 clamped=0 - TH08 th08:0x44aac9+aaef+ab0f
+```
+
+⇒ **`gate=ok` 且 `n≥1`** 是过；`n=3` 表示当时正在打符卡。
+**没掉的四种读法**（`gate=` 一眼给出）：`boss` = 场上没有 boss（**一手同样不给**：`0x44aaac je`
+＋ 社区「ボス戦のみ」）／`gauge` = 槽没到 +8000／`shottype` = 人単独非妖夢（本卡映射下看不到）／
+`off` = 开关 `YK_GRAZE_FIELD_GATES` 被翻成 0。新增的 `focus=` 用来看「这次擦弹是不是高速发生的」。
+定期账那一行尾部仍有 `graze_n 1/2/3=… graze_gate ok/boss/gauge/shottype/off=…`（各道门各挡了多少次）。
+
+### 6. 回归（原文）
+
+- `cd native && make -s check` ⇒ rc=0：`youkai_core: **5212** checks, 0 failed`（改前 5193 ⇒ 本批 **+19** 条）；
+  `x87 in our objects: 0`、`✅ 全部对上（31 个 BP_* 双向一致）`、`✅ 生成物无漂移`、
+  `engine_abi_check：对账通过 ✅（8 条）`、`anm_hud_alpha_check: 24 项一致 ✅`、`✓ 全部通过（385 个文件）`。
+- `make -s dllx87` ⇒ rc=0（`x87 in our objects: 0`）；`cards/youkai.c` 重编**零警告**。
+- `python3 native/sites.py verify` ⇒ rc=0（`✅ 全部对上（expected == exe 字节；code 与 expected 等长；只换常量）`；
+  **零新增站点**：本批只读已有的 `0x4ccd0c` 与 boss 槽）。
+- `python3 tooling/check-docs.py` ⇒ rc=0（`✓ 全部通过（385 个文件）`）。
+- 发布：DLL `39b186e8…` ⇒ **`83c0138b06da1da06f2015a82454a3a8`**（`make -s release` rc=0；
+  patch / 四份 `pl0X.sht` / 两份 anm / cards / files 的 md5 **与上一批逐项相同** ⇒ 本批**只动 DLL**）；
+  `bash local/sync_modkit_dll.sh` ⇒ **4 份同一 md5**。
+- ⚠ 本批**没有实跑**（无 Windows 现场，owner 那一局只留下一条 `gate=boss` 的历史行）；
+  观感/判据由 owner 下一次实跑按 §5 判。
+
+### 7. ★★ 并入的一手观察：**「换形窗口里两套判据同时成立」= 一手 bug，我们不复刻**
+
+> owner 原话：「似乎 2un 写的逢魔状态有 bug：在妖侧逢魔的时候，如果松开 shift，那一小段时间还是妖侧逢魔，
+> 然后能够触发人逢魔的效果」；随后 owner 澄清：「我刚才说的是 **th08 原作的 bug**，从语义上来讲应当被归为 bug。
+> 这个应该和我们目前的妖侧不掉关系不大，但总之**你别把 bug 也抄过来**」。
+
+**一手把三套判据的更新时机钉死**（都在 `Player::move` 的换形边沿 `th08:0x44b11f` / `:0x44b379` 那一段里）：
+
+**① 槽值极值（逢魔判据）**：`th08:0x406d10`（极人 `movsx ecx,WORD [eax+0x3ddfc]` + `cmp/setle`）、
+`th08:0x406d70`（极妖 `[eax+0x3ddfe]` + `setge`）、中度档 `0x406d40`/`0x406da0`。
+**换形段（`0x44b180`–`0x44b437`）里一次都没写 `globals+0x22`** ⇒ 换形**不动槽**。
+
+**② 形态标志 `player+3`（isYoukaiMode）**：人→妖 `th08:0x44b1e0 mov BYTE [edx+0x3],0x1`、
+妖→人 `th08:0x44b433 mov BYTE [edx+0x3],0x0` —— 两支都是**每帧无条件写**（在 `player+8` 的自增/判定**之外**）
+⇒ **换形第一帧就翻**。它的读点共 8 处（全 exe 穷举）：击破 ±200 方向 `0x42d65c`、收刻符 ±111 符号 `0x4413a5`、
+道具/`.sht` 表选择 `0x44054d`、归航道闸 `0x440838`、统计与掉落 `0x42c6d7`/`0x42d197`/`0x42d1c5`/`0x42d217`。
+
+**③ 形态标志 `player+5`（`IsYoukai()`）**：置位/清位都在 `player+8` 的门里 ——
+人→妖 `th08:0x44b1d0 cmp [eax+0x8],0x7` / `:0x44b1d4 jl` / `:0x44b1d9 mov BYTE [ecx+0x5],0x1`；
+妖→人 `th08:0x44b423 cmp [eax+0x8],0x7` / `:0x44b427 jl` / `:0x44b42c mov BYTE [ecx+0x5],0x0`；
+而 `player+8` 在换形的**第一帧**被清 0（`th08:0x44b1a5` / `:0x44b3f8`）、其后每帧 +1（`:0x44b1c4` / `:0x44b417`）
+⇒ **进、退两个方向都滞后 7 帧**（`player+8 ∈ [0,6]` 时保持上一形态的值）。它全 exe 只有 1 个读点 = **擦弹 +100**。
+
+**逐帧推演（妖逢魔 + 松开 Shift；槽 = +8000..+10000）**：
+
+| 帧（= 松手后第 n 帧） | `player+3`（侧） | `player+5`（IsYoukai） | 槽 / 极妖 | 结果 |
+| --- | --- | --- | --- | --- |
+| f0（当帧） | **0（人侧）** | **仍 1** | 仍 ≥ +8000 / **真** | 人侧装备 + 妖逢魔效果 + 擦弹 +100 **同时成立** |
+| f1..f6 | 0 | **仍 1** | 同上 | 同上（7 帧窗口） |
+| f7 | 0 | **0** | 同上 | 只剩「人侧 + 妖逢魔」 |
+| f≥30 | 0 | 0 | 才开始回中（`0x44be05 cmp [player+8],0x1e` 那道 30 帧空档） | 妖逢魔还会持续一段 |
+
+**⇒ 判定（三件套）**：**一手行为 X** = 换形窗口里「人侧装备 + 槽仍极妖 + `IsYoukai()` 仍真」三者同时成立
+（出处 = 上面 ①②③ 的逐指令 + 逐帧推演）；**判定 = bug**（owner 2026-09-27 明确拍：「应当被归为 bug，
+你别把 bug 也抄过来」）；**本卡取值 Y** = **保持我们现在的互斥状态机**（`focused` = 引擎的低速位当「当前侧」、
+槽值极值当「逢魔」，两者各自独立、**不做**那 7 帧跨形态的粘连；擦弹 +100 也就只在
+`focused && focus_age >= 7` 时给）；**理由** = ① owner 拍板；② 本批的真实工单（擦弹掉永点）与它无关
+（那条的真因是卡侧多出来的 `if (focused)`，见 §2）。登记 = `TUNING.md` §2.1ccc-15(c)。
+
+⚠ 顺带一条**与它相邻但不属它**的既有差异（**不改**，已登记）：本卡的「单人反向封顶」按**当前形态**给
+（`yk_gauge_limits_solo(focused, …)` ⇒ 反侧 limit ±2000），而一手是 `Player::on_registration` 里
+**按 shottype 一次性定死**（`th08:0x44daa2`/`:0x44dacd`）—— 后果：松手后约 30 帧（= `YK_GAUGE_SHIFT_BLANK`）
+一到，槽会从 +8000 **当场夹到 +2000**（一手是慢慢回中）。这条是 owner §1.8 口径的落法，
+「只能取一个」的记账在 `§2.1bbb-1`，本批不动。
+
+### 8. 剩余 ❓
+
+| ❓ | 影响面 |
+| --- | --- |
+| **通用击破批那条 `if (!focused) return;`**（`yk_on_enemy_killed` 中段）：一手 `0x42d652 push 1 / :0x42d657 call 0x42adb0` 在死亡路径里**无条件**（既不看形态也不看槽）⇒ 本卡「人侧不撒击破批」是**多出来的形态门**，与 §2 那条同源 | 只影响「人侧击破带子敌人的敌机」。删它 = 人侧也会喷永点盘（更贴一手），但会撞 owner §6「人侧和不装 108 完全一样」那条口径 ⇒ **本批不动，等 owner 拍** |
+| 「妖逢魔 + **道中**（无 boss）擦弹」一手同样**一颗都不给**（`0x44aaac` + 社区「ボス戦のみ」）| owner 若在道中试的，就会看到「妖逢魔擦弹不掉」而这**正是原作行为**。判据看 `gate=boss`；要不要为手感放宽 = owner 拍 |
+| 擦弹刻符的**落点**仍是自机（拿不到被擦的那颗弹） | `ce_graze_take` 依赖的断点 `0x42497f` 在 `sites.py` 里被注释掉 ⇒ 恒返回 0；改观感不影响数值 |

@@ -1146,6 +1146,9 @@ int yk_graze_field_gate(int enabled, int boss_active, int gauge, int shottype)
 int yk_graze_orbs_per_bullet(int field_gate, int bullet_path, int spell_active, int shottype)
 {
     int n;
+    /* ★ 2026-09-27（§BE #136）：**入参里没有「形态 / focus」这一维，也不该有** ——
+     * 一手里那道 `IsYoukai()` 闸（`th08:0x44aa6c`）只包住 +100，人/妖在 `th08:0x44aa86` 会合，
+     * 三处 `spawn_item` 全在会合点之后（逐指令与社区第二源见 `.h` 同名小节）。*/
     /* 第 1 颗前面那三条场上门没过（且不是「开关关掉」那一档）⇒ 这一颗弹**一颗都不给**
      * （一手：三条 `je 0x44ab14` 都跳到函数尾 ⇒ 三处 `spawn_item` 一处都走不到）。*/
     if (field_gate != YK_GRAZE_GATE_OK && field_gate != YK_GRAZE_GATE_OFF) return 0;
@@ -1156,7 +1159,7 @@ int yk_graze_orbs_per_bullet(int field_gate, int bullet_path, int spell_active, 
     if (bullet_path && spell_active) {
         n = 2;
         /* 门 B（`th08:0x44ab00`）：「妖単独」机体停在第 2 颗。*/
-        if (!yk_shottype_is_solo_youkai(shottype)) n = 3;
+        if (!yk_shottype_is_solo_youkai(shottype)) n = YK_GRAZE_ORBS_MAX;
     }
     return n;
 }
