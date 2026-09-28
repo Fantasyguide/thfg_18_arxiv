@@ -1969,6 +1969,10 @@ typedef struct {
     uint8_t  _pad;
 } yk_orb_t;
 
+static unsigned s_spiral_orbs;                       /* ★ 2026-09-27（第四十四批 · owner：「打 boss 的螺旋
+                                                       *   和逢魔状态没关系，是**固定撒的**」）：螺旋这一路
+                                                       *   累计撒了几颗 —— 判据 = 一轮满额应当 ≈935，
+                                                       *   且**与 `gauge` 无关**（下面那行日志同时打出槽值）。*/
 static unsigned s_fengma_eaten;                      /* ★ 2026-09-27（第三十九批）：**逢魔档的刻符在上抛
                                                        *   结束那一帧直接入账**（不走「飞过来」那段）的次数
                                                        *   —— owner 口径「自动吸收过程是指飞过来，生成部分
@@ -2571,6 +2575,8 @@ static void yk_spiral_tick(yk_card_t *s)
         bp = k_center;
     }
     yk_spiral_angle((int)s->spiral_t, &th);          /* `t` = **帧龄**（一手 `0x417565` 取的就是它）*/
+    /* ⚠ 本函数**刻意不读 `s->gauge` / `focused` / `s->fengma`**（owner 第四十四批：「打 boss 的螺旋
+     *   和逢魔状态没关系，是**固定撒的**」）—— 唯一读槽的地方是上面那行开喷日志（只为留现场）。*/
     /* 一帧的吐出与账面 = 一手 `0x4175cc`–`0x4176e1`（纯函数 + 单测在 core）：
      * 第一段 `min(额度,7)` 同角 + 第二段**固定 6** 角 +π；账面扣 `min(额度,7)` 两次（最多 14/帧）。*/
     s->spiral_quota = (uint32_t)yk_spiral_quota_step((int)s->spiral_quota, &k, &k2);
@@ -2585,13 +2591,20 @@ static void yk_spiral_tick(yk_card_t *s)
     for (i = 0; i < k2; ++i)
         yk_orb_spawn_ex(s, bp[0] + cs * YK_SPIRAL_RADIUS, bp[1] + sn * YK_SPIRAL_RADIUS,
                         YK_ORB_STATE_SPAWN5, 0);   /* ★ 同上：螺旋那一路**看得见飞向自机** */
+    s_spiral_orbs += (unsigned)(k + k2);         /* ★ 第四十四批：判据用（与槽值无关）*/
     if (!s->spiral_logged) {
         s->spiral_logged = 1;
-        ce_log("youkai: spell-card break spiral ON (TH08 `Spellcard::on_tick` 0x416b90) - EVERY FRAME: "
-               "min(quota,7) same-angle + 6 at +pi, 9 deg/frame (40 frames per turn), radius 128 "
-               "around the boss; quota 1000 = 72 frames / ~935 orbs; orbs spawn in state 5 = toss "
-               "(collectible during the toss - the 'invincible' in the owner report is the toss, "
-               "not an invulnerability window)");
+        /* ★★★ 2026-09-27（第四十四批 · owner：「打 boss 的螺旋和**逢魔状态没关系**，是**固定撒的**」）：
+         *   这一路**不读 `s->gauge` / `focused` / `s->fengma`**（本函数里零引用，可 grep 自证）——
+         *   撒点与吸收都是**固定**的：每帧 `min(额度,7)` 同角 + 固定 6 个 +π、锚点 `(0,224)`、
+         *   半径 128、9°/帧、额度 1000 ⇒ 72 帧 ≈935 颗；吸收 = `eat_at_toss 0`（看得见飞向自机）。
+         *   下面这行把**当时的槽值**也打出来 —— 只为留下「它与结果无关」的现场（值为多少都不影响）。*/
+        ce_log("youkai: spell-card break spiral ON (TH08 `Spellcard::on_tick` 0x416b90) - FIXED pattern, "
+               "independent of the fengma state (gauge=%d at start): EVERY FRAME min(quota,7) same-angle "
+               "+ 6 at +pi, 9 deg/frame (40 frames per turn), radius 128 around the PLAYFIELD CENTRE "
+               "(0,224); quota 1000 = 72 frames / ~935 orbs; orbs spawn in state 5 = toss and their "
+               "absorption is VISIBLE (eat_at_toss hard-coded 0)",
+               (int)s->gauge);
     }
 }
 
@@ -4802,11 +4815,12 @@ static int on_tick_2(ce_card_t *c)
             yk_orb_motion_params(ch, &sp, &rr);
             ce_log("youkai: gauge=%d piv=%d orbs=%d taken=%u live=%u peak=%u full=%u hud=%u "
                    "speed=%.0f pick=%.0f shoot=%d fengma=%u fscore=%d "
-                   "score=%d dscore=%d fengma=%d piv_pool=%d piv_show=%d pivw=%d bullet_hit_orbs=%u hitpos_swap=%u graze_pos_bullet=%u fengma_eaten=%u "
+                   "score=%d dscore=%d fengma=%d spiral_orbs=%u piv_pool=%d piv_show=%d pivw=%d bullet_hit_orbs=%u hitpos_swap=%u graze_pos_bullet=%u fengma_eaten=%u "
                    "graze_n 1/2/3=%u/%u/%u graze_gate ok/boss/gauge/shottype/off=%u/%u/%u/%u/%u clamped=%u",
                    (int)s->gauge, (int)s->piv, (int)s->orbs, s->orb_taken, s_orb_live,
                    (unsigned)s->orb_peak, s->orb_full, (unsigned)s->hud_ready, sp, rr, yk_shooting(),
                    (int)CE_SCORE(), (int)(CE_SCORE() - s->score_seen), (unsigned)s->fengma,
+                   s_spiral_orbs,
                    (int)s->fengma_score,
                    /* ★ 2026-09-27（§BE #137）：这两个数 = owner 报的那条能不能过的**判据**
                     * （`piv_pool` = 左下角那个数画的东西、`piv_wrote` = 本卡写进去的那一份）。*/
