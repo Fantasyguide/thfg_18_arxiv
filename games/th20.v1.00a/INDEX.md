@@ -86,10 +86,11 @@ owner 口径：「**兽之冷硬是 119**，认为是 **109 花映塚可触发**
 | 项 | 事实 |
 | --- | --- |
 | TH09 花映塚 | ✅ 本仓已有：`local/th09.v1.50a/th09.exe` + `th09.dat`（**尚未建 Ghidra 工程**）|
-| TH19 獣王園 | ✅ 本机有：`D:\SteamLibrary\steamapps\common\th19\`（`th19.exe` **2,163,416 B** md5 `8147b8d2bd8fe67b8d186e7fb3b5804d` + `th19.dat` 115,306,902 B）|
-| ⚠ TH19 exe | **SteamStub 壳**（PE 段里有 `.bind`）⇒ 建库前要过 `local/vendor/Steamless`（本仓已有该工具）|
+| TH19 獣王園 | ✅ **已建库**（`local/th19.v1.10c/`，4740 函数）：原始 exe 2,163,416 B md5 `8147b8d2bd8fe67b8d186e7fb3b5804d` → 脱壳后 1,993,728 B md5 `dd0e1ff8c02327bf6408f763b8beedc9` |
+| ★ TH19 版本 | 脱壳后 exe 的 VERSIONINFO 是 **ver 1.10c**（不是 1.00a）⇒ 目录与 `database_id` 记作 **`th19.v1.10c`**；见 [`games/th19.v1.10c/INDEX.md`](../th19.v1.10c/INDEX.md) §1a |
+| ⚠ TH19 exe | **SteamStub 壳**（PE 段里有 `.bind`）⇒ 已过 `tooling/steamless` 脱壳（判据：`.bind` 消失、EP 回 `.text`、熵 6.54）|
 | ⚠ TH19 安装 | 同目录另有**未打包的 `data/`（352 个文件）与 `ANM/`**，像是打过补丁/解包过的安装；当样本前要确认版本与 md5 |
-| 一手系统文档 | TH19 的 `data/ability.txt`（5078 B）= **能力卡（アビリティ）说明文本**；`abcard.anm`/`abmenu.anm`/`ability.anm` = 卡面/菜单/演出 |
+| 一手系统文档 | 能力卡文案 **1.10c 版**（从 dat 解出，5074 B，md5 `8720e840…`）= `local/th19.v1.10c/ability.txt`；`abcard.anm`/`abmenu.anm`/`ability.anm` = 卡面/菜单/演出 |
 | 官方定位（二手转述）| TH19 是**对战型弹幕游戏**，画面构成**大体基于 TH09**、但**重构了系统**（操作感更接近通常的东方作），**取消分数系统**，并**沿用 TH18/TH18.5 的卡牌系统**，且**没有 Replay** |
 
 ### 2c. 已知限制：**没有社区命名可比对**（TH20 太新）

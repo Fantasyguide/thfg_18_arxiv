@@ -3880,7 +3880,9 @@ static void on_bullet_hit(ce_card_t *c, const ce_bullet_hit_t *ev)
      * ⇒ 源中心离敌机 > 阈值时改用敌机位置（= 视觉上的命中处）。见 `youkai_core.h` 的
      * `YK_HIT_ORB_FAR_DIST` 那一节（owner：「魔理沙人激光的永点生成位置明显偏离 hit 位置」）。*/
     ox = ev->x; oy = ev->y;
-    if (yk_hit_orb_use_enemy_pos(ev->x - ev->ex, ev->y - ev->ey)) {
+    /* ⚠ `has_enemy_pos == 0` 时**不许**把 (0,0) 当落点（那是世界原点，不是命中处）—— 只在真拿到坐标
+     *   时才走「长光源 ⇒ 用敌机位置」那条判据（本站点拿不到敌指针，坐标是从 arg1 读的，见 `sdk.c`）。*/
+    if (ev->has_enemy_pos && yk_hit_orb_use_enemy_pos(ev->x - ev->ex, ev->y - ev->ey)) {
         ox = ev->ex; oy = ev->ey;
         ++s_bullet_hit_pos_swap;
     }

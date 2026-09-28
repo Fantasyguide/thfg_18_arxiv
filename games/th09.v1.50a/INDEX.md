@@ -55,5 +55,5 @@
 ## 关联
 
 - 119 合成卡工单：`mods/th18.v1.00a/card-expand/SINGLE-CARD-TEST.md` 的 `§th20` 第 6/8 条。
-- 姊妹作（TH19 獣王園）：[`games/th19.v1.00a/INDEX.md`](../th19.v1.00a/INDEX.md)。
+- 姊妹作（TH19 獣王園）：[`games/th19.v1.10c/INDEX.md`](../th19.v1.10c/INDEX.md)。
 - 命名金矿用法：[`tooling/ghidra/th-re-data.md`](../../tooling/ghidra/th-re-data.md)。

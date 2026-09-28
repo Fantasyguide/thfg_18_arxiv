@@ -24689,3 +24689,66 @@ TH08 不往里写（`YK_PIV_POOL_CAP` / `yk_piv_pool_step()` 从此没有卡侧�
 
 回归：`make -s check` rc=0（`youkai_core: 5254 checks, 0 failed`；`test_sdk_core` 1370/0；x87 = 0；
 33 个 BP_* 双向一致；生成物无漂移；393 个文档全过）；`capcheck` 全绿。
+
+## §BE 详录 #141（2026-09-27 紧急）：`ce_bullet_hit` **上线当天崩溃** —— 站点第 7 个实参是「敌人 ID」不是指针
+
+> **owner**：「ohno，crash」。dump = `crashdumps/th18.exe.74956.dmp`（2026-09-28 21:26）。
+
+### 1. 崩溃签名（读 dump，`tooling/crashdump/dmp.py`）
+
+```
+异常   : code=0xc0000005 addr=0x6dd8fd1b params=[0x0, 0x1274]      ← read @ 0x1274
+EIP 在 : mod_th18_card_expand.dll+fd1b
+寄存器 : eax=0x4 ebx=0x0 ecx=0x2 edx=0x4 esi=0x1a78a358 edi=0x1 eip=0x6dd8fd1b
+```
+反汇编本 DLL 该偏移（`objdump -d`，image base `0x10000000`）：
+
+```
+1000fd05: mov 0x98(%esi),%eax          ; ev.special = src+0x98
+1000fd0f: mov 0x48(%esp),%eax
+1000fd13: mov 0x8(%eax),%eax           ; eax = regs->esi   ← x86_reg_t 的 esi 在 +8（thcrap_bp.h）
+1000fd16: movsd 0x1c(%esi),%xmm0       ; ev.x/ev.y = src+0x1c（源中心）
+1000fd1b: movhps 0x1270(%eax),%xmm0    ; ★★ 崩点：读 [eax+0x1270]，eax = 4 ⇒ 0x1274
+```
+⇒ 崩在**本批新写的 `BP_ce_bullet_hit`** 里那两行「敌机坐标 = `regs->esi + CE_ENEMY_POS_X`」。
+
+### 2. 真因：**第 7 个实参是敌人的「id」，不是敌指针**
+
+一手（调用方 `th18:0x42f11b`–`0x42f16e`，`push` 序 = 从右往左）：
+
+```
+42f122  mov eax,[ebx+0x5588] / 42f131 mov eax,[eax+0x6830] / 42f137 push eax   ; ← 第 7 个实参
+42f13c  push 0                                                                 ; 第 6 个
+42f13e  push esi                     ; esi = lea [ebx+0x280]                   ; 第 5 个
+42f13f  push eax                     ; eax = lea [esp+0x14]（栈上缓冲）         ; 第 4 个
+42f140  push ecx                                                               ; 第 3 个
+...
+42f16d  push edi                     ; edi = lea [ebx+0x44] ⇒ **第 1 个实参 = &{x,y}**
+42f16e  call 0x45f0f0
+```
+- **第 7 个** = `[[enemy+0x5588]+0x6830]` = 那个**单调递增的敌人 id**（= SDK 里 `CE_ENEMY_ID` 那一格的值）
+  ⇒ 命中的是场上第 4 个敌人时它就是 `4` ⇒ `4 + 0x1270 = 0x1274` = 崩点地址 ✓✓ 签名完全对上。
+- 一手在函数体里对它的用法也自洽：`0x45f456 test esi,esi / :0x45f458 je 0x45f466`（**没 id 就不打这个
+  「一源一敌」标记**）、`:0x45f463 mov [edi+0x64],esi`（把 id 存进源槽当身份）、`:0x45f49d mov [edi+0x74],esi`
+  （交给特殊 handler）—— **全是当「身份值」用，从来没有解引用过它**。
+- 敌机坐标的真源是**第 1 个实参**：函数体 `0x45f138 mov [ebp-0x40],edx(=arg1)`、`:0x45f2f3`–`:45f304`
+  用 `[eax]`/`[eax+4]` 当 {x,y} 读 ⇒ 与 `BP_ce_shot_damage` 的 `pos`（`[ebx+8]`）**同一个源** ✓。
+
+### 3. 修法
+
+`sdk.c` 的 `BP_ce_bullet_hit`：
+- **不再解引用 `regs->esi`**；敌机坐标改成读 **`[regs->ebx + 8]`（arg1 的 {x,y} 指针）**，
+  并加两级防线：`ebx >= 0x10000`、`pos >= 0x10000`（低位一律当「没拿到」）；
+- 事件结构 `ce_bullet_hit_t`：**删掉 `enemy` 指针**（本站点根本没有指针 ⇒ 恒 0，防止再被误用），
+  改给 **`enemy_id`**（那个 id），并新增 **`has_enemy_pos`**（1 = `ex/ey` 是真读到的）；
+- 卡侧：`has_enemy_pos == 0` 时**不许**把 `(0,0)` 当落点（那是世界原点）⇒ 只在真拿到坐标时才走
+  「长光源 ⇒ 用敌机位置」那条判据。
+- 复核同类风险：**`ce_graze`（`0x42497f`）的 `esi` 是真·bullet 指针**（站点前后两步就是
+  `0x42496f test BYTE [esi+0x20],4` 与 `0x424984 or [esi+0x20],4`）⇒ 那条安全，无需改。
+
+**验尸口径（写进 GATES.md 那种「别的站点别照抄」的名单）**：站点寄存器**不许靠推测**——
+「看着像指针」的参数在被解引用前必须先确认它是指针（这次就是把它当指针用了一次 ⇒ 上线即崩）。
+
+闸：`make -s check` rc=0（`youkai_core: 5254 checks, 0 failed`；x87 = 0；33 个 BP_* 双向一致；
+生成物无漂移；393 个文档全过）；**并已用 `objdump -d` 确认重建后的 DLL 里再没有 `movhps 0x1270(...)`**
+（上一版那一条指令就是崩点）。

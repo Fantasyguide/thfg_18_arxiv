@@ -2571,9 +2571,31 @@ int __cdecl BP_ce_bullet_hit(x86_reg_t *regs, void *bp_info)
             /* ★ 2026-09-27（第三十九批）：敌机位置 —— 长光源（激光/束）的源中心在**膛口**，
              *   卡侧要用它把落点换到真正的命中处（见 `public.h` 同名字段与 `yk_hit_orb_use_enemy_pos`）。
              *   ⚠ `esi` 是本迭代的敌指针（已在入口判非 0），这里只在回调内读一次。*/
-            ev.ex         = *(const float *)((const uint8_t *)(uintptr_t)regs->esi + CE_ENEMY_POS_X);
-            ev.ey         = *(const float *)((const uint8_t *)(uintptr_t)regs->esi + CE_ENEMY_POS_X + 4);
-            ev.enemy      = (void *)(uintptr_t)regs->esi;            /* ⚠ 只在本次回调内有效 */
+            /* ★★★★ 2026-09-27 **崩溃修复**（第三十九批上线当天实跑崩在 `read 0x1274`，
+             *   dump = `th18.exe.74956.dmp`：EIP = 本 DLL+0xfd1b = `movhps 0x1270(%eax),%xmm0`，
+             *   `eax = 4`、params = `[0, 0x1274]`）：
+             *   ⚠⚠ **`esi` 在这个站点不是敌指针，是「敌人 ID」** —— 调用方 `0x42f137`
+             *   `push eax`（`eax = [[enemy+0x5588]+0x6830]`）= 第 7 个实参 = 那个单调递增的 id
+             *   （= SDK 里 `CE_ENEMY_ID` 那一格）；`esi == 0` = 没有 id（一手 `0x45f456 test esi,esi /
+             *   `:0x45f458 je` 就是「没 id 就不打这个「一源一敌」标记」）⇒ **绝不能拿它当指针解引用**。
+             *   我上一版把它当敌指针读 `+0x1270` ⇒ 命中第 4 个敌人时读到地址 `0x1274` ⇒ 访问违例 ✓。
+             *   ⇒ 敌机坐标改走 **arg1**（`[ebx+8]`，与 `BP_ce_shot_damage` 的 `pos` 同一个源：
+             *     调用方 `0x42f12e lea edi,[ebx+0x44]` → `0x42f16d push edi`；函数内
+             *     `0x45f138 mov [ebp-0x40],edx(=arg1)` ⇒ 几何判定就是拿它当 {x,y} 读的）。*/
+            {
+                uintptr_t fr = (uintptr_t)regs->ebx;                 /* ebx = 帧基（`mov ebx,esp`）*/
+                const float *epos = 0;
+                if (fr >= 0x10000u) epos = *(const float *const *)(fr + 8);   /* arg1 = &{x,y} */
+                if (epos && (uintptr_t)epos >= 0x10000u) {
+                    ev.ex = epos[0];
+                    ev.ey = epos[1];
+                } else {
+                    ev.ex = ev.ey = 0.0f;                            /* 拿不到 ⇒ has_enemy_pos = 0 */
+                }
+                ev.has_enemy_pos = (epos && (uintptr_t)epos >= 0x10000u) ? 1 : 0;
+            }
+            ev.enemy_id   = (uint32_t)regs->esi;                     /* ★ 敌人 ID（**不是指针**）*/
+            ev.enemy      = 0;   /* 本站点拿不到敌指针（只有 id）⇒ 一律 0，别当指针用 */
         }
         unsigned guard = 0;
         for (const uint8_t *node = *(const uint8_t *const *)(mgr + CE_MGR_CARD_LIST_FIRST);
