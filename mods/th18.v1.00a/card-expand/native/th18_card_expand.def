@@ -1,9 +1,9 @@
 LIBRARY th18_card_expand.dll
 EXPORTS
-	thcrap_plugin_init	@1
-	BP_ce_bomb_gate	@2
-	BP_ce_bomb_spent	@3
-	BP_ce_bullet_damage_final	@4
+	BP_ce_bomb_gate	@1
+	BP_ce_bomb_spent	@2
+	BP_ce_bullet_damage_final	@3
+	BP_ce_bullet_hit	@4
 	BP_ce_card_bind	@5
 	BP_ce_enemy_damage	@6
 	BP_ce_enemy_death	@7
@@ -32,3 +32,4 @@ EXPORTS
 	BP_ce_trace_alloc	@30
 	BP_ce_unlock_all	@31
 	BP_ce_unlock_write	@32
+	thcrap_plugin_init	@33

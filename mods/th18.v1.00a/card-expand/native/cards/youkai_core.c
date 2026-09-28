@@ -1501,8 +1501,29 @@ int yk_fengma(int32_t gauge, int32_t human_effects, int32_t youkai_effects)
 
 int yk_fengma_kill_orbs(int fengma, int is_human_fengma, int by_player_bullet)
 {
-    if (!fengma) return 0;
-    if (is_human_fengma && by_player_bullet) return 2;   /* 逢魔 +1 与 `0x45187f` 那一颗 +1 */
+    /* ★★★ 2026-09-27（第三十七批）：**恒 1 颗** —— 那两个「人间逢魔 + 自机弹击杀再多一颗」的
+     * 近似分支**已撤**。理由：一手的那 +1 是**另一条来源**（「極人期间**每一发自机弹碰到敌机**」，
+     * `th08:0x451860`–`:0x451892`），它有**自己的颗粒度**（每发命中一颗，不是每次击破一颗）
+     * ⇒ 本卡按真颗粒度接在 `on_bullet_hit`（新站点 `ce_bullet_hit`）上了；这里再补一颗就是**重复计数**。
+     * 一手那条（死亡路径）：`th08:0x42da2a`/`:0x42da38` 两问取或（極人或極妖）⇒ `:0x42da41 push 1` /
+     * `:0x42da54 spawn_item(type 7, ...)` —— **无条件、一颗、与形态无关**。
+     * ⚠ 两个入参保留（调用点与单测的接口不变），但**不再影响结果**。*/
+    (void)is_human_fengma;
+    (void)by_player_bullet;
+    return fengma ? 1 : 0;
+}
+
+int yk_human_fengma_bullet_orbs(int32_t gauge, int is_player_bullet)
+{
+    /* ★★★ 2026-09-27（第三十七批 · owner「3 可以贴一手」）：一手 `Player::compute_damage_to_enemy`
+     * `th08:0x451860`–`:0x451892`（逐指令）：
+     *   `451860 mov ecx,0x160f508 / 451865 call 0x406d10`  ⇒ **極端人間**问（假 ⇒ 整段跳过）
+     *   `451871 mov eax,[bullet+0x480]` / `451877 movsx ecx,WORD [eax+0x1e]` / `45187d jge` ⇒ ≥0 跳过
+     *   `45187f push 3` / `451881 push 7` / `451886 add edx,0x2a4`（弹的位置）/ `451892 call 0x4400a0`
+     * ⇒ **每一次「極人 + 自机弹命中敌机」掉 1 颗**（在**弹的位置**，type 7 ⇒ 被强制成 state 3）。
+     * 判据里**没有**低速位（`focused`）这一维 —— 一手那一段只看槽的極人档。*/
+    if (!is_player_bullet) return 0;                 /* 一手这 +1 只属于**自机弹**命中 */
+    if (gauge > YK_GAUGE_HUMAN_EFFECTS) return 0;    /* 極人（含等号，`0x406d10` 是 `setle`）*/
     return 1;
 }
 

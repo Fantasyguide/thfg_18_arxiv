@@ -2716,13 +2716,15 @@ static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
      * `th08:0x42da54 spawn_item(type 7, state 1)`），人侧（未聚焦）一样掉。
      * ⚠ 原来这段写在下面 `!focused` 之后 ⇒ 人侧逢魔不掉 —— 本批挪到前面（一手修正）。
      * 出生态 state 1 = 生成即满速归航（我们的 `YK_ORB_STATE_HOMING`）。*/
-    /* ★★★ 2026-09-22 夜（P-B + P-D）：逢魔击破掉几颗 = 一手 `yk_fengma_kill_orbs()` 的算式
-     *（逢魔 ⇒ 1；**人间逢魔 + 自机弹击杀** ⇒ 2）。`by_player_bullet` 是**新追加**的事件字段
-     *（`ce_enemy_death_t` 尾部，见 `sdk/public.h` 的注与 `AUDIT.md` §BE #66 的共享件登记）。*/
+    /* ★★★ 2026-09-27（第三十七批 · owner：「**2 可以删**」）：逢魔击破那一颗的算式**回到一手**
+     *   （`yk_fengma_kill_orbs()` 现在恒 1）—— 原来那个「人间逢魔 + 自机弹击杀 ⇒ 2 颗」是**近似**，
+     *   一手那条「極人期间**每一发自机弹碰到敌机**就掉 1 颗」已经由 `on_bullet_hit`（新站点
+     *   `ce_bullet_hit`）按**真颗粒度**实现了 ⇒ 再留这一颗就是**重复计数**。
+     *   一手出处：`th08:0x42da2a`/`:0x42da38` 两问取或（極人或極妖）⇒ `:0x42da41 push 1` /
+     *   `:0x42da54 spawn_item(type 7,...)` **一颗**；那条 +1 是**另一条来源**（`th08:0x45187f`）。*/
     {
         int fm = yk_fengma(s->gauge, YK_GAUGE_HUMAN_EFFECTS, YK_GAUGE_YOUKAI_EFFECTS);
-        int human_fm = (s->gauge <= YK_GAUGE_HUMAN_EFFECTS) ? 1 : 0;
-        int norbs = yk_fengma_kill_orbs(fm, human_fm, ev->by_player_bullet ? 1 : 0);
+        int norbs = yk_fengma_kill_orbs(fm, (s->gauge <= YK_GAUGE_HUMAN_EFFECTS) ? 1 : 0, 0);
         int oi;
         /* ★★★ 2026-09-27（§BE #117，owner：「人妖逢魔的永点……应当是下落一小段之后直接消失
          *   （= 直接吃掉），而不是现在还走一个自动吸收的中间路程」）：**改成上抛态（state 3）**。
@@ -2736,7 +2738,20 @@ static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
         for (oi = 0; oi < norbs; ++oi)
             yk_orb_spawn(s, ev->x, ev->y, YK_ORB_STATE_SPAWN);
     }
-    if (!focused) return;                               /* 妖逢魔才撒刻符 */
+    /* ★★★ 2026-09-27（第三十七批 · **owner 2026-09-27 拍「2 可以删」**）：**删掉了这里那句
+     *   `if (!focused) return;`**（「妖逢魔才撒刻符」）。它是一道**一手没有的形态门**：
+     *   · 一手死亡路径 `th08:0x42d625` → `:0x42d62f je 0x42d652` → **`:0x42d652 push 1` /
+     *     `:0x42d657 call 0x42adb0`**（两者之间**没有任何指令** ⇒ 无条件）→ `Enemy::sub_42adb0`
+     *     体内的刻符落点 `:0x42b03d push 7` / `:0x42b048`、`:0x42b1a6`/`:0x42b1b1`、`:0x42b1b8`；
+     *     那几处的门是**机体 / boss / 符卡**（`:0x42aece call 0x42f270` solo_youkai、
+     *     `:0x42aefd call 0x42f230` solo_human、`:0x42b054 call 0x42f1f0` is_boss_active、
+     *     `:0x42b062 call 0x4178a0` 符卡中）—— 而 `player+3` 的 **8 个读点**（`0x42c6d7`/`0x42d197`/
+     *     `:0x42d1c5`/`:0x42d217`/`:0x42d65c`/`:0x44054d`/`:0x440838`/`:0x4413a5`）**没有一个落在这段里**
+     *     ⇒ **掉这几颗刻符与形态无关**。
+     *   · 后果（删之前）：人侧（松 Shift / 高速）击破**一颗都不撒** —— 而 owner 的 §6 口径
+     *     「人侧和不装 108 完全一样」说的是**自机发弹**，不是「本卡自己的永点系统在人侧消失」。
+     *   ⇒ 删掉之后：人侧击破也会撒（一手行为）。判据 = 台账里的永点计数在人侧也涨。
+     * 逐条取证与影响面：`AUDIT.md` §BE #138。*/
     /* ★★★ 2026-09-22 深夜（owner 口径细化）：**两条一手来源分开实现**（各带自己的出处）。
      *
      * ① **通用击破批**（一手 `th08:0x42b048` = `Enemy::sub_42adb0`，push **state 3**）：
@@ -3752,6 +3767,35 @@ static int yk_on_shot_slot(ce_card_t *c, const ce_enemy_shot_t *ev)
     return 1;
 }
 
+/* ★★★ 2026-09-27（第三十七批 · **owner「3 可以贴一手，关键在站点写法」**）：
+ *   **人逢魔（槽 ≤ −8000）+ **一发自机弹命中敌机** ⇒ 在**那颗弹的位置**掉 1 颗刻符**。
+ *
+ *   一手（`Player::compute_damage_to_enemy`，`th08:0x451860`–`:0x451892`，逐指令）：
+ *     `451860 mov ecx,0x160f508 / 451865 call 0x406d10` ⇒ **極端人間**问（假 ⇒ 整段跳过）
+ *     `451871 mov eax,[bullet+0x480]` / `451877 movsx ecx,WORD [eax+0x1e]` / `45187d jge` ⇒ ≥0 跳过
+ *     `45187f push 3` / `451881 push 7` / `451886 add edx,0x2a4`（**弹的位置**）/ `451892 call 0x4400a0`
+ *   ⇒ 颗粒度是「**每一发命中**」（不是「每次击破」）；出生态 type 7 ⇒ `0x440124` 强制 state 3（先上抛）。
+ *
+ *   TH18 没有等价函数（伤害在敌人侧算）⇒ SDK 新站点 `ce_bullet_hit`（`0x45f466`）把
+ *   「某个伤害源**第一次**命中某个敌」那一刻交出来，并已判定 `ev->is_player_bullet`
+ *   （扫弹池找 `bullet+0xb0 == 本槽下标`）。机制全文 = `sdk.c` 的 `BP_ce_bullet_hit`。
+ *
+ *   ⚠ 回调里**只记标量 + 建自己的永点**（`yk_orb_spawn` 建的是 anm VM —— 与卡自己的 tick 同级，
+ *     不在死亡栈上）；**不缓存 `ev->enemy`**（同帧可能被删）。
+ *   ⚠ 本卡原来那条「人间逢魔 + 自机弹击杀 ⇒ 逢魔击破那笔 +1」的**近似已撤**（`yk_fengma_kill_orbs`
+ *     恒 1）—— 否则同一件事记两遍（一手那 +1 与死亡路径那 1 颗本来就是两笔，而「击破 + 命中」
+ *     在极人时自然会同时发生 ⇒ 那一瞬**确实是 2 颗**，只是账要记在各自的来源上）。*/
+static unsigned s_bullet_hit_orbs;                     /* 台账：本批新来源撒了几颗（实跑判据）*/
+static void on_bullet_hit(ce_card_t *c, const ce_bullet_hit_t *ev)
+{
+    yk_card_t *s = ce_state(c, yk_card_t);
+    if (!s || !ev) return;
+    if (!yk_human_fengma_bullet_orbs(s->gauge, ev->is_player_bullet)) return;
+    yk_orb_spawn(s, ev->x, ev->y, YK_ORB_STATE_SPAWN);   /* state 3 = 先上抛（一手 `push 3`）*/
+    ++s_bullet_hit_orbs;
+}
+
+
 /* ★ §3.6 击破信号：共享死亡事件是**广播只读**（EVENTS-CONTRACT §1）——
  * 这里只做一件事：认出「这只被打死的是我的使魔」⇒ 把那个发射口槽标成「被打破」。
  * ⚠ 回调里禁止析构任何敌人（UAF），也不缓存 `ev->enemy`（同帧 sweep 会删）。*/
@@ -4653,7 +4697,7 @@ static int on_tick_2(ce_card_t *c)
             yk_orb_motion_params(ch, &sp, &rr);
             ce_log("youkai: gauge=%d piv=%d orbs=%d taken=%u live=%u full=%u hud=%u "
                    "speed=%.0f pick=%.0f shoot=%d fengma=%u fscore=%d "
-                   "piv_pool=%d piv_wrote=%d "
+                   "piv_pool=%d piv_wrote=%d bullet_hit_orbs=%u "
                    "graze_n 1/2/3=%u/%u/%u graze_gate ok/boss/gauge/shottype/off=%u/%u/%u/%u/%u clamped=%u",
                    (int)s->gauge, (int)s->piv, (int)s->orbs, s->orb_taken, s_orb_live,
                    s->orb_full, (unsigned)s->hud_ready, sp, rr, yk_shooting(),
@@ -4661,6 +4705,9 @@ static int on_tick_2(ce_card_t *c)
                    /* ★ 2026-09-27（§BE #137）：这两个数 = owner 报的那条能不能过的**判据**
                     * （`piv_pool` = 左下角那个数画的东西、`piv_wrote` = 本卡写进去的那一份）。*/
                    (int)ce_piv_pool(), (int)ce_piv_written(ce_card_id(c)),
+                   /* ★ 2026-09-27（第三十七批）：`bullet_hit_orbs` = 「人逢魔 + 自机弹命中」这条新来源
+                    * 一共撒了几颗（一手 `th08:0x45187f`）。人侧击破那批的判据另看 `orbs`/`taken`。*/
+                   s_bullet_hit_orbs,
                    s_graze_n[1], s_graze_n[2], s_graze_n[3],
                    s_graze_gate[YK_GRAZE_GATE_OK], s_graze_gate[YK_GRAZE_GATE_BOSS],
                    s_graze_gate[YK_GRAZE_GATE_GAUGE], s_graze_gate[YK_GRAZE_GATE_SHOTTYPE],
@@ -5227,6 +5274,9 @@ static int on_tick_2(ce_card_t *c)
 CE_CARD(108, .ctor = on_ctor, .on_load = on_load, .on_power_level_change = on_power_level_change,
              .on_tick_shooters = on_tick_shooters, .on_tick_2 = on_tick_2,
              .on_bullet_created = on_bullet_created, .on_enemy_death = on_enemy_death,
+             /* ★ 2026-09-27（第三十七批）：**人逢魔 + 一发自机弹命中敌机 ⇒ 在弹的位置掉 1 颗**
+              *   （一手 `th08:0x451860`–`:0x451892`；站点 = `ce_bullet_hit` `0x45f466`）。*/
+             .on_bullet_hit = on_bullet_hit,
              .on_enemy_shot_slot = yk_on_shot_slot,           /* §3.5.1 发射口精确闸（0x433ffa）*/
              /* ★ 2026-09-22（P7）：`on_native_shot_suppress` **已退订** —— 妖侧主炮改成「认领 set +
               *   让引擎的行循环发」（见 `on_shot_set_index` 的注）。站点本身留着（109 还在用同一站点）。*/

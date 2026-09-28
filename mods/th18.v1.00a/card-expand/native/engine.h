@@ -208,6 +208,14 @@
 #define CE_BM_CANCEL_COUNTER       0x7a41e8   /* int：cancel_radius_as_bomb 每消一发 ++；Tenshi 每帧调前清零、调后读（0x40eb56）。ExpHP __some_cancel_related_counter */
 #define CE_FN_PLAYER_DMGSRC_RECT   0x45dfa0   /* stdcall(center*, angle, 寿命帧, 每次伤害) + ★XMM2 = 宽、XMM3 = 高；ret 0x10；返回 1-based 槽号。矩形伤害源（flags &~6|1）：+0xc 角度、+0x14/+0x18 宽高、+0x7c 累计上限 9999999、+0x80 命中间隔 1。Remilia 0x40f4a6 调 (玩家上方, 0.0, 2, 200) 宽 32（AUDIT O29b）*/
 #define CE_PLAYER_DMGSRC_POOL      0x20574    /* zPlayerDamageSource[0x400]，stride 0x9c；flags bit0 active、bit1 圆形（create_45de40）/ 清 = 矩形（engine/player/th18/02-damage-sources.md）*/
+#define CE_PLAYER_DMGSRC_BASE      0x204d8    /* ★ 2026-09-27 加（卡 108 的 `ce_bullet_hit` 用）：**槽下标 0 的基址**
+                                              *   —— 池的真实基址 = `PLAYER+0x204d8`，而上面的 `CE_PLAYER_DMGSRC_POOL`(0x20574)
+                                              *   = 0x204d8 + 0x9c = **槽 1 的地址**（`enm_compute_damage_sources` `0x45f0f0`
+                                              *   的循环从槽 1 起：`lea esi,[eax+0x20574]`）；弹侧同一个算式
+                                              *   （`tick_bullets` `0x45ee7a`、`PlayerBullet__create` `0x45e889`）用的是
+                                              *   `PLAYER+0x204d8+idx*0x9c` ⇒ 下标是 **1-based**、槽 0 是哨兵
+                                              *   （`ce_damage_rect` 返回的也是 1-based 槽号）
+                                              *   ⇒ 「槽地址 → 下标」= `(addr − (PLAYER+0x204d8)) / 0x9c`。*/
 #define CE_PLAYER_DMGSRC_STRIDE    0x9c
 #define CE_PLAYER_DMGSRC_SLOTS     0x400
 #define CE_PLAYER_DAMAGE_CAP       0x47984    /* int：敌人侧 enm_compute_damage_sources 0x45f0f0 把本帧总伤害钳到它（0x45f28b）；GameThread 0x443d3b 每帧从 sht+0x28 复位；Remilia 0x40f48e 抬到 300。本 mod 照 Remilia 在卡 tick 里抬（ce_raise_damage_cap，炎魔爆炸帧；AUDIT V20）*/

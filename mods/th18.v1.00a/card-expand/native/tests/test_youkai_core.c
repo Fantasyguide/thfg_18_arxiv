@@ -1424,12 +1424,22 @@ int main(void)
             CHECK(yk_fengma(0, YK_GAUGE_HUMAN_EFFECTS, YK_GAUGE_YOUKAI_EFFECTS) == 0);
             /* 妖梦人型那种「人侧只要 −3000」的阈值也走同一个函数（阈值是参数）*/
             CHECK(yk_fengma(-3000, -3000, 8000) == 1 && yk_fengma(-2999, -3000, 8000) == 0);
-            /* 击破掉几颗：非逢魔 0；逢魔 1；人间逢魔 + 自机弹 2（妖怪逢魔恒 1）*/
+            /* 击破掉几颗：非逢魔 0；逢魔 **恒 1** —— ★ 2026-09-27（第三十七批）撤掉了
+             * 「人间逢魔 + 自机弹击杀 ⇒ 2」那条近似：一手那 +1 属**另一条来源**
+             * （極人期间**每一发自机弹命中**），现在按真颗粒度接在 `on_bullet_hit` 上。*/
             CHECK(yk_fengma_kill_orbs(0, 1, 1) == 0);
             CHECK(yk_fengma_kill_orbs(1, 0, 0) == 1);
-            CHECK(yk_fengma_kill_orbs(1, 0, 1) == 1);          /* 妖怪逢魔：自机弹也只 1 颗 */
+            CHECK(yk_fengma_kill_orbs(1, 0, 1) == 1);
             CHECK(yk_fengma_kill_orbs(1, 1, 0) == 1);
-            CHECK(yk_fengma_kill_orbs(1, 1, 1) == 2);
+            CHECK(yk_fengma_kill_orbs(1, 1, 1) == 1);      /* ★ 从 2 改成 1（不再重复计数）*/
+            /* ★★★ 2026-09-27（第三十七批）：**極人 + 一发自机弹命中** ⇒ 1 颗（一手
+             * `th08:0x451860`–`:0x451892`）。判据 = 槽的極人档 + 「是自机弹」两条，**没有低速位**。*/
+            CHECK(yk_human_fengma_bullet_orbs(-8000, 1) == 1);    /* 極人（含等号，`setle`）*/
+            CHECK(yk_human_fengma_bullet_orbs(-10000, 1) == 1);
+            CHECK(yk_human_fengma_bullet_orbs(-7999, 1) == 0);    /* 差 1 就不算極人 */
+            CHECK(yk_human_fengma_bullet_orbs(0, 1) == 0);
+            CHECK(yk_human_fengma_bullet_orbs(10000, 1) == 0);    /* 極妖：这 +1 只属極人 */
+            CHECK(yk_human_fengma_bullet_orbs(-10000, 0) == 0);   /* 不是自机弹（卡侧伤害源/原生卡）*/
             /* ★★★ 2026-09-22 夜（P-E 单人反向封顶）：一手 `Player::on_registration`
              * —— 单人（`th08:0x44da99` / `:0x44dac4` 的两个门）把**反侧 limit** 收成 ±2000
              * （`th08:0x44daa2` = +0x7d0 / `th08:0x44dacd` = −0xf830），effects 不动 ⇒ 反侧逢魔不可达。*/

@@ -69,6 +69,27 @@ typedef struct {
 } ce_enemy_damage_t;
 #define CE_EDAMAGE_F_BOSS  0x1u   /* 已置位 = ECL 调过 setBoss（boss / 道中 boss）*/
 
+/* ---- 「一发自机弹 × 一个敌机」的命中（断点 `ce_bullet_hit` `0x45f466`；卡 108 的「人逢魔」用）------
+ * ★★★ 2026-09-27（owner：「3 可以贴一手，关键在站点写法」）。一手 TH08 的那条规定写在**玩家侧**的
+ * 伤害函数里（`Player::compute_damage_to_enemy` `th08:0x451860`–`:0x451892`）：**極端人間** 期间，
+ * **每一发自机弹碰到敌机**就在**那颗弹的位置**掉 1 颗刻符（type 7 ⇒ 被强制成 state 3）。
+ * TH18 的伤害在**敌人侧**算（`enm_compute_damage_sources` `0x45f0f0` 遍历 1024 槽伤害源）
+ * ⇒ 本站点钉在「**某个伤害源第一次命中某个敌人**」那一瞬（= 一发弹命中一次；机制全文 = `sdk.c` 的
+ * `BP_ce_bullet_hit`）。`x/y` 就是**那颗弹的当前位置**（弹的 tick 每帧把 `bullet+0x48` 同步进源槽）。
+ * ⚠ 大部分伤害源不是弹（原生卡 25/54 与各卡的 `ce_damage_rect` 都会往同一个池里放源）
+ *   ⇒ **先看 `is_player_bullet`** 再决定要不要当成「自机弹命中」。*/
+typedef struct {
+    int32_t  index;            /* 伤害源槽下标（1-based；= `ce_damage_rect` 的返回值口径）*/
+    int32_t  is_player_bullet; /* 1 = 有**活动弹**把自己的伤害源下标（`bullet+0xb0`）指向这个槽 */
+    int32_t  bullet_i;         /* 命中它的弹在弹池里的槽号（诊断；-1 = 不是弹）*/
+    int32_t  damage;           /* 这个源写着的「每次结算伤害」（源槽 +0x74；诊断用，别当伤害读数）*/
+    uint32_t flags;            /* 源槽 +0x00 原值（bit0 active、bit1 圆形）*/
+    int32_t  special;          /* 源槽 +0x98 特殊 handler 索引（**诊断用**：弹写 1，但两个 create
+                                *   都不清它 ⇒ 槽回收后会残留 ⇒ **不要**拿它当「是不是弹」的判据）*/
+    float    x, y;             /* 命中点 = **弹的当前位置**（源槽 +0x1c/+0x20）*/
+    void    *enemy;            /* zEnemy*；**只在本次回调内有效**（同帧可能被删），禁止缓存 */
+} ce_bullet_hit_t;
+
 typedef struct {
     int  (*ctor)(ce_card_t *);
     int  (*dtor)(ce_card_t *);
@@ -180,6 +201,13 @@ typedef struct {
      * ⚠ 只有在 `on_shot_set_index` 返回 >= 0 时才参与仲裁；相同优先级时取链表里靠前的（旧行为）。
      * ⚠ 加在结构体**最后**：`ce_hooks_t` 是各卡的静态常量（全用指定初始化器），尾部加字段不影响旧卡。*/
     int  shot_set_index_priority;
+    /* ★★★ 2026-09-27（卡 108 · owner「3 可以贴一手，关键在站点写法」）：**一发自机弹 × 一个敌机**的命中
+     *   （断点 `ce_bullet_hit` `0x45f466`）。一手 = TH08「極人期间每一发自机弹碰到敌机 ⇒ 在弹的位置掉
+     *   1 颗刻符」（`th08:0x451860`–`:0x451892`）；TH18 没有等价函数 ⇒ 取「某个伤害源**第一次**命中某个敌」。
+     *   ⚠ `ev->enemy` 只在回调内有效；回调里**只记标量**（建 VM / 建道具请放到自己的 tick 里做）。
+     *   ⚠ 先判 `ev->is_player_bullet`：同一个池里还有原生卡与各卡 `ce_damage_rect` 放的源。
+     *   ⚠ 加在结构体**最后**（`ce_hooks_t` 全是静态常量的指定初始化器 ⇒ 尾部加字段不影响旧卡）。*/
+    void (*on_bullet_hit)(ce_card_t *, const ce_bullet_hit_t *);
 } ce_hooks_t;
 
 /* 改这张卡当前的自机弹伤害倍率（千分比）。只在值真的变了的时候调（古锭刀在终符沿、衔尾蛇在叠层时）。*/

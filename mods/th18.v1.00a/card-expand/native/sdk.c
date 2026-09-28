@@ -2473,6 +2473,110 @@ int __cdecl BP_ce_shot_damage(x86_reg_t *regs, void *bp_info)
     return BP_EXEC_ORIGINAL;
 }
 
+/* ==========================================================================================
+ * ★★★ 2026-09-27（卡 108 · owner「3 可以贴一手，**关键在站点写法**」）
+ *   `BP_ce_bullet_hit` —— **「一发自机弹 × 一个敌机」的命中那一刻**（一手语义见下）
+ * ==========================================================================================
+ *
+ * **一手（TH08 v1.00d，逐指令）**：那条规定写在**玩家侧**的伤害函数里 ——
+ * `Player::compute_damage_to_enemy` 的 `th08:0x451860`–`:0x451892`：
+ *   `451860 mov ecx,0x160f508 / 451865 call 0x406d10`  ⇒ **極端人間**问（假就整段跳过）
+ *   `451871 mov eax,[bullet+0x480]` / `451877 movsx ecx,WORD [eax+0x1e]` / `45187d jge`（≥0 跳过）
+ *   `45187f push 3` / `451881 push 7` / `451886 add edx,0x2a4`（= **弹的位置**）
+ *   `451892 call 0x4400a0`（`ItemManager::spawn_item`；type 7 被 `0x440124` 强制成 state 3）
+ * ⇒ **極人期间，每一发自机弹碰到敌机**就在**那颗弹的位置**掉 1 颗刻符（不是「击破」，是「命中」）。
+ *
+ * **TH18 为什么不能照抄**：TH18 的伤害不在弹里算 —— 弹只是往 `player+0x204d8` 的
+ * 1024 槽**伤害源池**里放一条记录（`PlayerBullet__create` `0x45e861 call 0x45dfa0`，
+ * 下标存 `bullet+0xb0`），由**敌人侧**每帧遍历（`enm_compute_damage_sources` `0x45f0f0`）。
+ * ⇒ 等价事件 = 「**某个伤害源第一次命中某个敌人**」，本站点就钉在那个瞬间。
+ *
+ * **站点（`sites.py` 的 `ce_bullet_hit`，0x45f466 / 8 字节）为什么选这里**：
+ *   · 走到 0x45f466 之前已经过 `0x45f45d je 0x45f25f`（**这个源这一辈子已经打过这个敌**）
+ *     与 `0x45f437 jg 0x45f25f`（该源累计上限）⇒ 落在这里 = **这个源第一次命中这个敌**
+ *     = 一发弹命中一次 ✓（正是一手的颗粒度）。
+ *   · 0x45f458 的 `je 0x45f466` 只在 `esi == 0`（这次没带敌指针）时跳 ⇒ 用 `regs->esi != 0` 排除。
+ *   · `esi` = 敌指针（本迭代 `0x45f254 mov esi,[ebx+0x20]` 刚重载，之后到本站点无人写）；
+ *     `edi` = 伤害源槽 + 0x20（循环 `lea edi,[eax+0x20594]`、每轮 `add edi,0x9c`）⇒ 槽 = edi − 0x20。
+ *   · **落点不需要另找弹**：弹的 tick 每帧把弹的当前坐标同步进它的源
+ *     （`0x45efd2 movq xmm0,[bullet+0x48]` → `0x45efe3 movq [PLAYER+0x204f4+idx*0x9c],xmm0`）
+ *     ⇒ 槽的 `+0x1c/+0x20` 就是**弹的位置**（一手撒的正是这里）。
+ *
+ * **「这一发是不是自机弹」怎么判**：只有弹把自己的源下标写在 `bullet+0xb0`（`CE_PB_DAMAGE_IDX`）
+ * ⇒ 扫弹池（`PLAYER+0x1570`、`CE_PB_COUNT` × `CE_PB_STRIDE`、`+0x8c == 1` 活动）找 `+0xb0 == 本槽下标`。
+ * ⚠ **不用**槽自己的 `+0x98`（特殊 handler 索引）判：弹把它写成 1（`0x45e890`），但两个 create
+ * （`0x45de40` / `0x45dfa0`）**都不清它** ⇒ 槽被回收后可能残留、会把卡侧来源误判成自机弹。
+ *
+ * **开销**：两遍卡链表 —— 第一遍只看有没有任何卡声明 `on_bullet_hit`，没有就**整段早退**
+ * （没装 108 的牌组：零开销，一次指针比较）；有声明才反推下标 + 扫弹池。
+ * 返回 `BP_EXEC_ORIGINAL`：三条原指令在 cave 里原样回放，本站点**不改控制流、不写内存**。
+ * ========================================================================================== */
+int __cdecl BP_ce_bullet_hit(x86_reg_t *regs, void *bp_info)
+{
+    (void)bp_info;
+    uint8_t *mgr = CE_ABILITY_MGR();
+    if (!mgr) return BP_EXEC_ORIGINAL;
+    if (!regs->esi) return BP_EXEC_ORIGINAL;        /* esi == 0 = 走的 0x45f458 那条「没敌」路 */
+    if (!regs->edi || !CE_PLAYER()) return BP_EXEC_ORIGINAL;
+    /* 第一遍：有没有人声明？（没声明就一个字都不读、不扫）*/
+    {
+        int want = 0;
+        unsigned g0 = 0;
+        for (const uint8_t *node = *(const uint8_t *const *)(mgr + CE_MGR_CARD_LIST_FIRST);
+             node && g0 < 256;
+             node = *(const uint8_t *const *)(node + CE_NODE_NEXT), ++g0) {
+            uint8_t *card = *(uint8_t *const *)(node + CE_NODE_CARD);
+            if (!card) continue;
+            const ce_hooks_t *h = hooks_of(card);
+            if (h && h->on_bullet_hit) { want = 1; break; }
+        }
+        if (!want) return BP_EXEC_ORIGINAL;
+    }
+    {
+        const uint8_t *pl   = CE_PLAYER();
+        const uint8_t *src  = (const uint8_t *)(uintptr_t)(regs->edi - 0x20);   /* 槽首 */
+        const uint8_t *base = pl + CE_PLAYER_DMGSRC_BASE;                       /* = PLAYER+0x204d8 */
+        ce_bullet_hit_t ev;
+        size_t span = (size_t)CE_PLAYER_DMGSRC_SLOTS * CE_PLAYER_DMGSRC_STRIDE;
+        if (src < base || src >= base + span) return BP_EXEC_ORIGINAL;          /* 纵深防御：不在池里 */
+        {
+            int32_t idx = (int32_t)((src - base) / CE_PLAYER_DMGSRC_STRIDE);    /* 1-based（槽 0 不用）*/
+            const uint8_t *bpool = pl + CE_PB_POOL;
+            int is_bullet = 0, hit_bullet = 0;
+            if (idx > 0) {
+                for (unsigned i = 0; i < CE_PB_COUNT; ++i) {
+                    const uint8_t *b = bpool + (size_t)i * CE_PB_STRIDE;
+                    if (*(const uint32_t *)(b + CE_PB_STATE) != 1u) continue;   /* 1 = 活动 */
+                    if (*(const int32_t *)(b + CE_PB_DAMAGE_IDX) == idx) { is_bullet = 1; hit_bullet = i; break; }
+                }
+            }
+            ev = (ce_bullet_hit_t){0};
+            ev.index      = idx;
+            ev.is_player_bullet = is_bullet;
+            ev.bullet_i   = is_bullet ? (int32_t)hit_bullet : -1;   /* 第几槽（诊断用；-1 = 不是弹）*/
+            ev.flags      = *(const uint32_t *)(src + 0x00);
+            ev.damage     = *(const int32_t *)(src + 0x74);          /* 这一源的「每次结算伤害」*/
+            ev.special    = *(const int32_t *)(src + 0x98);          /* 特殊 handler 索引（**别当判据**）*/
+            ev.x          = *(const float *)(src + 0x1c);
+            ev.y          = *(const float *)(src + 0x20);
+            ev.enemy      = (void *)(uintptr_t)regs->esi;            /* ⚠ 只在本次回调内有效 */
+        }
+        unsigned guard = 0;
+        for (const uint8_t *node = *(const uint8_t *const *)(mgr + CE_MGR_CARD_LIST_FIRST);
+             node && guard < 256;
+             node = *(const uint8_t *const *)(node + CE_NODE_NEXT), ++guard) {
+            uint8_t *card = *(uint8_t *const *)(node + CE_NODE_CARD);
+            if (!card) continue;
+            const ce_hooks_t *h = hooks_of(card);
+            if (h && h->on_bullet_hit) {
+                h->on_bullet_hit((ce_card_t *)card, &ev);
+                ce_sdk_trace(ce_card_id(card), 0x8a, "on_bullet_hit");
+            }
+        }
+    }
+    return BP_EXEC_ORIGINAL;
+}
+
 /* presence 续批谓词（§Z21，前身 ce_item_pool_any_flying = 池空门 {1,3,4}，§Z18 弃用）：
  * 池里有没有批集道具（type∈{1,2}）在**真空飞行**（state == CE_ITEM_STATE_VACUUM）。
  * ★ state 口径一手（AUDIT §Z21/§Z22，state 机写点普查 0x445b0f/0x445e38/0x445f6f/0x446146/
@@ -2711,6 +2815,9 @@ int ce_sdk_setup(uint8_t *base, int trace)
         { "ce_enemy_shot_slot", CE_BP_ENEMY_SHOT_SLOT_RVA, 8 },
         { "ce_player_die",  CE_BP_PLAYER_DIE_RVA,  6 },
         { "ce_bullet_damage_final", CE_BP_BULLET_DAMAGE_FINAL_RVA, 9 },
+        /* ★ 2026-09-27（108 · owner「3 可以贴一手，关键在站点写法」）：一发自机弹 × 一个敌机的命中。
+         *   机制全文 = `BP_ce_bullet_hit` 的注释（唯一出处）。*/
+        { "ce_bullet_hit",  CE_BP_BULLET_HIT_RVA,  8 },
         /* ⛔ ce_death_result：站点仍在 park */
         /* ★ 2026-09-16（111 魔理沙侧「原生子机不许出现」）：`sdk.c` 上面那一大段。
          *   两条都**必须**在这里：少一条 = 静默失效（①不拦 ⇒ 原生子机照建照画；②不拦 ⇒

@@ -1232,6 +1232,39 @@ SDK_SITES = [
      "③ on_tick 不是可执行地址（VirtualQuery 判页保护）⇒ **跳过这次 call**：eax=1、retaddr=0x401357 "
      "= 跳转表 0x4013f8[1]=0x4013b7 的纯空转路径（不碰 edi、不摘链；[0]=0x401397 会去 0x4015a0 摘链，对垃圾节点更危险）。"
      "返回 0 = 不回放 cave 里的两条原指令（栈上没有 call 的压栈 ⇒ 与「调用后」同形）。"),
+    # ★★★ 2026-09-27（卡 108 · owner：「3 可以贴一手，**关键在站点写法**」）：
+    #   **「一发自机弹 × 一个敌机」的命中那一刻** —— 一手 TH08 的「極人 + 每一发自机弹碰到敌机
+    #   ⇒ 在**弹的位置**掉 1 颗刻符」写在 `Player::compute_damage_to_enemy` 体内
+    #   （`th08:0x451860 call 0x406d10`（極人判）→ `:0x451871 mov eax,[bullet+0x480]` /
+    #    `:0x451877 movsx ecx,WORD [eax+0x1e]` / `jge` 跳过 → `:0x45187f push 3` / `:0x451881 push 7` /
+    #    `:0x451892 call 0x4400a0`）；TH18 **没有等价函数** —— 伤害是在**敌人侧**算的
+    #   （`enm_compute_damage_sources` `0x45f0f0` 遍历 1024 槽伤害源）⇒ 取「**这个源第一次命中这个敌**」。
+    #   · 窗口 `0x45f466` = `mov ecx,[ebp-0x68]` + `mov eax,[ebp-0x38]` + `test ecx,ecx`
+    #     （8 字节 `8b4d988b45c885c9`；全是寄存器 / ebp 相对，**无相对寻址**）。
+    #   · 它是 `0x45f458 je 0x45f466` 的**靶**（落在站点本身 = 走断点，合法 —— 那条 je 只在 `esi == 0`
+    #     （这次没带敌指针）时跳 ⇒ handler 用 `regs->esi != 0` 排除）；窗内 `0x45f467..0x45f46d` 无跳转靶。
+    #   · 走到这里已经过两关：`0x45f45d je 0x45f25f`（**这个源这一辈子已经打过这个敌** ⇒ 跳过本迭代）
+    #     与 `0x45f437 jg 0x45f25f`（累计上限）⇒ 落在本站点 = 「这个源**第一次**命中这个敌」
+    #     = **一发弹命中一次**（正是一手的颗粒度）。
+    #   · 此刻寄存器：**esi = 敌指针**（本迭代 `0x45f254 mov esi,[ebx+0x20]` 刚重载、其后无人写它）、
+    #     **edi = 伤害源槽 + 0x20**（循环 `lea edi,[eax+0x20594]` 起、每轮 `add edi,0x9c`）⇒ 槽 = edi − 0x20。
+    #   · 落点：一手撒在**弹的位置**；本槽的 `+0x1c/+0x20` 就是弹的**当前位置**（弹的 tick
+    #     `0x45efd2`–`0x45efe3` 每帧 `movq xmm0,[bullet+0x48]` → `movq [PLAYER+0x204f4+idx*0x9c],xmm0` 同步）
+    #     ⇒ handler 直接读槽里那对坐标，不用另找弹。
+    #   · 「这一发是不是**自机弹**」：只有弹会把伤害源下标写进 `bullet+0xb0`
+    #     （`0x45e861 call 0x45dfa0` 之后 `0x45e866 mov [edi+0xb0],eax`，= `CE_PB_DAMAGE_IDX`）
+    #     ⇒ handler 扫弹池（`PLAYER+0x1570`、512×0xf8、`+0x8c == 1` 活动）找 `+0xb0 == 本槽下标`。
+    #     ⚠ 不用槽自己的 `+0x98`（特殊 handler 索引）判：弹把它写成 1（`0x45e890`），但两个 create
+    #       （`0x45de40` / `0x45dfa0`）**都不清它** ⇒ 槽回收后可能残留 ⇒ 不可作判据。
+    #   · handler = `sdk.c` 的 `BP_ce_bullet_hit`（机制全文的唯一出处）。
+    ("ce_bullet_hit", 0x45f466, 8, "8b4d988b45c885c9",
+     "enm_compute_damage_sources 0x45f0f0 的**新命中**点（一源一敌一次；跳过条件见上面注释）："
+     "esi = 敌指针、edi = 伤害源槽 + 0x20、ebx = 帧基。handler 反推槽下标"
+     "（`((edi-0x20) - (PLAYER+0x204d8)) / 0x9c`）、扫弹池（`PLAYER+0x1570`、512×0xf8、"
+     "`+0x8c == 1`、`+0xb0 == 下标`）判定「这一发是**自机弹**」，再沿卡链表调 on_bullet_hit(&ev)"
+     "（先扫一遍卡表看有没有声明，没有就整段早退 ⇒ 无卡时零开销）。窗口 = mov/mov/test 三条原样回放"
+     "（返回 BP_EXEC_ORIGINAL）、无相对寻址。一手：極人 + 每发自机弹命中敌机 ⇒ 在弹位置掉 1 颗刻符"
+     "（`th08:0x451860`–`:0x451892`）。"),
 ]
 
 # ★★★ 2026-09-18（用户实跑报「魔理沙原子机还有小激光 / shift 还会发导弹」时挖出来的）：
@@ -1288,6 +1321,8 @@ _SDK_KEEP_NAMED = {
     #     并且实跑验收之后再放。th06 #1 因此**暂时仍挂**。
     "ce_bullet_damage_final",         # 0x45e7ff：**伤害层唯一起作用点**（`bullet_damage_permille`）——
                                       #   它被截掉 = 所有走伤害层的卡**静默失效**（古锭刀/衔尾蛇/季节/测试卡 200…）
+    # ★ 2026-09-27（108）：一发自机弹 × 一个敌机的命中（一手：極人 + 每发命中 ⇒ 掉 1 颗刻符）
+    "ce_bullet_hit",                  # 0x45f466：`enm_compute_damage_sources` 的「新命中」点
 }
 # 过滤**之前**的全表（含 park 的）—— `tools/sitecheck.py` 的体检要连 park 的一起查：
 # park = 没进 patch = 现在没装，所以本身没风险；但**一旦放回发布面**，用的就是这一份声明。
@@ -1712,6 +1747,7 @@ def emit_header(sites, unlock_reads, order_sites, menu_binhacks):
               "#define CE_BP_ITEM_COLLECT_RVA 0x%06x" % (_sdk_rva("ce_item_collect") - 0x400000),
               "#define CE_BP_ITEM_COMMIT_RVA 0x%06x" % (_sdk_rva("ce_item_commit") - 0x400000),
               "#define CE_BP_SHOT_DAMAGE_RVA 0x%06x" % (_sdk_rva("ce_shot_damage") - 0x400000),
+              "#define CE_BP_BULLET_HIT_RVA 0x%06x" % (_sdk_rva("ce_bullet_hit") - 0x400000),
               "#define CE_BP_BOMB_GATE_RVA 0x%06x" % (_sdk_rva("ce_bomb_gate") - 0x400000),
               "#define CE_BP_PLAYER_DIE_RVA 0x%06x" % (_sdk_rva("ce_player_die") - 0x400000),
               "#define CE_BP_SHOT_SET_INDEX_RVA 0x%06x" % (_sdk_rva("ce_shot_set_index") - 0x400000),

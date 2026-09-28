@@ -1777,9 +1777,19 @@ int32_t yk_blue_point_score(int32_t night, int32_t dist, int32_t is_max_value);
 
 /* 逢魔判定：`gauge <= human_eff（默认为负）` **或** `gauge >= youkai_eff（默认为正）` ⇒ 1。 */
 int yk_fengma(int32_t gauge, int32_t human_effects, int32_t youkai_effects);
-/* 逢魔击破该掉几颗刻符（一手：逢魔 ⇒ 1；人间逢魔 + 自机弹击杀 ⇒ 2；其余 ⇒ 0）。
- * `is_human_fengma` = 人侧那一条门为真（`gauge <= human_eff`）；`by_player_bullet` = 这一下是自机弹打死的。*/
+/* 逢魔击破该掉几颗刻符（**现在恒 1 或 0**；见 `.c` 的订正注释）。
+ * ⚠ 2026-09-27（第三十七批）**撤掉了**「人间逢魔 + 自机弹击杀 ⇒ 2」那条近似 —— 一手的那 +1 属于
+ * **另一条来源**且有自己的颗粒度（「極人期间每一发自机弹命中敌机」，`th08:0x45187f`）⇒ 现在由
+ * `yk_human_fengma_bullet_orbs()` + 卡侧 `on_bullet_hit`（新站点 `ce_bullet_hit`）按真颗粒度记。
+ * 两个入参保留只为接口不变，**不再影响结果**。*/
 int yk_fengma_kill_orbs(int fengma, int is_human_fengma, int by_player_bullet);
+/* ★★★ 2026-09-27（第三十七批 · owner「3 可以贴一手，关键在站点写法」）：**極人 + 自机弹命中敌机**
+ * 该掉几颗（一手：**1 颗**，落在**弹的位置**，type 7 ⇒ 被强制成 state 3）。
+ * 一手逐指令 = `Player::compute_damage_to_enemy` `th08:0x451860`（`call 0x406d10` 極人问）→
+ * `:0x451871`/`:0x451877`/`jge`（命中对象那一格 < 0 才给）→ `:0x45187f push 3` / `:0x451881 push 7` /
+ * `:0x451892 call 0x4400a0`。判据里**没有低速位** ⇒ 入参也没有 `focused`。
+ * `is_player_bullet` = 这一下是**自机弹**的伤害源（TH18 侧由 `ce_bullet_hit` 事件给出）。*/
+int yk_human_fengma_bullet_orbs(int32_t gauge, int is_player_bullet);
 
 /* ============ ★★★ 2026-09-22 夜（owner #27）：**刻符的两支弹字**（+N 提示）======================
  * owner 原话：「**+刻符也有 UI，这个估计也得 VM 贴图**」。一手（`engine/player/th08/03-youkai-body-and-gauge.md` §2.7.3）：
