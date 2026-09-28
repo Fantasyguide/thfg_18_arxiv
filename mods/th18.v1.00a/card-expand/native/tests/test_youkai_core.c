@@ -1365,6 +1365,17 @@ int main(void)
                  *   是 `Timer::current_is_gt` 的一次性门槛「帧龄 > 8」⇒ 螺旋**每帧都喷**。*/
                 CHECK(YK_SPIRAL_START_AGE == 8 && YK_SPIRAL_FIRST_MAX == 7 &&
                       YK_SPIRAL_SECOND_N == 6 && YK_SPIRAL_RADIUS == 128.0f);
+            /* ★★★ 2026-09-27（第四十三批 · owner「螺旋改成画面中心」）：锚点 = 游玩区正中 (0, 224)
+             *   （TH18 的 ECL 坐标；一手那条绕的是符卡圈 effect，我们按 owner 口径取画面中心）。*/
+            CHECK(YK_SPIRAL_CENTER_X == 0.0f && YK_SPIRAL_CENTER_Y == 224.0f);
+            /* ★★★ 第四十三批（owner「这个的吸收过程得可见的」）：**只有極人**那一档
+             *   「上抛结束直接吃掉」（= 不走飞向自机那段）；極妖（擦弹/螺旋常在那一档）必须**可见**。*/
+            CHECK(yk_orb_eat_at_toss(-10000) == 1);      /* 極人（含等号，`setle`）*/
+            CHECK(yk_orb_eat_at_toss(-8000) == 1);
+            CHECK(yk_orb_eat_at_toss(-7999) == 0);
+            CHECK(yk_orb_eat_at_toss(0) == 0);
+            CHECK(yk_orb_eat_at_toss(8000) == 0);        /* ★ 極妖 ⇒ **不吃**（吸收要看得见）*/
+            CHECK(yk_orb_eat_at_toss(10000) == 0);
                 CHECK(yk_spiral_first_count(1000) == 7);                   /* min(额度, 7) */
                 CHECK(yk_spiral_first_count(7) == 7);
                 CHECK(yk_spiral_first_count(3) == 3);

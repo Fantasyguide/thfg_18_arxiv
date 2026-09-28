@@ -2017,7 +2017,7 @@ static void yk_orb_kill_all(void)
  *   `vy > 0` 转归航），但 **state 5 在上抛期间就能被收**（上面那条 `cmp ecx,3` 只排除 3）。
  *   本卡原来把两者并成一个 `YK_ORB_STATE_SPAWN` ⇒ **螺旋 / 擦弹那两路白丢了一段可收时间**。
  *   现在分开：击破批 = `YK_ORB_STATE_SPAWN`(3，不可收)、螺旋/擦弹 = `YK_ORB_STATE_SPAWN5`(5，可收)。*/
-static void yk_orb_spawn(yk_card_t *s, float x, float y, int state)
+static void yk_orb_spawn_ex(yk_card_t *s, float x, float y, int state, int eat_at_toss)
 {
     yk_orb_t *o = 0;
     unsigned i;
@@ -2048,8 +2048,9 @@ static void yk_orb_spawn(yk_card_t *s, float x, float y, int state)
     /* 三种出生态：1 = 生成即满速归航、3 = 上抛**不可收**（击破批）、5 = 上抛**可收**（螺旋/擦弹）。*/
     o->state = (uint8_t)((state == YK_ORB_STATE_HOMING || state == YK_ORB_STATE_SPAWN5)
                          ? state : YK_ORB_STATE_SPAWN);
-    /* ★ 2026-09-27（第三十九批）：出生时槽在**逢魔**档 ⇒ 上抛结束直接吃掉（见 `yk_orb_t` 的注）。*/
-    o->eat_at_toss = (uint8_t)(yk_orb_instant_absorb((int)s->gauge) ? 1 : 0);
+    /* ★ 2026-09-27（第三十九批 / 第四十三批收窄）：出生时槽在**極人**（人逢魔）⇒ 上抛结束直接吃掉
+     * （owner ④）；螺旋/擦弹那几路传 `eat_at_toss = 0` ⇒ **保留可见的吸收过程**（owner 第四十三批）。*/
+    o->eat_at_toss = (uint8_t)(eat_at_toss ? 1 : 0);
     o->x = x;
     o->y = y;
     /* 一手初速（`th08:0x4402cb`–`0x4402e9`）：`vx = rand(±0.6)`、`vy = −2.0 − rand(0.2)`。
@@ -2065,6 +2066,12 @@ static void yk_orb_spawn(yk_card_t *s, float x, float y, int state)
     /* ★ 2026-09-27（第三十八批）：同时在飞的**峰值** —— 符卡螺旋那一段应当打到 ~100
      * （`YK_ORB_MAX` = 128 就是按 `yk_spiral_live_peak()` 反推的；实跑用台账 `peak=` 复验）。*/
     if (s && s_orb_live > s->orb_peak) s->orb_peak = (uint16_t)s_orb_live;
+}
+
+/* 默认包装：`eat_at_toss` 由**当前槽值**决定（`yk_orb_eat_at_toss` = 只认極人）。*/
+static void yk_orb_spawn(yk_card_t *s, float x, float y, int state)
+{
+    yk_orb_spawn_ex(s, x, y, state, yk_orb_eat_at_toss((int)s->gauge));
 }
 
 /* ★★★ 2026-09-22 夜（P-C 订正）：TH08 `shotActive`（`player+0xfdc`）的对应读数。
@@ -2552,15 +2559,16 @@ static void yk_spiral_tick(yk_card_t *s)
      *   `YK_SPIRAL_START_AGE` 那一段（含 `0x4066c0` 的 8 条指令）。*/
     ++s->spiral_t;                                   /* 帧龄（一手：effect Timer 每帧 +1）*/
     if (s->spiral_t <= YK_SPIRAL_START_AGE) return;  /* 一手 `0x41751a`/`:0x41752e`：> 8 才开喷 */
-    boss = yk_boss();
-    bp = boss ? ce_enemy_pos(boss) : 0;
-    if (!bp) {
-        /* ★ 2026-09-27（第三十九批 · owner「**螺旋并没有生成**」的现场取证）：作废也要留一行 ——
-         *   否则「额度发了但 boss 没了」这条路上日志里一个字都没有（正是 owner 那种「什么都没有」）。*/
-        ce_log("youkai: spiral CANCELLED at batch %d - no boss on the field (%u orbs of quota left)",
-               (int)s->spiral_t, (unsigned)s->spiral_quota);
-        s->spiral_quota = 0;
-        return;                                      /* boss 没了 ⇒ 这一轮作废（下一次符卡重来）*/
+    /* ★★★ 2026-09-27（第四十三批 · owner「**螺旋改成画面中心**呢？」）：**不再挂 boss** ——
+     *   锚点 = 游玩区正中 `(0, 224)`（ECL 坐标，与 boss 坐标同一套）。原来那句「没有 boss ⇒ 整轮
+     *   作废」也随之删掉：实测就是它把 owner 那次螺旋整轮吃掉了
+     *   （`spiral CANCELLED at batch 9 - no boss on the field (1000 orbs of quota left)`）。
+     *   一手那条绕的是符卡圈 effect（`0x4175b0 add ecx,0x2e0`）—— 我们既没复刻它的轨迹，
+     *   就按 owner 口径取画面中心。*/
+    (void)boss;
+    {
+        static const float k_center[2] = { YK_SPIRAL_CENTER_X, YK_SPIRAL_CENTER_Y };
+        bp = k_center;
     }
     yk_spiral_angle((int)s->spiral_t, &th);          /* `t` = **帧龄**（一手 `0x417565` 取的就是它）*/
     /* 一帧的吐出与账面 = 一手 `0x4175cc`–`0x4176e1`（纯函数 + 单测在 core）：
@@ -2569,14 +2577,14 @@ static void yk_spiral_tick(yk_card_t *s)
     cs = yk_cos_approx(th);
     sn = yk_sin_approx(th);
     for (i = 0; i < k; ++i)                          /* 第一段：同一角、k 颗 */
-        yk_orb_spawn(s, bp[0] + cs * YK_SPIRAL_RADIUS, bp[1] + sn * YK_SPIRAL_RADIUS,
-                     YK_ORB_STATE_SPAWN5);   /* ★ state 5：上抛但**可收**（一手见 core 的常量注）*/
+        yk_orb_spawn_ex(s, bp[0] + cs * YK_SPIRAL_RADIUS, bp[1] + sn * YK_SPIRAL_RADIUS,
+                        YK_ORB_STATE_SPAWN5, 0);   /* ★ state 5：上抛但**可收**；`eat = 0` ⇒ **吸收可见** */
     /* 第二段：**固定 6 颗**（与额度无关）、角 = 第一段 **+π**（一手 `0x417639 push 0x40490fdb`）。*/
     cs = yk_cos_approx(th + 3.14159265f);
     sn = yk_sin_approx(th + 3.14159265f);
     for (i = 0; i < k2; ++i)
-        yk_orb_spawn(s, bp[0] + cs * YK_SPIRAL_RADIUS, bp[1] + sn * YK_SPIRAL_RADIUS,
-                     YK_ORB_STATE_SPAWN5);
+        yk_orb_spawn_ex(s, bp[0] + cs * YK_SPIRAL_RADIUS, bp[1] + sn * YK_SPIRAL_RADIUS,
+                        YK_ORB_STATE_SPAWN5, 0);   /* ★ 同上：螺旋那一路**看得见飞向自机** */
     if (!s->spiral_logged) {
         s->spiral_logged = 1;
         ce_log("youkai: spell-card break spiral ON (TH08 `Spellcard::on_tick` 0x416b90) - EVERY FRAME: "
@@ -5015,7 +5023,7 @@ static int on_tick_2(ce_card_t *c)
                 if (ce_graze_peek(&gx, &gy) > 0) ++s_graze_pos_from_bullet;
                 for (i = 0; i < d; ++i)
                     for (k = 0; k < orbs; ++k)
-                        yk_orb_spawn(s, gx, gy, YK_ORB_STATE_SPAWN5);   /* ★ state 5：上抛但可收 */
+                        yk_orb_spawn_ex(s, gx, gy, YK_ORB_STATE_SPAWN5, 0);  /* ★ 擦弹也**可见吸收** */
             }
             /* ★ 实跑判据（统筹要的那一条）：`gate=` 一眼看出**这次擦弹为什么没给**
              * （`ok` 全过 / `boss` 场上没 boss / `gauge` 槽没到 +8000 / `shottype` 人単独非妖夢 /

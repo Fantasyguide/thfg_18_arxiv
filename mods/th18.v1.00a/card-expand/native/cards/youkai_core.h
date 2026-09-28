@@ -1588,6 +1588,20 @@ unsigned yk_kill_ring_count(unsigned chain_n);    /* 被杀者自己那一环：
 #define YK_SPIRAL_FIRST_MAX    7        /* `0x4175cc cmp ..,7 / jle`：同角一批至多 7 颗 */
 #define YK_SPIRAL_SECOND_N     6        /* `0x4176be cmp [ebp-8],6 / jge`：第二段固定 6 颗（+π）*/
 #define YK_SPIRAL_RADIUS       128.0f   /* `0x43000000`（`0x417593`）*/
+/* ★★★ 2026-09-27（第四十三批 · **owner 口径**）：「**螺旋改成画面中心**呢？」
+ *   一手那条是绕 `[spellcard+0xf8]` 那颗 `spell_bonus_circle` **zEffect** 的位置（`0x4175b0` 的
+ *   `add ecx,0x2e0`），而那颗 effect 自己的位置每帧被移动段改写 ⇒ 我们既没复刻它的轨迹、也不该
+ *   继续挂在 boss 身上（挂 boss 会在「符卡结束时 boss 已经没了」的常见局面下整轮作废 ——
+ *   实测日志 `spiral CANCELLED at batch 9 - no boss on the field (1000 orbs of quota left)`）。
+ *   ⇒ 按 owner 口径改成**画面（游玩区）中心**：TH18 的 ECL/世界坐标里 = **(0, 224)**
+ *   （游玩区 384×448 ⇒ 中心；出处 `engine/anm/th18/01-vm-instantiate.md` §3「场地正中 = (0, 224)」，
+ *   与 boss 坐标同一套 ECL 坐标 ⇒ 直接用它当锚点即可，不需要换算）。*/
+#define YK_SPIRAL_CENTER_X     0.0f
+#define YK_SPIRAL_CENTER_Y     224.0f
+/* ★★★ 2026-09-27（第四十三批 · owner：「**然后这个的吸收过程得可见的**」）：一颗刻符出生时是不是
+ *   「逢魔档 ⇒ 上抛结束直接吃掉（不走飞向自机那段）」。**收窄成只认極人** —— owner ④ 的原话是
+ *   「**人逢魔**生成的永点应该没有吸收过程」，而螺旋（与擦弹）要看得见吸收过程 ⇒ 極妖那一档不再吃。*/
+int   yk_orb_eat_at_toss(int gauge);
 
 /* `t` = 该计时器的帧数（我们从 10 起算，见卡侧）。返回弧度：`((t−10)·2π/40) − π/2`。 */
 void  yk_spiral_angle(int t, float *out);

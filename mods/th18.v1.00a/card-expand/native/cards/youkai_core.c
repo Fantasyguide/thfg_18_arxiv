@@ -1538,6 +1538,14 @@ int yk_fengma_kill_orbs(int fengma, int is_human_fengma, int by_player_bullet)
     return fengma ? 1 : 0;
 }
 
+int yk_orb_eat_at_toss(int gauge)
+{
+    /* 只有**極人**那一档「上抛一结束就当场吃掉」（= owner ④：「人逢魔生成的永点应该没有吸收过程……
+     * 生成部分原版还是能看见的」）。極妖那一档（擦弹/螺旋常在那里）**保留可见的吸收过程**
+     * （owner 第四十三批：「这个的吸收过程得可见的」）。判据 = 既有的極人门（`th08:0x406d10`）。*/
+    return yk_gauge_is_extremely_human(gauge) ? 1 : 0;
+}
+
 int yk_hit_orb_use_enemy_pos(float dx, float dy)
 {
     /* 见 `.h`：源槽中心离敌机太远 ⇒ 那是长光源（激光/束），它的中心在膛口 ⇒ 落点改用敌机位置。*/
