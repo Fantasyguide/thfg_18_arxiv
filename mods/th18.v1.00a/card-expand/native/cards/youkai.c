@@ -232,6 +232,8 @@ typedef struct {
     uint32_t      graze_seen;          /* 上一帧的累计擦弹（`CE_ADDR_GRAZE` 0x4ccd0c）快照 */
     uint32_t      orb_taken;           /* 本局收了几颗刻符 */
     uint32_t      orb_full;            /* 池满 / VM 建不出来而放弃的颗数（诊断）*/
+    uint16_t      orb_peak;            /* ★ 2026-09-27（第三十八批）：本局**同时在飞的刻符峰值**（诊断）——
+                                        *   符卡螺旋那一段应当打到 ~100（`YK_ORB_MAX` 就是按它定的）。*/
     uint32_t      hud_bar, hud_human, hud_youkai, hud_cursor;  /* 人妖槽 HUD 的 4 支 VM */
     uint32_t      hud_digit[YK_GAUGE_TEXT_MAX];  /* ★ 百分比数字的**字形 VM**（每格一个；TH08 那边是
                                                   *   同一个 VM 反复换字，TH18 一个 VM 一帧只画一次
@@ -1879,10 +1881,19 @@ static void *yk_player_anm(void)
 }
 
 /* ---- 永点（刻符）VM 池 -------------------------------------------------------------------
- * ❓ **自定：池容量**（owner 只说「相对更大」）：64。TH08 那边是道具池（`ItemManager` 自己的数组，
- *    实参 `push 8` 一类），本卡不共享那个池 ⇒ 自己定一个。满 ⇒ **放弃这一颗**（不排队、不崩），
- *    并在 `s->orb_full` 上记账（诊断日志用）。*/
-#define YK_ORB_MAX            64
+ * ★★★ 2026-09-27（第三十八批 · owner：「**得扩永点池到 ~1e2 量级，至少你得把击破 boss 阶段的
+ *   那个螺旋形能给「渲染出来」**」）：**64 → 128**。这个数不是拍的 —— 由螺旋的**喷点速率 × 在飞时长**
+ *   反推（Little 定律；算式落在 `youkai_core.{h,c}` 的 `yk_spiral_live_peak()`，单测钉着）：
+ *     · 一手喷点：每 **8** 帧一批，一批 = `min(额度,7)` **同角** + **固定 6 颗 +π** = 至多 **13 颗/批**
+ *       （`th08:0x4175cc` / `:0x4176be`，见 `youkai_core.h` §3.11b）；
+ *     · 一颗刻符的在飞时长（TH08 运动方程，我们的实现同一套）：上抛 `vy = −2.0−rand(0.2)`、
+ *       每帧 `+0.05` ⇒ **40–44 帧**才转归航，再按 `[.sht+0x14]` = **10** px/帧 归航到自机
+ *       （螺旋撒在**半径 128** 的环上 ⇒ 典型再走 ~20 帧）⇒ **≈60–65 帧**；
+ *     · ⇒ 稳态在飞 ≈ `13 × 65 / 8` ≈ **106 颗**（+ 最新一批的余量）⇒ 池 **128** 留了余量。
+ *   ⚠ 64 那版会把螺旋**削掉约四成**（多出来的颗数静默丢进 `orb_full`）—— 那正是 owner 说的
+ *     「渲染不出来」。现在实跑用台账的 `peak=` 复验：螺旋那一段应当打到 ~100，`full=` 不该明显涨。
+ * ❓ 池容量本身仍是**自定**（TH08 那边是 `ItemManager` 自己的道具池，我们不共享那个池）。*/
+#define YK_ORB_MAX            128
 /* ❓ **自定：世界层**。TH08 的刻符是道具实体；TH18 里同档的是「场上实体」那一层 =
  *    6..11（`engine/anm/th18/02-render-stages.md`），使魔跟随 VM 用的就是 7（`YK_FAM_ANM_LAYER`）
  *    ⇒ 刻符同层。脚本自己没有 `layer()` ⇒ 这个参数是唯一的层来源。*/
@@ -2021,6 +2032,9 @@ static void yk_orb_spawn(yk_card_t *s, float x, float y, int state)
                                            : (YK_ORB_VY0 - ((float)(ce_rand() % 1001u) / 1000.0f) * YK_ORB_VY0_RAND);
     ce_anm_set_pos(id, x, y, 0.0f);
     ++s_orb_live;
+    /* ★ 2026-09-27（第三十八批）：同时在飞的**峰值** —— 符卡螺旋那一段应当打到 ~100
+     * （`YK_ORB_MAX` = 128 就是按 `yk_spiral_live_peak()` 反推的；实跑用台账 `peak=` 复验）。*/
+    if (s && s_orb_live > s->orb_peak) s->orb_peak = (uint16_t)s_orb_live;
 }
 
 /* ★★★ 2026-09-22 夜（P-C 订正）：TH08 `shotActive`（`player+0xfdc`）的对应读数。
@@ -3190,6 +3204,7 @@ static int on_ctor(ce_card_t *c)
     s->graze_seen = 0;
     s->orb_taken = 0;
     s->orb_full = 0;
+    s->orb_peak = 0;
     /* 人妖槽 HUD：认领一块左下角货架（每关开场重排；认领幂等）。抢不到就不画（0 = 没抢到）。*/
     {
         ce_hud_block_t blk;
@@ -4695,12 +4710,12 @@ static int on_tick_2(ce_card_t *c)
             int ch = yk_current_character();
             if (ch < 0 || ch > 3) ch = 0;
             yk_orb_motion_params(ch, &sp, &rr);
-            ce_log("youkai: gauge=%d piv=%d orbs=%d taken=%u live=%u full=%u hud=%u "
+            ce_log("youkai: gauge=%d piv=%d orbs=%d taken=%u live=%u peak=%u full=%u hud=%u "
                    "speed=%.0f pick=%.0f shoot=%d fengma=%u fscore=%d "
                    "piv_pool=%d piv_wrote=%d bullet_hit_orbs=%u "
                    "graze_n 1/2/3=%u/%u/%u graze_gate ok/boss/gauge/shottype/off=%u/%u/%u/%u/%u clamped=%u",
                    (int)s->gauge, (int)s->piv, (int)s->orbs, s->orb_taken, s_orb_live,
-                   s->orb_full, (unsigned)s->hud_ready, sp, rr, yk_shooting(),
+                   (unsigned)s->orb_peak, s->orb_full, (unsigned)s->hud_ready, sp, rr, yk_shooting(),
                    (unsigned)s->fengma, (int)s->fengma_score,
                    /* ★ 2026-09-27（§BE #137）：这两个数 = owner 报的那条能不能过的**判据**
                     * （`piv_pool` = 左下角那个数画的东西、`piv_wrote` = 本卡写进去的那一份）。*/

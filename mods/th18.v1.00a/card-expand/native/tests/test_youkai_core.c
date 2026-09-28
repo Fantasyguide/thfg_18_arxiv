@@ -1367,6 +1367,22 @@ int main(void)
                 CHECK(yk_spiral_first_count(7) == 7);
                 CHECK(yk_spiral_first_count(3) == 3);
                 CHECK(yk_spiral_first_count(0) == 0 && yk_spiral_first_count(-5) == 0);
+                /* ★★★ 2026-09-27（第三十八批 · owner：「扩永点池到 ~1e2，至少把击破 boss 的螺旋
+                 * 渲染出来」）：**在飞峰值**算式 —— 卡侧的 `YK_ORB_MAX` = 128 就是按它定的。
+                 * `per_batch` = 7 + 6 = 13、`batch_frames` = 8、`life_frames` = 65（❓自定估算）。*/
+                CHECK(yk_spiral_live_peak(13, 8, 65) == 119);          /* ceil(13×65/8)=106 + 13 */
+                CHECK(yk_spiral_live_peak(13, 8, 48) == 91);           /* 上抛段只剩 48 帧时的下界 */
+                CHECK(yk_spiral_live_peak(1, 8, 65) == 10);            /* ceil(65/8)=9 + 1 */
+                CHECK(yk_spiral_live_peak(13, 8, 8) == 26);            /* 恰一个批次 */
+                CHECK(yk_spiral_live_peak(0, 8, 65) == 0);             /* 防御：非正入参 ⇒ 0 */
+                CHECK(yk_spiral_live_peak(13, 0, 65) == 0);
+                CHECK(yk_spiral_live_peak(13, 8, 0) == 0);
+                CHECK(YK_SPIRAL_LIVE_LIFE_FRAMES == 65);
+                /* ★ 池必须装得下螺旋：`YK_ORB_MAX`(128) ≥ 峰值(119) —— 这条把「池够不够」
+                 *   钉成回归，改小池或改这批参数（批次/时长）都会在这里红。*/
+                CHECK(yk_spiral_live_peak(YK_SPIRAL_FIRST_MAX + YK_SPIRAL_SECOND_N,
+                                          YK_SPIRAL_BATCH_FRAMES,
+                                          YK_SPIRAL_LIVE_LIFE_FRAMES) <= 128);
             }
             /* 一手的状态号与常量（改了要在注释里同步改一手出处）*/
             CHECK(YK_ORB_STATE_FALL == 0 && YK_ORB_STATE_HOMING == 1 && YK_ORB_STATE_SPAWN == 3);

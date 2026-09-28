@@ -1196,6 +1196,16 @@ void yk_spiral_angle(int t, float *out)
     *out = a;
 }
 
+int yk_spiral_live_peak(int per_batch, int batch_frames, int life_frames)
+{
+    /* 见 `.h` 那一小节：Little 定律 + 最新一批的余量。只做整数运算（主机单测与卡侧同源）。*/
+    int steady, tail;
+    if (per_batch <= 0 || batch_frames <= 0 || life_frames <= 0) return 0;
+    steady = (per_batch * life_frames + batch_frames - 1) / batch_frames;   /* ceil */
+    tail = per_batch;
+    return steady + tail;
+}
+
 int yk_spiral_first_count(int quota)
 {
     if (quota <= 0) return 0;

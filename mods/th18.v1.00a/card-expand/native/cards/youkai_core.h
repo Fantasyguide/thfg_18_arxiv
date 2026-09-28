@@ -1572,6 +1572,26 @@ void  yk_spiral_angle(int t, float *out);
 /* 本批同角的颗数 = `min(quota, 7)`（quota <= 0 ⇒ 0）。 */
 int   yk_spiral_first_count(int quota);
 
+/* ★★★ 2026-09-27（第三十八批 · owner：「**得扩永点池到 ~1e2 量级，至少你得把击破 boss 阶段的
+ *   那个螺旋形能给「渲染出来」**」）：螺旋**同时在飞**的刻符峰值 —— **只用于容量口径**
+ *   （不参与运动/判定；卡侧的 `YK_ORB_MAX` 由它反推，台账 `peak=` 复验）。
+ *
+ * 稳态排队（Little）：`λ = per_batch / batch_frames`、`W = life_frames` ⇒ `L ≈ λ·W`，
+ * 再加上「最新那一批还没老」的余量 `per_batch`（向上取整）：
+ *   `yk_spiral_live_peak(13, 8, 65) = ceil(13×65/8) + 13 = 106 + 13 = 119`
+ * 参数取值（逐条有据）：
+ *   · `per_batch = YK_SPIRAL_FIRST_MAX + YK_SPIRAL_SECOND_N = 13`（一手 `0x4175cc` / `0x4176be`）；
+ *   · `batch_frames = YK_SPIRAL_BATCH_FRAMES = 8`（一手 `0x41751a push 8`）；
+ *   · `life_frames` = `YK_SPIRAL_LIVE_LIFE_FRAMES`（**❓ 自定估算**，见下）。*/
+#define YK_SPIRAL_LIVE_LIFE_FRAMES 65   /* ❓ 自定：一颗螺旋刻符的在飞时长估算 ——
+                                         *   上抛 `vy = −2.0−rand(0.2)`、每帧 `+0.05`
+                                         *   ⇒ **40–44 帧**（一手 `th08:0x440740`），
+                                         *   再按 `itemCollectSpeed = 10` px/帧 从**半径 128** 的环上
+                                         *   归航到自机（典型 ~20 帧）⇒ ≈60–65 帧。
+                                         *   ⚠ 与自机/ boss 的相对位置有关 ⇒ 这是**估算**，
+                                         *   `peak=` 与 `full=` 两个台账字段才是实跑真值。*/
+int   yk_spiral_live_peak(int per_batch, int batch_frames, int life_frames);
+
 /* ★★★ 2026-09-22（owner 口径细化 · 永点的两条来源）：**「自动吸收」= state 1（生成即满速归航）**。
  *
  * **owner 原话（逐字）**：「th08 一手永点大概是：**极端人形态爆点是落下即消失，自动吸收**；
