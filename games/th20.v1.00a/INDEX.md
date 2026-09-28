@@ -1,5 +1,7 @@
 # th20.v1.00a —— 東方錦上京 ～ Fossilized Wonders.（样本登记 + 导航）
 
+> **版本**：TH20 v1.00a（`th20.exe`，imagebase `0x400000`）。本文裸地址默认属该版本；引用其他版本须写成 `th18:0x…`。
+
 > **本文只做「登记与导航」**（样本路径 / 版本 / 覆盖统计 / 待挖图）。
 > **引擎结论一律写回 `engine/<子系统>/th20/`**，卡侧的复刻规格写在
 > `mods/th18.v1.00a/card-expand/SINGLE-CARD-TEST.md` 的 `§th20` 段。
@@ -18,7 +20,7 @@
 | exe 内函数总数 | **7315**（已命名 **1120** / 🔬 真·待挖 **6195**）|
 | dump | `local/th20.v1.00a/th20.v1.00a-funcs.json`（7315 个）|
 | SJIS 字符串导入 | `[sjis] found=62 applied=62 already=0 occupied=0 failed=0` |
-| 符号导出 | ⏳ 未做（**干完活记得**：`tooling/ghidra/symbols.py export th20.v1.00a` ⇒ `games/th20.v1.00a/symbols.json`）|
+| 符号导出 | ✅ **已导出**：`games/th20.v1.00a/symbols.json`（475 条 —— 具名来自 MSVC RTTI + ZUN 的 assert 串，见 §2d）|
 
 > ⚠ 样本是 ZUN 版权商业软件：**只放 `local/`，永不入库**；本文件里只记「路径 + md5 + 尺寸」这类事实。
 
@@ -53,22 +55,48 @@
 直接按地址读反汇编 + 用 MCP 只读工具即可（工具目录见 `tooling/ghidra/mcp-tools.md`）。
 ⚠ 若哪天社区出了 th20 的 re-data，放进 `local/vendor/th-re-data/` 再重跑 `bootstrap` 就能补上命名。
 
+### 2d. 本作的**替代命名金矿**：RTTI + assert 串（✅ 已用，不靠社区）
+
+exe 里保留着 **MSVC RTTI 类名**与 **ZUN 的 assert 字符串**（`…\src\game\weaponred.cpp:42 StoneRedReimuInf`），
+二者合起来给了我们 **79 个 ZUN 自己的类名 + 125 个挂在函数上的 `file:line` 锚点**。
+工具与用法（含四个已踩的坑）见 [`tooling/ghidra/README.md`](../../tooling/ghidra/README.md) 的 TH20 一节：
+
+| 工具 | 干什么 |
+| --- | --- |
+| `tooling/ghidra/th20_anchors.py` | 字符串 → 引用它的函数（assert 锚点），出 `local/th20.v1.00a/th20-anchors.json` |
+| `tooling/ghidra/th20_rtti.py` | RTTI 复原：类名 → COL → vftable → 逐槽函数，出 `th20-rtti.json` |
+| `tooling/ghidra/th20_names.py` | 写库：清 **73 处 FID 假阳性** + 套 `Class::vftable` + 钉 assert 注释 |
+| `tooling/ghidra/th20_decomp_corpus.py` | 按地址区间把**全部**反编译落成语料库（`local/th20.v1.00a/decomp/`，~7000 函数）|
+| `tooling/ghidra/th20_show.py` | 从语料库取函数 / grep / 找调用方（**不占工程锁** ⇒ 可并行分工）|
+
+> ⚠ **Ghidra 工程锁是独占的**（两个只读 driver 也会撞）：多人/多 agent 并行挖本作时，
+> 一个人生成语料库，其余人读文件。
+
 ## 3. 覆盖统计（挖了多少）
 
 | 子系统 | 状态 |
 | --- | --- |
-| 样本 / 工程 | ✅ 样本已入 `local/` + ✅ 工程已建（7315 函数，命名 1120，待挖 6195）|
-| 玩家（移动 / 射击 / 子机）| ⏳ 未挖 |
-| 异变石（装备表 / 数量 / 通关奖励）| ⏳ 未挖 |
-| 异变攻击（槽 / 样式表 / 抵消 Miss 的窗口）| ⏳ 未挖 |
-| 异变敌人（槽 / 颜色 / 等级 / 掉落）| ⏳ 未挖 |
-| 异变值（倍率公式 / 上限）| ⏳ 未挖 |
-| 得分 / 道具 | ⏳ 未挖 |
+| 样本 / 工程 / 命名 | ✅ 样本 + ✅ 工程（7315 函数）+ ✅ 命名（RTTI/assert 锚点，`symbols.json` 475 条）|
+| **异变石（表 / 四槽 / 30 槽接口）** | ✅ [`engine/stone/th20/01`](../../engine/stone/th20/01-stone-table-and-slots.md)（工厂表 `0x5b0ab0`、四槽 setter、槽位语义）|
+| **异变攻击（状态机 / 时长）** | ✅ [`engine/stone/th20/06`](../../engine/stone/th20/06-attack-gauge-and-miss.md)（三态 + 时长公式 + 槽线 280.0）|
+| **异变攻击（ECL/anm/SHT 资产）** | 🟡 [`engine/stone/th20/02`](../../engine/stone/th20/02-attack-assets.md) |
+| **异变敌人（槽 / 颜色 / 等级 / 掉落）** | 🟡 [`engine/stone/th20/03`](../../engine/stone/th20/03-stone-enemy.md) |
+| **异变值（倍率 / 上限）** | 🟡 [`engine/stone/th20/04`](../../engine/stone/th20/04-incident-value.md) |
+| **碎片道具（掉落 / 价值 / 吸收）** | 🟡 [`engine/stone/th20/05`](../../engine/stone/th20/05-shards-and-items.md) |
+| **抵消 Miss 的链路** | ❓ [`engine/stone/th20/07`](../../engine/stone/th20/07-miss-cancel-chain.md)（引擎侧链路未坐实）|
+| 玩家（移动 / 射击 / 子机）| ⏳ 未挖（本阶段不需）|
+| 得分 / 道具（通用部分）| ⏳ 未挖 |
+| 异变石「装备表 / 数量 / 通关奖励」（菜单侧）| ⏸ **本阶段按 owner 裁决①不挖**（不做装备界面）|
 
 ## 4. 待挖图（按「卡 120 需要什么」排序）
 
-1. **异变石四槽的表**：每块石的「扩散/集中/支援」三项分别指向哪套射击/支援参数；主石 → 异变攻击样式号的映射。
-2. **异变攻击槽**：槽长、蓄积速率（碎片价值 / 擦弹 / 命中）、发动时长、**抵消 Miss 的窗口与优先级**（与本仓既有的救援层阶梯 107→117→决死B→113 的关系 ❓ 待 owner 拍）。
-3. **异变敌人槽**：竖直槽的蓄积（击破 / 擦弹 / Boss 战自然上涨的速率）、满槽生成、颜色与**等级**（耐久 / 弹幕档）、击破掉落表。
-4. **异变值**：初始值 / 提升量 / 对「得分道具倍率」的公式与上限。
-5. **碎片道具**：生成点、擦弹与命中的掉落率、价值、吸收方式（与 116 季节道具的对照）。
+1. **异变石四槽的表** ✅ 已挖（[`stone/th20/01`](../../engine/stone/th20/01-stone-table-and-slots.md)）：
+   工厂表 `th20:0x5b0ab0`（`[角色][9]`）、四槽偏移 `+0x28/+0x2c/+0x30/+0x34`、
+   四槽 id 来自根对象 `+0x1c/+0x20/+0x24/+0x28`；**剩**：石 ↔ 卡号 的对应（需 owner 拍两块）。
+2. **异变攻击槽**：✅ 状态机与时长（[`stone/th20/06`](../../engine/stone/th20/06-attack-gauge-and-miss.md)）；
+   🟡 碎片充能换算（[`stone/th20/05`](../../engine/stone/th20/05-shards-and-items.md)）；
+   ❓ **抵消 Miss 的窗口与优先级**（[`stone/th20/07`](../../engine/stone/th20/07-miss-cancel-chain.md)）。
+3. **异变敌人槽**：🟡 [`stone/th20/03`](../../engine/stone/th20/03-stone-enemy.md)
+   （竖直槽的蓄积 / 满槽生成 / 颜色与等级 / 击破掉落）。
+4. **异变值**：🟡 [`stone/th20/04`](../../engine/stone/th20/04-incident-value.md)（提升量 / 倍率公式 / 上限 5000）。
+5. **碎片道具**：🟡 [`stone/th20/05`](../../engine/stone/th20/05-shards-and-items.md)（与 116 季节道具的对照）。

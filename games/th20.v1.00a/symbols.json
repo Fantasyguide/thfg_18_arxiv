@@ -1,0 +1,2386 @@
+{
+ "version": "th20.v1.00a",
+ "exe_md5": "f6bdf3535813a5d8c29a1ec429c72934",
+ "funcs": [],
+ "statics": [
+  {
+   "addr": "0x0056c920",
+   "name": "debug_memory_resource::vftable",
+   "type": "pointer[4]"
+  },
+  {
+   "addr": "0x0056d4c0",
+   "name": "TaskInf::vftable",
+   "type": "pointer[3]"
+  },
+  {
+   "addr": "0x0056d4d0",
+   "name": "InputInf::vftable",
+   "type": "pointer[3]"
+  },
+  {
+   "addr": "0x0056d744",
+   "name": "ScreenInf::vftable",
+   "type": "pointer[3]"
+  },
+  {
+   "addr": "0x0056e1ac",
+   "name": "SprtFuncBaseInf::vftable",
+   "type": "pointer[6]"
+  },
+  {
+   "addr": "0x0056e73c",
+   "name": "CSound::vftable",
+   "type": "pointer[2]"
+  },
+  {
+   "addr": "0x0056e748",
+   "name": "CStreamingSound::vftable",
+   "type": "pointer[2]"
+  },
+  {
+   "addr": "0x0056ec14",
+   "name": "EffectChargePointInf::vftable",
+   "type": "pointer[6]"
+  },
+  {
+   "addr": "0x0056eca4",
+   "name": "EffectFanSparkInf::vftable",
+   "type": "pointer[6]"
+  },
+  {
+   "addr": "0x0056ed1c",
+   "name": "EffectLineEffectInf::vftable",
+   "type": "pointer[6]"
+  },
+  {
+   "addr": "0x0056eddc",
+   "name": "EffectLineSparkInf::vftable",
+   "type": "pointer[6]"
+  },
+  {
+   "addr": "0x0056ee50",
+   "name": "EffectLineSpark2Inf::vftable",
+   "type": "pointer[6]"
+  },
+  {
+   "addr": "0x0056eec0",
+   "name": "EffectLineStoneInf::vftable",
+   "type": "pointer[6]"
+  },
+  {
+   "addr": "0x0056ef30",
+   "name": "EffectLineStone2Inf::vftable",
+   "type": "pointer[6]"
+  },
+  {
+   "addr": "0x0056efa0",
+   "name": "EffectMenuWindowInf::vftable",
+   "type": "pointer[6]"
+  },
+  {
+   "addr": "0x0056f014",
+   "name": "EffectPyramidInf::vftable",
+   "type": "pointer[6]"
+  },
+  {
+   "addr": "0x0056f098",
+   "name": "EffectScreenSwitchInf::vftable",
+   "type": "pointer[6]"
+  },
+  {
+   "addr": "0x0056f11c",
+   "name": "EffectShortLineEffectInf::vftable",
+   "type": "pointer[6]"
+  },
+  {
+   "addr": "0x0056f194",
+   "name": "EffectShortLineEffect2Inf::vftable",
+   "type": "pointer[6]"
+  },
+  {
+   "addr": "0x0056f20c",
+   "name": "EffectShortLineEffect3Inf::vftable",
+   "type": "pointer[6]"
+  },
+  {
+   "addr": "0x0056f288",
+   "name": "EffectStoneGaugeLineInf::vftable",
+   "type": "pointer[6]"
+  },
+  {
+   "addr": "0x0056f5c0",
+   "name": "AsciiInf::vftable",
+   "type": "pointer[3]"
+  },
+  {
+   "addr": "0x0056f80c",
+   "name": "BackGroundInf::vftable",
+   "type": "pointer[3]"
+  },
+  {
+   "addr": "0x0056fa78",
+   "name": "BombBaseInf::vftable",
+   "type": "pointer[6]"
+  },
+  {
+   "addr": "0x0056fa94",
+   "name": "BombInf::vftable",
+   "type": "pointer[3]"
+  },
+  {
+   "addr": "0x0056fb0c",
+   "name": "BombMarisaAInf::vftable",
+   "type": "pointer[6]"
+  },
+  {
+   "addr": "0x0056fb98",
+   "name": "BombReimuAInf::vftable",
+   "type": "pointer[6]"
+  },
+  {
+   "addr": "0x0056fc5c",
+   "name": "BulletInf::vftable",
+   "type": "pointer[3]"
+  },
+  {
+   "addr": "0x0056fd88",
+   "name": "CardInf::vftable",
+   "type": "pointer[3]"
+  },
+  {
+   "addr": "0x0056ff94",
+   "name": "EffectInf::vftable",
+   "type": "pointer[3]"
+  },
+  {
+   "addr": "0x00570244",
+   "name": "EndingInf::vftable",
+   "type": "pointer[3]"
+  },
+  {
+   "addr": "0x005703a0",
+   "name": "SptResourceInf::vftable",
+   "type": "pointer[3]"
+  },
+  {
+   "addr": "0x005703b0",
+   "name": "SptInf::vftable",
+   "type": "pointer[6]"
+  },
+  {
+   "addr": "0x005703cc",
+   "name": "EnemyInf::vftable",
+   "type": "pointer[6]"
+  },
+  {
+   "addr": "0x005703e8",
+   "name": "EclResourceInf::vftable",
+   "type": "pointer[3]"
+  },
+  {
+   "addr": "0x005703f8",
+   "name": "EnemyCtrlInf::vftable",
+   "type": "pointer[3]"
+  },
+  {
+   "addr": "0x005705a4",
+   "name": "FPSInf::vftable",
+   "type": "pointer[3]"
+  },
+  {
+   "addr": "0x0057062c",
+   "name": "FrontInf::vftable",
+   "type": "pointer[3]"
+  },
+  {
+   "addr": "0x00570b04",
+   "name": "GameInf::vftable",
+   "type": "pointer[3]"
+  },
+  {
+   "addr": "0x00570be4",
+   "name": "HelpInf::vftable",
+   "type": "pointer[3]"
+  },
+  {
+   "addr": "0x00570c88",
+   "name": "HitCtrlInf::vftable",
+   "type": "pointer[3]"
+  },
+  {
+   "addr": "0x00570d40",
+   "name": "ItemInf::vftable",
+   "type": "pointer[3]"
+  },
+  {
+   "addr": "0x00570dd0",
+   "name": "KeyConfigTaskInf::vftable",
+   "type": "pointer[3]"
+  },
+  {
+   "addr": "0x005710bc",
+   "name": "LaserDataInf::vftable",
+   "type": "pointer[34]"
+  },
+  {
+   "addr": "0x00571148",
+   "name": "LaserLineInf::vftable",
+   "type": "pointer[34]"
+  },
+  {
+   "addr": "0x00571214",
+   "name": "LaserCurveInf::vftable",
+   "type": "pointer[34]"
+  },
+  {
+   "addr": "0x005712e8",
+   "name": "LaserInfiniteInf::vftable",
+   "type": "pointer[34]"
+  },
+  {
+   "addr": "0x00571374",
+   "name": "LaserBeamInf::vftable",
+   "type": "pointer[34]"
+  },
+  {
+   "addr": "0x00571400",
+   "name": "LaserInf::vftable",
+   "type": "pointer[3]"
+  },
+  {
+   "addr": "0x00571798",
+   "name": "LoadingInf::vftable",
+   "type": "pointer[3]"
+  },
+  {
+   "addr": "0x00571ea8",
+   "name": "NoticeInf::vftable",
+   "type": "pointer[3]"
+  },
+  {
+   "addr": "0x00572090",
+   "name": "OptionTaskInf::vftable",
+   "type": "pointer[3]"
+  },
+  {
+   "addr": "0x005724a0",
+   "name": "PauseInf::vftable",
+   "type": "pointer[3]"
+  },
+  {
+   "addr": "0x00572bac",
+   "name": "PlayerInf::vftable",
+   "type": "pointer[3]"
+  },
+  {
+   "addr": "0x005732e4",
+   "name": "ReplayInf::vftable",
+   "type": "pointer[3]"
+  },
+  {
+   "addr": "0x00573954",
+   "name": "SmallScoreInf::vftable",
+   "type": "pointer[3]"
+  },
+  {
+   "addr": "0x00573ec4",
+   "name": "StageClearInf::vftable",
+   "type": "pointer[3]"
+  },
+  {
+   "addr": "0x00574d78",
+   "name": "StoneMenuInf::vftable",
+   "type": "pointer[3]"
+  },
+  {
+   "addr": "0x00574fbc",
+   "name": "TitleInf::vftable",
+   "type": "pointer[4]"
+  },
+  {
+   "addr": "0x005756dc",
+   "name": "TrophyInf::vftable",
+   "type": "pointer[3]"
+  },
+  {
+   "addr": "0x00575810",
+   "name": "StoneBaseInf::vftable",
+   "type": "pointer[30]"
+  },
+  {
+   "addr": "0x0057588c",
+   "name": "StoneBlueReimuInf::vftable",
+   "type": "pointer[30]"
+  },
+  {
+   "addr": "0x00575958",
+   "name": "StoneBlueReimu2Inf::vftable",
+   "type": "pointer[30]"
+  },
+  {
+   "addr": "0x00575a24",
+   "name": "StoneBlueMarisa2Inf::vftable",
+   "type": "pointer[30]"
+  },
+  {
+   "addr": "0x00575af4",
+   "name": "StoneBlueMarisaInf::vftable",
+   "type": "pointer[30]"
+  },
+  {
+   "addr": "0x00575bc4",
+   "name": "StoneGreenReimuInf::vftable",
+   "type": "pointer[30]"
+  },
+  {
+   "addr": "0x00575c90",
+   "name": "StoneGreenReimu2Inf::vftable",
+   "type": "pointer[30]"
+  },
+  {
+   "addr": "0x00575d60",
+   "name": "StoneGreenMarisa2Inf::vftable",
+   "type": "pointer[30]"
+  },
+  {
+   "addr": "0x00575e30",
+   "name": "StoneGreenMarisaInf::vftable",
+   "type": "pointer[30]"
+  },
+  {
+   "addr": "0x00575efc",
+   "name": "StoneRedReimuInf::vftable",
+   "type": "pointer[30]"
+  },
+  {
+   "addr": "0x00575fc4",
+   "name": "StoneRedReimu2Inf::vftable",
+   "type": "pointer[30]"
+  },
+  {
+   "addr": "0x00576090",
+   "name": "StoneRedMarisa2Inf::vftable",
+   "type": "pointer[30]"
+  },
+  {
+   "addr": "0x0057615c",
+   "name": "StoneRedMarisaInf::vftable",
+   "type": "pointer[30]"
+  },
+  {
+   "addr": "0x00576228",
+   "name": "WeaponStoneInf::vftable",
+   "type": "pointer[3]"
+  },
+  {
+   "addr": "0x00576368",
+   "name": "StoneYellowReimuInf::vftable",
+   "type": "pointer[30]"
+  },
+  {
+   "addr": "0x00576438",
+   "name": "StoneYellowReimu2Inf::vftable",
+   "type": "pointer[30]"
+  },
+  {
+   "addr": "0x00576558",
+   "name": "StoneYellowMarisa2Inf::vftable",
+   "type": "pointer[30]"
+  },
+  {
+   "addr": "0x00576680",
+   "name": "StoneYellowMarisaInf::vftable",
+   "type": "pointer[30]"
+  },
+  {
+   "addr": "0x00597124",
+   "name": "type_info::vftable",
+   "type": "pointer[1]"
+  }
+ ],
+ "labels": [],
+ "comments": [
+  {
+   "addr": "0x004100e0",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\core\\filectrl.cpp:50 u_char"
+  },
+  {
+   "addr": "0x004103c0",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\core\\filectrl.cpp:131 u_char"
+  },
+  {
+   "addr": "0x00410990",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\core\\filectrl.cpp:496 void"
+  },
+  {
+   "addr": "0x004127b0",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\core\\func.cpp:317 funcChainInf"
+  },
+  {
+   "addr": "0x00415830",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\core\\grpfont.cpp:920 AflDIB"
+  },
+  {
+   "addr": "0x00416420",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\core\\grpfont.cpp:615 u_char"
+  },
+  {
+   "addr": "0x0041e7d0",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\core\\main.cpp:172 FuncCtrlInf\nsrc\\core\\main.cpp:173 SprtCtrlInf"
+  },
+  {
+   "addr": "0x00422b00",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\core\\pad.cpp:771 InputInf"
+  },
+  {
+   "addr": "0x004250f0",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\core\\screen.cpp:580 ScreenInf"
+  },
+  {
+   "addr": "0x004263e0",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\core\\sound.cpp:255 CSoundManager"
+  },
+  {
+   "addr": "0x00427360",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\core\\sound.cpp:653 char"
+  },
+  {
+   "addr": "0x0044a700",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\core\\sprtlib.cpp:905 SprtGroupTexInf\nsrc\\core\\sprtlib.cpp:906 SprtDataInf\nsrc\\core\\sprtlib.cpp:907 int*\nsrc\\core\\sprtlib.cpp:929 SprtInf"
+  },
+  {
+   "addr": "0x0044c9b0",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\core\\sprtlib.cpp:2888 SprtInf"
+  },
+  {
+   "addr": "0x0044ed40",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\core\\sprtlib.cpp:950 SprtGroupInf"
+  },
+  {
+   "addr": "0x00459530",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\core\\zwave.cpp:278 LPDIRECTSOUNDBUFFER"
+  },
+  {
+   "addr": "0x00459a70",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\core\\zwave.cpp:119 CWaveFile\nsrc\\core\\zwave.cpp:154 DSBPOSITIONNOTIFY\nsrc\\core\\zwave.cpp:173 CStreamingSound"
+  },
+  {
+   "addr": "0x00459d70",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\core\\zwave.cpp:209 CWaveFile\nsrc\\core\\zwave.cpp:237 DSBPOSITIONNOTIFY\nsrc\\core\\zwave.cpp:256 CStreamingSound"
+  },
+  {
+   "addr": "0x0045b150",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\core\\zwave.cpp:322 LPDIRECTSOUNDBUFFER\nsrc\\core\\zwave.cpp:336 DSBPOSITIONNOTIFY"
+  },
+  {
+   "addr": "0x0045d000",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\effect\\effchargepoint.cpp:40 EffectChargePointInf"
+  },
+  {
+   "addr": "0x0045dc70",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\effect\\efffanspark.cpp:131 EffectFanSparkInf"
+  },
+  {
+   "addr": "0x0045e520",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\effect\\effline.cpp:154 EffectLineEffectInf"
+  },
+  {
+   "addr": "0x0045e550",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\effect\\effline.cpp:70 EffectLineEffectInf"
+  },
+  {
+   "addr": "0x0045ec70",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\effect\\efflinespark.cpp:125 EffectLineSparkInf"
+  },
+  {
+   "addr": "0x0045fd10",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\effect\\efflinespark2.cpp:135 EffectLineSpark2Inf"
+  },
+  {
+   "addr": "0x00460800",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\effect\\efflinestone.cpp:139 EffectLineStoneInf"
+  },
+  {
+   "addr": "0x00460f30",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\effect\\efflinestone2.cpp:145 EffectLineStone2Inf"
+  },
+  {
+   "addr": "0x004613a0",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\effect\\effmenuwindow.cpp:93 EffectMenuWindowInf"
+  },
+  {
+   "addr": "0x00463280",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\effect\\effpyramid.cpp:379 EffectPyramidInf"
+  },
+  {
+   "addr": "0x00465960",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\effect\\effscreenswitch.cpp:37 EffectScreenSwitchInf"
+  },
+  {
+   "addr": "0x00466270",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\effect\\effshortline.cpp:60 EffectShortLineEffectInf"
+  },
+  {
+   "addr": "0x00466860",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\effect\\effshortline2.cpp:60 EffectShortLineEffect2Inf"
+  },
+  {
+   "addr": "0x00466f80",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\effect\\effshortline3.cpp:83 EffectShortLineEffect3Inf"
+  },
+  {
+   "addr": "0x00467c20",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\effect\\effstonegaugeline.cpp:130 EffectStoneGaugeLineInf"
+  },
+  {
+   "addr": "0x0046c210",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\ascii.cpp:1118 JapaneseStrInf\nsrc\\game\\ascii.cpp:1139 JapaneseStrInf"
+  },
+  {
+   "addr": "0x00471060",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\ascii.cpp:111 AsciiInf"
+  },
+  {
+   "addr": "0x00474e70",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\background.cpp\nsrc\\game\\background.cpp:601 StageFileHeaderInf"
+  },
+  {
+   "addr": "0x004751b0",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\background.cpp:1029 RenderMeshInf\nsrc\\game\\background.cpp:1031 RenderMeshInf"
+  },
+  {
+   "addr": "0x00477880",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\background.cpp:136 BackGroundInf"
+  },
+  {
+   "addr": "0x00478300",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\bomb.cpp:87 BombInf"
+  },
+  {
+   "addr": "0x00479120",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\bomb_marisaa.cpp:172 BombMarisaAInf"
+  },
+  {
+   "addr": "0x0047a610",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\bomb_reimua.cpp:295 BombReimuAInf"
+  },
+  {
+   "addr": "0x00486630",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\bullet.cpp:666 BulletInf"
+  },
+  {
+   "addr": "0x00488b20",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\card.cpp:641 CardInf"
+  },
+  {
+   "addr": "0x0048c010",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\ecl.cpp:2387 EnemyDataInf::BossRenderInf\nsrc\\game\\ecl.cpp:2395 RenderMeshInf"
+  },
+  {
+   "addr": "0x0049cf80",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\effect.cpp:430 SprtID\nsrc\\game\\effect.cpp:431 SprtInf*\nsrc\\game\\effect.cpp:432 sprtVERTEXC\nsrc\\game\\effect.cpp:433 FVector"
+  },
+  {
+   "addr": "0x0049e0c0",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\effect.cpp:213 EffectInf"
+  },
+  {
+   "addr": "0x004a0600",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\ending.cpp:128 EndingMsgInf"
+  },
+  {
+   "addr": "0x004a1010",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\ending.cpp:170 EndingInf"
+  },
+  {
+   "addr": "0x004a7080",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\enemy.cpp:205 EclResourceInf"
+  },
+  {
+   "addr": "0x004a8920",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\enemy.cpp:69 EnemyInf"
+  },
+  {
+   "addr": "0x004aba70",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\enemy.cpp:420 EnemyCtrlInf"
+  },
+  {
+   "addr": "0x004ac1a0",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\fps.cpp:61 FPSInf"
+  },
+  {
+   "addr": "0x004b9090",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\front.cpp:402 FrontInf"
+  },
+  {
+   "addr": "0x004b9740",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\front.cpp:1199 MsgInf"
+  },
+  {
+   "addr": "0x004bec70",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\game.cpp:594 GameInf"
+  },
+  {
+   "addr": "0x004bfc70",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\help.cpp:86 HelpInf"
+  },
+  {
+   "addr": "0x004c0e60",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\hit.cpp:605 HitInf"
+  },
+  {
+   "addr": "0x004c20d0",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\hit.cpp:73 HitCtrlInf"
+  },
+  {
+   "addr": "0x004c5010",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\item.cpp:113 ItemInf"
+  },
+  {
+   "addr": "0x004c7cb0",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\keyconfig.cpp:74 KeyConfigTaskInf"
+  },
+  {
+   "addr": "0x004c9ab0",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\laser.cpp:3617 u_char"
+  },
+  {
+   "addr": "0x004cfb40",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\laser.h:315 LaserLineInf"
+  },
+  {
+   "addr": "0x004d3230",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\laser.cpp:2597 sprtVERTEXC\nsrc\\game\\laser.cpp:2599 LaserCurveVtxInf\nsrc\\game\\laser.cpp:2638 CurveEquationInf\nsrc\\game\\laser.cpp:2719 LaserHitDataInf"
+  },
+  {
+   "addr": "0x004d3d70",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\laser.cpp:1730 LaserHitDataInf"
+  },
+  {
+   "addr": "0x004d4150",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\laser.cpp:551 LaserHitDataInf"
+  },
+  {
+   "addr": "0x004d47f0",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\laser.cpp:296 LaserLineInf\nsrc\\game\\laser.cpp:306 LaserInfiniteInf\nsrc\\game\\laser.cpp:317 LaserBeamInf\nsrc\\game\\laser.cpp:328 LaserCurveInf"
+  },
+  {
+   "addr": "0x004d5a90",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\laser.h:468 CurveEquationInf"
+  },
+  {
+   "addr": "0x004d7e40",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\laser.cpp:163 LaserInf"
+  },
+  {
+   "addr": "0x004d85c0",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\loading.cpp:239 LoadingInf"
+  },
+  {
+   "addr": "0x004d9210",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\mother.cpp:501 BITMAPINFO"
+  },
+  {
+   "addr": "0x004d97f0",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\mother.cpp:483 Gdiplus::ImageCodecInfo"
+  },
+  {
+   "addr": "0x004dd600",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\mother.cpp:233 SprtInf\nsrc\\game\\mother.cpp:234 SprtInf\nsrc\\game\\mother.cpp:235 SprtInf\nsrc\\game\\mother.cpp:236 SprtInf\nsrc\\game\\mother.cpp:237 SprtInf"
+  },
+  {
+   "addr": "0x004de040",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\mother.cpp:424 BYTE"
+  },
+  {
+   "addr": "0x004dfb90",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\notice.cpp:154 NoticeInf"
+  },
+  {
+   "addr": "0x004e1080",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\option.cpp:60 OptionTaskInf"
+  },
+  {
+   "addr": "0x004e6b80",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\pause.cpp:238 PauseInf"
+  },
+  {
+   "addr": "0x004ffff0",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\player.cpp:313 PlayerInf"
+  },
+  {
+   "addr": "0x00506210",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\plyshot.cpp:184 ShotInf"
+  },
+  {
+   "addr": "0x00508480",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\replay.cpp:48 ReplayFileHeaderInf\nsrc\\game\\replay.cpp:54 ReplayDataHeaderInf\nsrc\\game\\replay.cpp:55 ReplayStageDataHeaderInf"
+  },
+  {
+   "addr": "0x00508b90",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\replay.cpp:708 ReplayFrameDataInf"
+  },
+  {
+   "addr": "0x00509280",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\replay.cpp:530 void\nsrc\\game\\replay.cpp:585 char"
+  },
+  {
+   "addr": "0x0050a2e0",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\replay.h:140 ReplayRecDataInf"
+  },
+  {
+   "addr": "0x0050a6b0",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\replay.cpp:818 ReplayStageDataHeaderInf"
+  },
+  {
+   "addr": "0x0050a8e0",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\replay.cpp:188 ReplayInf"
+  },
+  {
+   "addr": "0x0050a930",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\replay.cpp:169 ReplayInf"
+  },
+  {
+   "addr": "0x0050eb70",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\score.cpp:175 ScoreFileHeaderInf\nsrc\\game\\score.cpp:201 ScoreChunkInf"
+  },
+  {
+   "addr": "0x0050f6b0",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\score.cpp:252 char"
+  },
+  {
+   "addr": "0x0050fce0",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\score.cpp:118 ScoreInf"
+  },
+  {
+   "addr": "0x005108d0",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\smallscore.cpp:57 SmallScoreInf"
+  },
+  {
+   "addr": "0x005115c0",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\stageclear.cpp:89 StageClearInf"
+  },
+  {
+   "addr": "0x00512f60",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\stoneenemy.cpp:76 StoneEnemyInf"
+  },
+  {
+   "addr": "0x00514240",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\stoneenemy.cpp:67 StoneEnemyCtrlInf"
+  },
+  {
+   "addr": "0x0051cc20",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\stonemenu.cpp:302 StoneMenuInf"
+  },
+  {
+   "addr": "0x0052c030",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\title.cpp:5302 RenderMeshInf"
+  },
+  {
+   "addr": "0x0052cfe0",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\title.cpp:219 TitleInf"
+  },
+  {
+   "addr": "0x0052e210",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\trophy.cpp:92 TrophyMsgInf"
+  },
+  {
+   "addr": "0x0052f900",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\trophy.cpp:181 TrophyInf"
+  },
+  {
+   "addr": "0x005305f0",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\weaponblue.cpp:39 StoneBlueReimuInf"
+  },
+  {
+   "addr": "0x00530ae0",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\weaponblue2.cpp:51 StoneBlueReimu2Inf"
+  },
+  {
+   "addr": "0x00530c90",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\weaponblue2_m.cpp:52 StoneBlueMarisa2Inf"
+  },
+  {
+   "addr": "0x00531030",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\weaponblue_m.cpp:39 StoneBlueMarisaInf"
+  },
+  {
+   "addr": "0x00531580",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\weapongreen.cpp:59 StoneGreenReimuInf"
+  },
+  {
+   "addr": "0x00531bf0",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\weapongreen2.cpp:73 StoneGreenReimu2Inf"
+  },
+  {
+   "addr": "0x005321c0",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\weapongreen2_m.cpp:72 StoneGreenMarisa2Inf"
+  },
+  {
+   "addr": "0x00532310",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\weapongreen_m.cpp:59 StoneGreenMarisaInf"
+  },
+  {
+   "addr": "0x00532460",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\weaponred.cpp:42 StoneRedReimuInf"
+  },
+  {
+   "addr": "0x00532560",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\weaponred2.cpp:35 StoneRedReimu2Inf"
+  },
+  {
+   "addr": "0x00532630",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\weaponred2_m.cpp:36 StoneRedMarisa2Inf"
+  },
+  {
+   "addr": "0x00532700",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\weaponred_m.cpp:37 StoneRedMarisaInf"
+  },
+  {
+   "addr": "0x005348d0",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\weaponstone.cpp:482 RenderMeshInf"
+  },
+  {
+   "addr": "0x00534ab0",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\weaponstone.cpp:652 RenderMeshInf"
+  },
+  {
+   "addr": "0x00534dd0",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\weaponstone.cpp:256 WeaponStoneInf"
+  },
+  {
+   "addr": "0x005357f0",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\weaponyellow.cpp:71 StoneYellowReimuInf"
+  },
+  {
+   "addr": "0x00536d50",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\weaponyellow2.cpp:81 StoneYellowReimu2Inf"
+  },
+  {
+   "addr": "0x005381b0",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\weaponyellow2_m.cpp:81 StoneYellowMarisa2Inf"
+  },
+  {
+   "addr": "0x005389b0",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\game\\weaponyellow_m.cpp:72 StoneYellowMarisaInf"
+  },
+  {
+   "addr": "0x00538af0",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\pack\\File.cpp:162 void"
+  },
+  {
+   "addr": "0x005391f0",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\pack\\LzssUtil.cpp:202 BYTE"
+  },
+  {
+   "addr": "0x00539550",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\pack\\LzssUtil.cpp:57 BYTE"
+  },
+  {
+   "addr": "0x00539e60",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\pack\\_ArcMngr.cpp:422 char"
+  },
+  {
+   "addr": "0x00539ed0",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\pack\\_ArcMngr.cpp:344 void"
+  },
+  {
+   "addr": "0x0053a210",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\pack\\_ArcMngr.cpp:385 ARCFILE_INFO"
+  },
+  {
+   "addr": "0x0053a3c0",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\pack\\_ArcMngr.cpp:173 BYTE"
+  },
+  {
+   "addr": "0x0053a6f0",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\pack\\_ArcMngr.cpp:78 File"
+  },
+  {
+   "addr": "0x0053e390",
+   "kind": "plate",
+   "text": "assert 锚点:\nsrc\\script\\sptcmd.cpp:1013 SptBaseInf\nsrc\\script\\sptcmd.cpp:1014 LinkInf<SptBaseInf*>"
+  },
+  {
+   "addr": "0x0056c000",
+   "kind": "pre",
+   "text": "0  DirectInput8Create  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c010",
+   "kind": "pre",
+   "text": "725  GetStockObject  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c014",
+   "kind": "pre",
+   "text": "657  GetDeviceCaps  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c018",
+   "kind": "pre",
+   "text": "90  CreateSolidBrush  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c01c",
+   "kind": "pre",
+   "text": "957  TextOutW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c020",
+   "kind": "pre",
+   "text": "55  CreateDIBSection  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c024",
+   "kind": "pre",
+   "text": "938  SetTextColor  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c028",
+   "kind": "pre",
+   "text": "899  SetBkMode  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c02c",
+   "kind": "pre",
+   "text": "891  SelectObject  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c030",
+   "kind": "pre",
+   "text": "742  GetTextExtentPoint32W  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c034",
+   "kind": "pre",
+   "text": "468  EnumFontFamiliesExW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c038",
+   "kind": "pre",
+   "text": "404  DeleteObject  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c03c",
+   "kind": "pre",
+   "text": "401  DeleteDC  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c040",
+   "kind": "pre",
+   "text": "68  CreateFontW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c044",
+   "kind": "pre",
+   "text": "49  CreateCompatibleDC  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c04c",
+   "kind": "pre",
+   "text": "552  GetConsoleTitleW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c050",
+   "kind": "pre",
+   "text": "1555  WaitForSingleObject  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c054",
+   "kind": "pre",
+   "text": "216  CreateEventW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c058",
+   "kind": "pre",
+   "text": "271  CreateThread  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c05c",
+   "kind": "pre",
+   "text": "406  FindClose  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c060",
+   "kind": "pre",
+   "text": "417  FindFirstFileW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c064",
+   "kind": "pre",
+   "text": "429  FindNextFileW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c068",
+   "kind": "pre",
+   "text": "563  GetCurrentDirectoryW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c06c",
+   "kind": "pre",
+   "text": "542  GetConsoleMode  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c070",
+   "kind": "pre",
+   "text": "546  GetConsoleOutputCP  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c074",
+   "kind": "pre",
+   "text": "449  FlushFileBuffers  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c078",
+   "kind": "pre",
+   "text": "1411  SetStdHandle  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c07c",
+   "kind": "pre",
+   "text": "888  HeapQueryInformation  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c080",
+   "kind": "pre",
+   "text": "891  HeapSize  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c084",
+   "kind": "pre",
+   "text": "732  GetProcessHeap  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c088",
+   "kind": "pre",
+   "text": "1353  SetEnvironmentVariableW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c08c",
+   "kind": "pre",
+   "text": "460  FreeEnvironmentStringsW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c090",
+   "kind": "pre",
+   "text": "602  GetEnvironmentStringsW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c094",
+   "kind": "pre",
+   "text": "505  GetCommandLineW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c098",
+   "kind": "pre",
+   "text": "504  GetCommandLineA  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c09c",
+   "kind": "pre",
+   "text": "702  GetOEMCP  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c0a0",
+   "kind": "pre",
+   "text": "468  GetACP  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c0a4",
+   "kind": "pre",
+   "text": "831  GetUserDefaultLCID  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c0a8",
+   "kind": "pre",
+   "text": "889  HeapReAlloc  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c0ac",
+   "kind": "pre",
+   "text": "1368  SetFilePointerEx  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c0b0",
+   "kind": "pre",
+   "text": "1188  ReadFile  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c0b4",
+   "kind": "pre",
+   "text": "626  GetFileType  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c0b8",
+   "kind": "pre",
+   "text": "373  EnumSystemLocalesW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c0bc",
+   "kind": "pre",
+   "text": "956  IsValidLocale  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c0c0",
+   "kind": "pre",
+   "text": "650  GetLocaleInfoW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c0c4",
+   "kind": "pre",
+   "text": "992  LCMapStringW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c0c8",
+   "kind": "pre",
+   "text": "178  CompareStringW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c0cc",
+   "kind": "pre",
+   "text": "1544  VirtualProtect  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c0d0",
+   "kind": "pre",
+   "text": "444  FlsFree  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c0d4",
+   "kind": "pre",
+   "text": "447  FlsSetValue  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c0d8",
+   "kind": "pre",
+   "text": "445  FlsGetValue  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c0dc",
+   "kind": "pre",
+   "text": "443  FlsAlloc  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c0e0",
+   "kind": "pre",
+   "text": "886  HeapFree  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c0e4",
+   "kind": "pre",
+   "text": "882  HeapAlloc  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c0e8",
+   "kind": "pre",
+   "text": "763  GetStdHandle  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c0ec",
+   "kind": "pre",
+   "text": "383  ExitProcess  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c0f0",
+   "kind": "pre",
+   "text": "669  GetModuleHandleExW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c0f4",
+   "kind": "pre",
+   "text": "462  FreeLibraryAndExitThread  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c0f8",
+   "kind": "pre",
+   "text": "384  ExitThread  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c0fc",
+   "kind": "pre",
+   "text": "1010  LoadLibraryExW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c100",
+   "kind": "pre",
+   "text": "461  FreeLibrary  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c104",
+   "kind": "pre",
+   "text": "1498  TlsFree  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c108",
+   "kind": "pre",
+   "text": "1594  WideCharToMultiByte  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c10c",
+   "kind": "pre",
+   "text": "666  GetModuleFileNameW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c110",
+   "kind": "pre",
+   "text": "761  GetStartupInfoW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c114",
+   "kind": "pre",
+   "text": "245  CreateMutexW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c118",
+   "kind": "pre",
+   "text": "1150  QueryPerformanceFrequency  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c11c",
+   "kind": "pre",
+   "text": "1149  QueryPerformanceCounter  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c120",
+   "kind": "pre",
+   "text": "604  GetEnvironmentVariableW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c124",
+   "kind": "pre",
+   "text": "1055  MultiByteToWideChar  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c128",
+   "kind": "pre",
+   "text": "457  FormatMessageW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c12c",
+   "kind": "pre",
+   "text": "1022  LocalFree  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c130",
+   "kind": "pre",
+   "text": "646  GetLastError  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c134",
+   "kind": "pre",
+   "text": "156  CloseHandle  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c138",
+   "kind": "pre",
+   "text": "1614  WriteFile  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c13c",
+   "kind": "pre",
+   "text": "954  IsValidCodePage  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c140",
+   "kind": "pre",
+   "text": "1367  SetFilePointer  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c144",
+   "kind": "pre",
+   "text": "1501  TlsSetValue  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c148",
+   "kind": "pre",
+   "text": "1499  TlsGetValue  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c14c",
+   "kind": "pre",
+   "text": "1497  TlsAlloc  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c150",
+   "kind": "pre",
+   "text": "908  InitializeCriticalSectionAndSpinCount  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c154",
+   "kind": "pre",
+   "text": "1384  SetLastError  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c158",
+   "kind": "pre",
+   "text": "1171  RaiseException  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c15c",
+   "kind": "pre",
+   "text": "1288  RtlUnwind  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c160",
+   "kind": "pre",
+   "text": "623  GetFileSize  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c164",
+   "kind": "pre",
+   "text": "229  CreateFileW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c168",
+   "kind": "pre",
+   "text": "827  GetTimeZoneInformation  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c16c",
+   "kind": "pre",
+   "text": "1463  Sleep  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c170",
+   "kind": "pre",
+   "text": "912  InitializeSListHead  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c174",
+   "kind": "pre",
+   "text": "571  GetCurrentProcessId  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c178",
+   "kind": "pre",
+   "text": "940  IsDebuggerPresent  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c17c",
+   "kind": "pre",
+   "text": "948  IsProcessorFeaturePresent  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c180",
+   "kind": "pre",
+   "text": "1479  TerminateProcess  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c184",
+   "kind": "pre",
+   "text": "570  GetCurrentProcess  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c188",
+   "kind": "pre",
+   "text": "1447  SetUnhandledExceptionFilter  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c18c",
+   "kind": "pre",
+   "text": "1513  UnhandledExceptionFilter  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c190",
+   "kind": "pre",
+   "text": "483  GetCPInfo  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c194",
+   "kind": "pre",
+   "text": "768  GetStringTypeW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c198",
+   "kind": "pre",
+   "text": "991  LCMapStringEx  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c19c",
+   "kind": "pre",
+   "text": "294  DecodePointer  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c1a0",
+   "kind": "pre",
+   "text": "334  EncodePointer  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c1a4",
+   "kind": "pre",
+   "text": "301  DeleteCriticalSection  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c1a8",
+   "kind": "pre",
+   "text": "1004  LeaveCriticalSection  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c1ac",
+   "kind": "pre",
+   "text": "338  EnterCriticalSection  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c1b0",
+   "kind": "pre",
+   "text": "786  GetSystemTimeAsFileTime  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c1b4",
+   "kind": "pre",
+   "text": "1613  WriteConsoleW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c1b8",
+   "kind": "pre",
+   "text": "909  InitializeCriticalSectionEx  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c1bc",
+   "kind": "pre",
+   "text": "485  GetCPInfoExW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c1c0",
+   "kind": "pre",
+   "text": "901  InitOnceComplete  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c1c4",
+   "kind": "pre",
+   "text": "1253  ReleaseSRWLockExclusive  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c1c8",
+   "kind": "pre",
+   "text": "0  AcquireSRWLockExclusive  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c1cc",
+   "kind": "pre",
+   "text": "1563  WakeAllConditionVariable  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c1d0",
+   "kind": "pre",
+   "text": "1465  SleepConditionVariableSRW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c1d4",
+   "kind": "pre",
+   "text": "670  GetModuleHandleW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c1d8",
+   "kind": "pre",
+   "text": "725  GetProcAddress  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c1dc",
+   "kind": "pre",
+   "text": "1556  WaitForSingleObjectEx  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c1e0",
+   "kind": "pre",
+   "text": "575  GetCurrentThreadId  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c1e4",
+   "kind": "pre",
+   "text": "608  GetExitCodeThread  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c1e8",
+   "kind": "pre",
+   "text": "1505  TryAcquireSRWLockExclusive  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c1ec",
+   "kind": "pre",
+   "text": "456  FormatMessageA  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c1f0",
+   "kind": "pre",
+   "text": "649  GetLocaleInfoEx  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c1f4",
+   "kind": "pre",
+   "text": "211  CreateDirectoryW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c1f8",
+   "kind": "pre",
+   "text": "412  FindFirstFileExW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c1fc",
+   "kind": "pre",
+   "text": "613  GetFileAttributesExW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c200",
+   "kind": "pre",
+   "text": "37  AreFileApisANSI  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c204",
+   "kind": "pre",
+   "text": "619  GetFileInformationByHandleEx  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c208",
+   "kind": "pre",
+   "text": "900  InitOnceBeginInitialize  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c220",
+   "kind": "pre",
+   "text": "592  IsWindow  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c224",
+   "kind": "pre",
+   "text": "184  DestroyWindow  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c228",
+   "kind": "pre",
+   "text": "935  ShowWindow  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c22c",
+   "kind": "pre",
+   "text": "910  SetWindowPos  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c230",
+   "kind": "pre",
+   "text": "108  CreateDialogParamW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c234",
+   "kind": "pre",
+   "text": "339  GetDlgItem  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c238",
+   "kind": "pre",
+   "text": "72  CheckRadioButton  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c23c",
+   "kind": "pre",
+   "text": "571  IsDlgButtonChecked  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c240",
+   "kind": "pre",
+   "text": "367  GetKeyState  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c244",
+   "kind": "pre",
+   "text": "243  EnableWindow  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c248",
+   "kind": "pre",
+   "text": "466  GetSystemMetrics  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c24c",
+   "kind": "pre",
+   "text": "994  UpdateWindow  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c250",
+   "kind": "pre",
+   "text": "841  SetForegroundWindow  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c254",
+   "kind": "pre",
+   "text": "18  BeginPaint  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c258",
+   "kind": "pre",
+   "text": "746  RegisterClassW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c25c",
+   "kind": "pre",
+   "text": "555  InvalidateRect  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c260",
+   "kind": "pre",
+   "text": "505  GetWindowRect  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c264",
+   "kind": "pre",
+   "text": "4  AdjustWindowRectEx  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c268",
+   "kind": "pre",
+   "text": "930  ShowCursor  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c26c",
+   "kind": "pre",
+   "text": "824  SetCursor  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c270",
+   "kind": "pre",
+   "text": "278  FillRect  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c274",
+   "kind": "pre",
+   "text": "907  SetWindowLongW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c278",
+   "kind": "pre",
+   "text": "610  LoadCursorW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c27c",
+   "kind": "pre",
+   "text": "570  IsDialogMessageW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c280",
+   "kind": "pre",
+   "text": "264  EnumDisplaySettingsW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c284",
+   "kind": "pre",
+   "text": "952  SystemParametersInfoW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c288",
+   "kind": "pre",
+   "text": "447  GetRawInputData  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c28c",
+   "kind": "pre",
+   "text": "765  RegisterRawInputDevices  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c290",
+   "kind": "pre",
+   "text": "1012  WINNLSEnableIME  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c294",
+   "kind": "pre",
+   "text": "372  GetKeyboardState  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c298",
+   "kind": "pre",
+   "text": "121  CreateWindowExW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c29c",
+   "kind": "pre",
+   "text": "170  DefWindowProcW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c2a0",
+   "kind": "pre",
+   "text": "808  SendMessageW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c2a4",
+   "kind": "pre",
+   "text": "249  EndPaint  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c2a8",
+   "kind": "pre",
+   "text": "660  MessageBoxW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c2ac",
+   "kind": "pre",
+   "text": "328  GetDC  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c2b0",
+   "kind": "pre",
+   "text": "780  ReleaseDC  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c2b4",
+   "kind": "pre",
+   "text": "968  TranslateMessage  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c2b8",
+   "kind": "pre",
+   "text": "192  DispatchMessageW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c2bc",
+   "kind": "pre",
+   "text": "845  SetKeyboardState  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c2c0",
+   "kind": "pre",
+   "text": "698  PostThreadMessageW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c2c4",
+   "kind": "pre",
+   "text": "602  KillTimer  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c2c8",
+   "kind": "pre",
+   "text": "894  SetTimer  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c2cc",
+   "kind": "pre",
+   "text": "667  MsgWaitForMultipleObjects  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c2d0",
+   "kind": "pre",
+   "text": "691  PeekMessageW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c2d8",
+   "kind": "pre",
+   "text": "144  timeBeginPeriod  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c2dc",
+   "kind": "pre",
+   "text": "145  timeEndPeriod  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c2e0",
+   "kind": "pre",
+   "text": "24  joyGetDevCapsW  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c2e4",
+   "kind": "pre",
+   "text": "27  joyGetPosEx  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c2e8",
+   "kind": "pre",
+   "text": "148  timeGetTime  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c2f8",
+   "kind": "pre",
+   "text": "10  Direct3DCreate9  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c300",
+   "kind": "pre",
+   "text": "92  D3DXCreateTexture  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c304",
+   "kind": "pre",
+   "text": "216  D3DXMatrixRotationZ  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c308",
+   "kind": "pre",
+   "text": "312  D3DXVec3ProjectArray  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c30c",
+   "kind": "pre",
+   "text": "221  D3DXMatrixTranslation  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c310",
+   "kind": "pre",
+   "text": "196  D3DXMatrixLookAtLH  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c314",
+   "kind": "pre",
+   "text": "183  D3DXLoadSurfaceFromSurface  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c318",
+   "kind": "pre",
+   "text": "315  D3DXVec3TransformCoord  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c31c",
+   "kind": "pre",
+   "text": "214  D3DXMatrixRotationY  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c320",
+   "kind": "pre",
+   "text": "213  D3DXMatrixRotationX  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c324",
+   "kind": "pre",
+   "text": "198  D3DXMatrixMultiply  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c328",
+   "kind": "pre",
+   "text": "311  D3DXVec3Project  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c32c",
+   "kind": "pre",
+   "text": "313  D3DXVec3Transform  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c330",
+   "kind": "pre",
+   "text": "204  D3DXMatrixPerspectiveFovLH  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c334",
+   "kind": "pre",
+   "text": "178  D3DXLoadSurfaceFromFileInMemory  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c33c",
+   "kind": "pre",
+   "text": "33  GdipAlloc  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c340",
+   "kind": "pre",
+   "text": "237  GdipFree  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c344",
+   "kind": "pre",
+   "text": "629  GdiplusStartup  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c348",
+   "kind": "pre",
+   "text": "54  GdipCloneImage  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c34c",
+   "kind": "pre",
+   "text": "152  GdipDisposeImage  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c350",
+   "kind": "pre",
+   "text": "496  GdipSaveImageToFile  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c354",
+   "kind": "pre",
+   "text": "77  GdipCreateBitmapFromHBITMAP  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c358",
+   "kind": "pre",
+   "text": "287  GdipGetImageEncodersSize  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c35c",
+   "kind": "pre",
+   "text": "286  GdipGetImageEncoders  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c360",
+   "kind": "pre",
+   "text": "628  GdiplusShutdown  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c368",
+   "kind": "pre",
+   "text": "93  CoInitialize  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c36c",
+   "kind": "pre",
+   "text": "132  CoSetProxyBlanket  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c370",
+   "kind": "pre",
+   "text": "40  CoCreateInstance  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c374",
+   "kind": "pre",
+   "text": "142  CoUninitialize  <<not bound>>"
+  },
+  {
+   "addr": "0x0056c8a4",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `struct tagSIZE __cdecl grpPrint(struct tagRECT const *,int,unsigned long,unsigned long,char const *,struct IDirect3DTexture9 *,int,int,int,bool *,class std::function<void __cdecl(void)>)'::`20'::<lambda_1>,void>::vftable"
+  },
+  {
+   "addr": "0x0056e600",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: class SprtInf * __thiscall SprtCtrlInf::getSprt(class SprtID)'::`9'::<lambda_1>,bool,class LinkInf<class SprtInf *> &>::vftable"
+  },
+  {
+   "addr": "0x0056e61c",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: class SprtInf * __thiscall SprtCtrlInf::getSprt(class SprtID)'::`9'::<lambda_2>,bool,class LinkInf<class SprtInf *> &>::vftable"
+  },
+  {
+   "addr": "0x0056f764",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: __thiscall `public: void __cdecl AsciiInf::JPrintf(class FVector const &,class std::basic_string_view<char,struct std::char_traits<char> >,...)'::`17'::<lambda_1>::operator()(void)const '::`2'::<lambda_1>,void>::vftable"
+  },
+  {
+   "addr": "0x0056f780",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: void __cdecl AsciiInf::JPrintf(class FVector const &,class std::basic_string_view<char,struct std::char_traits<char> >,...)'::`17'::<lambda_1>,void>::vftable"
+  },
+  {
+   "addr": "0x0056fd20",
+   "kind": "plate",
+   "text": "const std::_Ref_count_obj_alloc3<struct EtamaArgInf,struct DebugAllocator<struct EtamaArgInf> >::vftable"
+  },
+  {
+   "addr": "0x0056fe28",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: __thiscall `public: void __thiscall CardInf::Start(int,char *,int,int)'::`2'::<lambda_1>::operator()(void)const '::`2'::<lambda_1>,void>::vftable"
+  },
+  {
+   "addr": "0x0056fe44",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: void __thiscall CardInf::Start(int,char *,int,int)'::`2'::<lambda_1>,void>::vftable"
+  },
+  {
+   "addr": "0x0057031c",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: __thiscall `public: int __thiscall EndingMsgInf::Anim(void)'::`17'::<lambda_1>::operator()(void)const '::`2'::<lambda_1>,void>::vftable"
+  },
+  {
+   "addr": "0x00570338",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: int __thiscall EndingMsgInf::Anim(void)'::`17'::<lambda_1>,void>::vftable"
+  },
+  {
+   "addr": "0x00570354",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: __thiscall `public: int __thiscall EndingMsgInf::Anim(void)'::`19'::<lambda_2>::operator()(void)const '::`2'::<lambda_1>,void>::vftable"
+  },
+  {
+   "addr": "0x00570370",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: int __thiscall EndingMsgInf::Anim(void)'::`19'::<lambda_2>,void>::vftable"
+  },
+  {
+   "addr": "0x0057079c",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: __thiscall `public: int __thiscall MsgInf::Anim(void)'::`17'::<lambda_1>::operator()(void)const '::`2'::<lambda_1>,void>::vftable"
+  },
+  {
+   "addr": "0x005707b8",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: int __thiscall MsgInf::Anim(void)'::`17'::<lambda_1>,void>::vftable"
+  },
+  {
+   "addr": "0x005707d4",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: __thiscall `public: int __thiscall MsgInf::Anim(void)'::`17'::<lambda_2>::operator()(void)const '::`2'::<lambda_1>,void>::vftable"
+  },
+  {
+   "addr": "0x005707f0",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: int __thiscall MsgInf::Anim(void)'::`17'::<lambda_2>,void>::vftable"
+  },
+  {
+   "addr": "0x0057080c",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: __thiscall `public: int __thiscall MsgInf::Anim(void)'::`26'::<lambda_3>::operator()(void)const '::`2'::<lambda_1>,void>::vftable"
+  },
+  {
+   "addr": "0x00570828",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: int __thiscall MsgInf::Anim(void)'::`26'::<lambda_3>,void>::vftable"
+  },
+  {
+   "addr": "0x00570844",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: __thiscall `public: int __thiscall MsgInf::Anim(void)'::`28'::<lambda_4>::operator()(void)const '::`2'::<lambda_1>,void>::vftable"
+  },
+  {
+   "addr": "0x00570860",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: int __thiscall MsgInf::Anim(void)'::`28'::<lambda_4>,void>::vftable"
+  },
+  {
+   "addr": "0x0057087c",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: __thiscall `public: int __thiscall MsgInf::Anim(void)'::`35'::<lambda_5>::operator()(void)const '::`2'::<lambda_1>,void>::vftable"
+  },
+  {
+   "addr": "0x00570898",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: int __thiscall MsgInf::Anim(void)'::`35'::<lambda_5>,void>::vftable"
+  },
+  {
+   "addr": "0x005708b4",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: __thiscall `public: int __thiscall MsgInf::Anim(void)'::`37'::<lambda_6>::operator()(void)const '::`2'::<lambda_1>,void>::vftable"
+  },
+  {
+   "addr": "0x005708d0",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: int __thiscall MsgInf::Anim(void)'::`37'::<lambda_6>,void>::vftable"
+  },
+  {
+   "addr": "0x005708ec",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: __thiscall `public: int __thiscall MsgInf::Anim(void)'::`17'::<lambda_7>::operator()(void)const '::`2'::<lambda_1>,void>::vftable"
+  },
+  {
+   "addr": "0x00570908",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: int __thiscall MsgInf::Anim(void)'::`17'::<lambda_7>,void>::vftable"
+  },
+  {
+   "addr": "0x00570924",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: __thiscall `public: int __thiscall MsgInf::Anim(void)'::`17'::<lambda_8>::operator()(void)const '::`2'::<lambda_1>,void>::vftable"
+  },
+  {
+   "addr": "0x00570940",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: int __thiscall MsgInf::Anim(void)'::`17'::<lambda_8>,void>::vftable"
+  },
+  {
+   "addr": "0x0057095c",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: __thiscall `public: int __thiscall MsgInf::Anim(void)'::`17'::<lambda_9>::operator()(void)const '::`2'::<lambda_1>,void>::vftable"
+  },
+  {
+   "addr": "0x00570978",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: int __thiscall MsgInf::Anim(void)'::`17'::<lambda_9>,void>::vftable"
+  },
+  {
+   "addr": "0x00570994",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: __thiscall `public: int __thiscall MsgInf::Anim(void)'::`17'::<lambda_10>::operator()(void)const '::`2'::<lambda_1>,void>::vftable"
+  },
+  {
+   "addr": "0x005709b0",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: int __thiscall MsgInf::Anim(void)'::`17'::<lambda_10>,void>::vftable"
+  },
+  {
+   "addr": "0x005709cc",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: __thiscall `public: int __thiscall MsgInf::Anim(void)'::`17'::<lambda_11>::operator()(void)const '::`2'::<lambda_1>,void>::vftable"
+  },
+  {
+   "addr": "0x005709e8",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: int __thiscall MsgInf::Anim(void)'::`17'::<lambda_11>,void>::vftable"
+  },
+  {
+   "addr": "0x00570a04",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: __thiscall `public: int __thiscall MsgInf::Anim(void)'::`17'::<lambda_12>::operator()(void)const '::`2'::<lambda_1>,void>::vftable"
+  },
+  {
+   "addr": "0x00570a20",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: int __thiscall MsgInf::Anim(void)'::`17'::<lambda_12>,void>::vftable"
+  },
+  {
+   "addr": "0x00570a3c",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: __thiscall `public: int __thiscall MsgInf::Anim(void)'::`17'::<lambda_13>::operator()(void)const '::`2'::<lambda_1>,void>::vftable"
+  },
+  {
+   "addr": "0x00570a58",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: int __thiscall MsgInf::Anim(void)'::`17'::<lambda_13>,void>::vftable"
+  },
+  {
+   "addr": "0x00570a74",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: __thiscall `public: int __thiscall MsgInf::Anim(void)'::`17'::<lambda_14>::operator()(void)const '::`2'::<lambda_1>,void>::vftable"
+  },
+  {
+   "addr": "0x00570a90",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: int __thiscall MsgInf::Anim(void)'::`17'::<lambda_14>,void>::vftable"
+  },
+  {
+   "addr": "0x00571ffc",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: int __thiscall NoticeInf::Calc(void)'::`8'::<lambda_1>,void>::vftable"
+  },
+  {
+   "addr": "0x00572018",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: int __thiscall NoticeInf::Calc(void)'::`11'::<lambda_2>,void>::vftable"
+  },
+  {
+   "addr": "0x00572034",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: int __thiscall NoticeInf::Calc(void)'::`14'::<lambda_3>,void>::vftable"
+  },
+  {
+   "addr": "0x00572050",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: int __thiscall NoticeInf::Calc(void)'::`15'::<lambda_4>,void>::vftable"
+  },
+  {
+   "addr": "0x0057206c",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: int __thiscall NoticeInf::Calc(void)'::`6'::<lambda_5>,void>::vftable"
+  },
+  {
+   "addr": "0x00572950",
+   "kind": "plate",
+   "text": "const std::_Fmt_buffer<char>::vftable"
+  },
+  {
+   "addr": "0x00572ca0",
+   "kind": "plate",
+   "text": "const std::_Fmt_counting_buffer<char>::vftable"
+  },
+  {
+   "addr": "0x00572ca8",
+   "kind": "plate",
+   "text": "const std::_Fmt_iterator_buffer<class std::_String_iterator<class std::_String_val<struct std::_Simple_types<char> > >,char,struct std::_Fmt_buffer_traits>::vftable"
+  },
+  {
+   "addr": "0x00572f9c",
+   "kind": "plate",
+   "text": "const std::numpunct<char>::vftable"
+  },
+  {
+   "addr": "0x005742b4",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: void __thiscall StoneEnemyInf::Start(class EnemyID,int)'::`2'::<lambda_2>,int,class EnemyInf *>::vftable"
+  },
+  {
+   "addr": "0x00574cec",
+   "kind": "plate",
+   "text": "const std::ctype<char>::vftable"
+  },
+  {
+   "addr": "0x00574d88",
+   "kind": "plate",
+   "text": "const std::basic_ios<char,struct std::char_traits<char> >::vftable"
+  },
+  {
+   "addr": "0x00574d90",
+   "kind": "plate",
+   "text": "const std::basic_istream<char,struct std::char_traits<char> >::vftable"
+  },
+  {
+   "addr": "0x00574da0",
+   "kind": "plate",
+   "text": "const std::basic_streambuf<char,struct std::char_traits<char> >::vftable"
+  },
+  {
+   "addr": "0x00574de0",
+   "kind": "plate",
+   "text": "const std::basic_stringbuf<char,struct std::char_traits<char>,class std::allocator<char> >::vftable"
+  },
+  {
+   "addr": "0x00574e20",
+   "kind": "plate",
+   "text": "const std::basic_istringstream<char,struct std::char_traits<char>,class std::allocator<char> >::vftable"
+  },
+  {
+   "addr": "0x005757d8",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: int __thiscall TrophyInf::Calc(void)'::`7'::<lambda_1>,void>::vftable"
+  },
+  {
+   "addr": "0x005757f4",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: int __thiscall TrophyInf::Calc(void)'::`7'::<lambda_2>,void>::vftable"
+  },
+  {
+   "addr": "0x00576504",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: virtual int __thiscall StoneYellowReimu2Inf::OnStoneAttack(void)'::`9'::<lambda_1>,int,class FVector &>::vftable"
+  },
+  {
+   "addr": "0x00576520",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: virtual void __thiscall StoneYellowReimu2Inf::CalcMain(void)'::`5'::<lambda_1>,int,class FVector &>::vftable"
+  },
+  {
+   "addr": "0x0057653c",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: virtual void __thiscall StoneYellowReimu2Inf::CalcSub(void)'::`10'::<lambda_1>,int,class FVector &>::vftable"
+  },
+  {
+   "addr": "0x00576628",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: virtual int __thiscall StoneYellowMarisa2Inf::OnStoneAttack(void)'::`9'::<lambda_1>,int,class FVector &>::vftable"
+  },
+  {
+   "addr": "0x00576644",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: virtual void __thiscall StoneYellowMarisa2Inf::CalcMain(void)'::`5'::<lambda_1>,int,class FVector &>::vftable"
+  },
+  {
+   "addr": "0x00576660",
+   "kind": "plate",
+   "text": "const std::_Func_impl_no_alloc<class `public: virtual void __thiscall StoneYellowMarisa2Inf::CalcSub(void)'::`10'::<lambda_1>,int,class FVector &>::vftable"
+  },
+  {
+   "addr": "0x005a8de0",
+   "kind": "plate",
+   "text": ".NET PDB Info"
+  }
+ ],
+ "structs": {}
+}

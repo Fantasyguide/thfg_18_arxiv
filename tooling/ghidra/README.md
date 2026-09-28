@@ -208,6 +208,12 @@ tooling/ghidra/serve.sh th18 [端口]     # http.server，只绑 127.0.0.1，默
 | [`dump_funcs.py`](dump_funcs.py) | 导出当前命名状态到 JSON |
 | [`build_worklist.py`](build_worklist.py) | 对比 ExpHP 与本地命名，算出「谁都没命名的处女地」 |
 | [`apply_th16_thredata_bulk_names.py`](apply_th16_thredata_bulk_names.py) | TH16 批量导名（历史脚本） |
+| [`th20_anchors.py`](th20_anchors.py) | TH20：字符串 → 引用它的函数（assert 锚点），出 JSON |
+| [`th20_rtti.py`](th20_rtti.py) | TH20：MSVC RTTI 复原（类名 → COL → vftable → 逐槽） |
+| [`th20_names.py`](th20_names.py) | TH20：清 FID 假阳性 + 套 `Class::vftable` + 钉 assert 注释 |
+| [`th20_decomp_corpus.py`](th20_decomp_corpus.py) | TH20：按地址区间把反编译落成语料库（**不占锁地并行分析**） |
+| [`th20_show.py`](th20_show.py) | TH20：从语料库里取函数 / grep / 找调用方（**不占锁**） |
+| [`th20_read.py`](th20_read.py) | TH20：开库做反编译/反汇编/xref/读字节（**占锁，一次一个**） |
 | [`mcp-tools.md`](mcp-tools.md) | `ghidra-re` MCP 工具目录（pinned / hidden） |
 | `run.sh` | 对单个二进制跑一个 pyghidra 脚本 |
 | `scripts/` | 逐子系统的命名固化脚本（headless 可复现） |
@@ -220,6 +226,56 @@ tooling/ghidra/run.sh local/th18.v1.00a/th18.exe tooling/ghidra/scripts/list_fun
 
 `scripts/` 里的 `apply_th16_*_names.py` 是**唯一能给数据符号真改名**的途径
 （MCP 的 rename 对数据符号需经 driver 落盘），且 headless 可复现。
+
+## 没有社区金矿的新作（TH20）：RTTI + assert 锚点 + 反编译语料库
+
+TH20《錦上京》2025-08 才出，`local/vendor/th-re-data/th20.v1.00a` **不存在**（TH06–TH17 都有），
+所以 `bootstrap.py` 的第 2–5 步全空转，库里 7315 个函数只剩 C++ 库的 FID 名
+（`games/th20.v1.00a/INDEX.md` §2c 记了这条限制）。但 ZUN 把**两样命名金矿**编进了 exe：
+
+1. **MSVC RTTI**：`.?AVStoneRedReimuInf@@` 这类 type descriptor ⇒ 类名；
+   顺着 `_TypeDescriptor(+8=名字) → RTTICompleteObjectLocator(+0xc 指向它) → vftable[-1]` 走，
+   拿得到 **79 个 ZUN 自己的类**（`StoneRedReimuInf` / `WeaponStoneInf` / `StoneEnemyCtrlInf` …）。
+2. **assert 字符串**：`D:\cygwin\home\zun\prog\th20\src\game\weaponred.cpp:42 StoneRedReimuInf`
+   —— 文件 + 行号 + token，每条只被一个函数引用 ⇒ 那是它的归属（156 条，其中 125 条落在函数上）。
+   它同时是一张**源码文件地图**：`src\game\stoneenemy.cpp` / `weaponstone.cpp` / `effect\efflinestone.cpp` …
+
+```bash
+# 1) 三类锚点：字符串引用表 + 符号表   → local/th20.v1.00a/th20-anchors.json
+python3 tooling/ghidra/th20_anchors.py
+# 2) RTTI 复原（类名 → vftable → 逐槽函数） → local/th20.v1.00a/th20-rtti.json
+python3 tooling/ghidra/th20_rtti.py --grep '.' --json local/th20.v1.00a/th20-rtti.json
+# 3) 写库：清 FID 假阳性 + 类 vftable 标签 + assert 板注释
+python3 tooling/ghidra/th20_names.py --dry-run     # 先看计划
+python3 tooling/ghidra/th20_names.py --apply
+```
+
+**★ 并行分工的唯一正确姿势**：**Ghidra 工程锁是独占的**（实测两个只读 driver 也会撞锁），
+所以「几个 agent 同时挖同一个 exe」不能各开一个库。做成两步：
+
+```bash
+# 一个人（占锁）：把要挖的地址区间反编译落盘 → local/th20.v1.00a/decomp/*.c + INDEX.tsv
+python3 tooling/ghidra/th20_decomp_corpus.py
+python3 tooling/ghidra/th20_decomp_corpus.py --range "weapon:0x52f000-0x539000" --list
+# 其余人（不占锁）：读语料库 —— 取函数 / grep / 找调用方
+python3 tooling/ghidra/th20_show.py 0x5120d0
+python3 tooling/ghidra/th20_show.py --grep "StoneAttack"
+python3 tooling/ghidra/th20_show.py --list --range 0x511000-0x515000
+```
+
+常量与数据表**不必开库**：`tooling/pe_read.py local/th20.v1.00a/th20.exe 0x573ff0 --dwords 20`
+（注意 TH20 的 `.rdata`/`.data` 指针**在文件里是 0、靠重定位填**，指针表要用
+`th20_read.py --bytes` 经 Ghidra 读，标量常量可以直接读文件）。
+
+三个已踩过的坑（都写进脚本注释了）：
+
+- **jpype 会把 `bytearray` 拷成 Java 数组**：`mem.getBytes(addr, buf)` 回填读不到，
+  必须自己 `JArray(JByte)(n)` 再造回来，否则**静默全零**。
+- **别信 `MemoryBlock.isInitialized()`**：TH20 的 `.rdata`/`.data` 在这工程里报 `False`，
+  信它就会把 vftable/COL 全扫掉，只剩 `.text`。
+- **`vftable[-1]` 才是 COL 指针**：找到「存 COL 的那一格」后起点在它**后面** 4 字节。
+- Ghidra 的 FID 分析器在 ZUN 代码上打了 **73 处假阳性**（名字里带 `FID_conflict:`），
+  不但错，还会让反编译把真函数体前面糊上 ~7 KB 的库函数说明 —— `th20_names.py` 负责清掉。
 
 ## MCP：让 Claude Code 直接驱动 Ghidra（推荐用于迭代）
 
