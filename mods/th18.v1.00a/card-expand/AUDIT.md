@@ -24931,3 +24931,42 @@ if (s->spell_was && !sp) { s->spiral_quota = YK_SPIRAL_QUOTA_FULL; s->spiral_t =
 
 闸：`make -s check` rc=0（`youkai_core: 5261 checks, 0 failed`；x87 = 0；33 个 BP_* 双向一致；
 生成物无漂移；404 个文档全过）。
+
+## §BE 详录 #147（2026-09-27 第四十六批）：击破批的**颗数**改用「敌人声明过的发射口槽数」
+
+> **owner 逐字**：「另外，**不同小怪爆的永点数量似乎应当是不一样的**」。
+
+### 1. 一手（`Enemy::sub_42adb0`，逐条）：颗数是**使魔数的函数**
+
+```
+42adbc  call 0x41fd40            ; ★ ExpHP 名 = `Enemy::sub_41fd40__possibly__get_familiar_count`
+42adc1  mov [ebp-0x4],eax        ;    ⇒ 返回值 = **这个敌人的使魔数**
+42adc4  cmp [ebp-0x4],0 / je 0x42b1e5   ; ★ 门：使魔数 == 0 ⇒ **整段撒点跳过**（一颗都不给）
+42aece  call 0x42f270            ; 妖単独？ ⇒ [ebp-0x2c] = (x >= 10) ? 26 : 2x + 6
+42aefd  call 0x42f230            ; 人単独？ ⇒ [ebp-0x2c] = (x >= 4)  ? 40 : 6x + 16
+42af29  （其余/双人）            ;               [ebp-0x2c] = (x >= 8)  ? 26 : 2x + 10
+42aff0  fild [ebp-0x2c] / 42aff3 fadd st,st          ; ★ 散开半径 = **2×颗数**（`0x40d390` 的实参）
+42b048  call 0x4400a0            ; spawn_item(..., type 7, state 3)
+```
+⇒ 本卡（每个 TH18 机体映到 TH08 的一个**组**）+ 双人那一档 ⇒ 用的是第三条 `2n+10 / 上限 26`
+（`yk_kill_burst_count()` 早就是这样）；**使魔数不同 ⇒ 颗数不同** = owner 那条观察的一手依据。
+
+### 2. 我们的缺口：`n` 用的是「自己真建出来的活子敌人」，不是「敌人本来有几台使魔」
+
+`n` 原来只数 `CE_SPAWN_PARENT == ev->id` 的活子敌人；而与敌人**重合**的发射口按规则**不建使魔**
+⇒ 那些槽一颗都不算 ⇒ 不同小怪之间的差别被压平（实测日志里只有一行
+`kill burst ON - enemy #102 has 1 live ECL child part(s) => 12 orbs per part`）。
+
+**改法**：新增 `yk_map_enemy_slots(&s_map, enemy_id)`（数**这个敌人声明过几个发射口槽**），
+卡侧取 **`max(活子敌人, 声明槽数)`** 当 `n` 喂给 `yk_kill_burst_count()` ⇒ 不同小怪按各自使魔数
+给 `2n+10`（上限 26）；并加一行日志（只记一次）把两个数都打出来，便于实跑对账。
+
+### 3. 还有一条一手来源**没做**（可能就是 owner 想说的那件事）
+
+一手在「**消弹**」那一路也会吐刻符：`th08:0x4308e5` 一族（`BulletManager` 消弹）+
+炸弹消弹区那一支（`th08:0x431650`：`eax == 2` 时按 `ds:0x18b8988 == 9 ? 2 : 1` 颗 type 7）
+⇒ **数量随周围弹数/`ds:0x18b8988` 变**（这才是「差得很多」的那种来源）。
+本卡至今**未实现这一族**（登记在 §BE #136 §8 ❓ 的老账里）。要接就得先定「消弹」在 TH18 的判据点。
+
+闸：`make -s check` rc=0（`youkai_core: 5261 checks, 0 failed`；x87 = 0；33 个 BP_* 双向一致；
+生成物无漂移；404 个文档全过）。

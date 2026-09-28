@@ -415,6 +415,20 @@ unsigned yk_map_fam_count(const yk_map_t *m)
     return n;
 }
 
+unsigned yk_map_enemy_slots(const yk_map_t *m, uint32_t enemy_id)
+{
+    /* ★★★ 2026-09-27（第四十六批 · owner：「**不同小怪爆的永点数量似乎应当是不一样的**」）：
+     *   数「这个敌人**声明过**几个发射口槽」—— 它才是 TH08 `Enemy::sub_41fd40`（ExpHP 名
+     *   `__possibly__get_familiar_count`）那个「使魔数」在本作的对位：一手死亡撒点的颗数
+     *   `[ebp-0x2c] = f(使魔数)`（`th08:0x42aece`–`:0x42af45` 三条 shottype 分支，见
+     *   `yk_kill_burst_count` 的注）。只用「我们真建出来的活子敌人」数会**偏少**
+     *   （与敌人重合的发射口按规则不建使魔 ⇒ 那些槽一颗都不算）⇒ 不同小怪之间的颗数差别被压平。*/
+    unsigned i, n = 0;
+    if (!m || !enemy_id) return 0;
+    for (i = 0; i < YK_FAM_MAX; ++i) if (m->e[i].enemy_id == enemy_id) ++n;
+    return n;
+}
+
 unsigned yk_map_heals(const yk_map_t *m)
 {
     return m ? m->heals : 0u;

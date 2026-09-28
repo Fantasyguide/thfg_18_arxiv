@@ -1083,6 +1083,9 @@ int        yk_map_is_fam(const yk_map_t *m, uint32_t fam_id);
 
 void       yk_map_reset(yk_map_t *m);
 unsigned   yk_map_fam_count(const yk_map_t *m);
+/* ★ 2026-09-27（第四十六批）：这个敌人**声明过几个发射口槽**（= TH08「使魔数」在本作的对位；
+ *   死亡撒点的颗数公式吃它 —— 见 `.c` 的同名函数注）。*/
+unsigned   yk_map_enemy_slots(const yk_map_t *m, uint32_t enemy_id);
 yk_slot_t *yk_map_find(yk_map_t *m, uint32_t enemy_id, int slot);
 yk_slot_t *yk_map_find_fam(yk_map_t *m, uint32_t fam_id);
 void       yk_frame_begin(yk_map_t *m);

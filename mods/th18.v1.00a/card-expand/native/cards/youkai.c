@@ -1969,6 +1969,7 @@ typedef struct {
     uint8_t  _pad;
 } yk_orb_t;
 
+static uint8_t s_kill_slots_logged;                    /* ★ 第四十六批：只记一次（颗数改用「声明过的发射口槽数」）*/
 static unsigned s_spiral_orbs;                       /* ★ 2026-09-27（第四十四批 · owner：「打 boss 的螺旋
                                                        *   和逢魔状态没关系，是**固定撒的**」）：螺旋这一路
                                                        *   累计撒了几颗 —— 判据 = 一轮满额应当 ≈935，
@@ -2882,6 +2883,25 @@ static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
                     cx[n - 1] = cp ? cp[0] : ev->x;
                     cy[n - 1] = cp ? cp[1] : ev->y;
                 }
+            }
+        }
+        /* ★★★ 2026-09-27（第四十六批 · owner：「不同小怪爆的永点数量似乎应当是不一样的」）：
+         *   颗数公式吃的是「**这个敌人的使魔数**」（一手 `th08:0x41fd40` = ExpHP 的
+         *   `__possibly__get_familiar_count`）。我们原来只用「自己真建出来的活子敌人个数」
+         *   ⇒ 与敌人重合、按规则不建使魔的那些发射口**一颗都不算** ⇒ 不同小怪之间的差别被压平。
+         *   现在取 **max(活子敌人, 声明过的发射口槽)**：后者才是「这个敌人本来有几台使魔」。*/
+        {
+            unsigned slots = yk_map_enemy_slots(&s_map, ev->id);
+            if (slots > n) {
+                if (!s_kill_slots_logged) {
+                    s_kill_slots_logged = 1;
+                    ce_log("youkai: kill burst count uses the enemy's DECLARED emitter slots "
+                           "(enemy #%u: %u slot(s) vs %u live child part(s)) - TH08's count formula "
+                           "reads `Enemy::sub_41fd40` = the familiar count (`th08:0x42adc4` gate + "
+                           "`2n+10` cap 26), so different enemies give different amounts",
+                           ev->id, slots, n);
+                }
+                n = slots;
             }
         }
         n2 = (int)yk_kill_burst_count(n);
