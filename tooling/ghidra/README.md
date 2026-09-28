@@ -227,9 +227,12 @@ tooling/ghidra/run.sh local/th18.v1.00a/th18.exe tooling/ghidra/scripts/list_fun
 `scripts/` 里的 `apply_th16_*_names.py` 是**唯一能给数据符号真改名**的途径
 （MCP 的 rename 对数据符号需经 driver 落盘），且 headless 可复现。
 
-## 没有社区金矿的新作（TH20）：RTTI + assert 锚点 + 反编译语料库
+## 没有社区金矿的新作（TH20 / TH19）：RTTI + assert 锚点 + 反编译语料库
 
-TH20《錦上京》2025-08 才出，`local/vendor/th-re-data/th20.v1.00a` **不存在**（TH06–TH17 都有），
+> ⚠️ 这一节的脚本文件名叫 `th20_*`，但**全都是版本参数化的**（`--version th19` / `--version th09.v1.50a` …），
+> 名字只是历史遗留（先给 TH20 写的）。TH19 用的是同一套链子。
+
+TH20《錦上京》2025-08 才出，`local/vendor/th-re-data/th20.v1.00a` **不存在**（TH06–TH18.5 都有），
 所以 `bootstrap.py` 的第 2–5 步全空转，库里 7315 个函数只剩 C++ 库的 FID 名
 （`games/th20.v1.00a/INDEX.md` §2c 记了这条限制）。但 ZUN 把**两样命名金矿**编进了 exe：
 
