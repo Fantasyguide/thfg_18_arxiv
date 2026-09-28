@@ -1004,7 +1004,7 @@ void ce_hud_vm_text_set_font(ce_hud_vm_text_t *t, float x, float y, uint32_t bgr
             /* ★ 第 52 轮（owner：「`.` 得往左移动，其他字符不要移动」）：**只把点这一格往左挪**
              *   （贴图里点的墨迹居中，字格又宽 ⇒ 看着离前一个数字太远）。步进 `adv` 不动 ⇒
              *   后面的字符位置一个都不变。挪动量 = 1.5 × `adv_dot` 的屏幕量（≈12 px @1280）。*/
-            pos[0] = pen - ((*p == '.') ? f->adv_dot * 1.5f * sx * dat : 0.0f);
+            pos[0] = pen - ((*p == '.') ? f->adv_dot * 1.0f * sx * dat : 0.0f);   /* ★ 第 54 轮：1.5 → 1.0（owner：「有点过左了」）*/
             pos[1] = ytop + f->vm_dy * sy * dat; pos[2] = 0.0f;
             if (*id && !ce_anm_get_vm(*id)) { *id = 0; t->shown[slot] = 0; }
             if (!*id) {
