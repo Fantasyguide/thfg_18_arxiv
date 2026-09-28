@@ -13,8 +13,12 @@
 | 本仓副本 | `local/th20.v1.00a/th20.exe` + `th20.dat`（`local/*` 已 gitignore ⇒ 不入库）|
 | exe | `th20.exe` **1,858,560 B**，md5 **`f6bdf3535813a5d8c29a1ec429c72934`** |
 | 数据 | `th20.dat` 150,943,726 B（144 MB）；同目录另有 `thbgm.dat` / `custom.exe` / `omake.txt` / `readme.txt` |
-| Ghidra 工程 | ⏳ **未建**（建法：`source tooling/env.sh` 后 `python3 tooling/ghidra/bootstrap.py th20.v1.00a`）|
-| 符号导出 | ⏳ 未做（建库后 `tooling/ghidra/symbols.py export th20.v1.00a` ⇒ `games/th20.v1.00a/symbols.json`）|
+| Ghidra 工程 | ✅ **已建**：`local/th20.v1.00a/ghidra_projects/th20.exe.gpr`（`bootstrap.py th20.v1.00a` 5 步全过）|
+| MCP `database_id` | `th20.v1.00a` |
+| exe 内函数总数 | **7315**（已命名 **1120** / 🔬 真·待挖 **6195**）|
+| dump | `local/th20.v1.00a/th20.v1.00a-funcs.json`（7315 个）|
+| SJIS 字符串导入 | `[sjis] found=62 applied=62 already=0 occupied=0 failed=0` |
+| 符号导出 | ⏳ 未做（**干完活记得**：`tooling/ghidra/symbols.py export th20.v1.00a` ⇒ `games/th20.v1.00a/symbols.json`）|
 
 > ⚠ 样本是 ZUN 版权商业软件：**只放 `local/`，永不入库**；本文件里只记「路径 + md5 + 尺寸」这类事实。
 
@@ -39,11 +43,21 @@
    gate / 动态 / mode 这些**完全照抄**。
 4. **118 / 119 空号不动**。★ **本阶段仅调研** ⇒ 只建工程 + 挖表 + 结论回流 `engine/`，**不写实现**。
 
+### 2c. 已知限制：**没有社区命名可比对**（TH20 太新）
+
+`tooling/ghidra/build_worklist.py th20.v1.00a` **跑不了** —— 它要 `local/vendor/th-re-data/th20.v1.00a`
+（ExpHP 的逐版本 funcs/statics/结构体），而**这一作还没有**（TH06–TH17 都有，TH20 没）。
+⇒ 影响：① 生成不了 `games/th20.v1.00a/unexplored.md`（自动待挖清单）；② 建库时「套 ExpHP 名」那一步跳过
+（`bootstrap` 已提示 `th-re-data（缺失,跳过命名）`）。
+⇒ **唯一后果是「函数名全靠我们自己起」**（比 TH16/TH18 那些辛苦一点），**不影响挖**：
+直接按地址读反汇编 + 用 MCP 只读工具即可（工具目录见 `tooling/ghidra/mcp-tools.md`）。
+⚠ 若哪天社区出了 th20 的 re-data，放进 `local/vendor/th-re-data/` 再重跑 `bootstrap` 就能补上命名。
+
 ## 3. 覆盖统计（挖了多少）
 
 | 子系统 | 状态 |
 | --- | --- |
-| 样本 / 工程 | ✅ 样本已入 `local/`；⏳ 工程未建 |
+| 样本 / 工程 | ✅ 样本已入 `local/` + ✅ 工程已建（7315 函数，命名 1120，待挖 6195）|
 | 玩家（移动 / 射击 / 子机）| ⏳ 未挖 |
 | 异变石（装备表 / 数量 / 通关奖励）| ⏳ 未挖 |
 | 异变攻击（槽 / 样式表 / 抵消 Miss 的窗口）| ⏳ 未挖 |
