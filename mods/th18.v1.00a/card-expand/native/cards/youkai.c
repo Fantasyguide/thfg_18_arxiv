@@ -5298,7 +5298,16 @@ static int on_tick_2(ce_card_t *c)
                    (unsigned)s_hs_release_n);
             yk_option_release(c, s);
         }
-        s_natopt_probe_done = 0;      /* ★ 诊断：下次再进妖侧再打一行 */
+        /* ★★★ 2026-09-27（第四十二批 · **日志洪水 + 白干活**）：这一行原来无条件跑 —— 它坐在
+         *   **高速（人侧）的每帧**路径里 ⇒ `s_natopt_probe_done` 每帧被清 0 ⇒ 上面那个
+         *   「native option slots at HIGH speed」探针**每帧**都重新探、并打 **5 行**日志
+         *   （实测 owner 那一局：几分钟 1.5 MB、日志里 90% 是它；`ce_log` 每行都 open/write/close）。
+         *   原意是「**每进一次妖侧**打一行（**离开时**复位）」⇒ 改成只在**妖→人的边沿**复位。*/
+        {
+            static uint8_t s_natopt_focus_prev;
+            if (s_natopt_focus_prev && !focused) s_natopt_probe_done = 0;   /* 只在这一帧复位 */
+            s_natopt_focus_prev = (uint8_t)(focused ? 1 : 0);
+        }
     }
     yk_familiars_tick(s);
     /* ★★ 2026-09-26（owner：那声切换音「**在有使魔的情况下才有**」）：人→妖那一下的 `se_ophide`

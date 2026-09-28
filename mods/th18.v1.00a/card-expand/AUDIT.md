@@ -24800,3 +24800,24 @@ youkai: gauge=-10000 piv=101040 … fengma=1 fscore=73100  shoot=1 …
 那 `shoot=1` 就说明 `CE_INPUT_HELD()`（`engine.h` 的 `CE_ADDR_INPUT_HELD`）读到的位卡住了
 ⇒ 那是**另一个 bug**（槽会被永久推向当前侧 ⇒ 永远逢魔）。判据：台账里 `shoot=` 恒 1 且
 `gauge` 恒在某一极。**本轮台账加了 `score=`/`dscore=`，下一条台账就能同时看出这两件事。**
+
+## §BE 详录 #143（2026-09-27 第四十二批）：日志洪水（每帧 5 行）—— 探针的复位写在了每帧路径里
+
+> **由来**：owner「总之不崩了」之后我读他那一局的日志做验收 —— 1.5 MB / 几分钟，90% 是
+> `youkai: native option slots at HIGH speed - N/4 live` + 4 行 `native opt slot k: …`。
+
+**真因**：那一段探针**本身**的门是对的（`if (!focused && !s_natopt_probe_done)`，
+`youkai.c` 的 `s_natopt_probe_done` 注释写着「每进一次妖侧打一行（**离开时复位**）」），
+但**复位那一行被放在了高速（人侧）的每帧路径里**（同一个 `if (!focused)` 块内、
+`yk_option_release` 兜底之后）⇒ 它每帧把标志清 0 ⇒ **下一帧又探一次** ⇒ 高速时每帧 5 行日志。
+`ce_log` 每行都 `open/write/close`（必 flush）⇒ 这既是日志洪水，也是**每帧 5 次文件写**的开销。
+
+**改法**：复位改成只在**妖→人的边沿**（一个静态 `s_natopt_focus_prev`）——
+语义回到注释里写的那个「离开时复位」，探针恢复成「每进一次妖侧一行」。
+
+**验收判据**：新一局里 `native option slots at HIGH speed` 应当**只在松 Shift 那一帧出现一次**
+（而不是每帧）；日志体积随之从「几分钟 MB」降到正常量级 —— 这也直接改善以后每一局的取证质量
+（`site:` 那条轨迹行是 SDK 的**崩溃取证**设计（「命中站点与上次不同就打一行」，
+崩溃前最后一行点名站点），站点顺序每帧都在轮转 ⇒ 它仍会刷；那一条属于 SDK 层，本轮不动）。
+
+闸：`make -s check` rc=0（`youkai_core: 5254 checks, 0 failed`；x87 = 0）。
