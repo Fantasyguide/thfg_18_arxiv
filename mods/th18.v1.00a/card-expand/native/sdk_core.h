@@ -730,7 +730,11 @@ void ce_hud_slots_reset(void);                                  /* 清空全部�
  * 由 `sdk.h` 的 `ce_hud_slot_claim_card()` 在**每次认领前**把 `CE_CURRENT_STAGE()` 推进来：
  * 关卡号变了 ⇒ 先 `ce_hud_slots_reset()` 再认领 ⇒ 上一关被删卡留下的占位自然收敛，
  * 而**同一关内**（局中删卡）一笔都不重排（§4.4：避免整摞 UI 突然跳动）。
- * ⚠ 不能拿 `on_run_reset`（`+0x4c`）当关卡信号：它由 `recount 0x4080e0` 调，**局中删卡后也会跑**。*/
+ * ⚠ 不能拿 `on_run_reset`（`+0x4c`）当关卡信号：它由 `recount 0x4080e0` 调。
+ * ★ 2026-09-27 订正（一手反汇编 + 实跑日志）：`recount 0x4080e0` 的**唯一**调用点是 `0x4433e2`
+ *   （`GameThread__teardown_and_recount_cards` 里 gamemode **10/11** 那一支）⇒ 它跑在
+ *   **「重开本局」那一刻**，不是「局中删卡」；局中删卡走 `+0x50`（`operator_delete`）。
+ *   本注释旧稿写的「局中删卡后也会跑」与一手不符（实跑 162k 行日志里 `+0x4c` 只出现 1 次）。*/
 void ce_hud_stage_begin(int stage);
 int  ce_hud_stage_current(void);                                /* 记住的关卡号（-1 = 还没认领过）*/
 /* 认领（幂等）。成功返回 1 并填 *out；卡 id 非法 / blk 非法返回 0。

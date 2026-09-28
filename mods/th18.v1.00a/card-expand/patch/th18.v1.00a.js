@@ -1496,6 +1496,12 @@
       "expected": "ff77088b0d5cf65100",
       "title": "行为 SDK → BP_ce_bullet_damage_final：PlayerBullet__create 0x45e320 的**卡链遍历出口**：0x45e7dc mov eax,[0x4cf298]（ABILITY_MGR）→ 0x45e7e4 mov esi,[eax+0x1c]（卡链头）→ 0x45e7e9 je 0x45e7ff（**没卡也跳这里**）→ 0x45e7f0 mov ecx,[esi] / 0x45e7f2 push edi（bullet）/ 0x45e7f5 call [eax+0x28] / 0x45e7f8 mov esi,[esi+4] / 0x45e7fb test esi,esi / 0x45e7fd jne 0x45e7f0 —— **五家（含原生 25 Saki 0x40c310 / 54 Momoyo 0x411010）全跑完**。覆盖字节 = `ff 77 08`（push [edi+8]）+ `8b 0d 5c f6 51 00`（mov ecx,[0x51f65c] = ANM_MANAGER_PTR，下一条 0x45e808 call 0x488b40 = AnmManager__get_vm_with_id），两条都无相对寻址；窗内无跳转靶（0x45e7e9 的 je 落在**站点本身** ⇒ 跳到站点 = 走断点，合法）；EDI 此刻仍是 bullet（0x45e837 才 push [edi+0x9c] 把它交给伤害源 0x45dfa0），ESI/EDX 已换用 ⇒ **只信 EDI**。\n为什么在这里：我们的倍率原来落在**同槽** `+0x28` 的桩里，而原生 25/54 是**从 shooter 重算**派 ⇒ 谁在链里靠后谁说了算，我们的 ×1.25 会被**静默抹掉**（卡链顺序 = 获得/存档顺序，不可控）。搬到遍历出口 = 永远乘在**别人的最终值**上（语义 = 乘法叠加，×1.25 × 1.4 = ×1.75，不是覆盖）。\n★ **不重复施加**：本站点是**唯一**落笔点 —— `CE_CARD` 的 `+0x28` 桩不再缩放（普查：全 exe `call [reg+0x28]` 8 处，只有 0x45e7f5 在卡链上，其余 7 处是别的对象类型）⇒ 不需要「本帧是否已施加」的标记，也就没有标记失效这一档。详见 BP30-IMPLEMENTATION.md §1"
     },
+    "ce_graze": {
+      "addr": "0x42497f",
+      "cavesize": 5,
+      "expected": "a1bcf24c00",
+      "title": "行为 SDK → BP_ce_graze：FUN_004248a0（子弹判定）的**擦弹路径**、引擎自己算完一次擦弹之后那一条（单条 5 字节，无相对寻址）：`mov eax,ds:0x4cf2bc`。ESI = 刚被擦到的弹（`0x42496f` 判过 `[esi+0x20] & 4` 没擦过、`0x424984` 才置位），位置在 `esi+0x638` ⇒ handler 只记标量并返回 BP_EXEC_ORIGINAL。消费者 = 108（擦弹刻符撒在弹的位置）与 116（季节点同）。"
+    },
     "ce_bullet_hit": {
       "addr": "0x45f466",
       "cavesize": 8,

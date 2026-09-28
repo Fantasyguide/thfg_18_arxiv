@@ -1832,6 +1832,15 @@ int ce_graze_take(float *x, float *y)
     return n;
 }
 
+/* ★ 2026-09-27（第三十九批）：**只读**版（不消费）—— 见 `sdk.h` 的同名注释：
+ * 108（擦弹刻符的落点）与 116（季节点）会在同一帧读同一个事件，用 `take` 会互相偷数据。*/
+int ce_graze_peek(float *x, float *y)
+{
+    int n = s_graze_pending;
+    if (n > 0) { if (x) *x = s_graze_x; if (y) *y = s_graze_y; }
+    return n;
+}
+
 /* ---- 低速子机声明层的落笔分派（spec §3.3.1；层 = sdk_core 的 `ce_optpose_*`）----
  * 每帧恰好跑一次：① 问层「本帧谁落笔、上一帧的落笔者在不在」；② **退位通知**（上一帧落笔者这一帧没赢
  * ⇒ 叫它一次，让它把子机收干净）；③ 叫本帧落笔者一次（申请 / 逐格写偏移 / 贴图）。
@@ -2559,6 +2568,11 @@ int __cdecl BP_ce_bullet_hit(x86_reg_t *regs, void *bp_info)
             ev.special    = *(const int32_t *)(src + 0x98);          /* 特殊 handler 索引（**别当判据**）*/
             ev.x          = *(const float *)(src + 0x1c);
             ev.y          = *(const float *)(src + 0x20);
+            /* ★ 2026-09-27（第三十九批）：敌机位置 —— 长光源（激光/束）的源中心在**膛口**，
+             *   卡侧要用它把落点换到真正的命中处（见 `public.h` 同名字段与 `yk_hit_orb_use_enemy_pos`）。
+             *   ⚠ `esi` 是本迭代的敌指针（已在入口判非 0），这里只在回调内读一次。*/
+            ev.ex         = *(const float *)((const uint8_t *)(uintptr_t)regs->esi + CE_ENEMY_POS_X);
+            ev.ey         = *(const float *)((const uint8_t *)(uintptr_t)regs->esi + CE_ENEMY_POS_X + 4);
             ev.enemy      = (void *)(uintptr_t)regs->esi;            /* ⚠ 只在本次回调内有效 */
         }
         unsigned guard = 0;
@@ -2818,6 +2832,9 @@ int ce_sdk_setup(uint8_t *base, int trace)
         /* ★ 2026-09-27（108 · owner「3 可以贴一手，关键在站点写法」）：一发自机弹 × 一个敌机的命中。
          *   机制全文 = `BP_ce_bullet_hit` 的注释（唯一出处）。*/
         { "ce_bullet_hit",  CE_BP_BULLET_HIT_RVA,  8 },
+        /* ★ 2026-09-27（第三十九批）：**放回**（原 2026-09-10 的 park 理由已被别处的定案取代，
+         *   五项窗口检查全绿）—— 108 的擦弹刻符要撒在**被擦到的那颗弹**上，116 的季节点同。*/
+        { "ce_graze",       CE_BP_GRAZE_RVA,       5 },
         /* ⛔ ce_death_result：站点仍在 park */
         /* ★ 2026-09-16（111 魔理沙侧「原生子机不许出现」）：`sdk.c` 上面那一大段。
          *   两条都**必须**在这里：少一条 = 静默失效（①不拦 ⇒ 原生子机照建照画；②不拦 ⇒

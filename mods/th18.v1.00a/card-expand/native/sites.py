@@ -1204,12 +1204,25 @@ SDK_SITES = [
      "popf/popa → 回放原指令 → jmp 站点+len ⇒ cave 里 ESP = 站点处 ESP），与已实跑的 `ce_option_shot_gate`"
      "（窗内含 `sub esp,0xc`）、`ce_shop_bought`（窗内三条 push）同机制。\n"
      "本站点**只记事实、不改控制流**：返回 BP_EXEC_ORIGINAL，原两条指令原样回放，`test` 设的 ZF 正好给 0x45c12d 用。"),
-    # ★ 2026-09-10（天空璋卡）：引擎自己算完一次**子弹擦弹**之后那一条。ESI = 刚被擦到的弹
-    # （0x42496f 已判过 `[esi+0x20] & 4` 没擦过、0x424984 才置位），位置在 esi+0x638。
-    # 卡用它把季节点撒在**弹的位置**上（此前只能扫弹池猜「最近的已擦弹」，会撒到自机背后）。
-    # ⚠️ 2026-09-10 临时摘掉（二分「游戏打不开」）：先确认它是不是元凶，确认后再放回。
-    # ("ce_graze", 0x42497f, 5, "a1bcf24c00",
-     # "FUN_004248a0 的子弹擦弹路径 …"),
+    # ★★★ 2026-09-27（卡 108 第三十九批 · owner 实跑：「**妖逢魔即使在 boss 也不生成永点**」）：
+    #   **把这条 2026-09-10 起 park 的站点放回发布面**。原 park 理由逐字：「临时摘掉（二分
+    #   「游戏打不开」）：先确认它是不是元凶，确认后再放回」—— 那次启动崩溃后来定案在**别处**
+    #   （§BE-EG/§BE-ER 的更新链节点悬垂，`ce_chain_node_guard` 才是止血点），本站在那份名单里
+    #   从未被坐实；放回前逐项过 `sitecheck.py 0x42497f 5`：**W1/W2/W3/R/W4 五项全绿**
+    #   （5 字节、恰好一条整指令 `a1 bc f2 4c 00` = `mov eax,ds:0x4cf2bc`、窗内无分支、
+    #    handler 返 `BP_EXEC_ORIGINAL`、零重叠），`sites.py verify` 也过（expected == exe 字节）。
+    # ★ 为什么 108 需要它：一手擦弹刻符撒在**被擦到的那颗弹**的位置（`th08:0x44a930` 的 pos 参数
+    #   = 弹的坐标），而此前拿不到那颗弹 ⇒ 我们只能撒在**自机身上** ⇒ 距离 0 < 抓取盒 20/24
+    #   ⇒ 擦弹刻符**当帧就被收掉**（state 5 上抛期间可收）⇒ 屏幕上什么都看不见 = owner 报的现象。
+    #   ESI = 刚被擦到的弹（`0x42496f` 已判过 `[esi+0x20] & 4` 没擦过、`0x424984` 才置位），
+    #   位置在 `esi+0x638`（`CE_BULLET_POS`）；卡用 SDK 的 `ce_graze_take(&x,&y)` 取。
+    # ⚠ 同时修好 116（季节卡）：它的季节点本来就该撒在弹上，站点 park 期间那条功能**静默失效**
+    #   （代码里写着「改读引擎自己的擦弹断点 `0x42497f`」，而站点不在 patch 里 ⇒ `ce_graze_take` 恒 0）。
+    ("ce_graze", 0x42497f, 5, "a1bcf24c00",
+     "FUN_004248a0（子弹判定）的**擦弹路径**、引擎自己算完一次擦弹之后那一条（单条 5 字节，"
+     "无相对寻址）：`mov eax,ds:0x4cf2bc`。ESI = 刚被擦到的弹（`0x42496f` 判过 `[esi+0x20] & 4` "
+     "没擦过、`0x424984` 才置位），位置在 `esi+0x638` ⇒ handler 只记标量并返回 BP_EXEC_ORIGINAL。"
+     "消费者 = 108（擦弹刻符撒在弹的位置）与 116（季节点同）。"),
     # ★★ 2026-09-16ze（头号崩溃的止血点 + 取证；机制全文 = `sdk.c` 的 `BP_ce_chain_node_guard`，唯一出处）：
     # ⚗ 2026-09-16zn 二分：站点从 0x401352（`mov eax,[edi+8]; call eax`，**在 call 之前**）挪到
     # `0x401357`（`cmp byte [0x5217be],0`，7 字节、esp 中性、**在 call 之后**）—— 这样 handler
@@ -1323,6 +1336,8 @@ _SDK_KEEP_NAMED = {
                                       #   它被截掉 = 所有走伤害层的卡**静默失效**（古锭刀/衔尾蛇/季节/测试卡 200…）
     # ★ 2026-09-27（108）：一发自机弹 × 一个敌机的命中（一手：極人 + 每发命中 ⇒ 掉 1 颗刻符）
     "ce_bullet_hit",                  # 0x45f466：`enm_compute_damage_sources` 的「新命中」点
+    # ★ 2026-09-27（108/116）：引擎自己的子弹擦弹事件（坐标 = 被擦到的那颗弹）
+    "ce_graze",                      # 0x42497f：放回发布面（见上面那一段的放回论证）
 }
 # 过滤**之前**的全表（含 park 的）—— `tools/sitecheck.py` 的体检要连 park 的一起查：
 # park = 没进 patch = 现在没装，所以本身没风险；但**一旦放回发布面**，用的就是这一份声明。
@@ -1748,6 +1763,7 @@ def emit_header(sites, unlock_reads, order_sites, menu_binhacks):
               "#define CE_BP_ITEM_COMMIT_RVA 0x%06x" % (_sdk_rva("ce_item_commit") - 0x400000),
               "#define CE_BP_SHOT_DAMAGE_RVA 0x%06x" % (_sdk_rva("ce_shot_damage") - 0x400000),
               "#define CE_BP_BULLET_HIT_RVA 0x%06x" % (_sdk_rva("ce_bullet_hit") - 0x400000),
+              "#define CE_BP_GRAZE_RVA 0x%06x" % (_sdk_rva("ce_graze") - 0x400000),
               "#define CE_BP_BOMB_GATE_RVA 0x%06x" % (_sdk_rva("ce_bomb_gate") - 0x400000),
               "#define CE_BP_PLAYER_DIE_RVA 0x%06x" % (_sdk_rva("ce_player_die") - 0x400000),
               "#define CE_BP_SHOT_SET_INDEX_RVA 0x%06x" % (_sdk_rva("ce_shot_set_index") - 0x400000),

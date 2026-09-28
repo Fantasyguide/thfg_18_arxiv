@@ -1434,6 +1434,20 @@ void    yk_piv_spell_bonus(int32_t *piv, int32_t count);
  *     110/111 的 `faith_hud_maxpoint()` / 112–117 的 `ce_piv_add` 都读它）。
  * **上限**（§BE #43 口径 2 逐字：「**PIV 无原生上限** ⇒ 用 int32 安全上界（防溢出成负数），别去找 clamp」）
  *   ⇒ 本卡的「可写上限」= 该安全上界，`ce_piv_claim()` 自己会夹到 `0x7ffffffe`。*/
+/* ★★★ 2026-09-27（第三十九批 · owner 实跑：「魔理沙人激光的永点生成位置**明显偏离 hit 位置**」）：
+ *   **长光源命中时的落点判据** —— 一手那条（`th08:0x451886 add edx,0x2a4`）撒在**那颗弹**的位置上；
+ *   普通弹的源槽中心就是弹的位置 ✓，但**`mode=2` 激光 / 束**的源槽中心是**膛口**
+ *   （弹的 tick `0x45efd2`–`0x45efe3` 每帧把 `bullet+0x48` 同步进源槽 —— 激光的 `+0x48` 不动，
+ *   长度写在 `+0xa0`（`CE_PB_LASER_LEN`）里），而**命中发生在束打到敌机那一点** ⇒
+ *   照抄「弹的位置」就会把永点撒在自机身上（=owner 看到的现象）。
+ *   ⇒ 判据：**源槽中心离被命中敌机 > 阈值** ⇒ 落点改用**敌机位置**（= 视觉上的命中处）；
+ *     否则一律用源槽中心（保持「撒在弹上」的一手口径）。
+ *   ⚠ 阈值 64 px 是 **❓ 自定**：普通弹命中时两者通常差 < 30 px（弹贴在敌机判定上），
+ *     激光差几百 px ⇒ 64 这个数把它们分得很干净；改它只影响这一处落点。*/
+#define YK_HIT_ORB_FAR_DIST 64.0f
+/* `dx`/`dy` = 源槽中心 − 敌机位置（像素）。返回 1 = 用**敌机位置**当落点（长光源那种）。 */
+int yk_hit_orb_use_enemy_pos(float dx, float dy);
+
 #define YK_PIV_POOL_CAP 0x7ffffffe
 /* 本帧应当往池里补多少（= 目标额外量 − 本卡已写量；不倒扣、不为负）。见 `.c` 的实现注释。*/
 int32_t yk_piv_pool_step(int32_t extra, int32_t written);
@@ -1562,7 +1576,15 @@ unsigned yk_kill_ring_count(unsigned chain_n);    /* 被杀者自己那一环：
  *     （= 我们的 `YK_ORB_STATE_SPAWN`：先上抛、`vy > 0` 才转归航；上抛期间**进不了收集判定**）。
  *
  * 下面两个纯函数把「角度」与「每批颗数」抽出来，便于主机单测与卡侧共用（无浮点库调用）。*/
-#define YK_SPIRAL_BATCH_FRAMES 8        /* `0x41751a push 8`：每 8 帧一批 */
+/* ★★★ 2026-09-27（第三十九批 · **逐指令复核后的订正**，owner ③「螺旋并没有生成……只看到一股一股」）：
+ *   `0x41751a push 8` **不是批次周期** —— 它是 `Timer::current_is_gt(effect+0x338, 8)`
+ *   （`th08:0x4066c0`：`mov ecx,[eax+8] / cmp ecx,[ebp+8] / setg al / ret 4` —— 一次性的
+ *   「计时器 **> 8 帧**」起跑门槛，过了就永远成立），本作真正的「每 N 帧」助手是
+ *   `Timer::current_is_multiple_of`（`0x40ebc0`），这里**没调它**。⇒ 螺旋是**每帧都喷**：
+ *   θ 用 `Timer::get_current_f()`（= effect 的**帧龄**，每帧 +1）算 ⇒ **9°/帧、40 帧一圈**；
+ *   每帧一对（θ 与 θ+π）⇒ 两条臂相隔 20 帧相位、走同一个 40 槽环 ⇒ 20 帧铺满整圈。*/
+#define YK_SPIRAL_START_AGE    8        /* `0x41751a push 8` = `Timer::current_is_gt` 的实参：
+                                         *   帧龄 **> 8** 才开喷（闸在 `0x417533`）*/
 #define YK_SPIRAL_FIRST_MAX    7        /* `0x4175cc cmp ..,7 / jle`：同角一批至多 7 颗 */
 #define YK_SPIRAL_SECOND_N     6        /* `0x4176be cmp [ebp-8],6 / jge`：第二段固定 6 颗（+π）*/
 #define YK_SPIRAL_RADIUS       128.0f   /* `0x43000000`（`0x417593`）*/
@@ -1581,9 +1603,10 @@ int   yk_spiral_first_count(int quota);
  *   `yk_spiral_live_peak(13, 8, 65) = ceil(13×65/8) + 13 = 106 + 13 = 119`
  * 参数取值（逐条有据）：
  *   · `per_batch = YK_SPIRAL_FIRST_MAX + YK_SPIRAL_SECOND_N = 13`（一手 `0x4175cc` / `0x4176be`）；
- *   · `batch_frames = YK_SPIRAL_BATCH_FRAMES = 8`（一手 `0x41751a push 8`）；
- *   · `life_frames` = `YK_SPIRAL_LIVE_LIFE_FRAMES`（**❓ 自定估算**，见下）。*/
-#define YK_SPIRAL_LIVE_LIFE_FRAMES 65   /* ❓ 自定：一颗螺旋刻符的在飞时长估算 ——
+ *   · `batch_frames = 1`（**每帧一批** —— 见 `YK_SPIRAL_START_AGE` 那段订正）；
+ *   · `life_frames` = `YK_SPIRAL_LIVE_LIFE_FRAMES`（**❓ 自定估算**，见下）。
+ *   ⇒ `yk_spiral_live_peak(13, 1, 75) = 975 + 13 = 988` ⇒ 卡侧池取 **1024**。*/
+#define YK_SPIRAL_LIVE_LIFE_FRAMES 75   /* ❓ 自定：一颗螺旋刻符的在飞时长估算 ——
                                          *   上抛 `vy = −2.0−rand(0.2)`、每帧 `+0.05`
                                          *   ⇒ **40–44 帧**（一手 `th08:0x440740`），
                                          *   再按 `itemCollectSpeed = 10` px/帧 从**半径 128** 的环上
@@ -1591,6 +1614,14 @@ int   yk_spiral_first_count(int quota);
                                          *   ⚠ 与自机/ boss 的相对位置有关 ⇒ 这是**估算**，
                                          *   `peak=` 与 `full=` 两个台账字段才是实跑真值。*/
 int   yk_spiral_live_peak(int per_batch, int batch_frames, int life_frames);
+
+/* ★★★ 2026-09-27（第三十九批）：**一帧的吐出与账面**（一手逐指令，`0x4175cc`–`0x4176e1`）：
+ *   · 第一段：`k1 = min(额度, 7)` 颗（**同一角度**）⇒ 账面 `额度 -= k1`（`0x41762d`）；
+ *   · 第二段：**固定 6 颗**（`0x4176be cmp …,0x6`，**与额度无关**）角 = 第一段 +π；
+ *     账面**再**减 `k2 = min(额度_第一段之后, 7)`（`0x417682`/`:0x4176a9` 算了它、`:0x4176e1` 扣它）
+ *     —— ⚠ **不是减 6**：所以额度 ≥14 时每帧账面扣 14、实际吐 13 ⇒ 额度比颗数先耗尽。
+ * `*first_out`/`*second_out` = 这一帧两段各吐几颗；返回值 = 扣完之后的额度（夹到 ≥ 0）。*/
+int   yk_spiral_quota_step(int quota, int *first_out, int *second_out);
 
 /* ★★★ 2026-09-22（owner 口径细化 · 永点的两条来源）：**「自动吸收」= state 1（生成即满速归航）**。
  *

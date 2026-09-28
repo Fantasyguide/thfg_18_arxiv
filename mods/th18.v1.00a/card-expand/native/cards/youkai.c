@@ -225,6 +225,21 @@ typedef struct {
     int32_t       piv_base;            /* ★ §BE #122：难度初值（`yk_night_point_init`）—— 声明给计分层的是
                                         *   **`piv − piv_base`**（「额外」），池初值才是 0（owner 口径）*/
     int32_t       orbs;                /* 累计刻符数（一手公式里的 `total_time_orbs`，`th08:0x41825c`）*/
+    /* ★★★ 2026-09-27（第三十九批 · owner 实跑：「**一上来人妖槽就写着 004200 —— retry 不清空值的**」）：
+     *   共享池是**进程级 static**（`sdk_core.c` 的 `s_piv_pool`），全 exe 只有一个复位点
+     *   `ce_sdk_setup()` = **插件装载时一次** ⇒ **新局 / retry 都不会清**。两处后果：
+     *     · 屏上那个数（画的就是池）retry 之后仍是旧值；
+     *     · 更糟：池的**写入账**（`s_piv_wrote[108]`）同样不清 ⇒ 我们的
+     *       `yk_piv_pool_step(piv − piv_base, ce_piv_written(id))` 会认为「已经写够了」⇒
+     *       **retry 之后这个池再也不会因为本卡而涨**。
+     *   修法（**无损**：绝不替别的卡清池）：
+     *     ① `piv_pool_base` = **本卡复位那一刻的池值**（retry/换关/新局都复位）⇒ 显示画
+     *        `池 − 基线` ⇒ retry 之后立刻回到 `000000`；
+     *     ② `piv_wrote_shadow` = **本卡自己的写账**（跟着复位归零）⇒ 新的增量照常补进池
+     *        （SDK 内部那道 cap 账仍然由 `ce_piv_add` 自己记，互不干扰）。*/
+    int32_t       piv_pool_base;       /* 本卡复位那一刻的**池值**（显示 = `ce_piv_pool() − 它`）*/
+    int32_t       piv_wrote_base;      /* 本卡复位那一刻的**写账**（`ce_piv_written(108)`）——
+                                        *   有效已写量 = `ce_piv_written(108) − 它`（跟卡状态一起复位）*/
     int32_t       gauge;               /* 人妖槽（i16 语义；负 = 人侧、正 = 妖侧，量程 ±10000）*/
     uint16_t      gauge_focus_run;     /* 一手 `unkE2ad0`：聚焦状态**保持不变**的帧数（TH08 的 4 / 30 两档门）*/
     uint16_t      gauge_hold;          /* 一手 `unkE2ae8`：按住聚焦的帧数（爬升速率 = min(帧数/15, 21)）*/
@@ -1892,7 +1907,11 @@ static void *yk_player_anm(void)
  *     · ⇒ 稳态在飞 ≈ `13 × 65 / 8` ≈ **106 颗**（+ 最新一批的余量）⇒ 池 **128** 留了余量。
  *   ⚠ 64 那版会把螺旋**削掉约四成**（多出来的颗数静默丢进 `orb_full`）—— 那正是 owner 说的
  *     「渲染不出来」。现在实跑用台账的 `peak=` 复验：螺旋那一段应当打到 ~100，`full=` 不该明显涨。
- * ★★★ 2026-09-27（同一天 · owner 追加：「**池子改成 256 吧 —— 会增加负担吗？**」）：**128 → 256**。
+ * ★★★ 2026-09-27（同一天 · owner 追加：「**池子改成 256 吧 —— 会增加负担吗？**」）：**128 → 256**
+ *   —— 下午又按订正后的螺旋节奏再抬到 **1024**：螺旋是**每帧 13 颗**（不是每 8 帧一批，见 core 的
+ *   `YK_SPIRAL_START_AGE` 订正）、一颗在飞 ≈75 帧 ⇒ 稳态 `13×75 + 13 = 988` ⇒ 池取 **1024**
+ *   （256 那版会把螺旋削掉七成以上）。负担仍与「同时在飞颗数」成正比（见下面的分析），
+ *   且只在螺旋那 1.2 s 里逼近上限。
  *   **负担分析**（答案：**几乎不增加**；代价只跟「**同时在飞的颗数**」走，不跟池常量走）：
  *     · **静态内存**：`yk_orb_t` = 24 B ⇒ 64/128/256 格 = 1.5 / 3 / **6 KB**（模块级 static，
  *       不进卡状态 `CE_STATE_BYTES`）。
@@ -1905,7 +1924,7 @@ static void *yk_player_anm(void)
  *     · **对比**：TH18 自己也每帧画成百上千个弹/道具 quad；256 个额外 sprite ≈ 噪声。
  *   ⇒ 256 是**上限**，只有「螺旋（~119）+ 击破批 + 人逢魔每发命中」三路**同时**在飞才可能逼近它。
  * ❓ 池容量本身仍是**自定**（TH08 那边是 `ItemManager` 自己的道具池，我们不共享那个池）。*/
-#define YK_ORB_MAX            256
+#define YK_ORB_MAX            1024
 /* ❓ **自定：世界层**。TH08 的刻符是道具实体；TH18 里同档的是「场上实体」那一层 =
  *    6..11（`engine/anm/th18/02-render-stages.md`），使魔跟随 VM 用的就是 7（`YK_FAM_ANM_LAYER`）
  *    ⇒ 刻符同层。脚本自己没有 `layer()` ⇒ 这个参数是唯一的层来源。*/
@@ -1954,9 +1973,18 @@ typedef struct {
     float    vx, vy;
     uint8_t  state;       /* 一手：3 = 出生上浮（必转 1）、1 = 归航、0 = 下落（类 P 点）*/
     uint8_t  used;
-    uint16_t _pad;
+    /* ★★★ 2026-09-27（第三十九批 · owner：「**人逢魔生成的永点应该没有吸收过程**，或者吸收过程被
+     *   透明化，总之我目前能看见自动吸收过程」）：出生那一刻槽在**逢魔**档的刻符 ⇒ 上抛结束
+     *   （`vy > 0`）**直接吃掉**，不走「飞向自机」的那段路程（= owner 2026-09-27 更早的同一句口径
+     *   「下落一小段之后**直接消失**（= 直接吃掉）」）。⚠ 与一手的差别登记见 `TUNING.md`。*/
+    uint8_t  eat_at_toss;
+    uint8_t  _pad;
 } yk_orb_t;
 
+static unsigned s_fengma_eaten;                      /* ★ 2026-09-27（第三十九批）：**逢魔档的刻符在上抛
+                                                       *   结束那一帧直接入账**（不走「飞过来」那段）的次数
+                                                       *   —— owner 口径「自动吸收过程是指飞过来，生成部分
+                                                       *   原版还是能看见的」。*/
 static yk_orb_t s_orb[YK_ORB_MAX];
 static unsigned s_orb_live;                 /* 诊断用：当前活着几颗 */
 static uint8_t  s_orb_dying_edge;           /* 「损命当帧」的边沿闩（`§BE #112`，见 `yk_orbs_tick`）*/
@@ -2032,6 +2060,8 @@ static void yk_orb_spawn(yk_card_t *s, float x, float y, int state)
     /* 三种出生态：1 = 生成即满速归航、3 = 上抛**不可收**（击破批）、5 = 上抛**可收**（螺旋/擦弹）。*/
     o->state = (uint8_t)((state == YK_ORB_STATE_HOMING || state == YK_ORB_STATE_SPAWN5)
                          ? state : YK_ORB_STATE_SPAWN);
+    /* ★ 2026-09-27（第三十九批）：出生时槽在**逢魔**档 ⇒ 上抛结束直接吃掉（见 `yk_orb_t` 的注）。*/
+    o->eat_at_toss = (uint8_t)(yk_orb_instant_absorb((int)s->gauge) ? 1 : 0);
     o->x = x;
     o->y = y;
     /* 一手初速（`th08:0x4402cb`–`0x4402e9`）：`vx = rand(±0.6)`、`vy = −2.0 − rand(0.2)`。
@@ -2400,7 +2430,27 @@ static int yk_orbs_tick(yk_card_t *s)
             /* 出生上浮：`vy += 0.05`；`vy > 0` 那一刻转归航（一手 `th08:0x4406ac` / `:0x4406e4`）。
              * ⚠ 3 与 5 在这一支**逐指令同形**，差别只在下面那道「能不能收」的闸（§BE #111）。*/
             o->vy += YK_ORB_GRAVITY;
-            if (o->vy > 0.0f) o->state = YK_ORB_STATE_HOMING;
+            if (o->vy > 0.0f) {
+                /* ★★★ 2026-09-27（第三十九批）：**逢魔档的刻符「下落一小段之后直接消失」** ——
+                 *   owner：「人逢魔生成的永点应该没有吸收过程……我目前能看见自动吸收过程」＋更早的
+                 *   同一句口径「下落一小段之后**直接消失**（= 直接吃掉），而不是现在还走一个自动吸收
+                 *   的中间路程」。⇒ 上抛结束这一帧**当场入账**（PIV / 槽 / 弹字全按正常收下那一套走，
+                 *   见 `yk_orb_collect()`），跳过归航那一段。
+                 * ⚠ 只对**出生时槽在逢魔档**的刻符生效（`eat_at_toss`）—— 普通击破批/螺旋/擦弹照旧
+                 *   上抛 → 归航 → 被收（那几路的「看得见的吸收」是 owner 要的观感）。*/
+                if (o->eat_at_toss) {
+                    /* ★ owner 同一句的澄清：「**自动吸收过程是指飞过来，生成部分原版还是能看见的**」
+                     *   ⇒ 我们要的正是这个：**上抛那一段照画**（VM 一直在画），**飞向自机那一段不画**
+                     *   （上抛一结束就当场入账、VM 直接收掉）。下面这个计数就是实跑判据。*/
+                    ++s_fengma_eaten;
+                    yk_orb_collect(s, o->x, o->y);
+                    yk_orb_kill(o);
+                    if (s_orb_live) --s_orb_live;
+                    ++taken;
+                    continue;
+                }
+                o->state = YK_ORB_STATE_HOMING;
+            }
         }
         /* ★★★ 2026-09-27（§BE #123，owner「1 2 继续开工」的第 2 条）：**PoC 线以上自动收**。
          *   一手（`ItemManager::on_tick` 的 `else` 支，decomp 原文 —— 只对 **state 0/1** 生效）：
@@ -2504,39 +2554,49 @@ static void yk_spiral_tick(yk_card_t *s)
 {
     uint8_t *boss;
     const float *bp;
-    int k, i;
+    int k, k2, i;
     float th, cs, sn;
     if (!s || !s->spiral_quota) return;
-    if (s->spiral_t % YK_SPIRAL_BATCH_FRAMES) { ++s->spiral_t; return; }   /* 一手：每 8 帧一批 */
+    /* ★★★ 2026-09-27（第三十九批 · 逐指令复核后的订正）：**每帧都喷**，`t` = effect 的**帧龄**。
+     *   原来这里写的是「每 8 帧一批」（把 `0x41751a push 8` 当成周期）—— 那是 `Timer::current_is_gt`
+     *   的实参（一次性起跑门槛「> 8 帧」），于是我们把它做成了「每 8 帧在**一个角度**上叠一簇」
+     *   ⇒ owner 看到的就是「**一股一股**」而不是螺旋。订正全文 = `youkai_core.h` 的
+     *   `YK_SPIRAL_START_AGE` 那一段（含 `0x4066c0` 的 8 条指令）。*/
+    ++s->spiral_t;                                   /* 帧龄（一手：effect Timer 每帧 +1）*/
+    if (s->spiral_t <= YK_SPIRAL_START_AGE) return;  /* 一手 `0x41751a`/`:0x41752e`：> 8 才开喷 */
     boss = yk_boss();
     bp = boss ? ce_enemy_pos(boss) : 0;
-    if (!bp) { s->spiral_quota = 0; return; }        /* boss 没了 ⇒ 这一轮作废（下一次符卡重来）*/
-    yk_spiral_angle((int)s->spiral_t + 10, &th);     /* `t` 从 10 起算 ⇒ 第一批 = 正上方 */
-    k = yk_spiral_first_count((int)s->spiral_quota);
+    if (!bp) {
+        /* ★ 2026-09-27（第三十九批 · owner「**螺旋并没有生成**」的现场取证）：作废也要留一行 ——
+         *   否则「额度发了但 boss 没了」这条路上日志里一个字都没有（正是 owner 那种「什么都没有」）。*/
+        ce_log("youkai: spiral CANCELLED at batch %d - no boss on the field (%u orbs of quota left)",
+               (int)s->spiral_t, (unsigned)s->spiral_quota);
+        s->spiral_quota = 0;
+        return;                                      /* boss 没了 ⇒ 这一轮作废（下一次符卡重来）*/
+    }
+    yk_spiral_angle((int)s->spiral_t, &th);          /* `t` = **帧龄**（一手 `0x417565` 取的就是它）*/
+    /* 一帧的吐出与账面 = 一手 `0x4175cc`–`0x4176e1`（纯函数 + 单测在 core）：
+     * 第一段 `min(额度,7)` 同角 + 第二段**固定 6** 角 +π；账面扣 `min(额度,7)` 两次（最多 14/帧）。*/
+    s->spiral_quota = (uint32_t)yk_spiral_quota_step((int)s->spiral_quota, &k, &k2);
     cs = yk_cos_approx(th);
     sn = yk_sin_approx(th);
     for (i = 0; i < k; ++i)                          /* 第一段：同一角、k 颗 */
         yk_orb_spawn(s, bp[0] + cs * YK_SPIRAL_RADIUS, bp[1] + sn * YK_SPIRAL_RADIUS,
                      YK_ORB_STATE_SPAWN5);   /* ★ state 5：上抛但**可收**（一手见 core 的常量注）*/
-    if (k) s->spiral_quota = (uint32_t)((int)s->spiral_quota - k);
-    /* 第二段：**固定 6 颗**、角 = 第一段 **+π**（一手 `0x417639 push 0x40490fdb` = π；
-     * ⚠ 不是 π/2 —— `engine/item/th08/01-time-orbs.md` 的旧值已订正）。*/
+    /* 第二段：**固定 6 颗**（与额度无关）、角 = 第一段 **+π**（一手 `0x417639 push 0x40490fdb`）。*/
     cs = yk_cos_approx(th + 3.14159265f);
     sn = yk_sin_approx(th + 3.14159265f);
-    for (i = 0; i < YK_SPIRAL_SECOND_N; ++i)
+    for (i = 0; i < k2; ++i)
         yk_orb_spawn(s, bp[0] + cs * YK_SPIRAL_RADIUS, bp[1] + sn * YK_SPIRAL_RADIUS,
                      YK_ORB_STATE_SPAWN5);
-    s->spiral_quota = (s->spiral_quota > (uint32_t)YK_SPIRAL_SECOND_N)
-                        ? (s->spiral_quota - (uint32_t)YK_SPIRAL_SECOND_N) : 0u;   /* 夹到 0 */
     if (!s->spiral_logged) {
         s->spiral_logged = 1;
-        ce_log("youkai: spell-card break spiral ON (TH08 `Spellcard::sub_416b10`) - 8-frame batches, "
-               "9 deg/frame (40 frames per turn), radius 128 around the boss, %d same-angle orbs + "
-               "%d at +pi per batch; orbs spawn in state 5 = toss (NOT collectible until vy > 0 - "
-               "that is the 'invincible' in the owner report, not an invulnerability window)",
-               YK_SPIRAL_FIRST_MAX, YK_SPIRAL_SECOND_N);
+        ce_log("youkai: spell-card break spiral ON (TH08 `Spellcard::on_tick` 0x416b90) - EVERY FRAME: "
+               "min(quota,7) same-angle + 6 at +pi, 9 deg/frame (40 frames per turn), radius 128 "
+               "around the boss; quota 1000 = 72 frames / ~935 orbs; orbs spawn in state 5 = toss "
+               "(collectible during the toss - the 'invincible' in the owner report is the toss, "
+               "not an invulnerability window)");
     }
-    ++s->spiral_t;
 }
 
 /* ★★★ 2026-09-27（§BE #113）：**符卡口径的探针**（`TUNING.md` §2.0zy-ter 那道额度公式的前置作业）。
@@ -3029,7 +3089,9 @@ static void yk_night_text_sync(yk_card_t *s, const yk_gauge_hud_t *h, uint32_t c
      *   而不是 TH08 那个带难度初值（NORMAL 100000）的夜点本体 —— 后者正是 owner 说的「那个 100000 东西」。
      *   池 = Σ 各卡的 `ce_score_declare_delta()`（本卡那笔见 `on_tick_2` 里的声明）⇒ 与 110/111
      *   那一族「最大得点」**同一份数**（`cards/faith_hud.c` 的 `faith_hud_maxpoint()` 也是读它）。*/
-    n = yk_night_text_glyphs(ce_piv_pool(), g);
+    /* ★ 2026-09-27（第三十九批）：画的是**池 − 本卡复位时的基线** —— 池是进程级 static、
+     *   retry 不清 ⇒ 直接画池会让 retry 之后仍显示上一局的数（owner：「一上来人妖槽就写着 004200」）。*/
+    n = yk_night_text_glyphs(ce_piv_pool() - s->piv_pool_base, g);
     for (i = 0; i < YK_NIGHT_TEXT_MAX; ++i) {
         uint32_t id = s->hud_night[i];
         if (!id) continue;
@@ -3203,6 +3265,13 @@ static int on_ctor(ce_card_t *c)
      * 难度一手编码 = `CE_ADDR_DIFFICULTY`（0 EASY/1 NORMAL/2 HARD/3 LUNATIC/4 EXTRA），与 TH08 同序。*/
     s->piv = yk_night_point_init(*(const int32_t *)(uintptr_t)CE_ADDR_DIFFICULTY);
     s->piv_base = s->piv;              /* ★ §BE #122：这一格是**基准**，不进「额外最大得点」池 */
+    /* ★★★ 2026-09-27（第三十九批）：**retry / 新局的两条基线** —— 池与写账都是**进程级 static**
+     *   （唯一的复位点 `ce_sdk_setup()` 只在插件装载时跑一次）⇒ 这里各记一条基线，之后：
+     *   · 显示 = `ce_piv_pool() − piv_pool_base` ⇒ retry 之后立刻 `000000`（owner 报的 004200 消失）；
+     *   · 写账 = `ce_piv_written(id) − piv_wrote_base` ⇒ retry 之后本卡还能继续往池里补。
+     *   ⚠ **无损**：绝不去清那个共享池（别的卡 110/111/112–117 的贡献一个字节都不动）。*/
+    s->piv_pool_base  = ce_piv_pool();
+    s->piv_wrote_base = ce_piv_written(ce_card_id(c));
     if (!s->night_logged) {
         s->night_logged = 1;
         ce_log("youkai: night point init = %d (difficulty %d; TH08 `pointItemValue` globals+0x24, "
@@ -3813,12 +3882,27 @@ static int yk_on_shot_slot(ce_card_t *c, const ce_enemy_shot_t *ev)
  *     恒 1）—— 否则同一件事记两遍（一手那 +1 与死亡路径那 1 颗本来就是两笔，而「击破 + 命中」
  *     在极人时自然会同时发生 ⇒ 那一瞬**确实是 2 颗**，只是账要记在各自的来源上）。*/
 static unsigned s_bullet_hit_orbs;                     /* 台账：本批新来源撒了几颗（实跑判据）*/
+static unsigned s_bullet_hit_pos_swap;                /* ★ 2026-09-27（第三十九批）：人逢魔「每发命中」那条
+                                                       *   里，落点从「源槽中心（膛口）」换成「敌机位置」的次数
+                                                       *   —— 激光类应当明显 >0，普通弹应当 0。*/
+static unsigned s_graze_pos_from_bullet;              /* ★ 2026-09-27（第三十九批）：擦弹刻符有几批的落点
+                                                       *   拿到了「被擦到的那颗弹」的坐标（站点 `ce_graze`）。
+                                                       *   这个数不涨 ⇒ 站点没挂上（或 `ce_graze_take` 恒 0）。*/
 static void on_bullet_hit(ce_card_t *c, const ce_bullet_hit_t *ev)
 {
     yk_card_t *s = ce_state(c, yk_card_t);
+    float ox, oy;
     if (!s || !ev) return;
     if (!yk_human_fengma_bullet_orbs(s->gauge, ev->is_player_bullet)) return;
-    yk_orb_spawn(s, ev->x, ev->y, YK_ORB_STATE_SPAWN);   /* state 3 = 先上抛（一手 `push 3`）*/
+    /* 落点（一手 = 弹的位置）：普通弹 ⇒ 源槽中心就是弹；**长光源（激光/束）**的源槽中心在膛口
+     * ⇒ 源中心离敌机 > 阈值时改用敌机位置（= 视觉上的命中处）。见 `youkai_core.h` 的
+     * `YK_HIT_ORB_FAR_DIST` 那一节（owner：「魔理沙人激光的永点生成位置明显偏离 hit 位置」）。*/
+    ox = ev->x; oy = ev->y;
+    if (yk_hit_orb_use_enemy_pos(ev->x - ev->ex, ev->y - ev->ey)) {
+        ox = ev->ex; oy = ev->ey;
+        ++s_bullet_hit_pos_swap;
+    }
+    yk_orb_spawn(s, ox, oy, YK_ORB_STATE_SPAWN);   /* state 3 = 先上抛（一手 `push 3`）*/
     ++s_bullet_hit_orbs;
 }
 
@@ -4724,17 +4808,18 @@ static int on_tick_2(ce_card_t *c)
             yk_orb_motion_params(ch, &sp, &rr);
             ce_log("youkai: gauge=%d piv=%d orbs=%d taken=%u live=%u peak=%u full=%u hud=%u "
                    "speed=%.0f pick=%.0f shoot=%d fengma=%u fscore=%d "
-                   "piv_pool=%d piv_wrote=%d bullet_hit_orbs=%u "
+                   "piv_pool=%d piv_show=%d piv_wrote=%d bullet_hit_orbs=%u hitpos_swap=%u graze_pos_bullet=%u fengma_eaten=%u "
                    "graze_n 1/2/3=%u/%u/%u graze_gate ok/boss/gauge/shottype/off=%u/%u/%u/%u/%u clamped=%u",
                    (int)s->gauge, (int)s->piv, (int)s->orbs, s->orb_taken, s_orb_live,
                    (unsigned)s->orb_peak, s->orb_full, (unsigned)s->hud_ready, sp, rr, yk_shooting(),
                    (unsigned)s->fengma, (int)s->fengma_score,
                    /* ★ 2026-09-27（§BE #137）：这两个数 = owner 报的那条能不能过的**判据**
                     * （`piv_pool` = 左下角那个数画的东西、`piv_wrote` = 本卡写进去的那一份）。*/
-                   (int)ce_piv_pool(), (int)ce_piv_written(ce_card_id(c)),
+                   (int)ce_piv_pool(), (int)(ce_piv_pool() - s->piv_pool_base),
+                   (int)(ce_piv_written(ce_card_id(c)) - s->piv_wrote_base),
                    /* ★ 2026-09-27（第三十七批）：`bullet_hit_orbs` = 「人逢魔 + 自机弹命中」这条新来源
                     * 一共撒了几颗（一手 `th08:0x45187f`）。人侧击破那批的判据另看 `orbs`/`taken`。*/
-                   s_bullet_hit_orbs,
+                   s_bullet_hit_orbs, s_bullet_hit_pos_swap, s_graze_pos_from_bullet, s_fengma_eaten,
                    s_graze_n[1], s_graze_n[2], s_graze_n[3],
                    s_graze_gate[YK_GRAZE_GATE_OK], s_graze_gate[YK_GRAZE_GATE_BOSS],
                    s_graze_gate[YK_GRAZE_GATE_GAUGE], s_graze_gate[YK_GRAZE_GATE_SHOTTYPE],
@@ -4925,9 +5010,25 @@ static int on_tick_2(ce_card_t *c)
              *     「人妖カスリ」（在弹列里**瞬间切高速**擦、再切回低速收）正是靠这一条成立的。
              *   ⇒ 判据全在 `yk_graze_field_gate()` / `yk_graze_orbs_per_bullet()`（纯逻辑 + 单测），
              *     卡侧这一支**不再自己加任何形态门**。*/
-            for (i = 0; i < d; ++i)
-                for (k = 0; k < orbs; ++k)
-                    yk_orb_spawn(s, px, py, YK_ORB_STATE_SPAWN5);   /* ★ state 5：上抛但可收 */
+            /* ★★★ 2026-09-27（第三十九批 · owner 实跑：「**妖逢魔即使在 boss 也不生成永点——或者
+             *   生成永点瞬间吃了？**」）：**落点从「自机」改成「被擦到的那颗弹」**。
+             *   · 真因（本轮定位）：我们原来撒在 `(px, py)` = **自机身上** ⇒ 距离 0 < 抓取盒 20/24
+             *     ⇒ 而 state 5 **上抛期间就能被收** ⇒ **当帧就被吃掉**、屏幕上什么都看不见。
+             *   · 一手正好相反：擦弹刻符撒在**被擦到的那颗弹**的位置上（`Player::sub_44a930`
+             *     `th08:0x44a930` 的第 1 个实参 = pos，由调用方传弹的坐标）—— 那颗弹在**擦弹环**
+             *     上（离自机 20–30 px），撒在那里就**看得见**（上抛一段、`vy > 0` 才转归航）。
+             *   · 拿法：SDK 的 `ce_graze_take(&gx, &gy)`（站点 `ce_graze` `0x42497f`，本轮**放回发布面**；
+             *     机制与放回论证见 `sites.py` 那一段）。取不到（无站点/本帧没记到）时退回自机位置。
+             *   · 弹/激光那条 `flag` 分不出来 ⇒ 用「本帧擦弹差分」当颗数（既有口径，未变）。*/
+            {
+                float gx = px, gy = py;
+                /* ⚠ 用 **peek**（只读）而不是 `take`：116（季节卡）在同一帧也要读这个事件，
+                 *   `take` 会把待处理数据清掉 ⇒ 谁先调谁偷走。见 `sdk.h` 的 `ce_graze_peek` 注释。*/
+                if (ce_graze_peek(&gx, &gy) > 0) ++s_graze_pos_from_bullet;
+                for (i = 0; i < d; ++i)
+                    for (k = 0; k < orbs; ++k)
+                        yk_orb_spawn(s, gx, gy, YK_ORB_STATE_SPAWN5);   /* ★ state 5：上抛但可收 */
+            }
             /* ★ 实跑判据（统筹要的那一条）：`gate=` 一眼看出**这次擦弹为什么没给**
              * （`ok` 全过 / `boss` 场上没 boss / `gauge` 槽没到 +8000 / `shottype` 人単独非妖夢 /
              * `off` 开关关掉），`n=` 是**过了门之后每颗弹给几颗**（0 = 被门挡）。
@@ -5127,9 +5228,13 @@ static int on_tick_2(ce_card_t *c)
      *     同时装 110/111/112–117 时它仍是**同一份数**（池共享，不是各画各的）。*/
     {
         uint32_t cid = ce_card_id(c);
-        int32_t  step;
+        int32_t  step, wrote;
         ce_piv_claim(cid, YK_PIV_POOL_CAP);
-        step = yk_piv_pool_step(s->piv - s->piv_base, ce_piv_written(cid));
+        /* ★ 2026-09-27（第三十九批）：写账用**相对基线**的量（见 `piv_wrote_base` 的注）——
+         *   否则 retry 之后 `ce_piv_written` 还记着上一局的量 ⇒ 本卡再也补不进池。*/
+        wrote = ce_piv_written(cid) - s->piv_wrote_base;
+        if (wrote < 0) wrote = 0;
+        step = yk_piv_pool_step(s->piv - s->piv_base, wrote);
         if (step > 0) ce_piv_add(cid, step);
     }
     /* ★★ 2026-09-22 晚（owner 第 1 条）：**低速隐藏原生（人侧）子机**。
@@ -5250,6 +5355,10 @@ static int on_tick_2(ce_card_t *c)
         if (s->spell_was && !sp) {
             s->spiral_quota = YK_SPIRAL_QUOTA_FULL;
             s->spiral_t = 0;
+            /* ★ 2026-09-27（第三十九批）：发额度这一行 —— owner 报「螺旋并没有生成」时，
+             *   有这一行 = 触发对了（问题在喷点或观感）、没有这一行 = **符卡结束的下降沿没抓到**。*/
+            ce_log("youkai: spiral ARMED (spell ended) - quota %u, 8-frame batches around the boss",
+                   (unsigned)YK_SPIRAL_QUOTA_FULL);
         }
         if (s->spell_was != (uint8_t)(sp ? 1 : 0))      /* ★ §BE #113：两个边沿各打一行探针 */
             yk_spell_probe(sp ? "start" : "end");

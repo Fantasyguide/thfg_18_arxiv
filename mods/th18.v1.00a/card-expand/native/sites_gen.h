@@ -155,6 +155,7 @@ static const ce_grow_t CE_GROW[] = {
 #define CE_BP_ITEM_COMMIT_RVA 0x04658a
 #define CE_BP_SHOT_DAMAGE_RVA 0x05f2a2
 #define CE_BP_BULLET_HIT_RVA 0x05f466
+#define CE_BP_GRAZE_RVA 0x02497f
 #define CE_BP_BOMB_GATE_RVA 0x05c048
 #define CE_BP_PLAYER_DIE_RVA 0x05d3a0
 #define CE_BP_SHOT_SET_INDEX_RVA 0x05ebfb

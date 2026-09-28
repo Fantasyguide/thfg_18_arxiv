@@ -427,8 +427,16 @@ static inline int ce_hud_font_page(int page)
 }
 
 /* 擦弹事件（引擎自己的子弹擦弹路径 `0x42497f` 断点记下的）：取「自上次调用以来」的擦弹次数，
- * >0 时把**最后一次被擦到的那颗弹**的坐标写进 x/y。季节点用它撒在弹的位置上。*/
+ * >0 时把**最后一次被擦到的那颗弹**的坐标写进 x/y。季节点用它撒在弹的位置上。
+ * ⚠ **`take` 会清空**累计（「自上次以来」语义）⇒ 同一帧里两张卡都调，后调的那张拿到 0。*/
 int ce_graze_take(float *x, float *y);
+/* ★ 2026-09-27（第三十九批，卡 108「擦弹刻符撒在弹上」用）：**只读不消费**的版本 ——
+ * 返回当前累计的擦弹次数、把**最后一次被擦到的那颗弹**的坐标写进 x/y，但**不清空**。
+ * 为什么需要它：108 与 116（季节）会同时在场，两条都读同一个擦弹事件 ⇒ 用 `take` 会互相偷
+ * （先调的那张把待处理数据清掉）。108 用本函数（它自己按 `0x4ccd0c` 的累计擦弹差分算颗数，
+ * 只需要**位置**）；116 继续用 `take`（它要的是「自上次以来的次数」）。
+ * 机制与站点见 `sdk.c` 的 `BP_ce_graze`。*/
+int ce_graze_peek(float *x, float *y);
 
 /* 极坐标 → 速度（`0x447430`，thiscall + ret 8：ECX = out，栈 = angle, speed）。
  * 写 out[0] = cos(angle)·speed、out[1] = sin(angle)·speed。角度约定与引擎一致（0 = +x，−π/2 = 上）。*/
@@ -905,6 +913,15 @@ typedef void (CE_TC *ce_base_del_t)(void *, uint32_t);
         return ce_hooks_##ID.on_draw ? ce_hooks_##ID.on_draw((ce_card_t *)self) : 0; } \
     static void CE_TC ce_s_##ID##_on_run_reset(void *self) { \
         ce_sdk_trace(ID, 0x4c, "on_run_reset"); \
+        /* ★★★ 2026-09-27（第三十九批 · owner「retry 不清空值的」）：**局级共享层的复位点**。\
+         *   TH18 的 retry（gamemode 10/11 → `GameThread__teardown_and_recount_cards` `0x4432c0`\
+         *   → `recount_and_recategorize_cards` `0x4080e0`）对**存档卡组的持久卡**就是走虚表 `+0x4c`\
+         *   这一条（`0x408151`–`0x408155`；本局买的卡走 `+0x50` 被删对象）；换关走 `+0x34`/`+0x20`\
+         *   **不经过这里**。⇒ 共享 PIV 池（`sdk_core.c` 的 `s_piv_pool`，屏幕那个 6 位数读它）\
+         *   正好在这一刻归零 —— 它此前**全仓没有任何生产复位点**（`ce_piv_reset()` 只有单测调过，\
+         *   `ce_score_reset()` 只在 DLL 装载那一次），所以 retry 之后屏上还是上一局的数。\
+         *   幂等（recount 对每张持久卡各调一次 ⇒ 池本来就是 0）；`ce_piv_reset()` 保留「在场声明」。*/ \
+        ce_piv_reset();                       /* ★ 共享「额外最大得点」池：局级复位（见上）*/ \
         ce_sdk_active_reset(self, &ce_hooks_##ID, 1); \
         ce_dmg_set(ID, ce_hooks_##ID.bullet_damage_permille); /* 回到声明的初值；声明 0 的卡也要清掉运行时报过的倍率 */ \
         ce_layer_drop_card(ID);               /* 2026-09-12：四个声明层 + HUD 槽位一起退回声明态 */ \

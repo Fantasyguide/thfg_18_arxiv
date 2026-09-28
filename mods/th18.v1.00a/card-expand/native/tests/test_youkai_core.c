@@ -1361,7 +1361,9 @@ int main(void)
                 yk_spiral_angle(50, &a);                                   /* 40 帧一圈 ⇒ 回到正上方 */
                 CHECK(a > -1.5708f - 1e-3f && a < -1.5708f + 1e-3f);
                 yk_spiral_angle(0, 0);                                     /* NULL 出口不崩 */
-                CHECK(YK_SPIRAL_BATCH_FRAMES == 8 && YK_SPIRAL_FIRST_MAX == 7 &&
+                /* ★★★ 2026-09-27（第三十九批 · 逐指令复核订正）：`push 8` **不是批次周期**，
+                 *   是 `Timer::current_is_gt` 的一次性门槛「帧龄 > 8」⇒ 螺旋**每帧都喷**。*/
+                CHECK(YK_SPIRAL_START_AGE == 8 && YK_SPIRAL_FIRST_MAX == 7 &&
                       YK_SPIRAL_SECOND_N == 6 && YK_SPIRAL_RADIUS == 128.0f);
                 CHECK(yk_spiral_first_count(1000) == 7);                   /* min(额度, 7) */
                 CHECK(yk_spiral_first_count(7) == 7);
@@ -1370,21 +1372,47 @@ int main(void)
                 /* ★★★ 2026-09-27（第三十八批 · owner：「扩永点池到 ~1e2，至少把击破 boss 的螺旋
                  * 渲染出来」）：**在飞峰值**算式 —— 卡侧的 `YK_ORB_MAX` = 128 就是按它定的。
                  * `per_batch` = 7 + 6 = 13、`batch_frames` = 8、`life_frames` = 65（❓自定估算）。*/
-                CHECK(yk_spiral_live_peak(13, 8, 65) == 119);          /* ceil(13×65/8)=106 + 13 */
-                CHECK(yk_spiral_live_peak(13, 8, 48) == 91);           /* 上抛段只剩 48 帧时的下界 */
-                CHECK(yk_spiral_live_peak(1, 8, 65) == 10);            /* ceil(65/8)=9 + 1 */
-                CHECK(yk_spiral_live_peak(13, 8, 8) == 26);            /* 恰一个批次 */
-                CHECK(yk_spiral_live_peak(0, 8, 65) == 0);             /* 防御：非正入参 ⇒ 0 */
-                CHECK(yk_spiral_live_peak(13, 0, 65) == 0);
-                CHECK(yk_spiral_live_peak(13, 8, 0) == 0);
-                CHECK(YK_SPIRAL_LIVE_LIFE_FRAMES == 65);
-                /* ★ 池必须装得下螺旋：`YK_ORB_MAX`(**256**) ≥ 峰值(119) —— 这条把「池够不够」
-                 *   钉成回归，改小池或改这批参数（批次/时长）都会在这里红。
-                 *   （2026-09-27 同一天：池从 128 抬到 256 —— 螺旋 119 只占一半不到，另一半留给
-                 *   「击破批」与「人逢魔每发命中」两路同时在飞。）*/
+                /* ★★★ 订正后的节奏：**每帧一批**（`batch_frames = 1`）⇒ 13 颗/帧 × 在飞 75 帧 */
+                CHECK(yk_spiral_live_peak(13, 1, 75) == 988);          /* 13×75 + 13（池 1024 够了）*/
+                CHECK(yk_spiral_live_peak(13, 1, 65) == 858);          /* 旧寿命估算下的下界 */
+                CHECK(yk_spiral_live_peak(1, 1, 75) == 76);
+                CHECK(yk_spiral_live_peak(13, 8, 75) == 135);          /* 旧读法（每 8 帧一批）对照 */
+                CHECK(yk_spiral_live_peak(0, 1, 75) == 0);             /* 防御：非正入参 ⇒ 0 */
+                CHECK(yk_spiral_live_peak(13, 0, 75) == 0);
+                CHECK(yk_spiral_live_peak(13, 1, 0) == 0);
+                CHECK(YK_SPIRAL_LIVE_LIFE_FRAMES == 75);
+                /* ★★★ 一帧的吐出与账面（一手 `0x4175cc`–`0x4176e1`）：第二段**固定 6**（与额度无关）
+                 *   但**账面扣 `min(额度,7)` 两次** ⇒ 额度 ≥14 时每帧扣 14、吐 13。*/
+                {
+                    int f = -1, sc = -1;
+                    CHECK(yk_spiral_quota_step(1000, &f, &sc) == 986 && f == 7 && sc == 6);
+                    CHECK(yk_spiral_quota_step(14, &f, &sc) == 0 && f == 7 && sc == 6);
+                    CHECK(yk_spiral_quota_step(13, &f, &sc) == 0 && f == 7 && sc == 6);  /* 扣 7 + 扣 6 */
+                    CHECK(yk_spiral_quota_step(9, &f, &sc) == 0 && f == 7 && sc == 6);   /* 扣 7 + 扣 2 */
+                    CHECK(yk_spiral_quota_step(5, &f, &sc) == 0 && f == 5 && sc == 6);   /* ★ 额度 5 也吐 6 */
+                    CHECK(yk_spiral_quota_step(1, &f, &sc) == 0 && f == 1 && sc == 6);
+                    CHECK(yk_spiral_quota_step(0, &f, &sc) == 0 && f == 0 && sc == 0);
+                    CHECK(yk_spiral_quota_step(-3, &f, &sc) == 0 && f == 0 && sc == 0);
+                    /* ★ 总额度 1000 的时长（一手：72 帧 / ~935 颗）—— 用账面扣减直接数一遍。*/
+                    {
+                        int q = 1000, frames = 0, orbs = 0;
+                        while (q > 0 && frames < 1000) {
+                            int a = 0, b = 0;
+                            q = yk_spiral_quota_step(q, &a, &b);
+                            orbs += a + b;
+                            ++frames;
+                        }
+                        CHECK(frames == 72);          /* ⇒ 1.20 s @60fps */
+                        CHECK(orbs == 935);           /* 一手复算：71×13 + 12 */
+                    }
+                }
+                /* ★ 池必须装得下螺旋：`YK_ORB_MAX`(**1024**) ≥ 订正后的峰值(**988**) —— 这条把
+                 *   「池够不够」钉成回归：改小池、或把「每帧一批」误改回批次制，都会在这里红。
+                 *   （池的演进：64 → 128 → 256（owner「扩到 ~1e2」）→ **1024**（订正成每帧 13 颗之后
+                 *   实算 988；256 那版会把螺旋削掉七成以上）。）*/
                 CHECK(yk_spiral_live_peak(YK_SPIRAL_FIRST_MAX + YK_SPIRAL_SECOND_N,
-                                          YK_SPIRAL_BATCH_FRAMES,
-                                          YK_SPIRAL_LIVE_LIFE_FRAMES) <= 256);
+                                          1,                             /* ★ 每帧一批 */
+                                          YK_SPIRAL_LIVE_LIFE_FRAMES) <= 1024);
             }
             /* 一手的状态号与常量（改了要在注释里同步改一手出处）*/
             CHECK(YK_ORB_STATE_FALL == 0 && YK_ORB_STATE_HOMING == 1 && YK_ORB_STATE_SPAWN == 3);
@@ -1458,6 +1486,18 @@ int main(void)
             CHECK(yk_human_fengma_bullet_orbs(0, 1) == 0);
             CHECK(yk_human_fengma_bullet_orbs(10000, 1) == 0);    /* 極妖：这 +1 只属極人 */
             CHECK(yk_human_fengma_bullet_orbs(-10000, 0) == 0);   /* 不是自机弹（卡侧伤害源/原生卡）*/
+            /* ★★★ 2026-09-27（第三十九批 · owner：「魔理沙人激光的永点生成位置明显偏离 hit 位置」）：
+             * 落点判据 —— 源槽中心离敌机 > 64 px ⇒ 认为那是**长光源**（激光/束，中心在膛口）
+             * ⇒ 落点改用**敌机位置**。普通弹（两者差 < 30 px）一律保持「撒在弹上」的一手口径。*/
+            CHECK(YK_HIT_ORB_FAR_DIST == 64.0f);
+            CHECK(yk_hit_orb_use_enemy_pos(0.0f, 0.0f) == 0);      /* 正中命中：用源中心 */
+            CHECK(yk_hit_orb_use_enemy_pos(20.0f, 0.0f) == 0);     /* 普通弹那一档 */
+            CHECK(yk_hit_orb_use_enemy_pos(0.0f, -30.0f) == 0);
+            CHECK(yk_hit_orb_use_enemy_pos(63.9f, 0.0f) == 0);     /* 阈值内 */
+            CHECK(yk_hit_orb_use_enemy_pos(64.1f, 0.0f) == 1);     /* 越过阈值 ⇒ 换敌机位置 */
+            CHECK(yk_hit_orb_use_enemy_pos(200.0f, 0.0f) == 1);    /* 激光：膛口离敌机几百 px */
+            CHECK(yk_hit_orb_use_enemy_pos(50.0f, 50.0f) == 1);    /* 斜向：50√2 ≈ 70.7 > 64 */
+            CHECK(yk_hit_orb_use_enemy_pos(-300.0f, 40.0f) == 1);
             /* ★★★ 2026-09-22 夜（P-E 单人反向封顶）：一手 `Player::on_registration`
              * —— 单人（`th08:0x44da99` / `:0x44dac4` 的两个门）把**反侧 limit** 收成 ±2000
              * （`th08:0x44daa2` = +0x7d0 / `th08:0x44dacd` = −0xf830），effects 不动 ⇒ 反侧逢魔不可达。*/

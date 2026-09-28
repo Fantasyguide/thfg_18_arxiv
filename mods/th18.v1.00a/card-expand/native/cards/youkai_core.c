@@ -1196,6 +1196,21 @@ void yk_spiral_angle(int t, float *out)
     *out = a;
 }
 
+int yk_spiral_quota_step(int quota, int *first_out, int *second_out)
+{
+    int k1, k2, q;
+    if (first_out)  *first_out  = 0;
+    if (second_out) *second_out = 0;
+    if (quota <= 0) return 0;
+    k1 = (quota > YK_SPIRAL_FIRST_MAX) ? YK_SPIRAL_FIRST_MAX : quota;   /* `0x4175cc`–`0x4175f3` */
+    q  = quota - k1;                                                    /* `0x41762d` */
+    k2 = (q > YK_SPIRAL_FIRST_MAX) ? YK_SPIRAL_FIRST_MAX : q;           /* `0x417682`–`0x4176a9` */
+    if (first_out)  *first_out  = k1;
+    if (second_out) *second_out = YK_SPIRAL_SECOND_N;                   /* 固定 6（`0x4176be`）*/
+    q -= k2;                                                            /* `0x4176e1` */
+    return q > 0 ? q : 0;                                               /* 夹到 0（一手 `0x4176f3`）*/
+}
+
 int yk_spiral_live_peak(int per_batch, int batch_frames, int life_frames)
 {
     /* 见 `.h` 那一小节：Little 定律 + 最新一批的余量。只做整数运算（主机单测与卡侧同源）。*/
@@ -1521,6 +1536,12 @@ int yk_fengma_kill_orbs(int fengma, int is_human_fengma, int by_player_bullet)
     (void)is_human_fengma;
     (void)by_player_bullet;
     return fengma ? 1 : 0;
+}
+
+int yk_hit_orb_use_enemy_pos(float dx, float dy)
+{
+    /* 见 `.h`：源槽中心离敌机太远 ⇒ 那是长光源（激光/束），它的中心在膛口 ⇒ 落点改用敌机位置。*/
+    return (dx * dx + dy * dy > YK_HIT_ORB_FAR_DIST * YK_HIT_ORB_FAR_DIST) ? 1 : 0;
 }
 
 int yk_human_fengma_bullet_orbs(int32_t gauge, int is_player_bullet)

@@ -813,8 +813,26 @@ int ce_piv_claim(uint32_t id, int32_t writable_cap)
 void ce_piv_release(uint32_t id)
 {
     if (id > (uint32_t)CE_SDK_CARD_ID_MAX) return;
-    s_piv_cap_p1[id] = 0;
-    s_piv_wrote[id]  = 0;                 /* 退场 = 那套系统撤了，写入账一并清 */
+    {
+        int was_present = (s_piv_cap_p1[id] > 0);
+        s_piv_cap_p1[id] = 0;
+        s_piv_wrote[id]  = 0;             /* 退场 = 那套系统撤了，写入账一并清 */
+        /* ★★★ 2026-09-27（第三十九批 · owner「retry 不清空值的」）：**最后一个在场者退场 ⇒ 池归 0**。
+         *   为什么需要：TH18 有**两条**重开路 ——
+         *     · 「重开本局」（gamemode 10/11）走 recount ⇒ 持久卡只收虚表 `+0x4c`
+         *       （`sdk.h` 的 `on_run_reset` 桩已在那里 `ce_piv_reset()`）；
+         *     · 「全新一局」（gamemode 4/2 → `AbilityManager__reset_cards(mgr,1)` `0x407da0`）
+         *       **删掉并重建所有卡对象**（走 `+0x50`），**不经过** `+0x4c` ⇒ 池会残留。
+         *   这一条覆盖后者：全部池来源都退场 ⇒ 「额外量」清零（语义与 `sdk_core.h` 的
+         *   「池里装的是额外最大得点、初值 0」一致）。副作用（登记 `TUNING.md`）：局中在商店里
+         *   把**最后一个**池来源删掉时，池也会归 0。*/
+        if (was_present) {
+            int any = 0;
+            for (uint32_t i = 0; i <= (uint32_t)CE_SDK_CARD_ID_MAX; ++i)
+                if (s_piv_cap_p1[i] > 0) { any = 1; break; }
+            if (!any) { ce_piv_reset(); }
+        }
+    }
 }
 
 void ce_piv_add(uint32_t id, int32_t points)
