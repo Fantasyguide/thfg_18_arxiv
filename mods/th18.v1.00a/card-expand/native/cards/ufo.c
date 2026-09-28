@@ -2178,6 +2178,18 @@ static void ufo_bolt_fx_frame(const uint8_t *e)
         sa = ufo_sin_approx(b->ang);
         id = ce_anm_spawn(anm, CE_ANM_ABILITY_SCRIPT_UFO_SUMMON_RING, UFO_SUMMON_DEBRIS_LAYER);
         if (id) {
+            /* ★★ 第 53 轮（owner：「**闪电的内部得是洋红色**，我记得我之前说过」）——
+             *   一手 effect #1 的 16 个顶点是一条沿折线的色带（`0x4102b0` 铺 16 项 `0xFF0040FF` 后逐项改字节）：
+             *   色基 A=FF R=00 G=40 B=FF；**前 8 项 R 每项 −0x20**（uint8 回绕 ⇒ R: 00,E0,C0,A0,80,60,40,20
+             *   ⇒ 中段是**洋红**）；**后 8 项 A 每项 −0x10**（F0→00，尾端淡出）。*/
+            int idx = UFO_BOLT_SEGS - b->left;                 /* 0 = 根部，15 = 尖端 */
+            uint32_t a = 0xFFu, r = 0x00u;
+            if (idx > 0) {
+                if (idx < 8) r = (0x00u - (uint32_t)idx * 0x20u) & 0xFFu;
+                else       { r = 0x20u; a = (0xFFu - (uint32_t)(idx - 8) * 0x10u) & 0xFFu; }
+            }
+            ce_anm_set_color(id, (a << 24) | (r << 16) | (0x40u << 8) | 0xFFu);
+            ce_anm_set_color2(id, (a << 24) | (r << 16) | (0x40u << 8) | 0xFFu);
             ce_anm_set_pos(id, b->x + ca * half, b->y + sa * half, 0.0f);   /* 本段中点 */
             ce_anm_set_rotation(id, 0.0f, 0.0f, b->ang);                     /* 本段方向 */
         }
