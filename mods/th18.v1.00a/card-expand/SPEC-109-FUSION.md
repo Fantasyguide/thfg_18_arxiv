@@ -1,6 +1,6 @@
 # SPEC-109-FUSION —— 109《花映塚 × 獣王園》合成卡落地规格
 
-> **版本**：宿主 TH18 v1.00a（`th18.exe`）。本文裸地址默认属 TH18；引用其他版本一律带前缀（`th09:` / `th19:`）。
+> **版本**：TH18 v1.00a（宿主 `th18.exe`；imagebase `0x400000`）。本文裸地址默认属 TH18；引用其他版本一律带前缀（`th09:` / `th19:`）。
 > **状态**：**规格（尚未实现）** —— 机制面已被 owner 拍完（§1），数值面标 ❓ 的要在落地时登记 `TUNING.md`。
 > **关联**：一手依据 [`engine/card/th09/01`](../../../engine/card/th09/01-pofv-charge-and-cancel-fields.md)、
 > [`engine/versus/th19/06-aura.md`](../../../engine/versus/th19/06-aura.md)（固灵结界）、
