@@ -662,6 +662,23 @@ typedef struct { int32_t prev; int32_t cur; float cur_f; } ce_timer_t;   /* zTim
  *   与绿妖精载体（`cards/faith.c`）都读它 ⇒ 常量只有这一处出处（原先硬编码在 `cards/mof.c`）。*/
 #define CE_ENEMY_ANM_SRC           0x1494     /* = CE_ENEMY_DATA + 0x268（N）*/
 #define CE_ENEMY_ANM_SCRIPT        0x1498     /* = CE_ENEMY_DATA + 0x26c（S）*/
+/* ★★★ 2026-09-28（卡 108「惰性绕转使魔」需要「是不是大怪」的判据；与 117 `cards/animal.c` 同源）：
+ *   **敌人的贴图尺寸**那一族偏移。一手来路逐条（与 `cards/animal.c:852-855` 的
+ *   `ANIMAL_ENEMY_ANM_VM0` / `ANIMAL_ANM_VM_SPRITE_SIZE` / `ANIMAL_ENEMY_FINAL_SPRITE_W/H`
+ *   **同值同义**，两处可交叉对账；117 那批是先用起来的那一处，这里是把它提进共享头）：
+ *     · `anm_vm_ids[0]`（ExpHP `zEnemyData`）—— `th18` 的槽 0 VM id，`CE_ENEMY_DATA + 0x124`；
+ *       取到 id 后经 `ce_anm_get_vm()` 拿 VM，`sprite_size` 在 VM 的 `+0x74/+0x78`
+ *       （ExpHP `zAnmVmPrefix.sprite_size`，float2，**原始贴图尺寸、未乘 scale**）；
+ *     · 退路 `final_sprite_size` —— `CE_ENEMY_DATA + 0x4fd8/0x4fdc`（同样 float2），
+ *       由 `anmSetMain` / `anmSetSprite` 的 K==0 那一路写（= sprite_size × scale）。
+ *   ⇒ 「贴图原始尺寸 >= 64×64」就是 117 的「大怪」判据（用户口径 + `enemy.png` 实测：
+ *     右下角 sprite96..107 = 64×64）；108 的绕转使魔要用**同一个**判据 ⇒ 常量只此一处。*/
+#define CE_ENEMY_ANM_VM0            0x1350   /* = CE_ENEMY_DATA + 0x124（zEnemyData.anm_vm_ids[0]）
+                                              *   ⚠ 别与上面的 CE_ENEMY_ANM_SRC/SCRIPT 混：那两条是
+                                              *   `anmSelect` 的选择子与槽 0 的主脚本号（+0x268/+0x26c）*/
+#define CE_ANM_VM_SPRITE_SIZE       0x74     /* zAnmVmPrefix.sprite_size（float2：+0x74 宽 / +0x78 高）*/
+#define CE_ENEMY_FINAL_SPRITE_W     0x6204   /* = CE_ENEMY_DATA + 0x4fd8（zEnemyData.final_sprite_size.x）*/
+#define CE_ENEMY_FINAL_SPRITE_H     0x6208   /* 同上 .y（float）*/
 #define CE_ENEMY_LIST_GUARD        4096       /* 敌人链表遍历的护栏（坏链表不转死）；ce_enemy_by_id / CE_ENEMY_FOREACH 共用 */
 #define CE_ENEMY_POS_Y             0x1274
 #define CE_ENEMY_FLAGS             0x635c    /* ★★★ 2026-09-22 夜（108 批次 2 一手）：`enemy+0x635c` 的 **bit4（0x10）= 免伤位**。

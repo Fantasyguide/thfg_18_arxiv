@@ -25033,3 +25033,84 @@ P=4.0 时真有 4 台子机；4 台各自计时、相位不同的**同一支动�
 
 闸：`make -s check` rc=0（`youkai_core: 5239 checks, 0 failed`；x87 = 0；33 个 BP_* 双向一致；
 生成物无漂移；404 个文档全过）；`sites.py verify` / `capcheck` / `sitecheck` 全绿（未动站点与集合）。
+
+## §BE 详录 #150（2026-09-28 第四十九批）：卡 108 —— **惰性绕转使魔**（给「大怪」补使魔，换取更多爆永点）
+
+> **owner 逐字**：「然后得加使魔了。你参考 117 掉动物灵的那个『大怪』判定，给这些大怪加上使魔，
+> 如何呢？**这些使魔是不发弹，没有体术判定的**。」
+> 动机（更早那句）：「为了增大爆永点的数量，应该给**没有使魔的怪物加使魔**了 ——
+> **没有体术、不发弹、只绕转**的使魔」。
+> 后续三条口径（同日第二轮，**按这个改**）：
+> ① 「**可以不免伤，血量 = 本体血量**」；② 「我觉得**可以不考虑发射口**的问题，这个是**别的种类**的使魔」；
+> ③ 「**数量我倾向于和血量挂钩**」。
+
+### 1. 为什么这么改能增大爆永点数量（一手机制链，逐条）
+
+```
+th08:0x42adbc  call 0x41fd40        ; ExpHP: Enemy::sub_41fd40__possibly__get_familiar_count
+th08:0x42adc4  cmp [ebp-0x4],0 / je …   ; ★ 门：使魔数 == 0 ⇒ 整段撒点跳过（一颗都不给）
+th08:0x42af29  （「双人组」那一支）      ; 颗数 = n>=8 ? 26 : 2n+10
+th08:0x42aff0  ; 每个使魔各撒一盘（散开半径 = 2×颗数，0x42aff3 fadd st,st）
+```
+⇒ 本卡的对位：`yk_kill_burst` 的 `n = max(活子敌人, 声明槽数)` + `yk_kill_burst_count(n)`；
+**给没有使魔的大怪补 K 台带 `CE_SPAWN_PARENT` 的惰性使魔**，就把它的击破批从 **0 颗** 变成
+`K × (2K + 10)` 量级（本批 K = 1..4，按血量）。
+
+### 2. 实现（只动卡 108 自己的文件 + 共享头 `engine.h`）
+
+| 文件 | 改了什么 |
+| --- | --- |
+| `native/cards/youkai_core.h` | 新节「惰性绕转使魔」：6 个常量（扫场 30 帧 / 池 16 / 半径 48 / 3°每帧 / 120 项表 / 孤儿宽限 2 帧）+ 台数分档表（`YK_ORBIT_HP_TIER_STEPS` / `YK_ORBIT_MAX_PER_ENEMY`）+ 4 个纯函数声明 |
+| `native/cards/youkai_core.c` | 120 项 `cos`/`sin` **离线生成常量表**（每项 3°、按 float32 舍入后粘贴；运行期不引 libm）+ 实现 `yk_big_by_sprite` / `yk_orbit_step_advance` / `yk_orbit_offset` / `yk_orbit_count_for_hp` |
+| `native/cards/youkai.c` | 建壳函数加 `parent`/`life` 两个实参（老签名留薄包装 ⇒ 既有调用点零改动）；新节（见下）：扫场 / 建壳 / 钉位 / 跟随 VM / 退休 / 全撤；`yk_drop_all` + `on_ctor` 各加一句 `yk_orbit_kill_all()`；`on_tick_2` 在 `yk_familiars_tick` 之后调一次 `yk_orbit_tick` |
+| `native/tests/test_youkai_core.c` | 大怪判据边界（63×64 / 64×63 / 64×64 / 负数）、相位回绕（一圈 40 帧正好回 0）、四象限代表值、**全部 120 项模长在 1% 内**、越界 step、空指针；台数函数的边界（199/200/599/600/1499/1500）与「单调不降 + 恒在 [1, 池上限]」 |
+| `native/engine.h` | 只**加 4 个宏**（见 §4），语义零改动 |
+
+### 3. 四条硬约束（每条都落成结构，不是靠自觉）
+
+1. **不进 `s_map`** ⇒ 不参与发射口映射 / 精准闸 / 使魔环爆闪 / 切换音计数；
+2. 由 1 顺带 ⇒ **不参与 `yk_fam_collide_tick`**（本卡唯一的「人侧撞使魔 = MISS」判据）
+   ⇒ owner 要的「**没有体术**」是**结构上**成立的（不是靠标志位）；
+3. **打得掉，血量 = 本体血量**（第二轮口径 ①）：建壳 `CE_SPAWN_LIFE = yk_clamp_spawn_life(父敌最大血量)`
+   （`CE_ENEMY_HP_MAX` = `zEnemyData.life.maximum`），每帧 `yk_orbit_pin()` **清掉**免伤位；
+   被钳时打一行（**只记一次**）；
+4. **VM 表独立**于 `s_fam_vm`：`yk_fam_vm_prune` 会把「不在 `s_map` 里的 fam_id」当**泄漏记录、
+   连实体一起撤掉** —— 绕转使魔**故意**不在 `s_map` 里 ⇒ 混用会在下一帧被自愈机制清光。
+
+### 4. ❓ 自定 / 待替换（全是「一行就能改」的旋钮）
+
+| 项 | 现值 | 出处 |
+| --- | --- | --- |
+| 扫场间隔 | 30 帧 | ❓自定（`HANDOFF-108.md` §4 的建议值） |
+| 池上限 | 16 | ❓自定（同上） |
+| 绕转半径 / 角速度 | 48 px / 3°每帧（120 帧一圈） | ❓自定（同上；一手侧是 ECL 逐条写死的位置） |
+| 孤儿宽限 | 2 帧 | ❓自定，理由是一手的**时序**：颗数在 `EnemyManager` 死亡块里算，可能排在卡 tick 之后 |
+| 台数分档 | `<200⇒1 / <600⇒2 / <1500⇒3 / 其余 4` | ❓自定（owner 给的初值）；**已另派一支 th08 一手统计，产出到了只改这两张表** |
+| 血量 | 父敌最大血量（过 `yk_clamp_spawn_life`，上限 999） | owner 口径 ①；上限是**引擎硬约束**（`>=1000` ⇒ `flags_lo 0x40000000` 锁定黑名单） |
+
+### 5. 共享件影响面（`engine.h`，**只加宏、不改语义**）
+
+新增 4 个宏：`CE_ENEMY_ANM_VM0`（`0x1350` = `CE_ENEMY_DATA + 0x124`）、`CE_ANM_VM_SPRITE_SIZE`（`0x74`）、
+`CE_ENEMY_FINAL_SPRITE_W/H`（`0x6204`/`0x6208` = `+0x4fd8`/`+0x4fdc`）。
+它们与 **117 `cards/animal.c:852-855` 的 `ANIMAL_*` 同值同义**（那边是先用起来的那一处，可交叉对账）。
+**影响面 = 0**：`engine.h` 里的新宏不改任何既有宏的取值/语义，也没有重名；
+回归 = 全量 `make -s check`（**所有测试 0 failed**）+ `dllx87`（x87 = 0）+ `sites.py verify`（213 条 binhack 全对上）
++ `capcheck`（全绿）+ 文档全过。未动 `sdk.*` / `sdk_core.*` / `sites.py` / `Makefile` / `patch/**` / `cards_def.c`。
+
+### 6. 顺手核清的一件事：**打死一台绕转使魔会不会再爆一盘永点**
+
+现状（读代码得出的定案，owner 问过）：
+- **盘（burst）不爆** —— `yk_kill_burst` 数的是「`CE_SPAWN_PARENT == 被杀者 id` 的**活子敌人**」+「声明过的发射口槽」，
+  绕转使魔自己**没有**子敌人、也不进 `s_map` ⇒ `n == 0` ⇒ 一手门（`th08:0x42adc4 je`）拦下 = **一颗盘都不给**；
+- **单颗会给**（`yk_kill_burst` 尾巴那一支：被杀者**自己有主** ⇒ `th08:0x42b1e5` 起的一颗）——
+  **有意保留**（一手那一支的判据就是「有主」，绕转使魔按定义有主）；
+- 击破它也照常吃「击破 ⇒ 人妖槽 ±200」（一手击破的通用尾）。
+⇒ 与 owner 的倾向（使魔被击破**不**爆盘）一致，无需新代码。
+
+### 7. 闸（原文）
+
+`make -s check` rc=0（`youkai_core: 5781 checks, 0 failed`；其余各测试 0 failed）、
+`make -s dllx87` ⇒ `x87 in our objects: 0`、`python3 sites.py verify` ⇒ `✅ 全部对上`、
+`python3 native/tools/capcheck.py` ⇒ `capcheck：全绿 ✅`（.rdata 多 960 B 的表，余量够）、
+`python3 tooling/check-docs.py` ⇒ `✓ 全部通过（406 个文件）`；另外整仓 `make -s check` 的其余各关
+（`engine_abi_check` 9 条引擎调用对账 / `anm_hud_alpha_check` 24 项 / 生成物无漂移）全绿。

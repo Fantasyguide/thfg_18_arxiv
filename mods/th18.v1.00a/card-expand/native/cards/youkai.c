@@ -424,7 +424,11 @@ static uint32_t yk_slot_fam_id(const yk_map_t *m, uint32_t enemy_id, int slot)
 }
 
 /* ========================= §3.5 使魔的建 / 钉 / 撤 ========================= */
-static uint8_t *yk_spawn_familiar(float x, float y)
+/* ★★★ 2026-09-28（第四十九批）：加一个 `parent_id` 实参 ——
+ *   `0` = 老语义（1:1 映射使魔，链根）；`!= 0` = **惰性绕转使魔**（父敌 id，见下面那一节）。
+ *   ⚠ 唯一不同的一格就是 `CE_SPAWN_PARENT`：它同时决定
+ *     「`yk_kill_burst` 数活子敌人时把这一台算进去」（颗数！）与「父敌没了它就该撤」。*/
+static uint8_t *yk_spawn_familiar_parent(float x, float y, uint32_t parent_id, int32_t life)
 {
     uint8_t spawn[CE_SPAWN_SIZE];
     float *pos;
@@ -437,13 +441,18 @@ static uint8_t *yk_spawn_familiar(float x, float y)
     pos[2] = 0.0f;
     *(int32_t *)(spawn + CE_SPAWN_SCORE) = 0;             /* 打死不给分（spec §6.1 的无害化）*/
     *(int32_t *)(spawn + CE_SPAWN_MAIN_DROP) = 0;         /* 不掉落 */
-    *(int32_t *)(spawn + CE_SPAWN_PARENT) = 0;
+    *(int32_t *)(spawn + CE_SPAWN_PARENT) = (int32_t)parent_id;
     /* `CE_SPAWN_FLAG_A/B` 一律不设：`flags_lo & 0x31` 绝不能置（置位 = 伤害免疫，spec §3.9 一手），
      * 用户定案 4 也是「不设」。life 钳在 < 1000（`CE_SPAWN_LIFE` 的 ⚠）。*/
-    *(int32_t *)(spawn + CE_SPAWN_LIFE) = yk_clamp_spawn_life(YK_FAM_LIFE);
+    /* 血量：`life` 由调用方给（**必须已经过 `yk_clamp_spawn_life()`** —— 引擎在 life >= 1000 时
+     * 会置锁定黑名单 `flags_lo |= 0x40000000`，见 `YK_LIFE_LIMIT` 那条注）。默认档 = `YK_FAM_LIFE`。*/
+    *(int32_t *)(spawn + CE_SPAWN_LIFE) = yk_clamp_spawn_life(life);
     /* 惰性空壳：`NoEnemyDebug` 的 `wait(1000)` 死循环 ⇒ 不跑 ECL、不动、不开火、不掉落、不自删。*/
     return (uint8_t *)ce_spawn_enemy("NoEnemyDebug", spawn);
 }
+
+/* 老签名 = 链根那一档（1:1 映射使魔）。所有既有调用点照旧。*/
+static uint8_t *yk_spawn_familiar(float x, float y) { return yk_spawn_familiar_parent(x, y, 0u, YK_FAM_LIFE); }
 
 /* 每帧钉位置（spec §3.5）+ 皮肤（资产未到时不动）。*/
 static uint8_t g_fam_nodmg_state = 0xff;   /* ★ 批次 2：上一次记过的免伤位状态（0/1；0xff = 还没记过）*/
@@ -708,6 +717,439 @@ static void yk_fam_vm_follow(uint32_t fam_id, int variant, const uint8_t *f)
 }
 
 
+
+/* ============================================================================================
+ * ★★★ 2026-09-28（第四十九批 · **owner 口径**）：**惰性绕转使魔** —— 给「没有任何发射口的大怪」补使魔
+ * ============================================================================================
+ * owner 逐字：「然后得加使魔了。你参考 117 掉动物灵的那个『大怪』判定，给这些大怪加上使魔，
+ *   如何呢？**这些使魔是不发弹，没有体术判定的**。」
+ *（动机来自更早那句：「为了增大爆永点的数量，应该给**没有使魔的怪物加使魔**了 ——
+ *   **没有体术、不发弹、只绕转**的使魔」）
+ *
+ * 纯逻辑（「大怪」判据 / 相位推进 / 查表）在 `youkai_core.{h,c}`（有主机单测）；
+ * 这一节只管**场景侧**：扫场 → 建壳 → 钉位 → 收尾。
+ * 机制链（为什么这么做能增大爆永点数量）、参数理由、三个连带项：`HANDOFF-108.md` §4 + `AUDIT.md` §BE #150。
+ *
+ * 壳 = 照抄 `yk_spawn_familiar_parent()` 的 `NoEnemyDebug` 惰性空壳
+ *（`wait(1000)` 死循环 ⇒ 不跑 ECL、不动、**不开火**、不掉落、不给分、不设免伤位），
+ * **只多写一格**：`CE_SPAWN_PARENT = 父敌 id`。那一格就是「让它们被算进爆永点颗数」的关键 ——
+ * `yk_kill_burst` 那边数「`CE_SPAWN_PARENT == 被杀者 id` 的**活子敌人**」时会把它们自动算进去
+ *（而且一手是**每个使魔各撒一盘**：`th08:0x42aff0`）⇒ **颗数那一侧不需要任何改动**
+ *（也正因此，那边**不许**再加「排除绕转使魔」的过滤）。
+ *
+ * ⚠ **「有没有发射口」不是筛选条件**（2026-09-28 第二轮 · owner：「我觉得可以不考虑发射口的问题，
+ *   这个是**别的种类**的使魔」）—— 已经有 1:1 发射口映射的大怪**照样**补绕转使魔。
+ *   这与「不进 `s_map`」**不矛盾**：那张表管的是「**发射口** ↔ 使魔」的 1:1 映射与精准闸，
+ *   绕转使魔是**另一种使魔**（只绕转、不发弹），既不该被当成谁的发射口、也不该占那个池。
+ * ⚠ 台数 = **父敌最大血量的函数**（owner：「数量我倾向于和血量挂钩」）⇒ `yk_orbit_count_for_hp()`；
+ *   阈值 / 台数那两张表在 `youkai_core.{h,c}`，标着 **❓自定（待 th08 一手统计回来即替换）**。
+ *
+ * **四条硬约束**（每条都落成结构，而不是靠自觉）：
+ *   ① **不进 `s_map`** ⇒ 不参与发射口映射 / 精准闸（`broken` 位）/ 使魔环爆闪 / 切换音计数；
+ *   ② 由 ① 顺带 ⇒ **不参与 `yk_fam_collide_tick`**（那是本卡唯一的人侧「撞使魔 = MISS」判据）
+ *      ⇒ owner 要的「**没有体术**」是**结构上**成立的，不是靠一个标志位；
+ *   ③ **打得掉，血量 = 本体血量**（★★★ 2026-09-28 第二轮 · **owner 口径**：「可以不免伤，
+ *      **血量 = 本体血量**」）：建壳时 `CE_SPAWN_LIFE = yk_clamp_spawn_life(父敌最大血量)`
+ *      （血量读 `CE_ENEMY_HP_MAX` = `zEnemyData.life.maximum`；钳位那一关是**引擎的硬约束**，
+ *      见 `YK_LIFE_LIMIT`：life >= 1000 会被置锁定黑名单 `flags_lo 0x40000000`），
+ *      并且每帧 `yk_orbit_pin()` **清掉** `CE_ENEMY_FLAG_NO_DAMAGE`（不置上、也不按聚焦分）；
+ *   ④ **VM 表独立**于 `s_fam_vm`（句柄放在 `s_orbit[]` 自己身上）：`s_fam_vm` 的自愈回收
+ *      （`yk_fam_vm_prune`）会把「不在 `s_map` 里的 fam_id」当成**泄漏记录、连实体一起撤掉** ——
+ *      而绕转使魔**恰恰故意**不在 `s_map` 里 ⇒ 混用会在下一帧就被自愈机制清光；
+ *   ⑤ **被玩家击破时爆不爆永点**（把现状读清之后的定案，owner 问过）：
+ *      · **盘（burst）不爆**：结构上就爆不了 —— `yk_kill_burst` 数的是「`CE_SPAWN_PARENT == 被杀者
+ *        id` 的**活子敌人**」+「声明过的发射口槽」，而绕转使魔自己**没有**子敌人、也不进 `s_map`
+ *        ⇒ `n == 0` ⇒ 一手那道门（`th08:0x42adc4 je`）拦下 = **一颗盘都不给** ✓ 与 owner 的倾向一致
+ *        （一手颗数公式吃的是「这个敌人的使魔数」，一台被打掉的使魔在 TH08 里少的就是**它那一盘**）；
+ *      · **单颗会给**：`yk_kill_burst` 尾巴那一支（一手 `th08:0x42b1e5` 起：被杀者**自己有主**
+ *        ⇒ `spawn_item(type 7, …)` 一颗）—— **有意保留**：一手那一支的判据正是「有主」，
+ *        而绕转使魔按定义就有主（`CE_SPAWN_PARENT`）；
+ *      · 如实记录：击破它也会照常吃「击破 ⇒ 人妖槽 ±200」（一手**击破**的通用尾，与死的是不是使魔无关）。
+ *
+ * 生命周期（**铁律：长持续效果必须交代「被删掉会怎样」**）：壳与跟随 VM 的**每一条死路**都过
+ *   `yk_orbit_retire()`；并且 `yk_drop_all()`（删卡 / 换关 / 局末 / 自机没了 / 世界没了）里有
+ *   `yk_orbit_kill_all()` 兜底 —— 删卡那一刻卡的 tick 全停，那是**唯一**的机会。
+ * ⚠ 这些使魔**在人侧也活着、也绕转**（它们不是「妖侧才有的东西」）⇒ 与映射使魔同一口径：
+ *   松 Shift（`yk_leave_youkai`）**不撤**它们，只有 `yk_drop_all` 撤。*/
+typedef struct {
+    uint32_t fam_id;      /* 0 = 空槽。键 = 使魔的 `enemy_id`（单调递增、不复用 ⇒ 不会撞键）*/
+    uint32_t parent_id;   /* 父敌 `enemy_id`（`CE_SPAWN_PARENT` 那一格，颗数就靠它）*/
+    unsigned step;        /* 绕转相位 0..`YK_ORBIT_STEPS`-1（每帧 +`YK_ORBIT_STEP_DEG`）*/
+    unsigned orphan;      /* 父敌**连续**查不到的帧数（满 `YK_ORBIT_ORPHAN_GRACE` 才撤）*/
+    uint32_t anm_id;      /* 跟随 VM 句柄（画本体）*/
+    uint32_t circle_id;   /* 妖侧的常驻魔法阵环句柄（与映射使魔同一套形态口径）*/
+    int32_t  variant;     /* 0..3：四色原生切图（VM 被引擎清过时按同一支自愈重起）*/
+} yk_orbit_t;
+
+static yk_orbit_t s_orbit[YK_ORBIT_MAX];
+static unsigned s_orbit_scan_timer;      /* 扫场节拍（帧）*/
+static unsigned s_orbit_scans;           /* 统计：扫了几次（台账，全程累计不清）*/
+static unsigned s_orbit_targets;         /* 统计：选中了几只大怪 */
+static unsigned s_orbit_spawned;         /* 统计：一共造了几台 */
+static unsigned s_orbit_killed;          /* 统计：一共撤了几台（外力/孤儿/收口）*/
+static unsigned s_orbit_lost_orphan;     /* 统计：因为父敌没了而撤的台数 */
+static uint8_t  s_orbit_pool_full;       /* 池满过（**只记一次**日志 —— 不刷屏）*/
+static uint8_t  s_orbit_first_scan;      /* 首次扫场的自述打过没 */
+static uint8_t  s_orbit_vm_failed;       /* VM 起失败过（只记一次）*/
+static uint8_t  s_orbit_spawn_failed;    /* 壳建失败过（只记一次）*/
+static uint8_t  s_orbit_life_clamped;    /* 父敌血量被 spawn-life 上限钳过（只记一次）*/
+
+/* 一只敌人**至多一对**（一敌一对，不重复补）⇒ 按父敌 id 查。*/
+static yk_orbit_t *yk_orbit_find_parent(uint32_t parent_id)
+{
+    unsigned i;
+    if (!parent_id) return 0;
+    for (i = 0; i < YK_ORBIT_MAX; ++i) if (s_orbit[i].fam_id && s_orbit[i].parent_id == parent_id) return &s_orbit[i];
+    return 0;
+}
+
+static unsigned yk_orbit_live(void)
+{
+    unsigned i, n = 0;
+    for (i = 0; i < YK_ORBIT_MAX; ++i)
+        if (s_orbit[i].fam_id && yk_familiar_by_id(s_orbit[i].fam_id)) ++n;
+    return n;
+}
+
+static unsigned yk_orbit_free(void)
+{
+    unsigned i, n = 0;
+    for (i = 0; i < YK_ORBIT_MAX; ++i) if (!s_orbit[i].fam_id) ++n;
+    return n;
+}
+
+/* 收 VM（只动句柄 ⇒ 幂等；`ce_anm_delete` 内部有 ANM 管理器门槛）。**不清 `fam_id`**。*/
+static void yk_orbit_vm_kill(yk_orbit_t *o)
+{
+    if (!o) return;
+    if (o->anm_id) { ce_anm_delete(o->anm_id); o->anm_id = 0; }
+    if (o->circle_id) { ce_anm_delete(o->circle_id); o->circle_id = 0; }
+}
+
+/* 撤一台：收 VM + 撤壳 + 清槽。`why != 0` 才记数/打日志（`yk_drop_all` 那条收口是静默批量）。*/
+static void yk_orbit_retire(yk_orbit_t *o, const char *why)
+{
+    uint8_t *f;
+    uint32_t parent;
+    if (!o || !o->fam_id) return;
+    parent = o->parent_id;
+    f = yk_familiar_by_id(o->fam_id);
+    yk_orbit_vm_kill(o);                  /* ① 收 VM（幂等）*/
+    if (f) yk_kill_familiar(f);           /* ② 撤壳（置删除位 ⇒ 同帧 EnemyManager sweep 静默析构）*/
+    o->fam_id = 0;
+    o->parent_id = 0;
+    o->step = 0;
+    o->orphan = 0;
+    o->variant = 0;
+    if (why) {
+        ++s_orbit_killed;
+        ce_log("youkai/orbit: retired familiar of enemy #%u (%s)", parent, why);
+    }
+}
+
+/* 「父敌没了」那一档单独一个口：多记一个 `orphan` 统计（台账里要分开看）。*/
+static void yk_orbit_retire_orphan(yk_orbit_t *o)
+{
+    if (!o || !o->fam_id) return;
+    ++s_orbit_lost_orphan;
+    yk_orbit_retire(o, "parent gone");
+}
+
+static void yk_orbit_retire_all(void)
+{
+    unsigned i;
+    for (i = 0; i < YK_ORBIT_MAX; ++i)
+        if (s_orbit[i].fam_id) yk_orbit_retire(&s_orbit[i], 0);
+    /* 兜底（句柄幂等）：`fam_id` 已经被清掉、VM 还挂着的残局 */
+    for (i = 0; i < YK_ORBIT_MAX; ++i) yk_orbit_vm_kill(&s_orbit[i]);
+    s_orbit_scan_timer = 0;
+}
+
+/* 全撤。**唯一收口**：`yk_drop_all`（删卡 / 换关 / 局末 / 自机没了 / 世界没了）与 `on_ctor`
+ *（每关重建）都过这里。⚠ 刻意**不清**上面那几个累计统计（台账要看全程）。*/
+static void yk_orbit_kill_all(void)
+{
+    yk_orbit_retire_all();
+}
+
+/* 每帧钉位（照 `yk_pin_familiar()` 的写法）。
+ * ★★★ 2026-09-28 第二轮（**owner 口径**：「**可以不免伤，血量 = 本体血量**」）：
+ *   **免伤位一律清掉**（不是置上、也不按聚焦分）—— 它们是**打得掉**的真敌人，血量在建壳时
+ *   就设成父敌最大血量（`CE_SPAWN_LIFE`，见 `yk_orbit_spawn_one`）。*/
+static void yk_orbit_pin(uint8_t *f, float x, float y)
+{
+    *(float *)(f + CE_ENEMY_POS_X) = x;                   /* final_pos（spec §3.5 的那两格）*/
+    *(float *)(f + CE_ENEMY_POS_Y) = y;
+    *(float *)(f + YK_ENEMY_ABS_POS) = x;                 /* + abs_pos（同 `yk_pin_familiar`）*/
+    *(float *)(f + YK_ENEMY_ABS_POS + 4) = y;
+    *(uint32_t *)(f + CE_ENEMY_FLAGS) &= ~(uint32_t)CE_ENEMY_FLAG_NO_DAMAGE;
+}
+
+/* float → 像素（四舍五入；117 `animal.c` 的 `animal_round_px` 同款，那边是 static ⇒ 这里自己一份）。
+ * ⚠ 不含浮点库调用（只有比较与 `+0.5f` 取整）—— 本仓 .c 禁 x86 浮点库。*/
+static int32_t yk_round_px(float v)
+{
+    if (!(v > 0.0f)) return 0;
+    if (v > 100000.0f) v = 100000.0f;
+    return (int32_t)(v + 0.5f);
+}
+
+/* 逐敌机取**贴图原始尺寸**（未乘 scale）。与 117 `cards/animal.c:1043` 的
+ * `animal_enemy_sprite_size()` **逐条同源**（那边是同一份判据的第一处出处 ⇒ 两处可交叉对账）：
+ *   ① 槽 0 当前 VM 的 `sprite_size`（`vm + CE_ANM_VM_SPRITE_SIZE`，float2）；
+ *      VM id 取自 `enemy + CE_ENEMY_ANM_VM0`（= `zEnemyData.anm_vm_ids[0]`）；
+ *   ② 退路：引擎记的 `final_sprite_size`（`enemy + CE_ENEMY_FINAL_SPRITE_W/H`，float2）。
+ * 返回 1 = 拿到（两边都 > 0）；0 = 两条来路都读不到（≈ 还没登场 / VM 还没建）。*/
+static int yk_enemy_sprite_size(const uint8_t *e, int *out_w, int *out_h)
+{
+    uint8_t *vm;
+    int32_t id, w, h;
+    if (out_w) *out_w = 0;
+    if (out_h) *out_h = 0;
+    if (!e) return 0;
+    id = *(const int32_t *)(e + CE_ENEMY_ANM_VM0);
+    vm = id ? (uint8_t *)ce_anm_get_vm((uint32_t)id) : 0;
+    if (vm) {
+        w = yk_round_px(*(const float *)(vm + CE_ANM_VM_SPRITE_SIZE));
+        h = yk_round_px(*(const float *)(vm + CE_ANM_VM_SPRITE_SIZE + 4));
+        if (w > 0 && h > 0) { if (out_w) *out_w = w; if (out_h) *out_h = h; return 1; }
+    }
+    w = yk_round_px(*(const float *)(e + CE_ENEMY_FINAL_SPRITE_W));
+    h = yk_round_px(*(const float *)(e + CE_ENEMY_FINAL_SPRITE_H));
+    if (w > 0 && h > 0) { if (out_w) *out_w = w; if (out_h) *out_h = h; return 1; }
+    return 0;
+}
+
+/* 「是 boss 吗」= 这个 id 在敌人管理器的 `CE_EM_BOSS_IDS[0..3]` 里。
+ * 判据与数据源与 117 `cards/animal.c:724` 的 `enemy_is_boss()` **完全相同**（那边是 static ⇒
+ * 不共享函数，但**数据源只有这一处**：管理器那 4 格）。*/
+static int yk_enemy_is_boss(const uint8_t *e)
+{
+    uint8_t *em = CE_ENEMY_MGR();
+    int32_t id;
+    int i;
+    if (!e || !em) return 0;
+    id = *(const int32_t *)(e + CE_ENEMY_ID);
+    for (i = 0; i < CE_EM_BOSS_SLOTS; ++i)
+        if (*(const int32_t *)(em + CE_EM_BOSS_IDS + (size_t)i * 4) == id) return 1;
+    return 0;
+}
+
+/* 起跟随 VM 并每帧跟随（照 `yk_fam_vm_follow()` 的写法：句柄被引擎清过 ⇒ 按同一变体自愈重起）。
+ * 形态口径与映射使魔**同一套**（owner 的 standing spec：「不按 shift 看得见使魔 / 按 shift 变成魔法阵」）：
+ *   · 人侧：画本体（四色原生切图，`yk_fam_anm_script()`）；
+ *   · 妖侧：本体透明（alpha 置 0，VM 不删 ⇒ 切回来一帧就恢复）+ 每台一支常驻魔法阵环。*/
+static void yk_orbit_vm_sync(yk_orbit_t *o)
+{
+    uint8_t *f = yk_familiar_by_id(o->fam_id);
+    const float *pp;
+    int youkai_side;
+    if (!f) return;
+    pp = ce_enemy_pos(f);
+    if (!o->anm_id || !ce_anm_get_vm(o->anm_id)) {
+        o->anm_id = ce_anm_spawn(CE_ABILITY_ANM(), yk_fam_anm_script((int)o->variant), YK_FAM_ANM_LAYER);
+        if (!o->anm_id) {
+            if (!s_orbit_vm_failed) {                     /* 只记一次（不刷屏）*/
+                s_orbit_vm_failed = 1;
+                ce_log("youkai/orbit: follow-VM spawn FAILED (familiar #%u, script %d, layer %d) - "
+                       "the shells stay alive (they still feed the kill-burst count) but invisible",
+                       o->fam_id, yk_fam_anm_script((int)o->variant), YK_FAM_ANM_LAYER);
+            }
+            return;
+        }
+        if (pp) ce_anm_set_pos(o->anm_id, pp[0], pp[1], 0.0f);
+    } else if (pp && !ce_anm_set_pos(o->anm_id, pp[0], pp[1], 0.0f)) {
+        o->anm_id = 0;                                    /* 句柄作废 ⇒ 下一帧自愈重起 */
+    }
+    youkai_side = CE_PLAYER_FOCUSED();
+    if (o->anm_id) ce_anm_set_color(o->anm_id, youkai_side ? 0x00ffffffu : 0xffffffffu);
+    if (youkai_side) {
+        if (!o->circle_id || !ce_anm_get_vm(o->circle_id)) {
+            o->circle_id = ce_anm_spawn(CE_ABILITY_ANM(),
+                                        CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_RING, YK_FAM_ANM_LAYER);
+            if (o->circle_id) ce_anm_interrupt(o->circle_id, 2);   /* 2 = 妖侧蓝（一手，同映射使魔）*/
+        }
+        if (o->circle_id && pp && !ce_anm_set_pos(o->circle_id, pp[0], pp[1], 0.0f)) o->circle_id = 0;
+    } else if (o->circle_id) {
+        ce_anm_delete(o->circle_id);                      /* 人侧不留魔法阵 */
+        o->circle_id = 0;
+    }
+}
+
+/* 找空槽建一台绕转使魔：位置 = 父敌坐标 + 半径 × (cosθ, sinθ)。
+ * 建壳那一刻就**清免伤位**（owner 口径：打得掉）并起**跟随 VM**（少等一帧 = 少一帧「看不见」的窗口）。*/
+static uint8_t *yk_orbit_spawn_one(uint32_t parent_id, unsigned step, int variant,
+                                   float px, float py, int32_t life)
+{
+    float dx = 0.0f, dy = 0.0f;
+    uint8_t *f;
+    yk_orbit_t *o;
+    unsigned i;
+
+    if (yk_orbit_free() == 0u) return 0;
+    for (i = 0; i < YK_ORBIT_MAX; ++i) if (!s_orbit[i].fam_id) break;
+    if (i >= YK_ORBIT_MAX) return 0;
+    o = &s_orbit[i];
+    if (!yk_orbit_offset(step, YK_ORBIT_RADIUS, &dx, &dy)) return 0;
+    f = yk_spawn_familiar_parent(px + dx, py + dy, parent_id, life);
+    if (!f) return 0;
+    o->fam_id = *(const uint32_t *)(f + CE_ENEMY_ID);     /* 键 = 使魔自己的 enemy_id */
+    o->parent_id = parent_id;
+    o->step = step;
+    o->orphan = 0;
+    o->variant = (int32_t)variant;
+    o->anm_id = 0;
+    o->circle_id = 0;
+    if (!o->fam_id) { o->parent_id = 0; return 0; }       /* 极端：刚建出来就没 id ⇒ 当失败 */
+    yk_orbit_pin(f, px + dx, py + dy);
+    yk_orbit_vm_sync(o);
+    ++s_orbit_spawned;
+    return f;
+}
+
+/* 扫全场：给「大怪」补 `yk_orbit_count_for_hp(父敌最大血量)` 台惰性绕转使魔。
+ * 五条筛选（owner 调的 117 判据 + 本卡三条）逐条见下面注释；一敌一对（补过就不再补）。
+ * ⚠ **「有没有发射口」不是筛选条件**（第二轮 owner 口径）—— 见下面 ④ 那段注。*/
+static void yk_orbit_scan(void)
+{
+    uint8_t *em = CE_ENEMY_MGR();
+    uint8_t *e;
+    unsigned seen = 0, roots = 0, bosses = 0, have_emit = 0, small = 0, big = 0, picked = 0;
+    if (!em) return;
+    ++s_orbit_scans;
+    CE_ENEMY_FOREACH(em, e) {
+        int32_t id, hp_now, life;
+        int w = 0, h = 0, want, k, made = 0;
+        const float *pp;
+        float px, py;
+        if (!e) continue;
+        ++seen;
+        id = *(const int32_t *)(e + CE_ENEMY_ID);
+        if (!id) continue;
+        /* **链根**：`CE_SPAWN_PARENT == 0` —— 排除 boss 部件 / 我们自己的使魔（它们都是子敌人），
+         *   也排除「别的敌人造出来的东西」（一手使魔数数的是**这个敌人自己的**使魔）。*/
+        if (*(const int32_t *)(e + CE_SPAWN_PARENT) != 0) continue;
+        ++roots;
+        /* **活着的真敌人**：`ce_enemy_lockable` 排掉死亡 / 未登场 / 不可锁定的那一档。*/
+        if (!ce_enemy_lockable(e)) continue;
+        /* **不是 boss**（117 的同一判据：id 在管理器那 4 格里）。*/
+        if (yk_enemy_is_boss(e)) { ++bosses; continue; }
+        /* **「有没有发射口」不再是筛选条件**（★★★ 2026-09-28 第二轮 · owner 口径：
+         *   「我觉得可以不考虑发射口的问题，这个是**别的种类**的使魔」）——
+         *   已经有 1:1 发射口映射的大怪**照样**补绕转使魔。这里只**数一下**（首次扫场那行日志用）。
+         *   ⚠ 与「**不进 `s_map`**」不矛盾：那张表管的是「**发射口** ↔ 使魔」的 1:1 映射与精准闸，
+         *     绕转使魔是**另一种使魔**（只绕转、不发弹），它既不该被当成谁的发射口、也不该占那个池；
+         *     它要的只是**一颗真敌人实体 + `CE_SPAWN_PARENT`**（颗数用）。两件事互不冲突。*/
+        if (yk_map_enemy_slots(&s_map, (uint32_t)id) != 0) ++have_emit;
+        /* 一敌一对：已经补过的不再补。*/
+        if (yk_orbit_find_parent((uint32_t)id)) continue;
+        /* **大怪**：贴图**原始**尺寸两边都 >= 64（117 的判据，见 `yk_big_by_sprite`）。*/
+        if (!yk_enemy_sprite_size(e, &w, &h)) continue;
+        if (!yk_big_by_sprite(w, h)) { ++small; continue; }
+        /* 池：这台敌人要 `want` 个空槽；一个都没有就**这一帧到此为止**（后面同样不够），
+         * 并且只记一次日志 —— 本卡有过 1.5 MB/min 的日志洪水事故（`AUDIT.md` §BE #143）。*/
+        if (yk_orbit_free() == 0u) {
+            if (!s_orbit_pool_full) {
+                s_orbit_pool_full = 1;
+                ce_log("youkai/orbit: pool full (%d) - no room for more orbit familiars this frame; "
+                       "the pool frees up when a parent dies (each big enemy wants up to %d, "
+                       "by its max HP)", (int)YK_ORBIT_MAX, (int)YK_ORBIT_MAX_PER_ENEMY);
+            }
+            break;
+        }
+        /* ★★★ 2026-09-28 第二轮（owner：「**数量我倾向于和血量挂钩**」）：台数 = f(父敌**最大血量**)。
+         * 血量走 spawn 的 `+0x14`（current/maximum/remaining 一次写三格），**必须过 `yk_clamp_spawn_life()`**
+         *（引擎在 life >= 1000 时置锁定黑名单 `flags_lo |= 0x40000000`）⇒ 被钳时记一行（只记一次）。*/
+        hp_now = *(const int32_t *)(e + CE_ENEMY_HP_MAX);
+        life = yk_clamp_spawn_life(hp_now);
+        if (life != hp_now && !s_orbit_life_clamped) {
+            s_orbit_life_clamped = 1;
+            ce_log("youkai/orbit: parent HP %d > the spawn-life ceiling (%d allowed, >= %d would set "
+                   "`flags_lo 0x40000000` = the lock-on blacklist) - the familiars' HP is clamped to %d",
+                   hp_now, (int)YK_LIFE_MAX_ALLOWED, (int)YK_LIFE_LIMIT, (int)life);
+        }
+        want = yk_orbit_count_for_hp(hp_now);
+        ++big;
+        pp = ce_enemy_pos(e);
+        px = pp ? pp[0] : 0.0f;
+        py = pp ? pp[1] : 0.0f;
+        for (k = 0; k < want; ++k) {
+            /* 第 0 台相位 0、第 1 台相差 180°、再往前后每隔 `YK_ORBIT_PHASE_GAP` 错开。*/
+            unsigned step = ((unsigned)k * YK_ORBIT_PHASE_GAP) % YK_ORBIT_STEPS;
+            if (yk_orbit_spawn_one((uint32_t)id, step, (int)(s_orbit_spawned & 3u), px, py, life)) ++made;
+            if (yk_orbit_free() == 0u) break;                 /* 池正好用光 ⇒ 这台就这些 */
+        }
+        if (made) {
+            ++s_orbit_targets; ++picked;
+            /* 每条目标**只打一次**（不刷屏）：这一行就是「哪只大怪被补了、补了几台、凭什么」的判据。*/
+            ce_log("youkai/orbit: target enemy #%u sprite %dx%d hp %d => %d familiar(s) "
+                   "(of %d by HP tier; chain root, not boss; radius %.0f, %.0f deg/frame, life %d)",
+                   (unsigned)id, w, h, hp_now, made, want,
+                   (double)YK_ORBIT_RADIUS, (double)YK_ORBIT_STEP_DEG, (int)life);
+        } else if (!s_orbit_spawn_failed) {
+            s_orbit_spawn_failed = 1;
+            ce_log("youkai/orbit: shell spawn FAILED for enemy #%u (sprite %dx%d hp %d) - "
+                   "`ce_spawn_enemy` returned 0 (ECL/manager not ready?)",
+                   (unsigned)id, w, h, hp_now);
+        }
+    }
+    if (!s_orbit_first_scan) {          /* 首次扫场自述一行：判「扫了没 / 场上有几只大怪」*/
+        s_orbit_first_scan = 1;
+        ce_log("youkai/orbit: first scan - %u enemy(ies) seen, %u chain root(s), %u boss, "
+               "%u already has emitter slot(s) (they get orbit familiars too now), "
+               "%u root(s) with a small sprite, %u big candidate(s), %u spawned",
+               seen, roots, bosses, have_emit, small, big, picked);
+    }
+}
+
+/* 每帧一次（`on_tick_2` 调；两个形态都跑 —— 这些使魔不是「妖侧才有的东西」）。
+ * 三件事：① 核生命周期（壳还在吗 / 父敌还在吗）② 推进相位 + 钉位 + 跟随 VM ③ 到点扫场 + 台账。
+ * ⚠ `noinline`：`on_tick_2` 里内联着 `ce_damage_rect` 的内联汇编，往它身上再加活值会让 i686
+ *   报「inline assembly requires more registers than available」（2026-09-22 实测，同 `yk_fam_vm_check`）。*/
+static void __attribute__((noinline)) yk_orbit_tick(uint32_t frame)
+{
+    uint8_t *em = CE_ENEMY_MGR();
+    unsigned i;
+    if (!em) return;                                  /* 世界没了：什么都不做（撤由 `yk_drop_all` 负责）*/
+    for (i = 0; i < YK_ORBIT_MAX; ++i) {
+        yk_orbit_t *o = &s_orbit[i];
+        uint8_t *f, *pe;
+        const float *pp;
+        float px, py, dx = 0.0f, dy = 0.0f;
+        if (!o->fam_id) continue;
+        f = yk_familiar_by_id(o->fam_id);
+        if (!f) { yk_orbit_retire(o, "shell gone"); continue; }   /* 被外力清了 ⇒ 清槽 + 收 VM */
+        pe = ce_enemy_by_id(em, (int32_t)o->parent_id);
+        if (!pe) {
+            /* 父敌查不到 ⇒ **等 `YK_ORBIT_ORPHAN_GRACE` 帧**再撤（理由见 `youkai_core.h`：
+             * 一手颗数在 EnemyManager 的死亡块里算，可能排在卡 tick **之后** ⇒ 早撤会把颗数打回 0）。*/
+            if (++o->orphan > YK_ORBIT_ORPHAN_GRACE) { yk_orbit_retire_orphan(o); continue; }
+            yk_orbit_pin(f, *(const float *)(f + CE_ENEMY_POS_X),
+                            *(const float *)(f + CE_ENEMY_POS_Y));   /* 原地钉住（免伤位照常清）*/
+            yk_orbit_vm_sync(o);
+            continue;
+        }
+        o->orphan = 0;
+        o->step = yk_orbit_step_advance(o->step);
+        pp = ce_enemy_pos(pe);
+        px = pp ? pp[0] : *(const float *)(f + CE_ENEMY_POS_X);
+        py = pp ? pp[1] : *(const float *)(f + CE_ENEMY_POS_Y);
+        if (!yk_orbit_offset(o->step, YK_ORBIT_RADIUS, &dx, &dy)) continue;
+        yk_orbit_pin(f, px + dx, py + dy);            /* 父敌会动 ⇒ 每帧用**父敌当前位置**重算 */
+        yk_orbit_vm_sync(o);
+    }
+    if ((++s_orbit_scan_timer % YK_ORBIT_SCAN_INTERVAL) == 0u) yk_orbit_scan();
+    /* 台账（每 120 帧一行，且只在「这件事真的发生过」之后）——
+     * 判据行见 `HANDOFF-108.md` §3 第 51 行；累计数跨关不清（看全程）。*/
+    if (s_orbit_targets && (frame % 120u) == 0u)
+        ce_log("youkai/orbit: targets %u live %u spawned %u killed %u orphan %u pool_full %u "
+               "scans %u (inert orbit familiars: no shots, no body hitbox, damageable with "
+               "HP = the parent's max HP; their real job is to be counted by the kill burst "
+               "through `CE_SPAWN_PARENT`)",
+               s_orbit_targets, yk_orbit_live(), s_orbit_spawned, s_orbit_killed,
+               s_orbit_lost_orphan, (unsigned)s_orbit_pool_full, s_orbit_scans);
+}
+
 /* ============ ★★★ #22 的另一半：Shift 那一下的**爆闪**（一手 `th08:0x42c420` 两支）=================
  * 一手：`FUN_0042c420` 里两支各起一支特效（都在**使魔身上** `&enemy+0x2d88`）：
  *   · **人→妖**：`0x42c44e SpawnEffect(0x1f, …, 颜色 0x80303080)` ⇒ 模板 `0x4c6d30[0x1f]` = `etama.anm`
@@ -969,6 +1411,10 @@ static void yk_drop_all(yk_card_t *s, const char *why)
     /* ★ 兜底收 VM（句柄幂等）：`acts` 装不下的条目、以及 `fam_id` 已经被清掉但 VM 还挂着的残局，
      * 都靠这一支清干净 —— 删卡那一刻 tick 全停，这里就是**唯一**的机会（照 112 的 kill_all）。*/
     yk_fam_vm_kill_all();
+    /* ★★★ 2026-09-28（第四十九批）：**惰性绕转使魔**也在这里收（它不在 `s_map` 里 ⇒
+     *   `yk_withdraw_all` 撤不到它）—— 删卡 / 换关 / 局末 / 自机没了 / 世界没了五条路**都过这里**
+     *   ⇒ 这一句就是「删卡后一只不留」的落点（`METHOD.md` 铁律二）。*/
+    yk_orbit_kill_all();
     if (had && why) ce_log("youkai: withdrew %u familiar(s) (%s)", had, why);
     if (s) s->tr.pending = 0;
 }
@@ -2877,6 +3323,10 @@ static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
                  *   （TH18 的 boss 部件常常不可锁定；用可锁定当筛子会漏数、颗数公式就跟着偏）。*/
                 if (!e) continue;
                 if (*(const int32_t *)(e + CE_SPAWN_PARENT) != (int32_t)ev->id) continue;
+                /* ★★★ 2026-09-28（第四十九批）：**惰性绕转使魔也是这里的合法子敌人**
+                 *   （它们的 `CE_SPAWN_PARENT` 就是父敌 id，见 `yk_orbit_*` 那一节）。
+                 *   ⇒ **不许**在这一支里按「是不是我们造的使魔」过滤掉它们 —— 那正好会把这一批
+                 *   换来的颗数抹掉（一手：颗数 = 使魔数的函数，`th08:0x41fd40` / `:0x42adc4` 的门）。*/
                 ++n;                                        /* 计数不封顶（颗数公式要真个数）*/
                 if (n <= YK_KILL_CHILD_MAX) {
                     const float *cp = ce_enemy_pos(e);
@@ -3216,6 +3666,9 @@ static int on_ctor(ce_card_t *c)
      * 再调一次 ctor）—— 那时 `yk_map_reset` 会把使魔一并忘掉，它们身上的 VM 若不复位就永久留下
      * （`s_fam_vm` 是文件级静态，不是卡状态）。句柄为空时是纯 no-op。*/
     yk_fam_vm_kill_all();
+    /* ★★★ 2026-09-28（第四十九批）：绕转使魔同理（文件级静态表；`on_run_reset` 那条路已经过
+     *   `yk_drop_all`，这里是**再兜一次** —— ctor 在局中每关都会被调，且它是真敌人，漏一只就是游荡空壳）。*/
+    yk_orbit_kill_all();
     /* ★ 2026-09-27 第二十六批：卡侧束的句柄也是**文件级静态**（每关 ctor 会重跑）⇒ 一并收干净，
      * 否则换关后那支 VM 会永远钉在旧位置（`METHOD.md` 铁律二：长持续效果必须交代被删掉会怎样）。*/
     yk_beam_kill(0);
@@ -5361,6 +5814,11 @@ static int on_tick_2(ce_card_t *c)
         }
     }
     yk_familiars_tick(s);
+    /* ★★★ 2026-09-28（第四十九批 · owner：「给这些大怪加上使魔」）：**惰性绕转使魔**每帧一次 ——
+     *   扫场（每 `YK_ORBIT_SCAN_INTERVAL` 帧）+ 生命周期 + 相位/钉位/跟随 VM。
+     *   ⚠ 刻意**不放在 `focused` 分支里**：它们不是「妖侧才有的东西」，人侧也活着、也绕转
+     *   （与 1:1 映射使魔同一口径：松 Shift 不撤，只有 `yk_drop_all` 撤）。*/
+    yk_orbit_tick(s_ledger_frame);
     /* ★★ 2026-09-26（owner：那声切换音「**在有使魔的情况下才有**」）：人→妖那一下的 `se_ophide`
      *   **延到这里才播** —— 门要读**本帧**使魔表（`yk_familiars_tick()` 刚在上面建/撤完）。
      *   一手语义也是这个：那一声是**敌人的方法**（`FUN_0042c420`）在「形态变了」时发的，

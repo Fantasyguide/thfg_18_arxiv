@@ -2151,6 +2151,95 @@ int main(void)
         CHECK(YK_BEAM_HIT_FX_LAYER == YK_BEAM_CORE_ANM_LAYER + 2);   /* 原生那一对（15 与 13）的相对位置 */
         CHECK(YK_BEAM_CORE_ANM_LAYER == 13);                        /* = 自机弹那一层（原生 script4 自己写的值）*/
     }
+    /* ===== ★★★ 2026-09-28（第四十九批）：**惰性绕转使魔**的纯逻辑（大怪判据 / 相位 / 查表）=====
+     * 语义来源：`youkai_core.h` 那一节（owner 口径 + 117 的同源判据）；场景侧在 `youkai.c`。*/
+    {
+        float dx, dy;
+        unsigned i;
+
+        /* ① 「大怪」判据的边界（63×64 / 64×63 / 64×64）—— 与 117 `cards/animal.c` 的
+         *    `ANIMAL_BIG_SPRITE_MIN_W/H` 同值，所以这一段同时钉住「两张卡用的是同一个数」。*/
+        CHECK(YK_BIG_SPRITE_MIN_W == 64 && YK_BIG_SPRITE_MIN_H == 64);
+        CHECK(!yk_big_by_sprite(63, 64));
+        CHECK(!yk_big_by_sprite(64, 63));
+        CHECK(yk_big_by_sprite(64, 64));                      /* 边界含 */
+        CHECK(yk_big_by_sprite(65, 64));
+        CHECK(yk_big_by_sprite(64, 65));
+        CHECK(yk_big_by_sprite(96, 96));                      /* 实测的 64×64 那一批 sprite */
+        CHECK(!yk_big_by_sprite(0, 0));
+        CHECK(!yk_big_by_sprite(-64, 100));                   /* 读到的值不信任：负数不算大怪 */
+        CHECK(!yk_big_by_sprite(100, -64));
+
+        /* ② 相位推进：每帧 +3°、满 120 回绕；走满一圈**正好**回到起点 */
+        CHECK(YK_ORBIT_STEP_DEG == 3);
+        CHECK(YK_ORBIT_STEPS == 120);
+        CHECK(YK_ORBIT_STEPS == 360u / YK_ORBIT_STEP_DEG);
+        CHECK(YK_ORBIT_PHASE_GAP == 60u);                     /* 同父两台初相相差 180° */
+        CHECK(yk_orbit_step_advance(0) == 3u);
+        CHECK(yk_orbit_step_advance(117) == 0u);
+        CHECK(yk_orbit_step_advance(118) == 1u);
+        CHECK(yk_orbit_step_advance(119) == 2u);
+        CHECK(yk_orbit_step_advance(100000000u) < YK_ORBIT_STEPS);   /* 越界也回绕进表内 */
+        {
+            unsigned s = 0, hits = 0;
+            for (i = 0; i < YK_ORBIT_STEPS / YK_ORBIT_STEP_DEG; ++i) {   /* 一圈 = 40 帧 */
+                s = yk_orbit_step_advance(s);
+                CHECK(s < YK_ORBIT_STEPS);
+                if (s == 0u) ++hits;
+            }
+            CHECK(s == 0u);                                   /* 40 帧后回到 0 */
+            CHECK(hits == 1u);                                /* 一圈内只经过 0 一次 */
+        }
+
+        /* ③ 四个象限的代表值（**y 轴向下**：0 = 正右、30 = 正下、60 = 正左、90 = 正上）*/
+        CHECK(yk_orbit_offset(0, 48.0f, &dx, &dy) && dx > 47.9f && dx < 48.1f && dy > -0.1f && dy < 0.1f);
+        CHECK(yk_orbit_offset(30, 48.0f, &dx, &dy) && dx > -0.1f && dx < 0.1f && dy > 47.9f && dy < 48.1f);
+        CHECK(yk_orbit_offset(60, 48.0f, &dx, &dy) && dx > -48.1f && dx < -47.9f && dy > -0.1f && dy < 0.1f);
+        CHECK(yk_orbit_offset(90, 48.0f, &dx, &dy) && dx > -0.1f && dx < 0.1f && dy > -48.1f && dy < -47.9f);
+
+        /* ④ 模长守恒（**不引 libm**：只用乘加与比较）—— 全部 120 项都在 1% 容差内 */
+        for (i = 0; i < YK_ORBIT_STEPS; ++i) {
+            const float r = 48.0f, r2 = r * r;
+            float m2;
+            CHECK(yk_orbit_offset(i, r, &dx, &dy));
+            m2 = dx * dx + dy * dy;
+            CHECK(m2 > r2 * 0.99f && m2 < r2 * 1.01f);
+        }
+        CHECK(yk_orbit_offset(17, 0.0f, &dx, &dy) && dx == 0.0f && dy == 0.0f);   /* 半径 0 ⇒ 原地 */
+
+        /* ⑤ 越界 step 一律回绕进表内；空指针返回 0（调用方的编程错，不是数据问题）*/
+        CHECK(yk_orbit_offset(120, 48.0f, &dx, &dy) && dx > 47.9f && dx < 48.1f);   /* 120 ≡ 0 */
+        CHECK(yk_orbit_offset(121, 48.0f, &dx, &dy));          /* ≡ 1，不崩即可 */
+        CHECK(yk_orbit_offset(1000000000u, 48.0f, &dx, &dy));
+        CHECK(!yk_orbit_offset(0, 48.0f, NULL, &dy));
+        CHECK(!yk_orbit_offset(0, 48.0f, &dx, NULL));
+
+        /* ⑥ 台数 = **父敌最大血量的函数**（★★★ 2026-09-28 第二轮 · owner「数量我倾向于和血量挂钩」）。
+         *   表 = ❓自定（`<200 ⇒ 1 / <600 ⇒ 2 / <1500 ⇒ 3 / 其余 4`），待 th08 一手统计回来即替换
+         *   ⇒ 这一段钉的是**函数与表的关系**（边界含/不含、单调不降、钳进池上限），不是那几个数本身。*/
+        CHECK(YK_ORBIT_HP_TIER_STEPS == 3);
+        CHECK(YK_ORBIT_MAX_PER_ENEMY == 4);
+        CHECK(yk_orbit_count_for_hp(0) == 1);                 /* 读不到血量 ⇒ 最低档（不放弃补）*/
+        CHECK(yk_orbit_count_for_hp(-12345) == 1);
+        CHECK(yk_orbit_count_for_hp(1) == 1);
+        CHECK(yk_orbit_count_for_hp(199) == 1);
+        CHECK(yk_orbit_count_for_hp(200) == 2);               /* 阈值是**开区间上界**：>= 200 进下一档 */
+        CHECK(yk_orbit_count_for_hp(599) == 2);
+        CHECK(yk_orbit_count_for_hp(600) == 3);
+        CHECK(yk_orbit_count_for_hp(1499) == 3);
+        CHECK(yk_orbit_count_for_hp(1500) == 4);
+        CHECK(yk_orbit_count_for_hp(999999) == 4);
+        CHECK(yk_orbit_count_for_hp(1500) == YK_ORBIT_MAX_PER_ENEMY);
+        {   /* 单调不降 + 恒在 [1, 池上限] 内（表被替换后这两条也必须成立）*/
+            int prev = 0, hp, v;
+            for (hp = -10; hp <= 4000; hp += 37) {
+                v = yk_orbit_count_for_hp(hp);
+                CHECK(v >= 1 && v <= (int)YK_ORBIT_MAX);
+                CHECK(v >= prev);
+                prev = v;
+            }
+        }
+    }
     check_beam_member_covers_entry();       /* ★ 第三十三批：束贴图铺满整条 entry 行宽（「一缕一缕」的闸）*/
     check_beam_spec_files();
 
