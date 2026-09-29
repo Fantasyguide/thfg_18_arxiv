@@ -1735,24 +1735,121 @@ unsigned yk_orbit_step_advance(unsigned step)
     return step;
 }
 
-/* ❓自定（owner 2026-09-28「**数量我倾向于和血量挂钩**」；**待 th08 一手统计回来即替换**）：
- * **分档表** = 阈值列（升序）+ 台数列，一一对应：`hp_max < 阈值[i]` ⇒ 取 `台数[i]`；
- * 高过全表 ⇒ `YK_ORBIT_MAX_PER_ENEMY`。owner 直接给的初值 = `<200 ⇒ 1 / <600 ⇒ 2 / <1500 ⇒ 3 / 其余 4`。
- * ⚠ **要替换的就是这两行**（阈值与台数必须同长、同序；长度 = `YK_ORBIT_HP_TIER_STEPS`）。
- * ⚠ 读不到血量（`hp_max <= 0`）走第一档（1 台）—— 不因为读失败就放弃补（那只敌人还是「没有使魔」）。*/
-static const int32_t YK_ORBIT_HP_STEP[YK_ORBIT_HP_TIER_STEPS] = { 200, 600, 1500 };
-static const unsigned char YK_ORBIT_HP_COUNT[YK_ORBIT_HP_TIER_STEPS] = { 1, 2, 3 };
+/* ★★★ 2026-09-28 第三轮：**按 th08 一手统计校准**（不再是 owner 的初值分档）。
+ * **分档表** = 阈值列（升序、**闭区间**：`hp_max <= 阈值[i]`）+ 台数列，一一对应；
+ * 高过全表 ⇒ `YK_ORBIT_MAX_PER_ENEMY`（= 13，也是全表最大档）。
+ * 一手出处：TH08 道中 24 个 ECL / 1481 条目 / 1016 个 `familiarCreate*` 站点里的 **40 个
+ *   「一次性撒完」样本**（Spearman ρ = 0.882、R² = 0.59 ⇒ **强单调但不是连续公式**，数据是
+ *   **角色分档**，所以用分档表而不是拟合）；完整统计、样本清单与反例见
+ *   `engine/enemy/th08/03-familiar-count-vs-hp.md`（原始草稿在本机 `local/_scratch/th08f/`，不入库）。
+ * 档值依据（中位数/集合）：`<= 200` 实测全是 2（{2,2,2,2,2}）；200–1000 中位 **4**
+ *   （200–500：{2×7,4×9}、500–1000：{4,4,4,4,5,5,9,13}）；1000–2000 中位 **8**
+ *   （{4,8×4,9,13×3}）；>2000 实测 **13**。
+ * ⚠ **三条反例**（写在这里，免得后人以为「大怪 ⇒ 使魔多」是铁的）：`ecldata3 Sub13/Sub14`
+ *   （HP 500/600 却**循环撒 50 台** ⇒ 台数与 HP 脱钩，真正决定的是存活帧数/间隔）、
+ *   `ecldata2 Sub7`（HP 1000 只 4 台）、`ecldata2 Sub11`（HP 400–500 有 9 台）；
+ *   另有 80+ 个 HP >= 4000 的 sub **一台使魔都没有**（如 `ecldata6 Sub32` HP 20000）
+ *   ⇒ **角色（中ボス vs 撒き役）才是自变量**。
+ * ⚠ **循环撒き型我们不做**（本卡只在敌人身上补一次性的一圈）⇒ 本表只覆盖「一次性」那一类。
+ * ⚠ 读不到血量（`hp_max <= 0`）走第一档（2 台）—— 不因为读失败就放弃补（那只敌人还是「没有使魔」）。*/
+static const int32_t YK_ORBIT_HP_STEP[YK_ORBIT_HP_TIER_STEPS] = { 200, 1000, 2000 };
+static const unsigned char YK_ORBIT_HP_COUNT[YK_ORBIT_HP_TIER_STEPS] = { 2, 4, 8 };
 
 int yk_orbit_count_for_hp(int hp_max)
 {
     int i, n;
     for (i = 0; i < YK_ORBIT_HP_TIER_STEPS; ++i)
-        if (hp_max < YK_ORBIT_HP_STEP[i]) { n = (int)YK_ORBIT_HP_COUNT[i]; goto clamp; }
-    n = YK_ORBIT_MAX_PER_ENEMY;
+        if (hp_max <= YK_ORBIT_HP_STEP[i]) { n = (int)YK_ORBIT_HP_COUNT[i]; goto clamp; }
+    n = YK_ORBIT_HP_MAX_COUNT;                            /* >2000 那一档 = 13（**不含**面加成）*/
 clamp:
     if (n < 1) n = 1;                                     /* 表被填坏也不给 0（0 = 不补，语义不同）*/
     if (n > (int)YK_ORBIT_MAX) n = (int)YK_ORBIT_MAX;      /* 钳进池上限 */
     return n;
+}
+
+/* 绕转半径按台数分档（一手读数分布与理由见 `youkai_core.h` 的同名宏）。**6/7 台落到 20**：
+ * 实测档只有 {2,4,8,13}，6/7 不会出现，这个兜底是给「表被换掉」留的（总函数，不留空洞）。*/
+int yk_orbit_radius_for_count(int n)
+{
+    /* 返回**整数像素**（三个档都是整数）—— ⚠ 别改成返回 float：i686 的 float 返回值走 x87 的
+     * `st(0)` ⇒ `make dllx87` 会红（实测多 3 条 x87 指令）。三个宏仍是唯一出处。*/
+    if (n <= 2) return (int)YK_ORBIT_RADIUS_FEW;          /* 100：stage1–3 小怪那一档 */
+    if (n <= 5) return (int)YK_ORBIT_RADIUS_MID;          /* 60：stage4A/4B 的 Sub5 */
+    return (int)YK_ORBIT_RADIUS_MANY;                     /* 20：大怪那一档（台数最多、圈最紧）*/
+}
+
+/* 面加成（owner 口径：「没过一面，同样血量的使魔数 +1」）：`stage` = TH18 当前面号（1 基）。
+ * `<= 1`（含 0 / 负数 / 读不到）⇒ 0；`> 6`（ex 面 / 异常值）⇒ 封顶 `YK_ORBIT_STAGE_BONUS_MAX`。*/
+int yk_orbit_stage_bonus(int stage)
+{
+    int b;
+    if (stage <= 1) return 0;
+    b = stage - 1;
+    if (b > YK_ORBIT_STAGE_BONUS_MAX) b = YK_ORBIT_STAGE_BONUS_MAX;
+    return b;
+}
+
+/* **最终台数** = HP 档 + 面加成，钳进 [1, `YK_ORBIT_MAX_PER_ENEMY`]。卡侧只用这一个。*/
+int yk_orbit_count_total(int hp_max, int stage)
+{
+    int n = yk_orbit_count_for_hp(hp_max) + yk_orbit_stage_bonus(stage);
+    if (n < 1) n = 1;
+    if (n > (int)YK_ORBIT_MAX_PER_ENEMY) n = (int)YK_ORBIT_MAX_PER_ENEMY;   /* 18 = 13 + 5 */
+    return n;
+}
+
+/* 一个敌人该给使魔多少血 = **HP 档（不含面加成）** → 一手值 → ×SCALE → 钳 999。
+ * 面加成只影响**台数**（owner：「**同样血量**的使魔数 +1」）⇒ 这里**不**传最终台数。*/
+int yk_orbit_hp_for_enemy(int hp_max)
+{
+    return yk_orbit_familiar_hp(yk_orbit_count_for_hp(hp_max));
+}
+
+/* 台数 → **血量档**（0..`YK_ORBIT_HP_TIER_STEPS`）：与半径那三档同一个切法
+ * （`<=2 / <=5 / <=8 / 其余`）⇒ 表里 `{100, 100, 300, 600}`。count <= 0 落第 0 档。*/
+static int yk_orbit_hp_tier(int count)
+{
+    if (count <= 2) return 0;
+    if (count <= 5) return 1;
+    if (count <= 8) return 2;
+    return YK_ORBIT_HP_TIER_STEPS;                        /* 3 = 最后一档（13 台那档）*/
+}
+
+/* 一手基准（TH08 使魔 `familiarCreate` 第 4 实参的实测值，按台数档归类）—— 不缩放。*/
+int yk_orbit_onehand_hp(int count)
+{
+    int t = yk_orbit_hp_tier(count);
+    if (t < 0) t = 0;
+    if (t > YK_ORBIT_HP_TIER_STEPS) t = YK_ORBIT_HP_TIER_STEPS;
+    return (int)YK_ORBIT_HP_ONEHAND[t];
+}
+
+/* 实际血量 = **一手基准 × `YK_ORBIT_HP_SCALE`**（当前 SCALE = 1 ⇒ 就是一手值 100/100/300/600），
+ * 顶上钳**引擎硬上限** 999（`life >= 1000` ⇒ `flags_lo 0x40000000` 锁定黑名单），底下保底 1。
+ * 旋钮留着是因为 TH08 道中使魔恒 100 血，在 TH18 的 DPS 下可能偏脆（owner：「一碰就碎主要是
+ * 形容杂鱼」）；TH18 vs TH08 的 DPS 核查另行进行，结论到了只改 `YK_ORBIT_HP_SCALE` 这一个数。
+ * ⚠ 返回 int（**不要**改成 float：i686 的 float 返回值走 x87 ⇒ `make dllx87` 会红）。*/
+int yk_orbit_familiar_hp(int count)
+{
+    int hp = yk_orbit_onehand_hp(count) * YK_ORBIT_HP_SCALE;
+    if (hp > YK_LIFE_MAX_ALLOWED) hp = YK_LIFE_MAX_ALLOWED;
+    if (hp < 1) hp = 1;
+    return hp;
+}
+
+/* 均匀相位：第 k 台的角度 = `k * 120 / n`（整数除法）。n <= 120 时严格递增 ⇒ 互不重合；
+ * n = 2 时 {0, 60} = 正好 180° 相对。参数越界 ⇒ 返回 0（调用方自己保证 k < n）。*/
+unsigned yk_orbit_phase_step(int n, int k)
+{
+    if (n <= 0 || k <= 0) return 0u;
+    if (k >= n) return 0u;
+    return ((unsigned)k * YK_ORBIT_STEPS) / (unsigned)n;
+}
+
+/* 每敌错相：`(enemy_id * 17) % 120`。乘子与 120 互质 ⇒ id 相邻的两只大怪相位也差 17 步。*/
+unsigned yk_orbit_phase_id(uint32_t enemy_id)
+{
+    return (unsigned)((enemy_id * YK_ORBIT_PHASE_STRIDE) % YK_ORBIT_STEPS);
 }
 
 /* 查表给偏移：`(cos, sin) × radius`。返回 0 只在空指针时（调用方自己的编程错，不是数据问题）。*/

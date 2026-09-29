@@ -25114,3 +25114,68 @@ th08:0x42aff0  ; 每个使魔各撒一盘（散开半径 = 2×颗数，0x42aff3 
 `python3 native/tools/capcheck.py` ⇒ `capcheck：全绿 ✅`（.rdata 多 960 B 的表，余量够）、
 `python3 tooling/check-docs.py` ⇒ `✓ 全部通过（406 个文件）`；另外整仓 `make -s check` 的其余各关
 （`engine_abi_check` 9 条引擎调用对账 / `anm_hud_alpha_check` 24 项 / 生成物无漂移）全绿。
+
+### §BE #150 · 追加（2026-09-28 第五轮）：**参数按 th08 一手统计校准**（台数 / 半径 / 圆心 / 血量 / 池）
+
+> 触发：一支**一次手统计**回来了（24 个 ECL / 1481 条目 / **1016 个 `familiarCreate*` 站点** /
+> 40 个「一次性撒完」的 (HP, n) 样本 / Spearman **ρ = 0.882**、R² = 0.59）。
+> 归档（新文档，已过 `check-docs.py`）：[`engine/enemy/th08/03-familiar-count-vs-hp.md`](../../../engine/enemy/th08/03-familiar-count-vs-hp.md)
+> —— 原始草稿与 37 行 JSON 在 `local/_scratch/th08f/`（**本机草稿，不入库**）。
+
+**逐条改了什么**
+
+| 项 | 改前 | 改后 | 依据 |
+| --- | --- | --- | --- |
+| 台数 | owner 初值分档 `<200⇒1 / <600⇒2 / <1500⇒3 / 其余 4` | **`<=200⇒2 / <=1000⇒4 / <=2000⇒8 / 其余 13`**（闭区间） | 一手统计（该文 §3）；反例 §4 |
+| 半径 | 常数 `48.0f`（❓自定，已删） | **按台数分档**：`n<=2⇒100`、`n<=5⇒60`、其余⇒`20`（`yk_orbit_radius_for_count`） | 一手读数 `r=120×148/100×104/20×93/60×10` + 道中三段 |
+| 相位 | 两台固定相差 180°（`YK_ORBIT_PHASE_GAP`，已删） | **均匀 `k·120/n` + 每敌错相 `(id·17)%120`**（`yk_orbit_phase_step` / `yk_orbit_phase_id`） | ❓自定（一手每台各写各的角度） |
+| 圆心 | **每帧跟在父敌身上**（读父敌坐标重算） | **定圆心**：圆心 = 建壳那一刻的父敌坐标，之后不跟（父敌飞走 ⇒ 使魔留在原地绕） | **一手**：`moveCircle`（opcode 73，`th08:0x41a4b7`）把圆心设成使魔自己当前位置（`0x41a50b`–`0x41a52a`）；`familiarCreate`（opcode 91，`th08:0x41f280`）生成点 = 本体位置 + `(x,y)`（`0x41f2ba`–`0x41f2d3`，脚本全写 `0,0`） |
+| 血量 | **父敌最大血量**（第二轮口径） | **一手值 × 缩放旋钮**：`YK_ORBIT_HP_ONEHAND`（按台数档 100/100/300/600）× `YK_ORBIT_HP_SCALE`（**当前 = 1**）⇒ `{100,100,300,600}`，恒钳 <= 999 | 一手：`familiarCreate` 第 4 实参（`th08:0x42a680`）、道中恒 100、218 个使魔子程序**无一** `lifeSet`；旋钮 = ❓自定（owner：「一碰就碎主要是形容杂鱼」；DPS 核查另行进行） |
+| 池上限 | 16 | **32** | 13 台/敌 × 同屏 2~3 只大怪 + 余量；每台 = 1 壳 + 1 跟随 VM（妖侧 +1 环 VM） |
+
+**同时删掉的旧机制**：`CE_ENEMY_HP_MAX` 当使魔血量那一条（父敌 HP **现在只用来定台数**）、
+`parent HP %d > the spawn-life ceiling` 那条钳位日志（新血量恒 < 1000）。
+**日志**：目标那一行现在带 `hp <父敌HP>`（定台数用）+ `radius` + `fam life %d = onehand %d x %d`
+⇒ 实跑可一眼判「台数按档」「不是一碰就碎」。
+
+**新增/改动的纯函数**（`youkai_core.{h,c}`，全有单测）：`yk_orbit_count_for_hp`（闭区间分档）、
+`yk_orbit_radius_for_count`、`yk_orbit_phase_step`、`yk_orbit_phase_id`、`yk_orbit_onehand_hp`、
+`yk_orbit_familiar_hp`、`YK_ORBIT_HP_ONEHAND[4]`、`YK_ORBIT_HP_SCALE`。
+⚠ **踩到过一次 x87 红线**：先写成「返回 float」的半径访问器 ⇒ i686 的 float 返回值走 `st(0)`
+⇒ `make dllx87` 立刻报 **3** 条 x87 指令；改成返回 int（卡侧 `(float)` 转一次）后归零。
+这一条已写进 `youkai_core.h` 的注释（**别再包 float 返回版本**）。
+
+**闸（追加后重跑，原文）**：`make -s check` rc=0（`youkai_core: 6670 checks, 0 failed`；其余各测试 0 failed）、
+`make -s dllx87` ⇒ `x87 in our objects: 0`、`python3 sites.py verify` ⇒ `✅ 全部对上`（213 条 binhack）、
+`python3 native/tools/capcheck.py` ⇒ `capcheck：全绿 ✅`、`python3 tooling/check-docs.py` ⇒ `✓ 全部通过`。
+
+### §BE #150 · 追加（2026-09-28 第六轮）：**台数加「面」那一项**（owner 口径）+ 容量核查
+
+> **owner 逐字**：「然后我倾向是**没过一面，同样血量的使魔数 +1**」。
+
+**改法**（全是纯函数 + 单测）：
+
+| 项 | 内容 |
+| --- | --- |
+| `yk_orbit_stage_bonus(int stage)` | `stage <= 1`（含 0 / 负数 / 读不到）⇒ `0`；否则 `min(stage − 1, YK_ORBIT_STAGE_BONUS_MAX)`，`YK_ORBIT_STAGE_BONUS_MAX = 5`（TH18 正篇 6 面 ⇒ 6 面 +5；ex 面 / 异常值不再加） |
+| `yk_orbit_count_total(int hp_max, int stage)` | `clamp(HP 档 + 面加成, 1, YK_ORBIT_MAX_PER_ENEMY)`；卡侧改成调**这一个**（面号 = `CE_CURRENT_STAGE()`，117 也是这么取的） |
+| 上限拆分 | 新增 `YK_ORBIT_HP_MAX_COUNT = 13`（HP 档最大档，`yk_orbit_count_for_hp` 的返回值**不再**借用 `YK_ORBIT_MAX_PER_ENEMY`）；`YK_ORBIT_MAX_PER_ENEMY = 13 + 5 = 18` |
+| 池上限 | `YK_ORBIT_MAX` 32 → **48**（同屏 2~3 只大怪 × 18 + 余量） |
+| 日志 | 目标那一行补 `stage %d` 与 `HP tier %d + stage bonus %d = %d`（台账那行不动） |
+
+**容量核查（按工单要求先核再定）**：
+- **敌人实体**：TH18 的敌人是**堆对象**（`youkai.c` 自己的注：「绝不缓存敌人指针：敌人是堆对象，过场 `destroy_all` 会静默释放」）⇒ 没有定长池可撞；
+- **ANM VM**：世界列表是**链表**（`engine/anm/th18/01-vm-instantiate.md` 的 `AnmLoaded__instantiate_vm_to_world_list_back th18:0x405bf0` 挂表尾），`CAPACITY.md` 第 127 行也明说它「**不是**有界且满了会静默改行为的定长数组」⇒ 失败模式 = `ce_anm_spawn` 返回 0（我们已按「只少观感 + 只记一次日志」处理，壳照样活着、照样算进颗数）；
+- ⇒ **没有硬池先被撞**（48 台 = 48 壳 + ≤48 跟随 VM + 妖侧 ≤48 环 VM；对照本卡已有的 1024 颗永点 VM 预算，这是小量）；
+  已按台账口径把这条登记进 [`CAPACITY.md`](CAPACITY.md) 的 `YK_ORBIT_MAX` 行（`capcheck` 全绿）；
+- 最坏情况下的可见代价：池满 ⇒ **能补几台补几台** + 只记一次日志（不刷屏、不崩）。
+
+**一处刻意的选择（发版前请 owner 拍）**：血量按 **HP 档**（**不含**面加成）归类 —— 依据是 owner 那句
+「**同样血量**的使魔数 +1」：面加成只加**台数**、**不改**每台的血。所以第六轮的 ≤200 血敌人在 6 面是
+「**7 台 × 各自 100 血**」而不是「7 台 × 300 血」。实现 = `yk_orbit_hp_for_enemy(hp_max)`（纯函数、有单测）；
+**半径**则相反，按**最终台数**走（圈大小是视觉量）。要改成「血量也跟着涨」= 把那一个调用换成
+`yk_orbit_familiar_hp(want)`（一行）。
+
+**单测（覆盖工单点名的边界）**：`bonus(0/-1/1) = 0`、`bonus(2..6) = 1..5`、`bonus(7/99) = 5`；
+`total(≤200, 1面) = 2`、`total(≤200, 6面) = 7`、`total(>2000, 1面) = 13`、`total(>2000, 6面) = 18`、
+`total(>2000, 99面) = 18`（钳住）、`stage = 0 / -1` 与 1 面同值、面号升 ⇒ 台数不降、恒在 `[1, 18]`。

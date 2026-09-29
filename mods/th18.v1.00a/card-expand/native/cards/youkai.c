@@ -748,11 +748,14 @@ static void yk_fam_vm_follow(uint32_t fam_id, int variant, const uint8_t *f)
  *   ① **不进 `s_map`** ⇒ 不参与发射口映射 / 精准闸（`broken` 位）/ 使魔环爆闪 / 切换音计数；
  *   ② 由 ① 顺带 ⇒ **不参与 `yk_fam_collide_tick`**（那是本卡唯一的人侧「撞使魔 = MISS」判据）
  *      ⇒ owner 要的「**没有体术**」是**结构上**成立的，不是靠一个标志位；
- *   ③ **打得掉，血量 = 本体血量**（★★★ 2026-09-28 第二轮 · **owner 口径**：「可以不免伤，
- *      **血量 = 本体血量**」）：建壳时 `CE_SPAWN_LIFE = yk_clamp_spawn_life(父敌最大血量)`
- *      （血量读 `CE_ENEMY_HP_MAX` = `zEnemyData.life.maximum`；钳位那一关是**引擎的硬约束**，
- *      见 `YK_LIFE_LIMIT`：life >= 1000 会被置锁定黑名单 `flags_lo 0x40000000`），
- *      并且每帧 `yk_orbit_pin()` **清掉** `CE_ENEMY_FLAG_NO_DAMAGE`（不置上、也不按聚焦分）；
+ *   ③ **打得掉，血量 = 一手值 × 缩放旋钮**（第四轮 **owner 口径**：「那就 **hp 切成一手**」）：
+ *      建壳时 `CE_SPAWN_LIFE = yk_clamp_spawn_life(yk_orbit_familiar_hp(台数))`
+ *      = 一手值（TH08 `familiarCreate` 第 4 实参，按台数档 100/100/300/600）× `YK_ORBIT_HP_SCALE`
+ *      ⇒ **当前 SCALE = 1，就是一手值 `{100, 100, 300, 600}`**（顶上还有引擎硬上限 999：
+ *      `life >= 1000` 会置锁定黑名单 `flags_lo 0x40000000`，见 `YK_LIFE_LIMIT`）；
+ *      并且每帧 `yk_orbit_pin()` **清掉** `CE_ENEMY_FLAG_NO_DAMAGE`（不置上、也不按聚焦分）。
+ *      ⚠ 旋钮留着是因为一手道中恒 100 血在 TH18 的 DPS 下可能偏脆（owner：「一碰就碎主要是形容杂鱼」）；
+ *      TH18 vs TH08 的 DPS 核查另行进行。⚠ 父敌 HP **只**用来定台数；
  *   ④ **VM 表独立**于 `s_fam_vm`（句柄放在 `s_orbit[]` 自己身上）：`s_fam_vm` 的自愈回收
  *      （`yk_fam_vm_prune`）会把「不在 `s_map` 里的 fam_id」当成**泄漏记录、连实体一起撤掉** ——
  *      而绕转使魔**恰恰故意**不在 `s_map` 里 ⇒ 混用会在下一帧就被自愈机制清光；
@@ -764,7 +767,15 @@ static void yk_fam_vm_follow(uint32_t fam_id, int variant, const uint8_t *f)
  *      · **单颗会给**：`yk_kill_burst` 尾巴那一支（一手 `th08:0x42b1e5` 起：被杀者**自己有主**
  *        ⇒ `spawn_item(type 7, …)` 一颗）—— **有意保留**：一手那一支的判据正是「有主」，
  *        而绕转使魔按定义就有主（`CE_SPAWN_PARENT`）；
- *      · 如实记录：击破它也会照常吃「击破 ⇒ 人妖槽 ±200」（一手**击破**的通用尾，与死的是不是使魔无关）。
+ *      · 如实记录：击破它也会照常吃「击破 ⇒ 人妖槽 ±200」（一手**击破**的通用尾，与死的是不是使魔无关）；
+ *   ⑥ **「样子」与属性的另一组一手对照**（都支持 owner 定的两条口径）：
+ *      · 使魔**有** `hitboxSet(24.0f, 24.0f)`（opcode 77，handler `th08:0x41a840`；实测 24 ECL 里每只
+ *        使魔都有）、多数还有 `setInvuln(30~80)` 的出生保护；而**没有任何使魔设 `hurtboxSet`**
+ *        ⇒ 「**打得掉、但没有体术**」与一手一致（我们的壳同样不设 hurtbox，`yk_fam_collide_tick`
+ *        那套 MISS 判据也只扫 `s_map`）；
+ *      · `drop_main`（`familiarCreate` 第 5 实参，落 `enemy+0x3304`，消费点 `th08:0x42bea0`）
+ *        **80% 是 `-2`（不掉道具）**；但**被自机击破固定掉 1 刻符**（`th08:0x42b29b`）——
+ *        这正是 `yk_kill_burst` 尾巴那颗「有主单颗」的一手对照（见那一处的注）。
  *
  * 生命周期（**铁律：长持续效果必须交代「被删掉会怎样」**）：壳与跟随 VM 的**每一条死路**都过
  *   `yk_orbit_retire()`；并且 `yk_drop_all()`（删卡 / 换关 / 局末 / 自机没了 / 世界没了）里有
@@ -774,6 +785,15 @@ static void yk_fam_vm_follow(uint32_t fam_id, int variant, const uint8_t *f)
 typedef struct {
     uint32_t fam_id;      /* 0 = 空槽。键 = 使魔的 `enemy_id`（单调递增、不复用 ⇒ 不会撞键）*/
     uint32_t parent_id;   /* 父敌 `enemy_id`（`CE_SPAWN_PARENT` 那一格，颗数就靠它）*/
+    float    cx, cy;      /* ★★★ 绕转**圆心**（第三轮）：= **生成那一刻**的父敌坐标，之后**不再跟**。
+                           *   一手：`moveCircle`（opcode 73，handler `th08:0x41a4b7`）把圆心设成
+                           *   **使魔自己当前的位置**（`0x41a50b`–`0x41a52a`：`+0x2dd0 := +0x2d34`
+                           *   三个 dword 拷贝），而 `familiarCreate`（opcode 91，handler `th08:0x41f280`）
+                           *   的生成点 = **本体位置 + (x,y)**（`0x41f2ba`–`0x41f2d3` `Float3::operator+=`
+                           *   `parent->final_pos`；TH08 脚本全写 `0,0` ⇒ 就在本体身上）
+                           *   ⇒ **圆心 = 生成瞬间那一点，本体后来飞走圆心不跟**（可见后果：大怪飞走
+                           *   ⇒ 使魔留在原地绕，与 TH08 同形）。*/
+    float    radius;      /* 该台的绕转半径（= `yk_orbit_radius_for_count(台数)`，建壳那一刻定死）*/
     unsigned step;        /* 绕转相位 0..`YK_ORBIT_STEPS`-1（每帧 +`YK_ORBIT_STEP_DEG`）*/
     unsigned orphan;      /* 父敌**连续**查不到的帧数（满 `YK_ORBIT_ORPHAN_GRACE` 才撤）*/
     uint32_t anm_id;      /* 跟随 VM 句柄（画本体）*/
@@ -792,7 +812,6 @@ static uint8_t  s_orbit_pool_full;       /* 池满过（**只记一次**日志 �
 static uint8_t  s_orbit_first_scan;      /* 首次扫场的自述打过没 */
 static uint8_t  s_orbit_vm_failed;       /* VM 起失败过（只记一次）*/
 static uint8_t  s_orbit_spawn_failed;    /* 壳建失败过（只记一次）*/
-static uint8_t  s_orbit_life_clamped;    /* 父敌血量被 spawn-life 上限钳过（只记一次）*/
 
 /* 一只敌人**至多一对**（一敌一对，不重复补）⇒ 按父敌 id 查。*/
 static yk_orbit_t *yk_orbit_find_parent(uint32_t parent_id)
@@ -976,12 +995,24 @@ static void yk_orbit_vm_sync(yk_orbit_t *o)
     }
 }
 
-/* 找空槽建一台绕转使魔：位置 = 父敌坐标 + 半径 × (cosθ, sinθ)。
- * 建壳那一刻就**清免伤位**（owner 口径：打得掉）并起**跟随 VM**（少等一帧 = 少一帧「看不见」的窗口）。*/
-static uint8_t *yk_orbit_spawn_one(uint32_t parent_id, unsigned step, int variant,
-                                   float px, float py, int32_t life)
+/* 找空槽建一台绕转使魔：位置 = **圆心**（= 建壳那一刻的父敌坐标）+ 半径 × (cosθ, sinθ)。
+ * 建壳那一刻就**清免伤位**（owner 口径：打得掉）并起**跟随 VM**（少等一帧 = 少一帧「看不见」的窗口）；
+ * 半径与相位都由纯函数给（`yk_orbit_radius_for_count` / `yk_orbit_phase_*`）。
+ *
+ * **血量 = 一手值 × 缩放旋钮**（第四轮 owner 口径：「那就 **hp 切成一手**」；那句
+ *   「一碰就碎主要是形容**杂鱼**的」是**留旋钮**的依据）：
+ *   · 一手：TH08 使魔 HP = `familiarCreate` 的**第 4 实参**（落点 `enemy+0x2dfc`；`EnemyManager::create_enemy`
+ *     `th08:0x42a680`：`cmp [ebp+0x10],0` / `jl`（负数 = 用默认）/ `mov [e+0x2dfc],…`）；
+ *     实测（24 ECL 全量）**50 / 100 / 180 / 200 / 300 / 400 / 600 / 2400**、**道中几乎恒 100**，
+ *     218 个使魔子程序里**没有一个**用 `lifeSet` 覆盖 ⇒ 那个实参就是它的血；
+ *   · 我们：`YK_ORBIT_HP_ONEHAND`（按台数档取一手值）+ `YK_ORBIT_HP_SCALE`（**当前 = 1 ⇒ 就是一手值**）
+ *     + 钳 999 ⇒ `{100, 100, 300, 600}`（纯函数 `yk_orbit_familiar_hp()`；❓自定一个旋钮）。
+ *     ⚠ **不再**用父敌最大血量当使魔血量（那条口径已被 owner 换成这条）；父敌 HP 只用来定**台数**。*/
+static uint8_t *yk_orbit_spawn_one(uint32_t parent_id, int count, int k, int32_t life,
+                                   float cx, float cy)
 {
-    float dx = 0.0f, dy = 0.0f;
+    float dx = 0.0f, dy = 0.0f, radius;
+    unsigned step;
     uint8_t *f;
     yk_orbit_t *o;
     unsigned i;
@@ -990,18 +1021,24 @@ static uint8_t *yk_orbit_spawn_one(uint32_t parent_id, unsigned step, int varian
     for (i = 0; i < YK_ORBIT_MAX; ++i) if (!s_orbit[i].fam_id) break;
     if (i >= YK_ORBIT_MAX) return 0;
     o = &s_orbit[i];
-    if (!yk_orbit_offset(step, YK_ORBIT_RADIUS, &dx, &dy)) return 0;
-    f = yk_spawn_familiar_parent(px + dx, py + dy, parent_id, life);
+    /* 相位 = 均匀分布 + 每敌错相；半径 = 台数分档（两件都是纯函数，见 `youkai_core.{h,c}`）。*/
+    radius = (float)yk_orbit_radius_for_count(count);     /* int→float 是 SSE 转换，不进 x87 */
+    step = (yk_orbit_phase_id(parent_id) + yk_orbit_phase_step(count, k)) % YK_ORBIT_STEPS;
+    if (!yk_orbit_offset(step, radius, &dx, &dy)) return 0;
+    f = yk_spawn_familiar_parent(cx + dx, cy + dy, parent_id, life);   /* life = 父敌最大血量（口径）*/
     if (!f) return 0;
     o->fam_id = *(const uint32_t *)(f + CE_ENEMY_ID);     /* 键 = 使魔自己的 enemy_id */
     o->parent_id = parent_id;
+    o->cx = cx;                                           /* ★ 定圆心（一手，见 struct 里的注）*/
+    o->cy = cy;
+    o->radius = radius;
     o->step = step;
     o->orphan = 0;
-    o->variant = (int32_t)variant;
+    o->variant = (int32_t)(s_orbit_spawned & 3u);         /* 四色循环（照映射使魔的四色规则）*/
     o->anm_id = 0;
     o->circle_id = 0;
     if (!o->fam_id) { o->parent_id = 0; return 0; }       /* 极端：刚建出来就没 id ⇒ 当失败 */
-    yk_orbit_pin(f, px + dx, py + dy);
+    yk_orbit_pin(f, cx + dx, cy + dy);
     yk_orbit_vm_sync(o);
     ++s_orbit_spawned;
     return f;
@@ -1021,7 +1058,7 @@ static void yk_orbit_scan(void)
         int32_t id, hp_now, life;
         int w = 0, h = 0, want, k, made = 0;
         const float *pp;
-        float px, py;
+        float cx, cy;
         if (!e) continue;
         ++seen;
         id = *(const int32_t *)(e + CE_ENEMY_ID);
@@ -1057,35 +1094,45 @@ static void yk_orbit_scan(void)
             }
             break;
         }
-        /* ★★★ 2026-09-28 第二轮（owner：「**数量我倾向于和血量挂钩**」）：台数 = f(父敌**最大血量**)。
-         * 血量走 spawn 的 `+0x14`（current/maximum/remaining 一次写三格），**必须过 `yk_clamp_spawn_life()`**
-         *（引擎在 life >= 1000 时置锁定黑名单 `flags_lo |= 0x40000000`）⇒ 被钳时记一行（只记一次）。*/
+        /* ★★★ 台数 = f(父敌**最大血量**)：**TH08 一手统计**的分档表（`yk_orbit_count_for_hp`，
+         * 见 `youkai_core.c` 的表头注 + `engine/enemy/th08/03-familiar-count-vs-hp.md`）。
+         * ⚠ **父敌 HP 只用来定台数**；使魔**自己的血量**是另一条口径（见下一段）。*/
         hp_now = *(const int32_t *)(e + CE_ENEMY_HP_MAX);
-        life = yk_clamp_spawn_life(hp_now);
-        if (life != hp_now && !s_orbit_life_clamped) {
-            s_orbit_life_clamped = 1;
-            ce_log("youkai/orbit: parent HP %d > the spawn-life ceiling (%d allowed, >= %d would set "
-                   "`flags_lo 0x40000000` = the lock-on blacklist) - the familiars' HP is clamped to %d",
-                   hp_now, (int)YK_LIFE_MAX_ALLOWED, (int)YK_LIFE_LIMIT, (int)life);
-        }
-        want = yk_orbit_count_for_hp(hp_now);
+        /* ★★★ 2026-09-28 第六轮（**owner 口径**：「没过一面，同样血量的使魔数 +1」）：
+         *   台数 = `HP 档 + 面加成`（面号取 `CE_CURRENT_STAGE()`，1 基；加成 = `min(面−1, 5)`），
+         *   钳进 [1, `YK_ORBIT_MAX_PER_ENEMY`] ⇒ 上限 18。纯函数 = `yk_orbit_count_total`。*/
+        want = yk_orbit_count_total(hp_now, (int)CE_CURRENT_STAGE());
+        /* ★★★ 2026-09-28 第四轮（**owner 口径**：「那就 **hp 切成一手**」）：
+         *   血量 = **一手值 × `YK_ORBIT_HP_SCALE`**（一手 = TH08 `familiarCreate` 第 4 实参，
+         *   按台数档 100/100/300/600），钳引擎硬上限 999 —— **当前 SCALE = 1 ⇒ 就是一手值**
+         *   `{100, 100, 300, 600}`。旋钮留着（owner 原话：「一碰就碎主要是形容**杂鱼**的」）：
+         *   TH18 vs TH08 的 DPS 差异核查另做，结论到了只改那一个数。
+         *   仍然过 `yk_clamp_spawn_life()`（幂等，双保险）。*/
+        /* ⚠ 血量按 **HP 档**（不含面加成）：owner 那句「**同样血量**的使魔数 +1」= 面加成只加台数。
+         * 半径则按**最终台数**（`want`）—— 圈大小是视觉量（见 `yk_orbit_spawn_one`）。*/
+        life = yk_clamp_spawn_life(yk_orbit_hp_for_enemy(hp_now));
         ++big;
+        /* ★★★ 圆心 = **这一刻的父敌坐标**（一手：见 `yk_orbit_t` 里 `cx/cy` 的注）。之后不再重取。*/
         pp = ce_enemy_pos(e);
-        px = pp ? pp[0] : 0.0f;
-        py = pp ? pp[1] : 0.0f;
+        cx = pp ? pp[0] : 0.0f;
+        cy = pp ? pp[1] : 0.0f;
         for (k = 0; k < want; ++k) {
-            /* 第 0 台相位 0、第 1 台相差 180°、再往前后每隔 `YK_ORBIT_PHASE_GAP` 错开。*/
-            unsigned step = ((unsigned)k * YK_ORBIT_PHASE_GAP) % YK_ORBIT_STEPS;
-            if (yk_orbit_spawn_one((uint32_t)id, step, (int)(s_orbit_spawned & 3u), px, py, life)) ++made;
+            /* 相位：`k * 120 / want` 均匀铺开 + 每敌错相（`(id*17)%120`）—— 见 core 的两个纯函数。*/
+            if (yk_orbit_spawn_one((uint32_t)id, want, k, life, cx, cy)) ++made;
             if (yk_orbit_free() == 0u) break;                 /* 池正好用光 ⇒ 这台就这些 */
         }
         if (made) {
             ++s_orbit_targets; ++picked;
             /* 每条目标**只打一次**（不刷屏）：这一行就是「哪只大怪被补了、补了几台、凭什么」的判据。*/
-            ce_log("youkai/orbit: target enemy #%u sprite %dx%d hp %d => %d familiar(s) "
-                   "(of %d by HP tier; chain root, not boss; radius %.0f, %.0f deg/frame, life %d)",
-                   (unsigned)id, w, h, hp_now, made, want,
-                   (double)YK_ORBIT_RADIUS, (double)YK_ORBIT_STEP_DEG, (int)life);
+            ce_log("youkai/orbit: target enemy #%u sprite %dx%d hp %d stage %d => %d familiar(s) "
+                   "(HP tier %d + stage bonus %d = %d; chain root, not boss; radius %.0f, "
+                   "%.0f deg/frame; fam life %d = onehand %d x %d; centre pinned at spawn (%.0f,%.0f))",
+                   (unsigned)id, w, h, hp_now, (int)CE_CURRENT_STAGE(), made,
+                   yk_orbit_count_for_hp(hp_now), yk_orbit_stage_bonus((int)CE_CURRENT_STAGE()), want,
+                   (double)yk_orbit_radius_for_count(want), (double)YK_ORBIT_STEP_DEG,
+                   (int)life, yk_orbit_onehand_hp(yk_orbit_count_for_hp(hp_now)),
+                   (int)YK_ORBIT_HP_SCALE,
+                   (double)cx, (double)cy);
         } else if (!s_orbit_spawn_failed) {
             s_orbit_spawn_failed = 1;
             ce_log("youkai/orbit: shell spawn FAILED for enemy #%u (sprite %dx%d hp %d) - "
@@ -1114,8 +1161,7 @@ static void __attribute__((noinline)) yk_orbit_tick(uint32_t frame)
     for (i = 0; i < YK_ORBIT_MAX; ++i) {
         yk_orbit_t *o = &s_orbit[i];
         uint8_t *f, *pe;
-        const float *pp;
-        float px, py, dx = 0.0f, dy = 0.0f;
+        float dx = 0.0f, dy = 0.0f;
         if (!o->fam_id) continue;
         f = yk_familiar_by_id(o->fam_id);
         if (!f) { yk_orbit_retire(o, "shell gone"); continue; }   /* 被外力清了 ⇒ 清槽 + 收 VM */
@@ -1131,11 +1177,11 @@ static void __attribute__((noinline)) yk_orbit_tick(uint32_t frame)
         }
         o->orphan = 0;
         o->step = yk_orbit_step_advance(o->step);
-        pp = ce_enemy_pos(pe);
-        px = pp ? pp[0] : *(const float *)(f + CE_ENEMY_POS_X);
-        py = pp ? pp[1] : *(const float *)(f + CE_ENEMY_POS_Y);
-        if (!yk_orbit_offset(o->step, YK_ORBIT_RADIUS, &dx, &dy)) continue;
-        yk_orbit_pin(f, px + dx, py + dy);            /* 父敌会动 ⇒ 每帧用**父敌当前位置**重算 */
+        /* ★★★ 2026-09-28 第三轮：**定圆心** —— 圆心是建壳那一刻写下的 `cx/cy`，父敌后来飞走
+         * 圆心**不跟**（一手：`moveCircle` 把圆心设成使魔当时的位置，见 struct 里的两个地址）。
+         * ⇒ 这里**不读父敌坐标**（`pe` 只用于「父敌还在不在」的孤儿检测）。*/
+        if (!yk_orbit_offset(o->step, o->radius, &dx, &dy)) continue;
+        yk_orbit_pin(f, o->cx + dx, o->cy + dy);
         yk_orbit_vm_sync(o);
     }
     if ((++s_orbit_scan_timer % YK_ORBIT_SCAN_INTERVAL) == 0u) yk_orbit_scan();
@@ -1144,8 +1190,9 @@ static void __attribute__((noinline)) yk_orbit_tick(uint32_t frame)
     if (s_orbit_targets && (frame % 120u) == 0u)
         ce_log("youkai/orbit: targets %u live %u spawned %u killed %u orphan %u pool_full %u "
                "scans %u (inert orbit familiars: no shots, no body hitbox, damageable with "
-               "HP = the parent's max HP; their real job is to be counted by the kill burst "
-               "through `CE_SPAWN_PARENT`)",
+               "HP = the one-hand value (`familiarCreate` arg4) x YK_ORBIT_HP_SCALE, NOT the "
+               "parent's HP; their real job is to be counted by the kill burst through "
+               "`CE_SPAWN_PARENT`)",
                s_orbit_targets, yk_orbit_live(), s_orbit_spawned, s_orbit_killed,
                s_orbit_lost_orphan, (unsigned)s_orbit_pool_full, s_orbit_scans);
 }
@@ -3414,6 +3461,10 @@ static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
          *   `0x42d8e7` 落到 `+0x6834`）。⇒ **普通妖精在这一支下会掉 1 颗**（不是 0 颗）——
          *   这正是 owner 选 B 时说的「普通妖精只剩 1 颗」；与 TH08（普通敌机 `ownerEnemy == 0` ⇒ 0 颗）
          *   的差别已登记 `TUNING.md` / `AUDIT.md` §BE #114。*/
+        /* ★★★ 2026-09-28 第三轮补的一手对照（使魔那一类的口径）：TH08 的使魔 `drop_main`
+         *   **80% 是 `-2`（不掉道具）**，但**被自机击破时固定掉 1 刻符**（`th08:0x42b29b` = 这一支）
+         *   ⇒ 我们补的**惰性绕转使魔**被打死时走的正是这一支（`AUDIT.md` §BE #150 §6：
+         *   **盘不爆、单颗给**）。*/
         if (!n2 && ev->enemy &&
             *(const int32_t *)((const uint8_t *)ev->enemy + CE_SPAWN_PARENT) != 0)
             yk_orb_spawn(s, ev->x, ev->y, YK_ORB_STATE_SPAWN);   /* ★ §BE #117：type 7 ⇒ 强制 state 3 */

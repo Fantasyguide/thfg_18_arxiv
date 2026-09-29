@@ -1983,24 +1983,100 @@ int yk_item_box_open(int32_t player_state);
 #define YK_ORBIT_SCAN_INTERVAL 30u    /* ❓自定（owner 未给数）：扫场间隔（帧），30 ≈ 0.5 s。
                                        *   扫描要遍历全场敌人链表 + 每只读一次贴图尺寸 ⇒ 不必每帧。
                                        *   建议值来源：`HANDOFF-108.md` §4 那张表。*/
-#define YK_ORBIT_MAX         16       /* ❓自定：池上限。满了就不再补（能补几台补几台）、只记一次日志（不刷屏）。*/
-/* ★★★ 2026-09-28 第二轮（**owner 口径**：「**数量我倾向于和血量挂钩**」）：
- * 台数不再是常数 2，而是**父敌最大血量的函数**（纯函数 `yk_orbit_count_for_hp`）。
- * ❓ **自定，待 th08 一手统计回来即替换** —— 已另派一支一次手统计（TH08 里每个敌人几台使魔
- *   vs 该敌人 HP），产出到了**只改下面那两张表**（阈值列 + 台数列，两者一一对应、按升序写）。
- * 初值（owner 直接给的）：`hp < 200 ⇒ 1`、`< 600 ⇒ 2`、`< 1500 ⇒ 3`、其余 ⇒ 4。*/
+#define YK_ORBIT_MAX         48       /* ❓自定：池上限。每台绕转使魔 = **1 个真敌人壳 + 1 支跟随 VM**
+                                       *   （妖侧还要 +1 支常驻魔法阵环）= 2~3 个引擎对象；`YK_ORBIT_MAX_PER_ENEMY`
+                                       *   最大档是 18（13 + 面加成 5）⇒ 48 = 「同屏 2~3 只大怪 × 18 + 余量」。
+                                       *   ⚠ 容量核查（2026-09-28）：敌方实体是**堆对象**、ANM VM 是**链表**
+                                       *   （`engine/anm/th18/01` 的 `instantiate_vm_to_world_list_back`；
+                                       *   `CAPACITY.md` 第 127 行那句「不是有界且满了会静默改行为的定长数组」）
+                                       *   ⇒ **没有硬池先被撞**；失败模式 = `ce_anm_spawn` 返回 0
+                                       *   （只少观感 + 只记一次日志），壳照样活着、照样算进颗数。
+                                       *   满了就不再补（能补几台补几台）、只记一次日志（不刷屏）。*/
+/* ★★★ 2026-09-28 第三轮（**按 th08 一手统计校准**）：台数不再是 owner 的初值分档，而是
+ * **TH08 实测的道中分档**（40 个「一次性撒完」的 (HP, n) 样本，Spearman ρ = 0.882；数据是
+ *   **角色分档**而不是连续公式 ⇒ 用分档表，见 [`engine/enemy/th08/03`](../../../../../engine/enemy/th08/03-familiar-count-vs-hp.md)）：
+ *   `hp <= 200 ⇒ 2`（≤200 档实测全是 2）、`<= 1000 ⇒ 4`（200–1000 中位 4）、
+ *   `<= 2000 ⇒ 8`（1000–2000 中位 8）、其余 ⇒ **13**（>2000 实测档，也是全表最大档）。
+ * ⚠ **三条已知反例**（别把「大怪 ⇒ 使魔多」当铁律）：`ecldata3 Sub13/Sub14` 血 500/600 但
+ *   **循环撒 50 台**（台数与 HP 脱钩 = 存活帧数/间隔）；`ecldata2 Sub7` 血 1000 只 4 台；
+ *   `ecldata2 Sub11` 血 400–500 有 9 台 ⇒ **角色（中ボス vs 撒き役）才是自变量**。
+ * ⚠ 循环撒き型**我们不做**（本卡只在敌人身上补一次性的一圈）⇒ 本表只覆盖「一次性」那一类。*/
 #define YK_ORBIT_HP_TIER_STEPS 3      /* 分档表的档数（不含「其余」那一档）*/
-#define YK_ORBIT_MAX_PER_ENEMY 4      /* 台数上限 = 最后那一档（= 表里最大的台数）*/
-/* 台数 = f(父敌最大血量)：顺序扫阈值表，命中即取该档台数；高过全表 ⇒ 取 `YK_ORBIT_MAX_PER_ENEMY`；
- * 读不到血量（<= 0）⇒ 按最低档（1 台）。结果一律钳进池上限 `YK_ORBIT_MAX`。*/
-int yk_orbit_count_for_hp(int hp_max);
-#define YK_ORBIT_RADIUS      48.0f    /* ❓自定：绕转半径（像素）。§4 的建议值。
-                                       *   一手侧使魔的位置是 ECL 指定的（TH08 的敌人脚本里逐条写死）⇒ 这颗
-                                       *   是我们补的，没有一手对应值。*/
+/* ★★★ 2026-09-28 第六轮（**owner 口径**）：「然后我倾向是**没过一面，同样血量的使魔数 +1**」：
+ *   台数 = `clamp(HP 档 + 面加成, 1, YK_ORBIT_MAX_PER_ENEMY)`，面加成 = `min(面号 − 1, 5)`
+ *   （入参 = **TH18 当前面号** `CE_CURRENT_STAGE()`，1 基；≤1 ⇒ 0）。
+ *   与一手趋势一致：道中表里**同 HP 在后面的面台数更多**（例：HP 500 在 2 面是 5 台、
+ *   HP 700 在 5 面是 13 台）—— 只是 TH08 没有「面」这个显式项，这条是 owner 口径。
+ *   ⚠ 上限 = 13（HP 最高档）+ 5（面加成）= **18**。*/
+#define YK_ORBIT_STAGE_BONUS_MAX 5    /* 面加成上限（TH18 正篇 6 面 ⇒ 到 6 面 +5；ex/异常值不再加）*/
+#define YK_ORBIT_HP_MAX_COUNT 13      /* **HP 分档**的最大档（>2000 那一档；= TH08 一次性样本最大台数）*/
+#define YK_ORBIT_MAX_PER_ENEMY (YK_ORBIT_HP_MAX_COUNT + YK_ORBIT_STAGE_BONUS_MAX)   /* = 18 */
+/* 台数 = f(父敌最大血量)：顺序扫**闭区间**阈值表（`hp <= 阈值[i]` ⇒ 取该档台数）；
+ * 高过全表 ⇒ `YK_ORBIT_MAX_PER_ENEMY`；读不到血量（<= 0）⇒ 按第一档（2 台）。
+ * 结果一律钳进池上限 `YK_ORBIT_MAX`。*/
+int yk_orbit_count_for_hp(int hp_max);   /* 纯 HP 分档（{2,4,8,13}），**不含**面加成 */
+/* 面加成 = `min(stage − 1, YK_ORBIT_STAGE_BONUS_MAX)`；`stage <= 1`（含 0 / 负数 / 读不到）⇒ 0。*/
+int yk_orbit_stage_bonus(int stage);
+/* **最终台数** = `clamp(HP 档 + 面加成, 1, YK_ORBIT_MAX_PER_ENEMY)` —— 卡侧用的就是这一个。*/
+int yk_orbit_count_total(int hp_max, int stage);
+
+/* ★★★ 2026-09-28 第三轮：**绕转半径按台数分档**（一手读数分布见
+ *   [`engine/enemy/th08/03`](../../../../../engine/enemy/th08/03-familiar-count-vs-hp.md) §3：
+ *   实参 `moveCircle` 的半径分布 = `r=120 ×148 / r=100 ×104 / r=20 ×93 / r=60 ×10`；
+ *   道中读数是「**HP 越大台数越多、圈越紧**」：stage1–3 小怪主力 `r=100`、stage4A/4B 的 Sub5 `r=60`、
+ *   stage4b–8 的大怪 `r=20`）：
+ *     `n <= 2 ⇒ 100`、`n <= 5 ⇒ 60`、其余 ⇒ **20**（6/7 台在实测档里不出现，落到 20 = 「多」那一档）。
+ *   ❓ 分档界（2/5）是我们的取法：实测三个半径对应三个台数段（2 / 4 / 8..13）。*/
+#define YK_ORBIT_RADIUS_FEW   100.0f  /* `n <= 2`：stage1–3 小怪那一段（一手 r=100）*/
+#define YK_ORBIT_RADIUS_MID    60.0f  /* `n <= 5`：stage4A/4B 的 Sub5（一手 r=60）*/
+#define YK_ORBIT_RADIUS_MANY   20.0f  /* `n >= 6`：stage4b–8 的大怪（一手 r=20，台数最多、圈最紧）*/
+/* 卡侧只用这一个入口（返回**整数像素**：三个档都是整数）。
+ * ⚠ **不要**再包一个「返回 float」的版本：i686 SysV 的 float 返回值走 **x87 的 st(0)**
+ *   ⇒ `make dllx87` 那一关会红（实测：加一个 `float yk_orbit_radius_value()` 就多 3 条 x87 指令）。
+ *   要 float 就在卡侧 `(float)` 转一次（SSE 转换，不进 x87）。*/
+int yk_orbit_radius_for_count(int n);
+
+/* ★★★ 2026-09-28 第四轮（**owner 口径 · 血量**）：「那就 **hp 切成一手** —— 但从 **dps** 角度考虑，
+ *   我感觉**使魔没那么脆，得打几秒**。一碰就碎主要是形容**杂鱼**的。」
+ *  ⇒ **结构照一手、数值按 TH18 的 DPS 抬**：
+ *   · **一手基准表**（`YK_ORBIT_HP_ONEHAND`，按**台数档**索引）：TH08 使魔 HP = `familiarCreate`
+ *     的**第 4 实参**（落点 `enemy+0x2dfc`；`EnemyManager::create_enemy` `th08:0x42a680`：
+ *     `cmp [ebp+0x10],0` / `jl`（负数=用默认）/ `mov [e+0x2dfc],…`）；道中实测 50/100/180/200/300/600/2400，
+ *     按台数归类 ⇒ 2 台 `100`、4 台 `100`、8 台 `300`（实测 200–300）、13 台 `600`（实测大怪 600；
+ *     stage8 那档 2400 我们不复刻）。218 个使魔子程序**无一**用 `lifeSet` 覆盖 ⇒ 那个实参就是它的血。
+ *   · **缩放旋钮**（`YK_ORBIT_HP_SCALE`，**当前 = 1 = 先按一手**）：本式恒为
+ *     `hp = min(999, 一手值 × SCALE)`，`SCALE = 1` 时实际血量就是一手原值 `{100, 100, 300, 600}`。
+ *     留这个旋钮的理由（owner 原话）：「一碰就碎主要是形容**杂鱼**的」—— TH08 道中使魔恒 100 血，
+ *     在 **TH18 的 DPS** 下可能真的一碰就碎 ⇒ 万一手感不对，靠这一个数往上抬。
+ *     ⚠ **DPS 差异的核查（TH18 人侧 vs TH08 妖侧）正另行进行**；结论一到再决定要不要缩放。
+ *   · 引擎硬上限 **999**（`life >= 1000` 会置锁定黑名单 `flags_lo 0x40000000`，见 `YK_LIFE_LIMIT`）
+ *     ⇒ 无论 `SCALE` 多大都过这个钳；并且**仍然过 `yk_clamp_spawn_life()`**。
+ *   ⚠ ❓**自定（一个旋钮、一行可调）**，登记 `TUNING.md` §2.1ccc-26。*/
+#define YK_ORBIT_HP_SCALE 1
+static const int32_t YK_ORBIT_HP_ONEHAND[YK_ORBIT_HP_TIER_STEPS + 1] = { 100, 100, 300, 600 };
+int yk_orbit_onehand_hp(int count);    /* 该台数档的**一手**基准血量（查表，不缩放）*/
+int yk_orbit_familiar_hp(int count);   /* 实际血量 = min(999, onehand × SCALE)，恒 ∈ [1, 999] */
+/* ★★★ 2026-09-28 第六轮：**卡侧用的就是这一个** —— 血量按 **HP 档**（**不含**面加成）归类：
+ *   owner 那句「**同样血量**的使魔数 +1」= 面加成只加**台数**、**不改**每台的血（同一个敌人，
+ *   到第 6 面还是同样血量的使魔，只是多了几台）⇒ 入参是 `hp_max`（内部先过 `yk_orbit_count_for_hp`
+ *   拿 HP 档，再过 `yk_orbit_familiar_hp`）。⚠ 半径**不**走这条：半径按**最终台数**（圈大小是视觉量）。*/
+int yk_orbit_hp_for_enemy(int hp_max);
+
+/* ★★★ 2026-09-28 第三轮：**相位**（一手：TH08 每台使魔各自 `moveCircle(半径, 角度, 角速度, …)`
+ *   ⇒ 台与台之间是**手动错开的角度**；我们补的这几台没有脚本可抄 ⇒ 取**均匀分布 + 每敌错相**）：
+ *     · `yk_orbit_phase_step(n, k)` = `k * YK_ORBIT_STEPS / n`（整数除法；n=2 正好 180° 相对，
+ *       n 台互不重合 —— n <= 120 时 floor(k·120/n) 严格递增）；
+ *     · `yk_orbit_phase_id(enemy_id)` = `(enemy_id * 17) % 120` ⇒ **不同大怪不同相**
+ *       （不然两只大怪的使魔会像同一只的复制品）。
+ *   最终角度 = `(phase_id + phase_step) % YK_ORBIT_STEPS`。❓ 自定（一手没有「均匀」这条）。*/
+#define YK_ORBIT_PHASE_STRIDE 17u     /* 每敌错相的乘子（互质于 120 ⇒ id 不同则相位不同）*/
+unsigned yk_orbit_phase_step(int n, int k);
+unsigned yk_orbit_phase_id(uint32_t enemy_id);
 #define YK_ORBIT_STEP_DEG    3        /* ❓自定：每帧转几度（3°/帧 = 120 帧一圈 ≈ 2 s）。
-                                       *   ⚠ 改这个必须同时改 `YK_ORBIT_STEPS` 并**重新生成那两张表**。*/
+                                       *   ⚠ 改这个必须同时改 `YK_ORBIT_STEPS` 并**重新生成那两张表**。
+                                       *   （一手：TH08 的角速度实参在 0.0524~0.105 rad/帧（3°~6°）之间，
+                                       *     见 `engine/enemy/th08/03` §3 的 `moveCircle` 第 3 实参分布。）*/
 #define YK_ORBIT_STEPS       120      /* 表长 = 一圈的步数（= 360 / YK_ORBIT_STEP_DEG，两者必须同步改）*/
-#define YK_ORBIT_PHASE_GAP   (YK_ORBIT_STEPS / 2u)   /* 同一父敌的两台**初相相差 180°**（step 差 60）*/
 #define YK_ORBIT_ORPHAN_GRACE 2u      /* 父敌查不到之后**再等几帧**才撤。❓自定，但理由是一手的时序：
                                        *   一手颗数在 `EnemyManager` 的死亡块里算（`th08:0x42da54` 一带），
                                        *   可能排在卡 tick **之后** ⇒ 早撤会把颗数打回 0。*/

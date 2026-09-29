@@ -2174,7 +2174,7 @@ int main(void)
         CHECK(YK_ORBIT_STEP_DEG == 3);
         CHECK(YK_ORBIT_STEPS == 120);
         CHECK(YK_ORBIT_STEPS == 360u / YK_ORBIT_STEP_DEG);
-        CHECK(YK_ORBIT_PHASE_GAP == 60u);                     /* 同父两台初相相差 180° */
+        CHECK(YK_ORBIT_PHASE_STRIDE == 17u);                  /* 每敌错相的乘子 */
         CHECK(yk_orbit_step_advance(0) == 3u);
         CHECK(yk_orbit_step_advance(117) == 0u);
         CHECK(yk_orbit_step_advance(118) == 1u);
@@ -2214,30 +2214,189 @@ int main(void)
         CHECK(!yk_orbit_offset(0, 48.0f, NULL, &dy));
         CHECK(!yk_orbit_offset(0, 48.0f, &dx, NULL));
 
-        /* ⑥ 台数 = **父敌最大血量的函数**（★★★ 2026-09-28 第二轮 · owner「数量我倾向于和血量挂钩」）。
-         *   表 = ❓自定（`<200 ⇒ 1 / <600 ⇒ 2 / <1500 ⇒ 3 / 其余 4`），待 th08 一手统计回来即替换
-         *   ⇒ 这一段钉的是**函数与表的关系**（边界含/不含、单调不降、钳进池上限），不是那几个数本身。*/
+        /* ⑥ 台数 = **父敌最大血量的函数**，表 = **TH08 一手统计**（★★★ 第三轮校准；出处见
+         *   `youkai_core.c` 的表头注 + `engine/enemy/th08/03-familiar-count-vs-hp.md`）。
+         *   分档（**闭区间**）：`<=200 ⇒ 2` / `<=1000 ⇒ 4` / `<=2000 ⇒ 8` / 其余 ⇒ 13。
+         *   这一段钉的是**函数与表的关系**（边界含/不含、单调不降、钳进池上限），不是拟合曲线。*/
         CHECK(YK_ORBIT_HP_TIER_STEPS == 3);
-        CHECK(YK_ORBIT_MAX_PER_ENEMY == 4);
-        CHECK(yk_orbit_count_for_hp(0) == 1);                 /* 读不到血量 ⇒ 最低档（不放弃补）*/
-        CHECK(yk_orbit_count_for_hp(-12345) == 1);
-        CHECK(yk_orbit_count_for_hp(1) == 1);
-        CHECK(yk_orbit_count_for_hp(199) == 1);
-        CHECK(yk_orbit_count_for_hp(200) == 2);               /* 阈值是**开区间上界**：>= 200 进下一档 */
-        CHECK(yk_orbit_count_for_hp(599) == 2);
-        CHECK(yk_orbit_count_for_hp(600) == 3);
-        CHECK(yk_orbit_count_for_hp(1499) == 3);
-        CHECK(yk_orbit_count_for_hp(1500) == 4);
-        CHECK(yk_orbit_count_for_hp(999999) == 4);
-        CHECK(yk_orbit_count_for_hp(1500) == YK_ORBIT_MAX_PER_ENEMY);
+        CHECK(YK_ORBIT_MAX_PER_ENEMY == 18);                  /* = 13（TH08 最大档）+ 5（面加成上限）*/
+        CHECK(YK_ORBIT_STAGE_BONUS_MAX == 5);
+        CHECK(yk_orbit_count_for_hp(0) == 2);                 /* 读不到血量 ⇒ 第一档（不放弃补）*/
+        CHECK(yk_orbit_count_for_hp(-12345) == 2);
+        CHECK(yk_orbit_count_for_hp(1) == 2);
+        CHECK(yk_orbit_count_for_hp(200) == 2);               /* 阈值是**闭区间**：200 还在第一档 */
+        CHECK(yk_orbit_count_for_hp(201) == 4);
+        CHECK(yk_orbit_count_for_hp(1000) == 4);
+        CHECK(yk_orbit_count_for_hp(1001) == 8);
+        CHECK(yk_orbit_count_for_hp(2000) == 8);
+        CHECK(yk_orbit_count_for_hp(2001) == 13);
+        CHECK(yk_orbit_count_for_hp(999999) == 13);
+        CHECK(yk_orbit_count_for_hp(2001) == YK_ORBIT_HP_MAX_COUNT);   /* HP 档只管到 13（不含面加成）*/
         {   /* 单调不降 + 恒在 [1, 池上限] 内（表被替换后这两条也必须成立）*/
             int prev = 0, hp, v;
-            for (hp = -10; hp <= 4000; hp += 37) {
+            for (hp = -10; hp <= 5000; hp += 37) {
                 v = yk_orbit_count_for_hp(hp);
                 CHECK(v >= 1 && v <= (int)YK_ORBIT_MAX);
                 CHECK(v >= prev);
                 prev = v;
             }
+        }
+
+        /* ⑦ 绕转半径按台数分档（一手读数分布见 `youkai_core.h` 的三个宏）：
+         *   `n <= 2 ⇒ 100`（stage1–3 小怪）、`n <= 5 ⇒ 60`（stage4A/4B 的 Sub5）、其余 ⇒ 20（大怪）。*/
+        CHECK(YK_ORBIT_RADIUS_FEW == 100.0f);
+        CHECK(YK_ORBIT_RADIUS_MID == 60.0f);
+        CHECK(YK_ORBIT_RADIUS_MANY == 20.0f);
+        CHECK(yk_orbit_radius_for_count(0) == 100);
+        CHECK(yk_orbit_radius_for_count(1) == 100);
+        CHECK(yk_orbit_radius_for_count(2) == 100);
+        CHECK(yk_orbit_radius_for_count(3) == 60);
+        CHECK(yk_orbit_radius_for_count(4) == 60);
+        CHECK(yk_orbit_radius_for_count(5) == 60);
+        CHECK(yk_orbit_radius_for_count(6) == 20);            /* 6/7 实测不出现 ⇒ 落「多」那一档 */
+        CHECK(yk_orbit_radius_for_count(7) == 20);
+        CHECK(yk_orbit_radius_for_count(8) == 20);
+        CHECK(yk_orbit_radius_for_count(13) == 20);
+        CHECK(yk_orbit_radius_for_count(13) == (int)(YK_ORBIT_RADIUS_MANY + 0.5f));
+        {   /* 半径单调不增（台数越多圈越紧，与一手那句一致）*/
+            int prev = 1000, n, r;
+            for (n = 0; n <= 20; ++n) {
+                r = yk_orbit_radius_for_count(n);
+                CHECK(r <= prev);
+                CHECK(r == 100 || r == 60 || r == 20);
+                prev = r;
+            }
+        }
+
+        /* ⑨ 面加成 + 总台数（**owner 口径**：「没过一面，同样血量的使魔数 +1」）
+         *   加成 = `min(面号 − 1, 5)`（面号 = TH18 当前面，1 基）；总台数 = HP 档 + 加成，钳 [1, 18]。*/
+        CHECK(yk_orbit_stage_bonus(0) == 0);                  /* 读不到面号 ⇒ 0 */
+        CHECK(yk_orbit_stage_bonus(-1) == 0);
+        CHECK(yk_orbit_stage_bonus(1) == 0);
+        CHECK(yk_orbit_stage_bonus(2) == 1);
+        CHECK(yk_orbit_stage_bonus(3) == 2);
+        CHECK(yk_orbit_stage_bonus(5) == 4);
+        CHECK(yk_orbit_stage_bonus(6) == YK_ORBIT_STAGE_BONUS_MAX);
+        CHECK(yk_orbit_stage_bonus(7) == YK_ORBIT_STAGE_BONUS_MAX);   /* ex 面不再加 */
+        CHECK(yk_orbit_stage_bonus(99) == YK_ORBIT_STAGE_BONUS_MAX);
+        CHECK(yk_orbit_count_total(200, 1) == 2);              /* ≤200 档 + 0 */
+        CHECK(yk_orbit_count_total(200, 6) == 7);              /* 2 + 5 */
+        CHECK(yk_orbit_count_total(200, 99) == 7);
+        CHECK(yk_orbit_count_total(2001, 1) == YK_ORBIT_HP_MAX_COUNT);
+        CHECK(yk_orbit_count_total(2001, 6) == YK_ORBIT_MAX_PER_ENEMY);   /* 13 + 5 = 上限 */
+        CHECK(yk_orbit_count_total(2001, 99) == YK_ORBIT_MAX_PER_ENEMY);  /* 钳住 */
+        CHECK(yk_orbit_count_total(2001, 0) == yk_orbit_count_total(2001, 1));
+        CHECK(yk_orbit_count_total(2001, -1) == yk_orbit_count_total(2001, 1));
+        CHECK(yk_orbit_count_total(1000, 3) == 6);             /* 4 + 2 */
+        CHECK(yk_orbit_count_total(1001, 4) == 11);            /* 8 + 3 */
+        {   /* 面号升 ⇒ 不降；恒在 [1, 18]；且面加成封顶后不再变 */
+            int st, hp, prev = 0, v;
+            for (hp = 100; hp <= 3000; hp += 700) {
+                prev = 0;
+                for (st = -2; st <= 12; ++st) {
+                    v = yk_orbit_count_total(hp, st);
+                    CHECK(v >= 1 && v <= (int)YK_ORBIT_MAX_PER_ENEMY);
+                    CHECK(v >= prev);
+                    prev = v;
+                }
+            }
+            CHECK(yk_orbit_count_total(2001, 6) == yk_orbit_count_total(2001, 12));
+        }
+
+        /* ⑩ 血量 = **一手值 × 缩放旋钮**（第四轮 owner 口径：「那就 hp 切成一手」）：
+         *   一手表 `{100,100,300,600}`（按台数档）× `YK_ORBIT_HP_SCALE`（**当前 = 1 ⇒ 就是一手值**），
+         *   顶上钳引擎硬上限 999。旋钮留着（「一碰就碎主要是形容杂鱼」）⇒ DPS 核查回来可能往上抬。*/
+        CHECK(YK_ORBIT_HP_SCALE == 1);
+        CHECK(YK_ORBIT_HP_TIER_STEPS + 1 == 4);
+        CHECK(YK_ORBIT_HP_ONEHAND[0] == 100);                 /* 一手：TH08 道中使魔恒 100 */
+        CHECK(YK_ORBIT_HP_ONEHAND[1] == 100);
+        CHECK(YK_ORBIT_HP_ONEHAND[2] == 300);
+        CHECK(YK_ORBIT_HP_ONEHAND[3] == 600);
+        {   /* 一手表**单调不降**（台数越多档越高） */
+            int i;
+            for (i = 1; i < (int)(YK_ORBIT_HP_TIER_STEPS + 1); ++i)
+                CHECK(YK_ORBIT_HP_ONEHAND[i] >= YK_ORBIT_HP_ONEHAND[i - 1]);
+        }
+        CHECK(yk_orbit_onehand_hp(0) == 100);
+        CHECK(yk_orbit_onehand_hp(2) == 100);                 /* 档 2 台 */
+        CHECK(yk_orbit_onehand_hp(4) == 100);                 /* 档 4 台 */
+        CHECK(yk_orbit_onehand_hp(8) == 300);                 /* 档 8 台（实测 200–300）*/
+        CHECK(yk_orbit_onehand_hp(13) == 600);                /* 档 13 台（实测大怪 600）*/
+        CHECK(yk_orbit_familiar_hp(2) == 100);                /* 一手值 × 1 */
+        CHECK(yk_orbit_familiar_hp(4) == 100);
+        CHECK(yk_orbit_familiar_hp(8) == 300);
+        CHECK(yk_orbit_familiar_hp(13) == 600);
+        /* ★ 第六轮：血量按 **HP 档**（不含面加成）—— 「同样血量的使魔数 +1」只加台数、不改每台的血。*/
+        CHECK(yk_orbit_hp_for_enemy(200) == 100);
+        CHECK(yk_orbit_hp_for_enemy(2001) == 600);
+        CHECK(yk_orbit_hp_for_enemy(0) == 100);
+        CHECK(yk_orbit_hp_for_enemy(1000) == 100);
+        CHECK(yk_orbit_hp_for_enemy(1001) == 300);
+        CHECK(yk_orbit_hp_for_enemy(2001) == yk_orbit_familiar_hp(yk_orbit_count_for_hp(2001)));
+        CHECK(yk_orbit_familiar_hp(13) == yk_orbit_onehand_hp(13) * 1);
+        CHECK(yk_orbit_familiar_hp(13) < YK_LIFE_LIMIT);      /* 必须 < 1000（锁定黑名单那条硬约束）*/
+        {   /* 缩放旋钮真的生效：临时用一个更大的档验证 `min(999, 一手 × SCALE)` 这条式子 */
+            int one = yk_orbit_onehand_hp(13);                /* 600 */
+            CHECK(one * 4 > YK_LIFE_MAX_ALLOWED);             /* 2400 > 999 ⇒ 顶上那钳是真钳 */
+            CHECK(yk_orbit_familiar_hp(13) <= YK_LIFE_MAX_ALLOWED);
+        }
+        {   /* 全台数范围：恒在 [1, 999]、单调不降、且幂等过钳位函数 */
+            int prev = 0, n, hp;
+            for (n = 0; n <= 40; ++n) {
+                hp = yk_orbit_familiar_hp(n);
+                CHECK(hp >= 1 && hp <= YK_LIFE_MAX_ALLOWED);
+                CHECK(hp < YK_LIFE_LIMIT);
+                CHECK(hp >= prev);
+                CHECK(yk_clamp_spawn_life(hp) == hp);         /* 卡侧还会再过一次：幂等 */
+                prev = hp;
+            }
+        }
+
+        /* ⑪ 相位：`k * 120 / n` 均匀铺开（n >= 2 互不重合、n=2 正好 180° 相对）+ 每敌错相。*/
+        CHECK(yk_orbit_phase_id(0) == 0u);
+        CHECK(yk_orbit_phase_id(1) == 17u);                   /* (1*17) % 120 */
+        CHECK(yk_orbit_phase_id(2) == 34u);
+        CHECK(yk_orbit_phase_id(7) == 119u);                  /* (119) % 120 */
+        CHECK(yk_orbit_phase_id(8) == 16u);                   /* 136 % 120：相邻两只大怪错 17 步 */
+        CHECK(yk_orbit_phase_id(0xffffffffu) < YK_ORBIT_STEPS);
+        CHECK(yk_orbit_phase_step(4, 0) == 0u);
+        CHECK(yk_orbit_phase_step(4, 1) == 30u);
+        CHECK(yk_orbit_phase_step(4, 2) == 60u);
+        CHECK(yk_orbit_phase_step(4, 3) == 90u);
+        CHECK(yk_orbit_phase_step(2, 1) == 60u);              /* 两台 = 正好 180° 相对 */
+        CHECK(yk_orbit_phase_step(8, 1) == 15u);
+        CHECK(yk_orbit_phase_step(13, 0) == 0u);
+        CHECK(yk_orbit_phase_step(13, 12) == (unsigned)(12 * 120 / 13));
+        CHECK(yk_orbit_phase_step(1, 0) == 0u);
+        CHECK(yk_orbit_phase_step(0, 0) == 0u);               /* 越界：n <= 0 / k < 0 / k >= n ⇒ 0 */
+        CHECK(yk_orbit_phase_step(4, -1) == 0u);
+        CHECK(yk_orbit_phase_step(4, 4) == 0u);
+        CHECK(yk_orbit_phase_step(4, 99) == 0u);
+        {   /* n = 1..13：全部在表内，且 n >= 2 时两两不重合、首尾不重合 */
+            int n, k, j;
+            for (n = 1; n <= (int)YK_ORBIT_MAX_PER_ENEMY; ++n) {
+                unsigned st[24];
+                CHECK(n <= 24);
+                for (k = 0; k < n; ++k) {
+                    st[k] = yk_orbit_phase_step(n, k);
+                    CHECK(st[k] < YK_ORBIT_STEPS);
+                    if (k) CHECK(st[k] > st[k - 1]);          /* 严格递增 ⇒ 均匀且互不重合 */
+                }
+                CHECK(st[0] == 0u);
+                if (n >= 2) {
+                    CHECK(st[n - 1] != st[0]);
+                    for (k = 0; k < n; ++k)
+                        for (j = k + 1; j < n; ++j) CHECK(st[k] != st[j]);
+                }
+            }
+        }
+        {   /* 同父的两台一定相对（n=2 的 {0,60}）；不同父（id 不同）初相不同 */
+            unsigned a = (yk_orbit_phase_id(101) + yk_orbit_phase_step(2, 0)) % YK_ORBIT_STEPS;
+            unsigned b = (yk_orbit_phase_id(101) + yk_orbit_phase_step(2, 1)) % YK_ORBIT_STEPS;
+            unsigned c = (yk_orbit_phase_id(102) + yk_orbit_phase_step(2, 0)) % YK_ORBIT_STEPS;
+            CHECK(a < YK_ORBIT_STEPS && b < YK_ORBIT_STEPS && c < YK_ORBIT_STEPS);
+            CHECK(b != a);
+            CHECK(c != a);
         }
     }
     check_beam_member_covers_entry();       /* ★ 第三十三批：束贴图铺满整条 entry 行宽（「一缕一缕」的闸）*/
