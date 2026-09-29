@@ -1,5 +1,8 @@
 # AUDIT-116 —— 系统卡 116（东方天空璋・季节系统）本轮留痕（2026-09-13）
 
+> **版本**：TH18 v1.00a（`th18.exe`，imagebase `0x400000`）+ TH16 v1.00a / TH13 / TH12 / TH07 等按需引用。
+> 本文地址一律带版本前缀（`th16:0x…` / `th18:0x…`）；**裸地址默认属 TH18 v1.00a**。
+
 > **为什么单独一个文件**：`AUDIT.md` / `TUNING.md` 当时正被**另一条会话**改着（未提交），
 > 按「只动自己的」纪律，本轮的 116 留痕写在这里，避免把别人的在改内容卷进我的提交。
 > 等那些改动落库后，可以把本文件并回 `AUDIT.md`（或只在那边留一行索引）。
@@ -14,14 +17,13 @@
 
 ## §2 六问逐条（第 4 问最关键）
 
-| 问 | 回答 |
-| --- | --- |
-| 1 原版是什么 | 见 §3/§4/§5（全部落到 `th16:` 地址、脚本号与常量）|
-| 2 TH18 语义映射 | 子机 = 世界层 anm VM（`Player::allocate_option` 的脚本号栈参）；季节点 = 本卡自建 VM 池；**没有重新发明机制** |
-| 3 TH18 有没有现成代码 | **有，而且是同一套**：`ability.anm` entry0 = `player/option/op00.png`（256×512，**16×16** 子机 sprite），其 **script2 / script16** 就是原生子机脚本（`-1: layer(13) blendMode(1) type(1)` / `0: interruptLabel(2) scale(0,0) scaleTime(10,4,1.4,1.4) sprite(sprite0) angleVel(0,0,0.31415927)` / `+10: scaleTime(6,1,0.7,0.7)`…）—— 与 TH16 `pl00sub` script1 **逐条同形** |
-| 4 ★ TH18 遗留能不能借 | **子机**：TH16 的五条配方**没**留在 TH18 的 anm 里，但**同形配方在**（上述 script2/16）；⇒ **借配方 + 借 TH16 贴图**（`local/` 只读切图），逐行搬成 5 支新脚本。**弹字**：**整套借** TH18 原生 adder `PopupManager__sub_4645f0` `th18:0x4645f0`，**没有自己写弹字**。⇒ 没有一处在需要借的地方自造 |
-| 5 如何恰当实现 | 能复刻的全复刻（脚本逐行、角度/速度/scale/层全用一手原值）；只在「TH16 有、TH18 没有这个道具/通道」处做**最小桥接**并标 ❓自定 |
-| 6 落笔要求 | 每处都标了 ✅复刻（给地址/脚本号）或 ❓自定（给理由），见 §3–§5；❓ 项见 §7 |
+- **问**：回答
+- **1 原版是什么**：见 §3/§4/§5（全部落到 `th16:` 地址、脚本号与常量）
+- **2 TH18 语义映射**：子机 = 世界层 anm VM（`Player::allocate_option` 的脚本号栈参）；季节点 = 本卡自建 VM 池；**没有重新发明机制**
+- **3 TH18 有没有现成代码**：**有，而且是同一套**：`ability.anm` entry0 = `player/option/op00.png`（256×512，**16×16** 子机 sprite），其 **script2 / script16** 就是原生子机脚本（`-1: layer(13) blendMode(1) type(1)` / `0: interruptLabel(2) scale(0,0) scaleTime(10,4,1.4,1.4) sprite(sprite0) angleVel(0,0,0.31415927)` / `+10: scaleTime(6,1,0.7,0.7)`…）—— 与 TH16 `pl00sub` script1 **逐条同形**
+- **4 ★ TH18 遗留能不能借**：**子机**：TH16 的五条配方**没**留在 TH18 的 anm 里，但**同形配方在**（上述 script2/16）；⇒ **借配方 + 借 TH16 贴图**（`local/` 只读切图），逐行搬成 5 支新脚本。**弹字**：**整套借** TH18 原生 adder `PopupManager__sub_4645f0` `th18:0x4645f0`，**没有自己写弹字**。⇒ 没有一处在需要借的地方自造
+- **5 如何恰当实现**：能复刻的全复刻（脚本逐行、角度/速度/scale/层全用一手原值）；只在「TH16 有、TH18 没有这个道具/通道」处做**最小桥接**并标 ❓自定
+- **6 落笔要求**：每处都标了 ✅复刻（给地址/脚本号）或 ❓自定（给理由），见 §3–§5；❓ 项见 §7
 
 ## §3 季节子机的尺寸：**「两倍」差在 scale 常量，不在贴图、也不在量纲换算**
 
@@ -95,14 +97,13 @@
 
 ## §6 落地（逐条：文件 / 一手出处 / 定性）
 
-| 处 | 内容 | 定性 |
-| --- | --- | --- |
-| 脚本 **364–368** `season_opt_{spring,summer,fall,winter,doyou}` | 与 TH16 零售脚本**逐行同形**（去空白/注释后 **diff 为空**，五条都验过），只把 `sprite` 换成 ORDER 占位名 | ✅复刻 |
-| 新增 10 帧贴图 `OPT_SUMMER_2..4` / `OPT_FALL_2..8` | 生成器 `assets/ability/make_season_opt_anim_art.py`：矩形**从 anm 的 sprites 表读**；⚠ 顺手查清一个坑：**同批副 anm 的偏移约定不一致** —— `pl00sub/pl01sub/pl03sub/pl04sub` 的 entry1 sprite 坐标**要加** `xOffset/yOffset`，**`pl02sub` 不能加**（其坐标已是整页绝对值；`pl02.png` 只有 128×160，加了就读到页外）。生成器**不猜**：拿既有定稿的第 1 帧 PNG **逐像素比对**来判定约定，两个读法都不匹配就 `SystemExit` | ✅复刻 |
-| `season.c`：`season_opt_script()` + `ce_option_alloc(...)` 传逐季脚本号 | 一手 `th16:0x492be0[SUBSEASON] = {1,1,1,0x12,1}`、`0x492cdc[SUBSEASON] = {pl00sub,pl02sub,pl03sub,pl01sub,pl04sub}` | ✅复刻 |
-| `refresh_options()` 改「全收 + 重申请」 | 脚本号**只在申请时**传得进去（在役 VM 换不了脚本）；一手依据：TH16 换副季节发生在季节解放时，而 `Bomb__activate_bomb` 扣完槽**接着就调** `repopulate_options` ⇒ 原版换季本来就是**整批重建** | ✅复刻 |
-| 脚本号写死 → `#ifdef` + 生成宏 | `anm_ids.h` 的 `CE_ANM_ABILITY_SCRIPT_SEASON_OPT_*`；回退形状照抄 `youkai.c`/`ufo.c` | 工程性 |
-| ❌ **没有** `zWriteDisable(1)` | TH16 五支与 TH18 原生 script2/16 **都没有** —— 那是旧 script113 里我们自己加的 | ✅去掉自造 |
+- 处 ｜ 内容 ｜ 定性
+- 脚本 **364–368** `season_opt_{spring,summer,fall,winter,doyou}` ｜ 与 TH16 零售脚本**逐行同形**（去空白/注释后 **diff 为空**，五条都验过），只把 `sprite` 换成 ORDER 占位名 ｜ ✅复刻
+- 新增 10 帧贴图 `OPT_SUMMER_2..4` / `OPT_FALL_2..8` ｜ 生成器 `assets/ability/make_season_opt_anim_art.py`：矩形**从 anm 的 sprites 表读**；⚠ 顺手查清一个坑：**同批副 anm 的偏移约定不一致** —— `pl00sub/pl01sub/pl03sub/pl04sub` 的 entry1 sprite 坐标**要加** `xOffset/yOffset`，**`pl02sub` 不能加**（其坐标已是整页绝对值；`pl02.png` 只有 128×160，加了就读到页外）。生成器**不猜**：拿既有定稿的第 1 帧 PNG **逐像素比对**来判定约定，两个读法都不匹配就 `SystemExit` ｜ ✅复刻
+- `season.c`：`season_opt_script()` + `ce_option_alloc(...)` 传逐季脚本号 ｜ 一手 `th16:0x492be0[SUBSEASON] = {1,1,1,0x12,1}`、`0x492cdc[SUBSEASON] = {pl00sub,pl02sub,pl03sub,pl01sub,pl04sub}` ｜ ✅复刻
+- `refresh_options()` 改「全收 + 重申请」 ｜ 脚本号**只在申请时**传得进去（在役 VM 换不了脚本）；一手依据：TH16 换副季节发生在季节解放时，而 `Bomb__activate_bomb` 扣完槽**接着就调** `repopulate_options` ⇒ 原版换季本来就是**整批重建** ｜ ✅复刻
+- 脚本号写死 → `#ifdef` + 生成宏 ｜ `anm_ids.h` 的 `CE_ANM_ABILITY_SCRIPT_SEASON_OPT_*`；回退形状照抄 `youkai.c`/`ufo.c` ｜ 工程性
+- ❌ **没有** `zWriteDisable(1)` ｜ TH16 五支与 TH18 原生 script2/16 **都没有** —— 那是旧 script113 里我们自己加的 ｜ ✅去掉自造
 
 - **对既有卡的影响面 = 零**：`season.c` 是 116 私有；新增脚本/贴图/ORDER 全是 append；
   **脚本 113 一个字节没动**（`grep SCRIPT_SEASON_OPT native/cards/season.c` 只剩注释）⇒
