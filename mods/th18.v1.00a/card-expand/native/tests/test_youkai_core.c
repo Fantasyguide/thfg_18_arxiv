@@ -245,9 +245,9 @@ int main(void)
         /* ① 早苗（机体 3）档 0 ⇒ 数量 0 ⇒ **不压**（这条就是用户口径本身）*/
         CHECK(yk_option_count(1, 3, 0) == 0);
         CHECK(yk_should_suppress_native(1, 1, 3, 0) == 0);
-        /* ①' 早苗档 1..4（数量 1..4）⇒ **压**（口径只放行「一发都出不来」的那一档）*/
+        /* ①' 早苗档 1..4（**恒 1 台**，第四十八批 owner 口径）⇒ **压**（口径只放行「一发都出不来」的那一档）*/
         for (lv = 1; lv < 5; ++lv) {
-            CHECK(yk_option_count(1, 3, lv) == lv);
+            CHECK(yk_option_count(1, 3, lv) == 1);
             CHECK(yk_should_suppress_native(1, 1, 3, lv) == 1);
         }
         /* ③ 霊夢 / 魔理沙 / 咲夜（常数 1 / 1 / 4）⇒ **任何档都压**（含档 0；与早苗档 0 的对照）*/
@@ -306,12 +306,15 @@ int main(void)
         CHECK(yk_option_count(1, 1, (int)i) == 1);            /* 魔理沙 → th08 pl01 妖侧（アリス）= 1，与 P 无关 */
         CHECK(yk_option_count(1, 2, (int)i) == 4);            /* 咲夜 → th08 pl02 妖侧（レミリア）= 4，与 P 无关 */
     }
-    CHECK(yk_option_count(1, 3, 0) == 0);                     /* 早苗 → th16 pl03（射命丸文）= floor(P/100) */
+    /* ★★ 2026-09-27（第四十八批 · owner 口径「高低速状态下文文应该只有一台子机」）：
+     *   早苗 = **1 台**（档 0 仍是 0 —— 那是 TH16 档 0 = 0 的一手事实），**不再 ∝ P**。
+     *   P 的成长由子机弹承担（`pl03.sht` 低速组 A0..A4：dmg 3/8/16/20 + 弹 anm 逐档放大）。*/
+    CHECK(yk_option_count(1, 3, 0) == 0);
     CHECK(yk_option_count(1, 3, 1) == 1);
-    CHECK(yk_option_count(1, 3, 2) == 2);
-    CHECK(yk_option_count(1, 3, 3) == 3);
-    CHECK(yk_option_count(1, 3, 4) == 4);
-    CHECK(YK_OPTION_BY_CHAR[3][4] == 4);                      /* 表本体可读（youkai_core.h）*/
+    CHECK(yk_option_count(1, 3, 2) == 1);
+    CHECK(yk_option_count(1, 3, 3) == 1);
+    CHECK(yk_option_count(1, 3, 4) == 1);
+    CHECK(YK_OPTION_BY_CHAR[3][4] == 1);                      /* 表本体可读（youkai_core.h）*/
     CHECK(YK_OPTION_TIERS == YK_SHOT_TIERS);                  /* 列数 = 五档（同一组火力档）*/
     CHECK(YK_OPTION_CHARS == 4);
     /* 高速：一格槽都不占（用户定案 5）——与机体 / 火力无关 */
