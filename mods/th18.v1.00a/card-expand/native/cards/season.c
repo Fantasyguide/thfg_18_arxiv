@@ -1527,21 +1527,33 @@ static int on_tick_shooters(ce_card_t *c, uint32_t short_timer, uint32_t long_ti
  * 认领**幂等**（`on_load` 每关都会再调一次，重复认领返回同一个槽）。
  * 释放不在这里做：删卡时 `on_delete` 走 `ce_layer_drop_card()` → `ce_hud_slot_release()`
  * （§4.4：局中删卡只「保留占位」，不当场重排，下关开场自然收敛）。*/
-static void hud_slot_claim(void)
+static void hud_slot_claim(season_card_t *s)
 {
     ce_hud_block_t blk;
+    int32_t ok;
 
     memset(&blk, 0, sizeof blk);
     blk.w = SEASON_HUD_BLOCK_W;
     blk.h = SEASON_HUD_BLOCK_H;
     blk.side = CE_HUD_SIDE_LEFT;                   /* 左下角货架（§2 从 (257,924) 向右排）*/
-    s_slot_ok = ce_hud_slot_claim_card(116, &blk, &s_slot);
-    if (s_slot_ok) {
-        ce_log("season: HUD block %.0fx%.0f claimed at surface (%.0f, %.0f)",
-               (double)blk.w, (double)blk.h, (double)s_slot.x, (double)s_slot.y);
-    } else {
-        ce_log("season: ce_hud_slot_claim_card FAILED");
+    ok = ce_hud_slot_claim_card(116, &blk, &s_slot);
+    /* ★★ 2026-09-13 修 bug（实跑日志 7419 行 + HUD 位置错）：认领结果**必须写进卡字段**
+     * `s->hud_slot_ok` —— 因为 `hud_slot_sync()` 与 `hud_ensure()` 读的都是**它**。
+     * 原来只写文件静态 `s_slot_ok` ⇒ 两个后果：
+     *   ① `hud_ensure()` 每帧都以为「本卡还没认领到」⇒ **每帧重认领**（日志刷屏）；
+     *   ② `hud_slot_sync()` 永远走 `!ok` 那条 ⇒ 退回默认锚点 `CE_HUD_ANCHOR_*`，
+     *      **从不 `ce_hud_slot_get()`** ⇒ 拿不到货架按 card_id 排给我们的槽位（**HUD 位置错**）。
+     * 现在两处同源：`s->hud_slot_ok` 是唯一真值；`s_slot_ok` 只留作「上一次的值」用于日志去重。*/
+    if (ok != s_slot_ok) {                         /* 只在结果**变化**时打日志（重认领不再刷屏）*/
+        if (ok) {
+            ce_log("season: HUD block %.0fx%.0f claimed at surface (%.0f, %.0f)",
+                   (double)blk.w, (double)blk.h, (double)s_slot.x, (double)s_slot.y);
+        } else {
+            ce_log("season: ce_hud_slot_claim_card FAILED");
+        }
     }
+    s_slot_ok = ok;
+    if (s) s->hud_slot_ok = ok;
 }
 
 /* 每帧取**最新**锚点。⚠ 两个坑（`sdk_core.c` 一手）：
@@ -1569,7 +1581,7 @@ static void hud_ensure(season_card_t *s)
      * 这里补一次 —— 认领是幂等的，正常路径只有开场那一次真正落账。
      * ⚠ 只在「本卡状态说没认领到」时补：不看 `ce_hud_slot_claimed()`，因为局中删卡时 SDK
      * 只把占位标记为「保留」、`claimed` 仍为真，那种情况不该重新认领（§4.4 不当场重排）。*/
-    if (!s->hud_slot_ok) hud_slot_claim();
+    if (!s->hud_slot_ok) hud_slot_claim(s);   /* ★ 传卡指针：认领结果会写回 `s->hud_slot_ok`（见 hud_slot_claim 的注释）*/
 
     pos[2] = 0.0f;
     /* ★ 2026-09-10 第二十九轮：任何 VM 被**重新生成**（换关时引擎清过 anm，或 VM 被删）都要把
@@ -1881,9 +1893,11 @@ static void clear_card(ce_card_t *c)
  * `hud_slot_sync` 只能退回默认锚点（虽然像素相同，但账就不对了）。*/
 static int on_load(ce_card_t *c)
 {
-    (void)c;
-    s_slot_ok = 0;
-    hud_slot_claim();
+    season_card_t *s = st(c);
+
+    /* ⚠ 这里**不**再把 `s_slot_ok` 清 0：它是「上一次认领结果」，留着才能让
+     * `hud_slot_claim()` 只在**结果变化**时打日志（否则每关都会再打一行）。*/
+    hud_slot_claim(s);
     return 0;
 }
 static void on_run_reset(ce_card_t *c) { clear_card(c); }
