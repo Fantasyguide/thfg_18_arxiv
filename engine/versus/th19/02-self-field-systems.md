@@ -5,7 +5,7 @@
 > **一手面**：`local/th19.v1.10c/decomp/all.c`（4740 函数，脱壳 exe md5 `dd0e1ff8c02327bf6408f763b8beedc9`）+ `local/th19.v1.10c/th19-rtti.json`（448 vftable）
 > + `tooling/ghidra/th20_show.py`（读语料）/ `tooling/pe_read.py`（常量真值）/ 指令级复核（capstone 直读 PE 节表按 VA 取字节，§5.4 的 RTTI 缺口就是这么测出来的）。
 > **只借名字**：RTTI 类名与 `local/th19.v1.10c/ability.txt`（能力说明文，SJIS）。**每条结论都落到自己的反编译/指令阅读上**。
-> **相关**：[`01-versus-loop.md`](../th09/01-versus-loop.md)（兄弟作 TH09 的对战循环；119 合成卡的另一半依据）·
+> **相关**：[`01-versus-loop.md`](../th09/01-versus-loop.md)（兄弟作 TH09 的对战循环；109 合成卡的另一半依据）·
 > [`../../../games/th19.v1.10c/INDEX.md`](../../../games/th19.v1.10c/INDEX.md)（样本登记与类地图 §2a）。
 
 ---

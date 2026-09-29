@@ -45,7 +45,7 @@
 | 霊（幽灵）系统 | ⏳ 未挖 |
 | 其余 | ⏳ 未挖 |
 
-## 4. 待挖图（按「119 合成卡需要什么」排序）
+## 4. 待挖图（按「109 合成卡需要什么」排序）
 
 1. **对战骨架**：两侧场地对象 / 每帧更新 / 胜负判定函数在哪里（th-re-data 有名字，先按名字定位）。
 2. **花与进度**：progress 字段、阈值、满进度时「送攻击」的入口（对应 TH19 的「送動物霊」）。
@@ -54,6 +54,6 @@
 
 ## 关联
 
-- 119 合成卡工单：`mods/th18.v1.00a/card-expand/SINGLE-CARD-TEST.md` 的 `§th20` 第 6/8 条。
+- 109 合成卡工单：`mods/th18.v1.00a/card-expand/SINGLE-CARD-TEST.md` 的 `§th20` 第 6/8 条。
 - 姊妹作（TH19 獣王園）：[`games/th19.v1.10c/INDEX.md`](../th19.v1.10c/INDEX.md)。
 - 命名金矿用法：[`tooling/ghidra/th-re-data.md`](../../tooling/ghidra/th-re-data.md)。

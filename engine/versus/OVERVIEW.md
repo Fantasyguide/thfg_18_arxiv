@@ -54,7 +54,7 @@ TH19 的官方口径是「**画面构成大体基于 TH09，但重构了系统**
 1. **「送进对手场地」在单人宿主里没有对手** ⇒ 复刻时必须先定落点（送成一波敌机 / 送成一波弹幕 / 送成一个道具环）。
    一手的两条落点实现正好给了两个可借的模板：th19 的「换生成侧 + 挂到某个 EnemyCtrl」与 th09 的「载体落地回调写对手池」。
 2. **TH19 的能力卡与 TH18 同源**（23 槽 vs 21 槽、对象 0x60/0x64、flags 位置只挪了一格）
-   ⇒ 119 卡若走「能力卡」路线，本仓 `mods/th18.v1.00a/card-expand/` 的骨架几乎可直接套。
+   ⇒ 109 卡若走「能力卡」路线，本仓 `mods/th18.v1.00a/card-expand/` 的骨架几乎可直接套。
 3. **别重复造**：TH19 的「霊撃」与「Bomb」是**同一个字段**，而本仓 117 卡已经有「霊撃」；
    119 若也用霊撃，要明确它与 117 的资源/优先级关系。
 
@@ -66,4 +66,4 @@ TH19 的官方口径是「**画面构成大体基于 TH09，但重构了系统**
 - TH19 能力卡（静态表 `th19:0x5c5640` / 23 槽虚表 / 装配链）：[`card/th19/01`](../card/th19/01-ability-cards.md)
 - TH19 能力卡资产（`abcard.anm` 85 entry / `abmenu.anm` / 卡面尺寸）：[`card/th19/02`](../card/th19/02-ability-assets.md)
 - 样本登记：[`games/th09.v1.50a/INDEX.md`](../../games/th09.v1.50a/INDEX.md)、[`games/th19.v1.10c/INDEX.md`](../../games/th19.v1.10c/INDEX.md)
-- 卡侧工单（119 合成卡）：`mods/th18.v1.00a/card-expand/SINGLE-CARD-TEST.md` 的 `§th19`
+- 卡侧工单（109 合成卡）：`mods/th18.v1.00a/card-expand/SINGLE-CARD-TEST.md` 的 `§th19`

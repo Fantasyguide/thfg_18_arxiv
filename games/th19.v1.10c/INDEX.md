@@ -103,7 +103,7 @@ RTTI 链子跑完（`local/th19.v1.10c/th19-rtti.json`，448 个 vftable），ZU
 | 对战骨架 + 動物霊送り込み | ✅ [`versus/th19/03`](../../engine/versus/th19/03-sending-and-rules.md)（**胜负判定仍 ❓**）|
 | 剧情模式 / 网络 | ⏳ 未挖（本工单不需要）|
 
-## 5. 待挖图（按「119 合成卡需要什么」排序）
+## 5. 待挖图（按「109 合成卡需要什么」排序）
 
 1. ~~能力卡系统~~ ✅ 已挖完（表 `0x5c5640`、id→类 `0x4deba0`、装配 `0x4e2c08`）；**剩**：`[ctx+0x2c]` 那个参数对象的类名与字段图。
 2. ~~動物霊送り込み~~ ✅ 已挖完（换生成侧机制）；**剩**：`+0xab/ac/ad`「被攻撃弱体化」的读取点。
@@ -122,7 +122,7 @@ RTTI 链子跑完（`local/th19.v1.10c/th19-rtti.json`，448 个 vftable），ZU
   [`engine/versus/th19/03`](../../engine/versus/th19/03-sending-and-rules.md)（对战骨架 + 動物霊）+
   门面 [`engine/versus/OVERVIEW.md`](../../engine/versus/OVERVIEW.md)、
   [`engine/card/OVERVIEW.md`](../../engine/card/OVERVIEW.md) 的 th19 小节。
-- 119 合成卡工单与 owner 口径：`mods/th18.v1.00a/card-expand/SINGLE-CARD-TEST.md` 的 `§th19`（含**合成方案候选表**）、
+- 109 合成卡工单与 owner 口径：`mods/th18.v1.00a/card-expand/SINGLE-CARD-TEST.md` 的 `§th19`（含**合成方案候选表**）、
   [`games/th20.v1.00a/INDEX.md`](../th20.v1.00a/INDEX.md) §2b-3 / §2b-4。
 - 兄弟作（TH09 花映塚）：[`games/th09.v1.50a/INDEX.md`](../th09.v1.50a/INDEX.md)、
   [`engine/versus/th09/01`](../../engine/versus/th09/01-versus-loop.md)。
