@@ -36,9 +36,11 @@
  *      的贴图外观不对。代价：季节点不进 TH18 的得分/道具系统（它只是本卡的资源）。
  *   ② 季节槽：累计季节点按 TH16 阈值分 0..6 档（`season_core.c`）。
  *   ③ 季节子机：档位 = 子机数（最多 3 个），**阵位直接照 TH16 副 sht 的 option_pos**（每档一套，
- *      秋最宽 ±48 / 冬竖线 / 其余小扇），走 `shooterset SEASON`；**S 键切副季节时贴图与阵位一起换**。
- *   ④ 季节解放：**A 键**；按副季节查表出「半径 / 持续 / 每帧伤害 / 无敌」，
- *      持续期间每帧半径清弹 + 一个伤害源；**S 键切副季节（春→夏→秋→冬→土用）**。
+ *      秋最宽 ±48 / 冬竖线 / 其余小扇），走 `shooterset SEASON`；**切副季节时贴图与阵位一起换**。
+ *   ④ 季节解放：**C 键**（本卡是主动卡：D 切到本卡、C 发动，见 `on_activate`）；按副季节查表出
+ *      「半径 / 持续 / 每帧伤害 / 无敌」，持续期间每帧半径清弹 + 一个伤害源；
+ *      **切副季节 = 完整双击 Z（春→夏→秋→冬→土用）** —— ❓自定（用户 2026-09-29 口径），
+ *      TH16 没有切季节的键（见 `SEASON_INPUT_Z` 的注释）。
  *      ⚠️ 原始键不进 replay 输入流（回放只录 `th18:0x4ca428` 的掩码）→ 用 A/S 触发的效果回放里不重现。
  *   ⑤ HUD：**游玩区左下角**（照 TH16 `front.anm` script113–118 的季节计量槽）：季节字 PNG（32×32，
  *      `front00.png` (832,80)+32k 的 5 个单元，TH16 用 `sprite = 82 + SUBSEASON`）+ 长方形进度条
@@ -68,15 +70,26 @@
 #define SEASON_SE_LEVEL      0x3f     /* ★ TH16 `item_collect_season` 升档时播 0x3f（一手），不是 se_extend */
 #define SEASON_SE_RELEASE    0x2c     /* se_bomb（解放）*/
 #define SEASON_SE_SWITCH     0x4e     /* se_changeitem（切副季节）*/
-/* ★★ 2026-09-21 owner 口径（`WORK-PACKAGES.md` §1b/§1c）：**副季节切换 = Shift + D**，且**只读引擎掩码**。
- *   两个位都落在 `INPUT_HELD` `th18:0x4ca428` 的**低 16 位**里 —— 那正是 replay 录的那一份
- *   （`sdk.h:761` + `ReplayManager__on_tick__record_replay` `th18:0x46295a`/`th18:0x462961` 的 `movzx … WORD`）
- *   ⇒ 录制录得到、回放喂得回来。一手逐位出处见 `engine/input/th18/01-key-mapping.md` §2.3（位表）/ §3（空位）/ §4.1（录制读点）：
- *     · `0x008` = Shift / 聚焦（`th18:0x45b3fa`：`player+0x476cc = INPUT_HELD >> 3 & 1`）
- *     · `0x800` = D（它唯一的消费者是玩家 tick 里 `th18:0x45c09c` 的 `test [0x4ca434],0x800`）
- *   ⚠ 原来读的是 `ce_key_down()`（GetKeyboardState）⇒ **不进 replay**：回放里季节切不动，
- *     而切换会换子机贴图/阵位、还进消弹族 ⇒ 会让回放**失同步**。这就是本次改动的唯一理由。*/
-#define SEASON_INPUT_CHANGE   0x800u          /* D：切一档副季节；同时是引擎的「切换主动卡」位（见 on_tick_2 的阻断）*/
+/* ★★ 2026-09-29 用户口径（原话：「算了，改成**双击 Z** 吧，**必须是完整的双击**：
+ *   **不按 Z，按 Z，放开，再按**」）⇒ **副季节切换 = 完整双击 Z**（❓自定，**不是复刻**；状态机在
+ *   `season_core.c` 的 `season_dtap_tick()`，纯逻辑可离线单测）。
+ *   Z 的位 = `INPUT_HELD`（`th18:0x4ca428`）**bit0 `0x001`** —— 一手：
+ *   `engine/input/th18/01-key-mapping.md` §2.1（`0x401ca6`/`0x401cb1` 把 Shot 键表 `0x4ca470` 的位挪到 bit0）、
+ *   §2.3 位表（`0x001` = 键盘 Z / 手柄 Shot = 射击）、§2.4 的逐键仿真；
+ *   同仓先例 `cards/pofv.c:63` `POFV_INPUT_SHOT = 0x001`、`cards/animal.c:2608` `CE_INPUT_HELD() & 1u`。
+ *   ⚠ 只读 `INPUT_HELD`（不写任何掩码位）⇒ ① 不进 replay 的问题不存在（held 的低 16 位就是
+ *   `ReplayManager__on_tick__record_replay` `th18:0x462961` 录的那一份，回放里双击会一模一样地重现）；
+ *   ② **不再需要**「按 Shift 抹掉 D 边沿」那段（已删，见 `on_tick_2` 的退休说明）。
+ *   ⚠ 背景（为什么以前是 Shift+D）：TH16 **没有**切季节的键 —— 副季节在选关/菜单里选
+ *   （`MainMenu__do_subseason_select` `th16:0x450af0` 的四处写点 `0x450d95`/`0x450df1`/`0x450df8`/`0x450e9b`
+ *    + 关卡配置拷贝 `0x447b53`/`0x44b083`），游戏里唯一的季节键是「季节释放」`INPUT_RISING_EDGE & 0x800`。
+ *   所以键位一直是**用户/owner 口径**（旧 `Shift+C` → 2026-09-21 `Shift+D` → 本次 **双击 Z**），
+ *   没有一手可复刻。*/
+#define SEASON_INPUT_Z        0x001u  /* Z（射击）—— 只读，绝不写 */
+
+/* ★ 2026-09-29 **已退休**：`SEASON_INPUT_CHANGE 0x800u`（D）、`(held & 0x008) && (INPUT_PRESSED & 0x800)`
+ *   这条 Shift+D 门，以及紧随的 `if (held & 0x008) INPUT_PRESSED &= ~0x800;` 阻断 —— 见 `on_tick_2`。
+ *   拆掉阻断那一段同时修掉一个真问题：**按住 Shift 时引擎的 D（切换主动卡）被我们吃掉了**。*/
 #define SEASON_GRAZE_ADDR    0x4ccd0c /* 原生擦弹计数（GLOBALS.inner+0x30）；与 lolk.c 同址 */
 #define SEASON_GRAZE_PER_FRAME 2      /* 一帧最多因擦弹撒几颗 */
 #define SEASON_CANCEL_PER_POINT 1     /* 消弹 → 季节点：**每 1 颗消掉的弹给 1 点**
@@ -285,9 +298,10 @@ typedef struct {
     int32_t     points;                    /* 累计季节点 */
     int32_t     subseason;                 /* 副季节 0..4 */
     int32_t     frame;                     /* 射击帧计数 */
-    int32_t     sub_prev;                  /* 【已退休，保留占位】历史 = 旧「Shift+C」原始键盘读法的上一帧电平；
-                                            * 2026-09-21 起边沿改由引擎的 `INPUT_PRESSED`（`th18:0x4ca434`）提供
-                                            * ⇒ 不再读写它（保留是为了不动 `season_card_t` 布局：
+    int32_t     sub_prev;                  /* 【已退休，保留占位】历史 = 更早的「Shift+C」原始键盘读法的上一帧电平；
+                                            * 2026-09-21 改用引擎边沿、2026-09-29 改成「双击 Z」的状态机
+                                            * （`season_dtap_t dtap`，见下）⇒ 本字段不再读写
+                                            *（保留是为了不动 `season_card_t` 布局：
                                             * 上面那条 `_Static_assert(sizeof ≤ 496)` 与存档影子都按这个大小）。*/
     int32_t     last_graze;                /* 上一帧原生擦弹计数；-1 = 未初始化 */
     int32_t     releases;                  /* 解放次数（日志）*/
@@ -298,7 +312,11 @@ typedef struct {
     int32_t     rel_dmg;
     int32_t     rel_sub;                   /* 释放时的副季节（快照）*/
     int32_t     rel_cancelled;             /* 本次消弹总数 */
-    int32_t     rel_acc;                   /* 消弹 → 季节点 的累加器 */
+    int32_t     rel_acc;                   /* 【已退休】消弹 → 季节点 的累加器（2026-09-29 起改由
+                                            * `cancel_spawn_points()` 一颗弹一颗点直接撒；字段保留不动布局）*/
+    season_dtap_t dtap;                    /* ★ 2026-09-29：**双击 Z** 的状态机（❓自定，用户口径）
+                                            * —— 跨帧、无句柄；`clear_card()` 里 `season_dtap_init()` 清零。
+                                            * 一手/口径见 `season_core.h` 的 `season_dtap_t` 头注 */
     hud_dim_t   hud;                       /* ★ 2026-09-15g：压暗状态（闩锁 + alpha）—— 跨卡统一件
                                             * `cards/hud_dim.{h,c}`（原来这里是 `hud_dim`/`hud_alpha`
                                             * 两个 int32：闩锁同 `TH16 gui+0x1ac bit0`，值 **64**；现在统一 32）*/
@@ -1405,7 +1423,6 @@ static void graze_tick(season_card_t *s)
 static int on_tick_2(ce_card_t *c)
 {
     season_card_t *s = st(c);
-    uint32_t held;
     int i;
 
     if (!s || !CE_PLAYER()) return 0;
@@ -1419,38 +1436,24 @@ static int on_tick_2(ce_card_t *c)
      *   「用 D 键切换到该卡，然后按 C」触发（实现在下面的 `on_activate()`）。
      *   ⚠ 原来这里是 `ce_key_down(CE_VK_A)` 的边沿。 */
 
-    /* ★★ 2026-09-21 owner 口径：副季节切换 = **Shift + D**，**只读引擎掩码**（旧：`ce_key_down(SHIFT)&&(C)`）。
-     *   边沿直接用引擎算好的 `INPUT_PRESSED`（`CE_ADDR_INPUT_PRESSED` `th18:0x4ca434`）——
-     *   `Input__compute_edges` `th18:0x42abc0` 每帧 `pressed = (held ^ prev) & held`（`th18:0x42ac46`–`0x42ac56`）
-     *   ⇒ **按一次只切一档，不需要我们存 prev 电平**（原来的 `s->sub_prev` 就此退休）。
-     *   顺序 = owner 的读法「先按住 Shift 再按 D」：`held & 0x008` **且** `pressed & 0x800`。
-     *   掩码位的一手出处（含「为什么它进 replay」）见上面 `SEASON_INPUT_CHANGE` 的注释。*/
-    held = CE_INPUT_HELD();
-    if ((held & CE_INPUT_FOCUS) && (*(volatile uint32_t *)CE_ADDR_INPUT_PRESSED & SEASON_INPUT_CHANGE)) {
+    /* ★★ 2026-09-29 用户口径：副季节切换 = **完整双击 Z**（「不按 Z，按 Z，放开，再按」）。
+     *   ❓**自定、不是复刻**（TH16 根本没有切季节的键，见 `SEASON_INPUT_Z` 的注释）；
+     *   状态机在 `season_core.c` 的 `season_dtap_tick()`：**只在第二次按下那一帧返回 1**
+     *   （一次手势只切一档、不连发），中间那一下松手必须真的发生，整个手势不超过
+     *   `SEASON_DTAP_WINDOW`（20 帧 ≈ 330 ms）。窗口与去重规则都是 ❓自定，见 `season_core.h` 头注。
+     *
+     *   替换掉的东西（2026-09-21 owner 口径的 Shift+D）：
+     *     · 旧门 `(held & 0x008) && (INPUT_PRESSED & 0x800)`；
+     *     · 旧阻断 `if (held & 0x008) INPUT_PRESSED &= ~0x800;` —— 它让**按住 Shift 时引擎的 D
+     *       （切换主动卡）按不动**（用户的 D 就是「切到本卡」），本次一并删掉。
+     *   ⇒ 本卡现在**一个输入掩码位都不写**（只读 `INPUT_HELD` 的 Z 位），引擎自己的 C/D 语义完整保留。
+     *   ⚠ Z 同时也是开火键 ⇒ 双击那两下**会各打一帧**（用户明确要这个）；本卡不吞任何输入帧。*/
+    if (season_dtap_tick(&s->dtap, (CE_INPUT_HELD() & SEASON_INPUT_Z) != 0)) {
         s->subseason = season_next(s->subseason);
         ce_play_sound(SEASON_SE_SWITCH, ce_player_x());
         refresh_options(c, s);                       /* ★ 子机**整批重建**：脚本/贴图/阵位都跟着换 */
-        ce_log("season: sub-season -> %s (Shift+D, mask 0x008|0x800)", season_name(s->subseason));
+        ce_log("season: sub-season -> %s (double-tap Z)", season_name(s->subseason));
     }
-
-    /* ★★ 阻断（owner 口径「按住 Shift 时不要让 D 触发『切换主动卡』」）—— **纯 mod 侧、零新站点**。
-     *   D 在引擎里只有一个消费者：玩家 tick 的 `th18:0x45c09c`
-     *   （`test dword [0x4ca434],0x800` → `th18:0x45c0b0 call 0x408b00` = `set_selected_active_card(mgr,-1)`
-     *   + 成功时 `play_sound(0x4e)`）。**它不在 SDK 的主动卡机器那一段**（`vtable+0x08` 只管 C），
-     *   所以「在 SDK 侧拦」对 D 不成立；能拦住它的位置只有一个，但**不必新增站点**：
-     *   帧内顺序（一手：注册优先级，见 `engine/_shared/frame-loop.md` §4 与
-     *   `engine/input/th18/01-key-mapping.md` §4.4 的表与 §5）：
-     *     ① ReplayManager 录制/回放节点 优先级 `0x11`（注册点 `th18:0x461825` / `0x461a42`）
-     *        —— `INPUT_HELD` / `INPUT_PRESSED` 在这里写出来，**replay 也在这里录**（`0x4629f7`/`0x462a05`/`0x462a0d`）；
-     *     ② AbilityManager 节点 优先级 `0x16`（`th18:0x408475` push 0x16 → `0x408a90` → `0x408640` 的
-     *        `call [eax+0x2c]`）= **本函数**；
-     *     ③ Player 节点 优先级 `0x17`（`th18:0x45a8aa` → `0x45caa0` → `jmp 0x45be90`）= 上面那个消费者。
-     *   ⇒ 在②把 D 的**上升沿位**从 `INPUT_PRESSED` 抹掉，③ 读到的就是 0。本卡不在场 / 不按住 Shift 时一个字节都不碰。
-     *   replay 一致：抹的是**本帧内存副本**，流里已存真值（①在我们之前），回放时同一帧我们同样再抹一次
-     *   ⇒ 录/放行为一致。比「引擎侧拦 `0x45c09c`」省一条站点（站点预算现实：我们 27/24、进程 47/42 ⇒ 不建议加）。
-     *   ⚠ 只抹 D（`&= ~0x800`）：Shift 期间 C 仍照常发动主动卡 —— owner 这次只要求阻断 D。*/
-    if (held & CE_INPUT_FOCUS)
-        *(volatile uint32_t *)CE_ADDR_INPUT_PRESSED &= ~(uint32_t)SEASON_INPUT_CHANGE;
 
     release_tick(c, s);
 
@@ -1862,6 +1865,7 @@ static void clear_card(ce_card_t *c)
     s->last_graze = -1;
     s->hud_last_state = -1;
     hud_dim_init(&s->hud);                     /* ★ 2026-09-15g：压暗状态复位 = **满亮 255**（不是 0）*/
+    season_dtap_init(&s->dtap);                /* ★ 2026-09-29：双击状态机清零（memset 已覆盖，显式再写一次）*/
 }
 
 /* ★ 2026-09-10 第二十六轮（用户实跑：切关后面板/子机被打回春）：

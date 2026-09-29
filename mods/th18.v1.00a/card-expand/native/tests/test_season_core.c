@@ -222,6 +222,99 @@ int main(void)
         CHECK(season_drop_count_decay(40, 40, season_drop_native_tier(1), 1) == 1);
     }
 
+
+    /* —— ★★ 副季节切换：**完整双击 Z** 的状态机（❓自定：用户 2026-09-29 口径）——
+     * 覆盖：完整双击触发一次 / 只按一下不触发 / 一直按住不触发 / 两次按下之间没放开不触发 /
+     *       超出窗口不触发 / 窗口内再次按下触发 / 连续三次按下（同一对只算一次 ⇒ 1 次）。
+     * 记法：`D` = 本帧按下（held=1）、`.` = 本帧松开（held=0）；`run()` 逐帧喂、累加触发次数。*/
+    {
+        season_dtap_t d;
+        int fires = 0;
+
+        /* ① 完整双击（按下 → 放开 → 再按下）⇒ 恰好 1 次，且触发帧 = 第二次按下那一帧 */
+        season_dtap_init(&d);
+        CHECK(season_dtap_tick(&d, 1) == 0);          /* 按 */
+        CHECK(season_dtap_tick(&d, 0) == 0);          /* 放 */
+        CHECK(season_dtap_tick(&d, 1) == 1);          /* 再按 → 触发 */
+        CHECK(season_dtap_tick(&d, 1) == 0);          /* 还按着：不连发 */
+        CHECK(season_dtap_tick(&d, 0) == 0);          /* 放（重新武装）*/
+        CHECK(season_dtap_tick(&d, 0) == 0);
+
+        /* ② 只按一下，然后一直放开 ⇒ 0 次 */
+        season_dtap_init(&d);
+        fires = 0;
+        fires += season_dtap_tick(&d, 1);
+        { int i; for (i = 0; i < 60; ++i) fires += season_dtap_tick(&d, 0); }
+        CHECK(fires == 0);
+
+        /* ③ 一直按住 Z（远超窗口）⇒ 0 次（按住不算双击）*/
+        season_dtap_init(&d);
+        fires = 0;
+        { int i; for (i = 0; i < 120; ++i) fires += season_dtap_tick(&d, 1); }
+        CHECK(fires == 0);
+        /* 按住很久之后松手、不按 ⇒ 仍然 0 次；且松手后必须**重新**按-放-按 才有一次 */
+        CHECK(season_dtap_tick(&d, 0) == 0);
+        fires += season_dtap_tick(&d, 1);             /* 新的第一次按下 */
+        fires += season_dtap_tick(&d, 0);             /* 放开 */
+        fires += season_dtap_tick(&d, 1);             /* 第二次按下 ⇒ 触发 */
+        CHECK(fires == 1);
+
+        /* ④ 「两次按下之间没有放开」（一直按着不松）⇒ 0 次 —— 与 ③ 同一条，这里显式再走一遍
+         *    「第一下按下后长时间保持、然后才松手再按」：第一次按下已超窗 ⇒ 那次手势作废 */
+        season_dtap_init(&d);
+        fires = 0;
+        fires += season_dtap_tick(&d, 1);             /* 按 */
+        { int i; for (i = 0; i < SEASON_DTAP_WINDOW + 5; ++i) fires += season_dtap_tick(&d, 1); }
+        fires += season_dtap_tick(&d, 0);             /* 松开 */
+        fires += season_dtap_tick(&d, 1);             /* 再按：这只是**新的第一次按下** */
+        CHECK(fires == 0);
+        fires += season_dtap_tick(&d, 0);             /* 放开 */
+        fires += season_dtap_tick(&d, 1);             /* 才凑成完整双击 */
+        CHECK(fires == 1);
+
+        /* ⑤ 超出窗口：按下 → 放开 → 等过窗口 → 再按 ⇒ 0 次（窗口内没等到第二次）*/
+        season_dtap_init(&d);
+        fires = 0;
+        fires += season_dtap_tick(&d, 1);             /* 按 */
+        fires += season_dtap_tick(&d, 0);             /* 放 */
+        { int i; for (i = 0; i < SEASON_DTAP_WINDOW + 2; ++i) fires += season_dtap_tick(&d, 0); }
+        fires += season_dtap_tick(&d, 1);             /* 超窗后再按 ⇒ 只是新的第一次按下 */
+        CHECK(fires == 0);
+        fires += season_dtap_tick(&d, 0);
+        fires += season_dtap_tick(&d, 1);
+        CHECK(fires == 1);
+
+        /* ⑥ 窗口内再次按下 ⇒ 触发（边界：刚好用掉窗口最后一帧的那次按下也算）*/
+        season_dtap_init(&d);
+        fires = 0;
+        fires += season_dtap_tick(&d, 1);             /* 按（win = W）*/
+        fires += season_dtap_tick(&d, 0);             /* 放（win = W-1）*/
+        { int i; for (i = 0; i < SEASON_DTAP_WINDOW - 2; ++i) fires += season_dtap_tick(&d, 0); }
+        CHECK(d.state == 2 && d.win == 1);            /* 还差 1 帧到期 */
+        fires += season_dtap_tick(&d, 1);             /* 窗口内按下 ⇒ 触发 */
+        CHECK(fires == 1);
+
+        /* ⑦ 连续三次按下（按-放-按-放-按）⇒ **同一对只算一次**：共 1 次（不是 2 次）*/
+        season_dtap_init(&d);
+        fires = 0;
+        fires += season_dtap_tick(&d, 1);   /* 按 1 */
+        fires += season_dtap_tick(&d, 0);   /* 放 1 */
+        fires += season_dtap_tick(&d, 1);   /* 按 2 → 触发 */
+        fires += season_dtap_tick(&d, 0);   /* 放 2 → 回空闲 */
+        fires += season_dtap_tick(&d, 1);   /* 按 3（新的第一次按下，不触发）*/
+        CHECK(fires == 1);
+        /* 再放、再按 ⇒ 第二个双击（四次按下 = 2 次）*/
+        fires += season_dtap_tick(&d, 0);
+        fires += season_dtap_tick(&d, 1);
+        CHECK(fires == 2);
+
+        /* ⑧ 空指针 / 初始化安全 */
+        season_dtap_init(0);
+        CHECK(season_dtap_tick(0, 1) == 0);
+        season_dtap_init(&d);
+        CHECK(d.state == 0 && d.win == 0);
+    }
+
     printf("test_season_core: %d passed, %d failed\n", s_pass, s_fail);
     return s_fail ? 1 : 0;
 }

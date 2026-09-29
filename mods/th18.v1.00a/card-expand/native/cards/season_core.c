@@ -184,3 +184,62 @@ int32_t season_drop_native_tier(int32_t native_timed_count)
     if (native_timed_count <= 10) return 13;             /* TH16 大妖精 (120,13,1) / (120,20,1) */
     return 30;                                           /* TH16 大只 (200,30,1)；道中 boss 的原版 15/20 也落这里 */
 }
+
+/* —— ★★ 副季节切换的双击状态机（❓自定：用户 2026-09-29「完整双击 Z」口径；细节见 season_core.h 的头注）——
+ *
+ * 逐帧含义（`z_held`）：
+ *   state 0 空闲        ：按下 → 进 1（win = 窗口，**从第一次按下起算**）
+ *   state 1 第一次按下  ：松手 → 进 2（窗口继续走）；一直按住且窗口耗尽 → 进 3（本次手势作废）
+ *   state 2 等第二次    ：再次按下 → **触发一次**、进 4；窗口耗尽前没等到 → 回 0（计数清零）
+ *   state 3 按太久      ：必须看到松手才回 0（松手后要**重新**从 0 开始）
+ *   state 4 已触发      ：必须看到松手才回 0 ⇒ 同一对按键只算一次（三连按 = 1 次，不是 2 次）
+ *
+ * ⚠ 与 TH16 无关（TH16 没有切季节键）；放这里的唯一理由是**可离线单测**（纯函数、不碰引擎地址）。*/
+void season_dtap_init(season_dtap_t *d)
+{
+    if (!d) return;
+    d->state = 0;
+    d->win = 0;
+}
+
+int season_dtap_tick(season_dtap_t *d, int z_held)
+{
+    if (!d) return 0;
+
+    switch (d->state) {
+    case 0:                                     /* 空闲：等第一次按下 */
+        if (z_held) {
+            d->state = 1;
+            d->win = SEASON_DTAP_WINDOW;        /* ★ 窗口从**第一次按下**这一刻起算 */
+        }
+        return 0;
+
+    case 1:                                     /* 第一次按下：等「放开」这一下 */
+        if (d->win > 0) --d->win;
+        if (!z_held) {
+            d->state = (d->win > 0) ? 2 : 0;    /* 窗口已经走完才松手 ⇒ 这次手势作废 */
+        } else if (d->win == 0) {
+            d->state = 3;                       /* 一直按着（窗口用光）⇒ 作废，等松手才重新武装 */
+        }
+        return 0;
+
+    case 2:                                     /* 已松手：等第二次按下（窗口内）*/
+        if (z_held) {
+            d->state = 4;                       /* ★ 触发；等这次松手才重新武装（防连发）*/
+            return 1;
+        }
+        if (d->win > 0) {
+            --d->win;
+            if (d->win == 0) d->state = 0;      /* 窗口内没等到第二次按下 ⇒ 清零 */
+        }
+        return 0;
+
+    case 3:                                     /* 第一次按太久：等松手 → 回空闲 */
+        if (!z_held) d->state = 0;
+        return 0;
+
+    default:                                    /* state 4：刚触发完，等松手 → 回空闲 */
+        if (!z_held) d->state = 0;
+        return 0;
+    }
+}

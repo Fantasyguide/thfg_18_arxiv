@@ -72,7 +72,41 @@ void season_ring(int subseason, season_ring_t *out);
 typedef struct { float x, y; } season_opt_pos_t;
 int season_option_pos(int subseason, int level, int i, season_opt_pos_t *out);
 
-/* 副季节循环（S 键切季节用）*/
+/* —— ★★ 副季节切换：**完整双击 Z**（❓自定 —— 用户 2026-09-29 口径，**不是复刻**）——
+ *
+ * 用户原话：「算了，改成双击 Z 吧，必须是完整的双击：**不按 Z，按 Z，放开，再按**」
+ * ⇒ 一次切换 = 一个「按下 → 放开 → 再按下」的**完整**手势（中间那一下松手必须真的发生；
+ *   一直按着 Z 不算）。⚠ **TH16 没有这个键**：副季节在 TH16 是**选关/菜单**里选的
+ *   （`MainMenu__do_subseason_select` `th16:0x450af0` 的四处写点 `0x450d95`/`0x450df1`/`0x450df8`/`0x450e9b`，
+ *    外加关卡配置拷贝 `0x447b53`/`0x44b083`）—— 游戏里没有任何切季节的键；
+ *   唯一的季节相关键是「季节释放」= `INPUT_RISING_EDGE & 0x800`（`th16:0x42fe5x` 族）。
+ *   所以这里只照**用户口径**做，实现细节（窗口、去重规则）全标 ❓自定。
+ *
+ * 输入 = 每帧「Z 是否按住」（`INPUT_HELD` bit0；Z 的位一手见
+ * `engine/input/th18/01-key-mapping.md` §2.1/§2.3/§2.4，同仓先例 `cards/pofv.c:63` `POFV_INPUT_SHOT = 0x001`）。
+ * 输出 = **本帧是否触发一次切换**（一次手势只给一次 1，不连发）。
+ *
+ * 窗口语义（❓自定）：**整个手势（第一次按下的那一帧 → 第二次按下的那一帧）必须落在 `SEASON_DTAP_WINDOW`
+ * 帧内**，两个相位各自至少 1 帧。⇒「按住 Z 很久 → 放开 → 再按」**不会**触发（第一次按下已超窗，
+ * 手势作废，要重新开始）—— 这条是刻意选的：TH18 里 Z 是**开火键**（玩家长期按住），若按「从松手
+ * 起计时」，日常「停火 → 再开火」都会误切季节。窗口取 **20 帧 ≈ 330 ms**（经典双击阈值 300–500 ms
+ * 的下沿；玩家手感不对就只调这一个常量）。
+ * 去重规则（❓自定）：**同一对按键只算一次**（触发后要等第二次按下松开才重新武装）⇒
+ * 「按-放-按」= 1 次、「按-放-按-放-按-放-按」= 2 次（三连按 = 1 次，不会一次给两档）。*/
+#define SEASON_DTAP_WINDOW 20   /* ❓自定：双击手势总时长上限（帧）≈330 ms */
+
+typedef struct {
+    uint8_t state;              /* 0 空闲 / 1 第一次按下 / 2 已松手等第二次 / 3 第一次按太久（作废）/ 4 已触发等松手 */
+    uint8_t win;                /* 剩余窗口（帧）*/
+} season_dtap_t;
+
+/* 状态清零（卡初始化 / 删卡时调；只写自己的字段）*/
+void season_dtap_init(season_dtap_t *d);
+
+/* 每帧推进；`z_held` = 本帧 Z 是否按住（非 0 即按住）。返回 1 = 本帧要切一档副季节。*/
+int season_dtap_tick(season_dtap_t *d, int z_held);
+
+/* 副季节循环（切季节用）*/
 static inline int season_next(int subseason) { return (subseason + 1) % SEASON_SUB_COUNT; }
 
 /* —— 敌人掉落的**计时衰减**（TH16 `dropSeason` + `dropItems`）——
