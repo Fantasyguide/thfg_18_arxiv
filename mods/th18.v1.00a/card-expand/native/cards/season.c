@@ -83,11 +83,13 @@
                                        * ★ 2026-09-15 用户裁决改成 1（复刻 TH16）。
                                        * 一手 `th16:0x416a00` 的 mode 4 = 季节道具（type 0x10）
                                        * **每颗弹 1 个**（mode 5 才是每 3 颗 1 个，那是主炸弹）；
-                                       * 我们照 mode 4 的档，所以比例 = 1。原值 8 是 ❓ 自定（已撤销）。*/
-#define SEASON_CANCEL_POINT_MAX 4     /* 每帧最多因消弹撒几颗 —— ❓ 自定闸（TH16 没有这个闸：
-                                       * 它是每颗弹各自在**弹的位置**掉 1 个，我们没有那个位置通道）。
-                                       * 保留它是为了不让一屏 200 颗弹在单帧生成 200 个实体
-                                       * （实体数是逐帧排空的：`rel_acc` 跨帧保留，按 4/帧发放）。*/
+                                       * 我们照 mode 4 的档，所以比例 = 1。原值 8 是 ❓ 自定（已撤销）。
+                                       * ★ 2026-09-29：**这个比例现在直接体现在代码里**
+                                       * （`cancel_spawn_points` 的「一颗弹一颗点」循环），
+                                       * 不再是累加器口径。*/
+/* ★ 2026-09-29 **已退休**：`SEASON_CANCEL_POINT_MAX 4`（每帧最多撒几颗）与 `rel_acc` 累加器
+ * —— 那是「我们没有弹的位置通道」时代的 ❓ 自定闸。现在有了位置（`cancel_spawn_points`），
+ * 照 TH16 的做法**一颗被消的弹就给一颗点**，改由池上限（`SEASON_POINT_POOL`）自然兜底。*/
 #define SEASON_CANCEL_MAX    9999     /* 半径清弹的数量上限（不限）*/
 #define SEASON_DMG_CAP       300      /* 释放帧把每敌每帧伤害上限抬到它（Remilia / 火主同款值）*/
 #define SEASON_DMG_WINTER    1500     /* 冬：释放期间自机弹伤害 ×1.5（TH16 `player+0x2c7cc=1.5f`）*/
@@ -348,8 +350,52 @@ static void set_option_offsets(uint8_t *o, const season_opt_pos_t *pos)
     *(int32_t *)(o + CE_OPT_OFF_F_Y)  = y;
 }
 
+/* ★★ 2026-09-29：**五副季节各一条自己的子机脚本**（原来五季共用 script113）——
+ * 一手 = TH16 `PlayerInner__repopulate_options` 的季节段：脚本号按副季节选
+ *   `th16:0x492be0[SUBSEASON]` = **{1, 1, 1, 0x12, 1}**（`th16:0x44477b`），
+ *   副 anm 文件按 `th16:0x492cdc[SUBSEASON]` = {pl00sub, pl02sub, pl03sub, pl01sub, pl04sub} 选。
+ * 每条的**尺寸 / 帧序 / 关键指令**都不同（春=自转、夏=4 帧 sprite 循环、秋=8 帧 sprite 循环、
+ * 冬=0.5↔0.6 缩放呼吸、土用=同春），这正是用户报的「应当有各自的动画」；
+ * 尺寸也随脚本回到原版（0.42 → 0.8/1.0，见 `364_…spring.anm.txt` 的注）。
+ * 我们把这五条配方逐行搬成 ability.anm 的新脚本
+ * （`assets/ability/scripts/36{4..8}_season_opt_*.anm.txt`，脚本本体与 TH16 原文逐行同形，
+ * 只把 sprite 换成 ORDER 的占位名）：
+ *   春 364 = `pl00sub` script1 / 夏 365 = `pl02sub` script1 / 秋 366 = `pl03sub` script1 /
+ *   冬 367 = `pl01sub` **script18** / 土用 368 = `pl04sub` script1。
+ * ⚠ 号段：`build_ability.py` 按「原生脚本数 68 + 目录内序号」编号（文件号即脚本号），
+ *   本目录原来最大 363 ⇒ 新脚本 364..368 ⇒ `anm_ids.h` 给出下面这几个宏。
+ *   ⚠ `anm_ids.h` 是**生成物**（`make anm` 产）；`#ifdef` 回退是为了「本文件在生成物还没刷新时
+ *   也能离线过 `-fsyntax-only`」，形状照抄 `youkai.c` / `ufo.c` 的同类写法。*/
+#ifdef CE_ANM_ABILITY_SCRIPT_SEASON_OPT_SPRING
+#define SEASON_OPT_SCRIPT_SPRING  CE_ANM_ABILITY_SCRIPT_SEASON_OPT_SPRING
+#else
+#define SEASON_OPT_SCRIPT_SPRING  364      /* `make anm` 后由上面的宏取代 */
+#endif
+#ifdef CE_ANM_ABILITY_SCRIPT_SEASON_OPT_SUMMER
+#define SEASON_OPT_SCRIPT_SUMMER  CE_ANM_ABILITY_SCRIPT_SEASON_OPT_SUMMER
+#else
+#define SEASON_OPT_SCRIPT_SUMMER  365
+#endif
+#ifdef CE_ANM_ABILITY_SCRIPT_SEASON_OPT_FALL
+#define SEASON_OPT_SCRIPT_FALL    CE_ANM_ABILITY_SCRIPT_SEASON_OPT_FALL
+#else
+#define SEASON_OPT_SCRIPT_FALL    366
+#endif
+#ifdef CE_ANM_ABILITY_SCRIPT_SEASON_OPT_WINTER
+#define SEASON_OPT_SCRIPT_WINTER  CE_ANM_ABILITY_SCRIPT_SEASON_OPT_WINTER
+#else
+#define SEASON_OPT_SCRIPT_WINTER  367
+#endif
+#ifdef CE_ANM_ABILITY_SCRIPT_SEASON_OPT_DOYOU
+#define SEASON_OPT_SCRIPT_DOYOU   CE_ANM_ABILITY_SCRIPT_SEASON_OPT_DOYOU
+#else
+#define SEASON_OPT_SCRIPT_DOYOU   368
+#endif
+
 /* 给一颗子机换 TH16 原版贴图（option+0xb0 = 它的 anm VM id）*/
 static int season_opt_sprite(int subseason);      /* 定义见下（TH16 原版子机贴图）*/
+static int season_opt_script(int subseason);      /* 定义见下（TH16 各副季节的子机脚本号）*/
+static int alloc_options(ce_card_t *c);           /* 定义见下（换季时要整批重建，先声明）*/
 
 static void set_option_art(uint8_t *o, int subseason)
 {
@@ -363,7 +409,9 @@ static void set_option_art(uint8_t *o, int subseason)
 static uint8_t *alloc_one(ce_card_t *c, season_card_t *s, int i)
 {
     season_opt_pos_t pos;
-    uint8_t *o = ce_option_alloc(c, &s->opt[i], opt_dx(i), CE_ANM_ABILITY_SCRIPT_SEASON_OPT, "season");
+    /* ★ 脚本号按副季节选（原来恒为 `CE_ANM_ABILITY_SCRIPT_SEASON_OPT` = script113）——
+     * 一手：TH16 的季节子机脚本号 = `th16:0x492be0[SUBSEASON]`。 */
+    uint8_t *o = ce_option_alloc(c, &s->opt[i], opt_dx(i), season_opt_script(s->subseason), "season");
 
     if (o) {
         if (season_option_pos(s->subseason, level_of(s), i, &pos)) set_option_offsets(o, &pos);
@@ -372,20 +420,18 @@ static uint8_t *alloc_one(ce_card_t *c, season_card_t *s, int i)
     return o;
 }
 
-/* ★ 换副季节时把**已有**子机一起改（贴图 + 阵位）—— TH16 的副 sht 本来就按副季节分表，
- * 子机外观与阵位都跟着季节走。*/
+/* ★★ 2026-09-29：换副季节 = **收掉重申请**（不是只换贴图/阵位）。
+ * 为什么必须重建：五副季节各有自己的**脚本**（TH16 就是「副 anm 文件 + 脚本号都按 SUBSEASON 选」），
+ * 而 `Player::allocate_option` 的脚本号只在**申请那一刻**传进去 ⇒ 在役 VM 换不了脚本。
+ * ⚠ 这**不是**新语义：TH16 的副季节是在**季节解放**时切的，而 `Bomb__activate_bomb` 扣完槽
+ *   **接着就调 `PlayerInner__repopulate_options`**（`th16:0x40db20` 的调用点清单）⇒
+ *   原版换季时子机本来也是**整批重建**（会重放出场动画）。*/
 static void refresh_options(ce_card_t *c, season_card_t *s)
 {
-    int i, level = level_of(s);
+    int i;
 
-    for (i = 0; i < SEASON_OPTS; ++i) {
-        uint8_t *o = ce_option_claim(c, &s->opt[i]);
-        season_opt_pos_t pos;
-
-        if (!o) continue;
-        if (season_option_pos(s->subseason, level, i, &pos)) set_option_offsets(o, &pos);
-        set_option_art(o, s->subseason);
-    }
+    for (i = 0; i < SEASON_OPTS; ++i) if (s->opt[i].ptr) ce_option_drop(c, &s->opt[i]);
+    alloc_options(c);
 }
 
 /* 季节子机的贴图（TH16 原版：自机贴图里切出来的 16×16 小球）*/
@@ -397,6 +443,19 @@ static int season_opt_sprite(int subseason)
     case SEASON_SUB_FALL:   return CE_ANM_ABILITY_SPRITE_OPT_FALL;
     case SEASON_SUB_WINTER: return CE_ANM_ABILITY_SPRITE_OPT_WINTER;
     default:                return CE_ANM_ABILITY_SPRITE_OPT_DOYOU;
+    }
+}
+
+/* 季节子机的脚本（TH16 `th16:0x492be0[SUBSEASON]` = {1,1,1,0x12,1} 的五条配方，
+ * 逐行搬到 ability.anm 的 364..368；见文件上部那段注释）*/
+static int season_opt_script(int subseason)
+{
+    switch (subseason) {
+    case SEASON_SUB_SPRING: return SEASON_OPT_SCRIPT_SPRING;
+    case SEASON_SUB_SUMMER: return SEASON_OPT_SCRIPT_SUMMER;
+    case SEASON_SUB_FALL:   return SEASON_OPT_SCRIPT_FALL;
+    case SEASON_SUB_WINTER: return SEASON_OPT_SCRIPT_WINTER;
+    default:                return SEASON_OPT_SCRIPT_DOYOU;
     }
 }
 
@@ -543,24 +602,88 @@ static void spawn_point_graze(season_card_t *s, float bx, float by, float px, fl
     spawn_point_at(s, bx, by, bc_atan2f(uy, ux), 1.9f, 1);
 }
 
-/* 在自机周围撒一颗（拿不到弹的位置时的退路）。★ 出生点同样推到**收集圈外** 6 px，
- * 否则一出生就被收走、玩家什么也看不见。*/
-static void spawn_point_around_player(season_card_t *s)
+/* ★★ 2026-09-29：**季节解放产生的季节点 = 每颗被消的弹「在弹的位置竖着向上飞」** ——
+ * 用户第 1 条「产生 —— 无敌上升 —— 自动回收」里的「产生 + 上升」。
+ * 一手（TH16 `gen_items_from_cancel` `th16:0x416a00` 的 **kind 4** 分支，`0x416bbb` 一处 call）：
+ *     `ItemManager__spawn_item(type = 0x10 = ITEM_SEASON, pos = 被消弹的坐标,
+ *                              angle = −π/2 + rand[0, π/18], speed = 2.2)`
+ *   实参逐条（反汇编，`0x430960` 的栈序 = type,pos,junk,angle,speed）：
+ *     `0x416b91 fmul ds:0x49444c`（= **0.17453292 = 10°**）→ `0x416ba4 subss ds:0x494534`（= **π/2**）
+ *     ⇒ **角度 = −π/2 .. −π/2+10°**（几乎正上方，±10°）；`0x416bac [esp+8] = 0x400ccccd` = **2.2f** 速度。
+ *   之后走原版道具 tick 的「飞散」段（我们已照抄为 `state 2`/`p->lr`）：每帧 `r -= 0.03`
+ *   ⇒ **竖直上升约 2.2²/(2×0.03) ≈ 80 px、约 73 帧**，速度耗尽后转飘落（state 1）。
+ *   ⇒ 「上升」是**季节点自己**上升（不是自机）；自机那一边只有「无敌」（`release()` 按档位表写
+ *     `CE_PLAYER_INVULN()`，一手 = `BombSub*::begin` 的 `player+0x1663c`，见 `release()` 注释）。
+ * 判据（与引擎自己的半径消弹**逐条同形**，`CE_FN_BULLET_CANCEL_RADIUS_AS_BOMB` `0x429370` 的命中段）：
+ *   `state ∈ {1,2}` 且 `bullet+0x24 == 0` 且 `dist² ≤ (bullet+0x658 × 0.5 + R)²`。
+ * ⚠ 必须**先扫后消**：`ce_cancel_radius()` 会把弹删掉，那时的坐标已经取不到了
+ *   （旧实现在没有位置通道时只能围着自机撒，还配了个 `SEASON_CANCEL_POINT_MAX 4` 的 ❓自定闸；
+ *    现在有位置了 ⇒ **闸与 `spawn_point_around_player()` 一起删**，照原版「一颗弹一颗点」）。*/
+static int cancel_spawn_points(season_card_t *s, const float *pos, float radius)
 {
-    const float *pp = ce_player_pos();
-    float collect_r = 30.0f, ang, dist;
-    float vel[3];
-    uint8_t *pl = CE_PLAYER();
+    uint8_t *mgr = CE_BULLET_MGR();
+    int n = 0;
+    unsigned i;
 
-    if (!pp) return;
-    if (pl) {
-        float r = *(float *)(pl + CE_PLAYER_ITEM_COLLECT_R);
-        if (r > 0.0f) collect_r = r;
+    if (!mgr || !pos) return 0;
+    for (i = 0; i < CE_BM_BULLET_COUNT; ++i) {
+        uint8_t *b = mgr + CE_BM_BULLETS + i * CE_BULLET_STRIDE;
+        uint16_t state = *(uint16_t *)(b + CE_BULLET_STATE);
+        float x, y, dx, dy, rr, ang;
+
+        if (state != 1 && state != 2) continue;                      /* 引擎命中段：state ∈ {1,2} */
+        if (*(uint32_t *)(b + CE_BULLET_FLAGS) != 0) continue;       /* 且 bullet+0x24 == 0 */
+        x = *(float *)(b + CE_BULLET_POS);
+        y = *(float *)(b + CE_BULLET_POS + 4);
+        dx = x - pos[0];
+        dy = y - pos[1];
+        rr = *(float *)(b + 0x658) * 0.5f + radius;                  /* 弹半径的一半 + 释放半径 */
+        if (dx * dx + dy * dy > rr * rr) continue;
+        /* 角度 = −π/2 + rand[0, 10°]（一手 `0x49444c` = 0.17453292）、速度 = 2.2（一手 `0x400ccccd`）*/
+        ang = -1.5707964f + (float)(ce_rand() % 1001) * (0.17453292f / 1000.0f);
+        if (spawn_point_at(s, x, y, ang, 2.2f, 0)) ++n;
     }
-    ang = (float)((int32_t)(ce_rand() % 2001) - 1000) * (SEASON_PI / 1000.0f);
-    dist = collect_r + 6.0f;
-    ce_polar_to_vel(vel, ang, 1.9f);
-    spawn_point_at(s, pp[0] + vel[0] / 1.9f * dist, pp[1] + vel[1] / 1.9f * dist, ang, 1.9f, 0);
+    return n;
+}
+
+/* ============================ 升档弹字（`+…`） ============================
+ * 用户第 3 条：「季节解放之后，收齐产生的季节道具之后，会在收齐的那个点有一个 `+....` 的 UI 显示」
+ * —— 本卡原来**一条弹字都没有**（改前 `grep -n "popup" native/cards/season.c` 零命中）。
+ *
+ * 一手（TH16，`ItemManager__on_tick` 的 **type 0x10 = ITEM_SEASON** 分支，`th16:0x42fe58`）：
+ *     eax = item_collect_season();            // 0x43de50：季节槽 +1（封顶），返回「档位跨了吗」
+ *     if (eax) {                              // ★ 只在**跨档**那一颗上：
+ *         PlayerInner__repopulate_options();  //   0x4440e0（子机按新档重排）
+ *         PopupManager::add(item.pos, −1, 0xffffff40);  // ★ 0x42fe6d..0x42fe7b（这就是那个 `+…`）
+ *         play_sound(0x3f, item.pos.x);       //   0x42fe84（= 我们的 SEASON_SE_LEVEL）
+ *     }
+ *     add_to_score(10); Gui__update_season_gauge();     // 0x42fe8b / 0x42fe92
+ *     play_sound(0x25, item.pos.x); item 收尾           // 0x42fea5 / 0x42feae（= SEASON_SE_GET）
+ *   · 位置 = **道具自己的坐标**（`lea esi,[edi+0xc08]`，edi = 该 zItem）—— 「收齐的那个点」✓
+ *   · 值 = **−1**：TH16 的 adder `0x44a460` 对负值只写一个字节 `0x0a`（`0x44a4dd`），
+ *     而弹字走字符串系统 `font_id = 2`（`0x44a31e`）
+ *   · 颜色 = **0xffffff40**（D3DCOLOR = A8R8G8B8 ⇒ α=255, R=255, G=255, B=64 = 亮黄）
+ *   · 生命周期/上飘/淡出**全在引擎里**（ring 槽、约 60 帧回收；本卡不持有它的状态）
+ *
+ * ★ TH18 侧的**同一支**：`PopupManager__sub_4645f0` `0x4645f0` —— 与 TH16 `0x44a460` **逐条同形**
+ *   （ring 基址 `mgr+0x624` vs TH16 `+0x614`，计数器 `+0x10` wrap at 10，负值同样写 `0x0a`）。
+ *   一手交叉验证：TH18 自己的**力量升档**分支（`ItemManager` 的 type 3 case）就是
+ *   `PopupManager__sub_4645f0(&item.pos, −1, 0xffffff40)` —— 与 TH16 季节升档**同一配方、同一颜色**
+ *   ⇒ **借 TH18 原生 adder，不自己写弹字**（不是 ❓自定）。
+ *   ⚠ 本仓现成的封装有两个都**不适用**：`cards/collect2x.c` 的 `ce_popup_mult()` 写的是**倍率槽**
+ *     （k13–17，且只能画 ×倍率 / NO BONUS），`cards/mof.c` 的 `mof_popup_number()` 是**别人卡里的 static**
+ *     （拷一份就是「两套弹字」）。⇒ 直接调原生 adder。
+ *   ★ 需要的新共享面（**报告里已提**）：`sdk.h` 里加一个 `ce_popup_number(pos, value, color)`
+ *     （mof.c 也早就登记了同一个需求）—— 本卡先在文件内本地声明，不动 `sdk*`。
+ * ⚠ ABI：adder **自己清栈**（`0x4646c8 c2 0c 00` = `ret 0xc`）⇒ **stdcall**，
+ *   三个 dword 栈参；写成 cdecl 会双重清栈（崩）。 */
+typedef void (__attribute__((stdcall)) *season_popup_add_t)(const float *pos, int32_t value, uint32_t color);
+#define CE_FN_POPUP_ADD_TH18  0x4645f0      /* `PopupManager__sub_4645f0`（值 = −1 就是 TH16 那个 `+…`）*/
+
+static void popup_level_up(const float *pos)
+{
+    if (!pos) return;
+    ((season_popup_add_t)(uintptr_t)CE_FN_POPUP_ADD_TH18)(pos, -1, 0xffffff40u);
 }
 
 /* 收一颗：加 1 点、升档检查、放音、让 VM 走 interruptLabel(1)（放大淡出后自删）*/
@@ -583,6 +706,12 @@ static void point_collect(ce_card_t *c, season_card_t *s, season_point_t *p)
     }
     ce_play_sound(SEASON_SE_LEVEL, ce_player_x());
     alloc_options(c);
+    /* ★ 升档弹字：TH16 的顺序是「重排子机 → 弹字 → 升档音」；位置 = **这颗道具自己的坐标** */
+    {
+        float at[3];
+        at[0] = p->x; at[1] = p->y; at[2] = 0.0f;
+        popup_level_up(at);
+    }
     ce_log("season: level up -> %d/%d (%d options, %d points)",
            new_level, SEASON_LEVEL_MAX, opts_for(new_level), (int)s->points);
 }
@@ -1142,12 +1271,12 @@ static void release(ce_card_t *c, season_card_t *s)
            level_of(s), opts_for(level_of(s)));
 }
 
-/* 解放逐帧：半径清弹（顺带补季节点）+ 伤害源 + 秋加速 */
+/* 解放逐帧：半径清弹（在弹的位置撒季节点）+ 伤害源 + 秋加速 */
 static void release_tick(ce_card_t *c, season_card_t *s)
 {
     const float *pp;
     float pos[3];
-    int n, give;
+    int n;
 
     if (s->rel_frames <= 0) return;
     pp = ce_player_pos();
@@ -1159,6 +1288,11 @@ static void release_tick(ce_card_t *c, season_card_t *s)
     pos[1] = s->rel_y;
     pos[2] = pp[2];
 
+    /* ★★ 2026-09-29：**先撒季节点、再消弹**（顺序不能反：`ce_cancel_radius` 会把弹删掉，
+     * 之后就取不到「弹的位置」了）。撒的点照 TH16 kind 4：在**弹的位置**、角度 −π/2 ±10°、
+     * 速度 2.2 ⇒ 竖直上升（见 `cancel_spawn_points()` 的一手注）。 */
+    cancel_spawn_points(s, pos, s->rel_radius);
+
     /* mode = **4**：用户定案（2026-09-10）——「相当于一个耦合：同时掉落季节点和钱」。
      * 引擎的 `Bullet__cancel` 末尾调 `gen_items_from_et_cancel(pos, mode)`（一手 `th18:0x428e90`
      * → `th18:0x4290e0`）：`1` → type 9、`4` → 多数 type 9 + 少数 type 2（金钱）、`0` → 直接 return；
@@ -1167,16 +1301,7 @@ static void release_tick(ce_card_t *c, season_card_t *s)
      *   TH18 里没有 type 0x10 这个道具 ⇒ 无法 1:1，「引擎撒钱 + 自制季节点」是**刻意的耦合，不是复刻**
      *   （2026-09-15 六作消弹口径一手核查后仍保留此取舍）。*/
     n = ce_cancel_radius(pos, s->rel_radius, SEASON_CANCEL_MAX, 4);
-    if (n > 0) {
-        s->rel_cancelled += n;
-        s->rel_acc += n;
-        give = 0;
-        while (s->rel_acc >= SEASON_CANCEL_PER_POINT && give < SEASON_CANCEL_POINT_MAX) {
-            s->rel_acc -= SEASON_CANCEL_PER_POINT;
-            ++give;
-        }
-        while (give-- > 0) spawn_point_around_player(s);
-    }
+    if (n > 0) s->rel_cancelled += n;
 
     if (s->rel_dmg > 0) {
         float d = s->rel_radius * 2.0f;
@@ -1304,7 +1429,7 @@ static int on_tick_2(ce_card_t *c)
     if ((held & CE_INPUT_FOCUS) && (*(volatile uint32_t *)CE_ADDR_INPUT_PRESSED & SEASON_INPUT_CHANGE)) {
         s->subseason = season_next(s->subseason);
         ce_play_sound(SEASON_SE_SWITCH, ce_player_x());
-        refresh_options(c, s);                       /* ★ 子机贴图 + 阵位跟着换 */
+        refresh_options(c, s);                       /* ★ 子机**整批重建**：脚本/贴图/阵位都跟着换 */
         ce_log("season: sub-season -> %s (Shift+D, mask 0x008|0x800)", season_name(s->subseason));
     }
 
@@ -1337,7 +1462,8 @@ static int on_tick_2(ce_card_t *c)
     for (i = 0; i < SEASON_OPTS; ++i) {
         if (i < opts_for(level_of(s))) {
             if (!ce_option_claim(c, &s->opt[i])) {
-                uint8_t *o = ce_option_retry(c, &s->opt[i], opt_dx(i), CE_ANM_ABILITY_SCRIPT_SEASON_OPT,
+                uint8_t *o = ce_option_retry(c, &s->opt[i], opt_dx(i),
+                                             season_opt_script(s->subseason),
                                              SEASON_RETRY, "season");
                 if (o) {
                     season_opt_pos_t pos;

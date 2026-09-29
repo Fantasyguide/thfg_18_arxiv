@@ -1,0 +1,40 @@
+script script365 {
+    // ★季节子机 —— **夏**：TH16 `pl02sub.anm` script1 **逐条复刻**（副 anm = `th16:0x492cdc[1]`，脚本号 = 1）。
+    //   · 贴图 16×16：entry1 sprite4..sprite7 = `OPT_SUMMER.png` / `OPT_SUMMER_2..4.png`
+    //     （切图见 `assets/ability/make_season_opt_anim_art.py`；本卡私有资产）。
+    //   · 尺寸：scaleTime(10,4, 1.0,1.0) ⇒ **16×1.0 = 16 世界单位**（出场），+10 帧起缩到 0.6 = 9.6 单位。
+    //   · ★**动画 = 4 帧 sprite 循环**：`offset136:`(time 16) 起 sprite4→5→6→7，**每 4 帧一换**，
+    //     `jmp(offset136, 16)` 把脚本时间设回 16 ⇒ 无限循环（一手 `pl02sub.anm` script1 原值）。
+    //   · 层 = `layer(13)`；type(3)（原版就是 3，决定几何/渲染路径，照抄）。
+    layer(13);
+    blendMode(1);
+    type(3);
+    interruptLabel(2);
+    scale(0.0f, 0.0f);
+    scaleTime(10, 4, 1.0f, 1.0f);
+    sprite(@OPT_SUMMER);
++10: // 10
+    scaleTime(6, 1, 0.6f, 0.6f);
++6: // 16
+    blendMode(0);
+offset136: // 原版 dump 里的标签名（那是脚本内字节偏移 136；这里保留原名便于对账）
+    sprite(@OPT_SUMMER);
++4: // 20
+    sprite(@OPT_SUMMER_2);
++4: // 24
+    sprite(@OPT_SUMMER_3);
++4: // 28
+    sprite(@OPT_SUMMER_4);
++4: // 32
+    jmp(offset136, 16);
+    stop();
+    interruptLabel(3);
+    scaleTime(20, 4, 0.0f, 0.0f);
++20: // 52
+    stop();
+    interruptLabel(1);
+    blendMode(1);
+    scaleTime(20, 4, 0.0f, 3.0f);
++20: // 72
+    delete();
+}

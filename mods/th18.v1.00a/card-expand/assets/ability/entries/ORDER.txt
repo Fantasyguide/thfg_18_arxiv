@@ -957,3 +957,15 @@ UFO_BURST_4          ability/ufo_burst/UFO_BURST_4.png
 UFO_BURST_5          ability/ufo_burst/UFO_BURST_5.png
 UFO_BURST_6          ability/ufo_burst/UFO_BURST_6.png
 UFO_BURST_7          ability/ufo_burst/UFO_BURST_7.png
+
+# ── 来自 ORDER.season_opt.txt（本轮合并；原片段保留作记录）
+OPT_SUMMER_2  ability/season/OPT_SUMMER_2.png  16x16
+OPT_SUMMER_3  ability/season/OPT_SUMMER_3.png  16x16
+OPT_SUMMER_4  ability/season/OPT_SUMMER_4.png  16x16
+OPT_FALL_2    ability/season/OPT_FALL_2.png    16x16
+OPT_FALL_3    ability/season/OPT_FALL_3.png    16x16
+OPT_FALL_4    ability/season/OPT_FALL_4.png    16x16
+OPT_FALL_5    ability/season/OPT_FALL_5.png    16x16
+OPT_FALL_6    ability/season/OPT_FALL_6.png    16x16
+OPT_FALL_7    ability/season/OPT_FALL_7.png    16x16
+OPT_FALL_8    ability/season/OPT_FALL_8.png    16x16

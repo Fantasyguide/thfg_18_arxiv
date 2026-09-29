@@ -1,0 +1,21 @@
+# 季节（系统卡 116）**季节子机**的逐季节动画帧 —— 只补「夏 4 帧循环 / 秋 8 帧循环」里**第 2 帧起**的那些帧。
+# 由 assets/ability/make_season_opt_anim_art.py 生成（幂等，整段重写）；合并时把这些行追加进 entries/ORDER.txt 末尾。
+# 第 1 帧（OPT_SUMMER.png / OPT_FALL.png）已在 ORDER.txt 的 ATLAS_SEASON_UI 段里定稿，本片段**不重复声明**。
+#
+# 一手（TH16 `PlayerInner__repopulate_options`）：季节子机脚本号 = `th16:0x492be0[SUBSEASON]` = {1,1,1,0x12,1}，
+#   副 anm 文件 = `th16:0x492cdc[SUBSEASON]` = {pl00sub, pl02sub, pl03sub, pl01sub, pl04sub}。
+#   夏 `pl02sub.anm` script1 = sprite4→5→6→7 每 4 帧一换（`+16: sprite(sprite4) … +28: sprite(sprite7) jmp`）；
+#   秋 `pl03sub.anm` script1 = sprite4..sprite11 每 4 帧一换（8 帧、`jmp(offset88, 0)` 循环）。
+#   帧序 = TH16 sprite 号顺序 ⇒ 文件名里的 `_2.._8` 就是脚本里第 2..8 帧。
+# 切图 = TH16 原版副自机贴图（`pl02sub/player/pl02/pl02.png`、`pl03sub/player/pl03/pl03.png`）的
+#   16×16 原始像素，**不重采样、不补边**（矩形都是从 anm 的 sprites 表读出来的，见生成器头）。
+OPT_SUMMER_2  ability/season/OPT_SUMMER_2.png  16x16
+OPT_SUMMER_3  ability/season/OPT_SUMMER_3.png  16x16
+OPT_SUMMER_4  ability/season/OPT_SUMMER_4.png  16x16
+OPT_FALL_2    ability/season/OPT_FALL_2.png    16x16
+OPT_FALL_3    ability/season/OPT_FALL_3.png    16x16
+OPT_FALL_4    ability/season/OPT_FALL_4.png    16x16
+OPT_FALL_5    ability/season/OPT_FALL_5.png    16x16
+OPT_FALL_6    ability/season/OPT_FALL_6.png    16x16
+OPT_FALL_7    ability/season/OPT_FALL_7.png    16x16
+OPT_FALL_8    ability/season/OPT_FALL_8.png    16x16

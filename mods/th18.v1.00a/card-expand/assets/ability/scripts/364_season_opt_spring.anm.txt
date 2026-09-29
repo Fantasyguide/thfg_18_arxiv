@@ -1,0 +1,38 @@
+script script364 {
+    // ★季节子机 —— **春**：TH16 `pl00sub.anm` script1 **逐条复刻**（副 anm 文件 = `th16:0x492cdc[0]`，
+    //   脚本号 = `th16:0x492be0[0]` = 1；`PlayerInner__repopulate_options` `th16:0x44477b` 选的）。
+    //   · 贴图 16×16（`pl00sub` entry1 sprite14，`(32,0)` + entry 的 xOffset64/yOffset144）—— 现有 `OPT_SPRING.png`。
+    //   · 尺寸：scaleTime(10,4, 0.8,0.8) 出场 ⇒ **16×0.8 = 12.8 世界单位**，+10 帧起 6 帧缩到
+    //     scaleTime(6,1, 0.6,0.6) ⇒ 16×0.6 = 9.6 单位（原版落定尺寸）。
+    //     ★ 这就是用户「应当是现在的两倍」的一手来源：本卡旧脚本 113 用的是 **0.42**
+    //     （那是按 64 px 的占位贴图算的 27/64）⇒ 16×0.42 = 6.72；原版 0.8 ⇒ 12.8 = **1.90×**（≈两倍）。
+    //   · 动画 = 自转：angleVel(0,0,+0.31415927) = +18°/帧（入场）→ +6 帧后 angleVel(0,0,−0.10471976) = −6°/帧。
+    //   · 层 = `layer(13)`（游玩区世界层，与原生道具同层）；混合 = 入场 blendMode(1) 加算 → blendMode(0) 普通。
+    //   ⚠ 与原版的唯一差别：**没有** `zWriteDisable(1)`（原版两支 TH16/TH18 子机脚本都没有它；
+    //     本卡旧脚本 113 里那一行是我们的添加，这里按原版**去掉**）。
+-1:
+    layer(13);
+    blendMode(1);
+    type(1);
+0:
+    interruptLabel(2);
+    scale(0.0f, 0.0f);
+    scaleTime(10, 4, 0.8f, 0.8f);
+    sprite(@OPT_SPRING);
+    angleVel(0.0f, 0.0f, 0.31415927f);
++10: // 10
+    scaleTime(6, 1, 0.6f, 0.6f);
++6: // 16
+    angleVel(0.0f, 0.0f, -0.10471976f);
+    blendMode(0);
+    stop();
+    interruptLabel(3);
+    scaleTime(20, 4, 0.0f, 0.0f);
++20: // 36
+    stop();
+    interruptLabel(1);
+    blendMode(1);
+    scaleTime(20, 4, 0.0f, 3.0f);
++20: // 56
+    delete();
+}

@@ -1,0 +1,146 @@
+# AUDIT-116 —— 系统卡 116（东方天空璋・季节系统）本轮留痕（2026-09-13）
+
+> **为什么单独一个文件**：`AUDIT.md` / `TUNING.md` 当时正被**另一条会话**改着（未提交），
+> 按「只动自己的」纪律，本轮的 116 留痕写在这里，避免把别人的在改内容卷进我的提交。
+> 等那些改动落库后，可以把本文件并回 `AUDIT.md`（或只在那边留一行索引）。
+>
+> 三条需求都来自用户（2026-09-13），并逐条过了 `CLAUDE.md` 的「系统卡六问」。
+
+## §1 用户报的三条
+
+> 1、th16 由**季节解放**出来的**季节点**应当是：**产生 —— 无敌上升 —— 自动回收**
+> 2、th16 的**季节子机**的大小应当是**现在的两倍**，并且**应当有各自的动画**
+> 3、季节解放之后，收齐产生的季节道具之后，会在收齐的那个点有一个 **`+…` 的 UI 显示**（用户确信没复刻）
+
+## §2 六问逐条（第 4 问最关键）
+
+| 问 | 回答 |
+| --- | --- |
+| 1 原版是什么 | 见 §3/§4/§5（全部落到 `th16:` 地址、脚本号与常量）|
+| 2 TH18 语义映射 | 子机 = 世界层 anm VM（`Player::allocate_option` 的脚本号栈参）；季节点 = 本卡自建 VM 池；**没有重新发明机制** |
+| 3 TH18 有没有现成代码 | **有，而且是同一套**：`ability.anm` entry0 = `player/option/op00.png`（256×512，**16×16** 子机 sprite），其 **script2 / script16** 就是原生子机脚本（`-1: layer(13) blendMode(1) type(1)` / `0: interruptLabel(2) scale(0,0) scaleTime(10,4,1.4,1.4) sprite(sprite0) angleVel(0,0,0.31415927)` / `+10: scaleTime(6,1,0.7,0.7)`…）—— 与 TH16 `pl00sub` script1 **逐条同形** |
+| 4 ★ TH18 遗留能不能借 | **子机**：TH16 的五条配方**没**留在 TH18 的 anm 里，但**同形配方在**（上述 script2/16）；⇒ **借配方 + 借 TH16 贴图**（`local/` 只读切图），逐行搬成 5 支新脚本。**弹字**：**整套借** TH18 原生 adder `PopupManager__sub_4645f0` `th18:0x4645f0`，**没有自己写弹字**。⇒ 没有一处在需要借的地方自造 |
+| 5 如何恰当实现 | 能复刻的全复刻（脚本逐行、角度/速度/scale/层全用一手原值）；只在「TH16 有、TH18 没有这个道具/通道」处做**最小桥接**并标 ❓自定 |
+| 6 落笔要求 | 每处都标了 ✅复刻（给地址/脚本号）或 ❓自定（给理由），见 §3–§5；❓ 项见 §7 |
+
+## §3 季节子机的尺寸：**「两倍」差在 scale 常量，不在贴图、也不在量纲换算**
+
+- **原版 sprite 矩形 = 16×16**（`pl00sub` entry1 `sprite14=(32,0,16,16)` 等；**五季全是 16×16**）。
+- **原版 scale（一手，逐季不同）**：
+
+| 季 | 脚本（一手） | 出场 `scaleTime` | 落定 | 场上尺寸（ECL 单位）|
+| --- | --- | --- | --- | --- |
+| 春 | `pl00sub` script1 | `(10,4,0.8,0.8)` | `(6,1,0.6,0.6)` | 12.8 → 9.6 |
+| 夏 | `pl02sub` script1 | `(10,4,1.0,1.0)` | `(6,1,0.6,0.6)` | 16 → 9.6 |
+| 秋 | `pl03sub` script1 | `(10,4,1.0,1.0)` | 不缩 | **16** |
+| 冬 | `pl01sub` **script18** | `(10,4,1.0,1.0)` | `(6,1,0.6,0.6)` + 15 帧 0.5↔0.6 呼吸 | 16 → 9.6 |
+| 土用 | `pl04sub` script1 | `(10,4,0.8,0.8)` | `(6,1,0.6,0.6)` | 12.8 → 9.6 |
+
+- **我们改前**：旧脚本 **113** 写的是 `scaleTime(10,4,0.42,0.42)`，**`0.42 = 27/64`** —— 那是**按占位贴图
+  `SEASON_OPT.png`（64×64 程序生成球）**算的；而**实际显示的 sprite 是 16×16 的 `OPT_SPRING` 等**
+  （`set_option_art()` 在 `ce_option_alloc` 建完 VM **之后**写，赢过脚本 init 段的 `sprite(@SEASON_OPT)`；
+  一手 VM 语义：`create_managed_*` 建时就把 `zTimer` 置 0 并跑一次 run，`ins.time <= vm.time` 的闸门让
+  `-1:` 与 `0:` 段**都在建的那一刻执行完**，见 `engine/anm/th16/02-vm-core.md` §8/§8.1）。
+  ⇒ **改前真实尺寸 = 16 × 0.42 = 6.72 ECL 单位**；**改后** 春/土用出场 12.8 = **1.90×**、落定 9.6 = 1.43×；
+  夏/秋/冬 16 = **2.38×** ⇒ **用户说的「两倍」完全对上**（0.42 ≈ 0.8/2）。
+- **量纲核对（重要，别再想当然）**：世界层 VM 两作**同量纲** —— **1 sprite texel = 1 ECL 单位**
+  （`engine/anm/th18/01-vm-instantiate.md` §3；子机脚本**没有** `resolutionMode` ⇒ 尺寸 ×1）；
+  游玩区两作都是 384×448 单位 ⇒ **sprite 矩形 × scale 可直接比**。
+  交叉验证：TH18 **原生**子机用同一张 16×16 表 + 同一套配方，scale **1.4 → 0.7**（= 22.4 → 11.2 单位）；
+  我们的 0.42 连原生的一半都不到。
+  ⇒ **只需改 scale**（现在由原版脚本原值带着走）⇒ **不需要换/放大贴图，也不涉及 640/表面换算**
+  （那条只对 **UI 层** VM 成立，例如 116 自己的 HUD 用了 `resolutionMode(2)`）。
+
+## §4 每季各自的动画（改前**一条都没有**：五季共用 script113 的「呼吸 alpha」）
+
+| 季 | 一手脚本 | 帧数 | 关键指令 | 层 | 我们改前 |
+| --- | --- | --- | --- | --- | --- |
+| 春 | `pl00sub` script1 | 1 帧 | `angleVel(0,0,+0.31415927)` → `+6帧: angleVel(0,0,−0.10471976)`（自转 18°/帧 → −6°/帧）；`blendMode(1)→(0)` | `layer(13)` | ❌ 缺 |
+| 夏 | `pl02sub` script1 | **4 帧循环**（sprite4→5→6→7，每 4 帧） | `+16: sprite4 … +28: sprite7; jmp(offset136,16)`；`type(3)`；scale 1.0→0.6 | `layer(13)` | ❌ 缺（连 sprite5/6/7 三张都没有）|
+| 秋 | `pl03sub` script1 | **8 帧循环**（sprite4..11，每 4 帧，32 帧一轮） | `offset88: sprite4 … jmp(offset88,0)`；`type(0)+resampleMode(1)`；scale 恒 1.0 | `layer(13)` | ❌ 缺（连 sprite5..11 七张都没有）|
+| 冬 | `pl01sub` **script18** | 1 帧 + 缩放呼吸 | `offset136: scaleTime(15,9,0.5,0.5) ↔ (15,9,0.6,0.6); jmp(offset136,16)`；`type(2)` | `layer(13)` | ❌ 缺 |
+| 土用 | `pl04sub` script1 | 1 帧 | 同春（sprite6） | `layer(13)` | ❌ 缺 |
+
+⇒ **缺的就是夏/秋那 10 帧贴图**，已全部补齐（切图见 §6）。
+
+## §5 季节点与 `+…` 弹字
+
+### 5.1 季节点（用户第 1 条）
+
+| 环节 | 一手 | 我们（改后）| 定性 |
+| --- | --- | --- | --- |
+| **产生** | 季节解放消弹时**每颗被消的弹在原位置**生一个季节点：`th16:0x416bbb` 的 `ItemManager__spawn_item` 实参 —— 角度 `−π/2 + rand[0,10°]`（`0x49444c = 0.17453292`）、速度 **2.2**（`0x400ccccd`）| `cancel_spawn_points()`：**每颗被消的弹在弹的位置**撒 1 个（同角度/速度）；**删掉**了旧的 `SEASON_CANCEL_POINT_MAX 4`（❓自定闸）与「围着自机随机撒」的老退路 | ✅复刻 |
+| **无敌上升** | 一手字段 = TH16 `player+0x1663c`；**春是每帧刷新到 50**（`th16:0x4116a0`），其余季 `BombSub*__begin` 只置 **10 帧** | 我们卡用的是 `season_core.c` 的 `k_invuln = {春: 持续+60, 夏 9, 秋 30, 冬 30, 土用 10}`，注释自标「**攻略口径**」= 🟡 **非一手**；**春的每帧刷新没复刻** | ❓**未改**（属另一件、且会动平衡）⇒ §7-3 |
+| **自动回收** | 门 = 「自机在回收线上 ∨ (`BOMB+0x30 == 1` ∧ `BOMB+0x38 < 0x3c`) ∨ 对话中」 | 本卡**不用引擎的 bomb 对象** ⇒ `s->rel_frames > 0` 那条是**必需的桥**（代码注释已标 ❓自定）；另 `SEASON_POINT_INTANGIBLE 32`（出生 32 帧不吸不收）也是既有 ❓自定 | ❓自定（已标明）|
+
+### 5.2 `+…` 弹字（用户第 3 条）—— 借 TH18 原生 adder，**没自己写弹字**
+
+- **TH16 一手**：`ItemManager__on_tick` 的 **type 0x10 = ITEM_SEASON** 分支 `th16:0x42fe58`：
+  `item_collect_season()`（`0x43de50`：季节槽 +1 封顶，**返回「档位跨了吗」**）⇒ **只有跨档那一颗**才：
+  `repopulate_options()`（`0x4440e0`）+ **`PopupManager::add(item.pos, −1, 0xffffff40)`**（`0x42fe6d`–`0x42fe7b`）
+  + 音效 `0x3f`；随后 `add_to_score(10)` + `Gui__update_season_gauge`，**总是** `play_sound(0x25)`。
+  **位置 = 道具自己的坐标**（`lea esi,[edi+0xc08]`）。
+  ⚠ **与用户措辞的差异**：一手是**按「档位跨越」触发**（随收随判），**不是**「收齐之后一次」——
+  用户看到的「收齐那一下」是因为一批点把槽推过阈值，视觉上像收齐才弹。
+- **TH18 侧现成机制 = 同一支**：`PopupManager__sub_4645f0` `th18:0x4645f0`，与 TH16 `0x44a460` **逐条同形**
+  （ring 基址 `+0x624`、计数器 `+0x10` wrap@10、负值同样写字节 `0x0a`）。
+  **交叉验证**：TH18 自己的**力量升档**分支就是 `PopupManager__sub_4645f0(&item.pos, −1, 0xffffff40)`
+  ⇒ **同一配方、同一颜色**。
+- **我们改前**：`grep -n "popup\|弹字" native/cards/season.c` **零命中** ⇒ 用户说的「根本没复刻」✅**属实**。
+- **改后**：`point_collect()` 的**跨档分支**里调 `popup_level_up()`（`season.c`），
+  **借原生 adder、不自造弹字**。ABI 实测：`th18:0x4646c8 c2 0c 00` = **`ret 0xc`（stdcall）**
+  ⇒ 声明成 `__attribute__((stdcall))`（写成 cdecl 会**双重清栈**）；反汇编确认调用点
+  `push color; push −1; push &pos; … call` 后面**没有** `add esp,0xc` ✓。
+  弹字生命周期（约 60 帧、上飘、按距自机取 alpha）**全原生** ⇒ 无跨帧状态。
+
+## §6 落地（逐条：文件 / 一手出处 / 定性）
+
+| 处 | 内容 | 定性 |
+| --- | --- | --- |
+| 脚本 **364–368** `season_opt_{spring,summer,fall,winter,doyou}` | 与 TH16 零售脚本**逐行同形**（去空白/注释后 **diff 为空**，五条都验过），只把 `sprite` 换成 ORDER 占位名 | ✅复刻 |
+| 新增 10 帧贴图 `OPT_SUMMER_2..4` / `OPT_FALL_2..8` | 生成器 `assets/ability/make_season_opt_anim_art.py`：矩形**从 anm 的 sprites 表读**；⚠ 顺手查清一个坑：**同批副 anm 的偏移约定不一致** —— `pl00sub/pl01sub/pl03sub/pl04sub` 的 entry1 sprite 坐标**要加** `xOffset/yOffset`，**`pl02sub` 不能加**（其坐标已是整页绝对值；`pl02.png` 只有 128×160，加了就读到页外）。生成器**不猜**：拿既有定稿的第 1 帧 PNG **逐像素比对**来判定约定，两个读法都不匹配就 `SystemExit` | ✅复刻 |
+| `season.c`：`season_opt_script()` + `ce_option_alloc(...)` 传逐季脚本号 | 一手 `th16:0x492be0[SUBSEASON] = {1,1,1,0x12,1}`、`0x492cdc[SUBSEASON] = {pl00sub,pl02sub,pl03sub,pl01sub,pl04sub}` | ✅复刻 |
+| `refresh_options()` 改「全收 + 重申请」 | 脚本号**只在申请时**传得进去（在役 VM 换不了脚本）；一手依据：TH16 换副季节发生在季节解放时，而 `Bomb__activate_bomb` 扣完槽**接着就调** `repopulate_options` ⇒ 原版换季本来就是**整批重建** | ✅复刻 |
+| 脚本号写死 → `#ifdef` + 生成宏 | `anm_ids.h` 的 `CE_ANM_ABILITY_SCRIPT_SEASON_OPT_*`；回退形状照抄 `youkai.c`/`ufo.c` | 工程性 |
+| ❌ **没有** `zWriteDisable(1)` | TH16 五支与 TH18 原生 script2/16 **都没有** —— 那是旧 script113 里我们自己加的 | ✅去掉自造 |
+
+- **对既有卡的影响面 = 零**：`season.c` 是 116 私有；新增脚本/贴图/ORDER 全是 append；
+  **脚本 113 一个字节没动**（`grep SCRIPT_SEASON_OPT native/cards/season.c` 只剩注释）⇒
+  108/111 借 113 的行为**零影响**；未动 `sdk*` / `engine.h` / `anm_ids.h`（生成物）/ `Makefile` / 别人的卡与资产。
+- ⚠ **ORDER 合并与贴图不入库**：`ORDER.season_opt.txt` 的 10 行已追加进 `entries/ORDER.txt` 末尾（纯 append）。
+  **这 10 张帧图属 `.gitignore:51` 覆盖的生成物**（`assets/ability/season/OPT_*.png`，与既有 `OPT_SPRING` 等**同一列**）
+  ⇒ **不入库**；换机/新 clone 构建前先跑一次
+  `python3 assets/ability/make_season_opt_anim_art.py`。entry 预算：并入前 **72** 个 ⇒ 并入后 **82**，离 256 余量很大。
+
+## §7 ❓ 未定 / 需要用户拍
+
+1. 🟡 **弹字的字形**：TH16 的 `−1` 经字符串系统 font 2 映到字形 `0x0a+0x94`；TH18 的弹字 draw 走**自己的三个基址**
+   （`+0x121/+0x12c/+0x136`），`−1` ⇒ 字形 `0x12b = 299` = `ascii.anm` entry0 的 **`sprite299 = (80,248,48,8)`（48×8 宽条）**。
+   ⚠ 本轮**没有读图能力**，只按引擎代码确定「画的是 299 号 sprite」，**没能肉眼确认它长什么样**。
+   ⇒ **实跑看一眼**：若是怪东西，备选 = 传**本次加的分（10）**（画「10」）或传季节槽值（**要用户点头**，❓自定）。
+2. **触发口径**：一手 = **每次跨档**弹一次（一次大解放可能连弹 2–3 次）。若用户要的是「收齐一批后只弹一次」，
+   那是**新机制** ⇒ 请用户明确。
+3. 🟡 **季节点「无敌」那半边**：一手 = TH16 `player+0x1663c`，**春每帧刷新到 50**（`th16:0x4116a0`）、
+   其余季 `BombSub*__begin` 只置 **10 帧**；我们现用的是 `k_invuln = {春: 持续+60, 夏 9, 秋 30, 冬 30, 土用 10}`
+   且注释自标「攻略口径」= **非一手**，**春的每帧刷新也没复刻**。
+   **本轮没改**（属另一件、且会动平衡）⇒ 要不要按一手改。
+4. 🟡 **能不能放炸弹**：TH16 有 `Bomb__initiate_season_release_cooldown`（45 帧冷却，见 `engine/player/th16/02`）；
+   我们卡的门是「`rel_frames > 0` 就 `ce_refuse`」= 持续期禁放，**没有 45 帧冷却** ⇒ 未复查一手冷却是否作用于季节释放。
+5. ⚠ **`type(3)`（夏）/`type(2)`（冬）/`type(0)+resampleMode(1)`（秋）** 是 TH16 原值、按「复刻」照抄，
+   但**没有实跑确认** TH18 的同号 type 渲染路径与之等价。
+6. ⚠ `cancel_spawn_points()` 的命中判据是按 `engine.h` 对 `0x429370` 的一手描述镜像的（**那条函数体未反汇编复核**）。
+7. **建议加一个共享件**（本轮**没动** `sdk*`）：`sdk.h` 增
+   `ce_popup_number(const float *pos, int32_t value, uint32_t color)`（= 调 `0x4645f0`，stdcall）。
+   现成封装两个都不适用：`cards/collect2x.c` 的 `ce_popup_mult()` 写的是**倍率槽**（k13–17，只能画 ×倍率 / NO BONUS）；
+   `cards/mof.c` 的是**别人卡里的 static**（拷一份 = 两套弹字）。⚠ `mof.c` 早就登记过**同一需求** ⇒ 一并解决最省事。
+
+## §8 自检（本轮全绿）
+
+- 新 PNG：**10 张全部 16×16（2 的幂）**、非全透明（可见像素 72–115）；生成器**连跑两次 md5 逐字节一致**；
+  把 anm 目录指到不存在处 ⇒ `SystemExit`；**矩形从 anm sprites 表读**。
+- 脚本：与 TH16 零售**去空白/注释后逐行 diff 为空**（五条）；`thanm -c 18 <spec> -m v8.anmm` 单编 **exit 0**（/tmp）。
+- C：`-fsyntax-only` **零告警**；`objdump` **x87 = 0**；`sizeof(season_card_t)` = **192 B ≤ 496**。
+- `test_season_core` **120 passed / 0 failed**；`make check` **exit 0**；`make verify` **exit 0**（210 条 binhack）；
+  `test-host` 24 组全 0 failed；`check-docs` 全过。
+- **`on_delete` 收尾**：本轮新增的东西**没有一件跨帧留在我们手里** —— `cancel_spawn_points()` 无状态；
+  弹字写在**引擎自己的 PopupManager ring**（10 槽、约 60 帧自回收，**引擎托管**）⇒ 删卡时无需也无法由我们收（已在注释写明）。

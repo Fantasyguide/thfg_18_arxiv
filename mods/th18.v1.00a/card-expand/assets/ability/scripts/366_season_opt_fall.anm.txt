@@ -1,0 +1,43 @@
+script script366 {
+    // ★季节子机 —— **秋**：TH16 `pl03sub.anm` script1 **逐条复刻**（副 anm = `th16:0x492cdc[2]`，脚本号 = 1）。
+    //   · 贴图 16×16：entry1 sprite4..sprite11 = `OPT_FALL.png` / `OPT_FALL_2..8.png`。
+    //   · 尺寸：scaleTime(10,4, 1.0,1.0) ⇒ 16 世界单位，**之后不再缩**（秋的落定尺寸就是 1.0 = 原版最大的一支）。
+    //   · ★**动画 = 8 帧 sprite 循环**：`offset88:` 起 sprite4..sprite11，每 4 帧一换（共 32 帧一轮），
+    //     `jmp(offset88, 0)` 把脚本时间设回 0 ⇒ 循环（一手原值）。
+    //   · 层 = `layer(13)`；type(0) + resampleMode(1)（原版原值，照抄）。
+-1:
+    layer(13);
+    type(0);
+    resampleMode(1);
+    interruptLabel(2);
+    scale(0.0f, 0.0f);
+    scaleTime(10, 4, 1.0f, 1.0f);
+0:
+offset88: // 原版 dump 的标签名（脚本内字节偏移 88）
+    sprite(@OPT_FALL);
++4: // 4
+    sprite(@OPT_FALL_2);
++4: // 8
+    sprite(@OPT_FALL_3);
++4: // 12
+    sprite(@OPT_FALL_4);
++4: // 16
+    sprite(@OPT_FALL_5);
++4: // 20
+    sprite(@OPT_FALL_6);
++4: // 24
+    sprite(@OPT_FALL_7);
++4: // 28
+    sprite(@OPT_FALL_8);
++4: // 32
+    jmp(offset88, 0);
+    interruptLabel(3);
+    scaleTime(20, 4, 0.0f, 0.0f);
++20: // 52
+    stop();
+    interruptLabel(1);
+    blendMode(1);
+    scaleTime(20, 4, 0.0f, 3.0f);
++20: // 72
+    delete();
+}

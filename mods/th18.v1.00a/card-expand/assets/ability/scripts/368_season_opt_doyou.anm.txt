@@ -1,0 +1,31 @@
+script script368 {
+    // ★季节子机 —— **土用**：TH16 `pl04sub.anm` script1 **逐条复刻**（副 anm = `th16:0x492cdc[4]`，脚本号 = 1）。
+    //   与春**同一条脚本**（TR16 里土用就是春的克隆），只有 sprite 不同：
+    //   贴图 16×16 entry1 sprite6 = 现有 `OPT_DOYOU.png`（`(32,0)` + entry 的 xOffset112/yOffset144）。
+    //   scaleTime(10,4, 0.8,0.8) → (6,1, 0.6,0.6)；angleVel ±；layer(13)；type(1)。
+-1:
+    layer(13);
+    blendMode(1);
+    type(1);
+0:
+    interruptLabel(2);
+    scale(0.0f, 0.0f);
+    scaleTime(10, 4, 0.8f, 0.8f);
+    sprite(@OPT_DOYOU);
+    angleVel(0.0f, 0.0f, 0.31415927f);
++10: // 10
+    scaleTime(6, 1, 0.6f, 0.6f);
++6: // 16
+    angleVel(0.0f, 0.0f, -0.10471976f);
+    blendMode(0);
+    stop();
+    interruptLabel(3);
+    scaleTime(20, 4, 0.0f, 0.0f);
++20: // 36
+    stop();
+    interruptLabel(1);
+    blendMode(1);
+    scaleTime(20, 4, 0.0f, 3.0f);
++20: // 56
+    delete();
+}
