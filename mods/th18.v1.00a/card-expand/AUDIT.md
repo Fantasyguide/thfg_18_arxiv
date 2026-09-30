@@ -25639,3 +25639,13 @@ owner 要的是「**默认换秋黄、逢魔回红**」这条口径。
 **闸（原文）**：`make -s check` rc=0（含 `anm-check`/`anm-verify`：4 支脚本已重编进 `pl03.anm` 并逐块复核；
 `youkai_core: 8120 checks, 0 failed`）、`make -s dllx87` ⇒ `x87 in our objects: 0`、
 `python3 sites.py verify` ⇒ `✅ 全部对上`、`capcheck` ⇒ `全绿 ✅`、`check-docs` ⇒ `✓ 全部通过`。
+
+## §BE 详录 #152（2026-09-28）：**共享件 `sdk.h` 的一处注释勘误**（消弹链的「子弹撒不撒点道具」写反了）
+
+| 项 | 内容 |
+| --- | --- |
+| 文件 | `native/sdk.h`（**共享件**）、`native/cards/judgment.c`、`native/cards/pofv.c`、`docs/superpowers/specs/2026-09-11-system-card-spec-review.md` §6.4 |
+| 改了什么 | **只改注释/文档，零行为改动**：① `sdk.h` 的 `ce_cancel_all_bullets()` 头注改成「**子弹不撒、激光撒**」；② `judgment.c` 行注同步；③ `pofv.c` 的 `0x428e90` 头注：四个入口 ⇒ **五个**（补 `0x4294b0`）+ 订正 mode 表；④ spec §6.4 同步 |
+| 为什么 | 一手复核（`engine/bullet/th18/01-cancel-to-item.md` §1.4/§2.1）证明旧注**写反了**：子弹侧 `th18:0x429932 xor edx,edx` ⇒ mode 0 ⇒ 一颗不撒；撒的是激光侧（mode 1）。按旧注算「清弹收多少点」的卡会算反 |
+| 谁改的 | 108 卡那一支（`AUDIT.md` §BE 协作纪律：动共享件必须登记）|
+| 怎么验证的 | 纯注释 ⇒ 行为不变：`make -s check` rc=0（`youkai_core: 8120 checks, 0 failed`；`dllx87 = 0`；`sites.py`/`capcheck` 全绿）+ `check-docs` 全过；`git diff` 核过：三个 `.c/.h` 的改动**全在 `/* … */` 里** |

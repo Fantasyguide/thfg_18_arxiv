@@ -59,7 +59,9 @@ static int on_activate(ce_card_t *c)
     *(int32_t *)(spell + CE_SPELL_BONUS) = 0;
     *(int32_t *)(em + CE_EM_CAN_CAPTURE) = 0;
 
-    ce_cancel_all_bullets();                                                  /* 安全垫：全屏消弹（弹 → 点道具）+ 激光 */
+    /* 安全垫：全屏消弹 = 弹幕 + 激光。★ 2026-09-30 订正：**子弹不撒点道具、激光才撒**
+     * （依据 `engine/bullet/th18/01-cancel-to-item.md` §1.4：子弹侧 `th18:0x429932 xor edx,edx` ⇒ mode 0）。*/
+    ce_cancel_all_bullets();
     ce_play_sound(CE_SE_RELEASE, ce_player_x());                              /* 反转牌同款发动音 */
     /* 演出：ability.anm script77（assets/ability/scripts/77_judgment_flash.anm.txt）——卡图副本在场地中央半透明浮现
      * （alpha 140）、铺满弹幕区（scale 1.25 → 1.45，320 高的卡图 × 1.45 ≈ 464 > 区域 448）、75 帧内缓缓放大并上浮 24 px，45 帧后 30 帧淡出。type(1) 二维、层 20，pos y 从区域顶部起算（236 ≈ 正中偏下）。*/

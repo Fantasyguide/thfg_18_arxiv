@@ -122,7 +122,12 @@ static inline void ce_gui_update_lives(void)
     void *gui = CE_GUI();
     if (gui) ((ce_fn_gui_lives_t)CE_FN_GUI_UPDATE_LIVES)(gui, CE_CURRENT_LIVES(), CE_LIFE_FRAGMENTS(), CE_LIVES_MAX());
 }
-/* 全屏消弹：弹幕（→ 点道具）+ 激光，照 ECL 消弹指令的写法（AUDIT O28h）。*/
+/* 全屏消弹：弹幕 + 激光，照 ECL 消弹指令的写法（AUDIT O28h）。
+ * ★ **2026-09-30 订正**（依据 = `engine/bullet/th18/01-cancel-to-item.md` §1.4/§5（一手））：
+ *   旧注写「弹幕（→ 点道具）」是**反的** —— 子弹侧 `BulletManager__cancel_all` 内部 `xor edx,edx`
+ *   （`th18:0x429932`）⇒ **mode 0 ⇒ 一颗点道具都不撒**；真正撒的是**激光侧**
+ *   （下面 `ce_fn_laser_cancel_all_t` 传的 mode 1 ⇒ 每条激光一颗 type 9）。
+ *   ⇒ 正确口径 =「**子弹不撒、激光撒**」（这也是原生 `etClearAll`(613) 的那处不对称）。*/
 /* ★ BulletManager__cancel_all 是 thiscall(BULLET_MANAGER; 一个从不读取的栈参) ret 4——Ghidra 反编译显示 void(void)，尾部却是 `ret 4`
  * （0x429a0e）；原生 ECL 调用现场 0x434d48 `mov ecx,[0x4cf2bc]; push 0; call`。第一版按无参调，多弹 4 字节，on_activate 的 ret 跳飞（O23 同款教训，O28h′）。*/
 typedef void (__attribute__((thiscall)) *ce_fn_bullet_cancel_all_t)(void *mgr, int unused);
