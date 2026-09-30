@@ -1355,17 +1355,14 @@ static void on_item_collect(ce_card_t *c, uint32_t type, const void *item)
     senro_handle_events(c, s, senro_take_events(&s->st));
 }
 
-/* ---- 自机弹计分命中（断点 0x45f2a2）----
- * ★ 2026-09-12：SDK 补了 `on_shot_damage_any`（`public.h` 的 `ce_hooks_t` 末尾；同一个断点 0x45f2a2、
- *   同一份实参，**不按聚焦过滤**，`focused` 由 SDK 传）⇒ 本卡的**两条通道都在它上面分流**：
- *     高速（!focused）与低速（focused）各走一次 `senro_hit`，「低速 ≈ 高速的 1/3」那半支不再是死路。
- * ⚠ 两个钩子**会各收一次**（public.h 明写）⇒ 这里**只**声明 `on_shot_damage_any` 并从
- *   `CE_CARD` 的挂表里撤掉 `on_shot_damage`，`on_shot_damage` 这个函数体**不再存在** ——
- *   从构造上排除「同一帧同一敌记两次账」。
- * ⚠ 数值语义与迁移前逐字相同：迁移前高速那半支走老钩子、`slow = CE_PLAYER_FOCUSED() ? 1 : 0`
- *   ——而老钩子的策略门恰好保证「到得了它 ⇒ !focused」⇒ 老路上 `slow` 恒 0。现在高速支仍传 0、
- *   低速支传 1（= `SENRO_HIT_SLOW_NUM/SENRO_HIT_FAST_NUM` 那对常量，senro_core.c 未改一个字）。
- * ⚠ 只读 `focused` 这一个入参、不读引擎输入位（回放安全）；bomb 生效帧两个钩子都不发（SDK 边界）。 */
+/* ---- 自机弹命中 → 樱点（断点 0x45f2a2）----
+ * 用 `on_shot_damage_any`（`public.h` 的 `ce_hooks_t`；同一个断点、同一份实参，**不按聚焦过滤**）：
+ * TH07 那条命中公式（`th07:0x4211bd`–`0x42132d`）**没有聚焦项**，聚焦/非聚焦的差别只体现在
+ * `damage` 本身 ⇒ 本卡不再按 `focused` 分流（旧版的「高速 ×3 / 低速 ×1」是 ❓自定，第四轮撤掉），
+ * 入参改成**关卡号**（一手 `p = (stage >= 5) ? 10 : stage × 2`，`0x420638`）。
+ * ⚠ 两个钩子**会各收一次**（public.h 明写）⇒ 这里**只**声明 `on_shot_damage_any`，
+ *   `on_shot_damage` 这个函数体**不再存在** —— 从构造上排除「同一帧同一敌记两次账」。
+ * ⚠ bomb 生效帧两个钩子都不发（SDK 边界）；本函数不读输入位（回放安全）。 */
 static void on_shot_damage_any(ce_card_t *c, int32_t damage, const float *pos, int focused)
 {
     senro_card_t *s = st(c);
@@ -1373,7 +1370,10 @@ static void on_shot_damage_any(ce_card_t *c, int32_t damage, const float *pos, i
 
     (void)pos;
     if (!s) return;
-    add = senro_hit(&s->st, damage, focused ? 1 : 0);   /* 1 = 低速（聚焦）⇒ 走慢支；0 = 高速 */
+    /* ★ 2026-09-30 第四轮：入参从「聚焦」改成**关卡号**（一手公式按 `0x62f85c` 分档，见 core 的注）；
+     *   `focused` 不再参与折算（一手那条公式里没有聚焦项），此处显式丢弃。*/
+    (void)focused;
+    add = senro_hit(&s->st, damage, CE_CURRENT_STAGE());
     if (!add) return;
     s->stat_gain_hit += add;
     senro_handle_events(c, s, senro_take_events(&s->st));

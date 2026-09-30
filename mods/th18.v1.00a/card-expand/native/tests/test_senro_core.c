@@ -258,20 +258,20 @@ int main(void)
     CHECK(st.cherry == st.cherry_max);
     CHECK(st.cherry_max == 200800);
 
-    /* ==================== H. 道具（0x433886 / 0x43370b / 0x433742+0x43374e）==================== */
+    /* ==================== H. 道具（0x43370b ★ / 0x433742+0x43374e 小樱点；2026-09-30 第四轮改口径）====
+     * owner 口径：「**一手应该是收金钱（蓝点）/ P 不加**」—— TH18 type 2 = 金钱 = 本 mod 的
+     * 「点道具 / 蓝点」对位（`cards/trance.c` 同口径），TH07 的蓝点 handler 不进加法器 ⇒ 0；
+     * 金钱原来的「大樱点 1000+100×符卡奖励」那一条**已撤**（大樱点改由自建实体那条路记）。 */
     senro_init(&st, SENRO_DIFF_NORMAL);
-    CHECK(senro_item_cherry(&st, SENRO_TH18_ITEM_MONEY) == 1000);   /* 1000 + 100×0 */
-    CHECK(st.cherry == 1000);
-    CHECK(st.plus == 1000);
-    CHECK(st.stat_items == 1);
-    st.spell_bonuses = 3;
-    CHECK(senro_item_cherry(&st, 2) == 1300);                       /* 1000 + 100×3 */
-    CHECK(st.cherry == 2300);
-    CHECK(st.plus == 2300);
+    CHECK(senro_item_cherry(&st, SENRO_TH18_ITEM_MONEY) == 0);   /* 金钱/蓝点：不给樱点 */
+    CHECK(senro_item_cherry(&st, 2) == 0);
+    CHECK(st.cherry == 0 && st.plus == 0);
+    CHECK(st.stat_items == 0);
+    st.spell_bonuses = 3;                         /* 符卡奖励次数不再影响道具口径 */
     CHECK(senro_item_cherry(&st, SENRO_TH18_ITEM_SCORE_LO) == SENRO_STAR_CHERRY);   /* ★ = 20 */
     CHECK(senro_item_cherry(&st, SENRO_TH18_ITEM_SCORE_HI) == SENRO_STAR_CHERRY);
-    CHECK(st.cherry == 2300 + 40);
-    CHECK(st.plus == 2300 + 40);
+    CHECK(st.cherry == 40);
+    CHECK(st.plus == 40);                         /* ★ 走加法器 ⇒ +C 同加 */
     CHECK(senro_item_cherry(&st, 1) == 0);        /* P 点：th07 不给樱点 */
     CHECK(senro_item_cherry(&st, 3) == 0);
     CHECK(senro_item_cherry(&st, 4) == 0);        /* 命碎 */
@@ -280,33 +280,34 @@ int main(void)
     CHECK(senro_item_cherry(&st, 0) == 0);
     CHECK(senro_item_cherry(&st, 0xf) == 0);
     CHECK(senro_item_cherry(&st, SENRO_TH18_ITEM_SCORE_LO - 1) == 0);
-    CHECK(st.cherry == 2340);
-    CHECK(st.stat_items == 4);                    /* 只有给过樱点的那 4 颗计数 */
-    CHECK(SENRO_STAR_CHERRY == 20 && SENRO_ITEM_BIG_BASE == 1000 && SENRO_ITEM_BIG_PER_BONUS == 100);
+    CHECK(st.cherry == 40);
+    CHECK(st.stat_items == 2);                    /* 只有给过樱点的那 2 颗计数 */
+    CHECK(SENRO_STAR_CHERRY == 20);
+    /* 大樱点那套值仍是一手（供自建实体那条路用） */
+    CHECK(SENRO_ITEM_BIG_BASE == 1000 && SENRO_ITEM_BIG_PER_BONUS == 100);
 
-    /* ==================== I. 命中（❓ 自定折算；形状是一手：10 的倍数、上限 70）==================== */
+    /* ============ I. 命中（2026-09-30 第四轮：按一手公式重写，入参 = 关卡号）============
+     * 一手：`p = stage >= 5 ? 10 : stage × 2`、`k = 10 − p/3`、`gain = (damage / k) × 10`、
+     * `gain == 0 → 10`、上限 70（地址见 `senro_core.h` 的 `SENRO_HIT_*`）。 */
     senro_init(&st, SENRO_DIFF_NORMAL);
-    CHECK(senro_hit(&st, 100, 0) == 10);          /* 100×3/20 = 15 → 取整到 10 */
-    CHECK(senro_hit(&st, 100, 1) == 0);           /* 100×1/20 = 5 → 0（不加）*/
-    CHECK(st.cherry == 10);
-    CHECK(senro_hit(&st, 600, 0) == SENRO_HIT_CAP);   /* 90 → 夹 70 */
-    CHECK(senro_hit(&st, 100000, 0) == SENRO_HIT_CAP);
-    CHECK(senro_hit(&st, 200, 1) == 10);          /* 10 → 10 */
-    CHECK(st.cherry == 10 + 70 + 70 + 10);
+    CHECK(SENRO_HIT_DIV == 10 && SENRO_HIT_MIN == 10 && SENRO_HIT_CAP == 70);
+    /* stage 1 ⇒ p = 2 ⇒ k = 10 − 0 = 10 */
+    CHECK(senro_hit(&st, 5, 1) == 10);            /* 5/10 = 0 ⇒ **抬到 10**（小怪命中也有）*/
+    CHECK(senro_hit(&st, 20, 1) == 20);           /* (20/10)×10 = 20 */
+    CHECK(st.cherry == 30);
     CHECK(st.plus == st.cherry);                  /* 命中走加法器 ⇒ +C 同加 */
-    CHECK(senro_hit(&st, 0, 0) == 0);
-    CHECK(senro_hit(&st, -50, 0) == 0);
+    CHECK(senro_hit(&st, 100, 1) == 70);          /* (100/10)×10 = 100 ⇒ 夹 70 */
+    CHECK(senro_hit(&st, 100000, 1) == SENRO_HIT_CAP);
+    CHECK(senro_hit(&st, 0, 1) == 0);
+    CHECK(senro_hit(&st, -50, 1) == 0);
     CHECK(st.stat_hits == 4);
-    /* 高速是低速的 3 倍（IDEAS §107 口径；比值 = SENRO_HIT_FAST_NUM / SENRO_HIT_SLOW_NUM）*/
-    CHECK(SENRO_HIT_FAST_NUM == 3 && SENRO_HIT_SLOW_NUM == 1);
-    CHECK(senro_hit(&st, 2000, 0) == 70);
-    CHECK(senro_hit(&st, 2000, 1) == 70);         /* 两者都被上限夹住 */
-    /* ★ 2026-09-12：SDK 新钩子 `on_shot_damage_any` 把两条通道都接通了
-     *   （`cards/senro.c` 的 `on_shot_damage_any` 按 `focused` 分流）。
-     *   卡侧接线测不到（要引擎），但 core 这一侧的两支必须都在：
-     *   低速支（slow=1）与高速支（slow=0）用的是同一套 `senro_hit` ⇒ 由上面几条断言覆盖。 */
-    CHECK(senro_hit(&st, 400, 0) == 60);          /* 400×3/20 = 60（低速同值会是 20）*/
-    CHECK(senro_hit(&st, 400, 1) == 20);          /* 400×1/20 = 20 —— 低速支**不是**死路了 */
+    /* 关卡分档：stage 3 ⇒ p = 6 ⇒ k = 10 − 2 = 8 ⇒ (20/8)=2 ⇒ 20；stage 6 ⇒ p = 10 ⇒ k = 7 */
+    CHECK(senro_hit(&st, 20, 3) == 20);
+    CHECK(senro_hit(&st, 20, 6) == 20);           /* (20/7)=2 ⇒ 20 */
+    CHECK(senro_hit(&st, 6, 6) == 10);            /* (6/7)=0 ⇒ 抬到 10 */
+    CHECK(senro_hit(&st, 700, 6) == 70);          /* (700/7)×10 = 1000 ⇒ 夹 70 */
+    /* 关卡号传 0/负数按 stage 1 那一支兜底（不影响上面各条的边界） */
+    CHECK(senro_hit(&st, 20, 0) == 20);
 
     /* ==================== J. 蓝点（点道具）分值（0x4330db–0x4331e5）==================== */
     senro_init(&st, SENRO_DIFF_NORMAL);

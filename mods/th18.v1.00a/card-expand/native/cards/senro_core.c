@@ -215,34 +215,42 @@ int32_t senro_item_cherry(senro_state_t *s, uint32_t type)
     int32_t d;
 
     if (!s) return 0;
-    if (type == SENRO_TH18_ITEM_MONEY) {
-        /* th07 **type 7**（`0x433886`，落在 type 7 块 `0x43375f` 内）= 1000 + 100 × 符卡奖励次数，
-         * 走樱点加法器（+C 同加）。⚠ 原注写作 type 2，2026-09-15 按跳表块归属订正（见 `senro_core.h`）。*/
-        d = SENRO_ITEM_BIG_BASE + SENRO_ITEM_BIG_PER_BONUS * s->spell_bonuses;
-    } else if (type >= SENRO_TH18_ITEM_SCORE_LO && type <= SENRO_TH18_ITEM_SCORE_HI) {
+    if (type >= SENRO_TH18_ITEM_SCORE_LO && type <= SENRO_TH18_ITEM_SCORE_HI) {
         /* th07 **type 6**（★，`0x43370b`/`0x433712`，落在 type 6 块 `0x433691` 内）= 樱点 / +C 各 +20。
          * ⚠ 原注写作 type 7，2026-09-15 按跳表块归属订正（见 `senro_core.h`）。*/
         d = SENRO_STAR_CHERRY;
     } else {
-        return 0;                          /* 其余 type 在 th07 都不给樱点（P / 命碎 / 符卡碎 / 残机 …）*/
+        /* ⛔ **2026-09-30 第四轮（owner 口径，逐字）：「一手应该是收金钱（蓝点）/ P **不加**」**
+         *   —— TH18 `type 2 = 金钱` 在本 mod 里就是「点道具 / 蓝点」的对位（`cards/trance.c` 同口径：
+         *   `TRANCE_ITEM_TYPE18_POINT 2u`「= 本 mod 的『点道具/蓝点』对位」），而 TH07 的**蓝点**
+         *   （type 1，handler `0x4330d2`）**根本不进樱点加法器**（它只算分）⇒ 收钱不该给樱点/+C。
+         *   原来那条「金钱 → 大樱点 `1000 + 100×符卡奖励次数`」是**旧自定**（把金钱当樱点道具），
+         *   本轮**撤掉**：大樱点仍由**自建樱点实体**（满 P 转换 `faith_convert_full_p_items()`）承担，
+         *   收下时走 `senro_on_cherry_pickup()` 记同一笔值（`cards/senro.c`）。
+         *   P（type 1）本来就不映射 ✓；命碎 / 符卡碎 / 残机 / 0xf 等一律 0（一手：TH07 那些 handler 都不调加法器）。*/
+        (void)d;
+        return 0;
     }
     ++s->stat_items;
     senro_add_cherry(s, d);
     return d;
 }
 
-int32_t senro_hit(senro_state_t *s, int32_t damage, int slow)
+int32_t senro_hit(senro_state_t *s, int32_t damage, int32_t stage)
 {
-    int32_t v;
+    int32_t p, k, v;
 
     if (!s || damage <= 0) return 0;
-    /* ❓ 自定折算：`damage × (高速 3 / 低速 1) / SENRO_HIT_DIV`，再按一手「输出是 10 的倍数、
-     * 上限 70/次」（0x421203 / 0x42121f）整形。th07 那条公式的输入是敌人数据（0x42118b 之前的浮点累加），
-     * TH18 侧没有对应量 ⇒ 只有这两个形状是一手的。 */
-    v = (int32_t)(((int64_t)damage * (slow ? SENRO_HIT_SLOW_NUM : SENRO_HIT_FAST_NUM)) / SENRO_HIT_DIV);
-    v = senro_round10(v);
+    /* 一手公式（逐条见 senro_core.h 的 `SENRO_HIT_*` 段）：
+     *   p = stage >= 5 ? 10 : stage × 2（0x420638–0x420660）；k = 10 − p/3（`ds:0x4bfee3 == 0` 那支）；
+     *   gain = (damage / k) × 10；0 → 10（0x421259）；上限 70（0x42121f）。*/
+    if (stage < 0) stage = 0;
+    p = (stage >= 5) ? 10 : stage * 2;
+    k = SENRO_HIT_DIV - p / 3;
+    if (k < 1) k = 1;
+    v = (damage / k) * 10;
+    if (v == 0) v = SENRO_HIT_MIN;
     if (v > SENRO_HIT_CAP) v = SENRO_HIT_CAP;
-    if (v <= 0) return 0;
     ++s->stat_hits;
     senro_add_cherry(s, v);
     return v;

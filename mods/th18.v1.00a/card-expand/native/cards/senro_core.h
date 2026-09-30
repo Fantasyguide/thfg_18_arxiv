@@ -135,15 +135,18 @@
 #define SENRO_POINT_DIV                5   /* 超出基线的部分 /5（0x4331c8 `idiv 5`）*/
 
 /* —— ❓ 自定占位（原版量在 TH18 侧没有对应载体 / 未取到；全部具名 + TODO(th07)）—— */
-#define SENRO_HIT_DIV                 20   /* ❓ 自定 TODO(th07)：自机弹命中 → 樱点。
-                                            * 一手锚点只有「th07 那条公式的输出**上限 70/次**」
-                                            * （0x42121f `cmp [ebp-0x40],0x46` + 0x421225 夹取）与
-                                            * 「输出恒为 10 的倍数」（0x421203 `imul eax,eax,0xa`）；
-                                            * 它的输入来自敌人数据（`0x42118b` 之前的浮点累加），
-                                            * TH18 拿不到 ⇒ 用「伤害 / 本常量」折算。*/
+/* ★★ 2026-09-30 第四轮：**自机弹命中 → 樱点**按一手重写（owner 口径：「击中敌人，包括小怪增加」）。
+ * 一手公式（逐指令，`th07:0x420638`–`0x420660` 定 p、`0x4211bd`–`0x42132d` 算 gain）：
+ *   · `p = (关卡号 >= 5) ? 10 : 关卡号 × 2`；            （`0x420638`/`0x420641`/`0x420652`）
+ *   · `k = 10 − p/3`（`ds:0x4bfee3 == 0` 的那一支，本卡按默认 0 走这条；另一支是 `30 − p`）；
+ *   · `gain = (伤害 / k) × 10`；                          （`0x4211f4` `idiv` + `0x421203` `imul …,0xa`）
+ *   · `gain == 0` ⇒ **抬到 10**（`0x421259`；闸 `ds:0x4bfee3 == 0`）——这一条让**小怪命中也有**；
+ *   · 上限 **70**（`0x42121f` `cmp …,0x46` + `0x421225`）。
+ * ⚠ 未搬的两条（都要敌人字段，TH18 拿不到）：①「掉落位为 0 的敌在 st4 折 1/4+1/16、st5/6 折半」
+ *   （`0x4212aa`/`0x4212dc`）；②「gain ∈ {20,30} 且敌标志位 & 1 时 −10」（`0x421285`）。*/
+#define SENRO_HIT_DIV                 10   /* = 一手的 k 基数（`10 − p/3` 里的 10）*/
 #define SENRO_HIT_CAP                 70   /* 一手：单次命中加值上限（0x42121f / 0x421225）*/
-#define SENRO_HIT_FAST_NUM             3   /* IDEAS §107：「同机体高速射击约低速的 3 倍」*/
-#define SENRO_HIT_SLOW_NUM             1
+#define SENRO_HIT_MIN                 10   /* 一手：算出 0 时抬到 10（0x421259）——「小怪也有」的来源*/
 #define SENRO_MISS_NUM                 1   /* Miss 扣减比例：th07 每机体不同（灵梦/魔理沙 1/2、咲夜 1/3，
                                             * [SHT+0x1c]，review §9.3）。TH18 不读 SHT 表 ⇒ ❓ 自定取 1/2；
                                             * 「按 TH18 自机分档」见本卡 spec §9 未定项。*/
@@ -227,8 +230,10 @@ int32_t senro_graze(senro_state_t *s, int32_t n, int slow);
 /* 收一颗道具：返回本颗加了多少樱点（0 = 这颗道具不给樱点）。type = TH18 item type。 */
 int32_t senro_item_cherry(senro_state_t *s, uint32_t type);
 
-/* 自机弹命中（`slow` = 聚焦）：damage → 樱点/ +C。返回本次加了多少樱点。 */
-int32_t senro_hit(senro_state_t *s, int32_t damage, int slow);
+/* 自机弹命中：damage + 关卡号 → 樱点/+C（公式见上面 `SENRO_HIT_*` 那段注）。
+ * 返回本次加了多少樱点。⚠ 不再区分聚焦 —— 一手那条公式里**没有**聚焦项（高低速的差别已经
+ * 体现在 `damage` 本身），旧版的「高速 ×3 / 低速 ×1」是 ❓自定，2026-09-30 撤掉。 */
+int32_t senro_hit(senro_state_t *s, int32_t damage, int32_t stage);   /* stage = 关卡号（1 起）*/
 
 /* 点道具（蓝点）分值 = 本卡的「最大得点」：`SENRO_POINT_BASE + max(0, cherry − BASE)/5`，
  * 向下取整到 10（th07:0x4330db–0x4331e5 的一手结构）。返回**分**（不是 ×10 的身价）。 */
