@@ -1365,8 +1365,14 @@ static void __attribute__((noinline)) yk_orbit_tick(uint32_t frame)
         yk_orbit_vm_sync(o);
         /* ★ 拖尾（每台自己一份节拍；父敌活着才撒 —— 孤儿那 2 帧与收口之后都**不再撒新的**，
          *   已撒的会在 20 帧内自删）。位置 = **使魔当前位置**（一手：撒在使魔身上）。*/
-        if (++o->trail_t >= s_orbit_trail_eff) {   /* 有效间隔（阀门可能把它抬高）*/
-            o->trail_t = 0;
+        /* ★★★ 2026-09-30（**一手 + owner 确认**）：一手里这一整块只在 `flags_lo` **bit11 == 0**
+         *   那一支里跑（`th08:0x42c43a jne 0x42c4e1`），而 owner 确认**这一 bit 就是高低速/聚焦态**
+         *   （原话：「bit == 0 就相当于我们的高低速啊……**低速敌方使魔呈现为魔法阵**」）
+         *   ⇒ **只在非聚焦（高速 / 人侧）撒火花**；聚焦（低速 / 妖侧）不撒 —— 那一侧本来就由
+         *   每台的**环 VM**（`ce_anm_interrupt(id, 2)`）承担「魔法阵」的外观。
+         *   ⚠ 切换那一帧：已撒的火花会在 20 帧内自灭，我们**不追**（也**不续撒**）。*/
+        if (!CE_PLAYER_FOCUSED() && ++o->trail_t >= s_orbit_trail_eff) {
+            o->trail_t = 0;                        /* 有效间隔（阀门可能把它抬高）*/
             yk_orbit_trail_spawn(*(const float *)(f + CE_ENEMY_POS_X),
                                  *(const float *)(f + CE_ENEMY_POS_Y));
         }

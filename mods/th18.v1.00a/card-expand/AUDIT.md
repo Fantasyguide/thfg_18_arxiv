@@ -25566,3 +25566,41 @@ owner 之后若要，要自己造**边沿 + 迟滞**（❓自定）。
 **闸（原文）**：`make -s check` rc=0（`youkai_core: 8120 checks, 0 failed`；其余各测试 0 failed）、
 `make -s dllx87` ⇒ `x87 in our objects: 0`、`python3 sites.py verify` ⇒ `✅ 全部对上`、
 `python3 native/tools/capcheck.py` ⇒ `capcheck：全绿 ✅`、`python3 tooling/check-docs.py` ⇒ `✓ 全部通过`。
+
+### §BE #150 · 追加（2026-09-28 第十三轮）：拖尾**提亮**（owner「不够亮，样式对了」）+ `flags_lo bit11` = **高低速**（一手机制）+ 逢魔 SE 结案
+
+> **owner 逐字**：「**不够亮，样式对了**」＋「**bit == 0 就相当于我们的高低速啊**，当然它本来也是高低速管的，
+> **低速敌方使魔呈现为魔法阵**」＋（另）：逢魔音效他重新核过，**不存在** ⇒ 那条不用动。
+
+**一、先自查「是不是量纲抄错了」（结论：没有）** —— 逐项对照后走「提亮旋钮」：
+
+| 项 | 我们的引擎 | 一手（TH08） | 判定 |
+| --- | --- | --- | --- |
+| `alpha` 量纲 | 0–255（本仓脚本里到处是 `alpha(255)`，如 `100_pea.anm.txt`）| `48 + rand(64)` = 48–111（0–255 制）| ✅ 同制 |
+| `color` 量纲 | 0–255/通道（v8 anmmap 的 `color` 403）| `128 + rand(64)` ×3 = 128–191 | ✅ 同制（所以 128–191 本来就只有**一半亮度**）|
+| 随机助记符 | `fsetRand`/`isetRand`（v8 anmmap 122/123）| TH08 的 `fsetRand`/`isetRand`（v2 anmmap 60/59）| ✅ 语义同（map 注释：`randf() * (max − min) + min`，`randf ∈ [0,1)`）⇒ 一手 `1.1 + rand(1.0)` 无论 [0,1) 还是 [0,1] 都落在 1.1–2.1 |
+| 混合模式 | `blendMode(1)`（本仓既有加法脚本同款，如 `100_pea.anm.txt`）| TH08 `blendAdditiveSet(1)` | ✅ 加法（这一处我们**没动**）|
+
+⇒ **不是抄错量纲，是亮度不够**（加法亮度 ≈ alpha × color ⇒ 一手只有 ~0.19×0.5 ≈ **10%** 量级）。
+
+**二、提亮（❓自定，不是一手）**：`assets/ability/scripts/370_youkai_familiar_trail_s71.anm.txt`
+把**随机区间换成钳过的常数**（anm 脚本里没有 `min`）：`alpha(200)`、`color(230,230,230)`；
+**`scale` 的随机保留**（owner「样式对了」⇒ 不动形状/寿命/间隔/`blendMode`）。
+一手原值（`alpha 48+rand(64)` / `color 128+rand(64)`×3）写在脚本注释里，**回退 = 还原三行**。
+K 的量级 ≈ 1.6（owner 口径）；登记 `TUNING.md` §2.1ccc-26 的「拖尾**亮度**」行。
+
+**三、`flags_lo bit11`：从「❓自定」改成「一手机制 + owner 确认」**
+一手：那一整块只在 **`flags_lo bit11 == 0`** 分支里跑（`th08:0x42c43a jne 0x42c4e1`，与
+`0x42c4a2`–`0x42c4af` 的 bit1 读点同属 `FUN_0042c420`）；**owner 确认这一 bit 就是高低速/聚焦态**。
+⇒ 卡侧改成 **`!CE_PLAYER_FOCUSED()` 才撒火花**：**高速（人侧）有拖尾、低速（妖侧）不撒** —— 低速那一侧
+使魔本来就显示为**魔法阵**（我们每台挂一支环 VM + `ce_anm_interrupt(id, 2)`，正好对上 owner 那句
+「低速敌方使魔呈现为魔法阵」）。切换那一帧若「环 + 火花」同帧共存可接受（一手两支也都在同一个函数里）；
+已撒的火花 20 帧内自灭，我们**不追、也不在聚焦时续撒**。
+
+**四、逢魔 SE：结案** —— owner 已复核确认「**不存在**」，与本仓普查（`0x45d550`/`0x45d660` 调用点 23 处、
+逢魔段零命中）一致 ⇒ `TUNING.md`/`engine/enemy/th08/03` §5d 里那条从「待 owner 拍」改成
+「**owner 已复核确认不存在（2026-09-30）**」，代码**什么都不做**。
+
+**闸（原文）**：`make -s check` rc=0（`youkai_core: 8120 checks, 0 failed`；其余各测试 0 failed）、
+`make -s dllx87` ⇒ `x87 in our objects: 0`、`python3 sites.py verify` ⇒ `✅ 全部对上`、
+`python3 native/tools/capcheck.py` ⇒ `capcheck：全绿 ✅`、`python3 tooling/check-docs.py` ⇒ `✓ 全部通过`。

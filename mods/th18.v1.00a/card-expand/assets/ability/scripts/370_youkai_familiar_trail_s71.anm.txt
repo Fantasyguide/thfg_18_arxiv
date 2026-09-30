@@ -15,16 +15,15 @@ script script370 {
     fsetAdd(%F0, %F0, 1.1f);
     scale(%F0, %F0);
     scaleTime(20, 0, 0.0f, 0.0f);
-    isetRand($I0, 64);
-    isetAdd($I0, $I0, 48);
-    alpha($I0);
-    isetRand($I0, 64);
-    isetAdd($I0, $I0, 128);
-    isetRand($I1, 64);
-    isetAdd($I1, $I1, 128);
-    isetRand($I2, 64);
-    isetAdd($I2, $I2, 128);
-    color($I0, $I1, $I2);
+    // ★★ 2026-09-30（owner 实跑：「**不够亮，样式对了**」）—— **提亮（❓自定，不是一手）**：
+    //   一手是 `alpha = 48 + rand(64)`（48–111）、`color = (128 + rand(64)) ×3`（128–191）、
+    //   `scale = 1.1 + rand(1.0)`；量纲自查过（我们的 alpha/color 都是 0–255 制、`blendMode(1)` = 加法、
+    //   `fsetRand/isetRand` 的 `randf() ∈ [0,1)` 与 TH08 同义）⇒ **不是抄错量纲，是亮度不够**。
+    //   做法：把**随机区间换成钳过的常数**（anm 脚本里没有 `min`），`alpha` 取 200、三通道 `color` 取 230
+    //   （≈ 一手中位值的 1.8× / 1.4×，owner 口径的 K≈1.6 量级）；**随机仍保留在 `scale` 上**（保形）。
+    //   ❓要回到一手：还原下面三行（一手值写在注释里）；K/S 旋钮登记 `TUNING.md` §2.1ccc-26。
+    alpha(200);
+    color(230, 230, 230);
 +20: // 20
     delete();
 }
