@@ -183,6 +183,8 @@ APPEND = [
                      #   生成器 `assets/ability/make_marisa_bullet_art.py`（entry 55 / sprite 436..439）。
                      anm="CE_ANM_ABILITY_SCRIPT_MARISA_BULLET", sfx=-1, func_on_init=0)]),  # 向后 24/帧
 
+
+
 ]
 
 
@@ -1932,6 +1934,45 @@ def _youkai_tier_sets(target_file: str, anm_ids: dict) -> list:
     return out
 
 
+def _pofv109_bossatk_sets(anm_ids: dict) -> list:
+    """→ 2 组：109「花映塚 × 獣王園」的 **boss attack**（C3 / C4）。
+
+    ## 一手：TH09 那一支在干什么（`0x41f999`）
+    `0x41f984` 先 `0x40f7d0(EM, 3)` 查「场上有没有 kind-3 boss」：有 ⇒ 退回 L3；
+    **没有** ⇒ 走 boss attack 支：
+      · `0x403e50(2, 2, 0, &field)` = **送攻击**（A 链敌机 / B 链 `fairy_bullets` 弹幕 / C 链演出）
+      · `0x403cf0` = **CA L3 的消弹圈**（0 / 3.5 / 128 → 448）
+      · `0x41f310(300.0f)` = 从 `player+0x30388` 扣 300（钳 ≥1.0f）；`0x401500(8)` = 8 帧计时
+    在**对手那边**：送过去的敌机由**上至下**压过来（A 链落地 `FUN_0040d9e0`，载体飞 60..160 帧）。
+
+    ## 单机化（owner 口径）：**画在自己这边、往上打、伤的是敌人**
+    原话：「自己会额外发射如对战作送到对面的攻击，但是**这些攻击是会对敌人造成伤害的**」
+         「这些弹幕得**往"上"打**，版顶=版底」「**也可以画在自己这边，但是是对敌人造成伤害**」。
+    ⇒ 走**原生 shooter 路**（卡侧自己申请一格子机，`ce_tick_shooters_for_card` 发），
+      全行 `angle = −π/2`（正上方）；节奏由卡侧自己的计数器当 short_timer ⇒ `fire_rate` 是
+      「每 N 个我们的计数发一次」（同豌豆先例）。
+    · `POFV109_BOSSATK_C3` = **只有额外攻击**（owner：「C3 也有送到对面的额外攻击——只不过自己不是 boss」）
+    · `POFV109_BOSSATK_C4` = 同一路**更密**（±8° 三路扇面），并且卡侧同时进 boss 态。
+    ⚠ 贴图是**借**的：`CE_ANM_ABILITY_SCRIPT_MARISA_BULLET`（= TH18 原生 `pl01.anm` script5 的移植，
+      一张真正的自机弹贴图）。TH09 那发「送到对面的弹」原图未切 ⇒ **❓ 占位**，登记 `TUNING.md` §2.0v-4。
+    """
+    specs = [
+        ("POFV109_BOSSATK_C3", 6, 12,
+         [(0.0, -1.5707964)]),
+        ("POFV109_BOSSATK_C4", 3, 10,
+         [(-24.0, -1.5707964 - 0.14), (0.0, -1.5707964), (24.0, -1.5707964 + 0.14)]),
+    ]
+    out = []
+    for name, rate, dmg, rows in specs:
+        rs = [dict(fire_rate=rate, start_delay=0, damage=dmg, hit_w=16.0, hit_h=16.0,
+                   spawn_dx=dx, spawn_dy=0.0, angle=ang, speed=16.0, opt_slot=0, mode=0,
+                   anm="CE_ANM_ABILITY_SCRIPT_MARISA_BULLET", sfx=-1, hit_fx=-1,
+                   fire_rate2=0, start_delay2=0, func_on_init=0, func_on_tick=0,
+                   func_on_draw=0, func_on_hit=0) for dx, ang in rows]
+        out.append((name, b"".join(pack_shooter(r, anm_ids) for r in rs) + TERMINATOR))
+    return out
+
+
 def sets_for_file(target_file: str, anm_ids: dict) -> list:
     # ★ **顺序即槽号**（`N_RETAIL + 序号`）⇒ 111 的五组必须排在最后：插在中间会让
     #   117 的 WOLF/EAGLE 十个槽整体移位（`animal_core.h` 的槽号是写死的 ⇒ 静默错弹）。
@@ -1942,7 +1983,10 @@ def sets_for_file(target_file: str, anm_ids: dict) -> list:
             + _marisa_formation_sets(anm_ids)
             # ★ 2026-09-22：妖侧的 15 组**排在最末**（下标 = 槽号 ⇒ 插在中间会把 111 的
             #   `MARISA_OPT_*` 与 117 的 WOLF/EAGLE 整体移位，那是静默错弹）。
-            + _youkai_tier_sets(target_file, anm_ids))
+            + _youkai_tier_sets(target_file, anm_ids)
+            # ★ 2026-10-01：109 的 boss attack 两组**接在最末**（新组只能往末尾加 ——
+            #   插在中间会把 117 的 WOLF/EAGLE 槽号整体顶掉，那是静默错弹）。
+            + _pofv109_bossatk_sets(anm_ids))
 
 
 def _alloc_names(sets: list) -> list:

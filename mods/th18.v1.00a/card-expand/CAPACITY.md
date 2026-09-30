@@ -732,7 +732,17 @@ CE_SHT_SET_MARISA_MAIN_04 0x0050
 CE_SHT_SET_MARISA_MAIN_05 0x0051
 CE_SHT_SET_MARISA_MAIN_06 0x0052
 CE_SHT_SET_MARISA_MAIN_07 0x0053
+CE_SHT_SET_POFV109_BOSSATK_C3 0x0068
+CE_SHT_SET_POFV109_BOSSATK_C4 0x0069
 ```
+
+> ★ **2026-10-01（109 的 boss attack）**：上面两组是**新占用**，落在 `0x0068` / `0x0069`
+> （1 + 3 条 shooter）。它们把生成序列的**已用槽推到 `0x69` = 105 格** ⇒ `append_shooterset.py`
+> 自动把产物头 `+0x02`（`N_SLOTS`）从 **96 抬到 128**（数组区预留 `N_SLOTS_RESERVED` = 256 格，
+> 数据区基址 `0x4e0` 是 exe 里的硬编码立即数 `th18:0x45a830`，**不用改 exe 补丁**）。
+> ⚠ 原来 `0x48`–`0x5f` 是「计数内剩 25 格」，现在**那 25 格仍在**、只是宣布的计数从 96 抬到 128
+> ⇒ 新组一律**接在 `sets_for_file()` 的最后**（插在中间会把 117 的 WOLF/EAGLE 槽号整体顶掉，
+> `append_shooterset.py` 里有硬门会当场拦住）。
 
 **A3. 图集 entry（`CE_ANM_ABILITY_ATLAS_*`，32 个）** —— 每个 = `ability.anm` 一个 entry
 
