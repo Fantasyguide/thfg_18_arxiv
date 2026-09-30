@@ -256,6 +256,28 @@ void pofv_node_radius(float r0, float dr, int32_t age, int32_t life, float *out)
     *out = r;
 }
 
+void pofv_storm_profile_for(int character, pofv_storm_profile_t *out)
+{
+    if (!out) return;
+    memset(out, 0, sizeof *out);
+    switch (character) {
+    case 2:   /* ★ 咲夜 → **TH09 的暴风**：连锁 + 能直接打死幽灵 */
+        out->chain = 1;
+        out->kills_ghosts = 1;
+        break;
+    case 3:   /* ★ 早苗 → **TH19**：没有暴风连锁，**只是暴风消弹** */
+        out->chain = 0;
+        out->kills_ghosts = 0;
+        break;
+    case 0:   /* 灵梦 / 魔理沙 —— ❓ owner 待定 ⇒ 占位 = TH09 档（= 改造前行为）*/
+    case 1:
+    default:
+        out->chain = 1;
+        out->kills_ghosts = 1;
+        break;
+    }
+}
+
 int32_t pofv_storm_life_for_chain(int32_t chain)
 {
     float r1;

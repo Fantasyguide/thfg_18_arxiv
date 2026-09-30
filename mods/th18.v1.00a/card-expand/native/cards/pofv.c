@@ -232,6 +232,7 @@ static float   s_aura_r;                /* 本帧的判定半径（≤ 0 = 结�
 static int32_t s_aura_age;              /* FIELD：本个场已活了几帧（−1 = 需要（重）出生）*/
 static int32_t s_shift_frames;          /* 连续按住 Shift 的帧数（早苗的「蓄力」）*/
 static int32_t s_aura_char = -1;        /* 上一次打过日志的角色号（换角色时打一行，便于实跑判读）*/
+static pofv_storm_profile_t s_storm_prof;   /* ★ 本帧的暴风档案（按自机角色；owner 第四/第五条）*/
 
 /* 结界的**跟随 VM**（判定半径 = 绘制半径，一手 TH19 §7.1/§9.2）。
  * 懒建：第一帧 tick 时起（`on_ctor` 发生在商店里，ANM 那边不一定就绪）；
@@ -245,6 +246,7 @@ static void aura_update(void)
     int character = *(const int32_t *)CE_ADDR_CHARACTER;
 
     pofv_aura_profile_for(character, &s_aura);
+    pofv_storm_profile_for(character, &s_storm_prof);   /* ★ 暴风也按角色（owner 第四/第五条）*/
     if (character != s_aura_char) {          /* 换角色 / 首次：打一行（实跑判读用）*/
         s_aura_char = character;
         ce_log("pofv: aura profile for character %d -> mode %d (%s), pad_linear %d, "
@@ -253,6 +255,9 @@ static void aura_update(void)
                s_aura.mode == POFV_AURA_FIELD ? "TH09 anchored field" : "TH19 growing circle",
                (int)s_aura.pad_linear, (int)s_aura.r_fixed, (int)s_aura.k,
                (int)s_aura.r0, (double)s_aura.dr, (int)s_aura.life, (int)s_aura.grow_frames);
+        ce_log("pofv: storm profile -> chain %d, kills_ghosts %d (%s)",
+               (int)s_storm_prof.chain, (int)s_storm_prof.kills_ghosts,
+               s_storm_prof.chain ? "TH09 chain storm" : "TH19 cancel-only storm");
     }
 
     /* Shift 时长 → TH19 的蓄力量（owner 口径；❓ 每帧 2 ⇒ 100 帧满）*/
@@ -406,9 +411,13 @@ static void do_storm_frame(pofv_card_t *s, const pofv_storm_t *bl, int *scan_bud
     }
 
     /* 一手：蓝圈**有攻击力** ⇒ 覆盖圈面的矩形伤害源（照 Remilia / season.c）。
-     * ★ 场每帧都放一个：这就是「妖精飞进来才被点着」的那只手（旧实现只放 2 帧）。*/
-    ce_raise_damage_cap(POFV_DMG_CAP);
-    ce_damage_rect(pos, 0.0f, POFV_STORM_DMG_LIFE, POFV_BLAST_DMG, r * 2.0f, r * 2.0f);
+     * ★ 场每帧都放一个：这就是「妖精飞进来才被点着」的那只手（旧实现只放 2 帧）。
+     * ★★ 2026-10-01（owner 第四条「th09 暴风可以直接打死 th09 幽灵」/ 第五条「th19 没有暴风连锁，
+     *   只是暴风消弹」）：**伤害源只在「能打死幽灵」的那一档放** —— 早苗（TH19）档**只消弹**。*/
+    if (s_storm_prof.kills_ghosts) {
+        ce_raise_damage_cap(POFV_DMG_CAP);
+        ce_damage_rect(pos, 0.0f, POFV_STORM_DMG_LIFE, POFV_BLAST_DMG, r * 2.0f, r * 2.0f);
+    }
 
     /* ★★ 2026-10-01（口径 10）：**旧的自建活化灵池已整条撤掉** —— 灵现在是**真敌人**
      *   （`ce_spawn_enemy` + `CESpirit109`），与普通敌机一样吃上面这个 `ce_damage_rect`
@@ -646,7 +655,7 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
     if (!(ev->flags & CE_EDEATH_F_REAL)) return;
 
     covering = pofv_storm_chain_at(&s_storm, ev->x, ev->y);
-    chain = covering > 0 ? covering + 1 : 1;
+    chain = (s_storm_prof.chain && covering > 0) ? covering + 1 : 1;   /* ★ TH19 档不连锁 */
     if (chain > POFV_BLAST_CHAIN_MAX) chain = POFV_BLAST_CHAIN_MAX;
     s->st.chain_kills = chain;
     s->st.last_kill_frame = s_frame;

@@ -254,6 +254,17 @@ void pofv_storm_final_radius(int32_t chain, float *out);
 /* 兼容旧名（旧实现的"爆风半径表"就叫 `pofv_blast_radius`；语义现在 = 该档暴风的终点半径）。*/
 void pofv_blast_radius(int chain, float *out);
 
+/* ★★★ 2026-10-01 owner 第四 / 第五条口径：**暴风也按自机角色取哪一边** ——
+ *   「**th09 暴风可以直接打死 th09 幽灵**」「不过似乎 **th19 没有暴风连锁，只是暴风消弹**」。
+ *   与结界同一套分派（咲夜取 TH09 / 早苗取 TH19 / 灵梦·魔理沙待 owner）。 */
+typedef struct {
+    int32_t chain;        /* 1 = **连爆**（TH09：击破 ⇒ 新场的档 +1）；0 = **不连锁**（TH19）*/
+    int32_t kills_ghosts; /* 1 = 暴风**能直接打死灵**（TH09）；0 = **只消弹**、不给敌人伤害（TH19）*/
+} pofv_storm_profile_t;
+
+/* 按 TH18 角色号取暴风档案（未识别 / 待定 ⇒ 回落到 TH09 档 = 改造前行为）。 */
+void pofv_storm_profile_for(int character, pofv_storm_profile_t *out);
+
 /* 连爆档上限（1..4）。❓ 自定：原版「连爆质量」的分档数没逆到；一手的**场**只给了半径律
  * （见上面 §C 的表），没给「档」这一层 —— 它是本卡对「暴风越连锁越大」的建模。 */
 #define POFV_BLAST_CHAIN_MAX        4

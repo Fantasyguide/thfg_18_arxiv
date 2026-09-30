@@ -614,6 +614,27 @@ int main(void)
         pofv_aura_radius(&pr, 0, 0, 0);
     }
 
+    /* ---- H.2 ★★ 2026-10-01 owner 第四 / 第五条：**暴风也按自机角色取哪一边** ----
+     *   「th09 暴风**可以直接打死 th09 幽灵**」「不过似乎 th19 **没有暴风连锁，只是暴风消弹**」 */
+    {
+        pofv_storm_profile_t sp;
+
+        pofv_storm_profile_for(2, &sp);        /* 咲夜 → TH09：连爆 + 能直接打死幽灵 */
+        CHECK(sp.chain == 1 && sp.kills_ghosts == 1);
+
+        pofv_storm_profile_for(3, &sp);        /* 早苗 → TH19：**不连锁、只消弹**（不给敌人伤害）*/
+        CHECK(sp.chain == 0 && sp.kills_ghosts == 0);
+
+        pofv_storm_profile_for(0, &sp);        /* 灵梦 / 魔理沙 → ❓ 待定 ⇒ 占位 = TH09 档 */
+        CHECK(sp.chain == 1 && sp.kills_ghosts == 1);
+        pofv_storm_profile_for(1, &sp);
+        CHECK(sp.chain == 1 && sp.kills_ghosts == 1);
+        pofv_storm_profile_for(99, &sp);       /* 未识别 ⇒ 同一档 */
+        CHECK(sp.chain == 1 && sp.kills_ghosts == 1);
+
+        pofv_storm_profile_for(3, 0);          /* NULL 安全 */
+    }
+
     /* 多位置打包撒（结界碰弹：位置 = 被碰到的弹的原位，颗数受每帧上限钳、面值守恒） */
     {
         pofv_power_pool_t pool;
