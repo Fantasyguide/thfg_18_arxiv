@@ -309,6 +309,38 @@ int main(void)
     /* 关卡号传 0/负数按 stage 1 那一支兜底（不影响上面各条的边界） */
     CHECK(senro_hit(&st, 20, 0) == 20);
 
+    /* ======= K. 定宽字段「画哪几位」（一手 0x404a25–0x404a3c 的 started 闸 + 个位恒画）=======
+     * 2026-09-30 第五轮修 bug：旧实现「凡是 0 就跳过」把 200000 画成 `2    0`。 */
+    {
+        int d[7], dr[7], i;
+        /* 200000（最大樱点初值，6 位）：第一位非零 ⇒ **六位全画** */
+        senro_field_layout(200000, 6, d, dr);
+        CHECK(d[0] == 2 && d[1] == 0 && d[2] == 0 && d[3] == 0 && d[4] == 0 && d[5] == 0);
+        for (i = 0; i < 6; ++i) CHECK(dr[i] == 1);
+        /* 1234（6 位字段）：前两位是**前导**零 ⇒ 不画；后四位全画 */
+        senro_field_layout(1234, 6, d, dr);
+        CHECK(dr[0] == 0 && dr[1] == 0);
+        CHECK(dr[2] == 1 && dr[3] == 1 && dr[4] == 1 && dr[5] == 1);
+        CHECK(d[2] == 1 && d[3] == 2 && d[4] == 3 && d[5] == 4);
+        /* 100001：中间那四个 0 在 started 之后 ⇒ 必须画（旧 bug 就丢在这） */
+        senro_field_layout(100001, 6, d, dr);
+        CHECK(dr[0] == 1 && dr[1] == 1 && dr[2] == 1 && dr[3] == 1 && dr[4] == 1 && dr[5] == 1);
+        CHECK(d[1] == 0 && d[2] == 0 && d[3] == 0 && d[4] == 0 && d[5] == 1);
+        /* 值 0 / 5（5 位 +C 字段）：个位恒画 ⇒ 只画最后一位 */
+        senro_field_layout(0, 5, d, dr);
+        CHECK(dr[0] == 0 && dr[1] == 0 && dr[2] == 0 && dr[3] == 0 && dr[4] == 1);
+        CHECK(d[4] == 0);
+        senro_field_layout(5, 5, d, dr);
+        CHECK(dr[4] == 1 && dr[3] == 0 && d[4] == 5);
+        /* 7 位（最大樱点 ≥ 1000000 那一支）全画 */
+        senro_field_layout(1000000, 7, d, dr);
+        for (i = 0; i < 7; ++i) CHECK(dr[i] == 1);
+        CHECK(d[0] == 1);
+        /* 负数按 0 处理（与卡侧原来的 value < 0 归一一致） */
+        senro_field_layout(-5, 5, d, dr);
+        CHECK(d[4] == 0 && dr[4] == 1);
+    }
+
     /* ==================== J. 蓝点（点道具）分值（0x4330db–0x4331e5）==================== */
     senro_init(&st, SENRO_DIFF_NORMAL);
     CHECK(senro_point_item_value(&st) == SENRO_POINT_BASE);        /* 樱点 0 ⇒ 基线 50000 */

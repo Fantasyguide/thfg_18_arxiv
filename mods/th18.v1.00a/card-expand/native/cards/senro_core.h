@@ -234,6 +234,14 @@ int32_t senro_item_cherry(senro_state_t *s, uint32_t type);
  * 返回本次加了多少樱点。⚠ 不再区分聚焦 —— 一手那条公式里**没有**聚焦项（高低速的差别已经
  * 体现在 `damage` 本身），旧版的「高速 ×3 / 低速 ×1」是 ❓自定，2026-09-30 撤掉。 */
 int32_t senro_hit(senro_state_t *s, int32_t damage, int32_t stage);   /* stage = 关卡号（1 起）*/
+/* 定宽字段「画哪几位」（TH07 `th07:0x404a25`–`0x404a3c` 的逐指令）：
+ *   · **每一位都推进 x**（字距 7）⇒ 字段定宽、数字靠右；
+ *   · `started` 闸：**只有第一个非零位把它置 1**（`0x404a2b`：`cmp 数字,0; je` 才跳过置位）
+ *     ⇒ 第一个非零位**之后**的所有位（**含 0**）都要画；
+ *   · 个位（divisor == 1）**恒画**（`0x404a38`）⇒ 值 0 显示一个 `0`。
+ * ⚠ 2026-09-30 第五轮修 bug：卡侧旧实现写成「凡是 0 就跳过」，于是 `200000` 画成 `2    0`。
+ * `out_digit[i]` = 该位数字、`out_draw[i]` = 该位画不画；两个数组都要能放 `digits` 个元素。 */
+void senro_field_layout(int32_t value, int digits, int *out_digit, int *out_draw);
 
 /* 点道具（蓝点）分值 = 本卡的「最大得点」：`SENRO_POINT_BASE + max(0, cherry − BASE)/5`，
  * 向下取整到 10（th07:0x4330db–0x4331e5 的一手结构）。返回**分**（不是 ×10 的身价）。 */

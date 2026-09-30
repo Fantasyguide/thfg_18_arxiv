@@ -342,6 +342,7 @@
                                              * ⇒ 盒 = `T .. T+48` × `T.y .. T.y+16`（与标签左半重合处）*/
 #define SENRO_HUD_BORDER_DY         8.0f
 #define SENRO_HUD_VM_SLOTS        17        /* 5(+C) + 6(樱点) + 6(最大樱点) —— 全是定宽字段 */
+#define SENRO_HUD_FIELD_MAX         7        /* 最长字段 = 最大樱点的 7 位（值 ≥ 1000000 那一支）*/
 /* ★★ 2026-09-15g：**压暗这一路改走跨卡统一件 `cards/hud_dim.{h,c}`**（唯一实现）。
  * 性质 = ❓ **用户口径（UI 统一），不是复刻**（用户 2026-09-15：「压暗这个涉及到 UI 统一，
  * 这个不能复刻。是那个靠近透明吧」）⇒ **动态**统一：终点 alpha **32**（原 64）、起始 255、
@@ -668,16 +669,16 @@ static void senro_hud_digit(int slot, float x640, float y640, float scale, uint3
 static float senro_hud_field(int *slot, float x640, float y640, float pitch, float scale,
                             uint32_t argb, int32_t value, int digits)
 {
-    int32_t div = 1;
-    int i;
+    int d[SENRO_HUD_FIELD_MAX], draw[SENRO_HUD_FIELD_MAX], i;
 
-    if (value < 0) value = 0;
-    for (i = 1; i < digits; ++i) div *= 10;
-    for (i = 0; i < digits; ++i, div /= 10) {
-        int d = (div > 0) ? (int)((value / div) % 10) : 0;
-        if (d != 0 || div <= 1)
-            senro_hud_digit(*slot, x640, y640, scale, argb, d);
-        ++*slot;
+    /* ★★ 2026-09-30 第五轮修 bug：**画哪几位**改由 `senro_core.c` 的 `senro_field_layout()` 判
+     *   （一手 `started` 闸：只有**第一个非零位之前**的 0 才跳过，之后含 0 全画、个位恒画）。
+     *   旧实现写成「凡是 0 就跳过」⇒ 实跑 `200000` 被画成 `2    0`（owner 报）。*/
+    if (digits > SENRO_HUD_FIELD_MAX) digits = SENRO_HUD_FIELD_MAX;
+    senro_field_layout(value, digits, d, draw);
+    for (i = 0; i < digits; ++i) {
+        if (draw[i]) senro_hud_digit(*slot, x640, y640, scale, argb, d[i]);
+        ++*slot;                              /* 每一位都推进（一手：字段定宽、数字靠右）*/
         x640 += pitch;
     }
     return x640;

@@ -236,6 +236,22 @@ int32_t senro_item_cherry(senro_state_t *s, uint32_t type)
     return d;
 }
 
+void senro_field_layout(int32_t value, int digits, int *out_digit, int *out_draw)
+{
+    int32_t div = 1;
+    int i, started = 0;
+
+    if (digits <= 0) return;
+    if (value < 0) value = 0;
+    for (i = 1; i < digits; ++i) div *= 10;
+    for (i = 0; i < digits; ++i, div /= 10) {
+        int d = (div > 0) ? (int)((value / div) % 10) : 0;
+        if (d != 0) started = 1;                      /* 一手 0x404a25/0x404a2b：只有非零位置 started */
+        if (out_digit) out_digit[i] = d;
+        if (out_draw)  out_draw[i]  = (started || div <= 1) ? 1 : 0;   /* 一手 0x404a32–0x404a3c */
+    }
+}
+
 int32_t senro_hit(senro_state_t *s, int32_t damage, int32_t stage)
 {
     int32_t p, k, v;
