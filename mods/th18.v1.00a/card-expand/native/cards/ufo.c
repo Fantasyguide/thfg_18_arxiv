@@ -5556,7 +5556,8 @@ static void on_item_frame(ce_card_t *c)
     }
 #endif
 
-#define UFO_DEBUG_FREEZE_ENEMY 1   /* ★★★ 2026-09-26 第 49 轮（owner）：「**暂时禁用 UFO 敌人的移动**，我好对比」
+#define UFO_DEBUG_FREEZE_ENEMY 0   /* ★ 第 55 轮（owner）：「把固定 UFO 敌人位置的回退」⇒ 1 → 0（代码留着）
+                                    * ★★★ 2026-09-26 第 49 轮（owner）：「**暂时禁用 UFO 敌人的移动**，我好对比」
                                     *   ⇒ 每游玩帧把 UFO 敌机的 `final_pos`（`0x1270/0x1274`）钉回它现身时
                                     *   的那一点。**为什么不在 ECL 里删 `movePosTime`**：`assets/ecl/ufo.ecl.txt`
                                     *   受 `make ecl-ufo` 的**往返行数对账**保护（一手保真），删一行就编译不过 —
