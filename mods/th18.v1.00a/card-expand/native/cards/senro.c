@@ -585,7 +585,8 @@ _Static_assert(sizeof(senro_card_t) <= 496, "ce_state 上限 496 字节（超了
 typedef struct {
     uint32_t id[SENRO_HUD_VM_SLOTS];        /* 每个数字位一台 VM（0 = 空）*/
     int32_t  shown[SENRO_HUD_VM_SLOTS];     /* 该 VM 当前挂的 sprite（省一次 set_sprite；-1 = 未知）*/
-    int32_t  n;                             /* 上一帧用到的槽数（本帧末尾收掉多余的）*/
+    int32_t  used;                          /* 本帧字段**消费**到的槽数（含被跳过的前导零位，末位收尾用）*/
+    uint8_t  written[SENRO_HUD_VM_SLOTS];   /* ★ 本帧这一槽**真的画了字**（没画的必须藏/收 —— 见 `on_draw` 的注）*/
     int32_t  warned;                        /* 起不来只报一次日志（防刷屏）*/
     uint32_t border_id;                     /* 森罗结界指示的脉动花（TH07 的 VM4 / sprite143）*/
     uint32_t label_id;                      /* ★ 数字左边那块固定标签（TH07 的 VM2 / sprite142，脚本 308）*/
@@ -611,8 +612,12 @@ static void senro_hud_vm_kill(uint32_t *id)
 static void senro_hud_clear(void)
 {
     int i;
-    for (i = 0; i < SENRO_HUD_VM_SLOTS; ++i) { senro_hud_vm_kill(&s_hud.id[i]); s_hud.shown[i] = -1; }
-    s_hud.n = 0;
+    for (i = 0; i < SENRO_HUD_VM_SLOTS; ++i) {
+        senro_hud_vm_kill(&s_hud.id[i]);
+        s_hud.shown[i] = -1;
+        s_hud.written[i] = 0;
+    }
+    s_hud.used = 0;
     senro_hud_vm_kill(&s_hud.border_id);
     senro_hud_vm_kill(&s_hud.label_id);        /* ★ 标签也是本卡的 VM（漏收 = 永久钉在屏幕上）*/
 }
@@ -659,7 +664,8 @@ static void senro_hud_digit(int slot, float x640, float y640, float scale, uint3
         if (ce_anm_set_sprite(anm, *id, (int)(CE_ANM_ABILITY_SPRITE_SENRO_HUD_D0 + (uint32_t)digit)))
             s_hud.shown[slot] = digit;
     }
-    if (slot + 1 > s_hud.n) s_hud.n = slot + 1;
+    s_hud.written[slot] = 1;
+    if (slot + 1 > s_hud.used) s_hud.used = slot + 1;
 }
 
 /* 定宽字段（一手：`th07:0x4049eb`–`0x404a89`）——
@@ -1463,7 +1469,7 @@ static int on_draw(ce_card_t *c)
     uint32_t a, col_plus, col_cherry;
     ce_hud_slot_t cur;
     float bx, by, tx, ty, x, y, scale_plus, pitch_plus;
-    int slot = 0, i, n_was, border, digits_max;
+    int slot = 0, i, border, digits_max;
 
     /* ★★ 2026-09-12 对抗审计补的门：`on_draw`（虚表 +0x48）**在主菜单 / 标题里也会被调**
      *   （`AbilityManager__on_draw` `0x408ab0` 每帧遍历卡链表调它；`on_tick_2` 才是「菜单/商店不跑」）。
@@ -1497,8 +1503,8 @@ static int on_draw(ce_card_t *c)
     tx = bx + SENRO_HUD_T_OFF_X;                    /* 原版锚 T（= 标签 VM2 的 pos）在本卡里的落点 */
     ty = by + SENRO_HUD_T_OFF_Y;
 
-    n_was = s_hud.n;
-    s_hud.n = 0;
+    s_hud.used = 0;
+    memset(s_hud.written, 0, sizeof s_hud.written);
 
     /* ⓪ ★★ **数字左边那块固定标签**（TH07 的 VM2 / `ascii.anm` sprite142，脚本 308）——
      *    **必须先于数字**：TH07 是每帧「标签 → 数字 → 脉动花」这个次序调的（`th07:0x404910`
@@ -1531,10 +1537,19 @@ static int on_draw(ce_card_t *c)
                         (col_cherry & 0x00ffffffu) | (a << 24), s->st.cherry, SENRO_HUD_FIELD_CHERRY);
 
     /* ② 同行的**最大樱点**：紧跟樱点字段 **+9 单位**（`th07:0x404ac8`）⇒ 字段起点固定
-     *    （樱点字段是定宽的），位数 = 6，值 ≥ 1000000 时 7（`th07:0x404ae0` 那一支）。*/
-    digits_max = (s->st.cherry_max >= 1000000) ? 7 : SENRO_HUD_FIELD_CHERRY;
-    (void)senro_hud_field(&slot, x + SENRO_HUD_GAP_MAX, y, SENRO_HUD_PITCH, SENRO_HUD_SCALE,
-                          (SENRO_HUD_COLOR_MAX & 0x00ffffffu) | (a << 24), s->st.cherry_max, digits_max);
+     *    （樱点字段是定宽的），位数 = 6，值 ≥ 1000000 时 7（`th07:0x404ae0` 那一支）。
+     *    ★★ 2026-09-30 第六轮（owner：「**最大樱点基础值不应该画 —— 它对应我们额外最大得点，
+     *    得去掉基础值**」）：**显示 `cherry_max − cherry_max_base`**（= 玩家赚到的增量）。
+     *    一手口径同构：TH07 三行读数都显示 `绝对值 − [globals+0x88]`，而那个基准正是开场时加在
+     *    三个绝对值上的同一个偏移（`th07:0x443877`/`0x44388e` 的 SHT 初始化）⇒ 显示出来的就是
+     *    SHT 的初值；本卡把「本关开场那个最大樱点」当基准（NORMAL = 200000）⇒ 开场显示 0。*/
+    {
+        int32_t cmax_show = s->st.cherry_max - s->st.cherry_max_base;
+        if (cmax_show < 0) cmax_show = 0;
+        digits_max = (cmax_show >= 1000000) ? 7 : SENRO_HUD_FIELD_CHERRY;
+        (void)senro_hud_field(&slot, x + SENRO_HUD_GAP_MAX, y, SENRO_HUD_PITCH, SENRO_HUD_SCALE,
+                              (SENRO_HUD_COLOR_MAX & 0x00ffffffu) | (a << 24), cmax_show, digits_max);
+    }
 
     /* ③ 上一行：**+C**（5 位定宽）。结界外的样子与结界中完全不同（这就是「森罗结界指示」的主体）：
      *    · 结界外：樱粉、字距 7、倍率 1.0、位置 T+(53,2)
@@ -1567,8 +1582,17 @@ static int on_draw(ce_card_t *c)
         senro_hud_vm_kill(&s_hud.border_id);
     }
 
-    /* ⑤ 收掉本帧没用到的槽（定宽字段 ⇒ 正常总是 17 个；这里是「池满 / VM 起不来」时的兜底）。*/
-    for (i = s_hud.n; i < n_was; ++i) { senro_hud_vm_kill(&s_hud.id[i]); s_hud.shown[i] = -1; }
+    /* ⑤ ★★ 2026-09-30 第六轮修 bug（owner：「结束结界的时候，我似乎看见了…被放大的 hud 仍然存在」）：
+     *    旧实现只收「**槽号 ≥ 本帧最高画过的槽**」的那些 VM，于是**中间**那些「上一帧画过、这一帧
+     *    被跳过的位」（值变短、或结界结束后 +C 行缩回去）没人管 —— 它们仍活着，还带着上一帧的
+     *    **放大 scale / 结界中那套偏移与红色**，就那么钉在屏幕上（放大 1.41 倍的字最显眼）。
+     *    现在按「本帧真的画了没」逐槽收：没画的、且在 `used` 之内的 **藏起来**（alpha 0，槽还会
+     *    被下一帧重用 ⇒ 不 churn VM），≥ `used` 的**直接删**（句柄自愈，保持旧口径）。*/
+    for (i = 0; i < SENRO_HUD_VM_SLOTS; ++i) {
+        if (!s_hud.id[i] || s_hud.written[i]) continue;         /* 本帧画过的：不动 */
+        if (i < s_hud.used) (void)ce_anm_set_color(s_hud.id[i], 0x00ffffffu);  /* 藏：alpha 0 */
+        else { senro_hud_vm_kill(&s_hud.id[i]); s_hud.shown[i] = -1; }         /* 收：句柄自愈 */
+    }
 
     /* ⑥ ★ 2026-09-30：进入结界的公告（TH07 GUI kind 2 = `Supernatural Border!!`）。
      *    年龄在**这里**推进 —— `on_draw` 就是「本帧画一次」的相位（TH07 同样每帧重发这条公告，

@@ -341,6 +341,26 @@ int main(void)
         CHECK(d[4] == 0 && dr[4] == 1);
     }
 
+    /* ======= L. 最大樱点的「基础值」（HUD 显示 `cherry_max − cherry_max_base`，2026-09-30 第六轮）====
+     * owner：「最大樱点基础值不应该画 —— 它对应我们额外最大得点，得去掉基础值」。 */
+    {
+        senro_state_t b;
+        senro_init(&b, SENRO_DIFF_NORMAL);
+        CHECK(b.cherry_max == 200000 && b.cherry_max_base == 200000);   /* NORMAL：开场显示 0 */
+        CHECK(senro_cherry_max_init(SENRO_DIFF_LUNATIC) == 300000);
+        senro_init(&b, SENRO_DIFF_LUNATIC);
+        CHECK(b.cherry_max_base == 300000);
+        CHECK(b.cherry_max - b.cherry_max_base == 0);
+        /* 结界自然结束 +10000 ⇒ 显示值 = 10000（base 不动） */
+        (void)open_border(&b);
+        while (senro_border_active(&b)) (void)senro_tick(&b, 0);
+        CHECK(b.cherry_max == 310000 && b.cherry_max_base == 300000);
+        CHECK(b.cherry_max - b.cherry_max_base == 10000);
+        /* 换关重设：base 跟着难度表重取 */
+        senro_stage_reset(&b, SENRO_DIFF_HARD);
+        CHECK(b.cherry_max == 250000 && b.cherry_max_base == 250000);
+    }
+
     /* ==================== J. 蓝点（点道具）分值（0x4330db–0x4331e5）==================== */
     senro_init(&st, SENRO_DIFF_NORMAL);
     CHECK(senro_point_item_value(&st) == SENRO_POINT_BASE);        /* 樱点 0 ⇒ 基线 50000 */

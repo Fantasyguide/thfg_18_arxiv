@@ -69,6 +69,7 @@ static void senro_reset_common(senro_state_t *s, int difficulty, int keep_stats)
     }
     s->cherry = senro_cherry_init(difficulty);
     s->cherry_max = senro_cherry_max_init(difficulty);
+    s->cherry_max_base = s->cherry_max;      /* 显示用的基准：HUD 画 `cherry_max − 本值`（见头注）*/
     if (s->cherry > s->cherry_max) s->cherry = s->cherry_max;
     s->plus = 0;                 /* th07:0x4416ee / 0x441da4：两种收尾都把 Plus 打回基准 */
     s->active = 0;
