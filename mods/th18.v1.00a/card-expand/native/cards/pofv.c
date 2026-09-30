@@ -248,11 +248,11 @@ static void aura_update(void)
     if (character != s_aura_char) {          /* 换角色 / 首次：打一行（实跑判读用）*/
         s_aura_char = character;
         ce_log("pofv: aura profile for character %d -> mode %d (%s), pad_linear %d, "
-               "r_fixed %d, K %d, r0 %d dr %d life %d",
+               "r_fixed %d, K %d, r0 %d, dr %.2f, life %d, grow %d",
                character, (int)s_aura.mode,
-               s_aura.mode == POFV_AURA_FIELD ? "TH09 anchored field" : "TH19 static circle",
+               s_aura.mode == POFV_AURA_FIELD ? "TH09 anchored field" : "TH19 growing circle",
                (int)s_aura.pad_linear, (int)s_aura.r_fixed, (int)s_aura.k,
-               (int)s_aura.r0, (int)s_aura.dr, (int)s_aura.life);
+               (int)s_aura.r0, (double)s_aura.dr, (int)s_aura.life, (int)s_aura.grow_frames);
     }
 
     /* Shift 时长 → TH19 的蓄力量（owner 口径；❓ 每帧 2 ⇒ 100 帧满）*/
@@ -273,8 +273,14 @@ static void aura_update(void)
         if (s_aura_age >= s_aura.life) s_aura_age = -1;   /* 到点：下一帧在自机处重生 */
         else ++s_aura_age;
     } else {
+        /* ★ STATIC（TH19 系 / 占位档）：**也跟着 `dr` 长**（owner：「aura 和锚定场本质上是同一个
+         *   东西」），只是**长到蓄力给的上限就停**；Shift 一松、蓄力归零 ⇒ 缩回没有、下次从 0 长。*/
+        int32_t charge = pofv_aura_shift_charge(s_shift_frames);
         if (pp) { s_aura_cx = pp[0]; s_aura_cy = pp[1]; }
-        pofv_aura_radius(&s_aura, 0, pofv_aura_shift_charge(s_shift_frames), &s_aura_r);
+        if (s_aura_age < 0) s_aura_age = 0;
+        if (charge <= 0) s_aura_age = 0;
+        pofv_aura_radius(&s_aura, s_aura_age, charge, &s_aura_r);
+        if (s_aura_age < 1000000) ++s_aura_age;
     }
 
     /* 视觉：懒建 + 每帧圆心/缩放（半径 ≤ 0 ⇒ 缩放 0 = 看不见）*/
@@ -368,7 +374,9 @@ static void ca_invuln_grant(pofv_card_t *s, int level)
  *   逐弹 `Bullet__cancel(b, mode = 1)`（引擎 `0x4290e0`：加分 + 掉点道具），不另造道具。
  *
  * ★★ 2026-09-22（P5 #4）**重做成「场」**：一个暴风不是一口气消完，而是**每帧**按当前半径判一次
- *   （`pofv_storm_radius`：16 → R_chain 线性长），活 `POFV_STORM_FRAMES` 帧 ⇒ 妖精是**飞进来**才被点着。
+ *   （`pofv_storm_radius`：一手 TH09 节点律 `r = r0 + dr × age`，`dr` = **1.6 px/帧**），
+ *   活 `pofv_storm_life_for_chain(档)` 帧 ⇒ 妖精是**飞进来**才被点着，且**连锁前沿 = 1.6 px/帧
+ *   ≈ 妖精速度**（owner 2026-10-01：「连锁爆破在敌人链条上的移动速度和敌人链条本身移动的速度相当」）。
  *   ⇒ 连锁由妖精的到场率决定，不再是一个 30 帧窗口的节拍器（用户：「连锁不该这么快」）。
  *   每帧的成本闸 = `POFV_STORM_SCANS_PER_FRAME`（整池扫弹的次数；伤害源那一条很便宜，不做闸）。 */
 static void do_storm_frame(pofv_card_t *s, const pofv_storm_t *bl, int *scan_budget)
@@ -740,7 +748,7 @@ static int on_tick_2(ce_card_t *c)
         bl = pofv_storm_slot(&s_storm, (int)i);
         if (bl && bl->active) do_storm_frame(s, bl, &scan_budget);
     }
-    /* 推进放在后面：本帧出生/本帧结算过的场，age 从这一帧开始算（寿命 = POFV_STORM_FRAMES 帧）。*/
+    /* 推进放在后面：本帧出生/本帧结算过的场，age 从这一帧开始算（寿命 = 该档的 `R_k / dr` 帧）。*/
     pofv_storm_tick(&s_storm);
 
     /* ★ 2026-10-01（口径 4 + 6）：**固灵结界**（常驻）——

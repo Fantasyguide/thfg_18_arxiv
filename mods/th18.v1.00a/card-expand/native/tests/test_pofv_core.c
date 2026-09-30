@@ -330,22 +330,34 @@ int main(void)
 
         CHECK(pofv_storm_spawn(&p, 0.0f, 0.0f, 1) == 0);
         CHECK(p.live == 1);
-        /* 出生帧 age = 0 ⇒ 半径 = r₀ = 16（★ 一手：etama 脚本的 `pos(16.0f,…)`）*/
+        /* ★★ 2026-10-01：改用一手 TH09「自机弹命中」节点（r0 = 0 / dr = 1.6 / 寿命 6）
+         *    ⇒ 出生帧 age = 0 ⇒ 半径 = r₀ = **0**（旧版是一手 etama 的 16）。*/
+        CHECK(POFV_STORM_R0 == 0.0f);
+        CHECK(POFV_STORM_DR == 1.6f);                             /* ★ 一手 = 连锁前沿速度 */
         CHECK(pofv_storm_slot(&p, 0) != NULL);
         out = *pofv_storm_slot(&p, 0);
         pofv_storm_radius(&out, &r);
-        CHECK(r == POFV_STORM_R0);
-        CHECK(pofv_storm_chain_at(&p, 0.0f, 0.0f) == 1);          /* 圆心在圈里 */
+        CHECK(r == POFV_STORM_R0 && r == 0.0f);
+        CHECK(pofv_storm_chain_at(&p, 0.0f, 0.0f) == 1);          /* r=0 时只有圆心自己在圈里 */
         CHECK(pofv_storm_chain_at(&p, 1000.0f, 0.0f) == 0);       /* 圈外 */
 
-        /* 半径逐帧长，到寿命那一刻 = 该档终点半径（旧值 64 是「缺乏范围」的根因）*/
-        for (i = 0; i < POFV_STORM_FRAMES - 1; ++i) {
-            pofv_storm_tick(&p);
+        /* 寿命按档给（`life = R_k / dr`）⇒ 半径**每帧只长 dr**，到寿命那一刻 = 该档终点半径 176 */
+        {
+            int32_t life1 = pofv_storm_life_for_chain(1);
+            CHECK(life1 == (int32_t)(176.0f / POFV_STORM_DR + 0.5f));   /* = 110 帧 */
+            CHECK(out.life == life1);
+            for (i = 0; i < life1 - 1; ++i) {
+                pofv_storm_tick(&p);
+                out = *pofv_storm_slot(&p, 0);
+                pofv_storm_radius(&out, &r);
+                /* 前沿速度恒为 dr（档不改速度）—— 这就是 owner 说的「链跟着敌人走」*/
+                CHECK(r == POFV_STORM_DR * (float)out.age || (r > 0.0f && r < 176.0f));
+            }
             out = *pofv_storm_slot(&p, 0);
             pofv_storm_radius(&out, &r);
-            CHECK(r > POFV_STORM_R0 && r <= 176.0f);
+            CHECK(r > 170.0f && r <= 176.0f);                     /* 到寿命 ≈ 该档终点半径 */
         }
-        pofv_storm_tick(&p);                                      /* 满寿命：释放 */
+        while (p.live > 0) pofv_storm_tick(&p);                   /* 满寿命：释放 */
         CHECK(p.live == 0);
         CHECK(pofv_storm_chain_at(&p, 0.0f, 0.0f) == 0);          /* 场没了 ⇒ 连锁也就断了 */
         pofv_storm_radius(pofv_storm_slot(&p, 0), &r);
@@ -361,11 +373,17 @@ int main(void)
     /* 档越高 → 终点半径越大（单调），且档 1 = 176（TH09 一手：CA 释放节点 16+20×8）*/
     {
         float prev = 0.0f;
+        int32_t prevlife = 0;
         for (i = 1; i <= POFV_BLAST_CHAIN_MAX; ++i) {
             pofv_storm_final_radius(i, &r);
             CHECK(r > prev);
             prev = r;
+            /* ★ owner「连爆档只放大范围」：dr 恒定 ⇒ 档只把**寿命**拉长 */
+            CHECK(pofv_storm_life_for_chain(i) > prevlife);
+            prevlife = pofv_storm_life_for_chain(i);
         }
+        CHECK(pofv_storm_life_for_chain(0) == pofv_storm_life_for_chain(1));      /* 越界钳 */
+        CHECK(pofv_storm_life_for_chain(99) == pofv_storm_life_for_chain(POFV_BLAST_CHAIN_MAX));
         pofv_storm_final_radius(1, &r);
         CHECK(r == 176.0f);
     }
@@ -374,7 +392,7 @@ int main(void)
      *   （`POFV_STORM_SCANS_PER_FRAME`）。这里只钉住这个预算数存在且 > 0 ——
      *   真正的闸在卡侧 `on_tick_2` 的 `scan_budget` 里。*/
     CHECK(POFV_STORM_SCANS_PER_FRAME > 0);
-    CHECK(POFV_STORM_SCANS_PER_FRAME < POFV_STORM_MAX * POFV_STORM_FRAMES);
+    CHECK(POFV_STORM_SCANS_PER_FRAME < POFV_STORM_MAX * pofv_storm_life_for_chain(1));
     CHECK(POFV_BLAST_CHAIN_MAX >= 2);
 
     /* ==================== G. 灵力道具（自建实体池；口径 5）====================
@@ -534,15 +552,25 @@ int main(void)
         CHECK(pr.mode == POFV_AURA_STATIC);
         CHECK(pr.pad_linear == 1);                                /* ★ 一手 §7.3 的第二支 */
         CHECK(pr.k == POFV_AURA_SANAE_K && pr.k == 128.0f);       /* ★ 一手 §7.2 */
+        /* ★ 「同一个东西」：早苗的半径也是**按 px/帧 长**（`dr = 满档 256 / 60 帧 ≈ 4.267`），
+         *   只是**长到蓄力给的上限就停** —— 不再瞬间跳到目标值。 */
+        CHECK(pr.grow_frames == POFV_AURA_SANAE_GROW_FRAMES && pr.grow_frames == 60);   /* 一手 +0x94 */
+        CHECK(pr.dr > 4.26f && pr.dr < 4.28f);                    /* 256 / 60 */
         pofv_aura_radius(&pr, 0, 0, &r);
         CHECK(r == 0.0f);                                         /* 没按 Shift ⇒ 没有结界 */
-        pofv_aura_radius(&pr, 0, 100, &r);
-        CHECK(r == 128.0f);                                       /* 半蓄力 */
         pofv_aura_radius(&pr, 0, 200, &r);
-        CHECK(r == 256.0f);                                       /* ★ 满蓄力 */
-        pofv_aura_radius(&pr, 0, 9999, &r);
-        CHECK(r == 256.0f);                                       /* 钳到 200 */
-        pofv_aura_radius(&pr, 0, -5, &r);
+        CHECK(r == 0.0f);                                         /* 起手那一帧还是 0（要长）*/
+        pofv_aura_radius(&pr, 15, 200, &r);
+        CHECK(r > 63.9f && r <= 64.0f);                           /* 长了 15 帧 ⇒ ≈64 */
+        pofv_aura_radius(&pr, 60, 200, &r);
+        CHECK(r > 255.9f && r <= 256.0f);                         /* 60 帧到满档 ⇒ 256 (K=128) */
+        pofv_aura_radius(&pr, 30, 100, &r);
+        CHECK(r > 127.9f && r <= 128.0f);                         /* 半蓄力（上限 128）30 帧就够到 */
+        pofv_aura_radius(&pr, 999, 200, &r);
+        CHECK(r > 255.9f && r <= 256.0f);                         /* 过了上限就停住（不无限长）*/
+        pofv_aura_radius(&pr, 60, 9999, &r);
+        CHECK(r > 255.9f && r <= 256.0f);                         /* 蓄力钳到 200 */
+        pofv_aura_radius(&pr, 60, -5, &r);
         CHECK(r == 0.0f);                                         /* 负蓄力钳到 0 */
 
         /* 「Shift 时长 → 蓄力」的换算（❓ 自定：每帧 2） */
@@ -554,8 +582,8 @@ int main(void)
         CHECK(pofv_aura_shift_charge(100000) == POFV_AURA_CHARGE_MAX);   /* 钳住 */
         /* 端到端：按住 Shift 100 帧 ⇒ 早苗的结界长到 256 */
         pofv_aura_profile_for(3, &pr);
-        pofv_aura_radius(&pr, 0, pofv_aura_shift_charge(100), &r);
-        CHECK(r == 256.0f);
+        pofv_aura_radius(&pr, 60, pofv_aura_shift_charge(100), &r);
+        CHECK(r > 255.9f && r <= 256.0f);
 
         /* 灵梦（0）/ 魔理沙（1）→ ❓ owner 待定 ⇒ 占位 = 常驻圆 96（= 改造前行为）*/
         pofv_aura_profile_for(0, &pr);

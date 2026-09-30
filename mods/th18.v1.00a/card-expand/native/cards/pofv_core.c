@@ -224,7 +224,7 @@ int pofv_storm_spawn(pofv_storm_pool_t *p, float x, float y, int32_t chain)
         s->y = y;
         s->chain = clamp_i32(chain, 1, POFV_BLAST_CHAIN_MAX);
         s->age = 0;
-        s->life = POFV_STORM_FRAMES;
+        s->life = pofv_storm_life_for_chain(s->chain);   /* ★ 档只放大范围 ⇒ 寿命按档 */
         s->active = 1;
         ++p->live;
         return i;
@@ -237,19 +237,36 @@ int pofv_storm_spawn(pofv_storm_pool_t *p, float x, float y, int32_t chain)
  * ⚠ 全程 float 运算、走出参 —— 不许引入 x87 返回值（`make dllx87` 的零 x87 不变式）。*/
 void pofv_storm_radius(const pofv_storm_t *st, float *out)
 {
-    float r0 = POFV_STORM_R0, r1, t;
-    int32_t life, age;
-
     if (!out) return;
     if (!st || !st->active || st->life <= 0) { *out = 0.0f; return; }
-    pofv_storm_final_radius(st->chain, &r1);
-    if (r1 < r0) r1 = r0;
-    life = st->life;
-    age = st->age;
+    /* ★★ 2026-10-01：改用**一手 TH09 的节点律**（`r = r0 + dr × age`）—— 与结界的锚定场
+     *   共用 `pofv_node_radius()`（owner：「aura 和锚定场本质上是同一个东西」）。
+     *   旧实现是「16 → R_chain 固定 30 帧」的自造律（前沿 5.3–10 px/帧 ⇒ 瞬间连锁）。*/
+    pofv_node_radius(POFV_STORM_R0, POFV_STORM_DR, st->age, st->life, out);
+}
+
+void pofv_node_radius(float r0, float dr, int32_t age, int32_t life, float *out)
+{
+    float r;
+    if (!out) return;
     if (age < 0) age = 0;
-    if (age > life) age = life;
-    t = (float)age / (float)life;
-    *out = r0 + (r1 - r0) * t;
+    if (life > 0 && age > life) age = life;
+    r = r0 + dr * (float)age;
+    if (!(r > 0.0f)) r = 0.0f;                       /* 负半径 / NaN ⇒ 0（没展开）*/
+    *out = r;
+}
+
+int32_t pofv_storm_life_for_chain(int32_t chain)
+{
+    float r1;
+    int32_t c, life;
+
+    c = clamp_i32(chain, 1, POFV_BLAST_CHAIN_MAX);
+    pofv_blast_radius(c, &r1);
+    if (POFV_STORM_DR <= 0.0f) return 1;
+    life = (int32_t)((r1 - POFV_STORM_R0) / POFV_STORM_DR + 0.5f);   /* 四舍五入 */
+    if (life < 1) life = 1;
+    return life;
 }
 
 void pofv_storm_final_radius(int32_t chain, float *out)
@@ -589,6 +606,9 @@ void pofv_aura_profile_for(int character, pofv_aura_profile_t *out)
         out->pad_linear = 1;                     /* Sanae 支 `<= (r+pad)²`（一手 §7.3）*/
         out->r_fixed = 0.0f;                     /* 不用固定值 ⇒ 走下面的 K */
         out->k = POFV_AURA_SANAE_K;              /* 一手 §7.2：`AuraSanaeInf` K = 128 */
+        out->grow_frames = POFV_AURA_SANAE_GROW_FRAMES;   /* 一手：`+0x94` = 60 */
+        /* ★ 「同一个东西」：生长速度也按 px/帧 给（= 满档目标 256 / 60 帧 ≈ 4.27 px/帧）。*/
+        out->dr = out->k * (float)POFV_AURA_CHARGE_MAX / 100.0f / (float)out->grow_frames;
         break;
     case 0:   /* 灵梦 —— ❓ owner 待定 ⇒ 占位：TH19 `AuraReimuInf` 的常驻圆 96 */
     case 1:   /* 魔理沙 —— ❓ 同上 */
@@ -607,20 +627,19 @@ void pofv_aura_radius(const pofv_aura_profile_t *p, int32_t age, int32_t charge,
     if (!p) { *out = 0.0f; return; }
 
     if (p->mode == POFV_AURA_FIELD) {
-        /* TH09 的节点律（一手 §1.3：每帧 `r += dr`、寿命到点释放）：钳在 [0, life]。*/
-        float r;
-        int32_t a = age;
-        if (a < 0) a = 0;
-        if (p->life > 0 && a > p->life) a = p->life;
-        r = p->r0 + p->dr * (float)a;
-        *out = r > 0.0f ? r : 0.0f;
+        /* ★ 与暴风**共用同一个节点律**（owner：「aura 和锚定场本质上是同一个东西」）。*/
+        pofv_node_radius(p->r0, p->dr, age, p->life, out);
         return;
     }
-    if (p->k > 0.0f) {                            /* STATIC + 蓄力（早苗）*/
+    if (p->k > 0.0f) {                            /* STATIC + 蓄力（早苗）——「有上限的生长」*/
+        float target, r;
         int32_t c = charge;
         if (c < 0) c = 0;
         if (c > POFV_AURA_CHARGE_MAX) c = POFV_AURA_CHARGE_MAX;
-        *out = (float)c * p->k / 100.0f;          /* ★ 一手 TH19 公式 `clamp(S+0x8c,0,200) × K/100` */
+        target = (float)c * p->k / 100.0f;        /* ★ 一手 TH19：`clamp(S+0x8c,0,200) × K/100` */
+        r = p->dr * (float)(age > 0 ? age : 0);   /* ★ 与节点律同一个「按 px/帧 长」的模型 */
+        if (r > target) r = target;               /* 长到蓄力给的上限就停 */
+        *out = r > 0.0f ? r : 0.0f;
         return;
     }
     *out = p->r_fixed;                            /* STATIC 固定（占位档）*/

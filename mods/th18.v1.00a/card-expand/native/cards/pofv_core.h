@@ -185,9 +185,19 @@ int32_t pofv_invuln_left(const pofv_invuln_t *w);
  *   而不是一个固定窗口的节拍器 —— 旧实现（一次性 `ce_damage_rect` 2 帧 + 30 帧连爆窗口打档）
  *   正是用户报的「暴风连锁好像不该这么快」。
  * ⚠ 本卡**没有** VM（视觉待资产），所以这里只做**判定场**：一个每帧都判的圆。 */
-#define POFV_STORM_MAX              8    /* ❓ 自定（原版是节点池；本卡要控每帧工作量）*/
-#define POFV_STORM_FRAMES          30    /* ❓ 自定（一手只给了形：锚定 + 逐帧扩张 + 有限寿命）*/
-#define POFV_STORM_R0              16.0f /* ★ 一手：环的起始半径 16（etama script91/92/93 的 `pos(16.0f,…)`）*/
+#define POFV_STORM_MAX             16    /* ❓ 自定（原版是节点池；寿命改长后要更大的池，见下）*/
+/* ★★★ 2026-10-01 owner 口径（第二版）：暴风改用**一手 TH09「自机弹命中」节点**
+ *   （`r0 = 0` / `dr = 1.6` / 寿命 6 帧 ⇒ 终点 ≈10，`th09:0x41fe93`–`0x41fea1`）
+ *   ＋「**连爆档只放大范围**」（档不改前沿速度）。
+ *   ★ 关键洞察（owner 原话：「连锁爆破在敌人链条上的移动速度和敌人链条本身移动的速度相当，
+ *     之前几乎是瞬间连锁」）：场是**锚定**的、圈里碰到就炸 ⇒ **连锁前沿的移动速度就是 `dr`**
+ *     （px/帧）。旧的「16 → R_chain 固定 30 帧」是**自造**的（前沿 5.3–10 px/帧，比妖精快 3–5 倍
+ *     ⇒ 瞬间连锁）。现在前沿 = **1.6 px/帧 ≈ 妖精爬行速度**。
+ *   ★ 「只放大范围」怎么实现：`dr` 固定 1.6，**寿命按档给**（`life_k = R_k / dr`），
+ *     于是档只决定「这个场最终能长到多大」——`R_k` 仍用一手锚定的 176/224/272/320
+ *     （档 1 = 176 是一手：CA 释放节点 `16 + 20×8`，`th09:0x41e875`）。*/
+#define POFV_STORM_R0               0.0f /* ★ 一手：「自机弹命中」节点的 r0 = 0 */
+#define POFV_STORM_DR               1.6f /* ★ 一手：同一个节点的 dr = 1.6 px/帧（= 连锁前沿速度）*/
 #define POFV_STORM_SCANS_PER_FRAME  4    /* ❓ 自定：每帧最多几次**整池扫弹**（O(弹池) 的预算闸）*/
 #define POFV_STORM_DMG_LIFE         2    /* ❓ 自定（伤害源寿命；与旧 `POFV_BLAST_DMG_LIFE` 同值）*/
 
@@ -227,6 +237,15 @@ const pofv_storm_t *pofv_storm_slot(const pofv_storm_pool_t *p, int i);
  *   —— 与 TH09 画环的 `posTime` 同律（起点 16、终点 R、线性、时长 = 寿命）。
  * ⚠ 本卡让**判定半径与将来画出来的环共用这一个数**（比 TH09 更严：TH09 的环与消弹圈只对齐终点）。 */
 void pofv_storm_radius(const pofv_storm_t *st, float *out);
+
+/* ★ 连爆档 k 的**寿命帧数** = `(R_k − r0) / dr`（dr 固定 ⇒ 档只放大范围，不改前沿速度）。
+ * 越界钳到 1..`POFV_BLAST_CHAIN_MAX`。 */
+int32_t pofv_storm_life_for_chain(int32_t chain);
+
+/* ★★ **TH09 的节点律**（一手 §1.3：每帧 `r += dr`、寿命到点释放）——**场与结界的锚定场共用这一个律**
+ *   —— owner 2026-10-01：「th09 和 th19 的那个 aura 和锚定场**本质上是同一个东西**」。
+ *   `r = r0 + dr × clamp(age, 0, life)`；`life <= 0` 或 `age` 非法时按钳位算。 */
+void pofv_node_radius(float r0, float dr, int32_t age, int32_t life, float *out);
 
 /* 连爆档 chain 的**终点半径** R。★ 档 1 = **176**（一手：TH09 的 CA 释放节点 16 + 20×8 = 176，
  * `th09:0x41e875`）—— 我们把它当最小暴风的终点半径；档 2..4 每档 +48 ❓ 自定（TODO(th09)）。 */
@@ -431,18 +450,27 @@ typedef enum {
 /* TH19 的蓄力量量程与 `AuraSanaeInf` 的 K（一手 §2/§7.2）。*/
 #define POFV_AURA_CHARGE_MAX           200
 #define POFV_AURA_SANAE_K            128.0f
+/* 一手：TH19 `AuraSanaeInf` 的动画器时长 `+0x94` = **60**（§7.2）⇒ 从 0 长到满档目标用 60 帧。*/
+#define POFV_AURA_SANAE_GROW_FRAMES     60
 
 /* ❓ 自定（owner 只说「把 shift 时长当作某种蓄力」，没给换算）：按住 Shift 每 1 帧涨多少蓄力。
  * 取 **2** ⇒ 100 帧（≈1.67 s）涨满 200 ⇒ 早苗的结界从 0 长到 256。 */
 #define POFV_AURA_SHIFT_CHARGE_PER_FRAME  2
 
+/* ★★ 2026-10-01（owner 第二点）：「th09 和 th19 的那个 aura 和锚定场**本质上是同一个东西**」
+ *   ⇒ 两种形态**共用同一个「半径随帧演化」的模型**（都靠 `dr` = px/帧 长），差别只有：
+ *     · **起点/寿命**（TH09 节点：`r0 + dr×age`，到寿命释放）；
+ *     · **上限从哪来**（TH19：上限 = 蓄力折算的目标半径，长到就停）。
+ *   实现上就是 `pofv_node_radius()` 一个函数 + 一支「有上限」的分支（见 `pofv_aura_radius`）。*/
 typedef struct {
     int32_t mode;        /* pofv_aura_mode_t */
     int32_t pad_linear;  /* 几何支：0 = `dx²+dy² < r²+pad²`（Reimu 支）；1 = `<= (r+pad)²`（Sanae 支）*/
     float   r_fixed;     /* STATIC 且不用蓄力时的半径（≤0 = 由蓄力算）*/
-    float   k;           /* STATIC 且用蓄力时：`r = clamp(charge,0,200) × k/100`（≤0 = 恒用 r_fixed）*/
-    float   r0, dr;      /* FIELD：起始半径 / 每帧增量 */
+    float   k;           /* STATIC 且用蓄力时：目标半径 = `clamp(charge,0,200) × k/100`（≤0 = 恒用 r_fixed）*/
+    float   dr;          /* **半径生长速度（px/帧）**：FIELD = 一手节点的 dr；STATIC+蓄力 = 满档目标 / grow_frames */
+    float   r0;          /* FIELD：起始半径 */
     int32_t life;        /* FIELD：寿命帧（到点重生）*/
+    int32_t grow_frames; /* STATIC+蓄力：从 0 长到**满档目标**用多少帧（一手 TH19 `AuraSanaeInf` 的 `+0x94` = 60）*/
 } pofv_aura_profile_t;
 
 /* 按 TH18 的**角色号**（0 灵梦 / 1 魔理沙 / 2 咲夜 / 3 早苗）取结界档案。
@@ -452,9 +480,11 @@ void pofv_aura_profile_for(int character, pofv_aura_profile_t *out);
 /* 「按住 Shift 的帧数」→ TH19 的蓄力量 0..`POFV_AURA_CHARGE_MAX`（owner 口径）。 */
 int32_t pofv_aura_shift_charge(int32_t shift_frames);
 
-/* 本帧的**判定半径**（也是绘制半径）：
- *   STATIC：`k > 0` ⇒ `clamp(charge,0,200) × k/100`；否则 `r_fixed`。
- *   FIELD ：`min(r0 + dr × age', r0 + dr × life)`（`age'` 钳到 `[0, life]`）。
+/* 本帧的**判定半径**（也是绘制半径）——两种形态共用「按 `dr` 长」的模型：
+ *   FIELD  ：`r = r0 + dr × clamp(age,0,life)`（= `pofv_node_radius`；TH09 的节点律）。
+ *   STATIC ：`k > 0` ⇒ `r = min(dr × age, clamp(charge,0,200) × k/100)`（**长到蓄力给的上限就停**）；
+ *             否则 `r = r_fixed`（占位档）。
+ * `age` = 这个结界已经长了多少帧（调用方维护；蓄力归零时应把它清 0 ⇒ 结界缩回没有）。
  * `*out` 恒被写（半径 ≤ 0 表示「结界没展开」）。 */
 void pofv_aura_radius(const pofv_aura_profile_t *p, int32_t age, int32_t charge, float *out);
 
