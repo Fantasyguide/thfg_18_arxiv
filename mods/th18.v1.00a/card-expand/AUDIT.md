@@ -26152,3 +26152,38 @@ verify/autoplay 的场景只判 109 的日志）；`sites.py` / `sdk.*` / `engin
 - **回归**：`make check` **rc=0**（含 `anm-verify` / `capcheck` / `sitecheck --all` / `check-docs` 412 文件
   + 全部主机单测）；`build_ability.py` 的重排检测 = 「已定稿的前 186 个数据行逐行未变 ✅」。
 - ⚠ **DLL 与 `ability.anm` 必须同时发布**（`anm_ids.h` 的宏值烘进 DLL）。
+
+## §BE 详录 #162（2026-09-28）：死亡浮字「十分偏移」的根因与修法 + 补齐一手的三笔死亡浮字
+
+> **owner 逐字**：「**打死怪物之后的 UI 不对，十分偏移正确位置**」＋「**th08 打死怪物…会出现一些 `+1` `+2` 的数字**；
+> 目前这个似乎没有，**有的是其他的**」。
+
+**一、① 偏移根因（证据）**：我们死亡时画两支浮字 —— `youkai.c:5072`（击破 `+1`）与 `3096`（收刻符的**分值**，就是 owner 说的「其他的」）。
+两支都用 `YK_GAUGE_SCRIPT_FONT[ch]` 起 VM，而那是**妖侧 HUD 的字形脚本**，我 dump 了自建 `pl02.anm script42`（`YKGAUGEFONT_PL02`）：
+```
+script script42 { layer(25); resolutionMode(2); pos(0,0,0); sprite(sprite115); zWriteDisable(1); static(); }
+```
+⇒ 脚本正文的 `layer(25)` **覆盖**我们建 VM 时给的 `YK_POPUP_ANM_LAYER = 11`，而 `layer(20..32)` 经 `set_layer`
+派生 `flags_hi` 的 resolutionMode（`engine.h:291`–`299`）⇒ VM 按 **HUD（表面）参照系**画、`static()`，
+我们却喂**世界/640 空间**坐标 ⇒ **参照系错** = 「十分偏移」（不是固定几十 px 的差）。
+**数值证据形态**：同一组 `(ev->x, ev->y)` 交给刻符（`yk_orb_spawn`，世界层 7）落点正确，交给浮字就偏。
+
+**二、修法（不动 HUD 脚本）**：`yk_popup_tick` 每帧**写回**字形 VM 的
+`vm+0x18 = YK_POPUP_ANM_LAYER(11)`（层字段，`engine.h:305` 的一手）与
+`flags_hi` 的 resolutionMode(bits22–24) = **mode 2**（`0x800000` = ×1 = 「脚本没写 `resolutionMode` 时」的默认档，
+见 `build_player_anm.py:1135` 的一手理由）⇒ 浮字与刻符**同一参照系**。
+⚠ 为什么不是「复制一份去掉前言的脚本」：那要在资产链里为**每机体**多生一支脚本 + 一套字形宏
+（同一张 `yk_gaugefont.png` 再进一份 entry），而每帧写回**等价且不动共享资产**（HUD 那几支同时给 HUD 用，
+本来就**不能**就地改 `layer(25)`）。`static()` **保留**（TH08 的 ascii 载体脚本本来就有它；位置由我们每帧写）。
+
+**三、② 补齐一手的三笔死亡浮字**（一手 `CreateTimePopup th08:0x403460` 在死亡路径被调三次）：
+`th08:0x42af78` = **每个子机各一次**（位置 = 该子机 `final_pos`）、`th08:0x42b122` = **链根一次**（位置 = 死亡点）、
+`th08:0x42b296` = **击破魔使 `+1`**（我们已有）。⇒ 新增：子机循环里 `yk_popup_spawn(cx[k], cy[k], n2, 0)`、
+链根分支里 `yk_popup_spawn(ev->x, ev->y, yk_kill_ring_count(n), 0)`（**与道具同一个数，不另算**）；
+池 `YK_POPUP_MAX` **3 → 8**（一只母机一次可能冒 1 + 子机数 ≤5 个；池满只丢浮字、不影响道具/计分，已有降级日志）。
+🟡 前两笔的**实参语义**（显示「撒了几颗」还是「槽增量」）**未逐条读出**（`0x42af78`/`0x42b122` 的 push 序列没抓到）
+⇒ 暂按「这一支撒的颗数」记，等一手复核再改（已写进 `TUNING.md` 与代码注释）。
+
+**闸**：`make -s check` 本体全过（`youkai_core: 8166 checks, 0 failed`、`dllx87 = 0`）；
+⚠ `check-docs` 当前有 **1 处别人的文档违规**（`engine/player/th18/06-offscreen-top-indicator-absent.md:155` 单元格 214>200 字符，
+**不是本批文件**）⇒ `make check` 因此非零，已报给协调方。

@@ -2965,7 +2965,9 @@ static int yk_bomb_active(void)
  *   10 = '%'、11 = '.'、12 = '-'、**13 = '+'**（本批追加的第 14 格，TH08 sprite149））；
  *   VM 必须挂**自机那一页**（`yk_player_anm()`，贴图按 VM 自己那一页取）。
  * ❓ 自定（owner 2026-09-22 已批，登记 `TUNING.md`）：**层 = 世界层 11**、**池 = 3 支 x 5 字形**。*/
-#define YK_POPUP_MAX        3
+#define YK_POPUP_MAX        8   /* ★ 2026-09-30：3 → 8（一手打死一只母机可能一次冒
+                                 *   1（链根 2n）+ 子机数（≤5）个浮字 ⇒ 3 会丢；池满只丢浮字、
+                                 *   不影响道具/计分，见 `yk_popup_spawn` 的降级日志）*/
 #define YK_POPUP_GLYPHS     5
 #define YK_POPUP_ANM_LAYER  11
 
@@ -3057,6 +3059,24 @@ static void yk_popup_tick(void)
             int a, dx0, dy0;
             if (!id || !ce_anm_get_vm(id)) { p->vm[i] = 0; continue; }
             if (!ce_anm_set_pos(id, gx, p->y, 0.0f)) { p->vm[i] = 0; continue; }
+            /* ★★★ 2026-09-30（**P0：浮字 UI「十分偏移」**，见 `AUDIT.md` §BE #162）：
+             *   浮字 VM 用的 `YK_GAUGE_SCRIPT_FONT[]` 是**HUD 字形脚本**，它正文自带
+             *   `layer(25); resolutionMode(2);` ⇒ 脚本一跑就**覆盖**我们创建时给的层，
+             *   于是我们喂的**世界/640 空间**坐标被当成 HUD（表面）参照系 ⇒ 整块偏到别处。
+             *   ⇒ 每帧**再写回**：层 = `YK_POPUP_ANM_LAYER`(11，世界层 3–19)，
+             *     `flags_hi` 的 resolutionMode(bits22–24) = **2**（= `1×`，即「脚本没写
+             *     `resolutionMode` 时」的默认档，见 `build_player_anm.py` 的一手理由）
+             *   ⇒ 浮字与同批刻符（`yk_orb_spawn`，世界层 7）**同一参照系**。
+             *   ⚠ 这样**不动 HUD 那几支脚本**（它们同时被 HUD 用，不能就地改 `layer(25)`）。*/
+            {
+                uint8_t *vm = (uint8_t *)ce_anm_get_vm(id);
+                if (vm) {
+                    *(volatile uint32_t *)(vm + 0x18) = (uint32_t)YK_POPUP_ANM_LAYER;   /* vm+0x18 = layer
+                                                        *   （`engine.h:305`：`set_layer 0x4066b0` 写它）*/
+                    *(volatile uint32_t *)(vm + CE_ANM_VM_FLAGS_HI) =
+                        (*(const uint32_t *)(vm + CE_ANM_VM_FLAGS_HI) & ~0x1c00000u) | 0x800000u;
+                }
+            }
             dx0 = pp ? (int)(gx - pp[0]) : 0;
             dy0 = pp ? (int)(p->y - pp[1]) : 0;
             a = yk_popup_alpha(dx0, dy0);
@@ -3969,6 +3989,12 @@ static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
                        (unsigned)yk_kill_ring_count(n), (double)YK_KILL_RING_RADIUS);
             }
             for (k = 0; k < nc; ++k) {                      /* 一手：每个链结点各撒 N 颗（`0x42aff0`）*/
+                /* ★★★ 2026-09-30 **复刻一手**：`CreateTimePopup`（`th08:0x403460`）在**每个子机**那一步
+                 *   各冒一个数字（一手调用点 `th08:0x42af78`，位置 = **该子机的 final_pos**）。
+                 *   数值 = **与该子机同一次撒的颗数**（`n2`，与道具用同一个数，不另算）。
+                 *   🟡 一手该 popup 的实参是不是「颗数」我没有逐条读出来（push 序列未读到）⇒
+                 *      暂按「同一次撒的颗数」记，等一手复核再改。*/
+                yk_popup_spawn(cx[k], cy[k], n2, 0);
                 for (i = 0; i < n2; ++i) {
                     float ang, rad;
                     /* ⚠ 两个随机数**先取到局部**（一手顺序是「先半径 `0x40d390`、后角度 `0x4143c0`」；
@@ -3987,6 +4013,11 @@ static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
             }
             /* 被杀者自己那一环（一手 `0x42b13b`–`0x42b1b1`）：`subEnemyCount * 2` 颗、**state 1**、
              * 半径上界 **128**（`0x42b15d` —— ⚠ 同样走 `GetRandomF32InRange` ⇒ **圆盘**，不是固定环）。*/
+            /* ★★★ 2026-09-30 **复刻一手**：链根那一步也冒一个数字（一手调用点 `th08:0x42b122`，
+             *   位置 = **链根死亡点**）。数值 = **`2 × subEnemyCount`**（= 一手这一支撒的颗数
+             *   `2 × subEnemyCount`，我们这里就是 `yk_kill_ring_count(n)`，同一个数不另算）。
+             *   🟡 一手 `0x42b122` 的实参同样未逐条读出（push 序列未读到）⇒ 暂按「这一支撒的颗数」记。*/
+            if (n > 0) yk_popup_spawn(ev->x, ev->y, (int32_t)yk_kill_ring_count(n), 0);
             for (k = 0; k < yk_kill_ring_count(n); ++k) {
                 float ang, rad;
                 /* ★ 2026-09-30 同上纠错：一手链根那一环也是**幅度 ±3.17**（不是半径 128）。*/
