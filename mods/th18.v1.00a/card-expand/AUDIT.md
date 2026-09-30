@@ -25723,3 +25723,33 @@ th08:0x406d70` + 无符卡）⇒ 1 颗、state 5；② 敌机死亡（`Enemy::FU
 「自机 192 格吸收区」。**`TUNING.md` 现行行为一个字没动**。
 
 **三、验证**：`check-docs` + `make -s check` 全过（纯文档）；`git diff` 里**没有任何 `.c/.h` 改动**。
+
+## §BE 详录 #154（2026-09-28）：卡 108 —— **死亡点吸收区**（TH08 `Enemy::FUN_0042adb0` 那一圈）
+
+> **owner 拍板**：「**死亡点的清弹幕得搞**」。一手形状见
+> [`engine/item/th08/02-cancel-and-graze-to-time-orbs.md`](../../../engine/item/th08/02-cancel-and-graze-to-time-orbs.md) §1 #5（本批已把该文 §5 的「未实现」改成已实现）。
+
+**一、实现（一套「区」的最小实现，不是两条独立逻辑）**
+`native/cards/youkai.c` 新增：
+
+| 件 | 内容 |
+| --- | --- |
+| `yk_zone_t` | `{x, y, radius, life, hit_type}` + **一个池** `s_zone[YK_ZONE_MAX = 12]`（❓自定上限）；**死亡点那一圈只是池里的一个区**（`hit_type = 7`），将来「炸弹片 / 自机吸收区」往**同一张 `hit_type → 道具`表**里加即可（本批只接 7）|
+| `yk_zone_open()` | 找空槽；**池满 ⇒ 返回 0（不吐、不开）** —— 照一手 `th08:0x4401aa` 的「只试游标当前格、撞占用即整批停」口径（**没有**拍 `min(N)`）|
+| `yk_zone_tick()` | **只有当帧有活区时才扫池**（否则零开销）：2000 格敌弹池（`engine.h:722` 的口径）× 活区数，平方距离判「进区」；进区 ⇒ **弹写消去态 + 吐 1 颗刻符（落在弹的位置）**；区寿命到就撤 |
+| 触发 | `yk_on_enemy_killed` 里、`n`（= `max(活子敌人, 声明槽数)`，**与 `yk_kill_burst` 同一个 n，没写第二套**）定稿之后：`n > 0` ⇒ 死亡点 **1 颗刻符** + 开区（R=32.5f / 16 帧 / hit 7）|
+| 吐点 | **我们现有的刻符 VM 池**（`yk_orb_spawn` / `YK_ORB_*`，与击破撒的那一套**同池**）—— **不是** TH18 原生 item ⇒ PIV / 人妖槽 / HUD / 收集全通 |
+| 仲裁 | 每帧先看 `ce_cancel_latch_owner()`：**别人拿了全屏消弹那一笔（且不是我们）⇒ 这一帧我们不吃弹**；我们**不认领**那个闩锁（认领有「谁执行」的语义，认了会顶掉 109/116/117 的消弹）⇒ 只观察，避免同一批弹同帧被两方各算一次 |
+| 收口 | `yk_zone_clear_all()` 挂在 **`yk_drop_all`**（删卡 / 换关 / 局末 / 自机没了 / 世界没了 —— 所有退休路都过它）与 **`on_ctor`**；**已吐的刻符**在既有刻符池里，`on_delete` 的 `yk_orb_kill_all()` 已经管 ⇒ 本批**不需要**新增收尾 |
+| 台账 | 每 120 帧一行（且只在「真的发生过」之后）：`youkai/zone: opened %u closed %u orbs %u bullets %u pool_full %u` |
+
+**二、⚠ 一处**跨版本映射**（本批最要紧的细节）**：TH08 把被区吃掉的弹写 **state 5**（一手 §1 #5 的
+`th08:0x4315f2..` 规则），但 **TH18 的「消去」态是 3**（一手：TH18 自己的擦弹消去
+`th18:0x4249be mov WORD PTR [esi+0xf68],3`；且 `cancel_all` **跳过 3** ⇒ 语义一致）。
+**写 5 在 TH18 是未定义态** ⇒ 我们写 **3**（常量 `YK_ZONE_BULLET_STATE_ERASED` + 长注）。
+
+**三、没做的**：③ 逢魔擦弹（现有行为不动）、炸弹 / 符卡清弹、hit type 9 的双倍（没有明确触发）。
+
+**闸（原文）**：`make -s check` rc=0（`youkai_core: 8120 checks, 0 failed`；其余各测试 0 failed）、
+`make -s dllx87` ⇒ `x87 in our objects: 0`、`sites.py verify` ⇒ 全对上、`capcheck` ⇒ 全绿、
+`check-docs` ⇒ 全过。

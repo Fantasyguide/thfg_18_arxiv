@@ -1987,6 +1987,29 @@ int yk_item_box_open(int32_t player_state);
                                        *   x=y=0 ⇒ 相对父敌位置）⇒ 我们取 **60**，并且**同帧一次建满**。
                                        *   ⚠ 扫场是每 `YK_ORBIT_SCAN_INTERVAL`(30) 帧一次 ⇒ 实际延时会被量化到
                                        *     30 帧的整数倍（60 ⇒ 通常在首次命中后的第 2~3 次扫描建出）。*/
+/* ★★★ 2026-09-30（**owner 拍板**「死亡点的清弹幕得搞」）：**死亡点吸收区** —— TH08
+ *   `Enemy::FUN_0042adb0` 在敌机死亡点开的那一圈，把 16 帧内飞过的敌弹**逐颗变成刻符**。
+ * 一手（见 `engine/item/th08/02-cancel-and-graze-to-time-orbs.md` §1 #5）：
+ *   · **只有「死时使魔数 ≠ 0」的敌人才开**：整段被 `th08:0x42adbc call 0x41fd40`（使魔数）+
+ *     **`th08:0x42adc4 je 0x42b1e5`** 守着 ⇒ 普通无使魔小怪死了**什么都不开**（我们侧判据 =
+ *     与 `yk_kill_burst` **同一个 `n`**：`max(活子敌人, 声明槽数)`，不写第二套）；
+ *   · **同时给 1 颗刻符**：`th08:0x42b1a4 push $1 / push $7 / call 0x4400a0`（位置 = 死亡点）；
+ *   · **区**：`th08:0x42b1b8 push $7 / push $0x10` + `th08:0x42b1d4 call 0x44df00`
+ *     （ExpHP 圆型区生成器）⇒ **半径 32.5f、寿命 16 帧、hit type 7**、**锚点 = 死亡点**；
+ *   · **每颗进区的敌弹**：弹消失 + 按 hit type 吐（`th08:0x4315f2..` / `0x4316b1..` 的规则；
+ *     hit type 7 ⇒ **1 颗**刻符；9 ⇒ 2 颗 —— ⚠ **9 我们不做**，没有明确触发）。*/
+#define YK_ZONE_MAX            12u     /* ❓自定：同时活着的**区**上限（一手没有「区池」这个概念；
+                                        *   一手约束在**吐点**那一侧 ⇒ 池满口径见下）*/
+#define YK_ZONE_DEATH_RADIUS   32.5f   /* 一手 `th08:0x42b1b8 push $7 / push $0x10`（R = 32.5f）*/
+#define YK_ZONE_DEATH_LIFE     16u     /* 一手：同上的寿命（16 帧）*/
+#define YK_ZONE_HIT_ORB        7       /* 一手 hit type：7 = 刻符（type 7）⇒ 每颗被吃的弹吐 1 颗 */
+#define YK_ZONE_BULLET_SLOTS   2000u   /* 敌弹池扫描口径 = `cancel_all` 的同一份（`engine.h:722`：
+                                        *   槽 0 = `CE_BM_BULLETS`、2000 张、stride `0xfa0`）*/
+#define YK_ZONE_BULLET_STATE_ERASED 3  /* ⚠ **跨版本映射**：TH08 把被区吃掉的弹写 **state 5**，
+                                        *   而 **TH18 的「消去」态是 3**（一手：TH18 自己的擦弹消去
+                                        *   `th18:0x4249be mov WORD PTR [esi+0xf68],3`；且 `cancel_all`
+                                        *   会跳过 3 ⇒ 「已被消掉」的语义一致）。写 5 在 TH18 是**未定义态**。*/
+
 #define YK_ORBIT_TRAIL_INTERVAL 2u   /* ★★★ 2026-09-30（owner：「忠于原作就得加拖尾」）：使魔**拖尾**的
                                        *   撒点间隔（帧）= **一手值**。消费者那段已逐指令读完：
                                        *   · 消费者 = **`th08::Enemy::FUN_0042c420`**，由 `EnemyManager::OnUpdate`

@@ -862,6 +862,7 @@ typedef struct {
 static yk_orbit_seen_t s_orbit_seen[YK_ORBIT_SEEN_MAX];
 
 static unsigned yk_orbit_live(void);   /* 前向声明：阀门要用它数活着的使魔（定义在下面）*/
+static void yk_zone_clear_all(void);   /* 前向声明：`yk_drop_all` / `on_ctor` 的收口要用它 */
 
 /* ★★★ 2026-09-30：**拖尾密度自适应阀门**（❓ **我们的安全阀、不是一手**，见 `YK_ORBIT_TRAIL_VM_CAP`）。
  * 我们不跟火花 VM 的句柄（脚本自删）⇒ 数不到真实存活数，只能用**可算出的峰值估计**：
@@ -1698,6 +1699,7 @@ static void yk_drop_all(yk_card_t *s, const char *why)
      *   `yk_withdraw_all` 撤不到它）—— 删卡 / 换关 / 局末 / 自机没了 / 世界没了五条路**都过这里**
      *   ⇒ 这一句就是「删卡后一只不留」的落点（`METHOD.md` 铁律二）。*/
     yk_orbit_kill_all();
+    yk_zone_clear_all();                  /* ★ 死亡点吸收区：所有退休路都过这里 ⇒ 不留游荡的区 */
     if (had && why) ce_log("youkai: withdrew %u familiar(s) (%s)", had, why);
     if (s) s->tr.pending = 0;
 }
@@ -3525,6 +3527,101 @@ static void yk_gauge_tick(yk_card_t *s, int focused)
 #define YK_KILL_CHILD_MAX 16        /* ❓ 自定：子敌人位置缓存的容量（一对位，一手无上限）*/
 static int s_kill_burst_logged;     /* 首次「带子敌人」的击破打一行（自定诊断，不参与逻辑）*/
 static int s_kill_gated_logged;     /* 首次「被门拦下」的击破打一行（同上）*/
+/* ============================================================================================
+ * ★★★ 2026-09-30（**owner 拍板**）：**死亡点吸收区**（TH08 `Enemy::FUN_0042adb0` 的那一圈）
+ * ============================================================================================
+ * 一手逐条见 `youkai_core.h` 的常量区 + `engine/item/th08/02-cancel-and-graze-to-time-orbs.md` §1 #5。
+ * 设计（按 owner 工单）：**一套「区」的最小实现**，结构 = `{x, y, radius, life, hit_type}` + **一个池**；
+ *   · 死亡点那一圈只是**这张池里的一个区**（`hit_type = 7`）；将来「炸弹片 / 自机吸收区」往
+ *     **同一张 `hit_type → 道具` 表**里加即可（本批**只接 type 7**）。
+ *   · **池满口径 = 一手**：TH08 的 type 7 软闸是「只试环状游标当前格、撞占用就**整批停**」
+ *     （`th08:0x4401aa`）⇒ 我们照「**池满就停止本帧吐点**」写（**不是**拍一个 `min(N)`）。
+ *   · 吐点 = **我们现有的刻符 VM**（`yk_orb_spawn` / `YK_ORB_*`，与击破撒的那一套**同一个池**）
+ *     —— **不是** TH18 原生 item ⇒ PIV / 人妖槽 / HUD / 收集全通；一手也确认二者同种（只差 state）。
+ *   · **仲裁**：本帧若**别人**（109/112/113/116/117…）已经拿了全屏消弹那一笔（`ce_cancel_latch_owner()`
+ *     != -1 且不是我们），这一帧**我们不吃弹**；我们**不认领**那个闩锁（认领有「谁执行」的语义，
+ *     认了会顶掉别人的消弹）⇒ 只**观察**，避免同一批弹在同帧被两方各算一次。
+ *   · **收口**（铁律）：`yk_zone_clear_all()` 挂在 `yk_drop_all`（删卡 / 换关 / 局末 / 自机没了 /
+ *     世界没了——所有退休路都过它）与 `on_ctor`；**已吐的刻符**在既有的刻符池里，`on_delete` 的
+ *     `yk_orb_kill_all()` 已经管（本批不需要新增收尾）。*/
+typedef struct {
+    float    x, y;        /* 圆心（死亡点那一支 = 敌人死亡时的位置）*/
+    float    radius;      /* 半径（死亡点那一支 = `YK_ZONE_DEATH_RADIUS` 32.5f）*/
+    unsigned life;        /* 剩余帧（0 = 空槽）；死亡点那一支 = `YK_ZONE_DEATH_LIFE` 16u */
+    int      hit_type;    /* `YK_ZONE_HIT_ORB`(7) = 每颗被吃的弹吐 1 颗刻符（**只接这一种**）*/
+} yk_zone_t;
+static yk_zone_t s_zone[YK_ZONE_MAX];
+static unsigned s_zone_opened, s_zone_closed, s_zone_orbs, s_zone_pool_full;
+static unsigned s_zone_bullets;                 /* 累计吃掉的敌弹数（台账用）*/
+
+static void yk_zone_clear_all(void)
+{
+    unsigned i;
+    for (i = 0; i < YK_ZONE_MAX; ++i) { s_zone[i].life = 0; s_zone[i].hit_type = 0; }
+}
+
+/* 开一个区。**池满 ⇒ 返回 0（不吐、不开）** —— 一手口径「满了就不吐」（不给 min(N) 那种截断）。*/
+static int yk_zone_open(float x, float y, float radius, unsigned life, int hit_type)
+{
+    unsigned i;
+    for (i = 0; i < YK_ZONE_MAX; ++i) {
+        if (s_zone[i].life) continue;
+        s_zone[i].x = x; s_zone[i].y = y;
+        s_zone[i].radius = radius; s_zone[i].life = life; s_zone[i].hit_type = hit_type;
+        ++s_zone_opened;
+        return 1;
+    }
+    ++s_zone_pool_full;
+    return 0;
+}
+
+/* 每帧：① 扫**在场敌弹**判「进没进区」② 进区 ⇒ 弹消失 + 吐 1 颗刻符 ③ 区寿命到就撤。
+ * 开销：**只有当帧有活区时才扫池**（否则一次函数调用就返回 ⇒ 零开销）；
+ *       池 2000 格 × 活区数（≤ `YK_ZONE_MAX`）的平方距离比较，只在开区后的 16 帧里发生。*/
+static void yk_zone_tick(yk_card_t *s, uint32_t card_id, uint32_t frame)
+{
+    uint8_t *mgr = CE_BULLET_MGR();
+    unsigned i, k, live = 0;
+    int owner;
+    if (!s) return;
+    for (i = 0; i < YK_ZONE_MAX; ++i) if (s_zone[i].life) ++live;
+    if (live && mgr) {
+        owner = ce_cancel_latch_owner();
+        if (owner == -1 || owner == (int)card_id) {          /* 别人拿走这一帧 ⇒ 我们不吃 */
+            for (k = 0; k < YK_ZONE_BULLET_SLOTS; ++k) {
+                uint8_t *b = mgr + CE_BM_BULLETS + (size_t)k * CE_BULLET_STRIDE;
+                uint16_t st = *(const uint16_t *)(b + CE_BULLET_STATE);
+                const float *bp;
+                if (st != 1 && st != 2) continue;             /* 一手：区只吃「活动中」的弹 */
+                bp = (const float *)(b + CE_BULLET_POS);
+                for (i = 0; i < YK_ZONE_MAX; ++i) {
+                    float dx, dy;
+                    if (!s_zone[i].life) continue;
+                    dx = bp[0] - s_zone[i].x;
+                    dy = bp[1] - s_zone[i].y;
+                    if (dx * dx + dy * dy > s_zone[i].radius * s_zone[i].radius) continue;
+                    /* ★ 吃掉：弹写「消去」态（TH18 = 3，见 `YK_ZONE_BULLET_STATE_ERASED` 的注），
+                     *   然后按 hit type 吐 —— 本批只有 7 ⇒ **1 颗刻符**（落在**弹的位置**上）。*/
+                    *(uint16_t *)(b + CE_BULLET_STATE) = (uint16_t)YK_ZONE_BULLET_STATE_ERASED;
+                    yk_orb_spawn(s, bp[0], bp[1], YK_ORB_STATE_SPAWN);
+                    ++s_zone_orbs;
+                    ++s_zone_bullets;
+                    break;                                     /* 一颗弹只被一个区吃 */
+                }
+            }
+        }
+    }
+    for (i = 0; i < YK_ZONE_MAX; ++i)
+        if (s_zone[i].life && --s_zone[i].life == 0u) ++s_zone_closed;
+    /* 台账：每 120 帧一行，且只在「这件事真的发生过」之后（不刷屏）。*/
+    if ((s_zone_opened || s_zone_bullets) && (frame % 120u) == 0u)
+        ce_log("youkai/zone: opened %u closed %u orbs %u bullets %u pool_full %u (16-frame "
+               "death-point absorb zones, hit type %d => 1 time orb per eaten bullet; opened only when "
+               "the dying enemy's familiar count != 0, `th08:0x42adc4`)",
+               s_zone_opened, s_zone_closed, s_zone_orbs, s_zone_bullets, s_zone_pool_full,
+               (int)YK_ZONE_HIT_ORB);
+}
+
 static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
 {
     int focused, i, n2;
@@ -3636,6 +3733,15 @@ static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
                 }
                 n = slots;
             }
+        }
+        /* ★★★ 2026-09-30（**owner 拍板**）：**死亡点吸收区** —— 一手 `th08:0x42adc4 je 0x42b1e5`
+         * 的门就是这里这个 `n`（使魔数）⇒ **`n > 0` 才开**（没使魔的小怪死了什么都不开）；
+         * 开的同时给 **1 颗刻符**（`th08:0x42b1a4 push $1 / push $7`，位置 = 死亡点），
+         * 再开 **R=32.5f / 16 帧 / hit type 7** 的圆型区（`th08:0x42b1b8` + `th08:0x42b1d4 call 0x44df00`）。*/
+        if (n > 0) {
+            yk_orb_spawn(s, ev->x, ev->y, YK_ORB_STATE_SPAWN);          /* 死亡点那 1 颗 */
+            ++s_zone_orbs;
+            yk_zone_open(ev->x, ev->y, YK_ZONE_DEATH_RADIUS, YK_ZONE_DEATH_LIFE, YK_ZONE_HIT_ORB);
         }
         n2 = (int)yk_kill_burst_count(n);
         if (!n2) {
@@ -3972,6 +4078,7 @@ static int on_ctor(ce_card_t *c)
     /* ★★★ 2026-09-28（第四十九批）：绕转使魔同理（文件级静态表；`on_run_reset` 那条路已经过
      *   `yk_drop_all`，这里是**再兜一次** —— ctor 在局中每关都会被调，且它是真敌人，漏一只就是游荡空壳）。*/
     yk_orbit_kill_all();
+    yk_zone_clear_all();                  /* ★ 同上的区池（每关 ctor 会重跑）*/
     /* ★ 2026-09-27 第二十六批：卡侧束的句柄也是**文件级静态**（每关 ctor 会重跑）⇒ 一并收干净，
      * 否则换关后那支 VM 会永远钉在旧位置（`METHOD.md` 铁律二：长持续效果必须交代被删掉会怎样）。*/
     yk_beam_kill(0);
@@ -6124,6 +6231,8 @@ static int on_tick_2(ce_card_t *c)
     yk_orbit_tick(s_ledger_frame);
     /* ★ 早苗妖侧弹色（owner 口径）：默认秋黄、逢魔红 —— 每帧刷一次（只动 RGB）。*/
     yk_aya_bullet_color_tick(s);
+    /* ★ 死亡点吸收区：每帧核寿命 + 吃进区的敌弹（无活区时零开销）。*/
+    yk_zone_tick(s, ce_card_id(c), s_ledger_frame);
     /* ★★ 2026-09-26（owner：那声切换音「**在有使魔的情况下才有**」）：人→妖那一下的 `se_ophide`
      *   **延到这里才播** —— 门要读**本帧**使魔表（`yk_familiars_tick()` 刚在上面建/撤完）。
      *   一手语义也是这个：那一声是**敌人的方法**（`FUN_0042c420`）在「形态变了」时发的，
