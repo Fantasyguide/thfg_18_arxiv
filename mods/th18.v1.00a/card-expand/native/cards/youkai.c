@@ -3698,38 +3698,44 @@ static int yk_zone_open(float x, float y, float radius, unsigned life, int hit_t
 /* 每帧：① 扫**在场敌弹**判「进没进区」② 进区 ⇒ 弹消失 + 吐 1 颗刻符 ③ 区寿命到就撤。
  * 开销：**只有当帧有活区时才扫池**（否则一次函数调用就返回 ⇒ 零开销）；
  *       池 2000 格 × 活区数（≤ `YK_ZONE_MAX`）的平方距离比较，只在开区后的 16 帧里发生。*/
-static void yk_zone_tick(yk_card_t *s, uint32_t card_id, uint32_t frame)
+/* ⚠ **`noinline` 是必需的**（2026-09-22 实测口径，见本文件别的注）：本函数内联着
+ *   `ce_cancel_radius` 的内联汇编（`sdk.h:156`），i686 的寄存器不够 ⇒ 一旦被并进更大的函数
+ *   就报 `inline assembly requires more registers than available`。*/
+static void __attribute__((noinline)) yk_zone_tick(yk_card_t *s, uint32_t card_id, uint32_t frame)
 {
     uint8_t *mgr = CE_BULLET_MGR();
-    unsigned i, k, live = 0;
+    unsigned i, live = 0;
     int owner;
     if (!s) return;
     for (i = 0; i < YK_ZONE_MAX; ++i) if (s_zone[i].life) ++live;
     if (live && mgr) {
+        /* ★ 仲裁：本帧别人拿了全屏消弹那一笔 ⇒ 我们**这一帧不吃弹**（只观察、不认领）。*/
         owner = ce_cancel_latch_owner();
-        if (owner != -1 && owner != (int)card_id) ++s_zone_latch_skip;   /* 只因仲裁跳过（诊断）*/
-        if (owner == -1 || owner == (int)card_id) {          /* 别人拿走这一帧 ⇒ 我们不吃 */
-            /* ★★★ 2026-09-30（**P0 实跑 bug**，owner：「发射口使魔放出的弹幕视觉上不会被消弹，
-             *   但之后也不会再有任何判定」）—— **改走引擎自己的消弹入口**：
-             *   原来这里是「自己扫池 + 手写 `state = 3`」，实测 3 只是**不再判定**（引擎认为它
-             *   「已在消去中」，`cancel_all` 都跳过它）而**不播消去视觉** ⇒ 观感 =「弹还在、但打不到」。
-             *   ⇒ 现在每帧对每个活区调一次 **`ce_cancel_radius`**（= `th18:0x429370`
-             *   `cancel_radius_as_bomb`，本仓 `sdk.h` 的封装），**mode 0 = 消去但不吐原生道具**
-             *   （一手 mode 表：0/3 不吐道具；我们照旧吐**自己的刻符** ⇒ 一手口径不变）；
-             *   返回的**颗数**就是「这一次消掉几颗」（封装里调前清 / 调后读 `CE_BM_CANCEL_COUNTER`，
-             *   并**自动**登记进本帧消弹记录）⇒ 按它吐刻符 + 记台账，不再需要自己扫 2000 格池。
-             *   ⚠ 区间是「每帧一小圈、连续 `YK_ZONE_DEATH_LIFE` 帧」= 一手「16 帧内经过死亡点的弹
-             *     逐颗被吃」的同一形状。*/
-            float cpos[3];
-            int got;
-            cpos[0] = s_zone[i].x; cpos[1] = s_zone[i].y; cpos[2] = 0.0f;
-            got = ce_cancel_radius(cpos, s_zone[i].radius, (int)YK_ZONE_BULLET_SLOTS, 0);
-            if (got > 0) {
-                int oi;
-                s_zone_bullets += (unsigned)got;
-                s_zone_orbs += (unsigned)got;
-                for (oi = 0; oi < got; ++oi)
-                    yk_orb_spawn(s, s_zone[i].x, s_zone[i].y, YK_ORB_STATE_SPAWN);
+        if (owner != -1 && owner != (int)card_id) ++s_zone_latch_skip;
+        if (owner == -1 || owner == (int)card_id) {
+            for (i = 0; i < YK_ZONE_MAX; ++i) {
+                float cpos[3];
+                int got;
+                if (!s_zone[i].life) continue;
+                /* ★★★ 2026-09-30（**P0 实跑 bug**，owner：「发射口使魔放出的弹幕视觉上不会被消弹，
+                 *   但之后也不会再有任何判定」）—— **改走引擎自己的消弹入口**，不再手写 `state = 3`：
+                 *   实测（实跑）写 3 只是**不再判定**（引擎认为它「已在消去中」，`cancel_all` 都跳过它）
+                 *   而**不播消去视觉** ⇒ 观感 =「弹还在、但打不到」。
+                 *   `ce_cancel_radius` = `th18:0x429370 cancel_radius_as_bomb`（`sdk.h` 的封装：
+                 *   调前清 / 调后读 `CE_BM_CANCEL_COUNTER`，并自动登记进本帧消弹记录）；
+                 *   **mode 0 = 消去但不吐原生道具**（一手 mode 表：0/3 不吐道具）⇒ 我们照旧吐
+                 *   **自己的刻符**，一手口径不变；`max_count` 给满池尺寸 = 圈内不限颗数。
+                 *   ⚠ 形状 = 「每帧一小圈、连续 `YK_ZONE_DEATH_LIFE` 帧」= 一手「16 帧内经过死亡点
+                 *     的弹逐颗被吃」的同一形状；每颗被消的弹在**区心**吐一颗刻符。*/
+                cpos[0] = s_zone[i].x; cpos[1] = s_zone[i].y; cpos[2] = 0.0f;
+                got = ce_cancel_radius(cpos, s_zone[i].radius, (int)YK_ZONE_BULLET_SLOTS, 0);
+                if (got > 0) {
+                    int oi;
+                    s_zone_bullets += (unsigned)got;
+                    s_zone_orbs += (unsigned)got;
+                    for (oi = 0; oi < got; ++oi)
+                        yk_orb_spawn(s, s_zone[i].x, s_zone[i].y, YK_ORB_STATE_SPAWN);
+                }
             }
         }
     }
@@ -3738,10 +3744,10 @@ static void yk_zone_tick(yk_card_t *s, uint32_t card_id, uint32_t frame)
     /* 台账：每 120 帧一行，且只在「这件事真的发生过」之后（不刷屏）。*/
     if ((s_zone_opened || s_zone_bullets) && (frame % 120u) == 0u)
         ce_log("youkai/zone: opened %u closed %u orbs %u bullets %u pool_full %u latch_skip %u (16-frame "
-               "death-point absorb zones, hit type %d => 1 time orb per eaten bullet; opened only when "
-               "the dying enemy's familiar count != 0, `th08:0x42adc4`)",
+               "death-point absorb zones via `ce_cancel_radius` mode 0 => 1 own time orb per cancelled bullet; "
+               "opened only when the dying enemy's familiar count != 0, `th08:0x42adc4`)",
                s_zone_opened, s_zone_closed, s_zone_orbs, s_zone_bullets, s_zone_pool_full,
-               s_zone_latch_skip, (int)YK_ZONE_HIT_ORB);
+               s_zone_latch_skip);
 }
 
 /* ★★★ 2026-09-30（**owner 口径**）：「我们 108 的 **boss 的发射口使魔原则上也应当是每段攻击
