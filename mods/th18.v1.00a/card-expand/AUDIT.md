@@ -26118,7 +26118,13 @@ verify/autoplay 的场景只判 109 的日志）；`sites.py` / `sdk.*` / `engin
 
 ---
 
-### §BE 详录 #164 —— 2026-10-01c：**顶部三角指示**（owner 新需求；107 / 110 / 111 统一）
+### §BE 详录 #164 —— 2026-10-01c：**顶部三角指示**（107 / 110 / 111 统一）【★ 2026-10-01d **整条撤销**】
+
+> **撤销（owner 2026-10-01d）**：「嗨呀，我重新看了，**th18 一手没有这个特性，那就去掉吧**」。
+> 处置：`native/cards/top_indicator.h` / `assets/ability/top_indicator/` / `scripts/375_top_indicator.anm.txt` /
+> `make_top_indicator_art.py` **全部删除**；`cards/faith.c` / `entries/ORDER.txt` / `native/anm_ids.h` 回退到实现前；
+> `make anm` 重编、`make check` **rc=0**。一手调研（`engine/player/th18/06-offscreen-top-indicator-absent.md`）
+> **保留** —— 它的结论「TH18 有零件没扳机」与 owner 复核一致。以下为当时的登记原文（历史）。
 
 **谁改的**：统筹会话（owner 2026-10-01：「109 其他人做了，你只做统一修改性质的东西——**加三角**」）。
 

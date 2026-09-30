@@ -665,7 +665,7 @@ DLL `eec2b9c5935d7be751ddb0c5f85e88a5`（modkit 4 路径同 md5）+
 | --- | --- |
 | 需求 | 当我们的对象（点道具 / 信仰点 / 自建 VM）跑到**画面正上方之外**时，在其 x 处、**画面顶边**画一个**三角形指示**（表示「上面还有」）|
 | 涉及卡 | **只有三张**：**107**（自建 VM）、**110 / 111**（信仰点）｜★ owner 2026-10-01 追加：「**109 没有**」⇒ **109 不做**这个三角（灵力道具与灵都不做）|
-| 状态 | ✅ 一手调研完成（TH18 是死代码、活版在 **TH07**）＋ ✅ 实现已落地（2026-10-01c）⇒ **待实跑**｜详见 [`§BE 详录 #164`](AUDIT.md) 与本文件 §11.2 |
+| 状态 | ❌ **已撤销（2026-10-01d）** —— owner 复核后定：**TH18 一手没有这个特性**，不做。一手调研结论保留（TH18 是死代码、活版只在 TH07），**实现已整条回退**（代码 / 资产 / 生成物全清）｜见 §11.2 |
 | 铁律 | ★ **UI/动画一律先从原代码找**：必须给出「哪个 anm + script 号 + 判据字段 + 画在哪 + 生命周期」；**原版找不到才允许 ❓自定**并登记 `TUNING.md` |
 | 铁律 2 | 「长持续效果的卡必须交代**被删掉会怎样**」：三角 VM 要在 `on_delete` 收干净 |
 | 已知对照（**不是**这条）| `engine/player/th18/05-poc-height-and-indicator.md` = **收点线**那条指示线（`front.anm` script `57`，引擎 GUI 自建 VM、可见性由 `Gui+0x194` bit `0x2000` 把门、位置每帧现算）⇒ **「引擎里怎么养一个指示 VM」的现成先例**，实现三角时可以照这个架子 |
@@ -700,3 +700,15 @@ DLL `eec2b9c5935d7be751ddb0c5f85e88a5`（modkit 4 路径同 md5）+
 | 登记 | `AUDIT.md` **§BE 详录 #164**（含影响面与回归）+ `CAPACITY.md` |
 | 回归 | `make check` **rc=0**（anm-verify / capcheck / sitecheck / check-docs 412 文件 + 全部单测）；站点零新增 |
 | 实跑判据 | ①点跑出画面顶边 ⇒ 顶边出现三角、x 跟着点 ②点回到画面内 ⇒ **立刻**消失（无淡出）③长按放 B / 换关 / 删卡 ⇒ 三角**不留残留** |
+
+### 11.3 撤销记录（2026-10-01d）
+
+> **owner 原话**：「嗨呀，我重新看了，**th18 一手没有这个特性，那就去掉吧**，不好意思」
+
+| 项 | 处置 |
+| --- | --- |
+| 代码 | `native/cards/top_indicator.h` **删除**；`native/cards/faith.c` 回到实现前（`faith_dot_t` 无 `topi_id`、tick/两条清理路的调用全撤）|
+| 资产 | `assets/ability/top_indicator/TOP_INDICATOR.png` + `scripts/375_top_indicator.anm.txt` + `make_top_indicator_art.py` **删除**；`entries/ORDER.txt` 去掉那三行追加 |
+| 生成物 | `native/anm_ids.h` 回退（`CE_ANM_ABILITY_SPRITE_TOP_INDICATOR` / `..._SCRIPT_TOP_INDICATOR` 消失）；`make anm` 重编过 |
+| 回归 | `make check` **rc=0**（413 文件）；`sites.py` / `sdk.*` / `engine.h` / `cards_def.md` / `Makefile` 始终未动 |
+| 保留 | `engine/player/th18/06-offscreen-top-indicator-absent.md`（**一手调研**，结论 = 「TH18 有零件没扳机」）—— 与 owner 复核结果一致，留作资料 |

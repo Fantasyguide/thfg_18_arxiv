@@ -81,7 +81,6 @@
 #include <string.h>
 #include "sdk.h"
 #include "faith.h"
-#include "top_indicator.h"   /* ★ 2026-10-01：顶部三角指示（107/110/111 统一的画面外指示）*/
 #include "mof_green_core.h"   /* ★ 2026-09-22：绿妖精载体的三个纯函数 */
 
 /* —— 运动学常量（出处见文件头；与 season.c 同值，别单独调）—— */
@@ -361,10 +360,6 @@ typedef struct {
      *   见 `faith_user_t` 尾部那两个字段的注（唯一使用者 = 107 的樱点）。*/
     int32_t art_sprite;
     int32_t art_script;
-    /* ★★ 2026-10-01：**顶部三角指示**的 VM 句柄（0 = 没起；见 `cards/top_indicator.h` 的文件头 =
-     *   owner 需求 + 照 TH07 活版的五项配方）。本池是 107/110/111 三张卡**共用**的点池
-     *   ⇒ 三角只在这一处接（「统一修改」）；每颗点各自一个三角（owner 口径）。*/
-    uint32_t topi_id;
 } faith_dot_t;
 
 /* ★ 池放 DLL 静态区（ce_state 只有 496 字节，装不下几百颗点；同 season.c 的口径）。*/
@@ -475,8 +470,6 @@ static faith_dot_t *dot_at(faith_tier_t tier, int i)
 
 static void dot_remove(faith_tier_t tier, int i)
 {
-    faith_dot_t *p = (tier == FAITH_TIER_BIG) ? &s_big[i] : &s_small[i];
-    ce_topi_kill(&p->topi_id);              /* ★ 本颗点的顶部三角一起收（长持续效果铁律）*/
     if (tier == FAITH_TIER_BIG) s_big[i] = s_big[--s_n_big];
     else                        s_small[i] = s_small[--s_n_small];
 }
@@ -647,13 +640,11 @@ void faith_clear_entities_mask(int slot_mask)
     for (i = 0; i < s_n_big; ) {
         if (!(s_big[i].slot_mask & slot_mask)) { ++i; continue; }
         if (s_big[i].id) ce_anm_delete((uint32_t)s_big[i].id);
-        ce_topi_kill(&s_big[i].topi_id);            /* ★ 顶部三角一起收 */
         s_big[i] = s_big[--s_n_big];
     }
     for (i = 0; i < s_n_small; ) {
         if (!(s_small[i].slot_mask & slot_mask)) { ++i; continue; }
         if (s_small[i].id) ce_anm_delete((uint32_t)s_small[i].id);
-        ce_topi_kill(&s_small[i].topi_id);          /* ★ 顶部三角一起收 */
         s_small[i] = s_small[--s_n_small];
     }
     /* ★★ 2026-09-15（`NEXT.md` §1x.2，删卡铁律）：**池被清空 ⇒ 立刻撤掉在飞声明**。
@@ -1963,10 +1954,6 @@ int faith_pool_tick(void)
                 continue;
             }
             ++p->age;
-
-            /* ★ 2026-10-01：顶部三角指示 —— 对象在画面顶边之外就摆一个三角（x 跟对象、y 固定 8.0、
-             *   距离式 alpha），回到画面内**立刻**消失（owner 口径：不是淡出）。一手见 `cards/top_indicator.h`。*/
-            ce_topi_tick(&p->topi_id, p->x, p->y, CE_TOPI_RGB_WHITE);
 
             /* 回收线 / 放 B / 对话 ⇒ 真空飞行（初速 = 磁速）。
              * ★ 2026-09-15：原来这里（以及下面两处）还有 `p->age >= FAITH_INTANGIBLE`（32 帧）——

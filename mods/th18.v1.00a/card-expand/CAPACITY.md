@@ -1059,7 +1059,7 @@ CE_ANM_ABILITY_SPRITE 宏 721 个，号 109..452
 
 ---
 
-## 2026-10-01c —— 顶部三角指示（107 / 110 / 111 统一；owner 需求）
+## ~~2026-10-01c —— 顶部三角指示~~【**2026-10-01d 已撤销**：owner 复核「th18 一手没有这个特性」⇒ 图集/脚本已回退，本段只作记录】
 
 - **图集成员**：`TOP_INDICATOR` = `ability/top_indicator/TOP_INDICATOR.png`（16×16 单图行，**末尾 append**）
   ⇒ 一 entry 一 sprite（`CE_ANM_ABILITY_SPRITE_TOP_INDICATOR = 572` / entry90）。
