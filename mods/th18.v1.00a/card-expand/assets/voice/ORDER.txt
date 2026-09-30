@@ -61,3 +61,13 @@ UFO_TOKEN_SPAWN
 #   一手定位：TH12 SE 表 `th12:0x4ae5a4` 第 **0x33** 行 `+0x00` = 名表下标 **40** → 名表 `th12:0x4aea50`
 #   → **`se_ufo.wav`**；行属性 vol **−400** / prio 100 / loop 0。TH18 84 行里没有这一枚 ⇒ 扩表现取。
 UFO
+
+# ★★ 2026-09-30（108 绕转使魔）：建使魔那一下的 SE（TH08 `se_option.wav`）
+#   一手：opcode 90/91/92（`familiarCreateA`/`familiarCreate`/`familiarCreateF`）三条尾巴**都**是
+#   `push 0x24` + `call 0x45d660`（`PlaySoundPositionedByIdx`，声像 = **生成者 x**）：
+#   `th08:0x41b0fa`/`0x41b101`（op90）、`0x41b2aa`/`0x41b2b1`（op91）、`0x41b4cb`/`0x41b4d2`（op92）；
+#   SE 表 `th08:0x4c8040[0x24]` = {bufferIdx **28**, vol **−800**（百分之一 dB）, prio **100**}，
+#   `nametable[28]` = **`se_option.wav`**（`assets/voice/derive_retail_se.py` 构建期从
+#   `local/th08.v1.00d/dat/` 逐字节现取；版权口径同 `YOUKAI_FAM_SHIFT`）。
+YOUKAI_FAM_SPAWN
+

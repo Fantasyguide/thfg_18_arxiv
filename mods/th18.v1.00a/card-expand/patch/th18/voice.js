@@ -71,4 +71,10 @@
     "volume_db": -400,
     "priority": 100
   }
+  ,"YOUKAI_FAM_SPAWN": {
+    "wav": "YOUKAI_FAM_SPAWN",
+    "id": 96,
+    "volume_db": -800,
+    "priority": 100
+  }
 }

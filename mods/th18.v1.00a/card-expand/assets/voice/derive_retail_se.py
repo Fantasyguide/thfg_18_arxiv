@@ -53,6 +53,12 @@ TABLE = (
     ("MOFPOWERUP", "th10.v1.00a", "se_powerup.wav",
      "th10:0x41b446（小 P）/ 0x41b68c（大 P）`mov ebx,0x1d; call 0x43dd10` —— 满 P 那一帧的上涨音；"
      "TH10 的 `0x1d`→`se_powerup.wav`，与 TH18 的**同名不同录音**（77278 B vs 367106 B）"),
+    ("YOUKAI_FAM_SPAWN", "th08.v1.00d", "se_option.wav",
+     "th08:0x41b2aa `push 0x24` + 0x41b2b1 `call 0x45d660` = **建使魔**（opcode 91 `familiarCreate`）"
+     "那条尾巴的 SE（op90 `0x41b0fa`/`0x41b101`、op92 `0x41b4cb`/`0x41b4d2` **三处同形** ⇒ "
+     "每建一台使魔各响一次）。SE 表 `th08:0x4c8040[0x24]` = {wav 28, vol **−800**, prio 100}；"
+     "名表 `0x24` 项 = `se_option.wav`。★ 卡 108 只在**惰性绕转使魔**建壳成功时播（映射使魔那条路 "
+     "不是 `familiarCreate` 的语义）"),
     ("YOUKAI_FAM_SHIFT", "th08.v1.00d", "se_ophide.wav",
      "th08:0x42c489 `push 0x28` + 0x42c490 `call 0x45d550` = `FUN_0042c420` 的「**人→妖**」分支"
      "（`flags` bit11 == 0 且玩家已是妖；同支还有 `0x42c477 push 0x2` = 环换妖侧、"

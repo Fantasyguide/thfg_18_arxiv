@@ -25371,3 +25371,84 @@ S55 / S56。owner 若想起原作那套对应关系 ⇒ **只改这一张表**�
 **闸（原文）**：`make -s check` rc=0（`youkai_core: 8104 checks, 0 failed`；其余各测试 0 failed）、
 `make -s dllx87` ⇒ `x87 in our objects: 0`、`python3 sites.py verify` ⇒ `✅ 全部对上`（213 条 binhack）、
 `python3 native/tools/capcheck.py` ⇒ `capcheck：全绿 ✅`、`python3 tooling/check-docs.py` ⇒ `✓ 全部通过`。
+
+### §BE #150 · 追加（2026-09-28 第十轮）：**绕转形状订正**（arg0 是时长不是半径）+ **生成 SE** + **生成延时**
+
+> **owner 口径**（工单原文）：「左下角 HUD 位置不对，得再往左……」（已在上一条做完）；
+> 本轮 = 一支一次手核查的**订正**（`moveCircle` 的实参语义）+ owner 要的两件事（生成 SE / 生成延时）。
+
+**一、★★★★ 订正：`moveCircle` 第 1 实参是「时长」，不是「半径」**（一手逐字段，`th08:0x41a4b7`）：
+
+| 字段（ExpHP `zEnemy`）| 写什么 | 语义 |
+| --- | --- | --- |
+| `+0x2de8` | `arg0` | **时长**（帧）—— ⚠ 我们上一版把它当**半径**（`100/60/20` 三个数全错）|
+| `+0x2dd0` | 当前 `pos` | **圆心**（第三轮「定圆心」用的就是它）|
+| `+0x2d9c` / `+0x2da0` | `arg1` / `arg2` | 初始角 / **`angular_velocity`**（弧度帧）|
+| `+0x2db0` / `+0x2db4` | **`0.0f`** / `arg3` | radius **从 0 起** / **`radial_speed`**（px/帧）|
+
+**最终半径 = arg0 × arg3**：`(100, 0.64) = 64`（stage1 三支妖精）、`(60, 0.8333) = 50`（stage4A/4B Sub5）、
+`(20, 3.0) = 60`（stage4b–8 大怪）⇒ **都在 50–64**（旧版「台数越多圈越紧」那条**不成立**，已从文档撤掉）。
+**改法**：删 `yk_orbit_radius_for_count`（100/60/20 那套），改
+`YK_ORBIT_FINAL_RADIUS 60.0f` + `YK_ORBIT_EXPAND_FRAMES 100u` + `YK_ORBIT_RADIAL_SPEED = 60/100 = 0.6 px/帧`
++ 纯函数 `yk_orbit_radius_at(age, &out)`（出生 0 → 线性外扩 → 100 帧后冻结；出口走**指针**：
+返回 float 会经 i686 的 x87 `st(0)` ⇒ `dllx87` 会红，这条教训第六轮已经踩过一次）。
+`yk_orbit_t` 新增 `age`（每帧 +1）。**角速度同时订正回一手值 3.0°/帧**（`YK_ORBIT_STEP_DIV` 2 → 1）：
+owner 那句「旋转速度太快」的**根因就是半径读错**（一进场就钉在 100 px 的圈上、线速度偏大，还丢了
+「贴本体 → 1.7 s 渐开」的节奏）⇒ 3°/帧 + 渐开一起订正；想更慢仍可把 `DIV` 改回 2（= 一手另一档 1.5°/帧）。
+
+**二、生成 SE**（见下面的 §BE #151：动了共享资产链）+ **生成延时**（`YK_ORBIT_DELAY_FRAMES = 60`）：
+一手（`ecldata1.txt`）阶段一妖精进场后飞约 1 秒（`moveDirTime(60,4,·)`）才在 **t = 50/60/70 帧**建使魔，
+且 2/4 台**同一帧连发、零帧间隔、无循环**。⇒ 我们按「父敌**首次被扫到**的帧号 + 60」放行，
+**同一父敌的多台同帧一次建满**（`s_orbit_seen[]` 小表，每父敌一项；父敌没了/收口时清）。
+扫场是每 30 帧一次 ⇒ 实际延时量化到 30 的倍数（日志 `spawn delay 60 f` 可对账）。
+
+**三、拖尾：本批不做（一手否定 + 配方与代价已归档）** —— 见
+[`engine/enemy/th08/03-familiar-count-vs-hp.md` §5c](../../../engine/enemy/th08/03-familiar-count-vs-hp.md)：
+TH08 使魔**没有**拖尾（`anmSetEx` 不是余像；script 53..56 自带拖尾；真正的 `trailSet` 全 24 份 ECL
+只有 4 面 boss 用 26 处、与任何使魔 sub 交集为空）。「体积感」的真实来源 = 32×32 彗星尾贴图 +
+加法光盘（`etama.anm` script48 = 我们的 `YOUKAI_FAMILIAR_RING 309`，**已在做**）+ 隐藏/显现那一对。
+若日后要做：15 帧位置历史 + 每帧 N 支 VM + `alpha/scale = 1 − i/15`（借 4 面配方，❓自定），
+代价 = **240 支 VM 量级**（48 台 × 5）+ 每条退休路都要收干净。
+
+**四、逢魔的 SE：TH08 没有（负结论，别加）** —— 全 `.text` 里 `PlaySoundByIdx th08:0x45d550` /
+`PlaySoundPositionedByIdx th08:0x45d660` 的调用点**普查只有 23 处**，逢魔那一段
+（`th08:0x44c52a`–`0x44c593`）里**一条都没有**，TH08 也没有「进入事件」可挂 ⇒ 默认不播；
+owner 之后若要，要自己造**边沿 + 迟滞**（❓自定）。
+
+**单测**：`yk_orbit_radius_at` 的边界（0 / 负数 / 1 / 50 / 99 / 100 / 101 / 1000000 / NULL）+
+单调不降 + 恒在 `[0, FINAL]` 内；`YK_ORBIT_STEP_DIV = 1` 的角速度自检 + 半步累加器的
+**DIV 无关**断言（`DIV` 改成 2 也全过：一圈帧数 = `360° ÷ 有效角速度` = `STEPS × DIV`）。
+
+## §BE 详录 #151（2026-09-28 第十轮）：**共享件** —— voice 资产链加一枚 SE（`YOUKAI_FAM_SPAWN` = `se_option.wav`）
+
+> 卡 108 的**惰性绕转使魔**建壳成功时要响一声（一手：opcode 90/91/92 三条尾巴都是
+> `push 0x24` + `call th08:0x45d660` = `PlaySoundPositionedByIdx`，声像 = **生成者 x**；
+> SE 表 `th08:0x4c8040[0x24]` = {wav **28**, vol **−800**, prio **100**}，名表 28 = `se_option.wav`）。
+> TH18 的 84 行里没有这一枚 ⇒ 走本仓**已有的音效扩容通道**（`native/sound_sites.py` 的 `0x54..0x73`）。
+
+### 改了哪些**共享**文件（⛔ 不在卡 108 自己的范围内 ⇒ 逐条登记）
+
+| 文件 | 改了什么 | 为什么 | 验证 |
+| --- | --- | --- | --- |
+| `assets/voice/derive_retail_se.py` | `TABLE` **末尾追加一行** `("YOUKAI_FAM_SPAWN", "th08.v1.00d", "se_option.wav", <一手出处>)` | 构建期从 `local/th08.v1.00d/dat/` **逐字节**现取（版权资产不入库）| `make voice` 跑通；产物 26504 B 与原件同尺寸 |
+| `assets/voice/ORDER.txt` | **末尾追加** `YOUKAI_FAM_SPAWN`（含一手出处的注释块）| `ORDER.txt` 行号 = id（第 k 行 ⇒ `0x54 + k`）⇒ 新 id = **0x60** | `build_voice.py` 的 ORDER↔voice.js 对账（id 对不上直接停）|
+| `patch/th18/voice.js` | `UFO` 之后**追加** `"YOUKAI_FAM_SPAWN": { wav, id: 96, volume_db: -800, priority: 100 }` | vol/prio = **一手行**那两个数 | `make voice` 的校验段（id / vol 范围 / ORDER 覆盖）全过 |
+| `.gitignore` | 追加一行 `…/assets/voice/YOUKAI_FAM_SPAWN.wav` | 与既有 6 枚「别作 SE 构建期现取」**同一口径**（原版音频**绝不入库**）| `git status` 里不再出现那枚 wav |
+| `patch/files.js` | 由 `make voice` **自动重算**的清单哈希（`th18/voice.js` 那一条）| 生成物 | ✅（生成器自己写的）|
+| `native/voice_ids.h` | 生成物（已 gitignored）：新增 `CE_VOICE_YOUKAI_FAM_SPAWN 0x60` | 卡侧用宏名，不写死数字 | 生成器输出 |
+
+### 影响面 = **零**（逐条）
+
+- **新 id 只在末尾追加**（`0x60`）：既有 `0x54..0x5f` 的号一个都没动 ⇒ 其它卡（58-62 / 72 / 107 /
+  109 / 110 / 111 / 112 / 113 …）拿到的音效**逐字节不变**；
+- 四张表的**宽度**由 `sound_sites.py` 的 `NEW_N = 32` 决定（现在用到 13 格）⇒ 也不动；
+- 唯一「共享行为」的变化：TH18 多了一枚可播的 SE + 一个 wav 文件（~26 KB）。
+- ⚠ 一手的音量/优先级**已写进 voice.js**（−800 / 100）；一手还带 `loop = 0`，本仓的扩容行没有
+  loop 字段（默认不循环）⇒ 与一手同效。
+
+### 回归跑了什么
+
+`make voice`（`derive_retail_se.py` → `build_voice.py`：13 个 wav + `voice_ids.h` 重生成）⇒ 全过；
+`make -s check` 的 **`snd-check`**（`sound_sites` 96 / `sound_emit` 188 / `build_voice` 17 项）
++ `sites.py verify`（213 条 binhack 全对上）+ `dllx87`（0）+ `capcheck`（全绿）
++ `check-docs`（全过）⇒ 一次跑绿；卡 108 侧 `youkai_core: 8120 checks, 0 failed`。

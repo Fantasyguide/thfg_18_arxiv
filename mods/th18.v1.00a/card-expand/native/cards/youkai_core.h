@@ -1980,6 +1980,14 @@ int yk_item_box_open(int32_t player_state);
                                        *（117 的判据：用户口径 + `enemy.png` 实测 —— 右下角 sprite96..107 = 64×64）。
                                        * ⚠ **别单独改这个数**：两处必须同值，要改先动 117 的那一份。*/
 #define YK_BIG_SPRITE_MIN_H   64
+#define YK_ORBIT_DELAY_FRAMES 60u     /* ★★★ 生成**延时**（一手形状）：父敌**首次被扫到**之后再等这么多帧
+                                       *   才建使魔。一手（`ecldata1.txt` 逐条）：阶段一妖精**进场后飞约 1 秒**
+                                       *   （`moveDirTime(60,4,·)`）才在 **t = 50 / 60 / 70 帧**建使魔，
+                                       *   而且 2/4 台**同一帧连发、零帧间隔、无循环**（`familiarCreateF`，
+                                       *   x=y=0 ⇒ 相对父敌位置）⇒ 我们取 **60**，并且**同帧一次建满**。
+                                       *   ⚠ 扫场是每 `YK_ORBIT_SCAN_INTERVAL`(30) 帧一次 ⇒ 实际延时会被量化到
+                                       *     30 帧的整数倍（60 ⇒ 通常在首次命中后的第 2~3 次扫描建出）。*/
+#define YK_ORBIT_SEEN_MAX     24       /* 「首次命中」表的大小（每父敌一项；父敌没了就清）*/
 #define YK_ORBIT_SCAN_INTERVAL 30u    /* ❓自定（owner 未给数）：扫场间隔（帧），30 ≈ 0.5 s。
                                        *   扫描要遍历全场敌人链表 + 每只读一次贴图尺寸 ⇒ 不必每帧。
                                        *   建议值来源：`HANDOFF-108.md` §4 那张表。*/
@@ -2020,21 +2028,29 @@ int yk_orbit_stage_bonus(int stage);
 /* **最终台数** = `clamp(HP 档 + 面加成, 1, YK_ORBIT_MAX_PER_ENEMY)` —— 卡侧用的就是这一个。*/
 int yk_orbit_count_total(int hp_max, int stage);
 
-/* ★★★ 2026-09-28 第三轮：**绕转半径按台数分档**（一手读数分布见
- *   [`engine/enemy/th08/03`](../../../../../engine/enemy/th08/03-familiar-count-vs-hp.md) §3：
- *   实参 `moveCircle` 的半径分布 = `r=120 ×148 / r=100 ×104 / r=20 ×93 / r=60 ×10`；
- *   道中读数是「**HP 越大台数越多、圈越紧**」：stage1–3 小怪主力 `r=100`、stage4A/4B 的 Sub5 `r=60`、
- *   stage4b–8 的大怪 `r=20`）：
- *     `n <= 2 ⇒ 100`、`n <= 5 ⇒ 60`、其余 ⇒ **20**（6/7 台在实测档里不出现，落到 20 = 「多」那一档）。
- *   ❓ 分档界（2/5）是我们的取法：实测三个半径对应三个台数段（2 / 4 / 8..13）。*/
-#define YK_ORBIT_RADIUS_FEW   100.0f  /* `n <= 2`：stage1–3 小怪那一段（一手 r=100）*/
-#define YK_ORBIT_RADIUS_MID    60.0f  /* `n <= 5`：stage4A/4B 的 Sub5（一手 r=60）*/
-#define YK_ORBIT_RADIUS_MANY   20.0f  /* `n >= 6`：stage4b–8 的大怪（一手 r=20，台数最多、圈最紧）*/
-/* 卡侧只用这一个入口（返回**整数像素**：三个档都是整数）。
- * ⚠ **不要**再包一个「返回 float」的版本：i686 SysV 的 float 返回值走 **x87 的 st(0)**
- *   ⇒ `make dllx87` 那一关会红（实测：加一个 `float yk_orbit_radius_value()` 就多 3 条 x87 指令）。
- *   要 float 就在卡侧 `(float)` 转一次（SSE 转换，不进 x87）。*/
-int yk_orbit_radius_for_count(int n);
+/* ★★★★ 2026-09-30 **订正**（一手指令级）：`moveCircle`（opcode 73，handler `th08:0x41a4b7`）
+ *   **第 1 实参是「时长」不是「半径」** —— 逐字段写（字段名取 ExpHP `zEnemy`）：
+ *     `+0x2de8 = arg0`（**计时上限 / 时长**）、`+0x2ddc` timer、`+0x2dd0 = 当前 pos`、
+ *     `+0x2d9c = arg1`（`move_circle__theta` 初始角）、**`+0x2da0 = arg2` = `angular_velocity`**、
+ *     **`+0x2db0 (radius) = 0.0f`**、**`+0x2db4 = arg3` = `radial_speed`**、`flags |= 0x3000`。
+ *   ⇒ 一手的绕转是「**贴在本体身上（半径 0）起，以 arg3 px/帧外扩，持续 arg0 帧**，之后
+ *     `moveCircleChange(6000, ω, 0.0f)` 把半径**冻结**」。
+ *   ⚠ 我们上一版把 **arg0 当半径**（`100/60/20`）⇒ **三个数全错**（它们是**时长**）。
+ *   **实算最终半径 = arg0 × arg3**（道中三个例子）：
+ *     · `(100, 0.64)`   ⇒ **64 px**（stage1 三支妖精：`moveCircle(100, %F0, 0.05235988f, 0.64f)`）
+ *     · `(60,  0.8333)` ⇒ **50 px**（stage4A/4B 的 Sub5）
+ *     · `(20,  3.0)`    ⇒ **60 px**（stage4b–8 的大怪）
+ *   ⇒ **最终半径都在 50–64 px**（一手逐 sub 各写各的，我们取**一个值 60**）。
+ *   旋钮：`YK_ORBIT_FINAL_RADIUS`（最终半径）+ `YK_ORBIT_EXPAND_FRAMES`（外扩时长）。*/
+#define YK_ORBIT_FINAL_RADIUS   60.0f   /* 一手最终半径 50–64 的**中间值**（三个实算例见上）*/
+#define YK_ORBIT_EXPAND_FRAMES  100u    /* 一手最常见的**时长档** = 100 帧 ≈ 1.7 s（arg0）*/
+/* 外扩速度（px/帧）= 最终半径 / 时长 —— **与一手 arg3 同义**（它们的 arg3 就是各 sub 自己写的
+ * 「1.7 s 内扩到位的速度」：0.64 / 0.8333 / 3.0 各对应上面三个例子）。*/
+#define YK_ORBIT_RADIAL_SPEED   (YK_ORBIT_FINAL_RADIUS / (float)YK_ORBIT_EXPAND_FRAMES)
+/* 第 `age` 帧的绕转半径（**纯函数、可单测**）：`age <= 0 ⇒ 0`、线性外扩、`age >= EXPAND_FRAMES`
+ * ⇒ `FINAL_RADIUS`（冻结）。⚠ 出口走**指针**（返回 float 会经 i686 的 x87 `st(0)` ⇒ `dllx87` 会红）。
+ * 返回 1 = 填好 `*out`；0 = `out == 0`（`age` 负数当 0）。*/
+int yk_orbit_radius_at(int age, float *out);
 
 /* ★★★ 2026-09-28 第四轮（**owner 口径 · 血量**）：「那就 **hp 切成一手** —— 但从 **dps** 角度考虑，
  *   我感觉**使魔没那么脆，得打几秒**。一碰就碎主要是形容**杂鱼**的。」
@@ -2081,7 +2097,14 @@ unsigned yk_orbit_phase_id(uint32_t enemy_id);
  *   `moveCircle(100, %F0, 0.05235988f, 0.64f)` ⇒ 半径 100 + 3°/帧。
  *   ⇒ 3°/帧**确实是一手值**，1.5°/帧也是；owner 实跑嫌快 ⇒ **取 1.5**。
  *   ⚠ 一行可改（把 `YK_ORBIT_STEP_DIV` 改回 1 就是 3°/帧）；**表不用动**。*/
-#define YK_ORBIT_STEP_DIV    2        /* 每 `DIV` 帧推进一格（2 ⇒ 1.5°/帧）。1 = 回到 3°/帧。*/
+#define YK_ORBIT_STEP_DIV    1        /* ★ 2026-09-30 **订正回一手值 3.0°/帧**（`DIV = 1` = 每帧一格）。
+                                       *   ⚠ 上一版按 owner 实跑那句「旋转速度太快」取 1.5°/帧（`DIV = 2`）——
+                                       *   那句观感的**真正根因是半径读错**（我们把 `moveCircle` 的**时长**
+                                       *   当成了**半径** ⇒ 一进场就钉在 100 px 的圈上、线速度偏大，也丢了
+                                       *   原作「贴在本体身上 → 1.7 s 螺旋外扩到位」的节奏）⇒ 半径订正后
+                                       *   角速度回到一手值 3.0°/帧。
+                                       *   **想更慢**：把这里改回 2（= 1.5°/帧，也是**一手另一档**：
+                                       *   `0.02617994f` ×54），一行。*/
 #define YK_ORBIT_STEPS       120      /* 表长 = 一圈的步数（= 360 / YK_ORBIT_STEP_DEG，两者必须同步改）*/
 #define YK_ORBIT_ORPHAN_GRACE 2u      /* 父敌查不到之后**再等几帧**才撤。❓自定，但理由是一手的时序：
                                        *   一手颗数在 `EnemyManager` 的死亡块里算（`th08:0x42da54` 一带），

@@ -820,7 +820,12 @@ typedef struct {
                            *   `parent->final_pos`；TH08 脚本全写 `0,0` ⇒ 就在本体身上）
                            *   ⇒ **圆心 = 生成瞬间那一点，本体后来飞走圆心不跟**（可见后果：大怪飞走
                            *   ⇒ 使魔留在原地绕，与 TH08 同形）。*/
-    float    radius;      /* 该台的绕转半径（= `yk_orbit_radius_for_count(台数)`，建壳那一刻定死）*/
+    unsigned age;         /* ★★★★ 帧龄（建壳起 +1）：绕转半径由它算（见下面 `radius`）*/
+    float    radius;      /* ★ 当前绕转半径 = `yk_orbit_radius_at(age)` —— 一手形状：
+                           *   出生**贴在本体身上（0）**，以 `YK_ORBIT_RADIAL_SPEED`(0.6 px/帧)
+                           *   外扩 `YK_ORBIT_EXPAND_FRAMES`(100 ≈ 1.7 s) 帧到 `YK_ORBIT_FINAL_RADIUS`(60)
+                           *   然后**冻结**（一手 `moveCircle`：`+0x2db0 radius = 0`、`+0x2db4 = arg3`、
+                           *   `+0x2de8 = arg0` 时长；之后 `moveCircleChange(6000, ω, 0)` 冻结）。*/
     unsigned substep;     /* ★ 绕转相位（**半步累加器**，第七轮）：每帧 +1，一圈 = `YK_ORBIT_SUBSTEPS`(240)
                            *   个 substep；查表格号 = `yk_orbit_step_of_substep(substep)`
                            *   ⇒ 实际转速 = 3°/格 ÷ `YK_ORBIT_STEP_DIV`(2) = **1.5°/帧**（240 帧 ≈ 4 s 一圈）。*/
@@ -833,6 +838,18 @@ typedef struct {
 } yk_orbit_t;
 
 static yk_orbit_t s_orbit[YK_ORBIT_MAX];
+
+/* ★★★ 2026-09-30（一手形状 · **生成延时**）：父敌**首次被扫到**之后再等 `YK_ORBIT_DELAY_FRAMES` 帧
+ * 才建使魔（一手 `ecldata1.txt`：阶段一妖精**进场后飞约 1 秒**才在 **t = 50 / 60 / 70 帧**建；
+ * 且 2/4 台**同一帧连发、零帧间隔、无循环**）。这里只记住「首次命中」的帧号，够用就好：
+ *   · 一父敌一项（`YK_ORBIT_SEEN_MAX` 条；满了只是那一只补不上，日志里有 `scans`/`pool_full` 可判）；
+ *   · 到点后**立刻把这一项删掉**（同一只敌人不会被补第二次 —— 一敌一对的判据是 `s_orbit`，不是这张表）；
+ *   · 父敌没了/登记过期 ⇒ 扫场时顺手清（见 `yk_orbit_seen_prune`）。*/
+typedef struct {
+    uint32_t id;      /* 0 = 空槽 */
+    uint32_t frame;   /* 首次命中那一刻的帧号 */
+} yk_orbit_seen_t;
+static yk_orbit_seen_t s_orbit_seen[YK_ORBIT_SEEN_MAX];
 static unsigned s_orbit_scan_timer;      /* 扫场节拍（帧）*/
 static unsigned s_orbit_scans;           /* 统计：扫了几次（台账，全程累计不清）*/
 static unsigned s_orbit_targets;         /* 统计：选中了几只大怪 */
@@ -889,6 +906,7 @@ static void yk_orbit_retire(yk_orbit_t *o, const char *why)
     o->fam_id = 0;
     o->parent_id = 0;
     o->substep = 0;
+    o->age = 0;
     o->orphan = 0;
     o->kind = 0;
     if (why) {
@@ -910,6 +928,7 @@ static void yk_orbit_retire_all(void)
     unsigned i;
     for (i = 0; i < YK_ORBIT_MAX; ++i)
         if (s_orbit[i].fam_id) yk_orbit_retire(&s_orbit[i], 0);
+    for (i = 0; i < YK_ORBIT_SEEN_MAX; ++i) s_orbit_seen[i].id = 0;   /* 延时登记也清 */
     /* 兜底（句柄幂等）：`fam_id` 已经被清掉、VM 还挂着的残局 */
     for (i = 0; i < YK_ORBIT_MAX; ++i) yk_orbit_vm_kill(&s_orbit[i]);
     s_orbit_scan_timer = 0;
@@ -1028,7 +1047,7 @@ static void yk_orbit_vm_sync(yk_orbit_t *o)
 
 /* 找空槽建一台绕转使魔：位置 = **圆心**（= 建壳那一刻的父敌坐标）+ 半径 × (cosθ, sinθ)。
  * 建壳那一刻就**清免伤位**（owner 口径：打得掉）并起**跟随 VM**（少等一帧 = 少一帧「看不见」的窗口）；
- * 半径与相位都由纯函数给（`yk_orbit_radius_for_count` / `yk_orbit_phase_*`）。
+ * 半径由 `yk_orbit_radius_at(age)` 给（随帧龄外扩）、相位由 `yk_orbit_phase_*` 给。
  *
  * **血量 = 一手值 × 缩放旋钮**（第四轮 owner 口径：「那就 **hp 切成一手**」；那句
  *   「一碰就碎主要是形容**杂鱼**的」是**留旋钮**的依据）：
@@ -1053,7 +1072,7 @@ static uint8_t *yk_orbit_spawn_one(uint32_t parent_id, int count, int k, int32_t
     if (i >= YK_ORBIT_MAX) return 0;
     o = &s_orbit[i];
     /* 相位 = 均匀分布 + 每敌错相；半径 = 台数分档（两件都是纯函数，见 `youkai_core.{h,c}`）。*/
-    radius = (float)yk_orbit_radius_for_count(count);     /* int→float 是 SSE 转换，不进 x87 */
+    radius = 0.0f;                                        /* 出生贴在本体身上（见 struct 里的注）*/
     step = (yk_orbit_phase_id(parent_id) + yk_orbit_phase_step(count, k)) % YK_ORBIT_STEPS;
     if (!yk_orbit_offset(step, radius, &dx, &dy)) return 0;
     f = yk_spawn_familiar_parent(cx + dx, cy + dy, parent_id, life);   /* life = 父敌最大血量（口径）*/
@@ -1064,6 +1083,7 @@ static uint8_t *yk_orbit_spawn_one(uint32_t parent_id, int count, int k, int32_t
     o->cy = cy;
     o->radius = radius;
     o->substep = step * YK_ORBIT_STEP_DIV;                /* 初相（格号 → substep，别慢半拍）*/
+    o->age = 0;                                           /* 帧龄从 0 起 ⇒ 半径 0（外扩的起点）*/
     o->orphan = 0;
     /* ★★★ 2026-09-30（owner 四色口径）：额外使魔恒 = `YK_FAM_KIND_NO_MELEE_SHOT_SAME`
      *   （**不会体术** + 弹一样）⇒ 这一批**全部同色**，不随生成顺序轮、也不按发射口槽取。*/
@@ -1077,16 +1097,44 @@ static uint8_t *yk_orbit_spawn_one(uint32_t parent_id, int count, int k, int32_t
     return f;
 }
 
+/* 首次命中登记 / 到点判定：返回 1 = **可以建了**（一到点就把登记删掉）；0 = 还没到（含刚登记）。
+ * ⚠ 扫场是每 `YK_ORBIT_SCAN_INTERVAL`(30) 帧一次 ⇒ 实际延时会被量化到 30 帧的整数倍。*/
+static int yk_orbit_delay_ok(uint32_t id, uint32_t frame)
+{
+    unsigned i, free_i = YK_ORBIT_SEEN_MAX;
+    if (!id) return 0;
+    for (i = 0; i < YK_ORBIT_SEEN_MAX; ++i) {
+        if (s_orbit_seen[i].id == id) {
+            if (frame - s_orbit_seen[i].frame >= YK_ORBIT_DELAY_FRAMES) { s_orbit_seen[i].id = 0; return 1; }
+            return 0;                                    /* 还没到点（下一次扫场再看）*/
+        }
+        if (!s_orbit_seen[i].id && free_i == YK_ORBIT_SEEN_MAX) free_i = i;
+    }
+    if (free_i < YK_ORBIT_SEEN_MAX) { s_orbit_seen[free_i].id = id; s_orbit_seen[free_i].frame = frame; }
+    return 0;                                            /* 刚登记（或表满）⇒ 这一帧不建 */
+}
+
+/* 清掉「父敌已经没了」的登记（每 30 帧的扫场里顺手做；`em` 为空时整表清）。*/
+static void yk_orbit_seen_prune(uint8_t *em)
+{
+    unsigned i;
+    for (i = 0; i < YK_ORBIT_SEEN_MAX; ++i) {
+        if (!s_orbit_seen[i].id) continue;
+        if (!em || !ce_enemy_by_id(em, (int32_t)s_orbit_seen[i].id)) s_orbit_seen[i].id = 0;
+    }
+}
+
 /* 扫全场：给「大怪」补 `yk_orbit_count_for_hp(父敌最大血量)` 台惰性绕转使魔。
  * 五条筛选（owner 调的 117 判据 + 本卡三条）逐条见下面注释；一敌一对（补过就不再补）。
  * ⚠ **「有没有发射口」不是筛选条件**（第二轮 owner 口径）—— 见下面 ④ 那段注。*/
-static void yk_orbit_scan(void)
+static void yk_orbit_scan(uint32_t frame)
 {
     uint8_t *em = CE_ENEMY_MGR();
     uint8_t *e;
     unsigned seen = 0, roots = 0, bosses = 0, have_emit = 0, small = 0, big = 0, picked = 0;
     if (!em) return;
     ++s_orbit_scans;
+    yk_orbit_seen_prune(em);
     CE_ENEMY_FOREACH(em, e) {
         int32_t id, hp_now, life;
         int w = 0, h = 0, want, k, made = 0;
@@ -1113,6 +1161,8 @@ static void yk_orbit_scan(void)
         if (yk_map_enemy_slots(&s_map, (uint32_t)id) != 0) ++have_emit;
         /* 一敌一对：已经补过的不再补。*/
         if (yk_orbit_find_parent((uint32_t)id)) continue;
+        /* ★★★ 生成延时（一手形状，见 `YK_ORBIT_DELAY_FRAMES`）：首次命中先只登记，到点才建。*/
+        if (!yk_orbit_delay_ok((uint32_t)id, frame)) continue;
         /* **大怪**：贴图**原始**尺寸两边都 >= 64（117 的判据，见 `yk_big_by_sprite`）。*/
         if (!yk_enemy_sprite_size(e, &w, &h)) continue;
         if (!yk_big_by_sprite(w, h)) { ++small; continue; }
@@ -1151,19 +1201,28 @@ static void yk_orbit_scan(void)
         cy = pp ? pp[1] : 0.0f;
         for (k = 0; k < want; ++k) {
             /* 相位：`k * 120 / want` 均匀铺开 + 每敌错相（`(id*17)%120`）—— 见 core 的两个纯函数。*/
-            if (yk_orbit_spawn_one((uint32_t)id, want, k, life, cx, cy)) ++made;
+            if (yk_orbit_spawn_one((uint32_t)id, want, k, life, cx, cy)) {
+                ++made;
+                /* ★★★ 2026-09-30（一手 SE）：建使魔那一下的 `se_option.wav`（TH08 id `0x24`，
+                 * 三条 opcode 尾巴都 `push 0x24` + `call 0x45d660` = `PlaySoundPositionedByIdx`，
+                 * **声像 = 生成者 x**）⇒ 每建成功一台各播一次，x 传**父敌**的 x（= 圆心 x）。
+                 * ⚠ 同一帧可能连播 N 次 —— 与一手同形（一手也是同一帧连发 2/4 台）。*/
+                ce_play_voice(YOUKAI_FAM_SPAWN, cx);
+            }
             if (yk_orbit_free() == 0u) break;                 /* 池正好用光 ⇒ 这台就这些 */
         }
         if (made) {
             ++s_orbit_targets; ++picked;
             /* 每条目标**只打一次**（不刷屏）：这一行就是「哪只大怪被补了、补了几台、凭什么」的判据。*/
             ce_log("youkai/orbit: target enemy #%u sprite %dx%d hp %d stage %d => %d familiar(s) "
-                   "(HP tier %d + stage bonus %d = %d; chain root, not boss; radius %.0f, "
-                   "%.1f deg/frame; fam life %d = onehand %d x %d; colour kind %d "
+                   "(HP tier %d + stage bonus %d = %d; spawn delay %u f; chain root, not boss; radius 0->%.0f in %u f "
+                   "(%.2f px/f), %.1f deg/frame; fam life %d = onehand %d x %d; colour kind %d "
                    "(melee %d shot_same %d) = script %d; centre pinned at spawn (%.0f,%.0f))",
                    (unsigned)id, w, h, hp_now, (int)CE_CURRENT_STAGE(), made,
                    yk_orbit_count_for_hp(hp_now), yk_orbit_stage_bonus((int)CE_CURRENT_STAGE()), want,
-                   (double)yk_orbit_radius_for_count(want),
+                   (unsigned)YK_ORBIT_DELAY_FRAMES,
+                   (double)YK_ORBIT_FINAL_RADIUS, (unsigned)YK_ORBIT_EXPAND_FRAMES,
+                   (double)YK_ORBIT_RADIAL_SPEED,
                    (double)YK_ORBIT_STEP_DEG / (double)YK_ORBIT_STEP_DIV,
                    (int)life, yk_orbit_onehand_hp(yk_orbit_count_for_hp(hp_now)),
                    (int)YK_ORBIT_HP_SCALE,
@@ -1215,8 +1274,11 @@ static void __attribute__((noinline)) yk_orbit_tick(uint32_t frame)
             continue;
         }
         o->orphan = 0;
-        /* ★ 第七轮：转速 = 每帧 1 个 substep（= 3°/格 ÷ `YK_ORBIT_STEP_DIV`(2) = 1.5°/帧）。*/
+        /* ★ 转速 = 每帧 1 个 substep（= 3°/格 ÷ `YK_ORBIT_STEP_DIV`；当前 DIV = 1 ⇒ 一手 3.0°/帧）。*/
         o->substep = yk_orbit_substep_advance(o->substep);
+        /* ★★★★ 订正：半径**随帧龄外扩**（出生 0 → 1.7 s 后 60 → 冻结），不再一进场就钉住。*/
+        if (o->age < 0xffffffffu) ++o->age;
+        yk_orbit_radius_at((int)o->age, &o->radius);
         /* ★★★ 2026-09-28 第三轮：**定圆心** —— 圆心是建壳那一刻写下的 `cx/cy`，父敌后来飞走
          * 圆心**不跟**（一手：`moveCircle` 把圆心设成使魔当时的位置，见 struct 里的两个地址）。
          * ⇒ 这里**不读父敌坐标**（`pe` 只用于「父敌还在不在」的孤儿检测）。*/
@@ -1224,7 +1286,7 @@ static void __attribute__((noinline)) yk_orbit_tick(uint32_t frame)
         yk_orbit_pin(f, o->cx + dx, o->cy + dy);
         yk_orbit_vm_sync(o);
     }
-    if ((++s_orbit_scan_timer % YK_ORBIT_SCAN_INTERVAL) == 0u) yk_orbit_scan();
+    if ((++s_orbit_scan_timer % YK_ORBIT_SCAN_INTERVAL) == 0u) yk_orbit_scan(frame);
     /* 台账（每 120 帧一行，且只在「这件事真的发生过」之后）——
      * 判据行见 `HANDOFF-108.md` §3 第 51 行；累计数跨关不清（看全程）。*/
     if (s_orbit_targets && (frame % 120u) == 0u)
@@ -3688,22 +3750,38 @@ static void yk_gauge_hud_update(yk_card_t *s)
      *   而 **113（`trance.c`）根本不用货架** —— 它写死表面坐标（`TRANCE_HUD_BASE_X/Y`），
      *   owner 2026-09-23 明确要「照着 113 117 定位」⇒ 本卡按同一口径：**锚点改成常量**，
      *   不再吃 `s->hud`（认领仍保留：只为「这块归我」的记账与日志，不参与定位）。
-     * ★★★ 2026-09-26（owner #39：「参考 th12/13/16/17/18 **原生的左下角框**看一下人妖槽的左下角
-     *   位置应该是哪样的坐标」）：锚点**不再抄 113 的数**，改成**一手换算的游玩区左下角**
-     *   `(257, 928)` —— 依据三条：
-     *     · 用户量过的 TH18 游玩区 = `x 257..1023 / y 32..928`（`trance.c:3884` 的注释里就写着）；
-     *     · TH08 的槽条 x = **32 = TH08 游玩区左沿**（相机 0 视口 `scale×(32,16,384,448)`，
-     *       `engine/anm/th18/02-render-stages.md` §2）⇒ 折算到 TH18 = 257（不是 113 的 248：
-     *       113 是 **TH13 灵界槽**的槽根，与本卡不是同一个东西）；
-     *     · TH08 的槽条 y = 449 而 TH08 游玩区下沿 = 464 ⇒ 条"骑"在场地下沿上；折算到 TH18
-     *       就是 `928 − (464−449)×2 = 898`（`yk_gauge_hud()` 里那段基准订正）。
-     *   ⇒ 人妖槽整块的**左下角 = 游玩区左下角**，与原版 TH08 逐条同构（并顺带对齐了
-     *     116/117 用的那条「左下角内缩锚点 257」= `HUD-LAYOUT.md` §1.2）。*/
-#define YK_GAUGE_BASE_X   257.0f        /* = **游玩区左沿**（用户量过：游玩区 = x 257..1023 / y 32..928）
-                                         *   —— 一手同源：TH08 的槽条 x = 32 = **TH08 游玩区左沿**（相机 0
-                                         *   视口 `scale×(32,16,384,448)`）⇒ 折算到 TH18 表面就是 257。
-                                         *   ⚠ 旧值 248 是抄 113 的（113 是 TH13 的灵界槽，不是 TH08 的槽条）。*/
-#define YK_GAUGE_BASE_Y   928.0f        /* = **游玩区下沿**（同一份用户量值）= TH08 640 空间的 464 */
+     * ★★★ 2026-09-26（owner #39）**曾经**取「游玩区左下角」`(257, 928)`（= 一手换算：TH08 槽条
+     *   x = 32 = TH08 游玩区左沿 ⇒ TH18 表面 257；y 基准 = 游玩区下沿 464 ⇒ 928）。
+     * ★★★ 2026-09-30（**owner 口径 · 第九轮**：「**左下角 HUD 位置不对，得再往左**，参考 **117、112、
+     *   113 的左下角位置**，那个才是**真正的画面左下角**。**你别管**你觉得可能什么会进入黑屏区域还是
+     *   什么的，**你就按照那个调就是了**。」）⇒ **x 改成 68**（那三张卡的**左边缘**那条竖线），
+     *   见下面 `YK_GAUGE_BASE_X` 的逐条算法；**y 保持 928**（本来就在同一条底线上，见 `…_Y`）。
+     *   这是**owner 口径覆盖**了 #39 那条「游玩区左下角」的推导（#39 的三条依据仍留在 `yk_gauge_hud()`
+     *   里解释 y 的基准订正：`928 − (464−449)×2 = 898` 那段与本次无关，继续有效）。*/
+#define YK_GAUGE_BASE_X    68.0f        /* ★★★ 第九轮：整块**左边缘**对齐到 117/112/113 那条竖线。
+                                         *   三个参考点（都取**左边缘**，不是数字的字形 x）：
+                                         *     · **112**（`ufo.c`）：`UFO_HUD_PIN_X = 248 + UFO_HUD_OWNER_DX_SURF
+                                         *       (−180) = 68`，块 132×32 ⇒ 左沿 **68**；
+                                         *     · **117**（`animal.c`）：pin = `ANIMAL_HUD_PIN_X = 88`、声明块
+                                         *       193×48（左沿 88）；但那条 pin 是**首格格心**
+                                         *       （`ANIMAL_HUD_HALF = 24`）⇒ **可见左沿 = 64**；
+                                         *     · **113**（`trance.c`）：`TRANCE_HUD_BASE_X = 248`
+                                         *       （一手 TH13 根 x = −196 ⇒ 640 + (−196)×2 = 248 = **场地左沿
+                                         *       256 外 8 px**），块 144×96 ⇒ 左沿 **248**。
+                                         *   ⚠ 三者不是严格同一条线（64 / 68 / 248）⇒ 取 **68**：
+                                         *     = 112 的块左沿 = **原生「当前卡」UI 的左沿**（112 的注释写着
+                                         *       「原生当前卡 UI = 表面 x **68..116**」⇒ 系统槽本来就该放这一带），
+                                         *     距 117 的可见左沿 4 px、在 113 左侧 180 px。
+                                         *   **一行可回退**：改回 `257.0f` = 上一版（= 游玩区左沿）。
+                                         *   ⚠ 本卡**定位不吃货架值**（`(void)s->hud`）⇒ 改锚点不动认领；
+                                         *     但可见范围会横跨 112/117/113 三块（owner：「别管」）——
+                                         *     重叠明细登记在 `AUDIT.md` §BE #150 第九轮。*/
+#define YK_GAUGE_BASE_Y   928.0f        /* = **游玩区下沿**（= TH08 640 空间的 464）。
+                                         * ★ 第九轮 **y 不动**：它已经与 **112**（`UFO_HUD_PIN_Y = 928`）
+                                         *   和 **113**（`TRANCE_HUD_BASE_Y = 928`）**同一条底线**；
+                                         *   117 的 `ANIMAL_HUD_PIN_Y = 924` 是**格心** pin
+                                         *   （`ANIMAL_HUD_DY = −20` ⇒ 格心 y = 904、块 y 876..924），折算到
+                                         *   「块左下角」也在 928 一带。owner 这单只说「往左」⇒ y 保持。*/
     anchor[0] = YK_GAUGE_BASE_X;
     anchor[1] = YK_GAUGE_BASE_Y;
     (void)s->hud;                       /* 认领值不再参与定位（见上）；日志里保留显示 */

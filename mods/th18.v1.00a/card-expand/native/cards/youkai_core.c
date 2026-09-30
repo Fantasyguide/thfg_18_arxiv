@@ -1775,13 +1775,20 @@ clamp:
 
 /* 绕转半径按台数分档（一手读数分布与理由见 `youkai_core.h` 的同名宏）。**6/7 台落到 20**：
  * 实测档只有 {2,4,8,13}，6/7 不会出现，这个兜底是给「表被换掉」留的（总函数，不留空洞）。*/
-int yk_orbit_radius_for_count(int n)
+/* ★★★★ 2026-09-30 **订正**：绕转半径不是「按台数分档的常数」，而是**随帧龄线性外扩**
+ *（一手 `moveCircle`：`radius = 0` 起、`+0x2db4 = arg3` px/帧、持续 `arg0` 帧后冻结 ——
+ * 见 `youkai_core.h` 里那段逐字段证据与三个实算例 `(100,0.64)=64 / (60,0.8333)=50 / (20,3.0)=60`）。
+ * ⚠ 出口走指针：返回 float 会经 i686 的 x87 `st(0)` ⇒ `make dllx87` 会红。*/
+int yk_orbit_radius_at(int age, float *out)
 {
-    /* 返回**整数像素**（三个档都是整数）—— ⚠ 别改成返回 float：i686 的 float 返回值走 x87 的
-     * `st(0)` ⇒ `make dllx87` 会红（实测多 3 条 x87 指令）。三个宏仍是唯一出处。*/
-    if (n <= 2) return (int)YK_ORBIT_RADIUS_FEW;          /* 100：stage1–3 小怪那一档 */
-    if (n <= 5) return (int)YK_ORBIT_RADIUS_MID;          /* 60：stage4A/4B 的 Sub5 */
-    return (int)YK_ORBIT_RADIUS_MANY;                     /* 20：大怪那一档（台数最多、圈最紧）*/
+    float r;
+    if (!out) return 0;
+    if (age <= 0) { *out = 0.0f; return 1; }               /* 出生那一刻贴在本体身上 */
+    if ((unsigned)age >= YK_ORBIT_EXPAND_FRAMES) { *out = YK_ORBIT_FINAL_RADIUS; return 1; }
+    r = YK_ORBIT_RADIAL_SPEED * (float)age;                /* 线性外扩（只有一次乘法）*/
+    if (r > YK_ORBIT_FINAL_RADIUS) r = YK_ORBIT_FINAL_RADIUS;
+    *out = r;
+    return 1;
 }
 
 /* 面加成（owner 口径：「没过一面，同样血量的使魔数 +1」）：`stage` = TH18 当前面号（1 基）。

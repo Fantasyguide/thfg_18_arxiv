@@ -2179,44 +2179,44 @@ int main(void)
         CHECK(YK_ORBIT_STEPS == 120);
         CHECK(YK_ORBIT_STEPS == 360u / YK_ORBIT_STEP_DEG);
         CHECK(YK_ORBIT_PHASE_STRIDE == 17u);                  /* 每敌错相的乘子 */
-        /* ★★★ 第七轮（owner 实跑「旋转速度太快」）：表仍是 3°/格，实际转速靠**半步累加器**
-         *   ⇒ 有效 **1.5°/帧**（240 帧 ≈ 4 s 一圈）。一手两档都在（3.0°/帧 ×92、1.5°/帧 ×54）。*/
-        CHECK(YK_ORBIT_STEP_DIV == 2);
+        /* ★★★ 第七轮引入、2026-09-30 **订正**的**半步累加器**：表仍是 3°/格，实际角速度 =
+         *   `YK_ORBIT_STEP_DEG / YK_ORBIT_STEP_DIV`。**当前 DIV = 1 ⇒ 一手值 3.0°/帧**
+         *  （owner 那句「旋转速度太快」的根因是**半径读错**，不是角速度；一手另一档 1.5°/帧
+         *    = 把 DIV 改 2 ⇒ 这两条一起核）。下列断言对 DIV 的**两个取值都成立**。*/
+        CHECK(YK_ORBIT_STEP_DIV == 1);                        /* 一手角速度 3.0°/帧 */
         CHECK(YK_ORBIT_SUBSTEPS == YK_ORBIT_STEPS * YK_ORBIT_STEP_DIV);
-        CHECK(YK_ORBIT_SUBSTEPS == 240);                      /* = 4 s × 60 fps */
-        CHECK((double)YK_ORBIT_STEP_DEG / (double)YK_ORBIT_STEP_DIV == 1.5);   /* 有效角速度 */
-        /* ① substep → 格号：每 2 个 substep 走一格 */
+        CHECK(YK_ORBIT_SUBSTEPS == 120);                      /* DIV = 1 ⇒ 120 帧 = 2 s 一圈 */
+        CHECK((double)YK_ORBIT_STEP_DEG / (double)YK_ORBIT_STEP_DIV == 3.0);
+        /* 一圈的帧数 = 360° ÷ 有效角速度（= `STEPS × DIV`，两条独立算法给出同一个数）*/
+        CHECK((unsigned)(360u / (YK_ORBIT_STEP_DEG / YK_ORBIT_STEP_DIV)) == YK_ORBIT_SUBSTEPS);
+        /* ① substep → 格号 = `(substep / DIV) % STEPS`（DIV 个 substep 走一格）*/
         CHECK(yk_orbit_step_of_substep(0) == 0u);
-        CHECK(yk_orbit_step_of_substep(1) == 0u);
-        CHECK(yk_orbit_step_of_substep(2) == 1u);
-        CHECK(yk_orbit_step_of_substep(3) == 1u);
-        CHECK(yk_orbit_step_of_substep(4) == 2u);
-        CHECK(yk_orbit_step_of_substep(238) == 119u);
-        CHECK(yk_orbit_step_of_substep(239) == 119u);
-        CHECK(yk_orbit_step_of_substep(240) == 0u);           /* 越界也回绕（mod）*/
+        CHECK(yk_orbit_step_of_substep(YK_ORBIT_STEP_DIV - 1u) == 0u);
+        CHECK(yk_orbit_step_of_substep(YK_ORBIT_STEP_DIV) == 1u);
+        CHECK(yk_orbit_step_of_substep(YK_ORBIT_STEP_DIV * 4u) == 4u);
+        CHECK(yk_orbit_step_of_substep(YK_ORBIT_SUBSTEPS - 1u) == YK_ORBIT_STEPS - 1u);
+        CHECK(yk_orbit_step_of_substep(YK_ORBIT_SUBSTEPS) == 0u);          /* 越界也回绕（mod）*/
         CHECK(yk_orbit_step_of_substep(1000000000u) < YK_ORBIT_STEPS);
-        /* ② 累加：每帧 +1、满 240 回绕 */
+        /* ② 累加：每帧 +1、满 `SUBSTEPS` 回绕 */
         CHECK(yk_orbit_substep_advance(0) == 1u);
-        CHECK(yk_orbit_substep_advance(238) == 239u);
-        CHECK(yk_orbit_substep_advance(239) == 0u);
+        CHECK(yk_orbit_substep_advance(YK_ORBIT_SUBSTEPS - 2u) == YK_ORBIT_SUBSTEPS - 1u);
+        CHECK(yk_orbit_substep_advance(YK_ORBIT_SUBSTEPS - 1u) == 0u);
         CHECK(yk_orbit_substep_advance(1000000000u) < YK_ORBIT_SUBSTEPS);
-        /* ③ 20 帧 ⇒ 10 格（= 30° = 20 × 1.5°） */
+        /* ③ 20 帧 = 20 个 substep = `20/DIV` 格 = **60°**（20 × 3.0°）**/
         {
             unsigned sub = 0;
             for (i = 0; i < 20u; ++i) sub = yk_orbit_substep_advance(sub);
             CHECK(sub == 20u);
-            CHECK(yk_orbit_step_of_substep(sub) == 10u);
             CHECK(yk_orbit_step_of_substep(sub) == (unsigned)(20u / YK_ORBIT_STEP_DIV));
-            /* 每一格都横跨**两个** substep（格 = substep/DIV）⇒ 逐格核一遍映射 */
-            {
-                unsigned c;
-                for (c = 0; c < YK_ORBIT_STEPS; ++c) {
-                    CHECK(yk_orbit_step_of_substep(c * YK_ORBIT_STEP_DIV) == c);
-                    CHECK(yk_orbit_step_of_substep(c * YK_ORBIT_STEP_DIV + 1u) == c);
-                }
+            CHECK(yk_orbit_step_of_substep(sub) * YK_ORBIT_STEP_DEG == 60u);   /* 度数自检 */
+            {   /* 每一格横跨 **DIV** 个 substep ⇒ 逐格核一遍映射（DIV 两个取值都过）*/
+                unsigned c, j;
+                for (c = 0; c < YK_ORBIT_STEPS; ++c)
+                    for (j = 0; j < YK_ORBIT_STEP_DIV; ++j)
+                        CHECK(yk_orbit_step_of_substep(c * YK_ORBIT_STEP_DIV + j) == c);
             }
         }
-        /* ④ 走满一圈（240 帧）回到起点，且期间只经过 0 一次 */
+        /* ④ 走满一圈回到起点；格 0 在一圈里只被经过一次（DIV 个 substep 算同一格）*/
         {
             unsigned sub = 0, hits = 0;
             for (i = 0; i < YK_ORBIT_SUBSTEPS; ++i) {
@@ -2226,7 +2226,7 @@ int main(void)
             }
             CHECK(sub == 0u);
             CHECK(yk_orbit_step_of_substep(sub) == 0u);
-            CHECK(hits == 2u);            /* 格 0 横跨 substep 0 与 1 ⇒ 一圈里命中两次 */
+            CHECK(hits == 1u);            /* DIV=1 ⇒ 只有 substep 0 落格 0；DIV=2 时是 2 */
         }
 
         /* ⑤ 四色**语义表**（2026-09-30 owner 口径）：两轴 = 会不会体术 × 高低速弹是否一样。
@@ -2318,113 +2318,31 @@ int main(void)
             }
         }
 
-        /* ⑦ 绕转半径按台数分档（一手读数分布见 `youkai_core.h` 的三个宏）：
-         *   `n <= 2 ⇒ 100`（stage1–3 小怪）、`n <= 5 ⇒ 60`（stage4A/4B 的 Sub5）、其余 ⇒ 20（大怪）。*/
-        CHECK(YK_ORBIT_RADIUS_FEW == 100.0f);
-        CHECK(YK_ORBIT_RADIUS_MID == 60.0f);
-        CHECK(YK_ORBIT_RADIUS_MANY == 20.0f);
-        CHECK(yk_orbit_radius_for_count(0) == 100);
-        CHECK(yk_orbit_radius_for_count(1) == 100);
-        CHECK(yk_orbit_radius_for_count(2) == 100);
-        CHECK(yk_orbit_radius_for_count(3) == 60);
-        CHECK(yk_orbit_radius_for_count(4) == 60);
-        CHECK(yk_orbit_radius_for_count(5) == 60);
-        CHECK(yk_orbit_radius_for_count(6) == 20);            /* 6/7 实测不出现 ⇒ 落「多」那一档 */
-        CHECK(yk_orbit_radius_for_count(7) == 20);
-        CHECK(yk_orbit_radius_for_count(8) == 20);
-        CHECK(yk_orbit_radius_for_count(13) == 20);
-        CHECK(yk_orbit_radius_for_count(13) == (int)(YK_ORBIT_RADIUS_MANY + 0.5f));
-        {   /* 半径单调不增（台数越多圈越紧，与一手那句一致）*/
-            int prev = 1000, n, r;
-            for (n = 0; n <= 20; ++n) {
-                r = yk_orbit_radius_for_count(n);
-                CHECK(r <= prev);
-                CHECK(r == 100 || r == 60 || r == 20);
-                prev = r;
-            }
-        }
-
-        /* ⑨ 面加成 + 总台数（**owner 口径**：「没过一面，同样血量的使魔数 +1」）
-         *   加成 = `min(面号 − 1, 5)`（面号 = TH18 当前面，1 基）；总台数 = HP 档 + 加成，钳 [1, 18]。*/
-        CHECK(yk_orbit_stage_bonus(0) == 0);                  /* 读不到面号 ⇒ 0 */
-        CHECK(yk_orbit_stage_bonus(-1) == 0);
-        CHECK(yk_orbit_stage_bonus(1) == 0);
-        CHECK(yk_orbit_stage_bonus(2) == 1);
-        CHECK(yk_orbit_stage_bonus(3) == 2);
-        CHECK(yk_orbit_stage_bonus(5) == 4);
-        CHECK(yk_orbit_stage_bonus(6) == YK_ORBIT_STAGE_BONUS_MAX);
-        CHECK(yk_orbit_stage_bonus(7) == YK_ORBIT_STAGE_BONUS_MAX);   /* ex 面不再加 */
-        CHECK(yk_orbit_stage_bonus(99) == YK_ORBIT_STAGE_BONUS_MAX);
-        CHECK(yk_orbit_count_total(200, 1) == 2);              /* ≤200 档 + 0 */
-        CHECK(yk_orbit_count_total(200, 6) == 7);              /* 2 + 5 */
-        CHECK(yk_orbit_count_total(200, 99) == 7);
-        CHECK(yk_orbit_count_total(2001, 1) == YK_ORBIT_HP_MAX_COUNT);
-        CHECK(yk_orbit_count_total(2001, 6) == YK_ORBIT_MAX_PER_ENEMY);   /* 13 + 5 = 上限 */
-        CHECK(yk_orbit_count_total(2001, 99) == YK_ORBIT_MAX_PER_ENEMY);  /* 钳住 */
-        CHECK(yk_orbit_count_total(2001, 0) == yk_orbit_count_total(2001, 1));
-        CHECK(yk_orbit_count_total(2001, -1) == yk_orbit_count_total(2001, 1));
-        CHECK(yk_orbit_count_total(1000, 3) == 6);             /* 4 + 2 */
-        CHECK(yk_orbit_count_total(1001, 4) == 11);            /* 8 + 3 */
-        {   /* 面号升 ⇒ 不降；恒在 [1, 18]；且面加成封顶后不再变 */
-            int st, hp, prev = 0, v;
-            for (hp = 100; hp <= 3000; hp += 700) {
-                prev = 0;
-                for (st = -2; st <= 12; ++st) {
-                    v = yk_orbit_count_total(hp, st);
-                    CHECK(v >= 1 && v <= (int)YK_ORBIT_MAX_PER_ENEMY);
-                    CHECK(v >= prev);
-                    prev = v;
+        /* ⑦ ★★★★ 绕转半径 = **随帧龄线性外扩到 60**（2026-09-30 订正：一手 `moveCircle` 的
+         *   第 1 实参是**时长**不是半径 ⇒ 形状是「贴本体 → 1.7 s 螺旋外扩到位 → 冻结」）。*/
+        CHECK(YK_ORBIT_FINAL_RADIUS == 60.0f);                 /* 一手实算 50–64 的中间值 */
+        CHECK(YK_ORBIT_EXPAND_FRAMES == 100u);                 /* 一手最常见的时长档 */
+        CHECK(YK_ORBIT_RADIAL_SPEED > 0.59f && YK_ORBIT_RADIAL_SPEED < 0.61f);   /* = 60/100 */
+        {
+            float r = -1.0f;
+            CHECK(yk_orbit_radius_at(0, &r) && r == 0.0f);     /* 出生：贴在本体身上 */
+            CHECK(yk_orbit_radius_at(-5, &r) && r == 0.0f);    /* 负数当 0 */
+            CHECK(yk_orbit_radius_at(1, &r) && r > 0.59f && r < 0.61f);
+            CHECK(yk_orbit_radius_at(50, &r) && r > 29.9f && r < 30.1f);
+            CHECK(yk_orbit_radius_at(99, &r) && r < YK_ORBIT_FINAL_RADIUS);
+            CHECK(yk_orbit_radius_at(100, &r) && r == YK_ORBIT_FINAL_RADIUS);      /* 到位 */
+            CHECK(yk_orbit_radius_at(101, &r) && r == YK_ORBIT_FINAL_RADIUS);      /* 冻结 */
+            CHECK(yk_orbit_radius_at(1000000, &r) && r == YK_ORBIT_FINAL_RADIUS);
+            CHECK(!yk_orbit_radius_at(10, NULL));
+            {   /* 单调不降 + 恒在 [0, FINAL] 内 */
+                float prev = -1.0f;
+                int age;
+                for (age = 0; age <= 220; ++age) {
+                    CHECK(yk_orbit_radius_at(age, &r));
+                    CHECK(r >= 0.0f && r <= YK_ORBIT_FINAL_RADIUS);
+                    CHECK(r >= prev);
+                    prev = r;
                 }
-            }
-            CHECK(yk_orbit_count_total(2001, 6) == yk_orbit_count_total(2001, 12));
-        }
-
-        /* ⑩ 血量 = **一手值 × 缩放旋钮**（第四轮 owner 口径：「那就 hp 切成一手」）：
-         *   一手表 `{100,100,300,600}`（按台数档）× `YK_ORBIT_HP_SCALE`（**当前 = 1 ⇒ 就是一手值**），
-         *   顶上钳引擎硬上限 999。旋钮留着（「一碰就碎主要是形容杂鱼」）⇒ DPS 核查回来可能往上抬。*/
-        CHECK(YK_ORBIT_HP_SCALE == 1);
-        CHECK(YK_ORBIT_HP_TIER_STEPS + 1 == 4);
-        CHECK(YK_ORBIT_HP_ONEHAND[0] == 100);                 /* 一手：TH08 道中使魔恒 100 */
-        CHECK(YK_ORBIT_HP_ONEHAND[1] == 100);
-        CHECK(YK_ORBIT_HP_ONEHAND[2] == 300);
-        CHECK(YK_ORBIT_HP_ONEHAND[3] == 600);
-        {   /* 一手表**单调不降**（台数越多档越高） */
-            int i;
-            for (i = 1; i < (int)(YK_ORBIT_HP_TIER_STEPS + 1); ++i)
-                CHECK(YK_ORBIT_HP_ONEHAND[i] >= YK_ORBIT_HP_ONEHAND[i - 1]);
-        }
-        CHECK(yk_orbit_onehand_hp(0) == 100);
-        CHECK(yk_orbit_onehand_hp(2) == 100);                 /* 档 2 台 */
-        CHECK(yk_orbit_onehand_hp(4) == 100);                 /* 档 4 台 */
-        CHECK(yk_orbit_onehand_hp(8) == 300);                 /* 档 8 台（实测 200–300）*/
-        CHECK(yk_orbit_onehand_hp(13) == 600);                /* 档 13 台（实测大怪 600）*/
-        CHECK(yk_orbit_familiar_hp(2) == 100);                /* 一手值 × 1 */
-        CHECK(yk_orbit_familiar_hp(4) == 100);
-        CHECK(yk_orbit_familiar_hp(8) == 300);
-        CHECK(yk_orbit_familiar_hp(13) == 600);
-        /* ★ 第六轮：血量按 **HP 档**（不含面加成）—— 「同样血量的使魔数 +1」只加台数、不改每台的血。*/
-        CHECK(yk_orbit_hp_for_enemy(200) == 100);
-        CHECK(yk_orbit_hp_for_enemy(2001) == 600);
-        CHECK(yk_orbit_hp_for_enemy(0) == 100);
-        CHECK(yk_orbit_hp_for_enemy(1000) == 100);
-        CHECK(yk_orbit_hp_for_enemy(1001) == 300);
-        CHECK(yk_orbit_hp_for_enemy(2001) == yk_orbit_familiar_hp(yk_orbit_count_for_hp(2001)));
-        CHECK(yk_orbit_familiar_hp(13) == yk_orbit_onehand_hp(13) * 1);
-        CHECK(yk_orbit_familiar_hp(13) < YK_LIFE_LIMIT);      /* 必须 < 1000（锁定黑名单那条硬约束）*/
-        {   /* 缩放旋钮真的生效：临时用一个更大的档验证 `min(999, 一手 × SCALE)` 这条式子 */
-            int one = yk_orbit_onehand_hp(13);                /* 600 */
-            CHECK(one * 4 > YK_LIFE_MAX_ALLOWED);             /* 2400 > 999 ⇒ 顶上那钳是真钳 */
-            CHECK(yk_orbit_familiar_hp(13) <= YK_LIFE_MAX_ALLOWED);
-        }
-        {   /* 全台数范围：恒在 [1, 999]、单调不降、且幂等过钳位函数 */
-            int prev = 0, n, hp;
-            for (n = 0; n <= 40; ++n) {
-                hp = yk_orbit_familiar_hp(n);
-                CHECK(hp >= 1 && hp <= YK_LIFE_MAX_ALLOWED);
-                CHECK(hp < YK_LIFE_LIMIT);
-                CHECK(hp >= prev);
-                CHECK(yk_clamp_spawn_life(hp) == hp);         /* 卡侧还会再过一次：幂等 */
-                prev = hp;
             }
         }
 
