@@ -234,3 +234,32 @@ TH08 `Sub50/56/57/60` 的 `floatTime`（440→320/288/256/224、120 帧）照抄
 ⇒ **结论**：TH08 的「随侧变化」= **实时**的（差一帧），来源是 `bit11` 的每帧刷新 + 环的切侧重发中断；
 **外观脚本永远一套**。我们卡侧**就是按当前聚焦状态**撒火花、环**按当前侧**换色 ⇒ **与一手一致**（不需要改）。
 🟡 残余：`thecl` 把 `enemy+0x3330` 那些位打成 `*`，**看不出哪些指令用了它**（要逐 sub 反汇编才能列全）。
+
+## 11. ★ A 方案已落地（2026-09-30）：改动在上游仓库的分支，不在本仓
+
+**口径**（owner）：「**都开强强联合，只开一个也能用**」⇒ 往本仓 patch 里放 `th18/st02enm.anm`
+会与 leveledit 补丁**同名冲突**（thcrap 后加载者赢 ⇒ 开两个反而坏一个）⇒ **B 方案作废**，
+改动搬去上游仓库。
+
+| 项 | 值 |
+| --- | --- |
+| 仓库 | `Fantasyguide/th18-leveledit`（**私有**；裸 HTTPS 连不上，必须 SSH：`git@github.com:Fantasyguide/th18-leveledit.git`） |
+| 分支 / 提交 | **`mystia-familiar-trail`** / `115e824`（URL：`https://github.com/Fantasyguide/th18-leveledit/tree/mystia-familiar-trail`） |
+| 改的源 | **`mods/stage02-mystia/assets.py`**（该仓是**生成式**：spec 由 Python 生成，不是手写 anm）—— 使魔那段（原 126–138 行）之后追加 entry30 + script30，并把 `script28/29` 的每个 `+4:` 拆成两段 `+2: scriptNewPos(script30,0,0)` |
+| 加的东西 | **entry30** `mystia/fam-trail.png` 16×16（= TH08 `etama.anm` sprite219 `(0,96,16,16)` 同格；sprite 号 = `max+1` = 91，**不能用 0**，会撞 entry0 的 sprite0）+ **script30** = TH08 `etama` script71 零翻译（加法 / 20 tick / `alpha=48+rand(64)` / `color=128+rand(64)`×3 / `scale=1.1+rand(1.0)→0` / `+20: delete()`，子 VM 带 `layer(7)/type(0)`） |
+| 构建 | README 的正路 = `python scripts/thcrap.py release stage02-mystia`（会**推送另一个仓** `Fantasyguide/th18_modkit`）；本次只跑了等价分步：`thanm -c18 <anm> spec.txt -m maps/anm/v8.anmm` + 回读 `-l18`/`-x18` + `scripts/lint.py` |
+| lint | `fsetRand` 在库内 56 个 ANM 无先例 ⇒ 按该仓机制加 `// lint-allow: anm-no-precedent <一手出处>` ⇒ **0 error / 0 warning** |
+| 验证到哪一步 | 编译 + 回读 + 与原产物**逐块对比**：除那三处编辑外逐块一致；**未实机**（也没跑完整 `release`） |
+| 许可证 | 该仓**没有 LICENSE**（只有 `maps/anm/LICENSE-truth-Apache-2.0.txt`、`legacy/.../LICENSE.thtk.txt`）⇒ **不能 vendor 进本仓**；正路 = 在该私有仓开分支/提 PR（owner 有权限） |
+
+**未闭合 / 要盯**：
+1. **`scriptNewPos` 子 VM 的锚定**：一手说 `th18:0x479b30`–`0x479b5d` 只写 `__pos_2`、之后不跟父 ⇒
+   火花留在撒点；**若引擎其实每帧重锚，拖尾会糊在使魔身上** —— 只能实机看观感。
+2. 子 VM 预算：单台 ≈ 10 支并发（2 tick × 20 tick 寿命），一场几十台 ⇒ 几百支；TH18 anm VM 池
+   够不够**未核**（失败模式 = 火花静默变少，不是崩）。
+3. 本机 TH08 输入 sha 与 manifest 不符（`thdat -x8` 报 `incorrect entry magic`）⇒ 用了已解包的
+   `local/th08.v1.00d/dat/`（其中 etama/enemy/stg2enm/eff02 的 sha 与 manifest 一致）。
+4. 本仓保留的**配方/预览工具**：`assets/mystia/build_st02.py`（默认输出到 gitignored 的
+   `local/_scratch/c108/build/`；⚠ **不要**指回本仓 `patch/th18/`）；上游侧的笔记在
+   `local/_scratch/leveledit-up/NOTES.md`。
+
