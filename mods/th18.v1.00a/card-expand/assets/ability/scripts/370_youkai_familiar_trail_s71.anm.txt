@@ -1,0 +1,30 @@
+script script370 {
+    // 由 assets/ability/make_youkai_familiar_art.py 的取图通道（thanm -l 8 -m v2.anmm）从
+    // TH08 v1.00d `etama.anm` script71 **零翻译**抄来（只换 sprite 名与脚本号），别手改。
+    // 这是**使魔的拖尾火花**：TH08 的 `trailFamiliarSet`（opcode 83，handler `th08:0x41e532`）
+    //   把 `enemy+0x3328`（flags_hi）**bit1** 置位后，引擎周期性在**使魔当前位置**撒效果 `0x26`；
+    //   模板表 `th08:0x4c6d30[0x26]` = `etama.anm` **script71**。
+    // 贴图 = entry1 `data/etama/etama2.png` 的 sprite219 = (0, 96, 16, 16)（加法亮点）。
+    // 逐条语义（一手 = 本节这些指令）：blendMode(1) 加法；scale = 1.1 + rand(1.0)（1.1..2.1）；
+    //   scaleTime(20, 0, 0, 0) 20 帧缩到 0；alpha = 48 + rand(64)（48..111）；
+    //   color = 128 + rand(64) 三通道（128..191）；`+20: delete()` ⇒ **脚本自删**
+    //   ⇒ 卡侧**不需要**跟踪/回收这支 VM（见 `youkai.c` 的 `yk_orbit_trail_tick`）。
+    sprite(@YOUKAI_FAM_TRAIL);
+    blendMode(1);
+    fsetRand(%F0, 1.0f);
+    fsetAdd(%F0, %F0, 1.1f);
+    scale(%F0, %F0);
+    scaleTime(20, 0, 0.0f, 0.0f);
+    isetRand($I0, 64);
+    isetAdd($I0, $I0, 48);
+    alpha($I0);
+    isetRand($I0, 64);
+    isetAdd($I0, $I0, 128);
+    isetRand($I1, 64);
+    isetAdd($I1, $I1, 128);
+    isetRand($I2, 64);
+    isetAdd($I2, $I2, 128);
+    color($I0, $I1, $I2);
++20: // 20
+    delete();
+}

@@ -150,6 +150,10 @@
 | `+0x2db4` | `arg3` | **`radial_speed`**（px/帧）|
 | `flags` | `\|= 0x3000` | 走这条运动 |
 
+★ **✅ 2026-09-30 升级（从 🟡 到一手实证）**：积分器 `th08::Enemy::FUN_00422c40` 逐指令证实了
+「半径**从 0 起、每帧 +`radial_speed`**」：`th08:0x422cb8 flds frameDelta / fmuls 0x2db4 / fadds 0x2db0`
+（θ 由 `th08:0x422c8d fmuls 0x2da0` 累加）⇒ 上面那条「时长 × 速度 = 最终半径」是**一手实证**，不是推断。
+
 **最终半径 = `arg0 × arg3`**（道中三例，逐条从 ECL 文本算）：`(100, 0.64) = 64 px`（stage1 三支妖精）、
 `(60, 0.8333) = 50 px`（stage4A/4B 的 Sub5）、`(20, 3.0) = 60 px`（stage4b–8 的大怪）⇒ **都在 50–64 px**；
 「时长 × 速度」这对参数各 sub 自己配（**没有**「台数越多圈越紧」这条）。之后
@@ -182,14 +186,26 @@
 
 **⇒ 四选一的答案 = (b) `trailFamiliarSet` 的周期火花**（不是贴图烤的尾巴、不是父敌的 `trailSet`）。
 
-**照抄配方**（若要做，❓自定；一手在 3.）：每台使魔一个计时器（interval 待钉，见下），到点就在
-**它当前位置**起一支 VM：脚本 = 把 `etama.anm` script71 **零翻译**抄进 `ability.anm`（新脚本号 + 新 sprite
-= `etama2.png(0,96)` 16×16 那格），`blendMode(1)` / `scale = 1.1 + rand(1.0)` / `scaleTime(20,0,0,0)` /
-`alpha = 48 + rand(64)` / `color = 128 + rand(64)` 三通道 / `+20: delete()` 全部照抄；
-**卡侧不跟踪句柄**（脚本自己 `delete()`，与 `yk_flash_spawn` 同一范式）。
+**✅ 已实现（2026-09-30 第十二轮）**：`etama.anm` script71 **零翻译**抄进 `ability.anm`
+（新脚本 **`script370`**，`assets/ability/scripts/370_youkai_familiar_trail_s71.anm.txt`；新 sprite
+**`YOUKAI_FAM_TRAIL`= 571**（entry**89**，`etama2.png(0,96)` 那格 16×16；ORDER 尾插 ⇒ 既有号零位移）⇒ 宏名见 `anm_ids.h`）；
+卡侧 `yk_orbit_trail_spawn()` 在**使魔当前位置**起一支该脚本的 VM、**不跟句柄**
+（脚本自带 `+20 delete()`，同 `yk_flash_spawn` 范式；也不占我们自己的 VM 池）。
+**节拍 = 每台使魔自己一份**（一手那个开关挂 `flags_hi` bit1 ⇒ 每台独立），间隔 = `YK_ORBIT_TRAIL_INTERVAL`
+= **2 帧（一手值，缺口已解决）**：消费者 = `th08::Enemy::FUN_0042c420`（由 `EnemyManager::OnUpdate`
+@ `th08:0x42c98a` 调，门 = `flags_lo` bit8），bit1 读点在 `th08:0x42c4a2`–`0x42c4af`（**全 exe 唯一**），
+撒效果 = `th08:0x42c4d3 push $0x26` + `th08:0x42c4da call 0x425430`（位置 = `enemy+0x2d88` 的 `final_pos`，
+无偏移）；**interval = 常数 2 帧**（`th08:0x42c4b1 push $0x2` → `th08:0x42c4b6 add $0x2e14,%ecx` →
+`th08:0x42c4bc call 0x40ebc0`，那个 helper = `current != previous && current % n == 0`；`+0x2e14` 是
+`zEnemy::spell_and_nonspell_timer`，**只是被借来当 %2 的时钟、不是倒计时**）⇒ 单台 ≈ **10 支**、
+48 台 ≈ 480 ⇒ 我们加了 `YK_ORBIT_TRAIL_VM_CAP = 240` 的**自适应阀门**（❓自定，见 `TUNING.md`）。
+⚠ 一手里整块只在 `flags_lo` **bit11 == 0** 那一支跑（`th08:0x42c43a jne`）—— 我们**不照搬**（❓自定）。
+**只在额外使魔（绕转）上做**：映射使魔那批是「1:1 对位发射口」的**我们造的**载体，没有对应的 ECL 源 sub
+（`trailFamiliarSet` 命中的全是真使魔 sub）⇒ **不开**。
 
-**代价 / VM 估算**：**每台使魔同时活着的火花数 = ⌈20 / interval⌉**。48 台使魔 ⇒
-`interval = 4 帧` ⇒ **48 × 5 = 240 支 VM**；`interval = 8` ⇒ 120；`interval = 20` ⇒ 48。
+**代价 / VM 估算（实现后不变）**：每台使魔同时活着的火花数 = ⌈20 / interval⌉；48 台 ⇒
+`interval = 8`（当前值）⇒ **120 支 VM**、4 帧 ⇒ 240、20 帧 ⇒ 48。这些 VM 是**引擎侧一次性**的
+（链表、非定长池），且**脚本自删** ⇒ 卡侧零回收负担。
 ⚠ **interval 本次没钉死**（诚实的缺口）：`+0x2e14` 这个倒计时字段在读点
 `th08:0x41cb60 / 0x41cde3 / 0x41ddc6 / 0x4247c3 / 0x4248b3 / 0x4249a3 / 0x429ed6` 出现，
 但因为 `flags_hi` bit1 的消费者那一段还没逐指令读完，**不敢写一个数**。要钉它就沿「谁读 `[enemy+0x3328]` 的 bit1

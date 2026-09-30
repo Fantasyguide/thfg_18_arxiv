@@ -969,3 +969,7 @@ OPT_FALL_5    ability/season/OPT_FALL_5.png    16x16
 OPT_FALL_6    ability/season/OPT_FALL_6.png    16x16
 OPT_FALL_7    ability/season/OPT_FALL_7.png    16x16
 OPT_FALL_8    ability/season/OPT_FALL_8.png    16x16
+
+# ★★ 2026-09-30（108 的**使魔拖尾火花**）：TH08 `etama.anm` script71 的 sprite219（16×16，加法亮点）；
+#   追加在**文件末尾**（尾插 ⇒ 既有 entry/sprite 号一个不动，不制造共享件位移）。
+YOUKAI_FAM_TRAIL  ability/youkai_familiar/YOUKAI_FAM_TRAIL.png  16x16

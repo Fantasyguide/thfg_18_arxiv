@@ -1987,6 +1987,33 @@ int yk_item_box_open(int32_t player_state);
                                        *   x=y=0 ⇒ 相对父敌位置）⇒ 我们取 **60**，并且**同帧一次建满**。
                                        *   ⚠ 扫场是每 `YK_ORBIT_SCAN_INTERVAL`(30) 帧一次 ⇒ 实际延时会被量化到
                                        *     30 帧的整数倍（60 ⇒ 通常在首次命中后的第 2~3 次扫描建出）。*/
+#define YK_ORBIT_TRAIL_INTERVAL 2u   /* ★★★ 2026-09-30（owner：「忠于原作就得加拖尾」）：使魔**拖尾**的
+                                       *   撒点间隔（帧）= **一手值**。消费者那段已逐指令读完：
+                                       *   · 消费者 = **`th08::Enemy::FUN_0042c420`**，由 `EnemyManager::OnUpdate`
+                                       *     @ `th08:0x42c98a` 调，门 = `flags_lo(0x3324)` **bit8**；
+                                       *   · **bit1 测试在 `th08:0x42c4a2`–`0x42c4af`**（**全 exe 唯一的 bit1 读者**）；
+                                       *   · 撒效果 = `th08:0x42c4d3 push $0x26` + `th08:0x42c4da call 0x425430`
+                                       *     （`EffectManager::SpawnEffect(0x26, &enemy->final_pos, 1, -1)`），
+                                       *     位置 = `enemy+0x2d88`（**final_pos，无偏移**）；
+                                       *   · **interval = 常数 2 帧**：`th08:0x42c4b1 push $0x2` →
+                                       *     `th08:0x42c4b6 add $0x2e14,%ecx` → `th08:0x42c4bc call 0x40ebc0`；
+                                       *     那个 helper 的语义 = `current != previous && current % n == 0`
+                                       *     （`th08:0x40ebc0`–`0x40ebfa`）⇒ 除数是实参，**没有 rand / 难度 / 血量**；
+                                       *   · `+0x2e14` = `zEnemy::spell_and_nonspell_timer`（每帧 `ZunTimer::Tick`
+                                       *     @ `th08:0x42ddc2` ⇒ +1/帧、`EnemyManager::Initialize` @ `0x429edc`
+                                       *     置 0）—— **它不是倒计时**，只是被借来当「% 2」的时钟。
+                                       *   ⇒ **每 2 帧一颗、寿命 20 帧 ⇒ 单台常驻 ≈ 10 支**；**alpha 是常数、
+                                       *     没有淡出**（亮点靠 `scale → 0` 消失）。
+                                       * ⚠ 一手里整块只在 **`flags_lo bit11 == 0`** 那一支里跑（`th08:0x42c43a jne`）——
+                                       *   **我们侧不照搬**（那一 bit 在 TH08 管的是使魔的隐藏/显现态，本卡没有等价
+                                       *   状态位）⇒ ❓**自定：两侧都撒**，见 `TUNING.md` §2.1ccc-26。*/
+#define YK_ORBIT_TRAIL_VM_CAP  240u  /* ❓**我们的安全阀、不是一手**：一手密度 = 单台 ≈10 支 ⇒ 48 台峰值
+                                      *   ≈ **480 支**，这个量级没实测过 ⇒ 用「可算出的峰值估计」把**有效间隔**
+                                      *   自动翻倍（2→4→8→…），直到 `est = 台数 × ⌈寿命/有效间隔⌉ <= CAP`；
+                                      *   恢复时**逐级回落**（要求 `est × 2 <= CAP` 的迟滞，别在边界抖）。
+                                      *   一手的 2 帧仍记在 `TUNING.md`；密度不足就调大这一格。*/
+#define YK_ORBIT_TRAIL_LIFE   20u    /* 一手：script71 的 `scaleTime(20, 0, 0, 0)` + `+20: delete()`
+                                      *   ⇒ 每颗火花的寿命（只用于容量估算，卡侧不跟踪）*/
 #define YK_ORBIT_SEEN_MAX     24       /* 「首次命中」表的大小（每父敌一项；父敌没了就清）*/
 #define YK_ORBIT_SCAN_INTERVAL 30u    /* ❓自定（owner 未给数）：扫场间隔（帧），30 ≈ 0.5 s。
                                        *   扫描要遍历全场敌人链表 + 每只读一次贴图尺寸 ⇒ 不必每帧。

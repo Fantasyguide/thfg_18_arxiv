@@ -829,6 +829,8 @@ typedef struct {
                            *   ⇒ 我们上一版按 91 的形状做（定圆心）⇒ owner 看到一面妖精的使魔不跟。
                            *   ⚠ `yk_orbit_tick` 的孤儿宽限（父敌查不到时原地钉住 N 帧）保留。*/
     unsigned age;         /* ★★★★ 帧龄（建壳起 +1）：绕转半径由它算（见下面 `radius`）*/
+    unsigned trail_t;     /* ★★★ 拖尾节拍（每台**自己**一份 —— 一手那个开关挂在 `flags_hi` bit1 上，
+                           *   即每台使魔各自计时）：数到 `YK_ORBIT_TRAIL_INTERVAL` 就在本位撒一颗火花*/
     float    radius;      /* ★ 当前绕转半径 = `yk_orbit_radius_at(age)` —— 一手形状：
                            *   出生**贴在本体身上（0）**，以 `YK_ORBIT_RADIAL_SPEED`(0.6 px/帧)
                            *   外扩 `YK_ORBIT_EXPAND_FRAMES`(100 ≈ 1.7 s) 帧到 `YK_ORBIT_FINAL_RADIUS`(60)
@@ -858,6 +860,49 @@ typedef struct {
     uint32_t frame;   /* 首次命中那一刻的帧号 */
 } yk_orbit_seen_t;
 static yk_orbit_seen_t s_orbit_seen[YK_ORBIT_SEEN_MAX];
+
+static unsigned yk_orbit_live(void);   /* 前向声明：阀门要用它数活着的使魔（定义在下面）*/
+
+/* ★★★ 2026-09-30：**拖尾密度自适应阀门**（❓ **我们的安全阀、不是一手**，见 `YK_ORBIT_TRAIL_VM_CAP`）。
+ * 我们不跟火花 VM 的句柄（脚本自删）⇒ 数不到真实存活数，只能用**可算出的峰值估计**：
+ *   `est = 台数 × ⌈YK_ORBIT_TRAIL_LIFE / 有效间隔⌉`
+ * 超 `CAP` 就把**有效间隔**翻倍（2→4→8→…，上限 64），恢复时逐级回落（要求 `est × 2 <= CAP` 的迟滞）。
+ * 有效间隔变化时**只记一行**日志（带 `est`/`cap`/间隔）——不刷屏。*/
+static unsigned s_orbit_trail_eff = YK_ORBIT_TRAIL_INTERVAL;   /* 当前**有效**间隔（帧）*/
+static uint8_t  s_orbit_trail_valve_logged;                    /* 阀门日志：状态变化才打 */
+
+static void yk_orbit_trail_valve(void)
+{
+    unsigned live = yk_orbit_live();
+    unsigned est, want = YK_ORBIT_TRAIL_INTERVAL;
+    uint8_t changed = 0;
+    if (!live) { s_orbit_trail_eff = YK_ORBIT_TRAIL_INTERVAL; return; }
+    for (;;) {
+        est = live * ((YK_ORBIT_TRAIL_LIFE + want - 1u) / want);   /* ceil(寿命/间隔) */
+        if (est <= YK_ORBIT_TRAIL_VM_CAP || want >= 64u) break;
+        want *= 2u;                                                /* 太密 ⇒ 有效间隔翻倍 */
+    }
+    if (want != s_orbit_trail_eff) {
+        changed = 1;
+        s_orbit_trail_eff = want;
+    }
+    /* 迟滞：只有 **还有一倍余量** 时才允许回落（否则会在边界来回跳）*/
+    if (!changed && s_orbit_trail_eff > YK_ORBIT_TRAIL_INTERVAL) {
+        unsigned half = s_orbit_trail_eff / 2u;
+        unsigned est2;
+        if (half < YK_ORBIT_TRAIL_INTERVAL) half = YK_ORBIT_TRAIL_INTERVAL;
+        est2 = live * ((YK_ORBIT_TRAIL_LIFE + half - 1u) / half);
+        if (est2 * 2u <= YK_ORBIT_TRAIL_VM_CAP) s_orbit_trail_eff = half;
+    }
+    if (est > YK_ORBIT_TRAIL_VM_CAP && !s_orbit_trail_valve_logged) {
+        s_orbit_trail_valve_logged = 1;
+        ce_log("youkai/orbit: trail density valve ENGAGED - %u live familiar(s) x ceil(%u/%u) = %u "
+               "estimated spark VM(s) > cap %u => effective trail interval raised to %u frame(s) "
+               "(the ONE-HAND interval is %u; this valve is OUR safety rail, see YK_ORBIT_TRAIL_VM_CAP)",
+               live, (unsigned)YK_ORBIT_TRAIL_LIFE, s_orbit_trail_eff, est,
+               (unsigned)YK_ORBIT_TRAIL_VM_CAP, s_orbit_trail_eff, (unsigned)YK_ORBIT_TRAIL_INTERVAL);
+    }
+}
 static unsigned s_orbit_scan_timer;      /* 扫场节拍（帧）*/
 static unsigned s_orbit_scans;           /* 统计：扫了几次（台账，全程累计不清）*/
 static unsigned s_orbit_targets;         /* 统计：选中了几只大怪 */
@@ -915,6 +960,7 @@ static void yk_orbit_retire(yk_orbit_t *o, const char *why)
     o->parent_id = 0;
     o->substep = 0;
     o->age = 0;
+    o->trail_t = 0;
     o->orphan = 0;
     o->kind = 0;
     if (why) {
@@ -1012,6 +1058,25 @@ static int yk_enemy_is_boss(const uint8_t *e)
     return 0;
 }
 
+/* ★★★ 2026-09-30（owner：「忠于原作就得加拖尾」）：**使魔拖尾**的一颗火花。
+ * 一手：`trailFamiliarSet`（opcode 83，handler `th08:0x41e532`）置 `enemy+0x3328`（`flags_hi`）**bit1**
+ *   之后，引擎**周期性**在**使魔当前位置**撒效果 `0x26` = `etama.anm` **script71**（我们的 `` `370` ``，
+ *   见 `assets/ability/scripts/370_youkai_familiar_trail_s71.anm.txt`：`sprite(@YOUKAI_FAM_TRAIL)` 16×16、
+ *   `blendMode(1)` 加法、`scale = 1.1 + rand(1.0)` → `scaleTime(20,0,0,0)`、`alpha = 48 + rand(64)`、
+ *   `color = 128 + rand(64)` ×3）。
+ * ⚠ **故意不记句柄**：这支脚本正文最后是 `+20: delete()` —— **它自己 20 帧后删掉自己**
+ *   （照 `yk_flash_spawn` 的范式）；卡侧既不需要跟踪、也不需要在 `on_delete`/`retire` 里回收
+ *   —— 那不是「漏收」，是**脚本的生命周期本来就是自管**的（删卡后已经在飞的最多再飘 20 帧）。
+ * ⚠ 它**不占我们自己的 VM 池**（那些池是 `s_orbit[]`/`s_fam_vm[]` 里我们跟句柄的那些）。*/
+static void yk_orbit_trail_spawn(float x, float y)
+{
+    uint32_t id = ce_anm_spawn(CE_ABILITY_ANM(),
+                               CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_TRAIL_S71, YK_FAM_ANM_LAYER);
+    if (!id) return;                                      /* 起不出来只少观感（与 `yk_flash_spawn` 同）*/
+    ce_anm_set_pos(id, x, y, 0.0f);
+    /* 基线 scale/alpha/color 由脚本自己 `rand` 出来 ⇒ 这里一个字都不写（照一手）。 */
+}
+
 /* 起跟随 VM 并每帧跟随（照 `yk_fam_vm_follow()` 的写法：句柄被引擎清过 ⇒ 按同一变体自愈重起）。
  * 形态口径与映射使魔**同一套**（owner 的 standing spec：「不按 shift 看得见使魔 / 按 shift 变成魔法阵」）：
  *   · 人侧：画本体（四色原生切图，`yk_fam_kind_script()` —— 颜色由 `YK_FAM_KIND_*` 语义表定）；
@@ -1092,6 +1157,7 @@ static uint8_t *yk_orbit_spawn_one(uint32_t parent_id, int count, int k, int32_t
     o->radius = radius;
     o->substep = step * YK_ORBIT_STEP_DIV;                /* 初相（格号 → substep，别慢半拍）*/
     o->age = 0;                                           /* 帧龄从 0 起 ⇒ 半径 0（外扩的起点）*/
+    o->trail_t = 0;                                       /* 拖尾节拍：从 0 起，攒满 interval 才撒第一颗*/
     o->orphan = 0;
     /* ★★★ 2026-09-30（owner 四色口径）：额外使魔恒 = `YK_FAM_KIND_NO_MELEE_SHOT_SAME`
      *   （**不会体术** + 弹一样）⇒ 这一批**全部同色**，不随生成顺序轮、也不按发射口槽取。*/
@@ -1297,7 +1363,15 @@ static void __attribute__((noinline)) yk_orbit_tick(uint32_t frame)
         if (!yk_orbit_offset(yk_orbit_step_of_substep(o->substep), o->radius, &dx, &dy)) continue;
         yk_orbit_pin(f, px + dx, py + dy);
         yk_orbit_vm_sync(o);
+        /* ★ 拖尾（每台自己一份节拍；父敌活着才撒 —— 孤儿那 2 帧与收口之后都**不再撒新的**，
+         *   已撒的会在 20 帧内自删）。位置 = **使魔当前位置**（一手：撒在使魔身上）。*/
+        if (++o->trail_t >= s_orbit_trail_eff) {   /* 有效间隔（阀门可能把它抬高）*/
+            o->trail_t = 0;
+            yk_orbit_trail_spawn(*(const float *)(f + CE_ENEMY_POS_X),
+                                 *(const float *)(f + CE_ENEMY_POS_Y));
+        }
     }
+    yk_orbit_trail_valve();                                    /* 每帧算一次密度（阀门）*/
     if ((++s_orbit_scan_timer % YK_ORBIT_SCAN_INTERVAL) == 0u) yk_orbit_scan(frame);
     /* 台账（每 120 帧一行，且只在「这件事真的发生过」之后）——
      * 判据行见 `HANDOFF-108.md` §3 第 51 行；累计数跨关不清（看全程）。*/
