@@ -46,7 +46,7 @@
  *    （先例 `cards/animal.c:3875` 一带、`cards/ufo.c:5528`）。⇒ 调试键本身不进 replay 输入流。
  *    ⚠ **不选 Ctrl+Space**：那个组合**已经被占**（`cards/animal.c` 的 `ANIMAL_DEBUG_KEY` 与
  *      `cards/ufo.c` 的 `UFO_DEBUG_KEY` 都拿它当边沿触发）。本件用 **Ctrl+A**
- *      （`CE_VK_CONTROL` + `CE_VK_A`；`CE_VK_A` 在 `sdk.h:812`，全仓**零引用**，
+ *      （**空格 `CE_VK_SPACE`** —— 用户口径；原先用 `Ctrl+A` 但实跑没生效；
  *      且 `A` 不在 TH18 的键盘配置表里（一手 engine/input/th18/01-key-mapping.md §1）
  *      也不是方向键 ⇒ 不会与任何原生行为或既有调试键撞车）。
  *
@@ -105,10 +105,12 @@ static int32_t  s_x0_fixed;   /* 起抖时的 x（1/128 px 定点）；用来算
 static float    s_x0;         /* 起抖时的 x（float, px）；只给日志看 */
 static int32_t  s_dxq_max;    /* 起抖以来 |Δx| 的峰值（1/128 px 定点）—— "平均不移动"一眼判据 */
 
-/* 调试键：**Ctrl + A**（为什么不是 Ctrl+Space 见文件头第 6 条）。 */
+/* 调试键：**空格（Space）** —— 用户 2026-09-13 口径「Ctrl+A 似乎没有生效，就用 Space 就行」。
+ * ⚠ 与 106（`th06rank.c`）的 Space 调试键**同键**：同时装备 106 且按空格时两件会一起动
+ *   （106 只是读键做别的事，不会抢我们的输入位）。要换键只改这一行。 */
 static inline int input_synth_key_down(void)
 {
-    return ce_key_down(CE_VK_CONTROL) && ce_key_down(CE_VK_A);
+    return ce_key_down(CE_VK_SPACE);
 }
 
 /* 调试键按下期间的状态复位 / 快照。只在"按下"那一帧调一次。 */
@@ -126,7 +128,7 @@ static void input_synth_begin(void)
         inv0       = *(const int32_t *)(const void *)(pl + IS_OFF_PLAYER_INVULN);
     }
 #if CE_INPUT_SYNTH_LOG_START_STOP
-    ce_log("isynth: START ctrl+A — pattern 左%u/松%u/右%u/松%u (period %u), x0=%.1f (fixed %d), inv0=%d",
+    ce_log("isynth: START Space — pattern 左%u/松%u/右%u/松%u (period %u), x0=%.1f (fixed %d), inv0=%d",
            (unsigned)CE_INPUT_SYNTH_LEFT_FRAMES, (unsigned)CE_INPUT_SYNTH_RELEASE_FRAMES,
            (unsigned)CE_INPUT_SYNTH_RIGHT_FRAMES, (unsigned)CE_INPUT_SYNTH_RELEASE_FRAMES,
            ce_input_synth_period(), (double)s_x0, (int)s_x0_fixed, inv0);
@@ -146,7 +148,7 @@ static void input_synth_end(void)
         inv = *(const int32_t *)(const void *)(pl + IS_OFF_PLAYER_INVULN);
     }
 #if CE_INPUT_SYNTH_LOG_START_STOP
-    ce_log("isynth: STOP ctrl+A after %u frames — net dx = %d/128 px (%.2f px), peak |dx| = %d/128 px, inv=%d",
+    ce_log("isynth: STOP Space after %u frames — net dx = %d/128 px (%.2f px), peak |dx| = %d/128 px, inv=%d",
            s_phase, (int)dxq, (double)dxq / 128.0, (int)s_dxq_max, inv);
 #else
     (void)dxq; (void)inv;
@@ -191,8 +193,18 @@ static int input_synth_blocked(void)
 }
 
 /* ============================== 每帧入口 ============================== */
+static int s_armed_logged;     /* ★ 只打一次：证明这件真的被链进 DLL 且每帧被调到 */
 void ce_input_synth_tick(void)
 {
+    if (!s_armed_logged) {
+        s_armed_logged = 1;
+        /* ★ 2026-09-13 用户报「Ctrl+A 没生效」⇒ 加这行：**不看按键**，第一帧就打，
+         *   用来区分「代码没跑」和「键没被 GetKeyboardState 看到」这两种失败。*/
+        ce_log("isynth: armed — 调试键 = 空格(Space)；模式 左%u/松%u/右%u/松%u (period %u)",
+               (unsigned)CE_INPUT_SYNTH_LEFT_FRAMES, (unsigned)CE_INPUT_SYNTH_RELEASE_FRAMES,
+               (unsigned)CE_INPUT_SYNTH_RIGHT_FRAMES, (unsigned)CE_INPUT_SYNTH_RELEASE_FRAMES,
+               ce_input_synth_period());
+    }
     const int down = input_synth_key_down();
 
     /* ① 键没按：**立刻停手、一个字节都不写**（不是"写 0"，是这里根本没有那两句）。
