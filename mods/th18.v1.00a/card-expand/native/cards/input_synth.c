@@ -94,10 +94,11 @@
  * ⇒ 按住调试键期间，在 HUD 上画一行 ASCII 状态（`ce_hud_text`，**只能在 on_draw 里调**，
  *    所以绘制半边挂在 `sdk.h` 的 `on_draw` 桩上，见 `ce_input_synth_draw()`）。
  * ⚠ 字体是引擎的 ASCII 字体 ⇒ **只能用 ASCII**，别写中文。 */
-#define CE_INPUT_SYNTH_HUD        1     /* 0 = 不画（发布版可关）*/
+#define CE_INPUT_SYNTH_HUD        1     /* 0 = 不画（发布版可关）。★ 现在是**常驻**：停着也画 */
 #define CE_INPUT_SYNTH_HUD_X      180.0f  /* 640×480 字面量空间（Gui 那套，与 `ce_hud_text` 一致）*/
 #define CE_INPUT_SYNTH_HUD_Y       40.0f  /* 压在游玩区上部：一定会被看见（调试件，临时遮挡可接受）*/
-#define CE_INPUT_SYNTH_HUD_BGRA   0xff40ff40u  /* BGRA：亮绿 */
+#define CE_INPUT_SYNTH_HUD_BGRA   0xff40ff40u  /* BGRA：亮绿（运行中）*/
+#define CE_INPUT_SYNTH_HUD_BGRA_IDLE 0xff40c0ffu /* BGRA：淡黄（停着时也画 —— 常驻指示器）*/
 
 /* 刻意**不**做"松开后再清一次位"的收尾：那会在键没按时也写字节（违反"默认一个字节都不写"），
  * 而引擎每帧重写 HELD/PRESSED ⇒ 本来就没有残留（见文件头第 5 条）。 */
@@ -215,33 +216,44 @@ void ce_input_synth_draw(void)
 #else
     static uint32_t s_draw_frame;
     const uint8_t *pl;
-    int32_t dxq = 0;
     int     inv = 0;
-    uint32_t mask;
-    const char *dir;
+    int32_t dxq = 0;
 
-    if (!s_active) return;                       /* 没生效 ⇒ 不画（不留残影：on_draw 每帧重画，停了就没有）*/
     {
         const uint32_t f = ce_sdk_frame();
         if (s_draw_frame == f) return;            /* 同帧只画一次（每张卡的 on_draw 都会调到这里）*/
         s_draw_frame = f;
     }
+    /* ★ 2026-09-13 用户口径：「**那个 UI 改成常驻**吧，**随着时间流逝无敌帧得减小**，做指示那个用」。
+     *   ⇒ 不再只在生效时画：**每帧都画**，核心读数就是 `inv`（`player+0x47778`，无敌计时器 cur）
+     *     —— 它会随每帧衰减自然往下掉，正好当"还剩多少无敌帧"的指示器。*/
     pl = CE_PLAYER();
-    if (pl) {
-        dxq = *(const int32_t *)(const void *)(pl + IS_OFF_PLAYER_X_FIXED) - s_x0_fixed;
-        inv = *(const int32_t *)(const void *)(pl + IS_OFF_PLAYER_INVULN);
+    if (pl) inv = *(const int32_t *)(const void *)(pl + IS_OFF_PLAYER_INVULN);
+
+    if (s_active && pl) {
+        /* 运行中：多给 方向 / 相位 / 累计 Δx（看"平均不移动"）*/
+        uint32_t mask;
+        const char *dir;
+        dxq  = *(const int32_t *)(const void *)(pl + IS_OFF_PLAYER_X_FIXED) - s_x0_fixed;
+        mask = ce_input_synth_mask(s_phase);
+        dir  = (mask & CE_INPUT_SYNTH_DIR_LEFT) ? "L"
+             : (mask & CE_INPUT_SYNTH_DIR_RIGHT) ? "R" : "-";
+        ce_hud_text(CE_INPUT_SYNTH_HUD_X, CE_INPUT_SYNTH_HUD_Y, CE_INPUT_SYNTH_HUD_BGRA,
+                    "SYNTH RUN %s f=%u dx=%.1f INV=%d", dir, (unsigned)s_phase,
+                    (double)dxq / 128.0, inv);
+    } else {
+        /* 停着也画（常驻指示器）：只报无敌帧 + 怎么开 */
+        ce_hud_text(CE_INPUT_SYNTH_HUD_X, CE_INPUT_SYNTH_HUD_Y, CE_INPUT_SYNTH_HUD_BGRA_IDLE,
+                    "SYNTH -- INV=%d   [Space] toggle", inv);
     }
-    mask = ce_input_synth_mask(s_phase);
-    dir  = (mask & CE_INPUT_SYNTH_DIR_LEFT) ? "L"
-         : (mask & CE_INPUT_SYNTH_DIR_RIGHT) ? "R" : "-";
-    ce_hud_text(CE_INPUT_SYNTH_HUD_X, CE_INPUT_SYNTH_HUD_Y, CE_INPUT_SYNTH_HUD_BGRA,
-                "SYNTH %s f=%u dx=%.1f inv=%d", dir, (unsigned)s_phase, (double)dxq / 128.0, inv);
 #endif
 }
 
 /* ============================== 每帧入口 ============================== */
 static int s_armed_logged;     /* ★ 只打一次：证明这件真的被链进 DLL 且每帧被调到 */
 static uint32_t s_last_frame;  /* ★ 同帧去重：上一次真正跑过的帧号 */
+static int      s_key_prev;    /* ★ 空格的上一次电平（做"按下沿"用 ⇒ 空格是启停开关）*/
+static int      s_pending_begin; /* 开关打开时若正好在菜单/回放 ⇒ 等能写了再重取基线 */
 void ce_input_synth_tick(void)
 {
     /* ★ 同帧去重：本函数挂在**每张卡的 tick 桩**上（见 `sdk.h` 的 `ce_s_##ID##_on_tick_2`），
@@ -265,31 +277,27 @@ void ce_input_synth_tick(void)
     }
     const int down = input_synth_key_down();
 
-    /* ① 键没按：**立刻停手、一个字节都不写**（不是"写 0"，是这里根本没有那两句）。
-     *    松开的那一帧只在日志里留一行总结。 */
-    if (!down) {
-        if (s_active) {
-            input_synth_end();
-            s_active = 0;
-        }
-        return;
+    /* ① ★★ **空格 = 启停开关**（用户 2026-09-13：「**空格是启停脚本**」）——
+     *    抓**按下沿**（`down && !s_key_prev`）切换 `s_active`，**不再要求一直按住**。
+     *    ⚠ `ce_key_down` 只给电平（`GetKeyboardState`）⇒ 边沿由我们自己的 `s_key_prev` 记。*/
+    if (down && !s_key_prev) {
+        if (s_active) { input_synth_end(); s_active = 0; }
+        else          { input_synth_begin(); s_active = 1; s_pending_begin = 0; }
     }
+    s_key_prev = down;
 
-    /* ② 门：回放中 / 没有自机（菜单、结算）⇒ 不工作。 */
-    if (input_synth_blocked()) {
-        if (s_active) { s_active = 0; s_phase = 0; }   /* 进回放/掉自机 ⇒ 相位清零，出来从"左"重起 */
-        return;
-    }
+    /* ② 关着：**立刻停手、一个字节都不写**（不是"写 0"，是这里根本没有那两句）。 */
+    if (!s_active) return;
 
-    if (!s_active) {
-        input_synth_begin();
-        s_active = 1;
-    }
+    /* ③ 门：回放中 / 没有自机（菜单、结算）⇒ 不写，但**保持"运行中"这个状态**（用户是开关语义）。
+     *    等能写了再重取基线（否则 dx 会把商店/菜单里的时间也算进去）。*/
+    if (input_synth_blocked()) { s_pending_begin = 1; return; }
+    if (s_pending_begin) { input_synth_begin(); s_pending_begin = 0; s_phase = 0; }
 
-    /* ③ 这一帧的模式位 */
+    /* ④ 这一帧的模式位 */
     const uint32_t mask = ce_input_synth_mask(s_phase);
 
-    /* ④ 落笔：**接管方向**（先抹掉四个方向位，再 OR 我们的），其余位（Z/X/Shift/C/D…）原样保留。
+    /* ⑤ 落笔：**接管方向**（先抹掉四个方向位，再 OR 我们的），其余位（Z/X/Shift/C/D…）原样保留。
      *    · 抹掉是必要的：玩家此刻若真按着方向键，引擎在 `0x462961` 已经把那个位写进 HELD，
      *      不抹就会和我们的模式叠加 ⇒ 结果不确定（工具要的是可复现的输入）。
      *    · HELD 与 PRESSED **两个都写**：引擎的边沿是 `0x462966` 在节点 `0x11` 算的，
@@ -302,7 +310,7 @@ void ce_input_synth_tick(void)
     *(volatile uint32_t *)(uintptr_t)CE_ADDR_INPUT_PRESSED =
         (*(volatile const uint32_t *)(uintptr_t)CE_ADDR_INPUT_PRESSED & ~(uint32_t)CE_INPUT_SYNTH_DIR_MASK) | mask;
 
-    /* ⑤ 可观测：节流日志（含累计 Δx 与峰值 |Δx|，还有文那张卡的无敌计时器 cur）*/
+    /* ⑥ 可观测：节流日志（含累计 Δx 与峰值 |Δx|，还有文那张卡的无敌计时器 cur）*/
 #if CE_INPUT_SYNTH_LOG_EVERY > 0
     if ((s_phase % (unsigned)CE_INPUT_SYNTH_LOG_EVERY) == 0) input_synth_log(mask);
 #endif
