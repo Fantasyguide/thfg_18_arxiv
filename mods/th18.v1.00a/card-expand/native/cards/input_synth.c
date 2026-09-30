@@ -99,6 +99,7 @@
 #define CE_INPUT_SYNTH_HUD_Y       40.0f  /* 压在游玩区上部：一定会被看见（调试件，临时遮挡可接受）*/
 #define CE_INPUT_SYNTH_HUD_BGRA   0xff40ff40u  /* BGRA：亮绿（运行中）*/
 #define CE_INPUT_SYNTH_HUD_BGRA_IDLE 0xff40c0ffu /* BGRA：淡黄（停着时也画 —— 常驻指示器）*/
+#define CE_INPUT_SYNTH_HUD_BGRA_SET  0xff4040ffu /* BGRA：红（检测到**引擎重设**无敌帧时）*/
 
 /* 刻意**不**做"松开后再清一次位"的收尾：那会在键没按时也写字节（违反"默认一个字节都不写"），
  * 而引擎每帧重写 HELD/PRESSED ⇒ 本来就没有残留（见文件头第 5 条）。 */
@@ -122,6 +123,17 @@ static int32_t  s_dxq_max;    /* 起抖以来 |Δx| 的峰值（1/128 px 定点�
  *       它就是"这套抖动能攒出多少无敌"的直接读数。*/
 static uint32_t s_frames_total;
 static int      s_inv_peak;
+/* ★ 2026-09-13 用户口径：「**能不能直接读那个帧数**——似乎**放 B 之后会把无敌帧重设为定值**」。
+ *   ⇒ 我们读的就是引擎字段 `player+0x47778`，但它**会被引擎自己覆盖**（一手普查，全是 `mov …, 定值`）：
+ *     `Bomb__can_bomb_and_deathbomb_check` `0x42067c`=120 / `0x420879`/`0x4215cc`/`0x4232cb`=40 /
+ *     `0x423170`=110；`Card__death_save_*_revive` `0x40a477`/`0x40d9a5`=60；
+ *     `Player__commit_death_and_enter_state2` `0x45d280`=180；`GlobalsInner__spend_power` `0x45c35e`=280。
+ *     只有卡 29 那处是**加**（`0x40cb2a addss`，+4）。⇒ **攒起来的会被覆盖掉**。
+ *   本组状态用来**抓这些覆盖**：每帧比对增量，凡不是「−1（自然衰减）」或「+3（本件触发 +4 再 −1）」
+ *   的变化都判为**引擎重设**，在日志与 HUD 上标出来。*/
+static int      s_inv_prev;        /* 上一帧读到的 inv（-1 = 还没读到过）*/
+static int      s_set_mark_frames; /* 检测到引擎重设后，HUD 上标几帧 */
+static int      s_set_from, s_set_to;
 
 /* 调试键：**空格（Space）** —— 用户 2026-09-13 口径「Ctrl+A 似乎没有生效，就用 Space 就行」。
  * ⚠ 与 106（`th06rank.c`）的 Space 调试键**同键**：同时装备 106 且按空格时两件会一起动
@@ -237,6 +249,7 @@ void ce_input_synth_draw(void)
      *     —— 它会随每帧衰减自然往下掉，正好当"还剩多少无敌帧"的指示器。*/
     pl = CE_PLAYER();
     if (pl) inv = *(const int32_t *)(const void *)(pl + IS_OFF_PLAYER_INVULN);
+    if (s_set_mark_frames > 0) --s_set_mark_frames;
 
     if (s_active && pl) {
         /* 运行中：主读数 = 无敌帧（当前/峰值）+ 累计帧数；再给 方向/相位/累计 Δx */
@@ -248,15 +261,25 @@ void ce_input_synth_draw(void)
         mask = ce_input_synth_mask(s_phase);
         dir  = (mask & CE_INPUT_SYNTH_DIR_LEFT) ? "L"
              : (mask & CE_INPUT_SYNTH_DIR_RIGHT) ? "R" : "-";
-        ce_hud_text(CE_INPUT_SYNTH_HUD_X, CE_INPUT_SYNTH_HUD_Y, CE_INPUT_SYNTH_HUD_BGRA,
-                    "SYNTH RUN %s inv=%d max=%d frames=%u dx=%.1f", dir, inv_now,
-                    s_inv_peak, (unsigned)s_frames_total, (double)dxq / 128.0);
+        if (s_set_mark_frames > 0)
+            ce_hud_text(CE_INPUT_SYNTH_HUD_X, CE_INPUT_SYNTH_HUD_Y, CE_INPUT_SYNTH_HUD_BGRA_SET,
+                        "SYNTH RUN %s inv=%d  << SET %d->%d (engine)  max=%d frames=%u",
+                        dir, inv_now, s_set_from, s_set_to, s_inv_peak, (unsigned)s_frames_total);
+        else
+            ce_hud_text(CE_INPUT_SYNTH_HUD_X, CE_INPUT_SYNTH_HUD_Y, CE_INPUT_SYNTH_HUD_BGRA,
+                        "SYNTH RUN %s inv=%d max=%d frames=%u dx=%.1f", dir, inv_now,
+                        s_inv_peak, (unsigned)s_frames_total, (double)dxq / 128.0);
     } else {
         /* 停着也画（常驻指示器）：报无敌帧（当前/峰值）+ 累计帧数 + 怎么开 */
         if (inv > s_inv_peak) s_inv_peak = inv;
-        ce_hud_text(CE_INPUT_SYNTH_HUD_X, CE_INPUT_SYNTH_HUD_Y, CE_INPUT_SYNTH_HUD_BGRA_IDLE,
-                    "SYNTH --  inv=%d max=%d frames=%u   [Space] toggle", inv,
-                    s_inv_peak, (unsigned)s_frames_total);
+        if (s_set_mark_frames > 0)
+            ce_hud_text(CE_INPUT_SYNTH_HUD_X, CE_INPUT_SYNTH_HUD_Y, CE_INPUT_SYNTH_HUD_BGRA_SET,
+                        "SYNTH --  inv=%d  << SET %d->%d (engine)  max=%d frames=%u   [Space] toggle",
+                        inv, s_set_from, s_set_to, s_inv_peak, (unsigned)s_frames_total);
+        else
+            ce_hud_text(CE_INPUT_SYNTH_HUD_X, CE_INPUT_SYNTH_HUD_Y, CE_INPUT_SYNTH_HUD_BGRA_IDLE,
+                        "SYNTH --  inv=%d max=%d frames=%u   [Space] toggle", inv,
+                        s_inv_peak, (unsigned)s_frames_total);
     }
 #endif
 }
@@ -277,6 +300,28 @@ void ce_input_synth_tick(void)
         const uint32_t f = ce_sdk_frame();
         if (s_last_frame == f) return;
         s_last_frame = f;
+    }
+    /* ★ 引擎重设检测（**先于 running 判断**：停着时放 B 也要能看到）*/
+    {
+        const uint8_t *pl = CE_PLAYER();
+        if (pl) {
+            const int inv = *(const int32_t *)(const void *)(pl + IS_OFF_PLAYER_INVULN);
+            if (s_inv_prev >= 0) {
+                const int d = inv - s_inv_prev;
+                /* 允许的两种：−1 = 每帧自然衰减（`0x45c5bc`）；+3 = 本件触发（卡 +4 在玩家之前 ⇒ 本帧净 +3）*/
+                if (d != -1 && d != 3) {
+                    s_set_from = s_inv_prev;
+                    s_set_to   = inv;
+                    s_set_mark_frames = 90;      /* HUD 上标约 1.5 s */
+                    ce_log("isynth: ★ INV 被**引擎重设**（多半是放 B / 复活 / 死亡结算）：%d -> %d (%+d)  "
+                           "[一手：`Bomb__can_bomb_and_deathbomb_check` 0x42067c=120 / 0x420879|0x4215cc|0x4232cb=40 / "
+                           "0x423170=110；death_save 60；death_commit 180；spend_power 280 —— 全是 `mov …, 定值`]",
+                           s_set_from, inv, d);
+                }
+            }
+            s_inv_prev = inv;
+            if (inv > s_inv_peak) s_inv_peak = inv;
+        }
     }
     if (!s_armed_logged) {
         s_armed_logged = 1;
