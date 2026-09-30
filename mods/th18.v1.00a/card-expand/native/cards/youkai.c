@@ -1058,6 +1058,48 @@ static int yk_enemy_is_boss(const uint8_t *e)
     return 0;
 }
 
+static int yk_current_character(void);   /* 前向声明：弹色那一支要用它（定义在下面）*/
+
+/* ★★★ 2026-09-30（**owner 口径**）：「把**早苗妖侧的红色弹幕变成那个秋天的黄色** —— 到时候**逢魔再变成
+ *   红色**，否则**红色变红一点不明显**」。
+ * 两个色都是**一手值**（TH16 `pl03.anm` 同族的两支脚本各写一支）：
+ *   · **秋黄 `(224,192,64)`** = TH16 `pl03.anm` **script10** 写的那个色（⛔ 我们**默认**用它；
+ *     构建期把源脚本的 `color(255,48,48)` 换掉 —— 见 `build_player_anm.py` 的 `_yk_bullet_block`）；
+ *   · **红 `(255,48,48)`** = TH16 `pl03.anm` **script6..9**（= 我们移植的那四支的**原件色**）⇒ 逢魔态用它。
+ * ⚠ 为什么**不是移植偏差**：四支子机弹脚本本来就是红（逐字照抄 TH16），红是**原作色**；owner 要的是
+ *   「默认换秋黄 + 逢魔回红」这条**口径**（登记 `TUNING.md` + `AUDIT.md`）。
+ * ⚠ 色格式 = 引擎的 `0xAARRGGBB`，**只换 RGB、alpha 原样**（与 `YK_FENGMA_TINT_RGB` / `yk_tint_apply`
+ *   同一条规矩：alpha 由弹脚本的 `alpha(170)` 管）。*/
+#define YK_AYA_BULLET_RGB_YELLOW 0x00e0c040u   /* 秋黄（TH16 pl03.anm script10 一手色）*/
+#define YK_AYA_BULLET_RGB_RED    0x00ff3030u   /* 红（TH16 pl03.anm script6 一手色 = 我们移植的原件色）*/
+
+/* 每帧：**只在早苗（机体 3）+ 聚焦（妖侧）**时，把我们那批子机弹（判据 = 当前 RGB 正好是这两个色之一）
+ * 刷成「逢魔 ⇒ 红 / 否则 ⇒ 秋黄」。**同帧先判逢魔再落色** ⇒ 切换帧不会闪回默认色；退出逢魔立刻回黄。
+ * 只换 RGB、不动 alpha/弹道/伤害/anm 帧序。成本 = 一次 512 格的弹池扫描（与决死变红那套同量级）。*/
+static void yk_aya_bullet_color_tick(yk_card_t *s)
+{
+    uint8_t *pl;
+    unsigned i;
+    if (!s) return;
+    if (yk_current_character() != YK_CHAR_SANAE) return;      /* 只早苗 */
+    if (!CE_PLAYER_FOCUSED()) return;                         /* 只妖侧（低速）*/
+    pl = CE_PLAYER();
+    if (!pl) return;
+    for (i = 0; i < CE_PB_COUNT; ++i) {
+        uint8_t *b = pl + CE_PB_POOL + (size_t)i * CE_PB_STRIDE;
+        volatile uint32_t *c;
+        uint32_t v;
+        if (*(const int32_t *)(b + CE_PB_STATE) != 1) continue;            /* 1 = 活着的弹 */
+        c = (volatile uint32_t *)(b + YK_BULLET_VM + CE_ANM_VM_COLOR1);
+        v = *c;
+        if (v == ((v & 0xff000000u) | YK_AYA_BULLET_RGB_RED)) {            /* 已是红 ⇒ 非逢魔则回黄 */
+            if (!s->fengma) *c = (v & 0xff000000u) | YK_AYA_BULLET_RGB_YELLOW;
+        } else if (v == ((v & 0xff000000u) | YK_AYA_BULLET_RGB_YELLOW)) {  /* 已是黄 ⇒ 逢魔则转红 */
+            if (s->fengma) *c = (v & 0xff000000u) | YK_AYA_BULLET_RGB_RED;
+        }
+    }
+}
+
 /* ★★★ 2026-09-30（owner：「忠于原作就得加拖尾」）：**使魔拖尾**的一颗火花。
  * 一手：`trailFamiliarSet`（opcode 83，handler `th08:0x41e532`）置 `enemy+0x3328`（`flags_hi`）**bit1**
  *   之后，引擎**周期性**在**使魔当前位置**撒效果 `0x26` = `etama.anm` **script71**（我们的 `` `370` ``，
@@ -6080,6 +6122,8 @@ static int on_tick_2(ce_card_t *c)
      *   ⚠ 刻意**不放在 `focused` 分支里**：它们不是「妖侧才有的东西」，人侧也活着、也绕转
      *   （与 1:1 映射使魔同一口径：松 Shift 不撤，只有 `yk_drop_all` 撤）。*/
     yk_orbit_tick(s_ledger_frame);
+    /* ★ 早苗妖侧弹色（owner 口径）：默认秋黄、逢魔红 —— 每帧刷一次（只动 RGB）。*/
+    yk_aya_bullet_color_tick(s);
     /* ★★ 2026-09-26（owner：那声切换音「**在有使魔的情况下才有**」）：人→妖那一下的 `se_ophide`
      *   **延到这里才播** —— 门要读**本帧**使魔表（`yk_familiars_tick()` 刚在上面建/撤完）。
      *   一手语义也是这个：那一声是**敌人的方法**（`FUN_0042c420`）在「形态变了」时发的，

@@ -25604,3 +25604,38 @@ K 的量级 ≈ 1.6（owner 口径）；登记 `TUNING.md` §2.1ccc-26 的「拖
 **闸（原文）**：`make -s check` rc=0（`youkai_core: 8120 checks, 0 failed`；其余各测试 0 failed）、
 `make -s dllx87` ⇒ `x87 in our objects: 0`、`python3 sites.py verify` ⇒ `✅ 全部对上`、
 `python3 native/tools/capcheck.py` ⇒ `capcheck：全绿 ✅`、`python3 tooling/check-docs.py` ⇒ `✓ 全部通过`。
+
+### §BE #150 · 追加（2026-09-28 第十四轮）：早苗妖侧弹色 = **默认秋黄 / 逢魔红**（owner 口径）
+
+> **owner 逐字**：「把**早苗妖侧的红色弹幕变成那个秋天的黄色** —— 到时候**逢魔再变成红色**，
+> 否则**红色变红一点不明显**」。
+
+**一、先查现状（结论：红是 TH16 原件色，不是我们的移植偏差）**
+早苗妖侧的子机弹 = 我们移植的 `pl03.anm` **script6..9**（构建号 45..49，子机行用的就是 46..49），
+四支都是**逐字照抄** TH16（`build_player_anm.py` 的 `_yk_bullet_block`：只做 `@成员名@`→sprite、
+脚本号、去注释三件事）。原生正文里明确写着：
+
+```
+sprite(sprite144);  alpha(170);  color(255, 48, 48);   ← 红（TH16 pl03.anm script6..9 原件）
+```
+
+⇒ **红是原作色**，不是偏移（这一点与 owner 的直觉不同，如实记录）。
+**秋黄也是同族的一手色**：TH16 `pl03.anm` **script10** 同一族脚本写的是 `(224, 192, 64)`
+（生成器注释里早就记着这对对比：`make_youkai_bullet_art.py:95`）⇒ 两个色**都有出处**，
+owner 要的是「**默认换秋黄、逢魔回红**」这条口径。
+
+**二、改了两处**
+
+| 层 | 改动 | 为什么在这层 |
+| --- | --- | --- |
+| 资产（构建期）| `build_player_anm.py` 的 `_yk_bullet_block`：`player == "pl03"` 时把弹体脚本里的 `color(255,48,48);` 换成 `color(224,192,64);`（**只这 4 支**，`alpha(170)`/帧序/sprite 一字不动）| **零每帧开销、也绝不和引擎每帧的脚本写色打架**（脚本自己写的就是默认色）；注释里写明这是**唯一一处**对弹体脚本正文的改写 + 为什么（owner 口径）|
+| 卡片运行期 | `youkai.c` 新增 `yk_aya_bullet_color_tick()`（`on_tick_2` 每帧调）：**只在机体 3 + 聚焦（妖侧）**时扫弹池，判据 = 当前 RGB 正好是两个色之一，**逢魔 ⇒ 红 / 否则 ⇒ 秋黄**，只换 RGB（保 alpha，同 `yk_tint_apply` 的规矩）| 逢魔是**运行期状态**，只能在运行期染；选「按当前色判等」当筛子 ⇒ 不会碰到别人的弹（灵梦/魔理沙/咲夜、敌弹都不在这两个色上）|
+
+切换帧顺序：**同一次调用里先读 `s->fengma` 再落色** ⇒ 进入逢魔那一帧就是红、退出那一帧就是黄，**不闪回**。
+
+**三、判据**（`HANDOFF-108.md` §3 第 53 行）：早苗按 shift ⇒ 子机弹**秋黄**；逢魔期间**整批红**且与黄一眼可分；
+退出立刻回黄；**其余机体与人侧一个字节不变**。
+
+**闸（原文）**：`make -s check` rc=0（含 `anm-check`/`anm-verify`：4 支脚本已重编进 `pl03.anm` 并逐块复核；
+`youkai_core: 8120 checks, 0 failed`）、`make -s dllx87` ⇒ `x87 in our objects: 0`、
+`python3 sites.py verify` ⇒ `✅ 全部对上`、`capcheck` ⇒ `全绿 ✅`、`check-docs` ⇒ `✓ 全部通过`。

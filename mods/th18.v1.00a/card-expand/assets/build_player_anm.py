@@ -1241,6 +1241,15 @@ def _yk_bullet_block(player: str, spec: dict) -> str:
         raise SystemExit(f"{player}: {hits[0].name} 里没有 script{spec['spec_file']}")
     kept = [l for l in body.splitlines() if not l.strip().startswith("//")]
     body = "\n".join(kept)
+    # ★★★ 2026-09-30（**owner 口径**）：「把**早苗妖侧的红色弹幕变成那个秋天的黄色** —— 到时候**逢魔再变成
+    #   红色**，否则红色变红一点不明显」⇒ **只对 pl03 的妖侧子机弹脚本**做一处**构建期换色**：
+    #   源（TH16 `pl03.anm` script6..9，逐字照抄）写的是 `color(255, 48, 48)` = **红**；
+    #   换成同族 `script10` 一手写的那支 **`(224, 192, 64)` = 秋黄**（同族两支脚本各写一支 ⇒ 两个值都是一手色）。
+    #   ⚠ 这是**唯一一处**对弹体脚本正文的改写（owner 口径，不是复刻）；逢魔的红由卡侧**运行期**染色
+    #     （`youkai.c` 的 `yk_aya_bullet_color_tick`）负责，所以这里只改默认色。
+    #   ⚠ 不改 `alpha(170)`、不改帧序、不动 sprite。
+    if player == "pl03":
+        body = body.replace("color(255, 48, 48);", "color(224, 192, 64);")
     # ⚠ 拼成 `sprite97` 而不是 `97`：本仓的 spec 文本里 sprite 操作数一律是 `sprite(spriteN)`
     #   （`thanm` 带 mapfile 时的写法，`_SPRITE_REF` 也是照这个写的）—— 目标是「与反解回来的文本逐字相同」。
     for name, sid in spec["sprite_names"].items():
