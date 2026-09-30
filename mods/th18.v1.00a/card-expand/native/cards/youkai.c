@@ -3748,10 +3748,13 @@ static void __attribute__((noinline)) yk_zone_tick(yk_card_t *s, uint32_t card_i
                 cpos[0] = s_zone[i].x; cpos[1] = s_zone[i].y; cpos[2] = 0.0f;
                 got = ce_cancel_radius(cpos, s_zone[i].radius, (int)YK_ZONE_BULLET_SLOTS, 0);
                 if (got > 0) {
+                    /* ★ 一手：`hit_type == 9` ⇒ 进区的弹**每颗变 2 颗**刻符
+                     *   （`th08:0x431634 cmpl $0x9,0x18b8988` 连发两次）；7 ⇒ 1 颗。*/
+                    int mult = (s_zone[i].hit_type == YK_ZONE_HIT_ORB_DOUBLE) ? 2 : 1;
                     int oi;
                     s_zone_bullets += (unsigned)got;
-                    s_zone_orbs += (unsigned)got;
-                    for (oi = 0; oi < got; ++oi)
+                    s_zone_orbs += (unsigned)(got * mult);
+                    for (oi = 0; oi < got * mult; ++oi)
                         yk_orb_spawn(s, s_zone[i].x, s_zone[i].y, YK_ORB_STATE_SPAWN);
                 }
             }
@@ -3899,6 +3902,14 @@ static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
                     const float *cp = ce_enemy_pos(e);
                     cx[n - 1] = cp ? cp[0] : ev->x;
                     cy[n - 1] = cp ? cp[1] : ev->y;
+                    /* ★★★ 2026-09-30（一手 `Enemy::FUN_0042adb0` 的循环体）：**每个子机位置也开一个
+                     *   吸收区** —— `FUN_0044df00(child_final_pos, R=32.5f, 2.03f, **寿命 8**,
+                     *   hitType = (被杀者 `flags_lo` bit1 ? 7 : 9))`。区结构复用同一个池
+                     *   （`yk_zone_open`）；**hit type 9 = 进区的弹每颗变 2 颗刻符**
+                     *   （`th08:0x431634 cmpl $0x9,0x18b8988` 连发两次）⇒ 已在 `yk_zone_tick` 里实现。*/
+                    yk_zone_open(cx[n - 1], cy[n - 1], YK_ZONE_DEATH_RADIUS, YK_ZONE_CHILD_LIFE,
+                                 (*(const uint32_t *)((const uint8_t *)ev->enemy + 0x3324) & 0x2u)
+                                     ? YK_ZONE_HIT_ORB : YK_ZONE_HIT_ORB_DOUBLE);
                 }
             }
         }
@@ -3926,8 +3937,11 @@ static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
          * 开的同时给 **1 颗刻符**（`th08:0x42b1a4 push $1 / push $7`，位置 = 死亡点），
          * 再开 **R=32.5f / 16 帧 / hit type 7** 的圆型区（`th08:0x42b1b8` + `th08:0x42b1d4 call 0x44df00`）。*/
         if (n > 0) {
-            yk_orb_spawn(s, ev->x, ev->y, YK_ORB_STATE_SPAWN);          /* 死亡点那 1 颗 */
-            ++s_zone_orbs;
+            /* ★ 2026-09-30 订正：这里**不再**额外给 1 颗 —— 一手链根那一支是
+             *   「popup + **`2 × subEnemyCount`** 颗（下面那一环）+ **在链根位置开区**」，
+             *   没有「单独的 1 颗」；那 1 颗**属于使魔/有主那一支**（`th08:0x42b1a4 push $1`，
+             *   在 `0x42adc4 je 0x42b1e5` 的**目标**里），我们已经在 `!n2 && parent != 0` 那支实现。
+             *   ⇒ 这里只开区（R=32.5 / 16 帧 / hit type 7 = 一手链根那一个）。*/
             yk_zone_open(ev->x, ev->y, YK_ZONE_DEATH_RADIUS, YK_ZONE_DEATH_LIFE, YK_ZONE_HIT_ORB);
         }
         n2 = (int)yk_kill_burst_count(n);
@@ -3959,9 +3973,13 @@ static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
                     float ang, rad;
                     /* ⚠ 两个随机数**先取到局部**（一手顺序是「先半径 `0x40d390`、后角度 `0x4143c0`」；
                      *   写成函数实参求值顺序在 C 里未定义 ⇒ 会破坏回放确定性）。*/
-                    float rr = (float)(ce_rand() % 1000u) / 1000.0f;   /* → 半径 ∈ [0, 2N) */
+                    /* ★★★ 2026-09-30 **纠错**（`AUDIT.md` §BE #161）：一手是「角度 `rand(0..2N)`、
+                     *   幅度 **±3.17 px**」= **堆在一点**（「爆一堆」的密堆感）；我们原来把**角度范围
+                     *   当成了半径**（`yk_orb_burst_polar(n2,…)` ⇒ 圆盘半径 2N）。⇒ 幅度固定 3.17。
+                     *   ⚠ 量纲：TH08 与 TH18 世界层同一套 ECL 单位 ⇒ 3.17 **直接照抄**。*/
+                    float rr = (float)(ce_rand() % 1000u) / 1000.0f;   /* → 半径 ∈ [0, 3.17) */
                     float ra = (float)(ce_rand() % 1000u) / 1000.0f;   /* → 角 ∈ [−π, π) */
-                    yk_orb_burst_polar(n2, ra, rr, &ang, &rad);
+                    yk_orb_burst_polar_range(YK_KILL_BURST_SPREAD, ra, rr, &ang, &rad);
                     yk_orb_spawn(s, cx[k] + yk_cos_approx(ang) * rad,
                                     cy[k] + yk_sin_approx(ang) * rad,
                                  YK_ORB_STATE_SPAWN);   /* 一手 `0x42b048`：state 3（上抛，期间收不到）*/
@@ -3971,9 +3989,10 @@ static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
              * 半径上界 **128**（`0x42b15d` —— ⚠ 同样走 `GetRandomF32InRange` ⇒ **圆盘**，不是固定环）。*/
             for (k = 0; k < yk_kill_ring_count(n); ++k) {
                 float ang, rad;
-                float rr = (float)(ce_rand() % 1000u) / 1000.0f;       /* → 半径 ∈ [0, 128) */
+                /* ★ 2026-09-30 同上纠错：一手链根那一环也是**幅度 ±3.17**（不是半径 128）。*/
+                float rr = (float)(ce_rand() % 1000u) / 1000.0f;       /* → 半径 ∈ [0, 3.17) */
                 float ra = (float)(ce_rand() % 1000u) / 1000.0f;       /* → 角 ∈ [−π, π) */
-                yk_orb_burst_polar_range(YK_KILL_RING_RADIUS, ra, rr, &ang, &rad);
+                yk_orb_burst_polar_range(YK_KILL_BURST_SPREAD, ra, rr, &ang, &rad);
                 yk_orb_spawn(s, ev->x + yk_cos_approx(ang) * rad,
                                 ev->y + yk_sin_approx(ang) * rad,
                              YK_ORB_STATE_SPAWN);       /* ★ §BE #117：type 7 ⇒ 实参被覆写成 state 3 */

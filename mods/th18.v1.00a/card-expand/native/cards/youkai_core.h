@@ -2008,7 +2008,16 @@ int yk_item_box_open(int32_t player_state);
                                         *   一手约束在**吐点**那一侧 ⇒ 池满口径见下）*/
 #define YK_ZONE_DEATH_RADIUS   32.5f   /* 一手 `th08:0x42b1b8 push $7 / push $0x10`（R = 32.5f）*/
 #define YK_ZONE_DEATH_LIFE     16u     /* 一手：同上的寿命（16 帧）*/
-#define YK_ZONE_HIT_ORB        7       /* 一手 hit type：7 = 刻符（type 7）⇒ 每颗被吃的弹吐 1 颗 */
+#define YK_ZONE_HIT_ORB        7       /* hit type 7：进区的弹 ⇒ **1 颗**刻符 */
+#define YK_ZONE_HIT_ORB_DOUBLE 9       /* ★ 2026-09-30：hit type 9 ⇒ 进区的弹 ⇒ **2 颗**刻符
+                                        *   （一手 `th08:0x431634 cmpl $0x9,0x18b8988` 连发两次）；
+                                        *   一手用它的是**子机位置**那个 8 帧区（`flags_lo` bit1 决定 7/9）*/
+#define YK_ZONE_CHILD_LIFE     8u      /* 一手：**子机位置**那个区的寿命（`FUN_0044df00` 第 4 实参 8）；
+                                        *   链根自己那个区是 `YK_ZONE_DEATH_LIFE`(16) —— 两者不同，别混 */
+#define YK_KILL_BURST_SPREAD   3.17f   /* ★★ 2026-09-30 **纠错**：一手刻符散布是「角度 rand、幅度
+                                        *   **±3.17 px**」= 堆在一点；我们原来把**角度范围当成了半径**
+                                        *   （2N / 128 的圆盘）—— 见 `AUDIT.md` §BE #161。
+                                        *   量纲：TH08 与 TH18 世界层同一套 ECL 单位 ⇒ 直接照抄。*/       /* 一手 hit type：7 = 刻符（type 7）⇒ 每颗被吃的弹吐 1 颗 */
 #define YK_ZONE_BULLET_SLOTS   2000u   /* 敌弹池扫描口径 = `cancel_all` 的同一份（`engine.h:722`：
                                         *   槽 0 = `CE_BM_BULLETS`、2000 张、stride `0xfa0`）*/
 #define YK_ZONE_BULLET_STATE_ERASED 3  /* ⚠ **跨版本映射**：TH08 把被区吃掉的弹写 **state 5**，
