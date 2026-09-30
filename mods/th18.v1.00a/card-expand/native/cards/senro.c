@@ -844,7 +844,9 @@ static int32_t senro_dim_alpha_at(int32_t elapsed)
         g = SENRO_DIM_G_HOLD;
     if (g < 0) g = 0;
     if (g > SENRO_DIM_G_FULL) g = SENRO_DIM_G_FULL;
-    return 255 - (255 * g) / SENRO_DIM_G_FULL;
+    /* ★ 四舍五入（+半个除数）：g=48 ⇒ `(12240+64)/128 = 96` ⇒ α = **159**（= round(255×0.625)，
+     *   与 0.375 的原版乘子差 0.15 %；直接截断会给 160）。g=128 ⇒ 0、g=0 ⇒ 255，两头仍精确。*/
+    return 255 - (255 * g + SENRO_DIM_G_FULL / 2) / SENRO_DIM_G_FULL;
 }
 
 static void senro_dim_tick(senro_card_t *s)
