@@ -193,6 +193,16 @@
 #define SEASON_HUD_GLYPH_DY    (-20.0f)  /* 季节字中心 y = 锚点 + 它（916−12−924）*/
 #define SEASON_HUD_STRIP_DX     71.0f    /* releaseable 条中心 x = 锚点 + 它（308+20−257）*/
 #define SEASON_HUD_STRIP_DY    (-16.0f)  /* releaseable 条中心 y = 锚点 + 它（916−8−924）*/
+/* ★★ 2026-09-13 用户口径：**HUD 放回左下角、暂不参与货架排布**（"目前暂时不搞货架排布"）。
+ *   左沿取 **68** —— = TH18 **原生「当前卡」UI 的左沿**：112 的 owner 口径就是这个值
+ *   （`ufo.c` 的 `UFO_HUD_PIN_X = 248 + (−180) = 68`，注释里还留着 owner 那句订正：
+ *   **表面 `x < 257` 那条带子不是黑底**，那是 TH18 自己的 HUD 面板区——原生分数/残机/Bomb/
+ *   当前卡都在那儿 ⇒ **系统槽本来就该放这一带**）；117 另用 88（`ANIMAL_HUD_PIN_X`）。
+ *   y 保持 **924**（= 117 量过的那条底线，也 = `CE_HUD_ANCHOR_Y`）
+ *   ⇒ **只动 x**：外框仍落 910..920、竖直观感一个像素不变。
+ *   ⚠ 要再左/右移**只改这一个数**（68 ↔ 88 之间也可以）。*/
+#define SEASON_HUD_PIN_X       68.0f
+#define SEASON_HUD_PIN_Y       924.0f
 #define SEASON_HUD_DIGIT_X640  (-32.75f) /* 档位数字（640 空间）= 锚点.x640 + 它*/
 #define SEASON_HUD_DIGIT_Y640  (-10.25f) /* 档位数字（640 空间）= 锚点.y640 + 它*/
 /* ★★ 2026-09-10 第三十二轮：外框改成**四条矩形**拼出来（TH16 `front.anm` script114 的
@@ -229,7 +239,7 @@ static const struct { float dx, dy, sx, sy; } k_season_frame[SEASON_FRAME_N] = {
  *
  * 本卡的块矩形 → 门限（**全部自机坐标**；换算见 `hud_dim.h` 的「表面 px → 自机坐标」定式：
  * `自机 = 表面/2 − (320, 16)`）：
- *   · 块 = 货架槽（`s_slot`，**每帧现取**）：表面 `(s_slot.x, s_slot.y)` 起 **104 × 36**
+ *   · 块 = **自带锚点的固定位**（`SEASON_HUD_PIN_X/Y` = `68, 924`，2026-09-13 用户口径）：表面 `(68, 924)` 起 **104 × 36**
  *     （`SEASON_HUD_BLOCK_W/H`；实测元素 x 263..365 / y 888..920 ⇒ 块 x 257..361、y 888..924）
  *   · ⇒ 自机坐标矩形 = x ∈ [−191.5, −139.5]、y ∈ [428, 446]（= 上沿 428 / 下沿 446）
  *   · ⇒ **进** = 自机落在「矩形 + 28」之内：x ∈ [−219.5, −111.5] ∧ y ∈ [400, 474]
@@ -1535,8 +1545,11 @@ static void hud_slot_claim(season_card_t *s)
     memset(&blk, 0, sizeof blk);
     blk.w = SEASON_HUD_BLOCK_W;
     blk.h = SEASON_HUD_BLOCK_H;
-    blk.side = CE_HUD_SIDE_LEFT;                   /* 左下角货架（§2 从 (257,924) 向右排）*/
-    ok = ce_hud_slot_claim_card(116, &blk, &s_slot);
+    /* ★ 2026-09-13 用户口径：改用**自带锚点**认领（照 117 的写法）——
+     * 登记进槽位表（`ce_hud_slot_get()` 取得到）、但**货架不会动它**、别的块也不会为它让位；
+     * 关卡纪元照样清 ⇒ 每关开场（`on_load`）重新认领。*/
+    blk.side = CE_HUD_SIDE_PINNED;
+    ok = ce_hud_slot_claim_pinned_card(116, &blk, SEASON_HUD_PIN_X, SEASON_HUD_PIN_Y, &s_slot);
     /* ★★ 2026-09-13 修 bug（实跑日志 7419 行 + HUD 位置错）：认领结果**必须写进卡字段**
      * `s->hud_slot_ok` —— 因为 `hud_slot_sync()` 与 `hud_ensure()` 读的都是**它**。
      * 原来只写文件静态 `s_slot_ok` ⇒ 两个后果：
@@ -1563,12 +1576,14 @@ static void hud_slot_claim(season_card_t *s)
  *      ⇒ 直接读 `s_slot.x640` 是上一关的陈旧值，这里按 SDK 口径自己换算（`CE_HUD_SURFACE_TO_640` = 0.5）。*/
 static void hud_slot_sync(season_card_t *s)
 {
-    if (!s->hud_slot_ok) {
-        s_slot.x = CE_HUD_ANCHOR_X;
-        s_slot.y = CE_HUD_ANCHOR_Y;
-    } else {
-        (void)ce_hud_slot_get(116, &s_slot);
-    }
+    (void)s;
+    /* ★ 2026-09-13 用户口径：**本卡不走货架**（"目前暂时不搞货架排布"）⇒ 锚点就是自己声明的
+     * 固定左下角 `SEASON_HUD_PIN_*`，**不再每帧 `ce_hud_slot_get()`**（那会拿分配器排给我们的槽位）。
+     * ⚠ 上一条（2026-09-13 早）我把这里改成"读货架槽位"并把它当成修 bug —— **判断错了**：
+     * `s->hud_slot_ok` 从没被写过**是本来就这么设计的**（本卡不参与货架排布）。
+     * 现在认领走 `ce_hud_slot_claim_pinned_card`（自带锚点）⇒ 取不取货架都是这个位置。*/
+    s_slot.x = SEASON_HUD_PIN_X;
+    s_slot.y = SEASON_HUD_PIN_Y;
     s_slot.x640 = s_slot.x * CE_HUD_SURFACE_TO_640;
     s_slot.y640 = s_slot.y * CE_HUD_SURFACE_TO_640;
 }
