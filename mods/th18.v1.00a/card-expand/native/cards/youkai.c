@@ -3646,6 +3646,47 @@ static void yk_zone_tick(yk_card_t *s, uint32_t card_id, uint32_t frame)
                (int)YK_ZONE_HIT_ORB);
 }
 
+/* ★★★ 2026-09-30（**owner 口径**）：「我们 108 的 **boss 的发射口使魔原则上也应当是每段攻击
+ *   killall 的**」——一手：TH08 的 boss 使魔**不常驻**，每段攻击开头 `enmKillAll()`（op95）清场、
+ *   本波再 `familiarCreate`（`engine/enemy/th08/04-…md` §1）。
+ * 我们**不改 boss 的符卡/ECL** ⇒ 由卡侧在**相位分界**模拟：把该 boss（含它的子敌人链）的
+ *   映射使魔**撤壳 + 收跟随 VM + 清槽**（走既有 `yk_run_actions` / `YK_ACT_WITHDRAW` 那条路），
+ *   然后**让既有映射逻辑在下一波自然重建**（**不手工建**）。
+ * ⚠ 不碰绕转使魔（我们补的，与 boss 波次无关）；不碰非 boss 的映射使魔（只按 id 过滤）。*/
+static void yk_boss_fam_rebuild(yk_card_t *s)
+{
+    uint8_t *em = CE_ENEMY_MGR();
+    yk_action_t acts[YK_FAM_MAX];
+    unsigned i;
+    int total = 0, nb = 0;
+    if (!s || !em) return;
+    for (i = 0; i < 4u; ++i) {                                  /* `CE_EM_BOSS_IDS` = int[4] */
+        int32_t boss = *(const int32_t *)(em + CE_EM_BOSS_IDS + (size_t)i * 4u);
+        uint8_t *e;
+        int n;
+        if (!boss) continue;
+        ++nb;
+        n = yk_withdraw_enemy(&s_map, (uint32_t)boss, acts, (int)YK_FAM_MAX);
+        if (n > 0) { yk_run_actions(s, acts, n); total += n; }
+        /* 子敌人链（TH18 侧 = `parent_enemy_id`）：发射口实体常常是 boss 的子敌人 ⇒ 一并收。*/
+        CE_ENEMY_FOREACH(em, e) {
+            int32_t id, parent;
+            if (!e) continue;
+            id = *(const int32_t *)(e + CE_ENEMY_ID);
+            if (!id) continue;
+            parent = *(const int32_t *)(e + CE_SPAWN_PARENT);
+            if (parent != boss) continue;
+            n = yk_withdraw_enemy(&s_map, (uint32_t)id, acts, (int)YK_FAM_MAX);
+            if (n > 0) { yk_run_actions(s, acts, n); total += n; }
+        }
+    }
+    if (total)
+        ce_log("youkai: boss emitter familiars REBUILT for the new attack - withdrew %d familiar(s) "
+               "across %d boss(es); the 1:1 map will re-create them in the next wave "
+               "(TH08 `enmKillAll` op95 semantics, owner 2026-09-30; we do NOT modify boss ECL)",
+               total, nb);
+}
+
 static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
 {
     int focused, i, n2;
@@ -6294,6 +6335,9 @@ static int on_tick_2(ce_card_t *c)
              *   有这一行 = 触发对了（问题在喷点或观感）、没有这一行 = **符卡结束的下降沿没抓到**。*/
             ce_log("youkai: spiral ARMED (spell ended) - quota %u, 8-frame batches around the boss",
                    (unsigned)YK_SPIRAL_QUOTA_FULL);
+            /* ★★★ 2026-09-30（owner 口径）：**boss 的发射口使魔按每段攻击重建**（相位分界 = 就是这条
+             *   符卡结束的下降沿，不新造判据）⇒ 收掉该 boss 的映射使魔，让映射逻辑在下一波重建。*/
+            yk_boss_fam_rebuild(s);
         }
         if (s->spell_was != (uint8_t)(sp ? 1 : 0))      /* ★ §BE #113：两个边沿各打一行探针 */
             yk_spell_probe(sp ? "start" : "end");

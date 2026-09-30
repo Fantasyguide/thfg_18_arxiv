@@ -25830,3 +25830,33 @@ th08:0x406d70` + 无符卡）⇒ 1 颗、state 5；② 敌机死亡（`Enemy::FU
 
 **三、回归**：`make -s check` rc=0（`youkai_core: 8120 checks, 0 failed`；`dllx87 = 0`；`sites.py verify`、
 `capcheck`、`check-docs` 全过）。
+
+## §BE 详录 #156（2026-09-28）：boss 发射口使魔**按每段攻击重建**（owner 口径 = TH08 `enmKillAll` 语义）+ `+0x332f` 层字段定论
+
+> **owner 逐字**：「**使魔常驻是我们不改符卡的结果** —— 当然，我们 108 的 **boss 的发射口使魔原则上也应当是
+> 每段攻击 killall 的**」；另：「**没有 th08 的时候等价于人单人机体**……**不知道低速会不会改使魔样式**」。
+
+**一、① 实现（卡侧模拟 TH08 的每波清场）**
+- 新核心件 `yk_withdraw_enemy(m, enemy_id, out, max)`（`youkai_core.c`）：与 `yk_withdraw_all` **逐条同语义**
+  （含「缓冲满就留到下一帧」的不变式），只多一个 `enemy_id` 过滤 ⇒ 其余调用点**零影响**。
+- 卡侧 `yk_boss_fam_rebuild(s)`：在**既有的符卡结束下降沿**（`s->spell_was && !sp`，**不新造判据**）里，
+  对 `CE_EM_BOSS_IDS`（`int[4]`）里的每个 boss，先收 `s_map` 里 `enemy_id == boss` 的槽，
+  再 `CE_ENEMY_FOREACH` 收 `parent_enemy_id == boss` 的**子敌人**（TH18 侧发射口实体常是子敌人）的槽；
+  走既有 `yk_run_actions` / `YK_ACT_WITHDRAW`（**没写第二条撤退路**）⇒ 映射逻辑在下一波自然重建（**不手工建**）。
+- 不碰：绕转使魔（我们补的，与 boss 波次无关）、非 boss 的映射使魔（只按 id 过滤）。
+- 日志：`youkai: boss emitter familiars REBUILT for the new attack - withdrew %d familiar(s) across %d boss(es) …`（只在真收了时打一行）。
+
+**二、② `enemy+0x332f`（`enemyType = IsYoukai()?0:2` 的落点）定论 = 绘制层桶，不是样式**
+全 exe 只有**两个读点**：`th08:0x42de11`（把节点**头插**进 `ctx+0x9dcedc + layer*4` 那条链表；
+节点 +0 存 next）与 `th08:0x42e17f`（绘制时**按层遍历**）；那 6 个 dword 在
+`EnemyManager::Initialize` 清零（`0x42c789`–`0x42c7b9`）；**图集槽是另外两个地址**（`0x9dceec` = `enemy.anm`、
+`0x9dcef0` = `stgNenm.anm`）⇒ **`layer` 不选图集、不选脚本**。
+⇒ **人/妖侧使魔外观完全一样**（同一支 `enemy.anm` script、同一套图），**低速不改样式**；
+`gd` 的等价物只是**绘制层号**（决定遮挡顺序），我们**不做分流**。全文落 `engine/enemy/th08/04-…md` §7，
+并把该文 §4 第 3 条从「移植缺项」**改判为无需移植**。
+
+**三、③ 夜盲遮罩**：本轮**不改代码**，只在同文 §8 写下判断 —— 保留补丁的 multi-slot 做法，
+但标明它是**移植方自创**（vanilla `st02bs` 不用 `anmMove/anmScale/anmAlpha`）。
+
+**闸（原文）**：`make -s check` rc=0（`youkai_core: 8120 checks, 0 failed`；`dllx87 = 0`）、
+`sites.py verify` 全对上、`capcheck` 全绿、`check-docs` 全过。

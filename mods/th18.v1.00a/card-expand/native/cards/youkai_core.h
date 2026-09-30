@@ -1114,6 +1114,9 @@ int        yk_fam_broken(yk_map_t *m, uint32_t fam_id);
 void       yk_fam_gone(yk_map_t *m, uint32_t fam_id);
 /* 全部撤（高速 / miss / 局末 / 删卡）。返回动作数。 */
 int        yk_withdraw_all(yk_map_t *m, yk_action_t *out, int max);
+/* ★★★ 2026-09-30（owner 口径，TH08 `enmKillAll` 语义）：只撤 `enemy_id` 那一个敌人的映射使魔
+ *   （boss 换段时用；不改 `yk_withdraw_all` 的语义 ⇒ 其余调用点零影响）。返回撤了几台。*/
+int        yk_withdraw_enemy(yk_map_t *m, uint32_t enemy_id, yk_action_t *out, int max);
 
 /* ==================================================== §3.5.1 发射口关闸（精确闸，2026-09-12）
  * 新 SDK 面 `on_enemy_shot_slot`（断点 `0x433ffa` = etOn 的「发弹三步」汇聚点，一手见 sdk.c）：

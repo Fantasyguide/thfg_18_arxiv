@@ -101,7 +101,10 @@ script29 ← TSub47:2058 / TSub49:2129 / TSub55:2410。
 **缺的 7 条**（否定证据：补丁反汇编里 `amiliar` 出现 **0** 次；`enmCreate*` 只用 300/301）：
 1. **`trailFamiliarSet(1)`（op83）⇒ 拖尾/残影没了**（TH18 无此 opcode）。
 2. **圆环特效（`linkedEffect@0x53c8`）完全没了**（TH08 生成时内联分配、每帧跟随、按人妖侧 `SetInterrupt(1/2)`）。
-3. **人/妖侧外观分流没了**（TH08 `enemyType = IsYoukai()?0:2`；移植只有一套图）。
+3. ~~**人/妖侧外观分流没了**（TH08 `enemyType = IsYoukai()?0:2`；移植只有一套图）。~~
+   ★ **2026-09-30 改判（一手，见 §7）**：那条 `enemyType = IsYoukai()?0:2` 写进去的是
+   **`enemy+0x332f` 绘制层桶**，**不是**样式/图集/脚本 ⇒ **本来就没有「外观分流」**，
+   这一条从「移植缺项」降格为「无需移植」。
 4. **生成语义换了**：TH08 = 父敌子敌人链；TH18 = `enmCreate`/`enmCreateA` 建普通敌机
    （TH18 只保留 `parent_enemy_id`（`enemy+0x6834`，`enmCreate` 自动写），**「跟随父敌」行为没有**）。
 5. **掉落/分数清零**：`familiarCreate(...,600,-2,100)` → `enmCreate(...,600,0,0)`。
@@ -130,17 +133,66 @@ script29 ← TSub47:2058 / TSub49:2129 / TSub55:2410。
   夜盲贴图（TH08 `etama.anm` sprite229）；夜盲动画数值（TH08 `Sub50/56/57/60` 的 `floatTime`：440→320/288/256/224、120 帧；
   192/128/96/64、1800 帧 —— 补丁 `MystiaMaskAnimate` 逐条对上）；使魔行为（`Sub28` 的 `etEx`×3 /
   `etOnAutoDelay(16)` / `moveDir(0.5)` / `moveAccel(0.0283)` / +60 停加速）；符卡名与数值。
-- **只能新做（❓）**：**圆环特效**（TH18 无对应；TH08 是哪支 anm/effect **未查**）；**拖尾**（TH18 无落点）；
-  **人/妖侧外观分流**（TH18 敌机无侧概念）；**5 槽 mask 暗场**（TH18 全 22 个 ECL 里只有 `st06bs.ecl:1873-1879`
+- **只能新做（❓）**：**圆环特效**（✅ **已解 2026-10-01**：TH08 = `AllocEffectSlot(0x20,…)` → 模板表 `th08:0x4c6d30[0x20]`
+  = `etama` **script48** / sprite197 **62×62** 空心环、加法、每帧跟随、`interrupt 1=人紫(192,128,255)/2=妖蓝(96,96,255)`、
+  8 帧长到 0.5(人)/0.8(妖) 后常驻、`interrupt 3` = 死时淡出 10 帧；卡 108 已移植为 `ability.anm` **309**）；
+  **拖尾**（✅ **有落点 2026-10-01**：TH18 **anm v8 原生**有 `scriptNewRoot`(504)/`scriptNewPos`(505)/`scriptNewRootPos`(506)
+  —— `local/th18.v1.00a/anm/enemy/enemy.anm.txt` 的 script91 **每帧** `scriptNewRoot(script89)` 撒加法粒子，
+  script89 = `layer(9) + blendMode(1) + spriteRand(sprite120,8) + scaleTime(10,1,0,0) + +10 delete()`
+  ⇒「敌机自己周期性撒加法火花」可以**纯 anm** 复刻（不必 DLL、不必额外敌人）；
+  **人/妖侧外观分流**（✅ **2026-10-01 复核：TH18 敌机确实无侧概念** —— ECL 全 opcode 名里无 youkai/focus 类；
+  引擎侧读玩家聚焦位 `player+0x476cc` 的 18 处**全是自机侧**函数（`Player__*` / `Card*` / `Bullet__try_kill_player`）；
+  TH18 的外观变体机制是 `anmSelect`(302) 写 `zEnemyData+0x264 selected_anm_index` + `anmSelectedPlay`，即**由 ECL 脚本选**）；**5 槽 mask 暗场**（TH18 全 22 个 ECL 里只有 `st06bs.ecl:1873-1879`
   用单槽 `anmSetSprite(3,22)+anmMove`；vanilla `st02bs` 完全不用 `anmMove/anmScale/anmAlpha` ⇒ 多槽是移植方自创）；
   **「常驻」本身**（原作没有）。
 
 ## 6. ❓ 未解
 1. **TH08 圆环特效的 anm/贴图是哪支**（`linkedEffect@0x53c8` 的 `AllocEffectSlot(0x20,…)` 对应哪份 anm/script/interrupt）
    —— 决定「环」能不能复刻（已查 eclm / decomp / `engine/enemy/th08/*`，均无落点）。
-2. **TH18 `enmCreateF`(309)/`enmCreateAF`(310) 的 F 是不是「跟随父敌」** —— 若是，移植改用它就能便宜地补上"跟随"
-   （`engine/ecl/th18/05-stage1-midstage-spawns.md:58` 只写「F 变体」❓）。
+2. ✅ **已解（2026-10-01）**：**F 不是「跟随父敌」**，而是「**`EnemyManager.boss_ids[0]`（`mgr+0x48`）那只 boss 已不在
+   活动敌机链表里才建**」的额外门 —— 分派 case `th18:0x430ddb`（309/310/311/312 共用）：
+   `push [mgr+0x48]` → `th18:0x42d500`（按 id 在 `mgr+0x18c` 链里查，非 0 = 还在）→ `jne th18:0x436417`（跳过）；
+   300/301/304/305 走 `th18:0x430df1`（无此门）。⇒ **移植不能靠 F 补「跟随」**。
+   引擎侧也**没有**任何每帧读 `parent_enemy_id`（`enemy+0x6834`）的代码：全 exe **1 写点**（`th18:0x42d8e7`）
+   + **2 读点**，且两处都是 ECL 取值器（`th18:0x4377a8` int / `th18:0x438472` float）—— int 口径的变量 id = **−9909**
+   （表 `th18:0x437978` index 91）。**「跟随」的两条可行路**：① 纯 ECL：子敌每帧
+   `enmPos(%F0, %F1, <父 id>)` + `movePos`（`enmPos` = op801、case `th18:0x4361eb`：arg2 = 目标 id →
+   `th18:0x42d500` 查表 → `th18:0x409980` 取坐标，分别写进两个目标变量；`enmAlive` = op555、`th18:0x4361c4` 判活）；
+   ② DLL 侧（卡 108 的 `yk_fam_*` 已是这个形状）。详见
+   [`../../ecl/th18/05-stage1-midstage-spawns.md`](../../ecl/th18/05-stage1-midstage-spawns.md) 的出怪变体表（同日本次补 ✅）。
 3. `MystiaChild28` 的 `wait(600)` 是否有原作依据（判为移植方自定）。
 4. 本体走动动画 script22-25 为何从不调用（还原度可补）。
 5. 建议先读：`engine/anm/th18/04-anm-slot-selection.md`（`anmSelect(N)`/`anmSetSprite(K,S)` 语义）、
    `engine/enemy/th18/08-parent-enemy-id-and-sub-enemies.md`、`engine/enemy/th08/01-familiars-and-anm.md`。
+
+
+## 7. ★ 2026-09-30 一手：`enemy+0x332f`（那份 `enemyType = IsYoukai()?0:2` 落点）到底是**什么**
+
+**发现**：三个使魔 create 变体（opcode 90/91/92）都把 `IsYoukai()?0:2` 写进 `enemy+0x332f`
+（`th08:0x41afe5` / `0x41b195` / `0x41b345`；另有 `th08:0x41c6f0` 与两处常量写 2 / 0）。
+
+**验证（全 exe 只有两个读点）**：
+- `th08:0x42de11`：`movzx eax,BYTE PTR [enemy+0x332f]` → `mov eax,[ctx+eax*4+0x9dcedc]` →
+  `mov [enemy+0],eax`，随后 `th08:0x42de3d` 把**当前节点**写回 `[ctx+layer*4+0x9dcedc]`
+  ⇒ 这是**链表头插**：`ctx+0x9dcedc + layer*4` 是**每层一条绘制链表**的表头，节点 +0 存 `next`。
+- `th08:0x42e17f`：`mov edx,[ctx+eax*4+0x9dcedc]` ⇒ 绘制时**按层遍历**这条链表。
+- 那 6 个 dword 在 `EnemyManager::Initialize` 里被清零（`th08:0x42c789`–`0x42c7b9`），
+  与**图集槽**是**另外两个地址**：`0x9dceec` = `enemy.anm`、`0x9dcef0` = `stgNenm.anm`
+  （`th08:0x42ec23` / `th08:0x42ec9e` 装载）—— **`layer` 不选图集**。
+
+**结论（✅ 一手）**：`+0x332f` = **绘制层桶索引**（0 = 妖侧创建、2 = 人侧创建），只影响
+「插进哪条绘制链表 / 谁先谁后」，**不影响** `anmSet(K)` 选的脚本、也不换 `anm` 图集
+⇒ **人/妖侧的使魔外观完全一样**（同一支 `enemy.anm` script，同一套图）。
+⇒ owner 的疑问有答案：**低速不会改 boss 使魔的样式**；TH18 侧没有这种「同层竞争」的场景，
+我们不做任何分流（若哪天要照做，等价物是**世界 VM 的绘制层号**，值本身只决定遮挡顺序）。
+🟡 残余：另外那几个写点（`0x41c6f0` / 常量 2 / `0x42c498` 写 0）分别属于哪些非使魔对象，
+没有逐个归类；「同一支脚本在两个层里会不会有别的差异」也只证到「图集与脚本都不变」这一层。
+
+## 8. 夜盲遮罩（`mystia/mask.png`）：**我们的判断**（不改代码）
+
+补丁用了 **5 个 mask 槽**（`multi-slot`）来压暗场地 —— 这是**移植方自创**：vanilla `st02bs.ecl`
+**不用** `anmMove/anmScale/anmAlpha` 去驱动遮罩，它只有**一张** `etama.anm` sprite229（128×128）
++ sprite70（1×1 黑）这套素材。我们的判断：**保留补丁的做法**（TH18 侧没有 TH08 那套
+`floatTime` 浮点动画，5 槽是补丁为了在 TH18 的 ECL 能力内复现「逐渐压暗」而做的近似），
+但要在文档里标明**它是 ❓补丁自创、不是 TH08 一手**；若将来要贴一手，方向是把
+TH08 `Sub50/56/57/60` 的 `floatTime`（440→320/288/256/224、120 帧）照抄成 TH18 的动画脚本。

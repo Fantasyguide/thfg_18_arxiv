@@ -1,5 +1,6 @@
 # TH18 stage 1（1 面）道中出怪 dump —— 给「道中小怪掉动物灵」定规则用
 
+> **版本**：TH18 v1.00a（`th18.exe`，imagebase `0x400000`）。本文裸地址默认属该版本；引用其他版本须写成 `th08:0x…`。
 > 由 dump-st01 生成；复现命令见文末。
 
 ### 每段子程序的出怪（`enmCreate*` 调用，按出现顺序）
@@ -49,20 +50,32 @@ local/vendor/thtk/build/thecl/thecl -j -d 18 -m local/vendor/eclmap/eclmap/th18.
 
 ## 出怪指令的变体与参数（eclmap 一手）
 
-| opcode | 参数 | 备注 |
+| opcode | 名 | 语义（一手）|
 |---|---|---|
-| `enmCreate` | `301 enmCreateA` | 同步建敌（等它结束） |
-| `enmCreateA` | `302 anmSelect` | A = async：不等待，主流程继续 |
-| `enmCreateM` | `305 enmCreateAM` | M = 绑定/镜像？ |
-| `enmCreateAM` | `306 anmSetMain` | A + M |
-| `enmCreateF` | `310 enmCreateAF` | F 变体 |
-| `enmCreateAF` | `311 enmCreateMF` | A + F |
-| `enmCreateMF` | `312 enmCreateAMF` | M + F |
-| `enmCreateAMF` | `313 anmSelectedPlay` | 三者叠加 |
+| 300 | `enmCreate` | 坐标 = **本机坐标 + 参数**（相对）|
+| 301 | `enmCreateA` | 坐标 = **参数原样**（绝对）⇒ **A = absolute**，不是 async |
+| 304 | `enmCreateM` | 相对 + **镜像标记**（M = mirror）|
+| 305 | `enmCreateAM` | 绝对 + 镜像标记 |
+| 309 | `enmCreateF` | 相对；**额外门**：`boss_ids[0]` 那只敌机还在活动链表里就**不建** |
+| 310 | `enmCreateAF` | 绝对 + 同上的 F 门 |
+| 311 | `enmCreateMF` | 相对 + 镜像 + F 门 |
+| 312 | `enmCreateAMF` | 绝对 + 镜像 + F 门 |
 
-> 说明：`A/AF/AM/AMF` 只差在「是否 async」与 `F/M` 两个变体（本 dump 里 1 面只用到
-> `enmCreate` / `enmCreateF` / `enmCreateM` / `enmCreateA` 四种）。参数里前两个是**逻辑坐标**，
-> 后面几项是**子程序号 / 血量 / 掉落表号**一类（具体逐位含义见 `engine/ecl/th18/` 与这份 dump 的实际调用）。
+> ✅ **2026-10-01 一手补（原先的 ❓ 与「A = async」口述一并订正）**：**A = 绝对坐标、M = 镜像、F = 「boss 不在场才建」**。
+> 证据：分派表 = 字节表 `th18:0x4366f4` + dword 表 `th18:0x436438`（index = **opcode − 300**）——
+> 300/301/304/305 全落**同一个** case `th18:0x430df1`，309/310/311/312 全落 `th18:0x430ddb`；
+> 后者只多一条门：`push [mgr+0x48]`（= `zEnemyManager.boss_ids[0]`）`call th18:0x42d500`
+> （按 id 在 `mgr+0x18c` 活动链表里查敌机，返回非 0 = 还活着）→ `test/jne th18:0x436417` 跳过建敌。
+> 坐标/镜像的差别在共用 wrapper `FUN_004369e0`（`th18:0x4369e0`）：`0x436a96/0x436a9b`（300/309）、
+> `0x436ab2/0x436ab7`（311/304）走 `th18:0x436ae4` 的 `addss xmm1,[esi+0x44] / addss xmm0,[esi+0x48]`
+> （**加本机坐标**），301/310/305/312 直接跳 `th18:0x436b0e`（**不加**）；304/311/305/312 另把镜像参数置 1，
+> 且本机 `flags_lo` bit19（`0x80000`，`flagMirror` op558 写它的那一位）置位时 `th18:0x436b1a mulss xmm1,[0x4b9418]`
+> 把 x 取反。**「同步/异步」这条没有落点**：300 与 301 共用同一 handler case ⇒ 阻塞与否不可能是这对 opcode 的差别
+> （🟡 若确有该语义，落点在别处，未读到）。
+> 旁证（第三方移植的实际用法，`engine/enemy/th08/04-mystia-boss-familiars-leveledit-port.md` §3.2）：
+> TH08 的 `familiarCreateF("Sub2",0,0,…)` 被翻成 `enmCreate("MystiaChild28",0,0,…)`（相对 ⇒ 落在父敌身上），
+> TH08 的 `familiarCreateA("Sub37",%SELF_X,%SELF_Y,…)` 被翻成 `enmCreateA("MystiaChild37",%Q-192,%R,…)`
+> （自己换算成绝对坐标）⇒ 与上面 A/无 A 的判读逐条一致。
 
 ## 1 面出怪的几个观察（给你定掉落规则用）
 

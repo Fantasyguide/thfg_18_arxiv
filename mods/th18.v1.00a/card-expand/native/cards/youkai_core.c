@@ -760,6 +760,27 @@ int yk_shot_slot_gate(yk_map_t *m, uint32_t enemy_id, int slot, uint32_t have_fa
     return 1;
 }
 
+/* ★★★ 2026-09-30（owner 口径）：**只撤某一个敌人的**映射使魔 —— TH08 的 boss 使魔是**每段攻击
+ *   重建**的（每波开头 `enmKillAll()` op95，见 `engine/enemy/th08/04-…md` §1），而 TH18 侧我们不改
+ *   boss 的符卡/ECL ⇒ 在相位分界上由卡侧收掉该 boss 的使魔、让映射逻辑在下一波自然重建。
+ *   语义与 `yk_withdraw_all` **逐条一致**（含截断不变式），只多一个 `enemy_id` 过滤。*/
+int yk_withdraw_enemy(yk_map_t *m, uint32_t enemy_id, yk_action_t *out, int max)
+{
+    unsigned i;
+    int n = 0;
+    if (!m || !enemy_id) return 0;
+    for (i = 0; i < YK_FAM_MAX; ++i) {
+        yk_slot_t *e = &m->e[i];
+        if (e->enemy_id != enemy_id || !e->fam_id) continue;
+        if (out && n >= max) break;                  /* 缓冲区满：剩下的**留到下一帧**（同 `_all`）*/
+        yk_fill_action(&out[n], YK_ACT_WITHDRAW, e);
+        ++n;
+        e->fam_id = 0;
+        e->prev_life = YK_LIFE_UNSAMPLED;
+    }
+    return n;
+}
+
 int yk_withdraw_all(yk_map_t *m, yk_action_t *out, int max)
 {
     unsigned i;
