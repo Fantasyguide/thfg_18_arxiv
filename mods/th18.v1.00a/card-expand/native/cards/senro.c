@@ -107,13 +107,16 @@
 #define SENRO_SMALL_TRIGGER_MIN   8      /* 本帧消弹 ≥ 这么多颗才算「boss 死亡那一大笔」（❓自定）*/
 #define SENRO_SMALL_MAX_SPAWN     24     /* 一次最多撒几颗实体（❓自定；总值按一手给足）*/
 
-/* ★★ 2026-09-18：**死敌掉 ★** 用的原生道具 type 与撒落实参。
- *   一手（TH07 §3.2，`th07:0x423144`）：死亡批处理对每只「已死且未结算」的敌机
- *   `spawn_item(enemy.pos, 6, 1)` **1 颗 ★**（樱点 / +C 各 +20）—— 撒在**敌人原位**、**无抖动**。
- *   本作的 ★ 已定为「兼用原生小分道具」（见 `SENRO_CANCEL_MODE` 的注）⇒ 用同一族 type 9，
- *   角 −π/2（`0xbfc90fdb`）/ 速 2.2（`0x400ccccd`）= 本作消弹撒点的一手实参
- *   （`engine/bullet/th18/01-cancel-to-item.md` §2.1）。*/
-#define SENRO_TH18_ITEM_STAR        SENRO_TH18_ITEM_SCORE_LO   /* 9 = 分数转换点族（★ 的载体）*/
+/* ⛔ **2026-10-01（owner 口径，逐字）：「th18 有自己的消弹点，你不应当在这件事情上复用，
+ *   最多是在消弹点上挂东西（如果有额外计数需求的话）；但如果只是加分，那无所谓了」**
+ *   ⇒ **撤掉** 2026-09-18 那条「死敌掉 ★（自建原生 type 9 实体）」。理由两条：
+ *     ① **TH18 的消弹点由引擎自己撒**（`gen_items_from_et_cancel`）——我们照着撒一遍是**重复造**，
+ *        而且 TH07 那条敌死掉 ★ 的**门**（`[enemy+0x2e29] >> 5 & 1`，见 `engine/item/th07/01` §3.2）
+ *        在 TH18 侧**没有对位**，当初就简化成了「每只真敌人 1 颗」⇒ 实跑「不消弹也满天掉星」✗；
+ *     ② 我们**真正需要的只是「收下消弹点时给樱点」**（TH07 ★ = 樱点/+C 各 +20）——
+ *        那属于「挂东西」，落在 `senro_item_cherry()` 的 type 9–0xe 那一支（**已经在**）✓。
+ *   ⇒ 现在本卡**一个道具都不自己撒**：灵击那条仍走 `ce_cancel_radius(..., mode 1)`（= 让**引擎**
+ *      用它自己的消弹点配方撒，一手 TH07 崩结界也是消弹 → ★ 每颗一），我们只在**收下时**记 +20。*/
 #define SENRO_ITEM_SPAWN_ANGLE      (-1.5707964f)              /* = 0xbfc90fdb（−π/2，直上）*/
 #define SENRO_ITEM_SPAWN_SPEED      2.2f                       /* = 0x400ccccd */
 
@@ -551,13 +554,8 @@ typedef struct {
     int32_t          stat_gain_graze;   /* 诊断：擦弹通道 */
     int32_t          stat_gain_hit;     /* 诊断：命中通道 */
     int32_t          stat_cherry_conv;  /* 诊断：满 P 转换撒出来的**大樱点实体**颗数（★ 2026-09-18）*/
-    int32_t          stat_star;         /* 诊断：死敌掉 ★（原生小分道具）成功颗数（★ 2026-09-18）*/
-    int32_t          stat_star_dropped; /* 诊断：★ 撒失败（道具池满）*/
     int32_t          stat_small;        /* 诊断：boss 死亡消弹撒出来的**小樱点实体**颗数（★ 2026-09-18）*/
     int32_t          stat_small_bullets;/* 诊断：那几笔消弹按一手折算的**颗数**（= 值 / 100）*/
-    int32_t          star_off;          /* ★ 关断位（**0 = 开**，非 0 = 关）——「0 即默认」是刻意的：
-                                         *   `senro_clear()` 的 `memset` 与 `on_run_reset` 都不会把它关掉
-                                         *   （写成「1 = 开」的话每局重开就静默失效）。见 TUNING §2.0m */
 } senro_card_t;
 
 _Static_assert(sizeof(senro_card_t) <= 496, "ce_state 上限 496 字节（超了会静默返回 NULL）");
@@ -1331,10 +1329,11 @@ static int on_tick_2(ce_card_t *c)
                (int)s->st.timer, (int)s->st.stat_open, (int)s->st.stat_natural, (int)s->st.stat_libyou,
                (int)s->st.stat_cancel, (int)s->stat_gain_item, (int)s->stat_gain_graze,
                (int)s->stat_gain_hit, (int)s->stat_fx_field, (int)s->stat_fx_ring);
-        if (s->stat_star || s->stat_star_dropped || s->stat_cherry_conv || s->stat_small)
-            ce_log("senro: ★掉落实体 %d 颗（失败 %d）、大樱点实体 %d 颗、小樱点实体 %d 颗（折 %d 颗弹）",
-                   (int)s->stat_star, (int)s->stat_star_dropped, (int)s->stat_cherry_conv,
-                   (int)s->stat_small, (int)s->stat_small_bullets);
+        if (s->stat_cherry_conv || s->stat_small)
+            ce_log("senro: 大樱点实体 %d 颗、小樱点实体 %d 颗（折 %d 颗弹）——★ 不自建："
+                   "原生消弹点收下时按 +%d 樱点/+C 记账（见头注 ⛔）",
+                   (int)s->stat_cherry_conv, (int)s->stat_small, (int)s->stat_small_bullets,
+                   (int)SENRO_STAR_CHERRY);
     }
 
     /* ⑨ 结界特效：先推进（老的一批按公式外扩 / 到点收句柄），再兑现本帧新置的 pending——
@@ -1743,28 +1742,10 @@ static void senro_small_burst(senro_card_t *s, int32_t bullets)
            (int)bullets, made, (int)bundle, (int)(bundle * made));
 }
 
-/* ---- ★ 死敌 ×1 ★（TH07 §3.2 一手）----
- * 门 = `CE_EDEATH_F_REAL`（真敌人）—— 一手那条「`enemy[+0x2e29] >> 5 & 1` 才算掉」在我们侧的对位；
- * **不按 kind 过滤**：TH07 的死亡批处理对「被打死 / 炸弹杀 / ECL `enmKillAll`」一视同仁
- * （§3.2 的四个调用者：`EnemyManager::on_tick_0a` / 符卡结束 / op94 / 关卡收尾）。
- * ⚠ 副作用（登记在 `TUNING.md` §2.0m）：type 9 是原生「分数转换点族」⇒ 除了本卡的 +20 樱点/+C，
- *   还会给玩家它自己那点分（原生行为，我们不改 type 分派表）。*/
-static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
-{
-    senro_card_t *s = st(c);
-    float pos[3];
-
-    if (!s || !ev) return;
-    if (s->star_off) return;
-    if (!(ev->flags & CE_EDEATH_F_REAL)) return;
-    pos[0] = ev->x; pos[1] = ev->y; pos[2] = 0.0f;         /* 敌人原位、无抖动（一手 §3.2）*/
-    if (!ce_spawn_item((uint32_t)SENRO_TH18_ITEM_STAR, pos,
-                       SENRO_ITEM_SPAWN_ANGLE, SENRO_ITEM_SPAWN_SPEED)) {
-        ++s->stat_star_dropped;                            /* 道具池满：丢弃（与原生撒落同口径）*/
-        return;
-    }
-    ++s->stat_star;
-}
+/* ---- ⛔ 死敌掉 ★ 的钩子已撤（2026-10-01 owner 口径，见文件头那个 ⛔ 块）----
+ *   原来这里是 `on_enemy_death`：每只「真敌人」死亡就自建 1 颗原生 type 9 当 ★。
+ *   撤掉之后本卡**不再有任何自建道具撒落**；「收下原生消弹点 → +20 樱点/+C」仍在
+ *   `senro_item_cherry()`（type 9–0xe 那一支）里生效 —— 那才是「挂在消弹点上」。*/
 
 static void senro_on_cherry_pickup(void *user, int slot_mask, int tier, int32_t value,
                                    float x, float y)
@@ -1909,7 +1890,6 @@ CE_CARD(107,
         .on_bomb_spent = on_bomb_spent,
         .on_death_before_deathbomb = on_death_before_deathbomb,
         .on_death_frame2 = on_death_frame2,
-        .on_enemy_death = on_enemy_death,      /* ★ 2026-09-18：死敌掉 ★（TH07 §3.2）*/
         .on_draw = on_draw,
         .on_run_reset = on_run_reset,
         .on_delete = on_delete);

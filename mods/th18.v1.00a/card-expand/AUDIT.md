@@ -26058,3 +26058,18 @@ verify/autoplay 的场景只判 109 的日志）；`sites.py` / `sdk.*` / `engin
 `assets/**` **一行未动** ⇒ **站点零新增**。
 **回归**：`make check` **exit 0**（`cards-check` / `gen_drift` / `sitecheck --all` / `capcheck` /
 `engine_abi_check` / `anm_hud_alpha_check` / `check-docs` 412 文件 + 全部主机单测）。
+
+### §BE #151 · 追加 9（2026-10-01 第十轮实跑）：撤掉「死敌掉 ★」的自建道具
+
+**owner 逐字**：「**首先，th18 有自己的消弹点，你不应当在这件事情上复用，最多是在消弹点上挂东西，
+如果有额外计数需求的话。但如果只是加分，那无所谓了**」＋「**星点应当只在和消弹有关时触发，
+它应当等价于消弹点**」。
+
+| 项 | 改了什么 | 为什么 |
+| --- | --- | --- |
+| `cards/senro.c` | **删掉** `on_enemy_death`（每只真敌人自建 1 颗原生 type 9 当 ★）＋挂表里的 `.on_enemy_death` ＋ `SENRO_TH18_ITEM_STAR` ＋ `stat_star` / `stat_star_dropped` / `star_off` ＋日志里那段星计数 | ① TH18 的消弹点由**引擎自己**撒（`gen_items_from_et_cancel`）⇒ 我们照撒一遍是**重复造**；② 一手那条敌死 ★ 的**门**（`[enemy+0x2e29] >> 5 & 1`，`engine/item/th07/01` §3.2）在 TH18 **没有对位**，当初简化成「每只真敌人 1 颗」⇒ 实跑「不消弹也满天掉星」|
+| 保留 | `senro_item_cherry()` 的 type 9–0xe → 樱点/+C 各 **+20**（「**挂在消弹点上**」）；灵击仍走 `ce_cancel_radius(..., mode 1)` = 让**引擎**用它自己的消弹点配方撒 | owner：「只是加分，那无所谓」；一手 TH07 崩结界那条也是消弹 → ★ |
+
+**对既有卡的影响面**：只动本卡；**没有**动共享件、没有新增站点；`SENRO_CANCEL_MODE` 一字未改
+（灵击那条继续用引擎的原生消弹点）。**没有**任何卡依赖本卡撒的 ★（那是本卡自己的诊断/樱点来源）。
+**回归**：`make dll` 无警告 · `make test-host` 全绿 · `make check` exit 0。
