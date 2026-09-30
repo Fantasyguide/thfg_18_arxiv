@@ -4903,6 +4903,7 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 | 2026-09-22b | **所有卡（共享件 `native/cards/bomb10.{h,c}` 的**无敌帧**：灵击发动时按一手给无敌）** | 见下方「§BE-FA」末的 **2026-09-22b 补遗** |
 | 2026-09-21c | **所有卡（新增共享件 `native/cards/bomb10.{h,c}` —— 110/111 的**同一份**灵击实现；共享件 `patch/th18/cards.js` 的 **110** 加 `category: 0` + 一行 `desc`；卡侧动 110 的 `cards/mof.c` 与 111 的 `cards/signal.c`）** | 见下方「§BE-FA」 |
 | 2026-09-22d | **所有卡（共享资源 `assets/ability/entries/ORDER.txt` 末尾 append 一段 `ATLAS_SENRO_HUD_LABEL` + 新脚本 `308_senro_hud_label.anm.txt`；共享生成物 `native/anm_ids.h` 追加 4 行）** | 见下方「§BE-FB」（107 的 HUD 固定标签 = TH07 原贴图，owner 口径「107的UI按照原贴图做」；**脚本 306/307、`sdk.*`、`sites.py`、`Makefile`、`patch/**` 一行未动**，既有 sprite/entry 号一个没挪）|
+| 2026-10-01 | **无（109 是系统卡；共享件只碰到 `patch/th18/cards.js` 的 109 那一行 `desc`）** | 见下方「§BE 详录 #162」 |
 
 
 > **§BE 详录 #42（2026-09-20 · P1「缺音效一批」8 条 + 音效表扩容新增 5 枚别作原版 SE）**
@@ -26032,3 +26033,28 @@ th08:0x406d70` + 无符卡）⇒ 1 颗、state 5；② 敌机死亡（`Enemy::FU
 `ATLAS_SENRO_HUD_LABEL`）；**脚本号 / 图集矩形 / 精灵号一字未动** ⇒ 与既有 DLL 的 id 仍对齐；
 没有新增站点、没有动共享件。**回归**：`make check` **exit 0**（412 文件；图集逐像素自检、
 重排检测「已定稿前 186 行未变」全过）。发布：`ability.anm ba…`（与 DLL `e2b5f9d9` 同批）。
+
+## §BE 详录 #162（2026-10-01）：**109 花映塚 × 獣王園 合成卡 第 1 步** —— 拦 Z 删除 + 蓄力键改「按住 C 电平」
+
+> 起因：owner 2026-09-28 口径 2「109 这张卡**不拦截 Z** 了，太屎了，还是现代一些吧」+ 口径 4「**1 也行**」。
+> 落地规格 = [`SPEC-109-FUSION.md`](SPEC-109-FUSION.md) §5「第 1 步」；交接 = [`HANDOFF-109.md`](HANDOFF-109.md) §6。
+
+**为什么登记在这里**：本改动的**行为只属于 109**（系统卡，我方），但碰到了一行**共享件**
+（`patch/th18/cards.js` 的 109 那一格）与两份**共享台账**（`native/tools/verify.py` / `autoplay.py`
+的 `z-intercept` 场景）。按 `CLAUDE.md`「改共享件 = 改所有人的卡」的纪律在此逐条记 ——
+**其余 36 张卡的 `cards.js` 一字未动**。
+
+| 文件 | 改了什么 | 为什么 | 谁 | 怎么验的 |
+| --- | --- | --- | --- | --- |
+| `native/cards/pofv.c` | 删 `on_native_shot_suppress()` 与它的注册；`POFV_INPUT_SHOT`(0x001) → `POFV_INPUT_CHARGE`(0x400)；`prev_shot` → `prev_charge`；`on_tick_2` 蓄力三步改读 C 电平；ctor 日志去「suppress」 | 口径 2 + 口径 4 | 接手者 | 跨编 0 警告；`make check` 全绿 |
+| `native/cards/pofv_core.{h,c}` | 删 `POFV_SUPPRESS_AFTER_FRAMES` 与 `pofv_charge_suppress()`；注释改注「一手仍在、本卡**刻意不复刻**」 | 同上 | 同上 | `test_pofv_core` 469 断言 0 失败 |
+| `native/tests/test_pofv_core.c` | 删 24 条拦 Z 断言；保留「气槽空也照涨到 C1」+「没气放不出 CA」 | 断言随 API 删除 | 同上 | 同上 |
+| `patch/th18/cards.js` | **只有 `"109"` 的 `desc` 第 3 行**：「X 蓄力涨气槽；蓝圈只吃白弹，」→「按住 C 蓄力涨档，松开放出蓄力攻击；」 | 旧文案是错的（X = 原生炸弹）| 同上 | `mkfiles.py --check` 37 张卡全合规 |
+| `native/tools/verify.py` / `autoplay.py` | `z-intercept` 场景**语义翻转**：改成检查「**Z 不再被拦**」+「蓄力 = 按住 C」；`charge` 时间轴 SHOT → CARD_USE。**场景 id 不改** | 判据必须与行为一致 | 同上 | `verify.py --list` 正常 |
+| 文档台账 | `CARDS.md:254` / `NEXT.md` / `TUNING.md` §2.0v（#1 作废 + 实跑验收点 ①/②）/ `SPEC-109-FUSION.md` / `HANDOFF-109.md` | 台账同步 | 同上 | `tooling/check-docs.py` 412 文件全绿 |
+
+**影响面（对既有卡）**：无 —— 三处共享接触都是 **109 专属**（cards.js 只改 109 那一格；
+verify/autoplay 的场景只判 109 的日志）；`sites.py` / `sdk.*` / `engine.h` / `cards_def.c` / `Makefile` /
+`assets/**` **一行未动** ⇒ **站点零新增**。
+**回归**：`make check` **exit 0**（`cards-check` / `gen_drift` / `sitecheck --all` / `capcheck` /
+`engine_abi_check` / `anm_hud_alpha_check` / `check-docs` 412 文件 + 全部主机单测）。

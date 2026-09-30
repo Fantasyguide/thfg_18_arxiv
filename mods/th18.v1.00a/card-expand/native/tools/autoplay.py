@@ -39,11 +39,15 @@ KEYS = {
 
 # 场景：每个原语配一条最小时间轴（"要触发什么动作"）。`deck` = 用哪副卡组（见 --deck）。
 SCENARIOS = {
-    "z-intercept": dict(deck="sys12", seconds=60, why="短按 Z 出点射、长按 Z 蓄力，验证 109 的拦 Z 与 CA",
-                        timeline=[(1.0, "hold SHOT"), (2.0, "release SHOT"), (3.0, "hold SHOT"),
-                                  (8.0, "release SHOT")]),
-    "charge": dict(deck="sys12", seconds=60, why="长按 Z 到档再放开 = 蓄力攻击（同一动作，看 CA 日志）",
-                   timeline=[(1.0, "hold SHOT"), (12.0, "release SHOT")]),
+    # ⚠ id 是 2026-09 的历史名；合成卡口径 2 后语义翻转 =「Z **不**再被拦」+「蓄力键 = 按住 C」。
+    #   时间轴：先长按 Z 证明原生照发；再按住 C 蓄力、松手放 CA。
+    "z-intercept": dict(deck="sys12", seconds=60,
+                        why="长按 Z 照常射击（拦 Z 已删）；蓄力 = 按住 C，松手放 CA",
+                        timeline=[(1.0, "hold SHOT"), (3.0, "release SHOT"),
+                                  (4.0, "hold CARD_USE"), (12.0, "release CARD_USE"),
+                                  (13.0, "hold SHOT"), (16.0, "release SHOT")]),
+    "charge": dict(deck="sys12", seconds=60, why="按住 C 到档再放开 = 蓄力攻击（看 CA 日志）",
+                   timeline=[(1.0, "hold CARD_USE"), (12.0, "release CARD_USE")]),
     "storm-chain": dict(deck="sys12", seconds=90, why="清一片小怪（含 Shift 固灵移动去找密集怪）",
                         timeline=[(1.0, "hold SHOT"), (3.0, "hold UP"), (9.0, "release UP"),
                                   (12.0, "hold SLOW"), (20.0, "release SLOW"), (30.0, "release SHOT")]),

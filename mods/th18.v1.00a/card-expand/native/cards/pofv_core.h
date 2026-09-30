@@ -60,17 +60,16 @@ int  pofv_scan_count_white(const float *radii, int n);
  *   （原版蓄力量只被气槽**钳上界**，见 `pofv_charge_hold` 的注释）。 */
 #define POFV_CHARGE_FRAMES_PER_LEVEL 45
 
-/* ★★ 一手：**按住射击后多久开始拦 Z（不发原生弹）** —— TH09 = **10 帧**
- *   （`th09:0x41fa17 push 0xa` → `0x41fa1b Timer::is_gt`；未超过 ⇒ `0x41fa22 je 0x41fc16` 走
- *   **原生射击**那一支。超过 ⇒ 停在蓄力支 `0x41fa08`，本帧不发弹）。
- * ⇒ 「点一下 Z = 发一发」（前 10 帧照发）+「长按 Z = 蓄力且不发弹」两件事**在原版是同一条闸**，
- *   与气槽无关。旧实现把闸挂在「等级 ≥ C1 **且** 气槽 ≥ 1 格」上 ⇒ 气槽空时按住 Z **什么都不发生**
- *   （既不发弹也不蓄力）= 用户报的「未拦截 Z」+「没有任何蓄力机制」。 */
-#define POFV_SUPPRESS_AFTER_FRAMES  10
+/* ★★ 2026-10-01（owner 口径：合成卡「不拦截 Z 了，还是现代一些吧」）：
+ *   **整条拦 Z 闸删除**（含 `POFV_SUPPRESS_AFTER_FRAMES` 与 `pofv_charge_suppress()`）。
+ *   历史：TH09 一手 `th09:0x41fa17 push 0xa` = 「按住射击满 10 帧就停发原生弹」，
+ *   P5 批（2026-09-22）照它实装过；owner 2026-09-28 判定「太屎了」⇒ 作废。
+ *   ⇒ 现在**原生行循环永远照跑**，蓄力只由**按住 C 的电平**推进（见 pofv.c 的接线）。
+ *   ⚠ 别再把它当「一手」引回来：一手事实仍然成立，是**本卡刻意不复刻**（登记 TUNING §2.0v #1）。*/
 
 typedef enum {
-    POFV_CHARGE_IDLE = 0,          /* 没在蓄力（此时 Z 走原生行循环）*/
-    POFV_CHARGE_HOLD = 1           /* 按住 Z：累积 hold_frames → level 上升 */
+    POFV_CHARGE_IDLE = 0,          /* 没在蓄力 */
+    POFV_CHARGE_HOLD = 1           /* 按住 C：累积 hold_frames → level 上升 */
 } pofv_charge_phase_t;
 
 /* 本卡的全部标量状态（卡侧 `ce_state` 用；纯逻辑可独立单测）。*/
@@ -103,18 +102,12 @@ int  pofv_ca_available(const pofv_state_t *st, int level);
 /* b = 当前可蓄最高等级 = clamp(gauge, 0, 4)。 */
 int  pofv_charge_max_level(int32_t gauge);
 
-/* Z 上升沿：进入按住态。返回 1 = 开始蓄力，0 = 已经在按住态（重复调用无副作用）。 */
+/* **按住 C 的上升沿**：进入按住态。返回 1 = 开始蓄力，0 = 已经在按住态（重复调用无副作用）。 */
 int  pofv_charge_begin(pofv_state_t *st);
 
 /* 按住态每帧一次：累积 hold_frames、按 `POFV_CHARGE_FRAMES_PER_LEVEL` 升级（钳到 max_level）。
  * 返回 1 = 本次升了一级（卡侧播「叮」一声），0 = 没有新等级。 */
 int  pofv_charge_hold(pofv_state_t *st);
-
-/* ★ **拦 Z 条件**（`on_native_shot_suppress` 的返回值）—— ★★ 2026-09-22（P5 #1）改成一手语义：
- *   **按住 Z 满 `POFV_SUPPRESS_AFTER_FRAMES`(10) 帧就拦**，与等级、气槽**无关**
- *   （一手 `th09:0x41fa17`/`0x41fa1b`：超过 10 帧才离开原生射击支）。
- *   前 10 帧不拦 ⇒ **点一下 Z = 正常发一发**（原版同款）。 */
-int  pofv_charge_suppress(const pofv_state_t *st);
 
 /* 本帧的**可用等级** = min(charge 等级 a, 气槽 b) —— 一手：原版蓄力量被气槽**钳上界**
  * （`th09:0x41fab0 fcomp [player+0x30388]` / `0x41fabd` 钳到上限），
@@ -122,8 +115,8 @@ int  pofv_charge_suppress(const pofv_state_t *st);
  * 返回 0 = 这一下放不出 CA（点射 / 气不够）。 */
 int  pofv_charge_usable_level(const pofv_state_t *st);
 
-/* Z 落下沿：结算。返回 1 = 发动 CA（`*out_level` = 1..4，气槽已按 `pofv_ca_cost` 扣掉），
- * 0 = 可用等级 0（没蓄到 / 气不够）⇒ **卡侧什么都不做，交回原生弹**（这一发就是「点射」）。 */
+/* **C 落下沿（松开 C）**：结算。返回 1 = 发动 CA（`*out_level` = 1..4，气槽已按 `pofv_ca_cost` 扣掉），
+ * 0 = 可用等级 0（没蓄到 / 气不够）⇒ **卡侧什么都不做**（原生射击这一路本来就没被拦过）。 */
 int  pofv_charge_release(pofv_state_t *st, int *out_level);
 
 /* 打断蓄力（对话 / 暂停 / 死亡 / 关末）：清成 IDLE，**不扣气、不发动**。 */
@@ -133,7 +126,7 @@ int  pofv_charge_cancel(pofv_state_t *st);
  * 原设计的 QCA 要落在 TH18 的炸弹键（X）上，而拦下它必须动 `on_bomb_gate`（`0x45c048`），
  * 那条路的「代价归属」在 `EVENTS-CONTRACT.md` §5 一直未拍板；对玩家的收益也薄（省一次蓄力）。
  * ⇒ 连同 `pofv_qca_level()` / `pofv_qca_fire()` 一起删掉（不留死代码），X 键**完全交还原生炸弹**。
- * 109 的 B 侧只保留「蓄力（长按 Z）」，见 `pofv_charge_*`。*/
+ * 109 的 B 侧只保留「蓄力（**按住 C 的电平**）」，见 `pofv_charge_*`。*/
 
 /* 加充气点（蓝圈消弹 / 击破）；满 `POFV_GAUGE_PTS_PER_LEVEL` 进一格，气槽上限处**溢出丢弃**。 */
 void pofv_gauge_add_points(pofv_state_t *st, int32_t pts);

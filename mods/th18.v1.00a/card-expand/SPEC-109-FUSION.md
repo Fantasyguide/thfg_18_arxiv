@@ -1,7 +1,8 @@
 # SPEC-109-FUSION —— 109《花映塚 × 獣王園》合成卡落地规格
 
 > **版本**：TH18 v1.00a（宿主 `th18.exe`；imagebase `0x400000`）。本文裸地址默认属 TH18；引用其他版本一律带前缀（`th09:` / `th19:`）。
-> **状态**：**规格（尚未实现）** —— 机制面已被 owner 拍完（§1），数值面标 ❓ 的要在落地时登记 `TUNING.md`。
+> **状态**：**第 1 步已落地（2026-10-01）** —— 拦 Z 已删、蓄力键改「按住 C 电平」；
+> **第 2 步（灵力道具 / 固灵结界 / 灵）尚未开工**。机制面已被 owner 拍完（§1），数值面标 ❓ 的要在落地时登记 `TUNING.md`。
 > **关联**：一手依据 [`engine/card/th09/01`](../../../engine/card/th09/01-pofv-charge-and-cancel-fields.md)、
 > [`engine/versus/th19/06-aura.md`](../../../engine/versus/th19/06-aura.md)（固灵结界）、
 > [`engine/versus/OVERVIEW.md`](../../../engine/versus/OVERVIEW.md)；卡侧工单 `SINGLE-CARD-TEST.md` 的 `§th09` / `§th19`。
@@ -27,11 +28,11 @@
 
 | 部件 | 现状（位置）| 处置 |
 | --- | --- | --- |
-| 拦原生射击 | `cards/pofv.c:373` `on_native_shot_suppress` → `pofv_charge_suppress`（断点 `th18:0x45ebfb`）| **删**（口径 2）|
-| 按住 Z 蓄力 | `cards/pofv.c:409`–`417`（`shot && !prev_shot` → `charge_begin/hold/release`）| **删**，改 C 电平（口径 2/4）|
+| 拦原生射击 | `cards/pofv.c:373` `on_native_shot_suppress` → `pofv_charge_suppress`（断点 `th18:0x45ebfb`）| ✅ **已删（2026-10-01）**（口径 2）|
+| 按住 Z 蓄力 | `cards/pofv.c:409`–`417`（`shot && !prev_shot` → `charge_begin/hold/release`）| ✅ **已改 C 电平（2026-10-01）**（口径 2/4）|
 | 气槽 | `pofv_state_t.gauge`（0..`POFV_GAUGE_MAX`=4 格）+ `gauge_pts`（每格 `POFV_GAUGE_PTS_PER_LEVEL`=100）| **保留槽形**，但充气改为**经灵力道具**（口径 5）|
 | 充气来源 | `pofv_core.c:361` 消弹 `+10/颗`（×连爆质量）、`:377` 击破 `+20/只`（直接加点）| **改成掉道具**（口径 5）|
-| 蓄力档 | `hold_frames` 每 100 帧一档；`max_level = min(gauge, 4)`（槽夹上限）| 保留 4 档与「槽夹上限」的味道，推进键改 C |
+| 蓄力档 | `hold_frames` 每 `POFV_CHARGE_FRAMES_PER_LEVEL`(45 ❓) 帧一档；`max_level = min(gauge, 4)`（槽夹上限）| ✅ **已改 C 电平（2026-10-01）**：4 档与「槽夹上限」的味道都保留 |
 | 暴风 / 连爆 | TH09 锚定场（圆心/r₀/dr/寿命），档 1 半径 176（`th09:0x41e875`）| **留**（一手复刻，已实装）|
 | 白弹分类 | `pofv_classify_bullet_radius` / `pofv_is_white_bullet` | **留** |
 | 连击 `sp` | 消白弹/红弹/击破都加 | **留**，可作为灵力道具的产源之一 |
@@ -93,14 +94,18 @@
 
 ## 5. 两步走（建议；每步都能单独实机验证）
 
-### 第 1 步：键位最小改动（改完就能跑，零站点、不动共享件）
+### 第 1 步：键位最小改动（改完就能跑，零站点、不动共享件）—— ✅ **已落地 2026-10-01**
 
-1. `cards/pofv_core.{h,c}`：删 `pofv_charge_suppress` 与「按住 Z 的 hold 计时」；
-   新增「按住 C 的电平推进」——`on_tick` 读 `CE_INPUT_HELD() & 0x400`，松手 `pofv_charge_release`。
-2. `cards/pofv.c`：删 `.on_native_shot_suppress` 注册（`cards/pofv.c:507` 附近）。
-3. **不动** `sdk.*` / `engine.h` / `sites.py` / `cards_def.c` ⇒ 站点零新增。
-4. 实跑判据：①按住 C 时 **Z 照常射击**（原生射击不再被拦）；②蓄力档随按住涨、松手放档；
-   ③日志 `pofv: CA L<n> r=… cancelled <n>`。
+1. ✅ `cards/pofv_core.{h,c}`：删 `pofv_charge_suppress` 与 `POFV_SUPPRESS_AFTER_FRAMES`；
+   「按住 C 的电平推进」落在 `cards/pofv.c` 的 `on_tick_2`（读 `CE_INPUT_HELD() & 0x400`，
+   松手 `pofv_charge_release`）。core 侧的状态机**一行没改**（它本来就与键无关）。
+2. ✅ `cards/pofv.c`：删 `.on_native_shot_suppress` 注册与 `on_native_shot_suppress()` 本体
+   （`prev_shot` → `prev_charge`）。
+3. ✅ **没动** `sdk.*` / `engine.h` / `sites.py` / `cards_def.c` ⇒ **站点零新增**。
+4. 实跑判据（待 owner 跑）：①按住 C 时 **Z 照常射击**（原生射击不再被拦）；②蓄力档随按住涨、松手放档；
+   ③日志 `pofv: ctor (… charge on hold-C, no Z suppression)` 与 `pofv: CA L<n> r=… cancelled <n>`。
+5. 同步更新：`CARDS.md` / `NEXT.md` / `TUNING.md` §2.0v / `patch/th18/cards.js`(desc) /
+   `native/tools/verify.py`+`autoplay.py`（`z-intercept` 语义翻转为「Z **不**再被拦」）/ 单测 469 断言。
 
 ### 第 2 步：灵力道具 + 固灵结界
 

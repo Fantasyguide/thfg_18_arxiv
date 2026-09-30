@@ -8,8 +8,10 @@
  *   · 红圈消掉的白弹**不回复气**：同上（「红色消弹圈」段）
  *   · 爆风队列 / 每帧预算：shared-enemy-death spec §4.1（死亡回调里不许扫弹池）
  * 设计文档：`docs/superpowers/specs/2026-09-12-pofv-109-design.md`
- * 覆盖：白弹筛选 / 蓄力状态机与拦 Z 条件 / 气槽 4 级与消耗 / SP 阈值 /
- *       爆风与红圈的半径与计数调用点 / 爆风队列与帧预算 / 活化灵状态机。 */
+ * 覆盖：白弹筛选 / 蓄力状态机（按住 C 的电平）/ 气槽 4 级与消耗 / SP 阈值 /
+ *       爆风与红圈的半径与计数调用点 / 爆风队列与帧预算 / 活化灵状态机。
+ * ⚠ 2026-10-01（合成卡 owner 口径 2）：**拦 Z 已整条删除**（`pofv_charge_suppress` 不再存在）
+ *   ⇒ 本文件不再有它的断言；一手 10 帧闸的事实留在核心注释与 `TUNING.md` §2.0v #1。 */
 #include <stdio.h>
 #include <string.h>
 
@@ -52,44 +54,41 @@ int main(void)
         CHECK(pofv_scan_count_white(NULL, 8) == 0);
     }
 
-    /* ==================== B. 蓄力状态机与拦 Z 条件 ==================== */
+    /* ==================== B. 蓄力状态机（按住 C 的电平）==================== */
     pofv_state_init(&st);
     CHECK(st.gauge == 0 && st.phase == POFV_CHARGE_IDLE && st.level == 0);
     CHECK(pofv_charge_max_level(0) == 0);
     CHECK(pofv_charge_max_level(2) == 2);
     CHECK(pofv_charge_max_level(9) == POFV_GAUGE_MAX);      /* 钳到 4 级 */
 
-    /* ★★ 2026-09-22（P5 #1）：**气槽空也照样蓄力、照样拦 Z** —— 一手：闸是时间（10 帧），
-     *   与等级/气槽无关（`th09:0x41fa17` push 0xa / `0x41fa1b is_gt`）。旧实现要求
-     *   「level ≥ C1 且 gauge ≥ 1」⇒ 气槽空时按住 Z 什么都不发生（用户报的「未拦截 Z」）。*/
+    /* ★★★ 2026-10-01（合成卡 owner 口径 2「不拦截 Z 了」）：**拦 Z 整条删除**
+     *   —— `pofv_charge_suppress()` / `POFV_SUPPRESS_AFTER_FRAMES` 已不存在，
+     *   这里能断言的事实只剩「气槽空也照样蓄力」（蓄力只由按住 C 的帧数决定）。
+     *   一手（TH09 `th09:0x41fa17` 的 10 帧闸）仍然成立，是**本卡刻意不复刻**
+     *   （登记 `TUNING.md` §2.0v #1）。*/
     CHECK(pofv_charge_begin(&st) == 1);
-    for (i = 1; i < POFV_SUPPRESS_AFTER_FRAMES; ++i) {
-        pofv_charge_hold(&st);
-        CHECK(pofv_charge_suppress(&st) == 0);              /* 前 10 帧：点射窗口（原生照发）*/
+    for (i = 1; i < POFV_CHARGE_FRAMES_PER_LEVEL; ++i) {
+        CHECK(pofv_charge_hold(&st) == 0);                  /* 还没升到 C1（等级随时间涨）*/
+        CHECK(st.level == 0);
     }
-    pofv_charge_hold(&st);
-    CHECK(st.hold_frames == POFV_SUPPRESS_AFTER_FRAMES);
-    CHECK(pofv_charge_suppress(&st) == 1);                  /* ★ 满 10 帧就拦（不看等级、不看气）*/
-    CHECK(st.level == 0 && st.gauge == 0);
+    CHECK(pofv_charge_hold(&st) == 1);                      /* ★ 升到 C1：卡侧播「叮」*/
+    CHECK(st.hold_frames == POFV_CHARGE_FRAMES_PER_LEVEL);
+    CHECK(st.level == 1 && st.gauge == 0);                  /* ★ 气槽空也涨到 C1 */
     CHECK(pofv_charge_release(&st, &lvl) == 0);             /* 没气 ⇒ 放不出 CA（蓄力量被气槽钳）*/
     CHECK(lvl == 0 && st.gauge == 0);
 
-    /* 有 4 格气：按住 → 升级 → 拦 Z；松开 → 发动 CA */
+    /* 有 4 格气：按住 → 升级 → 松开 → 发动 CA */
     st.gauge = POFV_GAUGE_MAX;
     CHECK(pofv_charge_begin(&st) == 1);
     CHECK(pofv_charge_begin(&st) == 0);                     /* 已在按住态：重复无副作用 */
     CHECK(st.max_level == POFV_GAUGE_MAX);                  /* b = min(气槽, 4) */
     for (i = 1; i < POFV_CHARGE_FRAMES_PER_LEVEL; ++i) {
         CHECK(pofv_charge_hold(&st) == 0);                  /* 还没升到 C1（等级仍随时间涨）*/
-        CHECK(pofv_charge_suppress(&st) == (st.hold_frames >= POFV_SUPPRESS_AFTER_FRAMES));
+        CHECK(st.level == 0);
     }
     CHECK(pofv_charge_hold(&st) == 1);                      /* ★ 升到 C1：卡侧播「叮」*/
     CHECK(st.level == 1);
-    CHECK(pofv_charge_suppress(&st) == 1);                  /* ★ 拦 Z 条件成立 */
-    for (i = 0; i < POFV_CHARGE_FRAMES_PER_LEVEL; ++i) {
-        pofv_charge_hold(&st);
-        CHECK(pofv_charge_suppress(&st) == 1);
-    }
+    for (i = 0; i < POFV_CHARGE_FRAMES_PER_LEVEL; ++i) pofv_charge_hold(&st);
     CHECK(st.level == 2 && st.max_level == 4);
     CHECK(pofv_charge_release(&st, &lvl) == 1);
     CHECK(lvl == 2 && st.gauge == POFV_GAUGE_MAX - 1);      /* C2 消耗 1 格 */
@@ -127,7 +126,7 @@ int main(void)
     CHECK(st.phase == POFV_CHARGE_IDLE && st.level == 0 && st.gauge == 4);
 
     /* ★ QCA 已**放弃**（用户 2026-09-12）：API 已从 core 删除 ⇒ 这里只能记一条「不存在」的事实：
-     *   109 的 B 侧只剩「长按 Z 蓄力」，X 键完全交还原生炸弹（不再拦 `on_bomb_gate`）。
+     *   109 的 B 侧只剩「按住 C 蓄力」，X 键完全交还原生炸弹（不再拦 `on_bomb_gate`）。
      *   （`pofv_charge_cancel()` 仍然存在 —— 它服务蓄力打断，与 QCA 无关。）*/
     CHECK(pofv_charge_cancel(&st) == 0);                    /* IDLE 时打断 = 无事发生 */
     CHECK(pofv_charge_max_level(st.gauge) == 4);            /* 蓄力上限仍按气槽算 */

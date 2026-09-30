@@ -89,19 +89,6 @@ int pofv_charge_hold(pofv_state_t *st)
     return 0;
 }
 
-int pofv_charge_suppress(const pofv_state_t *st)
-{
-    /* ★★ 2026-09-22（P5 #1「花映冢未拦截 Z」）—— 一手语义，见 pofv_core.h 的注释：
-     *   TH09 的闸是**时间**（按住射击满 10 帧就停发原生弹，`th09:0x41fa17` / `0x41fa1b`），
-     *   与气槽、与蓄力等级**都无关**。
-     * ⚠ 旧实现要求「level ≥ C1 且 gauge ≥ 1 格」：气槽空（每关开局 / 刚放完 CA）时
-     *   `pofv_charge_max_level(0) = 0` ⇒ 等级永远是 0 ⇒ **永不拦 Z、也永远蓄不出东西**，
-     *   正是用户报的「未拦截 Z」+「没有任何蓄力机制」两条。*/
-    if (!st) return 0;
-    if (st->phase != POFV_CHARGE_HOLD) return 0;
-    return st->hold_frames >= POFV_SUPPRESS_AFTER_FRAMES;
-}
-
 int pofv_charge_usable_level(const pofv_state_t *st)
 {
     int32_t lv;

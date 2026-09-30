@@ -11,21 +11,21 @@
  *     气槽 = 4×100 且蓄力量被它钳上界、消弹圈 = **锚定场**（r₀ + dr×帧、有限寿命）、
  *     CA 三级的一手半径 192/256/448）。
  *   · 本卡 spec：`docs/superpowers/specs/2026-09-12-pofv-109-design.md`（数值表 / 未定项都在那）
+ *   · ★★★ **合成卡规格（owner 2026-09-28 拍板）**：`SPEC-109-FUSION.md` + `HANDOFF-109.md`
+ *     —— 109 = 「花映塚 × 獣王園」合成卡。**第 1 步已落地（2026-10-01）**：
+ *     ① **拦 Z 整条删除**（owner：「109 这张卡不拦截 Z 了，太屎了，还是现代一些吧」）；
+ *     ② 蓄力键改 **按住 C 的电平**（`CE_INPUT_HELD() & 0x400`，C 在 replay 掩码低 16 位内）；
+ *     ③ Z 回到**纯原生射击**（本卡不再有任何 `on_native_shot_suppress`）。
+ *     第 2 步（灵力道具 / 固灵结界 / 自制灵）见 SPEC §5。
  *
- * 键位（用户 2026-09-10 定，一手抄录）
- *   · **Shift = 低速 / 固灵**（展开吸灵领域；低速本身是原生的，本卡只加「领域」这一层）
- *   · **Z 点一下 = 发一发**（不蓄力 ⇒ 原生行循环照跑）；**长按 Z = 蓄力**
- *   · **B = QCA**（BOMB / X 键）—— ⚠ **未实装**：拦下 X 会吃掉原生炸弹，
- *     `EVENTS-CONTRACT.md` §5 的「`on_bomb_gate` 代价归属」还没拍板（spec §未定项第 1 条）
- *
- * ★ 拦 Z（用户 2026-09-12：「得拦 Z，这是花映塚的魅力」）
- *   走 SDK 的 `on_native_shot_suppress`（断点 `0x45ebfb`，与 `on_shot_set_index` 同点）：
- *   SDK 先问 set index（117 咆哮覆写 ⇒ 本帧不抑制），再问 suppress，**本帧跳过原生行循环**
- *   但保留 `0x45eca0` 起的卡广播（77 / 116 不受影响）。**绝不改 Z 输入位**（`0x4ca428` bit `0x001`）。
- *   时序：AbilityManager tick（优先级 0x16）先于 Player（0x17）⇒ `on_tick_2` 里算出的蓄力态
- *   当帧就能影响射击状态机（同 SDK.md §7 J♠ 的结论）。
- *   ★★ 2026-09-22（P5 #1/#3）：闸从「等级 ≥ C1 且气 ≥ 1 格」换成**一手的时间闸**
- *   （按住满 10 帧 ⇒ 拦，`th09:0x41fa17`）—— 旧闸在气槽空时永不成立（用户实跑：「未拦截 Z」）。
+ * 键位（owner 2026-09-28 口径，最高优先级；与旧文档冲突时以口径为准）
+ *   · **按住 C = 蓄力**（电平：按住即在涨档，松开结算；**不需要本卡被选中**）；
+ *     一手依据 = TH09 的「按住射击满 10 帧进蓄力支」，本卡**只保留蓄力的律、去掉拦 Z 那半**
+ *     （一手事实仍在 `th09:0x41fa17`，是刻意不复刻 —— 登记 `TUNING.md` §2.0v #1）。
+ *   · **Shift = 低速 / 固灵**（展开吸灵领域；低速本身是原生的，本卡只加「领域」这一层）。
+ *     ⚠ 合成卡的「固灵结界」在 SPEC 里是 **C 侧常驻**（口径 4），本文件这一层是**第 2 步要重做的旧实现**。
+ *   · **Z = 纯原生**（点射 / 连射全交回引擎，本卡不拦、不写输入位）。
+ *   · **X = 原生炸弹**（QCA 已放弃，见 `pofv_core.h`）。
  *
  * ★ 性能（review §4.1 强制）：`on_enemy_death` 在**清场帧**一次被调 100–300 次，
  *   回调里扫弹池 = O(n²) ⇒ 回调**只登记**（定档 + 起一个暴风场 + 掉一颗灵魂，全 O(1)），
@@ -67,8 +67,10 @@
 #define POFV_BULLET_RADIUS      0x658
 #define POFV_BULLET_PROTECT     0x24
 
-/* 输入位（`0x4ca428` 的掩码 = replay 录的那一份 ⇒ 卡侧读它**回放安全**；engine.h 的注释）。*/
-#define POFV_INPUT_SHOT        0x001u   /* Z（= 射击）—— 只读，绝不写 */
+/* 输入位（`0x4ca428` 的掩码 = replay 录的那一份 ⇒ 卡侧读它**回放安全**；engine.h 的注释）。
+ * ★ 合成卡（owner 2026-09-28）：蓄力键 = **C 的电平**（`0x400`，仍在 replay 掩码低 16 位内
+ *   ⇒ 回放天然可复现，见 SPEC-109-FUSION §6 #7）。Z **不再被本卡读**（原生射击全交回引擎）。*/
+#define POFV_INPUT_CHARGE      0x400u   /* C（= 蓄力电平；engine.h：`0x45c084` 读的 C 位）*/
 #define POFV_INPUT_FOCUS       0x008u   /* Shift（= 低速 / 固灵）*/
 
 /* 消弹调用的 max_count（照 Tenshi 的 0x1869f 量级；本卡两处都不想被截断）。*/
@@ -126,7 +128,7 @@ static int32_t            s_spawned, s_absorbed, s_blasted, s_dropped;
 typedef struct {
     ce_card_t  *card;
     pofv_state_t st;
-    int32_t     prev_shot;      /* 上一帧 Z（边沿检测）*/
+    int32_t     prev_charge;    /* 上一帧 C（边沿检测；合成卡 2026-09-28 起取代 prev_shot）*/
     int32_t     prev_focus;     /* 上一帧 Shift（固灵领域开关；日志用）*/
     pofv_invuln_t invuln;       /* CA 无敌窗口（声明层：每帧声明剩余量 ⇒ 不会被别人截短；
                                  * 状态机在 `pofv_core.c` 的 `pofv_invuln_*`，有主机单测）*/
@@ -374,20 +376,14 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
     }
 }
 
-/* ★ 拦 Z：**按住 Z 满 10 帧**就跳过原生行循环（卡广播照跑）。
- *   一手（TH09）：`th09:0x41fa17 push 0xa` / `0x41fa1b Timer::is_gt` ⇒ 前 10 帧照发原生弹、
- *   之后停在蓄力支不发弹。⚠ 与气槽/等级无关（旧实现挂在「等级 ≥ C1 且气 ≥ 1 格」上 ⇒
- *   气槽空时按住 Z 什么都不发生 = 用户报的「未拦截 Z」）。*/
-static int on_native_shot_suppress(ce_card_t *c)
-{
-    pofv_card_t *s = st(c);
-    return s ? pofv_charge_suppress(&s->st) : 0;
-}
-
+/* ★★ 2026-10-01（合成卡 owner 口径 2）：**蓄力 = 按住 C 的电平**推进。
+ *   上升沿 `begin` / 每帧 `hold` / 松手 `release` 三步都在这里；
+ *   **Z 完全不参与** —— 原生射击照常（拦 Z 那条 `on_native_shot_suppress` 已整条删除，
+ *   一手 10 帧闸见 `pofv_core.h` 的历史注释，本卡刻意不复刻）。*/
 static int on_tick_2(ce_card_t *c)
 {
     pofv_card_t *s = st(c);
-    int shot, focus, lvl = 0;
+    int charge, focus, lvl = 0;
     int32_t i, n_sd;
     int scan_budget;
     int32_t sd_slots[POFV_SPIRIT_MAX];
@@ -401,7 +397,7 @@ static int on_tick_2(ce_card_t *c)
      * 无敌窗口也在对话里冻结（引擎自己的计时器同样不走）。*/
     if (CE_GUI_MSG_ACTIVE()) {
         pofv_charge_cancel(&s->st);
-        s->prev_shot = 1;   /* 当成「一直按着」⇒ 对话结束后要重新按才会开始蓄力（不误发）*/
+        s->prev_charge = 1;   /* 当成「一直按着」⇒ 对话结束后要重新按才会开始蓄力（不误发）*/
         return 0;
     }
 
@@ -414,18 +410,21 @@ static int on_tick_2(ce_card_t *c)
         if (decl > 0) ce_invuln_apply();
     }
 
-    shot  = (CE_INPUT_HELD() & POFV_INPUT_SHOT) != 0;
-    focus = (CE_INPUT_HELD() & POFV_INPUT_FOCUS) != 0;
+    /* ★ 合成卡（owner 2026-09-28）：蓄力 = **按住 C 的电平**（不是边沿触发的一次性动作）。
+     *   按住期间的上升沿 `begin`、每帧 `hold`、松开 `release` 三步都在这里；
+     *   Z 不参与（原生射击不受本卡任何影响 —— 拦 Z 已整条删除）。*/
+    charge = (CE_INPUT_HELD() & POFV_INPUT_CHARGE) != 0;
+    focus  = (CE_INPUT_HELD() & POFV_INPUT_FOCUS) != 0;
 
-    if (shot && !s->prev_shot) pofv_charge_begin(&s->st);
-    if (shot) {
+    if (charge && !s->prev_charge) pofv_charge_begin(&s->st);
+    if (charge) {
         if (pofv_charge_hold(&s->st))                     /* 升级 →「叮」一声（一手：每升一级）*/
             ce_play_sound(POFV_SE_CHARGE_DING, ce_player_x());
-    } else if (s->prev_shot) {
+    } else if (s->prev_charge) {
         if (pofv_charge_release(&s->st, &lvl)) ca_effect(s, lvl, /*grant_invuln=*/1);
-        /* 返回 0 = 没蓄到 C1（点射）⇒ 什么都不做，原生那一发在本帧之前已经出去了 */
+        /* 返回 0 = 没蓄到 C1（点射）/ 气不够 ⇒ 什么都不做 */
     }
-    s->prev_shot = shot;
+    s->prev_charge = charge;
     s->prev_focus = focus;
 
     /* 固灵（一手：按低速键 → 展开暗色吸灵领域）：领域圆心 = 自机、半径 = POFV_DOMAIN_R。
@@ -491,7 +490,7 @@ static void clear_card(ce_card_t *c)
     pofv_state_init(&s->st);
     ce_invuln_request(ce_card_id(c), 0);   /* 退出无敌声明层（不截短别人已给的计时器）*/
     pofv_invuln_init(&s->invuln);          /* 窗口清零（声明已在上一条退掉）*/
-    s->prev_shot = 0;
+    s->prev_charge = 0;
     s->prev_focus = 0;
     s->spirit_logged = 0;
     s->cap_logged = 0;
@@ -502,17 +501,18 @@ static int on_ctor(ce_card_t *c)
     pofv_card_t *s = st(c);
     if (!s) return 0;
     clear_card(c);                          /* 新对象 / 每关重挂：清成初始态（含文件级池）*/
-    ce_log("pofv: ctor (T = %.1f white-bullet radius; charge on hold-Z, suppress at C1)", POFV_WHITE_R_MAX);
+    ce_log("pofv: ctor (T = %.1f white-bullet radius; charge on hold-C, no Z suppression)", POFV_WHITE_R_MAX);
     return 0;
 }
 
 static void on_run_reset(ce_card_t *c) { clear_card(c); }
 static void on_delete(ce_card_t *c)    { clear_card(c); }
 
+/* ★ 合成卡（owner 2026-09-28）：**没有** `.on_native_shot_suppress` —— Z 是纯原生的。
+ *   （旧值 `on_native_shot_suppress = on_native_shot_suppress` 已删；见本文件头的键位段。）*/
 CE_CARD(109,
         .ctor = on_ctor,
         .on_enemy_death = on_enemy_death,
-        .on_native_shot_suppress = on_native_shot_suppress,
         .on_tick_2 = on_tick_2,
         .on_run_reset = on_run_reset,
         .on_delete = on_delete);

@@ -6,6 +6,11 @@
 > **一句话**：109 现有实现是**花映塚单体**（能跑、待实跑验收）；owner 已把它定为
 > **花映塚 × 獣王園 合成卡**，机制面**全部拍完**，落地规格在 [`SPEC-109-FUSION.md`](SPEC-109-FUSION.md)，
 > **尚未开工**。
+>
+> ★★ **执行进度（2026-10-01，接手者记）**：**第 1 步（键位最小改动）已落地** ——
+> 拦 Z 整条删除、蓄力键改「按住 C 电平」，零站点、未动共享件；`make check` 全绿、单测 **469** 断言。
+> **第 2 步（灵力道具 / 固灵结界 / 灵）未开工**，且可能要 hook ⇒ 见 §6 的 owner 拍板门。
+> 落地细节逐条记在 [`SPEC-109-FUSION.md`](SPEC-109-FUSION.md) §5「第 1 步」。
 
 ## 0. 先读这三份
 
@@ -39,11 +44,11 @@
 
 | 项 | 事实 |
 | --- | --- |
-| 实现文件 | `native/cards/pofv.c`（510 行）+ `native/cards/pofv_core.c`（482）+ `native/cards/pofv_core.h`（343）+ 单测 `native/tests/test_pofv_core.c` |
-| 卡元数据 | `patch/th18/cards.js` 的 `"109"`（名字「花映塚」、卡面文案）|
-| 卡表登记 | `CARDS.md` 第 254 行（钩子清单 + 状态「🔧 待实跑，493 断言；16 个占位常量已逐条标 ❓ 自定」）|
-| 现在挂的钩子 | `on_native_shot_suppress`（**待删**）、`on_enemy_death`（只入队，O(1)）、`on_tick_2`、`on_item_collect`、`on_draw` |
-| 现在能做什么 | 白弹阈值筛选、气槽/CA 四档、爆风队列消弹、蓝圈只吃白弹 / 红圈吃一切、SP 档的 boss attack 占位；**P5 批已落地**（拦 Z 闸 = 10 帧一手、蓄力不再被气槽夹死、暴风改「场」、档 1 半径 176 一手）|
+| 实现文件 | `native/cards/pofv.c`（517 行）+ `native/cards/pofv_core.c`（466）+ `native/cards/pofv_core.h`（334）+ 单测 `native/tests/test_pofv_core.c` |
+| 卡元数据 | `patch/th18/cards.js` 的 `"109"`（名字「花映塚」、卡面文案；2026-10-01 改成「按住 C 蓄力涨档」）|
+| 卡表登记 | `CARDS.md` 第 254 行（钩子清单 + 状态「🔧 待实跑，469 断言；**第 1 步已落地**」）|
+| 现在挂的钩子 | ~~`on_native_shot_suppress`~~（**2026-10-01 已删**）、`on_enemy_death`（只登记/起场，O(1)）、`on_tick_2`（**C 电平蓄力**）、`on_run_reset`、`on_delete` |
+| 现在能做什么 | 白弹阈值筛选、气槽/CA 四档、暴风场消弹、蓝圈只吃白弹 / 红圈吃一切、SP 档的 boss attack 占位；**P5 批已落地**（暴风改「场」、档 1 半径 176 一手）；**★ 2026-10-01 合成卡第 1 步**：拦 Z 整条删除、蓄力 = 按住 C 的电平 |
 | **共享件足迹** | **零** —— `native/` 里除自己的 3 个文件与测试外没有引用（`sites.py` / `sdk.*` / `engine.h` / `cards_def.c` 都没动）|
 | 部署快照 | 见 `RELEASE-STATE.json` 的 `last_release`（DLL / patch / sht 的 md5 四份同源；本机对账表 `local/DLL-SYNC.md`）|
 | 实跑日志关键字 | `pofv: CA L%d r=%d cancelled %d bullets`、`pofv: blast chain %d r %d`、`pofv: SP %d crossed stage %d`、`pofv: blast queue full`、`pofv: activated spirit self-destruct at (%d,%d)` |
@@ -96,8 +101,8 @@
 
 | 步 | 内容 | 代价 / 判据 |
 | :-: | --- | --- |
-| **第 1 步** | 删拦 Z、删 hold-Z、改「按住 C 的电平」推进蓄力 | **零站点、不动共享件**（只动 `pofv*.c`）。判据：按住 C 时 **Z 照常射击**；松手放档；日志 `pofv: CA L<n>` |
-| **第 2 步** | 灵力道具（新类型 + 三个生成点 + 拾取加槽）+ 固灵结界（形状/视觉/沈静化）+ 灵（自制 ECL + 循环撒 + boss 不撒）| 可能要 hook ⇒ **站点预算已超记账线（33/24）**，加站点要跑 `sitecheck.py` + 实跑看 `pool:` 余格 + `GATES.md` §8 记账 + `AUDIT.md` §BE 登记 + **owner 拍板** |
+| **第 1 步** ✅ | 删拦 Z、删 hold-Z、改「按住 C 的电平」推进蓄力 | **零站点、不动共享件**（只动 `pofv*.c` + 文档/verify 台账）。**2026-10-01 已落地**（`make check` 全绿、469 断言）。判据待实跑：按住 C 时 **Z 照常射击**；松手放档；日志 `pofv: CA L<n>` |
+| **第 2 步** ⏳ | 灵力道具（新类型 + 三个生成点 + 拾取加槽）+ 固灵结界（形状/视觉/沈静化）+ 灵（自制 ECL + 循环撒 + boss 不撒）| 可能要 hook ⇒ **站点预算已超记账线（33/24）**，加站点要跑 `sitecheck.py` + 实跑看 `pool:` 余格 + `GATES.md` §8 记账 + `AUDIT.md` §BE 登记 + **owner 拍板** |
 
 ## 7. 坑与纪律（踩过的 / 别人踩过的）
 
@@ -106,7 +111,10 @@
 3. **不要在敌人死亡回调里直接建灵**到「同一帧爆一堆」的规模 —— 先入队、延到帧末（113 的 boss 掉灵报告 §0 有同款纪律）。
 4. **站点余量 0**（33/24 记账线、42 进程上限）：能不加站点就不加；第 2 步尤其要小心。
 5. **改共享件 = 改所有人的卡**：`sdk.*` / `engine.h` / `sites.py` / `Makefile` / `cards_def.c` / `patch/**` / `assets/ability/scripts/**` 都要登记 `AUDIT.md` §BE 并单开一节说明影响面。
-6. **别信旧结论里「109 拦 Z」**：口径 2 已经作废它；`CARDS.md:254` 与 `patch/th18/cards.js` 的描述还是旧版，改代码时**顺手更新这两处**。
+6. ~~**别信旧结论里「109 拦 Z」**：口径 2 已经作废它；`CARDS.md:254` 与 `patch/th18/cards.js` 的描述还是旧版，改代码时**顺手更新这两处**。~~
+   ✅ **2026-10-01 已办**：代码删净、`CARDS.md:254` / `NEXT.md` / `patch/th18/cards.js` / `TUNING.md` §2.0v /
+   `verify.py`+`autoplay.py` 的 `z-intercept` 场景全部同步。**唯一还写着「拦 Z」的是本文件 §4/§9 的
+   一手索引与历史记录**（那些是「一手事实」，不是本卡现状）。
 7. **本机专属规矩**：`local/GAME-LOG.md`（实跑日志绝对路径；用户说跑了就先自己读日志尾巴）、`local/DLL-SYNC.md`（`make release` 后 DLL 必须四处同 md5）。
 
 ## 8. 未解清单
