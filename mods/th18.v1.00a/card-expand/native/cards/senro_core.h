@@ -241,6 +241,15 @@ int32_t senro_item_cherry(senro_state_t *s, uint32_t type);
  * 返回本次加了多少樱点。⚠ 不再区分聚焦 —— 一手那条公式里**没有**聚焦项（高低速的差别已经
  * 体现在 `damage` 本身），旧版的「高速 ×3 / 低速 ×1」是 ❓自定，2026-09-30 撤掉。 */
 int32_t senro_hit(senro_state_t *s, int32_t damage, int32_t stage);   /* stage = 关卡号（1 起）*/
+
+/* ★★ 2026-10-01（owner 口径「type 7 也得随机地掉，你看怎么弄比较好」）：
+ * **敌人自带掉落槽的 32 项轮转表**（一手 = TH07 `th07:0x49efa0` 的**逐字节**内容，
+ * `EnemyManager::on_tick_0a` 在 `th07:0x421b1b` 用 `movzx edx,BYTE [ecx+0x49efa0]` 取值、
+ * 取完把 16 位计数 `[mgr+0x9545ba]` +1 回绕 ⇒ 索引就是那个计数 & 31）。
+ * 只有 `enmCreate` 第 6 参数 = −1/−2（不指定）的敌机走它；表里 **3 项是 type 7（大樱点）**。 */
+#define SENRO_ROT_LEN      32
+#define SENRO_ROT_CHERRY    7   /* 表里的「大樱点」项 */
+int32_t senro_rot_drop_next(int32_t *cursor);   /* 取下一项并把游标推进（回绕）*/
 /* 定宽字段「画哪几位」（TH07 `th07:0x404a25`–`0x404a3c` 的逐指令）：
  *   · **每一位都推进 x**（字距 7）⇒ 字段定宽、数字靠右；
  *   · `started` 闸：**只有第一个非零位把它置 1**（`0x404a2b`：`cmp 数字,0; je` 才跳过置位）

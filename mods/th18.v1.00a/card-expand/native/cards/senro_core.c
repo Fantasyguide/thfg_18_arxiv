@@ -237,6 +237,23 @@ int32_t senro_item_cherry(senro_state_t *s, uint32_t type)
     return d;
 }
 
+/* 一手：`th07:0x49efa0` 的 32 个字节（逐字节读出，见 `engine/item/th07/01` §4.3）。 */
+static const uint8_t SENRO_ROT_TBL[SENRO_ROT_LEN] = {
+    0, 0, 1, 0, 1, 0, 0, 7, 1, 1, 0, 0, 7, 1, 1, 0,
+    1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 7, 1, 1, 1, 0, 2
+};
+
+int32_t senro_rot_drop_next(int32_t *cursor)
+{
+    int32_t idx;
+
+    if (!cursor) return -1;
+    if (*cursor < 0 || *cursor >= SENRO_ROT_LEN) *cursor = 0;
+    idx = SENRO_ROT_TBL[*cursor];
+    *cursor = (*cursor + 1) & (SENRO_ROT_LEN - 1);
+    return idx;
+}
+
 void senro_field_layout(int32_t value, int digits, int *out_digit, int *out_draw)
 {
     int32_t div = 1;

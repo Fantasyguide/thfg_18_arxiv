@@ -116,7 +116,12 @@
  *     ② 我们**真正需要的只是「收下消弹点时给樱点」**（TH07 ★ = 樱点/+C 各 +20）——
  *        那属于「挂东西」，落在 `senro_item_cherry()` 的 type 9–0xe 那一支（**已经在**）✓。
  *   ⇒ 现在本卡**一个道具都不自己撒**：灵击那条仍走 `ce_cancel_radius(..., mode 1)`（= 让**引擎**
- *      用它自己的消弹点配方撒，一手 TH07 崩结界也是消弹 → ★ 每颗一），我们只在**收下时**记 +20。*/
+ *      用它自己的消弹点配方撒，一手 TH07 崩结界也是消弹 → ★ 每颗一），我们只在**收下时**记 +20。
+ *   ★★ 同日追加（owner：「**type 7 也得随机地掉，你看怎么弄比较好**」）：`on_enemy_death` **重新接上**，
+ *      但这次**只做一手那件事** —— 敌人自带掉落槽的 **32 项轮转表**（`th07:0x49efa0`，表里 3 项
+ *      是 type 7）轮到 7 时，撒**一颗本卡的大樱点实体**（同一个共享点池 + 同一套外观/记账：
+ *      收下 = `1000 + 100×符卡奖励次数`）。其余条目（0/1/2 = 小P/蓝点/大P）**不碰** ——
+ *      那本来就是 TH18 原生掉落在做的事。相位的随机化见 `drop_rot` 的初始化那一行。*/
 #define SENRO_ITEM_SPAWN_ANGLE      (-1.5707964f)              /* = 0xbfc90fdb（−π/2，直上）*/
 #define SENRO_ITEM_SPAWN_SPEED      2.2f                       /* = 0x400ccccd */
 
@@ -554,6 +559,9 @@ typedef struct {
     int32_t          stat_gain_graze;   /* 诊断：擦弹通道 */
     int32_t          stat_gain_hit;     /* 诊断：命中通道 */
     int32_t          stat_cherry_conv;  /* 诊断：满 P 转换撒出来的**大樱点实体**颗数（★ 2026-09-18）*/
+    int32_t          drop_rot;          /* ★★ 2026-10-01：轮转表游标（0..31，跨关保留 = 一手那个全局计数）*/
+    int32_t          stat_rot;          /* 诊断：轮转表轮到 7 而撒出去的**大樱点实体**颗数 */
+    int32_t          stat_rot_fail;     /* 诊断：同上但池满/失败 */
     int32_t          stat_small;        /* 诊断：boss 死亡消弹撒出来的**小樱点实体**颗数（★ 2026-09-18）*/
     int32_t          stat_small_bullets;/* 诊断：那几笔消弹按一手折算的**颗数**（= 值 / 100）*/
 } senro_card_t;
@@ -1329,10 +1337,11 @@ static int on_tick_2(ce_card_t *c)
                (int)s->st.timer, (int)s->st.stat_open, (int)s->st.stat_natural, (int)s->st.stat_libyou,
                (int)s->st.stat_cancel, (int)s->stat_gain_item, (int)s->stat_gain_graze,
                (int)s->stat_gain_hit, (int)s->stat_fx_field, (int)s->stat_fx_ring);
-        if (s->stat_cherry_conv || s->stat_small)
-            ce_log("senro: 大樱点实体 %d 颗、小樱点实体 %d 颗（折 %d 颗弹）——★ 不自建："
-                   "原生消弹点收下时按 +%d 樱点/+C 记账（见头注 ⛔）",
-                   (int)s->stat_cherry_conv, (int)s->stat_small, (int)s->stat_small_bullets,
+        if (s->stat_cherry_conv || s->stat_small || s->stat_rot)
+            ce_log("senro: 大樱点实体 满P转换 %d 颗 + 轮转表 %d 颗（失败 %d，游标 %d）、"
+                   "小樱点实体 %d 颗（折 %d 颗弹）——★ 不自建：原生消弹点收下时按 +%d 樱点/+C 记账",
+                   (int)s->stat_cherry_conv, (int)s->stat_rot, (int)s->stat_rot_fail,
+                   (int)s->drop_rot, (int)s->stat_small, (int)s->stat_small_bullets,
                    (int)SENRO_STAR_CHERRY);
     }
 
@@ -1633,6 +1642,11 @@ static void senro_clear(ce_card_t *c, int keep_slot)
      *   ⇒ 「不播」的哨兵必须在 memset **之后**再写一次（与上面 `graze_last` / `spell_was` 同一条纪律）。*/
     s->text_age = -1;
     s->dim_alpha = -1;
+    /* ★★ 2026-10-01：轮转表的**相位**每次上卡随机一次（owner「type 7 也得随机地掉」）——
+     *   表本身与比例是一手的（32 项里 3 项是 7），随机化只动**从哪一项开始**，
+     *   于是「哪几只敌机掉」每局都不同，而「每 32 只出 3 颗」这条不变。
+     *   用引擎的 replay-safe RNG（`ce_rand()` = `CE_ADDR_REPLAY_SAFE_RNG`）⇒ 回放可复现。*/
+    s->drop_rot = (int32_t)(ce_rand() & (uint32_t)(SENRO_ROT_LEN - 1));
     hud_dim_init(&s->hud);   /* ★ 2026-09-15g：压暗状态复位 = **满亮 255**（共享件；memset 出来是 0）*/
     (void)keep_slot;         /* 槽位由 `CE_CARD` 的 on_run_reset / opdelete 自动 release（§6.1）*/
 }
@@ -1742,10 +1756,37 @@ static void senro_small_burst(senro_card_t *s, int32_t bullets)
            (int)bullets, made, (int)bundle, (int)(bundle * made));
 }
 
-/* ---- ⛔ 死敌掉 ★ 的钩子已撤（2026-10-01 owner 口径，见文件头那个 ⛔ 块）----
- *   原来这里是 `on_enemy_death`：每只「真敌人」死亡就自建 1 颗原生 type 9 当 ★。
- *   撤掉之后本卡**不再有任何自建道具撒落**；「收下原生消弹点 → +20 樱点/+C」仍在
- *   `senro_item_cherry()`（type 9–0xe 那一支）里生效 —— 那才是「挂在消弹点上」。*/
+/* ---- ★★ 2026-10-01：**逐敌大樱点**（一手 = 敌人自带掉落槽的 32 项轮转表）----
+ * 一手两点（见 `engine/item/th07/01` §4.3 与 core 的 `SENRO_ROT_*`）：
+ *   ① 表 `th07:0x49efa0` 逐字节 = 0×14 / 1×14 / **7×3** / 2×1，索引 = 全局计数 `[mgr+0x9545ba]` & 31；
+ *   ② 只有 `enmCreate` 第 6 参数 = −1/−2（不指定）的敌机走它 —— 那 42 处「变量」也已查实恒为 −2，
+ *      所以**绝大多数小怪**都走这张表。
+ * 本卡的落地（owner「你看怎么弄比较好」）：**只对表里的 7 出手**，撒一颗与「满 P 转换」同款的
+ * 大樱点实体（同池、同外观、同一笔记账）；0/1/2 那 29 项**什么都不做**（TH18 原生掉落本来就在掉
+ * 它自己的钱/P —— 我们不重复造）。⇒ 每 32 只真敌人出 3 颗大樱点（≈9.4%），与一手同比例。*/
+static int senro_spawn_rot_cherry(float x, float y)
+{
+    /* 外观/记账与 `faith_convert_full_p_items()` 那条**完全同源**：同一个槽位掩码、同一套
+     * `art_sprite/art_script`（注册在 `senro_faith_claim()` 里 = TH07 大樱点切图），
+     * 所以收下时走的都是 `senro_on_cherry_pickup()` 的 `1000 + 100×符卡奖励次数`。 */
+    return faith_spawn_art(x, y, FAITH_TIER_SMALL, 1 << FAITH_SLOT_107, 1,
+                           SENRO_ITEM_SPAWN_ANGLE,
+                           CE_ANM_ABILITY_SPRITE_SAKURA_POINT,
+                           CE_ANM_ABILITY_SCRIPT_SAKURA_POINT);
+}
+
+static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
+{
+    senro_card_t *s = st(c);
+    int32_t t;
+
+    if (!s || !ev) return;
+    if (!(ev->flags & CE_EDEATH_F_REAL)) return;      /* 只认真敌人（与「已死且未结算」同口径）*/
+    t = senro_rot_drop_next(&s->drop_rot);            /* ★ 推进轮转表（一手：那个全局计数）*/
+    if (t != SENRO_ROT_CHERRY) return;                /* 不是 7 的 29 项：交给 TH18 原生掉落 */
+    if (senro_spawn_rot_cherry(ev->x, ev->y)) ++s->stat_rot;
+    else ++s->stat_rot_fail;
+}
 
 static void senro_on_cherry_pickup(void *user, int slot_mask, int tier, int32_t value,
                                    float x, float y)
@@ -1891,5 +1932,6 @@ CE_CARD(107,
         .on_death_before_deathbomb = on_death_before_deathbomb,
         .on_death_frame2 = on_death_frame2,
         .on_draw = on_draw,
+        .on_enemy_death = on_enemy_death,      /* ★★ 2026-10-01：轮转表轮到 7 ⇒ 掉一颗大樱点 */
         .on_run_reset = on_run_reset,
         .on_delete = on_delete);

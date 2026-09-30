@@ -26073,3 +26073,20 @@ verify/autoplay 的场景只判 109 的日志）；`sites.py` / `sdk.*` / `engin
 **对既有卡的影响面**：只动本卡；**没有**动共享件、没有新增站点；`SENRO_CANCEL_MODE` 一字未改
 （灵击那条继续用引擎的原生消弹点）。**没有**任何卡依赖本卡撒的 ★（那是本卡自己的诊断/樱点来源）。
 **回归**：`make dll` 无警告 · `make test-host` 全绿 · `make check` exit 0。
+
+### §BE #151 · 追加 10（2026-10-01 第十一轮）：按一手轮转表**逐敌掉大樱点**
+
+**owner 逐字**：「**那就是只有 type7，记录一下。然后 type7 也得随机地掉，你看怎么弄比较好**」。
+
+| 文件 | 改了什么 | 为什么 |
+| --- | --- | --- |
+| `cards/senro_core.{h,c}` | 新增 `SENRO_ROT_TBL[32]`（= `th07:0x49efa0` 逐字节）+ `senro_rot_drop_next()` 纯函数 | 一手那张表的比例（0×14/1×14/**7×3**/2×1）与顺序照抄；纯函数 ⇒ 主机可测 |
+| `cards/senro.c` | **重新接上** `on_enemy_death`（这次只干一件事：轮到 7 ⇒ 撒一颗大樱点实体）；`senro_card_t` 加 `drop_rot`（相位）/`stat_rot`/`stat_rot_fail`；`senro_clear()` 里 `drop_rot = ce_rand() & 31`；日志带上轮转统计 | owner 要「type 7 随机地掉」；落地取「一手比例 + 随机相位」 |
+| `tests/test_senro_core.c` | 新增 M 节：32 步的分布 / 三个 7 的确切位置 / 回绕 / 越界与空指针兜底 | 表是逐字节抄的，必须钉住 |
+| `engine/item/th07/01-sakura-items.md` §4.3 | 新增：42 处变量全解（= `10000+号` 编码、恒 −2）、轮转表逐字节、**type 9 全 exe 无撒落点** | owner 追问的原始问题（"击破后掉的那个点是什么"）与后续追问的答案 |
+
+**对既有卡的影响面**：只动本卡（新增一个**自建点池实体**的撒落点，槽位掩码仍是 `1 << FAITH_SLOT_107`）。
+**共享件一个字节没动**；没有新增站点。⚠ 与 110/111 同装时：本卡的实体只占自己那一槽、外观是自己的，
+`faith_clear_entities_mask` 也只清自己那槽（既有纪律）⇒ 互不影响。
+**回归**：`make dll` 无警告（本卡 0 warning）· `make test-host` 全绿（`test_senro_core` **12293 断言 0 失败**）。
+⚠ `make check` 当次红在**另一批次**的在改项（`tools/capcheck.py` 的 `POFV_SPIRIT_MAX` 池搬走），与本批无关。

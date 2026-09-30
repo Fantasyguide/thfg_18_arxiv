@@ -361,6 +361,25 @@ int main(void)
         CHECK(b.cherry_max == 250000 && b.cherry_max_base == 250000);
     }
 
+    /* ======= M. 敌人自带掉落槽的 32 项轮转表（一手 th07:0x49efa0 逐字节，2026-10-01）======= */
+    {
+        int32_t cur = 0, i, n7 = 0, n0 = 0, n1 = 0, n2 = 0, first[32];
+        for (i = 0; i < 32; ++i) first[i] = senro_rot_drop_next(&cur);
+        for (i = 0; i < 32; ++i) {
+            if (first[i] == 7) ++n7;
+            else if (first[i] == 0) ++n0;
+            else if (first[i] == 1) ++n1;
+            else if (first[i] == 2) ++n2;
+        }
+        CHECK(n0 == 14 && n1 == 14 && n7 == 3 && n2 == 1);        /* 一手分布 0×14 / 1×14 / 7×3 / 2×1 */
+        CHECK(first[7] == 7 && first[12] == 7 && first[26] == 7); /* 三个 7 的确切位置（0 基）*/
+        CHECK(cur == 0);                                          /* 转满一圈回到起点 */
+        CHECK(senro_rot_drop_next(NULL) == -1);                   /* 空指针兜底 */
+        cur = -5; CHECK(senro_rot_drop_next(&cur) == 0);          /* 越界游标归一 */
+        cur = 31; CHECK(senro_rot_drop_next(&cur) == 2);          /* 最后一项 = 2（大P）*/
+        CHECK(cur == 0);                                          /* 回绕 */
+    }
+
     /* ==================== J. 蓝点（点道具）分值（0x4330db–0x4331e5）==================== */
     senro_init(&st, SENRO_DIFF_NORMAL);
     CHECK(senro_point_item_value(&st) == SENRO_POINT_BASE);        /* 樱点 0 ⇒ 基线 50000 */
