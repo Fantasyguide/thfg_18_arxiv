@@ -851,6 +851,11 @@ typedef struct {
                            *   外扩 `YK_ORBIT_EXPAND_FRAMES`(100 ≈ 1.7 s) 帧到 `YK_ORBIT_FINAL_RADIUS`(60)
                            *   然后**冻结**（一手 `moveCircle`：`+0x2db0 radius = 0`、`+0x2db4 = arg3`、
                            *   `+0x2de8 = arg0` 时长；之后 `moveCircleChange(6000, ω, 0)` 冻结）。*/
+    float    ang_deg;    /* ★ 2026-09-30：**浮点角**（度）—— 分圈后各圈 ω 不同（6/4.5/3°），
+                          *   整数格索引会把它抹掉 ⇒ 浮点累加、再量化（4.5 自然交替 1/2 格）*/
+    float    omega_deg;  /* 该台角速度（度/帧，含符号 = 转向）—— `yk_orbit_layout()` 给 */
+    float    radius_final;/* 该台**最终**半径（px）= 30/60/90（分圈）或 60（单圈）*/
+    int8_t   ring;       /* 第几圈（0 基）；日志用 */
     unsigned substep;     /* ★ 绕转相位（**半步累加器**，第七轮）：每帧 +1，一圈 = `YK_ORBIT_SUBSTEPS`(240)
                            *   个 substep；查表格号 = `yk_orbit_step_of_substep(substep)`
                            *   ⇒ 实际转速 = 3°/格 ÷ `YK_ORBIT_STEP_DIV`(2) = **1.5°/帧**（240 帧 ≈ 4 s 一圈）。*/
@@ -1279,7 +1284,8 @@ static void yk_orbit_vm_sync(yk_orbit_t *o)
 static uint8_t *yk_orbit_spawn_one(uint32_t parent_id, int count, int k, int32_t life,
                                    float cx, float cy)
 {
-    float dx = 0.0f, dy = 0.0f, radius;
+    float dx = 0.0f, dy = 0.0f, radius, ang = 0.0f;
+    yk_orbit_layout_t L;
     uint8_t *f;
     yk_orbit_t *o;
     unsigned step;
@@ -1289,9 +1295,14 @@ static uint8_t *yk_orbit_spawn_one(uint32_t parent_id, int count, int k, int32_t
     for (i = 0; i < YK_ORBIT_MAX; ++i) if (!s_orbit[i].fam_id) break;
     if (i >= YK_ORBIT_MAX) return 0;
     o = &s_orbit[i];
-    /* 相位 = 均匀分布 + 每敌错相；半径 = 台数分档（两件都是纯函数，见 `youkai_core.{h,c}`）。*/
+    /* ★★★ 2026-09-30（owner 口径 + 一手）：**按台数分圈**（`yk_orbit_layout` 表驱动）——
+     *   8 台 = 3+5（30/60、ω 6/4.5、内外反向）、13 台 = 3+5+5（30/60/90、ω 6/4.5/3、内反向、
+     *   中/外同向且共用初角）、其余（含 14–18 台与 ≤4 台）回落**单圈**（半径 60、ω 6、同向）。*/
+    if (!yk_orbit_layout(count, k, &L)) return 0;
     radius = 0.0f;                                        /* 出生贴在本体身上（见 struct 里的注）*/
-    step = (yk_orbit_phase_id(parent_id) + yk_orbit_phase_step(count, k)) % YK_ORBIT_STEPS;
+    ang = L.phase_deg + (float)yk_orbit_phase_id(parent_id);   /* 初角 + 每敌错相 */
+    ang = ang - 360.0f * (float)((int)(ang / 360.0f));         /* 归一到 [0,360) */
+    step = (unsigned)((int)(ang / (float)YK_ORBIT_STEP_DEG)) % YK_ORBIT_STEPS;
     if (!yk_orbit_offset(step, radius, &dx, &dy)) return 0;
     f = yk_spawn_familiar_parent(cx + dx, cy + dy, parent_id, life);   /* life = 父敌最大血量（口径）*/
     if (!f) return 0;
@@ -1302,6 +1313,10 @@ static uint8_t *yk_orbit_spawn_one(uint32_t parent_id, int count, int k, int32_t
     o->radius = radius;
     o->substep = step * YK_ORBIT_STEP_DIV;                /* 初相（格号 → substep，别慢半拍）*/
     o->age = 0;                                           /* 帧龄从 0 起 ⇒ 半径 0（外扩的起点）*/
+    o->ang_deg = ang;                                     /* ★ 初角（layout 的初角 + 每敌错相）*/
+    o->omega_deg = L.omega_deg;                           /* ★ 该台角速度（含转向符号）*/
+    o->radius_final = L.radius;                           /* ★ 该台最终半径（分圈 30/60/90）*/
+    o->ring = (int8_t)L.ring;
     o->trail_t = 0;                                       /* 拖尾节拍：从 0 起，攒满 interval 才撒第一颗*/
     o->orphan = 0;
     /* ★★★ 2026-09-30（owner 四色口径）：额外使魔恒 = `YK_FAM_KIND_NO_MELEE_SHOT_SAME`
@@ -1449,15 +1464,15 @@ static void yk_orbit_scan(uint32_t frame)
             ++s_orbit_targets; ++picked;
             /* 每条目标**只打一次**（不刷屏）：这一行就是「哪只大怪被补了、补了几台、凭什么」的判据。*/
             ce_log("youkai/orbit: target enemy #%u sprite %dx%d hp %d stage %d => %d familiar(s) "
-                   "(HP tier %d + stage bonus %d = %d; spawn delay %u f; chain root, not boss; radius 0->%.0f in %u f "
-                   "(%.2f px/f), %.1f deg/frame; fam life %d = onehand %d x %d; colour kind %d "
+                   "(HP tier %d + stage bonus %d = %d; spawn delay %u f; chain root, not boss; rings %d "
+                   "(radius 0->30/60/90 in %u f), per-ring %.1f/4.5/3 deg/frame; fam life %d = onehand %d x %d; colour kind %d "
                    "(melee %d shot_same %d) = script %d; centre pinned at spawn (%.0f,%.0f))",
                    (unsigned)id, w, h, hp_now, (int)CE_CURRENT_STAGE(), made,
                    yk_orbit_count_for_hp(hp_now), yk_orbit_stage_bonus((int)CE_CURRENT_STAGE()), want,
                    (unsigned)YK_ORBIT_DELAY_FRAMES,
-                   (double)YK_ORBIT_FINAL_RADIUS, (unsigned)YK_ORBIT_EXPAND_FRAMES,
-                   (double)YK_ORBIT_RADIAL_SPEED,
-                   (double)YK_ORBIT_STEP_DEG / (double)YK_ORBIT_STEP_DIV,
+                   (want == 13) ? 3 : (want == 8) ? 2 : 1,          /* ★ rings（分圈数）*/
+                   (unsigned)YK_ORBIT_EXPAND_FRAMES,
+                   (double)YK_ORBIT_FINAL_RADIUS / (double)YK_ORBIT_EXPAND_FRAMES,
                    (int)life, yk_orbit_onehand_hp(yk_orbit_count_for_hp(hp_now)),
                    (int)YK_ORBIT_HP_SCALE,
                    YK_FAM_KIND_NO_MELEE_SHOT_SAME,
@@ -1509,11 +1524,14 @@ static void __attribute__((noinline)) yk_orbit_tick(uint32_t frame)
             continue;
         }
         o->orphan = 0;
-        /* ★ 转速 = 每帧 1 个 substep（= 3°/格 ÷ `YK_ORBIT_STEP_DIV`；当前 DIV = 1 ⇒ 一手 3.0°/帧）。*/
-        o->substep = yk_orbit_substep_advance(o->substep);
+        /* ★ 2026-09-30：转速 = **该台的 ω**（分圈后 6/4.5/3°/帧，含转向符号）—— 浮点累加后量化到 3° 格。*/
+        o->ang_deg += o->omega_deg;
+        o->ang_deg = o->ang_deg - 360.0f * (float)((int)(o->ang_deg / 360.0f));
+        if (o->ang_deg < 0.0f) o->ang_deg += 360.0f;
+        o->substep = (unsigned)((int)(o->ang_deg / (float)YK_ORBIT_STEP_DEG)) % YK_ORBIT_STEPS;
         /* ★★★★ 订正：半径**随帧龄外扩**（出生 0 → 1.7 s 后 60 → 冻结），不再一进场就钉住。*/
         if (o->age < 0xffffffffu) ++o->age;
-        yk_orbit_radius_at((int)o->age, &o->radius);
+        yk_orbit_radius_at_r(o->radius_final, (int)o->age, &o->radius);   /* ★ 该台自己的最终半径 */
         /* ★★★★ 2026-09-30 **订正**：圆心 = **父敌当前位置**（一面妖精是 `familiarCreateF` = opcode 92，
          *   带 `TRACK_POS (0x200)` ⇒ 整圈跟着父敌走；只有 opcode 91 才是定圆心 —— 见 struct 里的注）。
          *   `cx/cy` 仍保留为**出生点**（记账/日志），不再参与定位；孤儿宽限那条分支照旧原地钉住。*/

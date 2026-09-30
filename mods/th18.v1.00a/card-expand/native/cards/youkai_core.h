@@ -2126,7 +2126,31 @@ int yk_orbit_count_total(int hp_max, int stage);
  *   ⇒ **最终半径都在 50–64 px**（一手逐 sub 各写各的，我们取**一个值 60**）。
  *   旋钮：`YK_ORBIT_FINAL_RADIUS`（最终半径）+ `YK_ORBIT_EXPAND_FRAMES`（外扩时长）。*/
 #define YK_ORBIT_FINAL_RADIUS   60.0f   /* 一手最终半径 50–64 的**中间值**（三个实算例见上）*/
-#define YK_ORBIT_EXPAND_FRAMES  100u    /* 一手最常见的**时长档** = 100 帧 ≈ 1.7 s（arg0）*/
+/* ★★★ 2026-09-30（**owner 口径 + 一手数据**）：**按台数分圈**（多圈同心）。
+ *   一手样本表（研究结论，见 `local/_scratch/c108/`）：
+ *     1 圈 = 6/7 面 `Sub0`（15 台）：半径 60、ω **6°/帧**、全体同向、初角 360/N 等分；
+ *     **2 圈 = 5 面 `Sub10`（8 台）：3 + 5 台，半径 30/60、ω 6/4.5、内外反向**；
+ *     **3 圈 = 5 面开场（13 台）：3 + 5 + 5，半径 30/60/90、ω 6/4.5/3、内反向、中/外同向**；
+ *     5 圈 = 8 面 `Sub29`（**5 台**，不是 53 —— 见 §BE #160 的订正）：40/80/120/160/200、ω 3 恒定。
+ *   要点：**半径等间隔**（1:2:3 不是等比）、**每圈给不同径向速度**、`moveCircle` 时长统一。
+ *   ⇒ 表驱动 + 纯函数 `yk_orbit_layout()`；**≤4 台/其它台数回落单圈**，**14–18 台回落单圈**
+ *     （照 15 台先例 ⇒ 🟡 一手先例的外推，原作没有 18 台样本）。*/
+typedef struct {
+    float radius;     /* 该台的**最终**绕转半径（px）*/
+    float omega_deg;  /* 该台的角速度（度/帧，含符号）*/
+    float phase_deg;  /* 该台的**初角**（度）*/
+    int   ring;       /* 第几圈（0 基），日志用 */
+} yk_orbit_layout_t;
+
+/* 台数 `count` 里第 `k` 台（0 基）的形状。→ 1 = 填好；0 = 参数不合法（越界）。纯函数。*/
+int yk_orbit_layout(int count, int k, yk_orbit_layout_t *out);
+/* 按**该台的最终半径**算当前半径（外扩 = 帧龄 × `final_r / YK_ORBIT_EXPAND_FRAMES`）。*/
+int yk_orbit_radius_at_r(float final_r, int age, float *out);
+
+/* ★ **时长口径统一到 20 帧**（2026-09-30 owner 口径 + 一手）：一手**分圈那几档样本全是 20 帧**
+ *   （5/6/8 面）；一面的 100 帧是**另一风格**、我们不是逐场复刻 ⇒ 统一取 20（≈0.33 s）。
+ *   旧值 100（≈1.7 s）已作废（`yk_orbit_radius_at()` 那个旧入口仍按这一格算，供旧单测用）。*/
+#define YK_ORBIT_EXPAND_FRAMES  20u    /* 一手最常见的**时长档** = 100 帧 ≈ 1.7 s（arg0）*/
 /* 外扩速度（px/帧）= 最终半径 / 时长 —— **与一手 arg3 同义**（它们的 arg3 就是各 sub 自己写的
  * 「1.7 s 内扩到位的速度」：0.64 / 0.8333 / 3.0 各对应上面三个例子）。*/
 #define YK_ORBIT_RADIAL_SPEED   (YK_ORBIT_FINAL_RADIUS / (float)YK_ORBIT_EXPAND_FRAMES)

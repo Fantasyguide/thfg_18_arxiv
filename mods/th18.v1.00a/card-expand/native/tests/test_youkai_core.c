@@ -239,6 +239,59 @@ static void check_orbit_gift_ledger(void)
     CHECK(yk_orbit_gift_prune(NULL, 0) == 0);    /* 空指针不炸 */
 }
 
+/* ★★★ 2026-09-30（owner 口径：13 颗「多绕几圈」）：`yk_orbit_layout()` 的表 —— 一手样本：
+ *   8 台 = 3+5（30/60、ω 6/4.5、内外反向）、13 台 = 3+5+5（30/60/90、ω 6/4.5/3、内反向、中/外同向）、
+ *   15 台单圈（半径 60、ω 6、360/N 等分）；14–18 台回落单圈（🟡 一手先例的外推）。*/
+static void check_orbit_layout(void)
+{
+    yk_orbit_layout_t a, b;
+    int k;
+    /* ① ≤4 台（与 5/6/7、9–12、14–18 台一样）⇒ 单圈：半径 60、ω 6°、初角 360/N 等分 */
+    CHECK(yk_orbit_layout(4, 0, &a) && a.radius == 60.0f && a.omega_deg == 6.0f && a.ring == 0);
+    CHECK(yk_orbit_layout(4, 1, &b) && b.phase_deg == 90.0f);          /* 360/4 */
+    CHECK(yk_orbit_layout(18, 3, &a) && a.radius == 60.0f && a.ring == 0);
+    CHECK(yk_orbit_layout(15, 1, &a) && a.phase_deg == 24.0f);         /* 360/15，一手那支 */
+    /* ② 8 台 = 3 + 5：内圈 30/ω6、外圈 60/ω4.5，且**内外反向** */
+    CHECK(yk_orbit_layout(8, 0, &a) && a.ring == 0 && a.radius == 30.0f && a.omega_deg == 6.0f);
+    CHECK(yk_orbit_layout(8, 2, &a) && a.radius == 30.0f && a.phase_deg == 120.0f * 2.0f);
+    CHECK(yk_orbit_layout(8, 3, &b) && b.ring == 1 && b.radius == 60.0f && b.omega_deg == -4.5f);
+    CHECK(yk_orbit_layout(8, 4, &b) && b.phase_deg == 72.0f);          /* 72° 等分 */
+    CHECK(yk_orbit_layout(8, 0, &a));
+    CHECK(yk_orbit_layout(8, 3, &b));
+    CHECK(a.omega_deg * b.omega_deg < 0.0f);                 /* 内外**反向** */
+    /* ③ 13 台 = 3 + 5 + 5 */
+    CHECK(yk_orbit_layout(13, 0, &a) && a.ring == 0 && a.radius == 30.0f && a.omega_deg == -6.0f);  /* 内圈反向 */
+    CHECK(yk_orbit_layout(13, 3, &a) && a.ring == 1 && a.radius == 60.0f && a.omega_deg == 4.5f);
+    CHECK(yk_orbit_layout(13, 8, &b) && b.ring == 2 && b.radius == 90.0f && b.omega_deg == 3.0f);
+    CHECK(yk_orbit_layout(13, 3, &a));
+    CHECK(yk_orbit_layout(13, 8, &b));
+    CHECK(b.phase_deg == a.phase_deg);                       /* 中/外**共用初角**（一手就是这样）*/
+    CHECK(a.omega_deg * b.omega_deg > 0.0f);                 /* 中/外**同向** */
+    CHECK(yk_orbit_layout(13, 7, &a) && a.phase_deg == 72.0f * 4.0f);
+    /* ④ 参数越界 / NULL 不炸 */
+    CHECK(!yk_orbit_layout(0, 0, &a));
+    CHECK(!yk_orbit_layout(8, 8, &a));
+    CHECK(!yk_orbit_layout(8, -1, &a));
+    CHECK(!yk_orbit_layout(8, 0, NULL));
+    /* ⑤ 初角不重合：13 台里 3 圈的初角集合两两不撞（中/外那 5+5 是**故意**同初角，按圈分别看）*/
+    for (k = 0; k < 3; ++k) {
+        yk_orbit_layout_t p, q;
+        int j;
+        CHECK(yk_orbit_layout(13, k, &p));
+        for (j = k + 1; j < 3; ++j) {
+            CHECK(yk_orbit_layout(13, j, &q));
+            CHECK(p.phase_deg != q.phase_deg);
+        }
+    }
+    /* ⑥ 每台半径（`yk_orbit_radius_at_r`）：按**该台**最终半径外扩，20 帧到位 */
+    {   float r = -1.0f;
+        CHECK(yk_orbit_radius_at_r(30.0f, 20, &r) && r == 30.0f);
+        CHECK(yk_orbit_radius_at_r(90.0f, 10, &r) && r > 44.9f && r < 45.1f);   /* 90/20*10 */
+        CHECK(yk_orbit_radius_at_r(60.0f, 0, &r) && r == 0.0f);
+        CHECK(!yk_orbit_radius_at_r(60.0f, 5, NULL));
+    }
+}
+
 int main(void)
 {
     yk_map_t m;
@@ -2352,17 +2405,17 @@ int main(void)
         /* ⑦ ★★★★ 绕转半径 = **随帧龄线性外扩到 60**（2026-09-30 订正：一手 `moveCircle` 的
          *   第 1 实参是**时长**不是半径 ⇒ 形状是「贴本体 → 1.7 s 螺旋外扩到位 → 冻结」）。*/
         CHECK(YK_ORBIT_FINAL_RADIUS == 60.0f);                 /* 一手实算 50–64 的中间值 */
-        CHECK(YK_ORBIT_EXPAND_FRAMES == 100u);                 /* 一手最常见的时长档 */
-        CHECK(YK_ORBIT_RADIAL_SPEED > 0.59f && YK_ORBIT_RADIAL_SPEED < 0.61f);   /* = 60/100 */
+        CHECK(YK_ORBIT_EXPAND_FRAMES == 20u);                  /* ★ 2026-09-30：统一到一手分圈样本的 20 帧 */
+        CHECK(YK_ORBIT_RADIAL_SPEED > 2.99f && YK_ORBIT_RADIAL_SPEED < 3.01f);   /* = 60/20 */
         {
             float r = -1.0f;
             CHECK(yk_orbit_radius_at(0, &r) && r == 0.0f);     /* 出生：贴在本体身上 */
             CHECK(yk_orbit_radius_at(-5, &r) && r == 0.0f);    /* 负数当 0 */
-            CHECK(yk_orbit_radius_at(1, &r) && r > 0.59f && r < 0.61f);
-            CHECK(yk_orbit_radius_at(50, &r) && r > 29.9f && r < 30.1f);
-            CHECK(yk_orbit_radius_at(99, &r) && r < YK_ORBIT_FINAL_RADIUS);
-            CHECK(yk_orbit_radius_at(100, &r) && r == YK_ORBIT_FINAL_RADIUS);      /* 到位 */
-            CHECK(yk_orbit_radius_at(101, &r) && r == YK_ORBIT_FINAL_RADIUS);      /* 冻结 */
+            CHECK(yk_orbit_radius_at(1, &r) && r > 2.99f && r < 3.01f);
+            CHECK(yk_orbit_radius_at(10, &r) && r > 29.9f && r < 30.1f);
+            CHECK(yk_orbit_radius_at(19, &r) && r < YK_ORBIT_FINAL_RADIUS);
+            CHECK(yk_orbit_radius_at(20, &r) && r == YK_ORBIT_FINAL_RADIUS);       /* 到位 */
+            CHECK(yk_orbit_radius_at(21, &r) && r == YK_ORBIT_FINAL_RADIUS);       /* 冻结 */
             CHECK(yk_orbit_radius_at(1000000, &r) && r == YK_ORBIT_FINAL_RADIUS);
             CHECK(!yk_orbit_radius_at(10, NULL));
             {   /* 单调不降 + 恒在 [0, FINAL] 内 */
@@ -2424,6 +2477,7 @@ int main(void)
             CHECK(c != a);
         }
     }
+    check_orbit_layout();                   /* ★ 2026-09-30：按台数分圈（8=3+5 / 13=3+5+5 / 其余单圈）*/
     check_beam_member_covers_entry();       /* ★ 第三十三批：束贴图铺满整条 entry 行宽（「一缕一缕」的闸）*/
     check_beam_spec_files();
     check_orbit_gift_ledger();              /* ★ 2026-09-30：绕转使魔「一只敌人只补一次」的判定 */

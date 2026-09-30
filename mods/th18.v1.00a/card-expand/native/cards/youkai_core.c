@@ -1816,6 +1816,48 @@ clamp:
  *（一手 `moveCircle`：`radius = 0` 起、`+0x2db4 = arg3` px/帧、持续 `arg0` 帧后冻结 ——
  * 见 `youkai_core.h` 里那段逐字段证据与三个实算例 `(100,0.64)=64 / (60,0.8333)=50 / (20,3.0)=60`）。
  * ⚠ 出口走指针：返回 float 会经 i686 的 x87 `st(0)` ⇒ `make dllx87` 会红。*/
+int yk_orbit_layout(int count, int k, yk_orbit_layout_t *out)
+{
+    float base;
+    if (!out || count <= 0 || k < 0 || k >= count) return 0;
+    out->ring = 0;
+    if (count == 8 && k >= 3) out->ring = 1;                 /* 8 台 = 3 + 5 */
+    if (count == 13 && k >= 3) out->ring = (k >= 8) ? 2 : 1; /* 13 台 = 3 + 5 + 5 */
+    switch (out->ring) {
+    case 0:
+        /* 第 0 圈：8/13 台时是**内圈**（3 台：半径 30、初角 360/3 = 120° 等分、ω 6°/帧）；
+         * 其它台数时就是**唯一的单圈**（半径 60、ω 6°/帧、初角 360/N 等分）。*/
+        if (count == 8 || count == 13) { base = 3.0f; out->radius = 30.0f; }
+        else { base = (float)count; out->radius = 60.0f; }
+        out->omega_deg = (count == 13) ? -6.0f : 6.0f;       /* 13 台：**内圈反向** */
+        out->phase_deg = 360.0f * (float)k / base;
+        break;
+    case 1:
+        out->radius = 60.0f;                                  /* 中圈（13 台）/ 外圈（8 台）*/
+        out->omega_deg = (count == 8) ? -4.5f : 4.5f;         /* 8 台：外圈反向；13 台：中圈与 外同向 */
+        out->phase_deg = 72.0f * (float)(k - 3);
+        break;
+    default:
+        out->radius = 90.0f;                                  /* 13 台的第 3 圈：与中圈**共用初角** */
+        out->omega_deg = 3.0f;
+        out->phase_deg = 72.0f * (float)(k - 8);
+        break;
+    }
+    return 1;
+}
+
+int yk_orbit_radius_at_r(float final_r, int age, float *out)
+{
+    float r;
+    if (!out) return 0;
+    if (final_r < 0.0f) final_r = 0.0f;
+    if (age <= 0) { *out = 0.0f; return 1; }                  /* 出生贴本体 */
+    if ((unsigned)age >= YK_ORBIT_EXPAND_FRAMES) { *out = final_r; return 1; }   /* 冻结 */
+    r = final_r / (float)YK_ORBIT_EXPAND_FRAMES * (float)age;
+    *out = r;
+    return 1;
+}
+
 int yk_orbit_radius_at(int age, float *out)
 {
     float r;
