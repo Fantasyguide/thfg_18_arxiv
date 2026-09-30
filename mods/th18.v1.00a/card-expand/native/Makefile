@@ -260,6 +260,15 @@ test-host:
 ##   取值 = ❓ 用户口径（UI 统一，**不是复刻**），见 `cards/hud_dim.h` 文件头与 `TUNING.md` §7。
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_hud_dim_core tests/test_hud_dim_core.c cards/hud_dim.c
 	./tests/build/test_hud_dim_core
+## test_input_synth_core —— ★★ 调试件「逐帧合成方向输入」的纯逻辑（`cards/input_synth.h`；**不需要 sdk.h**，
+##   所以主机上直接编，不链任何引擎件）：
+##   ① 默认模式 = 左/松/右/松（含松开帧）；② **半周期镜像不变量**（⇒ 整周期净位移精确为 0，任意 N/M）；
+##   ③ 位域卫生（只碰四个方向位，绝不碰 Z/X/Shift/C/D）；④ 两种动力学各 600 帧的离线位移复算
+##   （A = 一手 TH18 真模型「无惯性」；B = 反事实惯性模型，证明有惯性时每整周期也归零）。
+##   用法与一手依据见 `DEV-INPUT-SYNTH.md`。
+	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_input_synth_core tests/test_input_synth_core.c
+	./tests/build/test_input_synth_core
+
 
 ## x87 自检 —— 只看我们自己的目标文件
 dllx87: $(OBJS)

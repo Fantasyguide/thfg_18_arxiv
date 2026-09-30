@@ -57,6 +57,7 @@
 #include <string.h>
 #include <stdio.h>
 #include "card_expand.h"
+#include "cards/input_synth.h"   /* ★★ 调试件：逐帧合成方向输入（调试键 Ctrl+A）；CE_INPUT_SYNTH_ENABLED=0 时是编译期空壳 */
 #include "thcrap_bp.h"
 #include <stdarg.h>
 #include <stdio.h>
@@ -2367,6 +2368,14 @@ int __cdecl BP_ce_item_frame(x86_reg_t *regs, void *bp_info)
         const float *pp = ce_player_pos();
         if (pp) ce_hud_near_corner_update(pp[0], pp[1]);
     }
+    /* ★★ 2026-09-13 用户要的调试件：**逐帧合成方向输入**（调试键 `Ctrl+A`）。
+     * 为什么放这里：`BP_ce_item_frame` 是**唯一**「每个正常游玩帧一次、且在卡链遍历之前」的点
+     * （`sites.py` 原文；站点预算已 27 > 24 ⇒ **不加新站点**，只在本 handler 体内加一行），
+     * 且**不依赖我们任何卡** ⇒ 可拿**原生卡**做实验（例如原生卡 29「疾風の下駄」的起步无敌）。
+     * ⚠ 行为：不按调试键时**一个字节都不写**（门在 `cards/input_synth.c`；`ENABLED=0` 时整件编译期空壳）。
+     *   详见 `DEV-INPUT-SYNTH.md`。*/
+    ce_input_synth_tick();
+
     unsigned guard = 0;
     for (const uint8_t *node = *(const uint8_t *const *)(mgr + CE_MGR_CARD_LIST_FIRST);
          node && guard < 256;
