@@ -57,15 +57,27 @@ TH07 的这两台**，所以那两支脚本一行都不用改；新脚本 `308`�
   1 texel = 1 **表面 px**（1280×960），而 640 单位 = 2 表面 px ⇒ 想还原原版观感要在脚本里
   `scale(2.0, 2.0)`（先例 = `scripts/302_ufo_hud_slot.anm.txt` 的 Δ4 同一条换算）。
 
-★★ **必须上 colorKey（2026-09-30 修「HUD 样式不对」的根因）** —— 原图是**「纯黑底 + 白字形」**：
-一张 8×12 / 96×16 / 48×16 的图里，**大部分像素是 `(0,0,0, a)`**（数字的格心与四周、标签两字之间那一大条、
-樱花花瓣之间的缝），字形本身才是白的（`ffffff` / 灰）。TH07 那个 anm 的头里写着 **`colorKey: 0x00000000`**
-（`thanm -l 7` 的头几行就是），引擎**把纯黑当透明**画；而 TH18 的图集只有 alpha、**没有 colorKey 通道**
-⇒ 1:1 照抄的结果是**整块黑底被当不透明像素画出来**（数字变成黑方块上的白字、标签变成一条 96×16 的黑条、
-樱花变成黑底粉花）—— 实跑口径就是「HUD 样式不对」。
-⇒ 本脚本在切图后**逐像素做 colorKey**：`r==g==b==0` ⇒ alpha 归 0（**只键纯黑**，灰/半透明像素保持原样：
-标签那层"软投影"就是暗灰，它该留下）。判据：上述三个 sprite 的暗像素**全部**是 `(0,0,0, a)`（a 从 17 到 255），
-没有第二个近黑值 ⇒ 「纯黑 = 背景」这条在数据上无歧义。
+★★ **不许 key 黑（2026-09-30 第八轮·owner 实跑纠错）** —— 原图是**「白字形 + 实黑描边 + 半透明黑投影」**，
+`(0,0,0,a)` 那些像素**就是字形的一部分**，必须**原样画出来**：
+
+| 类别 | 判据（本脚本 2026-09-30 的四分类字符画）| 统计（10 个数字 / 标签 / 樱花143）| 是什么 |
+| --- | --- | --- | --- |
+| 亮 | 亮度 ≥ 128 | 140 / 79 / 108 | 字形本体（白）；樱花=粉（亮度也过 128）|
+| 灰 | 32 ≤ 亮度 < 128 | — | 字形的抗锯齿边 |
+| **实黑** | 亮度 < 32 且 **alpha ≥ 200** | 172 个（中位 α 238）/ 116 / 183 | **描边**（1 px 紧贴字形）|
+| **半透黑** | 亮度 < 32 且 alpha < 200 | 335 个（**中位 α 68**）/ 218 / 84 | **软投影**（1–2 px 外扩的暗晕）|
+
+一手依据：① TH07 `AsciiManager` 每个数字**只画一次**（`0x404a6c` `call 0x44f770`；全库 `0x404690` 只有一个
+调用点 `0x4019ea`）⇒ **没有**独立的描边/shadow 通道，黑色只能来自**贴图本身**；
+② 纹理是带 **alpha 通道**的 32 位格式（`thanm -x` 抽出来的 PNG 的 α 从 17 到 255，且上表两类黑的 α 分布
+就是「描边实、投影虚」）⇒ 引擎按 α 混合即可，不需要 `colorKey`。
+
+⛔ **2026-09-30 第一轮那次「逐像素 key 掉纯黑」是过度修正**（当时把「实黑描边 + 软投影」误读成「纯黑底」）：
+键掉之后**描边与投影一起没了**，实跑就是 owner 这一轮报的「**一手里面 th07 的左下角 HUD 似乎是有黑色描边
+or 引擎侧黑色 shadow 的，但是目前的 UI 看不见明显黑色**」。本脚本已**撤掉** `apply_colorkey()`，
+切出来 = 源图逐像素原样（`D*`/`LABEL`/`BORDER` 与 `thanm -x` 的源矩形**完全相同**）。
+⚠ 顺带纠正一处旧结论：`(0,0,0,a)` **不是**「大部分像素」的黑底，而是**紧贴字形**的一圈（四分类字符画里
+每一行都能看到黑像素都挨着 `#`/`+`）——「黑方块 / 96×16 黑条 / 黑底粉花」是粗分类（只按 α 阈值）看走眼了。
 
 产物：`ability/senro_hud/D0.png`..`D9.png`、`BORDER.png`、`LABEL.png`；
 stdout 打印要追加进 `entries/ORDER.txt` 的两段（`ORDER.senro_hud.txt` 由本脚本**直接写出**，别手改）。
@@ -170,21 +182,6 @@ def pack_rects(crops: list, width_limit: int = 256) -> tuple:
     return out, canvas
 
 
-def apply_colorkey(tile: Image.Image) -> Image.Image:
-    """TH07 的 `colorKey: 0x00000000`：**纯黑 = 透明**（见文件头 ★★ 那一段）。
-
-    TH18 的图集通道只有 alpha、没有 colorKey ⇒ 不在这里键掉的话，原图那层黑底会被当
-    **不透明**画出来（数字 = 黑方块上的白字、标签 = 96×16 的黑条、樱花 = 黑底粉花）。
-    只键**精确的** `(0,0,0)`：灰/半透明像素（标签那层软投影、字形的抗锯齿边）保持原样。"""
-    px = tile.load()
-    for y in range(tile.height):
-        for x in range(tile.width):
-            r, g, b, _a = px[x, y]
-            if r == 0 and g == 0 and b == 0:
-                px[x, y] = (0, 0, 0, 0)
-    return tile
-
-
 def emit(img, rects, crops, atlas: str, prefix: str) -> list:
     """切一组、存图、打印逐张信息，返回要追加进 ORDER.txt 的那几行。"""
     layout, canvas = pack_rects(crops)
@@ -196,10 +193,10 @@ def emit(img, rects, crops, atlas: str, prefix: str) -> list:
         tile = img.crop((x, y, x + sw, y + sh))
         if tile.getbbox() is None:
             raise SystemExit(f"{name}: sprite{sid} {(x, y, sw, sh)} 切出来全透明（矩形抄错了）")
-        apply_colorkey(tile)                     # ★★ TH07 的 colorKey：纯黑 → 透明（见文件头）
-        # 自检：键完之后不该再剩「不透明的纯黑」像素（剩下的黑一律是「没被键掉」= 上面那条规则漏了）
-        if any(p[3] > 0 and p[:3] == (0, 0, 0) for p in tile.get_flattened_data()):
-            raise SystemExit(f"{name}: colorKey 之后仍有纯黑像素（apply_colorkey 失效？）")
+        # ★ 自检（第八轮）：黑像素**必须还在**（描边/投影是字形的一部分）—— 旧版这里反过来要求「键干净」
+        blacks = sum(1 for p in tile.get_flattened_data() if p[3] > 0 and p[:3] == (0, 0, 0))
+        if blacks == 0:
+            raise SystemExit(f"{name}: 一个黑像素都没有 —— 描边/投影被谁 key 掉了？（见文件头 ★★）")
         tile.save(OUT / f"{name}.png")
         ink = sw * sh - tile.getchannel("A").histogram()[0]
         label = [c[3] for c in crops if c[0] == name][0]
