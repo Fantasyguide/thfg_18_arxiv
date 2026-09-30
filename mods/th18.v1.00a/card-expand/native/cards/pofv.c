@@ -34,11 +34,10 @@
  *   全 O(1)：灵力道具那次是「线性找空槽 ≤ 48 次比较」），
  *   真正的消弹在 `on_tick_2` 帧末按 `POFV_STORM_SCANS_PER_FRAME` 的预算做。
  *
- * ★ 长持续效果（CLAUDE.md / METHOD.md 铁律）：本卡跨帧留下的东西 = **暴风场池** + 灵魂池 +
- *   **灵力道具池** + 无敌声明层的一格。四条都在 `clear_card()`
- *   （`on_run_reset` / `on_delete` 共用）里收。
- *   ⚠ 本卡当前**不建任何 ANM VM**（活化灵 / 灵力道具 / 结界的视觉要 ability.anm 新增脚本 ⇒ 资产改动，
- *   见 SPEC §5 第 2 步）⇒ `on_delete` 里没有 VM 要删；**一旦加上 VM 必须在这里删**（见 clear_card 注释）。
+ * ★ 长持续效果（CLAUDE.md / METHOD.md 铁律）：本卡跨帧留下的东西 = **暴风场池** + **灵力道具池**
+ *   （每颗一台跟随 VM）+ **灵**（真敌人 + 每只一台跟随 VM）+ **固灵结界的跟随 VM** + 结界闩锁 +
+ *   无敌声明层的一格。**全部**在 `clear_card()`（`on_run_reset` / `on_delete` 共用）里收
+ *   —— 删卡发生在商店里、那一刻 tick 停着，画面上的 VM 与场上的真敌人不会自己走。
  */
 #include "sdk.h"
 #include "pofv_core.h"
