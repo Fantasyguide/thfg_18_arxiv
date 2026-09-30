@@ -25242,6 +25242,25 @@ owner：「你就别 *3 了，我让你核一下 **th18 和 th08 的 dps 差**�
 块宽仍报 200 ⇒ 与右邻块重叠由 owner 明确接受）。
 **回归**：`make dll` 无警告 · `make test-host` 全绿（发布批次见 `RELEASE-STATE.json`）。
 
+### §BE #151 · 追加 2（2026-09-30 第三轮实跑）：压暗**只压背景**、六芒星长命+缩小、`Border Bonus` 公告
+
+**owner 逐字（第三轮）**：ⓓ「**好像确实压暗，但是压暗的层数是只压暗背景**，目前是包括敌人和子弹也压暗了」·
+ⓔ「**进森罗结界会有一个粉色的六芒星围绕在自机旁边，随着时间逐渐缩小**」·
+ⓕ「**正常退出森罗结界还会从右侧飞过来一个 Border Bonus []**」。
+
+| 项 | 改了什么 | 为什么 |
+| --- | --- | --- |
+| ⓓ 压暗的层 | `SENRO_DIM_LAYER` 19 → **5**、`SENRO_DIM_ENABLE` 回 **1**（脚本 369 的 `layer()` 同步改 5 —— **脚本里的 `layer()` 会盖掉 `ce_anm_spawn` 的第三参**，必须两处一致）| TH18 层 3/4/5 = 背景组（画进 surface 0），`0xf` 才把「游戏区域」拷进游玩区面，层 6–19 才是敌机/子弹/自机（`engine/anm/th18/02-render-stages.md` §1）|
+| ⓔ 六芒星长命 + 缩小 | 新脚本 **371**（= 204 去掉 `iset/wait/delete`），卡侧每帧写 pos（跟自机）/ scale（1.0 → 0.25 / 540 帧）/ rotation（−π/1000）/ color（alpha 0→160 / 30 帧）；204 只留给崩结界 | 一手 `th07:0x441ad5`–`0x441b41`（`[+0xb4]` = 540、from 1.0、to 0.25、`[+0xc8]` = 540）+ `0x4414a2` 每帧写位置；204 的 33 帧自杀与这套数据矛盾，owner 口径 = 按数据本意 |
+| ⓕ `Border Bonus %7d` | 自然结束改发 GUI 公告 **kind 4**（`th07:0x4416dd` → `0x4284b1`，色 `0xffe0b0ff`）；**整套撤掉** TH18 PopupManager 的「自机位置数字飘字」（`senro_popup*` ~40 行 + `SENRO_HUD_COLOR_GOLD`）| 那个飘字是「TH18 画不了文字」前提下的 ❓自定 权宜；`ce_hud_text_ex` 打通后没理由再留（否则屏幕上两个数字）|
+| 顺带 | 樱点满值同样换成公告 **kind 3** `CherryPoint Max!`（`0x428480`，色 `0xffc0b0ff`）| 同上；节流 30 帧不变 |
+
+**共享件影响面**：`assets/ability/scripts/**` **追加** 371（末尾；⚠ 原本申请 370，但同批另一批次先占了
+370 = `youkai_familiar_trail_s71` ⇒ 按 `build_ability.py` 的连续编号要求落 **371**）；`anm_ids.h` /
+`ability.anm` 重新生成（图集矩形与精灵号**一个未动**）；**没有**新增站点、**没有**改 `sdk*` / `sites.py` /
+`Makefile` / 别人的卡。
+**回归**：`make dll` 无警告 · `make test-host` 全绿 · `make check` **exit 0**（含 `check-docs` 407 文件）。
+
 ### §BE #150 · 追加（2026-09-28 第七轮）：**转速减半 + 颜色固定**（owner 实跑两条）
 
 > **owner 逐字**：「**旋转速度太快**，然后**颜色似乎是随机的**」＋「**颜色应当是固定的某一个颜色**，
@@ -25491,6 +25510,58 @@ owner 之后若要，要自己造**边沿 + 迟滞**（❓自定）。
 **逐帧比对结论**：我们切进 `ability.anm` 的 `53..56` 四套与 TH08 原件**逐字节一致 ✅**（所以不是「切漏了拖尾」）；
 **贴图本身没有烤尾巴**（53..56 = 32×32 对称光球，覆盖 344–501 像素；57/58 = 亮核，覆盖 617/… 、且**我们没移植** ——
 原生正文有 v3 专有 `ins_25(1)`，v8 无对应助记符，按纪律不自己编指令）。⇒ 拖尾只能是机制 (b)，不是贴图 (a)。
+
+**闸（原文）**：`make -s check` rc=0（`youkai_core: 8120 checks, 0 failed`；其余各测试 0 failed）、
+`make -s dllx87` ⇒ `x87 in our objects: 0`、`python3 sites.py verify` ⇒ `✅ 全部对上`、
+`python3 native/tools/capcheck.py` ⇒ `capcheck：全绿 ✅`、`python3 tooling/check-docs.py` ⇒ `✓ 全部通过`。
+
+### §BE #150 · 追加（2026-09-28 第十二轮）：**使魔拖尾落地**（owner：「忠于原作就得加拖尾」）
+
+**一、资产**（`assets/ability/`，★ 共享件 ⇒ 影响面见 §二）：
+- 新 sprite **`YOUKAI_FAM_TRAIL` = 571**（`ability.anm` **entry89**，16×16）—— 从 TH08
+  `etama.anm` entry1 `data/etama/etama2.png` 的 **sprite219 = (0, 96, 16, 16)** 原尺寸切出
+  （可见像素 114；16×16 本来就是 2 的幂 ⇒ 不补边），用既有生成器的 `thanm -l/-x` 通道现取
+  （原生字节只在临时目录，仓里不落）；`assets/ability/youkai_familiar/YOUKAI_FAM_TRAIL.png`。
+- 新脚本 **`script370`** = `assets/ability/scripts/370_youkai_familiar_trail_s71.anm.txt` ——
+  `etama.anm` **script71 零翻译**（只换 sprite 名与脚本号）：`sprite(@YOUKAI_FAM_TRAIL)` /
+  `blendMode(1)`（加法）/ `fsetRand(%F0,1.0)` + `fsetAdd(%F0,%F0,1.1)` → `scale` →
+  `scaleTime(20, 0, 0, 0)` / `isetRand($I0,64)` + `isetAdd($I0,$I0,48)` → `alpha` / 三通道
+  `128 + rand(64)` → `color` / **`+20: delete()`**。宏名 `CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_TRAIL_S71`
+  （`make anm` 生成，卡侧不写死数字）。
+- ⚠ 脚本号协商：本轮与**另一支在跑的 senro 工作**撞过号（我先用 370 → 系统要求 371 → 对方把
+  `371_senro_field_long` 放在 371 ⇒ 最终**我 = 370、对方 = 371**，`make anm` 的连续性检查通过）。
+- ⚠ **ORDER 行尾插（2026-09-30 收尾）**：第一版把新行插在 `YOUKAI_FAM_RING` 之后 ⇒ 其后 entry/sprite 号
+  **整体 +1**（`anm_ids.h` 349 行 diff、所有卡的 sprite 号位移）。虽然大家都走宏名（行为零变化），但
+  另一支会话正在实时改 `senro.c` ⇒ 大面积位移只会制造冲突面。**已挪到 `ORDER.txt` 末尾**：
+  既有号**一个不动**，`anm_ids.h` 的 diff 只剩 **+3 行**（我那两个新宏），`YOUKAI_FAM_TRAIL` 拿到
+  **sprite 571 / entry89**；`make anm` 的「原生部分逐 entry/逐 script/逐贴图块一致」与
+  「已定稿 186 数据行未变」仍全过。
+
+**二、卡侧**（`native/cards/youkai.c`，只动卡 108 自己的文件）：
+- `yk_orbit_trail_spawn(x, y)`：在**使魔当前位置**起一支该脚本的 VM、`ce_anm_set_pos` 摆到该点；
+  **不记句柄**（脚本 `+20: delete()` 自删，与 `yk_flash_spawn` 同范式）⇒ **不需要**在 `retire` /
+  `retire_orphan` / `kill_all` / `yk_drop_all` / `on_delete` 里回收（那不是漏收，是脚本自管生命周期）；
+  也**不占**我们自己的 VM 池（`s_orbit[]` / `s_fam_vm[]` 那两套是跟句柄的）。
+- **每台使魔一份节拍**：`yk_orbit_t.trail_t` 每帧 +1，数到 `YK_ORBIT_TRAIL_INTERVAL` 就撒一颗并清零 ——
+  对应一手「开关挂在 `enemy+0x3328`（`flags_hi`）**bit1**，即**每台使魔自己**一份」（不是全局计时）。
+- **只在额外使魔（绕转）上做**：映射使魔那批是我们**自造**的 1:1 发射口载体，没有对应的 ECL 源 sub
+  （`trailFamiliarSet` 命中的全是真使魔 sub）⇒ 不开。
+- **异常路径**：撒点只在「父敌活着」的那条分支里（孤儿宽限那 2 帧、收口之后都**不再撒新的**；
+  已撒的 20 帧内自删）。
+- 间隔 = `YK_ORBIT_TRAIL_INTERVAL`（**❓自定占位 8 帧**：一手 interval 的精确值仍在读，见 §BE #150 第十一轮；
+  **只改这一个常量**）+ `YK_ORBIT_TRAIL_LIFE = 20`（只用于容量估算）。
+
+**三、容量**（`CAPACITY.md`，`capcheck` 全绿）：
+- 新增一行「108 的**拖尾火花 VM**」：同时活着 = 台数 × ⌈20/interval⌉ ⇒ **48 台时 8 帧 = 120 支**、4 帧 = 240、20 帧 = 48；
+  这些 VM 是**引擎侧一次性**的（世界列表链表，非定长池）且**脚本自删** ⇒ 卡侧零回收负担；失败模式 = 起不出 VM（只少观感）。
+- 顺手把 `ability.anm` entry 那一行改成**实测值 90 / 256（余量 166，64.8%）**（旧行写的是 54，早已过时）。
+
+**四、共享件影响面 + 回归**（`assets/ability/**` 属共享资产链）：
+- **只追加**：1 个 entry（entry66）+ 1 个 sprite + 1 条脚本 + 1 个 ORDER 行 ⇒ 既有 entry/sprite/脚本号
+  一个都没动；`make anm-verify` 的「原生部分逐 entry / 逐 script / 逐贴图块一致」与「已定稿的 186 个数据行未变」全过。
+- 回归：`make anm`（含 `verify_rebuilt` + 追加脚本的越界 / `scriptNew` / 源脚本对齐 / 主路径 delete 检查）✅、
+  `make -s check`（含 `anm-check` / `anm-verify` / `sht-verify` / `snd-check`）✅、`dllx87` = 0、
+  `sites.py verify` 213 条 ✅、`capcheck` 全绿 ✅、`check-docs` 407 文件 ✅。
 
 **闸（原文）**：`make -s check` rc=0（`youkai_core: 8120 checks, 0 failed`；其余各测试 0 failed）、
 `make -s dllx87` ⇒ `x87 in our objects: 0`、`python3 sites.py verify` ⇒ `✅ 全部对上`、

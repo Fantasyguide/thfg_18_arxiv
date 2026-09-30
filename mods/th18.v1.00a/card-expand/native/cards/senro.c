@@ -186,11 +186,19 @@
  *        （整串宽度与 TH07 相同；❓ 待实跑微调，登记 `TUNING.md` §2.0u）。
  *        ⚠ TH07 的 `y=168` 是**字形上沿**，而 TH18 的 ASCII 垂直锚默认就是「顶」（`+0x134 = 1`）
  *        ⇒ **直接写 168**（若实跑发现偏高/偏低，只需调 `SENRO_TEXT_Y` 一个数）。*/
-#define SENRO_DIM_ENABLE            0       /* ⛔ owner 2026-09-30：「整个画面暗下来了，肯定不太对」⇒ 关。
-                                             *   理由与「原版那条触发值很可能是恒 0（= 原版根本不压暗）」
-                                             *   写在文件上方 ① 那段；要重新试就改 1（曲线与载体都在）。*/
+#define SENRO_DIM_ENABLE            1       /* ★ 2026-09-30 第三轮：**重新打开**（owner 逐字：「好像确实压暗，
+                                             *   但是压暗的层数是**只压暗背景**，目前是包括敌人和子弹也压暗了」）
+                                             *   ⇒ 开回来，并把载体从「游玩区最上层」挪到**背景组最上层（层 5）**，
+                                             *   见 `SENRO_DIM_LAYER`。第二轮那句「整个画面暗下来不太对」由此收口：
+                                             *   原版确实压暗，只是**只压背景**。*/
 #define SENRO_DIM_RAMP              30      /* 两头各 30 帧的斜坡（一手 0x44158d 段的 30/510/540）*/
-#define SENRO_DIM_LAYER             19      /* 游玩区最上层（绘制桩优先级 0x2b；别用 24/25，那会连 HUD 一起压暗）*/
+#define SENRO_DIM_LAYER             5       /* ★★ **只压背景**：TH18 的层 3/4/5 = **背景组**（绘制桩优先级
+                                             *   0xa/0xb/0xd，画进 surface 0），随后优先级 **0xf** 才把这片
+                                             *   「游戏区域」拷进游玩区面；**敌机/子弹/自机在层 6–19**（0x10 起，
+                                             *   画在拷贝之后）⇒ 层 5 的遮罩正好只盖背景、不盖它们（层表见
+                                             *   `engine/anm/th18/02-render-stages.md` §1）。
+                                             *   ⚠ 旧值 19（= 游玩区最上层）会把敌人与子弹一起压暗 = owner 第三轮
+                                             *   报的现象；层 24/25 更不行（会连 HUD 一起压暗）。*/
 #define SENRO_DIM_G_FULL            0x80    /* g 的满值 = 128（乘子 1.0）*/
 #define SENRO_DIM_G_HOLD            0x30    /* 稳态 g = 48（0x30）⇒ 乘子 0.375 */
 #define SENRO_TEXT_LIFE             180     /* 一手 0x42b2cc 的 0xb4 */
@@ -198,9 +206,17 @@
 #define SENRO_TEXT_Y                168.0f  /* 一手 0x498b30 */
 #define SENRO_TEXT_X_START          416.0f  /* 一手 0x498a74 */
 #define SENRO_TEXT_X_END            104.0f  /* 一手 0x498bb8 */
-#define SENRO_TEXT_COLOR            0xffe0b0ffu  /* 一手 ds:0x13542d8（D3DCOLOR 0xAARRGGBB）*/
+#define SENRO_TEXT_COLOR            0xffe0b0ffu  /* 一手 ds:0x13542d8（kind 2 = 展开文字 / kind 4 同色）*/
+#define SENRO_TEXT_COLOR_MAXED      0xffc0b0ffu  /* 一手 0x428480（kind 3 = `CherryPoint Max!`）*/
 #define SENRO_TEXT_SCALE            1.4f    /* = 12.6 / 9（TH07 步进 ÷ TH18 font0 步进）；❓ 待实跑微调 */
 #define SENRO_TEXT_STR              "Supernatural Border!!"
+/* 公告 kind（TH07 是**单槽互斥**：新公告直接顶掉旧的，`th07:0x427c81` 每次都重置 pos/计时器）。
+ *   kind 2 = 展开（`th07:0x441b7a`）· kind 3 = `CherryPoint Max!`（`0x42f696`/`0x42f72d`）
+ *   · kind 4 = `Border Bonus %7d`（`0x4416dd`）。三者共用同一套位置/滑入/寿命（`0x42b278`–`0x42b2cc`）。*/
+#define SENRO_MSG_NONE              0
+#define SENRO_MSG_BORDER            1
+#define SENRO_MSG_BONUS             2
+#define SENRO_MSG_MAXED             3
 #define SENRO_FLASH_RED             0xffff0000u  /* 一手 th07:0x441574（`% 4 < 2` 取红）*/
 #define SENRO_FLASH_WHITE           0xffffffffu
 
@@ -378,15 +394,11 @@
 #define SENRO_HUD_COLOR_CHERRY       0xffffffffu   /* 白 */
 #define SENRO_HUD_COLOR_MAX          0xfff0d0e0u   /* RGB(0xF0,0xD0,0xE0) 最大樱点那一行的色（`th07:0x404aad`–`0x404ac1`）*/
 #define SENRO_HUD_COLOR_PLUS_IDLE    0xffc080b0u   /* RGB(0xC0,0x80,0xB0) 樱粉（结界外的 +C 指示器）*/
-/* 樱点满最大樱点 / 自然结束 Bonus 的飘字：用原生那个「金黄」。 */
-#define SENRO_HUD_COLOR_GOLD         0xffffd080u   /* RGB(0xFF,0xD0,0x80)（= 原生满值色）*/
-
 /* 诊断日志间隔（游玩帧）。*/
 #define SENRO_LOG_EVERY             600
-/* 「樱点满值」飘字的最小间隔（th07 每加一次都飘，0x42f679；这里节流防刷屏）。*/
+/* 「樱点满值」公告（`CherryPoint Max!`，kind 3）的最小间隔：TH07 每加一次都发（`0x42f679`），
+ * 这里节流防刷屏（❓自定，30 帧；登记 `TUNING.md` §2.0u-2）。*/
 #define SENRO_MAXED_POPUP_GAP       30
-/* ~~倍率弹字的第二行恒 1.0~~ —— **2026-09-18 已删**：那会让屏幕出现「BONUS 1.0」
- * （用户两次实跑都报「bonus 1.0」）。现在改走**数字槽**（只一行数字），见 `senro_popup()` 的注释。*/
 
 /* ==================== ★ 结界的「看得见的那一半」：两个世界层 VM（2026-09-12 补）====================
  *
@@ -455,9 +467,25 @@
 #define SENRO_RING_DEN              30.0f
 /* 甲的自杀帧数（脚本 204：`iset($I0,32); +1: wait($I0); delete()` ⇒ 第 33 帧）。C 侧只用来清句柄。 */
 #define SENRO_FIELD_LIFE            33
+/* ★★ 2026-09-30 第三轮（owner）：「**进森罗结界会有一个粉色的六芒星围绕在自机旁边，随着时间逐渐缩小**」
+ *   —— 开结界走**长命环**（脚本 **371**，= 204 去掉自杀），卡侧每帧写四个量。
+ *   一手参数全部在 `th07:0x441ad5`–`0x441b41`（发动时 C 侧给这台 effect VM 的插值通道）：
+ *     · `[vm+0xb4]`（插值计时）= **结界全长 540**、`[+0x218/+0x21c] = 1.0f`（from）、
+ *       `[+0x220/+0x224] = **0.25f**`（to）、`[+0xc8] = 540` ⇒ 线性 **1.0 → 0.25 / 540 帧**；
+ *     · 自转反向（`[+0x14] ×= -1.0f`，`0x498b5c` = −1.0）⇒ 脚本 204 那个正 π/1000 取负；
+ *     · 位置：`Player::sub_441330` 每帧写 `[player+0xb7e6c]+0x24c`（`0x4414a2`–`0x4414bd`）
+ *       ⇒ **环跟着自机走**（观感 = 绕在自机旁边）；
+ *     · 淡入：脚本 `alphaTime(30,0,160)`（0 → 160 / 30 帧）——TH18 侧同样由卡侧逐帧写
+ *       （不依赖 `stop()` 之后插值器还跑不跑，见脚本 371 的注）。*/
+#define SENRO_FIELD_LONG_SCALE_FROM   1.0f
+#define SENRO_FIELD_LONG_SCALE_TO     0.25f
+#define SENRO_FIELD_LONG_ALPHA         160
+#define SENRO_FIELD_LONG_ALPHA_FRAME    30
+#define SENRO_FIELD_LONG_SPIN       (-0.0031415927f)   /* −π/1000 per 帧（反向）*/
 /* pending 位（死亡栈里只置位、tick 里兑现）。 */
 #define SENRO_FX_PEND_FIELD         1
 #define SENRO_FX_PEND_RING          2
+#define SENRO_FX_PEND_FIELD_LONG    4      /* ★ 第三轮：开结界的**长命环**（371）；崩结界仍走 204 */
 
 /* 32 颗的方向表：`(cos(ang), sin(ang))`，`ang = -π + i × (2π/32)` —— **编译期常量**，不在运行时算三角函数
  * （原生那两条是 C 侧 `fcos`/`fsin`；我们这边照数值抄成表 ⇒ 卡侧零 x87，`make dllx87` 的不变式不动）。
@@ -497,8 +525,9 @@ typedef struct {
     int32_t          collect_log_at;    /* 结界自动收点的日志节流 */
     int32_t          hit_cancel_pending;/* 中弹灵击的消弹待补做（下一帧 flush；理由见 senro_do_libyou）*/
     /* ---- ★ 结界特效（世界层 VM，见文件中部那段长注）---- */
-    uint32_t         fx_field_id;       /* 甲：结界展开那个大环（脚本 204）的 VM 句柄 */
-    int32_t          fx_field_frame;    /* 甲的帧计数（≥ SENRO_FIELD_LIFE 就清句柄）*/
+    uint32_t         fx_field_id;       /* 甲：结界那个大环的 VM 句柄（开结界 = 371 长命 / 崩结界 = 204）*/
+    int32_t          fx_field_frame;    /* 甲的帧计数（长命环用它推 scale/alpha；204 用它到 33 帧清句柄）*/
+    int32_t          fx_field_long;     /* ★ 1 = 长命环（371，跟自机 + 缩放到 0.25）/ 0 = 一次性 204 */
     uint32_t         fx_ring_id[SENRO_RING_UNITS];  /* 乙：32 颗（脚本 205）*/
     int32_t          fx_ring_frame;     /* 乙的帧计数（32 颗同帧起 ⇒ 共用一个）*/
     int32_t          fx_ring_live;      /* 1 = 这一批还活着 */
@@ -512,7 +541,9 @@ typedef struct {
     int32_t          dim_warned;        /* 「压暗 VM 起不来」只报一次 */
     uint8_t          body_tinted;       /* 自机本体色被本卡改过（退出结界要还原）*/
     uint32_t         body_c1, body_c2;  /* 改动前的原始色（还原用）*/
-    int32_t          text_age;          /* 「Supernatural Border!!」的年龄；< 0 = 不画 */
+    int32_t          text_age;          /* 公告的年龄；< 0 = 不画（TH07 是**单槽**：新公告顶掉旧的）*/
+    int32_t          text_kind;         /* SENRO_MSG_*（0 = 无）*/
+    int32_t          text_value;        /* kind 4（`Border Bonus %7d`）的那个数 */
     int32_t          text_count;        /* 诊断：本局播了几次 */
     int32_t          stat_collect;      /* 诊断：结界期间自动收点总数 */
     int32_t          stat_gain_item;    /* 诊断：道具通道加的樱点总数 */
@@ -664,52 +695,13 @@ static void senro_cancel_impending_death(void)
  * th07 的最大樱点初值按难度查表（`th07:0x42eb7a`–`0x42ec57`），本卡照搬同一张表。*/
 static int senro_difficulty(void) { return *(volatile int32_t *)SENRO_ADDR_DIFFICULTY; }
 
-/* ---- 飘字（TH18 原生 PopupManager 的**数字槽** k0–12；字段语义一手见 engine.h 的
- * `CE_POPUP_*` 注，逐字段照 `cards/mof.c` 的 `mof_popup_number()` 同族抄）----
- *
- * ★★ 2026-09-18（用户实跑「又出现 bonus 1.0」）：**原来这里写的是倍率槽（k13–17）**，
- *   理由是「TH18 只有 `%d` + `BONUS %.1f` 两种格式，表达不出 th07 的 `Border Bonus %7d`
- *   （`th07:0x4416dd` kind=4）⇒ Bonus 分放进 `%d` 行、第二行恒 1.0」——**那是错的**：
- *   倍率槽**永远画两行**，于是屏幕上出现「22220 / **BONUS 1.0**」这种读不通的东西
- *   （×1.0 的 bonus = 没有 bonus），用户两次报的「bonus 1.0」都是它。
- *   ⇒ 改用**数字槽**：只画一行数字（= 那笔奖励分），不再有第二行。
- *   ⚠ th07 原版那一行是**文字 + 数字**（`Border Bonus %7d`）；TH18 这条弹字路径画不了文字
- *     ⇒ 这里只保留数字（❓ 自定：要完全复刻得把 "Border Bonus" 做成 anm 贴图另起一台 VM，
- *     登记在 `TUNING.md` §2.7 的待办里）。*/
-static int senro_popup(const float *pos, int32_t value, uint32_t color)
-{
-    uint8_t *mgr = CE_POPUP_MGR();
-    int k;
-
-    if (!mgr || !pos) return 0;
-    for (k = 0; k < CE_POPUP_NUM_SLOTS; ++k) {
-        uint8_t *s2 = mgr + CE_POPUP_RING + (size_t)k * CE_POPUP_STRIDE;
-        if (*(uint8_t *)(s2 + CE_POPUP_BUSY)) continue;              /* 占着：引擎自己会回收 */
-        *(int32_t *)(s2 + CE_POPUP_AGE - 4) = -1;
-        *(int32_t *)(s2 + CE_POPUP_AGE) = 0;
-        *(int32_t *)(s2 + CE_POPUP_AGE + 4) = 0;
-        if (!(*(uint32_t *)(s2 + 0x30) & 1u)) {                       /* 动画类标志 bit0（照 adder）*/
-            *(uint32_t *)(s2 + 0x30) |= 1u;
-            *(int32_t *)(s2 + 0x2c) = 0;
-        }
-        *(float *)(s2 + CE_POPUP_POS) = pos[0];
-        *(float *)(s2 + CE_POPUP_POS + 4) = pos[1];
-        *(float *)(s2 + CE_POPUP_POS + 8) = pos[2];
-        *(float *)(s2 + 0x18) = 1.0f;                                 /* scale（弹出动画起点）*/
-        *(uint32_t *)(s2 + CE_POPUP_COLOR) = color;
-        *(int32_t *)(s2 + CE_POPUP_VALUE) = value;   /* 数字槽：draw 只画这一行（`%d`）*/
-        *(uint8_t *)(s2 + CE_POPUP_BUSY) = 1;
-        return 1;
-    }
-    return 0;
-}
-
-static void senro_popup_at_player(int32_t value, uint32_t color)
-{
-    const float *pp = ce_player_pos();
-    if (pp) (void)senro_popup(pp, value, color);
-}
-
+/* ---- ⛔ 旧「自机位置飘字」（TH18 PopupManager 的数字槽）已于 2026-09-30 第三轮**整套撤掉** ----
+ * 历史：`bonus 1.0` 两次实跑 ⇒ 2026-09-18 从倍率槽改成数字槽（只画一行数字）——但那是「TH18 画不了文字」
+ * 那个前提下的 ❓自定 权宜。第三轮 owner 点出原版那一刻的**文字**（`Border Bonus []` 从右侧飞过来），
+ * 而 `ce_hud_text_ex` 这条路已经打通（`SENRO_MSG_*`）⇒ 两处飘字全部换成一手公告：
+ *   · 自然结束 = kind 4 `Border Bonus %7d`（`th07:0x4416dd`）→ `senro_text_post(s, SENRO_MSG_BONUS, …)`
+ *   · 樱点满值 = kind 3 `CherryPoint Max!`（`0x42f696`/`0x42f72d`）→ `SENRO_MSG_MAXED`
+ * 复核记录：`TUNING.md` §2.0u-2 / `AUDIT.md` §BE #151 追加。*/
 /* ============================ ★ 结界特效：两个世界层 VM ============================
  * 全部一手依据（逐指令 + 地址）在文件中部那段长注里，这里只写「怎么落地」。
  * ⚠️ 三个铁律：① **建** VM 只在 tick / 帧末（死亡栈里只置 pending）；
@@ -721,25 +713,55 @@ static void senro_fx_field_kill(senro_card_t *s)
 {
     if (s->fx_field_id) { ce_anm_delete(s->fx_field_id); s->fx_field_id = 0; }
     s->fx_field_frame = 0;
+    s->fx_field_long = 0;
 }
 
 /* 甲：在 `pos` 起一个（照 `th07:0x441aa4`/`0x441c19`：**先杀旧的再起新的**，见 `th07:0x441be5`）。
- * 立刻摆一次位置（世界层 (0,0,0) = 场地正中 ⇒ 不摆会先在正中闪一帧）。 */
-static void senro_fx_field_spawn(senro_card_t *s, const float *pos)
+ * 立刻摆一次位置（世界层 (0,0,0) = 场地正中 ⇒ 不摆会先在正中闪一帧）。
+ * ★ 2026-09-30 第三轮：`long_mode` 选脚本 —— **开结界 = 371（长命环，跟自机 + 缩到 0.25）**、
+ *   **崩结界 = 204（原脚本，33 帧自杀的那一闪）**；两条路都保持「先杀旧的再起新的」原样。*/
+static void senro_fx_field_spawn(senro_card_t *s, const float *pos, int long_mode)
 {
     uint32_t id;
+    int script = long_mode ? CE_ANM_ABILITY_SCRIPT_SENRO_FIELD_LONG : SENRO_ANM_SCRIPT_FIELD;
 
     senro_fx_field_kill(s);
-    id = ce_anm_spawn(CE_ABILITY_ANM(), SENRO_ANM_SCRIPT_FIELD, SENRO_FIELD_ANM_LAYER);
+    id = ce_anm_spawn(CE_ABILITY_ANM(), script, SENRO_FIELD_ANM_LAYER);
     if (!id) {
         ce_log("senro: 结界环 VM 起不来（脚本 %d、层 %d）—— 机制不受影响，只是这一半看不见",
-               SENRO_ANM_SCRIPT_FIELD, SENRO_FIELD_ANM_LAYER);
+               script, SENRO_FIELD_ANM_LAYER);
         return;
     }
     s->fx_field_id = id;
     s->fx_field_frame = 0;
+    s->fx_field_long = long_mode ? 1 : 0;
     ++s->stat_fx_field;
     if (pos) (void)ce_anm_set_pos(id, pos[0], pos[1], 0.0f);
+}
+
+/* 长命环每帧（脚本 371）：pos **跟自机** / scale **1.0 → 0.25** / rotation **−π/1000 per 帧** /
+ * color **alpha 0 → 160**（全部一手，见 `SENRO_FIELD_LONG_*` 那段注）。返回 0 = VM 已不在（调用方清句柄）。*/
+static int senro_fx_field_long_tick(senro_card_t *s)
+{
+    uint32_t id = s->fx_field_id;
+    const float *pp;
+    float k, sc;
+    int32_t f = s->fx_field_frame;
+    uint32_t a;
+
+    if (!id || !ce_anm_get_vm(id)) return 0;
+    pp = ce_player_pos();
+    if (pp) (void)ce_anm_set_pos(id, pp[0], pp[1], 0.0f);
+    k = (float)f / (float)SENRO_BORDER_FRAMES;
+    if (k > 1.0f) k = 1.0f;
+    sc = SENRO_FIELD_LONG_SCALE_FROM + (SENRO_FIELD_LONG_SCALE_TO - SENRO_FIELD_LONG_SCALE_FROM) * k;
+    (void)ce_anm_set_scale(id, sc, sc);
+    (void)ce_anm_set_rotation(id, 0.0f, 0.0f, SENRO_FIELD_LONG_SPIN * (float)f);
+    a = (f >= SENRO_FIELD_LONG_ALPHA_FRAME)
+            ? (uint32_t)SENRO_FIELD_LONG_ALPHA
+            : (uint32_t)((SENRO_FIELD_LONG_ALPHA * f) / SENRO_FIELD_LONG_ALPHA_FRAME);
+    (void)ce_anm_set_color(id, (a << 24) | 0x00ffffffu);   /* 色 = 白（一手 spawn 的色参 = −1）*/
+    return 1;
 }
 
 /* 乙：收掉那 32 颗（**只看句柄**：`on_ctor` / `on_run_reset` 之后颜色之类的字段已经没意义）。 */
@@ -786,7 +808,8 @@ static void senro_fx_flush(senro_card_t *s)
 
     if (!s || !s->fx_pending) return;
     pp = ce_player_pos();                       /* 一手：原生取起效那一刻的 `player+0x930` */
-    if (s->fx_pending & SENRO_FX_PEND_FIELD) senro_fx_field_spawn(s, pp);
+    if (s->fx_pending & SENRO_FX_PEND_FIELD_LONG) senro_fx_field_spawn(s, pp, /*long_mode=*/1);
+    else if (s->fx_pending & SENRO_FX_PEND_FIELD) senro_fx_field_spawn(s, pp, /*long_mode=*/0);
     if (s->fx_pending & SENRO_FX_PEND_RING) senro_fx_ring_spawn(s, pp);
     s->fx_pending = 0;
 }
@@ -801,8 +824,14 @@ static void senro_fx_tick(senro_card_t *s)
     if (!s) return;
     if (s->fx_field_id) {
         ++s->fx_field_frame;
-        if (s->fx_field_frame >= SENRO_FIELD_LIFE || !ce_anm_get_vm(s->fx_field_id))
-            senro_fx_field_kill(s);
+        if (s->fx_field_long) {
+            /* 长命环（371）：跟自机 + 缩到 0.25 / 540 帧；**结界一结束就收**（原版那台 VM 的插值
+             * 本来就是按结界长度配的，结界没了它也就没意义了）。*/
+            if (!senro_border_active(&s->st) || !senro_fx_field_long_tick(s))
+                senro_fx_field_kill(s);
+        } else if (s->fx_field_frame >= SENRO_FIELD_LIFE || !ce_anm_get_vm(s->fx_field_id)) {
+            senro_fx_field_kill(s);      /* 204 第 33 帧自杀 ⇒ 这里清句柄（自愈）*/
+        }
     }
     if (!s->fx_ring_live) return;
     ++s->fx_ring_frame;
@@ -943,6 +972,7 @@ static void senro_period_clear(senro_card_t *s)
         s->body_tinted = 0;
     }
     s->text_age = -1;
+    s->text_kind = SENRO_MSG_NONE;
 }
 
 /* 展开文字（TH07 GUI 公告 kind 2）—— ⚠ **只能在 `on_draw` 里调**（`ce_hud_text_ex` 的硬约束：
@@ -951,15 +981,41 @@ static void senro_text_draw(const senro_card_t *s)
 {
     float x;
 
-    if (!s || s->text_age < 0) return;
+    if (!s || s->text_age < 0 || s->text_kind == SENRO_MSG_NONE) return;
     x = (s->text_age < SENRO_TEXT_SLIDE)
             ? SENRO_TEXT_X_START
                   - (SENRO_TEXT_X_START - SENRO_TEXT_X_END) * (float)s->text_age / (float)SENRO_TEXT_SLIDE
             : SENRO_TEXT_X_END;
-    ce_hud_text_ex(x, SENRO_TEXT_Y, SENRO_TEXT_COLOR, 0u,
-                   0,                            /* font 0 = `sprite(char − 0x20)`：唯一含小写与 `!` 的字形集 */
-                   0,                            /* group 0 的绘制趟跑在本卡 on_draw 之后（03-ascii-text §2d）*/
-                   CE_ASCII_ALIGN_LEFT, SENRO_TEXT_SCALE, SENRO_TEXT_STR);
+    /* font 0 = `sprite(char − 0x20)`：唯一含小写与 `!` 的字形集；group 0 的绘制趟跑在本卡 on_draw 之后
+     * （`engine/anm/th18/03-ascii-text.md` §2d）。三种 kind 共用同一套位置/滑入（一手 `0x42b278`–`0x42b2cc`）。*/
+    switch (s->text_kind) {
+    case SENRO_MSG_BONUS:
+        /* kind 4（`th07:0x4416dd` → `0x4284b1`）：`Border Bonus %7d`，色同 kind 2（`0x4284cf` = 0xffe0b0ff）。*/
+        ce_hud_text_ex(x, SENRO_TEXT_Y, SENRO_TEXT_COLOR, 0u, 0, 0, CE_ASCII_ALIGN_LEFT, SENRO_TEXT_SCALE,
+                       "Border Bonus %7d", (int)s->text_value);
+        break;
+    case SENRO_MSG_MAXED:
+        /* kind 3（`0x42f696`/`0x42f72d` → `0x428480`）：`CherryPoint Max!`，色 `0xffc0b0ff`。*/
+        ce_hud_text_ex(x, SENRO_TEXT_Y, SENRO_TEXT_COLOR_MAXED, 0u, 0, 0, CE_ASCII_ALIGN_LEFT, SENRO_TEXT_SCALE,
+                       "CherryPoint Max!");
+        break;
+    default:
+        /* kind 2（`th07:0x441b7a` → `0x428414`）：`Supernatural Border!!`。*/
+        ce_hud_text_ex(x, SENRO_TEXT_Y, SENRO_TEXT_COLOR, 0u, 0, 0, CE_ASCII_ALIGN_LEFT, SENRO_TEXT_SCALE,
+                       SENRO_TEXT_STR);
+        break;
+    }
+}
+
+/* 发一条公告（TH07 `0x427c81` 的语义：**单槽**——新公告直接顶掉旧的，pos/计时器重置）。
+ * 只允许在「非绘制相位」调（它只写本卡状态）；真正画在 `on_draw`（`senro_text_draw`）。*/
+static void senro_text_post(senro_card_t *s, int kind, int32_t value)
+{
+    if (!s) return;
+    s->text_kind = kind;
+    s->text_value = value;
+    s->text_age = 0;
+    ++s->text_count;
 }
 
 /* 把纯逻辑累积的事件变成表现 + 日志（每次入账之后与每帧各调一次；事件取走即清）。*/
@@ -972,11 +1028,12 @@ static void senro_handle_events(ce_card_t *c, senro_card_t *s, int ev)
          * ⚠️ 这里只**置 pending**，真正的 `ce_anm_spawn` 在 `on_tick_2` 尾部兑现：
          *    本函数也会从断点回调（`on_item_collect` / `on_shot_damage_any`）里被调到，
          *    而「建 VM = 分配」这件事只在 tick / 帧末做（ufo.c 的死亡栈纪律）。 */
-        s->fx_pending |= SENRO_FX_PEND_FIELD;
-        /* ★ 2026-09-30：同时起**展开文字**（TH07 GUI 公告 kind 2 = `Supernatural Border!!`，
-         *   一手 `th07:0x441b7a` 就在同一个尾段里、紧跟环的句柄）。年龄 0 起、`on_draw` 里推进。*/
-        s->text_age = 0;
-        ++s->text_count;
+        /* ★ 第三轮：开结界起的是**长命环**（脚本 371：跟自机、540 帧里从 1.0 缩到 0.25），
+         *   不再是那个 33 帧就自杀的 204（204 留给崩结界那一闪）。*/
+        s->fx_pending |= SENRO_FX_PEND_FIELD_LONG;
+        /* 展开文字（TH07 GUI 公告 kind 2 = `Supernatural Border!!`；一手 `th07:0x441b7a` 就在同一个
+         * 尾段里、紧跟环的句柄）——`senro_text_post` 会按「单槽」语义顶掉上一条公告。*/
+        senro_text_post(s, SENRO_MSG_BORDER, 0);
         ce_play_sound(SENRO_SE_BORDER_OPEN, ce_player_x());
         /* ★ 2026-09-20：一手在**同一支**里连播两枚（`th07:0x441b91` 紧接着 `0x441b9f`）⇒ 这里照抄时序。*/
         ce_play_sound(SENRO_SE_BORDER_OPEN2, ce_player_x());
@@ -996,14 +1053,22 @@ static void senro_handle_events(ce_card_t *c, senro_card_t *s, int ev)
         /* 结算表现照一手（`th07:0x441670`）：分数 += (樱点 − 基准)、Border Bonus 飘字、SE。*/
         ce_add_score_delta(s->st.last_bonus);
         ce_play_sound(SENRO_SE_BORDER_END, ce_player_x());
-        senro_popup_at_player(s->st.last_bonus, SENRO_HUD_COLOR_GOLD);
+        /* ★ 第三轮（owner）：「正常退出森罗结界还会从右侧飞过来一个 `Border Bonus []`」——
+         *   一手 = TH07 GUI 公告 **kind 4**（`th07:0x4416dd` push 0x4 → `0x4284b1` 的 `Border Bonus %7d`，
+         *   色 `0xffe0b0ff`、位置/滑入/180 帧寿命与另外三条公告同一套）。
+         *   ⚠ 原来是「自机位置一个数字飘字」（`senro_popup_at_player`，❓自定 的老权宜）⇒ **撤掉**：
+         *   原版这一刻只有这一条公告，留着会变成两个数字。*/
+        senro_text_post(s, SENRO_MSG_BONUS, s->st.last_bonus);
         ce_log("senro: 结界自然结束 → 樱点 %d / 最大樱点 %d，Border Bonus +%d",
                (int)s->st.cherry, (int)s->st.cherry_max, (int)s->st.last_bonus);
     }
     if (ev & SENRO_EV_CHERRY_MAXED) {
+        /* ★ 第三轮顺带订正：这里原来也是「自机位置的数字飘字」（❓自定）；一手是 TH07 GUI 公告
+         *   **kind 3** = `CherryPoint Max!`（`0x42f696`/`0x42f72d` → `0x428480`，色 `0xffc0b0ff`）
+         *   ⇒ 换成同一条文字通道（节流沿用原来的 30 帧，防刷屏；节流值登记在 `TUNING.md` §2.0u-2）。*/
         if (s->frame - s->maxed_popup_at >= SENRO_MAXED_POPUP_GAP) {
             s->maxed_popup_at = s->frame;
-            senro_popup_at_player(s->st.cherry, SENRO_HUD_COLOR_GOLD);
+            senro_text_post(s, SENRO_MSG_MAXED, 0);
         }
     }
 }
