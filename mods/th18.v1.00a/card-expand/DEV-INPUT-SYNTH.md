@@ -2,6 +2,23 @@
 
 > **版本**：TH18 v1.00a（`th18.exe`，imagebase `0x400000`）。本文裸地址默认属该版本。
 
+## ★★ 当前状态（2026-09-13）：**已拆线**，代码留档
+
+owner 口径：「**那个无敌脚本空格的都拆掉，代码保留，注释一下这是什么**」⇒
+
+- **拆掉的**：站点 `ce_input_synth`（`th18:0x462966`，`sites.py`）、`sdk.c` 的 handler
+  `BP_ce_input_synth`、`sdk.h` on_draw 桩里的状态字调用、`sdk_core.h` 的入口原型
+  —— 现在**不装断点、不写输入、不画 GUI**（`sites.py` 记账随之回落 **34 → 33**、进程级 54 → 53）。
+- **保留的**：`cards/input_synth.{h,c}`（纯逻辑 + 逐帧掩码 + 绘制，**全部代码**）、
+  单测 `tests/test_input_synth_core.c`（仍进 `make test-host`）、以及本文档。
+- **重挂三步**：
+  1. `native/sites.py`：取消站点条目与 `CE_BP_INPUT_SYNTH_RVA` 的注释（记账 +1，`SITE_BUDGET` 是记账线）；
+  2. `native/sdk.c`：取消 `#if 0 … #endif`（handler）、`#include`、`bps[]` 那一行的注释；
+  3. `native/sdk_core.h` 的原型 + `native/sdk.h` on_draw 桩里的 `ce_input_synth_draw();` 取消注释。
+  然后 `make check`（`sites.py` 会重算站点与 `sites_gen.h`/`.def`/`patch/*.js`）。
+- ⚠ 拆线的意义：这件**只为做那个实验**（原生卡 29 刷永久无敌），实验做完就不该常驻在发布版里；
+  重挂后要**重开游戏**才生效。
+
 ## 0. 这是什么、为什么有它
 
 用户 2026-09-13 口径：

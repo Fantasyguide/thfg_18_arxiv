@@ -920,9 +920,10 @@ typedef void (CE_TC *ce_base_del_t)(void *, uint32_t);
     CE_STUB1(ID, on_hud_anm, 0x44, uint32_t) \
     static int CE_TC ce_s_##ID##_on_draw(void *self) { \
         ce_sdk_trace(ID, 0x48, "on_draw"); \
-        /* ★★ 调试件「逐帧合成方向输入」的状态字（**平时常驻**；回放/商店/无自机时不画）。 \
-         *   必须在 on_draw 的桩里调 —— `ce_hud_text` 只允许在虚表 +0x48 里用。*/ \
-        ce_input_synth_draw(); \
+        /* ★ 2026-09-13 **已拆线**：调试件「逐帧合成方向输入」的状态字不再画 \
+         *   （原为：平时常驻、回放/商店/无自机不画；代码保留在 cards/input_synth.{h,c}）。 \
+         *   重挂时把下面这行取消注释即可（`ce_hud_text` 只允许在虚表 +0x48 里用）。*/ \
+        /* ce_input_synth_draw(); */ \
         ce_sdk_damage_hud_draw(ID); \
         return ce_hooks_##ID.on_draw ? ce_hooks_##ID.on_draw((ce_card_t *)self) : 0; } \
     static void CE_TC ce_s_##ID##_on_run_reset(void *self) { \

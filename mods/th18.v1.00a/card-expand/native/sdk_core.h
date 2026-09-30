@@ -629,7 +629,10 @@ uint32_t ce_sdk_frame(void);                   /* 只读当前帧号 */
  *     `DEV-INPUT-SYNTH.md` §4）；写入现由 `sdk.c` 的站点 handler `BP_ce_input_synth` 做。
  * 本件只回答"这一帧该写什么"，**handler 负责写 `INPUT_HELD`**；`CE_INPUT_SYNTH_ENABLED = 0` 时是空壳。
  * 默认（不按调试键 / 回放中 / 商店冻结帧 / 无自机）⇒ `*write_out = 0`，一个字节都不写。*/
-uint32_t ce_input_synth_frame_mask(int *write_out);
+/* ★ 2026-09-13 **已拆线**：本件（调试用「逐帧合成方向输入」）不再接入构建。
+ *   代码保留在 `cards/input_synth.{h,c}` + 单测 `tests/test_input_synth_core.c`；
+ *   **重挂三步**见 `DEV-INPUT-SYNTH.md` §0（站点 + handler + 本原型/on_draw 调用）。*/
+/* uint32_t ce_input_synth_frame_mask(int *write_out); */
 /* 同上的**绘制**半边：在 `on_draw`（虚表 `+0x48`）里画一行状态字。
  * **平时常驻**（停着也画）；**回放中 / 商店冻结帧 / 无自机 ⇒ 不画**（owner 2026-09-13 追加口径；
  * 与写入侧共用 `input_synth_blocked()`，语义对齐见 `cards/input_synth.h`）。

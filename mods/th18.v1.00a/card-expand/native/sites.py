@@ -1321,14 +1321,18 @@ SDK_SITES = [
     #   备选路（改 `regs->eax`、让原件自己把我们的位搬进 `INPUT_HELD`）效果等价但不符合 owner 的落点口径。
     #   · 回放门：站点其实**只在录制 tick 上命中**（回放走 `0x462a50`，见 §4.2），
     #     但 handler 仍与写入/绘制/计数共用 `input_synth_blocked()`（`CE_GT_REPLAY_PLAYING` / 无自机）⇒ 双保险。
-    ("ce_input_synth", 0x462966, 5, "e85582fcff",
-     "调试件「逐帧合成方向输入」→ 写 `INPUT_HELD`（四个方向位，先抹后 OR；Z/X/Shift/C/D 一个都不碰）。"
-     "站点 = 录制 tick `0x462940` 里的 `call Input__compute_edges`（`0x462966`，5 字节；"
-     "**在 `0x462961` 的 raw→HELD 拷贝之后**、边沿与录制读点之前）：handler 在原件之前跑 ⇒ "
-     "我们写下的位会被 `0x42abc0` 算成边沿、被 `0x4629f7` 录进 replay、同帧 Player（`0x17`）读到。"
-     "默认（不按调试键 / 回放中 / 无自机）**一个字节都不写**。"
-     "窗内唯一 rel32 = 窗口首条 `e8` ⇒ `cave_fix` 重定位（sitecheck W3 fixable），不用 `no_replay`。"
-     "一手与落点论证见 `DEV-INPUT-SYNTH.md` §4 / `engine/input/th18/01-key-mapping.md` §3.3–§4。"),
+    # ★★★ 2026-09-13 **已拆线**（owner 口径：「那个无敌脚本空格的都拆掉，代码保留，注释一下这是什么」）
+    #   ⇒ 下面这条站点**不再安装**（连同 `sdk.c` 的 handler、`sdk.h` 的 on_draw 调用一起撤）；
+    #     整件代码保留在 `cards/input_synth.{h,c}` + 单测，**怎么重挂三步**见 `DEV-INPUT-SYNTH.md` §0。
+    #   ⇒ 记账随之回落：声明 34 → **33**、进程级 54 → **53**（本注释以下的原文是拆线前的记录）。
+    #     ("ce_input_synth", 0x462966, 5, "e85582fcff",
+    #      "调试件「逐帧合成方向输入」→ 写 `INPUT_HELD`（四个方向位，先抹后 OR；Z/X/Shift/C/D 一个都不碰）。"
+    #      "站点 = 录制 tick `0x462940` 里的 `call Input__compute_edges`（`0x462966`，5 字节；"
+    #      "**在 `0x462961` 的 raw→HELD 拷贝之后**、边沿与录制读点之前）：handler 在原件之前跑 ⇒ "
+    #      "我们写下的位会被 `0x42abc0` 算成边沿、被 `0x4629f7` 录进 replay、同帧 Player（`0x17`）读到。"
+    #      "默认（不按调试键 / 回放中 / 无自机）**一个字节都不写**。"
+    #      "窗内唯一 rel32 = 窗口首条 `e8` ⇒ `cave_fix` 重定位（sitecheck W3 fixable），不用 `no_replay`。"
+    #      "一手与落点论证见 `DEV-INPUT-SYNTH.md` §4 / `engine/input/th18/01-key-mapping.md` §3.3–§4。"),
 ]
 
 # ★★★ 2026-09-18（用户实跑报「魔理沙原子机还有小激光 / shift 还会发导弹」时挖出来的）：
@@ -1391,7 +1395,7 @@ _SDK_KEEP_NAMED = {
     "ce_graze",                      # 0x42497f：放回发布面（见上面那一段的放回论证）
     # ★★★ 2026-09-13（owner 拍板：「没有进 replay」→「要它进录像」）：调试件「逐帧合成方向输入」的落点。
     #   记账在文件头「站点记账」那一段（27→28 的旧口径 vs 现测 33→34）；判据 = sitecheck 五项 + 实跑。
-    "ce_input_synth",                # 0x462966：录制 tick 里的 call compute_edges（拷贝之后、边沿/录像之前）
+    # "ce_input_synth",              # ★ 2026-09-13 已拆线（见上）；重挂时取消注释
 }
 # 过滤**之前**的全表（含 park 的）—— `tools/sitecheck.py` 的体检要连 park 的一起查：
 # park = 没进 patch = 现在没装，所以本身没风险；但**一旦放回发布面**，用的就是这一份声明。
@@ -1818,9 +1822,9 @@ def emit_header(sites, unlock_reads, order_sites, menu_binhacks):
               "#define CE_BP_SHOT_DAMAGE_RVA 0x%06x" % (_sdk_rva("ce_shot_damage") - 0x400000),
               "#define CE_BP_BULLET_HIT_RVA 0x%06x" % (_sdk_rva("ce_bullet_hit") - 0x400000),
               "#define CE_BP_GRAZE_RVA 0x%06x" % (_sdk_rva("ce_graze") - 0x400000),
-              # ★★★ 2026-09-13（owner：合成输入要进 replay）：调试件「逐帧合成方向输入」的落点
-              #   （`sdk.c` 的 `BP_ce_input_synth` = 唯一出处；窗口/时序见 sites.py 的 SDK_SITES 条目）。
-              "#define CE_BP_INPUT_SYNTH_RVA 0x%06x" % (_sdk_rva("ce_input_synth") - 0x400000),
+              # ★ 2026-09-13 **已拆线**：`CE_BP_INPUT_SYNTH_RVA` 不再生成（站点与 handler 一起撤）。
+              #   重挂时把下面这行取消注释即可（窗口/时序见本文件 SDK_SITES 里那条注释）。
+              # "#define CE_BP_INPUT_SYNTH_RVA 0x%06x" % (_sdk_rva("ce_input_synth") - 0x400000),
               "#define CE_BP_BOMB_GATE_RVA 0x%06x" % (_sdk_rva("ce_bomb_gate") - 0x400000),
               "#define CE_BP_PLAYER_DIE_RVA 0x%06x" % (_sdk_rva("ce_player_die") - 0x400000),
               "#define CE_BP_SHOT_SET_INDEX_RVA 0x%06x" % (_sdk_rva("ce_shot_set_index") - 0x400000),

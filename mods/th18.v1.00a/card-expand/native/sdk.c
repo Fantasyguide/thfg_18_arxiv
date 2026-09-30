@@ -67,7 +67,11 @@
 #include <stdio.h>
 #include "sdk.h"
 #include "sdk_actions.h"
-#include "cards/input_synth.h"   /* ★ 调试件「逐帧合成方向输入」：站点 handler 只问它"这一帧写什么" */
+/* ★ 2026-09-13 已拆线：#include "cards/input_synth.h" —— 调试件「逐帧合成方向输入」不再接入
+ *   （代码保留在 cards/input_synth.{h,c}；重挂见 DEV-INPUT-SYNTH.md §0）。*/
+#if 0
+#include "cards/input_synth.h"
+#endif
 
 /* ★ 2026-09-12 十三修：`ce_option_shot_gate` 因 3 字节站点被 thcrap 拒绝，门回读失败会触发
  *   `restore_alloc_bound` 降级路径（新 id 禁用），而存档/编成里已有新 id 时 `allocate_new_card`
@@ -1877,6 +1881,12 @@ int ce_graze_peek(float *x, float *y)
  *     商店冻结帧同理 —— 录制 tick 在商店里照样跑到本站点，而自机不一定是 NULL）。
  *   · 轻：一次标量调用 + 一次 RMW，没有循环/分配/字符串（handler 在每帧的输入节点里跑）。
  *   · **不返回 `BP_EXEC_ORIGINAL` 以外的东西**：那条 `e8 rel32` 正是我们要引擎执行的 `compute_edges`。*/
+/* ★★★ 2026-09-13 **已拆线**（owner：「那个无敌脚本空格的都拆掉，代码保留，注释一下这是什么」）：
+ *   本 handler 与它的站点 `ce_input_synth`（`th18:0x462966`）**已不再安装** ——
+ *   这是一件**调试用**的「逐帧合成方向输入」工具（按空格开关，替玩家逐帧写方向位、
+ *   原地抖动、净位移为 0），原本用来实测**原生卡 29「疾風の下駄」的起步无敌能不能刷成永久**。
+ *   ⇒ 代码保留在这里与 `cards/input_synth.{h,c}`，**重挂三步**见 `DEV-INPUT-SYNTH.md` §0。*/
+#if 0   /* ← 取消注释（连同上面对应的 sites.py 条目）即可重新装上 */
 int __cdecl BP_ce_input_synth(x86_reg_t *regs, void *bp_info)
 {
     int      write = 0;
@@ -1887,6 +1897,7 @@ int __cdecl BP_ce_input_synth(x86_reg_t *regs, void *bp_info)
         CE_INPUT_HELD() = (CE_INPUT_HELD() & ~(uint32_t)CE_INPUT_SYNTH_DIR_MASK) | mask;
     return BP_EXEC_ORIGINAL;
 }
+#endif  /* 0：ce_input_synth 已拆线 */
 
 /* ---- 低速子机声明层的落笔分派（spec §3.3.1；层 = sdk_core 的 `ce_optpose_*`）----
  * 每帧恰好跑一次：① 问层「本帧谁落笔、上一帧的落笔者在不在」；② **退位通知**（上一帧落笔者这一帧没赢
@@ -2910,7 +2921,7 @@ int ce_sdk_setup(uint8_t *base, int trace)
          *   ⚠ 本条的 `bp_applied()` 判据**是退化的**：窗口首字节原本就是 `e8`（`call rel32`），
          *   站点打没打上都满足 `p[0]==0xe8` ⇒ 这一行**不构成**"栏挂了没有"的真护栏
          *   （真验靠 `sitecheck.py 0x462966 5` + 实跑；它绝不会误报 FAIL，也不会挡住别人）。*/
-        { "ce_input_synth", CE_BP_INPUT_SYNTH_RVA, 5 },
+        /* { "ce_input_synth", CE_BP_INPUT_SYNTH_RVA, 5 },  ★ 2026-09-13 已拆线（见文件头与 DEV-INPUT-SYNTH.md §0）*/
         /* ⛔ ce_death_result：站点仍在 park */
         /* ★ 2026-09-16（111 魔理沙侧「原生子机不许出现」）：`sdk.c` 上面那一大段。
          *   两条都**必须**在这里：少一条 = 静默失效（①不拦 ⇒ 原生子机照建照画；②不拦 ⇒

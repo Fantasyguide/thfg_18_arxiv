@@ -11,7 +11,8 @@ EXPORTS
 	BP_ce_enemy_shot_slot	@9
 	BP_ce_gate	@10
 	BP_ce_graze	@11
-	BP_ce_input_synth	@12
+; ★ 2026-09-13 已拆线（owner：「那个无敌脚本空格的都拆掉，代码保留」）：
+; BP_ce_input_synth	@12	; 调试件「逐帧合成方向输入」的站点 handler（代码保留在 sdk.c 的 #if 0 里）
 	BP_ce_item_collect	@13
 	BP_ce_item_commit	@14
 	BP_ce_item_frame	@15
