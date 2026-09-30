@@ -50,6 +50,11 @@
  *   BP_ce_death_result 0x45c127 Player__on_tick__body case 4 里五家救援者跑完后的**唯一判定**（edi = acc）：
  *                      把「这次死亡最终有没有被取消」写进 sdk_core 的结果闩锁（只读 getter 给卡侧）；
  *                      同一站点也把结果打进日志。见 BP30-IMPLEMENTATION.md §2。
+ *   BP_ce_input_synth 0x462966 ReplayManager__on_tick__record_replay 0x462940 里的 `call Input__compute_edges`
+ *                      （**在 `0x462961` 的 raw→INPUT_HELD 拷贝之后**、边沿与录制读点 `0x4629f7` 之前）：
+ *                      调试件「逐帧合成方向输入」在这里写 INPUT_HELD 的四个方向位 ⇒ **进录像** +
+ *                      同帧被引擎算成边沿、被 Player（0x17）读到。默认（不按调试键/回放中/商店/无自机）不写。
+ *                      ⚠ 回放播放走另一条 on_tick（0x462a50）⇒ 站点根本不命中；门是双保险。
  *   ce_destroy_card              局中删一张卡（倒吊人）：照 recount 0x4080e0 的删卡分支，AUDIT §W。
  *   ce_sdk_setup       门里：基类虚表 21 槽与 engine.h 的常量逐一比对（布局假设的运行时守卫）、全部断点已挂、
  *                      与 cards.js 对账（C 有 JSON 无 → FAIL）、每张行为卡记一行。
@@ -62,6 +67,7 @@
 #include <stdio.h>
 #include "sdk.h"
 #include "sdk_actions.h"
+#include "cards/input_synth.h"   /* ★ 调试件「逐帧合成方向输入」：站点 handler 只问它"这一帧写什么" */
 
 /* ★ 2026-09-12 十三修：`ce_option_shot_gate` 因 3 字节站点被 thcrap 拒绝，门回读失败会触发
  *   `restore_alloc_bound` 降级路径（新 id 禁用），而存档/编成里已有新 id 时 `allocate_new_card`
@@ -1841,6 +1847,47 @@ int ce_graze_peek(float *x, float *y)
     return n;
 }
 
+/* ★★★ 2026-09-13（owner 口径：「**没有进 replay**」→「要它进录像」）：
+ *   **调试件「逐帧合成方向输入」的落点**（`cards/input_synth.{h,c}`；机制/一手见 `DEV-INPUT-SYNTH.md` §4）。
+ *   站点 = `th18:0x462966`，在 `ReplayManager__on_tick__record_replay`（`0x462940`）体内：
+ *
+ *       0x462950  INPUT_HELD_PREV = INPUT_HELD
+ *       0x46295a  INPUT_HELD = (uint16)RAW(0x4ca210)        ; raw 键盘整体重写
+ *       ------------------- handler 在这里进来 -------------------
+ *       0x462966  call 0x42abc0                              ; ← 窗口那条被挪走的原指令
+ *       0x4629f7  held16 = (uint16)INPUT_HELD                ; ← 录制读点
+ *       0x462a19  call 0x463060(chunk, held16, pressed16, released16)
+ *
+ *   ★ 为什么这样能保证「**拷贝已完成、我们写在其后**」：本仓的站点机制是**handler 在原件之前跑**
+ *   （`thcrap_bp.h`：handler 返回 `BP_EXEC_ORIGINAL` 之后，thcrap 才从跳板池回放窗口那几字节）。
+ *   站点取 `0x462966`（= `0x462961` 那条 `mov` 的**下一条**）⇒ 进入 handler 时拷贝**已经执行完**
+ *   （`INPUT_HELD` 里是本帧 raw），而 `call 0x42abc0` **还没执行**。我们此刻把四个方向位写进
+ *   `INPUT_HELD` ⇒ ① `0x42abc0` 为这些位算 `INPUT_PRESSED`/`INPUT_RELEASED`（卡 29 吃这个边沿）；
+ *   ② `0x4629f7` 把它录进 replay；③ 同帧 Player（节点 `0x17` > `0x11`）读到 ⇒ 玩法与录像同时正确。
+ *   （若改挂 `0x462961`：handler 在那条 `mov` **之前**跑 ⇒ 无法"拷贝之后写"；那条只能靠改
+ *    `regs->eax` 让原件自己搬，效果等价但不是 owner 要的落点口径。）
+ *   ⚠ 窗内唯一一条 `e8 rel32` **正是窗口首条** ⇒ thcrap 的 `cave_fix` 会重定位（`sitecheck.py
+ *   0x462966 5` 判 "fixable"），**不需要 `no_replay`**；同地址先例 = `mods/th18.v1.00a/mouse-control`
+ *   的 hook 2（同一个 exe 上已实跑，其 `AUDIT.md` §B 记「录 replay 的 0x463060 在注入点之后」）。
+ *
+ *   · 写什么：**只动四个方向位**（`~0x0F0` 保留 Z/X/Shift/C/D…），先抹后 OR ⇒ 结果只由模式决定
+ *     （现场若真按着方向键，会被抹掉 ⇒ 实验可复现）。
+ *   · **默认不写**：`ce_input_synth_frame_mask()` 的 `*write_out == 0`（没按调试键 / 回放中 /
+ *     商店冻结帧 / 无自机）⇒ 直接返回，**一个字节都不写**（回放中写会覆盖回放注入的输入 ⇒ 回放必坏；
+ *     商店冻结帧同理 —— 录制 tick 在商店里照样跑到本站点，而自机不一定是 NULL）。
+ *   · 轻：一次标量调用 + 一次 RMW，没有循环/分配/字符串（handler 在每帧的输入节点里跑）。
+ *   · **不返回 `BP_EXEC_ORIGINAL` 以外的东西**：那条 `e8 rel32` 正是我们要引擎执行的 `compute_edges`。*/
+int __cdecl BP_ce_input_synth(x86_reg_t *regs, void *bp_info)
+{
+    int      write = 0;
+    uint32_t mask;
+    (void)regs; (void)bp_info;
+    mask = ce_input_synth_frame_mask(&write);
+    if (write)
+        CE_INPUT_HELD() = (CE_INPUT_HELD() & ~(uint32_t)CE_INPUT_SYNTH_DIR_MASK) | mask;
+    return BP_EXEC_ORIGINAL;
+}
+
 /* ---- 低速子机声明层的落笔分派（spec §3.3.1；层 = sdk_core 的 `ce_optpose_*`）----
  * 每帧恰好跑一次：① 问层「本帧谁落笔、上一帧的落笔者在不在」；② **退位通知**（上一帧落笔者这一帧没赢
  * ⇒ 叫它一次，让它把子机收干净）；③ 叫本帧落笔者一次（申请 / 逐格写偏移 / 贴图）。
@@ -2857,6 +2904,13 @@ int ce_sdk_setup(uint8_t *base, int trace)
         /* ★ 2026-09-27（第三十九批）：**放回**（原 2026-09-10 的 park 理由已被别处的定案取代，
          *   五项窗口检查全绿）—— 108 的擦弹刻符要撒在**被擦到的那颗弹**上，116 的季节点同。*/
         { "ce_graze",       CE_BP_GRAZE_RVA,       5 },
+        /* ★★★ 2026-09-13（owner：合成输入要进 replay）：调试件「逐帧合成方向输入」的落点
+         *   （机制全文 = 上面 `BP_ce_input_synth` 的长注）。列在这里是为了把站点一起登记进
+         *   `ce_cave_note`/每帧看门狗与启动日志。
+         *   ⚠ 本条的 `bp_applied()` 判据**是退化的**：窗口首字节原本就是 `e8`（`call rel32`），
+         *   站点打没打上都满足 `p[0]==0xe8` ⇒ 这一行**不构成**"栏挂了没有"的真护栏
+         *   （真验靠 `sitecheck.py 0x462966 5` + 实跑；它绝不会误报 FAIL，也不会挡住别人）。*/
+        { "ce_input_synth", CE_BP_INPUT_SYNTH_RVA, 5 },
         /* ⛔ ce_death_result：站点仍在 park */
         /* ★ 2026-09-16（111 魔理沙侧「原生子机不许出现」）：`sdk.c` 上面那一大段。
          *   两条都**必须**在这里：少一条 = 静默失效（①不拦 ⇒ 原生子机照建照画；②不拦 ⇒

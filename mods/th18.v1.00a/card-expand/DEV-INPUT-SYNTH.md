@@ -17,9 +17,10 @@
 | --- | --- |
 | **调试键** | **空格 `Space` = 启停开关**（用户 2026-09-13：「**空格是启停脚本**」）—— **按一下开、再按一下关**（抓按下沿，不需要一直按住）。⚠ 与 **106**（`th06rank.c`）的 Space 调试键同键 ⇒ 同时装备 106 并按空格时两件都会动（106 只读键、不抢输入位，安全）。要换键只改 `input_synth_key_down()` 一行 |
 | **模式** | `[左 N 帧][全松 M 帧][右 N 帧][全松 M 帧]`，宏 `CE_INPUT_SYNTH_{LEFT,RIGHT,RELEASE}_FRAMES`；**默认 N=1, M=1**（周期 4 帧） |
-| **写什么** | `INPUT_HELD`（`0x4ca428`）与 `INPUT_PRESSED`（`0x4ca434`）的**四个方向位**（`0x010/0x020/0x040/0x080`），**先抹后写**；`Z(0x001)/X(0x002)/Shift(0x008)/C(0x400)/D(0x800)` **一个都不碰** |
+| **写什么** | 只写 `INPUT_HELD`（`0x4ca428`）的**四个方向位**（`0x010/0x020/0x040/0x080`），**先抹后 OR**；`Z/X/Shift/C/D` **一个都不碰**。★ **不手写 `INPUT_PRESSED`**：落点在算边沿**之前**（§4）|
+| ★ **进不进录像** | **进**（2026-09-13 订正，owner：「没有进 replay」→「要它进录像」）—— 落点 = 录制 tick（`0x462940`）里的站点 `ce_input_synth`（`0x462966`），写点**在 `0x4629f7` 录制读点之前**（§4） |
 | **先看这一行** | 进游戏后日志里应出现**一次** `isynth: armed — 调试键 = 空格(Space)…` ⇒ 证明这件**确实被链进 DLL 且每帧被调到**（这行不看按键）。没有它 = 代码没进 DLL（多半没重启游戏） |
-| **屏幕状态字** | ★ **常驻**（用户：「**那个 UI 改成常驻**吧，**随着时间流逝无敌帧得减小**，做指示那个用」）—— 每帧都画一行 ASCII，核心读数是 **`INV`（无敌帧，逐帧递减）**；细节见 §1.1 |
+| **屏幕状态字** | ★ **平时常驻**（回放/商店/无自机**不画**；用户：「**那个 UI 改成常驻**吧」）—— 每帧画一行 ASCII，核心读数是 **`INV`（无敌帧，逐帧递减）**；细节见 §1.1 |
 | **怎么读效果** | 每 **30 帧**一行日志：相位/方向记号、自机 `x,y`、**定点累计 Δx（1/128 px，整数无误差）**、**峰值 \|Δx\|**、以及 **`player+0x47778`（无敌计时器 cur）**；按下/松开各一行总结 |
 | **验收判据** | ① `peak` 停在 **≤ 8 px**（普通 4 px/帧、原生卡 29 超速 8 px/帧）；② 累计 `dx` **每 4 帧回到 0**；③ 无敌 `inv` **单调上升**（这就是"刷永久无敌"的直接证据） |
 
@@ -43,10 +44,21 @@
 **⇒ 结论（对那个实验很重要）**：**抖出来的无敌一旦放 B（或复活/死亡结算）就被覆盖成 40/110/120（等）**，
 所以"永久无敌"只在**一直不炸、不挨那几类结算**的前提下成立。
 
-### 1.1 屏幕状态字（**常驻**指示器）
+### 1.1 屏幕状态字（**平时常驻；回放 / 商店 / 无自机时不画**）
 
 用户 2026-09-13 两次口径：「生效的时候随便 plot 点什么 hud」→ 随后「**那个 UI 改成常驻**吧，
 **随着时间流逝无敌帧得减小**，做指示那个用」。
+
+★ 2026-09-13 **追加口径**：「**然后在回放的时候，不画 gui**」。
+⇒ 状态字的显示口径 = **正常游玩时平时常驻**（停着也画）；
+**回放播放中 / 商店冻结帧 / 没有自机（菜单/结算）⇒ 不画**。
+判据就是写入侧那一个 `input_synth_blocked()`——
+它看三样：`CE_GT_REPLAY_PLAYING`（回放）、`CE_ADDR_SHOP_PTR`（`0x4cf2a4`，商店冻结帧）、
+`CE_PLAYER()==NULL`（菜单/结算）。
+**写输入 / 画 HUD / 计数与检测**三处共用它（三处语义对齐，见 §4.1 与 `cards/input_synth.h`）。
+⚠ **商店那一条是本站点特有的**：录制 tick 的 raw→HELD 拷贝与 `compute_edges` 在商店里**照样跑到**
+`0x462966`（商店闸 `0x4629a2` 在站点**之后**），而商店里自机对象不一定是 NULL ⇒ 不加这一条，
+工具开着进商店会往商店菜单灌方向位（旧接法=卡 tick 天然不含商店帧）。
 
 ⇒ 在 HUD 上**每帧**画一行 ASCII（`ce_hud_text`，640×480 字面量空间，位置 `(180, 40)` = 游玩区上部），两种形态：
 
@@ -69,7 +81,8 @@ SYNTH --  inv=37 max=512 frames=1234   [Space] toggle   ← 停着（淡黄）�
 
 ⚠ 用引擎的 ASCII 字体 ⇒ **只能 ASCII**；⚠ 绘制走 `sdk.h` 的 `on_draw` 桩
 （`ce_hud_text` 的契约要求只能在虚表 `+0x48` 里调），并按帧号同帧去重。
-⚠ 常驻的代价：**平时游玩也会看到这一行**（它就是设计成常驻指示器的）。
+⚠ 常驻的代价：**正常游玩时也会看到这一行**（它就是设计成常驻指示器的）；
+但**回放中 / 商店冻结帧 / 无自机时一个像素都不画**（§1.1 顶上的追加口径）。
 
 **关闭**：松开空格即停写（`if (!down) return;`）。`CE_INPUT_SYNTH_ENABLED = 0` 时整件是**编译期空壳**
 （发布版建议置 0；置 0 后连调用点都被优化掉，一个字节都不写）。
@@ -79,8 +92,9 @@ SYNTH --  inv=37 max=512 frames=1234   [Space] toggle   ← 停着（淡黄）�
 - **调试键这条路不进游戏输入流**：`ce_key_down` 走 `GetKeyboardState`（user32）；
   空格/Ctrl/Shift 之类不在 TH18 键盘配置表里（先例：`cards/animal.c:233` 的注释、`ufo.c` / `trance.c`）。
 - **方向位**：`engine/input/th18/01-key-mapping.md` §2.3 的位表（`0x010` 上 / `0x020` 下 / `0x040` 左 / `0x080` 右）。
-- **同帧生效**：卡链 tick（节点 `0x16`）在 **Player tick（`0x17`）之前**
-  （`0x461825 push 0x11` / `0x408475 push 0x16`）⇒ 在 `BP_ce_item_frame` 里写 HELD，同帧 Player 读得到。
+- **同帧生效**：录制 tick（`ReplayManager`，节点 **`0x11`**）在 **Player tick（节点 `0x17`）之前**
+  （`0x461825 push 0x11` / `0x45a8aa push 0x17`，注册表按节点 `+0x00` 升序）⇒ 我们在
+  `0x462966` 写的 HELD，同帧 Player 读得到，而且**也早于录制读点 `0x4629f7`**（§4）。
 - ★★ **订正一条旧口径：TH18 自机没有加速度/惯性**。`Player__sub_45b170` `0x45b170` 的积分段
   `0x45b5a2`–`0x45b608` 逐条是 `dx = (int)(dirX * speed * mult)` —— **`speed` 每帧只由当帧输入选表**，
   公式里**没有"上一帧速度"项**；松方向那一帧 `dirX = 0` ⇒ `dx = 0` ⇒ 当帧速度就归零。
@@ -125,66 +139,131 @@ ExpHP 符号库（`games/th18.v1.00a/symbols.json`）独立命名了 `struct zCa
   聚合 = **取 max / 置值**语义）⇒ 这条口子被**结构性堵住**（`12-card29-aya-speedqueen.md` §6）。
   所以要测必须用**原生卡 29**，工具也就必须**不依赖我们任何卡**（见 §4 的落地理由）。
 
-## 4. ★★ 落点（**踩过一次坑，务必别再挪回去**）
+## 4. ★★ 落点（**踩过两次坑，2026-09-13 定案 = 站点 `ce_input_synth` / `th18:0x462966`**）
 
-### 4.0 为什么**不能**放在 `BP_ce_item_frame`
+### 4.0 两条走过或被否的路（**历史，别挪回去**）
 
-第一版把调用放在 `sdk.c` 的 `BP_ce_item_frame`（站点 `th18:0x446ee3`）——**实跑失败**：
-日志有 `isynth: START/STOP`（键被看到了）但 **`dx` 与 `peak` 恒 0 ⇒ 自机一步没动**。
-
+**(a) `BP_ce_item_frame`（`th18:0x446ee3`）—— 实跑失败。**
+第一版把调用放在 `sdk.c` 的 `BP_ce_item_frame`：日志有 `isynth: START/STOP`（键被看到了）但
+**`dx` 与 `peak` 恒 0 ⇒ 自机一步没动**。
 一手原因 = **帧序**（`engine/player/th18/05-poc-height-and-indicator.md` §7.2 的 UpdateFunc 优先级表）：
 
 | 管理器 | 优先级 | 一手 |
 | --- | --- | --- |
+| **ReplayManager**（录制 / 回放；**录像录制读点在这里**）| **`0x11`** = 17 | `0x461825 push 0x11`（录制节点）|
 | **AbilityManager**（卡的 tick 在这里，**虚表 `+0x2c`**）| **`0x16`** = 22 | `0x408472 push 0x16` |
 | **Player**（`Player__on_tick` 包装 → `0x45be90`）| **`0x17`** = 23 | `0x45a8aa push 0x17` |
 | ItemManager（`ItemManager__on_tick` `0x446ec0`；`ce_item_frame` 断点在它的门卫 `0x446ee3`）| **`0x1e`** = 30 | `0x4458ac push 0x1e` |
 
-⇒ 顺序是 **AbilityManager → Player → … → ItemManager**。写在 ItemManager 里 ⇒
+⇒ 顺序是 **ReplayManager → AbilityManager → Player → … → ItemManager**。写在 ItemManager 里 ⇒
 **玩家这一帧已经读过 `INPUT_HELD` 了**，而下一帧 `0x46295a/0x462961` 又会用 raw 键盘把它整个重写
 ⇒ **我们写的位永远没被读过**（实跑 `dx ≡ 0` 正是这个）。
 
-### 4.1 现在的落点 = **卡 tick 的共同桩**（AbilityManager = `0x16`，早于 Player）
+**(b) 卡 tick 的共同桩（AbilityManager = `0x16`）—— 玩法对，但「没有进 replay」。**
+第二版改挂 `sdk.h` 的卡 tick 桩 `ce_s_##ID##_on_tick_2`：它在 Player `0x17` **之前** ⇒ 玩法没问题
+（`dx`/`inv` 读数已经实跑过），**但录制读点 `0x4629f7` 在节点 `0x11`**，而卡桩在节点 `0x16`、
+在它**之后** ⇒ 合成输入**进不了录像**（owner 2026-09-13 报的「没有进 replay」就是它）。
+⇒ 这条路**作废、别再挪回去**（另有代价：它只在卡组里至少有一张我方卡时才被调，见 §4.2 末尾）。
+
+### 4.1 ★ 现在的落点 = **新站点 `ce_input_synth`（`th18:0x462966`）**
+
+窗口 = `ReplayManager__on_tick__record_replay`（`0x462940`）里的 **`call Input__compute_edges`**
+（5 字节 `e8 55 82 fc ff`）。逐条帧内顺序（一手，`engine/input/th18/01-key-mapping.md` §4.1）：
+
+| 地址 | 指令 | 说明 |
+| --- | --- | --- |
+| `0x462950` | `INPUT_HELD_PREV(0x4ca42c) = INPUT_HELD` | 上一帧的 HELD（**含上一帧我们写的位**）|
+| `0x46295a` | `movzx eax, WORD PTR ds:0x4ca210` | 读 **raw 键盘** |
+| `0x462961` | `mov ds:0x4ca428, eax` | ★ **用 raw 整个重写 `INPUT_HELD`** |
+| **`0x462966`** | **`call 0x42abc0`** | ★★ **本站点**（handler 在这条原指令**之前**跑）|
+| `0x46296b` | `test [0x4cd014],0x200` … | 长按射击自动低速（可能 `or HELD,0x8`）|
+| `0x4629f7` | `mov ecx, ds:0x4ca428` | ★★ **录像录制读点** |
+| `0x462a19` | `call 0x463060(chunk, held16, pressed16, released16)` | 写 6 字节/帧 |
+
+★ **为什么取 `0x462966`、为什么它能保证「拷贝已完成、我们写在其后」**（本仓站点机制，一手）：
+`thcrap_bp.h` 写明 —— **handler 在窗口原件之前被调**，返回 `BP_EXEC_ORIGINAL` 之后 thcrap 才
+**从跳板池回放**窗口那几字节。站点取 `0x462966`（= `0x462961` 那条 `mov` 的**下一条**）⇒
+
+1. handler 进来时 `0x462961` **已经执行完** ⇒ `INPUT_HELD` 里就是本帧 raw（**拷贝已完成**）；
+2. 窗口那条 `call 0x42abc0` **还没执行** ⇒ 我们此刻写进去的方向位会被引擎算成
+   `INPUT_PRESSED`/`INPUT_RELEASED`（**卡 29 吃的就是这个 0→非 0 边沿**）；
+3. `0x4629f7` 的录制读点在更后面 ⇒ 同一个位**也被录进 replay**；
+4. 节点 `0x11` < Player `0x17` ⇒ 同帧玩家读到 ⇒ **玩法与录像同时正确**。
+
+⚠ 为什么不取 `0x462961`：那边的 handler 在**那条 `mov` 之前**跑 ⇒ 不能"拷贝之后写"；
+备选路（改 `regs->eax`、让原件把我们的位搬进 `INPUT_HELD`）效果等价，但不是 owner 要的落点口径。
+
+⚠ **窗内唯一一条相对寻址就是窗口首条 `e8 rel32`** ⇒ thcrap 的 `cave_fix` 会重定位它
+（`tools/sitecheck.py 0x462966 5`：W1/W2/W4 ✅、W3 判 **"fixable"**）⇒ **不需要也不该声明 `no_replay`**
+（那个字段只给 "cave_fix 修不了" 的窗口用，见 `sites.py` 的 `_SDK_SITE_FIELDS`）。
+同地址先例 = `mods/th18.v1.00a/mouse-control` 的 hook 2（**同一个 exe 上已实跑**，其 `AUDIT.md` §B 记
+「录 replay 的 `0x463060` 在注入点之后 ⇒ 输入会一致地录进录像」）。
+
+⚠ **回放注意**：回放**播放**走的是另一条 on_tick（`0x462a50`，`engine/input/th18/01-key-mapping.md` §4.2）
+⇒ 本站点根本不命中；handler 另有一道门（`input_synth_blocked()`：`CE_GT_REPLAY_PLAYING` /
+商店冻结帧 `0x4cf2a4` / 无自机）
+⇒ 回放中即使命中也不写（双保险）。
+
+**落到哪些文件**：
 
 | 文件 | 改了什么 |
 | --- | --- |
-| `native/sdk_core.h` | **+1 行原型** `void ce_input_synth_tick(void);`（共享声明层，附落点理由） |
-| `native/sdk.h` | 卡 tick 桩 `ce_s_##ID##_on_tick_2` 里 **+1 行调用**（`0x16`，早于 Player）**+ `on_draw` 桩 `ce_s_##ID##_on_draw` 里 +1 行 `ce_input_synth_draw()`**（`ce_hud_text` 的契约要求只能在 `+0x48` 里画）——**一处改、所有卡生效** |
-| `native/cards/input_synth.c` | 落笔 + 节流日志 + **HUD 状态字**（`ce_input_synth_draw()`）+ **同帧去重**（`ce_sdk_frame()`：同一卡节点内多张卡读到的帧号相同 ⇒ 只认第一次）；`input_synth_key_down()` = **空格**；第一帧打 `isynth: armed` |
-| `native/cards/input_synth.h` | 纯逻辑（模式/半周期镜像不变量/位域卫生） |
-| `native/tests/test_input_synth_core.c` | 主机单测 59 断言 |
-| `native/Makefile` | `test-host` 登记新单测 |
+| `native/sites.py` | 新站点 **`ce_input_synth`**（`0x462966`，5 字节）+ `_SDK_KEEP_NAMED` 点名 + `CE_BP_INPUT_SYNTH_RVA` + **记账**（§4.2）|
+| `native/sdk.c` | 新 handler **`BP_ce_input_synth`**：问 `ce_input_synth_frame_mask()`，`write` 为真才 `INPUT_HELD = (HELD & ~0x0F0) \| mask`（+ 顶部注释 + `bps[]` 一行）|
+| `native/th18_card_expand.def` | **`BP_ce_input_synth` 导出**（必须：patch 声明了断点而 DLL 不导出 ⇒ thcrap `GetProcAddress` 拿不到 ⇒ 游戏里**静默不生效**）|
+| `native/sdk_core.h` | 原型改成 `uint32_t ce_input_synth_frame_mask(int *write_out);`（附落点理由）|
+| `native/sdk.h` | **删掉**卡 tick 桩里的调用（§4.0(b) 那条作废）；`on_draw` 桩里**保留** `ce_input_synth_draw()`（`ce_hud_text` 的契约）|
+| `native/cards/input_synth.c` | 只**返回"这一帧写什么"**（写由 handler 做）；**删掉手写 `INPUT_PRESSED`**；回放/商店/无自机 ⇒ 不写/不画/不计数 |
+| `native/cards/input_synth.h` | 纯逻辑（模式/半周期镜像/位域卫生）+ 新入口原型 + 三处共用的门 `ce_input_synth_should_write()` |
+| `native/tests/test_input_synth_core.c` | 主机单测（模式 / 不变量 / 位域 / 门 / 两种动力学）|
 
-⚠ **代价（必须知道）**：卡 tick 桩只在**至少有一张我方卡在场**时才会被调 ⇒
-**这个调试件需要卡组里带至少一张系统卡（106–117）**。用原生卡 29 做实验没问题（我方卡可以只放着不触发），
-但「一张我方卡都不带」时它不会工作。
+★ **手写 `INPUT_PRESSED` 那一半为什么可以（并已经）去掉**：旧落点在 `0x42abc0` **之后** ⇒ 不写就没有边沿；
+新落点在 `0x42abc0` **之前** ⇒ **引擎自己会为我们的位算边沿**（§4.1 第 2 条）。留着反而**有害**：
+引擎随后按 `HELD_PREV` 重算并覆盖 `INPUT_PRESSED`，同一帧变成两个写入者（我们 + 引擎），语义打架。
 
-### 4.2 为什么不用新站点
+### 4.2 ★ 站点记账（**owner 拍板**）+ 顺带去掉的旧代价
 
-站点预算 **27 > `SITE_BUDGET` 24**（`engine/input/th18/01-key-mapping.md` §5.3 记账；
-`SITE_TOTAL_BUDGET` 42 已知崩过）⇒ **不加新站点**；改用「已有的卡 tick 桩」这条零成本路径。
-（另一条被否决的路：把 `INPUT_HELD` 写进 raw 键盘源 —— 同样被每帧重算覆盖，且要动输入链。）
+**记账**（口径 = `python3 sites.py check` 的 `站点预算核对`；`SITE_BUDGET` = 24 是**记账线**，
+超线**不判红**，真判据 = `sitecheck.py` 的窗口检查 + 启动日志 `pool:` 实测余格 + 实跑一局）：
+
+| | 改动前 | 改动后 |
+| --- | --- | --- |
+| 本 patch 声明 | **33** 条（正式 31 + 测试归档 2）| **34** 条（正式 32 + 测试归档 2）|
+| 进程级合计（+ `base_tsa` 20）| **53** | **54** |
+
+⚠ 任务书写的是「27 → 28」——那是 2026-09-13 早先的快照；此后别的会话又往 `_SDK_KEEP_NAMED`
+里放回了 `ce_graze` / `ce_bullet_hit` 等，所以**现测**是 33 → 34（`native/sites.py` 文件头
+「站点记账」那一段与本表同步；精确数一律以 `sites.py check` 的输出为准）。
+**本件 +1 由 owner 拍板**，理由 = §4.1 已证明**没有任何既有站点**能满足需求：
+本 mod 既有站点全在节点 ≥ `0x16`，**都晚于**录像录制读点 `0x4629f7`（节点 `0x11`）。
+
+★ **顺带去掉的旧代价**：旧接法（卡 tick 桩）**只在卡组里至少有一张我方卡在场时**才被调
+⇒ 测**原生卡 29** 时还得先往卡组里塞一张系统卡。新站点在录制 tick 上、**每个游玩帧到一次**，
+**不依赖卡组里有没有我方卡** ⇒ 现在可以一张我方卡都不带就测原生卡 29。
 
 ## 4.3 影响面汇总（★ 动了共享件）
 
 | 文件 | 改了什么 | 为什么 |
 | --- | --- | --- |
-| `native/sdk_core.h` / `native/sdk.h` | **+1 原型 + 卡 tick 桩里 +1 调用**（见 §4.1/§4.2） | AbilityManager `0x16` 早于 Player `0x17`；不加新站点 |
-| `native/Makefile` | `test-host` 里加 `test_input_synth_core` 的登记（2 行） | 新单测要进回归 |
-| `native/cards/input_synth.{h,c}` | 新增（纯逻辑 + 逐帧写输入 + 节流日志） | 本件本体 |
-| `native/tests/test_input_synth_core.c` | 新增（59 断言） | 覆盖模式/不变量/位域卫生/两种动力学 |
+| `native/sites.py` | +1 站点 `ce_input_synth` + keep 名单一行 + `emit_header` 一行 + 记账注释 | §4.1/§4.2；站点是"进录像"的**唯一**路径 |
+| `native/sdk.c` | +1 handler `BP_ce_input_synth`（+ include + 顶部注释 + `bps[]` 一行）| 在**输入节点**里跑，只做一次标量调用 + 一次 RMW |
+| `native/th18_card_expand.def` | +1 导出 `BP_ce_input_synth`（其后 ordinal 顺移 1）| 断点必须导出，否则静默不生效 |
+| `native/sdk_core.h` / `native/sdk.h` | 原型改写；**删掉**卡 tick 桩里的调用；`on_draw` 桩保留 | 新落点；避免与站点重复调用 |
+| `native/cards/input_synth.{h,c}` | 只返回"这一帧写什么"；**去掉手写 PRESSED**；回放/商店/无自机三处一起停 | §4.1 的订正 + owner 追加口径 |
+| `native/tests/test_input_synth_core.c` | +4 断言（三处共用的门）| 纯逻辑改动补单测 |
 
 **对既有卡的影响面**：
-- 不按空格时 `ce_input_synth_tick()` **立刻返回、一个字节都不写** ⇒ 对全部既有卡与引擎**零影响**；
-- 卡 tick 桩里多一行调用（同帧去重 ⇒ 每帧最多真正跑一次），**不改变任何卡的回调语义**；
-- `CE_INPUT_SYNTH_ENABLED = 0` 时整个函数体是空壳（调用点一并消失）⇒ 发布版可据此彻底摘除；
-- 不新增站点（预算 27 > 24 已超，见 `engine/input/th18/01-key-mapping.md` §5.3 的记账）；
-- `Makefile` 的 `SRCS := … $(wildcard cards/*.c)` ⇒ 新 `.c` **自动进 DLL**，无需再加。
+- **写入路径与任何卡都无关**了：handler 挂在录制 tick 上，**不遍历卡链表、不调任何卡回调**；
+- **卡 tick 桩少了一行调用**（这是**减负**：原来是每张卡的 `on_tick_2` 都会调一次，
+  现在一处都不调）⇒ 回调语义零变化，只少一次函数调用；
+- 不按空格 / `CE_INPUT_SYNTH_ENABLED = 0` ⇒ `*write_out == 0`，handler **一个字节都不写**
+  （`ENABLED = 0` 时整件是编译期空壳，连那一次调用都没有）；
+- 回放中 / 商店冻结帧 / 无自机 ⇒ 不写、不画、不计数（三处共用 `input_synth_blocked()`）；
+- `Makefile` 的 `SRCS := … $(wildcard cards/*.c)` ⇒ `input_synth.c` 本来就自动进 DLL，**不需要改 Makefile**。
 
-**回归跑了什么**：`make dll` 成功（链接行里可见 `cards/input_synth.o`）；
-`cc -std=c11 -Wall -Wextra -Werror -o /tmp/t_isynth tests/test_input_synth_core.c` ⇒ **59 checks passed / 0 failed**；
-`sdk.c` `-fsyntax-only` 只余**既有**告警（`ce_bp_kept` 未被引用，与本件无关）。
-⚠ **`make check` / `test-host` 当前是红的**，红在**另一条会话**正在改的 `tests/test_youkai_core.c`（129 条），与本件无关。
+**回归跑了什么**：`make gen`（重生成 `patch/th18.v1.00a.js` / `native/sites_gen.h` / `patch-test/…`）、
+`make check`、`make verify`、`make test-host` **全部 exit 0**；`sitecheck.py 0x462966 5` 五项全过；
+`gen_drift.py` 三份生成物零漂移；`dllverify` / `dllx87` 通过（含新导出）。
 
 ## 5. ❓ 未闭合 / 注意事项
 
@@ -192,9 +271,20 @@ ExpHP 符号库（`games/th18.v1.00a/symbols.json`）独立命名了 `struct zCa
    并新增一行**不看按键**的 `isynth: armed` 日志（第一帧就打）用来定位「代码没跑」还是「键没被看到」。
    ⚠ 日志前缀统一是 **`isynth:`**（grep 这个即可）。
 
-1. ⚠ **合成输入不进 replay 录像**：录制读点在 `0x4629f7`（节点 `0x11`，**早于**卡链 `0x16`）
-   ⇒ 卡侧写 `INPUT_HELD` 不会被录进去。**带这个工具录出来的回放不忠实** ⇒ 别留这类录像。
-   （想让合成输入进录像，唯一路是挂进 `0x462940` 体内 = **新站点**；预算已超，不建议。）
+1. ✅ **合成输入进 replay 录像**（2026-09-13 订正）：旧口径「不进录像」随落点搬到
+   `0x462966` 而**作废**（机制见 §4.1：写点 = `0x462961` 的拷贝之后、`0x4629f7` 录制读点之前）。
+   ⇒ 带这个工具录出来的回放**忠实**（自机在回放里走出与现场一致的抖动）。
+   ⚠ 回放**播放**走另一条 on_tick（`0x462a50`）⇒ 站点根本不命中；handler 另有一道
+   `input_synth_blocked()` 门 ⇒ 即使命中也不写（不覆盖回放注入的输入）。
+   ⚠ 回放中**不画 HUD、不计数、不检测**（owner 2026-09-13 追加口径，见 §1.1/§4.1）；
+   商店冻结帧同理（不写/不画/不计数）。
+   ❓ **待实跑验收**：录一段带工具的回放，确认自机在回放里抖动（这是本改动的最终判据）。
+   ⚠ **与 `mouse-control` 同址**：`mods/th18.v1.00a/mouse-control` 的 hook 2 也声明在 `0x462966`
+   （它的 patch 与本 patch 是**两个 patch**；本机 `mods/enabled.json` 现只启用 `th18_card_expand_*`，
+   mouse patch 没开）。**若同进程同时启用两者的 patch**，同一地址会有两条 thcrap 断点
+   （后一条的 cave 会把前一条的 `e8 rel32` 当"原指令"再包一层）⇒ ❓ 未实测，同时启用前先记账/问 owner。
+   备选：改用 `0x462961`（改 `regs->eax`，与 `mouse-control` 零地址冲突，效果等价）——但那不是
+   owner 要的"拷贝之后写"口径。
 2. ❓ `player+0x477f0..f8` 每帧从全局 `0x5217dc..e4` 整块拷（`0x45c717 movq`），而那一格在文件镜像里
    还在 `.data` 的 BSS 尾巴（未初始化）⇒ **运行期常态值未闭合**。它在 `dx` 里是**与方向无关的同一常数**
    （左右两半加同样的量）⇒ 不破坏左右对称，但若常态非 0 会叠加一个恒定漂移。

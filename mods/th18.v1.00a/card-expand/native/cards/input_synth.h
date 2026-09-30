@@ -71,7 +71,9 @@
  *     M 越大触发越稀，只有"想少抖"时才用（本工具默认不图那个）。
  *   · ⇒ **默认 N = 1, M = 1**（周期 4 帧：左 / 松 / 右 / 松）。
  *
- * 四、**默认关闭**：`ce_input_synth_tick()` 在调试键没按下时**一个字节都不写**（见 .c）。
+ * 四、**默认关闭**：`ce_input_synth_frame_mask()` 在调试键没按下时返回"不写"
+ *   （`*write_out == 0`）⇒ 调用方（站点 handler）**一个字节都不写**（见 .c）。
+ *   同一个门还管两件事：**回放中 / 商店冻结帧 / 无自机**时既不写、也不画 HUD、也不推进计数（见 .c）。
  *
  * 硬门：本文件是纯 C（`static inline`），不含浮点、不含 x87 —— 主机单测直接 include。
  */
@@ -132,15 +134,42 @@ static inline unsigned ce_input_synth_half_period(void)
     return CE_INPUT_SYNTH_LEFT_FRAMES + CE_INPUT_SYNTH_RELEASE_FRAMES;
 }
 
-/* ---- 运行件入口（`input_synth.c`）----
- * **每游玩帧调一次**（必须在 Player tick 之前 ⇒ 卡侧 `on_tick_2`（节点 0x16）或常驻帧点
- * `BP_ce_item_frame`（`th18:0x446ee3`）都满足）。返回值无。
+/* ---- 每帧的**三处共用一个门**（纯逻辑，主机单测直接验）----
+ * `active`  = 调试键开关此刻是否开着（`input_synth.c` 的 `s_active`）；
+ * `blocked` = **回放中 / 商店冻结帧 / 没有自机**（`input_synth_blocked()`：`CE_GT_REPLAY_PLAYING` / `0x4cf2a4` / `CE_PLAYER()==NULL`）。
  *
- * ⚠ 本件**不自己挂任何站点、也不注册任何卡**：接法（谁调这一句）由 owner 定，
- *   见 input_synth.c 文件尾「接线」。`Makefile` 的 `SRCS` 用 `cards` 目录通配
- *   （`$(wildcard cards/` + `*.c)`）⇒ 本文件**不需要改 Makefile** 就会被编进 DLL；
- *   需要的只有**一行调用**。
- * ⚠ 调试键没按下时本函数一个字节都不写（不按就 return）。 */
-void ce_input_synth_tick(void);
+ * 语义（owner 2026-09-13 口径，三处必须对齐）：
+ *   · **写输入**（站点 handler）：`active && !blocked` ⇒ 写；否则一个字节都不写；
+ *   · **画 HUD**：`!blocked` ⇒ 画（它是常驻指示器，停着也画）；回放/商店/无自机 ⇒ 不画；
+ *   · **计数与检测**（`frames`/`max`/引擎重设）：`active && !blocked` 才推进 ——
+ *     回放里读到的是**回放注入的输入**产生的状态，算进我们的累计量会污染读数。
+ * ⇒ 回放是**共享的禁令**：`blocked` 一真，三处一起停。 */
+static inline int ce_input_synth_should_write(int active, int blocked)
+{
+    return active && !blocked;
+}
+
+/* ---- 运行件入口（`cards/input_synth.c`）----
+ * **每游玩帧调一次**：由站点 `ce_input_synth`（`th18:0x462966` = 录制 tick 里
+ * `call Input__compute_edges` 那一条）的 handler `BP_ce_input_synth`（`sdk.c`）调。
+ * 落点论证与一手时序见 `DEV-INPUT-SYNTH.md` §4 / `engine/input/th18/01-key-mapping.md` §3.3–§4。
+ *
+ * 返回：本帧要写进 `INPUT_HELD` 的方向位（只有四个方向位；0 = 这一帧**松开方向**，即"抹掉方向位"）。
+ * 出参 `*write_out`：1 = 要写（此时返回值可能就是 0）、0 = **一个字节都不写**
+ *   （没按调试键 / 回放中 / 商店冻结帧 / 无自机）。**默认关闭**就是这个 0。
+ *
+ * ⚠ 站点取在 `0x462966`（**在 `0x462961` 的 raw→`INPUT_HELD` 拷贝之后**、`0x42abc0` 算边沿之前）
+ *   ⇒ 本函数只管"这一帧写什么"，**写 `INPUT_HELD` 由 handler 做**，而且**不再手写 `INPUT_PRESSED`**
+ *   （边沿由引擎随后那条 `0x42abc0` 自己算，见 .c 文件头的订正）。
+ * ⚠ 本件**不自己挂站点**、也不注册卡：站点在 `sites.py` 的 `SDK_SITES`，handler 在 `sdk.c`。
+ * ⚠ 本函数只返回一个标量 + 一个标量出参（最小状态）——handler 在每帧的输入节点里跑，别加重活。
+ */
+uint32_t ce_input_synth_frame_mask(int *write_out);
+
+/* 同上的**绘制**半边：在 `on_draw`（虚表 `+0x48`）里画一行状态字。
+ * **平时常驻**（停着也画）；**回放中 / 商店冻结帧 / 无自机 ⇒ 不画**（与写入侧同一个判据）。
+ * ⚠ `ce_hud_text` 只能在 `on_draw` 里调（SDK 契约）；同样用 `ce_sdk_frame()` 同帧去重。
+ * 定义在 `cards/input_synth.c`；`CE_INPUT_SYNTH_ENABLED = 0` 时是空壳。 */
+void     ce_input_synth_draw(void);
 
 #endif /* CE_INPUT_SYNTH_H */

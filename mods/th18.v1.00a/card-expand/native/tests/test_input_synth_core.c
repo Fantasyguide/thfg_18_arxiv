@@ -5,7 +5,9 @@
  *   ② ★ **半周期镜像不变量** `mask(t + P/2) == mirror(mask(t))` —— 这是"整周期净位移恰好 0"的
  *      结构性理由（论证见 input_synth.h 文件头第一条），对**任意** N/M 都必须成立；
  *   ③ 位域卫生：只写四个方向位，绝不碰 Z(0x001)/X(0x002)/Shift(0x008)/C(0x400)/D(0x800)；
- *   ④ 离线位移模型（两种动力学各跑 600 帧）：
+ *   ④ **三处共用的门**（★ 2026-09-13 owner 追加）：`ce_input_synth_should_write(active, blocked)`
+ *      = `active && !blocked` —— 回放中 / 无自机 ⇒ 不写输入、也不计数（写 HUD 走同一个 `blocked`）；
+ *   ⑤ 离线位移模型（两种动力学各跑 600 帧）：
  *        A = **一手反汇编出来的 TH18 真模型**（每帧速度由输入直接选表 ⇒ 无惯性，
  *            `Player__sub_45b170` `0x45b5a2`–`0x45b608`）；
  *        B = **反事实**的一阶惯性模型（`v += (target - v) * alpha`）—— 用来证明
@@ -117,7 +119,16 @@ int main(void)
         }
     }
 
-    /* ---------- ④ 离线位移：600 帧 ---------- */
+    /* ---------- ④ 三处共用的门（★ 2026-09-13 owner 追加口径）----------
+     * `ce_input_synth_should_write(active, blocked) = active && !blocked`：
+     *   写输入 / 计数与检测都要求它；`blocked` = 回放中 或 没有自机（`CE_GT_REPLAY_PLAYING` / `CE_PLAYER()==NULL`）。
+     * 硬要求：**回放中/无自机 ⇒ 不写**（回放里写 `INPUT_HELD` 会覆盖回放注入的输入 ⇒ 回放必坏）。 */
+    CHECK(ce_input_synth_should_write(1, 0) == 1);   /* 在跑、正常游玩 ⇒ 写 */
+    CHECK(ce_input_synth_should_write(1, 1) == 0);   /* ★ 在跑但回放中/无自机 ⇒ 不写 */
+    CHECK(ce_input_synth_should_write(0, 0) == 0);   /* 没开 ⇒ 不写 */
+    CHECK(ce_input_synth_should_write(0, 1) == 0);
+
+    /* ---------- ⑤ 离线位移：600 帧 ---------- */
     {
         const unsigned FRAMES = 600;
         unsigned i;

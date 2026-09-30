@@ -617,14 +617,22 @@ unsigned ce_death_result_seq(void);
 void     ce_sdk_frame_bump(void);              /* 帧点专用（`sdk.c` 的 `BP_ce_item_frame` 里调）*/
 uint32_t ce_sdk_frame(void);                   /* 只读当前帧号 */
 
-/* ★★ 2026-09-13 用户要的调试件入口：**逐帧合成方向输入**（调试键 = 空格）。
- * ⚠ 必须在**卡 tick（AbilityManager 节点 0x16）**里调 —— 见 `DEV-INPUT-SYNTH.md`「落点」一节：
- *   ItemManager 节点（`ce_item_frame` 那个断点 = 0x1e）在 **Player（0x17）之后**，
- *   在那里写 INPUT_HELD 玩家已经读过了（实跑症状：日志有 START/STOP 但 dx 恒 0）。
- * 定义在 `cards/input_synth.c`；`CE_INPUT_SYNTH_ENABLED = 0` 时是空壳。
- * 同帧只跑一次（内部用 `ce_sdk_frame()` 去重，多张卡各调一次也只推进一格）。*/
-void     ce_input_synth_tick(void);
-/* 同上的**绘制**半边：在 `on_draw`（虚表 `+0x48`）里画一行状态字（生效时才画）。
+/* ★★ 2026-09-13 用户要的调试件：**逐帧合成方向输入**（调试键 = 空格）。
+ * ★★★ 2026-09-13 订正（owner：「**没有进 replay**」→「要它进录像」）：**落点从卡 tick 搬到了
+ *   `ReplayManager__on_tick__record_replay`（`th18:0x462940`）里的新站点 `ce_input_synth`
+ *   （`th18:0x462966` = `call Input__compute_edges` 那一条）** —— 一手帧内顺序是
+ *   `0x462961` 写 `INPUT_HELD`（raw 键盘）→ **本站点** → `0x42abc0` 算边沿 → `0x4629f7` **录制读点**；
+ *   站点机制又是「handler 在原件之前跑」⇒ 在 handler 里写 `INPUT_HELD` **既进录像、又被算边沿、
+ *   同帧 Player（节点 `0x17`）也读到**。旧落点（卡 tick = AbilityManager 节点 `0x16`）在整段
+ *   **之后** ⇒ 写的位永远赶不上录制读点（那正是"没有进 replay"的机制）。
+ *   ⚠ 旧注释说的「必须在卡 tick 里调」**作废**（原因见 `sites.py` 的 `ce_input_synth` 条目 /
+ *     `DEV-INPUT-SYNTH.md` §4）；写入现由 `sdk.c` 的站点 handler `BP_ce_input_synth` 做。
+ * 本件只回答"这一帧该写什么"，**handler 负责写 `INPUT_HELD`**；`CE_INPUT_SYNTH_ENABLED = 0` 时是空壳。
+ * 默认（不按调试键 / 回放中 / 商店冻结帧 / 无自机）⇒ `*write_out = 0`，一个字节都不写。*/
+uint32_t ce_input_synth_frame_mask(int *write_out);
+/* 同上的**绘制**半边：在 `on_draw`（虚表 `+0x48`）里画一行状态字。
+ * **平时常驻**（停着也画）；**回放中 / 商店冻结帧 / 无自机 ⇒ 不画**（owner 2026-09-13 追加口径；
+ * 与写入侧共用 `input_synth_blocked()`，语义对齐见 `cards/input_synth.h`）。
  * ⚠ `ce_hud_text` 只能在 `on_draw` 里调（SDK 契约）；同样用 `ce_sdk_frame()` 同帧去重。*/
 void     ce_input_synth_draw(void);
 

@@ -140,6 +140,28 @@ EXTERNAL_SITES = [("base_tsa (nmlgc)", 20, "repos/nmlgc/base_tsa/th18.v1.00a.js�
 SITE_TOTAL_KNOWN_BAD = 42   # 实测：该配置（我们 22 + base_tsa 20）崩过两次
 SITE_TOTAL_BUDGET = 42      # 只作告警；条数不是触发条件（同配置既崩过也跑通过）
 
+# ★★★ 记账（**owner 拍板** 2026-09-13）：站点 `ce_input_synth`（`th18:0x462966`）
+#   —— 调试件「逐帧合成方向输入」（`cards/input_synth.{h,c}`）**唯一**的落笔点。
+#
+#   · 需求（owner 原话）：「**没有进 replay**」⇒ 要合成输入**进录像**，带工具的实验才可复现。
+#   · **为什么必须新站点、不能并进任何既有站点**（这一条就是"值不值"的全部理由）：
+#       录制读点在 `0x4629f7`（`held16 = (uint16)INPUT_HELD`），它住在 `ReplayManager` 的
+#       **节点 `0x11`**；而本 mod 现有的**每一条**站点都在节点 ≥ `0x16`
+#       （AbilityManager `0x16` / Player `0x17` / ItemManager `0x1e` …，见 `ce_item_frame` 的注释）。
+#       ⇒ **没有任何一条既有站点早于录制读点**；而写 `INPUT_HELD` 又必须同时早于
+#       `0x42abc0`（算边沿）与 `0x4629f7`（录录像）。唯一满足的窗口只剩 `0x462940` 函数体内那两条
+#       —— `0x46295a`（写 raw 键盘）或 **`0x462966`（写 `INPUT_HELD`，本件取它）**。
+#   · 记账口径 = `build_site_accounting()`（含测试归档与进程级外部占用；数与 `sites.py check` 一致）：
+#       改动**前**：本 patch 声明 **33** 条（正式 31 + 测试归档 2）；进程级 = 33 + base_tsa 20 = **53**。
+#       改动**后**：本 patch 声明 **34** 条（正式 32 + 测试归档 2）；进程级 = **54**。
+#       `SITE_BUDGET` = 24 是**记账线**（超线不判红，见上面那段）⇒ 改动前后都在线外，本件 +1 由 owner 拍板。
+#     ⚠ 任务书写的是「27 → 28」——那是 2026-09-13 早先的快照；此后别的会话又往
+#       `_SDK_KEEP_NAMED` 里放回了 `ce_graze` / `ce_bullet_hit` 等（见那里的 ★ 段），
+#       所以**现测**是 33 → 34。精确数一律以 `python3 sites.py check` 的输出为准（与本注释同步）。
+#   · 三条真判据（本件的读数）：① `python3 tools/sitecheck.py 0x462966 5` ⇒ W1/W2/W4 ✅、
+#     W3 = 「窗口首条 e8/e9 ⇒ cave_fix 会重定位」（fixable，**不需要 `no_replay`**）；
+#     ② 启动日志的 `pool:` 实测格数（`sdk.c` 的 `ce_pool_count`）；③ 实跑一局（owner 验收）。
+
 
 def external_sites():
     """进程里**别人**占用的断点条数（默认已知清单；可用 CE_EXTERNAL_SITES 覆盖）。"""
@@ -1278,6 +1300,35 @@ SDK_SITES = [
      "（先扫一遍卡表看有没有声明，没有就整段早退 ⇒ 无卡时零开销）。窗口 = mov/mov/test 三条原样回放"
      "（返回 BP_EXEC_ORIGINAL）、无相对寻址。一手：極人 + 每发自机弹命中敌机 ⇒ 在弹位置掉 1 颗刻符"
      "（`th08:0x451860`–`:0x451892`）。"),
+    # ★★★ 2026-09-13（owner 口径：「**没有进 replay**」→「要它进录像」）：调试件
+    #   「逐帧合成方向输入」（`cards/input_synth.{h,c}`，用法见 `DEV-INPUT-SYNTH.md`）的落点。
+    #   窗口 = `ReplayManager__on_tick__record_replay`（`0x462940`）里的
+    #   **`0x462966 call Input__compute_edges`**（5 字节 `e8 55 82 fc ff`）。
+    #   一手帧内顺序（逐条反汇编，见 `engine/input/th18/01-key-mapping.md` §4.1）：
+    #     `0x462950` 存 `INPUT_HELD_PREV` → `0x46295a` 读 raw 键盘 → **`0x462961` 写 `INPUT_HELD`**
+    #     → **本站点 `0x462966`** → `0x46296b` 长按射击自动低速 → `0x4629f7`/`0x462a0d` **录制读点**
+    #     → `0x463060` 落盘（6 字节/帧）。
+    #   ★ 本仓站点机制：**handler 在原件之前跑**（`thcrap_bp.h`：返回 `BP_EXEC_ORIGINAL` 才回放窗口
+    #   那几字节）。所以站点取 `0x462966` 时，进入 handler 时 `0x462961` 那条 `mov` **已经执行完**
+    #   ⇒ `INPUT_HELD` 里已经是本帧 raw（**拷贝已完成**），我们在这之后把四个方向位**先抹后 OR** 写进去
+    #   ⇒ 随后的 `0x42abc0` 会为我们的位算 `INPUT_PRESSED`/`INPUT_RELEASED`，`0x4629f7` 又把
+    #   `INPUT_HELD` 录进 replay，同帧 Player（节点 `0x17`）读到 ⇒ **玩法与录像同时正确**。
+    #   ⚠ 窗内唯一一条 `e8 rel32` **正是窗口首条** ⇒ thcrap 的 `cave_fix` 会重定位它
+    #   （`sitecheck.py 0x462966 5`：W1/W2/W4 ✅、W3 判 "fixable"，**不需要 `no_replay`**）；
+    #   同地址先例 = `mods/th18.v1.00a/mouse-control` 的 hook 2（同一个 exe 上已实跑，其 AUDIT §B
+    #   记「录 replay 的 0x463060 在注入点之后 ⇒ 输入会一致地录进录像」）。
+    #   为什么不取 `0x462961`：handler 在**那条 `mov` 之前**跑 ⇒ 无法「拷贝之后写」；
+    #   备选路（改 `regs->eax`、让原件自己把我们的位搬进 `INPUT_HELD`）效果等价但不符合 owner 的落点口径。
+    #   · 回放门：站点其实**只在录制 tick 上命中**（回放走 `0x462a50`，见 §4.2），
+    #     但 handler 仍与写入/绘制/计数共用 `input_synth_blocked()`（`CE_GT_REPLAY_PLAYING` / 无自机）⇒ 双保险。
+    ("ce_input_synth", 0x462966, 5, "e85582fcff",
+     "调试件「逐帧合成方向输入」→ 写 `INPUT_HELD`（四个方向位，先抹后 OR；Z/X/Shift/C/D 一个都不碰）。"
+     "站点 = 录制 tick `0x462940` 里的 `call Input__compute_edges`（`0x462966`，5 字节；"
+     "**在 `0x462961` 的 raw→HELD 拷贝之后**、边沿与录制读点之前）：handler 在原件之前跑 ⇒ "
+     "我们写下的位会被 `0x42abc0` 算成边沿、被 `0x4629f7` 录进 replay、同帧 Player（`0x17`）读到。"
+     "默认（不按调试键 / 回放中 / 无自机）**一个字节都不写**。"
+     "窗内唯一 rel32 = 窗口首条 `e8` ⇒ `cave_fix` 重定位（sitecheck W3 fixable），不用 `no_replay`。"
+     "一手与落点论证见 `DEV-INPUT-SYNTH.md` §4 / `engine/input/th18/01-key-mapping.md` §3.3–§4。"),
 ]
 
 # ★★★ 2026-09-18（用户实跑报「魔理沙原子机还有小激光 / shift 还会发导弹」时挖出来的）：
@@ -1338,6 +1389,9 @@ _SDK_KEEP_NAMED = {
     "ce_bullet_hit",                  # 0x45f466：`enm_compute_damage_sources` 的「新命中」点
     # ★ 2026-09-27（108/116）：引擎自己的子弹擦弹事件（坐标 = 被擦到的那颗弹）
     "ce_graze",                      # 0x42497f：放回发布面（见上面那一段的放回论证）
+    # ★★★ 2026-09-13（owner 拍板：「没有进 replay」→「要它进录像」）：调试件「逐帧合成方向输入」的落点。
+    #   记账在文件头「站点记账」那一段（27→28 的旧口径 vs 现测 33→34）；判据 = sitecheck 五项 + 实跑。
+    "ce_input_synth",                # 0x462966：录制 tick 里的 call compute_edges（拷贝之后、边沿/录像之前）
 }
 # 过滤**之前**的全表（含 park 的）—— `tools/sitecheck.py` 的体检要连 park 的一起查：
 # park = 没进 patch = 现在没装，所以本身没风险；但**一旦放回发布面**，用的就是这一份声明。
@@ -1764,6 +1818,9 @@ def emit_header(sites, unlock_reads, order_sites, menu_binhacks):
               "#define CE_BP_SHOT_DAMAGE_RVA 0x%06x" % (_sdk_rva("ce_shot_damage") - 0x400000),
               "#define CE_BP_BULLET_HIT_RVA 0x%06x" % (_sdk_rva("ce_bullet_hit") - 0x400000),
               "#define CE_BP_GRAZE_RVA 0x%06x" % (_sdk_rva("ce_graze") - 0x400000),
+              # ★★★ 2026-09-13（owner：合成输入要进 replay）：调试件「逐帧合成方向输入」的落点
+              #   （`sdk.c` 的 `BP_ce_input_synth` = 唯一出处；窗口/时序见 sites.py 的 SDK_SITES 条目）。
+              "#define CE_BP_INPUT_SYNTH_RVA 0x%06x" % (_sdk_rva("ce_input_synth") - 0x400000),
               "#define CE_BP_BOMB_GATE_RVA 0x%06x" % (_sdk_rva("ce_bomb_gate") - 0x400000),
               "#define CE_BP_PLAYER_DIE_RVA 0x%06x" % (_sdk_rva("ce_player_die") - 0x400000),
               "#define CE_BP_SHOT_SET_INDEX_RVA 0x%06x" % (_sdk_rva("ce_shot_set_index") - 0x400000),

@@ -1508,6 +1508,12 @@
       "expected": "8b4d988b45c885c9",
       "title": "行为 SDK → BP_ce_bullet_hit：enm_compute_damage_sources 0x45f0f0 的**新命中**点（一源一敌一次；跳过条件见上面注释）：esi = 敌指针、edi = 伤害源槽 + 0x20、ebx = 帧基。handler 反推槽下标（`((edi-0x20) - (PLAYER+0x204d8)) / 0x9c`）、扫弹池（`PLAYER+0x1570`、512×0xf8、`+0x8c == 1`、`+0xb0 == 下标`）判定「这一发是**自机弹**」，再沿卡链表调 on_bullet_hit(&ev)（先扫一遍卡表看有没有声明，没有就整段早退 ⇒ 无卡时零开销）。窗口 = mov/mov/test 三条原样回放（返回 BP_EXEC_ORIGINAL）、无相对寻址。一手：極人 + 每发自机弹命中敌机 ⇒ 在弹位置掉 1 颗刻符（`th08:0x451860`–`:0x451892`）。"
     },
+    "ce_input_synth": {
+      "addr": "0x462966",
+      "cavesize": 5,
+      "expected": "e85582fcff",
+      "title": "行为 SDK → BP_ce_input_synth：调试件「逐帧合成方向输入」→ 写 `INPUT_HELD`（四个方向位，先抹后 OR；Z/X/Shift/C/D 一个都不碰）。站点 = 录制 tick `0x462940` 里的 `call Input__compute_edges`（`0x462966`，5 字节；**在 `0x462961` 的 raw→HELD 拷贝之后**、边沿与录制读点之前）：handler 在原件之前跑 ⇒ 我们写下的位会被 `0x42abc0` 算成边沿、被 `0x4629f7` 录进 replay、同帧 Player（`0x17`）读到。默认（不按调试键 / 回放中 / 无自机）**一个字节都不写**。窗内唯一 rel32 = 窗口首条 `e8` ⇒ `cave_fix` 重定位（sitecheck W3 fixable），不用 `no_replay`。一手与落点论证见 `DEV-INPUT-SYNTH.md` §4 / `engine/input/th18/01-key-mapping.md` §3.3–§4。"
+    },
     "ce_shop_bought": {
       "addr": "0x4183ea",
       "cavesize": 12,
