@@ -1,7 +1,7 @@
 /* pofv_core.h —— 花映塚 × 獣王園 合成卡（card-expand id 109）的**纯逻辑**：
  * 白弹半径阈值分类 / 气槽 4 级与蓄力状态机 / CA 与 QCA 的等级与代价 /
- * 暴风（蓝圈）与 CA（红圈）的半径与消弹记账 / SP 三档 / 活化灵状态机 / 暴风队列 /
- * **灵力道具池（自建实体，§E）**。
+ * 暴风（蓝圈）与 CA（红圈）的半径与消弹记账 / SP 三档 /
+ * **灵力道具池（自建实体，§E）** / **固灵结界几何（§F）** / **灵（真敌人）句柄池（§G）**。
  * 纯 C11、**不含任何引擎地址**（引擎侧调用点全在 pofv.c）；主机单测 `tests/test_pofv_core.c`。
  *
  * 设计依据：spec [`docs/superpowers/specs/2026-09-12-pofv-109-design.md`]（2026-09-12）。
@@ -292,55 +292,6 @@ int32_t pofv_power_value_cancel(int32_t n_white, int32_t chain);
  * 真正的消弹 / 伤害在 `on_tick_2` 帧末按 `POFV_STORM_SCANS_PER_FRAME` 的预算做。
  * （旧实现在这里 push 一个 64 格的爆风队列；场模型下不需要队列：场本身就活在池里。）*/
 
-/* ==================================================================== D. 活化灵 */
-
-/* ★ 一手（IDEAS 109「固灵（吸灵）」）：
- *   · 按低速键（Shift）→ 低速移动 + 展开暗色**吸灵领域**（本卡叫「固灵」）；
- *   · 进入领域的**幽灵** → 变圆形、**HP 减半**、**缓慢上浮** → 此时叫**活化灵**；
- *   · 活化灵**一段时间内没被击破会自爆**，生成 **3 颗自机狙小玉**（3 = 一手）；
- *   · **普通幽灵很硬（3 枪打不掉）、只有被连爆波及时才爆**；活化灵很脆、**击破有爆风**。
- * ⚠ 一手未逆到的量（❤ 占位，spec「数值表」标 ❓ 自定）：领域半径、幽灵 HP、自爆倒计时、
- *   上浮速度、场上灵魂上限。 */
-#define POFV_SPIRIT_MAX                  32   /* ❓ 自定 */
-#define POFV_SPIRIT_HP_TOUGH              2   /* ❓ 自定（普通幽灵「3 枪打不掉」⇒ 只有爆风打得动）*/
-#define POFV_SPIRIT_HP_ACTIVATED          1   /* ★ 一手语义「HP **减半**」⇒ 恒 = HP_TOUGH / 2 */
-#define POFV_SPIRIT_SELFDESTRUCT_FRAMES 180   /* ❓ 自定（原版「一段时间」未逆到）*/
-#define POFV_SPIRIT_SELFDESTRUCT_BULLETS  3   /* ★ 一手：自爆生成 3 颗自机狙小玉 */
-#define POFV_SPIRIT_RISE_PER_FRAME        0.5f/* ❓ 自定（活化灵**缓慢上浮**，px/帧）*/
-#define POFV_DOMAIN_R                    96.0f/* ❓ 自定（固灵领域半径）*/
-#define POFV_BLAST_SPIRIT_DMG             2   /* ❓ 自定（爆风对灵魂的伤害；≥ HP_TOUGH ⇒ 连爆必杀）*/
-
-typedef struct {
-    int32_t active;          /* 1 = 槽在用 */
-    int32_t activated;       /* 1 = 活化灵（HP 已减半、正在缓慢上浮、有自爆倒计时）*/
-    float   x, y;            /* 世界坐标（卡侧维护；本卡当前**不建 VM**，视觉待 anm 资产）*/
-    int32_t hp;
-    int32_t age;             /* 出生帧数 */
-    int32_t selfdestruct_in; /* 活化灵自爆倒计时（帧）；≤0 = 本帧自爆；未活化 = -1 */
-    int32_t src_enemy_id;    /* 来源敌人的 enemy_id（记账；**不缓存敌人指针**）*/
-} pofv_spirit_t;
-
-typedef struct {
-    pofv_spirit_t s[POFV_SPIRIT_MAX];
-    int32_t live;
-} pofv_spirit_pool_t;
-
-void pofv_spirit_pool_init(pofv_spirit_pool_t *p);
-/* 掉一颗灵魂（拿卡后像 hyz 一样掉）：返回槽号，−1 = 池满（丢弃）。 */
-int  pofv_spirit_spawn(pofv_spirit_pool_t *p, float x, float y, int32_t src_enemy_id);
-/* 固灵：把领域（圆心 px,py、半径 POFV_DOMAIN_R）内的**未活化**灵魂转成活化灵
- * （HP 减半 + 起自爆倒计时）。`*out_n` = 本次活化的个数。返回本次活化个数。 */
-int  pofv_spirit_activate_in_domain(pofv_spirit_pool_t *p, float px, float py, int32_t *out_n);
-/* 每帧推进：活化灵缓慢上浮 + 自爆倒计时。到点的槽写进 `out_slots`（调用方接着做自爆效果）
- * 并**就地清槽**。返回自爆个数。cap 用满时多出的自爆**留在槽里**、下一帧再爆（不漏报）。 */
-int  pofv_spirit_tick(pofv_spirit_pool_t *p, int32_t *out_slots, int cap);
-/* 爆风波及：圆心 (x,y)、半径 r 内的灵魂吃 `dmg`。普通灵魂只有爆风打得动（一手）。
- * 被击破的槽号写进 `out_slots` 并清槽。返回击破个数。
- * ⚠ cap 传 `POFV_SPIRIT_MAX`（卡侧就这么用）：超过 cap 的击破**仍会清槽但不会被报出来**
- *   （少一次连锁爆风），所以别传小。 */
-int  pofv_spirit_blast_hit(pofv_spirit_pool_t *p, float x, float y, float r, int32_t dmg,
-                           int32_t *out_slots, int cap);
-void pofv_spirit_remove(pofv_spirit_pool_t *p, int32_t slot);
 
 /* ==================================================================== E. 灵力道具（自建实体池）
  *
@@ -466,10 +417,10 @@ int pofv_aura_hit(float dx, float dy, float r, float pad);
  * 本节只放**纯逻辑**：句柄池 + 循环撒的节拍 + boss 门 + 沈静化的计时。
  *   真正的 `ce_spawn_enemy()` / `ce_enemy_by_id()` / ECL 变量写读在 `pofv.c`（卡侧）。
  *
- * ⚠ **本节的 `pofv_ghost_*` 与 §D 的 `pofv_spirit_*` 不是一回事**：
- *   §D 是旧的**自建活化灵池**（卡自己算位置、Shift 领域吸收）；
- *   本节是 owner 口径 10 定下的**真敌人**载体 ⇒ 口径落地后 §D 那条旧路要**整条撤掉**
- *   （撤除与接线同在 `pofv.c`，见卡侧「灵」那一节）。
+ * ⚠ **旧的自建活化灵池（`pofv_spirit_*`）已在 2026-10-01 整条撤掉**：
+ *   它（卡自己算位置、Shift 领域吸收、HP 减半、自爆 3 颗）是口径 10 之前的实现；
+ *   口径 10 定「灵的本体 = TH12 UFO 型真敌人」⇒ 本节是真敌人载体，旧池不再存在。
+ *   撤除的一手交代（哪些 TH09 事实因此不再被复刻）登记在 `TUNING.md` §2.0v-1。
  *
  * 数值出处：
  *   · 同屏上限 = **4** —— ★ 一手 TH09：`initialize_vector_without_destructor(player + 0x30454,
@@ -486,6 +437,7 @@ int pofv_aura_hit(float dx, float dy, float r, float pad);
 #define POFV_GHOST_HP             400      /* ❓ 本卡取值（TH19 enable 侧 400 + I0*400，I0 = 0）*/
 #define POFV_GHOST_HP_CALM         50      /* ✅ 一手 TH19 沈静化后 50 + I0*10（I0 = 0）*/
 #define POFV_GHOST_PTS_KILL        20      /* ❓ 自定（击破一只灵掉的灵力道具面值；同 §E 的击破源）*/
+#define POFV_GHOST_DROP_ITEMS       4      /* ❓ 自定（击破一只灵掉**几颗**：口径 6 的「击破掉一把」）*/
 
 typedef enum {
     POFV_GHOST_KIND_WOLF  = 0,   /* TH19 三族：狼 */

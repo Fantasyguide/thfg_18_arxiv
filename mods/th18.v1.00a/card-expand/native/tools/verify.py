@@ -164,19 +164,40 @@ PRIMS = {
         fail=[(r"pofv: blast queue full", "爆风队列被打满（连锁太快，会丢暴风）")],
     ),
     "spirit": dict(
-        title="创建灵魂（TH09 / 卡 109）",
+        title="灵（自制真敌人；TH09 × TH19 / 卡 109 花映塚 × 獣王園）",
         card=109, impl="cards/pofv.c",
-        pre="装 109，正常打小怪（击破 = 掉一颗灵魂，进卡自己的池）",
+        pre="装 109，进关卡等一个周期（600 帧 ≈ 10 s；**boss 在场不撒**、同屏上限 4）",
         steps=[
-            "击破若干小怪 ⇒ 场上应出现灵魂（自建池）",
-            "Shift 固灵（低速）展开吸灵领域，把灵魂吸掉",
-            "看收尾行 `pofv: run done - N spirits spawned…`（过关 / 删卡 / 重开都会打）",
+            "等约 10 秒 ⇒ 场上出现一只**青绿光球**（灵的本体是真敌人，ECL 侧拆槽 + 卡侧跟随 VM）",
+            "靠近它 ⇒ **固灵结界**把它**沈静化**（停住、耐久骤降到 50）",
+            "打掉它 ⇒ 掉**一把灵力道具**（4 颗）；不打死 ⇒ 沈静化 160 帧后自然成佛（不掉道具）",
+            "看收尾行 `pofv: ghost run done - …`（过关 / 删卡 / 重开都会打）",
         ],
         expect=[
-            (r"pofv: run done - [1-9]\d* spirits spawned", "灵魂账：**击破 ⇒ 掉灵魂**真的发生过（spawned ≥ 1）", True),
-            (r"pofv: guzei activated \d+ spirits", "固灵吸走 N 颗（旁证：池里确实有货）", False),
+            (r"pofv: ghost spawn kind \d+ id \d+ at", "灵被 `ce_spawn_enemy()` 建出来（真敌人载体）", True),
+            (r"pofv: ghost \d+ killed at", "击破一只灵 ⇒ 掉一把灵力道具", False),
+            (r"pofv: ghost \d+ calmed by the barrier", "结界碰灵 ⇒ 沈静化（口径 6）", False),
+            (r"pofv: ghost run done - ", "收尾账（过关 / 删卡 / 重开）", False),
         ],
-        fail=[(r"pofv: spirit pool full", "灵魂池满（32）⇒ 后面的灵魂被丢")],
+        fail=[(r"pofv: ghost follow-VM spawn FAILED", "灵的跟随 VM 没装上（灵会是隐形的）"),
+              (r"pofv: ghost spawn failed", "灵没建出来（spawner 拒绝 / ECL 没加载）")],
+    ),
+    "power-item": dict(
+        title="灵力道具（口径 5 / 卡 109 花映塚 × 獣王園）",
+        card=109, impl="cards/pofv.c",
+        pre="装 109，进关卡打小怪 / 消弹（**卡的攻击槽只能靠拾取灵力道具上涨**）",
+        steps=[
+            "击破小怪 或 用暴风消白弹 ⇒ 原位掉**灵力道具**（青绿小球，会飘落）",
+            "走近 ⇒ 被磁吸 + 收取 ⇒ 日志 `pofv: power +N`",
+            "看收尾行 `pofv: power run done - …`（过关 / 删卡 / 重开都会打）",
+            "长按 C 扫过弹幕 ⇒ 结界碰弹也掉，但有**每帧上限**（不会瞬间爆槽）",
+        ],
+        expect=[
+            (r"pofv: power \+(\d+) \((\d+) items", "拾取 ⇒ 面值进攻击槽（充能的**唯一**入口）", True),
+            (r"pofv: power run done - ", "收尾账（made / picked / expired）", False),
+            (r"pofv: aura touched \d+ bullets", "结界碰弹（每帧上限生效时留一行）", False),
+        ],
+        fail=[(r"pofv: power pool full", "灵力道具池满（48）⇒ 这一个实体被丢（面值已打包，不丢点数）")],
     ),
     "spawn-enemy": dict(
         title="创建敌人（TH12 / 卡 112 星莲船）",
@@ -223,6 +244,7 @@ PRE = {
     "charge":        [r"pofv:"],
     "storm-chain":   [r"pofv:"],
     "spirit":        [r"pofv:"],
+    "power-item":    [r"pofv:"],
     "spawn-enemy":   [r"ufo:"],
     "collect":       [r"ufo:"],
 }
@@ -234,7 +256,10 @@ NOTES = {
     "emitter-close": "需要**打掉某只敌机的发弹口**（gate 才会出声）；场景要跑到敌机群。",
     "spawn-enemy": "需要**令牌走到 `ce_spawn_enemy`**（112 的令牌路径被触发）。",
     "collect": "需要**令牌落地/爆开**。",
-    "spirit": "灵魂账在三处打印（过关/删卡/重开）—— 有值才出声。",
+    "spirit": "灵的账在三处打印（过关/删卡/重开）—— 有值才出声；且要等满一个 600 帧周期"
+              "（boss 在场不撒、同屏上限 4）。",
+    "power-item": "灵力道具的收尾账在三处打印（过关/删卡/重开）—— 有值才出声；"
+                  "`pofv: power +N` 只在**拾取**那一帧打。",
 }
 
 

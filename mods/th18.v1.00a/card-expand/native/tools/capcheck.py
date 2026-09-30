@@ -101,8 +101,12 @@ POOLS = [
      "s_big_drop_lost", "满 → 丢尾并计数（首次记一行 `big-enemy drop queue full`）"),
     ("pool_ufotok", "UFO_TOKEN_CAP", "ufo_core.h", "ufo.c",
      "s_tokpool.dropped", "满 → 丢新令牌并计数（汇总行 `token pool dropped`）"),
-    ("pool_pofvsp", "POFV_SPIRIT_MAX", "pofv_core.h", "pofv.c",
-     "spirit pool full", "满 → 丢掉这支神灵并记一行（`cap_logged` 只记一次）"),
+    ("pool_pofvpow", "POFV_POWER_MAX", "pofv_core.h", "pofv.c",
+     "power pool full", "满 → 丢灵力道具**实体**并记一行。★ 面值由打包摊到已撒的那几颗上 ⇒ "
+     "**不丢充能点数**（`pofv_power_spawn_packed()` 的「总面值守恒」）"),
+    ("pool_pofvghost", "POFV_GHOST_MAX", "pofv_core.h", "pofv.c",
+     "ghost spawn failed", "满 → 跳过一次循环撒并记一行（同屏上限 4 = 一手 TH09；"
+     "节拍里已按它挡过，正常到不了这里）"),
     ("pool_pofvst", "POFV_STORM_MAX", "pofv_core.h", "pofv.c",
      "cap_logged", "满 → 丢暴风并计数（`blast queue full` 只记一行）。"
      "★ 2026-09-22 P5：池从「爆风队列」换成「暴风场池」（`POFV_BLAST_QUEUE_MAX` → `POFV_STORM_MAX`）"),

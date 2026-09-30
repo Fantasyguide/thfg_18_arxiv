@@ -51,9 +51,13 @@ SCENARIOS = {
     "storm-chain": dict(deck="sys12", seconds=90, why="清一片小怪（含 Shift 固灵移动去找密集怪）",
                         timeline=[(1.0, "hold SHOT"), (3.0, "hold UP"), (9.0, "release UP"),
                                   (12.0, "hold SLOW"), (20.0, "release SLOW"), (30.0, "release SHOT")]),
-    "spirit": dict(deck="sys12", seconds=90, why="击破小怪掉灵魂 + Shift 固灵吸灵（灵魂账在收尾打）",
-                   timeline=[(1.0, "hold SHOT"), (6.0, "hold SLOW"), (14.0, "hold UP"),
-                             (22.0, "release UP"), (28.0, "release SLOW"), (40.0, "release SHOT")]),
+    # ★ 2026-10-01（口径 8/9/10）：灵 = **真敌人**、600 帧一个周期 ⇒ 场景要跑够时间（默认 120 s）。
+    "spirit": dict(deck="sys12", seconds=120, why="等一个 600 帧周期 ⇒ 灵冒出来；靠近沈静化 / 打掉掉道具",
+                   timeline=[(1.0, "hold SHOT"), (30.0, "hold UP"), (60.0, "release UP"),
+                             (70.0, "hold SHOT"), (110.0, "release SHOT")]),
+    "power-item": dict(deck="sys12", seconds=90, why="打小怪 / 消弹掉灵力道具，走近拾取（槽涨）",
+                       timeline=[(1.0, "hold SHOT"), (20.0, "hold UP"), (45.0, "release UP"),
+                                 (45.0, "hold DOWN"), (75.0, "release DOWN"), (80.0, "release SHOT")]),
     "collect": dict(deck="sys12", seconds=120, why="上线收点（P 点/金钱）+ 令牌落地",
                     timeline=[(1.0, "hold SHOT"), (5.0, "hold UP"), (40.0, "release UP"),
                               (42.0, "release SHOT")]),
@@ -262,7 +266,7 @@ def find_modkit(explicit):
 # 于是"场景退出码"反映的是全局，汇总表里连该通过的场景也显示未过。
 SCEN_PRIM = {
     "z-intercept": "z-intercept", "charge": "charge", "storm-chain": "storm-chain",
-    "spirit": "spirit", "collect": "collect", "spawn-enemy": "spawn-enemy",
+    "spirit": "spirit", "power-item": "power-item", "collect": "collect", "spawn-enemy": "spawn-enemy",
     "familiar": "familiar", "emitter-close": "emitter-close",
     "card118": "all", "all12": "all",
 }

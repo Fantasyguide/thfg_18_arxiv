@@ -32,13 +32,16 @@
 // ⇒ `@GhostPureHP_D` = `lifeSet(50 + I0*10)`（对照 enable 侧的 `400 + I0*400`）+ 停住 + 缓慢上浮；
 // ⚠ 一手那个子程序**末尾没有 `delete()`**（`wait(100)` + `wait(60)` 后 `return`），
 //   「自然成佛」的计时器在 v1.10c **没找到**（`06` §10.4）。
-// 本卡照 owner 口径落地成：**停住 + 耐久骤降到 50 + 160 帧后 `delete()`（成佛）**
-//   —— 160 = 一手那两个 `wait` 之和（🟡 借它的形），`delete()` 部分是本卡的**❓ 自定**
-//   （成佛**不算击破** ⇒ 不掉道具、不给分；被玩家打死的才算击破）。
+// 本卡的落地：卡侧把 `$I0` 写成 **1** ⇒ 本子程序走 `CESpirit109_calm`：`lifeSet(50)` + **停住**
+//   （不再 `movePosTime`）；**成佛的 160 帧计时在卡侧**（`pofv_core.h` 的
+//   `POFV_GHOST_CALM_FRAMES`，🟡 借一手那两个 `wait` 之和）—— 到点后卡侧把 `$I0` 写成 **999**
+//   ⇒ 本子程序走 `CESpirit109_leave` 飞离自删。成佛**不算击破** ⇒ 不掉道具、不给分。
+//   ⚠ 为什么计时放卡侧：ECL 侧的 `+160:` 版本**不可单测**；放卡侧就能用主机单测钉住
+//     （`pofv_ghost_tick()` 的成佛名额 cap / 幂等沈静化，见 `tests/test_pofv_core.c` §I）。
 //
 // ## 离场
 //
-// `$I0 = 999`（卡侧在**删卡 / 一波结束**时喊）⇒ 飞向正上方 `delete()`：
+// `$I0 = 999`（卡侧在**沈静化成佛 / 删卡 / 一波结束**时喊）⇒ 飞向正上方 `delete()`：
 //   离场**不算击破**、不给点（引擎的 `delete()` 不走死亡通道）。
 //
 // ## 一手与工具链
@@ -56,16 +59,17 @@ void CESpirit109()
     setHurtbox(20.0f, 20.0f);
     setHitbox(12.0f, 12.0f);
 CESpirit109_100:
-    movePosTime(1, 1, %F2, %F3);
     unless ($I0 != 999) goto CESpirit109_leave @ 0;
     unless ($I0 != 1) goto CESpirit109_calm @ 0;
+    movePosTime(1, 1, %F2, %F3);
 +1: //1
     goto CESpirit109_100 @ 0;
 CESpirit109_calm:
     lifeSet(50);
-+160: //160
-    delete();
-    return;
+CESpirit109_calm_100:
+    unless ($I0 != 999) goto CESpirit109_leave @ 0;
++1: //1
+    goto CESpirit109_calm_100 @ 0;
 CESpirit109_leave:
     moveVel(-1.5707964f, 3.0f);
 +60: //60

@@ -73,9 +73,15 @@
 
 /* 输入位（`0x4ca428` 的掩码 = replay 录的那一份 ⇒ 卡侧读它**回放安全**；engine.h 的注释）。
  * ★ 合成卡（owner 2026-09-28）：蓄力键 = **C 的电平**（`0x400`，仍在 replay 掩码低 16 位内
- *   ⇒ 回放天然可复现，见 SPEC-109-FUSION §6 #7）。Z **不再被本卡读**（原生射击全交回引擎）。*/
+ *   ⇒ 回放天然可复现，见 SPEC-109-FUSION §6 #7）。Z **不再被本卡读**（原生射击全交回引擎）。
+ * ⚠ Shift（`0x008`）**也不再被本卡读** —— 旧的「Shift 开固灵吸灵领域」已随活化灵池整条撤掉
+ *   （口径 4 的固灵结界是**常驻**的，与 Shift 无关）。*/
 #define POFV_INPUT_CHARGE      0x400u   /* C（= 蓄力电平；engine.h：`0x45c084` 读的 C 位）*/
-#define POFV_INPUT_FOCUS       0x008u   /* Shift（= 低速 / 固灵）*/
+
+/* 两个跟随 VM 的**绘制层**（❓ 自定；层号在 `CE_ANM_VM_LAYER`，脚本里那两条都故意不写 `layer()`）：
+ * 结界在**灵**之下（结界是地面上的场、灵站在场里）、两者都在自机之下。*/
+#define POFV_AURA_VM_LAYER         5
+#define POFV_GHOST_VM_LAYER        6
 
 /* 消弹调用的 max_count（照 Tenshi 的 0x1869f 量级；本卡两处都不想被截断）。*/
 #define POFV_CANCEL_MAX        9999
@@ -106,40 +112,27 @@
  *     本卡**没接**（用户报的只是"升级音不对"）—— 要补的话各一行，出处已记在上面的表里。*/
 #define POFV_SE_CHARGE_DING     CE_VOICE_CHARGEUP
 
-/* 自爆占位（⚠ 待定）：TH18 **没有卡侧敌弹原语** ⇒ 先按 mandate 用 `ce_damage_rect` 顶替。
- * 语义差异写在 spec §未定项：「自机狙小玉」本该打向自机；ce_damage_rect 是**自机侧**伤害源（伤敌）。
- * 3 颗 = 一手；方向 = 朝自机的 **8 方向近似**（Chebyshev 归一化，**避免 libm / atan2**），
- * 距离与扩散是 ❓ 自定占位。*/
-#define POFV_SD_BULLETS           3
-#define POFV_SD_STEP           24.0f
-#define POFV_SD_DMG             200
-#define POFV_SD_DMG_LIFE          2
-#define POFV_SD_SIZE            8.0f
-
 /* ============================ 卡侧状态 ============================ */
 
 /* 池是**文件级**：`ce_state` 一张卡只有 496 字节（`CE_STATE_BYTES` 512 − `CE_STATE_RESERVED` 16），
- * 装不下 8 个暴风 + 32 颗灵魂 ⇒ 照 116 / 117 的先例放文件级静态池（`animal.c` 的 `s_tok`）。
+ * 装不下 8 个暴风 + 48 颗灵力道具 + 4 只灵 ⇒ 照 116 / 117 的先例放文件级静态池（`animal.c` 的 `s_tok`）。
  * ⚠ 代价：清理必须**完全不依赖 tick**（商店里 tick 停着）⇒ 两条删卡路都在 `clear_card()` 里清。*/
 static pofv_storm_pool_t  s_storm;
-static pofv_spirit_pool_t s_spirit;
 static pofv_power_pool_t  s_power;      /* ★ 2026-10-01（口径 5）：灵力道具池（自建实体，非原生道具）*/
+static pofv_ghost_pool_t  s_ghost;      /* ★ 2026-10-01（口径 8/9/10）：灵的**句柄池**（本体是真敌人）*/
+static int32_t            s_ghost_vm[POFV_GHOST_MAX];   /* 每只灵的**跟随 VM** id（0 = 没有）*/
 static int32_t            s_frame;      /* 游玩帧计数（连爆窗口的帧源；只在 on_tick_2 前进）*/
-/* ★ 验证批次判据（`native/tools/verify.py` 的 «创建灵魂»）：本次段累计的**灵魂账**。
- *   与两个池同样放文件级（`ce_state` 只有 480 字节可用），在 `clear_card()` 里清。
- *   没有这行账，"击破 ⇒ 掉灵魂"在日志上**不可判读**（池不满就一声不响）。*/
-static int32_t            s_spawned, s_absorbed, s_blasted, s_dropped;
-static int32_t            s_power_got;  /* ★ 2026-10-01：本次段累计收取的灵力道具颗数（诊断账）*/
-static int32_t            s_aura_hits;  /* ★ 2026-10-01：本次段结界碰敌弹的累计颗数（诊断账）*/
+/* 诊断账（都在 `clear_card()` 里清；`verify.py` 的场景吃这几行）。*/
+static int32_t            s_power_got;  /* 本次段累计收取的灵力道具颗数 */
+static int32_t            s_aura_hits;  /* 本次段结界碰敌弹的累计颗数 */
 
 typedef struct {
     ce_card_t  *card;
     pofv_state_t st;
     int32_t     prev_charge;    /* 上一帧 C（边沿检测；合成卡 2026-09-28 起取代 prev_shot）*/
-    int32_t     prev_focus;     /* 上一帧 Shift（固灵领域开关；日志用）*/
     pofv_invuln_t invuln;       /* CA 无敌窗口（声明层：每帧声明剩余量 ⇒ 不会被别人截短；
                                  * 状态机在 `pofv_core.c` 的 `pofv_invuln_*`，有主机单测）*/
-    int32_t     spirit_logged;  /* 本次「池满丢弃」只记一行（防刷屏）*/
+    int32_t     ghost_logged;   /* 本次「灵池满 / 没登记上」只记一行（防刷屏）*/
     int32_t     cap_logged;     /* 本次「爆风队满丢弃」只记一行 */
     int32_t     power_logged;   /* 本次「灵力道具池满丢弃」只记一行 */
 } pofv_card_t;
@@ -223,6 +216,24 @@ static int pofv_cancel_circle(const float *pos, float r, int white_only, int max
  *     而是卡侧按**槽号**记 —— 代价是「同一帧内弹被消掉、新弹复用同槽」会漏掉一次掉落（极罕见）。*/
 static uint8_t s_aura_done[CE_BM_BULLET_COUNT];
 
+/* 结界的**跟随 VM**（口径 4 常驻）——判定半径 = 绘制半径（一手 TH19 §7.1/§9.2）。
+ * 懒建：第一帧 tick 时起（`on_ctor` 发生在商店里，ANM 那边不一定就绪）；
+ * `clear_card()` 里删（删卡那一刻 tick 停着 ⇒ 必须自己收，METHOD 铁律）。*/
+static int32_t s_aura_vm;
+
+static void aura_vm_update(void)
+{
+    const float *pp = ce_player_pos();
+
+    if (!pp) return;
+    if (!s_aura_vm)
+        s_aura_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_AURA,
+                                          POFV_AURA_VM_LAYER);
+    if (!s_aura_vm) return;
+    ce_anm_set_pos((uint32_t)s_aura_vm, pp[0], pp[1], 0.0f);
+    ce_anm_set_scale((uint32_t)s_aura_vm, POFV_AURA_R, POFV_AURA_R);   /* ★ 判定 = 绘制 */
+}
+
 /* 扫一遍弹池：把「在结界内且本颗还没算过」的弹标成已算，最多把 `cap` 个位置抄进 ox/oy。
  * 返回本帧**新命中**的颗数（可能 > cap ⇒ 多出来的面值由打包摊到那 cap 颗上）。 */
 static int aura_scan_bullets(const float *center, float r, float *ox, float *oy, int cap)
@@ -284,9 +295,7 @@ static void ca_invuln_grant(pofv_card_t *s, int level)
 static void do_storm_frame(pofv_card_t *s, const pofv_storm_t *bl, int *scan_budget)
 {
     float pos[3], r;
-    int32_t slots[POFV_SPIRIT_MAX];
-    float sx[POFV_SPIRIT_MAX], sy[POFV_SPIRIT_MAX];
-    int n = 0, killed, i;
+    int n = 0;
 
     if (!s || !bl || !bl->active) return;
     pofv_storm_radius(bl, &r);
@@ -314,23 +323,10 @@ static void do_storm_frame(pofv_card_t *s, const pofv_storm_t *bl, int *scan_bud
     ce_raise_damage_cap(POFV_DMG_CAP);
     ce_damage_rect(pos, 0.0f, POFV_STORM_DMG_LIFE, POFV_BLAST_DMG, r * 2.0f, r * 2.0f);
 
-    /* 一手：**普通幽灵很硬（3 枪打不掉）、只有被连爆波及时才爆** ⇒ 灵魂只在这里吃伤害。
-     * 击破的幽灵自己也会产生爆风（一手：击破妖精 / 幽灵时产生蓝圈）⇒ 再起一个场（连锁）。
-     * ⚠ 位置必须在命中判定**之前**抄下来（命中即清槽，槽会被下一颗灵魂复用）。*/
-    for (i = 0; i < POFV_SPIRIT_MAX; ++i) { sx[i] = s_spirit.s[i].x; sy[i] = s_spirit.s[i].y; }
-    killed = pofv_spirit_blast_hit(&s_spirit, bl->x, bl->y, r, POFV_BLAST_SPIRIT_DMG,
-                                   slots, POFV_SPIRIT_MAX);
-    for (i = 0; i < killed && i < POFV_SPIRIT_MAX; ++i) {
-        int32_t k = slots[i];
-        int chain = bl->chain + 1;
-        pofv_account_kill(&s->st);
-        /* 一手（口径 5）：击破 ⇒ 掉一把灵力道具（在原位）。 */
-        pofv_power_spawn(&s_power, sx[k], sy[k], POFV_POWER_PTS_KILL, POFV_POWER_SRC_KILL);
-        if (pofv_storm_spawn(&s_storm, sx[k], sy[k], chain) < 0) {
-            if (!s->cap_logged) { ce_log("pofv: blast queue full — storm pool full, chain storm dropped"); s->cap_logged = 1; }
-        }
-    }
-    s_blasted += killed;
+    /* ★★ 2026-10-01（口径 10）：**旧的自建活化灵池已整条撤掉** —— 灵现在是**真敌人**
+     *   （`ce_spawn_enemy` + `CESpirit109`），与普通敌机一样吃上面这个 `ce_damage_rect`
+     *   与自机弹 ⇒ 「被爆风打死的灵也会起连锁场 + 掉灵力道具」由 `on_enemy_death`
+     *   那条**统一路径**处理（不必也不能在这里自己扫一个卡侧池）。*/
     if (n > 0)
         ce_log("pofv: blast chain %d r %d cancelled %d white (gauge %d, sp %d, power %d)",
                (int)bl->chain, (int)r, n, (int)s->st.gauge, (int)s->st.sp, (int)s_power.live);
@@ -365,34 +361,179 @@ static void do_boss_attack(pofv_card_t *s)
     ca_effect(s, POFV_CA_LEVEL_MAX, /*grant_invuln=*/0);
 }
 
-/* 活化灵自爆（一手：一段时间没被击破 → 自爆，生成 **3 颗自机狙小玉**）。
- * ⚠ **占位（待定）**：TH18 没有卡侧**敌弹**原语（造不出打向自机的弹），按 mandate 先用
- *   `ce_damage_rect` 顶替 —— 它是**自机侧**伤害源（伤敌，伤不到自机），与原版语义不同。
- *   方向 = 朝自机的 8 方向近似（Chebyshev 归一化，不引 libm；真狙击角待 th18 的 atan2 包装）。*/
-static void spirit_selfdestruct(pofv_card_t *s, float x, float y)
+/* ============================ 灵（自制真敌人；口径 8/9/10） ============================
+ * 本体 = **TH12 UFO 型真敌人**：`ce_spawn_enemy("CESpirit109", &spawn)`（ECL 见
+ *   `assets/ecl/spirit109.ecl.txt`，已由 `assets/ecl/make_ufo_ecl.py` 并进 `default.ecl`）。
+ * 卡侧与 ECL 之间只有**两个现成字段**（都不是新站点）：
+ *   · `%F2/%F3`（`CE_ENEMY_ECL_F2/F3` = `enemy+0x14d0/+0x14d4`）= 本帧目标坐标
+ *     —— 先例 = 110 的绿妖精（`cards/faith.c` 的 `gf_follow_tick()`，同一通道）；
+ *   · `$I0`（`CE_ENEMY_ECL_I0` = `enemy+0x14b8`）= 状态：**0 正常 / 1 沈静化 / 999 卡侧喊走**。
+ * ⚠ 卡侧**不缓存敌人指针**（`sdk.h` 的纪律）：每帧用 `ce_enemy_by_id()` 按 enemy_id 找。
+ * 三道门都在纯逻辑里（`pofv_ghost_*`，有主机单测）：同屏上限 **4**（★ 一手 TH09）、
+ *   周期 **600 帧**（❓ owner 2026-10-01 拍）、**任何 boss 在场就不撒**（口径 9 方案甲）。 */
+
+#define POFV_GHOST_ECL_NAME     "CESpirit109"   /* 必须与 `assets/ecl/spirit109.ecl.txt` 的子程序名一致 */
+#define POFV_GHOST_HOMING_SPEED   0.8f  /* ❓ 自定（索敌：每帧朝自机飘多少 px）*/
+#define POFV_GHOST_SPAWN_DX     -40.0f  /* ❓ 自定（出生点相对自机的偏移：左上方一点）*/
+#define POFV_GHOST_SPAWN_DY     -80.0f
+#define POFV_GHOST_VM_SCALE      1.0f   /* ❓ 自定（脚本画的是单位圆 ⇒ 缩放 = 视觉半径系数）*/
+
+/* boss 判据（口径 9 方案甲）：`mgr+0x48` 的 `int[4]` boss enemy_id（一手 `get_boss_enemy_full`
+ * `0x4237f0` 就是按它走链表找），逐个问「还在不在」。任何 boss（含道中）在场 ⇒ 不撒灵。 */
+static int boss_enemy_present(void)
 {
-    const float *pp = ce_player_pos();
-    float dirx = 0.0f, diry = -1.0f;      /* 自机不在时朝上（保底，不崩）*/
+    uint8_t *em = CE_ENEMY_MGR();
     int i;
 
+    if (!em) return 0;
+    for (i = 0; i < CE_EM_BOSS_SLOTS; ++i) {
+        int32_t id = *(const int32_t *)(em + CE_EM_BOSS_IDS + (size_t)i * 4);
+        if (id > 0 && ce_enemy_by_id(em, id)) return 1;
+    }
+    return 0;
+}
+
+/* 每只灵的**跟随 VM**（本体在 ECL 侧 `anmSetSprite(0, -1)` 拆槽 ⇒ 不画 VM 就是隐形的）。*/
+static void ghost_vm_kill(int slot)
+{
+    if (slot < 0 || slot >= POFV_GHOST_MAX) return;
+    if (s_ghost_vm[slot]) {
+        ce_anm_delete((uint32_t)s_ghost_vm[slot]);
+        s_ghost_vm[slot] = 0;
+    }
+}
+
+static void ghost_vm_spawn(pofv_card_t *s, int slot, float x, float y)
+{
+    uint32_t id;
+
+    if (slot < 0 || slot >= POFV_GHOST_MAX) return;
+    ghost_vm_kill(slot);
+    id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_SPIRIT109, POFV_GHOST_VM_LAYER);
+    if (!id) {
+        if (s && !s->ghost_logged) {
+            ce_log("pofv: ghost follow-VM spawn FAILED (anm not ready?) — ghost stays invisible");
+            s->ghost_logged = 1;
+        }
+        return;
+    }
+    s_ghost_vm[slot] = (int32_t)id;
+    ce_anm_set_pos(id, x, y, 0.0f);
+    ce_anm_set_scale(id, POFV_GHOST_VM_SCALE, POFV_GHOST_VM_SCALE);
+}
+
+/* 撒一只灵（真敌人）。返回槽号；−1 = 没撒成（spawner 拒绝 / 池满 ⇒ 已把那只见不得光的喊走）。 */
+static int ghost_spawn(pofv_card_t *s, int32_t kind)
+{
+    uint8_t spawn[CE_SPAWN_SIZE];
+    const float *pp = ce_player_pos();
+    float *sp;
+    uint8_t *e;
+    int32_t id;
+    int slot;
+
+    memset(spawn, 0, sizeof spawn);
+    sp = (float *)(spawn + CE_SPAWN_POS);
+    sp[0] = (pp ? pp[0] : 0.0f) + POFV_GHOST_SPAWN_DX;
+    sp[1] = (pp ? pp[1] : 0.0f) + POFV_GHOST_SPAWN_DY;
+    sp[2] = 0.0f;
+    *(int32_t *)(spawn + CE_SPAWN_SCORE) = 0;
+    *(int32_t *)(spawn + CE_SPAWN_MAIN_DROP) = 0;   /* 奖励全走卡侧的灵力道具（口径 5）*/
+    *(int32_t *)(spawn + CE_SPAWN_LIFE) = POFV_GHOST_HP;
+    *(int32_t *)(spawn + CE_SPAWN_ECL_I) = 0;       /* $I0 = 0（正常）*/
+    ((float *)(spawn + CE_SPAWN_ECL_F))[2] = sp[0]; /* %F2 = 初始目标（ECL 第一帧就 movePosTime 到它）*/
+    ((float *)(spawn + CE_SPAWN_ECL_F))[3] = sp[1]; /* %F3 */
+
+    e = (uint8_t *)ce_spawn_enemy(POFV_GHOST_ECL_NAME, spawn);
+    if (!e) return -1;                              /* spawner 拒绝（池满 / ECL 没加载）*/
+    id = *(int32_t *)(e + CE_ENEMY_ID);
+    slot = pofv_ghost_register(&s_ghost, id, kind);
+    if (slot < 0) {
+        /* 池满（正常到不了：节拍已按同屏上限挡过）⇒ 喊刚建的那只走（$I0 = 999 飞离自删），
+         * 绝不留一只没人管的孤儿敌人。*/
+        *(int32_t *)(e + CE_ENEMY_ECL_I0) = 999;
+        return -1;
+    }
+    s_ghost.s[slot].x = sp[0];
+    s_ghost.s[slot].y = sp[1];
+    ghost_vm_spawn(s, slot, sp[0], sp[1]);
+    ce_log("pofv: ghost spawn kind %d id %d at (%d,%d) [%d live, %d made]",
+           (int)kind, (int)id, (int)sp[0], (int)sp[1], (int)s_ghost.live, (int)s_ghost.spawned);
+    return slot;
+}
+
+/* 每帧：① 逐只跟随 + 结界沈静化 + 失踪回收；② 沈静化到点成佛；③ 循环撒。*/
+static void ghost_tick(pofv_card_t *s)
+{
+    uint8_t *em = CE_ENEMY_MGR();
+    const float *pp = ce_player_pos();
+    int32_t slots[POFV_GHOST_MAX];
+    int i, n;
+
     if (!s) return;
-    if (pp) {
-        float dx = pp[0] - x, dy = pp[1] - y;
-        float ax = dx < 0.0f ? -dx : dx, ay = dy < 0.0f ? -dy : dy;
-        float m = ax > ay ? ax : ay;
-        if (m > 0.0001f) { dirx = dx / m; diry = dy / m; }   /* 8 方向近似（不引 libm）*/
+
+    /* ① 逐只：找到敌人就跟随（写 %F2/%F3），找不到就回收槽（被击破的已在 on_enemy_death 处理）。*/
+    for (i = 0; i < POFV_GHOST_MAX; ++i) {
+        pofv_ghost_t *g = &s_ghost.s[i];
+        uint8_t *e;
+        if (!g->active) continue;
+        e = ce_enemy_by_id(em, g->enemy_id);
+        if (!e) {                                   /* 被清场（enmKillAll）/ 已经自删 ⇒ 槽回收 */
+            ghost_vm_kill(i);
+            pofv_ghost_release(&s_ghost, i);
+            continue;
+        }
+        g->x = ((const float *)ce_enemy_pos(e))[0];
+        g->y = ((const float *)ce_enemy_pos(e))[1];
+
+        if (!g->calmed && pp) {
+            float dx = pp[0] - g->x, dy = pp[1] - g->y;
+            float ax = dx < 0.0f ? -dx : dx, ay = dy < 0.0f ? -dy : dy;
+            float m = ax > ay ? ax : ay;
+            float tx = g->x, ty = g->y;
+            if (m > 1.0f) {                          /* 索敌：朝自机飘（Chebyshev 归一，不引 libm）*/
+                float step = POFV_GHOST_HOMING_SPEED;
+                if (step > m) step = m;
+                tx += dx / m * step;
+                ty += dy / m * step;
+            }
+            *(float *)(e + CE_ENEMY_ECL_F2) = tx;
+            *(float *)(e + CE_ENEMY_ECL_F3) = ty;
+            /* 口径 6：结界碰灵 ⇒ 沈静化（写 $I0 = 1；ECL 那边 lifeSet(50) + 停住）。*/
+            if (pofv_aura_hit(g->x - pp[0], g->y - pp[1], POFV_AURA_R, 0.0f)
+                && pofv_ghost_calm(&s_ghost, i)) {
+                *(int32_t *)(e + CE_ENEMY_ECL_I0) = 1;
+                ce_log("pofv: ghost %d calmed by the barrier at (%d,%d)",
+                       (int)g->enemy_id, (int)g->x, (int)g->y);
+            }
+        }
+        ce_anm_set_pos((uint32_t)s_ghost_vm[i], g->x, g->y, 0.0f);
     }
-    ce_raise_damage_cap(POFV_SD_DMG);
-    for (i = 0; i < POFV_SD_BULLETS; ++i) {
-        float d = POFV_SD_STEP * (float)(i + 1);
-        float p[3];
-        p[0] = x + dirx * d;
-        p[1] = y + diry * d;
-        p[2] = 0.0f;
-        ce_damage_rect(p, 0.0f, POFV_SD_DMG_LIFE, POFV_SD_DMG, POFV_SD_SIZE, POFV_SD_SIZE);
+
+    /* ② 成佛（沈静化满 `POFV_GHOST_CALM_FRAMES`）：喊 ECL 走（$I0 = 999 ⇒ 飞离自删）+ 收槽 + 删 VM。
+     *    ⚠ `pofv_ghost_tick()` 已就地释放槽（`active = 0`），这里只读它的 enemy_id 去喊话。*/
+    n = pofv_ghost_tick(&s_ghost, slots, POFV_GHOST_MAX);
+    for (i = 0; i < n && i < POFV_GHOST_MAX; ++i) {
+        int32_t k = slots[i];
+        uint8_t *e = ce_enemy_by_id(em, s_ghost.s[k].enemy_id);
+        if (e) *(int32_t *)(e + CE_ENEMY_ECL_I0) = 999;
+        ghost_vm_kill(k);
+        ce_log("pofv: ghost %d reached buddhahood (%d calm frames) — no drop (not a kill)",
+               (int)s_ghost.s[k].enemy_id, POFV_GHOST_CALM_FRAMES);
     }
-    ce_log("pofv: activated spirit self-destruct at (%d,%d) -> %d placeholder rects",
-           (int)x, (int)y, POFV_SD_BULLETS);
+
+    /* ③ 循环撒（口径 9）：600 帧一只 / boss 在场不撒 / 同屏 ≤ 4 —— 三道门都在 core 里。*/
+    {
+        int32_t kind = 0;
+        if (pofv_ghost_cycle_tick(&s_ghost, boss_enemy_present(), &kind)) {
+            if (ghost_spawn(s, kind) < 0) {
+                if (!s->ghost_logged) {
+                    ce_log("pofv: ghost spawn failed (spawner refused) — skipped this cycle");
+                    s->ghost_logged = 1;
+                }
+            }
+        }
+    }
 }
 
 /* ============================ 钩子 ============================ */
@@ -433,15 +574,22 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
             s->power_logged = 1;
         }
     }
-    /* 一手（用户口径）：拿卡后场上像 hyz 一样**掉灵魂**（自建池，照 116 / 117 先例）。
-     * ★ 两支都记账（verify.py 的 «创建灵魂» 判据就吃这行账）。*/
-    if (pofv_spirit_spawn(&s_spirit, ev->x, ev->y, (int32_t)ev->id) >= 0) {
-        ++s_spawned;
-    } else {
-        ++s_dropped;
-        if (!s->spirit_logged) {
-            ce_log("pofv: spirit pool full (%d) — spirit dropped", POFV_SPIRIT_MAX);
-            s->spirit_logged = 1;
+    /* ★★ 2026-10-01（口径 8/9/10）：如果死的这只正是**我们撒的灵** ⇒
+     *   回收句柄（槽 + 跟随 VM）+ 掉「**一把**」灵力道具（口径 6「击破掉一把」）。
+     *   ⚠ 只读 `ev->id`（不缓存敌人指针）；`pofv_ghost_find` 是 O(4)。*/
+    {
+        int gslot = pofv_ghost_find(&s_ghost, (int32_t)ev->id);
+        if (gslot >= 0) {
+            int32_t gpts = 0;
+            ghost_vm_kill(gslot);
+            pofv_ghost_release(&s_ghost, gslot);
+            ++s_ghost.killed;
+            pofv_power_spawn_packed(&s_power, ev->x, ev->y, POFV_GHOST_DROP_ITEMS,
+                                    POFV_GHOST_PTS_KILL, POFV_GHOST_DROP_ITEMS,
+                                    POFV_POWER_SRC_KILL, &gpts);
+            ce_log("pofv: ghost %d killed at (%d,%d) — %d power items worth %d pts [%d live]",
+                   (int)ev->id, (int)ev->x, (int)ev->y, POFV_GHOST_DROP_ITEMS, (int)gpts,
+                   (int)s_ghost.live);
         }
     }
 }
@@ -453,11 +601,9 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
 static int on_tick_2(ce_card_t *c)
 {
     pofv_card_t *s = st(c);
-    int charge, focus, lvl = 0;
-    int32_t i, n_sd;
+    int charge, lvl = 0;
+    int32_t i;
     int scan_budget;
-    int32_t sd_slots[POFV_SPIRIT_MAX];
-    float sd_x[POFV_SPIRIT_MAX], sd_y[POFV_SPIRIT_MAX];
     const pofv_storm_t *bl;
 
     if (!s) return 0;
@@ -482,9 +628,10 @@ static int on_tick_2(ce_card_t *c)
 
     /* ★ 合成卡（owner 2026-09-28）：蓄力 = **按住 C 的电平**（不是边沿触发的一次性动作）。
      *   按住期间的上升沿 `begin`、每帧 `hold`、松开 `release` 三步都在这里；
-     *   Z 不参与（原生射击不受本卡任何影响 —— 拦 Z 已整条删除）。*/
+     *   Z 不参与（原生射击不受本卡任何影响 —— 拦 Z 已整条删除）。
+     *   ⚠ 旧实现里 Shift（`focus`）还会开「固灵吸灵领域」——**那条已在 2026-10-01 整条撤掉**：
+     *     口径 4 的固灵结界是**常驻**的（见下面那个 aura 块），与 Shift 无关。*/
     charge = (CE_INPUT_HELD() & POFV_INPUT_CHARGE) != 0;
-    focus  = (CE_INPUT_HELD() & POFV_INPUT_FOCUS) != 0;
 
     if (charge && !s->prev_charge) pofv_charge_begin(&s->st);
     if (charge) {
@@ -495,30 +642,13 @@ static int on_tick_2(ce_card_t *c)
         /* 返回 0 = 没蓄到 C1（点射）/ 气不够 ⇒ 什么都不做 */
     }
     s->prev_charge = charge;
-    s->prev_focus = focus;
 
-    /* 固灵（一手：按低速键 → 展开暗色吸灵领域）：领域圆心 = 自机、半径 = POFV_DOMAIN_R。
-     * 「进入领域的幽灵 → 变圆形、HP 减半、缓慢上浮 → 活化灵」全在 core 里。*/
-    if (focus) {
-        int32_t n_act = 0;
-        const float *pp = ce_player_pos();
-        if (pp && pofv_spirit_activate_in_domain(&s_spirit, pp[0], pp[1], &n_act) > 0) {
-            s_absorbed += n_act;
-            ce_log("pofv: guzei activated %d spirits", (int)n_act);
-        }
-    }
-
-    /* 活化灵每帧推进 + 自爆。位置要在 tick 之前抄下来（tick 到点即清槽）。*/
-    for (i = 0; i < POFV_SPIRIT_MAX; ++i) {
-        sd_x[i] = s_spirit.s[i].x;
-        sd_y[i] = s_spirit.s[i].y;
-    }
-    n_sd = pofv_spirit_tick(&s_spirit, sd_slots, POFV_SPIRIT_MAX);
-    for (i = 0; i < n_sd && i < POFV_SPIRIT_MAX; ++i)
-        spirit_selfdestruct(s, sd_x[sd_slots[i]], sd_y[sd_slots[i]]);
+    /* ★ 2026-10-01（口径 8/9/10）：**灵**（真敌人）—— 跟随 / 索敌 / 结界沈静化 / 循环撒
+     *   （三道门：600 帧、boss 在场不撒、同屏 ≤ 4）全在 `ghost_tick()` 里。 */
+    ghost_tick(s);
 
     /* 帧末统一推进**暴风场**（review §4.1 的预算仍然在）：
-     * 每个活着的场**每帧**都判一次（伤害源 + 圈内灵魂），整池扫弹按 `POFV_STORM_SCANS_PER_FRAME`
+     * 每个活着的场**每帧**都判一次（伤害源 + 圈内灵），整池扫弹按 `POFV_STORM_SCANS_PER_FRAME`
      * 出闸 —— 这就是「场」与「一次性爆风」的全部差别（妖精飞进来才被点着 ⇒ 连锁跟着妖精走）。*/
     scan_budget = POFV_STORM_SCANS_PER_FRAME;
     for (i = 0; i < POFV_STORM_MAX; ++i) {
@@ -533,6 +663,7 @@ static int on_tick_2(ce_card_t *c)
      *   ⚠ 位置 = 被碰到的弹的**原位**（一手 TH19 的灵力道具就从实体原位掉）。 */
     {
         const float *pp = ce_player_pos();
+        aura_vm_update();                       /* ★ 结界的视觉：圆心 = 自机、scale = 判定半径 */
         if (pp) {
             float ox[POFV_AURA_ITEMS_PER_FRAME], oy[POFV_AURA_ITEMS_PER_FRAME];
             int hit = aura_scan_bullets(pp, POFV_AURA_R, ox, oy, POFV_AURA_ITEMS_PER_FRAME);
@@ -569,21 +700,18 @@ static int on_tick_2(ce_card_t *c)
 
 /* ============================ 生命周期 ============================ */
 
-/* 收干净：**暴风场池** + 灵魂池 + **灵力道具池** + 无敌声明。
+/* 收干净：**暴风场池** + **灵力道具池** + **灵（敌人 + 跟随 VM）** + 结界闩锁 + 无敌声明。
  * ⚠ 删卡发生在**商店里**（倒吊人 / 原版空白卡清空整副牌），那一刻 AbilityManager 冻着、
  *   卡的 tick 全停 ⇒ 只能靠 `on_delete`（虚表 `+0x50`）收。
- * ⚠ 本卡当前**没有 ANM VM**（活化灵 / 灵力道具 / 结界的视觉待 ability.anm 资产）；**将来加了必须在这里删**，
- *   否则会和 116 / 117 的「VM 永久钉在屏幕上」同款翻车。*/
+ *   ⇒ 灵的敌人与 VM **也必须在这里自己收**（tick 里那套回收逻辑这一帧不会跑）。*/
 static void clear_card(ce_card_t *c)
 {
     pofv_card_t *s = st(c);
+    uint8_t *em = CE_ENEMY_MGR();
+    int i;
 
-    /* ★ 验证批次判据（`verify.py` 的 «创建灵魂»）：**清池之前**把本次段累计打出来。
-     *   本函数同时服务三条路（每关重挂 / 一局重开 / 删卡）⇒ 这行是「本段账」，
-     *   关卡换段也会打一次（数据更多，不是错）；全部为 0 时不出声（不刷屏）。*/
-    if (s_spawned || s_absorbed || s_blasted || s_dropped)
-        ce_log("pofv: run done - %d spirits spawned, %d absorbed, %d blasted, %d dropped (pool %d)",
-               (int)s_spawned, (int)s_absorbed, (int)s_blasted, (int)s_dropped, POFV_SPIRIT_MAX);
+    /* ★ 诊断账（都在清池**之前**打）：本函数同时服务三条路（每关重挂 / 一局重开 / 删卡）
+     *   ⇒ 这行是「本段账」，关卡换段也会打一次（数据更多，不是错）；全 0 时不出声（不刷屏）。*/
     if (s_power.spawned || s_power_got || s_power.expired || s_power.dropped)
         ce_log("pofv: power run done - %d items made, %d picked (+%d pts), %d expired, %d packed away (pool %d)",
                (int)s_power.spawned, (int)s_power_got, (int)s_power.absorbed,
@@ -591,12 +719,30 @@ static void clear_card(ce_card_t *c)
     if (s_aura_hits)
         ce_log("pofv: aura run done - %d bullets touched by the barrier (r = %d)",
                (int)s_aura_hits, (int)POFV_AURA_R);
-    s_spawned = s_absorbed = s_blasted = s_dropped = 0;
+    if (s_ghost.spawned || s_ghost.killed || s_ghost.calmed_total || s_ghost.expired || s_ghost.live)
+        ce_log("pofv: ghost run done - %d made, %d killed, %d calmed, %d reached buddhahood, %d still live",
+               (int)s_ghost.spawned, (int)s_ghost.killed, (int)s_ghost.calmed_total,
+               (int)s_ghost.expired, (int)s_ghost.live);
     s_power_got = 0;
     s_aura_hits = 0;
 
+    /* ★ 灵：先喊所有活着的灵「走」（`$I0 = 999` ⇒ ECL 那边飞离自删），再收 VM，最后清句柄池。
+     *   ⚠ 顺序不能反：清池之后就找不到 enemy_id 了 ⇒ 会留下一批没人管的孤儿敌人。*/
+    for (i = 0; i < POFV_GHOST_MAX; ++i) {
+        if (!s_ghost.s[i].active) continue;
+        if (em) {
+            uint8_t *e = ce_enemy_by_id(em, s_ghost.s[i].enemy_id);
+            if (e) *(int32_t *)(e + CE_ENEMY_ECL_I0) = 999;
+        }
+        ghost_vm_kill(i);
+    }
+    pofv_ghost_clear(&s_ghost);
+    memset(s_ghost_vm, 0, sizeof s_ghost_vm);
+
+    /* ★ 结界的跟随 VM：同样必须在这里删（删卡那一刻 tick 停着，画面上的环不会自己走）。*/
+    if (s_aura_vm) { ce_anm_delete((uint32_t)s_aura_vm); s_aura_vm = 0; }
+
     pofv_storm_pool_init(&s_storm);
-    pofv_spirit_pool_init(&s_spirit);
     pofv_power_clear(&s_power);                 /* ★ 灵力道具池：删卡/重开/换关都清干净 */
     memset(s_aura_done, 0, sizeof s_aura_done); /* ★ 结界闩锁：与弹池一起清（删卡后不留幽灵标记）*/
     s_frame = 0;
@@ -605,8 +751,7 @@ static void clear_card(ce_card_t *c)
     ce_invuln_request(ce_card_id(c), 0);   /* 退出无敌声明层（不截短别人已给的计时器）*/
     pofv_invuln_init(&s->invuln);          /* 窗口清零（声明已在上一条退掉）*/
     s->prev_charge = 0;
-    s->prev_focus = 0;
-    s->spirit_logged = 0;
+    s->ghost_logged = 0;
     s->cap_logged = 0;
     s->power_logged = 0;
 }
@@ -617,7 +762,8 @@ static int on_ctor(ce_card_t *c)
     if (!s) return 0;
     clear_card(c);                          /* 新对象 / 每关重挂：清成初始态（含文件级池）*/
     ce_log("pofv: ctor (T = %.1f white-bullet radius; charge on hold-C, no Z suppression; "
-           "power items = self-built pool, no native item type)", POFV_WHITE_R_MAX);
+           "power items = self-built pool; ghosts = real enemies via %s)",
+           POFV_WHITE_R_MAX, POFV_GHOST_ECL_NAME);
     return 0;
 }
 
