@@ -194,6 +194,7 @@ PRIMS = {
         ],
         expect=[
             (r"pofv: power \+(\d+) \((\d+) items", "拾取 ⇒ 面值进攻击槽（充能的**唯一**入口）", True),
+            (r"pofv: aura profile for character \d+ -> mode", "结界按**自机角色**选档案（咲夜=TH09 锚定场 / 早苗=TH19 圆）", False),
             (r"pofv: power run done - ", "收尾账（made / picked / expired）", False),
             (r"pofv: aura touched \d+ bullets", "结界碰弹（每帧上限生效时留一行）", False),
         ],

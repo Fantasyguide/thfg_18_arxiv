@@ -73,9 +73,11 @@
 /* 输入位（`0x4ca428` 的掩码 = replay 录的那一份 ⇒ 卡侧读它**回放安全**；engine.h 的注释）。
  * ★ 合成卡（owner 2026-09-28）：蓄力键 = **C 的电平**（`0x400`，仍在 replay 掩码低 16 位内
  *   ⇒ 回放天然可复现，见 SPEC-109-FUSION §6 #7）。Z **不再被本卡读**（原生射击全交回引擎）。
- * ⚠ Shift（`0x008`）**也不再被本卡读** —— 旧的「Shift 开固灵吸灵领域」已随活化灵池整条撤掉
- *   （口径 4 的固灵结界是**常驻**的，与 Shift 无关）。*/
+ * ★ 2026-10-01 owner 追加口径：**早苗的固灵结界半径 = 按住 Shift 的时长**（「把 shift 时长当作
+ *   某种蓄力」）⇒ Shift（`0x008`）**重新被本卡读**（只读，不改位）。⚠ 旧的「Shift 开固灵吸灵领域」
+ *   那条（随活化灵池撤掉）**不恢复**：这里读 Shift 只服务结界的半径。*/
 #define POFV_INPUT_CHARGE      0x400u   /* C（= 蓄力电平；engine.h：`0x45c084` 读的 C 位）*/
+#define POFV_INPUT_FOCUS       0x008u   /* Shift（= 低速 / 聚焦）—— 只读：早苗结界的「蓄力」输入 */
 
 /* 两个跟随 VM 的**绘制层**（❓ 自定；层号在 `CE_ANM_VM_LAYER`，脚本里那两条都故意不写 `layer()`）：
  * 结界在**灵**之下（结界是地面上的场、灵站在场里）、两者都在自机之下。*/
@@ -218,22 +220,72 @@ static int pofv_cancel_circle(const float *pos, float r, int white_only, int max
  *     而是卡侧按**槽号**记 —— 代价是「同一帧内弹被消掉、新弹复用同槽」会漏掉一次掉落（极罕见）。*/
 static uint8_t s_aura_done[CE_BM_BULLET_COUNT];
 
-/* 结界的**跟随 VM**（口径 4 常驻）——判定半径 = 绘制半径（一手 TH19 §7.1/§9.2）。
+/* ---- ★★ 2026-10-01 owner 追加口径：结界**按自机角色**取不同游戏的版本 ----
+ *   「固灵结界 **咲夜取 th09，早苗取 th19**，灵梦和魔理沙**待定**」＋
+ *   「（早苗的半径）**把 shift 时长当作某种蓄力**」。档案表在 `pofv_core.h` §F（有主机单测）。
+ *
+ * 本帧算出来的三件东西放在文件级（`ghost_tick` / 弹扫描 / VM 都要用同一份）：
+ *   `s_aura`（档案）/ `s_aura_cx,cy`（圆心）/ `s_aura_r`（判定半径 = 绘制半径）。 */
+static pofv_aura_profile_t s_aura;
+static float   s_aura_cx, s_aura_cy;    /* 圆心：STATIC = 自机；FIELD = **锚定点**（一手 TH09 的锚定语义）*/
+static float   s_aura_r;                /* 本帧的判定半径（≤ 0 = 结界没展开）*/
+static int32_t s_aura_age;              /* FIELD：本个场已活了几帧（−1 = 需要（重）出生）*/
+static int32_t s_shift_frames;          /* 连续按住 Shift 的帧数（早苗的「蓄力」）*/
+static int32_t s_aura_char = -1;        /* 上一次打过日志的角色号（换角色时打一行，便于实跑判读）*/
+
+/* 结界的**跟随 VM**（判定半径 = 绘制半径，一手 TH19 §7.1/§9.2）。
  * 懒建：第一帧 tick 时起（`on_ctor` 发生在商店里，ANM 那边不一定就绪）；
  * `clear_card()` 里删（删卡那一刻 tick 停着 ⇒ 必须自己收，METHOD 铁律）。*/
 static int32_t s_aura_vm;
 
-static void aura_vm_update(void)
+/* 每帧一次：选档案 → 推 Shift 蓄力 → 算圆心/半径 → 同步 VM。之后再拿这份状态去判弹与灵。 */
+static void aura_update(void)
 {
     const float *pp = ce_player_pos();
+    int character = *(const int32_t *)CE_ADDR_CHARACTER;
 
-    if (!pp) return;
+    pofv_aura_profile_for(character, &s_aura);
+    if (character != s_aura_char) {          /* 换角色 / 首次：打一行（实跑判读用）*/
+        s_aura_char = character;
+        ce_log("pofv: aura profile for character %d -> mode %d (%s), pad_linear %d, "
+               "r_fixed %d, K %d, r0 %d dr %d life %d",
+               character, (int)s_aura.mode,
+               s_aura.mode == POFV_AURA_FIELD ? "TH09 anchored field" : "TH19 static circle",
+               (int)s_aura.pad_linear, (int)s_aura.r_fixed, (int)s_aura.k,
+               (int)s_aura.r0, (int)s_aura.dr, (int)s_aura.life);
+    }
+
+    /* Shift 时长 → TH19 的蓄力量（owner 口径；❓ 每帧 2 ⇒ 100 帧满）*/
+    if (CE_INPUT_HELD() & POFV_INPUT_FOCUS) {
+        if (s_shift_frames < 1000000) ++s_shift_frames;
+    } else {
+        s_shift_frames = 0;
+    }
+
+    if (s_aura.mode == POFV_AURA_FIELD) {
+        /* ★ TH09 的锚定场：圆心**锚在出生点**、逐帧扩张、寿命到点在自机处重起一个。
+         *   ⇒ 与 TH19 的「跟着自机走的常驻圆」手感不同（owner 口径 A）。*/
+        if (s_aura_age < 0) {
+            if (pp) { s_aura_cx = pp[0]; s_aura_cy = pp[1]; }
+            s_aura_age = 0;
+        }
+        pofv_aura_radius(&s_aura, s_aura_age, 0, &s_aura_r);
+        if (s_aura_age >= s_aura.life) s_aura_age = -1;   /* 到点：下一帧在自机处重生 */
+        else ++s_aura_age;
+    } else {
+        if (pp) { s_aura_cx = pp[0]; s_aura_cy = pp[1]; }
+        pofv_aura_radius(&s_aura, 0, pofv_aura_shift_charge(s_shift_frames), &s_aura_r);
+    }
+
+    /* 视觉：懒建 + 每帧圆心/缩放（半径 ≤ 0 ⇒ 缩放 0 = 看不见）*/
     if (!s_aura_vm)
         s_aura_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_AURA,
                                           POFV_AURA_VM_LAYER);
-    if (!s_aura_vm) return;
-    ce_anm_set_pos((uint32_t)s_aura_vm, pp[0], pp[1], 0.0f);
-    ce_anm_set_scale((uint32_t)s_aura_vm, POFV_AURA_R, POFV_AURA_R);   /* ★ 判定 = 绘制 */
+    if (s_aura_vm) {
+        float sc = s_aura_r > 0.0f ? s_aura_r : 0.0f;
+        ce_anm_set_pos((uint32_t)s_aura_vm, s_aura_cx, s_aura_cy, 0.0f);
+        ce_anm_set_scale((uint32_t)s_aura_vm, sc, sc);   /* ★ 判定 = 绘制 */
+    }
 }
 
 /* 灵力道具的**跟随 VM 同步**（每颗一台；`pofv_power_t` 是纯逻辑、不认识 VM ⇒ 在这里按槽对齐）：
@@ -262,7 +314,7 @@ static void power_vm_sync(void)
 
 /* 扫一遍弹池：把「在结界内且本颗还没算过」的弹标成已算，最多把 `cap` 个位置抄进 ox/oy。
  * 返回本帧**新命中**的颗数（可能 > cap ⇒ 多出来的面值由打包摊到那 cap 颗上）。 */
-static int aura_scan_bullets(const float *center, float r, float *ox, float *oy, int cap)
+static int aura_scan_bullets(const float *center, float r, int pad_linear, float *ox, float *oy, int cap)
 {
     uint8_t *bm = CE_BULLET_MGR();
     uint32_t i;
@@ -281,7 +333,8 @@ static int aura_scan_bullets(const float *center, float r, float *ox, float *oy,
         by = *(const float *)(b + CE_BULLET_POS + 4);
         dx = bx - center[0];
         dy = by - center[1];
-        if (!pofv_aura_hit(dx, dy, r, br)) continue;                     /* pad = 弹半径（一手 TH19）*/
+        /* pad = 弹半径（一手 TH19）；几何支按角色档案（Reimu 支 / Sanae 支）。*/
+        if (!pofv_aura_hit_ex(dx, dy, r, br, pad_linear)) continue;
         s_aura_done[i] = 1;
         if (n < cap) { ox[n] = bx; oy[n] = by; }
         ++n;
@@ -526,7 +579,8 @@ static void ghost_tick(pofv_card_t *s)
             *(float *)(e + CE_ENEMY_ECL_F2) = tx;
             *(float *)(e + CE_ENEMY_ECL_F3) = ty;
             /* 口径 6：结界碰灵 ⇒ 沈静化（写 $I0 = 1；ECL 那边 lifeSet(50) + 停住）。*/
-            if (pofv_aura_hit(g->x - pp[0], g->y - pp[1], POFV_AURA_R, 0.0f)
+            if (pofv_aura_hit_ex(g->x - s_aura_cx, g->y - s_aura_cy, s_aura_r, 0.0f,
+                                 s_aura.pad_linear)
                 && pofv_ghost_calm(&s_ghost, i)) {
                 *(int32_t *)(e + CE_ENEMY_ECL_I0) = 1;
                 ce_log("pofv: ghost %d calmed by the barrier at (%d,%d)",
@@ -669,6 +723,11 @@ static int on_tick_2(ce_card_t *c)
     }
     s->prev_charge = charge;
 
+    /* ★ 2026-10-01 owner 追加口径：结界的档案按**自机角色**选（咲夜 = TH09 锚定场 /
+     *   早苗 = TH19 圆 + Shift 蓄力 / 灵梦·魔理沙 = 占位）。
+     *   ⚠ 必须先算（`ghost_tick` 的「结界碰灵 ⇒ 沈静化」要用本帧的圆心/半径/几何支）。*/
+    aura_update();
+
     /* ★ 2026-10-01（口径 8/9/10）：**灵**（真敌人）—— 跟随 / 索敌 / 结界沈静化 / 循环撒
      *   （三道门：600 帧、boss 在场不撒、同屏 ≤ 4）全在 `ghost_tick()` 里。 */
     ghost_tick(s);
@@ -688,11 +747,13 @@ static int on_tick_2(ce_card_t *c)
      *   碰敌弹 ⇒ 掉灵力道具（每颗弹只算一次 + 每帧上限 + **打包面值守恒**）。
      *   ⚠ 位置 = 被碰到的弹的**原位**（一手 TH19 的灵力道具就从实体原位掉）。 */
     {
-        const float *pp = ce_player_pos();
-        aura_vm_update();                       /* ★ 结界的视觉：圆心 = 自机、scale = 判定半径 */
-        if (pp) {
+        if (s_aura_r > 0.0f) {
+            float ctr[3];
             float ox[POFV_AURA_ITEMS_PER_FRAME], oy[POFV_AURA_ITEMS_PER_FRAME];
-            int hit = aura_scan_bullets(pp, POFV_AURA_R, ox, oy, POFV_AURA_ITEMS_PER_FRAME);
+            int hit;
+            ctr[0] = s_aura_cx; ctr[1] = s_aura_cy; ctr[2] = 0.0f;
+            hit = aura_scan_bullets(ctr, s_aura_r, s_aura.pad_linear, ox, oy,
+                                    POFV_AURA_ITEMS_PER_FRAME);
             if (hit > 0) {
                 int32_t apts = 0;
                 pofv_power_spawn_packed_at(&s_power, ox, oy, hit, POFV_POWER_PTS_AURA,
@@ -744,8 +805,8 @@ static void clear_card(ce_card_t *c)
                (int)s_power.spawned, (int)s_power_got, (int)s_power.absorbed,
                (int)s_power.expired, (int)s_power.dropped, POFV_POWER_MAX);
     if (s_aura_hits)
-        ce_log("pofv: aura run done - %d bullets touched by the barrier (r = %d)",
-               (int)s_aura_hits, (int)POFV_AURA_R);
+        ce_log("pofv: aura run done - %d bullets touched by the barrier (last r = %d, mode %d, char %d)",
+               (int)s_aura_hits, (int)s_aura_r, (int)s_aura.mode, (int)*(const int32_t *)CE_ADDR_CHARACTER);
     if (s_ghost.spawned || s_ghost.killed || s_ghost.calmed_total || s_ghost.expired || s_ghost.live)
         ce_log("pofv: ghost run done - %d made, %d killed, %d calmed, %d reached buddhahood, %d still live",
                (int)s_ghost.spawned, (int)s_ghost.killed, (int)s_ghost.calmed_total,
@@ -768,6 +829,10 @@ static void clear_card(ce_card_t *c)
 
     /* ★ 结界的跟随 VM：同样必须在这里删（删卡那一刻 tick 停着，画面上的环不会自己走）。*/
     if (s_aura_vm) { ce_anm_delete((uint32_t)s_aura_vm); s_aura_vm = 0; }
+    s_aura_r = 0.0f;                 /* 结界状态复位（下一帧 aura_update 重新选档案）*/
+    s_aura_age = -1;
+    s_shift_frames = 0;
+    s_aura_char = -1;
 
     /* ★ 灵力道具的跟随 VM：删卡时场上的每一颗都要删（否则留下满屏幽灵光球）。*/
     for (i = 0; i < POFV_POWER_MAX; ++i) {

@@ -540,14 +540,90 @@ int pofv_power_spawn_packed_at(pofv_power_pool_t *p, const float *ox, const floa
 
 /* ------------------------------------------------------- F. 固灵结界（几何，见 pofv_core.h §F）*/
 
+int pofv_aura_hit_ex(float dx, float dy, float r, float pad, int pad_linear)
+{
+    float d2 = dx * dx + dy * dy;
+
+    if (!(r > 0.0f)) return 0;                       /* 结界没展开 ⇒ 永不命中 */
+    if (pad_linear) {
+        /* ★ 一手 TH19 §7.3 的**第二支**（`th19:0x418690`，Sanae/Nazrin/Seiran/Toutetsu/PL16/PL17
+         *   六类共用）：`dx²+dy² <= (r + pad)²` —— pad **线性并进半径**。*/
+        float rr = r + pad;
+        return d2 <= rr * rr;
+    }
+    /* ★ 一手 TH19 §7.3 的**第一支**（`th19:0x416f10` Reimu）：`dx²+dy² < r² + pad²`
+     *   —— pad **以平方和方式**并入（严格 `<`）。*/
+    return d2 < (r * r + pad * pad);
+}
+
 int pofv_aura_hit(float dx, float dy, float r, float pad)
 {
-    /* ★ 一手 TH19 §7.3 Reimu 类 `th19:0x416f10`：`dx²+dy² < r² + pad²`
-     *   —— pad（目标半径）是**以平方和方式**并进去的，不是并进半径（Sanae 族才是后者）。*/
-    float rr;
-    if (!(r > 0.0f)) return 0;
-    rr = r * r + pad * pad;
-    return (dx * dx + dy * dy) < rr;
+    return pofv_aura_hit_ex(dx, dy, r, pad, /*pad_linear=*/0);
+}
+
+/* ---- 逐角色结界档案（owner 2026-10-01 口径；见 pofv_core.h §F 的长注）---- */
+
+int32_t pofv_aura_shift_charge(int32_t shift_frames)
+{
+    int32_t c;
+    if (shift_frames <= 0) return 0;
+    c = shift_frames * POFV_AURA_SHIFT_CHARGE_PER_FRAME;
+    if (c > POFV_AURA_CHARGE_MAX) c = POFV_AURA_CHARGE_MAX;
+    return c;
+}
+
+void pofv_aura_profile_for(int character, pofv_aura_profile_t *out)
+{
+    if (!out) return;
+    memset(out, 0, sizeof *out);
+    switch (character) {
+    case 2:   /* ★ 咲夜 → **TH09 的「消弹圈 = 锚定场」**（一手 §1.4 的「CA 释放」节点）*/
+        out->mode = POFV_AURA_FIELD;
+        out->pad_linear = 0;                     /* 场形态的判定沿用第一支（圆，pad 平方和）*/
+        out->r0 = POFV_AURA_TH09_R0;             /* 16（一手 `th09:0x41e875`）*/
+        out->dr = POFV_AURA_TH09_DR;             /* 20（一手）*/
+        out->life = POFV_AURA_TH09_LIFE;         /* 8 帧（一手；终点 16 + 20×8 = 176）*/
+        break;
+    case 3:   /* ★ 早苗 → **TH19 `AuraSanaeInf`**（圆 + K = 128；半径由「Shift 蓄力」算）*/
+        out->mode = POFV_AURA_STATIC;
+        out->pad_linear = 1;                     /* Sanae 支 `<= (r+pad)²`（一手 §7.3）*/
+        out->r_fixed = 0.0f;                     /* 不用固定值 ⇒ 走下面的 K */
+        out->k = POFV_AURA_SANAE_K;              /* 一手 §7.2：`AuraSanaeInf` K = 128 */
+        break;
+    case 0:   /* 灵梦 —— ❓ owner 待定 ⇒ 占位：TH19 `AuraReimuInf` 的常驻圆 96 */
+    case 1:   /* 魔理沙 —— ❓ 同上 */
+    default:
+        out->mode = POFV_AURA_STATIC;
+        out->pad_linear = 0;                     /* Reimu 支 `dx²+dy² < r²+pad²` */
+        out->r_fixed = POFV_AURA_R;              /* 96（= 改造前的行为，零变化）*/
+        out->k = 0.0f;
+        break;
+    }
+}
+
+void pofv_aura_radius(const pofv_aura_profile_t *p, int32_t age, int32_t charge, float *out)
+{
+    if (!out) return;
+    if (!p) { *out = 0.0f; return; }
+
+    if (p->mode == POFV_AURA_FIELD) {
+        /* TH09 的节点律（一手 §1.3：每帧 `r += dr`、寿命到点释放）：钳在 [0, life]。*/
+        float r;
+        int32_t a = age;
+        if (a < 0) a = 0;
+        if (p->life > 0 && a > p->life) a = p->life;
+        r = p->r0 + p->dr * (float)a;
+        *out = r > 0.0f ? r : 0.0f;
+        return;
+    }
+    if (p->k > 0.0f) {                            /* STATIC + 蓄力（早苗）*/
+        int32_t c = charge;
+        if (c < 0) c = 0;
+        if (c > POFV_AURA_CHARGE_MAX) c = POFV_AURA_CHARGE_MAX;
+        *out = (float)c * p->k / 100.0f;          /* ★ 一手 TH19 公式 `clamp(S+0x8c,0,200) × K/100` */
+        return;
+    }
+    *out = p->r_fixed;                            /* STATIC 固定（占位档）*/
 }
 
 /* ------------------------------------------------- G. 灵（自制真敌人，见 pofv_core.h §G） */

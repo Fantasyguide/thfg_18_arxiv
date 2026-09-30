@@ -504,6 +504,88 @@ int main(void)
     CHECK(pofv_aura_hit(0.0f, 0.0f, 0.0f, 0.0f) == 0);
     CHECK(pofv_aura_hit(0.0f, 0.0f, -1.0f, 0.0f) == 0);
 
+    /* ---- H.1 ★★ 2026-10-01 owner 追加口径：**结界按自机角色取不同游戏的版本** ----
+     *   「固灵结界 **咲夜取 th09，早苗取 th19**，灵梦和魔理沙**待定**」＋
+     *   「（早苗的半径）**把 shift 时长当作某种蓄力**」。 */
+    {
+        pofv_aura_profile_t pr;
+        float r = 0.0f;
+
+        /* 咲夜（TH18 角色号 2）→ TH09 的「消弹圈 = 锚定场」（一手「CA 释放」节点 16 / 20 / 8） */
+        pofv_aura_profile_for(2, &pr);
+        CHECK(pr.mode == POFV_AURA_FIELD);
+        CHECK(pr.r0 == POFV_AURA_TH09_R0 && pr.r0 == 16.0f);      /* ★ 一手 th09:0x41e875 */
+        CHECK(pr.dr == POFV_AURA_TH09_DR && pr.dr == 20.0f);      /* ★ 一手 */
+        CHECK(pr.life == POFV_AURA_TH09_LIFE && pr.life == 8);    /* ★ 一手；终点 16+20×8 = 176 */
+        pofv_aura_radius(&pr, 0, 0, &r);
+        CHECK(r == 16.0f);                                        /* 出生帧 = r₀ */
+        pofv_aura_radius(&pr, 4, 0, &r);
+        CHECK(r == 96.0f);                                        /* 逐帧长 */
+        pofv_aura_radius(&pr, 8, 0, &r);
+        CHECK(r == 176.0f);                                       /* 寿命到点 = 终点 */
+        pofv_aura_radius(&pr, 999, 0, &r);
+        CHECK(r == 176.0f);                                       /* 过寿命钳住（不无限长）*/
+        pofv_aura_radius(&pr, -5, 0, &r);
+        CHECK(r == 16.0f);                                        /* 负 age 钳到 0 */
+        CHECK(pr.pad_linear == 0);                                /* 场形态沿用 Reimu 支几何 */
+
+        /* 早苗（TH18 角色号 3）→ TH19 `AuraSanaeInf`：圆 + `<= (r+pad)²` + K = 128 */
+        pofv_aura_profile_for(3, &pr);
+        CHECK(pr.mode == POFV_AURA_STATIC);
+        CHECK(pr.pad_linear == 1);                                /* ★ 一手 §7.3 的第二支 */
+        CHECK(pr.k == POFV_AURA_SANAE_K && pr.k == 128.0f);       /* ★ 一手 §7.2 */
+        pofv_aura_radius(&pr, 0, 0, &r);
+        CHECK(r == 0.0f);                                         /* 没按 Shift ⇒ 没有结界 */
+        pofv_aura_radius(&pr, 0, 100, &r);
+        CHECK(r == 128.0f);                                       /* 半蓄力 */
+        pofv_aura_radius(&pr, 0, 200, &r);
+        CHECK(r == 256.0f);                                       /* ★ 满蓄力 */
+        pofv_aura_radius(&pr, 0, 9999, &r);
+        CHECK(r == 256.0f);                                       /* 钳到 200 */
+        pofv_aura_radius(&pr, 0, -5, &r);
+        CHECK(r == 0.0f);                                         /* 负蓄力钳到 0 */
+
+        /* 「Shift 时长 → 蓄力」的换算（❓ 自定：每帧 2） */
+        CHECK(pofv_aura_shift_charge(0) == 0);
+        CHECK(pofv_aura_shift_charge(-3) == 0);
+        CHECK(pofv_aura_shift_charge(1) == POFV_AURA_SHIFT_CHARGE_PER_FRAME);
+        CHECK(pofv_aura_shift_charge(50) == 100);
+        CHECK(pofv_aura_shift_charge(100) == POFV_AURA_CHARGE_MAX);      /* 100 帧涨满 */
+        CHECK(pofv_aura_shift_charge(100000) == POFV_AURA_CHARGE_MAX);   /* 钳住 */
+        /* 端到端：按住 Shift 100 帧 ⇒ 早苗的结界长到 256 */
+        pofv_aura_profile_for(3, &pr);
+        pofv_aura_radius(&pr, 0, pofv_aura_shift_charge(100), &r);
+        CHECK(r == 256.0f);
+
+        /* 灵梦（0）/ 魔理沙（1）→ ❓ owner 待定 ⇒ 占位 = 常驻圆 96（= 改造前行为）*/
+        pofv_aura_profile_for(0, &pr);
+        CHECK(pr.mode == POFV_AURA_STATIC && pr.pad_linear == 0);
+        CHECK(pr.r_fixed == POFV_AURA_R && pr.k == 0.0f);
+        pofv_aura_radius(&pr, 0, 200, &r);
+        CHECK(r == POFV_AURA_R);                                  /* 不随蓄力变 */
+        pofv_aura_profile_for(1, &pr);
+        CHECK(pr.r_fixed == POFV_AURA_R);
+        pofv_aura_profile_for(99, &pr);                           /* 未识别 ⇒ 同一档 */
+        CHECK(pr.mode == POFV_AURA_STATIC && pr.r_fixed == POFV_AURA_R);
+
+        /* 两支几何：同参数下 Sanae 支（线性并 pad）比 Reimu 支（平方和并 pad）命中得远 */
+        CHECK(pofv_aura_hit_ex(110.0f, 0.0f, 96.0f, 20.0f, 0) == 0);   /* Reimu：96²+20² = 9616 < 110² */
+        CHECK(pofv_aura_hit_ex(110.0f, 0.0f, 96.0f, 20.0f, 1) == 1);   /* Sanae：(96+20)² = 13456 > 110² */
+        CHECK(pofv_aura_hit_ex(115.9f, 0.0f, 96.0f, 20.0f, 1) == 1);
+        CHECK(pofv_aura_hit_ex(116.1f, 0.0f, 96.0f, 20.0f, 1) == 0);
+        CHECK(pofv_aura_hit_ex(116.0f, 0.0f, 96.0f, 20.0f, 1) == 1);   /* Sanae 支是 `<=` */
+        CHECK(pofv_aura_hit_ex(0.0f, 0.0f, 0.0f, 0.0f, 1) == 0);       /* r ≤ 0 ⇒ 永不命中 */
+        CHECK(pofv_aura_hit_ex(0.0f, 0.0f, -1.0f, 0.0f, 1) == 0);
+        /* 旧签名 = Reimu 支的包装（改造前就有；钉住不回归） */
+        CHECK(pofv_aura_hit(98.0f, 0.0f, 96.0f, 20.0f) == pofv_aura_hit_ex(98.0f, 0.0f, 96.0f, 20.0f, 0));
+
+        /* NULL 安全 */
+        pofv_aura_profile_for(3, 0);
+        pofv_aura_radius(0, 0, 0, &r);
+        CHECK(r == 0.0f);
+        pofv_aura_radius(&pr, 0, 0, 0);
+    }
+
     /* 多位置打包撒（结界碰弹：位置 = 被碰到的弹的原位，颗数受每帧上限钳、面值守恒） */
     {
         pofv_power_pool_t pool;

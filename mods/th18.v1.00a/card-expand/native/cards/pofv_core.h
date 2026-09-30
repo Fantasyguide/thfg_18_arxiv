@@ -395,17 +395,76 @@ int  pofv_power_spawn_packed_at(pofv_power_pool_t *p, const float *ox, const flo
  *   ⚠ Sanae 族是 `dx²+dy² <= (r+pad)²`（pad 线性并进半径），与 Reimu 的平方和并入不同；
  *     本卡选 Reimu 那支（一手其一，登记 `TUNING.md`）。
  *
- * 半径（★ 一手 TH19 §7.2 的 Reimu 公式）：`clamp(S+0x8c,0,200) × K/100`，Reimu 的 **K = 64**
- *   ⇒ 满蓄力 = 128。以 TH19 的尺寸为锚，本卡取**常驻**半径 `POFV_AURA_R = 96`（❓ 自定：
- *   落在 Reimu 的 0..128 区间内；口径 4 要求「常驻」⇒ **不随 C 的档位变**）。
+ * 半径（★ 一手 TH19 §7.2 的公式）：`clamp(S+0x8c,0,200) × K/100`，**K 逐类**（Reimu 64 /
+ *   Sanae 128 / …）。以 TH19 的尺寸为锚，本卡取**常驻**半径 `POFV_AURA_R = 96`（❓ 自定：
+ *   落在 Reimu 的 0..128 区间内）。
  *   ★ 一手性质照抄：**判定半径 = 绘制半径**（TH19 §7.1/§9.2，`aura+0x9c` 同时喂槽 7 与
- *     VM 的 `scale.x/y`）⇒ 卡侧的结界 VM 每帧写 `scale = POFV_AURA_R`。 */
+ *     VM 的 `scale.x/y`）⇒ 卡侧的结界 VM 每帧写 `scale =` 本帧的判定半径。
+ *
+ * ★★★ 2026-10-01 **owner 追加口径**：结界**按自机角色取不同游戏的版本** ——
+ *   「固灵结界 **咲夜取 th09，早苗取 th19**，灵梦和魔理沙**待定**」＋（追问早苗的半径与
+ *   口径 4「常驻」冲突时）「**那你就把 shift 时长当作某种蓄力**」。落地成一张**逐角色档案表**：
+ *   · **咲夜**（TH18 角色号 2）→ **TH09 的「消弹圈 = 锚定场」**（一手 §1.4 的「CA 释放」节点：
+ *     r₀ = 16 / dr = 20 / 寿命 8 帧 / 终点 176，`th09:0x41e875`）：**圆心锚定在出生点**、
+ *     逐帧扩张、寿命到点**在原地（或自机处）重新起一个**（TH09 的节点本来就是「建 → 逐帧长 → 到点释放」）。
+ *   · **早苗**（TH18 角色号 3）→ **TH19 `AuraSanaeInf`**：圆 `dx²+dy² <= (r+pad)²`（§7.3 的 6 类共用支）、
+ *     `K = 128`、视觉 = `pl02.anm` script16 的 `drawPoly(1.0,64)`；半径的「蓄力量」= **按住 Shift 的帧数**
+ *     （owner 原话；❓ 每帧涨多少见 `POFV_AURA_SHIFT_CHARGE_PER_FRAME`）⇒ 满档 = 200 ⇒ r = 256。
+ *   · **灵梦 / 魔理沙**（0 / 1）→ **owner 待定** ⇒ 先沿用 TH19 `AuraReimuInf` 的**常驻圆 96**
+ *     （= 本卡原来的行为，零变化）作**占位**，登记 `TUNING.md` §2.0v-2。 */
 
-#define POFV_AURA_R                 96.0f  /* ❓ 自定（常驻半径；一手 Reimu 公式的 0..128 区间内）*/
+#define POFV_AURA_R                 96.0f  /* ❓ 占位（灵梦 / 魔理沙待 owner；一手 Reimu 公式 0..128 区间内）*/
 #define POFV_AURA_ITEMS_PER_FRAME    4     /* ❓ 自定（口径 6 的「每帧上限」；与消弹源同一把闸）*/
 
-/* 结界判定（★ 一手 TH19 `th19:0x416f10` 的 Reimu 圆）：`dx² + dy² < r² + pad²`。
+/* ---- 逐角色档案（owner 2026-10-01 口径；卡侧按 `CE_ADDR_CHARACTER` 选）---- */
+
+typedef enum {
+    POFV_AURA_STATIC = 0,   /* 常驻圆（TH19 系）：圆心 = 自机、半径按档案算 */
+    POFV_AURA_FIELD  = 1    /* TH09 的**锚定场**：圆心锚定、逐帧扩张、有限寿命后重生 */
+} pofv_aura_mode_t;
+
+/* TH09「CA 释放」节点的一手参数（`engine/card/th09/01…` §1.4 / `th09:0x41e875`）。*/
+#define POFV_AURA_TH09_R0            16.0f
+#define POFV_AURA_TH09_DR            20.0f
+#define POFV_AURA_TH09_LIFE              8
+
+/* TH19 的蓄力量量程与 `AuraSanaeInf` 的 K（一手 §2/§7.2）。*/
+#define POFV_AURA_CHARGE_MAX           200
+#define POFV_AURA_SANAE_K            128.0f
+
+/* ❓ 自定（owner 只说「把 shift 时长当作某种蓄力」，没给换算）：按住 Shift 每 1 帧涨多少蓄力。
+ * 取 **2** ⇒ 100 帧（≈1.67 s）涨满 200 ⇒ 早苗的结界从 0 长到 256。 */
+#define POFV_AURA_SHIFT_CHARGE_PER_FRAME  2
+
+typedef struct {
+    int32_t mode;        /* pofv_aura_mode_t */
+    int32_t pad_linear;  /* 几何支：0 = `dx²+dy² < r²+pad²`（Reimu 支）；1 = `<= (r+pad)²`（Sanae 支）*/
+    float   r_fixed;     /* STATIC 且不用蓄力时的半径（≤0 = 由蓄力算）*/
+    float   k;           /* STATIC 且用蓄力时：`r = clamp(charge,0,200) × k/100`（≤0 = 恒用 r_fixed）*/
+    float   r0, dr;      /* FIELD：起始半径 / 每帧增量 */
+    int32_t life;        /* FIELD：寿命帧（到点重生）*/
+} pofv_aura_profile_t;
+
+/* 按 TH18 的**角色号**（0 灵梦 / 1 魔理沙 / 2 咲夜 / 3 早苗）取结界档案。
+ * 未识别 / 待定的角色一律回落到「常驻圆 96」那一档（= 改造前的行为）。 */
+void pofv_aura_profile_for(int character, pofv_aura_profile_t *out);
+
+/* 「按住 Shift 的帧数」→ TH19 的蓄力量 0..`POFV_AURA_CHARGE_MAX`（owner 口径）。 */
+int32_t pofv_aura_shift_charge(int32_t shift_frames);
+
+/* 本帧的**判定半径**（也是绘制半径）：
+ *   STATIC：`k > 0` ⇒ `clamp(charge,0,200) × k/100`；否则 `r_fixed`。
+ *   FIELD ：`min(r0 + dr × age', r0 + dr × life)`（`age'` 钳到 `[0, life]`）。
+ * `*out` 恒被写（半径 ≤ 0 表示「结界没展开」）。 */
+void pofv_aura_radius(const pofv_aura_profile_t *p, int32_t age, int32_t charge, float *out);
+
+/* 结界判定 —— **两种几何各一支**（一手 TH19 §7.3 的两支）：
+ *   `pad_linear = 0` ⇒ Reimu 支 `dx² + dy² < r² + pad²`（`th19:0x416f10`）；
+ *   `pad_linear = 1` ⇒ Sanae 支 `dx² + dy² <= (r + pad)²`（`th19:0x418690`，6 类共用）。
  * `r <= 0` ⇒ 永不命中（结界没展开）。 */
+int pofv_aura_hit_ex(float dx, float dy, float r, float pad, int pad_linear);
+
+/* 旧签名（= Reimu 支的包装）：`pofv_aura_hit(dx,dy,r,pad) == pofv_aura_hit_ex(dx,dy,r,pad,0)`。 */
 int pofv_aura_hit(float dx, float dy, float r, float pad);
 
 /* ==================================================================== G. 灵（自制**真敌人**）

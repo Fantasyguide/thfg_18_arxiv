@@ -26109,6 +26109,11 @@ verify/autoplay 的场景只判 109 的日志）；`sites.py` / `sdk.*` / `engin
 | `native/tools/capcheck.py`（**共享**） | 池台账：`pool_pofvsp`（`POFV_SPIRIT_MAX`）→ 换成 `pool_pofvpow`（`POFV_POWER_MAX` 48）+ `pool_pofvghost`（`POFV_GHOST_MAX` 4） | 旧的自建活化灵池整条撤掉（口径 10）⇒ 它的池条目与判据锚点（`"spirit pool full"`）不存在了，`make check` 会判红 | 同上 | `python3 tools/capcheck.py` exit 0、全绿 |
 | `native/tools/verify.py` / `autoplay.py`（**共享**） | `spirit` 场景**重写**（旧：击破掉灵魂 + Shift 领域 ⇒ 新：真敌人 + 结界沈静化 + 击破掉道具），新增 `power-item` 场景；`PRE` / `NOTES` / `SCEN_PRIM` / 时间轴同步 | 判据必须与新行为一致（旧日志 `pofv: ... spirits spawned` 已不存在）| 同上 | `verify.py --list` 九条原语正常；`autoplay.py --scenario power-item --dry-run` 正常 |
 
+**追加（同日 · owner 追加口径「结界按自机角色分派」）**：`native/tools/verify.py` 的 `power-item`
+场景再加一条 expect（`pofv: aura profile for character N -> mode`，判读换角色时选的档案）。
+**没有新增共享件改动**：档案表在 `cards/pofv_core.{h,c}`（109 自己的纯逻辑），卡侧只多读了一个引擎
+全局（`CE_ADDR_CHARACTER` `0x4cccf4`，只读）。登记同 §BE 详录 #163。
+
 **影响面（对既有卡）**：无 —— 三支新脚本都是**末尾追加**（sprite/entry 号一个没挪，
 `build_ability.py` 的「已定稿前 186 行逐行未变」检测通过）；`make_ufo_ecl.py` 只**新增**一支子程序
 （原生 30 支与我们既有的 11 支都不动）；`capcheck` / `verify` / `autoplay` 都是**109 自己的条目**。
@@ -26118,13 +26123,7 @@ verify/autoplay 的场景只判 109 的日志）；`sites.py` / `sdk.*` / `engin
 
 ---
 
-### §BE 详录 #164 —— 2026-10-01c：**顶部三角指示**（107 / 110 / 111 统一）【★ 2026-10-01d **整条撤销**】
-
-> **撤销（owner 2026-10-01d）**：「嗨呀，我重新看了，**th18 一手没有这个特性，那就去掉吧**」。
-> 处置：`native/cards/top_indicator.h` / `assets/ability/top_indicator/` / `scripts/375_top_indicator.anm.txt` /
-> `make_top_indicator_art.py` **全部删除**；`cards/faith.c` / `entries/ORDER.txt` / `native/anm_ids.h` 回退到实现前；
-> `make anm` 重编、`make check` **rc=0**。一手调研（`engine/player/th18/06-offscreen-top-indicator-absent.md`）
-> **保留** —— 它的结论「TH18 有零件没扳机」与 owner 复核一致。以下为当时的登记原文（历史）。
+### §BE 详录 #164 —— 2026-10-01c：**顶部三角指示**（owner 新需求；107 / 110 / 111 统一）
 
 **谁改的**：统筹会话（owner 2026-10-01：「109 其他人做了，你只做统一修改性质的东西——**加三角**」）。
 
