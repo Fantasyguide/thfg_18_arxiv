@@ -617,6 +617,17 @@ unsigned ce_death_result_seq(void);
 void     ce_sdk_frame_bump(void);              /* 帧点专用（`sdk.c` 的 `BP_ce_item_frame` 里调）*/
 uint32_t ce_sdk_frame(void);                   /* 只读当前帧号 */
 
+/* ★★ 2026-09-13 用户要的调试件入口：**逐帧合成方向输入**（调试键 = 空格）。
+ * ⚠ 必须在**卡 tick（AbilityManager 节点 0x16）**里调 —— 见 `DEV-INPUT-SYNTH.md`「落点」一节：
+ *   ItemManager 节点（`ce_item_frame` 那个断点 = 0x1e）在 **Player（0x17）之后**，
+ *   在那里写 INPUT_HELD 玩家已经读过了（实跑症状：日志有 START/STOP 但 dx 恒 0）。
+ * 定义在 `cards/input_synth.c`；`CE_INPUT_SYNTH_ENABLED = 0` 时是空壳。
+ * 同帧只跑一次（内部用 `ce_sdk_frame()` 去重，多张卡各调一次也只推进一格）。*/
+void     ce_input_synth_tick(void);
+/* 同上的**绘制**半边：在 `on_draw`（虚表 `+0x48`）里画一行状态字（生效时才画）。
+ * ⚠ `ce_hud_text` 只能在 `on_draw` 里调（SDK 契约）；同样用 `ce_sdk_frame()` 同帧去重。*/
+void     ce_input_synth_draw(void);
+
 /* ---- 低速子机声明层（EVENTS-CONTRACT.md §1「选举覆盖」；108 spec §3.3.1）----
  * 108（妖机体）与 111（SA 子机层）都要定义「低速时子机长什么样」，而最终落在同一批 zPlayerOption
  * （原生聚焦偏移 +0x6c/+0x70、非聚焦 +0x64/+0x68、贴图脚本、数量）⇒ 各自写 = 谁后写谁赢。

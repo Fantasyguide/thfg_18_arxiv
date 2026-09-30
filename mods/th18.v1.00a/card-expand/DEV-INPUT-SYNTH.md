@@ -19,8 +19,27 @@
 | **模式** | `[左 N 帧][全松 M 帧][右 N 帧][全松 M 帧]`，宏 `CE_INPUT_SYNTH_{LEFT,RIGHT,RELEASE}_FRAMES`；**默认 N=1, M=1**（周期 4 帧） |
 | **写什么** | `INPUT_HELD`（`0x4ca428`）与 `INPUT_PRESSED`（`0x4ca434`）的**四个方向位**（`0x010/0x020/0x040/0x080`），**先抹后写**；`Z(0x001)/X(0x002)/Shift(0x008)/C(0x400)/D(0x800)` **一个都不碰** |
 | **先看这一行** | 进游戏后日志里应出现**一次** `isynth: armed — 调试键 = 空格(Space)…` ⇒ 证明这件**确实被链进 DLL 且每帧被调到**（这行不看按键）。没有它 = 代码没进 DLL（多半没重启游戏） |
+| **屏幕状态字** | 按住空格期间在 HUD 上画一行亮绿 ASCII 状态（细节见 §1.1）|
 | **怎么读效果** | 每 **30 帧**一行日志：相位/方向记号、自机 `x,y`、**定点累计 Δx（1/128 px，整数无误差）**、**峰值 \|Δx\|**、以及 **`player+0x47778`（无敌计时器 cur）**；按下/松开各一行总结 |
 | **验收判据** | ① `peak` 停在 **≤ 8 px**（普通 4 px/帧、原生卡 29 超速 8 px/帧）；② 累计 `dx` **每 4 帧回到 0**；③ 无敌 `inv` **单调上升**（这就是"刷永久无敌"的直接证据） |
+
+### 1.1 屏幕状态字（用户 2026-09-13：「生效的时候随便 plot 点什么 hud」）
+
+按住空格期间，HUD 上出现一行**亮绿 ASCII**（`ce_hud_text`，640×480 字面量空间，位置 `(180, 40)` = 游玩区上部）：
+
+```
+SYNTH L f=12 dx=-4.0 inv=37
+```
+
+| 字段 | 含义 |
+| --- | --- |
+| `L` / `R` / `-` | 本帧合成的方向（`-` = 这一帧**松开方向键**） |
+| `f=` | 从按下调试键起算的相位帧号（周期 4） |
+| `dx=` | **起抖以来累计 Δx（px）** —— 每 4 帧应回到 `0.0`（"平均不移动"的直接读数） |
+| `inv=` | **`player+0x47778`（无敌计时器 cur）** —— 做原生卡 29 实验时**看这个涨** |
+
+⚠ 用引擎的 ASCII 字体 ⇒ **只能 ASCII**；⚠ **只在生效期间画**（松开即消失，不留残影）；
+⚠ 绘制走 `sdk.h` 的 `on_draw` 桩（`ce_hud_text` 的契约要求只能在虚表 `+0x48` 里调），并按帧号同帧去重。
 
 **关闭**：松开空格即停写（`if (!down) return;`）。`CE_INPUT_SYNTH_ENABLED = 0` 时整件是**编译期空壳**
 （发布版建议置 0；置 0 后连调用点都被优化掉，一个字节都不写）。
@@ -76,17 +95,58 @@ ExpHP 符号库（`games/th18.v1.00a/symbols.json`）独立命名了 `struct zCa
   聚合 = **取 max / 置值**语义）⇒ 这条口子被**结构性堵住**（`12-card29-aya-speedqueen.md` §6）。
   所以要测必须用**原生卡 29**，工具也就必须**不依赖我们任何卡**（见 §4 的落地理由）。
 
-## 4. 落地与影响面（★ 动了一个共享件：`sdk.c`）
+## 4. ★★ 落点（**踩过一次坑，务必别再挪回去**）
+
+### 4.0 为什么**不能**放在 `BP_ce_item_frame`
+
+第一版把调用放在 `sdk.c` 的 `BP_ce_item_frame`（站点 `th18:0x446ee3`）——**实跑失败**：
+日志有 `isynth: START/STOP`（键被看到了）但 **`dx` 与 `peak` 恒 0 ⇒ 自机一步没动**。
+
+一手原因 = **帧序**（`engine/player/th18/05-poc-height-and-indicator.md` §7.2 的 UpdateFunc 优先级表）：
+
+| 管理器 | 优先级 | 一手 |
+| --- | --- | --- |
+| **AbilityManager**（卡的 tick 在这里，**虚表 `+0x2c`**）| **`0x16`** = 22 | `0x408472 push 0x16` |
+| **Player**（`Player__on_tick` 包装 → `0x45be90`）| **`0x17`** = 23 | `0x45a8aa push 0x17` |
+| ItemManager（`ItemManager__on_tick` `0x446ec0`；`ce_item_frame` 断点在它的门卫 `0x446ee3`）| **`0x1e`** = 30 | `0x4458ac push 0x1e` |
+
+⇒ 顺序是 **AbilityManager → Player → … → ItemManager**。写在 ItemManager 里 ⇒
+**玩家这一帧已经读过 `INPUT_HELD` 了**，而下一帧 `0x46295a/0x462961` 又会用 raw 键盘把它整个重写
+⇒ **我们写的位永远没被读过**（实跑 `dx ≡ 0` 正是这个）。
+
+### 4.1 现在的落点 = **卡 tick 的共同桩**（AbilityManager = `0x16`，早于 Player）
+
+| 文件 | 改了什么 |
+| --- | --- |
+| `native/sdk_core.h` | **+1 行原型** `void ce_input_synth_tick(void);`（共享声明层，附落点理由） |
+| `native/sdk.h` | 卡 tick 桩 `ce_s_##ID##_on_tick_2` 里 **+1 行调用**（`0x16`，早于 Player）**+ `on_draw` 桩 `ce_s_##ID##_on_draw` 里 +1 行 `ce_input_synth_draw()`**（`ce_hud_text` 的契约要求只能在 `+0x48` 里画）——**一处改、所有卡生效** |
+| `native/cards/input_synth.c` | 落笔 + 节流日志 + **HUD 状态字**（`ce_input_synth_draw()`）+ **同帧去重**（`ce_sdk_frame()`：同一卡节点内多张卡读到的帧号相同 ⇒ 只认第一次）；`input_synth_key_down()` = **空格**；第一帧打 `isynth: armed` |
+| `native/cards/input_synth.h` | 纯逻辑（模式/半周期镜像不变量/位域卫生） |
+| `native/tests/test_input_synth_core.c` | 主机单测 59 断言 |
+| `native/Makefile` | `test-host` 登记新单测 |
+
+⚠ **代价（必须知道）**：卡 tick 桩只在**至少有一张我方卡在场**时才会被调 ⇒
+**这个调试件需要卡组里带至少一张系统卡（106–117）**。用原生卡 29 做实验没问题（我方卡可以只放着不触发），
+但「一张我方卡都不带」时它不会工作。
+
+### 4.2 为什么不用新站点
+
+站点预算 **27 > `SITE_BUDGET` 24**（`engine/input/th18/01-key-mapping.md` §5.3 记账；
+`SITE_TOTAL_BUDGET` 42 已知崩过）⇒ **不加新站点**；改用「已有的卡 tick 桩」这条零成本路径。
+（另一条被否决的路：把 `INPUT_HELD` 写进 raw 键盘源 —— 同样被每帧重算覆盖，且要动输入链。）
+
+## 4.3 影响面汇总（★ 动了共享件）
 
 | 文件 | 改了什么 | 为什么 |
 | --- | --- | --- |
-| `native/sdk.c` | **+1 行 `#include "cards/input_synth.h"` + 1 行 `ce_input_synth_tick();`**（放在 `BP_ce_item_frame` 体内、**卡链 `for` 之前**） | `BP_ce_item_frame`（站点 `th18:0x446ee3`）是**唯一**「每个正常游玩帧一次、且在卡链遍历之前」的点（`sites.py` 原文）。⚠ **站点预算已 27 > `SITE_BUDGET` 24 ⇒ 不加新站点**，只在本 handler 体内加一行 |
+| `native/sdk_core.h` / `native/sdk.h` | **+1 原型 + 卡 tick 桩里 +1 调用**（见 §4.1/§4.2） | AbilityManager `0x16` 早于 Player `0x17`；不加新站点 |
 | `native/Makefile` | `test-host` 里加 `test_input_synth_core` 的登记（2 行） | 新单测要进回归 |
 | `native/cards/input_synth.{h,c}` | 新增（纯逻辑 + 逐帧写输入 + 节流日志） | 本件本体 |
 | `native/tests/test_input_synth_core.c` | 新增（59 断言） | 覆盖模式/不变量/位域卫生/两种动力学 |
 
 **对既有卡的影响面**：
 - 不按空格时 `ce_input_synth_tick()` **立刻返回、一个字节都不写** ⇒ 对全部既有卡与引擎**零影响**；
+- 卡 tick 桩里多一行调用（同帧去重 ⇒ 每帧最多真正跑一次），**不改变任何卡的回调语义**；
 - `CE_INPUT_SYNTH_ENABLED = 0` 时整个函数体是空壳（调用点一并消失）⇒ 发布版可据此彻底摘除；
 - 不新增站点（预算 27 > 24 已超，见 `engine/input/th18/01-key-mapping.md` §5.3 的记账）；
 - `Makefile` 的 `SRCS := … $(wildcard cards/*.c)` ⇒ 新 `.c` **自动进 DLL**，无需再加。

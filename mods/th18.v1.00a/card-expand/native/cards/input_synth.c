@@ -89,6 +89,16 @@
 #define CE_INPUT_SYNTH_LOG_EVERY      30u   /* 节流：每 30 帧（≈0.5 s）一行。⚠ 别调成 1（116 那次每帧刷 7419 行的教训）*/
 #define CE_INPUT_SYNTH_LOG_START_STOP 1     /* 按下/松开各打一行（一行，不是每帧）*/
 
+/* ---- 状态字（HUD）----
+ * 用户 2026-09-13：「**加一个东西：生效的时候随便 plot 点什么 hud**」。
+ * ⇒ 按住调试键期间，在 HUD 上画一行 ASCII 状态（`ce_hud_text`，**只能在 on_draw 里调**，
+ *    所以绘制半边挂在 `sdk.h` 的 `on_draw` 桩上，见 `ce_input_synth_draw()`）。
+ * ⚠ 字体是引擎的 ASCII 字体 ⇒ **只能用 ASCII**，别写中文。 */
+#define CE_INPUT_SYNTH_HUD        1     /* 0 = 不画（发布版可关）*/
+#define CE_INPUT_SYNTH_HUD_X      180.0f  /* 640×480 字面量空间（Gui 那套，与 `ce_hud_text` 一致）*/
+#define CE_INPUT_SYNTH_HUD_Y       40.0f  /* 压在游玩区上部：一定会被看见（调试件，临时遮挡可接受）*/
+#define CE_INPUT_SYNTH_HUD_BGRA   0xff40ff40u  /* BGRA：亮绿 */
+
 /* 刻意**不**做"松开后再清一次位"的收尾：那会在键没按时也写字节（违反"默认一个字节都不写"），
  * 而引擎每帧重写 HELD/PRESSED ⇒ 本来就没有残留（见文件头第 5 条）。 */
 
@@ -192,10 +202,58 @@ static int input_synth_blocked(void)
     return 0;
 }
 
+/* ============================== 状态字（HUD） ==============================
+ * 用户要的「生效时随便 plot 点什么」：按住调试键期间画一行 ASCII：
+ *     SYNTH L f=12 dx=-4.0 inv=37
+ * 字段 = 本帧方向(L/R/-) · 相位帧号 · 起抖以来累计 Δx(px) · **无敌计时器 cur**（做卡 29 实验时看这个涨）。
+ * ⚠ 只画、不写任何引擎状态；没按键（或门挡着）时**什么都不画**。
+ * ⚠ `ce_hud_text` 的契约：**只能在虚表 +0x48 `on_draw` 里调** ⇒ 本函数只从 sdk.h 的 on_draw 桩进来。*/
+void ce_input_synth_draw(void)
+{
+#if !CE_INPUT_SYNTH_ENABLED || !CE_INPUT_SYNTH_HUD
+    /* 空壳：不画 */
+#else
+    static uint32_t s_draw_frame;
+    const uint8_t *pl;
+    int32_t dxq = 0;
+    int     inv = 0;
+    uint32_t mask;
+    const char *dir;
+
+    if (!s_active) return;                       /* 没生效 ⇒ 不画（不留残影：on_draw 每帧重画，停了就没有）*/
+    {
+        const uint32_t f = ce_sdk_frame();
+        if (s_draw_frame == f) return;            /* 同帧只画一次（每张卡的 on_draw 都会调到这里）*/
+        s_draw_frame = f;
+    }
+    pl = CE_PLAYER();
+    if (pl) {
+        dxq = *(const int32_t *)(const void *)(pl + IS_OFF_PLAYER_X_FIXED) - s_x0_fixed;
+        inv = *(const int32_t *)(const void *)(pl + IS_OFF_PLAYER_INVULN);
+    }
+    mask = ce_input_synth_mask(s_phase);
+    dir  = (mask & CE_INPUT_SYNTH_DIR_LEFT) ? "L"
+         : (mask & CE_INPUT_SYNTH_DIR_RIGHT) ? "R" : "-";
+    ce_hud_text(CE_INPUT_SYNTH_HUD_X, CE_INPUT_SYNTH_HUD_Y, CE_INPUT_SYNTH_HUD_BGRA,
+                "SYNTH %s f=%u dx=%.1f inv=%d", dir, (unsigned)s_phase, (double)dxq / 128.0, inv);
+#endif
+}
+
 /* ============================== 每帧入口 ============================== */
 static int s_armed_logged;     /* ★ 只打一次：证明这件真的被链进 DLL 且每帧被调到 */
+static uint32_t s_last_frame;  /* ★ 同帧去重：上一次真正跑过的帧号 */
 void ce_input_synth_tick(void)
 {
+    /* ★ 同帧去重：本函数挂在**每张卡的 tick 桩**上（见 `sdk.h` 的 `ce_s_##ID##_on_tick_2`），
+     * 同帧会被调 N 次（N = 在场的我方卡数）⇒ 用 `ce_sdk_frame()` 只认第一次，
+     * 否则相位会在一帧里被推进 N 次（模式全乱）。
+     * ⚠ 帧号在 `BP_ce_item_frame`（ItemManager = 0x1e）里自增，**晚于**卡节点（0x16）
+     *   ⇒ 同一卡节点内多张卡读到的帧号相同 ✓ 去重成立。*/
+    {
+        const uint32_t f = ce_sdk_frame();
+        if (s_last_frame == f) return;
+        s_last_frame = f;
+    }
     if (!s_armed_logged) {
         s_armed_logged = 1;
         /* ★ 2026-09-13 用户报「Ctrl+A 没生效」⇒ 加这行：**不看按键**，第一帧就打，

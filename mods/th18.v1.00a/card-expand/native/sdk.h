@@ -903,6 +903,12 @@ typedef void (CE_TC *ce_base_del_t)(void *, uint32_t);
         return ce_sdk_c_press(self, &ce_hooks_##ID); } \
     static int CE_TC ce_s_##ID##_on_tick_2(void *self) { \
         ce_sdk_trace(ID, 0x2c, "on_tick_2"); \
+        /* ★★ 调试件：「逐帧合成方向输入」（调试键 = 空格）。**必须在卡 tick 这里调** —— \
+         *   本桩运行在 AbilityManager 节点（0x16），**早于 Player（0x17）**； \
+         *   ItemManager（`ce_item_frame` = 0x1e）在玩家之后，那里写输入玩家读不到。 \
+         *   同帧多张卡各调一次 ⇒ 内部用 `ce_sdk_frame()` 去重，只推进一格。 \
+         *   不按调试键时一个字节都不写；`CE_INPUT_SYNTH_ENABLED=0` 时是编译期空壳。*/ \
+        ce_input_synth_tick(); \
         ce_sdk_active_tick(self, &ce_hooks_##ID); \
         ce_sdk_damage_cap_tick(ID); \
         return ce_hooks_##ID.on_tick_2 ? ce_hooks_##ID.on_tick_2((ce_card_t *)self) : 0; } \
@@ -914,6 +920,9 @@ typedef void (CE_TC *ce_base_del_t)(void *, uint32_t);
     CE_STUB1(ID, on_hud_anm, 0x44, uint32_t) \
     static int CE_TC ce_s_##ID##_on_draw(void *self) { \
         ce_sdk_trace(ID, 0x48, "on_draw"); \
+        /* ★★ 调试件「逐帧合成方向输入」的状态字（生效时才画；同帧去重）。 \
+         *   必须在 on_draw 的桩里调 —— `ce_hud_text` 只允许在虚表 +0x48 里用。*/ \
+        ce_input_synth_draw(); \
         ce_sdk_damage_hud_draw(ID); \
         return ce_hooks_##ID.on_draw ? ce_hooks_##ID.on_draw((ce_card_t *)self) : 0; } \
     static void CE_TC ce_s_##ID##_on_run_reset(void *self) { \
