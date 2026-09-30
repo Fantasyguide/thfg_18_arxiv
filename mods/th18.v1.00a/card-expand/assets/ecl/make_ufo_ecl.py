@@ -26,6 +26,7 @@ REPO = MOD.parents[2]
 VERSION = "18"
 FRAGMENT = HERE / "ufo.ecl.txt"               # 112 的 9 个 UFO 子程序（入库）
 GREEN_FRAGMENT = HERE / "green_extra.ecl.txt"  # ★ 110 的「绿妖精」载体 1 个子程序（入库）
+SPIRIT_FRAGMENT = HERE / "spirit109.ecl.txt"   # ★ 109 合成卡的「灵」真敌人载体 1 个子程序（入库）
 OUT = MOD / "native" / "build" / "ecl" / "default.ecl"
 DAT = REPO / "local" / "th18.v1.00a" / "dat"
 ECLMAP = REPO / "local" / "vendor" / "eclmap" / "eclmap" / "th18.eclm"
@@ -38,8 +39,13 @@ OURS = ["UFO_EtBreak", "UFO_EtBreak2", "UFO_Red", "UFO_Blue", "UFO_Green", "UFO_
 #   放在同一个合并步里是**必须的**：两个脚本各写一次 `build/ecl/default.ecl` 会互相覆盖，
 #   而 `make dist` 只跑 `ecl-ufo` 这一个目标 ⇒ 漏掉谁都是「发布出去少一支子程序」。
 OURS_GREEN = ["CEGreenFairy"]
+# ★ 2026-10-01：再加 **109 合成卡的「灵」载体**（owner 口径 8/9/10：灵 = 自建真敌人）。
+#   同上：必须并进同一个合并步 —— 各写一次 build/ecl/default.ecl 会互相覆盖，
+#   而 `make dist` 只跑 `ecl-ufo` 这一个目标。
+OURS_SPIRIT = ["CESpirit109"]
 
 _SUB_RE = re.compile(r"^void (\w+)\(\)\n\{\n.*?^\}\n", re.S | re.M)
+_BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.S)
 
 
 def thecl():
@@ -55,11 +61,16 @@ def subs(text):
 
 
 def _opcodes(block):
-    """子程序体里「像指令」的行（去掉标签行/注释/空行/括号行）。"""
+    """子程序体里「像指令」的行（去掉标签行/注释/空行/括号行）。
+    ★ 2026-10-01：先剥掉 `/* … */` **块注释**（多行）—— 旧版只跳 `//` 行注释，
+    于是任何带块注释的子程序（`green_extra.ecl.txt` 就是）在「源 vs 往返」的**指令行数**
+    比对里会凭空多出几行，把这条自洽检查判红（110 那支因此一直被排除在检查外）。
+    这是**工具口径修正**，不动任何 ECL 的语义。"""
+    block = _BLOCK_COMMENT_RE.sub("", block)
     out = []
     for ln in block.split("\n"):
         t = ln.strip()
-        if not t or t.startswith("//") or t.startswith("{") or t.startswith("}"):
+        if not t or t.startswith("//") or t.startswith("*") or t.startswith("{") or t.startswith("}"):
             continue
         if t.startswith("_") and t.endswith(":"):
             continue
@@ -99,8 +110,19 @@ def main():
     if len(green) != len(OURS_GREEN):
         g_extra = sorted(set(green) - set(OURS_GREEN))
         raise SystemExit("green_extra.ecl.txt 里有多余子程序：%s" % ", ".join(g_extra))
+
+    if not SPIRIT_FRAGMENT.is_file():
+        raise SystemExit("没有 %s" % SPIRIT_FRAGMENT)
+    spirit = subs(SPIRIT_FRAGMENT.read_text(**ENC))
+    s_missing = [n for n in OURS_SPIRIT if n not in spirit]
+    if s_missing:
+        raise SystemExit("spirit109.ecl.txt 少了子程序：%s" % ", ".join(s_missing))
+    if len(spirit) != len(OURS_SPIRIT):
+        s_extra = sorted(set(spirit) - set(OURS_SPIRIT))
+        raise SystemExit("spirit109.ecl.txt 里有多余子程序：%s" % ", ".join(s_extra))
     frag.update(green)
-    ALL_OURS = OURS + OURS_GREEN
+    frag.update(spirit)
+    ALL_OURS = OURS + OURS_GREEN + OURS_SPIRIT
 
     # 原生 default.ecl 走的是**已解包**的那份（与 make_dev_ecl.py 同一口径）
     raw = DAT / "default.ecl"
@@ -139,7 +161,7 @@ def main():
 
     # 自洽 2：往返后我们的全部子程序都在，且「指令行数」与源片段一致（结构级）
     back = subs(back_txt.read_text(**ENC))
-    for n in OURS:
+    for n in ALL_OURS:
         if n not in back:
             raise SystemExit("往返后少了 %s" % n)
         ops_src, ops_back = _opcodes(frag[n]), _opcodes(back[n])
@@ -147,11 +169,11 @@ def main():
             raise SystemExit("%s 的指令行数变了：源 %d → 往返 %d"
                              % (n, len(ops_src), len(ops_back)))
 
-    n_subs = len(retail) + len(OURS) + len(OURS_GREEN)
-    print("原生 %d 子 + 我们 %d 子（UFO %d + 绿妖精 %d）= %d 子；无重名 ✓"
-          % (len(retail), len(OURS) + len(OURS_GREEN), len(OURS), len(OURS_GREEN), n_subs))
+    n_subs = len(retail) + len(ALL_OURS)
+    print("原生 %d 子 + 我们 %d 子（UFO %d + 绿妖精 %d + 灵 %d）= %d 子；无重名 ✓"
+          % (len(retail), len(ALL_OURS), len(OURS), len(OURS_GREEN), len(OURS_SPIRIT), n_subs))
     print("往返：编回 → 再编一次，二进制字节一致 ✓（%d B）；我们 %d 个子程序的指令行数不变 ✓"
-          % (built.stat().st_size, len(OURS) + len(OURS_GREEN)))
+          % (built.stat().st_size, len(ALL_OURS)))
 
     if a.verify_only:
         print("--verify-only：不写产物")
