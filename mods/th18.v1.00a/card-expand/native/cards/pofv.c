@@ -87,6 +87,15 @@
 #define POFV_POWER_VM_SCALE      8.0f   /* ❓ 自定（视觉半径；≈ `POFV_POWER_ABSORB_R` = 12）*/
 
 /* 消弹调用的 max_count（照 Tenshi 的 0x1869f 量级；本卡两处都不想被截断）。*/
+/* ★ 2026-10-01（owner 甜头口径「抵挡护盾」）：`th18:0x45d590` = `Player__cancel_impending_death`
+ *   （thiscall(Player*)、无栈参、裸 `ret`）—— 救援层的救命调用。一手与同款用法：
+ *   `cards/senro.c`（107 结界）/ `cards/animal.c`（117 咆哮）/ `cards/bomb10.c`（110/111 灵击）/ 113。*/
+#define POFV_FN_CANCEL_IMPENDING_DEATH  0x45d590
+
+/* 护盾的**跟随 VM** 尺寸与层（❓ 自定；层与结界同一档、在它上面一点）。 */
+#define POFV_SHIELD_VM_LAYER        8
+#define POFV_SHIELD_VM_SCALE     48.0f
+
 #define POFV_CANCEL_MAX        9999
 
 /* 蓝圈的「有攻击力」：照 Remilia `0x40f478` / season.c 的矩形伤害源写法。
@@ -139,6 +148,7 @@ typedef struct {
     int32_t     ghost_logged;   /* 本次「灵池满 / 没登记上」只记一行（防刷屏）*/
     int32_t     cap_logged;     /* 本次「爆风队满丢弃」只记一行 */
     int32_t     power_logged;   /* 本次「灵力道具池满丢弃」只记一行 */
+    int32_t     shield_logged;  /* 本次「护盾吃掉一发」只记一行 */
 } pofv_card_t;
 
 _Static_assert(sizeof(pofv_card_t) <= 496 - 16, "ce_state 用户区上限 496 字节");
@@ -238,6 +248,8 @@ static pofv_storm_profile_t s_storm_prof;   /* ★ 本帧的暴风档案（按�
  * 懒建：第一帧 tick 时起（`on_ctor` 发生在商店里，ANM 那边不一定就绪）；
  * `clear_card()` 里删（删卡那一刻 tick 停着 ⇒ 必须自己收，METHOD 铁律）。*/
 static int32_t s_aura_vm;
+static int32_t s_shield_vm;             /* ★ 护盾的跟随 VM（0 = 没起；见 §H）*/
+static int32_t s_shield_broken_log;     /* 破盾那一发只打一行日志 */
 
 /* 每帧一次：选档案 → 推 Shift 蓄力 → 算圆心/半径 → 同步 VM。之后再拿这份状态去判弹与灵。 */
 static void aura_update(void)
@@ -296,6 +308,27 @@ static void aura_update(void)
         float sc = s_aura_r > 0.0f ? s_aura_r : 0.0f;
         ce_anm_set_pos((uint32_t)s_aura_vm, s_aura_cx, s_aura_cy, 0.0f);
         ce_anm_set_scale((uint32_t)s_aura_vm, sc, sc);   /* ★ 判定 = 绘制 */
+    }
+}
+
+/* ★ 护盾（§H）的跟随 VM：**只在有盾时**显示；破盾那一帧发一次 anm 中断 1（= 一手破壊点给视觉弹
+ *   发的事件 1）然后隐掉。用的是同一台 VM（不反复建删 ⇒ 不会有 VM 生命周期残留）。*/
+static void shield_vm_update(const pofv_card_t *s)
+{
+    const float *pp = ce_player_pos();
+    int up = pofv_shield_up(&s->st);
+
+    if (!pp) return;
+    if (!s_shield_vm)
+        s_shield_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_SHIELD,
+                                            POFV_SHIELD_VM_LAYER);
+    if (!s_shield_vm) return;
+    ce_anm_set_pos((uint32_t)s_shield_vm, pp[0], pp[1], 0.0f);
+    ce_anm_set_scale((uint32_t)s_shield_vm, up ? POFV_SHIELD_VM_SCALE : 0.0f,
+                     up ? POFV_SHIELD_VM_SCALE : 0.0f);
+    if (!up && s_shield_broken_log) {            /* 从「有」掉到「无」的那一帧：破盾一闪 */
+        ce_anm_interrupt((uint32_t)s_shield_vm, 1);
+        s_shield_broken_log = 0;
     }
 }
 
@@ -442,6 +475,14 @@ static void ca_effect(pofv_card_t *s, int level, int grant_invuln)
     n = pofv_cancel_circle(pos, r, /*white_only=*/0, POFV_CANCEL_MAX, POFV_BULLET_CANCEL_MODE_CA);
     pofv_account_ca(&s->st, n);                    /* ★ 一手：红圈**不回复气**（只填 SP）*/
     if (grant_invuln) ca_invuln_grant(s, level);   /* 一手：CA 给无敌（C1 = 8 帧）*/
+    /* ★★ 2026-10-01（owner 甜头口径）：**C3 / C4 的蓄力攻击发动 ⇒ 把抵挡护盾（重新）架上**
+     *   —— 一手 TH19 `FUN_0040b420` 的唯二调用点就是阶段 3（EXスペシャル）/ 阶段 4（ボスアタック）。
+     *   ⚠ `grant_invuln` 只是「这一次调用要不要给 CA 无敌」的区别（boss attack 占位那条不给），
+     *     与架盾无关 ⇒ 两条路都架。*/
+    if (pofv_shield_arm(&s->st, level)) {
+        s->shield_logged = 0;
+        ce_log("pofv: shield ARMED by C%d charge attack (parts 1; TH19 auto-barrier)", level);
+    }
     ce_log("pofv: CA L%d r=%d cancelled %d bullets (sp %d, gauge %d)",
            level, (int)r, n, (int)s->st.sp, (int)s->st.gauge);
 }
@@ -691,6 +732,38 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
     }
 }
 
+/* ★★ 2026-10-01（owner 甜头口径「抵挡护盾……**保命等级最优先，无论如何先消耗它**」）——
+ *   中弹（虚表 `+0x10`，救援层的**最早那一层**：比决死 B 与 113 的 `+0x0c` 都早）：
+ *   **有盾就无条件吃**（不与其他救援者抢，也不让位 —— `EVENTS-CONTRACT.md` §5.2 的语义是
+ *   「一次中弹把当前所有救援型提供者都烧掉」，所以 107 / 117 照旧烧它们自己的）。
+ *
+ *   一手对应（TH19）：被弹处理 `FUN_00549570` 开头 `if (PlayerInf+0x18 == 1 && バリア吸收() != 0) return;`
+ *   ⇒ **有盾时这一发根本不进「真正的被弹处理」**；`FUN_00544c90` 里 `if (*p != 1) return 0` ⇒ 挡 1 发。
+ *   ⚠ 本卡没有 TH19 那层「命中的前处理」⇒ 只能在救援层里等价成「吃盾 + 取消这次死亡」，
+ *     代价是**盾破的那一发仍然走了一遍「死亡已发起」**（会掉决死窗那种瞬间）。登记 `TUNING.md` §2.0v-3。*/
+static int on_death_before_deathbomb(ce_card_t *c)
+{
+    pofv_card_t *s = st(c);
+    void *p;
+
+    if (!s) return 0;
+    if (!pofv_shield_take(&s->st)) return 0;       /* 没盾 ⇒ 什么都不做（107/117/决死 B/113 照走）*/
+
+    (void)ce_rescue_note_claim(109);               /* 报到（唯一消费者是最后一家 113；返回值不用）*/
+    p = CE_PLAYER();
+    if (p) ((void (__attribute__((thiscall)) *)(void *))POFV_FN_CANCEL_IMPENDING_DEATH)(p);
+    /* 吃盾后给一小段无敌（❓ 自定：与 107 / 117 同一档 40 帧）—— 否则下一颗弹立刻再吃一次。*/
+    ce_invuln_request(ce_card_id(c), POFV_SHIELD_INVULN_FRAMES);
+    ce_invuln_apply();
+    s_shield_broken_log = 1;                       /* 让跟随 VM 下一帧发「破盾一闪」（事件 1）*/
+    if (!s->shield_logged) {
+        s->shield_logged = 1;
+        ce_log("pofv: shield ABSORBED the hit — death cancelled, %d frames invuln (parts 0 left)",
+               POFV_SHIELD_INVULN_FRAMES);
+    }
+    return 0;   /* 返回值被 Player__die 忽略；救命靠 cancel_impending_death 的副作用（107/117 同款）*/
+}
+
 /* ★★ 2026-10-01（合成卡 owner 口径 2）：**蓄力 = 按住 C 的电平**推进。
  *   上升沿 `begin` / 每帧 `hold` / 松手 `release` 三步都在这里；
  *   **Z 完全不参与** —— 原生射击照常（拦 Z 那条 `on_native_shot_suppress` 已整条删除，
@@ -744,6 +817,7 @@ static int on_tick_2(ce_card_t *c)
      *   早苗 = TH19 圆 + Shift 蓄力 / 灵梦·魔理沙 = 占位）。
      *   ⚠ 必须先算（`ghost_tick` 的「结界碰灵 ⇒ 沈静化」要用本帧的圆心/半径/几何支）。*/
     aura_update();
+    shield_vm_update(s);     /* ★ 护盾的视觉（有盾才显示；与救援层无关，纯表现）*/
 
     /* ★ 2026-10-01（口径 8/9/10）：**灵**（真敌人）—— 跟随 / 索敌 / 结界沈静化 / 循环撒
      *   （三道门：600 帧、boss 在场不撒、同屏 ≤ 4）全在 `ghost_tick()` 里。 */
@@ -846,6 +920,8 @@ static void clear_card(ce_card_t *c)
 
     /* ★ 结界的跟随 VM：同样必须在这里删（删卡那一刻 tick 停着，画面上的环不会自己走）。*/
     if (s_aura_vm) { ce_anm_delete((uint32_t)s_aura_vm); s_aura_vm = 0; }
+    if (s_shield_vm) { ce_anm_delete((uint32_t)s_shield_vm); s_shield_vm = 0; }
+    s_shield_broken_log = 0;
     s_aura_r = 0.0f;                 /* 结界状态复位（下一帧 aura_update 重新选档案）*/
     s_aura_age = -1;
     s_shift_frames = 0;
@@ -868,6 +944,7 @@ static void clear_card(ce_card_t *c)
     s->ghost_logged = 0;
     s->cap_logged = 0;
     s->power_logged = 0;
+    s->shield_logged = 0;
 }
 
 static int on_ctor(ce_card_t *c)
@@ -888,6 +965,7 @@ static void on_delete(ce_card_t *c)    { clear_card(c); }
  *   （旧值 `on_native_shot_suppress = on_native_shot_suppress` 已删；见本文件头的键位段。）*/
 CE_CARD(109,
         .ctor = on_ctor,
+        .on_death_before_deathbomb = on_death_before_deathbomb,   /* ★ 抵挡护盾（救援层最早那一层）*/
         .on_enemy_death = on_enemy_death,
         .on_tick_2 = on_tick_2,
         .on_run_reset = on_run_reset,

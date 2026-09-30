@@ -667,6 +667,29 @@ void pofv_aura_radius(const pofv_aura_profile_t *p, int32_t age, int32_t charge,
     *out = p->r_fixed;                            /* STATIC 固定（占位档）*/
 }
 
+/* ------------------------------------------- H. オートパリア（抵挡护盾，见 pofv_core.h §H）*/
+
+int pofv_shield_arm(pofv_state_t *st, int ca_level)
+{
+    if (!st) return 0;
+    if (ca_level < POFV_SHIELD_ARM_LEVEL) return 0;   /* ★ 一手：只有阶段 3 / 4 回复（0x40b420）*/
+    if (st->shield) return 0;                         /* 已经有盾：不重复（也不刷新）*/
+    st->shield = 1;
+    return 1;
+}
+
+int pofv_shield_take(pofv_state_t *st)
+{
+    if (!st || !st->shield) return 0;
+    st->shield = 0;                                   /* ★ 一手：「挡 1 发」（state 1 → 2）*/
+    return 1;
+}
+
+int pofv_shield_up(const pofv_state_t *st)
+{
+    return (st && st->shield) ? 1 : 0;
+}
+
 /* ------------------------------------------------- G. 灵（自制真敌人，见 pofv_core.h §G） */
 
 void pofv_ghost_pool_init(pofv_ghost_pool_t *p)

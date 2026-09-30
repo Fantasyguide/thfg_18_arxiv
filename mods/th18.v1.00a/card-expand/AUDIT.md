@@ -26114,6 +26114,12 @@ verify/autoplay 的场景只判 109 的日志）；`sites.py` / `sdk.*` / `engin
 **没有新增共享件改动**：档案表在 `cards/pofv_core.{h,c}`（109 自己的纯逻辑），卡侧只多读了一个引擎
 全局（`CE_ADDR_CHARACTER` `0x4cccf4`，只读）。登记同 §BE 详录 #163。
 
+**追加（同日 · owner 甜头口径「抵挡护盾」）**：`assets/ability/scripts/375_pofv109_shield.anm.txt`（**新增**，
+`ability.anm` script **375** —— 程序化六边形护罩，`sprite(-1)`）+ `native/tools/verify.py` 的 `power-item`
+场景再加两条 expect（`shield ARMED` / `shield ABSORBED`）。⚠ **编号 375 是接在 374 之后的连续号**：
+构建期硬门要求追加脚本按文件名连续（`376_…` 会被判「编号应为 375」）；别的一支（被回退过的
+`375_top_indicator`）如果将来回来，需要重新分配号段。
+
 **影响面（对既有卡）**：无 —— 三支新脚本都是**末尾追加**（sprite/entry 号一个没挪，
 `build_ability.py` 的「已定稿前 186 行逐行未变」检测通过）；`make_ufo_ecl.py` 只**新增**一支子程序
 （原生 30 支与我们既有的 11 支都不动）；`capcheck` / `verify` / `autoplay` 都是**109 自己的条目**。

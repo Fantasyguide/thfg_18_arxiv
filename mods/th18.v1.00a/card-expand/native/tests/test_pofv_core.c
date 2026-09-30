@@ -756,6 +756,42 @@ int main(void)
         CHECK(pofv_ghost_tick(0, slots, 1) == 0 && pofv_ghost_release(0, 0) == 0);
     }
 
+    /* ==================== J. オートパリア（抵挡护盾；owner 2026-10-01 甜头）====================
+     * ★ 一手 TH19：バリア由 `FUN_0040b420` 从「破壊中」复活，而它的**唯二调用点 = 阶段 3 / 阶段 4**
+     *   ⇒ 「蓄力到 C3 / C4 发动就给盾」；`FUN_00544c90` 的 `if (*p != 1) return 0` ⇒ **挡 1 发**。 */
+    {
+        pofv_state_t sh;
+
+        CHECK(POFV_SHIELD_ARM_LEVEL == 3);                        /* ★ 一手：阶段 3 / 4 */
+        CHECK(POFV_SHIELD_INVULN_FRAMES > 0);                     /* ❓ 自定（与 107/117 同档 40）*/
+
+        pofv_state_init(&sh);
+        CHECK(pofv_shield_up(&sh) == 0);                          /* 开局没有盾 */
+        CHECK(pofv_shield_arm(&sh, 0) == 0);                      /* 没蓄力 */
+        CHECK(pofv_shield_arm(&sh, 1) == 0);                      /* C1 不给（一手：阶段 1/2 不回复）*/
+        CHECK(pofv_shield_arm(&sh, 2) == 0);                      /* C2 不给 */
+        CHECK(pofv_shield_up(&sh) == 0);
+        CHECK(pofv_shield_arm(&sh, 3) == 1);                      /* ★ C3 发动 ⇒ 架上 */
+        CHECK(pofv_shield_up(&sh) == 1);
+        CHECK(pofv_shield_arm(&sh, 3) == 0);                      /* 已有盾：不重复、也不刷新 */
+        CHECK(pofv_shield_arm(&sh, 4) == 0);
+        CHECK(pofv_shield_up(&sh) == 1);
+
+        CHECK(pofv_shield_take(&sh) == 1);                        /* ★ 挡 1 发 */
+        CHECK(pofv_shield_up(&sh) == 0);
+        CHECK(pofv_shield_take(&sh) == 0);                        /* 第二发直接放行（一手 `*p != 1`）*/
+
+        CHECK(pofv_shield_arm(&sh, 4) == 1);                      /* 破了以后 C4 发动 ⇒ 再架上 */
+        CHECK(pofv_shield_up(&sh) == 1);
+        pofv_state_init(&sh);                                     /* 换关 / 重开：清掉 */
+        CHECK(pofv_shield_up(&sh) == 0);
+        CHECK(pofv_shield_take(&sh) == 0);                        /* 没盾：吃不掉 */
+
+        CHECK(pofv_shield_arm(0, 4) == 0);                        /* NULL 安全 */
+        CHECK(pofv_shield_take(0) == 0);
+        CHECK(pofv_shield_up(0) == 0);
+    }
+
     printf("test_pofv_core: %d passed, %d failed\n", s_pass, s_fail);
     return s_fail ? 1 : 0;
 }

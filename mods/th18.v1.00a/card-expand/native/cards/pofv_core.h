@@ -90,6 +90,7 @@ typedef struct {
     int32_t white_cancelled;/* 本局消掉的白弹数（日志 / 调参用）*/
     int32_t any_cancelled;  /* 本局消掉的全部弹数（含不可消；红圈的账）*/
     int32_t attacks;        /* 本局 SP 档触发的「boss attack」次数 */
+    int32_t shield;         /* ★ オートパリア：1 = **有効**（挡 1 发）；0 = 无（见 §H）*/
 } pofv_state_t;
 
 void pofv_state_init(pofv_state_t *st);
@@ -507,6 +508,44 @@ int pofv_aura_hit_ex(float dx, float dy, float r, float pad, int pad_linear);
 
 /* 旧签名（= Reimu 支的包装）：`pofv_aura_hit(dx,dy,r,pad) == pofv_aura_hit_ex(dx,dy,r,pad,0)`。 */
 int pofv_aura_hit(float dx, float dy, float r, float pad);
+
+/* ==================================================================== H. オートパリア（抵挡护盾）
+ *
+ * owner 2026-10-01 甜头口径：「**按照 th19 口径，蓄力到 C3 or C4 可以给一个抵挡的护盾，
+ *   保命等级最优先，无论如何先消耗它**」。
+ *
+ * ★ 一手（TH19，`engine/versus/th19/05-four-mechanics.md` §5 / `02-self-field-systems.md` §4）：
+ *   · バリア是**独立对象**，状态 `[0]`：1 = 有効 / 2 = 破壊中 / 3 = 无（`0x544be0`）。
+ *   · **命中先吃它**：被弹处理 `FUN_00549570` 开头就是
+ *     `if (PlayerInf+0x18 == 1 && FUN_00544c90(barrier) != 0) return;`（`0x549570`）
+ *     ⇒ 有盾时**这一发根本不进「真正的被弹处理」**。
+ *   · **挡 1 发**：`FUN_00544c90` 开头 `if (*p != 1) return 0;` ⇒ 第一发把它打成 `2`，第二发直接放行。
+ *   · **怎么回复**：`FUN_0040b420`（`0x40b420`）把 `2 → 1`，而它的**唯二调用点**
+ *     = `0x4e7b8d`（**阶段 4 ボスアタック**）/ `0x4e8176`（**阶段 3 EXスペシャル**）
+ *     ⇒ **只有 C3 / C4 的蓄力攻击发动才回复**（Manual「EXスペシャルアタックかボスアタックを
+ *     発動すると復活」逐条对上）。
+ *
+ * ⇒ 本卡的落地（**按一手**）：蓄力攻击在 **C3 / C4** 发动 ⇒ `shield = 1`（破了以后要再发动一次
+ *   才能拿回来）；中弹（救援层）时**先吃盾**。
+ *
+ * ❓ 自定（本卡没有 TH19 那套「命中的前处理」，只能在**救援层**（虚表 `+0x10`，死亡已发起）里
+ *   等价成「吃盾 + 取消这次死亡」）：吸收后给的**无敌帧数**（`POFV_SHIELD_INVULN_FRAMES`）与
+ *   **音效**（TH19 是 SE `0x1b`；TH18 的表里没有同一枚）都登记在 `TUNING.md`。
+ *   ★ 「保命等级最优先 / 无论如何先消耗它」在这里 = **挂最早的那一层（`+0x10`，比决死 B 与 113 的
+ *     `+0x0c` 都早）**、且**无条件吃**（不与其他救援者抢，也不让位）。 */
+
+#define POFV_SHIELD_ARM_LEVEL        3     /* ★ 一手：`0x40b420` 的唯二调用点 = 阶段 3 / 4 */
+#define POFV_SHIELD_INVULN_FRAMES   40     /* ❓ 自定（与 107 结界 / 117 霊撃 同一档 40 帧）*/
+
+/* 蓄力攻击发动（`level` = 1..4）：**C3/C4 才**把盾（重新）架上。
+ * 返回 1 = 本次真的从「无」变成「有」（卡侧据此打一行日志 / 演出），0 = 没变。 */
+int  pofv_shield_arm(pofv_state_t *st, int ca_level);
+
+/* 中弹：**先吃盾**。返回 1 = 这一发被吃掉（卡侧接着取消死亡），0 = 没盾（什么都不做）。 */
+int  pofv_shield_take(pofv_state_t *st);
+
+/* 诊断 / 单测：盾在不在。 */
+int  pofv_shield_up(const pofv_state_t *st);
 
 /* ==================================================================== G. 灵（自制**真敌人**）
  *
