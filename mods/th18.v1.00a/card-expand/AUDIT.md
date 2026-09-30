@@ -25195,3 +25195,30 @@ owner：「你就别 *3 了，我让你核一下 **th18 和 th08 的 dps 差**�
 - 🟡 两条反例：TH18 魔理沙非聚焦是**激光行**（每帧结算，`th18:0x45fc62`）⇒ 表值失效、只能给界；早苗那一支接的是 **TH16 `pl03sub`（文）**，不在 TH08 表内。
 
 ⇒ 本批**不改代码**（现装的就是一手值），只把结论落进 `TUNING.md` §2.1ccc-26 与本条。
+
+## §BE 详录 #151（2026-09-30 第五十批）：卡 107 —— **HUD colorKey 根因** + 位置 + 结界持续期两件 + 展开文字
+
+**谁改的**：107（系统卡，本批唯一 owner）；**依据**：owner 2026-09-30 四条实跑口径（逐字见
+`SINGLE-CARD-TEST.md` §th07 本批 / `TUNING.md` §2.0u-2）+ 一手（TH07 反汇编见
+`engine/spirit/th07/01-barrier-visual.md`、逐像素判读见 `assets/ability/make_senro_hud_art.py` 文件头）。
+
+| 文件 | 改了什么 | 为什么 | 怎么验证的 |
+| --- | --- | --- | --- |
+| `assets/ability/make_senro_hud_art.py` | 切图后**逐像素 colorKey**（`r==g==b==0 ⇒ alpha 0`）+ 一条"键完不该再剩不透明纯黑"的自检 | TH07 `ascii.anm` 的头是 `colorKey: 0x00000000`（纯黑 = 透明），而 TH18 图集只有 alpha ⇒ 1:1 照抄会把黑底当不透明画出来（实跑「HUD 样式不对 / 缺件」的**根因**）| 生成器自检 + 渲染 `D0..D9/LABEL/BORDER` 的字符画（数字是干净字形、标签只剩 `Cherry` + 加号 + 斜杠）+ 重建后 `ATLAS_SENRO_HUD*` 的**不透明纯黑像素 = 0** |
+| `assets/ability/senro_hud/*.png`（12 张生成物）| 同上（键掉纯黑） | 同上 | `make_atlas.py` 的逐像素自检（画布裁出的矩形与源 PNG 完全相同）|
+| `assets/ability/scripts/369_senro_dim.anm.txt` | **末尾追加**一支新脚本（全屏 `drawRect(640,480)` + `layer(19)` + `anchor(0,0)`；不写 `alpha`）| 结界持续期的压暗载体（TH18 的原版全局色乘子够不到，见 `TUNING.md` §2.0u-2）| `build_ability.py` 的脚本序号连续性检查（369 = 原生 `n_script` + k，末尾追加 ⇒ 既有脚本号**一格未动**）|
+| `native/anm_ids.h` / `native/build/ability.anm`（生成物）| 重新生成（+`CE_ANM_ABILITY_SCRIPT_SENRO_DIM 369`；图集矩形/精灵号**一个都没变**）| 同上 | `make dll` 全绿；`thanm -l 18` 回读 entry63/64 的 sprite 表与改前逐行相同 |
+| `native/cards/senro.c` | ① `T` 锚点 `−43/−17 → 0/−13`；② 新增压暗 VM（369）的起停 + α 曲线；③ 自机本体红白闪（`on_item_frame` 写 `player+0x538/0x53c`）；④ 展开文字（`ce_hud_text_ex`）；⑤ 三条收尾路（`on_delete` / `on_run_reset` / `on_stage_start`）都收干净 | 四条 owner 口径 | `make dll` 全绿；`make test-host` 全绿（`test_senro_core` 12258 断言 0 失败）；`_Static_assert(ce_state ≤ 496)` 未触发 |
+
+**对既有卡的影响面（共享件纪律）**：
+- `assets/ability/scripts/**` 只**追加** 369（末尾、序号连续）⇒ 既有一切脚本号不变；
+- `ability.anm` 的**图集矩形与精灵号一个都没动**（只改了 107 自己那 12 张 PNG 的像素）⇒ 其它卡烘进 DLL 的
+  `CE_ANM_ABILITY_SPRITE_*` 全部照旧；`anm_ids.h` 只多一行 `SENRO_DIM` 脚本宏；
+- **没碰**：`sdk.*` / `sdk_core.*` / `engine.h` / `sites.py` / `Makefile` / `patch/**` / `cards_def.c` /
+  其它任何卡的文件；
+- 站点数**不变**（没有新增 thcrap 站点：文字走既有 `ce_hud_text_ex`、本体色是读写的既有字段、
+  压暗是普通 `ce_anm_spawn`）。
+
+**回归跑了什么**：`make dll`（0 错误）· `make test-host`（24 组全绿，含 `test_senro_core` 12258 断言）。
+⚠ **待实跑**：四条口径的画面判据见 `SINGLE-CARD-TEST.md` §th07 本批；`scale 1.4`（文字）与
+`α` 的观感是唯一两处可能要微调的数（登记在 `TUNING.md` §2.0u-2）。
