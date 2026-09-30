@@ -669,8 +669,19 @@ DLL `eec2b9c5935d7be751ddb0c5f85e88a5`（modkit 4 路径同 md5）+
 | 铁律 | ★ **UI/动画一律先从原代码找**：必须给出「哪个 anm + script 号 + 判据字段 + 画在哪 + 生命周期」；**原版找不到才允许 ❓自定**并登记 `TUNING.md` |
 | 铁律 2 | 「长持续效果的卡必须交代**被删掉会怎样**」：三角 VM 要在 `on_delete` 收干净 |
 | 已知对照（**不是**这条）| `engine/player/th18/05-poc-height-and-indicator.md` = **收点线**那条指示线（`front.anm` script `57`，引擎 GUI 自建 VM、可见性由 `Gui+0x194` bit `0x2000` 把门、位置每帧现算）⇒ **「引擎里怎么养一个指示 VM」的现成先例**，实现三角时可以照这个架子 |
-| 实现落点（预判） | 三张卡各自的绘制层（卡侧 VM）；若三处逻辑相同 ⇒ 抽一个共用 helper（**动共享件要按 `AUDIT.md` §BE 登记** + 站点预算核查：现 33/24 已超记账线）|
+| **归属（owner 2026-10-01）** | 「**109 其他人做了，你只做统一修改性质的东西——加三角**」⇒ **109 不归我**；**本条（顶三角）由我负责**，性质 = **跨卡统一修改**（107 / 110 / 111 三处同一逻辑 ⇒ 抽共用 helper）|
+| 实现落点（预判） | **卡侧 VM 路线**（照信仰点自己的做法：`th18` 没有对应 item type ⇒ 自建 VM）：三张卡的绘制层各调一次 helper。⇒ **不需要站点**（卡侧 VM 不走 hook）；若抽共用 helper，仍要按 `AUDIT.md` §BE 登记（动共享件）|
+| **接入面（主控已勘）** | 见本节末「接入面详录」|
 | **形态（owner 2026-10-01 追加）** | ★ **「那个三角形是贴图」** ⇒ 是 **anm 里的一张 sprite**（`set_sprite(N)`），**不是** `drawPoly`/`drawRect` 程序化图元 ⇒ 要找的是「哪张 sprite + 哪个 anm 的哪个 script」|
 | 判据（要一手回答的）| ①画它的是引擎还是对象自己 ②判据（`item_y < 0`？上边距阈值？）③**anm + script + sprite 号** ④x 是否夹边距、y 固定值 ⑤多个对象时每个一个三角还是合并 ⑥回收/掉回画面内时怎么消失 |
 | 定位提示（主控查过）| TH18 **没有 `etama.anm`**（道具图不在那）；HUD/GUI 大本营 = `front.anm`（entry 名只是 `front/front00.png` 这种路径、**无语义名**）⇒ 别靠 entry 名找，要逐 script 看 `sprite(N)` 的号与尺寸；`ascii.anm` / `effect.anm` 也是候选 |
 
+### 11.1 接入面详录（主控 2026-10-01 勘，供实现时直接照着调）
+
+| 卡 | 对象是什么 | 生成点 | 每帧位置在哪拿 | 三角挂哪 |
+| --- | --- | --- | --- | --- |
+| **110 / 111** | **自建 anm VM**（`th18` 没有信仰点 item type ⇒ 自建，见 `cards/faith.h` 的「为什么自建」）| `dot_spawn_vm()` `cards/faith.c:724` | 道具池 tick（`cards/faith.c:1945` 一带）逐颗更新 | **池 tick 里逐颗判 y** 最自然（同帧就能拿到 x/y）|
+| **107** | 自建 VM（位置由卡自己算、**没有 follow**）| `on_tick_2` 尾部的 `senro_fx_flush()` | 同一处 flush（`cards/senro.c`）| 在 flush 后统一判一次 |
+
+> 两条都能走**卡侧 VM**（`ce_anm_spawn` + `ce_anm_set_pos` + `ce_anm_set_sprite`）⇒ **不需要站点**；
+> 只有「抽共用 helper 进共享件」这一步要按 `AUDIT.md` §BE 登记。
