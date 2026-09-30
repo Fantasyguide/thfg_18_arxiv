@@ -246,8 +246,21 @@ TH08 `Sub50/56/57/60` 的 `floatTime`（440→320/288/256/224、120 帧）照抄
 | 仓库 | `Fantasyguide/th18-leveledit`（**私有**；裸 HTTPS 连不上，必须 SSH：`git@github.com:Fantasyguide/th18-leveledit.git`） |
 | 分支 / 提交 | **`mystia-familiar-trail`** / `115e824`（URL：`https://github.com/Fantasyguide/th18-leveledit/tree/mystia-familiar-trail`） |
 | 改的源 | **`mods/stage02-mystia/assets.py`**（该仓是**生成式**：spec 由 Python 生成，不是手写 anm）—— 使魔那段（原 126–138 行）之后追加 entry30 + script30，并把 `script28/29` 的每个 `+4:` 拆成两段 `+2: scriptNewPos(script30,0,0)` |
-| 加的东西 | **entry30** `mystia/fam-trail.png` 16×16（= TH08 `etama.anm` sprite219 `(0,96,16,16)` 同格；sprite 号 = `max+1` = 91，**不能用 0**，会撞 entry0 的 sprite0）+ **script30** = TH08 `etama` script71 零翻译（加法 / 20 tick / `alpha=48+rand(64)` / `color=128+rand(64)`×3 / `scale=1.1+rand(1.0)→0` / `+20: delete()`，子 VM 带 `layer(7)/type(0)`） |
-| 构建 | README 的正路 = `python scripts/thcrap.py release stage02-mystia`（会**推送另一个仓** `Fantasyguide/th18_modkit`）；本次只跑了等价分步：`thanm -c18 <anm> spec.txt -m maps/anm/v8.anmm` + 回读 `-l18`/`-x18` + `scripts/lint.py` |
+| 加的东西 | **1 格 16×16 火花 + 1 条子脚本 + 两处循环改写**（细节见下表） |
+
+**新增内容逐项**：
+
+- **entry30** `mystia/fam-trail.png` 16×16 = TH08 `etama.anm` sprite219 `(0,96,16,16)` 同格；
+  sprite 号 = **`max+1` = 91**（⚠ 用 0 会撞 entry0 的 sprite0，静默改坏原生 entry）。
+- **script30** = TH08 `etama` script71 零翻译：加法 / 20 tick / `alpha=48+rand(64)` /
+  `color=128+rand(64)`×3 / `scale=1.1+rand(1.0)→0` / `+20: delete()`；子 VM 自带 `layer(7)/type(0)`。
+- **script28/29**：每个 `+4:` 拆成两段 `+2: scriptNewPos(script30,0,0)` ⇒ **每 2 tick 一颗**，
+  而 `sprite()` 仍在 0/4/8/12 ⇒ **动画仍 4 tick 一轮**（速度不变）。
+| 构建 | README 的正路 = `python scripts/thcrap.py release stage02-mystia`（⚠ 会**推送另一个仓** `Fantasyguide/th18_modkit`）；本次只跑等价分步（见下） |
+
+等价分步 = `thanm -c18 <anm> spec.txt -m maps/anm/v8.anmm` + 回读 `-l18`/`-x18` + `scripts/lint.py`；
+依赖 = Python 3.10+ / Pillow / git + thtk（thanm/thecl/thdat）+ **打了 op19 补丁的 thmsg**；
+输入 = `local/origin-game/th18.dat`、`local/th08-origin-game/th08.dat`、`local/eclmap/eclmap/{th18,th08}.eclm`；`maps/anm/v8.anmm` 在库内。
 | lint | `fsetRand` 在库内 56 个 ANM 无先例 ⇒ 按该仓机制加 `// lint-allow: anm-no-precedent <一手出处>` ⇒ **0 error / 0 warning** |
 | 验证到哪一步 | 编译 + 回读 + 与原产物**逐块对比**：除那三处编辑外逐块一致；**未实机**（也没跑完整 `release`） |
 | 许可证 | 该仓**没有 LICENSE**（只有 `maps/anm/LICENSE-truth-Apache-2.0.txt`、`legacy/.../LICENSE.thtk.txt`）⇒ **不能 vendor 进本仓**；正路 = 在该私有仓开分支/提 PR（owner 有权限） |
