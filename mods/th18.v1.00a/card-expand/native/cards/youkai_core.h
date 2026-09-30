@@ -2072,10 +2072,16 @@ int yk_orbit_hp_for_enemy(int hp_max);
 #define YK_ORBIT_PHASE_STRIDE 17u     /* 每敌错相的乘子（互质于 120 ⇒ id 不同则相位不同）*/
 unsigned yk_orbit_phase_step(int n, int k);
 unsigned yk_orbit_phase_id(uint32_t enemy_id);
-#define YK_ORBIT_STEP_DEG    3        /* ❓自定：每帧转几度（3°/帧 = 120 帧一圈 ≈ 2 s）。
-                                       *   ⚠ 改这个必须同时改 `YK_ORBIT_STEPS` 并**重新生成那两张表**。
-                                       *   （一手：TH08 的角速度实参在 0.0524~0.105 rad/帧（3°~6°）之间，
-                                       *     见 `engine/enemy/th08/03` §3 的 `moveCircle` 第 3 实参分布。）*/
+#define YK_ORBIT_STEP_DEG    3        /* **表**的角步长：`yk_orbit_cos/sin` 每格 3°（120 格一圈）。
+                                       *   ⚠ 这是**表的定义**，不要为了调转速改它（改它就得重新生成两张表）。*/
+/* ★★★ 2026-09-28 第七轮（**owner 实跑口径**：「**旋转速度太快**」）：
+ *   **实际角速度 = `YK_ORBIT_STEP_DEG / YK_ORBIT_STEP_DIV` = 1.5°/帧**（240 帧 ≈ 4 s 一圈）。
+ *   一手两档都在：`moveCircle` 第 3 实参的字面值里 **`0.05235988f`（= 3.0°/帧）×92** 与
+ *   **`0.02617994f`（= 1.5°/帧）×54**（统计口径：24 文件、变量实参按展开计）；例子（stage1 的使魔 sub）：
+ *   `moveCircle(100, %F0, 0.05235988f, 0.64f)` ⇒ 半径 100 + 3°/帧。
+ *   ⇒ 3°/帧**确实是一手值**，1.5°/帧也是；owner 实跑嫌快 ⇒ **取 1.5**。
+ *   ⚠ 一行可改（把 `YK_ORBIT_STEP_DIV` 改回 1 就是 3°/帧）；**表不用动**。*/
+#define YK_ORBIT_STEP_DIV    2        /* 每 `DIV` 帧推进一格（2 ⇒ 1.5°/帧）。1 = 回到 3°/帧。*/
 #define YK_ORBIT_STEPS       120      /* 表长 = 一圈的步数（= 360 / YK_ORBIT_STEP_DEG，两者必须同步改）*/
 #define YK_ORBIT_ORPHAN_GRACE 2u      /* 父敌查不到之后**再等几帧**才撤。❓自定，但理由是一手的时序：
                                        *   一手颗数在 `EnemyManager` 的死亡块里算（`th08:0x42da54` 一带），
@@ -2085,8 +2091,44 @@ unsigned yk_orbit_phase_id(uint32_t enemy_id);
  * 负数 / 0 一律判 0（读到的值不信任：VM 还没建时那两格是 0）。*/
 int yk_big_by_sprite(int w, int h);
 
-/* 绕转相位推进：`step` 每帧 += `YK_ORBIT_STEP_DEG`，满一圈回绕。返回新 step（恒 < `YK_ORBIT_STEPS`）。*/
-unsigned yk_orbit_step_advance(unsigned step);
+/* ★★★ 绕转相位的**半步累加器**（第七轮）：表是 3°/格，实际转速靠「每 `YK_ORBIT_STEP_DIV` 帧走一格」。
+ *   · `yk_orbit_substep_advance(substep)`：每帧 +1，满一圈（`YK_ORBIT_STEPS × DIV`）回绕；
+ *   · `yk_orbit_step_of_substep(substep)`：查表用的**格号** = `(substep / DIV) % YK_ORBIT_STEPS`。
+ *   ⇒ 20 帧 = 20 个 substep = **10 格 = 30°**（`DIV = 2` 时）。两者都是纯函数（可单测）。*/
+#define YK_ORBIT_SUBSTEPS    (YK_ORBIT_STEPS * YK_ORBIT_STEP_DIV)   /* 一圈的 substep 数 = 240 */
+unsigned yk_orbit_substep_advance(unsigned substep);
+unsigned yk_orbit_step_of_substep(unsigned substep);
+
+/* ============================================================================================
+ * ★★★ 2026-09-30（**owner 口径**）：**四色语义表** = 两个布尔轴的 2×2
+ * ============================================================================================
+ * owner 逐字：「我记得之前在哪看到过有 **4 种使魔颜色区分**，分别是 **会/不会体术 × 高低速发弹是否
+ *   不一样**。**发弹口使魔 = 会体术，发弹一样**（发弹不一样还得改符卡算了）。**额外使魔 = 不会体术**
+ *   （否则道中体验大变），**发弹一样/不一样无所谓反正不发弹，就按照一样走**。」
+ *
+ * 轴 ① = **会不会体术**（接触自机 ⇒ MISS）；轴 ② = **高低速发弹是否一样**。四个 kind：
+ *   · `YK_FAM_KIND_MELEE_SHOT_SAME`（会体术 + 弹一样）⇒ **发弹口使魔**：`s_map` 里那批 1:1 映射使魔。
+ *     会体术正是 `yk_fam_collide_tick` 实现的「人侧撞使魔 ⇒ MISS」那一批；弹一样对应 owner 那句
+ *     「发弹不一样还得改符卡算了」⇒ 我们**不改符卡**。
+ *   · `YK_FAM_KIND_NO_MELEE_SHOT_SAME`（不会体术 + 弹一样）⇒ **额外使魔**：我们补的惰性绕转使魔。
+ *     不会体术是**结构上**的：它们**不进 `s_map`** ⇒ 人侧 MISS 判据够不到它们。
+ *   · `*_SHOT_DIFF` 两个 kind **现在没有使用者**，但**留在表里**（这就是「4 种」的意思）——
+ *     要用它们得先动符卡（高低速两套弹），owner 明确先不做。
+ * ⚠❓ **配色 = 自定**：2×2 语义 ↔ 四支脚本（`enemy.anm` 53..56）的**对应关系本仓没有任何一手依据**
+ *   （一手只证到「外观由使魔自己子程序的 `anmSet(K)` 定，K ∈ 53..58」；`engine/` 与 `mods/` 两个目录全查过，
+ *   没有这张表）⇒ 映射表在卡侧（`YK_FAM_KIND_SCRIPT`，用 `anm_ids.h` 的宏名），**整表可置换**；
+ *   owner 若想起原作那套对应关系，只改那一张表。*/
+enum {
+    YK_FAM_KIND_MELEE_SHOT_SAME    = 0,   /* 会体术   + 弹一样（发弹口使魔）*/
+    YK_FAM_KIND_MELEE_SHOT_DIFF    = 1,   /* 会体术   + 弹不一样（留位：要动符卡）*/
+    YK_FAM_KIND_NO_MELEE_SHOT_SAME = 2,   /* 不会体术 + 弹一样（额外使魔 = 绕转使魔）*/
+    YK_FAM_KIND_NO_MELEE_SHOT_DIFF = 3    /* 不会体术 + 弹不一样（留位：要动符卡）*/
+};
+#define YK_FAM_KIND_COUNT 4
+/* 两个轴的读数（表驱动、可单测；`kind` 越界一律当 `MELEE_SHOT_SAME` = 最保守那一档）。*/
+int yk_fam_kind_valid(int kind);       /* 1 = 落在 0..3 */
+int yk_fam_kind_melee(int kind);       /* 1 = 会体术（接触自机 ⇒ MISS）*/
+int yk_fam_kind_shot_same(int kind);   /* 1 = 高低速发弹一样；0 = 不一样（留位）*/
 
 /* 查表给出绕转偏移：`dx = cos(step × 2π/120) × radius`、`dy = sin(step × 2π/120) × radius`。
  * **y 轴向下**（TH18/TH08 的游玩区坐标）⇒ step 0 = 正右、30 = 正下、60 = 正左、90 = 正上。

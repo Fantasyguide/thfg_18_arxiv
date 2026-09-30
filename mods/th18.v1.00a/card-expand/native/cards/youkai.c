@@ -528,14 +528,41 @@ static void yk_kill_familiar(uint8_t *f)
 
 /* 变体（0..3）→ `ability.anm` 里的脚本号。★ 用 `anm_ids.h` 的**宏名**（`make anm` 生成），
  * 不写死数字；四条逐一列（不假设号连续 —— 万一资产重排，这里会**编译期**就对不上而不是静默画错）。*/
-static int yk_fam_anm_script(int variant)
+/* ★★★ 2026-09-30（**owner 口径**）：四色的语义表在 `youkai_core.h`（`YK_FAM_KIND_*`），
+ * 这里只负责「kind → 一支脚本」——**用 `anm_ids.h` 的宏名**，不写死数字。
+ * ⚠❓ **配色本身 = 自定**（2×2 语义 ↔ 53..56 的对应关系没有一手依据；见 core 那一节的长注）。
+ *   当前取法：**额外使魔**（不会体术）留在实跑已验证的 **S53（红）**，**发弹口使魔**改到 **S54**，
+ *   两个留位 kind 占 S55 / S56 ⇒ 四者互不相同（下面有编译期断言）。**整表可置换**。*/
+static const int32_t YK_FAM_KIND_SCRIPT[YK_FAM_KIND_COUNT] = {
+    CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_S54,   /* MELEE_SHOT_SAME     发弹口使魔（会体术 + 弹一样）*/
+    CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_S55,   /* MELEE_SHOT_DIFF     留位（会体术 + 弹不一样）*/
+    CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_S53,   /* NO_MELEE_SHOT_SAME  额外使魔（不会体术 + 弹一样）*/
+    CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_S56    /* NO_MELEE_SHOT_DIFF  留位（不会体术 + 弹不一样）*/
+};
+/* 编译期：四支必须互不相同（「4 种颜色」这句话的机器保证 —— 抄错一格就编不过）。*/
+_Static_assert(CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_S53 != CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_S54 &&
+               CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_S53 != CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_S55 &&
+               CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_S53 != CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_S56 &&
+               CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_S54 != CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_S55 &&
+               CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_S54 != CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_S56 &&
+               CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_S55 != CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_S56,
+               "the four youkai familiar colours must be four distinct scripts (YK_FAM_KIND_SCRIPT)");
+
+static int yk_fam_kind_script(int kind)
 {
-    switch (variant) {
-    case 0:  return CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_S53;   /* 红 */
-    case 1:  return CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_S54;   /* 绿 */
-    case 2:  return CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_S55;   /* 蓝白 */
-    default: return CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_S56;   /* 黄 */
-    }
+    if (!yk_fam_kind_valid(kind)) kind = YK_FAM_KIND_MELEE_SHOT_SAME;   /* 越界 = 最保守那一档 */
+    return (int)YK_FAM_KIND_SCRIPT[kind];
+}
+
+/* 映射使魔（`s_map` 里那批 1:1 发射口使魔）用哪个 kind：
+ *   新口径（**owner 2026-09-30**）= **恒 `MELEE_SHOT_SAME`**（会体术 + 弹一样）⇒ **它们全部同色**。
+ *   ⚠ 这是一处**可见变化**（原来按发射口槽 `yk_fam_variant(slot)` 取色，`AUDIT.md` §BE #150 第八轮登记）。
+ *   **要改回按槽取色** = 把下面 `return` 那一行换成 `return yk_fam_variant(slot);`（那个函数还在 core，
+ *   槽→变体/kind 同序 ⇒ 一行）。`slot` 在旧口径下是判据，所以这里保留实参。*/
+static int yk_fam_mapped_kind(int slot)
+{
+    (void)slot;
+    return YK_FAM_KIND_MELEE_SHOT_SAME;
 }
 
 /* 使魔 ↔ 跟随 VM 的对照表（**文件级静态**，照 117 动物灵 `s_tok[40]` / 112 的做法；
@@ -546,7 +573,7 @@ static int yk_fam_anm_script(int variant)
 typedef struct {
     uint32_t fam_id;   /* 0 = 空槽 */
     uint32_t anm_id;   /* 0 = 没有 VM（起失败 / 已被引擎销毁）*/
-    int32_t  variant;  /* 0..3：自愈重起时要按同一套脚本再起一个 */
+    int32_t  kind;     /* `YK_FAM_KIND_*`：自愈重起时要按**同一个 kind**（同一支脚本）再起一个 */
     /* ★★★ 2026-09-22 夜（owner：**妖侧只剩魔法阵**）：**常驻魔法阵环**的句柄（只在妖侧存在）。
      * 与 `yk_ring_blink` 那支**切换短命环**是两件事：这支是「妖侧使魔本体不可见时**一直**看得见的那圈」。*/
     uint32_t circle_id;/* 0 = 这一帧没有常驻魔法阵（人侧 / 起失败 / 还没起）*/
@@ -568,7 +595,7 @@ static void yk_fam_vm_kill(yk_fam_vm_t *v)
     if (v->anm_id) { ce_anm_delete(v->anm_id); v->anm_id = 0; }
     if (v->circle_id) { ce_anm_delete(v->circle_id); v->circle_id = 0; }
     v->fam_id = 0;
-    v->variant = 0;
+    v->kind = 0;
 }
 
 static void yk_fam_vm_kill_id(uint32_t fam_id) { yk_fam_vm_kill(yk_fam_vm_find(fam_id)); }
@@ -627,7 +654,7 @@ static void __attribute__((noinline)) yk_fam_vm_check(void)
 }
 
 /* 起一个跟随 VM 并**立刻**摆到实体坐标（世界层 VM 的实体坐标 (0,0,0) = 弹幕区上边框中点
- * ⇒ 不先摆会闪一帧）。失败只报日志（画不出来 ≠ 卡坏，`ufo_body_vm_spawn` 同款）。*/static void yk_fam_vm_spawn(uint32_t fam_id, int variant, float x, float y)
+ * ⇒ 不先摆会闪一帧）。失败只报日志（画不出来 ≠ 卡坏，`ufo_body_vm_spawn` 同款）。*/static void yk_fam_vm_spawn(uint32_t fam_id, int kind, float x, float y)
 {
     yk_fam_vm_t *v = yk_fam_vm_find(fam_id);
     uint32_t id;
@@ -655,7 +682,7 @@ static void __attribute__((noinline)) yk_fam_vm_check(void)
                (int)YK_FAM_MAX, fam_id);
         return;
     }
-    script = yk_fam_anm_script(variant);
+    script = yk_fam_kind_script(kind);
     id = ce_anm_spawn(CE_ABILITY_ANM(), script, YK_FAM_ANM_LAYER);
     if (!id) {
         ce_log("youkai: familiar follow-VM spawn FAILED (fam %u, script %d, layer %d) - the "
@@ -665,7 +692,7 @@ static void __attribute__((noinline)) yk_fam_vm_check(void)
     }
     v->fam_id = fam_id;
     v->anm_id = id;
-    v->variant = variant;
+    v->kind = kind;
     ce_anm_set_pos(id, x, y, 0.0f);
     /* ★★★ 2026-09-22 夜（owner 二次订正）：**使魔身上不再挂常驻环** —— 环改成「切换那一下的
      * 短命特效」（`yk_ring_blink`，见上面那一段的长注）。使魔本体这一层只剩一个跟随 VM。*/
@@ -675,7 +702,7 @@ static void __attribute__((noinline)) yk_fam_vm_check(void)
  * 世界层 VM 的实体坐标与 ECL 是同一套 640 空间 ⇒ 不需要换算，`ufo_body_vm_follow` 的注）。
  * ⚠ 句柄被引擎销毁过（过场重建 ANM 管理器 / VM 列表被清）⇒ **自愈**：丢掉句柄按同一变体重起。
  * ⚠ 脚本自己 `delete()` 了 ⇒ `ce_anm_set_pos` 返回 0 ⇒ 清句柄，下一帧自愈。*/
-static void yk_fam_vm_follow(uint32_t fam_id, int variant, const uint8_t *f)
+static void yk_fam_vm_follow(uint32_t fam_id, int kind, const uint8_t *f)
 {
     yk_fam_vm_t *v;
     if (!f || !fam_id) return;
@@ -683,7 +710,7 @@ static void yk_fam_vm_follow(uint32_t fam_id, int variant, const uint8_t *f)
     if (!v || !v->anm_id || !ce_anm_get_vm(v->anm_id)) {
         /* 记录还在 ⇒ `spawn` 按 `fam_id` 找回**同一条**（旧句柄早就没了，直接覆盖不泄漏）；
          * 记录也没了 ⇒ 它占一条空槽。两种都按**同一个变体**重起。*/
-        yk_fam_vm_spawn(fam_id, variant, *(const float *)(f + CE_ENEMY_POS_X),
+        yk_fam_vm_spawn(fam_id, kind, *(const float *)(f + CE_ENEMY_POS_X),
                                          *(const float *)(f + CE_ENEMY_POS_Y));
         return;                                            /* spawn 里已经摆好位置 */
     }
@@ -794,11 +821,15 @@ typedef struct {
                            *   ⇒ **圆心 = 生成瞬间那一点，本体后来飞走圆心不跟**（可见后果：大怪飞走
                            *   ⇒ 使魔留在原地绕，与 TH08 同形）。*/
     float    radius;      /* 该台的绕转半径（= `yk_orbit_radius_for_count(台数)`，建壳那一刻定死）*/
-    unsigned step;        /* 绕转相位 0..`YK_ORBIT_STEPS`-1（每帧 +`YK_ORBIT_STEP_DEG`）*/
+    unsigned substep;     /* ★ 绕转相位（**半步累加器**，第七轮）：每帧 +1，一圈 = `YK_ORBIT_SUBSTEPS`(240)
+                           *   个 substep；查表格号 = `yk_orbit_step_of_substep(substep)`
+                           *   ⇒ 实际转速 = 3°/格 ÷ `YK_ORBIT_STEP_DIV`(2) = **1.5°/帧**（240 帧 ≈ 4 s 一圈）。*/
     unsigned orphan;      /* 父敌**连续**查不到的帧数（满 `YK_ORBIT_ORPHAN_GRACE` 才撤）*/
     uint32_t anm_id;      /* 跟随 VM 句柄（画本体）*/
     uint32_t circle_id;   /* 妖侧的常驻魔法阵环句柄（与映射使魔同一套形态口径）*/
-    int32_t  variant;     /* 0..3：四色原生切图（VM 被引擎清过时按同一支自愈重起）*/
+    int32_t  kind;        /* `YK_FAM_KIND_*`（VM 被引擎清过时按同一支脚本自愈重起）。
+                           *   ★★★ 额外使魔恒 = `YK_FAM_KIND_NO_MELEE_SHOT_SAME`
+                           *   （不会体术 + 弹一样，owner 2026-09-30 口径；见 `youkai_core.h` 那张表）。*/
 } yk_orbit_t;
 
 static yk_orbit_t s_orbit[YK_ORBIT_MAX];
@@ -857,9 +888,9 @@ static void yk_orbit_retire(yk_orbit_t *o, const char *why)
     if (f) yk_kill_familiar(f);           /* ② 撤壳（置删除位 ⇒ 同帧 EnemyManager sweep 静默析构）*/
     o->fam_id = 0;
     o->parent_id = 0;
-    o->step = 0;
+    o->substep = 0;
     o->orphan = 0;
-    o->variant = 0;
+    o->kind = 0;
     if (why) {
         ++s_orbit_killed;
         ce_log("youkai/orbit: retired familiar of enemy #%u (%s)", parent, why);
@@ -956,7 +987,7 @@ static int yk_enemy_is_boss(const uint8_t *e)
 
 /* 起跟随 VM 并每帧跟随（照 `yk_fam_vm_follow()` 的写法：句柄被引擎清过 ⇒ 按同一变体自愈重起）。
  * 形态口径与映射使魔**同一套**（owner 的 standing spec：「不按 shift 看得见使魔 / 按 shift 变成魔法阵」）：
- *   · 人侧：画本体（四色原生切图，`yk_fam_anm_script()`）；
+ *   · 人侧：画本体（四色原生切图，`yk_fam_kind_script()` —— 颜色由 `YK_FAM_KIND_*` 语义表定）；
  *   · 妖侧：本体透明（alpha 置 0，VM 不删 ⇒ 切回来一帧就恢复）+ 每台一支常驻魔法阵环。*/
 static void yk_orbit_vm_sync(yk_orbit_t *o)
 {
@@ -966,13 +997,13 @@ static void yk_orbit_vm_sync(yk_orbit_t *o)
     if (!f) return;
     pp = ce_enemy_pos(f);
     if (!o->anm_id || !ce_anm_get_vm(o->anm_id)) {
-        o->anm_id = ce_anm_spawn(CE_ABILITY_ANM(), yk_fam_anm_script((int)o->variant), YK_FAM_ANM_LAYER);
+        o->anm_id = ce_anm_spawn(CE_ABILITY_ANM(), yk_fam_kind_script((int)o->kind), YK_FAM_ANM_LAYER);
         if (!o->anm_id) {
             if (!s_orbit_vm_failed) {                     /* 只记一次（不刷屏）*/
                 s_orbit_vm_failed = 1;
                 ce_log("youkai/orbit: follow-VM spawn FAILED (familiar #%u, script %d, layer %d) - "
                        "the shells stay alive (they still feed the kill-burst count) but invisible",
-                       o->fam_id, yk_fam_anm_script((int)o->variant), YK_FAM_ANM_LAYER);
+                       o->fam_id, yk_fam_kind_script((int)o->kind), YK_FAM_ANM_LAYER);
             }
             return;
         }
@@ -1012,9 +1043,9 @@ static uint8_t *yk_orbit_spawn_one(uint32_t parent_id, int count, int k, int32_t
                                    float cx, float cy)
 {
     float dx = 0.0f, dy = 0.0f, radius;
-    unsigned step;
     uint8_t *f;
     yk_orbit_t *o;
+    unsigned step;
     unsigned i;
 
     if (yk_orbit_free() == 0u) return 0;
@@ -1032,9 +1063,11 @@ static uint8_t *yk_orbit_spawn_one(uint32_t parent_id, int count, int k, int32_t
     o->cx = cx;                                           /* ★ 定圆心（一手，见 struct 里的注）*/
     o->cy = cy;
     o->radius = radius;
-    o->step = step;
+    o->substep = step * YK_ORBIT_STEP_DIV;                /* 初相（格号 → substep，别慢半拍）*/
     o->orphan = 0;
-    o->variant = (int32_t)(s_orbit_spawned & 3u);         /* 四色循环（照映射使魔的四色规则）*/
+    /* ★★★ 2026-09-30（owner 四色口径）：额外使魔恒 = `YK_FAM_KIND_NO_MELEE_SHOT_SAME`
+     *   （**不会体术** + 弹一样）⇒ 这一批**全部同色**，不随生成顺序轮、也不按发射口槽取。*/
+    o->kind = YK_FAM_KIND_NO_MELEE_SHOT_SAME;
     o->anm_id = 0;
     o->circle_id = 0;
     if (!o->fam_id) { o->parent_id = 0; return 0; }       /* 极端：刚建出来就没 id ⇒ 当失败 */
@@ -1126,12 +1159,18 @@ static void yk_orbit_scan(void)
             /* 每条目标**只打一次**（不刷屏）：这一行就是「哪只大怪被补了、补了几台、凭什么」的判据。*/
             ce_log("youkai/orbit: target enemy #%u sprite %dx%d hp %d stage %d => %d familiar(s) "
                    "(HP tier %d + stage bonus %d = %d; chain root, not boss; radius %.0f, "
-                   "%.0f deg/frame; fam life %d = onehand %d x %d; centre pinned at spawn (%.0f,%.0f))",
+                   "%.1f deg/frame; fam life %d = onehand %d x %d; colour kind %d "
+                   "(melee %d shot_same %d) = script %d; centre pinned at spawn (%.0f,%.0f))",
                    (unsigned)id, w, h, hp_now, (int)CE_CURRENT_STAGE(), made,
                    yk_orbit_count_for_hp(hp_now), yk_orbit_stage_bonus((int)CE_CURRENT_STAGE()), want,
-                   (double)yk_orbit_radius_for_count(want), (double)YK_ORBIT_STEP_DEG,
+                   (double)yk_orbit_radius_for_count(want),
+                   (double)YK_ORBIT_STEP_DEG / (double)YK_ORBIT_STEP_DIV,
                    (int)life, yk_orbit_onehand_hp(yk_orbit_count_for_hp(hp_now)),
                    (int)YK_ORBIT_HP_SCALE,
+                   YK_FAM_KIND_NO_MELEE_SHOT_SAME,
+                   yk_fam_kind_melee(YK_FAM_KIND_NO_MELEE_SHOT_SAME),
+                   yk_fam_kind_shot_same(YK_FAM_KIND_NO_MELEE_SHOT_SAME),
+                   yk_fam_kind_script(YK_FAM_KIND_NO_MELEE_SHOT_SAME),
                    (double)cx, (double)cy);
         } else if (!s_orbit_spawn_failed) {
             s_orbit_spawn_failed = 1;
@@ -1176,11 +1215,12 @@ static void __attribute__((noinline)) yk_orbit_tick(uint32_t frame)
             continue;
         }
         o->orphan = 0;
-        o->step = yk_orbit_step_advance(o->step);
+        /* ★ 第七轮：转速 = 每帧 1 个 substep（= 3°/格 ÷ `YK_ORBIT_STEP_DIV`(2) = 1.5°/帧）。*/
+        o->substep = yk_orbit_substep_advance(o->substep);
         /* ★★★ 2026-09-28 第三轮：**定圆心** —— 圆心是建壳那一刻写下的 `cx/cy`，父敌后来飞走
          * 圆心**不跟**（一手：`moveCircle` 把圆心设成使魔当时的位置，见 struct 里的两个地址）。
          * ⇒ 这里**不读父敌坐标**（`pe` 只用于「父敌还在不在」的孤儿检测）。*/
-        if (!yk_orbit_offset(o->step, o->radius, &dx, &dy)) continue;
+        if (!yk_orbit_offset(yk_orbit_step_of_substep(o->substep), o->radius, &dx, &dy)) continue;
         yk_orbit_pin(f, o->cx + dx, o->cy + dy);
         yk_orbit_vm_sync(o);
     }
@@ -1398,7 +1438,7 @@ static void yk_run_action(yk_card_t *s, const yk_action_t *act)   /* s 可为 NU
         yk_pin_familiar(f, act->x, act->y);
         /* ★ 壳建好的**那一刻**起跟随 VM（脚本按发射口槽选：槽 i → s53+i 那一套四色之一）。
          * ⚠ 建 VM 只能在 tick / 帧末（要分配），绝不在死亡栈上 —— 这条路径是 `on_tick_2`，合法。*/
-        yk_fam_vm_spawn(fid, yk_fam_variant(act->slot), act->x, act->y);
+        yk_fam_vm_spawn(fid, yk_fam_mapped_kind(act->slot), act->x, act->y);
         /* ★ #22：人→妖那一帧的爆闪（310）—— 起在**第一只**建出来的使魔身上（一手 script59）。
          * ★ owner 二次订正：同一下还要起一支**短命环**（一手里环是常驻的，owner 要切换那一下的形态）。*/
         if (s && s->flash_pending) {
@@ -1623,7 +1663,7 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
         yk_pin_familiar(f, sl->x, sl->y);                              /* 位置每帧重钉 */
         /* ★ 每帧跟随 VM：位置与上面那次钉的是**同一个** `final_pos`（`CE_ENEMY_POS_X/Y`）
          * ⇒ VM 与实体永远重合（脚本是 8 帧循环、不自删；句柄自愈见 `yk_fam_vm_follow`）。*/
-        yk_fam_vm_follow(sl->fam_id, yk_fam_variant((int)sl->slot), f);
+        yk_fam_vm_follow(sl->fam_id, yk_fam_mapped_kind((int)sl->slot), f);
         if (bp && yk_in_transfer_zone(sl->x, sl->y, bp[0], bp[1],
                                       YK_TRANSFER_BOX_W, YK_TRANSFER_BOX_H)) {
             /* 使魔就压在转嫁盒里（boss 自己的发射口常在本体上）⇒ 它这一帧掉的血可能是**我们自己的源**

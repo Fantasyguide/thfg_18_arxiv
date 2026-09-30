@@ -29,6 +29,10 @@
 #include <dirent.h>
 
 #include "../cards/youkai_core.h"
+/* ★★★ 2026-09-28 第七轮：**固定颜色**那条要核「S53 这支资产真存在」⇒ 直接引生成物 `anm_ids.h`
+ *   （`assets/build_ability.py` 生成、不入库手改）。这里只做**资产级**存在性检查；
+ *   「变体 v ↔ 脚本号」的匹配由卡侧 `yk_orbit_fixed_variant()` 在**运行期**断言（见那一段的注）。*/
+#include "../anm_ids.h"
 #ifdef __has_include
 #  if __has_include("../sht_ids.h")
 #    include "../sht_ids.h"     /* 生成物（make sht）：CE_SHT_SET_* */
@@ -2175,21 +2179,93 @@ int main(void)
         CHECK(YK_ORBIT_STEPS == 120);
         CHECK(YK_ORBIT_STEPS == 360u / YK_ORBIT_STEP_DEG);
         CHECK(YK_ORBIT_PHASE_STRIDE == 17u);                  /* 每敌错相的乘子 */
-        CHECK(yk_orbit_step_advance(0) == 3u);
-        CHECK(yk_orbit_step_advance(117) == 0u);
-        CHECK(yk_orbit_step_advance(118) == 1u);
-        CHECK(yk_orbit_step_advance(119) == 2u);
-        CHECK(yk_orbit_step_advance(100000000u) < YK_ORBIT_STEPS);   /* 越界也回绕进表内 */
+        /* ★★★ 第七轮（owner 实跑「旋转速度太快」）：表仍是 3°/格，实际转速靠**半步累加器**
+         *   ⇒ 有效 **1.5°/帧**（240 帧 ≈ 4 s 一圈）。一手两档都在（3.0°/帧 ×92、1.5°/帧 ×54）。*/
+        CHECK(YK_ORBIT_STEP_DIV == 2);
+        CHECK(YK_ORBIT_SUBSTEPS == YK_ORBIT_STEPS * YK_ORBIT_STEP_DIV);
+        CHECK(YK_ORBIT_SUBSTEPS == 240);                      /* = 4 s × 60 fps */
+        CHECK((double)YK_ORBIT_STEP_DEG / (double)YK_ORBIT_STEP_DIV == 1.5);   /* 有效角速度 */
+        /* ① substep → 格号：每 2 个 substep 走一格 */
+        CHECK(yk_orbit_step_of_substep(0) == 0u);
+        CHECK(yk_orbit_step_of_substep(1) == 0u);
+        CHECK(yk_orbit_step_of_substep(2) == 1u);
+        CHECK(yk_orbit_step_of_substep(3) == 1u);
+        CHECK(yk_orbit_step_of_substep(4) == 2u);
+        CHECK(yk_orbit_step_of_substep(238) == 119u);
+        CHECK(yk_orbit_step_of_substep(239) == 119u);
+        CHECK(yk_orbit_step_of_substep(240) == 0u);           /* 越界也回绕（mod）*/
+        CHECK(yk_orbit_step_of_substep(1000000000u) < YK_ORBIT_STEPS);
+        /* ② 累加：每帧 +1、满 240 回绕 */
+        CHECK(yk_orbit_substep_advance(0) == 1u);
+        CHECK(yk_orbit_substep_advance(238) == 239u);
+        CHECK(yk_orbit_substep_advance(239) == 0u);
+        CHECK(yk_orbit_substep_advance(1000000000u) < YK_ORBIT_SUBSTEPS);
+        /* ③ 20 帧 ⇒ 10 格（= 30° = 20 × 1.5°） */
         {
-            unsigned s = 0, hits = 0;
-            for (i = 0; i < YK_ORBIT_STEPS / YK_ORBIT_STEP_DEG; ++i) {   /* 一圈 = 40 帧 */
-                s = yk_orbit_step_advance(s);
-                CHECK(s < YK_ORBIT_STEPS);
-                if (s == 0u) ++hits;
+            unsigned sub = 0;
+            for (i = 0; i < 20u; ++i) sub = yk_orbit_substep_advance(sub);
+            CHECK(sub == 20u);
+            CHECK(yk_orbit_step_of_substep(sub) == 10u);
+            CHECK(yk_orbit_step_of_substep(sub) == (unsigned)(20u / YK_ORBIT_STEP_DIV));
+            /* 每一格都横跨**两个** substep（格 = substep/DIV）⇒ 逐格核一遍映射 */
+            {
+                unsigned c;
+                for (c = 0; c < YK_ORBIT_STEPS; ++c) {
+                    CHECK(yk_orbit_step_of_substep(c * YK_ORBIT_STEP_DIV) == c);
+                    CHECK(yk_orbit_step_of_substep(c * YK_ORBIT_STEP_DIV + 1u) == c);
+                }
             }
-            CHECK(s == 0u);                                   /* 40 帧后回到 0 */
-            CHECK(hits == 1u);                                /* 一圈内只经过 0 一次 */
         }
+        /* ④ 走满一圈（240 帧）回到起点，且期间只经过 0 一次 */
+        {
+            unsigned sub = 0, hits = 0;
+            for (i = 0; i < YK_ORBIT_SUBSTEPS; ++i) {
+                sub = yk_orbit_substep_advance(sub);
+                CHECK(sub < YK_ORBIT_SUBSTEPS);
+                if (yk_orbit_step_of_substep(sub) == 0u) ++hits;
+            }
+            CHECK(sub == 0u);
+            CHECK(yk_orbit_step_of_substep(sub) == 0u);
+            CHECK(hits == 2u);            /* 格 0 横跨 substep 0 与 1 ⇒ 一圈里命中两次 */
+        }
+
+        /* ⑤ 四色**语义表**（2026-09-30 owner 口径）：两轴 = 会不会体术 × 高低速弹是否一样。
+         *   四个 kind 必须**正好覆盖 2×2 四种组合**（每个 (体术, 弹) 组合恰好一个 kind）。*/
+        CHECK(YK_FAM_KIND_COUNT == 4);
+        CHECK(YK_FAM_KIND_MELEE_SHOT_SAME == 0);
+        CHECK(YK_FAM_KIND_MELEE_SHOT_DIFF == 1);
+        CHECK(YK_FAM_KIND_NO_MELEE_SHOT_SAME == 2);
+        CHECK(YK_FAM_KIND_NO_MELEE_SHOT_DIFF == 3);
+        CHECK(yk_fam_kind_valid(0) && yk_fam_kind_valid(1) && yk_fam_kind_valid(2) && yk_fam_kind_valid(3));
+        CHECK(!yk_fam_kind_valid(-1));
+        CHECK(!yk_fam_kind_valid(4));
+        CHECK(yk_fam_kind_melee(YK_FAM_KIND_MELEE_SHOT_SAME) == 1);      /* 发弹口使魔：会体术 */
+        CHECK(yk_fam_kind_shot_same(YK_FAM_KIND_MELEE_SHOT_SAME) == 1);  /* 且弹一样（不改符卡）*/
+        CHECK(yk_fam_kind_melee(YK_FAM_KIND_MELEE_SHOT_DIFF) == 1);
+        CHECK(yk_fam_kind_shot_same(YK_FAM_KIND_MELEE_SHOT_DIFF) == 0);
+        CHECK(yk_fam_kind_melee(YK_FAM_KIND_NO_MELEE_SHOT_SAME) == 0);   /* 额外使魔：不会体术 */
+        CHECK(yk_fam_kind_shot_same(YK_FAM_KIND_NO_MELEE_SHOT_SAME) == 1);
+        CHECK(yk_fam_kind_melee(YK_FAM_KIND_NO_MELEE_SHOT_DIFF) == 0);
+        CHECK(yk_fam_kind_shot_same(YK_FAM_KIND_NO_MELEE_SHOT_DIFF) == 0);
+        {   /* 2×2 全覆盖：四种 (melee, shot_same) 组合各出现且只出现一次 */
+            int seen[2][2] = { { 0, 0 }, { 0, 0 } };
+            int k;
+            for (k = 0; k < YK_FAM_KIND_COUNT; ++k)
+                seen[yk_fam_kind_melee(k)][yk_fam_kind_shot_same(k)] += 1;
+            for (k = 0; k < 2; ++k) {
+                CHECK(seen[k][0] == 1);
+                CHECK(seen[k][1] == 1);
+            }
+        }
+        /* 越界 kind ⇒ 按最保守那一档（会体术 + 弹一样）*/
+        CHECK(yk_fam_kind_melee(99) == yk_fam_kind_melee(YK_FAM_KIND_MELEE_SHOT_SAME));
+        CHECK(yk_fam_kind_shot_same(-5) == yk_fam_kind_shot_same(YK_FAM_KIND_MELEE_SHOT_SAME));
+        /* ⑥ 四色的**资产级**存在性：四支脚本互不相同（卡侧另有 `_Static_assert` 逐对钉死）。
+         *   ⚠ 2×2 语义 ↔ 53..56 的**配色本身 = ❓自定**（无一手依据）⇒ 这里只核「有四支不同的」。*/
+        CHECK(CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_S53 != CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_S54);
+        CHECK(CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_S54 != CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_S55);
+        CHECK(CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_S55 != CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_S56);
+        CHECK(CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_S53 != CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_S56);
 
         /* ③ 四个象限的代表值（**y 轴向下**：0 = 正右、30 = 正下、60 = 正左、90 = 正上）*/
         CHECK(yk_orbit_offset(0, 48.0f, &dx, &dy) && dx > 47.9f && dx < 48.1f && dy > -0.1f && dy < 0.1f);

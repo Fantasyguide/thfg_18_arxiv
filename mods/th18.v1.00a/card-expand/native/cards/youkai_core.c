@@ -1725,14 +1725,20 @@ int yk_big_by_sprite(int w, int h)
     return (w >= YK_BIG_SPRITE_MIN_W && h >= YK_BIG_SPRITE_MIN_H) ? 1 : 0;
 }
 
-/* 相位推进（每帧 +3°、满一圈回绕）。⚠ 不用 `%` 之后的余数做浮点：全程整数。
- * `step` 传进来的值不信任（可能被别处写坏）⇒ 先钳进 [0, YK_ORBIT_STEPS)。*/
-unsigned yk_orbit_step_advance(unsigned step)
+/* 半步累加器：每帧 +1 个 substep，满一圈（`YK_ORBIT_SUBSTEPS` = 240）回绕。
+ * ⚠ 全程整数；传进来的值不信任（可能被别处写坏）⇒ 先回绕进 [0, SUBSTEPS)。*/
+unsigned yk_orbit_substep_advance(unsigned substep)
 {
-    if (step >= YK_ORBIT_STEPS) step %= YK_ORBIT_STEPS;
-    step += YK_ORBIT_STEP_DEG;
-    if (step >= YK_ORBIT_STEPS) step -= YK_ORBIT_STEPS;   /* 每帧只加一个步长 ⇒ 减一次就够 */
-    return step;
+    if (substep >= YK_ORBIT_SUBSTEPS) substep %= YK_ORBIT_SUBSTEPS;
+    substep += 1u;
+    if (substep >= YK_ORBIT_SUBSTEPS) substep -= YK_ORBIT_SUBSTEPS;   /* 每帧只加 1 ⇒ 减一次就够 */
+    return substep;
+}
+
+/* substep → 查表格号：每 `YK_ORBIT_STEP_DIV` 个 substep 走一格（DIV=2 ⇒ 1.5°/帧）。*/
+unsigned yk_orbit_step_of_substep(unsigned substep)
+{
+    return (substep / YK_ORBIT_STEP_DIV) % YK_ORBIT_STEPS;
 }
 
 /* ★★★ 2026-09-28 第三轮：**按 th08 一手统计校准**（不再是 owner 的初值分档）。
@@ -1803,6 +1809,28 @@ int yk_orbit_count_total(int hp_max, int stage)
 int yk_orbit_hp_for_enemy(int hp_max)
 {
     return yk_orbit_familiar_hp(yk_orbit_count_for_hp(hp_max));
+}
+
+/* 四色语义表的**两个轴**（`youkai_core.h` 那一节；表驱动 ⇒ 单测逐格核 2×2 全覆盖）。
+ * 行序 = `YK_FAM_KIND_*` 的枚举序：(MELEE_SAME, MELEE_DIFF, NO_MELEE_SAME, NO_MELEE_DIFF)。*/
+static const unsigned char YK_FAM_KIND_MELEE[YK_FAM_KIND_COUNT]     = { 1, 1, 0, 0 };
+static const unsigned char YK_FAM_KIND_SHOT_SAME[YK_FAM_KIND_COUNT] = { 1, 0, 1, 0 };
+
+int yk_fam_kind_valid(int kind)
+{
+    return (kind >= 0 && kind < YK_FAM_KIND_COUNT) ? 1 : 0;
+}
+
+int yk_fam_kind_melee(int kind)
+{
+    if (!yk_fam_kind_valid(kind)) return YK_FAM_KIND_MELEE[YK_FAM_KIND_MELEE_SHOT_SAME];
+    return (int)YK_FAM_KIND_MELEE[kind];
+}
+
+int yk_fam_kind_shot_same(int kind)
+{
+    if (!yk_fam_kind_valid(kind)) return YK_FAM_KIND_SHOT_SAME[YK_FAM_KIND_MELEE_SHOT_SAME];
+    return (int)YK_FAM_KIND_SHOT_SAME[kind];
 }
 
 /* 台数 → **血量档**（0..`YK_ORBIT_HP_TIER_STEPS`）：与半径那三档同一个切法

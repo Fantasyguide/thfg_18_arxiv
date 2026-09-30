@@ -25222,3 +25222,85 @@ owner：「你就别 *3 了，我让你核一下 **th18 和 th08 的 dps 差**�
 **回归跑了什么**：`make dll`（0 错误）· `make test-host`（24 组全绿，含 `test_senro_core` 12258 断言）。
 ⚠ **待实跑**：四条口径的画面判据见 `SINGLE-CARD-TEST.md` §th07 本批；`scale 1.4`（文字）与
 `α` 的观感是唯一两处可能要微调的数（登记在 `TUNING.md` §2.0u-2）。
+
+### §BE #150 · 追加（2026-09-28 第七轮）：**转速减半 + 颜色固定**（owner 实跑两条）
+
+> **owner 逐字**：「**旋转速度太快**，然后**颜色似乎是随机的**」＋「**颜色应当是固定的某一个颜色**，
+> 这一类都是**不会造成体术**的使魔」。
+
+**一、转速 3°/帧 → 1.5°/帧（表不动，改半步累加器）**
+
+一手两档都在：`moveCircle` 第 3 实参的字面值里 **`0.05235988f`（= 3.0°/帧）×92** 与
+**`0.02617994f`（= 1.5°/帧）×54**（统计口径：24 文件、变量实参按展开计；例子 = stage1 的使魔 sub
+`moveCircle(100, %F0, 0.05235988f, 0.64f)`）⇒ **3°/帧确实是一手值**，1.5°/帧也是；owner 实跑嫌快 ⇒ **取 1.5**。
+
+改法（**表一个字都不动** —— `yk_orbit_cos/sin` 仍是 3°/格、120 格）：
+新增 `YK_ORBIT_STEP_DIV = 2` + `YK_ORBIT_SUBSTEPS = YK_ORBIT_STEPS × DIV = 240`；
+`yk_orbit_t.step` → **`substep`**（每帧 +1，满 240 回绕）；
+查表格号 = `yk_orbit_step_of_substep(substep)` = `(substep / DIV) % 120`；
+初相是格号 ⇒ 落进累加器时 ×`DIV`（否则第一格慢半拍）。
+纯函数 `yk_orbit_substep_advance` / `yk_orbit_step_of_substep`（单测：0..3 ⇒ 0,0,1,1、逐格横跨两个
+substep、越界回绕、20 帧 = 10 格 = 30°、240 substep 走满一圈）。⇒ **240 帧 ≈ 4 s 一圈**。
+
+**二、颜色固定成一支（不再是四色按生成顺序轮）**
+
+owner 口径：「颜色应当是**固定的某一个颜色**，这一类都是**不会造成体术**的使魔」。
+它确实**结构上**不造成体术：这些绕转使魔**不进 `s_map`** ⇒ 人侧「撞使魔 = MISS」的唯一判据
+（`yk_fam_collide_tick`）**够不到它们**。⇒ 它们**不跟**映射使魔那套「按发射口槽取色」（`yk_fam_variant(slot)`）
+走，颜色是一个常量。
+
+取哪一支：一手 = 外观由使魔**自己子程序的 `anmSet(K)`** 决定（K ∈ `enemy.anm` 53..58）；
+全量统计（218 个使魔子程序）里最常用的是 **script 53**（53 ×75 / 54 ×51 / 57 ×28 …
+见 [`engine/enemy/th08/03-familiar-count-vs-hp.md` §5a](../../../engine/enemy/th08/03-familiar-count-vs-hp.md)）
+⇒ **S53（红）**。实现：`yk_orbit_fixed_variant()` —— 用 `anm_ids.h` 的**宏名**判等
+（`yk_fam_anm_script(v) == CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_S53`），**不写死变体号**；
+解析结果缓存；解析不到（资产重排）⇒ **运行期断言**：记一行日志 + 退回 0（不静默画错色）。
+⚠ 编译期 `_Static_assert` 做不到（`yk_fam_anm_script()` 是 switch 不是常量表）⇒ 资产级的
+「S53 存在 + 四支互不相同」放在主机单测里（测试直接 `#include "../anm_ids.h"`）。
+台数日志补 `colour variant %d = script %d`，实跑一眼可判。
+
+**闸（原文）**：`make -s check` rc=0（`youkai_core: 8084 checks, 0 failed`；其余各测试 0 failed）、
+`make -s dllx87` ⇒ `x87 in our objects: 0`、`python3 sites.py verify` ⇒ `✅ 全部对上`（213 条 binhack）、
+`python3 native/tools/capcheck.py` ⇒ `capcheck：全绿 ✅`、`python3 tooling/check-docs.py` ⇒ `✓ 全部通过`。
+
+### §BE #150 · 追加（2026-09-28 第八轮）：**四色语义表**（owner 口径：会/不会体术 × 高低速发弹是否一样）
+
+> **owner 逐字**：「我记得之前在哪看到过有 **4 种使魔颜色区分**，分别是 **会/不会体术 × 高低速发弹
+> 是否不一样**。**发弹口使魔 = 会体术，发弹一样**（发弹不一样还得改符卡算了）。**额外使魔 = 不会体术**
+> （否则道中体验大变），**发弹一样/不一样无所谓反正不发弹，就按照一样走**。」
+
+**一、把「固定一支颜色」换成一张显式的语义表**（`youkai_core.h`）：
+
+| kind | 轴 ① 体术 | 轴 ② 高低速弹 | 谁在用 |
+| --- | --- | --- | --- |
+| `YK_FAM_KIND_MELEE_SHOT_SAME` | 会 | 一样 | **发弹口使魔**（`s_map` 里那批 1:1 映射使魔）|
+| `YK_FAM_KIND_MELEE_SHOT_DIFF` | 会 | 不一样 | **留位**（要动符卡 ⇒ owner 先不做）|
+| `YK_FAM_KIND_NO_MELEE_SHOT_SAME` | 不会 | 一样 | **额外使魔**（我们补的惰性绕转使魔）|
+| `YK_FAM_KIND_NO_MELEE_SHOT_DIFF` | 不会 | 不一样 | **留位**（同上）|
+
+两个轴的读数由 core 的表给（`yk_fam_kind_melee` / `yk_fam_kind_shot_same`，单测逐格核 **2×2 全覆盖**）；
+`yk_fam_kind_valid` 越界一律按最保守那一档（会体术 + 弹一样）。
+「额外使魔**不会体术**」是**结构上**成立的：它们**不进 `s_map`** ⇒ 人侧唯一的「撞使魔 ⇒ MISS」判据
+（`yk_fam_collide_tick`）**够不到它们**；「发弹一样」是因为这一批**根本不发弹**（owner：反正不发弹，
+按一样走）。
+
+**二、❓ 为什么配色标自定（查过哪些地方）**：一手只证到「使魔外观由**它自己子程序的 `anmSet(K)`** 决定
+（K ∈ `enemy.anm` 53..58）」（`engine/enemy/th08/01` §0 结论 1）；**没有任何一手/文档把 53..56 这四色
+与「体术 / 高低速发弹」两轴对应起来** —— 本仓 `engine/` 与 `mods/` 两个目录全查过（`grep` 四色 /
+53..56 / 体术 的组合），**没有**这张表。⇒ 卡侧的 `YK_FAM_KIND_SCRIPT[4]` 用 `anm_ids.h` 的**宏名**
+给出 kind → 脚本（**不写死数字**），并加 **`_Static_assert` 逐对钉死「四支互不相同」**（抄错一格就编不过）。
+当前取法：**额外使魔**留在上一轮实跑已验证的 **S53（红）**，**发弹口使魔**改用 **S54**，两个留位 kind 占
+S55 / S56。owner 若想起原作那套对应关系 ⇒ **只改这一张表**（`TUNING.md` §2.1ccc-26 已登记）。
+
+**三、一处可见变化（登记）**：**发弹口使魔（`s_map` 那批 1:1 映射使魔）现在全部同色** ——
+原来按发射口槽取色（`yk_fam_variant(act->slot)`，四槽四色）。按新口径它们都是
+`MELEE_SHOT_SAME` ⇒ 一个颜色。**要改回按槽取色 = 一行**：`yk_fam_mapped_kind()` 里的
+`return YK_FAM_KIND_MELEE_SHOT_SAME;` 换成 `return yk_fam_variant(slot);`（那个 core 函数还在，
+槽 → 变体/kind 同序）。使魔跟随 VM 的记录字段也从 `variant` 改成 `kind`（自愈重起仍按同一支脚本）。
+
+**四、转速**：照上一轮 = **1.5°/帧**（`YK_ORBIT_STEP_DIV = 2`，120 项表不动）。
+
+**闸（原文）**：`make -s check` rc=0（`youkai_core: 8104 checks, 0 failed`；其余各测试 0 failed）、
+`make -s dllx87` ⇒ `x87 in our objects: 0`、`python3 sites.py verify` ⇒ `✅ 全部对上`（213 条 binhack）、
+`python3 native/tools/capcheck.py` ⇒ `capcheck：全绿 ✅`、`python3 tooling/check-docs.py` ⇒ `✓ 全部通过`。
+（顺手修掉一处 `-Werror=comment`：注释里写 `` `engine/**` `` 会触发「注释里嵌套 `/*`」⇒ 已改成目录名。）
