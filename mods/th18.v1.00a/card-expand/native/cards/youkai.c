@@ -2974,6 +2974,11 @@ static int yk_bomb_active(void)
 typedef struct {
     uint8_t  used;
     uint8_t  kind;
+    uint32_t color;      /* ★ 2026-09-30（§BE #163）：一手 `CreateTimePopup` 的 arg3 = D3DCOLOR
+                          *   （`0xAARRGGBB`，与我们引擎/本文件别处同序）—— 链根黄 `0xfff0f00f`、
+                          *   子机按 n 分四档、击破使魔白。*/
+    float    scale;      /* ★ 一手：字号在**创建那一刻**从 AsciiManager 的缩放拷贝（`th08:0x4035c5`）——
+                          *   链根 `SetScale 2.03125`（`0x42b0ef`–`0x42b0fe`）、其余 1.0。*/
     uint8_t  n;
     uint8_t  age;
     float    x, y;
@@ -3002,7 +3007,9 @@ static void yk_popup_kill_all(void)
     for (i = 0; i < YK_POPUP_MAX; ++i) yk_popup_kill(&s_popup[i]);
 }
 
-static void yk_popup_spawn(float x, float y, int32_t value, int kind)
+/* ★ 2026-09-30（§BE #163）：扩参 —— 颜色/字号照一手 `CreateTimePopup`（`th08:0x403460`，4 栈参：
+ *   `pos / arg1 数字主体 / arg2 附加段 / arg3 颜色`）。alpha 由 `yk_popup_tick` 按**到自机的距离**每帧算。*/
+static void yk_popup_spawn(float x, float y, int32_t value, int kind, uint32_t color, float scale)
 {
     yk_popup_t *p = 0;
     uint8_t dg[YK_POPUP_GLYPHS];
@@ -3034,6 +3041,8 @@ static void yk_popup_spawn(float x, float y, int32_t value, int kind)
         ce_anm_set_sprite(anm, id, YK_GAUGE_FONT_BASE[ch] + (int)p->g[i]);
     }
     p->kind = (uint8_t)kind;
+    p->color = color;
+    p->scale = scale;
     p->age = 0;
     p->x = x; p->y = y;
     p->used = 1;
@@ -3079,8 +3088,24 @@ static void yk_popup_tick(void)
             }
             dx0 = pp ? (int)(gx - pp[0]) : 0;
             dy0 = pp ? (int)(p->y - pp[1]) : 0;
-            a = yk_popup_alpha(dx0, dy0);
-            (void)ce_anm_set_color(id, ((uint32_t)a << 24) | 0x00ffffffu);
+            a = 0x50;                                  /* 先给最低档，下面按一手三档覆盖 */
+            /* ★ 2026-09-30（§BE #163）：**颜色/字号照一手**，并且 **alpha 按到自机的距离**衰减
+             *   （一手 `th08:0x4059b4`–`0x4059f3` 三档：`d > 0x1000 ⇒ 0xd0`、
+             *   `d > 0x400 ⇒ 0x50 + d·0x80/0xc00`、否则 `0x50`）。
+             *   ⚠ 距离口径 = **世界/640 空间的像素**（`ce_player_pos()` 与浮字同一套）；`d` 用
+             *   `max(|dx|,|dy|) + 0.4·min(|dx|,|dy|)` 近似（省一次 sqrt，量级误差 <5%，已注明）。
+             *   🟡 一手那三个阈值（0x400/0x1000）的单位我没有逐条确认 —— 若它其实是 TH08 的
+             *   定点子像素，则这两档几乎不触发（只走 0x50）；实跑若发现浮字**整体偏暗**，
+             *   第一件事就是回来核这个单位。*/
+            {
+                int ax = dx0 < 0 ? -dx0 : dx0, ay = dy0 < 0 ? -dy0 : dy0;
+                int d = (ax > ay ? ax : ay) + (int)(0.4f * (float)(ax < ay ? ax : ay));
+                if (d > 0x1000) a = 0xd0;
+                else if (d > 0x400) a = 0x50 + d * 0x80 / 0xc00;
+                else a = 0x50;
+            }
+            (void)ce_anm_set_color(id, ((uint32_t)a << 24) | (p->color & 0x00ffffffu));
+            (void)ce_anm_set_scale(id, p->scale, p->scale);
         }
     }
 }
@@ -3113,7 +3138,9 @@ static int yk_orb_collect(yk_card_t *s, float x, float y)
     /* ★ #27 支 2：**收刻符的分值弹字**（一手 `Item::collect_time_orb th08:0x441348`
      * `CreatePlayerPointPopup(&item+0x2a4, value, color)`）—— 值 = `yk_orb_score()`（下限 100 / 上限 10000 /
      * 阶段门 2000），落点 = 那颗刻符的位置（一手就是道具位置，不换算）。*/
-    yk_popup_spawn(x, y, yk_orb_score((int32_t)s->orb_taken, (int32_t)s->orb_taken), 0);
+    /* 收刻符那支一手是 **`CreatePlayerPointPopup`（`th08:0x441348`）**、显示**分值**（不是 +1）；
+     * 🟡 它的颜色/字号没有逐条读出来 ⇒ 暂用白 + 1.0（待一手复核）。*/
+    yk_popup_spawn(x, y, yk_orb_score((int32_t)s->orb_taken, (int32_t)s->orb_taken), 0, 0xffffffffu, 1.0f);
     return 1;
 }
 
@@ -3994,7 +4021,11 @@ static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
                  *   数值 = **与该子机同一次撒的颗数**（`n2`，与道具用同一个数，不另算）。
                  *   🟡 一手该 popup 的实参是不是「颗数」我没有逐条读出来（push 序列未读到）⇒
                  *      暂按「同一次撒的颗数」记，等一手复核再改。*/
-                yk_popup_spawn(cx[k], cy[k], n2, 0);
+                /* ★ 一手（§BE #163）：子机那笔显示的是 **`n` = 那一窝使魔总数**（`GetSubEnemyChainCount(链根)`、
+                 *   **不是**每盘撒的颗数 `n2`！）⇒ 颜色按 n 四档（白 → 微黄），字号 1.0。*/
+                yk_popup_spawn(cx[k], cy[k], (int32_t)n, 1,
+                               (n < 2u) ? 0xffffffffu : (n <= 5u) ? 0xffffffd0u
+                                        : (n <= 9u) ? 0xffffffb0u : 0xffffff80u, 1.0f);
                 for (i = 0; i < n2; ++i) {
                     float ang, rad;
                     /* ⚠ 两个随机数**先取到局部**（一手顺序是「先半径 `0x40d390`、后角度 `0x4143c0`」；
@@ -4017,7 +4048,13 @@ static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
              *   位置 = **链根死亡点**）。数值 = **`2 × subEnemyCount`**（= 一手这一支撒的颗数
              *   `2 × subEnemyCount`，我们这里就是 `yk_kill_ring_count(n)`，同一个数不另算）。
              *   🟡 一手 `0x42b122` 的实参同样未逐条读出（push 序列未读到）⇒ 暂按「这一支撒的颗数」记。*/
-            if (n > 0) yk_popup_spawn(ev->x, ev->y, (int32_t)yk_kill_ring_count(n), 0);
+            /* ★ 一手（§BE #163）：链根那笔 = **黄 `0xfff0f00f` + 字号 2.03125**（`0x42b0ef` 先 SetScale、
+             *   `0x42b127` 复位），值 = **`+0x3380` = subEnemyCount**（还剩几台使魔）。
+             * ⚠ 取值时机：一手在**子机循环之后**读 `+0x3380`（`th08:0x42b10d`）；我把全 `.text` 的
+             *   `+0x3380` 写点过了一遍 —— **没有任何 `--`**（写点只有三处 opcode 生成时的 `+1` 与一处拷贝），
+             *   且死亡函数 `0x42ad*`–`0x42b3*` 区间里**没有减** ⇒ 循环后 = 循环前 = 我们的 `n` ✓
+             *   （我们的 `n` 也是「扫活子敌人」得来、循环里不递减）。*/
+            if (n > 0) yk_popup_spawn(ev->x, ev->y, (int32_t)n, 1, 0xfff0f00fu, 2.03125f);
             for (k = 0; k < yk_kill_ring_count(n); ++k) {
                 float ang, rad;
                 /* ★ 2026-09-30 同上纠错：一手链根那一环也是**幅度 ±3.17**（不是半径 128）。*/
@@ -5100,7 +5137,8 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
     }
     /* ★ #27 支 1：**「+1」弹字**（一手 `Enemy::sub_42adb0 th08:0x42b296 CreateTimePopup(&enemy+0x2d88, 1, 0, 0xFFFFFFFF)`
      * —— 一手是「击破魔使」那一刻；我们卡里没有 op90-92 那种魔使，**我们的使魔 = 同一位置的对应物** ⇒ 挂这里）。*/
-    yk_popup_spawn(ev->x, ev->y, 1, 1);
+    /* 击破使魔那一支（一手 `th08:0x42b296`）：**常数 1** + 白 `0xffffffff` + 字号 1.0（`kind 1` = 带 '+'）。*/
+    yk_popup_spawn(ev->x, ev->y, 1, 1, 0xffffffffu, 1.0f);
     ce_log("youkai: familiar enemy_id %u killed (kind %u, real=%u) at (%.0f, %.0f) - "
            "that emitter slot stays silent until the NEXT etOn of that slot (route A) or the "
            "%d-frame fallback self-heal expires (gate = on_enemy_shot_slot 0x433ffa)",
