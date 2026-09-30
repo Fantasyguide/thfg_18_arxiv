@@ -26100,13 +26100,14 @@ verify/autoplay 的场景只判 109 的日志）；`sites.py` / `sdk.*` / `engin
 | 文件 | 改了什么 | 为什么 | 谁 | 怎么验的 |
 | --- | --- | --- | --- | --- |
 | `assets/ability/scripts/372_spirit109.anm.txt`（**新增**） | 109「灵」的本体视觉：`sprite(-1)` + `drawPoly(1.0f, 32)` + 加算 + 青绿 | 口径 8/10 要灵可见；TH19 原贴图未移植 ⇒ 照 TH19 除霊オーラ自己的**程序化图元**做法 | 接手者 | `make anm` 全绿（追加脚本通过越界 / 主路径 delete 检查；**前 186 行逐行未变**）|
+| `assets/ability/scripts/374_pofv109_power.anm.txt`（**新增**） | 109 灵力道具的视觉：`sprite(-1)` + `drawPoly(1.0f, 16)` + 加算青绿 | 口径 5 的充能货币要看得见；TH19 原图未切 ⇒ 程序化占位 | 接手者 | 同上 |
 | `assets/ability/scripts/373_pofv109_aura.anm.txt`（**新增**） | 109 固灵结界的环：一手 TH19 的 `color(0,32,128)` / `color2(64,192,255)` / `alpha(128)` / `alpha2(160)` 配方 + `drawPoly` 实心盘 | 口径 4 常驻结界要看得见；★ 判定半径 = 绘制半径（一手 `06` §7.1/§9.2）| 同上 | 同上 |
-| `native/anm_ids.h`（生成物） | 追加 `CE_ANM_ABILITY_SCRIPT_SPIRIT109`(372) / `_POFV109_AURA`(373) | 上面两支脚本的宏 | 同上 | `make anm` 写出；`grep` 确认两个宏 |
+| `native/anm_ids.h`（生成物） | 追加 `CE_ANM_ABILITY_SCRIPT_SPIRIT109`(372) / `_POFV109_AURA`(373) / `_POFV109_POWER`(374) | 上面两支脚本的宏 | 同上 | `make anm` 写出；`grep` 确认两个宏 |
 | `assets/ecl/make_ufo_ecl.py`（**共享**） | ① 新增 `SPIRIT_FRAGMENT` / `OURS_SPIRIT`，把 `spirit109.ecl.txt` 并进**同一个**合并步；② `_opcodes()` 先剥 `/* … */` 块注释 | ① 三支片段各写一次 `build/ecl/default.ecl` 会互相覆盖，而 `make dist` 只跑 `ecl-ufo`；② 旧版不剥块注释 ⇒ 带块注释的 `green_extra.ecl.txt` 在「源 vs 往返」指令行数比对里凭空多 6 行，**110 那支一直被排除在这条自洽检查之外**（工具口径修正，不改任何 ECL 语义）| 同上 | `python3 assets/ecl/make_ufo_ecl.py`：原生 30 子 + 我们 12 子 = 42 子、无重名；往返二进制字节一致（21216 B）；**12 支**（此前只查 10 支）指令行数不变 |
 | `native/tools/capcheck.py`（**共享**） | 池台账：`pool_pofvsp`（`POFV_SPIRIT_MAX`）→ 换成 `pool_pofvpow`（`POFV_POWER_MAX` 48）+ `pool_pofvghost`（`POFV_GHOST_MAX` 4） | 旧的自建活化灵池整条撤掉（口径 10）⇒ 它的池条目与判据锚点（`"spirit pool full"`）不存在了，`make check` 会判红 | 同上 | `python3 tools/capcheck.py` exit 0、全绿 |
 | `native/tools/verify.py` / `autoplay.py`（**共享**） | `spirit` 场景**重写**（旧：击破掉灵魂 + Shift 领域 ⇒ 新：真敌人 + 结界沈静化 + 击破掉道具），新增 `power-item` 场景；`PRE` / `NOTES` / `SCEN_PRIM` / 时间轴同步 | 判据必须与新行为一致（旧日志 `pofv: ... spirits spawned` 已不存在）| 同上 | `verify.py --list` 九条原语正常；`autoplay.py --scenario power-item --dry-run` 正常 |
 
-**影响面（对既有卡）**：无 —— 两支新脚本是**末尾追加**（sprite/entry 号一个没挪，
+**影响面（对既有卡）**：无 —— 三支新脚本都是**末尾追加**（sprite/entry 号一个没挪，
 `build_ability.py` 的「已定稿前 186 行逐行未变」检测通过）；`make_ufo_ecl.py` 只**新增**一支子程序
 （原生 30 支与我们既有的 11 支都不动）；`capcheck` / `verify` / `autoplay` 都是**109 自己的条目**。
 `sites.py` / `sdk.*` / `engine.h` / `cards_def.c` / `Makefile` **一行未动** ⇒ **站点零新增**。

@@ -82,6 +82,8 @@
  * 结界在**灵**之下（结界是地面上的场、灵站在场里）、两者都在自机之下。*/
 #define POFV_AURA_VM_LAYER         5
 #define POFV_GHOST_VM_LAYER        6
+#define POFV_POWER_VM_LAYER        7    /* 灵力道具在最上（要一眼可判「捡得到」）*/
+#define POFV_POWER_VM_SCALE      8.0f   /* ❓ 自定（视觉半径；≈ `POFV_POWER_ABSORB_R` = 12）*/
 
 /* 消弹调用的 max_count（照 Tenshi 的 0x1869f 量级；本卡两处都不想被截断）。*/
 #define POFV_CANCEL_MAX        9999
@@ -125,6 +127,7 @@ static int32_t            s_frame;      /* 游玩帧计数（连爆窗口的帧�
 /* 诊断账（都在 `clear_card()` 里清；`verify.py` 的场景吃这几行）。*/
 static int32_t            s_power_got;  /* 本次段累计收取的灵力道具颗数 */
 static int32_t            s_aura_hits;  /* 本次段结界碰敌弹的累计颗数 */
+static int32_t            s_power_vm[POFV_POWER_MAX];   /* 每颗灵力道具的跟随 VM id（0 = 没有）*/
 
 typedef struct {
     ce_card_t  *card;
@@ -232,6 +235,30 @@ static void aura_vm_update(void)
     if (!s_aura_vm) return;
     ce_anm_set_pos((uint32_t)s_aura_vm, pp[0], pp[1], 0.0f);
     ce_anm_set_scale((uint32_t)s_aura_vm, POFV_AURA_R, POFV_AURA_R);   /* ★ 判定 = 绘制 */
+}
+
+/* 灵力道具的**跟随 VM 同步**（每颗一台；`pofv_power_t` 是纯逻辑、不认识 VM ⇒ 在这里按槽对齐）：
+ * 活着的有 VM 就挪位置、没 VM 就起一台；槽空了就删 VM。每帧 O(48)，很便宜。*/
+static void power_vm_sync(void)
+{
+    int i;
+
+    for (i = 0; i < POFV_POWER_MAX; ++i) {
+        const pofv_power_t *it = &s_power.s[i];
+        if (it->active) {
+            if (!s_power_vm[i])
+                s_power_vm[i] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
+                                                      CE_ANM_ABILITY_SCRIPT_POFV109_POWER,
+                                                      POFV_POWER_VM_LAYER);
+            if (s_power_vm[i]) {
+                ce_anm_set_pos((uint32_t)s_power_vm[i], it->x, it->y, 0.0f);
+                ce_anm_set_scale((uint32_t)s_power_vm[i], POFV_POWER_VM_SCALE, POFV_POWER_VM_SCALE);
+            }
+        } else if (s_power_vm[i]) {
+            ce_anm_delete((uint32_t)s_power_vm[i]);
+            s_power_vm[i] = 0;
+        }
+    }
 }
 
 /* 扫一遍弹池：把「在结界内且本颗还没算过」的弹标成已算，最多把 `cap` 个位置抄进 ox/oy。
@@ -691,6 +718,7 @@ static int on_tick_2(ce_card_t *c)
                    (int)s->st.gauge, (int)(s->st.gauge_pts * 100 / POFV_GAUGE_PTS_PER_LEVEL));
         }
     }
+    power_vm_sync();                            /* ★ 灵力道具的视觉（每颗一台跟随 VM）*/
 
     /* SP 到档 → boss attack（一手：10 万 / 30 万 / 50 万）。*/
     if (pofv_sp_take_attack(&s->st)) do_boss_attack(s);
@@ -741,6 +769,11 @@ static void clear_card(ce_card_t *c)
 
     /* ★ 结界的跟随 VM：同样必须在这里删（删卡那一刻 tick 停着，画面上的环不会自己走）。*/
     if (s_aura_vm) { ce_anm_delete((uint32_t)s_aura_vm); s_aura_vm = 0; }
+
+    /* ★ 灵力道具的跟随 VM：删卡时场上的每一颗都要删（否则留下满屏幽灵光球）。*/
+    for (i = 0; i < POFV_POWER_MAX; ++i) {
+        if (s_power_vm[i]) { ce_anm_delete((uint32_t)s_power_vm[i]); s_power_vm[i] = 0; }
+    }
 
     pofv_storm_pool_init(&s_storm);
     pofv_power_clear(&s_power);                 /* ★ 灵力道具池：删卡/重开/换关都清干净 */
