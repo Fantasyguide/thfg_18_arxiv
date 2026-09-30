@@ -1117,6 +1117,9 @@ int        yk_withdraw_all(yk_map_t *m, yk_action_t *out, int max);
 /* ★★★ 2026-09-30（owner 口径，TH08 `enmKillAll` 语义）：只撤 `enemy_id` 那一个敌人的映射使魔
  *   （boss 换段时用；不改 `yk_withdraw_all` 的语义 ⇒ 其余调用点零影响）。返回撤了几台。*/
 int        yk_withdraw_enemy(yk_map_t *m, uint32_t enemy_id, yk_action_t *out, int max);
+#define YK_ORBIT_GIFT_OK   2   /* `yk_orbit_gift_verdict` 的返回值：可以补 */
+#define YK_ORBIT_GIFT_DONE 1   /* 已给过 ⇒ 拒 */
+#define YK_ORBIT_GIFT_FULL 0   /* 表满 ⇒ 宁可不补 */
 
 /* ==================================================== §3.5.1 发射口关闸（精确闸，2026-09-12）
  * 新 SDK 面 `on_enemy_shot_slot`（断点 `0x433ffa` = etOn 的「发弹三步」汇聚点，一手见 sdk.c）：
@@ -2054,6 +2057,19 @@ int yk_item_box_open(int32_t player_state);
                                       * ⚠ 512 这个量级我们没实测：实跑掉帧就**下调这一格（一行）**。*/
 #define YK_ORBIT_TRAIL_LIFE   20u    /* 一手：script71 的 `scaleTime(20, 0, 0, 0)` + `+20: delete()`
                                       *   ⇒ 每颗火花的寿命（只用于容量估算，卡侧不跟踪）*/
+/* ★★★ 2026-09-30（**owner 实跑 bug**：「我看一面 3 只大蝴蝶生成了两次两个使魔」）：
+ *   TH08 的使魔是**脚本一次性连发**（一面妖精同一帧 2/4 台，撒完就没了；使魔死了**不会**再生成）
+ *   —— 而我们的扫场是**每 30 帧轮询**、判据却是「这只父敌现在名下有活着的绕转使魔吗」⇒
+ *   **使魔被打死后，下一次扫场又给它补一批** = owner 看到的两批。⇒ 必须自己记「已给过」。
+ *   判定 = `yk_orbit_gift_verdict()`（纯函数，单测覆盖）；「父敌消失多久才清记录」= `yk_orbit_gift_prune()`。
+ *   ⚠ 清记录**只**因父敌消失（id 不复用），**不**因「使魔全死」；表满 ⇒ **宁可不补**（fail closed）。*/
+#define YK_ORBIT_GIFTED_MAX   64u  /* ❓自定：同屏「大怪」数量级够用（超出 = 不再补，见 verdict）*/
+#define YK_ORBIT_GIFTED_GRACE 2u   /* 父敌连续**几次扫场**找不到才清记录（容忍锁定/登场抖动）*/
+/* → 2 = 可以补；1 = 已给过（拒）；0 = 表满（宁可不补）。纯函数，无副作用。*/
+int  yk_orbit_gift_verdict(int recorded, int table_full);
+/* 记录老化一步：`present` = 这次扫场找得到父敌吗。返回 1 = 该把这条记录清掉。*/
+int  yk_orbit_gift_prune(unsigned *absent, int present);
+
 #define YK_ORBIT_SEEN_MAX     24       /* 「首次命中」表的大小（每父敌一项；父敌没了就清）*/
 #define YK_ORBIT_SCAN_INTERVAL 30u    /* ❓自定（owner 未给数）：扫场间隔（帧），30 ≈ 0.5 s。
                                        *   扫描要遍历全场敌人链表 + 每只读一次贴图尺寸 ⇒ 不必每帧。
@@ -2135,6 +2151,12 @@ int yk_orbit_radius_at(int age, float *out);
  *   · 引擎硬上限 **999**（`life >= 1000` 会置锁定黑名单 `flags_lo 0x40000000`，见 `YK_LIFE_LIMIT`）
  *     ⇒ 无论 `SCALE` 多大都过这个钳；并且**仍然过 `yk_clamp_spawn_life()`**。
  *   ⚠ ❓**自定（一个旋钮、一行可调）**，登记 `TUNING.md` §2.1ccc-26。*/
+/* ★★★ 2026-09-30（owner 实跑：「**使魔爆炸给永点的似乎不够多**」）—— **A 的旋钮**：
+ *   击破一台**我们补的绕转使魔**时吐几颗刻符。**一手 = 1 颗**（`th08:0x42b29b`：使魔被自机击破
+ *   固定 1 颗；走 `yk_kill_burst` 尾巴那支「被杀者**自己有主** ⇒ 一颗」）+ 一手还带「槽 `-= 槽/12`」
+ *   （**我们没做**那一笔，登记 `TUNING.md`）。⇒ **默认 1 = 复刻**；owner 若要「更多」，**只改这一格**
+ *   （❓口径，不是复刻；owner 还没拍数）。*/
+#define YK_ORBIT_KILL_ORBS 1u
 #define YK_ORBIT_HP_SCALE 1
 static const int32_t YK_ORBIT_HP_ONEHAND[YK_ORBIT_HP_TIER_STEPS + 1] = { 100, 100, 300, 600 };
 int yk_orbit_onehand_hp(int count);    /* 该台数档的**一手**基准血量（查表，不缩放）*/

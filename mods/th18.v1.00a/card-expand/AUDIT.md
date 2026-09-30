@@ -25860,3 +25860,43 @@ th08:0x406d70` + 无符卡）⇒ 1 颗、state 5；② 敌机死亡（`Enemy::FU
 
 **闸（原文）**：`make -s check` rc=0（`youkai_core: 8120 checks, 0 failed`；`dllx87 = 0`）、
 `sites.py verify` 全对上、`capcheck` 全绿、`check-docs` 全过。
+
+## §BE 详录 #158（2026-09-28）：绕转使魔**一只敌人只补一次**（owner 实跑 bug）+ 死点区「有没有跑」的实证
+
+> **owner 逐字**：「**产生使魔是循环吗？我看一面 3 只大蝴蝶生成了两次两个使魔**」+
+> 「**使魔爆炸给永点的似乎不够多**」+「以及**似乎没有消弹**」。
+
+**一、bug 根因（读代码证实，不是猜）**：`yk_orbit_scan` 的「一敌一对」判据是
+`yk_orbit_find_parent(id)` —— 它只看**现在还活着**的绕转使魔。而我们的使魔是**可打掉的**
+（一手血量档 `{100,100,300,600}`）⇒ **全被打死后判据回到 0**，下一次 30 帧扫场又给它补一批
+⇒ owner 看到的「同一只蝴蝶两批、每批两台」。一手语义：TH08 的使魔是**脚本一次性连发**
+（同帧 2/4 台、撒完就没了、死了不会再生成）⇒ **必须自己记「已给过」**。
+
+**二、修法**
+- 新账本 `s_orbit_gifted[]`（`YK_ORBIT_GIFTED_MAX = 64`，**与生成延时那张一次性表分开** ——
+  延时表到点就自己抹掉、放不下长期状态；**生成延时 60 帧一个字没动**）。
+- 两个**纯函数**（`youkai_core.c` + 单测 `check_orbit_gift_ledger`，+10 checks 覆盖工单点名三条）：
+  `yk_orbit_gift_verdict(recorded, table_full)` → `2` 可补 / `1` 已给过 ⇒ 拒 / `0` 表满 ⇒ **宁可不补**（fail closed）；
+  `yk_orbit_gift_prune(&absent, present)` → 父敌**连续 `YK_ORBIT_GIFTED_GRACE`(2) 次扫场**找不到才清记录。
+- **清记录只因父敌消失**（敌机 id 不复用），**不因使魔全死**；卡重来（`yk_drop_all` 那条路）整表清零。
+- 日志：真拦下重复补时**每敌只打一次** `youkai/orbit: refused re-gift to enemy #N (already gave at frame F)`。
+- ⚠ **boss 那条「每段攻击重建」与这本账无关**：`yk_orbit_scan` 本来就把 boss 排除在绕转使魔之外
+  （`yk_enemy_is_boss(e)` ⇒ `continue`）⇒ 绕转使魔从不长在 boss 身上 ⇒ 不存在「boss 换段要不要重新武装」。
+
+**三、A「使魔爆炸给永点不够多」—— 一手 vs 我们（实测口径）**
+- **一手 = 1 颗**：使魔被自机击破固定掉 1 颗刻符（`th08:0x42b29b`），走 `yk_kill_burst` 尾巴那支
+  「被杀者**自己有主** ⇒ 一颗」（`youkai.c`：`if (!n2 && ev->enemy && CE_SPAWN_PARENT != 0)`）
+  + 一手另有「槽 `-= 槽/12`」（**我们没做**）。**盘（burst）不爆**是一手语义（使魔没有子敌人 ⇒ `n == 0`）。
+- **我们实际就吐 1 颗**（代码级证据 = 上引那一支）；owner 若要「更多」⇒ 新增旋钮
+  **`YK_ORBIT_KILL_ORBS`（默认 1 = 一手）**，**没有直接改大**（等 owner 拍数）。
+
+**四、B「似乎没有消弹」—— 实证：**在跑，只是小**
+实跑日志（`th18_card_expand.log`）里那条台账**一直在涨**：
+`youkai/zone: opened 15 closed 14 orbs 148 bullets 133 pool_full 0` ⇒ **开了 15 个区、吃掉 133 颗敌弹**
+（133 + 15 颗死点 = 148 颗刻符）✓ 半径/寿命/条件也对（`R=32.5f` / 16 帧 / hit type 7 / `n > 0` 才开）。
+⇒ 「看不出消弹」是因为它**不是全屏清弹**，只是死亡点周围一小圈、只吃 16 帧内经过那里的弹。
+新增诊断计数 **`latch_skip`**（因别的卡拿了本帧消弹闩锁而整帧没吃弹的次数）并进同一行日志，
+用来判断「是不是被仲裁挡太多」。
+
+**闸（原文）**：`make -s check` rc=0（`youkai_core: 8130 checks, 0 failed`；`dllx87 = 0`）、
+`sites.py verify` 全对上、`capcheck` 全绿、`check-docs` 全过。

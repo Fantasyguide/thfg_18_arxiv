@@ -764,6 +764,22 @@ int yk_shot_slot_gate(yk_map_t *m, uint32_t enemy_id, int slot, uint32_t have_fa
  *   重建**的（每波开头 `enmKillAll()` op95，见 `engine/enemy/th08/04-…md` §1），而 TH18 侧我们不改
  *   boss 的符卡/ECL ⇒ 在相位分界上由卡侧收掉该 boss 的使魔、让映射逻辑在下一波自然重建。
  *   语义与 `yk_withdraw_all` **逐条一致**（含截断不变式），只多一个 `enemy_id` 过滤。*/
+int yk_orbit_gift_verdict(int recorded, int table_full)
+{
+    if (recorded) return YK_ORBIT_GIFT_DONE;      /* 一手：撒完就是撒完，死了也不再补 */
+    if (table_full) return YK_ORBIT_GIFT_FULL;    /* 宁可不补，也不要重复补 */
+    return YK_ORBIT_GIFT_OK;
+}
+
+int yk_orbit_gift_prune(unsigned *absent, int present)
+{
+    if (!absent) return 0;
+    if (present) { *absent = 0; return 0; }       /* 父敌还在 ⇒ 记录留着（与使魔死活无关）*/
+    if (*absent < 0xffffu) ++*absent;
+    if (*absent >= YK_ORBIT_GIFTED_GRACE) { *absent = 0; return 1; }   /* 连续 N 次找不到 ⇒ 清 */
+    return 0;
+}
+
 int yk_withdraw_enemy(yk_map_t *m, uint32_t enemy_id, yk_action_t *out, int max)
 {
     unsigned i;

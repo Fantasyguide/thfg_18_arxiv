@@ -208,6 +208,37 @@ static void check_beam_spec_files(void)
 
 static yk_action_t s_acts[YK_FAM_MAX];
 
+/* ★★★ 2026-09-30（owner 实跑：「一面 3 只大蝴蝶生成了两次两个使魔」）：
+ *   绕转使魔的**「已给过」账**两个纯函数的单测 —— 覆盖工单点名的三条：
+ *     ① 已给过 ⇒ 不给；② 父敌消失后复现 ⇒ 可给；③ 表满 ⇒ 不给（宁可不补）。*/
+static void check_orbit_gift_ledger(void)
+{
+    unsigned absent = 0;
+    /* ① 已给过（无论表满不满）⇒ 拒 */
+    CHECK(yk_orbit_gift_verdict(1, 0) == YK_ORBIT_GIFT_DONE);
+    CHECK(yk_orbit_gift_verdict(1, 1) == YK_ORBIT_GIFT_DONE);   /* 已给过优先于表满 */
+    /* 没给过 + 有位 ⇒ 可以补 */
+    CHECK(yk_orbit_gift_verdict(0, 0) == YK_ORBIT_GIFT_OK);
+    /* ③ 没给过但表满 ⇒ 宁可不补（fail closed：绝不冒「重复补」的险）*/
+    CHECK(yk_orbit_gift_verdict(0, 1) == YK_ORBIT_GIFT_FULL);
+    /* ② 父敌还在 ⇒ 记录留着（与使魔死活无关）：连续多少次 present 都不清 */
+    absent = 7u;
+    CHECK(yk_orbit_gift_prune(&absent, 1) == 0);
+    CHECK(absent == 0u);
+    /* ② 父敌消失：到 `YK_ORBIT_GIFTED_GRACE` 次才清；之前一直不清 */
+    absent = 0u;
+    CHECK(yk_orbit_gift_prune(&absent, 0) == (YK_ORBIT_GIFTED_GRACE <= 1u ? 1 : 0));
+    if (YK_ORBIT_GIFTED_GRACE > 1u) {
+        unsigned k;
+        int cleared = 0;
+        for (k = 2; k <= YK_ORBIT_GIFTED_GRACE; ++k)
+            cleared = yk_orbit_gift_prune(&absent, 0);
+        CHECK(cleared == 1);
+        CHECK(absent == 0u);                     /* 清掉后计数归零 ⇒ 同名 id 复现可重新给 */
+    }
+    CHECK(yk_orbit_gift_prune(NULL, 0) == 0);    /* 空指针不炸 */
+}
+
 int main(void)
 {
     yk_map_t m;
@@ -2395,6 +2426,7 @@ int main(void)
     }
     check_beam_member_covers_entry();       /* ★ 第三十三批：束贴图铺满整条 entry 行宽（「一缕一缕」的闸）*/
     check_beam_spec_files();
+    check_orbit_gift_ledger();              /* ★ 2026-09-30：绕转使魔「一只敌人只补一次」的判定 */
 
     printf("youkai_core: %d checks, %d failed\n", s_pass + s_fail, s_fail);
     return s_fail ? 1 : 0;

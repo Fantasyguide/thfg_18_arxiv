@@ -877,6 +877,83 @@ typedef struct {
 } yk_orbit_seen_t;
 static yk_orbit_seen_t s_orbit_seen[YK_ORBIT_SEEN_MAX];
 
+/* ★★★ 2026-09-30（**owner 实跑 bug**：「我看一面 3 只大蝴蝶生成了两次两个使魔」）：
+ *   **「已给过使魔」的账**（与生成延时那张 `s_orbit_seen[]` **分开** —— 延时那支是**一次性**的
+ *   （到点就 `id = 0` 把自己抹掉），放不下这条长期状态；**生成延时 60 帧一个字没动**）。
+ * 语义（一手）：TH08 的使魔是脚本一次性连发，撒完就没了、死了也不会再生成 ⇒ 我们的扫场（每 30 帧）
+ *   必须自己记住「这只父敌已经给过」，判据绝不能用「它现在名下有没有活着的使魔」。
+ * 清记录**只**因父敌消失（连续 `YK_ORBIT_GIFTED_GRACE` 次扫场找不到；敌机 id 不复用）；
+ *   **不**因使魔全死。表满 ⇒ **宁可不补**（`yk_orbit_gift_verdict` 的 fail-closed 分支）。
+ * ⚠ boss 那条「每段攻击重建」的路与本表**无关**：`yk_orbit_scan` 本来就把 boss 排除在绕转使魔之外
+ *   （`yk_enemy_is_boss(e)` ⇒ `continue`）⇒ 绕转使魔从不长在 boss 身上，不存在「boss 换段要不要重新武装」。*/
+typedef struct {
+    uint32_t id;              /* 0 = 空条目 */
+    uint32_t frame;           /* 给出去的那一刻（日志用）*/
+    unsigned absent;          /* 连续几次扫场找不到这个父敌（`yk_orbit_gift_prune` 用）*/
+    uint8_t  refused_logged;  /* 「拦下重复补」只记一次 */
+} yk_orbit_gifted_t;
+static yk_orbit_gifted_t s_orbit_gifted[YK_ORBIT_GIFTED_MAX];
+static unsigned s_orbit_gift_full;    /* 表满拒绝过几次（只增，诊断用）*/
+static unsigned s_orbit_gift_refused; /* 拦下过几次重复补（只增，诊断用）*/
+
+static int yk_orbit_gifted_find(uint32_t id)
+{
+    unsigned i;
+    for (i = 0; i < YK_ORBIT_GIFTED_MAX; ++i) if (s_orbit_gifted[i].id == id) return (int)i;
+    return -1;
+}
+
+/* 扫场判据（有副作用：写「拦下」日志 / 表满计数）。→ 1 = 可以补，0 = 不补。*/
+static int yk_orbit_gift_maybe(uint32_t id, uint32_t frame)
+{
+    unsigned i;
+    int idx = yk_orbit_gifted_find(id);
+    int table_full = 1;
+    int v;
+    for (i = 0; i < YK_ORBIT_GIFTED_MAX; ++i) if (!s_orbit_gifted[i].id) { table_full = 0; break; }
+    v = yk_orbit_gift_verdict(idx >= 0, table_full);
+    if (v == YK_ORBIT_GIFT_DONE) {
+        yk_orbit_gifted_t *g = &s_orbit_gifted[idx];
+        ++s_orbit_gift_refused;
+        if (!g->refused_logged) {
+            g->refused_logged = 1;
+            ce_log("youkai/orbit: refused re-gift to enemy #%u (already gave at frame %u) - TH08's "
+                   "familiars are spawned ONCE by the script and never re-created when killed "
+                   "(owner 2026-09-30: \"3 butterflies gave two batches\")", id, g->frame);
+        }
+        return 0;
+    }
+    if (v == YK_ORBIT_GIFT_FULL) {
+        if (++s_orbit_gift_full == 1u)
+            ce_log("youkai/orbit: gift ledger FULL (%u) - refusing to gift NEW parents rather than "
+                   "risk re-gifting an old one (fail closed)", (unsigned)YK_ORBIT_GIFTED_MAX);
+        return 0;
+    }
+    return 1;
+}
+
+/* 真给出去了才记账（`made > 0` 才调）。*/
+static void yk_orbit_gift_mark(uint32_t id, uint32_t frame)
+{
+    unsigned i;
+    if (!id || yk_orbit_gifted_find(id) >= 0) return;
+    for (i = 0; i < YK_ORBIT_GIFTED_MAX; ++i) {
+        if (!s_orbit_gifted[i].id) {
+            s_orbit_gifted[i].id = id;
+            s_orbit_gifted[i].frame = frame;
+            s_orbit_gifted[i].absent = 0;
+            s_orbit_gifted[i].refused_logged = 0;
+            return;
+        }
+    }
+}
+
+static void yk_orbit_gift_clear(void)
+{
+    unsigned i;
+    for (i = 0; i < YK_ORBIT_GIFTED_MAX; ++i) s_orbit_gifted[i].id = 0;
+}
+
 static unsigned yk_orbit_live(void);   /* 前向声明：阀门要用它数活着的使魔（定义在下面）*/
 static void yk_zone_clear_all(void);   /* 前向声明：`yk_drop_all` / `on_ctor` 的收口要用它 */
 
@@ -1002,6 +1079,7 @@ static void yk_orbit_retire_all(void)
     for (i = 0; i < YK_ORBIT_MAX; ++i)
         if (s_orbit[i].fam_id) yk_orbit_retire(&s_orbit[i], 0);
     for (i = 0; i < YK_ORBIT_SEEN_MAX; ++i) s_orbit_seen[i].id = 0;   /* 延时登记也清 */
+    yk_orbit_gift_clear();                           /* ★ 「已给过」的账随卡重来一起清 */
     /* 兜底（句柄幂等）：`fam_id` 已经被清掉、VM 还挂着的残局 */
     for (i = 0; i < YK_ORBIT_MAX; ++i) yk_orbit_vm_kill(&s_orbit[i]);
     s_orbit_scan_timer = 0;
@@ -1263,6 +1341,16 @@ static void yk_orbit_seen_prune(uint8_t *em)
         if (!s_orbit_seen[i].id) continue;
         if (!em || !ce_enemy_by_id(em, (int32_t)s_orbit_seen[i].id)) s_orbit_seen[i].id = 0;
     }
+    /* ★★★ 2026-09-30（owner bug）：**「已给过」的账**按「父敌还在不在」老化 ——
+     *   还在 ⇒ 清零 `absent`（记录留着，**与使魔死活无关**）；连续 `YK_ORBIT_GIFTED_GRACE`
+     *   次扫场找不到 ⇒ 清掉（敌机 id 不复用，所以同名 id 再出现就是新敌人、可以重新给）。*/
+    for (i = 0; i < YK_ORBIT_GIFTED_MAX; ++i) {
+        yk_orbit_gifted_t *g = &s_orbit_gifted[i];
+        int present;
+        if (!g->id) continue;
+        present = em && ce_enemy_by_id(em, (int32_t)g->id) != 0;
+        if (yk_orbit_gift_prune(&g->absent, present)) g->id = 0;
+    }
 }
 
 /* 扫全场：给「大怪」补 `yk_orbit_count_for_hp(父敌最大血量)` 台惰性绕转使魔。
@@ -1302,6 +1390,10 @@ static void yk_orbit_scan(uint32_t frame)
         if (yk_map_enemy_slots(&s_map, (uint32_t)id) != 0) ++have_emit;
         /* 一敌一对：已经补过的不再补。*/
         if (yk_orbit_find_parent((uint32_t)id)) continue;
+        /* ★★★ 另一回事：**这只父敌以前给过没有** —— 给过就永远不再补（即使使魔全被打死）。
+         *   一手：TH08 的使魔是脚本一次性连发、撒完就没了；`yk_orbit_find_parent` 只看「活着」，
+         *   拿它当唯一判据就会在使魔死后又补一批（owner 实跑看到的「两批」）。*/
+        if (!yk_orbit_gift_maybe((uint32_t)id, frame)) continue;
         /* ★★★ 生成延时（一手形状，见 `YK_ORBIT_DELAY_FRAMES`）：首次命中先只登记，到点才建。*/
         if (!yk_orbit_delay_ok((uint32_t)id, frame)) continue;
         /* **大怪**：贴图**原始**尺寸两边都 >= 64（117 的判据，见 `yk_big_by_sprite`）。*/
@@ -1353,6 +1445,7 @@ static void yk_orbit_scan(uint32_t frame)
             if (yk_orbit_free() == 0u) break;                 /* 池正好用光 ⇒ 这台就这些 */
         }
         if (made) {
+            yk_orbit_gift_mark((uint32_t)id, frame);          /* ★ 真给出去了才记账（一只敌人只补一次）*/
             ++s_orbit_targets; ++picked;
             /* 每条目标**只打一次**（不刷屏）：这一行就是「哪只大怪被补了、补了几台、凭什么」的判据。*/
             ce_log("youkai/orbit: target enemy #%u sprite %dx%d hp %d stage %d => %d familiar(s) "
@@ -3577,6 +3670,9 @@ typedef struct {
 static yk_zone_t s_zone[YK_ZONE_MAX];
 static unsigned s_zone_opened, s_zone_closed, s_zone_orbs, s_zone_pool_full;
 static unsigned s_zone_bullets;                 /* 累计吃掉的敌弹数（台账用）*/
+static unsigned s_zone_latch_skip;              /* ★ 因**别人**拿了本帧全屏消弹那一笔而整帧没吃弹的次数
+                                                 *   （owner 2026-09-30「似乎没有消弹」的排查口径：
+                                                 *   这条涨得快 ⇒ 我们的区被仲裁挡得多）*/
 
 static void yk_zone_clear_all(void)
 {
@@ -3611,27 +3707,29 @@ static void yk_zone_tick(yk_card_t *s, uint32_t card_id, uint32_t frame)
     for (i = 0; i < YK_ZONE_MAX; ++i) if (s_zone[i].life) ++live;
     if (live && mgr) {
         owner = ce_cancel_latch_owner();
+        if (owner != -1 && owner != (int)card_id) ++s_zone_latch_skip;   /* 只因仲裁跳过（诊断）*/
         if (owner == -1 || owner == (int)card_id) {          /* 别人拿走这一帧 ⇒ 我们不吃 */
-            for (k = 0; k < YK_ZONE_BULLET_SLOTS; ++k) {
-                uint8_t *b = mgr + CE_BM_BULLETS + (size_t)k * CE_BULLET_STRIDE;
-                uint16_t st = *(const uint16_t *)(b + CE_BULLET_STATE);
-                const float *bp;
-                if (st != 1 && st != 2) continue;             /* 一手：区只吃「活动中」的弹 */
-                bp = (const float *)(b + CE_BULLET_POS);
-                for (i = 0; i < YK_ZONE_MAX; ++i) {
-                    float dx, dy;
-                    if (!s_zone[i].life) continue;
-                    dx = bp[0] - s_zone[i].x;
-                    dy = bp[1] - s_zone[i].y;
-                    if (dx * dx + dy * dy > s_zone[i].radius * s_zone[i].radius) continue;
-                    /* ★ 吃掉：弹写「消去」态（TH18 = 3，见 `YK_ZONE_BULLET_STATE_ERASED` 的注），
-                     *   然后按 hit type 吐 —— 本批只有 7 ⇒ **1 颗刻符**（落在**弹的位置**上）。*/
-                    *(uint16_t *)(b + CE_BULLET_STATE) = (uint16_t)YK_ZONE_BULLET_STATE_ERASED;
-                    yk_orb_spawn(s, bp[0], bp[1], YK_ORB_STATE_SPAWN);
-                    ++s_zone_orbs;
-                    ++s_zone_bullets;
-                    break;                                     /* 一颗弹只被一个区吃 */
-                }
+            /* ★★★ 2026-09-30（**P0 实跑 bug**，owner：「发射口使魔放出的弹幕视觉上不会被消弹，
+             *   但之后也不会再有任何判定」）—— **改走引擎自己的消弹入口**：
+             *   原来这里是「自己扫池 + 手写 `state = 3`」，实测 3 只是**不再判定**（引擎认为它
+             *   「已在消去中」，`cancel_all` 都跳过它）而**不播消去视觉** ⇒ 观感 =「弹还在、但打不到」。
+             *   ⇒ 现在每帧对每个活区调一次 **`ce_cancel_radius`**（= `th18:0x429370`
+             *   `cancel_radius_as_bomb`，本仓 `sdk.h` 的封装），**mode 0 = 消去但不吐原生道具**
+             *   （一手 mode 表：0/3 不吐道具；我们照旧吐**自己的刻符** ⇒ 一手口径不变）；
+             *   返回的**颗数**就是「这一次消掉几颗」（封装里调前清 / 调后读 `CE_BM_CANCEL_COUNTER`，
+             *   并**自动**登记进本帧消弹记录）⇒ 按它吐刻符 + 记台账，不再需要自己扫 2000 格池。
+             *   ⚠ 区间是「每帧一小圈、连续 `YK_ZONE_DEATH_LIFE` 帧」= 一手「16 帧内经过死亡点的弹
+             *     逐颗被吃」的同一形状。*/
+            float cpos[3];
+            int got;
+            cpos[0] = s_zone[i].x; cpos[1] = s_zone[i].y; cpos[2] = 0.0f;
+            got = ce_cancel_radius(cpos, s_zone[i].radius, (int)YK_ZONE_BULLET_SLOTS, 0);
+            if (got > 0) {
+                int oi;
+                s_zone_bullets += (unsigned)got;
+                s_zone_orbs += (unsigned)got;
+                for (oi = 0; oi < got; ++oi)
+                    yk_orb_spawn(s, s_zone[i].x, s_zone[i].y, YK_ORB_STATE_SPAWN);
             }
         }
     }
@@ -3639,11 +3737,11 @@ static void yk_zone_tick(yk_card_t *s, uint32_t card_id, uint32_t frame)
         if (s_zone[i].life && --s_zone[i].life == 0u) ++s_zone_closed;
     /* 台账：每 120 帧一行，且只在「这件事真的发生过」之后（不刷屏）。*/
     if ((s_zone_opened || s_zone_bullets) && (frame % 120u) == 0u)
-        ce_log("youkai/zone: opened %u closed %u orbs %u bullets %u pool_full %u (16-frame "
+        ce_log("youkai/zone: opened %u closed %u orbs %u bullets %u pool_full %u latch_skip %u (16-frame "
                "death-point absorb zones, hit type %d => 1 time orb per eaten bullet; opened only when "
                "the dying enemy's familiar count != 0, `th08:0x42adc4`)",
                s_zone_opened, s_zone_closed, s_zone_orbs, s_zone_bullets, s_zone_pool_full,
-               (int)YK_ZONE_HIT_ORB);
+               s_zone_latch_skip, (int)YK_ZONE_HIT_ORB);
 }
 
 /* ★★★ 2026-09-30（**owner 口径**）：「我们 108 的 **boss 的发射口使魔原则上也应当是每段攻击
@@ -3873,8 +3971,15 @@ static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
          *   ⇒ 我们补的**惰性绕转使魔**被打死时走的正是这一支（`AUDIT.md` §BE #150 §6：
          *   **盘不爆、单颗给**）。*/
         if (!n2 && ev->enemy &&
-            *(const int32_t *)((const uint8_t *)ev->enemy + CE_SPAWN_PARENT) != 0)
-            yk_orb_spawn(s, ev->x, ev->y, YK_ORB_STATE_SPAWN);   /* ★ §BE #117：type 7 ⇒ 强制 state 3 */
+            *(const int32_t *)((const uint8_t *)ev->enemy + CE_SPAWN_PARENT) != 0) {
+            /* ★ 2026-09-30：**A 的旋钮**（`YK_ORBIT_KILL_ORBS`，默认 1 = 一手）。
+             *   一手 = 「被杀者自己有主 ⇒ `spawn_item(type 7)` 一颗」（`th08:0x42b1e5` 起 /
+             *   `th08:0x42b29b`：使魔被自机击破固定 1 颗）+ 「槽 -= 槽/12」（我们没做）。
+             *   owner 若觉得「不够多」，**只改这一格**（❓口径，不是复刻）。*/
+            unsigned ko;
+            for (ko = 0; ko < YK_ORBIT_KILL_ORBS; ++ko)
+                yk_orb_spawn(s, ev->x, ev->y, YK_ORB_STATE_SPAWN);   /* ★ §BE #117：type 7 ⇒ state 3 */
+        }
     }
     /* ② 極端人/妖的那一颗**已挪到上面**（`!focused` 之前）—— 一手它与聚焦无关，见那里的注。*/
 }
