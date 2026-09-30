@@ -4008,7 +4008,18 @@ G      = G_0 + Σ ΔG_i          ← 用户形式：G = (G_0 + Σ ΔG_i) × coef
 一直以来都是这样」⇒ **不必去找 TH18 专属的一手**。同类的已有一手可以照：
 TH08 人妖切换的**本机印象色光环** = `etama.anm` **script54**（`engine/player/th08/03-youkai-body-and-gauge.md` §2.6）；
 TH16 的**聚焦光环** = anm `0x1b`（`engine/player/th16/05-object-field-maps.md`）。
-⚠ 但「**扭曲背景**」那一支 `engine/` 里**还没有任何一手**（哪个游戏、哪个函数都没记）⇒ 要做得单开一轮挖。
+★ **owner 2026-10-01 追加线索**：「boss plot 那个**可能从 th12 就开始这样了**」—— 我按这条去
+`local/th12.v1.00b/th12.exe` 扫了字符串，**挖到硬证据**（`th12.exe` 内 ASCII 串，偏移见下）：
+
+| 偏移 | 串 | 说明 |
+| --- | --- | --- |
+| `0x09ebec` | `.\src\game\enemy.cpp:3038 m_bossRMesh` | ★★ **boss 的「R Mesh」** —— 就是一个**网格**成员（TH12 的 boss 光环走的是 mesh，不是 anm 精灵）⇒ 与「环绕在 boss 四周、会扭曲背景的特效」在形态上对得上，也解释了为什么**在 th12–th18 的 anm/aura 字样里找不到它**（它不在 anm 里）|
+| `0x09ec14` | `MBossCard2_at2` | boss 卡（符卡）演出相关 |
+| `0x09ee1c`–`0x09ef38` | `boss_card_1`…`boss_card_19`、`boss_1`…`boss_19` | 逐个 boss 的**背景/演出资源名**（19 组）|
+
+⇒ 这条线索**成立方向明确**：**TH12《星蓮船》很可能就是「boss 光环（mesh）+ 逐 boss 背景演出」这套通用
+plot 机制的起点**（`engine/` 目前**零文档**，所以这仍是 🟡 —— 要把 `m_bossRMesh` 的建立/绘制、
+以及它到底扭不扭背景逐条读出来才算一手）。要做的话单开一轮：样本已在 `local/th12.v1.00b/`。
 
 **实跑验收点**：① 用 C3/C4 放一次蓄力攻击 ⇒ 自机身上出现一圈护罩（日志 `pofv: shield ARMED by C3 …`）；
 ② 中一发弹 ⇒ **不扣命**、护罩消失并闪一下（日志 `pofv: shield ABSORBED …`）、有无敌；
