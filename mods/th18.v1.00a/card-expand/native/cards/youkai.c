@@ -812,14 +812,22 @@ static void yk_fam_vm_follow(uint32_t fam_id, int kind, const uint8_t *f)
 typedef struct {
     uint32_t fam_id;      /* 0 = 空槽。键 = 使魔的 `enemy_id`（单调递增、不复用 ⇒ 不会撞键）*/
     uint32_t parent_id;   /* 父敌 `enemy_id`（`CE_SPAWN_PARENT` 那一格，颗数就靠它）*/
-    float    cx, cy;      /* ★★★ 绕转**圆心**（第三轮）：= **生成那一刻**的父敌坐标，之后**不再跟**。
-                           *   一手：`moveCircle`（opcode 73，handler `th08:0x41a4b7`）把圆心设成
-                           *   **使魔自己当前的位置**（`0x41a50b`–`0x41a52a`：`+0x2dd0 := +0x2d34`
-                           *   三个 dword 拷贝），而 `familiarCreate`（opcode 91，handler `th08:0x41f280`）
-                           *   的生成点 = **本体位置 + (x,y)**（`0x41f2ba`–`0x41f2d3` `Float3::operator+=`
-                           *   `parent->final_pos`；TH08 脚本全写 `0,0` ⇒ 就在本体身上）
-                           *   ⇒ **圆心 = 生成瞬间那一点，本体后来飞走圆心不跟**（可见后果：大怪飞走
-                           *   ⇒ 使魔留在原地绕，与 TH08 同形）。*/
+    float    cx, cy;      /* **出生点**（= 建壳那一刻的父敌坐标；只作记账/日志用）。
+                           * ★★★★ 2026-09-30 **订正（owner 实跑：中间大蝴蝶往下走、使魔留在高处错位）**：
+                           *   绕转**跟着父敌走** —— 每帧圆心 = **父敌当前位置**（见 `yk_orbit_tick`）。
+                           *   一手把两条合起来看才完整：
+                           *     · `moveCircle`（opcode 73，handler `th08:0x41a4b7`）只把**圆心设成那一刻
+                           *       使魔所在的位置**（`0x41a50b`–`0x41a52a`：`+0x2dd0 := +0x2d34` 三个 dword
+                           *       拷贝）—— 这条没错，但它**只管「圆心钉在当场」**；
+                           *     · **跟不跟父敌取决于用哪个 create 变体**：`familiarCreateF`（opcode **92**，
+                           *       一面妖精用的就是它）spawn 时 `moveVec = enemy->pos`、
+                           *       `movePos = moveVec + pos` 并 **`flags |= TRACK_POS (0x200)`**
+                           *       ⇒ **整圈跟着父敌走**；`familiarCreate`（opcode **91**）**不加**
+                           *       TRACK_POS ⇒ 生成点定死；`familiarCreateA`（opcode **90**）用绝对坐标。
+                           *       （三者的生成点都经 `0x41f2ba`–`0x41f2d3` 的 `Float3::operator+=`
+                           *       `parent->final_pos`，脚本全写 `(0,0)` ⇒ 出生贴在本体身上。）
+                           *   ⇒ 我们上一版按 91 的形状做（定圆心）⇒ owner 看到一面妖精的使魔不跟。
+                           *   ⚠ `yk_orbit_tick` 的孤儿宽限（父敌查不到时原地钉住 N 帧）保留。*/
     unsigned age;         /* ★★★★ 帧龄（建壳起 +1）：绕转半径由它算（见下面 `radius`）*/
     float    radius;      /* ★ 当前绕转半径 = `yk_orbit_radius_at(age)` —— 一手形状：
                            *   出生**贴在本体身上（0）**，以 `YK_ORBIT_RADIAL_SPEED`(0.6 px/帧)
@@ -1259,7 +1267,8 @@ static void __attribute__((noinline)) yk_orbit_tick(uint32_t frame)
     for (i = 0; i < YK_ORBIT_MAX; ++i) {
         yk_orbit_t *o = &s_orbit[i];
         uint8_t *f, *pe;
-        float dx = 0.0f, dy = 0.0f;
+        const float *pp;
+        float px, py, dx = 0.0f, dy = 0.0f;
         if (!o->fam_id) continue;
         f = yk_familiar_by_id(o->fam_id);
         if (!f) { yk_orbit_retire(o, "shell gone"); continue; }   /* 被外力清了 ⇒ 清槽 + 收 VM */
@@ -1279,11 +1288,14 @@ static void __attribute__((noinline)) yk_orbit_tick(uint32_t frame)
         /* ★★★★ 订正：半径**随帧龄外扩**（出生 0 → 1.7 s 后 60 → 冻结），不再一进场就钉住。*/
         if (o->age < 0xffffffffu) ++o->age;
         yk_orbit_radius_at((int)o->age, &o->radius);
-        /* ★★★ 2026-09-28 第三轮：**定圆心** —— 圆心是建壳那一刻写下的 `cx/cy`，父敌后来飞走
-         * 圆心**不跟**（一手：`moveCircle` 把圆心设成使魔当时的位置，见 struct 里的两个地址）。
-         * ⇒ 这里**不读父敌坐标**（`pe` 只用于「父敌还在不在」的孤儿检测）。*/
+        /* ★★★★ 2026-09-30 **订正**：圆心 = **父敌当前位置**（一面妖精是 `familiarCreateF` = opcode 92，
+         *   带 `TRACK_POS (0x200)` ⇒ 整圈跟着父敌走；只有 opcode 91 才是定圆心 —— 见 struct 里的注）。
+         *   `cx/cy` 仍保留为**出生点**（记账/日志），不再参与定位；孤儿宽限那条分支照旧原地钉住。*/
+        pp = ce_enemy_pos(pe);
+        px = pp ? pp[0] : *(const float *)(f + CE_ENEMY_POS_X);
+        py = pp ? pp[1] : *(const float *)(f + CE_ENEMY_POS_Y);
         if (!yk_orbit_offset(yk_orbit_step_of_substep(o->substep), o->radius, &dx, &dy)) continue;
-        yk_orbit_pin(f, o->cx + dx, o->cy + dy);
+        yk_orbit_pin(f, px + dx, py + dy);
         yk_orbit_vm_sync(o);
     }
     if ((++s_orbit_scan_timer % YK_ORBIT_SCAN_INTERVAL) == 0u) yk_orbit_scan(frame);

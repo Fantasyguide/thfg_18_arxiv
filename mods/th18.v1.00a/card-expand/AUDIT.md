@@ -25452,3 +25452,46 @@ owner 之后若要，要自己造**边沿 + 迟滞**（❓自定）。
 `make -s check` 的 **`snd-check`**（`sound_sites` 96 / `sound_emit` 188 / `build_voice` 17 项）
 + `sites.py verify`（213 条 binhack 全对上）+ `dllx87`（0）+ `capcheck`（全绿）
 + `check-docs`（全过）⇒ 一次跑绿；卡 108 侧 `youkai_core: 8120 checks, 0 failed`。
+
+### §BE #150 · 追加（2026-09-28 第十一轮）：**使魔跟父敌**（bug 订正）+ **拖尾结论翻案** + 切图给 owner
+
+> **owner 逐字**：「**忠于原作就得加拖尾，你肯定核错了，一面道中 boss 之前的妖精发的使魔就有拖尾**」/
+> 「**彗尾贴图你切出来到 windows 侧我看一下**，也有可能是这个」/
+> 「目前 **th18 第一面的三只大蝴蝶，中间那只的使魔不知道为什么错位了**，中间大蝴蝶**会往下走**，
+> 而两侧会停在更高位置，但**使魔对齐的是这个更高位置**」。
+
+**一、① 订正：绕转使魔要**跟着父敌**（我上一批的「定圆心」做过头了）**
+一手（两条合起来才完整）：`moveCircle`（73）只把**圆心设成那一刻使魔所在的位置**（`0x41a50b`–`0x41a52a`），
+但**跟不跟父敌取决于用哪个 create 变体**：`familiarCreateF`（**92**，一面妖精用的就是它）spawn 时
+`moveVec = enemy->pos` / `movePos = moveVec + pos` 且 **`flags |= TRACK_POS (0x200)`** ⇒ **整圈跟随父敌**；
+`familiarCreate`（**91**）不加 TRACK_POS ⇒ 生成点定死；`familiarCreateA`（**90**）用绝对坐标
+（三者生成点都经 `0x41f2ba`–`0x41f2d3` 的 `Float3::operator+= parent->final_pos`，脚本写 `(0,0)` ⇒ 出生贴本体）。
+⇒ `yk_orbit_tick` 改回**每帧圆心 = 父敌当前位置**（`yk_orbit_pin(f, px+dx, py+dy)`）；`yk_orbit_t`
+的 `cx/cy` 降级为**出生点记账**，孤儿宽限（父敌查不到时原地钉住 2 帧）保留。
+上一批文档里「TH08 是定圆心」的说法**已订正**（`engine/enemy/th08/03` §5b/§5 + §7 表）。
+
+**二、② 拖尾：上一批的结论**错了**（`AUDIT` 第十轮说「TH08 使魔没有拖尾」⇒ 作废）**
+上一批只查了 `trailSet`（opcode **157**，位置历史余像），**没查 `trailFamiliarSet`（opcode 83）**。
+按 owner 的入口重查：`grep` 全 24 份 ECL ⇒ **17 个文件 170+ 处**，而且**命中的全是使魔 sub** ——
+阶段一四个使魔 sub（`ecldata1.txt` 的 `Sub2/Sub4/Sub10/Sub12`，`anmSet(55)`）**各自都有一条
+`trailFamiliarSet(1)`**。handler `th08:0x41e532` 置/清 `[enemy+0x3328]`（`flags_hi`）**bit1**
+（`and eax,0xfffffffd` + 移位写回）⇒ 开关挂在**每台使魔自己**身上。消费者撒效果 `0x26` =
+**`etama.anm` script71**（本次逐条 dump：`sprite219` 16×16、`blendMode(1)`、`scale 1.1+rand(1.0)` →
+`scaleTime(20,0,0,0)`、`alpha 48+rand(64)`、`color 128+rand(64)` 三通道、`+20 delete`）⇒ **一串加法亮点**
+= owner 看到的那条拖尾。**本批不实现**（照 owner 的工单：先给结论 + 配方 + VM 估算）：
+`interval = 4 帧` ⇒ 48 台 × 5 = **240 支 VM**；`8 帧` ⇒ 120；`20 帧` ⇒ 48。
+⚠ **interval 未钉死**（诚实缺口）：`+0x2e14` 倒计时在读点 `th08:0x41cb60` / `th08:0x41cde3` /
+`th08:0x41ddc6` / `th08:0x4247c3` / `th08:0x4248b3` / `th08:0x4249a3` / `th08:0x429ed6` 出现，
+但「`flags_hi` bit1 的消费者 → 撒 `0x26`」这一段还没逐指令读完。
+
+**三、③ 贴图已切给 owner**（Windows 侧 `/mnt/d/项目/幻想指南/18/art-src/_familiar_look/`，**48 个文件**）：
+`fam_s53..s56` 各 8 帧 + 横向条、`fam_s57/s58` 各 4 帧 + 横向条、`etama_s219.png`（拖尾火花 16×16）、
+`etama_s197.png`（环 62×62）—— 全部原始尺寸；用的是既有生成器
+`assets/ability/make_youkai_familiar_art.py` 的 `thanm -l/-x` 通道（原生字节只在临时目录，仓里不落）。
+**逐帧比对结论**：我们切进 `ability.anm` 的 `53..56` 四套与 TH08 原件**逐字节一致 ✅**（所以不是「切漏了拖尾」）；
+**贴图本身没有烤尾巴**（53..56 = 32×32 对称光球，覆盖 344–501 像素；57/58 = 亮核，覆盖 617/… 、且**我们没移植** ——
+原生正文有 v3 专有 `ins_25(1)`，v8 无对应助记符，按纪律不自己编指令）。⇒ 拖尾只能是机制 (b)，不是贴图 (a)。
+
+**闸（原文）**：`make -s check` rc=0（`youkai_core: 8120 checks, 0 failed`；其余各测试 0 failed）、
+`make -s dllx87` ⇒ `x87 in our objects: 0`、`python3 sites.py verify` ⇒ `✅ 全部对上`、
+`python3 native/tools/capcheck.py` ⇒ `capcheck：全绿 ✅`、`python3 tooling/check-docs.py` ⇒ `✓ 全部通过`。

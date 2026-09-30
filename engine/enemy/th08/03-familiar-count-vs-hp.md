@@ -155,29 +155,66 @@
 「时长 × 速度」这对参数各 sub 自己配（**没有**「台数越多圈越紧」这条）。之后
 `moveCircleChange(6000, ω, 0.0f)` 把半径**冻结**（`0.0f` = radial_speed 归零）。
 
-### 5c. 拖尾（2026-09-30 一手否定 + 若日后要做的配方）
+### 5c. 拖尾（**2026-09-30 二次核查 · 订正**：使魔**有**拖尾，机制 = `trailFamiliarSet`）
 
-- **TH08 的使魔本身没有拖尾**：`anmSetEx(30)` / `anmSetSlot` 不是余像（opcode 55 handler `th08:0x419875`
-  只是给本体 +5 个 ex 槽装脚本）；`enemy.anm` script **53..56 本身不带拖尾**（8 张 sprite 每 2 帧一换、
-  16 帧循环，脚本里**没有** alpha/scale 渐变、也**没有**第二支 VM）。
-- TH08 真正的拖尾是**引擎侧 `trailSet`**（opcode 157，handler `th08:0x41de42`：`enemy+0x534c` flags /
-  `+0x534e` duration / `+0x5352` interval / `zEnemy+0x3394 trail_data[0x60]` 每帧后移一格）；
-  **全 24 份 ECL 只有 4 面用（26 处，全是 `trailSet(5,15,0,1)` / `trailSet(0,15,0,1)`）**，
-  与**任何使魔 sub 的交集为空** —— owner 看到的那种拖尾是 **4 面 boss 本体**的。
-- 使魔「有体积感」的真正来源 = ① 32×32 原生彗星尾贴图（script 53..56）② **加法光盘** =
-  `AllocEffectSlot(0x20, …)` → `etama.anm` **script 48**（= 卡 108 的 `YOUKAI_FAMILIAR_RING 309`，
-  `interrupt 2` = 妖侧色；**绕转使魔已经在做**）③ 隐藏/显现那一对（`se_opshow`/`se_ophide` +
-  `etama` script 59/60，也在做）。
-- **若日后要做**（照抄 4 面 boss 的配方，❓自定）：留 15 帧位置历史、每帧为每台使魔画 N 个 VM、
-  `alpha/scale = 1 − i/15`。**代价**：48 台 × 5 = **240 支 VM** 量级（要实测世界列表/VM 池余量）、
-  `ability.anm` 多一个 entry、并且**每一条退休路**（`on_delete`/换关/父敌消失/壳被清）都要收干净。
+⚠ **本节的上一版结论（「使魔没有拖尾」）是错的** —— 那一版只查了 `trailSet`（opcode **157**，位置历史余像），
+**没查 `trailFamiliarSet`（opcode 83）**。owner 实跑指出「一面道中 boss 之前的妖精使魔就有拖尾」，
+按他的入口重查，证据链如下：
 
+1. **谁在用 `trailFamiliarSet`**（`grep` 全 24 份 ECL 文本）：**17 个文件、共 170+ 处**，而且**命中的全是使魔 sub**——
+   阶段一四个使魔 sub（`ecldata1.txt` 的 `Sub2/Sub4/Sub10/Sub12`）**各自都有一条 `trailFamiliarSet(1)`**，
+   它们的 `anmSet` 是 **55**（⇒ 一面妖精的使魔 = 我们那套 `YOUKAI_FAM_55`，**不是 53**）。
+2. **handler 干什么**：opcode 83 → `th08:0x41e532`：取 opcode 参数的一位、`shl 1`、把
+   `[enemy+0x3328]`（ExpHP `flags_hi`）**bit1** 置/清（`and eax,0xfffffffd` + 移位写回）——
+   即「**使魔拖尾开关**」挂在**它自己**身上（⇒ 每台使魔各有一份状态，不是共享计时）。
+3. **拖的是什么**：EHP 名（`flags_hi` 那个 bit 的消费者）指向**周期撒效果 `0x26`**；效果模板
+   `0x4c6d30[0x26]` = **`etama.anm` script 71**，其正文（本次逐条 `thanm` dump 复核）：
+   `sprite(sprite219)`（16×16，`etama2.png(0,96)`）+ **`blendMode(1)`（加法）** +
+   `scale(rand(1.0) + 1.1)` → `scaleTime(20, 0, 0, 0)`（20 帧缩到 0）+
+   `alpha(rand(64) + 48)`（48..111）+ `color(128..191, 同上, 同上)` + **`+20: delete()`**
+   ⇒ **一颗加法亮点的「火花」**，一串跟在使用魔后面 = owner 说的那条**拖尾**。
+4. **贴图本身没有烤拖尾**（这一条排除了 (a)）：本次把 `enemy.anm` script 53..58 的 sprite **69..108 全部导出成 PNG**
+   （见 §5e 的路径），逐帧看过：
+   - `53..56` = **32×32 的对称光球**（8 帧循环，`alpha` 覆盖 344–501 像素、外形是圆形光斑 + 软边，**没有方向性尾巴**）；
+   - `57/58` = **32×32 的亮核**（4 帧，覆盖 617/582/590/627 与 496/468/469/523 像素，也没有尾巴；这两支我们**没移植**，见下）。
+5. **`trailSet`（157）与本主题无关**（上一版唯一查对的那半）：全 24 份只有 4 面用 26 处
+   （`trailSet(5,15,0,1)` / `trailSet(0,15,0,1)`），与任何使魔 sub 交集为空——那是 **4 面 boss 本体**的余像。
+
+**⇒ 四选一的答案 = (b) `trailFamiliarSet` 的周期火花**（不是贴图烤的尾巴、不是父敌的 `trailSet`）。
+
+**照抄配方**（若要做，❓自定；一手在 3.）：每台使魔一个计时器（interval 待钉，见下），到点就在
+**它当前位置**起一支 VM：脚本 = 把 `etama.anm` script71 **零翻译**抄进 `ability.anm`（新脚本号 + 新 sprite
+= `etama2.png(0,96)` 16×16 那格），`blendMode(1)` / `scale = 1.1 + rand(1.0)` / `scaleTime(20,0,0,0)` /
+`alpha = 48 + rand(64)` / `color = 128 + rand(64)` 三通道 / `+20: delete()` 全部照抄；
+**卡侧不跟踪句柄**（脚本自己 `delete()`，与 `yk_flash_spawn` 同一范式）。
+
+**代价 / VM 估算**：**每台使魔同时活着的火花数 = ⌈20 / interval⌉**。48 台使魔 ⇒
+`interval = 4 帧` ⇒ **48 × 5 = 240 支 VM**；`interval = 8` ⇒ 120；`interval = 20` ⇒ 48。
+⚠ **interval 本次没钉死**（诚实的缺口）：`+0x2e14` 这个倒计时字段在读点
+`th08:0x41cb60 / 0x41cde3 / 0x41ddc6 / 0x4247c3 / 0x4248b3 / 0x4249a3 / 0x429ed6` 出现，
+但因为 `flags_hi` bit1 的消费者那一段还没逐指令读完，**不敢写一个数**。要钉它就沿「谁读 `[enemy+0x3328]` 的 bit1
+→ 谁 `push 0x26`/调效果分配器」这两步接着读（下一次一手核查的入口）。
+
+### 5d. 逢魔的 SE
 ### 5d. 逢魔的 SE：**TH08 没有**（负结论）
 
 判据 = 全 `.text` 里对 `PlaySoundByIdx th08:0x45d550` / `PlaySoundPositionedByIdx th08:0x45d660` 的
 调用点**普查只有 23 处**，而逢魔那一段（`Player::OnUpdate` 的 `th08:0x44c52a`–`0x44c593`：极人/极妖判定
 + 计数 + `push 0x64` 加分）里**一条都没有**；TH08 也**没有**「进入事件」可挂（逐帧现算）。
 ⇒ 卡 108 **默认不播**；若 owner 之后要，标 ❓自定，并且要自己造**边沿 + 迟滞**（别在阈值线上抖出连续音）。
+
+### 5e. 切图（给 owner 看的那一份，2026-09-30）
+
+导出到 **`/mnt/d/项目/幻想指南/18/art-src/_familiar_look/`**（Windows 侧，`art-src/` 属**版权产物**，不入库）：
+`fam_s53_f00.png` … `fam_s56_f07.png`（8 帧 ×4 套）、`fam_s57_f00..03.png` / `fam_s58_f00..03.png`（4 帧 ×2 套）、
+每套一条 `fam_s5X_strip.png` 横向条、外加 `etama_s219.png`（拖尾火花贴图，16×16）与 `etama_s197.png`（环，62×62）。
+全部**原始尺寸、未缩放**；用的是本仓既有生成器 `assets/ability/make_youkai_familiar_art.py` 里的
+`thanm -l/-x` 通道（脚本现场解到临时目录，仓里不落原生字节）。**共 48 个文件**。
+
+**我们的四套与原件是否逐像素一致**：**`53..56` 八帧 ×4 套逐字节一致 ✅**（本次用 `Image.tobytes()` 逐帧比对）；
+`57/58` **我们根本没移植**（原生正文有 v3 专有 `ins_25(1)`，v8 anmm 无对应助记符 ⇒ 按纪律不自己编指令）
+⇒ 全世界用 `57/58` 的使魔（`ecldata2 Sub12/15/20/28/30/37/43/59`、`ecldata3 Sub45`、`ecldata2 Sub5/47/49/55`）
+在我们这里会落到「按 kind 选的那四支」之一，**不是**原件的 57/58（登记为已知偏差）。
 
 **由 `moveCircle` 的两个地址得到的一条机制**（卡 108 的「**定圆心**」就是照它做的）：
 `moveCircle`（opcode 73，handler `th08:0x41a4b7`）把**圆心设成使魔自己当前的位置**
@@ -229,7 +266,8 @@
 | §3 的生成时机（一手 t = 50/60/70 帧 + 同帧连发）| `YK_ORBIT_DELAY_FRAMES = 60`：父敌首次被扫到后 60 帧、**同帧一次建满** | 一手 `ecldata1.txt`；扫场每 30 帧 ⇒ 实际延时量化到 30 的倍数 |
 | 建使魔的 SE（op90/91/92 三处 `push 0x24`）| `ce_play_voice(YOUKAI_FAM_SPAWN, 父敌 x)`（= `se_option.wav`，vol −800 / prio 100）| 一手：`th08:0x41b0fa/0x41b2aa/0x41b4cb`；只给绕转使魔 |
 | §5 的使魔 HP | `YK_ORBIT_HP_ONEHAND`（按台数档 100/100/300/600）× `YK_ORBIT_HP_SCALE`（**当前 = 1**）⇒ 就是一手原值 | **一手结构 + 缩放旋钮**（旋钮留着；TH18 vs TH08 的 DPS 差异核查另行进行），❓自定 |
-| §5 的 `moveCircle` 语义 | **定圆心**：圆心 = 建壳那一刻的父敌坐标，之后不跟 | 一手：`0x41a50b`–`0x41a52a` + `0x41f2ba`–`0x41f2d3` |
+| §5 的 `moveCircle` 语义 | ★ **跟着父敌走**（每帧圆心 = 父敌当前位置；`cx/cy` 只留作出生点记账）| **订正（第十一轮）**：跟不跟看 create 变体 —— **92 F = 跟随**（带 `TRACK_POS 0x200`）、**91 = 不跟**、**90 = 绝对坐标**（三条的生成点见 §5b）|
+| §5c 的拖尾 | **未做**（结论 = `trailFamiliarSet` 的周期火花；配方 + VM 估算见 §5c）| 一手：opcode 83 `th08:0x41e532`（`flags_hi` bit1）+ `etama.anm` script71（逐条 dump 过）|
 | §5 的 hitbox / 无 hurtbox | 打得掉、但没有体术（不进 `s_map`） | owner 口径与一手一致 |
 | §5 的 `0x42b29b` | 被自机击破掉 **1 刻符**（`yk_kill_burst` 尾巴那一支） | 使魔被打死**不爆盘** |
 | §4 的循环撒き型 | **不做**（本卡只补一次性的一圈） | 所以分档表只覆盖「一次性」那一类 |
