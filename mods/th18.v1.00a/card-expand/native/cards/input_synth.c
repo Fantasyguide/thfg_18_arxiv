@@ -115,6 +115,13 @@ static int      s_active;     /* 上一帧调试键是否按着（用来抓 按�
 static int32_t  s_x0_fixed;   /* 起抖时的 x（1/128 px 定点）；用来算累计 Δx */
 static float    s_x0;         /* 起抖时的 x（float, px）；只给日志看 */
 static int32_t  s_dxq_max;    /* 起抖以来 |Δx| 的峰值（1/128 px 定点）—— "平均不移动"一眼判据 */
+/* ★ 2026-09-13 用户口径：「**重新启停应当帧数累加的**——或者说它应当是无敌帧本身计数的指示」
+ *   ⇒ 下面两个计数**跨启停累加**（关掉再开不清零；整个游戏会话内一直累积）：
+ *     · `s_frames_total` = 本件真正写过输入的**总帧数**（只有 running 且未被门挡住的帧才 +1）；
+ *     · `s_inv_peak`     = 观测到的**无敌帧峰值**（`player+0x47778` 的最大值）——
+ *       它就是"这套抖动能攒出多少无敌"的直接读数。*/
+static uint32_t s_frames_total;
+static int      s_inv_peak;
 
 /* 调试键：**空格（Space）** —— 用户 2026-09-13 口径「Ctrl+A 似乎没有生效，就用 Space 就行」。
  * ⚠ 与 106（`th06rank.c`）的 Space 调试键**同键**：同时装备 106 且按空格时两件会一起动
@@ -159,8 +166,9 @@ static void input_synth_end(void)
         inv = *(const int32_t *)(const void *)(pl + IS_OFF_PLAYER_INVULN);
     }
 #if CE_INPUT_SYNTH_LOG_START_STOP
-    ce_log("isynth: STOP Space after %u frames — net dx = %d/128 px (%.2f px), peak |dx| = %d/128 px, inv=%d",
-           s_phase, (int)dxq, (double)dxq / 128.0, (int)s_dxq_max, inv);
+    ce_log("isynth: STOP — 本次 %u 帧 / 累计 frames=%u ; net dx = %d/128 px (%.2f px), peak |dx| = %d/128 px, "
+           "inv=%d (峰值 max=%d)  [累计量跨启停不清零]",
+           s_phase, (unsigned)s_frames_total, (int)dxq, (double)dxq / 128.0, (int)s_dxq_max, inv, s_inv_peak);
 #else
     (void)dxq; (void)inv;
 #endif
@@ -231,20 +239,24 @@ void ce_input_synth_draw(void)
     if (pl) inv = *(const int32_t *)(const void *)(pl + IS_OFF_PLAYER_INVULN);
 
     if (s_active && pl) {
-        /* 运行中：多给 方向 / 相位 / 累计 Δx（看"平均不移动"）*/
+        /* 运行中：主读数 = 无敌帧（当前/峰值）+ 累计帧数；再给 方向/相位/累计 Δx */
         uint32_t mask;
         const char *dir;
+        int inv_now = inv;
+        if (inv_now > s_inv_peak) s_inv_peak = inv_now;   /* 峰值也在绘制侧兜一次（本帧 tick 可能没跑）*/
         dxq  = *(const int32_t *)(const void *)(pl + IS_OFF_PLAYER_X_FIXED) - s_x0_fixed;
         mask = ce_input_synth_mask(s_phase);
         dir  = (mask & CE_INPUT_SYNTH_DIR_LEFT) ? "L"
              : (mask & CE_INPUT_SYNTH_DIR_RIGHT) ? "R" : "-";
         ce_hud_text(CE_INPUT_SYNTH_HUD_X, CE_INPUT_SYNTH_HUD_Y, CE_INPUT_SYNTH_HUD_BGRA,
-                    "SYNTH RUN %s f=%u dx=%.1f INV=%d", dir, (unsigned)s_phase,
-                    (double)dxq / 128.0, inv);
+                    "SYNTH RUN %s inv=%d max=%d frames=%u dx=%.1f", dir, inv_now,
+                    s_inv_peak, (unsigned)s_frames_total, (double)dxq / 128.0);
     } else {
-        /* 停着也画（常驻指示器）：只报无敌帧 + 怎么开 */
+        /* 停着也画（常驻指示器）：报无敌帧（当前/峰值）+ 累计帧数 + 怎么开 */
+        if (inv > s_inv_peak) s_inv_peak = inv;
         ce_hud_text(CE_INPUT_SYNTH_HUD_X, CE_INPUT_SYNTH_HUD_Y, CE_INPUT_SYNTH_HUD_BGRA_IDLE,
-                    "SYNTH -- INV=%d   [Space] toggle", inv);
+                    "SYNTH --  inv=%d max=%d frames=%u   [Space] toggle", inv,
+                    s_inv_peak, (unsigned)s_frames_total);
     }
 #endif
 }
@@ -296,6 +308,15 @@ void ce_input_synth_tick(void)
 
     /* ④ 这一帧的模式位 */
     const uint32_t mask = ce_input_synth_mask(s_phase);
+    /* ★ 跨启停累加的计数（见 s_frames_total 的注释） */
+    {
+        const uint8_t *pl = CE_PLAYER();
+        ++s_frames_total;
+        if (pl) {
+            const int inv = *(const int32_t *)(const void *)(pl + IS_OFF_PLAYER_INVULN);
+            if (inv > s_inv_peak) s_inv_peak = inv;
+        }
+    }
 
     /* ⑤ 落笔：**接管方向**（先抹掉四个方向位，再 OR 我们的），其余位（Z/X/Shift/C/D…）原样保留。
      *    · 抹掉是必要的：玩家此刻若真按着方向键，引擎在 `0x462961` 已经把那个位写进 HELD，
