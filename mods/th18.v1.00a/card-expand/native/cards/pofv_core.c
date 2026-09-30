@@ -340,13 +340,12 @@ int pofv_sp_take_attack(pofv_state_t *st)
 
 void pofv_account_blast(pofv_state_t *st, int32_t n_white, int32_t chain)
 {
-    int32_t c;
     if (!st || n_white <= 0) return;
-    c = clamp_i32(chain, 1, POFV_BLAST_CHAIN_MAX);
+    (void)chain;                                 /* 连爆档只影响**道具面值**（见 pofv_power_value_cancel）*/
     st->white_cancelled += n_white;
     st->any_cancelled += n_white;
-    pofv_gauge_add_points(st, n_white * POFV_GAUGE_PTS_PER_WHITE_CANCEL * c);  /* 按连爆质量回气 */
     st->sp += n_white * POFV_SP_PER_WHITE_CANCEL;
+    /* ★ 2026-10-01（口径 5）：**不再直接加气** —— 充能一律经灵力道具（卡侧撒 / 收取）。 */
 }
 
 void pofv_account_ca(pofv_state_t *st, int32_t n_any)
@@ -361,8 +360,16 @@ void pofv_account_kill(pofv_state_t *st)
 {
     if (!st) return;
     ++st->kills;
-    pofv_gauge_add_points(st, POFV_GAUGE_PTS_PER_KILL);
     st->sp += POFV_SP_PER_KILL;
+    /* ★ 2026-10-01（口径 5）：同上，充能走卡侧的灵力道具（`POFV_POWER_PTS_KILL`）。 */
+}
+
+int32_t pofv_power_value_cancel(int32_t n_white, int32_t chain)
+{
+    int32_t c;
+    if (n_white <= 0) return 0;
+    c = clamp_i32(chain, 1, POFV_BLAST_CHAIN_MAX);
+    return n_white * POFV_POWER_PTS_CANCEL * c;
 }
 
 /* ---- 暴风池的实现见上面 §C 开头（`pofv_storm_*`）；旧的爆风队列已删除（场模型不需要它）---- */
@@ -466,4 +473,180 @@ void pofv_spirit_remove(pofv_spirit_pool_t *p, int32_t slot)
     if (!p->s[slot].active) return;
     p->s[slot].active = 0;
     --p->live;
+}
+
+/* ------------------------------------------------- E. 灵力道具（自建实体池，见 pofv_core.h §E） */
+
+/* 8 方向单位向量（一批多颗时铺开用；**不引 libm** —— 0.70710678f = √2/2 字面量）。*/
+static const float s_power_dir[8][2] = {
+    {  1.0f,        0.0f       }, {  0.70710678f,  0.70710678f },
+    {  0.0f,        1.0f       }, { -0.70710678f,  0.70710678f },
+    { -1.0f,        0.0f       }, { -0.70710678f, -0.70710678f },
+    {  0.0f,       -1.0f       }, {  0.70710678f, -0.70710678f }
+};
+
+void pofv_power_pool_init(pofv_power_pool_t *p)
+{
+    if (!p) return;
+    memset(p, 0, sizeof *p);
+}
+
+int pofv_power_spawn(pofv_power_pool_t *p, float x, float y, int32_t value, int32_t src)
+{
+    int i;
+    if (!p) return -1;
+    for (i = 0; i < POFV_POWER_MAX; ++i) {
+        pofv_power_t *it = &p->s[i];
+        if (it->active) continue;
+        memset(it, 0, sizeof *it);
+        it->active = 1;
+        it->x = x;
+        it->y = y;
+        it->value = value;
+        it->life = POFV_POWER_LIFE;
+        it->src = src;
+        ++p->live;
+        ++p->spawned;
+        return i;
+    }
+    return -1;                                  /* 池满（打包撒会先算余量，正常到不了这里）*/
+}
+
+static int power_free_slots(const pofv_power_pool_t *p)
+{
+    int i, n = 0;
+    if (!p) return 0;
+    for (i = 0; i < POFV_POWER_MAX; ++i) if (!p->s[i].active) ++n;
+    return n;
+}
+
+int pofv_power_spawn_packed(pofv_power_pool_t *p, float x, float y, int32_t n_units,
+                            int32_t pts_each, int32_t max_spawn, int32_t src, int32_t *out_pts)
+{
+    int32_t total, k, base, rem, i, got = 0;
+    int free_slots;
+
+    if (out_pts) *out_pts = 0;
+    if (!p || n_units <= 0 || pts_each <= 0 || max_spawn <= 0) return 0;
+    total = n_units * pts_each;
+    if (total <= 0) {                            /* 溢出保护：真溢出就什么都不撒（不撒垃圾面值）*/
+        p->dropped += n_units;
+        return 0;
+    }
+    free_slots = power_free_slots(p);
+    k = n_units < max_spawn ? n_units : max_spawn;
+    if (k > free_slots) k = free_slots;
+    if (k <= 0) { p->dropped += n_units; return 0; }
+
+    /* ★ 打包：total 分摊到 k 颗上，**余数给第一颗** ⇒ Σ面值 == total（一颗都不少给）。*/
+    base = total / k;
+    rem  = total - base * k;
+    for (i = 0; i < k; ++i) {
+        float px = x, py = y;
+        int32_t v = base + (i == 0 ? rem : 0);
+        if (k > 1) {                             /* 多颗时铺开（只有一颗时原地 = 事件位置）*/
+            const float *d = s_power_dir[i & 7];
+            float rr = POFV_POWER_SPAWN_R * (float)((i / 8) + 1);
+            px += d[0] * rr;
+            py += d[1] * rr;
+        }
+        if (pofv_power_spawn(p, px, py, v, src) < 0) break;
+        got += v;
+    }
+    if (i < n_units) p->dropped += (n_units - i);
+    if (out_pts) *out_pts = got;
+    return (int)i;
+}
+
+int pofv_power_tick(pofv_power_pool_t *p, const float *player, int32_t *out_pts)
+{
+    int i, got = 0;
+    int32_t pts = 0;
+    const float absorb2 = POFV_POWER_ABSORB_R * POFV_POWER_ABSORB_R;
+    const float mag2    = POFV_POWER_MAG_R * POFV_POWER_MAG_R;
+
+    if (out_pts) *out_pts = 0;
+    if (!p) return 0;
+    for (i = 0; i < POFV_POWER_MAX; ++i) {
+        pofv_power_t *it = &p->s[i];
+        if (!it->active) continue;
+        ++it->age;
+        if (player) {
+            float dx = player[0] - it->x;
+            float dy = player[1] - it->y;
+            float d2 = dx * dx + dy * dy;
+            if (d2 <= absorb2) {                 /* 收取：点入账、槽当场释放 */
+                pts += it->value;
+                it->active = 0;
+                --p->live;
+                ++p->absorbed;
+                ++got;
+                continue;
+            }
+            if (d2 <= mag2) {                    /* 磁吸：朝自机走（Chebyshev 归一，不引 libm）*/
+                float ax = dx < 0.0f ? -dx : dx;
+                float ay = dy < 0.0f ? -dy : dy;
+                float m = ax > ay ? ax : ay;
+                if (m > 0.0001f) {
+                    it->x += dx / m * POFV_POWER_MAG_SPEED;
+                    it->y += dy / m * POFV_POWER_MAG_SPEED;
+                }
+            } else {
+                it->y += POFV_POWER_FALL;        /* 圈外：飘落 */
+            }
+        } else {
+            it->y += POFV_POWER_FALL;            /* 没有自机（单测 / 过场）：只飘落 */
+        }
+        if (it->age >= it->life) { it->active = 0; --p->live; ++p->expired; }
+    }
+    if (out_pts) *out_pts = pts;
+    return got;
+}
+
+int pofv_power_clear(pofv_power_pool_t *p)
+{
+    int n;
+    if (!p) return 0;
+    n = p->live;
+    pofv_power_pool_init(p);
+    return n;
+}
+
+int pofv_power_spawn_packed_at(pofv_power_pool_t *p, const float *ox, const float *oy,
+                               int32_t n_units, int32_t pts_each, int32_t max_spawn,
+                               int32_t src, int32_t *out_pts)
+{
+    int32_t total, k, base, rem, i, got = 0;
+    int free_slots;
+
+    if (out_pts) *out_pts = 0;
+    if (!p || !ox || !oy || n_units <= 0 || pts_each <= 0 || max_spawn <= 0) return 0;
+    total = n_units * pts_each;
+    if (total <= 0) { p->dropped += n_units; return 0; }
+    free_slots = power_free_slots(p);
+    k = n_units < max_spawn ? n_units : max_spawn;
+    if (k > free_slots) k = free_slots;
+    if (k <= 0) { p->dropped += n_units; return 0; }
+    base = total / k;
+    rem  = total - base * k;
+    for (i = 0; i < k; ++i) {                    /* 位置由调用方给（命中点原位）*/
+        int32_t v = base + (i == 0 ? rem : 0);
+        if (pofv_power_spawn(p, ox[i], oy[i], v, src) < 0) break;
+        got += v;
+    }
+    if (i < n_units) p->dropped += (n_units - i);
+    if (out_pts) *out_pts = got;
+    return (int)i;
+}
+
+/* ------------------------------------------------------- F. 固灵结界（几何，见 pofv_core.h §F）*/
+
+int pofv_aura_hit(float dx, float dy, float r, float pad)
+{
+    /* ★ 一手 TH19 §7.3 Reimu 类 `th19:0x416f10`：`dx²+dy² < r² + pad²`
+     *   —— pad（目标半径）是**以平方和方式**并进去的，不是并进半径（Sanae 族才是后者）。*/
+    float rr;
+    if (!(r > 0.0f)) return 0;
+    rr = r * r + pad * pad;
+    return (dx * dx + dy * dy) < rr;
 }

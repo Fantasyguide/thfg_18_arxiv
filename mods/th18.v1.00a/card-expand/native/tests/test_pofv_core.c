@@ -9,7 +9,8 @@
  *   · 爆风队列 / 每帧预算：shared-enemy-death spec §4.1（死亡回调里不许扫弹池）
  * 设计文档：`docs/superpowers/specs/2026-09-12-pofv-109-design.md`
  * 覆盖：白弹筛选 / 蓄力状态机（按住 C 的电平）/ 气槽 4 级与消耗 / SP 阈值 /
- *       爆风与红圈的半径与计数调用点 / 爆风队列与帧预算 / 活化灵状态机。
+ *       爆风与红圈的半径与计数调用点 / 爆风队列与帧预算 / 活化灵状态机 /
+ *       **灵力道具池（口径 5：打包面值守恒 / 磁吸收取 / 寿命 / 池满）**。
  * ⚠ 2026-10-01（合成卡 owner 口径 2）：**拦 Z 已整条删除**（`pofv_charge_suppress` 不再存在）
  *   ⇒ 本文件不再有它的断言；一手 10 帧闸的事实留在核心注释与 `TUNING.md` §2.0v #1。 */
 #include <stdio.h>
@@ -255,11 +256,11 @@ int main(void)
     pofv_state_init(&st);
     st.sp = 600000;
     CHECK(pofv_sp_take_attack(&st) == 1 && st.sp_stage == 3 && st.attacks == 1);
-    /* 击破填 SP + 充气 */
+    /* 击破填 SP（★ 2026-10-01 口径 5：**不再直接加气** ⇒ 充能走灵力道具）*/
     pofv_state_init(&st);
     pofv_account_kill(&st);
     CHECK(st.kills == 1 && st.sp == POFV_SP_PER_KILL);
-    CHECK(st.gauge_pts == POFV_GAUGE_PTS_PER_KILL);
+    CHECK(st.gauge == 0 && st.gauge_pts == 0);              /* ★ 直加点那条路已删除 */
 
     /* ==================== E. 爆风 / 红圈：半径与计数调用点 ==================== */
     pofv_blast_radius(1, &r);
@@ -289,19 +290,22 @@ int main(void)
         CHECK(r >= 400.0f);                                 /* C4 = 近乎全屏（一手语义）*/
     }
 
-    /* 蓝圈记账：按消掉的白弹数充气 + 填 SP；连爆质量加权 */
+    /* 蓝圈记账（★ 2026-10-01 口径 5：只记 counters + 填 SP，**不直接加气**）；
+     * 充能的那笔账改由 `pofv_power_value_cancel()` 给出，由卡侧打包成灵力道具实体。*/
     pofv_state_init(&st);
-    pofv_account_blast(&st, 0, 1);                          /* 0 颗：什么也不记 */
+    pofv_account_blast(&st, 0, 1);
     CHECK(st.white_cancelled == 0 && st.gauge_pts == 0 && st.sp == 0);
+    CHECK(pofv_power_value_cancel(0, 1) == 0);
     pofv_account_blast(&st, 2, 1);
     CHECK(st.white_cancelled == 2 && st.any_cancelled == 2);
-    CHECK(st.gauge_pts == 2 * POFV_GAUGE_PTS_PER_WHITE_CANCEL);
+    CHECK(st.gauge == 0 && st.gauge_pts == 0);              /* ★ 直加点那条路已删除 */
     CHECK(st.sp == 2 * POFV_SP_PER_WHITE_CANCEL);
-    {
-        int32_t base = st.gauge_pts;
-        pofv_account_blast(&st, 1, 3);                      /* 同样的 1 颗，档高 → 充气更多 */
-        CHECK(st.gauge_pts - base == 3 * POFV_GAUGE_PTS_PER_WHITE_CANCEL);
-    }
+    /* ★ 连爆质量加权**挪进面值公式**：同样的 1 颗，档 3 ⇒ 3 倍面值（保留原来的味道）*/
+    CHECK(pofv_power_value_cancel(1, 1) == POFV_POWER_PTS_CANCEL);
+    CHECK(pofv_power_value_cancel(1, 3) == 3 * POFV_POWER_PTS_CANCEL);
+    CHECK(pofv_power_value_cancel(2, 2) == 2 * 2 * POFV_POWER_PTS_CANCEL);
+    CHECK(pofv_power_value_cancel(1, 0) == POFV_POWER_PTS_CANCEL);      /* 越界档钳到 1 */
+    CHECK(pofv_power_value_cancel(1, 99) == POFV_BLAST_CHAIN_MAX * POFV_POWER_PTS_CANCEL);
     /* ★ 红圈记账：只填 SP、**不回复气**（一手：「红色消弹圈消掉的白弹…不回复气」）*/
     pofv_state_init(&st);
     st.gauge = 2; st.gauge_pts = 7;
@@ -445,6 +449,158 @@ int main(void)
         CHECK(pool.live == POFV_SPIRIT_MAX - 1);
         pofv_spirit_pool_init(&pool);
         CHECK(pool.live == 0);
+    }
+
+    /* ==================== G. 灵力道具（自建实体池；口径 5）====================
+     * ★★ 2026-10-01：充能不再直接加点，而是「消弹 / 击破 / 结界碰弹 → 掉实体 → 拾取 → 涨槽」。
+     *   本段钉住：池不变式 / **打包面值守恒** / 磁吸与收取 / 圈外只飘落 / 寿命 / 池满与上限。 */
+    {
+        pofv_power_pool_t pool;
+        float pp[3] = { 100.0f, 200.0f, 0.0f };
+        int32_t pts = 0;
+        int k, n, j;
+
+        pofv_power_pool_init(&pool);
+        CHECK(pool.live == 0 && pool.spawned == 0 && pool.dropped == 0);
+
+        /* 池的基本不变式 */
+        CHECK(pofv_power_spawn(&pool, 10.0f, 20.0f, 10, POFV_POWER_SRC_KILL) == 0);
+        CHECK(pool.live == 1 && pool.s[0].active == 1);
+        CHECK(pool.s[0].x == 10.0f && pool.s[0].y == 20.0f);
+        CHECK(pool.s[0].value == 10 && pool.s[0].life == POFV_POWER_LIFE);
+        CHECK(pool.s[0].src == POFV_POWER_SRC_KILL);
+        CHECK(pofv_power_spawn(&pool, 0.0f, 0.0f, 5, POFV_POWER_SRC_AURA) == 1);
+        CHECK(pool.live == 2);
+        CHECK(pofv_power_clear(&pool) == 2);
+        CHECK(pool.live == 0);
+
+        /* ★ 打包撒：颗数被 `max_spawn` 截断，但**总面值守恒**（多的摊到已撒的那几颗上）*/
+        pofv_power_pool_init(&pool);
+        k = pofv_power_spawn_packed(&pool, 50.0f, 60.0f, 10, 10, 4, POFV_POWER_SRC_CANCEL, &pts);
+        CHECK(k == 4 && pool.live == 4);
+        CHECK(pts == 100);                                  /* 10 颗 × 10 分全给出去 */
+        {
+            int32_t sum = 0;
+            for (j = 0; j < POFV_POWER_MAX; ++j) if (pool.s[j].active) sum += pool.s[j].value;
+            CHECK(sum == 100);
+        }
+        /* 只有一颗时**在原地**（不铺开）*/
+        pofv_power_pool_init(&pool);
+        CHECK(pofv_power_spawn_packed(&pool, 7.0f, 8.0f, 1, 20, 4, POFV_POWER_SRC_KILL, &pts) == 1);
+        CHECK(pts == 20 && pool.s[0].x == 7.0f && pool.s[0].y == 8.0f && pool.s[0].value == 20);
+        /* 非法入参：什么都不做 */
+        pofv_power_pool_init(&pool);
+        CHECK(pofv_power_spawn_packed(&pool, 0.0f, 0.0f, 0, 10, 4, 0, &pts) == 0 && pts == 0);
+        CHECK(pofv_power_spawn_packed(&pool, 0.0f, 0.0f, 5, 0, 4, 0, &pts) == 0 && pts == 0);
+        CHECK(pofv_power_spawn_packed(&pool, 0.0f, 0.0f, 5, 10, 0, 0, &pts) == 0 && pts == 0);
+        CHECK(pool.live == 0);
+
+        /* 池余量参与截断：只剩 2 格 ⇒ 只撒 2 颗，面值仍然全给 */
+        pofv_power_pool_init(&pool);
+        for (j = 0; j < POFV_POWER_MAX - 2; ++j) pofv_power_spawn(&pool, 0.0f, 0.0f, 1, 0);
+        CHECK(pool.live == POFV_POWER_MAX - 2);
+        k = pofv_power_spawn_packed(&pool, 0.0f, 0.0f, 10, 10, 4, POFV_POWER_SRC_CANCEL, &pts);
+        CHECK(k == 2 && pool.live == POFV_POWER_MAX);
+        CHECK(pts == 100);                                  /* ★ 面值守恒（颗数少了、分没少）*/
+        /* 池全满：一颗都撒不出 ⇒ 报 0 并记账（卡侧只少一次掉落，不崩） */
+        CHECK(pofv_power_spawn_packed(&pool, 0.0f, 0.0f, 10, 10, 4, POFV_POWER_SRC_CANCEL, &pts) == 0);
+        CHECK(pts == 0 && pool.dropped >= 10);
+
+        /* 收取：在收取半径内 ⇒ 点入账、槽当场释放 */
+        pofv_power_pool_init(&pool);
+        pofv_power_spawn(&pool, 100.0f, 200.0f, 30, POFV_POWER_SRC_KILL);
+        CHECK(pofv_power_tick(&pool, pp, &pts) == 1);
+        CHECK(pts == 30 && pool.live == 0 && pool.absorbed == 1);
+
+        /* 磁吸：圈内（MAG_R 内、ABSORB_R 外）朝自机走 ⇒ 有限帧内必被收 */
+        pofv_power_pool_init(&pool);
+        pofv_power_spawn(&pool, 100.0f + POFV_POWER_MAG_R, 200.0f, 10, POFV_POWER_SRC_AURA);
+        { float x0 = pool.s[0].x; pofv_power_tick(&pool, pp, &pts); CHECK(pool.s[0].x < x0); }
+        n = 0;
+        while (pool.live > 0 && n < 200) { pofv_power_tick(&pool, pp, &pts); ++n; }
+        CHECK(pool.live == 0 && pts >= 10);
+
+        /* 圈外：只飘落（y 增），不磁吸、不收取 */
+        pofv_power_pool_init(&pool);
+        pofv_power_spawn(&pool, 100.0f + POFV_POWER_MAG_R * 4.0f, 200.0f, 10, POFV_POWER_SRC_AURA);
+        {
+            float y0 = pool.s[0].y;
+            pofv_power_tick(&pool, pp, &pts);
+            CHECK(pool.s[0].y > y0);
+            CHECK(pts == 0 && pool.live == 1);
+        }
+
+        /* 没有自机（过场 / 单测）：只飘落，不磁吸不收取 */
+        pofv_power_pool_init(&pool);
+        pofv_power_spawn(&pool, 0.0f, 0.0f, 10, POFV_POWER_SRC_AURA);
+        CHECK(pofv_power_tick(&pool, 0, &pts) == 0 && pts == 0 && pool.s[0].y > 0.0f);
+
+        /* 寿命：到点自行消失（不刷屏），并记账 */
+        pofv_power_pool_init(&pool);
+        pofv_power_spawn(&pool, 0.0f, 0.0f, 10, POFV_POWER_SRC_AURA);
+        for (n = 0; n < POFV_POWER_LIFE; ++n) pofv_power_tick(&pool, 0, &pts);
+        CHECK(pool.live == 0 && pool.expired == 1 && pts == 0);
+
+        /* 池满：丢弃不越界；NULL 安全 */
+        pofv_power_pool_init(&pool);
+        for (j = 0; j < POFV_POWER_MAX; ++j) CHECK(pofv_power_spawn(&pool, (float)j, 0.0f, 1, 0) == j);
+        CHECK(pofv_power_spawn(&pool, 0.0f, 0.0f, 1, 0) == -1);
+        CHECK(pool.live == POFV_POWER_MAX);
+        CHECK(pofv_power_clear(&pool) == POFV_POWER_MAX);
+        CHECK(pool.live == 0);
+        CHECK(pofv_power_spawn(0, 0.0f, 0.0f, 1, 0) == -1);
+        CHECK(pofv_power_spawn_packed(0, 0.0f, 0.0f, 1, 1, 1, 0, &pts) == 0);
+        CHECK(pofv_power_tick(0, pp, &pts) == 0 && pts == 0);
+        CHECK(pofv_power_clear(0) == 0);
+        pofv_power_pool_init(0);                            /* NULL 安全 */
+    }
+
+    /* ==================== H. 固灵结界（几何；一手 TH19 Reimu 圆）==================== */
+    CHECK(POFV_AURA_R > 0.0f);
+    CHECK(POFV_AURA_ITEMS_PER_FRAME > 0);
+    CHECK(POFV_AURA_R >= 14.0f);                            /* 一手 TH19 逐类 K = 14..600 的下界 */
+
+    /* 圆心必中；边界 `r` 处**不含**（一手是严格 `<`）；半径外不中 */
+    CHECK(pofv_aura_hit(0.0f, 0.0f, 96.0f, 0.0f) == 1);
+    CHECK(pofv_aura_hit(95.9f, 0.0f, 96.0f, 0.0f) == 1);
+    CHECK(pofv_aura_hit(96.0f, 0.0f, 96.0f, 0.0f) == 0);    /* 96² == 96² ⇒ 不中（严格 <）*/
+    CHECK(pofv_aura_hit(96.1f, 0.0f, 96.0f, 0.0f) == 0);
+    CHECK(pofv_aura_hit(57.0f, 76.0f, 96.0f, 0.0f) == 1);   /* 斜向：57²+76² = 9025 < 9216 */
+    CHECK(pofv_aura_hit(-95.0f, 0.0f, 96.0f, 0.0f) == 1);   /* 方向无关 */
+
+    /* ★ 一手：pad（目标半径）以**平方和**并入（Reimu 支），不是并进半径（Sanae 支）。
+     *   r=96 / pad=20 ⇒ 有效半径 = √(96²+20²) ≈ 98.06；线性并法会给出 116。 */
+    CHECK(pofv_aura_hit(98.0f, 0.0f, 96.0f, 20.0f) == 1);
+    CHECK(pofv_aura_hit(98.1f, 0.0f, 96.0f, 20.0f) == 0);
+    CHECK(pofv_aura_hit(110.0f, 0.0f, 96.0f, 20.0f) == 0);  /* ★ 线性并法会误判为命中 */
+
+    /* 半径 ≤ 0（结界没展开）⇒ 永不命中；NaN 安全 */
+    CHECK(pofv_aura_hit(0.0f, 0.0f, 0.0f, 0.0f) == 0);
+    CHECK(pofv_aura_hit(0.0f, 0.0f, -1.0f, 0.0f) == 0);
+
+    /* 多位置打包撒（结界碰弹：位置 = 被碰到的弹的原位，颗数受每帧上限钳、面值守恒） */
+    {
+        pofv_power_pool_t pool;
+        const float ox[4] = { 1.0f, 2.0f, 3.0f, 4.0f };
+        const float oy[4] = { 10.0f, 20.0f, 30.0f, 40.0f };
+        int32_t pts = 0;
+        int j;
+
+        pofv_power_pool_init(&pool);
+        CHECK(pofv_power_spawn_packed_at(&pool, ox, oy, 8, 5, 4, POFV_POWER_SRC_AURA, &pts) == 4);
+        CHECK(pts == 40 && pool.live == 4);                 /* 8 颗 × 5 分，颗数被截到 4 */
+        {
+            int32_t sum = 0;
+            for (j = 0; j < 4; ++j) sum += pool.s[j].value;
+            CHECK(sum == 40);
+        }
+        /* 位置逐个用上（原位掉落） */
+        CHECK(pool.s[0].x == 1.0f && pool.s[1].x == 2.0f && pool.s[3].y == 40.0f);
+        /* 非法入参 / NULL 安全 */
+        CHECK(pofv_power_spawn_packed_at(&pool, ox, oy, 0, 5, 4, 0, &pts) == 0 && pts == 0);
+        CHECK(pofv_power_spawn_packed_at(0, ox, oy, 4, 5, 4, 0, &pts) == 0);
+        CHECK(pofv_power_spawn_packed_at(&pool, 0, oy, 4, 5, 4, 0, &pts) == 0);
+        CHECK(pofv_power_spawn_packed_at(&pool, ox, oy, 4, 0, 4, 0, &pts) == 0);
     }
 
     printf("test_pofv_core: %d passed, %d failed\n", s_pass, s_fail);

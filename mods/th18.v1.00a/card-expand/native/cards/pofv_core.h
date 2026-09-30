@@ -1,6 +1,7 @@
-/* pofv_core.h —— 花映塚（TH09 系统，card-expand id 109）的**纯逻辑**：
+/* pofv_core.h —— 花映塚 × 獣王園 合成卡（card-expand id 109）的**纯逻辑**：
  * 白弹半径阈值分类 / 气槽 4 级与蓄力状态机 / CA 与 QCA 的等级与代价 /
- * 爆风（蓝圈）与 CA（红圈）的半径与消弹记账 / SP 三档 / 活化灵状态机 / 爆风队列。
+ * 暴风（蓝圈）与 CA（红圈）的半径与消弹记账 / SP 三档 / 活化灵状态机 / 暴风队列 /
+ * **灵力道具池（自建实体，§E）**。
  * 纯 C11、**不含任何引擎地址**（引擎侧调用点全在 pofv.c）；主机单测 `tests/test_pofv_core.c`。
  *
  * 设计依据：spec [`docs/superpowers/specs/2026-09-12-pofv-109-design.md`]（2026-09-12）。
@@ -252,11 +253,11 @@ void pofv_ca_circle_radius(int level, float *out);
 /* 消弹来源（记账口径不同，见下面两个函数）。 */
 typedef enum { POFV_CANCEL_SRC_BLAST = 0, POFV_CANCEL_SRC_CA = 1 } pofv_cancel_src_t;
 
-/* ❓ 自定（TODO(th09)）：下面五条是「填槽速率」的占位，原版（爆风按连爆质量回气、
- * 连击 SP 的每颗/每杀点数）**没有逆到**。量纲：SP 与原版同口径（阈值 10 万 / 30 万 / 50 万）。*/
+/* ❓ 自定（TODO(th09)）：下面三条是「连击 SP 的每颗/每杀点数」的占位，原版**没有逆到**。
+ * 量纲：SP 与原版同口径（阈值 10 万 / 30 万 / 50 万）。
+ * ⚠ 充能（气槽）那三条旧常量（`POFV_GAUGE_PTS_PER_WHITE_CANCEL` / `_PER_KILL`）**已删除**：
+ *   口径 5 起，充能一律**经灵力道具**（面值 = §E 的 `POFV_POWER_PTS_*`），不再有第二条直接加点路。*/
 #define POFV_GAUGE_PTS_PER_LEVEL        100
-#define POFV_GAUGE_PTS_PER_WHITE_CANCEL  10
-#define POFV_GAUGE_PTS_PER_KILL          20
 #define POFV_SP_PER_WHITE_CANCEL         10
 #define POFV_SP_PER_RED_CANCEL           10
 #define POFV_SP_PER_KILL                100
@@ -270,14 +271,20 @@ int     pofv_sp_attack_stage(int32_t sp);      /* 当前 SP 达到了几档（0.
  * 返回 1 = 本次应发动 boss attack。 */
 int  pofv_sp_take_attack(pofv_state_t *st);
 
-/* 记一笔消弹：
- *   · 蓝圈（`SRC_BLAST`）：消掉 `n_white` 颗**白弹** ⇒ 充气（按连爆质量 `chain` 加权）+ 填 SP；
+/* 记一笔消弹（★ 2026-10-01 口径 5：**这里不再直接加气**）：
+ *   · 蓝圈（`SRC_BLAST`）：消掉 `n_white` 颗**白弹** ⇒ 只记 counters + 填 SP；
+ *     充能改由卡侧撒**灵力道具**（面值见 `pofv_power_value_cancel()` + §E 的打包撒）；
  *   · 红圈（`SRC_CA`）：消掉 `n_any` 颗（含不可消）⇒ **只填 SP、不回复气**
  *     ——★ 一手：「红色消弹圈消掉的白弹直接消失且**不回复气**」。 */
 void pofv_account_blast(pofv_state_t *st, int32_t n_white, int32_t chain);
 void pofv_account_ca(pofv_state_t *st, int32_t n_any);
-/* 击破一笔：填 SP + 充气（连爆档由调用方在**击破那一刻**用 `pofv_storm_chain_at()` 定，见 §C）。 */
+/* 击破一笔（★ 同上：只记 kills + 填 SP，充能走卡侧的灵力道具）。 */
 void pofv_account_kill(pofv_state_t *st);
+
+/* ★ 消弹源要撒的**总面值**（打包前的账）：`n_white × POFV_POWER_PTS_CANCEL × 连爆档`。
+ * 保留原来「连爆质量越高、同样的白弹给得越多」的味道（旧 `pofv_account_blast` 的 `× c`）。
+ * 面板值与 §E 的 `POFV_POWER_PTS_CANCEL` 同源 ⇒ 改一个数就够。 */
+int32_t pofv_power_value_cancel(int32_t n_white, int32_t chain);
 
 /* ---- 性能纪律（review §4.1 仍然成立）----
  * 清场帧 `on_enemy_death` 一次被调 100–300 次 ⇒ 回调里**只准 O(1)**：现在做的是
@@ -334,3 +341,118 @@ int  pofv_spirit_tick(pofv_spirit_pool_t *p, int32_t *out_slots, int cap);
 int  pofv_spirit_blast_hit(pofv_spirit_pool_t *p, float x, float y, float r, int32_t dmg,
                            int32_t *out_slots, int cap);
 void pofv_spirit_remove(pofv_spirit_pool_t *p, int32_t slot);
+
+/* ==================================================================== E. 灵力道具（自建实体池）
+ *
+ * owner 2026-09-28 口径 5：「**灵力道具用 A**」⇒ 充能货币统一 = 灵力道具
+ * （消弹 / 击破 / 结界碰弹 → 掉 → 拾取 → 涨槽）。
+ *
+ * ★★ 2026-10-01 落地形态（**改判规格 §4 #9 的「新道具类型」**）：经三路互证
+ *   （`0x44685c` 映射表 + `0x446830` 跳表 + `0x4b4020` 贴图脚本表），TH18 **没有干净的原生道具空号**：
+ *     · type 1（小 P）/ 3（大 P）= **110/111 的满 P 转换目标**（`faith_convert_full_p_items()`
+ *       在满火力时**主动删掉**这两类原生道具）⇒ 用它们会被别人的卡吃掉；
+ *     · type 9–0xe（分数转换点族）= **107 的 ★ + 114 的点数**载体（两卡的 `on_item_collect`
+ *       都按这个区段入账）⇒ 串账；
+ *     · type 7 = 112 的整炸弹、8 = 115 的满 P、4/6 = 117 的碎片、0x10/0x11 = 115/111 的碎片；
+ *     · type 0 的贴图脚本 = `0xffffffff`（**隐形**）、type 0xf 在 spawner `0x446ff7` 被改写成 6。
+ *   ⇒ 本卡走**自建实体池**（先例：`cards/faith.c` 的 110/111 绿点、`cards/ufo.c` 的 112 令牌、
+ *     `cards/animal.c` 的 117 动物灵）：**零站点、不与任何别人的卡共享状态**。
+ *   一手核表与逐 type 占用表见 `SPEC-109-FUSION.md` §8.1。
+ *
+ * 经济口径（**与改造前的「直接加点」等价**，只是中间插了一层可拾取的实体）：
+ *   · 消弹：`n` 颗白弹 × `POFV_POWER_PTS_CANCEL` × 连爆档（= 原 `pofv_account_blast` 的式子）；
+ *   · 击破：1 颗 × `POFV_POWER_PTS_KILL`（= 原 `pofv_account_kill`）；
+ *   · 结界碰弹：1 颗 × `POFV_POWER_PTS_AURA`（口径 6 的新源）。
+ *   **打包**（照 107 小樱点的先例）：一次事件要撒的颗数按「每帧上限 / 池余量」截断，
+ *   **总面值不变**（余数摊到已撒的那几颗上）⇒ 上限与池满都不会悄悄少给充能点。
+ *
+ * ⚠ 池是**文件级**还是卡内由卡侧决定（本文件只给纯逻辑）；`pofv_power_clear()` 必须被
+ *   `on_delete` 调到（METHOD 铁律：长持续效果删卡要收干净 —— 这里没有 VM，清了池就没有残留）。 */
+
+#define POFV_POWER_MAX               48     /* ❓ 自定（同屏上限）*/
+#define POFV_POWER_PTS_CANCEL        10     /* ❓ 自定（消弹源 1 颗的基准面值 = 旧「消弹 +10」）*/
+#define POFV_POWER_PTS_KILL          20     /* ❓ 自定（击破源 = 旧「击破 +20」）*/
+#define POFV_POWER_PTS_AURA           5     /* ❓ 自定（结界碰弹源；口径 6）*/
+#define POFV_POWER_SPAWN_PER_FRAME    4     /* ❓ 自定（每帧上限；口径 6 的护栏之一）*/
+#define POFV_POWER_SPAWN_R           24.0f  /* ❓ 自定（一批多颗时的铺开半径）*/
+#define POFV_POWER_FALL               0.5f  /* ❓ 自定（飘落速度 px/帧）*/
+#define POFV_POWER_MAG_R             56.0f  /* ❓ 自定（磁吸半径）*/
+#define POFV_POWER_MAG_SPEED          4.0f  /* ❓ 自定（磁吸速度 px/帧）*/
+#define POFV_POWER_ABSORB_R          12.0f  /* ❓ 自定（收取半径）*/
+#define POFV_POWER_LIFE             600     /* ❓ 自定（寿命帧；到点自行消失，不刷屏）*/
+
+typedef enum {
+    POFV_POWER_SRC_CANCEL = 0,   /* 消弹（暴风蓝圈的白弹）*/
+    POFV_POWER_SRC_KILL   = 1,   /* 击破敌人 */
+    POFV_POWER_SRC_AURA   = 2    /* 固灵结界碰敌弹（口径 6）*/
+} pofv_power_src_t;
+
+typedef struct {
+    int32_t active;
+    float   x, y;        /* 世界坐标（卡侧维护 + 画 VM）*/
+    int32_t value;       /* 收取时加的充能点（**打包值**，可能 > 基准面值）*/
+    int32_t age;
+    int32_t life;        /* 寿命帧（到点自行消失）*/
+    int32_t src;         /* pofv_power_src_t（诊断 / 日志）*/
+} pofv_power_t;
+
+typedef struct {
+    pofv_power_t s[POFV_POWER_MAX];
+    int32_t live;
+    int32_t spawned;     /* 累计撒出颗数（诊断）*/
+    int32_t absorbed;    /* 累计收取颗数（诊断）*/
+    int32_t expired;     /* 累计寿命到期消失颗数（诊断）*/
+    int32_t dropped;     /* 因池满 / 每帧上限被**打包吞掉**的颗数（诊断；面值不丢）*/
+} pofv_power_pool_t;
+
+void pofv_power_pool_init(pofv_power_pool_t *p);
+
+/* 撒一颗（`value` = 面值）。返回槽号，−1 = 池满。 */
+int  pofv_power_spawn(pofv_power_pool_t *p, float x, float y, int32_t value, int32_t src);
+
+/* ★ **打包撒**：把「`n_units` 份 × `pts_each`」的总面值摊到最多 `max_spawn` 颗实体上
+ * （在 (x,y) 周围 `POFV_POWER_SPAWN_R` 内铺开；只有一颗时就在原点）。
+ * 实际颗数还会被池余量钳住 ⇒ 面值守恒（余数给第一颗）；一颗都撒不出时 `*out_pts = 0`。
+ * 返回实际撒出的颗数。 */
+int  pofv_power_spawn_packed(pofv_power_pool_t *p, float x, float y, int32_t n_units,
+                             int32_t pts_each, int32_t max_spawn, int32_t src, int32_t *out_pts);
+
+/* 每帧推进：飘落 + 靠近自机时磁吸 + 到收取半径内**收取**（点累加进 `*out_pts`）/ 到寿命消失。
+ * 返回本帧收取的**颗数**；`*out_pts` = 本帧收取的总面值（调用方 `pofv_gauge_add_points`）。
+ * `player` = 自机 float3（NULL 时只飘落、不磁吸也不收取 ⇒ 供单测/无自机帧）。 */
+int  pofv_power_tick(pofv_power_pool_t *p, const float *player, int32_t *out_pts);
+
+/* 删除所有实体（`clear_card()` 用；返回清掉的颗数）。 */
+int  pofv_power_clear(pofv_power_pool_t *p);
+
+/* ★ **多位置打包撒**（结界碰弹用）：把「`n_units` 份 × `pts_each`」的总面值摊到
+ * `k = min(n_units, max_spawn, 池余量)` 个**调用方给的位置**上（`ox`/`oy` 至少这么多个）。
+ * 总面值守恒（余数给第一颗）；`*out_pts` = 实际撒出的总面值。返回实际撒出的颗数。 */
+int  pofv_power_spawn_packed_at(pofv_power_pool_t *p, const float *ox, const float *oy,
+                                int32_t n_units, int32_t pts_each, int32_t max_spawn,
+                                int32_t src, int32_t *out_pts);
+
+/* ==================================================================== F. 固灵结界（除霊オーラ）
+ *
+ * owner 口径 4：「**固灵结界常驻**」（与 C 键无关）；口径 6：「结界碰敌弹 = 碰弹掉道具
+ * （**每颗弹只算一次 + 每帧上限**）+ 对灵沈静化 + 击破掉一把」；口径 3：**不做减速**
+ * （TH19 的那三个 `0.5f` 字段一个都不写）。
+ *
+ * 几何（★ 一手 TH19 §7.3）：19 类里**最省的一套 = 圆**，本卡取 **Reimu 类**的判定式
+ *   `dx² + dy² < r² + pad²`（`th19:0x416f10`；`pad` = 目标半径，TH19 传敌弹半径
+ *   `bullet+0x674`、传敌人半径 `EnemyInf+0x1350 / 2`）—— 本卡的 `pad` = 弹半径 `+0x658`。
+ *   ⚠ Sanae 族是 `dx²+dy² <= (r+pad)²`（pad 线性并进半径），与 Reimu 的平方和并入不同；
+ *     本卡选 Reimu 那支（一手其一，登记 `TUNING.md`）。
+ *
+ * 半径（★ 一手 TH19 §7.2 的 Reimu 公式）：`clamp(S+0x8c,0,200) × K/100`，Reimu 的 **K = 64**
+ *   ⇒ 满蓄力 = 128。以 TH19 的尺寸为锚，本卡取**常驻**半径 `POFV_AURA_R = 96`（❓ 自定：
+ *   落在 Reimu 的 0..128 区间内；口径 4 要求「常驻」⇒ **不随 C 的档位变**）。
+ *   ★ 一手性质照抄：**判定半径 = 绘制半径**（TH19 §7.1/§9.2，`aura+0x9c` 同时喂槽 7 与
+ *     VM 的 `scale.x/y`）⇒ 卡侧的结界 VM 每帧写 `scale = POFV_AURA_R`。 */
+
+#define POFV_AURA_R                 96.0f  /* ❓ 自定（常驻半径；一手 Reimu 公式的 0..128 区间内）*/
+#define POFV_AURA_ITEMS_PER_FRAME    4     /* ❓ 自定（口径 6 的「每帧上限」；与消弹源同一把闸）*/
+
+/* 结界判定（★ 一手 TH19 `th19:0x416f10` 的 Reimu 圆）：`dx² + dy² < r² + pad²`。
+ * `r <= 0` ⇒ 永不命中（结界没展开）。 */
+int pofv_aura_hit(float dx, float dy, float r, float pad);
