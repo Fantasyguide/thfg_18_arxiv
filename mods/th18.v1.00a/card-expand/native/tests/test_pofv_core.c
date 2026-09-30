@@ -603,6 +603,102 @@ int main(void)
         CHECK(pofv_power_spawn_packed_at(&pool, ox, oy, 4, 0, 4, 0, &pts) == 0);
     }
 
+    /* ==================== I. 灵（自制真敌人）的句柄池与循环撒节拍 ====================
+     * owner 口径 8/9/10：灵都自建、按周期循环撒、任何 boss 在场就不撒、同屏上限 4（一手 TH09）。 */
+    CHECK(POFV_GHOST_MAX == 4);                              /* ★ 一手 TH09 的槽数 */
+    CHECK(POFV_GHOST_CYCLE_FRAMES > 0);
+    CHECK(POFV_GHOST_CALM_FRAMES > 0);
+    CHECK(POFV_GHOST_HP > POFV_GHOST_HP_CALM);               /* 沈静化 = 耐久骤降（一手 TH19） */
+    CHECK(POFV_GHOST_KIND_MAX == 4);                         /* 狼 / 獺 / 鷲 / TH09 的霊 */
+    {
+        pofv_ghost_pool_t g;
+        int32_t kind = -1, slots[POFV_GHOST_MAX];
+        int n, j, hits;
+
+        pofv_ghost_pool_init(&g);
+        CHECK(g.live == 0 && g.cycle == 0 && g.next_kind == POFV_GHOST_KIND_WOLF);
+
+        /* 循环撒的节拍 + 四族轮转（狼 → 獺 → 鷲 → 霊 → 狼）：每撒一只后要等满一个周期。
+         * 前 3 只登记进池（留一个空位给下面的满员测试）。 */
+        {
+            const int32_t expect[4] = { POFV_GHOST_KIND_WOLF, POFV_GHOST_KIND_OTTER,
+                                        POFV_GHOST_KIND_EAGLE, POFV_GHOST_KIND_HYZ };
+            for (j = 0; j < 4; ++j) {
+                n = 0;
+                while (pofv_ghost_cycle_tick(&g, 0, &kind) == 0 && n < POFV_GHOST_CYCLE_FRAMES * 2) ++n;
+                CHECK(kind == expect[j]);
+                CHECK(n == (j == 0 ? 0 : POFV_GHOST_CYCLE_FRAMES - 1));   /* 首帧即撒；之后满一周期 */
+                if (j < 3) CHECK(pofv_ghost_register(&g, 100 + j, kind) == j);
+                else CHECK(g.next_kind == POFV_GHOST_KIND_WOLF);          /* 轮转回第一族 */
+            }
+        }
+        CHECK(g.live == 3);
+
+        /* ★ 口径 9（方案甲）：任何 boss 在场就不撒，且**不重置**倒计时 */
+        g.cycle = 0;
+        CHECK(pofv_ghost_cycle_tick(&g, 1, &kind) == 0);
+        CHECK(g.cycle == 0);                                 /* boss 一走立刻就能撒（不被罚一个周期）*/
+        CHECK(pofv_ghost_cycle_tick(&g, 0, &kind) == 1 && g.cycle == POFV_GHOST_CYCLE_FRAMES);
+        CHECK(pofv_ghost_register(&g, 103, kind) == 3);      /* 第 4 只 ⇒ 满员 */
+
+        /* 同屏上限（一手 TH09 = 4）：满员时即使节拍到点也不撒 */
+        CHECK(g.live == POFV_GHOST_MAX);
+        g.cycle = 0;
+        CHECK(pofv_ghost_register(&g, 999, 0) == -1);        /* 池满 */
+        CHECK(pofv_ghost_cycle_tick(&g, 0, &kind) == 0);
+        CHECK(pofv_ghost_cycle_tick(&g, 1, &kind) == 0);     /* boss 与满员两条门都挡住 */
+
+        /* 查找 / 释放 / 槽复用 */
+        CHECK(pofv_ghost_find(&g, 100) == 0 && g.s[0].enemy_id == 100);
+        CHECK(pofv_ghost_find(&g, 404) == -1);
+        CHECK(pofv_ghost_find(&g, 0) == -1 && pofv_ghost_find(0, 1) == -1);
+        CHECK(pofv_ghost_release(&g, 0) == 1 && g.live == POFV_GHOST_MAX - 1);
+        CHECK(pofv_ghost_release(&g, 0) == 0);               /* 重复释放：无副作用 */
+        CHECK(pofv_ghost_release(&g, -1) == 0 && pofv_ghost_release(&g, POFV_GHOST_MAX) == 0);
+        CHECK(pofv_ghost_find(&g, 100) == -1);
+        CHECK(pofv_ghost_register(&g, 301, 0) == 0);         /* 空出来的槽可复用 */
+        CHECK(pofv_ghost_find(&g, 301) == 0);
+        pofv_ghost_pool_init(&g);
+
+        /* 沈静化：幂等（不重置计时）+ 到 POFV_GHOST_CALM_FRAMES 自然成佛 */
+        pofv_ghost_register(&g, 500, POFV_GHOST_KIND_EAGLE);
+        CHECK(g.s[0].calmed == 0 && g.s[0].calm_age == 0);
+        CHECK(pofv_ghost_calm(&g, 0) == 1);
+        CHECK(g.s[0].calmed == 1 && g.calmed_total == 1);
+        for (n = 0; n < 30; ++n) pofv_ghost_tick(&g, slots, POFV_GHOST_MAX);
+        CHECK(pofv_ghost_calm(&g, 0) == 0);                  /* ★ 幂等 */
+        CHECK(g.s[0].calm_age == 30);
+        hits = 0;
+        for (n = 0; n < POFV_GHOST_CALM_FRAMES + 4; ++n) hits += pofv_ghost_tick(&g, slots, POFV_GHOST_MAX);
+        CHECK(hits == 1 && g.live == 0 && g.expired == 1);
+        CHECK(pofv_ghost_calm(&g, 0) == 0);                  /* 槽已空 */
+        CHECK(pofv_ghost_calm(&g, -1) == 0 && pofv_ghost_calm(0, 0) == 0);
+
+        /* 未沈静化的灵**不会**自然成佛（一直挂在场上，等玩家打） */
+        pofv_ghost_pool_init(&g);
+        pofv_ghost_register(&g, 600, 0);
+        hits = 0;
+        for (n = 0; n < POFV_GHOST_CALM_FRAMES * 3; ++n) hits += pofv_ghost_tick(&g, slots, POFV_GHOST_MAX);
+        CHECK(hits == 0 && g.live == 1);
+
+        /* 成佛名额 cap：满了留在槽里、下一帧再报（不漏事件） */
+        pofv_ghost_pool_init(&g);
+        for (j = 0; j < POFV_GHOST_MAX; ++j) { pofv_ghost_register(&g, 700 + j, 0); pofv_ghost_calm(&g, j); }
+        for (n = 0; n < POFV_GHOST_CALM_FRAMES; ++n) pofv_ghost_tick(&g, slots, 1);
+        CHECK(g.live == POFV_GHOST_MAX - 1);                 /* 本帧只报 1 只 */
+        hits = 0;
+        for (n = 0; n < POFV_GHOST_MAX + 4; ++n) hits += pofv_ghost_tick(&g, slots, POFV_GHOST_MAX);
+        CHECK(hits == POFV_GHOST_MAX - 1 && g.live == 0);    /* 剩下的全部报到 */
+
+        pofv_ghost_register(&g, 800, 0);
+        CHECK(pofv_ghost_clear(&g) == 1 && g.live == 0);
+        CHECK(pofv_ghost_clear(0) == 0);
+        pofv_ghost_pool_init(0);
+        CHECK(pofv_ghost_register(0, 1, 0) == -1);
+        CHECK(pofv_ghost_cycle_tick(0, 0, &kind) == 0);
+        CHECK(pofv_ghost_tick(0, slots, 1) == 0 && pofv_ghost_release(0, 0) == 0);
+    }
+
     printf("test_pofv_core: %d passed, %d failed\n", s_pass, s_fail);
     return s_fail ? 1 : 0;
 }

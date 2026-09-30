@@ -650,3 +650,102 @@ int pofv_aura_hit(float dx, float dy, float r, float pad)
     rr = r * r + pad * pad;
     return (dx * dx + dy * dy) < rr;
 }
+
+/* ------------------------------------------------- G. 灵（自制真敌人，见 pofv_core.h §G） */
+
+void pofv_ghost_pool_init(pofv_ghost_pool_t *p)
+{
+    if (!p) return;
+    memset(p, 0, sizeof *p);
+}
+
+int pofv_ghost_cycle_tick(pofv_ghost_pool_t *p, int boss_present, int32_t *out_kind)
+{
+    if (!p) return 0;
+    if (p->cycle > 0) --p->cycle;
+    if (p->cycle > 0) return 0;
+    if (boss_present) return 0;                     /* 口径 9：任何 boss 在场就不撒（不重置）*/
+    if (p->live >= POFV_GHOST_MAX) return 0;        /* 同屏上限（一手 TH09 = 4）*/
+    p->cycle = POFV_GHOST_CYCLE_FRAMES;             /* 撒成功才重新计时 */
+    if (out_kind) *out_kind = p->next_kind;
+    p->next_kind = (p->next_kind + 1) % POFV_GHOST_KIND_MAX;
+    return 1;
+}
+
+int pofv_ghost_register(pofv_ghost_pool_t *p, int32_t enemy_id, int32_t kind)
+{
+    int i;
+    if (!p || enemy_id <= 0) return -1;
+    for (i = 0; i < POFV_GHOST_MAX; ++i) {
+        pofv_ghost_t *g = &p->s[i];
+        if (g->active) continue;
+        memset(g, 0, sizeof *g);
+        g->active = 1;
+        g->enemy_id = enemy_id;
+        g->kind = kind;
+        ++p->live;
+        ++p->spawned;
+        return i;
+    }
+    return -1;                                      /* 池满：调用方应立刻把刚建的敌人删掉 */
+}
+
+int pofv_ghost_find(const pofv_ghost_pool_t *p, int32_t enemy_id)
+{
+    int i;
+    if (!p || enemy_id <= 0) return -1;
+    for (i = 0; i < POFV_GHOST_MAX; ++i)
+        if (p->s[i].active && p->s[i].enemy_id == enemy_id) return i;
+    return -1;
+}
+
+int pofv_ghost_calm(pofv_ghost_pool_t *p, int slot)
+{
+    pofv_ghost_t *g;
+    if (!p || slot < 0 || slot >= POFV_GHOST_MAX) return 0;
+    g = &p->s[slot];
+    if (!g->active || g->calmed) return 0;          /* 幂等：已沈静化的不重置计时 */
+    g->calmed = 1;
+    g->calm_age = 0;
+    ++p->calmed_total;
+    return 1;
+}
+
+int pofv_ghost_tick(pofv_ghost_pool_t *p, int32_t *out_slots, int cap)
+{
+    int i, n = 0;
+    if (!p) return 0;
+    for (i = 0; i < POFV_GHOST_MAX; ++i) {
+        pofv_ghost_t *g = &p->s[i];
+        if (!g->active) continue;
+        ++g->age;
+        if (!g->calmed) continue;
+        ++g->calm_age;
+        if (g->calm_age < POFV_GHOST_CALM_FRAMES) continue;
+        if (n >= cap) continue;                     /* 名额用完：留在槽里，下一帧再成佛（不漏报）*/
+        if (out_slots) out_slots[n] = i;
+        ++n;
+        g->active = 0;                              /* 成佛：槽当场释放（ECL 侧自删由调用方喊）*/
+        --p->live;
+        ++p->expired;
+    }
+    return n;
+}
+
+int pofv_ghost_release(pofv_ghost_pool_t *p, int slot)
+{
+    if (!p || slot < 0 || slot >= POFV_GHOST_MAX) return 0;
+    if (!p->s[slot].active) return 0;
+    p->s[slot].active = 0;
+    --p->live;
+    return 1;
+}
+
+int pofv_ghost_clear(pofv_ghost_pool_t *p)
+{
+    int n;
+    if (!p) return 0;
+    n = p->live;
+    pofv_ghost_pool_init(p);
+    return n;
+}

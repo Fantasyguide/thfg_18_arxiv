@@ -456,3 +456,85 @@ int  pofv_power_spawn_packed_at(pofv_power_pool_t *p, const float *ox, const flo
 /* 结界判定（★ 一手 TH19 `th19:0x416f10` 的 Reimu 圆）：`dx² + dy² < r² + pad²`。
  * `r <= 0` ⇒ 永不命中（结界没展开）。 */
 int pofv_aura_hit(float dx, float dy, float r, float pad);
+
+/* ==================================================================== G. 灵（自制**真敌人**）
+ *
+ * owner 口径 8/9/10：**两种灵都自建**（不借原版敌人、不借那两作的 ECL）、
+ *   **按周期循环撒**、**任何 boss（含道中）在场就不撒**、
+ *   本体 = **TH12 UFO 型真敌人**（`ce_spawn_enemy()` + 我们自己注册进 `default.ecl` 的子程序）。
+ *
+ * 本节只放**纯逻辑**：句柄池 + 循环撒的节拍 + boss 门 + 沈静化的计时。
+ *   真正的 `ce_spawn_enemy()` / `ce_enemy_by_id()` / ECL 变量写读在 `pofv.c`（卡侧）。
+ *
+ * ⚠ **本节的 `pofv_ghost_*` 与 §D 的 `pofv_spirit_*` 不是一回事**：
+ *   §D 是旧的**自建活化灵池**（卡自己算位置、Shift 领域吸收）；
+ *   本节是 owner 口径 10 定下的**真敌人**载体 ⇒ 口径落地后 §D 那条旧路要**整条撤掉**
+ *   （撤除与接线同在 `pofv.c`，见卡侧「灵」那一节）。
+ *
+ * 数值出处：
+ *   · 同屏上限 = **4** —— ★ 一手 TH09：`initialize_vector_without_destructor(player + 0x30454,
+ *     0x2c4, **4**, …)`（`HANDOFF-109.md` §5；TH19 那边是数据驱动、拔不到常数）；
+ *   · 循环周期 = `POFV_GHOST_CYCLE_FRAMES` = **600** ❓ owner 2026-10-01 拍（`TUNING.md` §2.0v-1 #13）；
+ *   · 耐久：enable 侧 `400 + I0*400`、沈静化后 `50 + I0*10` —— ✅ 一手 TH19（`06` §10.3，
+ *     `@GhostPureHP_E` / `@GhostPureHP_D`）；本卡 I0 = 0 ⇒ **400 / 50**（❓ 本卡取值）；
+ *   · 成佛计时 = **160** 帧 —— 🟡 一手 TH19 `GhostPureOrinDisable` 的 `wait(100)` + `wait(60)`
+ *     （⚠ 一手**没有**自毁指令，见 `06` §10.4；本卡把它当「自然成佛」的时长，登记 ❓）。*/
+
+#define POFV_GHOST_MAX              4      /* ★ 一手 TH09 的槽数 = 4（同屏上限）*/
+#define POFV_GHOST_CYCLE_FRAMES   600      /* ❓ 自定（owner 2026-10-01 拍）*/
+#define POFV_GHOST_CALM_FRAMES    160      /* 🟡 一手 TH19 的 wait(100)+wait(60) */
+#define POFV_GHOST_HP             400      /* ❓ 本卡取值（TH19 enable 侧 400 + I0*400，I0 = 0）*/
+#define POFV_GHOST_HP_CALM         50      /* ✅ 一手 TH19 沈静化后 50 + I0*10（I0 = 0）*/
+#define POFV_GHOST_PTS_KILL        20      /* ❓ 自定（击破一只灵掉的灵力道具面值；同 §E 的击破源）*/
+
+typedef enum {
+    POFV_GHOST_KIND_WOLF  = 0,   /* TH19 三族：狼 */
+    POFV_GHOST_KIND_OTTER = 1,   /* 獺 */
+    POFV_GHOST_KIND_EAGLE = 2,   /* 鷲 */
+    POFV_GHOST_KIND_HYZ   = 3,   /* TH09 的霊（口径 8：两种都自建）*/
+    POFV_GHOST_KIND_MAX   = 4
+} pofv_ghost_kind_t;
+
+typedef struct {
+    int32_t active;
+    int32_t enemy_id;    /* 引擎分配的 enemy_id（每帧 `ce_enemy_by_id` 找；**不缓存指针**）*/
+    int32_t kind;        /* pofv_ghost_kind_t */
+    int32_t calmed;      /* 1 = 已被固灵结界沈静化（耐久已骤降、停住）*/
+    int32_t calm_age;    /* 沈静化后经过帧数；到 `POFV_GHOST_CALM_FRAMES` ⇒ 自然成佛 */
+    int32_t age;
+    float   x, y;        /* 上一帧从引擎读到的位置（诊断 / 结界判定用）*/
+} pofv_ghost_t;
+
+typedef struct {
+    pofv_ghost_t s[POFV_GHOST_MAX];
+    int32_t live;
+    int32_t cycle;       /* 距离下一次该撒还有几帧（0 = 本帧就够条件）*/
+    int32_t next_kind;   /* 下一只的族（四族轮转）*/
+    int32_t spawned, killed, calmed_total, expired;   /* 诊断账 */
+} pofv_ghost_pool_t;
+
+void pofv_ghost_pool_init(pofv_ghost_pool_t *p);
+
+/* 循环撒的节拍：每帧调一次。返回 1 = **本帧该撒一只**（`*out_kind` = 族），0 = 不撒。
+ *   门（口径 9）：`boss_present`（任何 boss 在场）或 `live >= POFV_GHOST_MAX` ⇒ 不撒，
+ *   且**不重置**倒计时（下一帧够条件就撒）—— 这就是「boss 在场就不撒」。 */
+int  pofv_ghost_cycle_tick(pofv_ghost_pool_t *p, int boss_present, int32_t *out_kind);
+
+/* 记一只撒出去的灵（`enemy_id` = `ce_spawn_enemy()` 返回值的 `+CE_ENEMY_ID`）。返回槽号，−1 = 池满。 */
+int  pofv_ghost_register(pofv_ghost_pool_t *p, int32_t enemy_id, int32_t kind);
+
+/* 按 enemy_id 找槽（找不到 / 空 id 返回 −1）。 */
+int  pofv_ghost_find(const pofv_ghost_pool_t *p, int32_t enemy_id);
+
+/* 沈静化一只（**幂等**：已沈静化的不重置计时）。返回 1 = 本次真的沈静化了。 */
+int  pofv_ghost_calm(pofv_ghost_pool_t *p, int slot);
+
+/* 每帧推进：`age++`；已沈静化的 `calm_age++`，到 `POFV_GHOST_CALM_FRAMES` 的写进 `out_slots`
+ * （调用方接着做「成佛」：ECL 侧自删 + 卡侧释放槽）并**就地释放**。返回本帧成佛只数。 */
+int  pofv_ghost_tick(pofv_ghost_pool_t *p, int32_t *out_slots, int cap);
+
+/* 释放一个槽（敌人被击破 / 被清场 / 成佛 / 删卡）。返回 1 = 真的释放了。 */
+int  pofv_ghost_release(pofv_ghost_pool_t *p, int slot);
+
+/* 清空（`clear_card()` 用；返回清掉的只数）。 */
+int  pofv_ghost_clear(pofv_ghost_pool_t *p);
