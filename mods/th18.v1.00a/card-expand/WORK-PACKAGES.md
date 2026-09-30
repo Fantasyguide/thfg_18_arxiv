@@ -670,5 +670,7 @@ DLL `eec2b9c5935d7be751ddb0c5f85e88a5`（modkit 4 路径同 md5）+
 | 铁律 2 | 「长持续效果的卡必须交代**被删掉会怎样**」：三角 VM 要在 `on_delete` 收干净 |
 | 已知对照（**不是**这条）| `engine/player/th18/05-poc-height-and-indicator.md` = **收点线**那条指示线（`front.anm` script `57`，引擎 GUI 自建 VM、可见性由 `Gui+0x194` bit `0x2000` 把门、位置每帧现算）⇒ **「引擎里怎么养一个指示 VM」的现成先例**，实现三角时可以照这个架子 |
 | 实现落点（预判） | 三张卡各自的绘制层（卡侧 VM）；若三处逻辑相同 ⇒ 抽一个共用 helper（**动共享件要按 `AUDIT.md` §BE 登记** + 站点预算核查：现 33/24 已超记账线）|
-| 判据（要一手回答的）| ①画它的是引擎还是对象自己 ②判据（`item_y < 0`？上边距阈值？）③anm + script 号 ④x 是否夹边距、y 固定值 ⑤多个对象时每个一个三角还是合并 ⑥回收/掉回画面内时怎么消失 |
+| **形态（owner 2026-10-01 追加）** | ★ **「那个三角形是贴图」** ⇒ 是 **anm 里的一张 sprite**（`set_sprite(N)`），**不是** `drawPoly`/`drawRect` 程序化图元 ⇒ 要找的是「哪张 sprite + 哪个 anm 的哪个 script」|
+| 判据（要一手回答的）| ①画它的是引擎还是对象自己 ②判据（`item_y < 0`？上边距阈值？）③**anm + script + sprite 号** ④x 是否夹边距、y 固定值 ⑤多个对象时每个一个三角还是合并 ⑥回收/掉回画面内时怎么消失 |
+| 定位提示（主控查过）| TH18 **没有 `etama.anm`**（道具图不在那）；HUD/GUI 大本营 = `front.anm`（entry 名只是 `front/front00.png` 这种路径、**无语义名**）⇒ 别靠 entry 名找，要逐 script 看 `sprite(N)` 的号与尺寸；`ascii.anm` / `effect.anm` 也是候选 |
 
