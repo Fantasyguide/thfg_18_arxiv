@@ -792,6 +792,46 @@ int main(void)
         CHECK(pofv_shield_up(0) == 0);
     }
 
+    /* ==================== K. ボスアタック（C3/C4 的「送到对面的攻击」；owner 2026-10-01）========
+     * ★ 一手 TH09 `0x41f999`：门槛 = 蓄力量 ≥400 且场上没有 kind-3 boss；
+     *   `0x403cf0` = CA L3 的**不断扩张**的消弹圈（0 / 3.5 / 128 → 448）。 */
+    {
+        pofv_bossatk_t ba;
+
+        CHECK(POFV_BOSSATK_MIN_LEVEL == 3);        /* ★ owner：C3 也给 */
+        CHECK(POFV_BOSSATK_C4_FRAMES > POFV_BOSSATK_C3_FRAMES);   /* C4 更长 */
+
+        memset(&ba, 0, sizeof ba);
+        CHECK(pofv_bossatk_is_boss(&ba) == 0);
+        CHECK(pofv_bossatk_tick(&ba) == 0);        /* 没起手 ⇒ 不打 */
+
+        CHECK(pofv_bossatk_start(&ba, 1) == 0);    /* C1 不起手 */
+        CHECK(pofv_bossatk_start(&ba, 2) == 0);    /* C2 不起手 */
+        CHECK(ba.active == 0 && ba.level == 0);
+
+        CHECK(pofv_bossatk_start(&ba, 3) == 1);    /* ★ C3 起手 */
+        CHECK(ba.active == 1 && ba.level == 3 && ba.left == POFV_BOSSATK_C3_FRAMES);
+        CHECK(pofv_bossatk_is_boss(&ba) == 0);     /* ★ C3「自己不是 boss」*/
+        {   int i, n = 0;
+            for (i = 0; i < POFV_BOSSATK_C3_FRAMES + 5; ++i) n += pofv_bossatk_tick(&ba);
+            CHECK(n == POFV_BOSSATK_C3_FRAMES);    /* 正好打这么多帧 */
+        }
+        CHECK(ba.active == 0 && pofv_bossatk_tick(&ba) == 0);
+
+        CHECK(pofv_bossatk_start(&ba, 4) == 1);    /* ★ C4 起手 */
+        CHECK(ba.level == 4 && ba.left == POFV_BOSSATK_C4_FRAMES);
+        CHECK(pofv_bossatk_is_boss(&ba) == 1);     /* ★ C4 = 自己是 boss */
+        pofv_bossatk_stop(&ba);                    /* 删卡 / 换关：收手 */
+        CHECK(ba.active == 0 && ba.left == 0 && ba.level == 0);
+        CHECK(pofv_bossatk_is_boss(&ba) == 0);
+        CHECK(pofv_bossatk_start(&ba, 99) == 1 && ba.level == 4);   /* 越界钳到 4 */
+
+        CHECK(pofv_bossatk_start(0, 4) == 0);      /* NULL 安全 */
+        CHECK(pofv_bossatk_tick(0) == 0);
+        pofv_bossatk_stop(0);
+        CHECK(pofv_bossatk_is_boss(0) == 0);
+    }
+
     printf("test_pofv_core: %d passed, %d failed\n", s_pass, s_fail);
     return s_fail ? 1 : 0;
 }

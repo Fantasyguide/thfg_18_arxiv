@@ -96,6 +96,12 @@
 #define POFV_SHIELD_VM_LAYER        8
 #define POFV_SHIELD_VM_SCALE     48.0f
 
+/* ★ 2026-10-01（owner）boss attack：卡侧自己申请**一格子机**当发射口
+ *   （owner 选了「原生自机弹幕」那条路）⇒ 需要一个子机**本体**脚本。
+ *   ❓ 占位：**借** `CE_ANM_ABILITY_SCRIPT_SEASON_OPT`（116 季节子机本体脚本，
+ *   `signal.c` 也是借它）——子机本体只是个「看不见的发射口」，位置 = 自机（opt offset 0）。*/
+#define POFV_BOSSATK_OPT_ANM   CE_ANM_ABILITY_SCRIPT_SEASON_OPT
+
 #define POFV_CANCEL_MAX        9999
 
 /* 蓝圈的「有攻击力」：照 Remilia `0x40f478` / season.c 的矩形伤害源写法。
@@ -149,6 +155,9 @@ typedef struct {
     int32_t     cap_logged;     /* 本次「爆风队满丢弃」只记一行 */
     int32_t     power_logged;   /* 本次「灵力道具池满丢弃」只记一行 */
     int32_t     shield_logged;  /* 本次「护盾吃掉一发」只记一行 */
+    pofv_bossatk_t bossatk;     /* ★ boss attack（C3/C4；见 pofv_core.h §I）*/
+    ce_option_t opt;            /* ★ 发射口（自己申请的**一格子机**）*/
+    int32_t     bossatk_logged; /* 「boss attack 起手」只记一行 */
 } pofv_card_t;
 
 _Static_assert(sizeof(pofv_card_t) <= 496 - 16, "ce_state 用户区上限 496 字节");
@@ -332,6 +341,27 @@ static void shield_vm_update(const pofv_card_t *s)
     }
 }
 
+/* ★ boss attack 的开火（owner 选了**原生自机弹幕**那条路）：
+ *   每帧把本卡自己的计时器当 `short_timer` 传进 `ce_tick_shooters_for_card()`，
+ *   于是 shooter 行里的 `fire_rate` = 「每 N 个我们的计数发一次」（同豌豆先例）。
+ *   行数据在 `assets/sht/append_shooterset.py` 的 `_pofv109_bossatk_sets()`：
+ *   C3 = 1 条（`CE_SHT_SET_POFV109_BOSSATK_C3`）/ C4 = 3 条 ±8° 扇面（`_C4`），全行 `angle = −π/2`
+ *   = **由下至上**（owner：「对战作是由上至下，这里面只有我自己，所以是由下至上」）。
+ *   ⚠ 观感：owner「最好观感一致」⇒ 贴图最终要换成**敌弹样式 + alpha ≤128**（TUNING §2.0v-4 #51/#52）；
+ *     现在借的是自机弹样式（按 owner 的透明度铁律**豁免**额外 alpha）。*/
+static void bossatk_fire(ce_card_t *c, pofv_card_t *s)
+{
+    int set;
+    uint8_t *o;
+
+    if (!pofv_bossatk_tick(&s->bossatk)) return;        /* 没在打 / 这一帧打完 */
+    set = (s->bossatk.level >= 4) ? CE_SHT_SET_POFV109_BOSSATK_C4
+                                  : CE_SHT_SET_POFV109_BOSSATK_C3;
+    o = ce_option_get(c, &s->opt, 0, POFV_BOSSATK_OPT_ANM, 30, "pofv109");
+    if (!o) return;                                     /* 拿不到发射口：这一帧不发 */
+    ce_tick_shooters_for_card(o, (int)s->bossatk.left, 0, set);
+}
+
 /* 灵力道具的**跟随 VM 同步**（每颗一台；`pofv_power_t` 是纯逻辑、不认识 VM ⇒ 在这里按槽对齐）：
  * 活着的有 VM 就挪位置、没 VM 就起一台；槽空了就删 VM。每帧 O(48)，很便宜。*/
 static void power_vm_sync(void)
@@ -482,6 +512,15 @@ static void ca_effect(pofv_card_t *s, int level, int grant_invuln)
     if (pofv_shield_arm(&s->st, level)) {
         s->shield_logged = 0;
         ce_log("pofv: shield ARMED by C%d charge attack (parts 1; TH19 auto-barrier)", level);
+    }
+    /* ★★ 2026-10-01（owner）：**C3 / C4 的蓄力攻击同时起 boss attack** ——
+     *   「自己会额外发射如对战作送到对面的攻击……往"上"打……会对敌人造成伤害」；
+     *   「C3 也有……只不过自己不是 boss」；一手 TH09 `0x41f999` 支。*/
+    if (pofv_bossatk_start(&s->bossatk, level)) {
+        s->bossatk_logged = 0;
+        ce_log("pofv: BOSS ATTACK started by C%d charge attack (%s; %d frames)",
+               level, pofv_bossatk_is_boss(&s->bossatk) ? "I am the boss" : "extra attack only",
+               (int)s->bossatk.left);
     }
     ce_log("pofv: CA L%d r=%d cancelled %d bullets (sp %d, gauge %d)",
            level, (int)r, n, (int)s->st.sp, (int)s->st.gauge);
@@ -818,6 +857,7 @@ static int on_tick_2(ce_card_t *c)
      *   ⚠ 必须先算（`ghost_tick` 的「结界碰灵 ⇒ 沈静化」要用本帧的圆心/半径/几何支）。*/
     aura_update();
     shield_vm_update(s);     /* ★ 护盾的视觉（有盾才显示；与救援层无关，纯表现）*/
+    bossatk_fire(c, s);      /* ★ C3/C4 的 boss attack：往"上"打的原生自机弹幕 */
 
     /* ★ 2026-10-01（口径 8/9/10）：**灵**（真敌人）—— 跟随 / 索敌 / 结界沈静化 / 循环撒
      *   （三道门：600 帧、boss 在场不撒、同屏 ≤ 4）全在 `ghost_tick()` 里。 */
@@ -922,6 +962,9 @@ static void clear_card(ce_card_t *c)
     if (s_aura_vm) { ce_anm_delete((uint32_t)s_aura_vm); s_aura_vm = 0; }
     if (s_shield_vm) { ce_anm_delete((uint32_t)s_shield_vm); s_shield_vm = 0; }
     s_shield_broken_log = 0;
+    if (s->opt.ptr) ce_option_drop(c, &s->opt);   /* ★ 发射口（子机槽）必须收干净 */
+    pofv_bossatk_stop(&s->bossatk);
+    s->bossatk_logged = 0;
     s_aura_r = 0.0f;                 /* 结界状态复位（下一帧 aura_update 重新选档案）*/
     s_aura_age = -1;
     s_shift_frames = 0;
@@ -945,6 +988,11 @@ static void clear_card(ce_card_t *c)
     s->cap_logged = 0;
     s->power_logged = 0;
     s->shield_logged = 0;
+    /* ★ boss attack：收手 + **删掉自己那格子机**（长持续效果必须在 on_delete 里收干净，
+     *   METHOD 铁律 —— 删卡发生在商店、那一刻卡的 tick 全停）。*/
+    if (s->opt.ptr) ce_option_drop(c, &s->opt);
+    pofv_bossatk_stop(&s->bossatk);
+    s->bossatk_logged = 0;
 }
 
 static int on_ctor(ce_card_t *c)

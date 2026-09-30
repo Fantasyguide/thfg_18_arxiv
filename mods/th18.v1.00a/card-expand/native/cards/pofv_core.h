@@ -547,6 +547,47 @@ int  pofv_shield_take(pofv_state_t *st);
 /* 诊断 / 单测：盾在不在。 */
 int  pofv_shield_up(const pofv_state_t *st);
 
+/* ==================================================================== I. ボスアタック
+ *
+ * owner 2026-10-01 口径（逐字）：「C3 C4 能不能做一个**把自己变成 boss** 的 boss attack？
+ *   也就是自己会额外发射如对战作**送到对面的攻击**，但是这些攻击**是会对敌人造成伤害的**」；
+ *   「**C3 也有**送到对面的额外攻击——只不过自己**不是** boss」；
+ *   「这些弹幕得**往"上"打**，版顶=版底」「**也可以画在自己这边，但是是对敌人造成伤害**」；
+ *   「**C4 确实是一个不断扩张的消弹圈**」；「最好**观感一致**」。
+ *
+ * ★ 一手（TH09 `0x41f999` 那一支，见 `engine/card/th09/01` §1.4 与 `engine/versus/th09/01` §2.3）：
+ *   · 门槛 = 蓄力量 **≥400** 且场上**没有 kind-3 boss**（`0x41f984` → `0x40f7d0(EM,3)`）；
+ *   · `0x403cf0` = **CA L3 的消弹圈**（r0 0 / dr 3.5 / 寿命 128 → **448**，**逐帧扩张**）；
+ *   · `0x403e50(2,2,0,&field)` = 送攻击（A 敌机 / B `fairy_bullets` / C 演出）；
+ *   · `0x41f310(300.0f)` = 消耗；`0x401500(8)` = 8 帧计时。
+ *   ⇒ 在**发动者自己**这边就是「一个**不断扩张**的消弹圈 + 一路往上打的弹幕」。
+ *
+ * ✅ owner 已拍：**C4 的圈就是那个扩张圈（不是永久场）**；`0x417630` 那支 500/30000 的永久场
+ *   **排除出 C4**。 */
+
+#define POFV_BOSSATK_MIN_LEVEL        3   /* ★ owner：C3 也给（不是 boss）；C4 = boss */
+#define POFV_BOSSATK_C3_FRAMES       90   /* ❓ 自定（C3 的额外攻击持续）*/
+#define POFV_BOSSATK_C4_FRAMES      150   /* ❓ 自定（C4：更长 + 自己是 boss）*/
+
+typedef struct {
+    int32_t active;   /* 1 = 正在打 */
+    int32_t left;     /* 剩余帧 */
+    int32_t level;    /* 起手时的蓄力档（3 / 4）*/
+} pofv_bossatk_t;
+
+/* 蓄力攻击发动（`ca_level` = 1..4）：**C3 / C4** 才起手（低于 3 不做）。
+ * 返回 1 = 本次真的起手（卡侧据此起子机 / 打日志），0 = 没起。 */
+int  pofv_bossatk_start(pofv_bossatk_t *b, int ca_level);
+
+/* 每帧推进：返回 1 = **本帧要开火**（还没打完），0 = 没在打 / 刚打完。 */
+int  pofv_bossatk_tick(pofv_bossatk_t *b);
+
+/* 收手（删卡 / 换关 / 真死都调）。 */
+void pofv_bossatk_stop(pofv_bossatk_t *b);
+
+/* 「自己是不是 boss」= 起手档是 **C4**（owner：「C3……只不过自己不是 boss」）。 */
+int  pofv_bossatk_is_boss(const pofv_bossatk_t *b);
+
 /* ==================================================================== G. 灵（自制**真敌人**）
  *
  * owner 口径 8/9/10：**两种灵都自建**（不借原版敌人、不借那两作的 ECL）、

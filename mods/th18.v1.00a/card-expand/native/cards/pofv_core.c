@@ -667,6 +667,41 @@ void pofv_aura_radius(const pofv_aura_profile_t *p, int32_t age, int32_t charge,
     *out = p->r_fixed;                            /* STATIC 固定（占位档）*/
 }
 
+/* ------------------------------------------- I. ボスアタック（见 pofv_core.h §I）*/
+
+int pofv_bossatk_start(pofv_bossatk_t *b, int ca_level)
+{
+    if (!b) return 0;
+    if (ca_level < POFV_BOSSATK_MIN_LEVEL) return 0;   /* ★ owner：C3 起才有 */
+    if (ca_level > 4) ca_level = 4;
+    b->active = 1;
+    b->level = ca_level;
+    b->left = (ca_level >= 4) ? POFV_BOSSATK_C4_FRAMES : POFV_BOSSATK_C3_FRAMES;
+    return 1;
+}
+
+int pofv_bossatk_tick(pofv_bossatk_t *b)
+{
+    if (!b || !b->active) return 0;
+    if (b->left <= 0) { b->active = 0; return 0; }
+    --b->left;
+    if (b->left <= 0) b->active = 0;
+    return 1;
+}
+
+void pofv_bossatk_stop(pofv_bossatk_t *b)
+{
+    if (!b) return;
+    b->active = 0;
+    b->left = 0;
+    b->level = 0;
+}
+
+int pofv_bossatk_is_boss(const pofv_bossatk_t *b)
+{
+    return (b && b->active && b->level >= 4) ? 1 : 0;
+}
+
 /* ------------------------------------------- H. オートパリア（抵挡护盾，见 pofv_core.h §H）*/
 
 int pofv_shield_arm(pofv_state_t *st, int ca_level)

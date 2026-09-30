@@ -29,6 +29,11 @@
 >   就架盾（✅ 一手 TH19 `0x40b420` 的唯二调用点 = 阶段 3/4）、**挡 1 发**（✅ 一手 `0x544c90`）；
 >   中弹走 `on_death_before_deathbomb`（虚表 `+0x10` = 救援层**最早**那层）**无条件先吃盾** + 取消死亡
 >   ⇒ owner「保命等级最优先、无论如何先消耗它」。视觉 = script **375**。见 SPEC §8.8 / `TUNING.md` §2.0v-3。
+> · **第 2j 步（owner 口径「总之尝试做吧」）✅ 已落地**：**boss attack** —— C3/C4 的蓄力攻击起手，
+>   用**自己申请的一格子机**打 `CE_SHT_SET_POFV109_BOSSATK_C3/C4`（原生自机弹幕、全行 `angle = −π/2`
+>   = **由下至上**）；C4 = `pofv_bossatk_is_boss()` 为真 + 一手那个**不断扩张**的消弹圈（`0x403cf0`）。
+>   core §I `pofv_bossatk_*` + 卡侧 `bossatk_fire()`；`ce_option_drop` 在 `clear_card` 收干净。
+>   ⚠ 待办：贴图换成「敌弹样式 + alpha ≤128」以做到 owner 的「观感一致」（TUNING §2.0v-4 #51/#52）。
 > · **第 2e 步（owner 追加口径 · 第一条）✅ 已落地**：固灵结界**按自机角色分派** ——
 >   咲夜 = TH09 的**锚定场**；早苗 = TH19 `AuraSanaeInf` 的圆（半径 = **按住 Shift 的时长**）；
 >   灵梦 / 魔理沙 **owner 待定** ⇒ 占位常驻圆 96（= 改造前行为）。见表 `pofv_aura_profile_for()`

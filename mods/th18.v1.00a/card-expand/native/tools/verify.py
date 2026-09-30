@@ -197,6 +197,7 @@ PRIMS = {
             (r"pofv: aura profile for character \d+ -> mode", "结界按**自机角色**选档案（咲夜=TH09 锚定场 / 早苗=TH19 圆）", False),
             (r"pofv: shield ARMED by C\d charge attack", "★ 抵挡护盾：C3/C4 蓄力攻击发动 ⇒ 架盾（TH19 口径）", False),
             (r"pofv: shield ABSORBED the hit", "★ 抵挡护盾：中弹先吃盾 ⇒ 取消死亡（保命最优先）", False),
+            (r"pofv: BOSS ATTACK started by C\d", "★ boss attack：C3/C4 蓄力攻击 ⇒ 起手往上打的弹幕（C4 = 自己是 boss）", False),
             (r"pofv: power run done - ", "收尾账（made / picked / expired）", False),
             (r"pofv: aura touched \d+ bullets", "结界碰弹（每帧上限生效时留一行）", False),
         ],
