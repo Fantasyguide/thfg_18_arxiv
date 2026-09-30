@@ -940,6 +940,7 @@
 #define CE_ANM_ABILITY_SPRITE_OPT_FALL_7            569   /* entry87 */
 #define CE_ANM_ABILITY_SPRITE_OPT_FALL_8            570   /* entry88 */
 #define CE_ANM_ABILITY_SPRITE_YOUKAI_FAM_TRAIL      571   /* entry89 */
+#define CE_ANM_ABILITY_SPRITE_TOP_INDICATOR         572   /* entry90 */
 #define CE_ANM_ABILITY_SPRITE_YOUKAI_ALICE_S11      415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
 #define CE_ANM_ABILITY_SPRITE_YOUKAI_ALICE_S12      415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
 #define CE_ANM_ABILITY_SPRITE_YOUKAI_ALICE_S13      415   /* 退役名 → RETIRED_BLANK（美术暂不进图集，见 ORDER.txt 退役段）*/
@@ -1302,3 +1303,4 @@
 #define CE_ANM_ABILITY_SCRIPT_SPIRIT109             372
 #define CE_ANM_ABILITY_SCRIPT_POFV109_AURA          373
 #define CE_ANM_ABILITY_SCRIPT_POFV109_POWER         374
+#define CE_ANM_ABILITY_SCRIPT_TOP_INDICATOR         375

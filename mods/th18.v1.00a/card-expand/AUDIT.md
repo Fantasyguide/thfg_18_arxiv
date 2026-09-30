@@ -4906,6 +4906,8 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 | 2026-10-01 | **无（109 是系统卡；共享件只碰到 `patch/th18/cards.js` 的 109 那一行 `desc`）** | 见下方「§BE 详录 #162」 |
 | 2026-10-01b | **所有卡（共享资源 `assets/ability/scripts/` 新增 372/373；共享件 `assets/ecl/make_ufo_ecl.py` / `native/tools/capcheck.py` / `verify.py` / `autoplay.py`；生成物 `native/anm_ids.h`）** | 见下方「§BE 详录 #163」 |
 
+| 2026-10-01c | **所有卡（共享资源 `assets/ability/` 追加 1 图 + 1 脚本；共享件 `native/cards/faith.c`；新增头 `native/cards/top_indicator.h`；生成物 `native/anm_ids.h`）** | 见下方「§BE 详录 #164」 |
+
 
 > **§BE 详录 #42（2026-09-20 · P1「缺音效一批」8 条 + 音效表扩容新增 5 枚别作原版 SE）**
 >
@@ -26113,3 +26115,40 @@ verify/autoplay 的场景只判 109 的日志）；`sites.py` / `sdk.*` / `engin
 `sites.py` / `sdk.*` / `engine.h` / `cards_def.c` / `Makefile` **一行未动** ⇒ **站点零新增**。
 **回归**：`make check` exit 0（含 `capcheck` / `anm-verify` / `sitecheck --all` / `check-docs` 412 文件
 + 全部主机单测）；`cards/pofv.c` 交叉编译 0 警告。
+
+---
+
+### §BE 详录 #164 —— 2026-10-01c：**顶部三角指示**（owner 新需求；107 / 110 / 111 统一）
+
+**谁改的**：统筹会话（owner 2026-10-01：「109 其他人做了，你只做统一修改性质的东西——**加三角**」）。
+
+**改了什么 / 为什么**（owner 原话：「当点处于画面正上方外的时候，会在画面顶部有一个三角形指示上面还有，
+107 的自建 VM、110-111 的信仰点都得有那个三角形」；追加口径：「**那个三角形是贴图**」
+「一个对象一个三角 / x 跟着对象 / 不需要夹边距 / **不是淡出**——那个进来了就消失」）：
+
+| 文件 | 改动 |
+| --- | --- |
+| `assets/ability/make_top_indicator_art.py`（**新增**）| 切图脚本：TH07 `etama.anm` entry1 `etama2.png` 的 `(240,64,16,16)` → `ability/top_indicator/TOP_INDICATOR.png`（16×16，近白）|
+| `assets/ability/entries/ORDER.txt` | **末尾 append** 一行 `TOP_INDICATOR`（尾插 ⇒ 既有 entry/sprite 号一个不动）|
+| `assets/ability/scripts/375_top_indicator.anm.txt`（**新增**）| 正文逐条照 TH18 原生脚本 134..141：`sprite(@TOP_INDICATOR); originMode(1); type(0); static();` |
+| `native/cards/top_indicator.h`（**新增**，header-only）| 统一 helper：判据 `y < -8.0` / 固定 `y = 8.0` / `alpha = clamp(255 − (8−y)×255/128, ≥64)` / 白 + alpha，逐条照 TH07 活版 |
+| `native/cards/faith.c` | `faith_dot_t` 加 `topi_id`；tick 里每颗调一次 `ce_topi_tick()`；`dot_remove()` 与 `faith_clear_entities_mask()` 两条清理路各收一次 |
+| `native/anm_ids.h`（生成物）| `CE_ANM_ABILITY_SPRITE_TOP_INDICATOR = 572`（entry90）、`CE_ANM_ABILITY_SCRIPT_TOP_INDICATOR = 375` |
+
+**为什么一处就够**：107 的樱点实体（`faith_spawn_art` + `FAITH_SLOT_107`）与 110/111 的信仰点
+**共用同一个点池**（`cards/faith.c`）⇒ 三张卡的点都在同一处逐帧遍历 ⇒ 三角只在这一处接。
+
+**一手依据**：`engine/player/th18/06-offscreen-top-indicator-absent.md`
+（TH18 自己那条是**死代码**：`VM_A.pos.y` 唯一写点被「减速因子<1.0」把门、且 y 还叠了 `entity_pos`；
+活的那份在 **TH07** `th07:0x433cd0`：判据 `pos.y < -8.0`、y 恒 `8.0+全局`、alpha `clamp(255−(8−y)×255/128,≥64)`）。
+
+**影响面 / 回归**：
+- **共享件**：`cards/faith.c` 是 107/110/111 共用的点池实现；新增字段在结构体尾部、新增调用只在
+  「点出界」时起 VM ⇒ 画面内的点**行为逐字节不变**（`ce_topi_tick` 在 `y ≥ -8` 那一支只会
+  `ce_topi_kill`（句柄为 0 时是空操作））。
+- **共享资源**：`assets/ability/` 是**追加**（尾插 + 新脚本号 375）⇒ 既有 entry/sprite/script 号零位移
+  （`build_ability.py` 的「重排检测」通过）。
+- `sites.py` / `sdk.*` / `engine.h` / `cards_def.c` / `Makefile` **一行未动** ⇒ **站点零新增**。
+- **回归**：`make check` **rc=0**（含 `anm-verify` / `capcheck` / `sitecheck --all` / `check-docs` 412 文件
+  + 全部主机单测）；`build_ability.py` 的重排检测 = 「已定稿的前 186 个数据行逐行未变 ✅」。
+- ⚠ **DLL 与 `ability.anm` 必须同时发布**（`anm_ids.h` 的宏值烘进 DLL）。

@@ -973,3 +973,7 @@ OPT_FALL_8    ability/season/OPT_FALL_8.png    16x16
 # ★★ 2026-09-30（108 的**使魔拖尾火花**）：TH08 `etama.anm` script71 的 sprite219（16×16，加法亮点）；
 #   追加在**文件末尾**（尾插 ⇒ 既有 entry/sprite 号一个不动，不制造共享件位移）。
 YOUKAI_FAM_TRAIL  ability/youkai_familiar/YOUKAI_FAM_TRAIL.png  16x16
+
+# ★★ 2026-10-01（107 / 110 / 111 的**顶部三角指示**，owner 需求）：TH07 `etama.anm` entry1 的 (240,64,16,16)
+#   （近白 16×16、与 TH18 `bullet/item.png` 的 sprite501/503 同形）—— **尾插**，既有 entry/sprite 号一个不动。
+TOP_INDICATOR  ability/top_indicator/TOP_INDICATOR.png  16x16

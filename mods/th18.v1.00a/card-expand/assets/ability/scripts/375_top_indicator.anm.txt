@@ -1,0 +1,15 @@
+script script375 {
+    // 顶部三角指示（画面外指示）：107 / 110 / 111 共用。
+    // 一手（✅ 逐条）：TH18 原生脚本 134..141 的正文 = `sprite(...); originMode(1); type(0); static();`
+    //   （local/th18.v1.00a/anm/bullet/bullet.anm.txt；脚本表 th18:0x4b4020 的第二个 dword = 0x85 + type）
+    //   —— **静态、无动画**（没有 alpha/scale/pos 指令）⇒ 位置由 C 侧每帧 `ce_anm_set_pos` 写，
+    //   alpha 走 VM color_1（th18:0x524）按 TH07 的距离式配方。
+    // 贴图 = TOP_INDICATOR（TH07 etama2.png 的 (240,64,16,16)；近白 ⇒ 可用顶点色染）。
+    // 为什么是 TH07 的配方、TH18 那条为什么是死代码：
+    //   engine/player/th18/06-offscreen-top-indicator-absent.md、
+    //   assets/ability/make_top_indicator_art.py 的文件头。
+    sprite(@TOP_INDICATOR);
+    originMode(1);
+    type(0);
+    static();
+}

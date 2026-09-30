@@ -1056,3 +1056,15 @@ CE_ANM_ABILITY_SPRITE 宏 721 个，号 109..452
   （entry **71/72/73**，合计 74/256、余量 **182**）。切图 = `assets/ability/make_ufo_carrier_art.py`。
   宿主表（哪些敌人换皮 / 谁掉令牌）= `native/cards/ufo_carrier_table.h`，生成器
   `native/tools/gen_ufo_carrier_table.py`；一手依据见 `TUNING.md` §2.0zzm。
+
+---
+
+## 2026-10-01c —— 顶部三角指示（107 / 110 / 111 统一；owner 需求）
+
+- **图集成员**：`TOP_INDICATOR` = `ability/top_indicator/TOP_INDICATOR.png`（16×16 单图行，**末尾 append**）
+  ⇒ 一 entry 一 sprite（`CE_ANM_ABILITY_SPRITE_TOP_INDICATOR = 572` / entry90）。
+- **脚本**：`scripts/375_top_indicator.anm.txt`（下一个空号 = 375）。
+- 一手：`engine/player/th18/06-offscreen-top-indicator-absent.md`（TH18 死代码 / TH07 活版配方）；
+  切图与配方见 `assets/ability/make_top_indicator_art.py` 与 `native/cards/top_indicator.h` 的文件头。
+- 尾插 ⇒ 既有 entry/sprite/script 号**零位移**（`build_ability.py` 重排检测通过）。
+

@@ -665,7 +665,7 @@ DLL `eec2b9c5935d7be751ddb0c5f85e88a5`（modkit 4 路径同 md5）+
 | --- | --- |
 | 需求 | 当我们的对象（点道具 / 信仰点 / 自建 VM）跑到**画面正上方之外**时，在其 x 处、**画面顶边**画一个**三角形指示**（表示「上面还有」）|
 | 涉及卡 | **只有三张**：**107**（自建 VM）、**110 / 111**（信仰点）｜★ owner 2026-10-01 追加：「**109 没有**」⇒ **109 不做**这个三角（灵力道具与灵都不做）|
-| 状态 | 🔬 **一手调研进行中**（2026-10-01 派工：先扒 TH18 是否本来就有这条；没有则往 TH16/TH17 找）|
+| 状态 | ✅ 一手调研完成（TH18 是死代码、活版在 **TH07**）＋ ✅ 实现已落地（2026-10-01c）⇒ **待实跑**｜详见 [`§BE 详录 #164`](AUDIT.md) 与本文件 §11.2 |
 | 铁律 | ★ **UI/动画一律先从原代码找**：必须给出「哪个 anm + script 号 + 判据字段 + 画在哪 + 生命周期」；**原版找不到才允许 ❓自定**并登记 `TUNING.md` |
 | 铁律 2 | 「长持续效果的卡必须交代**被删掉会怎样**」：三角 VM 要在 `on_delete` 收干净 |
 | 已知对照（**不是**这条）| `engine/player/th18/05-poc-height-and-indicator.md` = **收点线**那条指示线（`front.anm` script `57`，引擎 GUI 自建 VM、可见性由 `Gui+0x194` bit `0x2000` 把门、位置每帧现算）⇒ **「引擎里怎么养一个指示 VM」的现成先例**，实现三角时可以照这个架子 |
@@ -686,3 +686,17 @@ DLL `eec2b9c5935d7be751ddb0c5f85e88a5`（modkit 4 路径同 md5）+
 
 > 两条都能走**卡侧 VM**（`ce_anm_spawn` + `ce_anm_set_pos` + `ce_anm_set_sprite`）⇒ **不需要站点**；
 > 只有「抽共用 helper 进共享件」这一步要按 `AUDIT.md` §BE 登记。
+
+### 11.2 实现记录（2026-10-01c，**已落地待实跑**）
+
+| 项 | 内容 |
+| --- | --- |
+| 一手 | `engine/player/th18/06-offscreen-top-indicator-absent.md`：TH18 那条是**死代码**（零件全在、扳机拿不到输入）；**活版在 TH07**（= 卡 107 的原作）|
+| 配方（照 TH07）| 判据 `y < -8.0` · 固定 `y = 8.0` · `alpha = clamp(255 − (8−y)×255/128, ≥64)` · 白 + alpha · **不需要** TH07 的翻转闩锁（我们给三角单独一个 VM）|
+| 贴图 | TH07 `etama.anm` entry1 `etama2.png` 的 `(240,64,16,16)`（近白 16×16，与 TH18 `bullet/item.png` 的 sprite501/503 同形）|
+| 代码 | `native/cards/top_indicator.h`（统一 helper，header-only）+ `native/cards/faith.c`（点池逐颗 tick + 两条清理路）|
+| 资产 | `entries/ORDER.txt` 末尾 append `TOP_INDICATOR`；脚本 `375_top_indicator.anm.txt`；切图脚本 `make_top_indicator_art.py` |
+| 为什么一处就够 | 107 的樱点（`faith_spawn_art` + `FAITH_SLOT_107`）与 110/111 的信仰点**共用同一个点池** |
+| 登记 | `AUDIT.md` **§BE 详录 #164**（含影响面与回归）+ `CAPACITY.md` |
+| 回归 | `make check` **rc=0**（anm-verify / capcheck / sitecheck / check-docs 412 文件 + 全部单测）；站点零新增 |
+| 实跑判据 | ①点跑出画面顶边 ⇒ 顶边出现三角、x 跟着点 ②点回到画面内 ⇒ **立刻**消失（无淡出）③长按放 B / 换关 / 删卡 ⇒ 三角**不留残留** |
