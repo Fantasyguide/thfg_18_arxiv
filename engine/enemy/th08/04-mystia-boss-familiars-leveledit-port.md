@@ -276,3 +276,13 @@ TH08 `Sub50/56/57/60` 的 `floatTime`（440→320/288/256/224、120 帧）照抄
    `local/_scratch/c108/build/`；⚠ **不要**指回本仓 `patch/th18/`）；上游侧的笔记在
    `local/_scratch/leveledit-up/NOTES.md`。
 
+
+
+## 11. 米斯蒂亚（stage 2）**没有侧分叉可压**（一手统计）
+
+按「ECL 条件字节（指令 +9 的 `rank_mask` 高字节）里的侧位」扫全 24 份 ECL：
+**`ecldata2.*`（stage 2 / 米斯蒂亚）= 0 / 0 —— 两个文件都是 0** ⇒ 这场**两侧发弹完全相同**，
+移植补丁在这里**没有压掉任何侧分叉**。owner 记的「人妖不一致发弹」一手实例在
+**stage 3（32 处，全作最多）**、stage 8（16）、stage 1（3）、stage 6/7（各 2）。
+⚠ **不要**去接管米斯蒂亚的侧逻辑（它两侧本来就一样）。编码表 / 判定指令 / `thecl` dump 里
+`5`（只妖）/ `6`（只人）的读法见 [`../../ecl/th08/01-rank-mask-per-side-bit.md`](../../ecl/th08/01-rank-mask-per-side-bit.md)。
