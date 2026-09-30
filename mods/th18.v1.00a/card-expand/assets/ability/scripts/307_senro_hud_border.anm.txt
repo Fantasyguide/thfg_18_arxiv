@@ -42,6 +42,14 @@ script script307 {
     //   v2.anmm 的号名：ins_3 = sprite、ins_30 = zWriteDisable、ins_36 = scaleTime、ins_4 = jmp
     //   ⇒ 「30 帧缩到 1.2 倍 → 30 帧缩到 0.8 倍 → 跳回开头（脚本时间拨回 0）」，**永远循环**。
     sprite(@SENRO_HUD_BORDER@);
+    /* ★★ 2026-09-30 第七轮（owner：「hud 的贴图质感太差」）：补 **`resampleMode(1)` = 最近邻**
+     *   （opcode 311 → `flags_hi` bit11：0 = 线性 / 1 = 最近邻，`engine/anm/th16/06-settings.md` §3.5）。
+     *   本卡的 HUD 贴图是 TH07 原版 **8×12 / 48×16 / 96×16** 的小图，在 TH18 要放 **2 倍**
+     *   （`scale(2.0)` + `resolutionMode(2)`，见本脚本的 Δ2）⇒ TH18 默认的**线性过滤**把每个 texel
+     *   抹成 2×2 的模糊块 = 实跑「质感差」。仓库里所有上一代像素贴图（TH10/TH12/TH13 …）的脚本
+     *   都写着这一行（先例 = `146_aura_wolf` / `154_slot_soul` / `211_mof_faith_digit` …）——
+     *   本卡当初照抄的是 TH18 原生的 `136_hud_glyph`（那张图**1:1** 画，所以它不需要这一行）⇒ 漏了。*/
+    resampleMode(1);
     ins_431(1);
     type(1);
     layer(25);

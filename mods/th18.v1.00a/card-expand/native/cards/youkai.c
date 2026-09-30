@@ -576,7 +576,10 @@ typedef struct {
     int32_t  kind;     /* `YK_FAM_KIND_*`：自愈重起时要按**同一个 kind**（同一支脚本）再起一个 */
     /* ★★★ 2026-09-22 夜（owner：**妖侧只剩魔法阵**）：**常驻魔法阵环**的句柄（只在妖侧存在）。
      * 与 `yk_ring_blink` 那支**切换短命环**是两件事：这支是「妖侧使魔本体不可见时**一直**看得见的那圈」。*/
-    uint32_t circle_id;/* 0 = 这一帧没有常驻魔法阵（人侧 / 起失败 / 还没起）*/
+    uint32_t circle_id;/* ★ 常驻**加法空心环**（一手 `th08:0x425b70` 内联分配 / 句柄 `enemy+0x53c8`）
+                        *   0 = 这一帧没有环（起失败 / 还没起）*/
+    int8_t   circle_side;  /* 上一次发的中断对应的侧：0 = 人（interrupt 1 紫）/ 1 = 妖（2 蓝）/ -1 = 还没发
+                            *   —— 只在**换侧**时发一次（每帧发会把这支 8 帧的生长动画一直重播）*/
 } yk_fam_vm_t;
 static yk_fam_vm_t s_fam_vm[YK_FAM_MAX];
 
@@ -593,7 +596,10 @@ static void yk_fam_vm_kill(yk_fam_vm_t *v)
 {
     if (!v) return;
     if (v->anm_id) { ce_anm_delete(v->anm_id); v->anm_id = 0; }
-    if (v->circle_id) { ce_anm_delete(v->circle_id); v->circle_id = 0; }
+    /* ★ 环：**发 interrupt 3 淡出**（一手：脚本 `interruptLabel(3)` = `scaleTime(10, 0, 0, 0)` ⇒
+     *   10 帧后 `delete()` **脚本自删**）⇒ 我们**不跟句柄**（置 0 即可，也不留游荡 VM）。*/
+    if (v->circle_id) { ce_anm_interrupt(v->circle_id, 3); v->circle_id = 0; }
+    v->circle_side = -1;
     v->fam_id = 0;
     v->kind = 0;
 }
@@ -724,21 +730,30 @@ static void yk_fam_vm_follow(uint32_t fam_id, int kind, const uint8_t *f)
      *     `SetInterrupt(2)` = 妖侧蓝 —— 一手 `th08:0x41b04e SetInterrupt(环, IsYoukai()?2:1)`）。
      * ⚠ 与 `yk_ring_blink` 的**切换短命环**是两支 VM、两个用途（那支是「切换那一下闪一圈」）。*/
     {
-        int youkai_side = CE_PLAYER_FOCUSED();
-        if (v->anm_id) ce_anm_set_color(v->anm_id, youkai_side ? 0x00ffffffu : 0xffffffffu);
-        if (youkai_side) {
-            if (!v->circle_id || !ce_anm_get_vm(v->circle_id)) {
-                v->circle_id = ce_anm_spawn(CE_ABILITY_ANM(),
-                                            CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_RING,
-                                            YK_FAM_ANM_LAYER);
-                if (v->circle_id) ce_anm_interrupt(v->circle_id, 2);   /* 2 = 妖侧蓝（一手）*/
+        int side = CE_PLAYER_FOCUSED() ? 1 : 0;
+        if (v->anm_id) ce_anm_set_color(v->anm_id, side ? 0x00ffffffu : 0xffffffffu);
+        /* ★★★ 2026-09-30（**owner 口径**：「得画那个加法空心环……**你只碰使魔加那个环**」）：
+         *   **两侧都常驻**（一手：环由 `familiarCreate*` 内联分配 `th08:0x425b70`、句柄 `enemy+0x53c8`、
+         *   每帧跟随 `th08:0x42cac9..0x42caf6` 把 `enemy+0x2d88` 拷进去 ⇒ **换侧只换中断、环不消失**）。
+         *   人侧 `interrupt 1` = (192,128,255) 紫、妖侧 `interrupt 2` = (96,96,255) 蓝；尺寸也分侧
+         *   （脚本 `scaleTime(8,0,0.5f/0.8f)`）—— 这正是 owner 说的「**大小形成质感**」。
+         *   ⚠ 只在**换侧**时发中断：每帧发会把这支 8 帧的生长动画一直重播。*/
+        if (!v->circle_id || !ce_anm_get_vm(v->circle_id)) {
+            v->circle_id = ce_anm_spawn(CE_ABILITY_ANM(),
+                                        CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_RING,
+                                        YK_FAM_ANM_LAYER);
+            v->circle_side = -1;
+        }
+        if (v->circle_id) {
+            if (v->circle_side != (int8_t)side) {
+                ce_anm_interrupt(v->circle_id, side ? 2 : 1);
+                v->circle_side = (int8_t)side;
             }
-            if (v->circle_id && !ce_anm_set_pos(v->circle_id, *(const float *)(f + CE_ENEMY_POS_X),
-                                                               *(const float *)(f + CE_ENEMY_POS_Y), 0.0f))
+            if (!ce_anm_set_pos(v->circle_id, *(const float *)(f + CE_ENEMY_POS_X),
+                                               *(const float *)(f + CE_ENEMY_POS_Y), 0.0f)) {
                 v->circle_id = 0;                          /* 句柄作废 ⇒ 下一帧自愈重起 */
-        } else if (v->circle_id) {
-            ce_anm_delete(v->circle_id);                   /* 人侧不留魔法阵 */
-            v->circle_id = 0;
+                v->circle_side = -1;
+            }
         }
     }
 }
@@ -841,7 +856,8 @@ typedef struct {
                            *   ⇒ 实际转速 = 3°/格 ÷ `YK_ORBIT_STEP_DIV`(2) = **1.5°/帧**（240 帧 ≈ 4 s 一圈）。*/
     unsigned orphan;      /* 父敌**连续**查不到的帧数（满 `YK_ORBIT_ORPHAN_GRACE` 才撤）*/
     uint32_t anm_id;      /* 跟随 VM 句柄（画本体）*/
-    uint32_t circle_id;   /* 妖侧的常驻魔法阵环句柄（与映射使魔同一套形态口径）*/
+    uint32_t circle_id;   /* ★ 常驻**加法空心环**句柄（两侧都有；与映射使魔同一套口径）*/
+    int8_t   circle_side; /* 上一次发的中断对应的侧（0 人 / 1 妖 / -1 还没发）——只在换侧时发 */
     int32_t  kind;        /* `YK_FAM_KIND_*`（VM 被引擎清过时按同一支脚本自愈重起）。
                            *   ★★★ 额外使魔恒 = `YK_FAM_KIND_NO_MELEE_SHOT_SAME`
                            *   （不会体术 + 弹一样，owner 2026-09-30 口径；见 `youkai_core.h` 那张表）。*/
@@ -944,7 +960,9 @@ static void yk_orbit_vm_kill(yk_orbit_t *o)
 {
     if (!o) return;
     if (o->anm_id) { ce_anm_delete(o->anm_id); o->anm_id = 0; }
-    if (o->circle_id) { ce_anm_delete(o->circle_id); o->circle_id = 0; }
+    /* ★ 同映射使魔：环**发 interrupt 3 淡出**（10 帧后脚本自删，我们不跟句柄）。*/
+    if (o->circle_id) { ce_anm_interrupt(o->circle_id, 3); o->circle_id = 0; }
+    o->circle_side = -1;
 }
 
 /* 撤一台：收 VM + 撤壳 + 清槽。`why != 0` 才记数/打日志（`yk_drop_all` 那条收口是静默批量）。*/
@@ -1146,18 +1164,24 @@ static void yk_orbit_vm_sync(yk_orbit_t *o)
     } else if (pp && !ce_anm_set_pos(o->anm_id, pp[0], pp[1], 0.0f)) {
         o->anm_id = 0;                                    /* 句柄作废 ⇒ 下一帧自愈重起 */
     }
-    youkai_side = CE_PLAYER_FOCUSED();
+    youkai_side = CE_PLAYER_FOCUSED() ? 1 : 0;
     if (o->anm_id) ce_anm_set_color(o->anm_id, youkai_side ? 0x00ffffffu : 0xffffffffu);
-    if (youkai_side) {
-        if (!o->circle_id || !ce_anm_get_vm(o->circle_id)) {
-            o->circle_id = ce_anm_spawn(CE_ABILITY_ANM(),
-                                        CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_RING, YK_FAM_ANM_LAYER);
-            if (o->circle_id) ce_anm_interrupt(o->circle_id, 2);   /* 2 = 妖侧蓝（一手，同映射使魔）*/
+    /* ★ 与映射使魔**同一条口径**（owner 2026-09-30）：环**两侧都常驻**，换侧只换中断
+     *   （人 1 紫 / 妖 2 蓝），尺寸由脚本分侧（0.5 / 0.8）。*/
+    if (!o->circle_id || !ce_anm_get_vm(o->circle_id)) {
+        o->circle_id = ce_anm_spawn(CE_ABILITY_ANM(),
+                                    CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_RING, YK_FAM_ANM_LAYER);
+        o->circle_side = -1;
+    }
+    if (o->circle_id) {
+        if (o->circle_side != (int8_t)youkai_side) {
+            ce_anm_interrupt(o->circle_id, youkai_side ? 2 : 1);
+            o->circle_side = (int8_t)youkai_side;
         }
-        if (o->circle_id && pp && !ce_anm_set_pos(o->circle_id, pp[0], pp[1], 0.0f)) o->circle_id = 0;
-    } else if (o->circle_id) {
-        ce_anm_delete(o->circle_id);                      /* 人侧不留魔法阵 */
-        o->circle_id = 0;
+        if (pp && !ce_anm_set_pos(o->circle_id, pp[0], pp[1], 0.0f)) {
+            o->circle_id = 0;
+            o->circle_side = -1;
+        }
     }
 }
 
@@ -6356,7 +6380,9 @@ _Static_assert(YK_OPTION_MAX >= 4, "YK_OPTION_MAX must cover the biggest row of 
  * 随「环改成切换那一下的短命特效」一起去掉了 ⇒ 表从 32×20 B 降到 32×12 B。*/
 /* ★ 2026-09-22 夜（owner：妖侧只剩魔法阵）后记录 = 16 B：加回一个**常驻魔法阵**句柄
  * （`circle_id`）；表 = 32×16 B = 512 B，仍是文件级静态、不进卡的私有状态预算。*/
-_Static_assert(sizeof(yk_fam_vm_t) == 16, "familiar follow-VM record changed size");
+/* ★ 2026-09-30（owner：使魔两侧都常驻**加法空心环**）后记录 = 20 B：环句柄 `circle_id` 之外多了
+ * 「上一次发的中断对应的侧」`circle_side`（1 字节，补齐到 4 字节对齐）—— 表 = 32×20 B = 640 B。*/
+_Static_assert(sizeof(yk_fam_vm_t) == 20, "familiar follow-VM record changed size");
 
 /* ============================== ★ 占位 / TODO 清单 ==============================
  * 每一条都「不自己发明数值」，取值一律是**不做**这个语义：
