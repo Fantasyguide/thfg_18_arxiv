@@ -1829,9 +1829,29 @@ void faith_green_fairy_tick(void)
     }
 #endif
 }
+/* ★★★ 2026-09-30（owner 实跑：「**107 卡会使得有些妖精变成绿妖精**」）：**换皮驱动只在
+ *   「变绿这件事的主家」在场时才跑**。那个点池**不是 110/111 专用的** —— **107 也注册在里面**
+ *   （它的「大樱点」实体走同一个池，`senro.c` 的 `faith_register`），而 `faith_pool_tick()` 原来
+ *   是**无条件**调 `faith_green_swap_tick()` ⇒ **107 单装时每帧都会把场上的妖精改成绿妖精**
+ *   （`mof.c` 那边「变绿 ⇒ 掉绿点」的判据只在 110 在场时才跑 ⇒ 观感正好是「无缘无故变绿」）。
+ *   判据 = **池子里有 110 或 111 注册** —— 正是 owner 2026-09-24 那句「110 或 111 只要装一张就改」。
+ *   ⚠ 没做成 `faith_user_t` 的新字段，是为了**不逼 `mof.c` / `signal.c` 跟着改**（共享件最小改动；
+ *     要改成显式能力位随时可以，那时这两张卡各加一行 `u.xxx = 1`）。*/
+static int faith_green_owner_present(void)
+{
+    int i;
+
+    for (i = 0; i < s_n_user; ++i) {
+        uint32_t id = s_user[i].card_id;
+        if (id == 110u || id == 111u) return 1;
+    }
+    return 0;
+}
+
 int faith_pool_tick(void)
 {
-    faith_green_swap_tick();          /* ★ 换皮驱动（110/111 任一在场都跑；幂等）*/
+    /* ★ 换皮驱动（110/111 任一在场才跑；幂等）——判据见上面 `faith_green_owner_present()` 的注。*/
+    if (faith_green_owner_present()) faith_green_swap_tick();
     uint8_t *pl = CE_PLAYER();
     /* ★★ 2026-09-13 补（跨卡互作审计发现 #3）：**帧守卫**。
      *   这个池是 110/111 **共用**的（`faith_register` 按 slot_mask 分账），而两个卡各自在自己的
