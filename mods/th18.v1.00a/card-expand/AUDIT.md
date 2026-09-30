@@ -19280,7 +19280,7 @@ commit `7647511` 才放出）⇒ #3（音效没屏蔽）/ #4 / #6（灵界结束
 | C | ★ **坐标空间**（⚠ **本行 2026-09-22 已被推翻 —— 见 §BE 详录 #56 第 2 节**：`th18:0x4063d0` 的 **mode 0 支根本不进乘法** ⇒ 这类 VM 是 **1 单位 = 1 表面 px**，写 640 空间才是错的）—— 当时写作「没有 `resolutionMode` ⇒ 坐标 ×2 ⇒ 必须写 640 空间值」 | ❌ 已推翻 | 当时只读到「按 `vm+0x538 & 0x1c00000` 选倍率」，**漏读 mode 0 那条 `jne 0x406451`**（跳过了整段乘法）；#56 补全指令边界 + 实跑合证 |
 | C | 槽条/图标/游标/数字**同吃五档染色**（极人/中人/极妖/中妖/其余）| ✅ | `AsciiManager.cpp:1030-1062` |
 | D | 归航（state 1）是**恒速、无加速段**：模长 = `[ds:0x18b896c]+0x14` = 当前 `.sht` 头的 `itemCollectSpeed` = pl00/02/03 **10.0**、pl01 **12.0**（我们原来 ❓自定 3.0 ⇒ owner 说的「很慢」）| ✅ | `th08:0x440886`(方向) / `:0x440898`(`mov eax,[edx+0x14]`) / `:0x4408a5`(造速度)；`dat/ply0{,1,2,3}{,as}.sht` 直读 |
-| D | **「刚开始就满速」的一手落点**：擦弹/消弹那一路 `spawn_item(type 7, state 1)` ⇒ 生成即归航；只有「击破敌机/符卡」那一路是 state 3/5（先上浮 40 帧 = owner 说的「很小的加速度」）| ✅ | `th08:0x431650` 一族 push 1；`th08:0x42b048` push 3；`th08:0x4402cb`–`:0x4402e9`（state 3 初速）|
+| D | **「刚开始就满速」的一手落点**（★ 2026-09-30 订正：type 7 的 state 被 `SpawnItem` 覆写 ⇒ **state 1 只属 `cancel_autocollect`**、**吸收区 = state 3**、**擦弹 = state 5**；`th08:0x431650` 一族是**炸弹吸收区（→ 小 P）**，与刻符无关 —— 详见 §BE #153）| ✅ | `th08:0x440124`（覆写）/ `0x4413e0` / `0x4315f2..` / `0x44aabc` / `0x42b048` |
 | D | 收集 = **抓取盒相交**（与自机 y 无关）；`arcadeRegionSize.y + 16`（= 448+16 = 464）是**丢失线**（掉出去那颗不给分）—— 我们原来写成「`y <= 自机 y + 16` 就收」= 把丢失线当回收线且方向反了 | ✅ | `ItemManager.cpp:271-288` + `Player.cpp:100`/`:1059`；`th08:0x43a144` 写 448.0；比较方向 `th08:0x44096f`–`0x440983` |
 | D | 抓取盒半宽 = `[.sht+0x18]/2` = pl00/02/03 **12.0**、pl01 **16.0** ⇒ 加上刻符自身半宽 8，我们那套「半径」口径的一手等效值 = **20 / 24** | ✅ | `th08:0x44d83f`–`0x44d873`；`.sht` 的 `+0x18` = 24.0 / 32.0 |
 
@@ -22588,7 +22588,10 @@ if (state == ITEM_STATE_UNK3) { vy = -2.0 - rand(0.2); vx = rand(±0.6); … }
 ```
 ⇒ **type 7（时点）的调用实参 `state` 会被强制覆写成 3**（type 0xa 则强制 5）；
 **真正会落在 state 1（AUTOCOLLECT）的只有 `ItemManager::cancel_autocollect` 那一支**
-（全屏消弹 / PoC 自动收，`th08:0x4413e0`；调用点见 `th08:0x4308e5` 一族）。
+（**PoC 自动收 / 全屏收**，`th08:0x4413e0`）。
+★ **2026-09-30 订正**：这里旧注把 `th08:0x4308e5` 一族叫「全屏消弹」**不准确** —— 那是
+**自机 192 格吸收区**的逐弹循环（弹变刻符那一路，**state 3**；`hit type == 9` 时 2 颗），
+与 `cancel_autocollect`（state 1）是**两条不同的路**（见 §BE #153）。
 
 **本卡原来的四处「state 1」都错了**（我们都按「生成即满速归航」实现 —— 那是
 `cancel_autocollect` 的语义，不是这几处的）：
@@ -24963,10 +24966,24 @@ if (s->spell_was && !sp) { s->spiral_quota = YK_SPIRAL_QUOTA_FULL; s->spiral_t =
 
 ### 3. 还有一条一手来源**没做**（可能就是 owner 想说的那件事）
 
-一手在「**消弹**」那一路也会吐刻符：`th08:0x4308e5` 一族（`BulletManager` 消弹）+
-炸弹消弹区那一支（`th08:0x431650`：`eax == 2` 时按 `ds:0x18b8988 == 9 ? 2 : 1` 颗 type 7）
-⇒ **数量随周围弹数/`ds:0x18b8988` 变**（这才是「差得很多」的那种来源）。
-本卡至今**未实现这一族**（登记在 §BE #136 §8 ❓ 的老账里）。要接就得先定「消弹」在 TH18 的判据点。
+> ★★★ **2026-09-30 一手订正**（详见 **§BE #153** + [`engine/item/th08/02-cancel-and-graze-to-time-orbs.md`](../../../engine/item/th08/02-cancel-and-graze-to-time-orbs.md)）：
+> **本段旧表述把「炸弹清弹」当成了刻符来源 —— 那是错的。**
+>
+> - **炸弹 / 决死清屏** = `Player::UpdateInvulnerability th08:0x44d303` 建**全屏吸收区（hit type 0）**
+>   ⇒ 弹变**小 P**，**不是**刻符；
+> - **符卡结束清弹** = `Spellcard::EndSpell th08:0x41620f` → `th08:0x430aa0`，`itemType` 初值 `th08:0x42f396 movl $0x6`
+>   ⇒ 每颗 **type 6 星点**；**boss 相位切换 / ECL op#162** ⇒ **什么都不吐**（op#161 ⇒ 恒 type 6）；
+> - **刻符（type 7）真正的三个来源**：① **妖怪逢魔擦弹**（`Player::FUN_0044a930 th08:0x44aabc push $1/$0xa`；
+>   门 = `GaugeIsExtremelyYoukai th08:0x406d70` + 无符卡）⇒ 1 颗、**state 5**；② **敌机死亡**
+>   （`Enemy::FUN_0042adb0 th08:0x42b1a4` 一颗 + `th08:0x42b1b8`/`$0x10`/`th08:0x42b1d4` 在**死亡点**开
+>   **R=32.5f、16 帧、hit type 7** 的吸收区 ⇒ 16 帧内经过的弹逐颗变刻符）；
+>   ③ **弹进自机 192 格吸收区**（`BulletManager::OnUpdate th08:0x4315f2..`/`th08:0x4316b1..`）⇒ 1 颗、**state 3**，
+>   **`hit type == 9` 时连发两次 = 2 颗**；
+> - 旧注里那个 `ds:0x18b8988` **不是**关卡/难度/形态，= **`g_Player.lastShotHitType`**（`0x17d5ef8 + 0xe2a90`）。
+>
+> ⇒ 要接就得先定「复刻哪几条」；TH18 侧的消弹入口与「按颗数判」的可行性见
+> [`engine/bullet/th18/01-cancel-to-item.md`](../../../engine/bullet/th18/01-cancel-to-item.md)。
+> 本卡至今**仍未实现**（登记在 §BE #136 §8 ❓ 的老账里）。
 
 闸：`make -s check` rc=0（`youkai_core: 5261 checks, 0 failed`；x87 = 0；33 个 BP_* 双向一致；
 生成物无漂移；404 个文档全过）。
@@ -25649,3 +25666,34 @@ owner 要的是「**默认换秋黄、逢魔回红**」这条口径。
 | 为什么 | 一手复核（`engine/bullet/th18/01-cancel-to-item.md` §1.4/§2.1）证明旧注**写反了**：子弹侧 `th18:0x429932 xor edx,edx` ⇒ mode 0 ⇒ 一颗不撒；撒的是激光侧（mode 1）。按旧注算「清弹收多少点」的卡会算反 |
 | 谁改的 | 108 卡那一支（`AUDIT.md` §BE 协作纪律：动共享件必须登记）|
 | 怎么验证的 | 纯注释 ⇒ 行为不变：`make -s check` rc=0（`youkai_core: 8120 checks, 0 failed`；`dllx87 = 0`；`sites.py`/`capcheck` 全绿）+ `check-docs` 全过；`git diff` 核过：三个 `.c/.h` 的改动**全在 `/* … */` 里** |
+
+
+## §BE 详录 #153（2026-09-28）：**前提订正** —— 「炸弹清弹 → 刻符」不成立（TH08「消弹/擦弹 → 刻符」的真来源）
+
+> **来由**：owner 拍「消弹 → 刻符**得做的**」，本仓先做 TH18 侧侦察（`engine/bullet/th18/01-cancel-to-item.md`），
+> 同时另一支一手把 **TH08 侧的真规则**读清了 ⇒ 发现本仓（以及这次工单）的**前提**是错的，先把结论落库。
+
+**一、订正前的说法（本仓多处）**：「一手在**消弹**那一路也会吐刻符：`th08:0x4308e5` 一族 +
+炸弹消弹区那一支（`th08:0x431650`：`eax == 2` 时按 `ds:0x18b8988 == 9 ? 2 : 1` 颗 type 7）」。
+**订正后**（一手，全文见 [`engine/item/th08/02-cancel-and-graze-to-time-orbs.md`](../../../engine/item/th08/02-cancel-and-graze-to-time-orbs.md)）：
+
+| 清弹路径 | 一手 | 吐什么 |
+| --- | --- | --- |
+| **炸弹 / 决死清屏** | `Player::UpdateInvulnerability th08:0x44d303` ⇒ 全屏吸收区（hit **type 0**）| 弹 → **小 P**（**不是刻符**）|
+| **符卡结束** | `Spellcard::EndSpell th08:0x41620f` → `th08:0x430aa0`；`th08:0x42f396 movl $0x6` | 每颗 **type 6 星点** |
+| **boss 相位切换 / ECL op#162** | `RemoveAllBullets(param=4)` | **什么都不吐**（op#161 ⇒ 恒 type 6）|
+
+**刻符（type 7）真正的三个来源**：① 妖怪逢魔擦弹（`th08:0x44aabc push $1/$0xa`，门 = `GaugeIsExtremelyYoukai
+th08:0x406d70` + 无符卡）⇒ 1 颗、state 5；② 敌机死亡（`Enemy::FUN_0042adb0 th08:0x42b1a4` 一颗 +
+`th08:0x42b1b8`/`$0x10`/`th08:0x42b1d4` 在死亡点开 R=32.5f / 16 帧 / hit type 7 的吸收区 ⇒ 逐颗变刻符）；
+③ 弹进自机 **192 格**吸收区（`th08:0x4315f2..`/`th08:0x4316b1..`）⇒ 1 颗、state 3，**hit type == 9 ⇒ 2 颗**。
+另：**`ds:0x18b8988` = `g_Player.lastShotHitType`**（`0x17d5ef8 + 0xe2a90`），不是关卡/难度/形态。
+
+**二、本轮只改描述/老账，零代码、零行为**（我们**还没实现任何消弹→刻符**）：
+① 新增 `engine/item/th08/02-cancel-and-graze-to-time-orbs.md`（逐条地址 + 指令原文 + 三条未闭合的 🟡）；
+② 本文件 §BE #147 §3 的那段老账加订正块；③ §BE 详录 #56 表里那条「擦弹/消弹那一路 state 1」的 D 行订正
+（type 7 的 state 被 `SpawnItem` 覆写：state 1 只属 `cancel_autocollect`、吸收区 = state 3、擦弹 = state 5，
+`0x431650` = 炸弹吸收区与刻符无关）；④ §BE #57 附近那句「全屏消弹…见 `0x4308e5` 一族」改成
+「自机 192 格吸收区」。**`TUNING.md` 现行行为一个字没动**。
+
+**三、验证**：`check-docs` + `make -s check` 全过（纯文档）；`git diff` 里**没有任何 `.c/.h` 改动**。
