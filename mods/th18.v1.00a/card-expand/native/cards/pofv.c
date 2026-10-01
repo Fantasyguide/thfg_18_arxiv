@@ -114,6 +114,8 @@
 #define POFV_BOSSATK_DMG_W     384.0f    /* 覆盖宽（= 场地宽 384，一手 `arcadeRegionSize`）*/
 #define POFV_BOSSATK_DMG_H     320.0f    /* 覆盖高（自锚点往上）*/
 #define POFV_BOSSATK_DMG_LIFE    2       /* 源存活帧（照风暴那一支的量级）*/
+#define POFV_BOSSATK_DMG_CELL   24.0f    /* ❓ 逐弹版：每颗弹那一发小方框的边长（占位）*/
+#define POFV_BOSSATK_DMG_MAX      64     /* ❓ 每帧最多建几个源（防刷爆源池；占位）*/
 
 /* ★★ 2026-10-01：C3/C4 的**发射音**（一手 = TH09 `arg9` 的 **bit9** → `0x43e380` = 播音）。
  *   ⚠ **不在 ECL 里做**：TH18 对应的是 `etSound(id, sfx)`(608)，而 **`thecl` 能编、却 dump 不了 608**
@@ -487,12 +489,41 @@ static void bossatk_carrier_sync(int32_t level)
  *   中心 = 锚点往上半个覆盖高（这样覆盖区正好盖住朝上发的弹幕）。*/
 static void bossatk_damage(void)
 {
-    float pos[3];
-    pos[0] = POFV_BOSSATK_ANCHOR_X;
-    pos[1] = POFV_BOSSATK_ANCHOR_Y - POFV_BOSSATK_DMG_H * 0.5f;
-    pos[2] = 0.0f;
-    ce_damage_rect(pos, 0.0f, POFV_BOSSATK_DMG_LIFE, POFV_BOSSATK_DMG,
-                   POFV_BOSSATK_DMG_W, POFV_BOSSATK_DMG_H);
+    uint8_t *bm = CE_BULLET_MGR();
+    uint32_t i;
+    int made = 0;
+
+    if (!bm) return;
+    /* ★★ 2026-10-01（**逐弹版**，owner：「这些攻击是会对敌人造成伤害的」）：
+     *   逐颗扫敌弹，只挑「**弹种属于我们那几对 `(type, subtype)`**」且**在弹幕覆盖区内**的，
+     *   在**每颗弹的位置**各来一发 `ce_damage_rect`（小方框）⇒ 命中感 = 弹打到谁谁掉血。
+     *   一手（弹种指针）：`CE_BULLET_TYPE_REC`（`engine.h`，`0x42589b`）。
+     *   ⚠ 两道过滤缺一不可：① 类型（我们 ECL 用到的 `etSprite` 类型集合）；
+     *     ② 覆盖区（`x` 在场地内、`y` 自锚点往上一个高）—— 因为类型 0/2 之类的**原生敌人也在用**，
+     *     只按类型会把别人的弹也算进来（那道闸就是为此留的）。*/
+    for (i = 0; i < CE_BM_BULLET_COUNT; ++i) {
+        uint8_t *b = bm + CE_BM_BULLETS + (size_t)i * CE_BULLET_STRIDE;
+        uint16_t state = *(const uint16_t *)(b + CE_BULLET_STATE);
+        uint32_t rec = *(const uint32_t *)(b + CE_BULLET_TYPE_REC);
+        uint32_t type;
+        float bx, by;
+        float pos[3];
+
+        if (state != 1 && state != 2) continue;
+        if (rec < CE_BULLET_TYPE_TABLE) continue;                  /* 还没建/不合法 */
+        if ((rec - CE_BULLET_TYPE_TABLE) % CE_BULLET_TYPE_STRIDE) continue;   /* 不在表上（对齐校验）*/
+        type = (rec - CE_BULLET_TYPE_TABLE) / CE_BULLET_TYPE_STRIDE;
+        if (!pofv_bossatk_bullet_type_ours(type)) continue;         /* 不是我们 ECL 用到的类型 */
+        bx = *(const float *)(b + CE_BULLET_POS);
+        by = *(const float *)(b + CE_BULLET_POS + 4);
+        if (bx < 0.0f || bx > POFV_BOSSATK_DMG_W) continue;         /* 覆盖区：横向 = 场地宽 */
+        if (by > POFV_BOSSATK_ANCHOR_Y + 8.0f) continue;            /* 覆盖区：不能低于锚点 */
+        if (by < POFV_BOSSATK_ANCHOR_Y - POFV_BOSSATK_DMG_H) continue;  /* 覆盖区：往上一个高 */
+        pos[0] = bx; pos[1] = by; pos[2] = 0.0f;
+        ce_damage_rect(pos, 0.0f, POFV_BOSSATK_DMG_LIFE, POFV_BOSSATK_DMG,
+                       POFV_BOSSATK_DMG_CELL, POFV_BOSSATK_DMG_CELL);
+        if (++made >= POFV_BOSSATK_DMG_MAX) break;                  /* 每帧上限（别把源池刷爆）*/
+    }
 }
 
 /* ★★ 2026-10-01（owner：「最好是**除了透明度之外完全复刻符卡**，**包括对于敌机的「自机狙」**等等」）：

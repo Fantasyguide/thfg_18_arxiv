@@ -9775,8 +9775,25 @@ TH18 对应的是 **`etSound(id, sfx)`(608)**，但：
 | ★ **敌弹生成点** | `th18:0x425770`：`imul eax, [esi], 0x118` ⇒ **`[esi]` = 弹的类型 id**；紧接 `push [eax+0x4c5f90]` → `call 0x477d60`；同段 `or [edi+0x20],0x10`（`edi` = 弹对象）|
 | 引用点 | 全代码段 `0x4c5f90` 共 **7 处**，形式都是 `[eax + 0x4c5f90]`（**负偏移**寻址）|
 
-**下一步只剩一件事**：在 `0x425770` 那段里找出「**类型 id 被写进弹对象的哪个偏移**」
-（形如 `mov [edi + X], <type>`；`edi` 是弹对象）—— 找到后：
-- 卡侧扫弹时读 `[bullet + X]`，**只处理类型 == 我们那几对 `(type, subtype)` 的弹**；
-- 把 `bossatk_damage()` 里那个大 rect 换成「对每颗属于我们的弹，在其位置各来一发 `ce_damage_rect`」。
-（⚠ 本轮 `read_va` 在 `0x42579a` 处读空了，下次换个起点/用 objdump 复核。）
+✅ **已解决（同一轮）**：`read_va` 在那个区间读空 ⇒ 改用 **objdump** 逐指令看，找到了：
+
+```asm
+0x42588b  movl 0x8(%ebp),%esi        ; esi = 生成描述符
+0x42588e  movl (%esi),%ecx           ; ecx = **类型 id**
+0x425890  imull $0x118,%ecx,%eax
+0x425896  addl $0x4c5f90,%eax         ; = 类型记录指针
+0x42589b  movl %eax,0xf94(%edi)       ; ★★ 弹对象 + 0xf94 = 它那条「弹种记录」的指针
+```
+
+⇒ **`zBullet + 0xf94` = 类型记录指针**（`engine.h` 的 `CE_BULLET_TYPE_REC`，含出处）。
+
+**落地（逐弹版）**：
+- `pofv_core.{h,c}` 新增 `pofv_bossatk_bullet_type_ours(type)` —— 类型在不在**我们 ECL 用到的集合**
+  `{0, 2, 11, 12, 13, 20}` 里（逐条来自 `pofv109_boss.ecl.txt` 的 `etSprite`）；
+  单测 **+38 条**（成员逐个过 + 10 个非成员）；
+- `cards/pofv.c` 的 `bossatk_damage()` **从「一个大覆盖区」改成「逐弹」**：扫敌弹池，
+  两道过滤（① 类型属于我们；② 在覆盖区内 —— 因为 `0`/`2` 之类的**原生敌人也在用**，
+  只按类型会把别人的弹算进来）⇒ 在**每颗弹的位置**各建一发 `ce_damage_rect`（小方框），
+  每帧上限 `POFV_BOSSATK_DMG_MAX = 64`（防刷爆源池）。
+
+⚠ 新常量 `POFV_BOSSATK_DMG_CELL = 24.0f` 与 `_MAX = 64` 是 **❓ 占位**（数值整体仍等 owner 实跑）。

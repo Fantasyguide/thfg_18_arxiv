@@ -133,6 +133,18 @@ int  pofv_charge_cancel(pofv_state_t *st);
 /* 加充气点（蓝圈消弹 / 击破）；满 `POFV_GAUGE_PTS_PER_LEVEL` 进一格，气槽上限处**溢出丢弃**。 */
 void pofv_gauge_add_points(pofv_state_t *st, int32_t pts);
 
+/* ★ 2026-10-01（109 的「逐弹归属」）：判断一颗**敌弹**是不是**我们那个伪 boss 载体**发的。
+ *
+ * 判据 = 弹种类型在**我们 ECL 用到的集合**里（逐条来自 `assets/ecl/pofv109_boss.ecl.txt` 的
+ * `etSprite` 调用）：**0 / 2 / 11 / 12 / 13 / 20**
+ *   · 灵梦：C3 `(2,·)` `(0,·)`；C4 `(11,·)` `(0,·)`
+ *   · 魔理沙：`(12,·)` `(13,·)` `(0,·)`
+ *   · 咲夜：`(20,·)` `(0,·)`
+ * ⚠ **单靠类型不足以归属**（`0`/`2` 之类的原生敌人也在用）⇒ 调用方必须**再叠一层覆盖区过滤**
+ *   （见 `pofv.c` 的 `bossatk_damage()`）。本函数只做「类型在不在集合里」这一件事，**便于单测**。*/
+int pofv_bossatk_bullet_type_ours(uint32_t type);
+
+
 /* ★ 2026-10-01（自机狙）：**只用 SSE 标量的 atan2 近似**。
  *
  * 为什么不用引擎的：`th18:0x4a94a0` 是 MSVC i387 版（结果在 `st(0)`）⇒ 调它我们的目标文件里
@@ -144,7 +156,8 @@ void pofv_gauge_add_points(pofv_state_t *st, int32_t pts);
  * 返回值域 = `(-π, π]`，与引擎那条同口径。
  *
  * ⚠ **不返回 float**（i386 上 float 返回值走 `st0` ⇒ 目标文件里出现 `flds`，踩 `dllx87` 闸门；
- *   实测：签名写成 `float pofv_atan2(y, x)` 时闸门报 `x87 in our objects: 2`）
+ *   实测：签名写成 `
+float pofv_atan2(y, x)` 时闸门报 `x87 in our objects: 2`）
  *   ⇒ 结果经 `*out` 写出。这就是本仓「C 函数不返回浮点」那条铁律的具体来由之一。*/
 void pofv_atan2(float y, float x, float *out);
 

@@ -1001,6 +1001,19 @@ int main(void)
         pofv_atan2(1.0f, 1.0f, 0);   /* NULL 不许崩 */
     }
 
+    
+    /* ==================== N. 逐弹归属（C3/C4 的自伤源用）====================
+     * 集合逐条来自 `assets/ecl/pofv109_boss.ecl.txt` 的 `etSprite` 调用。*/
+    {
+        static const uint32_t ours[] = { 0u, 2u, 11u, 12u, 13u, 20u };
+        static const uint32_t theirs[] = { 1u, 3u, 4u, 5u, 10u, 14u, 19u, 21u, 255u, 0xffffffffu };
+        size_t k;
+        for (k = 0; k < sizeof ours / sizeof ours[0]; ++k)
+            CHECK(pofv_bossatk_bullet_type_ours(ours[k]) == 1);
+        for (k = 0; k < sizeof theirs / sizeof theirs[0]; ++k)
+            CHECK(pofv_bossatk_bullet_type_ours(theirs[k]) == 0);
+    }
+
     printf("test_pofv_core: %d passed, %d failed\n", s_pass, s_fail);
     return s_fail ? 1 : 0;
 }

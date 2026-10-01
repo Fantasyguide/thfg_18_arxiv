@@ -769,6 +769,18 @@ typedef struct { int32_t prev; int32_t cur; float cur_f; int32_t speed_src; uint
 /* `+0xac` = **本发弹的"set<<8 | 行号"**（一手：`PlayerBullet__create 0x45e35c mov [edi+0xac],ecx`，
  * `ecx` = `Player__shoot_one_bullet` 传进来的 `set*256|row`；117 里那份同名局部宏 = `ANIMAL_BULLET_PACKED_ID`）。*/
 #define CE_BULLET_SET_ROW          0xac
+/* ★★★ 2026-10-01（109 的「逐弹归属」要用）：**弹对象 + 0xf94 = 它那条「弹种记录」的指针**
+ *   （= `0x4c5f90 + type_id × 0x118`）。一手（`th18.exe`，objdump 逐指令）：
+ *     敌弹生成段 `0x42588b`–`0x42589b`：
+ *       `mov 0x8(%ebp),%esi` ; `mov (%esi),%ecx`（**类型 id**）;
+ *       `imull $0x118,%ecx,%eax` ; `addl $0x4c5f90,%eax` ; ★ `movl %eax, 0xf94(%edi)`（`edi` = 弹对象）。
+ *   ⇒ **`type_id = (*(u32*)(bullet + 0xf94) − 0x4c5f90) / 0x118`** ⇒ 卡侧能按类型认弹
+ *     （109 用它把「自伤源」从覆盖区升级成逐弹；见 `TUNING.md` §2.0v-7）。
+ *   ⚠ 同一段里还有一处 `0x4257b1 movl 0x4c60a4(%eax),%eax`（= 类型记录 **`+0x114`** 的字段，
+ *     紧接 `test/je` 与 `call 0x407420`）—— 那是另一条路（不是类型指针），别混。*/
+#define CE_BULLET_TYPE_REC         0xf94
+#define CE_BULLET_TYPE_TABLE       0x4c5f90   /* 弹种表基址（stride 0x118；`pofv_core.h` 的半径字段注释同源）*/
+#define CE_BULLET_TYPE_STRIDE      0x118
 
 /* ---- 道具池 zItem（ItemManager* = [0x4cf2ec]；2026-09-08 一手，进 AUDIT 登记）---- */
 #define CE_ADDR_ITEM_MANAGER_PTR  0x4cf2ec   /* ItemManager*：spawn 调用方从这取 ecx（0x430473 `8b 0d ec f2 4c 00`）*/

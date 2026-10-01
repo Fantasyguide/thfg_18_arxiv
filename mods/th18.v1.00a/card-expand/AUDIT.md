@@ -27830,3 +27830,22 @@ Python 里**后一个定义覆盖前一个** ⇒ 改第一个**完全无效且�
 ① 81/82 需要先把 `ce_grant_power` 加进 `sdk.h`（共享件，照 `CardRingo__constructor` `th18:0x40a0b0` 四步）；
 ② 83 = 上游 `fireball.c` 141 行，复用炎魔之王（72）的贴图/脚本 ⇒ **无需新美术**；
 ③ 84/85 = 上游 `plant.c` 122 行 + `plant_core.c` 34 行（共基类）+ 各自数值文件，另需 **`ability.anm` 新脚本与 PvZ 原版帧素材**（上游 `assets/ability/{sunflower,marigold}/_src/`）。
+
+## §BE 详录 #169（2026-10-01）：`engine.h` 加两条**只读**常量（弹种记录指针），零行为改动
+
+**谁改的**：109 的 owner 会话。**共享件**：`native/engine.h`、`native/sdk.h`。
+
+**改了什么**：新增三个宏（**纯常量，无函数、无行为**）：
+`CE_BULLET_TYPE_REC 0xf94`（★ `zBullet+0xf94` = 该弹的「弹种记录」指针）、
+`CE_BULLET_TYPE_TABLE 0x4c5f90`、`CE_BULLET_TYPE_STRIDE 0x118`，并附**一手出处**
+（`th18.exe` 的 `0x42588b`–`0x42589b` 逐指令：`mov (%esi),%ecx` → `imull $0x118` →
+`addl $0x4c5f90` → `movl %eax,0xf94(%edi)`）。
+
+**为什么**：109 的 C3/C4 要走「**逐弹**伤敌机」（owner：「这些攻击是会对敌人造成伤害的」）⇒
+必须能认出「哪颗弹是我们那个伪 boss 载体发的」；判据就是**弹种类型**。
+
+**对既有卡的影响面**：**0**（只加宏；没有改任何函数/结构/调用约定，`make check` 全绿可证）。
+**109 自己的新增**（非共享）：`pofv_core.{h,c}` 的 `pofv_bossatk_bullet_type_ours()`（+38 条单测）、
+`pofv.c` 的 `bossatk_damage()` 逐弹版。
+
+**验证**：`make check` exit 0（含 `dllx87` x87=0、`test_pofv_core` **846** 断言、419 文档）。

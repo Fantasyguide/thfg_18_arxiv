@@ -945,3 +945,15 @@ void pofv_atan2(float y, float x, float *out)
     /* 按 y 的符号取负 */
     *out = (y < 0.0f) ? -r : r;
 }
+
+/* ---------------------------------------------------------------- 逐弹归属（见头文件）
+
+ * 集合逐条来自 `assets/ecl/pofv109_boss.ecl.txt` 的 `etSprite` 调用（三角色 × 两档）。*/
+int pofv_bossatk_bullet_type_ours(uint32_t type)
+{
+    static const uint32_t ours[] = { 0u, 2u, 11u, 12u, 13u, 20u };
+    size_t i;
+    for (i = 0; i < sizeof ours / sizeof ours[0]; ++i)
+        if (type == ours[i]) return 1;
+    return 0;
+}
