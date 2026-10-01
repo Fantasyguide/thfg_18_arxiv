@@ -503,7 +503,11 @@ static void yk_side_lock_tick(void)
 #define YK_ENABLE_CB_STAGE         1  /* ⑮ on_stage_start（本卡当前**没有**这个回调，占位备用）*/
 #define YK_ENABLE_CB_TICK_SHOOTERS 1  /* ⑯ on_tick_shooters（★ 头号嫌疑：每帧跑在 shooter 行上）*/
 #define YK_ENABLE_CB_TICK2         1  /* ⑰ on_tick_2 */
-#define YK_ENABLE_CB_BULLET        0  /* ⑱ on_bullet_created / on_bullet_hit */
+#define YK_ENABLE_CB_BULLET 1  /* ⑱ on_bullet_created / on_bullet_hit */
+/* ★★★★ 2026-10-01（owner 工单⑩：#110 二分把凶手锁在 bullet 回调 ⇒ 再拆两个子项做最后确认）*/
+#define YK_ENABLE_CB_BULLET_CREATED 1  /* ⑱a `on_bullet_created`（只对我们自己的妖侧 set 改伤害）*/
+#define YK_ENABLE_CB_BULLET_HIT     1  /* ⑱b `on_bullet_hit`（人逢魔：命中 ⇒ 掉刻符）*/
+#define YK_BULLET_HIT_QUEUE         8  /* 命中回调里**只排队**；真正撒符挪到 `on_tick_2`（见修法 B）*/
 #define YK_ENABLE_CB_ITEM          1  /* ⑲ on_item_frame */
 #define YK_ENABLE_CB_DRAW          1  /* ⑳ on_draw */
 #define YK_ENABLE_CB_ENEMY_DEATH   1  /* ㉑ on_enemy_death */
@@ -5874,11 +5878,16 @@ static int on_tick_shooters(ce_card_t *c, uint32_t short_timer, uint32_t long_ti
  * ⚠ 走这里而不是伤害层（`bullet_damage_permille`）：那一层作用于**所有**自机弹（会连带人侧）。*/
 static int on_bullet_created(ce_card_t *c, void *bullet)
 {
-    if (!YK_ENABLE_CARD || !YK_ENABLE_CB_BULLET) return 0;   /* ★ 总开关 + 回调族 ⑨ */
+    if (!YK_ENABLE_CARD || !YK_ENABLE_CB_BULLET || !YK_ENABLE_CB_BULLET_CREATED) return 0;
     uint32_t packed;
     int32_t out = 0;
     (void)c;
     if (!bullet) return 0;
+    /* ★★★ 2026-10-01（**根因修法 A · 缺侧门**）：本回调只服务**妖侧弹**（`yk_bullet_is_youkai`
+     *   只认 `0x16` 与逐档组 `0x54..0x67`）⇒ 加侧门后人形态下连「读+写玩家弹结构 `+0x9c`」都不做，
+     *   人侧弹（含魔理沙人形态子机激光）与我们**零接触**。
+     *   ⚠ 我方弹只可能在妖侧存在（`on_shot_set_index` 只在聚焦时认领我们的 set）⇒ **无功能损失**。*/
+    if (!yk_focused()) return 0;
     packed = *(uint32_t *)((uint8_t *)bullet + YK_PB_PACKED_ID);
     if (yk_bullet_damage_apply(*(int32_t *)((uint8_t *)bullet + CE_BULLET_DAMAGE), packed,
                                CE_CURRENT_POWER(), &s_yk_sets, &out))
@@ -6057,9 +6066,20 @@ static unsigned s_bullet_hit_pos_swap;                /* ★ 2026-09-27（第三
 static unsigned s_graze_pos_from_bullet;              /* ★ 2026-09-27（第三十九批）：擦弹刻符有几批的落点
                                                        *   拿到了「被擦到的那颗弹」的坐标（站点 `ce_graze`）。
                                                        *   这个数不涨 ⇒ 站点没挂上（或 `ce_graze_take` 恒 0）。*/
+/* ★★★ 2026-10-01（**根因修法 B · 命中断点里不再调引擎**）：owner 的二分把凶手锁在 bullet 回调，
+ *   而这里原来会 `yk_orb_spawn()` → `ce_anm_spawn()`（起刻符 VM、插 world 链表）——
+ *   **就发生在引擎的命中断点内部**，正是「打到人才断、某些帧变蓝」的时刻。
+ *   ⇒ 回调现在**只把落点排进一个小环**（纯内存写、零引擎调用、零 VM），
+ *     真正的 `yk_orb_spawn()` 挪到 `on_tick_2`（普通帧上下文）里 flush（`yk_bullet_hit_flush`）。
+ *   功能语义不变（人逢魔命中掉刻符，晚 ≤1 帧）；`YK_ENABLE_CB_BULLET_HIT=0` 仍可整体关。*/
+static float    s_bhit_q[YK_BULLET_HIT_QUEUE][2];
+static uint8_t  s_bhit_used[YK_BULLET_HIT_QUEUE];
+static unsigned s_bhit_head;
+static unsigned s_bhit_dropped;
+
 static void on_bullet_hit(ce_card_t *c, const ce_bullet_hit_t *ev)
 {
-    if (!YK_ENABLE_CARD || !YK_ENABLE_CB_BULLET) return;   /* ★ 总开关 + 回调族 ⑨ */
+    if (!YK_ENABLE_CARD || !YK_ENABLE_CB_BULLET || !YK_ENABLE_CB_BULLET_HIT) return;
     yk_card_t *s = ce_state(c, yk_card_t);
     float ox, oy;
     if (!s || !ev) return;
@@ -6074,8 +6094,32 @@ static void on_bullet_hit(ce_card_t *c, const ce_bullet_hit_t *ev)
         ox = ev->ex; oy = ev->ey;
         ++s_bullet_hit_pos_swap;
     }
-    yk_orb_spawn(s, ox, oy, YK_ORB_STATE_SPAWN);   /* state 3 = 先上抛（一手 `push 3`）*/
-    ++s_bullet_hit_orbs;
+    /* ★ 只排队（**绝不**在这里调引擎）：见上面那段修法说明。*/
+    {
+        unsigned k;
+        for (k = 0; k < (unsigned)YK_BULLET_HIT_QUEUE; ++k) {
+            unsigned idx = (s_bhit_head + k) % (unsigned)YK_BULLET_HIT_QUEUE;
+            if (s_bhit_used[idx]) continue;
+            s_bhit_used[idx] = 1;
+            s_bhit_q[idx][0] = ox; s_bhit_q[idx][1] = oy;
+            ++s_bullet_hit_orbs;                  /* 台账口径不变（排进队的算一颗）*/
+            return;
+        }
+        ++s_bhit_dropped;                          /* 队列满（极小概率）：丢一颗，账上可见 */
+    }
+}
+
+/* `on_tick_2` 里调用：把命中回调排队下来的刻符真正撒出去（普通帧上下文、与其它 VM 一起建）。*/
+static void yk_bullet_hit_flush(yk_card_t *s)
+{
+    unsigned k;
+    if (!s) return;
+    for (k = 0; k < (unsigned)YK_BULLET_HIT_QUEUE; ++k) {
+        if (!s_bhit_used[k]) continue;
+        s_bhit_used[k] = 0;
+        yk_orb_spawn(s, s_bhit_q[k][0], s_bhit_q[k][1], YK_ORB_STATE_SPAWN);
+    }
+    s_bhit_head = 0;
 }
 
 
@@ -7053,6 +7097,7 @@ static int on_tick_2(ce_card_t *c)
         return 0;
     }
     yk_side_lock_tick();                                  /* ★ owner ④：锁形态（B / 灵界 / 咆哮）*/
+    yk_bullet_hit_flush(s);                               /* ★ 修法 B：命中回调排队的刻符在这里落地 */
     focused = yk_focused();                               /* ★ owner ④：本卡眼中的侧（锁期间钉住）*/
     /* ★★ 2026-09-22（人妖槽 + 永点）：每帧三件事 + 一件声明，全部是**普通内存读写**（不新增站点）。
      *   ① 刻符运动 / 收集（`yk_orbs_tick`，一手运动方程见 core §3.11）；

@@ -8779,6 +8779,18 @@ owner：「`.` 有点过左了」⇒ `sdk.c` 那一行 `f->adv_dot * 1.5f` → *
 **推导例子**（owner 给的 + 补的）：`3200/3 ⇒ 1066`、`1800/3 ⇒ 600`、`3200/1 ⇒ 3200`、`200/2 ⇒ 100`（档 0）、
 `0 ⇒ 100`、`201/3 ⇒ 67`（上面那个坑）。
 
+### 2.1ccc-36 ❓ 2026-10-01（卡 108 · **bullet 回调的侧门 + 命中回调不调引擎**）
+
+owner 二分：`YK_ENABLE_CB_BULLET=0` ⇒ 魔理沙人形态激光**正常** ⇒ 凶手在 `on_bullet_created` / `on_bullet_hit`。
+
+| 修法 | 内容 |
+| --- | --- |
+| **A（侧门）** | `on_bullet_created` 加 `if (!yk_focused()) return 0;` —— 它只服务**妖侧弹**（判据 `yk_bullet_is_youkai`：`set==0x16` 或逐档组 `0x54..0x67`）⇒ 人形态下连读写玩家弹结构都不做。**无功能损失**（我方弹只在妖侧存在）|
+| **B（命中断点内不调引擎）** | `on_bullet_hit`（人逢魔掉刻符）**不再当场 `yk_orb_spawn`**（那在引擎命中断点内起 VM/插链表 = 「打到人才断」的时刻）⇒ 只排进 ≤8 的小环，`on_tick_2` 的 `yk_bullet_hit_flush()` 落地（晚 ≤1 帧，**功能保留**）|
+| 仍保留写什么 | 只有 `on_bullet_created` 写 `bullet+0x9c`（`CE_BULLET_DAMAGE`），且仅当 set ∈ {`0x16`,`0x54..0x67`} **且妖侧**；不碰滚动/命中账本、激光 VM、`player+0x476fc`、`+0x8c`/`+0xac` |
+| 判据 | ① `CB_BULLET=1`（其余全 1）⇒ 人形态激光正常；② 妖侧弹色/伤害与之前一致；③ 闸全绿 |
+| 登记 | `AUDIT.md` §BE #205；`HANDOFF-108.md` §3 第 91 行 |
+
 ### 2.1ccc-35 ⚠ 2026-10-01（**发布纪律**）：`pl0X.sht` 资产与 exe/DLL 常量**必须同批**
 
 判据一行：**`sht_dbase_45a830`（exe 补丁：数据区基址 `0x180→0x4e0`）⟺ `assets/sht/append_shooterset.py` 的 `DATA_BASE`（= DLL 里 `sht_ids.h` 的 `CE_SHT_TRANCE_DBASE`）⟺ `dist/.../th18/pl0X.sht`**——

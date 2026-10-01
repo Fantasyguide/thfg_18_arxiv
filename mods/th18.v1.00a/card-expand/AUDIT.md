@@ -27571,3 +27571,32 @@ owner：「魔理沙的命中系数再下调」。取 **0.85 ⇒ ≈0.59**（`35
   `test_youkai_core` 的 9 条 shift 判据未动、`check-docs` 四项全绿（416 文件）、`sites.py` 站点零新增。
 - ⚠ **实跑前置**：验收必须用**含 108 P0 修复**的那版 DLL（`RELEASE-STATE.json` 的 `last_release.dll_md5` =
   `07ed3a6e3e666887b5d5b425e9f23e26`）—— 旧版（`88e828df…`）一进关就爆栈（`0xc00000fd`），测不到本功能。
+
+## §BE 详录 #205（2026-10-01）：**108 的 bullet 回调搅了人侧激光** —— 根因与修法
+
+**证据链**（owner 实跑 · 卡内开关逐项二分）：
+`#102`（7 入口全关）仍异常 → ⑧ ORBIT=0 / ⑨ MAP_LAYER=0 仍异常 → 资产（`pl01.sht`/4 个 anm）静态验证干净、
+可达 set = `0x00..0x15` ⇒ 资产排除 → `YK_ENABLE_CARD=0` ⇒ **正常**（凶手在回调里）→
+按回调族二分：**`YK_ENABLE_CB_BULLET=0` ⇒ 正常** ⇒ 锁定 `on_bullet_created` / `on_bullet_hit`。
+
+**根因（两条，同型：在错误的一侧/错误的时刻动引擎）**：
+1. **缺侧门**：`on_bullet_created`（`youkai.c` 的 `on_bullet_created`，判据 `yk_bullet_is_youkai`：`set==0x16`
+   或逐档组 `0x54..0x67`）本意只服务**妖侧弹**，却**没有侧门** ⇒ 人形态下每个自机弹创建时都会进来
+   **读 `+0xac`（packed id）并按需写 `+0x9c`（`CE_BULLET_DAMAGE`）**。人侧弹（含魔理沙人形态子机激光）
+   因此与我们发生接触。
+2. **在引擎的命中断点内部调引擎**：`on_bullet_hit`（人逢魔：命中 ⇒ 掉 1 颗刻符）原来**当场** `yk_orb_spawn()`
+   → `ce_anm_spawn()`（起刻符 VM + 插 world 链表）。这个回调本身**是为人侧设计的**（人逢魔），
+   所以它必然在**人形态**跑，而且**恰好在"打中敌人"那一刻**执行引擎分配器/链表操作 ——
+   与 owner 描述「打到人才断、某些帧变蓝」「装了才坏」的时机**逐条吻合**。
+
+**修法（默认路径，开关全部回 1）**：
+· A：`on_bullet_created` 增加 `if (!yk_focused()) return 0;`（妖侧行为不变；我方弹只在妖侧存在 ⇒ 无损失）；
+· B：`on_bullet_hit` **只排队**（`s_bhit_q[YK_BULLET_HIT_QUEUE=8]`，纯内存写、零引擎调用），
+  由 `on_tick_2` 里的 `yk_bullet_hit_flush()` 在普通帧上下文撒符（人逢魔语义保留，晚 ≤1 帧）。
+· 另加两个子开关 `YK_ENABLE_CB_BULLET_CREATED` / `…_HIT`（默认 1）供后续精确定位，**不是**修法依赖。
+
+**保留/不碰清单（写给复核）**：我们**保留**只写 `bullet+0x9c` 且仅当 `set ∈ {0x16, 0x54..0x67}` **且妖侧**；
+**不碰**滚动账本、命中账本、激光 VM（`+0x08`）、`+0x8c`（state）、`+0xac`（packed id 只读）、`player+0x476fc`。
+
+**判据**：① `CB_BULLET=1`（其余全 1）⇒ 魔理沙**人形态**子机激光正常；② 妖侧弹伤害/颜色与之前一致、
+人逢魔刻符照掉；③ `make -s check` / `dllx87` / `sites` / `capcheck` / `check-docs` 全绿。
