@@ -4,7 +4,7 @@
  *
  * ## 运动是**泰拉瑞亚原版复刻**（不是我们编的）
  *
- * 一手：`Terraria.exe`（用户本机 1.4.4.9）的 `Terraria.Projectile.AI_182_FinalFractal`
+ * 一手：`Terraria.exe`（用户本机 （本机 Steam 版实际 **1.4.5.8**；公式/表另用 1.4.4.5 的社区 decompile 对照，两版这块一致 —— 见 AUDIT §BE #213 追加 B））的 `Terraria.Projectile.AI_182_FinalFractal`
  * （Zenith 弹幕 = `ProjectileID.FinalFractal` 933）+ `Terraria.Graphics.FinalFractalHelper`，
  * 用 `dnfile` + `dncil` 反 IL 逐行读出（过程与对照见 `AUDIT.md` §BE 详录 #211）。逐条对位：
  *

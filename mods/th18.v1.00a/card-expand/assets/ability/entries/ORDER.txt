@@ -983,7 +983,7 @@ POFV109_POWER_P  ability/pofv109_power/POWER_P.png  32x32
 #   ⚠ 这张图集**同时**供跟班（逐把轮播，见 script378）与剑刃（每把随机）用 —— 原先给跟班单开的
 #     单图 entry（`ZENITH_SWORD`）同日撤掉（它的唯一消费者改走本图集的第 21 个成员），
 #     **没有别人的号受影响**（那两行都在文件末尾、冻结段之后）。
-#   一手（不是猜的）：`Terraria.exe`（用户本机 1.4.4.9）里 `Terraria.Graphics.FinalFractalHelper..cctor`
+#   一手（不是猜的）：`Terraria.exe`（用户本机 **1.4.5.8**）里 `Terraria.Graphics.FinalFractalHelper..cctor`
 #   的 IL —— 21 个 `FinalFractalProfile(ItemID, bladeLength, trailColor)`，物品号顺序如下（用 dnfile+dncil
 #   反 IL 读出；`Projectile.AI_182_FinalFractal` 用 `GetRandomProfileIndex()` 在这些里随机挑一把画）。
 #   ⚠ 最初只认出 12 个：颜色里有 `Main.OurFavoriteColor` 这类**静态字段**、长度是 `ldc.r4`（浮点），
@@ -1014,7 +1014,7 @@ ZENITH_BLADE_COPPERSHORT      ability/zenith/_src/sword_3507.png @92,236,32x32
 ZENITH_BLADE_ZENITH           ability/zenith/_src/sword_4956.png @152,224,56x56
 
 # ★★ 2026-10-02（89 星星炮，致敬泰拉瑞亚 Star Cannon）：跟班 + 弹幕两张单图。
-#   一手（用户本机 1.4.4.9 Steam 版）：`ItemID.StarCannon = 197`（`Item_197.xnb`，52×18，
+#   一手（用户本机 1.4.5.8 Steam 版）：`ItemID.StarCannon = 197`（`Item_197.xnb`，52×18，
 #   与 item 的 `width=50/height=18` 对上）、`shoot = ProjectileID.StarCannonStar = 955`
 #   （`Projectile_955.xnb`，22×24；它的 `width=18/height=18`）。取法见 `assets/cards/_src/README.md` 的
 #   「Terraria 物品贴图的取法」一节（xnbcli 解 LZX）。

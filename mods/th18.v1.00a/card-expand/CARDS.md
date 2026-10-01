@@ -238,7 +238,7 @@ C 自带一个计数器当 `short_timer` 传进去（`param_2` 只进模运算�
 
 **星星炮（89）补充**（致敬・泰拉瑞亚的 Star Cannon；owner 2026-10-02 开卡）：
 **数值逐条反编译对位**（一手 = 1.4.4.5 的 `Item.cs` / `Projectile.cs`，物品号与弹幕号从用户本机
-1.4.4.9 的 exe 常量表读出，见 `native/cards/star_cannon_core.h` 的对照表）：
+1.4.5.8 的 exe 常量表读出，见 `native/cards/star_cannon_core.h` 的对照表）：
 - 物品 = **`ItemID.StarCannon = 197`**（`_src/Item_197.png` 52×18，与 `width=50/height=18` 对上）；
   弹幕 = **`ProjectileID.StarCannonStar = 955`**（`Projectile_955.png` 22×24，`width=height=18`）。
 - **攻速复刻无加成白板**：`useTime = useAnimation = 12`、`autoReuse = true` ⇒ **12 帧一发**（5 发/秒）；
