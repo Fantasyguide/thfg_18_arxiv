@@ -508,6 +508,18 @@ static void yk_side_lock_tick(void)
 #define YK_ENABLE_CB_BULLET_CREATED 1  /* ⑱a `on_bullet_created`（只对我们自己的妖侧 set 改伤害）*/
 #define YK_ENABLE_CB_BULLET_HIT     1  /* ⑱b `on_bullet_hit`（人逢魔：命中 ⇒ 掉刻符）*/
 #define YK_BULLET_HIT_QUEUE         8  /* 命中回调里**只排队**；真正撒符挪到 `on_tick_2`（见修法 B）*/
+/* ★★★★ 2026-10-01（owner 工单⑪：**把 `yk_orb_spawn()` 这条路径逐段开关**）：
+ *   #111（只把撒符推迟 1 帧、照样撒）仍异常 ⇒ 凶手是 **`yk_orb_spawn()` 这个动作本身**。
+ *   ① `ORB_VM`      = 0：不建刻符 VM（`ce_anm_spawn` 那支跳过 ⇒ 这颗直接放弃）；
+ *   ② `ORB_LIST`    = 0：**不占我们自己的 `s_orb` 表槽**（只留「建 VM」那一半 ⇒ 与本卡逻辑脱钩）；
+ *   ③ `ORB_ZONE`    = 0：占位（一手核对：撒符**不开区、不调 `ce_cancel_radius`** —— 消弹在 `yk_zone_*`）；
+ *   ④ `ORB_DRECT`   = 0：占位（一手核对：撒符**不建 `ce_damage_rect`**；本卡只有转嫁 `:2675`、卡侧束 `:6438`）；
+ *   ⑤ `ORB_PLAYERW` = 0：**不消耗引擎 RNG**（`ce_rand()` —— 本路径唯一的全局态交互）⇒ 用固定偏移。*/
+#define YK_ENABLE_ORB_VM           0
+#define YK_ENABLE_ORB_LIST         1
+#define YK_ENABLE_ORB_ZONE         1
+#define YK_ENABLE_ORB_DRECT        1
+#define YK_ENABLE_ORB_PLAYERW      1
 #define YK_ENABLE_CB_ITEM          1  /* ⑲ on_item_frame */
 #define YK_ENABLE_CB_DRAW          1  /* ⑳ on_draw */
 #define YK_ENABLE_CB_ENEMY_DEATH   1  /* ㉑ on_enemy_death */
@@ -3675,6 +3687,17 @@ static void yk_orb_spawn_ex(yk_card_t *s, float x, float y, int state, int eat_a
     yk_orb_t *o = 0;
     unsigned i;
     uint32_t id;
+    /* ★ ⑪② `ORB_LIST=0`：**只走「建 VM」那一半**（不占我们的表、不进任何本卡逻辑）。*/
+    if (!YK_ENABLE_ORB_LIST) {
+        if (YK_ENABLE_ORB_VM) {
+            int ch0 = yk_current_character();
+            uint32_t vid;
+            if (ch0 < 0 || ch0 > 3) ch0 = 0;
+            vid = ce_anm_spawn(yk_player_anm(), YK_ORB_SCRIPT[ch0], YK_ORB_ANM_LAYER);
+            if (vid) ce_anm_set_pos(vid, x, y, 0.0f);
+        }
+        return;
+    }
     for (i = 0; i < YK_ORB_MAX; ++i) if (!s_orb[i].used) { o = &s_orb[i]; break; }
     if (!o) {
         if (s) ++s->orb_full;
@@ -3683,7 +3706,9 @@ static void yk_orb_spawn_ex(yk_card_t *s, float x, float y, int state, int eat_a
     {
         int ch = yk_current_character();
         if (ch < 0 || ch > 3) ch = 0;
-        id = ce_anm_spawn(yk_player_anm(), YK_ORB_SCRIPT[ch], YK_ORB_ANM_LAYER);
+        id = YK_ENABLE_ORB_VM
+             ? ce_anm_spawn(yk_player_anm(), YK_ORB_SCRIPT[ch], YK_ORB_ANM_LAYER)
+             : 0u;                                    /* ★ ⑪① 不建 VM ⇒ 下面 `!id` 放弃这颗 */
         /* ★ 2026-09-23（#42）：**出生即记**（前 5 颗）—— 上一版只在「60 秒采样点那一刻有活着的永点」才打，
          *   而永点常在几帧内就被收走 ⇒ 一次实跑 0 行、拿不到证据（实测 owner 15:17 那局的日志就是 0 行）。
          *   出生即记保证必有一手证据：VM 在不在、sprite/alpha/layer/draw 是什么，一眼可判。*/
@@ -3711,9 +3736,9 @@ static void yk_orb_spawn_ex(yk_card_t *s, float x, float y, int state, int eat_a
      * 那一档 `(0, −0.5, 0)`（`th08:0x441407`–`0x44142c`），而**当帧就会被归航重设成满速**
      * （`th08:0x4407f6` → `:0x4408a5`）⇒ 初始值对可见行为无影响，这里照样给一组合理初值。
      * RNG 走 `ce_rand()`（SDK 的 replay-safe RNG）——**不引 libm、不进 x87**。*/
-    o->vx = ((float)(ce_rand() % 1201u) / 1000.0f - 0.6f);                    /* ❓ 用整数取模近似 randf */
+    o->vx = ((YK_ENABLE_ORB_PLAYERW ? (float)(ce_rand() % 1201u) : 600.0f) / 1000.0f - 0.6f);                    /* ❓ 用整数取模近似 randf */
     o->vy = (state == YK_ORB_STATE_HOMING) ? -0.5f   /* `th08:0x441407` 那一档的归航初速 */
-                                           : (YK_ORB_VY0 - ((float)(ce_rand() % 1001u) / 1000.0f) * YK_ORB_VY0_RAND);
+                                           : (YK_ORB_VY0 - ((YK_ENABLE_ORB_PLAYERW ? (float)(ce_rand() % 1001u) : 500.0f) / 1000.0f) * YK_ORB_VY0_RAND);
     ce_anm_set_pos(id, x, y, 0.0f);
     ++s_orb_live;
     /* ★ 2026-09-27（第三十八批）：同时在飞的**峰值** —— 符卡螺旋那一段应当打到 ~100
@@ -4154,7 +4179,8 @@ static int yk_orbs_tick(yk_card_t *s)
              * —— 飞行坐标与 state 都在我们自己的池里，跟 VM 无关；收下与否只由抓取盒决定。*/
             int ch2 = yk_current_character();
             if (ch2 < 0 || ch2 > 3) ch2 = 0;
-            o->anm_id = ce_anm_spawn(yk_player_anm(), YK_ORB_SCRIPT[ch2], YK_ORB_ANM_LAYER);
+            o->anm_id = YK_ENABLE_ORB_VM
+                        ? ce_anm_spawn(yk_player_anm(), YK_ORB_SCRIPT[ch2], YK_ORB_ANM_LAYER) : 0u;  /* ★ ⑪① */
             if (o->anm_id) ce_anm_set_pos(o->anm_id, o->x, o->y, 0.0f);
             else if (s) ++s->orb_full;              /* 重起也失败 ⇒ 这颗只当「看不见但仍在飞」*/
         }
@@ -6959,7 +6985,8 @@ static int on_tick_2(ce_card_t *c)
                "fx_vms=%d transfer=%d zone=%d orbit=%d map_layer=%d human_opt_write=%d "
                "card=%d score_decl=%d fengma_score=%d pose_declare=%d hud_init=%d "
                "cb_life=%d cb_stage=%d cb_shooters=%d cb_tick2=%d cb_bullet=%d cb_item=%d cb_draw=%d "
-               "cb_edeath=%d cb_dbomb=%d (1 = 现状)",
+               "cb_edeath=%d cb_dbomb=%d orb_vm=%d orb_list=%d orb_zone=%d orb_drect=%d "
+               "orb_playerw=%d (1 = 现状)",
                (int)YK_ENABLE_SET_INDEX, (int)YK_ENABLE_NATIVE_SUPPRESS, (int)YK_ENABLE_OPTION_POSE,
                (int)YK_ENABLE_HUD_VM, (int)YK_ENABLE_FX_VMS, (int)YK_ENABLE_TRANSFER,
                (int)YK_ENABLE_ZONE, (int)YK_ENABLE_ORBIT, (int)YK_ENABLE_MAP_LAYER,
@@ -6967,7 +6994,9 @@ static int on_tick_2(ce_card_t *c)
                (int)YK_ENABLE_FENGMA_SCORE, (int)YK_ENABLE_POSE_DECLARE, (int)YK_ENABLE_HUD_INIT,
                (int)YK_ENABLE_CB_LIFECYCLE, (int)YK_ENABLE_CB_STAGE, (int)YK_ENABLE_CB_TICK_SHOOTERS,
                (int)YK_ENABLE_CB_TICK2, (int)YK_ENABLE_CB_BULLET, (int)YK_ENABLE_CB_ITEM,
-               (int)YK_ENABLE_CB_DRAW, (int)YK_ENABLE_CB_ENEMY_DEATH, (int)YK_ENABLE_CB_DEATHBOMB);
+               (int)YK_ENABLE_CB_DRAW, (int)YK_ENABLE_CB_ENEMY_DEATH, (int)YK_ENABLE_CB_DEATHBOMB,
+               (int)YK_ENABLE_ORB_VM, (int)YK_ENABLE_ORB_LIST, (int)YK_ENABLE_ORB_ZONE,
+               (int)YK_ENABLE_ORB_DRECT, (int)YK_ENABLE_ORB_PLAYERW);
         ce_log("youkai: human option-write mode = %s (%s) - owner laser bisect switch",
                YK_HUMAN_OPT_WRITE ? "ON (current)" : "OFF (human side fully hands-off)",
                "YK_HUMAN_OPT_WRITE");
