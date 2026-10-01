@@ -1994,6 +1994,15 @@ static uint32_t s_ledger_frame;   /* 前向声明（定义在后面；这里只�
 typedef struct { uint32_t id; int32_t life; uint8_t seen; } yk_xfam_t;
 static yk_xfam_t s_xfam[YK_XFAM_MAX];
 static unsigned  s_xfam_fed;      /* 本局喂过多少次外部/绕转使魔（日志用）*/
+/* ★★★ 2026-10-01（owner：「体感 1/2 伤害转移没有生效…敌人本身没死」+ 日志 `0 transfer damage`）：
+ *   **转嫁链路的逐段诊断**（只加计数，行为零变化）—— 把「喂料 → 累加器 → 落点」每一段都数出来：
+ *   `s_xfer_mapped_feed/_delta`（映射使魔那一支）、`s_xfer_orbit_feed/_delta`（绕转）、
+ *   `s_xfer_ext_feed/_delta`（外部子敌人 = leveledit 那批）、`s_xfer_rect`（**真的调了几次
+ *   `ce_damage_rect`**）、`s_xfer_noboss`（因为**没有 boss** 而把转嫁量丢进 `dropped` 的次数）。*/
+static unsigned s_xfer_mapped_feed, s_xfer_orbit_feed, s_xfer_ext_feed;
+static int32_t  s_xfer_mapped_delta, s_xfer_orbit_delta, s_xfer_ext_delta;
+static unsigned s_xfer_rect, s_xfer_rect_fail, s_xfer_noboss;
+static unsigned s_xfer_tick_calls;   /* ★ `yk_transfer_tick` 本局被调了几次（判断这一支有没有在跑）*/
 static unsigned  s_xfam_used;     /* 本帧表用了几格（日志用）*/
 
 /* 这个 id 是否已在映射层（`s_map`）—— 那边已经在喂转嫁，别重复计。*/
@@ -2038,6 +2047,7 @@ static yk_xfam_t *yk_xfam_find(uint32_t id)
 
 static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
 {
+    ++s_xfer_tick_calls;                   /* ★ 诊断：这一支本局跑了几次 */
     unsigned i;
     uint8_t *boss = yk_boss();                      /* 每帧只解析一次（链表走 4 个 id）*/
     const float *bp = boss ? ce_enemy_pos(boss) : 0;
@@ -2074,7 +2084,9 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
             yk_sample_life(sl, sl->fam_id, *(int32_t *)(f + YK_ED_LIFE_CUR));
             continue;
         }
-        yk_transfer_feed(&s->tr, yk_sample_life(sl, sl->fam_id, *(int32_t *)(f + YK_ED_LIFE_CUR)));
+        {   int32_t d = yk_sample_life(sl, sl->fam_id, *(int32_t *)(f + YK_ED_LIFE_CUR));
+            if (d > 0) { ++s_xfer_mapped_feed; s_xfer_mapped_delta += d; }
+            yk_transfer_feed(&s->tr, d); }
     }
 
     /* ===== ★ 第二遍：**绕转 + 外部子敌人**的同一套 1/2 转嫁（owner 2026-09-30 口径）=====
@@ -2117,7 +2129,9 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
                     /* 掉血 ⇒ 转 1/2（`yk_transfer_feed` 内部按比例）；自激盒内只采样不喂。*/
                     if (!cp || !bp || !yk_in_transfer_zone(cp[0], cp[1], bp[0], bp[1],
                                                           YK_TRANSFER_BOX_W, YK_TRANSFER_BOX_H)) {
-                        yk_transfer_feed(&s->tr, x->life - life);
+                        {   int32_t d = x->life - life;
+                            ++s_xfer_ext_feed; s_xfer_ext_delta += d;
+                            yk_transfer_feed(&s->tr, d); }
                         ++s_xfam_fed;
                     }
                 }
@@ -2148,7 +2162,12 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
                         }
                     continue;
                 }
-                if (x->life > lc) { yk_transfer_feed(&s->tr, x->life - lc); ++s_xfam_fed; }
+                if (x->life > lc) {
+                    int32_t d = x->life - lc;
+                    ++s_xfer_orbit_feed; s_xfer_orbit_delta += d;
+                    yk_transfer_feed(&s->tr, d);
+                    ++s_xfam_fed;
+                }
                 x->life = lc;
                 x->seen = 1;
             }
@@ -2158,6 +2177,7 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
     if (!boss) {
         /* 没有 boss（道中空场 / boss 已死）：本帧不转嫁（研究 §4）。**丢掉的量记账**，不攒着 ——
          * 攒着会在 boss 出现那一帧一次性砸下去（顶掉配额、放大计分）。*/
+        ++s_xfer_noboss;                                     /* ★ 诊断：没有 boss ⇒ 丢进 dropped */
         s->dropped += (uint32_t)s->tr.pending;
         s->tr.pending = 0;
         return;
@@ -2167,9 +2187,11 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
     if (amount <= 0) return;
     /* ★ 每帧**新建**一条源（一源一敌一辈子只结算一次，tag 守卫 `0x45f45a` ⇒ 复用等于只打一次）。
      * 同帧抬每敌每帧上限：自机弹贴脸打 boss 时配额已被吃满，不抬就被整份吃掉（AUDIT V20）。*/
+    ++s_xfer_rect;                                           /* ★ 诊断：真的调了几次伤害源 */
     ce_raise_damage_cap(yk_base_damage_cap() + amount);
-    ce_damage_rect(bp, 0.0f, YK_TRANSFER_SRC_LIFE, (int)amount,
-                   YK_TRANSFER_BOX_W, YK_TRANSFER_BOX_H);
+    {   int slot = ce_damage_rect(bp, 0.0f, YK_TRANSFER_SRC_LIFE, (int)amount,
+                                  YK_TRANSFER_BOX_W, YK_TRANSFER_BOX_H);
+        if (slot <= 0) ++s_xfer_rect_fail;                    /* ★ 伤害源槽没开出来（>`0` = 成功）*/ }
     s->transferred += (uint32_t)amount;
 }
 
@@ -2218,6 +2240,7 @@ static yk_emitkey_t s_emitkey[YK_EMITKEY_MAX];
  *   · `new_after_off`   = 「**父敌我们已经认识**、但又看到一个**没见过的 slot 号**」的次数
  *                         （`reappeared == 0 && new_after_off > 0` ⇒ **序号漂** DRIFTED）。*/
 static unsigned s_emitkey_pairs, s_emitkey_reappeared, s_emitkey_new_after_off;
+static unsigned s_emitkey_acts;   /* ★ 本局「看到过 active 槽」的次数（>0 = 我们**确实扫到了槽**）*/
 
 static void yk_emitkey_note(uint32_t enemy_id, int slot, int active, uint32_t child,
                             uint32_t frame)
@@ -2244,6 +2267,7 @@ static void yk_emitkey_note(uint32_t enemy_id, int slot, int active, uint32_t ch
         s_emitkey[i].logged = 0;
     }
     k = &s_emitkey[i];
+    if (active) ++s_emitkey_acts;                              /* ★ 诊断：扫到过活跃槽 */
     if (k->active_prev && !active) k->went_off = 1;            /* active → inactive */
     else if (!k->active_prev && active && k->went_off) {       /* inactive → active（**转换**）*/
         ++s_emitkey_reappeared;                                 /* ★ 汇总：OFF 后又出现 */
@@ -4787,7 +4811,21 @@ static unsigned yk_deathbomb_tint(void)
 static unsigned yk_deathbomb_tint(void) { return 0; }
 #endif
 
-static int on_load(ce_card_t *c) { return on_ctor(c); }
+/* ★★★ 2026-10-01（owner 反复出现「游戏到底载入的是哪版 DLL」的疑问）：**编译期构建戳**。
+ *   `__DATE__` / `__TIME__` 是**编译期常量**（不用运行时算 md5），每次编出来的 DLL 都不同 ⇒
+ *   实跑日志里搜 `youkai: build` 就能确认版本。判据见 `HANDOFF-108.md`。*/
+#define YK_BUILD_STAMP __DATE__ " " __TIME__
+
+static int on_load(ce_card_t *c)
+{
+    static int s_stamp_logged;
+    if (!s_stamp_logged) {
+        s_stamp_logged = 1;
+        ce_log("youkai: build " YK_BUILD_STAMP " (card 108; compile-time stamp - check this line "
+               "FIRST in any field report)");
+    }
+    return on_ctor(c);
+}
 
 static void on_run_reset(ce_card_t *c)
 {
@@ -4795,16 +4833,23 @@ static void on_run_reset(ce_card_t *c)
     /* ★ 2026-10-01（owner：这次发版就为拿这个数）—— **emitkey 收尾汇总**：
      *   `reappeared > 0` ⇒ 同一 `(enemy,slot)` 关掉后又出现 ⇒ **序号稳**（③ 可按现有身份做）；
      *   `reappeared == 0 && new_after_off > 0` ⇒ 我们只看到「新 slot 号」 ⇒ **序号漂**（③ 要换键）。*/
-    if (s_emitkey_pairs)
-        ce_log("youkai/emitkey: pairs %u seen %u reappeared %u new_after_off %u "
-               "(reappeared>0 => ordinal STABLE; reappeared==0 && new_after_off>0 => DRIFTED)",
-               s_emitkey_pairs, s_emitkey_pairs, s_emitkey_reappeared, s_emitkey_new_after_off);
+    /* ★ 2026-10-01：**无条件打**（`pairs 0` 也打）—— 并带上 `acts`（本局扫到过多少次活跃槽）：
+     *   这样即使一次转换都没有，也能区分「**根本没扫到槽**」与「扫到了但没有 关→开 转换」。*/
+    ce_log("youkai/emitkey: pairs %u seen %u reappeared %u new_after_off %u acts %u "
+           "(acts==0 => we never even SAW an active emitter slot; reappeared>0 => ordinal STABLE; "
+           "reappeared==0 && new_after_off>0 => DRIFTED)",
+           s_emitkey_pairs, s_emitkey_pairs, s_emitkey_reappeared, s_emitkey_new_after_off,
+           s_emitkey_acts);
     /* ★ 2026-09-30：台账加 `xfam`（本局喂过几次外部/绕转使魔）与 `xtab`（表用了几格）。*/
     if (s && (s->spawns || s->transferred || s_xfam_fed))
         ce_log("youkai: run done - %u familiars spawned, %u killed, %u withdrew, %u silent, "
-               "%u transfer damage, %u dropped (no boss), xfam %u xtab %u",
+               "%u transfer damage, %u dropped (no boss), xfam %u xtab %u, "
+               "xfer[tick %u map %u/%d orb %u/%d ext %u/%d rect %u fail %u noboss %u]",
                s->spawns, s->broken, s->lost, s->silent, s->transferred, s->dropped,
-               s_xfam_fed, s_xfam_used);
+               s_xfam_fed, s_xfam_used,
+               s_xfer_tick_calls,
+               s_xfer_mapped_feed, s_xfer_mapped_delta, s_xfer_orbit_feed, s_xfer_orbit_delta,
+               s_xfer_ext_feed, s_xfer_ext_delta, s_xfer_rect, s_xfer_rect_fail, s_xfer_noboss);
     yk_ring_kill_all();                                  /* ★ 切换环：换关时 tick 会停 ⇒ 这里直接收 */
     yk_popup_kill_all();                                 /* ★ #27：弹字同样要收干净 */
     (void)yk_deathbomb_tint();                           /* ★ #26：换关也要把染色还回去（先还原）*/

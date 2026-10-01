@@ -26497,3 +26497,38 @@ youkai/emitkey: pairs %u seen %u reappeared %u new_after_off %u
 
 **闸**：`make -s check` rc=0（`youkai_core: 8791 checks, 0 failed`、`dllx87 = 0`）、`sites.py verify` 全对上、
 `capcheck` 全绿、`check-docs` 全过。
+
+## §BE 详录 #172（2026-10-01）：转嫁链路的**逐段诊断计数** + **启动构建戳** + emitkey 汇总改为无条件
+
+> **owner 实跑**：「**体感 1/2 伤害转移没有生效**，我都打死了好多个使魔了都，**敌人本身没死**」；
+> 日志：`card deleted - withdrawing familiars (**24 spawned, 13 killed, 0 transfer damage this run**)`
+> ⇒ **不是感觉问题：这一局转嫁一次都没落地**。owner 已确认那局的对象 = **普通大怪（绕转使魔）**
+> ⇒ `external_feed = 0` 属预期（本局没有 leveledit 米斯蒂亚使魔），**焦点 = 绕转那一支为什么没喂到**。
+
+**一、加了什么（全是诊断，行为零变化）**
+| 计数 | 含义 |
+| --- | --- |
+| `xfer tick` | `yk_transfer_tick()` 本局被调了几次（**0 ⇒ 这一支根本没跑**）|
+| `map %u/%d` | 映射使魔那支：喂料次数 / 累计 delta |
+| `orb %u/%d` | **绕转使魔那支：喂料次数 / 累计 delta**（owner 这局的焦点）|
+| `ext %u/%d` | 外部子敌人（leveledit 那批）：喂料次数 / 累计 delta（**本局预期 0**）|
+| `rect %u fail %u` | `ce_damage_rect` 调用次数 / **返回槽号 ≤ 0 的次数**（>`0` = 伤害源真的开出来了）|
+| `noboss %u` | 因为**场上没有 boss** 而把转嫁量丢进 `dropped` 的次数 |
+
+它们都打在 **run-done 那行**（`youkai: run done - … xfer[tick … map … orb … ext … rect … fail … noboss …]`）。
+**一点即查的读法**：`tick 0` ⇒ 函数没跑；`tick >0 但 orb 0` ⇒ 绕转那支没喂到（取样/差分/清表）；
+`orb>0 但 rect 0` ⇒ 卡在「没有 boss」或 `pending ≤ 0`；`rect>0 且 fail>0` ⇒ 伤害源槽开不出来。
+
+**二、`emitkey` 汇总改成无条件**（`pairs 0` 也打）并加 `acts %u`（本局**扫到过多少次 active 槽**）
+⇒ 即使一次转换都没有，也能区分「**根本没扫到槽**」与「扫到了但没有关→开转换」。
+
+**三、★ 启动构建戳**（一劳永逸回答「游戏载入的是哪版 DLL」）：`on_load` 里打一行
+`youkai: build <__DATE__ __TIME__> (card 108; compile-time stamp - check this line FIRST in any field report)`
+（**编译期常量**，不运行时算 md5）。判据进 `HANDOFF-108.md`。
+
+**四、一手 1/2 的复核状态（如实）**：1/2 的出处仍是 `local/_scratch/research-108-damage-transfer.md`
+（🟡 `th08:0x451670`/`th08:0x4517f6` 未逐指令复核）⇒ 本轮**不改比例**、也**不能**据此断言「一手没有」；
+**先把机制闸在我们这侧查通**（上面的计数就是为它加的）。
+
+**闸**：`make -s check` rc=0（`youkai_core: 8791 checks, 0 failed`、`dllx87 = 0`）、`sites.py verify` 全对上、
+`capcheck` 全绿、`check-docs` 全过。
