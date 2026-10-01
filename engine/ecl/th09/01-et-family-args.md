@@ -142,11 +142,47 @@ fld [esi+0x18]; fsub [esi+0x1c]; call 0x404910(this=…); fadd [esi+0x1c]
 把 arg5 归一化」的惯用写法），落到 **`bullet+0xd70`**；而这一颗的角 → `call 0x42aed0(角, 0)`
 （返回 float，落 `bullet+0xd7c`，形态像 sin/cos 的方向换算）。
 
-🟡 **仍未定**：arg5/arg6 在**语义**上叫什么（对应 TH16/18 的 `etSpeed` 还是「aim 参考角」）——
-两条可选证法：① 看 `0x404910` 的 `this`（`0x4ace0c` 那个全局对象）是什么；② 看 `bullet+0xd70`
-在弹的 tick 里怎么用。**注意**：`arg5/arg6` **不是** speed —— 速度更可能来自 **arg1 指的那条类型记录**
-（`idx × 0xD48`），这也解释了为什么 `etSpeed` 在 TH16/18 里是独立的一条、而 TH09 的九参里没有明显的
-「速度对」。
+## 7. ★★★ `arg5/arg6` 定案 = **`etSpeed`**（`0x404910` = `random01() × x`）
 
-⚠ **还没做**：`0x43e380`（arg9 bit9 触发的那支）是什么；以及 §3 的 TH09→TH16/18 表要按本节更新
-（`etAngle` 那一行现在 ✅，`etCount` 那行 ✅✅）。
+跟进去读 `0x404910` 与它调的两层：
+
+```asm
+0x404910  push ebp; mov ebp,esp
+0x404913  call 0x42ae70          ; ← f(ecx)，而调用点的 ecx = 常量 0x4ace0c
+0x404918  fmul [ebp+8]           ; × 压入的 (arg5 - arg6)
+0x40491c  ret 4
+
+0x42ae70  push ecx; call 0x42ae50 ; rand() → int
+          fild [ebp-4]            ; 转 float
+          jge +; fadd [0x48e2a8]  ; ★ 负数补 2^31（0x48e2a8 = 2147483648.0）
+          fmul [0x48fb7c]         ; ★ 归一（1/2^32 量级）⇒ 结果落在 [0,1)
+```
+
+⇒ **`0x404910(x)` = `random01() × x`**。所以 `0x412c98` 那一路是：
+
+```c
+[ebp-8] = random01() * (arg5 - arg6) + arg6;   /* ★ 每颗弹一个 [arg6, arg5] 的随机值 */
+0x412d59  *(float *)(bullet + 0xd70) = [ebp-8];
+```
+
+⇒ **`arg5/arg6` 是「速度」那一对** —— 与 TH16/18 文档「**对随机子弹，它的两个参数代表了
+子弹速度的涨落的中心和范围**」相符 ⇒ 对应 **`etSpeed(第一层速度, 最后一层速度)`**。
+（我 §6 那个「不是 speed」的猜测**作废**；`arg1` 指的类型记录是**弹型/贴图**那一半，速度在参数里。）
+
+### 7.1 ★ 九个实参全部落位（TH09 → TH16/18 最终对照表）
+
+| TH09 实参 | 语义 | TH16/18 | 目标字段 |
+| :-: | --- | --- | --- |
+| — | `mode = opcode − 0x60`（96→0）| `etAim(mode)` | `desc[0xda]` |
+| **arg1** | 弹「类型记录」索引（`idx × 0xD48 + bullet_mgr`）| 类型/贴图那一半（`etSprite` 的 type 侧 🟡）| `emitter+0x210` |
+| arg2 | 🟡 本族未读（可能给 `shoot_one_bullet` 的其它分支）| — | `emitter+0x02` |
+| **arg3** | **路数**（内层循环上界）| `etCount` 低 16 | `desc[0xd9]` 低 |
+| **arg4** | **波数/层数**（外层循环上界）| `etCount` 高 16 | `desc[0xd9]` 高 |
+| **arg5 / arg6** | **速度**（每颗取 `rnd×(a−b)+b` ⇒ 随机涨落区间）| **`etSpeed`** | `desc[7]/[8]` |
+| **arg7 / arg8** | **基准角 / 层间偏角**（`(i×2π)/路数 + wave×a8 + a7`）| **`etAngle`** | `desc[5]/[6]` |
+| **arg9** | **标志位**（bit9 = `0x200` → `call 0x43e380`）| 🟡 | `emitter+0x1fc` |
+
+⇒ **「Ctrl+C」的两侧规格到这一节就算齐了**：模式、类型、路数/波数、速度、角度**全部对名**。
+
+⚠ **还没做**：`0x43e380`（arg9 bit9 那支）是什么；`arg2` 的用途；以及**开始逐条转写**
+`pl00/pl01/pl02.ecl`（下一步就是它）。
