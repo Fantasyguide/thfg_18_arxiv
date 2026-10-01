@@ -229,6 +229,22 @@ static pofv_card_t *st(ce_card_t *c)
 
 typedef void (__attribute__((thiscall)) *pofv_fn_bullet_cancel_t)(void *bullet, int mode);
 
+/* ★★ 2026-10-01（真 bug 预防）：这颗**敌弹**是不是**我们自己**的 C3/C4 弹幕（伪 boss 载体发的）？
+ *
+ *   是 ⇒ **结界 / 暴风 / CA 场都不吃它**。理由：载体的弹走的是**敌弹池**，而我们的三种清弹机制
+ *   都是「扫敌弹池」⇒ 不排除的话，**我们自己的符卡会被自己的清弹吃掉**（观感直接坏掉，
+ *   而且暴风还会拿自己的弹去连爆/回气）。
+ *
+ *   判据 = **弹种类型**在不在我们 ECL 用到的集合里（`pofv_bossatk_bullet_type_ours()`）；
+ *   类型指针的一手出处见 `engine.h` 的 `CE_BULLET_TYPE_REC`（`th18:0x42589b`）。*/
+static int is_our_barrage(const uint8_t *b)
+{
+    uint32_t rec = *(const uint32_t *)(b + CE_BULLET_TYPE_REC);
+    if (rec < CE_BULLET_TYPE_TABLE) return 0;
+    if ((rec - CE_BULLET_TYPE_TABLE) % CE_BULLET_TYPE_STRIDE) return 0;
+    return pofv_bossatk_bullet_type_ours((rec - CE_BULLET_TYPE_TABLE) / CE_BULLET_TYPE_STRIDE);
+}
+
 /* 路 ①：**只消白弹**（蓝圈）—— 引擎没有带 exclude 的半径消弹接口（review §6.4）⇒ 自己扫池。
  * 命中判据**逐字照抄** `0x429370`：state ∈ {1,2}、dist² ≤ (弹半径 × 0.5 + R)²
  * —— 这里的「弹半径」用的是**这颗弹自己的** `+0x658`（`br * 0.5f + r`），与引擎一致；
@@ -247,6 +263,7 @@ static int cancel_white_in_circle(const float *pos, float r, int max_count, int 
     for (i = 0; i < CE_BM_BULLET_COUNT; ++i) {
         uint8_t *b = bm + CE_BM_BULLETS + (size_t)i * CE_BULLET_STRIDE;
         uint16_t state = *(const uint16_t *)(b + CE_BULLET_STATE);
+        if (is_our_barrage(b)) continue;      /* ★ 我们自己发的 C3/C4 弹幕：三种清弹都不吃 */
         float br, dx, dy, rr;
         if (state != 1 && state != 2) continue;        /* 0 = 空槽；3 / 4 = 别的状态（★ 2026-09-12 asm：
                                                         * 三个消弹入口写的是 **4**，3 来自另一条路
@@ -504,6 +521,7 @@ static void bossatk_damage(void)
     for (i = 0; i < CE_BM_BULLET_COUNT; ++i) {
         uint8_t *b = bm + CE_BM_BULLETS + (size_t)i * CE_BULLET_STRIDE;
         uint16_t state = *(const uint16_t *)(b + CE_BULLET_STATE);
+        if (is_our_barrage(b)) continue;      /* ★ 我们自己发的 C3/C4 弹幕：三种清弹都不吃 */
         uint32_t rec = *(const uint32_t *)(b + CE_BULLET_TYPE_REC);
         uint32_t type;
         float bx, by;
@@ -550,6 +568,11 @@ static void bossatk_aim(void)
         const float *p;
         float dx, dy, d2;
         if (!ce_enemy_lockable(e)) continue;
+        /* ★★ 2026-10-01（真 bug 修正）：**别把自机狙瞄到我们自己的伪 boss 载体上**。
+         *   载体是**我们**在版底刷的敌人（`s_boss_carrier`）—— `CE_ENEMY_FLAG_NO_DAMAGE` 只保证
+         *   「打不掉」，**不等于「不可锁定」**（`CE_ENEMY_FLAG_NO_LOCK` 是一组语义位构成的掩码
+         *   `0x0c000021`，没有单独一位可安全置）⇒ 这里按 **enemy_id 精确排除**。*/
+        if (s_boss_carrier && *(const int32_t *)(e + CE_ENEMY_ID) == s_boss_carrier) continue;
         p = ce_enemy_pos(e);
         if (!p) continue;
         dx = p[0] - ax; dy = p[1] - ay;
@@ -635,6 +658,7 @@ static int aura_scan_bullets(const float *center, float r, int pad_linear, float
     for (i = 0; i < CE_BM_BULLET_COUNT; ++i) {
         uint8_t *b = bm + CE_BM_BULLETS + (size_t)i * CE_BULLET_STRIDE;
         uint16_t state = *(const uint16_t *)(b + CE_BULLET_STATE);
+        if (is_our_barrage(b)) continue;      /* ★ 我们自己发的 C3/C4 弹幕：三种清弹都不吃 */
         float br, bx, by, dx, dy;
         if (state != 1 && state != 2) { s_aura_done[i] = 0; continue; }  /* 空槽 / 别的状态：清闩锁 */
         if (s_aura_done[i]) continue;                                    /* ★ 这颗弹已经算过 */
