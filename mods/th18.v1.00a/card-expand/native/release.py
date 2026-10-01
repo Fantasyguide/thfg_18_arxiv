@@ -83,6 +83,9 @@ def sh(*args, cwd=None, check=True):
     return subprocess.run(args, cwd=cwd, check=check, text=True, capture_output=True).stdout.strip()
 
 
+EXCLUDE = {x for x in os.environ.get("YK_FILES_EXCLUDE", "").split(",") if x}
+
+
 def main():
     push = os.environ.get("PUSH") == "1"
     if not NO_GIT and not os.path.isdir(os.path.join(MODKIT, ".git")):
@@ -106,6 +109,11 @@ def main():
 
     changed = []
     for src, dst in MAP.items():
+        if os.path.basename(src) in {os.path.basename(x) for x in EXCLUDE}:
+            d = os.path.join(MODKIT, dst)                       # ★ 资产二分版：不同步 + 删掉发布仓库里那份
+            if os.path.exists(d):
+                os.remove(d); changed.append("删除 %s（YK_FILES_EXCLUDE）" % dst)
+            continue
         s, d = os.path.join(DIST, src), os.path.join(MODKIT, dst)
         os.makedirs(os.path.dirname(d), exist_ok=True)
         data = open(s, "rb").read()
@@ -115,7 +123,8 @@ def main():
     for src, (dst, sufs) in MAP_DIRS.items():
         s_dir, d_dir = os.path.join(DIST, src), os.path.join(MODKIT, dst)
         os.makedirs(d_dir, exist_ok=True)
-        want = {n for n in sorted(os.listdir(s_dir)) if n.endswith(sufs)}
+        want = {n for n in sorted(os.listdir(s_dir))
+                if n.endswith(sufs) and n not in {os.path.basename(x) for x in EXCLUDE}}
         for n in sorted(want):
             data = open(os.path.join(s_dir, n), "rb").read()
             d = os.path.join(d_dir, n)

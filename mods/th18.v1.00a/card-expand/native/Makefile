@@ -303,8 +303,10 @@ dist: anm sht ecl ecl-ufo
 	$(MAKE) -s ROWS=255 gen dll files >/dev/null
 	cp $(DLL) $(DIST)/bin/ && cp -r ../patch-test/. $(DIST)/patch-test/
 	cp -r ../patch/. $(DIST)/patch-step3/
-	cp build/abcard.anm build/ability.anm build/pl00.anm build/pl01.anm build/pl02.anm build/pl03.anm $(DIST)/patch-step3/th18/
-	for f in build/sht/pl0[0-3].sht; do [ -f "$$f" ] && cp "$$f" $(DIST)/patch-step3/th18/; done; true
+	for f in build/abcard.anm build/ability.anm build/pl00.anm build/pl01.anm build/pl02.anm build/pl03.anm; do \
+	    case ",$$YK_FILES_EXCLUDE," in *,th18/$${f##*/},*) echo "  [YK_FILES_EXCLUDE] 不替换 $$f";; *) cp $$f $(DIST)/patch-step3/th18/;; esac; done
+	for f in build/sht/pl0[0-3].sht; do [ -f "$$f" ] || continue; \
+	    case ",$$YK_FILES_EXCLUDE," in *,th18/$${f##*/},*) echo "  [YK_FILES_EXCLUDE] 不替换 $$f";; *) cp "$$f" $(DIST)/patch-step3/th18/;; esac; done; true
 	cp build/ecl/default.ecl $(DIST)/patch-step3/th18/    # 112 的 UFO ECL（TH12 移植；原版 30 子原样保留）
 	python3 mkfiles.py $(DIST)/patch-step3 >/dev/null
 	cp ../patch-devstage/patch.js $(DIST)/patch-devstage/ && cp build/ecl/st0[1-6].ecl build/ecl/st0[1-6]bs.ecl $(DIST)/patch-devstage/th18/ && python3 mkfiles.py $(DIST)/patch-devstage >/dev/null

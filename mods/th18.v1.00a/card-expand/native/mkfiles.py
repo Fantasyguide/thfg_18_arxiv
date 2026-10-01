@@ -31,6 +31,13 @@ def gitignored(paths, patch_dir):
     return set(r.stdout.split("\n")) - {""}
 
 
+# ★★★ 2026-10-01（owner 工单⑦ · **资产二分版**）：`YK_FILES_EXCLUDE=th18/pl01.sht[,th18/pl01.anm]`
+#   把指定文件从 files.js 里**摘掉**（= thcrap 不再替换它 ⇒ 游戏读到零售原文件）。
+#   机制说明：thcrap 的替换清单**就是本文件生成的 `files.js` + 该文件是否在 patch 目录里**
+#   （`refresh()` 用「目录里有没有这个文件」+ 后缀白名单决定条目）。所以二分版 = 文件不进 dist + 不进 files.js。
+EXCLUDE = {x for x in os.environ.get("YK_FILES_EXCLUDE", "").split(",") if x}
+
+
 def refresh(patch_dir):
     cand = []
     for root, _dirs, names in os.walk(patch_dir):
@@ -38,6 +45,9 @@ def refresh(patch_dir):
             full = os.path.join(root, name)
             rel = os.path.relpath(full, patch_dir).replace(os.sep, "/")
             if rel == "files.js" or not rel.endswith((".js", ".anm", ".ecl", ".wav", ".sht")):
+                continue
+            if rel in EXCLUDE:                      # ★ 资产二分版：不进清单 = 不替换
+                print("  [YK_FILES_EXCLUDE] 跳过 %s（本版不替换它）" % rel)
                 continue
             cand.append((rel, full))
     skip = gitignored([f for _, f in cand], patch_dir)
