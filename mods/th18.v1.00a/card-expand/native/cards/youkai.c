@@ -3279,7 +3279,7 @@ static int yk_bomb_active(void)
  *   10 = '%'、11 = '.'、12 = '-'、**13 = '+'**（本批追加的第 14 格，TH08 sprite149））；
  *   VM 必须挂**自机那一页**（`yk_player_anm()`，贴图按 VM 自己那一页取）。
  * ❓ 自定（owner 2026-09-22 已批，登记 `TUNING.md`）：**层 = 世界层 11**、**池 = 3 支 x 5 字形**。*/
-#define YK_POPUP_MAX        8   /* ★ 2026-09-30：3 → 8（一手打死一只母机可能一次冒
+#define YK_POPUP_MAX        24   /* ★ 2026-10-01：8 → 24（最坏 = 链根 1 + 每台绕转/映射使魔 1；17–18 台要 19）*/   /* ★ 2026-09-30：3 → 8（一手打死一只母机可能一次冒
                                  *   1（链根 2n）+ 子机数（≤5）个浮字 ⇒ 3 会丢；池满只丢浮字、
                                  *   不影响道具/计分，见 `yk_popup_spawn` 的降级日志）*/
 #define YK_POPUP_GLYPHS     5
@@ -4369,6 +4369,23 @@ static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
              *   且死亡函数 `0x42ad*`–`0x42b3*` 区间里**没有减** ⇒ 循环后 = 循环前 = 我们的 `n` ✓
              *   （我们的 `n` 也是「扫活子敌人」得来、循环里不递减）。*/
             if (n > 0) yk_popup_spawn(ev->x, ev->y, (int32_t)n, 1, 0xfff0f00fu, 2.03125f);
+            /* ★★★ 2026-10-01（owner：「**缺少打死 +N 的 UI**」）：上面那笔 = **链根母机**的大黄字；
+             *   这里补 **每台「绕转使魔」位置的小白字**（一手 `th08:0x42af78` 的对应物，色随 n 分档）
+             *   —— 原来浮字只挂在**映射使魔**（ECL 子敌人）那条循环上，**绕转使魔一笔都没有**。*/
+            {   unsigned oi;
+                for (oi = 0; oi < YK_ORBIT_MAX; ++oi) {
+                    yk_orbit_t *ob = &s_orbit[oi];
+                    uint8_t *of;
+                    const float *op;
+                    if (!ob->fam_id || ob->parent_id != ev->id) continue;
+                    of = ce_enemy_by_id(CE_ENEMY_MGR(), (int32_t)ob->fam_id);
+                    op = of ? ce_enemy_pos(of) : 0;
+                    if (!op) continue;
+                    yk_popup_spawn(op[0], op[1], (int32_t)n, 1,
+                                   (n < 2u) ? 0xffffffffu : (n <= 5u) ? 0xffffffd0u
+                                            : (n <= 9u) ? 0xffffffb0u : 0xffffff80u, 1.0f);
+                }
+            }
             for (k = 0; k < yk_kill_ring_count(n); ++k) {
                 float ang, rad;
                 /* ★ 2026-09-30 同上纠错：一手链根那一环也是**幅度 ±3.17**（不是半径 128）。*/
@@ -4922,13 +4939,14 @@ static void on_run_reset(ce_card_t *c)
     if (s && (s->spawns || s->transferred || s_xfam_fed))
         ce_log("youkai: run done - %u familiars spawned, %u killed, %u withdrew, %u silent, "
                "%u transfer damage, %u dropped (no boss), xfam %u xtab %u, "
-               "xfer[tick %u map %u/%d orb %u/%d ext %u/%d rect %u fail %u noboss %u noparent %u rej %u clamp %u badfp %u]",
+               "xfer[tick %u map %u/%d orb %u/%d ext %u/%d rect %u fail %u noboss %u noparent %u rej %u clamp %u badfp %u pf %u]",
                s->spawns, s->broken, s->lost, s->silent, s->transferred, s->dropped,
                s_xfam_fed, s_xfam_used,
                s_xfer_tick_calls,
                s_xfer_mapped_feed, s_xfer_mapped_delta, s_xfer_orbit_feed, s_xfer_orbit_delta,
                s_xfer_ext_feed, s_xfer_ext_delta, s_xfer_rect, s_xfer_rect_fail, s_xfer_noboss,
-               s_xfer_noparent, s ? s->tr.rejected : 0, s ? s->tr.clamped : 0, s_ysp_badfp);
+               s_xfer_noparent, s ? s->tr.rejected : 0, s ? s->tr.clamped : 0, s_ysp_badfp,
+               s_popup_dropped);
     yk_ring_kill_all();                                  /* ★ 切换环：换关时 tick 会停 ⇒ 这里直接收 */
     yk_popup_kill_all();                                 /* ★ #27：弹字同样要收干净 */
     (void)yk_deathbomb_tint();                           /* ★ #26：换关也要把染色还回去（先还原）*/
@@ -5503,6 +5521,7 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
     /* ★ #27 支 1：**「+1」弹字**（一手 `Enemy::sub_42adb0 th08:0x42b296 CreateTimePopup(&enemy+0x2d88, 1, 0, 0xFFFFFFFF)`
      * —— 一手是「击破魔使」那一刻；我们卡里没有 op90-92 那种魔使，**我们的使魔 = 同一位置的对应物** ⇒ 挂这里）。*/
     /* 击破使魔那一支（一手 `th08:0x42b296`）：**常数 1** + 白 `0xffffffff` + 字号 1.0（`kind 1` = 带 '+'）。*/
+    /* ★ 这一笔在「被杀者**自己有主**」分支里 ⇒ **绕转使魔被击破也有 `+1`** ✓（妖侧无敌 ⇒ 只在人侧发生）。*/
     yk_popup_spawn(ev->x, ev->y, 1, 1, 0xffffffffu, 1.0f);
     ce_log("youkai: familiar enemy_id %u killed (kind %u, real=%u) at (%.0f, %.0f) - "
            "that emitter slot stays silent until the NEXT etOn of that slot (route A) or the "
