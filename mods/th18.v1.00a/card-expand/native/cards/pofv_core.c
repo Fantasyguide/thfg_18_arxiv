@@ -951,7 +951,7 @@ void pofv_atan2(float y, float x, float *out)
  * 集合逐条来自 `assets/ecl/pofv109_boss.ecl.txt` 的 `etSprite` 调用（三角色 × 两档）。*/
 int pofv_bossatk_bullet_type_ours(uint32_t type)
 {
-    static const uint32_t ours[] = { 0u, 2u, 11u, 12u, 13u, 20u };
+    static const uint32_t ours[] = { 0u, 1u, 2u, 11u, 12u, 13u, 18u, 20u };
     size_t i;
     for (i = 0; i < sizeof ours / sizeof ours[0]; ++i)
         if (type == ours[i]) return 1;

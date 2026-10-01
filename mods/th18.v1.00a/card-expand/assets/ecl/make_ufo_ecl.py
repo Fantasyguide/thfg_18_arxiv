@@ -127,6 +127,27 @@ def main():
     if len(spirit) != len(OURS_SPIRIT):
         s_extra = sorted(set(spirit) - set(OURS_SPIRIT))
         raise SystemExit("spirit109.ecl.txt 里有多余子程序：%s" % ", ".join(s_extra))
+    # ★★ 硬闸（2026-10-01）：**我们 ECL 里 `etSprite` 用到的「弹型」必须与 C 侧那份名单逐条一致**。
+    #   来由：卡侧靠「弹型」认自己的弹（逐弹伤害 + 置「免撞」位）；**漏一个类型** ⇒ 那几颗弹
+    #   既**不会伤敌机**、也不会被置免撞位 ⇒ **会打到自机**。我加早苗（TH19）的支时就漏了 1 / 18
+    #   （她的 C4 用 (11,8) (1,8) (18,1)）—— 正是这个闸要抓的东西。
+    #   ⚠ 必须先**剥注释**：文件头引用了原生示例 `etSprite(0, 7, 2)`，不剥会把 7 当成真用法。
+    import re as _re2
+    _boss_src = BOSS_FRAGMENT.read_text(**ENC)
+    _boss_src = _re2.sub(r"/\*.*?\*/", "", _boss_src, flags=_re2.S)      # 块注释
+    _boss_src = "\n".join(l for l in _boss_src.split("\n") if not l.strip().startswith("//"))
+    _ecl_types = sorted({int(m.group(1)) for m in
+                         _re2.finditer(r"etSprite\(\s*[^,]+,\s*([0-9]+)\s*,", _boss_src)})
+    _core = (MOD / "native" / "cards" / "pofv_core.c").read_text(**ENC)
+    _m = _re2.search(r"static const uint32_t ours\[\] = \{([^}]*)\}", _core)
+    if not _m:
+        raise SystemExit("pofv_core.c 里找不到 `static const uint32_t ours[]`（弹型名单）")
+    _c_types = sorted({int(x) for x in _re2.findall(r"[0-9]+", _m.group(1))})
+    if _ecl_types != _c_types:
+        raise SystemExit(
+            "★ 弹型名单不一致（会漏置「免撞」位 ⇒ 那几颗弹会打到自机）：\n"
+            "   ECL 用到: %s\n   C 侧名单: %s" % (_ecl_types, _c_types))
+
     if not BOSS_FRAGMENT.is_file():
         raise SystemExit("没有 %s" % BOSS_FRAGMENT)
     boss = subs(BOSS_FRAGMENT.read_text(**ENC))
