@@ -457,9 +457,25 @@ static void do_storm_frame(pofv_card_t *s, const pofv_storm_t *bl, int *scan_bud
     int n = 0;
 
     if (!s || !bl || !bl->active) return;
-    pofv_storm_radius(bl, &r);
+    pofv_storm_radius(bl, &r);          /* ★ 每槽自带 r0/dr ⇒ **逐帧扩张** */
     if (r <= 0.0f) return;
     pos[0] = bl->x; pos[1] = bl->y; pos[2] = 0.0f;
+
+    /* ★★★ 2026-10-01（owner：「**消弹圈是逐帧扩张的场**」）：蓄力攻击的红圈走**同一个场池**，
+     *   但它是**另一回事** —— 一手：红圈消掉圈内**所有**弹幕（含不可消）、**不回复气**、不连爆、
+     *   不掉灵力道具、也不给敌人伤害。⇒ 每一帧按**当前半径**（= 这一帧长到多大）扫一遍整池。*/
+    if (bl->kind == POFV_STORM_KIND_CA) {
+        if (scan_budget && *scan_budget > 0) {
+            --*scan_budget;
+            n = pofv_cancel_circle(pos, r, /*white_only=*/0, POFV_CANCEL_MAX,
+                                   POFV_BULLET_CANCEL_MODE_CA);
+            pofv_account_ca(&s->st, n);                 /* 一手：红圈不回复气（只填 SP）*/
+        }
+        if (n > 0)
+            ce_log("pofv: CA field L%d age %d r %d cancelled %d (all bullets, sp %d)",
+                   (int)bl->life, (int)bl->age, (int)r, n, (int)s->st.sp);
+        return;
+    }
 
     /* 一手：蓝圈只消**白弹**（半径 ≤ 4.0）。整池扫弹是 O(2000)，按帧预算出闸。 */
     if (scan_budget && *scan_budget > 0) {
@@ -504,10 +520,18 @@ static void ca_effect(pofv_card_t *s, int level, int grant_invuln)
     int n;
 
     if (!s || !pp) return;
-    pofv_ca_circle_radius(level, &r);
+    /* ★★★ 2026-10-01（owner：「**消弹圈是逐帧扩张的场**」）：**不再**一次性按终点半径消一圈，
+     *   而是起**两个扩张的场**（与暴风**共用同一个场池** —— owner：「aura 和锚定场本质上是
+     *   同一个东西」的延续）：
+     *     · **「松手那一下」**（一手 `0x41e875`：16 / 20 / 8 → 176）—— **任何一次松手都起**；
+     *     · **该档的圈**（一手 L1/L2/L3：0/4.0/48→192、0/4.0/64→256、0/3.5/128→448）。
+     *   两个场都在 `do_storm_frame()` 里**逐帧按当前半径**扫弹。*/
     pos[0] = pp[0]; pos[1] = pp[1]; pos[2] = pp[2];
-    n = pofv_cancel_circle(pos, r, /*white_only=*/0, POFV_CANCEL_MAX, POFV_BULLET_CANCEL_MODE_CA);
-    pofv_account_ca(&s->st, n);                    /* ★ 一手：红圈**不回复气**（只填 SP）*/
+    pofv_ca_field_start(&s_storm, pos[0], pos[1], 0);          /* 「松手那一下」*/
+    n = pofv_ca_field_start(&s_storm, pos[0], pos[1], level);  /* 该档的圈 */
+    (void)n;
+    pofv_ca_circle_radius(level, &r);              /* 只用于日志（该档的**终点**半径）*/
+    n = 0;                                         /* 本帧的消弹数由场那边每帧自己记 */
     if (grant_invuln) ca_invuln_grant(s, level);   /* 一手：CA 给无敌（C1 = 8 帧）*/
     /* ★★ 2026-10-01（owner 甜头口径）：**C3 / C4 的蓄力攻击发动 ⇒ 把抵挡护盾（重新）架上**
      *   —— 一手 TH19 `FUN_0040b420` 的唯二调用点就是阶段 3（EXスペシャル）/ 阶段 4（ボスアタック）。
@@ -873,6 +897,9 @@ static int on_tick_2(ce_card_t *c)
     scan_budget = POFV_STORM_SCANS_PER_FRAME;
     for (i = 0; i < POFV_STORM_MAX; ++i) {
         bl = pofv_storm_slot(&s_storm, (int)i);
+        /* ★ 2026-10-01：**暴风与 CA 红圈共用这一个场池**，所以这里一次遍历两种都跑到
+         *   （`do_storm_frame()` 按 `kind` 分流）。⚠ 扫描预算 `POFV_STORM_SCANS_PER_FRAME`
+         *   是**两种场共用**的 ⇒ 同屏场多时每个场扫到的频率会降。*/
         if (bl && bl->active) do_storm_frame(s, bl, &scan_budget);
     }
     /* 推进放在后面：本帧出生/本帧结算过的场，age 从这一帧开始算（寿命 = 该档的 `R_k / dr` 帧）。*/

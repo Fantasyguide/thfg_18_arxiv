@@ -208,7 +208,18 @@ typedef struct {
     int32_t age;         /* 已经活了几帧（0 = 出生帧）*/
     int32_t life;        /* 寿命帧数（到点释放）*/
     int32_t active;
+    /* ★★ 2026-10-01（owner「**消弹圈是逐帧扩张的场**」）：场**不再只有暴风一种** ——
+     *   蓄力攻击的红圈也是同一个场（一手 L1/L2/L3 = 0/4.0/48、0/4.0/64、0/3.5/128），
+     *   甚至「松手那一下」那个 16/20/8 → 176 也是。⇒ 每个槽自带 `r0`/`dr` + `kind`。*/
+    float   r0;          /* 起始半径（暴风 = POFV_STORM_R0；CA 圈 = 一手各自的值）*/
+    float   dr;          /* 每帧增量（暴风 = POFV_STORM_DR；CA 圈 = 4.0 / 4.0 / 3.5 / 20）*/
+    int32_t kind;        /* pofv_storm_kind_t */
 } pofv_storm_t;
+
+typedef enum {
+    POFV_STORM_KIND_STORM = 0,   /* 暴风（口径 4/6：消白弹掉灵力道具 + 连爆 + 能打死灵）*/
+    POFV_STORM_KIND_CA    = 1    /* ★ 蓄力攻击的红圈（一手：消**所有**弹、**不**连爆、**不**掉道具）*/
+} pofv_storm_kind_t;
 
 typedef struct {
     pofv_storm_t s[POFV_STORM_MAX];
@@ -220,6 +231,28 @@ void pofv_storm_pool_init(pofv_storm_pool_t *p);
 
 /* 起一个暴风（O(1)：死亡回调里只准做这个）。返回槽号，−1 = 池满（丢弃）。 */
 int  pofv_storm_spawn(pofv_storm_pool_t *p, float x, float y, int32_t chain);
+
+/* 起一个**任意场**（r0/dr/寿命/kind 全给）—— 暴风与 CA 红圈共用这一个入口。−1 = 池满。 */
+int  pofv_storm_spawn_field(pofv_storm_pool_t *p, float x, float y,
+                            float r0, float dr, int32_t life, int32_t kind);
+
+/* ★★ 蓄力攻击的扩张圈（一手 `0x403c30`/`0x403c90`/`0x403cf0` ＋「松手那一下」`0x41e875`）：
+ *   `level` = **0 = 「松手那一下」**（16 / 20 / 8 → 176，**任何一次松手都起**）；
+ *   `level` = 1..4 = 该档的圈（1: 0/4.0/48→192；2: 0/4.0/64→256；3·4: 0/3.5/128→448）。
+ *   ⇒ owner：「消弹圈是**逐帧扩张的场**」——**不是**一次性按终点半径消一圈。
+ *   返回槽号，−1 = 池满。 */
+int  pofv_ca_field_start(pofv_storm_pool_t *p, float x, float y, int level);
+
+/* 「松手那一下」的一手参数（`0x41e875`–`0x41e88c`）。 */
+#define POFV_CA_BURST_R0      16.0f
+#define POFV_CA_BURST_DR      20.0f
+#define POFV_CA_BURST_LIFE        8
+
+/* 档 L 的圈参数（一手；L ≥ 3 同一支 = L3）。 */
+void pofv_ca_field_params(int level, float *r0, float *dr, int32_t *life);
+
+/* 该场**是不是**暴风（`pofv_storm_chain_at()` 只认暴风；CA 圈不参与连爆）。 */
+int  pofv_storm_is_storm(const pofv_storm_t *st);
 
 /* ★ 连爆档的来源（替换旧的 `pofv_chain_register_kill` 帧窗口）：
  *   返回**覆盖 (x,y) 这一点的最高档**（0 = 没有任何暴风盖住它）。

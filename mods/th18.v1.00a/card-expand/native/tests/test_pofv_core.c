@@ -839,6 +839,77 @@ int main(void)
         CHECK(pofv_bossatk_is_boss(0) == 0);
     }
 
+    /* ============ L. 蓄力攻击的消弹圈 = **逐帧扩张的场**（owner 2026-10-01：「消弹圈是逐帧扩张的场」）====
+     * ★ 一手：L1 `0x403c30` = 0 / 4.0 / 48 → 192；L2 `0x403c90` = 0 / 4.0 / 64 → 256；
+     *   L3 `0x403cf0` = 0 / 3.5 / 128 → 448；「松手那一下」`0x41e875` = **16 / 20 / 8 → 176**。 */
+    {
+        pofv_storm_pool_t pool;
+        const pofv_storm_t *f;
+        float r0, dr, r;
+        int32_t life;
+        int i, slot;
+
+        pofv_ca_field_params(1, &r0, &dr, &life);
+        CHECK(r0 == 0.0f && dr == 4.0f && life == 48);           /* ★ 一手 L1 */
+        pofv_ca_field_params(2, &r0, &dr, &life);
+        CHECK(r0 == 0.0f && dr == 4.0f && life == 64);           /* ★ 一手 L2 */
+        pofv_ca_field_params(3, &r0, &dr, &life);
+        CHECK(r0 == 0.0f && dr == 3.5f && life == 128);          /* ★ 一手 L3 */
+        pofv_ca_field_params(4, &r0, &dr, &life);
+        CHECK(life == 128);                                      /* ★ L≥3 同一支 */
+        pofv_ca_field_params(0, &r0, &dr, &life);
+        CHECK(life == 48);                                       /* 越界按 L1 */
+        CHECK(POFV_CA_BURST_R0 == 16.0f && POFV_CA_BURST_DR == 20.0f && POFV_CA_BURST_LIFE == 8);
+
+        pofv_storm_pool_init(&pool);
+        slot = pofv_ca_field_start(&pool, 10.0f, 20.0f, 1);
+        CHECK(slot >= 0 && pool.live == 1);
+        f = pofv_storm_slot(&pool, slot);
+        CHECK(f && f->kind == POFV_STORM_KIND_CA);
+        CHECK(pofv_storm_is_storm(f) == 0);                      /* ★ CA 场**不是**暴风 */
+        pofv_storm_radius(f, &r);
+        CHECK(r == 0.0f);                                        /* 出生帧 = r0 = 0 */
+        /* 逐帧扩张：每帧 +dr（**不是**一次性按终点半径）*/
+        for (i = 1; i <= 10; ++i) {
+            pofv_storm_tick(&pool);
+            f = pofv_storm_slot(&pool, slot);
+            pofv_storm_radius(f, &r);
+            CHECK(r == 4.0f * (float)i);
+        }
+        /* 打满寿命：终点 = 4.0 × 48 = 192（★ 一手 L1 的终点）*/
+        while (pool.live > 0) pofv_storm_tick(&pool);
+        CHECK(pool.live == 0);
+
+        /* 「松手那一下」（level 0）：16 / 20 / 8 → 176，**任何一次松手都起** */
+        slot = pofv_ca_field_start(&pool, 0.0f, 0.0f, 0);
+        f = pofv_storm_slot(&pool, slot);
+        pofv_storm_radius(f, &r);
+        CHECK(r == POFV_CA_BURST_R0);                            /* 出生就是 16（不是 0）*/
+        for (i = 0; i < POFV_CA_BURST_LIFE; ++i) pofv_storm_tick(&pool);
+        CHECK(pool.live == 0);
+
+        /* ★ CA 场**不参与连爆**：盖着点也不算档 */
+        slot = pofv_ca_field_start(&pool, 100.0f, 100.0f, 3);
+        CHECK(slot >= 0);
+        for (i = 0; i < 200; ++i) pofv_storm_tick(&pool);        /* 长到 448 以上 */
+        CHECK(pofv_storm_chain_at(&pool, 100.0f, 100.0f) == 0);
+        while (pool.live > 0) pofv_storm_tick(&pool);
+
+        /* 暴风仍是暴风（kind 默认 + 参与连爆）*/
+        CHECK(pofv_storm_spawn(&pool, 5.0f, 5.0f, 1) == 0);
+        f = pofv_storm_slot(&pool, 0);
+        CHECK(pofv_storm_is_storm(f) == 1);
+        CHECK(f->r0 == POFV_STORM_R0 && f->dr == POFV_STORM_DR);
+        CHECK(pofv_storm_chain_at(&pool, 5.0f, 5.0f) == 1);
+        pofv_storm_pool_init(&pool);
+        CHECK(pofv_ca_field_start(&pool, 0.0f, 0.0f, 3) == 0);   /* 空池能起 */
+        pofv_storm_pool_init(&pool);
+        CHECK(pofv_ca_field_start(0, 0.0f, 0.0f, 1) == -1);      /* NULL 安全 */
+        pofv_storm_spawn_field(0, 0.0f, 0.0f, 0.0f, 1.0f, 1, 0);
+        pofv_storm_is_storm(0);
+        pofv_ca_field_params(1, 0, 0, 0);
+    }
+
     printf("test_pofv_core: %d passed, %d failed\n", s_pass, s_fail);
     return s_fail ? 1 : 0;
 }

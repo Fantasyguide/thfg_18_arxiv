@@ -225,6 +225,9 @@ int pofv_storm_spawn(pofv_storm_pool_t *p, float x, float y, int32_t chain)
         s->chain = clamp_i32(chain, 1, POFV_BLAST_CHAIN_MAX);
         s->age = 0;
         s->life = pofv_storm_life_for_chain(s->chain);   /* ★ 档只放大范围 ⇒ 寿命按档 */
+        s->r0 = POFV_STORM_R0;
+        s->dr = POFV_STORM_DR;
+        s->kind = POFV_STORM_KIND_STORM;
         s->active = 1;
         ++p->live;
         return i;
@@ -242,7 +245,61 @@ void pofv_storm_radius(const pofv_storm_t *st, float *out)
     /* ★★ 2026-10-01：改用**一手 TH09 的节点律**（`r = r0 + dr × age`）—— 与结界的锚定场
      *   共用 `pofv_node_radius()`（owner：「aura 和锚定场本质上是同一个东西」）。
      *   旧实现是「16 → R_chain 固定 30 帧」的自造律（前沿 5.3–10 px/帧 ⇒ 瞬间连锁）。*/
-    pofv_node_radius(POFV_STORM_R0, POFV_STORM_DR, st->age, st->life, out);
+    pofv_node_radius(st->r0, st->dr, st->age, st->life, out);
+}
+
+int pofv_storm_spawn_field(pofv_storm_pool_t *p, float x, float y,
+                           float r0, float dr, int32_t life, int32_t kind)
+{
+    int i;
+    if (!p) return -1;
+    for (i = 0; i < POFV_STORM_MAX; ++i) {
+        pofv_storm_t *s = &p->s[i];
+        if (s->active) continue;
+        memset(s, 0, sizeof *s);
+        s->x = x; s->y = y;
+        s->active = 1;
+        s->age = 0;
+        s->life = life > 0 ? life : 1;
+        s->r0 = r0;
+        s->dr = dr;
+        s->kind = kind;
+        s->chain = 0;
+        ++p->live;
+        return i;
+    }
+    ++p->dropped;
+    return -1;
+}
+
+void pofv_ca_field_params(int level, float *r0, float *dr, int32_t *life)
+{
+    /* ★ 一手：L1 `0x403c30` = 0 / 4.0 / 48；L2 `0x403c90` = 0 / 4.0 / 64；
+     *        L3 `0x403cf0` = 0 / 3.5 / 128（L ≥ 3 同一支）。*/
+    float a = 0.0f, b = 4.0f;
+    int32_t l = 48;
+    if (level <= 1)      { a = 0.0f; b = 4.0f; l = 48; }
+    else if (level == 2) { a = 0.0f; b = 4.0f; l = 64; }
+    else                 { a = 0.0f; b = 3.5f; l = 128; }
+    if (r0) *r0 = a;
+    if (dr) *dr = b;
+    if (life) *life = l;
+}
+
+int pofv_ca_field_start(pofv_storm_pool_t *p, float x, float y, int level)
+{
+    float r0, dr;
+    int32_t life;
+    if (level <= 0)   /* ★ 「松手那一下」（一手 `0x41e875`：16 / 20 / 8 → 176）*/
+        return pofv_storm_spawn_field(p, x, y, POFV_CA_BURST_R0, POFV_CA_BURST_DR,
+                                      POFV_CA_BURST_LIFE, POFV_STORM_KIND_CA);
+    pofv_ca_field_params(level, &r0, &dr, &life);
+    return pofv_storm_spawn_field(p, x, y, r0, dr, life, POFV_STORM_KIND_CA);
+}
+
+int pofv_storm_is_storm(const pofv_storm_t *st)
+{
+    return (st && st->active && st->kind == POFV_STORM_KIND_STORM) ? 1 : 0;
 }
 
 void pofv_node_radius(float r0, float dr, int32_t age, int32_t life, float *out)
@@ -304,7 +361,8 @@ int pofv_storm_chain_at(const pofv_storm_pool_t *p, float x, float y)
         const pofv_storm_t *s = &p->s[i];
         float r, dx, dy;
         if (!s->active) continue;
-        pofv_storm_radius(s, &r);
+        if (!pofv_storm_is_storm(s)) continue;     /* ★ CA 红圈不参与连爆（owner：两回事）*/
+        pofv_storm_radius(s, &r);                  /* 每槽自带 r0/dr ⇒ 按**这一个场**算 */
         dx = x - s->x;
         dy = y - s->y;
         if (dx * dx + dy * dy > r * r) continue;   /* 没盖住这一点 */
