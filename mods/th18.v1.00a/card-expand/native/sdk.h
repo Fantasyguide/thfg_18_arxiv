@@ -567,6 +567,19 @@ void ce_poc_release(uint32_t id);
 
 /* 敌人坐标（同为 float3 基址；破损核心与炎魔在用）。*/
 static inline const float *ce_enemy_pos(const uint8_t *e) { return (const float *)(e + CE_ENEMY_POS_X); }
+/* ---- ★ 2026-10-01（109 的「自机狙」要用）：引擎的 **atan2** 存在，但**我们不能调** ----
+ * 一手：`th18:0x4a94a0` = MSVC 的 i387 `atan2`（本体 `jmp 0x4aa5a0`）；调用点
+ *   `CardAlice__on_shoot` 的 `0x40b5e8` 是 `fld y` → `fld x` → `call` → **结果在 `st(0)`**
+ *   （`0x40b5fa fstp [player+0x479cc]`）。
+ * ⚠⚠ **别在卡里调它**：结果走 x87 栈 ⇒ 我们的目标文件里必然出现 `fld/fstp`，而本仓的
+ *   `make dllx87` 闸门要求 **我们的目标文件里 x87 指令数 = 0**（我 2026-10-01 试过，被闸门拦下：
+ *   `x87 in our objects: 3`）。
+ * ⇒ 想算方位角就用 **`pofv_atan2()`**（`cards/pofv_core.h`，纯 SSE + 多项式，主机可单测、
+ *   还能在测试里拿 `math.h` 的 `atan2` 对账误差）。
+ * 用法（自机狙正路，`engine/sht/th18/02-shooter-record.md` §5）：
+ *   `*(float *)(CE_PLAYER() + CE_PLAYER_AIM_ANGLE) = pofv_atan2(dy, dx);`
+ *   再让那几行 shooter 的 `func_on_init = 5`（`0x4612d0` 会读它覆写 `bullet+0x64`）。*/
+
 /* 可锁定 = 非空且不带 NO_LOCK（破损核心瞄准与炎魔投火球是同一套过滤）。*/
 static inline int ce_enemy_lockable(const uint8_t *e)
 {

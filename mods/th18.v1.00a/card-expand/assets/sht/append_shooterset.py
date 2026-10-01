@@ -2589,23 +2589,38 @@ def _pofv109_bossatk_sets(anm_ids: dict) -> list:
         rows = []
         for k in range(n):
             t = (k / (n - 1) - 0.5) if n > 1 else 0.0
-            rows.append((0.0, U + t * spread + phase, speed, rate, dmg))
+            rows.append((0.0, U + t * spread + phase, speed, rate, dmg, 0))
         return rows
 
+    def aimed(k, speed=18.0, rate=6, dmg=12):
+        """k 条**自机狙**行（`func_on_init = 5`）。
+
+        ★ 一手（`engine/sht/th18/02-shooter-record.md` §5 + §3 的函数表）：
+          行填 `func_on_init = 5` ⇒ 建弹时 `0x4612d0` 会读 `PLAYER + 0x479cc` 的**瞄准角**
+          覆写 `bullet+0x64`（= 出膛方向）⇒ **发射瞬间定向**（不是追踪）。
+          卡侧负责把「版底锚点 → 最近可锁定敌人」的角度写进那个字段（`pofv.c` 的 `bossatk_aim()`）。
+          owner 2026-10-01：「最好是**除了透明度之外完全复刻符卡**，**包括对于敌机的「自机狙」**等等」。
+        ⚠ 这几行是**占位数值**（与 arc 同档）。
+        """
+        return [(0.0, U, speed, rate, dmg, 5) for _ in range(k)]
+
     specs = [
-        ("POFV109_BOSSATK_C1", arc(6,  speed=16.0, rate=6, dmg=14)),             # 6 颗：上半圈
-        ("POFV109_BOSSATK_C2", arc(12, speed=16.0, rate=5, dmg=11)),             # 12 颗：上半圈
-        ("POFV109_BOSSATK_C3", arc(12, speed=16.0, rate=5, dmg=10)               # 两层半圈（错 15°）
-                               + arc(12, speed=16.0, rate=5, dmg=10, phase=math.pi / 12.0)),
-        ("POFV109_BOSSATK_C4", arc(12, speed=24.0, rate=3, dmg=10)),             # 12 颗、速度 ×1.5
+        ("POFV109_BOSSATK_C1", arc(6,  speed=16.0, rate=6, dmg=14) + aimed(2)),          # 6 颗半圈 + 2 自机狙
+        ("POFV109_BOSSATK_C2", arc(12, speed=16.0, rate=5, dmg=11) + aimed(2)),          # 12 颗 + 2 自机狙
+        ("POFV109_BOSSATK_C3", arc(12, speed=16.0, rate=5, dmg=10)                       # 两层半圈（错 15°）
+                               + arc(12, speed=16.0, rate=5, dmg=10, phase=math.pi / 12.0)
+                               + aimed(4)),                                              # + 4 自机狙
+        ("POFV109_BOSSATK_C4", arc(12, speed=24.0, rate=3, dmg=10) + aimed(4, speed=26.0, rate=3)),
     ]
     out = []
     for name, rows in specs:
         rs = [dict(fire_rate=rate, start_delay=0, damage=dmg, hit_w=16.0, hit_h=16.0,
                    spawn_dx=dx, spawn_dy=0.0, angle=ang, speed=spd, opt_slot=0, mode=0,
                    anm="CE_ANM_ABILITY_SCRIPT_POFV109_BOSSATK", sfx=-1, hit_fx=-1,
-                   fire_rate2=0, start_delay2=0, func_on_init=0, func_on_tick=0,
-                   func_on_draw=0, func_on_hit=0) for dx, ang, spd, rate, dmg in rows]
+                   fire_rate2=0, start_delay2=0, func_on_init=init, func_on_tick=0,
+                   func_on_draw=0, func_on_hit=0) for dx, ang, spd, rate, dmg, init in rows]
+        for r in rs:
+            pass
         out.append((name, b"".join(pack_shooter(r, anm_ids) for r in rs) + TERMINATOR))
     return out
 

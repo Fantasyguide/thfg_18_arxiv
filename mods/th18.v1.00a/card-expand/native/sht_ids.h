@@ -82,10 +82,10 @@
 #define CE_SHT_SET_YOUKAI_A2                0x65   /* 追加，0 shooter */
 #define CE_SHT_SET_YOUKAI_A3                0x66   /* 追加，0 shooter */
 #define CE_SHT_SET_YOUKAI_A4                0x67   /* 追加，0 shooter */
-#define CE_SHT_SET_POFV109_BOSSATK_C1       0x68   /* 追加，6 shooter */
-#define CE_SHT_SET_POFV109_BOSSATK_C2       0x69   /* 追加，12 shooter */
-#define CE_SHT_SET_POFV109_BOSSATK_C3       0x6a   /* 追加，24 shooter */
-#define CE_SHT_SET_POFV109_BOSSATK_C4       0x6b   /* 追加，12 shooter */
+#define CE_SHT_SET_POFV109_BOSSATK_C1       0x68   /* 追加，8 shooter */
+#define CE_SHT_SET_POFV109_BOSSATK_C2       0x69   /* 追加，14 shooter */
+#define CE_SHT_SET_POFV109_BOSSATK_C3       0x6a   /* 追加，28 shooter */
+#define CE_SHT_SET_POFV109_BOSSATK_C4       0x6b   /* 追加，16 shooter */
 #define CE_SHT_SET_YOUKAI                   0x16   /* ★ 覆盖原生空槽，9 shooter */
 
 /* ---- 组数扩容：宣布可用 128 格 / 数组区预留 256 格（2026-09-14；AUDIT.md §CQ、NEXT.md §1w）----

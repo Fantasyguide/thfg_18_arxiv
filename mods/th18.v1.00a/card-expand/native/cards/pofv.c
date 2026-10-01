@@ -381,6 +381,43 @@ static void shield_vm_update(const pofv_card_t *s)
  *   = **由下至上**（owner：「对战作是由上至下，这里面只有我自己，所以是由下至上」）。
  *   ⚠ 观感：owner「最好观感一致」⇒ 贴图最终要换成**敌弹样式 + alpha ≤128**（TUNING §2.0v-4 #51/#52）；
  *     现在借的是自机弹样式（按 owner 的透明度铁律**豁免**额外 alpha）。*/
+/* ★★ 2026-10-01（owner：「最好是**除了透明度之外完全复刻符卡**，**包括对于敌机的「自机狙」**等等」）：
+ *   **自机狙** —— 把「版底锚点 → **最近的可锁定敌人**」的方位角写进 `PLAYER + CE_PLAYER_AIM_ANGLE`，
+ *   给那几行 `func_on_init = 5` 的 shooter 在建弹时取用（出膛定向，**不是追踪**）。
+ *
+ * 一手（逐条）：
+ *   · `engine/sht/th18/02-shooter-record.md` §5：`CardAlice__on_shoot` `0x40b4e0` 的完整链路 ——
+ *     最近敌人搜索 `0x438cb0`（半径 `0x4b93b0` = **512.0**）→ `0x4a94a0` `atan2` → `0x40b5fa`
+ *     `fstp [player+0x479cc]` → 再 `call 0x40a9c0` 发弹；行侧 `func_on_init = 5`（`0x4612d0`）
+ *     把那个角覆写到 `bullet+0x64`。
+ *   · 角度：`ce_atan2()`（`sdk.h`，包的是同一个 `0x4a94a0`）。
+ * ⚠ 「锁不锁」用引擎自己的过滤 `ce_enemy_lockable()`（= 非空且不带 NO_LOCK）——与 108/109 别处同款。
+ * ⚠ 没有可锁定敌人时**什么都不写**（保留上一次的角度；`func_on_init=5` 那几行照旧出膛，
+ *   方向 = 上一次的瞄准角 ⇒ 观感上是「朝上次目标」而不是「朝天上乱飞」）。*/
+static void bossatk_aim(void)
+{
+    uint8_t *em = CE_ENEMY_MGR();
+    uint8_t *e, *best = 0;
+    const float ax = POFV_BOSSATK_ANCHOR_X, ay = POFV_BOSSATK_ANCHOR_Y;
+    float best2 = 512.0f * 512.0f;              /* ★ 一手：CardAlice 的搜索半径（`0x4b93b0` = 512.0）*/
+
+    CE_ENEMY_FOREACH(em, e) {
+        const float *p;
+        float dx, dy, d2;
+        if (!ce_enemy_lockable(e)) continue;
+        p = ce_enemy_pos(e);
+        if (!p) continue;
+        dx = p[0] - ax; dy = p[1] - ay;
+        d2 = dx * dx + dy * dy;
+        if (d2 < best2) { best2 = d2; best = e; }
+    }
+    if (best) {
+        const float *p = ce_enemy_pos(best);
+        uint8_t *pl = CE_PLAYER();
+        if (pl) pofv_atan2(p[1] - ay, p[0] - ax, (float *)(pl + CE_PLAYER_AIM_ANGLE));
+    }
+}
+
 static void bossatk_fire(ce_card_t *c, pofv_card_t *s)
 {
     int set;
@@ -401,6 +438,7 @@ static void bossatk_fire(ce_card_t *c, pofv_card_t *s)
      *   （下一帧引擎再写回玩家身边，我们再覆盖，如此往复）。*/
     *(int32_t *)(o + CE_OPT_POS_X) = (int32_t)(POFV_BOSSATK_ANCHOR_X * 128.0f);
     *(int32_t *)(o + CE_OPT_POS_Y) = (int32_t)(POFV_BOSSATK_ANCHOR_Y * 128.0f);
+    bossatk_aim();                                      /* ★ 自机狙：先定方位角，再发弹 */
     ce_tick_shooters_for_card(o, (int)s->bossatk.left, 0, set);
 }
 

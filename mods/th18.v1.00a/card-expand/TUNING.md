@@ -9445,3 +9445,33 @@ Python 里**后一个生效** ⇒ **改前一个完全无效、而且不报错**
 
 ⇒ **纪律**：动这个文件前先 `grep -n "^def <名字>" ` 看有几个；**只改最后一个**。
 现在文件顶部已加醒目警告横幅。根治（删死的那份）属共享件改动 ⇒ 走 `AUDIT.md` §BE。
+
+#### ★★ 2026-10-01：**自机狙**落地（owner：「除了透明度之外完全复刻符卡，包括对于敌机的『自机狙』」）
+
+**一手机制**（`engine/sht/th18/02-shooter-record.md` §5 + §3 函数表）：
+`CardAlice__on_shoot` `0x40b4e0` 的链路 = 最近敌人搜索 `0x438cb0`（半径 `0x4b93b0` = **512.0**）
+→ `0x4a94a0` `atan2` → `0x40b5fa fstp [player+0x479cc]` → `call 0x40a9c0` 发弹；
+**行侧 `func_on_init = 5`**（`0x4612d0`）读那个角覆写 `bullet+0x64`（= **发射瞬间定向，不是追踪**）。
+
+**本卡落地**：
+- `cards/pofv.c` 新增 **`bossatk_aim()`**：遍历敌人链表（`CE_ENEMY_FOREACH` + `ce_enemy_lockable`），
+  在 **512 px**（一手半径）内挑最近的可锁定敌人，把「**版底锚点 → 该敌人**」的方位角写进
+  `CE_PLAYER_AIM_ANGLE`（`player+0x479cc`）；`bossatk_fire()` 在 `ce_tick_shooters_for_card` **之前**调它；
+- `append_shooterset.py`：四组各在**半圈**之后追加**自机狙行**（`func_on_init = 5`）——
+  C1/C2 = +2 行、C3 = +4 行、C4 = +4 行（速度 26）⇒ 行数 **6/12/24/12 → 8/14/28/16**；
+- `cards/pofv_core.{h,c}` 新增 **`pofv_atan2(y, x, *out)`**。
+
+**⚠⚠ 两个必须记住的坑（都在这次踩到）**：
+
+1. **引擎的 `atan2`（`0x4a94a0`）我们不能调**：它是 MSVC **i387** 版，结果在 `st(0)` ⇒ 我们的目标
+   文件里必然出现 `fld/fstp`，被 `make dllx87` 闸门拦（实测 `x87 in our objects: 3`）。
+2. **`float` 返回值也一样踩闸门**：i386 上 float 返回走 **`st0`** ⇒ 我第一版把 `pofv_atan2` 写成
+   `float pofv_atan2(y, x)`，闸门报 `x87 in our objects: 2`（两个 `.o` 各一条 `flds (%esp)`）。
+   ⇒ 改成 **`void pofv_atan2(y, x, *out)`**（指针出口）后 **归零**。
+   **这就是本仓「C 函数不返回浮点」那条铁律的具体来由**。
+
+⇒ `pofv_atan2` 是**纯 SSE 标量 + 5 项多项式**（❓ 自定：数学近似，非一手），先归约到第一象限
+`[0,1]` 再按象限补 π/2 / π 与符号；**单测拿 12 个黄金角对账**（不引 libm —— host 编译行没有 `-lm`），
+实测最大误差 **1.14e-05 rad**。
+
+⚠ **DPS 与数值仍是占位**（owner：「dps 还得重新考虑，可以先填占位」）。

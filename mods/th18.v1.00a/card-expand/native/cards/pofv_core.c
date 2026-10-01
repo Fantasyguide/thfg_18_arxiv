@@ -910,3 +910,38 @@ int pofv_ghost_clear(pofv_ghost_pool_t *p)
     pofv_ghost_pool_init(p);
     return n;
 }
+
+/* ---------------------------------------------------------------- 数学：SSE 版 atan2（见头文件）
+
+ * 手写近似（❓ 自定）：先归约到第一象限的 [0, 1] 区间，再用一个 5 项多项式算 atan，
+ * 最后按象限补 π/2 / π 与符号。全程只用标量加减乘除 ⇒ **不会产出 x87 指令**
+ * （`make dllx87` 闸门要求我们的目标文件里 x87 数 = 0；实测引擎那条 i387 atan2 会踩闸门）。*/
+void pofv_atan2(float y, float x, float *out)
+{
+    const float PI = 3.14159265358979f;
+    const float HALF_PI = 1.57079632679490f;
+    float ay = y < 0.0f ? -y : y;
+    float ax = x < 0.0f ? -x : x;
+    float z, r, z2;
+
+    if (!out) return;
+    if (ax == 0.0f && ay == 0.0f) { *out = 0.0f; return; }
+
+    /* 第一八分圆：z = min/max ∈ [0,1] */
+    if (ay <= ax) {
+        z = (ax != 0.0f) ? ay / ax : 0.0f;
+        z2 = z * z;
+        r = z * (0.9998660f + z2 * (-0.3302995f + z2 * (0.1801410f
+              + z2 * (-0.0851330f + z2 * 0.0208351f))));
+    } else {
+        z = (ay != 0.0f) ? ax / ay : 0.0f;
+        z2 = z * z;
+        r = z * (0.9998660f + z2 * (-0.3302995f + z2 * (0.1801410f
+              + z2 * (-0.0851330f + z2 * 0.0208351f))));
+        r = HALF_PI - r;                       /* 用余角 */
+    }
+    /* 按 x 的符号补到第二/三象限 */
+    if (x < 0.0f) r = PI - r;
+    /* 按 y 的符号取负 */
+    *out = (y < 0.0f) ? -r : r;
+}

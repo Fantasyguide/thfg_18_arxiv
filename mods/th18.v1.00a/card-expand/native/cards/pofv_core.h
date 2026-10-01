@@ -133,6 +133,21 @@ int  pofv_charge_cancel(pofv_state_t *st);
 /* 加充气点（蓝圈消弹 / 击破）；满 `POFV_GAUGE_PTS_PER_LEVEL` 进一格，气槽上限处**溢出丢弃**。 */
 void pofv_gauge_add_points(pofv_state_t *st, int32_t pts);
 
+/* ★ 2026-10-01（自机狙）：**只用 SSE 标量的 atan2 近似**。
+ *
+ * 为什么不用引擎的：`th18:0x4a94a0` 是 MSVC i387 版（结果在 `st(0)`）⇒ 调它我们的目标文件里
+ * 必然出现 `fld/fstp`，被 `make dllx87` 闸门拦（实测 `x87 in our objects: 3`）。
+ * 也不用 libm（本仓铁律）。⇒ 自己写一个多项式近似，**放在纯逻辑层**（主机可单测）。
+ *
+ * ❓ **自定（数学近似，非一手）**：精度目标是「瞄准够用」，实测误差 < 1e-4 rad（单测里拿
+ *   `math.h` 的 `atan2` 对 0..2π 扫一遍对账）。
+ * 返回值域 = `(-π, π]`，与引擎那条同口径。
+ *
+ * ⚠ **不返回 float**（i386 上 float 返回值走 `st0` ⇒ 目标文件里出现 `flds`，踩 `dllx87` 闸门；
+ *   实测：签名写成 `float pofv_atan2(y, x)` 时闸门报 `x87 in our objects: 2`）
+ *   ⇒ 结果经 `*out` 写出。这就是本仓「C 函数不返回浮点」那条铁律的具体来由之一。*/
+void pofv_atan2(float y, float x, float *out);
+
 /* CA 的无敌帧数。★ 一手：**C1 = 8 帧**（IDEAS 109 表）；C2–C4「无敌越长」但**帧数未逆到**
  * ⇒ ❓ 自定占位（TODO(th09)）。 */
 int  pofv_ca_invuln_frames(int level);
