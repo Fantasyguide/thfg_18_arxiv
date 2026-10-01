@@ -26408,3 +26408,32 @@ TH08 id `0x28` = `se_ophide`）⇒ 判据 = 「场上**有敌方使魔**」，�
 
 **闸**：`make -s check` rc=0（`youkai_core: 8784 checks, 0 failed`、`dllx87 = 0`）、`sites.py verify` 全对上、
 `capcheck` 全绿、`check-docs` 全过。
+
+## §BE 详录 #168（2026-09-28）：发射口**序号稳定性**诊断（纯日志，零行为变化）
+
+> **owner 问**：「那些**间断发弹的发弹口**，**发弹口序号本身是稳定的吗**？」（这决定 §③「一槽一实体」能不能按现有身份做。）
+
+**背景（代码）**：我们的发射口身份 = **`(父敌 enemy_id, 该敌人的槽序号 slot 0..15)`**
+（`youkai.c:1962 yk_note_slot(&s_map, id, i, active, wxy, &act)`；查表键 `yk_map_find(enemy_id, slot)`）。
+「不活跃的槽不建条目」⇒ 槽一关，壳就撤 —— 但**槽序号 `i` 是我们逐帧扫描发射口数组时的下标**，
+**若引擎在开/关时重排数组，序号会漂**，那就不能用它当稳定键。这一点**无法纯代码证明** ⇒ 加诊断。
+
+**诊断（已加，`youkai.c`）**：`yk_emitkey_note(enemy_id, slot, active, child, frame)` ——
+给每个 `(enemy, slot)` 记「上帧 active 与否」，**只在 `active → inactive → active` 这条转换上**打一行
+（同一对**最多 3 行**、表 32 格、表满静默放弃 ⇒ 不刷屏）：
+```
+youkai/emitkey: enemy #%u slot %d child #%u frame %u active %d
+                (re-appeared after an OFF - same (enemy,slot) pair = ordinal is STABLE;
+                 if you never see a repeated slot, it DRIFTED)
+```
+**埋点**：`yk_familiars_tick()` 里 `yk_note_slot(...)` 的**紧后一行**（`act.fam_id` 已在手）。
+**行为零变化**：不动 `yk_note_slot` / `yk_map_*` / 任何生命周期逻辑；回退 = 删那一个调用点。
+（一个实现细节：诊断状态放在**卡侧的 32 格小表**里，**不动共享件 `yk_slot_t`**（它 28 B 有 sizeof 断言）。）
+
+**判读**：拿一次 **4 面道中 boss**（或 **6 面开场阵列**）的实跑日志：
+① 同一 `(enemy, slot)` 对在 OFF 之后**再次出现** ⇒ **序号稳** = (a) ⇒ ③ 可**按现有身份**做；
+② 从不重复、每次 slot 都变 ⇒ **漂** = (b) ⇒ 换**稳定键**（最小替代 =「父敌 id + **槽的位置分桶**」）；
+③ `child #` 每次都换 ⇒ 引擎确实每次建新实体（**正常**；关键只是**别在 OFF 期间撤壳**）。
+
+**闸**：`make -s check` rc=0（`youkai_core: 8784 checks, 0 failed`、`dllx87 = 0`）、`sites.py verify` 全对上、
+`capcheck` 全绿、`check-docs` 全过。

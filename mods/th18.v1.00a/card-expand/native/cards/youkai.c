@@ -1907,6 +1907,9 @@ static void yk_fam_collide_tick(yk_card_t *s)
     s->fam_miss_latch = 0;                                        /* 没在接触 ⇒ 解锁 */
 }
 
+static uint32_t s_ledger_frame;   /* 前向声明（定义在后面；这里只用它做诊断的时间戳）*/
+static void yk_emitkey_note(uint32_t enemy_id, int slot, int active, uint32_t child, uint32_t frame);
+
 static void yk_familiars_tick(yk_card_t *s)
 {
     uint8_t *em = CE_ENEMY_MGR();
@@ -1960,6 +1963,7 @@ static void yk_familiars_tick(yk_card_t *s)
                 continue;
             }
             if (yk_note_slot(&s_map, id, i, active, wxy, &act)) yk_run_action(s, &act);
+            yk_emitkey_note(id, i, active, act.fam_id, s_ledger_frame);   /* ★ 诊断：序号稳不稳 */
         }
     }
     /* 帧末：本帧没扫到的条目 = 敌人没了（过场全清 / 静默移除）⇒ 有使魔就撤，然后退休。*/
@@ -2188,6 +2192,59 @@ static int yk_current_character(void)
 static int yk_current_power_level(void)
 {
     return yk_shot_tier((int)CE_CURRENT_POWER());
+}
+
+/* ★★★ 2026-09-30（owner 问：「那些**间断发弹的发弹口**，**发弹口序号本身是稳定的吗**？」）
+ *   —— **纯诊断**（**零行为变化**：不改 `yk_note_slot` / `yk_map_*` / 任何生命周期逻辑）。
+ *   只做一件事：给每个 `(父敌 enemy_id, 槽序号 slot)` 记一个「上帧 active 与否」，并且**只在
+ *   `active → inactive → active` 这条转换上**打一行；同一对最多打 `YK_EMITKEY_MAX_LOG` 次（防刷屏）。
+ *   判读：拿一次 4 面道中 boss（或 6 面开场阵列）的实跑日志看那几行 ——
+ *     · 同一 `(enemy, slot)` **off 之后又出现** ⇒ **序号稳** = (a)（③ 可以按现有身份做）；
+ *     · 每次出现的 `slot` 都不同（旧的不再回来）⇒ **序号会漂** = (b)（要换「父敌 id + 槽位置分桶」的键）；
+ *     · `child #` 每次都换 ⇒ 引擎确实每次都建新实体（那正常，**关键只是别在 off 期间撤壳**）。*/
+#define YK_EMITKEY_MAX      32u
+#define YK_EMITKEY_MAX_LOG  3u
+typedef struct {
+    uint32_t enemy_id;
+    uint8_t  slot;
+    uint8_t  active_prev;      /* 上一帧这个 (enemy,slot) 是不是 active */
+    uint8_t  went_off;         /* 见过一次 active→inactive */
+    uint8_t  logged;           /* 这一对已经打了几行 */
+} yk_emitkey_t;
+static yk_emitkey_t s_emitkey[YK_EMITKEY_MAX];
+
+static void yk_emitkey_note(uint32_t enemy_id, int slot, int active, uint32_t child,
+                            uint32_t frame)
+{
+    unsigned i, free_i = YK_EMITKEY_MAX;
+    yk_emitkey_t *k;
+    if (!enemy_id || slot < 0) return;
+    for (i = 0; i < YK_EMITKEY_MAX; ++i) {
+        if (s_emitkey[i].enemy_id == enemy_id && s_emitkey[i].slot == (uint8_t)slot) break;
+        if (!s_emitkey[i].enemy_id && free_i == YK_EMITKEY_MAX) free_i = i;
+    }
+    if (i >= YK_EMITKEY_MAX) {                                 /* 没记过 ⇒ 找空格登记 */
+        if (free_i >= YK_EMITKEY_MAX) return;                  /* 表满：**静默放弃**（只是诊断）*/
+        i = free_i;
+        s_emitkey[i].enemy_id = enemy_id;
+        s_emitkey[i].slot = (uint8_t)slot;
+        s_emitkey[i].active_prev = 0;
+        s_emitkey[i].went_off = 0;
+        s_emitkey[i].logged = 0;
+    }
+    k = &s_emitkey[i];
+    if (k->active_prev && !active) k->went_off = 1;            /* active → inactive */
+    else if (!k->active_prev && active && k->went_off) {       /* inactive → active（**转换**）*/
+        if (k->logged < YK_EMITKEY_MAX_LOG) {
+            ++k->logged;
+            ce_log("youkai/emitkey: enemy #%u slot %d child #%u frame %u active %d "
+                   "(re-appeared after an OFF - same (enemy,slot) pair = ordinal is STABLE; "
+                   "if you never see a repeated slot, it DRIFTED)",
+                   enemy_id, slot, child, frame, active);
+        }
+        k->went_off = 0;                                        /* 重置，等下一次 off→on */
+    }
+    k->active_prev = (uint8_t)(active ? 1 : 0);
 }
 
 /* ---- ★★ 2026-09-22 晚（owner 第 2 条）：本帧的**追踪目标**（`on_tick_2` 每帧解析一次）---------
