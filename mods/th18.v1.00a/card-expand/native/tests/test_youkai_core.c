@@ -2320,10 +2320,12 @@ int main(void)
 
         /* ① 「大怪」判据的边界（63×64 / 64×63 / 64×64）—— 与 117 `cards/animal.c` 的
          *    `ANIMAL_BIG_SPRITE_MIN_W/H` 同值，所以这一段同时钉住「两张卡用的是同一个数」。*/
-        CHECK(YK_BIG_SPRITE_MIN_W == 64 && YK_BIG_SPRITE_MIN_H == 64);
-        CHECK(!yk_big_by_sprite(63, 64));
-        CHECK(!yk_big_by_sprite(64, 63));
-        CHECK(yk_big_by_sprite(64, 64));                      /* 边界含 */
+        CHECK(YK_BIG_SPRITE_MIN_W == 48 && YK_BIG_SPRITE_MIN_H == 48);   /* ★ 2026-09-30：64→48（大妖精 48×48）*/
+        /* ★ 2026-09-30：阈值 64 → **48**（4 面那两种「大妖精」= 48×48；小妖精 32×32 / 48×32 仍排除）*/
+        CHECK(!yk_big_by_sprite(47, 48));
+        CHECK(!yk_big_by_sprite(48, 47));
+        CHECK(yk_big_by_sprite(48, 48));                      /* 大妖精（新纳入）*/
+        CHECK(yk_big_by_sprite(64, 64));                      /* 大蝴蝶 */
         CHECK(yk_big_by_sprite(65, 64));
         CHECK(yk_big_by_sprite(64, 65));
         CHECK(yk_big_by_sprite(96, 96));                      /* 实测的 64×64 那一批 sprite */

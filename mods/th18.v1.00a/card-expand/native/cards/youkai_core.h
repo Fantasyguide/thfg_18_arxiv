@@ -1981,11 +1981,16 @@ int yk_item_box_open(int32_t player_state);
  *   ③ 「**数量我倾向于和血量挂钩**」⇒ 台数 = `yk_orbit_count_for_hp(父敌最大血量)`
  *      （分档表见下，**❓自定，待 th08 一手统计回来即替换**）。*/
 
-#define YK_BIG_SPRITE_MIN_W   64      /* 判「大怪」的贴图**原始**尺寸下限（未乘 scale）。
+/* ★★★ 2026-09-30（owner：4 面掉钱卡那波的三只 = enemy.png **右上角那两块**的「大妖精」，
+ *   比大蝴蝶小 ⇒ 我们原来的「两边 ≥ 64」把它们漏了）：一手 rect（`local/th18.v1.00a/anm/enemy/enemy.anm.txt`
+ *   entry0 `enemy/enemy.png`，120 sprites）—— 小妖精 **32×32**（60 张）/ 48×32（24 张）、
+ *   **大妖精 48×48**（24 张，其中**右上角 sprite72..87 = 16 张** = 两种大妖精 × 8 帧）、
+ *   **大蝴蝶 64×64**（12 张）⇒ 判据取「**两边 ≥ 48**」= 卡在「小妖精最大 48×32」与「大妖精 48×48」之间。*/
+#define YK_BIG_SPRITE_MIN_W   48      /* 判「大怪」的贴图**原始**尺寸下限（未乘 scale）。
                                        * 一手/同源：`cards/animal.c` 的 `ANIMAL_BIG_SPRITE_MIN_W/H` = 64/64
                                        *（117 的判据：用户口径 + `enemy.png` 实测 —— 右下角 sprite96..107 = 64×64）。
                                        * ⚠ **别单独改这个数**：两处必须同值，要改先动 117 的那一份。*/
-#define YK_BIG_SPRITE_MIN_H   64
+#define YK_BIG_SPRITE_MIN_H   48
 #define YK_ORBIT_DELAY_FRAMES 60u     /* ★★★ 生成**延时**（一手形状）：父敌**首次被扫到**之后再等这么多帧
                                        *   才建使魔。一手（`ecldata1.txt` 逐条）：阶段一妖精**进场后飞约 1 秒**
                                        *   （`moveDirTime(60,4,·)`）才在 **t = 50 / 60 / 70 帧**建使魔，
