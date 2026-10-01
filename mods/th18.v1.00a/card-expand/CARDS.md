@@ -49,7 +49,7 @@
 
 | id | 名字 | category | 状态 |
 | :-: | --- | :-: | --- |
-| ~~86~~ | 东尼的悲恸 | 2（被动）| ✅ **2026-10-02 落地**（统筹代做）—— 见「其它」段的 86 行；卡图暂用占位（白底 + 问号），待 owner 提供 |
+| ~~86~~ | 东尼的悲恸 | 2（被动）| ✅ **2026-10-02 落地**（统筹代做）—— 见「其它」段的 86 行；卡图 = owner 提供的《杀戮尖塔》「送死亡」整卡（裁出卡体矩形后铺满，见「其它」段 86 行） |
 | ~~87~~ | 天顶剑 | 1（装备区）| ✅ **2026-10-02 落地** —— 见「装备（子机）」段的 87 行；卡面 = 白底 + Terraria 原版天顶剑物品 |
 
 > **号位不再预留**（两条都已实装）。预留台账原文见 [`HANDOFF-CROSSCARD-STATE.md`](HANDOFF-CROSSCARD-STATE.md) §11.4b。
@@ -145,7 +145,7 @@ EVENTS-CONTRACT §2）⇒ 与卡链顺序无关、别的卡加到的那颗也一
 **用时** = `SPELLCARD+0x24`（宣言清零、每帧 +1，只有这两个写点）`≤ 960`。
 **非符** = 段边界（活动中断槽 `(槽名, hp, time, 名字前 16 字节)` 签名变化，算式同族于 `animal.c`/`lolk.c`，名字取 16 字节而不是 4 ⇒ `Boss2`/`BossCard3` 分得开）处 bit0 = 0；**死亡段**（槽名含 `Dead`，复用古锭刀 76 的 `gd_slot_is_final`）不写，免得一枪跳过死亡演出。
 落笔只写 `zEnemy+0x6220`（非符段的权威血量；`maximum` 不动 ⇒ 血条见底），段内每帧幂等补写、签名一变立刻停。
-卡图暂用**占位**（白底 + 灰问号，`assets/cards/make_white_item_card.py TONY_GRIEF --text '?'`，sprite 200/201），等 owner 提供；`price_tier 9 / weight 2 / initial_unlocked 1` 是占位值（进 `TUNING.md`）。
+卡图 = **owner 2026-10-02 提供**（《杀戮尖塔》「送死亡」整卡）：原件 `_src/TONY_GRIEF.png`，按 alpha 遮盖取**卡体矩形** `(72,53,771,1042)` = 699×989 裁出 `_src/TONY_GRIEF_CARD.png`，再 `fit_card.py TONY_GRIEF … --no-detect --trim 0 --margin 0 --fill` 铺满 256×320 + 套原生框（sprite 200/201 不变）；裁法与出处见 `assets/cards/_src/README.md`；`price_tier 9 / weight 2 / initial_unlocked 1` 是占位值（进 `TUNING.md`）。
 ⚠ 口径待 owner 一句话：**耐久符卡**（bit3）超时在 flag 上与「收下」不可区分（引擎自己也按收下算），本卡按引擎口径**算收下**。
 
 ## 致敬・炉石传说
