@@ -323,6 +323,12 @@ release-check:
 ##   ⚠ 顺序：**先过 release-check（冻结即中止）**，再 dist，然后发布，最后 record 记账
 ##   （账 = patch js / DLL / 四份 pl0X.sht / 两份 anm / cards.js / files.js 的 md5 快照，写进
 ##    入库的 `RELEASE-STATE.json` + 本机 `local/DLL-SYNC.md`）。
-release: release-check dist
+## ★ 2026-10-01：`release` 走的是 `--full-batch` 版的闸 —— 这一批**会连四份 pl0X.sht 一起**写进
+##   modkit，所以「游戏里的 sht 与当前构建不同」是**预期**而不是错误（否则改 sht 的批次会被循环锁住，
+##   见 AUDIT §BE 详录 #165）。**手工跑的 `release-check` 与 `sync_modkit_dll.sh` 都仍是严格版。**
+release-check-full:
+	python3 tools/release_guard.py check --full-batch --modkit "$${MODKIT_DIR:-}"
+
+release: release-check-full dist
 	python3 release.py
 	python3 tools/release_guard.py record --modkit "$${MODKIT_DIR:-未指定}"

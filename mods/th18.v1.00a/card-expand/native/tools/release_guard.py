@@ -189,7 +189,8 @@ def cmd_check(s, a):
         if not os.path.isfile(pair):
             print("  ❌ 找不到 %s（模组级 tools/）⇒ 这条检查没法做，按不过处理" % os.path.relpath(pair, REPO))
             bad += 1
-        elif run([sys.executable, pair, DLL, a.modkit]) != 0:
+        elif run([sys.executable, pair, DLL, a.modkit]
+                 + (["--allow-stale-sht"] if getattr(a, "full_batch", False) else [])) != 0:
             bad += 1
     else:
         print("② DLL ↔ pl0X.sht：没给 `--modkit <dir>` ⇒ 跳过（发布前请带上）")
@@ -238,7 +239,13 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("status"); p.set_defaults(fn=cmd_status)
-    p = sub.add_parser("check"); p.add_argument("--modkit", default=None); p.set_defaults(fn=cmd_check)
+    p = sub.add_parser("check"); p.add_argument("--modkit", default=None)
+    # ★★ 2026-10-01（AUDIT §BE 详录 #165）：`--full-batch` = 「这一批会连 sht 一起发布」
+    #   ⇒ 判据 1 的逐字节比较降级为提示（否则**改了 sht 的批次永远发不出去**：闸让整批发布，
+    #   而整批发布又被闸拦住 = 循环锁）。⚠ **只给 `make release` 用**；
+    #   `release-check`（手工跑）与 `sync_modkit_dll.sh`（只推 DLL）都必须保持严格。
+    p.add_argument("--full-batch", action="store_true")
+    p.set_defaults(fn=cmd_check)
     p = sub.add_parser("record"); p.add_argument("--modkit", default=None); p.set_defaults(fn=cmd_record)
     p = sub.add_parser("freeze")
     p.add_argument("--reason", required=True); p.add_argument("--ref", default=None)

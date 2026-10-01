@@ -1,7 +1,16 @@
 #!/usr/bin/env python3
 """★ 部署配套性闸：**DLL 与游戏里的 `pl0X.sht` 必须同批**（2026-09-15，AUDIT §CV/§CX）。
 
-    python3 tools/check_deploy_pair.py <待推的 DLL> <modkit 目录>
+    python3 tools/check_deploy_pair.py <待推的 DLL> <modkit 目录> [--allow-stale-sht]
+
+★★ `--allow-stale-sht`（2026-10-01 加）：**只在「整批发布」那条路上用**。
+    起因（AUDIT §BE 详录 #165）：判据 1 要求「游戏里的 pl0X.sht **逐字节等于**当前构建产物」，
+    而这**只有发布之后才成立** ⇒ 一旦这一批**改了 sht**（例如 109 加了 4 组、`N_SLOTS` 96→128），
+    `make release` 的闸就变成**循环锁**：闸说「整批发布」，而整批发布又被闸拦住。
+    ⇒ 带这个开关时，判据 1 的逐字节比较**降级为 ⚠ 提示**（因为 `release.py` 会把四份 sht 一起写进
+       modkit）；**判据 2（形状体检：113 的槽指向合法行）仍然照旧硬判**，退出码也照旧。
+    ⚠ `local/sync_modkit_dll.sh`（**只推 DLL** 那条路）**绝不许**带这个开关 —— 那条路正是这道闸
+       存在的理由（新 DLL + 旧 sht = 崩）。
 
 ## 为什么要这道闸（一次真实崩溃）
 
@@ -69,6 +78,9 @@ def slot_ok(data, slot, dbase):
 
 
 def main(argv):
+    # ★ 开关先摘掉再数参数（2026-10-01：`--allow-stale-sht` 只在「整批发布」那条路上用）
+    allow_stale = "--allow-stale-sht" in argv
+    argv = [a for a in argv if a != "--allow-stale-sht"]
     if len(argv) != 3:
         print(__doc__)
         return 2
@@ -95,8 +107,11 @@ def main(argv):
         ref_path = os.path.join(BUILD_DIR, n)
         if os.path.exists(ref_path):
             if open(ref_path, "rb").read() != dep:
-                print("      ✗ 与当前构建产物不同 ⇒ 资产不是这一版")
-                bad += 1
+                if allow_stale:
+                    print("      ⚠ 与当前构建产物不同 —— **整批发布模式**：这一批会连 sht 一起写进 modkit")
+                else:
+                    print("      ✗ 与当前构建产物不同 ⇒ 资产不是这一版")
+                    bad += 1
         else:
             print(f"      ⚠ 没有构建产物可对比（{ref_path}）—— 先 `make sht`")
             bad += 1

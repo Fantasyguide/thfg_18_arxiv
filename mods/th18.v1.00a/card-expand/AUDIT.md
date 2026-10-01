@@ -26271,3 +26271,38 @@ owner 口径也是 50%）🟡 **TH08 侧 `th08:0x451670`/`th08:0x4517f6` 的每�
 
 **闸**：`make -s check` rc=0（`youkai_core: 8166 checks, 0 failed`、`dllx87 = 0`）、`sites.py verify` 全对上、
 `capcheck` 全绿、`check-docs` 全过（413 文件）。
+
+## §BE 详录 #165（2026-10-01）：修**发布闸的循环锁** —— 改了 `pl0X.sht` 的批次发不出去
+
+**谁改的**：109 的 owner 会话（`make release` 时踩到）。**碰到的共享件**：
+`tools/check_deploy_pair.py`、`native/tools/release_guard.py`、`native/Makefile`。
+
+**症状**（2026-10-01，109 的 boss attack 批次）：`make release-check` 红一条 ——
+「✗ **不配套**：游戏里的 pl0X.sht 与当前构建不同批」，而**闸自己印的解药就是**
+「⇒ 整批发布：`make release MODKIT_DIR=… NO_GIT=1`」。但 `Makefile` 里 `release: release-check dist`
+⇒ **整批发布被同一个闸拦住** = **循环锁**。
+
+**根因**：`check_deploy_pair.py` 的判据 1 是「游戏里四份 `pl0X.sht` **逐字节等于** 当前构建产物」。
+这条对「**没改 sht** 的批次」恰好成立（上一批已经部署过同一份文件），但**对这一批改了 sht 的情况
+天然不可满足** —— 它的真值只有**发布之后**才有。历史佐证：`RELEASE-STATE.json` 的 history 里
+`sht_md5` **从没变过**（所有条目同一组）⇒ 这道闸**从没遇到过改 sht 的发布**。
+
+**修法**（保留闸的原意，只把「整批发布」这条合法路放行）：
+
+| 文件 | 改动 |
+| --- | --- |
+| `tools/check_deploy_pair.py` | 新增 `--allow-stale-sht`：判据 1 的逐字节比较**降级为 ⚠ 提示**（理由是 `release.py` 会把四份 sht 一起写进 modkit）；**判据 2（113 的槽指向形状合法的行）照旧硬判**，退出码语义不变 |
+| `native/tools/release_guard.py` | `check` 加 `--full-batch`，透传上面那个开关 |
+| `native/Makefile` | 新增 `release-check-full`（= `check --full-batch`），`release: release-check-full dist` |
+
+⚠ **边界写死**：`--allow-stale-sht` **只给 `make release` 用**。
+- 手工跑的 `release-check` 仍是**严格版**；
+- `local/sync_modkit_dll.sh`（**只推 DLL** 那条路，`check_deploy_pair.py` 的既有调用方）**绝不带**
+  —— 那条路正是这道闸存在的理由（**新 DLL + 旧 sht = 崩**，§CV/§CX 的事故）。
+
+**验证**：
+- 发布当天现场：严格版红（游戏里是旧 sht）⇒ 走 `make dist` + `release.py`（7 处写入，含四份 sht）
+  + `local/sync_modkit_dll.sh`（四份 DLL 同 md5 `bd5c8d83a93781b2f9f40454865025e3`）
+  ⇒ **严格版与 `--full-batch` 版随后都 ✅ 全过**（游戏里已是新 sht）。
+- `release_guard.py record` 已写 `RELEASE-STATE.json`，本批 `sht_md5` 与历史**不同**
+  （`c6e1bd19… / b72212e3… / 1d1e52bb… / cfdf1e23…`）= 四份 sht 真的换代了。
