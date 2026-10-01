@@ -5774,10 +5774,46 @@ static void ufo_dup_run(ufo_card_t *s)
     ce_log("ufo: jera dup %d bags", n);
 }
 
+/* ★★ 2026-10-02（Jera 88「杰拉」）：本卡的**令牌（飞碟）**交给 SDK 的「复制代数闸」——
+ * 每帧上报可见数，代数一变就照原档重撒（`ufo_tok_spawn_ex` 是它唯一的出生口）。
+ * ★ owner 2026-10-02 口径：「112 和 117 的 token **不能重合**啊，得换个移动方向」
+ *   ⇒ 复制品的**水平方向与原物相反**（一手只有两个对角线方向：π/4 右下 / 3π/4 左下，
+ *     `ufo_tok_motion_init_at` 按序号奇偶选）—— 反向 = 换个方向、且必然分得开。
+ * 语义见 `sdk_core.h` 末节与 `cards/jera.c` 文件头。*/
+static int ufo_dup_tok_count(void)
+{
+    int i, n = 0;
+    for (i = 0; i < s_tokpool.n; ++i) if (s_tokpool.tok[i].anm_id) ++n;
+    return n;
+}
+
+static void ufo_dup_tokens(ufo_card_t *s)
+{
+    ufo_tok_t snap[UFO_TOKEN_CAP];
+    int n = s_tokpool.n, i, made = 0;
+    if (n <= 0) return;
+    memcpy(snap, s_tokpool.tok, sizeof snap[0] * (size_t)n);   /* 先快照：池是紧凑数组，生成会追加 */
+    for (i = 0; i < n; ++i) {
+        ufo_tok_t *cp;
+        if (!snap[i].anm_id) continue;
+        if (!ufo_tok_spawn_ex(s, snap[i].motion.x, snap[i].motion.y,
+                              ufo_token_display_color(snap[i].color, snap[i].cycler, snap[i].rb_state),
+                              (int)snap[i].rb_state, (int)snap[i].cycler))
+            continue;
+        cp = &s_tokpool.tok[s_tokpool.n - 1];                  /* 刚撒的那一枚（池尾）*/
+        if (cp->motion.vx * snap[i].motion.vx > 0.0f)          /* 同向 ⇒ 翻成另一个对角线 */
+            cp->motion.vx = -cp->motion.vx;
+        ++made;
+    }
+    ce_log("ufo: jera dup %d/%d tokens", made, n);
+}
+
 static int on_tick_2(ce_card_t *c)
 {
     ufo_card_t *s = ce_state(c, ufo_card_t);
     if (!s) return 0;
+    ce_dup_publish((uint32_t)ce_card_id(c), ufo_dup_bag_count() + ufo_dup_tok_count());
+    if (ce_dup_should_run(&s_dup_seen)) { ufo_dup_run(s); ufo_dup_tokens(s); }
     ce_dup_publish((uint32_t)ce_card_id(c), ufo_dup_bag_count());
     if (ce_dup_should_run(&s_dup_seen)) ufo_dup_run(s);
 

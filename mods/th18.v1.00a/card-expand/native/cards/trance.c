@@ -2146,12 +2146,47 @@ static void trance_spirits_tick(ce_card_t *c)
  *   而引擎的移动函数在最后一步把它当倍率乘上去（`th18:0x45b170` 末段 `* *(float*)(p+0x477ec)`；
  *   见 `mods/th18.v1.00a/mouse-control/TARGET.md` §目标字段 6/8）。
  *   ⇒ 两家**结构上相乘**（Aya 给基础步长、我们给倍率），谁也吃不掉谁 —— 不需要任何改动。*/
+/* ★★ 2026-10-02（Jera 88「杰拉」）：本卡的**神灵**交给 SDK 的「复制代数闸」——
+ * 每帧上报可见数，代数一变就照原档重撒（`trance_spirit_spawn` 是它唯一的出生口）。
+ * ⚠ 两处口径：
+ *   ① `core` 传 **NULL**（照 `trance_spirit_restyle()` 的先例）—— 复制**不是**原版的"出生事件"，
+ *      传 core 会推进连锁（凭空造白灵）；这是 ❓ 口径，登记在 `TUNING.md` §2.10。
+ *   ② 方向不用管：`trance_spirit_spawn()` 自带避让（TH17 那条 24 px 同向 +225° 重掷）⇒ 复制品自动散开。
+ * 语义见 `sdk_core.h` 末节与 `cards/jera.c` 文件头。*/
+static uint32_t s_dup_seen;
+
+static int trance_dup_spirit_count(void)
+{
+    int i, n = 0;
+    for (i = 0; i < s_n_spirit; ++i) if (s_spirit[i].id && !s_spirit[i].dying) ++n;
+    return n;
+}
+
+static void trance_dup_run(void)
+{
+    trance_spirit_t snap[TRANCE_SPIRIT_POOL];
+    int n = s_n_spirit, i, made = 0;
+    if (n <= 0) return;
+    memcpy(snap, s_spirit, sizeof snap[0] * (size_t)n);
+    s_spirit_spawn_silent = 1;               /* 复制不该再响一遍出生音（照 restyle 的先例）*/
+    for (i = 0; i < n; ++i) {
+        if (snap[i].dying || !snap[i].id) continue;
+        trance_spirit_spawn(snap[i].x, snap[i].y, snap[i].type, snap[i].born_trance, NULL,
+                            TRANCE_SPIRIT_SPAWN_SPEED);
+        ++made;
+    }
+    s_spirit_spawn_silent = 0;
+    ce_log("trance: jera dup %d/%d spirits", made, n);
+}
+
 static int on_tick_2(ce_card_t *c)
 {
     trance_card_t *s = st(c);
     uint8_t *pl;
 
     if (!s) return 0;
+    ce_dup_publish((uint32_t)ce_card_id(c), trance_dup_spirit_count());
+    if (ce_dup_should_run(&s_dup_seen)) trance_dup_run();
     pl = CE_PLAYER();
     if (!pl) return 0;
 

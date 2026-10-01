@@ -3875,6 +3875,29 @@ static int on_bomb_gate(ce_card_t *c)
     return 1;
 }
 
+/* ★★ 2026-10-02（Jera 88「杰拉」）：本卡的**动物灵**交给 SDK 的「复制代数闸」——
+ * 每帧上报可见数，代数一变就照原档重撒。
+ * ★ owner 2026-10-02：「112 和 117 的 token 不能重合啊，得换个移动方向」——
+ *   `token_spawn_heading()` **本身就带方向避让**（TH17 一手：24 px 内有点积 ≥ `ANIMAL_OVERLAP_DOT`
+ *   的另一枚就往同方向转 `ANIMAL_OVERLAP_TURN` 重试）⇒ 复制品与原物同坐标、同朝向 ⇒
+ *   第一轮就判 clash、自动换一个方向 ✓ **不用另写逻辑**。
+ * 语义见 `sdk_core.h` 末节与 `cards/jera.c` 文件头。*/
+static uint32_t s_dup_seen;
+
+static void animal_dup_run(void)
+{
+    animal_token_t snap[ANIMAL_TOKEN_MAX];
+    int n = s_n_tok, i, made = 0;
+    if (n <= 0) return;
+    memcpy(snap, s_tok, sizeof snap[0] * (size_t)n);
+    for (i = 0; i < n; ++i) {
+        float ang = bc_atan2f(snap[i].vy, snap[i].vx);   /* 原物当前朝向（避让会把它转开）*/
+        if (token_spawn_heading(snap[i].type, snap[i].long_life, snap[i].x, snap[i].y, ang, 0))
+            ++made;
+    }
+    ce_log("wba_wc: jera dup %d/%d tokens", made, n);
+}
+
 static int on_tick_2(ce_card_t *c)
 {
     animal_card_t *s = st(c);
@@ -3882,6 +3905,8 @@ static int on_tick_2(ce_card_t *c)
 
     if (!s) return 0;
     ++s->frame;
+    ce_dup_publish((uint32_t)ce_card_id(c), (int)s_n_tok);
+    if (ce_dup_should_run(&s_dup_seen)) animal_dup_run();
     /* ★ 2026-10-01（跨卡只读标志；交接 = `HANDOFF-108-CROSSCARD-SHIFT.md`）：每帧按 `roaring(s)`
      *   重算「暴走咆哮中」——**零发明**（判据现成：`core.ready || core.hypering`），
      *   也正好绕开「还有没有别的入口把咆哮打开」这个未普查项（交接 §6.1）。粘性；删卡由

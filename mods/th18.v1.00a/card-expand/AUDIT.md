@@ -28021,3 +28021,27 @@ static 池**，Jera 够不着。而引擎道具池也不是「一个大池」：
    ⚠ 这是**删行**（不是尾插）：被删的行在**文件末尾、`ORDER.frozen.txt` 的冻结段之后**，
    既有别人的 entry / sprite 号**一个没动**；受影响的只有本卡 87 自己，与它同批重编
    （`anm_ids.h` / DLL / `ability.anm` 一起发布）。`make check` 全绿可证。
+
+### §BE 详录 #212 追加（2026-10-02c）：再接 **112 飞碟令牌 / 113 神灵 / 117 动物灵**，并给 112/117 的复制品换方向
+
+owner 2026-10-02：「112 113 117也接会比较好玩 —— 112和117的token不能重合啊，得换个移动方向」。
+
+| 文件 | 别人的卡 | 加的是什么 |
+| --- | --- | --- |
+| `cards/ufo.c` | **112 星莲船** | `ufo_dup_tokens()`（先快照 `s_tokpool.tok[0..n)`，逐个 `ufo_tok_spawn_ex()`），并把可见数改成「压缩包 + 令牌」 |
+| `cards/trance.c` | **113 神灵庙** | `trance_dup_run()`（先快照 `s_spirit[0..n)`，跳过 `dying`），重撒时 **`core` 传 NULL** + 静音 |
+| `cards/animal.c` | **117 鬼形兽** | `animal_dup_run()`（先快照 `s_tok[0..n_tok)`，逐个 `token_spawn_heading()`）|
+
+**方向（owner 那条要求的落点）**：
+- **112**：一手只有两个对角线方向（`ufo_tok_motion_init_at` 按序号奇偶选 π/4 右下 / 3π/4 左下）⇒
+  复制品**同向就把 `motion.vx` 取反**（换到另一个对角线，必然分得开）。
+- **117**：**不用另写** —— `token_spawn_heading()` 自带一手避让（24 px 内点积 ≥ `ANIMAL_OVERLAP_DOT`
+  就往同方向转 `ANIMAL_OVERLAP_TURN` 重试）⇒ 同坐标同朝向的复制品第一轮就判 clash、自动转开。
+- **113**：`trance_spirit_spawn()` 同样自带避让（TH17 那条 +225° 重掷）⇒ 复制品自动散开。
+
+**一处 ❓ 口径**（登记在 `TUNING.md` §2.10）：113 复制时 `core` 传 **NULL**（照 `trance_spirit_restyle()`
+的先例）⇒ **复制不推进连锁**（否则每复制一颗都会凭空造白灵）。owner 若要「复制品也算出生事件」，
+改成传卡状态即可（一行）。
+
+四处生产者改动仍然是「只加上报 + 代数变了复制一遍」，不发动 Jera 时逐字节等价于改前。
+`make check` exit 0（`cards-check` 45 张卡、`capcheck` 全绿、`check-docs` 四项全绿）。
