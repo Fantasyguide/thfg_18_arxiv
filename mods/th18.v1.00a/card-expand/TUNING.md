@@ -9887,3 +9887,29 @@ etExSet(0, 5, 1, 8, 120, $C + 18, 0.03f, 0.0f);
 **源 179 / 往返 178**。修法：`_opcodes()` 跳过 `t.startswith("var ")`（声明不是指令）。
 ⇒ 这类「工具口径」的坑现在是**第三个**（前两个：未知助记符静默变子调用、`etSound` 能编不能 dump），
 三个都留在台账里。
+#### ✅ 2026-10-01：**早苗的 C4（她的符卡本体）也转写进来了**
+
+★ 又一条编号对上：**TH19 的 `ins_611`（7 参）= TH18 的 `etEx`(611)** —— 与 TH16/18 文档的
+签名 `etEx(id, async, type, a, b, r, s)` **逐字相同**。⇒ 至此确认：**TH19 与 TH18 在 600–615 上
+是同一套编号**（名字不同只因 TH18 的 eclmap 把 609 叫 `etExSet`）。两者**都能直接转发**（实测编+dump 干净）。
+
+**早苗 C4 的转写源 = 一手 `Boss00BossCard1` 里那三个发射器**：
+
+```
+@Boss00BossCard1_at(0, 11, 8) async;
+@Boss00BossCard1_at(1,  1, 8) async;
+@Boss00BossCard1_at(2, 18, 1) async;
+```
+
+每个 `_at` = `etNew` + **`etAim 3`**（固定弹环形）+ `etSprite(type, subtype)` + `etCount(1,1)`
++ `etAngle(π/2, 2° = 0.034906585)` + `etSpeed(2.0, 1.0)` + **三条效果**
+（2 条 `etExSet` + 1 条 `etEx`，参数逐条照抄）—— 已按 (11,8)/(1,8)/(18,1) 三组逐条转写。
+
+**为什么 C4 不照抄 `BossAttack()` 那支**：一手的 `BossAttack()` = `ins_300("Boss00", …)`
+= TH18 的 **`enmCreate`**（同号同形；原生用法 `enmCreate("DeadAttackEt1", 0, 0, 10, 10, 0)`）
+⇒ 语义 = 「**再召一个 boss 出来**」。而**本卡的载体本身就是那个「被送过去的 boss」**（owner 的 C4 口径：
+「C4 给对方送的是 BOSS 是我自己」）⇒ **再套一层召唤只会多一个生命周期要管**（多一个孤儿敌人的风险），
+所以改成**直接跑她那张符卡**（`Boss00BossCard1_at` ×3）。这条取舍登记在此。
+
+验证：`make ecl-ufo` 通过（27412 B、往返一致、行数不变）；反编译可见 `etOn` / `etEx` / `etExSet` 齐备；
+`make check` exit 0（419 文档）。
