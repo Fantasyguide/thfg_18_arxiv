@@ -207,6 +207,23 @@
 | **75 死亡 `+N` 诊断** | 每次死亡浮字 spawn 打一行（`tag` = `root`/`part`/`orbit`/`fam+1`、带 `value`，上限 256 行）| 打大怪应出现 `tag root value N`（N > 0）；**只有 `fam+1`** ⇒ 那只没进爆点支（`n == 0`）|
 | **70b `spriteprobe` 无条件** | 每只敌人一行、按 `enemy_id` 去重、上限 128 行、带 `readfail` 与 `final` 交叉；**挪到逐敌循环最前** | 打一面 ⇒ 那面每只敌人各一行；**boss 也有行**（旧版看不到 boss）|
 
+## §3 追加（2026-10-01 第二批 = #90 之后 · 判据）
+
+> 背景：owner 实跑（build `Oct 1 2026 16:27:56`）`youkai/popup spawn:` **0 行** + 无消弹，
+> 且**就是有使魔的情况下打的**（日志 `live 0 … orphan +7` ⇒ 母机死时使魔还活着）。
+> 真根因 = **父字段读错偏移**（读 `CE_SPAWN_PARENT` 0x50 = ECL 栈变量，而不是 `zEnemy+0x6834`）
+> ⇒ 活子敌数恒 0 ⇒ 整块被门跳过。逐条 = `AUDIT.md` §BE #188；口径 = `TUNING.md` §2.1ccc-28/29。
+
+| 条 | 做了什么 | 怎么验的 |
+| --- | --- | --- |
+| **76 ★★ 两侧打死「带使魔的敌人」⇒ 死亡点消弹 + `+N`**（owner ②）| **父字段改成 `YK_ENEMY_PARENT_ID`（0x6834）** ⇒ 活子敌数真的数得到。**妖侧**（使魔无敌 ⇒ 活着）与**人侧**（使魔还活着时）打掉母机 ⇒ 死亡点开 **R=32.5 / 16 帧**吸收区（飞过的敌弹一颗颗变刻符）+ 母机**大黄字 `+n`** + **每台使魔小白字 `+n`** | `youkai/kill: enemy #N … live >0 … burst >0` + `youkai/popup spawn: tag root value n` / `tag orbit …` + `youkai/zone: opened … bullets …` **都在涨**；若 `live > 0` 却 `burst 0` ⇒ 父字段那一路又坏了（当 P0 报回来）|
+| **77 ★★ 人侧「先清光使魔再打死母机」⇒ 仍显示那一窝台数**（owner ①）| 发放台账记「当初真建了几台」（`yk_orbit_gift_mark(made)`）；死亡时 `n = max(活子敌, 记忆值)` 用于**值 / 颗数公式 / 开区门**；**逐台位置仍按活子敌**（有几个画几个）| 人侧先打死这只大怪的全部使魔、再打死它 ⇒ 仍出**母机大黄字 `+n`（n = 当初发出去那批的台数）**与链根那一环；判据行 `youkai: kill burst uses the REMEMBERED familiar count (enemy #N: … remembered R => n = N)` |
+| **78 入口判据 + 环 VM 判据**（诊断，行为零变化）| ① `youkai/kill: … side %d live %u … remembered %u => n %u, burst %d`（定额 64 行）；② 台账行加 `ring vms <made>/<try>`、环建失败按 1/120 打一行 | ① 「没这一行」= 没进死亡处理；「有行且 `burst 0`」= 门/识别问题；「`burst >0`」= 浮字与消弹必然发生。② owner 实跑 `target #152 … ring vms try 13 made 3` ⇒ 同一帧建 16 台 = 同帧要 32 支 `ability.anm` VM；**成规模反复**出现才是池/脚本问题（瞬时压力下一帧会补上）|
+| **79 ★★ 绕转使魔血量 = 母机 HP / 圈数**（owner 定案，第 56 批）| **档 0（HP ≤ 200）⇒ 恒 100**；其它 ⇒ **`HP / 圈数`**（圈数 = `s_orbit_tab[]` 1/2/3）；**不封顶 999** ⇒ >999 走「spawn 写 ≤999 + 建后回写三格」（照 `ufo.c:3518`）| 3200 血 13 台（3 圈）⇒ 日志 `fam life 1066 = fam_hp(3200, rings 3, …) x 1`；1800/2 圈 ⇒ `900`；≤200 ⇒ `100`。单测钉 `hp_for_enemy(3200,3) > 999` |
+| **80 映射（发射口）使魔 HP = 100 常数**（**未动**，只查证）| 映射使魔走 `YK_FAM_LIFE = 100`（`youkai_core.h:967` → `youkai.c:493` → 建壳点 `youkai.c:1999`）；与 `YK_ORBIT_HP_ONEHAND` 那张**台数档汇总表**无关 | 一手 `familiarCreate` 的 life 是**逐站点字面值**（50/100/180/200/300/400/600/2400/2600）⇒ 忠实做法应照站点取；现成表 `local/_scratch/th08f/familiar_final.json`（不在库）。方案 = `AUDIT.md` §BE #191（**等 owner 拍**）|
+| **117 查证（未改 117 代码）**：`wba_wc big-enemy drop` 为什么 0 行 | 实跑日志里那一局唯一一只 `big_by_size=1` 的大怪 `GirlC01`（48×48，白名单**已命中**）是 **`veto=third`**（`wave=2` = 用户 1-based 第三波）⇒ `drop_decision=0`。**尺寸/VM 读取链已通、死因是 `KILLED`、也不是队列/池满**（那两种各有一行）| 判据 = `wba_wc: death diag … big_by_size=1 … veto=third … drop=0`。三个修法（不改 / veto 只吃小怪 / veto 限定到具体面）与影响面见 `AUDIT.md` §BE #189 —— **等 owner 拍**；本批**没动** 117 |
+| ⚠ **不要顺手改的两处** | `yk_orbit_scan()` 与 `yk_chase_target_resolve()` 的「链根」门**仍读 `CE_SPAWN_PARENT`（= 0x50 = ECL 栈变量）**：TH18 时间轴自己是敌人 ⇒ 真父字段几乎恒非 0 ⇒ **一旦改对，所有大怪都会被排掉**（绕转使魔 + 追踪两条功能一起死）| 要修 = 另立判据（父敌是不是 boss / 是不是我们的实体），**另开一批**；两处各留 ⚠ 注 |
+
 > **第 71 行的细节**（owner 2026-10-01：「妖状态下应当使魔是无敌的，也不会被索敌也不会被伤害，
 > 也不会有体术」＋「灵梦妖子机追踪……**对妖侧使魔可能的追踪**得关掉」）：
 > · **妖侧** = **魔法阵**：① 自机弹**穿过去**（`enemy+0x133c/+0x1340` 置 0，弹不消失、后面的敌人照常掉血）；

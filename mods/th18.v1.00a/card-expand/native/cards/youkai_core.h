@@ -924,8 +924,19 @@ int     yk_shotset_usable(int fire_rate);
                                   * 32 条 × **28 B** = 896 B 的**文件级静态**表（不进卡的 512 B 私有状态预算，
                                   * 照 117 动物灵 `s_tok[40]` 的做法；单测断言 ≤ 1024 B）；每只使魔 = 一次
                                   * 0x683c 字节堆 `new` + 一个敌人 tick ⇒ 表满时**放弃这一只**（不崩、不排队）。*/
-#define YK_LIFE_LIMIT     1000   /* ★ 硬约束（spec §3.5 / §6.1）：spawn 参数 `+0x14` 必须 < 这个数，
-                                  * 否则 `flags_lo` 位 30 被置 ⇒ 进锁定黑名单 ⇒ 诱导打不到使魔。*/
+#define YK_LIFE_LIMIT     1000   /* ★ 硬约束（spec §3.5 / §6.1）：**spawn 参数** `+0x14` 必须 < 这个数。
+                                  * 一手门（2026-10-01 复核，逐指令）：`EnemyManager__allocate_new_enemy`
+                                  * `th18:0x42d7d0` 里 `0x42d8ed cmp DWORD PTR [edx+0x14],0x3e8` /
+                                  * `0x42d8f4 jl 0x42d902` / `0x42d8f6 or ecx,0x40000000` /
+                                  * `0x42d8fc mov [esi+0x635c],ecx`（`edx` = spawn 参数、`esi` = 新敌人）
+                                  * ⇒ **≥1000 就在 `flags_lo` 上留下位 30**，而且**只有 spawn 那一刻写**
+                                  * （建出来之后回写 `enemy+0x6220/24/28` 不会置它 —— 这就是 117/飞碟
+                                  * `ufo.c:3518` 那套「先 999 出生、再回写真血量」的由来）。
+                                  * ⚠ 位 30 的**已定位读点** = `0x42f769 test [zEnemyData+0x5130],0x40800000`
+                                  * （选爆炸音 0x22/0x23），且 boss 位（`0x800000`）也会把它一起置上
+                                  * （`0x433b38`–`0x433b4a`）⇒ 旧注「锁定黑名单」的措辞**没有读点支持**
+                                  * （`0xc000021` 那些锁定位掩码都不含位 30），按一手订正为「不可撤销的
+                                  * 引擎侧『大怪』标记」；**结论不变：我们的 spawn 路径一律 ≤999**。*/
 #define YK_LIFE_MAX_ALLOWED 999
 #define YK_LIFE_UNSAMPLED INT32_MIN   /* `prev_life` 未采样（第一次看到这只使魔）*/
 /* ★★ 2026-09-22（工单 E 第 2 条）：使魔 HP = 100，**一手取自 TH08 `familiarCreate` 的 life 参数**。
@@ -939,14 +950,28 @@ int     yk_shotset_usable(int fire_rate);
  *     `engine/enemy/th08/01-familiars-and-anm.md` §4。
  * ⇒ **原作没有统一值**（同一波里各 `familiarCreate` 各给各的），本卡取**众数 100**。
  *
- * **为什么不照抄更大的那些档**（硬约束）：`EnemyManager__allocate_new_enemy` `th18:0x42d8f6` 在 spawn
- *   的 life ≥ 1000 时置 `flags_lo |= 0x40000000`（锁定黑名单 ⇒ 诱导打不到使魔）⇒ TH08 里 1200 / 13500 /
- *   5000 / 4000 这些档**在本卡的 spawn 路径上不可用**；可用的字面值里 100 就是众数。
+ * **为什么不照抄更大的那些档**（硬约束，2026-10-01 一手复核 + 全库先例）：`EnemyManager__allocate_new_enemy`
+ *   `th18:0x42d8ed` 在 **spawn 参数** life ≥ 1000（`0x3e8`）时置 `flags_lo |= 0x40000000`
+ *   （`0x42d8f6`；见 `YK_LIFE_LIMIT` 那一段的一手逐条）⇒ TH08 里 1200 / 13500 / 5000 / 4000
+ *   这些档在**只用 spawn 参数**这条路上会留下那个标记。
+ *   ⚠ 真需要 >999：照 `cards/ufo.c:3518` 的先例 —— 先以 999 出生，`ce_spawn_enemy()` 返回后把
+ *   真血量回写 `enemy+0x6220/0x6224/0x6228`（那条路**不置位**）。
+ *   **本卡现在两条路都用**：`yk_spawn_familiar_parent()` 已经实现这个两步走 ⇒
+ *     ① **绕转使魔**（`yk_orbit_*`）走新口径 `yk_orbit_fam_hp()`（母机 HP / 圈数，**可 >999**）；
+ *     ② **映射（发射口）使魔**仍走本宏 `YK_FAM_LIFE = 100`（≤999，用不到第 ② 步）。
+ *
+ * ⚠ **映射使魔的 100 是「众数」不是「逐站点值」**：一手每一处 `familiarCreate("SubN", x, y, life, …)`
+ *   的 life 是**站点写死的字面值**（实测集合 50/100/180/200/300/400/600/2400/2600，见
+ *   `engine/enemy/th08/01-familiars-and-anm.md` §4 与 `03-familiar-count-vs-hp.md` §0.4）
+ *   ⇒ 「照该站点的一手值」才是忠实做法；本卡现在只有众数 100（owner 2026-10-01 的口径是
+ *   **映射使魔先别动**，所以本批**没有改**）。要逐站点取值需要一张
+ *   「TH18（敌机 sub 名 + 发射口槽）→ TH08 `familiarCreate` 站点」的静态表，方案见
+ *   `AUDIT.md` §BE #191（**未实现**）。
  *
  * ⚠ **这条顺手救活了 1/2 转嫁**：`life = 1` 时 `yk_sample_life` 的每帧掉血至多 1，而
  *   `yk_half_with_carry(1)` = **0** ⇒ `tr.pending` 恒 0 ⇒ `ce_damage_rect` 那条转嫁源**从未被建过**
  *   （数值上是死代码）。100 点血让 §3.7 真正跑到。
- * ⚠ 仍是**数值设计项**（owner 可调）：只改这一行，`yk_clamp_spawn_life` 会拦住 >= 1000 的误填；
+ * ⚠ 仍是**数值设计项**（owner 可调）：只改这一行；`yk_clamp_spawn_life` 管的是 spawn 侧那一步。
  *   已登记 `TUNING.md`。*/
 #define YK_FAM_LIFE       100
 
@@ -959,7 +984,7 @@ int     yk_shotset_usable(int fire_rate);
  *   那一槽就永久哑火**：闸恒返回 1（SDK 置 `retaddr = 0x43402d` ⇒ `etOn` 本帧不发射），
  *   而且使魔也永远不重建（`broken` 挡着）。
  *   这条路径在 boss 战里**必然发生**：boss 的发射口在整个阶段里往往**持续活跃**
- *   （反复 `etOn`、中间不调 `etNew`），而我们的使魔（`YK_FAM_LIFE = 1` 占位值）几乎必然被打掉
+ *   （反复 `etOn`、中间不调 `etNew`），而我们的使魔（`YK_FAM_LIFE = 100`，见上面那一段）几乎必然被打掉
  *   （它钉在发射口上、与 boss 本体重叠 ⇒ 自机打 boss 的弹顺带就把它打死）⇒
  *   击破一个阶段之后那些槽就再也不发弹 —— 正是 owner 报的现象。
  *
@@ -1600,6 +1625,18 @@ void yk_orb_burst_polar_range(float radius_range, float r1, float r2,
 unsigned yk_kill_burst_count(unsigned chain_n);   /* 门：`chain_n == 0` ⇒ 0；否则 `min(2n+10, 26)` */
 unsigned yk_kill_ring_count(unsigned chain_n);    /* 被杀者自己那一环：`2 · chain_n`（state 1）*/
 
+/* ============ ★★★ 2026-10-01：**死亡 +N 的「记忆值」**（owner 实跑 bug：人侧先清光使魔再打死母机
+ *   ⇒ 母机死亡那一刻「活子敌数」= 0 ⇒ 击破批被门整块跳过、连 `+N` 浮字都没有）====================
+ * 口径（owner 2026-10-01 拍板，`HANDOFF-108.md` §判据）：
+ *   · **显示/公式用的 `n`** = `max(活子敌数, 发放记录)` —— 记录 = 这台母机当初**真建出来几台**
+ *     绕转使魔（`yk_orbit_gift_mark(made)` 那一格；清记录时机 = 父敌消失 / 卡重来）；
+ *   · **位置循环仍按活子敌** —— 「有几个位置就画几个」（母机死时使魔已经不在场上 ⇒ 没有位置，
+ *     只有链根那一笔大黄字 + 链根自己那一环；**绝不**按记忆值去读未初始化的位置栈）。
+ * 一手对照：TH08 那条链是**同步**的（`GetSubEnemyChainCount` 数的是「这一刻还挂在链上的结点」），
+ *   本来就是「先死使魔 ⇒ n 变小」；本函数是 **TH18 侧的兜底**（我们的使魔是独立敌人实体、会先被打光），
+ *   **不是一手复刻** ⇒ 判据记在 `TUNING.md` / `AUDIT.md` §BE。*/
+unsigned yk_kill_display_count(unsigned live, unsigned remembered);  /* = max(live, remembered) */
+
 /* ============ ★★★ §3.11b 击破符卡的「螺旋撒点」（一手参数，见 engine/item/th08/01-time-orbs.md §5.3）===
  * owner 口径：「击破符卡会有一个**螺旋式**的撒永点，无敌一段时间后自动满速吸收」。
  *
@@ -2222,12 +2259,34 @@ int yk_orbit_radius_at(int age, float *out);
 #define YK_ORBIT_HP_SCALE 1
 static const int32_t YK_ORBIT_HP_ONEHAND[YK_ORBIT_HP_TIER_STEPS + 1] = { 100, 100, 300, 600 };
 int yk_orbit_onehand_hp(int count);    /* 该台数档的**一手**基准血量（查表，不缩放）*/
-int yk_orbit_familiar_hp(int count);   /* 实际血量 = min(999, onehand × SCALE)，恒 ∈ [1, 999] */
-/* ★★★ 2026-09-28 第六轮：**卡侧用的就是这一个** —— 血量按 **HP 档**（**不含**面加成）归类：
- *   owner 那句「**同样血量**的使魔数 +1」= 面加成只加**台数**、**不改**每台的血（同一个敌人，
- *   到第 6 面还是同样血量的使魔，只是多了几台）⇒ 入参是 `hp_max`（内部先过 `yk_orbit_count_for_hp`
- *   拿 HP 档，再过 `yk_orbit_familiar_hp`）。⚠ 半径**不**走这条：半径按**最终台数**（圈大小是视觉量）。*/
-int yk_orbit_hp_for_enemy(int hp_max);
+int yk_orbit_familiar_hp(int count);   /* ⚠ 旧口径（台数档查表 × SCALE）：**卡侧已不用**，留作对照/单测 */
+/* ★★★ 2026-10-01（**owner 定案口径 · 使魔血量**，第 56 批第二轮）：**母机 HP / 圈数**。
+ *   owner 逐字：「你按照 **0 档 100**，其他的 **`min(999, 1/2 HP)`** 走」→ 随后**改为**：
+ *   「**母机 HP / 圈数**」（圈数 = 我们给那只母机分的圈数 1/2/3，见 `s_orbit_tab[]`）。
+ *   ⇒ 本卡不再按台数档查一手表，也不再钳 999：
+ *     · **档 0（母机 HP ≤ `YK_ORBIT_FAM_HP_TIER0_MAX` = 200）⇒ 恒 100**（owner 明确保留；见下 ⚠）；
+ *     · **其它 ⇒ `母机HP / 圈数`**（整数除法；圈数钳进 `[1, 5]`，1 圈 = 除 1）。
+ *   推导例子（owner 给的 + 补的，核对用）：`3200/3 ⇒ 1066`、`1800/3 ⇒ 600`、`3200/1 ⇒ 3200`、
+ *   `3200/2 ⇒ 1600`、`200/2 ⇒ 100`（档 0）、`0 ⇒ 100`。
+ *   ★ **硬依据（>999 那条路）**：`EnemyManager__allocate_new_enemy` 的 **spawn** 路径
+ *   `th18:0x42d8ed cmp [spawn+0x14],0x3e8` / `0x42d8f6 or flags_lo,0x40000000` ⇒
+ *   **spawn 参数 ≥1000 会留下一个不可撤销的「大怪」标记**（逐条见 `YK_LIFE_LIMIT`）。
+ *   ⇒ 真血量可以 >999，但**必须照 `cards/ufo.c:3518` 的先例**：先以 ≤999 出生、`ce_spawn_enemy()`
+ *   返回后回写 `enemy+0x6220/0x6224/0x6228`（那条路**不置位**）。本卡的
+ *   `yk_spawn_familiar_parent()` **已经这么做了**（2026-10-01 起）。
+ *   ⚠ 档 0 的 100 是 owner 拍的口径（**不**跟着 `/圈数` 走：HP 120 的杂鱼若按 /1 会变 120、
+ *     手感与「杂鱼」定位不符）。若要一起改，一句话就能改（回报里已提）。
+ *   ⚠ 出口是 **int**（不要改 float：i686 的 float 返回值走 x87 ⇒ `make dllx87` 会红）。*/
+#define YK_ORBIT_FAM_HP_TIER0_MAX 200   /* 档 0 的上界（含）：母机 HP ≤ 它 ⇒ 使魔恒 100 血 */
+int yk_orbit_fam_hp(int parent_hp, int rings);   /* 母机最大血量 + 圈数 ⇒ 基准血量（不缩放，≥1）*/
+/* 圈数 = `s_orbit_tab[台数].nrings`（1/2/3；表外/未定义 ⇒ 1）。**与 `yk_orbit_layout()` 同一张表** ⇒
+ *   卡侧「这只母机分几圈」必须走这一个出口，别在卡侧再抄一份 1/2/3 的判据。*/
+int yk_orbit_rings_for_count(int count);
+/* ★★★ 2026-09-28 第六轮：**卡侧用的就是这一个** —— 血量按**母机最大血量 ÷ 圈数**（**不含**面加成）：
+ *   owner 那句「**同样血量**的使魔数 +1」= 面加成只加**台数**、**不改**每台的血；
+ *   ★ 2026-10-01：内部已从「HP 档 → 一手表」改成 `yk_orbit_fam_hp(hp_max, rings)`。
+ *   ⚠ 半径**不**走这条：半径按**最终台数**（圈大小是视觉量）。*/
+int yk_orbit_hp_for_enemy(int hp_max, int rings);
 
 /* ★★★ 2026-09-28 第三轮：**相位**（一手：TH08 每台使魔各自 `moveCircle(半径, 角度, 角速度, …)`
  *   ⇒ 台与台之间是**手动错开的角度**；我们补的这几台没有脚本可抄 ⇒ 取**均匀分布 + 每敌错相**）：

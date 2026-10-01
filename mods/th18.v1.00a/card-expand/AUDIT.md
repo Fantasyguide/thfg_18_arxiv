@@ -26956,3 +26956,314 @@ owner/一手口径：妖侧使魔 = **魔法阵** ⇒ **不被自机打到、也
 **闸（#184–#187 全批）**：`make -s check` rc=0（`youkai_core: 8799 checks, 0 failed`、`dllx87 = 0`）、
 `python3 sites.py verify`、`python3 tools/capcheck.py`、`python3 ../../../../tooling/check-docs.py` 全过。
 **未** release / commit / 同步 DLL（上层统一发）。
+
+## §BE 详录 #188（2026-10-01）：**死亡 `+N` / 死亡点消弹两侧全无的真根因 = 父字段读错偏移**（+ 记忆值兜底）
+
+> **owner 实跑（build Oct 1 2026 16:27:56 = #90）**：`youkai/popup spawn:` **0 行**、
+> `youkai/zone:` 无消弹；owner 补证「**就是有使魔的情况下打的**」
+> （日志 `youkai/orbit: target …` + `live 0 … orphan +7` ⇒ 母机死时使魔还活着）。
+> 现象**两侧一样**（owner 只测了妖侧）。
+
+### ① 根因（**发现 → 验证 → 结论**）
+
+**发现**：`yk_on_enemy_killed()` 数「这只母机的活子敌人」用的是
+`*(const int32_t *)(e + CE_SPAWN_PARENT)`，而 `CE_SPAWN_PARENT`（`engine.h:571`）是
+**spawn 参数结构**的偏移（`CE_SPAWN_SIZE` = 0x54 那张表），**不是敌人对象上的偏移** ——
+`engine.h` 那一行的注自己写着「→ `enemy+0x6834`」。
+
+**验证**（三条独立证据）：
+1. **字段图**：`type-structs-own.json` 的 `zEnemy` = `[0x0 ecl(zEclVm), 0x122c data(zEnemyData),
+   0x682c on_death_callback, 0x6830 enemy_id, 0x6834 parent_enemy_id]` ⇒ 敌人对象上父字段 = **0x6834**。
+   而 `e + 0x50` 落在 **`zEclVm.context`（+0xc）内的 `zEclStack.data[]`** = 敌人**自己 ECL 脚本的一个局部变量**。
+2. **写点**：`th18:0x42d8e4 mov eax,[edx+0x50]` / `0x42d8e7 mov [esi+0x6834],eax`（`edx` = spawn 参数、
+   `esi` = 新 zEnemy）⇒ 0x50 只在**参数结构**上有意义。
+3. **同库交叉对账**：`lolk.c:119` / `ufo.c:2284` / `faith.c:2145` / `animal.c:851` 四张卡读敌人父字段
+   **一律 `0x6834`**（各带一手注）。本卡是唯一读 0x50 的。
+4. **实跑形状**：读 ECL 变量 ⇒ `parent == ev->id` 几乎是随机事件 ⇒ `n_child == 0`
+   ⇒ `yk_kill_burst_count(0) == 0` ⇒ 整块 `if (!n2) … else { … }` 跳过
+   ⇒ **`+N` 浮字 / 死亡点吸收区 / 那一盘刻符全都没有**（正是 owner 报的三样）。
+   同时解释了 `youkai/orbit: target … chain root, not boss`（链根门读同一个错格、大怪都过得来）。
+
+**结论（可信度 ✅ 一手字段图 + 写点 + 同库四卡交叉 + 实跑形状）**：**读错偏移**，不是侧门、
+不是「母机识别」、也不是 `n == 0` 的时序问题。
+
+### ② 修法（本批落地）
+
+| 处 | 改动 |
+| --- | --- |
+| `youkai.c` 顶部 `YK_ENEMY_PARENT_ID`（新） | **0x6834** + 长注（讲清「spawn 参数 0x50 ≠ 敌人 0x6834」） |
+| `yk_on_enemy_killed()` 的**活子敌扫描** | `e + CE_SPAWN_PARENT` → `e + YK_ENEMY_PARENT_ID`（**核心一行**） |
+| 同函数的「被杀者自己有主」那一支 | 同上（`ev->enemy + 0x6834`）⇒ 时间轴建的普通敌机**一律**拿那 1 颗（#114 早就写下的口径第一次真正生效） |
+| `yk_boss_fam_rebuild()` 的子敌人扫描 | 同上 ⇒ boss 换段真的收得掉它的子敌人（`map 0/0` 时无影响） |
+| `yk_xfam_feed`（转嫁的「外部子敌人」源） | 同上 ⇒ `xfer[… ext …]` 那条源从「几乎死的」变成真按「谁是 boss 的孩子」喂（**影响面见下**） |
+| `yk_orbit_scan()` / `yk_chase_target_resolve()` 的**「链根」门** | **刻意不动**（见下 ⚠⚠） |
+
+**⚠⚠ 两处「链根」门为什么不能一起改对**：那两行问的是「父字段 == 0」，而 TH18 的**关卡时间轴
+自己是一只敌人**（`engine/enemy/th18/08`：`main` 载体 id 非 0）⇒ **时间轴刷出来的每一只敌机父字段都非 0**
+⇒ 一旦改成 `YK_ENEMY_PARENT_ID`，**所有大怪都会被排掉** ⇒ 「惰性绕转使魔」与「追踪目标」两条功能一起死。
+⇒ 现状（读 ECL 变量）**恰好**让大怪过得来；真正排除绕转使魔的是 `yk_orbit_find_id()` 那一行、
+排除映射使魔的是 `yk_map_is_fam()`。**要修得另立判据**（父敌是不是 boss / 是不是我们的实体），
+**另开一批**；本轮在两处各留一段 ⚠ 注，防后来人「顺手修对」。
+
+### ③ 「与侧无关」的逐处核对（owner ②：妖侧也必须有消弹 + `+N`）
+
+| 环节 | 有没有侧门 |
+| --- | --- |
+| `sdk.c: BP_ce_enemy_death`（`0x430240`）→ 逐卡回调 | **没有**（只按 `kind` 与 `ev->enemy` 判） |
+| `youkai.c: on_enemy_death` | **没有**（`focused` 一个字都没读；`KILL_ALL` 那条排除是「奖励类」口径） |
+| `yk_on_enemy_killed` | **没有早退**：`focused` 只用于 ① 人妖槽 ±200 的**方向** ② `yk_gauge_limits_solo` 的上下限 ③ 逢魔那一颗的档位 |
+| `yk_zone_open` / `yk_zone_tick` | **没有**（唯一闸是「池满」与「本帧别人拿了全屏消弹」的仲裁闩锁） |
+| `yk_popup_spawn` / `yk_popup_tick` | **没有**（`on_tick_2` 里**无条件**调；池满时只有 `kind != 0` 的挤掉 `kind == 0`） |
+
+⇒ 「妖侧使魔无敌」（`yk_orbit_pin()` 给**使魔自己**置 `CE_ENEMY_FLAG_NO_DAMAGE` + 碰撞盒置 0）
+是**使魔自身**的字段操作，与**母机死亡**这条链没有任何交集 —— 去掉侧门不会影响它（何况本来就没有侧门）。
+
+### ④ 记忆值（❓自定，owner 口径；防「人侧先清光使魔再打死母机」）
+
+- `yk_orbit_gifted_t` 加 `unsigned gifted`；`yk_orbit_gift_mark(id, frame, made)` 记**真建出来几台**
+  （不是 `want` —— 实跑 `=> 16 familiar(s) … made 3` 这种会被池/环上限截）；清记录时机与 `absent` 老化同一处。
+- 纯函数 `yk_kill_display_count(live, remembered) = max(...)`（`youkai_core.{c,h}`）⇒ `n_mem`；
+  **值 / 颗数公式 / 开区门**用 `n_mem`，**位置循环仍用活子敌数 `n_child`**。
+- **顺带修掉一处未初始化栈读**：旧版 `n = max(活子敌, 声明槽)` 之后又拿 `n` 当 `cx[]/cy[]` 的上界
+  ⇒ 声明槽 > 活子敌时会读没写过的栈格（#187 标出的风险）。现在 `n_child`（位置）与 `n`（值）分开。
+- 单测：`tests/test_youkai_core.c` 新增 11 条（含 owner 两种局面 `(0,13)⇒13` / `(5,13)⇒13`、
+  退化 `(0,0)⇒0`、单调性 + 「记忆值只放大颗数」的等价式）。
+
+### ⑤ 诊断（行为零变化）
+
+- `youkai/kill: enemy #%u kind %u side %d live %u … remembered %u => n %u, burst %d`（定额 64 行）：
+  一眼分清「没进函数 / 进了但门拦下 / 门开了」。
+- 环 VM：台账行加 `ring vms <made>/<try>`；`ce_anm_spawn` 返回 0 时按 1/120 打一行
+  （owner 实跑 `ring vms try 13 made 3` = 同一帧建 16 台 ⇒ 同帧要 32 支 `ability.anm` VM；
+  下一帧会重试 ⇒ 这一行**成规模反复**才是池/脚本问题）。
+
+**对既有行为的影响面（诚实登记）**：
+1. **死亡 `+N` / 消弹 / 那盘刻符从「两侧都没有」变成「两侧都有」**（owner 要的）。
+2. **普通妖精开始真的掉那 1 颗**（`!n2 && parent != 0` 那一支，#114 的口径、第一次生效）⇒ 刻符总量上升。
+3. **转嫁的「外部子敌人」源开始工作**（`ext` 计数会涨）⇒ 打 boss 子敌人时会有 1/2 转嫁给它的母机（#178 的设计意图）。
+4. boss 换段时其子敌人的映射使魔真的会被撤（`map 0/0` 的局里看不出）。
+
+**只动卡 108 文件**（`youkai.c` / `youkai_core.{c,h}` / 本文件 / `HANDOFF-108.md` / `TUNING.md`）；
+**未**动 `patch/files.js` / `sdk.*` / `engine.h` / `sites.py` / 117 的任何代码。
+
+## §BE 详录 #189（2026-10-01）：**117「大怪掉动物灵」为什么没触发**（**查证，未改 117 代码**，等 owner 拍）
+
+> owner：「`wba_wc big-enemy drop` **0 行**」。本批把这档的**完整条件链**读了，并用**实跑日志**定位。
+
+### ① 实跑证据（一条就够）
+
+```
+wba_wc: death diag kind=KILLED retaddr=0x0042f3b7 … id=50 sub=48/GirlC01 hp=-20/3200 hurtbox=32.0
+  main_drop=18 anm_main=214 sprite=48x48 big_by_size=1 wave=2 wave_src=bound veto=third odd=0
+  drop=0 group_total=802 census=1 total=802 pos=(-1,111)
+```
+
+⇒ 这一局**唯一**一只 `big_by_size=1` 的大怪（`GirlC01`，48×48 ⇒ 走 #186 修好的**白名单**、
+判据**已经命中**）被 **`veto=third`** 整波否掉：`drop=0`。
+
+### ② 完整条件链（`animal.c`，逐条）
+
+| # | 条件 | 位置 | 说明 |
+| --- | --- | --- | --- |
+| 1 | `on_enemy_death` 被调 + `ev->enemy` 非空 | `animal.c:3645` | 断点 `0x430240`（引擎撒主掉落**之前**） |
+| 2 | **尺寸/sprite 读得出来** | `animal_enemy_sprite_size()` `:1048` | `anm_vm_ids[0]`（**VM id**）→ `ce_anm_get_vm()` → `vm+0x74/0x78`；退路 = `final_sprite_size` |
+| 3 | **「大怪」= `(w≥64&&h≥64)` 或 `(48×48 && sprite ∈ 72..87 ∪ 292..307)`** | `:1466` | 白名单的 sprite 取自**主 VM** `vm+0x24`（#186 已从「裸指针解引用」修成 id→VM）；`88..95 / 308..315` 那批 48×48 **不在**白名单 |
+| 4 | **整波否决** `wave == 2`（0-based；= 用户 1-based 第三波） | `animal_wave_veto()` `:1022`、应用在 `:1503` | `veto != NONE ⇒ why = NONE` —— **覆盖 size 与 odd 两条** |
+| 5 | 否则：`big ⇒ reason=size`；小体 `⇒ odd-one-out` 统计 | `:1499`–`:1506` | `ANIMAL_DROP_REASON_{SIZE,ODD_ONE_OUT,NONE}` |
+| 6 | **死因**：只认 `KILLED` / `BOMB_KILL`（`KILL_ALL`/`ECL_DIE` 不算）；栈扫描全 miss 时有 `retaddr==0 && REAL && hp≤0 && 非 Cir` 的兜底 | `animal_big_death_counts()` `:1542`、`:3685` | ⇒ **是**「被自机击杀」那条口径 |
+| 7 | `animal_big_real_ok()`（REAL 位 / 具名非关卡脚本兜底） | `:1524`、`:3701` | |
+| 8 | **boss / 中 boss 走另一条** | `:3704` | boss 由 `on_enemy_drop_pre` 那条路管（本档明确不发） |
+| 9 | 队列 → 帧末 `animal_big_drop_drain()` → `token_spawn()` | `:1638`/`:1652` | **只有到这里**才打 `wba_wc: big-enemy drop -> …`；池满打 `blocked by token pool full` |
+
+⇒ 结论：**「0 行」= 第 4 条把 `drop_decision` 归零**（不是尺寸读不出来、不是没被自机击杀、
+也不是队列/池满 —— 那两种都会各打一行）。
+
+### ③ 尺寸 / sprite 读法有没有第二处「VM id 当指针」或时机问题
+
+- `animal.c` 里读 `ANIMAL_ENEMY_ANM_VM0` 的地方**只有两处**：`animal_enemy_sprite_size()`（`:1058`）
+  与 `animal_enemy_drop_measure()` 的白名单段（`:1462`）—— **两处都是** `id → ce_anm_get_vm(id)`（#186 已统一）。
+  `grep` 全文件**没有**第二处裸解引用。
+- **时机**：读点在死亡断点 `0x430240`（引擎析构之前）⇒ VM 还活着；本轮实跑 `sprite=48x48 big_by_size=1`
+  就是这一条链**已经通了**的直接证据（`girlC01` 的 48×48 是白名单命中）。
+- ⚠ 唯一「读不到」的形态是 `sprite=-1 / rect 0x0`（108 的 `spriteprobe` 见过 enemy #121）——
+  那会让第 2 条返回 0 ⇒ 整只不判。**但 id=50 这次不是这种**。
+
+### ④ 最小修法（**三选一，先别改，等 owner 拍**）
+
+| 方案 | 改动 | 影响面 |
+| --- | --- | --- |
+| **A. 不改**（若 owner 认「第三波就是不掉」） | 0 行 | 只改文档：把「0 行」解释成 veto 生效 |
+| **B. 让 veto 只吃小怪、不吃大怪** | `:1503` 一行：`if (veto_src != NONE && !big) why = NONE;` | 第三波里**所有**大怪（≥64 或白名单 48）恢复掉落 —— veto 的初衷（`ANIMAL_THIRD_WAVE_KEY` 那条用户口径）**只对小怪的 odd 规则**有意义；大怪的 size 那条本来就与波无关 |
+| **C. 把 veto 限定到「哪一面的第三波」** | `animal_wave_veto()` 加 `stage` 实参（调用点 `:1477` 已有 `CE_CURRENT_STAGE()`） | 影响面最小（只放开那几面），但要 owner 说明「到底哪一面的第三波不该掉」——现口径是**全局按波号**，stage 4 的第三波 GirlC01 是被**顺带**否掉的 |
+
+**我的建议**：先问 owner「你期待掉的那只大怪是不是**第三波**」——
+若是 ⇒ 他要的其实是 **B**（veto 只该管小怪），若不是 ⇒ 是**波号绑定**问题（`wave_src=bound`，
+`animal_static_wave_has/next` 那套兜底就在修同类误绑，值得先看那一只的绑定时机）。
+
+**闸（#188–#189 全批）**：`make -s check` rc=0（`youkai_core: 8966 checks, 0 failed`、`dllx87 = 0`）、
+`python3 sites.py verify`、`python3 tools/capcheck.py`、`python3 ../../../../tooling/check-docs.py` 全过。
+**未** release / commit / 同步 DLL；**未**改 117 代码。
+
+## §BE 详录 #190（2026-10-01）：**绕转**使魔血量 = 母机 HP / 圈数（owner 第 56 批定案）+「**1000 上限**」两处一手查证
+
+> owner 口径（两次，**后者为定案**）：先「你按照 **0 档 100**，其他的 **`min(999, 1/2 HP)`** 走」，
+> 随后改成「**母机 HP / 圈数**」（圈数 = 我们给那只母机分的圈数 1/2/3，见 `s_orbit_tab[]`）。
+> 另追加一条查证：「我记得是有**血量不能超过 1000** 的限制是吗？」
+> ⚠ **范围**：本批只作用于**绕转使魔**（`s_orbit[]`）；**发射口（映射）使魔未动**，其查证见 §BE #191。
+
+### ① 实现（`youkai_core.{c,h}` / `youkai.c`）
+
+| 处 | 改动 |
+| --- | --- |
+| `youkai_core.h`（新） | `YK_ORBIT_FAM_HP_TIER0_MAX 200` + `int yk_orbit_fam_hp(int parent_hp, int rings)` + `int yk_orbit_rings_for_count(int count)` 声明 |
+| `youkai_core.c`（新） | `yk_orbit_fam_hp()`：`parent_hp <= 200 ⇒ 100`；否则 `parent_hp / rings`（`rings` 钳 `[1,5]`）、保底 1、**不钳 999**（纯函数、int 出口、零浮点） |
+| `yk_orbit_rings_for_count()` | = `s_orbit_tab[count].nrings`（**与 `yk_orbit_layout()` 同一张表**；表外/未定义 ⇒ 1），卡侧别另抄判据 |
+| `yk_orbit_hp_for_enemy(hp_max, rings)` | 由「HP 档 → `yk_orbit_familiar_hp(台数档)`」改成 `yk_orbit_fam_hp(hp_max, rings) × YK_ORBIT_HP_SCALE`（只保底 1，**不钳 999**） |
+| `yk_spawn_familiar_parent()` | **新增第二步**（照 `ufo.c:3518`）：spawn `+0x14` 写 `yk_clamp_spawn_life(life)`；`ce_spawn_enemy()` 返回后若 `life > 999` 再回写 `enemy+0x6220/0x6224/0x6228` |
+| 旧式 | `YK_ORBIT_HP_ONEHAND` / `yk_orbit_onehand_hp()` / `yk_orbit_familiar_hp()` **保留**（注释标明「卡侧不再调用」，留作一手对照与单测） |
+| `youkai.c` 建壳日志 | `fam life %d = fam_hp(%d, rings %d, tier0<=%u => 100 / else HP/rings) x %d`；`rings` 字段改为**走表**（旧版写死 `want==13?3:want==8?2:1`，与表不符） |
+| 单测 | `tests/test_youkai_core.c`：owner 五例 + 边界 + 圈数出口 + 不变量 + `hp_for_enemy` 的「×SCALE 只保底」等价式；**并钉住「不钳 999」**（`hp_for_enemy(3200,3) > 999`） |
+
+**改动前后对照表**（`SCALE = 1`；「旧」= 台数档一手表；「新」= `HP / 圈数`，圈数取该母机最终台数 `want` 那一行）：
+
+| 母机 HP | 档 / `want`（第 1 面）/ 圈数 | 旧 | 新 |
+| --- | --- | --- | --- |
+| 0 / 读不到 / 负 | 档 0 / 2 / 1 | 100 | **100**（档 0） |
+| 200 | 档 0 / 2 / 1 | 100 | **100**（档 0 上界，含） |
+| 201 | 档 1 / 4 / 1 | 100 | **201** |
+| 400 | 档 1 / 4 / 1 | 100 | **400** |
+| 600 | 档 1 / 4 / 1 | 100 | **600** |
+| 1000 | 档 1 / 4 / 1 | 100 | **1000**（>999，走两步） |
+| 1001 | 档 2 / 8 / 2 | 300 | **500** |
+| 1800 | 档 2 / 8 / 2 | 300 | **900** |
+| 2001 | 档 3 / 13 / 3 | 600 | **667** |
+| 3000 | 档 3 / 13 / 3 | 600 | **1000**（>999） |
+| 3200 | 档 3 / 13 / 3 | 600 | **1066**（owner 的例子） |
+| 4000 | 档 3 / 13 / 3 | 600 | **1333** |
+| 2000（第 6 面） | 档 2 / 13 / 3 | 600 | **666**（面加成只改**圈数**） |
+
+⚠ **口径边界的小坑（已报 owner，未擅自改）**：档 0 的 100 只在 `HP ≤ 200`；`201` 且圈数 3 时
+`201/3 = 67`（**比档 0 的 100 还少**）。同圈数下对 HP 单调，只有跨过 200 这一格会「跳低」。
+单测里把 `201/3 == 67` 钉住了（免得将来有人以为是 bug 顺手改掉，而其实是 owner 口径的必然结果）。
+
+### ② 一手查证 A：**TH08 `familiarCreate` 的第 4 实参有没有被夹？**（答案：**没有**）
+
+- 三个 handler（op90/91/92 = `0x41af5b` / `0x41b10b` / `0x41b2bb`）**只搬参**：
+  op90 在 `0x41af6c call 0x41f110`、op91 在 `0x41f335` 一带把 arg 拼成结构 → `0x41f3e4 call 0x42a680`
+  （`EnemyManager::create_enemy`）；实参 4（life）从 ECL 指令体 `+0x20` 取出（`0x41f34e`）**原样**下传。
+- `th08:0x42a680` 里唯一的门是**负数**，不是上限：
+  ```asm
+  42a70b  cmp DWORD PTR [ebp+0x10],0x0    ; arg4 = life
+  42a70f  jl  0x42a71d                    ; < 0 ⇒ 保留默认（不写）
+  42a711  mov ecx,DWORD PTR [ebp-0x8]     ; ecx = 使魔（zEnemy*）
+  42a714  mov edx,DWORD PTR [ebp+0x10]
+  42a717  mov DWORD PTR [ecx+0x2dfc],edx  ; ★ 直接写，**i32**，无 min/max/饱和
+  ```
+  另在 `0x42a7b5`–`0x42a7c1` 再写一次 `+0x2dfc`（建完之后的第二次），随后 `0x42a7d9`–`0x42a7f7`
+  把它拷进 `+0x2e00`（max）/`+0x2e04` —— **全是 `DWORD`（i32）**。
+- 旁证：TH08 的 ECL 里 `familiarCreate` 的 life 字面值实测有 **1200 / 2400 / 2600 / 13500 / 5000 / 4000**
+  （`engine/enemy/th08/01-familiars-and-anm.md` §4 的全量统计）⇒ **>1000 在原作里就是正常值**。
+- **结论**：TH08 **没有**「使魔血量 ≤1000」这条限制（既无逻辑夹、也无字段类型限制）。
+
+### ③ 一手查证 B：**TH18 引擎对敌人 HP 有没有上限？**（答案：**没有逻辑夹**；≥1000 只留一个标记）
+
+- **写入点**（`EnemyManager__allocate_new_enemy` `th18:0x42d7d0`）：
+  ```asm
+  42d815  mov eax,DWORD PTR [edx+0x14]     ; edx = spawn 参数，+0x14 = life
+  42d818  mov DWORD PTR [esi+0x6220],eax   ; current   （i32，原样）
+  42d821  mov DWORD PTR [esi+0x6224],eax   ; maximum   （i32，原样）
+  42d82a  mov DWORD PTR [esi+0x6228],eax   ; remaining （i32，原样）
+  ```
+  ⇒ **HP 值本身不夹**（ExpHP `zEnemyLife` = `int32_t current/maximum/remaining`）。
+- **唯一的 1000 相关门**（同函数尾部，**只管 spawn 参数**）：
+  ```asm
+  42d8ed  cmp DWORD PTR [edx+0x14],0x3e8   ; spawn life >= 1000 ?
+  42d8f4  jl  0x42d902
+  42d8f6  or  ecx,0x40000000               ; ★ flags_lo |= 位 30
+  42d8fc  mov DWORD PTR [esi+0x635c],ecx
+  ```
+  ⇒ 这是**逻辑侧的门**（不是显示上限），但**只标记、不夹值**，而且**只有 spawn 那一刻会写**
+  （建出来之后回写 `enemy+0x6220/24/28` 不会置它 —— `cards/ufo.c:3518` 的真血量 1600..2500 就是这么绕过去的）。
+- **位 30 是什么**（读点普查，全 `.text` 静态立即数）：
+  - **已定位读点** = `0x42f769 test DWORD PTR [ebx+0x5130],0x40800000`（`ebx` = `zEnemyData`）
+    → 死亡时**选爆炸音**（`0x42f797` 比 `+0x6228` 与 `0xc8`=200、`0x42f7af` 比 `0x384`=900 ⇒ push 0x22/0x23）；
+  - 写点除了上面那条，还有 **boss 位**那一路：`0x433b38 test eax,0x800000` / `0x433b45 or eax,0x40000000`
+    （`setBoss` 一族的 handler）⇒ 位 30 的语义 = 「大怪 / boss 系」标记；
+  - ⚠ **`engine.h` 旧注「锁定黑名单」不成立**：锁定/不可锁那一族的掩码是 `0xc000021`
+    （`0x40b531` / `0x40b7b1` / `0x421e57` / `0x438cd5` / `0x45f893`）**不含位 30**；`enmKillAll` 的
+    `0x430741 test eax,0xc004a0` 同样不含位 30。（旧注措辞按一手订正；**结论不变**：我们的 spawn 路径一律 ≤999。）
+- **显示/条**：GUI 的 boss 血条那一段确实有 1000/2000 的分段阈值
+  （`0x43c9fd cmp [edi+0x6228],0x7d0`(2000) / `0x43ca30 cmp …,0x3e8`(1000) / `0x43ca41` 200 / `0x43ca6d` 400 ——
+  在 `0x43c9xx` 的 `Gui__on_tick` 血条更新里，读的是 **remaining**）⇒ 那是**显示侧**的「一条血 = 1000」分段，
+  **不是逻辑上限**（逻辑侧只有 ② 那个标记门）。
+
+### ④ 结论（一句话）
+
+**不存在「敌人 HP 不能超过 1000」的逻辑夹** —— TH08 的 `familiarCreate` arg4 原样写入 i32（只有负值门），
+TH18 的 HP 三格也原样写入 i32；**存在的是 TH18 的一条 spawn 门**：`spawn+0x14 ≥ 1000 ⇒ flags_lo 位 30`
+（大怪标记，不可撤销，喂爆炸音选择）。⇒ 真血量可以 >999，**但 spawn 参数不能**；
+`>999` 必须走「999 出生 + 事后回写三格」（`ufo.c:3518` 先例）——**本卡新口径已照这条路做**。
+注释里已按**硬依据**写（引 `th18:0x42d8ed`/`0x42d8f6` 与 `ufo.c:3518`），不再只写「owner 口径」。
+⚠ owner 记忆里的位号写作 `0x20000000`，一手实际是 **`0x40000000`（位 30）**（`0x20000000` 在别处是 ECL 中断位）。
+
+### ⑤ 我们自己给使魔设 life 的方式（一句话）
+
+与 `ufo.c` **同一个封装**（`ce_spawn_enemy()`），**同一个两步**（2026-10-01 起）：
+`yk_spawn_familiar_parent()` 先写 spawn 参数 `spawn+0x14 = yk_clamp_spawn_life(life)`，
+`ce_spawn_enemy()` 返回后若 `life > 999` 再回写 `enemy+0x6220/0x6224/0x6228`（= `YK_ED_LIFE_CUR`/+4/+8）。
+⇒ 绕转使魔的真血量可以 >999（例：3200 血 3 圈 ⇒ 1066）而**不置位 30**；
+映射使魔走同一个函数、只是 `life = 100`（≤999 ⇒ 第 ② 步不触发，行为不变）。
+
+**闸（#188–#191 全批）**：`make -s check` rc=0（`youkai_core: 10736 checks, 0 failed`、`dllx87 = 0`）、
+`python3 sites.py verify`、`python3 tools/capcheck.py`、`python3 ../../../../tooling/check-docs.py` 全过。
+**未** release / commit / 同步 DLL（等 owner 发版）。
+
+## §BE 详录 #191（2026-10-01）：**发射口（映射）使魔的 HP 查证**（**未改代码**，等 owner 拍）
+
+> owner 范围澄清：「这个是**绕转使魔**；**发射口使魔目前我还没测**，可能还有点问题」
+> ⇒ 本批**不动**映射使魔的行为，只答两个问题。
+
+### ① 我们现在给映射使魔定的 HP 是多少？（= **100**，一个常数）
+
+| 处 | 事实 |
+| --- | --- |
+| `youkai_core.h:967` | `#define YK_FAM_LIFE 100`（唯一出处；注释里写着「一手 990 处字面值的**众数** = 100（159 处）」） |
+| `youkai.c:493` | `yk_spawn_familiar(x, y)` = `yk_spawn_familiar_parent(x, y, 0u, YK_FAM_LIFE)` ⇒ **parent = 0**（映射使魔不挂父敌 id） |
+| `youkai.c:1999` | 唯一建壳点 = `yk_run_action()` 的 `YK_ACT_CREATE` 支（1:1 发射口映射） |
+| 与 `{100,100,300,600}` 的关系 | 那张 `YK_ORBIT_HP_ONEHAND` **不是**一手表：它是**按台数档**把一手实测归类后的**我们的汇总表**（2/4 台 → 100、8 台 → 300、13 台 → 600）。映射使魔走 `YK_FAM_LIFE`，**两者互不相干**（绕转那一侧现在也改走 `HP/圈数` 了） |
+
+### ② 一手那批「每个发射口的实参」是不是逐站点写死的？（= **是**）
+
+- **一手形态**：TH08 的使魔由 ECL 的 `familiarCreate*("SubN", x, y, life, drop, score)` 生成，
+  其中 `life` 是**每一条指令自己的字面值**（第 4 实参）。逐条实例（`local/_scratch/th08f/ecldata1.txt`）：
+  `familiarCreateF("Sub2", 0, 0, 50, -2, 100)` / `("Sub10", 0, 0, 100, -2, 100)`；
+  更全的集合见 `engine/enemy/th08/03-familiar-count-vs-hp.md` §0.4：
+  **50 / 100 / 180 / 200 / 300 / 400 / 600 / 2400 / 2600**（**道中几乎恒 100**），
+  且 218 个使魔子程序**没有一个**用 `lifeSet` 覆盖 ⇒ 那个实参就是它的血。
+- **已抽好的逐站点表**（本机草稿区，**不入库**）：`local/_scratch/th08f/familiar_final.json` +
+  `familiar_final.md` —— 每个（ecldata 文件, **父 sub**）一行，含
+  `fam_N/E/H/L`（四难度台数）、`fam_subs`、`faminfo[].life_from_call`（**该站点的一手 life**）、
+  `anm`、`hitbox`、`moves`、`is`/`enmkillall` 等。例：`ecl1 Sub1 → Sub2 [50]`、
+  `ecl4a Sub7 → Sub10/Sub8 [200,300]`、`ecl8 Sub29 → Sub31.. [2400]`。
+- **结论**：忠实做法 = 映射使魔的血**照「该发射口对应的一手站点」取**，而**不是**按母机 HP 推。
+  我们现在的常数 100 = 「道中众数」，对**大部分**站点正确、对 180/200/300/600/2400 那些**偏少**。
+
+### ③ 怎么把「每站点的一手值」取到（**方案，先别实现**）
+
+1. **数据源已经现成**（不必重跑 `thecl`）：`familiar_final.json` 就是
+   `(ecldata file, 父 sub) → 使魔 sub → life_from_call` 的表；要进库得**生成一份 header**
+   （放 `native/cards/` 或 `assets/ability/`，像 `animal_wave_table.h` 那样由脚本生成 + 只读）。
+2. **缺的只是一把运行期能用的键**：我们的映射使魔是 `(host enemy, 发射口槽 i)`，
+   而表是按「TH08 父 sub 名」索引的 ⇒ 需要一张
+   **「TH18 敌机身份 → TH08 父 sub」**的对应表。可用的键：`CE_ENEMY_ANM_SRC/SCRIPT`（外观身份，
+   110/111 已在按它查宿主表）、或敌机的 ECL sub 名（`45/GirlA01` 这种，`wba_wc: death diag … sub=…`
+   就是它）。对应关系我们**已经有一部分**：
+   `engine/enemy/th08/04-mystia-boss-familiars-leveledit-port.md`（Sub35→Sub37 那一类逐条映射）
+   与台数公式用的波表（`engine/enemy/th08/03-…md`）。
+3. **落地形状（建议）**：`yk_run_action()` 的 `YK_ACT_CREATE` 支把 `life` 从常数改成
+   「查表（stage, 敌机身份, slot）→ 一手 life；查不到 ⇒ 100」；表里 `life > 999` 的站点
+   （2400 等）**自动**走 `yk_spawn_familiar_parent()` 的两步走（那条路已经在 #190 里建好了）。
+   ⇒ 行为影响面：只有 `life != 100` 的那些站点会变（动物灵/掉落/转嫁都不受影响；打使魔的手感会变）。
+4. **前置条件（必须先做）**：把「TH18 敌机身份 ↔ TH08 父 sub」这张对应表**坐实**（现在只有零散几条），
+   否则查表会大面积 miss、退化回 100（等于没做）。⇒ **等 owner 拍「映射使魔也想逐站点取血」再做**。
+

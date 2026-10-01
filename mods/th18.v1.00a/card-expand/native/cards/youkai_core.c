@@ -818,6 +818,12 @@ int yk_withdraw_all(yk_map_t *m, yk_action_t *out, int max)
     return n;
 }
 
+/* ★ 2026-10-01（一手复核）：`YK_LIFE_LIMIT` 那条门逐指令在 `EnemyManager__allocate_new_enemy`
+ *   `th18:0x42d7d0` 里 —— `0x42d8ed cmp DWORD PTR [edx+0x14],0x3e8`（`edx` = spawn 参数）/
+ *   `0x42d8f4 jl 0x42d902` / `0x42d8f6 or ecx,0x40000000` / `0x42d8fc mov [esi+0x635c],ecx`。
+ *   **只有 spawn 那一刻会置位**（建出来之后回写 `enemy+0x6220/24/28` 不置）⇒ 想要 >999 的真血量，
+ *   照 `cards/ufo.c:3518` 的先例（先 999 出生、再回写三格 life）。本卡（含绕转使魔）**不**需要它：
+ *   一律 ≤999。逐条依据见 `youkai_core.h` 的 `YK_LIFE_LIMIT`。*/
 int32_t yk_clamp_spawn_life(int32_t life)
 {
     if (life < 1) return 1;                               /* 0 及以下没有意义（引擎拿它算血条 / 死亡判定）*/
@@ -1401,6 +1407,15 @@ unsigned yk_kill_ring_count(unsigned chain_n)
     return 2u * chain_n;
 }
 
+/* ★★★ 2026-10-01：**死亡 +N 的记忆值**（口径与边界全在 `youkai_core.h` 的同名小节）。
+ * `live` = 这一帧扫到的活子敌数（母机死亡瞬间）；`remembered` = 发放台账里记的「当初建了几台」。
+ * 取 max —— 两者任何一个大就用哪一个；都为 0 ⇒ 0（门照旧拦住，一颗都不给）。
+ * 纯函数、无副作用 ⇒ 直接进主机单测（边界见 `tests/test_youkai_core.c`）。*/
+unsigned yk_kill_display_count(unsigned live, unsigned remembered)
+{
+    return (remembered > live) ? remembered : live;
+}
+
 /* ============ ★★★ 2026-09-22（owner #26 · 风味选项）决死窗口全屏敌弹变红：三条纯逻辑 ============
  * 依据、一手与「为什么留在卡内」全在 `youkai_core.h` 的同名小节；这里只有算式。*/
 int yk_deathbomb_window(int32_t player_state)
@@ -1964,11 +1979,43 @@ int yk_orbit_count_total(int hp_max, int stage)
     return n;
 }
 
-/* 一个敌人该给使魔多少血 = **HP 档（不含面加成）** → 一手值 → ×SCALE → 钳 999。
- * 面加成只影响**台数**（owner：「**同样血量**的使魔数 +1」）⇒ 这里**不**传最终台数。*/
-int yk_orbit_hp_for_enemy(int hp_max)
+/* 一个敌人该给使魔多少血 = **母机最大血量 ÷ 圈数**（owner 2026-10-01 **定案**口径）：
+ *   档 0（母机 HP ≤ `YK_ORBIT_FAM_HP_TIER0_MAX` = 200）⇒ **恒 100**（owner 明确保留；
+ *     不跟着 `/圈数` 走 —— HP 120 的杂鱼按 /1 会变 120，与「杂鱼」定位不符）；
+ *   其它 ⇒ **`母机HP / 圈数`**（整数除法；`rings < 1` 当 1、`> 5` 钳 5 —— 表最多 5 圈）。
+ * 面加成只影响**台数**（owner：「**同样血量**的使魔数 +1」）⇒ 这里**不**传最终台数。
+ * ⚠ **不再封顶 999**：真血量 >999 由 spawn 路径处理（`yk_spawn_familiar_parent()` 先 999 出生、
+ *   再回写 `enemy+0x6220/24/28`，照 `cards/ufo.c:3518`；见 `youkai_core.h` 的同一节）。
+ * ⚠ 纯函数（无副作用、无浮点）⇒ 直接进主机单测；出口是 int（不要改 float：x87 闸会红）。*/
+int yk_orbit_fam_hp(int parent_hp, int rings)
 {
-    return yk_orbit_familiar_hp(yk_orbit_count_for_hp(hp_max));
+    int hp;
+    if (!(parent_hp > YK_ORBIT_FAM_HP_TIER0_MAX)) return 100;      /* 档 0（含 0 / 负数 / 读不到）*/
+    if (rings < 1) rings = 1;
+    if (rings > 5) rings = 5;                                     /* 表最多 5 圈（`per[5]`）*/
+    hp = parent_hp / rings;
+    if (hp < 1) hp = 1;
+    return hp;
+}
+
+/* 「这只母机分几圈」= `s_orbit_tab[台数].nrings`（**与 `yk_orbit_layout()` 同一张表**）。
+ * 表外（<1 / >18）与未定义（nrings == 0）⇒ 1 —— 与 `yk_orbit_layout()` 的单圈兜底一致。*/
+int yk_orbit_rings_for_count(int count)
+{
+    if (count <= 0 || count > 18) return 1;
+    if (s_orbit_tab[count].nrings == 0u) return 1;
+    return (int)s_orbit_tab[count].nrings;
+}
+
+/* 卡侧入口：**基准血量 × `YK_ORBIT_HP_SCALE`**（默认 1 ⇒ 就是上面那一式），底下保底 1。
+ * ★ **不钳 999**（owner 定案）：>999 的真血量由 spawn 路径的「999 出生 + 事后回写」承接。
+ * 旋钮留着（owner：「一碰就碎主要是形容杂鱼」）——手感不对只改 `YK_ORBIT_HP_SCALE`。
+ * ⚠ 返回 int（**不要**改成 float：i686 的 float 返回值走 x87 ⇒ `make dllx87` 会红）。*/
+int yk_orbit_hp_for_enemy(int hp_max, int rings)
+{
+    int hp = yk_orbit_fam_hp(hp_max, rings) * YK_ORBIT_HP_SCALE;
+    if (hp < 1) hp = 1;
+    return hp;
 }
 
 /* 四色语义表的**两个轴**（`youkai_core.h` 那一节；表驱动 ⇒ 单测逐格核 2×2 全覆盖）。
@@ -2014,8 +2061,9 @@ int yk_orbit_onehand_hp(int count)
 
 /* 实际血量 = **一手基准 × `YK_ORBIT_HP_SCALE`**（当前 SCALE = 1 ⇒ 就是一手值 100/100/300/600），
  * 顶上钳**引擎硬上限** 999（`life >= 1000` ⇒ `flags_lo 0x40000000` 锁定黑名单），底下保底 1。
- * 旋钮留着是因为 TH08 道中使魔恒 100 血，在 TH18 的 DPS 下可能偏脆（owner：「一碰就碎主要是
- * 形容杂鱼」）；TH18 vs TH08 的 DPS 核查另行进行，结论到了只改 `YK_ORBIT_HP_SCALE` 这一个数。
+ * ★★★ 2026-10-01（owner 新口径）：**卡侧不再走这一式** —— `yk_orbit_hp_for_enemy()` 已改成
+ *   `yk_orbit_fam_hp(母机HP) × SCALE`（档 0 恒 100、其它 `min(999, HP/2)`，见 `youkai_core.h`）。
+ *   本函数**保留**作旧口径对照与单测（`yk_orbit_onehand_hp` / `YK_ORBIT_HP_ONEHAND` 同理）。
  * ⚠ 返回 int（**不要**改成 float：i686 的 float 返回值走 x87 ⇒ `make dllx87` 会红）。*/
 int yk_orbit_familiar_hp(int count)
 {

@@ -2255,6 +2255,25 @@ int main(void)
         CHECK(yk_kill_ring_count(1) == 2);
         CHECK(yk_kill_ring_count(4) == 8);
         CHECK(yk_kill_ring_count(9999u) == 19998u);
+        /* ★★★ 2026-10-01（**记忆值**，owner 口径 —— 修「死亡 +N 不出现」）：
+         *   `yk_kill_display_count(live, remembered)` = `max(live, remembered)`；
+         *   口径：显示值与爆点公式用这个数，**位置循环仍按活子敌**（有几个位置画几个）。
+         *   边界四条（owner 实跑的两种局面 + 两个退化）：*/
+        CHECK(yk_kill_display_count(0u, 13u) == 13u);   /* 人侧：先清光使魔再打死母机 ⇒ n 仍 = 13 */
+        CHECK(yk_kill_display_count(5u, 13u) == 13u);   /* 活子敌少于当初发的台数 ⇒ 取记忆值 */
+        CHECK(yk_kill_display_count(13u, 5u) == 13u);   /* 活的比记录多（后补过/记录被清过）⇒ 取活数 */
+        CHECK(yk_kill_display_count(0u, 0u) == 0u);     /* 都没使魔 ⇒ 0（门照旧拦住，一颗不给）*/
+        CHECK(yk_kill_display_count(1u, 1u) == 1u);
+        CHECK(yk_kill_display_count(9999u, 0u) == 9999u);
+        CHECK(yk_kill_display_count(0u, 9999u) == 9999u);
+        /* 记忆值只**放大**门与颗数（单调不减 ⇒ 不会把原本会发生的击破批吃掉）。*/
+        for (k = 0u; k < 40u; ++k) {
+            CHECK(yk_kill_display_count(k, k) == k);
+            CHECK(yk_kill_display_count(k, 7u) >= k);
+            CHECK(yk_kill_display_count(k, 7u) >= 7u);
+            CHECK(yk_kill_burst_count(yk_kill_display_count(0u, k))
+                  == yk_kill_burst_count(k));
+        }
         /* 单调不减（防将来把常数写成 +6 / +16 那两支时手滑）。*/
         for (k = 1u; k < 40u; ++k) {
             CHECK(yk_kill_burst_count(k) <= yk_kill_burst_count(k + 1u));
@@ -2511,6 +2530,96 @@ int main(void)
                 CHECK(v >= prev);
                 prev = v;
             }
+        }
+
+        /* ⑥bis ★★★★ 2026-10-01（**owner 定案口径**）**使魔血量 = 母机最大血量 / 圈数**：
+         *   「档 0（母机 HP ≤ 200）恒 **100**、其它 **`母机HP / 圈数`**」（纯函数 `yk_orbit_fam_hp`，
+         *   圈数 = `yk_orbit_rings_for_count()` = `s_orbit_tab[]` 的 `nrings`；**不再封顶 999**）。
+         *   口径、推导例子与「一手 `familiarCreate` 的 100/100/300/600 作对照」见 `youkai_core.h`。
+         *   ⚠ 这一批**不再**走 `yk_orbit_familiar_hp(台数档)` 那条旧式（旧函数留给对照/单测）。*/
+        CHECK(YK_ORBIT_FAM_HP_TIER0_MAX == 200);
+        /* owner 给的五个例子（逐字核过）：*/
+        CHECK(yk_orbit_fam_hp(3200, 3) == 1066);   /* 3200/3 = 1066.67 ⇒ 1066 */
+        CHECK(yk_orbit_fam_hp(1800, 3) == 600);
+        CHECK(yk_orbit_fam_hp(3200, 1) == 3200);   /* ★ >999 合法（spawn 侧两步走）*/
+        CHECK(yk_orbit_fam_hp(200, 2) == 100);     /* 档 0（圈数不参与）*/
+        CHECK(yk_orbit_fam_hp(0, 1) == 100);
+        /* 边界与退化：*/
+        CHECK(yk_orbit_fam_hp(-5, 3) == 100);      /* 负数 ⇒ 档 0（不崩、不返回负数）*/
+        CHECK(yk_orbit_fam_hp(200, 3) == 100);     /* 档 0 上界（含）*/
+        CHECK(yk_orbit_fam_hp(201, 1) == 201);     /* 刚出档 0：/1 */
+        CHECK(yk_orbit_fam_hp(201, 2) == 100);     /* 201/2 = 100 */
+        CHECK(yk_orbit_fam_hp(201, 3) == 67);      /* 201/3 = 67 */
+        CHECK(yk_orbit_fam_hp(900, 1) == 900);
+        CHECK(yk_orbit_fam_hp(900, 2) == 450);
+        CHECK(yk_orbit_fam_hp(900, 3) == 300);
+        CHECK(yk_orbit_fam_hp(1998, 2) == 999);    /* 1998/2 = 999 ⇒ 正好不越门 */
+        CHECK(yk_orbit_fam_hp(2000, 2) == 1000);   /* ★ 1000 > 999 也照给（spawn 侧两步走）*/
+        CHECK(yk_orbit_fam_hp(999999, 3) == 333333);
+        CHECK(yk_orbit_fam_hp(4000, 0) == 4000);   /* rings < 1 当 1 */
+        CHECK(yk_orbit_fam_hp(4000, -7) == 4000);
+        CHECK(yk_orbit_fam_hp(4000, 99) == 800);   /* rings > 5 钳 5（表最多 5 圈）*/
+        {   /* 不变量：恒 ≥ 1、**无 999 上限**；`hp > 200` 段对 hp 单调不降、对 rings 单调不增。
+             * ⚠ **不**断言「恒 ≥ 100」：档 0 的 100 只在 `hp <= 200`；`hp = 201` 且圈数 3 时
+             *   `201/3 = 67`（口径边界的小坑，已在报告里向 owner 提，未擅自改）。*/
+            int hp, r, prev;
+            for (r = 0; r <= 6; ++r) {
+                prev = 0;
+                for (hp = 201; hp <= 5000; hp += 41) {
+                    int v = yk_orbit_fam_hp(hp, r);
+                    CHECK(v >= 1);
+                    CHECK(v >= prev);
+                    prev = v;
+                }
+                CHECK(yk_orbit_fam_hp(0, r) >= 1);       /* 档 0 恒 100（0/负数/读不到）*/
+                CHECK(yk_orbit_fam_hp(200, r) == 100);
+            }
+            for (hp = 500; hp <= 5000; hp += 250) {      /* 圈数越多、每台越少（同一个 HP）*/
+                CHECK(yk_orbit_fam_hp(hp, 1) >= yk_orbit_fam_hp(hp, 2));
+                CHECK(yk_orbit_fam_hp(hp, 2) >= yk_orbit_fam_hp(hp, 3));
+            }
+        }
+        /* 圈数出口 = 与 `s_orbit_tab[]` 同一张表（表外/未定义 ⇒ 1，与 `yk_orbit_layout` 的单圈兜底一致）。*/
+        CHECK(yk_orbit_rings_for_count(1) == 1);
+        CHECK(yk_orbit_rings_for_count(5) == 1);
+        CHECK(yk_orbit_rings_for_count(6) == 2);
+        CHECK(yk_orbit_rings_for_count(8) == 2);
+        CHECK(yk_orbit_rings_for_count(9) == 3);
+        CHECK(yk_orbit_rings_for_count(13) == 3);
+        CHECK(yk_orbit_rings_for_count(18) == 3);
+        CHECK(yk_orbit_rings_for_count(0) == 1);           /* 表外 */
+        CHECK(yk_orbit_rings_for_count(-3) == 1);
+        CHECK(yk_orbit_rings_for_count(19) == 1);
+        /* 卡侧入口 = `fam_hp × YK_ORBIT_HP_SCALE`（**只保底 1、不钳 999**；SCALE 变了也成立）。*/
+        {
+            static const int probe_hp[] = { 0, 200, 201, 1000, 1800, 2000, 3200, 999999 };
+            static const int probe_r[]  = { 1, 2, 3 };
+            unsigned pi, ri;
+            for (pi = 0; pi < sizeof probe_hp / sizeof probe_hp[0]; ++pi)
+                for (ri = 0; ri < sizeof probe_r / sizeof probe_r[0]; ++ri) {
+                    int want = yk_orbit_fam_hp(probe_hp[pi], probe_r[ri]) * YK_ORBIT_HP_SCALE;
+                    if (want < 1) want = 1;
+                    CHECK(yk_orbit_hp_for_enemy(probe_hp[pi], probe_r[ri]) == want);
+                }
+            /* 「母机 3200 血、3 圈」= 卡侧真实会走的那条（>999 ⇒ 由 spawn 两步走承接）。*/
+            CHECK(yk_orbit_hp_for_enemy(3200, 3) == 1066 * YK_ORBIT_HP_SCALE);
+            CHECK(yk_orbit_hp_for_enemy(3200, 3) > YK_LIFE_MAX_ALLOWED);   /* 证明「不钳 999」*/
+        }
+        /* 旧式（台数档一手表）仍在、仍可用作对照 —— 但**不再是**卡侧口径。*/
+        CHECK(YK_ORBIT_HP_ONEHAND[0] == 100 && YK_ORBIT_HP_ONEHAND[1] == 100);
+        CHECK(YK_ORBIT_HP_ONEHAND[2] == 300 && YK_ORBIT_HP_ONEHAND[3] == 600);
+        CHECK(yk_orbit_onehand_hp(1) == 100);      /* 档 0（台数 ≤2）*/
+        CHECK(yk_orbit_onehand_hp(2) == 100);
+        CHECK(yk_orbit_onehand_hp(3) == 100);      /* 档 1（台数 ≤5）*/
+        CHECK(yk_orbit_onehand_hp(5) == 100);
+        CHECK(yk_orbit_onehand_hp(6) == 300);      /* 档 2（台数 ≤8）*/
+        CHECK(yk_orbit_onehand_hp(8) == 300);
+        CHECK(yk_orbit_onehand_hp(9) == 600);      /* 档 3（其余，含 13）*/
+        {   /* 旧式 = 一手表 × SCALE，再过同一个 999 / 1 钳（SCALE 变了也成立）。*/
+            int want = (int)YK_ORBIT_HP_ONEHAND[3] * YK_ORBIT_HP_SCALE;
+            if (want > YK_LIFE_MAX_ALLOWED) want = YK_LIFE_MAX_ALLOWED;
+            if (want < 1) want = 1;
+            CHECK(yk_orbit_familiar_hp(13) == want);
         }
 
         /* ⑦ ★★★★ 绕转半径 = **随帧龄线性外扩到 60**（2026-09-30 订正：一手 `moveCircle` 的
