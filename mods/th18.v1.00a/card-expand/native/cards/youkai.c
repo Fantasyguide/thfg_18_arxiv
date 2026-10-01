@@ -1966,6 +1966,64 @@ static void yk_familiars_tick(yk_card_t *s)
  *   PIV 上报…）⇒ 它一旦被内联进 `on_tick_2`，编译器就报
  *   `inline assembly requires more registers than available`（整个 TU 编不过，不是警告）。
  *   代价：每帧多一次 call（可忽略）；收益：加任何一行业务代码都不会再把整棵树编红。*/
+static uint32_t s_ledger_frame;   /* 前向声明（定义在后面；这里只用它做「每 2 帧」的节拍）*/
+
+/* ★★★ 2026-09-30（owner：「**至少得再加一个 50% 血量转伤吧**」，路线 A 的**覆盖面补齐**）：
+ *   现有转嫁只喂 `s_map`（我们自己建的**映射/发射口**使魔）⇒ 缺口 = ①**绕转使魔**（`s_orbit[]`，
+ *   不进 `s_map`）②**外部子敌人**（leveledit/Mystia 那批 `MystiaChild*`：普通敌机 + `parent_enemy_id`
+ *   = 母机）。两者都是「使魔」，一手 **1/2 转嫁**对它们同样成立。
+ *   本表 = 「外部/绕转使魔的上帧 `life.current`」采样（enemy_id 键，**单调递增不复用**）：
+ *     · 上限 `YK_XFAM_MAX`(32)；**表满只放弃这一帧的「新」条目**（宁可不转、不要乱转）；
+ *     · 条目查不到（子敌/父敌消失）⇒ 删；**不因「血量没变」删**；
+ *     · 喂进**同一个** `s->tr` 累加器（1/2 比例在 `yk_transfer_feed` 里），落点仍是母机（路线 A）。
+ *   ⚠ 自激守卫：我们打在母机上的源若擦到子敌人，会让它掉血又被当成新伤害转一次
+ *     ⇒ 照 `youkai.c` 既有的 `yk_in_transfer_zone(...)` 做法把「落在转嫁盒里」的条目**只采样不喂**。*/
+#define YK_XFAM_MAX 32
+typedef struct { uint32_t id; int32_t life; uint8_t seen; } yk_xfam_t;
+static yk_xfam_t s_xfam[YK_XFAM_MAX];
+static unsigned  s_xfam_fed;      /* 本局喂过多少次外部/绕转使魔（日志用）*/
+static unsigned  s_xfam_used;     /* 本帧表用了几格（日志用）*/
+
+/* 这个 id 是否已在映射层（`s_map`）—— 那边已经在喂转嫁，别重复计。*/
+static int yk_map_has_id(const yk_map_t *m, uint32_t id)
+{
+    unsigned i;
+    if (!m || !id) return 0;
+    for (i = 0; i < YK_FAM_MAX; ++i) if (m->e[i].fam_id == id) return 1;
+    return 0;
+}
+
+/* 这个 id 是不是我们的绕转使魔（`s_orbit[]`，不进 `s_map`）—— 那条支单独喂。*/
+static int yk_orbit_find_id(uint32_t id)
+{
+    unsigned i;
+    if (!id) return 0;
+    for (i = 0; i < YK_ORBIT_MAX; ++i) if (s_orbit[i].fam_id == id) return 1;
+    return 0;
+}
+
+/* 母机是不是「boss 系」：① id 在管理器那 4 格 `CE_EM_BOSS_IDS` 里；**或** ② 母机自己的
+ * `CE_ENEMY_OWN_BOSS_ID != 0`（覆盖道中 boss）。两者取或 —— 一手转嫁的判据是「有主」，
+ * 我们再加「主是 boss」只是为了不把**普通子敌人**（例如关卡时间轴建的普通妖精）也算进来。*/
+static int yk_parent_is_boss(uint8_t *em, uint8_t *pe)
+{
+    int32_t pid;
+    unsigned i;
+    if (!em || !pe) return 0;
+    pid = *(const int32_t *)(pe + CE_ENEMY_ID);
+    if (!pid) return 0;
+    for (i = 0; i < 4u; ++i)
+        if (*(const int32_t *)(em + CE_EM_BOSS_IDS + (size_t)i * 4u) == pid) return 1;
+    return *(const int32_t *)(pe + CE_ENEMY_OWN_BOSS_ID) != 0;
+}
+
+static yk_xfam_t *yk_xfam_find(uint32_t id)
+{
+    unsigned i;
+    for (i = 0; i < YK_XFAM_MAX; ++i) if (s_xfam[i].id == id) return &s_xfam[i];
+    return 0;
+}
+
 static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
 {
     unsigned i;
@@ -2007,6 +2065,83 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
         yk_transfer_feed(&s->tr, yk_sample_life(sl, sl->fam_id, *(int32_t *)(f + YK_ED_LIFE_CUR)));
     }
 
+    /* ===== ★ 第二遍：**绕转 + 外部子敌人**的同一套 1/2 转嫁（owner 2026-09-30 口径）=====
+     * 每 2 帧扫一次（代价减半；一手的转嫁本身就是每帧结算，2 帧的量化误差 ≤1 帧掉血）。*/
+    {
+        uint8_t *em = CE_ENEMY_MGR();
+        uint8_t *e;
+        unsigned i;
+        if (em && (s_ledger_frame % 2u) == 0u) {
+            for (i = 0; i < YK_XFAM_MAX; ++i) s_xfam[i].seen = 0;
+            CE_ENEMY_FOREACH(em, e) {
+                uint32_t id, parent;
+                int32_t life;
+                const float *cp;
+                uint8_t *pe;
+                yk_xfam_t *x;
+                if (!e) continue;
+                id = *(const uint32_t *)(e + CE_ENEMY_ID);
+                if (!id) continue;
+                parent = (uint32_t)*(const int32_t *)(e + CE_SPAWN_PARENT);
+                if (!parent) continue;                             /* 只看子敌人 */
+                if (yk_map_has_id(&s_map, id)) continue;            /* 已在映射层 ⇒ 那边已喂，别重复 */
+                if (yk_orbit_find_id(id)) continue;                 /* 绕转使魔走下面那条支 */
+                pe = ce_enemy_by_id(em, (int32_t)parent);
+                if (!pe) continue;
+                /* 判据：母机是 boss 系（`CE_EM_BOSS_IDS[4]` **或** 母机自己的 `own_boss_id != 0`）。*/
+                if (!yk_parent_is_boss(em, pe)) continue;
+                life = *(const int32_t *)(e + YK_ED_LIFE_CUR);
+                cp = ce_enemy_pos(e);
+                x = yk_xfam_find(id);
+                if (!x) {                                          /* 新条目：表满就**放弃**（不转）*/
+                    unsigned k;
+                    if (s_xfam_used >= YK_XFAM_MAX) continue;
+                    for (k = 0; k < YK_XFAM_MAX; ++k) if (!s_xfam[k].id) break;
+                    if (k >= YK_XFAM_MAX) continue;
+                    x = &s_xfam[k];
+                    s_xfam[k].id = id;
+                    ++s_xfam_used;
+                } else if (x->life > life) {
+                    /* 掉血 ⇒ 转 1/2（`yk_transfer_feed` 内部按比例）；自激盒内只采样不喂。*/
+                    if (!cp || !bp || !yk_in_transfer_zone(cp[0], cp[1], bp[0], bp[1],
+                                                          YK_TRANSFER_BOX_W, YK_TRANSFER_BOX_H)) {
+                        yk_transfer_feed(&s->tr, x->life - life);
+                        ++s_xfam_fed;
+                    }
+                }
+                x->life = life;
+                x->seen = 1;
+            }
+            for (i = 0; i < YK_XFAM_MAX; ++i) {                    /* 查不到 ⇒ 删（不因血量没变删）*/
+                if (s_xfam[i].id && !s_xfam[i].seen) { s_xfam[i].id = 0; --s_xfam_used; }
+            }
+        }
+        /* ★ 绕转使魔（`s_orbit[]`）：它们不进 `s_map` 但也必须转（一手：1/2 对使魔成立）。
+         * 采样与映射使魔同一形状（`life.current` 差分），直接喂同一个累加器。*/
+        for (i = 0; i < YK_ORBIT_MAX; ++i) {
+            yk_orbit_t *o = &s_orbit[i];
+            uint8_t *f;
+            if (!o->fam_id) continue;
+            f = ce_enemy_by_id(em, (int32_t)o->fam_id);
+            if (!f) continue;
+            {
+                int32_t lc = *(const int32_t *)(f + YK_ED_LIFE_CUR);
+                yk_xfam_t *x = yk_xfam_find(o->fam_id);
+                if (!x) {
+                    unsigned k;
+                    if (s_xfam_used < YK_XFAM_MAX)
+                        for (k = 0; k < YK_XFAM_MAX; ++k) if (!s_xfam[k].id) {
+                            s_xfam[k].id = o->fam_id; s_xfam[k].life = lc; s_xfam[k].seen = 1;
+                            ++s_xfam_used; break;
+                        }
+                    continue;
+                }
+                if (x->life > lc) { yk_transfer_feed(&s->tr, x->life - lc); ++s_xfam_fed; }
+                x->life = lc;
+                x->seen = 1;
+            }
+        }
+    }
     if (s->tr.pending <= 0) return;
     if (!boss) {
         /* 没有 boss（道中空场 / boss 已死）：本帧不转嫁（研究 §4）。**丢掉的量记账**，不攒着 ——
@@ -4365,6 +4500,11 @@ static int on_ctor(ce_card_t *c)
     yk_beam_kill(0);
     yk_map_reset(&s_map);
     yk_transfer_reset(&s->tr);
+    {   /* ★ 2026-09-30：外部/绕转使魔的转嫁采样表也随卡重来一起清（文件级静态）。*/
+        unsigned xi;
+        for (xi = 0; xi < YK_XFAM_MAX; ++xi) s_xfam[xi].id = 0;
+        s_xfam_used = 0;
+    }
     __builtin_memset(s->opt, 0, sizeof s->opt);
     s->opt_script = -1;
     s->shot_timer = 0;
@@ -4575,10 +4715,12 @@ static int on_load(ce_card_t *c) { return on_ctor(c); }
 static void on_run_reset(ce_card_t *c)
 {
     yk_card_t *s = ce_state(c, yk_card_t);
-    if (s && (s->spawns || s->transferred))
+    /* ★ 2026-09-30：台账加 `xfam`（本局喂过几次外部/绕转使魔）与 `xtab`（表用了几格）。*/
+    if (s && (s->spawns || s->transferred || s_xfam_fed))
         ce_log("youkai: run done - %u familiars spawned, %u killed, %u withdrew, %u silent, "
-               "%u transfer damage, %u dropped (no boss)",
-               s->spawns, s->broken, s->lost, s->silent, s->transferred, s->dropped);
+               "%u transfer damage, %u dropped (no boss), xfam %u xtab %u",
+               s->spawns, s->broken, s->lost, s->silent, s->transferred, s->dropped,
+               s_xfam_fed, s_xfam_used);
     yk_ring_kill_all();                                  /* ★ 切换环：换关时 tick 会停 ⇒ 这里直接收 */
     yk_popup_kill_all();                                 /* ★ #27：弹字同样要收干净 */
     (void)yk_deathbomb_tint();                           /* ★ #26：换关也要把染色还回去（先还原）*/

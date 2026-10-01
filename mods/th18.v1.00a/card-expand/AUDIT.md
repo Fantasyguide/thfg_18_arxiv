@@ -26236,3 +26236,32 @@ script script42 { layer(25); resolutionMode(2); pos(0,0,0); sprite(sprite115); z
 
 **闸**：`make -s check` 本体全过（`youkai_core: 8166 checks, 0 failed`、`dllx87 = 0`、`sites.py verify`、
 `capcheck`）；⚠ `check-docs` 仍有 **1 处别人的文档违规**（`engine/player/th18/06-offscreen-top-indicator-absent.md:155`，非本批）。
+
+## §BE 详录 #164（2026-09-28）：转伤**覆盖面补齐**（绕转 + 外部子敌人）—— 路线 A
+
+> **owner 逐字**：「**至少得再加一个 50% 血量转伤吧**」（紧接「你相当于只改了使魔外观是吗」之后）。
+
+**一、现状与缺口**：卡里**早就有** 1/2 转嫁（`youkai.c:188 yk_transfer_t`「1/2 转嫁累加器」、`:1969 yk_transfer_tick`
++ `yk_transfer_feed` 的 **`life.current` 逐帧差分** + `research-108-damage-transfer.md` 的**路线 A** 落点：
+每帧一条新 `ce_damage_rect` 打在**母机**坐标 + 同帧 `ce_raise_damage_cap(基值+转嫁)`，**无新断点、不动共享件**）。
+**缺口 = 覆盖面**：喂转嫁的循环只遍历 `s_map` 的槽 ⇒ ① **绕转使魔**（`s_orbit[]`，不进 `s_map`）
+② **外部子敌人**（leveledit/Mystia 的 `MystiaChild*`：普通敌机 + `parent_enemy_id` = 母机）都没喂。
+
+**二、改动（`youkai.c`，只动本卡）**
+- 新采样表 `s_xfam[YK_XFAM_MAX=32]`（enemy_id 键；单调递增不复用）+ `yk_xfam_find`。
+- `yk_transfer_tick` 加**第二遍**（**每 2 帧**一次扫描，代价减半）：`CE_ENEMY_FOREACH` 找
+  `CE_SPAWN_PARENT != 0` 的子敌人，母机是 **boss 系**（`CE_EM_BOSS_IDS[4]` **或**母机 `CE_ENEMY_OWN_BOSS_ID != 0`，
+  两者取或 ⇒ 覆盖道中 boss）；`delta = prev - life_cur` 且 `> 0` ⇒ `yk_transfer_feed(&s->tr, delta)`（**同一个累加器**，
+  1/2 比例在里面）；**绕转使魔**另有一支同样形状的差分（它们在 `s_orbit[]` 里）。
+- **排除**：已在 `s_map` 的（`yk_map_has_id`，避免重复计数）、已在 `s_orbit` 的（走自己那支）、
+  **落在我们转嫁盒里的**（`yk_in_transfer_zone`，**自激回路**守卫 —— 与我们打在母机上的源擦到子敌人时只采样不喂）。
+- **收尾**：条目查不到（子敌/父敌消失）⇒ 删；**不因「血量没变」删**；表满 ⇒ **只放弃这一帧的新条目**
+  （宁可不转、不要乱转）；卡重来（`on_run_reset` 那条收口）清表 + 计数器。
+- **日志**：run-done 那行加 `xfam`（本局喂过几次外部/绕转）与 `xtab`（表用了几格）。
+
+**三、一手与未复核**：**方向/比例 = 打使魔 ⇒ 1/2 给本体**（`research-108-damage-transfer.md` 的标题结论；
+owner 口径也是 50%）🟡 **TH08 侧 `th08:0x451670`/`th08:0x4517f6` 的每帧结算我没有逐指令复核** ⇒ 本轮
+按「既有的 1/2」实现，未改比例。**没动共享件**（`sdk.*`/`engine.h`/`sites.py` 一个字节没碰）。
+
+**闸**：`make -s check` rc=0（`youkai_core: 8166 checks, 0 failed`、`dllx87 = 0`）、`sites.py verify` 全对上、
+`capcheck` 全绿、`check-docs` 全过（413 文件）。
