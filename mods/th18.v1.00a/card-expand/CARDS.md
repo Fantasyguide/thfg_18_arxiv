@@ -4,6 +4,14 @@
 > 人看的目录。**数据的真相在 `patch/th18/cards.js`，行为的真相在 `native/cards/*.c`**；本表每加一张卡补一行。
 > id 58–254 可用（≤ 197 张；实际先撞 `abcard.anm` 的 256 entry，见 [`CAPACITY.md`](CAPACITY.md) §5-①）。状态：✅ 实跑通过 / 🔧 待实跑 / 💡 设计中。
 
+> ★★ **文案的两层分工（owner 2026-10-01e 口径）**：
+> 「比如**115 切波规则**，这是**机器得规定死**，但是**对于我们东方玩家来讲就得是这样的东西**」——
+> · **玩家面向**（`patch/th18/cards.js` 的 `desc`，商店/图鉴里显示的那几句）写**玩家的心智模型**：
+>   115 就写「一个非符 + 一张符卡」切成一波（玩家在游戏里看到的那一版），不写引擎内部的判据；
+> · **机器面向**（本表 + `engine/**` 文档）必须写**精确规则**：115 的一手是「**一段攻击 = 一波**」
+>   （`trance` 那套 `phase` 同源的分章判据），两者**不是同一句话**，别互相搬。
+> ⇒ 描述与实现脱节时：**本表改成现实现状**，**cards.js 改成玩家能对得上的说法**。
+
 ## 黑桃（原型：德州扑克・皇家同花顺）
 
 | id | 名字 | 效果 | 实现（槽 / 事件） | 文件 | 状态 |
@@ -192,7 +200,7 @@ C 自带一个计数器当 `short_timer` 传进去（`param_2` 只进模运算�
 
 | id | 名字 | 效果 | 实现（槽 / 事件） | 文件 | 状态 |
 | --- | --- | --- | --- | --- | --- |
-| 116 | 季节 | **主动卡**（2026-09-12 用户定案）：季节点（擦弹 / 掉落 / 解放消弹）→ 0..6 档 → 子机 → **D 切到本卡后按 C 解放**、S 键切副季节；掉落量、运动学、出场动画、HUD 全部照 TH16 一手，详见下表下方的「季节（116）补充」 | `on_tick_2` + `on_enemy_drop_pre` + `on_power_level_change` + `on_tick_shooters` + `on_draw` | `season.c` + `season_core.c` | 🔧 |
+| 116 | 季节 | **主动卡**（2026-09-12 用户定案）：季节点（擦弹 / 掉落 / 解放消弹）→ 0..6 档 → 子机 → **D 切到本卡后按 C 解放**、**双击 Z** 切副季节（2026-09-29 定，S/Shift+D 均为历史）；掉落量、运动学、出场动画、HUD 全部照 TH16 一手，详见下表下方的「季节（116）补充」 | `on_tick_2` + `on_enemy_drop_pre` + `on_power_level_change` + `on_tick_shooters` + `on_draw` | `season.c` + `season_core.c` | 🔧 |
 
 **季节（116）补充**：TH16 季节系统的复刻（**主动卡**：D 切到本卡 + C 发动季节解放），数值全部来自 TH16 v1.00a **脱壳版**一手
 （[`engine/season/th16/01`](../../../engine/season/th16/01-season-data-and-tables.md)；纯逻辑在 `season_core.c`，
@@ -236,7 +244,7 @@ C 自带一个计数器当 `short_timer` 传进去（`param_2` 只进模运算�
   （一手 [`engine/input/th18/01`](../../../engine/input/th18/01-key-mapping.md)）。
   ⚠️ 原始键不进 replay 输入流 → 回放里不重现（同文档 §4a）；`C` 是引擎自己的主动卡键，进流。
 设计 [`docs/superpowers/specs/2026-09-10-season-and-animal-design.md`](../../../docs/superpowers/specs/2026-09-10-season-and-animal-design.md)。
-子机阵位写 option 记录的 `+0x64/+0x68/+0x6c/+0x70`（原生卡 `th18:0x40b8c1` 同款）；**S 键切副季节时子机的贴图与阵位一起换**（`refresh_options`）。
+子机阵位写 option 记录的 `+0x64/+0x68/+0x6c/+0x70`（原生卡 `th18:0x40b8c1` 同款）；**双击 Z 切副季节时子机的贴图与阵位一起换**（`refresh_options`）。
 季节点外观 = `ability.anm` script 115 + **TH16 原版切图**（`bullet/item.png` 右上 2×2 = 春/夏/秋/冬 + `(224,32)` = 土用，各 16×16，按副季节换 sprite；出场动画照 TH16 script129，**含 `angleVel(%F0)` 的 0..5°/帧 随机自转**）。
 档位数字（原 ASCII）**2026-09-10 起改成贴图 VM**（`ce_hud_vm_text_set` + 脚本 136 + TH18 font 2 的原生切图），
 这样暂停时数字也跟槽一起被模糊罩盖住（ASCII 文字做不到，见 [`engine/anm/th18/03`](../../../engine/anm/th18/03-ascii-text.md) §2f）。

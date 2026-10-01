@@ -20,6 +20,12 @@
  *   ⇒ 本文件不再有它的断言；一手 10 帧闸的事实留在核心注释与 `TUNING.md` §2.0v #1。 */
 #include <stdio.h>
 #include <string.h>
+/* ★ 2026-10-01f（统筹修构建）：M 段（`pofv_atan2` 的黄金样本对账）用了 `fabsf`，但本文件
+ *   只 include 了 stdio/string + `pofv_core.h`（后者只有 stdint.h）⇒ `-Werror`
+ *   报「implicit declaration of fabsf」把整条 `make check` 弄红（不是本次文案改动引入的）。
+ *   宿主单测允许用 libm（卡侧才禁 —— 见 `sdk.h` 里 `pofv_atan2` 的那段注释），所以补这一行。
+ *   登记：`AUDIT.md` §BE 详录 #207。*/
+#include <math.h>
 
 #include "../cards/pofv_core.h"
 
@@ -942,6 +948,57 @@ int main(void)
         pofv_storm_spawn_field(0, 0.0f, 0.0f, 0.0f, 1.0f, 1, 0);
         pofv_storm_is_storm(0);
         pofv_ca_field_params(1, 0, 0, 0);
+    }
+
+    
+    /* ================= M. 方位角（自机狙用）=================
+     * ❓ 自定（数学近似）：`pofv_atan2` 是纯 SSE 的多项式近似（见 `pofv_core.c`）。
+     * 这里**拿 libm 的 `atan2` 对账**（主机单测允许用 libm；卡侧才是禁的）——
+     * 扫 0..2π 全周 + 四象限边界，断言误差 < 1e-4 rad。*/
+    /* ==================== M. 方位角 pofv_atan2（自机狙用；纯 SSE 近似）==================== */
+    {
+        /* ⚠ 本文件**不引 libm**（host 编译行没有 `-lm`）⇒ 用**黄金样本对账**：
+         *   每个角度给一对 (y, x) 与**期望角**（值来自 `tools/` 之外的常识角 / 手算），
+         *   覆盖四个象限 + 轴 + 非对角线（`atan(1/2)` / `atan(2)`）。*/
+        static const struct { float y, x, want; } g[] = {
+            {  1.0f,  1.0f,  0.7853982f },   /* 45°   */
+            {  1.0f, -1.0f,  2.3561945f },   /* 135°  */
+            { -1.0f, -1.0f, -2.3561945f },   /* −135° */
+            { -1.0f,  1.0f, -0.7853982f },   /* −45°  */
+            {  1.0f,  2.0f,  0.4636476f },   /* atan(1/2) */
+            {  2.0f,  1.0f,  1.1071487f },   /* atan(2)   */
+            {  0.1f,  1.0f,  0.0996687f },   /* atan(0.1) */
+            {  1.0f,  0.1f,  1.4711277f },   /* atan(10)  */
+            {  3.0f,  4.0f,  0.6435011f },   /* 3-4-5 三角 */
+            { -3.0f,  4.0f, -0.6435011f },
+            {  3.0f, -4.0f,  2.4980915f },
+            { -3.0f, -4.0f, -2.4980915f },
+        };
+        size_t gi;
+        float worst = 0.0f;
+        for (gi = 0; gi < sizeof g / sizeof g[0]; ++gi) {
+            float got = 0.0f, err;
+            pofv_atan2(g[gi].y, g[gi].x, &got);
+            err = got - g[gi].want; if (err < 0.0f) err = -err;
+            if (err > worst) worst = err;
+            CHECK(err < 1e-4f);
+        }
+        printf("    pofv_atan2 黄金样本最大误差 = %.2e rad\n", (double)worst);
+    }
+    {
+        float r = 123.0f;
+        pofv_atan2(0.0f, 0.0f, &r);
+        CHECK(r == 0.0f);                          /* 原点：定 0 */
+        pofv_atan2(1.0f, 0.0f, &r);  CHECK(r - 1.5707964f < 1e-4f && 1.5707964f - r < 1e-4f);   /* 正上 = +π/2 */
+        pofv_atan2(-1.0f, 0.0f, &r); CHECK(r + 1.5707964f < 1e-4f && -1.5707964f - r < 1e-4f);   /* 正下 = −π/2 */
+        pofv_atan2(0.0f, -1.0f, &r); CHECK(r > 3.1415927f - 1e-4f || r < -3.1415927f + 1e-4f); /* 正左 = ±π */
+        pofv_atan2(0.0f, 1.0f, &r);  CHECK(r == 0.0f);                       /* 正右 = 0 */
+        pofv_atan2(1.0f, 1.0f, &r);  CHECK(r - 0.7853982f < 1e-4f && 0.7853982f - r < 1e-4f);   /* 45° */
+        pofv_atan2(1.0f, -1.0f, &r); CHECK(r - 2.3561945f < 1e-4f && 2.3561945f - r < 1e-4f);   /* 135° */
+        pofv_atan2(-1.0f, -1.0f, &r);CHECK(r + 2.3561945f < 1e-4f && -2.3561945f - r < 1e-4f);   /* −135° */
+        pofv_atan2(1.0f, 2.0f, &r);  CHECK(r - 0.4636476f < 1e-4f && 0.4636476f - r < 1e-4f);   /* 非对角：atan(1/2) */
+        pofv_atan2(2.0f, 1.0f, &r);  CHECK(r - 1.1071487f < 1e-4f && 1.1071487f - r < 1e-4f);   /* 非对角：atan(2) */
+        pofv_atan2(1.0f, 1.0f, 0);   /* NULL 不许崩 */
     }
 
     printf("test_pofv_core: %d passed, %d failed\n", s_pass, s_fail);
