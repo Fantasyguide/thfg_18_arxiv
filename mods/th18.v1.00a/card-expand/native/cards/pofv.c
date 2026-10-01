@@ -98,9 +98,12 @@
 
 /* ★ 2026-10-01（owner）boss attack：卡侧自己申请**一格子机**当发射口
  *   （owner 选了「原生自机弹幕」那条路）⇒ 需要一个子机**本体**脚本。
- *   ❓ 占位：**借** `CE_ANM_ABILITY_SCRIPT_SEASON_OPT`（116 季节子机本体脚本，
- *   `signal.c` 也是借它）——子机本体只是个「看不见的发射口」，位置 = 自机（opt offset 0）。*/
-#define POFV_BOSSATK_OPT_ANM   CE_ANM_ABILITY_SCRIPT_SEASON_OPT
+ *   ★ 2026-10-01 owner 实跑订正：「**默认样式的子机突然多出来一个**」—— 根因就是原来**借**了
+ *     `CE_ANM_ABILITY_SCRIPT_SEASON_OPT`（116 季节子机**本体**脚本）⇒ 那个发射口被**画成了**
+ *     一颗季节子机。现在改用**自己的一条隐形脚本** `CE_ANM_ABILITY_SCRIPT_POFV109_PORT`
+ *     （`alpha(0); stop();` —— 同 `bullet.anm` script0 的「不可见」写法）⇒ 只剩膛口，不画东西。
+ *   位置 = 自机（opt offset 0）——弹从自机身上往上出。*/
+#define POFV_BOSSATK_OPT_ANM   CE_ANM_ABILITY_SCRIPT_POFV109_PORT
 
 #define POFV_CANCEL_MAX        9999
 
@@ -288,16 +291,25 @@ static void aura_update(void)
         s_shift_frames = 0;
     }
 
-    if (s_aura.mode == POFV_AURA_FIELD) {
-        /* ★ TH09 的锚定场：圆心**锚在出生点**、逐帧扩张、寿命到点在自机处重起一个。
-         *   ⇒ 与 TH19 的「跟着自机走的常驻圆」手感不同（owner 口径 A）。*/
+    /* ★★★ 2026-10-01 owner **订正**（实跑 #1）：「一手 **th09 和 th19 都是蓄力同时张开结界**，
+     *   有时结界大小还和蓄力时长有关。目前我们拆分了，**蓄力走 C，结界走 shift，但是其他什么都没变**」。
+     *   ⇒ **Shift = 张开/收起结界的那只手**；**没按住 Shift = 结界根本没张开** ——
+     *     判定半径 0（不判弹、不沈静化）、UI 不画。**不是**一进关就挂着一个渐变圆。
+     *   ⚠ 这条**覆盖**了早先「口径 4 = 常驻」的读法（那时把「常驻」读成了「一直画着」；
+     *     一手的「常驻」指的是**它跟着蓄力一起开着**，不是「独立于蓄力的常驻 UI」）。*/
+    if (s_shift_frames <= 0) {
+        s_aura_age = -1;          /* 下次按下 = 重新张开（咲夜的锚点取按下那一刻的自机位置）*/
+        s_aura_r = 0.0f;          /* 判定半径 0 ⇒ 不判弹 / 不沈静化 / 跟随 VM 的 scale 也是 0 */
+    } else if (s_aura.mode == POFV_AURA_FIELD) {
+        /* ★ TH09 的锚定场：圆心**锚在张开那一刻的自机位置**、逐帧扩张；按住期间一直长。*/
         if (s_aura_age < 0) {
             if (pp) { s_aura_cx = pp[0]; s_aura_cy = pp[1]; }
             s_aura_age = 0;
         }
         pofv_aura_radius(&s_aura, s_aura_age, 0, &s_aura_r);
-        if (s_aura_age >= s_aura.life) s_aura_age = -1;   /* 到点：下一帧在自机处重生 */
-        else ++s_aura_age;
+        /* 按住期间**只长这一个场**（不再「到点在自机处重生」—— 那是旧口径；现在松开 Shift
+         * 就整个收起，再按一次才重新张开 ⇒ 与一手「蓄力张开、松手收起」同形）。*/
+        if (s_aura_age < 1000000) ++s_aura_age;
     } else {
         /* ★ STATIC（TH19 系 / 占位档）：**也跟着 `dr` 长**（owner：「aura 和锚定场本质上是同一个
          *   东西」），只是**长到蓄力给的上限就停**；Shift 一松、蓄力归零 ⇒ 缩回没有、下次从 0 长。*/
@@ -305,6 +317,8 @@ static void aura_update(void)
         if (pp) { s_aura_cx = pp[0]; s_aura_cy = pp[1]; }
         if (s_aura_age < 0) s_aura_age = 0;
         if (charge <= 0) s_aura_age = 0;
+        /* 占位档（`k == 0`，灵梦 / 魔理沙 / 未识别）不吃蓄力 ⇒ 半径恒为 `r_fixed`；
+         *   它同样被上面那道 **Shift 门**管着（没按 = 0）—— 「一上来就是一个渐变圆 UI」正是它之前的毛病。*/
         pofv_aura_radius(&s_aura, s_aura_age, charge, &s_aura_r);
         if (s_aura_age < 1000000) ++s_aura_age;
     }
