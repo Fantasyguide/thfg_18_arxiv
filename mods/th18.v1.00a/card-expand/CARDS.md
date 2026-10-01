@@ -291,7 +291,7 @@ HUD = **游玩区内的左下角**（字面量空间 x 44 起）：季节字 PNG
 | 106 | 红魔乡 | **红魔乡 PlayRank**：12 条增减（收点/擦弹/吃道具/Rank 四件套），判定点指示 alpha=0；**`rank → 难度` 用户拍板完全搁置** | `on_item_collect` + `on_item_score` + `on_draw` + `on_stage_start` | `th06rank.c` + `th06rank_core.c` | 🔧 待实跑（spec §2.2 十二条 + 碎片会计三条已单测 40168 断言） |
 | 107 | 妖妖梦 | **樱点 / 森罗结界**：樱点来源 = **击中敌人（含小怪，一手公式）+ ★（分数转换点族，各 +20）+ 小樱点 + 结界中擦弹**；**金钱 / P 不给樱点**（2026-09-30 订正）。满 50000 开结界 **9 s**；中弹 / B ⇒ 灵击崩结界（消弹转原生小分道具 + 40 帧无敌）。详见 `TUNING.md` §2.0u-2 |
 | 108 | 永夜抄 | **妖机体 + 使魔**：低速止射（不改 Z 位）→ 换妖侧弹；子机走声明层（id 最小者落笔）；使魔 = 自建真敌人载体（`ce_spawn_enemy`），伤害转嫁 1/2（❓ 自定） | `on_native_shot_suppress` + `on_bullet_created` + `on_enemy_death` + `on_tick_2` + `on_draw` | `youkai.c` + `youkai_core.c` | 🔧 待实跑（194 断言；资产未到 ⇒ 本体 sprite / 妖侧 shooterset `0x16` / 子机声明数全留 -1·0 占位）|
-| 109 | 花映塚 **× 獣王園（合成卡）** | ★ **机制全部落地**：① 拦 Z 删除、蓄力 = 按住 C；② 充能改「灵力道具」（自建实体池）；③④ **结界与暴风按角色分派**；⑤ 灵 = 自制真敌人；⑥ 抵挡护盾；⑦ **boss attack**（C3/C4 往上打原生弹幕）| `on_enemy_death` + `on_tick_2` + `on_run_reset` + `on_delete` | `pofv.c` + `pofv_core.c` + `assets/ecl/spirit109.ecl.txt` | 🔧 待实跑（797 断言；❓ 见 `TUNING.md` §2.0v-1…4）· 规格 [`SPEC-109-FUSION.md`](SPEC-109-FUSION.md) | |
+| 109 | 花映塚 **× 獣王園（合成卡）** | **机制全部落地 + 蓄力攻击「混合路线」**（C1/C2 = sht、C3/C4 = ECL 版底伪 boss 载体 + 逐弹自伤源）⇒ ★ 细节见下方 §109 | `on_enemy_death` + `on_tick_2` + `on_run_reset` + `on_delete` | `pofv.c` + `pofv_core.c` + `assets/ecl/{spirit109,pofv109_boss}.ecl.txt` | 🔧 **待实跑**（**846** 断言；数值占位，受一手「每帧伤害上限 90」约束）· 规格 [`SPEC-109-FUSION.md`](SPEC-109-FUSION.md) §10 · ❓ 见 `TUNING.md` §2.0v-1…7 | |
 | 110 | 风神录 | **风神录信仰**：绿点实体池（与 111 共用）+ 按槽记账、连击 130f、灵击（门槛 2.00 档 / 扣 1 档 / 下限 1.05；★ 消弹圈/伤害/音效/满 P 表按 TH10 一手重写 ⇒ `TUNING.md` §2.5）、PV→计分只由落笔者落笔；★★ 2026-09-15 生成语义收口 ⇒ §2.5c；★★ 大信仰点判据换成**宿主表**（不再按「掉钱」）⇒ §2.5f | `on_enemy_death`（宿主表） + `on_item_collect` + `on_item_score` + `on_activate`（新）+ `on_tick_2` + `on_draw` | `mof.c` + `mof_core.c` + `faith.c` + `faith_core.c` | 🔧 待实跑（**1007** 断言；绿点实体池 `faith.c` 也是 111 的共用件）；★★ **2026-09-21c 主动卡 + 灵击合并**：灵击多一个 **C** 入口（D 切到本卡后按 C），实现 = **110/111 共用的唯一一份** `cards/bomb10.{h,c}`（新增共享件）⇒ `AUDIT.md` §BE-FA |
 | 111 | 地灵殿 | **地灵殿信号槽**：回收线上方 +50/f、满 100 自动全收道具、线下 −0.3/f、被弹归零（0–130）；绿点信仰（共用池，按槽记账）；蓝点分 = 信仰 ×(擦弹倍率 + 信号强度) 落在金钱道具分数上（**不改金钱数量**）；B 双选与 110 同规则；★ **满 P 转换与 110 是同一台机器**（共用件扫池 ⇒ 中绿点、type 9 档；`TUNING.md` §2.5c） | `on_activate`（新）+ `on_item_collect` + `on_item_score` + `on_tick_2` + `on_draw` + `on_death_after_deathbomb` | `signal.c` + `signal_core.c`（共用 `faith.c`） | 🔧 待实跑（**653** 断言；HUD 坐标/配色与灵击伤害是 ❓ 自定占位）；★ **2026-09-21 主动卡**：灵击多一个 **C** 入口（D 切到本卡后按 C）—— 与 X 调同一个入口（现为共用件 `bomb10_start()`，2026-09-21c 起 110/111 共用），灵击侧规则一字未变；`AUDIT.md` §BE-EV |
 | 112 | 星莲船 | **飞碟**：**token = 自建 VM 池**（照 117/113；不再是敌人载体 ⇒ 打不掉、只能碰）；吸收链 = 伪磁场拉拽 type 1/2 → 置空槽 → 计数；击破走 `on_enemy_death`（排除清场）；凑组三同色 / 三色各一 / **两同一异 = 丢最旧**（一手 KEEP2）；**金 UFO = 蓝 UFO**（P 图调色）| `on_enemy_death` + `on_item_frame` + `on_tick_2` + `on_draw` | `ufo.c` + `ufo_core.c` | 🔧 待实跑（**992** 断言；HUD 第一版在层 25；token 会飞会反弹、来源=小怪击破；**真 ECL 已从 TH12 移植**（`assets/ecl/ufo.ecl.txt`）；**本体/令牌用官方原版切图**（`ability.anm` script 164–173）由**卡侧跟随 VM** 画、ECL 侧 `anmSetSprite(0,-1)` 当隐形载体 ⇒ 已可发布）|
@@ -391,6 +391,20 @@ TH17 的 shot 组**（`pl0X.sht` +10/+15 组，脚本 `assets/sht/append_shooter
 `weight` 0..255、sprite 必填 —— 任何一条不合规，DLL 的自检（`cards_def.c`）会走
 `mitigation: allocator bound restored to retail (56)`，**整批新卡失效**（现象是「卡全没了」）。
 构建期已加 `make cards-check`（并入 `make check` 与 `make release`）。
+### §109 细节（2026-10-01：混合路线落地后）
+
+**「混合」= owner 拍板的路线**：**C1/C2 走 sht**（自机弹：朝上半圈 + 各 2 条自机狙行）；
+**C3/C4 走 ECL**（版底伪 boss 载体 `CEPofvBoss109` + 逐弹自伤源）。
+
+| 项 | 状态 |
+| --- | --- |
+| 蓄力/结界/暴风/护盾/灵（真敌人）| ✅ 已落地（见 `TUNING.md` §2.0v-1…5）|
+| **C3/C4 的 ECL 载体** | ✅ **四角色 × 两档逐条转写**：灵梦/魔理沙/咲夜 = **TH09** `plNN.ecl`；★ **早苗 = TH19** `pl02.ecl`。伪 boss 口径：隐形、判定 1×1、**不登记任何 boss 身份** |
+| **逐弹自伤源** | ✅ 扫敌弹池 + **四道过滤**（弹型 ∈ ECL 的 `etSprite` 集合 / 锚点覆盖区 / 往上飞 / 从锚点发散）+ 置 `0x200`（跳过碰撞，**不伤自机**）|
+| **自家机制隔离** | ✅ 清弹（暴风/CA 场/结界）不吃自家弹；自机狙不瞄自家载体 |
+| **构建硬闸（2 条）** | ✅ ECL 不许调用不存在的子程序；ECL 弹型 ↔ C 侧名单逐条对账 |
+| **一手挖到的约束** | ✅ 出膛坐标 = `option+0x5c/0x60`（`0x40a9c0`，逐指令）；世界坐标 x 以 **0** 为中心（锚点 `(0,440)`）；**每帧总伤害上限 = 90**（`sht+0x28`）|
+| **数值** | ⏳ **占位**（DPS / 自机狙密度 / 覆盖格）—— 已在「≤90/帧」的硬约束内配平（`16×5 = 80`），等 owner 实跑反馈 |
 
 ## 约定
 
