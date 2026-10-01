@@ -741,8 +741,17 @@ void faith_hud_draw(void)
                                       have111 ? s_decl[FAITH_SLOT_111].delta_fixed : 0);
         signal   = have111 ? s_decl[FAITH_SLOT_111].signal : FAITH_HUD_SIGNAL_NEUTRAL;
         combo    = have110 ? s_decl[FAITH_SLOT_110].combo  : FAITH_HUD_COMBO_NEUTRAL;
+        /* ★★★ 2026-09-26（owner 追问：「**擦弹倍率是 th10 的东西吗**」）—— **不是，是 TH11（111）的**：
+         *   一手 = `th11:0x41f4e7`（步数上限 `0x383` = **899** ⇒ 8.99）+ `th11:0x41f640`（信号强度），
+         *   两者相加那条 `add` 也在 TH11（`th11:0x41ce1f`）⇒ 这一整项属于**地霊殿（111）的得点公式**。
+         *   用户规格（`sdk_core.c` 的 `ce_score_coupling_permille()` 里逐字引着）：
+         *     「`(擦弹倍率 + 信号强度) if 有 111 else 1`」⇒ **只装 110 时耦合必须恒 1.00**。
+         *   ⚠ 计分层**本来就是对的**（`mof_core_pv()` 的「只装 110」支 = `PV = 信仰`，**无乘数**；
+         *     `test_mof_core.c` 用 `mof_core_pv(1,0,55000,8990,130000) == 55000` 钉着）——
+         *     漏的只是**这一行显示**：原来无条件加擦弹项 ⇒ 只装 110 实跑里擦弹过 100 就画 `×1.01`
+         *     （owner 报的现象；日志 27/27 采样都精确等于 `1.00 + ⌊graze/100⌋×0.01`）。*/
         mult     = faith_hud_mult_permille(
-                       mof_core_graze_mult(*(const volatile int32_t *)FH_GRAZE_ADDR),   /* 擦弹项（只读全局）*/
+                       have111 ? mof_core_graze_mult(*(const volatile int32_t *)FH_GRAZE_ADDR) : 0, /* 擦弹项：**只在 111 在场时** */
                        faith_hud_signal_strength(signal));                              /* 信号项（中性 1.00）*/
         faith_hud_mult_text(mult, mtxt);
 
