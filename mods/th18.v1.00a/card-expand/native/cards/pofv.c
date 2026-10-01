@@ -95,8 +95,17 @@
  *   一手（怎么钉）：`CE_OPT_POS_X/Y` = 子机的**出膛坐标**，`CE_FN_TICK_SHOOTERS_FOR_CARD`
  *   就是从这里出膛（`engine.h` 里 `0x40a9c0` 的注释）；引擎每帧会按「跟随玩家」重算它，
  *   而 `on_tick_2`（AbilityManager tick，优先级 0x16）在那之后跑 ⇒ **我们在发弹前覆盖即可生效**。*/
-#define POFV_BOSSATK_ANCHOR_X  192.0f   /* ❓ 自定（场地宽 384 正中；一手尺寸见上）*/
-#define POFV_BOSSATK_ANCHOR_Y  440.0f   /* ❓ 自定（版底；一手场地高 448）*/
+/* ★★★ 订正（2026-10-01）：**世界坐标的 x 是「以 0 为中心」的**，不是 `[0, 384]`！
+ *   一手（`engine/player/th18/01-position-and-state-timers.md`）：玩家钳位
+ *     `x ∈ [-0x5c00, 0x5c00]` ⇒ **±184 px**、`y ∈ [0x1000, 0xd800]` ⇒ **[32, 432] px**
+ *   ⇒ 弹幕区 **x ∈ [-192, +192]**（中心 **0**）、**y ∈ [0, 448]**（玩家自己内缩到 [32,432]）。
+ *   交叉自洽：世界 ±192 加屏幕偏移 224（= 32 + 192）就是场地的屏幕范围 **32..416**
+ *   = `arcadeRegionTopLeftPos (32,16)` + 宽 384 ✓✓。
+ *   ⚠ 我原来写的 **192 是「右墙」不是「中心」**（`TRANCE_SPIRIT_BOUNCE_X = 192` 也是墙）——
+ *     那版会让**整套弹幕（sht 与 ECL 都是）在屏幕最右边发射**。*/
+#define POFV_BOSSATK_ANCHOR_X    0.0f   /* ★ 世界水平中心（订正后）*/
+#define POFV_BOSSATK_HALF_W    192.0f   /* ★ 弹幕区半宽（世界 x ∈ ±192）*/
+#define POFV_BOSSATK_ANCHOR_Y  440.0f   /* ★ 版底：世界底 = 448、玩家最多到 432 ⇒ 取 440（在玩家够不到、又在场内）*/
 /* ★★ 2026-10-01（owner 的混合路线）：**C3/C4 的 ECL 侧载体** —— `assets/ecl/pofv109_boss.ecl.txt`
  *   的 `CEPofvBoss109`（= 由 TH09 `pl00.ecl` 的环弹幕逐条转写来的伪 boss）。
  *   伪 boss 口径：它只是个**发弹用的隐形架子** —— 不设 boss 标志、不挂血条/名字、不用体术判定。*/
@@ -560,7 +569,7 @@ static void bossatk_damage(void)
         *(uint32_t *)(b + CE_BULLET_FLAGS) |= POFV_BOSSATK_NO_HIT;
         bx = *(const float *)(b + CE_BULLET_POS);
         by = *(const float *)(b + CE_BULLET_POS + 4);
-        if (bx < 0.0f || bx > POFV_BOSSATK_DMG_W) continue;         /* 覆盖区：横向 = 场地宽 */
+        if (bx < -POFV_BOSSATK_HALF_W || bx > POFV_BOSSATK_HALF_W) continue;  /* 覆盖区：世界 x ∈ ±192 */
         if (by > POFV_BOSSATK_ANCHOR_Y + 8.0f) continue;            /* 覆盖区：不能低于锚点 */
         if (by < POFV_BOSSATK_ANCHOR_Y - POFV_BOSSATK_DMG_H) continue;  /* 覆盖区：往上一个高 */
         pos[0] = bx; pos[1] = by; pos[2] = 0.0f;
