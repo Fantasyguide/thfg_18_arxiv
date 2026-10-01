@@ -26654,3 +26654,25 @@ sprite/size（真 48×48 且不在白名单 ⇒ 它们不会出现 = 修好；�
 
 **闸**：`make -s check` rc=0（`youkai_core: 8799 checks, 0 failed`、`dllx87 = 0`）、`sites.py verify` 全对上、
 `capcheck` 全绿、`check-docs` 全过。
+
+## §BE 详录 #178（2026-10-01）：转嫁**落点改成使魔自己的母机**（根因 = 旧实现只认 boss）
+
+> **owner 实跑（`d2caaaf2`，practice 5 面，几乎没动）**：
+> `youkai: run done - … xfer[tick 5706 **map 0/0** **orb 538/11391** ext 0/0 **rect 0** fail 0 **noboss 275**]`
+> ⇒ `tick` 在跑、**绕转那支采样成功（538 次 / 累计 11391 伤害）**，但 **`rect 0`**（`ce_damage_rect` 一次没调）
+> ⇒ **11391 点全被 `noboss` 丢掉** = 「落点要求目标必须是 boss」而这一局对象是**道中/大妖精**（不是 boss）。
+
+**改动（`youkai.c` 的 `yk_transfer_tick`）**
+1. 新增 `s_xfer_parent`：**三条喂料支各自记下该使魔的母机 id**
+   （绕转 = `o->parent_id`、映射 = `sl->enemy_id`、外部 = `CE_SPAWN_PARENT`）；
+2. **落点优先取「该母机的坐标」**（`ce_enemy_by_id` + `ce_enemy_pos`）⇒ 伤害打在**母机**身上；
+   **不再要求它在 `CE_EM_BOSS_IDS` 里**（覆盖道中大妖精 / 道中 boss / leveledit 米斯蒂亚那批）；
+3. 母机查不到 ⇒ 退回原来的**全局 boss** 兜底；两者都无 ⇒ `noboss` 丢（账**仍不攒**）；
+4. 计数细化：新增 **`noparent`**（母机查不到）与 `noboss` 分开，并进 run-done 日志
+   （`xfer[… noboss %u noparent %u …]`）。
+
+**一手对照**：转嫁的语义本来就是「打使魔 ⇒ 转给它的**主人**」（`research-108-damage-transfer.md`），
+旧实现把「主人」近似成了「全局 boss」⇒ 道中场景全丢。现在按 parent 落地**更贴一手**。
+
+**闸**：`make -s check` rc=0（`youkai_core: 8799 checks, 0 failed`、`dllx87 = 0`）、`sites.py verify` 全对上、
+`capcheck` 全绿、`check-docs` 全过。

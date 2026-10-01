@@ -2058,7 +2058,13 @@ static unsigned  s_xfam_fed;      /* 本局喂过多少次外部/绕转使魔（
  *   `ce_damage_rect`**）、`s_xfer_noboss`（因为**没有 boss** 而把转嫁量丢进 `dropped` 的次数）。*/
 static unsigned s_xfer_mapped_feed, s_xfer_orbit_feed, s_xfer_ext_feed;
 static int32_t  s_xfer_mapped_delta, s_xfer_orbit_delta, s_xfer_ext_delta;
-static unsigned s_xfer_rect, s_xfer_rect_fail, s_xfer_noboss;
+static unsigned s_xfer_rect, s_xfer_rect_fail, s_xfer_noboss, s_xfer_noparent;
+/* ★★★ 2026-10-01（owner 实跑：`xfer[tick 5706 map 0/0 orb 538/11391 ext 0/0 rect 0 … noboss 275]`
+ *   ⇒ **11391 点伤害全被 `noboss` 丢掉**）—— **落点改成「这只使魔自己的母机（parent）」**：
+ *   绕转/映射/外部三条支在喂料时把该使魔的 **`CE_SPAWN_PARENT`（母机 id）** 记到这里，
+ *   转嫁就打在**那台母机**身上（一手语义 = 「打使魔 ⇒ 转给它的主人」，**不再要求它在 boss 表里**）；
+ *   母机查不到时才退回原来的全局 boss，再不行才 `noboss` 丢。*/
+static uint32_t s_xfer_parent;
 static unsigned s_xfer_tick_calls;   /* ★ `yk_transfer_tick` 本局被调了几次（判断这一支有没有在跑）*/
 static unsigned  s_xfam_used;     /* 本帧表用了几格（日志用）*/
 
@@ -2142,7 +2148,10 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
             continue;
         }
         {   int32_t d = yk_sample_life(sl, sl->fam_id, *(int32_t *)(f + YK_ED_LIFE_CUR));
-            if (d > 0) { ++s_xfer_mapped_feed; s_xfer_mapped_delta += d; }
+            if (d > 0) {
+                ++s_xfer_mapped_feed; s_xfer_mapped_delta += d;
+                s_xfer_parent = sl->enemy_id;                /* ★ 落点 = 映射槽的母机 */
+            }
             yk_transfer_feed(&s->tr, d); }
     }
 
@@ -2188,6 +2197,7 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
                                                           YK_TRANSFER_BOX_W, YK_TRANSFER_BOX_H)) {
                         {   int32_t d = x->life - life;
                             ++s_xfer_ext_feed; s_xfer_ext_delta += d;
+                            s_xfer_parent = parent;              /* ★ 落点 = 外部子敌人的母机 */
                             yk_transfer_feed(&s->tr, d); }
                         ++s_xfam_fed;
                     }
@@ -2222,6 +2232,7 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
                 if (x->life > lc) {
                     int32_t d = x->life - lc;
                     ++s_xfer_orbit_feed; s_xfer_orbit_delta += d;
+                    s_xfer_parent = o->parent_id;            /* ★ 落点 = 这只绕转使魔的母机 */
                     yk_transfer_feed(&s->tr, d);
                     ++s_xfam_fed;
                 }
@@ -2231,13 +2242,23 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
         }
     }
     if (s->tr.pending <= 0) return;
-    if (!boss) {
-        /* 没有 boss（道中空场 / boss 已死）：本帧不转嫁（研究 §4）。**丢掉的量记账**，不攒着 ——
-         * 攒着会在 boss 出现那一帧一次性砸下去（顶掉配额、放大计分）。*/
-        ++s_xfer_noboss;                                     /* ★ 诊断：没有 boss ⇒ 丢进 dropped */
-        s->dropped += (uint32_t)s->tr.pending;
-        s->tr.pending = 0;
-        return;
+    /* ★★★ 2026-10-01：**落点 = 使魔自己的母机**（`s_xfer_parent`）——一手语义就是「转给它的主人」，
+     *   不再要求母机在 boss 表里（道中大妖精 / 道中 boss / leveledit 米斯蒂亚那批都能落地）。
+     *   母机查不到（已死/已撤）才退回**全局 boss**；两者都没有才 `noboss` 丢（账仍不攒）。*/
+    {
+        uint8_t *em2 = CE_ENEMY_MGR();
+        uint8_t *pe = (em2 && s_xfer_parent) ? ce_enemy_by_id(em2, (int32_t)s_xfer_parent) : 0;
+        const float *pp2 = pe ? ce_enemy_pos(pe) : 0;
+        if (pp2) { bp = pp2; }
+        else {
+            if (s_xfer_parent) ++s_xfer_noparent;             /* ★ 诊断：母机查不到 */
+            if (!bp) {
+                ++s_xfer_noboss;                              /* 连 boss 兜底也没有 ⇒ 丢 */
+                s->dropped += (uint32_t)s->tr.pending;
+                s->tr.pending = 0;
+                return;
+            }
+        }
     }
     amount = yk_transfer_clamp(s->tr.pending, YK_TRANSFER_CAP_PER_FRAME);
     s->tr.pending = 0;
@@ -4901,13 +4922,13 @@ static void on_run_reset(ce_card_t *c)
     if (s && (s->spawns || s->transferred || s_xfam_fed))
         ce_log("youkai: run done - %u familiars spawned, %u killed, %u withdrew, %u silent, "
                "%u transfer damage, %u dropped (no boss), xfam %u xtab %u, "
-               "xfer[tick %u map %u/%d orb %u/%d ext %u/%d rect %u fail %u noboss %u rej %u clamp %u badfp %u]",
+               "xfer[tick %u map %u/%d orb %u/%d ext %u/%d rect %u fail %u noboss %u noparent %u rej %u clamp %u badfp %u]",
                s->spawns, s->broken, s->lost, s->silent, s->transferred, s->dropped,
                s_xfam_fed, s_xfam_used,
                s_xfer_tick_calls,
                s_xfer_mapped_feed, s_xfer_mapped_delta, s_xfer_orbit_feed, s_xfer_orbit_delta,
                s_xfer_ext_feed, s_xfer_ext_delta, s_xfer_rect, s_xfer_rect_fail, s_xfer_noboss,
-               s ? s->tr.rejected : 0, s ? s->tr.clamped : 0, s_ysp_badfp);
+               s_xfer_noparent, s ? s->tr.rejected : 0, s ? s->tr.clamped : 0, s_ysp_badfp);
     yk_ring_kill_all();                                  /* ★ 切换环：换关时 tick 会停 ⇒ 这里直接收 */
     yk_popup_kill_all();                                 /* ★ #27：弹字同样要收干净 */
     (void)yk_deathbomb_tint();                           /* ★ #26：换关也要把染色还回去（先还原）*/

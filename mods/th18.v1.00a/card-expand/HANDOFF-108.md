@@ -341,6 +341,8 @@ TH16 的布局索引 = 三角数表 `0x4a5dac` ⇒ 档 k 块大小 = k），我�
 | 71 | ★★ **转嫁改成 100%**（owner：「有很多使魔…反而 1/2 减伤 ⇒ 必须 100% 转移」）| **打使魔 ⇒ 母机掉血与自机直接打母机等价（目测 DPS 不减半）**；`transferred ≈ Σ(使魔掉的血)`（不再是 Σ/2）；日志 `xfer[orb/orb_delta]` 的 delta 与 `transferred` 同步变大 | `transferred` 仍约为 Σ/2 ⇒ 装的是旧 DLL；转嫁量被截断 ⇒ 看同行的 `fail`/`noboss` |
 | 72 | ★ **防御加固**（崩后）| VM 读已 NULL 保护（`vm ? *(vm+0x24) : -1`）；`spriteprobe` 下标双界检查；**转嫁加了「异常 delta ⇒ 丢」与「pending 上限 ⇒ 截断」**，日志尾部新增 `rej %u clamp %u` | 若 owner 再崩：**先去 `C:\Users\<用户>\AppData\Local\CrashDumps` 找 `th18.exe.*.dmp`**；同时把 `youkai: build …` 与尾几行发我（确认版本 + 有没有 `rej/clamp` 涨）|
 | 73 | ★★ **崩溃已定位并修复**（dump 证据）| 打一局**不再崩**（崩点 = 读 VM+0x24 取 sprite 时解引用**悬垂指针**；现改为 `IsBadReadPtr` 检查 + **只读一次缓存**，无效 ⇒ 退回纯尺寸门）；日志 `xfer[… badfp %u]` 可看命中过几次无效 VM | 若再崩：给 **dump**（`crashdumps/th18.exe.*.dmp`）+ `youkai: build …` —— 崩点若仍在 `dll+0x17017` 附近说明还有别的解引用点 |
+| 74 | ★★ **转嫁落点改成母机**（owner practice 5 面：`orb 538/11391` 但 `rect 0 / noboss 275`）| **打大妖精 / 道中 boss / 米斯蒂亚那批的使魔，母机都会掉血**（不再要求目标在 boss 表里）；run-done 的 `xfer[… rect >0 … noparent …]` 可核；`noboss` 只在「母机与 boss 都查不到」时才涨 | `rect` 仍为 0 ⇒ 装的是旧 DLL；`noparent` 很大 ⇒ 母机 id 取错/母机已死（把行发我）|
+
 
 
 
