@@ -1193,9 +1193,21 @@ int32_t    yk_clamp_spawn_life(int32_t life);
 #define YK_TRANSFER_CAP_PER_FRAME 0             /* ★ TODO(决策 §7.5-1)：单帧转嫁上限。0 = 无上限（占位）。
                                                  *   研究提醒：使魔一刀 2000 ⇒ boss 一帧 1000，会顶掉 boss 的
                                                  *   每帧配额并放大计分 ⇒ 要不要封顶由用户定。*/
+/* ★★★ 2026-10-01（owner 实跑**崩溃**后加的**防御**，不改口径）：
+ *   · `YK_TRANSFER_DELTA_MAX`：单次采样的 delta 合理上限。一手血量档最大 **600**（一台使魔满血也就 600），
+ *     一次 30 帧的采样跨帧最多 ≈ 几千 ⇒ **10000** 是「远超正常、但远低于天文数字」的界线：
+ *     超过它基本只能是**表复用 / 敌机复活 / id 复用**造成的假差分 ⇒ **整笔丢掉**并计数（见 `rejected`）。
+ *   · `YK_TRANSFER_PENDING_MAX`：待转嫁总量的上限（100000 = 最大档 600 × 18 台 × ~9 倍余量；
+ *     100% 转嫁下 `pending` 会比 1/2 大一倍，但正常一帧也就几千）⇒ 超出**截断**并计数（`clamped`），
+ *     避免把天文数字喂给 `ce_damage_rect` 的 `dmg` 参数。*/
+#define YK_TRANSFER_DELTA_MAX   10000
+#define YK_TRANSFER_PENDING_MAX 100000
+
 typedef struct {
     int32_t carry;      /* 奇数额外那半的进位（累计到偶数再补，见 yk_half_with_carry）*/
     int32_t pending;    /* 本帧要转嫁的量（卡侧转完清零；取不到 boss 时按研究 §4 丢掉并记账）*/
+    uint32_t rejected;  /* ★ 防御：因 delta 异常大而**整笔丢掉**的次数（诊断）*/
+    uint32_t clamped;   /* ★ 防御：因 pending 超上限而**截断**的次数（诊断）*/
 } yk_transfer_t;
 
 void    yk_transfer_reset(yk_transfer_t *t);

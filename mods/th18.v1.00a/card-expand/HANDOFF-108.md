@@ -339,6 +339,8 @@ TH16 的布局索引 = 三角数表 `0x4a5dac` ⇒ 档 k 块大小 = k），我�
 
 **#68（伤害转嫁覆盖面补齐：绕转使魔 + 外部子敌人含 leveledit 米斯蒂亚那批）已编好并提交
 | 71 | ★★ **转嫁改成 100%**（owner：「有很多使魔…反而 1/2 减伤 ⇒ 必须 100% 转移」）| **打使魔 ⇒ 母机掉血与自机直接打母机等价（目测 DPS 不减半）**；`transferred ≈ Σ(使魔掉的血)`（不再是 Σ/2）；日志 `xfer[orb/orb_delta]` 的 delta 与 `transferred` 同步变大 | `transferred` 仍约为 Σ/2 ⇒ 装的是旧 DLL；转嫁量被截断 ⇒ 看同行的 `fail`/`noboss` |
+| 72 | ★ **防御加固**（崩后）| VM 读已 NULL 保护（`vm ? *(vm+0x24) : -1`）；`spriteprobe` 下标双界检查；**转嫁加了「异常 delta ⇒ 丢」与「pending 上限 ⇒ 截断」**，日志尾部新增 `rej %u clamp %u` | 若 owner 再崩：**先去 `C:\Users\<用户>\AppData\Local\CrashDumps` 找 `th18.exe.*.dmp`**；同时把 `youkai: build …` 与尾几行发我（确认版本 + 有没有 `rej/clamp` 涨）|
+
 
 （`6c21c5ad`，源码 `youkai.c` + 文档），但 DLL 未同步进 modkit。**
 
