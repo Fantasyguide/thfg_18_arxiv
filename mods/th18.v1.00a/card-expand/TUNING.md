@@ -8910,3 +8910,26 @@ owner 原话：「（UFO 敌人血量）**肯定是真值**」。**核查结果�
 
 ⇒ 改了两处**过期注释**：`ufo_core.h` 的 `hp_max` 字段注（原来写"要按 <1000 缩放"）、`ufo.c` 待办第 36 条（⏳ → ✅）。
 发布：DLL → 见本轮快照（注释改动也照常走 `make release` + 四处同步，保证仓/部署一致）。
+
+### 2.1ccc-38 📋 卡 108 **二分开关清单与用途**（默认**全 1 = 正常版**；除排障外**不要改**）
+
+⚠ 这些开关是为「魔理沙人形态子机激光」那一轮排障加的（见 `AUDIT.md` §BE #200–#206）。
+**默认全 1 = 正常版**：发布/回归前请用下面这条命令确认（**必须 30 个 `1`**）：
+
+```bash
+grep -nE "^#define YK_(ENABLE|HUMAN_OPT)" native/cards/youkai.c     # 全 1 才算正常版
+```
+
+首帧日志会打一行自述：`youkai: bisect switches … (1 = 现状)` —— 实跑报障时**先看这一行**。
+
+| 组 | 开关（行）| 说明 |
+| --- | --- | --- |
+| 入口 ①–⑦ | `SET_INDEX`(477) / `NATIVE_SUPPRESS`(478) / `OPTION_POSE`(479) / `HUD_VM`(480) / `FX_VMS`(481) / `TRANSFER`(482) / `ZONE`(483) | 依次管：认领妖侧 set、压原生行、子机声明层、HUD VM、特效 VM、伤害转嫁、死亡消弹 |
+| 总闸 ⑧–⑨ | `ORBIT`(527) / `MAP_LAYER`(528) | 绕转使魔整体 / 映射（发射口）层整体 |
+| 整卡 | `CARD`(491) | **=0 ⇒ 每个回调入口就 return**（最干净的「凶手是否在回调里」判据）|
+| 计分/HUD 细项 | `SCORE_DECL`(493) / `FENGMA_SCORE`(495) / `POSE_DECLARE`(497) / `HUD_INIT`(499) | 计分层声明 / 逢魔加分 / 每帧 declare / HUD 初始 VM |
+| 回调族 | `CB_LIFECYCLE`(502) / `CB_STAGE`(503,占位) / `CB_TICK_SHOOTERS`(504) / `CB_TICK2`(505) / `CB_BULLET`(506) / `CB_ITEM`(523) / `CB_DRAW`(524) / `CB_ENEMY_DEATH`(525) / `CB_DEATHBOMB`(526) | 按回调族关（各回调入口 `if (!YK_ENABLE_CARD \|\| !YK_ENABLE_CB_x) return;`）|
+| bullet 细项 | `CB_BULLET_CREATED`(508) / `CB_BULLET_HIT`(509) | 拆到单个回调（`HIT` 是那一轮的真凶所在）|
+| 刻符路径 | `ORB_VM`(518) / `ORB_LIST`(519) / `ORB_ZONE`(520,占位) / `ORB_DRECT`(521,占位) / `ORB_PLAYERW`(522) | 建 VM / 占表 / 消弹 / 伤害源 / 抽引擎 RNG |
+| 人侧子机写入 | `HUMAN_OPT_WRITE`(3051) | =0 ⇒ 人侧完全不碰引擎子机层（#98/#99 实验用；已排除该线）|
+
