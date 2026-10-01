@@ -101,6 +101,19 @@
  *   的 `CEPofvBoss109`（= 由 TH09 `pl00.ecl` 的环弹幕逐条转写来的伪 boss）。
  *   伪 boss 口径：它只是个**发弹用的隐形架子** —— 不设 boss 标志、不挂血条/名字、不用体术判定。*/
 #define POFV_BOSSATK_ECL_NAME   "CEPofvBoss109"   /* 必须与 `assets/ecl/pofv109_boss.ecl.txt` 同名 */
+/* ★★ 2026-10-01（C3/C4 的「**自伤源**」，owner：「这些攻击是会对敌人造成伤害的」）：
+ *   载体的弹是**敌弹**（ECL `etNew` 族）——引擎只会让它们撞**自机**，**不会伤敌机** ⇒ 卡侧补一套。
+ *
+ *   ❓ **本版是「覆盖区」近似，不是「逐弹命中」**（登记 `TUNING.md` §2.0v-7）：
+ *     逐弹版必须能认出「哪颗弹是我们发的」，而敌弹池是**共用**的；唯一的干净判据是弹的**类型**
+ *     （弹种表 `0x4c5f90`，stride `0x118`）—— 但**弹结构里存不存类型/类型指针，仓库还没定位**
+ *     （`engine/bullet/th18/01` §4 那条 ❓ 就是它）。⇒ 先用「锚点上方的覆盖区」结算，
+ *     等那个字段定位了再换成逐弹（接口不用改：都走 `ce_damage_rect`）。
+ *   ⚠ 数值（伤害 / 覆盖尺寸 / 持续帧）**一律占位**（owner：「dps 还得重新考虑，可以先填占位」）。*/
+#define POFV_BOSSATK_DMG         6       /* ❓ 占位（每帧每源的伤害）*/
+#define POFV_BOSSATK_DMG_W     384.0f    /* 覆盖宽（= 场地宽 384，一手 `arcadeRegionSize`）*/
+#define POFV_BOSSATK_DMG_H     320.0f    /* 覆盖高（自锚点往上）*/
+#define POFV_BOSSATK_DMG_LIFE    2       /* 源存活帧（照风暴那一支的量级）*/
 #define POFV_POWER_SE_GET       0x25
 #define POFV_POWER_VM_LAYER        7    /* 灵力道具在最上（要一眼可判「捡得到」）*/
 #define POFV_POWER_VM_SCALE      1.0f   /* ★ 一手（2026-10-01）：画的是 TH18 原版 P 点
@@ -445,6 +458,18 @@ static void bossatk_carrier_sync(int32_t level)
     *(int32_t *)(e + CE_ENEMY_ECL_I0 + 4) = level;              /* $I1 = 档位 */
 }
 
+/* ★ C3/C4 的「自伤源」（近似；见常量处的长注释）：在**锚点上方的覆盖区**里每帧结算一次伤害。
+ *   中心 = 锚点往上半个覆盖高（这样覆盖区正好盖住朝上发的弹幕）。*/
+static void bossatk_damage(void)
+{
+    float pos[3];
+    pos[0] = POFV_BOSSATK_ANCHOR_X;
+    pos[1] = POFV_BOSSATK_ANCHOR_Y - POFV_BOSSATK_DMG_H * 0.5f;
+    pos[2] = 0.0f;
+    ce_damage_rect(pos, 0.0f, POFV_BOSSATK_DMG_LIFE, POFV_BOSSATK_DMG,
+                   POFV_BOSSATK_DMG_W, POFV_BOSSATK_DMG_H);
+}
+
 /* ★★ 2026-10-01（owner：「最好是**除了透明度之外完全复刻符卡**，**包括对于敌机的「自机狙」**等等」）：
  *   **自机狙** —— 把「版底锚点 → **最近的可锁定敌人**」的方位角写进 `PLAYER + CE_PLAYER_AIM_ANGLE`，
  *   给那几行 `func_on_init = 5` 的 shooter 在建弹时取用（出膛定向，**不是追踪**）。
@@ -491,7 +516,10 @@ static void bossatk_fire(ce_card_t *c, pofv_card_t *s)
         bossatk_carrier_stop();                         /* ★ 打完了 ⇒ 喊载体走（别留孤儿敌人）*/
         return;
     }
-    if (s->bossatk.level >= 3) bossatk_carrier_sync(s->bossatk.level);   /* ★ C3/C4：ECL 侧载体 */
+    if (s->bossatk.level >= 3) {
+        bossatk_carrier_sync(s->bossatk.level);      /* ★ C3/C4：ECL 侧载体 */
+        bossatk_damage();                            /* ★ C3/C4：自伤源（近似，见常量处）*/
+    }
     switch (s->bossatk.level) {                 /* ★ 四档各一组（密度递进）*/
     case 1:  set = CE_SHT_SET_POFV109_BOSSATK_C1; break;
     case 2:  set = CE_SHT_SET_POFV109_BOSSATK_C2; break;
