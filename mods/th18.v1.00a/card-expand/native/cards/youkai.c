@@ -1464,17 +1464,18 @@ static void yk_orbit_scan(uint32_t frame)
         if (!yk_enemy_sprite_size(e, &w, &h)) continue;
         /* ★ 2026-10-01：判据带 **sprite 号**（白名单）—— VM 的当前 sprite 在 `vm+0x24`（`engine.h`）。*/
         {   int spid = yk_sprite_id_for(e, (uint32_t)id);
-            if (!yk_big_by_sprite_id(w, h, spid)) { ++small; continue; }
-            /* ★★★ 2026-10-01（owner：6 面关底有小妖精爆动物灵）—— **临时验证日志**：
-             *   每只被判为「大怪」的敌人打一行（**同一 sprite 只打一次**，节流）⇒ owner 打一波 6 面关底
-             *   就能看出那批小妖精的 sprite/size 到底落在哪：若它们真是 48×48 且 sprite 不在白名单里，
-             *   它们就**不会**出现在这几行里（= 修好了）；若它们是 64×64 也在这里 ⇒ 白名单不是原因。*/
+            /* ★★★ 2026-10-01 **负向探针**（owner：5 面道中 boss 前的大妖精「没使魔了」，而
+             *   `spriteprobe` 一行都没有 ⇒ 那一局**没有任何敌人被判为大怪**，看不到它的 sprite）：
+             *   改成对**所有尺寸 ≥ 48 的敌人**都打一行（**含 `big 0` 的失败样本**），同一 sprite 只打一次。
+             *   ⇒ owner 打一次 5 面就能看到那只大妖精的 **sprite 号**，再决定白名单补什么（**不猜**）。*/
             {   static int8_t s_probe_done[512];
-                if (spid >= 0 && spid < 512 && !s_probe_done[spid]) {
+                int big = yk_big_by_sprite_id(w, h, spid);
+                if ((w >= 48 || h >= 48) && spid >= 0 && spid < 512 && !s_probe_done[spid]) {
                     s_probe_done[spid] = 1;
-                    ce_log("youkai/spriteprobe: enemy #%u sprite %d size %ux%u big 1",
-                           (unsigned)id, spid, w, h);
+                    ce_log("youkai/spriteprobe: enemy #%u sprite %d size %ux%u big %d",
+                           (unsigned)id, spid, w, h, big);
                 }
+                if (!big) { ++small; continue; }
             }
         }
         /* 池：这台敌人要 `want` 个空槽；一个都没有就**这一帧到此为止**（后面同样不够），
@@ -3279,7 +3280,10 @@ static int yk_bomb_active(void)
  *   10 = '%'、11 = '.'、12 = '-'、**13 = '+'**（本批追加的第 14 格，TH08 sprite149））；
  *   VM 必须挂**自机那一页**（`yk_player_anm()`，贴图按 VM 自己那一页取）。
  * ❓ 自定（owner 2026-09-22 已批，登记 `TUNING.md`）：**层 = 世界层 11**、**池 = 3 支 x 5 字形**。*/
-#define YK_POPUP_MAX        24   /* ★ 2026-10-01：8 → 24（最坏 = 链根 1 + 每台绕转/映射使魔 1；17–18 台要 19）*/   /* ★ 2026-09-30：3 → 8（一手打死一只母机可能一次冒
+#define YK_POPUP_MAX        128  /* ★★ 2026-10-01：24 → **128**（实跑 `dropped 4740` ⇒ 一局几千个
+                                  *   收刻符「分值」浮字把 24 格池挤爆，**死亡 `+N` 永远没格子**）。
+                                  *   ⇒ 总量抬到 128 + **分层**：`kind == 0`（收刻符分值，装饰性）可以被
+                                  *   `kind != 0`（死亡 `+N` / `+1`，判据性）**挤掉**（见下面的分配逻辑）。*/   /* ★ 2026-09-30：3 → 8（一手打死一只母机可能一次冒
                                  *   1（链根 2n）+ 子机数（≤5）个浮字 ⇒ 3 会丢；池满只丢浮字、
                                  *   不影响道具/计分，见 `yk_popup_spawn` 的降级日志）*/
 #define YK_POPUP_GLYPHS     5
@@ -3331,6 +3335,20 @@ static void yk_popup_spawn(float x, float y, int32_t value, int kind, uint32_t c
     unsigned k;
     void *anm;
     for (k = 0; k < YK_POPUP_MAX; ++k) if (!s_popup[k].used) { p = &s_popup[k]; break; }
+    if (!p && kind != 0) {
+        /* ★★★ 2026-10-01（owner 实跑 `popup pool full, dropped 4740`）：**分层** —— 死亡 `+N`/`+1`
+         *   是**判据性** UI，池满时**先挤掉最旧的 `kind == 0`（收刻符分值，一局几千个、装饰性）**。
+         *   ⇒ 这样 `pf`（丢弃计数）**不再因为收刻符的字而涨**，死亡 `+N` 一定打得出来。*/
+        unsigned oldest = YK_POPUP_MAX;
+        uint8_t oldest_age = 0;
+        for (k = 0; k < YK_POPUP_MAX; ++k) {
+            if (!s_popup[k].used || s_popup[k].kind != 0) continue;
+            if (oldest == YK_POPUP_MAX || s_popup[k].age > oldest_age) {
+                oldest = k; oldest_age = s_popup[k].age;              /* 最旧的那个分值浮字 */
+            }
+        }
+        if (oldest < YK_POPUP_MAX) { yk_popup_kill(&s_popup[oldest]); p = &s_popup[oldest]; }
+    }
     if (!p) {
         /* ★ 2026-09-25（卫生 + 诊断）：这个计数原来**只加不读**（`-Wunused-but-set-variable`）。
          *   改成**首次 + 每 60 次**各打一行 —— 池满（`YK_POPUP_MAX` = 3 是 ❓ 自定值，见 `TUNING.md`）

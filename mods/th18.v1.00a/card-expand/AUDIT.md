@@ -26693,3 +26693,23 @@ sprite/size（真 48×48 且不在白名单 ⇒ 它们不会出现 = 修好；�
 
 **闸**：`make -s check` rc=0（`youkai_core: 8799 checks, 0 failed`、`dllx87 = 0`）、`sites.py verify` 全对上、
 `capcheck` 全绿、`check-docs` 全过。
+
+## §BE 详录 #180（2026-10-01）：浮字池 **24 → 128 + 分层**（死亡 `+N` 走判据层）+ 负向 `spriteprobe`
+
+> **owner（`build Oct 1 2026 15:40:58`）**：`youkai: popup pool full, dropped **4740** popup(s) so far
+> (YK_POPUP_MAX 24)` ⇒ 一局几千个「收刻符分值」浮字把池挤爆 ⇒ **死亡 `+N` 永远没格子**（`pf` 涨到 4700+）。
+
+**① 池分层 + 扩容（已改）**：`YK_POPUP_MAX` **24 → 128**；`yk_popup_spawn()` 在**找不到空格且 `kind != 0`**
+（死亡 `+N` / `+1` = 判据性 UI）时，**先挤掉最旧的 `kind == 0`（收刻符分值、装饰性）条目**再用它的槽
+⇒ **`pf` 不再因为分值字而涨**，死亡 `+N` 一定打得出来（`pf` 仍保留，用于判断池是否真的不够）。
+
+**② 负向 `spriteprobe`（已改）**：原来只在**判定为「大怪」**时打 ⇒ owner 那局**一行都没有**（= 没任何敌人被判大怪，
+看不到那只大妖精的 sprite）。现在对**所有尺寸 ≥ 48 的敌人**都打一行（**含 `big 0` 的失败样本**，同 sprite 只打一次）：
+`youkai/spriteprobe: enemy #%u sprite %d size %ux%u big %d` ⇒ 打一次 5 面就能拿到那只大妖精的 sprite 号，
+再决定白名单补哪一段（**不猜**）。
+
+**好消息（同一份日志）**：`xfer[… map 545/13048 orb 661/14018 **rect 977** fail 0 noboss 3]` ⇒
+**转嫁真的落地了**（§BE #178 的母机落点生效）✓
+
+**闸**：`make -s check` rc=0（`youkai_core: 8799 checks, 0 failed`、`dllx87 = 0`）、`sites.py verify` 全对上、
+`capcheck` 全绿、`check-docs` 全过。
