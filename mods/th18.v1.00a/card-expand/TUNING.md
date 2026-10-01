@@ -9201,3 +9201,51 @@ grep -nE "^#define YK_(ENABLE|HUMAN_OPT)" native/cards/youkai.c     # 全 1 才�
 
 ⇒ **下轮一条命令接着走**：反汇编 `0x544e75` 起，找创建视觉弹的那个调用点、读它的**脚本立即数**
 （那才是「バリア长什么样」的答案）。
+
+#### ★★★ バリア视觉**破解完成**：它就是 `effect.anm` **script1**（2026-10-01）
+
+反汇编链（`local/th19.v1.10c/th19.exe`）：`FUN_00544dd0`（每帧）的 `state==1` 支 → `0x544e75` →
+`0x544ea2 call 0x4cb960`，参数里 **`push 1`** = **anm 脚本号**、`add eax,0x68c` = **玩家坐标**
+（⇒ 与 `engine/versus/th19/02` §4.1 的「`[7]` = 视觉子弹句柄、**anm `1`**、每帧跟玩家坐标」**逐条吻合**）。
+
+那个脚本在 **`effect.anm`**（不是 `bullet.anm`）—— 实测：
+
+```bash
+thdat -x19 th19.dat effect.anm -C local/th19.v1.10c/dat
+thanm -l19 local/th19.v1.10c/dat/effect.anm -m local/vendor/eclmap/anmmap/v8.anmm
+```
+
+```c
+script script1 {
+-1:
+    type(0);
+    layer(7);
+    sprite(-1);
+0:
+    scriptNew(script2);
+    scriptNew(script3);
+    color(255, 255, 255);
+    color2(224, 224, 255);
+    alpha(0);
+    alpha2(64);
+    drawPoly(28.0f, 24);          /* ★ 半径 28 的 24 边形圆（程序化，无贴图）*/
+    blendMode(1);                 /* ★ 加算 */
+    stop();
+    case(1);
+    scaleTime(10, 4, 4.0f, 4.0f); /* ★ 破坏那一档（= 一手 `FUN_004cb830([7], 1)` 发的事件 1）*/
+```
+
+⇒ **本卡 C3/C4 那层护罩该照它做**（我现在用的 script 375 是**自造的六边形环**，**样式不对** ——
+owner 实跑 #5 说的就是这个）：
+
+| 项 | 一手（`effect.anm` script1）| 本卡现在（script 375）| 要改成 |
+| --- | --- | --- | --- |
+| 形状 | `drawPoly(28.0f, 24)`（半径 **28**、**24** 边）| `drawPoly(1.0f, 6)`（6 边）| 照一手 |
+| 配色 | `color(255,255,255)` / `color2(224,224,255)`（白 / 淡蓝）| `(160,224,255)` / `(64,128,255)` | 照一手 |
+| 透明度 | `alpha(0)` / `alpha2(64)` | `alpha(120)` / `alpha2(180)` | 照一手 |
+| 混合 / 层 | `blendMode(1)`（加算）/ `layer(7)` | `blendMode(1)` | 照一手 |
+| 内层 | `scriptNew(script2)` ＋ `scriptNew(script3)`（**两个子脚本**，未读）| 无 | 🟡 待读 script2/3 |
+| 破坏演出 | `case(1)` → `scaleTime(10, 4, 4.0f, 4.0f)`（扩 4 倍）| 中断 1 = 淡出 | 照一手 |
+
+⚠ **还没做**（下轮）：① 读 `effect.anm` 的 **script2 / script3**（内层那两个子脚本）；
+② 把 109 的护罩脚本（375）**照上表重写**；③ 早苗阶段 3/4 的读法（同一条链上）。
