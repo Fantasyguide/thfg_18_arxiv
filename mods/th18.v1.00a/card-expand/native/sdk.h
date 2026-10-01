@@ -1061,6 +1061,12 @@ static inline int ce_difficulty(void) { return *(volatile int32_t *)CE_ADDR_DIFF
 static inline uint32_t ce_dup_generation(void) { return ce_dup_gen(); }
 static inline void     ce_dup_request(void)    { (void)ce_dup_bump(); }
 static inline void     ce_dup_publish(uint32_t id, int n) { (void)ce_dup_vis_set(id, n); }
+/* 「这个**引擎道具**由我负责复制」：生产者注册谓词后，Jera 扫引擎道具池时会**跳过**它
+ * （生产者的复制路径会整份复制 —— 例：112 的**满 B** = 原生 B 道具 + 一张卡面 VM 两件套）。*/
+static inline void     ce_dup_claim(uint32_t id, int (*fn)(const void *))
+{ (void)ce_dup_claim_set(id, fn); }
+/* 查「这个引擎道具是不是被某张卡认领了」：直接调 `sdk_core.h` 的 `ce_dup_item_claimed()`
+ *（**别在这里再包一层同名 inline —— 那会自己递归自己**）。*/
 /* 生产者每帧调一次（传自己的 `static uint32_t` 缓存）：返回 1 = 有人刚发动 Jera，**该复制一遍**。
  * 实现在 `sdk_core.c`（纯逻辑，主机单测 `tests/test_dup_layer.c`）。*/
 
@@ -1101,6 +1107,7 @@ static inline void ce_layer_drop_card(uint32_t id)
      *   与上面几条同款：删卡的路只有 `on_delete` 跑得到，而它在商店里、帧钩子已经停了。*/
     ce_card_flag_set(id, 0);
     ce_dup_vis_drop(id);             /* ★ 2026-10-02（Jera）：可见数台账也在这里收（漏收 = 被删的卡永远算在场）*/
+    ce_dup_claim_drop(id);           /* 同上：认领谓词也要退（漏退 = Jera 永远跳过那些引擎道具）*/
     ce_hud_slot_release(id);
 }
 

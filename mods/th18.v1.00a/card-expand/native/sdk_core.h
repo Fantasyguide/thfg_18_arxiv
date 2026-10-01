@@ -973,4 +973,12 @@ int      ce_dup_vis_set(uint32_t card_id, int n);   /* 生产者每帧上报；�
 int      ce_dup_should_run(uint32_t *seen);
 void     ce_dup_vis_drop(uint32_t card_id);         /* 删卡 / 退场 */
 int      ce_dup_vis_total(void);                    /* 全场「可复制」总数（各生产者之和）*/
+/* 「这个**引擎道具**由我负责复制」的认领谓词（112 的**满 B** 那支要用）：
+ * 满 B 是「原生 B 道具（type 7）+ 一张我们自己的卡面 VM」两件套，而原生那一件**也在引擎池里**
+ * ⇒ Jera 的道具池那一路会把它复制一遍（但**不带卡面**）。生产者注册一个谓词认领它之后，
+ * Jera 扫池时**跳过**它，改由生产者自己那条路整份复制（道具 + 卡面）。*/
+typedef int (*ce_dup_claim_fn)(const void *item);
+int      ce_dup_claim_set(uint32_t card_id, ce_dup_claim_fn fn);
+void     ce_dup_claim_drop(uint32_t card_id);
+int      ce_dup_item_claimed(const void *item);     /* Jera 扫池时逐个问；没人认领 = 0 */
 int      ce_dup_producers(void);                    /* 有几个生产者在位（> 0 才可能有私有池可复制）*/

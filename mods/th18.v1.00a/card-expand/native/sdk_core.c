@@ -1813,3 +1813,46 @@ int ce_dup_should_run(uint32_t *seen)
     *seen = g;
     return 1;
 }
+
+/* ---- 「这个引擎道具由我负责复制」的认领谓词（112 的满 B 用；语义见 sdk_core.h）---- */
+
+typedef struct {
+    uint32_t        id;      /* 0 = 空槽 */
+    ce_dup_claim_fn fn;
+} ce_dup_claim_t;
+
+static ce_dup_claim_t s_dup_claim[CE_DUP_SLOT_MAX];
+
+int ce_dup_claim_set(uint32_t card_id, ce_dup_claim_fn fn)
+{
+    int i, free_i = -1;
+    if (!card_id) return 0;
+    for (i = 0; i < CE_DUP_SLOT_MAX; ++i) {
+        if (s_dup_claim[i].id == card_id) {
+            s_dup_claim[i].fn = fn;               /* 幂等：同一张卡每帧重申一次也只会更新指针 */
+            if (!fn) { s_dup_claim[i].id = 0; }   /* 撤认领 = 释放槽 */
+            return 1;
+        }
+        if (!s_dup_claim[i].id && free_i < 0) free_i = i;
+    }
+    if (!fn || free_i < 0) return 0;
+    s_dup_claim[free_i].id = card_id;
+    s_dup_claim[free_i].fn = fn;
+    return 1;
+}
+
+void ce_dup_claim_drop(uint32_t card_id)
+{
+    int i;
+    for (i = 0; i < CE_DUP_SLOT_MAX; ++i)
+        if (s_dup_claim[i].id == card_id) { s_dup_claim[i].id = 0; s_dup_claim[i].fn = 0; }
+}
+
+int ce_dup_item_claimed(const void *item)
+{
+    int i;
+    if (!item) return 0;
+    for (i = 0; i < CE_DUP_SLOT_MAX; ++i)
+        if (s_dup_claim[i].id && s_dup_claim[i].fn && s_dup_claim[i].fn(item)) return 1;
+    return 0;
+}

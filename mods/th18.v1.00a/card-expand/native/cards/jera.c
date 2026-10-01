@@ -90,6 +90,9 @@ static int on_activate(ce_card_t *c)
     for (i = 0; i < CE_ITEM_SLOTS; ++i) {
         uint8_t *it = mgr + CE_ITEM_POOL_OFF + (size_t)i * CE_ITEM_STRIDE;
         if (*(int32_t *)(it + CE_ITEM_STATE) == 0) continue;
+        /* ★ 2026-10-02：被别的卡**认领**的原生道具跳过 —— 它的复制由那张卡整份做
+         *（例：112 的满 B = 原生 B 道具 + 一张卡面 VM；这里复制会**少那张卡面**）。*/
+        if (ce_dup_item_claimed(it)) continue;
         *(uint32_t *)(it + JERA_ITEM_MARK) = JERA_MARK;
         ++n_src;
     }

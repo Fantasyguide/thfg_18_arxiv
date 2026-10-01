@@ -5744,10 +5744,39 @@ static void on_item_frame(ce_card_t *c)
  *   反过来的话，① 刚建出来的 UFO 会被 ③ 立刻判成「不在了」—— 它这一帧还没挂上链表尾呢。
  * ★★ 2026-09-12 换池：原来的 ① 段（「死亡栈里登记的令牌颜色」出队 → 落槽 → 可能召唤）**整段删除** ——
  *   那是「令牌被子弹打掉也算收」的兑现点，令牌换成自建 VM 之后环里永远不会有人放东西。 */
+/* ★★ 2026-10-02（owner：「112 还有**满 B** 的那张卡」）：满 B 是**两件套** ——
+ * 原生 B 道具（type 7，在引擎道具池里）+ 我们自己的**卡面 VM**（`abcard` 那棵树）。
+ * Jera 扫引擎池那一路只会复制**道具本体、不带卡面** ⇒ 这里**认领**它：
+ * 生产者（本卡）注册一个谓词，Jera 扫池时跳过被认领的道具，改由本卡 `ufo_dup_run()` 整份复制。 */
+static int ufo_item_claim(const void *item)
+{
+    int i;
+    if (!item) return 0;
+    for (i = 0; i < UFO_DROP_POOL; ++i)
+        if (s_drops[i].item == (const uint8_t *)item) return 1;
+    return 0;
+}
+
+/* 满 B 槽的**当前**位置：卡面那个 VM 每帧跟随原生道具（`ufo_drops_draw_follow`），
+ * 所以位置真相在 `item+CE_ITEM_POS`，拿不到才退回槽里记的坐标。 */
+static void ufo_drop_pos(const ufo_drop_slot_t *d, float *x, float *y)
+{
+    if (d->item) {
+        *x = *(const float *)(d->item + CE_ITEM_POS);
+        *y = *(const float *)(d->item + CE_ITEM_POS + 4);
+        return;
+    }
+    *x = d->core.x;
+    *y = d->core.y;
+}
+
 /* ★★ 2026-10-02（Jera 88「杰拉」）：本卡的**压缩包**交给 SDK 的「复制代数闸」——
  * 每帧上报可见数，代数一变就照原档重撒（`ufo_drop_spawn` 是它唯一的出生口）。
- * ⚠ **只复制 `UFO_DROP_KIND_BAG`**：整颗 B 那一支的可见载荷是**原生道具 type 7**
- *   （`d->item`），它已经在引擎道具池里 ⇒ Jera 那一路已经复制过，别在这里再复制一遍（会翻倍）。
+ * ★★ 2026-10-02b（owner：「112 还有**满 B** 的那张卡」）：**压缩包与满 B 都复制**。
+ *   满 B = 原生 B 道具（type 7，也在引擎池里）+ 一张**卡面 VM** 两件套 ⇒ 若只让 Jera 扫池那一路
+ *   复制，复制品**少那张卡面**；两路都做又会**多一颗 B**。⇒ 用 SDK 的**认领谓词**
+ *   （`ce_dup_claim`+`ufo_item_claim`）把满 B 的原生道具从 Jera 那一路**摘出来**，
+ *   由本卡 `ufo_dup_run()` 用 `ufo_drop_spawn()` **整份**重撒（道具 + 卡面）。
  * 语义见 `sdk_core.h` 末节与 `cards/jera.c` 文件头。*/
 static uint32_t s_dup_seen;
 
@@ -5759,19 +5788,30 @@ static int ufo_dup_bag_count(void)
     return n;
 }
 
+static int ufo_dup_bomb_count(void)
+{
+    int i, n = 0;
+    for (i = 0; i < UFO_DROP_POOL; ++i)
+        if (s_drops[i].core.alive && s_drops[i].core.kind == UFO_DROP_KIND_BOMB) ++n;
+    return n;
+}
+
 static void ufo_dup_run(ufo_card_t *s)
 {
     uint8_t was[UFO_DROP_POOL];
-    int i, n = 0;
+    int i, n = 0, nb = 0;
     for (i = 0; i < UFO_DROP_POOL; ++i)
-        was[i] = (uint8_t)((s_drops[i].core.alive && s_drops[i].core.kind == UFO_DROP_KIND_BAG) ? 1 : 0);
+        was[i] = (uint8_t)(s_drops[i].core.alive ? 1 : 0);   /* 压缩包与满 B 都复制 */
     for (i = 0; i < UFO_DROP_POOL; ++i) {
         const ufo_drop_t *d = &s_drops[i].core;
+        float x, y;
         if (!was[i] || !d->alive) continue;
-        if (ufo_drop_spawn(s, d->kind, d->x, d->y, d->ufo_color, d->cnt_p, d->cnt_money, d->mult_permille))
-            ++n;
+        ufo_drop_pos(&s_drops[i], &x, &y);
+        if (!ufo_drop_spawn(s, d->kind, x, y, d->ufo_color, d->cnt_p, d->cnt_money, d->mult_permille))
+            continue;
+        if (d->kind == UFO_DROP_KIND_BOMB) ++nb; else ++n;
     }
-    ce_log("ufo: jera dup %d bags", n);
+    ce_log("ufo: jera dup %d bags + %d full-B (with card face)", n, nb);
 }
 
 /* ★★ 2026-10-02（Jera 88「杰拉」）：本卡的**令牌（飞碟）**交给 SDK 的「复制代数闸」——
@@ -5812,7 +5852,9 @@ static int on_tick_2(ce_card_t *c)
 {
     ufo_card_t *s = ce_state(c, ufo_card_t);
     if (!s) return 0;
-    ce_dup_publish((uint32_t)ce_card_id(c), ufo_dup_bag_count() + ufo_dup_tok_count());
+    ce_dup_claim((uint32_t)ce_card_id(c), ufo_item_claim);   /* 满 B 的原生道具由本卡负责复制 */
+    ce_dup_publish((uint32_t)ce_card_id(c),
+                   ufo_dup_bag_count() + ufo_dup_tok_count() + ufo_dup_bomb_count());
     if (ce_dup_should_run(&s_dup_seen)) { ufo_dup_run(s); ufo_dup_tokens(s); }
     ce_dup_publish((uint32_t)ce_card_id(c), ufo_dup_bag_count());
     if (ce_dup_should_run(&s_dup_seen)) ufo_dup_run(s);

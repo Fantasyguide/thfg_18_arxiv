@@ -28045,3 +28045,24 @@ owner 2026-10-02：「112 113 117也接会比较好玩 —— 112和117的token�
 
 四处生产者改动仍然是「只加上报 + 代数变了复制一遍」，不发动 Jera 时逐字节等价于改前。
 `make check` exit 0（`cards-check` 45 张卡、`capcheck` 全绿、`check-docs` 四项全绿）。
+
+### §BE 详录 #212 追加 2（2026-10-02d）：112 的**满 B 两件套** —— 新增 SDK 的「引擎道具认领谓词」
+
+owner 2026-10-02：「112 还有**满 B** 的那张卡」。
+
+**问题**：满 B（`UFO_DROP_KIND_BOMB`）是两件套 —— ①原生 B 道具（`type 7`，**在引擎道具池里**）
+＋②我们自己的**卡面 VM**（`abcard` 那棵树，`ufo_drop_spawn` 里建）。Jera 的第一段（扫引擎池）只会复制
+①，复制品**少那张卡面**；而如果 112 也整份重撒，①就**多了一颗 B**。
+
+**解法**：给 SDK 的复制层加一个**认领谓词**（`sdk_core.{h,c}` 的 `ce_dup_claim_set/_drop/item_claimed`，
+`sdk.h` 一个 inline 包装 + `ce_layer_drop_card` 里退认领）：
+- 112 每帧 `ce_dup_claim(ce_card_id(c), ufo_item_claim)`，谓词 = 「这个 `zItem*` 是不是我某个满 B 槽的 `item`」；
+- Jera 扫引擎池时 `if (ce_dup_item_claimed(it)) continue;` ⇒ 把满 B 的原生道具**摘出去**；
+- 112 的 `ufo_dup_run()` 改成**压缩包与满 B 都复制**（满 B 的位置取 `item+0xc2c`，拿不到才退回槽里坐标），
+  于是 112 自己用 `ufo_drop_spawn()` **整份**重撒 ⇒ 道具 + 卡面都不缺、也不重复。
+
+⚠ 踩过一个坑（记一笔）：`sdk.h` 里曾把包装写成 `static inline int ce_dup_item_claimed(...) { return
+ce_dup_item_claimed(...); }` —— **同名 inline 自己递归自己**，编译期看不出来。现在 `sdk.h` 不包这一层，
+卡侧直接调 `sdk_core.h` 的声明。
+
+`make check` exit 0（`cards-check` 45 张卡、`capcheck` 全绿、`check-docs` 四项全绿）。
