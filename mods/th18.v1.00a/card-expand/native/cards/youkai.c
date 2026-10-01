@@ -479,7 +479,7 @@ static void yk_side_lock_tick(void)
 #define YK_ENABLE_OPTION_POSE     1  /* ③ `on_option_pose_apply` + declare + hide/keep_records */
 #define YK_ENABLE_HUD_VM          1  /* ④ HUD 数字/槽 VM（`ce_anm_spawn_ui` 那一族）*/
 #define YK_ENABLE_FX_VMS          1  /* ⑤ 拖尾/浮字/环/束条/光环 VM（`yk_vm_spawn` 唯一出口）*/
-#define YK_ENABLE_TRANSFER        1  /* ⑥ `ce_damage_rect` + `ce_raise_damage_cap`（伤害转嫁）*/
+#define YK_ENABLE_TRANSFER        0  /* ⑥ `ce_damage_rect` + `ce_raise_damage_cap`（伤害转嫁）*/
 #define YK_ENABLE_ZONE            1  /* ⑦ `ce_cancel_radius`（死亡点消弹）*/
 #define YK_FX_VMS YK_ENABLE_FX_VMS   /* 旧名保留（同一格；`yk_vm_spawn` 里用）*/
 
