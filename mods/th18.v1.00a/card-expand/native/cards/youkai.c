@@ -484,7 +484,7 @@ static void yk_side_lock_tick(void)
 /* ★★★★ 2026-10-01（owner 工单⑥ · 第 102 版「7 项全关仍异常」⇒ 转「动敌人链表」这条线）：
  *   两条都是**会往敌人链表插/删对象**（或每帧重写发射口表）的路径。⚠ 默认 1 = 现状。*/
 #define YK_ENABLE_ORBIT           1  /* ⑧ 绕转使魔整体：扫描 / `ce_spawn_enemy` 建壳 / 撤退 / VM / 喂转嫁 */
-#define YK_ENABLE_MAP_LAYER       0  /* ⑨ 映射（发射口）层：note_slot / 建壳 / 撤壳 / 闸 */
+#define YK_ENABLE_MAP_LAYER       1  /* ⑨ 映射（发射口）层：note_slot / 建壳 / 撤壳 / 闸 */
 #define YK_FX_VMS YK_ENABLE_FX_VMS   /* 旧名保留（同一格；`yk_vm_spawn` 里用）*/
 
 static unsigned s_fx_try, s_fx_fail, s_fx_skip;        /* 累计（只增）*/
