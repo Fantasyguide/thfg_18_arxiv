@@ -1194,16 +1194,28 @@ static int yk_sprite_id_for(const uint8_t *e, uint32_t id)
 {
     unsigned i, free_i = YK_YSP_MAX;
     uint8_t *vm;
+    int32_t vid;
     int v;
     if (!e || !id) return -1;
     for (i = 0; i < YK_YSP_MAX; ++i) {
         if (s_ysp_id[i] == id) return (int)s_ysp_val[i];          /* ★ 命中缓存：**不再碰 VM** */
         if (!s_ysp_id[i] && free_i == YK_YSP_MAX) free_i = i;
     }
-    vm = *(uint8_t **)(e + CE_ENEMY_ANM_VM0);
+    /* ★★★ 2026-10-01（**订正 id/指针混用**，见 `AUDIT.md` §BE #186）：`CE_ENEMY_ANM_VM0`
+     *   （`enemy+0x1350` = `zEnemyData.anm_vm_ids[0]`）是 **VM id**、**不是指针** ——
+     *   `engine.h` 这一格自己的注就这么写、117 `cards/animal.c` 的 `animal_enemy_sprite_size()`
+     *   也是 `id → ce_anm_get_vm()`。这里原来按 `*(uint8_t **)` 解引用 ⇒ 把 **id 当地址**读
+     *   ⇒ ① 几乎恒 `IsBadReadPtr` ⇒ `spid` 恒 `-1` ⇒ **白名单（48×48 的 72..87/292..307）
+     *      永远不命中**，48×48 大妖精拿不到绕转使魔（= owner 报的「4 面道中那只没使魔」）；
+     *   ② #177 那个崩溃值 `0x08f1ff3f` 的形状 = 日志里那种 VM id（`15f0ff8f`/`18397e18`…）。
+     *   修法 = 与 `yk_enemy_sprite_size()` 逐字同一条读法；`IsBadReadPtr` **保留**作第二层
+     *   （id 解析出来的 VM 仍可能是刚撤的那一支）。若万一原读法才对：`ce_anm_get_vm(不是 id)`
+     *   只会返回 NULL ⇒ `spid = -1` = 今天的行为，**不会更差**。*/
+    vid = *(const int32_t *)(e + CE_ENEMY_ANM_VM0);
+    vm = vid ? (uint8_t *)ce_anm_get_vm((uint32_t)vid) : 0;
     if (!vm) v = -1;
-    else if (IsBadReadPtr((const void *)(vm + 0x24), 4)) { v = -1; ++s_ysp_badfp; }
-    else v = *(const int32_t *)(vm + 0x24);
+    else if (IsBadReadPtr((const void *)(vm + CE_ANM_VM_SPRITE_ID), 4)) { v = -1; ++s_ysp_badfp; }
+    else v = *(const int32_t *)(vm + CE_ANM_VM_SPRITE_ID);
     if (free_i < YK_YSP_MAX) { s_ysp_id[free_i] = id; s_ysp_val[free_i] = v; }
     return v;
 }
@@ -1435,6 +1447,57 @@ static void yk_orbit_seen_prune(uint8_t *em)
     }
 }
 
+/* ★★★ 2026-10-01（#89 的**无条件探针**，实现在这里）：**每只敌人**一行（**同一 `enemy_id` 只打一次**、
+ *   全局上限 `128` 行，够看一面）。
+ *   ⚠ **位置 = `yk_orbit_scan` 逐敌循环的**最前面**（读完 id 就调）—— 它要回答的正是「这一只
+ *     **为什么**没走补使魔那条路」：子敌人 / 不可锁定 / boss / 已给过 / 延时门 / 尺寸读不出来…
+ *     **全都在下面**，所以必须在**所有筛选之前**读尺寸。旧版（#180/#182）挂在筛选**之后**
+ *     ⇒ 它**永远看不到** boss 与被链根门排掉的子敌人 ⇒ owner 报的「4 面道中那只 `probe` 0 行」
+ *     完全可能只是**它根本没走到那一步**，而不是尺寸读值失败。本版按「无条件」重摆。
+ *   · `readfail` = VM 取不到 / `vm+0x54` 不可读 / `rect` 全 0；
+ *   · `final` = `+0x6204/+0x6208`（`final_sprite_size` = `sprite_size × scale`，**float2**）
+ *     与 VM 的 `sprite_size`（`+0x74/+0x78`）**交叉**，用来判断该信哪一条来源；
+ *   · `sprite` = `vm+0x24`（`CE_ANM_VM_SPRITE_ID`）；VM 由 `CE_ENEMY_ANM_VM0`（**VM id**）
+ *     经 `ce_anm_get_vm()` 解析 —— 与 `yk_enemy_sprite_size()` / `yk_sprite_id_for()` 同一条读法。
+ *   ⚠ **只加日志**：不改任何判据、不动池、不碰 VM。*/
+static void yk_spriteprobe_one(const uint8_t *e, uint32_t id)
+{
+    static uint32_t s_probe_ids[128];
+    static unsigned s_probe_n, s_probe_fail, s_probe_seen;
+    uint8_t *vm;
+    int32_t vid;
+    int w = 0, h = 0, spid, big, readfail = 0, fw, fh;
+    float sx = 0.0f, sy = 0.0f, vw, vh;
+    unsigned pi;
+
+    if (!e || !id) return;
+    ++s_probe_seen;
+    for (pi = 0; pi < s_probe_n; ++pi) if (s_probe_ids[pi] == id) return;   /* 这只打过（同 id 只一行）*/
+    if (s_probe_n >= 128u) return;                                          /* 上限 128 行 */
+    s_probe_ids[s_probe_n++] = id;
+
+    (void)yk_enemy_sprite_size(e, &w, &h);        /* 判据用的**同一个**读法（VM id → VM → +0x74）*/
+    spid = yk_sprite_id_for(e, id);
+    big = yk_big_by_sprite_id(w, h, spid);
+    vid = *(const int32_t *)(e + CE_ENEMY_ANM_VM0);                  /* zEnemyData.anm_vm_ids[0] = VM **id** */
+    vm = vid ? (uint8_t *)ce_anm_get_vm((uint32_t)vid) : 0;
+    if (!vm || IsBadReadPtr((const void *)(vm + CE_ANM_VM_SCALE), 12)) readfail = 1;
+    else {
+        sx = *(const float *)(vm + CE_ANM_VM_SCALE);
+        sy = *(const float *)(vm + CE_ANM_VM_SCALE + 4);
+    }
+    if (!w && !h) readfail = 1;
+    vw = (float)w * sx; vh = (float)h * sy;
+    fw = yk_round_px(*(const float *)(e + CE_ENEMY_FINAL_SPRITE_W));  /* ★ float2，不是 int32 */
+    fh = yk_round_px(*(const float *)(e + CE_ENEMY_FINAL_SPRITE_H));
+    if (readfail) ++s_probe_fail;                                     /* 计数（只增；当前不进台账行）*/
+    ce_log("youkai/spriteprobe: enemy #%u sprite %d rect %ux%u scale %.2f vis %.0fx%.0f "
+           "final %dx%d big %d%s",
+           (unsigned)id, spid, w, h, (double)sx, (double)vw, (double)vh,
+           fw, fh, big, readfail ? " readfail" : "");
+    (void)s_probe_seen;
+}
+
 /* 扫全场：给「大怪」补 `yk_orbit_count_for_hp(父敌最大血量)` 台惰性绕转使魔。
  * 五条筛选（owner 调的 117 判据 + 本卡三条）逐条见下面注释；一敌一对（补过就不再补）。
  * ⚠ **「有没有发射口」不是筛选条件**（第二轮 owner 口径）—— 见下面 ④ 那段注。*/
@@ -1455,6 +1518,8 @@ static void yk_orbit_scan(uint32_t frame)
         ++seen;
         id = *(const int32_t *)(e + CE_ENEMY_ID);
         if (!id) continue;
+        /* ★★★ 2026-10-01（#89）：**无条件探针** —— 放在这里（所有筛选之前）的理由见它的定义处。*/
+        yk_spriteprobe_one(e, (uint32_t)id);
         /* **链根**：`CE_SPAWN_PARENT == 0` —— 排除 boss 部件 / 我们自己的使魔（它们都是子敌人），
          *   也排除「别的敌人造出来的东西」（一手使魔数数的是**这个敌人自己的**使魔）。*/
         if (*(const int32_t *)(e + CE_SPAWN_PARENT) != 0) continue;
@@ -1480,65 +1545,17 @@ static void yk_orbit_scan(uint32_t frame)
         if (!yk_orbit_delay_ok((uint32_t)id, frame)) continue;
         /* **大怪**：贴图**原始**尺寸两边都 >= 64（117 的判据，见 `yk_big_by_sprite`）。*/
         if (!yk_enemy_sprite_size(e, &w, &h)) continue;
-        /* ★ 2026-10-01：判据带 **sprite 号**（白名单）—— VM 的当前 sprite 在 `vm+0x24`（`engine.h`）。*/
-        {   int spid = yk_sprite_id_for(e, (uint32_t)id);
-            /* ★★★ 2026-10-01 **负向探针**（owner：5 面道中 boss 前的大妖精「没使魔了」，而
-             *   `spriteprobe` 一行都没有 ⇒ 那一局**没有任何敌人被判为大怪**，看不到它的 sprite）：
-             *   改成对**所有尺寸 ≥ 48 的敌人**都打一行（**含 `big 0` 的失败样本**），同一 sprite 只打一次。
-             *   ⇒ owner 打一次 5 面就能看到那只大妖精的 **sprite 号**，再决定白名单补什么（**不猜**）。*/
-        if (*(const int32_t *)(e + CE_SPAWN_PARENT) != 0) continue;
-        ++roots;
-        /* **活着的真敌人**：`ce_enemy_lockable` 排掉死亡 / 未登场 / 不可锁定的那一档。*/
-        if (!ce_enemy_lockable(e)) continue;
-        /* **不是 boss**（117 的同一判据：id 在管理器那 4 格里）。*/
-        if (yk_enemy_is_boss(e)) { ++bosses; continue; }
-        /* 「有没有发射口」不再当筛子（owner 口径）：只数一下。*/
-        if (yk_map_enemy_slots(&s_map, (uint32_t)id) != 0) ++have_emit;
-        /* 一敌一对：**现在还活着**的使魔不再补。*/
-        if (yk_orbit_find_parent((uint32_t)id)) continue;
-        /* 这只父敌**以前给过**没有（给过就永不再补，见 §BE #158）。*/
-        if (!yk_orbit_gift_maybe((uint32_t)id, frame)) continue;
-        /* 生成延时（一手形状，见 `YK_ORBIT_DELAY_FRAMES`）：首次命中先登记，到点才建。*/
-        if (!yk_orbit_delay_ok((uint32_t)id, frame)) continue;
-        /* **大怪**：贴图**原始**尺寸两边都 >= 64（117 的判据，见 `yk_big_by_sprite`）。*/
-        if (!yk_enemy_sprite_size(e, &w, &h)) continue;
-            /* ★★★ 2026-10-01（owner：「它**肯定不是道中 boss**」⇒ probe 0 行更可疑）——
-             *   **无条件探针**：对**每只敌人**打一行（**同一 enemy_id 只打一次**，全局上限 128 行，
-             *   够看一面）。若连「明显很大的大妖精」都读成 0×0/垃圾 ⇒ 我们**一直读错了字段**。
-             *   同时：`readfail` 标记（`vm == NULL` / `IsBadReadPtr` / rect 全 0）+ **交叉验证**
-             *   `VM0 的 rect` 与 **`+0x6204/+0x6208` 的 final sprite**（两条来源我们都有）看哪个才是
-             *   「看起来的尺寸」。*/
-            {   static uint32_t s_probe_ids[128];
-                static unsigned s_probe_n, s_probe_fail, s_probe_seen;
-                uint8_t *pvm = *(uint8_t **)(e + CE_ENEMY_ANM_VM0);
-                int spid = yk_sprite_id_for(e, (uint32_t)id);
-                int big = yk_big_by_sprite_id(w, h, spid);
-                int readfail = 0, fw, fh;
-                float sx = 0.0f, sy = 0.0f, vw, vh;
-                unsigned pi;
-                ++s_probe_seen;
-                for (pi = 0; pi < s_probe_n; ++pi) if (s_probe_ids[pi] == id) break;
-                if (pi >= s_probe_n && s_probe_n < 128u) {          /* 这只没打过且没到上限 */
-                    s_probe_ids[s_probe_n++] = id;
-                    if (!pvm || IsBadReadPtr((const void *)(pvm + 0x54), 12)) { readfail = 1; }
-                    else {
-                        sx = *(const float *)(pvm + CE_ANM_VM_SCALE);
-                        sy = *(const float *)(pvm + CE_ANM_VM_SCALE + 4);
-                    }
-                    if (!w && !h) readfail = 1;
-                    vw = (float)w * sx; vh = (float)h * sy;
-                    fw = *(const int32_t *)(e + CE_ENEMY_FINAL_SPRITE_W);
-                    fh = *(const int32_t *)(e + CE_ENEMY_FINAL_SPRITE_H);
-                    if (readfail) ++s_probe_fail;
-                    ce_log("youkai/spriteprobe: enemy #%u sprite %d rect %ux%u scale %.2f vis %.0fx%.0f "
-                           "final %dx%d big %d%s",
-                           (unsigned)id, spid, w, h, (double)sx, (double)vw, (double)vh,
-                           fw, fh, big, readfail ? " readfail" : "");
-                }
-                (void)s_probe_seen;
-                if (!big) { ++small; continue; }
-            }
-        }
+        /* ★ 2026-10-01：判据带 **sprite 号**（白名单）—— VM 的当前 sprite 在 `vm+0x24`（`engine.h`）。
+         * ⚠ 探针 `yk_spriteprobe_one()`（#89）已经挪到**逐敌循环的最前面**（读完 id 就调），
+         *   这里**只剩判据**，不再夹带日志：
+         *   ① 尺寸读不出来 ⇒ 上面那条 `continue`（`small++` 都不算）；
+         *   ② `yk_big_by_sprite_id()` 不过 ⇒ 这一只**不补**（`small++`）。
+         * ⚠⚠ **2026-10-01 回归订正**：`96610aef`（#89）把「链根 / 可锁定 / 非 boss / 已给过 / 延时门 /
+         *   尺寸」这**一整套筛选**又插了一遍（当时是套在 `{ int spid = …` 里的 16 行副本），
+         *   后果 = `yk_orbit_delay_ok()` **同一帧被调两次**：第一次「到点 ⇒ 清登记、返回 1」，
+         *   第二次「重新登记 + 返回 0」⇒ **永远 `continue`，任何大怪都补不出使魔**（延时门自锁）。
+         *   这里把副本整段删掉、恢复「筛一遍 ⇒ 判一次」；探针另挪到循环首（见上）。*/
+        if (!yk_big_by_sprite_id(w, h, yk_sprite_id_for(e, (uint32_t)id))) { ++small; continue; }
         /* 池：这台敌人要 `want` 个空槽；一个都没有就**这一帧到此为止**（后面同样不够），
          * 并且只记一次日志 —— 本卡有过 1.5 MB/min 的日志洪水事故（`AUDIT.md` §BE #143）。*/
         if (yk_orbit_free() == 0u) {
@@ -2479,11 +2496,26 @@ static void yk_chase_target_resolve(yk_card_t *s)
         CE_ENEMY_FOREACH(CE_ENEMY_MGR(), e) {
             const float *ep;
             uint32_t id;
-            if (!ce_enemy_lockable(e)) continue;
-            if (*(const int32_t *)(e + CE_SPAWN_PARENT) != 0) continue;   /* 链根：不是别人生成的子敌人 */
+            if (!ce_enemy_lockable(e)) continue;                            /* 只挡 NO_LOCK；妖侧只置 NO_DAMAGE */
             id = *(const uint32_t *)(e + CE_ENEMY_ID);
             if (!id) continue;
-            if (yk_map_is_fam(&s_map, id)) continue;                       /* 我们自己的使魔不当目标 */
+            /* ★★★ 2026-10-01（owner）：「**妖侧**使魔的追踪也不能追踪到」—— owner 随后澄清
+             *   「这个关掉**不是**说关掉追踪，是关掉**对妖侧使魔可能的追踪**」。
+             *   ⇒ 我们自己的**绕转使魔**（`s_orbit[]`，**不进 `s_map`**）**不进候选**。
+             *   ⚠ **本函数只在妖侧被调**（唯一调用点 = `on_tick_2` 的 `if (focused)` 分支；
+             *     非聚焦那一支直接把 `chase_have = 0`）⇒ 这一条 = owner 要的「只关妖侧」；
+             *     **人侧根本不经过这里**（那时子机走引擎原生跟随、发弹角写 −π/2）⇒ **人侧照旧**：
+             *     使魔仍是「真敌人」（可打、走 100% 转嫁）。
+             *   ⚠ 这一条**今天在行为上是冗余的**：下一行的**一手**「链根」门
+             *     （`CE_SPAWN_PARENT == 0`）本来就排掉了**所有**我们自建的使魔（绕转使魔都带父敌 id，
+             *     见 `yk_orbit_spawn_one` → `yk_spawn_familiar_parent` 写 `CE_SPAWN_PARENT`）。
+             *     写它的理由 = 把 owner 的口径从**隐式**（恰好被链根门盖住）变成**显式**：
+             *     将来若有人为了**人侧**放宽链根门（人侧确实希望使魔可被索敌），妖侧这条不会跟着破。
+             *   ⚠ 「按母机 id 查绕转表」那一条（`CE_SPAWN_PARENT != 0 && yk_orbit_find_parent(pid)`）
+             *     写在这里是**死代码**（下一行已 `continue`）⇒ 不写；认使魔**自己的 id** 就够。*/
+            if (yk_orbit_find_id(id)) continue;                             /* 妖侧：我们的绕转使魔不当目标 */
+            if (*(const int32_t *)(e + CE_SPAWN_PARENT) != 0) continue;     /* 链根：不是别人生成的子敌人 */
+            if (yk_map_is_fam(&s_map, id)) continue;                        /* 映射使魔（这一档是链根）不当目标 */
             ep = ce_enemy_pos(e);
             if (!ep) continue;
             if (ep[0] - px >= 64.0f || px - ep[0] >= 64.0f) continue;      /* 一手：|x − 玩家 x| < 64 */
@@ -3386,15 +3418,38 @@ static void yk_popup_kill_all(void)
     for (i = 0; i < YK_POPUP_MAX; ++i) yk_popup_kill(&s_popup[i]);
 }
 
+/* ★★★ 2026-10-01（owner：「目前看不到 +N」，并给两条假设 = **图层顺序** / **死亡顺序导致判定时 +0**）：
+ *   死亡那几笔浮字的**播报**（`kind != 0` = 判据性 UI，`tag` 说明是哪一笔：`root` / `part` / `orbit` / `fam+1`）。
+ *   定额 256 行后收口（`AUDIT.md` §BE #143 的 1.5 MB/min 日志洪水事故）。
+ *   判据（下一轮实跑）：
+ *     · 行里有 `value` ⇒ 直接看出「链根那笔的值是不是 0」；
+ *     · **一行都没有**（连 `root` 都没有）⇒ 那一只**根本没进爆点支**（`n == 0` + `yk_kill_burst_count(0) == 0`
+ *       ⇒ 整块被 `if (!n2) … else { … }` 跳过，见 `yk_on_enemy_killed`）—— 与「值 = 0」是**两种**失败，别混。
+ *   ⚠ 只加日志：不改池、不改值、不改位置。*/
+static void yk_popup_spawn_log(const char *tag, int32_t value, float x, float y)
+{
+    static unsigned s_popup_logged;
+    if (s_popup_logged < 256u) {
+        ++s_popup_logged;
+        ce_log("youkai/popup spawn: tag %s value %d at (%.0f,%.0f) frame %u",
+               tag ? tag : "?", (int)value, (double)x, (double)y, (unsigned)ce_sdk_frame());
+    } else if (s_popup_logged == 256u) {
+        ++s_popup_logged;                                   /* 只打一次「收口」提示 */
+        ce_log("youkai/popup spawn: (further popup spawn lines suppressed after 256)");
+    }
+}
+
 /* ★ 2026-09-30（§BE #163）：扩参 —— 颜色/字号照一手 `CreateTimePopup`（`th08:0x403460`，4 栈参：
  *   `pos / arg1 数字主体 / arg2 附加段 / arg3 颜色`）。alpha 由 `yk_popup_tick` 按**到自机的距离**每帧算。*/
-static void yk_popup_spawn(float x, float y, int32_t value, int kind, uint32_t color, float scale)
+static void yk_popup_spawn(float x, float y, int32_t value, int kind, uint32_t color, float scale,
+                           const char *tag)
 {
     yk_popup_t *p = 0;
     uint8_t dg[YK_POPUP_GLYPHS];
     int n, i, ch = yk_current_character();
     unsigned k;
     void *anm;
+    if (kind != 0) yk_popup_spawn_log(tag, value, x, y);     /* ★ 死亡三笔的播报（kind != 0）*/
     for (k = 0; k < YK_POPUP_MAX; ++k) if (!s_popup[k].used) { p = &s_popup[k]; break; }
     if (!p && kind != 0) {
         /* ★★★ 2026-10-01（owner 实跑 `popup pool full, dropped 4740`）：**分层** —— 死亡 `+N`/`+1`
@@ -4421,7 +4476,7 @@ static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
                  *   **不是**每盘撒的颗数 `n2`！）⇒ 颜色按 n 四档（白 → 微黄），字号 1.0。*/
                 yk_popup_spawn(cx[k], cy[k], (int32_t)n, 1,
                                (n < 2u) ? 0xffffffffu : (n <= 5u) ? 0xffffffd0u
-                                        : (n <= 9u) ? 0xffffffb0u : 0xffffff80u, 1.0f);
+                                        : (n <= 9u) ? 0xffffffb0u : 0xffffff80u, 1.0f, "part");
                 for (i = 0; i < n2; ++i) {
                     float ang, rad;
                     /* ⚠ 两个随机数**先取到局部**（一手顺序是「先半径 `0x40d390`、后角度 `0x4143c0`」；
@@ -4450,7 +4505,7 @@ static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
              *   `+0x3380` 写点过了一遍 —— **没有任何 `--`**（写点只有三处 opcode 生成时的 `+1` 与一处拷贝），
              *   且死亡函数 `0x42ad*`–`0x42b3*` 区间里**没有减** ⇒ 循环后 = 循环前 = 我们的 `n` ✓
              *   （我们的 `n` 也是「扫活子敌人」得来、循环里不递减）。*/
-            if (n > 0) yk_popup_spawn(ev->x, ev->y, (int32_t)n, 1, 0xfff0f00fu, 2.03125f);
+            if (n > 0) yk_popup_spawn(ev->x, ev->y, (int32_t)n, 1, 0xfff0f00fu, 2.03125f, "root");
             /* ★★★ 2026-10-01（owner：「**缺少打死 +N 的 UI**」）：上面那笔 = **链根母机**的大黄字；
              *   这里补 **每台「绕转使魔」位置的小白字**（一手 `th08:0x42af78` 的对应物，色随 n 分档）
              *   —— 原来浮字只挂在**映射使魔**（ECL 子敌人）那条循环上，**绕转使魔一笔都没有**。*/
@@ -4465,7 +4520,7 @@ static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
                     if (!op) continue;
                     yk_popup_spawn(op[0], op[1], (int32_t)n, 1,
                                    (n < 2u) ? 0xffffffffu : (n <= 5u) ? 0xffffffd0u
-                                            : (n <= 9u) ? 0xffffffb0u : 0xffffff80u, 1.0f);
+                                            : (n <= 9u) ? 0xffffffb0u : 0xffffff80u, 1.0f, "orbit");
                 }
             }
             for (k = 0; k < yk_kill_ring_count(n); ++k) {
@@ -5604,7 +5659,7 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
      * —— 一手是「击破魔使」那一刻；我们卡里没有 op90-92 那种魔使，**我们的使魔 = 同一位置的对应物** ⇒ 挂这里）。*/
     /* 击破使魔那一支（一手 `th08:0x42b296`）：**常数 1** + 白 `0xffffffff` + 字号 1.0（`kind 1` = 带 '+'）。*/
     /* ★ 这一笔在「被杀者**自己有主**」分支里 ⇒ **绕转使魔被击破也有 `+1`** ✓（妖侧无敌 ⇒ 只在人侧发生）。*/
-    yk_popup_spawn(ev->x, ev->y, 1, 1, 0xffffffffu, 1.0f);
+    yk_popup_spawn(ev->x, ev->y, 1, 1, 0xffffffffu, 1.0f, "fam+1");
     ce_log("youkai: familiar enemy_id %u killed (kind %u, real=%u) at (%.0f, %.0f) - "
            "that emitter slot stays silent until the NEXT etOn of that slot (route A) or the "
            "%d-frame fallback self-heal expires (gate = on_enemy_shot_slot 0x433ffa)",

@@ -1445,8 +1445,22 @@ __declspec(dllimport) int __stdcall IsBadReadPtr(const void *lp, unsigned cb);
 
     /* ★★★ 2026-10-01（**与 108 同一条崩溃根因**：dump 显示 `mov eax,[eax+0x24]` 解引用垃圾指针）：
      *   `vm` 非空**不等于**可读（悬垂/被复用的格子）⇒ 先 `IsBadReadPtr(vm+0x24, 4)` 再读，
-     *   不可读就当 `spid = -1`（**退回纯尺寸门**）。108 侧同改，见 `AUDIT.md` §BE #177。*/
-    {   uint8_t *vm = *(uint8_t **)(e + CE_ENEMY_ANM_VM0);
+     *   不可读就当 `spid = -1`（**退回纯尺寸门**）。108 侧同改，见 `AUDIT.md` §BE #177。
+     *
+     * ★★★ 2026-10-01 **第二次订正 = id / 指针混用**（**117 不是本批的卡**：owner 拍板「117 也得改」，
+     *   按 108 同一修法改，登记 `AUDIT.md` §BE #186，并在此处留注说明来龙去脉）：
+     *   `CE_ENEMY_ANM_VM0`（= `ANIMAL_ENEMY_ANM_VM0`，`zEnemyData.anm_vm_ids[0]`，`CE_ENEMY_DATA + 0x124`）
+     *   是 **VM id**、**不是裸指针** —— 本文件 `animal_enemy_sprite_size()` 自己就是
+     *   `id → ce_anm_get_vm(id)`，`engine.h` 那一格的注也写着 id。而 #177 之后这里仍在**直接解引用**
+     *   那一格 ⇒ 把 id 当地址读 ⇒ `IsBadReadPtr(id + 0x24)` 几乎**恒真** ⇒ `spid` 恒 `-1`
+     *   ⇒ **白名单（48×48 的 `72..87` / `292..307`）永不命中** ⇒ 117 的「大怪」判据实际只剩
+     *   「两边 ≥ 64」这一条（48×48 那批**拿不到动物灵**）。
+     *   修法 = 与 `animal_enemy_sprite_size()` **逐字同一条读法**（用 `ce_anm_get_vm()` 解析 id）；
+     *   `IsBadReadPtr` **保留**作第二层（id 解析出来的 VM 仍可能是刚撤的那一支）。
+     *   ⚠ **行为影响面（owner 已知并拍板）**：修好后 48×48 白名单那批**开始**被判为「大怪」
+     *     ⇒ 117 的**动物灵掉落面变大**；范围与类别见 `AUDIT.md` §BE #186 的影响面一节。*/
+    {   int32_t vid = *(const int32_t *)(e + CE_ENEMY_ANM_VM0);       /* ★ VM **id**（不是指针）*/
+        uint8_t *vm = vid ? ce_anm_get_vm((uint32_t)vid) : 0;
         int spid = (vm && !IsBadReadPtr((const void *)(vm + 0x24), 4))
                        ? *(const int32_t *)(vm + 0x24) : -1;
         big = (w >= ANIMAL_BIG_SPRITE_MIN_W && h >= ANIMAL_BIG_SPRITE_MIN_H)
