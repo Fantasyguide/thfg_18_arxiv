@@ -2,6 +2,7 @@
 """用 ExpHP `th-re-data` 的 `labels.json` 生成 **eclmap**（`thecl -m` 要的那个格式）。
 
     python3 tooling/eclmap/gen_eclmap.py th09.v1.50a           # 写到 local/vendor/eclmap/eclmap/th09.eclm
+    python3 tooling/eclmap/gen_eclmap.py th09.v1.50a --kind anm # → <thNN>.anmm（anm 名表）
     python3 tooling/eclmap/gen_eclmap.py th09.v1.50a --out /tmp/x.eclm
     python3 tooling/eclmap/gen_eclmap.py --list                # 列出哪些版本能生成
 
@@ -52,14 +53,17 @@ def versions_with_ecl():
     return out
 
 
-def build(version: str) -> str:
+def build(version: str, kind: str = "ecl") -> str:
     f = REDATA / version / "labels.json"
     if not f.is_file():
         raise SystemExit(f"找不到 {f}（ExpHP 数据在本机 `local/vendor/th-re-data/`，gitignored）")
     data = json.loads(f.read_text(encoding="utf-8"))
-    ecl = data.get("ecl")
+    ecl = data.get(kind)
     if not isinstance(ecl, list) or not ecl:
-        raise SystemExit(f"{version} 的 labels.json 里没有 `ecl` 键 ⇒ 这份数据没带 opcode 名")
+        raise SystemExit(f"{version} 的 labels.json 里没有 `{kind}` 键 ⇒ 这份数据没带这类名表")
+    # ★ 2026-10-01：`kind` 两用 —— `ecl`（指令名，`thecl -m`）与 `anm`（anm 指令名，`thanm -m`）。
+    #   两种文件的语法同形（`!<x>map` + `!ins_names` + `NN name`），只是头一行不同
+    #   （anmmap 见 `local/vendor/thpages/static/mapfile/v8.anmm`：`!anmmap` / 空行 / 注释 / `!ins_names`）。
 
     # 条目形如 [地址, "54__anm_set_main"]；名字里 `__` 前是 opcode（可能比 0x 更省事）。
     # ⚠ 有少数条目**只有数字没有名字**（如 "185"）⇒ 名字就用 `ins_<n>` 兜底，保持可读。
@@ -78,7 +82,11 @@ def build(version: str) -> str:
         if num not in rows or (rows[num].startswith("op_") and not nm.startswith("op_")):
             rows[num] = nm
 
-    lines = ["!eclmap", "!ins_names"]
+    if kind == "anm":
+        lines = ["!anmmap", "", f"#  generated from ExpHP labels.json ({version}, kind=anm)", "",
+                 "!ins_names"]
+    else:
+        lines = ["!eclmap", "!ins_names"]
     for num in sorted(rows):
         lines.append(f"{num} {rows[num]}")
     lines.append("")
@@ -89,6 +97,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("version", nargs="?", help="例如 th09.v1.50a")
     ap.add_argument("--out", default=None, help="输出路径（默认 local/vendor/eclmap/eclmap/<thNN>.eclm）")
+    ap.add_argument("--kind", choices=("ecl", "anm"), default="ecl",
+                    help="ecl = 指令名表（thecl -m，默认）；anm = anm 指令名表（thanm -m）")
     ap.add_argument("--list", action="store_true", help="列出能生成 eclmap 的版本")
     a = ap.parse_args()
 
@@ -97,14 +107,21 @@ def main():
         if not vs:
             print("没找到任何带 `ecl` 键的 labels.json（先备好 local/vendor/th-re-data/）")
             return 0
-        print("能生成 eclmap 的版本（版本目录, opcode 条数）：")
+        print("能生成名表的版本（版本目录, ecl 条数 / anm 条数）：")
         for name, n in vs:
+            anm = 0
+            try:
+                _d = json.loads((REDATA / name / "labels.json").read_text(encoding="utf-8"))
+                anm = len(_d.get("anm") or [])
+            except Exception:
+                pass
             have = (ECLMAP_DIR / (name.split(".")[0] + ".eclm")).is_file()
-            print(f"  {name:20s} {n:4d} 条   仓库已有 eclmap: {'是' if have else '否'}")
+            print(f"  {name:20s} ecl {n:4d} / anm {anm:4d}   仓库已有 eclmap: {'是' if have else '否'}")
         return 0
 
-    text = build(a.version)
-    out = Path(a.out) if a.out else ECLMAP_DIR / (a.version.split(".")[0] + ".eclm")
+    text = build(a.version, a.kind)
+    ext = ".eclm" if a.kind == "ecl" else ".anmm"
+    out = Path(a.out) if a.out else ECLMAP_DIR / (a.version.split(".")[0] + ext)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(text, encoding="utf-8")
     n = len([l for l in text.splitlines() if l and not l.startswith("!")])

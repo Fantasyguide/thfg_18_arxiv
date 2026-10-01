@@ -89,9 +89,15 @@ Sub8:  shoot_offset([10094.0f], [10095.0f]); …
   ★ **已确认前提**（2026-10-01）：`thdat -l9 th09.dat` 里有 **`etama.anm`（612632 B）**、
   `enemy.anm`、`pl0X.anm`/`pl0Xb.anm` ⇒ 抽图这条路是通的（th09 只是没进
   `tooling/thtk/unpack.py` 的 `GAMES` 表，`thanm` 要自己给版本号与 anmmap）。
-  ⚠ `thecl`/`thanm` 的 **th09 anmmap 也没有**，但 `tooling/eclmap/gen_eclmap.py` 证明
-  ExpHP 的 `labels.json` 里有 `anm` 键（`3__sprite` / `7__scale` / …）⇒ **同样能生成一份**
-  （生成器现在只做 `ecl` 段，加个 `--kind anm` 即可）。
+  ★ **anmmap 也有办法了**（2026-10-01 落地）：`tooling/eclmap/gen_eclmap.py` 加了 **`--kind anm`**，
+  用 ExpHP `labels.json` 的 `anm` 键生成 `thanm -m` 要的名表：
+
+  ```bash
+  python3 tooling/eclmap/gen_eclmap.py th09.v1.50a --kind anm   # → local/vendor/eclmap/eclmap/th09.anmm（90 条）
+  ```
+
+  （格式与 eclmap 同形：`!anmmap` ＋ 空行/注释 ＋ `!ins_names` ＋ `NN name`，
+  照 `local/vendor/thpages/static/mapfile/v8.anmm`。`--list` 现在同时报 ecl/anm 条数。）
 - `ins_99` / `ins_101` 的**参数语义**（前两个实参是「方向/侧」还是「rank」，第 3 个是「弹 id 还是 group」）
   未逐个核 —— 本文只按**实参的字面差异**描述形态差异，**不宣称**已解开它们的语义。
 - 完整的 sub 列表与时限（`Sub2`/`Sub5` 等只列了行号没展开）。
