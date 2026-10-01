@@ -36,9 +36,11 @@
                                     *   = 游玩区中心 240 − 60 = **180**；贴图 80 高 ⇒ 中心放 180 + 40 = 220。
                                     *   ⚠ 贴图是**裁掉上下留白**的（见 make_death_msg.py），所以不能再按 240 放 */
 /* ★ 2026-10-02（一手，AUDIT §BE 详录 #213 追加 B）：原版 `Main.DrawInterface_35_YouDied()` 的行为是
- *   「死亡瞬间出现、**无淡入无淡出**、复活下一帧直接消失」⇒ 这里也照做：**显示到自机复活为止**，
- *   不淡出、不数固定帧数。`SC_MSG_MAX` 只是"引擎状态万一没回到 1"的保险丝（10 s）。*/
-#define SC_MSG_MAX      600        /* ❓自定：保险丝（正常路径靠"复活了"来收）*/
+ *   「死亡瞬间出现、**无淡入无淡出**、复活下一帧直接消失」。
+ * ★ 2026-10-03 owner 定案：**显示 15 秒**（原版死亡界面底下那行就是**复活倒计时** ——
+ *   `Game.RespawnInSuffix` 从 15 秒起数，所以"挂着 15 秒"才是那段界面的实际时长）。
+ *   ⇒ 这里改成**固定 15 s**（900 帧 @60fps）、仍然**不淡入不淡出**（淡出这条原版没有）。*/
+#define SC_MSG_FRAMES   900        /* 15 s（owner 口径；原版倒计时也是 15 起步）*/
 
 typedef struct {
     ce_option_t opt;               /* 跟班槽 */
@@ -144,16 +146,15 @@ static int on_tick_2(ce_card_t *c)
         id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_STAR_CANNON_DEATH_MSG, SC_MSG_LAYER);
         if (id) {
             s->msg_id = id;
-            s->msg_life = SC_MSG_MAX;
+            s->msg_life = SC_MSG_FRAMES;
             ce_anm_set_pos(id, SC_MSG_X, SC_MSG_Y, 0.0f);
             ce_anm_set_color(id, 0xffffffffu);   /* 颜色烘在贴图里（一手：暖红 229,127,127、不描边）*/
             ce_log("star_cannon: death message shown (591 platinum version) at (%.0f, %.0f)",
                    (double)SC_MSG_X, (double)SC_MSG_Y);
         }
     }
-    if (s->msg_id) {
-        int alive_again = (*(int32_t *)(p + CE_PLAYER_STATE) == 1);   /* 一手：复活下一帧直接消失 */
-        if (!ce_anm_get_vm(s->msg_id) || alive_again || s->msg_life == 0) {
+    if (s->msg_id) {                     /* 挂满 15 s 再收（不再跟"复活了"走 —— owner 2026-10-03 定案）*/
+        if (!ce_anm_get_vm(s->msg_id) || s->msg_life == 0) {
             sc_msg_kill(s);
         } else {
             s->msg_life--;
