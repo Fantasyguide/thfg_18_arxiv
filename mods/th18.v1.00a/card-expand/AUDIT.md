@@ -4915,6 +4915,8 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 | 2026-10-01f | **所有卡**（玩家面向文案：`patch/th18/cards.js` 的 **107–117 共 11 张** `desc`；`CARDS.md` 的 116 键位订正 + 新增「文案两层分工」口径块） | 见下方「§BE 详录 #208」 |
 | 2026-10-01g | **109 花映塚**（`native/tests/test_pofv_core.c`：补 `#include <math.h>` —— 构建修复，不动 109 的生产代码） | 见下方「§BE 详录 #207」 |
 
+| 2026-10-01h | **所有卡**（共享资源 `assets/cards/**` 追加 5 张卡图 + `ORDER.txt`；`patch/th18/cards.js` 追加 **81–85**；新增 `native/cards/{lotus,solring,fireball,sunflower,marigold}.c`（**占位**）；`CAPACITY.md` 附录 A 重生成） | 见下方「§BE 详录 #209」 |
+
 
 > **§BE 详录 #42（2026-09-20 · P1「缺音效一批」8 条 + 音效表扩容新增 5 枚别作原版 SE）**
 >
@@ -27786,3 +27788,45 @@ Python 里**后一个定义覆盖前一个** ⇒ 改第一个**完全无效且�
 `cards-check` = 「37 张卡全部合规（desc ≤6 行 / 每行 <64 字节 / 无 ASCII %）」；
 `make check` **rc=0**（含 `check-docs` 418 文件）。
 **未动**：`name`、`category`、`internal_name`、价格/权重/贴图等字段一律原样。
+
+---
+
+### §BE 详录 #209 —— 2026-10-01h：新非系统卡 **81–85** 从 `upstream/stg-agent-proto` 搬运（**本期只落「卡图 + 卡表行 + 占位行为」**）
+
+**谁改的**：统筹。**owner 口径**：「你先搬运那 5 张卡，或者最低等级的：**就搬运卡图和占位**」。
+
+**搬了什么**（卡名/id 全按 owner 定的「非系统卡从 81 起」）：
+
+| id | 卡 | `category` | 卡图（sprite_large/small，**我们这边现算**）|
+| :-: | --- | :-: | --- |
+| 81 | 黑莲花 | 3（即时卡）| 190 / 191 |
+| 82 | 阳光戒指 | 2（被动）| 192 / 193 |
+| 83 | 火球术 | 0（主动，`active_recharge` = 480）| 194 / 195 |
+| 84 | 向日葵 | 0（主动，600）| 196 / 197 |
+| 85 | 金盏花 | 0（主动，600）| 198 / 199 |
+
+| 文件 | 改动 |
+| --- | --- |
+| `assets/cards/{BLACK_LOTUS,SOL_RING,FIREBALL,SUNFLOWER,MARIGOLD}_{max,min}.png`（10 张）| 从 `upstream/stg-agent-proto` 取出，**与上游逐字节一致**（md5 逐个核过）|
+| `assets/cards/ORDER.txt` | 末尾 **append** 5 行（尾插 ⇒ 既有卡图 sprite 号零位移）|
+| `patch/th18/cards.js` | 追加 81–85 五行：`name` / `desc` / `category` / `internal_name` / `initial_unlocked` / `price_tier` / `weight` 与上游**逐字一致**，只有 `sprite_large/sprite_small` 按我们 `ORDER.txt` 的行序现算（190..199）|
+| `native/cards/{lotus,solring,fireball,sunflower,marigold}.c`（新增）| **占位注册**：`category` 与行为契约一致（主动卡给 `active_recharge`、`on_activate` 只打日志并 `return 0`；即时卡给空 `ctor` 返回 0；被动卡给空 `on_tick_2`）⇒ 卡在游戏里可见、按 C 无效、**不会卡状态**。每个文件头部写明**目标效果原文 + 上游实现路径 + 搬迁 TODO** |
+| `CAPACITY.md` 附录 A | 用 `python3 native/tools/capcheck.py --gen-appendix` **重生成**（A0 = **还能进 28 张**；A1 的 42 张里含 81–85）|
+
+**为什么这么落**：全量效果搬迁要动共享件（上游 81/82 用 `ce_grant_power`，**我们 SDK 里还没有**；
+84/85 还要 `ability.anm` 新脚本 + PvZ 素材）⇒ 先把「卡图 + 卡表 + 可注册的占位行为」落稳，保住闸门绿。
+
+**影响面 / 回归**
+- `assets/cards/**` 与 `patch/th18/cards.js` 是**共享资源**（全部卡的卡面/文案载体）⇒ 本表即登记；
+  尾插 + 只新增行 ⇒ 既有卡的 sprite 号与文案**零变化**。
+- **没有动** `sdk.*` / `sites.py` / `Makefile` / `cards_def.c` ⇒ **零新增站点**。
+- **验证**（本批单独核过）：新增 5 个 `.c` 用 `i686-w64-mingw32-gcc -Werror … -c` **逐个编译通过**；
+  `make cards-check` = **42 张卡全部合规**；`make dllx87` 的 **x87 = 0**；`capcheck` **全绿**；
+  `check-docs` **四项全绿（419 文件）**；`build_abcard.py` 通过（entry **200 / 256** ⇒ 余 56 = 还能进 28 张）。
+- ⚠ 当时整体 `make check` 红在**109 那条线的在途 `cards/pofv.c`**（`POFV_BOSSATK_ECL_NAME` 未声明，
+  23:27:36 的编辑）—— **与本批无关**，未触碰。
+
+**未做（等 owner 挑）**：全量效果搬迁的依赖与工作量（上游行数为准）：
+① 81/82 需要先把 `ce_grant_power` 加进 `sdk.h`（共享件，照 `CardRingo__constructor` `th18:0x40a0b0` 四步）；
+② 83 = 上游 `fireball.c` 141 行，复用炎魔之王（72）的贴图/脚本 ⇒ **无需新美术**；
+③ 84/85 = 上游 `plant.c` 122 行 + `plant_core.c` 34 行（共基类）+ 各自数值文件，另需 **`ability.anm` 新脚本与 PvZ 原版帧素材**（上游 `assets/ability/{sunflower,marigold}/_src/`）。

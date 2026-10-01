@@ -576,5 +576,87 @@
     "weight": 4,
     "sprite_large": 4,
     "sprite_small": 5
+  },
+  "81": {
+    "name": "黑莲花",
+    "desc": [
+      "商店免费，购买时立刻获得 3.00 火力；",
+      "超出火力上限的部分按 1 点 ＝ 1 金钱折算。",
+      "本身不会进入卡组。致敬・万智牌。"
+    ],
+    "internal_name": "BLACK_LOTUS",
+    "category": 3,
+    "initial_unlocked": 1,
+    "deck_visible": 0,
+    "repeatable": 1,
+    "hud_show": 0,
+    "price_tier": 0,
+    "weight": 2,
+    "sprite_large": 190,
+    "sprite_small": 191
+  },
+  "82": {
+    "name": "阳光戒指",
+    "desc": [
+      "每 20 秒自动获得 0.10 火力。",
+      "只在关卡里计时，商店与菜单不算。",
+      "火力已满时不再累积。致敬・万智牌。"
+    ],
+    "internal_name": "SOL_RING",
+    "initial_unlocked": 1,
+    "price_tier": 9,
+    "weight": 2,
+    "sprite_large": 192,
+    "sprite_small": 193
+  },
+  "83": {
+    "name": "火球术",
+    "desc": [
+      "主动（C 键）：向正前方打出一颗火球，",
+      "碰到第一个敌人就地爆炸。",
+      "火球与爆炸都是炎魔之王同款。",
+      "打空了就是打空了。致敬・炉石传说。"
+    ],
+    "internal_name": "FIREBALL",
+    "category": 0,
+    "initial_unlocked": 1,
+    "price_tier": 10,
+    "weight": 2,
+    "sprite_large": 194,
+    "sprite_small": 195
+  },
+  "84": {
+    "name": "向日葵",
+    "desc": [
+      "主动（C 键）：消耗 0.50 火力，",
+      "在当前位置种一株向日葵替你挡子弹。",
+      "它血量不多，但每活 5 秒就撒出",
+      "25 个火力道具。",
+      "致敬・植物大战僵尸。"
+    ],
+    "internal_name": "SUNFLOWER",
+    "category": 0,
+    "initial_unlocked": 1,
+    "price_tier": 9,
+    "weight": 2,
+    "sprite_large": 196,
+    "sprite_small": 197
+  },
+  "85": {
+    "name": "金盏花",
+    "desc": [
+      "主动（C 键）：消耗 1.00 火力，",
+      "在当前位置种一株金盏花替你挡子弹。",
+      "它血量不多，但每活 5 秒就撒出",
+      "25 个金钱道具。",
+      "致敬・植物大战僵尸。"
+    ],
+    "internal_name": "MARIGOLD",
+    "category": 0,
+    "initial_unlocked": 1,
+    "price_tier": 10,
+    "weight": 2,
+    "sprite_large": 198,
+    "sprite_small": 199
   }
 }
