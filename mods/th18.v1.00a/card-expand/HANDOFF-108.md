@@ -326,3 +326,24 @@ TH16 的布局索引 = 三角数表 `0x4a5dac` ⇒ 档 k 块大小 = k），我�
 - `native/sht_ids.h` 的「追加，N shooter」注释按 **pl00** 那份算 ⇒ A/M/S 全印 0，实际 pl03 的 A = 2/3/3/3/3。
 - `cards/youkai.c` 与 `AUDIT.md` 里「**A0 是空组**」与生成物不符（A0 有 2 行、fire_rate 3）⇒
   tier 0 走原生弹的真机制是 `on_shot_set_index` 的 `yk_option_wanted` 门。
+
+## ★ 未发布状态（2026-09-30 深夜，owner 拍「先不发」）
+
+**#68（伤害转嫁覆盖面补齐：绕转使魔 + 外部子敌人含 leveledit 米斯蒂亚那批）已编好并提交
+（`6c21c5ad`，源码 `youkai.c` + 文档），但 DLL 未同步进 modkit。**
+
+- 原因：`make release` 的发布闸报 **「游戏里的 `pl0X.sht` 与当前构建不同批」**。
+  重新生成的 sht 与机器上装的那批不同 —— 而 sht 的差异**不是本批造成的**（本批只动
+  `native/cards/youkai.c`），来自**另一支会话在飞的 sht 资产改动**（季节 119 的
+  `pl0X.sht` shooterset 等）。`make release` 是**整批发布**（DLL + sht + patch），
+  所以一发布就会把别人未定稿的资产推进游戏 ⇒ owner 选「先不发」。
+- **机器上现在跑的仍是上一版 DLL（`4e892c18c250ba618e6494d6ed910c90`）**，与已装的
+  `pl0X.sht` 配套（可正常玩）；#68 的新 DLL 只留 `native/th18_card_expand.dll`
+  （`aa49d10c9c7f4e0cffc9c92ccb2a2867`）与 `dist/`。
+- 下次要发的做法（二选一）：① 等那支会话把 sht 定稿后 `make release` 整批发；
+  ② 只补 DLL 需要 `SKIP_PAIR_CHECK=1 bash local/sync_modkit_dll.sh`（**有进灵界崩的风险**，
+  仅当确认 DLL 与已装 sht 同批时用）。
+- 顺带记账欠账（owner 说「站点的本质原因不是数量」，故不挡发布）：发布闸的 ⚠ 显示
+  **进程级站点合计 53 > 安全线 42**、我们自己的 `SITE_BUDGET=24` 超（33 条）⇒
+  `GATES.md` §8 与 `AUDIT.md` §BE 的记账还没补。
+
