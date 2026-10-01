@@ -163,19 +163,21 @@ static void test_lookup(void)
      *   ⇒ 默认表里**恰好开一行**：`A 组蓝妖精 · 只 st01`（src sprite0 → sprite24、screen 0 → 10，
      *   只 st01）。其余各行仍然全关 —— 尤其**不许**碰 sprite36（那是 112 载体皮用的
      *   `sprite36..47` 那一组：owner 明确要求「和 th12 错开改，别改成同一只」）。*/
-    CHECK(mof_green_active_count() == 1);
+    /* ★ 2026-09-26 owner：「3 面…圣域…妖精种类特殊…应当改成 enemy_g 倒数第三行」⇒ st03 那行也开了
+     *   ⇒ 现在有**两行**开着（st01 的 A 组蓝妖精 = 0/10、st03 的 B 组蓝妖精 = 184/194）。*/
+    CHECK(mof_green_active_count() == 2);
     CHECK(mof_green_lookup(0xffffffffu, 2, 0) != 0);        /* ★ 开的那一行：st01 的蓝妖精命中 */
     CHECK(mof_green_lookup(0xffffffffu, 2, 24) == 0);       /* 换过去的目标组不参与判据 */
     CHECK(mof_green_lookup(applied, 2, 36) == 0);           /* ★ 112 载体皮那一组**绝不**命中 */
-    CHECK(mof_green_lookup(applied, 2, 184) == 0);
+    CHECK(mof_green_lookup(applied, 2, 184) != 0);          /* ★ st03 那行（stage 索引 2 = ST3）命中 */
 
-    for (i = 0; i < 5; ++i) {                   /* 除那一行之外，仍然一条都不命中 */
-        CHECK(mof_green_lookup(applied, 2, 0 + i) != 0);    /* ★ 这一组（0..4）是开着的 */
+    for (i = 0; i < 5; ++i) {
+        CHECK(mof_green_lookup(applied, 2, 0 + i) != 0);    /* ★ st01 那一组（0..4）开着 */
         CHECK(mof_green_lookup(applied, 2, 5 + i) == 0);
-        CHECK(mof_green_lookup(applied, 2, 184 + i) == 0);
-        CHECK(mof_green_lookup(applied, 2, 189 + i) == 0);
+        CHECK(mof_green_lookup(applied, 2, 184 + i) != 0);  /* ★ st03 那一组（184..188）也开着 */
+        CHECK(mof_green_lookup(applied, 2, 189 + i) == 0);  /* 红妖精那一组（189..）没开 */
         CHECK(mof_green_lookup(applied, 2, 15 + i) == 0);
-        CHECK(mof_green_lookup(applied, 2, 199 + i) == 0);
+        CHECK(mof_green_lookup(applied, 2, 199 + i) == 0);  /* 黄妖精那一组（199..）没开 */
     }
     CHECK(mof_green_lookup(applied, 2, 10) == 0);       /* 本来就是绿的那支（宿主表管，不归这里）*/
     CHECK(mof_green_lookup(applied, 3, 0) == 0);        /* 不是 enemy.anm ⇒ 一律不算 */
@@ -433,10 +435,10 @@ static void test_instance_helpers(void)
     CHECK(mof_green_mirror_ok(-9.0f, 100.0f, 26.0f, 100.0f) == 0);    /* |−9+26| = 17 > 16 ⇒ 不是一对 */
     CHECK(mof_green_mirror_ok(-40.0f, 100.0f, 40.0f, 125.0f) == 0);   /* y 差 25 > 24 ⇒ 不是一**对**（另一波）*/
     CHECK(mof_green_mirror_ok(-40.0f, 100.0f, 40.0f, 124.0f) == 1);   /* y 差 24 取等号 ⇒ 仍是那一对 */
-    /* 行启用判据（= `enabled` ∧ 关掩码）：只有第 0 行是「开着且只 st01」。*/
+    /* 行启用判据（= `enabled` ∧ 关掩码）：第 0 行（st01）/ 第 1 行（st03）开着。*/
     CHECK(mof_green_row_armed(&mof_green_pairs[0], 1) == 1);
     CHECK(mof_green_row_armed(&mof_green_pairs[0], 2) == 0);
-    CHECK(mof_green_row_armed(&mof_green_pairs[1], 3) == 0);   /* 这一行 enabled = 0 */
+    CHECK(mof_green_row_armed(&mof_green_pairs[1], 3) == 1);   /* ★ 2026-09-26 开启（ST3）*/
     CHECK(mof_green_row_armed(0, 1) == 0);
 }
 

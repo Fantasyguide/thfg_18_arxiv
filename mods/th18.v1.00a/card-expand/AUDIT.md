@@ -4849,6 +4849,7 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 
 | 日期 | 别人的卡 | 文件 | 改了什么 | 为什么 | 验证 |
 | --- | --- | --- | --- | --- | --- |
+| 2026-09-26 | **112 星莲船（UFO 载体皮）** | `assets/ability/scripts/352_ufo_carrier_fairy.anm.txt`、`356_ufo_carrier_fairy_side_r.anm.txt`、`357_ufo_carrier_fairy_side_l.anm.txt` | 三支脚本的贴图从本卡自己的 `@CARRIER_FAIRY_0..11@`（TH12 妖精切图）换成 **TH18 原生 `enemy_g.png` 倒数第二行**那支**黄色辉光妖精**的 sprite **256..267**（正面 256..259、转身 260..267；帧**时序未动**）| **owner 2026-09-26 逐字指示**：「3 面…圣域…妖精种类特殊，贴图外面有一层辉光…**包括 112 改的黄色妖精也得改成这里面倒数第二行的**」| `make anm` 追加脚本检查全过、`make check` 全绿；**实跑待 112 那条线复核**（他们的载体皮判据/掉落逻辑一行未动，只换图）|
 | 2026-09-12 | **69 加倍** | 见下方「§BE 详录 #1」 |
 | 2026-09-12 | **70 腐化** | 见下方「§BE 详录 #2」 |
 | 2026-09-12 | **58–62 皇家同花顺** | 见下方「§BE 详录 #3」 |
@@ -26604,6 +26605,30 @@ sprite/size（真 48×48 且不在白名单 ⇒ 它们不会出现 = 修好；�
 `yk_transfer_clamp(pending, YK_TRANSFER_CAP_PER_FRAME)`（**cap 默认 0 = 无上限**）⇒ **不会被每帧上限砍**；
 若场上**没有 boss** 则整帧量进 `dropped`（`noboss` 计数可见）；`ce_damage_rect` 开槽失败计 `fail`。
 ⇒ 现有 `xfer[tick map orb ext rect fail noboss]` 一行足够判断有没有被截断。
+
+**闸**：`make -s check` rc=0（`youkai_core: 8799 checks, 0 failed`、`dllx87 = 0`）、`sites.py verify` 全对上、
+`capcheck` 全绿、`check-docs` 全过。
+
+## §BE 详录 #176（2026-10-01）：崩溃后的**防御性加固**（不改数值口径）
+
+> **背景**：owner 在 `152dbf66`（100% 转嫁 + 白名单 + spriteprobe）上崩了；modkit `crashdumps/` **没有新 dump**
+> （最新 09-28），日志尾只有 `site:` 计数行、**没有我们卡的报错** ⇒ 先做防御 + 等 dump。
+
+**一、查了两条新读路径（结论：本来就有 NULL 保护）**
+- **108**（`youkai.c` 扫描里）：`uint8_t *vm = *(uint8_t **)(e + CE_ENEMY_ANM_VM0); int spid = vm ? *(const int32_t *)(vm + 0x24) : -1;`
+  ⇒ **NULL 时 spid = −1**（白名单必然不命中 ⇒ 退回纯尺寸门）✓；
+- **117**（`animal.c`）：同一写法（`vm ? … : -1`）✓；
+- **`spriteprobe` 表**：`if (spid >= 0 && spid < 512 && !s_probe_done[spid])` ⇒ **下标与 sprite 号是同向的同一个量**（不是把 sprite 当下标再换算），且**两侧都做了界内检查** ✓。
+
+**二、新加的三种保护（这个才是本轮改动）**
+| 保护 | 常量 / 位置 | 依据 |
+| --- | --- | --- |
+| **异常大 delta ⇒ 整笔丢** | `YK_TRANSFER_DELTA_MAX = 10000`（`yk_transfer_feed` 开头）| 一手血量档最大 **600**；一次采样跨帧最多几千 ⇒ >10000 基本只能是**表复用/敌机复活/id 复用**的假差分 |
+| **pending 截断** | `YK_TRANSFER_PENDING_MAX = 100000`（`yk_transfer_feed` 末尾）| 最大档 600 × 18 台 ≈ 10800，给 ~9 倍余量；避免把天文数字喂进 `ce_damage_rect` 的 `dmg` |
+| **计数可见** | `yk_transfer_t.rejected / .clamped` + 日志 | run-done 行尾加 **`rej %u clamp %u`**（诊断：被丢了几笔 / 截断了几次）|
+
+**三、VM 指针本身的失效风险（诚实）**：我们只保证**非 NULL**；若引擎把 VM 撤了而 `e+0x?` 里还留着**悬垂指针**，
+`vm+0x24` 仍可能读到坏地址 —— 这一档**没有便宜的判据**（要拿 dump 才能确认是否真发生）。已写进注释。
 
 **闸**：`make -s check` rc=0（`youkai_core: 8799 checks, 0 failed`、`dllx87 = 0`）、`sites.py verify` 全对上、
 `capcheck` 全绿、`check-docs` 全过。
