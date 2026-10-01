@@ -28209,3 +28209,35 @@ Undertale 的时机条；当有敌人可攻击的时候，时机条会开始动�
   （本卡没有自建 VM）。
 - `make check` exit 0（`cards-check` 49 张、`capcheck` 全绿、`dllx87 = 0`、`check-docs` 四项全绿）。
 - ⚠ 未实跑：两条公式的系数、`GW_BULLET_MAX`、boss 破阶段那一下的实际观感都要看实跑。
+
+### §BE 详录 #213 追加 B（2026-10-03）：**死亡讯息 UI 的一手规格**（推翻了本卡第一版的三处写法）
+
+**起因**：owner 2026-10-02 给了实机截图当参考；我按截图取了「浅灰白 + 深色描边」。随后派 subagent 用
+`dnfile`+`dncil` 直读 `Terraria.exe` 的 IL 复核 —— **截图那个颜色是假的**（见下），本卡的贴图与生命周期已按一手重做。
+
+#### 一手结论（`Terraria.Main.DrawInterface_35_YouDied()`；本机 Steam 版实际是 **1.4.5.8**，
+参照版 tModLoader **1.4.4.9**，这块代码两版逐条一致）
+| 面 | 一手 | 我第一版（错在哪） |
+| --- | --- | --- |
+| 文本 | 第一行 = `Lang.inter[38]`（key **`LegacyInterface.38`**），zh-Hans **「你被杀死了……」**；第二行 = `Game.DroppedCoins`（zh-Hans「掉了{0}」），`{0}` 来自 `Main.ValueToCoins`，其格式串 `"{0} {1} "` **硬编码在 exe、带空格、不可本地化**| 无空格、单个省略号 |
+| **颜色** | `GetDeathAlpha(Color.Transparent)`：`Color.Transparent` = **RGBA(0,0,0,0)**（不是白！XNA 与 FNA 两边 IL 都验过）、死亡期间 `immuneAlpha` 恒 255 ⇒ **RGBA(229,127,127,102)** = 暖红 `#E57F7F` | **浅灰白** ← 截图的色度被压掉了（×4 饱和度增强后立刻显红；与代码色相同色相）|
+| 描边 | **没有**（ReLogic 的 12 参 `DrawString` 扩展，两个尾数组 `null`；`DrawBorderStringBig` 不在这条路径上）| 加了黑描边 |
+| 字体 | 第一行 `FontAssets.DeathText`（`lineSpacing = 72`）、第二行 **`FontAssets.MouseText`**（`lineSpacing = 29`）⇒ **两行不同字体** | 同一字体、字号自拟 |
+| 排版 | 两行**各自** `MeasureString` 居中；`origin = Zero` ⇒ 记的是**盒左上角**；y = `H/2 − 60` 与 `H/2 − 10`（盒顶差 **50 px**）、scale 1.0 | 大致居中，行距自拟 |
+| 生命周期 | 死亡瞬间出现 → alpha 全程恒定（**无淡入无淡出**）→ 复活下一帧**直接消失** | 自拟了 300 帧 + 40 帧淡出 |
+| z-order | 接口层下标 **36**（`"Vanilla: Death Text"`，`InterfaceScaleType.UI`）：在世界/玩家/HUD/聊天之上、光标之下 | 我们的 UI 层 25（等价位置）|
+
+#### 已知差距（🟡 老实记一笔）
+**字形拿不到**：原版字形在 `Content/Fonts/Death_Text.xnb` / `Mouse_Text.xnb` 里，是 ReLogic 的
+`DynamicSpriteFont`（XNB 版本 5 + LZX，159 页 Dxt3，38636 字形；`xnbcli` 认不出那个自定义 type reader）。
+本次顺手写的 reader + DXT3 解码器**能解析出结构与全部字形表**，但**解出来的图集是横条纹**（不可用），
+所以贴图仍用系统字体近似（Droid Sans Fallback 汉字 + DejaVu 数字，按一手 `lineSpacing` 比例取字号）。
+⇒ 字宽/字距与原版不会完全一致；**颜色/描边/字体分工/排版/生命周期这五条是复刻的**。
+
+#### 副产品（复用价值）
+- ReLogic `DynamicSpriteFontReader` 的格式：`float characterSpacing; int lineSpacing; char defaultChar;
+  int pageCount; { Texture2D; List<Rectangle> glyphs; List<Rectangle> cropping; List<char> charMap;
+  List<Vector3> kerning; }*` —— ⚠ **四个 List 的长度是 `int32`，不是 XNB 那套 7-bit**。
+- **本机 Steam 版 Terraria 不是 1.4.4.9 而是 1.4.5.8**（`changelog.txt` 第 1 行 + `Assembly` 表）。
+  之前本卡引的「1.4.4.9」是猜测 —— 现在有事实：参照系用 tModLoader 的 1.4.4.9 对照，**结论两版通用**。
+- 原版死亡界面**不用任何贴图**（`Content/Images/UI/` 里没有相关文件），全程只用字体。

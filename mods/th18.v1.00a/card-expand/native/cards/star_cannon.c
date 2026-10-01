@@ -33,8 +33,10 @@
 #define SC_MSG_X        320.0f     /* 640×480 空间：(320, 240) 正是**游玩区正中**
                                     *（x：场地中心 320；y：场地上沿 16 + 448/2 = 240）*/
 #define SC_MSG_Y        240.0f
-#define SC_MSG_FRAMES   300        /* ❓自定：显示 5 秒（原版一直挂到复活；我们的死亡演出更短）*/
-#define SC_MSG_FADE     40         /* 最后 40 帧线性淡出 */
+/* ★ 2026-10-02（一手，AUDIT §BE 详录 #213 追加 B）：原版 `Main.DrawInterface_35_YouDied()` 的行为是
+ *   「死亡瞬间出现、**无淡入无淡出**、复活下一帧直接消失」⇒ 这里也照做：**显示到自机复活为止**，
+ *   不淡出、不数固定帧数。`SC_MSG_MAX` 只是"引擎状态万一没回到 1"的保险丝（10 s）。*/
+#define SC_MSG_MAX      600        /* ❓自定：保险丝（正常路径靠"复活了"来收）*/
 
 typedef struct {
     ce_option_t opt;               /* 跟班槽 */
@@ -140,20 +142,18 @@ static int on_tick_2(ce_card_t *c)
         id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_STAR_CANNON_DEATH_MSG, SC_MSG_LAYER);
         if (id) {
             s->msg_id = id;
-            s->msg_life = SC_MSG_FRAMES;
+            s->msg_life = SC_MSG_MAX;
             ce_anm_set_pos(id, SC_MSG_X, SC_MSG_Y, 0.0f);
-            ce_anm_set_color(id, 0xffffffffu);
-            ce_log("star_cannon: death message shown (590+1 platinum version) at (%.0f, %.0f)",
+            ce_anm_set_color(id, 0xffffffffu);   /* 颜色烘在贴图里（一手：暖红 229,127,127、不描边）*/
+            ce_log("star_cannon: death message shown (591 platinum version) at (%.0f, %.0f)",
                    (double)SC_MSG_X, (double)SC_MSG_Y);
         }
     }
     if (s->msg_id) {
-        if (!ce_anm_get_vm(s->msg_id) || s->msg_life == 0) {
+        int alive_again = (*(int32_t *)(p + CE_PLAYER_STATE) == 1);   /* 一手：复活下一帧直接消失 */
+        if (!ce_anm_get_vm(s->msg_id) || alive_again || s->msg_life == 0) {
             sc_msg_kill(s);
         } else {
-            int a = 255;
-            if (s->msg_life < SC_MSG_FADE) a = (int)(255u * s->msg_life / SC_MSG_FADE);
-            ce_anm_set_color(s->msg_id, ((uint32_t)a << 24) | 0x00ffffffu);
             s->msg_life--;
         }
     }
