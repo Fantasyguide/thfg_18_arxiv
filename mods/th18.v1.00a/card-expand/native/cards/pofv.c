@@ -355,8 +355,12 @@ static void bossatk_fire(ce_card_t *c, pofv_card_t *s)
     uint8_t *o;
 
     if (!pofv_bossatk_tick(&s->bossatk)) return;        /* 没在打 / 这一帧打完 */
-    set = (s->bossatk.level >= 4) ? CE_SHT_SET_POFV109_BOSSATK_C4
-                                  : CE_SHT_SET_POFV109_BOSSATK_C3;
+    switch (s->bossatk.level) {                 /* ★ 四档各一组（密度递进）*/
+    case 1:  set = CE_SHT_SET_POFV109_BOSSATK_C1; break;
+    case 2:  set = CE_SHT_SET_POFV109_BOSSATK_C2; break;
+    case 3:  set = CE_SHT_SET_POFV109_BOSSATK_C3; break;
+    default: set = CE_SHT_SET_POFV109_BOSSATK_C4; break;
+    }
     o = ce_option_get(c, &s->opt, 0, POFV_BOSSATK_OPT_ANM, 30, "pofv109");
     if (!o) return;                                     /* 拿不到发射口：这一帧不发 */
     ce_tick_shooters_for_card(o, (int)s->bossatk.left, 0, set);

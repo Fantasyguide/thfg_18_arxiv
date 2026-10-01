@@ -672,11 +672,16 @@ void pofv_aura_radius(const pofv_aura_profile_t *p, int32_t age, int32_t charge,
 int pofv_bossatk_start(pofv_bossatk_t *b, int ca_level)
 {
     if (!b) return 0;
-    if (ca_level < POFV_BOSSATK_MIN_LEVEL) return 0;   /* ★ owner：C3 起才有 */
+    if (ca_level < POFV_BOSSATK_MIN_LEVEL) return 0;   /* ★ owner：C1 起就有 */
     if (ca_level > 4) ca_level = 4;
     b->active = 1;
     b->level = ca_level;
-    b->left = (ca_level >= 4) ? POFV_BOSSATK_C4_FRAMES : POFV_BOSSATK_C3_FRAMES;
+    switch (ca_level) {
+    case 1:  b->left = POFV_BOSSATK_C1_FRAMES; break;
+    case 2:  b->left = POFV_BOSSATK_C2_FRAMES; break;
+    case 3:  b->left = POFV_BOSSATK_C3_FRAMES; break;
+    default: b->left = POFV_BOSSATK_C4_FRAMES; break;
+    }
     return 1;
 }
 

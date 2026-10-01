@@ -798,16 +798,23 @@ int main(void)
     {
         pofv_bossatk_t ba;
 
-        CHECK(POFV_BOSSATK_MIN_LEVEL == 3);        /* ★ owner：C3 也给 */
-        CHECK(POFV_BOSSATK_C4_FRAMES > POFV_BOSSATK_C3_FRAMES);   /* C4 更长 */
+        CHECK(POFV_BOSSATK_MIN_LEVEL == 1);        /* ★ owner：C1 起就有（打自己场上的敌人）*/
+        CHECK(POFV_BOSSATK_C1_FRAMES < POFV_BOSSATK_C2_FRAMES);
+        CHECK(POFV_BOSSATK_C2_FRAMES < POFV_BOSSATK_C3_FRAMES);
+        CHECK(POFV_BOSSATK_C3_FRAMES < POFV_BOSSATK_C4_FRAMES);   /* 档越高打得越久 */
 
         memset(&ba, 0, sizeof ba);
         CHECK(pofv_bossatk_is_boss(&ba) == 0);
         CHECK(pofv_bossatk_tick(&ba) == 0);        /* 没起手 ⇒ 不打 */
 
-        CHECK(pofv_bossatk_start(&ba, 1) == 0);    /* C1 不起手 */
-        CHECK(pofv_bossatk_start(&ba, 2) == 0);    /* C2 不起手 */
-        CHECK(ba.active == 0 && ba.level == 0);
+        CHECK(pofv_bossatk_start(&ba, 1) == 1);    /* ★ C1 起手 */
+        CHECK(ba.active == 1 && ba.level == 1 && ba.left == POFV_BOSSATK_C1_FRAMES);
+        CHECK(pofv_bossatk_is_boss(&ba) == 0);
+        pofv_bossatk_stop(&ba);
+        CHECK(pofv_bossatk_start(&ba, 2) == 1);    /* ★ C2 起手 */
+        CHECK(ba.level == 2 && ba.left == POFV_BOSSATK_C2_FRAMES);
+        CHECK(pofv_bossatk_is_boss(&ba) == 0);
+        pofv_bossatk_stop(&ba);
 
         CHECK(pofv_bossatk_start(&ba, 3) == 1);    /* ★ C3 起手 */
         CHECK(ba.active == 1 && ba.level == 3 && ba.left == POFV_BOSSATK_C3_FRAMES);

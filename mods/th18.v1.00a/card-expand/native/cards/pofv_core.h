@@ -565,9 +565,14 @@ int  pofv_shield_up(const pofv_state_t *st);
  * ✅ owner 已拍：**C4 的圈就是那个扩张圈（不是永久场）**；`0x417630` 那支 500/30000 的永久场
  *   **排除出 C4**。 */
 
-#define POFV_BOSSATK_MIN_LEVEL        3   /* ★ owner：C3 也给（不是 boss）；C4 = boss */
-#define POFV_BOSSATK_C3_FRAMES       90   /* ❓ 自定（C3 的额外攻击持续）*/
-#define POFV_BOSSATK_C4_FRAMES      150   /* ❓ 自定（C4：更长 + 自己是 boss）*/
+/* ★★ 2026-10-01 owner：「**C1 和 C2 本来就是自己攻击己方敌人的呀**」
+ *   ⇒ **四档都有**向上弹幕，只是密度/单发随档递进（弹幕组 `SHT_C1..C4`）；
+ *   「C3……只不过自己不是 boss」，**C4 = 自己是 boss**。*/
+#define POFV_BOSSATK_MIN_LEVEL        1   /* ★ owner：C1 起就有（打自己场上的敌人）*/
+#define POFV_BOSSATK_C1_FRAMES       45   /* ❓ 自定（档越低打得越短）*/
+#define POFV_BOSSATK_C2_FRAMES       60   /* ❓ 自定 */
+#define POFV_BOSSATK_C3_FRAMES       90   /* ❓ 自定 */
+#define POFV_BOSSATK_C4_FRAMES      150   /* ❓ 自定（最长 + 自己是 boss）*/
 
 typedef struct {
     int32_t active;   /* 1 = 正在打 */
