@@ -20,7 +20,12 @@
 //   | arg5 / arg6 | (速度, 速度2；每颗取 `rnd×(a−b)+b`) | `etSpeed(id, arg5, arg6)` |
 //   | arg7 / arg8 | (基准角, 层间偏角) | `etAngle(id, arg7, arg8)` |
 //   | opcode − 96 | 模式 | `etAim(id, mode)` |
-//   | arg9 | 标志位（bit9 → `0x43e380`） | 🟡 TH18 无对应开关 ⇒ **丢掉** |
+//   | arg9 | 标志位（**bit9 → `0x43e380` = 播音**，一手：12 声道表 + `0x80` 冷却） | ⚠ **不在 ECL 里做** |
+//     · 为什么：TH18 对应的指令是 `etSound(id, sfx)`(608)，而 **`thecl` 能编、却 dump 不了 608**
+//       （实测 `thecl: error when dumping opcode 608 (etSound)`）—— 本管线**要往返反编译**（自洽 1/2）⇒ 用不了。
+//     · 改由**卡侧**在载体激活期间按同一节拍（40 帧）播：`ce_play_sound(0x15, …)`，
+//       `0x15` = **`se_tan00`**（弾音；一手见 `TUNING.md`：名表 `th18:0x4b47a0` 的 `[5] = se_tan00.wav`，
+//       `senro.c` 记「TH18 有三格 se_tan00：`0x15`/`0x18`/`0x1b`」）⇒ 观感等价，且不碰那个工具坑。
 //
 // ★ **模式一一对应**（这条让转写变成机械活）：TH09 的 1 `etFan` / 2 `etRingAimed` / 3 `etRing`
 //   与 TH16/18 的 `etAim` **1（固定弹）/ 2（自机狙环形）/ 3（固定弹环形）同号同义**。

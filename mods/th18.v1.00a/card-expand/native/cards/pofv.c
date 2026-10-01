@@ -114,6 +114,17 @@
 #define POFV_BOSSATK_DMG_W     384.0f    /* 覆盖宽（= 场地宽 384，一手 `arcadeRegionSize`）*/
 #define POFV_BOSSATK_DMG_H     320.0f    /* 覆盖高（自锚点往上）*/
 #define POFV_BOSSATK_DMG_LIFE    2       /* 源存活帧（照风暴那一支的量级）*/
+
+/* ★★ 2026-10-01：C3/C4 的**发射音**（一手 = TH09 `arg9` 的 **bit9** → `0x43e380` = 播音）。
+ *   ⚠ **不在 ECL 里做**：TH18 对应的是 `etSound(id, sfx)`(608)，而 **`thecl` 能编、却 dump 不了 608**
+ *     （实测 `thecl: error when dumping opcode 608 (etSound)`）—— 本管线**要往返反编译**（自洽 1/2）
+ *     ⇒ 用它会把构建弄红。改由卡侧按**同一节拍**（ECL 里每 40 帧一轮）播。
+ *   音 = **`0x15` = `se_tan00`**（弾音）—— 一手：名表 `th18:0x4b47a0` 的 `[5] = se_tan00.wav`；
+ *     `senro.c` 记「TH18 有三格 se_tan00：`0x15`/`0x18`/`0x1b`」，取第一格。
+ *   🟡 一手只给了「要不要播」这一位、没给具体 id ⇒ 这个 id 是**就近取的原生弾音**（登记 `TUNING.md`）。*/
+#define POFV_BOSSATK_SE         0x15    /* se_tan00（弾音）*/
+#define POFV_BOSSATK_SE_PERIOD  40      /* 与 ECL 的 40 帧一轮同拍 */
+static int32_t s_bossatk_se_timer;
 #define POFV_POWER_SE_GET       0x25
 /* ★ 一手（2026-10-01）：**升档音** —— TH16 季节道具**升档**（`item_collect_season`）播 `0x3f`，
  *   116 `season.c` 的 `SEASON_SE_LEVEL` 就是它（一手出处见那份文件；**不是** `se_extend`）。
@@ -421,6 +432,7 @@ static void bossatk_carrier_stop(void)
     if (e) *(int32_t *)(e + CE_ENEMY_ECL_I0) = 999;     /* 喊走：ECL 侧飞离自删 */
     ce_log("pofv: boss carrier %d told to leave", (int)s_boss_carrier);
     s_boss_carrier = 0;
+    s_bossatk_se_timer = 0;
 }
 
 static void bossatk_carrier_sync(int32_t level)
@@ -464,6 +476,11 @@ static void bossatk_carrier_sync(int32_t level)
     *(int32_t *)(e + CE_ENEMY_ECL_I0 + 4) = level;              /* $I1 = 档位 */
     *(int32_t *)(e + CE_ENEMY_ECL_I0 + 8) =
         *(const int32_t *)CE_ADDR_CHARACTER;                    /* $I2 = 角色 */
+    /* ★ 发射音（见常量处）：与 ECL 的 40 帧一轮同拍；首次也响（计时器 0 起算 ⇒ 先 ++ 再判）。*/
+    if (++s_bossatk_se_timer >= POFV_BOSSATK_SE_PERIOD) {
+        s_bossatk_se_timer = 0;
+        ce_play_sound(POFV_BOSSATK_SE, POFV_BOSSATK_ANCHOR_X);
+    }
 }
 
 /* ★ C3/C4 的「自伤源」（近似；见常量处的长注释）：在**锚点上方的覆盖区**里每帧结算一次伤害。
