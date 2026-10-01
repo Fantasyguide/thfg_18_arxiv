@@ -725,5 +725,21 @@
     "weight": 2,
     "sprite_large": 206,
     "sprite_small": 207
+  },
+  "90": {
+    "name": "冰淇淋",
+    "desc": [
+      "被动：miss 时不会损失火力，",
+      "且符卡直接 +3（正常 miss 会",
+      "掉一档火力、符卡重设为 3）。",
+      "致敬・杀戮尖塔。"
+    ],
+    "internal_name": "ICE_CREAM",
+    "category": 2,
+    "initial_unlocked": 1,
+    "price_tier": 9,
+    "weight": 2,
+    "sprite_large": 208,
+    "sprite_small": 209
   }
 }

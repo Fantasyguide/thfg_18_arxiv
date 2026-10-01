@@ -23,6 +23,8 @@
 `crop((224, 118, 1012, 1103))` = 788×985。人物中线由绿裙的包围盒（`x 332..904`、`y 376..922`）定，
 上取到发带、下取到脚；再按**卡框每边吃掉的 7％** 把这个构图外扩一圈，免得发带和鞋被框边切掉。
 之后 `fit_card.py WHIRLWIND … --no-detect --trim 0 --margin 0`。
+| `ICE_CREAM.png` | 冰淇淋（id 90）卡面的**原件** | **用户本机已解包的《杀戮尖塔 1》**：`<Steam>/steamapps/common/SlayTheSpire/desktop-1.0/images/largeRelics/iceCream.png`（256×256，调色板 PNG）| 不直接进卡面（遗物原图四周留了大量透明边）|
+| `ICE_CREAM_RELIC.png` | 同上，**裁掉透明边** | 由上一张按 alpha 包围盒裁出（`(102,72,160,186)` ⇒ **58×114**）| `make_white_item_card.py ICE_CREAM --item _src/ICE_CREAM_RELIC.png --fill`：白底 + 等比放大到画面区上限 + 原生框 |
 | `TONY_GRIEF.png` | 东尼的悲恸（id 86）卡面的**原件** | **用户提供**（`D:\项目\幻想指南\18\th18_modkit\d3bd0a27cffc1e17610100340c90f603738de914.png`，850×1072，透明底《杀戮尖塔》「送死亡」整卡：**左上角凸出一块能量六边形**、两侧还有横幅飞边）| 不直接进卡面（下面那张是裁出来的卡体）|
 | `TONY_GRIEF_CARD.png` | 同上，**卡体矩形** | 由上一张裁出（一次性：按 alpha 逐行/逐列遮盖 ≥ 70% 峰值取卡体 = `(72,53,771,1042)` ⇒ **699×989**，凸出的六边形与横幅飞边都在这个阈值之外）| `fit_card.py TONY_GRIEF cards/_src/TONY_GRIEF_CARD.png --no-detect --trim 0 --margin 0 --fill`：卡体正好铺满 256×320（横向 4:5，13% 拉伸），再套原生框 ⇒ 卡体矩形与卡面**对齐** |
 | `ZENITH.png` | 天顶剑（id 87）的卡面 | **Terraria 原版物品**（用户本机 Steam 版 `Content/Images/Item_4956.xnb`，56×56；物品号 4956，**不是** 4144） | `make_white_item_card.py ZENITH --item _src/ZENITH.png --fill`：白底 + 物品缩到画面区上限（LANCZOS）+ 原生框 |

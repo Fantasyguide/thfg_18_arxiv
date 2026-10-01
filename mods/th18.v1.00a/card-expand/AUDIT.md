@@ -4919,6 +4919,7 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 
 | 2026-10-02 | **所有卡**（共享资源 `assets/ability/**` + `assets/cards/**` + 共享数据 `patch/th18/cards.js` + 共享件 `native/Makefile`；新卡 **86 / 87**） | 见下方「§BE 详录 #210」 |
 
+| 2026-10-02f | **所有卡**（共享数据 `patch/th18/cards.js` + 共享资源 `assets/cards/**`；新卡 **90**）| 见下方「§BE 详录 #214」 |
 | 2026-10-02e | **所有卡**（共享资源 `assets/ability/**` + `assets/cards/**` + `assets/voice/**` + `patch/th18/cards.js` + `patch/th18/voice.js` + `native/Makefile`；新卡 **89**）| 见下方「§BE 详录 #213」 |
 
 | 2026-10-02b | **108 永夜抄 / 109 花映塚 / 112 星莲船 / 116 天空璋**（各自的私有掉落池各加一行「复制代数闸」）+ **所有卡**（共享件 `sdk_core.{h,c}` / `sdk.h` / `Makefile`） | 见下方「§BE 详录 #211（87 天顶剑按泰拉瑞亚还原）」与「#212（88 杰拉 + 跨卡复制闸）」 |
@@ -28106,3 +28107,34 @@ ce_dup_item_claimed(...); }` —— **同名 inline 自己递归自己**，编�
 - 讯息贴图是**预渲染**的（TH18 的 ASCII 字体图集没有汉字字形）；样式按 owner 给的实机截图逐像素对
   （两行居中、浅暖白 + 深色描边、行 1 字高 ≈43 / 行 2 ≈19、行距极紧；**截图证实不分币种配色**）。
 - `make check` exit 0（`cards-check` 46 张卡、`capcheck` 全绿、`dllx87 = 0`、`check-docs` 四项全绿）。
+
+## §BE 详录 #214（2026-10-02f）：**90 冰淇淋**（miss 不掉火力 + 符卡 +3）
+
+**谁改的**：统筹会话（owner 2026-10-02：「再加一张卡：冰淇淋（杀戮尖塔1或2都有这个遗物…）
+冰淇淋：miss 时不会损失火力，且 bomb 直接+3。正常 miss 时候会掉 1p 火力，并且 bomb 重设为 3 的」）。
+
+### 一手：TH18 一次 miss 原生做两件事（**这次是本条的新证据**）
+| 地址 | 做什么 |
+| --- | --- |
+| `0x45c135 call 0x45d090` | `Player__commit_death_and_enter_state2`：`CURRENT_BOMBS = clamp([0x4ccd60] = 3, 0, MAX_BOMBS)`（`0x45d1cb`–`0x45d1e8`）、`CURRENT_LIVES -= 1`（`0x45d19b`，写 `[0x4ccd48]`）、状态 → 2、HUD 刷新 |
+| `0x45c149 push [0x4ccd40]` + `0x45c154 call 0x457480` | `GlobalsInner__spend_power(一档)` ⇒ **`CURRENT_POWER -= 一档`**，钳到一档（`0x457497`–`0x4574a6`）。⚠ 只在 `[player+0x638] == 3` 那一帧走（`0x45c140`）|
+| `0x45c251`–`0x45c255` | 引擎**遍历卡表**（头 = `[0x4cf298 + 0x1c]`）逐个 `call [vtable + 0x14]` ⇒ 卡的回调 `on_death_frame2` **在扣完火力之后**被调 |
+
+⇒ 本卡在 `+0x14` 里把 `CURRENT_POWER` 写成生前值、`CURRENT_BOMBS` 写成「生前 + 3 钳上限」，
+即 owner 要的两条；顺手 `ce_gui_update_bombs()` 刷 HUD（`0x4420e0`，死亡结算里也是它刷的）。
+
+### 改到的文件
+| 文件 | 类型 | 改了什么 |
+| --- | --- | --- |
+| `native/cards/ice_cream.c` + `ice_cream_core.{c,h}` | 新卡（90）| 快照（只在 `player+0x476ac == 1` 采）+ `+0x14` 写回 |
+| `native/tests/test_ice_cream_core.c` + `native/Makefile` | **共享件** | 新单测（正常态才采 / 死态不覆盖快照 / +3 钳上限 / 同一次 miss 只写一遍 / NULL 输出），`test-host` 加一行 |
+| `assets/cards/ORDER.txt` + `ICE_CREAM_{max,min}.png` + `_src/ICE_CREAM{,_RELIC}.png` | **共享资源** | 尾插一行 ⇒ sprite 208/209（源 = 用户本机**已解包的杀戮尖塔 1** `images/largeRelics/iceCream.png`，按 alpha 裁出卡体再 `--fill`）|
+| `patch/th18/cards.js` | **共享数据** | 追加 `"90"`（`category 2` + 效果文案）|
+| `CARDS.md` | 台账 | 89 从「以撒」段挪进新的「致敬・泰拉瑞亚」段；新建「致敬・杀戮尖塔」段放 90；顺手修掉杰拉那条已经不成立的「卡图占位」说明 |
+
+### 影响面 + 回归
+- **零新增站点、零新资源 entry**（本卡没有任何 VM / 池 / 子机槽 ⇒ 删卡无事可做，`on_delete` 只清快照）。
+- 写引擎字段的时机严格照一手：`+0x0c` 只置位、`+0x14` 才写（两条都在引擎自己的死亡流程里，不在死亡栈上建东西）。
+- ⚠ 与救援层（107/117/113 的 `cancel_impending_death`）**不冲突**：被救回来的那一路在 `0x45c12d` 就跳走了
+  （既不走 `0x45d090` 也不走 `spend_power`）⇒ 本卡的 `+0x14` 也不会被调到（`0x45c255` 在同一条路上）。
+- `make check` exit 0（`cards-check` 47 张卡、`capcheck` 全绿、`dllx87 = 0`、`check-docs` 四项全绿）。

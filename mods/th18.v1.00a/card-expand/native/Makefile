@@ -207,6 +207,10 @@ test-host:
 ##   （定速直线 + 自转 + 闪烁 + 出界）与命中免疫计时（复刻默认 localNPCHitCooldown = 10）。
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_star_cannon_core tests/test_star_cannon_core.c cards/star_cannon_core.c
 	./tests/build/test_star_cannon_core
+## ★ 2026-10-02（90 冰淇淋）：miss 之后「火力写回生前值 + 符卡 = 生前 + 3（钳上限）」，
+##   以及「快照只在正常态采、同一次 miss 只写一遍」。
+	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_ice_cream_core tests/test_ice_cream_core.c cards/ice_cream_core.c
+	./tests/build/test_ice_cream_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_firelord_core tests/test_firelord_core.c cards/firelord_core.c -lm
 	./tests/build/test_firelord_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_truesilver_core tests/test_truesilver_core.c cards/truesilver_core.c
