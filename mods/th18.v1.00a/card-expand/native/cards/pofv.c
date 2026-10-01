@@ -84,7 +84,10 @@
 #define POFV_AURA_VM_LAYER         5
 #define POFV_GHOST_VM_LAYER        6
 #define POFV_POWER_VM_LAYER        7    /* 灵力道具在最上（要一眼可判「捡得到」）*/
-#define POFV_POWER_VM_SCALE      8.0f   /* ❓ 自定（视觉半径；≈ `POFV_POWER_ABSORB_R` = 12）*/
+#define POFV_POWER_VM_SCALE      1.0f   /* ★ 一手（2026-10-01）：画的是 TH18 原版 P 点
+                                          *   （`bullet/item.png` 的 (0,0,32,32)，见 `make_pofv109_power_art.py`），
+                                          *   原版 `script114` 的终值就是 `scale(1.0f,1.0f)` = **原生 32 px**
+                                          *   （出场那 16 帧由脚本的 `scaleTime` 从 0.5 长上来，卡侧让开）。*/
 
 /* 消弹调用的 max_count（照 Tenshi 的 0x1869f 量级；本卡两处都不想被截断）。*/
 /* ★ 2026-10-01（owner 甜头口径「抵挡护盾」）：`th18:0x45d590` = `Player__cancel_impending_death`
@@ -388,7 +391,11 @@ static void power_vm_sync(void)
 
     for (i = 0; i < POFV_POWER_MAX; ++i) {
         const pofv_power_t *it = &s_power.s[i];
-        if (it->active) {
+        /* ★ 一手（2026-10-01）：**「待发射」的错帧里不建 VM** —— TH16 的季节道具就是这么干的
+         *   （延时里 `item+0xc50 = 6`，延时结束才 `mov [item+0x530], 0xffffffff` 去建 VM；
+         *   116 `season.c` 562–565 行同款）。⇒ 本卡也让 VM 从 `delay` 归零那一帧才出现，
+         *   出场观感（`scaleTime` 0.5 → 1.0）正好落在「开始飞散」的瞬间。*/
+        if (it->active && it->delay == 0) {
             if (!s_power_vm[i])
                 s_power_vm[i] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
                                                       CE_ANM_ABILITY_SCRIPT_POFV109_POWER,

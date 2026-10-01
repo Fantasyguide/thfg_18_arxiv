@@ -9353,3 +9353,30 @@ esi = [edi+0x34] + 8; [ebp-4] = 0x2710;            /* clamp 10000 */
 ② 写 `assets/ability/make_pofv109_power_art.py`（照 `make_marisa_bullet_art.py` 的纪律 **1:1 切、不缩放**）；
 ③ `ORDER.txt` 追加一行 → `make anm` 出新 entry/sprite 号 → 一条脚本（**道具不是「伤害敌人的弹幕」⇒
    不受 owner 透明度铁律约束**）→ 换掉 `POFV_POWER_VM_*` 现在用的自建发光球（script 374）。
+
+#### ★★★ #4 外观**已落地**（2026-10-01）：照 TH18 原版 P 点
+
+一手：**TH18 自己的 `bullet/item.png`（256×64）就是原生道具表**，其中
+**`sprite504 = {x:0,y:0,w:32,h:32}` = 那颗红 P 方块**，而**原版画 P 点的脚本 `script114`** 是：
+
+```c
+sprite(sprite504); originMode(1); type(1);
+angleVel(0.0f, 0.0f, 0.7853982f);        /* 自旋 π/4 */
+scale(0.5f, 0.5f); scaleTime(16, 0, 1.0f, 1.0f);   /* 16 帧从半尺寸长到原尺寸 */
+```
+
+落地：
+- `assets/ability/make_pofv109_power_art.py`（**新**）：**1:1** 切 `(0,0,32,32)` →
+  `ability/pofv109_power/POWER_P.png`（32×32，sha256 `c522a14a8f0d352e…`），图集尺寸不对就直接报错；
+- `entries/ORDER.txt` **尾插**一行 `POFV109_POWER_P` → `anm_ids.h` 新增
+  `CE_ANM_ABILITY_SPRITE_POFV109_POWER_P = 572`（`entry90`），**既有 sprite 号一个没动**；
+- `scripts/374_pofv109_power.anm.txt` **重写**：逐条照抄上面那四行（只把 sprite 换成 572）；
+  ⇒ 上一版的「自建加算发光小球（`drawPoly(1.0f,16)`）」占位 **❓ #18 就此作废**；
+- `cards/pofv.c`：`POFV_POWER_VM_SCALE` 从 **❓8.0** 改成 **★1.0**（一手：原版终值
+  `scale(1.0f,1.0f)` = 原生 32 px）；`scaleTime` 那 16 帧里卡侧的 `set_scale` 会被让开
+  （`sdk.h` 的 `ce_anm_set_scale` 注释：脚本里有在跑的 `scaleTime` 时不覆盖）；
+- `cards/pofv.c` 的 `power_vm_sync()`：**`delay != 0` 时不建 VM** —— 一手「**待发射延时结束才建 VM**」
+  （TH16 `item+0x530 = 0xffffffff`；116 `season.c` 562–565）⇒ 出场那 16 帧正好落在开始飞散时。
+
+回归：`make anm` 通过、`make check` exit 0（418 文档）、`cards/pofv.c` 交叉编译 0 警告。
+⚠ 仍未做（#4 剩下的两小项）：**收回音效**（116 用 `se_item00`，升档 `0x3f`）。

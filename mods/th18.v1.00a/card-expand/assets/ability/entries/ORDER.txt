@@ -973,3 +973,9 @@ OPT_FALL_8    ability/season/OPT_FALL_8.png    16x16
 # ★★ 2026-09-30（108 的**使魔拖尾火花**）：TH08 `etama.anm` script71 的 sprite219（16×16，加法亮点）；
 #   追加在**文件末尾**（尾插 ⇒ 既有 entry/sprite 号一个不动，不制造共享件位移）。
 YOUKAI_FAM_TRAIL  ability/youkai_familiar/YOUKAI_FAM_TRAIL.png  16x16
+# ★★ 2026-10-01（109 的**灵力道具外观**）：TH18 **自己**的 `bullet/item.png` sprite504 = (0,0,32,32)
+#   就是原版的 **P 点**（一手：`bullet.anm` 的 `script114` = sprite(sprite504) + scale 0.5→1.0 用 16 帧
+#   + angleVel 自旋；见 `make_pofv109_power_art.py` 的文件头）。
+#   owner 口径：「灵力道具得按照类季节道具做，动态什么的一模一样」＋「完全类似与信仰点、P点等」。
+#   **追加在文件末尾**（尾插 ⇒ 既有 entry / sprite 号一个不动，不制造共享件位移）。
+POFV109_POWER_P  ability/pofv109_power/POWER_P.png  32x32
