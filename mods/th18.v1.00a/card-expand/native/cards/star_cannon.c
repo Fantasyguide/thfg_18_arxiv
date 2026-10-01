@@ -41,6 +41,17 @@
  *   `Game.RespawnInSuffix` 从 15 秒起数，所以"挂着 15 秒"才是那段界面的实际时长）。
  *   ⇒ 这里改成**固定 15 s**（900 帧 @60fps）、仍然**不淡入不淡出**（淡出这条原版没有）。*/
 #define SC_MSG_FRAMES   900        /* 15 s（owner 口径；原版倒计时也是 15 起步）*/
+/* ★★ 2026-10-03 owner：「仁慈一些，类似于 115 chapter finish 的淡出，当第一次碰触到的时候，
+ *   死亡讯息直接隐藏」⇒ 照 115（`lolk.c`）那套**防遮挡**做：
+ *     · 判据 = 自机（世界坐标换算到 640 空间）**碰进讯息贴图的矩形**（外扩 `SC_MSG_TOUCH_PAD`）；
+ *     · 动作 = 起一次 `SC_MSG_FADE` 帧的线性淡出再收（**帧数直接取 115 的 `LOLK_PANEL_FADE_FRAMES = 20`**），
+ *       **一次性**（淡掉就不再回来 —— owner 说「直接隐藏」，不是 115 那种"离开又回来"的连续抗遮挡）；
+ *     · 只在自机**活着**（`player+0x476ac == 1`）时判 —— 死亡演出里那具"尸体"不算碰触
+ *       （否则死在屏幕中央时会当场把自己的讯息点掉）。*/
+#define SC_MSG_HALF_W   186.0f     /* 讯息贴图 372×80 的一半（尺寸改了就跟着改）*/
+#define SC_MSG_HALF_H   40.0f
+#define SC_MSG_TOUCH_PAD 6.0f      /* 外扩一点算"碰到"（自机自己也有体积）❓ 自定 */
+#define SC_MSG_FADE     20         /* ★ 退场淡出帧数 = 115 的 LOLK_PANEL_FADE_FRAMES */
 
 typedef struct {
     ce_option_t opt;               /* 跟班槽 */
@@ -48,6 +59,7 @@ typedef struct {
     uint8_t     death_pending;     /* 死亡钩子里只置位（那一帧不建 VM）*/
     uint32_t    msg_id;            /* 讯息 VM（0 = 没有）*/
     uint32_t    msg_life;          /* 讯息剩余帧 */
+    uint32_t    msg_fade_t;        /* 退场淡出已走帧数（0 = 没在退场）*/
 } sc_card_t;
 
 _Static_assert(sizeof(sc_card_t) <= 496, "star_cannon: private state overflows CE_STATE_BYTES");
@@ -63,11 +75,26 @@ static void sc_place(ce_option_t *o)
     *(int32_t *)(p + CE_OPT_OFF_F_Y)  = (int32_t)(SC_OPT_F_Y * 128.0f);
 }
 
+/* 自机碰到讯息贴图没有（世界 → 640 空间：x 以场地中心 320 为 0、y 以场地上沿 16 起算，与 112 的换算同源）。*/
+static int sc_msg_touched(const float *pp)
+{
+    float x640, y640;
+    if (!pp) return 0;
+    x640 = 320.0f + pp[0];
+    y640 = 16.0f + pp[1];
+    if (x640 < SC_MSG_X - SC_MSG_HALF_W - SC_MSG_TOUCH_PAD) return 0;
+    if (x640 > SC_MSG_X + SC_MSG_HALF_W + SC_MSG_TOUCH_PAD) return 0;
+    if (y640 < SC_MSG_Y - SC_MSG_HALF_H - SC_MSG_TOUCH_PAD) return 0;
+    if (y640 > SC_MSG_Y + SC_MSG_HALF_H + SC_MSG_TOUCH_PAD) return 0;
+    return 1;
+}
+
 static void sc_msg_kill(sc_card_t *s)
 {
     if (s->msg_id) ce_anm_delete(s->msg_id);
     s->msg_id = 0;
     s->msg_life = 0;
+    s->msg_fade_t = 0;
 }
 
 /* 收光：星星 + 讯息 + 子机槽（不依赖 tick —— 商店里删卡只有 `on_delete` 跑得到）。*/
@@ -147,6 +174,7 @@ static int on_tick_2(ce_card_t *c)
         if (id) {
             s->msg_id = id;
             s->msg_life = SC_MSG_FRAMES;
+            s->msg_fade_t = 0;
             ce_anm_set_pos(id, SC_MSG_X, SC_MSG_Y, 0.0f);
             ce_anm_set_color(id, 0xffffffffu);   /* 颜色烘在贴图里（一手：暖红 229,127,127、不描边）*/
             ce_log("star_cannon: death message shown (591 platinum version) at (%.0f, %.0f)",
@@ -154,8 +182,22 @@ static int on_tick_2(ce_card_t *c)
         }
     }
     if (s->msg_id) {                     /* 挂满 15 s 再收（不再跟"复活了"走 —— owner 2026-10-03 定案）*/
+        int alive = (*(int32_t *)(p + CE_PLAYER_STATE) == 1);
         if (!ce_anm_get_vm(s->msg_id) || s->msg_life == 0) {
             sc_msg_kill(s);
+        } else if (s->msg_fade_t == 0 && alive && sc_msg_touched(ce_player_pos())) {   /* ★ 第一次碰到 ⇒ 起淡出 */
+            s->msg_fade_t = 1;
+            ce_log("star_cannon: death message dismissed (player touched it) - fading %d frames",
+                   SC_MSG_FADE);
+        } else if (s->msg_fade_t > 0) {                                   /* 115 式退场淡出（一次性）*/
+            int a = (int)(255u * (SC_MSG_FADE - s->msg_fade_t) / SC_MSG_FADE);
+            if (a < 0) a = 0;
+            ce_anm_set_color(s->msg_id, ((uint32_t)a << 24) | 0x00ffffffu);
+            if (s->msg_fade_t >= SC_MSG_FADE) {
+                sc_msg_kill(s);
+            } else {
+                s->msg_fade_t++;
+            }
         } else {
             s->msg_life--;
         }
