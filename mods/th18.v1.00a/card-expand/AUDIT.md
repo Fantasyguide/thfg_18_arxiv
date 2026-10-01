@@ -26739,3 +26739,29 @@ sprite/size（真 48×48 且不在白名单 ⇒ 它们不会出现 = 修好；�
 ⇒ **「没使魔了、但应当是右上角贴图的那种大妖精」= 4 面道中的那只**（不是 5 面）。下一轮用 `spriteprobe`
 定位时**只看 4 面道中那一段的行**（**优先取 `big 0` 的失败样本**），拿到 sprite 号后再定白名单补哪一段
 （**108 与 117 同步**）。此条同时适用于「6 面关底小妖精掉动物灵」那条（§BE #181 前后的协同排查）。
+
+## §BE 详录 #182（2026-10-01）：probe 加 **scale / 视觉尺寸**（owner #86 数据：那只 4 面道中大妖精 **rect < 48**）
+
+> **owner #86（`build Oct 1 15:57:05`，4 面道中）日志**：`youkai/spriteprobe:` **整局只有 1 行**
+> `enemy #295 sprite 0 size 64x64 big 1`；`popup pool full` = 0 ✓；`xfer[… rect 465 …]` ✓。
+> ⇒ owner 说的那只「**4 面道中大妖精**」**根本没进 probe** ⇒ **它的 rect < 48**
+> ⇒ 新假设：它是 **「小 rect + anm 放大」**（**视觉大、rect 小**）⇒ **rect 判据可能从一开始就选错了量**。
+
+**已改（只加日志）**：probe 现在打
+`youkai/spriteprobe: enemy #%u sprite %d rect %ux%u scale %.2f vis %.0fx%.0f big %d`
+—— `scale` 读 `vm+0x54/+0x58`（zFloat2，一手 `engine.h:329` / `sdk.h:340`；**同样过 `IsBadReadPtr`**），
+`vis = rect × scale`；候选门槛放宽到「**rect ≥ 48 或 视觉 ≥ 48**」（同 sprite 只打一次）。
+⇒ owner 再打一次 **4 面道中**就能同时看到 rect 与 scale。
+
+**三条候选判据（**未实现**，等你拍；108 与 117 必须一致）**
+| 方案 | 代价 | 风险 / 影响面 |
+| --- | --- | --- |
+| **(a) 视觉尺寸**（rect × scale ≥ 阈值）| 小（判据里多读一次 scale，两个卡各几行）| 需 `IsBadReadPtr` 守卫；**117 的 `big-enemy drop`（动物灵）会跟着变**（这可能是**想要的**）；阈值要等实测 |
+| **(b) 按 HP** | 小（我们有现成 HP 读取；117 也读 HP）| **一手支持**：TH08 的使魔数量本来就按 **HP 档**挂钩（`engine/enemy/th08/03-…md`）⇒ 语义更稳；但**会改变 117 的掉灵面**（HP 阈值要挑：道中 boss 高 HP、大妖精中 HP、杂鱼低 HP）|
+| **(c) rect + 白名单** | 最小 | **不推荐**：那只 rect < 48 ⇒ 白名单会把**它和普通小怪混在一起**（无法区分）|
+
+**推荐**：**(b) HP 优先**（一手语义最硬、且 108/117 都已在读 HP），**视觉尺寸 (a) 作为 HP 不好分档时的补充**；
+具体阈值等 owner 再打一次 4 面道中（拿到那只的 rect/scale/HP）再定。
+
+**闸**：`make -s check` rc=0（`youkai_core: 8799 checks, 0 failed`、`dllx87 = 0`）、`sites.py verify` 全对上、
+`capcheck` 全绿、`check-docs` 全过。

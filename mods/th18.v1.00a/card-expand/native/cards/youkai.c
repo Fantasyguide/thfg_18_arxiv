@@ -1468,12 +1468,26 @@ static void yk_orbit_scan(uint32_t frame)
              *   `spriteprobe` 一行都没有 ⇒ 那一局**没有任何敌人被判为大怪**，看不到它的 sprite）：
              *   改成对**所有尺寸 ≥ 48 的敌人**都打一行（**含 `big 0` 的失败样本**），同一 sprite 只打一次。
              *   ⇒ owner 打一次 5 面就能看到那只大妖精的 **sprite 号**，再决定白名单补什么（**不猜**）。*/
+            /* ★★★ 2026-10-01（owner #86 实测：整局只有 1 行且是 64×64 ⇒ 那只「4 面道中大妖精」
+             *   **没进 probe** ⇒ 它的 **rect < 48**）—— 新假设：它是 **「小 rect + anm 放大」**
+             *   （**视觉大、rect 小**）⇒ 判据用 rect 可能**从一开始就选错了量**。
+             *   探针加 **scale**（`vm+0x54/+0x58` zFloat2，一手 `engine.h:329` / `sdk.h:340`）与
+             *   **视觉尺寸 = rect × scale**，并把候选门槛放宽到「rect ≥48 **或** 视觉 ≥48」。*/
             {   static int8_t s_probe_done[512];
+                uint8_t *pvm = *(uint8_t **)(e + CE_ENEMY_ANM_VM0);   /* 探针自己取一次（防悬垂见下）*/
                 int big = yk_big_by_sprite_id(w, h, spid);
-                if ((w >= 48 || h >= 48) && spid >= 0 && spid < 512 && !s_probe_done[spid]) {
+                float sx = 1.0f, sy = 1.0f, vw = (float)w, vh = (float)h;
+                int visbig;
+                if (pvm && !IsBadReadPtr((const void *)(pvm + 0x54), 8)) {   /* scale 读也要防悬垂 */
+                    sx = *(const float *)(pvm + CE_ANM_VM_SCALE);
+                    sy = *(const float *)(pvm + CE_ANM_VM_SCALE + 4);
+                }
+                vw = (float)w * sx; vh = (float)h * sy;
+                visbig = (vw >= 48.0f && vh >= 48.0f) ? 1 : 0;
+                if ((w >= 48 || h >= 48 || visbig) && spid >= 0 && spid < 512 && !s_probe_done[spid]) {
                     s_probe_done[spid] = 1;
-                    ce_log("youkai/spriteprobe: enemy #%u sprite %d size %ux%u big %d",
-                           (unsigned)id, spid, w, h, big);
+                    ce_log("youkai/spriteprobe: enemy #%u sprite %d rect %ux%u scale %.2f vis %.0fx%.0f big %d",
+                           (unsigned)id, spid, w, h, (double)sx, (double)vw, (double)vh, big);
                 }
                 if (!big) { ++small; continue; }
             }
