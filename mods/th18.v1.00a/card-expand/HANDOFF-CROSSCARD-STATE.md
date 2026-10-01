@@ -208,4 +208,37 @@ cd mods/th18.v1.00a/card-expand/native && python3 sites.py check && make check
 `CLAUDE.md` 现在写「其余（id 58–80 那批…）**属于别人**」—— 与你「我将开始开发非系统卡」矛盾。
 **在你点头之前我没改那份文件**（它是给所有 agent 看的规则面）。要改就这么改：
 「id 58–80 = **owner 本人的工作面**（统筹 = 同一名统筹 agent）」+ 指向本节的台账。
+## 12. agent 代打工作线（`upstream/stg-agent-proto`）—— owner 2026-10-01「考虑进来」
+
+> **owner 口径**：「那 **agent branch** 考虑进来吧，我记得那边是要加一些**算法代打**的卡」
+> ⇒ 我读了那条分支（**只读，不动**），把它的真实形状记在这里，避免「记忆」与「分支实际内容」错位。
+
+| 项 | 事实（分支实测） |
+| --- | --- |
+| **它是什么** | 「**AI 代打**：观察/动作契约（`stg-agent-proto`）+ 单 DLL 桥」：契约 = `ap_world_t` 观察 + 动作位（`UP…SHOT/BOMB/SLOW/TIMESTOP/CARD_USE/CARD_SWITCH`）+ phase 位 + `.stglog` 日志；**运行时零 Python / 零网络**（第二版设计，第一版 TCP 锁步已作废）|
+| 设计文档 | `docs/superpowers/specs/2026-09-10-ai-agent-bridge-design.md`（§4 契约 v1 / **§5 TH18 桥** / §6b th06nc 桥 / §7 TH18 引擎层缺口 G1–G4）＋ 计划 `docs/superpowers/plans/2026-09-11-stg-agent-proto.md` |
+| **已实现（那边）** | **th06nc 桥** = `mods/th06nc/autoplay/`（代理 DLL + `Player__OnUpdate` 跳板，已实跑）＋契约仓 `stg-agent-proto`（C 编码器 + Python 读取器 + pytest + 交叉编译）|
+| **未实现（设计好）** | ★ **TH18 桥** = 新 mod `mods/th18.v1.00a/agent-bridge/`（spec §5.1 给了完整结构：`th18.h` / `bp_agent.c` / `extract_th18.c` / patch 三件套）|
+| TH18 桥的注入点 | 断点 `th18:0x462966`（`e8 55 82 fc ff` / 5 B，放行原指令）；体内顺序 = 抽取 → `policy_step` → **整体覆盖 `INPUT_HELD`** → 写 OBS/ACT → 返回 1 |
+| ⚠ **与我们的 K4 撞点** | 同一个 **5 字节窗口 `th18:0x462966`** 现在**三个申请者**（mouse-control hook 2 / agent-bridge 断点 / 我们的 K4 借位）⇒ 见 §12.1 |
+| ⚠ 前置 | 契约仓 `stg-agent-proto` 是**独立仓库**（spec 里写的路径是另一台机的 `/data/sunyunbo/www/stg-agent-proto`）⇒ 本机落地前要先**取过来 / vendor 进 `local/vendor/`**（owner 决定）|
+| 与卡线的关系 | 那边顺带的 TH18 新卡 = **81–85**（黑莲花 / 阳光戒指 / 火球术 / 向日葵 / 金盏花；见 §11.3b）—— **语义上与代打无耦合**（MTG / 炉石 / PvZ 主题），只是一起长在那条分支上 |
+| §7 的引擎缺口（G1–G4）| G1 frame-loop 优先级 / G2 道具池布局 / G3 激光几何 / G4 自机状态机 —— **我们后来的文档已补掉一部分**（如 G2 的 `zItem` 字段 = `engine.h` 的 `CE_ITEM_*`），真要做桥时先按 §7 逐条对一遍再动 |
+
+### 12.1 ⚠ `th18:0x462966` 的三个申请者（**站点只有一条**）
+
+| 申请者 | 用途 | 会不会写 `INPUT_HELD` |
+| --- | --- | --- |
+| `mods/th18.v1.00a/mouse-control` 的 hook 2 | 鼠标控制 | 是 |
+| `agent-bridge` 的断点（spec §5.2）| 代打：**整体覆盖** `INPUT_HELD` | 是 |
+| 我们的 **K4「借一个空闲输入位」**（`engine/input/th18/01-key-mapping.md` §3.3）| 把掩码外的物理键塞进掩码（给需要新键的卡）| 是（OR 上位）|
+
+⇒ **同一时刻只能有一个**（同一段 5 字节被换成不同的 cave 调用）；三者都要在 `AUDIT.md` §BE 登记谁在占。
+**K4 现在没启用**（`TUNING.md` 的 K4 标「未启用」）⇒ 若将来要给某张卡加独立键，先确认 mouse-control / agent-bridge 有没有占这条。
+
+**我要请你拍的一条**：这条线里到底要我统筹哪个？
+1. **只搬那五张卡（81–85）**：我可以按上游那版移植（卡表行 + 实现 + 单测 + 卡面图 + §BE 登记），走的还是 §11 的七步流程；
+2. **把「TH18 桥」当一条工作线立起来**：那我先做**只读**的现状/缺口台账（对 §5/§7 逐条核我们 `engine/` 与 `mods/` 的现状，列出可复用与缺口），再等你决定要不要真开；
+3. **两者都要**：我先出「桥的台账」，再按 §11 流程搬家那五张。
+
 
