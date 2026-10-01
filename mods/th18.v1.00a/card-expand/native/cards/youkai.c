@@ -2948,7 +2948,7 @@ static void yk_option_release(ce_card_t *c, yk_card_t *s)
  *   ⇒ owner 用「0 版」打一次人形态：**激光恢复正常 ⇒ 凶手在本卡的人侧子机写入**；
  *     仍然异常 ⇒ 与本卡无关（回去查引擎侧，需要 dump/时序）。
  *   ⚠ 只影响**人侧**；妖侧一行不变（妖侧的隐藏/收束/膛口镜像都是功能本体）。*/
-#define YK_HUMAN_OPT_WRITE 1
+#define YK_HUMAN_OPT_WRITE 0
 
 static int on_option_pose_apply(ce_card_t *c)
 {
