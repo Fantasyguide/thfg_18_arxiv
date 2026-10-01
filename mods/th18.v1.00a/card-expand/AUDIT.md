@@ -27648,3 +27648,28 @@ if (ev->has_enemy_pos && yk_hit_orb_use_enemy_pos(…) { … }  s_bhit_ex[idx] =
 **结论**：**常态异常（一节一节长出 / 命中处断节 / 蓝闪断续）已修**（`CB_BULLET_HIT` 那条路径：命中回调改为纯记录 +
 判据/落点/撒符挪到 `on_tick_2` 的 flush；`on_bullet_created` 加妖侧门）。
 **残余的「首次命中一瞬」在 #114 仍在、owner retry 不可复现 ⇒ 按已解决处理**（不追 SDK 站点、不动共享件）。
+
+## §BE 详录 #166（2026-10-01）：109 的灵力道具**照 116 的季节道具借做法**（不碰它的槽/脚本号）
+
+**谁改的**：109 的 owner 会话。**碰到别人的卡**：116（季节，`cards/season.c` / `cards/season_core.*`）。
+
+**口径**：owner 2026-10-01「**灵力道具得按照类季节道具做，动态什么的一模一样**」。
+
+**借了什么**（**只借做法，不借代码、不占任何槽/脚本号**）：
+
+| 借的项 | 一手出处（116 文档里已列的） | 109 落到哪 |
+| --- | --- | --- |
+| 出生先「待发射」的**错帧** | TH16 `item+0xc50` = 6→3；错帧 = `total_items_created & 3` 帧（`0x430a0e` 段）| `POFV_POWER_SCATTER_DELAY_MASK 3` + `pofv_power_tick()` 的头两行 |
+| **直线飞散**：角整期不变、剩余速度每帧 −0.03 | TH16 `item+0xc24` / `item+0xc20`（`0x42f54e` / `0x430c90`）| `pofv_power_t` 的 `dx,dy` / `lr` + `POFV_POWER_DECEL 0.03f` |
+| 初速量级 | 原生 main-drop 实参 **2.2**（`cards/collect2x.c` 的注释）| `POFV_POWER_SCATTER_SPEED 2.2f`（❓ 另一候选 = 116 那边的 1.2）|
+| 飞散方向 | 一手只给「角在飞散期不变」，**没给角的分布** | ❓ 自定：8 向单位向量表（**不引 libm**）|
+
+**没有借的**：116 的 `SEASON_*` 脚本号 / 槽位 / anm 条目 / 常量命名 / 它的季节逻辑 —— 109 用的是
+自己的 `POFV_POWER_*` 常量、自己的 VM（script 374）与自己那套池。
+
+**对 116 的影响面**：**无**（只读它的注释与常量表当参考，一个字节都没改它的文件）。
+`git diff --stat` 可核：本批 commit 只动 `native/cards/pofv_core.{h,c}` / `native/tests/test_pofv_core.c`
+/ `TUNING.md` / `AUDIT.md` / `tooling/eclmap/*` / `engine/card/th09/*` / `engine/enemy/th18/*`。
+
+**验证**：`make check` exit 0（含 `test_season_core` 601 断言、`test_pofv_core` 808 断言）；
+`cards/pofv.c` 交叉编译 0 警告。
