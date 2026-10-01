@@ -1110,7 +1110,14 @@ static void yk_orbit_pin(uint8_t *f, float x, float y)
     *(float *)(f + CE_ENEMY_POS_Y) = y;
     *(float *)(f + YK_ENEMY_ABS_POS) = x;                 /* + abs_pos（同 `yk_pin_familiar`）*/
     *(float *)(f + YK_ENEMY_ABS_POS + 4) = y;
-    *(uint32_t *)(f + CE_ENEMY_FLAGS) &= ~(uint32_t)CE_ENEMY_FLAG_NO_DAMAGE;
+    /* ★★★ 2026-10-01（**owner 口径**，真 bug）：「**妖状态下应当使魔是无敌的，也不会被索敌也不会被伤害，
+     *   也不会有体术**，目前是妖状态下它只是**样子隐去了**」⇒ 这里按**侧**给免伤位：
+     *   **妖侧（聚焦）⇒ 置 `CE_ENEMY_FLAG_NO_DAMAGE`**（自机弹打不进、也进不了索敌/伤害结算）、
+     *   人侧 ⇒ 清掉（保持可打 —— 这正是「打死使魔 ⇒ 1/2 转嫁」与一手一致的前提）。
+     *   ⚠ 这是 **owner 口径**（`engine/enemy/th08/04-…md` §9 那条「按 shift 使魔变魔法阵、不碰撞也打不到」），
+     *     不是一手复刻（一手是引擎自己的侧门）。体术那一路由 `yk_fam_collide_tick` 的聚焦早退负责。*/
+    if (CE_PLAYER_FOCUSED()) *(uint32_t *)(f + CE_ENEMY_FLAGS) |= (uint32_t)CE_ENEMY_FLAG_NO_DAMAGE;
+    else *(uint32_t *)(f + CE_ENEMY_FLAGS) &= ~(uint32_t)CE_ENEMY_FLAG_NO_DAMAGE;
 }
 
 /* float → 像素（四舍五入；117 `animal.c` 的 `animal_round_px` 同款，那边是 static ⇒ 这里自己一份）。
@@ -4867,6 +4874,21 @@ static void on_delete(ce_card_t *c)
     ce_log("youkai: card deleted - withdrawing familiars "
            "(%u spawned, %u killed, %u transfer damage this run)",
            s ? s->spawns : 0, s ? s->broken : 0, s ? s->transferred : 0);
+    /* ★★★ 2026-10-01（owner #78 ③：这两行原来挂在 `on_run_reset`，**那一路这一局没跑**）⇒
+     *   **挪到删卡/撤离这条一定会跑的路径**上，保证每局必出。*/
+    ce_log("youkai: run done - %u familiars spawned, %u killed, %u withdrew, %u silent, "
+           "%u transfer damage, %u dropped (no boss), xfam %u xtab %u, "
+           "xfer[tick %u map %u/%d orb %u/%d ext %u/%d rect %u fail %u noboss %u]",
+           s ? s->spawns : 0, s ? s->broken : 0, s ? s->lost : 0, s ? s->silent : 0,
+           s ? s->transferred : 0, s ? s->dropped : 0, s_xfam_fed, s_xfam_used,
+           s_xfer_tick_calls,
+           s_xfer_mapped_feed, s_xfer_mapped_delta, s_xfer_orbit_feed, s_xfer_orbit_delta,
+           s_xfer_ext_feed, s_xfer_ext_delta, s_xfer_rect, s_xfer_rect_fail, s_xfer_noboss);
+    ce_log("youkai/emitkey: pairs %u seen %u reappeared %u new_after_off %u acts %u "
+           "(acts==0 => we never even SAW an active emitter slot; reappeared>0 => ordinal STABLE; "
+           "reappeared==0 && new_after_off>0 => DRIFTED)",
+           s_emitkey_pairs, s_emitkey_pairs, s_emitkey_reappeared, s_emitkey_new_after_off,
+           s_emitkey_acts);
     yk_drop_all(s, 0);
     yk_ring_kill_all();                                  /* ★ 切换环：删卡那一刻 tick 停着 ⇒ 直接收 */
     yk_popup_kill_all();                                 /* ★ #27：弹字（删卡那一刻 tick 停着）*/

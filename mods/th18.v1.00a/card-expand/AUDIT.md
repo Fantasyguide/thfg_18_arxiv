@@ -26532,3 +26532,30 @@ youkai/emitkey: pairs %u seen %u reappeared %u new_after_off %u
 
 **闸**：`make -s check` rc=0（`youkai_core: 8791 checks, 0 failed`、`dllx87 = 0`）、`sites.py verify` 全对上、
 `capcheck` 全绿、`check-docs` 全过。
+
+## §BE 详录 #173（2026-10-01）：妖侧使魔**无敌**（owner 口径，真 bug）+ 诊断挪到必经路径 + 转嫁比例旋钮
+
+> **owner**：「**妖状态下应当使魔是无敌的，也不会被索敌也不会被伤害，也不会有体术**，目前是妖状态下
+> 它只是**样子隐去了**」；另 `run done … xfer[…]`/`emitkey` 汇总**一行都没有**（而 `card deleted` 有）。
+
+**① 妖侧无敌（改 `youkai.c` 的 `yk_orbit_pin`）**：原来那一行是**无条件清** `CE_ENEMY_FLAG_NO_DAMAGE`
+（= orbit `… damageable with HP` 的由来）。现在按**侧**：**聚焦（妖侧）⇒ 置位**（打不进、也进不了伤害/索敌结算）、
+**人侧 ⇒ 清掉**（保持可打 —— 一手/我们「打死使魔 ⇒ 1/2 转嫁」的前提）。体术那一路本来就已由
+`yk_fam_collide_tick()` 的 `if (CE_PLAYER_FOCUSED()) return;` 早退覆盖。**依据 = owner 口径**（不是复刻），
+已写进代码注释 + `TUNING.md`；对照 `engine/enemy/th08/04-…md` §9（「按 shift 使魔变魔法阵、不碰撞也打不到」）。
+⚠ 转嫁喂料：妖侧使魔不再掉血 ⇒ 采样差分恒 0 ⇒ **不会误算**（它会自然停喂）。
+
+**② 转嫁「在跑但小」**：实跑 `80 transfer damage` / 4 killed ≈ 每台 20–50（一手 HP/2 = 50/50/150/300，取决档位）
+⇒ **机制是通的，量级是 1/2 本身**。加 **`YK_TRANSFER_PCT`（默认 50）** 旋钮（`youkai_core.h`/`yk_transfer_feed`），
+**默认路径仍走原来的半整数进位器**（`#if YK_TRANSFER_PCT == 50` ⇒ 逐字节同旧行为）；要「有感」改这一格或
+`YK_ORBIT_HP_SCALE`。**没有偷偷改比例**。实跑判据：`杀死 N 台 ⇒ transferred ≈ Σ(HP_i)/2`。
+
+**③ 诊断挪路径**：`run done … xfer[…]` 与 `emitkey` 汇总原来挂在 `on_run_reset`（那一局**没跑**）⇒
+**挪到 `on_delete`**（删卡/撤离必经）⇒ **每局必出**。
+
+**④ 6 面小妖精爆动物灵（🟡 未定位）**：#74 把阈值 64→48 后，**8 张归属未核的 48×48** 可能把小妖精纳入
+「大怪」⇒ 117 分支触发。**本轮未改**（需先定位那批敌人的 sprite/entry）；若确认是它们，最小改法 =
+**阈值 + 排除项**或**显式白名单**（两种大妖精 `sprite72..87` + 大蝴蝶那批），**108/117 两边同步**（届时追加 §BE）。
+
+**闸**：`make -s check` rc=0（`youkai_core: 8791 checks, 0 failed`、`dllx87 = 0`）、`sites.py verify` 全对上、
+`capcheck` 全绿、`check-docs` 全过。

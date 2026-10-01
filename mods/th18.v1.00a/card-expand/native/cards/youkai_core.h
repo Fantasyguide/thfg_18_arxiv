@@ -1179,6 +1179,11 @@ int32_t    yk_clamp_spawn_life(int32_t life);
  * `0x45f45a` ⇒ 不能复用）+ 同帧 `ce_raise_damage_cap(基值 + 转嫁值)`。
  * 比例 = 1/2（**用户 2026-09-12 定案**；❓ 自定 —— TH08 没有这条管线，不是复刻，spec §3.7）。*/
 #define YK_TRANSFER_DEN 2                       /* 1/2 */
+/* ★★★ 2026-10-01（owner：「体感 1/2 伤害转移没有生效」→ 其实**在跑但量小**：实跑 `80 transfer damage`）：
+ *   **转嫁比例旋钮**（百分比）。**默认 50 = 一手 1/2**（出处 `local/_scratch/research-108-damage-transfer.md`，
+ *   🟡 `th08:0x451670`/`0x4517f6` 未逐指令复核）⇒ **没有为了「有感」偷偷改比例**；owner 若要有感，
+ *   改这一格（或 `YK_ORBIT_HP_SCALE` 提升使魔血量档）。*/
+#define YK_TRANSFER_PCT 50
 #define YK_TRANSFER_CAP_PER_FRAME 0             /* ★ TODO(决策 §7.5-1)：单帧转嫁上限。0 = 无上限（占位）。
                                                  *   研究提醒：使魔一刀 2000 ⇒ boss 一帧 1000，会顶掉 boss 的
                                                  *   每帧配额并放大计分 ⇒ 要不要封顶由用户定。*/

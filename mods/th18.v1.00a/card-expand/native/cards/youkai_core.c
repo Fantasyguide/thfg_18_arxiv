@@ -847,7 +847,11 @@ int32_t yk_half_with_carry(int32_t delta, int32_t *carry)
 void yk_transfer_feed(yk_transfer_t *t, int32_t delta)
 {
     if (!t || delta <= 0) return;
-    t->pending += yk_half_with_carry(delta, &t->carry);
+#if YK_TRANSFER_PCT == 50
+    t->pending += yk_half_with_carry(delta, &t->carry);         /* 一手 1/2（默认；走半整数进位器）*/
+#else
+    t->pending += (int32_t)((int64_t)delta * (int64_t)YK_TRANSFER_PCT / 100);   /* ❓口径旋钮 */
+#endif
 }
 
 int32_t yk_transfer_clamp(int32_t pending, int32_t cap)
