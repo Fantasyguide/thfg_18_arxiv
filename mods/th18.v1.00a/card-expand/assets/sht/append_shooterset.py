@@ -82,6 +82,7 @@
 import argparse
 import re
 import struct
+import math
 import sys
 from pathlib import Path
 
@@ -1965,22 +1966,45 @@ def _pofv109_bossatk_sets(anm_ids: dict) -> list:
     #   C3 C4 是打对面**」。⇒ 本表照这个取向配：
     #   · **C1 / C2 = 伤害取向**：**少而重**（路数少、单发重、节奏慢）；
     #   · **C3 / C4 = 打对面取向**：**多而密**（路数多、扇面宽、节奏快 = 符卡/非符的观感）。
-    # (名字, fire_rate, 单发伤害, [(spawn_dx, angle), …])；angle = −π/2 = 正上方（**由下至上**）
+        # ★★★ 2026-10-01 重做（owner 实跑订正 #3）：**四档都是「环」**。
+    #   一手（`engine/card/th09/03` §4.5）：TH09 三角色的符卡用的都是 `etRing` / `etRingAway`
+    #   （名字从**同代** th08 的手工 eclmap 借来：opcode 99 = `etRing`、101 = `etRingAway`）：
+    #     · 灵梦 = 两种环各两组、颗数 **2 与 15**、两侧不对称；
+    #     · 魔理沙 = 环的**基准角 3π/4 与 π/4**（斜向）；
+    #     · 咲夜 = 速度实参 **2.0f**（比另两位的 0.5f 快 4 倍）＋ `shoot_offset` ＋ 子敌人。
+    #   ⇒ 本表把「一颗子弹 = 一行」堆成**整圈**（N 行 = N 颗环），四档的差别照一手取在
+    #     **颗数 / 圈数 / 速度**上：
+    #       C1 = 1 圈 6 颗（≈ 灵梦那圈「少」的）
+    #       C2 = 1 圈 12 颗
+    #       C3 = 2 圈（12 + 12，第二圈整圈偏 15°≈ 魔理沙那种「斜基准角」）
+    #       C4 = 1 圈 12 颗但**速度 ×1.5**（≈ 咲夜那圈「快 4 倍」的方向；我们的速度空间另算，
+    #            取 24 = 16×1.5，别直接搬一手的 2.0f）
+    #   ⚠ 方向：环是**整圈**（360°），所以「由下至上」体现为**环心在自机、环整体向上推进** ——
+    #     owner「版底 boss 位、180° 反转、往上发」在「整圈」这种形态下就是**环本身**。
     U = -1.5707964
+
+    def ring(n, base=0.0, speed=16.0, rate=5, dmg=12, phase=0.0):
+        """n 颗一整圈（每颗一行，角均分）+（可选）整圈相位 `phase`。"""
+        rows = []
+        for k in range(n):
+            ang = base + phase + (2.0 * math.pi) * k / n
+            rows.append((0.0, ang, speed, rate, dmg))
+        return rows
+
     specs = [
-        ("POFV109_BOSSATK_C1", 6, 24, [(0.0, U)]),                                  # 打伤害：一路重弹
-        ("POFV109_BOSSATK_C2", 5, 18, [(-16.0, U - 0.06), (16.0, U + 0.06)]),       # 打伤害：两路
-        ("POFV109_BOSSATK_C3", 5, 12, [(-24.0, U - 0.14), (0.0, U), (24.0, U + 0.14)]),   # 打对面
-        ("POFV109_BOSSATK_C4", 3, 10, [(-48.0, U - 0.28), (-24.0, U - 0.14), (0.0, U),
-                                       (24.0, U + 0.14), (48.0, U + 0.28)]),        # 打对面（最密）
+        ("POFV109_BOSSATK_C1", ring(6,  speed=16.0, rate=6, dmg=14)),            # 6 颗环
+        ("POFV109_BOSSATK_C2", ring(12, speed=16.0, rate=5, dmg=11)),            # 12 颗环
+        ("POFV109_BOSSATK_C3", ring(12, speed=16.0, rate=5, dmg=10)              # 两圈：第二圈偏 15°
+                               + ring(12, speed=16.0, rate=5, dmg=10, phase=math.pi / 12.0)),
+        ("POFV109_BOSSATK_C4", ring(12, speed=24.0, rate=3, dmg=10)),            # 12 颗环、速度 ×1.5
     ]
     out = []
-    for name, rate, dmg, rows in specs:
+    for name, rows in specs:
         rs = [dict(fire_rate=rate, start_delay=0, damage=dmg, hit_w=16.0, hit_h=16.0,
-                   spawn_dx=dx, spawn_dy=0.0, angle=ang, speed=16.0, opt_slot=0, mode=0,
+                   spawn_dx=dx, spawn_dy=0.0, angle=ang, speed=spd, opt_slot=0, mode=0,
                    anm="CE_ANM_ABILITY_SCRIPT_POFV109_BOSSATK", sfx=-1, hit_fx=-1,
                    fire_rate2=0, start_delay2=0, func_on_init=0, func_on_tick=0,
-                   func_on_draw=0, func_on_hit=0) for dx, ang in rows]
+                   func_on_draw=0, func_on_hit=0) for dx, ang, spd, rate, dmg in rows]
         out.append((name, b"".join(pack_shooter(r, anm_ids) for r in rs) + TERMINATOR))
     return out
 
