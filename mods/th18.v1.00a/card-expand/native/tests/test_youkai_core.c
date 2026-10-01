@@ -1010,8 +1010,8 @@ int main(void)
     CHECK(yk_withdraw_all(&m, s_acts, (int)YK_FAM_MAX) == 1);
     CHECK(yk_map_fam_count(&m) == 0);                    /* 处理完 ⇒ 表清空 */
     CHECK(yk_withdraw_all(&m, s_acts, 1) == 0);
-    CHECK(sizeof(yk_map_t) <= 1024u);                 /* 静态表预算（现 32 × 28 + 8 = 904 B）*/
-    CHECK(sizeof(yk_slot_t) == 28u);                  /* ★ route A 的 rearm_pending 塞进 padding，不许撑大 */
+    CHECK(sizeof(yk_map_t) <= 1100u);                 /* 静态表预算（现 32×32 + 16 = 1040 B；原来 ≤1024）*/
+    CHECK(sizeof(yk_slot_t) == 32u);                   /* ★ owner ② 的 `eton_gap` 把 28 → 30 → 32 B（对齐）*/
 
     /* ============================== §3.7 伤害转交 1/2：取整 */
     yk_transfer_reset(&t);
@@ -1210,7 +1210,9 @@ int main(void)
      *      一波之内**不再自己复活**（`rearm_pending` 降级为纯记账）；
      *    ② 主复位口 = ECL 重新武装边沿 / **波次边沿**（`yk_fam_wave_clear`）/ 相位撤壳 / 整表清；
      *    ③ **新增长期 TTL**（`YK_EMIT_REBUILD_TTL` = 600 帧 ≈ 10 s）到期自动放行 + 重建。 */
-    CHECK(sizeof(yk_slot_t) == 28u);                  /* 新字段塞进 padding（上面那条是同一件事）*/
+    /* ★★★ 2026-10-01（owner 实跑 ②）：加了 `eton_gap`（`etOn` 间隔 ⇒ 波次边沿）⇒ 28 → 30 → 32 B
+     *   （对齐）；`yk_map_t` = 32×32+16 = 1040 B（静态表，不进 496 B 的卡状态预算）。*/
+    CHECK(sizeof(yk_slot_t) == 32u);
     CHECK(YK_EMIT_REBUILD_TTL == 600u);               /* ★ owner 2026-10-01：≈10 s 的自动重建 */
     yk_map_reset(&m);
     yk_frame_begin(&m);
@@ -1293,6 +1295,72 @@ int main(void)
     CHECK(yk_note_slot(&m, 801, 0, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);  /* 新条目、无残留 */
     CHECK(yk_shot_slot_suppressed(&m, 801, 0, 0) == 0);
     }
+
+    /* ============ ★★★ 2026-10-01（owner 实跑 ②）：**波次边沿 = `etOn` 的间隔** ============
+     * 一手 ECL（`local/_scratch/st05mbs.asm` 的 `MBoss1`）：一波 = 一次 `MBoss1_at`（`etNew(0/1)`
+     * + 配置 + 30 × (`etOn`×4 + `wait(12)`）），波间 = `wait(30)`×2 + moveRand ≥ 60 帧
+     * ⇒ 阈值 `YK_EMIT_WAVE_GAP`(24) 能把「波内 12 帧」与「波间 ≥60 帧」分开。*/
+    CHECK(YK_EMIT_WAVE_GAP == 24);
+    CHECK(YK_EMIT_WAVE_GAP > 12 && YK_EMIT_WAVE_GAP < 60);   /* 一手两个间隔之间 */
+    yk_map_reset(&m);
+    yk_frame_begin(&m);
+    CHECK(yk_note_slot(&m, 850, 0, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);
+    yk_fam_created(&m, 850, 0, 8501);
+    CHECK(yk_fam_broken(&m, 8501) == 1);                        /* 玩家打死了它（本波从此哑火）*/
+    {
+        unsigned gbase = yk_map_gap_releases(&m);
+        unsigned i;
+        CHECK(yk_shot_slot_gate(&m, 850, 0, 0) == 1);           /* 本波第一条 etOn：照掐 */
+        /* 波内：连跑 `YK_EMIT_WAVE_GAP-1` 帧再问 ⇒ **不**放行（还是同一波）*/
+        for (i = 1; i < (unsigned)YK_EMIT_WAVE_GAP; ++i) {
+            yk_frame_begin(&m);
+            CHECK(yk_note_slot(&m, 850, 0, 1, p1, &a) == 0);     /* broken ⇒ 不重建 */
+        }
+        CHECK(yk_shot_slot_gate(&m, 850, 0, 0) == 1);           /* 间隔 < 阈值 ⇒ 仍掐 */
+        CHECK(yk_map_gap_releases(&m) == gbase);
+        /* 跨过阈值：再攒够帧数 ⇒ 判定「新的一波」⇒ **放行**（这一发照发）+ 记账 */
+        for (i = 0; i < (unsigned)YK_EMIT_WAVE_GAP; ++i) {
+            yk_frame_begin(&m);
+            (void)yk_note_slot(&m, 850, 0, 1, p1, &a);          /* 每帧的卡 tick（年龄在这里涨）*/
+        }
+        CHECK(yk_shot_slot_gate(&m, 850, 0, 0) == 0);           /* ★ 放行（关键断言）*/
+        CHECK(yk_map_gap_releases(&m) == gbase + 1);            /* ★ 记一笔「间隔 ⇒ 波次」*/
+        CHECK(yk_shot_slot_suppressed(&m, 850, 0, 0) == 0);     /* 夹持态已清 ⇒ 闸恒放 */
+        /* 使魔在下一帧被 1:1 映射重建；重建后再打死 ⇒ 新一波照旧从 0 起算 */
+        CHECK(yk_note_slot(&m, 850, 0, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);
+        yk_fam_created(&m, 850, 0, 8502);
+        CHECK(yk_fam_broken(&m, 8502) == 1);
+        CHECK(yk_shot_slot_gate(&m, 850, 0, 0) == 1);
+        yk_frame_begin(&m);
+        CHECK(yk_shot_slot_gate(&m, 850, 0, 0) == 1);           /* 才 1 帧 ⇒ 仍掐（不会立刻又放）*/
+        CHECK(yk_map_gap_releases(&m) == gbase + 1);
+    }
+    /* 没有使魔的槽 / 从没建过：间隔那条路**绝不**误放（判据要求 `fam_seen`）*/
+    {
+        unsigned gbase = yk_map_gap_releases(&m);
+        yk_map_reset(&m);
+        yk_frame_begin(&m);
+        CHECK(yk_note_slot(&m, 851, 0, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);
+        yk_fam_created(&m, 851, 0, 8511);
+        {   int i; for (i = 0; i < YK_EMIT_WAVE_GAP + 5; ++i) yk_frame_begin(&m); }
+        CHECK(yk_shot_slot_gate(&m, 851, 0, 8511) == 0);        /* 使魔活着 ⇒ 放行、不记账 */
+        CHECK(yk_map_gap_releases(&m) == gbase);
+        CHECK(yk_shot_slot_gate(&m, 851, 1, 0) == 0);           /* 从没管过的槽 ⇒ 放行 */
+        CHECK(yk_map_gap_releases(&m) == gbase);
+    }
+
+    /* ============ ★★★ 2026-10-01（owner 口径 ④）：**锁形态**的两个纯判据 ============
+     * owner 逐字：「当以**人形态放 B** 的时候，**B 的持续时间内应当固定为人形态**；**妖形态同理**」
+     * ＋「**灵击不算 B**」＋「灵界 or 暴走咆哮状态 ⇒ **shift 别把妖子机放出来**（主机贴图不动）」。*/
+    CHECK(yk_is_real_bomb(0, 0) == 0);          /* 没在放 B */
+    CHECK(yk_is_real_bomb(0, 1) == 0);
+    CHECK(yk_is_real_bomb(1, 0) == 1);          /* 真 B ⇒ 要锁 */
+    CHECK(yk_is_real_bomb(1, 1) == 0);          /* ★ 灵击（起手在决死窗口里）⇒ **不算 B**、不锁 */
+    CHECK(yk_side_switch_allowed(0, 0, 0) == 1);    /* 三个都没有 ⇒ 照常可切 */
+    CHECK(yk_side_switch_allowed(1, 0, 0) == 0);    /* 灵界 ⇒ 锁 */
+    CHECK(yk_side_switch_allowed(0, 1, 0) == 0);    /* 暴走咆哮 ⇒ 锁 */
+    CHECK(yk_side_switch_allowed(0, 0, 1) == 0);    /* 真 B ⇒ 锁 */
+    CHECK(yk_side_switch_allowed(1, 1, 1) == 0);    /* 取或 */
 
     /* ============ §3.10 人妖槽（TH08 `youkaiGauge`；限值/判定/几何全部一手）============ */
     /* 夹紧：`th08:0x43c0fa`（下限）/`th08:0x43c128`（上限），两条都**取等号**。*/
@@ -2673,7 +2741,7 @@ int main(void)
          *   模型 = `有效 = 标称 × 命中系数`、倍率 = `有效_i / 有效_灵梦`（只乘血量）；表与推导见
          *   `youkai_core.h` 的同名小节。⚠ **平衡口径、不是复刻**；命中系数是估计值（待实测校准）。*/
         CHECK(yk_fam_hp_char_scale(YK_CHAR_REIMU) == 1000);   /* 基准 = ×1.0 */
-        CHECK(yk_fam_hp_char_scale(YK_CHAR_MARISA) == 500);   /* 760 × 0.85 = 646 ⇒ 646/1280 */
+        CHECK(yk_fam_hp_char_scale(YK_CHAR_MARISA) == 350);   /* ★ owner 第三轮：一档下调 0.85 ⇒ ≈0.59 */
         CHECK(yk_fam_hp_char_scale(YK_CHAR_SAKUYA) == 880);   /* 1880 × 0.60 = 1128 ⇒ 1128/1280 */
         CHECK(yk_fam_hp_char_scale(YK_CHAR_SANAE) == 240);    /* 616 × 0.50 = 308 ⇒ 308/1280 */
         CHECK(yk_fam_hp_char_scale(-1) == 1000);              /* 越界/未知 ⇒ 缺省 1.0（缺省值即缺省）*/
@@ -2686,13 +2754,13 @@ int main(void)
         /* 倍率乘在**最后**：`HP_i = (母机HP/3) × 倍率_i`（档 0 的 100 也乘）。*/
         CHECK(yk_map_fam_hp(13000, YK_CHAR_REIMU) == 4333);
         CHECK(yk_map_fam_hp(13000, YK_CHAR_SAKUYA) == 4333 * 880 / 1000);   /* 3813 */
-        CHECK(yk_map_fam_hp(13000, YK_CHAR_MARISA) == 4333 * 500 / 1000);   /* 2166 */
+        CHECK(yk_map_fam_hp(13000, YK_CHAR_MARISA) == 4333 * 350 / 1000);   /* 1516 */
         CHECK(yk_map_fam_hp(13000, YK_CHAR_SANAE)  == 4333 * 240 / 1000);   /* 1039 */
         CHECK(yk_map_fam_hp(200, YK_CHAR_SANAE) == 24);                     /* 档 0 也乘（100×0.24）*/
         /* ★ 口径目标：四机体在 13000 血母机上**打死一只的耗时相同**（≈3.4 s @各自的有效 DPS）
          *   —— 用整数近似核一遍（`HP_i × 1000 / 有效DPS_i` 应与灵梦同量级）。*/
         {
-            static const int eff[4] = { 1280, 646, 1128, 308 };             /* 有效 DPS（表） */
+            static const int eff[4] = { 1280, 448, 1128, 308 };             /* 有效 DPS（表；魔理沙 350‰）*/
             static const int chr[4] = { YK_CHAR_REIMU, YK_CHAR_MARISA, YK_CHAR_SAKUYA, YK_CHAR_SANAE };
             int i, t0;
             t0 = yk_map_fam_hp(13000, YK_CHAR_REIMU) * 1000 / eff[0];

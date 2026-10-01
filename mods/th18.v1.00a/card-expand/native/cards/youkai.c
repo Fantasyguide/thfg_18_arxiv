@@ -307,6 +307,8 @@ typedef struct {
     uint16_t      spiral_t;
     uint8_t       spell_was;
     uint8_t       spiral_logged;
+    uint32_t      gap_releases_seen;   /* ★★★ 2026-10-01（owner 实跑 ②）：上一帧读到的
+                                        *   `yk_map_gap_releases`（`etOn` 间隔判出的波次边沿次数）*/
     uint32_t      releases_seen;       /* ★★★ 2026-09-22（P8-3 / route A′）：上一帧读到的
                                         *   `yk_map_releases`（第二问主动放行的次数，只增不清）*/
     uint32_t      silent;              /* ★★★ 2026-09-22（P8-6）：使魔**查不到**（过场 destroy_all /
@@ -341,6 +343,80 @@ static int s_map_has_fam(void)
     for (i = 0; i < YK_FAM_MAX; ++i) if (s_map.e[i].fam_id) return 1;
     return 0;
 }              /* 使魔表（(enemy_id, 发射口槽) → 使魔）*/
+
+/* ================== ★★★ 2026-10-01（**owner 口径 ④：锁形态**） ==================
+ * owner 逐字：「当以**人形态放 B** 的时候，**B 的持续时间内应当固定为人形态**；**妖形态同理**」
+ *          ＋「**灵击不算 B**」
+ *          ＋「当处于**灵界状态** or **暴走咆哮状态**的时候，**可以改主机贴图，但是 shift 别把
+ *             妖子机放出来**」。
+ * ⇒ 本卡只做一件事：**这三个条件任一成立时，把「本卡眼中的侧」钉在锁定那一刻的值**
+ *   （`yk_focused()` 代替所有 `CE_PLAYER_FOCUSED()` 的**行为判据**）——按 Shift 不再放/收妖子机、
+ *   不再换妖侧出弹组、不再认领妖侧 shooterset。
+ * ⚠ **主机贴图那条一律不动**（那是引擎 / 113 / 117 自己的事；owner 明确说「可以改主机贴图」）。
+ * ⚠ 灵界（113）与暴走咆哮（117）是**别的卡的私有状态**，本卡读不到 ⇒ 见下面两个 TODO 桩：
+ *   在跨卡只读查询落地前它们恒 0 ⇒ 总门现在只对「真 B」生效（登记 `AUDIT.md` §BE #201）。*/
+static int8_t   s_side_lock = -1;        /* -1 = 不锁（跟真实 Shift）；0 = 锁人侧；1 = 锁妖侧 */
+static int8_t   s_bomb_prev;             /* 上一帧 `bomb_mgr+0x30`（用来抓「B 起手那一帧」）*/
+static int8_t   s_bomb_is_deathbomb;     /* 当前这次 B 是**灵击**（起手帧落在决死窗口里）⇒ 不锁 */
+static uint32_t s_deathbomb_frame;       /* 最近一次见到决死窗口（自机状态 4）的帧号 */
+static int8_t   s_deathbomb_seen;
+
+/* 「本卡眼中的侧」：锁定期间恒为锁定值，否则跟引擎（`player+0x476cc`）。*/
+static int yk_focused(void)
+{
+    if (s_side_lock >= 0) return (int)s_side_lock;
+    return yk_focused() ? 1 : 0;
+}
+
+/* TODO(owner 口径 ④)：**灵界（113 Trance）/ 暴走咆哮（117 Animal）**的状态查询。
+ * 这两张卡的「在进行中」是**卡内私有状态**（113：`trance.c` 的 `p->state`；117：`animal.c` 的
+ * `s->core.ready || s->core.hypering`）⇒ 本卡**没有**合法的只读路径。
+ * 方案（二选一，需 owner/作者拍；**本轮没动别人的卡、也没动共享件**）：
+ *   ① 共享件加一个**跨卡只读标志位**（`sdk.h`：`ce_card_flag_set(card_id,bit)` / `ce_card_flag_get(card_id)`），
+ *      113/117 在进入/退出状态时各置/清一位；
+ *   ② 由那两张卡各导出一个 `int <card>_state_query(void)`（同一层的 `cards_def` 弱符号导出面）。
+ * ⇒ 任一路落地后，把下面两支改成读那一位即可（门本身已经是纯函数 + 单测覆盖）。*/
+static int yk_trance_active(void) { return 0; }
+static int yk_roar_active(void)  { return 0; }
+
+/* 每帧一次（在 `on_tick_2` 最前面调用）：更新「锁形态」状态机。
+ * 「真 B」判据 = `bomb_mgr+0x30`（`do_bomb`，`engine.h`）**且起手那一帧不在决死窗口里**：
+ *   灵击 = 决死窗口（自机状态 4，`player+0x476ac`，`Player__die` 写、持续 8 帧
+ *   `player+0x47908`，见 `engine/player/th18/03-player-hit-gate.md`）里按的 B
+ *   ⇒ 起手帧见到状态 4（或刚刚见过）⇒ `yk_is_real_bomb()` 判 0 ⇒ **不锁**（owner：「灵击不算 B」）。
+ *   ⚠ 判据只在**起手那一帧**取一次并记住整个持续期：灵击的动画比决死窗口长得多，
+ *     只看瞬时状态会把它的后半段误判成真 B。*/
+static void yk_side_lock_tick(void)
+{
+    uint8_t *m = CE_BOMB_MGR();
+    int act = (m && *(const int32_t *)(m + CE_BOMB_MGR_ACTIVE) != 0) ? 1 : 0;
+    int state4 = yk_deathbomb_window(*(const int32_t *)(CE_PLAYER() + CE_PLAYER_STATE));
+    unsigned now = (unsigned)ce_sdk_frame();
+    int real_bomb;
+    if (state4) { s_deathbomb_seen = 1; s_deathbomb_frame = now; }
+    if (act && !s_bomb_prev) {
+        int recent = s_deathbomb_seen && (now - s_deathbomb_frame) <= 8u;   /* 决死窗口 8 帧 */
+        s_bomb_is_deathbomb = (state4 || recent) ? 1 : 0;
+        if (s_bomb_is_deathbomb)
+            ce_log("youkai: side lock - this B is a DEATHBOMB (player state 4) => do NOT lock the form "
+                   "(owner 2026-10-01: 'a deathbomb is not a B')");
+    }
+    if (!act) s_bomb_is_deathbomb = 0;
+    s_bomb_prev = (int8_t)act;
+    real_bomb = yk_is_real_bomb(act, s_bomb_is_deathbomb);
+    if (yk_side_switch_allowed(yk_trance_active(), yk_roar_active(), real_bomb)) {
+        if (s_side_lock >= 0) {
+            ce_log("youkai: side lock OFF - Shift switches again (was locked to the %s side)",
+                   s_side_lock ? "youkai/focused" : "human/unfocused");
+            s_side_lock = -1;
+        }
+    } else if (s_side_lock < 0) {
+        s_side_lock = (int8_t)(yk_focused() ? 1 : 0);
+        ce_log("youkai: side lock ON for this B - the form stays %s until the B ends "
+               "(owner 2026-10-01; deathbomb excluded)",
+               s_side_lock ? "youkai/focused" : "human/unfocused");
+    }
+}
 
 /* ============================== 小工具 ============================== */
 static int yk_base_damage_cap(void)                       /* 照 76 guding.c：sht 头的每敌每帧上限基值 */
@@ -528,7 +604,7 @@ static void yk_pin_familiar(uint8_t *f, float x, float y)
      *   **结构上不可能触发**；**人侧清位**：照旧可打、可击破。*/
     {
         uint32_t *fl = (uint32_t *)(f + CE_ENEMY_FLAGS);
-        int want = CE_PLAYER_FOCUSED() ? 1 : 0;
+        int want = yk_focused() ? 1 : 0;
         if (want) *fl |= CE_ENEMY_FLAG_NO_DAMAGE;
         else      *fl &= ~(uint32_t)CE_ENEMY_FLAG_NO_DAMAGE;
         if (g_fam_nodmg_state != want) {           /* 两态各记一次（实跑判据）*/
@@ -783,7 +859,7 @@ static void yk_fam_vm_follow(uint32_t fam_id, int kind, const uint8_t *f)
      *     `SetInterrupt(2)` = 妖侧蓝 —— 一手 `th08:0x41b04e SetInterrupt(环, IsYoukai()?2:1)`）。
      * ⚠ 与 `yk_ring_blink` 的**切换短命环**是两支 VM、两个用途（那支是「切换那一下闪一圈」）。*/
     {
-        int side = CE_PLAYER_FOCUSED() ? 1 : 0;
+        int side = yk_focused() ? 1 : 0;
         if (v->anm_id) ce_anm_set_color(v->anm_id, side ? 0x00ffffffu : 0xffffffffu);
         /* ★★★ 2026-09-30（**owner 口径**：「得画那个加法空心环……**你只碰使魔加那个环**」）：
          *   **两侧都常驻**（一手：环由 `familiarCreate*` 内联分配 `th08:0x425b70`、句柄 `enemy+0x53c8`、
@@ -1196,7 +1272,7 @@ static void yk_orbit_pin(uint8_t *f, float x, float y)
      *   人侧 ⇒ 清掉（保持可打 —— 这正是「打死使魔 ⇒ 1/2 转嫁」与一手一致的前提）。
      *   ⚠ 这是 **owner 口径**（`engine/enemy/th08/04-…md` §9 那条「按 shift 使魔变魔法阵、不碰撞也打不到」），
      *     不是一手复刻（一手是引擎自己的侧门）。体术那一路由 `yk_fam_collide_tick` 的聚焦早退负责。*/
-    if (CE_PLAYER_FOCUSED()) *(uint32_t *)(f + CE_ENEMY_FLAGS) |= (uint32_t)CE_ENEMY_FLAG_NO_DAMAGE;
+    if (yk_focused()) *(uint32_t *)(f + CE_ENEMY_FLAGS) |= (uint32_t)CE_ENEMY_FLAG_NO_DAMAGE;
     else *(uint32_t *)(f + CE_ENEMY_FLAGS) &= ~(uint32_t)CE_ENEMY_FLAG_NO_DAMAGE;
 }
 
@@ -1322,7 +1398,7 @@ static void yk_aya_bullet_color_tick(yk_card_t *s)
     unsigned i;
     if (!s) return;
     if (yk_current_character() != YK_CHAR_SANAE) return;      /* 只早苗 */
-    if (!CE_PLAYER_FOCUSED()) return;                         /* 只妖侧（低速）*/
+    if (!yk_focused()) return;                         /* 只妖侧（低速）*/
     pl = CE_PLAYER();
     if (!pl) return;
     for (i = 0; i < CE_PB_COUNT; ++i) {
@@ -1385,7 +1461,7 @@ static void yk_orbit_vm_sync(yk_orbit_t *o)
     } else if (pp && !ce_anm_set_pos(o->anm_id, pp[0], pp[1], 0.0f)) {
         o->anm_id = 0;                                    /* 句柄作废 ⇒ 下一帧自愈重起 */
     }
-    youkai_side = CE_PLAYER_FOCUSED() ? 1 : 0;
+    youkai_side = yk_focused() ? 1 : 0;
     if (o->anm_id) ce_anm_set_color(o->anm_id, youkai_side ? 0x00ffffffu : 0xffffffffu);
     /* ★★★ 2026-10-01（**owner 新报的真 bug**：「对于妖侧，**使魔会挡住弹幕**，也就是妖侧打不进去」）——
      *   我们原来只置了 `CE_ENEMY_FLAG_NO_DAMAGE`（**不可伤害**），但**碰撞盒还在** ⇒ 自机弹会被它吃掉
@@ -1721,9 +1797,14 @@ static void yk_orbit_scan(uint32_t frame)
                    "(radius 0->30/60/90 in %u f), per-ring %.1f/4.5/3 deg/frame; fam life %d = "
                    "fam_hp(%d, rings %d, tier0<=%u => 100 / else HP/rings) x %d; colour kind %d "
                    "(melee %d shot_same %d) = script %d; centre pinned at spawn (%.0f,%.0f))",
+                   /* ★★★ 2026-10-01 勘误：这一串**参数顺序原来与格式串错位**（全是 int ⇒ 编译器不报），
+                    *   实跑读出来是「=> 17 familiar(s) ring vms try 13 made 4 int 17; (HP tier 82 +
+                    *   stage bonus 82 = 87 …)」这种**标签与数值对不上**的行（owner 拿它诊断会被误导）。
+                    *   现在按格式串的顺序给：`=> familiar(s)` = 实际建成数、`ring vms try/made/int` =
+                    *   环 VM 三个计数、`HP tier + stage bonus = 台数`。*/
                    (unsigned)id, w, h, hp_now, (int)CE_CURRENT_STAGE(), made,
-                   yk_orbit_count_for_hp(hp_now), yk_orbit_stage_bonus((int)CE_CURRENT_STAGE()), want,
                    s_orbit_ring_try, s_orbit_ring_made, s_orbit_ring_int,
+                   yk_orbit_count_for_hp(hp_now), yk_orbit_stage_bonus((int)CE_CURRENT_STAGE()), want,
                    (unsigned)YK_ORBIT_DELAY_FRAMES,
                    rings,                                            /* ★ rings（分圈数，走表）*/
                    (unsigned)YK_ORBIT_EXPAND_FRAMES,
@@ -1805,7 +1886,7 @@ static void __attribute__((noinline)) yk_orbit_tick(uint32_t frame)
          *   ⇒ **只在非聚焦（高速 / 人侧）撒火花**；聚焦（低速 / 妖侧）不撒 —— 那一侧本来就由
          *   每台的**环 VM**（`ce_anm_interrupt(id, 2)`）承担「魔法阵」的外观。
          *   ⚠ 切换那一帧：已撒的火花会在 20 帧内自灭，我们**不追**（也**不续撒**）。*/
-        if (!CE_PLAYER_FOCUSED() && ++o->trail_t >= s_orbit_trail_eff) {
+        if (!yk_focused() && ++o->trail_t >= s_orbit_trail_eff) {
             o->trail_t = 0;                        /* 有效间隔（阀门可能把它抬高）*/
             yk_orbit_trail_spawn(*(const float *)(f + CE_ENEMY_POS_X),
                                  *(const float *)(f + CE_ENEMY_POS_Y));
@@ -2129,7 +2210,7 @@ static void yk_fam_collide_tick(yk_card_t *s)
     float hit_r;
     unsigned i;
     if (!s || !s_map_has_fam()) return;
-    if (CE_PLAYER_FOCUSED()) { s->fam_miss_latch = 0; return; }   /* 妖侧：可穿梭 ⇒ 不判 */
+    if (yk_focused()) { s->fam_miss_latch = 0; return; }   /* 妖侧：可穿梭 ⇒ 不判 */
     pl = CE_PLAYER();
     if (!pl) return;
     if (*(const int32_t *)(pl + CE_PLAYER_STATE) != 1) return;    /* 只在存活态判（1 = 存活）*/
@@ -3508,7 +3589,19 @@ static int yk_bomb_active(void)
                                  *   1（链根 2n）+ 子机数（≤5）个浮字 ⇒ 3 会丢；池满只丢浮字、
                                  *   不影响道具/计分，见 `yk_popup_spawn` 的降级日志）*/
 #define YK_POPUP_GLYPHS     5
-#define YK_POPUP_ANM_LAYER  11
+#define YK_POPUP_ANM_LAYER  16
+/* ★★★ 2026-10-01（owner 第三轮：「依旧没有发红字」；实跑日志已证**字建出来了**）：
+ *   日志判据（`th18_card_expand.log`，build 17:54:12）：`youkai/popup spawn: tag root/part/orbit
+ *   value 16 …` **86 行**、`youkai/kill:` **64 行**、`youkai/zone: opened 41 … bullets 104`
+ *   ⇒ **入口 / 建字 / 消弹三条路都在跑** ⇒ 属「**建了但看不见**」那一类 ⇒ 唯一剩下的结构差异 = **层**：
+ *     · 引擎渲染阶段表（`engine/anm/th18/02-render-stages.md`）：**层 11 属「敌机等」那一组**
+ *       （优先级 0x18），而 **道具 12 / 激光·自机 13 / 子弹 14–16** 都在它**之后**（0x1b 起）
+ *       ⇒ 浮字被自机弹/敌机盖住（实跑里敌人一死正是弹幕最密的那一帧）。
+ *     · 原生「场地中央展示卡」`abcard.anm script14` 用的就是 **`layer(16)`**（脚本注：子弹之上）
+ *       ⇒ 16 是**一手先例**，不是自定。
+ *   ⚠ 仍与刻符（层 7）**同一参照系**（世界层 3–19 + 每帧回写 `resolutionMode(2)`，见 `yk_popup_tick`）
+ *     ⇒ 这一改**不动坐标**、只动先后。*/
+
 
 typedef struct {
     uint8_t  used;
@@ -3695,7 +3788,7 @@ static int yk_orb_collect(yk_card_t *s, float x, float y)
     if (!s) return 0;
     {
         int32_t hl, yl;                                     /* ★ P-E：单人反向封顶（见 core 的同名小节）*/
-        yk_gauge_limits_solo(CE_PLAYER_FOCUSED() ? 1 : 0, &hl, &yl);
+        yk_gauge_limits_solo(yk_focused() ? 1 : 0, &hl, &yl);
         yk_piv_add(&s->piv, &s->orbs, 1);
     /* ★★★ 2026-09-27 订正（第十六批，一手）：**这道闸不存在** —— `AddToYoukaiGauge` 的第一道闸
      * （`th08:0x43c0c2`：`cmp ds:0x17d6ed4,0 / je 加数` + `cmp [ebp+0xc],0`）读的是一个
@@ -3708,7 +3801,7 @@ static int yk_orb_collect(yk_card_t *s, float x, float y)
         /* ★ P-D：击破魔使后 **50 帧内收刻符不给槽**（一手 `th08:0x42b240 Timer(0x18b89d4).set(50)`，
          * 门住 `Item::collect_time_orb` 的 ±111：`th08:0x44138e`–`0x44139c`）—— **这一道是真的**（有写点）。*/
         if (s->orb_silence == 0)
-            s->gauge = yk_gauge_add2(s->gauge, yk_gauge_orbs_delta(CE_PLAYER_FOCUSED()), hl, yl);
+            s->gauge = yk_gauge_add2(s->gauge, yk_gauge_orbs_delta(yk_focused()), hl, yl);
     }
     ++s->orb_taken;
     /* ★ #27 支 2：**收刻符的分值弹字**（一手 `Item::collect_time_orb th08:0x441348`
@@ -4448,7 +4541,7 @@ static void yk_on_enemy_killed(yk_card_t *s, const ce_enemy_death_t *ev)
     int focused, i, n2;
     int32_t hl, yl;                                     /* ★ P-E：当前形态的同一对 limit */
     if (!s || !ev) return;
-    focused = CE_PLAYER_FOCUSED();
+    focused = yk_focused();
     yk_gauge_limits_solo(focused, &hl, &yl);
     /* ★★★ 2026-09-27 订正（同 §BE #110）：`AddToYoukaiGauge` 的第一道闸（`th08:0x43c0c2`）读的
      * `ds:0x17d6ed4` **全 exe 没有写点、又是 BSS**（⇒ 恒为 0）⇒ 「整形中丢掉 ±200」那条分支永不成立
@@ -5036,6 +5129,9 @@ static int on_ctor(ce_card_t *c)
     s->heals_seen = 0;
     s->rearms_seen = 0;                 /* ★ route A：整表 reset 也清条目，但计数只增不清 ⇒ 快照回 0 */
     s->releases_seen = 0;               /* ★ P8-3：同上（route A′ 计数只增不清）*/
+    s->gap_releases_seen = 0;           /* ★ owner ②：同上（只增不清 ⇒ 快照回 0）*/
+    s_side_lock = -1;                   /* ★ owner ④：reset ⇒ 解锁（不再钉住形态）*/
+    s_bomb_prev = 0; s_bomb_is_deathbomb = 0;
     s->night_logged = 0;
     s->solo_cap_logged = 0;
     s->gauge_ram = 0;
@@ -5119,7 +5215,7 @@ static int on_ctor(ce_card_t *c)
     s->gauge = 0;
     s->gauge_focus_run = 0;
     s->gauge_hold = 0;
-    s->gauge_focus_prev = (uint8_t)(CE_PLAYER_FOCUSED() ? 1 : 0);
+    s->gauge_focus_prev = (uint8_t)(yk_focused() ? 1 : 0);
     s->graze_seen = 0;
     s->orb_taken = 0;
     s->orb_full = 0;
@@ -5285,6 +5381,7 @@ static void on_run_reset(ce_card_t *c)
 static void on_delete(ce_card_t *c)
 {
     yk_card_t *s = ce_state(c, yk_card_t);
+    s_side_lock = -1;                     /* ★ owner ④：删卡 ⇒ 解锁（形态不再钉住）*/
     ce_log("youkai: card deleted - withdrawing familiars "
            "(%u spawned, %u killed, %u transfer damage this run)",
            s ? s->spawns : 0, s ? s->broken : 0, s ? s->transferred : 0);
@@ -5413,7 +5510,7 @@ static void yk_body_sync(yk_card_t *s)
     vm = p + CE_PLAYER_VM;
     ch = yk_current_character();
     if (ch < 0 || ch > 3) ch = 0;
-    focused = CE_PLAYER_FOCUSED() ? 1 : 0;
+    focused = yk_focused() ? 1 : 0;
     if (focused != (int)s->body_focused) {                /* 换形那一帧 */
         s->body_prev_dx = 0;
         s->body_state = YK_BODY_IDLE;
@@ -5497,7 +5594,7 @@ static int on_power_level_change(ce_card_t *c)
     /* ★ th08 #1：整池重建 ⇒ 我们手里那几格已经作废（引擎重建的子机在新位置）⇒
      * 弹簧也从头起（否则会从**旧偏移**滑进来，看起来像"从别处飞回来"）。*/
     s->opt_spring_live = 0;
-    yk_option_refresh(c, s, CE_PLAYER_FOCUSED());          /* 声明；落笔在帧界（SDK 调被选举者）*/
+    yk_option_refresh(c, s, yk_focused());          /* 声明；落笔在帧界（SDK 调被选举者）*/
     return 0;
 }
 
@@ -5526,7 +5623,7 @@ static int on_shot_set_index(ce_card_t *c, int power_level)
 {
     yk_card_t *s = ce_state(c, yk_card_t);
     if (!s) return -1;
-    if (!CE_PLAYER_FOCUSED()) return -1;                      /* 人侧：原生 set */
+    if (!yk_focused()) return -1;                      /* 人侧：原生 set */
     /* ★ 2026-09-26（ownner 实跑「灵梦/魔理沙/咲夜 妖侧不出弹」那一批时一并查出来的矛盾）：
      *   **本帧一台妖侧子机都没有时不许认领 set**。理由：SDK 的止射闸（`on_native_shot_suppress`）
      *   只在**没有卡认领 set** 时才会被问到（`sdk.c`：先问 `on_shot_set_index`，有卡覆盖了就不抑制）
@@ -5576,7 +5673,7 @@ static int on_tick_shooters(ce_card_t *c, uint32_t short_timer, uint32_t long_ti
     /* 高速 = 原机体（原生弹照发）；早苗的档 0 = 0 个子机 ⇒ 没有膛口，也不发妖侧弹。
      * ★ 这一条 = 止射闸第三条门的**同一张表、同一个函数**（`yk_option_wanted`）：两边同帧同源
      *   ⇒ 「不压原生弹」的那一帧，这里也恰好不出妖侧弹（不会出现两边都发或两边都不发）。*/
-    if (!yk_option_wanted(CE_PLAYER_FOCUSED(), yk_current_character(), yk_current_power_level())) return 0;
+    if (!yk_option_wanted(yk_focused(), yk_current_character(), yk_current_power_level())) return 0;
     set = yk_youkai_shotset_pick(yk_current_character(), yk_current_power_level());
     if (!yk_youkai_shotset_installed(set)) {
         if (!s->logged_sht) {
@@ -5635,7 +5732,7 @@ static int on_native_shot_suppress(ce_card_t *c) __attribute__((unused));
 static int on_native_shot_suppress(ce_card_t *c)
 {
     yk_card_t *s = ce_state(c, yk_card_t);
-    const int focused = CE_PLAYER_FOCUSED() ? 1 : 0;
+    const int focused = yk_focused() ? 1 : 0;
     const int character = yk_current_character();
     const int level = yk_current_power_level();
 
@@ -5744,7 +5841,7 @@ static int yk_on_shot_slot(ce_card_t *c, const ce_enemy_shot_t *ev)
                "broken=%d no_fam_frames=%d) - P1: this slot stays silent for the REST of this wave "
                "until a main release port (ECL re-arm / wave edge / phase edge / reset) or the "
                "%d-frame rebuild TTL fires (core: `yk_shot_slot_gate` / `YK_EMIT_REBUILD_TTL`)",
-               ev->slot, ev->enemy_id, CE_PLAYER_FOCUSED() ? 1 : 0,
+               ev->slot, ev->enemy_id, yk_focused() ? 1 : 0,
                sl ? (int)sl->fam_seen : -1, sl ? (int)sl->broken : -1,
                sl ? (int)sl->no_fam_frames : -1, (int)YK_EMIT_REBUILD_TTL);
     }
@@ -5853,7 +5950,7 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
      *   ③ **50 帧内收刻符不给槽**（`th08:0x42b240 Timer(0x18b89d4).set(50)`）。*/
     {
         int32_t hl3, yl3;
-        yk_gauge_limits_solo(CE_PLAYER_FOCUSED() ? 1 : 0, &hl3, &yl3);
+        yk_gauge_limits_solo(yk_focused() ? 1 : 0, &hl3, &yl3);
         s->gauge = yk_gauge_add2(s->gauge, yk_gauge_fam_kill_delta(s->gauge), hl3, yl3);
         yk_orb_spawn(s, ev->x, ev->y, YK_ORB_STATE_SPAWN);   /* ★ §BE #117：type 7 ⇒ 强制 state 3 */
         s->orb_silence = YK_ORB_SILENCE_FRAMES;
@@ -5905,7 +6002,7 @@ static void on_item_commit(ce_card_t *c)
     if (!s) return;
     base = *(const int32_t *)(uintptr_t)CE_ADDR_MONEY_BASE;
     if (base <= 0) return;
-    s->gauge = yk_gauge_add(s->gauge, CE_PLAYER_FOCUSED() ? (int)(base / 100) : -(int)(base / 100));
+    s->gauge = yk_gauge_add(s->gauge, yk_focused() ? (int)(base / 100) : -(int)(base / 100));
 }
 #endif
 
@@ -6273,7 +6370,7 @@ static void __attribute__((noinline)) yk_beam_tick(yk_card_t *s)
      *   见 `yk_m_laser_beam_bars_resident()`）。`ncore` 从中拆出来，只为让 on 那一行把「残影 / 光斑」分开报。*/
     int want = 0, ncore = 0, nres = 0;
 
-    if (!s || !CE_PLAYER() || !CE_PLAYER_FOCUSED() || character != YK_CHAR_MARISA || !yk_shooting()) {
+    if (!s || !CE_PLAYER() || !yk_focused() || character != YK_CHAR_MARISA || !yk_shooting()) {
         yk_beam_kill(1);
         return;
     }
@@ -6654,7 +6751,7 @@ static int on_tick_2(ce_card_t *c)
      *     · `set`：本帧认领的妖侧 shooterset 槽号（认领没生效 ⇒ 打的是原生 set）。
      *   ⚠ 判「子机不发弹」时看 `muz`：仍是 `(0,-400)` 或与 `opt` 差很远 ⇒ 镜像没生效；
      *     `want>0` 而 `have==0` ⇒ 池满（日志会有 `option allocated FAILED (pool full)`）。*/
-    if ((s_ledger_frame % 120u) == 0u && CE_PLAYER_FOCUSED()) {
+    if ((s_ledger_frame % 120u) == 0u && yk_focused()) {
         int nopt = 0, k;
         uint8_t *pl = CE_PLAYER();
         for (k = 0; k < YK_OPTION_MAX; ++k) if (s->opt[k].ptr) ++nopt;
@@ -6738,7 +6835,8 @@ static int on_tick_2(ce_card_t *c)
         yk_drop_all(s, "no player");
         return 0;
     }
-    focused = CE_PLAYER_FOCUSED();
+    yk_side_lock_tick();                                  /* ★ owner ④：锁形态（B / 灵界 / 咆哮）*/
+    focused = yk_focused();                               /* ★ owner ④：本卡眼中的侧（锁期间钉住）*/
     /* ★★ 2026-09-22（人妖槽 + 永点）：每帧三件事 + 一件声明，全部是**普通内存读写**（不新增站点）。
      *   ① 刻符运动 / 收集（`yk_orbs_tick`，一手运动方程见 core §3.11）；
      *   ② 擦弹涨源：TH18 的累计擦弹在 `CE_ADDR_GRAZE`（0x4ccd0c），本卡自己差分
@@ -7315,6 +7413,20 @@ static int on_tick_2(ce_card_t *c)
                    "total %u) - new wave: clamp flags cleared, the 1:1 mapping rebuilds those slots",
                    rel - s->releases_seen, rel);
             s->releases_seen = rel;
+        }
+    }
+    /* ★★★ 2026-10-01（owner 实跑 ②「没有识别到波次、下一波没重建」）：**`etOn` 间隔**那条波次边沿
+     *   的记账（与上面 `enmKillAll` 那条**分开**）—— 涨了 = 有一波是靠「两次 `etOn` 间隔 ≥
+     *   `YK_EMIT_WAVE_GAP` 帧」认出来的（一手 `MBoss1`：波内 12 帧 / 波间 ≥60 帧）。
+     *   ⚠ 它涨得太频 ⇒ 阈值相对该 ECL 的波内间隔偏小（表现 = 使魔比预期早重建），调大它
+     *   （`TUNING.md` §2.1ccc-33）。*/
+    {
+        uint32_t gap = yk_map_gap_releases(&s_map);
+        if (gap != s->gap_releases_seen) {
+            ce_log("youkai: emitter gate released %u slot(s) on an etOn GAP >= %d frames (wave edge "
+                   "heuristic; total %u) - those slots fire again and rebuild next tick",
+                   gap - s->gap_releases_seen, (int)YK_EMIT_WAVE_GAP, gap);
+            s->gap_releases_seen = gap;
         }
     }
     /* ★★★ 2026-10-01（P1，owner：「终符卡持续发弹、高速把发弹口全清掉 ⇒ 终符变成奶奶来也能过」）：

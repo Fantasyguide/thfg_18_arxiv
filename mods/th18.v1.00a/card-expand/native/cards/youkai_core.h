@@ -1021,6 +1021,32 @@ int     yk_shotset_usable(int fire_rate);
  *     只改这一个数（或给终符单独一档）。登记 `TUNING.md` §2.1ccc-31。*/
 #define YK_EMIT_REBUILD_TTL 600  /* ❓ 自定（owner 2026-10-01）：闸到期自动重建的期限（帧，≈10 s @60fps）*/
 
+/* ★★★ 2026-10-01（**owner 实跑 ② · 5 面道中 boss 非符「没有识别到波次」**）：**波次边沿 = `etOn` 的间隔**。
+ *   owner 逐字：「应该是，**没有识别到波次**，**下一波次没有重建**」。
+ *
+ *   **为什么需要这条**（一手 ECL 反汇编，`local/_scratch/st05mbs.asm` 的 `MBoss1`）：
+ *   ```c
+ *   void MBoss1() { $I0=60; $I1=1; goto MBoss1_316;
+ *     MBoss1_140: moveRand(...); @MBoss1_at(+0.1745); wait(30);
+ *                 moveRand(...); @MBoss1_at(-0.1745); wait(30);
+ *     MBoss1_316: if (1) goto MBoss1_140; }          // ← 每次 @MBoss1_at = 一波
+ *   void MBoss1_at(A) { etNew(0); …config…; etNew(1); …config…;   // ← 每波开头重新武装槽 0/1
+ *                       … 30 × (etOn ×4 + wait(12)) … }
+ *   ```
+ *   ⇒ 一波的边界 = **`etNew(i)`**，但一手已证 `etNew` 与同槽 `etSprite` **同帧**
+ *     （`engine/enemy/th18/07-…md` §2：282/282 处）⇒ 卡每帧只采样一次 `props[i].type`，
+ *     **永远看不到 `type == 0` 那一瞬** ⇒「重新武装边沿」在实战里等于不存在（这条也是 P1 的已知缺口）。
+ *   ⇒ 能观测到的代理信号 = **同一个槽两次 `etOn` 之间的间隔**：一手这一份 ECL 里
+ *     **波内** = `wait(12)`（12 帧/次），**波间** = `wait(30) ×2 + moveRand + 一次子程序调用` **≥ 60 帧**。
+ *     ⇒ 用一个远大于「波内」、小于「波间」的阈值就能分开：本常量 **24 帧**（= 波内 12 的 2 倍）。
+ *
+ *   **语义**：夹着的槽（`fam_seen && !fam_id`）下一次被 `etOn` 问到、且**距上次 `etOn` ≥ 本阈值**
+ *   ⇒ 判定「新的一波」：**放行 + 清夹持态**（本帧这条 `etOn` **照发**），1:1 映射下一帧重建使魔。
+ *   ❓ **自定阈值**（一手只给了这一份 ECL 的两个数）：其它 ECL 的波内间隔若不小于 24 帧会误判成
+ *     新波（表现 = 使魔比预期早重建、决不「更堵」）⇒ 实跑若见到日志里 WAVE GAP 放行过频，调大它。
+ *     登记 `TUNING.md` §2.1ccc-33。*/
+#define YK_EMIT_WAVE_GAP 24      /* ❓ 自定（owner 2026-10-01）：两次 `etOn` 间隔 ≥ 此值 = 新一波 */
+
 /* 槽位 → 使魔皮肤**变体**（0..3）。卡侧把变体映射到 `anm_ids.h` 的脚本宏（**不写死数字**）：
  * `CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_S53 + 变体`。
  * 语义（用户 2026-09-12 定案，spec §3.5）：**使魔数量 = 该敌当前活跃发射口槽数（1–4）
@@ -1089,6 +1115,12 @@ typedef struct {
                           *   ★ 位置在 `fam_seen` 与 `no_fam_frames` **之间**：正好吃掉
                           *     `uint16_t` 对齐留出的那 1 字节空洞 ⇒
                           *     **`sizeof(yk_slot_t)` 仍是 28 B**（单测 `== 28u` 盯着；放错位置会变 32）。*/
+    uint16_t eton_gap;   /* ★★★ 2026-10-01（owner 实跑 ②）：**距上一次 `etOn` 过了多少卡 tick 帧**
+                          *   （只在夹持期有意义；每次 `yk_shot_slot_gate` 被问到就归零）。
+                          *   `>= YK_EMIT_WAVE_GAP` ⇒ 判定「新的一波」⇒ 放行 + 清夹持态。
+                          *   ⚠ 与 `no_fam_frames` **不是一个东西**：后者是「距使魔死/夹上那一刻」，
+                          *     用来做**长期 TTL**（那条必须与 `etOn` 无关，否则持续发弹的终符
+                          *     永远等不到 600 帧 —— 正是 owner 要求防的场景）。*/
     uint16_t no_fam_frames; /* ★ 2026-09-22（#7）：`fam_seen == 1 && fam_id == 0` 已经连续多少
                           *   **卡 tick** 帧（= 闸夹着、使魔又不在）。到了 `YK_EMIT_REBUILD_TTL`
                           *   就自愈（清 `fam_seen` + 清 `broken`）。归零口 = `yk_fam_created` /
@@ -1110,6 +1142,9 @@ typedef struct {
                           *   `rearm_pending` 记一次，只增不清）。★ 2026-10-01（P1）起 `rearm_pending`
                           *   **只是记账**（卡 tick 不再消费它）⇒ 本计数 = 「夹持期数」。
                           *   `sizeof(yk_map_t)` = 32×28+8 = 904 B。*/
+    uint32_t  gap_releases; /* ★★★ 2026-10-01（owner 实跑 ②）：**「`etOn` 间隔 ≥ `YK_EMIT_WAVE_GAP`
+                          *   帧」那条波次边沿放行了几次**（只增不清）。与 `releases`（`enmKillAll`）分开，
+                          *   这样实跑里一眼分清「是真清场、还是靠间隔猜的波次」（owner 要判据）。*/
     uint32_t  releases;  /* ★★★ 2026-10-01（P1）：闸被**主复位口之一**放行的次数（只增不清）。
                           *   现在只在**波次边沿**（`yk_fam_wave_clear()`，卡侧收到 `enmKillAll` 广播）
                           *   里 ++；与 `rearms` 成对：`rearms` 涨 = 掐过，`releases` 涨 = 新波开始、
@@ -1120,6 +1155,7 @@ typedef struct {
 unsigned   yk_map_heals(const yk_map_t *m);      /* 长期 TTL 自动重建计数（#7 记账；NULL ⇒ 0）*/
 unsigned   yk_map_rearms(const yk_map_t *m);     /* 「掐掉过几次」计数（夹持期数；NULL ⇒ 0）*/
 unsigned   yk_map_releases(const yk_map_t *m);   /* 「波次边沿放行」计数（P1 记账；NULL ⇒ 0）*/
+unsigned   yk_map_gap_releases(const yk_map_t *m); /* 「etOn 间隔 ⇒ 波次」放行计数（NULL ⇒ 0）*/
 
 /* ★★★ 2026-09-22（P1，实跑日志直证）：**只读**判据「这个 id 是不是我表里的使魔」。
  *
@@ -1211,6 +1247,12 @@ int        yk_shot_slot_suppressed(const yk_map_t *m, uint32_t enemy_id, int slo
  *   ⇒ `yk_note_slot` 里自动放行 + 重建（`m->heals` 记账）。owner 的理由（原话）：「有些**终符卡是
  *   持续发弹的**，我**高速把发弹口全清掉了**，我终符直接变成**奶奶来也能过了**」⇒ 不能让终符被永久清空。
  *
+ * ★★★ 2026-10-01（owner 实跑 ②）：**再加一条可观测的波次边沿 = `etOn` 的间隔** ——
+ *   夹着的槽下一次被 `etOn` 问到、且距上次 `etOn` ≥ `YK_EMIT_WAVE_GAP`（24 帧）⇒ 判「新的一波」：
+ *   放行 + 清夹持态（**这一条 `etOn` 照发**，使魔下一帧重建）。一手 ECL 证据（`MBoss1`）见该常量注。
+ *   ⚠ 它**替代不了** `YK_EMIT_REBUILD_TTL`：持续发弹的口 `etOn` 间隔一直是波内的 12 帧，
+ *     永远触发不了本条 ⇒ 长期 TTL 仍是「终符不被清空」的唯一兜底。
+ *
  * ⚠ **已删除的两条旧复位口**（P1 之前是主路，现在都不要了）：
  *   · route A（卡 tick 消费 `rearm_pending` ⇒ 清闸 + 同帧重建）—— 会让口子**一波内自己复活**；
  *   · route A′（第二次 `etOn` 当场放行）—— 同上（代价从"至多丢 1 条 `etOn`"变成"堵到主复位口/TTL"）。
@@ -1229,6 +1271,23 @@ int        yk_shot_slot_gate(yk_map_t *m, uint32_t enemy_id, int slot, uint32_t 
 int        yk_fam_wave_clear(yk_map_t *m, uint32_t fam_id);
 
 /* 硬约束护栏：spawn 的 life 参数 >= 1000 会进锁定黑名单 ⇒ 钳到 999（并在卡侧记一条日志）。 */
+/* ★★★ 2026-10-01（**owner 口径 ④：放 B / 特殊状态下锁形态**）：两个**纯判据**（单测覆盖）。
+ *
+ * **owner 逐字（第一条）**：「当以**人形态放 B** 的时候，**B 的持续时间内应当固定为人形态**；
+ *   **妖形态同理**」＋「**灵击不算 B**」。
+ * **owner 逐字（第二条，灵界/暴走咆哮）**：「当处于**灵界状态** or **暴走咆哮状态**的时候，
+ *   **可以改主机贴图，但是 shift 别把妖子机放出来**」。
+ * ⇒ 本卡的做法：这三个条件**任一成立 ⇒ 不切侧**（按 shift 不放/不收妖子机、不换妖侧出弹组），
+ *   **主机贴图那条一律不动**（那是引擎/113/117 自己的事，本卡不碰）。
+ *
+ * ⚠ 「灵击不算 B」的判据（一手）：灵击 = **决死窗口**里按 B，而决死窗口 = 自机状态 4
+ *   （`player+0x476ac == 4`，`Player__die` 写、`player+0x47908 = 8` 帧；见
+ *   `engine/player/th18/03-player-hit-gate.md`）⇒ 卡的作法是**在 B 起手那一帧**看自机状态：
+ *   状态 4（或刚见过状态 4）⇒ 这一次是**灵击** ⇒ `yk_is_real_bomb()` 返回 0 ⇒ **不锁**。
+ *   ⇒ 因此必须传「起手帧」的两个布尔，而不是每帧的瞬时值：一旦判成灵击，整个持续期都不锁。*/
+int        yk_is_real_bomb(int bomb_active, int started_in_deathbomb);
+/* 切换总门：1 = 允许切侧；0 = 锁住当前侧。三个条件取或（任一为 1 ⇒ 锁）。 */
+int        yk_side_switch_allowed(int trance, int roar, int real_bomb);
 int32_t    yk_clamp_spawn_life(int32_t life);
 
 /* =============================================================== §3.7 伤害转交 1/2

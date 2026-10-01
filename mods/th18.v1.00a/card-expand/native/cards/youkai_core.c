@@ -447,6 +447,12 @@ unsigned yk_map_rearms(const yk_map_t *m)
     return m ? m->rearms : 0u;
 }
 
+/* ★★★ 2026-10-01（owner 实跑 ②）：`etOn` 间隔判出来的「波次边沿」放行了几次（只增不清）。*/
+unsigned yk_map_gap_releases(const yk_map_t *m)
+{
+    return m ? m->gap_releases : 0u;
+}
+
 unsigned yk_map_releases(const yk_map_t *m)
 {
     return m ? m->releases : 0u;
@@ -557,6 +563,7 @@ int yk_note_slot(yk_map_t *m, uint32_t enemy_id, int slot, int active, const flo
      * ★ 2026-10-01（P1）：这是**主复位口 ①**。 */
     if (active && !was_active) {
         e->broken = 0; e->fam_seen = 0; e->no_fam_frames = 0;
+        e->eton_gap = 0;                                  /* ★ owner ②：重开 = 新的 etOn 间隔起算 */
         e->rearm_pending = 0;                             /* P1：夹持态一并拆掉（它现在只是记账）*/
     }
 
@@ -574,15 +581,18 @@ int yk_note_slot(yk_map_t *m, uint32_t enemy_id, int slot, int active, const flo
      * ⚠ 放在**边沿复位之后**：真被重新武装过的那一帧按上面的边沿处理，不记年龄。
      * ⚠ 年龄**只在卡 tick 里 ++**（这里）—— 闸那条 P8-4 的递增已删（两边各 ++ 会让 600 走成 2×）。*/
     if (e->fam_seen && !e->fam_id) {
+        if (e->eton_gap < 0xffffu) ++e->eton_gap;          /* ★ owner ②：距上次 etOn 的帧数 */
         if (e->no_fam_frames < YK_EMIT_REBUILD_TTL) ++e->no_fam_frames;
         if (e->no_fam_frames >= YK_EMIT_REBUILD_TTL) {
             e->fam_seen = 0;                              /* 闸放行 */
             e->broken = 0;                                /* 允许重建（下面那条分支本帧就建）*/
             e->rearm_pending = 0;                         /* 下一个夹持期从头记账 */
+            e->eton_gap = 0;
             ++m->heals;                                   /* ★ 记账：卡侧每帧读一次打日志（P1 验收）*/
         }
     } else {
         e->no_fam_frames = 0;
+        e->eton_gap = 0;
     }
 
     /* 状态差分：不活跃且有使魔 → 撤。*/
@@ -624,6 +634,7 @@ int yk_frame_end(yk_map_t *m, yk_action_t *out, int max)
         e->broken = 0;
         e->fam_seen = 0;
         e->no_fam_frames = 0;
+        e->eton_gap = 0;
         e->rearm_pending = 0;                             /* ★ P1 记账位：退休的条目不带夹持记账 */
     }
     return n;
@@ -636,6 +647,7 @@ void yk_fam_created(yk_map_t *m, uint32_t enemy_id, int slot, uint32_t fam_id)
     e->fam_id = fam_id;
     e->fam_seen = 1;                                      /* ★ 关闸的「曾经有过」记忆 */
     e->no_fam_frames = 0;                                 /* ★ 建回来了 ⇒ 闸的年龄归零（#7）*/
+    e->eton_gap = 0;                                      /* ★ owner ②：重建 = 间隔重新起算 */
     e->rearm_pending = 0;                                 /* ★ P1：新使魔 = 新的夹持记账周期 */
     e->prev_life = YK_LIFE_UNSAMPLED;                     /* 新使魔：下一帧才允许出 delta */
 }
@@ -646,6 +658,7 @@ int yk_fam_broken(yk_map_t *m, uint32_t fam_id)
     if (!e) return 0;
     e->fam_id = 0;
     e->no_fam_frames = 0;                                 /* ★ #7：从「它没了的这一刻」开始计闸的年龄 */
+    e->eton_gap = 0;                                      /* ★ owner ②：同理，间隔从这一刻重新算 */
     e->prev_life = YK_LIFE_UNSAMPLED;
     /* ★ P1（2026-10-01）：这里**保留** `rearm_pending` —— 它现在只表示「这个夹持期已数过一次」，
      *   清不清都不再影响放行（放行只走主复位口 / 长期 TTL）。*/
@@ -665,6 +678,7 @@ void yk_fam_gone(yk_map_t *m, uint32_t fam_id)
     if (!e) return;
     e->fam_id = 0;
     e->no_fam_frames = 0;                                 /* ★ #7：同上（松手那一刻重新计年龄）*/
+    e->eton_gap = 0;
     e->prev_life = YK_LIFE_UNSAMPLED;
     /* ★ 2026-09-12：这里**不能**置 `broken`（试过，直接把既有的「静默移除 ⇒ 下一帧补建」断言打红）。
      * 理由：`broken` 唯一的复位口是 `yk_note_slot` 的 inactive→active 边沿，而本函数处理的是
@@ -735,6 +749,21 @@ int yk_shot_slot_gate(yk_map_t *m, uint32_t enemy_id, int slot, uint32_t have_fa
 
     if (!yk_shot_slot_suppressed(m, enemy_id, slot, have_fam_id)) return 0;   /* 放行（使魔还在/没管过）*/
     e = yk_map_find(m, enemy_id, slot);      /* 上面那支已确认条目存在（否则它返回 0）*/
+    /* ★★★ 2026-10-01（owner 实跑 ② · **波次边沿 = `etOn` 间隔**，一手 ECL 证据见 `YK_EMIT_WAVE_GAP`）：
+     *   夹着的槽下一次被 `etOn` 问到、且**距上次 `etOn` ≥ `YK_EMIT_WAVE_GAP` 帧**
+     *   ⇒ 判定「新的一波」：清夹持态并**放行本帧这一条 `etOn`**（新波第一发不该白丢），
+     *   1:1 映射下一帧把使魔建回来。⇒ 「打光一波的使魔 ⇒ 该波不再发弹；下一波开始重建」。
+     *   ⚠ 顺序在「记账」之前：本帧既不算一次夹持（`rearms`），也不算一次间隔。*/
+    if (e && e->fam_seen && e->eton_gap >= (uint16_t)YK_EMIT_WAVE_GAP) {
+        e->fam_seen = 0;
+        e->broken = 0;
+        e->no_fam_frames = 0;
+        e->eton_gap = 0;
+        e->rearm_pending = 0;
+        ++m->gap_releases;                   /* ★ 与 `releases`（enmKillAll）分开记账：实跑可分辨 */
+        return 0;                            /* 放行：新波的第一发照发 */
+    }
+    if (e) e->eton_gap = 0;                  /* 本帧这一次 `etOn` ⇒ 间隔计时归零（无论掐不掐）*/
     if (e && !e->rearm_pending) {
         e->rearm_pending = 1;                /* ★ 纯记账：这个夹持期已经数过一次（不再驱动放行）*/
         ++m->rearms;                         /* ★ 记账（只增不清）：涨了 = 有槽被夹住过 */
@@ -760,6 +789,7 @@ int yk_fam_wave_clear(yk_map_t *m, uint32_t fam_id)
     e->fam_seen = 0;                 /* 闸放行 */
     e->broken = 0;                   /* 允许重建 */
     e->no_fam_frames = 0;
+    e->eton_gap = 0;
     e->rearm_pending = 0;            /* 新波：夹持记账从头开始 */
     e->prev_life = YK_LIFE_UNSAMPLED;
     ++m->releases;                   /* ★ 记账：波次边沿放行了几次（卡侧打日志）*/
@@ -830,6 +860,19 @@ int yk_withdraw_all(yk_map_t *m, yk_action_t *out, int max)
  *   **只有 spawn 那一刻会置位**（建出来之后回写 `enemy+0x6220/24/28` 不置）⇒ 想要 >999 的真血量，
  *   照 `cards/ufo.c:3518` 的先例（先 999 出生、再回写三格 life）。本卡（含绕转使魔）**不**需要它：
  *   一律 ≤999。逐条依据见 `youkai_core.h` 的 `YK_LIFE_LIMIT`。*/
+/* ★★★ 2026-10-01（**owner 口径 ④**：放 B / 灵界 / 暴走咆哮期间**锁形态**）—— 两个纯判据。
+ * 语义 / owner 原话 / 「灵击不算 B」的一手判据全在 `youkai_core.h` 的同名小节。*/
+int yk_is_real_bomb(int bomb_active, int started_in_deathbomb)
+{
+    if (!bomb_active) return 0;
+    return started_in_deathbomb ? 0 : 1;      /* 灵击（决死窗口里按的 B）不算「真 B」*/
+}
+
+int yk_side_switch_allowed(int trance, int roar, int real_bomb)
+{
+    return (trance || roar || real_bomb) ? 0 : 1;   /* 任一成立 ⇒ 锁住当前侧（不许切）*/
+}
+
 int32_t yk_clamp_spawn_life(int32_t life)
 {
     if (life < 1) return 1;                               /* 0 及以下没有意义（引擎拿它算血条 / 死亡判定）*/
@@ -2017,9 +2060,16 @@ int yk_orbit_rings_for_count(int count)
  * 模型 / owner 原话 / 四机体推导表（标称 DPS、命中系数、有效 DPS、倍率）全在 `youkai_core.h` 的同名小节。
  * 顺序 = `YK_CHAR_*`（0 灵梦 / 1 魔理沙 / 2 咲夜 / 3 早苗）；单位 = **千分比**（1000 = ×1.0）——
  * 本仓 .c 禁浮点库、也不返回 float（x87 闸会红）。⚠ 这是**平衡口径、不是复刻**；owner 报数后只改本表。*/
+/* ★★★ 2026-10-01（**owner 第三轮**）：「魔理沙的命中系数再下调」——**一档下调 0.85 ⇒ ≈0.59**
+ *（倍率 500‰ ⇒ **350‰**，`350/1000 = 1280×k/760` ⇒ k ≈ 0.59）。依据：
+ *   ① owner 直接点名；② 她的标称高速 DPS 本来就是四机体**最低**（760），原 0.85（「窄束命中不差」）
+ *      在 5/6 面那些**会移动 / 有部件**的目标上偏乐观；③ 下调后 13000 母机 ⇒ 使魔
+ *      `4333 × 0.35 = 1516`，按有效 `760 × 0.59 ≈ 448` dps 打死需 **3.38 s**（仍 < 6 s 波、
+ *      仍与其余三机体等时）⇒ 不破坏「谁都能一波打死一只」的口径。
+ * ❓ 仍是**估计值、待实测校准**：owner 报数后只改本表一行（`TUNING.md` §2.1ccc-32）。*/
 static const int s_fam_hp_char_permille[YK_OPTION_CHARS] = {
     YK_FAM_HP_CHAR_PERMILLE_ONE,   /* 0 灵梦：基准 1.00（高速追踪）*/
-    500,                           /* 1 魔理沙：760 × 0.85 = 646 ⇒ 646/1280 ≈ 0.50 */
+    350,                           /* 1 魔理沙：760 × 0.59 ≈ 448 ⇒ 448/1280 ≈ 0.35（★ owner 第三轮一档下调）*/
     880,                           /* 2 咲夜：1880 × 0.60 = 1128 ⇒ 1128/1280 ≈ 0.88 */
     240                            /* 3 早苗：616 × 0.50 = 308 ⇒ 308/1280 ≈ 0.24（owner：扩散机体）*/
 };
