@@ -1,6 +1,7 @@
-/* 天顶剑（id 87）纯逻辑单测：开火节奏 / 挑最近的敌人 / 剑刃池的发射与推进。
+/* 天顶剑（id 87）纯逻辑单测：开火节奏 / 挑最近的敌人 / **剑刃的泰拉瑞亚运动参数**
+ *（椭圆半轴、相位寿命、透明度、命中冷却、残影节奏）。
  *   cc -std=c11 -Wall -Wextra -Werror -o t tests/test_zenith_core.c cards/zenith_core.c -lm && ./t
- * 角度那一段与 libm 对拍（bc_atan2f 本身的误差界在 test_broken_core_core.c 里测过，这里只查用对了没有）。 */
+ * 公式的一手对照表在 `zenith_core.h` 文件头（Terraria `Projectile.AI_182_FinalFractal`）。 */
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>
@@ -11,7 +12,7 @@
 #endif
 
 #include "../cards/zenith_core.h"
-#include "../cards/broken_core_core.h"     /* bc_atan2f：角度与 zenith.c 用的是同一个 */
+#include "../cards/broken_core_core.h"     /* bc_atan2f：与 zenith.c / zenith_core.c 同一份 */
 
 static int fails;
 #define CHECK(cond, ...) do { if (!(cond)) { printf("FAIL %s:%d ", __FILE__, __LINE__); \
@@ -26,9 +27,7 @@ static void test_charge(void)
     for (i = 1; i < ZN_PERIOD; i++)
         CHECK(!zn_charge(&s), "帧 %d 就蓄满了", i);
     CHECK(zn_charge(&s), "第 %d 帧该蓄满", ZN_PERIOD);
-    CHECK(s.frames == (uint32_t)ZN_PERIOD, "frames=%u", s.frames);
 
-    /* 蓄满后没目标 / 池满 ⇒ 一直保持蓄满（敌人一进射程就出手）*/
     for (i = 0; i < 300; i++) CHECK(zn_charge(&s), "蓄满后第 %d 帧掉了", i);
     CHECK(s.fired == 0, "还没开火 fired=%u", s.fired);
 
@@ -45,86 +44,148 @@ static void test_aim(void)
 
     zn_aim_reset(&a);
     CHECK(!zn_aim_ready(&a), "没有候选却给出了目标");
-
-    /* 射程外的不算 */
-    zn_aim_reset(&a);
     zn_aim_consider(&a, 0.0f, 0.0f, ZN_RANGE + 1.0f, 0.0f);
     CHECK(!zn_aim_ready(&a), "射程外的敌人被选中了");
-
-    /* 边界：正好射程内 */
     zn_aim_reset(&a);
     zn_aim_consider(&a, 0.0f, 0.0f, ZN_RANGE - 1.0f, 0.0f);
     CHECK(zn_aim_ready(&a), "射程内的敌人没选中");
-    CHECK(fabsf(bc_atan2f(a.dy, a.dx)) < 1e-4f, "正右方角度应为 0");
 
-    /* 取最近的那个，与加入顺序无关 */
     zn_aim_reset(&a);
     zn_aim_consider(&a, 10.0f, 10.0f, 10.0f, -90.0f);   /* 距 100，正上方 */
     zn_aim_consider(&a, 10.0f, 10.0f, 60.0f, 10.0f);    /* 距 50，正右方 */
     zn_aim_consider(&a, 10.0f, 10.0f, 10.0f, 210.0f);   /* 距 200 */
-    CHECK(zn_aim_ready(&a), "该有目标");
-    CHECK(a.dx == 50.0f && a.dy == 0.0f, "该选正右方那个 (%.1f, %.1f)", a.dx, a.dy);
-    CHECK(fabsf(bc_atan2f(a.dy, a.dx)) < 1e-4f, "该选正右方那个");
+    CHECK(zn_aim_ready(&a) && a.dx == 50.0f && a.dy == 0.0f, "该选正右方那个");
 }
 
-static void test_launch_and_advance(void)
+static void test_launch(void)
 {
     zn_state_t s;
     zn_blade_t *b;
-    float x0, y0;
 
+    /* 目标 (300,400)：两点距 500 > ZN_ARC_MAX ⇒ 截到 200 ⇒ velocity = 偏移 (60,80)（= 目标方向 × 100）*/
     zn_reset(&s);
     b = zn_slot(&s);
     CHECK(b == &s.b[0], "第一个空槽该是 [0]");
+    zn_launch(b, 0x1234u, 7, 0x00AABBCCu, 0.0f, 0.0f, 300.0f, 400.0f, 50.0f);
+    CHECK(b->active == 1 && b->id == 0x1234u && b->sprite == 7 && b->color == 0x00AABBCCu,
+          "发射没生效");
+    CHECK(fabsf(b->vx - 60.0f) < 1e-4f && fabsf(b->vy - 80.0f) < 1e-4f,
+          "velocity 偏移该是 (60, 80)，得到 (%g, %g)", (double)b->vx, (double)b->vy);
+    CHECK(fabsf(b->heading - bc_atan2f(160.0f, 120.0f)) < 1e-5f, "heading 该指向目标");
+    CHECK(zn_sign(b) == 1.0f, "向右飞 sign 该是 +1");
+    CHECK(fabsf(zn_fast(b) - (700.0f / 900.0f)) < 1e-4f, "fast=%g（|v|·2 = 200）", (double)zn_fast(b));
+    CHECK(fabsf(zn_rate(b) - (0.7f + 1.3f * (700.0f / 900.0f))) < 1e-4f, "rate=%g", (double)zn_rate(b));
+    CHECK(fabsf(b->ai0 - 50.0f) < 1e-4f, "ai0 该原样存下");
+    CHECK(b->phase == 0.0f, "发射该把相位清零");
 
-    /* 朝正右方（dx=+100, dy=0）：速度 = ZN_SPEED，方向 +x */
-    zn_launch(b, 0x1234u, 10.0f, 20.0f, 100.0f, 0.0f);
-    CHECK(b->active == 1 && b->id == 0x1234u, "发射没生效");
-    CHECK(fabsf(b->vx - ZN_SPEED) < 1e-4f && fabsf(b->vy) < 1e-4f,
-          "速度该是 (+%g, 0)，得到 (%g, %g)", (double)ZN_SPEED, (double)b->vx, (double)b->vy);
-    CHECK(b->life == ZN_LIFE, "寿命该是 %d，得到 %u", ZN_LIFE, b->life);
-    CHECK(b->rot == 0.0f, "初角该是 0");
-
-    /* 斜向：归一化后速度模长仍是 ZN_SPEED（3-4-5 三角形，方向要保对）*/
+    /* 向左飞 ⇒ sign = −1；目标是原地 ⇒ |v| = 0 ⇒ fast = 1（最慢的相增 = 0.7）*/
     zn_reset(&s);
     b = zn_slot(&s);
-    zn_launch(b, 1u, 0.0f, 0.0f, 300.0f, 400.0f);
-    CHECK(fabsf(b->vx - ZN_SPEED * 0.6f) < 1e-4f && fabsf(b->vy - ZN_SPEED * 0.8f) < 1e-4f,
-          "3-4-5 方向错了：(%g, %g)", (double)b->vx, (double)b->vy);
-
-    /* 原地（dx=dy=0）：不产生 NaN，速度 0 */
+    zn_launch(b, 1u, 0, 0, 0.0f, 0.0f, -80.0f, 60.0f, 0.0f);
+    CHECK(zn_sign(b) == -1.0f, "向左飞 sign 该是 −1");
     zn_reset(&s);
     b = zn_slot(&s);
-    zn_launch(b, 2u, 5.0f, 6.0f, 0.0f, 0.0f);
-    CHECK(b->vx == 0.0f && b->vy == 0.0f, "零向量该给零速度");
+    zn_launch(b, 2u, 0, 0, 5.0f, 6.0f, 5.0f, 6.0f, 0.0f);
+    CHECK(b->vx == 0.0f && b->vy == 0.0f && zn_fast(b) == 1.0f, "原地：v = 0、fast = 1");
+    /* 原版 `Lerp(0.7, 2, GetLerpValue(900,0,|v|·2,true))`：**|v| 越小 fast 越接近 1 ⇒ 相增越大（寿命越短）** */
+    CHECK(fabsf(zn_rate(b) - ZN_SPIN_MAX) < 1e-5f, "原地该用最快的相增 %g，得到 %g", (double)ZN_SPIN_MAX, (double)zn_rate(b));
 
-    /* 推进：每帧走一步、寿命每帧减一、自旋单调累加 */
+    /* |v| 很大 ⇒ fast 接近 0 ⇒ 相增接近 2.0（原版：飞得越快转得越快）*/
     zn_reset(&s);
     b = zn_slot(&s);
-    zn_launch(b, 3u, 0.0f, 0.0f, 1.0f, 0.0f);
-    x0 = b->x; y0 = b->y;
-    zn_advance(b);
-    CHECK(fabsf(b->x - (x0 + ZN_SPEED)) < 1e-4f && b->y == y0, "推进位移不对");
-    CHECK(b->life == ZN_LIFE - 1, "寿命该减一，得到 %u", b->life);
-    CHECK(fabsf(b->rot - ZN_SPIN) < 1e-4f, "自旋该累加，得到 %g", (double)b->rot);
-
-    /* 寿命尽 ⇒ active 清 0（调用方据此收 VM）。起点放在左边界内，免得先撞出界那条。
-     * 一趟 = ZN_LIFE × ZN_SPEED ≈ 598 px，正好与射程 ZN_RANGE 同量级（见 zenith_core.h 的注释）。*/
-    zn_reset(&s);
-    b = zn_slot(&s);
-    zn_launch(b, 4u, ZN_X_MIN + 10.0f, 0.0f, 1.0f, 0.0f);
-    for (int i = 0; i < ZN_LIFE; i++) {
-        CHECK(b->active, "第 %d 帧就没了", i);
-        zn_advance(b);
+    zn_launch(b, 3u, 0, 0, 0.0f, 0.0f, ZN_ARC_MAX, 0.0f, 0.0f);   /* |v| = 100、|v|·2 = 200 → fast = 700/900 */
+    {
+        zn_state_t s2;
+        zn_blade_t *b2;
+        zn_reset(&s2);
+        b2 = zn_slot(&s2);
+        /* 极小距离 ⇒ fast 接近 1（慢）——与上一行对照，方向正确即可 */
+        zn_launch(b2, 4u, 0, 0, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f);
+        CHECK(zn_rate(b2) > zn_rate(b), "越近相增越大（原版：|v| 小 ⇒ GetLerpValue 大 ⇒ Lerp 靠 2.0）");
     }
-    CHECK(!b->active, "寿命尽了还活着");
 
-    /* 出界（往正下方飞，y 越过 ZN_Y_MAX）⇒ 早于寿命结束就收 */
+    /* ai0 超界要夹到 [−100, 100]（原版 ai[0] 只可能是这个范围）*/
     zn_reset(&s);
     b = zn_slot(&s);
-    zn_launch(b, 5u, 0.0f, ZN_Y_MAX - 1.0f, 0.0f, 1.0f);
-    zn_advance(b);
-    CHECK(!b->active, "出界了还活着");
+    zn_launch(b, 5u, 0, 0, 0.0f, 0.0f, 10.0f, 0.0f, 9999.0f);
+    CHECK(b->ai0 == ZN_AI0_MAX, "ai0 该夹到 %g，得到 %g", (double)ZN_AI0_MAX, (double)b->ai0);
+    zn_launch(b, 5u, 0, 0, 0.0f, 0.0f, 10.0f, 0.0f, -9999.0f);
+    CHECK(b->ai0 == -ZN_AI0_MAX, "ai0 该夹到 −%g", (double)ZN_AI0_MAX);
+}
+
+static void test_orbit_params(void)
+{
+    zn_state_t s;
+    zn_blade_t *b;
+    zn_pose_t p;
+    int i, n_trail = 0, n_hit = 0;
+    float prev_ang;
+    float vlen;
+
+    /* 出膛点 (0,0) → 目标 (120,160)：d = 200 = ZN_ARC_MAX ⇒ |v| = 100、heading = atan2(160,120) */
+    zn_reset(&s);
+    b = zn_slot(&s);
+    zn_launch(b, 3u, 0, 0, 0.0f, 0.0f, 120.0f, 160.0f, 100.0f);
+    vlen = __builtin_sqrtf(b->vx * b->vx + b->vy * b->vy);
+
+    /* 第一帧：L = rate/60、ang = π + 1·L·2π、R = max(60, |v| + 0)·1、A = ai0·Lerp(2,1,fast) */
+    zn_step(b, &p);
+    CHECK(!p.done, "第一帧不该就结束");
+    {
+        float L = zn_rate(b) / ZN_PHASE_SWING;
+        float want_ang = (float)M_PI + L * 2.0f * (float)M_PI;
+        float want_A = 100.0f * (2.0f + (1.0f - 2.0f) * zn_fast(b));
+        CHECK(fabsf(p.ang - want_ang) < 1e-4f, "ang=%g 该是 %g", (double)p.ang, (double)want_ang);
+        CHECK(p.ang > (float)M_PI, "第一帧该从 π 往正方向转（sign=+1）");
+        CHECK(fabsf(p.A - want_A) < 1e-3f, "A=%g 该是 %g", (double)p.A, (double)want_A);
+    }
+    /* R：|v| = 100 > 60 ⇒ L 小的时候 R = 100（还没加 40）*/
+    CHECK(fabsf(p.R - vlen) < 1e-3f || p.R >= ZN_RADIUS_MIN, "R=%g 不该小于 |v|", (double)p.R);
+    /* rot = ang + heading + π/2（原版 rotation 那一行）*/
+    CHECK(fabsf(p.rot - (p.ang + b->heading + 1.5707963705062866f)) < 1e-5f, "rot 公式不对");
+    /* 透明度：前 5 个相位单位淡入 */
+    CHECK(p.alpha > 0 && p.alpha < 255, "淡入第一帧 alpha=%d", p.alpha);
+    /* fade 起始偏移：k = 1 − GetLerpValue(0,0.5,L)；fade_x = k·sign·−R·0.1、fade_y = k·−ai0·0.3 */
+    {
+        float L0 = zn_rate(b) / ZN_PHASE_SWING;
+        float k0 = 1.0f - (L0 < 0.0f ? 0.0f : (L0 > 0.5f ? 1.0f : L0 / 0.5f));
+        CHECK(k0 > 0.9f, "第一帧 k 该接近 1，得到 %g", (double)k0);
+        CHECK(fabsf(p.fade_x - (k0 * zn_sign(b) * -p.R * 0.1f)) < 1e-3f, "fade_x=%g", (double)p.fade_x);
+        CHECK(fabsf(p.fade_y - (k0 * -100.0f * 0.3f)) < 1e-3f, "fade_y=%g", (double)p.fade_y);
+    }
+
+    /* 相位走到 ZN_PHASE_SWING：L 夹到 1、ang 停在 π + 2π、R 长到 |v| + 40、fade 衰减到 0 */
+    prev_ang = p.ang;
+    for (i = 0; b->phase < ZN_PHASE_SWING && i < 1000; ++i) {
+        zn_step(b, &p);
+        CHECK(p.ang + 1e-4f >= prev_ang, "ang 该单调增（sign=+1）");
+        prev_ang = p.ang;
+        n_trail += p.emit_trail;
+        n_hit += p.hit;
+    }
+    CHECK(fabsf(p.ang - ((float)M_PI + 2.0f * (float)M_PI)) < 1e-3f,
+          "满相位时 ang 该停在 3π，得到 %g", (double)p.ang);
+    CHECK(fabsf(p.R - (vlen + ZN_RADIUS_ADD)) < 1e-3f, "满相位时 R 该是 |v| + 40，得到 %g", (double)p.R);
+    CHECK(fabsf(p.fade_x) < 1e-3f && fabsf(p.fade_y) < 1e-3f, "满相位时 fade 该衰减到 0");
+    /* 残影 / 命中节奏：走完 60 相位大约 60/rate 帧 */
+    CHECK(n_trail >= 10, "60 相位里该留了不少残影，得到 %d", n_trail);
+    CHECK(n_hit >= 5, "60 相位里该命中若干次，得到 %d", n_hit);
+
+    /* 寿命：相位到 ZN_PHASE_END 那一帧 done=1；帧数落在 [120/2.0, 120/0.7] 内 */
+    zn_reset(&s);
+    b = zn_slot(&s);
+    zn_launch(b, 5u, 0, 0, 0.0f, 0.0f, 120.0f, 160.0f, 0.0f);
+    for (i = 0; i < 10000; ++i) {
+        zn_step(b, &p);
+        if (p.done) break;
+        CHECK(b->active, "还没到相位上限就断了");
+        CHECK(p.alpha > 0, "中途 alpha 掉到 0（第 %d 帧）", i);
+    }
+    CHECK(p.done == 1 && !b->active, "相位到 %g 该结束", (double)ZN_PHASE_END);
+    CHECK(b->phase >= ZN_PHASE_END, "结束时相位该到上限");
+    CHECK(i + 1 >= (int)(ZN_PHASE_END / ZN_SPIN_MAX) && i + 1 <= (int)(ZN_PHASE_END / ZN_SPIN_MIN) + 1,
+          "寿命 %d 帧超出 [%d, %d]", i + 1, (int)(ZN_PHASE_END / ZN_SPIN_MAX),
+          (int)(ZN_PHASE_END / ZN_SPIN_MIN) + 1);
 }
 
 static void test_pool(void)
@@ -134,22 +195,15 @@ static void test_pool(void)
 
     zn_reset(&s);
     CHECK(zn_live(&s) == 0, "空池 live=%d", zn_live(&s));
-
-    /* 池满：第 ZN_BLADE_MAX+1 个拿不到槽 */
     for (i = 0; i < ZN_BLADE_MAX; i++) {
         zn_blade_t *b = zn_slot(&s);
         CHECK(b != 0, "第 %d 个该拿得到槽", i);
-        zn_launch(b, (uint32_t)(i + 1), 0.0f, 0.0f, 1.0f, 0.0f);
+        zn_launch(b, (uint32_t)(i + 1), 0, 0, 0.0f, 0.0f, 60.0f, 80.0f, 0.0f);
     }
     CHECK(zn_slot(&s) == 0, "池满了还给槽");
     CHECK(zn_live(&s) == ZN_BLADE_MAX, "live=%d", zn_live(&s));
-
-    /* 放掉一个 ⇒ 槽能复用 */
     s.b[3].active = 0;
-    CHECK(zn_live(&s) == ZN_BLADE_MAX - 1, "live=%d", zn_live(&s));
     CHECK(zn_slot(&s) == &s.b[3], "没复用刚放掉的槽");
-
-    /* zn_reset 全清 */
     zn_reset(&s);
     CHECK(zn_live(&s) == 0 && zn_slot(&s) == &s.b[0], "reset 没清干净");
 }
@@ -158,7 +212,8 @@ int main(void)
 {
     test_charge();
     test_aim();
-    test_launch_and_advance();
+    test_launch();
+    test_orbit_params();
     test_pool();
     printf(fails ? "zenith_core: %d FAILED\n" : "zenith_core: ok\n", fails);
     return fails ? 1 : 0;

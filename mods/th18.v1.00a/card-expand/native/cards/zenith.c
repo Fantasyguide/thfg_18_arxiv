@@ -1,28 +1,28 @@
-/* 天顶剑（id 87）—— 装备卡，致敬《泰拉瑞亚》的天顶剑（Zenith，物品 4144）。
+/* 天顶剑（id 87）—— 装备卡，致敬《泰拉瑞亚》的天顶剑（Zenith，Item 4956 / ProjectileID.FinalFractal 933）。
  *
  * 身边一把剑形**跟班**（原生装备卡的子机机制，与 71 破损核心 / 77 豌豆射手同一套 `ce_option_*`），
- * 每 ZN_PERIOD 帧朝**最近的敌人**掷出一把**自旋的剑刃**；剑刃直线飞一段（ZN_LIFE 帧）后消失。
+ * 每 ZN_PERIOD 帧朝**最近的敌人**甩出一把剑；剑的运动 / 贴图 / 特效都是**泰拉瑞亚原版复刻**：
+ *   · 剑不飞 —— 它**绕着「跟班 + velocity」这个点画椭圆**（`velocity` 是出膛定死的偏移，
+ *     原版 `A:182` 的 `UpdatePosition` 对 933 直接早退 ⇒ 从不积分）；一圈 60 相位走完、
+ *     相位 120 消失（详见 `zenith_core.h` 的对照表）。
+ *   · 贴图 = 原版 `FinalFractalHelper` 的 **21 把剑**随机挑（第 1/4/7… 把固定是天顶剑本体，
+ *     其余从另外 20 把里抽 —— 对位 `GetRandomProfileIndex()` 会重掷掉 4956）。
+ *   · 特效 = 原版的三件：**残影**（每 2 帧一枚、按这把剑的 `trailColor` 染色、渐隐）、
+ *     **命中**（沿刃的判定，冷却 7 帧 ≈ 原版 `localNPCHitCooldown`）、出膛音（`se_slash`）。
  *
- * 三件事各自的出处（都能在仓里找到现成写法，没有自创机制）：
+ * 三件事各自的出处：
  *   ① 跟班：`Player__allocate_option`（引擎管位置 / 聚焦位移 / 开店收起）—— 见 `broken_core.c` 文件头；
- *      指针存本卡私有状态（我们的对象只有 0x54 字节，原生的 `card+0x54` 在对象外）。
- *      侧向站位自己写 `option+0x64/+0x6c`（原生卡 `th18:0x40b8c1` 同款；allocate 只写 y 偏移）。
- *   ② 挑最近的敌人：距离平方比较（照 `broken_core_core.c` 的 `bc_aim_*`，本卡自带一份是为了改射程）；
- *      角度用 `bc_atan2f`（确定性 SSE 多项式，不引 libm、零 x87）。
- *   ③ 会飞的伤害弹：**卡自管 ANM VM + 每帧一个小矩形伤害源** —— 炎魔火球（72）的写法：
- *      `ce_anm_spawn` 起 VM → 每帧 `ce_anm_set_pos` / `set_rotation` → 每帧在剑刃位置 `ce_damage_rect`
- *      （一个源对同一敌人只结算一次 ⇒ 要连续伤害就得每帧放新源）。`on_delete` 里逐个删 VM。
- *      ❓ 与炎魔唯一的差别：这是**多发在途的池**（炎魔只有一颗火球）—— 池的写法是新东西，
- *      数值（周期 / 速度 / 伤害 / 射程）一律 `❓ 自定`，登记在 `TUNING.md` 的 87 条目。
+ *      侧向站位自己写 `option+0x64/+0x6c`（原生卡 `0x40b8c1` 同款；allocate 只写 y 偏移）。
+ *   ② 瞄准：距离平方取最近（射程 640；原版是「光标 400 px 内最近敌」）+ `bc_atan2f`。
+ *   ③ 剑刃：**卡自管的 ANM VM**（炎魔火球 72 的写法，但**多发在途的池**是本卡的新写法）。
+ *      椭圆的两次旋转走引擎的 `ce_polar_to_vel()`（FSINCOS）—— 我们自己的目标文件零 sin/cos、零 x87。
  *
- * 为什么不用 SHT shooterset 那条链（豌豆射手的写法）：`+0x1c` 只在**按住射击键**时广播，
- * 而这张卡的剑刃要跟班自己定时掷（不按键）—— 那条路要自己在 `on_tick_2` 里调 `0x40a9c0`，
- * 反而比 ANM 弹更绕，而且要把弹的贴图绑到 ability.anm 的 shooter 记录上。
- *
- * 纯逻辑（节奏 / 池 / 瞄准）在 zenith_core.c，主机单测 tests/test_zenith_core.c。 */
+ * 收尾（CARD-CHECKLIST §3）：`on_delete` 删光全部剑刃 VM + 最近一枚残影 VM + 还子机槽 ——
+ * 商店里删卡时 tick 全停，只有 `on_delete` 跑得到。
+ * 纯逻辑（节奏 / 池 / 运动参数）在 `zenith_core.c`，主机单测 `tests/test_zenith_core.c`。 */
 #include "sdk.h"
 #include "zenith_core.h"
-#include "broken_core_core.h"      /* bc_atan2f：确定性 SSE 多项式（见那个头；禁止调引擎的 x87 atan2）*/
+#include "broken_core_core.h"      /* bc_atan2f：确定性 SSE 多项式（禁调引擎的 x87 atan2）*/
 
 #define ZN_OPT_ANM_Y    0x10       /* allocate 的偏移参（引擎把它写进 option+0x68/+0x70 两个 y 偏移）*/
 #define ZN_OPT_NF_X     46.0f      /* 非聚焦：自机右前方一点 ❓ 自定（allocate 只给 y，x 自己写）*/
@@ -31,14 +31,50 @@
 #define ZN_OPT_F_Y      (-20.0f)
 #define ZN_RETRY        60         /* 关卡中途买到这张卡：没拿到子机时的重试间隔（槽满 / 广播还没来）*/
 #define ZN_LAYER        13         /* 世界特效层（破损核心 / 炎魔 / 青眼同层）*/
-#define ZN_SE_SLASH     0x2d       /* TH18 音效表 0x2d = se_slash.wav（一手 engine/_shared/th18-sound-table.md）*/
+#define ZN_SE_SLASH     0x2d       /* TH18 音效表 0x2d = se_slash.wav（一手 engine/_shared/th18-sound-table.md）；
+                                    * 对位 Terraria 的 `SoundID.Item169`（原版每把出膛放一次）*/
+#define ZN_PROFILE_N    21         /* = `FinalFractalHelper._fractalProfiles` 的条数（一手，见 AUDIT §BE #211）*/
+#define ZN_RANDOM_N     20         /* 随机池 = 去掉天顶剑本体自己（原版 `GetRandomProfileIndex` 会重掷 4956）*/
 
 typedef struct {
     ce_option_t opt;               /* 跟班槽（SDK：认领 / 申请 / 收起）*/
-    zn_state_t  st;                /* 池 + 节奏（纯逻辑）*/
+    zn_state_t  st;                /* 池 + 节奏 + 运动（纯逻辑）*/
 } zn_card_t;
 
 _Static_assert(sizeof(zn_card_t) <= 496, "zenith: private state overflows CE_STATE_BYTES");
+
+/* ★ 泰拉瑞亚的剑阵表（`FinalFractalHelper._fractalProfiles`，**顺序照原版**；物品号与 trailColor
+ *   都是反 IL 读出来的，见 AUDIT §BE 详录 #211 与 `assets/ability/entries/ORDER.txt` 末段）。
+ *   原版结构 = `FinalFractalProfile(ItemID, bladeLength, trailColor)`；我们只用得到
+ *   「挑哪张 sprite」与「残影染什么色」两件事（bladeLength 是原版 ribbon 的半宽，我们不做 ribbon）。*/
+typedef struct {
+    int32_t  sprite;
+    uint32_t color;                /* 0x00RRGGBB */
+} zn_profile_t;
+
+static const zn_profile_t s_zn_profiles[ZN_PROFILE_N] = {
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_STARFURY,       0x00EC3EC0u },   /* 65   星怒 */
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_BEEKEEPER,      0x00FFE745u },   /* 1123 养蜂人（原版 = Main.OurFavoriteColor）*/
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_LIGHTSBANE,     0x007A42BFu },   /* 46   光之灾 */
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_FIERYGREATSWORD,0x00FE9E23u },   /* 121  炽焰巨剑 */
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_BLADEOFGRASS,   0x006BCB00u },   /* 190  草剑 */
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_EXCALIBUR,      0x00ECC813u },   /* 368  断钢剑 */
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_TRUEEXCALIBUR,  0x00ECC813u },   /* 674  真断钢剑 */
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_NIGHTSEDGE,     0x00B336C9u },   /* 273  暗影焰刃 */
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_TRUENIGHTSEDGE, 0x00B336C9u },   /* 675  真暗影焰刃 */
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_INFLUXWAVER,    0x0054EAF5u },   /* 2880 波涌之刃 */
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_ENCHANTEDSWORD, 0x005B9EE8u },   /* 989  附魔剑 */
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_HORSEMAN,       0x00FC5F04u },   /* 1826 无头骑士剑 */
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_MEOWMERE,       0x00FEC2FAu },   /* 3063 喵刀 */
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_STARWRATH,      0x00ED3F85u },   /* 3065 狂星之怒 */
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_TERRABLADE,     0x0050DE7Au },   /* 757  泰拉刃 */
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_MURAMASA,       0x00384ED2u },   /* 155  村正 */
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_BLOODBUTCHERER, 0x00ED1C24u },   /* 795  嗜血者 */
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_SEEDLER,        0x008FD71Du },   /* 3018 种子弯刀 */
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_TERRAGRIM,      0x00B2FFB4u },   /* 4144 地灵之刃 */
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_COPPERSHORT,    0x00EBA687u },   /* 3507 铜短剑 */
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_ZENITH,         0x00B2FFB4u },   /* 4956 天顶剑本体 */
+};
 
 /* 侧向站位：allocate 只会写 y 偏移（第 2 / 第 5 个栈参 ⇒ option+0x68 / +0x70），x 的两格留给卡自己写
  *（一手 `th18:0x40a80a` 写 0、原生卡 `th18:0x40b8c1` 自己摆阵型）。单位 = 像素，引擎每帧 ×128 用。 */
@@ -52,7 +88,7 @@ static void zn_place(ce_option_t *o)
     *(int32_t *)(p + CE_OPT_OFF_F_Y)  = (int32_t)(ZN_OPT_F_Y * 128.0f);
 }
 
-/* 收掉所有在飞的剑刃 VM。**不依赖 tick**（商店里删卡时只有 on_delete 跑得到）。 */
+/* 收掉所有在飞的剑刃 + 它们的残影。**不依赖 tick**（商店里删卡时只有 on_delete 跑得到）。 */
 static void zn_kill_blades(ce_card_t *c)
 {
     zn_card_t *s = ce_state(c, zn_card_t);
@@ -60,7 +96,9 @@ static void zn_kill_blades(ce_card_t *c)
     if (!s) return;
     for (i = 0; i < ZN_BLADE_MAX; ++i) {
         if (s->st.b[i].id) ce_anm_delete(s->st.b[i].id);
+        if (s->st.b[i].trail_id) ce_anm_delete(s->st.b[i].trail_id);   /* 更早的残影脚本自己 delete */
         s->st.b[i].id = 0;
+        s->st.b[i].trail_id = 0;
         s->st.b[i].active = 0;
     }
 }
@@ -85,8 +123,7 @@ static void on_run_reset(ce_card_t *c)
     if (s) zn_reset(&s->st);
 }
 
-/* +0x50：卡被局中删掉（倒吊人 / 原版空白卡弃整副牌，都在商店里成交）—— 那一刻 tick 全停、
- * on_load 不会再来，只有这里跑得到。子机槽没有别的回收者（12 格漏完就申请不到），剑刃 VM 也一样。 */
+/* +0x50：卡被局中删掉（倒吊人 / 原版空白卡弃整副牌，都在商店里成交）—— 那一刻 tick 全停。 */
 static void on_delete(ce_card_t *c)
 {
     on_run_reset(c);
@@ -96,6 +133,22 @@ static int on_load(ce_card_t *c)
 {
     on_run_reset(c);
     return 0;
+}
+
+/* 把一帧的位姿参数落成世界坐标：两次 `ce_polar_to_vel`（原版的两次 `RotatedBy`）。
+ *   offset = (Vector2(1,0).RotatedBy(ang) · Vector2(R, A)).RotatedBy(heading)
+ *          = ((R·cos ang, A·sin ang)) 在 heading 的坐标系里再转一次。*/
+static void zn_place_blade(const zn_blade_t *b, const zn_pose_t *p, float fx, float fy,
+                           float *out_x, float *out_y)
+{
+    float e[2], h[2], ex, ey;
+
+    ce_polar_to_vel(e, p->ang, 1.0f);          /* (cos ang, sin ang) */
+    ex = p->R * e[0];
+    ey = p->A * e[1];
+    ce_polar_to_vel(h, b->heading, 1.0f);      /* (cos heading, sin heading) */
+    *out_x = fx + b->vx + (ex * h[0] - ey * h[1]) + p->fade_x;
+    *out_y = fy + b->vy + (ex * h[1] + ey * h[0]) + p->fade_y;
 }
 
 /* +0x2c：AbilityManager 每帧（菜单 / 商店 / 暂停里不跑；优先级 0x16，在 GameThread 复位伤害上限 0x10 之后、
@@ -108,7 +161,8 @@ static int on_tick_2(ce_card_t *c)
     uint8_t *o, *enemy;
     zn_aim_t aim;
     zn_blade_t *b;
-    float ox, oy, pz;
+    zn_pose_t pose;
+    float fx, fy, pz, x, y, center[3];
     uint32_t id;
     int i;
 
@@ -117,54 +171,82 @@ static int on_tick_2(ce_card_t *c)
     if (!o) return 0;
     zn_place(&s->opt);                          /* 补申请 / 重建过 ⇒ 站位重新写一遍（幂等）*/
     pz = ce_player_pos()[2];
+    fx = ce_option_x(o);                        /* ★ 原版每帧重读 `player.MountedCenter` ⇒ 剑阵跟着跟班走 */
+    fy = ce_option_y(o);
 
-    /* ① 推进在飞的剑刃：写位姿 + 每帧在剑刃位置放一个小伤害源。
-     *    一个源对同一敌人只结算一次（src+0x84 tag 守卫）⇒ 连续伤害必须逐帧放新源（炎魔同款）。*/
+    /* ① 推进在飞的剑刃：算位姿（两次 RotatedBy 由 `ce_polar_to_vel` 完成）+ 命中 + 残影。 */
     for (i = 0; i < ZN_BLADE_MAX; ++i) {
         b = &s->st.b[i];
         if (!b->active) continue;
         if (!ce_anm_get_vm(b->id)) {            /* VM 被引擎收掉了（脚本 delete / 被别的路清）*/
-            b->active = 0; b->id = 0;
+            b->active = 0; b->id = 0; b->trail_id = 0;
             continue;
         }
-        zn_advance(b);
-        if (!b->active) {                       /* 寿命尽 / 出界：收 VM、放空槽 */
+        zn_step(b, &pose);
+        if (pose.done) {
             ce_anm_delete(b->id);
-            b->id = 0;
+            if (b->trail_id) ce_anm_delete(b->trail_id);
+            b->id = 0; b->trail_id = 0;
             continue;
         }
-        ce_anm_set_pos(b->id, b->x, b->y, pz);
-        ce_anm_set_rotation(b->id, 0.0f, 0.0f, b->rot);
-        {
-            float center[3] = { b->x, b->y, pz };
-            ce_damage_rect(center, 0.0f, ZN_HIT_LIFE, ZN_DMG, ZN_HIT_W, ZN_HIT_H);
+        zn_place_blade(b, &pose, fx, fy, &x, &y);
+        if (x < -ZN_VIEW_X || x > ZN_VIEW_X || y < ZN_VIEW_Y_MIN || y > ZN_VIEW_Y_MAX) {
+            ce_anm_delete(b->id);
+            if (b->trail_id) ce_anm_delete(b->trail_id);
+            b->id = 0; b->trail_id = 0; b->active = 0;
+            continue;
+        }
+        ce_anm_set_pos(b->id, x, y, pz);
+        ce_anm_set_rotation(b->id, 0.0f, 0.0f, pose.rot);
+        ce_anm_set_color(b->id, ((uint32_t)pose.alpha << 24) | 0x00ffffffu);   /* 原版 Opacity */
+        if (pose.hit) {                          /* 原版 localNPCHitCooldown：每 7 帧一次（沿刃的判定）*/
+            center[0] = x; center[1] = y; center[2] = pz;
+            ce_damage_rect(center, pose.rot, ZN_HIT_LIFE, ZN_DMG, ZN_HIT_W, ZN_HIT_H);
+        }
+        if (pose.emit_trail) {
+            uint32_t tr = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_ZENITH_TRAIL, ZN_LAYER);
+            if (tr) {
+                ce_anm_set_sprite(CE_ABILITY_ANM(), tr, (int)b->sprite);           /* 残影用同一把剑 */
+                ce_anm_set_color(tr, 0xff000000u | b->color);                 /* 原版 ribbon = 每把剑的 trailColor */
+                ce_anm_set_pos(tr, x, y, pz);
+                ce_anm_set_rotation(tr, 0.0f, 0.0f, pose.rot);
+                b->trail_id = tr;      /* 只记最近的（更早的自己 delete，同炎魔拖尾的处理）*/
+            }
         }
     }
     if (zn_live(&s->st) > 0) ce_raise_damage_cap(ZN_CAP);   /* 自机弹与卡共用每敌每帧上限：不抬就被自机弹吃满 */
 
-    /* ② 蓄满才掷；没目标 / 池满就一直攒着（蓄满状态保持，敌人一进射程就出手）。*/
+    /* ② 蓄满才甩；没目标 / 池满就一直攒着（蓄满状态保持，敌人一进射程就出手）。*/
     if (!zn_charge(&s->st) || !em) return 0;
-    ox = ce_option_x(o);
-    oy = ce_option_y(o);
     zn_aim_reset(&aim);
     CE_ENEMY_FOREACH(em, enemy) {
         if (!ce_enemy_lockable(enemy)) continue;
-        zn_aim_consider(&aim, ox, oy, ce_enemy_pos(enemy)[0], ce_enemy_pos(enemy)[1]);
+        zn_aim_consider(&aim, fx, fy, ce_enemy_pos(enemy)[0], ce_enemy_pos(enemy)[1]);
     }
     if (!zn_aim_ready(&aim)) return 0;
     b = zn_slot(&s->st);
     if (!b) return 0;
     id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_ZENITH_BLADE, ZN_LAYER);
     if (!id) return 0;
-    zn_launch(b, id, ox, oy, aim.dx, aim.dy);
-    ce_anm_set_pos(id, b->x, b->y, pz);
-    ce_anm_set_rotation(id, 0.0f, 0.0f, b->rot);
+    {
+        /* 原版：一挥 3 把，**第 1 把固定是天顶剑本体**，其余从另外 20 把里随机（`GetRandomProfileIndex`
+         * 会重掷掉 4956）。我们把它按「每第 3 把 = 本体」对位（跟班是连续出膛，没有"一挥"这个概念）。*/
+        int32_t slot = (s->st.fired % 3u == 0u) ? (ZN_PROFILE_N - 1)
+                                                : (int32_t)(ce_rand() % ZN_RANDOM_N);
+        const zn_profile_t *pr = &s_zn_profiles[slot];
+        ce_anm_set_sprite(CE_ABILITY_ANM(), id, pr->sprite);
+        zn_launch(b, id, pr->sprite, pr->color, fx, fy, fx + aim.dx, fy + aim.dy,
+                  (float)(int32_t)(ce_rand() % (2u * (uint32_t)ZN_AI0_MAX + 1u)) - ZN_AI0_MAX);
+    }
+    ce_anm_set_pos(id, fx, fy, pz);           /* 出膛那帧先摆在膛口（下一帧起走椭圆）*/
+    ce_anm_set_color(id, 0x00ffffffu);
     zn_did_fire(&s->st);
-    ce_play_sound(ZN_SE_SLASH, ox);
+    ce_play_sound(ZN_SE_SLASH, fx);
     if (s->st.fired <= 3 || s->st.fired % 20 == 0)
-        ce_log("zenith: blade #%u at frame %u, fam (%.1f, %.1f) -> (%.1f, %.1f) angle %.3f, live %d",
-               s->st.fired, s->st.frames, ox, oy, ox + aim.dx, oy + aim.dy,
-               bc_atan2f(aim.dy, aim.dx), zn_live(&s->st));
+        ce_log("zenith: blade #%u at frame %u, fam (%.1f, %.1f) -> (%.1f, %.1f) v|%.1f| ai0 %.0f sprite %d, live %d",
+               s->st.fired, s->st.frames, fx, fy, fx + aim.dx, fy + aim.dy,
+               zn_vlen(b), (double)b->ai0, (int)b->sprite,
+               zn_live(&s->st));
     return 0;
 }
 

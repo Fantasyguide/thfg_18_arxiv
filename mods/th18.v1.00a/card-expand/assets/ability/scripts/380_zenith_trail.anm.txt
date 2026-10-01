@@ -1,0 +1,20 @@
+script script380 {
+    // 天顶剑（id 87）的**剑刃残影**（Terraria 的 `oldPos/oldRot` 拖尾 + `SpawnDustMethod` 粒子的对位）。
+    // C 每 `ZN_TRAIL_EVERY` 帧在剑刃当前坐标起一个本脚本的 VM，并把**同一把剑的 sprite**（`ce_anm_set_sprite`）
+    // 与当前 rotation.z 抄过来；脚本自己淡出 + 缩小，10 帧后 `delete()` ⇒ **不需要卡回收**（自毁）。
+    // 一手对位：Terraria `Projectile.AI_182_FinalFractal` 里每帧按 `trailColor` / `trailWidth` 调
+    // `FinalFractalHelper.SpawnDustMethod(center, rotation, velocity)`（见 AUDIT §BE 详录 #211）。
+-1:
+    layer(13);
+    sprite(@ZENITH_BLADE_ZENITH);
+    type(1);
+    blendMode(1);
+    zWriteDisable(1);
+    scale(0.55f, 0.55f);
+    alpha(170);
+0:
+    alphaTime(10, 0, 0);
+    scaleTime(10, 0, 0.30f, 0.30f);
++10:
+    delete();
+}

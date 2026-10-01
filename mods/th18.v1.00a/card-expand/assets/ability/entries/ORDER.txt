@@ -979,8 +979,39 @@ YOUKAI_FAM_TRAIL  ability/youkai_familiar/YOUKAI_FAM_TRAIL.png  16x16
 #   owner 口径：「灵力道具得按照类季节道具做，动态什么的一模一样」＋「完全类似与信仰点、P点等」。
 #   **追加在文件末尾**（尾插 ⇒ 既有 entry / sprite 号一个不动，不制造共享件位移）。
 POFV109_POWER_P  ability/pofv109_power/POWER_P.png  32x32
-# ★★ 2026-10-02（87 天顶剑，致敬泰拉瑞亚 Zenith）：跟班本体与剑刃共用这一张 32×32 贴图 ——
-#   Terraria 原版物品「天顶剑」= `Item_4144`（用户本机 Steam 版 `Content/Images/Item_4144.xnb`，
-#   用 xnbcli 解出 PNG；解包命令与来源见 `assets/cards/_src/ZENITH.png` 的取图记录与
-#   `assets/cards/make_white_item_card.py`）。**追加在文件末尾**（尾插 ⇒ 既有 entry / sprite 号一个不动）。
-ZENITH_SWORD  cards/_src/ZENITH.png  32x32
+# ★★ 2026-10-02（87 天顶剑，致敬泰拉瑞亚 Zenith）：跟班的贴图 = Terraria 原版物品「天顶剑」本体。
+#   物品号 `Item_4956`（**不是** 4144 —— 一手：Terraria 1.4.4.9 的 `Item.cs` 里 Zenith 的 `shoot = 933`、
+#   `GetAlpha` 的 `case 4956`，以及 `FinalFractalHelper..cctor` 的 12 个物品号列表里 4956 与 4144 是两个不同的物品）。
+#   取法：用户本机 Steam 版 `Content/Images/Item_4956.xnb` → xnbcli 解 PNG（LZX）→ `assets/cards/_src/ZENITH.png`。
+#   **追加在文件末尾**（尾插 ⇒ 既有 entry / sprite 号一个不动）。
+ZENITH_SWORD  cards/_src/ZENITH.png  56x56
+# ★★ 2026-10-02b（87 天顶剑 → 按泰拉瑞亚的**弹幕本体**还原）：天顶剑每一挥甩出的**剑阵**用的剑贴图。
+#   一手（不是猜的）：`Terraria.exe`（用户本机 1.4.4.9）里 `Terraria.Graphics.FinalFractalHelper..cctor`
+#   的 IL —— 21 个 `FinalFractalProfile(ItemID, bladeLength, trailColor)`，物品号顺序如下（用 dnfile+dncil
+#   反 IL 读出；`Projectile.AI_182_FinalFractal` 用 `GetRandomProfileIndex()` 在这些里随机挑一把画）。
+#   ⚠ 最初只认出 12 个：颜色里有 `Main.OurFavoriteColor` 这类**静态字段**、长度是 `ldc.r4`（浮点），
+#     所以那一次只扫到一部分物品号。21 个与 decompile 的对照表逐项吻合（见 AUDIT §BE 详录 #211）。
+#   21 张按**各自的原始像素尺寸**摆进一个 6×4 网格（格子 72×72，逐格居中 ⇒ 旋转轴仍在图心）。
+#   **追加在文件末尾**（尾插 ⇒ 既有 entry / sprite 号一个不动）。名字 = `ZENITH_BLADE_<剑名>`。
+ATLAS ATLAS_ZENITH_BLADE 432x288
+ZENITH_BLADE_STARFURY         ability/zenith/_src/sword_65.png @15,15,42x42
+ZENITH_BLADE_BEEKEEPER        ability/zenith/_src/sword_1123.png @83,11,50x50
+ZENITH_BLADE_LIGHTSBANE       ability/zenith/_src/sword_46.png @155,11,50x50
+ZENITH_BLADE_FIERYGREATSWORD  ability/zenith/_src/sword_121.png @217,1,70x70
+ZENITH_BLADE_BLADEOFGRASS     ability/zenith/_src/sword_190.png @290,2,68x68
+ZENITH_BLADE_EXCALIBUR        ability/zenith/_src/sword_368.png @372,12,48x48
+ZENITH_BLADE_TRUEEXCALIBUR    ability/zenith/_src/sword_674.png @10,82,52x52
+ZENITH_BLADE_NIGHTSEDGE       ability/zenith/_src/sword_273.png @83,81,50x54
+ZENITH_BLADE_TRUENIGHTSEDGE   ability/zenith/_src/sword_675.png @156,80,48x56
+ZENITH_BLADE_INFLUXWAVER      ability/zenith/_src/sword_2880.png @227,83,50x50
+ZENITH_BLADE_ENCHANTEDSWORD   ability/zenith/_src/sword_989.png @307,91,34x34
+ZENITH_BLADE_HORSEMAN         ability/zenith/_src/sword_1826.png @369,81,54x54
+ZENITH_BLADE_MEOWMERE         ability/zenith/_src/sword_3063.png @11,151,50x58
+ZENITH_BLADE_STARWRATH        ability/zenith/_src/sword_3065.png @85,153,46x54
+ZENITH_BLADE_TERRABLADE       ability/zenith/_src/sword_757.png @157,153,46x54
+ZENITH_BLADE_MURAMASA         ability/zenith/_src/sword_155.png @220,148,64x64
+ZENITH_BLADE_BLOODBUTCHERER   ability/zenith/_src/sword_795.png @299,151,50x58
+ZENITH_BLADE_SEEDLER          ability/zenith/_src/sword_3018.png @374,146,44x68
+ZENITH_BLADE_TERRAGRIM        ability/zenith/_src/sword_4144.png @20,236,32x32
+ZENITH_BLADE_COPPERSHORT      ability/zenith/_src/sword_3507.png @92,236,32x32
+ZENITH_BLADE_ZENITH           ability/zenith/_src/sword_4956.png @152,224,56x56

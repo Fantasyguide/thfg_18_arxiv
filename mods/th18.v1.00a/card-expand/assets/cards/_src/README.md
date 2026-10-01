@@ -23,3 +23,24 @@
 `crop((224, 118, 1012, 1103))` = 788×985。人物中线由绿裙的包围盒（`x 332..904`、`y 376..922`）定，
 上取到发带、下取到脚；再按**卡框每边吃掉的 7％** 把这个构图外扩一圈，免得发带和鞋被框边切掉。
 之后 `fit_card.py WHIRLWIND … --no-detect --trim 0 --margin 0`。
+| `ZENITH.png` | 天顶剑（id 87）的卡面 | **Terraria 原版物品**（用户本机 Steam 版 `Content/Images/Item_4956.xnb`，56×56；物品号 4956，**不是** 4144） | `make_white_item_card.py ZENITH --item _src/ZENITH.png --fill`：白底 + 物品缩到画面区上限（LANCZOS）+ 原生框 |
+| `ZENITH_FIRST_FRACTAL.png` | （只作记录，不进卡面） | 同上，`Item_4144.xnb`（32×32） | **4144 是「地灵之刃 Terragrim」，不是天顶剑**；它只是天顶剑剑阵的 21 把之一（见 `ability/zenith/_src/`）|
+
+### Terraria 物品贴图的取法（LZX 解包，一次性）
+
+Terraria 的 `Content/Images/Item_<id>.xnb` 是 **XNB（LZX 压缩）**，需要一个能解 LZX 的工具。
+本仓的做法（2026-10-02 实测）：
+
+```bash
+git clone --depth 1 https://github.com/LeonBlade/xnbcli            # Node 工具，纯 JS 的 LZX
+cd xnbcli && node -e "const p=require('./package.json'); delete p.dependencies.lz4; require('fs').writeFileSync('package.json',JSON.stringify(p,null,2))"
+npm install                                                        # lz4 是原生模块、编不过；Terraria 只走 LZX(0x80) 所以删掉它即可
+mkdir -p node_modules/lz4 && printf '{"name":"lz4","version":"0.6.5","main":"index.js"}' > node_modules/lz4/package.json
+echo "module.exports={decode(){throw 0},encode(){throw 0}};" > node_modules/lz4/index.js   # 占位，仅为过 require
+cp "<Terraria>/Content/Images/Item_4956.xnb" packed/ && node xnbcli.js unpack ./packed ./unpacked
+```
+
+产物 `unpacked/Item_4956.png` 即上表那一张。**物品号怎么定**（别猜）：
+- 天顶剑本体 = **4956**（一手：`Item.cs` 的 `shoot = 933` + `GetAlpha` 的 `case 4956`；wiki 的 Item ID 栏同值）；
+- 剑阵的 21 个物品号 = `FinalFractalHelper..cctor` 的 IL（本机 exe 反出来的，见 `native/cards/zenith.c`
+  的表与 `AUDIT.md` §BE 详录 #211），它们对应的贴图在 `assets/ability/zenith/_src/sword_<id>.png`。

@@ -5744,10 +5744,42 @@ static void on_item_frame(ce_card_t *c)
  *   反过来的话，① 刚建出来的 UFO 会被 ③ 立刻判成「不在了」—— 它这一帧还没挂上链表尾呢。
  * ★★ 2026-09-12 换池：原来的 ① 段（「死亡栈里登记的令牌颜色」出队 → 落槽 → 可能召唤）**整段删除** ——
  *   那是「令牌被子弹打掉也算收」的兑现点，令牌换成自建 VM 之后环里永远不会有人放东西。 */
+/* ★★ 2026-10-02（Jera 88「杰拉」）：本卡的**压缩包**交给 SDK 的「复制代数闸」——
+ * 每帧上报可见数，代数一变就照原档重撒（`ufo_drop_spawn` 是它唯一的出生口）。
+ * ⚠ **只复制 `UFO_DROP_KIND_BAG`**：整颗 B 那一支的可见载荷是**原生道具 type 7**
+ *   （`d->item`），它已经在引擎道具池里 ⇒ Jera 那一路已经复制过，别在这里再复制一遍（会翻倍）。
+ * 语义见 `sdk_core.h` 末节与 `cards/jera.c` 文件头。*/
+static uint32_t s_dup_seen;
+
+static int ufo_dup_bag_count(void)
+{
+    int i, n = 0;
+    for (i = 0; i < UFO_DROP_POOL; ++i)
+        if (s_drops[i].core.alive && s_drops[i].core.kind == UFO_DROP_KIND_BAG) ++n;
+    return n;
+}
+
+static void ufo_dup_run(ufo_card_t *s)
+{
+    uint8_t was[UFO_DROP_POOL];
+    int i, n = 0;
+    for (i = 0; i < UFO_DROP_POOL; ++i)
+        was[i] = (uint8_t)((s_drops[i].core.alive && s_drops[i].core.kind == UFO_DROP_KIND_BAG) ? 1 : 0);
+    for (i = 0; i < UFO_DROP_POOL; ++i) {
+        const ufo_drop_t *d = &s_drops[i].core;
+        if (!was[i] || !d->alive) continue;
+        if (ufo_drop_spawn(s, d->kind, d->x, d->y, d->ufo_color, d->cnt_p, d->cnt_money, d->mult_permille))
+            ++n;
+    }
+    ce_log("ufo: jera dup %d bags", n);
+}
+
 static int on_tick_2(ce_card_t *c)
 {
     ufo_card_t *s = ce_state(c, ufo_card_t);
     if (!s) return 0;
+    ce_dup_publish((uint32_t)ce_card_id(c), ufo_dup_bag_count());
+    if (ce_dup_should_run(&s_dup_seen)) ufo_dup_run(s);
 
     if (s->pending_break) {                            /* ② 击破（死亡栈里只记了位置）*/
         s->pending_break = 0;

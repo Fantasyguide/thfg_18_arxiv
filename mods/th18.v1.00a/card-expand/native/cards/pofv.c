@@ -1171,6 +1171,27 @@ static int on_death_before_deathbomb(ce_card_t *c)
  *   上升沿 `begin` / 每帧 `hold` / 松手 `release` 三步都在这里；
  *   **Z 完全不参与** —— 原生射击照常（拦 Z 那条 `on_native_shot_suppress` 已整条删除，
  *   一手 10 帧闸见 `pofv_core.h` 的历史注释，本卡刻意不复刻）。*/
+/* ★★ 2026-10-02（Jera 88「杰拉」）：本卡场上的**灵力道具**交给 SDK 的「复制代数闸」——
+ * 每帧上报可见数，代数一变就把活着的道具按**同坐标 / 同打包值 / 同来源**各重撒一颗
+ * （`pofv_power_spawn` 是它唯一的出生口 ⇒ 复制品与原件逐字同源，连飞散动态都照原样重抽）。
+ * 语义见 `sdk_core.h` 末节与 `cards/jera.c` 文件头。
+ * ⚠ 先快照 `active`：`pofv_power_spawn` 找的是**空槽**（不一定是池尾）⇒ 边遍历边生成会复制到复制品。*/
+static uint32_t s_dup_seen;
+
+static void pofv_dup_run(void)
+{
+    uint8_t was[POFV_POWER_MAX];
+    int i, n = 0;
+    for (i = 0; i < POFV_POWER_MAX; ++i) was[i] = (uint8_t)(s_power.s[i].active ? 1 : 0);
+    for (i = 0; i < POFV_POWER_MAX; ++i) {
+        const pofv_power_t *it = &s_power.s[i];
+        if (!was[i] || !it->active) continue;
+        if (pofv_power_spawn(&s_power, it->x, it->y, it->value, it->src) < 0) break;   /* 池满就停 */
+        ++n;
+    }
+    ce_log("pofv: jera dup %d power items (live %d/%d)", n, (int)s_power.live, POFV_POWER_MAX);
+}
+
 static int on_tick_2(ce_card_t *c)
 {
     pofv_card_t *s = st(c);
@@ -1181,6 +1202,8 @@ static int on_tick_2(ce_card_t *c)
 
     if (!s) return 0;
     ++s_frame;
+    ce_dup_publish((uint32_t)ce_card_id(c), (int)s_power.live);
+    if (ce_dup_should_run(&s_dup_seen)) pofv_dup_run();
 
     /* 对话中：蓄力打断、不发动（照 117 的处理）；商店里 AbilityManager 整个冻着，进不到这里。
      * 无敌窗口也在对话里冻结（引擎自己的计时器同样不走）。*/

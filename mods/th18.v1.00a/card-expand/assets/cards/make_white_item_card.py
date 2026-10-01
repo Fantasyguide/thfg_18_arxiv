@@ -41,22 +41,30 @@ WHITE = (255, 255, 255, 255)
 LAT_FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 
-def compose_item(item: Image.Image) -> Image.Image:
-    """纯白底 + 物品整数倍最近邻放大到画面区里最大居中。"""
+def compose_item(item: Image.Image, fill: bool = False) -> Image.Image:
+    """纯白底 + 物品放大到画面区里最大居中。
+
+    `fill=False`（默认）= **整数倍最近邻**（像素画不糊；小图会留白边）。
+    `fill=True` = 直接缩到画面区上限（LANCZOS）—— 源图本来就大（如 56×56 的泰拉瑞亚物品）时用它「撑满」。"""
     art = Image.new("RGBA", (W, H), WHITE)
     avail = min(AW - 2 * PAD, AH - 2 * PAD)
-    k = max(1, avail // max(item.width, item.height))
-    big = item.resize((item.width * k, item.height * k), Image.NEAREST)
+    if fill:
+        k = avail / max(item.width, item.height)
+        big = item.resize((max(1, round(item.width * k)), max(1, round(item.height * k))), Image.LANCZOS)
+    else:
+        k = max(1, avail // max(item.width, item.height))
+        big = item.resize((item.width * k, item.height * k), Image.NEAREST)
     art.alpha_composite(big, ((W - big.width) // 2, (H - big.height) // 2))
     return art
 
 
-def compose_text(text: str) -> Image.Image:
-    """占位：纯白底 + 一个灰问号（= 系统卡缺图标时同一套画法）。"""
+def compose_text(text: str, font_path: str = LAT_FONT) -> Image.Image:
+    """占位：纯白底 + 一个灰字形（= 系统卡缺图标时同一套画法）。
+    `font_path` 可换 —— 例如卢恩字母 ᛃ 只有 FreeMono 有（DejaVu 会渲染成豆腐块）。"""
     art = Image.new("RGBA", (W, H), WHITE)
     d = ImageDraw.Draw(art)
     try:
-        f = ImageFont.truetype(LAT_FONT, 150)
+        f = ImageFont.truetype(font_path, 150)
     except Exception:                       # noqa: BLE001 —— 没字体就退回默认
         f = ImageFont.load_default()
     d.text((W // 2, H // 2), text, font=f, fill=(200, 200, 205, 255), anchor="mm")
@@ -78,12 +86,15 @@ def main():
     g = ap.add_mutually_exclusive_group(required=True)
     g.add_argument("--item", type=Path, help="物品 PNG（透明底像素画；整数倍最近邻放大）")
     g.add_argument("--text", help="占位字形 / 文字（一般为 '?'）")
+    ap.add_argument("--font", default=LAT_FONT, help="--text 用的字体（默认 DejaVu Sans Bold）")
+    ap.add_argument("--fill", action="store_true",
+                    help="物品直接缩到画面区上限（LANCZOS；源图大时用它撑满，默认整数倍最近邻）")
     ap.add_argument("--out", default=str(OUT))
     a = ap.parse_args()
     if a.item:
-        art = compose_item(Image.open(a.item).convert("RGBA"))
+        art = compose_item(Image.open(a.item).convert("RGBA"), a.fill)
     else:
-        art = compose_text(a.text)
+        art = compose_text(a.text, a.font)
     emit(a.name, art, Path(a.out))
     return 0
 

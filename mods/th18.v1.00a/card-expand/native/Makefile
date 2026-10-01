@@ -196,9 +196,13 @@ test-host:
 	./tests/build/test_blue_eyes_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_broken_core_core tests/test_broken_core_core.c cards/broken_core_core.c -lm
 	./tests/build/test_broken_core_core
-## ★ 2026-10-02（87 天顶剑）：节奏 / 挑最近的敌人 / 剑刃池（发射-推进-回收）；角度与 libm 对拍。
+## ★ 2026-10-02（87 天顶剑）：泰拉瑞亚运动（绕锚点转圈 / 相位寿命 / 透明度）+ 节奏 + 挑最近的敌人。
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_zenith_core tests/test_zenith_core.c cards/zenith_core.c -lm
 	./tests/build/test_zenith_core
+## ★ 2026-10-02（88 杰拉）：SDK 的「复制代数闸 + 可见数台账」（跨卡共享件；语义 = sdk_core.h 末节）。
+##   链 sdk_core.c + cards/hud_dim.c（与 test_sdk_core 同款依赖）。
+	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_dup_layer tests/test_dup_layer.c sdk_core.c cards/hud_dim.c
+	./tests/build/test_dup_layer
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_firelord_core tests/test_firelord_core.c cards/firelord_core.c -lm
 	./tests/build/test_firelord_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_truesilver_core tests/test_truesilver_core.c cards/truesilver_core.c

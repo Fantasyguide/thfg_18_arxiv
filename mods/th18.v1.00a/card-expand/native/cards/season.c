@@ -1436,6 +1436,12 @@ static void graze_tick(season_card_t *s)
 }
 
 /* ⑤ 每帧 */
+/* ★★ 2026-10-02（Jera 88「杰拉」）：本卡场上的**季节点**交给 SDK 的「复制代数闸」——
+ * 每帧上报可见数，代数一变就照原档各重撒一颗（`spawn_point_at` 用**同一角度 / 同一起始速度**，
+ * 与它出生的那一次逐字同源）。语义见 `sdk_core.h` 末节与 `cards/jera.c` 文件头。
+ * ⚠ 先存 `n0` 再循环：`spawn_point_at` 是**追加**到池尾，边遍历边追加会把复制品再复制一遍。*/
+static uint32_t s_dup_seen;
+
 static int on_tick_2(ce_card_t *c)
 {
     season_card_t *s = st(c);
@@ -1443,6 +1449,14 @@ static int on_tick_2(ce_card_t *c)
 
     if (!s || !CE_PLAYER()) return 0;
     ++s->frame;
+
+    ce_dup_publish((uint32_t)ce_card_id(c), (int)s->n_pt);
+    if (ce_dup_should_run(&s_dup_seen)) {
+        int32_t n0 = s->n_pt, k;
+        for (k = 0; k < n0; ++k)
+            (void)spawn_point_at(s, s_pt[k].x, s_pt[k].y, s_pt[k].lang, s_pt[k].lr, 0);
+        ce_log("season: jera dup %d/%d points", (int)(s->n_pt - n0), (int)s->n_pt);
+    }
 
     graze_tick(s);
     points_tick(c, s);

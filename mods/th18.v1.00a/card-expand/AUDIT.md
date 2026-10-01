@@ -4919,6 +4919,8 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 
 | 2026-10-02 | **所有卡**（共享资源 `assets/ability/**` + `assets/cards/**` + 共享数据 `patch/th18/cards.js` + 共享件 `native/Makefile`；新卡 **86 / 87**） | 见下方「§BE 详录 #210」 |
 
+| 2026-10-02b | **108 永夜抄 / 109 花映塚 / 112 星莲船 / 116 天空璋**（各自的私有掉落池各加一行「复制代数闸」）+ **所有卡**（共享件 `sdk_core.{h,c}` / `sdk.h` / `Makefile`） | 见下方「§BE 详录 #211（87 天顶剑按泰拉瑞亚还原）」与「#212（88 杰拉 + 跨卡复制闸）」 |
+
 
 > **§BE 详录 #42（2026-09-20 · P1「缺音效一批」8 条 + 音效表扩容新增 5 枚别作原版 SE）**
 >
@@ -27905,3 +27907,102 @@ owner 2026-10-01 开的两个号位，2026-10-02 直接指示「做一下这两�
 `sitecheck --all`、`capcheck` **全绿**、`engine_abi_check`、`check-docs` 四项全绿）；
 `build_abcard.py` entry **204 / 256**（余 52 = 还能进 26 张）。**实跑未做**（待 owner）。
 
+## §BE 详录 #211（2026-10-02b）：**87 天顶剑按泰拉瑞亚原版还原**（运动 / 贴图 / 特效）
+
+**谁改的**：统筹会话（owner 2026-10-02：「对于天顶剑你就按照泰拉瑞亚的状态做，包括贴图和特效」）。
+**共享资源**：`assets/ability/entries/ORDER.txt`（追加 `ATLAS_ZENITH_BLADE` 21 个成员）、
+`assets/ability/scripts/379_zenith_blade.anm.txt`（重写）、`380_zenith_trail.anm.txt`（新）、
+`assets/cards/_src/ZENITH.png`（**换图**：`Item_4144` → `Item_4956`）、`native/anm_ids.h`（重生成）、
+`assets/cards/ZENITH_{max,min}.png` + `_art/ZENITH.png`（卡面重出）。
+
+### 一手怎么来的（**这一节是可复现的做法**，不是结论）
+
+用户在**本机**装了 Terraria（`/mnt/d/SteamLibrary/steamapps/common/Terraria`）。两条路都走通了：
+
+1. **贴图**：`Content/Images/Item_<id>.xnb` 是 **XNB（LZX 压缩）** ⇒ 用 Node 的 `xnbcli`
+   （`LeonBlade/xnbcli`，纯 JS 的 LZX；`package.json` 里的原生模块 `lz4` 在本机编不出来，
+   删掉它 + 补一个 stub 即可 —— Terraria 只走 LZX(0x80)）。取法全文见 [`assets/cards/_src/README.md`](assets/cards/_src/README.md)。
+2. **行为**：`Terraria.exe` 是 .NET 程序集 ⇒ 用 Python 的 **`dnfile`（元数据）+ `dncil`（IL 反汇编）**
+   直接读，不需要 Windows / ILSpy：
+   - 物品号：`Terraria.ID.ItemID` 的常量表（`Constant` 表按 `Parent` 索引 `Field`）⇒
+     `Zenith = 4956`（**不是** 4144）、`Terragrim = 4144`；
+   - 剑阵表：`Terraria.Graphics.FinalFractalHelper..cctor` 的 IL —— 21 个
+     `FinalFractalProfile(ItemID, bladeLength, trailColor)`；
+     ⚠ **第一次只认出 12 个**：颜色里有 `Main.OurFavoriteColor` 这类**静态字段**（不是 `ldc.i4` 字面量）、
+     bladeLength 是 `ldc.r4`（我第一遍只扫 `ldc.i4`）⇒ 少了一半。后来按「(物品号, r, g, b) 三元组」
+     重组才全对上（21 个与社区 decompile 的对照表逐项吻合）；
+   - 运动：`Terraria.Projectile.AI_182_FinalFractal` 的完整 IL（`ProjectileID.FinalFractal = 933`）。
+
+### 改了什么（对到代码）
+
+| 原版（一手） | 我们的实现 |
+| --- | --- |
+| `velocity` **不是位移**（`UpdatePosition` 对 933 早退）⇒ 剑绕「自机 + velocity」画椭圆 | `zenith_core.c` 的 `zn_step`：输出 `ang / R / A / fade_x / fade_y`，**两次 `RotatedBy` 走 `ce_polar_to_vel()`（FSINCOS）** |
+| `t += Lerp(0.7, 2, GetLerpValue(900,0,\|v\|·2))`；`t ≥ 120 ⇒ Kill` | `zn_rate()`（由 `vx/vy` 现算，省字段）+ `ZN_PHASE_END` |
+| 21 把剑随机挑（`GetRandomProfileIndex` 重掷 4956）、**第 1 把固定本体** | `s_zn_profiles[21]` + 「每第 3 把 = 本体，其余 20 随机」|
+| 每把剑带 `trailColor` 的 ribbon / ghost | 残影 VM（`script380`）按 `color` 染色、10 帧渐隐缩小 |
+| 命中 = 沿刃的胶囊、`localNPCHitCooldown = 7` | `ZN_HIT_COOLDOWN = 7`（**复刻**）+ 40×40 判定盒（❓ 尺度换算）|
+| `SoundID.Item169` 每把出膛一次 | `se_slash`（`0x2d`）|
+
+**没做的（明确记一笔）**：原版的 **60 采样 vertex-strip ribbon**（`GameShaders.Misc["FinalFractal"]`）、
+**尘埃 278**、**两处 `Lighting.AddLight`**、**刃尖星芒**（`DrawPrettyStarSparkle`）与 **×1.25 白色叠加**。
+我们只做得出「残影 VM」这一层 ⇒ 观感近似、**不是逐像素复刻**。
+
+### 影响面 + 回归
+
+- **零新增站点**；`ability.anm` 追一个图集（entry 92，21 sprite）、既有号零位移；
+  ⚠ **`ZENITH_SWORD` 那一行换了源图**（`Item_4144` → `Item_4956`，32×32 → 56×56）；
+  ⚠ **`ATLAS_ZENITH_BLADE` 从 12 个成员重做成 21 个**（同一天、同一张卡、未发布 ⇒ 允许原地改，
+  既有别人的号一个没动）。
+- `native/cards/zenith_core.{h,c}` 的表结构**瘦身**（`fast` / `rate` / `sign` 改成由 `vx/vy` 现算的
+  `static inline`）—— 第一版 8 格 × 3 个 float 把 `ce_state` 的 496 字节撑爆（`_Static_assert` 当场拦下）。
+- 单测 `tests/test_zenith_core.c` 重写（椭圆半轴 / 相位寿命 / 透明度 / 命中冷却 / 残影节奏）。
+- `make check` **exit 0**（`capcheck` 全绿、`check-docs` 四项全绿）。
+
+## §BE 详录 #212（2026-10-02b）：**88 杰拉**（复制场上所有掉落物）+ **SDK 的「复制代数闸」**（跨卡共享件）
+
+**谁改的**：统筹会话（owner 2026-10-02：「再加一张主动卡：jera：使用后复制所有掉落物，包括但不限于永点、
+P点、金钱、季节道具、灵力道具、残碎B碎、112压缩包等等（后者涉及到卡间协同作用）」）。
+
+### 为什么是一层共享件，而不是一张卡自己干
+
+一手普查（本次 objdump + 各卡源码）：**本仓一半「掉落物」根本不在引擎道具池里** ——
+108 的刻符(`s_orb[1024]`) / 109 的灵力道具(`s_power`) / 110-111 的信仰点·绿点 + 107 的樱点（`faith.c` 共享池）/
+112 的压缩包(`s_drops[4]`) / 113 的神灵 / 116 的季节点(`s_pt[512]`) / 117 的动物灵 —— **全是各卡 `.c` 里的
+static 池**，Jera 够不着。而引擎道具池也不是「一个大池」：它是**两条 freelist**
+（`normal 600 槽 @ mgr+0x14` + `cancel 4096 槽 @ mgr+0x1d7af4`，同 stride `0xc94`，`0x14…0xe6baf4` 连续）。
+
+⇒ 分成三段：
+1. **引擎道具池**：Jera 自己扫（`CE_ITEM_POOL_OFF` + `CE_ITEM_SLOTS` 一次扫完两条 freelist）。
+2. **共享信仰点池**：`faith.h` 早就有公开枚举 API（`faith_absorb_list`）⇒ Jera 直接调 + `faith_spawn()` 原档重撒。
+3. **各卡私有池**：**SDK 加一层「复制代数闸」**（`sdk_core.{h,c}` 的 `ce_dup_*` + `sdk.h` 三个 inline）：
+   Jera 发动时 `ce_dup_request()`（代数 +1），生产者在**自己的 tick** 里 `ce_dup_should_run(&自己的缓存)`
+   看到就复制自己那批，并每帧 `ce_dup_publish(id, n)` 上报可见数（Jera 用它判「值不值得发动」）。
+   删卡由 `ce_layer_drop_card()` 自动 `ce_dup_vis_drop()`。
+
+### 改到的文件（逐条）
+
+| 文件 | 类型 | 改了什么 |
+| --- | --- | --- |
+| `native/sdk_core.{h,c}` | **共享件** | 新增 `ce_dup_*`（代数闸 + 可见数台账 + `ce_dup_should_run`），~80 行 |
+| `native/sdk.h` | **共享件** | 三个 inline 包装 + `ce_layer_drop_card` 里加一行退台账 |
+| `native/Makefile` | **共享件** | `test-host` 加 `test_dup_layer`（链 `sdk_core.c` + `cards/hud_dim.c`）|
+| `native/tests/test_dup_layer.c` | 新单测 | 代数单调 / 第一次不触发 / 同一次只触发一次 / 台账覆盖·删除·槽满·负数·id 0 |
+| `native/cards/jera.c` | 新卡（88）| 见 `CARDS.md` 的 88 行 |
+| `native/cards/season.c`（**116**）| 别人的卡 | `on_tick_2` 开头 4 行：上报 `n_pt` + 代数变了照 `spawn_point_at()` 原档重撒 |
+| `native/cards/pofv.c`（**109**）| 别人的卡 | 同上：上报 `s_power.live` + `pofv_power_spawn()` 原档重撒（先快照 `active`）|
+| `native/cards/ufo.c`（**112**）| 别人的卡 | 同上：**只复制 `UFO_DROP_KIND_BAG`**（整颗 B 那一支的可见载荷是原生道具 type 7，引擎池那一路已复制）|
+| `native/cards/youkai.c`（**108**）| 别人的卡 | 同上：上报 `s_orb_live` + `yk_orb_spawn_ex()` 按同坐标/同出生态/同「逢魔直接吃」标志重撒 |
+| `assets/cards/{JERA_*,JERA_min.png,_art/JERA.png}` + `ORDER.txt` | **共享资源** | 尾插一行 ⇒ sprite 204/205（占位：白底 + 卢恩字母 ᛃ）|
+| `patch/th18/cards.js` | **共享数据** | 追加 `"88"`（`category 0` + `active_recharge`）|
+| `native/cards/zenith.c` 的 `s_zn_profiles` | —— | §211 的剑阵表 |
+
+### 对既有卡的影响面 + 回归
+
+- **零新增站点**；四处生产者改动都**只加**「上报 + 代数变了复制一遍」，不改任何既有行为
+  （不发动 Jera 时 `ce_dup_should_run` 恒返回 0 ⇒ 逐字节等价于改前，只有每帧一次 8 格表写入的开销）。
+- ⚠ **动到别人的卡**（108/109/112/116）⇒ 本次按纪律逐条登记在此，并在各文件里留了注释说明来路。
+- 未接的私有池（**明确记一笔**）：**113 神灵 / 117 动物灵**（owner 没点名）—— 要接就是同款三行；
+  以及 **107 樱点**（它在 `faith.c` 共享池里 ⇒ **已经被 Jera 的第 ② 段覆盖**，不用另接）。
+- ⚠ 语义口径（登记在 `TUNING.md` §2.10）：type 0x10–0x13 的卡道具**不排除** ⇒ 复制品被收时**真的多发卡**。
+- 单测 `tests/test_dup_layer.c` 全绿；`make check` **exit 0**（`cards-check` 45 张卡合规、`capcheck` 全绿）。

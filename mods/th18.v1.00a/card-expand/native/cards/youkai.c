@@ -6975,6 +6975,27 @@ static void yk_fengma_tint_bullets(void)
     (void)n;
 }
 
+/* ★★ 2026-10-02（Jera 88「杰拉」）：本卡场上的**刻符（永点）**交给 SDK 的「复制代数闸」——
+ * 每帧上报可见数，代数一变就把活着的刻符按**同坐标 / 同出生态 / 同「逢魔直接吃掉」标志**各重撒一颗
+ * （`yk_orb_spawn_ex` 是它唯一的出生口 ⇒ 复制品与原件逐字同源）。
+ * 语义见 `sdk_core.h` 末节与 `cards/jera.c` 文件头。
+ * ⚠ 先存下标集合：`yk_orb_spawn_ex` 会找**空槽**（不一定是池尾）⇒ 遍历中新增的槽可能被下一轮扫到。*/
+static uint32_t s_dup_seen;
+
+static void yk_dup_run(yk_card_t *s)
+{
+    unsigned i, n = 0;
+    uint8_t was[YK_ORB_MAX];
+    for (i = 0; i < YK_ORB_MAX; ++i) was[i] = s_orb[i].used;         /* 快照：只看复制前就活着的那批 */
+    for (i = 0; i < YK_ORB_MAX; ++i) {
+        const yk_orb_t *o = &s_orb[i];
+        if (!was[i] || !o->used) continue;
+        yk_orb_spawn_ex(s, o->x, o->y, (int)o->state, (int)o->eat_at_toss);
+        ++n;
+    }
+    ce_log("youkai: jera dup %u orbs (live before %u)", n, s_orb_live);
+}
+
 static int on_tick_2(ce_card_t *c)
 {
     if (!YK_ENABLE_CARD || !YK_ENABLE_CB_TICK2) return 0;   /* ★ 总开关 + 回调族 ⑨ */
@@ -6982,6 +7003,8 @@ static int on_tick_2(ce_card_t *c)
     int focused;
     static int8_t s_optmode_logged;
     if (!s) return 0;
+    ce_dup_publish((uint32_t)ce_card_id(c), (int)s_orb_live);
+    if (ce_dup_should_run(&s_dup_seen)) yk_dup_run(s);
     if (!s_optmode_logged) {                              /* ★ 工单③：日志里要能看出是哪个二分版 */
         s_optmode_logged = 1;
         ce_log("youkai: bisect switches set_index=%d native_suppress=%d option_pose=%d hud_vm=%d "

@@ -946,3 +946,31 @@ uint32_t ce_card_flag_get(uint32_t card_id);
 int      ce_card_flag_any(uint32_t bits);
 /* 整层清零（`ce_sdk_setup` / 单测用；粘性层的复位先例见 `ce_no_hit_reset`）。*/
 void     ce_card_flag_reset(void);
+
+/* ★★ 2026-10-02（Jera 88「杰拉」）：**「复制场上掉落物」的代数闸 + 可见数台账**。
+ *
+ * 背景：本仓有一半「掉落物」**不在引擎的道具池里**（108 的刻符 / 109 的灵力道具 / 110-111 的信仰点 /
+ * 112 的压缩包 / 116 的季节道具 …），它们是各卡 `.c` 里的 static 池，**只有那张卡自己够得着**。
+ * 所以「复制」不能由 Jera 一手包办，也不能靠回调传指针（那些池所在的卡对象会在换关时重建）：
+ *   · **生产者**（有自己池的卡）在 tick 里比对 `ce_dup_gen()` 与自己缓存的代数值，
+ *     变了就把自己场上那批实体各复制一份（用自己那份 spawn 原语）；
+ *   · **Jera** 发动时 `ce_dup_bump()` 一次，自己只管能直接够到的两处（引擎道具池 + 共享信仰点池）。
+ *
+ * 三条语义：
+ *   ① **代数只增**：`ce_dup_bump()` 只在 C 键发动（进 replay 流）时调用 ⇒ replay 安全；
+ *      差一帧天然被「生产者下一次 tick 必看到」吃掉（Jera 在 Player tick 0x17、别人在 AbilityManager 0x16）。
+ *   ② **可见数台账**：生产者每帧 `ce_dup_vis_set()` 上报「我场上有几个可复制的」，
+ *      Jera 用 `ce_dup_vis_total()` 判「这一发值不值得」（全场空 ⇒ 拒绝发动、不烧充能）。
+ *   ③ **删卡自动收**：`ce_layer_drop_card()` 会 `ce_dup_vis_drop(id)`（卡不用自己撤）。*/
+#define CE_DUP_SLOT_MAX 8
+
+void     ce_dup_reset(void);                        /* 进程初始化 / 单测用 */
+uint32_t ce_dup_bump(void);                         /* Jera 发动：++代数，返回新值 */
+uint32_t ce_dup_gen(void);                          /* 生产者读：与上次不同 ⇒ 复制一遍 */
+int      ce_dup_vis_set(uint32_t card_id, int n);   /* 生产者每帧上报；返回 1 = 记下了（槽满=0）*/
+/* 生产者每帧调一次（传自己的 `uint32_t` 缓存）：返回 1 = 有人刚发动 Jera，**该复制一遍**。
+ * 第一次调用只登记（不会在开局那一刻误触发）；`seen` 为 NULL 时安全返回 0。*/
+int      ce_dup_should_run(uint32_t *seen);
+void     ce_dup_vis_drop(uint32_t card_id);         /* 删卡 / 退场 */
+int      ce_dup_vis_total(void);                    /* 全场「可复制」总数（各生产者之和）*/
+int      ce_dup_producers(void);                    /* 有几个生产者在位（> 0 才可能有私有池可复制）*/

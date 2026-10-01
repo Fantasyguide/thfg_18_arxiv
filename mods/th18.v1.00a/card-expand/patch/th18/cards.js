@@ -690,5 +690,22 @@
     "weight": 2,
     "sprite_large": 202,
     "sprite_small": 203
+  },
+  "88": {
+    "name": "杰拉",
+    "desc": [
+      "主动（C 键）：复制场上所有掉落物。",
+      "P 点、金钱、碎片，以及各张卡",
+      "自己的道具（季节点、灵力道具、",
+      "压缩包、信仰点…）都会翻一份。",
+      "致敬・以撒的结合。"
+    ],
+    "internal_name": "JERA",
+    "category": 0,
+    "initial_unlocked": 1,
+    "price_tier": 10,
+    "weight": 2,
+    "sprite_large": 204,
+    "sprite_small": 205
   }
 }

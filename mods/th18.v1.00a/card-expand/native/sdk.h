@@ -1053,6 +1053,17 @@ static inline int ce_shoot_cancel_claim(uint32_t card_id) { return ce_cancel_lat
  * 用途（2026-09-18）：共享 PIV 池族的卡用它查自己那一档的「可写上限 = cap_i − init_i」（`ce_piv_claim_auto`）。*/
 static inline int ce_difficulty(void) { return *(volatile int32_t *)CE_ADDR_DIFFICULTY; }
 
+/* ★★ 2026-10-02（Jera 88「杰拉」）：**「复制场上掉落物」的代数闸**（语义与设计见 `sdk_core.h` 末节）。
+ *   · Jera 发动时 `ce_dup_request()`；
+ *   · 有自己掉落物池的卡每帧 `ce_dup_publish(ce_card_id(c), n)` 上报可见数，
+ *     并比对 `ce_dup_generation()` 与自己缓存的代数值 —— 变了就把自己那批各复制一份。
+ *   · 删卡自动收台账（`ce_layer_drop_card`）。*/
+static inline uint32_t ce_dup_generation(void) { return ce_dup_gen(); }
+static inline void     ce_dup_request(void)    { (void)ce_dup_bump(); }
+static inline void     ce_dup_publish(uint32_t id, int n) { (void)ce_dup_vis_set(id, n); }
+/* 生产者每帧调一次（传自己的 `static uint32_t` 缓存）：返回 1 = 有人刚发动 Jera，**该复制一遍**。
+ * 实现在 `sdk_core.c`（纯逻辑，主机单测 `tests/test_dup_layer.c`）。*/
+
 /* 一次性把 ID 的所有声明层退回「不参与」态（CE_CARD 的 on_run_reset / opdelete 里自动调，卡不用管）。*/
 static inline void ce_layer_drop_card(uint32_t id)
 {
@@ -1089,6 +1100,7 @@ static inline void ce_layer_drop_card(uint32_t id)
      *   漏撤 = 108 的「灵界/咆哮下不切侧」永久锁死（113/117 已经不在场，标志却还在）。
      *   与上面几条同款：删卡的路只有 `on_delete` 跑得到，而它在商店里、帧钩子已经停了。*/
     ce_card_flag_set(id, 0);
+    ce_dup_vis_drop(id);             /* ★ 2026-10-02（Jera）：可见数台账也在这里收（漏收 = 被删的卡永远算在场）*/
     ce_hud_slot_release(id);
 }
 

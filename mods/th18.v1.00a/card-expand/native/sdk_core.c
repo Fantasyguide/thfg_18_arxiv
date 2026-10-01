@@ -1739,3 +1739,77 @@ void ce_card_flag_reset(void)
 {
     memset(s_card_flag, 0, sizeof s_card_flag);
 }
+
+/* ---- ★★ 2026-10-02（Jera 88）：复制代数闸 + 可见数台账（语义见 sdk_core.h 末节）---- */
+
+typedef struct {
+    uint32_t id;      /* 0 = 空槽 */
+    int32_t  n;       /* 本卡当前场上可复制的实体数 */
+} ce_dup_vis_t;
+
+static uint32_t    s_dup_gen = 1;                      /* 从 1 起（0 = 生产者的「还没见过」哨兵）*/
+static ce_dup_vis_t s_dup_vis[CE_DUP_SLOT_MAX];
+
+void ce_dup_reset(void)
+{
+    s_dup_gen = 1;
+    memset(s_dup_vis, 0, sizeof s_dup_vis);
+}
+
+uint32_t ce_dup_bump(void)
+{
+    ++s_dup_gen;
+    if (!s_dup_gen) s_dup_gen = 1;                     /* 0 保留作哨兵（回绕只可能发生在 40 亿次发动之后）*/
+    return s_dup_gen;
+}
+
+uint32_t ce_dup_gen(void)
+{
+    return s_dup_gen;
+}
+
+int ce_dup_vis_set(uint32_t card_id, int n)
+{
+    int i, free_i = -1;
+    if (!card_id) return 0;
+    if (n < 0) n = 0;
+    for (i = 0; i < CE_DUP_SLOT_MAX; ++i) {
+        if (s_dup_vis[i].id == card_id) { s_dup_vis[i].n = n; return 1; }
+        if (!s_dup_vis[i].id && free_i < 0) free_i = i;
+    }
+    if (free_i < 0) return 0;
+    s_dup_vis[free_i].id = card_id;
+    s_dup_vis[free_i].n = n;
+    return 1;
+}
+
+void ce_dup_vis_drop(uint32_t card_id)
+{
+    int i;
+    for (i = 0; i < CE_DUP_SLOT_MAX; ++i)
+        if (s_dup_vis[i].id == card_id) { s_dup_vis[i].id = 0; s_dup_vis[i].n = 0; }
+}
+
+int ce_dup_vis_total(void)
+{
+    int i, t = 0;
+    for (i = 0; i < CE_DUP_SLOT_MAX; ++i) t += s_dup_vis[i].n;
+    return t;
+}
+
+int ce_dup_producers(void)
+{
+    int i, n = 0;
+    for (i = 0; i < CE_DUP_SLOT_MAX; ++i) if (s_dup_vis[i].id) n++;
+    return n;
+}
+
+int ce_dup_should_run(uint32_t *seen)
+{
+    uint32_t g = s_dup_gen;
+    if (!seen) return 0;
+    if (!*seen) { *seen = g; return 0; }     /* 第一次 tick：只登记（否则开局会误复制一次）*/
+    if (g == *seen) return 0;
+    *seen = g;
+    return 1;
+}
