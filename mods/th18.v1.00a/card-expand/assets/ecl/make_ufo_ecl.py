@@ -27,6 +27,7 @@ VERSION = "18"
 FRAGMENT = HERE / "ufo.ecl.txt"               # 112 的 9 个 UFO 子程序（入库）
 GREEN_FRAGMENT = HERE / "green_extra.ecl.txt"  # ★ 110 的「绿妖精」载体 1 个子程序（入库）
 SPIRIT_FRAGMENT = HERE / "spirit109.ecl.txt"   # ★ 109 合成卡的「灵」真敌人载体 1 个子程序（入库）
+BOSS_FRAGMENT = HERE / "pofv109_boss.ecl.txt"   # ★ 109 合成卡的「伪 boss 载体」（C3/C4 的 ECL 侧；入库）
 OUT = MOD / "native" / "build" / "ecl" / "default.ecl"
 DAT = REPO / "local" / "th18.v1.00a" / "dat"
 ECLMAP = REPO / "local" / "vendor" / "eclmap" / "eclmap" / "th18.eclm"
@@ -43,6 +44,7 @@ OURS_GREEN = ["CEGreenFairy"]
 #   同上：必须并进同一个合并步 —— 各写一次 build/ecl/default.ecl 会互相覆盖，
 #   而 `make dist` 只跑 `ecl-ufo` 这一个目标。
 OURS_SPIRIT = ["CESpirit109"]
+OURS_BOSS = ["CEPofvBoss109"]   # ★ 109 的伪 boss 载体（C3/C4 的 ECL 侧）
 
 _SUB_RE = re.compile(r"^void (\w+)\(\)\n\{\n.*?^\}\n", re.S | re.M)
 _BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.S)
@@ -120,9 +122,19 @@ def main():
     if len(spirit) != len(OURS_SPIRIT):
         s_extra = sorted(set(spirit) - set(OURS_SPIRIT))
         raise SystemExit("spirit109.ecl.txt 里有多余子程序：%s" % ", ".join(s_extra))
+    if not BOSS_FRAGMENT.is_file():
+        raise SystemExit("没有 %s" % BOSS_FRAGMENT)
+    boss = subs(BOSS_FRAGMENT.read_text(**ENC))
+    b_missing = [n for n in OURS_BOSS if n not in boss]
+    if b_missing:
+        raise SystemExit("pofv109_boss.ecl.txt 少了子程序：%s" % ", ".join(b_missing))
+    if len(boss) != len(OURS_BOSS):
+        b_extra = sorted(set(boss) - set(OURS_BOSS))
+        raise SystemExit("pofv109_boss.ecl.txt 里有多余子程序：%s" % ", ".join(b_extra))
     frag.update(green)
     frag.update(spirit)
-    ALL_OURS = OURS + OURS_GREEN + OURS_SPIRIT
+    frag.update(boss)
+    ALL_OURS = OURS + OURS_GREEN + OURS_SPIRIT + OURS_BOSS
 
     # 原生 default.ecl 走的是**已解包**的那份（与 make_dev_ecl.py 同一口径）
     raw = DAT / "default.ecl"
