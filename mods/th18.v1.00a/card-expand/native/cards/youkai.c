@@ -488,7 +488,7 @@ static void yk_side_lock_tick(void)
  *   位置照旧存在）。用途：把「凶手在**我们的回调代码**里」与「凶手是**卡对象存在本身**
  *   （共享表登记 / deck 组合 / 计分层 / 加载期副作用）」这两类一次分开。
  *   ⚠ 只给二分用；=1（默认）时连编译产物都应当与现状等价。*/
-#define YK_ENABLE_CARD            0
+#define YK_ENABLE_CARD            1
 /* ⑩ 计分层声明（`ce_score_family_declare` + `ce_score_declare_delta`）*/
 #define YK_ENABLE_SCORE_DECL      1
 /* ⑪ 逢魔的 `CE_SCORE() += 100/帧` */
@@ -497,6 +497,17 @@ static void yk_side_lock_tick(void)
 #define YK_ENABLE_POSE_DECLARE    1
 /* ⑬ HUD 的 **初始**（非每帧）`ce_anm_spawn_ui` */
 #define YK_ENABLE_HUD_INIT        1
+/* ★★★★ 2026-10-01（owner 工单⑨ · **按回调族排除法**；`YK_ENABLE_CARD=0` 时下面全部照旧 return）：
+ *   每族一行；默认 1 = 现状。owner 按「只关一族」出包二分。*/
+#define YK_ENABLE_CB_LIFECYCLE     1  /* ⑭ on_ctor / on_load / on_power_level_change / on_run_reset / on_delete */
+#define YK_ENABLE_CB_STAGE         1  /* ⑮ on_stage_start（本卡当前**没有**这个回调，占位备用）*/
+#define YK_ENABLE_CB_TICK_SHOOTERS 0  /* ⑯ on_tick_shooters（★ 头号嫌疑：每帧跑在 shooter 行上）*/
+#define YK_ENABLE_CB_TICK2         1  /* ⑰ on_tick_2 */
+#define YK_ENABLE_CB_BULLET        1  /* ⑱ on_bullet_created / on_bullet_hit */
+#define YK_ENABLE_CB_ITEM          1  /* ⑲ on_item_frame */
+#define YK_ENABLE_CB_DRAW          1  /* ⑳ on_draw */
+#define YK_ENABLE_CB_ENEMY_DEATH   1  /* ㉑ on_enemy_death */
+#define YK_ENABLE_CB_DEATHBOMB     1  /* ㉒ on_death_before_deathbomb */
 #define YK_ENABLE_ORBIT           1  /* ⑧ 绕转使魔整体：扫描 / `ce_spawn_enemy` 建壳 / 撤退 / VM / 喂转嫁 */
 #define YK_ENABLE_MAP_LAYER       1  /* ⑨ 映射（发射口）层：note_slot / 建壳 / 撤壳 / 闸 */
 #define YK_FX_VMS YK_ENABLE_FX_VMS   /* 旧名保留（同一格；`yk_vm_spawn` 里用）*/
@@ -5250,7 +5261,7 @@ static void yk_gauge_hud_update(yk_card_t *s)
 
 static int on_ctor(ce_card_t *c)
 {
-    if (!YK_ENABLE_CARD) return 0;                    /* ★ 总开关：整卡 no-op */
+    if (!YK_ENABLE_CARD || !YK_ENABLE_CB_LIFECYCLE) return 0;   /* ★ 总开关 + 回调族 ⑨ */
     yk_card_t *s = ce_state(c, yk_card_t);
     if (!s) return 0;
     /* ★ 先收跟随 VM 再复位静态表：本函数**在局中被重建时也会跑**（每关开始引擎对卡组每张卡
@@ -5486,7 +5497,7 @@ static unsigned yk_deathbomb_tint(void) { return 0; }
 
 static int on_load(ce_card_t *c)
 {
-    if (!YK_ENABLE_CARD) return 0;                    /* ★ 总开关：整卡 no-op */
+    if (!YK_ENABLE_CARD || !YK_ENABLE_CB_LIFECYCLE) return 0;   /* ★ 总开关 + 回调族 ⑨ */
     static int s_stamp_logged;
     if (!s_stamp_logged) {
         s_stamp_logged = 1;
@@ -5498,7 +5509,7 @@ static int on_load(ce_card_t *c)
 
 static void on_run_reset(ce_card_t *c)
 {
-    if (!YK_ENABLE_CARD) return;                    /* ★ 总开关：整卡 no-op */
+    if (!YK_ENABLE_CARD || !YK_ENABLE_CB_LIFECYCLE) return;   /* ★ 总开关 + 回调族 ⑨ */
     yk_card_t *s = ce_state(c, yk_card_t);
     /* ★ 2026-10-01（owner：这次发版就为拿这个数）—— **emitkey 收尾汇总**：
      *   `reappeared > 0` ⇒ 同一 `(enemy,slot)` 关掉后又出现 ⇒ **序号稳**（③ 可按现有身份做）；
@@ -5535,7 +5546,7 @@ static void on_run_reset(ce_card_t *c)
  * tick 回调全停）—— 只有这里收得到。使魔是**真敌人**，必须在这里交代清楚。*/
 static void on_delete(ce_card_t *c)
 {
-    if (!YK_ENABLE_CARD) return;                    /* ★ 总开关：整卡 no-op */
+    if (!YK_ENABLE_CARD || !YK_ENABLE_CB_LIFECYCLE) return;   /* ★ 总开关 + 回调族 ⑨ */
     yk_card_t *s = ce_state(c, yk_card_t);
     s_side_lock = -1;                     /* ★ owner ④：删卡 ⇒ 解锁（形态不再钉住）*/
     ce_log("youkai: card deleted - withdrawing familiars "
@@ -5714,13 +5725,13 @@ static void yk_body_sync(yk_card_t *s)
  * ⚠ 别把它挪回任何 `on_draw`（那正是「闪一帧」的成因）。*/
 static void on_item_frame(ce_card_t *c)
 {
-    if (!YK_ENABLE_CARD) return;                    /* ★ 总开关：整卡 no-op */
+    if (!YK_ENABLE_CARD || !YK_ENABLE_CB_ITEM) return;   /* ★ 总开关 + 回调族 ⑨ */
     yk_body_sync(ce_state(c, yk_card_t));
 }
 
 static int on_draw(ce_card_t *c)
 {
-    if (!YK_ENABLE_CARD) return 0;                    /* ★ 总开关：整卡 no-op */
+    if (!YK_ENABLE_CARD || !YK_ENABLE_CB_DRAW) return 0;   /* ★ 总开关 + 回调族 ⑨ */
     /* ★ 2026-09-22（P6）：本体换脚本**不在这里**了（绘制相位太晚 ⇒ 会闪一帧），见 `on_item_frame`。
      * 这个钩子留着（本卡以后若要在绘制相位做纯视觉的东西再放这里）。*/
     (void)c;
@@ -5731,7 +5742,7 @@ static int on_draw(ce_card_t *c)
  * ⇒ 必须在这里**再申请一次**（原生装备卡同款；spec §3.3 的「火力档变化时重申请」）。*/
 static int on_power_level_change(ce_card_t *c)
 {
-    if (!YK_ENABLE_CARD) return 0;                    /* ★ 总开关：整卡 no-op */
+    if (!YK_ENABLE_CARD || !YK_ENABLE_CB_LIFECYCLE) return 0;   /* ★ 总开关 + 回调族 ⑨ */
     yk_card_t *s = ce_state(c, yk_card_t);
     int i;
     if (!s) return 0;
@@ -5825,7 +5836,7 @@ static int on_shot_set_index(ce_card_t *c, int power_level)
 
 static int on_tick_shooters(ce_card_t *c, uint32_t short_timer, uint32_t long_timer)
 {
-    if (!YK_ENABLE_CARD) return 0;                    /* ★ 总开关：整卡 no-op */
+    if (!YK_ENABLE_CARD || !YK_ENABLE_CB_TICK_SHOOTERS) return 0;   /* ★ 总开关 + 回调族 ⑨ */
     yk_card_t *s = ce_state(c, yk_card_t);
     uint8_t *o;
     int set;
@@ -5863,7 +5874,7 @@ static int on_tick_shooters(ce_card_t *c, uint32_t short_timer, uint32_t long_ti
  * ⚠ 走这里而不是伤害层（`bullet_damage_permille`）：那一层作用于**所有**自机弹（会连带人侧）。*/
 static int on_bullet_created(ce_card_t *c, void *bullet)
 {
-    if (!YK_ENABLE_CARD) return 0;                    /* ★ 总开关：整卡 no-op */
+    if (!YK_ENABLE_CARD || !YK_ENABLE_CB_BULLET) return 0;   /* ★ 总开关 + 回调族 ⑨ */
     uint32_t packed;
     int32_t out = 0;
     (void)c;
@@ -6048,7 +6059,7 @@ static unsigned s_graze_pos_from_bullet;              /* ★ 2026-09-27（第三
                                                        *   这个数不涨 ⇒ 站点没挂上（或 `ce_graze_take` 恒 0）。*/
 static void on_bullet_hit(ce_card_t *c, const ce_bullet_hit_t *ev)
 {
-    if (!YK_ENABLE_CARD) return;                    /* ★ 总开关：整卡 no-op */
+    if (!YK_ENABLE_CARD || !YK_ENABLE_CB_BULLET) return;   /* ★ 总开关 + 回调族 ⑨ */
     yk_card_t *s = ce_state(c, yk_card_t);
     float ox, oy;
     if (!s || !ev) return;
@@ -6073,7 +6084,7 @@ static void on_bullet_hit(ce_card_t *c, const ce_bullet_hit_t *ev)
  * ⚠ 回调里禁止析构任何敌人（UAF），也不缓存 `ev->enemy`（同帧 sweep 会删）。*/
 static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
 {
-    if (!YK_ENABLE_CARD) return;                    /* ★ 总开关：整卡 no-op */
+    if (!YK_ENABLE_CARD || !YK_ENABLE_CB_ENEMY_DEATH) return;   /* ★ 总开关 + 回调族 ⑨ */
     yk_card_t *s = ce_state(c, yk_card_t);
     if (!s || !ev) return;
     /* 「被打死」= KILLED（`retaddr 0x42f3b7`，life ≤ 0 主路 —— SDK 已按一手研究实现成
@@ -6179,7 +6190,7 @@ static void on_item_commit(ce_card_t *c)
  * 与 TH08 的 `begin_death` 同一时刻）。*/
 static int on_death_before_deathbomb(ce_card_t *c)
 {
-    if (!YK_ENABLE_CARD) return 0;                    /* ★ 总开关：整卡 no-op */
+    if (!YK_ENABLE_CARD || !YK_ENABLE_CB_DEATHBOMB) return 0;   /* ★ 总开关 + 回调族 ⑨ */
     yk_card_t *s = ce_state(c, yk_card_t);
     if (s) s->gauge = 0;
     return 0;
@@ -6893,7 +6904,7 @@ static void yk_fengma_tint_bullets(void)
 
 static int on_tick_2(ce_card_t *c)
 {
-    if (!YK_ENABLE_CARD) return 0;                    /* ★ 总开关：整卡 no-op */
+    if (!YK_ENABLE_CARD || !YK_ENABLE_CB_TICK2) return 0;   /* ★ 总开关 + 回调族 ⑨ */
     yk_card_t *s = ce_state(c, yk_card_t);
     int focused;
     static int8_t s_optmode_logged;
@@ -6902,12 +6913,17 @@ static int on_tick_2(ce_card_t *c)
         s_optmode_logged = 1;
         ce_log("youkai: bisect switches set_index=%d native_suppress=%d option_pose=%d hud_vm=%d "
                "fx_vms=%d transfer=%d zone=%d orbit=%d map_layer=%d human_opt_write=%d "
-               "card=%d score_decl=%d fengma_score=%d pose_declare=%d hud_init=%d (1 = 现状)",
+               "card=%d score_decl=%d fengma_score=%d pose_declare=%d hud_init=%d "
+               "cb_life=%d cb_stage=%d cb_shooters=%d cb_tick2=%d cb_bullet=%d cb_item=%d cb_draw=%d "
+               "cb_edeath=%d cb_dbomb=%d (1 = 现状)",
                (int)YK_ENABLE_SET_INDEX, (int)YK_ENABLE_NATIVE_SUPPRESS, (int)YK_ENABLE_OPTION_POSE,
                (int)YK_ENABLE_HUD_VM, (int)YK_ENABLE_FX_VMS, (int)YK_ENABLE_TRANSFER,
                (int)YK_ENABLE_ZONE, (int)YK_ENABLE_ORBIT, (int)YK_ENABLE_MAP_LAYER,
                (int)YK_HUMAN_OPT_WRITE, (int)YK_ENABLE_CARD, (int)YK_ENABLE_SCORE_DECL,
-               (int)YK_ENABLE_FENGMA_SCORE, (int)YK_ENABLE_POSE_DECLARE, (int)YK_ENABLE_HUD_INIT);
+               (int)YK_ENABLE_FENGMA_SCORE, (int)YK_ENABLE_POSE_DECLARE, (int)YK_ENABLE_HUD_INIT,
+               (int)YK_ENABLE_CB_LIFECYCLE, (int)YK_ENABLE_CB_STAGE, (int)YK_ENABLE_CB_TICK_SHOOTERS,
+               (int)YK_ENABLE_CB_TICK2, (int)YK_ENABLE_CB_BULLET, (int)YK_ENABLE_CB_ITEM,
+               (int)YK_ENABLE_CB_DRAW, (int)YK_ENABLE_CB_ENEMY_DEATH, (int)YK_ENABLE_CB_DEATHBOMB);
         ce_log("youkai: human option-write mode = %s (%s) - owner laser bisect switch",
                YK_HUMAN_OPT_WRITE ? "ON (current)" : "OFF (human side fully hands-off)",
                "YK_HUMAN_OPT_WRITE");
