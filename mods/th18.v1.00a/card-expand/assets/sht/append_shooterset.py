@@ -2604,14 +2604,14 @@ def _pofv109_bossatk_sets(anm_ids: dict) -> list:
         """
         return [(0.0, U, speed, rate, dmg, 5) for _ in range(k)]
 
+    # ★★ 2026-10-01（owner 定的混合路线）：**C3/C4 已改走 ECL**（`assets/ecl/pofv109_boss.ecl.txt`
+    #   的伪 boss 载体）⇒ 本表**只留 C1/C2**（自机弹：原生伤敌机 + 自机狙打敌机）。
+    #   C3/C4 那两组的行**整组撤掉**（它们是过渡态）。本组在槽序最后 ⇒ 撤两个槽不影响别的卡。
     specs = [
-        ("POFV109_BOSSATK_C1", arc(6,  speed=16.0, rate=6, dmg=14) + aimed(2)),          # 6 颗半圈 + 2 自机狙
-        ("POFV109_BOSSATK_C2", arc(12, speed=16.0, rate=5, dmg=11) + aimed(2)),          # 12 颗 + 2 自机狙
-        ("POFV109_BOSSATK_C3", arc(12, speed=16.0, rate=5, dmg=10)                       # 两层半圈（错 15°）
-                               + arc(12, speed=16.0, rate=5, dmg=10, phase=math.pi / 12.0)
-                               + aimed(4)),                                              # + 4 自机狙
-        ("POFV109_BOSSATK_C4", arc(12, speed=24.0, rate=3, dmg=10) + aimed(4, speed=26.0, rate=3)),
+        ("POFV109_BOSSATK_C1", arc(6,  speed=16.0, rate=6, dmg=14) + aimed(2)),
+        ("POFV109_BOSSATK_C2", arc(12, speed=16.0, rate=5, dmg=11) + aimed(2)),
     ]
+
     out = []
     for name, rows in specs:
         rs = [dict(fire_rate=rate, start_delay=0, damage=dmg, hit_w=16.0, hit_h=16.0,

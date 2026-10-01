@@ -524,16 +524,17 @@ static void bossatk_fire(ce_card_t *c, pofv_card_t *s)
         bossatk_carrier_stop();                         /* ★ 打完了 ⇒ 喊载体走（别留孤儿敌人）*/
         return;
     }
+    /* ★★ 2026-10-01（owner 定的**混合路线**）：**C1/C2 = sht 自机弹**（原生伤敌机 + 自机狙打敌机）；
+     *   **C3/C4 = ECL 侧**（`assets/ecl/pofv109_boss.ecl.txt` 的伪 boss 载体）⇒ 这两档**不发 sht 行**
+     *   （它们原来那两组已经在 `append_shooterset.py` 里整组撤掉，槽号也不再引用）。
+     *   ⚠ 自伤源与载体都在下面 `level >= 3` 那一支里（本函数后半）。*/
     if (s->bossatk.level >= 3) {
-        bossatk_carrier_sync(s->bossatk.level);      /* ★ C3/C4：ECL 侧载体 */
-        bossatk_damage();                            /* ★ C3/C4：自伤源（近似，见常量处）*/
+        bossatk_carrier_sync(s->bossatk.level);      /* ★ C3/C4：ECL 侧载体（+ 下面的自伤源）*/
+        bossatk_damage();
+        return;                                      /* ★ 不再走 sht 那条路 */
     }
-    switch (s->bossatk.level) {                 /* ★ 四档各一组（密度递进）*/
-    case 1:  set = CE_SHT_SET_POFV109_BOSSATK_C1; break;
-    case 2:  set = CE_SHT_SET_POFV109_BOSSATK_C2; break;
-    case 3:  set = CE_SHT_SET_POFV109_BOSSATK_C3; break;
-    default: set = CE_SHT_SET_POFV109_BOSSATK_C4; break;
-    }
+    set = (s->bossatk.level == 1) ? CE_SHT_SET_POFV109_BOSSATK_C1
+                                  : CE_SHT_SET_POFV109_BOSSATK_C2;
     o = ce_option_get(c, &s->opt, 0, POFV_BOSSATK_OPT_ANM, 30, "pofv109");
     if (!o) return;                                     /* 拿不到发射口：这一帧不发 */
     /* ★★ owner 的最终模型：**不是从自机身上发，而是从「版底的 boss 位」往上发**。
