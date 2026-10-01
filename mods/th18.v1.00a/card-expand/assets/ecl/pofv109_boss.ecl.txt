@@ -75,6 +75,9 @@
 
 void CEPofvBoss109()
 {
+    var R;                          // ★ 本子程序唯一的局部（帧间保持）：本档还要发几轮
+                                    //   ⚠ TH18 的 ECL 全局只有 `$I0..$I3` / `%F0..%F3`（见 `engine.h`）
+                                    //     ⇒ 第 5 个整数得用**局部**（`var R;` + `$R`）
     anmSelect(2);
     anmSetSprite(0, -1);            // 本体隐形（原版「拆槽」，照 spirit109）
     setHurtbox(1.0f, 1.0f);         // ★ 伪 boss：判定收到最小 ⇒ 不挡自机、也没有体术判定
@@ -91,7 +94,14 @@ CEPofvBoss109_loop:
     //   （`@mathIntMul(...)`）。已按栈式重写，并给构建加了硬闸（见 `make_ufo_ecl.py`）。
     $I1; 2; muli(); 32; addi(); seti($I3);           // $I3 = 路数 = $I1 × 2 + 32
     $I1; 0.15f; mulf(); 1.0f; addf(); setf(%F0);     // %F0 = 速度 = 1.0 + 0.15 × $I1
+    // ★ 一手的阶段结构：`loop(40, Sub0_572, [10001])` = 整轮**重复 `[10001]` 次**（1/2/3）
+    //   ⇒ 本卡把重复次数也取成档位（与一手的 `[10001]` 同源：那三个分支就是按 `[10101]` 分的）。
+    $R = $I1;                                        // $R = 本档还要发几轮
+    // ⚠ 全局变量（`$I*`）必须用**赋值式**写（`$I4 = $I1;`）—— `$I1; seti($I4);` 那种
+    //   写法会被编到**局部** `$A` 上（反编译看得见），而且往返自洽会当场报
+    //   「variable not found: A」（本轮就是被它抓到的）。
 
+CEPofvBoss109_volley:
     // ── 角色分派（$I2），每 40 帧一轮（一手：灵梦 `+40:`、魔理沙也是 40 帧节拍）──────
     unless ($I2 != 1) goto CEPofvBoss109_marisa @ 0;
     unless ($I2 != 2) goto CEPofvBoss109_sakuya @ 0;
@@ -217,8 +227,10 @@ CEPofvBoss109_sakuya:
     goto CEPofvBoss109_next @ 0;
 
 CEPofvBoss109_next:
-+40: //40  一手：每 40 帧一轮（灵梦 `+40: ins_5(40, Sub0_572, [10001])`）
-    goto CEPofvBoss109_loop @ 0;
++40: //40  一手：`+40: loop(40, Sub0_572, [10001])` —— 等 40 帧，然后把这一轮**重复 `[10001]` 次**
+    $R = $R - 1;                                     // $R -= 1
+    if ($R > 0) goto CEPofvBoss109_volley @ 0;       // 还有次数 ⇒ 再发一轮
+    goto CEPofvBoss109_loop @ 0;                     // 这一档发完 ⇒ 回主循环（继续跟锚点/看 $I0）
 
 CEPofvBoss109_leave:
     delete();
