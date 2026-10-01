@@ -1156,8 +1156,8 @@ int main(void)
      * 现象（owner 单卡实跑）：「击破 boss 一个阶段后 boss 几乎不再发弹」——boss 的发射口在
      * 整个阶段里**持续活跃**（反复 `etOn`、中间不调 `etNew`），而 `broken` 的唯一复位口是
      * inactive→active 边沿 ⇒ 闸夹死 + 使魔不再重建 ⇒ 那个槽**永远**不发弹。
-     * 修法 = 连续 `YK_EMIT_BROKEN_TTL` 帧「记忆里有使魔、当前没有」⇒ 无条件放开。 */
-    CHECK(YK_EMIT_BROKEN_TTL > 0);
+     * 修法 = 连续 `YK_EMIT_REBUILD_TTL` 帧「记忆里有使魔、当前没有」⇒ 无条件放开。 */
+    CHECK(YK_EMIT_REBUILD_TTL > 0);
     yk_map_reset(&m);
     yk_frame_begin(&m);
     CHECK(yk_note_slot(&m, 700, 2, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);
@@ -1168,7 +1168,7 @@ int main(void)
         int f;
         unsigned base = yk_map_heals(&m);
         /* TTL−1 帧：仍然夹着（发射口**一直活跃**，没有边沿）*/
-        for (f = 1; f < YK_EMIT_BROKEN_TTL; ++f) {
+        for (f = 1; f < YK_EMIT_REBUILD_TTL; ++f) {
             yk_frame_begin(&m);
             CHECK(yk_note_slot(&m, 700, 2, 1, p1, &a) == 0);     /* broken ⇒ 不重建、不撤 */
             CHECK(yk_shot_slot_suppressed(&m, 700, 2, 0) == 1);
@@ -1203,48 +1203,73 @@ int main(void)
         CHECK(yk_map_heals(&m) == base);                         /* 边沿复位**不**记账 */
     }
 
-    /* ============ ★★ 2026-09-22（工单 E）route A = 闸的复位口改成「下一波 etOn」============
-     * 一手根因：`engine/enemy/th18/07-emitter-slots-waves-and-phase-transitions.md`
-     * 原来的复位口是 `props[i].type` 的 inactive→active 边沿，而 `etNew` 与同槽 `etSprite` 在原生 ECL 里
-     * **永远同帧**（22 份 ECL、282/282 处）⇒ 卡每帧只采样一次，永远看不到那一瞬 ⇒ 边沿基本不发生；
-     * 而 boss 段首的 `enmKillAll()` 必然把使魔清光 ⇒ 原来只能等 `YK_EMIT_BROKEN_TTL` 才放开。
-     * route A：夹住的槽**被 `etOn` 问到**（= `yk_shot_slot_gate`）时置 `rearm_pending`，
-     * 卡 tick 的 `yk_note_slot` 同帧消费 ⇒ 清闸 + 重建（每个使魔死亡最多丢 1 条 etOn）。 */
+    /* ============ ★★★ 2026-10-01（**P1，owner 拍板**）= 闸「停到主复位口 / 长期 TTL」============
+     * owner 逐字：「使魔是符卡的有机组成部分，由它来向你发弹」＋「有些**终符卡是持续发弹的**，
+     * 我**高速把发弹口全清掉了**，我终符直接变成**奶奶来也能过了**」。
+     * ⇒ ① **删掉** route A（卡 tick 消费 `rearm_pending`）与 route A′（第二次 `etOn` 放行）：
+     *      一波之内**不再自己复活**（`rearm_pending` 降级为纯记账）；
+     *    ② 主复位口 = ECL 重新武装边沿 / **波次边沿**（`yk_fam_wave_clear`）/ 相位撤壳 / 整表清；
+     *    ③ **新增长期 TTL**（`YK_EMIT_REBUILD_TTL` = 600 帧 ≈ 10 s）到期自动放行 + 重建。 */
     CHECK(sizeof(yk_slot_t) == 28u);                  /* 新字段塞进 padding（上面那条是同一件事）*/
+    CHECK(YK_EMIT_REBUILD_TTL == 600u);               /* ★ owner 2026-10-01：≈10 s 的自动重建 */
     yk_map_reset(&m);
     yk_frame_begin(&m);
     CHECK(yk_note_slot(&m, 800, 0, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);
     yk_fam_created(&m, 800, 0, 8001);
     CHECK(yk_shot_slot_gate(&m, 800, 0, 8001) == 0);            /* 使魔活着 ⇒ 放行，不记账 */
     CHECK(yk_map_rearms(&m) == 0);
-    CHECK(yk_fam_broken(&m, 8001) == 1);                        /* 被打死（例如段首 enmKillAll） */
+    CHECK(yk_fam_broken(&m, 8001) == 1);                        /* 人侧打死了它（妖侧无敌，打不死）*/
     {
         unsigned base = yk_map_rearms(&m);
         unsigned hbase = yk_map_heals(&m);
         unsigned lbase = yk_map_releases(&m);
-        CHECK(yk_shot_slot_gate(&m, 800, 0, 0) == 1);           /* 第一次 etOn：掐 + 记「下一波」 */
+        CHECK(yk_shot_slot_gate(&m, 800, 0, 0) == 1);           /* 第一次 etOn：掐 + 记一次夹持账 */
         CHECK(yk_map_rearms(&m) == base + 1);
-        /* ★★★ 2026-09-22（P8-3 / **route A′**）：**第二次**被问到时当场放行并清夹持态 ——
-         * 「恢复」不再依赖卡 tick（卡 tick 在未聚焦时根本不跑），也不用等 120 帧 TTL。*/
-        CHECK(yk_shot_slot_gate(&m, 800, 0, 0) == 0);
-        CHECK(yk_map_releases(&m) == lbase + 1);                /* ★ 记一笔「第二问放行」 */
-        CHECK(yk_map_rearms(&m) == base + 1);                   /* ★ 不重复记「掐」的账 */
-        CHECK(yk_shot_slot_suppressed(&m, 800, 0, 0) == 0);     /* ★ 闸已放开（关键断言） */
+        /* ★★★ P1 回归断言：**第二次（以及之后每一次）被问都照旧掐** —— 一波之内不再自己复活。*/
+        CHECK(yk_shot_slot_gate(&m, 800, 0, 0) == 1);
+        CHECK(yk_shot_slot_gate(&m, 800, 0, 0) == 1);
+        CHECK(yk_map_rearms(&m) == base + 1);                   /* 不重复记「掐」的账 */
+        CHECK(yk_map_releases(&m) == lbase);                    /* ★ route A′ 的「第二问放行」已删 */
+        CHECK(yk_map_heals(&m) == hbase);
+        CHECK(yk_shot_slot_suppressed(&m, 800, 0, 0) == 1);     /* ★ 闸仍然夹着 */
+        /* ★ P1 回归断言：**卡 tick 不再消费 `rearm_pending`** ⇒ 跑几帧也不放行、不重建。*/
+        CHECK(yk_frame_end(&m, s_acts, (int)YK_FAM_MAX) == 0);
+        {   int f;
+            for (f = 0; f < 5; ++f) {
+                yk_frame_begin(&m);
+                CHECK(yk_note_slot(&m, 800, 0, 1, p1, &a) == 0);   /* broken ⇒ 不重建、不撤 */
+                CHECK(yk_shot_slot_suppressed(&m, 800, 0, 0) == 1);
+            }
+        }
+        CHECK(yk_map_releases(&m) == lbase);
+        /* ★ 主复位口 ②（**波次边沿**）：收到 `enmKillAll` 广播 ⇒ `yk_fam_wave_clear` 放行 + 重建。*/
+        CHECK(yk_fam_wave_clear(&m, 999999u) == 0);             /* 不是我们的使魔 ⇒ 什么都不做 */
+        CHECK(yk_map_releases(&m) == lbase);
+        CHECK(yk_fam_wave_clear(&m, 8001u) == 0);               /* 已经被 broken 清掉 fam_id ⇒ 查不到 */
+        /* 造一只新的、再让它被清场打死 */
+        yk_frame_begin(&m);
+        CHECK(yk_note_slot(&m, 800, 0, 1, p1, &a) == 0);        /* 仍夹着 ⇒ 不建 */
+        yk_map_reset(&m);
+        yk_frame_begin(&m);
+        CHECK(yk_note_slot(&m, 800, 0, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);
+        yk_fam_created(&m, 800, 0, 8002);
+        CHECK(yk_fam_wave_clear(&m, 8002u) == 1);               /* ★ 波次边沿：放行 */
+        CHECK(yk_map_releases(&m) == lbase + 1);                /* ★ 记一笔「波次边沿放行」 */
+        CHECK(yk_shot_slot_suppressed(&m, 800, 0, 0) == 0);     /* ★ 闸已放开（关键断言）*/
         CHECK(yk_frame_end(&m, s_acts, (int)YK_FAM_MAX) == 0);
         yk_frame_begin(&m);
         CHECK(yk_note_slot(&m, 800, 0, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);  /* 1:1 映射重建 */
-        CHECK(yk_map_heals(&m) == hbase);                       /* ★ 没走 TTL 兜底 */
-        yk_fam_created(&m, 800, 0, 8002);
-        CHECK(yk_shot_slot_gate(&m, 800, 0, 8002) == 0);        /* 下一次 etOn：使魔已回来 ⇒ 放行 */
-        /* 再来一轮：证明不是一次性的（掐 → 放 → 重建）*/
-        CHECK(yk_fam_broken(&m, 8002) == 1);
-        CHECK(yk_shot_slot_gate(&m, 800, 0, 0) == 1);
-        CHECK(yk_map_rearms(&m) == base + 2);
-        CHECK(yk_shot_slot_gate(&m, 800, 0, 0) == 0);           /* 第二问：route A′ 再放一次 */
+        CHECK(yk_map_heals(&m) == hbase);                       /* ★ 没走长期 TTL 兜底 */
+        yk_fam_created(&m, 800, 0, 8003);
+        CHECK(yk_shot_slot_gate(&m, 800, 0, 8003) == 0);        /* 下一次 etOn：使魔已回来 ⇒ 放行 */
+        /* 再来一轮：证明 wave_clear 是可重复的（建 → 清场打死 → 波次边沿放行 → 重建）。
+         * ⚠ 清场那条路**只调 `yk_fam_wave_clear`**（不像玩家击破那样先走 `yk_fam_broken`）——
+         *   后者会清 `fam_id` ⇒ 再按 id 找就找不到了。*/
+        CHECK(yk_fam_wave_clear(&m, 8003u) == 1);               /* 清场直接命中（fam_id 还在）*/
         CHECK(yk_map_releases(&m) == lbase + 2);
         yk_frame_begin(&m);
         CHECK(yk_note_slot(&m, 800, 0, 1, p1, &a) == 1 && a.kind == YK_ACT_CREATE);
-        yk_fam_created(&m, 800, 0, 8003);
+        yk_fam_created(&m, 800, 0, 8004);
     }
     /* 没被夹住的槽：闸恒放行、一次都不记账（route A 绝不误伤）。
      * ⚠ `rearms`/`heals` 都是**只增不清**的（`yk_map_reset` 不动它们，卡侧靠快照比对打日志）
@@ -2605,26 +2630,38 @@ int main(void)
             CHECK(yk_orbit_hp_for_enemy(3200, 3) == 1066 * YK_ORBIT_HP_SCALE);
             CHECK(yk_orbit_hp_for_enemy(3200, 3) > YK_LIFE_MAX_ALLOWED);   /* 证明「不钳 999」*/
         }
-        /* ⑥ter ★★★★ 2026-10-01（**owner 口径 ②**）**映射（发射口）使魔血量 = 母机 HP / 2**：
+        /* ⑥ter ★★★★ 2026-10-01（**owner 口径 ② 第二轮定案**）**映射（发射口）使魔血量 = 母机 HP / 3**：
          *   「发射口使魔血量理论上应当是一个**在一波里面或许能打死**的值，但这个判定就很不好说了」
-         *   ⇒ `/2` 是**启发式**（不是精确判定）；档 0 与绕转共用（≤200 ⇒ 100，owner「0 还是 100」）；
-         *   **不钳 999**（>999 由 spawn 路径两步写血承接）。动机全文见 `youkai_core.h` 的同名小节。*/
-        CHECK(yk_map_fam_hp(3200) == 1600);        /* owner 给的例子 */
-        CHECK(yk_map_fam_hp(1800) == 900);         /* owner 给的例子 */
+         *   ⇒ `/3` 是**启发式**（不是精确判定）；档 0 与绕转共用（≤200 ⇒ 100，owner「0 还是 100」）；
+         *   **不钳 999**（>999 由 spawn 路径两步写血承接）。动机 + 数值依据（5/6 面 13000/14000、
+         *   单波 360 f、灵梦 1280 dps ⇒ 2560–3840 是目标）见 `youkai_core.h` 的同名小节。*/
+        CHECK(yk_map_fam_hp(13000) == 4333);       /* ★ owner 的锚点：5 面道中 ⇒ 3.39 s @1280 dps */
+        CHECK(yk_map_fam_hp(14000) == 4666);       /* ★ 6 面道中 ⇒ 3.65 s */
+        CHECK(yk_map_fam_hp(3200) == 1066);
+        CHECK(yk_map_fam_hp(1800) == 600);
         CHECK(yk_map_fam_hp(200) == 100);          /* 档 0 上界（含）*/
         CHECK(yk_map_fam_hp(0) == 100);            /* 读不到 ⇒ 档 0 */
         CHECK(yk_map_fam_hp(-9) == 100);           /* 负数 ⇒ 档 0 */
-        CHECK(yk_map_fam_hp(201) == 100);          /* 201/2 = 100（刚出档 0 时与档 0 同值）*/
-        CHECK(yk_map_fam_hp(202) == 101);
-        CHECK(yk_map_fam_hp(1000) == 500);
-        CHECK(yk_map_fam_hp(2000) == 1000);        /* ★ >999：不再封顶 */
-        CHECK(yk_map_fam_hp(999999) == 499999);
-        CHECK(yk_map_fam_hp(3200) > YK_LIFE_MAX_ALLOWED);
-        {   /* 不变量：恒 ≥ 100、对 HP 单调不降（`hp > 200` 段是 hp/2，档 0 是 100）*/
+        CHECK(yk_map_fam_hp(201) == 67);           /* 201/3 = 67（小坑：比档 0 的 100 少）*/
+        CHECK(yk_map_fam_hp(300) == 100);
+        CHECK(yk_map_fam_hp(301) == 100);          /* 301/3 = 100 */
+        CHECK(yk_map_fam_hp(302) == 100);          /* 302/3 = 100（整数除法）*/
+        CHECK(yk_map_fam_hp(303) == 101);
+        CHECK(yk_map_fam_hp(1000) == 333);
+        CHECK(yk_map_fam_hp(2000) == 666);         /* ★ >999 只在 3000 以上出现（见下）*/
+        CHECK(yk_map_fam_hp(3000) == 1000);        /* ★ >999：不再封顶 */
+        CHECK(yk_map_fam_hp(999999) == 333333);
+        CHECK(yk_map_fam_hp(3000) > YK_LIFE_MAX_ALLOWED);
+        {   /* 不变量（分两段，别跨 200 那格比单调 —— 档 0 的 100 会「跳低」到 67）：
+             *   · `hp <= 200` ⇒ **恒 100**（含 0 / 负数 / 读不到）；
+             *   · `hp >= 201` ⇒ `hp/3`、恒 ≥ 1、恒 ≤ hp、对 HP 单调不降。*/
             int prev = 0, hp;
-            for (hp = -20; hp <= 8000; hp += 37) {
+            for (hp = -20; hp <= 200; hp += 7) CHECK(yk_map_fam_hp(hp) == 100);
+            for (hp = 201; hp <= 8000; hp += 37) {
                 int v = yk_map_fam_hp(hp);
-                CHECK(v >= 100);
+                CHECK(v >= 1);
+                CHECK(v <= hp);
+                CHECK(v == hp / 3);
                 CHECK(v >= prev);
                 prev = v;
             }

@@ -2198,7 +2198,7 @@ static void yk_familiars_tick(yk_card_t *s)
              *        ⇒ 同一个 `CREATE` 分支**每帧**再命中一次（每帧一次失败 + 日志刷屏）；
              *     ② 若在 `yk_note_slot` 里「不建但不清」⇒ 这一格一旦曾经建过壳（`fam_seen=1`），
              *        壳撤掉后闸会**夹住敌人本体炮**（`yk_shot_slot_suppressed` 只看 `fam_seen`），
-             *        要等 `YK_EMIT_BROKEN_TTL`（120 帧）才自愈；
+             *        要等 `YK_EMIT_REBUILD_TTL`（600 帧）才自动重建；
              *     ③ 跳过 ⇒ 本帧「没扫到这一格」⇒ `yk_frame_end` 当场退休该条目（原来有壳就发一次
              *        `WITHDRAW`，壳与跟随 VM 一起收掉），`fam_seen` 归零、闸恒放行。
              *   判据 = `yk_emit_on_body()`（相对模式 + 偏移恰好 (0,0)；一手与数据统计见 core 的声明段）。
@@ -5740,17 +5740,19 @@ static int yk_on_shot_slot(ce_card_t *c, const ce_enemy_shot_t *ev)
     if (s && yk_map_rearms(&s_map) != rearms_before) {
         yk_slot_t *sl = yk_map_find(&s_map, ev->enemy_id, ev->slot);
         ce_log("youkai: emitter gate CLAMPED slot %d of enemy_id %u (focused=%d fam_seen=%d "
-               "broken=%d no_fam_frames=%d) - this etOn is dropped; the NEXT etOn of this slot is "
-               "released by route A' (core: `yk_shot_slot_gate`)",
+               "broken=%d no_fam_frames=%d) - P1: this slot stays silent for the REST of this wave "
+               "until a main release port (ECL re-arm / wave edge / phase edge / reset) or the "
+               "%d-frame rebuild TTL fires (core: `yk_shot_slot_gate` / `YK_EMIT_REBUILD_TTL`)",
                ev->slot, ev->enemy_id, CE_PLAYER_FOCUSED() ? 1 : 0,
                sl ? (int)sl->fam_seen : -1, sl ? (int)sl->broken : -1,
-               sl ? (int)sl->no_fam_frames : -1);
+               sl ? (int)sl->no_fam_frames : -1, (int)YK_EMIT_REBUILD_TTL);
     }
     if (s && !s->logged_gate) {
         s->logged_gate = 1;
-        ce_log("youkai: emitter gate ACTIVE - slot %d of enemy_id %u stays silent until the next "
-               "etOn of that slot (route A) or the %d-frame self-heal expires",
-               ev->slot, ev->enemy_id, (int)YK_EMIT_BROKEN_TTL);
+        ce_log("youkai: emitter gate ACTIVE - slot %d of enemy_id %u stays silent for the rest of "
+               "this wave (P1: releases only on ECL re-arm / wave edge / phase edge / reset) or until "
+               "the %d-frame rebuild TTL fires",
+               ev->slot, ev->enemy_id, (int)YK_EMIT_REBUILD_TTL);
     }
     return 1;
 }
@@ -5816,20 +5818,26 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
      *     · 给奖励 / 加计数 / 得分 / 掉落（109 爆风、110 大信仰点、112 计数）⇒ **必须排除 `KILL_ALL`**
      *       （清场会把计数刷满；而且 `0x4307f1` / `0x430a00` / `0x430c08` 那三路在调 `0x430240`
      *        **之前**已经 `memset(enemy+0x6240)` 并清了主掉落 ⇒ 本来就不该算击破）。
-     *     · **纯状态判断**（本卡：这一槽的使魔没了 ⇒ 标 `broken`、不再重建，等 ECL 下一波
-     *       `etNew(i)`+`etOn(i)` 重新武装时自然复位）⇒ **把 `KILL_ALL` 算进去是对的**：
-     *       清场时使魔确实从场上消失了；若不算，`broken` 不置 ⇒ 下一帧又凭 1:1 映射把它建回来，
-     *       卡的状态就与场上矛盾了。
-     *   炸弹秒杀（`BOMB_KILL`）同理：使魔真的没了 ⇒ 一并打破。
+     *     · **纯状态判断**（本卡：这一槽的使魔没了）⇒ **把 `KILL_ALL` 算进来是对的**：清场时使魔确实
+     *       从场上消失了，卡必须知道（否则表里留着已死使魔的 id）。
+     *   ★★★ 2026-10-01（**P1 口径改动**）：**`KILL_ALL` 的处理方式变了** —— 它不再走 `yk_fam_broken()`
+     *     （那是「**玩家打死**」的语义 = 夹闸），而是走 `yk_fam_wave_clear()`：`enmKillAll` 是 **ECL 的
+     *     「新一波开始」**（op95，110 处、集中在段首），一手语义就是「每波重新 `familiarCreate`」
+     *     （`engine/enemy/th08/01-familiars-and-anm.md` §3）⇒ 新波该口应当**照常发弹**（放行 + 重建）。
+     *     这也是 owner 要的「主复位口 = 波次/相位边沿」里的**波次边沿**。
+     *   炸弹秒杀（`BOMB_KILL`）与普通击破（`KILLED`）仍走 `yk_fam_broken()`（使魔被玩家打掉 ⇒ 夹闸）。
      *   ECL_DIE / OTHER 对我们自造的惰性空壳（无 ECL、无符卡）不可能发生，故不列。 */
     if (ev->kind != CE_EDEATH_KILLED && ev->kind != CE_EDEATH_BOMB_KILL &&
         ev->kind != CE_EDEATH_KILL_ALL)
         return;
+    /* ① 波次边沿（`KILL_ALL` = `enmKillAll`）：**放行 + 让映射重建**，不夹闸（P1 主复位口 ②）。*/
+    if (ev->kind == CE_EDEATH_KILL_ALL) {
+        yk_fam_wave_clear(&s_map, ev->id);       /* 不是我们的使魔 ⇒ 返回 0，什么都不做 */
+        return;                                  /* 清场不算击破（本函数开头那段约定）⇒ 不进 +N 那条路 */
+    }
     if (!yk_fam_broken(&s_map, ev->id)) {
-        /* ★★ 2026-09-22：**不是我们的使魔** ⇒ 这是一次普通击破 —— 人妖槽与刻符的涨源就在这里。
-         * ⚠ `KILL_ALL`（段首清场 `enmKillAll`）**不算击破**（本函数开头那段约定：给奖励的东西必须
-         *   排除它，否则清场会把计数刷满）。*/
-        if (ev->kind != CE_EDEATH_KILL_ALL) yk_on_enemy_killed(s, ev);
+        /* ★★ 2026-09-22：**不是我们的使魔** ⇒ 这是一次普通击破 —— 人妖槽与刻符的涨源就在这里。*/
+        yk_on_enemy_killed(s, ev);
         return;
     }
     /* ★ 壳体已经被引擎析构了 ⇒ 跟随 VM 也必须同时收，否则会留下一个**画着已死使魔的幽灵**
@@ -5855,10 +5863,11 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
     /* ★ 这一笔在「被杀者**自己有主**」分支里 ⇒ **绕转使魔被击破也有 `+1`** ✓（妖侧无敌 ⇒ 只在人侧发生）。*/
     yk_popup_spawn(ev->x, ev->y, 1, 1, 0xffffffffu, 1.0f, "fam+1");
     ce_log("youkai: familiar enemy_id %u killed (kind %u, real=%u) at (%.0f, %.0f) - "
-           "that emitter slot stays silent until the NEXT etOn of that slot (route A) or the "
-           "%d-frame fallback self-heal expires (gate = on_enemy_shot_slot 0x433ffa)",
+           "P1: that emitter slot now stays silent for the rest of this wave (main release ports: "
+           "ECL re-arm / wave edge / phase edge / reset) or up to %d frames until the rebuild TTL "
+           "fires (gate = on_enemy_shot_slot 0x433ffa)",
            ev->id, ev->kind, (ev->flags & CE_EDEATH_F_REAL) ? 1u : 0u, ev->x, ev->y,
-           (int)YK_EMIT_BROKEN_TTL);
+           (int)YK_EMIT_REBUILD_TTL);
 }
 
 /* ★★★ 2026-09-22（P3 / th08 #17「人妖槽在 +99 和 -99 点跳」）：**原来的「收道具 ⇒ 人妖槽 ±身价/100」
@@ -7301,21 +7310,22 @@ static int on_tick_2(ce_card_t *c)
     {
         uint32_t rel = yk_map_releases(&s_map);
         if (rel != s->releases_seen) {
-            ce_log("youkai: emitter gate released %u slot(s) on the second etOn (route A', total %u) "
-                   "- clamp flags cleared at the breakpoint, the 1:1 mapping rebuilds next tick",
+            ce_log("youkai: emitter gate released %u slot(s) on the WAVE edge (enmKillAll broadcast, "
+                   "total %u) - new wave: clamp flags cleared, the 1:1 mapping rebuilds those slots",
                    rel - s->releases_seen, rel);
             s->releases_seen = rel;
         }
     }
-    /* ★ 2026-09-22（#7）：闸的**兜底**自愈记账。`YK_EMIT_BROKEN_TTL` 帧没再被 `etOn` 问到的
-     * 发射口会被无条件放开。route A 落地后这一条**正常应当基本不涨**（只有「ECL 再也不 `etOn`
-     * 这个槽」时才轮到它）；它在涨 ⇒ 那个槽是靠 TTL 才放开的，值得看一眼。*/
+    /* ★★★ 2026-10-01（P1，owner：「终符卡持续发弹、高速把发弹口全清掉 ⇒ 终符变成奶奶来也能过」）：
+     *   **长期自动重建**记账 —— 夹持超过 `YK_EMIT_REBUILD_TTL`（600 帧 ≈ 10 s）的槽会被无条件放开 +
+     *   重建使魔。判据：这一行在涨 = 「有口被堵到 TTL 才放开」（owner 那个场景正在被兜住）；
+     *   它**不涨**而 `CLAMPED` 在涨 = 那些口在主复位口（重新武装/波次/相位）之前就恢复了。*/
     {
         uint32_t heals = yk_map_heals(&s_map);
         if (heals != s->heals_seen) {
-            ce_log("youkai: emitter gate self-healed %u slot(s) after %d frames without any etOn "
-                   "(fallback path; total %u) - those emitters fire again", heals - s->heals_seen,
-                   (int)YK_EMIT_BROKEN_TTL, heals);
+            ce_log("youkai: emitter gate REBUILT %u slot(s) after the %d-frame rebuild TTL "
+                   "(P1 auto-rebuild, owner 2026-10-01; total %u) - those emitters fire again",
+                   heals - s->heals_seen, (int)YK_EMIT_REBUILD_TTL, heals);
             s->heals_seen = heals;
         }
     }
