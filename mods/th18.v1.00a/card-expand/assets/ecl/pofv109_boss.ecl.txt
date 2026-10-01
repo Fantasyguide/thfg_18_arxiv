@@ -138,6 +138,31 @@ CEPofvBoss109_volley:
     etAngle(3, 1.5707964f, 0.0f);
     etSpeed(3, %F0, 0.5f);
     etOn(3);
+    // ★ C4 层（档 4）：一手的**自机狙**那一张（`pl00.ecl` 的 Sub3 / Sub4 / Sub7）——
+    //   owner：「**包括对于敌机的「自机狙」**等等」⇒ TH09 的 `etRingAimed`(mode 2) /
+    //   `etRingAimedAway`(mode 4) 与 TH16/18 的 `etAim` **2 / 4 同号同义**。
+    if ($I1 < 4) goto CEPofvBoss109_next @ 0;
+    etNew(4);
+    etAim(4, 2);                    // 一手 Sub3：etRingAimed(11, 2, [10000], [10001], 2.5f, 0.5f, …)
+    etSprite(4, 11, 2);
+    etCount(4, $I3, 1);
+    etAngle(4, -1.5707964f, 0.0f);
+    etSpeed(4, 2.5f, 0.5f);
+    etOn(4);
+    etNew(5);
+    etAim(5, 2);                    // 一手 Sub4：etRingAimed(11, 15, [10000], 2, 2.5f, 1.3f, …)
+    etSprite(5, 11, 15);
+    etCount(5, $I3, 2);
+    etAngle(5, -1.5707964f, 0.0f);
+    etSpeed(5, 2.5f, 1.3f);
+    etOn(5);
+    etNew(6);
+    etAim(6, 4);                    // 一手 Sub7 的 etRingAimedAway(0, 15, …) ⇒ mode 4（偶数狙环形）
+    etSprite(6, 0, 15);
+    etCount(6, $I3, 1);
+    etAngle(6, -1.5707964f, 0.0f);
+    etSpeed(6, %F0, 0.5f);
+    etOn(6);
     goto CEPofvBoss109_next @ 0;
 
 CEPofvBoss109_marisa:
@@ -189,6 +214,23 @@ CEPofvBoss109_marisa:
     etAngle(5, -1.5707964f, 0.0f);
     etSpeed(5, 1.3f, 0.5f);
     etOn(5);
+    // ★ C4 层（档 4）：一手 `pl01.ecl` **没有**瞄准型（全篇零个 `etRingAimed`）—— 与
+    //   「魔理沙＝直线流」一致 ⇒ 这里**加两道更密的流**（❓ 自定：把 `波数 8` 抬到 12 并补一发）。
+    if ($I1 < 4) goto CEPofvBoss109_next @ 0;
+    etNew(6);
+    etAim(6, 3);
+    etSprite(6, 12, 6);
+    etCount(6, 1, 12);
+    etAngle(6, -1.5707964f, 0.0f);
+    etSpeed(6, %F0, 0.5f);
+    etOn(6);
+    etNew(7);
+    etAim(7, 3);
+    etSprite(7, 13, 10);
+    etCount(7, 1, 12);
+    etAngle(7, -2.3561945f, 0.0f);
+    etSpeed(7, %F0, 0.5f);
+    etOn(7);
     goto CEPofvBoss109_next @ 0;
 
 CEPofvBoss109_sakuya:
