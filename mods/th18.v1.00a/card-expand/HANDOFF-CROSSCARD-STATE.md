@@ -1,0 +1,137 @@
+# HANDOFF-CROSSCARD-STATE —— 跨卡状态台账（谁在动 / 共享资源到哪 / 发布落后多少）
+
+> **版本**：TH18 v1.00a（宿主 `th18.exe`，imagebase `0x400000`）。本文裸地址默认属该版本。
+> **这是什么**：**多人多会话共用一个工作区**时的统筹视图。三件事一眼看完：
+> ① 现在谁在动哪张卡；② 共享资源（图集 / shooterset / ECL / 共享代码 / 共享文档）用到哪一步、
+> 还有多少余量、有没有冻结；③ **仓里 vs 线上（发布）落后多少**。
+> **怎么维护**：谁动了共享资源，就在 §3 对应行更新「最近改动 + 用量」，并在 `AUDIT.md` §BE 登记；
+> 每次更新顺手改下面的「快照」行。**本文只做状态，不写引擎结论**（结论回 `engine/*`）。
+
+> **快照**：2026-10-01 18:2x（主控现算）。复核命令见 §10。
+
+## 1. 一页速览
+
+| 共享资源 | 用量 / 余量 | 冻结？ | 最近改动 |
+| --- | --- | --- | --- |
+| `ability.anm` 图集（`assets/ability/`）| **entry 90 / 上限 256**（余量 **166**）、sprite 572、script 377 | **有**：`ORDER.frozen.txt` 的已定稿段（插行 = 全库号平移，构建期拒）| 脚本 376/377（109）、352/356/357（112 妖精）|
+| `pl0X.sht` shooterset（`assets/sht/`）| **88 条追加 set**（`sht_ids.h`）| **没有**（只有「只许追加、号只增」的约定）| **13:57 109 蓄力弹**（`53315ba0`）|
+| `default.ecl` 合并（`assets/ecl/`）| 112 UFO 9 子程序 + **109 `spirit109.ecl.txt`** + st0X 各批 | 无机制 | 109 的灵 ECL（`spirit109.ecl.txt`）|
+| 车卡元数据 `patch/th18/cards.js` | 每卡 name/desc/category | 无 | 109 那一行（`desc` 写全合成卡）|
+| 共享代码 `sdk.*` / `engine.h` / `cards_def.c` / `Makefile` / `sites.py` | 站点 **33 / 记账线 24**（⚠ 超线）、进程级 42；**去重后待改站点 100 处** | 无 | 各批零散 |
+| 共享文档 `AUDIT.md` / `CAPACITY.md` / `TUNING.md` / `CARDS.md` / 各 `HANDOFF-*` | `AUDIT.md` §BE 详录已到 **#204** | 无 | 每批都在追加 |
+| **发布（线上那批）** | `RELEASE-STATE.json`：**2026-10-01 01:00:27** | — | ⚠ **其后已有 55 个提交未发布** |
+
+## 2. 活跃工作面（近 12 小时）
+
+| 线 | 提交数 | 在做 |
+| --- | :-: | --- |
+| **th08 / 108 永夜抄** | **28** | 妖侧使魔（血量倍率 / 发射口闸 / 死亡浮字 / 转嫁 / 崩溃加固），最近 `668a189d`（18:13）|
+| **109 花映塚 × 獣王園** | 4 | 蓄力弹四档分包 → 换敌弹样式+半透明 → 消弹圈改「逐帧扩张的场」|
+| st06 / 110-111 绿点 | 2 | 四色妖精掉绿点口径、擦弹倍率归属（110 单装不再显示擦弹项）|
+| 112 UFO | 1+ | 第 56 轮：UFO 血量显示口径；妖精换原生 `enemy_g.png` 行 |
+| **工作区未提交（WIP）** | — | 快照时只有 `patch/files.js`（其余各线都已提交）|
+
+> ⚠ **WIP 是易变的**：这份快照随时可能变。要现算：`git status --short | grep -v '^??'`。
+
+## 3. 共享资源逐个（动之前先看这一节）
+
+### 3.1 `ability.anm` 图集
+- **只许 append**：`entries/ORDER.txt` 末尾追加 + `scripts/NN_*.anm.txt`（号连续、从 68 起）；
+  已定稿段被 `ORDER.frozen.txt` 冻住，插行会被 `build_ability.py` 拒。
+- **余量 166 entry**（给以后的新卡美术）⇒ 视觉类需求首选这条路；**不需要站点**。
+- 一次**共享资源**改动会影响所有卡：登记 `AUDIT.md` §BE（先例：§BE 详录 #164 = 我 2026-10-01 的三角，
+  同日整条撤销，回退记录在 `WORK-PACKAGES.md` §11.3）。
+- ⚠ **DLL 与 `ability.anm` 必须同时发布**（`anm_ids.h` 的宏值烘进 DLL）。
+
+### 3.2 `pl0X.sht` shooterset
+- **只许追加**（`sht_ids.h` 是生成物、头注「别手改」）；**没有冻结段**。
+- 现状：88 条追加 set，最大归属 **111**（`MARISA_OPT` 35 + `MARISA_MAIN` 8），其次 108（`WOLF`/`EAGLE`/`YOUKAI_*`）、
+  113（`TRANCE` 3）、110 / 116 / 117 等。
+- **定稿状态：未定稿**（109 的弹幕组最近 3 小时还在追加）。
+- 生成器**确定性**（重跑 md5 不变）；`make sht-verify` 会查 sprite 越界 / anm 引用 / 追加脚本主路径 delete。
+
+### 3.3 ECL（`assets/ecl/` → `native/build/ecl/default.ecl`）
+- 每批一个 `make_*_ecl.py` 合并脚本：112 的 UFO（9 子）、109 的灵（`spirit109.ecl.txt`）等；
+  合并后二进制往返回验。**自建敌人的「能被打、能掉东西」都走这条路**。
+
+### 3.4 共享代码与站点
+- `sites.py`：**站点 33 / 记账线 24（已超线）**、进程级上限 42、去重后待改站点 **100 处**。
+- ⇒ **加站点的真判据**：`sitecheck.py <addr> <len>` 窗口检查 + 启动日志 `pool:` 实测余格 + 实跑一局 +
+  `GATES.md` §8 记账 + `AUDIT.md` §BE 登记 + **owner 拍板**。
+- 能不加站点就不加（先例：109 的蓄力键走「按住 C 的电平」，零站点）。
+
+## 4. 发布同步（仓里 vs 线上）
+
+| 项 | 值 |
+| --- | --- |
+| 最后一次发布 | **2026-10-01 01:00:27**（`RELEASE-STATE.json` 的 `last_release`；含 patch / DLL / 四份 `pl0X.sht` / 两份 anm / cards.js / files.js 的 md5）|
+| 之后的提交 | **55 个**（含 th08 28 笔、109 4 笔、st06/112 等）⇒ **线上落后** |
+| 对账手段 | `RELEASE-STATE.json` 的 md5；发布前跑 `native/tools/check_deploy_pair.py --modkit <dir>`（专查「DLL ↔ 游戏里 `pl0X.sht` 同批」）|
+| ⚠ 注意 | `native/build/` 是 **gitignored** ⇒ 「线上 / 本地一致」只能靠 md5 对账，不能靠 git status |
+
+## 5. 冻结与定稿
+
+| 对象 | 状态 |
+| --- | --- |
+| `ability.anm` 图集 | **部分冻结**（`ORDER.frozen.txt` 的已定稿段；新东西一律 append）|
+| `pl0X.sht` | ❌ **未定稿**（无冻结机制；109 仍在追加）|
+| `default.ecl` | ❌ 未定稿（各批按需新增子程序）|
+| 共享代码 / 站点表 | ❌ 未定稿；**站点已超记账线**，后续要动必须走 §3.4 流程 |
+
+## 6. 多会话工作区的既知雷区（都踩过）
+
+1. **`git add -A` 会扫走别人的 WIP** —— 本工作区多人共用一个 index。★ 只 `git add <自己的路径>`；
+   若目标文件里有别人的在途改动，用「取 HEAD 版 → 写入自己那段 → `git add <该文件>` → 把别人的版本还原回工作区」
+   （先例见 2026-10-01 的三角撤销提交）。
+2. **同一文件并发编辑**（`AUDIT.md` / `TUNING.md` / `CARDS.md` 最容易撞）—— 提交前先 `git diff --stat` 看一眼。
+3. **`build/` 不入库** ⇒ 别用 git 判断「发布了没」。
+4. **站点余量实际上为 0** ⇒ 任何「顺手加个 hook」都要先算账。
+5. **DLL / anm / sht 必须同批发布**（`anm_ids.h` 宏值 + shooterset 索引都烘在 DLL 里）。
+
+## 7. 每张卡一句话现状（系统卡 106–117；细节看 `CARDS.md` / `SINGLE-CARD-TEST.md`）
+
+| id | 卡 | 一句话 |
+| :-: | --- | --- |
+| 106 | 红魔乡 | PlayRank 12 条增减四件套 |
+| 107 | 妖妖梦 | 樱点 / 森罗结界（樱点实体借 TH07 切图；与 110/111 共用点池）|
+| 108 | 永夜抄 | 妖机体 + 使魔（**当前最活跃**：血量/发射口/浮字/转嫁/崩溃加固）|
+| 109 | 花映塚 × 獣王園（**合成卡**）| 机制全部落地（去拦 Z / 蓄力四档 / 灵力道具 / 结界 / 自制灵 ECL）；**仍在追加 shooterset** |
+| 110 | 风神录 | 信仰（绿点实体池，与 111 共用 + 按槽记账）|
+| 111 | 地灵殿 | 信号槽（回收线上方 +50/f、满槽全收）；**sht 最大户** |
+| 112 | 星莲船 | 飞碟（token = 自建 VM 池）；UFO 血量显示口径已拍定 |
+| 113 | 神灵庙 | 灵界（手动 + 中弹无伤那条）|
+| 114 | 辉针城 | TH14 Collect Point 1:1（全屏收点）|
+| 115 | 绀珠传 | 擦弹区判定 + 子弹变黄 |
+| 116 | 天空璋 | **主动卡**：季节点（擦弹/掉落/解放消弹）+ Shift+D 副季节 |
+| 117 | 鬼形兽 | **主动**：5 颗动物灵满槽自动咆哮 |
+| 118 / 119 | — | **空号**（owner 2026-09-28：「没有 119，它就是 109」）|
+
+## 8. 我这批（统筹）最近动了什么
+
+| 日期 | 事项 | 记录 |
+| --- | --- | --- |
+| 2026-09-28 | 119 = 109 合成卡的调研（TH19/TH09 两个样本建库 + 一手调研 + 规格 + 交接）| `SPEC-109-FUSION.md`、`HANDOFF-109.md`、`engine/versus/*`、`engine/card/th19/*` |
+| 2026-10-01 | 顶部三角指示：一手调研（TH18 是死代码、活版只在 TH07）→ 实现一期 → **owner 复核后整条撤销** | `engine/player/th18/06-offscreen-top-indicator-absent.md`（资料保留）、`WORK-PACKAGES.md` §11/§11.3、`AUDIT.md` §BE #164（含撤销框）|
+
+## 9. 待 owner 拍 / 挂起
+
+| # | 事项 | 现状 |
+| :-: | --- | --- |
+| 1 | **发布**：仓里已领先线上 55 个提交（含 109 的 sht 三笔）| ⏳ 等 owner 说「可以发」|
+| 2 | `pl0X.sht` 是否算定稿（109 是否还要追加弹幕组）| ❓ 取决于 109 那条线的收工判断 |
+| 3 | 站点超记账线（33/24）的处置 | ⏳ 长期挂账（每次动站点都要走 §3.4）|
+
+## 10. 怎么复核这份文档（命令）
+
+```bash
+# 图集用量 / 余量
+python3 mods/th18.v1.00a/card-expand/assets/build_ability.py --verify-only | head -3
+# shooterset 追加条数 / 最近改动
+grep -c 追加 mods/th18.v1.00a/card-expand/native/sht_ids.h
+git log -1 --date=iso --pretty="%ad %h %s" -- mods/th18.v1.00a/card-expand/assets/sht
+# 发布状态 / 之后多少提交
+python3 -c "import json;d=json.load(open('mods/th18.v1.00a/card-expand/RELEASE-STATE.json'));print(d['last_release']['at'])"
+git log --since="<上面那个时间>" --oneline | wc -l
+# 站点账 / 全量校验
+cd mods/th18.v1.00a/card-expand/native && python3 sites.py check && make check
+```
