@@ -501,8 +501,8 @@ static void yk_side_lock_tick(void)
  *   每族一行；默认 1 = 现状。owner 按「只关一族」出包二分。*/
 #define YK_ENABLE_CB_LIFECYCLE     1  /* ⑭ on_ctor / on_load / on_power_level_change / on_run_reset / on_delete */
 #define YK_ENABLE_CB_STAGE         1  /* ⑮ on_stage_start（本卡当前**没有**这个回调，占位备用）*/
-#define YK_ENABLE_CB_TICK_SHOOTERS 0  /* ⑯ on_tick_shooters（★ 头号嫌疑：每帧跑在 shooter 行上）*/
-#define YK_ENABLE_CB_TICK2         1  /* ⑰ on_tick_2 */
+#define YK_ENABLE_CB_TICK_SHOOTERS 1  /* ⑯ on_tick_shooters（★ 头号嫌疑：每帧跑在 shooter 行上）*/
+#define YK_ENABLE_CB_TICK2         0  /* ⑰ on_tick_2 */
 #define YK_ENABLE_CB_BULLET        1  /* ⑱ on_bullet_created / on_bullet_hit */
 #define YK_ENABLE_CB_ITEM          1  /* ⑲ on_item_frame */
 #define YK_ENABLE_CB_DRAW          1  /* ⑳ on_draw */
