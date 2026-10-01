@@ -2065,6 +2065,7 @@ faith_hud:   压暗 L0 a=255（目标 255，步进 56/帧）| 本块矩形(自�
 | 5 | 残影 | `ZN_TRAIL_EVERY = 2` 帧一枚，10 帧渐隐缩小，颜色 = 这把剑的 `trailColor` | ❓ 自定（原版 = 4 个 ghost + 60 采样 ribbon + 尘埃 278 + 光；我们只做得出**残影 VM**这一层，颜色是**复刻**的 `trailColor`）|
 | 6 | 剑阵表 | **21 把**（原版 `FinalFractalHelper._fractalProfiles` 的物品号顺序）| **复刻**：顺序 / 颜色都是反 IL 读出的；每第 3 把固定天顶剑本体、其余从另外 20 把随机（对位 `GetRandomProfileIndex` 重掷 4956）。改表就改 `zenith.c` 的 `s_zn_profiles` + `ORDER.txt` 的 `ATLAS_ZENITH_BLADE` |
 | 7 | 跟班站位 | `option+0x64/0x68/0x6c/0x70` = (46, −14) 非聚焦 / (36, −20) 聚焦 | ❓ 自定；⚠ **y 正负号与手感待实跑调**（与真银圣剑的 HUD 偏移同一类）|
+| 7b | 跟班**贴图轮播** | `ZN_FAM_PERIOD = 40` 帧/把（一轮 21 把 = 840 帧 = 14 s）| ❓ 自定（owner 只说了「轮流显示整组 21 把」，没说节奏）；20 帧更闪、80 帧更安静 |
 | 8 | 音效 | `0x2d` = TH18 `se_slash.wav` | 对位原版 `SoundID.Item169`（**复刻**语义、音色借现成一手 SE）；每把出膛响一次 |
 | 9 | 卡面 / 卡表 | 白底 + `Item_4956`（56×56，LANCZOS 撑满画面区）+ 原生框，sprite 202/203；`price_tier 8` / `weight 2` | 卡面 = owner 2026-10-02 口径（「白底，放一个天顶剑物品撑满就行」）；`price_tier` / `weight` 是占位 |
 

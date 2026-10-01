@@ -24,6 +24,7 @@
 上取到发带、下取到脚；再按**卡框每边吃掉的 7％** 把这个构图外扩一圈，免得发带和鞋被框边切掉。
 之后 `fit_card.py WHIRLWIND … --no-detect --trim 0 --margin 0`。
 | `ZENITH.png` | 天顶剑（id 87）的卡面 | **Terraria 原版物品**（用户本机 Steam 版 `Content/Images/Item_4956.xnb`，56×56；物品号 4956，**不是** 4144） | `make_white_item_card.py ZENITH --item _src/ZENITH.png --fill`：白底 + 物品缩到画面区上限（LANCZOS）+ 原生框 |
+| `JERA.png` | 杰拉（id 88）的卡面 | **用户提供**（`D:\项目\幻想指南\18\th18_modkit\Runes_sprite.png`，256×256，透明底紫色辉光的卢恩字母 ᛃ = Jera 符文）| `fit_card.py JERA _src/JERA.png --trim 0 --margin 24 --bg '#ffffff'`：按非白包围盒等比缩到画面区、白底、套原生框 |
 | `ZENITH_FIRST_FRACTAL.png` | （只作记录，不进卡面） | 同上，`Item_4144.xnb`（32×32） | **4144 是「地灵之刃 Terragrim」，不是天顶剑**；它只是天顶剑剑阵的 21 把之一（见 `ability/zenith/_src/`）|
 
 ### Terraria 物品贴图的取法（LZX 解包，一次性）

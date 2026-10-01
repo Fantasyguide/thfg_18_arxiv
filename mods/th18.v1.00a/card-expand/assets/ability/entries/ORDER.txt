@@ -979,13 +979,10 @@ YOUKAI_FAM_TRAIL  ability/youkai_familiar/YOUKAI_FAM_TRAIL.png  16x16
 #   owner 口径：「灵力道具得按照类季节道具做，动态什么的一模一样」＋「完全类似与信仰点、P点等」。
 #   **追加在文件末尾**（尾插 ⇒ 既有 entry / sprite 号一个不动，不制造共享件位移）。
 POFV109_POWER_P  ability/pofv109_power/POWER_P.png  32x32
-# ★★ 2026-10-02（87 天顶剑，致敬泰拉瑞亚 Zenith）：跟班的贴图 = Terraria 原版物品「天顶剑」本体。
-#   物品号 `Item_4956`（**不是** 4144 —— 一手：Terraria 1.4.4.9 的 `Item.cs` 里 Zenith 的 `shoot = 933`、
-#   `GetAlpha` 的 `case 4956`，以及 `FinalFractalHelper..cctor` 的 12 个物品号列表里 4956 与 4144 是两个不同的物品）。
-#   取法：用户本机 Steam 版 `Content/Images/Item_4956.xnb` → xnbcli 解 PNG（LZX）→ `assets/cards/_src/ZENITH.png`。
-#   **追加在文件末尾**（尾插 ⇒ 既有 entry / sprite 号一个不动）。
-ZENITH_SWORD  cards/_src/ZENITH.png  56x56
 # ★★ 2026-10-02b（87 天顶剑 → 按泰拉瑞亚的**弹幕本体**还原）：天顶剑每一挥甩出的**剑阵**用的剑贴图。
+#   ⚠ 这张图集**同时**供跟班（逐把轮播，见 script378）与剑刃（每把随机）用 —— 原先给跟班单开的
+#     单图 entry（`ZENITH_SWORD`）同日撤掉（它的唯一消费者改走本图集的第 21 个成员），
+#     **没有别人的号受影响**（那两行都在文件末尾、冻结段之后）。
 #   一手（不是猜的）：`Terraria.exe`（用户本机 1.4.4.9）里 `Terraria.Graphics.FinalFractalHelper..cctor`
 #   的 IL —— 21 个 `FinalFractalProfile(ItemID, bladeLength, trailColor)`，物品号顺序如下（用 dnfile+dncil
 #   反 IL 读出；`Projectile.AI_182_FinalFractal` 用 `GetRandomProfileIndex()` 在这些里随机挑一把画）。

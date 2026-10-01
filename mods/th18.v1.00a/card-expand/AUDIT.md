@@ -28006,3 +28006,18 @@ static 池**，Jera 够不着。而引擎道具池也不是「一个大池」：
   以及 **107 樱点**（它在 `faith.c` 共享池里 ⇒ **已经被 Jera 的第 ② 段覆盖**，不用另接）。
 - ⚠ 语义口径（登记在 `TUNING.md` §2.10）：type 0x10–0x13 的卡道具**不排除** ⇒ 复制品被收时**真的多发卡**。
 - 单测 `tests/test_dup_layer.c` 全绿；`make check` **exit 0**（`cards-check` 45 张卡合规、`capcheck` 全绿）。
+
+### §BE 详录 #211 追加（2026-10-02c，同日两次）
+
+1. **跟班改成轮播整组 21 把**（owner：「跟班也轮流显示整组 21 把」）：`zenith.c` 新增 `zn_fam_cycle()`
+   —— 每 `ZN_FAM_PERIOD`（40 帧）`ce_anm_set_sprite` 换下一把；子机 VM 被引擎重建（换关 / 火力档变 /
+   开店收起再开，id 会变）时立刻补上当前那一把（用 `fam_vm` 记上一次落笔的 id）。
+   一手依据（本条新增反汇编）：`AnmVm::set_sprite` `0x477b00` 读的是**文件级 sprite 表**
+   （`[mgr+0x11c] + idx*0x44`），**不按 entry 分基址** ⇒ 同一个 VM 可以换成同文件里任何 entry 的 sprite。
+   ★ 尽管如此，仍把 script378 的默认 sprite 从单图 `@ZENITH_SWORD` 换成**同一张图集**的
+   `@ZENITH_BLADE_ZENITH`（同一张像素），让跟班与剑刃同 entry —— 少一层依赖。
+2. **撤掉 `ZENITH_SWORD` 那张单图 entry**（它唯一的消费者 = 跟班，已改走图集）：
+   `entries/ORDER.txt` 删掉那一行 ⇒ 图集 entry 92 → **91**、成员 sprite 574..594 → **573..593**。
+   ⚠ 这是**删行**（不是尾插）：被删的行在**文件末尾、`ORDER.frozen.txt` 的冻结段之后**，
+   既有别人的 entry / sprite 号**一个没动**；受影响的只有本卡 87 自己，与它同批重编
+   （`anm_ids.h` / DLL / `ability.anm` 一起发布）。`make check` 全绿可证。

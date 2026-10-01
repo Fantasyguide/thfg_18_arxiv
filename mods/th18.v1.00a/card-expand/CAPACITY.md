@@ -1130,10 +1130,11 @@ CE_ANM_ABILITY_SCRIPT_ZENITH_TRAIL
 **A5. sprite 汇总（`CE_ANM_ABILITY_SPRITE_*`）** —— sprite 号是 dword、**不是容量**，所以这里只登记总数与号段（加一张美术这两行就变 ⇒ 台账必须跟着刷新）
 
 ```
-CE_ANM_ABILITY_SPRITE 宏 989 个，号 109..594
+CE_ANM_ABILITY_SPRITE 宏 988 个，号 109..593
 ```
 
 <!-- capcheck:appendix:end -->
+
 
 
 

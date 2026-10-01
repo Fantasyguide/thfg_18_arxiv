@@ -34,11 +34,18 @@
 #define ZN_SE_SLASH     0x2d       /* TH18 音效表 0x2d = se_slash.wav（一手 engine/_shared/th18-sound-table.md）；
                                     * 对位 Terraria 的 `SoundID.Item169`（原版每把出膛放一次）*/
 #define ZN_PROFILE_N    21         /* = `FinalFractalHelper._fractalProfiles` 的条数（一手，见 AUDIT §BE #211）*/
+#define ZN_FAM_PERIOD   40         /* ❓自定：跟班**轮播**整组 21 把的节奏（帧/把 ⇒ 一轮 40×21 = 840 帧 = 14 s）*/
 #define ZN_RANDOM_N     20         /* 随机池 = 去掉天顶剑本体自己（原版 `GetRandomProfileIndex` 会重掷 4956）*/
 
 typedef struct {
     ce_option_t opt;               /* 跟班槽（SDK：认领 / 申请 / 收起）*/
     zn_state_t  st;                /* 池 + 节奏 + 运动（纯逻辑）*/
+    /* ★ 2026-10-02（owner：「跟班也轮流显示整组 21 把」）：跟班的**贴图轮播**状态。
+     *   `fam_vm` 记住上一次落笔的那个 VM —— 引擎重建子机（repopulate / 换关）会换成新 id，
+     *   发现 id 变了就**立刻**把当前这一把补上（不然那一帧会闪回脚本默认的天顶剑）。*/
+    uint8_t  fam_idx;              /* 当前显示的是 21 把里的第几把（0 = 天顶剑本体）*/
+    uint32_t fam_timer;
+    uint32_t fam_vm;               /* 上一次 `set_sprite` 作用的 VM id（0 = 还没落过笔）*/
 } zn_card_t;
 
 _Static_assert(sizeof(zn_card_t) <= 496, "zenith: private state overflows CE_STATE_BYTES");
@@ -135,6 +142,29 @@ static int on_load(ce_card_t *c)
     return 0;
 }
 
+/* ★ 跟班贴图轮播（owner 2026-10-02：「跟班也轮流显示整组 21 把」）：
+ * 每 `ZN_FAM_PERIOD` 帧换成 21 把里的下一把；子机 VM 被引擎重建时（换关 / 火力档变 / 开店收起再开）
+ * 立刻把当前这一把补上。贴图取自同一份 `ATLAS_ZENITH_BLADE`（sprite 表是**文件级**的 ⇒ 脚本 378
+ * 用的是单图 entry 的 sprite，也能换成图集里的成员，`ce_anm_set_sprite` 就是这个语义）。*/
+static void zn_fam_cycle(zn_card_t *s, uint8_t *o)
+{
+    uint32_t vm;
+    if (!o) return;
+    vm = *(uint32_t *)(o + CE_OPT_ANM_ID);
+    if (!vm) { s->fam_vm = 0; return; }
+    if (vm != s->fam_vm) {                      /* 新 VM（首次 / 被重建）⇒ 立刻补上当前这一把 */
+        s->fam_vm = vm;
+        s->fam_timer = 0;
+        ce_anm_set_sprite(CE_ABILITY_ANM(), vm, s_zn_profiles[s->fam_idx].sprite);
+        return;
+    }
+    if (++s->fam_timer >= ZN_FAM_PERIOD) {
+        s->fam_timer = 0;
+        s->fam_idx = (uint8_t)((s->fam_idx + 1u) % ZN_PROFILE_N);
+        ce_anm_set_sprite(CE_ABILITY_ANM(), vm, s_zn_profiles[s->fam_idx].sprite);
+    }
+}
+
 /* 把一帧的位姿参数落成世界坐标：两次 `ce_polar_to_vel`（原版的两次 `RotatedBy`）。
  *   offset = (Vector2(1,0).RotatedBy(ang) · Vector2(R, A)).RotatedBy(heading)
  *          = ((R·cos ang, A·sin ang)) 在 heading 的坐标系里再转一次。*/
@@ -170,6 +200,7 @@ static int on_tick_2(ce_card_t *c)
     o = ce_option_get(c, &s->opt, ZN_OPT_ANM_Y, CE_ANM_ABILITY_SCRIPT_ZENITH_OPT, ZN_RETRY, "zenith");
     if (!o) return 0;
     zn_place(&s->opt);                          /* 补申请 / 重建过 ⇒ 站位重新写一遍（幂等）*/
+    zn_fam_cycle(s, o);                         /* 跟班贴图轮播（21 把）*/
     pz = ce_player_pos()[2];
     fx = ce_option_x(o);                        /* ★ 原版每帧重读 `player.MountedCenter` ⇒ 剑阵跟着跟班走 */
     fy = ce_option_y(o);

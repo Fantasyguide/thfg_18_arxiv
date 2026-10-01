@@ -2,7 +2,9 @@ script script378 {
     // 天顶剑（id 87）的**跟班本体** —— 由 `Player__allocate_option` 起（脚本号当它的最后一个栈参）。
     // 骨架照原生子机脚本 script2 / script16 与本 mod 的 script88（破损核心）/ script102（豌豆射手）：
     // interruptLabel(2) 出场、(3) 进店收起、(1) 销毁 —— 三个都是引擎发的，卡不自己发。
-    // 贴图 = Terraria 原版「天顶剑」**物品本体**（`ZENITH_SWORD` = Item_4956，56×56；见 entries/ORDER.txt 末段），
+    // 贴图 = Terraria 原版「天顶剑」**物品本体**（`ZENITH_BLADE_ZENITH` = Item_4956，56×56；图集
+    // `ATLAS_ZENITH_BLADE` 的第 21 个成员，见 entries/ORDER.txt 末段）—— 这里只是**默认值**：
+    // C 每 ZN_FAM_PERIOD 帧用 `ce_anm_set_sprite` 换成同一图集里的下一把（owner：「跟班也轮流显示整组 21 把」）。
     // 场上约 24 px（scale 0.42，56×0.42 = 23.5）；站位（右前方）由 C 写 option+0x64/0x6c，脚本不碰 pos。
 -1:
     layer(13);
@@ -11,7 +13,7 @@ script script378 {
     zWriteDisable(1);
 0:
     interruptLabel(2);
-    sprite(@ZENITH_SWORD);
+    sprite(@ZENITH_BLADE_ZENITH);
     scale(0.0f, 0.0f);
     scaleTime(10, 4, 0.42f, 0.42f);
     angleVel(0.0f, 0.0f, 0.01308997f);   // 每帧 0.75°：极慢自转（活着，但不抢视线）

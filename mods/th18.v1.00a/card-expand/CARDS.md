@@ -230,7 +230,9 @@ C 自带一个计数器当 `short_timer` 传进去（`param_2` 只进模运算�
 - **物品号先订正**：天顶剑本体 = **4956**（不是 4144；4144 是「地灵之刃 Terragrim」，只是剑阵 21 把之一）。一手 = `Item.cs` 的 `shoot = 933`、`GetAlpha` 的 `case 4956` + wiki。
 - **弹幕 = `ProjectileID.FinalFractal` 933 / `aiStyle 182`**：`velocity` 是**出膛定死的偏移**（`(目标−自机)/2`，`UpdatePosition` 对 933 直接早退 ⇒ 从不积分）⇒ 剑**绕着「跟班 + velocity」画椭圆**，`ang = π + sign(vx)·L·2π`（`L = 相位/60`）、`R = max(60, |v| + GetLerpValue(0.5,1,L)·40)`、第二半轴 `ai[0] ∈ [−100,100]`（我们每把用 `ce_rand()` 抽）、还有一个随 `L` 衰减的起始偏移；相位 120 消失、`Opacity = GetLerpValue(0,5,t)·GetLerpValue(120,115,t)`。**两次 `RotatedBy` 走引擎的 `ce_polar_to_vel()`（FSINCOS）⇒ 我们的目标文件零 sin/cos、零 x87。**
 - **贴图 = `FinalFractalHelper._fractalProfiles` 的 21 把剑**（物品号 + trailColor 都是反 IL 读出来的）：落在 `ability.anm` 的 `ATLAS_ZENITH_BLADE`（entry 92、21 个成员、画布 432×288）；每把按原版规则挑 —— **每第 3 把固定是天顶剑本体**，其余从另外 20 把随机（`GetRandomProfileIndex` 会重掷 4956）。
+- **跟班也轮播整组 21 把**（owner 2026-10-02「跟班也轮流显示整组 21 把」）：每 40 帧 `ce_anm_set_sprite` 换成下一把，一轮 14 s；子机 VM 被引擎重建（换关 / 火力档变 / 开店）时立刻补上当前那一把（`zn_fam_cycle`）。
 - **特效**：残影（每 2 帧一枚、按这把剑的 `trailColor` 染色、脚本自毁、渐隐缩小 —— 对位原版的 4 个 ghost + ribbon）、出膛音 `se_slash`（对位 `SoundID.Item169`）、命中冷却 **7 帧**（对位 `localNPCHitCooldown = 7`）。
+- ⚠ 跟班与剑刃**共用同一张图集** `ATLAS_ZENITH_BLADE`；原先给跟班单开的那张单图 entry `ZENITH_SWORD` 同日撤掉（唯一消费者已改走图集，**没有别人的号受影响**）。
 - 跟班 = 原生装备卡子机（与 71/77 同一套 `ce_option_*`；侧向站位自己写 `option+0x64/0x6c`）；`on_delete` 收光全部剑刃 + 残影 VM + 子机槽。
 - ❓ 自定（进 `TUNING.md` §2.10）：出膛周期 10 帧、射程 640、弧长上限 200、池 8、每次命中 20、判定盒 40×40、残影间隔 2、跟班站位。
 
