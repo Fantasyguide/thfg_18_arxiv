@@ -26632,3 +26632,25 @@ sprite/size（真 48×48 且不在白名单 ⇒ 它们不会出现 = 修好；�
 
 **闸**：`make -s check` rc=0（`youkai_core: 8799 checks, 0 failed`、`dllx87 = 0`）、`sites.py verify` 全对上、
 `capcheck` 全绿、`check-docs` 全过。
+
+## §BE 详录 #177（2026-10-01）：**崩溃已定位并修复**（#79 的 sprite 读解引用垃圾指针）
+
+> **dump**：`crashdumps/th18.exe.15640.dmp`（`tooling/crashdump/dmp.py` 解析）——
+> `code=0xc0000005`、`addr=0x5b1a7017`、`params=['0x0','0x8f1ff63']`、**EIP = `mod_th18_card_expand.dll+0x17017`**、
+> 崩点页字节含 **`8b 40 24`** = `mov eax,[eax+0x24]`、寄存器 **`eax=0x08f1ff3f`**（垃圾值）。
+
+**证据链（完全对上）**：`8b 40 24` 就是 §BE #174 新加的「读 **VM+0x24** 取 sprite 号」那条；
+`eax = 0x08f1ff3f` 非 0 ⇒ **过了 `vm ? … : -1` 的 NULL 守卫**，然后 `0x08f1ff3f + 0x24 = 0x08f1ff63`
+**正是异常参数里的第二个值** ✓ ⇒ 结论：**`vm` 是悬垂/被复用的指针，NULL 保护不够**。
+
+**修法（两层，108 与 117 同步）**
+1. **地址有效性**：`vm && !IsBadReadPtr(vm + 0x24, 4)` 才读；不可读 ⇒ `spid = -1`（**退回纯尺寸门**）。
+   `IsBadReadPtr` 是 raw `kernel32` 导入（本项目没有 `windows.h` ⇒ 在两个卡文件里按 ABI **自己声明**，
+   带注释，未动共享件）。
+2. **只读一次并缓存**（108 侧）：`yk_sprite_id_for(e, id)` 用 32 格 `{enemy_id → sprite}` 表，
+   命中缓存**完全不碰 VM** ⇒ **悬垂窗口从「每帧」缩到「一次」**；无效读计 **`badfp`** 并进 run-done 日志
+   （`xfer[… badfp %u]`）。117 侧只做了第 1 层（它没有每帧扫描循环）。
+3. **117 同步**（`cards/animal.c`，同一行读法）✓。
+
+**闸**：`make -s check` rc=0（`youkai_core: 8799 checks, 0 failed`、`dllx87 = 0`）、`sites.py verify` 全对上、
+`capcheck` 全绿、`check-docs` 全过。

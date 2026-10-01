@@ -1439,8 +1439,16 @@ static int animal_enemy_drop_measure(const uint8_t *e, const char *name,
      *   `(w==48&&h==48 && sprite ∈ 白名单)` —— 白名单 = entry0 `enemy.png` **72..87**（两种大妖精）、
      *   entry4 `enemy_g.png` 的 **292..307**（= entry0+220）；**排除 88..95 / 308..315**（6 面那批小妖精）。
      *   sprite 号从敌人主 VM 的当前 sprite 取（`vm+0x24`）；取不到（vm 空）就退回纯尺寸门。*/
+/* ★ raw Win32（`kernel32`）：`IsBadReadPtr` —— 本项目没有 windows.h（见 `sdk.h` 的做法），
+ *   这里按 ABI 自己声明（`__stdcall`、返回 BOOL、两参数）。用于**崩溃后**的地址有效性检查（§BE #177）。*/
+__declspec(dllimport) int __stdcall IsBadReadPtr(const void *lp, unsigned cb);
+
+    /* ★★★ 2026-10-01（**与 108 同一条崩溃根因**：dump 显示 `mov eax,[eax+0x24]` 解引用垃圾指针）：
+     *   `vm` 非空**不等于**可读（悬垂/被复用的格子）⇒ 先 `IsBadReadPtr(vm+0x24, 4)` 再读，
+     *   不可读就当 `spid = -1`（**退回纯尺寸门**）。108 侧同改，见 `AUDIT.md` §BE #177。*/
     {   uint8_t *vm = *(uint8_t **)(e + CE_ENEMY_ANM_VM0);
-        int spid = vm ? *(const int32_t *)(vm + 0x24) : -1;
+        int spid = (vm && !IsBadReadPtr((const void *)(vm + 0x24), 4))
+                       ? *(const int32_t *)(vm + 0x24) : -1;
         big = (w >= ANIMAL_BIG_SPRITE_MIN_W && h >= ANIMAL_BIG_SPRITE_MIN_H)
               || (w == 48 && h == 48 && ((spid >= 72 && spid <= 87) || (spid >= 292 && spid <= 307)));
     }

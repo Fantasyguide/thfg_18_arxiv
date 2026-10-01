@@ -1170,6 +1170,42 @@ static int yk_enemy_is_boss(const uint8_t *e)
     return 0;
 }
 
+/* ★★★ 2026-10-01（**owner 实跑崩溃，dump 已定位到这一处**）：
+ *   `crashdumps/th18.exe.15640.dmp`：EIP = `mod_th18_card_expand.dll+0x17017`，崩点字节 **`8b 40 24`**
+ *   = `mov eax,[eax+0x24]`（就是**读 VM+0x24 的 sprite 号**），而 **`eax = 0x08f1ff3f` 是垃圾值**
+ *   ⇒ 访问 `0x08f1ff3f + 0x24 = 0x08f1ff63`，**与异常参数一致** ✓
+ *   ⇒ **`vm ? … : -1` 的 NULL 保护不够**：`vm` 是**悬垂/垃圾指针**（引擎撤了 VM，或被复用的那一格不是 VM）。
+ * 修法（两层）：① **地址有效性**：`IsBadReadPtr(vm+0x24, 4)` ⇒ 不可读就当无效；
+ *   ② **只读一次并缓存**（键 = `enemy_id`，32 格）：悬垂窗口从「每帧」缩到「一次」；
+ *   无效 ⇒ `spid = -1`（**退回纯尺寸门**）并计 `badfp`（日志可见）。
+ * ⚠ 缓存条目在敌人消失后由「表满时覆盖最旧」自然淘汰（32 格 ≫ 同屏大怪数）。*/
+/* ★ raw Win32（`kernel32`）：`IsBadReadPtr` —— 本项目没有 windows.h（见 `sdk.h` 的做法），
+ *   这里按 ABI 自己声明（`__stdcall`、返回 BOOL、两参数）。用于**崩溃后**的地址有效性检查（§BE #177）。*/
+__declspec(dllimport) int __stdcall IsBadReadPtr(const void *lp, unsigned cb);
+
+#define YK_YSP_MAX 32u
+static uint32_t s_ysp_id[YK_YSP_MAX];
+static int32_t  s_ysp_val[YK_YSP_MAX];
+static unsigned s_ysp_badfp;      /* ★ 读到无效/悬垂 VM 指针的次数（诊断）*/
+
+static int yk_sprite_id_for(const uint8_t *e, uint32_t id)
+{
+    unsigned i, free_i = YK_YSP_MAX;
+    uint8_t *vm;
+    int v;
+    if (!e || !id) return -1;
+    for (i = 0; i < YK_YSP_MAX; ++i) {
+        if (s_ysp_id[i] == id) return (int)s_ysp_val[i];          /* ★ 命中缓存：**不再碰 VM** */
+        if (!s_ysp_id[i] && free_i == YK_YSP_MAX) free_i = i;
+    }
+    vm = *(uint8_t **)(e + CE_ENEMY_ANM_VM0);
+    if (!vm) v = -1;
+    else if (IsBadReadPtr((const void *)(vm + 0x24), 4)) { v = -1; ++s_ysp_badfp; }
+    else v = *(const int32_t *)(vm + 0x24);
+    if (free_i < YK_YSP_MAX) { s_ysp_id[free_i] = id; s_ysp_val[free_i] = v; }
+    return v;
+}
+
 static int yk_current_character(void);   /* 前向声明：弹色那一支要用它（定义在下面）*/
 
 /* ★★★ 2026-09-30（**owner 口径**）：「把**早苗妖侧的红色弹幕变成那个秋天的黄色** —— 到时候**逢魔再变成
@@ -1427,8 +1463,7 @@ static void yk_orbit_scan(uint32_t frame)
         /* **大怪**：贴图**原始**尺寸两边都 >= 64（117 的判据，见 `yk_big_by_sprite`）。*/
         if (!yk_enemy_sprite_size(e, &w, &h)) continue;
         /* ★ 2026-10-01：判据带 **sprite 号**（白名单）—— VM 的当前 sprite 在 `vm+0x24`（`engine.h`）。*/
-        {   uint8_t *vm = *(uint8_t **)(e + CE_ENEMY_ANM_VM0);
-            int spid = vm ? *(const int32_t *)(vm + 0x24) : -1;
+        {   int spid = yk_sprite_id_for(e, (uint32_t)id);
             if (!yk_big_by_sprite_id(w, h, spid)) { ++small; continue; }
             /* ★★★ 2026-10-01（owner：6 面关底有小妖精爆动物灵）—— **临时验证日志**：
              *   每只被判为「大怪」的敌人打一行（**同一 sprite 只打一次**，节流）⇒ owner 打一波 6 面关底
@@ -4866,13 +4901,13 @@ static void on_run_reset(ce_card_t *c)
     if (s && (s->spawns || s->transferred || s_xfam_fed))
         ce_log("youkai: run done - %u familiars spawned, %u killed, %u withdrew, %u silent, "
                "%u transfer damage, %u dropped (no boss), xfam %u xtab %u, "
-               "xfer[tick %u map %u/%d orb %u/%d ext %u/%d rect %u fail %u noboss %u rej %u clamp %u]",
+               "xfer[tick %u map %u/%d orb %u/%d ext %u/%d rect %u fail %u noboss %u rej %u clamp %u badfp %u]",
                s->spawns, s->broken, s->lost, s->silent, s->transferred, s->dropped,
                s_xfam_fed, s_xfam_used,
                s_xfer_tick_calls,
                s_xfer_mapped_feed, s_xfer_mapped_delta, s_xfer_orbit_feed, s_xfer_orbit_delta,
                s_xfer_ext_feed, s_xfer_ext_delta, s_xfer_rect, s_xfer_rect_fail, s_xfer_noboss,
-               s ? s->tr.rejected : 0, s ? s->tr.clamped : 0);
+               s ? s->tr.rejected : 0, s ? s->tr.clamped : 0, s_ysp_badfp);
     yk_ring_kill_all();                                  /* ★ 切换环：换关时 tick 会停 ⇒ 这里直接收 */
     yk_popup_kill_all();                                 /* ★ #27：弹字同样要收干净 */
     (void)yk_deathbomb_tint();                           /* ★ #26：换关也要把染色还回去（先还原）*/
