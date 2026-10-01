@@ -1,0 +1,22 @@
+script script382 {
+    // 星星炮（id 89）的**弹幕**（Terraria `ProjectileID.StarCannonStar = 955`）——
+    // C 用 `ce_anm_spawn` 起，每帧写 pos / rotation.z / color（**复刻**原版 aiStyle 5 的自转与闪烁）。
+    // ★ 纪律同炎魔火球 script92 / 天顶剑 script379：**脚本里不许碰 rotate / pos / color**。
+    // 复刻依据（一手，decompile `Projectile.cs` 的 `SetDefaults` type 955 与 aiStyle 5 那一段）：
+    //   · `width = height = 18`、`aiStyle = 5`、`friendly`、**`penetrate = -1`（无限穿透）**、
+    //     `alpha = 50`、`light = 1f`、`ranged`；
+    //   · aiStyle 5 的运动：**不加速、不重力**，只有 `rotation += (|vx|+|vy|)·0.01·direction`
+    //     （射速 14 ⇒ 0.14 rad/帧 ≈ 8°/帧）与 `alpha += 25·localAI[0]` 在 0..200 之间来回
+    //     （localAI[0] 到顶翻 −1、到底翻 +1 ⇒ 约 16 帧一个来回）。
+    // scale 1.0：贴图 22×24 ≈ 场上 22×24 px（原版就是按原生像素画这颗星的）。
+-1:
+    layer(13);
+    sprite(@STAR_CANNON_SHOT);
+    type(1);
+    blendMode(1);
+    zWriteDisable(1);
+    scale(1.0f, 1.0f);
+    alpha(255);
+0:
+    stop();
+}

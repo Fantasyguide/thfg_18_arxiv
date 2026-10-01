@@ -71,3 +71,5 @@ UFO
 #   `local/th08.v1.00d/dat/` 逐字节现取；版权口径同 `YOUKAI_FAM_SHIFT`）。
 YOUKAI_FAM_SPAWN
 
+
+STAR_CANNON_SHOT

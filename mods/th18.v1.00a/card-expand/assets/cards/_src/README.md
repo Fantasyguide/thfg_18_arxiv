@@ -26,6 +26,7 @@
 | `TONY_GRIEF.png` | 东尼的悲恸（id 86）卡面的**原件** | **用户提供**（`D:\项目\幻想指南\18\th18_modkit\d3bd0a27cffc1e17610100340c90f603738de914.png`，850×1072，透明底《杀戮尖塔》「送死亡」整卡：**左上角凸出一块能量六边形**、两侧还有横幅飞边）| 不直接进卡面（下面那张是裁出来的卡体）|
 | `TONY_GRIEF_CARD.png` | 同上，**卡体矩形** | 由上一张裁出（一次性：按 alpha 逐行/逐列遮盖 ≥ 70% 峰值取卡体 = `(72,53,771,1042)` ⇒ **699×989**，凸出的六边形与横幅飞边都在这个阈值之外）| `fit_card.py TONY_GRIEF cards/_src/TONY_GRIEF_CARD.png --no-detect --trim 0 --margin 0 --fill`：卡体正好铺满 256×320（横向 4:5，13% 拉伸），再套原生框 ⇒ 卡体矩形与卡面**对齐** |
 | `ZENITH.png` | 天顶剑（id 87）的卡面 | **Terraria 原版物品**（用户本机 Steam 版 `Content/Images/Item_4956.xnb`，56×56；物品号 4956，**不是** 4144） | `make_white_item_card.py ZENITH --item _src/ZENITH.png --fill`：白底 + 物品缩到画面区上限（LANCZOS）+ 原生框 |
+| `STAR_CANNON.png` | 星星炮（id 89）的卡面 | **Terraria 原版物品**（`Content/Images/Item_197.xnb`，52×18；`ItemID.StarCannon = 197`）| `make_white_item_card.py STAR_CANNON --item _src/STAR_CANNON.png --fill`：白底 + 物品缩到画面区上限 + 原生框 |
 | `JERA.png` | 杰拉（id 88）的卡面 | **用户提供**（`D:\项目\幻想指南\18\th18_modkit\Runes_sprite.png`，256×256，透明底紫色辉光的卢恩字母 ᛃ = Jera 符文）| `fit_card.py JERA _src/JERA.png --trim 0 --margin 24 --bg '#ffffff'`：按非白包围盒等比缩到画面区、白底、套原生框 |
 | `ZENITH_FIRST_FRACTAL.png` | （只作记录，不进卡面） | 同上，`Item_4144.xnb`（32×32） | **4144 是「地灵之刃 Terragrim」，不是天顶剑**；它只是天顶剑剑阵的 21 把之一（见 `ability/zenith/_src/`）|
 
@@ -47,3 +48,21 @@ cp "<Terraria>/Content/Images/Item_4956.xnb" packed/ && node xnbcli.js unpack ./
 - 天顶剑本体 = **4956**（一手：`Item.cs` 的 `shoot = 933` + `GetAlpha` 的 `case 4956`；wiki 的 Item ID 栏同值）；
 - 剑阵的 21 个物品号 = `FinalFractalHelper..cctor` 的 IL（本机 exe 反出来的，见 `native/cards/zenith.c`
   的表与 `AUDIT.md` §BE 详录 #211），它们对应的贴图在 `assets/ability/zenith/_src/sword_<id>.png`。
+
+### Terraria 音效的取法（同样是 xnbcli，`SoundEffect` 这一类它支持）
+
+```bash
+cd <xnbcli 目录>
+cp "<Terraria>/Content/Sounds/Item_9.xnb" packed/ && node xnbcli.js unpack ./packed ./unpacked
+# → unpacked/Item_9.wav（立体声 44.1k/16-bit）。**原件放 local/**（版权资产不入库）：
+mkdir -p <repo>/local/terraria/dat && cp unpacked/Item_9.wav <repo>/local/terraria/dat/
+# 之后走本仓既有的现取通道（**逐字节拷** + STAR_CANNON_SHOT 那条的纯增益归一化例外）：
+python3 assets/voice/derive_retail_se.py STAR_CANNON_SHOT
+python3 assets/build_voice.py
+```
+
+⚠ **不要**把 wav 直接提交进 `assets/voice/`：那是版权资产，`.gitignore` 里按先例单独忽略
+（`STAR_CANNON_SHOT.wav` 与 ASTRALUP / UFOALERT / YOUKAI_FAM_SPAWN 同一档）。名字进 `assets/voice/ORDER.txt`
+（一行 = 一个新 id）、`patch/th18/voice.js` 里登记同号（id 显式写死，别靠顺序）。
+
+一手出处：星星炮的 `UseSound = SoundID.Item9`（`Item.cs` 的 `case 197:`）⇒ `Item_9.xnb`。

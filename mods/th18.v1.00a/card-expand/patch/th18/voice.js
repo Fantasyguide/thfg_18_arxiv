@@ -77,4 +77,10 @@
     "volume_db": -800,
     "priority": 100
   }
+  ,"STAR_CANNON_SHOT": {
+    "wav": "STAR_CANNON_SHOT",
+    "id": 97,
+    "volume_db": -300,
+    "priority": 60
+  }
 }

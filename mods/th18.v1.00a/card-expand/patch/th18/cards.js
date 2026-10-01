@@ -707,5 +707,23 @@
     "weight": 2,
     "sprite_large": 204,
     "sprite_small": 205
+  },
+  "89": {
+    "name": "星星炮",
+    "desc": [
+      "装备：身边一门星星炮，每 12 帧",
+      "朝最近的敌人射出一颗穿透的星星",
+      "（复刻原版白板星星炮的攻速）。",
+      "撞弹死亡时，游玩区正中显示",
+      "「你被杀死了…」与掉落的钱财。",
+      "致敬・泰拉瑞亚。"
+    ],
+    "internal_name": "STAR_CANNON",
+    "category": 1,
+    "initial_unlocked": 1,
+    "price_tier": 10,
+    "weight": 2,
+    "sprite_large": 206,
+    "sprite_small": 207
   }
 }

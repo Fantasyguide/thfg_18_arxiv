@@ -89,3 +89,7 @@ mods/th18.v1.00a/card-expand/assets/voice/CHARGEUP.wav
 mods/th18.v1.00a/card-expand/assets/voice/MOFPOWERUP.wav
 # ★ 107 的森罗结界展开音：TH07 原版 se_border.wav（TH18 71 枚里没有）
 mods/th18.v1.00a/card-expand/assets/voice/PCB_BORDER.wav
+
+# ★ 89 星星炮的射击音：泰拉瑞亚原版 Item_9.xnb 的**构建期现取**产物（非 ZUN 版权资产，不入库；
+#   源在 local/terraria/dat/Item_9.wav，见 assets/voice/derive_retail_se.py 的 STAR_CANNON_SHOT 行）
+mods/th18.v1.00a/card-expand/assets/voice/STAR_CANNON_SHOT.wav

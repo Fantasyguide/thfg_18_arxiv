@@ -1012,3 +1012,17 @@ ZENITH_BLADE_SEEDLER          ability/zenith/_src/sword_3018.png @374,146,44x68
 ZENITH_BLADE_TERRAGRIM        ability/zenith/_src/sword_4144.png @20,236,32x32
 ZENITH_BLADE_COPPERSHORT      ability/zenith/_src/sword_3507.png @92,236,32x32
 ZENITH_BLADE_ZENITH           ability/zenith/_src/sword_4956.png @152,224,56x56
+
+# ★★ 2026-10-02（89 星星炮，致敬泰拉瑞亚 Star Cannon）：跟班 + 弹幕两张单图。
+#   一手（用户本机 1.4.4.9 Steam 版）：`ItemID.StarCannon = 197`（`Item_197.xnb`，52×18，
+#   与 item 的 `width=50/height=18` 对上）、`shoot = ProjectileID.StarCannonStar = 955`
+#   （`Projectile_955.xnb`，22×24；它的 `width=18/height=18`）。取法见 `assets/cards/_src/README.md` 的
+#   「Terraria 物品贴图的取法」一节（xnbcli 解 LZX）。
+STAR_CANNON                     ability/star_cannon/_src/Item_197.png       52x18
+STAR_CANNON_SHOT                ability/star_cannon/_src/Projectile_955.png 22x24
+# ★★ 89 星星炮的**被动讯息**：撞弹致死时显示在游玩区正中的泰拉瑞亚样死亡讯息
+#   （「你被杀死了…」＋「掉了591铂金60金15银3铜」，文本 owner 逐字给定）。
+#   为什么烘成图：TH18 的 ASCII 字体图集（font2 / th13_big / th12）**没有汉字字形** ⇒ 只能预渲染
+#   （owner 也是这么建议的）。样式按 owner 给的实机截图逐像素对：两行居中、浅暖白 + 深色描边、
+#   行 1 字高 ≈43 / 行 2 ≈19、行距极紧。生成器 = `assets/ability/star_cannon/make_death_msg.py`。
+STAR_CANNON_DEATH_MSG           ability/star_cannon/_src/DEATH_MSG.png    384x104

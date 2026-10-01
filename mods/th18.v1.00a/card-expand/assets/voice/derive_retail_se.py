@@ -29,6 +29,10 @@ TH18 的 84 行音效表（71 枚 wav）里**没有**某些别作独有的 SE。
 
 `make voice` 会自动先跑它（`make voice` → `derive_astralup.py` → 本文件 → `build_voice.py`）。
 缺哪一作的样本就直接报错停下（**不要下载素材**，见 `local/README.md`）——缺的会一次全列出来。
+
+★ **非 ZUN 作的素材**（目前只有泰拉瑞亚的 `STAR_CANNON_SHOT`）：源同样是用户自己那份游戏，
+放在 `local/<名字>/dat/<文件>`（本脚本的定位口径不变）。XNB 那种压缩包需要用户先解一次，
+解出来的 WAV 才放进去 —— 命令在 `assets/cards/_src/README.md` 的「Terraria 音效的取法」。
 """
 import shutil
 import subprocess
@@ -75,6 +79,12 @@ TABLE = (
     ("UFO_TOKEN_SPAWN", "th12.v1.00b", "se_piyo.wav",
      "th12:0x42741b `mov $0x37,%eax` + 0x427423 `call 0x453e20`（令牌生成那一声）；TH12 SE 表 0x4ae5a4 第 0x37 行"
      "（VA 0x4ae9f0）`+0x00` = 名表下标 44 → 名表 0x4aea50 → `se_piyo.wav`。TH18 没有这一枚 ⇒ 现取"),
+    ("STAR_CANNON_SHOT", "terraria", "Item_9.wav",
+     "★ 非 ZUN 作：**泰拉瑞亚**。一手 = `Item.cs` 的 `case 197:`（星星炮，`ItemID.StarCannon = 197`）"
+     "`UseSound = SoundID.Item9` ⇒ `Content/Sounds/Item_9.xnb`。⚠ XNB 是 LZX 压缩包（不是 thdat 那种 dat）"
+     "⇒ 用户先用 `xnbcli` 解一次，把 WAV 放进 `local/terraria/dat/Item_9.wav`"
+     "（取法见 `assets/cards/_src/README.md`），本脚本照旧**逐字节**拷。"
+     "格式 = 立体声 44.1k/16-bit（引擎的 RIFF 解析吃立体声；响度比 ZUN 的 SE 轻约 15 dB ⇒ 走本文件的 `GAIN_DB` 例外做纯增益归一化）"),
     ("UFO", "th12.v1.00b", "se_ufo.wav",
      "★ owner 2026-09-23（112 #8「UFO 召唤…得有音效 se_ufo.wav」）指定；一手定位 = TH12 SE 表 `th12:0x4ae5a4` "
      "第 **0x33** 行 `+0x00` = 名表下标 **40** → 名表 `th12:0x4aea50` → `se_ufo.wav`，行属性 vol **−400** / "
@@ -82,6 +92,14 @@ TABLE = (
      "与 0x46a836（带声像）—— **不在** `Ufo::spawn`（那里只有 0x34 + 0x36）⇒ 本槽属 **owner 口径映射**。"
      "TH18 84 行里没有这一枚 ⇒ 现取"),
 )
+
+
+# ★ 唯一允许的**例外**：纯增益（`volume_db` 只能衰减 0..−5000 ⇒ 比原生 SE 轻的素材补不回来）。
+#   只做「整体乘一个常数 + 峰值钳到 −1 dBFS」，**不重采样、不改格式、不动动态** ⇒ 音色不变。
+#   目前只有泰拉瑞亚那一枚（它的录音比 ZUN 的 SE 轻约 15 dB，不补就在混音里听不见）。
+GAIN_DB = {
+    "STAR_CANNON_SHOT": 13.0,
+}
 
 
 def _extract_one(version: str, fname: str, cache_ok: bool = True) -> Path:
@@ -123,8 +141,26 @@ def derive(name: str, version: str, fname: str, note: str) -> tuple[bool, str]:
     if dst.is_file() and dst.read_bytes() == src.read_bytes():
         return False, f"{name}: {dst.name} 已是最新（与 {version} 的样本逐字节相同）"
     shutil.copyfile(src, dst)
+    extra = ""
+    if name in GAIN_DB:
+        import array
+        gain = 10.0 ** (GAIN_DB[name] / 20.0)
+        with wave.open(str(dst), "rb") as w:
+            chn, sww, frr, nn = w.getnchannels(), w.getsampwidth(), w.getframerate(), w.getnframes()
+            raw = w.readframes(nn)
+        a = array.array("h")
+        a.frombytes(raw)
+        peak = max(1, max(abs(v) for v in a))
+        k = min(gain, (10.0 ** (-1.0 / 20)) * 32767.0 / peak)      # 峰值顶到 −1 dBFS 就不再放大
+        for i, v in enumerate(a):
+            x = int(v * k)
+            a[i] = -32768 if x < -32768 else (32767 if x > 32767 else x)
+        with wave.open(str(dst), "wb") as w:
+            w.setnchannels(chn); w.setsampwidth(sww); w.setframerate(frr)
+            w.writeframes(a.tobytes())
+        extra = f"，**+{GAIN_DB[name]:.1f} dB 纯增益归一化**（实际 ×{k:.2f}；见 GAIN_DB 的注释）"
     return True, (f"{name}: 现取 {version}/{src.name} -> {dst.name}"
-                  f"（{ch} ch / {sw * 8} bit / {fr} Hz / {n} 帧，逐字节拷）")
+                  f"（{ch} ch / {sw * 8} bit / {fr} Hz / {n} 帧，逐字节拷{extra}）")
 
 
 def main() -> int:

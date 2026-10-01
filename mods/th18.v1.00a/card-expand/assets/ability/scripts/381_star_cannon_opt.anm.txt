@@ -1,0 +1,37 @@
+script script381 {
+    // 星星炮（id 89）的**跟班本体** —— 由 `Player__allocate_option` 起（脚本号当它的最后一个栈参）。
+    // 骨架照原生子机脚本 script2 / script16 与本 mod 的 script378（天顶剑跟班）/ script88（破损核心）。
+    // 贴图 = Terraria 原版**星星炮物品**（`STAR_CANNON` = `Item_197`，52×18；一手：
+    //   `ItemID.StarCannon = 197`、item 的 `width=50/height=18` ⇒ 与贴图对上）。
+    // scale 0.5 ⇒ 场上 26×9 px（弹幕区 384×448、自机约 32 px；它是一门口径不大的小炮）。
+    // angleVel 为 0：**朝向由 C 每帧写 rotation.z**（炮口指向目标 / 无目标时朝正上），脚本不许自转。
+-1:
+    layer(13);
+    blendMode(1);
+    type(1);
+    zWriteDisable(1);
+0:
+    interruptLabel(2);
+    sprite(@STAR_CANNON);
+    scale(0.0f, 0.0f);
+    scaleTime(10, 4, 0.5f, 0.5f);
+    alpha(255);
++10: // 10
+    blendMode(0);
+breathe:
+    alphaTime(20, 4, 200);
++20: // 30
+    alphaTime(20, 4, 255);
++20: // 50
+    jmp(breathe, 10);
+    stop();
+    interruptLabel(3);
+    scaleTime(20, 4, 0.0f, 0.0f);
++20:
+    stop();
+    interruptLabel(1);
+    blendMode(1);
+    scaleTime(20, 4, 0.0f, 3.0f);
++20:
+    delete();
+}

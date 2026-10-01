@@ -4919,6 +4919,8 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 
 | 2026-10-02 | **所有卡**（共享资源 `assets/ability/**` + `assets/cards/**` + 共享数据 `patch/th18/cards.js` + 共享件 `native/Makefile`；新卡 **86 / 87**） | 见下方「§BE 详录 #210」 |
 
+| 2026-10-02e | **所有卡**（共享资源 `assets/ability/**` + `assets/cards/**` + `assets/voice/**` + `patch/th18/cards.js` + `patch/th18/voice.js` + `native/Makefile`；新卡 **89**）| 见下方「§BE 详录 #213」 |
+
 | 2026-10-02b | **108 永夜抄 / 109 花映塚 / 112 星莲船 / 116 天空璋**（各自的私有掉落池各加一行「复制代数闸」）+ **所有卡**（共享件 `sdk_core.{h,c}` / `sdk.h` / `Makefile`） | 见下方「§BE 详录 #211（87 天顶剑按泰拉瑞亚还原）」与「#212（88 杰拉 + 跨卡复制闸）」 |
 
 
@@ -28066,3 +28068,41 @@ ce_dup_item_claimed(...); }` —— **同名 inline 自己递归自己**，编�
 卡侧直接调 `sdk_core.h` 的声明。
 
 `make check` exit 0（`cards-check` 45 张卡、`capcheck` 全绿、`check-docs` 四项全绿）。
+
+## §BE 详录 #213（2026-10-02e）：**89 星星炮**（泰拉瑞亚 Star Cannon 复刻 + 死亡讯息被动）
+
+**谁改的**：统筹会话（owner 2026-10-02：「再加一张卡：星星炮（装备卡）：桑百颗够吗？…被动：装备这张卡
+撞弹弹死亡的时候，会在游玩区居中出现：你被杀死了…／掉了591铂金60金15银3铜」；随后给了死亡 UI 的实机截图）。
+
+### 一手怎么来的
+- **物品号 / 弹幕号**：读用户本机 `Terraria.exe` 的 `ItemID` / `ProjectileID` 常量表（dnfile；⚠ 这些
+  常量是 **2 字节** 的 `ELEMENT_TYPE_U2` —— 第一版按 4 字节解，值全是 None）⇒ `StarCannon = 197`、
+  `StarCannonStar = 955`、`FallenStar = 75`（弹药）、`SuperStarCannon = 4060`（肉后那把，**不用**）。
+- **数值**：社区 decompile（1.4.4.5 源码，`codingwatching/terraria-1.4.4.5-source-code`）——
+  `Item.cs` 的 `case 197:`（`useTime = useAnimation = 12`、`shoot = 955`、`shootSpeed = 14`、
+  `UseSound = SoundID.Item9`、`damage = 55`、`autoReuse`）、`Projectile.cs` 的 `type == 955` 默认值
+  与 `aiStyle == 5` 那一段（`penetrate = -1`、`alpha += 25·localAI[0]`、
+  `rotation += (|vx|+|vy|)·0.01·direction`）。
+- **贴图**：`xnbcli` 解 `Content/Images/Item_197.xnb`（52×18）与 `Projectile_955.xnb`（22×24）。
+- **音效**：`xnbcli` 解 `Content/Sounds/Item_9.xnb` → WAV（**它支持 SoundEffect**）⇒ 转 16-bit 单声道、
+  峰值归一化到 −1 dBFS，进 `assets/voice/STAR_CANNON_SHOT.wav`。
+
+### 改到的文件
+| 文件 | 类型 | 改了什么 |
+| --- | --- | --- |
+| `native/cards/star_cannon.c` + `star_cannon_core.{c,h}` | 新卡（89）| 跟班（原生子机）+ 星星池；纯逻辑在 core |
+| `native/tests/test_star_cannon_core.c` + `native/Makefile` | **共享件** | 新单测（节奏 / 瞄准 / 定速直线 / 自转 / 闪烁 / 出免疫 / 出界 / 池），`test-host` 加一行 |
+| `assets/ability/entries/ORDER.txt` | **共享资源** | 尾插 3 行：`STAR_CANNON`(entry92) / `STAR_CANNON_SHOT`(93) / `STAR_CANNON_DEATH_MSG`(94) |
+| `assets/ability/scripts/381..383_*.anm.txt` | **共享资源** | 新脚本：跟班 / 弹幕 / 死亡讯息（讯息钉 layer 25）|
+| `assets/ability/star_cannon/**` | 新资源 | 三张原版贴图 + 讯息生成器 `make_death_msg.py` |
+| `assets/voice/ORDER.txt` + `STAR_CANNON_SHOT.wav` + `patch/th18/voice.js` | **共享资源 / 共享数据** | 新语音槽 **0x61**（与 112 的 `se_piyo` / 108 的 `se_option` 同一口径：构建期从用户本机现取）|
+| `assets/cards/ORDER.txt` + `STAR_CANNON_{max,min}.png` + `_src/STAR_CANNON.png` | **共享资源** | 尾插一行 ⇒ sprite 206/207 |
+| `patch/th18/cards.js` | **共享数据** | 追加 `"89"`（`category 1`）|
+
+### 影响面 + 回归
+- **零新增站点**；`ability.anm` 尾插 3 个 entry（92–94）、既有号一个没动；语音表尾插一槽（0x61）。
+- 死亡钩子用 `+0x0c on_death_after_deathbomb`（真死那一刻；**不是** `+0x10` 中弹那一帧 —— 那一帧还可能被
+  107/117/113 救回来）。钩子里**只置位**，建 VM 放在下一帧 `on_tick_2`（死亡栈纪律，照 112 `pend_drop`）。
+- 讯息贴图是**预渲染**的（TH18 的 ASCII 字体图集没有汉字字形）；样式按 owner 给的实机截图逐像素对
+  （两行居中、浅暖白 + 深色描边、行 1 字高 ≈43 / 行 2 ≈19、行距极紧；**截图证实不分币种配色**）。
+- `make check` exit 0（`cards-check` 46 张卡、`capcheck` 全绿、`dllx87 = 0`、`check-docs` 四项全绿）。

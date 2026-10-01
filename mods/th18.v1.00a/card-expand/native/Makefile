@@ -203,6 +203,10 @@ test-host:
 ##   链 sdk_core.c + cards/hud_dim.c（与 test_sdk_core 同款依赖）。
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_dup_layer tests/test_dup_layer.c sdk_core.c cards/hud_dim.c
 	./tests/build/test_dup_layer
+## ★ 2026-10-02（89 星星炮）：开火节奏（复刻原版白板 useTime = 12）/ 瞄准 / 星星弹幕
+##   （定速直线 + 自转 + 闪烁 + 出界）与命中免疫计时（复刻默认 localNPCHitCooldown = 10）。
+	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_star_cannon_core tests/test_star_cannon_core.c cards/star_cannon_core.c
+	./tests/build/test_star_cannon_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_firelord_core tests/test_firelord_core.c cards/firelord_core.c -lm
 	./tests/build/test_firelord_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_truesilver_core tests/test_truesilver_core.c cards/truesilver_core.c
