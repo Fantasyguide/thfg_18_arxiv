@@ -4103,6 +4103,25 @@ mode 4 = 季节道具 type 0x10），要照抄的**动态**逐条都有出处：
 ⚠ 116 是**别的会话的卡** ⇒ 只借**做法**（读它的注释与常量表），**不占**它的槽/脚本号，
 并且改完**必须在 `AUDIT.md` §BE 登记**。
 
+#### ★ TH19 那条（#5）的可行性已核实（2026-10-01）
+
+**`thdat -l19 local/th19.v1.10c/th19.dat` 能列**（thtk 支持 th19；`-l20` 也给出同一份清单
+⇒ 版本参数不敏感）⇒ 抽 TH19 的资产**这条路是通的**。清单里 **125 个 `.anm`**，含：
+
+```
+bullet.anm 626648 / effect.anm 276373 / enemy.anm 1035656 / front.anm 1028563
+pl00.anm pl00b.anm pl00f.anm  pl01.anm pl01b.anm pl01f.anm  pl02.anm … pl03.anm …
+```
+
+⇒ **バリア（护罩）的视觉**就在这堆里：一手说它的 `[7]` 是一个**视觉子弹**、`anm 1`、每帧跟玩家坐标
+（`engine/versus/th19/02` §4.1）⇒ 下一步 = 抽 `bullet.anm`（或 `effect.anm`）/`pl0X*.anm`，
+用 **`thanm -l19`** 列脚本找那一条（`thanm` 同样支持 19；
+**TH19 没有 eclmap/anmmap**，可以照 `tooling/eclmap/gen_eclmap.py --kind anm` 用 ExpHP 的
+`labels.json` 现生成 —— 前提是 `local/vendor/th-re-data/data/` 里有 th19 那份）。
+
+⚠ **未做**：`local/` 下已有 `local/th19.v1.10c/ability.txt` 等少数文本，但**没有解包目录**；
+抽图与早苗阶段 3/4 的读法都还是**下一轮**的事。
+
 ### boss 特效（#2 的另一半）：**先搁置，可以先挖**
 
 > 「boss 特效先搁置，你可以先挖」
