@@ -97,6 +97,10 @@
  *   而 `on_tick_2`（AbilityManager tick，优先级 0x16）在那之后跑 ⇒ **我们在发弹前覆盖即可生效**。*/
 #define POFV_BOSSATK_ANCHOR_X  192.0f   /* ❓ 自定（场地宽 384 正中；一手尺寸见上）*/
 #define POFV_BOSSATK_ANCHOR_Y  440.0f   /* ❓ 自定（版底；一手场地高 448）*/
+/* ★★ 2026-10-01（owner 的混合路线）：**C3/C4 的 ECL 侧载体** —— `assets/ecl/pofv109_boss.ecl.txt`
+ *   的 `CEPofvBoss109`（= 由 TH09 `pl00.ecl` 的环弹幕逐条转写来的伪 boss）。
+ *   伪 boss 口径：它只是个**发弹用的隐形架子** —— 不设 boss 标志、不挂血条/名字、不用体术判定。*/
+#define POFV_BOSSATK_ECL_NAME   "CEPofvBoss109"   /* 必须与 `assets/ecl/pofv109_boss.ecl.txt` 同名 */
 #define POFV_POWER_SE_GET       0x25
 #define POFV_POWER_VM_LAYER        7    /* 灵力道具在最上（要一眼可判「捡得到」）*/
 #define POFV_POWER_VM_SCALE      1.0f   /* ★ 一手（2026-10-01）：画的是 TH18 原版 P 点
@@ -164,6 +168,7 @@ static int32_t            s_frame;      /* 游玩帧计数（连爆窗口的帧�
 /* 诊断账（都在 `clear_card()` 里清；`verify.py` 的场景吃这几行）。*/
 static int32_t            s_power_got;  /* 本次段累计收取的灵力道具颗数 */
 static int32_t            s_aura_hits;  /* 本次段结界碰敌弹的累计颗数 */
+static int32_t            s_boss_carrier;               /* ★ 伪 boss 载体 enemy_id（0 = 没有）*/
 static int32_t            s_power_vm[POFV_POWER_MAX];   /* 每颗灵力道具的跟随 VM id（0 = 没有）*/
 
 typedef struct {
@@ -381,6 +386,65 @@ static void shield_vm_update(const pofv_card_t *s)
  *   = **由下至上**（owner：「对战作是由上至下，这里面只有我自己，所以是由下至上」）。
  *   ⚠ 观感：owner「最好观感一致」⇒ 贴图最终要换成**敌弹样式 + alpha ≤128**（TUNING §2.0v-4 #51/#52）；
  *     现在借的是自机弹样式（按 owner 的透明度铁律**豁免**额外 alpha）。*/
+/* ★★ 2026-10-01：**伪 boss 载体**（C3/C4 的 ECL 侧）的生命周期 —— 刷 / 每帧喂 / 喊走。
+ *
+ *   载体 = `CEPofvBoss109`（`assets/ecl/pofv109_boss.ecl.txt`）：
+ *     · 本体隐形（ECL 侧 `anmSetSprite(0,-1)`），判定收到 1×1 ⇒ **不挡自机、没有体术判定**；
+ *     · 位置由这里每帧写 `%F2/%F3`（= 版底锚点）—— 与灵同一套通道；
+ *     · `$I0` = 状态（0 正常 / 999 喊走）；`$I1` = **档位**（1..4 ⇒ ECL 里算路数与速度）。
+ *   ⚠ 伪 boss 口径（owner）：「**其他什么 boss 标识都别干**」⇒ 本文件对它**只**做三件事：
+ *     刷（`ce_spawn_enemy`）、每帧喂坐标与档位、喊走（`$I0 = 999`）。
+ *     不设 boss 标志、不挂血条/名字、不进 boss 表、不做出场特效。
+ *   ⚠ 长持续效果纪律：它跨帧存在 ⇒ 删卡/中断的路（`clear_card`）里必须喊走（见本文件 `clear_card`）。*/
+static void bossatk_carrier_stop(void)
+{
+    uint8_t *e;
+    if (!s_boss_carrier) return;
+    e = ce_enemy_by_id(CE_ENEMY_MGR(), s_boss_carrier);
+    if (e) *(int32_t *)(e + CE_ENEMY_ECL_I0) = 999;     /* 喊走：ECL 侧飞离自删 */
+    ce_log("pofv: boss carrier %d told to leave", (int)s_boss_carrier);
+    s_boss_carrier = 0;
+}
+
+static void bossatk_carrier_sync(int32_t level)
+{
+    uint8_t spawn[CE_SPAWN_SIZE];
+    uint8_t *e;
+    float *sp, *ef;
+
+    if (s_boss_carrier) {
+        e = ce_enemy_by_id(CE_ENEMY_MGR(), s_boss_carrier);
+        if (!e) { s_boss_carrier = 0; }                 /* 它自己没了（被删/离场）*/
+    }
+    if (!s_boss_carrier) {
+        memset(spawn, 0, sizeof spawn);
+        sp = (float *)(spawn + CE_SPAWN_POS);
+        sp[0] = POFV_BOSSATK_ANCHOR_X;                  /* ★ 版底锚点 */
+        sp[1] = POFV_BOSSATK_ANCHOR_Y;
+        sp[2] = 0.0f;
+        *(int32_t *)(spawn + CE_SPAWN_SCORE) = 0;
+        *(int32_t *)(spawn + CE_SPAWN_MAIN_DROP) = 0;   /* 奖励全走灵力道具（口径 5）*/
+        *(int32_t *)(spawn + CE_SPAWN_LIFE) = 999;      /* ⚠ < 1000（引擎的锁定阈值，见 engine.h）*/
+        *(int32_t *)(spawn + CE_SPAWN_ECL_I + 0) = 0;   /* $I0 = 正常 */
+        *(int32_t *)(spawn + CE_SPAWN_ECL_I + 4) = level;   /* $I1 = 档位 */
+        ef = (float *)(spawn + CE_SPAWN_ECL_F);
+        ef[2] = sp[0];                                  /* %F2/%F3 = 初始目标（ECL 第一帧就走过去）*/
+        ef[3] = sp[1];
+        e = (uint8_t *)ce_spawn_enemy(POFV_BOSSATK_ECL_NAME, spawn);
+        if (!e) { ce_log("pofv: boss carrier spawn FAILED (pool / ECL)"); return; }
+        s_boss_carrier = *(int32_t *)(e + CE_ENEMY_ID);
+        /* ★ 免伤：它是架子不是敌人（ECL 侧判定已是 1×1，这里再加一道引擎闸，防自机弹误伤）*/
+        *(uint32_t *)(e + CE_ENEMY_FLAGS) |= CE_ENEMY_FLAG_NO_DAMAGE;
+        ce_log("pofv: boss carrier spawn id %d at (%d,%d) level %d",
+               (int)s_boss_carrier, (int)sp[0], (int)sp[1], (int)level);
+    }
+    e = ce_enemy_by_id(CE_ENEMY_MGR(), s_boss_carrier);
+    if (!e) return;
+    *(float *)(e + CE_ENEMY_ECL_F2) = POFV_BOSSATK_ANCHOR_X;    /* 钉在版底锚点 */
+    *(float *)(e + CE_ENEMY_ECL_F3) = POFV_BOSSATK_ANCHOR_Y;
+    *(int32_t *)(e + CE_ENEMY_ECL_I0 + 4) = level;              /* $I1 = 档位 */
+}
+
 /* ★★ 2026-10-01（owner：「最好是**除了透明度之外完全复刻符卡**，**包括对于敌机的「自机狙」**等等」）：
  *   **自机狙** —— 把「版底锚点 → **最近的可锁定敌人**」的方位角写进 `PLAYER + CE_PLAYER_AIM_ANGLE`，
  *   给那几行 `func_on_init = 5` 的 shooter 在建弹时取用（出膛定向，**不是追踪**）。
@@ -423,7 +487,11 @@ static void bossatk_fire(ce_card_t *c, pofv_card_t *s)
     int set;
     uint8_t *o;
 
-    if (!pofv_bossatk_tick(&s->bossatk)) return;        /* 没在打 / 这一帧打完 */
+    if (!pofv_bossatk_tick(&s->bossatk)) {
+        bossatk_carrier_stop();                         /* ★ 打完了 ⇒ 喊载体走（别留孤儿敌人）*/
+        return;
+    }
+    if (s->bossatk.level >= 3) bossatk_carrier_sync(s->bossatk.level);   /* ★ C3/C4：ECL 侧载体 */
     switch (s->bossatk.level) {                 /* ★ 四档各一组（密度递进）*/
     case 1:  set = CE_SHT_SET_POFV109_BOSSATK_C1; break;
     case 2:  set = CE_SHT_SET_POFV109_BOSSATK_C2; break;
@@ -1088,6 +1156,11 @@ static void clear_card(ce_card_t *c)
                (int)s_ghost.expired, (int)s_ghost.live);
     s_power_got = 0;
     s_aura_hits = 0;
+
+    /* ★ 伪 boss 载体（C3/C4 的 ECL 侧）：**必须喊走** —— 它跨帧活着，而删卡/换关都发生在这里
+     *   （那一刻卡的 tick 已经停了，只有 on_delete 这条路跑得到；见 METHOD 的「长持续效果」铁律）。
+     *   不喊走就会留一只没人管的孤儿敌人（不设标志、不掉东西，但会一直发弹）。*/
+    bossatk_carrier_stop();
 
     /* ★ 灵：先喊所有活着的灵「走」（`$I0 = 999` ⇒ ECL 那边飞离自删），再收 VM，最后清句柄池。
      *   ⚠ 顺序不能反：清池之后就找不到 enemy_id 了 ⇒ 会留下一批没人管的孤儿敌人。*/

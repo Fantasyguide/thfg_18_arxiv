@@ -9520,3 +9520,29 @@ owner 问：「ECL 驱动的只能是敌人的弹幕对吧」⇒ **一手核实�
 （`etFanAimed`/`etFan`/`etRingAimed`/`etRing`/`etRingAimedAway`/`etRingAway`/`etRandAng`/`etRandSpd`/`etRand`）
 共用同一个 handler `0x40a168`** ⇒ **读它一个就能解出整族（含 `etRing`）的参数语义**，
 不必再逐条找。（ExpHP 只把 `0x40a168` 标成 `96__multiple`，没标出这是共用入口。）
+
+#### ★★★ 2026-10-01：C3/C4 的 **ECL 侧落地**（混合路线的第一步实装）
+
+**owner 定的混合路线**：C1/C2 留 sht（自机弹：原生伤敌机 + 自机狙打敌机）；**C3/C4 走 ECL**
+（自制隐形载体跑由 `pl00.ecl` 转写来的 TH18 ECL）。
+
+**① ECL 侧**：`assets/ecl/pofv109_boss.ecl.txt` 的 `CEPofvBoss109`（转写细则见该文件头）——
+每 40 帧一轮发四个环（`etNew`/`etAim 3`/`etSprite`/`etCount`/`etAngle`/`etSpeed`/`etOn`），
+路数与速度照一手的 `[10000]=[10101]×2` 与 `[10017.0f]=1.0+0.15×[10101]`（本卡用 `$I1` = 档位）。
+两处适配：① 基准角取**正上**（一手朝下 ⇒ owner 的 180° 反转）；② TH09 的 `etRingAway`（模式 5）
+TH18 无同名模式 ⇒ 用 `etAim 3` + 基准角 `+π` 表达（🟡 待实跑校）。
+
+**② 卡侧**：`cards/pofv.c` 新增 `bossatk_carrier_sync()/bossatk_carrier_stop()` ——
+- **何时**：`bossatk_fire()` 里 `level >= 3`（= C3/C4）时同步；攻击结束那一帧（`pofv_bossatk_tick`
+  返回 0）喊走；`clear_card()`（删卡/换关/重开）也喊走 —— **长持续效果纪律**，绝不留孤儿敌人；
+- **怎么**：`ce_spawn_enemy("CEPofvBoss109", …)` 在 **版底锚点 (192,440)** 刷（照 `ghost_spawn` 的路子）；
+  每帧写 `%F2/%F3`（= 锚点，ECL 侧 `movePosTime` 跟过去）与 `$I1`（档位）；`life = 999`（< 1000，
+  避开引擎的锁定阈值）；**另置 `CE_ENEMY_FLAG_NO_DAMAGE`**（它是架子不是敌人，防自机弹误伤）；
+- **伪 boss 口径**（owner：「其他什么 boss 标识都别干」）：只做「刷 / 喂 / 喊走」三件事 ——
+  不设 boss 标志、不挂血条/名字、不进 boss 表、不做出场特效、判定 1×1（无体术判定）。
+
+**③ 与 sht 侧的关系**：C3/C4 的 sht 行（朝上半圈 + 自机狙）**暂时保留**（owner 实跑反馈后再定
+「C3/C4 只留 ECL」还是「两者叠加」；现在是**过渡态**，登记在此）。
+
+⚠ **未做**：给载体的**敌弹加「伤敌机」的自伤源**（照暴风/CA 的既有做法）；魔理沙/咲夜的形态
+（现在只有灵梦的转写；`$I1` 已预留档位通道）。
