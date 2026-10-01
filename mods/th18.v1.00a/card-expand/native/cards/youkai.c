@@ -298,6 +298,9 @@ typedef struct {
                                         *   （被夹住的槽在下一次 `etOn` 就被放开、使魔同帧重建）。*/
 
     int32_t       claimed_set;        /* ★★★ 2026-09-22（P7）：最近一次认领/打日志的主炮 set（-1 = 还没认领过）*/
+    uint8_t       laser_probe;        /* ★ 2026-10-01（工单②：「我们到底有没有在人侧杀自机激光」）：
+                                       *   `yk_kill_retail` 上下文的诊断行计数（只打前几次）*/
+    uint8_t       laser_probe_human;  /* ★ 同上：**人侧**那行「NOT called」的计数（证明没碰）*/
     /* ★★★ 2026-09-22（#25 击破符卡的螺旋，一手参数见 `youkai_core.h` §3.11b）：
      * `spiral_quota` = 还剩几颗没吐（TH08 的 `spellcard[+0x10]`）；`spiral_t` = 计时器帧数（从 10 起算）；
      * `spell_was` = 上一帧在不在符卡里（**符卡结束的下降沿**是触发器）；`spiral_logged` = 只记一次日志。*/
@@ -7292,12 +7295,42 @@ static int on_tick_2(ce_card_t *c)
     ce_native_option_keep_records((uint32_t)ce_card_id(c), focused);
     if (focused) {
         int n = ce_native_option_sweep_keep_state();
-        (void)ce_kill_retail_option_lasers();
+        /* ★★★ 2026-10-01（owner 定性「就是 th08 的问题」+ 工单②的假设 1，**收紧判据 + 加诊断**）：
+         *   **收紧**：只在「妖侧 **且** 我们真的认领了妖侧 shooterset」时才收原生 `mode=2` 激光。
+         *   为什么：`ce_kill_retail_option_lasers()` 打的是 **packed set ≤ 0x15 = 原生/零售那一族**
+         *   （`sdk.c:639`；魔理沙的「ミニ八卦炉」人侧束 = **set 0x0b**）—— 它是为「我们占了妖侧 set、
+         *   原生子机被藏、可它们的束寿命只跟 Z 走会钉在原地」这一件事服务的。认领不了的时候
+         *   （早苗档 0 等表里 0 台子机的档）原生行**照发**，那些束**不是**我们要替换的东西
+         *   ⇒ 杀了就是我们**主动打断自机激光**（形状 = 断层 + 命中蓝闪断续）。
+         *   判据与 `on_shot_set_index` / `yk_should_suppress_native` **同表同帧**（`yk_option_wanted`）。
+         *   **诊断**（owner 要的判据）：妖侧这一支打上下文行；人侧另打一行「NOT called」⇒
+         *   人形态打一次就能证明 108 有没有碰自机激光。各自只打前几次（不刷屏）。*/
+        if (s && s->laser_probe < 6) {
+            ++s->laser_probe;
+            ce_log("youkai/laser: kill_retail context focused=%d real_focused=%d claimed_set=0x%02x "
+                   "want=%d (human side must print focused=0 and never call the kill)",
+                   focused, yk_real_focused(), (unsigned)s->claimed_set,
+                   yk_option_wanted(1, yk_current_character(), yk_current_power_level()));
+        }
+        if (yk_option_wanted(1, yk_current_character(), yk_current_power_level())) {
+            int kn = ce_kill_retail_option_lasers();
+            if (kn > 0 && s && s->laser_probe < 16) {
+                ++s->laser_probe;
+                ce_log("youkai/laser: kill_retail KILLED %d native mode=2 laser(s) while we own the "
+                       "youkai shooterset (these are the hidden human-side option beams, set <= 0x15)",
+                       kn);
+            }
+        }
         if (n && s && !s->logged_natopt) {
             s->logged_natopt = 1;
             ce_log("youkai: native (human-side) options hidden in low speed - swept %d stale VM(s); "
                    "they come back the frame Shift is released (declaration is per-character)", n);
         }
+    } else if (s && s->laser_probe_human < 4) {
+        ++s->laser_probe_human;
+        ce_log("youkai/laser: kill_retail NOT called on the human side (real_focused=%d) - 108 does not "
+               "touch native option lasers here (owner's laser report: this line is the proof)",
+               yk_real_focused());
     }
     /* ★ 追踪目标（机体 0 那一支用）：每帧解析一次，帧界的 `on_option_pose_apply` 读卡状态。
      * ⚠ 只在低速解析（高速没有我们的子机、使魔也撤了，解析出来也没人用）。*/
