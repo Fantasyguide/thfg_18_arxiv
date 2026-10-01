@@ -1025,7 +1025,7 @@ STAR_CANNON_SHOT                ability/star_cannon/_src/Projectile_955.png 22x2
 #   为什么烘成图：TH18 的 ASCII 字体图集（font2 / th13_big / th12）**没有汉字字形** ⇒ 只能预渲染
 #   （owner 也是这么建议的）。样式按 owner 给的实机截图逐像素对：两行居中、浅暖白 + 深色描边、
 #   行 1 字高 ≈43 / 行 2 ≈19、行距极紧。生成器 = `assets/ability/star_cannon/make_death_msg.py`。
-STAR_CANNON_DEATH_MSG           ability/star_cannon/_src/DEATH_MSG.png    372x131
+STAR_CANNON_DEATH_MSG           ability/star_cannon/_src/DEATH_MSG.png    372x80
 
 # ★★ 2026-10-02（91 鞘翅重锤，致敬 Minecraft 的**鞘翅 + 重锤**）：演出用的四张图。
 #   一手（用户本机 Minecraft 1.21.10 客户端 jar）：

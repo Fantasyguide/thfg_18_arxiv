@@ -39,6 +39,10 @@ LINE1 = "你被杀死了……"                        # LegacyInterface.38（zh
 LINE2 = "掉了591 铂金 60 金 15 银 3 铜"         # Game.DroppedCoins = "掉了{0}"；{0} = ValueToCoins 的实机输出（带空格）
 DEATH_TEXT = (229, 127, 127)                   # = GetDeathAlpha(Color.Transparent) 的 RGB
 LINE_GAP = 50                                  # 一手：两行**盒顶**差 50 px（H/2−60 → H/2−10）
+GLYPH_GAP = 4                                  # ★ 但原版大字在那 50 px 里是**靠盒底**画的 ⇒ 实测「第一行字形下沿
+                                               #   → 第二行字形上沿」只有 **4 px**（owner 的实机截图量出来是空 4 行）。
+                                               #   第一版按 50 px 摆字形的**上沿**，两行当场叠在一起 —— 这里改按
+                                               #   **实测字形包围盒**排：第二行盒顶 = 第一行字形下沿 + GLYPH_GAP。
 OUTLINE_WIDTH = 0                              # 一手：原版**没有**描边（留成常量，实跑嫌糊再调）
 
 # 字号按一手的 `lineSpacing` 比例取（Death_Text 72 : Mouse_Text 29 ≈ 2.48 : 1）
@@ -91,6 +95,19 @@ def line_width(d, runs):
     return sum(d.textlength(s, font=f) for s, f in runs)
 
 
+def bbox_of(d, runs, y):
+    """这一行字形在本行内的包围盒（多段取并集；PIL 的 textbbox 带字体上下留白，用 anchor 拿真实字形框）。"""
+    lo, hi = None, None
+    for s, f in runs:
+        bb = d.textbbox((0, 0), s, font=f)
+        _, top, _, bot = bb
+        lo = top if lo is None else min(lo, top)
+        hi = bot if hi is None else max(hi, bot)
+    if lo is None:
+        return (0, y, 0, y)
+    return (0, y + lo, 0, y + hi)
+
+
 def draw_centered(d, y, runs):
     x = (W - line_width(d, runs)) / 2.0                  # 一手：两行**各自**居中
     for s, f in runs:
@@ -112,10 +129,16 @@ def main():
         img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         d = ImageDraw.Draw(img)
     draw_centered(d, 0, r1)
-    draw_centered(d, LINE_GAP - 2, r2)                   # 第二行盒顶 = 第一行盒顶 + 50（−2 是字体上沿留白）
+    b1 = bbox_of(d, r1, 0)
+    y2 = b1[3] + GLYPH_GAP                               # ★ 见 GLYPH_GAP 的注：按字形下沿排，不按盒顶
+    draw_centered(d, y2, r2)
+    b2 = bbox_of(d, r2, y2)
+    top = min(b1[1], b2[1]) - 2
+    bot = max(b1[3], b2[3]) + 2
+    img = img.crop((0, max(0, top), W, bot))             # 裁掉上下留白（贴图按 sprite 居中放，留白会把它顶偏）
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     img.save(OUT)
-    print(f"DEATH_MSG: {OUT} {img.width}x{img.height} · 色 RGB{DEATH_TEXT} · 行距 {LINE_GAP} · 描边 {OUTLINE_WIDTH}")
+    print(f"DEATH_MSG: {OUT} {img.width}x{img.height} · 色 RGB{DEATH_TEXT} · 字形间距 {GLYPH_GAP} px（一手盒顶差 {LINE_GAP}）· 描边 {OUTLINE_WIDTH}")
 
 
 if __name__ == "__main__":

@@ -28224,6 +28224,7 @@ Undertale 的时机条；当有敌人可攻击的时候，时机条会开始动�
 | 描边 | **没有**（ReLogic 的 12 参 `DrawString` 扩展，两个尾数组 `null`；`DrawBorderStringBig` 不在这条路径上）| 加了黑描边 |
 | 字体 | 第一行 `FontAssets.DeathText`（`lineSpacing = 72`）、第二行 **`FontAssets.MouseText`**（`lineSpacing = 29`）⇒ **两行不同字体** | 同一字体、字号自拟 |
 | 排版 | 两行**各自** `MeasureString` 居中；`origin = Zero` ⇒ 记的是**盒左上角**；y = `H/2 − 60` 与 `H/2 − 10`（盒顶差 **50 px**）、scale 1.0 | 大致居中，行距自拟 |
+| ⚠ 第五处（次日被 owner 抓到「重叠了」）| 那 50 px 是**盒顶差**；大字在盒里**靠盒底**画 ⇒ 实测两行**字形**间隙只有 **4 px**（owner 截图上就是空 4 行）。第一版按盒顶摆字形 ⇒ 两行叠在一起。现在生成器按 `textbbox` 实测包围盒排（`GLYPH_GAP = 4`），贴图也裁掉上下留白，卡侧 Y 换算成「第一行字形顶 = 游玩区中心 − 60」（640 空间 `(320, 220)`）| 叠了 |
 | 生命周期 | 死亡瞬间出现 → alpha 全程恒定（**无淡入无淡出**）→ 复活下一帧**直接消失** | 自拟了 300 帧 + 40 帧淡出 |
 | z-order | 接口层下标 **36**（`"Vanilla: Death Text"`，`InterfaceScaleType.UI`）：在世界/玩家/HUD/聊天之上、光标之下 | 我们的 UI 层 25（等价位置）|
 
