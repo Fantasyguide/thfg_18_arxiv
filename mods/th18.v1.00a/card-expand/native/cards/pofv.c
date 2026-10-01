@@ -115,6 +115,10 @@
 #define POFV_BOSSATK_DMG_H     320.0f    /* 覆盖高（自锚点往上）*/
 #define POFV_BOSSATK_DMG_LIFE    2       /* 源存活帧（照风暴那一支的量级）*/
 #define POFV_POWER_SE_GET       0x25
+/* ★ 一手（2026-10-01）：**升档音** —— TH16 季节道具**升档**（`item_collect_season`）播 `0x3f`，
+ *   116 `season.c` 的 `SEASON_SE_LEVEL` 就是它（一手出处见那份文件；**不是** `se_extend`）。
+ *   本卡的语义对照：**充能升档**（气槽实心格 +1）⇒ 借同一个音（借做法已登记 `AUDIT` §BE #166）。*/
+#define POFV_POWER_SE_LEVEL     0x3f
 #define POFV_POWER_VM_LAYER        7    /* 灵力道具在最上（要一眼可判「捡得到」）*/
 #define POFV_POWER_VM_SCALE      1.0f   /* ★ 一手（2026-10-01）：画的是 TH18 原版 P 点
                                           *   （`bullet/item.png` 的 (0,0,32,32)，见 `make_pofv109_power_art.py`），
@@ -1147,7 +1151,12 @@ static int on_tick_2(ce_card_t *c)
         int got_n = pofv_power_tick(&s_power, ce_player_pos(), &got_pts);
         if (got_n > 0 && got_pts > 0) {
             ce_play_sound(POFV_POWER_SE_GET, ce_player_x());   /* ★ 一手：收取音（见常量处）*/
-            pofv_gauge_add_points(&s->st, got_pts);
+            {
+                int32_t lv0 = s->st.gauge;
+                pofv_gauge_add_points(&s->st, got_pts);
+                /* ★ 一手：**升档**另有音（TH16 季节道具升档播 0x3f）—— 本卡的对照事件 = 气槽 +1 */
+                if (s->st.gauge != lv0) ce_play_sound(POFV_POWER_SE_LEVEL, ce_player_x());
+            }
             s_power_got += got_n;
             ce_log("pofv: power +%d (%d items, gauge %d.%d)", (int)got_pts, got_n,
                    (int)s->st.gauge, (int)(s->st.gauge_pts * 100 / POFV_GAUGE_PTS_PER_LEVEL));
