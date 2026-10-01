@@ -47,6 +47,7 @@ const ce_behavior_t *ce_sdk_find(uint32_t id)
 
 void ce_sdk_reset_for_test(void)
 {
+    ce_card_flag_reset();
     memset(s_beh, 0, sizeof s_beh);
     memset(s_beh_by_id, 0, sizeof s_beh_by_id);
     s_nbeh = 0;
@@ -1707,4 +1708,34 @@ int ce_vitem_flying(void)
 
     for (uint32_t src = 0; src <= (uint32_t)CE_SDK_CARD_ID_MAX; ++src) sum += ce_vitem_flying_from(src);
     return sum;
+}
+
+
+/* ---- ★★ 2026-10-01 跨卡只读标志（接口与语义见 sdk_core.h）--------------------------------- */
+static uint8_t s_card_flag[CE_SDK_CARD_ID_MAX + 1];
+
+void ce_card_flag_set(uint32_t card_id, uint32_t bits)
+{
+    if (card_id > (uint32_t)CE_SDK_CARD_ID_MAX) return;
+    s_card_flag[card_id] = (uint8_t)(bits & 0xffu);
+}
+
+uint32_t ce_card_flag_get(uint32_t card_id)
+{
+    if (card_id > (uint32_t)CE_SDK_CARD_ID_MAX) return 0u;
+    return (uint32_t)s_card_flag[card_id];
+}
+
+int ce_card_flag_any(uint32_t bits)
+{
+    if (!bits) return 0;
+    for (uint32_t id = 0; id <= (uint32_t)CE_SDK_CARD_ID_MAX; ++id) {
+        if (s_card_flag[id] & (uint8_t)bits) return 1;
+    }
+    return 0;
+}
+
+void ce_card_flag_reset(void)
+{
+    memset(s_card_flag, 0, sizeof s_card_flag);
 }

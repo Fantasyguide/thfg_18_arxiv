@@ -3882,6 +3882,11 @@ static int on_tick_2(ce_card_t *c)
 
     if (!s) return 0;
     ++s->frame;
+    /* ★ 2026-10-01（跨卡只读标志；交接 = `HANDOFF-108-CROSSCARD-SHIFT.md`）：每帧按 `roaring(s)`
+     *   重算「暴走咆哮中」——**零发明**（判据现成：`core.ready || core.hypering`），
+     *   也正好绕开「还有没有别的入口把咆哮打开」这个未普查项（交接 §6.1）。粘性；删卡由
+     *   `ce_layer_drop_card()` 收（`clear_card()` 里再显式撤一次，双保险）。*/
+    ce_card_flag_set(ANIMAL_ID_NUM, roaring(s) ? CE_CARD_FLAG_ROAR : 0u);
     s->core.goast = goast_for_deck();       /* TH18 无凭依选择：默认「主凭依灵不存在」；带 25/34 时恒存在 */
     paused = dialogue_open();
     animal_big_drop_drain(s);               /* AL55：上一帧大怪击破队列 → 本帧建 VM + 打掉落行 */
@@ -4029,6 +4034,9 @@ static void clear_card(ce_card_t *c, int keep_hud_slot)
 {
     animal_card_t *s = st(c);
     if (!s) return;
+    /* ★ 2026-10-01：跨卡只读标志也在这里撤（`ce_layer_drop_card()` 已兜底，这里是双保险 ——
+     *   交接 §3.1 的风险②：漏撤 = 108 的 shift 闸门永久锁死）。*/
+    ce_card_flag_set(ANIMAL_ID_NUM, 0u);
     hud_clear(s);
     /* ★ 2026-09-12：HUD **槽位**也在这里退（`CE_CARD` 的 `on_run_reset`/`opdelete` 会先调
      * `ce_layer_drop_card()` → `ce_hud_slot_release()`，这里显式再来一次是幂等的）。

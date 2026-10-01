@@ -4910,6 +4910,8 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 | 2026-10-01c | **所有卡（共享资源 `assets/ability/` 追加 1 图 + 1 脚本；共享件 `native/cards/faith.c`；新增头 `native/cards/top_indicator.h`；生成物 `native/anm_ids.h`）** | 见下方「§BE 详录 #164」 |
 | 2026-10-01d | **117 鬼形兽**（`native/cards/animal.c`：**删掉整波否决** `animal_wave_veto()` / `ANIMAL_WAVE_VETO_*` / `veto` 字段与日志字段） | 见下方「§BE 详录 #194」 | **owner 2026-10-01 逐字「你去掉那个整体否决吧」**（108 这条线代改；影响面 + 验证见 #194） |
 
+| 2026-10-01d | **所有卡**（共享件 `sdk_core.{h,c}` / `sdk.h` / `sdk.c`；改 113 / 117 / 108 三张卡；单测） | 见下方「§BE 详录 #205」 |
+
 
 > **§BE 详录 #42（2026-09-20 · P1「缺音效一批」8 条 + 音效表扩容新增 5 枚别作原版 SE）**
 >
@@ -27519,3 +27521,43 @@ owner：「魔理沙的命中系数再下调」。取 **0.85 ⇒ ≈0.59**（`35
 | 我们唯一碰原生激光的地方 | `ce_kill_retail_option_lasers()`（`youkai.c`，**只在 `focused` 那一支**调；只碰 packed set ≤ 0x15 的 `mode=2` 在飞弹） | ⇒ 人侧（未聚焦）不调 |
 | 「打到就消失成断层 + 蓝断续」 | 与 `hit2`(`0x460320`)「命中即把 `+0x8c` 置 2 = 结束」的行为同形（本卡 `yk_beam_tick` 的注里记过这条一手） | ⇒ **待实跑分辨**（见下） |
 | 下一步（给 owner 的最小验证） | ① 只在人形态、不装 108 打一次（判「原生本来是否贯通」）；② 装 108 时看日志有没有 `youkai/beam: on …`（我们的束只在**聚焦**时开）；③ 若两者都在人侧发生，再上 `hit2` 的单点探针 | 未定论（本轮无一手证据判「是我们的」） |
+
+---
+
+### §BE 详录 #205 —— 2026-10-01d：**跨卡只读标志层**（108 的 shift 侧门 ↔ 113 灵界 / 117 咆哮）
+
+**谁改的**：统筹会话（owner 点名把这条跨卡只读查询交给统筹；交接文档 =
+[`HANDOFF-108-CROSSCARD-SHIFT.md`](HANDOFF-108-CROSSCARD-SHIFT.md)，方案①）。
+
+**为什么**：owner 口径「**处于灵界状态 or 暴走咆哮状态的时候，可以改主机贴图，但是 shift 别把妖子机放出来**」。
+108（`youkai.c`）的 `yk_side_switch_allowed(trance, roar, real_bomb)` 总门早已写好，但 113 / 117 的状态是
+**各自卡的私有变量**，108 没有合法只读路径 ⇒ 两支实参一直是**恒 0 的 TODO 桩**。
+
+**改了什么**（逐文件）
+
+| 文件 | 改动 |
+| --- | --- |
+| `native/sdk_core.h` / `sdk_core.c` | 新增跨卡只读标志层：`CE_CARD_FLAG_TRANCE 0x01` / `CE_CARD_FLAG_ROAR 0x02` + `ce_card_flag_set/get/any/reset`（**粘性**、按 card id 的 `uint8_t` 表、越界防护；纯逻辑无引擎依赖 ⇒ 可主机单测）|
+| `native/sdk.h` | `ce_layer_drop_card()` 加一行 `ce_card_flag_set(id, 0)`（删卡 / 局末 / 换关的**唯一自动收口**）|
+| `native/sdk.c` | `ce_sdk_setup()` 加 `ce_card_flag_reset()`（粘性层的复位先例 = `ce_no_hit_reset` / `ce_native_option_hide_reset`）|
+| `native/cards/trance.c`（113）| `on_item_frame` 里 `trance_tick()` 之后一句：`core.phase != TRANCE_PHASE_IDLE ⇒ CE_CARD_FLAG_TRANCE`。★ **判据是 `core.phase`**，不是 `p->state`（那是神灵实体的运动 state 机 —— 交接 §2.2 的订正）|
+| `native/cards/animal.c`（117）| `on_tick_2` 里每帧按现成判据 `roaring(s) = core.ready \|\| core.hypering` 重算；`clear_card()` 里再显式撤一次（双保险）|
+| `native/cards/youkai.c`（108）| 两支 TODO 桩改成读层：`yk_trance_active()` → `ce_card_flag_any(CE_CARD_FLAG_TRANCE)`、`yk_roar_active()` → `..._ROAR`（**只改这两行**）|
+| `native/tests/test_sdk_core.c` | 新增 `test_card_flags()`：置 / 读 / 任意聚合 / 粘性 / 撤（= 删卡收口）/ 越界防护 |
+
+**语义与为什么这么设计**（照交接 §3.1 的定案）
+- **谁的状态谁写**：113 / 117 各自声明自己的位，108 **只读聚合**，两卡之间不直接引用（符合 `SDK.md` §6.1 的声明层架构；
+  这条也避免了「仓里第一个卡直接调卡」的先例）。
+- **粘性**（置/撤是边沿行为，不做「当帧有效、跨帧自过期」）⇒ 读方**不依赖卡链顺序**（否则 108 若排在 113 前面
+  就会读到上一帧）。代价：进/出状态那一帧允许 **1 帧延迟**（交接的验收判据第 5 条）。
+- **零站点**：没有新断点、没有 hook ⇒ `sites.py` 不受影响（站点仍 33/24 超记账线，本批不增加）。
+- **对不声明的卡完全惰性**：表全 0 ⇒ `ce_card_flag_any` 恒 0 ⇒ 108 的两支实参与改动前**逐字节同效**。
+
+**影响面 / 回归**
+- 共享件（`sdk_core.*` / `sdk.h` / `sdk.c`）⇒ 影响所有卡：新增的是**独立的一层**（不读写任何既有层的数据），
+  只多 255 字节 BSS + 每帧 O(255) 的 `any` 扫描（只在 108 每帧调一次）。
+- 改到别人的卡（113 / 117）与 108：已在**各自文件里留注释**说明来龙去脉（交接 §5 的纪律），本表即登记。
+- **回归**：`make check` **rc=0** —— `test_sdk_core: 1383 passed, 0 failed`（含新用例）、
+  `test_youkai_core` 的 9 条 shift 判据未动、`check-docs` 四项全绿（416 文件）、`sites.py` 站点零新增。
+- ⚠ **实跑前置**：验收必须用**含 108 P0 修复**的那版 DLL（`RELEASE-STATE.json` 的 `last_release.dll_md5` =
+  `07ed3a6e3e666887b5d5b425e9f23e26`）—— 旧版（`88e828df…`）一进关就爆栈（`0xc00000fd`），测不到本功能。

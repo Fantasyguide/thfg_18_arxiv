@@ -1072,6 +1072,10 @@ static inline void ce_layer_drop_card(uint32_t id)
     /* ★ 2026-09-16（111 魔理沙侧）：「隐藏原生子机」同样是**粘性**声明 ⇒ 也必须在这里撤
      *   （漏撤 = 那台机体的原生子机永远不出现，日志上只看得到"没出现"）。机体号一并清 0。*/
     ce_native_option_hide_declare(id, 0, 0);
+    /* ★ 2026-10-01（跨卡只读标志，`HANDOFF-108-CROSSCARD-SHIFT.md`）：**粘性层**，同样必须在这里收 ——
+     *   漏撤 = 108 的「灵界/咆哮下不切侧」永久锁死（113/117 已经不在场，标志却还在）。
+     *   与上面几条同款：删卡的路只有 `on_delete` 跑得到，而它在商店里、帧钩子已经停了。*/
+    ce_card_flag_set(id, 0);
     ce_hud_slot_release(id);
 }
 

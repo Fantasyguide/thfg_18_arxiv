@@ -1631,9 +1631,44 @@ static void test_poc_mask_layer(void)
     }
 }
 
+/* ★★ 2026-10-01：**跨卡只读标志**（`HANDOFF-108-CROSSCARD-SHIFT.md` 方案①）——
+ * 置 / 读 / 任意聚合 / 粘性 / 撤（= `ce_layer_drop_card` 的收口）/ 越界防护。*/
+static void test_card_flags(void)
+{
+    ce_card_flag_reset();
+    CHECK(ce_card_flag_get(113) == 0);
+    CHECK(ce_card_flag_any(CE_CARD_FLAG_TRANCE) == 0);
+
+    ce_card_flag_set(113, CE_CARD_FLAG_TRANCE);
+    CHECK(ce_card_flag_get(113) == CE_CARD_FLAG_TRANCE);
+    CHECK(ce_card_flag_any(CE_CARD_FLAG_TRANCE) == 1);
+    CHECK(ce_card_flag_any(CE_CARD_FLAG_ROAR) == 0);          /* 位不相干 */
+
+    ce_card_flag_set(117, CE_CARD_FLAG_ROAR);
+    CHECK(ce_card_flag_any(CE_CARD_FLAG_ROAR) == 1);
+    CHECK(ce_card_flag_any(CE_CARD_FLAG_TRANCE | CE_CARD_FLAG_ROAR) == 1);   /* 任一位命中即 1 */
+
+    /* 粘性：读方不刷新，值就一直是它（不做「当帧有效、跨帧自过期」）*/
+    CHECK(ce_card_flag_get(113) == CE_CARD_FLAG_TRANCE);
+
+    /* 撤 = `ce_layer_drop_card()` 里那一行（删卡 / 局末 / 换关的唯一收口）*/
+    ce_card_flag_set(113, 0u);
+    CHECK(ce_card_flag_get(113) == 0);
+    CHECK(ce_card_flag_any(CE_CARD_FLAG_TRANCE) == 0);
+    CHECK(ce_card_flag_any(CE_CARD_FLAG_TRANCE | CE_CARD_FLAG_ROAR) == 1);   /* 117 仍在场 */
+
+    /* 越界 id：不写、不读（数组不许被越界索引）*/
+    ce_card_flag_set((uint32_t)CE_SDK_CARD_ID_MAX + 1u, CE_CARD_FLAG_ROAR);
+    CHECK(ce_card_flag_get((uint32_t)CE_SDK_CARD_ID_MAX + 1u) == 0);
+
+    ce_card_flag_reset();
+    CHECK(ce_card_flag_any(CE_CARD_FLAG_TRANCE | CE_CARD_FLAG_ROAR) == 0);
+}
+
 int main(void)
 {
     test_dmg_layer();
+    test_card_flags();
     test_declare_layers();
     test_drop_layer();
     test_hud_slots();

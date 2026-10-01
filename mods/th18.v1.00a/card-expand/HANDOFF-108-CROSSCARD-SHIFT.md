@@ -199,3 +199,24 @@ md5sum th18_card_expand.dll        # 应等于 RELEASE-STATE.json 的 last_relea
 cd /home/nipporita/renkolab/mods/th18.v1.00a/card-expand/native && make -s check
 cd /home/nipporita/renkolab && python3 tooling/check-docs.py
 ```
+
+---
+
+## §8 落地记录（2026-10-01d，**统筹已实装，只加不改**）
+
+> 方案①已落地并过闸（`make check` **rc=0**，`test_sdk_core: 1383 passed`）。本节只追加，**正文一个字没改**。
+
+| 项 | 实装位置（现算） | 值 |
+| --- | --- | --- |
+| 接口 | `native/sdk_core.h` 尾部（`CE_CARD_FLAG_TRANCE/ROAR` + `ce_card_flag_set/get/any/reset`）| 粘性、按 card id 的 `uint8_t` 表、越界防护 |
+| 实现 | `native/sdk_core.c`（`s_card_flag[CE_SDK_CARD_ID_MAX+1]`）| 纯逻辑，可主机单测 |
+| 删卡收口 | `native/sdk.h` 的 `ce_layer_drop_card()` 内 `ce_card_flag_set(id, 0)` | 唯一的自动收口 |
+| 进程复位 | `native/sdk.c` 的 `ce_sdk_setup()` 内 `ce_card_flag_reset()` | 与 `ce_no_hit_reset` 等同款 |
+| 113 声明 | `native/cards/trance.c`：`t = trance_tick(...)` 之后一句 | 判据 = `core.phase != TRANCE_PHASE_IDLE`（**已按 §2.2 订正，不用 `p->state`**）|
+| 117 声明 | `native/cards/animal.c`：`on_tick_2` 里 `++s->frame` 后一句（`roaring(s)`）；`clear_card()` 里再撤一次 | 每帧重算 ⇒ 覆盖所有入口（§6.1 的未普查项绕开）|
+| 108 读层 | `native/cards/youkai.c`：`yk_trance_active()` / `yk_roar_active()` 两支桩（**只改这两行**）| `ce_card_flag_any(...)` |
+| 单测 | `native/tests/test_sdk_core.c` 的 `test_card_flags()` | 置 / 读 / 聚合 / 粘性 / 撤 / 越界 |
+| 登记 | `AUDIT.md` §BE 详录 **#205** | 含影响面与回归 |
+
+**未做/留给你们**：验收（§4 的 6 条判据）**要你们那条线的实跑**——必须用含 P0 修复的 DLL（`07ed3a6e…`）；
+`youkai.c` 仍在并发修改，**实装行的行号请按 §7 现算**，别照抄本文数字。

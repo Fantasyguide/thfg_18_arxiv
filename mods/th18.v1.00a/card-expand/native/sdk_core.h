@@ -919,3 +919,27 @@ int ce_vitem_flying_from(uint32_t source);                  /* 单个源（诊�
  * ⚠ 唯一调用方是 `sdk.h` 的两个 `ce_hud_slot_claim_*_card()` 包装（那里能读引擎全局）；
  *   **认领之外不重排**（HUD-LAYOUT §4.4）⇒ 只在这里设一次就够了，别做每帧刷新。*/
 void ce_hud_card_set(int present);
+
+/* ★★ 2026-10-01（跨卡只读标志；owner 点名让统筹做，交接 = `HANDOFF-108-CROSSCARD-SHIFT.md`）
+ *
+ * 「A 卡要知道 B 卡现在处在某个全局状态吗」这件事在仓里的**唯一**合法通道：
+ *   **谁的状态谁写**（B 每帧 `ce_card_flag_set`），**别人只读聚合**（A 用 `ce_card_flag_any`），
+ *   两卡之间**不直接引用**（不许 `extern` 另一个 .c 的符号，见 SDK.md §6.1 的声明层架构）。
+ *
+ * 语义四条（照 `HANDOFF-108-CROSSCARD-SHIFT.md` §3.1 的定案）：
+ *   ① **粘性**：置位/撤位都是边沿行为，**不做「当帧有效、跨帧自过期」** —— 否则读方会依赖卡链顺序
+ *      （108 排在 113 前面就会读到上一帧），违反 SDK.md 的「规则不依赖卡链顺序」。
+ *   ② **按 card id**：一张卡一个字节（同 id 重复注册 = 后写者覆盖；本仓卡组里 id 唯一）。
+ *   ③ **删卡自动收**：`ce_layer_drop_card()` 会 `ce_card_flag_set(id, 0)`；卡不用自己撤。
+ *   ④ **位要语义化**：用 `CE_CARD_FLAG_*` 常量，别在卡里写裸 bit。*/
+#define CE_CARD_FLAG_TRANCE  0x01u   /* 灵界进行中（113 声明）—— 判据 = `core.phase != TRANCE_PHASE_IDLE` */
+#define CE_CARD_FLAG_ROAR    0x02u   /* 暴走咆哮中（117 声明）—— 判据 = `core.ready || core.hypering` */
+
+/* 声明 / 撤位（`bits` = 0 即全撤）。粘性：不调用就一直保持上一次的值。*/
+void     ce_card_flag_set(uint32_t card_id, uint32_t bits);
+/* 只读单卡（没这张卡 / id 越界 = 0）。*/
+uint32_t ce_card_flag_get(uint32_t card_id);
+/* 只读聚合：任一张在场卡命中 `bits` 里任意一位 ⇒ 1。*/
+int      ce_card_flag_any(uint32_t bits);
+/* 整层清零（`ce_sdk_setup` / 单测用；粘性层的复位先例见 `ce_no_hit_reset`）。*/
+void     ce_card_flag_reset(void);

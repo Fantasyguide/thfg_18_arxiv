@@ -404,8 +404,8 @@ static int yk_focused(void)
  *      113/117 在进入/退出状态时各置/清一位；
  *   ② 由那两张卡各导出一个 `int <card>_state_query(void)`（同一层的 `cards_def` 弱符号导出面）。
  * ⇒ 任一路落地后，把下面两支改成读那一位即可（门本身已经是纯函数 + 单测覆盖）。*/
-static int yk_trance_active(void) { return 0; }
-static int yk_roar_active(void)  { return 0; }
+static int yk_trance_active(void) { return ce_card_flag_any(CE_CARD_FLAG_TRANCE); }
+static int yk_roar_active(void)  { return ce_card_flag_any(CE_CARD_FLAG_ROAR); }
 
 /* 每帧一次（在 `on_tick_2` 最前面调用）：更新「锁形态」状态机。
  * 「真 B」判据 = `bomb_mgr+0x30`（`do_bomb`，`engine.h`）**且起手那一帧不在决死窗口里**：

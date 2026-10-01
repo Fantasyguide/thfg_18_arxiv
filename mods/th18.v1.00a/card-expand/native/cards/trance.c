@@ -2843,6 +2843,13 @@ static void on_item_frame(ce_card_t *c)
     /* ① 窗口推进（空闲：推冷却 + 连锁窗口；在灵界里：槽 −1/帧、归零收尾并报 `re_die`）*/
     t = trance_tick(&s->core, s->frame);
 
+    /* ★ 2026-10-01（跨卡只读标志；交接 = `HANDOFF-108-CROSSCARD-SHIFT.md`）：
+     *   向层声明「灵界进行中」—— 108（永夜抄）靠它决定 shift 切不切侧（owner 口径：
+     *   「处于灵界状态 or 暴走咆哮状态的时候，可以改主机贴图，但是 shift 别把妖子机放出来」）。
+     *   判据 = `core.phase`（**不是** `p->state` —— 那是神灵实体的运动 state 机，
+     *   见交接 §2.2 的订正）；粘性，撤位由下一帧的 `: 0u` 或删卡时的 `ce_layer_drop_card()` 完成。*/
+    ce_card_flag_set(ce_card_id(c), (s->core.phase != TRANCE_PHASE_IDLE) ? CE_CARD_FLAG_TRANCE : 0u);
+
     /* ①′ ★ **对话强制退出**（用户口径 ④；一手 `th13:0x4288f9` = 起对话那一帧调 `end`）。
      *   **边沿触发**：只在"上一帧没对话、这一帧有对话"时动手（一手没有每帧检查那条路）。
      *   把它的结果并进 `t` ⇒ 下面的「结束反馈」与「补死」两条逻辑**共用一份**，不另抄一遍：
