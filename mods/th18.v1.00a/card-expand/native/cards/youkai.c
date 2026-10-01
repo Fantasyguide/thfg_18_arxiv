@@ -452,6 +452,54 @@ static void yk_side_lock_tick(void)
     }
 }
 
+/* ================== ★★★ 2026-10-01（owner 工单④：**ANM VM 池压力**） ==================
+ * owner 的新头号嫌疑：**人侧激光的分段是 anm VM**，而 anm VM 是全局的；本卡每帧起一大堆
+ * （拖尾/浮字/环/束条/光环）⇒ 若把池占满或踢掉别人的 VM，激光就会「一节一节长出 / 命中处断一节」。
+ *
+ * **一手事实（先摆出来，免得修错方向）**：
+ *   · 分配器 = `AnmManager__allocate_new_vm` **`0x489320`**，而 `engine.h:738` 记着它的行为：
+ *     **freelist 空则 `malloc(0x60c)`** ⇒ 它是**按需增长**的，不是固定小池 ⇒ 「池满 ⇒ 起不出 VM」
+ *     只在 `malloc` 失败时发生（那时连引擎自己都完了）。
+ *   · id 空间 = **`id & 0x7fff`**（`AnmManager__get_vm_with_id` `0x488b40`，engine/anm/th18/01 §0）
+ *     ⇒ 理论上存在**32768 个 id 回绕**后别名到别人的 VM 的风险（实跑里我们远到不了）。
+ *   ⇒ 所以「池压力」这条要用**证据**判：下面这组计数 + 探针行（try/fail/skip）就是证据。
+ *     若 owner 的 `YK_FX_VMS=0` 版仍然异常、而 fail 计数一直是 0 ⇒ 这条线也可以干净排除。
+ *
+ * **二分开关**（第二把，随下一版一起发）：
+ *   `1` = 现状（照常起我们的特效 VM）；
+ *   `0` = **完全不生成**我们的拖尾/浮字/环/束条/光环 VM（`yk_vm_spawn()` 直接返回 0，
+ *         各调用点的既有失败分支照常跑）—— 其它逻辑（伤害/消弹/转嫁/子机/使魔实体）一行不变。*/
+/* ★★★★ 2026-10-01（owner 工单⑤ · **按卡入口逐项二分**，一把开关一项、默认 1 = 现状）：
+ *   owner 的新证据推翻了「VM 池压力」（触发时 4 面开头、**完全没有**拖尾/浮字/加法环）
+ *   ⇒ 改成逐入口二分：**每次只关一项**，人形态打 4 面开头，看哪一项让激光恢复。
+ *   ⚠ **绝不耦合**：每个开关只管自己那一条路径；关掉后其它逻辑一行不变。
+ *   日志里有一行汇总（`youkai: bisect switches …`，`on_tick_2` 首次运行时打）。*/
+#define YK_ENABLE_SET_INDEX       1  /* ① `on_shot_set_index`：认领妖侧 shooterset / 退选举 */
+#define YK_ENABLE_NATIVE_SUPPRESS 1  /* ② `on_native_shot_suppress`：压不压原生行循环 */
+#define YK_ENABLE_OPTION_POSE     1  /* ③ `on_option_pose_apply` + declare + hide/keep_records */
+#define YK_ENABLE_HUD_VM          1  /* ④ HUD 数字/槽 VM（`ce_anm_spawn_ui` 那一族）*/
+#define YK_ENABLE_FX_VMS          1  /* ⑤ 拖尾/浮字/环/束条/光环 VM（`yk_vm_spawn` 唯一出口）*/
+#define YK_ENABLE_TRANSFER        1  /* ⑥ `ce_damage_rect` + `ce_raise_damage_cap`（伤害转嫁）*/
+#define YK_ENABLE_ZONE            1  /* ⑦ `ce_cancel_radius`（死亡点消弹）*/
+#define YK_FX_VMS YK_ENABLE_FX_VMS   /* 旧名保留（同一格；`yk_vm_spawn` 里用）*/
+
+static unsigned s_fx_try, s_fx_fail, s_fx_skip;        /* 累计（只增）*/
+static unsigned s_fx_try_win, s_fx_fail_win;           /* 本「观察窗」内（每 120 帧清）*/
+static uint32_t s_fx_win_start;
+
+/* 本卡所有**特效类** VM 的唯一出口（`YK_FX_VMS=0` 时一律返回 0 = 「起不出来」）。
+ * ⚠ 只包特效：**实体**（使魔跟随 VM / 刻符 / HUD 数字）仍走 `ce_anm_spawn` 本体，
+ *   否则二分版会让 owner 连使魔/刻符都看不见，判据就不干净了。*/
+static uint32_t yk_vm_spawn(void *anm, int script, int layer)
+{
+    uint32_t id;
+    if (!YK_FX_VMS) { ++s_fx_skip; return 0; }
+    ++s_fx_try; ++s_fx_try_win;
+    id = ce_anm_spawn(anm, script, layer);
+    if (!id) { ++s_fx_fail; ++s_fx_fail_win; }
+    return id;
+}
+
 /* ============================== 小工具 ============================== */
 static int yk_base_damage_cap(void)                       /* 照 76 guding.c：sht 头的每敌每帧上限基值 */
 {
@@ -902,7 +950,7 @@ static void yk_fam_vm_follow(uint32_t fam_id, int kind, const uint8_t *f)
          *   （脚本 `scaleTime(8,0,0.5f/0.8f)`）—— 这正是 owner 说的「**大小形成质感**」。
          *   ⚠ 只在**换侧**时发中断：每帧发会把这支 8 帧的生长动画一直重播。*/
         if (!v->circle_id || !ce_anm_get_vm(v->circle_id)) {
-            v->circle_id = ce_anm_spawn(CE_ABILITY_ANM(),
+            v->circle_id = yk_vm_spawn(CE_ABILITY_ANM(),
                                         CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_RING,
                                         YK_FAM_ANM_LAYER);
             v->circle_side = -1;
@@ -1517,7 +1565,7 @@ static void yk_orbit_vm_sync(yk_orbit_t *o)
      *   （人 1 紫 / 妖 2 蓝），尺寸由脚本分侧（0.5 / 0.8）。*/
     if (!o->circle_id || !ce_anm_get_vm(o->circle_id)) {
         ++s_orbit_ring_try;
-        o->circle_id = ce_anm_spawn(CE_ABILITY_ANM(),
+        o->circle_id = yk_vm_spawn(CE_ABILITY_ANM(),
                                     CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_RING, YK_FAM_ANM_LAYER);
         o->circle_side = -1;
         if (o->circle_id) ++s_orbit_ring_made;
@@ -2010,7 +2058,7 @@ static void yk_ring_blink(float x, float y, int variant)
     uint32_t id;
     for (i = 0; i < YK_RING_MAX; ++i) if (!s_ring[i].id) break;
     if (i == YK_RING_MAX) return;                      /* 池满 ⇒ 这一次少闪几圈（纯观感）*/
-    id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_RING,
+    id = yk_vm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_RING,
                       YK_FAM_ANM_LAYER);
     if (!id) {
         ++s_ring_failed;
@@ -2104,7 +2152,7 @@ static void yk_aura_tick(yk_card_t *s, float x, float y)
      *     这里消费掉（起成功就清 0）⇒ VM 中途没了**不补**（等下一次切换），动画只播一遍。
      *   ⚠ 与 #33/#38 的「高速完全回归原生」一致：离开低速走 `yk_aura_kill()`（interrupt 1 → 30 帧淡出自删）。*/
     if (!s->aura_id && s_aura_edge_spawn) {
-        s->aura_id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_AURA,
+        s->aura_id = yk_vm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_AURA,
                                   YK_FAM_ANM_LAYER);
         if (!s->aura_id) {
             ce_log("youkai: body Shift aura VM spawn FAILED (script %d) - the TH08 body halo "
@@ -2582,6 +2630,10 @@ static void __attribute__((noinline)) yk_transfer_tick(yk_card_t *s)
     if (amount <= 0) return;
     /* ★ 每帧**新建**一条源（一源一敌一辈子只结算一次，tag 守卫 `0x45f45a` ⇒ 复用等于只打一次）。
      * 同帧抬每敌每帧上限：自机弹贴脸打 boss 时配额已被吃满，不抬就被整份吃掉（AUDIT V20）。*/
+    if (!YK_ENABLE_TRANSFER) {                                /* ★ 二分开关 ⑥：不建伤害源、不抬上限 */
+        s->dropped += (uint32_t)amount;
+        return;
+    }
     ++s_xfer_rect;                                           /* ★ 诊断：真的调了几次伤害源 */
     ce_raise_damage_cap(yk_base_damage_cap() + amount);
     {   int slot = ce_damage_rect(bp, 0.0f, YK_TRANSFER_SRC_LIFE, (int)amount,
@@ -2948,7 +3000,7 @@ static void yk_option_release(ce_card_t *c, yk_card_t *s)
  *   ⇒ owner 用「0 版」打一次人形态：**激光恢复正常 ⇒ 凶手在本卡的人侧子机写入**；
  *     仍然异常 ⇒ 与本卡无关（回去查引擎侧，需要 dump/时序）。
  *   ⚠ 只影响**人侧**；妖侧一行不变（妖侧的隐藏/收束/膛口镜像都是功能本体）。*/
-#define YK_HUMAN_OPT_WRITE 0
+#define YK_HUMAN_OPT_WRITE 1   /* ★ 二分实验（#98/#99）已做完 ⇒ 恢复推荐值 1；=0 那版已排除「人侧子机写入」 */
 
 static int on_option_pose_apply(ce_card_t *c)
 {
@@ -2959,6 +3011,11 @@ static int on_option_pose_apply(ce_card_t *c)
     int want, i;
 
     if (!s) return 0;
+    /* ★ 二分开关 ③：整个子机声明/落笔层关掉（收干净再退）。*/
+    if (!YK_ENABLE_OPTION_POSE) {
+        if (s->opt_script >= 0 || s->opt[0].ptr) yk_option_release(c, s);
+        return 0;
+    }
     /* ★ 2026-10-01（工单③ 二分开关 + 人侧探针）：`YK_HUMAN_OPT_WRITE == 0` ⇒ 人侧完全不落笔。*/
     if (!YK_HUMAN_OPT_WRITE && !yk_focused()) {
         if (s->opt_script >= 0 || s->opt[0].ptr) yk_option_release(c, s);   /* 收干净再退 */
@@ -3775,7 +3832,7 @@ static void yk_popup_spawn(float x, float y, int32_t value, int kind, uint32_t c
     anm = yk_player_anm();
     if (!anm) { p->n = 0; return; }
     for (i = 0; i < (int)p->n; ++i) {
-        uint32_t id = ce_anm_spawn(anm, YK_GAUGE_SCRIPT_FONT[ch], YK_POPUP_ANM_LAYER);
+        uint32_t id = yk_vm_spawn(anm, YK_GAUGE_SCRIPT_FONT[ch], YK_POPUP_ANM_LAYER);
         if (!id) { yk_popup_kill(p); return; }
         p->vm[i] = id;
         ce_anm_set_sprite(anm, id, YK_GAUGE_FONT_BASE[ch] + (int)p->g[i]);
@@ -4539,7 +4596,9 @@ static void __attribute__((noinline)) yk_zone_tick(yk_card_t *s, uint32_t card_i
                  *   ⚠ 形状 = 「每帧一小圈、连续 `YK_ZONE_DEATH_LIFE` 帧」= 一手「16 帧内经过死亡点
                  *     的弹逐颗被吃」的同一形状；每颗被消的弹在**区心**吐一颗刻符。*/
                 cpos[0] = s_zone[i].x; cpos[1] = s_zone[i].y; cpos[2] = 0.0f;
-                got = ce_cancel_radius(cpos, s_zone[i].radius, (int)YK_ZONE_BULLET_SLOTS, 0);
+                got = YK_ENABLE_ZONE
+                    ? ce_cancel_radius(cpos, s_zone[i].radius, (int)YK_ZONE_BULLET_SLOTS, 0)
+                    : 0;                                  /* ★ 二分开关 ⑦：完全不清弹 */
                 if (got > 0) {
                     /* ★ 一手：`hit_type == 9` ⇒ 进区的弹**每颗变 2 颗**刻符
                      *   （`th08:0x431634 cmpl $0x9,0x18b8988` 连发两次）；7 ⇒ 1 颗。*/
@@ -4951,7 +5010,7 @@ static void yk_gauge_hud_spawn(ce_card_t *c, yk_card_t *s)
     for (i = 0; i < 4; ++i) {
         uint32_t id;
         if (*slot[i] && ce_anm_get_vm(*slot[i])) continue;
-        id = ce_anm_spawn_ui(yk_player_anm(), YK_GAUGE_SCRIPT[ch][i], 0);
+        id = YK_ENABLE_HUD_VM ? ce_anm_spawn_ui(yk_player_anm(), YK_GAUGE_SCRIPT[ch][i], 0) : 0;
         if (!id) { *slot[i] = 0; continue; }
         *slot[i] = id;
         ce_anm_interrupt(id, 1);          /* 一手：脚本出生是 stopHide 状态，interrupt 1 = 「显形」*/
@@ -5693,6 +5752,7 @@ static int on_power_level_change(ce_card_t *c)
 static int on_shot_set_index(ce_card_t *c, int power_level)
 {
     yk_card_t *s = ce_state(c, yk_card_t);
+    if (!YK_ENABLE_SET_INDEX) return -1;                  /* ★ 二分开关 ①：不认领 ⇒ 全走原生 set */
     if (!s) return -1;
     if (!yk_focused()) return -1;                      /* 人侧：原生 set */
     /* ★ 2026-09-26（ownner 实跑「灵梦/魔理沙/咲夜 妖侧不出弹」那一批时一并查出来的矛盾）：
@@ -5802,6 +5862,7 @@ static int on_bullet_created(ce_card_t *c, void *bullet)
 static int on_native_shot_suppress(ce_card_t *c) __attribute__((unused));
 static int on_native_shot_suppress(ce_card_t *c)
 {
+    if (!YK_ENABLE_NATIVE_SUPPRESS) return 0;             /* ★ 二分开关 ②：不压原生行 */
     yk_card_t *s = ce_state(c, yk_card_t);
     const int focused = yk_focused() ? 1 : 0;
     const int character = yk_current_character();
@@ -6402,7 +6463,7 @@ static int __attribute__((noinline)) yk_beam_hit_fx_try(float bx, float by)
     }
     if (!found) return 0;
     ++s_beam_fx_want;
-    id = ce_anm_spawn(CE_ABILITY_ANM(), YK_BEAM_HIT_FX_SCRIPT, YK_BEAM_HIT_FX_LAYER);
+    id = yk_vm_spawn(CE_ABILITY_ANM(), YK_BEAM_HIT_FX_SCRIPT, YK_BEAM_HIT_FX_LAYER);
     if (!id) { ++s_beam_dropped; return 1; }        /* 池满 ⇒ 这一帧没有火花（纯观感，伤害照旧）*/
     ++s_beam_fx_got;
     /* script5 的层号由它自己写 `layer(15)`（脚本的 `layer()` 晚于 instantiate 的层参数 ⇒ 参数只作记录）。
@@ -6540,7 +6601,7 @@ static void __attribute__((noinline)) yk_beam_tick(yk_card_t *s)
             const float y = trail[k * 2 + 1];
             const int vis = (k < bars);
             if (!s_beam_vm[u][k] || !ce_anm_get_vm(s_beam_vm[u][k])) {
-                s_beam_vm[u][k] = ce_anm_spawn(yk_player_anm(), YK_BEAM_SCRIPT[tier], YK_BEAM_ANM_LAYER);
+                s_beam_vm[u][k] = yk_vm_spawn(yk_player_anm(), YK_BEAM_SCRIPT[tier], YK_BEAM_ANM_LAYER);
                 if (!s_beam_vm[u][k]) {               /* 池满 ⇒ 这一帧到此为止 */
                     ++s_beam_dropped;                 /* ★ 记账：**只少一条观感**，见下面伤害那一段 */
                     break;
@@ -6564,7 +6625,7 @@ static void __attribute__((noinline)) yk_beam_tick(yk_card_t *s)
         if (bars > 0) {
             ++want;                                   /* 光斑也是本帧想要的常驻 VM 之一 */
             if (!s_beam_core[u] || !ce_anm_get_vm(s_beam_core[u])) {
-                s_beam_core[u] = ce_anm_spawn(CE_ABILITY_ANM(), YK_BEAM_CORE_SCRIPT,
+                s_beam_core[u] = yk_vm_spawn(CE_ABILITY_ANM(), YK_BEAM_CORE_SCRIPT,
                                              YK_BEAM_CORE_ANM_LAYER);
                 if (!s_beam_core[u]) ++s_beam_dropped;    /* 池满 ⇒ 少一颗光斑（观感）*/
             }
@@ -6801,6 +6862,11 @@ static int on_tick_2(ce_card_t *c)
     if (!s) return 0;
     if (!s_optmode_logged) {                              /* ★ 工单③：日志里要能看出是哪个二分版 */
         s_optmode_logged = 1;
+        ce_log("youkai: bisect switches set_index=%d native_suppress=%d option_pose=%d hud_vm=%d "
+               "fx_vms=%d transfer=%d zone=%d human_opt_write=%d (1 = 现状)",
+               (int)YK_ENABLE_SET_INDEX, (int)YK_ENABLE_NATIVE_SUPPRESS, (int)YK_ENABLE_OPTION_POSE,
+               (int)YK_ENABLE_HUD_VM, (int)YK_ENABLE_FX_VMS, (int)YK_ENABLE_TRANSFER,
+               (int)YK_ENABLE_ZONE, (int)YK_HUMAN_OPT_WRITE);
         ce_log("youkai: human option-write mode = %s (%s) - owner laser bisect switch",
                YK_HUMAN_OPT_WRITE ? "ON (current)" : "OFF (human side fully hands-off)",
                "YK_HUMAN_OPT_WRITE");
@@ -6809,6 +6875,22 @@ static int on_tick_2(ce_card_t *c)
         ce_log("youkai: ledger - %u spawned, %u killed, %u withdrew, %u silent, %u dropped, "
                "%u body-emitter slot(s) skipped (#37: no familiar when the emitter is the enemy itself)",
                s->spawns, s->broken, s->lost, s->silent, s->dropped, s->emit_body_skipped);
+    /* ★★★ 2026-10-01（工单④探针）：**我们的特效 VM 压力**（每 120 帧一行，只在有活动时打）。
+     * `fail` 是判据：一直 0 ⇒ 「池满/起不出 VM」这条线可以排除（`0x489320` 本来就是 freelist 空
+     * 就 malloc 的按需增长分配器，见 `YK_FX_VMS` 那一段）。`skip` = 二分版跳过的次数。*/
+    {
+        uint32_t now = (uint32_t)ce_sdk_frame();
+        if (!s_fx_win_start) s_fx_win_start = now;
+        if (now - s_fx_win_start >= 120u) {
+            if (s_fx_try_win || s_fx_fail_win || s_fx_skip) {
+                ce_log("youkai/fx: our FX VM spawns in the last %u frame(s): try %u fail %u "
+                       "(cumulative try %u fail %u skipped %u) YK_FX_VMS=%d",
+                       now - s_fx_win_start, s_fx_try_win, s_fx_fail_win, s_fx_try, s_fx_fail,
+                       s_fx_skip, (int)YK_FX_VMS);
+            }
+            s_fx_try_win = 0; s_fx_fail_win = 0; s_fx_win_start = now;
+        }
+    }
     if (s_ring_failed && (s_ledger_frame % 600u) == 0u)
         ce_log("youkai: switch ring VM spawn FAILED %u time(s) total (cosmetic only - the Shift "
                "magic circle was missing)", s_ring_failed);
@@ -7407,8 +7489,9 @@ static int on_tick_2(ce_card_t *c)
      * 放在前面会慢一帧。*/
     if (focused) yk_probe_tick(s, yk_current_character());
     /* ★ 2026-10-01（工单③ 二分开关）：`YK_HUMAN_OPT_WRITE == 0` ⇒ 人侧**退出声明**（不参选、不落笔）。*/
-    if (YK_HUMAN_OPT_WRITE || focused) yk_option_refresh(c, s, focused);
-    else { ce_option_pose_declare(c, NULL); s->pose_probe = s->pose_probe; }
+    if (!YK_ENABLE_OPTION_POSE) ce_option_pose_declare(c, NULL);         /* ★ 二分开关 ③ */
+    else if (YK_HUMAN_OPT_WRITE || focused) yk_option_refresh(c, s, focused);
+    else ce_option_pose_declare(c, NULL);
     if (!focused) {
         /* 高速 = 原机体：使魔全部撤（spec §9 实跑清单 1「松开全部还原」）。
          * ★★★ 2026-09-22（P8-2）：**无条件**走这一支（原来写成 `if (yk_map_fam_count(...))`）——
