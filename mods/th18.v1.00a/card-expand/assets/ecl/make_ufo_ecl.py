@@ -171,6 +171,28 @@ def main():
         raise SystemExit("往返二进制不一致（%d vs %d B）—— 说明有损"
                          % (again.stat().st_size, built.stat().st_size))
 
+    # ★★ 自洽 0（**硬闸**，2026-10-01 加）：**我们的子程序里不许出现「子程序调用」**。
+    #   来由：`thecl` 对**未知助记符只 warning**（`rc=0`），把它编成「调用一个不存在的子程序」
+    #   ⇒ 我第一版把栈式算术写成 `mathIntMul($I3, $I1, 2)` 那种函数式，反编译出来是
+    #   `@mathIntMul($I3, $I1, 2)` —— **静默失效**（那几行根本没算数），而且往返/行数两条自洽
+    #   都查不出来（它们对「编成了什么」是无感的）。⇒ 在这里按**反编译文本**判：
+    #   我们的子程序块里出现 `@<标识符>(` 就报错（`goto X @ 0` 里的 `@` 后面是空格/数字，不算）。
+    #   ⚠ 判据必须**排除「自家子程序之间的合法调用」**（112 的 `UFO_Red` 就 `@UFO_EtBreak(...)`）⇒
+    #     只拦「**调一个不存在的子程序**」= 未知助记符的那一类。
+    import re as _re
+    _back_text = back_txt.read_text(**ENC)
+    _back = subs(_back_text)
+    _defined = set(_back.keys())          # 反编译文本里出现过的子程序名（含原生的）
+    for _n in ALL_OURS:
+        for _mm in _re.finditer(r"@([A-Za-z_]\w*)\s*\(", _back.get(_n, "")):
+            if _mm.group(1) in _defined:
+                continue                  # 自家子程序调用：合法
+            raise SystemExit(
+                "子程序 %s 调用了**不存在的子程序** %s ⇒ 多半是某个「未知助记符」被 thecl 当成了调用"
+                "（它只 warning、rc=0，静默失效）。TH18 的 ECL 是**栈式**：算术要写 `x; y; addf(); setf(z);`，"
+                "不是 `mathFloatAdd(z, x, y)`。查你的源片段里有没有不在 th18.eclm 里的名字。"
+                % (_n, _mm.group(0)))
+
     # 自洽 2：往返后我们的全部子程序都在，且「指令行数」与源片段一致（结构级）
     back = subs(back_txt.read_text(**ENC))
     for n in ALL_OURS:

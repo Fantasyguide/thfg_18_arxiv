@@ -83,12 +83,14 @@ void CEPofvBoss109()
 CEPofvBoss109_loop:
     unless ($I0 != 999) goto CEPofvBoss109_leave @ 0;
     movePosTime(1, 1, %F2, %F3);    // 位置由卡侧每帧写到版底锚点
-    // 一手的 `[10000] = [10101] × 2`（路数）与 `[10017.0f] = 1.0 + 0.15 × [10101]`（速度）
+    // 一手的 `[10000] = [10101] × 2 + 32`（路数）与 `[10017.0f] = 1.0 + 0.15 × [10101]`（速度）
     // ⇒ 本卡把「档位」$I1（1..4）当一手的 `[10101]` 用。
-    mathIntMul($I3, $I1, 2);        // $I3 = 路数 = 2 × 档
-    setFloat(%F0, 1.0f);
-    mathFloatMul(%F1, $I1, 0.15f);
-    mathFloatAdd(%F0, %F0, %F1);    // %F0 = 速度 = 1.0 + 0.15 × 档
+    // ⚠⚠ **TH18 的 ECL 是栈式的**（一手写法见 `assets/ecl/ufo.ecl.txt`：
+    //   `%A; 6; addf(); setf(%A);`）—— 我第一版写成 `mathIntMul($I3, $I1, 2)` 那种「函数式」，
+    //   而 `thecl` 对**未知助记符只 warning**（编成「子程序调用」）⇒ 那几行**根本没算数**
+    //   （`@mathIntMul(...)`）。已按栈式重写，并给构建加了硬闸（见 `make_ufo_ecl.py`）。
+    $I1; 2; muli(); 32; addi(); seti($I3);           // $I3 = 路数 = $I1 × 2 + 32
+    $I1; 0.15f; mulf(); 1.0f; addf(); setf(%F0);     // %F0 = 速度 = 1.0 + 0.15 × $I1
 
     // ── 角色分派（$I2），每 40 帧一轮（一手：灵梦 `+40:`、魔理沙也是 40 帧节拍）──────
     unless ($I2 != 1) goto CEPofvBoss109_marisa @ 0;
