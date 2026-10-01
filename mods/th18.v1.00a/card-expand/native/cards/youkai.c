@@ -506,7 +506,7 @@ static void yk_side_lock_tick(void)
 #define YK_ENABLE_CB_BULLET 1  /* ⑱ on_bullet_created / on_bullet_hit */
 /* ★★★★ 2026-10-01（owner 工单⑩：#110 二分把凶手锁在 bullet 回调 ⇒ 再拆两个子项做最后确认）*/
 #define YK_ENABLE_CB_BULLET_CREATED 1  /* ⑱a `on_bullet_created`（只对我们自己的妖侧 set 改伤害）*/
-#define YK_ENABLE_CB_BULLET_HIT     1  /* ⑱b `on_bullet_hit`（人逢魔：命中 ⇒ 掉刻符）*/
+#define YK_ENABLE_CB_BULLET_HIT     0  /* ⑱b `on_bullet_hit`（人逢魔：命中 ⇒ 掉刻符）*/
 #define YK_BULLET_HIT_QUEUE         8  /* 命中回调里**只排队**；真正撒符挪到 `on_tick_2`（见修法 B）*/
 /* ★★★★ 2026-10-01（owner 工单⑪：**把 `yk_orb_spawn()` 这条路径逐段开关**）：
  *   #111（只把撒符推迟 1 帧、照样撒）仍异常 ⇒ 凶手是 **`yk_orb_spawn()` 这个动作本身**。
@@ -515,7 +515,7 @@ static void yk_side_lock_tick(void)
  *   ③ `ORB_ZONE`    = 0：占位（一手核对：撒符**不开区、不调 `ce_cancel_radius`** —— 消弹在 `yk_zone_*`）；
  *   ④ `ORB_DRECT`   = 0：占位（一手核对：撒符**不建 `ce_damage_rect`**；本卡只有转嫁 `:2675`、卡侧束 `:6438`）；
  *   ⑤ `ORB_PLAYERW` = 0：**不消耗引擎 RNG**（`ce_rand()` —— 本路径唯一的全局态交互）⇒ 用固定偏移。*/
-#define YK_ENABLE_ORB_VM           0
+#define YK_ENABLE_ORB_VM           1
 #define YK_ENABLE_ORB_LIST         1
 #define YK_ENABLE_ORB_ZONE         1
 #define YK_ENABLE_ORB_DRECT        1
