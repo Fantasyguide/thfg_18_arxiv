@@ -26473,3 +26473,27 @@ youkai/emitkey: enemy #%u slot %d child #%u frame %u active %d
 | 谁改的 | **owner 2026-10-01 要求「把 117 的判据也改一下」**（改别人的卡 ⇒ 本条登记 + 文件内注释，双份）|
 | 怎么验证的 | `make -s check` rc=0（`youkai_core: 8791 checks, 0 failed`）、`dllx87 = 0`、`sites.py verify` 全对上、`capcheck` 全绿、`check-docs` 全过；`animal.c` 里无单测引用这两个宏（`grep` 核过）|
 | 影响面（117） | 与 108 一致：**48×48 的 sprite 也从此算「大怪」**（例如 4 面那两种大妖精 ⇒ 117 里同样会走大怪分支）；小妖精（高 32）仍不算。与 108 用的**同一个数**（48/48）|
+
+## §BE 详录 #171（2026-10-01）：emitkey **收尾汇总**（一次实跑必定出结果）
+
+> **背景**：§BE #168 的 per-transition 行在 owner 那局（stage 4 + 6）**一行都没出**，而映射层确实在跑
+> （`familiar … killed (kind 4, real=1) …` 419 条）⇒ 只靠 per-transition 行**可能永远拿不到结论**。
+
+**改动（只加日志/计数，行为零变化）**
+1. **埋点路径核对**（结论：**路径是对的**）：调用点 `youkai.c:1966`，就在 `yk_familiars_tick()` 的
+   发射口扫描循环里、紧跟在 `yk_note_slot(...)` 之后（与那 419 条 same-tick 日志同一条路径）⇒
+   **不是路径问题**，而是那局**没出现**「同一 `(enemy,slot)` 关→开」的转换（那本身就是 (b) 的候选证据，
+   但需要汇总数来区分「没转换」与「转换了但没打出来」）。
+2. **三个收尾计数**（`s_emitkey_pairs / _reappeared / _new_after_off`）+ **run-done 附近必定打一行**：
+```
+youkai/emitkey: pairs %u seen %u reappeared %u new_after_off %u
+                (reappeared>0 => ordinal STABLE; reappeared==0 && new_after_off>0 => DRIFTED)
+```
+   · `pairs` = 见过的 `(enemy,slot)` 对数（`seen` 同值，保留字段位以对齐 owner 给的格式）；
+   · `reappeared` = **OFF 后又出现**的对数（>0 ⇒ **序号稳**）；
+   · `new_after_off` = 「**父敌我们已经认识**（表里有它别的 slot）、却又看到一个**没见过的 slot 号**」的次数
+     （`reappeared == 0 && new_after_off > 0` ⇒ **序号漂**）。
+3. per-transition 行（§BE #168）**保留**，便于看细节；`YK_EMITKEY_MAX_LOG = 3` 的节流不变。
+
+**闸**：`make -s check` rc=0（`youkai_core: 8791 checks, 0 failed`、`dllx87 = 0`）、`sites.py verify` 全对上、
+`capcheck` 全绿、`check-docs` 全过。

@@ -2212,6 +2212,12 @@ typedef struct {
     uint8_t  logged;           /* 这一对已经打了几行 */
 } yk_emitkey_t;
 static yk_emitkey_t s_emitkey[YK_EMITKEY_MAX];
+/* ★ 2026-10-01（owner 要「一次实跑必定出结果」）：**收尾汇总**用的三个计数。
+ *   · `pairs`           = 见过的 `(enemy, slot)` 对总数；
+ *   · `reappeared`      = 该对 **OFF 后又出现**的对数（>0 ⇒ **序号稳** STABLE）；
+ *   · `new_after_off`   = 「**父敌我们已经认识**、但又看到一个**没见过的 slot 号**」的次数
+ *                         （`reappeared == 0 && new_after_off > 0` ⇒ **序号漂** DRIFTED）。*/
+static unsigned s_emitkey_pairs, s_emitkey_reappeared, s_emitkey_new_after_off;
 
 static void yk_emitkey_note(uint32_t enemy_id, int slot, int active, uint32_t child,
                             uint32_t frame)
@@ -2224,8 +2230,13 @@ static void yk_emitkey_note(uint32_t enemy_id, int slot, int active, uint32_t ch
         if (!s_emitkey[i].enemy_id && free_i == YK_EMITKEY_MAX) free_i = i;
     }
     if (i >= YK_EMITKEY_MAX) {                                 /* 没记过 ⇒ 找空格登记 */
+        unsigned j;
         if (free_i >= YK_EMITKEY_MAX) return;                  /* 表满：**静默放弃**（只是诊断）*/
         i = free_i;
+        /* ★ 漂的判据：**这个敌人我们已经认识**（表里有它的别的 slot），却又冒出一个新 slot 号 */
+        for (j = 0; j < YK_EMITKEY_MAX; ++j)
+            if (s_emitkey[j].enemy_id == enemy_id) { ++s_emitkey_new_after_off; break; }
+        ++s_emitkey_pairs;
         s_emitkey[i].enemy_id = enemy_id;
         s_emitkey[i].slot = (uint8_t)slot;
         s_emitkey[i].active_prev = 0;
@@ -2235,6 +2246,7 @@ static void yk_emitkey_note(uint32_t enemy_id, int slot, int active, uint32_t ch
     k = &s_emitkey[i];
     if (k->active_prev && !active) k->went_off = 1;            /* active → inactive */
     else if (!k->active_prev && active && k->went_off) {       /* inactive → active（**转换**）*/
+        ++s_emitkey_reappeared;                                 /* ★ 汇总：OFF 后又出现 */
         if (k->logged < YK_EMITKEY_MAX_LOG) {
             ++k->logged;
             ce_log("youkai/emitkey: enemy #%u slot %d child #%u frame %u active %d "
@@ -4780,6 +4792,13 @@ static int on_load(ce_card_t *c) { return on_ctor(c); }
 static void on_run_reset(ce_card_t *c)
 {
     yk_card_t *s = ce_state(c, yk_card_t);
+    /* ★ 2026-10-01（owner：这次发版就为拿这个数）—— **emitkey 收尾汇总**：
+     *   `reappeared > 0` ⇒ 同一 `(enemy,slot)` 关掉后又出现 ⇒ **序号稳**（③ 可按现有身份做）；
+     *   `reappeared == 0 && new_after_off > 0` ⇒ 我们只看到「新 slot 号」 ⇒ **序号漂**（③ 要换键）。*/
+    if (s_emitkey_pairs)
+        ce_log("youkai/emitkey: pairs %u seen %u reappeared %u new_after_off %u "
+               "(reappeared>0 => ordinal STABLE; reappeared==0 && new_after_off>0 => DRIFTED)",
+               s_emitkey_pairs, s_emitkey_pairs, s_emitkey_reappeared, s_emitkey_new_after_off);
     /* ★ 2026-09-30：台账加 `xfam`（本局喂过几次外部/绕转使魔）与 `xtab`（表用了几格）。*/
     if (s && (s->spawns || s->transferred || s_xfam_fed))
         ce_log("youkai: run done - %u familiars spawned, %u killed, %u withdrew, %u silent, "
