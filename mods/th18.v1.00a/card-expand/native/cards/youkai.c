@@ -1486,27 +1486,56 @@ static void yk_orbit_scan(uint32_t frame)
              *   `spriteprobe` 一行都没有 ⇒ 那一局**没有任何敌人被判为大怪**，看不到它的 sprite）：
              *   改成对**所有尺寸 ≥ 48 的敌人**都打一行（**含 `big 0` 的失败样本**），同一 sprite 只打一次。
              *   ⇒ owner 打一次 5 面就能看到那只大妖精的 **sprite 号**，再决定白名单补什么（**不猜**）。*/
-            /* ★★★ 2026-10-01（owner #86 实测：整局只有 1 行且是 64×64 ⇒ 那只「4 面道中大妖精」
-             *   **没进 probe** ⇒ 它的 **rect < 48**）—— 新假设：它是 **「小 rect + anm 放大」**
-             *   （**视觉大、rect 小**）⇒ 判据用 rect 可能**从一开始就选错了量**。
-             *   探针加 **scale**（`vm+0x54/+0x58` zFloat2，一手 `engine.h:329` / `sdk.h:340`）与
-             *   **视觉尺寸 = rect × scale**，并把候选门槛放宽到「rect ≥48 **或** 视觉 ≥48」。*/
-            {   static int8_t s_probe_done[512];
-                uint8_t *pvm = *(uint8_t **)(e + CE_ENEMY_ANM_VM0);   /* 探针自己取一次（防悬垂见下）*/
+        if (*(const int32_t *)(e + CE_SPAWN_PARENT) != 0) continue;
+        ++roots;
+        /* **活着的真敌人**：`ce_enemy_lockable` 排掉死亡 / 未登场 / 不可锁定的那一档。*/
+        if (!ce_enemy_lockable(e)) continue;
+        /* **不是 boss**（117 的同一判据：id 在管理器那 4 格里）。*/
+        if (yk_enemy_is_boss(e)) { ++bosses; continue; }
+        /* 「有没有发射口」不再当筛子（owner 口径）：只数一下。*/
+        if (yk_map_enemy_slots(&s_map, (uint32_t)id) != 0) ++have_emit;
+        /* 一敌一对：**现在还活着**的使魔不再补。*/
+        if (yk_orbit_find_parent((uint32_t)id)) continue;
+        /* 这只父敌**以前给过**没有（给过就永不再补，见 §BE #158）。*/
+        if (!yk_orbit_gift_maybe((uint32_t)id, frame)) continue;
+        /* 生成延时（一手形状，见 `YK_ORBIT_DELAY_FRAMES`）：首次命中先登记，到点才建。*/
+        if (!yk_orbit_delay_ok((uint32_t)id, frame)) continue;
+        /* **大怪**：贴图**原始**尺寸两边都 >= 64（117 的判据，见 `yk_big_by_sprite`）。*/
+        if (!yk_enemy_sprite_size(e, &w, &h)) continue;
+            /* ★★★ 2026-10-01（owner：「它**肯定不是道中 boss**」⇒ probe 0 行更可疑）——
+             *   **无条件探针**：对**每只敌人**打一行（**同一 enemy_id 只打一次**，全局上限 128 行，
+             *   够看一面）。若连「明显很大的大妖精」都读成 0×0/垃圾 ⇒ 我们**一直读错了字段**。
+             *   同时：`readfail` 标记（`vm == NULL` / `IsBadReadPtr` / rect 全 0）+ **交叉验证**
+             *   `VM0 的 rect` 与 **`+0x6204/+0x6208` 的 final sprite**（两条来源我们都有）看哪个才是
+             *   「看起来的尺寸」。*/
+            {   static uint32_t s_probe_ids[128];
+                static unsigned s_probe_n, s_probe_fail, s_probe_seen;
+                uint8_t *pvm = *(uint8_t **)(e + CE_ENEMY_ANM_VM0);
+                int spid = yk_sprite_id_for(e, (uint32_t)id);
                 int big = yk_big_by_sprite_id(w, h, spid);
-                float sx = 1.0f, sy = 1.0f, vw = (float)w, vh = (float)h;
-                int visbig;
-                if (pvm && !IsBadReadPtr((const void *)(pvm + 0x54), 8)) {   /* scale 读也要防悬垂 */
-                    sx = *(const float *)(pvm + CE_ANM_VM_SCALE);
-                    sy = *(const float *)(pvm + CE_ANM_VM_SCALE + 4);
+                int readfail = 0, fw, fh;
+                float sx = 0.0f, sy = 0.0f, vw, vh;
+                unsigned pi;
+                ++s_probe_seen;
+                for (pi = 0; pi < s_probe_n; ++pi) if (s_probe_ids[pi] == id) break;
+                if (pi >= s_probe_n && s_probe_n < 128u) {          /* 这只没打过且没到上限 */
+                    s_probe_ids[s_probe_n++] = id;
+                    if (!pvm || IsBadReadPtr((const void *)(pvm + 0x54), 12)) { readfail = 1; }
+                    else {
+                        sx = *(const float *)(pvm + CE_ANM_VM_SCALE);
+                        sy = *(const float *)(pvm + CE_ANM_VM_SCALE + 4);
+                    }
+                    if (!w && !h) readfail = 1;
+                    vw = (float)w * sx; vh = (float)h * sy;
+                    fw = *(const int32_t *)(e + CE_ENEMY_FINAL_SPRITE_W);
+                    fh = *(const int32_t *)(e + CE_ENEMY_FINAL_SPRITE_H);
+                    if (readfail) ++s_probe_fail;
+                    ce_log("youkai/spriteprobe: enemy #%u sprite %d rect %ux%u scale %.2f vis %.0fx%.0f "
+                           "final %dx%d big %d%s",
+                           (unsigned)id, spid, w, h, (double)sx, (double)vw, (double)vh,
+                           fw, fh, big, readfail ? " readfail" : "");
                 }
-                vw = (float)w * sx; vh = (float)h * sy;
-                visbig = (vw >= 48.0f && vh >= 48.0f) ? 1 : 0;
-                if ((w >= 48 || h >= 48 || visbig) && spid >= 0 && spid < 512 && !s_probe_done[spid]) {
-                    s_probe_done[spid] = 1;
-                    ce_log("youkai/spriteprobe: enemy #%u sprite %d rect %ux%u scale %.2f vis %.0fx%.0f big %d",
-                           (unsigned)id, spid, w, h, (double)sx, (double)vw, (double)vh, big);
-                }
+                (void)s_probe_seen;
                 if (!big) { ++small; continue; }
             }
         }
