@@ -69,6 +69,10 @@
 | 对账手段 | `RELEASE-STATE.json` 的 md5；发布前跑 `native/tools/check_deploy_pair.py --modkit <dir>`（专查「DLL ↔ 游戏里 `pl0X.sht` 同批」）|
 | ⚠ 注意 | `native/build/` 是 **gitignored** ⇒ 「线上 / 本地一致」只能靠 md5 对账，不能靠 git status |
 
+> **订正（2026-10-01 18:2x，只加不改）**：上表「最后一次发布 2026-10-01 01:00:27 / 之后 55 个提交」是**旧快照** ——
+> `RELEASE-STATE.json` 的 `last_release.at` 现为 **2026-10-01 18:23:44**（#96，DLL `07ed3a6e3e666887b5d5b425e9f23e26`）；
+> 其前一次是 18:13:23（#95，`88e828dfac4c3a8aea79ad3ebeef7ede`）。原句保留。
+
 ## 5. 冻结与定稿
 
 | 对象 | 状态 |
@@ -120,6 +124,7 @@
 | 1 | **发布**：仓里已领先线上 55 个提交（含 109 的 sht 三笔）| ⏳ 等 owner 说「可以发」|
 | 2 | `pl0X.sht` 是否算定稿（109 是否还要追加弹幕组）| ❓ 取决于 109 那条线的收工判断 |
 | 3 | 站点超记账线（33/24）的处置 | ⏳ 长期挂账（每次动站点都要走 §3.4）|
+| 4 | **108 的 shift 侧门跨卡只读**（灵界 113 / 咆哮 117）| 交接见 [`HANDOFF-108-CROSSCARD-SHIFT.md`](HANDOFF-108-CROSSCARD-SHIFT.md)；两方案待拍，落地前需含 108 P0 修复的 DLL |
 
 ## 10. 怎么复核这份文档（命令）
 

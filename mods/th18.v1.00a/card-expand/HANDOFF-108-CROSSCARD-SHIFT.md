@@ -1,12 +1,12 @@
 # 交接：108 的 Shift 切侧闸接入「灵界 / 暴走咆哮」跨卡只读查询
 
 > **版本**：TH18 v1.00a（`th18.exe`，imagebase `0x400000`）。本文裸地址默认属该版本；引用其他版本一律带前缀（`th13:0x…` / `th17:0x…`）。
-> **方法**：一手读工作树源码（行号快照 = 2026-10-01 18:22）+ gcc 预处理 / `objdump -dr` + 本机实跑日志。
+> **方法**：一手读工作树源码（行号快照 = 2026-10-01 18:24，即 th08 #96 之后）+ gcc 预处理 / `objdump -dr` + 本机实跑日志。
 > **可信度**：字段 / 行号 / 判据 ✅（逐条给行号，本机核过）；方案取舍与实装代价 🟡（未实装、未实跑）。
 > **读者**：接手这条跨卡只读查询的**统筹 agent**。本文自包含，不读别的文档也能动手。
 > **相关**：[`HANDOFF-108.md`](HANDOFF-108.md)（108 条目 87）、[`AUDIT.md`](AUDIT.md) §BE 详录 #201、[`SDK.md`](SDK.md) §6.1（声明层）。
-> **⚠ 落点改名**：任务原定 `HANDOFF-CROSSCARD-STATE.md`，该路径已被统筹的**跨卡状态台账**占用（提交 `3857e8d4`，已入库）⇒ 本文落在 `HANDOFF-108-CROSSCARD-SHIFT.md`；台账要不要加一行指过来，由统筹定。
-> **⚠ 行号会漂**：108 那一侧正被 th08 线并发修 P0（见 §0.1）⇒ 落地前用 §7 的 `grep -n` 现算行号，别照抄本文数字。
+> **⚠ 落点改名**：任务原定 `HANDOFF-CROSSCARD-STATE.md`，该路径已被统筹的**跨卡状态台账**占用（提交 `3857e8d4`，已入库）⇒ 本文落在 `HANDOFF-108-CROSSCARD-SHIFT.md`；台账里已加一行指过来（台账 §9 第 4 条）。
+> **⚠ 行号会漂**：108 那一侧的 P0 刚修完并已发布（`575e6312` / #96，见 §0.1），源码仍在动 ⇒ 落地前用 §7 的 `grep -n` 现算行号，别照抄本文数字。
 
 ## §0 需求一句话
 
@@ -14,13 +14,13 @@
 
 `youkai_core.h:1290` 的 `yk_side_switch_allowed(trance, roar, real_bomb)` 语义已经是「三者取或，任一成立 ⇒ 不切侧」（`youkai_core.c:871`：`return (trance || roar || real_bomb) ? 0 : 1;`）⇒ **要改的只有喂进去的 `trance` / `roar` 两个实参**。
 
-## §0.1 前置状态：108 侧刚出的 P0（并发线正在修，别在这里重复修）
+## §0.1 前置状态：108 侧的 P0（已修 / 已提交 / 已发布，别在这里重复修）
 
 - 现象：装了 108 一进关卡即爆栈（dump `code=0xc00000fd` STACK_OVERFLOW）。
 - 根因（✅ 已核）：`yk_focused()` 里那句本该是 `CE_PLAYER_FOCUSED()`（`native/engine.h:435`，`player+0x476cc`）的读法被批量替换时一起换掉了，变成 `return yk_focused() ? 1 : 0;` = **自递归**；`s_side_lock` 初值 −1 ⇒ 正常游玩每帧都进。
-- 现状：**工作区（未提交）已修**（`git status` 显示 `M native/cards/youkai.c`）：新增 `yk_real_focused()`（`youkai.c:371`）+ 重入守卫 `yk_focused()`（380–397），旧的自递归函数保留为 `yk_focused_buggy()`（398–402）当反面教材。
-- **已发布的那版仍有这个 bug**：`native/th18_card_expand.dll` 的 md5 = `88e828dfac4c3a8aea79ad3ebeef7ede`，等于 `RELEASE-STATE.json` 的 `last_release.dll_md5`。
-- ⇒ **验收第 0 步**：先有一版含该修复的 DLL，否则「灵界/咆哮下按 Shift」根本测不到（第一帧就爆栈）。本文是只写文档的任务，**一个 `.c/.h` 都没动**。
+- 现状：**已修、已提交、已发布** —— `575e6312`（th08 #96）新增 `yk_real_focused()`（`youkai.c:371`）+ 重入守卫 `yk_focused()`（380–397），旧的自递归函数保留为 `yk_focused_buggy()`（398–402）当反面教材。
+- **发布面**：`RELEASE-STATE.json` 的 `last_release.at` = **2026-10-01 18:23:44**，DLL md5 = `07ed3a6e3e666887b5d5b425e9f23e26`（= `native/th18_card_expand.dll` 现算值）；**带 bug 的旧版是 `88e828dfac4c3a8aea79ad3ebeef7ede`**（#95）。
+- ⇒ **验收第 0 步**：确认实跑用的是 #96 之后那版 DLL（`07ed3a6e…`），否则「灵界/咆哮下按 Shift」根本测不到（第一帧就爆栈）。本文是只写文档的任务，**一个 `.c/.h` 都没动**。
 - ⚠ **本文档描述的 108 行为需要「含该 P0 修复」的 DLL 才能实跑验证** —— 拿旧版（`88e828…`）去测只会得到爆栈（`0xc00000fd`），那不是本功能的失败。
 
 ## §1 需求与 owner 原话
@@ -34,16 +34,16 @@
 2. **主机贴图照变** —— 那是引擎 / 113 / 117 自己的事，108 **一行都不碰**（这条不是 108 的验收项，是「别顺手改」的红线）。
 3. **灵击不算 B、不受影响** —— 已有的「决死窗口里按的 B」判据不动（`youkai_core.c:865` + 单测 `native/tests/test_youkai_core.c:1355-1363`）。
 
-## §2 两边现状（行号 = 18:22 快照）
+## §2 两边现状（行号 = 18:24 快照，th08 #96 之后）
 
 ### §2.1 108 侧：门已经通了，缺的只是两个实参
 
 | 件 | 位置 | 现状 |
 | --- | --- | --- |
-| 锁值 | `youkai.c:358` `s_side_lock` | −1 = 不锁 / 0 = 锁人侧 / 1 = 锁妖侧；`on_run_reset` 5168、`on_delete` 5419 各复位一次 |
+| 锁值 | `youkai.c:358` `s_side_lock` | −1 = 不锁 / 0 = 锁人侧 / 1 = 锁妖侧；`on_run_reset` 5163、`on_delete` 5414 各复位一次 |
 | 「本卡眼中的侧」 | `youkai.c:380` `yk_focused()` | 锁定期间恒返回 `s_side_lock`，否则 = `yk_real_focused()`（`player+0x476cc`）|
-| 状态机 | `youkai.c:422` `yk_side_lock_tick()` | 每帧一次（`on_tick_2` 开头调）；`yk_side_switch_allowed(...)` 在 **440** 行 |
-| **两支 TODO 桩（要改的就是这里）** | **`youkai.c:412` `yk_trance_active()` / `413` `yk_roar_active()`** | **恒 `return 0`** ⇒ 目前门只对「真 B」生效 |
+| 状态机 | `youkai.c:417` `yk_side_lock_tick()` | 每帧一次（`on_tick_2` 开头调）；`yk_side_switch_allowed(...)` 在 **435** 行 |
+| **两支 TODO 桩（要改的就是这里）** | **`youkai.c:407` `yk_trance_active()` / `408` `yk_roar_active()`** | **恒 `return 0`** ⇒ 目前门只对「真 B」生效 |
 | 纯判据 | `youkai_core.c:865/871`，声明 `youkai_core.h:1288/1290` | 有主机单测 9 条（`test_youkai_core.c:1355-1363`），**落地时不用动** |
 
 桩上面的注释（`youkai.c:404-411`）已经写了两条候选路线，本文 §3 把它坐实（其中「`cards_def` 弱符号导出面」这句要订正：仓里**没有**弱符号机制，见 §3.2）。
@@ -138,7 +138,7 @@ int      ce_card_flag_any(uint32_t bits);                    /* 只读聚合：�
 | 2 | 统筹 / 117 作者 | `native/cards/animal.c` : `on_tick_2`（3878） | 一句 `ce_card_flag_set(ANIMAL_ID_NUM, roaring(s) ? CE_CARD_FLAG_ROAR : 0)`；`clear_card()`（4028）显式撤 |
 | 3 | 统筹 | `native/sdk.h` : `ce_layer_drop_card`（1044-1076） | 加 `ce_card_flag_set(id, 0)`（删卡/局末/换关自动收）|
 | 4 | 统筹 | `native/sdk_core.h` / `sdk_core.c` | 表 + 三个函数（纯逻辑）|
-| 5 | 统筹 / 108 作者 | `native/cards/youkai.c` : **412 / 413** | 两支桩改成读层（只改这两行）|
+| 5 | 统筹 / 108 作者 | `native/cards/youkai.c` : **407 / 408** | 两支桩改成读层（只改这两行）|
 | 6 | 统筹 | `native/tests/test_sdk_core.c` | 新增用例：置/撤/任意聚合/删卡撤（`test_youkai_core.c` 不动）|
 
 **验收判据（灵界 / 咆哮各跑一遍，看日志关键字）**：
@@ -165,7 +165,7 @@ int      ce_card_flag_any(uint32_t bits);                    /* 只读聚合：�
 3. **同 id 多实例**：我没核实「同一 id 是否可能同时在场两张」（影响方案②的镜像语义；也影响方案①的表是「按 id」还是「按实例」）。🟡 若可能重复，方案①的表要改成「每槽一个 card 指针」，或写死「后声明者覆盖」。
 4. **进/出那一帧的排序**：108 的 `on_tick_2` 与 113/117 的声明谁先谁后**未实跑验证**；本文按「粘性 + 1 帧延迟可接受」设计，未实跑。
 5. **方案②的 `roaring()` 不能直接导出**（它是 static 且带 `animal_card_t *` 形参）⇒ 要另写无参导出函数读镜像位；这一步没写，留给落地人。
-6. 本文行号是 18:22 快照，而 `youkai.c` 正被并发修改 ⇒ **任何行号落地前重算**（§7 第一条）。
+6. 本文行号是 18:24（#96 之后）快照，而 `youkai.c` 仍在并发修改 ⇒ **任何行号落地前重算**（§7 第一条）。
 
 ## §7 复核命令（可复制）
 
