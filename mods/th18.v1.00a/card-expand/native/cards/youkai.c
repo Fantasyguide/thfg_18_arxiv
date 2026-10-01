@@ -1693,7 +1693,7 @@ static void yk_orbit_scan(uint32_t frame)
         /* ⚠ 血量只与**母机最大血量 + 圈数**有关（面加成只加台数 ⇒ 它经由 `want` 影响圈数）。
          * 半径则按**最终台数**（`want`）—— 圈大小是视觉量（见 `yk_orbit_spawn_one`）。*/
         rings = yk_orbit_rings_for_count(want);
-        life = yk_orbit_hp_for_enemy(hp_now, rings);          /* ★ 真血量（可 >999；spawn 时再钳）*/
+        life = yk_orbit_hp_for_enemy(hp_now, rings, yk_current_character());   /* ★ 真血量（含机体倍率，可 >999）*/
         ++big;
         /* ★★★ 圆心 = **这一刻的父敌坐标**（一手：见 `yk_orbit_t` 里 `cx/cy` 的注）。之后不再重取。*/
         pp = ce_enemy_pos(e);
@@ -2015,7 +2015,8 @@ static void yk_run_action(yk_card_t *s, const yk_action_t *act)   /* s 可为 NU
          *   （`yk_map_fam_hp()`；档 0 ≤200 ⇒ 100）。口径与动机原文见 `youkai_core.h` 的同名小节；
          *   ⚠ 母机查不到 / `life.maximum` 读不到（≤0）⇒ 回落 `YK_FAM_LIFE = 100`（兜底保留）。*/
         int32_t hp_now = yk_enemy_hp_max_by_id(act->enemy_id);
-        int32_t life = (hp_now > 0) ? (int32_t)yk_map_fam_hp((int)hp_now) : (int32_t)YK_FAM_LIFE;
+        int32_t life = (hp_now > 0) ? (int32_t)yk_map_fam_hp((int)hp_now, yk_current_character())
+                                    : (int32_t)YK_FAM_LIFE;
         uint8_t *f = yk_spawn_familiar(act->x, act->y, life);
         uint32_t fid;
         if (!f) {

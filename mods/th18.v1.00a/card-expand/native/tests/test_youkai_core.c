@@ -2624,46 +2624,83 @@ int main(void)
                 for (ri = 0; ri < sizeof probe_r / sizeof probe_r[0]; ++ri) {
                     int want = yk_orbit_fam_hp(probe_hp[pi], probe_r[ri]) * YK_ORBIT_HP_SCALE;
                     if (want < 1) want = 1;
-                    CHECK(yk_orbit_hp_for_enemy(probe_hp[pi], probe_r[ri]) == want);
+                    CHECK(yk_orbit_hp_for_enemy(probe_hp[pi], probe_r[ri], YK_CHAR_REIMU) == want);
                 }
             /* 「母机 3200 血、3 圈」= 卡侧真实会走的那条（>999 ⇒ 由 spawn 两步走承接）。*/
-            CHECK(yk_orbit_hp_for_enemy(3200, 3) == 1066 * YK_ORBIT_HP_SCALE);
-            CHECK(yk_orbit_hp_for_enemy(3200, 3) > YK_LIFE_MAX_ALLOWED);   /* 证明「不钳 999」*/
+            CHECK(yk_orbit_hp_for_enemy(3200, 3, YK_CHAR_REIMU) == 1066 * YK_ORBIT_HP_SCALE);
+            CHECK(yk_orbit_hp_for_enemy(3200, 3, YK_CHAR_REIMU) > YK_LIFE_MAX_ALLOWED);   /* 证明「不钳 999」*/
         }
         /* ⑥ter ★★★★ 2026-10-01（**owner 口径 ② 第二轮定案**）**映射（发射口）使魔血量 = 母机 HP / 3**：
          *   「发射口使魔血量理论上应当是一个**在一波里面或许能打死**的值，但这个判定就很不好说了」
          *   ⇒ `/3` 是**启发式**（不是精确判定）；档 0 与绕转共用（≤200 ⇒ 100，owner「0 还是 100」）；
          *   **不钳 999**（>999 由 spawn 路径两步写血承接）。动机 + 数值依据（5/6 面 13000/14000、
          *   单波 360 f、灵梦 1280 dps ⇒ 2560–3840 是目标）见 `youkai_core.h` 的同名小节。*/
-        CHECK(yk_map_fam_hp(13000) == 4333);       /* ★ owner 的锚点：5 面道中 ⇒ 3.39 s @1280 dps */
-        CHECK(yk_map_fam_hp(14000) == 4666);       /* ★ 6 面道中 ⇒ 3.65 s */
-        CHECK(yk_map_fam_hp(3200) == 1066);
-        CHECK(yk_map_fam_hp(1800) == 600);
-        CHECK(yk_map_fam_hp(200) == 100);          /* 档 0 上界（含）*/
-        CHECK(yk_map_fam_hp(0) == 100);            /* 读不到 ⇒ 档 0 */
-        CHECK(yk_map_fam_hp(-9) == 100);           /* 负数 ⇒ 档 0 */
-        CHECK(yk_map_fam_hp(201) == 67);           /* 201/3 = 67（小坑：比档 0 的 100 少）*/
-        CHECK(yk_map_fam_hp(300) == 100);
-        CHECK(yk_map_fam_hp(301) == 100);          /* 301/3 = 100 */
-        CHECK(yk_map_fam_hp(302) == 100);          /* 302/3 = 100（整数除法）*/
-        CHECK(yk_map_fam_hp(303) == 101);
-        CHECK(yk_map_fam_hp(1000) == 333);
-        CHECK(yk_map_fam_hp(2000) == 666);         /* ★ >999 只在 3000 以上出现（见下）*/
-        CHECK(yk_map_fam_hp(3000) == 1000);        /* ★ >999：不再封顶 */
-        CHECK(yk_map_fam_hp(999999) == 333333);
-        CHECK(yk_map_fam_hp(3000) > YK_LIFE_MAX_ALLOWED);
+        CHECK(yk_map_fam_hp(13000, YK_CHAR_REIMU) == 4333);       /* ★ owner 的锚点：5 面道中 ⇒ 3.39 s @1280 dps */
+        CHECK(yk_map_fam_hp(14000, YK_CHAR_REIMU) == 4666);       /* ★ 6 面道中 ⇒ 3.65 s */
+        CHECK(yk_map_fam_hp(3200, YK_CHAR_REIMU) == 1066);
+        CHECK(yk_map_fam_hp(1800, YK_CHAR_REIMU) == 600);
+        CHECK(yk_map_fam_hp(200, YK_CHAR_REIMU) == 100);          /* 档 0 上界（含）*/
+        CHECK(yk_map_fam_hp(0, YK_CHAR_REIMU) == 100);            /* 读不到 ⇒ 档 0 */
+        CHECK(yk_map_fam_hp(-9, YK_CHAR_REIMU) == 100);           /* 负数 ⇒ 档 0 */
+        CHECK(yk_map_fam_hp(201, YK_CHAR_REIMU) == 67);           /* 201/3 = 67（小坑：比档 0 的 100 少）*/
+        CHECK(yk_map_fam_hp(300, YK_CHAR_REIMU) == 100);
+        CHECK(yk_map_fam_hp(301, YK_CHAR_REIMU) == 100);          /* 301/3 = 100 */
+        CHECK(yk_map_fam_hp(302, YK_CHAR_REIMU) == 100);          /* 302/3 = 100（整数除法）*/
+        CHECK(yk_map_fam_hp(303, YK_CHAR_REIMU) == 101);
+        CHECK(yk_map_fam_hp(1000, YK_CHAR_REIMU) == 333);
+        CHECK(yk_map_fam_hp(2000, YK_CHAR_REIMU) == 666);         /* ★ >999 只在 3000 以上出现（见下）*/
+        CHECK(yk_map_fam_hp(3000, YK_CHAR_REIMU) == 1000);        /* ★ >999：不再封顶 */
+        CHECK(yk_map_fam_hp(999999, YK_CHAR_REIMU) == 333333);
+        CHECK(yk_map_fam_hp(3000, YK_CHAR_REIMU) > YK_LIFE_MAX_ALLOWED);
         {   /* 不变量（分两段，别跨 200 那格比单调 —— 档 0 的 100 会「跳低」到 67）：
              *   · `hp <= 200` ⇒ **恒 100**（含 0 / 负数 / 读不到）；
-             *   · `hp >= 201` ⇒ `hp/3`、恒 ≥ 1、恒 ≤ hp、对 HP 单调不降。*/
+             *   · `hp >= 201` ⇒ `hp/3`、恒 ≥ 1、恒 ≤ hp、对 HP 单调不降。
+             * ⚠ 全部按**灵梦（基准 1000‰）**核 —— 机体倍率在下面单独测。*/
             int prev = 0, hp;
-            for (hp = -20; hp <= 200; hp += 7) CHECK(yk_map_fam_hp(hp) == 100);
+            for (hp = -20; hp <= 200; hp += 7) CHECK(yk_map_fam_hp(hp, YK_CHAR_REIMU) == 100);
             for (hp = 201; hp <= 8000; hp += 37) {
-                int v = yk_map_fam_hp(hp);
+                int v = yk_map_fam_hp(hp, YK_CHAR_REIMU);
                 CHECK(v >= 1);
                 CHECK(v <= hp);
                 CHECK(v == hp / 3);
                 CHECK(v >= prev);
                 prev = v;
+            }
+        }
+        /* ⑥quater ★★★★ 2026-10-01（**owner 口径 ③ · 按机体的使魔血量倍率**，平衡项）：
+         *   owner 逐字：「我觉得 **616dps 可以减小**，并且**她高速是扩散机体，打使魔命中不太了**；
+         *   对于**咲夜和魔理沙也可以适当减小**，**灵梦高速能追踪比较 OP**」。
+         *   模型 = `有效 = 标称 × 命中系数`、倍率 = `有效_i / 有效_灵梦`（只乘血量）；表与推导见
+         *   `youkai_core.h` 的同名小节。⚠ **平衡口径、不是复刻**；命中系数是估计值（待实测校准）。*/
+        CHECK(yk_fam_hp_char_scale(YK_CHAR_REIMU) == 1000);   /* 基准 = ×1.0 */
+        CHECK(yk_fam_hp_char_scale(YK_CHAR_MARISA) == 500);   /* 760 × 0.85 = 646 ⇒ 646/1280 */
+        CHECK(yk_fam_hp_char_scale(YK_CHAR_SAKUYA) == 880);   /* 1880 × 0.60 = 1128 ⇒ 1128/1280 */
+        CHECK(yk_fam_hp_char_scale(YK_CHAR_SANAE) == 240);    /* 616 × 0.50 = 308 ⇒ 308/1280 */
+        CHECK(yk_fam_hp_char_scale(-1) == 1000);              /* 越界/未知 ⇒ 缺省 1.0（缺省值即缺省）*/
+        CHECK(yk_fam_hp_char_scale(4) == 1000);
+        CHECK(yk_fam_hp_char_scale(999) == 1000);
+        /* 单调性（owner 的期望方向）：早苗 < 魔理沙/咲夜 < 灵梦 */
+        CHECK(yk_fam_hp_char_scale(YK_CHAR_SANAE) < yk_fam_hp_char_scale(YK_CHAR_MARISA));
+        CHECK(yk_fam_hp_char_scale(YK_CHAR_MARISA) < yk_fam_hp_char_scale(YK_CHAR_SAKUYA));
+        CHECK(yk_fam_hp_char_scale(YK_CHAR_SAKUYA) < yk_fam_hp_char_scale(YK_CHAR_REIMU));
+        /* 倍率乘在**最后**：`HP_i = (母机HP/3) × 倍率_i`（档 0 的 100 也乘）。*/
+        CHECK(yk_map_fam_hp(13000, YK_CHAR_REIMU) == 4333);
+        CHECK(yk_map_fam_hp(13000, YK_CHAR_SAKUYA) == 4333 * 880 / 1000);   /* 3813 */
+        CHECK(yk_map_fam_hp(13000, YK_CHAR_MARISA) == 4333 * 500 / 1000);   /* 2166 */
+        CHECK(yk_map_fam_hp(13000, YK_CHAR_SANAE)  == 4333 * 240 / 1000);   /* 1039 */
+        CHECK(yk_map_fam_hp(200, YK_CHAR_SANAE) == 24);                     /* 档 0 也乘（100×0.24）*/
+        /* ★ 口径目标：四机体在 13000 血母机上**打死一只的耗时相同**（≈3.4 s @各自的有效 DPS）
+         *   —— 用整数近似核一遍（`HP_i × 1000 / 有效DPS_i` 应与灵梦同量级）。*/
+        {
+            static const int eff[4] = { 1280, 646, 1128, 308 };             /* 有效 DPS（表） */
+            static const int chr[4] = { YK_CHAR_REIMU, YK_CHAR_MARISA, YK_CHAR_SAKUYA, YK_CHAR_SANAE };
+            int i, t0;
+            t0 = yk_map_fam_hp(13000, YK_CHAR_REIMU) * 1000 / eff[0];
+            for (i = 0; i < 4; ++i) {
+                int t = yk_map_fam_hp(13000, chr[i]) * 1000 / eff[i];
+                /* `t` = 毫秒（HP × 1000 / dps 的整数近似）⇒ 等时（±10%）且都 < 6 s 波。*/
+                CHECK(t > t0 * 90 / 100 && t < t0 * 110 / 100);
+                CHECK(t < 6000);
             }
         }
         /* 旧式（台数档一手表）仍在、仍可用作对照 —— 但**不再是**卡侧口径。*/

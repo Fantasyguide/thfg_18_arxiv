@@ -2013,17 +2013,40 @@ int yk_orbit_rings_for_count(int count)
     return (int)s_orbit_tab[count].nrings;
 }
 
+/* ★★★ 2026-10-01（**owner 口径 ③ · 按机体的使魔血量倍率**，平衡项）：表 + 纯函数。
+ * 模型 / owner 原话 / 四机体推导表（标称 DPS、命中系数、有效 DPS、倍率）全在 `youkai_core.h` 的同名小节。
+ * 顺序 = `YK_CHAR_*`（0 灵梦 / 1 魔理沙 / 2 咲夜 / 3 早苗）；单位 = **千分比**（1000 = ×1.0）——
+ * 本仓 .c 禁浮点库、也不返回 float（x87 闸会红）。⚠ 这是**平衡口径、不是复刻**；owner 报数后只改本表。*/
+static const int s_fam_hp_char_permille[YK_OPTION_CHARS] = {
+    YK_FAM_HP_CHAR_PERMILLE_ONE,   /* 0 灵梦：基准 1.00（高速追踪）*/
+    500,                           /* 1 魔理沙：760 × 0.85 = 646 ⇒ 646/1280 ≈ 0.50 */
+    880,                           /* 2 咲夜：1880 × 0.60 = 1128 ⇒ 1128/1280 ≈ 0.88 */
+    240                            /* 3 早苗：616 × 0.50 = 308 ⇒ 308/1280 ≈ 0.24（owner：扩散机体）*/
+};
+
+int yk_fam_hp_char_scale(int character)
+{
+    if (character < 0 || character >= (int)YK_OPTION_CHARS) return YK_FAM_HP_CHAR_PERMILLE_ONE;
+    if (s_fam_hp_char_permille[character] <= 0) return YK_FAM_HP_CHAR_PERMILLE_ONE;
+    return s_fam_hp_char_permille[character];
+}
+
 /* ★★★ 2026-10-01（owner 口径 ②，**第二轮定案 = ÷3**）：**映射（发射口）使魔血量 = 母机 HP / 3**。
  *   口径 / 动机原文 / 数值依据（5/6 面 lifeSet 13000/14000、单波 360 f、灵梦 1280 dps）全在
  *   `youkai_core.h` 的同名小节。规则与绕转共用档 0：
  *     档 0（`parent_hp <= YK_FAM_HP_TIER0_MAX` = 200，含 0 / 负数 / 读不到）⇒ **100**；
  *     其它 ⇒ `parent_hp / 3`（整数除法）、保底 1、**不钳 999**（>999 由 spawn 路径两步写血承接）。
  *   ⚠ 纯函数（无副作用、无浮点）⇒ 直接进主机单测；出口 int（不要改 float：x87 闸会红）。*/
-int yk_map_fam_hp(int parent_hp)
+int yk_map_fam_hp(int parent_hp, int character)
 {
     int hp;
-    if (!(parent_hp > YK_FAM_HP_TIER0_MAX)) return 100;            /* 档 0（含 0 / 负数 / 读不到）*/
-    hp = parent_hp / 3;
+    if (!(parent_hp > YK_FAM_HP_TIER0_MAX)) hp = 100;              /* 档 0（含 0 / 负数 / 读不到）*/
+    else {
+        hp = parent_hp / 3;
+        if (hp < 1) hp = 1;
+    }
+    /* ★ owner 口径 ③：**机体倍率乘在最后**（档 0 的 100 也乘 —— 与「一波内等时打死」一致）。*/
+    hp = hp * yk_fam_hp_char_scale(character) / YK_FAM_HP_CHAR_PERMILLE_ONE;
     if (hp < 1) hp = 1;
     return hp;
 }
@@ -2032,9 +2055,11 @@ int yk_map_fam_hp(int parent_hp)
  * ★ **不钳 999**（owner 定案）：>999 的真血量由 spawn 路径的「999 出生 + 事后回写」承接。
  * 旋钮留着（owner：「一碰就碎主要是形容杂鱼」）——手感不对只改 `YK_ORBIT_HP_SCALE`。
  * ⚠ 返回 int（**不要**改成 float：i686 的 float 返回值走 x87 ⇒ `make dllx87` 会红）。*/
-int yk_orbit_hp_for_enemy(int hp_max, int rings)
+int yk_orbit_hp_for_enemy(int hp_max, int rings, int character)
 {
+    /* ★ owner 口径 ③：绕转使魔**同样**吃机体倍率（只乘血量，不动 DPS）。*/
     int hp = yk_orbit_fam_hp(hp_max, rings) * YK_ORBIT_HP_SCALE;
+    hp = hp * yk_fam_hp_char_scale(character) / YK_FAM_HP_CHAR_PERMILLE_ONE;
     if (hp < 1) hp = 1;
     return hp;
 }
