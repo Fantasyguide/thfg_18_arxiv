@@ -361,11 +361,39 @@ static int8_t   s_bomb_is_deathbomb;     /* 当前这次 B 是**灵击**（起�
 static uint32_t s_deathbomb_frame;       /* 最近一次见到决死窗口（自机状态 4）的帧号 */
 static int8_t   s_deathbomb_seen;
 
-/* 「本卡眼中的侧」：锁定期间恒为锁定值，否则跟引擎（`player+0x476cc`）。*/
+/* 真实聚焦（`player+0x476cc`，引擎每帧从输入位 3 写）。
+ * ★★★ P0 事故（2026-10-01 18:20 dump，`code=0xc00000fd` STACK_OVERFLOW，`dll+0x6555c`）：
+ *   这一支原来是**唯一**读真实聚焦的地方，而我在批量把行为判据换成 `yk_focused()` 时
+ *   **连带把本函数自己的 `CE_PLAYER_FOCUSED()` 也换掉了** ⇒ 变成 `return yk_focused() ? 1 : 0;`
+ *   = **自递归**（`s_side_lock < 0` 的**正常游玩**态每帧都进）⇒ 装 108 一进关卡就爆栈。
+ *   ⇒ 教训写在这里：**读引擎原值的那一支必须是独立函数、且只此一处**（下面 `yk_real_focused`），
+ *     `yk_focused()` 只允许调它，**永远不许调自己**。*/
+static int yk_real_focused(void)
+{
+    return CE_PLAYER_FOCUSED() ? 1 : 0;
+}
+
+/* 「本卡眼中的侧」：锁定期间恒为锁定值，否则 = 真实聚焦。
+ * ★ P0 防线（owner 要求「结构上仍可能深层递归就加重入守卫」）：静态重入标志 —— 一旦重入
+ *   （今后有人再往这里塞一层间接调用）立刻**返回真实聚焦**并打一行（只打一次），绝不递归下去。*/
+static int8_t s_focus_reentry_logged;
 static int yk_focused(void)
 {
+    static int8_t in_focus;
+    int v;
     if (s_side_lock >= 0) return (int)s_side_lock;
-    return yk_focused() ? 1 : 0;
+    if (in_focus) {
+        if (!s_focus_reentry_logged) {
+            s_focus_reentry_logged = 1;
+            ce_log("youkai: SIDE-FOCUS REENTRY guard tripped in yk_focused() - returning the real "
+                   "focus (this is a BUG: yk_focused must never call itself; owner 108 P0)");
+        }
+        return yk_real_focused();
+    }
+    in_focus = 1;
+    v = yk_real_focused();
+    in_focus = 0;
+    return v;
 }
 
 /* TODO(owner 口径 ④)：**灵界（113 Trance）/ 暴走咆哮（117 Animal）**的状态查询。
@@ -411,7 +439,9 @@ static void yk_side_lock_tick(void)
             s_side_lock = -1;
         }
     } else if (s_side_lock < 0) {
-        s_side_lock = (int8_t)(yk_focused() ? 1 : 0);
+        /* ⚠ **必须**读真实聚焦（不是 `yk_focused()`）：锁的那一刻 `s_side_lock` 还是 -1，
+         *   若走 `yk_focused()` 就会在「决定锁谁」这一步先递归（P0 的第二条自递归链）。*/
+        s_side_lock = (int8_t)yk_real_focused();
         ce_log("youkai: side lock ON for this B - the form stays %s until the B ends "
                "(owner 2026-10-01; deathbomb excluded)",
                s_side_lock ? "youkai/focused" : "human/unfocused");
