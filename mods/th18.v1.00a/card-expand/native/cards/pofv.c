@@ -543,7 +543,19 @@ static void bossatk_damage(void)
         /* ★ 第三道过滤：**只认「往上飞」的**。载体在版底往上发（`velocity.y < 0`），
          *   而原生敌人的弹在同一个覆盖区里多半是**往下**飞的 ⇒ 方向是最强的区分器，
          *   少了它会把「路过这个区域的原生弹」也一起置成免撞（那才是真事故）。*/
-        if (*(const float *)(b + CE_BULLET_VELOCITY + 4) >= 0.0f) continue;
+        {
+            const float vx = *(const float *)(b + CE_BULLET_VELOCITY);
+            const float vy = *(const float *)(b + CE_BULLET_VELOCITY + 4);
+            if (vy >= 0.0f) continue;                       /* 只认往上飞的（我们的弹幕朝上）*/
+            /* ★★ 再加一道「**从锚点向外发散**」：载体在锚点放射状发弹 ⇒ 速度方向与
+             *   「(弹位 − 锚点)」同向（点积 > 0）。这一条把「**原生敌人也往上发、恰好路过**
+             *   这片区域**」的弹挡在外面（只按类型 + 区域 + 方向还不够严）。
+             *   ⚠ 刚出生的弹在锚点附近（点积 ≈ 0）⇒ 允许一小段（`+8.0f` 容差）；
+             *   那几帧它在锚点下方（低于自机）⇒ 打不到自机，不影响安全。*/
+            if ((bx - POFV_BOSSATK_ANCHOR_X) * vx + (by - POFV_BOSSATK_ANCHOR_Y) * vy
+                < -8.0f) continue;
+        }
+
         /* ★★ 置「跳过碰撞判定」⇒ 这颗弹**打不到自机**（见 `POFV_BOSSATK_NO_HIT` 的长注释）。*/
         *(uint32_t *)(b + CE_BULLET_FLAGS) |= POFV_BOSSATK_NO_HIT;
         bx = *(const float *)(b + CE_BULLET_POS);
