@@ -581,7 +581,11 @@ typedef struct { int32_t prev; int32_t cur; float cur_f; } ce_timer_t;   /* zTim
                                                  ★ fire_rate == 0 会整数除零（这条路径没有零分支）。
                                                  开火期间把 player+0x10 换成 ability.anm，所以 shooter 的 anm 字段按 ability.anm 解释 */
 #define CE_OPT_IN_USE              0x00       /* zPlayerOption：非 0 = 占用中（allocate 找空位看它）*/
-#define CE_OPT_POS_X               0x5c       /* 定点数，× 1/128 = 像素（`0x40a9c0` 出膛坐标就取这两个）*/
+#define CE_OPT_POS_X               0x5c       /* 定点数，× 1/128 = 像素（`0x40a9c0` 出膛坐标就取这两个）
+                                               * ★ 2026-10-01 **逐指令复核（109 会话）**：`0x40aa0c movd 0x5c(%edx),%xmm0` /
+                                               *   `0x40aa21 movd 0x60(%edx),%xmm0` ⇒ 出膛坐标**确实**只来自这两个字段，
+                                               *   **不是**用玩家位置现算 ⇒ 「把这个字段改成别处」= 从别处出膛 ✅
+                                               *   （109 的「版底伪 boss」整个几何就靠这一条）。*/
 #define CE_OPT_POS_Y               0x60
 #define CE_OPT_OFF_NF_X            0x64       /* 非聚焦位置偏移 x（定点 ×1/128）：`Player::allocate_option` `th18:0x40a80a` 写 0，
                                                * 原生卡 `th18:0x40b8c1` 写它 → 卡可以自己摆阵型 */

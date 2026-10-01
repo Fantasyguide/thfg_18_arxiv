@@ -10005,3 +10005,29 @@ if ((bx - POFV_BOSSATK_ANCHOR_X) * vx + (by - POFV_BOSSATK_ANCHOR_Y) * vy < -8.0
 第二遍按 `STRIDE` 读但**从 `0x0C` 起把字段当 8 个 float 打印** ⇒ 在 `0x24` 看到 `nan`，一度以为数据坏了。
 ★ 真因：`pack_shooter` 的布局是 **`0x0C` = `hit_w/hit_h`（两个 float）**、**`0x22` = `anm/sfx`（两个 short）**
 ⇒ 把 short 对当 float 读当然出 `nan`。**教训**：读产物前先看**写入方的布局表**，别凭印象定字段。
+#### ★★★ 2026-10-01：**「从版底出膛」的命门验证通过**（一手逐指令复核）
+
+owner 的 C3/C4 模型是「**在版底生成一个 boss，让它按 `下` 是我们这里的上那样发弹**」——
+卡侧的落地办法是：发弹前把子机（option）的**世界坐标**覆盖成版底锚点。
+**这条路能不能成立，全看引擎的出膛坐标是不是取自那两个字段**：
+
+| 假设 | 后果 |
+| --- | --- |
+| 出膛坐标**取自** `option+0x5c/0x60` | ✅ 覆盖有效（我们写什么它就从哪儿发）|
+| 引擎**用玩家位置现算**出膛点 | ❌ 覆盖完全无效（弹幕还是从玩家身边发）|
+
+**一手（本轮 objdump 逐指令，`th18:0x40a9c0` = `Player__tick_shooters_for_ability_card`）**：
+
+```asm
+40aa0c: movd 0x5c(%edx), %xmm0      ; ★ 读 option+0x5c（出膛 x）
+40aa1c: movss %xmm0, -0xc(%ebp)
+40aa21: movd 0x60(%edx), %xmm0      ; ★ 读 option+0x60（出膛 y）
+40aa31: movss %xmm0, -0x8(%ebp)
+```
+
+⇒ **只读这两个字段**（`movd` 整数搬进 xmm ⇒ 后接 ×1/128 的定点换算，与 `engine.h` 的注释一致）
+⇒ **覆盖有效，设计成立** ✅。已把这条复核写进 `engine.h` 的 `CE_OPT_POS_X` 注释。
+
+**同一轮连带确认的**：`ce_tick_shooters_for_card` 调的是引擎的
+`Player__tick_shooters_for_ability_card`（**由卡自己调**）⇒ 引擎**不会**自动 tick 卡的 shooter 组
+⇒ **不存在双重发射**。
