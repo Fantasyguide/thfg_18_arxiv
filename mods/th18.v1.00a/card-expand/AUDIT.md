@@ -26120,6 +26120,12 @@ verify/autoplay 的场景只判 109 的日志）；`sites.py` / `sdk.*` / `engin
 构建期硬门要求追加脚本按文件名连续（`376_…` 会被判「编号应为 375」）；别的一支（被回退过的
 `375_top_indicator`）如果将来回来，需要重新分配号段。
 
+**追加（同日 · owner「观感一致」+ 透明度铁律）**：`assets/ability/scripts/376_pofv109_bossatk.anm.txt`
+（**新增**，`ability.anm` script **376**）—— 109 蓄力攻击弹的视觉：**形状照敌弹**
+（同 TH18 `bullet.anm` script2 的 `sprite(-1)` + `drawPoly(8.0f, 32)`）＋ **`alpha(112)`（≈56% 透明）**。
+⇒ 用的是 owner 那条「伤敌弹幕除非是自机弹样式就必须上额外透明度、50% 起步」的**豁免反面**：
+**故意做成敌弹样式 ⇒ 必须半透明**。四组 shooterset（`POFV109_BOSSATK_C1..C4`）的 `+0x22` 指到它。
+
 **影响面（对既有卡）**：无 —— 三支新脚本都是**末尾追加**（sprite/entry 号一个没挪，
 `build_ability.py` 的「已定稿前 186 行逐行未变」检测通过）；`make_ufo_ecl.py` 只**新增**一支子程序
 （原生 30 支与我们既有的 11 支都不动）；`capcheck` / `verify` / `autoplay` 都是**109 自己的条目**。

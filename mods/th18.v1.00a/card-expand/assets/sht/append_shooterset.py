@@ -1955,8 +1955,11 @@ def _pofv109_bossatk_sets(anm_ids: dict) -> list:
     ＋「**也可以画在自己这边，但是是对敌人造成伤害**」。
     ⇒ 四档都做成**从自机往上打的原生自机弹幕**（打的就是自己场上的敌人），密度/单发伤害按档递进
       —— 与一手的「档越高：扣得越多、消弹圈越大」同向。
-    ⚠ 观感（owner「最好观感一致」）：最终要换成**敌弹样式贴图 + alpha ≤128**（`TUNING.md` §2.0v-4
-      #51/#52）；现在借的是自机弹样式（按 owner 的透明度铁律**豁免**额外 alpha）。
+    ★★ 观感（owner「最好观感一致」＋「伤敌弹幕除非是自机弹样式就必须上额外透明度、50% 起步」）：
+      `anm` = **`CE_ANM_ABILITY_SCRIPT_POFV109_BOSSATK`（script 376）** ——
+      **形状照敌弹**（同 `bullet.anm` script2 的 `sprite(-1)` + `drawPoly(8.0f, 32)`，半径 8 与行的
+      `hit_w/hit_h = 16` 一致）＋ **`alpha(112)`（≈56% 透明，过 50% 那条线）**。
+      ⇒ **观感与 boss 的弹同族，但半透明 = 一眼知道是自己打出去的**。
     """
     # ★★ owner 2026-10-01 把四档的**取向**分开了：「**C1 主要是打伤害，C2 也算是打伤害，
     #   C3 C4 是打对面**」。⇒ 本表照这个取向配：
@@ -1975,7 +1978,7 @@ def _pofv109_bossatk_sets(anm_ids: dict) -> list:
     for name, rate, dmg, rows in specs:
         rs = [dict(fire_rate=rate, start_delay=0, damage=dmg, hit_w=16.0, hit_h=16.0,
                    spawn_dx=dx, spawn_dy=0.0, angle=ang, speed=16.0, opt_slot=0, mode=0,
-                   anm="CE_ANM_ABILITY_SCRIPT_MARISA_BULLET", sfx=-1, hit_fx=-1,
+                   anm="CE_ANM_ABILITY_SCRIPT_POFV109_BOSSATK", sfx=-1, hit_fx=-1,
                    fire_rate2=0, start_delay2=0, func_on_init=0, func_on_tick=0,
                    func_on_draw=0, func_on_hit=0) for dx, ang in rows]
         out.append((name, b"".join(pack_shooter(r, anm_ids) for r in rs) + TERMINATOR))
