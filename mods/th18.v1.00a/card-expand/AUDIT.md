@@ -26391,3 +26391,20 @@ owner 口径也是 50%）🟡 **TH08 侧 `th08:0x451670`/`th08:0x4517f6` 的每�
 ω 序列 == `−6/+4.5/+3`）；`youkai_core: 8784 checks, 0 failed`。
 
 **闸**：`make -s check` rc=0、`dllx87 = 0`、`sites.py verify` 全对上、`capcheck` 全绿、`check-docs` 全过。
+
+## §BE 详录 #167（2026-09-28）：进妖侧切换 SE —— **把绕转使魔也数进「场上有使魔」**
+
+> **owner 逐字**：「进妖侧**有敌方使魔时候**的音效缺失了」。
+
+**一手依据**：那一声是**使魔实体自己**在形态变化时发的（`FUN_0042c420`，见 `youkai.c` ctx 段长注释；
+TH08 id `0x28` = `se_ophide`）⇒ 判据 = 「场上**有敌方使魔**」，而**绕转使魔也是使魔**。
+
+**我们的现状（根因）**：`youkai.c` 的切换 SE 门只数**映射（发射口）**使魔
+（`yk_map_fam_live_count(&s_map)`）⇒ 在 **4/6 面那种「大怪 + 绕转使魔」**的场面（映射层可能是空的），
+`fam_now == 0` ⇒ **SE 不播** —— 正是 owner 看到的缺失。
+
+**最小改法（已改，一行）**：`fam_now = yk_map_fam_live_count(&s_map) + yk_orbit_live()`（绕转计数用现成的
+`yk_orbit_live()`）。日志同步（`familiar live count = N` 现在含绕转）。
+
+**闸**：`make -s check` rc=0（`youkai_core: 8784 checks, 0 failed`、`dllx87 = 0`）、`sites.py verify` 全对上、
+`capcheck` 全绿、`check-docs` 全过。

@@ -6670,7 +6670,11 @@ static int on_tick_2(ce_card_t *c)
      *   一手语义也是这个：那一声是**敌人的方法**（`FUN_0042c420`）在「形态变了」时发的，
      *   所以只有当场真的有那些使魔实体时才听得见（详见上面 SE 那一段的长注释）。*/
     if (s->se_fam_press) {
-        const int fam_now = (int)yk_map_fam_live_count(&s_map);
+        /* ★★★ 2026-09-30（owner：「**进妖侧有敌方使魔时候**的音效缺失了」）—— 原来这里只数
+         *   **映射（发射口）**使魔 ⇒ 场上只有**绕转**使魔时 `fam_now == 0`，SE 不播（owner 看到的
+         *   正是 4/6 面那种「大怪 + 绕转使魔」的场面）。一手语义：这一声是**使魔实体自己**发的
+         *   （`FUN_0042c420`，见 ctx 段的长注释）⇒ **绕转使魔同样是「敌方使魔」**，必须一起数。*/
+        const int fam_now = (int)yk_map_fam_live_count(&s_map) + (int)yk_orbit_live();
         s->se_fam_press = 0;
         if (fam_now) {
             ce_play_voice(YOUKAI_FAM_SHIFT, s->se_fam_press_x);   /* TH08 id 0x28 = se_ophide */
