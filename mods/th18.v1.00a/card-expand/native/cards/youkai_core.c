@@ -1761,6 +1761,17 @@ static const float yk_orbit_sin[YK_ORBIT_STEPS] = {
 
 /* 「大怪」判据：贴图原始尺寸两边都 >= 64（= 117 `cards/animal.c` 的 `ANIMAL_BIG_SPRITE_MIN_W/H`）。
  * 纯比较、无浮点 —— 卡侧取到的是已经 round 过的 int。*/
+int yk_big_by_sprite_id(int w, int h, int sprite)
+{
+    if (w >= YK_BIG_SPRITE_MIN_W && h >= YK_BIG_SPRITE_MIN_H) return 1;   /* 64×64 及以上：大怪（不限号）*/
+    if (w == 48 && h == 48) {                                            /* ★ 白名单（见头文件注释）*/
+        if (sprite >= 72 && sprite <= 87) return 1;                      /* entry0 enemy.png 的大妖精 */
+        if (sprite >= 292 && sprite <= 307) return 1;                    /* entry4 enemy_g.png（+220）*/
+        return 0;                                                        /* 88..95 / 308..315：**不算**（6 面小妖精）*/
+    }
+    return 0;
+}
+
 int yk_big_by_sprite(int w, int h)
 {
     return (w >= YK_BIG_SPRITE_MIN_W && h >= YK_BIG_SPRITE_MIN_H) ? 1 : 0;

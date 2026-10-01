@@ -1991,12 +1991,12 @@ int yk_item_box_open(int32_t player_state);
  *   entry0 `enemy/enemy.png`，120 sprites）—— 小妖精 **32×32**（60 张）/ 48×32（24 张）、
  *   **大妖精 48×48**（24 张，其中**右上角 sprite72..87 = 16 张** = 两种大妖精 × 8 帧）、
  *   **大蝴蝶 64×64**（12 张）⇒ 判据取「**两边 ≥ 48**」= 卡在「小妖精最大 48×32」与「大妖精 48×48」之间。*/
-#define YK_BIG_SPRITE_MIN_W   48      /* 判「大怪」的贴图**原始**尺寸下限（未乘 scale）。
+#define YK_BIG_SPRITE_MIN_W   64      /* 判「大怪」的贴图**原始**尺寸下限（未乘 scale）。
                                        * 一手/同源：`cards/animal.c` 的 `ANIMAL_BIG_SPRITE_MIN_W/H` = **48/48**
                                        *   （2026-10-01 两边对齐；一手 rect 见 `AUDIT.md` §BE #169/#170）
                                        *（117 的判据：用户口径 + `enemy.png` 实测 —— 右下角 sprite96..107 = 64×64）。
                                        * ⚠ **别单独改这个数**：两处必须同值，要改先动 117 的那一份。*/
-#define YK_BIG_SPRITE_MIN_H   48
+#define YK_BIG_SPRITE_MIN_H   64
 #define YK_ORBIT_DELAY_FRAMES 60u     /* ★★★ 生成**延时**（一手形状）：父敌**首次被扫到**之后再等这么多帧
                                        *   才建使魔。一手（`ecldata1.txt` 逐条）：阶段一妖精**进场后飞约 1 秒**
                                        *   （`moveDirTime(60,4,·)`）才在 **t = 50 / 60 / 70 帧**建使魔，
@@ -2245,6 +2245,13 @@ unsigned yk_orbit_phase_id(uint32_t enemy_id);
 
 /* 「大怪」判据（= 117 的判据，同值同义）：贴图**原始**尺寸（未乘 scale）两边都 >= 64。
  * 负数 / 0 一律判 0（读到的值不信任：VM 还没建时那两格是 0）。*/
+/* ★★★ 2026-10-01（owner：**白名单**拍板）：判「大怪」= `(w>=64 && h>=64)` **或**
+ *   `(w==48 && h==48 && sprite 在 `YK_BIG_SET` 里)`。
+ *   依据（一手 rect，`enemy.anm`）：entry0 `enemy.png` 的 48×48 = **72..95**（其中 **72..87 = 右上角
+ *   两种大妖精**、**88..95 = 6 面那批被误当大怪的小妖精**）、64×64 = 96..107（大蝴蝶）；
+ *   entry4 `enemy_g.png` 的编号 = **entry0 + 220**（48×48 = 292..315、64×64 = 316..327）⇒ 它的大妖精
+ *   = **292..307**、要排除的 = 308..315。⇒ 白名单认 **{72..87} ∪ {292..307}**（64×64 不限号）。*/
+int yk_big_by_sprite_id(int w, int h, int sprite);
 int yk_big_by_sprite(int w, int h);
 
 /* ★★★ 绕转相位的**半步累加器**（第七轮）：表是 3°/格，实际转速靠「每 `YK_ORBIT_STEP_DIV` 帧走一格」。

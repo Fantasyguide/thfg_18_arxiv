@@ -2325,11 +2325,20 @@ int main(void)
         /* ① 「大怪」判据的边界（63×64 / 64×63 / 64×64）—— 与 117 `cards/animal.c` 的
          *    `ANIMAL_BIG_SPRITE_MIN_W/H` 同值（**2026-10-01 起两边都是 48**），
          *    所以这一段同时钉住「两张卡用的是同一个数」。*/
-        CHECK(YK_BIG_SPRITE_MIN_W == 48 && YK_BIG_SPRITE_MIN_H == 48);   /* ★ 2026-09-30：64→48（大妖精 48×48）*/
+        CHECK(YK_BIG_SPRITE_MIN_W == 64 && YK_BIG_SPRITE_MIN_H == 64);   /* ★ 2026-10-01：尺寸门回 64，48×48 走白名单 */
         /* ★ 2026-09-30：阈值 64 → **48**（4 面那两种「大妖精」= 48×48；小妖精 32×32 / 48×32 仍排除）*/
         CHECK(!yk_big_by_sprite(47, 48));
         CHECK(!yk_big_by_sprite(48, 47));
-        CHECK(yk_big_by_sprite(48, 48));                      /* 大妖精（新纳入）*/
+        /* ★ 2026-10-01 白名单：48×48 只有 72..87 / 292..307 算大怪 */
+        CHECK(!yk_big_by_sprite_id(48, 48, 88));              /* #88（6 面那批）**不算** */
+        CHECK(!yk_big_by_sprite_id(48, 48, 95));
+        CHECK(!yk_big_by_sprite_id(48, 48, 308));             /* entry4 的对应排除段 */
+        CHECK(yk_big_by_sprite_id(48, 48, 72));               /* 大妖精第一个 */
+        CHECK(yk_big_by_sprite_id(48, 48, 87));
+        CHECK(yk_big_by_sprite_id(48, 48, 292));              /* entry4 的大妖精段 */
+        CHECK(yk_big_by_sprite_id(48, 48, 307));
+        CHECK(yk_big_by_sprite_id(64, 64, 0));                /* 64×64 不限号 */
+        CHECK(!yk_big_by_sprite(48, 48));                     /* ★ 尺寸门回 64 ⇒ 旧入口对 48×48 说「不」*/
         CHECK(yk_big_by_sprite(64, 64));                      /* 大蝴蝶 */
         CHECK(yk_big_by_sprite(65, 64));
         CHECK(yk_big_by_sprite(64, 65));

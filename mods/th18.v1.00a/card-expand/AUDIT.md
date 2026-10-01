@@ -26559,3 +26559,30 @@ youkai/emitkey: pairs %u seen %u reappeared %u new_after_off %u
 
 **闸**：`make -s check` rc=0（`youkai_core: 8791 checks, 0 failed`、`dllx87 = 0`）、`sites.py verify` 全对上、
 `capcheck` 全绿、`check-docs` 全过。
+
+## §BE 详录 #174（2026-10-01）：大怪判据改**白名单**（108 + 117 同步）+ 临时 `spriteprobe`
+
+> **owner**：「这一张：`enemy_g.png` **和 enemy.png 一模一样，只是贴图加了描边**」；另报 **6 面接近关底有小妖精爆动物灵**。
+
+**一、一手 rect（本次直读 `enemy.anm` 文本 spec）**
+| entry | name | sprites | 48×48 | 64×64 |
+| --- | --- | --- | --- | --- |
+| **entry0** | `enemy/enemy.png` | 120 | **72..95** | 96..107 |
+| **entry4** | `enemy/enemy_g.png` | 108 | **292..315** | 316..327 |
+- 两表**不是逐格相同**（120 vs 108，编号落点不同）⇒ **跨 entry 不能只比 sprite 号**；但 **entry4 = entry0 + 220** 的偏移在本批数据里成立。
+- owner 的分组复核：**48×48 两处 = 72..87（右上角两种大妖精）+ 88..95（6 面那批）**、32×32 = 0..47 + 108..119、
+  48×32 = 48..71、64×64 = 96..107 ✓ 与直方图完全吻合。
+
+**二、判据（108 + 117 同步）**：`big ⟺ (w≥64 && h≥64) || (w==48 && h==48 && sprite ∈ {72..87} ∪ {292..307})`
+- `YK_BIG_SPRITE_MIN_W/H` **回到 64**（尺寸门），48×48 的两种大妖精由**白名单**纳入；
+- 新增 `yk_big_by_sprite_id(w,h,sprite)`（旧 `yk_big_by_sprite(w,h)` 保留 = 纯尺寸门，兼容）；
+  调用点（`youkai.c` 扫描）从敌人主 VM 取当前 sprite（`vm+0x24`，`vm = *(uint8_t**)(e + CE_ENEMY_ANM_VM0)`）；
+- **117**：`ANIMAL_BIG_SPRITE_MIN_W/H` **回 64** + 同一张白名单（`cards/animal.c`，其 `e` 处同样读 `vm+0x24`）。
+- ⇒ **排除 88..95 / 308..315**（6 面那批被误当大怪的小妖精），**保住** 72..87（两种大妖精）与 64×64（大蝴蝶）。
+
+**三、临时验证日志**：每只被判为「大怪」的敌人打一行（**同一 sprite 只打一次**、512 格节流）
+`youkai/spriteprobe: enemy #%u sprite %d size %ux%u big 1` ⇒ owner 打一波 6 面关底即可确认那批小妖精的
+sprite/size（真 48×48 且不在白名单 ⇒ 它们不会出现 = 修好；若它们是 64×64 ⇒ 白名单不是原因，回头再查）。
+
+**闸**：`make -s check` rc=0（`youkai_core: 8799 checks, 0 failed`、`dllx87 = 0`）、`sites.py verify` 全对上、
+`capcheck` 全绿、`check-docs` 全过。

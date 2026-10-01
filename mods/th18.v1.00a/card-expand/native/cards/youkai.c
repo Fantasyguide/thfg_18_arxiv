@@ -1426,7 +1426,22 @@ static void yk_orbit_scan(uint32_t frame)
         if (!yk_orbit_delay_ok((uint32_t)id, frame)) continue;
         /* **大怪**：贴图**原始**尺寸两边都 >= 64（117 的判据，见 `yk_big_by_sprite`）。*/
         if (!yk_enemy_sprite_size(e, &w, &h)) continue;
-        if (!yk_big_by_sprite(w, h)) { ++small; continue; }
+        /* ★ 2026-10-01：判据带 **sprite 号**（白名单）—— VM 的当前 sprite 在 `vm+0x24`（`engine.h`）。*/
+        {   uint8_t *vm = *(uint8_t **)(e + CE_ENEMY_ANM_VM0);
+            int spid = vm ? *(const int32_t *)(vm + 0x24) : -1;
+            if (!yk_big_by_sprite_id(w, h, spid)) { ++small; continue; }
+            /* ★★★ 2026-10-01（owner：6 面关底有小妖精爆动物灵）—— **临时验证日志**：
+             *   每只被判为「大怪」的敌人打一行（**同一 sprite 只打一次**，节流）⇒ owner 打一波 6 面关底
+             *   就能看出那批小妖精的 sprite/size 到底落在哪：若它们真是 48×48 且 sprite 不在白名单里，
+             *   它们就**不会**出现在这几行里（= 修好了）；若它们是 64×64 也在这里 ⇒ 白名单不是原因。*/
+            {   static int8_t s_probe_done[512];
+                if (spid >= 0 && spid < 512 && !s_probe_done[spid]) {
+                    s_probe_done[spid] = 1;
+                    ce_log("youkai/spriteprobe: enemy #%u sprite %d size %ux%u big 1",
+                           (unsigned)id, spid, w, h);
+                }
+            }
+        }
         /* 池：这台敌人要 `want` 个空槽；一个都没有就**这一帧到此为止**（后面同样不够），
          * 并且只记一次日志 —— 本卡有过 1.5 MB/min 的日志洪水事故（`AUDIT.md` §BE #143）。*/
         if (yk_orbit_free() == 0u) {

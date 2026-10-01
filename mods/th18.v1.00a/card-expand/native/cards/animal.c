@@ -859,8 +859,8 @@ static const char *animal_enemy_sub_name(const uint8_t *e, int32_t *out_sub)
  *   小妖精 **32×32 / 48×32**（高最多 32）、**右上角 `sprite72..87` 的两种「大妖精」= 48×48**、
  *   大蝴蝶 64×64 ⇒ 「两边 ≥ 48」正好卡在「小妖精（高 32）」与「大妖精（48）」之间；
  *   原 64 会把 4 面那种大妖精漏掉（108 侧已按同一条改）。见 `AUDIT.md` §BE #170。*/
-#define ANIMAL_BIG_SPRITE_MIN_W      48
-#define ANIMAL_BIG_SPRITE_MIN_H      48     /* ★ 2026-10-01：与 108 对齐（见上面那条注释 + §BE #170）*/
+#define ANIMAL_BIG_SPRITE_MIN_W      64
+#define ANIMAL_BIG_SPRITE_MIN_H      64     /* ★ 2026-10-01：尺寸门回 64；48×48 走白名单（与 108 同表）*/
 #define ANIMAL_ODD_GROUP_MAX         3      /* 用户 2026-09-13：同波同类 ≤3 也叫鹤立鸡群（具名旋钮）*/
 #define ANIMAL_ODD_MIN_SAMPLE        1      /* 用户口径「哪怕只有 1 只」；total < 它时不参与统计 */
 #define ANIMAL_ODD_MAJORITY_NUM      1      /* 严格过半多数派：max/total > NUM/DEN = 1/2 */
@@ -1435,7 +1435,15 @@ static int animal_enemy_drop_measure(const uint8_t *e, const char *name,
     if (!animal_enemy_sprite_size(e, &w, &h)) return 0;
     if (sprite_w) *sprite_w = w;
     if (sprite_h) *sprite_h = h;
-    big = (w >= ANIMAL_BIG_SPRITE_MIN_W && h >= ANIMAL_BIG_SPRITE_MIN_H);
+    /* ★★★ 2026-10-01（owner 拍白名单，108/117 同步）：`(w>=64&&h>=64)` **或**
+     *   `(w==48&&h==48 && sprite ∈ 白名单)` —— 白名单 = entry0 `enemy.png` **72..87**（两种大妖精）、
+     *   entry4 `enemy_g.png` 的 **292..307**（= entry0+220）；**排除 88..95 / 308..315**（6 面那批小妖精）。
+     *   sprite 号从敌人主 VM 的当前 sprite 取（`vm+0x24`）；取不到（vm 空）就退回纯尺寸门。*/
+    {   uint8_t *vm = *(uint8_t **)(e + CE_ENEMY_ANM_VM0);
+        int spid = vm ? *(const int32_t *)(vm + 0x24) : -1;
+        big = (w >= ANIMAL_BIG_SPRITE_MIN_W && h >= ANIMAL_BIG_SPRITE_MIN_H)
+              || (w == 48 && h == 48 && ((spid >= 72 && spid <= 87) || (spid >= 292 && spid <= 307)));
+    }
     if (big_by_size) *big_by_size = big;
 
     /* ★ 死亡瞬间“本敌机绑定波”优先；live 只负责更新 sticky + 首次登记。*/
