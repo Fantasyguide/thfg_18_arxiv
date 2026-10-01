@@ -9337,3 +9337,19 @@ esi = [edi+0x34] + 8; [ebp-4] = 0x2710;            /* clamp 10000 */
 从 `bullet/item.png` 1:1 切 16×16 单元）→ `ORDER.txt` → 一条脚本（**注意 owner 的透明度铁律只约束
 「伤害敌人的弹幕」；道具不是弹幕 ⇒ 不必压 alpha**）→ 把 `POFV_POWER_VM_*` 换过去。
 ⚠ 116 是别的会话的卡 ⇒ **只借做法**（已登记 `AUDIT` §BE #166），切图与脚本号都用自己的。
+
+#### ★ #4 外观的源图**就在 TH18 自己身上**（2026-10-01）
+
+- **TH18** 的 `local/th18.v1.00a/anm/bullet/bullet/item.png` = **256×64 RGBA**；
+  **TH19** 的 `local/th19.v1.10c/dat/bullet/item.png` = **256×64 RGBA** —— **两者同版式**。
+- ⇒ owner 要的「**完全类似与信仰点、P点等**」**不需要**去借 TH16/TH19 的：
+  **TH18 原生道具表就是这张图**（`bullet.anm` 里那个 `name: "bullet/item.png"` 的 entry）。
+- 116 的季节道具也是从**同一张表**切的（`make_season_art.py`：右上 2×2 = 春/夏/秋/冬，16×16 一格，
+  再加 `(224,32)` = 土用；一手 `th16:0x430cb7 add eax,0x81` → 脚本号 = 129 + SUBSEASON）。
+
+⇒ **下一轮的最短路径**（比之前的计划更省）：
+① 在 TH18 的 `bullet.anm` 里列 `bullet/item.png` 那个 entry 的 **sprite 表**（`spriteN: {x,y,w,h}`），
+   找出 **P 点**（信仰点）那一格；
+② 写 `assets/ability/make_pofv109_power_art.py`（照 `make_marisa_bullet_art.py` 的纪律 **1:1 切、不缩放**）；
+③ `ORDER.txt` 追加一行 → `make anm` 出新 entry/sprite 号 → 一条脚本（**道具不是「伤害敌人的弹幕」⇒
+   不受 owner 透明度铁律约束**）→ 换掉 `POFV_POWER_VM_*` 现在用的自建发光球（script 374）。
