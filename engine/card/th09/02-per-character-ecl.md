@@ -213,3 +213,28 @@ im.crop((0,161,0+16,161+14)).resize((128,112), Image.NEAREST).save('/tmp/x.png')
 ⇒ **「角色风格」的素材进度**：灵梦 ✅（`sprite24`）/ 咲夜 ✅（`sprite28`）/ **魔理沙 🟡**。
 ⇒ 下一步（魔理沙）：在 `pl01.anm` 里找**发弹脚本**（`script` 里 `sprite(spriteN)` 且被 `pl01.ecl`
 的 `etRing` 尾参引用那一族）⇒ 或者接受「魔理沙用程序化弹」。
+
+#### 4.4 ⚠ 工具修正：**TH09 的 anm 名表是 `v2.anmm`**（不是 v8，也不是我生成的那份）
+
+`plNN.anm` 的头是 **version 3** ⇒ 按 `tooling/thtk/unpack.py` 的注释「头 2/3 → `v2.anmm`」
+（TH07 PCB / TH08 IN 同族）。**不带 `-m` 时 `thanm` 输出的是 `ins_NNN`**，于是我用
+`grep "sprite(...)"` 什么都 grep 不到，误判成「这份 anm 没有 sprite 引用」（上一轮就踩了）。
+
+```bash
+thanm -l9 local/th09.v1.50a/dat/pl01.anm -m local/vendor/eclmap/anmmap/v2.anmm   # ✅ 有名字
+thanm -l9 local/th09.v1.50a/dat/pl01.anm                                        # ❌ 全是 ins_NNN
+```
+
+（`v8.anmm` 是 TH13–TH18 那一族 **anm 头 = 8** 用的 —— TH19 的 `bullet.anm`/`effect.anm` 正是 8，
+见 `TUNING.md` §2.0v-7；**名表一律按 anm 文件头版本选，不是按作品**。）
+
+#### 4.5 魔理沙的弹：**还没找到**（`sprite60..63` 不是它）
+
+带对名表后，`pl01`（魔理沙）的脚本引用的是 **`sprite60..63`**（各 12 次）＋ `sprite66/67`；
+查 sprite 表 ⇒ 它们在 **`entry21`**（第 22 个 entry），矩形全是 **64×80** 的 `4×2` 宫格
+（`(0,0)/(64,0)/(128,0)/(192,0)` 与 `y:80` 那一排）—— **64×80 是立绘/演出尺寸**，
+**不像普通弹**（灵梦的符是 64×16、咲夜的刀是 16×14）。
+
+⇒ 🟡 **魔理沙的弹还没定位**：下一步该做的是**从 `pl01.ecl` 那边反向找** ——
+它的 `etRing(...)` 尾参（`512`/`546` 那些）在引擎里最终喂给哪个 anm 脚本/entry
+（而不是在 anm 里正向 grep sprite）。
