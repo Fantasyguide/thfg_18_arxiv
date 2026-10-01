@@ -297,7 +297,8 @@ static void check_orbit_layout(void)
  *   ω = 6/4.5/3/2.25/1.6875（照 5 面递减）；**内圈反向**、其余同向；初角按该圈台数等分。*/
 static void check_orbit_rings_14_18(void)
 {
-    static const unsigned want_rings[5] = { 4, 4, 4, 4, 4 };        /* 14/15/16/17/18（owner：14–18 ⇒ 4 圈）*/
+    static const unsigned want_rings[5] = { 3, 3, 3, 3, 3 };        /* ★ 14–18 ⇒ **3 圈**（owner：不能到 4 圈，
+                                                                    *   内圈 4–6 台、外圈 ≥ 内圈）*/
     unsigned n;
     for (n = 14; n <= 18; ++n) {
         unsigned rings = want_rings[n - 14];
@@ -327,7 +328,24 @@ static void check_orbit_rings_14_18(void)
         for (r = 0; r < rings; ++r) {
             unsigned total = sum[0] + sum[1] + sum[2] + sum[3] + sum[4];
             CHECK(total == n);
-            CHECK(sum[r] >= 3u);
+            CHECK(sum[r] >= 4u);                    /* ★ owner：内圈到 5–6 都可以 ⇒ 每圈 ≥4 台 */
+        }
+        /* ★ owner 口径：**外圈台数 ≥ 内圈**（半径更大的圈放更多）；14–18 的 ω 序列 = −6/+4.5/+3 */
+        CHECK(sum[0] <= sum[1] && sum[1] <= sum[2]);
+        {   yk_orbit_layout_t q0, q1, q2;
+            int ik0 = -1, ik1 = -1, ik2 = -1;
+            for (k = 0; k < n; ++k) {
+                yk_orbit_layout_t t;
+                yk_orbit_layout((int)n, (int)k, &t);
+                if (t.ring == 0 && ik0 < 0) ik0 = (int)k;
+                if (t.ring == 1 && ik1 < 0) ik1 = (int)k;
+                if (t.ring == 2 && ik2 < 0) ik2 = (int)k;
+            }
+            CHECK(ik0 >= 0 && ik1 >= 0 && ik2 >= 0);
+            CHECK(yk_orbit_layout((int)n, ik0, &q0) && yk_orbit_layout((int)n, ik1, &q1)
+                  && yk_orbit_layout((int)n, ik2, &q2));
+            CHECK(q0.omega_deg == -6.0f && q1.omega_deg == 4.5f && q2.omega_deg == 3.0f);
+            CHECK(q2.radius == 90.0f);
         }
         /* 半径序列严格递增（等间隔）—— 直接按圈号抽查第 0/最后 圈 */
         {   yk_orbit_layout_t f, l;
