@@ -114,6 +114,39 @@ if ((*(emitter + 0x1FC) >> 8) & 2) call 0x43e380(…);   /* ★ arg9 是**标志
    `514 = 0x202` / `642 = 0x282` / 咲夜的 `18946 = 0x4A02` **都带 bit1(0x2) 与 bit9(0x200)**
    ⇒ 那才是它们「看起来同族」的真正原因（不是「高字节=组」）。
 
-⚠ **还没做**：arg5–arg8 四个 float 的**名字**（`etSpeed`/`etAngle` 哪一对是哪个）——
-它们在 `shoot_one_bullet`(`0x412960`) 里被读，**下一次反汇编就从那里进**；
-以及 `0x43e380`（arg9 bit9 触发的那支）是什么。
+## 6. ★★ 四个 float 的归属（`shoot_one_bullet` `0x412960` 读取侧，2026-10-01）
+
+在 `0x412cb9`–`0x412cd3` 读到**环的铺法公式**（`[0x48e4c4]` 实测 = **6.2831855 = 2π**）：
+
+```asm
+0x412caf  movsx eax, word [esi+0x1f4]   ; eax = 路数
+0x412cb9  fild  [ebp+0xc]               ; i
+0x412cbf  fmul  [0x48e4c4]              ; ★ × 2π
+0x412cc5  fidiv [ebp+0xc]               ; ÷ 路数        ⇒ (i × 2π) / 路数
+0x412cc8  fild  [ebp+0x10]              ; wave
+0x412ccb  fmul  [esi+0x14]              ; ★ × arg8
+0x412cd0  fadd  [esi+0x10]              ; ★ + arg7
+0x412cd3  fstp  [ebp+0x18]              ; = 这一颗的角
+```
+
+⇒ **arg7（`+0x10`）= 基准角**、**arg8（`+0x14`）= 层间偏角** ——
+与 `engine/ecl/th16/ECL-info.md`「**对圆形弹幕，ang1 同样是角度偏移量…ang2 是相邻『层』之间的
+角度偏移量**」**逐字相符** ⇒ 这一对就是 **`etAngle`**。✅✅
+
+另一路（`0x412c98`）：
+```asm
+fld [esi+0x18]; fsub [esi+0x1c]; call 0x404910(this=…); fadd [esi+0x1c]
+→ 0x412d59  mov [ebx+0xd70], ecx        ; ★ arg5/arg6 的结果落到 bullet+0xd70
+```
+⇒ `arg5/arg6`（`+0x18`/`+0x1c`）是**另一对角度**（`normalize(arg5 − arg6) + arg6` 是「以 arg6 为基准
+把 arg5 归一化」的惯用写法），落到 **`bullet+0xd70`**；而这一颗的角 → `call 0x42aed0(角, 0)`
+（返回 float，落 `bullet+0xd7c`，形态像 sin/cos 的方向换算）。
+
+🟡 **仍未定**：arg5/arg6 在**语义**上叫什么（对应 TH16/18 的 `etSpeed` 还是「aim 参考角」）——
+两条可选证法：① 看 `0x404910` 的 `this`（`0x4ace0c` 那个全局对象）是什么；② 看 `bullet+0xd70`
+在弹的 tick 里怎么用。**注意**：`arg5/arg6` **不是** speed —— 速度更可能来自 **arg1 指的那条类型记录**
+（`idx × 0xD48`），这也解释了为什么 `etSpeed` 在 TH16/18 里是独立的一条、而 TH09 的九参里没有明显的
+「速度对」。
+
+⚠ **还没做**：`0x43e380`（arg9 bit9 触发的那支）是什么；以及 §3 的 TH09→TH16/18 表要按本节更新
+（`etAngle` 那一行现在 ✅，`etCount` 那行 ✅✅）。
