@@ -420,6 +420,36 @@ static int aura_scan_bullets(const float *center, float r, int pad_linear, float
     return n;
 }
 
+/* ★★ 调试快捷键（owner 2026-10-01）：「**109 空格 = 发 C4**」。
+ *
+ *   **空格 = 本仓既定的调试键**：`sdk.h` 的 `CE_VK_SPACE`（读 `GetKeyboardState`），
+ *   owner 2026-09-21 口径 —— 111 灵界调试 / 112 令牌调试 / 106 满 P 测试键都在用它，
+ *   并且明文写着「**玩法功能禁止占用空格**」⇒ 本条是**调试**，不是玩法绑定。
+ *
+ *   ⚠ 为什么不能走输入掩码：**空格根本没进 TH18 的掩码** —— 引擎的键盘扫描
+ *     （`th18:0x401c50` 起）只读 `Z/X/Shift/方向/Esc/C/D/Home/P/Enter/End/R`，
+ *     连 `GetKeyboardState` 缓冲区的偏移里都没有 `0x20`
+ *     （`engine/input/th18/01-key-mapping.md` §2.1）⇒ 只能卡侧自己去问 Windows，`ce_key_down()` 就是它。
+ *   ⚠ 也因此它**不进 replay 输入流**（回放只录 `th18:0x4ca428` 的低 16 位）⇒ 回放里不重现，
+ *     也**不需要**去占掩码空闲位。
+ *   ⚠ 正式发布口径下要撤（登记 `TUNING.md` §2.0v-6）。
+ *
+ *   按下沿触发一次：`ca_effect(C4)` = 一手 C4 那一整套（**扩张的消弹圈** L3 + 抵挡护盾 +
+ *   boss attack 弹幕 + 自己是 boss）。⚠ **调试用不计气槽代价**（方便反复试）。*/
+static int32_t s_dbg_space = 0;
+static void ca_effect(pofv_card_t *s, int level, int grant_invuln);   /* 定义见下（本函数要用）*/
+
+static void debug_hotkeys(pofv_card_t *s)
+{
+    int down = ce_key_down(CE_VK_SPACE) ? 1 : 0;
+
+    if (down && !s_dbg_space) {
+        ce_log("pofv: DEBUG hotkey SPACE -> fire C4 (CA L3 expanding circle + shield + boss attack; free)");
+        ca_effect(s, POFV_CA_LEVEL_MAX, /*grant_invuln=*/1);
+    }
+    s_dbg_space = down;
+}
+
 /* ============================ 效果 ============================ */
 
 /* 无敌：走 EVENTS-CONTRACT §4 的**声明层**（各卡声明、层取最大值、只在更长时写 `player+0x47774`），
@@ -879,6 +909,8 @@ static int on_tick_2(ce_card_t *c)
         /* 返回 0 = 没蓄到 C1（点射）/ 气不够 ⇒ 什么都不做 */
     }
     s->prev_charge = charge;
+
+    debug_hotkeys(s);   /* ★ 调试：空格 = 发 C4（见上面 `debug_hotkeys()` 的长注）*/
 
     /* ★ 2026-10-01 owner 追加口径：结界的档案按**自机角色**选（咲夜 = TH09 锚定场 /
      *   早苗 = TH19 圆 + Shift 蓄力 / 灵梦·魔理沙 = 占位）。
