@@ -98,6 +98,19 @@ Sub8:  shoot_offset([10094.0f], [10095.0f]); …
 
   （格式与 eclmap 同形：`!anmmap` ＋ 空行/注释 ＋ `!ins_names` ＋ `NN name`，
   照 `local/vendor/thpages/static/mapfile/v8.anmm`。`--list` 现在同时报 ecl/anm 条数。）
+
+  ★★ **端到端已验证**（2026-10-01）：
+
+  ```bash
+  local/vendor/thtk/build/thdat/thdat -x9 local/th09.v1.50a/th09.dat \
+      etama.anm pl00.anm pl01.anm pl02.anm -C local/th09.v1.50a/dat
+  local/vendor/thtk/build/thanm/thanm -l9 local/th09.v1.50a/dat/etama.anm \
+      -m local/vendor/eclmap/eclmap/th09.anmm
+  ```
+  ⇒ `etama.anm` **612628 B** 已抽到 `local/th09.v1.50a/dat/`，`thanm -l9` 能列出
+  `entry entry0 { version: 3, name: "data/etama/etama.png", format: 5, width: 256, height: 256, … }`。
+  ⇒ **下一轮直接做**：在 `etama.anm.txt` 里找 `script 514 / 642 / 512 / 18946`（`thanm -x9` 连贴图一起切），
+  认出弹的样子 ⇒ 同时**直证角色号**（阴阳玉 / 飞刀一眼可辨）。
 - `ins_99` / `ins_101` 的**参数语义**（前两个实参是「方向/侧」还是「rank」，第 3 个是「弹 id 还是 group」）
   未逐个核 —— 本文只按**实参的字面差异**描述形态差异，**不宣称**已解开它们的语义。
 - 完整的 sub 列表与时限（`Sub2`/`Sub5` 等只列了行号没展开）。
