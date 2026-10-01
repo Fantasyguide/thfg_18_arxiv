@@ -4919,6 +4919,7 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 
 | 2026-10-02 | **所有卡**（共享资源 `assets/ability/**` + `assets/cards/**` + 共享数据 `patch/th18/cards.js` + 共享件 `native/Makefile`；新卡 **86 / 87**） | 见下方「§BE 详录 #210」 |
 
+| 2026-10-02g | **所有卡**（共享资源 `assets/ability/**` + `assets/cards/**` + 共享数据 `patch/th18/cards.js` + 共享件 `native/Makefile`；新卡 **91**）| 见下方「§BE 详录 #215」 |
 | 2026-10-02f | **所有卡**（共享数据 `patch/th18/cards.js` + 共享资源 `assets/cards/**`；新卡 **90**）| 见下方「§BE 详录 #214」 |
 | 2026-10-02e | **所有卡**（共享资源 `assets/ability/**` + `assets/cards/**` + `assets/voice/**` + `patch/th18/cards.js` + `patch/th18/voice.js` + `native/Makefile`；新卡 **89**）| 见下方「§BE 详录 #213」 |
 
@@ -28138,3 +28139,33 @@ ce_dup_item_claimed(...); }` —— **同名 inline 自己递归自己**，编�
 - ⚠ 与救援层（107/117/113 的 `cancel_impending_death`）**不冲突**：被救回来的那一路在 `0x45c12d` 就跳走了
   （既不走 `0x45d090` 也不走 `spend_power`）⇒ 本卡的 `+0x14` 也不会被调到（`0x45c255` 在同一条路上）。
 - `make check` exit 0（`cards-check` 47 张卡、`capcheck` 全绿、`dllx87 = 0`、`check-docs` 四项全绿）。
+
+## §BE 详录 #215（2026-10-02g）：**91 鞘翅重锤**（Undertale 式时机条 + 瞬移砸锤）
+
+**谁改的**：统筹会话（owner 2026-10-02：「再加一张卡：鞘翅重锤。发动之后会进入无敌状态，并有一个类似于
+Undertale 的时机条；当有敌人可攻击的时候，时机条会开始动，到中间时机的时候需要再按下 C；让自机瞬移 or
+快速直线移动到敌人身边，重锤砸下，造成高额伤害，然后回到原位。当 3s 没有可攻击的敌人或者时机没卡准的时候，
+自动退出，会再给你一点点无敌帧作为缓冲。」＋追加「此时按 D 会切卡，如果切到了别的卡，退出该状态，给你一点点无敌帧作为缓冲」）。
+
+### 落点（每条都有一手依据或明确的 ❓ 标记）
+| 面 | 做法 | 依据 |
+| --- | --- | --- |
+| 发动 | 引擎在 `card->state(+0x54) == 0 && recharge_cur(+0x38) < 1` 时调 `on_activate`（C 上升沿 = `INPUT_PRESSED` bit `0x400`，`0x45c048` 分派）| `engine/card/th18/04-active-cards.md` §「唯一门控」|
+| 第二次 C | 卡自己读 `CE_ADDR_INPUT_PRESSED & 0x400`；**激活那一帧的边沿丢掉**（core 的 `armed`），否则同一次按键会自己确认自己 | 本次新踩点 |
+| 无敌 | `ce_invuln_request(id, frames)` 声明层（SDK 每帧取最大值落笔到 `player+0x47774`）| `sdk.h` §② |
+| 时机条 | `script384`（条，layer 24）/ `script385`（光标，layer 25）| 层语义见 `script107` 的注（24 = 暂停模糊罩之前、25 = 之后）|
+| 瞬移 | 直接写 `player+0x620/624`（`CE_PLAYER_X/Y` 那个每帧被重读的 float3）| ★ **本仓第一张写自机坐标的卡** —— 风险登记于此：只写当前坐标，不动引擎的上一帧位置字段；全程无敌，所以不吃"跨线段"的激光判定 |
+| 伤害 | `ce_raise_damage_cap(800)` + `ce_damage_rect(…, 800, 140, 140)` | 不抬上限会被引擎的「每敌每帧 90」削掉（同 87/89 的做法）|
+| D 切卡退出 | 每帧比对 `AbilityManager+0x38`（`CE_MGR_SELECTED_ACTIVE`）是不是本卡对象 | owner 追加口径；与「3s / 卡歪」共用同一条 `EXIT` 路径与缓冲 |
+
+### 踩到的坑（记一笔）
+**`dllx87` 门被一条 float 返回值踩中**：`em_cursor_norm()` 原本是 `.c` 里的普通函数、返回 `float`
+⇒ i386 ABI 用 **st(0)** 返回 ⇒ 我们的目标文件里出现 1 条 x87（`make dllx87` 红）。改成头里的
+`static inline` 后归零 —— 与 `bc_atan2f` 同一条理由（这条纪律本来写在 `sdk_core.h`，这是第二次被踩）。
+
+### 影响面 + 回归
+- `ability.anm` 尾插 4 个 entry（95–98：锤 / 鞘翅 / 条 / 光标）+ 4 个脚本（384–387）；既有号一个没动。
+- 卡表：`patch/th18/cards.js` +`"91"`（`category 0` + `active_recharge 2400`，C 侧同值 —— 契约检查要求两侧都在）。
+- 新单测 `tests/test_elytra_mace_core.c`（`test-host` 加一行）：激活帧丢 C / 没敌人光标不动 / 卡准 HIT /
+  卡歪 MISS / 双 3s TIMEOUT / 砸完 RETURN / 缓冲 DONE / 无敌声明单调不增。
+- `make check` exit 0（`cards-check` 48 张、`capcheck` 全绿、`dllx87 = 0`、`check-docs` 四项全绿）。

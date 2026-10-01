@@ -52,3 +52,5 @@ JERA
 STAR_CANNON
 # ── 2026-10-02：非系统卡 90 冰淇淋（被动卡；致敬・杀戮尖塔）
 ICE_CREAM
+# ── 2026-10-02：非系统卡 91 鞘翅重锤（主动卡；致敬・Minecraft）
+ELYTRA_MACE

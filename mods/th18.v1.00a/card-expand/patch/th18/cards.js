@@ -741,5 +741,24 @@
     "weight": 2,
     "sprite_large": 208,
     "sprite_small": 209
+  },
+  "91": {
+    "name": "鞘翅重锤",
+    "desc": [
+      "主动（C 键）：进入无敌 + 时机条。",
+      "有敌人时光标开始左右扫，在中间",
+      "亮带里再按一次 C ⇒ 瞬移到最近的",
+      "敌人上空，重锤砸下造成高额伤害后",
+      "回到原位。3 秒没敌人、没卡准或按",
+      "D 切走都退出（留一点无敌）。致敬・Minecraft。"
+    ],
+    "internal_name": "ELYTRA_MACE",
+    "category": 0,
+    "initial_unlocked": 1,
+    "price_tier": 10,
+    "weight": 2,
+    "active_recharge": 2400,
+    "sprite_large": 210,
+    "sprite_small": 211
   }
 }

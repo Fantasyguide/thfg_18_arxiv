@@ -1,0 +1,16 @@
+script script384 {
+    // 鞘翅重锤（id 91）的**时机条**（贴图 `ELYTRA_MACE_BAR`，160×14，中间那道暖黄亮带 = 判定窗口）。
+    // C 在 on_activate 里起它、写 pos（640×480 空间的游玩区正中），退出时删。
+    // layer 24 = UI 表面（早于暂停模糊罩）⇒ 光标用 25 压在它上面（同层之间的顺序不保证，分两层最稳）。
+    // ★ 纪律同炎魔火球 script92：**脚本里不许碰 pos / color**，只钉 layer 与混合。
+-1:
+    layer(24);
+    sprite(@ELYTRA_MACE_BAR);
+    type(1);
+    blendMode(1);
+    zWriteDisable(1);
+    scale(1.0f, 1.0f);
+    alpha(255);
+0:
+    stop();
+}

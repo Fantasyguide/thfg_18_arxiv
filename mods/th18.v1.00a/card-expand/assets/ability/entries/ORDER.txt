@@ -1026,3 +1026,13 @@ STAR_CANNON_SHOT                ability/star_cannon/_src/Projectile_955.png 22x2
 #   （owner 也是这么建议的）。样式按 owner 给的实机截图逐像素对：两行居中、浅暖白 + 深色描边、
 #   行 1 字高 ≈43 / 行 2 ≈19、行距极紧。生成器 = `assets/ability/star_cannon/make_death_msg.py`。
 STAR_CANNON_DEATH_MSG           ability/star_cannon/_src/DEATH_MSG.png    384x104
+
+# ★★ 2026-10-02（91 鞘翅重锤，致敬 Minecraft 的**鞘翅 + 重锤**）：演出用的四张图。
+#   一手（用户本机 Minecraft 1.21.10 客户端 jar）：
+#   `assets/minecraft/textures/item/mace.png`（重锤，16×16）、`.../elytra.png`（鞘翅，16×16）、
+#   `.../wind_charge.png`（风弹，备用）。取法 = 直接 `zipfile` 读那个 jar（见 AUDIT §BE #215）。
+#   时机条 / 光标是**我们烘的**（Undertale 式战斗条）：`assets/ability/elytra_mace/make_bar_art.py`。
+ELYTRA_MACE_HAMMER              ability/elytra_mace/_src/mace.png         16x16
+ELYTRA_MACE_WING                ability/elytra_mace/_src/elytra.png       16x16
+ELYTRA_MACE_BAR                 ability/elytra_mace/_src/BAR.png          160x14
+ELYTRA_MACE_CURSOR              ability/elytra_mace/_src/CURSOR.png       6x18

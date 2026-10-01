@@ -659,12 +659,12 @@ python3 native/tools/reader_census.py --all    # 连锚点的 31 处引用一起
 
 <!-- capcheck:appendix:begin（本段由 `native/tools/capcheck.py --gen-appendix` 生成，**别手改**）-->
 
-**A0. 卡的安全用量：还能进 23 张**（瓶颈 = `abcard.anm` entry，每张 2 格；口径 = 本文件 `CARD_COST`，见 `CAPACITY.md` §1 的「安全用量」）
+**A0. 卡的安全用量：还能进 22 张**（瓶颈 = `abcard.anm` entry，每张 2 格；口径 = 本文件 `CARD_COST`，见 `CAPACITY.md` §1 的「安全用量」）
 
-**A1. 卡 id（`CE_CARD(` 的落点，47 张）** —— 出处 `native/cards/*.c`
+**A1. 卡 id（`CE_CARD(` 的落点，48 张）** —— 出处 `native/cards/*.c`
 
 ```
-58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 106 107 108 109 110 111 112 113 114 115 116 117 118 200
+58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 106 107 108 109 110 111 112 113 114 115 116 117 118 200
 ```
 
 **A2. shooterset 组（`native/sht_ids.h`，84 个宏）**
@@ -809,7 +809,7 @@ CE_ANM_ABILITY_ATLAS_ATLAS_YK_OPT
 CE_ANM_ABILITY_ATLAS_ATLAS_ZENITH_BLADE
 ```
 
-**A4. 追加脚本（`CE_ANM_ABILITY_SCRIPT_*`，316 个）**
+**A4. 追加脚本（`CE_ANM_ABILITY_SCRIPT_*`，320 个）**
 
 ```
 CE_ANM_ABILITY_SCRIPT_ANIMAL_EAGLE
@@ -837,6 +837,10 @@ CE_ANM_ABILITY_SCRIPT_BROKEN_CORE_BEAM
 CE_ANM_ABILITY_SCRIPT_BROKEN_CORE_ORB
 CE_ANM_ABILITY_SCRIPT_BROKEN_CORE_SPARK
 CE_ANM_ABILITY_SCRIPT_EAGLE_BEAM
+CE_ANM_ABILITY_SCRIPT_ELYTRA_MACE_BAR
+CE_ANM_ABILITY_SCRIPT_ELYTRA_MACE_CURSOR
+CE_ANM_ABILITY_SCRIPT_ELYTRA_MACE_HAMMER
+CE_ANM_ABILITY_SCRIPT_ELYTRA_MACE_WING
 CE_ANM_ABILITY_SCRIPT_FAITH_DOT
 CE_ANM_ABILITY_SCRIPT_FAITH_HUD_MUL
 CE_ANM_ABILITY_SCRIPT_FAITH_HUD_MULT
@@ -1133,10 +1137,11 @@ CE_ANM_ABILITY_SCRIPT_ZENITH_TRAIL
 **A5. sprite 汇总（`CE_ANM_ABILITY_SPRITE_*`）** —— sprite 号是 dword、**不是容量**，所以这里只登记总数与号段（加一张美术这两行就变 ⇒ 台账必须跟着刷新）
 
 ```
-CE_ANM_ABILITY_SPRITE 宏 991 个，号 109..596
+CE_ANM_ABILITY_SPRITE 宏 995 个，号 109..600
 ```
 
 <!-- capcheck:appendix:end -->
+
 
 
 

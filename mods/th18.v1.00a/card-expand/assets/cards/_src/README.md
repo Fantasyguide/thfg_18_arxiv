@@ -23,6 +23,7 @@
 `crop((224, 118, 1012, 1103))` = 788×985。人物中线由绿裙的包围盒（`x 332..904`、`y 376..922`）定，
 上取到发带、下取到脚；再按**卡框每边吃掉的 7％** 把这个构图外扩一圈，免得发带和鞋被框边切掉。
 之后 `fit_card.py WHIRLWIND … --no-detect --trim 0 --margin 0`。
+| `ELYTRA_MACE.png` | 鞘翅重锤（id 91）的卡面 | **用户本机 Minecraft 1.21.10 客户端**：`<MC>/.minecraft/versions/1.21.10/1.21.10.jar` → `assets/minecraft/textures/item/mace.png`（16×16 调色板 PNG）| `make_white_item_card.py ELYTRA_MACE --item _src/ELYTRA_MACE.png`：白底 + **整数倍**放大（像素材质不插值）+ 原生框 |
 | `ICE_CREAM.png` | 冰淇淋（id 90）卡面的**原件** | **用户本机已解包的《杀戮尖塔 1》**：`<Steam>/steamapps/common/SlayTheSpire/desktop-1.0/images/largeRelics/iceCream.png`（256×256，调色板 PNG）| 不直接进卡面（遗物原图四周留了大量透明边）|
 | `ICE_CREAM_RELIC.png` | 同上，**裁掉透明边** | 由上一张按 alpha 包围盒裁出（`(102,72,160,186)` ⇒ **58×114**）| `make_white_item_card.py ICE_CREAM --item _src/ICE_CREAM_RELIC.png --fill`：白底 + 等比放大到画面区上限 + 原生框 |
 | `TONY_GRIEF.png` | 东尼的悲恸（id 86）卡面的**原件** | **用户提供**（`D:\项目\幻想指南\18\th18_modkit\d3bd0a27cffc1e17610100340c90f603738de914.png`，850×1072，透明底《杀戮尖塔》「送死亡」整卡：**左上角凸出一块能量六边形**、两侧还有横幅飞边）| 不直接进卡面（下面那张是裁出来的卡体）|
@@ -68,3 +69,19 @@ python3 assets/build_voice.py
 （一行 = 一个新 id）、`patch/th18/voice.js` 里登记同号（id 显式写死，别靠顺序）。
 
 一手出处：星星炮的 `UseSound = SoundID.Item9`（`Item.cs` 的 `case 197:`）⇒ `Item_9.xnb`。
+
+### Minecraft 物品贴图的取法（客户端 jar，无需任何工具）
+
+```bash
+python3 - <<'EOF'
+import zipfile, os
+jar = '<MC>/.minecraft/versions/1.21.10/1.21.10.jar'      # 1.21 才有 mace
+z = zipfile.ZipFile(jar)
+for n in ('assets/minecraft/textures/item/mace.png',
+          'assets/minecraft/textures/item/elytra.png',
+          'assets/minecraft/textures/item/wind_charge.png'):
+    open(os.path.join('assets/ability/elytra_mace/_src', os.path.basename(n)), 'wb').write(z.read(n))
+EOF
+```
+
+贴图是 16×16 的**调色板 PNG**（`mode=P`）⇒ 用 PIL 读的时候记得 `.convert("RGBA")`。
