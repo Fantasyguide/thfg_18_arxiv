@@ -249,8 +249,7 @@ static void check_orbit_layout(void)
     /* ① ≤4 台（与 5/6/7、9–12、14–18 台一样）⇒ 单圈：半径 60、ω 6°、初角 360/N 等分 */
     CHECK(yk_orbit_layout(4, 0, &a) && a.radius == 60.0f && a.omega_deg == 6.0f && a.ring == 0);
     CHECK(yk_orbit_layout(4, 1, &b) && b.phase_deg == 90.0f);          /* 360/4 */
-    CHECK(yk_orbit_layout(18, 3, &a) && a.radius == 60.0f && a.ring == 0);
-    CHECK(yk_orbit_layout(15, 1, &a) && a.phase_deg == 24.0f);         /* 360/15，一手那支 */
+    /* ★ 2026-09-30（owner 口径「应当是多个环」）：14–18 台不再是单圈 ⇒ 下面 check_orbit_rings_14_18() 专测 */
     /* ② 8 台 = 3 + 5：内圈 30/ω6、外圈 60/ω4.5，且**内外反向** */
     CHECK(yk_orbit_layout(8, 0, &a) && a.ring == 0 && a.radius == 30.0f && a.omega_deg == 6.0f);
     CHECK(yk_orbit_layout(8, 2, &a) && a.radius == 30.0f && a.phase_deg == 120.0f * 2.0f);
@@ -289,6 +288,62 @@ static void check_orbit_layout(void)
         CHECK(yk_orbit_radius_at_r(90.0f, 10, &r) && r > 44.9f && r < 45.1f);   /* 90/20*10 */
         CHECK(yk_orbit_radius_at_r(60.0f, 0, &r) && r == 0.0f);
         CHECK(!yk_orbit_radius_at_r(60.0f, 5, NULL));
+    }
+}
+
+/* ★★★ 2026-09-30（owner：「『一堆使魔但是只有一个环』的意思是，**它应当是多个环**」——
+ *   这里「环」= **绕转圈数**）：14–18 台那档从「单圈」改成**多圈同心**（❓口径外推，一手无样本）。
+ *   规则：圈数 = ceil(N/4) 钳 [3,5]；每圈台数尽量均匀（余数摊外圈）；半径 = 30·(圈+1) 等间隔；
+ *   ω = 6/4.5/3/2.25/1.6875（照 5 面递减）；**内圈反向**、其余同向；初角按该圈台数等分。*/
+static void check_orbit_rings_14_18(void)
+{
+    static const unsigned want_rings[5] = { 4, 4, 4, 4, 4 };        /* 14/15/16/17/18（owner：14–18 ⇒ 4 圈）*/
+    unsigned n;
+    for (n = 14; n <= 18; ++n) {
+        unsigned rings = want_rings[n - 14];
+        unsigned r, k;
+        unsigned sum[5] = { 0, 0, 0, 0, 0 };
+        unsigned prev_phase[5];
+        int seen[5] = { 0, 0, 0, 0, 0 };
+        float prev_r = 0.0f;
+        for (k = 0; k < n; ++k) {
+            yk_orbit_layout_t L;
+            CHECK(yk_orbit_layout((int)n, (int)k, &L));
+            CHECK(L.ring >= 0 && (unsigned)L.ring < rings);
+            sum[L.ring]++;
+            /* 半径 = 30·(圈+1) 等间隔 */
+            CHECK(L.radius == 30.0f * (float)(L.ring + 1));
+            /* ω：内圈反向、其余同向，且绝对值不超过 6 */
+            if (L.ring == 0) CHECK(L.omega_deg < 0.0f);
+            else CHECK(L.omega_deg > 0.0f);
+            CHECK(L.omega_deg <= 6.0f && L.omega_deg >= -6.0f);
+            /* 同圈初角互不重合 */
+            if (seen[L.ring]) CHECK(L.phase_deg != prev_phase[L.ring]);
+            else seen[L.ring] = 1;
+            prev_phase[L.ring] = L.phase_deg;
+            CHECK(L.phase_deg >= 0.0f && L.phase_deg < 360.0f);
+        }
+        /* 每圈台数之和 == N，且每圈至少 3 台 */
+        for (r = 0; r < rings; ++r) {
+            unsigned total = sum[0] + sum[1] + sum[2] + sum[3] + sum[4];
+            CHECK(total == n);
+            CHECK(sum[r] >= 3u);
+        }
+        /* 半径序列严格递增（等间隔）—— 直接按圈号抽查第 0/最后 圈 */
+        {   yk_orbit_layout_t f, l;
+            int ki = -1, kl = -1;
+            for (k = 0; k < n; ++k) {
+                yk_orbit_layout_t t;
+                yk_orbit_layout((int)n, (int)k, &t);
+                if (t.ring == 0) ki = (int)k;
+                if ((unsigned)t.ring == rings - 1u) kl = (int)k;
+            }
+            CHECK(ki >= 0 && kl >= 0);
+            CHECK(yk_orbit_layout((int)n, ki, &f) && yk_orbit_layout((int)n, kl, &l));
+            CHECK(l.radius > f.radius);
+            prev_r = l.radius;
+            CHECK(prev_r == 30.0f * (float)rings);
+        }
     }
 }
 
@@ -2478,6 +2533,7 @@ int main(void)
         }
     }
     check_orbit_layout();                   /* ★ 2026-09-30：按台数分圈（8=3+5 / 13=3+5+5 / 其余单圈）*/
+    check_orbit_rings_14_18();              /* ★ 2026-09-30：14–18 台 ⇒ 多圈（owner 口径，一手无样本）*/
     check_beam_member_covers_entry();       /* ★ 第三十三批：束贴图铺满整条 entry 行宽（「一缕一缕」的闸）*/
     check_beam_spec_files();
     check_orbit_gift_ledger();              /* ★ 2026-09-30：绕转使魔「一只敌人只补一次」的判定 */
