@@ -725,18 +725,22 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
      *     万一将来要把「整支变绿」切回来，两条判据可以并存。*/
     /* ★★★ 2026-09-26 owner 口径（逐字）：「**特别地对于六面道中，会有四色妖精都出现，这里面四色妖精
      *   不是用来指示掉落的，而是美术性质的，所以得让它们平均地掉落绿点，在这里可以不把部分妖精改成绿色**」
-     *   ⇒ **只在第 6 关**：A 组四色杂鱼妖精（`anm_src == 2`，主脚本 **0/5/10/15 = 蓝/红/绿/黄**）
-     *     **一律**按「绿妖精」那条路发点 —— 四条走同一个 `mof_core_wants_big_green()` ⇒ **值相同 = 平均**；
-     *     并且**不做换皮**（换皮表 `mof_green_pairs[]` 的关掩码本来就不含 ST6 ⇒ 天然不改外观 ✓）。
-     *   ⚠ 键与宿主表同源（表里 `{2,10}` = 绿妖精本体；这里把同族的 0/5/15 一起收进来，**只限第 6 关**，
-     *     别的关仍然只认表 —— 免得 stage1 的蓝妖精无端掉点）。
-     *   ⚠ `is_green = 1` ⇒ 走 `mof_drop_wipe()` 清掉原生掉落，满足既有口径「金钱和绿点别重合」。*/
+     *   +「**你为什么要清掉原生掉落？绿点是额外性质的，然后你按照平均有 1/4 概率掉绿点来做**」
+     *   ⇒ **只在第 6 关**：A 组四色杂鱼妖精（`anm_src == 2`，主脚本 **0/5/10/15 = 蓝/红/绿/黄**），
+     *     每只被杀时**独立掷一次 1/4**（`ce_rand()` = 引擎的 `REPLAY_SAFE_RNG`，与原生掉落同一个流 ⇒ 录像一致），
+     *     掷中才**额外**撒一颗大信仰点：
+     *     · **不清原生掉落**（`is_green` 保持 0 ⇒ 不走 `mof_drop_wipe()`）—— 绿点是**附加**的；
+     *     · **不做换皮**（换皮表关掩码本来就不含 ST6 ✓）；
+     *     · 值仍走 `mof_core_wants_big_green()`（与绿妖精同一档 ⇒ 四色**平均**）。
+     *   ⚠ 与「变绿的妖精」那条路的区别：那条是**替换**（owner 2026-09-18 口径），这里明确是**追加**。*/
     if (!want_big && anm_src == 2 && CE_CURRENT_STAGE() == 6 &&
-        (anm_script == 0 || anm_script == 5 || anm_script == 10 || anm_script == 15)) {
+        (anm_script == 0 || anm_script == 5 || anm_script == 10 || anm_script == 15) &&
+        (ce_rand() % 4u) == 0u) {
         want_big = mof_core_wants_big_green(ev->kind, ev->flags, is_boss, mof_difficulty(), &v);
-        is_green = want_big;
+        is_green = 0;                       /* ★ 额外掉落：**不**清原生掉落 */
         if (want_big) {
-            ce_log("mof: st06 道中四色妖精（脚本 %d）⇒ 按绿妖精**平均**发点（外观不动）", (int)anm_script);
+            ce_log("mof: st06 道中四色妖精（脚本 %d）⇒ **1/4 掷中**：额外撒绿点（原生掉落保留、外观不动）",
+                   (int)anm_script);
         }
     }
     if (!want_big && faith_green_node_owns((int32_t)ev->id)) {
