@@ -1,0 +1,73 @@
+# 01 — TH09 的 `et*` 发射器族（opcode **96–104**）的**实参顺序**（转写用）
+
+> **版本**：TH09 v1.50a（`local/th09.v1.50a/th09.exe`，imagebase `0x400000`）。
+> **方法**：一手 —— 派发表（文件偏移 `0xb4a4` = VA `0xc0a4`，见 §1）+ 反汇编共用实作 `0x408040`。
+> **可信度**：实参顺序与落点 ✅（逐指令）；**每个字段的「游戏内含义」** 🟡（下一步要跟
+> `0x4131c0` 或与 TH16/18 的 `etNew` 族对名）。2026-10-01。
+
+## 1. 这一族共用一个 handler
+
+TH09 的 ECL 派发表 = **文件偏移 `0xb4a4`（VA `0xc0a4`）起 186 个 handler 地址**，按
+`opcode - 2` 索引（拿 ExpHP `th-re-data` 的 `ecl` label 对齐，**146 条一致命中**）。
+
+| opcode | 名字（从**同代** `th08.eclm` 借）| handler |
+| :-: | --- | --- |
+| 96 | `etFanAimed` | `0x40a168` |
+| 97 | `etFan` | `0x40a168` |
+| 98 | `etRingAimed` | `0x40a168` |
+| **99** | **`etRing`** | `0x40a168` |
+| 100 | `etRingAimedAway` | `0x40a168` |
+| **101** | **`etRingAway`** | `0x40a168` |
+| 102 / 103 / 104 | `etRandAng` / `etRandSpd` / `etRand` | `0x40a168` |
+
+⇒ **96–104 共用一个入口**（`0x40a168` 是「共用取参序言」：`call 0x408040` 后各支 `jmp 0x408750`
+回 VM 主循环）。`0x408040` 是**真正的实作**，节拍见 §2。
+
+## 2. 实参顺序（`0x408040` 逐指令读出）
+
+Eclipse 指令流里，`esi` 指向这条指令的描述块：
+
+- `[esi + 4]` = **opcode** ⇒ ★ **`mode = opcode − 0x60`**（96 → mode 0）写进 `emitter+0x1f8`（word）
+- `[esi + 0xa]` = **实参类型位掩码**（`byte`）：**第 i 位 = 「第 i 个实参是表达式/变量」**；
+  置位时 `call 0x405760`（求值），否则直接取立即数。
+  用的位：`0x01`(arg1)、`0x02`(arg2)、`0x04`(arg3)、`0x08`(arg4)、`0x10`(arg5)、`0x20`(arg6)、
+  `0x40`(arg7)、`0x80`(arg8)。
+- 实参槽（**注意 arg1/arg2 是同一个 dword 的高低 16 位**）：
+
+| 实参 | 字节码偏移 | 类型 | 落点 |
+| :-: | :-: | :-: | --- |
+| arg1 | `+0xc`（**低 16**）| int | `emitter + 0x00`（word）|
+| arg2 | `+0xe`（**高 16**）| int | `emitter + 0x02`（word）|
+| arg3 | `+0x10` | int | `emitter + 0x1f4`（word）|
+| arg4 | `+0x14` | int | `emitter + 0x1f6`（word）|
+| arg5 | `+0x18` | float | `emitter + 0x18` |
+| arg6 | `+0x1c` | float | `emitter + 0x1c` |
+| arg7 | `+0x20` | float | `emitter + 0x10` |
+| arg8 | `+0x24` | float | `emitter + 0x14` |
+| arg9 | `+0x28` | int | `emitter + 0x1fc` |
+
+另外：
+- `emitter + 0x1fa`（word）恒写 0；
+- 发射器的**初始位置**来自 `call 0x401100`（对 `enemy+0x2dd4` / `enemy+0x2e04` 做的 Float3 运算），
+  结果拷进 `emitter + 4`（float3）；
+- 最后 `call 0x4131c0` = **`BulletManager::shoot_rival_bullets_array`**（ExpHP 命名）—— 真正发弹。
+
+## 3. 与 TH16/TH18 `etNew` 族的对应（翻译目标）
+
+TH09 是「**一条指令带全部参数**」的老式风格；TH16/TH18 拆成了
+`etNew`(600) ＋ 一串 setter（`etOn`/`etSprite`/`etOffset`/`etAngle`/`etSpeed`/`etCount`/`etAim`/…）。
+两边的**模式表**能对上（`engine/ecl/th16/ECL-info.md` 的 `etAim` mode 表）：
+
+| TH09（`mode = opcode − 96`）| TH16/18 写法 |
+| --- | --- |
+| 96 `etFanAimed`（mode 0）| `etAim 0`（自机狙）+ `etCount(路数,层)` + `etAngle(偏移, 夹角)` |
+| 97 `etFan`（mode 1）| `etAim 1`（固定弹）+ `etCount` + `etAngle(起始角, 夹角)` |
+| 98 `etRingAimed`（mode 2）| `etAim 2`（自机狙环形）|
+| **99 `etRing`（mode 3）** | `etAim 3`（固定弹环形）+ `etCount` + `etAngle(起始角, 层间偏角)` |
+| 100 `etRingAimedAway`（mode 4）| `etAim 4`（偶数狙环形）|
+| **101 `etRingAway`（mode 5）** | `etAim 5` / 或 `etAim 3` + 起始角偏 π（🟡 待定）|
+| 102/103/104（mode 6/7/8）| `etAim 6`/`7`/`8`（含角度/速度涨落）|
+
+⚠ **还没做**：把 §2 那 9 个字段与 TH16/18 setter 的**字段级**对应坐实（两边字段都还没逐一对名）；
+以及 `arg9`（TH09 例子里是 `514`/`642` 那种数）到底是什么 —— 🟡 下一步从 `0x4131c0` 或
+`BulletManager` 的弹类型表反查。
