@@ -4119,8 +4119,32 @@ pl00.anm pl00b.anm pl00f.anm  pl01.anm pl01b.anm pl01f.anm  pl02.anm … pl03.an
 **TH19 没有 eclmap/anmmap**，可以照 `tooling/eclmap/gen_eclmap.py --kind anm` 用 ExpHP 的
 `labels.json` 现生成 —— 前提是 `local/vendor/th-re-data/data/` 里有 th19 那份）。
 
-⚠ **未做**：`local/` 下已有 `local/th19.v1.10c/ability.txt` 等少数文本，但**没有解包目录**；
-抽图与早苗阶段 3/4 的读法都还是**下一轮**的事。
+✅ **抽图也跑通了**（2026-10-01）：
+
+```bash
+mkdir -p local/th19.v1.10c/dat
+thdat -x19 local/th19.v1.10c/th19.dat bullet.anm pl00f.anm -C local/th19.v1.10c/dat
+thanm -l19 local/th19.v1.10c/dat/bullet.anm            # ⚠ th19 没有 anmmap ⇒ 输出是 ins_NNN（数字）
+```
+
+- `bullet.anm`（626,648 B，**version 8**）谱系：**10 个 entry / 331 个 script**；
+  贴图名 = `bullet/bullet1.png`、`bullet/bullet2.png`、`bullet/bullet3.png`、
+  ★ **`bullet/item.png`**（第 4 个 entry）。
+- `script1` 长这样（数字 opcode，th19 缺名表）：`ins_304(23); ins_313(1); ins_300(-1); 0: ins_603(8.0f, 8.0f); +2: ins_1();`
+  ⇒ 想读懂得先给 th19 生成名表（`gen_eclmap.py --kind anm`，**前提是 `th-re-data` 里有 th19 那份**；
+  没有就得先补 ExpHP 数据）。
+
+### ★ 顺带：#4（灵力道具外观）也可能在这里拿到
+
+★ **`bullet/item.png`** 就是 TH19 的**道具贴图**（和 TH16 那个 `bullet/item.png` 同名同用途
+—— 116 的季节道具正是从 TH16 的 `bullet/item.png` 切出 5 个 16×16 单元的）。
+⇒ 若走「**TH19 口径**的道具外观」（owner 说的是「类季节道具」，而季节道具的贴图就是这个文件），
+**源图现成**：`thdat -x19 … bullet.anm` 抽出来后用 `thanm -x19` 切 entry3 的贴图即可。
+⚠ 但 **109 的灵力道具到底是「TH16 季节道具样」还是「TH19 道具样」**，得 owner 一句话 ——
+两条路的源图都拿得到（TH16 那条 116 已经在用）。
+
+⚠ **未做**：早苗阶段 3/4 的读法、バリア视觉那一条 script 的确认（都要先有名表或先把 331 个脚本
+按 entry 分组读完）。
 
 ### boss 特效（#2 的另一半）：**先搁置，可以先挖**
 
