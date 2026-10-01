@@ -26462,3 +26462,14 @@ youkai/emitkey: enemy #%u slot %d child #%u frame %u active %d
 「6 面开场阵列」等别的场景用的是哪张（🟡）。**下一步实跑判据**见 `HANDOFF-108.md` #69。
 
 **闸**：`make -s check` rc=0、`dllx87 = 0`、`sites.py verify` 全对上、`capcheck` 全绿、`check-docs` 全过。
+
+## §BE 详录 #170（2026-10-01）：**117 的大怪判据阈值 64 → 48**（与 108 对齐，owner 要求）
+
+| 项 | 内容 |
+| --- | --- |
+| 文件 | `native/cards/animal.c`（**117 自己的文件** —— 已确认这两个宏**不是**共享件：定义在 `animal.c:857/863`，只有它自己用；`sdk.*`/`engine.h` 里没有） |
+| 改了什么 | `ANIMAL_BIG_SPRITE_MIN_W/H` **64 → 48**（两行），并在宏上面留了来龙去脉注释 |
+| 为什么 | **一手 rect 与 108 相同**（`enemy.anm` entry0 `enemy.png`，120 sprites）：小妖精 **32×32 / 48×32**（高 ≤32）、**右上角 `sprite72..87` 的两种大妖精 = 48×48**、大蝴蝶 **64×64** ⇒ ≥48 卡在两者之间；原 64 会漏掉 4 面那种大妖精（108 见 §BE #169）|
+| 谁改的 | **owner 2026-10-01 要求「把 117 的判据也改一下」**（改别人的卡 ⇒ 本条登记 + 文件内注释，双份）|
+| 怎么验证的 | `make -s check` rc=0（`youkai_core: 8791 checks, 0 failed`）、`dllx87 = 0`、`sites.py verify` 全对上、`capcheck` 全绿、`check-docs` 全过；`animal.c` 里无单测引用这两个宏（`grep` 核过）|
+| 影响面（117） | 与 108 一致：**48×48 的 sprite 也从此算「大怪」**（例如 4 面那两种大妖精 ⇒ 117 里同样会走大怪分支）；小妖精（高 32）仍不算。与 108 用的**同一个数**（48/48）|

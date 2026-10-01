@@ -854,8 +854,13 @@ static const char *animal_enemy_sub_name(const uint8_t *e, int32_t *out_sub)
 #define ANIMAL_ENEMY_FINAL_SPRITE_H  (CE_ENEMY_DATA + 0x4fdc)
 #define ANIMAL_ANM_VM_SPRITE_SIZE    0x74   /* zAnmVmPrefix.sprite_size（vm+0x74/+0x78）*/
 #define ANIMAL_ANM_VM_SCALE          0x54   /* zAnmVmPrefix.scale（备查；本判据用原始贴图尺寸）*/
-#define ANIMAL_BIG_SPRITE_MIN_W      64     /* 用户口径 + enemy.png/thanm 实测：右下角 sprite96..107 = 64×64 */
-#define ANIMAL_BIG_SPRITE_MIN_H      64
+/* ★★★ 2026-10-01（**owner 要求与 108 对齐**）：阈值 **64 → 48**。
+ *   一手 rect（`enemy.anm` entry0 = `enemy.png`，120 sprites，108 侧同一份实测）：
+ *   小妖精 **32×32 / 48×32**（高最多 32）、**右上角 `sprite72..87` 的两种「大妖精」= 48×48**、
+ *   大蝴蝶 64×64 ⇒ 「两边 ≥ 48」正好卡在「小妖精（高 32）」与「大妖精（48）」之间；
+ *   原 64 会把 4 面那种大妖精漏掉（108 侧已按同一条改）。见 `AUDIT.md` §BE #170。*/
+#define ANIMAL_BIG_SPRITE_MIN_W      48
+#define ANIMAL_BIG_SPRITE_MIN_H      48     /* ★ 2026-10-01：与 108 对齐（见上面那条注释 + §BE #170）*/
 #define ANIMAL_ODD_GROUP_MAX         3      /* 用户 2026-09-13：同波同类 ≤3 也叫鹤立鸡群（具名旋钮）*/
 #define ANIMAL_ODD_MIN_SAMPLE        1      /* 用户口径「哪怕只有 1 只」；total < 它时不参与统计 */
 #define ANIMAL_ODD_MAJORITY_NUM      1      /* 严格过半多数派：max/total > NUM/DEN = 1/2 */

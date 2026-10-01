@@ -1987,7 +1987,8 @@ int yk_item_box_open(int32_t player_state);
  *   **大妖精 48×48**（24 张，其中**右上角 sprite72..87 = 16 张** = 两种大妖精 × 8 帧）、
  *   **大蝴蝶 64×64**（12 张）⇒ 判据取「**两边 ≥ 48**」= 卡在「小妖精最大 48×32」与「大妖精 48×48」之间。*/
 #define YK_BIG_SPRITE_MIN_W   48      /* 判「大怪」的贴图**原始**尺寸下限（未乘 scale）。
-                                       * 一手/同源：`cards/animal.c` 的 `ANIMAL_BIG_SPRITE_MIN_W/H` = 64/64
+                                       * 一手/同源：`cards/animal.c` 的 `ANIMAL_BIG_SPRITE_MIN_W/H` = **48/48**
+                                       *   （2026-10-01 两边对齐；一手 rect 见 `AUDIT.md` §BE #169/#170）
                                        *（117 的判据：用户口径 + `enemy.png` 实测 —— 右下角 sprite96..107 = 64×64）。
                                        * ⚠ **别单独改这个数**：两处必须同值，要改先动 117 的那一份。*/
 #define YK_BIG_SPRITE_MIN_H   48

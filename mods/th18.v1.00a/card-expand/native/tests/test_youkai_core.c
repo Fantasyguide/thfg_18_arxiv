@@ -259,13 +259,14 @@ static void check_orbit_layout(void)
     CHECK(yk_orbit_layout(8, 3, &b));
     CHECK(a.omega_deg * b.omega_deg < 0.0f);                 /* 内外**反向** */
     /* ③ 13 台 = 3 + 5 + 5 */
-    CHECK(yk_orbit_layout(13, 0, &a) && a.ring == 0 && a.radius == 30.0f && a.omega_deg == -6.0f);  /* 内圈反向 */
-    CHECK(yk_orbit_layout(13, 3, &a) && a.ring == 1 && a.radius == 60.0f && a.omega_deg == 4.5f);
-    CHECK(yk_orbit_layout(13, 8, &b) && b.ring == 2 && b.radius == 90.0f && b.omega_deg == 3.0f);
+    CHECK(yk_orbit_layout(13, 0, &a) && a.ring == 0 && a.radius == 30.0f && a.omega_deg == 6.0f);   /* 口径：内圈 + */
+    CHECK(yk_orbit_layout(13, 3, &a) && a.ring == 1 && a.radius == 60.0f && a.omega_deg == -4.5f);
+    CHECK(yk_orbit_layout(13, 8, &b) && b.ring == 2 && b.radius == 90.0f && b.omega_deg == 3.0f);   /* 中/外不再同向 */
+    CHECK(a.omega_deg * b.omega_deg < 0.0f);                 /* ★ 口径：相邻反向 */
     CHECK(yk_orbit_layout(13, 3, &a));
     CHECK(yk_orbit_layout(13, 8, &b));
     CHECK(b.phase_deg == a.phase_deg);                       /* 中/外**共用初角**（一手就是这样）*/
-    CHECK(a.omega_deg * b.omega_deg > 0.0f);                 /* 中/外**同向** */
+    CHECK(a.omega_deg * b.omega_deg < 0.0f);                 /* ★ 口径：相邻反向（一手是 −3/+3 同向，已偏离）*/
     CHECK(yk_orbit_layout(13, 7, &a) && a.phase_deg == 72.0f * 4.0f);
     /* ④ 参数越界 / NULL 不炸 */
     CHECK(!yk_orbit_layout(0, 0, &a));
@@ -315,7 +316,9 @@ static void check_orbit_rings_14_18(void)
             /* 半径 = 30·(圈+1) 等间隔 */
             CHECK(L.radius == 30.0f * (float)(L.ring + 1));
             /* ω：内圈反向、其余同向，且绝对值不超过 6 */
-            if (L.ring == 0) CHECK(L.omega_deg < 0.0f);
+            /* ★ 口径（owner：相邻反向、内圈 +）：ring0 正、ring1 负、ring2 正 */
+            if (L.ring == 0) CHECK(L.omega_deg > 0.0f);
+            else if (L.ring == 1) CHECK(L.omega_deg < 0.0f);
             else CHECK(L.omega_deg > 0.0f);
             CHECK(L.omega_deg <= 6.0f && L.omega_deg >= -6.0f);
             /* 同圈初角互不重合 */
@@ -344,7 +347,8 @@ static void check_orbit_rings_14_18(void)
             CHECK(ik0 >= 0 && ik1 >= 0 && ik2 >= 0);
             CHECK(yk_orbit_layout((int)n, ik0, &q0) && yk_orbit_layout((int)n, ik1, &q1)
                   && yk_orbit_layout((int)n, ik2, &q2));
-            CHECK(q0.omega_deg == -6.0f && q1.omega_deg == 4.5f && q2.omega_deg == 3.0f);
+            CHECK(q0.omega_deg == 6.0f && q1.omega_deg == -4.5f && q2.omega_deg == 3.0f);
+            CHECK(q0.omega_deg * q1.omega_deg < 0.0f && q1.omega_deg * q2.omega_deg < 0.0f);
             CHECK(q2.radius == 90.0f);
         }
         /* 半径序列严格递增（等间隔）—— 直接按圈号抽查第 0/最后 圈 */
@@ -2319,7 +2323,8 @@ int main(void)
         unsigned i;
 
         /* ① 「大怪」判据的边界（63×64 / 64×63 / 64×64）—— 与 117 `cards/animal.c` 的
-         *    `ANIMAL_BIG_SPRITE_MIN_W/H` 同值，所以这一段同时钉住「两张卡用的是同一个数」。*/
+         *    `ANIMAL_BIG_SPRITE_MIN_W/H` 同值（**2026-10-01 起两边都是 48**），
+         *    所以这一段同时钉住「两张卡用的是同一个数」。*/
         CHECK(YK_BIG_SPRITE_MIN_W == 48 && YK_BIG_SPRITE_MIN_H == 48);   /* ★ 2026-09-30：64→48（大妖精 48×48）*/
         /* ★ 2026-09-30：阈值 64 → **48**（4 面那两种「大妖精」= 48×48；小妖精 32×32 / 48×32 仍排除）*/
         CHECK(!yk_big_by_sprite(47, 48));
