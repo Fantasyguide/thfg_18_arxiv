@@ -650,10 +650,12 @@ int yk_fam_broken(yk_map_t *m, uint32_t fam_id)
     /* ★ route A：这里**故意不清** `rearm_pending`。它是「这一槽的下一次 `etOn` 已经来过」的证据；
      *   若正巧与死亡同帧（段首 `enmKillAll` 与 `etOn` 的先后本来就不定），带着它进 tick 只会让
      *   使魔**早一帧**回来 —— 而清掉它就等于把那次 `etOn` 白丢。两种都不会夹死（下面是 TTL 兜底）。*/
-    /* ★ 「打死使魔 ⇒ 关掉那个发射口」的**近似**：真正的关槽要 hook `0x434019`（`etOn` 里 `push eax`
-     * 前，`esi = enemy + i*0x488` 可反推 `i`）—— 那是**新断点**（sites.py，本卡不能加）。
-     * 这里做的两件事替代它：① 使魔不再重建（本标志）② 它带来的转嫁归零（没有使魔就没差分）。
-     * ⇒ ⚠ 发射口**本身还在开火**（ECL 直接调 etOn，不经我们），这是已知的近似缺口。*/
+    /* ★ 「打死使魔 ⇒ 关掉那个发射口」：**实现点不在这里** —— 这里只置状态，真正的「掐掉这一刻的
+     *   `etOn`」由卡侧 `yk_on_shot_slot()`（SDK 站点 `0x433ffa`，`sdk.c` 的 `ce_enemy_shot_slot`）
+     *   调 `yk_shot_slot_gate()` 完成（返回 1 ⇒ SDK 置 `retaddr = 0x43402d` ⇒ 本帧这一槽不发射）。
+     *   本标志（`broken`）是那条路的**判据**：`yk_shot_slot_suppressed()` 只看 `fam_seen && broken`。
+     *   ★ 2026-10-01：卡侧那道「只在聚焦时表态」的侧门已删（owner：「只有人侧才能打死使魔啊」）
+     *   ⇒ 这条闸现在在**人侧**真的生效（妖侧使魔无敌 ⇒ 本来也无口可堵）。*/
     e->broken = 1;
     return 1;
 }
@@ -1980,7 +1982,7 @@ int yk_orbit_count_total(int hp_max, int stage)
 }
 
 /* 一个敌人该给使魔多少血 = **母机最大血量 ÷ 圈数**（owner 2026-10-01 **定案**口径）：
- *   档 0（母机 HP ≤ `YK_ORBIT_FAM_HP_TIER0_MAX` = 200）⇒ **恒 100**（owner 明确保留；
+ *   档 0（母机 HP ≤ `YK_FAM_HP_TIER0_MAX` = 200）⇒ **恒 100**（owner 明确保留；
  *     不跟着 `/圈数` 走 —— HP 120 的杂鱼按 /1 会变 120，与「杂鱼」定位不符）；
  *   其它 ⇒ **`母机HP / 圈数`**（整数除法；`rings < 1` 当 1、`> 5` 钳 5 —— 表最多 5 圈）。
  * 面加成只影响**台数**（owner：「**同样血量**的使魔数 +1」）⇒ 这里**不**传最终台数。
@@ -1990,7 +1992,7 @@ int yk_orbit_count_total(int hp_max, int stage)
 int yk_orbit_fam_hp(int parent_hp, int rings)
 {
     int hp;
-    if (!(parent_hp > YK_ORBIT_FAM_HP_TIER0_MAX)) return 100;      /* 档 0（含 0 / 负数 / 读不到）*/
+    if (!(parent_hp > YK_FAM_HP_TIER0_MAX)) return 100;      /* 档 0（含 0 / 负数 / 读不到）*/
     if (rings < 1) rings = 1;
     if (rings > 5) rings = 5;                                     /* 表最多 5 圈（`per[5]`）*/
     hp = parent_hp / rings;
@@ -2005,6 +2007,20 @@ int yk_orbit_rings_for_count(int count)
     if (count <= 0 || count > 18) return 1;
     if (s_orbit_tab[count].nrings == 0u) return 1;
     return (int)s_orbit_tab[count].nrings;
+}
+
+/* ★★★ 2026-10-01（owner 口径 ②）：**映射（发射口）使魔血量 = 母机 HP / 2**（口径、动机与边界
+ *   全在 `youkai_core.h` 的同名小节）。规则与绕转共用档 0：
+ *     档 0（`parent_hp <= YK_FAM_HP_TIER0_MAX` = 200，含 0 / 负数 / 读不到）⇒ **100**；
+ *     其它 ⇒ `parent_hp / 2`（整数除法）、保底 1、**不钳 999**（>999 由 spawn 路径两步写血承接）。
+ *   ⚠ 纯函数（无副作用、无浮点）⇒ 直接进主机单测；出口 int（不要改 float：x87 闸会红）。*/
+int yk_map_fam_hp(int parent_hp)
+{
+    int hp;
+    if (!(parent_hp > YK_FAM_HP_TIER0_MAX)) return 100;            /* 档 0（含 0 / 负数 / 读不到）*/
+    hp = parent_hp / 2;
+    if (hp < 1) hp = 1;
+    return hp;
 }
 
 /* 卡侧入口：**基准血量 × `YK_ORBIT_HP_SCALE`**（默认 1 ⇒ 就是上面那一式），底下保底 1。

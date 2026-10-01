@@ -4908,6 +4908,7 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 | 2026-10-01b | **所有卡（共享资源 `assets/ability/scripts/` 新增 372/373；共享件 `assets/ecl/make_ufo_ecl.py` / `native/tools/capcheck.py` / `verify.py` / `autoplay.py`；生成物 `native/anm_ids.h`）** | 见下方「§BE 详录 #163」 |
 
 | 2026-10-01c | **所有卡（共享资源 `assets/ability/` 追加 1 图 + 1 脚本；共享件 `native/cards/faith.c`；新增头 `native/cards/top_indicator.h`；生成物 `native/anm_ids.h`）** | 见下方「§BE 详录 #164」 |
+| 2026-10-01d | **117 鬼形兽**（`native/cards/animal.c`：**删掉整波否决** `animal_wave_veto()` / `ANIMAL_WAVE_VETO_*` / `veto` 字段与日志字段） | 见下方「§BE 详录 #194」 | **owner 2026-10-01 逐字「你去掉那个整体否决吧」**（108 这条线代改；影响面 + 验证见 #194） |
 
 
 > **§BE 详录 #42（2026-09-20 · P1「缺音效一批」8 条 + 音效表扩容新增 5 枚别作原版 SE）**
@@ -27267,3 +27268,90 @@ TH18 的 HP 三格也原样写入 i32；**存在的是 TH18 的一条 spawn 门*
 4. **前置条件（必须先做）**：把「TH18 敌机身份 ↔ TH08 父 sub」这张对应表**坐实**（现在只有零散几条），
    否则查表会大面积 miss、退化回 100（等于没做）。⇒ **等 owner 拍「映射使魔也想逐站点取血」再做**。
 
+
+## §BE 详录 #192（2026-10-01）：发射口闸的**侧门修复**（人侧生效）+ 复位口**方案**（未实现，待 owner 拍）
+
+> owner 两条：「**只有人侧才能打死使魔啊**」＋「TH08 的关键是在于，**使魔是符卡的有机组成部分，
+> 由它来向你发弹**」。
+
+### ① 侧门修复（**明确 bug，本批已改**）
+
+| 项 | 内容 |
+| --- | --- |
+| 文件 / 行 | `native/cards/youkai.c` 的 `yk_on_shot_slot()`（站点点 `0x433ffa`）——删掉 `if (!CE_PLAYER_FOCUSED()) return 0;`（原 P8-1，位于本批前的 `:5705`） |
+| 为什么是 bug | 旧注（P8-1）写「1:1 映射只在低速活着」——**前提早已不成立**：2026-09-22 起「松 Shift 不撤使魔」（`yk_leave_youkai()` 不碰 `s_map`）；而**妖侧使魔无敌** ⇒ 它**只可能在人侧被打死** ⇒ 旧门把闸唯一该作用的一侧关掉了 |
+| 新语义（与侧无关） | 「这一槽的使魔**建过、现在没了**」⇒ 掐掉这一刻那条 `etOn`（判据 `yk_shot_slot_suppressed()` = `fam_seen && broken`）。妖侧只会被 `enmKillAll` 波次清场触发，那一刻槽马上被重新武装/由映射重建 |
+| 顺带核过 | `on_enemy_death` → `yk_fam_broken()` **没有**任何侧门（`KILL_ALL`/`BOMB_KILL`/`KILLED` 都算状态）⇒ `broken` 在人侧正常打上 ✓；`yk_note_slot` 的发射口扫描也**没有**侧门（映射使魔两侧都建）✓ |
+| 还清了旧账 | `yk_fam_broken()`（`youkai_core.c`）里那句「真正的关槽要 hook `0x434019`……那是新断点（本卡不能加）⇒ 发射口本身还在开火」是**过时注释**（站点 `0x433ffa` 早就接上了）⇒ 已改写并指向 `yk_shot_slot_gate()` |
+| 怎么验证 | `make check` rc=0；实跑判据（`HANDOFF-108` §3 第 81 行）：**人侧**打掉一只发射口使魔 ⇒ 该发射口的下一发被掐（日志 `youkai: emitter gate CLAMPED slot … (focused=0 …)`）|
+
+### ② 复位口方案（**只给方案，未实现** —— owner 要「停到重新武装」）
+
+**现状（四个复位口）**：① route A（卡 tick `yk_note_slot` 消费 `rearm_pending` ⇒ 清闸 + 同帧重建）；
+② **route A′**（该槽**第二次** `etOn` 当场放行 + 清夹持态）；③ ECL 重新武装边沿（`props[i].type`
+inactive→active）；④ `YK_EMIT_BROKEN_TTL` 120 帧兜底自愈；⑤ `yk_map_reset`（删卡/换关/断链）。
+
+**owner 要的语义**：使魔死了**这一波就不该再从那个口发弹**，直到**该槽被 ECL 重新武装/重建**。
+
+⇒ **方案 P1（忠实）**：复位口只留 **③ + ⑤**（+ 波次边沿，见下），**删掉 ② 与 ④**（②是「丢 1 发就恢复」，
+④是「120 帧自愈」——两条都会让口子在一波内复活，与 owner 语义冲突）；① 的「消费 `rearm_pending`
+就清闸 + 重建」也要一起去掉（否则卡 tick 一跑就把它放开了），只保留「按重新武装边沿重建」。
+**代价**：口子会**持续堵到下一次重新武装**（通常 = 该波结束/下一段攻击）——**这正是 owner 要的**；
+风险 = 若某条 ECL 活跃槽**整段都不重新武装**，那个口子会静默到相位结束（老 #7 症状，但现在是**有意**的）。
+⇒ 建议叠一个**只做兜底的长 TTL**（例如 600 帧）或把兜底挂到**相位边沿**（`on_tick_2` 的符卡结束下降沿，
+那里已经调 `yk_boss_fam_rebuild`）：这样"一波"有明确的边界，不会真的永久哑火。
+
+⇒ **方案 P2（折中，我推荐先上这个）**：保留 latch，但把 ② 从「第二次 `etOn` 放行」改成
+**「相位/波次边沿放行」**（符卡结束下降沿 + `enmKillAll` 广播），④ 的 TTL 抬到 ≥ 一个相位长度（纯兜底）。
+代价 = 口子在该相位内保持静默、相位一换立刻恢复（并重建使魔）；比 P1 保守、比现状（丢 1 发）忠于语义。
+
+⚠ 两个方案都要动 core 的 `yk_shot_slot_gate()` / `yk_note_slot()`（纯逻辑 + 单测），
+**本批未实现**（owner 拍了再做）。
+
+## §BE 详录 #193（2026-10-01）：**映射（发射口）使魔血量 = 母机 HP / 2**（owner 口径 ②）
+
+> owner 逐字（**动机，勿改措辞**）：「发射口使魔血量理论上应当是一个**在一波里面或许能打死**的值，
+> 但这个判定就很不好说了」＋「因为**发射口使魔打死有额外收益**」。
+
+| 处 | 改动 |
+| --- | --- |
+| `youkai_core.h`（新） | `int yk_map_fam_hp(int parent_hp)` 声明 + 口径/动机/边界全注（含上面两句逐字） |
+| `youkai_core.c`（新） | `yk_map_fam_hp()`：`parent_hp <= YK_FAM_HP_TIER0_MAX(200) ⇒ 100`；否则 `parent_hp / 2`；保底 1、**不钳 999** |
+| `YK_FAM_HP_TIER0_MAX` | 由 `YK_ORBIT_FAM_HP_TIER0_MAX` **改名**（升为**两种使魔共用**的档 0 边界；owner「0 还是 100」= both） |
+| `youkai.c` | `yk_spawn_familiar()` 加 `life` 实参；`yk_run_action()` 按 `act->enemy_id` 回查母机 `life.maximum`（新助手 `yk_enemy_hp_max_by_id()`）⇒ `yk_map_fam_hp()`；查不到 ⇒ 回落 `YK_FAM_LIFE = 100` |
+| >999 | 与绕转共用同一个 `yk_spawn_familiar_parent()` 两步写血（先 ≤999 出生、再回写 `enemy+0x6220/24/28`） |
+| 单测 | `tests/test_youkai_core.c`：`3200⇒1600`、`1800⇒900`、`200⇒100`、`0⇒100`、`201⇒100`、`2000⇒1000`(>999)、单调/≥100 不变量 |
+
+**为什么不是别的读法**（parent 让我先报）：「按照 1/2 伤害映射」+「打死有额外收益」两条并读
+⇒ 只能是「血量按母机的一半给」（伤害映射/转嫁那条是**既有的 100% 转嫁**，与血量无关；
+若 owner 的原意是改转嫁比例，那是另一处（`YK_TRANSFER_PCT`，现在是 100）——**本批按血量口径实现**，
+若读错一句话就能回退（改 `yk_map_fam_hp` 一处）。
+
+**影响面**：映射使魔从常数 100 变成 `母机HP/2`（例：道中 300 血小怪 ⇒ 150；4 面大妖精 3200 ⇒ 1600）
+⇒ 「先清使魔再打母机」成为**有代价**的操作、打死使魔的收益（转嫁 + 堵口 + `+N`）也更值钱；
+**掉落/得分/发动机理不变**（`drop_main=0`、不给分那两条没动）。⚠ 手感面**待实跑**（owner 还没测发射口使魔）。
+
+## §BE 详录 #194（2026-10-01）：**117「整波否决」整条删除**（owner 拍板 · 协作改动）
+
+> owner 逐字：「你去掉那个**整体否决**吧」。
+
+| 项 | 内容 |
+| --- | --- |
+| 文件 | `native/cards/animal.c`（117 鬼形兽；**协作改动**，登记见下方 §BE 表） |
+| 删了什么 | 整条否决链：`ANIMAL_WAVE_VETO_*` / `animal_wave_veto()` / `animal_wave_veto_name()` / `animal_enemy_drop_measure()` 的 `veto` 出参与 `veto_src` 判定 / `animal_big_drop_t.veto` / 四行日志的 `veto=%s` |
+| `reason` 现在只有两条来源 | `big` ⇒ `reason=size`；小体走同波 `odd-one-out` ⇒ `reason=odd-one-out`；都不中 ⇒ 不掉 |
+| 保留了什么 | 波号本身（`wave` / `wave_key` / `animal_static_wave_has/next`）**全部保留** —— 它是**同波统计**的键（删掉会让 odd-one-out 失效） |
+| 为什么 | 用户 **2026-09-13** 的「1 面第三波（`MainSub02`：`GirlB01`×8 + `A01n`）整波不掉」口径**已在 2026-10-01 由 owner 撤销**；实跑证据 = 4 面第三波的大怪 `GirlC01` 被跨面误伤（`veto=third drop=0`，§BE #189） |
+| 怎么验证 | `make quick`/`make check`（`animal.c` **零警告**）＋ 实跑判据：**3 面/4 面等第三波的大怪恢复掉落**（日志出现 `wba_wc: big-enemy drop -> 1 animal spirit (reason=size, …)`；`death diag` 里**不再有 `veto=` 字段**） |
+
+**影响面（诚实登记）**：
+1. **从此 1 面第三波也会掉**：`GirlB01`×8 是「纯杂鱼波」⇒ 被 `animal_name_is_swarm_guard()` 的
+   `odd-one-out` guard 挡住 ⇒ 实际**仍然不掉**（`Cir/ECir/GirlB01` 那批走 guard，不是 veto）；
+   该波里的 `A01n`（`GirlRed/BlueA01n`）等**非 guard 族**从此按 odd 规则判（`≤3` / 少数派 ⇒ **会掉**）。
+2. **其它面的第三波**：原本被跨面误伤 ⇒ 现在交给尺寸/odd 判据（大怪必定掉、杂鱼多数派不掉）。
+3. **boss / 中 boss**：不受影响（它们走 `on_enemy_drop_pre` 那条路，从来不看 veto）。
+4. **日志消费者**：`veto=` 字段消失（本仓无脚本解析它；`verify.py` 不读 117 的日志字段）。
+
+## §BE 详录 #195（2026-10-01）：发射口闸**复位口**口径 —— 见 #192 §②（**方案，未实现**）
+
+（为避免编号空洞：本条目只做交叉引用，内容在 #192 §②。owner 拍板后按 P1/P2 落地。）

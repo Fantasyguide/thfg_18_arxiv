@@ -491,8 +491,21 @@ static uint8_t *yk_spawn_familiar_parent(float x, float y, uint32_t parent_id, i
     }
 }
 
-/* 老签名 = 链根那一档（1:1 映射使魔）。所有既有调用点照旧。*/
-static uint8_t *yk_spawn_familiar(float x, float y) { return yk_spawn_familiar_parent(x, y, 0u, YK_FAM_LIFE); }
+/* 1:1 映射（发射口）使魔：**链根**（`parent_id = 0`）。
+ * ★ 2026-10-01（owner 口径 ②）：`life` 从常数 100 改成**调用方按母机 HP 算**（`yk_map_fam_hp()`）；
+ *   调用方读不到母机 HP 时回落 `YK_FAM_LIFE`（= 100，兜底保留）。*/
+static uint8_t *yk_spawn_familiar(float x, float y, int32_t life)
+{
+    return yk_spawn_familiar_parent(x, y, 0u, life > 0 ? life : (int32_t)YK_FAM_LIFE);
+}
+
+/* 按 `enemy_id` 取敌人的 `life.maximum`（`CE_ENEMY_HP_MAX` = `enemy+0x6224`）；0 = 查不到 / 读不到。
+ * ⚠ 只在**建壳那一刻**读（映射使魔用；母机 HP 是常数，重建时重算同值）。*/
+static int32_t yk_enemy_hp_max_by_id(uint32_t id)
+{
+    uint8_t *e = id ? ce_enemy_by_id(CE_ENEMY_MGR(), (int32_t)id) : 0;
+    return e ? *(const int32_t *)(e + CE_ENEMY_HP_MAX) : 0;
+}
 
 /* 每帧钉位置（spec §3.5）+ 皮肤（资产未到时不动）。*/
 static uint8_t g_fam_nodmg_state = 0xff;   /* ★ 批次 2：上一次记过的免伤位状态（0/1；0xff = 还没记过）*/
@@ -1668,7 +1681,7 @@ static void yk_orbit_scan(uint32_t frame)
         want = yk_orbit_count_total(hp_now, (int)CE_CURRENT_STAGE());
         /* ★★★ 2026-10-01（**owner 定案口径 · 第 56 批第二轮**）：**使魔血量 = 母机 HP / 圈数**。
          *   （先给过 `min(999, 1/2 HP)`，owner 随后改成「母机 HP / 圈数」⇒ 本卡实现后者。）
-         *     · 档 0（`hp_now <= YK_ORBIT_FAM_HP_TIER0_MAX` = 200）⇒ **恒 100**（owner 保留）；
+         *     · 档 0（`hp_now <= YK_FAM_HP_TIER0_MAX` = 200）⇒ **恒 100**（owner 保留）；
          *     · 其它 ⇒ **`hp_now / 圈数`**（整数除法；圈数 = `s_orbit_tab[want].nrings`，1/2/3）。
          *   `rings` 走 core 的 `yk_orbit_rings_for_count(want)`（**与分圈表同一个出口**，别在卡侧另抄）。
          *   ⚠ **不再封顶 999**：`life` 是**真血量**（可能 >999，例：3200 血 3 圈 ⇒ 1066）⇒
@@ -1716,7 +1729,7 @@ static void yk_orbit_scan(uint32_t frame)
                    (unsigned)YK_ORBIT_EXPAND_FRAMES,
                    (double)YK_ORBIT_FINAL_RADIUS / (double)YK_ORBIT_EXPAND_FRAMES,
                    (int)life, yk_orbit_fam_hp(hp_now, rings), rings,
-                   (unsigned)YK_ORBIT_FAM_HP_TIER0_MAX,
+                   (unsigned)YK_FAM_HP_TIER0_MAX,
                    (int)YK_ORBIT_HP_SCALE,
                    YK_FAM_KIND_NO_MELEE_SHOT_SAME,
                    yk_fam_kind_melee(YK_FAM_KIND_NO_MELEE_SHOT_SAME),
@@ -1998,7 +2011,12 @@ static void yk_aura_tick(yk_card_t *s, float x, float y)
 static void yk_run_action(yk_card_t *s, const yk_action_t *act)   /* s 可为 NULL（卡状态没了也要把敌人收干净）*/
 {
     if (act->kind == YK_ACT_CREATE) {
-        uint8_t *f = yk_spawn_familiar(act->x, act->y);
+        /* ★★★ 2026-10-01（**owner 口径 ②**）：映射（发射口）使魔的血 = **母机 HP / 2**
+         *   （`yk_map_fam_hp()`；档 0 ≤200 ⇒ 100）。口径与动机原文见 `youkai_core.h` 的同名小节；
+         *   ⚠ 母机查不到 / `life.maximum` 读不到（≤0）⇒ 回落 `YK_FAM_LIFE = 100`（兜底保留）。*/
+        int32_t hp_now = yk_enemy_hp_max_by_id(act->enemy_id);
+        int32_t life = (hp_now > 0) ? (int32_t)yk_map_fam_hp((int)hp_now) : (int32_t)YK_FAM_LIFE;
+        uint8_t *f = yk_spawn_familiar(act->x, act->y, life);
         uint32_t fid;
         if (!f) {
             if (s) ++s->fam_full;
@@ -5696,13 +5714,21 @@ static int yk_on_shot_slot(ce_card_t *c, const ce_enemy_shot_t *ev)
 
     if (!s || !ev || !ev->enemy_id) return 0;
     if (ev->slot < 0 || ev->slot >= YK_EMIT_SLOTS) return 0;
-    /* ★★★ 2026-09-22（P8-1）：**未聚焦 ⇒ 本卡一律不表态**。
-     * 本卡的 1:1 映射整体只在低速（= 妖侧）活着（`on_tick_2` 的 `!focused` 分支把使魔全撤 + 清表）；
-     * 高速时场上的使魔与我们无关 ⇒ 闸在这里没有任何语义，却**可能认下 boss 自己的发射口**
-     * （槽表对每一只敌人、每个 `props[i].type != 0` 的槽都建条目，没有任何 boss / 可锁定过滤）。
-     * 这条闸就是 owner 早先「击破一个阶段后 boss 不再发弹」的机制（闸的归属判据确实会认 boss）——
-     * 加上这条门之后，「未聚焦的那一半时间」不再有任何夹持的可能。*/
-    if (!CE_PLAYER_FOCUSED()) return 0;
+    /* ★★★ 2026-10-01（**owner 报的真 bug**：「**只有人侧才能打死使魔啊**」＋「TH08 的关键是在于，
+     *   **使魔是符卡的有机组成部分，由它来向你发弹**」）—— **原 P8-1 的侧门已删**。
+     * 旧代码：`if (!CE_PLAYER_FOCUSED()) return 0;`（未聚焦 ⇒ 本卡不表态）。它建立在一条**早已不成立**
+     * 的前提上（P8-1 那条注写「1:1 映射整体只在低速活着」）；事实（2026-09-22 owner 口径订正之后）：
+     *   · **松 Shift 不撤使魔**（`on_tick_2` 的 `!focused` 支只收妖侧专有的东西 —— 光环 / 染色 /
+     *     切换环；`yk_leave_youkai()` 一个字都不碰 `s_map`）；映射使魔与闸的夹持态**跨形态保持**；
+     *   · 而**妖侧使魔无敌**（`yk_orbit_pin` 那一套：`NO_DAMAGE` + 碰撞盒置 0）⇒ 它**只可能在人侧被打死**。
+     * ⇒ 旧门把闸**唯一该起作用的那一侧关掉了** = 等于没做（owner 的判据：打死发射口使魔 ⇒ 那个口
+     *   应当停火；TH08 里那一发弹就是使魔自己发的）。
+     * 新的语义（与侧无关）：**「这一槽的使魔建过、现在没了」⇒ 掐掉这一刻那条 `etOn`** —— 由
+     *   `yk_shot_slot_suppressed()` 判（`fam_seen && broken`）。它在妖侧只会被 `enmKillAll` 波次清场
+     *   触发，而那一刻槽马上会被 ECL 重新武装 / 由映射重建（route A/A′ 立刻放开）⇒ 不会夹死 boss。
+     * ⚠ 旧门当年是给「击破一个阶段后 boss 不再发弹」止血的；那个症状的真根因（缺少复位口）已由
+     *   route A（卡 tick 消费 `rearm_pending`）+ route A′（该槽第二次 `etOn` 当场放开）解决，
+     *   不再需要拿「不表态」当兜底。*/
     /* 按 id 回查**当前活着的**使魔（0 = 没了）。★ 不碰 `ev->enemy`：那是敌人本体、不是使魔，
      * 而且只在本次回调内有效（同帧 sweep 可能删它）。 */
     have = yk_slot_fam_id(&s_map, ev->enemy_id, ev->slot);

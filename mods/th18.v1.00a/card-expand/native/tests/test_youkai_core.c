@@ -2537,7 +2537,7 @@ int main(void)
          *   圈数 = `yk_orbit_rings_for_count()` = `s_orbit_tab[]` 的 `nrings`；**不再封顶 999**）。
          *   口径、推导例子与「一手 `familiarCreate` 的 100/100/300/600 作对照」见 `youkai_core.h`。
          *   ⚠ 这一批**不再**走 `yk_orbit_familiar_hp(台数档)` 那条旧式（旧函数留给对照/单测）。*/
-        CHECK(YK_ORBIT_FAM_HP_TIER0_MAX == 200);
+        CHECK(YK_FAM_HP_TIER0_MAX == 200);
         /* owner 给的五个例子（逐字核过）：*/
         CHECK(yk_orbit_fam_hp(3200, 3) == 1066);   /* 3200/3 = 1066.67 ⇒ 1066 */
         CHECK(yk_orbit_fam_hp(1800, 3) == 600);
@@ -2604,6 +2604,30 @@ int main(void)
             /* 「母机 3200 血、3 圈」= 卡侧真实会走的那条（>999 ⇒ 由 spawn 两步走承接）。*/
             CHECK(yk_orbit_hp_for_enemy(3200, 3) == 1066 * YK_ORBIT_HP_SCALE);
             CHECK(yk_orbit_hp_for_enemy(3200, 3) > YK_LIFE_MAX_ALLOWED);   /* 证明「不钳 999」*/
+        }
+        /* ⑥ter ★★★★ 2026-10-01（**owner 口径 ②**）**映射（发射口）使魔血量 = 母机 HP / 2**：
+         *   「发射口使魔血量理论上应当是一个**在一波里面或许能打死**的值，但这个判定就很不好说了」
+         *   ⇒ `/2` 是**启发式**（不是精确判定）；档 0 与绕转共用（≤200 ⇒ 100，owner「0 还是 100」）；
+         *   **不钳 999**（>999 由 spawn 路径两步写血承接）。动机全文见 `youkai_core.h` 的同名小节。*/
+        CHECK(yk_map_fam_hp(3200) == 1600);        /* owner 给的例子 */
+        CHECK(yk_map_fam_hp(1800) == 900);         /* owner 给的例子 */
+        CHECK(yk_map_fam_hp(200) == 100);          /* 档 0 上界（含）*/
+        CHECK(yk_map_fam_hp(0) == 100);            /* 读不到 ⇒ 档 0 */
+        CHECK(yk_map_fam_hp(-9) == 100);           /* 负数 ⇒ 档 0 */
+        CHECK(yk_map_fam_hp(201) == 100);          /* 201/2 = 100（刚出档 0 时与档 0 同值）*/
+        CHECK(yk_map_fam_hp(202) == 101);
+        CHECK(yk_map_fam_hp(1000) == 500);
+        CHECK(yk_map_fam_hp(2000) == 1000);        /* ★ >999：不再封顶 */
+        CHECK(yk_map_fam_hp(999999) == 499999);
+        CHECK(yk_map_fam_hp(3200) > YK_LIFE_MAX_ALLOWED);
+        {   /* 不变量：恒 ≥ 100、对 HP 单调不降（`hp > 200` 段是 hp/2，档 0 是 100）*/
+            int prev = 0, hp;
+            for (hp = -20; hp <= 8000; hp += 37) {
+                int v = yk_map_fam_hp(hp);
+                CHECK(v >= 100);
+                CHECK(v >= prev);
+                prev = v;
+            }
         }
         /* 旧式（台数档一手表）仍在、仍可用作对照 —— 但**不再是**卡侧口径。*/
         CHECK(YK_ORBIT_HP_ONEHAND[0] == 100 && YK_ORBIT_HP_ONEHAND[1] == 100);

@@ -496,7 +496,6 @@ typedef struct {
     int32_t census;       /* ★ 运行时实测：本波该 group 累积成员数（仅日志/兜底）*/
     int32_t wave_total;   /* ★ 判定用的同波总数（静态表或兜底 census）*/
     int32_t group_total;  /* ★ AL58c 静态表：本波该组总数；-1 = 表未命中，走 census 兜底 */
-    int32_t veto;         /* ★ ANIMAL_WAVE_VETO_*：整波否决来源（覆盖 size/odd）*/
     int32_t reason;        /* ANIMAL_DROP_REASON_* */
 } animal_big_drop_t;
 
@@ -875,13 +874,16 @@ static const char *animal_enemy_sub_name(const uint8_t *e, int32_t *out_sub)
 #define ANIMAL_DROP_REASON_SIZE        1
 #define ANIMAL_DROP_REASON_ODD_ONE_OUT 2
 
-/* ★ 整波否决（用户 2026-09-13 口径）：命中后本波所有敌机一律不掉，覆盖 size/odd。
- *   · third     = 用户口中的「第三波」；用户按 1-based 数，所以代码取 0-based wave 2。
- *   · 用户 2026-09-13 更正：此前理解的 last-wave 是误读；道中 boss 后第二波的大蝴蝶要掉，所以不再设
- *     last-wave veto。*/
-#define ANIMAL_WAVE_VETO_NONE  0
-#define ANIMAL_WAVE_VETO_THIRD 1
-#define ANIMAL_THIRD_WAVE_KEY  2   /* 用户 1-based 第三波 = 0-based 2 */
+/* ★★★ 2026-10-01（**owner 拍板：去掉「整波否决」**）：
+ *   owner 逐字「你去掉那个**整体否决**吧」⇒ 原先那条「第 N 波（1-based 第三波 = MainSub2）
+ *   整波一律不掉」的路径**整条删除**（`ANIMAL_WAVE_VETO_*` / `ANIMAL_THIRD_WAVE_KEY` /
+ *   `animal_wave_veto()` / `animal_wave_veto_name()` / 记账字段 `veto` / 日志里的 `veto=`）。
+ *   从此 **117 的掉落只看逐敌判据**：`big`（尺寸 ≥64 或白名单 48×48）⇒ `reason=size`；
+ *   小体走同波 `odd-one-out` 统计 ⇒ `reason=odd-one-out`；两者都不命中 ⇒ 不掉。
+ *   历史（为什么曾存在）：`AUDIT.md` §AL58 ——**用户 2026-09-13** 的道中掉落口径里，
+ *   1 面第三波（`MainSub02`：`GirlB01`×8 + `A01n`）被要求「整波不掉」；那条口径**已在
+ *   2026-10-01 由 owner 撤销**（实跑证据：4 面第三波的大怪 `GirlC01` 被跨面误伤 ⇒ `drop=0`，
+ *   见 `AUDIT.md` §BE #189）。*/
 
 /* ★ AL58d 波号绑定：主上下文在某些时点不是 MainSubNN（实测 wave=-1），死亡瞬间实时读会
  * 让“静态表查不到 + census 键 -1”双双失效。⇒ 每只敌机首次见到时就把当时的波号绑到 enemy_id；
@@ -925,13 +927,6 @@ static const char *animal_drop_reason_name(int32_t reason)
     }
 }
 
-static const char *animal_wave_veto_name(int32_t veto)
-{
-    switch (veto) {
-    case ANIMAL_WAVE_VETO_THIRD: return "third";
-    default:                     return "none";
-    }
-}
 static const char *animal_wave_src_name(int32_t src)
 {
     switch (src) {
@@ -1019,11 +1014,8 @@ static int32_t animal_stage_mainsub(void)
     return animal_parse_mainsub_number(name);
 }
 
-static int32_t animal_wave_veto(int32_t wave)
-{
-    if (wave == ANIMAL_THIRD_WAVE_KEY) return ANIMAL_WAVE_VETO_THIRD;  /* 用户 1-based 第三波 */
-    return ANIMAL_WAVE_VETO_NONE;
-}
+/* ★★★ 2026-10-01：`animal_wave_veto()` 已**整条删除**（owner「你去掉那个整体否决吧」）——
+ *   这里留注释只为让 grep `veto` 的人知道它去哪了：整波否决不再存在，掉落只看逐敌判据。*/
 
 static void animal_family_key(const char *name, char *out, size_t cap)
 {
@@ -1129,9 +1121,11 @@ static int animal_wave_bind_lookup(uint32_t id, int32_t *out_wave, int32_t *out_
  * （`thecl -d 18 st01.ecl`：`@MainSub03()` 内无 `ins_23`；相比之下 `MainSub01/02/06` 内部有等待 ⇒
  * sub 名会保持到卡片 tick）。卡片 `on_tick_2` 在该帧稍后跑到 `animal_wave_census_update` 时，
  * 关卡脚本 sub 名已经回到 `MainFront` ⇒ `animal_stage_mainsub()` 返回 -1 ⇒ 旧代码用 `s_sticky_wave`
- * （= 上一波 2 = 被 third-wave veto 的那一波）登记 GirlD01 ⇒ `wave=2 veto=third drop=0`。
+ * （= 上一波 2）登记 GirlD01 ⇒ 波号错一格 ⇒ 同波统计跟着错（当年表现为 `wave=2 drop=0`）。
  * 修法：sticky 推断时，若 sticky 波的静态组里**没有**这只敌机的 (type,w,h)，就取 sticky 之后
- * 第一个真正含它的波（波序单调向前，所以「sticky 之后第一个」= 正确波）。*/
+ * 第一个真正含它的波（波序单调向前，所以「sticky 之后第一个」= 正确波）。
+ * ⚠ 2026-10-01：整波否决已删（owner），但**这套波号修正仍然要留** —— 波号还是同波统计
+ *   （`animal_odd_one_out` / `group_total`）的键。*/
 static int animal_static_wave_has(int32_t stage, int32_t wave,
                                   int32_t type_id, int32_t w, int32_t h)
 {
@@ -1400,11 +1394,11 @@ static int animal_enemy_drop_measure(const uint8_t *e, const char *name,
                                      int32_t *sprite_w, int32_t *sprite_h,
                                      int32_t *big_by_size, int32_t *wave, int32_t *wave_src,
                                      int32_t *odd, int32_t *census, int32_t *wave_total,
-                                     int32_t *group_total, int32_t *veto, int32_t *reason)
+                                     int32_t *group_total, int32_t *reason)
 {
     int32_t w = 0, h = 0, big = 0, wave_key = -1, is_odd = 0, why = ANIMAL_DROP_REASON_NONE;
     int32_t type_id = 0, live_wave = -1, wave_src_v = ANIMAL_WAVE_SRC_NONE;
-    int32_t same = 0, total = 0, max = 0, veto_src = ANIMAL_WAVE_VETO_NONE;
+    int32_t same = 0, total = 0, max = 0;
     int32_t census_same = 0, census_total = 0, static_total = -1;
 
     if (hp_cur)    *hp_cur = 0;
@@ -1421,7 +1415,6 @@ static int animal_enemy_drop_measure(const uint8_t *e, const char *name,
     if (census)    *census = 0;
     if (wave_total)*wave_total = 0;
     if (group_total)*group_total = -1;
-    if (veto)      *veto = ANIMAL_WAVE_VETO_NONE;
     if (reason)    *reason = ANIMAL_DROP_REASON_NONE;
 
     if (!e) return 0;
@@ -1474,8 +1467,8 @@ __declspec(dllimport) int __stdcall IsBadReadPtr(const void *lp, unsigned cb);
     wave_key = animal_enemy_wave_bind(e, live_wave, type_id, w, h, &wave_src_v);
     if (wave)      *wave = wave_key;
     if (wave_src)  *wave_src = wave_src_v;
-    veto_src = animal_wave_veto(wave_key);
-    if (veto) *veto = veto_src;
+    /* ★ 2026-10-01：这里原来的 `veto_src = animal_wave_veto(wave_key);` 已删（整波否决被 owner 撤销）。
+     *   波号（`wave_key`）仍然要算 —— 它是**同波统计**（`animal_odd_one_out` / `group_total`）的键。*/
 
     if (name && wave_key >= 0) {
         int32_t stage = CE_CURRENT_STAGE();
@@ -1500,8 +1493,8 @@ __declspec(dllimport) int __stdcall IsBadReadPtr(const void *lp, unsigned cb);
         is_odd = animal_odd_one_out(name, w, h, wave_key, same, total, max);
     if (odd) *odd = is_odd;
 
-    if (veto_src != ANIMAL_WAVE_VETO_NONE) why = ANIMAL_DROP_REASON_NONE;
-    else if (big) why = ANIMAL_DROP_REASON_SIZE;
+    /* ★ 2026-10-01：整波否决删除后，`reason` 只有这两条来源（不再有「被 veto 强成 none」那一档）。*/
+    if (big) why = ANIMAL_DROP_REASON_SIZE;
     else if (is_odd) why = ANIMAL_DROP_REASON_ODD_ONE_OUT;
     if (reason) *reason = why;
     return why != ANIMAL_DROP_REASON_NONE;
@@ -1659,21 +1652,21 @@ static void animal_big_drop_drain(animal_card_t *s)
 
         if (ok) {
             ++s->drops;
-            ce_log("wba_wc: big-enemy drop -> 1 animal spirit (reason=%s, veto=%s, type %d, "
+            ce_log("wba_wc: big-enemy drop -> 1 animal spirit (reason=%s, type %d, "
                    "sprite=%dx%d, big_by_size=%d, wave=%d wave_src=%s, odd=%d, "
                    "group_total=%d census=%d total=%d, hp=%d/%d, drop_id %d, sub %d) "
                    "at (%.0f, %.0f)",
-                   animal_drop_reason_name(d.reason), animal_wave_veto_name(d.veto),
+                   animal_drop_reason_name(d.reason),
                    (int)type, (int)d.sprite_w, (int)d.sprite_h,
                    (int)d.big_by_size, (int)d.wave, animal_wave_src_name(d.wave_src),
                    (int)d.odd, (int)d.group_total, (int)d.census, (int)d.wave_total,
                    (int)d.hp_cur, (int)d.hp_max, (int)d.drop_main, (int)d.sub,
                    (double)d.x, (double)y);
         } else {
-            ce_log("wba_wc: big-enemy drop blocked by token pool full (reason=%s, veto=%s, cap %d, "
+            ce_log("wba_wc: big-enemy drop blocked by token pool full (reason=%s, cap %d, "
                    "sprite=%dx%d, wave=%d wave_src=%s, odd=%d, group_total=%d census=%d total=%d, "
                    "hp=%d/%d, drop_id %d, sub %d) at (%.0f, %.0f)",
-                   animal_drop_reason_name(d.reason), animal_wave_veto_name(d.veto),
+                   animal_drop_reason_name(d.reason),
                    ANIMAL_TOKEN_MAX, (int)d.sprite_w, (int)d.sprite_h,
                    (int)d.wave, animal_wave_src_name(d.wave_src), (int)d.odd,
                    (int)d.group_total, (int)d.census, (int)d.wave_total,
@@ -3636,7 +3629,7 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
     animal_big_drop_t d;
     int32_t hp_cur = 0, hp_max = 0, drop_main = 0, sub = -1, anm_main = 0;
     int32_t sprite_w = 0, sprite_h = 0, big_by_size = 0, wave = -1, wave_src = 0, odd = 0;
-    int32_t census = 0, wave_total = 0, group_total = -1, veto = 0, reason = 0;
+    int32_t census = 0, wave_total = 0, group_total = -1, reason = 0;
     float hurtbox_x = 0.0f;
     uint32_t flags;
     const char *name;
@@ -3654,7 +3647,7 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
                                                &anm_main, &hurtbox_x,
                                                &sprite_w, &sprite_h, &big_by_size,
                                                &wave, &wave_src, &odd, &census, &wave_total,
-                                               &group_total, &veto, &reason);
+                                               &group_total, &reason);
 
     /* ★ 先诊断、后判据：前 16 只死亡逐只打印；**再额外保证 4 只非 Cir/ECir 族**打一行。
      *   用户实测前半面 16 只全被 Cir00 占满，三只 GirlD01 根本没进样本。
@@ -3670,14 +3663,14 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
     if (diag) {
         ce_log("wba_wc: death diag kind=%s retaddr=0x%08x ret_slot=%d esp=0x%08x raw_flags=0x%08x "
                "real_bit=%d id=%u sub=%d/%s hp=%d/%d hurtbox=%.1f main_drop=%d anm_main=%d "
-               "sprite=%dx%d big_by_size=%d wave=%d wave_src=%s veto=%s odd=%d drop=%d "
+               "sprite=%dx%d big_by_size=%d wave=%d wave_src=%s odd=%d drop=%d "
                "group_total=%d census=%d total=%d pos=(%.0f,%.0f)",
                animal_death_kind_name(ev->kind), (unsigned)ev->retaddr, (int)ev->ret_slot,
                (unsigned)ev->esp, flags, (ev->flags & CE_EDEATH_F_REAL) ? 1 : 0, (unsigned)ev->id,
                (int)sub, name ? name : "(null)", (int)hp_cur, (int)hp_max, (double)hurtbox_x,
                (int)drop_main, (int)anm_main, (int)sprite_w, (int)sprite_h,
                (int)big_by_size, (int)wave, animal_wave_src_name(wave_src),
-               animal_wave_veto_name(veto), (int)odd, drop_decision,
+               (int)odd, drop_decision,
                (int)group_total, (int)census, (int)wave_total,
                (double)ev->x, (double)ev->y);
     }
@@ -3692,10 +3685,10 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
               animal_name_is_fallback_noncir(name))) return;
         ce_log("wba_wc: death kind fallback -> KILLED (call-site scan miss, retaddr=0x%08x "
                "ret_slot=%d hp=%d/%d sub=%s sprite=%dx%d big_by_size=%d wave=%d wave_src=%s "
-               "veto=%s odd=%d drop=%d group_total=%d census=%d total=%d)",
+               "odd=%d drop=%d group_total=%d census=%d total=%d)",
                (unsigned)ev->retaddr, (int)ev->ret_slot, (int)hp_cur, (int)hp_max,
                name ? name : "(null)", (int)sprite_w, (int)sprite_h, (int)big_by_size,
-               (int)wave, animal_wave_src_name(wave_src), animal_wave_veto_name(veto),
+               (int)wave, animal_wave_src_name(wave_src),
                (int)odd, drop_decision, (int)group_total, (int)census, (int)wave_total);
     }
     if (!animal_big_real_ok(ev, name, anm_main, hurtbox_x, drop_main)) return; /* REAL + 正判兜底 */
@@ -3704,13 +3697,13 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
     if (enemy_is_boss(ev->enemy)) {
         int is_mid = (name && strncmp(name, "MBoss", 5) == 0);
         ce_log("wba_wc: big-enemy death (%s) -> no extra animal spirit; %s handles it "
-               "(hp=%d/%d, drop_id %d, sub %d, sprite=%dx%d, wave=%d wave_src=%s, veto=%s, "
+               "(hp=%d/%d, drop_id %d, sub %d, sprite=%dx%d, wave=%d wave_src=%s, "
                "odd=%d, group_total=%d census=%d total=%d) at (%.0f, %.0f)",
                is_mid ? "midboss" : "boss",
                is_mid ? "midboss drop path" : "existing *Dead drop_pre",
                (int)hp_cur, (int)hp_max, (int)drop_main, (int)sub,
                (int)sprite_w, (int)sprite_h, (int)wave, animal_wave_src_name(wave_src),
-               animal_wave_veto_name(veto), (int)odd, (int)group_total, (int)census,
+               (int)odd, (int)group_total, (int)census,
                (int)wave_total, (double)ev->x, (double)ev->y);
         return;
     }
@@ -3730,7 +3723,6 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
     d.census = census;
     d.wave_total = wave_total;
     d.group_total = group_total;
-    d.veto = veto;
     d.reason = reason;
     (void)animal_big_drop_push(&d);
 }
