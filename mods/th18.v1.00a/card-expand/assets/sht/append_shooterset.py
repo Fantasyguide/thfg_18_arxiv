@@ -79,6 +79,16 @@
 另外 `fire_rate` 必须 1–127：`0` 在装备卡路径上会整数除零（`0x40a9c0` 没有零分支），
 `< 0` 是 shooterset 的终止符。
 """
+
+# ══════════════════════════════════════════════════════════════════════════════════════════
+# ⚠⚠ **本文件存在同名函数重复定义**（2026-10-01 实测：`_pofv109_bossatk_sets` / `_hyper_sets` /
+#   `_youkai_tier_sets` / `_retail_dps` / `_rows_dps` / `_yk_bullet_anm` / `_read_int_table` /
+#   `_retail_set_blob` / `_register_m_beam` / `check_bullet_scripts_have_layer` … 各出现两次）。
+#   Python 里**后一个生效** ⇒ 改前一个**完全无效且不报错**（我为此白跑了一轮：改了 ring→arc
+#   但产物字节一个没变）。
+#   ⇒ **动手前先 `grep -n "^def <名字>"` 确认你改的是最后一个**；`grep -c` 看有没有重复。
+#     根治（删掉死的那份）属于共享件改动，要登记 `AUDIT.md` §BE，见那里的条目。
+# ══════════════════════════════════════════════════════════════════════════════════════════
 import argparse
 import re
 import struct
@@ -2563,20 +2573,31 @@ def _pofv109_bossatk_sets(anm_ids: dict) -> list:
     #     owner「版底 boss 位、180° 反转、往上发」在「整圈」这种形态下就是**环本身**。
     U = -1.5707964
 
-    def ring(n, base=0.0, speed=16.0, rate=5, dmg=12, phase=0.0):
-        """n 颗一整圈（每颗一行，角均分）+（可选）整圈相位 `phase`。"""
+    def arc(n, spread=math.pi, speed=16.0, rate=5, dmg=12, phase=0.0):
+        """n 颗**以正上方为中心**的扇形（`spread` = 总张角；默认 π = 上半圈）。
+
+        ★★ 为什么是「朝上的扇形」而不是「整圈」（owner 2026-10-01 的最终模型）：
+          「自机都是从下往上打，上面是 boss……把**另一侧的场地拉过来，并且 180° 反转**！
+           也就是说，在**我们的版底生成一个 boss**……你发弹得按照**我是 boss 往上发**」
+          ⇒ 发射锚点在**版底**（`cards/pofv.c` 的 `POFV_BOSSATK_ANCHOR_X/Y` = (192, 440)）。
+          一手 TH09 的 `etRing` 是**整圈**，但那是「boss 在对手场地的**上方**」时发的；
+          把对手场地 180° 反转搬到我们版底后，那个「朝向对手」的半圈 = **我们的上半圈**
+          （朝下的半圈会当场出屏）⇒ 这里只发**朝上的那一半**。
+        ⚠ **DPS 待重定**（owner 2026-10-01：「向上发的『华丽』弹幕 —— dps 还得重新考虑，
+          可以先填占位」）⇒ 本表里的 `dmg` / `rate` / `speed` 一律**占位**，登记在 `TUNING.md`。
+        """
         rows = []
         for k in range(n):
-            ang = base + phase + (2.0 * math.pi) * k / n
-            rows.append((0.0, ang, speed, rate, dmg))
+            t = (k / (n - 1) - 0.5) if n > 1 else 0.0
+            rows.append((0.0, U + t * spread + phase, speed, rate, dmg))
         return rows
 
     specs = [
-        ("POFV109_BOSSATK_C1", ring(6,  speed=16.0, rate=6, dmg=14)),            # 6 颗环
-        ("POFV109_BOSSATK_C2", ring(12, speed=16.0, rate=5, dmg=11)),            # 12 颗环
-        ("POFV109_BOSSATK_C3", ring(12, speed=16.0, rate=5, dmg=10)              # 两圈：第二圈偏 15°
-                               + ring(12, speed=16.0, rate=5, dmg=10, phase=math.pi / 12.0)),
-        ("POFV109_BOSSATK_C4", ring(12, speed=24.0, rate=3, dmg=10)),            # 12 颗环、速度 ×1.5
+        ("POFV109_BOSSATK_C1", arc(6,  speed=16.0, rate=6, dmg=14)),             # 6 颗：上半圈
+        ("POFV109_BOSSATK_C2", arc(12, speed=16.0, rate=5, dmg=11)),             # 12 颗：上半圈
+        ("POFV109_BOSSATK_C3", arc(12, speed=16.0, rate=5, dmg=10)               # 两层半圈（错 15°）
+                               + arc(12, speed=16.0, rate=5, dmg=10, phase=math.pi / 12.0)),
+        ("POFV109_BOSSATK_C4", arc(12, speed=24.0, rate=3, dmg=10)),             # 12 颗、速度 ×1.5
     ]
     out = []
     for name, rows in specs:

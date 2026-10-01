@@ -9407,3 +9407,41 @@ owner 的最终模型（逐字）：
 
 回归：`make check` exit 0（含 `sht-verify` 418 文档）、`cards/pofv.c` 交叉编译 0 警告。
 ⚠ 仍未做：boss **特效**（owner：先搁置）；C1–C4 的**每角色弹图**（灵梦/咲夜素材已定位，魔理沙未定位）。
+
+#### ★★ owner 2026-10-01 两条新口径：**伪 boss** ＋ **华丽弹幕的 DPS 待重定**
+
+**① 这是「伪 boss」—— 只给自己加特效，不向引擎登记任何 boss 身份。**
+
+owner 原话：「这个 boss 是**伪 boss**，只是我给我自己加特效，**其他什么 boss 标识都别干**」。
+⇒ 本卡的 C3/C4「boss attack」**只做两件事**：① 把发射口摆到版底锚点（`POFV_BOSSATK_ANCHOR_X/Y`）；
+② 从那里往上发弹。**不做**：不设 boss 标志位、不挂 boss 血条/名字、不进 `mgr+0x48` 的 boss 表、
+不出 boss 出场特效、不改关卡/boss 状态机。
+
+一手核对（2026-10-01，全卡扫一遍 `grep -i boss`）：
+
+| 命中 | 性质 |
+| --- | --- |
+| `pofv_bossatk_is_boss()`（`pofv_core.c`）| ★ **我们自己的纯逻辑判定**（C4 = boss 档），只在日志里用，**不碰引擎** |
+| `boss_enemy_present()`（`pofv.c`）| ★ **只读**查询：读 `mgr+0x48` 的 boss `enemy_id` 表，判「有没有 boss 在场」来决定**撒不撒灵**（口径 9）⇒ 纯读，不写 |
+| 其余 | 全是注释 |
+
+**② 向上发的「华丽」弹幕 —— DPS 待重定，先填占位。**
+
+owner 原话：「向上发的『华丽』弹幕 —— dps 还得重新考虑，**可以先填占位**」。
+⇒ `append_shooterset.py` 里 C1–C4 的 `dmg` / `fire_rate` / `speed`（14/11/10/10、6/5/5/3、16/16/16/24）
+**一律是 ❓ 占位**，等 owner 定了「华丽弹幕该有多少输出」再算（口径：先看**观感**，后配数值）。
+⚠ 别把现在的数字当成已定的平衡值。
+
+#### ⚠⚠ 共享件坑：`assets/sht/append_shooterset.py` 有**同名函数重复定义**（2026-10-01 实测）
+
+`grep -c` 实测有 **10+ 个**函数名各定义了**两次**（`_pofv109_bossatk_sets` / `_hyper_sets` /
+`_youkai_tier_sets` / `_retail_dps` / `_rows_dps` / `_yk_bullet_anm` / `_read_int_table` /
+`_retail_set_blob` / `_register_m_beam` / `check_bullet_scripts_have_layer` …）。
+Python 里**后一个生效** ⇒ **改前一个完全无效、而且不报错**。
+
+> 我为此白跑一轮：把「整圈」改成「朝上的半圈」时改的是**第一个** `_pofv109_bossatk_sets`
+> （1938 行），`make sht` 跑完 `pl00.sht` 的 md5 **一个字节都没变**（`aca783b0…` 前后相同），
+> 才发现真正生效的是 2518 行那份。
+
+⇒ **纪律**：动这个文件前先 `grep -n "^def <名字>" ` 看有几个；**只改最后一个**。
+现在文件顶部已加醒目警告横幅。根治（删死的那份）属共享件改动 ⇒ 走 `AUDIT.md` §BE。

@@ -27673,3 +27673,34 @@ if (ev->has_enemy_pos && yk_hit_orb_use_enemy_pos(…) { … }  s_bhit_ex[idx] =
 
 **验证**：`make check` exit 0（含 `test_season_core` 601 断言、`test_pofv_core` 808 断言）；
 `cards/pofv.c` 交叉编译 0 警告。
+
+## §BE 详录 #167（2026-10-01）：`assets/sht/append_shooterset.py` **同名函数重复定义**（共享件，害人）
+
+**谁改的**：109 的 owner 会话。**共享件**：`assets/sht/append_shooterset.py`（所有卡共用的 shooterset 生成器）。
+
+**现象**：该文件里 **10+ 个函数名各定义了两次**：
+
+```
+_hyper_sets / _pofv109_bossatk_sets / _read_int_table / _register_m_beam / _retail_dps /
+_retail_set_blob / _rows_dps / _yk_bullet_anm / _youkai_tier_sets / check_bullet_scripts_have_layer
+```
+
+Python 里**后一个定义覆盖前一个** ⇒ 改第一个**完全无效且不报错**。
+
+**我怎么发现的**：把 109 的弹幕从「整圈」改成「朝上的半圈」时，编辑的是**第一个**
+`_pofv109_bossatk_sets`（1938 行）⇒ 重跑 `make sht` 后 `build/sht/pl00.sht` 的 md5
+**前后完全一样**（`aca783b0fd5497c6b3ed42c5e16466af`），才顺着查出来真正生效的是 **2518 行**那份。
+
+**本次的处理（最小、无行为变化）**：
+1. 把改动**落到生效的那份**（2518 行的 `_pofv109_bossatk_sets`：`ring()` → `arc()`）；
+2. 在文件顶部加**醒目警告横幅**（写明「改前一个无效」+「动手前先 `grep -n "^def <名字>"`」+
+   「根治要登记 §BE」）。
+
+**对既有卡的影响面**：**无** —— 只改了 109 自己那组（`POFV109_BOSSATK_C1..C4`，槽 `0x68–0x6b`），
+其余卡的组与槽号一个没动（`make check` 的 `capcheck` / `sht-verify` 全过可证）。
+
+**未做（留给后续）**：**删除死的那几份**（根治）。它是纯清理、理应是零行为变化，但涉及 10+ 个函数、
+且要逐对确认「死的那份确实没有被任何地方引用」⇒ 单独一批做更稳，届时同样登记本节。
+
+**验证**：`make check` exit 0（含 `sht-verify` / `capcheck` / 418 文档）；
+本次改完 `build/sht/pl00.sht` = `0a314a3d31df267597a505262f6c0bf5`（**与改前不同** ⇒ 说明这次真落地了）。
