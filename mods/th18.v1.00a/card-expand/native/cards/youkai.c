@@ -474,13 +474,17 @@ static void yk_side_lock_tick(void)
  *   ⇒ 改成逐入口二分：**每次只关一项**，人形态打 4 面开头，看哪一项让激光恢复。
  *   ⚠ **绝不耦合**：每个开关只管自己那一条路径；关掉后其它逻辑一行不变。
  *   日志里有一行汇总（`youkai: bisect switches …`，`on_tick_2` 首次运行时打）。*/
-#define YK_ENABLE_SET_INDEX       0  /* ① `on_shot_set_index`：认领妖侧 shooterset / 退选举 */
-#define YK_ENABLE_NATIVE_SUPPRESS 0  /* ② `on_native_shot_suppress`：压不压原生行循环 */
-#define YK_ENABLE_OPTION_POSE     0  /* ③ `on_option_pose_apply` + declare + hide/keep_records */
-#define YK_ENABLE_HUD_VM          0  /* ④ HUD 数字/槽 VM（`ce_anm_spawn_ui` 那一族）*/
-#define YK_ENABLE_FX_VMS          0  /* ⑤ 拖尾/浮字/环/束条/光环 VM（`yk_vm_spawn` 唯一出口）*/
-#define YK_ENABLE_TRANSFER        0  /* ⑥ `ce_damage_rect` + `ce_raise_damage_cap`（伤害转嫁）*/
-#define YK_ENABLE_ZONE            0  /* ⑦ `ce_cancel_radius`（死亡点消弹）*/
+#define YK_ENABLE_SET_INDEX       1  /* ① `on_shot_set_index`：认领妖侧 shooterset / 退选举 */
+#define YK_ENABLE_NATIVE_SUPPRESS 1  /* ② `on_native_shot_suppress`：压不压原生行循环 */
+#define YK_ENABLE_OPTION_POSE     1  /* ③ `on_option_pose_apply` + declare + hide/keep_records */
+#define YK_ENABLE_HUD_VM          1  /* ④ HUD 数字/槽 VM（`ce_anm_spawn_ui` 那一族）*/
+#define YK_ENABLE_FX_VMS          1  /* ⑤ 拖尾/浮字/环/束条/光环 VM（`yk_vm_spawn` 唯一出口）*/
+#define YK_ENABLE_TRANSFER        1  /* ⑥ `ce_damage_rect` + `ce_raise_damage_cap`（伤害转嫁）*/
+#define YK_ENABLE_ZONE            1  /* ⑦ `ce_cancel_radius`（死亡点消弹）*/
+/* ★★★★ 2026-10-01（owner 工单⑥ · 第 102 版「7 项全关仍异常」⇒ 转「动敌人链表」这条线）：
+ *   两条都是**会往敌人链表插/删对象**（或每帧重写发射口表）的路径。⚠ 默认 1 = 现状。*/
+#define YK_ENABLE_ORBIT           0  /* ⑧ 绕转使魔整体：扫描 / `ce_spawn_enemy` 建壳 / 撤退 / VM / 喂转嫁 */
+#define YK_ENABLE_MAP_LAYER       1  /* ⑨ 映射（发射口）层：note_slot / 建壳 / 撤壳 / 闸 */
 #define YK_FX_VMS YK_ENABLE_FX_VMS   /* 旧名保留（同一格；`yk_vm_spawn` 里用）*/
 
 static unsigned s_fx_try, s_fx_fail, s_fx_skip;        /* 累计（只增）*/
@@ -1757,6 +1761,7 @@ static void yk_spriteprobe_one(const uint8_t *e, uint32_t id)
  * ⚠ **「有没有发射口」不是筛选条件**（第二轮 owner 口径）—— 见下面 ④ 那段注。*/
 static void yk_orbit_scan(uint32_t frame)
 {
+    if (!YK_ENABLE_ORBIT) return;                         /* ★ ⑧ */
     uint8_t *em = CE_ENEMY_MGR();
     uint8_t *e;
     unsigned seen = 0, roots = 0, bosses = 0, have_emit = 0, small = 0, big = 0, picked = 0;
@@ -1921,6 +1926,7 @@ static void yk_orbit_scan(uint32_t frame)
  *   报「inline assembly requires more registers than available」（2026-09-22 实测，同 `yk_fam_vm_check`）。*/
 static void __attribute__((noinline)) yk_orbit_tick(uint32_t frame)
 {
+    if (!YK_ENABLE_ORBIT) return;                         /* ★ ⑧ */
     uint8_t *em = CE_ENEMY_MGR();
     unsigned i;
     if (!em) return;                                  /* 世界没了：什么都不做（撤由 `yk_drop_all` 负责）*/
@@ -2330,6 +2336,7 @@ static void yk_emitkey_note(uint32_t enemy_id, int slot, int active, uint32_t ch
 
 static void yk_familiars_tick(yk_card_t *s)
 {
+    if (!YK_ENABLE_MAP_LAYER) return;                     /* ★ ⑨ */
     uint8_t *em = CE_ENEMY_MGR();
     uint8_t *e;
     yk_action_t act;
@@ -5938,6 +5945,7 @@ static int on_native_shot_suppress(ce_card_t *c)
  * ⚠ 代价：每次使魔死亡**最多丢 1 条 `etOn`**（那一帧照旧掐，下一帧使魔已回来）。 */
 static int yk_on_shot_slot(ce_card_t *c, const ce_enemy_shot_t *ev)
 {
+    if (!YK_ENABLE_MAP_LAYER) return 0;                  /* ★ ⑨：闸也停（不掐任何 etOn）*/
     yk_card_t *s = ce_state(c, yk_card_t);
     uint32_t have = 0;
     uint32_t rearms_before;
@@ -6863,10 +6871,11 @@ static int on_tick_2(ce_card_t *c)
     if (!s_optmode_logged) {                              /* ★ 工单③：日志里要能看出是哪个二分版 */
         s_optmode_logged = 1;
         ce_log("youkai: bisect switches set_index=%d native_suppress=%d option_pose=%d hud_vm=%d "
-               "fx_vms=%d transfer=%d zone=%d human_opt_write=%d (1 = 现状)",
+               "fx_vms=%d transfer=%d zone=%d orbit=%d map_layer=%d human_opt_write=%d (1 = 现状)",
                (int)YK_ENABLE_SET_INDEX, (int)YK_ENABLE_NATIVE_SUPPRESS, (int)YK_ENABLE_OPTION_POSE,
                (int)YK_ENABLE_HUD_VM, (int)YK_ENABLE_FX_VMS, (int)YK_ENABLE_TRANSFER,
-               (int)YK_ENABLE_ZONE, (int)YK_HUMAN_OPT_WRITE);
+               (int)YK_ENABLE_ZONE, (int)YK_ENABLE_ORBIT, (int)YK_ENABLE_MAP_LAYER,
+               (int)YK_HUMAN_OPT_WRITE);
         ce_log("youkai: human option-write mode = %s (%s) - owner laser bisect switch",
                YK_HUMAN_OPT_WRITE ? "ON (current)" : "OFF (human side fully hands-off)",
                "YK_HUMAN_OPT_WRITE");
