@@ -301,6 +301,7 @@ typedef struct {
     uint8_t       laser_probe;        /* ★ 2026-10-01（工单②：「我们到底有没有在人侧杀自机激光」）：
                                        *   `yk_kill_retail` 上下文的诊断行计数（只打前几次）*/
     uint8_t       laser_probe_human;  /* ★ 同上：**人侧**那行「NOT called」的计数（证明没碰）*/
+    uint8_t       pose_probe;         /* ★ 2026-10-01（工单③）：人侧「我们到底写了什么」探针计数 */
     /* ★★★ 2026-09-22（#25 击破符卡的螺旋，一手参数见 `youkai_core.h` §3.11b）：
      * `spiral_quota` = 还剩几颗没吐（TH08 的 `spellcard[+0x10]`）；`spiral_t` = 计时器帧数（从 10 起算）；
      * `spell_was` = 上一帧在不在符卡里（**符卡结束的下降沿**是触发器）；`spiral_logged` = 只记一次日志。*/
@@ -2939,6 +2940,16 @@ static void yk_option_release(ce_card_t *c, yk_card_t *s)
  *   ① `ce_option_pose_winner() == 我们` ⇒ 按本帧声明申请 / 逐格摆位；
  *   ② **退位通知**（上一帧我们是落笔者、这一帧不是：松了 Shift / 被别人盖过 / 池被重建）
  *      ⇒ 此时 winner 不是我们 ⇒ 把手里所有子机还回去（否则高速还看得见妖侧子机 = 用户定案 5 的反面）。*/
+/* ★★★ 2026-10-01（owner 工单③ · **人侧写入二分开关**，调试用，随下一版发给 owner 做实验）：
+ *   `1`（**默认 = 现状**）：人侧照常走本卡的子机声明/落笔（下面 `on_option_pose_apply` 会
+ *        写**我们自己**那 12 格卡池对象的阵型；原生 4 格的**膛口**自本批起**只在妖侧**写，见 mirror 段）。
+ *   `0`（**二分版**）：**人侧完全不碰引擎的子机层** —— 不 `hide_declare` / 不 `keep_records` /
+ *        不 `yk_option_declare` / 不落笔（`on_option_pose_apply` 人侧直接早退并收干净）。
+ *   ⇒ owner 用「0 版」打一次人形态：**激光恢复正常 ⇒ 凶手在本卡的人侧子机写入**；
+ *     仍然异常 ⇒ 与本卡无关（回去查引擎侧，需要 dump/时序）。
+ *   ⚠ 只影响**人侧**；妖侧一行不变（妖侧的隐藏/收束/膛口镜像都是功能本体）。*/
+#define YK_HUMAN_OPT_WRITE 1
+
 static int on_option_pose_apply(ce_card_t *c)
 {
     yk_card_t *s = ce_state(c, yk_card_t);
@@ -2948,9 +2959,26 @@ static int on_option_pose_apply(ce_card_t *c)
     int want, i;
 
     if (!s) return 0;
+    /* ★ 2026-10-01（工单③ 二分开关 + 人侧探针）：`YK_HUMAN_OPT_WRITE == 0` ⇒ 人侧完全不落笔。*/
+    if (!YK_HUMAN_OPT_WRITE && !yk_focused()) {
+        if (s->opt_script >= 0 || s->opt[0].ptr) yk_option_release(c, s);   /* 收干净再退 */
+        if (s->pose_probe < 6) {
+            ++s->pose_probe;
+            ce_log("youkai/pose: human side HANDS-OFF (YK_HUMAN_OPT_WRITE=0) - no option declare/"
+                   "apply, no native slot writes");
+        }
+        return 0;
+    }
     if (ce_option_pose_winner() != (int)ce_card_id(c) || !pose || pose->count <= 0) {
         if (s->opt_script >= 0 || s->opt[0].ptr) yk_option_release(c, s);   /* 退位：收干净 */
         return 0;
+    }
+    /* ★ 2026-10-01（工单③ 判据行）：人侧**前几次**把「我们声明了什么」打出来（格数 + 非聚焦阵型）。*/
+    if (!yk_focused() && s->pose_probe < 6 && pose->count > 0) {
+        ++s->pose_probe;
+        ce_log("youkai/pose: human write decl off=(%d,%d) slots=%d script=%d (these are the native "
+               "option objects' offsets/positions we may write; owner laser report)",
+               (int)pose->cell[0].ux, (int)pose->cell[0].uy, pose->count, pose->anm_script);
     }
     if (yk_option_script_changed(pose->anm_script, (int)s->opt_script)) {
         /* 子机的 anm 脚本是**申请时**定死的（`Player__allocate_option` `0x40a790` 第 5 个栈参）
@@ -3189,7 +3217,17 @@ static int on_option_pose_apply(ce_card_t *c)
      *   两份都按 `pl0X.sht` 重写，我们下一帧再镜像一次即可（幂等）。
      * ⚠ 机位数不够时（例：早苗档 1 只有 1 台，而她的回落组有原点 2 的行）**沿用最后一台的坐标**
      *   ⇒ 那些行与已有的那台同点出膛，而不是从 `(0,-400)` 或屏幕外冒出。*/
-    {
+    /* ★★★ 2026-10-01（**本批的真修法**，owner 工单③ 头号嫌疑）：**mirror 只在妖侧跑**。
+     *   本段原来是**无条件**执行的 —— 它写的是**原生那 4 格**（`player+0x670+i*0xf0`）的
+     *   **膛口 `+0x5c/+0x60`**（`CE_OPT_POS_X/POS_Y`）与聚焦偏移 `+0x6c/+0x70`。
+     *   而它自己的注释写着「⚠ 只写**聚焦**那一对……高速（人侧）用的是非聚焦对，**一个字节都不碰**
+     *   ⇒「人侧和不装 th08 完全一样」」—— 事实与注释不符：**膛口那两格在人侧也照写**，
+     *   而且人侧 `have = 1`（魔理沙）时槽 1..3 还会被写成「与最后一台同点」。
+     *   一手（`sdk.h` 的 mode=2 说明）：**束的位置每帧从持有者读** ⇒ 人侧每帧改写原生格的膛口
+     *   = 我们主动喂束的原点（形状：束分段/起点抖、命中处像「断了一节」）。
+     *   ⇒ 现在起：`yk_focused()` 为假时**整段跳过**（人侧一个字节都不写）；`YK_HUMAN_OPT_WRITE=0`
+     *     时连我们自己卡池那支也不写（上面的早退）。*/
+    if (yk_focused()) {
         uint8_t *pl = CE_PLAYER();
         if (pl) {
             const int have = (want > 0) ? want : 0;
@@ -6759,7 +6797,14 @@ static int on_tick_2(ce_card_t *c)
 {
     yk_card_t *s = ce_state(c, yk_card_t);
     int focused;
+    static int8_t s_optmode_logged;
     if (!s) return 0;
+    if (!s_optmode_logged) {                              /* ★ 工单③：日志里要能看出是哪个二分版 */
+        s_optmode_logged = 1;
+        ce_log("youkai: human option-write mode = %s (%s) - owner laser bisect switch",
+               YK_HUMAN_OPT_WRITE ? "ON (current)" : "OFF (human side fully hands-off)",
+               "YK_HUMAN_OPT_WRITE");
+    }
     if ((++s_ledger_frame % 600u) == 0u && (s->spawns || s->broken || s->lost || s->silent))
         ce_log("youkai: ledger - %u spawned, %u killed, %u withdrew, %u silent, %u dropped, "
                "%u body-emitter slot(s) skipped (#37: no familiar when the emitter is the enemy itself)",
@@ -7288,11 +7333,19 @@ static int on_tick_2(ce_card_t *c)
      *   ⇒ 现在：不声明隐藏（让引擎照常建记录、跟随位置），只**杀显示**（新 sweep 保留 `state`）。
      *   ⚠ 已知剩下的一处：**111（魔理沙侧）仍然声明隐藏** ⇒ 魔理沙机体下隐藏断点仍会把 `lvl` 压 0，
      *     那一路的 `slot >= 1` 行仍无膛口（登记在 `HANDOFF-108.md` §4）。*/
-    ce_native_option_hide_declare((uint32_t)ce_card_id(c), 0, yk_current_character());
+    /* ★ 2026-10-01（工单③ 第 3 条核对）：本调用**值恒 0**（= 本卡从不声明「原生子机不许出现」），
+     *   而声明层是**粘性**的（`sdk_core.c:645`：写一次就一直有效）⇒ 人侧再喊一遍**没有任何行为**。
+     *   为「人侧少碰引擎层」起见，现在只在**妖侧**（或二分版）喊；人侧不喊不可能改变任何东西。*/
+    if (YK_HUMAN_OPT_WRITE || focused)
+        ce_native_option_hide_declare((uint32_t)ce_card_id(c), 0, yk_current_character());
     /* ★ 修法第 3 步（2026-09-23）：**隐藏但请求保留记录** —— 这样即使 111（魔理沙侧）同时声明了隐藏，
      *   构建断点也不会把 `lvl` 压 0 ⇒ 那 4 格的记录/坐标照建，行循环有活膛口（我们的 `slot >= 1` 行）。
      *   显示仍由下面那支 keep_state sweep 每帧收掉 ⇒ 111 的「原生不可见」不受影响。*/
-    ce_native_option_keep_records((uint32_t)ce_card_id(c), focused);
+    /* ★ 2026-10-01（工单③ 第 3 条核对）：这一支**人侧必须继续调、且必须传 0** ——
+     *   声明层同样是**粘性**的 ⇒ 人侧不调 = 妖侧那次「保留记录」一直挂着（会削弱 111 那侧的隐藏语义）。
+     *   ⇒ 只有二分版把它压成 0（人侧完全不申请）。*/
+    ce_native_option_keep_records((uint32_t)ce_card_id(c),
+                                  (YK_HUMAN_OPT_WRITE ? focused : 0));
     if (focused) {
         int n = ce_native_option_sweep_keep_state();
         /* ★★★ 2026-10-01（owner 定性「就是 th08 的问题」+ 工单②的假设 1，**收紧判据 + 加诊断**）：
@@ -7353,7 +7406,9 @@ static int on_tick_2(ce_card_t *c)
     /* ★ owner ②③ 的读数探针（每 120 帧一行）—— 排在束 tick **之后**：它读的是 `s_beam_*`，
      * 放在前面会慢一帧。*/
     if (focused) yk_probe_tick(s, yk_current_character());
-    yk_option_refresh(c, s, focused);                     /* 每帧声明（低速才有货；落笔由 SDK 在帧界叫）*/
+    /* ★ 2026-10-01（工单③ 二分开关）：`YK_HUMAN_OPT_WRITE == 0` ⇒ 人侧**退出声明**（不参选、不落笔）。*/
+    if (YK_HUMAN_OPT_WRITE || focused) yk_option_refresh(c, s, focused);
+    else { ce_option_pose_declare(c, NULL); s->pose_probe = s->pose_probe; }
     if (!focused) {
         /* 高速 = 原机体：使魔全部撤（spec §9 实跑清单 1「松开全部还原」）。
          * ★★★ 2026-09-22（P8-2）：**无条件**走这一支（原来写成 `if (yk_map_fam_count(...))`）——
