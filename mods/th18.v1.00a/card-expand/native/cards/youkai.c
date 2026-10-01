@@ -474,13 +474,13 @@ static void yk_side_lock_tick(void)
  *   ⇒ 改成逐入口二分：**每次只关一项**，人形态打 4 面开头，看哪一项让激光恢复。
  *   ⚠ **绝不耦合**：每个开关只管自己那一条路径；关掉后其它逻辑一行不变。
  *   日志里有一行汇总（`youkai: bisect switches …`，`on_tick_2` 首次运行时打）。*/
-#define YK_ENABLE_SET_INDEX       1  /* ① `on_shot_set_index`：认领妖侧 shooterset / 退选举 */
-#define YK_ENABLE_NATIVE_SUPPRESS 1  /* ② `on_native_shot_suppress`：压不压原生行循环 */
-#define YK_ENABLE_OPTION_POSE     1  /* ③ `on_option_pose_apply` + declare + hide/keep_records */
-#define YK_ENABLE_HUD_VM          1  /* ④ HUD 数字/槽 VM（`ce_anm_spawn_ui` 那一族）*/
-#define YK_ENABLE_FX_VMS          1  /* ⑤ 拖尾/浮字/环/束条/光环 VM（`yk_vm_spawn` 唯一出口）*/
+#define YK_ENABLE_SET_INDEX       0  /* ① `on_shot_set_index`：认领妖侧 shooterset / 退选举 */
+#define YK_ENABLE_NATIVE_SUPPRESS 0  /* ② `on_native_shot_suppress`：压不压原生行循环 */
+#define YK_ENABLE_OPTION_POSE     0  /* ③ `on_option_pose_apply` + declare + hide/keep_records */
+#define YK_ENABLE_HUD_VM          0  /* ④ HUD 数字/槽 VM（`ce_anm_spawn_ui` 那一族）*/
+#define YK_ENABLE_FX_VMS          0  /* ⑤ 拖尾/浮字/环/束条/光环 VM（`yk_vm_spawn` 唯一出口）*/
 #define YK_ENABLE_TRANSFER        0  /* ⑥ `ce_damage_rect` + `ce_raise_damage_cap`（伤害转嫁）*/
-#define YK_ENABLE_ZONE            1  /* ⑦ `ce_cancel_radius`（死亡点消弹）*/
+#define YK_ENABLE_ZONE            0  /* ⑦ `ce_cancel_radius`（死亡点消弹）*/
 #define YK_FX_VMS YK_ENABLE_FX_VMS   /* 旧名保留（同一格；`yk_vm_spawn` 里用）*/
 
 static unsigned s_fx_try, s_fx_fail, s_fx_skip;        /* 累计（只增）*/
