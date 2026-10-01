@@ -144,6 +144,8 @@
 #define POFV_BOSSATK_SE         0x15    /* se_tan00（弾音）*/
 #define POFV_BOSSATK_SE_PERIOD  40      /* 与 ECL 的 40 帧一轮同拍 */
 static int32_t s_bossatk_se_timer;
+/* ★ 扫弹的**轮转起点**（每帧换一批）：见 `bossatk_damage()` 里「公平性」那段长注释。*/
+static uint32_t s_bossatk_scan_rot;
 #define POFV_POWER_SE_GET       0x25
 /* ★ 一手（2026-10-01）：**升档音** —— TH16 季节道具**升档**（`item_collect_season`）播 `0x3f`，
  *   116 `season.c` 的 `SEASON_SE_LEVEL` 就是它（一手出处见那份文件；**不是** `se_extend`）。
@@ -277,8 +279,13 @@ static int cancel_white_in_circle(const float *pos, float r, int max_count, int 
     int n = 0;
 
     if (!bm || !pos || r <= 0.0f || max_count <= 0) return 0;
+    /* ★ 公平性（2026-10-01）：扫池是**定序**的，而每帧只允许建 `POFV_BOSSATK_DMG_MAX` 个源
+     *   ⇒ 不加轮转的话，**每帧都是同一批（池里靠前的）弹拿到伤害源**，池里靠后的弹**永远轮不到**
+     *   （观感就是「同屏的弹有的有判定、有的没有」）。⇒ 每帧把起点往前挪一个「批次」，
+     *   整个池 `CE_BM_BULLET_COUNT / MAX` 帧走一圈，所有弹**均摊**到伤害源。*/
     for (i = 0; i < CE_BM_BULLET_COUNT; ++i) {
-        uint8_t *b = bm + CE_BM_BULLETS + (size_t)i * CE_BULLET_STRIDE;
+        uint32_t _slot = (i + s_bossatk_scan_rot) % CE_BM_BULLET_COUNT;
+        uint8_t *b = bm + CE_BM_BULLETS + (size_t)_slot * CE_BULLET_STRIDE;
         uint16_t state = *(const uint16_t *)(b + CE_BULLET_STATE);
         if (is_our_barrage(b)) continue;      /* ★ 我们自己发的 C3/C4 弹幕：三种清弹都不吃 */
         float br, dx, dy, rr;
@@ -577,6 +584,7 @@ static void bossatk_damage(void)
                        POFV_BOSSATK_DMG_CELL, POFV_BOSSATK_DMG_CELL);
         if (++made >= POFV_BOSSATK_DMG_MAX) break;                  /* 每帧上限（别把源池刷爆）*/
     }
+    s_bossatk_scan_rot = (s_bossatk_scan_rot + POFV_BOSSATK_DMG_MAX) % CE_BM_BULLET_COUNT;
 }
 
 /* ★★ 2026-10-01（owner：「最好是**除了透明度之外完全复刻符卡**，**包括对于敌机的「自机狙」**等等」）：
