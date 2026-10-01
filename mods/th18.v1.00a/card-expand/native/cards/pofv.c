@@ -116,6 +116,14 @@
 #define POFV_BOSSATK_DMG_LIFE    2       /* 源存活帧（照风暴那一支的量级）*/
 #define POFV_BOSSATK_DMG_CELL   24.0f    /* ❓ 逐弹版：每颗弹那一发小方框的边长（占位）*/
 #define POFV_BOSSATK_DMG_MAX      64     /* ❓ 每帧最多建几个源（防刷爆源池；占位）*/
+#define POFV_BOSSATK_NO_HIT      0x200u  /* ★ 见下：载体的弹必须置这一位才打不到自机 */
+/* ★★ 2026-10-01：载体的弹**绝不能打到自机** —— 它是「我」发的，而且从**版底往上**发，
+ *   而自机通常就在锚点正上方 ⇒ 不处理的话 = **自己打自己**（每张符卡都变成自杀）。
+ *   一手：`bullet+0x20`（`CE_BULLET_FLAGS`）的 **bit `0x200` = 跳过碰撞判定**
+ *     （`engine/bullet/th18/01-cancel-to-item.md` 的「未解」条目 1：三个读点 `0x4245a9` /
+ *      `0x42486d` / `0x424d78` **都用来跳过碰撞判定**）。
+ *   ⚠ 该位的**写侧来源**在本仓仍是 ❓（同一条记着「哪条路把 `0x200` 塞进 flags 未解」）⇒
+ *     这是**我们主动置位的首次使用** ⇒ 登记为「待实跑确认」；观感/判定不对就回退这一行。*/
 
 /* ★★ 2026-10-01：C3/C4 的**发射音**（一手 = TH09 `arg9` 的 **bit9** → `0x43e380` = 播音）。
  *   ⚠ **不在 ECL 里做**：TH18 对应的是 `etSound(id, sfx)`(608)，而 **`thecl` 能编、却 dump 不了 608**
@@ -532,6 +540,12 @@ static void bossatk_damage(void)
         if ((rec - CE_BULLET_TYPE_TABLE) % CE_BULLET_TYPE_STRIDE) continue;   /* 不在表上（对齐校验）*/
         type = (rec - CE_BULLET_TYPE_TABLE) / CE_BULLET_TYPE_STRIDE;
         if (!pofv_bossatk_bullet_type_ours(type)) continue;         /* 不是我们 ECL 用到的类型 */
+        /* ★ 第三道过滤：**只认「往上飞」的**。载体在版底往上发（`velocity.y < 0`），
+         *   而原生敌人的弹在同一个覆盖区里多半是**往下**飞的 ⇒ 方向是最强的区分器，
+         *   少了它会把「路过这个区域的原生弹」也一起置成免撞（那才是真事故）。*/
+        if (*(const float *)(b + CE_BULLET_VELOCITY + 4) >= 0.0f) continue;
+        /* ★★ 置「跳过碰撞判定」⇒ 这颗弹**打不到自机**（见 `POFV_BOSSATK_NO_HIT` 的长注释）。*/
+        *(uint32_t *)(b + CE_BULLET_FLAGS) |= POFV_BOSSATK_NO_HIT;
         bx = *(const float *)(b + CE_BULLET_POS);
         by = *(const float *)(b + CE_BULLET_POS + 4);
         if (bx < 0.0f || bx > POFV_BOSSATK_DMG_W) continue;         /* 覆盖区：横向 = 场地宽 */
