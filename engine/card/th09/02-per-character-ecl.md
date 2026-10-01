@@ -44,9 +44,22 @@ charge 等级 `min(等级+1, 3)`，**等级 3 = 终点（boss 档）**。
 - 抽：`thdat -x9 local/th09.v1.50a/th09.dat pl00.ecl … -C /tmp/th09all`
 - 反编译：`thecl -d9 /tmp/th09all/pl00.ecl`（**没有 `th09.eclm`** —— 仓库只有 th08/th11–18）
 - ★ **opcode 名表在 ExpHP 那边**：`local/vendor/th-re-data/data/th09.v1.50a/labels.json` 的
-  **`ecl` 键**就是 TH09 的完整指令名（`54__anm_set_main` / `92…` / `111__bullet_effects` /
+  **`ecl` 键**就是 TH09 的指令名（`54__anm_set_main` / `111__bullet_effects` /
   `116__laser_index` / `127__boss_set` / `128__spellcard_effect` / `131__enemy_life_set` …）
-  ⇒ **可以照它生成一份 `th09.eclm`**，之后反编译就有名字了。
+- ★★ **现在有生成器了**：`tooling/eclmap/gen_eclmap.py`（**新增**）把上面那个 `ecl` 键转成 `thecl` 要的
+  eclmap，写完是 `local/vendor/eclmap/eclmap/th09.eclm`：
+
+  ```bash
+  python3 tooling/eclmap/gen_eclmap.py th09.v1.50a          # → local/vendor/eclmap/eclmap/th09.eclm
+  python3 tooling/eclmap/gen_eclmap.py --list               # 哪些版本能生成（th06–th18 全都能）
+  thecl -d9 pl00.ecl -m local/vendor/eclmap/eclmap/th09.eclm
+  ```
+
+  自检（拿仓库已有的 `th08.eclm` 对）：生成的 `!ins_names` 段 **160 行 vs 仓库那份 159 行**
+  （只差一个 `nop`）⇒ **转换是对的**；仓库那几份**多出来的段**
+  （`!timeline_ins_names` / `!gvar_names` / `!gvar_types`）ExpHP 这边没有，本生成器不做。
+  ⚠ 少数 opcode ExpHP 只给了裸数字 ⇒ 兜底名写成 `op_<n>`（**不能**写 `ins_<n>`：`thecl` 会拒
+  「mnemonic can't start with 'ins_'」）。
 
 `pl00.ecl` 的 `Sub0` 片段（数字 opcode，未套名表）：
 
