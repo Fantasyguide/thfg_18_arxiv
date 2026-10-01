@@ -74,6 +74,10 @@ source tooling/env.sh         # 探测并导出 GHIDRA_INSTALL_DIR / JAVA_HOME
 ## ★ 本机专属铁律（`local/*.md`，不入库）
 
 `local/` 里有几份**只在本机生效**的规矩（路径是本机路径，所以不进仓库）：
+- ★ [`local/MEMORY.md`](local/MEMORY.md) —— **跨上下文交接**（压缩后先读这份）。它的
+  **铁律 A** 对 DSH agent 有硬约束：**DSH 会自动压缩上下文 ⇒ 禁止拿「上下文快满/用尽」当理由**
+  停下、缩短任务、降级粒度、或把 goal 标 `blocked`（会话里看不到压缩 ⇒「没有信号就是没满」）；
+  真阻塞就写**具体那件事**，不许写「上下文」。
 - [`local/GAME-LOG.md`](local/GAME-LOG.md) —— **实跑日志的绝对路径** + 「用户说实跑了/崩了，先自己读日志尾巴，别问用户」；
 - [`local/DLL-SYNC.md`](local/DLL-SYNC.md) —— 每次 `make release` 后 DLL 必须四处同 md5。
 
