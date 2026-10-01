@@ -76,6 +76,11 @@ def _opcodes(block):
             continue
         if t.startswith("_") and t.endswith(":"):
             continue
+        # ★ 2026-10-01：**跳过 `var` 声明行** —— 反编译器会把多个 `var A; var B;` 合并成
+        #   一行 `var A, B;` ⇒ 不跳过的话「源 vs 往返」的指令行数会凭空差 1（我加早苗支时
+        #   就撞上：源 179 / 往返 178），把这条自洽检查判红。声明不是指令，跳过才对。
+        if t.startswith("var "):
+            continue
         out.append(t)
     return out
 

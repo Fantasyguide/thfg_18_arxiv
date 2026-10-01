@@ -80,7 +80,8 @@
 
 void CEPofvBoss109()
 {
-    var R;                          // ★ 本子程序唯一的局部（帧间保持）：本档还要发几轮
+    var R;                          // ★ 帧间保持：本档还要发几轮
+    var C;                          // ★ 早苗支用（一手 TH19 `ExAttackFunc` 的 `$C` 计时基准）
                                     //   ⚠ TH18 的 ECL 全局只有 `$I0..$I3` / `%F0..%F3`（见 `engine.h`）
                                     //     ⇒ 第 5 个整数得用**局部**（`var R;` + `$R`）
     anmSelect(2);
@@ -110,6 +111,7 @@ CEPofvBoss109_volley:
     // ── 角色分派（$I2），每 40 帧一轮（一手：灵梦 `+40:`、魔理沙也是 40 帧节拍）──────
     unless ($I2 != 1) goto CEPofvBoss109_marisa @ 0;
     unless ($I2 != 2) goto CEPofvBoss109_sakuya @ 0;
+    unless ($I2 != 3) goto CEPofvBoss109_sanae @ 0;   // ★ 早苗 = TH19 口径
 
     // ═══ 灵梦 `pl00`：四个环（mode 3 / 5；`etRingAway` = mode 3 + 基准角 +π）═══
     etNew(0);
@@ -271,6 +273,38 @@ CEPofvBoss109_sakuya:
     etAngle(3, -1.5707964f, 0.20943952f);
     etSpeed(3, %F0, 0.5f);
     etOn(3);
+    goto CEPofvBoss109_next @ 0;
+
+CEPofvBoss109_sanae:
+    // ═══ 早苗：★ **TH19 口径**（owner：「早苗取 th19」）—— 逐条转写 `th19:pl02.ecl` ═══
+    //
+    // 一手：TH19 的角色号 **2 = 早苗**（`engine/versus/th19/06-aura.md`：`| Sanae (2) | pl02.anm | 16 |…`）
+    //   ⇒ 她的形态在 **`pl02.ecl`**。★ 关键发现：**TH19 用的是同一族 opcode**
+    //   （`ins_600..608` = `etNew/etOn/etSprite/etOffset/etAngle/etSpeed/etCount/etAim/etSound`），
+    //   而 `ins_609(8 参)` = TH18 原生在跑的 **`etExSet`**（原生 `default.ecl` 逐字同形：
+    //   `etExSet(0, 0, 0, 2, 1, -9999994, -9999994.0f, -9999994.0f)`）⇒ **能直接转发**。
+    //
+    // 转写源 = `ExAttackFunc`（= owner 说的**阶段 3「EXスペシャル」**）：
+    //   `etNew(0); etSprite(0,0,6); etAngle(0, 1.5707964f, 1.5707964f);
+    //    etSpeed(0, 0.0f, 0.0f);`  ＋ **6 条 `etExSet`**（效果栈）＋ `ins_711(0)`（发射）
+    //   ⇒ 注意：这个发射器**自己不吐弹**（speed 0/0），整张符卡靠 `etExSet` 的效果跑。
+    //
+    // ⚠ 两处**必须替换**（TH19 专有，TH18 没有）：
+    //   ① `ins_711(0)`（TH19 的发射）⇒ 用 `etOn(0)`（本族的标准发射口）；
+    //   ② 一手的 `%A = [-9888.0f]`（某全局）与 `$C = 60 + ([-10000] % 100)` ⇒ 那两个全局我们拿不到，
+    //      `%A` 取 0.0f、`$C` 取 **60**（登记为 ❓ 占位）。
+    etNew(0);
+    etSprite(0, 0, 6);
+    etAngle(0, 1.5707964f, 1.5707964f);
+    etSpeed(0, 0.0f, 0.0f);
+    $C = 60;                                        // ❓ 一手：60 + ([-10000] % 100)
+    etExSet(0, 0, 0, 128, 300, -9999994, -9999994.0f, -9999994.0f);
+    etExSet(0, 1, 1, 8, 40, 0, 0.1f, 0.0f);          // 一手 %B = 0.1f
+    etExSet(0, 2, 1, 8, $C - 40, 40, 0.0f, 0.0f);
+    etExSet(0, 3, 1, 8, 10, $C, -0.4f, 0.0f);        // 一手 (-40 × %B) / 10 = -0.4
+    etExSet(0, 4, 1, 8, 8, $C + 10, 0.0f, -0.19634955f);   // 一手 -0.19634955f = -11.25°
+    etExSet(0, 5, 1, 8, 120, $C + 18, 0.03f, 0.0f);  // 一手 0.03f + %A × 0.03f（%A 取 0）
+    etOn(0);                                        // ⚠ 一手是 `ins_711(0)`
     goto CEPofvBoss109_next @ 0;
 
 CEPofvBoss109_next:
