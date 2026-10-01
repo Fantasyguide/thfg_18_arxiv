@@ -1983,6 +1983,586 @@ def _pofv109_bossatk_sets(anm_ids: dict) -> list:
     #     owner「版底 boss 位、180° 反转、往上发」在「整圈」这种形态下就是**环本身**。
     U = -1.5707964
 
+    def arc(n, spread=math.pi, speed=16.0, rate=5, dmg=12, phase=0.0):
+        """n 颗**以正上方为中心**的扇形（`spread` = 总张角；默认 π = 上半圈）。
+
+        ★★ 为什么是「朝上的扇形」而不是「整圈」（owner 2026-10-01 的最终模型）：
+          「自机都是从下往上打，上面是 boss……把**另一侧的场地拉过来，并且 180° 反转**！
+           也就是说，在**我们的版底生成一个 boss**……你发弹得按照**我是 boss 往上发**」
+          ⇒ 发射锚点在**版底**（`cards/pofv.c` 的 `POFV_BOSSATK_ANCHOR_X/Y` = (192, 440)）。
+          一手 TH09 的 `etRing` 是**整圈**，但那是「boss 在对手场地的**上方**」时发的；
+          把对手场地 180° 反转搬到我们版底后，那个「朝向对手」的半圈 = **我们的上半圈**
+          （朝下的半圈会当场出屏）⇒ 这里只发**朝上的那一半**。
+        """
+        rows = []
+        for k in range(n):
+            t = (k / (n - 1) - 0.5) if n > 1 else 0.0
+            rows.append((0.0, U + t * spread + phase, speed, rate, dmg))
+        return rows
+
+    specs = [
+        ("POFV109_BOSSATK_C1", arc(6,  speed=16.0, rate=6, dmg=14)),             # 6 颗：上半圈
+        ("POFV109_BOSSATK_C2", arc(12, speed=16.0, rate=5, dmg=11)),             # 12 颗：上半圈
+        ("POFV109_BOSSATK_C3", arc(12, speed=16.0, rate=5, dmg=10)               # 两层上半圈（错 15°）
+                               + arc(12, speed=16.0, rate=5, dmg=10, phase=math.pi / 12.0)),
+        ("POFV109_BOSSATK_C4", arc(12, speed=24.0, rate=3, dmg=10)),             # 12 颗、速度 ×1.5
+    ]
+    out = []
+    for i, (_key, rows) in enumerate(opt_specs):
+        rs = [_marisa_opt_row(_key[0], rate, dmg, ang) for rate, dmg, ang in rows]
+        out.append((f"MARISA_OPT_{i:02d}",
+                    b"".join(pack_shooter(r, anm_ids) for r in rs) + TERMINATOR))
+    for i, (dmg, _elem) in enumerate(main_specs):
+        rs = _marisa_main_rows(dmg)
+        out.append((f"MARISA_MAIN_{i:02d}",
+                    b"".join(pack_shooter(r, anm_ids) for r in rs) + TERMINATOR))
+    return out
+
+
+def marisa_layout_maps() -> tuple:
+    """给 `write_ids_h` 用的 `(opt_map, main_map)`（绝对槽号 / −1）。"""
+    _o, _m, opt_map, main_map = _marisa_layout()
+    return opt_map, main_map
+
+
+def _retail_set_blob(data: bytes, off: int) -> bytes:
+    """按文件相对偏移 off 拷一段**零售** shooterset 原始字节（含终止符）⇒ 用零售基址。"""
+    p = DATA_BASE_RETAIL + off
+    while struct.unpack_from("<i", data, p)[0] != -1:
+        p += STRIDE
+        if p > len(data):
+            raise SystemExit("原生 shooterset 没有终止符")
+    return data[DATA_BASE_RETAIL + off:p + 4]
+
+
+def _hyper_sets(target_file: str, anm_ids: dict) -> list:
+    """按文件/家族生成 5 个追加组。三种来源，优先级：
+       1. HYPER_CUSTOM —— 已经是 TH18 形状的行；pl01 EAGLE 现在登记为空列表（空组）；
+       2. HYPER_FALLBACK —— 逐字节拷原生 shooterset（当前为空；留给实跑未坐实的组）；
+       3. HYPER_TEMPLATES —— TH17 行经 `_map_hyper_row` 翻译（pl00、pl01 WOLF、pl02、pl03）。
+       每个 family 仍生成 5 组、索引连续：*_0 = 空组（只有终止符），*_1..*_4 = 实际行。
+    """
+    out = []
+    for family in ("WOLF", "EAGLE"):
+        custom = HYPER_CUSTOM.get((target_file, family))
+        if custom is not None:
+            blob = b"".join(pack_shooter(r, anm_ids) for r in custom) + TERMINATOR
+            for power in range(5):
+                out.append((f"{family}_{power}", TERMINATOR if power == 0 else blob))
+            print(f"  {target_file}: {family} = TH18 形状自定义组 "
+                  f"({len(custom)} shooter/组，索引 0x1e+ 起)")
+            continue
+
+        fallback = HYPER_FALLBACK.get((target_file, family))
+        if fallback is not None:
+            data = (RETAIL / target_file).read_bytes()
+            offs = offsets(data, N_SLOTS_RETAIL)
+            for power, src_idx in enumerate(fallback):
+                off = offs[src_idx]
+                if off == 0:
+                    raise SystemExit(f"{target_file}: 回退目标 set {src_idx:#x} 为空")
+                out.append((f"{family}_{power}", _retail_set_blob(data, off)))
+            print("  " + target_file + f": {family} 安全回退 -> 原生行 " +
+                  ", ".join(f"{family}_{i}=set{si:#x}" for i, si in enumerate(fallback)))
+            continue
+
+        src = HYPER_SOURCE[target_file][family]
+        rows = [_map_hyper_row(r, target_file) for r in HYPER_TEMPLATES[(src, family)]]
+        blob = b"".join(pack_shooter(r, anm_ids) for r in rows) + TERMINATOR
+        for power in range(5):
+            out.append((f"{family}_{power}", TERMINATOR if power == 0 else blob))
+    return out
+
+
+def check_bullet_scripts_have_layer(anm_ids: dict) -> None:
+    """★ 2026-09-16w **硬门**：凡是 shooter 行的 `+0x22`（anm 脚本号）指向的脚本，正文**必须写
+    `layer(12..19)`**；不写就**直接停构建**。
+
+    ## 为什么这条门是必须的（一手，出处 `native/engine.h` 的 `CE_ANM_VM_LAYER`）
+    · 弹的 VM 进的是**世界列表**，绘制时按 **`vm+0x18`（层）**分桶：`AnmManager__render_layer`
+      `0x488260` 只在「本趟桶号 == `vm+0x18`」时才画（`0x4882a1` / `0x4882b0`）。
+    · 游玩区的桶 = **层 12–19**；**层 0–2 = 3D 背景那一趟**（相机 2，在游玩区之前）。
+    · **没人替弹设层**：卡子机弹的 VM 走 `AnmManager__instantiate` `0x407420`（**两参、无层参数**，
+      而且显式保留 `vm+0x18`），空闲池是 `memset` 0 ⇒ 不写 `layer()` 的弹**层 = 0**
+      ⇒ **画在背景那一趟 = 弹幕区里一颗都看不见**（弹对象、伤害源都正常，只是不画）。
+      对照：**子机本体**那条路由引擎强设层 14（`Player__allocate_option` `0x40a8bc`），
+      所以子机脚本可以不写 —— 「子机不写、弹也不用写」这个推广是**错的**。
+    · 写层的唯一入口 = 脚本的 `layer()`：opcode 304 → handler `0x47b67b` → `AnmManager__set_layer`
+      `0x4066b0`（`mov [ecx+0x18],edx`）。
+    · TH11 的引擎**自己传层**（`th11:0x4341e3 push 0x16` → `th11:0x455a00`）⇒ 从 TH11 移植弹脚本时
+      这条信息会**静默丢掉** —— 本门就是为这一档踩过的坑立的（用户实跑：「魔理沙子机没有发弹」，
+      根因 = 288..292 五支都没有 `layer()`）。
+
+    ★ 2026-09-16zb：本门只查**卡侧 tick 的**弹（子机组）。111 的**主炮组**（`MARISA_MAIN_*`）豁免 ——
+    它的 `+0x22` 写的是**本作原生 `pl0X.anm` 的脚本 5**（用户口径「主炮别换弹幕了」），
+    而那一组由**原生行循环**发（`on_shot_set_index` 覆盖，`th18:0x45ebfb`），
+    原生的自机弹一直是看得见的 ⇒ 不适用本门（本门是为"卡自己 tick 的弹"立的）。
+    """
+    scripts_dir = HERE.parent / "ability" / "scripts"
+    bad = []
+    seen = set()
+    for name, blob in (*_common_sets(anm_ids), *_marisa_formation_sets(anm_ids)):
+        if blob is None or name.startswith("MARISA_MAIN_"):
+            continue                                    # 主炮组：原生 pl0X.anm 脚本，见 docstring
+        for off in range(0, len(blob) - STRIDE + 1, STRIDE):
+            rate = struct.unpack_from("<b", blob, off)[0]
+            if rate < 0:
+                break                                   # 终止符
+            anm = struct.unpack_from("<h", blob, off + 0x22)[0]
+            if anm in seen or anm <= 0:
+                continue
+            seen.add(anm)
+            hit = sorted(scripts_dir.glob(f"{anm}_*.anm.txt"))
+            if not hit:
+                bad.append(f"脚本 {anm}：{scripts_dir} 下找不到 {anm}_*.anm.txt")
+                continue
+            body = hit[0].read_text(encoding="utf-8")
+            m = re.search(r"^\s*layer\(\s*(\d+)\s*\)", body, re.M)
+            if not m:
+                bad.append(f"{hit[0].name}：正文没有 `layer(...)` ⇒ 弹的 VM 层 = 0 = 画在 3D 背景那一趟"
+                           f"（弹幕区里一颗都看不见；见本函数注释）")
+            elif not 12 <= int(m.group(1)) <= 19:
+                bad.append(f"{hit[0].name}：`layer({m.group(1)})` 不在游玩区桶 12..19 里")
+    if bad:
+        raise SystemExit("★ 子弹脚本的层自检失败（shooter 行 +0x22 指向的脚本必须自带 layer(12..19)）：\n  "
+                         + "\n  ".join(bad))
+
+
+# ---- 生成：逐角色 × 逐火力档的妖侧组（P4 · th08 #5；数据表与一手的全文见上面那一大段注释）----
+# 名字 = `YOUKAI_<角色后缀><档>`：后缀 R/M/S 分别对应 **TH08 的角色 0/1/2**
+# （`ply00as`=霊夢・八雲紫 / `ply01as`=魔理沙・アリス / `ply02as`=咲夜・レミリア）。
+# 生成序列里的**下标即槽号**（`N_RETAIL + 序号`）⇒ 四个文件必须产出**同长度同名字**的序列，
+# 只有**行内容**按文件不同（照 `_hyper_sets` 的先例：117 的 WOLF/EAGLE 也是逐文件取内容）。
+# 卡侧按 (角色, 火力档) 选名字（`cards/youkai.c` 的 `yk_shot_set_for()`），
+# 顺序被 `_Static_assert(CE_SHT_SET_YOUKAI_M0 == CE_SHT_SET_YOUKAI_R0 + 5)` 钉死。
+YOUKAI_TIER_FILES = {                    # TH18 文件 → 一手表里的哪一份（None = 本批没有一手数据）
+    "pl00.sht": "R",                     # 霊夢 → TH08 `ply00as`（紫）
+    "pl01.sht": "M",                     # 魔理沙 → TH08 `ply01as`（アリス）
+    "pl02.sht": "S",                     # 咲夜 → TH08 `ply02as`（レミリア）
+    "pl03.sht": "A",                     # ★ 2026-09-26 早苗 → **TH16 `pl03sub`（秋/文）**，
+                                         #   不再回落 `REPLACE(YOUKAI, 0x16)`（那一格仍是最后一层兜底：
+                                         #   资产没装 / 空组时 `yk_youkai_shotset_pick()` 仍会回落到它）
+}
+# ⚠ 顺序 = 槽号（`N_RETAIL + 序号`）⇒ **只能在末尾追加**（R/M/S 的槽号被 `youkai.c` 的
+#   `_Static_assert` 钉死；把 A 插到中间会让那三支整体移位 = 静默错弹）。
+YOUKAI_TIER_SUFFIXES = ("R", "M", "S", "A")
+YOUKAI_TIER_TABLES = {"R": YOUKAI_TIERS_R, "M": YOUKAI_TIERS_M, "S": YOUKAI_TIERS_S,
+                      "A": YOUKAI_TIERS_A}
+
+
+# ============================================================================
+# ★★★ 2026-09-26（owner 实跑：「**整体妖机体的火力似乎有点弱**」）：妖侧弹的**绝对 DPS 对齐 TH18 本机**。
+#
+# 规格依据：owner 2026-09-23 的完整规格第 3 条 —— 「妖主机和子机按照 th08 里面的一手来做（包括跟随 p 点等级
+# 的行为），**除绝对 dps**」⇒ **形态/节奏/角度/子机数照抄一手，DPS 不照抄**，按本作同机体同档对齐
+# （先例：111 在 2026-09-23 也是这么做的，见 `AUDIT.md` §BE #75）。
+#
+# 实测差（本脚本在**构建期**从零售 `pl0X.sht` 现读，不是抄进来的数）：
+#   灵梦  妖侧比原生低速弱 10%–28%；魔理沙 **弱 55%–77%**；咲夜 弱 20%–33%；早苗 **弱 75%–85%**。
+#   ⇒ 每行伤害乘一个**逐（机体, 档）**的系数 `k = 原生低速 DPS / 妖侧 DPS`，然后**核对**回读值。
+#   · 目标 = 该文件**低速**主炮组 `set 5 + tier`（TH18 的 `set = 档 + (聚焦 ? 5 : 0)`；
+#     一手 `engine/sht/th16/07` §1 与 `th18` 侧同一套，实读 0x00–0x04 高速 / 0x05–0x09 低速）；
+#   · 妖侧占的就是**低速**那一态（按 Shift 时原生低速组被我们认领的组顶掉）⇒ 对齐它才是「手感不变」；
+#   · 伤害是 i16 整数 ⇒ 逐行 `round(dmg * k)` 后**回读实际 DPS** 并打印偏差（|偏差| > 2% 时构建期告警）。
+def _retail_dps(data: bytes, set_index: int) -> float:
+    """零售 `.sht` 里第 `set_index` 组的 Σ(damage / fire_rate)（每帧伤害，一手口径）。"""
+    offs = list(struct.unpack_from(f"<{N_SLOTS_RETAIL}I", data, OFF_ARRAY))
+    if set_index >= len(offs):
+        return 0.0
+    p = DATA_BASE_RETAIL + offs[set_index]
+    total = 0.0
+    while struct.unpack_from("<i", data, p)[0] != -1:
+        rate = struct.unpack_from("<b", data, p)[0]
+        dmg = struct.unpack_from("<h", data, p + 0x02)[0]
+        if rate > 0 and dmg > 0:
+            total += dmg / rate
+        p += STRIDE
+    return total
+
+
+def _rows_dps(rows) -> float:
+    total = 0.0
+    for r in rows:
+        if r["fire_rate"] > 0 and r["damage"] > 0:
+            total += r["damage"] / r["fire_rate"]
+    return total
+
+
+DPS_TOLERANCE = 0.02          # 逐行取整后的允许偏差（2%）
+
+# ============================================================================
+# ★★★ 2026-09-27 第二十六批（卡 108 · owner ⑥ 的**第二轮**）：**魔理沙妖侧子机的束 = 卡侧矩形束**。
+#
+# ## 一手：TH08 那条激光行的真面目（`ply01as.sht` 的**子机行**，origin ≥ 1）
+#   一手（`engine/player/th08/01-youkai-familiars-first-hand.md` §+0x28/+0x2c 两条）：
+#     · `+0x28 = 0x44fe20` **不做 `frames % rate`** —— 文档原文：「`rate` 是**残影条数**」；
+#     · `+0x2c = 0x450840` 每帧沿 32 点残影轨迹、对每个 `x ≥ −900` 的点
+#       `SpawnShot(pos, 16.0, 448.0, unk2c=1, lifespan=0)` ⇒ **16×448 的贯穿竖条判定**；
+#       `vm+0x434 = 448.0f` ⇒ 视觉长度恒 448；逐档宽度在 `player01.anm` script24..28 的 `scale.y`。
+#   ⇒ 「真激光、无限贯通、随 P 变宽」逐条对上 ✓（owner 的三条口径）。
+#
+# ## TH18 落点：**引擎这一行不再发任何东西**
+#   上一版让它走引擎原生的 `mode=2` 激光通路 —— **实跑否掉了**（探针：
+#   `youkai/probe beam: state 2 len(+0xa0) 18.0 width(+0xa4) 16.0` ⇒ 一出生就被判完成、
+#   只长了一帧 = owner 报的「十分短小的袖箭」）。117 在 TH17 上有同一结论（`cards/animal.c:283`-`300`）。
+#   ⇒ 本卡照 117 的做法：**引擎不发、卡侧发**（视觉 = `pl01.anm` script62..66 的束 VM；
+#   伤害 = `ce_damage_rect` 每 2 帧一个矩形源）。行表里只留一条**不可达的载体**（见 `_youkai_tier_sets`
+#   的 `k == "M"` 段：`start_delay = M_OPT_LASER_DEAD_DELAY` ⇒ 引擎的行循环判据恒不成立）。
+M_OPT_LASER_DEAD_DELAY = 15    # 「不可达的 start_delay」：行循环判据 = `short_timer % fire_rate == start_delay`，
+                               # 短计时器 ∈ {-1, 0..14}（`engine/sht/th18/02` §1）、`fire_rate ≤ 12` ⇒ 余数 ≤ 11 < 15
+                               # ⇒ 这一行**永远不会**被发（引擎不会建弹、不会建伤害源）。换任何更小的值都要重算这条不等式。
+# 逐档束脚本的宏名（下标 = 火力档 0..4；与 `pl_anm_ids.h` 的 `CE_PL_ANM_SCRIPT_YKBULLET_M_BEAM{0..4}_PL01`
+# 逐字对应、与 `youkai.c` 的 `YK_M_LASER_BEAM_SCRIPT` 同序）。⚠ 用**下标 t**取，不是 `t-1`（见下面 M 段）。
+M_BEAM_ANM = ("CE_PL_ANM_SCRIPT_YKBULLET_M_BEAM0_PL01", "CE_PL_ANM_SCRIPT_YKBULLET_M_BEAM1_PL01",
+              "CE_PL_ANM_SCRIPT_YKBULLET_M_BEAM2_PL01", "CE_PL_ANM_SCRIPT_YKBULLET_M_BEAM3_PL01",
+              "CE_PL_ANM_SCRIPT_YKBULLET_M_BEAM4_PL01")
+M_BEAM_W_PX100 = (1600, 1600, 1920, 2240, 2560)   # 逐档宽度（屏上 px × 100）= 一手 TH08
+                                                  # `player01.anm` script24..28 的 `scale(1.0, 0.5/0.6/0.7/0.8/1.0)` × 贴图高 32。
+                                                  # 与 `youkai_core.h` 的 `YK_M_LASER_BEAM_W_PX100` 对账（下面 `check_m_beam_tables`）。
+M_BEAM_INFO = {}               # tier → 本档的算术账（打印 + 与卡侧常量对账；只在 pl01 那一趟填满 5 档）
+
+
+def _read_int_table(name: str) -> list:
+    """从 `youkai_core.h` 现读一个 `#define NAME { a, b, c }` 形状的整数表（跨层对账用）。"""
+    txt = YOUKAI_CORE_H.read_text(encoding="utf-8")
+    m = re.search(rf"^#define\s+{name}\s*\{{([^}}]*)\}}", txt, re.M)
+    if not m:
+        raise SystemExit(f"{YOUKAI_CORE_H.name}: 找不到 `#define {name} {{ … }}` —— 卡侧常量与生成器"
+                         f"必须成对（改了名字两边一起改）")
+    return [int(x) for x in re.findall(r"-?\d+", m.group(1))]
+
+
+def _register_m_beam(t: int, d_opt: int, rate: int, hit: int, rows: list, orig: list, want: float):
+    """把这一档的账记下来（本体 DPS + 卡侧束 DPS 对目标的偏差），并逐档打印。"""
+    body = [r for r, o in zip(rows, orig) if o == 0]
+    body_dps = sum(r["damage"] / r["fire_rate"] for r in body)
+    beam_dps = hit / 2.0                                   # 每 2 帧一次 ⇒ 每帧 hit/2
+    total = body_dps + beam_dps
+    dev = (total - want) / want if want > 0 else 0.0
+    M_BEAM_INFO[t] = dict(w100=M_BEAM_W_PX100[t], d_opt=d_opt, rate=rate, hit=hit, body=body_dps,
+                          beam=beam_dps, total=total, want=want, dev=dev)
+    print(f"   108 魔理沙卡侧束 tier{t}: 载体行 damage {d_opt} / rate {rate} ⇒ 每次结算 {hit}"
+          f"（每 {2} 帧）= {beam_dps:.2f}/帧；本体 {body_dps:.3f}/帧 ⇒ 合计 {total:.3f}"
+          f"（目标 {want:.3f}，{dev * 100:+.2f}%）")
+
+
+def check_m_beam_tables():
+    """跨层对账：生成器算出来的两个表 == `youkai_core.h` 里卡侧那两个表（防两边静默漂移）。
+
+    为什么要闸（同 `read_yk_option_counts` / `check_card_constants` 的理由）：宽度与伤害现在**只在卡侧**用
+    （行里的字段已经没人读），一旦有人改了一边而另一边没跟上，观感/伤害就会与「对齐本机同档低速 DPS」
+    这个口径脱钩，而**构建期什么都看不出来**。"""
+    if len(M_BEAM_INFO) != 5:
+        raise SystemExit(f"魔理沙卡侧束的账只记到 {len(M_BEAM_INFO)} 档（预期 5）—— "
+                         f"pl01 那一趟的 `YOUKAI_TIERS_M` 是不是漏了档？")
+    got_w = tuple(M_BEAM_INFO[t]["w100"] for t in range(5))
+    if got_w != M_BEAM_W_PX100:
+        raise SystemExit(f"束宽表自相矛盾：{got_w} != {M_BEAM_W_PX100}")
+    hdr_w = _read_int_table("YK_M_LASER_BEAM_W_PX100")
+    hdr_d = _read_int_table("YK_M_LASER_BEAM_DAMAGE")
+    if tuple(hdr_w) != M_BEAM_W_PX100:
+        raise SystemExit(f"{YOUKAI_CORE_H.name}: YK_M_LASER_BEAM_W_PX100 = {tuple(hdr_w)}，"
+                         f"但生成器/一手的逐档宽度是 {M_BEAM_W_PX100} —— 两边必须一致")
+    got_d = tuple(M_BEAM_INFO[t]["hit"] for t in range(5))
+    if tuple(hdr_d) != got_d:
+        raise SystemExit(f"{YOUKAI_CORE_H.name}: YK_M_LASER_BEAM_DAMAGE = {tuple(hdr_d)}，"
+                         f"但按 `round(2 × 对齐后行伤害 / rate)` 算出来是 {got_d} —— 两边必须一致")
+    # ★★★ 2026-09-27 第二十七批：**残影条数**表（卡侧 `yk_m_laser_beam_rate()` 按它取循环上界）
+    #   也必须与行里的 `fire_rate` 逐档一致 —— 一手 `th08:0x44ff2b` 就是把 `row[+0x00]` 搬进
+    #   `vm+0x46a` 当残影条数的；两边漂移了卡侧会画错条数而构建期看不出来（同宽/伤害表的理由）。
+    hdr_r = _read_int_table("YK_M_LASER_BEAM_RATE")
+    got_r = tuple(M_BEAM_INFO[t]["rate"] for t in range(5))
+    if tuple(hdr_r) != got_r:
+        raise SystemExit(f"{YOUKAI_CORE_H.name}: YK_M_LASER_BEAM_RATE = {tuple(hdr_r)}，"
+                         f"但生成器的逐档 `fire_rate`（= 一手行 `+0x00` 的残影条数）是 {got_r} —— 两边必须一致")
+    worst = max(abs(M_BEAM_INFO[t]["dev"]) for t in range(5))
+    if worst > DPS_TOLERANCE:
+        raise SystemExit(f"魔理沙卡侧束的逐档总 DPS 偏差 {worst * 100:.1f}% > {DPS_TOLERANCE * 100:.0f}%"
+                         f"（取整做不到更准 ⇒ 调 `YK_M_LASER_BEAM_DAMAGE` 或行伤害）")
+    print(f"  {YOUKAI_CORE_H.name}: 卡侧束的宽度/伤害/条数与生成器一致（宽 {hdr_w} px×100、"
+          f"每 2 帧 {hdr_d} 点、逐档 {tuple(hdr_r)} 条残影；逐档总 DPS 偏差最大 {worst * 100:.2f}%）")
+
+
+# ★★★ 2026-09-26（owner：「**妖机体的弹幕样式应该都不对，发的弹幕本身得搬过来**」）：
+#   **弹体贴图逐机体换成原作那一支**（此前一律填本作 `ability.anm` 的通用弹 `anm=21`/原生主炮弹）。
+#   一手：TH08 的行里 `+0x24` = anm 脚本基号，引擎**用它 +10** 装进弹的 VM
+#     （`th08:0x44fd32 movsx edx,WORD PTR [ecx+0x24]` → `0x44fd36 add edx,0xa` → `call 0x4069f0`）
+#     ⇒ 霊夢 主炮 14 / 子机 16（sprite35/36）· 魔理沙 主炮 22 / 子机 24（sprite30/32）·
+#       咲夜 主炮 12 / 子机 14（sprite22/23）；早苗 = TH16 `pl03sub.anm` script0（sprite0..3）。
+#   那些 sprite 与脚本已由 `assets/ability/make_youkai_bullet_art.py` 搬进 `ability.anm`
+#   （脚本 364..370、图集 `ATLAS_YK_BULLET`）⇒ 这里按 **(角色, 是不是子机行)** 填宏名。
+#   ⚠ 两处偏离照实登记：① 魔理沙子机的逐档脚本（TH08 s24/25/26/27）只差 `scale.y` 0.5/0.6/0.7/0.8
+#     ⇒ 本卡统一用 s24（0.5）；② 原脚本里 v8 没有的 `ins_83`/`ins_25`/`scrollX` 已省（见生成器产物）。
+# ★★★ 2026-09-26 第十一批**订正**：这些号必须是 **`pl0X.anm`** 的脚本号，不是 `ability.anm` 的。
+#
+# 一手（`th18.exe` 逐条，见 `assets/build_player_anm.py` 的同一段注）：弹的 anm 取 `player+0x10`
+# （`PlayerBullet__create 0x45e719`–`0x45e726`），而它只在 `Player__tick_shooters_for_ability_card`
+# （`0x40a9c0`）**期间** = 装备卡的 `ability_anm`，函数收尾（`0x40aa95`–`0x40aa9a`）**还原成
+# `player+0xc` = `pl0X.anm`** ⇒ **我们认领的主炮 set 由引擎的行循环发（`0x45ebfb`–`0x45ec9f`）
+# ⇒ 行里的 `+0x22` 按 `pl0X.anm` 解析**。旁证：原生主炮 10 组的 `+0x22` = `{5,6,7,8,9}`（pl0X 的
+# 自机弹脚本），只有**卡子机**那 13 组才是 `ability.anm` 的号（`engine/sht/th18/02-shooter-record.md` §4）。
+# ⚠ 上一版（`AUDIT.md` §BE #98）填的是 `ability.anm` 的 364..370 ⇒ 在 `pl0X.anm`（51..60 支脚本）
+# 里**越界**、弹的 VM 拿不到脚本。本批把弹体脚本逐机体追加进 `pl0X.anm`
+# （宏 = `CE_PL_ANM_SCRIPT_YKBULLET_*_PL0X`，由 `build_player_anm.py` 写进 `pl_anm_ids.h`）。
+YOUKAI_BULLET_ANM = {
+    "R": ("CE_PL_ANM_SCRIPT_YKBULLET_R_MAIN_PL00", "CE_PL_ANM_SCRIPT_YKBULLET_R_OPT_PL00"),
+    # ★★★ 2026-09-27（owner ⑥）：魔理沙的子机行是**真激光**（TH08 `ply01as` 的 `type=5` 那一行）
+    #   ⇒ 第二格是**按档的元组**（5 支束脚本；一手宽度逐档 16/16/19.2/22.4/25.6 px）。
+    #   ⚠ **第二十六批起这一行不再被引擎发**（M 段：`start_delay` 不可达）⇒ 这里的映射只作**记录**，
+    #     实际画束的是卡侧（`youkai.c` 的 `YK_M_LASER_BEAM_SCRIPT`，同一组宏名、同一套下标）。
+    "M": ("CE_PL_ANM_SCRIPT_YKBULLET_M_MAIN_PL01",
+          ("CE_PL_ANM_SCRIPT_YKBULLET_M_BEAM0_PL01", "CE_PL_ANM_SCRIPT_YKBULLET_M_BEAM1_PL01",
+           "CE_PL_ANM_SCRIPT_YKBULLET_M_BEAM2_PL01", "CE_PL_ANM_SCRIPT_YKBULLET_M_BEAM3_PL01",
+           "CE_PL_ANM_SCRIPT_YKBULLET_M_BEAM4_PL01")),
+    "S": ("CE_PL_ANM_SCRIPT_YKBULLET_S_MAIN_PL02", "CE_PL_ANM_SCRIPT_YKBULLET_S_OPT_PL02"),
+    # ★★★ 2026-09-27 早苗（TH16 文）：**本体一支 + 子机逐档一支**（TH16 set6..9 的子机行
+    #   `anm` = 1/2/3/4 ⇒ `pl03.anm` script6/7/8/9，逐档只差 `scale.y`）
+    #   ⇒ 第二格是**按档的元组**（子机档 = TH18 火力档，`_yk_bullet_anm` 按 `tier` 取）。
+    "A": ("CE_PL_ANM_SCRIPT_YKBULLET_A_BODY_PL03",
+          ("CE_PL_ANM_SCRIPT_YKBULLET_A_OPT1_PL03", "CE_PL_ANM_SCRIPT_YKBULLET_A_OPT2_PL03",
+           "CE_PL_ANM_SCRIPT_YKBULLET_A_OPT3_PL03", "CE_PL_ANM_SCRIPT_YKBULLET_A_OPT4_PL03")),
+}
+
+
+def _yk_bullet_anm(suffix: str, origin: int, tier: int):
+    """该行的弹体脚本宏名：origin == 0 = 主炮行，≥1 = 子机行（与 TH08 的 `opt` 同义）。
+
+    ★ 2026-09-27：第二格可以是**按档的元组**（早苗那一侧逐档换子机弹：TH16 set6..9 的
+    `anm` = 1..4 ⇒ 红弹的四支 `scale.y`）；`tier` = TH18 火力档 0..4，取 `tier - 1` 那一支
+    （档 0 没有子机行 ⇒ 不会被取到；越界时钳到最后一支，不静默发错弹）。"""
+    main, opt = YOUKAI_BULLET_ANM[suffix]
+    if origin <= 0:
+        return main
+    if isinstance(opt, tuple):
+        return opt[min(max(tier - 1, 0), len(opt) - 1)]
+    return opt
+
+def read_yk_option_counts() -> dict:
+    """从 `youkai_core.h` 现读 `YK_OPTION_BY_CHAR`（每机体每档的**子机台数**）→ {后缀: [5 个整数]}。
+
+    ★ 2026-09-26 第十五批（本批新增的**跨层不变式**）：行里的 `+0x20`（origin，= 用第几台子机的膛口）
+    必须 **≤ 该档的台数** —— 否则那一行会去读**不存在的那台子机**的膛口坐标（`player+0x580+n*0xf0`），
+    观感就是「子机不发弹 / 弹从屏外出来」（正是 owner 报过的那一类）。
+    一手：`th18:0x45ec41` 的行循环按 `+0x20` 选膛口；台数由卡侧声明（`YK_OPTION_BY_CHAR`）。
+    ⇒ 这条不变式横跨「sht 产物」与「卡侧常量」两个文件，两边都对不上时**构建期就红**，别等到实跑。
+    """
+    txt = YOUKAI_CORE_H.read_text(encoding="utf-8")
+    m = re.search(r"YK_OPTION_BY_CHAR\[[^\]]*\]\[[^\]]*\]\s*=\s*\{(.*?)\};", txt, re.S)
+    if not m:
+        raise SystemExit(f"{YOUKAI_CORE_H.name}: 找不到 `YK_OPTION_BY_CHAR` 表")
+    out = {}
+    # 表体每行一条注释 + 一行初值；后缀按出现顺序 = R/M/S/A（与 YOUKAI_TIER_SUFFIXES 同序）
+    rows = [l for l in m.group(1).splitlines() if "{" in l]
+    for suf, line in zip(YOUKAI_TIER_SUFFIXES, rows):
+        out[suf] = [int(x) for x in re.findall(r"\d+", line.split("{", 1)[1])]
+    if len(out) != len(YOUKAI_TIER_SUFFIXES):
+        raise SystemExit(f"{YOUKAI_CORE_H.name}: YK_OPTION_BY_CHAR 只解析到 {len(out)} 行"
+                         f"（预期 4）")
+    return out
+
+
+def _youkai_tier_sets(target_file: str, anm_ids: dict) -> list:
+    """该文件的 15 组（3 角色 × 5 档）。pl03 上全是**空组**（只有终止符）⇒
+    卡侧 `yk_shotset_usable()` 读到 −1 ⇒ 回落到 `CE_SHT_SET_YOUKAI`（0x16）。"""
+    suf = YOUKAI_TIER_FILES.get(target_file)
+    out = []
+    for k in YOUKAI_TIER_SUFFIXES:
+        tiers = YOUKAI_TIER_TABLES[k] if k == suf else None
+        orig = YOUKAI_TIER_ORIGINS[k] if k == suf else None
+        for t in range(5):
+            rows = (tiers[t] if tiers is not None else [])
+            if rows:
+                rows = [dict(r, anm=_yk_anm_for(target_file)) for r in rows]
+            # ★ 2026-09-26：绝对 DPS 对齐本机（见上面 `_retail_dps` 那一段）。只对**本文件的角色**做；
+            #   空组（早苗 tier 0）跳过；对齐后**回读核对**。
+            if rows and k == suf:
+                retail_path = RETAIL / target_file
+                if not retail_path.is_file():
+                    raise SystemExit(f"对齐 DPS 需要零售样本 {retail_path}（本脚本本来就要读它来追加）")
+                want = _retail_dps(retail_path.read_bytes(), 5 + t)      # 原生**低速**同档
+                got = _rows_dps(rows)
+                if want > 0.0 and got > 0.0:
+                    kk = want / got
+                    rows = [dict(r, damage=max(1, int(round(r["damage"] * kk)))) for r in rows]
+                    back = _rows_dps(rows)
+                    dev = (back - want) / want
+                    if abs(dev) > DPS_TOLERANCE:
+                        print(f"   ⚠ 108 妖侧 DPS 对齐 {target_file} tier{t}: 目标 {want:.2f} / 实际 "
+                              f"{back:.2f}（偏差 {dev * 100:+.1f}%）—— 逐行取整做不到更准，登记在案")
+                    print(f"   108 妖侧 DPS 对齐 {target_file} {k} tier{t}: 原生低速 {want:.2f} ← "
+                          f"妖侧 {got:.2f} × {kk:.3f} ⇒ {back:.2f}（{dev * 100:+.1f}%）")
+            if orig is not None and rows:
+                # ★ 跨层不变式（见 `read_yk_option_counts`）：origin ≤ 该档子机台数
+                counts = read_yk_option_counts().get(k)
+                if not counts or len(counts) != 5:
+                    raise SystemExit(f"youkai_core.h 的 YK_OPTION_BY_CHAR[{k}] 不是 "
+                                     f"5 档：{counts}")
+                mx = max(orig[t]) if orig[t] else 0
+                if mx > counts[t]:
+                    raise SystemExit(
+                        f"YOUKAI_TIERS_{k} tier{t}: 行里最大 origin = {mx}，但该档只有 "
+                        f"{counts[t]} 台子机（`youkai_core.h` 的 YK_OPTION_BY_CHAR）"
+                        f" ⇒ 那一行会读不存在的子机膛口（= 「子机不发弹」那一类观感）。"
+                        f"要么改行表的 origin，要么改台数表（两处必须一致）")
+            if orig is not None:
+                # ★ 2026-09-22（P7）：逐行套上 TH08 的 `+0x20`；★ **2026-09-26 复核**：**原值即 TH18 行槽号**
+                #   （TH08 n ⇒ TH18 原生槽 n）—— 卡侧每帧把原生槽 1..4 的膛口镜像成自己那几台子机的
+                #   当前位置（见上面「行里的 `+0x20` 保持 TH08 原值」那一段）。
+                #   行数与烘进来的原点表**必须相等** —— 不等就说明行表或原点表被单独改过（那是静默错弹），
+                #   当场停构建。
+                if len(rows) != len(orig[t]):
+                    raise SystemExit(f"YOUKAI_TIERS_{k} tier{t}: {len(rows)} 行 与烘焙的 origin 表 "
+                                     f"{len(orig[t])} 项不等（TH08 ply{suf}as.sht 的实测行数）")
+                # ★ 2026-09-26：`anm` 从「本文件原生主炮那一支」换成**原作那一支弹体脚本**
+                #   （宏名，`pack_shooter` 会经 `anm_ids` 解成号 —— 与 `make anm` 写的 `anm_ids.h` 同源）。
+                #   ★ 2026-09-27：多传 `t`（火力档）—— 早苗那一侧的子机弹**逐档一支**（见 `_yk_bullet_anm`）。
+                rows = [dict(r, opt_slot=o, anm=_yk_bullet_anm(k, o, t) if k in YOUKAI_BULLET_ANM
+                             else _yk_anm_for(target_file)) for r, o in zip(rows, orig[t])]
+                # ★★★ 2026-09-27（owner ⑤）：**霊夢（R）的子机行 = 发射瞬间朝敌定向**。
+                #   一手（`ply00as.sht` 逐行 + `th08:0x450240` 逐指令）：只有**子机行**（origin ≥ 1）的
+                #   `+0x28`（= 回调表下标）= 1，本体行 = 0；那支回调把
+                #   `angle = wrap(atan2(boss − bullet) + row.angle + π/2)`、`speed = row.speed × 1.5`
+                #   （`ds:0x4b4438` = 1.5）写回 ⇒ 子机行**对着 boss 飞**（本体行仍是 −π/2 直上）。
+                #   TH18 的对位 = `func_on_init = 5`（读卡写进 `PLAYER+0x479cc` 的角，`th18:0x4612d0`）
+                #   + 把 ×1.5 直接烘进行速度（TH08 那几行的 10.0 ⇒ 15.0）。
+                #   ⚠ 表里那两个 `angle = −1.535890 / −1.605703`（= 直上 ±2°）在 TH08 里是
+                #   「**朝敌 ±2°**」（同一算式里 `+ row.angle + π/2` 抵消了 −π/2）；TH18 的 init5 只有一个
+                #   全局角 ⇒ 这两行会与其它子机行同向（**丢掉 ±2° 散角**），登记 `TUNING.md` 的 ❓。
+                if k == "R":
+                    rows = [dict(r, func_on_init=5, speed=r["speed"] * 1.5) if o >= 1 else r
+                            for r, o in zip(rows, orig[t])]
+                # ★★★ 2026-09-27 第二十六批（**实跑定案 + 一手**）：**魔理沙（M）的子机行什么都不发**
+                #   —— 引擎的 `mode=2` 主炮路径走不通，束改由**卡侧**画（见 `youkai_core.h` 的新小节）。
+                #
+                # ## 为什么放弃引擎那条路（两条独立证据）
+                #   · **实跑**（owner 的探针日志，已定案）：
+                #     `youkai/probe beam: state 2 len(+0xa0) 18.0 width(+0xa4) 16.0`
+                #     ⇒ 束一出生就被判 `state = 2`（只长了一帧 = 18 px）= owner 报的「十分短小的袖箭」。
+                #   · **一手**：`Player__shoot_one_bullet` `th18:0x45e930` 对 `mode=2` 只有一道
+                #     「每槽一发」的去重锁；束的生死在 `tick2`（`0x45fc80`）与命中路径里
+                #     （`0x45f6a0` → `0x45f6f0`：给弹的 VM 发 `interrupt 1` + `+0x8c = 2`）。
+                #   ⇒ **117 当年在同一件事上有同一结论**（`cards/animal.c:283`–`300`，TH17 的
+                #     `mode=2` 在主炮路径下会变成「带激光贴图的移动 sprite-bullet」）⇒ 照它的做法：
+                #     引擎这一行**不产生任何东西**，视觉与伤害都归卡侧。
+                #
+                # ## 本卡不能整组留空（117 是整组留空）—— 改用「**不可达的射击时刻**」
+                #   本组里**还有一条本体行**（`origin = 0`）必须照旧由引擎发 ⇒ 只能让**那一行**哑掉。
+                #   一手判据（引擎的行循环 `Player__tick_shooting_state` `0x45ea00`，本次逐指令回读）：
+                #       `if (fire_rate == 0) fire = 1;                      // ★ 显式的 0 分支
+                #        else { i = short_timer % fire_rate; fire = (i == (signed char)row[+0x01]); }`
+                #   （`engine/sht/th18/02` §2 同款；`0x45ea00` 的 `local_10 = player+0x476d4` = **短计时器**，
+                #    `pcVar5[0x01]` = `start_delay`；`fire_rate == 0` 会**每帧**发 ⇒ 不能填 0）
+                #   `short_timer ∈ {-1, 0..14}`（同篇 §1：`< 14` 就 ++、否则 `-= 14`）
+                #   ⇒ `i = short % rate ∈ [0, rate-1]`、`rate ≤ 12` ⇒ **`i ≤ 11`**
+                #   ⇒ 只要 `start_delay = 15`，这条判据**恒不成立** ⇒ 引擎**永不**为这一行建弹。
+                #   为什么不用别的写法（都试过/评估过，逐条否决见 `AUDIT.md` §BE #129 §2；口径登记 `TUNING.md` §2.1ccc-2 第 0 行）：
+                #     ① `damage = 0` / 判定盒 0：**挡不住建弹** —— 行循环不看这两个字段，
+                #        `PlayerBullet__create` 照样建 VM + 建伤害源（`+0x74 = damage`）⇒ 仍会有东西飞；
+                #     ② 把 `anm` 指到一支什么都不画的脚本：VM 与伤害源**照样存在**（只是看不见），
+                #        比 ① 更糟（隐形伤害）；而且 pl0X.anm 追加脚本号是**钉死**的（加一支要动共享资产计划）；
+                #     ③ 靠 `mode=2` 的去重锁（`player+0x476fc+idx*4`）当闸：**要每帧写引擎的全局表** ——
+                #        那张表是**原生卡（ミニ八卦炉）也用的**（idx 由行里 `+0x20` 低 4 位算 ⇒ 我们占 1、
+                #        原生占 0），一旦写错位就把别人的束锁死；而「不可达的 start_delay」**一个字节的
+                #        运行期副作用都没有** ⇒ 选它。
+                #   载体里仍留着**一手字段值**（damage 7 / angle −π/2 / speed 0 / 盒 24×448 / mode 2 /
+                #   init2-tick2-hit2 / 逐档束脚本）当**文档**（改了哪几个字段一眼看得出），
+                #   外加一条**构建期断言**：`start_delay >= fire_rate`（= 上面那条「不可达」的充要条件）。
+                if k == "M":
+                    # 一手：判据盒 24×448（`ply01as.sht` 那一行；本次载体里**没人读**它，只作记录）。
+                    # ★ 逐档束脚本**按下标 `t` 取**（0..4 = BEAM0..4），不走 `_yk_bullet_anm` 的
+                    #   「元组取 `tier-1`」那条约定（那是早苗的形态）：卡侧 `YK_M_LASER_BEAM_SCRIPT`
+                    #   也用同一套下标 ⇒ 两边同档同脚本，不会被 `t-1` 悄悄错开一格。
+                    #   （引擎反正不发这一行 ⇒ 它只作记录；但错开一格会让「行里记的宽度档」与卡侧对不上。）
+                    rows_opt = []
+                    for r, o in zip(rows, orig[t]):
+                        if o >= 1:
+                            r = dict(r, anm=M_BEAM_ANM[t],
+                                     mode=2, speed=0.0, hit_w=24.0, hit_h=448.0, hit_fx=0,
+                                     func_on_init=2, func_on_tick=2, func_on_hit=2,
+                                     start_delay=M_OPT_LASER_DEAD_DELAY)
+                        rows_opt.append(r)
+                    rows = rows_opt
+                    for r, o in zip(rows, orig[t]):
+                        if o < 1:
+                            continue
+                        if not r["start_delay"] >= r["fire_rate"]:
+                            raise SystemExit(
+                                f"YOUKAI_TIERS_M tier{t}: 子机行的 start_delay="
+                                f"{r['start_delay']} < fire_rate={r['fire_rate']} ⇒ 引擎**会**发这一行"
+                                f"（行循环判据 `short_timer % rate == start_delay`，短计时器 0..14）"
+                                f" ⇒ 那条 `mode=2` 束会当场被引擎判完成（实跑已定案）⇒ 必须不可达")
+                    # ---- 卡侧束的**逐档伤害**：从「本卡既有的 DPS 对齐结果」里分配 ------------------
+                    # 口径（`TUNING.md` §2.1ccc-2）：这一行被对齐后的伤害 = `d`（上面那段 kk 缩放的结果），
+                    # 它的 DPS 份额在本卡模型里就是 `d / rate`（`_rows_dps` 对每一行都这么算）
+                    # ⇒ 卡侧按一手的**每 2 帧结算**（`th08:0x4517a1`）交付：每次 `round(2·d/rate)`。
+                    # ⚠ 分期只影响**取整**：本体行一个数都不动（本体那一列的伤害与产物 md5 里
+                    #   除这一行之外的部分全部不变），总 DPS 仍在 ±2% 内（下面逐档打印）。
+                    opt = [r for r, o in zip(rows, orig[t]) if o >= 1]
+                    if len(opt) != 1:
+                        raise SystemExit(f"YOUKAI_TIERS_M tier{t}: 子机行有 {len(opt)} 条"
+                                         f"（一手 `ply01as.sht` 每档只有 1 条）")
+                    d_opt = opt[0]["damage"]
+                    rate = opt[0]["fire_rate"]
+                    hit = max(1, int(round(2.0 * d_opt / rate)))
+                    _register_m_beam(t, d_opt, rate, hit, rows, orig[t], want)
+                for o in orig[t]:
+                    if not 0 <= o <= 4:
+                        raise SystemExit(f"YOUKAI_TIERS_{k} tier{t}: origin {o} 越界（TH08 只会有 0..4）")
+            out.append((f"YOUKAI_{k}{t}",
+                        b"".join(pack_shooter(r, anm_ids) for r in rows) + TERMINATOR))
+    if suf == "M":
+        check_m_beam_tables()          # 卡侧那两个表（宽度/伤害）必须与这里算出来的一致
+    return out
+
+
+def _pofv109_bossatk_sets(anm_ids: dict) -> list:
+    """→ 4 组：109「花映塚 × 獣王園」的**蓄力攻击弹幕**（C1/C2/C3/C4，密度递进）。
+
+    ## 一手：TH09 的蓄力阶梯（`0x41fb42`–`0x41fbd8` 那条松手支，三档完全同形）
+    每一档 = **送攻击 + 扣蓄力 + 8 帧计时 + 消弹圈**：
+
+    | 档 | 门槛 | 送攻击 | 扣蓄力 | 消弹圈 |
+    | --- | --- | --- | :-: | --- |
+    | 0 | ≥200 | `0x403e50(0,0,0,名字)` | 100 | L1 `0x403c30` = 0 / 4.0 / 48 → 192 |
+    | 1 | ≥300 | `0x403e50(1,1,0,名字)` | 200 | L2 `0x403c90` = 0 / 4.0 / 64 → 256 |
+    | 2 | ≥400 且无 kind-3 boss | `0x403e50(2,2,0,名字)` | 300 | L3 `0x403cf0` = 0 / 3.5 / 128 → 448 |
+
+    「送攻击」往里走 = `0x4a00c0[档]` 的载体 → `0x440c80` → **`0x40f1d0`**（在对方 `EnemyManager`
+    生成敌机，type = 档号）。
+
+    ## 单机化（owner 口径）
+    ★ owner：「**C1 和 C2 本来就是自己攻击己方敌人的呀**」＋「自己会额外发射如对战作送到对面的
+    攻击，但是这些攻击**是会对敌人造成伤害的**」＋「这些弹幕得**往"上"打**」
+    ＋「**也可以画在自己这边，但是是对敌人造成伤害**」。
+    ⇒ 四档都做成**从自机往上打的原生自机弹幕**（打的就是自己场上的敌人），密度/单发伤害按档递进
+      —— 与一手的「档越高：扣得越多、消弹圈越大」同向。
+    ★★ 观感（owner「最好观感一致」＋「伤敌弹幕除非是自机弹样式就必须上额外透明度、50% 起步」）：
+      `anm` = **`CE_ANM_ABILITY_SCRIPT_POFV109_BOSSATK`（script 376）** ——
+      **形状照敌弹**（同 `bullet.anm` script2 的 `sprite(-1)` + `drawPoly(8.0f, 32)`，半径 8 与行的
+      `hit_w/hit_h = 16` 一致）＋ **`alpha(112)`（≈56% 透明，过 50% 那条线）**。
+      ⇒ **观感与 boss 的弹同族，但半透明 = 一眼知道是自己打出去的**。
+    """
+    # ★★ owner 2026-10-01 把四档的**取向**分开了：「**C1 主要是打伤害，C2 也算是打伤害，
+    #   C3 C4 是打对面**」。⇒ 本表照这个取向配：
+    #   · **C1 / C2 = 伤害取向**：**少而重**（路数少、单发重、节奏慢）；
+    #   · **C3 / C4 = 打对面取向**：**多而密**（路数多、扇面宽、节奏快 = 符卡/非符的观感）。
+        # ★★★ 2026-10-01 重做（owner 实跑订正 #3）：**四档都是「环」**。
+    #   一手（`engine/card/th09/03` §4.5）：TH09 三角色的符卡用的都是 `etRing` / `etRingAway`
+    #   （名字从**同代** th08 的手工 eclmap 借来：opcode 99 = `etRing`、101 = `etRingAway`）：
+    #     · 灵梦 = 两种环各两组、颗数 **2 与 15**、两侧不对称；
+    #     · 魔理沙 = 环的**基准角 3π/4 与 π/4**（斜向）；
+    #     · 咲夜 = 速度实参 **2.0f**（比另两位的 0.5f 快 4 倍）＋ `shoot_offset` ＋ 子敌人。
+    #   ⇒ 本表把「一颗子弹 = 一行」堆成**整圈**（N 行 = N 颗环），四档的差别照一手取在
+    #     **颗数 / 圈数 / 速度**上：
+    #       C1 = 1 圈 6 颗（≈ 灵梦那圈「少」的）
+    #       C2 = 1 圈 12 颗
+    #       C3 = 2 圈（12 + 12，第二圈整圈偏 15°≈ 魔理沙那种「斜基准角」）
+    #       C4 = 1 圈 12 颗但**速度 ×1.5**（≈ 咲夜那圈「快 4 倍」的方向；我们的速度空间另算，
+    #            取 24 = 16×1.5，别直接搬一手的 2.0f）
+    #   ⚠ 方向：环是**整圈**（360°），所以「由下至上」体现为**环心在自机、环整体向上推进** ——
+    #     owner「版底 boss 位、180° 反转、往上发」在「整圈」这种形态下就是**环本身**。
+    U = -1.5707964
+
     def ring(n, base=0.0, speed=16.0, rate=5, dmg=12, phase=0.0):
         """n 颗一整圈（每颗一行，角均分）+（可选）整圈相位 `phase`。"""
         rows = []

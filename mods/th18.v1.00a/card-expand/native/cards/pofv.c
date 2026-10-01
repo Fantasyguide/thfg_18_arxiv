@@ -83,6 +83,21 @@
  * 结界在**灵**之下（结界是地面上的场、灵站在场里）、两者都在自机之下。*/
 #define POFV_AURA_VM_LAYER         5
 #define POFV_GHOST_VM_LAYER        6
+/* ★ 一手（2026-10-01）：**收取音** —— TH16 季节道具收进时播 `se_item00`（`0x25`），
+ *   116 `season.c` 的 `SEASON_SE_GET` 就是它（一手 `th16:0x42fea5` / `0x42feae`）。
+ *   owner 口径「灵力道具得按照**类季节道具**做」⇒ 收取这一下的音效照抄季节道具。*/
+/* ★★ 2026-10-01（owner 的 C3/C4 最终模型）：**发射口钉在「版底 boss 位」** ——
+ *   「自机都是从下往上打，上面是 boss…我们需要把**另一侧的场地拉过来，并且 180° 反转**！
+ *    也就是说，在**我们的版底生成一个 boss**…你发弹得按照**我是 boss 往上发**」。
+ *   一手（场地尺寸）：`engine/player/th06nc/01-main-loop-and-collision.md` §arcadeRegion：
+ *   `arcadeRegionSize = (384, 448)` ⇒ 本卡取 **x = 384/2 = 192**（正中）、
+ *   **y = 440**（版底，留 8 px）。⚠ y 取具体值属 **❓ 自定**（一手只给了 448 这个高）。
+ *   一手（怎么钉）：`CE_OPT_POS_X/Y` = 子机的**出膛坐标**，`CE_FN_TICK_SHOOTERS_FOR_CARD`
+ *   就是从这里出膛（`engine.h` 里 `0x40a9c0` 的注释）；引擎每帧会按「跟随玩家」重算它，
+ *   而 `on_tick_2`（AbilityManager tick，优先级 0x16）在那之后跑 ⇒ **我们在发弹前覆盖即可生效**。*/
+#define POFV_BOSSATK_ANCHOR_X  192.0f   /* ❓ 自定（场地宽 384 正中；一手尺寸见上）*/
+#define POFV_BOSSATK_ANCHOR_Y  440.0f   /* ❓ 自定（版底；一手场地高 448）*/
+#define POFV_POWER_SE_GET       0x25
 #define POFV_POWER_VM_LAYER        7    /* 灵力道具在最上（要一眼可判「捡得到」）*/
 #define POFV_POWER_VM_SCALE      1.0f   /* ★ 一手（2026-10-01）：画的是 TH18 原版 P 点
                                           *   （`bullet/item.png` 的 (0,0,32,32)，见 `make_pofv109_power_art.py`），
@@ -380,6 +395,12 @@ static void bossatk_fire(ce_card_t *c, pofv_card_t *s)
     }
     o = ce_option_get(c, &s->opt, 0, POFV_BOSSATK_OPT_ANM, 30, "pofv109");
     if (!o) return;                                     /* 拿不到发射口：这一帧不发 */
+    /* ★★ owner 的最终模型：**不是从自机身上发，而是从「版底的 boss 位」往上发**。
+     *   直接把出膛坐标（`CE_OPT_POS_X/Y`，定点 ×128）覆盖成那个固定锚点 ——
+     *   引擎本帧早些时候已按「跟随玩家」写过一次，我们在它之后写 ⇒ 当帧的发射点就是这里
+     *   （下一帧引擎再写回玩家身边，我们再覆盖，如此往复）。*/
+    *(int32_t *)(o + CE_OPT_POS_X) = (int32_t)(POFV_BOSSATK_ANCHOR_X * 128.0f);
+    *(int32_t *)(o + CE_OPT_POS_Y) = (int32_t)(POFV_BOSSATK_ANCHOR_Y * 128.0f);
     ce_tick_shooters_for_card(o, (int)s->bossatk.left, 0, set);
 }
 
@@ -987,6 +1008,7 @@ static int on_tick_2(ce_card_t *c)
         int32_t got_pts = 0;
         int got_n = pofv_power_tick(&s_power, ce_player_pos(), &got_pts);
         if (got_n > 0 && got_pts > 0) {
+            ce_play_sound(POFV_POWER_SE_GET, ce_player_x());   /* ★ 一手：收取音（见常量处）*/
             pofv_gauge_add_points(&s->st, got_pts);
             s_power_got += got_n;
             ce_log("pofv: power +%d (%d items, gauge %d.%d)", (int)got_pts, got_n,
