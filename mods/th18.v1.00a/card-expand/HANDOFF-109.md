@@ -58,6 +58,40 @@
 >     ⚠ 剩：找 `0x5d1aa4` 表 / `0x40fb70` 比对面 ⇒ 300/350 两条攻击的形态。
 >   · ⚠ **#4 仍卡在 owner 一句话**：灵力道具外观走 **TH16 季节道具样**（116 已在用）还是
 >     **TH19 道具样**（`local/th19.v1.10c/dat/bullet/item.png`，256×64）；两条路的源图都已在手。
+> · **第 2o 步（owner 实跑订正 #3/#4 的第二轮）**：
+>   · **#4 灵力道具外观 ✅ 落地并发布**：一手 = TH18 **自己**的 `bullet/item.png` 里
+>     `sprite504 = (0,0,32,32)`（那颗红 P 方块）—— 原版 `bullet.anm` 的 **`script114`** 就用它画 P 点
+>     （`sprite(sprite504)` + `angleVel(0,0,π/4)` + `scale(0.5,0.5)` + `scaleTime(16,0,1.0,1.0)`）。
+>     切图脚本 `assets/ability/make_pofv109_power_art.py`（**1:1、不缩放**）→ `entries/ORDER.txt`
+>     **尾插** ⇒ sprite **572**（`entry90`）→ 脚本 374 逐条照抄那四行（旧占位 ❓#18 作废）→
+>     卡侧 `POFV_POWER_VM_SCALE` ❓8.0 → **★1.0**、且 `delay != 0` 时不建 VM（一手「延时结束才建 VM」）。
+>     另：收取音 = `se_item00`（`0x25`，一手 TH16 季节道具 `0x42fea5`）。
+>   · **#3 版底伪 boss 位 ✅ 落地并发布**：`cards/pofv.c` 的 `POFV_BOSSATK_ANCHOR_X/Y = (192, 440)`
+>     （场地 384×448 一手 ⇒ 取正中 + 版底），在 `bossatk_fire()` 里**覆盖 `CE_OPT_POS_X/Y`** 出膛坐标
+>     （`on_tick_2` 在引擎的「子机跟随更新」之后跑 ⇒ 当帧生效）；弹幕从**整圈**改成**以正上方为中心的
+>     半圈**（`append_shooterset.py` 的 `arc()`）。
+>   · **★ 自机狙 ✅ 落地并发布**：一手链路 `engine/sht/th18/02-shooter-record.md` §5 ——
+>     最近敌人搜索（半径 **512**）→ `atan2` → 写 `player+0x479cc` → 行侧 `func_on_init = 5` 覆写出膛角。
+>     卡侧 `bossatk_aim()`（遍历敌人链表挑最近可锁定者）＋ `pofv_atan2()`；四组各加 2/2/4/4 条瞄准行
+>     （行数 6/12/24/12 → **8/14/28/16**，槽 `0x68–0x6b` 不变）。
+>   · ⚠⚠ **两个坑（都在 `TUNING.md` §2.0v-7 与 `sdk.h` 的警示注释里）**：
+>     ① 引擎的 `atan2`(`0x4a94a0`) 是 **i387** 版 ⇒ 卡里调它会踩 `make dllx87` 闸门；
+>     ② **`float` 返回值本身也踩**（i386 float 返回走 `st0`）⇒ `pofv_atan2` 必须是**指针出口**。
+>     **这就是本仓「C 函数不返回浮点」铁律的具体来由。**
+>   · ⚠ **共享件坑**（`AUDIT` §BE **#167**）：`assets/sht/append_shooterset.py` 有 **10+ 个同名函数
+>     重复定义**（Python 取**后一个**）⇒ 我改死代码白跑一轮（产物 md5 一个字节没变）。
+>     文件顶部已加警告横幅；**动手前先 `grep -n "^def <名字>"`**。根治（删死的）**未做**。
+>   · ★ **架构结论（待 owner 拍板，`TUNING.md` §2.0v-7 末段）**：**TH18 里 ECL 只能驱动敌弹**
+>     （`etNew` 600 + `etAim`/`ANGLE_PLAYER` 那族进敌弹池；242 条里**没有**玩家弹 opcode）。
+>     ⇒ **「除透明度外完全复刻符卡」要求 ECL 路线**（顺手还能用 `etAim` 复刻 TH09 的 `etRingAimed`），
+>     而 **「自机狙打敌机」要求 sht 路线**（ECL 的瞄准只指**自机**）。**两者不可兼得。**
+>     我的建议：C1/C2 留 sht，C3/C4 若要完全复刻则走 ECL（自制敌人载体 + 自伤源，伪 boss 口径照旧）。
+>   · ★ **TH09 侧转写的前置研究**：ECL 派发表 = **文件偏移 `0xb4a4`（VA `0xc0a4`）起 186 个 handler**，
+>     按 `opcode - 2` 索引（ExpHP label 对齐，**146 条一致命中**）；★ **opcode 96–104 共用一个 handler
+>     `0x40a168`**（`etFanAimed`/`etFan`/`etRingAimed`/`etRing`/`etRingAimedAway`/`etRingAway`/
+>     `etRandAng`/`etRandSpd`/`etRand`）。⚠ 我已读过 `0x40a168`：它是**家族的共用取参序言**
+>     （`call 0x408040`，各支都 `jmp 0x408750` 回 VM 主循环）⇒ **环的参数语义要顺着 `0x408040`
+>     往下读**（下一步入口就在这里）。
 > · 工具（这一批新加的，接手直接用）：`tooling/eclmap/gen_eclmap.py`（ecl/anm 名表生成器）、
 >   `thdat -l19/-x19`（能解 th19.dat）、`thanm -l9/-l19 -m v8.anmm`（**anmmap 按文件头版本选**，
 >   TH19 用 v8 即可）、`thanm -x9 plNN.anm`（切角色图，看图认人/认弹）。
