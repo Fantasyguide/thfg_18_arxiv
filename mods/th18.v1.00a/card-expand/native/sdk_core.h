@@ -933,7 +933,10 @@ void ce_hud_card_set(int present);
  *   ③ **删卡自动收**：`ce_layer_drop_card()` 会 `ce_card_flag_set(id, 0)`；卡不用自己撤。
  *   ④ **位要语义化**：用 `CE_CARD_FLAG_*` 常量，别在卡里写裸 bit。*/
 #define CE_CARD_FLAG_TRANCE  0x01u   /* 灵界进行中（113 声明）—— 判据 = `core.phase != TRANCE_PHASE_IDLE` */
-#define CE_CARD_FLAG_ROAR    0x02u   /* 暴走咆哮中（117 声明）—— 判据 = `core.ready || core.hypering` */
+#define CE_CARD_FLAG_ROAR    0x02u   /* 暴走咆哮中（117 声明）—— ★ **只有狼(1)/鷲(3)** 那种：
+                                      *   判据 = `(core.ready || core.hypering) && hyper_type ∈ {1,3}`
+                                      *   （owner 2026-10-01d：「只有 117 大鹫灵和狼灵的暴走咆哮」要锁，
+                                      *    **水獭灵暴走咆哮可以改子机** ⇒ 獺(2)/混合(4) 不置位）*/
 
 /* 声明 / 撤位（`bits` = 0 即全撤）。粘性：不调用就一直保持上一次的值。*/
 void     ce_card_flag_set(uint32_t card_id, uint32_t bits);

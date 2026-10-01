@@ -3885,8 +3885,18 @@ static int on_tick_2(ce_card_t *c)
     /* ★ 2026-10-01（跨卡只读标志；交接 = `HANDOFF-108-CROSSCARD-SHIFT.md`）：每帧按 `roaring(s)`
      *   重算「暴走咆哮中」——**零发明**（判据现成：`core.ready || core.hypering`），
      *   也正好绕开「还有没有别的入口把咆哮打开」这个未普查项（交接 §6.1）。粘性；删卡由
-     *   `ce_layer_drop_card()` 收（`clear_card()` 里再显式撤一次，双保险）。*/
-    ce_card_flag_set(ANIMAL_ID_NUM, roaring(s) ? CE_CARD_FLAG_ROAR : 0u);
+     *   `ce_layer_drop_card()` 收（`clear_card()` 里再显式撤一次，双保险）。
+     *
+     * ★★ 2026-10-01d **owner 细化（逐字）**：「涉及到 108 你别改的**只有 117 大鹫灵和狼灵的暴走咆哮**，
+     *   **水獭灵暴走咆哮可以改子机**」⇒ **只有 `hyper_type` = 1（狼）/ 3（鷲）才置位**；
+     *   **獺(2) 与混合(4) 不置位**（owner 只点名了狼/鷲 —— 混合那条按「只点名才算」处理）。
+     *   一手映射（`hyper_type` 的取值）＝ `engine/animal/th17/01-animal-spirits.md` §5.1：
+     *   `+0xe0` = 1/2/3 狼/獺/鷲、4 混合；本卡的 `hyper_type` 在 ready 那一步就算定
+     *   （`animal_core.c` 的 best_type / 4 → 随后 `ready = 1`）⇒ `ready` 窗口里读它有效。*/
+    {
+        int roar_locks_side = roaring(s) && (s->core.hyper_type == 1 || s->core.hyper_type == 3);
+        ce_card_flag_set(ANIMAL_ID_NUM, roar_locks_side ? CE_CARD_FLAG_ROAR : 0u);
+    }
     s->core.goast = goast_for_deck();       /* TH18 无凭依选择：默认「主凭依灵不存在」；带 25/34 时恒存在 */
     paused = dialogue_open();
     animal_big_drop_drain(s);               /* AL55：上一帧大怪击破队列 → 本帧建 VM + 打掉落行 */

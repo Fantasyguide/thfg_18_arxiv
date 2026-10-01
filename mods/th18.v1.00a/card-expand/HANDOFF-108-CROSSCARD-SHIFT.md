@@ -220,3 +220,22 @@ cd /home/nipporita/renkolab && python3 tooling/check-docs.py
 
 **未做/留给你们**：验收（§4 的 6 条判据）**要你们那条线的实跑**——必须用含 P0 修复的 DLL（`07ed3a6e…`）；
 `youkai.c` 仍在并发修改，**实装行的行号请按 §7 现算**，别照抄本文数字。
+
+### §8.1 追加：owner 2026-10-01e 细化（**只加不改**）
+
+> **owner 逐字**：「涉及到 108 你别改的**只有 117 大鹫灵和狼灵的暴走咆哮**，**水獭灵暴走咆哮可以改子机**；
+> **111 魔理沙特技是低速时候 108 覆盖 111 的特技子机**（特技子机不分高低速）；**113 是灵界状态你别改**」
+
+⇒ **已按此收窄**：`CE_CARD_FLAG_ROAR` 的置位条件 = `(core.ready || core.hypering) && hyper_type ∈ {1(狼), 3(鷲)}`
+（`cards/animal.c` 的 `on_tick_2`，现算行号）；**獺(2) 与混合(4) 不置位** ⇒ 水獭咆哮期间 shift **照常**切侧。
+一手映射（`hyper_type`）= `engine/animal/th17/01-animal-spirits.md` §5.1；`hyper_type` 在 ready 那一步算定
+（`animal_core.c` 的 best_type / 4 → 随后 `ready = 1`）⇒ ready 窗口读它有效。
+
+| 你那条口径 | 本层的落地 |
+| --- | --- |
+| 狼 / 鷲 咆哮 ⇒ 不切侧 | `CE_CARD_FLAG_ROAR` 置位（108 的 `yk_roar_active()` 读它）|
+| **水獭咆哮 ⇒ 可以改子机** | **不置位**（`hyper_type == 2` 跳过）|
+| 113 灵界 ⇒ 不切侧 | `CE_CARD_FLAG_TRANCE`（113 声明，判据 `core.phase != IDLE`）|
+| 111 魔理沙特技（低速时 108 覆盖 111 的特技子机）| **不在本层** —— 那是低速子机声明层 / 隐藏原生子机那套既有机制，本层不参与 |
+
+⚠ 混合（`hyper_type == 4`）按「owner 只点名了狼/鷲」处理 = **不置位**。若你要「混合也锁」，说一声改一个条件即可。
