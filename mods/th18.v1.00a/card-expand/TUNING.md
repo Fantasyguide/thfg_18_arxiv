@@ -4162,8 +4162,20 @@ thanm -l19 local/th19.v1.10c/dat/bullet.anm            # ⚠ th19 没有 anmmap 
 —— 116 的季节道具正是从 TH16 的 `bullet/item.png` 切出 5 个 16×16 单元的）。
 ⇒ 若走「**TH19 口径**的道具外观」（owner 说的是「类季节道具」，而季节道具的贴图就是这个文件），
 **源图现成**：`thdat -x19 … bullet.anm` 抽出来后用 `thanm -x19` 切 entry3 的贴图即可。
+✅ **图也切出来了**（2026-10-01）：
+
+```bash
+cd local/th19.v1.10c/dat && thanm -x19 bullet.anm
+#   ⚠ `thanm -x` 的 `-o` 是 **flag**（加地址信息），**不是输出目录** —— 写 `-o dir` 会把 dir
+#     当成「archive 里的文件名」而报 `not found in archive`（我踩了一次）。
+```
+
+产物落在 `local/th19.v1.10c/dat/`（`local/` gitignored）：`bullet/bullet1..6.png`、`bullet/laser1..2.png`、
+`effect/etbreak.png`、★ **`bullet/item.png`（256×64 RGBA）**。
+
 ⚠ 但 **109 的灵力道具到底是「TH16 季节道具样」还是「TH19 道具样」**，得 owner 一句话 ——
-两条路的源图都拿得到（TH16 那条 116 已经在用）。
+两条路的源图**都已在手**：TH16 那条 116 已经在用（`bullet/item.png` 右上 2×2 的四季单元），
+TH19 这条是 `local/th19.v1.10c/dat/bullet/item.png`（256×64）。
 
 ⚠ **未做**：早苗阶段 3/4 的读法、バリア视觉那一条 script 的确认（都要先有名表或先把 331 个脚本
 按 entry 分组读完）。
