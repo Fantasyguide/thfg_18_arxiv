@@ -10097,3 +10097,27 @@ owner 的 C3/C4 模型是「**在版底生成一个 boss，让它按 `下` 是�
 
 ⚠ 仍是**占位**（owner 说等实跑）——但它现在**落在一手约束的边界内**，而不是随手写的数。
 这也是本轮的意义：**一手挖出来的常量直接改写了数值该怎么填**。
+#### ✅ 2026-10-01：两条**集成验证**（都不用实跑就能定）
+
+**① 载体的自删不会被误当成「灵死亡」**（否则会凭空起连锁 + 掉灵力道具）
+
+`on_enemy_death()` 的门是：
+```c
+if (ev->kind != CE_EDEATH_KILLED) return;      /* 只认「被打死」*/
+if (!(ev->flags & CE_EDEATH_F_REAL)) return;   /* 只认真敌人 */
+```
+一手（`sdk/public.h`）：`CE_EDEATH_KILLED = 0` = **`retaddr 0x42f3b7`、`life ≤ 0` 的被打死主路**；
+`CE_EDEATH_F_REAL` = `(flags_lo & 0x31) == 0`。
+⇒ 载体是 ECL `delete()` **自删**（走别的 retaddr ⇒ `kind != KILLED`）⇒ **早退** ✓；
+  且它带着 `NO_DAMAGE(0x10)` ⇒ `flags_lo & 0x31 = 0x10 ≠ 0` ⇒ **连「真敌人」都不算** ✓
+  —— **双重保险**（就算它真被打死也不会走灵的路径）。
+
+**② 档位在攻击中途**不会变 ⇒ 载体不会「残留到 C1/C2 期间继续发弹」
+
+`pofv_bossatk_start(b, ca_level)` 在**开始那一刻一次性**写死 `b->level`（`pofv_core.c:760`），
+`stop()`/`tick()` 才清零 ⇒ **一次攻击从头到尾同一个档** ⇒ `bossatk_fire()` 里那条
+`level >= 3 ? ECL : sht` 的分支**整段一致**，不存在「C3 的载体在 C2 期间还活着」的窗口 ✓。
+
+**③ 顺带核对**：`pofv_bossatk_is_boss()`（C4 = 「自己是 boss」的语义标记）**目前只用于日志**
+—— 这是**故意**的：owner 口径「**其他什么 boss 标识都别干**」⇒ 它**不该**接任何引擎 boss 标志
+（不设 `setBoss`、不挂血条、不进 boss 表）。保持现状 = 正确 ✓。
