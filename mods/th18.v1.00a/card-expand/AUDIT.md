@@ -4917,6 +4917,8 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 
 | 2026-10-01h | **所有卡**（共享资源 `assets/cards/**` 追加 5 张卡图 + `ORDER.txt`；`patch/th18/cards.js` 追加 **81–85**；新增 `native/cards/{lotus,solring,fireball,sunflower,marigold}.c`（**占位**）；`CAPACITY.md` 附录 A 重生成） | 见下方「§BE 详录 #209」 |
 
+| 2026-10-02 | **所有卡**（共享资源 `assets/ability/**` + `assets/cards/**` + 共享数据 `patch/th18/cards.js` + 共享件 `native/Makefile`；新卡 **86 / 87**） | 见下方「§BE 详录 #210」 |
+
 
 > **§BE 详录 #42（2026-09-20 · P1「缺音效一批」8 条 + 音效表扩容新增 5 枚别作原版 SE）**
 >
@@ -27849,3 +27851,57 @@ Python 里**后一个定义覆盖前一个** ⇒ 改第一个**完全无效且�
 `pofv.c` 的 `bossatk_damage()` 逐弹版。
 
 **验证**：`make check` exit 0（含 `dllx87` x87=0、`test_pofv_core` **846** 断言、419 文档）。
+
+## §BE 详录 #210（2026-10-02）：新非系统卡 **86 东尼的悲恸 / 87 天顶剑**（owner 预留号位 → 统筹代做）
+
+**谁改的**：统筹会话（owner 2026-10-02 指示「做一下这两张卡」）。**号位台账**：[`HANDOFF-CROSSCARD-STATE.md`](HANDOFF-CROSSCARD-STATE.md) §11.4b（本次结案）。
+
+### 改了什么（逐文件）
+
+| 文件 | 类型 | 改了什么 |
+| --- | --- | --- |
+| `native/cards/tony_grief.c` + `tony_grief_core.{c,h}` | 新卡（86） | 被动：16 s（960 帧）内收符卡 ⇒ 下一个非符段 `life.current` 写 1 |
+| `native/cards/zenith.c` + `zenith_core.{c,h}` | 新卡（87） | 装备：原生子机跟班 + 8 格 ANM VM 剑刃池，每 20 帧朝最近敌掷一把 |
+| `native/tests/test_tony_grief_core.c` / `test_zenith_core.c` | 新单测 | 86 = 速收判据 + 段边界锁定；87 = 节奏 / 瞄准 / 池 |
+| `native/Makefile` | **共享件** | `test-host` 加两条（86 那条链 `cards/guding_core.c`：复用槽原语） |
+| `assets/ability/entries/ORDER.txt` | **共享资源** | **末尾 append** 单图 `ZENITH_SWORD`（源 = `cards/_src/ZENITH.png`）⇒ entry 91 / sprite 573 |
+| `assets/ability/scripts/378_zenith_opt.anm.txt` / `379_zenith_blade.anm.txt` | **共享资源** | 新脚本 378 / 379（跟班 / 剑刃） |
+| `native/anm_ids.h` | 生成物 | `make anm` 重生成（+1 sprite 宏 +2 脚本宏） |
+| `assets/cards/_src/ZENITH.png` + `make_white_item_card.py` | **共享资源** | Terraria 原版物品贴图 + 「白底 + 物品撑满」卡面生成器（新脚本） |
+| `assets/cards/{TONY_GRIEF,ZENITH}_{max,min}.png` + `_art/*` + `ORDER.txt` | **共享资源** | **末尾 append** 两行 ⇒ sprite 200/201（86 占位问号）/ 202/203（87） |
+| `patch/th18/cards.js` | **共享数据** | 追加 `"86"` / `"87"`（86 = `category 2` 被动 / 87 = `category 1` 装备，均无 `active_recharge`） |
+| `patch/files.js` | 生成物 | crc32 清单 `make files` 重生成；它会**顺带追平 81–85 那批**（2026-10-01h 改了 `cards.js` 但没跟着刷 `files.js`，工作区里一直挂着这一处 `M`）|
+| `CAPACITY.md` | 台账 | `python3 native/tools/capcheck.py --gen-appendix` 重生成附录 A |
+| `CARDS.md` / `TUNING.md` / `HANDOFF-CROSSCARD-STATE.md` | 文档 | 键位总表 + 两条卡行 + 补充；§2.10 的 ❓ 清单；§11.4b 结案 |
+
+### 为什么
+
+owner 2026-10-01 开的两个号位，2026-10-02 直接指示「做一下这两张卡」。
+- **86**：两侧判据都是引擎自己的口径（`Spellcard__end` `0x42a780` 的 bit1 / 超时 bit7 / `+0x24` 经过帧；
+  段边界签名照 `animal.c` / `lolk.c`，名字取 16 字节而不是 4 —— `Boss2`/`BossCard3` 那族头 4 字节相同）。
+- **87**：三件事各自照仓里既有写法（原生子机 / 距离平方取最近 + `bc_atan2f` / 炎魔火球的「ANM VM + 逐帧伤害源」）；
+  **只有「多发在途的弹池」是新写法**，数值全部 `❓ 自定` 并登记 [`TUNING.md`](TUNING.md) §2.10。
+
+### 对既有卡的影响面 + 回归
+
+- **零新增站点**：没有动 `sites.py` / `sdk.{h,c}` / `sdk_core.*` / `engine.h` / `cards_def.c` / `patch/**`（除 `cards.js` 追加两行）。
+- **图集 / 卡面都是尾插**：`ability.anm` 既有 entry / sprite 号一个不动（`ORDER.frozen.txt` 冻结段未触发）；
+  `abcard.anm` 既有 sprite 号一个不动 ⇒ 其余 42 张卡的贴图号零变化。
+- **两条新单测**全绿；`make dll` 两个新 `.o` **零警告**。
+- ⚠ **两处口径待 owner 拍**（都登记在 `TUNING.md` §2.10）：
+  ① 耐久符卡（bit3）算不算「收取」—— 本卡按引擎口径**算收下**；
+  ② 87 的跟班站位 y 正负号与手感待实跑调。
+- ⚠ **顺手订正一处台账漂移**：`CAPACITY.md` 附录 A 是**重生成的**，因此删掉了
+  `CE_SHT_SET_POFV109_BOSSATK_C3/C4` 两行 —— 那两行是 `b667756b`（「C3/C4 只走 ECL，sht 那两组已撤」）
+  **撤了宏但没刷新附录**留下的**陈旧登记**，**不是本次的功能删除**（`capcheck` 前后都判该差异「不判红」）。
+- ⚠ **只记录、未改**（共享件误标，下次动 `sdk.*` 时一起处理）：[`native/sdk/public.h`](native/sdk/public.h) 的
+  `ce_enemy_damage_t.hp_max` 注释写 `enemy+0x6230`，而 `sdk.c` 填的是 `data+0x5004`
+  = `life.starting_value_for_next_attack`（**不是** `life.maximum` = `0x6224`）。本批没有卡消费它。
+
+### 验证
+
+`make check` **exit 0**（含 `test_zenith_core` / `test_tony_grief_core`、`cards-check` **44 张卡**合规、
+`anm-verify`、`sht-verify`、`dllx87` **x87 = 0**、`dllverify`、`sites.py check`、`contract_check`、`gen_drift`、
+`sitecheck --all`、`capcheck` **全绿**、`engine_abi_check`、`check-docs` 四项全绿）；
+`build_abcard.py` entry **204 / 256**（余 52 = 还能进 26 张）。**实跑未做**（待 owner）。
+

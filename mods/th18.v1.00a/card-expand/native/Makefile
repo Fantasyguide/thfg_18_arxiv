@@ -196,12 +196,19 @@ test-host:
 	./tests/build/test_blue_eyes_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_broken_core_core tests/test_broken_core_core.c cards/broken_core_core.c -lm
 	./tests/build/test_broken_core_core
+## ★ 2026-10-02（87 天顶剑）：节奏 / 挑最近的敌人 / 剑刃池（发射-推进-回收）；角度与 libm 对拍。
+	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_zenith_core tests/test_zenith_core.c cards/zenith_core.c -lm
+	./tests/build/test_zenith_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_firelord_core tests/test_firelord_core.c cards/firelord_core.c -lm
 	./tests/build/test_firelord_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_truesilver_core tests/test_truesilver_core.c cards/truesilver_core.c
 	./tests/build/test_truesilver_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_guding_core tests/test_guding_core.c cards/guding_core.c
 	./tests/build/test_guding_core
+## ★ 2026-10-02（86 东尼的悲恸）：速收判据（收取 vs 超时 / 用时 / 中途作废）+ 段边界锁定与释放。
+##   链 guding_core.c：槽原语（活动槽 / 死亡段）复用古锭刀那份，不再抄一遍。
+	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_tony_grief_core tests/test_tony_grief_core.c cards/tony_grief_core.c cards/guding_core.c
+	./tests/build/test_tony_grief_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_collect2x_core tests/test_collect2x_core.c cards/collect2x_core.c
 	./tests/build/test_collect2x_core
 ## test_vitem_batch —— ★★ 2026-09-15（NEXT.md §1x.2）：自建实体（110/111 绿点）→ 114 收点批 的

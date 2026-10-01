@@ -979,3 +979,8 @@ YOUKAI_FAM_TRAIL  ability/youkai_familiar/YOUKAI_FAM_TRAIL.png  16x16
 #   owner 口径：「灵力道具得按照类季节道具做，动态什么的一模一样」＋「完全类似与信仰点、P点等」。
 #   **追加在文件末尾**（尾插 ⇒ 既有 entry / sprite 号一个不动，不制造共享件位移）。
 POFV109_POWER_P  ability/pofv109_power/POWER_P.png  32x32
+# ★★ 2026-10-02（87 天顶剑，致敬泰拉瑞亚 Zenith）：跟班本体与剑刃共用这一张 32×32 贴图 ——
+#   Terraria 原版物品「天顶剑」= `Item_4144`（用户本机 Steam 版 `Content/Images/Item_4144.xnb`，
+#   用 xnbcli 解出 PNG；解包命令与来源见 `assets/cards/_src/ZENITH.png` 的取图记录与
+#   `assets/cards/make_white_item_card.py`）。**追加在文件末尾**（尾插 ⇒ 既有 entry / sprite 号一个不动）。
+ZENITH_SWORD  cards/_src/ZENITH.png  32x32

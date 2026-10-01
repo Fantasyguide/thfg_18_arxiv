@@ -1,0 +1,27 @@
+script script379 {
+    // 天顶剑（id 87）的**剑刃** —— C 用 `ce_anm_spawn` 起，每帧写 pos 与 rotation.z（自旋 0.42 rad/帧）。
+    // ★ 纪律同炎魔火球 script92：**脚本里不许碰 rotate**（会盖掉 C 写的自旋角）；pos / rotation 归 C，
+    //   这里只管长相（加色混合 + 亮度脉动）。伤害也不在这里：C 每帧在剑刃位置放一个 ZN_DMG 的矩形源。
+    //   寿命由 C 数（ZN_LIFE 帧 / 出界即 `ce_anm_delete`）—— 脚本末尾的 interrupt 只是兜底。
+-1:
+    layer(13);
+    sprite(@ZENITH_SWORD);
+    type(1);
+    blendMode(1);
+    zWriteDisable(1);
+    alpha(255);
+    scale(0.78f, 0.78f);      // 32 px 贴图 → 场上约 25 px（判定框 ZN_HIT_W = 26）
+0:
+pulse:
+    alphaTime(8, 4, 170);
++8: // 8
+    alphaTime(8, 4, 255);
++8: // 16
+    jmp(pulse, 0);
+    stop();
+    interruptLabel(1);
+    scaleTime(5, 4, 0.0f, 0.0f);
+    alphaTime(5, 0, 0);
++5:
+    delete();
+}

@@ -658,5 +658,37 @@
     "weight": 2,
     "sprite_large": 198,
     "sprite_small": 199
+  },
+  "86": {
+    "name": "东尼的悲恸",
+    "desc": [
+      "被动：若在 16 秒内收取一张符卡，",
+      "boss 紧接着的那段非符，",
+      "开场血量就只有 1 点。"
+    ],
+    "internal_name": "TONY_GRIEF",
+    "category": 2,
+    "initial_unlocked": 1,
+    "price_tier": 9,
+    "weight": 2,
+    "sprite_large": 200,
+    "sprite_small": 201
+  },
+  "87": {
+    "name": "天顶剑",
+    "desc": [
+      "装备：身边浮着一把天顶剑。",
+      "它每隔一会儿朝最近的敌人",
+      "掷出一把旋转的剑刃，",
+      "剑刃掠过之处都能割伤敌人。",
+      "致敬・泰拉瑞亚。"
+    ],
+    "internal_name": "ZENITH",
+    "category": 1,
+    "initial_unlocked": 1,
+    "price_tier": 8,
+    "weight": 2,
+    "sprite_large": 202,
+    "sprite_small": 203
   }
 }
