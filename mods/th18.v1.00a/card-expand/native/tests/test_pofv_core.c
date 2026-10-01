@@ -458,7 +458,7 @@ int main(void)
 
         /* 磁吸：圈内（MAG_R 内、ABSORB_R 外）朝自机走 ⇒ 有限帧内必被收 */
         pofv_power_pool_init(&pool);
-        pofv_power_spawn(&pool, 100.0f + POFV_POWER_MAG_R, 200.0f, 10, POFV_POWER_SRC_AURA);
+        pofv_power_spawn(&pool, 100.0f + POFV_POWER_MAG_R * 0.5f, 200.0f, 10, POFV_POWER_SRC_AURA);
         { float x0 = pool.s[0].x; pofv_power_tick(&pool, pp, &pts); CHECK(pool.s[0].x < x0); }
         n = 0;
         while (pool.live > 0 && n < 200) { pofv_power_tick(&pool, pp, &pts); ++n; }
@@ -468,16 +468,50 @@ int main(void)
         pofv_power_pool_init(&pool);
         pofv_power_spawn(&pool, 100.0f + POFV_POWER_MAG_R * 4.0f, 200.0f, 10, POFV_POWER_SRC_AURA);
         {
-            float y0 = pool.s[0].y;
+            float x0 = pool.s[0].x, y0 = pool.s[0].y;
+            /* ★ 2026-10-01：出生先飞散（方向由表给）⇒ 只断言「动了」，不再断言「一定往下」
+             *   —— 旧断言是「圈外只飘落」，那是**改造前**的动态。*/
             pofv_power_tick(&pool, pp, &pts);
-            CHECK(pool.s[0].y > y0);
+            CHECK(pool.s[0].x != x0 || pool.s[0].y != y0);
             CHECK(pts == 0 && pool.live == 1);
         }
 
         /* 没有自机（过场 / 单测）：只飘落，不磁吸不收取 */
         pofv_power_pool_init(&pool);
         pofv_power_spawn(&pool, 0.0f, 0.0f, 10, POFV_POWER_SRC_AURA);
-        CHECK(pofv_power_tick(&pool, 0, &pts) == 0 && pts == 0 && pool.s[0].y > 0.0f);
+        /* 同上：出生那几帧是**飞散**（待发射 + 直线飞散），断言「动了」而不是「往下」*/
+        {
+            float x0 = pool.s[0].x, y0 = pool.s[0].y;
+            CHECK(pofv_power_tick(&pool, 0, &pts) == 0 && pts == 0);
+            CHECK(pool.s[0].x != x0 || pool.s[0].y != y0);
+        }
+        /* ★ 新动态：**待发射**的错帧里不动（`delay = seq & 3`）；第 2 颗起才有延时 */
+        {
+            pofv_power_pool_t q;
+            pofv_power_pool_init(&q);
+            CHECK(q.seq == 0);
+            pofv_power_spawn(&q, 0.0f, 0.0f, 1, POFV_POWER_SRC_AURA);
+            CHECK(q.s[0].delay == 0);                 /* 第 1 颗：seq=0 ⇒ & 3 = 0 */
+            pofv_power_spawn(&q, 0.0f, 0.0f, 1, POFV_POWER_SRC_AURA);
+            CHECK(q.s[1].delay == 1);                 /* 第 2 颗：seq=1 ⇒ & 3 = 1（错帧）*/
+            pofv_power_spawn(&q, 0.0f, 0.0f, 1, POFV_POWER_SRC_AURA);
+            CHECK(q.s[2].delay == 2);
+            pofv_power_spawn(&q, 0.0f, 0.0f, 1, POFV_POWER_SRC_AURA);
+            CHECK(q.s[3].delay == 3);
+            pofv_power_spawn(&q, 0.0f, 0.0f, 1, POFV_POWER_SRC_AURA);
+            CHECK(q.s[4].delay == 0);                 /* 第 5 颗：回到 0（& 3）*/
+            CHECK(q.s[0].lr == POFV_POWER_SCATTER_SPEED);
+            /* 待发射那一帧不动 */
+            { float x0 = q.s[1].x, y0 = q.s[1].y;
+              pofv_power_tick(&q, 0, &pts);
+              CHECK(q.s[1].x == x0 && q.s[1].y == y0); }   /* seq=1 ⇒ delay 1 → 本帧还在等 */
+            /* 飞散：剩余速度每帧 −0.03（一手 TH16 `item+0xc20`）*/
+            { float l0 = q.s[0].lr;
+              pofv_power_tick(&q, 0, &pts);
+              CHECK(q.s[0].lr < l0);
+              { float d = l0 - q.s[0].lr;
+                CHECK(d > POFV_POWER_DECEL - 1e-5f && d < POFV_POWER_DECEL + 1e-5f); } }
+        }
 
         /* 寿命：到点自行消失（不刷屏），并记账 */
         pofv_power_pool_init(&pool);

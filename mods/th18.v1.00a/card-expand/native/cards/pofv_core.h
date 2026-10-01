@@ -390,7 +390,21 @@ int32_t pofv_power_value_cancel(int32_t n_white, int32_t chain);
 #define POFV_POWER_PTS_AURA           5     /* ❓ 自定（结界碰弹源；口径 6）*/
 #define POFV_POWER_SPAWN_PER_FRAME    4     /* ❓ 自定（每帧上限；口径 6 的护栏之一）*/
 #define POFV_POWER_SPAWN_R           24.0f  /* ❓ 自定（一批多颗时的铺开半径）*/
-#define POFV_POWER_FALL               0.5f  /* ❓ 自定（飘落速度 px/帧）*/
+#define POFV_POWER_FALL               0.5f  /* ❓ 自定（飞散结束后的飘落速度 px/帧）*/
+/* ★★★ 2026-10-01（owner：「**灵力道具得按照类季节道具做，动态什么的一模一样**」）：
+ *   照 TH16 季节道具（= 116 `cards/season.c` 那份一手复刻）的**出生/飞散动态**：
+ *     · **出生先「待发射」**：错帧延时 = `total_items_created & 3` 帧（TH16 `0x430a0e` 段，
+ *       `item+0xc50` 在延时里是 6、结束后才 `mov [item+0x530], 0xffffffff` 去建 VM）；
+ *     · 然后**直线飞散**：`item+0xc24` = 飞散角（**整个飞散期不变**），
+ *       `item+0xc20` = 剩余速度，**每帧 −0.03**（TH16 `0x42f54e` / `0x430c90`）。*/
+#define POFV_POWER_SCATTER_DELAY_MASK   3    /* ★ 一手：TH16 的错帧 = `& 3`（0..3 帧）*/
+#define POFV_POWER_DECEL              0.03f  /* ★ 一手：TH16 `item+0xc20` 每帧 −0.03 */
+#define POFV_POWER_SCATTER_SPEED       2.2f  /* ❓ 自定（初速）：一手候选 = 原生 main-drop 实参 2.2
+                                              *   （`cards/collect2x.c` 的注释：P/钱 与碎片卡都是 2.2）；
+                                              *   TH16 季节道具那边是 1.2（`[0x494510]`）。取 2.2 更飘得开。*/
+#define POFV_POWER_SCATTER_DIRS          8    /* ❓ 自定：飞散方向用 **8 向单位向量表**近似
+                                              *   （一手只给「角在飞散期不变」，没给角的分布；
+                                              *     用表 ⇒ **不引 libm**，也够表达四散的观感）*/
 #define POFV_POWER_MAG_R             56.0f  /* ❓ 自定（磁吸半径）*/
 #define POFV_POWER_MAG_SPEED          4.0f  /* ❓ 自定（磁吸速度 px/帧）*/
 #define POFV_POWER_ABSORB_R          12.0f  /* ❓ 自定（收取半径）*/
@@ -409,10 +423,15 @@ typedef struct {
     int32_t age;
     int32_t life;        /* 寿命帧（到点自行消失）*/
     int32_t src;         /* pofv_power_src_t（诊断 / 日志）*/
+    /* ★ 2026-10-01：照季节道具的**出生/飞散**动态（见上面常量段的注释）*/
+    int32_t delay;       /* 待发射的错帧延时（> 0 时本帧不动）*/
+    float   dx, dy;      /* 飞散方向的单位向量（= TH16 `item+0xc24` 那个角）*/
+    float   lr;          /* ★ 剩余速度（= TH16 `item+0xc20`，每帧 −`POFV_POWER_DECEL`）*/
 } pofv_power_t;
 
 typedef struct {
     pofv_power_t s[POFV_POWER_MAX];
+    int32_t seq;         /* ★ 出生序号（= TH16 的 `total_items_created`，给待发射错帧用）*/
     int32_t live;
     int32_t spawned;     /* 累计撒出颗数（诊断）*/
     int32_t absorbed;    /* 累计收取颗数（诊断）*/

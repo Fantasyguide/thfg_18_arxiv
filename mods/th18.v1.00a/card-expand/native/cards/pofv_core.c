@@ -487,6 +487,14 @@ void pofv_power_pool_init(pofv_power_pool_t *p)
     memset(p, 0, sizeof *p);
 }
 
+/* ★ 飞散方向表（单位向量，8 向；见 `POFV_POWER_SCATTER_DIRS` 的注释）。用表 = **不引 libm**。*/
+static const float s_scatter_dir[POFV_POWER_SCATTER_DIRS][2] = {
+    {  0.0f,     -1.0f     }, {  0.7071f, -0.7071f },
+    {  1.0f,      0.0f     }, {  0.7071f,  0.7071f },
+    {  0.0f,      1.0f     }, { -0.7071f,  0.7071f },
+    { -1.0f,      0.0f     }, { -0.7071f, -0.7071f },
+};
+
 int pofv_power_spawn(pofv_power_pool_t *p, float x, float y, int32_t value, int32_t src)
 {
     int i;
@@ -501,6 +509,12 @@ int pofv_power_spawn(pofv_power_pool_t *p, float x, float y, int32_t value, int3
         it->value = value;
         it->life = POFV_POWER_LIFE;
         it->src = src;
+        /* ★ 季节道具的出生动态：**错帧待发射** ＋ **一个固定的飞散方向**（表里取，不引 libm）*/
+        it->delay = p->seq & POFV_POWER_SCATTER_DELAY_MASK;
+        it->dx = s_scatter_dir[p->seq % POFV_POWER_SCATTER_DIRS][0];
+        it->dy = s_scatter_dir[p->seq % POFV_POWER_SCATTER_DIRS][1];
+        it->lr = POFV_POWER_SCATTER_SPEED;
+        ++p->seq;
         ++p->live;
         ++p->spawned;
         return i;
@@ -567,6 +581,16 @@ int pofv_power_tick(pofv_power_pool_t *p, const float *player, int32_t *out_pts)
         pofv_power_t *it = &p->s[i];
         if (!it->active) continue;
         ++it->age;
+        /* ★★ 2026-10-01（owner：照季节道具做）：**出生先待发射、再直线飞散**。
+         *   待发射的错帧里**什么都不做**（TH16 在延时里 `item+0xc50 = 6`，结束后才建 VM）；
+         *   飞散期沿**固定的** `dx/dy` 走，**剩余速度每帧 −0.03**（TH16 `item+0xc20`）。*/
+        if (it->delay > 0) { --it->delay; continue; }
+        if (it->lr > 0.0f) {
+            it->x += it->dx * it->lr;
+            it->y += it->dy * it->lr;
+            it->lr -= POFV_POWER_DECEL;
+            if (it->lr < 0.0f) it->lr = 0.0f;
+        }
         if (player) {
             float dx = player[0] - it->x;
             float dy = player[1] - it->y;
@@ -587,11 +611,11 @@ int pofv_power_tick(pofv_power_pool_t *p, const float *player, int32_t *out_pts)
                     it->x += dx / m * POFV_POWER_MAG_SPEED;
                     it->y += dy / m * POFV_POWER_MAG_SPEED;
                 }
-            } else {
-                it->y += POFV_POWER_FALL;        /* 圈外：飘落 */
+            } else if (it->lr <= 0.0f) {
+                it->y += POFV_POWER_FALL;        /* 飞散完了、又在圈外：慢慢飘落 */
             }
-        } else {
-            it->y += POFV_POWER_FALL;            /* 没有自机（单测 / 过场）：只飘落 */
+        } else if (it->lr <= 0.0f) {
+            it->y += POFV_POWER_FALL;            /* 没有自机（单测 / 过场）：飞散完只飘落 */
         }
         if (it->age >= it->life) { it->active = 0; --p->live; ++p->expired; }
     }
