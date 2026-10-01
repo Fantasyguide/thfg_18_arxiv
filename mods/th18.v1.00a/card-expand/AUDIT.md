@@ -26586,3 +26586,24 @@ sprite/size（真 48×48 且不在白名单 ⇒ 它们不会出现 = 修好；�
 
 **闸**：`make -s check` rc=0（`youkai_core: 8799 checks, 0 failed`、`dllx87 = 0`）、`sites.py verify` 全对上、
 `capcheck` 全绿、`check-docs` 全过。
+
+## §BE 详录 #175（2026-10-01）：转嫁比例**默认 50 ⇒ 100**（owner 定案）
+
+> **owner 逐字**：「我知道问题了，因为**有很多使魔**，所以伤害都达到使魔上了反而是 **1/2 减伤**。
+> 原本的使魔是经过设计过的，所以现在**必须改成 100% 转移伤害**」
+
+**改动**
+- `youkai_core.h`：`YK_TRANSFER_PCT` **50 → 100**（注释引 owner 原话 + 「50 = 一手 1/2 保留可切回」）。
+- `youkai_core.c` 的 `yk_transfer_feed()` 改成**三分支**：
+  `#if == 100` ⇒ `pending += delta`（**逐字节全额、不丢余数**，并把 `carry` 清零）；
+  `#elif == 50` ⇒ 原**半整数进位器**（一手 1/2，保留）；`#else` ⇒ 百分比（**注明会丢余数**）。
+- 单测改为**与 `YK_TRANSFER_PCT` 绑定**（100 ⇒ 5+3=8、1+1=2；50 ⇒ 4、进位 0/1）⇒ 旋钮切回 50 时断言仍成立。
+- **保留旋钮**（50 的路径没删）—— 一手值以后还要对照。
+
+**截断面（顺带核过）**：100% 下 `pending` 更大，但落点仍是
+`yk_transfer_clamp(pending, YK_TRANSFER_CAP_PER_FRAME)`（**cap 默认 0 = 无上限**）⇒ **不会被每帧上限砍**；
+若场上**没有 boss** 则整帧量进 `dropped`（`noboss` 计数可见）；`ce_damage_rect` 开槽失败计 `fail`。
+⇒ 现有 `xfer[tick map orb ext rect fail noboss]` 一行足够判断有没有被截断。
+
+**闸**：`make -s check` rc=0（`youkai_core: 8799 checks, 0 failed`、`dllx87 = 0`）、`sites.py verify` 全对上、
+`capcheck` 全绿、`check-docs` 全过。
