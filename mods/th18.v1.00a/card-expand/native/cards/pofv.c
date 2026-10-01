@@ -439,7 +439,9 @@ static void bossatk_carrier_sync(int32_t level)
         *(int32_t *)(spawn + CE_SPAWN_MAIN_DROP) = 0;   /* 奖励全走灵力道具（口径 5）*/
         *(int32_t *)(spawn + CE_SPAWN_LIFE) = 999;      /* ⚠ < 1000（引擎的锁定阈值，见 engine.h）*/
         *(int32_t *)(spawn + CE_SPAWN_ECL_I + 0) = 0;   /* $I0 = 正常 */
-        *(int32_t *)(spawn + CE_SPAWN_ECL_I + 4) = level;   /* $I1 = 档位 */
+        *(int32_t *)(spawn + CE_SPAWN_ECL_I + 4) = level;        /* $I1 = 档位 */
+        *(int32_t *)(spawn + CE_SPAWN_ECL_I + 8) =
+            *(const int32_t *)CE_ADDR_CHARACTER;                /* $I2 = 角色（0 灵梦/1 魔理沙/2 咲夜）*/
         ef = (float *)(spawn + CE_SPAWN_ECL_F);
         ef[2] = sp[0];                                  /* %F2/%F3 = 初始目标（ECL 第一帧就走过去）*/
         ef[3] = sp[1];
@@ -456,6 +458,8 @@ static void bossatk_carrier_sync(int32_t level)
     *(float *)(e + CE_ENEMY_ECL_F2) = POFV_BOSSATK_ANCHOR_X;    /* 钉在版底锚点 */
     *(float *)(e + CE_ENEMY_ECL_F3) = POFV_BOSSATK_ANCHOR_Y;
     *(int32_t *)(e + CE_ENEMY_ECL_I0 + 4) = level;              /* $I1 = 档位 */
+    *(int32_t *)(e + CE_ENEMY_ECL_I0 + 8) =
+        *(const int32_t *)CE_ADDR_CHARACTER;                    /* $I2 = 角色 */
 }
 
 /* ★ C3/C4 的「自伤源」（近似；见常量处的长注释）：在**锚点上方的覆盖区**里每帧结算一次伤害。
