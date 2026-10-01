@@ -1011,6 +1011,9 @@ static unsigned s_orbit_lost_orphan;     /* 统计：因为父敌没了而撤的
 static uint8_t  s_orbit_pool_full;       /* 池满过（**只记一次**日志 —— 不刷屏）*/
 static uint8_t  s_orbit_first_scan;      /* 首次扫场的自述打过没 */
 static uint8_t  s_orbit_vm_failed;       /* VM 起失败过（只记一次）*/
+/* ★ 2026-09-30（owner：「一堆使魔但是**只有一个环**」）—— 环的**诊断计数**（只在 target 日志里打）：
+ *   一眼看出「建环请求 try 几次 / 成功 made 几次 / 发中断 int 几次」。*/
+static unsigned s_orbit_ring_try, s_orbit_ring_made, s_orbit_ring_int;
 static uint8_t  s_orbit_spawn_failed;    /* 壳建失败过（只记一次）*/
 
 /* 一只敌人**至多一对**（一敌一对，不重复补）⇒ 按父敌 id 查。*/
@@ -1252,14 +1255,17 @@ static void yk_orbit_vm_sync(yk_orbit_t *o)
     /* ★ 与映射使魔**同一条口径**（owner 2026-09-30）：环**两侧都常驻**，换侧只换中断
      *   （人 1 紫 / 妖 2 蓝），尺寸由脚本分侧（0.5 / 0.8）。*/
     if (!o->circle_id || !ce_anm_get_vm(o->circle_id)) {
+        ++s_orbit_ring_try;
         o->circle_id = ce_anm_spawn(CE_ABILITY_ANM(),
                                     CE_ANM_ABILITY_SCRIPT_YOUKAI_FAMILIAR_RING, YK_FAM_ANM_LAYER);
         o->circle_side = -1;
+        if (o->circle_id) ++s_orbit_ring_made;
     }
     if (o->circle_id) {
         if (o->circle_side != (int8_t)youkai_side) {
             ce_anm_interrupt(o->circle_id, youkai_side ? 2 : 1);
             o->circle_side = (int8_t)youkai_side;
+            ++s_orbit_ring_int;
         }
         if (pp && !ce_anm_set_pos(o->circle_id, pp[0], pp[1], 0.0f)) {
             o->circle_id = 0;
@@ -1464,11 +1470,13 @@ static void yk_orbit_scan(uint32_t frame)
             ++s_orbit_targets; ++picked;
             /* 每条目标**只打一次**（不刷屏）：这一行就是「哪只大怪被补了、补了几台、凭什么」的判据。*/
             ce_log("youkai/orbit: target enemy #%u sprite %dx%d hp %d stage %d => %d familiar(s) "
+                   "ring vms try %u made %u int %u; "
                    "(HP tier %d + stage bonus %d = %d; spawn delay %u f; chain root, not boss; rings %d "
                    "(radius 0->30/60/90 in %u f), per-ring %.1f/4.5/3 deg/frame; fam life %d = onehand %d x %d; colour kind %d "
                    "(melee %d shot_same %d) = script %d; centre pinned at spawn (%.0f,%.0f))",
                    (unsigned)id, w, h, hp_now, (int)CE_CURRENT_STAGE(), made,
                    yk_orbit_count_for_hp(hp_now), yk_orbit_stage_bonus((int)CE_CURRENT_STAGE()), want,
+                   s_orbit_ring_try, s_orbit_ring_made, s_orbit_ring_int,
                    (unsigned)YK_ORBIT_DELAY_FRAMES,
                    (want == 13) ? 3 : (want == 8) ? 2 : 1,          /* ★ rings（分圈数）*/
                    (unsigned)YK_ORBIT_EXPAND_FRAMES,
