@@ -27600,3 +27600,42 @@ owner：「魔理沙的命中系数再下调」。取 **0.85 ⇒ ≈0.59**（`35
 
 **判据**：① `CB_BULLET=1`（其余全 1）⇒ 魔理沙**人形态**子机激光正常；② 妖侧弹伤害/颜色与之前一致、
 人逢魔刻符照掉；③ `make -s check` / `dllx87` / `sites` / `capcheck` / `check-docs` 全绿。
+
+## §BE 详录 #206（2026-10-01）：**命中回调（`on_bullet_hit`）在断点里跑什么都扰动引擎** ⇒ 压成纯记录器
+
+**证据链**：`CB_BULLET=0` ⇒ 激光正常 → 拆成 `CB_BULLET_CREATED` / `CB_BULLET_HIT` ⇒ **`CB_BULLET_HIT=0` ⇒ 正常**；
+而 **#111**（把撒符推迟 1 帧、仍撒）⇒ 仍异常、**#112**（不建 VM/链表那条）⇒ 仍异常
+⇒ **不是「在断点里调引擎分配器」这一条**，而是**这个回调里任何我们的代码**都扰动引擎（命中断点上下文极敏感）。
+
+**逐行审计（修改前，`youkai.c`）**：
+| 行 | 语句 | 碰引擎/全局？ |
+| --- | --- | --- |
+| 1 | `if (!YK_ENABLE_CARD \|\| …) return;` | 否 |
+| 2 | `yk_card_t *s = ce_state(c, yk_card_t);` | **SDK 调用** |
+| 3 | `if (!s \|\| !ev) return;` | 否 |
+| 4 | `if (!yk_human_fengma_bullet_orbs(s->gauge, ev->is_player_bullet)) return;` | 否（纯函数，core 已单测）|
+| 5 | `ox = ev->x; oy = ev->y;` | 否（读事件结构）|
+| 6 | `if (ev->has_enemy_pos && yk_hit_orb_use_enemy_pos(…)) { ox=ev->ex; … ; ++s_bullet_hit_pos_swap; }` | 否 |
+| 7 | 环插入（`s_bhit_*` 静态）| 否 |
+
+⇒ **逐行看没有一处写引擎**，但二分证明「关掉它就好」⇒ 结论 = **命中断点里执行我们的 C 代码本身**就是扰动源
+（最可能的机制：SDK 在该断点处的寄存器/FPU/栈状态或临界区上下文，被我们这次调用打乱；这也解释了
+owner 说的「**开头一瞬间异常**」——那是命中断点第一次被我们的代码进入时的时序抖动）。
+
+**修法（默认路径）**：把回调压成**纯记录器**：
+```c
+/* 改前（#111 之后） */                     /* 改后（本批） */
+yk_card_t *s = ce_state(c, yk_card_t);      (void)c;                       /* 不取 s */
+if (!s || !ev) return;                      if (!ev) return;
+if (!yk_human_fengma_bullet_orbs(…)) return;/* 判据挪到 flush */
+ox = ev->x; oy = ev->y;                     s_bhit_x[idx] = ev->x; s_bhit_y[idx] = ev->y;
+if (ev->has_enemy_pos && yk_hit_orb_use_enemy_pos(…) { … }  s_bhit_ex[idx] = ev->ex; s_bhit_ey[idx] = ev->ey;
+… 环插入 …                                   s_bhit_flags[idx] = has_enemy_pos|is_player_bullet<<1;  /* 只此一句 */
+```
+`on_tick_2` 的 `yk_bullet_hit_flush()` 里才做：`yk_human_fengma_bullet_orbs(s->gauge, is_player)` 判据 →
+长光源落点换算（`yk_hit_orb_use_enemy_pos`）→ `yk_orb_spawn()`（人逢魔刻符**功能保留**，晚 ≤1 帧）。
+
+**判据**：① 人形态激光正常（不再被命中回调扰动）；② 妖侧/人逢魔功能不变；③ 闸全绿。
+**若仍偶发**（owner 说 `CARD=0`/`CB_BULLET_HIT=0` 都是「开头一瞬间异常、之后正常」）：残余的那一瞬间
+指向**卡加载/注册期的第一个命中断点上下文**，下一步应查 SDK 该站点的进入代码（`sdk.c` 的 `ce_bullet_hit`
+包装：进/出时保存了哪些寄存器/是否在临界区），而不是卡侧。

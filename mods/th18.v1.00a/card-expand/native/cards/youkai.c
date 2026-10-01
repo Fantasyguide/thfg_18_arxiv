@@ -506,7 +506,7 @@ static void yk_side_lock_tick(void)
 #define YK_ENABLE_CB_BULLET 1  /* ⑱ on_bullet_created / on_bullet_hit */
 /* ★★★★ 2026-10-01（owner 工单⑩：#110 二分把凶手锁在 bullet 回调 ⇒ 再拆两个子项做最后确认）*/
 #define YK_ENABLE_CB_BULLET_CREATED 1  /* ⑱a `on_bullet_created`（只对我们自己的妖侧 set 改伤害）*/
-#define YK_ENABLE_CB_BULLET_HIT     0  /* ⑱b `on_bullet_hit`（人逢魔：命中 ⇒ 掉刻符）*/
+#define YK_ENABLE_CB_BULLET_HIT     1  /* ⑱b `on_bullet_hit`（人逢魔：命中 ⇒ 掉刻符）*/
 #define YK_BULLET_HIT_QUEUE         8  /* 命中回调里**只排队**；真正撒符挪到 `on_tick_2`（见修法 B）*/
 /* ★★★★ 2026-10-01（owner 工单⑪：**把 `yk_orb_spawn()` 这条路径逐段开关**）：
  *   #111（只把撒符推迟 1 帧、照样撒）仍异常 ⇒ 凶手是 **`yk_orb_spawn()` 这个动作本身**。
@@ -6092,62 +6092,65 @@ static unsigned s_bullet_hit_pos_swap;                /* ★ 2026-09-27（第三
 static unsigned s_graze_pos_from_bullet;              /* ★ 2026-09-27（第三十九批）：擦弹刻符有几批的落点
                                                        *   拿到了「被擦到的那颗弹」的坐标（站点 `ce_graze`）。
                                                        *   这个数不涨 ⇒ 站点没挂上（或 `ce_graze_take` 恒 0）。*/
-/* ★★★ 2026-10-01（**根因修法 B · 命中断点里不再调引擎**）：owner 的二分把凶手锁在 bullet 回调，
- *   而这里原来会 `yk_orb_spawn()` → `ce_anm_spawn()`（起刻符 VM、插 world 链表）——
- *   **就发生在引擎的命中断点内部**，正是「打到人才断、某些帧变蓝」的时刻。
- *   ⇒ 回调现在**只把落点排进一个小环**（纯内存写、零引擎调用、零 VM），
- *     真正的 `yk_orb_spawn()` 挪到 `on_tick_2`（普通帧上下文）里 flush（`yk_bullet_hit_flush`）。
- *   功能语义不变（人逢魔命中掉刻符，晚 ≤1 帧）；`YK_ENABLE_CB_BULLET_HIT=0` 仍可整体关。*/
-static float    s_bhit_q[YK_BULLET_HIT_QUEUE][2];
+/* ★★★★ 2026-10-01（**根因修法 C · owner #113 二分：`CB_BULLET_HIT=0` ⇒ 正常**）：
+ *   #111 已只排队、#112 又证明不是「建 VM/链表」⇒ 逐行审计后结论：**只要我们的 C 代码在引擎的命中断点里
+ *   跑，就有扰动风险** ⇒ 本回调现在压成**纯记录器**：
+ *     · **不取 `ce_state`**、**不调任何 `ce_*`**、**不调任何 `yk_*` 判据**（连纯函数 `yk_human_fengma_bullet_orbs`
+ *       也不调）—— 断点里只做「读事件结构 + 写本文件静态环」；
+ *     · **判据 / 落点换算 / 撒符**全部挪到 `on_tick_2` 的 `yk_bullet_hit_flush()`（普通帧上下文）。
+ *   功能语义不变（人逢魔命中掉刻符，≤1 帧延迟；长光源落点规则不变）。*/
+static float    s_bhit_x[YK_BULLET_HIT_QUEUE];
+static float    s_bhit_y[YK_BULLET_HIT_QUEUE];
+static float    s_bhit_ex[YK_BULLET_HIT_QUEUE];
+static float    s_bhit_ey[YK_BULLET_HIT_QUEUE];
+static uint8_t  s_bhit_flags[YK_BULLET_HIT_QUEUE];   /* bit0 = has_enemy_pos, bit1 = is_player_bullet */
 static uint8_t  s_bhit_used[YK_BULLET_HIT_QUEUE];
 static unsigned s_bhit_head;
 static unsigned s_bhit_dropped;
 
 static void on_bullet_hit(ce_card_t *c, const ce_bullet_hit_t *ev)
 {
+    unsigned k;
+    (void)c;                                          /* ★ 连 `ce_state` 都不取（少一次 SDK 调用）*/
     if (!YK_ENABLE_CARD || !YK_ENABLE_CB_BULLET || !YK_ENABLE_CB_BULLET_HIT) return;
-    yk_card_t *s = ce_state(c, yk_card_t);
-    float ox, oy;
-    if (!s || !ev) return;
-    if (!yk_human_fengma_bullet_orbs(s->gauge, ev->is_player_bullet)) return;
-    /* 落点（一手 = 弹的位置）：普通弹 ⇒ 源槽中心就是弹；**长光源（激光/束）**的源槽中心在膛口
-     * ⇒ 源中心离敌机 > 阈值时改用敌机位置（= 视觉上的命中处）。见 `youkai_core.h` 的
-     * `YK_HIT_ORB_FAR_DIST` 那一节（owner：「魔理沙人激光的永点生成位置明显偏离 hit 位置」）。*/
-    ox = ev->x; oy = ev->y;
-    /* ⚠ `has_enemy_pos == 0` 时**不许**把 (0,0) 当落点（那是世界原点，不是命中处）—— 只在真拿到坐标
-     *   时才走「长光源 ⇒ 用敌机位置」那条判据（本站点拿不到敌指针，坐标是从 arg1 读的，见 `sdk.c`）。*/
-    if (ev->has_enemy_pos && yk_hit_orb_use_enemy_pos(ev->x - ev->ex, ev->y - ev->ey)) {
-        ox = ev->ex; oy = ev->ey;
-        ++s_bullet_hit_pos_swap;
+    if (!ev) return;
+    /* ▼▼ 本函数**只做这一件事**：把原始事件字段抄进静态环（纯内存写）。▼▼ */
+    for (k = 0; k < (unsigned)YK_BULLET_HIT_QUEUE; ++k) {
+        unsigned idx = (s_bhit_head + k) % (unsigned)YK_BULLET_HIT_QUEUE;
+        if (s_bhit_used[idx]) continue;
+        s_bhit_used[idx] = 1;
+        s_bhit_x[idx] = ev->x;   s_bhit_y[idx] = ev->y;
+        s_bhit_ex[idx] = ev->ex; s_bhit_ey[idx] = ev->ey;
+        s_bhit_flags[idx] = (uint8_t)((ev->has_enemy_pos ? 1u : 0u) | (ev->is_player_bullet ? 2u : 0u));
+        return;
     }
-    /* ★ 只排队（**绝不**在这里调引擎）：见上面那段修法说明。*/
-    {
-        unsigned k;
-        for (k = 0; k < (unsigned)YK_BULLET_HIT_QUEUE; ++k) {
-            unsigned idx = (s_bhit_head + k) % (unsigned)YK_BULLET_HIT_QUEUE;
-            if (s_bhit_used[idx]) continue;
-            s_bhit_used[idx] = 1;
-            s_bhit_q[idx][0] = ox; s_bhit_q[idx][1] = oy;
-            ++s_bullet_hit_orbs;                  /* 台账口径不变（排进队的算一颗）*/
-            return;
-        }
-        ++s_bhit_dropped;                          /* 队列满（极小概率）：丢一颗，账上可见 */
-    }
+    ++s_bhit_dropped;                                 /* 环满（极小概率）：丢一颗，账上可见 */
 }
 
-/* `on_tick_2` 里调用：把命中回调排队下来的刻符真正撒出去（普通帧上下文、与其它 VM 一起建）。*/
+/* `on_tick_2` 里调用（**普通帧上下文**）：判据、落点换算、撒符全在这里做。*/
 static void yk_bullet_hit_flush(yk_card_t *s)
 {
     unsigned k;
     if (!s) return;
     for (k = 0; k < (unsigned)YK_BULLET_HIT_QUEUE; ++k) {
+        int has_enemy_pos, is_player_bullet;
+        float ox, oy;
         if (!s_bhit_used[k]) continue;
         s_bhit_used[k] = 0;
-        yk_orb_spawn(s, s_bhit_q[k][0], s_bhit_q[k][1], YK_ORB_STATE_SPAWN);
+        has_enemy_pos    = (s_bhit_flags[k] & 1u) ? 1 : 0;
+        is_player_bullet = (s_bhit_flags[k] & 2u) ? 1 : 0;
+        if (!yk_human_fengma_bullet_orbs(s->gauge, is_player_bullet)) continue;   /* 判据挪到这里 */
+        ox = s_bhit_x[k]; oy = s_bhit_y[k];
+        if (has_enemy_pos && yk_hit_orb_use_enemy_pos(s_bhit_x[k] - s_bhit_ex[k],
+                                                     s_bhit_y[k] - s_bhit_ey[k])) {
+            ox = s_bhit_ex[k]; oy = s_bhit_ey[k];
+            ++s_bullet_hit_pos_swap;
+        }
+        yk_orb_spawn(s, ox, oy, YK_ORB_STATE_SPAWN);   /* state 3 = 先上抛（一手 `push 3`）*/
+        ++s_bullet_hit_orbs;                           /* 台账：真撒出去的算一颗 */
     }
     s_bhit_head = 0;
 }
-
 
 /* ★ §3.6 击破信号：共享死亡事件是**广播只读**（EVENTS-CONTRACT §1）——
  * 这里只做一件事：认出「这只被打死的是我的使魔」⇒ 把那个发射口槽标成「被打破」。
