@@ -4131,8 +4131,30 @@ thanm -l19 local/th19.v1.10c/dat/bullet.anm            # ⚠ th19 没有 anmmap 
   贴图名 = `bullet/bullet1.png`、`bullet/bullet2.png`、`bullet/bullet3.png`、
   ★ **`bullet/item.png`**（第 4 个 entry）。
 - `script1` 长这样（数字 opcode，th19 缺名表）：`ins_304(23); ins_313(1); ins_300(-1); 0: ins_603(8.0f, 8.0f); +2: ins_1();`
-  ⇒ 想读懂得先给 th19 生成名表（`gen_eclmap.py --kind anm`，**前提是 `th-re-data` 里有 th19 那份**；
-  没有就得先补 ExpHP 数据）。
+  ⇒ ~~想读懂得先给 th19 生成名表~~ ⇒ ★★ **不用了**（2026-10-01 当场解开）：
+
+  **仓库自带的 anmmap 是「按 anm 文件头版本」选的，不是按作品**：
+  `local/vendor/eclmap/anmmap/{v0,v2,v4,v8}.anmm`。TH19 的 `bullet.anm` 头是 **version 8**
+  ⇒ **直接用 `v8.anmm`**，一条 `-m` 就出名字（**根本不需要 ExpHP 的 th19 数据** ——
+  实测 `th-re-data/data/` 里**没有** th19）：
+
+  ```bash
+  thanm -l19 local/th19.v1.10c/dat/bullet.anm -m local/vendor/eclmap/anmmap/v8.anmm
+  ```
+
+  实测输出（`src` 是 TH19 自己的 `bullet.anm`）：
+
+  ```
+  script script1 {
+  -1: layer(23); resolutionMode(1); sprite(-1);
+   0: drawRect(8.0f, 8.0f);
+  +2: delete();
+  }
+  ```
+
+  ⇒ 与 **TH18 的 `bullet.anm` script1 逐条同形**（我给 109 做的弹观感 script 376 就是照那一族写的：
+  `sprite(-1)` + 程序化图元）⇒ **TH19 的弹/护罩视觉现在能直接读了**。
+  （⚠ 这条同时订正了上一段：不是「缺名表」，是**我找错了名表的维度**。）
 
 ### ★ 顺带：#4（灵力道具外观）也可能在这里拿到
 
