@@ -16,7 +16,7 @@
 | `ability.anm` 图集（`assets/ability/`）| **entry 93 / 上限 256**（余量 **163**）、sprite 594、script 380（★ 2026-10-02 现算：87 追加单图 `ZENITH_SWORD` + 21 成员的 `ATLAS_ZENITH_BLADE` + 脚本 378/379/380）| **有**：`ORDER.frozen.txt` 的已定稿段（插行 = 全库号平移，构建期拒）| 脚本 378–380（87）、376/377（109）|
 | `pl0X.sht` shooterset（`assets/sht/`）| **88 条追加 set**（`sht_ids.h`）| **没有**（只有「只许追加、号只增」的约定）| **13:57 109 蓄力弹**（`53315ba0`）|
 | `default.ecl` 合并（`assets/ecl/`）| 112 UFO 9 子程序 + **109 `spirit109.ecl.txt`** + st0X 各批 | 无机制 | 109 的灵 ECL（`spirit109.ecl.txt`）|
-| 车卡元数据 `patch/th18/cards.js` | 每卡 name/desc/category（现 **48 张**：58–91 · 106–118 · 200）| 无 | **86–91 六行**（2026-10-02）|
+| 车卡元数据 `patch/th18/cards.js` | 每卡 name/desc/category（现 **49 张**：58–92 · 106–118 · 200）| 无 | **86–92 七行**（2026-10-02…03）|
 | 共享代码 `sdk.*` / `engine.h` / `cards_def.c` / `Makefile` / `sites.py` | 站点 **33 / 记账线 24**（⚠ 超线）、进程级 42；**去重后待改站点 100 处** | 无 | **`Makefile` 加两条主机单测**（86/87，零站点）；其余各批零散 |
 | 共享文档 `AUDIT.md` / `CAPACITY.md` / `TUNING.md` / `CARDS.md` / 各 `HANDOFF-*` | `AUDIT.md` §BE 详录已到 **#204** | 无 | 每批都在追加 |
 | **发布（线上那批）** | `RELEASE-STATE.json`：**2026-10-01 01:00:27** | — | ⚠ **其后已有 55 个提交未发布** |
@@ -123,6 +123,7 @@
 | **2026-10-02e** | **89 星星炮落地**（泰拉瑞亚 Star Cannon 复刻：12 帧白板攻速 / 14 px 弹速 /无限穿透 / 自转闪烁 + 撞弹致死的泰拉瑞亚样死亡讯息贴图）。顺带新增**语音槽 0x61**（音源从用户本机 `Item_9.xnb` 现取）| `AUDIT.md` §BE 详录 **#213**、`CARDS.md` 89 行 + 补充、`TUNING.md` §2.10 的 89 表、`assets/cards/_src/README.md`（贴图/音效取法）|
 | **2026-10-02f** | **90 冰淇淋落地**（被动：miss 不掉火力 + 符卡 +3）。顺带查清 TH18 一次 miss 的原生两步（`0x45d090` 重设符卡 = 3 / `0x45c154 spend_power(一档)`）与**卡回调 `+0x14` 的调用点**（`0x45c255`，引擎遍历卡表 ⇒ 严格在扣火力之后）| `AUDIT.md` §BE 详录 **#214**、`CARDS.md` 新建「致敬・泰拉瑞亚」（89 挪过去）与「致敬・杀戮尖塔」（90）两段、`TUNING.md` §2.10 的 90 表 |
 | **2026-10-02g** | **91 鞘翅重锤落地**（Undertale 式时机条 + 无敌 + 瞬移砸锤；D 切卡也退出）。本仓**第一次写自机坐标**（`player+0x620/624`），`dllx87` 被一条 float 返回值踩中一次（已修）。贴图取用户本机 Minecraft 1.21.10 客户端 jar | `AUDIT.md` §BE 详录 **#215**、`CARDS.md` 新增「致敬・Minecraft」段、`TUNING.md` §2.10 的 91 表、`assets/cards/_src/README.md`（MC 取法）|
+| **2026-10-03a** | **92 伟大之作落地**（弹幕 + 敌人 → 金钱；boss 破一阶段；冷却按转换量、发动时改写充能）。新查：`Bullet__cancel` 的 mode 语义、金钱 = item type 2、伤害上限是**本帧总伤害**；卡面取用户本机 Noita `data.wak` 的三宝磨（不用解包工具）| `AUDIT.md` §BE 详录 **#216**、`CARDS.md` 新增「致敬・Noita」段、`TUNING.md` §2.10 的 92 表、`assets/cards/_src/README.md`（wak 取法）|
 
 ### 8.1 owner 2026-10-01e 跨卡口径（逐字，别丢）
 

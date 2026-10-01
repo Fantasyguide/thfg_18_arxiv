@@ -54,3 +54,5 @@ STAR_CANNON
 ICE_CREAM
 # ── 2026-10-02：非系统卡 91 鞘翅重锤（主动卡；致敬・Minecraft）
 ELYTRA_MACE
+# ── 2026-10-03：非系统卡 92 伟大之作（主动卡；致敬・Noita）
+GREAT_WORK

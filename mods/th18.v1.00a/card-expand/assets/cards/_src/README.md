@@ -23,6 +23,7 @@
 `crop((224, 118, 1012, 1103))` = 788×985。人物中线由绿裙的包围盒（`x 332..904`、`y 376..922`）定，
 上取到发带、下取到脚；再按**卡框每边吃掉的 7％** 把这个构图外扩一圈，免得发带和鞋被框边切掉。
 之后 `fit_card.py WHIRLWIND … --no-detect --trim 0 --margin 0`。
+| `GREAT_WORK.png` | 伟大之作（id 92）的卡面 | **用户本机 Noita 原版贴图**：`<Noita>/data/data.wak` → `data/entities/animals/boss_centipede/sampo.png`（**三宝磨 Sampo**，24×24 RGBA）| `make_white_item_card.py GREAT_WORK --item _src/GREAT_WORK.png`：白底 + **整数倍**放大 + 原生框 |
 | `ELYTRA_MACE.png` | 鞘翅重锤（id 91）的卡面 | **用户本机 Minecraft 1.21.10 客户端**：`<MC>/.minecraft/versions/1.21.10/1.21.10.jar` → `assets/minecraft/textures/item/mace.png`（16×16 调色板 PNG）| `make_white_item_card.py ELYTRA_MACE --item _src/ELYTRA_MACE.png`：白底 + **整数倍**放大（像素材质不插值）+ 原生框 |
 | `ICE_CREAM.png` | 冰淇淋（id 90）卡面的**原件** | **用户本机已解包的《杀戮尖塔 1》**：`<Steam>/steamapps/common/SlayTheSpire/desktop-1.0/images/largeRelics/iceCream.png`（256×256，调色板 PNG）| 不直接进卡面（遗物原图四周留了大量透明边）|
 | `ICE_CREAM_RELIC.png` | 同上，**裁掉透明边** | 由上一张按 alpha 包围盒裁出（`(102,72,160,186)` ⇒ **58×114**）| `make_white_item_card.py ICE_CREAM --item _src/ICE_CREAM_RELIC.png --fill`：白底 + 等比放大到画面区上限 + 原生框 |
@@ -85,3 +86,25 @@ EOF
 ```
 
 贴图是 16×16 的**调色板 PNG**（`mode=P`）⇒ 用 PIL 读的时候记得 `.convert("RGBA")`。
+
+### Noita `data.wak` 贴图的取法（**不需要任何解包工具**）
+
+Noita 把所有资源打进一个 `data/data.wak`（约 42 MB）。它的目录表**路径是明文**，每个条目 = 路径字符串
+**前面 12 字节**的三个小端 u32：`<数据偏移><数据长度><路径长度>`。所以只要先搜到路径，就能直接切出文件：
+
+```bash
+python3 - <<'EOF'
+import struct, os
+d = open('<Noita>/data/data.wak', 'rb').read()
+path = b'data/entities/animals/boss_centipede/sampo.png'
+i = d.find(path)                                   # 路径明文出现处
+off, size, plen = struct.unpack('<III', d[i-12:i])  # 条目头
+assert plen == len(path), (plen, len(path))
+blob = d[off:off+size]
+assert blob[:8] == b'\x89PNG\r\n\x1a\n'            # 确认是 PNG
+open('assets/cards/_src/GREAT_WORK.png', 'wb').write(blob)
+EOF
+```
+
+⚠ 一次 `d.find` 只给第一个命中（有些路径在 Lua 源码里也会出现）⇒ 找到后**先断言魔数**；
+要别的素材就把 `path` 换成 `data/...` 里的目标路径（用 `grep -a` 或 Python 扫 `b'.png'` 找候选）。

@@ -760,5 +760,24 @@
     "active_recharge": 2400,
     "sprite_large": 210,
     "sprite_small": 211
+  },
+  "92": {
+    "name": "伟大之作",
+    "desc": [
+          "主动（C 键）：把场上所有弹幕与敌人",
+          "变成金钱道具；敌人按剩余血量换出",
+          "多枚，boss 期间则直接击破一个阶段。",
+          "冷却按转换的弹幕数与该敌人血量等",
+          "比例计算（不转换就不消耗）。",
+          "致敬・Noita。"
+    ],
+    "internal_name": "GREAT_WORK",
+    "category": 0,
+    "initial_unlocked": 1,
+    "price_tier": 10,
+    "weight": 2,
+    "active_recharge": 600,
+    "sprite_large": 212,
+    "sprite_small": 213
   }
 }

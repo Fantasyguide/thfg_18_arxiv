@@ -204,6 +204,12 @@
 #define CE_FN_GUI_UPDATE_LIVES     0x441f10   /* thiscall(gui; lives, fragments, max) ret 0xc：刷 HUD 残机行（死亡 0x45c2xx、商店复原 0x4179xx 都调；一手反汇编 AUDIT O28）*/
 #define CE_SE_INVALID              0x10       /* 无效操作（商店买不起同款）*/
 #define CE_FN_BULLET_CANCEL_ALL    0x4297a0   /* thiscall(BULLET_MANAGER; 一个从不读取的栈参) ★ret 4（0x429a0e）：全屏消弹（弹 → 点道具 + 音效 0x47）。函数体自己读全局 0x4cf2bc；原生 ECL 消弹 case 0x434d48 `mov ecx,[0x4cf2bc]; push 0; call`（AUDIT O28h′）*/
+#define CE_FN_BULLET_CANCEL        0x428e90   /* ★ 2026-10-03（92 伟大之作）：Bullet__cancel ——
+                                              * thiscall(bullet; mode) ret 4。**mode 决定撒不撒道具**：
+                                              * 0 / 3 = 纯删除（0 连消弹计数器都不动）、1 = 撒 type 9 小分、
+                                              * 4 = type 9 多数 + type 2 少数（一手 `engine/bullet/th18/01-cancel-to-item.md` §2.1）。
+                                              * 我们只走 **mode 0**（自己撒金钱），所以不推那条 RNG、
+                                              * 也不搅「本帧消弹颗数」的共用闩锁。⚠ #1 不看 state（调用方筛）。*/
 #define CE_FN_BULLET_CANCEL_RADIUS_AS_BOMB 0x429370 /* stdcall(pos*, mode, max_count, tag) + ★XMM2 = 半径；四个出口都 ret 0x10。命中：state∈{1,2} 且 bullet+0x24==0 且 dist² ≤ (弹半径(+0x658)×0.5 + R)²；每消一发 Bullet__cancel(b, mode) 0x428e90 + counter++；消满 max_count 立即返回（Tenshi 0x40eb13..0x40eb2f，AUDIT O29a）*/
 #define CE_BM_CANCEL_COUNTER       0x7a41e8   /* int：cancel_radius_as_bomb 每消一发 ++；Tenshi 每帧调前清零、调后读（0x40eb56）。ExpHP __some_cancel_related_counter */
 #define CE_FN_PLAYER_DMGSRC_RECT   0x45dfa0   /* stdcall(center*, angle, 寿命帧, 每次伤害) + ★XMM2 = 宽、XMM3 = 高；ret 0x10；返回 1-based 槽号。矩形伤害源（flags &~6|1）：+0xc 角度、+0x14/+0x18 宽高、+0x7c 累计上限 9999999、+0x80 命中间隔 1。Remilia 0x40f4a6 调 (玩家上方, 0.0, 2, 200) 宽 32（AUDIT O29b）*/

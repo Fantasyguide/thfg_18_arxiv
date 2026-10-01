@@ -4919,6 +4919,7 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 
 | 2026-10-02 | **所有卡**（共享资源 `assets/ability/**` + `assets/cards/**` + 共享数据 `patch/th18/cards.js` + 共享件 `native/Makefile`；新卡 **86 / 87**） | 见下方「§BE 详录 #210」 |
 
+| 2026-10-03a | **所有卡**（共享件 `native/engine.h` + `native/Makefile`；共享资源 `assets/cards/**`；共享数据 `patch/th18/cards.js`；新卡 **92**）| 见下方「§BE 详录 #216」 |
 | 2026-10-02g | **所有卡**（共享资源 `assets/ability/**` + `assets/cards/**` + 共享数据 `patch/th18/cards.js` + 共享件 `native/Makefile`；新卡 **91**）| 见下方「§BE 详录 #215」 |
 | 2026-10-02f | **所有卡**（共享数据 `patch/th18/cards.js` + 共享资源 `assets/cards/**`；新卡 **90**）| 见下方「§BE 详录 #214」 |
 | 2026-10-02e | **所有卡**（共享资源 `assets/ability/**` + `assets/cards/**` + `assets/voice/**` + `patch/th18/cards.js` + `patch/th18/voice.js` + `native/Makefile`；新卡 **89**）| 见下方「§BE 详录 #213」 |
@@ -28169,3 +28170,42 @@ Undertale 的时机条；当有敌人可攻击的时候，时机条会开始动�
 - 新单测 `tests/test_elytra_mace_core.c`（`test-host` 加一行）：激活帧丢 C / 没敌人光标不动 / 卡准 HIT /
   卡歪 MISS / 双 3s TIMEOUT / 砸完 RETURN / 缓冲 DONE / 无敌声明单调不增。
 - `make check` exit 0（`cards-check` 48 张、`capcheck` 全绿、`dllx87 = 0`、`check-docs` 四项全绿）。
+
+## §BE 详录 #216（2026-10-03a）：**92 伟大之作**（弹幕 + 敌人 → 金钱；boss 破一阶段；冷却按转换量）
+
+**谁改的**：统筹会话（owner 2026-10-03：「noita卡：伟大之作：把所有敌人+弹幕变成金钱道具（类P点的那个）。
+冷却时间按照转换的弹幕数量和消灭敌人的血量等比例计算。敌人也按照剩余血量可以转换出多个金钱。
+如果是 boss 期间就会直接击破一个阶段。」＋「卡面是三宝磨的样式」）。
+
+### 改到的文件 + 一手依据
+| 文件 | 类型 | 改了什么 / 依据 |
+| --- | --- | --- |
+| `native/engine.h` | **共享件** | 新增 `CE_FN_BULLET_CANCEL = 0x428e90`（`Bullet__cancel`：thiscall(bullet; mode) ret 4）。一手 = `engine/bullet/th18/01-cancel-to-item.md` §2.1：**mode 决定撒不撒道具** ⇒ 本卡只用 **0**（自己撒金钱）|
+| `native/cards/great_work.c` + `great_work_core.{c,h}` | 新卡（92）| 见下 |
+| `native/tests/test_great_work_core.c` + `native/Makefile` | **共享件** | 新单测（血量→枚数、冷却公式、上下限、溢出），`test-host` 加一行 |
+| `assets/cards/ORDER.txt` + `GREAT_WORK_{max,min}.png` + `_src/GREAT_WORK.png` | **共享资源** | 尾插一行 ⇒ sprite 212/213（源 = 用户本机 Noita `data/data.wak` 里的三宝磨 `sampo.png`，24×24）|
+| `patch/th18/cards.js` | **共享数据** | 追加 `"92"`（`category 0` + `active_recharge 600`）|
+
+### 实现要点（三条容易写错的）
+1. **弹幕**：扫 `bm + CE_BM_BULLETS + i*CE_BULLET_STRIDE`（`i < CE_BM_BULLET_COUNT = 0x7d0 = 2000`），
+   `state ∈ {1,2}` 才算活动；**先记位置、再逐颗 `Bullet__cancel(b, 0)`、最后才撒金钱**
+   （撒完再删会被自己刚撒的扫帚扫到 —— 顺序反了就是「撒了个寂寞」）。
+2. **伤害上限是「本帧总伤害」**（`player+0x47984`，`enm_compute_damage_sources 0x45f0f0` 用它钳本帧总和）⇒
+   先统计完所有敌人要吃的伤害再**一次性** `ce_raise_damage_cap(Σ)`；逐只抬会互相盖掉。
+3. **动态充能**：写 `card+0x34/+0x38/+0x3c`（zTimer 的 prev/cur/cur_f）与 `card+0x48`（总时长），
+   照引擎自己写充能那一支（`engine/card/th18/04-active-cards.md`）；空场走 `ce_refuse`（引擎退充能）。
+
+### 一手来源（本次新查，全部落进文档或代码注释）
+- **金钱道具 = item type 2**：`engine/faith/th18/01-point-item-value.md` §3（收下 = `MONEY += 1` + `SCORE += 身价/10`，
+  `0x446b00`）。
+- **子弹池布局**：`engine.h` 的 `CE_BM_BULLETS/CE_BM_BULLET_COUNT/CE_BULLET_STRIDE/CE_BULLET_STATE`（已有）。
+- **boss 判据**：`CE_ENEMY_FLAGS` bit23（`CE_ENEMY_FLAG_BOSS`，一手 ECL `setBoss`）。
+- **Noita 素材取法**（新，写进 `assets/cards/_src/README.md`）：`data.wak` 里**路径是明文**，
+  每个条目 = 路径前 12 字节的 `<offset:u32><size:u32><pathlen:u32>` ⇒ 用 Python 直接定位 + 切出 PNG，
+  **不需要任何 wak 解包工具**。
+
+### 影响面 + 回归
+- `engine.h` 只**新增**一个 define（无删改）；卡表尾插；abcard 尾插一行；ability.anm **不需要**新 entry
+  （本卡没有自建 VM）。
+- `make check` exit 0（`cards-check` 49 张、`capcheck` 全绿、`dllx87 = 0`、`check-docs` 四项全绿）。
+- ⚠ 未实跑：两条公式的系数、`GW_BULLET_MAX`、boss 破阶段那一下的实际观感都要看实跑。

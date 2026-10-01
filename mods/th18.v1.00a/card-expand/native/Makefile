@@ -211,6 +211,10 @@ test-host:
 ##   以及「快照只在正常态采、同一次 miss 只写一遍」。
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_ice_cream_core tests/test_ice_cream_core.c cards/ice_cream_core.c
 	./tests/build/test_ice_cream_core
+## ★ 2026-10-03（92 伟大之作）：血量 → 金钱枚数（至少 1 / 至多上限）与「转换量 → 冷却帧数」
+##   （底价 + 弹幕数·单价 + 血量·单价，钳上下限）。
+	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_great_work_core tests/test_great_work_core.c cards/great_work_core.c
+	./tests/build/test_great_work_core
 ## ★ 2026-10-02（91 鞘翅重锤）：时机条状态机（激活帧丢 C / 没敌人光标不动 / 卡准 HIT / 卡歪 MISS /
 ##   3s 没敌人或总预算到 TIMEOUT / 砸完 RETURN / 缓冲 DONE / 无敌帧声明单调不增）。
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_elytra_mace_core tests/test_elytra_mace_core.c cards/elytra_mace_core.c

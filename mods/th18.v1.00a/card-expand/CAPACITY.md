@@ -659,12 +659,12 @@ python3 native/tools/reader_census.py --all    # 连锚点的 31 处引用一起
 
 <!-- capcheck:appendix:begin（本段由 `native/tools/capcheck.py --gen-appendix` 生成，**别手改**）-->
 
-**A0. 卡的安全用量：还能进 22 张**（瓶颈 = `abcard.anm` entry，每张 2 格；口径 = 本文件 `CARD_COST`，见 `CAPACITY.md` §1 的「安全用量」）
+**A0. 卡的安全用量：还能进 21 张**（瓶颈 = `abcard.anm` entry，每张 2 格；口径 = 本文件 `CARD_COST`，见 `CAPACITY.md` §1 的「安全用量」）
 
-**A1. 卡 id（`CE_CARD(` 的落点，48 张）** —— 出处 `native/cards/*.c`
+**A1. 卡 id（`CE_CARD(` 的落点，49 张）** —— 出处 `native/cards/*.c`
 
 ```
-58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 106 107 108 109 110 111 112 113 114 115 116 117 118 200
+58 59 60 61 62 63 64 65 66 67 68 69 70 71 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 106 107 108 109 110 111 112 113 114 115 116 117 118 200
 ```
 
 **A2. shooterset 组（`native/sht_ids.h`，84 个宏）**
@@ -1141,6 +1141,7 @@ CE_ANM_ABILITY_SPRITE 宏 995 个，号 109..600
 ```
 
 <!-- capcheck:appendix:end -->
+
 
 
 
