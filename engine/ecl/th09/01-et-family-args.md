@@ -83,10 +83,37 @@ TH09 是「**一条指令带全部参数**」的老式风格；TH16/TH18 拆成�
 | arg7 / arg8 | float/float | 疑 `etAngle(基准角, 层间偏角)` | `[5]` / `[6]` | 同四条里 arg8 = **`0.0f`** ⇒ 层间偏角 0；arg7 是变量（各支不同）⇒ 基准角（🟡）|
 | arg9 | int | 🟡 **未定** | `[0x1fc]` | 灵梦那四条的 arg9 = `514`/`642`；同一轮的观察：`0x202`/`0x282` 的**高字节都是 2**（🟡 见 `engine/card/th09/02` §4.6）|
 
-⚠ **还没做（下一步，二选一即可）**：
-- ① 读 `0x4131c0`（`BulletManager::shoot_rival_bullets_array`）的**读取侧**，把 arg3..arg9 逐个坐实
-  （TH16 那侧就是这么做的：写入侧 + 读取侧双向印证）；
-- ② 或直接**做一发对照实验**：翻成 TH18 的 `etNew` 族发一次，看观感与 TH09 是否一致（更快但不够硬）。
+## 5. ★★★ 读取侧坐实（`0x4131c0` = `shoot_rival_bullets_array`，2026-10-01）
 
-⇒ 两边的**模式表**（§3）与 **`(type, subtype)` 那个结构吻合**（§4 第二行）已经能支撑「机械翻译」；
-剩下的只是把 arg3..arg9 的**顺序**钉死，那是**一次反汇编**或**一次对照实验**的量。
+```c
+/* th09:0x4131c0  —— 实参 = (emitter)  */
+eax = (int16)*(emitter + 0x00) * 0xD48 + bullet_mgr;   /* ★ arg1 = 「弹类型记录」的索引，stride 0xD48 */
+*(emitter + 0x210) = eax;                              /* 该类型记录的指针存这里 */
+call 0x41bb70(emitter + 4, …); fstp [ebp-8];           /* 位置 →（基准角？）一个 float */
+for (wave = 0; wave < (int16)*(emitter + 0x1F6); ++wave)        /* ★ arg4 = 波数/层数 */
+    for (i   = 0; i   < (int16)*(emitter + 0x1F4); ++i)          /* ★ arg3 = 路数 */
+        edi = shoot_one_bullet(emitter, i, wave, [ebp-8], 1);    /* 0x412960 */
+if ((*(emitter + 0x1FC) >> 8) & 2) call 0x43e380(…);   /* ★ arg9 是**标志位**：bit9(0x200) 触发 */
+```
+
+⇒ **逐条订正/坐实**：
+
+| 实参 | 结论 | 可信 |
+| :-: | --- | :-: |
+| **arg3 = `emitter+0x1f4`** | ★ **路数**（内层循环上界）| ✅✅ 与 TH16/18 的 `etCount` **低16=路数**逐字同构 |
+| **arg4 = `emitter+0x1f6`** | ★ **波数/层数**（外层循环上界）| ✅✅ 同 `etCount` **高16**（TH16/18 用一整 word 装它）|
+| **arg1 = `emitter+0x00`** | ★ **弹「类型记录」索引**：`idx * 0xD48 + bullet_mgr` ⇒ 一条 **0xD48 字节**的类型记录 | ✅ 一手（不是「sprite 对」——我 §4 那行的猜测**偏了**，见下）|
+| **arg9 = `emitter+0x1fc`** | ★ **标志位**（bit9 = 0x200 触发 `0x43e380(emitter+4, emitter+0x200)`）| ✅ 一手 |
+
+**⇒ §4 的两条要订正**：
+
+1. ~~「arg1/arg2 = `etSprite(type, subtype)`」~~ —— **arg1 是「类型记录索引（stride 0xD48）」**，
+   `0xD48` 那种体量不像一个 sprite 号；arg2（`emitter+0x02`）在本函数里**没有被读**（可能给
+   `shoot_one_bullet` 或其它分支用）⇒ **改成 🟡 待定**，别按 `etSprite` 硬套。
+2. ~~「arg9 = 514/642 那种 id / 高字节=组」~~ —— **arg9 是标志位**：灵梦四条里的
+   `514 = 0x202` / `642 = 0x282` / 咲夜的 `18946 = 0x4A02` **都带 bit1(0x2) 与 bit9(0x200)**
+   ⇒ 那才是它们「看起来同族」的真正原因（不是「高字节=组」）。
+
+⚠ **还没做**：arg5–arg8 四个 float 的**名字**（`etSpeed`/`etAngle` 哪一对是哪个）——
+它们在 `shoot_one_bullet`(`0x412960`) 里被读，**下一次反汇编就从那里进**；
+以及 `0x43e380`（arg9 bit9 触发的那支）是什么。
