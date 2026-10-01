@@ -26765,3 +26765,33 @@ sprite/size（真 48×48 且不在白名单 ⇒ 它们不会出现 = 修好；�
 
 **闸**：`make -s check` rc=0（`youkai_core: 8799 checks, 0 failed`、`dllx87 = 0`）、`sites.py verify` 全对上、
 `capcheck` 全绿、`check-docs` 全过。
+
+## §BE 详录 #183（2026-10-01）：妖侧使魔**关掉碰撞盒**（owner：妖侧使魔挡住弹幕）+ ① 只报告 + ② 未定论
+
+**① 6 面杂鱼掉动物灵 = 117 自己的 `odd-one-out`（**不是我们、也不是协同** ⇒ **未改**）**
+日志：`wba_wc: big-enemy drop -> 1 animal spirit (reason=**odd-one-out**, veto=none, type 3,
+sprite=32x32, **big_by_size=0**, wave=6, group_total=6, census=2, hp=0/500, …)`
+⇒ **`big_by_size=0`**（117 自己也不认为它大）却仍掉 ⇒ **原因字符串 `odd-one-out`** = 117 的
+「一组里那一个『异类』掉灵」设计（TH17 风格）⇒ **与我们的白名单/尺寸判据无关，不需要我们改**。
+（若 owner 认为这条本身是 117 的 bug ⇒ 另一个话题，等他拍。）
+
+**② 4 面道中那只大妖精没使魔（**本轮未定论，先查证**）**
+这一局 `spriteprobe` **0 行** ⇒ 那只**根本没走我们的扫描路径** ⇒ 与 `yk_orbit_scan` 的
+**`yk_enemy_is_boss(e) ⇒ continue`（boss 一律不补）**高度吻合 ⇒ **怀疑它是道中 boss（midboss）**。
+**本轮没查完的**（诚实）：① 它对 `CE_EM_BOSS_IDS` / `own_boss_id` 的判定是否成立；
+② **一手 TH08 里 midboss 有没有使魔**（`engine/enemy/th08/03-…md` 的样本表里 4/5/6 面道中 boss 那一档）。
+**候选改法（等你拍）**：把排除从「boss」收窄到「**实际 boss（final boss / 有 spell 的那只）**」，
+**道中 boss 放行**；与「发射口映射」层去重的判据 = 沿用 `yk_map_enemy_slots()`（已声明的槽 ⇒ 那层管）
++ 绕转层只看「**没有映射使魔的**道中 boss」（或按 `own_boss_id` 与 `CE_EM_BOSS_IDS` 的差集来分）。
+
+**③ 妖侧使魔挡住弹幕（**已改，真 bug**）**
+原来只置 `CE_ENEMY_FLAG_NO_DAMAGE`（**不可伤害**）⇒ **碰撞盒还在** ⇒ 自机弹被吃掉 = 「挡住弹幕」。
+owner/一手口径：妖侧使魔 = **魔法阵** ⇒ **不被自机打到、也不碰撞**（弹**穿过去**）。
+修法（`yk_orbit_vm_sync`）：**妖侧**把 `zEnemyData.hurtbox_size`（`enemy+0x133c`/`+0x1340` 两个 float，
+与 117 读的同一对）**置 0**（原值存进 `yk_orbit_t.hurt_x/hurt_y`，只存一次）；**人侧还原**。
+⚠ 与 NO_DAMAGE **是两件事**：那个管「打到了也不掉血」，这个管「根本不吃弹」。
+**判据**：**妖侧自机弹从使魔身上穿过去**（弹不消失、后面的敌人照常掉血）；**人侧才被吸收**
+（这时才触发转嫁）。
+
+**闸**：`make -s check` rc=0（`youkai_core: 8799 checks, 0 failed`、`dllx87 = 0`）、`sites.py verify` 全对上、
+`capcheck` 全绿、`check-docs` 全过。

@@ -856,6 +856,8 @@ typedef struct {
     float    omega_deg;  /* 该台角速度（度/帧，含符号 = 转向）—— `yk_orbit_layout()` 给 */
     float    radius_final;/* 该台**最终**半径（px）= 30/60/90（分圈）或 60（单圈）*/
     int8_t   ring;       /* 第几圈（0 基）；日志用 */
+    float    hurt_x, hurt_y;  /* ★ 2026-10-01：妖侧被我们**临时置 0** 的碰撞盒原值（人侧还原用）*/
+    uint8_t  hurt_saved;      /* 1 = 上面那对值有效（该使魔正被「隐去碰撞」）*/
     unsigned substep;     /* ★ 绕转相位（**半步累加器**，第七轮）：每帧 +1，一圈 = `YK_ORBIT_SUBSTEPS`(240)
                            *   个 substep；查表格号 = `yk_orbit_step_of_substep(substep)`
                            *   ⇒ 实际转速 = 3°/格 ÷ `YK_ORBIT_STEP_DIV`(2) = **1.5°/帧**（240 帧 ≈ 4 s 一圈）。*/
@@ -1295,6 +1297,22 @@ static void yk_orbit_vm_sync(yk_orbit_t *o)
     }
     youkai_side = CE_PLAYER_FOCUSED() ? 1 : 0;
     if (o->anm_id) ce_anm_set_color(o->anm_id, youkai_side ? 0x00ffffffu : 0xffffffffu);
+    /* ★★★ 2026-10-01（**owner 新报的真 bug**：「对于妖侧，**使魔会挡住弹幕**，也就是妖侧打不进去」）——
+     *   我们原来只置了 `CE_ENEMY_FLAG_NO_DAMAGE`（**不可伤害**），但**碰撞盒还在** ⇒ 自机弹会被它吃掉
+     *   （打不出伤害、也穿不过去）= 「挡住弹幕」。一手/owner 口径：妖侧使魔 = **魔法阵**
+     *   ⇒ **不被自机打到、也不碰撞**（自机弹**穿过去**）。
+     *   修法：**妖侧把碰撞盒置 0**（`zEnemyData.hurtbox_size` = `enemy+0x133c`/`+0x1340` 两个 float，
+     *   与 117 读的是同一对），**原值存进 `o->hurt_x/hurt_y`**（只存一次）；**人侧还原**。
+     *   ⚠ 与 NO_DAMAGE 是**两件事**：那个管「打到了也不掉血」，这个管「根本不吃弹」。*/
+    if (youkai_side) {
+        float *hb = (float *)(f + 0x133c);
+        if (!o->hurt_saved && hb[0] > 0.0f) { o->hurt_x = hb[0]; o->hurt_y = hb[1]; o->hurt_saved = 1; }
+        if (o->hurt_saved) { hb[0] = 0.0f; hb[1] = 0.0f; }
+    } else if (o->hurt_saved) {
+        float *hb = (float *)(f + 0x133c);
+        hb[0] = o->hurt_x; hb[1] = o->hurt_y;
+        o->hurt_saved = 0;
+    }
     /* ★ 与映射使魔**同一条口径**（owner 2026-09-30）：环**两侧都常驻**，换侧只换中断
      *   （人 1 紫 / 妖 2 蓝），尺寸由脚本分侧（0.5 / 0.8）。*/
     if (!o->circle_id || !ce_anm_get_vm(o->circle_id)) {
