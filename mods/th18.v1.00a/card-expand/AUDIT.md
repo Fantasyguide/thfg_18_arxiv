@@ -26713,3 +26713,21 @@ sprite/size（真 48×48 且不在白名单 ⇒ 它们不会出现 = 修好；�
 
 **闸**：`make -s check` rc=0（`youkai_core: 8799 checks, 0 failed`、`dllx87 = 0`）、`sites.py verify` 全对上、
 `capcheck` 全绿、`check-docs` 全过。
+
+## §BE 详录 #181（2026-10-01）：**删掉「收刻符 ⇒ 分值浮字」**（owner 纠错，不是口径）
+
+> **owner 逐字**：「**收刻符应该没有分值浮字来的**」。
+> **一手支持**：`CreatePlayerPointPopup`（`th08:0x441348`）是**点数道具（point item）**那条路；
+> **刻符收集本身不出浮字**。我们那笔（`youkai.c` 的 `yk_popup_spawn(x, y, yk_orb_score(...), 0, …)`）
+> 是**自己加的、多余的**，也正是 `popup pool full, dropped **4740**` 的元凶。
+
+**改动**：**删掉那个调用点**（原地留注释说明「一手刻符不出字；要出字请挂到点数道具那条路」；
+`orb_taken` 的累加/计分**不动**）。**保留** #85 的池 128 + 分层（无害、且给死亡 `+N` 留保障）
+与死亡三笔（`0x42af78` / `0x42b122` / `0x42b296` 的一手 UI）。
+**判据**：`pf`（run-done 行尾）**应当恒为 0**；死亡 `+N` 正常出现。
+
+**⚠ 未自行决定的部分**：一手是否在**别处**（例如最大得点/刻符数变动、点数道具收集）出过字 ——
+若发现，**先报协调方**再挂回去（本轮只删不加）。
+
+**闸**：`make -s check` rc=0（`youkai_core: 8799 checks, 0 failed`、`dllx87 = 0`）、`sites.py verify` 全对上、
+`capcheck` 全绿、`check-docs` 全过。

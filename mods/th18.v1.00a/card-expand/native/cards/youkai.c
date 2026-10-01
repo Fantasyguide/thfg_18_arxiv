@@ -3470,9 +3470,12 @@ static int yk_orb_collect(yk_card_t *s, float x, float y)
     /* ★ #27 支 2：**收刻符的分值弹字**（一手 `Item::collect_time_orb th08:0x441348`
      * `CreatePlayerPointPopup(&item+0x2a4, value, color)`）—— 值 = `yk_orb_score()`（下限 100 / 上限 10000 /
      * 阶段门 2000），落点 = 那颗刻符的位置（一手就是道具位置，不换算）。*/
-    /* 收刻符那支一手是 **`CreatePlayerPointPopup`（`th08:0x441348`）**、显示**分值**（不是 +1）；
-     * 🟡 它的颜色/字号没有逐条读出来 ⇒ 暂用白 + 1.0（待一手复核）。*/
-    yk_popup_spawn(x, y, yk_orb_score((int32_t)s->orb_taken, (int32_t)s->orb_taken), 0, 0xffffffffu, 1.0f);
+    /* ★★★ 2026-10-01（**owner 纠错**：「**收刻符应该没有分值浮字来的**」）—— **删掉这一笔**：
+     *   一手 `CreatePlayerPointPopup`（`th08:0x441348`）是**点数道具（point item）**那条路；
+     *   **刻符收集本身不出浮字**。我们这一笔是**自己加的、多余的**，而且正是把浮字池挤爆的元凶
+     *   （实跑 `popup pool full, dropped 4740`）。⇒ 若将来要挂「点数道具出字」，**挂到那条路**上，
+     *   **不要**挂在刻符上（`orb_taken` 仍照旧累加/计分，只是不再打浮字）。*/
+    (void)x; (void)y;
     return 1;
 }
 
