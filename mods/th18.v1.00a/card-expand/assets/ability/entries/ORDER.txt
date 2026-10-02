@@ -1069,3 +1069,17 @@ CARRIER_FAIRY_GLOW_8                   ability/ufo_carrier_glow/CARRIER_FAIRY_GL
 CARRIER_FAIRY_GLOW_9                   ability/ufo_carrier_glow/CARRIER_FAIRY_GLOW_9.png   @288,0,32x32
 CARRIER_FAIRY_GLOW_10                  ability/ufo_carrier_glow/CARRIER_FAIRY_GLOW_10.png   @320,0,32x32
 CARRIER_FAIRY_GLOW_11                  ability/ufo_carrier_glow/CARRIER_FAIRY_GLOW_11.png   @352,0,32x32
+# 112 的宿主妖精皮：普通黄（非辉光妖精用）；一手 = enemy/enemy.png (36/37/38/39… = y=416)
+ATLAS ATLAS_UFO_CARRIER_FAIRY_PLAIN 384x32
+CARRIER_FAIRY_PLAIN_0                   ability/ufo_carrier_plain/CARRIER_FAIRY_PLAIN_0.png   @0,0,32x32
+CARRIER_FAIRY_PLAIN_1                   ability/ufo_carrier_plain/CARRIER_FAIRY_PLAIN_1.png   @32,0,32x32
+CARRIER_FAIRY_PLAIN_2                   ability/ufo_carrier_plain/CARRIER_FAIRY_PLAIN_2.png   @64,0,32x32
+CARRIER_FAIRY_PLAIN_3                   ability/ufo_carrier_plain/CARRIER_FAIRY_PLAIN_3.png   @96,0,32x32
+CARRIER_FAIRY_PLAIN_4                   ability/ufo_carrier_plain/CARRIER_FAIRY_PLAIN_4.png   @128,0,32x32
+CARRIER_FAIRY_PLAIN_5                   ability/ufo_carrier_plain/CARRIER_FAIRY_PLAIN_5.png   @160,0,32x32
+CARRIER_FAIRY_PLAIN_6                   ability/ufo_carrier_plain/CARRIER_FAIRY_PLAIN_6.png   @192,0,32x32
+CARRIER_FAIRY_PLAIN_7                   ability/ufo_carrier_plain/CARRIER_FAIRY_PLAIN_7.png   @224,0,32x32
+CARRIER_FAIRY_PLAIN_8                   ability/ufo_carrier_plain/CARRIER_FAIRY_PLAIN_8.png   @256,0,32x32
+CARRIER_FAIRY_PLAIN_9                   ability/ufo_carrier_plain/CARRIER_FAIRY_PLAIN_9.png   @288,0,32x32
+CARRIER_FAIRY_PLAIN_10                  ability/ufo_carrier_plain/CARRIER_FAIRY_PLAIN_10.png   @320,0,32x32
+CARRIER_FAIRY_PLAIN_11                  ability/ufo_carrier_plain/CARRIER_FAIRY_PLAIN_11.png   @352,0,32x32

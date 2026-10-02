@@ -2398,6 +2398,9 @@ typedef struct {
     float    last_x;               /* 上一帧的 x（算水平速度方向）*/
     uint8_t  have_last_x;
     uint8_t  kind;                 /* `ufo_carrier_kind_t` */
+    uint8_t  glow;                 /* ★ 2026-10-03：宿主自己是不是**辉光妖精**（表里的 `glow` 列）
+                                    *   ⇒ 妖精皮挑**辉光黄**（352/356/357）还是**普通黄**（394/395/396）。
+                                    *   owner 口径：「辉光黄妖精当且仅当辉光妖精」。*/
     int16_t  n, s;                 /* 外观身份（`anmSelect` 的 N / 主脚本 S）*/
     int32_t  enemy_id;
     float    skin_scale;           /* 皮的缩放（表里的 `skin_scale_permille`）= 1.0（三条规则下恒等）*/
@@ -2446,6 +2449,23 @@ static int ufo_carrier_kind_of(const uint8_t *e)
     return -1;
 }
 
+/* ★ 2026-10-03（owner 实跑：「辉光黄妖精当且仅当辉光妖精」）：宿主自己那支脚本引用的 sprite
+ *   整组落在**辉光区**（`enemy_g.png` 的五行的 220..267 / 316..327）⇒ 它是辉光妖精。
+ *   判据在**生成器**里现算（`gen_ufo_carrier_table.py` 的 `glow` 列），这里只查表。*/
+static int ufo_carrier_is_glow(const uint8_t *e, int kind)
+{
+    int32_t n, s;
+    int i;
+    if (!e) return 0;
+    n = *(const int32_t *)(e + CE_ENEMY_ANM_SRC);
+    s = *(const int32_t *)(e + CE_ENEMY_ANM_SCRIPT);
+    for (i = 0; i < UFO_CARRIER_KEY_COUNT; ++i)
+        if (UFO_CARRIER_KEYS[i].n == n && UFO_CARRIER_KEYS[i].s == s &&
+            (int)UFO_CARRIER_KEYS[i].kind == kind)
+            return (int)UFO_CARRIER_KEYS[i].glow;
+    return 0;
+}
+
 static float ufo_carrier_skin_scale(const uint8_t *e, int kind)
 {
     int32_t n, s;
@@ -2463,13 +2483,23 @@ static float ufo_carrier_skin_scale(const uint8_t *e, int kind)
 /* 皮的脚本：蝴蝶那一档只有一支（一手 script45 本身就是左右两套 sprite 的表）；
  * 妖精那一档**按飞行方向挑**（owner 第 17 轮：「左右的动态没有复刻」）：
  *   0 = 正面走位（脚本 352 ← 一手 script15）／1 = 向右（脚本 356 ← 一手 script17）／2 = 向左（357 ← script16）。*/
-static int ufo_carrier_body_script_k(int kind, int facing)
+static int ufo_carrier_body_script_k(int kind, int facing, int glow)
 {
     if (kind == (int)UFO_CARRIER_KIND_BFLY) return CE_ANM_ABILITY_SCRIPT_UFO_CARRIER_BUTTERFLY;
+    /* ★ 2026-10-03：**两套妖精皮**（owner：「辉光黄妖精当且仅当辉光妖精」）——
+     *   辉光妖精（原生脚本 184/189/…，sprite ⊂ 220..267）穿**辉光黄**；
+     *   其余穿**普通黄**。两套的帧时序完全一样，只有图不同。*/
+    if (glow) {
+        switch (facing) {
+        case 1:  return CE_ANM_ABILITY_SCRIPT_UFO_CARRIER_FAIRY_SIDE_R;
+        case 2:  return CE_ANM_ABILITY_SCRIPT_UFO_CARRIER_FAIRY_SIDE_L;
+        default: return CE_ANM_ABILITY_SCRIPT_UFO_CARRIER_FAIRY;
+        }
+    }
     switch (facing) {
-    case 1:  return CE_ANM_ABILITY_SCRIPT_UFO_CARRIER_FAIRY_SIDE_R;
-    case 2:  return CE_ANM_ABILITY_SCRIPT_UFO_CARRIER_FAIRY_SIDE_L;
-    default: return CE_ANM_ABILITY_SCRIPT_UFO_CARRIER_FAIRY;
+    case 1:  return CE_ANM_ABILITY_SCRIPT_UFO_CARRIER_FAIRY_PLAIN_SIDE_R;
+    case 2:  return CE_ANM_ABILITY_SCRIPT_UFO_CARRIER_FAIRY_PLAIN_SIDE_L;
+    default: return CE_ANM_ABILITY_SCRIPT_UFO_CARRIER_FAIRY_PLAIN;
     }
 }
 
@@ -2638,6 +2668,7 @@ static void ufo_carrier_tick(void)
             c->n = (int16_t)*(const int32_t *)(e + CE_ENEMY_ANM_SRC);
             c->s = (int16_t)*(const int32_t *)(e + CE_ENEMY_ANM_SCRIPT);
             c->skin_scale = ufo_carrier_skin_scale(e, kind);
+            c->glow = (uint8_t)ufo_carrier_is_glow(e, kind);
             /* ★ 分组键 = **ECL 自己的波号**（MainSub 数字），组里的**第一只立刻当宿主** + 后来的镜像。 */
             if (ufo_carrier_arrival(c, *(const float *)(e + CE_ENEMY_POS_X),
                                        *(const float *)(e + CE_ENEMY_POS_Y))) {
@@ -2677,7 +2708,8 @@ static void ufo_carrier_tick(void)
             if (!c->body_vm || facing != c->facing) {
                 if (c->body_vm) { ce_anm_delete(c->body_vm); c->body_vm = 0; }
                 c->facing = (uint8_t)facing;
-                c->body_vm = ce_anm_spawn(CE_ABILITY_ANM(), ufo_carrier_body_script_k(c->kind, facing),
+                c->body_vm = ce_anm_spawn(CE_ABILITY_ANM(),
+                                          ufo_carrier_body_script_k(c->kind, facing, c->glow),
                                           UFO_CARRIER_BODY_LAYER);
                 if (c->body_vm && c->skin_scale != 1.0f)
                     ce_anm_set_scale(c->body_vm, c->skin_scale, c->skin_scale);
@@ -2691,8 +2723,9 @@ static void ufo_carrier_tick(void)
             ce_log("ufo: carrier skin ON - enemy_id %d (N %d, S %d) -> %s x%.2f; body script %d + mark script %d "
                    "(owner: the skin MEANS it carries a token)",
                    (int)c->enemy_id, (int)c->n, (int)c->s,
-                   c->kind == (uint8_t)UFO_CARRIER_KIND_BFLY ? "BFLY (sprite125..132 蝴蝶)" : "FAIRY (sprite36..47 妖精)",
-                   (double)c->skin_scale, ufo_carrier_body_script_k(c->kind, (int)c->facing),
+                   c->kind == (uint8_t)UFO_CARRIER_KIND_BFLY ? "BFLY (sprite125..132 蝴蝶)"
+                       : (c->glow ? "FAIRY 辉光黄 (sprite256..267)" : "FAIRY 普通黄 (sprite36..47)"),
+                   (double)c->skin_scale, ufo_carrier_body_script_k(c->kind, (int)c->facing, c->glow),
                    CE_ANM_ABILITY_SCRIPT_UFO_CARRIER_MARK);
         }
         {

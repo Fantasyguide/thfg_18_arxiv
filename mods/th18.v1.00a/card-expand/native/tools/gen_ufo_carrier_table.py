@@ -140,7 +140,9 @@ def sub_hp(stage_paths, name):
 
 
 def script_sizes():
-    """→ {脚本号: (w,h)}：脚本里第一张 sprite 的尺寸（`thanm -l 18 enemy.anm`）。"""
+    """→ {脚本号: (w,h,[sprites])}：脚本里第一张 sprite 的尺寸 + **该脚本引用的全部 sprite 号**
+    （`thanm -l 18 enemy.anm`）。sprite 号用来判「宿主自己是不是辉光妖精」——
+    辉光那一组在 `enemy_g.png` 里 = sprite **220..267**（见 `make_ufo_carrier_fairy_art.py`）。"""
     text = run([THANM, '-l', '18', ENEMY_ANM])
     sp = {int(m.group(1)): (int(m.group(4)), int(m.group(5)))
           for m in re.finditer(r'sprite(\d+):\s*\{\s*x:\s*(-?\d+),\s*y:\s*(-?\d+),\s*w:\s*(\d+),\s*h:\s*(\d+)', text)}
@@ -149,8 +151,10 @@ def script_sizes():
         num, body = int(m.group(1)[6:]), m.group(2)
         ids = [int(x) for x in re.findall(r'ins_300\(sprite(\d+)\)', body)][:1] or \
               [int(x) for x in re.findall(r'sprite\(sprite(\d+)\)', body)][:1]
+        allids = [int(x) for x in re.findall(r'sprite\(sprite(\d+)\)', body)] or \
+                 [int(x) for x in re.findall(r'ins_300\(sprite(\d+)\)', body)]
         if ids:
-            out[num] = sp.get(ids[0], (0, 0))
+            out[num] = (sp.get(ids[0], (0, 0))[0], sp.get(ids[0], (0, 0))[1], allids)
     return out
 
 
@@ -186,9 +190,13 @@ def main() -> int:
                 break
             if s is None or s < 0:
                 continue
-            w, h = sizes.get(s, (0, 0))
+            w, h, sprites = sizes.get(s, (0, 0, []))
             key = (n, s)
-            r = rows.setdefault(key, {"who": set(), "stages": set(), "size": (w, h), "hp": []})
+            # ★ 2026-10-03（owner「辉光黄妖精当且仅当辉光妖精」）：宿主自己那支脚本引用的 sprite
+            #   若整组都在**辉光区**（220..267 = `enemy_g.png` 四行）⇒ 它是辉光妖精，才给辉光皮。
+            #   辉光区 = `enemy_g.png` 的五行：32×32 四行 220..267 + 64×64 大号一行 **316..327**
+            glow = bool(sprites) and all(220 <= x <= 267 or 316 <= x <= 327 for x in sprites)
+            r = rows.setdefault(key, {"who": set(), "stages": set(), "size": (w, h), "hp": [], "glow": glow})
             r["who"].add(CARRIER_SUBS[name].split('（')[0])
             r["stages"].add(idx)
             r["hp"] += hp_by_sub.get(name, [])
@@ -246,6 +254,8 @@ def main() -> int:
         '    uint8_t  kind;     /* ufo_carrier_kind_t */',
         '    uint8_t  sprite_w; /* 主脚本第一张精灵的宽（仅供人读；分档就是靠它）*/',
         '    uint8_t  sprite_h;',
+        '    uint8_t  glow;     /* ★ 宿主自己是不是辉光妖精（它那支脚本的 sprite ⊂ 220..267）',
+        '                        *   ⇒ 112 挑皮用：辉光妖精穿辉光黄，否则穿普通黄（owner 2026-10-03）*/',
         '    int16_t  hp_min;   /* 创建点 hp 的最小值（owner 第 12 轮的分档判据：≤ 400 = 一碰就碎）*/',
         '    int16_t  hp_max;',
         '    int16_t  skin_scale_permille;  /* 皮的缩放（千分比）：宿主原始精灵 max(w,h) ÷ 皮的原始边长*/',
@@ -265,7 +275,7 @@ def main() -> int:
         stages = '/'.join(f'st{i}' for i in sorted(r['stages']))
         who = '、'.join(sorted(r['who']))
         lines.append(f'    {{ {n:4d}, {s:4d}, UFO_CARRIER_KIND_{r["kind"]:<5}, '
-                     f'{r["size"][0]:3d}, {r["size"][1]:3d}, {r.get("hp_lo", 0):5d}, {r.get("hp_hi", 0):5d}, '
+                     f'{r["size"][0]:3d}, {r["size"][1]:3d}, {1 if r.get("glow") else 0:2d}, {r.get("hp_lo", 0):5d}, {r.get("hp_hi", 0):5d}, '
                      f'{r.get("scale_permille", 1000):5d}, "{who}", "{stages}" }},')
     lines += [
         '};',
@@ -280,7 +290,8 @@ def main() -> int:
     for (n, s), r in sorted(rows.items()):
         print(f'  (N={n}, S={s:3d}) {r["kind"]:5s} sprite {r["size"][0]}x{r["size"][1]}  '
               f'hp {r.get("hp_lo", 0)}..{r.get("hp_hi", 0)} scale x{r.get("scale_permille", 1000) / 1000:.2f}  '
-              f'stages={"".join(str(i) for i in sorted(r["stages"]))}  {"/".join(sorted(r["who"]))}')
+              f'glow={int(bool(r.get("glow")))}  stages={"".join(str(i) for i in sorted(r["stages"]))}'
+              f'  {"/".join(sorted(r["who"]))}')
     return 0
 
 

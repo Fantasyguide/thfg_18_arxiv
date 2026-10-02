@@ -4928,6 +4928,8 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 
 | 2026-10-03 | **所有卡**（共享资源 `assets/ability/`：新增图集 `ATLAS_UFO_CARRIER_FAIRY_GLOW` + 切图器 `make_ufo_carrier_glow_art.py`；改 3 支 112 脚本 352/356/357；生成物 `native/anm_ids.h`） | 见下方「§BE 详录 #219」 |
 
+| 2026-10-03b | **112 星莲船**（妖精皮分两套：辉光 / 普通；改本卡 + 生成器 + 共享资源）| 见下方「§BE 详录 #220」 |
+
 
 > **§BE 详录 #42（2026-09-20 · P1「缺音效一批」8 条 + 音效表扩容新增 5 枚别作原版 SE）**
 >
@@ -26179,6 +26181,9 @@ verify/autoplay 的场景只判 109 的日志）；`sites.py` / `sdk.*` / `engin
 （TH18 自己那条是**死代码**：`VM_A.pos.y` 唯一写点被「减速因子<1.0」把门、且 y 还叠了 `entity_pos`；
 活的那份在 **TH07** `th07:0x433cd0`：判据 `pos.y < -8.0`、y 恒 `8.0+全局`、alpha `clamp(255−(8−y)×255/128,≥64)`）。
 
+**`glow` 的判据**：宿主自己那支脚本引用的 sprite **整组**落在辉光区（`220..267` 或 `316..327`）⇒ `glow=1`。
+实测：`S=184`/`189`（辉光蓝/红，st2/st3/st7）= 1、`S=224`（64×64 辉光大号）= 1；其余（0/5/10/15/91/99/103/40）= 0。
+
 **影响面 / 回归**：
 - **共享件**：`cards/faith.c` 是 107/110/111 共用的点池实现；新增字段在结构体尾部、新增调用只在
   「点出界」时起 VM ⇒ 画面内的点**行为逐字节不变**（`ce_topi_tick` 在 `y ≥ -8` 那一支只会
@@ -28390,3 +28395,36 @@ owner 后续两条：「**音量再大一点**」「然后**虚影持续时间�
 - **没有动** `sdk.*` / `sites.py` / `Makefile` / `cards_def.c` ⇒ **零新增站点**；`ability.anm` 现在 entry **103/256**、sprite **616**。
 - `build_ability.py` 的图集逐像素自检通过；`make anm` 重编成功；`make check`（含 `anm-verify`）见下。
 - ⚠ 旧图集 `ATLAS_UFO_CARRIER_FAIRY`（sprite 519…530，TH12 妖精切图）**保留**（现在没人引用，属历史资产）。
+
+---
+
+### §BE 详录 #220 —— 2026-10-03b：112 妖精皮分**两套**（辉光 / 普通）—— owner「辉光黄妖精当且仅当辉光妖精」
+
+**谁改的**：统筹。**owner 实跑口径**：先报「辉光黄妖精**当且仅当 3 面**」，随即订正为
+「**或者说，辉光黄妖精当且仅当辉光妖精**」。（两者都对得上：宿主表里辉光那几支脚本
+`S=184/189` 出现在 **st2/st3/st7**，不是只有 st3。）
+
+**问题**：`#219` 修好编号空间之后，112 的宿主妖精**在所有关卡**都穿了**辉光黄**皮
+（`ATLAS_UFO_CARRIER_FAIRY_GLOW` = 原生 `enemy_g.png` y=416 行）。但辉光那一套在原版里是**一组**
+（`enemy_g.png` 五行：32×32 蓝/红/绿/黄 + 64×64 大号），只有**本来就是辉光妖精**的那种妖精才发辉光
+⇒ 非辉光妖精穿辉光皮 = 看起来"自带辉光"，错。
+
+**修法**：**两套皮 + 按宿主自己的行挑**
+| 落点 | 改动 |
+| --- | --- |
+| `assets/ability/make_ufo_carrier_fairy_art.py`（重命名自 `make_ufo_carrier_glow_art.py`）| 同时切**两套**皮（普通黄 / 辉光黄），见本节末的「一手对照」；不重画不缩放，逐张断言 32×32 |
+| `assets/ability/ufo_carrier_plain/*.png`（12 张，新）| 普通黄皮的切图产物 |
+| `assets/ability/entries/ORDER.txt` | append 图集段 `ATLAS_UFO_CARRIER_FAIRY_PLAIN 384x32`（尾插零位移）|
+| `assets/ability/scripts/394 / 395 / 396`（新）| 普通黄的孪生脚本（正面 / 向右 / 向左），与 352/356/357 **逐条同形**，只差图集名 |
+| `native/tools/gen_ufo_carrier_table.py` + `native/cards/ufo_carrier_table.h` | 表新增 **`glow` 列**（判据与实测值见下）|
+| `native/cards/ufo.c` | 新增 `ufo_carrier_is_glow()` 查表 + 结构体 `glow` 字段；`ufo_carrier_body_script_k(kind, facing, glow)` 按 `glow` 在**辉光黄**（352/356/357）与**普通黄**（394/395/396）之间挑；蝴蝶档不变（仍是 TH12 蝴蝶皮 351）|
+
+**影响面 / 回归**
+- `assets/ability/**` 是**共享资源**；`ufo.c` / `ufo_carrier_table.h` 是 **112 自己的卡**（owner 那条线的卡 ⇒ 本表即登记）。
+- **没有动** `sdk.*` / `sites.py` / `Makefile` / `cards_def.c` ⇒ **零新增站点**；
+  `ability.anm` 现在 **entry 104/256 · sprite 628 · script 397**。
+- `make check` **rc=0**（含图集逐像素自检 / `anm-verify` / `capcheck`（附录 A 已重生成）/ `check-docs` 419 文件）；
+  单测 `test_ufo_core` 不受影响（没有手工构造那张表）。
+- 一手对照（两行**结构逐位平行**，辉光 = 普通 **+220 sprite / +184 script**）：
+  **普通黄** `sprite36..39`（script15 正面）/ `40..47`（script16·17 转身）/ script18·19 侧身；
+  **辉光黄** `sprite256..259`（script199）/ `260..267`（script200·201）/ script202·203。
