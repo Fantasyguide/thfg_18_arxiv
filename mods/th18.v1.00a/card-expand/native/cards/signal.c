@@ -81,6 +81,7 @@
 #include <stdio.h>
 #include "sdk.h"
 #include "faith.h"
+#include "ufo_bounty.h"   /* ★ 112 压缩包的等价计数广播（owner：三张卡都接）*/
 #include "faith_hud.h"        /* ★★ 2026-09-15：110/111 共用的「组合 UI」（共享件）*/
 #include "signal_core.h"
 #include "sht_ids.h"         /* ★ 生成物：111 五组 formation shooterset 的槽号（0x29–0x2d，本轮新增）。
@@ -3263,6 +3264,39 @@ static void signal_lifefrag_tick(signal_card_t *s)
 /* ★ 2026-09-18：本函数每帧补调一次（见 `signal_ensure_registered()` 的注释）。*/
 static void signal_ensure_registered(ce_card_t *c);
 
+
+/* ★★★ 2026-10-03h（owner：「**接：三张卡都按各自的格子折算**」）：
+ *   112 的压缩包被吃下那一刻会**广播**一份「等价计数 + 逐颗账」（`native/cards/ufo_bounty.h`）——
+ *   本卡按**自己槽**里被吞掉的那几颗、用**原值**折进自己那本账（走本卡自己的收下回调，判据与
+ *   正常收下一颗**逐字相同** ⇒ 不会出现"折算一套、正常收另一套"）。
+ *   ⚠ 广播读法：各自记 `seen_gen`，看到代数变了才折一次（三张卡互不抢，见 `ufo_bounty.h`）。
+ *   ⚠❓ **与"原值 1:1 归还"叠加 = 这一批点会被记两次**（归还的实体被捡回时还会再记一次）——
+ *     这是 owner「接」的口径下的**已知后果**，实跑认为不对就把下面那个开关改成 0（一个数字）。*/
+#define SIGNAL_BOUNTY_EQ_FOLD 1
+
+static uint32_t s_bounty_eq_seen;
+
+static void signal_bounty_eq_fold(void *user)
+{
+#if SIGNAL_BOUNTY_EQ_FOLD
+    ufo_bounty_eq_t eq;
+    uint32_t gen;
+    int i, n;
+    if (!ufo_bounty_eq_peek(&eq, &gen) || gen == s_bounty_eq_seen) return;
+    s_bounty_eq_seen = gen;
+    n = ufo_bounty_eq_log_n();
+    for (i = 0; i < n; ++i) {
+        int32_t tier = 0, value = 0, mask = 0;
+        if (!ufo_bounty_eq_log(i, &tier, &value, &mask)) break;
+        if (!(mask & (1 << FAITH_SLOT_111))) continue;          /* ⚠ 只折**本卡自己的槽** */
+        signal_on_pickup(user, mask, (int)tier, value);
+    }
+    ce_log("signal: bounty eq folded (gen %u, %d logged dots)", (unsigned)gen, n);
+#else
+    (void)user;
+#endif
+}
+
 static int on_tick_2(ce_card_t *c)
 {
     signal_card_t *s = st(c);
@@ -3277,6 +3311,7 @@ static int on_tick_2(ce_card_t *c)
     int32_t palt_items = 0, palt_lo = 0, palt_hi = 0;
 
     if (!s || !CE_PLAYER()) return 0;
+    signal_bounty_eq_fold(c);   /* ★ 112 压缩包被吃下 ⇒ 按等价计数折进本卡那本账 */
     ++s->frame;
     pp = ce_player_pos();
     /* ★★★ 2026-09-24：**每帧**声明「本卡在场」+ 若这一发灵击是 **110** 放的则补起泡

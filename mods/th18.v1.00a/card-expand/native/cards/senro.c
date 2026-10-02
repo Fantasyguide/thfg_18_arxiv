@@ -49,6 +49,7 @@
 #include "sdk.h"
 #include "senro_core.h"
 #include "faith.h"       /* ★ 2026-09-16：`faith_collect_all()`（结界全收也要收自建绿点）*/
+#include "ufo_bounty.h"   /* ★ 112 压缩包的等价计数广播（owner：三张卡都接）*/
 #include "hud_dim.h"           /* ★ 跨卡统一件：左下角 HUD 压暗（❓ 用户口径，见文件头）*/
 
 #define SENRO_ID                    107
@@ -1250,6 +1251,43 @@ static void senro_faith_claim(ce_card_t *c);
 /* ★ 2026-09-18：小樱点爆发（boss 死亡消弹），定义在文件后半。*/
 static void senro_small_burst(senro_card_t *s, int32_t bullets);
 
+
+/* ⚠ 前向声明：`senro_on_cherry_pickup()` 的定义在本文件靠后（≈1791），而折算在 on_tick_2 里跑 */
+static void senro_on_cherry_pickup(void *user, int slot_mask, int tier, int32_t value,
+                                   float x, float y);
+
+/* ★★★ 2026-10-03h（owner：「**接：三张卡都按各自的格子折算**」）：
+ *   112 的压缩包被吃下那一刻会**广播**一份「等价计数 + 逐颗账」（`native/cards/ufo_bounty.h`）——
+ *   本卡按**自己槽**里被吞掉的那几颗、用**原值**折进自己那本账（走本卡自己的收下回调，判据与
+ *   正常收下一颗**逐字相同** ⇒ 不会出现"折算一套、正常收另一套"）。
+ *   ⚠ 广播读法：各自记 `seen_gen`，看到代数变了才折一次（三张卡互不抢，见 `ufo_bounty.h`）。
+ *   ⚠❓ **与"原值 1:1 归还"叠加 = 这一批点会被记两次**（归还的实体被捡回时还会再记一次）——
+ *     这是 owner「接」的口径下的**已知后果**，实跑认为不对就把下面那个开关改成 0（一个数字）。*/
+#define SENRO_BOUNTY_EQ_FOLD 1
+
+static uint32_t s_bounty_eq_seen;
+
+static void senro_bounty_eq_fold(void *user)
+{
+#if SENRO_BOUNTY_EQ_FOLD
+    ufo_bounty_eq_t eq;
+    uint32_t gen;
+    int i, n;
+    if (!ufo_bounty_eq_peek(&eq, &gen) || gen == s_bounty_eq_seen) return;
+    s_bounty_eq_seen = gen;
+    n = ufo_bounty_eq_log_n();
+    for (i = 0; i < n; ++i) {
+        int32_t tier = 0, value = 0, mask = 0;
+        if (!ufo_bounty_eq_log(i, &tier, &value, &mask)) break;
+        if (!(mask & (1 << FAITH_SLOT_107))) continue;          /* ⚠ 只折**本卡自己的槽** */
+        senro_on_cherry_pickup(user, mask, (int)tier, value, ce_player_x(), ce_player_pos()[1]);
+    }
+    ce_log("senro: bounty eq folded (gen %u, %d logged dots)", (unsigned)gen, n);
+#else
+    (void)user;
+#endif
+}
+
 static int on_tick_2(ce_card_t *c)
 {
     senro_card_t *s = st(c);
@@ -1257,6 +1295,7 @@ static int on_tick_2(ce_card_t *c)
     int spell_now;
 
     if (!s || !CE_PLAYER()) return 0;
+    senro_bounty_eq_fold(c);   /* ★ 112 压缩包被吃下 ⇒ 按等价计数折进本卡那本账 */
     ++s->frame;
     /* ★★ 2026-09-18（用户实跑）：**中盘拿到卡（十二合一）时引擎只调 `ctor`、不调 `on_load`**
      *   ⇒ 这里从没认领过 HUD 槽 ⇒ 107 的 UI 不出现，要等换面（`on_load`）才补上。

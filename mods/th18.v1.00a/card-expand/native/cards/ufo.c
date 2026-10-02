@@ -2134,6 +2134,46 @@ int ufo_bounty_eq_take(ufo_bounty_eq_t *out)
     return 1;
 }
 
+/* ★★ 2026-10-03h（owner：「**接：三张卡都按各自的格子折算**」+ 统筹技术拍板）：
+ *   原 API 是「**谁先取谁得**」（`take()` 取走即清）—— 但 112 是**单例**，而 107 / 110 / 111 三张卡
+ *   都可能想拿同一份计数 ⇒ 先取的赢，后面的什么都拿不到。
+ *   ⇒ 改成**广播 + 各自只读自己那几格**：每次包被吃下 `s_bounty_eq_gen` **++**（代数），
+ *     消费者各自记一个 `seen_gen`，看到代数变了就把**自己关心那几格**折进自己那本账（读**不清**）。
+ *     这样三张卡互不抢、也不需要定「谁先取」。
+ *   ⚠ `ufo_bounty_eq_take()` 保留（旧调用点 / 兼容），但**新卡一律用 `peek`**（见 `ufo_bounty.h`）。*/
+static uint32_t s_bounty_eq_gen;
+
+uint32_t ufo_bounty_eq_gen(void) { return s_bounty_eq_gen; }
+
+int ufo_bounty_eq_peek(ufo_bounty_eq_t *out, uint32_t *out_gen)
+{
+    if (!out || s_bounty_eq_gen == 0) return 0;      /* 0 = 从没有过包被吃下 */
+    *out = s_bounty_eq;
+    if (out_gen) *out_gen = s_bounty_eq_gen;
+    return 1;
+}
+
+/* ★★ 2026-10-03h（续）：**逐颗账**也一起广播（不只是五个计数）——
+ *   包身上本来就有 `eq_log_*`（每颗的 tier / value / mask），但那只在**包的槽**里（`s_drops[i].core`），
+ *   别的卡拿不到 ⇒ 这里在发布那一刻**快照一份**给消费者。
+ *   意义：107 / 110 / 111 可以**按 mask 只折自己槽里被吞掉的那几颗**、并用**原值**折算 ——
+ *   既精确、又不会出现「110 与 111 都拿同一份 big/mid 计数 ⇒ 重复入账」。*/
+static int32_t s_bounty_log_tier[FAITH_POOL_TOTAL];
+static int32_t s_bounty_log_value[FAITH_POOL_TOTAL];
+static int32_t s_bounty_log_mask[FAITH_POOL_TOTAL];
+static int     s_bounty_log_n;
+
+int ufo_bounty_eq_log_n(void) { return s_bounty_log_n; }
+
+int ufo_bounty_eq_log(int index, int32_t *out_tier, int32_t *out_value, int32_t *out_mask)
+{
+    if (index < 0 || index >= s_bounty_log_n) return 0;
+    if (out_tier)  *out_tier  = s_bounty_log_tier[index];
+    if (out_value) *out_value = s_bounty_log_value[index];
+    if (out_mask)  *out_mask  = s_bounty_log_mask[index];
+    return 1;
+}
+
 static int32_t s_faith_log_n;
 static int32_t s_faith_log_tier[FAITH_POOL_TOTAL];
 static int32_t s_faith_log_value[FAITH_POOL_TOTAL];
@@ -4604,13 +4644,24 @@ static void ufo_drop_collect(ufo_card_t *s, int i)
                    "(tier/value/mask kept; owner 2026-09-26)", (int)d->eq_log_n);
         }
         s_faith_log_n = 0;                  /* 本只 UFO 的账已随包结清 */
-        /* ★★★ 2026-09-26（owner）：**发布等价计数**给其他卡（取走即清）*/
+        /* ★★★ 2026-09-26（owner）：**发布等价计数**给其他卡。
+         * ★★ 2026-10-03h：改成**广播**（`s_bounty_eq_gen` ++ ⇒ 消费者各自记 `seen_gen` 只读自己那几格）；
+         *   旧的「取走即清」`ufo_bounty_eq_take()` 保留兼容，但新卡用 `ufo_bounty_eq_peek()`。*/
         s_bounty_eq.p = c->eq_p;
         s_bounty_eq.money = c->eq_money;
         s_bounty_eq.big_faith = c->eq_big;
         s_bounty_eq.mid_faith = c->eq_mid;
         s_bounty_eq.cherry = c->eq_cherry;
+        ++s_bounty_eq_gen;                  /* ★ 广播代数：0 = 还没有过；每吃一个包 ++ */
+        if (s_bounty_eq_gen == 0) s_bounty_eq_gen = 1;   /* 防溢出回绕到 0（0 是"没有"的哨兵）*/
         s_bounty_eq_pending = 1;
+        /* ★ 2026-10-03h：逐颗账快照（供 107/110/111 按 mask 精确折算；见 `ufo_bounty_eq_log`）*/
+        s_bounty_log_n = (d->eq_log_n < (int)FAITH_POOL_TOTAL) ? (int)d->eq_log_n : (int)FAITH_POOL_TOTAL;
+        for (int li = 0; li < s_bounty_log_n; ++li) {
+            s_bounty_log_tier[li]  = d->eq_log_tier[li];
+            s_bounty_log_value[li] = d->eq_log_value[li];
+            s_bounty_log_mask[li]  = d->eq_log_mask[li];
+        }
         ce_log("ufo: BOUNTY settled - **raw kinds** P %d / money %d / big faith %d / mid faith %d / "
                "cherry %d  =>  **one-hand channels** cntA(P side) %d / cntB(money side) %d, color %d, "
                "mult %d.%03d (channels = th12 cntA/cntB: rainbow swaps the two; red multiplies cntA, "
