@@ -34,21 +34,28 @@
                                         *   ⚠ 112 的**压缩包**（`ufo_drop_t` 的袋子）不在这里 —— 它带账
                                         *   （`cnt_p`/`cnt_money`），由 112 自己的清扫钩子按「吸收量」换钱 */
 #define GW_FLASH_LAYER        19       /* 同脚本 397 的 `layer(19)`（世界层最上、HUD 之下）*/
-/* ★★ 2026-10-03 owner：「**黄金的特效你换一种写法，照着原生卡丰聪耳神子的卡写【什么什么的威光】，
- *   中心就选取到释放点**」⇒ 直接**借原版那一支**（能借就不自己写）：
- *   原版卡 45 = `MIKOFLASH`「やんごとなき威光」(`CardMiko`)：`c_press` `0x40e5c0` 里
- *     · 把**自机坐标** (`player+0x620`) 存进卡对象 `+0x58`（= 释放点）；
- *     · `0x489320` 分配 VM → `0x407420(anm, vm, 0x2f)` **装载脚本 0x2f = 47**；
- *     · VM 层 = `0xd`（= 13，`vm+0x18`；`0x405bf0` 的注释：layer<0x18 就写 `vm+0x18`）；
- *     · 之后在 `__on_tick_2` `0x40e3d0` 里每帧 `0x488b40(id)` 把 VM 贴回自机 + 到点 `0x488cf0` 删。
- *   anm 管理器 = `[0x4cf298]+0xc` = `CE_MGR_ABILITY_ANM` = **ability.anm**（`engine.h` 的 O24′ 记过
- *   Tenshi 卡同一条路起 script 0x1c）⇒ 脚本 47 就在我们编出来的 ability.anm 里（原生 68 支之一）。*/
-#define GW_MIKO_FLASH_SCRIPT  47       /* 原生「威光」脚本号（`0x2f`）*/
-#define GW_MIKO_FLASH_LAYER   13       /* 原生层号（`0xd`）*/
-#define GW_MIKO_FLASH_FRAMES  130      /* 原生窗口 ≈130 帧（`on_tick_2` 里 `cmp …,0x82`）*/
-/* 金色（D3DCOLOR 0xAARRGGBB）：owner 要「黄金」。⚠ 原版威光是**白光**（贴图自身多半是白），
- * 这里把 VM 的 color_1 染金；若该脚本自己每帧写 `color(...)`，这一笔会被脚本覆盖（那就得改贴图/另写脚本）。*/
-#define GW_MIKO_FLASH_RGBA    0xffffc040u
+/* ★★ 2026-10-03 owner 的**演出口径**（三轮叠加，最终版）：
+ *   ① 「照着原生卡**丰聪耳神子**的卡写【やんごとなき威光】，中心选取到释放点」；
+ *   ② 「乘法滤镜和闪光能不能变成**圆形扩张范围**？」；
+ *   ③ 「**威光的光线最先出来，几乎同时圆盘长出来开始**，但是由于慢所以一开始相对注意不到」＋
+ *      「**先慢再快**，顶点的时候加法和乘法都变成**纯白色**」＋「顶点也是**慢慢**变成纯白，不是瞬间」＋
+ *      「然后**全屏死亡**」。
+ *   ⇒ 三个脚本按原生 `CardMiko` 的配方照抄（`native/build/tex-ability/spec.txt` 里有原生
+ *      script47/48/49 的反编译）：
+ *      · **光线**：脚本 400（总控，照原生 **script47**：20 批 × 5 支、每 2 帧一批、92 帧后删）→
+ *        每支 = 脚本 399（照原生 **script48**：随机角度 + 从释放点往外长 + 加算，**颜色改金** ——
+ *        原生那支是 `color(128,128,255)`/`color2(255,32,255)` **蓝紫**）；
+ *      · **圆盘**：脚本 397（加法闪光）/ 398（乘法滤镜）—— 都是 `drawPoly(1.0f,32)` 实心盘
+ *        （原生 **script49** 同配方），0→24 帧**慢**长到 90 半径、24→34 帧**快**冲到 640
+ *        （罩满游玩区），颜色一路**慢慢**转成纯白 ⇒ **顶点 = 纯白 + 满 alpha = 全屏白（"全屏死亡"）**。
+ *   三者都在释放点、同一帧起（"几乎同时"）；光线在层 6（原生层号），圆盘在层 19。*/
+#define GW_RAYS_SCRIPT        400      /* 金色威光总控（照原生 script47）*/
+#define GW_RAYS_LAYER         6        /* 原生层号（script47/48 的 layer(6)）*/
+/* 三个脚本的自然寿命（比脚本里的 `delete()` 略短 —— **必须在 VM 还活着时清句柄**，
+ *  否则 VM 池把 id 回收给别人之后，我们会去动别人的 VM）。*/
+#define GW_RAYS_LIFE          92       /* 脚本 400：92 帧后自己删 */
+#define GW_TINT_LIFE          40       /* 脚本 398：34 顶点 + 8 停留 → 42 删 */
+#define GW_FLASH_LIFE         74       /* 脚本 397：34 顶点 + 8 停留 + 6 快落 + 30 长尾 → 78 删 */
 #define GW_CARD_SE          0x4d       /* 发动音：0x4d se_release（与杰拉 / 鞘翅重锤同）*/
 #define GW_ENEMY_HIT_H      44.0f
 
@@ -64,9 +71,11 @@ typedef struct {
      *   ⇒ 自毁永远到不了 ⇒ 金色永久留在屏幕上 ✗。**脚本已经修好**，这里再加一道保险：
      *   换关 / 局末 / 删卡时把它们收掉（`delete()` 幂等；被收过的 id 再收无害）。*/
     uint32_t fx_flash_id;
-    uint32_t fx_tint_id;       /* 已退役（改成借原版威光；见 GW_MIKO_FLASH_SCRIPT）*/
-    uint32_t fx_miko_id;       /* ★ 原版「威光」那一支（脚本 47）的 VM 句柄 */
-    int32_t  fx_miko_left;     /* 它还该活多少帧（原版 ≈130 —— 原版由卡的 tick 删，脚本不自毁）*/
+    uint32_t fx_tint_id;       /* 乘法金色滤镜（脚本 398）的 VM 句柄 */
+    uint32_t fx_rays_id;       /* ★ 金色威光总控（脚本 400）的 VM 句柄 */
+    int32_t  fx_rays_left;     /* 它还活着的帧数（脚本自己会删；我们在**它还活着**时清句柄）*/
+    int32_t  fx_tint_left;     /* 乘法滤镜（脚本 398）剩余帧数 */
+    int32_t  fx_flash_left;    /* 加法闪光（脚本 397）剩余帧数 */
 } gw_card_t;
 
 _Static_assert(sizeof(gw_card_t) <= 496, "great_work: private state overflows CE_STATE_BYTES");
@@ -330,24 +339,26 @@ static int on_activate(ce_card_t *c)
         release[2] = 0.0f;
     }
 
-    /* 金色演出**三层**，全部以释放点为心、都在世界层 19（世界层最上、HUD 24/25 之下）：
-     *   ① **威光**：直接借原版 `CardMiko` 那一支（ability.anm **脚本 47**，层 13，原生 130 帧窗口，
-     *      寿命归卡管 —— 见 `GW_MIKO_FLASH_SCRIPT` 的注）；
-     *   ② **圆形扩张的乘法金色滤镜**（脚本 398，`drawPoly(1.0f,32)` 实心盘 + `blendMode(5)`
-     *      ⇒ `rgb′ = src×dst`，几何遮罩 ⇒ 金色像波一样从中心扩出去，盘外一点不动）；
-     *   ③ **圆形扩张的加法金色闪光**（脚本 397，实心盘 + `blendMode(1)`，闪光灯那一下）。
-     *   ⚠ owner 2026-10-03 改法：从"铺满游玩区的矩形"改成"**圆形扩张范围**"；
-     *     乘法层的淡出只能走 `colorTime`（该模式的 RGB 不吃 alpha）。*/
-    s->fx_miko_id = ce_anm_spawn(CE_ABILITY_ANM(), GW_MIKO_FLASH_SCRIPT, GW_MIKO_FLASH_LAYER);
-    if (s->fx_miko_id) {
-        ce_anm_set_pos(s->fx_miko_id, release[0], release[1], release[2]);
-        ce_anm_set_color(s->fx_miko_id, GW_MIKO_FLASH_RGBA);       /* 金色（原版是白光；见宏注）*/
-        s->fx_miko_left = GW_MIKO_FLASH_FRAMES;
+    /* 金色演出（同一帧起、都以释放点为心，owner 的"几乎同时"）：
+     *   · 光线总控（脚本 400，层 6）—— 最先出来的那 100 支金色光线（总控自己 92 帧后删，
+     *     子 VM 各自 90 帧自毁）；
+     *   · 圆形扩张的乘法金色滤镜（脚本 398，层 19）与加法金色闪光（脚本 397，层 19）
+     *     —— 慢起、先慢再快，顶点（≈34 帧）一起变成纯白 ⇒ 全屏白。*/
+    s->fx_rays_id = ce_anm_spawn(CE_ABILITY_ANM(), GW_RAYS_SCRIPT, GW_RAYS_LAYER);
+    if (s->fx_rays_id) {
+        ce_anm_set_pos(s->fx_rays_id, release[0], release[1], release[2]);
+        s->fx_rays_left = GW_RAYS_LIFE;
     }
     s->fx_tint_id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_GREAT_WORK_TINT, GW_FLASH_LAYER);
-    if (s->fx_tint_id) ce_anm_set_pos(s->fx_tint_id, release[0], release[1], release[2]);
+    if (s->fx_tint_id) {
+        ce_anm_set_pos(s->fx_tint_id, release[0], release[1], release[2]);
+        s->fx_tint_left = GW_TINT_LIFE;
+    }
     s->fx_flash_id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_GREAT_WORK_FLASH, GW_FLASH_LAYER);
-    if (s->fx_flash_id) ce_anm_set_pos(s->fx_flash_id, release[0], release[1], release[2]);
+    if (s->fx_flash_id) {
+        ce_anm_set_pos(s->fx_flash_id, release[0], release[1], release[2]);
+        s->fx_flash_left = GW_FLASH_LIFE;
+    }
 
     /* ★★ 2026-10-03 owner 的**平衡**：「伟大之作原作是会把**自机也变成黄金**，那就是**再减少冷却**，
      *   但是**会把我也杀死**」——**除非我处于无敌状态**。
@@ -393,18 +404,35 @@ static void gw_fx_kill(ce_card_t *c)
 {
     gw_card_t *s = ce_state(c, gw_card_t);
     if (!s) return;
-    if (s->fx_flash_id) { ce_anm_delete(s->fx_flash_id); s->fx_flash_id = 0; }
-    if (s->fx_tint_id)  { ce_anm_delete(s->fx_tint_id);  s->fx_tint_id = 0; }
-    if (s->fx_miko_id)  { ce_anm_delete(s->fx_miko_id);  s->fx_miko_id = 0; s->fx_miko_left = 0; }
+    if (s->fx_rays_id)  { ce_anm_delete(s->fx_rays_id);  s->fx_rays_id = 0;  s->fx_rays_left = 0; }
+    if (s->fx_tint_id)  { ce_anm_delete(s->fx_tint_id);  s->fx_tint_id = 0;  s->fx_tint_left = 0; }
+    if (s->fx_flash_id) { ce_anm_delete(s->fx_flash_id); s->fx_flash_id = 0; s->fx_flash_left = 0; }
 }
 
-/* ★ 原版威光的寿命是**卡自己管的**（`CardMiko::__on_tick_2` 到点调 `0x488cf0` 删；脚本不自毁）
- * ⇒ 我们也要自己数：`GW_MIKO_FLASH_FRAMES` 帧后收掉。这是每帧 tick（只做一次减法，可忽略）。*/
+/* ★★ owner 2026-10-03 两条补充：
+ *   ① 「**全屏死亡的时候是光最强的时候**」—— 397 的 alpha 与半径都在第 34 帧同时到顶
+ *      （alpha 255 + 半径 640 + 纯白）⇒ 最亮那一下正好就是罩满全屏那一下（脚本里已对齐）；
+ *   ② 「那些放射光线、圆盘中心**还是跟着自机可以移动的**」—— 每帧把三个演出 VM 贴回自机
+ *      （**原版 `CardMiko::__on_tick_2` `0x40e3d0` 就是每帧 `0x488b40(id)` 取 VM 再写
+ *      `player+0x620`，我们照抄**）。光线总控跟着自机 ⇒ 它每 2 帧 `scriptNew` 出去的子光线
+ *      就从**当时**的自机位置射出（已射出的那几支留在原地，与原版一致）。
+ *   ⚠ 句柄清理：脚本自己 `delete()`，这里只把句柄清 0（**不按 id 删**）—— 清的时刻都取在
+ *     脚本寿命**之内**（GW_*_LIFE 略小于脚本的 delete 帧），所以绝不会去动被池子回收后
+ *      落到别人头上的同号 VM。三条生命周期（换关/局末/删卡）那条路才真删（那时它们一定还在窗口内）。*/
 static int on_tick_2(ce_card_t *c)
 {
     gw_card_t *s = ce_state(c, gw_card_t);
-    if (!s || !s->fx_miko_id) return 0;
-    if (--s->fx_miko_left <= 0) { ce_anm_delete(s->fx_miko_id); s->fx_miko_id = 0; }
+    const float *pp;
+    if (!s) return 0;
+    pp = ce_player_pos();
+    if (pp) {
+        if (s->fx_rays_id)  ce_anm_set_pos(s->fx_rays_id,  pp[0], pp[1], 0.0f);
+        if (s->fx_tint_id)  ce_anm_set_pos(s->fx_tint_id,  pp[0], pp[1], 0.0f);
+        if (s->fx_flash_id) ce_anm_set_pos(s->fx_flash_id, pp[0], pp[1], 0.0f);
+    }
+    if (s->fx_rays_id  && --s->fx_rays_left  <= 0) s->fx_rays_id  = 0;
+    if (s->fx_tint_id  && --s->fx_tint_left  <= 0) s->fx_tint_id  = 0;
+    if (s->fx_flash_id && --s->fx_flash_left <= 0) s->fx_flash_id = 0;
     return 0;
 }
 

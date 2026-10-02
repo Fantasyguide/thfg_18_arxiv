@@ -1,0 +1,30 @@
+script script399 {
+    // 伟大之作（id 92）发动 —— **一支金色光线**（owner 2026-10-03：「**威光的光线最先出来**」）。
+    // 一手 = 原生 `ability.anm` **script48**（`CardMiko` 威光里那 100 支光线，逐条照抄；
+    //   见 `native/build/tex-ability/spec.txt` 的 script48 反编译）：
+    //     `sprite(-1)` + `layer(6)` + `anchor(2,0)` + `alpha2(16)` + `blendMode(1)`
+    //     + `ins_614(640.0f, 1.0f)`（原生那支"细长条"图元）+ 随机角度 + `scaleTime(30,0,1.0,%F0)`
+    //     + `color(128,128,255)`/`color2(255,32,255)`（**原生是蓝紫**）+ 60 帧后淡出/缩回 + `delete()`。
+    // 我们的差异只有两处：① 用 `drawRect(1,1)` 代替 `ins_614`（同一个"细长条"效果，走本仓已有的图元）；
+    //   ② 颜色改成**金色**（owner 要金；原生的蓝紫在 spec.txt 里）。
+-1:
+    sprite(-1);
+    layer(6);
+    zWriteDisable(1);
+    blendMode(1);
+    anchor(1, 0);                 // 一端锚 ⇒ scale.x 是从释放点**往外**长
+    drawRect(1.0f, 1.0f);
+    color(255, 206, 110);
+    alpha(255);
+0:
+    rotate(%RANDRAD, 0.0f, %RANDRAD);          // 方向随机（照 native）
+    fsetMul(%F0, %RANDF2, 96.0f);              // 长度 = 128..224（照 native 的 %F0 口径）
+    fadd(%F0, 128.0f);
+    scale(1.0f, 3.0f);                         // 粗 3 px
+    scaleTime(30, 0, %F0, 3.0f);               // 30 帧长出去（linear，照 native）
++60:
+    alphaTime(30, 0, 0);
+    scaleTime(30, 0, 1.0f, 0.0f);
++30:
+    delete();
+}

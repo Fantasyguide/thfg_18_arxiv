@@ -1090,3 +1090,6 @@ CARRIER_FAIRY_PLAIN_11                  ability/ufo_carrier_plain/CARRIER_FAIRY_
 
 # 伟大之作（id 92）的**乘法金色滤镜**（脚本 398）：`blendMode(5)` = DESTCOLOR/ZERO（rgb = src×dst）
 #   + `drawRect` 铺满游玩区 + `colorTime` 白→金 ⇒ 与脚本 397 的加法闪光叠成"闪光灯 + 真染金"。
+
+# 伟大之作（id 92）的**金色威光**：光线 399（照原生 ability.anm script48，颜色改金）+ 总控 400
+#   （照原生 script47：20 批 × 5 支、每 2 帧一批）。原生那支是蓝紫，见 native/build/tex-ability/spec.txt。
