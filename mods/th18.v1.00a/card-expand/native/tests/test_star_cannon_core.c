@@ -61,7 +61,7 @@ static void test_launch_and_step(void)
     CHECK(sh->active == 1 && sh->id == 0x1234u, "发射没生效");
     CHECK(sh->x == 5.0f && sh->y == 6.0f, "出膛位置该原样");
     CHECK(sh->hit == 1, "出生那一帧就该能命中");
-    CHECK(sc_draw_alpha(sh) == 255, "出生时不透明度该是满的（原版 alpha 从 0 起）");
+    CHECK(sc_draw_alpha(sh) == 255, "★ owner 口径：完全不透明（不闪）");
 
     x0 = sh->x; y0 = sh->y;
     CHECK(!sc_step(sh), "第一帧不该出界");
@@ -93,8 +93,9 @@ static void test_launch_and_step(void)
         }
         CHECK(lo >= 0 && hi <= SC_ALPHA_MAX, "alpha 越界 [%d, %d]", lo, hi);
         CHECK(hi == SC_ALPHA_MAX && lo <= SC_ALPHA_STEP, "alpha 该走到两端（实测 [%d, %d]）", lo, hi);
-        CHECK(sc_draw_alpha(sh) == 255 - sh->alpha / SC_ALPHA_DRAW_DIV,
-              "画出来的 alpha 该是 255 − 原版 alpha/SC_ALPHA_DRAW_DIV（覆盖混合下压摆动幅度）");
+        CHECK(sc_draw_alpha(sh) == 255, "★ owner 口径：不管原版 alpha 怎么摆，画出来恒 255（第 %d 帧）", i);
+        CHECK(sh->alpha >= 0 && sh->alpha <= SC_ALPHA_MAX,
+              "原版 alpha 的摆动本身仍该在 0..%d（只是不参与绘制）", SC_ALPHA_MAX);
     }
 
     /* 命中免疫：每 SC_HIT_COOLDOWN 帧正好一次 */

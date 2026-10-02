@@ -89,12 +89,10 @@ int sc_step(sc_shot_t *sh)
 
 int sc_draw_alpha(const sc_shot_t *sh)
 {
-    /* ★ 见头文件里 `SC_ALPHA_DRAW_DIV` 的注：摆动压到 1/3 幅度 ⇒ 覆盖混合下不会"透"。*/
-    int a = 255 - sh->alpha / SC_ALPHA_DRAW_DIV;
-    if (a < 0) a = 0;
-    if (a > 255) a = 255;
-    return a;
+    (void)sh;                    /* ★ owner 2026-10-03：不用闪烁 alpha，**完全不透明**（见头文件那段演变）*/
+    return 255;
 }
+
 
 void sc_aim_reset(sc_aim_t *a)
 {
