@@ -119,3 +119,16 @@ Aa' = 1 · Sa + 0 · Da = Sa        （与 blendMode 无关、与 Da 无关）
    （白 = 乘 1 = 不变，这是天然的"无效果"端点）。
 2. **`alpha` 别写 0**：`color_1.A == 0 && color_2.A == 0` 时整台 VM **不画**（`0x4812e8`，见 §2）——
    乘法层想"完全透明"是做不到的（它本来就不吃 alpha），要收就 `colorTime` 回白再 `delete()`。
+
+### 5.1 推论：**有形状的乘法/滤波只能靠几何遮罩**
+
+既然 RGB 因子由 `blendMode` 决定、alpha 只写 `Aa′`（§1/§2），那么：
+
+- **贴图 alpha 不能给乘法"开洞"**：`blendMode(5)`（`DESTCOLOR/ZERO`）的因子是**源色 × 底色**，
+  源色 = 顶点色 × **贴图 RGB** ⇒ 贴图透明处的 RGB 一样参与乘法（0 值还会把画面乘黑）。想做
+  "只在圈内染色"，靠贴图 alpha 是**做不到**的。
+- **正解 = 几何遮罩**：`drawPoly(1.0f, 32)`（实心盘）/ `drawRing(...)` / `texCircle(...)` 这些**图元**只
+  栅格化形状内的像素 ⇒ 乘法天然只作用在形状内。半径就用 `scale`（`drawPoly(1.0f,…)` 的半径 = 1.0
+  ⇒ 缩放值 = 半径），扩张用 `scaleTime`。
+- 同理，**淡化**也不能用 `alpha`（不进 RGB）⇒ 用 `colorTime` 把颜色插回**白**（乘 1 = 不变）。
+  实测用例：本仓卡 92 的"圆形扩张金色滤镜"（`assets/ability/scripts/398_great_work_tint.anm.txt`）。

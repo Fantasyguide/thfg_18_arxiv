@@ -28717,3 +28717,27 @@ owner：「**黄金的特效你换一种写法，照着原生卡丰聪耳神子�
 **乘法滤镜（脚本 398）退役**：不再 spawn；脚本不删（ORDER append-only，删行会把后续号全推走）。
 
 **回归**：`make check` rc=0（cards-check 49 张 / anm-verify / capcheck / dllx87 / check-docs）。
+
+#### §BE 详录 #219 追加 5（2026-10-03）：两层金色演出改成**圆形扩张**（`drawPoly` 实心盘）
+
+owner：「动画再斟酌一下吧：**乘法滤镜和闪光能不能变成圆形扩张范围？**」
+
+**改法**：两个脚本都从"铺满游玩区的 `drawRect`"改成 **实心盘** —— `sprite(-1)` + `drawPoly(1.0f, 32)`
+（= 半径 1.0 的 32 边形；一手：原生 ability.anm **script49** = `drawPoly(1.0f,32)` + `scaleTime(60,1,600,600)`，
+盘点见 [`engine/card/th18/14-clear-range-barrier.md`](../../../engine/card/th18/14-clear-range-barrier.md) §3.3；
+本仓 277 的配方也来自它）。**`drawPoly` 的缩放值 = 半径**（世界单位），所以扩张就是 `scaleTime(...)`。
+
+| 层 | 脚本 | 叠法 | 时序 |
+| --- | --- | --- | --- |
+| 圆形乘法金色滤镜 | 398 | `blendMode(5)`（`rgb′ = src×dst`）| 0→560 半径 / 28 帧；`colorTime(8,0,255,205,110)` 推到金 → 落定后 `colorTime(16,0,255,255,255)` 退回白 → `delete()` |
+| 圆形加法金色闪光 | 397 | `blendMode(1)` | 0→560 / 24 帧；alpha 3 帧到 230、30 帧退 0 → `delete()` |
+
+**★ 为什么"盘"能当遮罩（这才是换圆形的关键）**：`drawPoly` 只**栅格化盘内的像素** ⇒ 乘法只作用在盘内；
+而用**全屏矩形**时，乘法模式的 RGB 因子是 `DESTCOLOR`（不吃 alpha，见 §7 的十模式表）⇒ 根本没法"只在圈里染色"。
+⇒ **凡是要"有形状的乘法/滤波"，都得靠几何遮罩（`drawPoly` / `drawRing` / `texCircle`），不能靠贴图 alpha。**
+
+**中心**：三层（威光 47 / 滤镜 398 / 闪光 397）**全部以释放点为中心**（发动那一刻的自机坐标 `ce_player_pos()`，
+原版 `CardMiko` 同取法）。层 19（世界层最上、HUD 24/25 之下 ⇒ HUD 不染金）。
+三个 VM 都在 `gw_fx_kill()` 兜底里（换关 / 局末 / 删卡），且 397/398 自毁、47 由 `on_tick_2` 数 130 帧删。
+
+**回归**：`make check` rc=0（cards-check 49 张 / anm-verify 认 397+398 / capcheck / dllx87 / check-docs）。
