@@ -4601,9 +4601,16 @@ static void ufo_drop_collect(ufo_card_t *s, int i)
         s_bounty_eq.mid_faith = c->eq_mid;
         s_bounty_eq.cherry = c->eq_cherry;
         s_bounty_eq_pending = 1;
-        ce_log("ufo: BOUNTY equivalence published - P %d / money %d / big faith %d / mid faith %d "
-               "/ cherry %d (**raw classification** - the rainbow channel swap does NOT affect it; "
-               "for other cards; th12 has no such API - owner 2026-09-26)",
+        ce_log("ufo: BOUNTY settled - **raw kinds** P %d / money %d / big faith %d / mid faith %d / "
+               "cherry %d  =>  **one-hand channels** cntA(P side) %d / cntB(money side) %d, color %d, "
+               "mult %d.%03d (channels = th12 cntA/cntB: rainbow swaps the two; red multiplies cntA, "
+               "other colors multiply cntB -> the bounty score; raw kinds are what other cards want)",
+               (int)c->eq_p, (int)c->eq_money, (int)c->eq_big, (int)c->eq_mid, (int)c->eq_cherry,
+               (int)c->cnt_p, (int)c->cnt_money, (int)c->ufo_color,
+               (int)c->mult_permille / 1000, (int)c->mult_permille % 1000);
+        ce_log("ufo: BOUNTY equivalence published for other cards - P %d / money %d / big faith %d / "
+               "mid faith %d / cherry %d (**raw classification** - the rainbow channel swap does NOT "
+               "affect it; th12 has no such API - owner 2026-09-26)",
                (int)c->eq_p, (int)c->eq_money, (int)c->eq_big, (int)c->eq_mid, (int)c->eq_cherry);
         s->faith_pulled_big = 0;                  /* 账已经结清 ⇒ 清掉（下一只 UFO 从零开始）*/
         s->faith_pulled_mid = 0;

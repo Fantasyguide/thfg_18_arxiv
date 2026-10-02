@@ -10369,3 +10369,22 @@ mask = 它的槽、分角同形；位置 = 调用者给的坐标），并且**�
 - **原生 P / 金钱道具不动**：仍照一手走「type 1 → `cntA`（彩虹 ⇒ `cntB`）／type 2 反过来」✓（那条已经一手对账过）。
 - 大信仰点仍 `NEUTRAL`（原封不动）；非满P 的樱点仍 `NEUTRAL`。
 - 发布：DLL `2389af59…` → **`b0bd69b1b796c00e664814fbaf54d27a`**（四处同步 OK）；门禁 `check` ✓（420 文件）/ 闸自检 ✓。
+
+#### §2.0zzx-24c 让内部**看得见**：日志同时打「原样分类计数」与「一手通道」（owner 2026-09-26：「你为什么在内部只建立 P or money 的数字呢，你多建几个东西不是更清晰吗」）
+
+**两层，各有各的一手理由**：
+
+| 层 | 是什么 | 一手出处 / 为什么存在 |
+| --- | --- | --- |
+| **原样分类计数**（`eq_p/eq_money/eq_big/eq_mid/eq_cherry`）| UFO 在场期间**真正吞下的东西**，彩虹的互换**不影响**它 | owner 2026-09-26 要的"等价计数"；`ufo_bounty.h` 出口给其他卡 |
+| **一手通道**（`cnt_p` = 一手 `cntA`、`cnt_money` = 一手 `cntB`）| 赏金结算用的**两条通道**；彩虹把两条**互换** | 一手 `th12:0x44acc8`/`0x44ad0c` 的 `add %edi,0x48/0x4c`；**而且压缩包的三张皮**（16/17/18）就是按"`cntA != 0 && cntB != 0` / 只有一条"选的 |
+
+⇒ 没删通道（删了就选不出压缩包那张皮、也复刻不了一手的互换），**但把两层一起打进日志**：
+
+```
+ufo: BOUNTY settled - **raw kinds** P .. / money .. / big faith .. / mid faith .. / cherry ..
+     => **one-hand channels** cntA(P side) .. / cntB(money side) .., color .., mult ..
+ufo: BOUNTY equivalence published for other cards - P .. / money .. / big faith .. / mid faith .. / cherry ..
+```
+
+发布：DLL `b0bd69b1…` → **`ebc1e3628c05a158ba33ca246a189778`**（四处同步 OK）。
