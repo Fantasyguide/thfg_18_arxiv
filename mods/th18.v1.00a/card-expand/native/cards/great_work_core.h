@@ -24,11 +24,11 @@
 #define GW_MONEY_ANGLE_SPREAD 1     /* 1 = 金钱撒落角度打散（不叠成一摞）*/
 
 /* —— 冷却公式（❓ 全部自定） —— */
-#define GW_BASE             600     /* 10 s 底价 */
-#define GW_PER_BULLET       3       /* 每颗弹幕 +3 帧（0.05 s）*/
-#define GW_PER_HP           1       /* 每点敌人剩余血量 +1 帧 */
-#define GW_MIN              600     /* 冷却下限 10 s */
-#define GW_MAX              9000    /* 冷却上限 2.5 min（防"一屏弹幕 ⇒ 这局再也用不了"）。
+#define GW_BASE             360     /* ★ 6 s 底价（owner 2026-10-03「再减少冷却」：原 600 的 0.6 倍）*/
+#define GW_PER_BULLET       2       /* ★ 每颗弹幕 +2 帧（原 3）*/
+#define GW_PER_HP           1       /* 每点敌人剩余血量 +1 帧（不变）*/
+#define GW_MIN              360     /* ★ 冷却下限 6 s（原 600）*/
+#define GW_MAX              5400    /* ★ 冷却上限 90 s（原 9000 ⇒ ×0.6）（防"一屏弹幕 ⇒ 这局再也用不了"）。
                                      * 量级参照：200 颗弹 + 2000 血 ≈ 3200 帧（53 s）；
                                      * 一屏弹 + 一个大 boss 阶段（2 万血）会直接顶到上限 */
 

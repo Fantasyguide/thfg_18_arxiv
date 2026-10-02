@@ -50,6 +50,13 @@ static float       s_bullet_pos[GW_BULLET_MAX][3];
 static uint32_t    s_bullet_rnd[GW_BULLET_MAX];
 static gw_target_t s_target[GW_ENEMY_MAX];
 
+/* ★ 自机也变黄金（owner 2026-10-03 的平衡）：调引擎自己的 `Player__die`。
+ *   一手：`Player__die` = `0x45d3a0`（thiscall(Player*)、无栈参、裸 ret；内部干「状态→4 + 死亡特效 +
+ *   8 帧决死窗 + 末尾广播卡虚表 +0x10」，**不扣命** —— 扣命在 `commit_death_and_enter_state2`），
+ *   调用先例 = `cards/youkai.c` 的 `YK_FN_PLAYER_DIE` / `cards/trance.c` 的 `TRANCE_FN_PLAYER_DIE`。*/
+#define GW_FN_PLAYER_DIE 0x45d3a0u
+typedef void (__attribute__((thiscall)) *gw_fn_player_die_t)(void *player);
+
 /* 把这张卡的充能**当帧改成** `frames`（照引擎写充能那一支：zTimer 的 prev/cur/cur_f + 总时长）。*/
 static void gw_set_recharge(ce_card_t *c, int32_t frames)
 {
@@ -189,6 +196,26 @@ static int on_activate(ce_card_t *c)
     s->last_money = money;
     s->last_phase_breaks = breaks;
     ce_play_sound(GW_CARD_SE, px);
+
+    /* ★★ 2026-10-03 owner 的**平衡**：「伟大之作原作是会把**自机也变成黄金**，那就是**再减少冷却**，
+     *   但是**会把我也杀死**」——**除非我处于无敌状态**。
+     *   ⇒ 转换做完之后调引擎自己的 `Player__die`（thiscall(Player*)；先例 `youkai.c`/`trance.c`），
+     *     走的是**原生 MISS 链**（状态→4 决死窗 → 没救回才 commit：扣命/炸弹归 3/掉一档），
+     *     所以还留了 8 帧决死窗（按 X 能救回来 —— owner 没要求秒杀，先按原生的来）。
+     *   ⇒ 无敌中（复活 280 帧 / 决死救回 60 / 炸弹各自那段 —— `player+0x47774`）**不杀**：
+     *     否则"刚复活就用一次"会被自己的卡秒掉，等于把无敌帧吃掉了。
+     *   ⚠ 只在**真的转换了东西**之后才走到这里（空场在上面 `ce_refuse` 早退了）⇒ 拒绝时不自杀。*/
+    {
+        ce_timer_t *inv = CE_PLAYER_INVULN();
+        uint8_t *pl = CE_PLAYER();
+        if (pl && (!inv || inv->cur <= 0)) {
+            ((gw_fn_player_die_t)(uintptr_t)GW_FN_PLAYER_DIE)(pl);
+            ce_log("great_work: 自机也变成黄金（原生 MISS 链；无敌中会豁免）");
+        } else {
+            ce_log("great_work: 自机在无敌中 ⇒ 豁免这一死（owner 口径）");
+        }
+    }
+
     ce_log("great_work: converted %d bullets + %d enemies (hp %lld) -> %d money items, "
            "%d boss phase(s) broken; recharge %d frames (%.1f s)",
            bullets, enemies, (long long)hp_sum, money, breaks,
