@@ -53,9 +53,15 @@
 #define GW_RAYS_LAYER         6        /* 原生层号（script47/48 的 layer(6)）*/
 /* 三个脚本的自然寿命（比脚本里的 `delete()` 略短 —— **必须在 VM 还活着时清句柄**，
  *  否则 VM 池把 id 回收给别人之后，我们会去动别人的 VM）。*/
+/* ★ owner 2026-10-03：「**顶点延迟成 1s**」＋「刚才测试**瞬间就所有人死了**，**死亡代码应当是延迟触发的**」
+ *   ⇒ 顶点 = **60 帧 = 1 s**：脚本 397/398 的时序按它重排（慢段 42 帧 + 快段 18 帧 = 60），
+ *     真正的"死"（`gw_resolve()`：换钱 + 自机也变黄金）也在第 60 帧那一拍触发。
+ *   ⚠ 改这里的数就要同步改脚本 397/398 里的 `42/18`（两处必须对齐）。*/
+#define GW_PEAK_FRAMES        60       /* 顶点（= 死亡结算）在发动后第几帧 */
+#define GW_DEATH_DELAY        GW_PEAK_FRAMES
 #define GW_RAYS_LIFE          92       /* 脚本 400：92 帧后自己删 */
-#define GW_TINT_LIFE          40       /* 脚本 398：34 顶点 + 8 停留 → 42 删 */
-#define GW_FLASH_LIFE         74       /* 脚本 397：34 顶点 + 8 停留 + 6 快落 + 30 长尾 → 78 删 */
+#define GW_TINT_LIFE          64       /* 脚本 398：60 顶点 + 8 停留 → 68 删 */
+#define GW_FLASH_LIFE        100       /* 脚本 397：60 顶点 + 8 停留 + 6 快落 + 30 长尾 → 104 删 */
 #define GW_CARD_SE          0x4d       /* 发动音：0x4d se_release（与杰拉 / 鞘翅重锤同）*/
 #define GW_ENEMY_HIT_H      44.0f
 
@@ -76,6 +82,7 @@ typedef struct {
     int32_t  fx_rays_left;     /* 它还活着的帧数（脚本自己会删；我们在**它还活着**时清句柄）*/
     int32_t  fx_tint_left;     /* 乘法滤镜（脚本 398）剩余帧数 */
     int32_t  fx_flash_left;    /* 加法闪光（脚本 397）剩余帧数 */
+    int32_t  fx_death_left;    /* ★ 距离"顶点结算"还有几帧（60 = 1 s；见 GW_DEATH_DELAY）*/
 } gw_card_t;
 
 _Static_assert(sizeof(gw_card_t) <= 496, "great_work: private state overflows CE_STATE_BYTES");
@@ -288,50 +295,127 @@ static int gw_take_enemies(int64_t *hp_sum, int32_t *money, int32_t *breaks)
     return n;
 }
 
-static int on_activate(ce_card_t *c)
+/* ★ **只数不动手**的一扫（发动那一刻用）：`gw_recharge()` 只要"弹幕数 + 敌人血量"两项，
+ *   这里正好给这两项 ⇒ **冷却在发动瞬间就能算准**（不必等结算，HUD 不会跳）；另外顺手给
+ *   "场上有没有东西"的判据（敌人只数、道具只数、信仰点走 `faith_absorb_list()` 那只读枚举）。*/
+static void gw_scan(int32_t *bullets_out, int64_t *hp_out, int32_t *items_out, int *faith_out)
+{
+    uint8_t *bm = CE_BULLET_MGR();
+    uint8_t *em = CE_ENEMY_MGR();
+    uint8_t *im = CE_ITEM_MANAGER();
+    faith_absorb_t probe[1];
+    int32_t nb = 0, ni = 0, i;
+    int64_t hp = 0;
+
+    if (bm) {
+        for (i = 0; i < CE_BM_BULLET_COUNT; ++i) {
+            uint8_t *b = bm + CE_BM_BULLETS + (size_t)i * CE_BULLET_STRIDE;
+            int32_t st = (int32_t)*(uint16_t *)(b + CE_BULLET_STATE);
+            if (st == 1 || st == 2) ++nb;
+        }
+    }
+    if (em) {
+        uint8_t *e;
+        CE_ENEMY_FOREACH(em, e) {
+            int32_t ehp;
+            if (!e) continue;
+            ehp = *(int32_t *)(e + CE_ENEMY_HP_CUR);
+            if (ehp > 0) hp += ehp;
+        }
+    }
+    if (im) {
+        for (i = 0; i < (int)CE_ITEM_SLOTS; ++i) {
+            uint8_t *it = im + CE_ITEM_POOL_OFF + (size_t)i * CE_ITEM_STRIDE;
+            if (*(int32_t *)(it + CE_ITEM_STATE) != 0) ++ni;
+        }
+    }
+    *bullets_out = nb;
+    *hp_out = hp;
+    *items_out = ni;
+    *faith_out = faith_absorb_list(probe, 1);      /* 只读枚举：>0 就是场上有 */
+}
+
+/* ★★ 结算（= owner 说的「死亡代码」）：**延迟到顶点那一拍才跑**（见 `GW_DEATH_DELAY`）。
+ *   把弹幕 / 敌人 / 引擎道具 / 共享信仰点换成钱，再让自机也变黄金。*/
+static void gw_resolve(ce_card_t *c)
 {
     gw_card_t *s = ce_state(c, gw_card_t);
     int64_t hp_sum = 0;
-    float release[3] = { 0.0f, 224.0f, 0.0f };
     int32_t money = 0, breaks = 0, bullets, frames, enemies, items;
     int32_t faith_money = 0;
     int faith_n;
-    float px = ce_player_x();
 
-    if (!s) return 0;
-
+    if (!s) return;
     bullets = gw_take_bullets(&money);
     enemies = gw_take_enemies(&hp_sum, &money, &breaks);
-    items = gw_take_items(&money);                        /* ★ 通道①：引擎道具池全清成钱 */
-    /* ★ 通道②：**共享信仰点池**（107 樱点 / 110-111 信仰点·绿点）——
-     *   owner 2026-10-03：「110-111 得响应清扫，107 是樱点，也得响应清扫」。
-     *   池是共享的 ⇒ 清扫做在 `faith.c` 里一份，三张卡一起响应（不必各自再挂）。
-     *   `faith_n` = 换掉的颗数（进「有没有东西可转」的判据）；`faith_money` 已进钱包（撒道具 / `ce_money_pocket`）。*/
+    items = gw_take_items(&money);
     faith_n = faith_sweep_to_money(&faith_money);
-
-    /* ★ 通道③：让**有私有池的卡**在自己的 tick 里把场上那批也清成钱（代数闸，见 sdk_core.h）。
-     *   接了的：108 刻符 / 109 灵力道具 / 112 飞碟 token / 116 季节道具 / 117 动物灵 token。
-     *   ★ 通道②（共享信仰点池）已在上面直接清掉了（`faith_sweep_to_money()`）—— 那一池是共享的，
-     *   做在层里一份、三张卡（107/110/111）一起响应，不需要走代数闸。*/
-    if (items || bullets || enemies || faith_n)
-        ce_sweep_bump();
-
-    if (bullets == 0 && enemies == 0 && items == 0 && faith_n == 0)   /* 空场：不烧充能 */
-        return ce_refuse("great_work", "nothing to convert (no live bullet, no enemy, no item, no faith dot)");
+    if (items || bullets || enemies || faith_n) ce_sweep_bump();
 
     frames = gw_recharge(bullets, hp_sum);
-    gw_set_recharge(c, frames);                           /* ④ 冷却按转换量等比例 */
-
+    gw_set_recharge(c, frames);
     ++s->fired;
     s->last_frames = frames;
     s->last_bullets = bullets;
     s->last_hp = hp_sum;
     s->last_money = money;
     s->last_phase_breaks = breaks;
+
+    {
+        ce_timer_t *inv = CE_PLAYER_INVULN();
+        uint8_t *pl = CE_PLAYER();
+        if (pl && (!inv || inv->cur <= 0)) {
+            ((gw_fn_player_die_t)(uintptr_t)GW_FN_PLAYER_DIE)(pl);
+            if (*(int32_t *)(pl + CE_PLAYER_STATE) == 4) {
+                ((gw_fn_commit_death_t)(uintptr_t)GW_FN_COMMIT_DEATH)(pl);
+                ce_log("great_work: 自机也变成黄金 —— 开窗后**立刻结算**（无决死机会）");
+            } else {
+                ce_log("great_work: 自机也变成黄金 —— 但被保护/救援接住了（状态 %d）⇒ 不补刀",
+                       *(int32_t *)(pl + CE_PLAYER_STATE));
+            }
+        } else {
+            ce_log("great_work: 自机在无敌中 ⇒ 豁免这一死（owner 口径）");
+        }
+    }
+    ce_log("great_work: (顶点结算) converted %d bullets + %d enemies + %d items + %d faith dots "
+           "(%d from faith) (hp %lld) -> %d money items, %d boss phase(s) broken; recharge %d frames (%.1f s)",
+           bullets, enemies, items, faith_n, (int)faith_money, (long long)hp_sum, money, breaks,
+           frames, (double)frames / 60.0);
+}
+
+static int on_activate(ce_card_t *c)
+{
+    gw_card_t *s = ce_state(c, gw_card_t);
+    int32_t bullets = 0, items = 0, frames;
+    int64_t hp_sum = 0;
+    int faith_n = 0;
+    float release[3] = { 0.0f, 224.0f, 0.0f };
+    float px = ce_player_x();
+
+    if (!s) return 0;
+
+    /* ★★ owner 2026-10-03：「我刚才测试的时候**瞬间就所有人死了**。**死亡代码应当是延迟触发的**」
+     *   ＋「**顶点延迟成 1s**」。
+     *   ⇒ 发动这一拍**只做两件事**：① **只数不动手**地判"有没有东西可转"（空场不烧充能）；
+     *     ② 起金色演出 + 把结算倒计时设成 `GW_DEATH_DELAY`（= 60 帧 = 1 s，正好是顶点）。
+     *     真正的"死"——把弹幕/敌人/引擎道具/信仰点换成钱、以及**自机也变黄金**——在
+     *     `on_tick_2` 数到 0 时由 `gw_resolve()` 执行（见那里的注）。*/
+    gw_scan(&bullets, &hp_sum, &items, &faith_n);
+
+    if (bullets == 0 && hp_sum == 0 && items == 0 && faith_n == 0)   /* 空场：不烧充能 */
+        return ce_refuse("great_work", "nothing to convert (no live bullet, no enemy, no item, no faith dot)");
+
+    /* 冷却照**扫描量**先算好（`gw_recharge()` 只要这两项 ⇒ 与结算后的值完全一致，HUD 不跳）。*/
+    frames = gw_recharge(bullets, hp_sum);
+    gw_set_recharge(c, frames);
+    s->last_frames = frames;
+    s->last_bullets = bullets;
+    s->last_hp = hp_sum;
+    s->fx_death_left = GW_DEATH_DELAY;
     ce_play_sound(GW_CARD_SE, px);
 
-    /* ★ 释放点 = **发动那一刻的自机坐标**（owner：「中心就选取到释放点」；原版 `CardMiko` 也是这么取，
-     *   `0x40e5c0` 的 `movq xmm0,[player+0x620]`）。下面三个演出共用它当中心。*/
+    /* ★ 释放点 = **发动那一刻的自机坐标**；三个演出共用它当**初始**中心
+     *   （之后每帧由 `on_tick_2` 贴回自机 —— owner：「那些放射光线圆盘中心还是跟着自机可以移动的」）。*/
     {
         const float *pp = ce_player_pos();
         release[0] = pp ? pp[0] : 0.0f;
@@ -339,11 +423,11 @@ static int on_activate(ce_card_t *c)
         release[2] = 0.0f;
     }
 
-    /* 金色演出（同一帧起、都以释放点为心，owner 的"几乎同时"）：
-     *   · 光线总控（脚本 400，层 6）—— 最先出来的那 100 支金色光线（总控自己 92 帧后删，
+    /* 金色演出（同一帧起、都以释放点为心 —— owner 的"几乎同时"）：
+     *   · 光线总控（脚本 400，层 6）—— 最先出来的那 100 支金色光刃（总控 92 帧后删，
      *     子 VM 各自 90 帧自毁）；
-     *   · 圆形扩张的乘法金色滤镜（脚本 398，层 19）与加法金色闪光（脚本 397，层 19）
-     *     —— 慢起、先慢再快，顶点（≈34 帧）一起变成纯白 ⇒ 全屏白。*/
+     *   · 圆形扩张的乘法金色滤镜（脚本 398）与加法金色闪光（脚本 397），层 19 ——
+     *     慢段 42 帧 + 快段 18 帧 = **第 60 帧（1 s）顶点**：纯白 + alpha 255 + 半径 640 同帧到顶。*/
     s->fx_rays_id = ce_anm_spawn(CE_ABILITY_ANM(), GW_RAYS_SCRIPT, GW_RAYS_LAYER);
     if (s->fx_rays_id) {
         ce_anm_set_pos(s->fx_rays_id, release[0], release[1], release[2]);
@@ -360,41 +444,9 @@ static int on_activate(ce_card_t *c)
         s->fx_flash_left = GW_FLASH_LIFE;
     }
 
-    /* ★★ 2026-10-03 owner 的**平衡**：「伟大之作原作是会把**自机也变成黄金**，那就是**再减少冷却**，
-     *   但是**会把我也杀死**」——**除非我处于无敌状态**。
-     *   ⇒ 转换做完之后调引擎自己的 `Player__die`（thiscall(Player*)；先例 `youkai.c`/`trance.c`），
-     *     走的是**原生 MISS 链**（状态→4 决死窗 → 没救回才 commit：扣命/炸弹归 3/掉一档），
-     *     所以还留了 8 帧决死窗（按 X 能救回来 —— owner 没要求秒杀，先按原生的来）。
-     *   ⇒ 无敌中（复活 280 帧 / 决死救回 60 / 炸弹各自那段 —— `player+0x47774`）**不杀**：
-     *     否则"刚复活就用一次"会被自己的卡秒掉，等于把无敌帧吃掉了。
-     *   ⚠ 只在**真的转换了东西**之后才走到这里（空场在上面 `ce_refuse` 早退了）⇒ 拒绝时不自杀。*/
-    {
-        ce_timer_t *inv = CE_PLAYER_INVULN();
-        uint8_t *pl = CE_PLAYER();
-        if (pl && (!inv || inv->cur <= 0)) {
-            ((gw_fn_player_die_t)(uintptr_t)GW_FN_PLAYER_DIE)(pl);
-            /* ★ 不给决死窗：`Player__die` 只是把状态推到 **4（决死窗）** 并广播卡虚表 +0x10（救援/保护
-             *   就挂在那里）；**还停在 4** 就立刻结算（= 窗口当场到期，按 X 也来不及）。
-             *   若这一调之后状态已经不是 4（被救援层/保护接住了）⇒ **不补刀**，尊重那道保护
-             *   —— owner：「那些什么**咆哮状态**之类的**可以挡**」（咆哮的无敌 = `set_invuln(60)`
-             *   写的就是 `player+0x47774`，上面那道 `inv->cur` 门已经先挡了一层）。*/
-            if (*(int32_t *)(pl + CE_PLAYER_STATE) == 4) {
-                ((gw_fn_commit_death_t)(uintptr_t)GW_FN_COMMIT_DEATH)(pl);
-                ce_log("great_work: 自机也变成黄金 —— 开窗后**立刻结算**（无决死机会）");
-            } else {
-                ce_log("great_work: 自机也变成黄金 —— 但被保护/救援接住了（状态 %d）⇒ 不补刀",
-                       *(int32_t *)(pl + CE_PLAYER_STATE));
-            }
-        } else {
-            ce_log("great_work: 自机在无敌中 ⇒ 豁免这一死（owner 口径）");
-        }
-    }
-
-    ce_log("great_work: converted %d bullets + %d enemies + %d items + %d faith dots "
-           "(%d from faith) (hp %lld) -> %d money items, "
-           "%d boss phase(s) broken; recharge %d frames (%.1f s)",
-           bullets, enemies, items, faith_n, (int)faith_money, (long long)hp_sum, money, breaks,
-           frames, (double)frames / 60.0);
+    ce_log("great_work: 发动（顶点演出 1 s）—— 场上 %d 弹 / %lld 血 / %d 道具 / %d 信仰点，"
+           "冷却已定 %d 帧；**结算延迟到第 %d 帧**",
+           bullets, (long long)hp_sum, items, faith_n, frames, GW_DEATH_DELAY);
     return 0;
 }
 
@@ -425,11 +477,14 @@ static int on_tick_2(ce_card_t *c)
     const float *pp;
     if (!s) return 0;
     pp = ce_player_pos();
-    if (pp) {
+    /* 跟着自机只在**顶点之前**（顶点那一拍结算，之后自机要进死亡链了 —— 光别追着尸体跑；
+       峰值之后剩下的只有缓出尾巴，中心冻在顶点位置更稳）。*/
+    if (pp && s->fx_death_left > 0) {
         if (s->fx_rays_id)  ce_anm_set_pos(s->fx_rays_id,  pp[0], pp[1], 0.0f);
         if (s->fx_tint_id)  ce_anm_set_pos(s->fx_tint_id,  pp[0], pp[1], 0.0f);
         if (s->fx_flash_id) ce_anm_set_pos(s->fx_flash_id, pp[0], pp[1], 0.0f);
     }
+    if (s->fx_death_left > 0 && --s->fx_death_left == 0) gw_resolve(c);   /* ★ 顶点结算（延迟）*/
     if (s->fx_rays_id  && --s->fx_rays_left  <= 0) s->fx_rays_id  = 0;
     if (s->fx_tint_id  && --s->fx_tint_left  <= 0) s->fx_tint_id  = 0;
     if (s->fx_flash_id && --s->fx_flash_left <= 0) s->fx_flash_id = 0;
