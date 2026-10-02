@@ -234,7 +234,10 @@ static int on_tick_2(ce_card_t *c)
 
     /* ② 跟班（炮身）：占一个原生子机槽当**定位锚**（收起/展开语义白送），
      *   但**画面上的炮身是我们自绘的 VM** —— 这样炮口的旋转与灰/白完全归我们写。*/
-    o = ce_option_get(c, &s->opt, SC_OPT_ANM_Y, CE_ANM_ABILITY_SCRIPT_STAR_CANNON_OPT, SC_RETRY, "star_cannon");
+    /* ⚠ option 挂的是**空白锚脚本 392**（不画东西）—— 早先挂 381（炮身贴图）再写 `color = 0` 想藏它，
+     *   结果引擎只让 alpha 生效、RGB 留 0 ⇒ 屏上一个**黑色剪影**在闪（owner 实测的那个"黑色虚影"）。
+     *   画面上的炮身是下面那个**自绘 VM**（脚本 381），旋转/灰白全归我们写。*/
+    o = ce_option_get(c, &s->opt, SC_OPT_ANM_Y, CE_ANM_ABILITY_SCRIPT_STAR_CANNON_ANCHOR, SC_RETRY, "star_cannon");
     if (!o) {
         if (s->cannon_id) { ce_anm_delete(s->cannon_id); s->cannon_id = 0; }   /* 收起了 ⇒ 自绘的也收 */
         return 0;
@@ -248,10 +251,6 @@ static int on_tick_2(ce_card_t *c)
             s->shots = 0;                            /* 装满了 ⇒ 计数归零 */
             ce_log("star_cannon: reload done - %d rounds ready", SC_MAGAZINE);
         }
-    }
-    {
-        uint32_t vm = *(uint32_t *)(o + CE_OPT_ANM_ID);
-        if (vm) ce_anm_set_color(vm, 0x00000000u);   /* option 自己那个 VM 透明（只当锚点）*/
     }
     if (!s->cannon_id) {                             /* 自绘炮身：第一次 tick 建出来 */
         s->cannon_id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_STAR_CANNON_OPT, SC_LAYER);

@@ -53,9 +53,10 @@
 #define ZN_RANGE          640.0f   /* 锁敌半径（原版 = 光标 400 px 内最近敌；我们的"光标"=跟班）*/
 #define ZN_RANGE_SQ       (ZN_RANGE * ZN_RANGE)
 #define ZN_ARC_MAX        200.0f   /* 出膛点到目标的最大距离（= 2·|velocity|）*/
-#define ZN_TRAIL_EVERY      8      /* ★ 2026-10-03 owner 实测「残留大量剑的虚影」⇒ 从 2 帧改成 8 帧、
-                                    *   寿命同时拉长到 24 帧（对位原版那 **4 个 ghost**：`oldPos 15/30/45/60`、
-                                    *   每把剑同时只挂 3–4 个，而不是原来那种 5 个×8 把 = 40 个）*/
+#define ZN_TRAIL_EVERY      4      /* ★ 2026-10-03：owner 先说「残留大量虚影」（= 孤儿 bug，已修），再说
+                                    *   「虚影密度可以再高一些」⇒ 8 帧 → **4 帧**（每把剑同时约 6 枚）*/
+#define ZN_TRAIL_MIN_DIST   40.0f  /* ★ 同一条实测：「虚影集中在玩家背后十分明显」⇒ **离自机 40 px 内不留**
+                                    *   （剑从自机身上出膛，前半程贴着自机 ⇒ 虚影糊在自机周围）*/
 #define ZN_HIT_COOLDOWN     7      /* 帧：同一把剑两次伤害之间的最小间隔（原版 localNPCHitCooldown = 7）*/
 #define ZN_HIT_LIFE         2      /* 伤害源寿命（一个源对同一敌人只结算一次）*/
 #define ZN_HIT_W           40.0f   /* 判定盒：盖住刃（贴图 32–70 px × scale 0.55 ⇒ 18–39 px）❓ 自定 */
@@ -88,6 +89,11 @@ typedef struct {
 
 /* 由 vx/vy 现算的派生量（不占字段：8 格 × 3 个 float 会把 ce_state 撑爆 ⇒ 卡状态上限 496 字节）。
  * **static inline 的理由同 `bc_atan2f`**：i386 ABI 返回 float 走 st0，内联掉才守得住零 x87。*/
+static inline float zn_dist2(float ax, float ay, float bx, float by)
+{
+    float dx = ax - bx, dy = ay - by;
+    return dx * dx + dy * dy;
+}
 static inline float zn_vlen(const zn_blade_t *b) { return __builtin_sqrtf(b->vx * b->vx + b->vy * b->vy); }
 static inline float zn_fast(const zn_blade_t *b)   /* clamp(GetLerpValue(900, 0, |v|·2)) */
 {

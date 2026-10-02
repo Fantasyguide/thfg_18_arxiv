@@ -230,10 +230,12 @@ static int on_tick_2(ce_card_t *c)
     zn_blade_t *b;
     zn_pose_t pose;
     float fx, fy, pz, x, y, center[3];
+    const float *pp;
     uint32_t id;
     int i;
 
     if (!s || !p) return 0;
+    pp = ce_player_pos();                       /* 自机坐标（虚影防糊在自机周围要用）*/
     o = ce_option_get(c, &s->opt, ZN_OPT_ANM_Y, CE_ANM_ABILITY_SCRIPT_ZENITH_OPT, ZN_RETRY, "zenith");
     if (!o) return 0;
     zn_place(&s->opt);                          /* 补申请 / 重建过 ⇒ 站位重新写一遍（幂等）*/
@@ -338,7 +340,10 @@ static int on_tick_2(ce_card_t *c)
             }
         }
 
-        if (pose.emit_trail) {
+        /* 离自机太近就不留虚影（owner 实测：「虚影集中在玩家背后十分明显」—— 剑是从自机身上出膛的，
+         * 前半程贴着自机，虚影会糊在自机周围）。*/
+        if (pose.emit_trail &&
+            zn_dist2(x, y, pp[0], pp[1]) > ZN_TRAIL_MIN_DIST * ZN_TRAIL_MIN_DIST) {
             const zn_profile_t *tp = &s_zn_profiles[(b->prof >= 0 && b->prof < ZN_PROFILE_N) ? b->prof : 0];
             uint32_t tr = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_ZENITH_TRAIL, ZN_LAYER);
             if (tr) {
