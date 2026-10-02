@@ -8,7 +8,8 @@ script script391 {
     layer(13);
     sprite(@STAR_CANNON_TAIL);
     type(1);
-    blendMode(1);
+    // ★ 同星星：owner 2026-10-03「不够蓝」⇒ 加算（会把蓝推白）改**覆盖**，尾才显蓝。
+    blendMode(0);
     zWriteDisable(1);
     scale(0.5f, 0.5f);
     alpha(150);

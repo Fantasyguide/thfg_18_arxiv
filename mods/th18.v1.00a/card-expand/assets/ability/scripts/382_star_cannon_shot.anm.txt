@@ -16,7 +16,10 @@ script script382 {
     layer(13);
     sprite(@STAR_CANNON_SHOT);
     type(1);
-    blendMode(1);
+    // ★★ 2026-10-03 owner：「星星炮**蓝色虚影**你可能用的是 **+ 模式**，就用**覆盖模式**吧，
+    //   看着**不够蓝**」⇒ `blendMode(1)`（加算）改 **0（覆盖）**：加算是把蓝加到背景上、亮处直接
+    //   被推白，蓝色全丢；覆盖才是老老实实把这张（已经烘了蓝晕的）贴图**盖上去**。
+    blendMode(0);
     zWriteDisable(1);
     scale(0.75f, 0.75f);
     alpha(255);
