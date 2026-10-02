@@ -95,3 +95,5 @@ mods/th18.v1.00a/card-expand/assets/voice/PCB_BORDER.wav
 mods/th18.v1.00a/card-expand/assets/voice/STAR_CANNON_SHOT.wav
 #   TONY_GRIEF_TRIGGER 同（源 = TH18 自己的 se_wolf.wav，本机 local/th18.v1.00a/dat/ 里就有）
 mods/th18.v1.00a/card-expand/assets/voice/TONY_GRIEF_TRIGGER.wav
+#   原版卡文案（id < 57）只能靠改这份游戏数据文件；构建期从 local/ 现取（见 assets/derive_ability_txt.py）
+mods/th18.v1.00a/card-expand/patch/th18/ability.txt

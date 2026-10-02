@@ -61,6 +61,11 @@ voice_ids.h: ../assets/voice/ORDER.txt $(wildcard ../assets/voice/*.wav) ../patc
 ##           + pl0X.anm（../assets/build_player_anm.py：四个文件都是「原生部分逐块不变 + 纯追加」
 ##             —— pl02/pl03 追加兽灵脚本（AL59）、pl00/pl01/pl03 追加灵界弹（113，AUDIT §CJ），
 ##             见 pl_anm_ids.h）→ build/
+## ability-text —— 原版卡（id < 57）的文案：改 `ability.txt`（逐字节外科手术，源在 local/）。
+##   为什么不是 cards.js：`native/text.c` 的文案重定向只覆盖 id >= 57（见 assets/derive_ability_txt.py 的头注）。
+ability-text:
+	python3 ../assets/derive_ability_txt.py
+
 anm:
 	python3 ../assets/build_abcard.py
 	python3 ../assets/player_art_src/make_player_art.py   # AL62：玩家兽灵弹源图（补默认 + 切到 18/art-src 供用户改）
@@ -325,7 +330,7 @@ dllverify: $(DLL)
 ## dist —— 在 ../dist/ 摆出可直接安装的整套：一个 DLL + patch-step3 / patch-test / patch-devstage
 ##         （dist/ 已 gitignore：DLL 是构建产物，不入库；随时 make dist 重建）
 DIST := ../dist
-dist: anm sht ecl ecl-ufo
+dist: anm sht ecl ecl-ufo ability-text
 	rm -rf $(DIST) && mkdir -p $(DIST)/bin $(DIST)/patch-step3 $(DIST)/patch-test $(DIST)/patch-devstage/th18
 	$(MAKE) -s ROWS=255 gen dll files >/dev/null
 	cp $(DLL) $(DIST)/bin/ && cp -r ../patch-test/. $(DIST)/patch-test/

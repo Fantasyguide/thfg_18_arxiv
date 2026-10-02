@@ -50,6 +50,7 @@ MAP = {                                   # dist 里的 → modkit 里的
     "patch-devstage/th18/st05bs.ecl": "thcrap/repos/Renko_1055/th18_card_expand_devstage/th18/st05bs.ecl",
     "patch-devstage/th18/st06.ecl": "thcrap/repos/Renko_1055/th18_card_expand_devstage/th18/st06.ecl",
     "patch-devstage/th18/st06bs.ecl": "thcrap/repos/Renko_1055/th18_card_expand_devstage/th18/st06bs.ecl",
+    "patch-step3/th18/ability.txt": "thcrap/repos/Renko_1055/th18_card_expand_255/th18/ability.txt",
     "patch-step3/th18/voice.js":  "thcrap/repos/Renko_1055/th18_card_expand_255/th18/voice.js",
     "bin/th18_card_expand.dll":   "mods/th18_card_expand.dll",
 }

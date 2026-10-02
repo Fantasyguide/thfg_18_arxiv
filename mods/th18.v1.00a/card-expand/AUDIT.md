@@ -28307,3 +28307,37 @@ owner 两条：「东尼的悲恸加一个东西：**触发的时候 BOSS 身上
 **怎么验证的**：`make check` exit 0（`cards-check` 49 张、`anm-verify` 认了新 entry/脚本、`snd-check` 认了新语音槽、
 `capcheck` 全绿、`dllx87 = 0`、`check-docs` 四项全绿）；`derive_retail_se` 报「12 条，更新 2 条」；
 `build_voice` 报新槽 rms 偏离基准 −4.3 dB（提示级，未拦）。
+
+### §BE 详录 #218（2026-10-03）：**原版卡的文案**（id < 57）—— 空白卡的描述改成 owner 指定的梗
+
+owner：「原版卡的『空白卡片』的描述改为：『**删牌大于一切啊噶人闷**』」，并确认「好像确实是**第一张**卡片」。
+
+**事实核对**：注册表 `zTableCardData[]`（`0x4c53c0`，stride 0x34）的 **id 0 = `BLANK`**（[`engine/card/th18/07-registry.md`](../../../engine/card/th18/07-registry.md) 的 dump ✅）
+⇒ 「第一张卡」= 空白卡 = id 0 ✓。
+
+**为什么不能走 `cards.js` / `ce_text_set`**（两条都试过口径）：
+- `native/text.c` 的文案重定向**只覆盖 id ≥ 57**（`zAbilityText` 容量 57 张，58 起才落在对象之外），
+  `ce_text_set()` 对 id < 57 直接 `out of range — ignored`；
+- `cards.js` 那条路会让 `cards.c` 把**整行**（价格/权重/两张 sprite/类别…）重新编码 —— 改文案却要冒
+  **写坏原版特殊卡行**的风险（id 0 的行还有 `dmode=11`、`f14=0` 这类特殊值）。
+⇒ 正解是改**文案的源头**：引擎启动时 `AbilityText__parse_ability_txt`（`0x4160b0`）按 `@NAME` 把自己那份
+`ability.txt` 填进 `zAbilityText` ⇒ 我们在 thcrap 栈里**盖住这个文件**即可（与 `.anm`/`.wav` 同一套“按名覆盖”机制，
+**不需要** `files.js` 登记 —— 那份清单只管 JS patch）。
+
+**改了什么**
+
+| 文件 | 改动 | 说明 |
+| --- | --- | --- |
+| `assets/derive_ability_txt.py`（新） | 从 `local/th18.v1.00a/dat/ability.txt` 现取，**字节级外科手术**只替换 `@BLANK` 段的说明行 | 段外字节**一个都没动**（脚本自检打印新段内容）；产物 `patch/th18/ability.txt` **不入库**（`.gitignore`）|
+| `native/Makefile` | 新目标 `ability-text`，并挂进 `dist` 的依赖 | 与 `anm` / `sht` / `ecl` 同一层 |
+| `native/release.py` | `MAP` 加 `patch-step3/th18/ability.txt → …/th18/ability.txt` | 共享件（发布映射）|
+| `.gitignore` | 加 `patch/th18/ability.txt` | 零售数据文件不入库，构建期现取 |
+
+**编码（这条是关键坑）**：原文件是 **Shift-JIS（cp932）**，而简体字（「删」「牌」「闷」…）**写不进 cp932**
+（实测 `UnicodeEncodeError`）⇒ 我们那一行写成 **UTF-8**。混编**安全**：thcrap 的 textdisp **逐字符串**
+先按 UTF-8 解、失败才退 cp932（`native/text.c` 头注），而引擎把 7 行当 7 个字符串分别渲染
+⇒ 我们这行按 UTF-8 走、原版那些行照旧按 cp932 走，互不影响。
+
+**怎么验证的**：`make ability-text` 打印「14914 → 14684 字节」，并回读新段（`@BLANK | 空白のカード | |
+删牌大于一切啊噶人闷 |`）；另做字节级对账：**段外前半 / 后半与原文件逐字节相同** ✅。
+`make check` exit 0。
