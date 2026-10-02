@@ -93,7 +93,8 @@ static void test_launch_and_step(void)
         }
         CHECK(lo >= 0 && hi <= SC_ALPHA_MAX, "alpha 越界 [%d, %d]", lo, hi);
         CHECK(hi == SC_ALPHA_MAX && lo <= SC_ALPHA_STEP, "alpha 该走到两端（实测 [%d, %d]）", lo, hi);
-        CHECK(sc_draw_alpha(sh) == 255 - sh->alpha, "画出来的 alpha 该是 255 − 原版 alpha");
+        CHECK(sc_draw_alpha(sh) == 255 - sh->alpha / SC_ALPHA_DRAW_DIV,
+              "画出来的 alpha 该是 255 − 原版 alpha/SC_ALPHA_DRAW_DIV（覆盖混合下压摆动幅度）");
     }
 
     /* 命中免疫：每 SC_HIT_COOLDOWN 帧正好一次 */

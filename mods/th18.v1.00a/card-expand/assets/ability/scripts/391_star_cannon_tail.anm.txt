@@ -12,7 +12,7 @@ script script391 {
     blendMode(0);
     zWriteDisable(1);
     scale(0.5f, 0.5f);
-    alpha(150);
+    alpha(220);   // ★ owner 2026-10-03「这么淡」⇒ 150 → 220（覆盖混合下才够实）
 0:
     alphaTime(8, 0, 0);
     scaleTime(8, 0, 0.34f, 0.34f);

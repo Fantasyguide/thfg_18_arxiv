@@ -89,7 +89,8 @@ int sc_step(sc_shot_t *sh)
 
 int sc_draw_alpha(const sc_shot_t *sh)
 {
-    int a = 255 - sh->alpha;                             /* 原版把 alpha 加到**不透明度**的反面 */
+    /* ★ 见头文件里 `SC_ALPHA_DRAW_DIV` 的注：摆动压到 1/3 幅度 ⇒ 覆盖混合下不会"透"。*/
+    int a = 255 - sh->alpha / SC_ALPHA_DRAW_DIV;
     if (a < 0) a = 0;
     if (a > 255) a = 255;
     return a;

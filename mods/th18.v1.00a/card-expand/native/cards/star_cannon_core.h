@@ -89,6 +89,12 @@ void sc_launch(sc_shot_t *sh, uint32_t id, float x, float y, float vx, float vy)
  * `sh->hit` = 本帧该不该出伤害源（照原版默认的 `localNPCHitCooldown = 10`）。*/
 int  sc_step(sc_shot_t *sh);
 /* 这一帧该给 VM 写的颜色 alpha（= 255 − 原版 alpha）*/
+/* 这一帧该给 VM 写的颜色 alpha。★ 2026-10-03 owner：「星星和贴图怎么这么淡，感觉有透明度」——
+ *   原版 `alpha` 在 0..200 之间摆、画的时候取 `255 − alpha`（最低 55）。那套是给出**加算**看的：
+ *   加算下它只是「忽明忽暗」；我们按 owner 口径改成**覆盖**混合后，55 就成了「忽明忽**透**」（背景
+ *   直接透出来）。⇒ 这里把摆动**压到 1/3 幅度**（画出来 255..188，仍然在闪，但始终是实心的）。
+ *   ⚠ 这是**偏离原版振幅**的 owner 口径；要回原版就把 `SC_ALPHA_DRAW_DIV` 改成 1。*/
+#define SC_ALPHA_DRAW_DIV 3
 int  sc_draw_alpha(const sc_shot_t *sh);
 
 typedef struct {
