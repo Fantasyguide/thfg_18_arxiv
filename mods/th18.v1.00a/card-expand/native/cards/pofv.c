@@ -695,6 +695,39 @@ static void power_vm_sync(void)
     }
 }
 
+/* ★★ 2026-10-03b（92 伟大之作的**清扫闸**；统筹接 `HANDOFF-86-92-AND-SWEEP.md` §3 的 T2）：
+ *   本卡这一批 = **灵力道具**（`s_power`，自建实体、不在引擎道具池里）⇒ 只能本卡自己清。
+ *   做法：先按颗在原位撒金钱（池满走 `ce_money_pocket()` 的同一条记账），**再把池整批标空**——
+ *   紧接着的 `power_vm_sync()` 会看到「槽已空、VM 还在」那一支，把每颗的跟随 VM 删掉
+ *   （`pofv.c` 的 `else if (s_power_vm[i])` 分支）⇒ **消失仍然走本卡自己的收尾**，不留幽灵 VM。
+ *   ⚠ 不走 `pofv_power_clear()`：那支会 `pofv_power_pool_init()` 连**诊断计数**一起归零（日志口径会乱），
+ *     而且它只清池、不放钱。这里只把 `active` 标空 + `live` 归零，诊断字段全留。
+ *   ❓ 面值自定（1 颗灵力道具 = `POFV_SWEEP_MONEY_PER_ITEM` 枚金钱）—— 见 `TUNING.md` 的 109 段。*/
+#define POFV_SWEEP_MONEY_PER_ITEM 1
+static uint32_t s_sweep_seen;
+
+static void pofv_sweep_to_money(void)
+{
+    int i, n = 0, k;
+    for (i = 0; i < POFV_POWER_MAX; ++i) {
+        const pofv_power_t *it = &s_power.s[i];
+        float p[3];
+        if (!it->active) continue;
+        p[0] = it->x;
+        p[1] = it->y;
+        p[2] = 0.0f;
+        for (k = 0; k < POFV_SWEEP_MONEY_PER_ITEM; ++k) {
+            if (!ce_spawn_item(2u, p, -1.5707964f, 1.7f)) ce_money_pocket(1);
+        }
+        ++n;
+    }
+    if (n) {
+        for (i = 0; i < POFV_POWER_MAX; ++i) s_power.s[i].active = 0;
+        s_power.live = 0;                  /* ⚠ 只动这两个；诊断计数（spawned/absorbed/expired）原样留 */
+        ce_log("pofv: 92 清扫 —— %d 颗灵力道具换成金钱（每颗 %d 枚）", n, POFV_SWEEP_MONEY_PER_ITEM);
+    }
+}
+
 /* 扫一遍弹池：把「在结界内且本颗还没算过」的弹标成已算，最多把 `cap` 个位置抄进 ox/oy。
  * 返回本帧**新命中**的颗数（可能 > cap ⇒ 多出来的面值由打包摊到那 cap 颗上）。 */
 static int aura_scan_bullets(const float *center, float r, int pad_linear, float *ox, float *oy, int cap)
@@ -1307,6 +1340,7 @@ static int on_tick_2(ce_card_t *c)
                    (int)s->st.gauge, (int)(s->st.gauge_pts * 100 / POFV_GAUGE_PTS_PER_LEVEL));
         }
     }
+    if (ce_sweep_should_run(&s_sweep_seen)) pofv_sweep_to_money();   /* ★ 92 清扫：灵力道具 → 金钱 */
     power_vm_sync();                            /* ★ 灵力道具的视觉（每颗一台跟随 VM）*/
 
     /* SP 到档 → boss attack（一手：10 万 / 30 万 / 50 万）。*/

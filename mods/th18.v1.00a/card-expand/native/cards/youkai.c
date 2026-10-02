@@ -3657,6 +3657,38 @@ static void yk_orb_kill_all(void)
     s_orb_live = 0;
 }
 
+/* ★★ 2026-10-03b（92 伟大之作的**清扫闸**；统筹接 `HANDOFF-86-92-AND-SWEEP.md` §3 的 T2）：
+ *   92 发动时 `ce_sweep_bump()` ++代数 ⇒ 有私有池的卡在自己 tick 里看代数变了，就把自家那批**清成金钱**。
+ *   本卡这一批 = **刻符（永点 / `yk_orb_t`）** —— 它不在引擎道具池里（本卡私有池）⇒ 只能本卡自己清。
+ *   ⚠ 消失必须走本卡自己的 `yk_orb_kill()`（删 VM 句柄 + 清 `used`），否则场上留幽灵 VM（铁律二）。
+ *   ❓ 面值自定（1 颗刻符 = `YK_SWEEP_MONEY_PER_ORB` 枚金钱；与 112/117 的「每 token 10 枚」不是同一口径
+ *      —— 刻符在场上成批出现，量级比 token 大得多）—— 见 `TUNING.md` 的 108 段。*/
+#define YK_SWEEP_MONEY_PER_ORB 1
+static uint32_t s_sweep_seen;
+
+static void yk_sweep_to_money(void)
+{
+    unsigned i;
+    int n = 0, k;
+    for (i = 0; i < YK_ORB_MAX; ++i) {
+        yk_orb_t *o = &s_orb[i];
+        float p[3];
+        if (!o->used) continue;
+        p[0] = o->x;
+        p[1] = o->y;
+        p[2] = 0.0f;
+        for (k = 0; k < YK_SWEEP_MONEY_PER_ORB; ++k) {
+            if (!ce_spawn_item(2u, p, -1.5707964f, 1.7f)) ce_money_pocket(1);
+        }
+        yk_orb_kill(o);                     /* ⚠ 走本卡自己的收尾（见上）*/
+        ++n;
+    }
+    if (n) {
+        s_orb_live = 0;
+        ce_log("youkai: 92 清扫 —— %d 颗刻符换成金钱（每颗 %d 枚）", n, YK_SWEEP_MONEY_PER_ORB);
+    }
+}
+
 /* 生成一颗刻符（TH08 的 `ItemManager::spawn_item(pos, 7, state)`，`th08:0x4400a0` 的 type 7 那一档）。
  * `state` = **一手的出生状态**，按来源取（见 `youkai_core.h` §3.11 的常量块）：
  *   · `YK_ORB_STATE_HOMING`(1) = **消弹 / `cancel_autocollect`** 那一支
@@ -7248,6 +7280,7 @@ static int on_tick_2(ce_card_t *c)
             for (q = 0; q < YK_GAUGE_TEXT_MAX; ++q) yk_hud_vm_log("digit", s->hud_digit[q]);
         }
     }
+    if (ce_sweep_should_run(&s_sweep_seen)) yk_sweep_to_money();   /* ★ 92 清扫：刻符 → 金钱 */
     yk_orbs_tick(s);
     {
         uint32_t graze = *(const uint32_t *)(uintptr_t)CE_ADDR_GRAZE;

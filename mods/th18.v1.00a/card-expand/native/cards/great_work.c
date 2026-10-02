@@ -29,7 +29,9 @@
 #define GW_ITEM_TYPE_MONEY_CARD 0x12   /* 金钱**卡**（道具表 0x12 行 → card_id 5）*/
 #define GW_ITEM_TYPE_CARD_LO    0x10   /* 卡道具区间：0x10 残碎卡 / 0x11 B 碎卡 / 0x12 钱卡 / 0x13 */
 #define GW_ITEM_TYPE_CARD_HI    0x13
-#define GW_ITEM_MONEY_BOMB    3        /* ❓ 自定：112 压缩包（type 7 整颗 B）「等量于吸收量」按满 B = 3 */
+#define GW_ITEM_MONEY_BOMB    1        /* ❓ 自定：**原生 type 7「整颗 Bomb」道具** = 一颗炸弹 ⇒ 1 枚。
+                                        *   ⚠ 112 的**压缩包**（`ufo_drop_t` 的袋子）不在这里 —— 它带账
+                                        *   （`cnt_p`/`cnt_money`），由 112 自己的清扫钩子按「吸收量」换钱 */
 #define GW_CARD_SE          0x4d       /* 发动音：0x4d se_release（与杰拉 / 鞘翅重锤同）*/
 #define GW_ENEMY_HIT_H      44.0f
 

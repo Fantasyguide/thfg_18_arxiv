@@ -987,6 +987,8 @@ typedef struct {
     uint8_t           near;          /* 上一帧在不在 60 px 圈内（一手 `item+0x9c4` 的闩）*/
 } ufo_tok_t;
 
+static void ufo_drop_kill(int i);              /* 92 的清扫钩子要用（定义在 drops 那一段，先声明）*/
+
 /* ★★ 令牌池（**文件级静态**，先例：117 `animal.c` 的 `s_tok[40]` / 113 `trance.c` 的 `s_spirit[128]`）----
  * 为什么在这里而不是卡私状态：实测 `UFO_TOKEN_CAP` × `sizeof(ufo_tok_t)` = 5 × 40 = **200 B**
  *   （+ 框句柄表 20 B），而换池后私状态只剩 8 B 余量 —— 用户硬约束是「**不要为了省字节去砍功能**」
@@ -1483,8 +1485,32 @@ static void ufo_sweep_to_money(void)
         ufo_tok_remove(i);
         ++n;
     }
-    if (n) ce_log("ufo: 92 清扫 —— %d 只飞碟 token 换成金钱（每只 %d 枚）",
-                  n, UFO_SWEEP_MONEY_PER_TOKEN);
+    /* ★★ owner 追问：「**压缩包原则上有吸了多少东西的统计吧**」—— 有：`ufo_drop_t` 的
+     *   `cnt_p` / `cnt_money`（+0x9cc/+0x9d0，纯逻辑层一直在维护）＋ `mult_permille`（倍率）。
+     *   ⇒ 压缩包按 owner 的口径 = 「**等量于吸收量**」的金钱 = **`cnt_p + cnt_money`** 枚
+     *     （吸了多少颗就给多少枚；倍率不动它 —— owner 说的是"吸收量"，不是"结算分"）。
+     *   ⚠ 只清 `UFO_DROP_KIND_BAG`（压缩包）：`UFO_DROP_KIND_BOMB` 那只是**原生 type 7 道具的壳**
+     *     （道具本体由 92 的通道①扫走并换成钱），壳在道具消失后自己会收（`ufo_drop_*` 的轮询）⇒
+     *     这里再发一次钱就重复计了。*/
+    for (i = 0; i < (int)UFO_DROP_POOL; ++i) {
+        ufo_drop_slot_t *d = &s_drops[i];
+        ufo_drop_t *c = &d->core;
+        float p2[3];
+        int cnt;
+        if (!d->anm_id || !c->alive) continue;
+        if (c->kind != UFO_DROP_KIND_BAG) continue;
+        cnt = c->cnt_p + c->cnt_money;
+        if (cnt <= 0) cnt = 0;
+        p2[0] = c->x;
+        p2[1] = c->y;
+        p2[2] = 0.0f;
+        for (k = 0; k < cnt; ++k) {
+            if (!ce_spawn_item(2u, p2, -1.5707964f, 1.7f)) ce_money_pocket(1);
+        }
+        ufo_drop_kill(i);                      /* 压缩包走它自己的收尾（删 VM + 清槽）*/
+        ++n;
+    }
+    if (n) ce_log("ufo: 92 清扫 —— %d 件（飞碟 token / 压缩包）换成金钱", n);
 }
 
 /* 收掉**整池**的令牌 VM + 五边形框 VM，并把池清空。⚠ **只看句柄、不看 `color`** ——

@@ -559,6 +559,34 @@ static void point_clear_all(season_card_t *s)
     s->n_pt = 0;
 }
 
+/* ★★ 2026-10-03b（92 伟大之作的**清扫闸**；统筹接 `HANDOFF-86-92-AND-SWEEP.md` §3 的 T2）：
+ *   本卡这一批 = **季节道具（季节点 / `season_point_t`）** —— 自建实体、不在引擎道具池里 ⇒ 只能本卡自己清。
+ *   做法：**倒序**扫（`point_remove` 是 swap-remove，倒序才不跳项）⇒ 每颗在原位撒金钱（池满走
+ *   `ce_money_pocket()` 的同一条记账）⇒ `ce_anm_delete` 删它自己的 VM ⇒ `point_remove` 出池。
+ *   ⚠ 消失必须过 `point_remove`（池的紧凑性）+ 删 VM 句柄两件事，否则留幽灵 VM / 池里留死槽（铁律二）。
+ *   ❓ 面值自定（1 颗季节点 = `SEASON_SWEEP_MONEY_PER_POINT` 枚金钱）—— 见 `TUNING.md` 的 116 段。*/
+#define SEASON_SWEEP_MONEY_PER_POINT 1
+static uint32_t s_sweep_seen;
+
+static void season_sweep_to_money(season_card_t *s)
+{
+    int i, n = 0, k;
+    for (i = s->n_pt - 1; i >= 0; --i) {
+        season_point_t *p = &s_pt[i];
+        float pos[3];
+        pos[0] = p->x;
+        pos[1] = p->y;
+        pos[2] = 0.0f;
+        for (k = 0; k < SEASON_SWEEP_MONEY_PER_POINT; ++k) {
+            if (!ce_spawn_item(2u, pos, -1.5707964f, 1.7f)) ce_money_pocket(1);
+        }
+        if (p->id) ce_anm_delete((uint32_t)p->id);
+        point_remove(s, i);
+        ++n;
+    }
+    if (n) ce_log("season: 92 清扫 —— %d 颗季节道具换成金钱（每颗 %d 枚）", n, SEASON_SWEEP_MONEY_PER_POINT);
+}
+
 /* ★ 建 VM（「待发射」延时结束时才建 —— TH16 就是这么干的：延时里 `item+0xc50 = 6`、
  * VM 还没出生，`Item__init_anm_for_piv_or_season` `th16:0x430c90` 才 `copy_vm` + `run`）。
  * color 出生就是 `0xffffffff`（**无染色**，贴图自带颜色；`th16:0x430960` 尾
@@ -1459,6 +1487,7 @@ static int on_tick_2(ce_card_t *c)
     }
 
     graze_tick(s);
+    if (ce_sweep_should_run(&s_sweep_seen)) season_sweep_to_money(s);   /* ★ 92 清扫：季节道具 → 金钱 */
     points_tick(c, s);
     burst_tick(s);
 

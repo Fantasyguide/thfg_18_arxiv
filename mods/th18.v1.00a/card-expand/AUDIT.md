@@ -28469,3 +28469,19 @@ owner：「你得把**场上的所有可收集道具也变成金钱**，比如�
 
 **怎么验证的**：`make check` exit 0（cards-check 49 张、`test_dup_layer` 的清扫闸三条不变式、anm-verify、capcheck、
 dllx87 = 0、check-docs 四项全绿）；`make dll` 只有既有的无关告警（`pofv.c` / `youkai.c` 的未用变量）。
+
+#### §BE 详录 #219 追加（2026-10-03）：压缩包按**吸收量**结算（owner 追问）
+
+owner：「**压缩包原则上有吸了多少东西的统计吧**」—— 有，而且一直在维护：
+
+| 字段 | 语义 | 一手 |
+| --- | --- | --- |
+| `ufo_drop_t.cnt_p` | 这只 UFO **吸到的 P 道具数**（`+0x9cc`）| `ufo_core.h` 的 `ufo_drop_t` 注（`item+0x9cc`）|
+| `ufo_drop_t.cnt_money` | 吸到的**金钱道具**数（`+0x9d0`）| 同上 |
+| `ufo_drop_t.mult_permille` | 结算**倍率**（按 UFO 颜色 × 是否满火力 × fill 算）| `ufo_drop_mult_permille()` + `+0x9d4` |
+
+⇒ 112 的清扫钩子对 `UFO_DROP_KIND_BAG` 的换算 = **`cnt_p + cnt_money`** 枚金钱（原地撒 + 池满走
+`ce_money_pocket`），**不乘倍率** —— owner 的原话是「等量于**吸收量**」，不是「等量于结算分」。
+`UFO_DROP_KIND_BOMB`（原生 type 7 道具的壳）**不在清扫里换钱**：道具本体由 92 的通道①换过钱，
+壳在道具消失后自己会收 ⇒ 再发一次就是重复计。
+同轮把 `GW_ITEM_MONEY_BOMB` 从 3 改成 **1**（原生 type 7 = 「整颗 Bomb」= 一颗炸弹 ⇒ 1 枚）。
