@@ -38,6 +38,12 @@
 #define SC_RANGE        640.0f   /* 锁敌半径 */
 #define SC_RANGE_SQ     (SC_RANGE * SC_RANGE)
 #define SC_HIT_LIFE     2        /* 伤害源寿命（一个源对同一敌人只结算一次）*/
+/* ★★ 2026-10-03 owner 口径：「星星炮是**无限穿透**的」+「务必**不要做成帧伤**」⇒ 两条都在这里定死：
+ *   ① **无限穿透** = 命中不消耗：核心**没有任何 pierce 计数**，`sc_step()` 只在出界时返回 1
+ *      （对位原版 `Projectile.SetDefaults` 的 `penetrate = -1`）；
+ *   ② **不是帧伤** = 伤害源只每 `SC_HIT_COOLDOWN` 帧出一次（下一条），而**单条**伤害源对同一敌人
+ *      只结算一次（`SC_HIT_LIFE` + 引擎侧 `enemy+0x80` 的命中间隔，见 `engine/player/th18/02-damage-sources.md`）
+ *      ⇒ 一颗星穿过一个敌人是「每 10 帧 1 跳」而不是每帧一跳。单测把这两条都钉住了。*/
 #define SC_HIT_COOLDOWN 10       /* ★ 复刻原版**默认的 `localNPCHitCooldown = 10`**：同一颗星
                                   * 对同一个敌人每 10 帧才结算一次（无限穿透但要吃本地免疫）*/
 #define SC_DMG          12       /* 每次命中的伤害（原版 55）*/

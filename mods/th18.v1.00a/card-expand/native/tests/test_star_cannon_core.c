@@ -107,6 +107,25 @@ static void test_launch_and_step(void)
         CHECK(hits >= 5 && hits <= 7, "%d 帧里该命中 5..7 次，得到 %d", SC_HIT_COOLDOWN * 6, hits);
     }
 
+    /* ★ 2026-10-03 owner 口径：「星星炮是**无限穿透**的」+「务必**不要做成帧伤**」——
+     *   这两条一起钉：① 命中**不消耗**（星不消失、照飞）；② 伤害源只每 `SC_HIT_COOLDOWN` 帧出一次
+     *   （= 原版 `localNPCHitCooldown = 10`），所以是"每 10 帧 1 次"而不是每帧。
+     *   一手：`enemy+0x80` = 命中间隔（`engine/player/th18/02-damage-sources.md` 的字段表）。*/
+    {
+        int i, hits = 0;
+        const int N = SC_HIT_COOLDOWN * 5;
+        sc_reset(&s);
+        sh = sc_slot(&s);
+        sc_launch(sh, 1u, -200.0f, 0.0f, SC_SPEED, 0.0f);
+        for (i = 0; i < N; ++i) {
+            sh->x = 0.0f; sh->y = 0.0f;                     /* 钉在"敌人身上"，只数伤害与存亡 */
+            if (sc_step(sh)) break;
+            CHECK(sh->active == 1, "第 %d 帧：命中不该让星星消失（原版 penetrate = -1）", i);
+            if (sh->hit) ++hits;
+        }
+        CHECK(hits == 5, "%d 帧里该正好 5 次伤害（每 10 帧一次、**不是帧伤**），得到 %d", N, hits);
+    }
+
     /* 出界即收（原版撞方块 / timeLeft 用尽）*/
     sc_reset(&s);
     sh = sc_slot(&s);
