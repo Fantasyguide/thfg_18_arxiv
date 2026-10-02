@@ -10293,3 +10293,27 @@ if (!(ev->flags & CE_EDEATH_F_REAL)) return;   /* 只认真敌人 */
 **③ 顺带核对**：`pofv_bossatk_is_boss()`（C4 = 「自己是 boss」的语义标记）**目前只用于日志**
 —— 这是**故意**的：owner 口径「**其他什么 boss 标识都别干**」⇒ 它**不该**接任何引擎 boss 标志
 （不设 `setBoss`、不挂血条、不进 boss 表）。保持现状 = 正确 ✓。
+
+---
+
+## 2.11 ★ 92「清扫」的**每件面值表**（跨卡；❓自定项集中在这里）
+
+> **机制**：92 伟大之作发动时 `ce_sweep_bump()` ++代数；**有私有掉落池的卡**在自己 tick 里
+> `if (ce_sweep_should_run(&my_seen)) my_sweep_to_money();` ⇒ 把自家那批换成金钱（`ce_spawn_item(2u, …)`，
+> 池满走 `ce_money_pocket()`）。接法与验收见 `AUDIT.md` §BE 详录 **#221**；总视图见
+> [`HANDOFF-86-92-AND-SWEEP.md`](HANDOFF-86-92-AND-SWEEP.md) §2.2。
+
+| 卡 | 私有掉落物 | 每件换几枚金钱 | 谁定的 |
+| :-: | --- | :-: | --- |
+| 112 星莲船 | 飞碟 token（含压缩包按**吸收量**）| **10** | ★ owner 2026-10-03 点名（「都变成 10 个」）|
+| 117 鬼形兽 | 动物灵 token | **10** | ★ owner 2026-10-03 点名 |
+| 108 永夜抄 | **刻符（永点）** | **1**（`YK_SWEEP_MONEY_PER_ORB`）| ❓ 自定 —— 刻符在场上**成批**出现（逢魔/擦弹各一串），给 10 会瞬间刷钱 |
+| 109 花映塚 × 獣王園 | **灵力道具** | **1**（`POFV_SWEEP_MONEY_PER_ITEM`）| ❓ 自定 —— 它是**产能**道具（换气槽），折成 1 枚只是「清场不白清」 |
+| 116 天空璋 | **季节道具（季节点）** | **1**（`SEASON_SWEEP_MONEY_PER_POINT`）| ❓ 自定 —— 同 108：成批出现 |
+
+**改法**：三张卡各有一个 `*_SWEEP_MONEY_PER_*` 常量（`native/cards/{youkai,pofv,season}.c` 的清扫段），
+改数字 + 重跑 `make check` 即可；owner 实跑觉得不对就一句话。
+
+**还不响应清扫的**（列入下一手）：107/110/111 的**信仰点池**（`faith.h` 目前只有撒/快照，没有「取走」接口
+⇒ 要先给 faith 层加 consume，见 `HANDOFF-86-92-AND-SWEEP.md` §3 的 T1）。
+

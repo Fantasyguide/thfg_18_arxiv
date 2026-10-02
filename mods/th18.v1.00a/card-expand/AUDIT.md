@@ -4930,6 +4930,8 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 
 | 2026-10-03b | **112 星莲船**（妖精皮分两套：辉光 / 普通；改本卡 + 生成器 + 共享资源）| 见下方「§BE 详录 #220」 |
 
+| 2026-10-03c | **108 永夜抄 / 109 花映塚 / 116 天空璋**（各自私有掉落池接 92 的**清扫闸**：`ce_sweep_should_run` + 一个 `*_sweep_to_money()`）| 见下方「§BE 详录 #221」 |
+
 
 > **§BE 详录 #42（2026-09-20 · P1「缺音效一批」8 条 + 音效表扩容新增 5 枚别作原版 SE）**
 >
@@ -28485,3 +28487,33 @@ owner：「**压缩包原则上有吸了多少东西的统计吧**」—— 有�
 `UFO_DROP_KIND_BOMB`（原生 type 7 道具的壳）**不在清扫里换钱**：道具本体由 92 的通道①换过钱，
 壳在道具消失后自己会收 ⇒ 再发一次就是重复计。
 同轮把 `GW_ITEM_MONEY_BOMB` 从 3 改成 **1**（原生 type 7 = 「整颗 Bomb」= 一颗炸弹 ⇒ 1 枚）。
+
+---
+
+### §BE 详录 #221 —— 2026-10-03c：**108 / 109 / 116 接 92 的「清扫」闸**（`HANDOFF-86-92-AND-SWEEP.md` §3 的 T2）
+
+**谁改的**：统筹。**理由**：那三张卡的私有掉落物**不在引擎道具池里** ⇒ 92（伟大之作）的
+「把场上所有可收集道具变成金钱」扫不到它们。112/117 已由 86–92 那条线接入（#219），
+本批把剩下三张按**同一个模式**接上（owner 口径：私有池只能由**那张卡自己**清）。
+
+| 文件 | 加了什么 |
+| --- | --- |
+| `native/cards/youkai.c`（**108**）| `YK_SWEEP_MONEY_PER_ORB` + `s_sweep_seen` + `yk_sweep_to_money()`：逐颗撒金钱后走 **本卡自己的 `yk_orb_kill()`**（删 VM + 清 `used`）+ `s_orb_live = 0`；挂点 = `on_tick_2` 里 `yk_orbs_tick(s)` 之前一句 |
+| `native/cards/pofv.c`（**109**）| `POFV_SWEEP_MONEY_PER_ITEM` + `pofv_sweep_to_money()`：逐颗撒金钱后把池 `active` 标空 + `live = 0`（**不动诊断计数**），紧接着既有的 `power_vm_sync()` 走「槽空、VM 还在」那支删 VM；挂点 = `power_vm_sync()` 之前一句 |
+| `native/cards/season.c`（**116**）| `SEASON_SWEEP_MONEY_PER_POINT` + `season_sweep_to_money()`：**倒序**扫（`point_remove` 是 swap-remove）⇒ 撒金钱 ⇒ `ce_anm_delete(它的 VM)` ⇒ `point_remove()`；挂点 = `on_tick_2` 里 `points_tick(c, s)` 之前一句 |
+
+**共同纪律**
+- **消失仍然走各自的收尾**（108 `yk_orb_kill` / 109 由 `power_vm_sync` 的统一删 VM 支 / 116 `point_remove` + 删 VM）
+  ⇒ **不留幽灵 VM**（本仓铁律二）。三处都不新增站点、不碰 `sdk.*`。
+- 面值全部是 **❓自定**（108/109/116 各 **1 枚/件**），集中登记在 `TUNING.md` **§2.11** 的跨卡面值表里
+  （112/117 的 10 枚是 owner 点名的，不是自定）。改法 = 改各自那一个 `*_SWEEP_MONEY_PER_*` 常量。
+
+**过程备注（⚠ 对协作有用）**：本批写完后，**另一个会话的提交 `ca53986a` 把这批工作树改动一起收进了它的提交**
+（提交信息只写了 112 压缩包那件事）⇒ 代码在 `HEAD`，但**没有登记**。本详录 + `TUNING §2.11` 是事后补登记。
+⇒ 提醒：并行作业时**别用 `git add -A` / `commit -a`**（本仓多人共用一棵工作树）。
+
+**验证**：三张卡用真构建旗标（Makefile 的 `-O2 -Wall -Wextra …`，**不含 `-Werror`**）逐个编译通过；
+`make check` = 见下（`cards-check` 49 张 / `anm-verify` / `capcheck` / `check-docs`）。
+
+**下一手（未做）**：**107 / 110 / 111 的信仰点池**（`faith.h` 缺「取走」接口 ⇒ 先加 consume，见 T1）；
+108/109/116 的面值实跑手感（T5/T6 同类）。
