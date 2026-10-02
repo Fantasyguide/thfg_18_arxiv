@@ -56,6 +56,13 @@ static gw_target_t s_target[GW_ENEMY_MAX];
  *   调用先例 = `cards/youkai.c` 的 `YK_FN_PLAYER_DIE` / `cards/trance.c` 的 `TRANCE_FN_PLAYER_DIE`。*/
 #define GW_FN_PLAYER_DIE 0x45d3a0u
 typedef void (__attribute__((thiscall)) *gw_fn_player_die_t)(void *player);
+/* `Player__commit_death_and_enter_state2` = `0x45d090`（thiscall(Player*)）：**真正扣命 / 记 miss /
+ * 状态→2（死亡动画）**。全 exe 只有 1 个调用点 `0x45c135`（状态 4 的 tick，决死窗走完/没救回时）。
+ * owner 2026-10-03：「**我觉得不应该决死**」⇒ 我们走"开窗后**立刻**结算"，等价于窗口当场到期
+ * （跳掉那 8 帧 + 跳掉按 X 的机会），但**开窗那一调照走** —— 引擎在 `Player__die` 里会广播卡虚表
+ * +0x10（救援层 / 各类保护就挂在那儿）。*/
+#define GW_FN_COMMIT_DEATH 0x45d090u
+typedef void (__attribute__((thiscall)) *gw_fn_commit_death_t)(void *player);
 
 /* 把这张卡的充能**当帧改成** `frames`（照引擎写充能那一支：zTimer 的 prev/cur/cur_f + 总时长）。*/
 static void gw_set_recharge(ce_card_t *c, int32_t frames)
@@ -210,7 +217,18 @@ static int on_activate(ce_card_t *c)
         uint8_t *pl = CE_PLAYER();
         if (pl && (!inv || inv->cur <= 0)) {
             ((gw_fn_player_die_t)(uintptr_t)GW_FN_PLAYER_DIE)(pl);
-            ce_log("great_work: 自机也变成黄金（原生 MISS 链；无敌中会豁免）");
+            /* ★ 不给决死窗：`Player__die` 只是把状态推到 **4（决死窗）** 并广播卡虚表 +0x10（救援/保护
+             *   就挂在那里）；**还停在 4** 就立刻结算（= 窗口当场到期，按 X 也来不及）。
+             *   若这一调之后状态已经不是 4（被救援层/保护接住了）⇒ **不补刀**，尊重那道保护
+             *   —— owner：「那些什么**咆哮状态**之类的**可以挡**」（咆哮的无敌 = `set_invuln(60)`
+             *   写的就是 `player+0x47774`，上面那道 `inv->cur` 门已经先挡了一层）。*/
+            if (*(int32_t *)(pl + CE_PLAYER_STATE) == 4) {
+                ((gw_fn_commit_death_t)(uintptr_t)GW_FN_COMMIT_DEATH)(pl);
+                ce_log("great_work: 自机也变成黄金 —— 开窗后**立刻结算**（无决死机会）");
+            } else {
+                ce_log("great_work: 自机也变成黄金 —— 但被保护/救援接住了（状态 %d）⇒ 不补刀",
+                       *(int32_t *)(pl + CE_PLAYER_STATE));
+            }
         } else {
             ce_log("great_work: 自机在无敌中 ⇒ 豁免这一死（owner 口径）");
         }
