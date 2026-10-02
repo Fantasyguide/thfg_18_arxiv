@@ -37,7 +37,10 @@ OUT = os.path.join(HERE, "_src", "DEATH_MSG.png")
 # ── 一手规格（改这里之前先读文件头那张表）─────────────────────────────────────────
 LINE1 = "你被杀死了……"                        # LegacyInterface.38（zh-Hans）
 LINE2 = "掉了591 铂金 60 金 15 银 3 铜"         # Game.DroppedCoins = "掉了{0}"；{0} = ValueToCoins 的实机输出（带空格）
-DEATH_TEXT = (229, 127, 127)                   # = GetDeathAlpha(Color.Transparent) 的 RGB
+# 一手真值 = RGB(229,127,127)（`GetDeathAlpha(Color.Transparent)`）；★ owner 2026-10-03 实测
+# 「有点暗，感觉得调亮一点」⇒ 按 owner 口径提亮到 (255,152,152)（约 1.15×、红不过曝）。
+# ⚠ 这是**偏离一手值**的 owner 口径，只影响这一个常量（重烘即可）。
+DEATH_TEXT = (255, 152, 152)
 LINE_GAP = 50                                  # 一手：两行**盒顶**差 50 px（H/2−60 → H/2−10）
 GLYPH_GAP = 2                                  # ★ 但原版大字在那 50 px 里是**靠盒底**画的 ⇒ 实测「第一行字形下沿
                                                #   → 第二行字形上沿」只有 **4 px**（owner 的实机截图量出来是空 4 行）。
