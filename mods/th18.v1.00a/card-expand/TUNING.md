@@ -10453,3 +10453,21 @@ ufo: BOUNTY equivalence published for other cards - P .. / money .. / big faith 
   蓝 = 令牌 14；彩虹 = 按起始色的令牌；公共 = 赏金道具 16/17/18。
 - **卡侧待改（下一轮做）**：① `mult` 改成击破时按 (颜色, fill, 满P) 算；② 赏金值击破时定下随道具携带；
   ③ 四条掉落按上表补（尤其：**绿击破是雷碎片 5**、整颗雷 7 属于喂饱；令牌要带起始色；彩按最后碎片色）。
+
+#### §2.0zzx-25c goal 收尾：①–④ **实现核对完毕**（唯一偏差已修并发布）
+
+逐条对照卡侧实现与一手（全部 ✅ = 与一手一致）：
+
+| goal 项 | 一手 | 卡侧实现 | 判 |
+| --- | --- | --- | --- |
+| ① 蓝点分 = **PIV = 最大得点**（`PV = PIV/100` 取整到 10）；×N = 赏金对该通道的倍率 | 红 `0x44b1d0`–`0x44b1f3`；蓝/绿/彩 `0x44b2f4`/`0x44b3ad`/`0x44b562` | `ufo_drop_settle_value()`（逐条同形）| ✅ |
+| ① 四色 N | 红 `满P?2:1`、绿 `2`、蓝 `8/6/2+8fill`、彩 `4/3/2+2fill` | `ufo_drop_mult_permille()`（逐格一致；蓝的 8 系数在 FP 栈上复核过）| ✅ |
+| ② 红「额外给分 / 满P 2 倍」 | `0x44b149`/`cmp 0x4b0cd0`：`power>=max ? 2.0 : 1.0` | `ufo_drop_mult_permille(RED, CE_CURRENT_POWER() >= CE_MAX_POWER_VAL(), fill)` | ✅ |
+| ③ 令牌起始色 = 最后吃到的碎片色 | `0x44b416 mov 0x4b0c54`（第 3 槽）→ 13/14/15 | `ufo_break_token_state(color, s->grp.last_slot2)` | ✅ |
+| ④ 蓝击破给令牌 14 | `0x44b328 push 0xe` | `ufo_break_token_state(BLUE, …) = 1`；蓝喂饱无物品（`0x44ad99` 无 case）| ✅ |
+| 掉落表（红 4+13 / 绿 **5**+15 / 蓝 14 / 彩按起始色 / 公共 16/17/18）| `0x44b20f`/`0x44b236`/`0x44b3e0`/`0x44b407`/`0x44b328`/`0x44b0ff` | `ufo_break_color_bonus()`（红 `0x10` 残碎卡 / 绿 `0x11` 符卡碎片卡）+ `ufo_break_token_state()` + `ufo_drop_spawn_bag()` | ✅ |
+| 喂饱（红 4 / 绿整颗雷 / 蓝无 / 彩令牌）| `0x44ad99` switch + `0x44ae03` | `ufo_fill_complete()`：红 LIFE_FRAG、绿自建整颗雷、蓝无、彩令牌 | ✅ |
+
+**唯一偏差（本轮修）**：赏金值一手在**击破那一刻**算好写 `zUfo+0x68` 随道具携带；我们原来在**收包那一刻**按当时 PV 算
+⇒ 新增 `ufo_drop_t.value_at_break`（击破时按同一条公式定下），收包优先用它、没存过才回退。
+发布：DLL `ebc1e362…` → **`a07a57efc2e7b799178dbd9e37014276`**（四处同步 OK）；门禁 `check`（420 文件）/ 闸自检 / `dllx87`=0 全过。
