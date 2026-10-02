@@ -75,6 +75,19 @@ static void gw_set_recharge(ce_card_t *c, int32_t frames)
     *(int32_t *)(p + CE_CARD_RECHARGE_TIME)      = frames;          /* +0x48 总时长 */
 }
 
+/* ★★ 2026-10-03 owner：「**因为池子上限不能产生的金钱自动进腰包**」——
+ *   道具池满时 `ce_spawn_item()` 直接失败，那一份钱原来就**丢了** ✗ ⇒ 现在照**拾取金钱道具那条路**
+ *   原样补进腰包（一手：`ItemManager__collect_money_item` `0x446d2e` —— 一枚 type 2 金钱道具
+ *   ⇒ `MONEY += 1` 且 `0x4ccd20` / `0x4ccd30` 各 +1，见 `engine/faith/th18/01-point-item-value.md` §3.1 第 1 行）。
+ *   三个字段都是 `int32_t`：`0x4ccd34` = `CE_MONEY()`、`0x4ccd30` = `CE_MONEY_TOTAL()`、
+ *   `0x4ccd20` = `CE_ADDR_MONEY_ITEMS`（吃到过的金钱道具个数）。*/
+static void gw_pocket_money(void)
+{
+    CE_MONEY() += 1;
+    CE_MONEY_TOTAL() += 1;
+    *(volatile int32_t *)CE_ADDR_MONEY_ITEMS += 1;
+}
+
 /* ① 弹幕 → 金钱。返回转换掉的弹幕数。*/
 static int gw_take_bullets(int32_t *out_money)
 {
@@ -122,7 +135,7 @@ static int gw_take_enemies(int64_t *hp_sum, int32_t *money, int32_t *breaks)
 {
     uint8_t *em = CE_ENEMY_MGR();
     uint8_t *e;
-    int n = 0, i;
+    int n = 0, i, skipped_invuln = 0, skipped_dead = 0;
     int32_t total_dmg = 0;
 
     *hp_sum = 0;
@@ -130,14 +143,24 @@ static int gw_take_enemies(int64_t *hp_sum, int32_t *money, int32_t *breaks)
     *breaks = 0;
     if (!em) return 0;
 
+    /* ★★ 2026-10-03 owner 实测：「**没有把第一面第二波的中妖精杀死**」——
+     *   根因是我们原来用 `ce_enemy_lockable()` 当门，而那个判据是 `CE_ENEMY_FLAG_NO_LOCK`
+     *   的 **0x0c000021（任一位置起即"不可锁定"）**：它把 **boss 系（bit26/27）**也算了进去，
+     *   于是中妖精 / 中 boss 这一类**能打**的目标被整只过滤掉 ✗。
+     *   ⇒ 本卡改判「**活着 + 引擎自己的免伤位没置**」：
+     *     · `hp <= 0` = 已经死了/正在收；
+     *     · `flags & CE_ENEMY_FLAG_NO_DAMAGE (bit4)` = 引擎自己都不会扣它血（无敌/入场中）
+     *       ⇒ 转了也是白转（伤害会被 `0x42f2b9` 那道闸跳过），所以不收。
+     *   其余一律可转（含未上场的 —— 本卡的设定就是"全场变黄金"）。*/
     CE_ENEMY_FOREACH(em, e) {                             /* 第一遍：记账 + 抬上限 */
         int32_t hp;
         uint32_t flags;
         if (n >= GW_ENEMY_MAX) break;
-        if (!ce_enemy_lockable(e)) continue;
+        if (!e) continue;
         hp = *(int32_t *)(e + CE_ENEMY_HP_CUR);
-        if (hp <= 0) continue;
+        if (hp <= 0) { ++skipped_dead; continue; }
         flags = *(uint32_t *)(e + CE_ENEMY_FLAGS);
+        if (flags & CE_ENEMY_FLAG_NO_DAMAGE) { ++skipped_invuln; continue; }
         s_target[n].x = ce_enemy_pos(e)[0];
         s_target[n].y = ce_enemy_pos(e)[1];
         s_target[n].hp = hp;
@@ -146,11 +169,16 @@ static int gw_take_enemies(int64_t *hp_sum, int32_t *money, int32_t *breaks)
         total_dmg += hp + GW_LETHAL_SLACK;
         ++n;
     }
-    if (n == 0) return 0;
+    if (n == 0) {
+        if (skipped_invuln || skipped_dead)
+            ce_log("great_work: 没可转的敌人（免伤中 %d / 已死 %d）", skipped_invuln, skipped_dead);
+        return 0;
+    }
     ce_raise_damage_cap(total_dmg);                       /* ★ 一次性抬到"这一帧要打的总伤害" */
 
     for (i = 0; i < n; ++i) {                             /* 第二遍：出伤害（+ 非 boss 撒金钱）*/
         float center[3];
+        int pocket = 0;
         int32_t k, cnt, dmg = s_target[i].hp + GW_LETHAL_SLACK;
         center[0] = s_target[i].x;
         center[1] = s_target[i].y;
@@ -172,8 +200,11 @@ static int gw_take_enemies(int64_t *hp_sum, int32_t *money, int32_t *breaks)
             p[1] = center[1];
             p[2] = 0.0f;
             if (ce_spawn_item(2u, p, ang, 1.8f)) ++(*money);
+            else { gw_pocket_money(); ++(*money); ++pocket; }
         }
         ce_damage_rect(center, 0.0f, 2, dmg, GW_ENEMY_HIT_W, GW_ENEMY_HIT_H);
+        if (pocket)
+            ce_log("great_work: 池满 ⇒ %d 枚金钱直接进腰包（MONEY +%d）", pocket, pocket);
     }
     return n;
 }
