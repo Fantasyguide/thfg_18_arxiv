@@ -486,6 +486,15 @@ int   ufo_items_to_full(int32_t stage, int32_t scale_permille);
  *   ⇒ 可观测语义：**一次吸满只开一次奖**；满着期间再吸只是计数（不再产奖励）。
  *   卡侧现在就是 `if (ufo_absorb_item(...)) 开奖` ⇒ 本条订正**直接**修掉了「吸满后每颗再来一件」的漏洞。 */
 int   ufo_absorb_item(ufo_ufo_t *u, uint32_t type, int32_t stage, int32_t scale_permille);
+/* ★★★ 2026-09-26（owner 的跨卡口径）：吸收的**通道**从"道具类型"提升为显式 kind ——
+ *   因为中信仰点、以及**满 P 时的樱点**都要按 **P** 计（进彩色转换 / 红 UFO 的倍率通道），
+ *   而**大信仰点"原封不动"**（只加 fill、不进任何计数）。三种 kind = 一手那两种 type 的语义 + 中性：
+ *     `UFO_ABSORB_P`       = 一手 type 1：非彩虹 → `cnt_p`、彩虹 → `cnt_money`（即"转换时变金钱"）
+ *     `UFO_ABSORB_MONEY`   = 一手 type 2：非彩虹 → `cnt_money`、彩虹 → `cnt_p`（"金钱转成 P"）
+ *     `UFO_ABSORB_NEUTRAL` = **只加 fill、不计数**（大信仰点：不参与转换、原封不动）
+ *   `ufo_absorb_item()` 保留为 `type` 包装（行为与以前逐字相同 ⇒ 原生道具那条路不受影响）。*/
+enum { UFO_ABSORB_P = 0, UFO_ABSORB_MONEY = 1, UFO_ABSORB_NEUTRAL = 2 };
+int   ufo_absorb_item_ex(ufo_ufo_t *u, int kind, int32_t stage, int32_t scale_permille);
 
 /* ---- 吸满吐奖励（表抄，type 号映射到 TH18）------------------------------------------
  * 一手（`th12:0x44aca0`，`UFO:213-222`）：红 → 道具 4；绿 → 道具 5；彩虹 → 13/14/15；
@@ -623,6 +632,10 @@ typedef struct {
     /* ★ 用户 2026-09-18：被吸走的**信仰点**也要跟着回来（`NEXT.md` §1x.9）*/
     uint32_t faith_big, faith_mid;
     int32_t  faith_mask;
+    /* ★★★ 2026-09-26（owner）：「压缩包的**等价计数** —— 我吃了这个等价于吃了多少个大信仰点 /
+     *   中信仰点 / 樱点 / P / 金钱，其他卡要用」⇒ UFO 在场期间**原样分类**吞下的东西，随包携带。
+     *   与 `faith_*` 那三格的区别：那三格是"要还回去的点"（共享点池实体），这五格是**折算给别人的账**。*/
+    int32_t  eq_p, eq_money, eq_big, eq_mid, eq_cherry;
 } ufo_drop_t;
 
 /* 倍率（一手 `0x44b149` / `0x44b24d` / `0x44b33f` / `0x44b49c`，逐条）：

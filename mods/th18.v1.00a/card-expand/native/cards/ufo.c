@@ -89,6 +89,7 @@
  * 那是 `faith.c` 的**自建 VM 池**（TH18 没有信仰点这个 item type），走声明式通道
  * （`faith_absorb_list/take/move`，语义见 `faith.h` 那一段）。**只 include 头文件，不碰它的内部**。 */
 #include "faith.h"
+#include "ufo_bounty.h"   /* ★ 2026-09-26：压缩包的**等价计数**出口（其他卡要用）*/
 /* ★★ 2026-09-24（owner：「**得改谁能飞碟掉落，并且还得给掉的那个改帖图**」）：令牌**宿主表** ——
  * 生成物，由 `native/tools/gen_ufo_carrier_table.py` 从 TH18 的 7 关 ECL + enemy.anm 现扫出来
  * （键 = 敌人「长什么样」的 `(N,S)`，与 110 的大信仰点表同一套判据）。表的内容、一手出处与"换哪张皮"
@@ -1108,6 +1109,13 @@ static uint32_t s_penta_id[UFO_TOKEN_CAP];
 #define CE_DIFFICULTY_VAL()      (*(int32_t *)CE_ADDR_DIFFICULTY)   /* 0 EASY / 1..3 / 4 EXTRA */
 typedef struct {
     ufo_drop_t core;                            /* 纯逻辑（坐标 / 速度 / 携带的账）*/
+    /* ★★★ 2026-09-26（owner「原值归还」）：这颗包**专属**的逐颗账快照（tier/value/mask 1:1）——
+     *   为什么要快照：三张账表是文件作用域（卡私有状态放不下，见 `s_faith_log_*` 的注），
+     *   若玩家在**收包之前**又召唤了一只 UFO，那份账会被覆盖 ⇒ 必须在**包生成那一刻**拷进槽里。*/
+    int32_t   eq_log_n;
+    int32_t   eq_log_tier[FAITH_POOL_TOTAL];
+    int32_t   eq_log_value[FAITH_POOL_TOTAL];
+    int32_t   eq_log_mask[FAITH_POOL_TOTAL];
     uint32_t   anm_id;                          /* 它的 VM（0 = 空槽）*/
     uint8_t   *item;                            /* ★ 2026-09-23：**原生道具槽指针**（只有整颗 B 那一支有；
                                                  * = `CE_FN_SPAWN_ITEM` 的返回值，`zItem*`。它的运动/收集
@@ -1325,8 +1333,12 @@ typedef struct {
     uint32_t    faith_pulled_big;                      /* 吸走的大信仰点数 */
     uint32_t    faith_pulled_mid;                      /* 吸走的中信仰点数 */
     int32_t     faith_pulled_mask;                     /* 这些点原属谁的槽（110/111；按位或）*/
-    int32_t     faith_pulled_big_sum;                  /* 大点 value 之和（还回去时按均值还原）*/
+    int32_t     faith_pulled_big_sum;                  /* 大点 value 之和（日志/对账用）*/
     int32_t     faith_pulled_mid_sum;                  /* 中点 value 之和 */
+    /* ★★★ 2026-09-26（owner：「**原值归还**」）：逐颗记账的**计数器**（三张账表放在文件作用域的
+     *   `s_faith_log_*`，理由：卡私有状态预算只有 496 B，三张 160 格的表放不进去 —— 与本卡
+     *   `s_drops` / `s_bolt` / `s_pull` 同一套既有写法，同样假定"本卡一局一份"）。*/
+    int32_t     faith_log_n;
     uint32_t    drops_spawned;                         /* 诊断：起了几个掉落物实体 */
     int64_t     slot_full_piv;                         /* 一手的原始加值累计（×100 定点；日志/对账用）*/
     /* —— ★ ④（2026-09-18）：Boss / 对话两条离场路的闩 —— */
@@ -2088,6 +2100,31 @@ static uint32_t s_summon_debris_id;        /* 闪电碎屑发射器 VM（脚本 
 typedef struct { float x, y, ang; int left; } ufo_bolt_t;
 static ufo_bolt_t s_bolt[UFO_BOLT_CAP];
 static uint32_t s_bolt_rng = 0x1234567u;
+/* ★★★ 2026-09-26（owner：「原值归还」）：被吸走的共享点池实体**逐颗记账**（tier / value / mask），
+ *   开奖时**1:1 原值**撒回 —— 均值还原会破坏 107 小樱点的打包值（`senro.c:1803`）。
+ *   容量 = 共享点池总量（`FAITH_POOL_TOTAL`）⇒ 一次召唤不可能溢出；`s_faith_log_n > 0` 表示账没结清。*/
+/* ★★★ 2026-09-26（owner）：「给压缩包一个**等价计数** —— 我吃了这个等价于吃了多少个大信仰点、
+ *   中信仰点、樱点、P、金钱，**其他卡要用**」⇒ 两套：
+ *     · `s_eq`        = **本只 UFO** 在场期间原样分类吞下的东西（随包携带，`ufo_drop_t.eq_*`）；
+ *     · `s_bounty_eq` = **最近一次被吃掉**的压缩包的等价计数（`ufo_bounty_eq_take()` 取走即清）。*/
+static ufo_bounty_eq_t s_eq;
+static ufo_bounty_eq_t s_bounty_eq;
+static int s_bounty_eq_pending;
+
+int ufo_bounty_eq_pending(void) { return s_bounty_eq_pending; }
+
+int ufo_bounty_eq_take(ufo_bounty_eq_t *out)
+{
+    if (!s_bounty_eq_pending || !out) return 0;
+    *out = s_bounty_eq;
+    s_bounty_eq_pending = 0;
+    return 1;
+}
+
+static int32_t s_faith_log_n;
+static int32_t s_faith_log_tier[FAITH_POOL_TOTAL];
+static int32_t s_faith_log_value[FAITH_POOL_TOTAL];
+static int32_t s_faith_log_mask[FAITH_POOL_TOTAL];
 static uint32_t s_summon_burst_id;         /* 一手爆闪/雷（脚本 362，自己 +51 帧 delete）*/
 /* ★★★ 2026-09-26 第 34 轮（owner）：「**最后一条是不应该存在青六边形**」——
  *   319/320（← TH12 `enemy.anm` 102/104）当年是**我们自己按「全 enemy.anm 里只有 4 支用 drawPoly」
@@ -3313,6 +3350,17 @@ static void ufo_fill_complete(ufo_card_t *s, float ux, float uy)
                (int)s->u.color);
 }
 
+/* ★★★ 2026-09-26（owner 的跨卡口径）：两个判据 ——
+ *   ① **协同卡在场吗**：`faith_registered_mask()`（`faith.h:171`；0 = 没有任何卡在场。
+ *      ⚠ 那一段明令**不许**用"槽值恰好为 0"判在场）；
+ *   ② **玩家满 P 吗**：一手转换的判据是 `power >= max_power > 0`（`faith.h:354` 逐条对照）。*/
+static int ufo_collab_present(void) { return faith_registered_mask() != 0; }
+static int ufo_power_full(void)
+{
+    int32_t maxp = *(const int32_t *)CE_ADDR_MAX_POWER;
+    return maxp > 0 && CE_CURRENT_POWER() >= maxp;
+}
+
 static int ufo_try_item(ufo_card_t *s, uint8_t *it, float ux, float uy)
 {
     float *ipos = (float *)(it + CE_ITEM_POS);
@@ -3335,6 +3383,22 @@ static int ufo_try_item(ufo_card_t *s, uint8_t *it, float ux, float uy)
         /* vel 也清掉（同一个槽下帧可能被复用；残留 vel 会立刻把新道具甩走）*/
         ivel[0] = 0.0f; ivel[1] = 0.0f; ivel[2] = 0.0f;
         ++s->items_pulled;
+        {
+            /* ★★★ 2026-09-26（owner 规格）：**金钱 → P** 这条转换在**满 P** 时「同时变成
+             *   1 樱点 + 1 中信仰点」—— 按注册表产出（`faith_payout_full_p_conversion()`），
+             *   位置 = 道具自己的位置（与 faith 自己那条转换规则同口径）。仅**协同卡在场**时做。*/
+            uint32_t ity = *(uint32_t *)(it + CE_ITEM_TYPE);
+            int akind = ufo_absorb_type_index(ity);
+            if (akind == UFO_ABSORB_P) ++s_eq.p;              /* ★ 等价计数（原样分类）*/
+            else if (akind == UFO_ABSORB_MONEY) ++s_eq.money;
+            if (akind == UFO_ABSORB_MONEY && s->u.color == UFO_COLOR_RAINBOW
+                && ufo_collab_present() && ufo_power_full()) {
+                int paid = faith_payout_full_p_conversion(ipos[0], ipos[1]);
+                ce_log("ufo: full-P MONEY->P conversion paid out %d registered dot(s) "
+                       "(1 cherry + 1 mid faith when 107/110/111 are in the deck; owner 2026-09-26)",
+                       paid);
+            }
+        }
         if (ufo_absorb_item(&s->u, *(uint32_t *)(it + CE_ITEM_TYPE), UFO_PLACEHOLDER_STAGE,
                             UFO_FILL_SCALE_PERMILLE)) {
             /* 吸满：按色吐**一件**（一手 `0x44ad99` 的 switch）——
@@ -3461,17 +3525,42 @@ static void ufo_absorb_faith_tick(ufo_card_t *s, float ux, float uy)
          *   （`faith_absorb_t` 里的 `age/state/in_toss` 三个字段保留：生产者照旧声明，
          *     消费者**当前不用** —— 将来若要给自建点加豁免，判据已经在那儿了。）*/
         if (ufo_within_capture(dx, dy)) {              /* 18 px 内 ⇒ 吸掉（与道具同一判据）*/
+            int kind = UFO_ABSORB_P;                   /* 默认 = 旧行为（无协同卡时逐字不变）*/
             if (!faith_absorb_take(&e)) continue;      /* 这一颗已经被别人收走 / 匹配不上 */
+            /* ★★★ 2026-09-26（owner 的跨卡口径，**仅协同卡在场时**生效）：
+             *   · 107 的**樱点实体**（`slot_mask` 带 `1 << FAITH_SLOT_107`，`faith_core.h:29`）
+             *     ⇒ **满 P 时**算 P（进彩色转换 / 红 UFO 的倍率通道），否则"不转换" = 中性；
+             *   · 110/111 的**中信仰点**（`FAITH_TIER_SMALL`）⇒ 恒算 P（它本来就是满 P 由 P 转出来的）；
+             *   · 110/111 的**大信仰点**（`FAITH_TIER_BIG`）⇒ 不算 P、**原封不动**（只加 fill、不计数）。*/
+            if (ufo_collab_present()) {
+                if (e.slot_mask & (1 << FAITH_SLOT_107))
+                    kind = ufo_power_full() ? UFO_ABSORB_P : UFO_ABSORB_NEUTRAL;
+                else if (e.tier == FAITH_TIER_BIG)
+                    kind = UFO_ABSORB_NEUTRAL;
+                else
+                    kind = UFO_ABSORB_P;
+            }
             if (e.tier == FAITH_TIER_BIG) { ++s->faith_pulled_big; s->faith_pulled_big_sum += e.value; }
             else { ++s->faith_pulled_mid; s->faith_pulled_mid_sum += e.value; }
             s->faith_pulled_mask |= e.slot_mask;
+            /* ★ 等价计数（owner 2026-09-26）：107 的樱点 / 110·111 的大点 / 中点，**原样分类**记 */
+            if (e.slot_mask & (1 << FAITH_SLOT_107)) ++s_eq.cherry;
+            else if (e.tier == FAITH_TIER_BIG) ++s_eq.big_faith;
+            else ++s_eq.mid_faith;
+            if (s_faith_log_n < (int32_t)FAITH_POOL_TOTAL) {   /* ★ 逐颗记账（原值归还的底账）*/
+                s_faith_log_tier[s_faith_log_n] = e.tier;
+                s_faith_log_value[s_faith_log_n] = e.value;
+                s_faith_log_mask[s_faith_log_n] = e.slot_mask;
+                ++s_faith_log_n;
+            }
+            s->faith_log_n = s_faith_log_n;                     /* 卡侧只留计数器（日志/结清用）*/
             /* ★ 计数 +1（颜色通道由 `ufo_absorb_item` 一处决定：彩虹时互换）*/
             /* ★★ 2026-09-23（owner #7）：**必须接住返回值** —— 原来 `(void)` 丢掉它 ⇒
              *   被信仰点喂满的那一次不开奖（没 B、没闪烁）。见 `ufo_fill_complete()` 的注。*/
-            if (ufo_absorb_item(&s->u, UFO_ITEM_TYPE_P, UFO_PLACEHOLDER_STAGE, UFO_FILL_SCALE_PERMILLE))
+            if (ufo_absorb_item_ex(&s->u, kind, UFO_PLACEHOLDER_STAGE, UFO_FILL_SCALE_PERMILLE))
                 ufo_fill_complete(s, ux, uy);
             ufo_se(UFO_SEV_ABSORB, UFO_SE_ABSORB, e.x,
-                       "一手 th12:0x426970（同上；这一声是 110/111 的信仰点被吞）");
+                       "一手 th12:0x426970（同上；这一声是共享点池的点被吞）");
             continue;
         }
         /* 拉拽：与道具同一条步长公式（一手 `th12:0x426879`），走 `ufo_drag_step` 的**比例步进**
@@ -3668,6 +3757,10 @@ static void ufo_try_summon(ufo_card_t *s)
     ufo_se(UFO_SEV_SPAWN, UFO_SE_UFO, *(const float *)(body + CE_ENEMY_POS_X),
                        "★ owner 2026-09-23 指定 se_ufo.wav（TH12 表第 0x33 行；一手那一枚不在 Ufo::spawn —— "
                        "见宏定义处的说明）");
+    /* ★★★ 2026-09-26：新的一只 UFO ⇒ **等价计数与逐颗账从零开始**
+     *   （上一只的账已在它生成压缩包那一刻快照进包槽，或者已随包结清 ⇒ 这里清是安全的）。*/
+    s_eq.p = s_eq.money = s_eq.big_faith = s_eq.mid_faith = s_eq.cherry = 0;
+    s_faith_log_n = 0;
     ce_log("ufo: summoned UFO (color %d, art idx %d%s) enemy_id %u at frame %u - REAL HP %d "
            "(one-hand tier %d = %d, applied to enemy+0x6220/24/28 after spawn; spawn life was %d "
            "to stay under the >=1000 flag-30 gate; power %d, per level %d)", (int)made,
@@ -3915,6 +4008,18 @@ static int ufo_drop_spawn(ufo_card_t *s, int32_t kind, float x, float y,
     d->core.faith_big = s->faith_pulled_big;       /* ★ 被吸走的信仰点跟着压缩包回来 */
     d->core.faith_mid = s->faith_pulled_mid;
     d->core.faith_mask = s->faith_pulled_mask;
+    /* ★★★ 2026-09-26（owner）：**等价计数**随包携带（其他卡折算用）+ **逐颗账快照**（原值归还）*/
+    d->core.eq_p = s_eq.p;
+    d->core.eq_money = s_eq.money;
+    d->core.eq_big = s_eq.big_faith;
+    d->core.eq_mid = s_eq.mid_faith;
+    d->core.eq_cherry = s_eq.cherry;
+    d->eq_log_n = s_faith_log_n;
+    for (int i = 0; i < s_faith_log_n && i < (int)FAITH_POOL_TOTAL; ++i) {
+        d->eq_log_tier[i] = s_faith_log_tier[i];
+        d->eq_log_value[i] = s_faith_log_value[i];
+        d->eq_log_mask[i] = s_faith_log_mask[i];
+    }
     if (kind == UFO_DROP_KIND_BOMB) {
         /* ★★★ 2026-09-23（owner 第 5 条 + 新口径「满 B 的运动模式应当**完全复刻 B碎**…参考**信仰点**的
          *   运动模式，完全复刻即可。主要是**上线收点**（以及其他全屏收点）以及 **th15 变黄变慢抖动**」）
@@ -4447,23 +4552,28 @@ static void ufo_drop_collect(ufo_card_t *s, int i)
         /* ★ 信仰点原样还回去（用户：「被吸走后爆出来还得按照信仰-樱点算 … 后面只调用收信仰樱点的函数即可吧」）
          *   —— 这里调的是**生产者自己的 spawn 入口**（`faith_spawn`），不碰它的记账：还回去的点
          *   会像正常撒出来的点一样被自机收走/过线/进批（= 用户要的"按信仰算"）。 */
-        if (c->faith_big || c->faith_mid) {
-            uint32_t n;
-            int32_t mask = c->faith_mask ? c->faith_mask : (~0);
-            /* 值 = 被吸走那批的**均值**（保住总分；同一批点的 value 在 110/111 内部按难度/档位
-             * 各不相同，按均值还原是"总量不变"的最小失真读法 —— ❓ 自定，见 TUNING §2.0o）。 */
-            int32_t vb = c->faith_big ? (s->faith_pulled_big_sum / (int32_t)c->faith_big) : 0;
-            int32_t vm = c->faith_mid ? (s->faith_pulled_mid_sum / (int32_t)c->faith_mid) : 0;
-            if (c->faith_big && vb <= 0) vb = 1;
-            if (c->faith_mid && vm <= 0) vm = 1;
-            for (n = 0; n < c->faith_big; ++n)
-                (void)faith_spawn(c->x, c->y, FAITH_TIER_BIG, mask, vb);
-            for (n = 0; n < c->faith_mid; ++n)
-                (void)faith_spawn(c->x, c->y, FAITH_TIER_SMALL, mask, vm);
-            ce_log("ufo: PACKAGE returned the pulled faith dots: %u big (value %d each) + %u mid "
-                   "(value %d each), mask 0x%x - via the producer's own faith_spawn()",
-                   c->faith_big, (int)vb, c->faith_mid, (int)vm, (unsigned)mask);
+        /* ★★★ 2026-09-26（owner：「**原值归还**」）：按**逐颗账** tier/value/mask **1:1** 撒回 ——
+         *   不再按均值还原（均值会破坏 107 小樱点的打包值，`senro.c:1803`）。
+         *   位置 = 压缩包（= 一手"在它的位置"那条口径）。*/
+        if (d->eq_log_n > 0) {
+            int32_t n;
+            for (n = 0; n < d->eq_log_n; ++n)
+                (void)faith_spawn(c->x, c->y, d->eq_log_tier[n], d->eq_log_mask[n],
+                                  d->eq_log_value[n]);
+            ce_log("ufo: PACKAGE returned %d pulled dots **1:1 by original value** "
+                   "(tier/value/mask kept; owner 2026-09-26)", (int)d->eq_log_n);
         }
+        s_faith_log_n = 0;                  /* 本只 UFO 的账已随包结清 */
+        /* ★★★ 2026-09-26（owner）：**发布等价计数**给其他卡（取走即清）*/
+        s_bounty_eq.p = c->eq_p;
+        s_bounty_eq.money = c->eq_money;
+        s_bounty_eq.big_faith = c->eq_big;
+        s_bounty_eq.mid_faith = c->eq_mid;
+        s_bounty_eq.cherry = c->eq_cherry;
+        s_bounty_eq_pending = 1;
+        ce_log("ufo: BOUNTY equivalence published - P %d / money %d / big faith %d / mid faith %d "
+               "/ cherry %d (for other cards; th12 has no such API - owner 2026-09-26)",
+               (int)c->eq_p, (int)c->eq_money, (int)c->eq_big, (int)c->eq_mid, (int)c->eq_cherry);
         s->faith_pulled_big = 0;                  /* 账已经结清 ⇒ 清掉（下一只 UFO 从零开始）*/
         s->faith_pulled_mid = 0;
         s->faith_pulled_mask = 0;

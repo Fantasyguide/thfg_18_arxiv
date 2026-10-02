@@ -28182,6 +28182,10 @@ Undertale 的时机条；当有敌人可攻击的时候，时机条会开始动�
   卡歪 MISS / 双 3s TIMEOUT / 砸完 RETURN / 缓冲 DONE / 无敌声明单调不增。
 - `make check` exit 0（`cards-check` 48 张、`capcheck` 全绿、`dllx87 = 0`、`check-docs` 四项全绿）。
 
+| 新增 | `native/cards/faith.h`、`native/cards/faith.c` | 第 57 轮：新增 `faith_payout_full_p_conversion(x,y)` —— 满 P 时「一颗 P 已被转换」的产出（按注册表给每个 `conv_value > 0` 的注册者各撒一颗 `FAITH_TIER_SMALL`，分角与 `faith_convert_full_p_items()` 同形，**不碰原生道具池**）| owner 2026-09-26 跨卡规格：112 的金钱→P 在满 P 时产出「1 樱点 + 1 中信仰点」| 112（Nipporita）| `make check` ✓ / `dllx87=0`；faith 既有卡行为未改（新函数只在 112 调）|
+
+| 新增 | `native/cards/ufo_bounty.h` | 第 57 轮：压缩包**等价计数**出口（`ufo_bounty_eq_t{p,money,big_faith,mid_faith,cherry}` + `ufo_bounty_eq_pending/_take`，取走即清）| owner：「其他卡要用」| 112（Nipporita）| `make check` ✓；107/110/111 可 include |
+
 ## §BE 详录 #216（2026-10-03a）：**92 伟大之作**（弹幕 + 敌人 → 金钱；boss 破一阶段；冷却按转换量）
 
 **谁改的**：统筹会话（owner 2026-10-03：「noita卡：伟大之作：把所有敌人+弹幕变成金钱道具（类P点的那个）。

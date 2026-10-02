@@ -429,14 +429,26 @@ int ufo_absorb_item(ufo_ufo_t *u, uint32_t type, int32_t stage, int32_t scale_pe
     if (!ufo_present(u)) return 0;
     idx = ufo_absorb_type_index(type);
     if (idx < 0) return 0;
+    /* ★ 2026-09-26：原生道具那条路逐字不变（索引 0 = type 1 = P、1 = type 2 = 金钱）*/
+    return ufo_absorb_item_ex(u, idx, stage, scale_permille);
+}
+
+/* ★★★ 2026-09-26（见头文件那条注）：kind 版 —— 计数通道显式化，`NEUTRAL` 只加 fill。
+ *   ⚠ fill 那一段与原来逐字相同（含"满着不再开奖"的一手订正）。*/
+int ufo_absorb_item_ex(ufo_ufo_t *u, int kind, int32_t stage, int32_t scale_permille)
+{
+    if (!ufo_present(u)) return 0;
+    if (kind < UFO_ABSORB_P || kind > UFO_ABSORB_NEUTRAL) return 0;
     /* 一手（`th12:0x44aca0`）：颜色 ≠ −1 时 type 1 → `cntA`、type 2 → `cntB`；彩虹时**反过来**。
      * 本层把两个计数按 TH18 的 type 语义命名（`cnt_p` / `cnt_money`），彩虹的「反过来」照抄语义：
      * 彩虹 UFO 吸 P 道具算到 `cnt_money`、吸金钱算到 `cnt_p`。
      * ⚠ 计数在**满着时也照加**（一手 `0x44acc8` 的 `add [esi+0x48],edi` 在第一个满格检查**之前**）*/
-    if (u->color == UFO_COLOR_RAINBOW) {
-        if (idx == 0) ++u->cnt_money; else ++u->cnt_p;
+    if (kind == UFO_ABSORB_NEUTRAL) {
+        /* 大信仰点：不参与转换、不进任何计数 —— 只有下面的 fill 生效（"原封不动"）*/
+    } else if (u->color == UFO_COLOR_RAINBOW) {
+        if (kind == UFO_ABSORB_P) ++u->cnt_money; else ++u->cnt_p;
     } else {
-        if (idx == 0) ++u->cnt_p; else ++u->cnt_money;
+        if (kind == UFO_ABSORB_P) ++u->cnt_p; else ++u->cnt_money;
     }
     ++u->absorbed;
     /* ★★ 2026-09-12 订正（一手 `0x44acd8 fld1; fcom fill; test ah,0x41; jnp 0x44ae98`）：

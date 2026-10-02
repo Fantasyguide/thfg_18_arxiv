@@ -10319,3 +10319,27 @@ if (!(ev->flags & CE_EDEATH_F_REAL)) return;   /* 只认真敌人 */
 （107/110/111，层内一份）⇒ **场上能收的东西都进清扫了**。仍未接的只有「卡道具转钱卡」那一类边界（owner 已定：已经是钱的
 不动、残碎卡/B 碎卡转钱卡，见 92 段），以及**面值的实跑手感**。
 
+
+### 2.0zzx-24 ★★★ 第 **五十七** 轮（2026-09-26）：跨卡规格（112 × 107 × 110/111）—— 原值归还 + P 等价分类 + 满P 金钱转换产出 + 压缩包**等价计数**出口
+
+**owner 规格（原话）**：「107 的樱点在满 P 的时候需要被认为是等价于 P 点，进彩色转换和红 UFO 加倍的」/
+「中信仰点（仅满 P 由 P 转换出来）也得认为是 P」/「大信仰点不认为是 P，原封不动」/
+「樱点道具当且仅当满 P 的时候认为是 P，会参与转换，否则不转换」/
+「金钱 → P 点——当满 P 的时候会同时变成 1 樱点 + 1 中信仰点」/「**仅在有卡的协同时候这么做**」/
+「**原值归还**」/「给压缩包一个**等价计数**（大信仰点 / 中信仰点 / 樱点 / P / 金钱），**其他卡要用**」。
+
+| 项 | 实现 | 落点 |
+| --- | --- | --- |
+| **原值归还** | 共享点池的实体**逐颗记账**（tier/value/mask），开奖时 **1:1** 撒回；不再均值化（均值会破坏 107 小樱点的打包值 `senro.c:1803`）| `ufo.c` 的 `s_faith_log_*`（文件作用域：卡私有状态预算只有 496 B）+ `ufo_drop_slot_t.eq_log_*`（**包生成那一刻快照**，防"没收包又召唤下一只"覆盖）|
+| **P 等价分类** | 通道从"道具类型"提升为显式 kind：`UFO_ABSORB_P` / `_MONEY` / `_NEUTRAL`（只加 fill、不计数）| `ufo_core.h` 的 `ufo_absorb_item_ex()`（`ufo_absorb_item()` 保留为逐字不变的包装）|
+| 分类判据 | 107 樱点（`slot_mask & 1<<FAITH_SLOT_107`，`faith_core.h:29`）⇒ **满 P 才算 P**，否则中性；110/111 **中信仰点** ⇒ 恒 P；**大信仰点** ⇒ 中性（原封不动）| `ufo.c` 的 `ufo_absorb_faith_tick` |
+| 满 P 判据 | `power >= max_power > 0`（`CE_ADDR_MAX_POWER`，`faith.h:354` 逐条对照）| `ufo_power_full()` |
+| 协同在场判据 | `faith_registered_mask() != 0`（`faith.h:171`；那段明令**不许**用槽值判在场）| `ufo_collab_present()` |
+| 满 P 金钱转换产出 | 新增 `faith_payout_full_p_conversion(x, y)`：按注册表给每个 `conv_value > 0` 的注册者各撒一颗 `FAITH_TIER_SMALL`（值 = 它的 `conv_value`、mask = 它的槽、分角与 `faith_convert_full_p_items()` 同形）| `faith.h` / `faith.c`（**跨卡**，见 AUDIT §BE）；112 在**彩虹 UFO 吸金钱且满 P** 时调它 |
+| **压缩包等价计数** | 新出口 `ufo_bounty.h`：`ufo_bounty_eq_t{p, money, big_faith, mid_faith, cherry}` + `ufo_bounty_eq_pending()` / `ufo_bounty_eq_take()`（**取走即清**的一次性闩）| UFO 在场期间**原样分类**计数（彩虹的通道互换**不**影响它）⇒ 随包携带（`ufo_drop_t.eq_*`）⇒ 收包那一帧发布 |
+
+**回归面**：`ufo.c` / `ufo_core.h` / `ufo_core.c` / **`faith.h` / `faith.c`（跨卡，已在 AUDIT §BE 登记）** /
+新头 `ufo_bounty.h`。门禁：`check` ✓（420 文件）/ 闸自检 ✓ / `dllx87` = **0** ✓。
+发布：DLL `617c7176…` → **`ac978770e893efb73ee30f19296198e7`**、`ability.anm` → **`c36d1635eeb34beebabeea94e30563fb`**（四处同步 OK）。
+⚠ 待拍一条：**「两种信仰点对绿 UFO 的计数如 P 对红 UFO 的计数」** —— 现在实现为"按 P 计"（非彩虹时进 `cnt_p`），
+而一手赏金公式里**红**乘 `cnt_p`、**其余色**乘 `cnt_money` ⇒ 若你要的是"进被乘那条通道"，就要按色分流（red/rainbow ⇒ P 通道、blue/green/gold ⇒ money 通道）。等 owner 一句话。
