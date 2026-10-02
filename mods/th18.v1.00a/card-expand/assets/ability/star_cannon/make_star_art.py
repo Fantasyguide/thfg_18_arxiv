@@ -25,8 +25,8 @@ OUT = os.path.join(HERE, "_src", "STAR_SHOT_BLUE.png")
 OUT_TAIL = os.path.join(HERE, "_src", "STAR_TAIL.png")
 
 PAD = 10                    # 四周留出辉光的位置（原图 22×24 → 42×44）
-GLOW = (104, 176, 255)      # 辉光色（冷蓝，取 Terraria 星光那种偏青的蓝）
-GLOW_MAX = 215              # 辉光中心的最大 alpha（别盖过星星本身）
+GLOW = (58, 138, 255)       # 辉光色（★ owner 2026-10-03：「蓝色应当更浓」⇒ 压掉 R/G、提高饱和）
+GLOW_MAX = 245              # 辉光中心的最大 alpha（更浓；星星本体仍压在最上面）
 RINGS = 30
 
 
@@ -62,7 +62,7 @@ def make_tail():
             # 头端偏白、尾端**明显的蓝**（原版动态光照拖出来的是由白转蓝的渐层；
             # 第一版整条太白，owner 要的是"有蓝色" ⇒ 尾端压到 R70/G140）
             k = 1.0 - t
-            col = (int(70 + 145 * k), int(140 + 95 * k), 255)
+            col = (int(38 + 177 * k), int(112 + 123 * k), 255)   # 尾端更蓝（owner：蓝色更浓）
             px[x, y] = col + (min(a, 255),)
     img.save(OUT_TAIL)
     print(f"STAR_TAIL: {OUT_TAIL} {img.width}x{img.height}（头端在右、尾尖在左）")
@@ -77,7 +77,7 @@ def main():
     rmax = min(cx, cy)
     for i in range(RINGS, 0, -1):                 # 从外往内铺同心圆，越里面越亮
         r = rmax * i / RINGS
-        a = int(GLOW_MAX * (1.0 - i / float(RINGS)) ** 1.6)
+        a = int(GLOW_MAX * (1.0 - i / float(RINGS)) ** 1.15)   # 指数 1.6→1.15：外圈留更多 alpha、蓝更成片
         if a <= 0:
             continue
         d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=GLOW + (a,))
