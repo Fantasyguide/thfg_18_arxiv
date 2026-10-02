@@ -11,10 +11,10 @@ script script380 {
     blendMode(1);
     zWriteDisable(1);
     scale(0.55f, 0.55f);
-    alpha(170);
+    alpha(120);              // ★ 2026-10-03：170 → 120（owner「残留大量剑的虚影」⇒ 淡一点、稀一点）
 0:
-    alphaTime(10, 0, 0);
-    scaleTime(10, 0, 0.30f, 0.30f);
-+10:
+    alphaTime(24, 0, 0);     // ★ 10 → 24 帧：寿命拉长、但**生成间隔**从 2 帧放到 8 帧（见 ZN_TRAIL_EVERY）
+    scaleTime(24, 0, 0.42f, 0.42f);
++24:
     delete();
 }

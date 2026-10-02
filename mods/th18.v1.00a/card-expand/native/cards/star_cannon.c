@@ -23,17 +23,22 @@
 #include "broken_core_core.h"      /* bc_atan2f：确定性 SSE 多项式（禁调引擎的 x87 atan2）*/
 
 #define SC_OPT_ANM_Y    0x10       /* allocate 的偏移参（引擎写进 option+0x68/+0x70）*/
-#define SC_OPT_NF_X     44.0f      /* 非聚焦：自机右前方 ❓ 自定（与天顶剑同款，炮身短所以更贴）*/
-#define SC_OPT_NF_Y     (-10.0f)
-#define SC_OPT_F_X      34.0f      /* 聚焦：收拢一点 ❓ 自定 */
-#define SC_OPT_F_Y      (-14.0f)
+/* ★ 2026-10-03 owner 实测口径：「星星炮位置放在**子机正前方**」⇒ 炮身摆在自机正上方居中
+ *   （原生子机那一排在自机两侧偏下，"正前方"就是那一排的前面 = 再往上、回中）。❓ 数值仍是我定的。*/
+#define SC_OPT_NF_X     0.0f       /* 非聚焦：正前方（居中）*/
+#define SC_OPT_NF_Y     (-40.0f)
+#define SC_OPT_F_X      0.0f       /* 聚焦：收拢一点 */
+#define SC_OPT_F_Y      (-34.0f)
 #define SC_RETRY        60         /* 关卡中途买到这张卡：没拿到子机时的重试间隔 */
 /* ★★ 2026-10-03 owner：「89 这也涉及到社区梗，计数，打到 300 颗的时候会变成灰色装填一小段时间」
  *   ⇒ 弹匣 300 发（对位原版的**坠落之星弹药** —— 卡名那句「桑百颗够吗？」问的就是它）、
  *     打满 300 ⇒ 子机**变灰** + 装填 `SC_RELOAD_FRAMES` 帧（这期间不开火），装完计数归零。
  *     ❓ 装填时长是我拍的（owner 只说"一小段时间"）。
  *   ★ 2026-10-03 owner：「不需要 on_draw」⇒ **不显示任何数字**，计数只在内部（诊断日志里报）。*/
+#define SC_INPUT_Z      0x001u     /* ★ owner 实测：「星星炮和天顶剑**是否开火得看 Z**」
+                                    *   ⇒ 只有按住 Z（射击键）时才开火；松手就停（充能照跑，随时能续）*/
 #define SC_MAGAZINE     300        /* 一个弹匣 = 300 颗 */
+#define SC_SE_MUZZLE    0x2d       /* ❓ 出膛音借 TH18 的 se_slash（与天顶剑同一枚）*/
 #define SC_RELOAD_FRAMES 180       /* ❓自定：装填 3 s（这期间灰着、不开火）*/
 #define SC_LAYER        13         /* 世界特效层（与天顶剑 / 破损核心同层）*/
 #define SC_MSG_LAYER    25         /* 讯息贴图：UI 层（世界层是 3–19，HUD 是 24/25）*/
@@ -67,6 +72,11 @@ typedef struct {
     uint32_t    msg_id;            /* 讯息 VM（0 = 没有）*/
     uint32_t    msg_life;          /* 讯息剩余帧 */
     uint32_t    msg_fade_t;        /* 退场淡出已走帧数（0 = 没在退场）*/
+    uint32_t    cannon_id;         /* ★ 我们**自绘**的炮身 VM（owner 实测：「炮体也得跟着旋转」）。
+                                    *   为什么不直接转 option 自己那个 VM：它的旋转不归我们管
+                                    *   （引擎的 option tick 可能每帧覆写）⇒ 自己画一个，位置读 option 的坐标、
+                                    *   旋转与灰/白全由我们写；**option 那个 VM 置成透明**当"定位锚 + 收起语义"用。*/
+    float       aim;               /* 当前瞄准角（没有目标时保持上一次，免得炮口乱甩）*/
     int32_t     shots;             /* 这一匣已经打了几颗（0..SC_MAGAZINE）*/
     int32_t     reload_left;       /* 装填剩余帧（> 0 = 灰着 + 不开火）*/
 } sc_card_t;
@@ -117,6 +127,9 @@ static void sc_kill_all(ce_card_t *c)
         s->st.s[i].id = 0;
         s->st.s[i].active = 0;
     }
+    if (s->cannon_id) ce_anm_delete(s->cannon_id);
+    s->cannon_id = 0;
+    s->aim = 0.0f;
     sc_msg_kill(s);
     s->death_pending = 0;
     s->shots = 0;
@@ -214,9 +227,13 @@ static int on_tick_2(ce_card_t *c)
         }
     }
 
-    /* ② 跟班（炮身）：站在自机旁边，**炮口跟着目标转**（rotation.z 由 C 每帧写）。*/
+    /* ② 跟班（炮身）：占一个原生子机槽当**定位锚**（收起/展开语义白送），
+     *   但**画面上的炮身是我们自绘的 VM** —— 这样炮口的旋转与灰/白完全归我们写。*/
     o = ce_option_get(c, &s->opt, SC_OPT_ANM_Y, CE_ANM_ABILITY_SCRIPT_STAR_CANNON_OPT, SC_RETRY, "star_cannon");
-    if (!o) return 0;
+    if (!o) {
+        if (s->cannon_id) { ce_anm_delete(s->cannon_id); s->cannon_id = 0; }   /* 收起了 ⇒ 自绘的也收 */
+        return 0;
+    }
     sc_place(&s->opt);
     pz = ce_player_pos()[2];
     fx = ce_option_x(o);
@@ -228,8 +245,12 @@ static int on_tick_2(ce_card_t *c)
         }
     }
     {
-        uint32_t vm = *(uint32_t *)(o + CE_OPT_ANM_ID);   /* 灰/白：脚本的呼吸 alpha 仍然乘在上面 */
-        if (vm) ce_anm_set_color(vm, s->reload_left > 0 ? 0xff909090u : 0xffffffffu);
+        uint32_t vm = *(uint32_t *)(o + CE_OPT_ANM_ID);
+        if (vm) ce_anm_set_color(vm, 0x00000000u);   /* option 自己那个 VM 透明（只当锚点）*/
+    }
+    if (!s->cannon_id) {                             /* 自绘炮身：第一次 tick 建出来 */
+        s->cannon_id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_STAR_CANNON_OPT, SC_LAYER);
+        if (s->cannon_id && s->aim == 0.0f) s->aim = -1.5707964f;
     }
 
     /* 瞄准：最近的敌人；没有就朝正上（❓自定，我们的弹幕区没有光标）*/
@@ -240,12 +261,14 @@ static int on_tick_2(ce_card_t *c)
             sc_aim_consider(&aim, fx, fy, ce_enemy_pos(enemy)[0], ce_enemy_pos(enemy)[1]);
         }
     }
-    if (sc_aim_ready(&aim)) {
-        ang = bc_atan2f(aim.dy, aim.dx);
-    } else {
-        ang = -1.5707964f;                                  /* −π/2：正上 */
+    if (sc_aim_ready(&aim)) ang = bc_atan2f(aim.dy, aim.dx);  /* 有目标：算瞄准角 */
+    else ang = s->aim;                                       /* 没目标：保持上一次（炮口不甩）*/
+    s->aim = ang;
+    if (s->cannon_id) {                                      /* ★ 炮体跟着目标转（自绘 VM）*/
+        ce_anm_set_pos(s->cannon_id, fx, fy, pz);
+        ce_anm_set_rotation(s->cannon_id, 0.0f, 0.0f, s->aim);
+        ce_anm_set_color(s->cannon_id, s->reload_left > 0 ? 0xff909090u : 0xffffffffu);
     }
-    ce_anm_set_rotation((uint32_t)*(int32_t *)(o + CE_OPT_ANM_ID), 0.0f, 0.0f, ang);
 
     /* ③ 星星：推进 + 自转 + 闪烁 + 判定；出界就收。*/
     for (i = 0; i < SC_SHOT_MAX; ++i) {
@@ -264,9 +287,17 @@ static int on_tick_2(ce_card_t *c)
     }
     if (sc_live(&s->st) > 0) ce_raise_damage_cap(SC_CAP);
 
-    /* ④ 开火：蓄满才发（池满就一直攒着，不丢已有星星）；**装填中不发**。*/
+    /* ④ 开火：蓄满才发（池满就一直攒着，不丢已有星星）；**装填中不发**、**没按 Z 不发**。*/
     if (!sc_charge(&s->st)) return 0;
     if (s->reload_left > 0) return 0;
+    /* ★ owner 实测口径：「星星炮要**瞄准敌人**开火」「关于 Z 参考豌豆射手」——豌豆射手那套开火门
+     *   是引擎的原生子机射击（`ce_tick_shooters_for_card`）：**按住 Z + 活着 + 不在对话里**才发。
+     *   我们的星星是卡自管的（要瞄准 / 要 Terraria 的弹道），所以这三条自己判，语义与之一致；
+     *   再叠一条「**必须有可攻击的敌人**」—— 没目标不开火（原来朝正上乱打一梭子，owner 不要）。*/
+    if ((CE_INPUT_HELD() & SC_INPUT_Z) == 0u) return 0;
+    if (*(int32_t *)(p + CE_PLAYER_STATE) != 1) return 0;
+    if (CE_GUI_MSG_ACTIVE()) return 0;
+    if (!sc_aim_ready(&aim)) return 0;
     sh = sc_slot(&s->st);
     if (!sh) return 0;
     id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_STAR_CANNON_SHOT, SC_LAYER);

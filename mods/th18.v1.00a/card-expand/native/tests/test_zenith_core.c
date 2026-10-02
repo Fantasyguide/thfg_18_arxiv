@@ -168,7 +168,7 @@ static void test_orbit_params(void)
     CHECK(fabsf(p.R - (vlen + ZN_RADIUS_ADD)) < 1e-3f, "满相位时 R 该是 |v| + 40，得到 %g", (double)p.R);
     CHECK(fabsf(p.fade_x) < 1e-3f && fabsf(p.fade_y) < 1e-3f, "满相位时 fade 该衰减到 0");
     /* 残影 / 命中节奏：走完 60 相位大约 60/rate 帧 */
-    CHECK(n_trail >= 10, "60 相位里该留了不少残影，得到 %d", n_trail);
+    CHECK(n_trail >= 4, "60 相位里该留几个残影（ZN_TRAIL_EVERY = 8 ⇒ 约 7 个），得到 %d", n_trail);
     CHECK(n_hit >= 5, "60 相位里该命中若干次，得到 %d", n_hit);
 
     /* 寿命：相位到 ZN_PHASE_END 那一帧 done=1；帧数落在 [120/2.0, 120/0.7] 内 */

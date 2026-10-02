@@ -25,10 +25,15 @@
 #include "broken_core_core.h"      /* bc_atan2f：确定性 SSE 多项式（禁调引擎的 x87 atan2）*/
 
 #define ZN_OPT_ANM_Y    0x10       /* allocate 的偏移参（引擎把它写进 option+0x68/+0x70 两个 y 偏移）*/
-#define ZN_OPT_NF_X     46.0f      /* 非聚焦：自机右前方一点 ❓ 自定（allocate 只给 y，x 自己写）*/
-#define ZN_OPT_NF_Y     (-14.0f)
-#define ZN_OPT_F_X      36.0f      /* 聚焦：收拢一点 ❓ 自定 */
-#define ZN_OPT_F_Y      (-20.0f)
+/* ★ 2026-10-03 owner 实测口径：「天顶剑位置放在**自机正中心**，但是是**身下**，甚至可以不画」
+ *   ⇒ 站位 (0, 0)（正好压在自机身上）+ 层比自机低 ⇒ 被自机盖住（"身下"）。
+ *   ❓「可以不画」我按**保留但被盖住**处理（万一别的路径要用它的坐标）；要彻底不画就把
+ *     `ZN_FAM_HIDE` 打开或干脆不建 VM。*/
+#define ZN_OPT_NF_X     0.0f
+#define ZN_OPT_NF_Y     0.0f
+#define ZN_OPT_F_X      0.0f
+#define ZN_OPT_F_Y      0.0f
+#define ZN_INPUT_Z      0x001u     /* 同 89：按住 Z 才甩剑 */
 #define ZN_RETRY        60         /* 关卡中途买到这张卡：没拿到子机时的重试间隔（槽满 / 广播还没来）*/
 /* ★★ 2026-10-03（owner：「87 尽量做吧」）：把原版那几样**挥动特效**补上（一手见 AUDIT §BE #211 追加）：
  *   · 刃尖**星芒** `DrawPrettyStarSparkle`：4 个 `Extra[98]` quad，`t 15→30` 淡入、`30→45` 淡出
@@ -47,7 +52,7 @@
 #define ZN_SPARK_SX1    0.30f
 #define ZN_SPARK_SY0    0.10f
 #define ZN_SPARK_SY1    0.18f
-#define ZN_DUST_ODDS    9          /* 尘埃 1-in-N（原版 `Main.rand.Next(9) == 0` 那一档的均值）*/
+#define ZN_DUST_ODDS    16         /* 尘埃 1-in-N（原版是 `Next(9) == 0`；实测嫌杂 ⇒ 调稀一倍）❓ 自定*/
 #define ZN_DUST_MAX     3          /* 一次最多几颗（原版 1–3）*/
 #define ZN_LAYER        13         /* 世界特效层（破损核心 / 炎魔 / 青眼同层）*/
 #define ZN_SE_SLASH     0x2d       /* TH18 音效表 0x2d = se_slash.wav（一手 engine/_shared/th18-sound-table.md）；
@@ -227,6 +232,12 @@ static int on_tick_2(ce_card_t *c)
     if (!o) return 0;
     zn_place(&s->opt);                          /* 补申请 / 重建过 ⇒ 站位重新写一遍（幂等）*/
     zn_fam_cycle(s, o);                         /* 跟班贴图轮播（21 把）*/
+    {   /* ★ owner 2026-10-03 实测：「天顶剑位置放在**自机正中心**，但是是**身下**，甚至可以不画」
+         *   ⇒ 站位已经在 `zn_place()` 里改成 (0,0)；这里再把 option 那个 VM **整只透明**
+         *     （"身下/不画"），剑阵由剑刃自己表现。VM 仍留着当**定位锚**（剑刃从它的坐标出发）。*/
+        uint32_t fvm = *(uint32_t *)(o + CE_OPT_ANM_ID);
+        if (fvm) ce_anm_set_color(fvm, 0x00000000u);
+    }
     pz = ce_player_pos()[2];
     fx = ce_option_x(o);                        /* ★ 原版每帧重读 `player.MountedCenter` ⇒ 剑阵跟着跟班走 */
     fy = ce_option_y(o);
@@ -340,6 +351,11 @@ static int on_tick_2(ce_card_t *c)
         zn_aim_consider(&aim, fx, fy, ce_enemy_pos(enemy)[0], ce_enemy_pos(enemy)[1]);
     }
     if (!zn_aim_ready(&aim)) return 0;
+    /* ★ owner 口径：按住 Z 才甩剑；再叠"活着 + 不在对话里"两条 —— 与原生子机射击
+     *   （豌豆射手那套 `ce_tick_shooters_for_card` 的引擎门）语义一致。*/
+    if ((CE_INPUT_HELD() & ZN_INPUT_Z) == 0u) return 0;
+    if (*(int32_t *)(p + CE_PLAYER_STATE) != 1) return 0;
+    if (CE_GUI_MSG_ACTIVE()) return 0;
     b = zn_slot(&s->st);
     if (!b) return 0;
     id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_ZENITH_BLADE, ZN_LAYER);
