@@ -184,3 +184,12 @@ script84 { 重复爆闪：sprite68、scaleTime(30,2,2,2)、alphaTime(30,0,0)、+
 4. 跨版本比脚本先确认是哪一份 anm（本轮踩过：拿 `etama.anm` 的同号脚本比 `enemy.anm` 的）。
 5. **「移植了但没接」是这类卡的常见坑**（#22 面板就挂了很久）⇒ 新移植一件就问一句「C 侧真的引用它了吗」（grep 宏名）。
 6. **状态别落后于代码**：已修的要立刻改台账状态列，否则下一轮会被当新 bug 重报。
+
+### §3 ①d ✅ goal（2026-09-26）四色得分/奖励口径**核清并核对实现完毕**
+
+- 一手结论落在 `engine/ufo/th12/01-ufo-system.md` §8b（按色倍率 N + 赏金公式）、§8c（四色击破掉落 + 令牌起始色）。
+- 卡侧逐条对照见 `TUNING.md` §2.0zzx-25a/25b/25c：`ufo_drop_mult_permille()` / `ufo_break_token_state()` /
+  `ufo_break_color_bonus()` / `ufo_fill_complete()` **全部与一手一致**（含 ③ 的 `last_slot2`、④ 的蓝令牌 14）。
+- **唯一偏差已修并发布**：赏金值改为**击破那一刻**定下（一手 `zUfo+0x68`）→ 新增 `ufo_drop_t.value_at_break`；
+  DLL → `a07a57efc2e7b799178dbd9e37014276`（四处同步 OK）。
+- 订正两处旧记录：① 我此前的"蓝喂饱/击破无 case"只对**喂饱**成立（击破给令牌 14 ✓）；② 蓝的低档系数是 **2+8×fill**（FP 栈复核），不是 2+4×fill。
