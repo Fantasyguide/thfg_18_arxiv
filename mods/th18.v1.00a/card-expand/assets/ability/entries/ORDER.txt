@@ -1056,3 +1056,16 @@ STAR_CANNON_TAIL                ability/star_cannon/_src/STAR_TAIL.png    44x16
 # 东尼的悲恸（id 86）触发时 BOSS 身上的**卡面虚影**（脚本 393）。素材 = owner 给的卡面截图按
 # **主体卡长方形**裁切再缩（见 `assets/ability/tony/make_card_ghost.py` 的注：左上能量球在卡框外）。
 TONY_GRIEF_CARD_GHOST           ability/tony/_src/GRIEF_CARD_GHOST.png    128x181
+ATLAS ATLAS_UFO_CARRIER_FAIRY_GLOW 384x32
+CARRIER_FAIRY_GLOW_0                   ability/ufo_carrier_glow/CARRIER_FAIRY_GLOW_0.png   @0,0,32x32
+CARRIER_FAIRY_GLOW_1                   ability/ufo_carrier_glow/CARRIER_FAIRY_GLOW_1.png   @32,0,32x32
+CARRIER_FAIRY_GLOW_2                   ability/ufo_carrier_glow/CARRIER_FAIRY_GLOW_2.png   @64,0,32x32
+CARRIER_FAIRY_GLOW_3                   ability/ufo_carrier_glow/CARRIER_FAIRY_GLOW_3.png   @96,0,32x32
+CARRIER_FAIRY_GLOW_4                   ability/ufo_carrier_glow/CARRIER_FAIRY_GLOW_4.png   @128,0,32x32
+CARRIER_FAIRY_GLOW_5                   ability/ufo_carrier_glow/CARRIER_FAIRY_GLOW_5.png   @160,0,32x32
+CARRIER_FAIRY_GLOW_6                   ability/ufo_carrier_glow/CARRIER_FAIRY_GLOW_6.png   @192,0,32x32
+CARRIER_FAIRY_GLOW_7                   ability/ufo_carrier_glow/CARRIER_FAIRY_GLOW_7.png   @224,0,32x32
+CARRIER_FAIRY_GLOW_8                   ability/ufo_carrier_glow/CARRIER_FAIRY_GLOW_8.png   @256,0,32x32
+CARRIER_FAIRY_GLOW_9                   ability/ufo_carrier_glow/CARRIER_FAIRY_GLOW_9.png   @288,0,32x32
+CARRIER_FAIRY_GLOW_10                  ability/ufo_carrier_glow/CARRIER_FAIRY_GLOW_10.png   @320,0,32x32
+CARRIER_FAIRY_GLOW_11                  ability/ufo_carrier_glow/CARRIER_FAIRY_GLOW_11.png   @352,0,32x32

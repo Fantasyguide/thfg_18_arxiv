@@ -22,21 +22,21 @@ script script357 {
     //     若要连时序也照原生 202/203（7 帧转身：263,262,261,260,256,257,258），说一声我改。
     layer(8);
     flipX();          // ★ 与 356 的唯一差别（一手 script16 也是只多这一行）
-    sprite(260);   /* 原生 enemy_g 倒数第二行（黄辉光妖精）*/
+    sprite(@CARRIER_FAIRY_GLOW_4@);   /* 原生 enemy_g 倒数第二行（黄辉光妖精）*/
 +4: // 4
-    sprite(261);   /* 原生 enemy_g 倒数第二行（黄辉光妖精）*/
+    sprite(@CARRIER_FAIRY_GLOW_5@);   /* 原生 enemy_g 倒数第二行（黄辉光妖精）*/
 +4: // 8
-    sprite(262);   /* 原生 enemy_g 倒数第二行（黄辉光妖精）*/
+    sprite(@CARRIER_FAIRY_GLOW_6@);   /* 原生 enemy_g 倒数第二行（黄辉光妖精）*/
 +4: // 12
-    sprite(263);   /* 原生 enemy_g 倒数第二行（黄辉光妖精）*/
+    sprite(@CARRIER_FAIRY_GLOW_7@);   /* 原生 enemy_g 倒数第二行（黄辉光妖精）*/
 +5: // 17
 offset60:
-    sprite(264);   /* 原生 enemy_g 倒数第二行（黄辉光妖精）*/
+    sprite(@CARRIER_FAIRY_GLOW_8@);   /* 原生 enemy_g 倒数第二行（黄辉光妖精）*/
 +5: // 22
-    sprite(265);   /* 原生 enemy_g 倒数第二行（黄辉光妖精）*/
+    sprite(@CARRIER_FAIRY_GLOW_9@);   /* 原生 enemy_g 倒数第二行（黄辉光妖精）*/
 +5: // 27
-    sprite(266);   /* 原生 enemy_g 倒数第二行（黄辉光妖精）*/
+    sprite(@CARRIER_FAIRY_GLOW_10@);   /* 原生 enemy_g 倒数第二行（黄辉光妖精）*/
 +5: // 32
-    sprite(267);   /* 原生 enemy_g 倒数第二行（黄辉光妖精）*/
+    sprite(@CARRIER_FAIRY_GLOW_11@);   /* 原生 enemy_g 倒数第二行（黄辉光妖精）*/
     jmp(offset60, 12);
 }

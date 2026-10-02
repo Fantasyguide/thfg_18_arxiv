@@ -4926,6 +4926,8 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 
 | 2026-10-02b | **108 永夜抄 / 109 花映塚 / 112 星莲船 / 116 天空璋**（各自的私有掉落池各加一行「复制代数闸」）+ **所有卡**（共享件 `sdk_core.{h,c}` / `sdk.h` / `Makefile`） | 见下方「§BE 详录 #211（87 天顶剑按泰拉瑞亚还原）」与「#212（88 杰拉 + 跨卡复制闸）」 |
 
+| 2026-10-03 | **所有卡**（共享资源 `assets/ability/`：新增图集 `ATLAS_UFO_CARRIER_FAIRY_GLOW` + 切图器 `make_ufo_carrier_glow_art.py`；改 3 支 112 脚本 352/356/357；生成物 `native/anm_ids.h`） | 见下方「§BE 详录 #219」 |
+
 
 > **§BE 详录 #42（2026-09-20 · P1「缺音效一批」8 条 + 音效表扩容新增 5 枚别作原版 SE）**
 >
@@ -28354,3 +28356,37 @@ owner 后续两条：「**音量再大一点**」「然后**虚影持续时间�
   顺手修一个自己埋的坑：`derive()` 的"已是最新"判据拿"与源逐字节相同"当标准，**带 GAIN/LIMIT 的条目
   永远不该等于源** ⇒ 之前加 `GAIN_DB` 后会被误判跳过（已加条件）。
 - **虚影时长**：脚本 393 的淡出 66 → 150 → **354 帧**（owner 定案 **6 s**；+6 帧淡入 = **360 帧**）、上飘 28 → 40 → **70 px**。
+
+---
+
+### §BE 详录 #219 —— 2026-10-03：修「112 黄妖精贴图错」= **两套 sprite 编号空间串了**（不是容量爆）
+
+**谁改的**：统筹。**owner 报**：「th12 改的黄色妖精图出问题了，有没有可能是 sprite 编号爆了？」
+
+**根因（✅ 一手，逐条可复算）**
+`352_ufo_carrier_fairy` / `356_…_side_r` / `357_…_side_l` 三支脚本住在 **`ability.anm`**，
+2026-09-26 那版把贴图写死成 `sprite(256..267)`，注释说这些号是「TH18 原生 **`enemy.anm`** entry4
+`enemy_g.png` 的 y=416 行（黄辉光妖精）」。但 `sprite(N)` 查的是**本文件**（`ability.anm`）的 sprite 表：
+
+| 引用 | 在 `ability.anm` 里实际落到 |
+| --- | --- |
+| `sprite(256..264)` | `entry32 ATLAS_ANIMAL_64`（sprite **222…264**）= **117 鬼形兽的动物灵图集** |
+| `sprite(265..267)` | `entry33 ATLAS_ANIMAL_SMALL`（265…279）|
+
+⇒ 黄妖精画成了**动物灵**。**与容量无关**：修复前 `ability.anm` = entry **102/256**、sprite **604**，
+离两道墙都很远。（同类错误上一轮也犯过 —— 更早写的是 `sprite(84..87)` = TH12 `enemy.anm` 的号。）
+
+**修法**（把原生那行切进**本文件**图集，脚本改用构建期解析的宏名 ⇒ 结构上不可能再串空间）
+| 文件 | 改动 |
+| --- | --- |
+| `assets/ability/make_ufo_carrier_glow_art.py`（**新增**）| 从 `local/th18.v1.00a/anm/enemy/enemy/enemy_g.png` 按原生 anm 的 sprite 表切 **12 帧 32×32**（y=416，x=0…352；= 原生 `sprite256..267`），不重画不缩放，逐张断言 32×32 |
+| `assets/ability/ufo_carrier_glow/CARRIER_FAIRY_GLOW_0..11.png`（12 张，新增）| 切图产物 |
+| `assets/ability/entries/ORDER.txt` | 末尾 **append** 图集段 `ATLAS_UFO_CARRIER_FAIRY_GLOW 384x32`（12 成员）|
+| `assets/ability/scripts/352 / 356 / 357` | `sprite(256..267)` → `sprite(@CARRIER_FAIRY_GLOW_0..11@)`（正面 0..3 / 转身 4..11）；头部注释改成记录这次真 bug 与「为什么必须切进来」 |
+| `native/anm_ids.h`（生成物）| `CE_ANM_ABILITY_ATLAS_ATLAS_UFO_CARRIER_FAIRY_GLOW = 102`、`CE_ANM_ABILITY_SPRITE_CARRIER_FAIRY_GLOW_0..11 = 604..615` |
+
+**影响面 / 回归**
+- `assets/ability/**` 是**共享资源**（所有卡的场上特效图集）⇒ 本表即登记；**尾插** ⇒ 既有 entry/sprite/script 号零位移。
+- **没有动** `sdk.*` / `sites.py` / `Makefile` / `cards_def.c` ⇒ **零新增站点**；`ability.anm` 现在 entry **103/256**、sprite **616**。
+- `build_ability.py` 的图集逐像素自检通过；`make anm` 重编成功；`make check`（含 `anm-verify`）见下。
+- ⚠ 旧图集 `ATLAS_UFO_CARRIER_FAIRY`（sprite 519…530，TH12 妖精切图）**保留**（现在没人引用，属历史资产）。
