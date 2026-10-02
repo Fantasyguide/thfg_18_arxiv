@@ -53,8 +53,9 @@
 #define ZN_RANGE          640.0f   /* 锁敌半径（原版 = 光标 400 px 内最近敌；我们的"光标"=跟班）*/
 #define ZN_RANGE_SQ       (ZN_RANGE * ZN_RANGE)
 #define ZN_ARC_MAX        200.0f   /* 出膛点到目标的最大距离（= 2·|velocity|）*/
-#define ZN_TRAIL_EVERY      4      /* ★ 2026-10-03：owner 先说「残留大量虚影」（= 孤儿 bug，已修），再说
-                                    *   「虚影密度可以再高一些」⇒ 8 帧 → **4 帧**（每把剑同时约 6 枚）*/
+#define ZN_TRAIL_EVERY      2      /* ★ 2026-10-03 owner 连提两次：「虚影密度可以再高一些」→「虚影可以再密」
+                                    *   ⇒ 8 → 4 → **2 帧**（每把剑同时约 12 枚）。⚠ 更早那条「残留大量虚影」是
+                                    *   **孤儿 VM 的 bug**（已修），修干净之后加密才是纯观感问题 */
 #define ZN_TRAIL_MIN_DIST   40.0f  /* ★ 同一条实测：「虚影集中在玩家背后十分明显」⇒ **离自机 40 px 内不留**
                                     *   （剑从自机身上出膛，前半程贴着自机 ⇒ 虚影糊在自机周围）*/
 #define ZN_HIT_COOLDOWN     7      /* 帧：同一把剑两次伤害之间的最小间隔（原版 localNPCHitCooldown = 7）*/

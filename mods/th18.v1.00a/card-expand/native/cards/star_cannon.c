@@ -154,7 +154,11 @@ static int on_power_level_change(ce_card_t *c)
 {
     sc_card_t *s = ce_state(c, sc_card_t);
     if (s) {
-        ce_option_alloc(c, &s->opt, SC_OPT_ANM_Y, CE_ANM_ABILITY_SCRIPT_STAR_CANNON_OPT, "star_cannon");
+        /* ⚠ 这里必须与 `on_tick_2` 的 `ce_option_get` 用**同一个锚脚本 392** —— 引擎开局
+         *   （`on_power_level_change`）就是在这里建 option 的 VM 的；只改 tick 那处不够，
+         *   否则 option 的 VM 依旧挂炮身贴图（owner 两次实测：「一直有一个闪烁的黑色虚影」→
+         *   「依旧有一个炮身贴图」，两次都是这一处）。*/
+        ce_option_alloc(c, &s->opt, SC_OPT_ANM_Y, CE_ANM_ABILITY_SCRIPT_STAR_CANNON_ANCHOR, "star_cannon");
         sc_place(&s->opt);
     }
     return 0;
@@ -252,6 +256,7 @@ static int on_tick_2(ce_card_t *c)
             ce_log("star_cannon: reload done - %d rounds ready", SC_MAGAZINE);
         }
     }
+    if (s->cannon_id && !ce_anm_get_vm(s->cannon_id)) s->cannon_id = 0;   /* 被引擎收掉 ⇒ 当没有（防写进回收后的槽）*/
     if (!s->cannon_id) {                             /* 自绘炮身：第一次 tick 建出来 */
         s->cannon_id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_STAR_CANNON_OPT, SC_LAYER);
         if (s->cannon_id && s->aim == 0.0f) s->aim = -1.5707964f;
