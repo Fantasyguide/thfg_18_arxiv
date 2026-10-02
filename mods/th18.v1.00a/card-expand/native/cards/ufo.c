@@ -1423,6 +1423,7 @@ static int ufo_tok_live_count(void)
 
 /* swap-remove：把尾元素换到 i（**不 ++i**，尾元素也要过筛）。`s_penta_id` 跟着一起搬
  * —— 框的句柄是**按下标**存的，不搬就会把 A 的框留给 B（框的颜色/寿命全错）。 */
+
 static void ufo_tok_remove(int i)
 {
     s_tokpool.tok[i] = s_tokpool.tok[--s_tokpool.n];
@@ -1457,6 +1458,33 @@ static void ufo_tok_vm_kill(int slot, ufo_tok_t *t)
 {
     ufo_tok_art_vm_kill(t);
     ufo_tok_penta_kill(slot);
+}
+
+/* ★★ 2026-10-03（92 伟大之作的**清扫闸**）：owner「**112 飞碟 token … 变成 10 个**（金钱）」。
+ *   生产者侧：在自己的 tick 里看代数（`ce_sweep_should_run`），变了就把场上每只令牌**清成 10 枚金钱**
+ *   —— 原地撒 type 2 道具；池满的那几枚走 `ce_money_pocket()`（与 92 同一条口径，见 sdk.h）。
+ *   ⚠ 令牌消失必须过 `ufo_tok_vm_kill`（令牌 VM + 五边形框，铁律见那里的注），否则留幽灵。*/
+#define UFO_SWEEP_MONEY_PER_TOKEN 10
+static uint32_t s_sweep_seen;
+
+static void ufo_sweep_to_money(void)
+{
+    int i, n = 0, k;
+    for (i = (int)s_tokpool.n - 1; i >= 0; --i) {          /* 倒序：swap-remove 不破坏待处理下标 */
+        ufo_tok_t *tok = &s_tokpool.tok[i];
+        float p[3];
+        p[0] = tok->motion.x;
+        p[1] = tok->motion.y;
+        p[2] = 0.0f;
+        for (k = 0; k < UFO_SWEEP_MONEY_PER_TOKEN; ++k) {
+            if (!ce_spawn_item(2u, p, -1.5707964f, 1.7f)) ce_money_pocket(1);
+        }
+        ufo_tok_vm_kill(i, tok);
+        ufo_tok_remove(i);
+        ++n;
+    }
+    if (n) ce_log("ufo: 92 清扫 —— %d 只飞碟 token 换成金钱（每只 %d 枚）",
+                  n, UFO_SWEEP_MONEY_PER_TOKEN);
 }
 
 /* 收掉**整池**的令牌 VM + 五边形框 VM，并把池清空。⚠ **只看句柄、不看 `color`** ——
@@ -5889,6 +5917,7 @@ static int on_tick_2(ce_card_t *c)
     ce_dup_publish((uint32_t)ce_card_id(c),
                    ufo_dup_bag_count() + ufo_dup_tok_count() + ufo_dup_bomb_count());
     if (ce_dup_should_run(&s_dup_seen)) { ufo_dup_run(s); ufo_dup_tokens(s); }
+    if (ce_sweep_should_run(&s_sweep_seen)) ufo_sweep_to_money();   /* ★ 92 清扫：飞碟 token → 金钱 */
     ce_dup_publish((uint32_t)ce_card_id(c), ufo_dup_bag_count());
     if (ce_dup_should_run(&s_dup_seen)) ufo_dup_run(s);
 

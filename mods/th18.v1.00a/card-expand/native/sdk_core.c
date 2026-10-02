@@ -1804,6 +1804,36 @@ int ce_dup_producers(void)
     return n;
 }
 
+/* ---- 清扫闸（92 用；实现与复制闸同款，只有"生产者做什么"不同）---- */
+static uint32_t s_sweep_gen = 1;
+
+void ce_sweep_reset(void)
+{
+    s_sweep_gen = 1;
+}
+
+uint32_t ce_sweep_bump(void)
+{
+    ++s_sweep_gen;
+    if (!s_sweep_gen) s_sweep_gen = 1;
+    return s_sweep_gen;
+}
+
+uint32_t ce_sweep_gen(void)
+{
+    return s_sweep_gen;
+}
+
+int ce_sweep_should_run(uint32_t *seen)
+{
+    uint32_t g = s_sweep_gen;
+    if (!seen) return 0;
+    if (!*seen) { *seen = g; return 0; }     /* 第一次 tick：只登记 */
+    if (g == *seen) return 0;
+    *seen = g;
+    return 1;
+}
+
 int ce_dup_should_run(uint32_t *seen)
 {
     uint32_t g = s_dup_gen;

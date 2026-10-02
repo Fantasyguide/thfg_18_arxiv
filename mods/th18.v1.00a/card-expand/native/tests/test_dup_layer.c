@@ -11,6 +11,25 @@ static int fails;
 #define CHECK(cond, ...) do { if (!(cond)) { printf("FAIL %s:%d ", __FILE__, __LINE__); \
     printf(__VA_ARGS__); printf("\n"); fails++; } } while (0)
 
+
+/* ★ 2026-10-03：同款的**清扫闸**（92 用；生产者侧 = 112/117/108/109/116 各自的池）。
+ * 语义与复制闸一样，只有"生产者做什么"不同 ⇒ 这里钉住同样的三条不变式。*/
+static void test_sweep_gate(void)
+{
+    uint32_t seen = 0, g0;
+
+    ce_sweep_reset();
+    g0 = ce_sweep_gen();
+    CHECK(g0 != 0, "清扫代数不该是 0（0 是「还没见过」哨兵）");
+    CHECK(ce_sweep_should_run(NULL) == 0, "seen 为 NULL 要安全返回 0");
+    CHECK(ce_sweep_should_run(&seen) == 0, "第一次调用只登记，不该触发清扫");
+    CHECK(seen == g0, "登记后 seen 该等于当前代数");
+    CHECK(ce_sweep_should_run(&seen) == 0, "没人发动时不该重复触发");
+    CHECK(ce_sweep_bump() == g0 + 1, "发动一次代数 +1");
+    CHECK(ce_sweep_should_run(&seen) == 1, "代数变了 ⇒ 生产者该清一批");
+    CHECK(ce_sweep_should_run(&seen) == 0, "清过之后本代不该再触发（每代正好一次）");
+}
+
 static void test_generation(void)
 {
     uint32_t g0;
@@ -92,6 +111,7 @@ static void test_vis_table(void)
 
 int main(void)
 {
+    test_sweep_gate();
     test_generation();
     test_should_run();
     test_vis_table();

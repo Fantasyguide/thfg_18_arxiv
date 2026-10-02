@@ -982,3 +982,20 @@ int      ce_dup_claim_set(uint32_t card_id, ce_dup_claim_fn fn);
 void     ce_dup_claim_drop(uint32_t card_id);
 int      ce_dup_item_claimed(const void *item);     /* Jera 扫池时逐个问；没人认领 = 0 */
 int      ce_dup_producers(void);                    /* 有几个生产者在位（> 0 才可能有私有池可复制）*/
+
+/* ★★ 2026-10-03（92 伟大之作「把场上所有可收集道具变成金钱」）：**清扫代数闸** —— 与上面那套
+ *   复制闸同形同语义，只是生产者要做的事不同：**把自己场上那批实体换成金钱**（撒完把钱报给 92）。
+ *
+ *   为什么要这一层：一半「可收集物」**不在引擎道具池里**（108 刻符 / 109 灵力道具 / 110-111 信仰点 /
+ *   112 飞碟 token 与压缩包 / 116 季节道具 / 117 动物灵 token …），它们是各卡 `.c` 的 static 池，
+ *   只有那张卡自己够得着 ⇒ 只能由**生产者自己**在自己的 tick 里看到代数变了再清。
+ *
+ *   生产者每帧调一次 `ce_sweep_should_run(&my_seen)`（传自己的 `uint32_t` 缓存）：返回 1 = 有人刚发动
+ *   92，**该把自己那批清成钱**；换到的金钱枚数由本卡自己 `ce_spawn_item(2u, …)` 撒（池满就照
+ *   `great_work` 那套补进腰包 —— 直接写 `CE_MONEY()`/`CE_MONEY_TOTAL()`/`CE_ADDR_MONEY_ITEMS`）。
+ *   第一次调用只登记（开局不会误清）。*/
+void     ce_sweep_reset(void);                      /* 进程初始化 / 单测用 */
+uint32_t ce_sweep_bump(void);                       /* 92 发动：++代数，返回新值 */
+uint32_t ce_sweep_gen(void);                        /* 生产者读 */
+int      ce_sweep_should_run(uint32_t *seen);        /* 生产者每帧调；1 = 清一批 */
+

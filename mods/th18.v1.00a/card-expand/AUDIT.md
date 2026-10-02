@@ -28428,3 +28428,44 @@ owner 后续两条：「**音量再大一点**」「然后**虚影持续时间�
 - 一手对照（两行**结构逐位平行**，辉光 = 普通 **+220 sprite / +184 script**）：
   **普通黄** `sprite36..39`（script15 正面）/ `40..47`（script16·17 转身）/ script18·19 侧身；
   **辉光黄** `sprite256..259`（script199）/ `260..267`（script200·201）/ script202·203。
+
+### §BE 详录 #219（2026-10-03）：92 的伟大之作**清扫全场**——新增 SDK 清扫闸 + **动了 112 / 117 两张别人的卡**
+
+owner：「你得把**场上的所有可收集道具也变成金钱**，比如季节道具、用点。特别地：**掉钱卡的实体不需要转换 ——
+它已经是钱了**；其他的**残碎卡 B 碎卡转换成钱卡**；**112 压缩包**变成等量于吸收量的金钱；**112 飞碟 token 与
+117 动物灵 token 都变成 10 个**」。
+
+#### 动了哪些共享件 / 别人的卡（协作须知）
+
+| 文件 | 改动 | 说明 |
+| --- | --- | --- |
+| `sdk.h` | 新增 `ce_money_pocket(int n)`（inline）| 一枚 type 2 金钱道具的**等价记账**：`MONEY`/`MONEY_TOTAL`/`MONEY_ITEMS` 三字段各 +n（一手 `ItemManager__collect_money_item` `0x446d2e`）。**池满撒不出来时用它**；92 原来的私有实现改成调它 |
+| `sdk_core.h` / `sdk_core.c` | 新增**清扫代数闸** `ce_sweep_reset/bump/gen/should_run` | 与 88 的复制闸**同形同语义**（我第一次做这层也是本会话的 88 ✓），只是生产者要做的事不同：把私有池清成钱 |
+| `native/tests/test_dup_layer.c` | 新增 `test_sweep_gate`（第一次只登记 / 每代正好一次 / NULL 安全）| 纯逻辑单测，与引擎无关 |
+| `native/cards/great_work.c`（92，我的卡）| 通道① `gw_take_items()` + `ce_sweep_bump()` | 见下 |
+| **`native/cards/ufo.c`（112，别人的卡）** | `ufo_sweep_to_money()` + tick 里一句 `ce_sweep_should_run` | ⚠ 动别人的卡：**文件里已留注释**说明来龙去脉；只加不改既有逻辑；令牌消失走它自己的 `ufo_tok_vm_kill()` + `ufo_tok_remove()`（铁律：令牌消失每条路都要过那里，否则留幽灵 VM）|
+| **`native/cards/animal.c`（117，别人的卡）** | `animal_sweep_to_money()` + 同款一句 | 同上；消失走它自己的 `token_remove()`（删 VM + swap-remove）|
+
+#### 通道①（引擎道具池）的语义
+
+`gw_take_items()` 扫全池（`CE_ITEM_POOL_OFF` + `CE_ITEM_SLOTS` + `CE_ITEM_STRIDE`，与 88 杰拉同一条）：
+
+- **type 2（金钱道具）** 与 **type 0x12（金钱卡）** ⇒ **不动**（owner 口径：「掉钱卡的实体不需要转换，它已经是钱了」；
+  0x12 = 金钱卡的一手见本文件 §BE 的 AL12c：`type 2 = 金钱点；type 0x12 = 金钱卡`）；
+- **卡道具 0x10/0x11/0x13**（= 残碎卡 / B 碎卡 / 団子；道具表 `0x4b4020` 的 0x10–0x13 行 → card_id 3/4/5/6，见 §BE 的 Z12 证据）
+  ⇒ **把 type 改成 0x12（钱卡）**——卡道具是**收集那一刻**才 `allocate_new_card(mgr, card_id, 0)` ⇒ 改 type 即换卡；
+- **其余**（P / 命碎 / 符卡碎 / 分数点 / 112 的整颗 B = type 7 …）⇒ 改成 **type 2 金钱道具**，
+  值 > 1 的用 `ce_spawn_item` 在**原地**补几枚（`GW_ITEM_MONEY_BOMB = 3` ❓ 自定：112 压缩包 = type 7 整颗 B，
+  「等量于吸收量」我按满 B = 3 取）；池满的那几枚 `ce_money_pocket(1)`。
+  ⚠ 之所以**改 type 而不是删道具**：引擎在收集那一刻才读 type（一手 `0x44625f mov edx,[edi+0xc78]`），
+  改 type 能让原道具**照走引擎自己的收集路径**（含它的 VM 回收）⇒ 不会留孤儿 VM（对比：直接写 `state = 0` 会）。
+
+#### 没做的（如实记）
+
+- **通道② 共享信仰点池**（107 樱点 / 110-111 信仰点）：`faith.h` 目前只有 `faith_spawn()` / `faith_absorb_list()`
+  （撒 / 快照）**没有"取走"的接口** ⇒ 要清得先给 faith 层加 consume。本轮没动。
+- **108 刻符 / 109 灵力道具 / 116 季节道具**：也是各卡私有池，接法与 112/117 **完全一样**（生产者侧加一句
+  `ce_sweep_should_run`）；owner 这次只点名了 112/117 ⇒ 本轮不碰那三张卡，等 owner 发话（避免无谓地动别人的文件）。
+
+**怎么验证的**：`make check` exit 0（cards-check 49 张、`test_dup_layer` 的清扫闸三条不变式、anm-verify、capcheck、
+dllx87 = 0、check-docs 四项全绿）；`make dll` 只有既有的无关告警（`pofv.c` / `youkai.c` 的未用变量）。

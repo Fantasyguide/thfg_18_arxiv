@@ -866,6 +866,18 @@ void ce_sdk_on_shop_open(void);                                   /* shop.c 在 
  * state 1（抛物/坠落）不算：场道具不续批（TH14 原义，0x43898e 只在 state-3 在飞体上重载）。早停。
  * 由 collect2x.c 在批开时每帧调。*/
 int ce_item_pool_any_attracting(void);
+
+/* ★ 2026-10-03：**金钱直接进腰包**（一枚 type 2 金钱道具的等价记账）—— 一手
+ *   `ItemManager__collect_money_item` `0x446d2e`：`MONEY += 1` 且 `0x4ccd20`（吃到过的金钱道具数）/
+ *   `0x4ccd30`（只记收入）各 +1。**池满撒不出来时用它**（92 的伟大之作 / 各卡的清扫闸都走这条），
+ *   这样"钱数"与"总收入"两个口径不会打架。 */
+static inline void ce_money_pocket(int n)
+{
+    if (n <= 0) return;
+    CE_MONEY() += n;
+    CE_MONEY_TOTAL() += n;
+    *(volatile int32_t *)CE_ADDR_MONEY_ITEMS += n;
+}
 /* 局中从卡组删一张卡（AUDIT §W）：照 recount 0x4080e0 的删卡分支——摘链、按 flags 减类别计数、num_total−1、
  * owned[id] 清零（能再刷出）、虚表 +0x50 删对象、重画 HUD 三行。★ 不能删当前选中的主动卡（mgr+0x38 指向它，
  * 重选要重建 HUD 图标 VM，本函数拒绝并返回 0）。只能在没有人正在遍历链表时调（ctor / 事件断点里都可以，链表遍历桩里不行）。*/

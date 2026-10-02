@@ -1539,10 +1539,35 @@ static int animal_big_death_counts(uint32_t kind)
 
 /* —— 实体池 —— */
 
+
 static void token_remove(int i)
 {
     if (s_tok[i].id) ce_anm_delete((uint32_t)s_tok[i].id);
     s_tok[i] = s_tok[--s_n_tok];
+}
+
+/* ★★ 2026-10-03（92 的清扫闸）：owner「**117 动物灵 token 变成 10 个**（金钱）」。
+ *   生产者侧同 112：代数变了就把场上每只灵**清成 10 枚金钱**（原地撒 + 池满走 `ce_money_pocket`），
+ *   消失过 `token_remove()`（它同时删 VM 并 swap-remove）。*/
+#define ANIMAL_SWEEP_MONEY_PER_TOKEN 10
+static uint32_t s_sweep_seen;
+
+static void animal_sweep_to_money(void)
+{
+    int i, n = 0, k;
+    for (i = s_n_tok - 1; i >= 0; --i) {                   /* 倒序：见 token_remove 的 swap-remove */
+        float p[3];
+        p[0] = s_tok[i].x;
+        p[1] = s_tok[i].y;
+        p[2] = 0.0f;
+        for (k = 0; k < ANIMAL_SWEEP_MONEY_PER_TOKEN; ++k) {
+            if (!ce_spawn_item(2u, p, -1.5707964f, 1.7f)) ce_money_pocket(1);
+        }
+        token_remove(i);
+        ++n;
+    }
+    if (n) ce_log("animal: 92 清扫 —— %d 只动物灵 token 换成金钱（每只 %d 枚）",
+                  n, ANIMAL_SWEEP_MONEY_PER_TOKEN);
 }
 
 /* ★ 2026-09-13 bug-4：整只清空 = 删所有 VM + 每只字段归零 + `s_n_tok = 0`。
@@ -3907,6 +3932,7 @@ static int on_tick_2(ce_card_t *c)
     ++s->frame;
     ce_dup_publish((uint32_t)ce_card_id(c), (int)s_n_tok);
     if (ce_dup_should_run(&s_dup_seen)) animal_dup_run();
+    if (ce_sweep_should_run(&s_sweep_seen)) animal_sweep_to_money();   /* ★ 92 清扫：动物灵 token → 金钱 */
     /* ★ 2026-10-01（跨卡只读标志；交接 = `HANDOFF-108-CROSSCARD-SHIFT.md`）：每帧按 `roaring(s)`
      *   重算「暴走咆哮中」——**零发明**（判据现成：`core.ready || core.hypering`），
      *   也正好绕开「还有没有别的入口把咆哮打开」这个未普查项（交接 §6.1）。粘性；删卡由
