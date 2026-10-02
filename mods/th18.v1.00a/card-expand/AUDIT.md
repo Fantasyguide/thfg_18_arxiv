@@ -28694,3 +28694,26 @@ owner 实测：「**黄金特效变成永久的了**」。根因（我的锅）�
   （`mof.c` / `signal.c` / `senro.c`），实跑认为不对就改成 0（一个数字）。
 - 验证：`ufo.c` / `mof.c` / `signal.c` / `senro.c` 用真构建旗标逐个编译通过；
   `make check` **rc=0**（`cards-check` 49 张 / `anm-verify` / `capcheck` / `check-docs` 420 文件）。
+
+#### §BE 详录 #219 追加 4（2026-10-03）：金色演出改成**借原版「威光」**（`CardMiko`），中心 = 释放点
+
+owner：「**黄金的特效你换一种写法，照着原生卡丰聪耳神子的卡写【什么什么的威光】，中心就选取到释放点**」。
+
+**一手（原版卡 45 = `MIKOFLASH`「やんごとなき威光」/`CardMiko`）**
+
+| 步 | 地址 | 做什么 |
+| --- | --- | --- |
+| 取释放点 | `0x40e5c0` 段 | `movq xmm0,[player+0x620]` ⇒ 存进卡对象 `+0x58`（**自机坐标 = 释放点**）|
+| 建 VM | `0x489320` | 分配 VM（管理器 = `[0x4cf298]+0xc` = `CE_MGR_ABILITY_ANM` = **ability.anm**）|
+| 装脚本 | `0x40e5c0` 段 | `mov ecx,[ebp-4]`(anm) + `push vm; push 0x2f; call 0x407420` ⇒ **脚本 `0x2f` = 47** |
+| 层 | `0x40e5c0` 段 | `mov [vm+0x18], 0xd` ⇒ **层 13**（`0x405bf0` 的注释：layer<0x18 写 `vm+0x18`）|
+| 贴自机 | `0x40e3d0` 段 | 每帧 `0x488b40(id)` 取 VM ⇒ 写 `vm+0x5f0/5f8`（跟着自机；**我们改成固定在释放点**，owner 要的）|
+| 寿命 | `0x40e3d0` 段 | `cmp ecx,0x82`（**130 帧**）⇒ `call 0x488cf0` 删 VM ⇒ **脚本不自毁、寿命归卡管** |
+
+**实现**：`GW_MIKO_FLASH_SCRIPT 47` / `GW_MIKO_FLASH_LAYER 13` / `GW_MIKO_FLASH_FRAMES 130`；
+发动时 `ce_anm_spawn(CE_ABILITY_ANM(), 47, 13)` + `ce_anm_set_pos(释放点)` + `ce_anm_set_color(0xffffc040)`
+（原版是白光，owner 要金）；新增 `on_tick_2` 数到 0 自己删（**照原版"卡管寿命"**）；`gw_fx_kill()` 的
+三条生命周期兜底把 Miko 这一支也一起收（`fx_miko_id`）。
+**乘法滤镜（脚本 398）退役**：不再 spawn；脚本不删（ORDER append-only，删行会把后续号全推走）。
+
+**回归**：`make check` rc=0（cards-check 49 张 / anm-verify / capcheck / dllx87 / check-docs）。

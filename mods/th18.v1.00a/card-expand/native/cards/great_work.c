@@ -34,6 +34,21 @@
                                         *   ⚠ 112 的**压缩包**（`ufo_drop_t` 的袋子）不在这里 —— 它带账
                                         *   （`cnt_p`/`cnt_money`），由 112 自己的清扫钩子按「吸收量」换钱 */
 #define GW_FLASH_LAYER        19       /* 同脚本 397 的 `layer(19)`（世界层最上、HUD 之下）*/
+/* ★★ 2026-10-03 owner：「**黄金的特效你换一种写法，照着原生卡丰聪耳神子的卡写【什么什么的威光】，
+ *   中心就选取到释放点**」⇒ 直接**借原版那一支**（能借就不自己写）：
+ *   原版卡 45 = `MIKOFLASH`「やんごとなき威光」(`CardMiko`)：`c_press` `0x40e5c0` 里
+ *     · 把**自机坐标** (`player+0x620`) 存进卡对象 `+0x58`（= 释放点）；
+ *     · `0x489320` 分配 VM → `0x407420(anm, vm, 0x2f)` **装载脚本 0x2f = 47**；
+ *     · VM 层 = `0xd`（= 13，`vm+0x18`；`0x405bf0` 的注释：layer<0x18 就写 `vm+0x18`）；
+ *     · 之后在 `__on_tick_2` `0x40e3d0` 里每帧 `0x488b40(id)` 把 VM 贴回自机 + 到点 `0x488cf0` 删。
+ *   anm 管理器 = `[0x4cf298]+0xc` = `CE_MGR_ABILITY_ANM` = **ability.anm**（`engine.h` 的 O24′ 记过
+ *   Tenshi 卡同一条路起 script 0x1c）⇒ 脚本 47 就在我们编出来的 ability.anm 里（原生 68 支之一）。*/
+#define GW_MIKO_FLASH_SCRIPT  47       /* 原生「威光」脚本号（`0x2f`）*/
+#define GW_MIKO_FLASH_LAYER   13       /* 原生层号（`0xd`）*/
+#define GW_MIKO_FLASH_FRAMES  130      /* 原生窗口 ≈130 帧（`on_tick_2` 里 `cmp …,0x82`）*/
+/* 金色（D3DCOLOR 0xAARRGGBB）：owner 要「黄金」。⚠ 原版威光是**白光**（贴图自身多半是白），
+ * 这里把 VM 的 color_1 染金；若该脚本自己每帧写 `color(...)`，这一笔会被脚本覆盖（那就得改贴图/另写脚本）。*/
+#define GW_MIKO_FLASH_RGBA    0xffffc040u
 #define GW_CARD_SE          0x4d       /* 发动音：0x4d se_release（与杰拉 / 鞘翅重锤同）*/
 #define GW_ENEMY_HIT_H      44.0f
 
@@ -49,7 +64,9 @@ typedef struct {
      *   ⇒ 自毁永远到不了 ⇒ 金色永久留在屏幕上 ✗。**脚本已经修好**，这里再加一道保险：
      *   换关 / 局末 / 删卡时把它们收掉（`delete()` 幂等；被收过的 id 再收无害）。*/
     uint32_t fx_flash_id;
-    uint32_t fx_tint_id;
+    uint32_t fx_tint_id;       /* 已退役（改成借原版威光；见 GW_MIKO_FLASH_SCRIPT）*/
+    uint32_t fx_miko_id;       /* ★ 原版「威光」那一支（脚本 47）的 VM 句柄 */
+    int32_t  fx_miko_left;     /* 它还该活多少帧（原版 ≈130 —— 原版由卡的 tick 删，脚本不自毁）*/
 } gw_card_t;
 
 _Static_assert(sizeof(gw_card_t) <= 496, "great_work: private state overflows CE_STATE_BYTES");
@@ -321,8 +338,20 @@ static int on_activate(ce_card_t *c)
          *   两层都铺满游玩区（`drawRect(384,448)`）、层 19、自毁 ⇒ 卡侧零簿记。
          *   ⚠ 乘法层**不能用 alpha 淡入**（那个模式的 RGB 不吃 alpha，TH18 的 alpha 是分离混合）
          *     ⇒ 脚本里用 `colorTime` 从白插到金；`alpha` 保持 255（写成 0 会让整台 VM 不画）。*/
-        s->fx_tint_id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_GREAT_WORK_TINT, GW_FLASH_LAYER);
-        if (s->fx_tint_id) ce_anm_set_pos(s->fx_tint_id, ctr[0], ctr[1], ctr[2]);
+        /* ★ 改法（owner 2026-10-03）：不再用乘法全屏矩形，改**借原版的威光**，中心 = **释放点**。*/
+        {
+            const float *pp = ce_player_pos();
+            float rp[3];
+            rp[0] = pp ? pp[0] : 0.0f;
+            rp[1] = pp ? pp[1] : 224.0f;
+            rp[2] = 0.0f;
+            s->fx_miko_id = ce_anm_spawn(CE_ABILITY_ANM(), GW_MIKO_FLASH_SCRIPT, GW_MIKO_FLASH_LAYER);
+            if (s->fx_miko_id) {
+                ce_anm_set_pos(s->fx_miko_id, rp[0], rp[1], rp[2]);
+                ce_anm_set_color(s->fx_miko_id, GW_MIKO_FLASH_RGBA);   /* 金色（原版是白光；见宏注）*/
+                s->fx_miko_left = GW_MIKO_FLASH_FRAMES;
+            }
+        }
         s->fx_flash_id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_GREAT_WORK_FLASH, GW_FLASH_LAYER);
         if (s->fx_flash_id) ce_anm_set_pos(s->fx_flash_id, ctr[0], ctr[1], ctr[2]);
     }
@@ -373,11 +402,22 @@ static void gw_fx_kill(ce_card_t *c)
     if (!s) return;
     if (s->fx_flash_id) { ce_anm_delete(s->fx_flash_id); s->fx_flash_id = 0; }
     if (s->fx_tint_id)  { ce_anm_delete(s->fx_tint_id);  s->fx_tint_id = 0; }
+    if (s->fx_miko_id)  { ce_anm_delete(s->fx_miko_id);  s->fx_miko_id = 0; s->fx_miko_left = 0; }
+}
+
+/* ★ 原版威光的寿命是**卡自己管的**（`CardMiko::__on_tick_2` 到点调 `0x488cf0` 删；脚本不自毁）
+ * ⇒ 我们也要自己数：`GW_MIKO_FLASH_FRAMES` 帧后收掉。这是每帧 tick（只做一次减法，可忽略）。*/
+static int on_tick_2(ce_card_t *c)
+{
+    gw_card_t *s = ce_state(c, gw_card_t);
+    if (!s || !s->fx_miko_id) return 0;
+    if (--s->fx_miko_left <= 0) { ce_anm_delete(s->fx_miko_id); s->fx_miko_id = 0; }
+    return 0;
 }
 
 static void on_stage_start(ce_card_t *c) { gw_fx_kill(c); }
 static void on_run_reset(ce_card_t *c)   { gw_fx_kill(c); }
 static void on_delete(ce_card_t *c)      { gw_fx_kill(c); }
 
-CE_CARD(92, .active_recharge = GW_BASE, .on_activate = on_activate,
+CE_CARD(92, .active_recharge = GW_BASE, .on_activate = on_activate, .on_tick_2 = on_tick_2,
             .on_stage_start = on_stage_start, .on_run_reset = on_run_reset, .on_delete = on_delete);
