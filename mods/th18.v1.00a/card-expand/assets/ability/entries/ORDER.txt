@@ -1046,3 +1046,9 @@ ELYTRA_MACE_CURSOR              ability/elytra_mace/_src/CURSOR.png       6x18
 #   素材 = 用户本机 Terraria `Content/Images/Extra_98.xnb` → `Extra_98.png`（72×72，四角星光 + 软辉光）。
 #   同图也当**尘埃**用（原版是 `DustID 278 FireworksRGB` 的小星点；缩放 0.15 ≈ 11 px，染色用每把剑的 trailColor）。
 ZENITH_SPARKLE                  ability/zenith/_src/Extra_98_sparkle.png  72x72
+
+# ★★ 2026-10-03（89 补彗尾）：owner「它还有一个**水滴形状的拖尾**，像彗星一样 …… 那个就是动态光照
+#   叠起来的东西，你得**烘一个差不多的**」⇒ 与蓝晕同一路数：烘一张水滴形拖尾（头端亮、尾尖收），
+#   由脚本 391 贴在星星**后面**、按**速度方向**摆（不跟星星自转），一帧一枚、8 帧淡掉自毁。
+#   生成器 = `assets/ability/star_cannon/make_star_art.py`（同一支脚本连蓝晕一起产出）。
+STAR_CANNON_TAIL                ability/star_cannon/_src/STAR_TAIL.png    44x16

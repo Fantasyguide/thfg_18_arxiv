@@ -13,7 +13,12 @@ script script378 {
     zWriteDisable(1);
 0:
     interruptLabel(2);
-    sprite(@ZENITH_BLADE_ZENITH);
+    sprite(@RETIRED_BLANK);   // ★ 2026-10-03 owner：「天顶剑似乎并没有压在自机身下」——
+                              //   原来这里挂剑的贴图、靠 C 写透明色去藏，但 option VM 的
+                              //   **颜色/位置归引擎的 option tick 管**，写进去会被覆写 ⇒ 剑照样露在自机身上。
+                              //   改成挂 **1×1 全透明** 贴图（ORDER 里现成的 `RETIRED_BLANK`）：
+                              //   引擎爱怎么写颜色/位置都画不出东西，VM 只剩"定位锚"身份（剑刃从它坐标出发）。
+                              //   要改成"**露在自机身下**"（能看见一点）就把这行换回剑的贴图 + `layer(6)`。
     scale(0.0f, 0.0f);
     scaleTime(10, 4, 0.42f, 0.42f);
     angleVel(0.0f, 0.0f, 0.01308997f);   // 每帧 0.75°：极慢自转（活着，但不抢视线）

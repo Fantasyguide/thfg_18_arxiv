@@ -34,6 +34,7 @@
 #define ZN_OPT_F_X      0.0f
 #define ZN_OPT_F_Y      0.0f
 #define ZN_INPUT_Z      0x001u     /* 同 89：按住 Z 才甩剑 */
+#define ZN_FAM_CYCLE    0         /* ❓ 0 = 跟班不画（owner 口径）；1 = 恢复 21 把轮播观感 */
 #define ZN_RETRY        60         /* 关卡中途买到这张卡：没拿到子机时的重试间隔（槽满 / 广播还没来）*/
 /* ★★ 2026-10-03（owner：「87 尽量做吧」）：把原版那几样**挥动特效**补上（一手见 AUDIT §BE #211 追加）：
  *   · 刃尖**星芒** `DrawPrettyStarSparkle`：4 个 `Extra[98]` quad，`t 15→30` 淡入、`30→45` 淡出
@@ -236,7 +237,14 @@ static int on_tick_2(ce_card_t *c)
     o = ce_option_get(c, &s->opt, ZN_OPT_ANM_Y, CE_ANM_ABILITY_SCRIPT_ZENITH_OPT, ZN_RETRY, "zenith");
     if (!o) return 0;
     zn_place(&s->opt);                          /* 补申请 / 重建过 ⇒ 站位重新写一遍（幂等）*/
-    zn_fam_cycle(s, o);                         /* 跟班贴图轮播（21 把）*/
+    /* ⚠ 跟班轮播（`zn_fam_cycle`）**停用**：option 现在挂的是 1×1 全透明贴图（见脚本 378），
+     *   轮播会用 `ce_anm_set_sprite` 把剑的贴图贴回来 ⇒ 又露在自机身上（owner 实测的那个）。
+     *   函数留着（`ZN_FAM_CYCLE` 打开就能恢复 21 把轮播的观感）。*/
+#if ZN_FAM_CYCLE
+    zn_fam_cycle(s, o);
+#else
+    (void)o;
+#endif
     {   /* ★ owner 2026-10-03 实测：「天顶剑位置放在**自机正中心**，但是是**身下**，甚至可以不画」
          *   ⇒ 站位已经在 `zn_place()` 里改成 (0,0)；这里再把 option 那个 VM **整只透明**
          *     （"身下/不画"），剑阵由剑刃自己表现。VM 仍留着当**定位锚**（剑刃从它的坐标出发）。*/

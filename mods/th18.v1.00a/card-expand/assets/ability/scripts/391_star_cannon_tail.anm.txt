@@ -1,0 +1,20 @@
+script script391 {
+    // 星星炮（id 89）弹幕的**彗尾**（owner：「水滴形状的拖尾，像彗星一样 …… 动态光照叠起来的东西，
+    // 烘一个差不多的」⇒ 贴图 `STAR_CANNON_TAIL` 就是烘出来的水滴）。
+    // C 每帧在**星星身后**起一枚：位置 = 星位 − 速度方向 × 偏置、rotation = **速度角**（不跟自转！）、
+    // color = 白（蓝色在贴图里）。脚本自己淡出 + 自毁 ⇒ 卡侧零簿记。
+    // 贴图坐标约定：**右端是头（亮）**、左端是尾尖 —— VM 的 +x 指向速度方向 ⇒ 尾巴正好拖在身后。
+-1:
+    layer(13);
+    sprite(@STAR_CANNON_TAIL);
+    type(1);
+    blendMode(1);
+    zWriteDisable(1);
+    scale(0.5f, 0.5f);
+    alpha(150);
+0:
+    alphaTime(8, 0, 0);
+    scaleTime(8, 0, 0.34f, 0.34f);
++8:
+    delete();
+}

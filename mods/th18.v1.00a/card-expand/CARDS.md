@@ -194,7 +194,7 @@ EVENTS-CONTRACT §2）⇒ 与卡链顺序无关、别的卡加到的那颗也一
 | --- | --- | --- | --- | --- | --- |
 | 71 | 破损核心 | 装备：身边多一颗电球子机，每 1 秒朝**最近的敌人**（512 px 内）**瞬间**劈一道电弧，那一个敌人吃 120 伤害（名义 120 DPS，原生子机卡中位）| 第一张走**原生装备卡机制**的卡：`on_power_level_change` 生成子机、`on_tick_2` 计时 + 选目标 + 定点伤害源 + 电弧特效（详见下）。AUDIT §U | `broken_core.c` + `broken_core_core.c` | 🔧 |
 | 77 | 豌豆射手 | 装备：身边多一株豌豆射手子机，向**正前方**（画面上方）吐豌豆；平时 1 秒一颗、一颗 90，每 20–30 秒进入**机枪状态** 100 帧，泼出 20 排 × 7 = 140 颗小豌豆（合 980 伤害）。综合约 123 DPS，但只在按住射击键时打 | 第一张真走 **SHT shooterset** 的卡：`on_power_level_change` 生成子机、`on_tick_shooters` 自带计数器当 short_timer 调 `ce_tick_shooters_for_card`（两组 shooterset 切换）、`on_tick_2` 在豌豆在途的帧抬每帧伤害上限。AUDIT §AJ | `peashooter.c` + `peashooter_core.c` | 🔧 |
-| 87 | 天顶剑 | 装备：**按住 Z** 才甩剑；跟班在**自机正中心（被自机盖住，可视为不画）**，每 10 帧朝**最近的敌人**（640 px 内）甩出一把剑；剑**不飞** —— 它绕着「跟班 + velocity」这个点画**椭圆**（一圈 = 相位 60、相位 120 消失），贴图从**原版 21 把剑**里挑、带同色**残影**，命中有 7 帧冷却。不按键，跟班自己开火 | **运动 / 贴图 / 特效全部照泰拉瑞亚复刻**（`Projectile.AI_182_FinalFractal` + `FinalFractalHelper`，反 IL 读出）；跟班 = 原生子机；剑刃 = 卡自管 ANM VM 池（8 格）+ 椭圆用 `ce_polar_to_vel`。AUDIT §BE 详录 #211 | `zenith.c` + `zenith_core.c`（主机单测）| 🔧 |
+| 87 | 天顶剑 | 装备：**按住 Z** 才甩剑；跟班**不画**（option 挂 1×1 全透明贴图，只剩定位锚；`ZN_FAM_CYCLE = 0`）| **运动 / 贴图 / 特效全部照泰拉瑞亚复刻**（`Projectile.AI_182_FinalFractal` + `FinalFractalHelper`，反 IL 读出）；跟班 = 原生子机；剑刃 = 卡自管 ANM VM 池（8 格）+ 椭圆用 `ce_polar_to_vel`。AUDIT §BE 详录 #211 | `zenith.c` + `zenith_core.c`（主机单测）| 🔧 |
 
 **破损核心（71）补充**：子机 = `Player__allocate_option(card, 0x18, ability script88)`（指针存 `ce_state()`，
 不是原生的 `card+0x54`：我们的对象只有 `0x54` 字节）。闪电 = **定点伤害源 + 特效**两件独立的事：

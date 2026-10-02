@@ -39,6 +39,8 @@
                                     *   ⇒ 只有按住 Z（射击键）时才开火；松手就停（充能照跑，随时能续）*/
 #define SC_MAGAZINE     300        /* 一个弹匣 = 300 颗 */
 #define SC_SE_MUZZLE    0x2d       /* ❓ 出膛音借 TH18 的 se_slash（与天顶剑同一枚）*/
+#define SC_TAIL_BACK    9.0f       /* ❓ 彗尾 VM 相对星位再往后挪多少 px（贴图 44×16、scale 0.5 ⇒
+                                    *   半长 11；挪 9 让**头端**正好压在星上、尾巴拖在身后）*/
 #define SC_RELOAD_FRAMES 180       /* ❓自定：装填 3 s（这期间灰着、不开火）*/
 #define SC_LAYER        13         /* 世界特效层（与天顶剑 / 破损核心同层）*/
 #define SC_MSG_LAYER    25         /* 讯息贴图：UI 层（世界层是 3–19，HUD 是 24/25）*/
@@ -279,6 +281,23 @@ static int on_tick_2(ce_card_t *c)
         ce_anm_set_pos(sh->id, sh->x, sh->y, pz);
         ce_anm_set_rotation(sh->id, 0.0f, 0.0f, sh->rot);
         ce_anm_set_color(sh->id, ((uint32_t)sc_draw_alpha(sh) << 24) | 0x00ffffffu);
+        /* ★★ 2026-10-03（owner：「它还有一个**水滴形状的拖尾**，像彗星一样 …… 动态光照叠起来的东西，
+         *   你得烘一个差不多的」）：在星星**身后**补一枚烘好的水滴形尾（脚本 391 自淡自毁，卡侧零簿记）。
+         *   ⚠ 尾巴的 rotation 用**速度角**（`sh->vx/vy`），**不能用 `sh->rot`** —— 星是自转的
+         *     （`aiStyle 5` 的 `rotation += speed*0.01*dir`），尾巴跟着转会拧成麻花。
+         *   位置再往后让半个尾长（贴图右端是头 ⇒ 头正好落在星上）。*/
+        {
+            float va = bc_atan2f(sh->vy, sh->vx);
+            float vd[2];
+            uint32_t tl;
+            ce_polar_to_vel(vd, va, 1.0f);
+            tl = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_STAR_CANNON_TAIL, SC_LAYER);
+            if (tl) {
+                ce_anm_set_pos(tl, sh->x - vd[0] * SC_TAIL_BACK, sh->y - vd[1] * SC_TAIL_BACK, pz);
+                ce_anm_set_rotation(tl, 0.0f, 0.0f, va);
+                ce_anm_set_color(tl, ((uint32_t)sc_draw_alpha(sh) << 24) | 0x00ffffffu);
+            }
+        }
         if (sh->hit) {                                   /* 照原版 localNPCHitCooldown = 10：同一颗星
                                                           * 对同一个敌人每 10 帧才结算一次 */
             center[0] = sh->x; center[1] = sh->y; center[2] = pz;
