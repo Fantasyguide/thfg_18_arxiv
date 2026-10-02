@@ -8,11 +8,11 @@
     "by": "Nipporita@DESKTOP-H16AD78"
   },
   "last_release": {
-    "at": "2026-10-02 17:18:48+0800",
+    "at": "2026-10-02 18:21:06+0800",
     "agent": "Nipporita@DESKTOP-H16AD78",
     "modkit": "/mnt/d/项目/幻想指南/18/th18_modkit",
     "patch_md5": "7eba2eb25452939a514290f8fec26d94",
-    "dll_md5": "5d85e97e4b7933ad9e7df2f4a4d012b9",
+    "dll_md5": "9caf78b03fe9ea4bd0e1b1ed754f50c0",
     "sht_md5": [
       "58c7dc2106de1719ac2f13643d607225",
       "4024d9373a6b6f8276b93d16b78174ff",
@@ -20,11 +20,45 @@
       "af2c1df28174337735ab5f30c2e2e6ff"
     ],
     "abcard_md5": "a8c623bd34150c5af15879cb02919d0e",
-    "ability_md5": "c2b4f2c5ec108382d1be1cc4b7d3b12f",
+    "ability_md5": "08cdd229e411cefff1716ae8d3ba3c61",
     "cards_md5": "a016adff47573f8daca84da2f54e04b8",
     "files_md5": "82d0560f0810d652a4225e2b7beccdaa"
   },
   "history": [
+    {
+      "at": "2026-10-02 18:21:06+0800",
+      "agent": "Nipporita@DESKTOP-H16AD78",
+      "modkit": "/mnt/d/项目/幻想指南/18/th18_modkit",
+      "patch_md5": "7eba2eb25452939a514290f8fec26d94",
+      "dll_md5": "9caf78b03fe9ea4bd0e1b1ed754f50c0",
+      "sht_md5": [
+        "58c7dc2106de1719ac2f13643d607225",
+        "4024d9373a6b6f8276b93d16b78174ff",
+        "19711e3409eeda3e9bc34b8c4e576892",
+        "af2c1df28174337735ab5f30c2e2e6ff"
+      ],
+      "abcard_md5": "a8c623bd34150c5af15879cb02919d0e",
+      "ability_md5": "08cdd229e411cefff1716ae8d3ba3c61",
+      "cards_md5": "a016adff47573f8daca84da2f54e04b8",
+      "files_md5": "82d0560f0810d652a4225e2b7beccdaa"
+    },
+    {
+      "at": "2026-10-02 17:21:35+0800",
+      "agent": "Nipporita@DESKTOP-H16AD78",
+      "modkit": "/mnt/d/项目/幻想指南/18/th18_modkit",
+      "patch_md5": "7eba2eb25452939a514290f8fec26d94",
+      "dll_md5": "90399d0d9943b9316015b5d1349ffb66",
+      "sht_md5": [
+        "58c7dc2106de1719ac2f13643d607225",
+        "4024d9373a6b6f8276b93d16b78174ff",
+        "19711e3409eeda3e9bc34b8c4e576892",
+        "af2c1df28174337735ab5f30c2e2e6ff"
+      ],
+      "abcard_md5": "a8c623bd34150c5af15879cb02919d0e",
+      "ability_md5": "622e0bc2f927a80ce575ba90386ea7c2",
+      "cards_md5": "a016adff47573f8daca84da2f54e04b8",
+      "files_md5": "82d0560f0810d652a4225e2b7beccdaa"
+    },
     {
       "at": "2026-10-02 17:18:48+0800",
       "agent": "Nipporita@DESKTOP-H16AD78",
@@ -158,40 +192,6 @@
       ],
       "abcard_md5": "a8c623bd34150c5af15879cb02919d0e",
       "ability_md5": "8803efa5d551e09f874e82877129bfdb",
-      "cards_md5": "a016adff47573f8daca84da2f54e04b8",
-      "files_md5": "b0b8fcb7278683615907c7d8ca3d5ea9"
-    },
-    {
-      "at": "2026-10-02 14:43:35+0800",
-      "agent": "Nipporita@DESKTOP-H16AD78",
-      "modkit": "/mnt/d/项目/幻想指南/18/th18_modkit",
-      "patch_md5": "7eba2eb25452939a514290f8fec26d94",
-      "dll_md5": "b7f25f6808470e2cd6e15d0dbb4cd76f",
-      "sht_md5": [
-        "58c7dc2106de1719ac2f13643d607225",
-        "4024d9373a6b6f8276b93d16b78174ff",
-        "19711e3409eeda3e9bc34b8c4e576892",
-        "af2c1df28174337735ab5f30c2e2e6ff"
-      ],
-      "abcard_md5": "a8c623bd34150c5af15879cb02919d0e",
-      "ability_md5": "92997d612a42a6a5049b53b606989b29",
-      "cards_md5": "a016adff47573f8daca84da2f54e04b8",
-      "files_md5": "b0b8fcb7278683615907c7d8ca3d5ea9"
-    },
-    {
-      "at": "2026-10-02 14:40:07+0800",
-      "agent": "Nipporita@DESKTOP-H16AD78",
-      "modkit": "/mnt/d/项目/幻想指南/18/th18_modkit",
-      "patch_md5": "7eba2eb25452939a514290f8fec26d94",
-      "dll_md5": "8f4c370e03d0866fe1d16b67b0d80378",
-      "sht_md5": [
-        "58c7dc2106de1719ac2f13643d607225",
-        "4024d9373a6b6f8276b93d16b78174ff",
-        "19711e3409eeda3e9bc34b8c4e576892",
-        "af2c1df28174337735ab5f30c2e2e6ff"
-      ],
-      "abcard_md5": "a8c623bd34150c5af15879cb02919d0e",
-      "ability_md5": "92997d612a42a6a5049b53b606989b29",
       "cards_md5": "a016adff47573f8daca84da2f54e04b8",
       "files_md5": "b0b8fcb7278683615907c7d8ca3d5ea9"
     }
