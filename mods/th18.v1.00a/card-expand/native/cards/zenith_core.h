@@ -65,6 +65,8 @@
  *   正上目标（heading = −π/2）时 rotation = π − π/2 + π/2 = **π = 竖直朝下** ✓（这正是 owner 描述的观感；
  *   减 45° 之前是 135°，斜着 —— 就是"旋转和运动方向不一致"的那 45°）。*/
 #define ZN_SPRITE_BASE      (-0.7853982f)   /* 贴图基准朝向（引擎 rotation=0 时剑尖的指向）= 右上 45° */
+#define ZN_TRAIL_SPACING    9.0f  /* ★ 残影**按距离**发：每走过这么多 px 才留一枚（帧门 `ZN_TRAIL_EVERY`
+                                    *   只是上限）—— 回收段 `|v|` 小也不会糊成一坨（owner 2026-10-03）*/
 #define ZN_TRAIL_MIN_DIST   40.0f  /* ★ 同一条实测：「虚影集中在玩家背后十分明显」⇒ **离自机 40 px 内不留**
                                     *   （剑从自机身上出膛，前半程贴着自机 ⇒ 虚影糊在自机周围）*/
 #define ZN_HIT_COOLDOWN     7      /* 帧：同一把剑两次伤害之间的最小间隔（原版 localNPCHitCooldown = 7）*/
@@ -87,7 +89,9 @@ typedef struct {
     int16_t  prof;        /* ★ 剑阵表下标 0..20（sprite / trailColor / bladeLength 都查表拿 ——
                            *   省下每格 6 字节：8 格 + 特效 VM 句柄刚好卡进 ce_state 的 496）*/
     uint8_t  sign_pos;    /* 1 = velocity.X > 0（原版 direction / 椭圆往哪边转）*/
-    uint8_t  trail_timer;
+    uint32_t trail_last;  /* ★ **上一枚残影的落点**（打包：x 高 16 / y 低 16，1/2 px 定点）——
+                           *   残影改成**按距离**发（见 `ZN_TRAIL_SPACING`）：原来按帧发，回收段
+                           *   `|v|` 小、同样帧数只走一点点 ⇒ 虚影在那一段糊成一坨（owner 2026-10-03）*/
     uint8_t  hit_timer;
     uint8_t  _pad;
     float    vx, vy;      /* 原版 velocity：出膛时定死的偏移（= (目标 − 出膛点)/2）*/
@@ -106,6 +110,28 @@ typedef struct {
 
 /* 由 vx/vy 现算的派生量（不占字段：8 格 × 3 个 float 会把 ce_state 撑爆 ⇒ 卡状态上限 496 字节）。
  * **static inline 的理由同 `bc_atan2f`**：i386 ABI 返回 float 走 st0，内联掉才守得住零 x87。*/
+/* 残影落点的打包 / 距离判定（1/2 px 定点，见 `trail_last`）。
+ * **static inline 的理由同 `bc_atan2f`**：i386 下返回 float 的非内联函数会走 x87。*/
+#define ZN_TRAIL_FIX     2.0f
+static inline uint32_t zn_trail_pack(float x, float y)
+{
+    int32_t ix = (int32_t)(x * ZN_TRAIL_FIX), iy = (int32_t)(y * ZN_TRAIL_FIX);
+    if (ix < -32768) ix = -32768;
+    if (ix > 32767) ix = 32767;
+    if (iy < -32768) iy = -32768;
+    if (iy > 32767) iy = 32767;
+    return ((uint32_t)(uint16_t)ix << 16) | (uint16_t)iy;
+}
+static inline int zn_trail_far_enough(const zn_blade_t *b, float x, float y)
+{
+    float lx, ly, dx, dy;
+    if (b->trail_last == 0xffffffffu) return 1;              /* 第一枚 */
+    lx = (float)(int16_t)(b->trail_last >> 16) / ZN_TRAIL_FIX;
+    ly = (float)(int16_t)(b->trail_last & 0xffffu) / ZN_TRAIL_FIX;
+    dx = x - lx; dy = y - ly;
+    return (dx * dx + dy * dy) >= (ZN_TRAIL_SPACING * ZN_TRAIL_SPACING);
+}
+
 static inline float zn_dist2(float ax, float ay, float bx, float by)
 {
     float dx = ax - bx, dy = ay - by;

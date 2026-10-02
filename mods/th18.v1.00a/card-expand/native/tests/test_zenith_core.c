@@ -200,7 +200,24 @@ static void test_orbit_params(void)
     CHECK(fabsf(p.R - (vlen + ZN_RADIUS_ADD)) < 1e-3f, "满相位时 R 该是 |v| + 40，得到 %g", (double)p.R);
     CHECK(fabsf(p.fade_x) < 1e-3f && fabsf(p.fade_y) < 1e-3f, "满相位时 fade 该衰减到 0");
     /* 残影 / 命中节奏：走完 60 相位大约 60/rate 帧 */
-    CHECK(n_trail >= 4, "60 相位里该留几个残影（ZN_TRAIL_EVERY = 8 ⇒ 约 7 个），得到 %d", n_trail);
+    CHECK(n_trail >= 4, "60 相位里该给几次残影机会（帧门 ZN_TRAIL_EVERY ⇒ 约 30 次），得到 %d", n_trail);
+
+    /* ★ 2026-10-03 owner：「它是因为在收回的时候 v 小，所以虚影密」⇒ 残影改成**按距离**发。
+     *   这里钉住打包/距离判定的语义（世界坐标那一侧的比较在卡里）。*/
+    {
+        zn_blade_t tb;
+        memset(&tb, 0, sizeof tb);
+        tb.trail_last = 0xffffffffu;                       /* 还没落点 ⇒ 第一枚必发 */
+        CHECK(zn_trail_far_enough(&tb, 0.0f, 0.0f) == 1, "第一枚残影该发");
+        tb.trail_last = zn_trail_pack(100.0f, -50.0f);
+        CHECK(zn_trail_far_enough(&tb, 100.0f + ZN_TRAIL_SPACING - 1.0f, -50.0f) == 0,
+              "没走到 ZN_TRAIL_SPACING 就不该再发（v 小的时候正是这段）");
+        CHECK(zn_trail_far_enough(&tb, 100.0f + ZN_TRAIL_SPACING + 1.0f, -50.0f) == 1,
+              "走够距离该发");
+        /* 定点回读的量化误差 ≤ 0.5 px（1/2 px 定点）*/
+        CHECK(fabsf((float)(int16_t)(zn_trail_pack(100.0f, -50.0f) >> 16) / 2.0f - 100.0f) <= 0.5f,
+              "打包回读误差该 ≤ 0.5 px");
+    }
     CHECK(n_hit >= 5, "60 相位里该命中若干次，得到 %d", n_hit);
 
     /* 寿命：相位到 ZN_PHASE_END 那一帧 done=1；帧数落在 [120/2.0, 120/0.7] 内 */

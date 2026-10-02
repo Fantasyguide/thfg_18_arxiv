@@ -102,7 +102,7 @@ void zn_launch(zn_blade_t *b, uint32_t id, int32_t prof,
     if (b->ai0 < -ZN_AI0_MAX) b->ai0 = -ZN_AI0_MAX;
     b->phase = 0.0f;
     b->frames = 0;
-    b->trail_timer = 0;
+    b->trail_last = 0xffffffffu;   /* 还没有落点 ⇒ 第一枚一定发 */
     b->hit_timer = (uint8_t)ZN_HIT_COOLDOWN;   
 /* 出生那一帧就能命中（原版第一帧就在判定）*/
 }
@@ -152,8 +152,8 @@ void zn_step(zn_blade_t *b, zn_pose_t *out)
     op = clamp01(b->phase / ZN_FADE_IN) * clamp01((ZN_PHASE_END - b->phase) / ZN_FADE_OUT);
     out->alpha = (int)(op * 255.0f + 0.5f);
 
-    b->trail_timer++;
-    if (b->trail_timer >= ZN_TRAIL_EVERY) { b->trail_timer = 0; out->emit_trail = 1; }
+    /* 帧门（距离门在卡侧：它知道世界坐标）*/
+    if ((b->frames % (uint16_t)ZN_TRAIL_EVERY) == 0u) out->emit_trail = 1;   /* 帧门（距离门在卡侧）*/
     b->hit_timer++;
     if (b->hit_timer >= ZN_HIT_COOLDOWN) { b->hit_timer = 0; out->hit = 1; }
 }

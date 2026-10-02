@@ -349,9 +349,11 @@ static int on_tick_2(ce_card_t *c)
             }
         }
 
-        /* 离自机太近就不留虚影（owner 实测：「虚影集中在玩家背后十分明显」—— 剑是从自机身上出膛的，
-         * 前半程贴着自机，虚影会糊在自机周围）。*/
-        if (pose.emit_trail &&
+        /* 离自机太近就不留虚影（owner：「虚影集中在玩家背后十分明显」—— 剑从自机身上出膛，
+         * 前半程贴着自机）＋ ★ **按距离发**（owner：「它是因为在收回的时候 v 小，所以虚影密」）：
+         * 帧门只给"机会"，真要落笔还得自上一枚起走过 `ZN_TRAIL_SPACING` px ⇒ 回收段走得慢，
+         * 残影就稀，不会在那一小段糊成一坨。`trail_last` 打包成 x 高 16 / y 低 16（1/2 px 定点）。*/
+        if (pose.emit_trail && zn_trail_far_enough(b, x, y) &&
             zn_dist2(x, y, pp[0], pp[1]) > ZN_TRAIL_MIN_DIST * ZN_TRAIL_MIN_DIST) {
             const zn_profile_t *tp = &s_zn_profiles[(b->prof >= 0 && b->prof < ZN_PROFILE_N) ? b->prof : 0];
             uint32_t tr = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_ZENITH_TRAIL, ZN_LAYER);
@@ -361,6 +363,7 @@ static int on_tick_2(ce_card_t *c)
                 ce_anm_set_pos(tr, x, y, pz);
                 ce_anm_set_rotation(tr, 0.0f, 0.0f, pose.rot);
                 ce_anm_set_scale(tr, pose.mirror ? -ZN_BLADE_SCALE : ZN_BLADE_SCALE, ZN_BLADE_SCALE);
+                b->trail_last = zn_trail_pack(x, y);
                 b->trail_id = tr;      /* 只记最近的（更早的自己 delete，同炎魔拖尾的处理）*/
             }
         }
