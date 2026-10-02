@@ -66,8 +66,8 @@ static void test_launch(void)
     zn_reset(&s);
     b = zn_slot(&s);
     CHECK(b == &s.b[0], "第一个空槽该是 [0]");
-    zn_launch(b, 0x1234u, 7, 0x00AABBCCu, 0.0f, 0.0f, 300.0f, 400.0f, 50.0f);
-    CHECK(b->active == 1 && b->id == 0x1234u && b->sprite == 7 && b->color == 0x00AABBCCu,
+    zn_launch(b, 0x1234u, 7, 0.0f, 0.0f, 300.0f, 400.0f, 50.0f);
+    CHECK(b->active == 1 && b->id == 0x1234u && b->prof == 7,
           "发射没生效");
     CHECK(fabsf(b->vx - 60.0f) < 1e-4f && fabsf(b->vy - 80.0f) < 1e-4f,
           "velocity 偏移该是 (60, 80)，得到 (%g, %g)", (double)b->vx, (double)b->vy);
@@ -81,11 +81,11 @@ static void test_launch(void)
     /* 向左飞 ⇒ sign = −1；目标是原地 ⇒ |v| = 0 ⇒ fast = 1（最慢的相增 = 0.7）*/
     zn_reset(&s);
     b = zn_slot(&s);
-    zn_launch(b, 1u, 0, 0, 0.0f, 0.0f, -80.0f, 60.0f, 0.0f);
+    zn_launch(b, 1u, 0, 0.0f, 0.0f, -80.0f, 60.0f, 0.0f);
     CHECK(zn_sign(b) == -1.0f, "向左飞 sign 该是 −1");
     zn_reset(&s);
     b = zn_slot(&s);
-    zn_launch(b, 2u, 0, 0, 5.0f, 6.0f, 5.0f, 6.0f, 0.0f);
+    zn_launch(b, 2u, 0, 5.0f, 6.0f, 5.0f, 6.0f, 0.0f);
     CHECK(b->vx == 0.0f && b->vy == 0.0f && zn_fast(b) == 1.0f, "原地：v = 0、fast = 1");
     /* 原版 `Lerp(0.7, 2, GetLerpValue(900,0,|v|·2,true))`：**|v| 越小 fast 越接近 1 ⇒ 相增越大（寿命越短）** */
     CHECK(fabsf(zn_rate(b) - ZN_SPIN_MAX) < 1e-5f, "原地该用最快的相增 %g，得到 %g", (double)ZN_SPIN_MAX, (double)zn_rate(b));
@@ -93,23 +93,23 @@ static void test_launch(void)
     /* |v| 很大 ⇒ fast 接近 0 ⇒ 相增接近 2.0（原版：飞得越快转得越快）*/
     zn_reset(&s);
     b = zn_slot(&s);
-    zn_launch(b, 3u, 0, 0, 0.0f, 0.0f, ZN_ARC_MAX, 0.0f, 0.0f);   /* |v| = 100、|v|·2 = 200 → fast = 700/900 */
+    zn_launch(b, 3u, 0, 0.0f, 0.0f, ZN_ARC_MAX, 0.0f, 0.0f);   /* |v| = 100、|v|·2 = 200 → fast = 700/900 */
     {
         zn_state_t s2;
         zn_blade_t *b2;
         zn_reset(&s2);
         b2 = zn_slot(&s2);
         /* 极小距离 ⇒ fast 接近 1（慢）——与上一行对照，方向正确即可 */
-        zn_launch(b2, 4u, 0, 0, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f);
+        zn_launch(b2, 4u, 0, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f);
         CHECK(zn_rate(b2) > zn_rate(b), "越近相增越大（原版：|v| 小 ⇒ GetLerpValue 大 ⇒ Lerp 靠 2.0）");
     }
 
     /* ai0 超界要夹到 [−100, 100]（原版 ai[0] 只可能是这个范围）*/
     zn_reset(&s);
     b = zn_slot(&s);
-    zn_launch(b, 5u, 0, 0, 0.0f, 0.0f, 10.0f, 0.0f, 9999.0f);
+    zn_launch(b, 5u, 0, 0.0f, 0.0f, 10.0f, 0.0f, 9999.0f);
     CHECK(b->ai0 == ZN_AI0_MAX, "ai0 该夹到 %g，得到 %g", (double)ZN_AI0_MAX, (double)b->ai0);
-    zn_launch(b, 5u, 0, 0, 0.0f, 0.0f, 10.0f, 0.0f, -9999.0f);
+    zn_launch(b, 5u, 0, 0.0f, 0.0f, 10.0f, 0.0f, -9999.0f);
     CHECK(b->ai0 == -ZN_AI0_MAX, "ai0 该夹到 −%g", (double)ZN_AI0_MAX);
 }
 
@@ -125,7 +125,7 @@ static void test_orbit_params(void)
     /* 出膛点 (0,0) → 目标 (120,160)：d = 200 = ZN_ARC_MAX ⇒ |v| = 100、heading = atan2(160,120) */
     zn_reset(&s);
     b = zn_slot(&s);
-    zn_launch(b, 3u, 0, 0, 0.0f, 0.0f, 120.0f, 160.0f, 100.0f);
+    zn_launch(b, 3u, 0, 0.0f, 0.0f, 120.0f, 160.0f, 100.0f);
     vlen = __builtin_sqrtf(b->vx * b->vx + b->vy * b->vy);
 
     /* 第一帧：L = rate/60、ang = π + 1·L·2π、R = max(60, |v| + 0)·1、A = ai0·Lerp(2,1,fast) */
@@ -174,7 +174,7 @@ static void test_orbit_params(void)
     /* 寿命：相位到 ZN_PHASE_END 那一帧 done=1；帧数落在 [120/2.0, 120/0.7] 内 */
     zn_reset(&s);
     b = zn_slot(&s);
-    zn_launch(b, 5u, 0, 0, 0.0f, 0.0f, 120.0f, 160.0f, 0.0f);
+    zn_launch(b, 5u, 0, 0.0f, 0.0f, 120.0f, 160.0f, 0.0f);
     for (i = 0; i < 10000; ++i) {
         zn_step(b, &p);
         if (p.done) break;
@@ -198,7 +198,7 @@ static void test_pool(void)
     for (i = 0; i < ZN_BLADE_MAX; i++) {
         zn_blade_t *b = zn_slot(&s);
         CHECK(b != 0, "第 %d 个该拿得到槽", i);
-        zn_launch(b, (uint32_t)(i + 1), 0, 0, 0.0f, 0.0f, 60.0f, 80.0f, 0.0f);
+        zn_launch(b, (uint32_t)(i + 1), 0, 0.0f, 0.0f, 60.0f, 80.0f, 0.0f);
     }
     CHECK(zn_slot(&s) == 0, "池满了还给槽");
     CHECK(zn_live(&s) == ZN_BLADE_MAX, "live=%d", zn_live(&s));

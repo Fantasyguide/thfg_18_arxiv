@@ -1036,3 +1036,10 @@ ELYTRA_MACE_HAMMER              ability/elytra_mace/_src/mace.png         16x16
 ELYTRA_MACE_WING                ability/elytra_mace/_src/elytra.png       16x16
 ELYTRA_MACE_BAR                 ability/elytra_mace/_src/BAR.png          160x14
 ELYTRA_MACE_CURSOR              ability/elytra_mace/_src/CURSOR.png       6x18
+
+# ★★ 2026-10-03（87 天顶剑 · 补挥动特效）：原版**刃尖星芒**的贴图。
+#   一手：`Projectile.cs` 的 `DrawPrettyStarSparkle` 画 **4 个 quad 的 `TextureAssets.Extra[98]`**
+#   （两个轴用纯辉光色 + 两个用 `drawColor*0.5`，每个再 ×0.6）；出现在 `t 15→30`、`30→45` 淡出。
+#   素材 = 用户本机 Terraria `Content/Images/Extra_98.xnb` → `Extra_98.png`（72×72，四角星光 + 软辉光）。
+#   同图也当**尘埃**用（原版是 `DustID 278 FireworksRGB` 的小星点；缩放 0.15 ≈ 11 px，染色用每把剑的 trailColor）。
+ZENITH_SPARKLE                  ability/zenith/_src/Extra_98_sparkle.png  72x72

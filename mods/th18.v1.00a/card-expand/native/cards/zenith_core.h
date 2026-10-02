@@ -68,8 +68,11 @@ typedef struct {
     int32_t  active;      /* 1 = 这个槽在飞 */
     uint32_t id;          /* 剑刃 VM id（引擎侧句柄；core 只存不碰）*/
     uint32_t trail_id;    /* 最近一个残影 VM id（残影脚本自己 delete；这个只用于删卡时兜底）*/
-    uint32_t color;       /* 这把剑的 trailColor（RGB，用于残影染色）*/
-    int16_t  sprite;      /* 图集里哪把剑（调用方从 21 把里挑）*/
+    uint32_t ov_id;       /* ★ ×1.25 白色叠加 VM（原版辉光第二遍；随剑刃一起收）*/
+    uint32_t sp_id;       /* ★ 刃尖星芒 VM（随剑刃一起收）*/
+
+    int16_t  prof;        /* ★ 剑阵表下标 0..20（sprite / trailColor / bladeLength 都查表拿 ——
+                           *   省下每格 6 字节：8 格 + 特效 VM 句柄刚好卡进 ce_state 的 496）*/
     uint8_t  sign_pos;    /* 1 = velocity.X > 0（原版 direction / 椭圆往哪边转）*/
     uint8_t  trail_timer;
     uint8_t  hit_timer;
@@ -79,7 +82,6 @@ typedef struct {
     float    ai0;         /* 原版 ai[0] ∈ [−100, 100]（椭圆第二半轴）*/
     float    phase;       /* 原版 localAI[0] */
     uint16_t frames;      /* 只用于日志 */
-    uint16_t _pad2;
 } zn_blade_t;
 
 /* 由 vx/vy 现算的派生量（不占字段：8 格 × 3 个 float 会把 ce_state 撑爆 ⇒ 卡状态上限 496 字节）。
@@ -95,6 +97,7 @@ static inline float zn_rate(const zn_blade_t *b)   /* Lerp(0.7, 2, fast) */
     return ZN_SPIN_MIN + (ZN_SPIN_MAX - ZN_SPIN_MIN) * zn_fast(b);
 }
 static inline float zn_sign(const zn_blade_t *b) { return b->sign_pos ? 1.0f : -1.0f; }
+
 
 typedef struct {
     uint32_t  frames;
@@ -134,7 +137,7 @@ zn_blade_t *zn_slot(zn_state_t *s);     /* 找一个空槽；全满返回 0（�
 
 /* 朝 (tx,ty) 甩一把：算 v / heading / sign / fast / rate（原版 AI 序言那几行）。
  * `ai0` 由调用方用 `ce_rand()` 抽（core 不产随机数，保持可单测）。*/
-void zn_launch(zn_blade_t *b, uint32_t id, int32_t sprite, uint32_t color,
+void zn_launch(zn_blade_t *b, uint32_t id, int32_t prof,
                float ox, float oy, float tx, float ty, float ai0);
 /* 推进一帧：写一帧的位姿参数；寿命尽把 active 清 0（调用方据此收 VM）。*/
 void zn_step(zn_blade_t *b, zn_pose_t *out);

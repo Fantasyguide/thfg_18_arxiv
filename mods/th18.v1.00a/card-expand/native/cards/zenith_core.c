@@ -45,7 +45,7 @@ zn_blade_t *zn_slot(zn_state_t *s)
     return 0;
 }
 
-void zn_launch(zn_blade_t *b, uint32_t id, int32_t sprite, uint32_t color,
+void zn_launch(zn_blade_t *b, uint32_t id, int32_t prof,
                float ox, float oy, float tx, float ty, float ai0)
 {
     float dx = tx - ox, dy = ty - oy;
@@ -60,8 +60,9 @@ void zn_launch(zn_blade_t *b, uint32_t id, int32_t sprite, uint32_t color,
     b->active = 1;
     b->id = id;
     b->trail_id = 0;
-    b->sprite = sprite;
-    b->color = color;
+    b->ov_id = 0;
+    b->sp_id = 0;
+    b->prof = (int16_t)prof;
     b->vx = dx * 0.5f;                    /* 原版 velocity = (目标 − 自机) / 2（**偏移**，不是位移）*/
     b->vy = dy * 0.5f;
     b->heading = bc_atan2f(dy, dx);

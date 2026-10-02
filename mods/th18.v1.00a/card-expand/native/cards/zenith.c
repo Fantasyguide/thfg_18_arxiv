@@ -30,6 +30,25 @@
 #define ZN_OPT_F_X      36.0f      /* 聚焦：收拢一点 ❓ 自定 */
 #define ZN_OPT_F_Y      (-20.0f)
 #define ZN_RETRY        60         /* 关卡中途买到这张卡：没拿到子机时的重试间隔（槽满 / 广播还没来）*/
+/* ★★ 2026-10-03（owner：「87 尽量做吧」）：把原版那几样**挥动特效**补上（一手见 AUDIT §BE #211 追加）：
+ *   · 刃尖**星芒** `DrawPrettyStarSparkle`：4 个 `Extra[98]` quad，`t 15→30` 淡入、`30→45` 淡出
+ *     ⇒ 每把剑一个 `script388` 的 VM，挂在 `Center + bladeDir·(bladeLength/2)`；
+ *   · **×1.25 白色叠加**（原版的辉光第二遍）：每把剑再加一个同 sprite 的 VM，scale ×1.25、白、alpha 半；
+ *   · **尘埃**（`DustID 278 FireworksRGB`，1-in-9 × 1–3 颗、沿刃向 +3..7）：`script389/390` 两支自走自灭
+ *     的小星点，染色用那把剑的 trailColor；
+ *   ⚠ **ribbon 仍然没有**（引擎无顶点条带通道）：那条弧线依旧由 `script380` 的残影顶替。
+ *   ⚠ 光照（原版两处 `Lighting.AddLight`）也没法做（引擎无动态光照通道）。*/
+#define ZN_SPARK_LAYER  14         /* 星芒 / 尘埃：压在剑刃（13）之上 */
+#define ZN_OVERLAY_MUL  1.25f      /* 原版第二遍白叠的放大倍数 */
+#define ZN_SPARK_IN     15.0f      /* 星芒淡入：t 15→30 */
+#define ZN_SPARK_FULL   30.0f
+#define ZN_SPARK_OUT    45.0f      /* 星芒淡出：t 30→45 */
+#define ZN_SPARK_SX0    0.16f      /* 星芒尺寸（起 → 满）*/
+#define ZN_SPARK_SX1    0.30f
+#define ZN_SPARK_SY0    0.10f
+#define ZN_SPARK_SY1    0.18f
+#define ZN_DUST_ODDS    9          /* 尘埃 1-in-N（原版 `Main.rand.Next(9) == 0` 那一档的均值）*/
+#define ZN_DUST_MAX     3          /* 一次最多几颗（原版 1–3）*/
 #define ZN_LAYER        13         /* 世界特效层（破损核心 / 炎魔 / 青眼同层）*/
 #define ZN_SE_SLASH     0x2d       /* TH18 音效表 0x2d = se_slash.wav（一手 engine/_shared/th18-sound-table.md）；
                                     * 对位 Terraria 的 `SoundID.Item169`（原版每把出膛放一次）*/
@@ -56,31 +75,34 @@ _Static_assert(sizeof(zn_card_t) <= 496, "zenith: private state overflows CE_STA
  *   「挑哪张 sprite」与「残影染什么色」两件事（bladeLength 是原版 ribbon 的半宽，我们不做 ribbon）。*/
 typedef struct {
     int32_t  sprite;
-    uint32_t color;                /* 0x00RRGGBB */
+    uint32_t color;                /* 0x00RRGGBB：strarColor（原版 `FinalFractalProfile.trailColor`）*/
+    float    blade_len;            /* ★ 原版 `fullBladeLength`（一手 1.4.5.0 表）—— 只用来算**刃尖**
+                                    *   位置与 ribbon 半宽（`trailWidth = bladeLength/2`）：星芒就画在
+                                    *   `Center + bladeDir·trailWidth` 上（见 AUDIT §BE #211 追加）*/
 } zn_profile_t;
 
 static const zn_profile_t s_zn_profiles[ZN_PROFILE_N] = {
-    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_STARFURY,       0x00EC3EC0u },   /* 65   星怒 */
-    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_BEEKEEPER,      0x00FFE745u },   /* 1123 养蜂人（原版 = Main.OurFavoriteColor）*/
-    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_LIGHTSBANE,     0x007A42BFu },   /* 46   光之灾 */
-    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_FIERYGREATSWORD,0x00FE9E23u },   /* 121  炽焰巨剑 */
-    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_BLADEOFGRASS,   0x006BCB00u },   /* 190  草剑 */
-    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_EXCALIBUR,      0x00ECC813u },   /* 368  断钢剑 */
-    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_TRUEEXCALIBUR,  0x00ECC813u },   /* 674  真断钢剑 */
-    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_NIGHTSEDGE,     0x00B336C9u },   /* 273  暗影焰刃 */
-    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_TRUENIGHTSEDGE, 0x00B336C9u },   /* 675  真暗影焰刃 */
-    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_INFLUXWAVER,    0x0054EAF5u },   /* 2880 波涌之刃 */
-    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_ENCHANTEDSWORD, 0x005B9EE8u },   /* 989  附魔剑 */
-    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_HORSEMAN,       0x00FC5F04u },   /* 1826 无头骑士剑 */
-    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_MEOWMERE,       0x00FEC2FAu },   /* 3063 喵刀 */
-    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_STARWRATH,      0x00ED3F85u },   /* 3065 狂星之怒 */
-    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_TERRABLADE,     0x0050DE7Au },   /* 757  泰拉刃 */
-    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_MURAMASA,       0x00384ED2u },   /* 155  村正 */
-    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_BLOODBUTCHERER, 0x00ED1C24u },   /* 795  嗜血者 */
-    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_SEEDLER,        0x008FD71Du },   /* 3018 种子弯刀 */
-    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_TERRAGRIM,      0x00B2FFB4u },   /* 4144 地灵之刃 */
-    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_COPPERSHORT,    0x00EBA687u },   /* 3507 铜短剑 */
-    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_ZENITH,         0x00B2FFB4u },   /* 4956 天顶剑本体 */
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_STARFURY,       0x00EC3EC0u , 60.0f },  /* 65   星怒 */
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_BEEKEEPER,      0x00FFE745u , 75.0f },  /* 1123 养蜂人（原版 = Main.OurFavoriteColor）*/
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_LIGHTSBANE,     0x007A42BFu , 65.0f },  /* 46   光之灾 */
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_FIERYGREATSWORD,0x00FE9E23u , 80.0f },  /* 121  炽焰巨剑（🟡 bladeLength **当时没从 IL 解出** ⇒ 取 80，见 TUNING §2.x-87）*/
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_BLADEOFGRASS,   0x006BCB00u , 105.0f },  /* 190  草剑 */
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_EXCALIBUR,      0x00ECC813u , 75.0f },  /* 368  断钢剑 */
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_TRUEEXCALIBUR,  0x00ECC813u , 75.0f },  /* 674  真断钢剑 */
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_NIGHTSEDGE,     0x00B336C9u , 70.0f },  /* 273  暗影焰刃 */
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_TRUENIGHTSEDGE, 0x00B336C9u , 70.0f },  /* 675  真暗影焰刃 */
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_INFLUXWAVER,    0x0054EAF5u , 70.0f },  /* 2880 波涌之刃 */
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_ENCHANTEDSWORD, 0x005B9EE8u , 48.0f },  /* 989  附魔剑 */
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_HORSEMAN,       0x00FC5F04u , 76.0f },  /* 1826 无头骑士剑 */
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_MEOWMERE,       0x00FEC2FAu , 76.0f },  /* 3063 喵刀 */
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_STARWRATH,      0x00ED3F85u , 70.0f },  /* 3065 狂星之怒 */
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_TERRABLADE,     0x0050DE7Au , 70.0f },  /* 757  泰拉刃 */
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_MURAMASA,       0x00384ED2u , 70.0f },  /* 155  村正 */
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_BLOODBUTCHERER, 0x00ED1C24u , 72.0f },  /* 795  嗜血者 */
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_SEEDLER,        0x008FD71Du , 75.0f },  /* 3018 种子弯刀 */
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_TERRAGRIM,      0x00B2FFB4u , 45.0f },  /* 4144 地灵之刃 */
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_COPPERSHORT,    0x00EBA687u , 45.0f },  /* 3507 铜短剑 */
+    { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_ZENITH,         0x00B2FFB4u , 86.0f },  /* 4956 天顶剑本体 */
 };
 
 /* 侧向站位：allocate 只会写 y 偏移（第 2 / 第 5 个栈参 ⇒ option+0x68 / +0x70），x 的两格留给卡自己写
@@ -104,8 +126,12 @@ static void zn_kill_blades(ce_card_t *c)
     for (i = 0; i < ZN_BLADE_MAX; ++i) {
         if (s->st.b[i].id) ce_anm_delete(s->st.b[i].id);
         if (s->st.b[i].trail_id) ce_anm_delete(s->st.b[i].trail_id);   /* 更早的残影脚本自己 delete */
+        if (s->st.b[i].ov_id) ce_anm_delete(s->st.b[i].ov_id);         /* ★ ×1.25 白叠 */
+        if (s->st.b[i].sp_id) ce_anm_delete(s->st.b[i].sp_id);         /* ★ 刃尖星芒 */
         s->st.b[i].id = 0;
         s->st.b[i].trail_id = 0;
+        s->st.b[i].ov_id = 0;
+        s->st.b[i].sp_id = 0;
         s->st.b[i].active = 0;
     }
 }
@@ -234,11 +260,70 @@ static int on_tick_2(ce_card_t *c)
             center[0] = x; center[1] = y; center[2] = pz;
             ce_damage_rect(center, pose.rot, ZN_HIT_LIFE, ZN_DMG, ZN_HIT_W, ZN_HIT_H);
         }
+        /* ---- ★ 挥动特效三件（2026-10-03 补；一手见 AUDIT §BE #211 追加）---- */
+        {
+            const zn_profile_t *bp = &s_zn_profiles[(b->prof >= 0 && b->prof < ZN_PROFILE_N) ? b->prof : 0];
+            float bd[2];
+            float tipx, tipy, t = b->phase;
+            /* 原版 `bladeDir = (rotation + π/2).ToRotationVector2()`、刃尖 = `Center + bladeDir·(bladeLength/2)` */
+            ce_polar_to_vel(bd, pose.rot + 1.5707964f, 1.0f);
+            tipx = x + bd[0] * (bp->blade_len * 0.5f);
+            tipy = y + bd[1] * (bp->blade_len * 0.5f);
+
+            if (b->ov_id) {                                  /* ×1.25 白叠（原版辉光第二遍）*/
+                if (!ce_anm_get_vm(b->ov_id)) { b->ov_id = 0; }
+                else {
+                    ce_anm_set_pos(b->ov_id, x, y, pz);
+                    ce_anm_set_rotation(b->ov_id, 0.0f, 0.0f, pose.rot);
+                    ce_anm_set_color(b->ov_id, ((uint32_t)(pose.alpha / 2) << 24) | 0x00ffffffu);
+                }
+            }
+            if (b->sp_id) {                                  /* 刃尖星芒：t 15→30 淡入、30→45 淡出 */
+                if (!ce_anm_get_vm(b->sp_id)) { b->sp_id = 0; }
+                else {
+                    float fin = (t - ZN_SPARK_IN) / (ZN_SPARK_FULL - ZN_SPARK_IN);
+                    float fout = (ZN_SPARK_OUT - t) / (ZN_SPARK_OUT - ZN_SPARK_FULL);
+                    float k = (fin < fout) ? fin : fout;
+                    uint32_t cr, cg, cb;
+                    int a;
+                    if (k < 0.0f) k = 0.0f;
+                    if (k > 1.0f) k = 1.0f;
+                    a = (int)(255.0f * k);
+                    /* 原版两个轴各取一种色（纯白 × 每把剑的 trailColor）—— 我们一层 ⇒ 按 k 插值 */
+                    cr = (uint32_t)(255.0f + ((float)((bp->color >> 16) & 0xffu) - 255.0f) * k);
+                    cg = (uint32_t)(255.0f + ((float)((bp->color >> 8) & 0xffu) - 255.0f) * k);
+                    cb = (uint32_t)(255.0f + ((float)(bp->color & 0xffu) - 255.0f) * k);
+                    ce_anm_set_pos(b->sp_id, tipx, tipy, pz);
+                    ce_anm_set_rotation(b->sp_id, 0.0f, 0.0f, pose.rot);
+                    ce_anm_set_scale(b->sp_id,
+                                     ZN_SPARK_SX0 + (ZN_SPARK_SX1 - ZN_SPARK_SX0) * k,
+                                     ZN_SPARK_SY0 + (ZN_SPARK_SY1 - ZN_SPARK_SY0) * k);
+                    ce_anm_set_color(b->sp_id, ((uint32_t)a << 24) | (cr << 16) | (cg << 8) | cb);
+                }
+            }
+            /* 尘埃：1-in-N × 1–3 颗（原版 `Main.rand.Next(9) == 0`），自走自灭、卡侧不记账 */
+            if (t < ZN_PHASE_SWING && (ce_rand() % (uint32_t)ZN_DUST_ODDS) == 0u) {
+                uint32_t nd = 1u + (ce_rand() % (uint32_t)ZN_DUST_MAX), k2;
+                for (k2 = 0; k2 < nd; ++k2) {
+                    uint32_t du = ce_anm_spawn(CE_ABILITY_ANM(),
+                                               (ce_rand() & 1u) ? CE_ANM_ABILITY_SCRIPT_ZENITH_DUST_L
+                                                                : CE_ANM_ABILITY_SCRIPT_ZENITH_DUST_R,
+                                               ZN_SPARK_LAYER);
+                    if (!du) break;
+                    /* 出生点 = 刃上随机一处（原版 `Center + bladeDir·trailWidth·Lerp(0.5,1,rand)`）*/
+                    ce_anm_set_pos(du, x + bd[0] * (bp->blade_len * 0.5f * 0.75f),
+                                   y + bd[1] * (bp->blade_len * 0.5f * 0.75f), pz);
+                    ce_anm_set_color(du, 0xff000000u | bp->color);   /* 染色 = 那把剑的 trailColor */
+                }
+            }
+        }
+
         if (pose.emit_trail) {
+            const zn_profile_t *tp = &s_zn_profiles[(b->prof >= 0 && b->prof < ZN_PROFILE_N) ? b->prof : 0];
             uint32_t tr = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_ZENITH_TRAIL, ZN_LAYER);
             if (tr) {
-                ce_anm_set_sprite(CE_ABILITY_ANM(), tr, (int)b->sprite);           /* 残影用同一把剑 */
-                ce_anm_set_color(tr, 0xff000000u | b->color);                 /* 原版 ribbon = 每把剑的 trailColor */
+                ce_anm_set_sprite(CE_ABILITY_ANM(), tr, tp->sprite);          /* 残影用同一把剑 */
+                ce_anm_set_color(tr, 0xff000000u | tp->color);                /* 原版 ribbon = 每把剑的 trailColor */
                 ce_anm_set_pos(tr, x, y, pz);
                 ce_anm_set_rotation(tr, 0.0f, 0.0f, pose.rot);
                 b->trail_id = tr;      /* 只记最近的（更早的自己 delete，同炎魔拖尾的处理）*/
@@ -266,8 +351,24 @@ static int on_tick_2(ce_card_t *c)
                                                 : (int32_t)(ce_rand() % ZN_RANDOM_N);
         const zn_profile_t *pr = &s_zn_profiles[slot];
         ce_anm_set_sprite(CE_ABILITY_ANM(), id, pr->sprite);
-        zn_launch(b, id, pr->sprite, pr->color, fx, fy, fx + aim.dx, fy + aim.dy,
+        zn_launch(b, id, (int32_t)slot, fx, fy, fx + aim.dx, fy + aim.dy,
                   (float)(int32_t)(ce_rand() % (2u * (uint32_t)ZN_AI0_MAX + 1u)) - ZN_AI0_MAX);
+    }
+    /* ★ 两个挥动特效的 VM 在出膛时一次建好（之后每帧由下面那段写 pos / scale / color，收剑时一起删）*/
+    {
+    const zn_profile_t *pr = &s_zn_profiles[(b->prof >= 0 && b->prof < ZN_PROFILE_N) ? b->prof : 0];
+    b->ov_id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_ZENITH_BLADE, ZN_LAYER);
+    if (b->ov_id) {
+        ce_anm_set_sprite(CE_ABILITY_ANM(), b->ov_id, pr->sprite);
+        ce_anm_set_scale(b->ov_id, 0.55f * ZN_OVERLAY_MUL, 0.55f * ZN_OVERLAY_MUL);
+    }
+    b->sp_id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_ZENITH_SPARKLE, ZN_SPARK_LAYER);
+    if (b->sp_id) ce_anm_set_color(b->sp_id, 0x00ffffffu);   /* 先全透明，相位到 15 才亮 */
+    /* 日志里那句 sprite 用它 */
+    {
+        int spr_log = (int)pr->sprite;
+        (void)spr_log;
+    }
     }
     ce_anm_set_pos(id, fx, fy, pz);           /* 出膛那帧先摆在膛口（下一帧起走椭圆）*/
     ce_anm_set_color(id, 0x00ffffffu);
@@ -276,7 +377,8 @@ static int on_tick_2(ce_card_t *c)
     if (s->st.fired <= 3 || s->st.fired % 20 == 0)
         ce_log("zenith: blade #%u at frame %u, fam (%.1f, %.1f) -> (%.1f, %.1f) v|%.1f| ai0 %.0f sprite %d, live %d",
                s->st.fired, s->st.frames, fx, fy, fx + aim.dx, fy + aim.dy,
-               zn_vlen(b), (double)b->ai0, (int)b->sprite,
+               zn_vlen(b), (double)b->ai0,
+               (int)s_zn_profiles[(b->prof >= 0 && b->prof < ZN_PROFILE_N) ? b->prof : 0].sprite,
                zn_live(&s->st));
     return 0;
 }

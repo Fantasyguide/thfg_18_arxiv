@@ -28242,3 +28242,27 @@ Undertale 的时机条；当有敌人可攻击的时候，时机条会开始动�
 - **本机 Steam 版 Terraria 不是 1.4.4.9 而是 1.4.5.8**（`changelog.txt` 第 1 行 + `Assembly` 表）。
   之前本卡引的「1.4.4.9」是猜测 —— 现在有事实：参照系用 tModLoader 的 1.4.4.9 对照，**结论两版通用**。
 - 原版死亡界面**不用任何贴图**（`Content/Images/UI/` 里没有相关文件），全程只用字体。
+
+### §BE 详录 #211 追加 2（2026-10-03）：87 天顶剑**补三样挥动特效**（owner：「87 尽量做吧」）
+
+一手（`Projectile.cs` 的绘制段与 `DrawPrettyStarSparkle`，见 #211 正文那节）原本列了「没做的五样」
+（ribbon / 星芒 / 尘埃 / 光照 / ×1.25 白叠）。本次把**能做尽做**的三样补上：
+
+| 补了什么 | 一手对位 | 落点 |
+| --- | --- | --- |
+| **刃尖星芒** | `DrawPrettyStarSparkle`：4 个 `TextureAssets.Extra[98]` quad，`t 15→30` 淡入、`30→45` 淡出，画在 `Center + bladeDir·(bladeLength/2)` | 新 entry **99**（`Extra_98.png`，72×72 四角星光）+ 脚本 **388**；每把剑一个 VM，C 每帧写 pos（刃尖）/ rotation / scale / 颜色（白 → 那把剑的 `trailColor` 插值）+ alpha（按上面那两个窗口）|
+| **×1.25 白色叠加** | 原版第二遍「白字放大 1.25、alpha 127」的辉光 | 每把剑再挂一个同 sprite 的 VM（scale `0.55×1.25`、白、alpha = 剑刃 alpha 的一半），随剑一起收 |
+| **尘埃** | `DustID 278 FireworksRGB`：1-in-9 × 1–3 颗、沿刃向 +3..7 px/帧、颜色 `Lerp(trailColor, White, rand·0.3)` | 脚本 **389/390**（左上/右上两支，`posTime` 自走自灭、12 帧淡出）⇒ 卡侧**零簿记**；C 按概率在刃上随机一处起 VM 并染那把剑的 `trailColor` |
+
+**仍然没有**（如实记）：**ribbon**（`VertexStrip` + `Misc["FinalFractal"]` shader + `Extra_201/193`）——
+引擎只有四边形 VM、没有顶点条带通道，那条弧线依旧由脚本 380 的残影顶替；**光照**（两处 `Lighting.AddLight`）
+—— 引擎没有动态光照通道。两者都不是"没想到"，是**做不了**。
+
+#### 连带的结构体瘦身（记一笔）
+加了两个特效 VM 句柄之后 `zn_blade_t` 一度撑爆 `ce_state` 的 496 字节（`_Static_assert` 当场拦下）。
+解法：**把「这把剑是哪把」压成一个 `prof` 索引**（sprite / trailColor / bladeLength 全改成查
+`s_zn_profiles[]`）⇒ 52 字节/格 × 8 + 状态 12 = 428 ✅。剑阵表也顺手补上了 **`bladeLength`**
+（一手 1.4.5.0 的 `FinalFractalProfile` 长度表，21 项）—— 星芒的刃尖位置与 ribbon 半宽都要它。
+`zn_launch()` 的签名随之改成 `(b, id, prof, ox, oy, tx, ty, ai0)`，主机单测同步。
+
+`make check` exit 0（`anm-verify` 认了新 entry 与三张脚本、`capcheck` 全绿、`dllx87 = 0`、`check-docs` 四项全绿）。

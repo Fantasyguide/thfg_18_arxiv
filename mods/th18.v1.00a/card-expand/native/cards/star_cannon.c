@@ -28,6 +28,12 @@
 #define SC_OPT_F_X      34.0f      /* 聚焦：收拢一点 ❓ 自定 */
 #define SC_OPT_F_Y      (-14.0f)
 #define SC_RETRY        60         /* 关卡中途买到这张卡：没拿到子机时的重试间隔 */
+/* ★★ 2026-10-03 owner：「89 这也涉及到社区梗，计数，打到 300 颗的时候会变成灰色装填一小段时间」
+ *   ⇒ 弹匣 300 发（对位原版的**坠落之星弹药** —— 卡名那句「桑百颗够吗？」问的就是它）、
+ *     打满 300 ⇒ 子机**变灰** + 装填 `SC_RELOAD_FRAMES` 帧（这期间不开火），装完计数归零。
+ *     ❓ 装填时长是我拍的（owner 只说"一小段时间"）；数字显示在炮身旁边（`on_draw` 里的计数）。*/
+#define SC_MAGAZINE     300        /* 一个弹匣 = 300 颗 */
+#define SC_RELOAD_FRAMES 180       /* ❓自定：装填 3 s（这期间灰着、不开火）*/
 #define SC_LAYER        13         /* 世界特效层（与天顶剑 / 破损核心同层）*/
 #define SC_MSG_LAYER    25         /* 讯息贴图：UI 层（世界层是 3–19，HUD 是 24/25）*/
 #define SC_MSG_X        320.0f     /* 640×480 空间：(320, 240) 正是**游玩区正中**
@@ -60,6 +66,9 @@ typedef struct {
     uint32_t    msg_id;            /* 讯息 VM（0 = 没有）*/
     uint32_t    msg_life;          /* 讯息剩余帧 */
     uint32_t    msg_fade_t;        /* 退场淡出已走帧数（0 = 没在退场）*/
+    int32_t     shots;             /* 这一匣已经打了几颗（0..SC_MAGAZINE）*/
+    int32_t     reload_left;       /* 装填剩余帧（> 0 = 灰着 + 不开火）*/
+    float       hud_x, hud_y;      /* 炮身在 640 空间的位置（`on_draw` 画计数用；`on_tick_2` 里更新）*/
 } sc_card_t;
 
 _Static_assert(sizeof(sc_card_t) <= 496, "star_cannon: private state overflows CE_STATE_BYTES");
@@ -110,6 +119,10 @@ static void sc_kill_all(ce_card_t *c)
     }
     sc_msg_kill(s);
     s->death_pending = 0;
+    s->shots = 0;
+    s->reload_left = 0;
+    s->hud_x = 0.0f;
+    s->hud_y = 0.0f;
 }
 
 static void sc_stop(ce_card_t *c)
@@ -210,6 +223,18 @@ static int on_tick_2(ce_card_t *c)
     pz = ce_player_pos()[2];
     fx = ce_option_x(o);
     fy = ce_option_y(o);
+    s->hud_x = 320.0f + fx;                          /* 640 空间（on_draw 画计数用）*/
+    s->hud_y = 16.0f + fy;
+    if (s->reload_left > 0) {                        /* ★ 装填中：灰着、不开火 */
+        if (--s->reload_left == 0) {
+            s->shots = 0;                            /* 装满了 ⇒ 计数归零 */
+            ce_log("star_cannon: reload done - %d rounds ready", SC_MAGAZINE);
+        }
+    }
+    {
+        uint32_t vm = *(uint32_t *)(o + CE_OPT_ANM_ID);   /* 灰/白：脚本的呼吸 alpha 仍然乘在上面 */
+        if (vm) ce_anm_set_color(vm, s->reload_left > 0 ? 0xff909090u : 0xffffffffu);
+    }
 
     /* 瞄准：最近的敌人；没有就朝正上（❓自定，我们的弹幕区没有光标）*/
     sc_aim_reset(&aim);
@@ -243,8 +268,9 @@ static int on_tick_2(ce_card_t *c)
     }
     if (sc_live(&s->st) > 0) ce_raise_damage_cap(SC_CAP);
 
-    /* ④ 开火：蓄满才发（池满就一直攒着，不丢已有星星）。*/
+    /* ④ 开火：蓄满才发（池满就一直攒着，不丢已有星星）；**装填中不发**。*/
     if (!sc_charge(&s->st)) return 0;
+    if (s->reload_left > 0) return 0;
     sh = sc_slot(&s->st);
     if (!sh) return 0;
     id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_STAR_CANNON_SHOT, SC_LAYER);
@@ -257,6 +283,12 @@ static int on_tick_2(ce_card_t *c)
     ce_anm_set_color(id, 0xffffffffu);
     sc_launch(sh, id, x, y, dir[0], dir[1]);
     sc_did_fire(&s->st);
+    if (++s->shots >= SC_MAGAZINE) {                        /* ★ 打满一匣 ⇒ 变灰装填 */
+        s->shots = SC_MAGAZINE;
+        s->reload_left = SC_RELOAD_FRAMES;
+        ce_log("star_cannon: magazine empty (%d rounds) - reloading %d frames",
+               SC_MAGAZINE, SC_RELOAD_FRAMES);
+    }
     ce_play_sound(CE_VOICE_STAR_CANNON_SHOT, fx);           /* 对位原版 `UseSound = SoundID.Item9` */
     if (s->st.fired <= 3 || s->st.fired % 60 == 0)
         ce_log("star_cannon: shot #%u at frame %u, cannon (%.1f, %.1f) ang %.1f deg, live %d",
@@ -265,6 +297,23 @@ static int on_tick_2(ce_card_t *c)
     return 0;
 }
 
+/* +0x48：只在**绘制**这一相里能调 `ce_hud_text_ex`（SDK 的硬约束，见 senro.c 的注）。
+ * 画炮身旁边的**剩余弹数**（社区梗就是那个"三百颗够吗"）—— 装填中显示 0 并转灰。*/
+static int on_draw(ce_card_t *c)
+{
+    sc_card_t *s = ce_state(c, sc_card_t);
+    int32_t left;
+
+    if (!s || !s->hud_x || !s->hud_y) return 0;
+    left = SC_MAGAZINE - s->shots;
+    if (left < 0) left = 0;
+    ce_hud_text_ex(s->hud_x + 13.0f, s->hud_y - 4.0f,
+                   s->reload_left > 0 ? 0xffa0a0a0u : 0xffffe080u,   /* 灰 / 暖黄（ARGB）*/
+                   0xff000000u, -1, -1, -1, 0.8f, "%d", (int)left);
+    return 0;
+}
+
 CE_CARD(89, .on_power_level_change = on_power_level_change, .on_tick_2 = on_tick_2,
+            .on_draw = on_draw,
             .on_death_after_deathbomb = on_death_after_deathbomb,
             .on_load = on_load, .on_run_reset = on_run_reset, .on_delete = on_delete);

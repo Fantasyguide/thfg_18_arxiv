@@ -52,7 +52,10 @@ tg_out_t tg_frame(tg_state_t *s, const tg_input_t *in)
     }
     /* 下降沿 + 收下 + 16 s 内 ⇒ 武装「等下一个非符段」的窗口。
      * ⚠ 必须同时看**当前** bit1（`in->spell_bonus`）与「亮过」的锁存：中途被清掉的（玩家死亡 /
-     *   110/111 灵击 / 神之宣告）在结尾这一刻 bit1 是 0 ⇒ 不算收下（与引擎 `0x42a7ed` 同口径）。 */
+     *   110/111 灵击 / 神之宣告）在结尾这一刻 bit1 是 0 ⇒ 不算收下（与引擎 `0x42a7ed` 同口径）。
+     * ★★ 2026-10-03 owner 口径：「耐久符卡不算收下，**只要是 00.00 结束的符卡，你就当没收下**」
+     *   ⇒ 就是这里的 `!in->spell_timed_out`（bit7 = 已超时）。⚠ 不能只看 bit1：超时但 `elapsed < 60`
+     *   时引擎**不清** bit1（`0x42efd2 cmp [edx+0x24],0x3c`）⇒ 必须靠 bit7 排除。 */
     if (!in->spell_active && s->spell_was) {
         if (in->spell_bonus && s->bonus_seen && !in->spell_timed_out &&
             s->elapsed_last <= TG_MAX_FRAMES) {

@@ -1,0 +1,18 @@
+script script388 {
+    // 天顶剑（id 87）的**刃尖星芒**（原版 `DrawPrettyStarSparkle` 里那 4 个 `Extra[98]` quad 的对位）。
+    // 贴图 = `ZENITH_SPARKLE`（Extra_98，72×72 四角星光）。C 每帧写 pos（刃尖）/ rotation / scale / color：
+    //   · 位置 = `Center + bladeDir · (bladeLength/2)`（原版 `trailWidth`）；
+    //   · 出场/退场 = 原版的 `fadeIn 15→30, fadeOut 45→30`（按那把剑的相位 t），alpha 由 C 打；
+    //   · 颜色 = 白 → 每把剑的 trailColor 之间插值（原版两个轴各一种色，我们只有一层 VM ⇒ 取混合）。
+    // ★ 纪律同 script379：**脚本里不许碰 pos / rotation / color**，只钉 layer / 混合 / 默认 scale。
+-1:
+    layer(14);
+    sprite(@ZENITH_SPARKLE);
+    type(1);
+    blendMode(1);
+    zWriteDisable(1);
+    scale(0.18f, 0.12f);      // 原版那个 quad 是"扁"的（scale (5,2) + fatness），横向比纵向长
+    alpha(0);
+0:
+    stop();
+}
