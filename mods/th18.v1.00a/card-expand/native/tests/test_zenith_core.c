@@ -50,11 +50,15 @@ static void test_aim(void)
     zn_aim_consider(&a, 0.0f, 0.0f, ZN_RANGE - 1.0f, 0.0f);
     CHECK(zn_aim_ready(&a), "射程内的敌人没选中");
 
+    /* ★ owner 2026-10-03：追踪取**最远**的敌人（天顶剑的一般攻击方式，路径上能扫到更多敌人）。
+     *   ⚠ 射程外的照样不要（取最远之后，射程不能再靠 best_d2 的初值兜）。*/
     zn_aim_reset(&a);
-    zn_aim_consider(&a, 10.0f, 10.0f, 10.0f, -90.0f);   /* 距 100，正上方 */
-    zn_aim_consider(&a, 10.0f, 10.0f, 60.0f, 10.0f);    /* 距 50，正右方 */
-    zn_aim_consider(&a, 10.0f, 10.0f, 10.0f, 210.0f);   /* 距 200 */
-    CHECK(zn_aim_ready(&a) && a.dx == 50.0f && a.dy == 0.0f, "该选正右方那个");
+    zn_aim_consider(&a, 10.0f, 10.0f, 10.0f, -90.0f);            /* 距 100，正上方 */
+    zn_aim_consider(&a, 10.0f, 10.0f, 60.0f, 10.0f);             /* 距 50，正右方 */
+    zn_aim_consider(&a, 10.0f, 10.0f, 10.0f, 210.0f);            /* 距 200 ⇒ 该选这个 */
+    CHECK(zn_aim_ready(&a) && a.dx == 0.0f && a.dy == 200.0f, "该选最远的那个（距 200）");
+    zn_aim_consider(&a, 10.0f, 10.0f, 10.0f, 10.0f + ZN_RANGE + 5.0f);   /* 更远但出射程 ⇒ 不该抢 */
+    CHECK(a.dy == 200.0f, "射程外的更远目标不该被选中");
 }
 
 static void test_launch(void)
@@ -141,8 +145,9 @@ static void test_orbit_params(void)
     }
     /* R：|v| = 100 > 60 ⇒ L 小的时候 R = 100（还没加 40）*/
     CHECK(fabsf(p.R - vlen) < 1e-3f || p.R >= ZN_RADIUS_MIN, "R=%g 不该小于 |v|", (double)p.R);
-    /* rot = ang + heading + π/2（原版 rotation 那一行）*/
-    CHECK(fabsf(p.rot - (p.ang + b->heading + 1.5707963705062866f)) < 1e-5f, "rot 公式不对");
+    /* rot = ang + heading + π/2 − (π/2 + ZN_SPRITE_BASE)（原版 rotation 那一行 + 贴图基准修正）*/
+    CHECK(fabsf(p.rot - (p.ang + b->heading + 1.5707963705062866f
+                         - (1.5707963705062866f + ZN_SPRITE_BASE))) < 1e-5f, "rot 公式不对");
     /* 透明度：前 5 个相位单位淡入 */
     CHECK(p.alpha > 0 && p.alpha < 255, "淡入第一帧 alpha=%d", p.alpha);
     /* fade 起始偏移：k = 1 − GetLerpValue(0,0.5,L)；fade_x = k·sign·−R·0.1、fade_y = k·−ai0·0.3 */

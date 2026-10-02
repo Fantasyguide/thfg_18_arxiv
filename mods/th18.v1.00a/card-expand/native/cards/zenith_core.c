@@ -104,7 +104,10 @@ void zn_step(zn_blade_t *b, zn_pose_t *out)
     k = 1.0f - clamp01(L / 0.5f);                               /* 1 − GetLerpValue(0,0.5,L) */
     out->fade_x = k * (zn_sign(b) * -out->R * 0.1f);
     out->fade_y = k * (-b->ai0 * 0.3f);
-    out->rot = out->ang + b->heading + BC_HALF_PI;              /* rotation = num9 + heading + π/2 */
+    /* rotation = num9 + heading + π/2（原版），再**减掉贴图基准朝向的差**：
+     *   原版弹幕贴图正上朝（base = −π/2）而我们用物品贴图（base = ZN_SPRITE_BASE ≈ −π/4）
+     *   ⇒ 少转了 45°，见 `zenith_core.h` 里 ZN_SPRITE_BASE 的推导。*/
+    out->rot = out->ang + b->heading + BC_HALF_PI - (BC_HALF_PI + ZN_SPRITE_BASE);
 
     op = clamp01(b->phase / ZN_FADE_IN) * clamp01((ZN_PHASE_END - b->phase) / ZN_FADE_OUT);
     out->alpha = (int)(op * 255.0f + 0.5f);
@@ -126,16 +129,21 @@ int zn_live(const zn_state_t *s)
 void zn_aim_reset(zn_aim_t *a)
 {
     a->found = 0;
-    a->best_d2 = ZN_RANGE_SQ;             /* 一开始就是射程：射程外的自然进不来 */
+    a->best_d2 = 0.0f;                    /* ★ 取最远（见 consider）：从 0 往上比；射程由调用方先滤 */
     a->dx = 0.0f;
     a->dy = 0.0f;
 }
 
+/* ★★ 2026-10-03 owner：「把追踪改成**最远的敌人** —— 天顶剑的一般攻击方式，这样能**打更多敌人**」。
+ *   ⇒ 从"取最近"改成"取**射程内最远**"：剑朝最远的那个敌人甩过去，飞行路径上会**扫过**沿途的敌人
+ *     （近处的反而更容易吃到），这是原版那把剑清场的观感。
+ *   实现：`best_d2` 初值 = 射程平方，判据反过来取**更大**的 d2（射程外的仍旧进不来）。*/
 void zn_aim_consider(zn_aim_t *a, float ox, float oy, float ex, float ey)
 {
     float dx = ex - ox, dy = ey - oy;
     float d2 = dx * dx + dy * dy;
-    if (d2 < a->best_d2) {
+    if (d2 > ZN_RANGE_SQ) return;          /* ⚠ 射程外不要（原来靠 best_d2 的初值当射程，取最远后必须显式滤）*/
+    if (d2 > a->best_d2) {
         a->found = 1;
         a->best_d2 = d2;
         a->dx = dx;

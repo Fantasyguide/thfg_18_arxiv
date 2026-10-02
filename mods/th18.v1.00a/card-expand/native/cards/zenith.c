@@ -287,8 +287,10 @@ static int on_tick_2(ce_card_t *c)
             const zn_profile_t *bp = &s_zn_profiles[(b->prof >= 0 && b->prof < ZN_PROFILE_N) ? b->prof : 0];
             float bd[2];
             float tipx, tipy, t = b->phase;
-            /* 原版 `bladeDir = (rotation + π/2).ToRotationVector2()`、刃尖 = `Center + bladeDir·(bladeLength/2)` */
-            ce_polar_to_vel(bd, pose.rot + 1.5707964f, 1.0f);
+            /* 原版刃尖方向 = `(rotation − π/2).ToRotationVector2()`（它的贴图正上朝）；
+             * 我们的贴图基准是 `ZN_SPRITE_BASE` ⇒ 剑尖方向 = `rot + ZN_SPRITE_BASE`。
+             * ⚠ 之前写的是 `rot + π/2`（差了 180°）⇒ 星芒其实挂在**剑柄**那头。*/
+            ce_polar_to_vel(bd, pose.rot + ZN_SPRITE_BASE, 1.0f);
             tipx = x + bd[0] * (bp->blade_len * 0.5f);
             tipy = y + bd[1] * (bp->blade_len * 0.5f);
 
