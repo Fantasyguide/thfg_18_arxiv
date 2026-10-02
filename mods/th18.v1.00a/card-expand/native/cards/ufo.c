@@ -4030,6 +4030,13 @@ static int ufo_drop_spawn(ufo_card_t *s, int32_t kind, float x, float y,
     d->core.cnt_p = cnt_p;
     d->core.cnt_money = cnt_money;
     d->core.mult_permille = mult;
+    /* ★★★ 2026-09-26（goal 核对发现的唯一偏差）：赏金值一手是**击破那一刻**算好、写 `zUfo+0x68`
+     *   随赏金道具携带（`0x44b1f3` 等：`mov %eax,0x68(%esi)`）；我们原来是**收包那一刻**按当时 PV 算。
+     *   ⇒ 在这里（= 击破那一刻）按同一条公式定下，收包时直接用它（0 = 没存过 ⇒ 老路子回退算）。*/
+    if (kind == UFO_DROP_KIND_BAG) {
+        int32_t pv0 = ufo_drop_pv_from_base(CE_MONEY_BASE_VAL());
+        d->core.value_at_break = ufo_drop_settle_value(color, cnt_p, cnt_money, mult, pv0);
+    }
     d->core.faith_big = s->faith_pulled_big;       /* ★ 被吸走的信仰点跟着压缩包回来 */
     d->core.faith_mid = s->faith_pulled_mid;
     d->core.faith_mask = s->faith_pulled_mask;
@@ -4565,8 +4572,11 @@ static void ufo_drop_collect(ufo_card_t *s, int i)
         ce_log("ufo: WHOLE BOMB picked up (one-hand item 7; th18 has no such type) - ce_add_bomb()");
     } else {
         int32_t pv = ufo_drop_pv_from_base(CE_MONEY_BASE_VAL());
-        int32_t gain = ufo_drop_settle_value(c->ufo_color, c->cnt_p, c->cnt_money,
-                                             c->mult_permille, pv);
+        /* ★ 优先用**击破那一刻**算好的值（一手 `zUfo+0x68` 随道具携带）；
+         *   复制路/老状态没存过（= 0）⇒ 按当时的 PV 回退算一次。*/
+        int32_t gain = c->value_at_break ? c->value_at_break
+                                         : ufo_drop_settle_value(c->ufo_color, c->cnt_p, c->cnt_money,
+                                                                 c->mult_permille, pv);
         /* ★★ 2026-09-23 一手订正（原来只播一个 ❓自定 0x0d）：一手是**两声** ——
          *   `0x426c76 mov eax,0x27` + `0x426c7e call 0x453e20`（`se_invalid`，声像 = 道具 x）
          *   ⇒ 先响这一声；随后子分派算分、落回共同尾 `0x426da4` 再响一次 `0x26`。*/
