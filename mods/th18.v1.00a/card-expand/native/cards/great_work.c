@@ -24,6 +24,7 @@
  * 金钱撒落的散开角度、以及「敌人的正常掉落**不压制**」（要压制得走掉落倍率层，见 TUNING 那条）。 */
 #include "sdk.h"
 #include "great_work_core.h"
+#include "faith.h"      /* ★ 通道②：共享信仰点池（107 樱点 / 110-111 信仰点）的清扫接口 */
 
 #define GW_ITEM_MONEY_DEFAULT 1        /* ❓ 自定：其余可收集道具统一 1 枚金钱 */
 #define GW_ITEM_TYPE_MONEY_CARD 0x12   /* 金钱**卡**（道具表 0x12 行 → card_id 5）*/
@@ -259,6 +260,8 @@ static int on_activate(ce_card_t *c)
     gw_card_t *s = ce_state(c, gw_card_t);
     int64_t hp_sum = 0;
     int32_t money = 0, breaks = 0, bullets, frames, enemies, items;
+    int32_t faith_money = 0;
+    int faith_n;
     float px = ce_player_x();
 
     if (!s) return 0;
@@ -266,16 +269,21 @@ static int on_activate(ce_card_t *c)
     bullets = gw_take_bullets(&money);
     enemies = gw_take_enemies(&hp_sum, &money, &breaks);
     items = gw_take_items(&money);                        /* ★ 通道①：引擎道具池全清成钱 */
+    /* ★ 通道②：**共享信仰点池**（107 樱点 / 110-111 信仰点·绿点）——
+     *   owner 2026-10-03：「110-111 得响应清扫，107 是樱点，也得响应清扫」。
+     *   池是共享的 ⇒ 清扫做在 `faith.c` 里一份，三张卡一起响应（不必各自再挂）。
+     *   `faith_n` = 换掉的颗数（进「有没有东西可转」的判据）；`faith_money` 已进钱包（撒道具 / `ce_money_pocket`）。*/
+    faith_n = faith_sweep_to_money(&faith_money);
 
     /* ★ 通道③：让**有私有池的卡**在自己的 tick 里把场上那批也清成钱（代数闸，见 sdk_core.h）。
-     *   ⚠ 通道②（共享信仰点池 = 107 樱点 / 110-111 信仰点）**还没接**：`faith.h` 目前只有
-     *   `faith_spawn()/faith_absorb_list()`（撒 / 快照），**没有"取走"的接口** ⇒ 要清得先给
-     *   faith 层加一个 consume，见 AUDIT §BE 详录 #219 的待办。开着 110/111 时那一池不变钱。*/
-    if (items || bullets || enemies)
+     *   接了的：108 刻符 / 109 灵力道具 / 112 飞碟 token / 116 季节道具 / 117 动物灵 token。
+     *   ★ 通道②（共享信仰点池）已在上面直接清掉了（`faith_sweep_to_money()`）—— 那一池是共享的，
+     *   做在层里一份、三张卡（107/110/111）一起响应，不需要走代数闸。*/
+    if (items || bullets || enemies || faith_n)
         ce_sweep_bump();
 
-    if (bullets == 0 && enemies == 0 && items == 0)       /* 空场：不烧充能 */
-        return ce_refuse("great_work", "nothing to convert (no live bullet, no enemy, no item)");
+    if (bullets == 0 && enemies == 0 && items == 0 && faith_n == 0)   /* 空场：不烧充能 */
+        return ce_refuse("great_work", "nothing to convert (no live bullet, no enemy, no item, no faith dot)");
 
     frames = gw_recharge(bullets, hp_sum);
     gw_set_recharge(c, frames);                           /* ④ 冷却按转换量等比例 */
@@ -318,9 +326,10 @@ static int on_activate(ce_card_t *c)
         }
     }
 
-    ce_log("great_work: converted %d bullets + %d enemies + %d items (hp %lld) -> %d money items, "
+    ce_log("great_work: converted %d bullets + %d enemies + %d items + %d faith dots "
+           "(%d from faith) (hp %lld) -> %d money items, "
            "%d boss phase(s) broken; recharge %d frames (%.1f s)",
-           bullets, enemies, items, (long long)hp_sum, money, breaks,
+           bullets, enemies, items, faith_n, (int)faith_money, (long long)hp_sum, money, breaks,
            frames, (double)frames / 60.0);
     return 0;
 }

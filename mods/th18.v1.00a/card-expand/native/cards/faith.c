@@ -474,6 +474,49 @@ static void dot_remove(faith_tier_t tier, int i)
     else                        s_small[i] = s_small[--s_n_small];
 }
 
+/* ★★ 2026-10-03d（92 伟大之作的**清扫**通道②；owner：「110-111 得响应清扫，107 是樱点，也得响应清扫」）：
+ *   本池是 **107 樱点 / 110-111 信仰点·绿点共用**的（见 `faith.h` 文件头）⇒ 清扫只做这一份，
+ *   三张卡一起响应（不需要各自在本卡 tick 里再挂一次）。
+ *
+ *   形态与那六张私有池的卡逐条一致（见 `AUDIT.md` §BE 详录 #221/#222）：
+ *     · 每颗在**原位**撒 `FAITH_SWEEP_MONEY_PER_ITEM` 枚 type 2 金钱道具；
+ *       道具池满 ⇒ 走 `ce_money_pocket(1)`（与 92 通道①同一条钱包记账）。
+ *     · **消失走本层自己的收尾**：`ce_anm_delete(VM)` + `dot_remove()`（swap-remove）
+ *       ⇒ 不留幽灵 VM（铁律二）。⚠ `state 0`（待发射、还没建 VM）的颗**也算在场上**
+ *       —— 它已经在池里、会被 `faith_absorb_list()` 看见 ⇒ 一并换钱，只是没有 VM 可删。
+ *     · 倒序遍历：`dot_remove()` 会把尾元素换到 `i`，正序会跳项。
+ *   ❓ 面值自定（1 颗 = 1 枚）—— 见 `TUNING.md` §2.11 的跨卡面值表。*/
+#define FAITH_SWEEP_MONEY_PER_ITEM 1
+
+int faith_sweep_to_money(int32_t *out_money)
+{
+    int t, n = 0;
+    int32_t money = 0;
+    for (t = 0; t < 2; ++t) {
+        const faith_tier_t tier = (t == 0) ? FAITH_TIER_BIG : FAITH_TIER_SMALL;
+        int i = dot_n(tier);
+        while (--i >= 0) {
+            faith_dot_t *p = dot_at(tier, i);
+            float pos[3];
+            int k;
+            pos[0] = p->x;
+            pos[1] = p->y;
+            pos[2] = 0.0f;
+            for (k = 0; k < FAITH_SWEEP_MONEY_PER_ITEM; ++k) {
+                if (ce_spawn_item(2u, pos, -1.5707964f, 1.7f)) ++money;
+                else { ce_money_pocket(1); ++money; }
+            }
+            if (p->id) ce_anm_delete((uint32_t)p->id);
+            dot_remove(tier, i);
+            ++n;
+        }
+    }
+    if (out_money) *out_money = money;
+    if (n) ce_log("faith: 92 清扫 —— %d 颗点换成金钱（每颗 %d 枚，共 %d 枚）",
+                  n, FAITH_SWEEP_MONEY_PER_ITEM, (int)money);
+    return n;
+}
+
 /* ============================ ★★ 声明式「外部消费者」（112 的飞碟）====================================
  * 语义与为什么用「快照 + 坐标取回」写在 `faith.h` 那一段；这里只做实现。
  * ⚠ 本支**不动记账**：取走的点不进 Δ / 不进 114 的批 / 不加连击 —— 一手的道具被 UFO 吸走也是
@@ -2675,3 +2718,32 @@ int faith_green_row_green(int i)
     return mof_green_pair_is_green(tbl, &mof_green_pairs[i]);
 }
 
+/* ★★★ 2026-09-26：112 的路 —— 满 P 时「一颗 P 被转换」的产出（见 faith.h 的声明注）。
+ *   逐条照抄 `faith_convert_full_p_items()` 里那段产出循环（含「按外观分组给分角」），
+ *   只把位置换成调用者给的 (x, y)、并且**不碰原生道具池**。*/
+int faith_payout_full_p_conversion(float x, float y)
+{
+    uint32_t seen_spr[FAITH_MAX_USERS], seen_scr[FAITH_MAX_USERS];
+    int n_seen = 0, u, n = 0;
+    for (u = 0; u < s_n_user; ++u) {
+        int g = -1, v;
+        float ang;
+        if (s_user[u].conv_value <= 0) continue;
+        for (v = 0; v < n_seen; ++v) {
+            if (seen_spr[v] == s_user[u].art_sprite && seen_scr[v] == s_user[u].art_script) {
+                g = v; break;
+            }
+        }
+        if (g < 0) { g = n_seen; seen_spr[n_seen] = s_user[u].art_sprite;
+                     seen_scr[n_seen] = s_user[u].art_script; ++n_seen; }
+        ang = FAITH_THROW_ANGLE;
+        if (g > 0) {
+            const float k = (float)((g + 1) / 2);
+            ang += ((g & 1) ? k : -k) * FAITH_CONV_SPREAD_STEP;
+        }
+        if (faith_spawn_angled(x, y, faith_core_tier_for_source(FAITH_SRC_FULL_P),
+                               s_user[u].slot_mask, s_user[u].conv_value, ang)) ++n;
+        else ++s_stat_conv_dropped;
+    }
+    return n;
+}
