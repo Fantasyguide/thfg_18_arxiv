@@ -10352,3 +10352,20 @@ mask = 它的槽、分角同形；位置 = 调用者给的坐标），并且**�
 发布：DLL `617c7176…` → **`ac978770e893efb73ee30f19296198e7`**、`ability.anm` → **`c36d1635eeb34beebabeea94e30563fb`**（四处同步 OK）。
 ⚠ 待拍一条：**「两种信仰点对绿 UFO 的计数如 P 对红 UFO 的计数」** —— 现在实现为"按 P 计"（非彩虹时进 `cnt_p`），
 而一手赏金公式里**红**乘 `cnt_p`、**其余色**乘 `cnt_money` ⇒ 若你要的是"进被乘那条通道"，就要按色分流（red/rainbow ⇒ P 通道、blue/green/gold ⇒ money 通道）。等 owner 一句话。
+
+#### §2.0zzx-24b 信仰点/樱点（P 等价物）**按色进"被乘的那条通道"**（owner 2026-09-26：「信仰点对于绿 UFO 得是被乘的」）
+
+一手赏金公式（`ufo_drop_settle_value()` 照抄 `0x426cd2` / `0x426c9a` / `0x426d27`）：
+**红**乘 `cntA`(P)、**其余色**乘 `cntB`(金钱) ⇒ 「被乘的通道」= **red ⇒ `cnt_p`**、**blue/green/gold/rainbow ⇒ `cnt_money`**。
+
+⇒ 新增 `ufo_p_equiv_kind(color)`，只作用于 **P 等价物**（中信仰点 / 满P 的樱点）：
+
+| UFO 颜色 | 传的 kind | 落到 |
+| --- | --- | --- |
+| 红 | `UFO_ABSORB_P` | `cnt_p`（被乘 ✓）|
+| 彩虹 | `UFO_ABSORB_P` | 互换 ⇒ `cnt_money`（被乘 ✓）|
+| 蓝 / 绿 / 金 | `UFO_ABSORB_MONEY` | `cnt_money`（被乘 ✓）|
+
+- **原生 P / 金钱道具不动**：仍照一手走「type 1 → `cntA`（彩虹 ⇒ `cntB`）／type 2 反过来」✓（那条已经一手对账过）。
+- 大信仰点仍 `NEUTRAL`（原封不动）；非满P 的樱点仍 `NEUTRAL`。
+- 发布：DLL `2389af59…` → **`b0bd69b1b796c00e664814fbaf54d27a`**（四处同步 OK）；门禁 `check` ✓（420 文件）/ 闸自检 ✓。

@@ -2117,6 +2117,12 @@ static uint32_t s_bolt_rng = 0x1234567u;
 static ufo_bounty_eq_t s_eq;
 static ufo_bounty_eq_t s_bounty_eq;
 static int s_bounty_eq_pending;
+/* ★★ 2026-10-03f（owner：「**包括杰拉**」+「伟大之作对于压缩包的转化也应当用这个**数字之和**」）：
+ *   杰拉（88）复制压缩包时走 `ufo_drop_spawn()`，而那一支的五格是抄**全局 `s_eq`**（= 当前那只 UFO
+ *   的账）⇒ **复制品的账是错的**（要么是 0，要么成了别人的账）⇒ 92 按 sum 换钱时复制品算错。
+ *   ⇒ 复制路径把**原件那五格**临时挂在这里，`ufo_drop_spawn()` 优先读它（正常生成时是 NULL ⇒ 读 `s_eq`，
+ *     行为与以前逐字相同）。用「临时指针 + 用完即清」而不是改签名：调用点只有两处，改动面最小。*/
+static const ufo_bounty_eq_t *s_eq_override;
 
 int ufo_bounty_eq_pending(void) { return s_bounty_eq_pending; }
 
@@ -3362,6 +3368,18 @@ static void ufo_fill_complete(ufo_card_t *s, float ux, float uy)
  *      ⚠ 那一段明令**不许**用"槽值恰好为 0"判在场）；
  *   ② **玩家满 P 吗**：一手转换的判据是 `power >= max_power > 0`（`faith.h:354` 逐条对照）。*/
 static int ufo_collab_present(void) { return faith_registered_mask() != 0; }
+/* ★★★ 2026-09-26（owner）：「**信仰点对于绿 UFO 得是被乘的**」——
+ *   P 等价物（中信仰点 / 满P 的樱点）要走"**当前颜色被乘的那条通道**"。一手赏金公式里
+ *   **红乘 `cntA`(P)**、**其余色乘 `cntB`(金钱)**（`th12:0x426cd2` vs `0x426c9a`/`0x426d27`，
+ *   见 `ufo_drop_settle_value()`）⇒ 分流如下（**只作用于 P 等价物**；原生 P 道具仍照一手走互换 ✓）：
+ *     red / rainbow ⇒ `UFO_ABSORB_P`（rainbow 的互换再把它送进 `cnt_money` = 被乘那条 ✓）
+ *     blue / green / gold ⇒ `UFO_ABSORB_MONEY`（`cnt_money` 就是它们被乘的那条）*/
+static int ufo_p_equiv_kind(int color)
+{
+    if (color == UFO_COLOR_RED || color == UFO_COLOR_RAINBOW) return UFO_ABSORB_P;
+    return UFO_ABSORB_MONEY;
+}
+
 static int ufo_power_full(void)
 {
     int32_t maxp = *(const int32_t *)CE_ADDR_MAX_POWER;
@@ -3540,12 +3558,12 @@ static void ufo_absorb_faith_tick(ufo_card_t *s, float ux, float uy)
              *   · 110/111 的**中信仰点**（`FAITH_TIER_SMALL`）⇒ 恒算 P（它本来就是满 P 由 P 转出来的）；
              *   · 110/111 的**大信仰点**（`FAITH_TIER_BIG`）⇒ 不算 P、**原封不动**（只加 fill、不计数）。*/
             if (ufo_collab_present()) {
-                if (e.slot_mask & (1 << FAITH_SLOT_107))
-                    kind = ufo_power_full() ? UFO_ABSORB_P : UFO_ABSORB_NEUTRAL;
-                else if (e.tier == FAITH_TIER_BIG)
+                if (e.slot_mask & (1 << FAITH_SLOT_107))          /* 107 樱点：仅满 P 才算 P */
+                    kind = ufo_power_full() ? ufo_p_equiv_kind(s->u.color) : UFO_ABSORB_NEUTRAL;
+                else if (e.tier == FAITH_TIER_BIG)                /* 110/111 大信仰点：原封不动 */
                     kind = UFO_ABSORB_NEUTRAL;
-                else
-                    kind = UFO_ABSORB_P;
+                else                                              /* 110/111 中信仰点：算 P（按色分流）*/
+                    kind = ufo_p_equiv_kind(s->u.color);
             }
             if (e.tier == FAITH_TIER_BIG) { ++s->faith_pulled_big; s->faith_pulled_big_sum += e.value; }
             else { ++s->faith_pulled_mid; s->faith_pulled_mid_sum += e.value; }
@@ -4015,12 +4033,17 @@ static int ufo_drop_spawn(ufo_card_t *s, int32_t kind, float x, float y,
     d->core.faith_big = s->faith_pulled_big;       /* ★ 被吸走的信仰点跟着压缩包回来 */
     d->core.faith_mid = s->faith_pulled_mid;
     d->core.faith_mask = s->faith_pulled_mask;
-    /* ★★★ 2026-09-26（owner）：**等价计数**随包携带（其他卡折算用）+ **逐颗账快照**（原值归还）*/
-    d->core.eq_p = s_eq.p;
-    d->core.eq_money = s_eq.money;
-    d->core.eq_big = s_eq.big_faith;
-    d->core.eq_mid = s_eq.mid_faith;
-    d->core.eq_cherry = s_eq.cherry;
+    /* ★★★ 2026-09-26（owner）：**等价计数**随包携带（其他卡折算用）+ **逐颗账快照**（原值归还）
+     * ★★ 2026-10-03f：五格的**来源**——正常生成 = 本只 UFO 的 `s_eq`（行为不变）；
+     *   杰拉的复制路径把**原件那五格**挂进 `s_eq_override`（见它的注）⇒ 复制品的账与原件一致。*/
+    {
+        const ufo_bounty_eq_t *eq = s_eq_override ? s_eq_override : &s_eq;
+        d->core.eq_p = eq->p;
+        d->core.eq_money = eq->money;
+        d->core.eq_big = eq->big_faith;
+        d->core.eq_mid = eq->mid_faith;
+        d->core.eq_cherry = eq->cherry;
+    }
     d->eq_log_n = s_faith_log_n;
     for (int i = 0; i < s_faith_log_n && i < (int)FAITH_POOL_TOTAL; ++i) {
         d->eq_log_tier[i] = s_faith_log_tier[i];
@@ -6010,10 +6033,24 @@ static void ufo_dup_run(ufo_card_t *s)
     for (i = 0; i < UFO_DROP_POOL; ++i) {
         const ufo_drop_t *d = &s_drops[i].core;
         float x, y;
+        int ok;
         if (!was[i] || !d->alive) continue;
         ufo_drop_pos(&s_drops[i], &x, &y);
-        if (!ufo_drop_spawn(s, d->kind, x, y, d->ufo_color, d->cnt_p, d->cnt_money, d->mult_permille))
-            continue;
+        /* ★★ 2026-10-03f（owner：「**包括杰拉**」）：压缩包的复制品必须**带着原件那份等价计数** ——
+         *   否则 92（伟大之作）按 sum(五格) 换钱时，复制品那一份算 0（或错抄成当前 UFO 的账）。
+         *   做法：把原件五格挂进 `s_eq_override`，`ufo_drop_spawn()` 出来再清（只影响这一只）。*/
+        if (d->kind == UFO_DROP_KIND_BAG) {
+            ufo_bounty_eq_t eq;
+            eq.p = d->eq_p;
+            eq.money = d->eq_money;
+            eq.big_faith = d->eq_big;
+            eq.mid_faith = d->eq_mid;
+            eq.cherry = d->eq_cherry;
+            s_eq_override = &eq;
+        }
+        ok = ufo_drop_spawn(s, d->kind, x, y, d->ufo_color, d->cnt_p, d->cnt_money, d->mult_permille);
+        s_eq_override = 0;                            /* ⚠ 无论成败都清（别影响下一只的正常生成）*/
+        if (!ok) continue;
         if (d->kind == UFO_DROP_KIND_BOMB) ++nb; else ++n;
     }
     ce_log("ufo: jera dup %d bags + %d full-B (with card face)", n, nb);
