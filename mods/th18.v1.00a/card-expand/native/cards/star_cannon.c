@@ -31,7 +31,8 @@
 /* ★★ 2026-10-03 owner：「89 这也涉及到社区梗，计数，打到 300 颗的时候会变成灰色装填一小段时间」
  *   ⇒ 弹匣 300 发（对位原版的**坠落之星弹药** —— 卡名那句「桑百颗够吗？」问的就是它）、
  *     打满 300 ⇒ 子机**变灰** + 装填 `SC_RELOAD_FRAMES` 帧（这期间不开火），装完计数归零。
- *     ❓ 装填时长是我拍的（owner 只说"一小段时间"）；数字显示在炮身旁边（`on_draw` 里的计数）。*/
+ *     ❓ 装填时长是我拍的（owner 只说"一小段时间"）。
+ *   ★ 2026-10-03 owner：「不需要 on_draw」⇒ **不显示任何数字**，计数只在内部（诊断日志里报）。*/
 #define SC_MAGAZINE     300        /* 一个弹匣 = 300 颗 */
 #define SC_RELOAD_FRAMES 180       /* ❓自定：装填 3 s（这期间灰着、不开火）*/
 #define SC_LAYER        13         /* 世界特效层（与天顶剑 / 破损核心同层）*/
@@ -68,7 +69,6 @@ typedef struct {
     uint32_t    msg_fade_t;        /* 退场淡出已走帧数（0 = 没在退场）*/
     int32_t     shots;             /* 这一匣已经打了几颗（0..SC_MAGAZINE）*/
     int32_t     reload_left;       /* 装填剩余帧（> 0 = 灰着 + 不开火）*/
-    float       hud_x, hud_y;      /* 炮身在 640 空间的位置（`on_draw` 画计数用；`on_tick_2` 里更新）*/
 } sc_card_t;
 
 _Static_assert(sizeof(sc_card_t) <= 496, "star_cannon: private state overflows CE_STATE_BYTES");
@@ -121,8 +121,6 @@ static void sc_kill_all(ce_card_t *c)
     s->death_pending = 0;
     s->shots = 0;
     s->reload_left = 0;
-    s->hud_x = 0.0f;
-    s->hud_y = 0.0f;
 }
 
 static void sc_stop(ce_card_t *c)
@@ -223,8 +221,6 @@ static int on_tick_2(ce_card_t *c)
     pz = ce_player_pos()[2];
     fx = ce_option_x(o);
     fy = ce_option_y(o);
-    s->hud_x = 320.0f + fx;                          /* 640 空间（on_draw 画计数用）*/
-    s->hud_y = 16.0f + fy;
     if (s->reload_left > 0) {                        /* ★ 装填中：灰着、不开火 */
         if (--s->reload_left == 0) {
             s->shots = 0;                            /* 装满了 ⇒ 计数归零 */
@@ -297,23 +293,6 @@ static int on_tick_2(ce_card_t *c)
     return 0;
 }
 
-/* +0x48：只在**绘制**这一相里能调 `ce_hud_text_ex`（SDK 的硬约束，见 senro.c 的注）。
- * 画炮身旁边的**剩余弹数**（社区梗就是那个"三百颗够吗"）—— 装填中显示 0 并转灰。*/
-static int on_draw(ce_card_t *c)
-{
-    sc_card_t *s = ce_state(c, sc_card_t);
-    int32_t left;
-
-    if (!s || !s->hud_x || !s->hud_y) return 0;
-    left = SC_MAGAZINE - s->shots;
-    if (left < 0) left = 0;
-    ce_hud_text_ex(s->hud_x + 13.0f, s->hud_y - 4.0f,
-                   s->reload_left > 0 ? 0xffa0a0a0u : 0xffffe080u,   /* 灰 / 暖黄（ARGB）*/
-                   0xff000000u, -1, -1, -1, 0.8f, "%d", (int)left);
-    return 0;
-}
-
 CE_CARD(89, .on_power_level_change = on_power_level_change, .on_tick_2 = on_tick_2,
-            .on_draw = on_draw,
             .on_death_after_deathbomb = on_death_after_deathbomb,
             .on_load = on_load, .on_run_reset = on_run_reset, .on_delete = on_delete);
