@@ -83,4 +83,10 @@
     "volume_db": -300,
     "priority": 60
   }
+  ,"TONY_GRIEF_TRIGGER": {
+    "wav": "TONY_GRIEF_TRIGGER",
+    "id": 98,
+    "volume_db": -300,
+    "priority": 100
+  }
 }

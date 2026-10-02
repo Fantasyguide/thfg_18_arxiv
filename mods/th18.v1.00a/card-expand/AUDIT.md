@@ -28285,3 +28285,25 @@ owner 2026-10-03 实测：「你被杀死了**偏移**了，你画在了**整个
 640 空间 [32, 416] + 偏移 224 矛盾 ⇒ **两者必有一错**，owner 实测优先。
 本卡（89）已按 224 改（含碰触盒的世界→640 换算）；**`faith_hud.c` 所属卡的作者请自行核对**
 （若它用这个偏移去对游玩区，会整体右偏 96 px）。
+
+### §BE 详录 #217（2026-10-03）：86 的**触发演出**（卡面虚影 + `se_wolf`）—— 动到了语音共享件
+
+owner 两条：「东尼的悲恸加一个东西：**触发的时候 BOSS 身上出现一个卡面的虚影**」＋
+「然后触发的时候**发一声这个**：`D:\SteamLibrary\steamapps\common\th18\data\se_wolf.wav`」。
+
+**改了什么 / 为什么**
+
+| 文件 | 改动 | 说明 |
+| --- | --- | --- |
+| `assets/ability/tony/make_card_ghost.py`（新） | 从 owner 的卡面截图裁**主体卡长方形**再缩成 128×181 | owner 两次强调「左上角突起、视觉中心该是**主体卡长方形的中心**」：源图是 StS 卡面截图，**左上那个能量球画到了卡框外**（实测突出去的部分 x ∈ [34,110]、y ∈ [23,150]，主体卡框 = x ∈ [71,770]、y ∈ [53,1042]）⇒ 只取卡框当整图 |
+| `assets/ability/entries/ORDER.txt` | **追加** entry `TONY_GRIEF_CARD_GHOST`（entry 101）| append-only，不动既有次序 |
+| `assets/ability/scripts/393_tony_card_ghost.anm.txt`（新） | `layer(14)`、淡入 6 帧到 alpha 200、之后 66 帧上飘 28 px 淡出、`delete()` | **自淡自毁** ⇒ 卡侧零簿记；删卡时它顶多把剩下几十帧飘完（无害） |
+| `native/cards/tony_grief.c` | 触发帧（第一次把 BOSS 血量写成 1）起虚影 VM + `ce_play_sound(CE_VOICE_TONY_GRIEF_TRIGGER, x)` | `tg_state_t` 加一个 UI 标志 `ghost_done`（每次锁定只放一次，`out.armed` 时清零）|
+| `assets/voice/ORDER.txt` | **追加** `TONY_GRIEF_TRIGGER` | |
+| `patch/th18/voice.js` | 新槽 **id 98（0x62）**、`volume_db = -300`、`priority = 100` | ⚠ 共享件：新 id 只增不改 |
+| `assets/voice/derive_retail_se.py` | 表里加一行（`th18.v1.00a` / `se_wolf.wav`）| **逐字节**现取；一手 = `engine/_shared/th18-sound-table.md` §4 第 `0x49` 行 = `se_wolf.wav`（原生播放点是收集动物灵 `0x410b73`）⇒ 本槽属 **owner 口径映射**（原版不是给这张卡用的）|
+| `.gitignore` | 加一行 `assets/voice/TONY_GRIEF_TRIGGER.wav` | 版权口径同其它零售 SE：**源不入库**，构建期从 `local/th18.v1.00a/dat/` 现取 |
+
+**怎么验证的**：`make check` exit 0（`cards-check` 49 张、`anm-verify` 认了新 entry/脚本、`snd-check` 认了新语音槽、
+`capcheck` 全绿、`dllx87 = 0`、`check-docs` 四项全绿）；`derive_retail_se` 报「12 条，更新 2 条」；
+`build_voice` 报新槽 rms 偏离基准 −4.3 dB（提示级，未拦）。

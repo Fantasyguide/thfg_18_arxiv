@@ -73,3 +73,6 @@ YOUKAI_FAM_SPAWN
 
 
 STAR_CANNON_SHOT
+
+# 86 东尼的悲恸触发那一声（owner 指定 = TH18 自己的 `se_wolf.wav`，SND 表 0x49）
+TONY_GRIEF_TRIGGER

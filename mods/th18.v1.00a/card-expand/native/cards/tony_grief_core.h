@@ -78,6 +78,8 @@ typedef struct {
     uint32_t target_id;
     int32_t  target_sig;
     int      target_live;
+    /* ★ 触发演出（UI 侧，不参与纯逻辑判定；owner 2026-10-03：触发时 BOSS 身上浮一个卡面虚影 + 一声 SE）*/
+    int      ghost_done;       /* 这一段已经放过虚影/音效了（每次锁定只放一次）*/
     /* 统计 */
     uint32_t quick;            /* 判到的速收次数 */
     uint32_t armed_n;          /* 实际改写过的段数 */

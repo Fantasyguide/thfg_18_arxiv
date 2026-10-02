@@ -1052,3 +1052,7 @@ ZENITH_SPARKLE                  ability/zenith/_src/Extra_98_sparkle.png  72x72
 #   由脚本 391 贴在星星**后面**、按**速度方向**摆（不跟星星自转），一帧一枚、8 帧淡掉自毁。
 #   生成器 = `assets/ability/star_cannon/make_star_art.py`（同一支脚本连蓝晕一起产出）。
 STAR_CANNON_TAIL                ability/star_cannon/_src/STAR_TAIL.png    44x16
+
+# 东尼的悲恸（id 86）触发时 BOSS 身上的**卡面虚影**（脚本 393）。素材 = owner 给的卡面截图按
+# **主体卡长方形**裁切再缩（见 `assets/ability/tony/make_card_ghost.py` 的注：左上能量球在卡框外）。
+TONY_GRIEF_CARD_GHOST           ability/tony/_src/GRIEF_CARD_GHOST.png    128x181

@@ -93,3 +93,5 @@ mods/th18.v1.00a/card-expand/assets/voice/PCB_BORDER.wav
 # ★ 89 星星炮的射击音：泰拉瑞亚原版 Item_9.xnb 的**构建期现取**产物（非 ZUN 版权资产，不入库；
 #   源在 local/terraria/dat/Item_9.wav，见 assets/voice/derive_retail_se.py 的 STAR_CANNON_SHOT 行）
 mods/th18.v1.00a/card-expand/assets/voice/STAR_CANNON_SHOT.wav
+#   TONY_GRIEF_TRIGGER 同（源 = TH18 自己的 se_wolf.wav，本机 local/th18.v1.00a/dat/ 里就有）
+mods/th18.v1.00a/card-expand/assets/voice/TONY_GRIEF_TRIGGER.wav

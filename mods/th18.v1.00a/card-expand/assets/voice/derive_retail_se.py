@@ -85,6 +85,8 @@ TABLE = (
      "⇒ 用户先用 `xnbcli` 解一次，把 WAV 放进 `local/terraria/dat/Item_9.wav`"
      "（取法见 `assets/cards/_src/README.md`），本脚本照旧**逐字节**拷。"
      "格式 = 立体声 44.1k/16-bit（引擎的 RIFF 解析吃立体声；响度比 ZUN 的 SE 轻约 15 dB ⇒ 走本文件的 `GAIN_DB` 例外做纯增益归一化）"),
+    ("TONY_GRIEF_TRIGGER", "th18.v1.00a", "se_wolf.wav",
+     "★ owner 2026-10-03 指定（86 东尼的悲恸**触发那一声**：「然后触发的时候发一声这个：D:\\SteamLibrary\\steamapps\\common\\th18\\data\\se_wolf.wav」）—— **TH18 自己的**一枚，逐字节现取。一手：`engine/_shared/th18-sound-table.md` §4 第 `0x49` 行 = `se_wolf.wav`（原生播放点是收集动物灵 `0x410b73`，见 AUDIT §BE）；⚠ 本槽属 **owner 口径映射**（原版不是给这张卡用的）"),
     ("UFO", "th12.v1.00b", "se_ufo.wav",
      "★ owner 2026-09-23（112 #8「UFO 召唤…得有音效 se_ufo.wav」）指定；一手定位 = TH12 SE 表 `th12:0x4ae5a4` "
      "第 **0x33** 行 `+0x00` = 名表下标 **40** → 名表 `th12:0x4aea50` → `se_ufo.wav`，行属性 vol **−400** / "

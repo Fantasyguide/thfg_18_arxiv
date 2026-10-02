@@ -10,11 +10,19 @@
  * 落笔只写 `zEnemyData.life.current`（`zEnemy+0x6220`，非符段的权威血量；`maximum` 不动，血条自然见底），
  * 段内每帧幂等补写（压过同段内可能更晚的 `lifeSet`），段签名一变立刻停。
  *
- * **本卡不建任何跨帧外部资源**（无 VM / 子机 / HUD / 伤害源 / 全局旋钮）⇒ `on_delete` 只需清自己那份
- * `ce_state`（真释放由 SDK 的 `ce_state_free` 做）；换关 / 局末也用同一套清零。
+ * **跨帧外部资源**：只有触发演出那一个**卡面虚影 VM**（脚本 393）—— 它**自淡自毁**（72 帧内 delete），
+ * 所以不占卡侧簿记、也不需要 `on_delete` 去收（删卡时它顶多把剩下那几十帧飘完，无害）；
+ * 其余无（无子机 / 无 HUD / 无伤害源 / 无全局旋钮）⇒ `on_delete` 只需清自己那份 `ce_state`
+ * （真释放由 SDK 的 `ce_state_free` 做）；换关 / 局末也用同一套清零。
  * 纯逻辑在 `tony_grief_core.c`（主机单测 `tests/test_tony_grief_core.c`）；槽原语复用古锭刀（76）。 */
 #include "sdk.h"
 #include "tony_grief_core.h"
+
+/* ★ 2026-10-03 owner：「东尼的悲恸加一个东西：**触发的时候 BOSS 身上出现一个卡面的虚影**」＋
+ *   「然后触发的时候**发一声这个**：`…/th18/data/se_wolf.wav`」⇒ 触发那一刻（= 第一次把 BOSS 血量
+ *   写成 1 的那一帧）在 BOSS 坐标起一个脚本 393 的卡面虚影（脚本自淡自毁 ⇒ 卡侧零簿记），
+ *   同时播一枚 SE（voice id 0x62 = TH18 自己的 `se_wolf.wav`，逐字节现取，见 `derive_retail_se.py`）。*/
+#define TG_GHOST_LAYER   14         /* 与脚本 393 的 `layer(14)` 一致 */
 
 typedef struct {
     tg_state_t st;
@@ -100,6 +108,8 @@ static int on_tick_2(ce_card_t *c)
     if (out.expired)
         ce_log("tony_grief: 等了 %d 帧没等到下一段，放弃", TG_WAIT_FRAMES);
 
+    if (out.armed) s->ghost_done = 0;               /* 新锁一段 ⇒ 下一帧的触发演出重新放一次 */
+
     if (out.want_write) {
         uint8_t *e = ce_enemy_by_id(em, (int32_t)s->target_id);
         if (e) {
@@ -108,6 +118,16 @@ static int on_tick_2(ce_card_t *c)
                 if (!out.armed && *hp != 1)
                     ce_log("tony_grief: 段内补写 boss %u 血量 %d -> 1", s->target_id, *hp);
                 *hp = 1;
+            }
+            if (!s->ghost_done) {                   /* ★ 触发表演：卡面虚影（BOSS 身上）+ 一声 se_wolf */
+                const float *ep = ce_enemy_pos(e);
+                uint32_t vm = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_TONY_CARD_GHOST,
+                                           TG_GHOST_LAYER);
+                if (vm) ce_anm_set_pos(vm, ep[0], ep[1], ep[2]);   /* 只写这一次，位移/淡出归脚本 */
+                ce_play_sound(CE_VOICE_TONY_GRIEF_TRIGGER, ep[0]);
+                s->ghost_done = 1;
+                ce_log("tony_grief: 触发演出 —— 卡面虚影 + se_wolf @ boss %u (%.1f, %.1f)",
+                       s->target_id, (double)ep[0], (double)ep[1]);
             }
         }
     }
@@ -130,8 +150,8 @@ static void on_run_reset(ce_card_t *c)
     }
 }
 
-/* +0x50：删卡（倒吊人 / 原版空白卡弃整副牌，都在商店里成交）。本卡没有跨帧外部资源，
- * 这里只是把状态清干净 —— 真释放由 SDK 的 `ce_state_free` 做。 */
+/* +0x50：删卡（倒吊人 / 原版空白卡弃整副牌，都在商店里成交）。本卡唯一的跨帧外部资源是**自毁**的
+ * 卡面虚影 VM（见文件头）⇒ 这里把状态清干净即可 —— 真释放由 SDK 的 `ce_state_free` 做。 */
 static void on_delete(ce_card_t *c)
 {
     tg_state_t *s = ce_state(c, tg_state_t);
