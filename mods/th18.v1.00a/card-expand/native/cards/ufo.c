@@ -1329,7 +1329,8 @@ typedef struct {
     uint32_t    slot_full_tokens;                      /* 槽满期间被消耗的令牌数 */
     /* —— ★★ 用户 2026-09-18（`NEXT.md` §1x.9）：被飞碟吸走的**信仰点**的账 ——
      * 口径：**每颗 +1 计数**（与道具同；用户「按 +1 实现」），归 **P 通道**（中信仰点是 P 点转化的、
-     * 大信仰点对红 UFO 等价于 P 点）；击破时这些账由「压缩包」带回、收集时调 `faith_spawn()` 还回去。 */
+     * 大信仰点对红 UFO 等价于 P 点）；击破时这些账由「压缩包」带回；★ 2026-10-03i 起**不再撒回实体**（点了「**点不飞出来，只有一个压缩包**」），
+     * 改由开包时广播 `ufo_bounty_eq_*`、107/110/111 各自按 mask 折进自己那本账。 */
     uint32_t    faith_pulled_big;                      /* 吸走的大信仰点数 */
     uint32_t    faith_pulled_mid;                      /* 吸走的中信仰点数 */
     int32_t     faith_pulled_mask;                     /* 这些点原属谁的槽（110/111；按位或）*/
@@ -3572,7 +3573,8 @@ static void ufo_absorb_tick(ufo_card_t *s)
  *   · **拉拽目标是 UFO 本体**（`ux/uy`），不是自机 ⇒ 本函数**不收自机坐标**
  *     （2026-09-18：原来多两个没用到的 `px/py` 形参，编译器 `-Wunused-parameter` 会叫，删掉）；
  *   · **被吸走的点不再属于 110/111**：不 +Δ、不进 114 的批、不加连击（`faith_absorb_take()` 只删实体）
- *     —— 它们的价值记在 `faith_pulled_*` 里，**击破时由「压缩包」带回**（收集时调 `faith_spawn()`）。 */
+ *     —— 它们的价值记在 `faith_pulled_*` / `eq_log_*` 里，**击破时由「压缩包」带回**；
+ *     开包时**折进各自那本账**（★ 2026-10-03i 起不再 `faith_spawn()` 撒回）。 */
 static void ufo_absorb_faith_tick(ufo_card_t *s, float ux, float uy)
 {
     faith_absorb_t list[FAITH_BIG_POOL];
@@ -4588,7 +4590,8 @@ static void ufo_drop_spawn_bomb(ufo_card_t *s, float x, float y)
 }
 
 /* 收集结算（一手三条式子，纯逻辑在 `ufo_drop_settle_value()`）：
- *   · **压缩包**：给分（一手式子）+ **把被吸走的信仰点还回去**（`faith_spawn()`，用户 2026-09-18）
+ *   · **压缩包**：给分（一手式子）+ **把被吸走的点折回各自那本账**（★ 2026-10-03i：不再 `faith_spawn()` 撒回；
+ *     改为开包广播 `ufo_bounty_eq_*`，由 107/110/111 自己按 mask 折算）
  *     + 一手那两个音效（结算 `0x27`、收尾 `0x26` —— TH18 侧用现成 id 代替，见 `UFO_SE_*`）；
  *   · **整颗 Bomb**：`ce_add_bomb()`（引擎自己的加法：钳上限 / 清碎片 / 音效 / 刷 HUD —— 与
  *     一手「吃到整颗 Bomb」同一条路；TH13 的符卡碎也是走它）。 */
@@ -4629,20 +4632,18 @@ static void ufo_drop_collect(ufo_card_t *s, int i)
                "(one-hand formulas; th12:0x426c9a/0x426cd2/0x426d27)",
                (int)c->ufo_color, (int)c->cnt_p, (int)c->cnt_money,
                (int)c->mult_permille / 1000, (int)c->mult_permille % 1000, (int)pv, (int)gain);
-        /* ★ 信仰点原样还回去（用户：「被吸走后爆出来还得按照信仰-樱点算 … 后面只调用收信仰樱点的函数即可吧」）
-         *   —— 这里调的是**生产者自己的 spawn 入口**（`faith_spawn`），不碰它的记账：还回去的点
-         *   会像正常撒出来的点一样被自机收走/过线/进批（= 用户要的"按信仰算"）。 */
-        /* ★★★ 2026-09-26（owner：「**原值归还**」）：按**逐颗账** tier/value/mask **1:1** 撒回 ——
-         *   不再按均值还原（均值会破坏 107 小樱点的打包值，`senro.c:1803`）。
-         *   位置 = 压缩包（= 一手"在它的位置"那条口径）。*/
-        if (d->eq_log_n > 0) {
-            int32_t n;
-            for (n = 0; n < d->eq_log_n; ++n)
-                (void)faith_spawn(c->x, c->y, d->eq_log_tier[n], d->eq_log_mask[n],
-                                  d->eq_log_value[n]);
-            ce_log("ufo: PACKAGE returned %d pulled dots **1:1 by original value** "
-                   "(tier/value/mask kept; owner 2026-09-26)", (int)d->eq_log_n);
-        }
+        /* ★★★ 2026-10-03i（owner 定案，**改口径**）：「**点不飞出来，只有一个压缩包**」——
+         *   被吞掉的信仰/樱点**留在包里**（只以 `eq_log_*` 的形式携带），开包时**不再撒成实体**。
+         *   归还改由**折算**完成：包一开就 `++s_bounty_eq_gen` 广播，107 / 110 / 111 各自按
+         *   `mask` 把**自己槽里那几颗**按原值记进自己那本账（见 `ufo_bounty.h` 的标准用法与
+         *   三张卡的 `*_bounty_eq_fold()`）。
+         *
+         *   它**取代**的是 2026-09-26 那条「原值归还」（当时是 `faith_spawn()` 逐颗 1:1 撒回）。
+         *   ⚠ 为什么改：两条口径叠在一起会**记两次**（开包折算一次 + 爆出来的实体被捡回再记一次）。
+         *   ⚠ 与杰拉的关系：复制品**照抄** `eq_log_*` ⇒ 两个包都被吃下时仍然**加倍**
+         *   （owner 2026-10-03：「**复制肯定是加倍**」）—— 这是设计，不是重复计。*/
+        ce_log("ufo: PACKAGE holds %d pulled dot(s) **inside** (no burst-out; owner 2026-10-03) "
+               "- folded by the owning card via ufo_bounty_eq_*", (int)d->eq_log_n);
         s_faith_log_n = 0;                  /* 本只 UFO 的账已随包结清 */
         /* ★★★ 2026-09-26（owner）：**发布等价计数**给其他卡。
          * ★★ 2026-10-03h：改成**广播**（`s_bounty_eq_gen` ++ ⇒ 消费者各自记 `seen_gen` 只读自己那几格）；
