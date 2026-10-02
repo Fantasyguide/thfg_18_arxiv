@@ -1,0 +1,38 @@
+script script398 {
+    // 伟大之作（id 92）发动时的**乘法金色滤镜**（owner 2026-10-03：「你能不能叠加一些东西，**不只是加法，
+    //   还有乘法**」）。
+    // 与脚本 397（加法闪光）**叠成两层**：加法负责"啪一下亮起来"（闪光灯），这一层负责**真的把画面染金**
+    //   —— 乘法是滤波：`rgb' = src × dst`。
+    //
+    // ★ 乘法模式的一手：TH18 `blendMode` 落地函数 `0x47d937`–`0x47d9a8` 之后按 `eax*4 + 0x47dcac`
+    //   跳表分派（`movzx eax,[esi+0x3120e08]; cmp eax,9; ja 默认; jmp [eax*4+0x47dcac]`），共 **10 个模式**：
+    //     0 = SRCALPHA/INVSRCALPHA（普通）      1 = SRCALPHA/ONE（加法，闪光用这个）
+    //     2 = SRCALPHA/ONE + REVSUBTRACT（反向减算，118 擦弹圈在用）
+    //     3 = ZENABLE=0 且 ONE/ZERO（覆盖、不写深度）
+    //     4 = INVDESTCOLOR/INVSRCCOLOR（screen）  5 = **DESTCOLOR/ZERO（乘法）** ← 本脚本
+    //     6 = INVSRCCOLOR/INVSRCALPHA             7 = DESTALPHA/INVDESTALPHA（astral 面具那套）
+    //     8 = SRCALPHA/ONE + MIN                  9 = SRCALPHA/ONE + MAX
+    //   （逐 case 的 push 序列读自 `th18.exe`；跳表 5 → `0x47dad9` = `push 9; push 0x13` / `push 1; push 0x14`）
+    //
+    // ⚠ 这个模式的 **RGB 不吃 alpha**（TH18 的 alpha 通道是分离混合 `Aa' = Sa`，见
+    //   `engine/anm/th18/07-blendmode-rgb-only-alpha-is-sa.md`）⇒ **淡入淡出只能走 `colorTime()`
+    //   把乘法色从"白（=乘 1，不变）"插值到金色**，不能靠 alphaTime。
+    //   ⚠ 也别把 alpha 写成 0：`color_1.A == 0 && color_2.A == 0` 会让整台 VM **不画**。
+    // 位置由 C 写一次（游玩区正中 = 世界坐标 (0, 224)）；层 19 = 世界层最上（HUD 的 24/25 之下）。
+-1:
+    layer(19);
+    sprite(-1);
+    zWriteDisable(1);
+    blendMode(5);
+    drawRect(384.0f, 448.0f);
+    color(255, 255, 255);
+    alpha(255);
+0:
+    colorTime(6, 0, 255, 208, 112);      // 6 帧：白 → 金（乘法系数）
++6:
+    stop();
+    interruptLabel(1);
+    colorTime(20, 0, 255, 255, 255);     // 20 帧退回白（= 恢复原色）再自毁
++20:
+    delete();
+}

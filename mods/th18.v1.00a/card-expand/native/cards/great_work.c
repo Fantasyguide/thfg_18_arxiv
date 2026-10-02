@@ -33,6 +33,7 @@
 #define GW_ITEM_MONEY_BOMB    1        /* ❓ 自定：**原生 type 7「整颗 Bomb」道具** = 一颗炸弹 ⇒ 1 枚。
                                         *   ⚠ 112 的**压缩包**（`ufo_drop_t` 的袋子）不在这里 —— 它带账
                                         *   （`cnt_p`/`cnt_money`），由 112 自己的清扫钩子按「吸收量」换钱 */
+#define GW_FLASH_LAYER        19       /* 同脚本 397 的 `layer(19)`（世界层最上、HUD 之下）*/
 #define GW_CARD_SE          0x4d       /* 发动音：0x4d se_release（与杰拉 / 鞘翅重锤同）*/
 #define GW_ENEMY_HIT_H      44.0f
 
@@ -260,6 +261,7 @@ static int on_activate(ce_card_t *c)
     gw_card_t *s = ce_state(c, gw_card_t);
     int64_t hp_sum = 0;
     int32_t money = 0, breaks = 0, bullets, frames, enemies, items;
+    uint32_t flash;
     int32_t faith_money = 0;
     int faith_n;
     float px = ce_player_x();
@@ -295,6 +297,30 @@ static int on_activate(ce_card_t *c)
     s->last_money = money;
     s->last_phase_breaks = breaks;
     ce_play_sound(GW_CARD_SE, px);
+
+    /* ★★ 2026-10-03 owner：「按照伟大之作的通关画面，**得把所有东西染上金色**，咱们做成一个**跟闪光灯
+     *   似的特效**」⇒ 在游玩区正中起一个脚本 397 的**全屏加法金色矩形**（`drawRect(384,448)`、
+     *   `blendMode(1)`、金色 `color()`、4 帧冲到 alpha 230 / 36 帧退回 0、自毁）。
+     *   为什么这么做：引擎没有调色板 / 后处理通道（anm 只有四边形 VM）⇒ "把每个像素变金"做不到，
+     *   但**加算的金色全屏矩形**等价于闪光灯：黑的地方直接变金、亮的地方更亮偏金 —— 观感就是"全场染金"。
+     *   位置 = 世界坐标 (0, 224) = **游玩区正中**（与 86 的卡面虚影同一套世界层坐标）；层 19 = 世界层最上。*/
+    {
+        float ctr[3];
+        ctr[0] = 0.0f;
+        ctr[1] = 224.0f;
+        ctr[2] = 0.0f;
+        /* 两层叠着放（owner：「**不只是加法，还有乘法**」）：
+         *   ① **乘法金色滤镜**（脚本 398，`blendMode(5)` = DESTCOLOR/ZERO ⇒ `rgb' = src×dst`）
+         *      —— 这一层才是真的"把画面染金"：6 帧把乘法色从白推到金（255,208,112），20 帧退回白；
+         *   ② **加法金色闪光**（脚本 397，`blendMode(1)`）—— 压在滤镜上，负责闪光灯那一下的亮度。
+         *   两层都铺满游玩区（`drawRect(384,448)`）、层 19、自毁 ⇒ 卡侧零簿记。
+         *   ⚠ 乘法层**不能用 alpha 淡入**（那个模式的 RGB 不吃 alpha，TH18 的 alpha 是分离混合）
+         *     ⇒ 脚本里用 `colorTime` 从白插到金；`alpha` 保持 255（写成 0 会让整台 VM 不画）。*/
+        flash = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_GREAT_WORK_TINT, GW_FLASH_LAYER);
+        if (flash) ce_anm_set_pos(flash, ctr[0], ctr[1], ctr[2]);
+        flash = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_GREAT_WORK_FLASH, GW_FLASH_LAYER);
+        if (flash) ce_anm_set_pos(flash, ctr[0], ctr[1], ctr[2]);
+    }
 
     /* ★★ 2026-10-03 owner 的**平衡**：「伟大之作原作是会把**自机也变成黄金**，那就是**再减少冷却**，
      *   但是**会把我也杀死**」——**除非我处于无敌状态**。

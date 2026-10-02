@@ -1083,3 +1083,10 @@ CARRIER_FAIRY_PLAIN_8                   ability/ufo_carrier_plain/CARRIER_FAIRY_
 CARRIER_FAIRY_PLAIN_9                   ability/ufo_carrier_plain/CARRIER_FAIRY_PLAIN_9.png   @288,0,32x32
 CARRIER_FAIRY_PLAIN_10                  ability/ufo_carrier_plain/CARRIER_FAIRY_PLAIN_10.png   @320,0,32x32
 CARRIER_FAIRY_PLAIN_11                  ability/ufo_carrier_plain/CARRIER_FAIRY_PLAIN_11.png   @352,0,32x32
+
+# 伟大之作（id 92）发动时的**金色闪光**（脚本 397）。没有贴图 —— 它用 `sprite(-1)` + `drawRect` 铺满
+# 整个游玩区（世界层单位 384×448）+ 加算 + 金色 color() ⇒ "把所有东西染上金色"的闪光灯观感。
+# （引擎没有调色板/后处理通道，这是能做到的最接近的近似。）
+
+# 伟大之作（id 92）的**乘法金色滤镜**（脚本 398）：`blendMode(5)` = DESTCOLOR/ZERO（rgb = src×dst）
+#   + `drawRect` 铺满游玩区 + `colorTime` 白→金 ⇒ 与脚本 397 的加法闪光叠成"闪光灯 + 真染金"。

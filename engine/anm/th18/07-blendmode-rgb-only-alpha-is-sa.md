@@ -92,3 +92,30 @@ Aa' = 1 · Sa + 0 · Da = Sa        （与 blendMode 无关、与 Da 无关）
 ⇒ **推论（重要）**：不写 `colorMode` 的脚本 ⇒ mode 0 ⇒ 走 `color_1` ⇒ `color_2` **结构性恒 0**。
 所以「诊断里 `c2=0`」**不是判决字段**（连一直可见的连击条也是 `c2=0`）。
 当年 `trance.c` / `faith.c` 采取的「**两路都写**」修法**依然正确**（与 colorMode 无关），只是**原因**不是本文原来写的那个。
+
+## 5. ★ 十个模式的完整表（2026-10-03 补，一手 = 跳表 + 逐 case 读 push）
+
+分派：`movzx eax,[esi+0x3120e08]; cmp eax,9; ja 默认; jmp dword ptr [eax*4 + 0x47dcac]`
+（`0x47d9ae`–`0x47d9be`）⇒ **模式 0..9**，跳表 `0x47dcac` 十项。
+每条的 `SRCBLEND`(`0x13`) / `DESTBLEND`(`0x14`) / `BLENDOP`(`0x15`) 直接读各 case 的 push 序列：
+
+| mode | 目标地址 | `SRCBLEND` | `DESTBLEND` | `BLENDOP` | 效果 |
+| :-: | --- | --- | --- | --- | --- |
+| 0 | `0x47d9c5` | `SRCALPHA` | `INVSRCALPHA` | `ADD` | 普通 alpha 混合 |
+| 1 | `0x47d9f0` | `SRCALPHA` | `ONE` | `ADD` | **加算**（发光/闪光）|
+| 2 | `0x47da1b` | `SRCALPHA` | `ONE` | `REVSUBTRACT` | 反向减算（`dst − src·a`，压暗；118 擦弹圈用）|
+| 3 | `0x47da46` | `ONE` | `ZERO` | `ADD` | 覆盖；**附带 `ZENABLE(0xf) ← 0`**（不写深度）|
+| 4 | `0x47da83` | `INVDESTCOLOR` | `INVSRCCOLOR` | `ADD` | screen（`1−(1−s)(1−d)`）|
+| **5** | `0x47dad9` | **`DESTCOLOR`** | **`ZERO`** | `ADD` | **乘法**（`rgb′ = src × dst`）——**滤波/染色**用这个 |
+| 6 | `0x47daae` | `INVSRCCOLOR` | `INVSRCALPHA` | `ADD` | — |
+| 7 | `0x47db01` | `DESTALPHA` | `INVDESTALPHA` | `ADD` | 把**下层 alpha** 当遮罩（astral 背景那套）|
+| 8 | `0x47db29` | `SRCALPHA` | `ONE` | `MIN` | — |
+| 9 | `0x47db51` | `SRCALPHA` | `ONE` | `MAX` | — |
+
+**两条使用要点**（本仓 2026-10-03 实装 92 的"金色闪光"时踩到）：
+
+1. **乘法层（mode 5）不能用 `alpha()` 淡入淡出**：本文 §2 已证 RGB 只由 `blendMode` 决定、alpha 走分离混合
+  （`Aa′ = Sa`）⇒ 乘法系数就是 VM 的**颜色**，要淡入就得用 **`colorTime()` 把颜色从白插到目标色**
+   （白 = 乘 1 = 不变，这是天然的"无效果"端点）。
+2. **`alpha` 别写 0**：`color_1.A == 0 && color_2.A == 0` 时整台 VM **不画**（`0x4812e8`，见 §2）——
+   乘法层想"完全透明"是做不到的（它本来就不吃 alpha），要收就 `colorTime` 回白再 `delete()`。
