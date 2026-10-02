@@ -389,8 +389,10 @@ int faith_convert_full_p_items(void);
  *   按注册表给每个 `conv_value > 0` 的注册者各撒一颗 `FAITH_TIER_SMALL`（值 = 它自己的
  *   `conv_value`、mask = 它的槽），位置/分角与 `faith_convert_full_p_items()` 的产出**同形**
  *   （那边是「删原生道具再发」，这边是「调用方已经把一颗 P 转换掉了」，所以不碰道具池）。
- *   用途：owner 2026-09-26 规格 —— 112 的**金钱→P** 转换在**满 P** 时「同时变成 1 樱点 + 1 中信仰点」
- *   （107/110/111 各按自己的 `conv_value`）。返回撒出去的颗数（诊断）。*/
+ *   用途：owner 2026-09-26 规格 —— 112 的**金钱→P** 转换在**满 P** 时的产出。
+ *   ★ **产出完全由注册表决定**（不是写死「1 樱点 + 1 中信仰点」）：拿了 107（`conv_value > 0`）才有樱点那一颗、
+ *     拿了 110/111 才有中信仰点；只拿其一就只有那一颗（owner 2026-09-26 追加口径）。
+ *   返回撒出去的颗数（诊断）。*/
 int faith_payout_full_p_conversion(float x, float y);
 
 int faith_pool_tick(void);

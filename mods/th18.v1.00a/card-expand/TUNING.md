@@ -10335,7 +10335,16 @@ if (!(ev->flags & CE_EDEATH_F_REAL)) return;   /* 只认真敌人 */
 | 分类判据 | 107 樱点（`slot_mask & 1<<FAITH_SLOT_107`，`faith_core.h:29`）⇒ **满 P 才算 P**，否则中性；110/111 **中信仰点** ⇒ 恒 P；**大信仰点** ⇒ 中性（原封不动）| `ufo.c` 的 `ufo_absorb_faith_tick` |
 | 满 P 判据 | `power >= max_power > 0`（`CE_ADDR_MAX_POWER`，`faith.h:354` 逐条对照）| `ufo_power_full()` |
 | 协同在场判据 | `faith_registered_mask() != 0`（`faith.h:171`；那段明令**不许**用槽值判在场）| `ufo_collab_present()` |
-| 满 P 金钱转换产出 | 新增 `faith_payout_full_p_conversion(x, y)`：按注册表给每个 `conv_value > 0` 的注册者各撒一颗 `FAITH_TIER_SMALL`（值 = 它的 `conv_value`、mask = 它的槽、分角与 `faith_convert_full_p_items()` 同形）| `faith.h` / `faith.c`（**跨卡**，见 AUDIT §BE）；112 在**彩虹 UFO 吸金钱且满 P** 时调它 |
+| 满 P 金钱转换产出 | 新增 `faith_payout_full_p_conversion(x, y)`：**按注册表**给每个 `conv_value > 0` 的注册者各撒一颗 `FAITH_TIER_SMALL` | 见下 §2.0zzx-24a |
+
+#### §2.0zzx-24a 满 P 金钱转换的产出 = **按注册表**（不是写死「1 樱点 + 1 中信仰点」）
+
+`faith_payout_full_p_conversion(x, y)` 逐条照抄 `faith_convert_full_p_items()` 里那段产出循环：
+对注册表里每个 `conv_value > 0` 的注册者，各撒一颗 `FAITH_TIER_SMALL`（值 = 它自己的 `conv_value`、
+mask = 它的槽、分角同形；位置 = 调用者给的坐标），并且**不碰原生道具池**。
+
+⇒ **107 没拿就没有樱点那一颗，110/111 没拿就只有樱点那一颗；两个都拿才各一颗**
+（owner 2026-09-26 追加口径）。
 | **压缩包等价计数** | 新出口 `ufo_bounty.h`：`ufo_bounty_eq_t{p, money, big_faith, mid_faith, cherry}` + `ufo_bounty_eq_pending()` / `ufo_bounty_eq_take()`（**取走即清**的一次性闩）| UFO 在场期间**原样分类**计数（彩虹的通道互换**不**影响它）⇒ 随包携带（`ufo_drop_t.eq_*`）⇒ 收包那一帧发布 |
 
 **回归面**：`ufo.c` / `ufo_core.h` / `ufo_core.c` / **`faith.h` / `faith.c`（跨卡，已在 AUDIT §BE 登记）** /

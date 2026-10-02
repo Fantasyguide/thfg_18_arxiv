@@ -3401,9 +3401,9 @@ static int ufo_try_item(ufo_card_t *s, uint8_t *it, float ux, float uy)
             if (akind == UFO_ABSORB_MONEY && s->u.color == UFO_COLOR_RAINBOW
                 && ufo_collab_present() && ufo_power_full()) {
                 int paid = faith_payout_full_p_conversion(ipos[0], ipos[1]);
-                ce_log("ufo: full-P MONEY->P conversion paid out %d registered dot(s) "
-                       "(1 cherry + 1 mid faith when 107/110/111 are in the deck; owner 2026-09-26)",
-                       paid);
+                ce_log("ufo: full-P MONEY->P conversion paid out %d dot(s) **per the registry** "
+                       "(owner 2026-09-26: NO 107 => only the mid faith point; NO 110/111 => only the "
+                       "cherry point; both => one of each - registry-driven, never hardcoded)", paid);
             }
         }
         if (ufo_absorb_item(&s->u, *(uint32_t *)(it + CE_ITEM_TYPE), UFO_PLACEHOLDER_STAGE,
@@ -4579,7 +4579,8 @@ static void ufo_drop_collect(ufo_card_t *s, int i)
         s_bounty_eq.cherry = c->eq_cherry;
         s_bounty_eq_pending = 1;
         ce_log("ufo: BOUNTY equivalence published - P %d / money %d / big faith %d / mid faith %d "
-               "/ cherry %d (for other cards; th12 has no such API - owner 2026-09-26)",
+               "/ cherry %d (**raw classification** - the rainbow channel swap does NOT affect it; "
+               "for other cards; th12 has no such API - owner 2026-09-26)",
                (int)c->eq_p, (int)c->eq_money, (int)c->eq_big, (int)c->eq_mid, (int)c->eq_cherry);
         s->faith_pulled_big = 0;                  /* 账已经结清 ⇒ 清掉（下一只 UFO 从零开始）*/
         s->faith_pulled_mid = 0;
