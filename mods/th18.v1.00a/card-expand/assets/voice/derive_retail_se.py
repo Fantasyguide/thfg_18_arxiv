@@ -101,7 +101,43 @@ TABLE = (
 #   目前只有泰拉瑞亚那一枚（它的录音比 ZUN 的 SE 轻约 15 dB，不补就在混音里听不见）。
 GAIN_DB = {
     "STAR_CANNON_SHOT": 13.0,
+    # ★ owner 2026-10-03：「音量再大一点」—— `volume_db` 只能衰减（0..−5000）⇒ 已经顶到 0 之后
+    #   还想更响，只能走这个纯增益例外（+6 dB 整体乘常数 + 峰值钳 −1 dBFS，不重采样/不动动态）。
+    "TONY_GRIEF_TRIGGER": 6.0,
 }
+
+
+# ★★ 第二条例外（2026-10-03 owner：「音量再大一点」）：**软限幅 + RMS 抬升**。
+#   为什么不能用纯增益：`se_wolf.wav` 自己的**峰值已经到 −0.2 dBFS** ⇒ 任何正增益都被峰值钳回 −1 dBFS
+#   （实测把 +6 dB 钳成 ×0.91 = 反而**变小**）；而 `volume_db` 只能衰减（0..−5000）且已经顶到 0。
+#   ⇒ 唯一还能更响的路是**压动态**：把整段乘到目标 RMS，再用 tanh 软限幅把峰压回 −1 dBFS。
+#   这是**刻意的音色取舍**（只在 owner 点名的那一枚上用），写法与量级都记在这里。
+LIMIT_DB = {
+    "TONY_GRIEF_TRIGGER": -10.0,      # 目标 RMS（dBFS）—— build_voice 的基准目标也是 −10.0
+}
+
+
+def _soft_limit(name: str, dst, target_rms_db: float) -> str:
+    """整段乘到目标 RMS，再用 tanh 软限幅（峰值 ≤ −1 dBFS）。返回一行说明。"""
+    import array, math, wave as _w
+    with _w.open(str(dst), "rb") as w:
+        chn, sww, frr, nn = w.getnchannels(), w.getsampwidth(), w.getframerate(), w.getnframes()
+        a = array.array("h"); a.frombytes(w.readframes(nn))
+    peak = max(1, max(abs(v) for v in a))
+    rms = math.sqrt(sum(v * v for v in a) / len(a))
+    gain = 10.0 ** ((target_rms_db - 20.0 * math.log10(rms / 32768.0)) / 20.0)
+    limit = 10.0 ** (-1.0 / 20.0) * 32767.0
+    for i, v in enumerate(a):
+        x = v * gain
+        y = limit * math.tanh(x / limit)          # 小信号近线性、大信号压缩
+        a[i] = -32768 if y < -32768 else (32767 if y > 32767 else int(y))
+    with _w.open(str(dst), "wb") as w:
+        w.setnchannels(chn); w.setsampwidth(sww); w.setframerate(frr)
+        w.writeframes(a.tobytes())
+    nrms = math.sqrt(sum(v * v for v in a) / len(a))
+    npeak = max(abs(v) for v in a)
+    return (f"，**软限幅到 RMS {target_rms_db:.1f} dBFS**（原 −{abs(20 * math.log10(rms / 32768.0)):.1f} ⇒ "
+            f"总增益 ×{gain:.2f}、峰值 {20 * math.log10(npeak / 32768.0):.1f} dBFS；见 `LIMIT_DB` 的注）")
 
 
 def _extract_one(version: str, fname: str, cache_ok: bool = True) -> Path:
@@ -140,11 +176,15 @@ def derive(name: str, version: str, fname: str, note: str) -> tuple[bool, str]:
     if comp != "NONE" or sw not in (1, 2):
         raise SystemExit(f"{src.name}: 不是未压缩的 8/16-bit PCM（comptype={comp}, 采样宽={sw}）"
                          f" —— 引擎的 RIFF 解析吃这个，别转成别的")
-    if dst.is_file() and dst.read_bytes() == src.read_bytes():
+    # ⚠ GAIN_DB 里的条目**不能**用"与源逐字节相同"来判"已是最新"—— 它本来就不该等于源
+    #   （2026-10-03 踩到：先跑过一次无增益的，再加 GAIN_DB 就被这行误判成"已是最新"跳过了）。
+    if name not in GAIN_DB and name not in LIMIT_DB and dst.is_file() and dst.read_bytes() == src.read_bytes():
         return False, f"{name}: {dst.name} 已是最新（与 {version} 的样本逐字节相同）"
     shutil.copyfile(src, dst)
     extra = ""
-    if name in GAIN_DB:
+    if name in LIMIT_DB:
+        extra += _soft_limit(name, dst, LIMIT_DB[name])
+    elif name in GAIN_DB:
         import array
         gain = 10.0 ** (GAIN_DB[name] / 20.0)
         with wave.open(str(dst), "rb") as w:
