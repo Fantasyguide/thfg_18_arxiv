@@ -117,6 +117,23 @@ static void test_launch(void)
     CHECK(b->ai0 == -ZN_AI0_MAX, "ai0 该夹到 −%g", (double)ZN_AI0_MAX);
 }
 
+/* ★ owner 2026-10-03：「天顶剑**既有逆时针也有顺时针**」「**得翻转贴图**的，种子弯刀是刀」。 */
+static void test_sweep_and_mirror(void)
+{
+    zn_blade_t bl, br;
+    zn_pose_t pl, pr;
+    int i;
+
+    /* ai0 < 0 ⇒ **反向扫**（原版那一支用 −2π），且镜像标志与 ai0 ≥ 0 相反 */
+    zn_launch(&bl, 1u, 0, 0.0f, 0.0f, 100.0f, 0.0f, 30.0f);     /* ai0 = +30、vx > 0 */
+    zn_launch(&br, 2u, 0, 0.0f, 0.0f, 100.0f, 0.0f, -30.0f);    /* ai0 = −30、vx > 0 */
+    for (i = 0; i < 11; ++i) { zn_step(&bl, &pl); zn_step(&br, &pr); }
+    CHECK(pl.ang > 3.14159265f, "ai0 > 0：该朝 + 方向扫（ang=%g）", (double)pl.ang);
+    CHECK(pr.ang < 3.14159265f, "ai0 < 0：该**反向**扫（ang=%g）", (double)pr.ang);
+    CHECK(pl.mirror == 0, "ai0 > 0 且 vx > 0 ⇒ spriteDirection = +1，不翻");
+    CHECK(pr.mirror == 1, "ai0 < 0 且 vx > 0 ⇒ spriteDirection = −1，要翻");
+}
+
 static void test_orbit_params(void)
 {
     zn_state_t s;
@@ -145,9 +162,19 @@ static void test_orbit_params(void)
     }
     /* R：|v| = 100 > 60 ⇒ L 小的时候 R = 100（还没加 40）*/
     CHECK(fabsf(p.R - vlen) < 1e-3f || p.R >= ZN_RADIUS_MIN, "R=%g 不该小于 |v|", (double)p.R);
-    /* rot = ang + heading + π/2 − (π/2 + ZN_SPRITE_BASE)（原版 rotation 那一行 + 贴图基准修正）*/
-    CHECK(fabsf(p.rot - (p.ang + b->heading + 1.5707963705062866f
-                         - (1.5707963705062866f + ZN_SPRITE_BASE))) < 1e-5f, "rot 公式不对");
+    /* rot = ang + heading − base（原版 rotation 那一行 + **这把剑的贴图基准**）；
+     *   `tip` = ang + heading 与贴图无关；`mirror` = 原版 spriteDirection == −1。
+     *   ⚠ 单测里 zn_launch 传的 prof = 0/3/5，对应表里第 0/3/5 项（65 / 121 / 368）。*/
+    {
+        const float bases[21] = {
+            -0.7976f, -0.7854f, -0.7941f, -0.7854f, -0.7906f, -0.7941f, -0.7836f, -0.8622f,
+            -0.9320f, -0.7854f, -0.7854f, -0.7854f, -0.8325f, -0.8570f, -0.8395f, -0.8779f,
+            -0.8308f, -1.0612f, -0.7854f, -0.7854f, -0.7854f
+        };
+        float base = bases[(b->prof >= 0 && b->prof < 21) ? b->prof : 0];
+        CHECK(fabsf(p.rot - (p.ang + b->heading - base)) < 1e-5f, "rot 公式不对");
+        CHECK(fabsf(p.tip - (p.ang + b->heading)) < 1e-5f, "tip 该是 ang + heading");
+    }
     /* 透明度：前 5 个相位单位淡入 */
     CHECK(p.alpha > 0 && p.alpha < 255, "淡入第一帧 alpha=%d", p.alpha);
     /* fade 起始偏移：k = 1 − GetLerpValue(0,0.5,L)；fade_x = k·sign·−R·0.1、fade_y = k·−ai0·0.3 */
@@ -218,6 +245,7 @@ int main(void)
     test_charge();
     test_aim();
     test_launch();
+    test_sweep_and_mirror();
     test_orbit_params();
     test_pool();
     printf(fails ? "zenith_core: %d FAILED\n" : "zenith_core: ok\n", fails);

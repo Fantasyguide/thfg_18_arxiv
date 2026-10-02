@@ -46,6 +46,7 @@
  *   ⚠ 光照（原版两处 `Lighting.AddLight`）也没法做（引擎无动态光照通道）。*/
 #define ZN_SPARK_LAYER  14         /* 星芒 / 尘埃：压在剑刃（13）之上 */
 #define ZN_OVERLAY_MUL  1.25f      /* 原版第二遍白叠的放大倍数 */
+#define ZN_BLADE_SCALE  0.55f      /* ⚠ 必须与脚本 379 的 `scale(0.55f, 0.55f)` 一致（C 每帧会写 scale 做镜像）*/
 #define ZN_SPARK_IN     15.0f      /* 星芒淡入：t 15→30 */
 #define ZN_SPARK_FULL   30.0f
 #define ZN_SPARK_OUT    45.0f      /* 星芒淡出：t 30→45 */
@@ -58,7 +59,6 @@
 #define ZN_LAYER        13         /* 世界特效层（破损核心 / 炎魔 / 青眼同层）*/
 #define ZN_SE_SLASH     0x2d       /* TH18 音效表 0x2d = se_slash.wav（一手 engine/_shared/th18-sound-table.md）；
                                     * 对位 Terraria 的 `SoundID.Item169`（原版每把出膛放一次）*/
-#define ZN_PROFILE_N    21         /* = `FinalFractalHelper._fractalProfiles` 的条数（一手，见 AUDIT §BE #211）*/
 #define ZN_FAM_PERIOD   40         /* ❓自定：跟班**轮播**整组 21 把的节奏（帧/把 ⇒ 一轮 40×21 = 840 帧 = 14 s）*/
 #define ZN_RANDOM_N     20         /* 随机池 = 去掉天顶剑本体自己（原版 `GetRandomProfileIndex` 会重掷 4956）*/
 
@@ -87,6 +87,7 @@ typedef struct {
                                     *   `Center + bladeDir·trailWidth` 上（见 AUDIT §BE #211 追加）*/
 } zn_profile_t;
 
+/* 条数 `ZN_PROFILE_N` 在 `zenith_core.h`（core 侧要按 prof 查贴图基准朝向）*/
 static const zn_profile_t s_zn_profiles[ZN_PROFILE_N] = {
     { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_STARFURY,       0x00EC3EC0u , 60.0f },  /* 65   星怒 */
     { CE_ANM_ABILITY_SPRITE_ZENITH_BLADE_BEEKEEPER,      0x00FFE745u , 75.0f },  /* 1123 养蜂人（原版 = Main.OurFavoriteColor）*/
@@ -277,6 +278,9 @@ static int on_tick_2(ce_card_t *c)
         }
         ce_anm_set_pos(b->id, x, y, pz);
         ce_anm_set_rotation(b->id, 0.0f, 0.0f, pose.rot);
+        /* ★ 原版 `spriteDirection = −1` 那支要**水平翻转贴图**（owner：「得翻转贴图的，种子弯刀是刀」）：
+         *   负的 scaleX 就是镜像（旋转由 rotation 表达，翻转由 scale 符号表达）。*/
+        ce_anm_set_scale(b->id, pose.mirror ? -ZN_BLADE_SCALE : ZN_BLADE_SCALE, ZN_BLADE_SCALE);
         ce_anm_set_color(b->id, ((uint32_t)pose.alpha << 24) | 0x00ffffffu);   /* 原版 Opacity */
         if (pose.hit) {                          /* 原版 localNPCHitCooldown：每 7 帧一次（沿刃的判定）*/
             center[0] = x; center[1] = y; center[2] = pz;
@@ -290,7 +294,7 @@ static int on_tick_2(ce_card_t *c)
             /* 原版刃尖方向 = `(rotation − π/2).ToRotationVector2()`（它的贴图正上朝）；
              * 我们的贴图基准是 `ZN_SPRITE_BASE` ⇒ 剑尖方向 = `rot + ZN_SPRITE_BASE`。
              * ⚠ 之前写的是 `rot + π/2`（差了 180°）⇒ 星芒其实挂在**剑柄**那头。*/
-            ce_polar_to_vel(bd, pose.rot + ZN_SPRITE_BASE, 1.0f);
+            ce_polar_to_vel(bd, pose.tip, 1.0f);
             tipx = x + bd[0] * (bp->blade_len * 0.5f);
             tipy = y + bd[1] * (bp->blade_len * 0.5f);
 
@@ -299,6 +303,9 @@ static int on_tick_2(ce_card_t *c)
                 else {
                     ce_anm_set_pos(b->ov_id, x, y, pz);
                     ce_anm_set_rotation(b->ov_id, 0.0f, 0.0f, pose.rot);
+                    ce_anm_set_scale(b->ov_id,
+                                     (pose.mirror ? -1.0f : 1.0f) * ZN_BLADE_SCALE * ZN_OVERLAY_MUL,
+                                     ZN_BLADE_SCALE * ZN_OVERLAY_MUL);
                     ce_anm_set_color(b->ov_id, ((uint32_t)(pose.alpha / 2) << 24) | 0x00ffffffu);
                 }
             }
@@ -320,7 +327,7 @@ static int on_tick_2(ce_card_t *c)
                     ce_anm_set_pos(b->sp_id, tipx, tipy, pz);
                     ce_anm_set_rotation(b->sp_id, 0.0f, 0.0f, pose.rot);
                     ce_anm_set_scale(b->sp_id,
-                                     ZN_SPARK_SX0 + (ZN_SPARK_SX1 - ZN_SPARK_SX0) * k,
+                                     (pose.mirror ? -1.0f : 1.0f) * (ZN_SPARK_SX0 + (ZN_SPARK_SX1 - ZN_SPARK_SX0) * k),
                                      ZN_SPARK_SY0 + (ZN_SPARK_SY1 - ZN_SPARK_SY0) * k);
                     ce_anm_set_color(b->sp_id, ((uint32_t)a << 24) | (cr << 16) | (cg << 8) | cb);
                 }
@@ -353,6 +360,7 @@ static int on_tick_2(ce_card_t *c)
                 ce_anm_set_color(tr, 0xff000000u | tp->color);                /* 原版 ribbon = 每把剑的 trailColor */
                 ce_anm_set_pos(tr, x, y, pz);
                 ce_anm_set_rotation(tr, 0.0f, 0.0f, pose.rot);
+                ce_anm_set_scale(tr, pose.mirror ? -ZN_BLADE_SCALE : ZN_BLADE_SCALE, ZN_BLADE_SCALE);
                 b->trail_id = tr;      /* 只记最近的（更早的自己 delete，同炎魔拖尾的处理）*/
             }
         }

@@ -97,6 +97,13 @@ typedef struct {
     uint16_t frames;      /* 只用于日志 */
 } zn_blade_t;
 
+/* 剑阵表的条数 = 原版 `FinalFractalHelper._fractalProfiles` 的条数（一手，见 AUDIT §BE #211）。
+ * ★ 放这里是因为 **core 侧也要按 prof 查"这把剑的贴图基准朝向"**（`s_zn_base[]`）；
+ *   卡侧的 `s_zn_profiles[]` 用同一个宏。*/
+#ifndef ZN_PROFILE_N
+#define ZN_PROFILE_N 21
+#endif
+
 /* 由 vx/vy 现算的派生量（不占字段：8 格 × 3 个 float 会把 ce_state 撑爆 ⇒ 卡状态上限 496 字节）。
  * **static inline 的理由同 `bc_atan2f`**：i386 ABI 返回 float 走 st0，内联掉才守得住零 x87。*/
 static inline float zn_dist2(float ax, float ay, float bx, float by)
@@ -133,7 +140,9 @@ typedef struct {
     float ang;          /* 椭圆第一半轴的角（原版 num9）*/
     float R, A;         /* 两个半轴（原版 R / ai[0]·Lerp(2,1,fast)）*/
     float fade_x, fade_y; /* 原版的起始偏移（随 L 衰减到 0）*/
-    float rot;          /* VM 的 rotation.z = ang + heading + π/2 */
+    float rot;          /* VM 的 rotation.z = ang + heading − base（已减掉这把剑的贴图基准）*/
+    float tip;          /* ★ 剑尖指向（引擎角度 = ang + heading）—— 星芒/尘埃挂这一头 */
+    int   mirror;       /* ★ 1 = 本帧要**水平翻转**贴图（原版 `spriteDirection = −1` 那支）*/
     int   alpha;        /* 0..255（原版 Opacity × 255）*/
     int   emit_trail;   /* 本帧该在当前位置留一个残影 */
     int   hit;          /* 本帧该出一次伤害（原版 localNPCHitCooldown）*/
