@@ -1499,8 +1499,11 @@ static void ufo_sweep_to_money(void)
     }
     /* ★★ owner 追问：「**压缩包原则上有吸了多少东西的统计吧**」—— 有：`ufo_drop_t` 的
      *   `cnt_p` / `cnt_money`（+0x9cc/+0x9d0，纯逻辑层一直在维护）＋ `mult_permille`（倍率）。
-     *   ⇒ 压缩包按 owner 的口径 = 「**等量于吸收量**」的金钱 = **`cnt_p + cnt_money`** 枚
-     *     （吸了多少颗就给多少枚；倍率不动它 —— owner 说的是"吸收量"，不是"结算分"）。
+     *   ★★ 2026-10-03e（owner **口径变更**）：「**你把压缩包转化金钱数量变成 sum(这些数)**」——
+     *   那五格 = owner 2026-09-26 要的**等价计数**（`ufo_drop_t` 的 `eq_p` / `eq_money` / `eq_big` /
+     *   `eq_mid` / `eq_cherry`：「我吃了这个**等价于**吃了多少个大信仰点 / 中信仰点 / 樱点 / P / 金钱，
+     *   **其他卡要用**」）⇒ 换钱数量 = **五格之和**，不再用 `cnt_p + cnt_money` 那条只数 P / 金钱的旧口径。
+     *   ⚠ 倍率仍然不动它（owner 说的是"吸收量"，不是"结算分"）；五格全 0 ⇒ 一颗也不撒（下面那个早退）。
      *   ⚠ 只清 `UFO_DROP_KIND_BAG`（压缩包）：`UFO_DROP_KIND_BOMB` 那只是**原生 type 7 道具的壳**
      *     （道具本体由 92 的通道①扫走并换成钱），壳在道具消失后自己会收（`ufo_drop_*` 的轮询）⇒
      *     这里再发一次钱就重复计了。*/
@@ -1511,7 +1514,7 @@ static void ufo_sweep_to_money(void)
         int cnt;
         if (!d->anm_id || !c->alive) continue;
         if (c->kind != UFO_DROP_KIND_BAG) continue;
-        cnt = c->cnt_p + c->cnt_money;
+        cnt = c->eq_p + c->eq_money + c->eq_big + c->eq_mid + c->eq_cherry;   /* ★ owner：sum(五个等价计数) */
         if (cnt <= 0) cnt = 0;
         p2[0] = c->x;
         p2[1] = c->y;
@@ -1519,6 +1522,10 @@ static void ufo_sweep_to_money(void)
         for (k = 0; k < cnt; ++k) {
             if (!ce_spawn_item(2u, p2, -1.5707964f, 1.7f)) ce_money_pocket(1);
         }
+        if (cnt > 0)
+            ce_log("ufo: 92 清扫 · 压缩包按等价计数换钱 —— P %d + 金钱 %d + 大信仰 %d + 中信仰 %d + 樱点 %d = %d 枚",
+                   (int)c->eq_p, (int)c->eq_money, (int)c->eq_big, (int)c->eq_mid,
+                   (int)c->eq_cherry, cnt);
         ufo_drop_kill(i);                      /* 压缩包走它自己的收尾（删 VM + 清槽）*/
         ++n;
     }
