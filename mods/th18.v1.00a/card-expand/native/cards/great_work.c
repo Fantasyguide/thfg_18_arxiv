@@ -44,6 +44,12 @@ typedef struct {
     int64_t  last_hp;
     int32_t  last_money;
     int32_t  last_phase_breaks;
+    /* ★★ 2026-10-03 兜底（owner 实测「黄金特效变成永久的了」之后加的）：两个演出 VM 的句柄。
+     *   它们本来是**自毁**的（脚本 397/398 末尾 `delete()`），但那次我误在滤镜脚本里写了 `stop()`
+     *   ⇒ 自毁永远到不了 ⇒ 金色永久留在屏幕上 ✗。**脚本已经修好**，这里再加一道保险：
+     *   换关 / 局末 / 删卡时把它们收掉（`delete()` 幂等；被收过的 id 再收无害）。*/
+    uint32_t fx_flash_id;
+    uint32_t fx_tint_id;
 } gw_card_t;
 
 _Static_assert(sizeof(gw_card_t) <= 496, "great_work: private state overflows CE_STATE_BYTES");
@@ -261,7 +267,6 @@ static int on_activate(ce_card_t *c)
     gw_card_t *s = ce_state(c, gw_card_t);
     int64_t hp_sum = 0;
     int32_t money = 0, breaks = 0, bullets, frames, enemies, items;
-    uint32_t flash;
     int32_t faith_money = 0;
     int faith_n;
     float px = ce_player_x();
@@ -316,10 +321,10 @@ static int on_activate(ce_card_t *c)
          *   两层都铺满游玩区（`drawRect(384,448)`）、层 19、自毁 ⇒ 卡侧零簿记。
          *   ⚠ 乘法层**不能用 alpha 淡入**（那个模式的 RGB 不吃 alpha，TH18 的 alpha 是分离混合）
          *     ⇒ 脚本里用 `colorTime` 从白插到金；`alpha` 保持 255（写成 0 会让整台 VM 不画）。*/
-        flash = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_GREAT_WORK_TINT, GW_FLASH_LAYER);
-        if (flash) ce_anm_set_pos(flash, ctr[0], ctr[1], ctr[2]);
-        flash = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_GREAT_WORK_FLASH, GW_FLASH_LAYER);
-        if (flash) ce_anm_set_pos(flash, ctr[0], ctr[1], ctr[2]);
+        s->fx_tint_id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_GREAT_WORK_TINT, GW_FLASH_LAYER);
+        if (s->fx_tint_id) ce_anm_set_pos(s->fx_tint_id, ctr[0], ctr[1], ctr[2]);
+        s->fx_flash_id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_GREAT_WORK_FLASH, GW_FLASH_LAYER);
+        if (s->fx_flash_id) ce_anm_set_pos(s->fx_flash_id, ctr[0], ctr[1], ctr[2]);
     }
 
     /* ★★ 2026-10-03 owner 的**平衡**：「伟大之作原作是会把**自机也变成黄金**，那就是**再减少冷却**，
@@ -360,4 +365,19 @@ static int on_activate(ce_card_t *c)
     return 0;
 }
 
-CE_CARD(92, .active_recharge = GW_BASE, .on_activate = on_activate);
+/* ★ 演出 VM 的兜底收尾（脚本已自毁，这里防"脚本卡住"那种事故 —— 见 `fx_flash_id` 的注）。
+ * 换关 / 局末 / 删卡三条路都走它；`ce_anm_delete` 幂等，句柄清零后再调无害。*/
+static void gw_fx_kill(ce_card_t *c)
+{
+    gw_card_t *s = ce_state(c, gw_card_t);
+    if (!s) return;
+    if (s->fx_flash_id) { ce_anm_delete(s->fx_flash_id); s->fx_flash_id = 0; }
+    if (s->fx_tint_id)  { ce_anm_delete(s->fx_tint_id);  s->fx_tint_id = 0; }
+}
+
+static void on_stage_start(ce_card_t *c) { gw_fx_kill(c); }
+static void on_run_reset(ce_card_t *c)   { gw_fx_kill(c); }
+static void on_delete(ce_card_t *c)      { gw_fx_kill(c); }
+
+CE_CARD(92, .active_recharge = GW_BASE, .on_activate = on_activate,
+            .on_stage_start = on_stage_start, .on_run_reset = on_run_reset, .on_delete = on_delete);
