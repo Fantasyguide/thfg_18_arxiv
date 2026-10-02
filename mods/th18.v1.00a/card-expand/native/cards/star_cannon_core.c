@@ -2,6 +2,8 @@
  *（一手 = 反编译 1.4.4.5 的 `Item.cs` / `Projectile.cs`）。只用加减乘除，零 sin/cos、零 x87。 */
 #include <string.h>
 
+#include <math.h>
+
 #include "star_cannon_core.h"
 
 void sc_reset(sc_state_t *s)
@@ -64,7 +66,9 @@ int sc_step(sc_shot_t *sh)
     if (sh->frames > 0xF000u) sh->frames = 0xF000u;      /* uint16 不会绕回（一颗星活不了那么久）*/
     sh->x += sh->vx;                                     /* aiStyle 5 不加速度、不加重力 */
     sh->y += sh->vy;
-    sh->rot += SC_SPIN * dir;                            /* `rotation += (|vx|+|vy|)·0.01·direction` */
+    /* ★ 原版公式本来就是「按速度自转」：`rotation += (|vx|+|vy|)·0.01·direction` ⇒ 弹速减半时
+     *   自转自动跟着减半（owner 2026-10-03「弹速慢一倍」），不用另配常量。*/
+    sh->rot += (fabsf(sh->vx) + fabsf(sh->vy)) * 0.01f * dir;
     if ((uint8_t)(sh->hit_timer + 1u) >= (uint8_t)SC_HIT_COOLDOWN) {
         sh->hit_timer = 0;
         sh->hit = 1;

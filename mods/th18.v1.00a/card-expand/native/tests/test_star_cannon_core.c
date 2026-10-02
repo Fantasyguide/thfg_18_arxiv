@@ -69,15 +69,18 @@ static void test_launch_and_step(void)
           (double)(y0 - sh->y));
     CHECK(sh->x == x0, "朝正上时 x 不该动");
     /* 自转方向 = sign(velocity.X)（原版那个 `direction`）：vx == 0 时按 +1 处理（一手是"保持上一帧"）*/
-    CHECK(fabsf(sh->rot - SC_SPIN) < 1e-6f, "vx == 0 ⇒ direction = +1 ⇒ rot = %g，得到 %g",
-          (double)SC_SPIN, (double)sh->rot);
+    /* 自转按**速度**算：`(|vx|+|vy|)·0.01`（原版公式）⇒ 弹速 7 时 = 0.07 */
+    CHECK(fabsf(sh->rot - (fabsf(sh->vx) + fabsf(sh->vy)) * 0.01f) < 1e-6f,
+          "vx == 0 ⇒ direction = +1 ⇒ rot = %g，得到 %g",
+          (double)((fabsf(sh->vx) + fabsf(sh->vy)) * 0.01f), (double)sh->rot);
 
     /* 自转与闪烁都按**水平飞行**测（竖直飞 6 帧就出界了；这里每帧把位置拉回原地，只看时间维）*/
     sc_reset(&s);
     sh = sc_slot(&s);
     sc_launch(sh, 0x99u, 0.0f, 0.0f, -SC_SPEED, 0.0f);     /* 朝左 ⇒ direction = −1 */
     for (i = 0; i < 10; ++i) { sh->x = 0.0f; sh->y = 0.0f; sc_step(sh); }
-    CHECK(fabsf(sh->rot + SC_SPIN * 10.0f) < 1e-4f, "朝左该往负向自转：rot = %g", (double)sh->rot);
+    CHECK(fabsf(sh->rot + (fabsf(sh->vx) + fabsf(sh->vy)) * 0.01f * 10.0f) < 1e-4f,
+          "朝左该往负向自转：rot = %g", (double)sh->rot);
 
     /* 闪烁：alpha 在 0..SC_ALPHA_MAX 之间来回（原版 `alpha += 25·localAI[0]`）*/
     {

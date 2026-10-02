@@ -66,19 +66,23 @@ static void test_launch(void)
     zn_state_t s;
     zn_blade_t *b;
 
-    /* 目标 (300,400)：两点距 500 > ZN_ARC_MAX ⇒ 截到 200 ⇒ velocity = 偏移 (60,80)（= 目标方向 × 100）*/
+    /* 目标 (500,600)：两点距 781 > ZN_ARC_MAX(640) ⇒ 截到 640 ⇒ 偏移 (640·0.6, 640·0.8) = (384,512)、
+     *   velocity = 偏移/2 = (192,256)。
+     *   ★ owner 2026-10-03：「天顶剑应当是能**打全图**的」⇒ `ZN_ARC_MAX` 从 200 提到 640（游玩区对角 ≈590），
+     *   这道钳位只管"远得离谱的目标"，射程内（`ZN_RANGE`）的目标一律原样够得着。*/
     zn_reset(&s);
     b = zn_slot(&s);
     CHECK(b == &s.b[0], "第一个空槽该是 [0]");
-    zn_launch(b, 0x1234u, 7, 0.0f, 0.0f, 300.0f, 400.0f, 50.0f);
+    zn_launch(b, 0x1234u, 7, 0.0f, 0.0f, 500.0f, 600.0f, 50.0f);
     CHECK(b->active == 1 && b->id == 0x1234u && b->prof == 7,
           "发射没生效");
-    CHECK(fabsf(b->vx - 60.0f) < 1e-4f && fabsf(b->vy - 80.0f) < 1e-4f,
-          "velocity 偏移该是 (60, 80)，得到 (%g, %g)", (double)b->vx, (double)b->vy);
-    CHECK(fabsf(b->heading - bc_atan2f(160.0f, 120.0f)) < 1e-5f, "heading 该指向目标");
+    CHECK(fabsf(b->vx - 204.8590f) < 1e-3f && fabsf(b->vy - 245.8308f) < 1e-3f,
+          "velocity 偏移该是 (204.859, 245.831)（= 640·方向/2），得到 (%g, %g)", (double)b->vx, (double)b->vy);
+    CHECK(fabsf(b->heading - bc_atan2f(600.0f, 500.0f)) < 1e-5f, "heading 该指向目标（方向不受缩放影响）");
     CHECK(zn_sign(b) == 1.0f, "向右飞 sign 该是 +1");
-    CHECK(fabsf(zn_fast(b) - (700.0f / 900.0f)) < 1e-4f, "fast=%g（|v|·2 = 200）", (double)zn_fast(b));
-    CHECK(fabsf(zn_rate(b) - (0.7f + 1.3f * (700.0f / 900.0f))) < 1e-4f, "rate=%g", (double)zn_rate(b));
+    /* |v| = 320 ⇒ |v|·2 = 640 ⇒ fast = (900−640)/900 */
+    CHECK(fabsf(zn_fast(b) - (260.0f / 900.0f)) < 1e-4f, "fast=%g（|v|·2 = 640）", (double)zn_fast(b));
+    CHECK(fabsf(zn_rate(b) - (0.7f + 1.3f * (260.0f / 900.0f))) < 1e-4f, "rate=%g", (double)zn_rate(b));
     CHECK(fabsf(b->ai0 - 50.0f) < 1e-4f, "ai0 该原样存下");
     CHECK(b->phase == 0.0f, "发射该把相位清零");
 
@@ -97,7 +101,7 @@ static void test_launch(void)
     /* |v| 很大 ⇒ fast 接近 0 ⇒ 相增接近 2.0（原版：飞得越快转得越快）*/
     zn_reset(&s);
     b = zn_slot(&s);
-    zn_launch(b, 3u, 0, 0.0f, 0.0f, ZN_ARC_MAX, 0.0f, 0.0f);   /* |v| = 100、|v|·2 = 200 → fast = 700/900 */
+    zn_launch(b, 3u, 0, 0.0f, 0.0f, 200.0f, 0.0f, 0.0f);   /* 偏移 200 ⇒ |v| = 100、|v|·2 = 200 → fast = 700/900 */
     {
         zn_state_t s2;
         zn_blade_t *b2;

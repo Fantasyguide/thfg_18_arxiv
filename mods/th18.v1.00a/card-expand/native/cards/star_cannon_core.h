@@ -10,7 +10,7 @@
  * | `ItemID.StarCannon` | **197**（`_src/Item_197.png`，`width=50/height=18`）| 跟班贴图 `STAR_CANNON`（script381）|
  * | `useTime` / `useAnimation` | **12** / **12**（`autoReuse = true`）| `SC_PERIOD`（=5 发/秒，**白板无加成**）|
  * | `shoot` | `ProjectileID.StarCannonStar` = **955** | 弹幕贴图 `STAR_CANNON_SHOT`（script382）|
- * | `shootSpeed` | **14** | `SC_SPEED`（px/帧）|
+ * | `shootSpeed` | **14** → ❓ owner 口径 **7**（「弹速慢一倍」）| `SC_SPEED`（px/帧）|
  * | `damage` | 55 | ❓ 按弹幕区尺度缩到 `SC_DMG`（登记 `TUNING.md`）|
  * | `UseSound` | `SoundID.Item9` | 自建语音槽 `CE_VOICE_STAR_CANNON_SHOT`（**从用户本机的 `Item_9.xnb` 现取**）|
  * | 弹幕 `SetDefaults` | `width=height=18`、`aiStyle=5`、`penetrate=-1`（无限穿透）、`alpha=50`、`light=1` | 判定盒 / 穿透 / 闪烁都照它 |
@@ -27,8 +27,11 @@
 
 /* —— 泰拉瑞亚一手（逐字） —— */
 #define SC_PERIOD       12       /* useTime = useAnimation = 12（白板无加成）*/
-#define SC_SPEED        14.0f    /* shootSpeed = 14 */
-#define SC_SPIN         0.14f    /* (|vx|+|vy|)·0.01 = 14·0.01 */
+/* ★ 2026-10-03 owner：「星星炮的**弹速慢一倍**」⇒ 14 → **7** px/帧。
+ *   ⚠ 这是**偏离一手值**的 owner 口径（原版 `shootSpeed = 14`）。
+ *   副作用（都对）：自转按原版公式 `(|vx|+|vy|)·0.01` 自动跟着减半（0.14 → 0.07 rad/帧）；
+ *   命中仍是每 `SC_HIT_COOLDOWN` 帧一跳 ⇒ 同一颗星的 DPS 不变，只是走得慢。*/
+#define SC_SPEED        7.0f     /* ❓ owner 口径：14 / 2（原版 shootSpeed = 14）*/
 #define SC_ALPHA_STEP   25       /* alpha += 25·localAI[0] */
 #define SC_ALPHA_MAX    200      /* alpha 上界（下界 0）*/
 #define SC_HIT_SIZE     18.0f    /* ★ 判定盒 = **原版声明值** width = height = 18（不再跟着贴图缩放改 ——
