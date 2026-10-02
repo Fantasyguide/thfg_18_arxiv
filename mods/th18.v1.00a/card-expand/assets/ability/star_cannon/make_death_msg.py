@@ -39,15 +39,21 @@ LINE1 = "你被杀死了……"                        # LegacyInterface.38（zh
 LINE2 = "掉了591 铂金 60 金 15 银 3 铜"         # Game.DroppedCoins = "掉了{0}"；{0} = ValueToCoins 的实机输出（带空格）
 DEATH_TEXT = (229, 127, 127)                   # = GetDeathAlpha(Color.Transparent) 的 RGB
 LINE_GAP = 50                                  # 一手：两行**盒顶**差 50 px（H/2−60 → H/2−10）
-GLYPH_GAP = 4                                  # ★ 但原版大字在那 50 px 里是**靠盒底**画的 ⇒ 实测「第一行字形下沿
+GLYPH_GAP = 2                                  # ★ 但原版大字在那 50 px 里是**靠盒底**画的 ⇒ 实测「第一行字形下沿
                                                #   → 第二行字形上沿」只有 **4 px**（owner 的实机截图量出来是空 4 行）。
                                                #   第一版按 50 px 摆字形的**上沿**，两行当场叠在一起 —— 这里改按
                                                #   **实测字形包围盒**排：第二行盒顶 = 第一行字形下沿 + GLYPH_GAP。
 OUTLINE_WIDTH = 0                              # 一手：原版**没有**描边（留成常量，实跑嫌糊再调）
 
-# 字号按一手的 `lineSpacing` 比例取（Death_Text 72 : Mouse_Text 29 ≈ 2.48 : 1）
-FONT1_PX = 52
-FONT2_PX = 21
+# ★★ 2026-10-03 owner 实测「你被杀死了太大了」⇒ 字号要按**屏幕比例**换算，不能把 1080p 的字号
+#   直接搬进 640×480 空间：
+#     一手：那行死亡大字在 1080p 屏上高约 **52 px** ⇒ 占屏高 4.8%；我们的空间高 480
+#     ⇒ 场上字形高该是 480 × 0.048 ≈ **23 单位**（PIL 的 size 是 em 尺寸，汉字墨高约 0.85×size
+#     ⇒ size ≈ 27）。第二行（Mouse_Text，1080p 上约 19 px）同比例 ⇒ 约 9 单位 ⇒ size ≈ 11。
+#   ⚠ 上一版写 52 / 21（= 直接把 1080p 的字号当场上单位用）⇒ 整整大一倍多，owner 一眼就看出来了。
+#   字号与 `GLYPH_GAP` 是一组：改这两个数重烘即可，贴图尺寸会变（ORDER.txt 与 SC_MSG_Y 要跟着改）。
+FONT1_PX = 27
+FONT2_PX = 11
 CJK_FONT = "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf"   # 汉字：细无衬线（⚠ 它没有 ASCII 数字）
 LAT_FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"             # 数字 / 拉丁：细体、不加重
 
