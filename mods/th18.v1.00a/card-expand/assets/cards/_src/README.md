@@ -108,3 +108,22 @@ EOF
 
 ⚠ 一次 `d.find` 只给第一个命中（有些路径在 Lua 源码里也会出现）⇒ 找到后**先断言魔数**；
 要别的素材就把 `path` 换成 `data/...` 里的目标路径（用 `grep -a` 或 Python 扫 `b'.png'` 找候选）。
+
+## ★ 选卡图标（`_min`）的口径定案（owner 2026-10-03）
+
+> owner：「**游戏内的卡片样式和游戏外选卡的样式不太一样**……尤其是伟大之作，三宝磨不一样大」
+
+**两套并存是根因**（都在 `cardframe.min_image_from_art()` 里）：
+
+| 口径 | 做法 | 效果 | 谁在用（定案前）|
+| --- | --- | --- | --- |
+| **A（定案）** | `_art` **整幅 ÷4**（含白边）| 图标 = 缩小版整张卡，**与游戏内卡面同比例** | 老卡 / 系统卡 106–118、新卡 86/88 |
+| B | 裁出内容外框 → **撑满** 64×80 | 主体更大 | 新卡 **87 / 89 / 90 / 91 / 92** |
+
+**原生游戏用的是 B**（拿原生卡对拍：`BASSDRUM` 画面区撑满 vs 整幅÷4 的相关度 **0.81 : 0.26**、
+`AUTOBOMB` 0.50 : 0.26 —— 见 `AUDIT.md` §BE 详录 #227）。
+**但 owner 2026-10-03 定案选 A**：理由是「游戏内 vs 选卡**看起来要一致**」优先于「与原生图标画法一致」。
+
+⇒ **新卡一律 A**：`make_white_item_card.py` 已把 `save_min_from_art(..., area=False)` 写死；
+    手工重出：`python3 -c "import cardframe; cardframe.save_min_from_art('NAME', __import__('PIL.Image',fromlist=['Image']).Image.open('_art/NAME.png'), area=False)"`。
+

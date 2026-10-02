@@ -76,7 +76,10 @@ def emit(name: str, art: Image.Image, out: Path):
     (out / "_art").mkdir(exist_ok=True)
     cardframe.save_art(art, out / "_art" / f"{name}.png")            # 真源（画框前的画面）
     cardframe.save_framed(cardframe.frame_card(art, area=True), out / f"{name}_max.png")
-    cardframe.save_min_from_art(name, art, area=True)                # ⚠ 写的是 assets/cards/<NAME>_min.png
+    # ★★ owner 2026-10-03 定案：「选卡图标的样式与游戏内卡面一致」⇒ `_min` = **整幅 ÷4**
+    #   （`area=True` 那套「画面区撑满」= 原生游戏的画法，但会让图标与游戏内不同比例；
+    #    全文与证据见 `AUDIT.md` §BE 详录 #227）
+    cardframe.save_min_from_art(name, art, area=False)               # ⚠ 写的是 assets/cards/<NAME>_min.png
     print(f"{name}: {name}_max.png {W}x{H} · {name}_min.png 64x80 · _art/{name}.png（真源）")
 
 
