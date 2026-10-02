@@ -6050,6 +6050,10 @@ static void ufo_dup_run(ufo_card_t *s)
         }
         ok = ufo_drop_spawn(s, d->kind, x, y, d->ufo_color, d->cnt_p, d->cnt_money, d->mult_permille);
         s_eq_override = 0;                            /* ⚠ 无论成败都清（别影响下一只的正常生成）*/
+        /* ★★ 2026-10-03g（owner 定案）：「**复制肯定是加倍**」——
+         *   复制品**故意**连 `eq_log_*`（"要 1:1 还回去的信仰点账"）一起照抄 ⇒ 两个包都被吃下时，
+         *   那几颗信仰点**还两次**。这**不是**漏洞，是杰拉这条线要的语义（复制 = 完全复制、加倍）。
+         *   ⚠ 别"顺手"在这里清 `eq_log_n`：那会变成"复制品只保留折算账、不重复还点"。*/
         if (!ok) continue;
         if (d->kind == UFO_DROP_KIND_BOMB) ++nb; else ++n;
     }
