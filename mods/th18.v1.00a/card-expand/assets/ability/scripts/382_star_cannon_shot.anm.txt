@@ -8,14 +8,15 @@ script script382 {
     //   · aiStyle 5 的运动：**不加速、不重力**，只有 `rotation += (|vx|+|vy|)·0.01·direction`
     //     （射速 14 ⇒ 0.14 rad/帧 ≈ 8°/帧）与 `alpha += 25·localAI[0]` 在 0..200 之间来回
     //     （localAI[0] 到顶翻 −1、到底翻 +1 ⇒ 约 16 帧一个来回）。
-    // scale 1.0：贴图 22×24 ≈ 场上 22×24 px（原版就是按原生像素画这颗星的）。
+    // ★ 2026-10-02 owner 实测「星星缩小 1 倍」⇒ scale **0.5**：贴图 42×44（含蓝辉光边）里星星本体约 22×24
+    //   ⇒ 场上星星本体约 11×12 px、辉光外圈约 21×22 px。⚠ 判定盒也跟着收到 14×14（见 SC_HIT_SIZE）。
 -1:
     layer(13);
     sprite(@STAR_CANNON_SHOT);
     type(1);
     blendMode(1);
     zWriteDisable(1);
-    scale(1.0f, 1.0f);
+    scale(0.5f, 0.5f);
     alpha(255);
 0:
     stop();

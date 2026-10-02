@@ -31,7 +31,7 @@
 #define SC_SPIN         0.14f    /* (|vx|+|vy|)·0.01 = 14·0.01 */
 #define SC_ALPHA_STEP   25       /* alpha += 25·localAI[0] */
 #define SC_ALPHA_MAX    200      /* alpha 上界（下界 0）*/
-#define SC_HIT_SIZE     24.0f    /* ❓ 判定盒（原版 width=height=18，贴图 22×24）*/
+#define SC_HIT_SIZE     14.0f    /* ❓ 判定盒（原版 width=height=18；贴图缩到一半后按同比例收到 14）*/
 
 /* —— 本卡旋钮（❓ 自定） —— */
 #define SC_SHOT_MAX     12       /* 同时在飞的星星上限（❓自定；`ce_state` 只有 496 字节）*/

@@ -1019,7 +1019,10 @@ ZENITH_BLADE_ZENITH           ability/zenith/_src/sword_4956.png @152,224,56x56
 #   （`Projectile_955.xnb`，22×24；它的 `width=18/height=18`）。取法见 `assets/cards/_src/README.md` 的
 #   「Terraria 物品贴图的取法」一节（xnbcli 解 LZX）。
 STAR_CANNON                     ability/star_cannon/_src/Item_197.png       52x18
-STAR_CANNON_SHOT                ability/star_cannon/_src/Projectile_955.png 22x24
+STAR_CANNON_SHOT                ability/star_cannon/_src/STAR_SHOT_BLUE.png 42x44
+#   ⚠ 上面那张 = 原版 `Projectile_955.png`（22×24，纯黄）**加了蓝辉光**的重烘版：owner 实测
+#     「星星周围应当有蓝色」——原版的蓝来自 `light = 1f` 的**动态光照**（我们引擎没有）
+#     ⇒ 只能烘进贴图（❓ 自绘近似）。生成器 = `assets/ability/star_cannon/make_star_art.py`。
 # ★★ 89 星星炮的**被动讯息**：撞弹致死时显示在游玩区正中的泰拉瑞亚样死亡讯息
 #   （「你被杀死了…」＋「掉了591铂金60金15银3铜」，文本 owner 逐字给定）。
 #   为什么烘成图：TH18 的 ASCII 字体图集（font2 / th13_big / th12）**没有汉字字形** ⇒ 只能预渲染

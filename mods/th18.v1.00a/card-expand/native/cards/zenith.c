@@ -122,23 +122,28 @@ static void zn_place(ce_option_t *o)
     *(int32_t *)(p + CE_OPT_OFF_F_Y)  = (int32_t)(ZN_OPT_F_Y * 128.0f);
 }
 
+/* ★★ 2026-10-03 owner 实测「我所谓的残留虚影是**孤儿虚影**」⇒ 找到真 bug：
+ *   原来只有"寿命尽 / 删卡"两条路径收了 `ov_id`/`sp_id`，**另外三条早退路径**（VM 被引擎收掉 /
+ *   出界 / 池满顶掉）只清了 `id`/`trail_id` ⇒ ×1.25 那层白叠（**整把剑**！）和刃尖星芒就留在屏上
+ *   当孤儿。现在所有路径一律走这个函数：**四个句柄要么一起活、要么一起死**。*/
+static void zn_kill_blade(zn_blade_t *b)
+{
+    if (!b) return;
+    if (b->id) ce_anm_delete(b->id);
+    if (b->trail_id) ce_anm_delete(b->trail_id);   /* 更早的残影脚本自己 delete，这里只兜底最近一枚 */
+    if (b->ov_id) ce_anm_delete(b->ov_id);
+    if (b->sp_id) ce_anm_delete(b->sp_id);
+    b->id = b->trail_id = b->ov_id = b->sp_id = 0;
+    b->active = 0;
+}
+
 /* 收掉所有在飞的剑刃 + 它们的残影。**不依赖 tick**（商店里删卡时只有 on_delete 跑得到）。 */
 static void zn_kill_blades(ce_card_t *c)
 {
     zn_card_t *s = ce_state(c, zn_card_t);
     int i;
     if (!s) return;
-    for (i = 0; i < ZN_BLADE_MAX; ++i) {
-        if (s->st.b[i].id) ce_anm_delete(s->st.b[i].id);
-        if (s->st.b[i].trail_id) ce_anm_delete(s->st.b[i].trail_id);   /* 更早的残影脚本自己 delete */
-        if (s->st.b[i].ov_id) ce_anm_delete(s->st.b[i].ov_id);         /* ★ ×1.25 白叠 */
-        if (s->st.b[i].sp_id) ce_anm_delete(s->st.b[i].sp_id);         /* ★ 刃尖星芒 */
-        s->st.b[i].id = 0;
-        s->st.b[i].trail_id = 0;
-        s->st.b[i].ov_id = 0;
-        s->st.b[i].sp_id = 0;
-        s->st.b[i].active = 0;
-    }
+    for (i = 0; i < ZN_BLADE_MAX; ++i) zn_kill_blade(&s->st.b[i]);
 }
 
 /* +0x18：开局 / 火力档变 / 关店后广播（池刚被重建过）—— 无条件重新申请一个，与原生装备卡一致。 */
@@ -247,21 +252,17 @@ static int on_tick_2(ce_card_t *c)
         b = &s->st.b[i];
         if (!b->active) continue;
         if (!ce_anm_get_vm(b->id)) {            /* VM 被引擎收掉了（脚本 delete / 被别的路清）*/
-            b->active = 0; b->id = 0; b->trail_id = 0;
+            zn_kill_blade(b);                   /* ★ 连 ov/sp 一起收（孤儿虚影的那个 bug）*/
             continue;
         }
         zn_step(b, &pose);
         if (pose.done) {
-            ce_anm_delete(b->id);
-            if (b->trail_id) ce_anm_delete(b->trail_id);
-            b->id = 0; b->trail_id = 0;
+            zn_kill_blade(b);
             continue;
         }
         zn_place_blade(b, &pose, fx, fy, &x, &y);
         if (x < -ZN_VIEW_X || x > ZN_VIEW_X || y < ZN_VIEW_Y_MIN || y > ZN_VIEW_Y_MAX) {
-            ce_anm_delete(b->id);
-            if (b->trail_id) ce_anm_delete(b->trail_id);
-            b->id = 0; b->trail_id = 0; b->active = 0;
+            zn_kill_blade(b);
             continue;
         }
         ce_anm_set_pos(b->id, x, y, pz);
