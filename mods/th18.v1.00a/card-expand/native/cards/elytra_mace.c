@@ -40,6 +40,15 @@
 #define EM_CARD_BAR_Y        240.0f
 #define EM_CARD_C_INPUT      0x400u     /* `INPUT_PRESSED` 的 C 位（一手 `0x45c084`）*/
 #define EM_CARD_SE_SLASH     0x2d       /* TH18 音效表 0x2d = se_slash.wav（重锤落下那一声 ❓ 借现成的）*/
+/* ★★ 2026-10-03：owner 一开始要「飞行过程中**禁用上下左右输入**」⇒ 我按输入位写了一份屏蔽
+ *   （清 `INPUT_HELD/PRESSED` 的 0x010/0x020/0x040/0x080），并去查了**引擎有没有现成机制**：
+ *   · 一手（`engine/player/th18/03-player-hit-gate.md` §1.6.2）：**TH18 里「不能移动」只有一种形态
+ *     = `player+0x476ac` 离开 1**（移动只在 case 1 调，`0x45c0cc`）⇒ **引擎没有"屏蔽方向输入"的开关** ✗，
+ *     而 state 2/4/0（死亡动画/决死窗/出生）副作用太大，不能用；
+ *   · 原生卡自己也**不锁**：瞬移那篇（`engine/player/th18/04-warp-yukari-gap.md` §3）明确写
+ *     「**动画期间自机自己还能动**」。
+ *   ⇒ owner 拍板「**那就算了，别屏蔽了吧**」⇒ 本卡**不屏蔽**任何输入；"没被拉走"靠的是**每帧写坐标**
+ *     （见 `em_set_player()`：浮点 + 定点两份都写 ⇒ 玩家那点位移被我们每帧覆盖，效果上等价于"轨道上"）。*/
 #define EM_RECHARGE          2400u      /* ❓自定：40 s（与 `patch/th18/cards.js` 的 active_recharge 同值；
                                          *   契约检查要求 C 侧与卡表两侧都在）*/
 #define EM_CARD_HAM_Y0       (-72.0f)   /* 锤子起手：目标上方 72 px */
@@ -58,6 +67,7 @@ typedef struct {
     uint8_t  homed;             /* home_* 有效 */
     uint8_t  switched_away;     /* 本帧发现玩家把卡切走了（D）*/
     uint8_t  dmg_done;          /* 这一锤的伤害只出一次 */
+    float    dash_x0, dash_y0;  /* ★ "飞过去"的起点（卡准那一刻的自机坐标）*/
     uint8_t  *self;             /* 本卡对象（on_activate 时记下；用来比对"选中卡是不是我"）*/
 } em_card_t;
 
@@ -81,12 +91,25 @@ static void em_kill_fx(em_card_t *s)
 }
 
 /* 写自机坐标（`CE_PLAYER_X` 是引擎每帧重读的 float3；z 不动）。*/
+/* ★★ 2026-10-03（owner 让我去看「原生卡的穿墙 / 111 灵梦特技」那条线 ⇒
+ *   `engine/player/th18/04-warp-yukari-gap.md` §4）：自机位置在引擎里是**两份**——
+ *     · 浮点：`player+0x620/+0x624`（`CE_PLAYER_X/Y`）；我们原来**只写这份** ✗
+ *     · **定点 1/128 px**：`player+0x62c`(x) / `+0x630`(y) —— 引擎每帧
+ *       `x += int(velocity.x)`（`th18:0x45b705`）之后**钳位 ±0x5c00**（`0x45b735/0x45b7ad`）的那一份。
+ *   ⇒ 只写浮点，引擎那份还是旧值：下一帧积分/钳位都从旧值出发 ⇒ 表现就是"被拉回去 / 漂移" ✗。
+ *   两份一起写。定点值 = 浮点 × 128（就近取整；手写 round，避免 libm）。
+ *   ⚠ float→int 的转换在 i686 上有 x87 风险 ⇒ `make dllx87` 断言 0 条，本函数实测通过。*/
+#define EM_PLAYER_X_FIXED    0x62c
+#define EM_PLAYER_Y_FIXED    0x630
+
 static void em_set_player(float x, float y)
 {
     uint8_t *p = CE_PLAYER();
     if (!p) return;
     *(float *)(p + CE_PLAYER_X) = x;
     *(float *)(p + CE_PLAYER_Y) = y;
+    *(int32_t *)(p + EM_PLAYER_X_FIXED) = (int32_t)(x * 128.0f + (x >= 0.0f ? 0.5f : -0.5f));
+    *(int32_t *)(p + EM_PLAYER_Y_FIXED) = (int32_t)(y * 128.0f + (y >= 0.0f ? 0.5f : -0.5f));
 }
 
 /* 找一个「可攻击」的敌人（可锁定 + 在 `EM_TARGET_RANGE` 内），返回最近的。1 = 找到。*/
@@ -216,6 +239,31 @@ static int on_tick_2(ce_card_t *c)
         }
     }
 
+    /* ★ 2026-10-03 owner：「加一个**移动过去移动回来**的过程，这个过程中**禁用上下左右输入**」
+     *   （**不屏蔽输入** —— owner 2026-10-03「那就算了，别屏蔽了吧」；见文件上方那段调查记录。
+     *     自机之所以看着"在轨道上"，是因为我们**每帧把两份坐标都写回去**，玩家的位移当帧就被覆盖。）*/
+    {
+        const int32_t ph = (int32_t)s->st.state;
+        if (ph == (int32_t)EM_DASH_OUT || ph == (int32_t)EM_SMASH || ph == (int32_t)EM_DASH_BACK) {
+            float t, x, y;
+            if (ph == (int32_t)EM_DASH_OUT) {
+                t = (float)s->st.frames / (float)EM_DASH_FRAMES;
+                if (t > 1.0f) t = 1.0f;
+                x = s->dash_x0 + (s->tgt_x - s->dash_x0) * t;
+                y = s->dash_y0 + ((s->tgt_y + EM_SMASH_OFFSET_Y) - s->dash_y0) * t;
+                em_set_player(x, y);
+            } else if (ph == (int32_t)EM_SMASH) {
+                em_set_player(s->tgt_x, s->tgt_y + EM_SMASH_OFFSET_Y);   /* 按在敌人上方砸 */
+            } else {
+                t = (float)s->st.frames / (float)EM_DASH_FRAMES;
+                if (t > 1.0f) t = 1.0f;
+                x = s->tgt_x + (s->home_x - s->tgt_x) * t;
+                y = (s->tgt_y + EM_SMASH_OFFSET_Y) + ((s->home_y) - (s->tgt_y + EM_SMASH_OFFSET_Y)) * t;
+                em_set_player(x, y);
+            }
+        }
+    }
+
     /* 光标：有敌人时左右扫（判据在 core 里）；位置每帧写 */
     ev = em_tick(&s->st, has_target, (*(volatile uint32_t *)CE_ADDR_INPUT_PRESSED & EM_CARD_C_INPUT) != 0);
     if (s->cur_id) {
@@ -226,17 +274,18 @@ static int on_tick_2(ce_card_t *c)
 
     switch (ev) {
     case EM_EV_HIT:
-        /* ★ 卡准了：锁存目标、瞬移过去、抡锤、出伤害 */
+        /* ★ 卡准了：锁存目标 + 记下"飞过去"的起点（**不再瞬移** —— 走 EM_DASH_OUT 的插值）*/
         s->tgt_x = tx;
         s->tgt_y = ty;
+        s->dash_x0 = px;
+        s->dash_y0 = py;
         s->dmg_done = 0;
-        em_set_player(tx, ty + EM_SMASH_OFFSET_Y);
         em_kill(&s->cur_id);
         if (s->bar_id) { ce_anm_delete(s->bar_id); s->bar_id = 0; }
         s->ham_id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_ELYTRA_MACE_HAMMER, EM_CARD_HAM_LAYER);
         s->wing_id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_ELYTRA_MACE_WING, EM_CARD_WING_LAYER);
-        ce_play_sound(EM_CARD_SE_SLASH, tx);          /* ❓ 借 TH18 的斩击音（重锤落下的那一声）*/
-        ce_log("elytra_mace: HIT - teleported (%.1f, %.1f) -> target (%.1f, %.1f)",
+        ce_play_sound(EM_CARD_SE_SLASH, tx);          /* ❓ 借 TH18 的斩击音（抡起的那一声）*/
+        ce_log("elytra_mace: HIT - dashing out (%.1f, %.1f) -> target (%.1f, %.1f)",
                (double)px, (double)py, (double)tx, (double)ty);
         break;
     case EM_EV_MISS:

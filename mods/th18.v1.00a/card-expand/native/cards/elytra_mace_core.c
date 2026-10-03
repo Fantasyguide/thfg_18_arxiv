@@ -28,10 +28,15 @@ int em_invuln_left(const em_state_t *s)
     if (!s) return 0;
     switch (s->state) {
     case EM_AIM:
-        /* 瞄准剩余 + 砸击 + 缓冲：一次性声明足，卡侧每帧重声明 ⇒ 结束时自然掉 */
-        return (int)(EM_AIM_FRAMES - s->frames) + EM_SMASH_FRAMES + EM_EXIT_INVULN;
+        /* 瞄准剩余 + 去 + 砸 + 回 + 缓冲：一次性声明足，卡侧每帧重声明 ⇒ 结束时自然掉 */
+        return (int)(EM_AIM_FRAMES - s->frames) + EM_DASH_FRAMES + EM_SMASH_FRAMES
+               + EM_DASH_FRAMES + EM_EXIT_INVULN;
+    case EM_DASH_OUT:
+        return (int)(EM_DASH_FRAMES - s->frames) + EM_SMASH_FRAMES + EM_DASH_FRAMES + EM_EXIT_INVULN;
     case EM_SMASH:
-        return (int)(EM_SMASH_FRAMES - s->frames) + EM_EXIT_INVULN;
+        return (int)(EM_SMASH_FRAMES - s->frames) + EM_DASH_FRAMES + EM_EXIT_INVULN;
+    case EM_DASH_BACK:
+        return (int)(EM_DASH_FRAMES - s->frames) + EM_EXIT_INVULN;
     case EM_EXIT:
         return (int)(EM_EXIT_INVULN - s->frames);
     default:
@@ -68,7 +73,9 @@ int em_tick(em_state_t *s, int has_target, int c_edge)
         if (c_edge && has_target) {
             if (em_in_window(s)) {
                 s->hits++;
-                s->state = EM_SMASH;
+                /* ★ 2026-10-03：卡准之后不再瞬移 —— 先进 **EM_DASH_OUT**（卡侧做"飞过去"的插值
+                 *   并屏蔽方向输入），到达时才进 EM_SMASH 出伤害。*/
+                s->state = EM_DASH_OUT;
                 s->frames = 0;
                 return EM_EV_HIT;
             }
@@ -91,6 +98,14 @@ int em_tick(em_state_t *s, int has_target, int c_edge)
         }
         return EM_EV_NONE;
 
+    case EM_DASH_OUT:
+        s->frames++;
+        if (s->frames >= EM_DASH_FRAMES) {           /* 到了敌人上方 ⇒ 开始砸 */
+            s->state = EM_SMASH;
+            s->frames = 0;
+        }
+        return EM_EV_NONE;
+
     case EM_SMASH:
         s->frames++;
         if (s->frames >= EM_SMASH_FRAMES) {
@@ -100,6 +115,16 @@ int em_tick(em_state_t *s, int has_target, int c_edge)
              *   · 新一轮 AIM 的**光标从头开始**、`no_target` 清零；
              *   · 退出仍走原来的三条：**3 s 没有可攻击的敌人 / 错过窗口 / 瞄准预算到** ⇒ 进 EXIT 缓冲。
              *   ⇒ 只要场上还有敌人、节奏卡得准，就能一锤接一锤（无敌全程声明不断）。*/
+            /* ★ 2026-10-03：砸完也不瞬移回家 —— 先进 **EM_DASH_BACK**（卡侧插值飞回 + 屏蔽方向输入），
+             *   飞回原位那一帧才发 EM_EV_RETURN（卡侧在那里收尾并回 AIM 连段）。*/
+            s->state = EM_DASH_BACK;
+            s->frames = 0;
+        }
+        return EM_EV_NONE;
+
+    case EM_DASH_BACK:
+        s->frames++;
+        if (s->frames >= EM_DASH_FRAMES) {           /* 回到原位 ⇒ 收尾（并准备连段）*/
             s->state = EM_AIM;
             s->frames = 0;
             s->no_target = 0;

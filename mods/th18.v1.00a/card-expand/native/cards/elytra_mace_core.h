@@ -38,6 +38,10 @@
                                        *   （≈0.23 s 的窗口；美术 `make_bar_art.py` 同步加宽到 22）。*/
 #define EM_CURSOR_SPEED      3.2f     /* 光标速度（px/帧；单程 160/3.2 = 50 帧）*/
 #define EM_SMASH_FRAMES      18       /* 砸下 → 起身的动画帧数（这期间自机在敌人身上）*/
+#define EM_DASH_FRAMES       12       /* ★ 2026-10-03 owner：「加一个**移动过去移动回来**的过程，
+                                       *   这个过程中**禁用上下左右输入**」⇒ 去/回各 12 帧（0.2 s）的直线插值。
+                                       *   这两段里卡侧每帧：① 写自机插值坐标；② 屏蔽方向键（INPUT_HELD/PRESSED
+                                       *   的 0x010/0x020/0x040/0x080 四位）。❓ 自定：12 帧 = 够看清"飞过去"又不拖沓。*/
 #define EM_EXIT_INVULN       30       /* 退出后的缓冲无敌帧（0.5 s）*/
 #define EM_SMASH_DMG         800      /* 那一锤的伤害（❓ 高额；进 TUNING 调）*/
 #define EM_SMASH_W           140.0f   /* 判定盒（以目标敌人为中心）*/
@@ -46,10 +50,12 @@
 #define EM_TARGET_RANGE      520.0f   /* 「可攻击」的半径（在屏内且够近）❓ 自定 */
 
 typedef enum {
-    EM_IDLE  = 0,   /* 不在任何状态（不声明无敌）*/
-    EM_AIM   = 1,   /* 时机条在动 / 等确认 */
-    EM_SMASH = 2,   /* 已瞬移过去、锤子正在砸 */
-    EM_EXIT  = 3    /* 退出后的缓冲无敌帧 */
+    EM_IDLE       = 0,   /* 不在任何状态（不声明无敌）*/
+    EM_AIM        = 1,   /* 时机条在动 / 等确认 */
+    EM_DASH_OUT   = 2,   /* ★ 飞到敌人上方（插值中，方向输入被屏蔽）*/
+    EM_SMASH      = 3,   /* 到了：锤子砸下 + 伤害（自机被按在敌人上方）*/
+    EM_DASH_BACK  = 4,   /* ★ 飞回原位（插值中，方向输入被屏蔽）*/
+    EM_EXIT       = 5    /* 退出后的缓冲无敌帧 */
 } em_phase_t;
 
 typedef enum {

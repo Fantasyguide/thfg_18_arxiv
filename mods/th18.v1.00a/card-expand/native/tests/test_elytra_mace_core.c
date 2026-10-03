@@ -70,9 +70,18 @@ static void test_hit_and_miss(void)
     em_tick(&s, 1, 0);                     /* 解锁帧 */
     CHECK(run_until_in_window(&s, 1), "光标一直没进过窗口（参数被改了？）");
     CHECK(em_tick(&s, 1, 1) == EM_EV_HIT, "窗口内按 C 该是 HIT");
-    CHECK(s.state == EM_SMASH && s.hits == 1, "HIT 之后该进 SMASH");
+    /* ★ 2026-10-03 owner「加一个移动过去移动回来的过程」⇒ HIT 之后先进 **EM_DASH_OUT**（飞过去），
+       飞完才进 EM_SMASH 出伤害。*/
+    CHECK(s.state == EM_DASH_OUT && s.hits == 1, "HIT 之后该进 DASH_OUT（得到 %d）", (int)s.state);
+    {
+        int i;
+        for (i = 1; i < EM_DASH_FRAMES; ++i)
+            CHECK(em_tick(&s, 1, 0) == EM_EV_NONE, "飞行第 %d 帧不该出事件", i);
+        CHECK(em_tick(&s, 1, 0) == EM_EV_NONE, "飞完那一帧仍不该出事件");
+        CHECK(s.state == EM_SMASH, "飞完该进 SMASH（得到 %d）", (int)s.state);
+    }
 
-    /* 砸完 ⇒ RETURN ⇒ 缓冲 ⇒ DONE */
+    /* 砸完 ⇒ 飞回来 ⇒ RETURN ⇒ 缓冲 ⇒ DONE */
     {
         int ev = EM_EV_NONE, i, saw_return = 0;
         for (i = 1; i < EM_SMASH_FRAMES; ++i) {
@@ -80,8 +89,13 @@ static void test_hit_and_miss(void)
             CHECK(ev == EM_EV_NONE, "砸击第 %d 帧不该出事件（得到 %d）", i, ev);
         }
         ev = em_tick(&s, 0, 0);
-        CHECK(ev == EM_EV_RETURN, "砸完那一帧该 RETURN，得到 %d", ev);
-        /* ★ 2026-10-03 owner「连续作用」：砸完回 AIM 连段（不再直接进 EXIT）*/
+        CHECK(ev == EM_EV_NONE, "砸完那一帧该进 DASH_BACK（不该出事件，得到 %d）", ev);
+        CHECK(s.state == EM_DASH_BACK, "砸完该进 DASH_BACK（得到 %d）", (int)s.state);
+        for (i = 1; i < EM_DASH_FRAMES; ++i)
+            CHECK(em_tick(&s, 0, 0) == EM_EV_NONE, "回程第 %d 帧不该出事件", i);
+        ev = em_tick(&s, 0, 0);
+        CHECK(ev == EM_EV_RETURN, "飞回原位那一帧该 RETURN，得到 %d", ev);
+        /* ★ 2026-10-03 owner「连续作用」：回原位后回 AIM 连段（不再直接进 EXIT）*/
         CHECK(s.state == EM_AIM, "RETURN 之后该回到 AIM 继续连段（得到 %d）", (int)s.state);
         saw_return = 1;
         /* 连段之后：让它在 AIM 里超时（没有目标）⇒ 仍要能进 EXIT 收尾 */
@@ -161,9 +175,12 @@ static void test_invuln_monotone(void)
     CHECK(em_tick(&s, 1, 1) == EM_EV_HIT, "该 HIT");
     CHECK(em_invuln_left(&s) >= EM_EXIT_INVULN, "SMASH 第一帧的声明该含缓冲（得到 %d）",
           em_invuln_left(&s));
-    /* ★ 2026-10-03「连续作用」：砸完回 AIM 连段 ⇒ 得先让 AIM 超时（3s 没敌人）再进 EXIT 缓冲，
-       走完那一段之后声明才该归 0（原来直接 SMASH→EXIT 所以几步就归零）。*/
-    for (i = 0; i < EM_SMASH_FRAMES + EM_NO_TARGET_FRAMES + EM_EXIT_INVULN + 8; ++i) em_tick(&s, 0, 0);
+    /* ★ 2026-10-03「连续作用 + 飞去飞回」：砸完 → DASH_BACK → AIM 连段 ⇒ 得再让 AIM 超时（3s 没敌人）
+       进 EXIT 缓冲，走完那一段之后声明才该归 0。*/
+    /* 预算：去(EM_DASH_FRAMES) + 砸 + 回 + AIM 超时 + 缓冲 + 余量 */
+    for (i = 0; i < EM_DASH_FRAMES + EM_SMASH_FRAMES + EM_DASH_FRAMES
+                    + EM_NO_TARGET_FRAMES + EM_EXIT_INVULN + 8; ++i)
+        em_tick(&s, 0, 0);
     CHECK(s.state == EM_IDLE, "连段超时 + 缓冲走完该回 IDLE（得到 %d）", (int)s.state);
     CHECK(em_invuln_left(&s) == 0, "全走完该是 0");
 }
