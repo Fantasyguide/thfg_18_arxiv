@@ -209,6 +209,19 @@ static uint32_t s_bossatk_scan_rot;
  *   坐标是 **640×480 屏幕空间**（`ce_hud_number_set`/`ce_hud_text` 都收这个空间）。
  *   位置取**左上角**（owner 记的 TH19 位置）；配色取暖橙（与 TH19 的计数器同族的暖色）。*/
 /* ★ 一手：TH19 那个计数器 UI 的**显示门槛 = 10**（`0x51d84e cmpl $0xa` / `0x51d855 jl`）。*/
+/* ★★ 2026-10-01（owner 给了字体出处「看字体基本就是这两个之一」）：hits UI **自带字形**。
+ *   8 台 VM = 4 个标签字形（H/I/T/S）+ 最多 4 位数字；字形来自 TH19 `ascii_norm2.png` 的切片
+ *   （见 `assets/ability/make_pofv109_hits_art.py`），画法复用 `scripts/105_hud_number.anm.txt`
+ *   （单 sprite VM，卡侧 `ce_anm_set_sprite` 换字形）——**不再借用共享的 `ATLAS_HUD_DIGIT`**
+ *   （那套是真银圣剑的 `ability/truesilver/DIGIT_*.png` ✗）。*/
+/* ★ 描边那套字形（`*_EDGE`）的染色 = **黑**（AARRGGBB）；差值 = 同一字形的白字号 → 描边号。*/
+#define POFV_HITS_EDGE_RGBA  0xff000000u
+/* ★ ORDER.txt 里每个字形是「白、描边」**相邻两条** ⇒ 描边号 = 白字号 + 1（已核：D0=577/D0_EDGE=578）。*/
+#define POFV_HITS_EDGE_DELTA       1u
+#define POFV_HITS_UI_VMS          16   /* 8 个字形 × (描边 + 白字) */
+#define POFV_HITS_UI_DIGITS        4
+#define POFV_HITS_UI_PITCH      14.0f   /* ❓ 自定：显示步距（一手 24 是**图集**步距，不是显示间距）*/
+#define POFV_HITS_UI_GAP         6.0f   /* 标签与数字之间的空档 */
 #define POFV_HITS_UI_MIN          10
 #define POFV_CHAIN_UI_X         52.0f
 #define POFV_CHAIN_UI_Y         40.0f
@@ -252,6 +265,8 @@ static pofv_ghost_pool_t  s_ghost;      /* ★ 2026-10-01（口径 8/9/10）：�
 static int32_t            s_ghost_vm[POFV_GHOST_MAX];   /* 每只灵的**跟随 VM** id（0 = 没有）*/
 /* ★ 每个**场**（暴风 / CA 红圈）的跟随 VM id（0 = 没有）；驱动在 `storm_vm_sync()`。*/
 static int32_t            s_storm_vm[POFV_STORM_MAX];
+/* ★ 109 自己的 hits UI 字形 VM（4 标签 + 4 数字；见 `hits_ui_sync()`）。*/
+static uint32_t           s_hits_vm[POFV_HITS_UI_VMS];
 static int32_t            s_frame;      /* 游玩帧计数（连爆窗口的帧源；只在 on_tick_2 前进）*/
 /* 诊断账（都在 `clear_card()` 里清；`verify.py` 的场景吃这几行）。*/
 static int32_t            s_power_got;  /* 本次段累计收取的灵力道具颗数 */
@@ -280,6 +295,10 @@ typedef struct {
 } pofv_card_t;
 
 _Static_assert(sizeof(pofv_card_t) <= 496 - 16, "ce_state 用户区上限 496 字节");
+
+/* ★ hits UI 的两个函数（定义在文件后段；`clear_card()` 要用 `hits_ui_kill` ⇒ 在结构体之后先声明）。*/
+static void hits_ui_kill(void);
+static void hits_ui_sync(pofv_card_t *s);
 
 static pofv_card_t *st(ce_card_t *c)
 {
@@ -676,6 +695,9 @@ static void bossatk_fire(ce_card_t *c, pofv_card_t *s)
 
     if (!pofv_bossatk_tick(&s->bossatk)) {
         bossatk_carrier_stop();
+
+    /* ★ hits UI 的字形 VM（长持续效果纪律）。*/
+    hits_ui_kill();
 
     /* ★ 场的 VM 也要收干净（长持续效果纪律：删卡/换关/重开那一刻 tick 全停，只有这里跑得到）。*/
     {
@@ -1344,6 +1366,80 @@ static void pofv_dup_run(void)
     ce_log("pofv: jera dup %d power items (live %d/%d)", n, (int)s_power.live, POFV_POWER_MAX);
 }
 
+/* ★★ 2026-10-01（owner：「看字体基本就是这两个之一」）：hits UI 的**自带字形**绘制。
+ *
+ *   字形 = TH19 `ascii/ascii_norm2.png` 的切片（`POFV109_HITS_D0..D9` / `_H` `_I` `_T` `_S`）；
+ *   VM = 复用共享脚本 `CE_ANM_ABILITY_SCRIPT_HUD_NUMBER`（`sprite(@TS_DIGIT_0); …; stop();`
+ *        —— 一个**单 sprite VM**，字形由卡侧 `ce_anm_set_sprite` 换）✓。
+ *   显示条件：`hits >= POFV_HITS_UI_MIN`（一手门槛 10，见 `0x51d84e`）；否则全部删掉。
+ *   ⚠ 前导零不画（`hits = 42` 只画两位）—— 与「多少 hits」的读数习惯一致。*/
+static void hits_ui_kill(void)
+{
+    int i;
+    for (i = 0; i < POFV_HITS_UI_VMS; ++i) {
+        if (s_hits_vm[i]) { ce_anm_delete(s_hits_vm[i]); s_hits_vm[i] = 0; }
+    }
+}
+
+static void hits_ui_sync(pofv_card_t *s)
+{
+    /* 每个字形两台 VM：**描边（`*_EDGE`，染黑）先起 ⇒ 画在下面**，白字后起 ⇒ 画在上面 ✓
+     * （一手用法：owner「可能是 `ascii_bigf.png` **染成黑色叠在下面**」）。*/
+    static const uint32_t label[4][2] = {
+        { CE_ANM_ABILITY_SPRITE_POFV109_HITS_H_EDGE, CE_ANM_ABILITY_SPRITE_POFV109_HITS_H },
+        { CE_ANM_ABILITY_SPRITE_POFV109_HITS_I_EDGE, CE_ANM_ABILITY_SPRITE_POFV109_HITS_I },
+        { CE_ANM_ABILITY_SPRITE_POFV109_HITS_T_EDGE, CE_ANM_ABILITY_SPRITE_POFV109_HITS_T },
+        { CE_ANM_ABILITY_SPRITE_POFV109_HITS_S_EDGE, CE_ANM_ABILITY_SPRITE_POFV109_HITS_S },
+    };
+    uint32_t want[POFV_HITS_UI_VMS];
+    float    xs[POFV_HITS_UI_VMS];
+    int      n = 0, k, lead, v, g;
+    void    *anm = CE_ABILITY_ANM();
+
+    if (!s || !anm) return;
+    if (s->st.hits < POFV_HITS_UI_MIN) { hits_ui_kill(); return; }
+
+    for (g = 0; g < 4; ++g) {                       /* 标签 "HITS" */
+        for (k = 0; k < 2; ++k) {
+            want[n] = label[g][k];
+            xs[n] = POFV_CHAIN_UI_X + POFV_HITS_UI_PITCH * (float)g;
+            ++n;
+        }
+    }
+    v = s->st.hits;
+    {   int d[POFV_HITS_UI_DIGITS], pos;
+        for (k = POFV_HITS_UI_DIGITS - 1; k >= 0; --k) { d[k] = v % 10; v /= 10; }
+        lead = 0;
+        while (lead < POFV_HITS_UI_DIGITS - 1 && d[lead] == 0) ++lead;
+        for (k = lead, pos = 0; k < POFV_HITS_UI_DIGITS; ++k, ++pos) {
+            uint32_t base = (uint32_t)(CE_ANM_ABILITY_SPRITE_POFV109_HITS_D0 + d[k]);
+            for (g = 0; g < 2; ++g) {              /* 0 = 描边、1 = 白字 */
+                want[n] = base + (g == 0 ? POFV_HITS_EDGE_DELTA : 0u);
+                xs[n] = POFV_CHAIN_UI_X + POFV_HITS_UI_PITCH * 4.0f + POFV_HITS_UI_GAP
+                        + POFV_HITS_UI_PITCH * (float)pos;
+                ++n;
+            }
+        }
+    }
+
+    for (k = 0; k < POFV_HITS_UI_VMS; ++k) {
+        if (k >= n) { if (s_hits_vm[k]) { ce_anm_delete(s_hits_vm[k]); s_hits_vm[k] = 0; } continue; }
+        if (s_hits_vm[k] && !ce_anm_get_vm(s_hits_vm[k])) s_hits_vm[k] = 0;
+        if (!s_hits_vm[k]) {
+            float pos[3];
+            if (k % 2 == 0) continue;               /* ★ 描边必须先起：等白字那台落下再补（下一帧起）*/
+            pos[0] = xs[k]; pos[1] = POFV_CHAIN_UI_Y; pos[2] = 0.0f;
+            s_hits_vm[k - 1] = ce_anm_spawn_ui(anm, CE_ANM_ABILITY_SCRIPT_HUD_NUMBER, pos);
+            s_hits_vm[k]     = ce_anm_spawn_ui(anm, CE_ANM_ABILITY_SCRIPT_HUD_NUMBER, pos);
+            if (!s_hits_vm[k]) { if (s_hits_vm[k - 1]) { ce_anm_delete(s_hits_vm[k - 1]); s_hits_vm[k - 1] = 0; } continue; }
+            ce_anm_set_color(s_hits_vm[k - 1], POFV_HITS_EDGE_RGBA);   /* 描边 = 黑 */
+        } else {
+            ce_anm_set_pos(s_hits_vm[k], xs[k], POFV_CHAIN_UI_Y, 0.0f);
+        }
+        ce_anm_set_sprite(anm, s_hits_vm[k], want[k]);
+    }
+}
+
 static int on_tick_2(ce_card_t *c)
 {
     pofv_card_t *s = st(c);
@@ -1357,26 +1453,8 @@ static int on_tick_2(ce_card_t *c)
     ce_dup_publish((uint32_t)ce_card_id(c), (int)s_power.live);
     if (ce_dup_should_run(&s_dup_seen)) pofv_dup_run();
 
-    /* ══ ★★★ 2026-10-01（owner：「**th19 有一个多少 hits 的 UI**」）击中数 UI：左上角 ══════
-     *   显示 `st.hits`（累计击中数），只在 > 0 时出现。
-     *   ⚠ 如实登记：TH19 那个 UI 的**精确图元我没定位到**（exe 里没有 `HITS`/`連爆` 字符串；
-     *     `front.anm` 解出的 11 张图里也没有）⇒ 用本仓既有 HUD 手段做等价物：
-     *       · 数字 = `ce_hud_number_set`（ANM 图元，TH18 原生 **font 2** 字形）；
-     *       · 标签 = `ce_hud_text("HITS")`（ASCII；TH18 的 ascii 字体没有汉字）。*/
-    /* ★★ 2026-10-01（一手）：**这个 UI 只在计数 ≥ 10 时才出现** ——
-     *   `th19:0x51d84e cmpl $0xa, 0x22bc(%ecx)` / `0x51d855 jl skip`（读的是 `PlayerInf+0x22bc`）。
-     *   ⇒ 门槛取 10（不是 `> 0`）✓。*/
-    if (s->st.hits >= POFV_HITS_UI_MIN) {
-        if (!s->chain_ui_on) {
-            ce_hud_text(POFV_CHAIN_UI_X, POFV_CHAIN_UI_Y - 13.0f, POFV_CHAIN_UI_BGRA, "HITS");
-            s->chain_ui_on = 1;
-        }
-        ce_hud_number_set(&s->chain_num, POFV_CHAIN_UI_X, POFV_CHAIN_UI_Y,
-                          POFV_CHAIN_UI_DX, (int)s->st.hits, 4, 0, "pofv109");
-    } else if (s->chain_ui_on) {
-        ce_hud_number_clear(&s->chain_num);
-        s->chain_ui_on = 0;
-    }
+    /* ★★ 2026-10-01：hits UI —— 自带 TH19 字形（见 `hits_ui_sync()` 的长注释）。*/
+    hits_ui_sync(s);
 
     /* 对话中：蓄力打断、不发动（照 117 的处理）；商店里 AbilityManager 整个冻着，进不到这里。
      * 无敌窗口也在对话里冻结（引擎自己的计时器同样不走）。*/

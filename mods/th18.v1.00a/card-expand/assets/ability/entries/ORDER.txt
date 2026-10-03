@@ -991,17 +991,39 @@ POFV109_SPIRIT_0  ability/pofv109_spirit/SPIRIT_0.png  48x32
 POFV109_SPIRIT_1  ability/pofv109_spirit/SPIRIT_1.png  48x32
 POFV109_SPIRIT_2  ability/pofv109_spirit/SPIRIT_2.png  48x32
 POFV109_SPIRIT_3  ability/pofv109_spirit/SPIRIT_3.png  48x32
-# ★★ 2026-10-02b（87 天顶剑 → 按泰拉瑞亚的**弹幕本体**还原）：天顶剑每一挥甩出的**剑阵**用的剑贴图。
-#   ⚠ 这张图集**同时**供跟班（逐把轮播，见 script378）与剑刃（每把随机）用 —— 原先给跟班单开的
-#     单图 entry（`ZENITH_SWORD`）同日撤掉（它的唯一消费者改走本图集的第 21 个成员），
-#     **没有别人的号受影响**（那两行都在文件末尾、冻结段之后）。
-#   一手（不是猜的）：`Terraria.exe`（用户本机 **1.4.5.8**）里 `Terraria.Graphics.FinalFractalHelper..cctor`
-#   的 IL —— 21 个 `FinalFractalProfile(ItemID, bladeLength, trailColor)`，物品号顺序如下（用 dnfile+dncil
-#   反 IL 读出；`Projectile.AI_182_FinalFractal` 用 `GetRandomProfileIndex()` 在这些里随机挑一把画）。
-#   ⚠ 最初只认出 12 个：颜色里有 `Main.OurFavoriteColor` 这类**静态字段**、长度是 `ldc.r4`（浮点），
-#     所以那一次只扫到一部分物品号。21 个与 decompile 的对照表逐项吻合（见 AUDIT §BE 详录 #211）。
-#   21 张按**各自的原始像素尺寸**摆进一个 6×4 网格（格子 72×72，逐格居中 ⇒ 旋转轴仍在图心）。
-#   **追加在文件末尾**（尾插 ⇒ 既有 entry / sprite 号一个不动）。名字 = `ZENITH_BLADE_<剑名>`。
+# 109 的 **hits UI 字形**：★ **TH19 原版字体**（owner 给两张图 + 「一手有黑描边」）。
+#   白字 = `ascii/ascii_big.png`（首格 sprite320 = 空格 ASCII32、16 格/行、x 步 32、y 步 40、高 37）；
+#   描边 = `ascii/ascii_bigf.png`（**同布局**、首格 sprite418）—— 卡侧把描边那套**染黑画在下面** ✓。
+#   14 个字形（0-9 + H I T S）× (白 + 描边) = **28 张**；切图 = `make_pofv109_hits_art.py`；
+#   画法 = 复用 `scripts/105_hud_number.anm.txt`（单 sprite VM，卡侧 `ce_anm_set_sprite` / `ce_anm_set_color`）。
+POFV109_HITS_D0  ability/pofv109_hits/D0.png  32x37
+POFV109_HITS_D0_EDGE  ability/pofv109_hits/D0_EDGE.png  32x37
+POFV109_HITS_D1  ability/pofv109_hits/D1.png  32x37
+POFV109_HITS_D1_EDGE  ability/pofv109_hits/D1_EDGE.png  32x37
+POFV109_HITS_D2  ability/pofv109_hits/D2.png  32x37
+POFV109_HITS_D2_EDGE  ability/pofv109_hits/D2_EDGE.png  32x37
+POFV109_HITS_D3  ability/pofv109_hits/D3.png  32x37
+POFV109_HITS_D3_EDGE  ability/pofv109_hits/D3_EDGE.png  32x37
+POFV109_HITS_D4  ability/pofv109_hits/D4.png  32x37
+POFV109_HITS_D4_EDGE  ability/pofv109_hits/D4_EDGE.png  32x37
+POFV109_HITS_D5  ability/pofv109_hits/D5.png  32x37
+POFV109_HITS_D5_EDGE  ability/pofv109_hits/D5_EDGE.png  32x37
+POFV109_HITS_D6  ability/pofv109_hits/D6.png  32x37
+POFV109_HITS_D6_EDGE  ability/pofv109_hits/D6_EDGE.png  32x37
+POFV109_HITS_D7  ability/pofv109_hits/D7.png  32x37
+POFV109_HITS_D7_EDGE  ability/pofv109_hits/D7_EDGE.png  32x37
+POFV109_HITS_D8  ability/pofv109_hits/D8.png  32x37
+POFV109_HITS_D8_EDGE  ability/pofv109_hits/D8_EDGE.png  32x37
+POFV109_HITS_D9  ability/pofv109_hits/D9.png  32x37
+POFV109_HITS_D9_EDGE  ability/pofv109_hits/D9_EDGE.png  32x37
+POFV109_HITS_H  ability/pofv109_hits/H.png  32x37
+POFV109_HITS_H_EDGE  ability/pofv109_hits/H_EDGE.png  32x37
+POFV109_HITS_I  ability/pofv109_hits/I.png  32x37
+POFV109_HITS_I_EDGE  ability/pofv109_hits/I_EDGE.png  32x37
+POFV109_HITS_T  ability/pofv109_hits/T.png  32x37
+POFV109_HITS_T_EDGE  ability/pofv109_hits/T_EDGE.png  32x37
+POFV109_HITS_S  ability/pofv109_hits/S.png  32x37
+POFV109_HITS_S_EDGE  ability/pofv109_hits/S_EDGE.png  32x37
 ATLAS ATLAS_ZENITH_BLADE 432x288
 ZENITH_BLADE_STARFURY         ability/zenith/_src/sword_65.png @15,15,42x42
 ZENITH_BLADE_BEEKEEPER        ability/zenith/_src/sword_1123.png @83,11,50x50
