@@ -60,7 +60,7 @@
 #define GW_PEAK_FRAMES        60       /* 顶点（= 死亡结算）在发动后第几帧 */
 #define GW_DEATH_DELAY        GW_PEAK_FRAMES
 #define GW_RAYS_LIFE          92       /* 脚本 400：92 帧后自己删 */
-#define GW_TINT_LIFE         100       /* 脚本 401（平白盘）：60 + 8 + 6 + 30 → 104 删 */
+#define GW_TINT_LIFE         118       /* 脚本 401（全屏白）：60 顶点 + 4 平台 + 10 + 14 + 36 → 124 删 */
 #define GW_FLASH_LIFE        144       /* 脚本 397：60 顶点 + 8 停留 + 12 + 70 长缓出 → 150 删 */
 #define GW_CARD_SE          0x4d       /* 发动音：0x4d se_release（与杰拉 / 鞘翅重锤同）*/
 #define GW_ENEMY_HIT_H      44.0f
@@ -447,14 +447,15 @@ static int on_activate(ce_card_t *c)
         ce_anm_set_pos(s->fx_flash_id, release[0], release[1], release[2]);
         s->fx_flash_left = GW_FLASH_LIFE;
     }
-    /* 第 2 层（平白盘 401，"黑色变白"那一步）：owner 2026-10-03「**算了**，你把 scale max 开大点就行了」
-     *   ⇒ **不挂**。脚本 401 留着（已经改成"RGB 从黑升到白"那套 = 起步绝不白，见该文件注释）；
-     *   想接回来只需把下面注释去掉。*/
-    /* s->fx_tint_id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_GREAT_WORK_WHITE, GW_FLASH_LAYER);
+    /* ★ 第 2 层 = **全屏白**（401）——owner 2026-10-03：「**还是得加回来**，缓出用全屏白做吧。
+     *   得是一个缓出：**dalpha/dt(t=start) = 0**」。
+     *   强度走 **RGB 灰度**（加和模式下黑 = 不贡献）⇒ 第 60 帧（1 s）到全白，随后 4 帧平台 + 分段长尾收黑
+     *   —— 平台那 4 帧就是 "起点斜率为 0" ✓。*/
+    s->fx_tint_id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_GREAT_WORK_WHITE, GW_FLASH_LAYER);
     if (s->fx_tint_id) {
         ce_anm_set_pos(s->fx_tint_id, release[0], release[1], release[2]);
         s->fx_tint_left = GW_TINT_LIFE;
-    } */
+    }
 
     ce_log("great_work: 发动（顶点演出 1 s）—— 场上 %d 弹 / %lld 血 / %d 道具 / %d 信仰点，"
            "冷却已定 %d 帧；**结算延迟到第 %d 帧**",
