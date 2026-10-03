@@ -21,7 +21,8 @@ from PIL import Image
 SIZE = 128
 CENTER_RGB = (255, 255, 255)     # 圆心：白（最亮）
 EDGE_RGB = (0, 0, 0)             # 边缘：黑（加和不贡献 ⇒ 不发光）
-FALLOFF = 1.6                    # 亮度 = (1 - r)^FALLOFF；1.6 = 中间还亮、靠边才暗下去
+FALLOFF = 0.9                    # 亮度 = (1 - r)^FALLOFF；★ 2026-10-03 owner「很浅」⇒ 1.6 → 0.9
+                                 #   （曲线放平 = 亮核更大、中段更亮；想更亮就继续往 0.6 降）
 
 out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "GREAT_WORK_GLOW.png")
 img = Image.new("RGBA", (SIZE, SIZE))
