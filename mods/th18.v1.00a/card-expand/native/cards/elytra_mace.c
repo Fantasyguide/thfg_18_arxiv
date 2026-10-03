@@ -264,6 +264,16 @@ static int on_tick_2(ce_card_t *c)
                 ce_anm_set_color(s->bar_id, 0xffffffffu);
             }
         }
+        /* ★ 2026-10-03 owner 实跑：「**第二次没有游标**」—— HIT 那一帧把**游标** VM 也删了（见 EM_EV_HIT），
+         *   上一版只补了条 ⇒ 第二轮有条没游标。这里一起重建；core 已把 `cursor` 重置到左端（-EM_BAR_HALF），
+         *   下一帧卡侧那行 `ce_anm_set_pos(cur, BAR_X + cursor, …)` 就会把它摆到位。*/
+        if (!s->cur_id) {
+            s->cur_id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_ELYTRA_MACE_CURSOR, EM_CARD_CUR_LAYER);
+            if (s->cur_id) {
+                ce_anm_set_pos(s->cur_id, EM_CARD_BAR_X + s->st.cursor, EM_CARD_BAR_Y, 0.0f);
+                ce_anm_set_color(s->cur_id, 0xffffffffu);
+            }
+        }
         ce_log("elytra_mace: smash done - back home (%.1f, %.1f) ⇒ 回 AIM 连段", (double)s->home_x, (double)s->home_y);
         break;
     case EM_EV_DONE:
