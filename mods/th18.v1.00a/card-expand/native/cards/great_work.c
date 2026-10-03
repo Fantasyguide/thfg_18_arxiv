@@ -447,11 +447,14 @@ static int on_activate(ce_card_t *c)
         ce_anm_set_pos(s->fx_flash_id, release[0], release[1], release[2]);
         s->fx_flash_left = GW_FLASH_LIFE;
     }
-    s->fx_tint_id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_GREAT_WORK_WHITE, GW_FLASH_LAYER);
+    /* ⚠ **定位版**（owner 2026-10-03「我一按 C 就全白了」）：第 2 层（平白盘 401，"黑变白"那步）
+     *   这一轮**先不挂** —— 先确认第 1 层（中心渐变盘）本身的表现，再决定怎么加回来。
+     *   要恢复：把下面两行取消注释即可。*/
+    /* s->fx_tint_id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_GREAT_WORK_WHITE, GW_FLASH_LAYER);
     if (s->fx_tint_id) {
         ce_anm_set_pos(s->fx_tint_id, release[0], release[1], release[2]);
         s->fx_tint_left = GW_TINT_LIFE;
-    }
+    } */
 
     ce_log("great_work: 发动（顶点演出 1 s）—— 场上 %d 弹 / %lld 血 / %d 道具 / %d 信仰点，"
            "冷却已定 %d 帧；**结算延迟到第 %d 帧**",
