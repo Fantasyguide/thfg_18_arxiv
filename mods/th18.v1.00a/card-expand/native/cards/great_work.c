@@ -60,7 +60,7 @@
 #define GW_PEAK_FRAMES        60       /* 顶点（= 死亡结算）在发动后第几帧 */
 #define GW_DEATH_DELAY        GW_PEAK_FRAMES
 #define GW_RAYS_LIFE          92       /* 脚本 400：92 帧后自己删 */
-#define GW_TINT_LIFE          64       /* 脚本 398：60 顶点 + 8 停留 → 68 删 */
+#define GW_TINT_LIFE         100       /* 脚本 401（平白盘）：60 + 8 + 6 + 30 → 104 删 */
 #define GW_FLASH_LIFE        100       /* 脚本 397：60 顶点 + 8 停留 + 6 快落 + 30 长尾 → 104 删 */
 #define GW_CARD_SE          0x4d       /* 发动音：0x4d se_release（与杰拉 / 鞘翅重锤同）*/
 #define GW_ENEMY_HIT_H      44.0f
@@ -426,7 +426,9 @@ static int on_activate(ce_card_t *c)
     /* 金色演出（同一帧起、都以释放点为心 —— owner 的"几乎同时"）：
      *   · 光线总控（脚本 400，层 6）—— 最先出来的那 100 支金色光刃（总控 92 帧后删，
      *     子 VM 各自 90 帧自毁）；
-     *   （圆盘 397/398 暂时不挂 —— owner「先复刻威光」，见下面的注释块。）*/
+     *   · 「全部发亮」两层（脚本 397 径向亮度渐变盘 + 401 平白盘，层 19）：
+     *     先半径增大、再"黑色变白"，第 60 帧（1 s）= 顶点 = 全屏白。
+     *     （旧的乘法滤镜 398 不挂。）*/
     s->fx_rays_id = ce_anm_spawn(CE_ABILITY_ANM(), GW_RAYS_SCRIPT, GW_RAYS_LAYER);
     if (s->fx_rays_id) {
         ce_anm_set_pos(s->fx_rays_id, release[0], release[1], release[2]);
@@ -436,8 +438,20 @@ static int on_activate(ce_card_t *c)
      *   ⇒ 暂时**不挂**那两个全屏圆盘（脚本 397/398 留着不删 —— ORDER 是 append-only），
      *     只留**威光**：总控 400（照原生 script47）+ 光扇 399（照原生 script48，颜色改金）。
      *   旧代码在这里 spawn 397/398（乘法滤镜 + 加法闪光），要恢复就取消下面两行注释。*/
-    /* s->fx_tint_id = ...GREAT_WORK_TINT...; */
-    /* s->fx_flash_id = ...GREAT_WORK_FLASH...; */
+    /* 「**全部发亮**」两层（owner 2026-10-03 的 AE 配方：加和 + 中心渐变内白外黑 → 先半径增大 → 再黑变白）：
+     *   ① 397 = 径向亮度渐变盘（@GREAT_WORK_GLOW，RGB 白→黑、alpha 255）—— 负责"半径增大"；
+     *   ② 401 = 平白盘（drawPoly 实心盘，alpha 渐入）—— 负责"黑色变白"（加和把盘内抬到白）。
+     * 两层同几何、同层、同顶点（第 60 帧 = 1 s），并一起做白色相加的缓出。*/
+    s->fx_flash_id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_GREAT_WORK_FLASH, GW_FLASH_LAYER);
+    if (s->fx_flash_id) {
+        ce_anm_set_pos(s->fx_flash_id, release[0], release[1], release[2]);
+        s->fx_flash_left = GW_FLASH_LIFE;
+    }
+    s->fx_tint_id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_GREAT_WORK_WHITE, GW_FLASH_LAYER);
+    if (s->fx_tint_id) {
+        ce_anm_set_pos(s->fx_tint_id, release[0], release[1], release[2]);
+        s->fx_tint_left = GW_TINT_LIFE;
+    }
 
     ce_log("great_work: 发动（顶点演出 1 s）—— 场上 %d 弹 / %lld 血 / %d 道具 / %d 信仰点，"
            "冷却已定 %d 帧；**结算延迟到第 %d 帧**",

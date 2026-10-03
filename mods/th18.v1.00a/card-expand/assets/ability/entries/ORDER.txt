@@ -1093,3 +1093,10 @@ CARRIER_FAIRY_PLAIN_11                  ability/ufo_carrier_plain/CARRIER_FAIRY_
 
 # 伟大之作（id 92）的**金色威光**：光线 399（照原生 ability.anm script48，颜色改金）+ 总控 400
 #   （照原生 script47：20 批 × 5 支、每 2 帧一批）。原生那支是蓝紫，见 native/build/tex-ability/spec.txt。
+
+# 伟大之作（id 92）的**径向渐变圆盘**贴图（owner：「圆能中心渐变吗？」）：中心白 → 边缘 #CC8400，
+#   alpha 平滑衰减（生成脚本 assets/ability/great_work/make_glow_disc.py）。
+GREAT_WORK_GLOW       ability/great_work/GREAT_WORK_GLOW.png      128x128
+
+# 伟大之作（id 92）「全部发亮」：第 1 层 397（径向亮度渐变盘 @GREAT_WORK_GLOW，内白外黑）
+#   + 第 2 层 401（平白盘，alpha 渐入 ⇒ "黑色变白"）—— 两层同几何、同加和、同顶点（第 60 帧 = 1 s）。
