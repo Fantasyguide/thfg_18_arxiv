@@ -102,6 +102,19 @@ static void em_kill_fx(em_card_t *s)
 #define EM_PLAYER_X_FIXED    0x62c
 #define EM_PLAYER_Y_FIXED    0x630
 
+/* ★ 2026-10-03：**改本卡的充能**（owner：「进度条因为**没敌人**退出了，**返还一半充能**」）。
+ *   照引擎写充能那一支（`card+0x34/+0x38/+0x3c` = zTimer 的 prev/cur/cur_f，`card+0x48` = 总时长；
+ *   同款先例 = 卡 92 的 `gw_set_recharge()`）。*/
+static void em_set_recharge(ce_card_t *c, int32_t frames)
+{
+    uint8_t *p = (uint8_t *)c;
+    if (!p || frames < 0) return;
+    *(int32_t *)(p + CE_CARD_RECHARGE_TIMER)     = frames - 1;
+    *(int32_t *)(p + CE_CARD_RECHARGE_TIMER + 4) = frames;
+    *(float   *)(p + CE_CARD_RECHARGE_TIMER + 8) = (float)frames;
+    *(int32_t *)(p + CE_CARD_RECHARGE_TIME)      = frames;
+}
+
 static void em_set_player(float x, float y)
 {
     uint8_t *p = CE_PLAYER();
@@ -173,6 +186,14 @@ static int on_activate(ce_card_t *c)
 
     if (!s) return 0;
     if (s->st.state != EM_IDLE) return 0;            /* 已经在演出里（正常到不了这里）*/
+    /* ★ 2026-10-03 owner：「没有怪的时候…应当**瞬间消失**」⇒ core 的 no-target 从 3s 收到 1 帧；
+     *   发动这一拍也顺手**拒绝空场**（否则会先烧掉充能、下一帧条就消失 ✗）。判据与 core 同一条：
+     *   `em_find_target()` = 可锁定且在 `EM_TARGET_RANGE` 内。*/
+    {
+        float tx0 = 0.0f, ty0 = 0.0f;
+        if (!em_find_target(pp ? pp[0] : 0.0f, pp ? pp[1] : 0.0f, &tx0, &ty0))
+            return ce_refuse("elytra_mace", "no attackable enemy (nothing to smash)");
+    }
     s->home_x = pp ? pp[0] : 0.0f;
     s->home_y = pp ? pp[1] : 0.0f;
     s->homed = 1;
@@ -291,6 +312,16 @@ static int on_tick_2(ce_card_t *c)
     case EM_EV_MISS:
         ce_log("elytra_mace: MISS (cursor %.1f px off center) - backing off with %d invuln frames",
                (double)s->st.cursor, EM_EXIT_INVULN);
+        if (s->bar_id) { ce_anm_delete(s->bar_id); s->bar_id = 0; }
+        em_kill(&s->cur_id);
+        break;
+    case EM_EV_NO_TARGET:
+        /* ★ 2026-10-03 owner：「**如果是进度条因为没敌人退出了，返还一半充能**」
+         *   ⇒ 把本卡充能改成 `EM_RECHARGE / 2`（= 冷却减半，玩家很快能再来一次）。
+         *   ⚠ 只能在这里做：充能是引擎在**发动那一拍**照 `active_recharge` 写满的，提前退出要自己改。*/
+        em_set_recharge(c, (int32_t)(EM_RECHARGE / 2u));
+        ce_log("elytra_mace: no target - exiting & refunding half recharge (%u -> %u frames)",
+               EM_RECHARGE, EM_RECHARGE / 2u);
         if (s->bar_id) { ce_anm_delete(s->bar_id); s->bar_id = 0; }
         em_kill(&s->cur_id);
         break;

@@ -28,7 +28,10 @@
 
 /* —— owner 给的（秒数换算成帧 @60fps）—— */
 #define EM_AIM_FRAMES        180      /* 3s：瞄准总预算（超时自动退出）*/
-#define EM_NO_TARGET_FRAMES  180      /* 3s：连续没有可攻击的敌人就退出 */
+#define EM_NO_TARGET_FRAMES  1        /* ★ 2026-10-03 owner 改口径：「**没有怪的时候，进度条定住了，然后一段时间后消失了，
+                                       *   应当瞬间消失**」⇒ 原来是 180 帧（3s，owner 2026-10-02 的旧口径），
+                                       *   现在 = **1 帧**（判到没目标的下一帧就走 EXIT ⇒ 观感是"瞬间消失"）。
+                                       *   配套：卡侧 `on_activate` **没有目标直接拒绝**（不白烧充能）。*/
 
 /* —— 本卡旋钮（❓ 自定） —— */
 #define EM_BAR_HALF          80.0f    /* 时机条半宽（px，640×480 空间；贴图 160 宽 ⇒ 与之一致）*/
@@ -69,7 +72,10 @@ typedef enum {
     EM_EV_MISS    = 2,   /* 按早了/按晚了：进入 EXIT */
     EM_EV_TIMEOUT = 3,   /* 3s（没有敌人 / 总预算）到：进入 EXIT */
     EM_EV_RETURN  = 4,   /* 砸完：把自机送回原位 */
-    EM_EV_DONE    = 5    /* 缓冲也走完了：一切都收掉 */
+    EM_EV_DONE      = 5, /* 缓冲也走完了：一切都收掉 */
+    EM_EV_NO_TARGET = 6  /* ★ 2026-10-03 owner：「如果是进度条因为**没敌人**退出了，**返还一半充能**」
+                          *   ⇒ 把"没敌人"与"瞄准预算到"**分开报**（原来都是 EM_EV_TIMEOUT）：
+                          *   卡侧收到这个事件就把本卡的充能计时器改成 `EM_RECHARGE / 2`。*/
 } em_event_t;
 
 typedef struct {

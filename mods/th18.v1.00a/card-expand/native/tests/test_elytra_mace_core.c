@@ -42,22 +42,27 @@ static void test_begin_and_first_frame(void)
     CHECK(s.state == EM_AIM, "激活帧还是 AIM");
 }
 
+/* ★ 2026-10-03 owner 改口径：「没有怪的时候…**应当瞬间消失**」⇒ no-target 从 3s 收到 **1 帧**：
+   判到没目标的下一帧就走 EXIT（不再停着等）。⇒ 这个用例改成验证"**当帧就退出**"+ 光标在有目标时确实在动。*/
 static void test_cursor_only_moves_with_target(void)
 {
     em_state_t s;
     float before;
 
+    /* ① 有目标：光标在动 */
     em_reset(&s);
     em_begin(&s);
-    em_tick(&s, 0, 0);                     /* 解锁 */
+    em_tick(&s, 1, 0);                     /* 解锁 */
     before = s.cursor;
-    for (int i = 0; i < 30; ++i) em_tick(&s, 0, 0);
-    CHECK(s.cursor == before, "没有可攻击敌人时光标该停着（%g -> %g）", (double)before, (double)s.cursor);
-    CHECK(s.no_target >= 30, "「没有敌人」的计时该在跑，得到 %u", s.no_target);
-
     em_tick(&s, 1, 0);
     CHECK(s.cursor > before, "有敌人了光标该动起来");
-    CHECK(s.no_target == 0, "有敌人该把 no_target 清零");
+
+    /* ② 没目标：下一帧就 TIMEOUT 走人（不再"定住后等一段时间"）*/
+    em_reset(&s);
+    em_begin(&s);
+    em_tick(&s, 0, 0);                     /* 解锁帧：只登记 armed */
+    CHECK(em_tick(&s, 0, 0) == EM_EV_NO_TARGET, "没目标该当帧 NO_TARGET（卡侧据此返还一半充能）");
+    CHECK(s.state == EM_EXIT && s.timeouts == 1, "TIMEOUT 之后该进 EXIT（得到 %d）", (int)s.state);
 }
 
 static void test_hit_and_miss(void)
@@ -125,15 +130,16 @@ static void test_timeouts(void)
     em_state_t s;
     int i, ev = EM_EV_NONE;
 
-    /* 3s 没有可攻击的敌人 ⇒ TIMEOUT */
+    /* 没有可攻击的敌人 ⇒ **当帧** TIMEOUT（owner 2026-10-03：应当瞬间消失）*/
     em_reset(&s);
     em_begin(&s);
-    for (i = 0; i < EM_NO_TARGET_FRAMES; ++i) {
+    /* ⚠ 到"没目标 ⇒ 退出"要两拍：第 1 帧只解锁（armed），第 2 帧才判 no-target ⇒ 循环给 +2 余量 */
+    for (i = 0; i < EM_NO_TARGET_FRAMES + 2; ++i) {
         ev = em_tick(&s, 0, 0);
         if (ev) break;
     }
-    CHECK(ev == EM_EV_TIMEOUT, "3s 没敌人该 TIMEOUT，第 %d 帧得到 %d", i, ev);
-    CHECK(s.state == EM_EXIT && s.timeouts == 1, "TIMEOUT 之后该进 EXIT");
+    CHECK(ev == EM_EV_NO_TARGET, "没敌人该 NO_TARGET，第 %d 帧得到 %d", i, ev);
+    CHECK(s.state == EM_EXIT && s.timeouts == 1, "NO_TARGET 之后该进 EXIT");
 
     /* 一直有敌人但不按 ⇒ 总预算到（也是 3s）*/
     em_reset(&s);

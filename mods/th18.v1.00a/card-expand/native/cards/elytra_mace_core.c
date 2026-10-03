@@ -85,10 +85,11 @@ int em_tick(em_state_t *s, int has_target, int c_edge)
             return EM_EV_MISS;
         }
         if (!has_target && s->no_target >= EM_NO_TARGET_FRAMES) {
+            /* ★ 2026-10-03：**没敌人**这种退出单独报一个事件 —— 卡侧要因此**返还一半充能**。*/
             s->timeouts++;
             s->state = EM_EXIT;
             s->frames = 0;
-            return EM_EV_TIMEOUT;
+            return EM_EV_NO_TARGET;
         }
         if (s->frames >= EM_AIM_FRAMES) {
             s->timeouts++;
