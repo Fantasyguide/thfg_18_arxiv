@@ -487,13 +487,93 @@ void pofv_power_pool_init(pofv_power_pool_t *p)
     memset(p, 0, sizeof *p);
 }
 
-/* ★ 飞散方向表（单位向量，8 向；见 `POFV_POWER_SCATTER_DIRS` 的注释）。用表 = **不引 libm**。*/
+/* ★★ 2026-10-01（owner「动态不对」）：飞散方向 = **随机角**（一手：`randf_minus_pi_to_pi()`）。
+ *   本层**禁 libm**（不能算 cos/sin）⇒ 用 **64 向单位向量表**近似「随机角」：
+ *   取表的随机下标 = 5.6° 一档，肉眼与连续随机角无异。
+ *   ⚠ 表是**算出来的常数**（Python `math.cos/sin`，构建前生成一次，写死在这里）——
+ *     与「不引 libm」的铁律一致（运行时零 libm 调用）。*/
 static const float s_scatter_dir[POFV_POWER_SCATTER_DIRS][2] = {
-    {  0.0f,     -1.0f     }, {  0.7071f, -0.7071f },
-    {  1.0f,      0.0f     }, {  0.7071f,  0.7071f },
-    {  0.0f,      1.0f     }, { -0.7071f,  0.7071f },
-    { -1.0f,      0.0f     }, { -0.7071f, -0.7071f },
+    { -0.998795f, -0.049068f },
+    { -0.989177f, -0.146730f },
+    { -0.970031f, -0.242980f },
+    { -0.941544f, -0.336890f },
+    { -0.903989f, -0.427555f },
+    { -0.857729f, -0.514103f },
+    { -0.803208f, -0.595699f },
+    { -0.740951f, -0.671559f },
+    { -0.671559f, -0.740951f },
+    { -0.595699f, -0.803208f },
+    { -0.514103f, -0.857729f },
+    { -0.427555f, -0.903989f },
+    { -0.336890f, -0.941544f },
+    { -0.242980f, -0.970031f },
+    { -0.146730f, -0.989177f },
+    { -0.049068f, -0.998795f },
+    {  0.049068f, -0.998795f },
+    {  0.146730f, -0.989177f },
+    {  0.242980f, -0.970031f },
+    {  0.336890f, -0.941544f },
+    {  0.427555f, -0.903989f },
+    {  0.514103f, -0.857729f },
+    {  0.595699f, -0.803208f },
+    {  0.671559f, -0.740951f },
+    {  0.740951f, -0.671559f },
+    {  0.803208f, -0.595699f },
+    {  0.857729f, -0.514103f },
+    {  0.903989f, -0.427555f },
+    {  0.941544f, -0.336890f },
+    {  0.970031f, -0.242980f },
+    {  0.989177f, -0.146730f },
+    {  0.998795f, -0.049068f },
+    {  0.998795f,  0.049068f },
+    {  0.989177f,  0.146730f },
+    {  0.970031f,  0.242980f },
+    {  0.941544f,  0.336890f },
+    {  0.903989f,  0.427555f },
+    {  0.857729f,  0.514103f },
+    {  0.803208f,  0.595699f },
+    {  0.740951f,  0.671559f },
+    {  0.671559f,  0.740951f },
+    {  0.595699f,  0.803208f },
+    {  0.514103f,  0.857729f },
+    {  0.427555f,  0.903989f },
+    {  0.336890f,  0.941544f },
+    {  0.242980f,  0.970031f },
+    {  0.146730f,  0.989177f },
+    {  0.049068f,  0.998795f },
+    { -0.049068f,  0.998795f },
+    { -0.146730f,  0.989177f },
+    { -0.242980f,  0.970031f },
+    { -0.336890f,  0.941544f },
+    { -0.427555f,  0.903989f },
+    { -0.514103f,  0.857729f },
+    { -0.595699f,  0.803208f },
+    { -0.671559f,  0.740951f },
+    { -0.740951f,  0.671559f },
+    { -0.803208f,  0.595699f },
+    { -0.857729f,  0.514103f },
+    { -0.903989f,  0.427555f },
+    { -0.941544f,  0.336890f },
+    { -0.970031f,  0.242980f },
+    { -0.989177f,  0.146730f },
+    { -0.998795f,  0.049068f },
 };
+
+
+/* ★ 飞散方向/初速的伪随机源（xorshift32；**纯整数** ⇒ 不引 libm、单测可复现）。
+ *   一手要的是「角在 ±π 上随机、速度 `rand×1.9+0.2`」——本层禁 libm（算不了 cos/sin）
+ *   ⇒ 角用 **64 向单位向量表**取随机下标近似，速度用这里的 [0,1) 映射。*/
+static uint32_t power_rng_next(pofv_power_pool_t *p)
+{
+    uint32_t x = p->rng ? p->rng : 0x1234567u;
+    x ^= x << 13; x ^= x >> 17; x ^= x << 5;
+    p->rng = x;
+    return x;
+}
+static float power_rng_unit(pofv_power_pool_t *p)      /* → [0, 1) */
+{
+    return (float)(power_rng_next(p) >> 8) * (1.0f / 16777216.0f);
+}
 
 int pofv_power_spawn(pofv_power_pool_t *p, float x, float y, int32_t value, int32_t src)
 {
@@ -509,11 +589,20 @@ int pofv_power_spawn(pofv_power_pool_t *p, float x, float y, int32_t value, int3
         it->value = value;
         it->life = POFV_POWER_LIFE;
         it->src = src;
-        /* ★ 季节道具的出生动态：**错帧待发射** ＋ **一个固定的飞散方向**（表里取，不引 libm）*/
-        it->delay = p->seq & POFV_POWER_SCATTER_DELAY_MASK;
-        it->dx = s_scatter_dir[p->seq % POFV_POWER_SCATTER_DIRS][0];
-        it->dy = s_scatter_dir[p->seq % POFV_POWER_SCATTER_DIRS][1];
-        it->lr = POFV_POWER_SCATTER_SPEED;
+        /* ★★ 一手（TH16 季节道具，owner：「动态这块按照季节点做就行」）：
+         *   · **待发射 6 帧**（`item+0xc50 = 6`）—— 延时里什么都不做；",
+         *   · 出生角 = **随机 ±π**（一手 `randf_minus_pi_to_pi()`）⇒ 用 64 向表取随机下标近似；
+         *   · 出生速度 = **`rand×1.9 + 0.2` ⇒ 0.2..2.1**（`0x41d880`–`0x41d8bb`）。*/
+        {
+            uint32_t di = power_rng_next(p) % POFV_POWER_SCATTER_DIRS;
+            it->delay = POFV_POWER_LAUNCH_DELAY;
+            it->dx = s_scatter_dir[di][0];
+            it->dy = s_scatter_dir[di][1];
+            it->lr = power_rng_unit(p) * POFV_POWER_SPEED_SCALE + POFV_POWER_SPEED_MIN;
+            it->st = 0;
+            it->vy = 0.0f;
+            it->mspd = 0.0f;
+        }
         ++p->seq;
         ++p->live;
         ++p->spawned;
@@ -573,7 +662,6 @@ int pofv_power_tick(pofv_power_pool_t *p, const float *player, int32_t *out_pts)
     int i, got = 0;
     int32_t pts = 0;
     const float absorb2 = POFV_POWER_ABSORB_R * POFV_POWER_ABSORB_R;
-    const float mag2    = POFV_POWER_MAG_R * POFV_POWER_MAG_R;
 
     if (out_pts) *out_pts = 0;
     if (!p) return 0;
@@ -581,16 +669,18 @@ int pofv_power_tick(pofv_power_pool_t *p, const float *player, int32_t *out_pts)
         pofv_power_t *it = &p->s[i];
         if (!it->active) continue;
         ++it->age;
-        /* ★★ 2026-10-01（owner：照季节道具做）：**出生先待发射、再直线飞散**。
-         *   待发射的错帧里**什么都不做**（TH16 在延时里 `item+0xc50 = 6`，结束后才建 VM）；
-         *   飞散期沿**固定的** `dx/dy` 走，**剩余速度每帧 −0.03**（TH16 `item+0xc20`）。*/
-        if (it->delay > 0) { --it->delay; continue; }
-        if (it->lr > 0.0f) {
-            it->x += it->dx * it->lr;
-            it->y += it->dy * it->lr;
-            it->lr -= POFV_POWER_DECEL;
-            if (it->lr < 0.0f) it->lr = 0.0f;
-        }
+        /* ══ TH16 季节道具的状态机（owner：「**动态这块按照季节点做就行**」）════════════════════
+         *   一手逐条见 `engine/season/th16/01-season-data-and-tables.md` §4：
+         *     state 3 飞散  → pos += vel、速度 −0.03/帧、**无重力**、角度不变（`0x42f82c`–`0x42f83f`）
+         *     state 1 飘落  → **重力 0.03**（`0x4b90a4`）、`vy > 2.0 → 2.0`（`0x494558`）、
+         *                     `vy ≥ 0 ⇒ vx = 0`（`0x42fb5f` 起）＝只有竖直运动
+         *     state 4 回收线 → `player.y < 128` ⇒ 速度 = `sht+8` = 6.0（实读 `pl00.sht` 的 +8）
+         *     state 5 吸引   → 进吸引矩形 ⇒ 速度 = `sht+8/3` = 2.0，**每帧 +0.2、上限 12.0**（`0x4945d4`）
+         *   出界 = y 472 / |x| 200（§4 尾注）。
+         * ⚠ 本层**禁 libm** ⇒ 「朝自机」的方向用 **Chebyshev 归一**（除以 |dx|,|dy| 的较大者）
+         *   ——不是单位向量，但走向正确；这是本实现**唯一的近似**（登记 `TUNING.md`）。*/
+        if (it->delay > 0) { --it->delay; continue; }        /* 待发射 6 帧：什么都不做 */
+
         if (player) {
             float dx = player[0] - it->x;
             float dy = player[1] - it->y;
@@ -603,19 +693,52 @@ int pofv_power_tick(pofv_power_pool_t *p, const float *player, int32_t *out_pts)
                 ++got;
                 continue;
             }
-            if (d2 <= mag2) {                    /* 磁吸：朝自机走（Chebyshev 归一，不引 libm）*/
-                float ax = dx < 0.0f ? -dx : dx;
-                float ay = dy < 0.0f ? -dy : dy;
-                float m = ax > ay ? ax : ay;
-                if (m > 0.0001f) {
-                    it->x += dx / m * POFV_POWER_MAG_SPEED;
-                    it->y += dy / m * POFV_POWER_MAG_SPEED;
-                }
-            } else if (it->lr <= 0.0f) {
-                it->y += POFV_POWER_FALL;        /* 飞散完了、又在圈外：慢慢飘落 */
+            if (player[1] < POFV_POWER_COLLECT_Y) {
+                if (it->st != 2) it->st = 2;                  /* 过回收线（一手 state 4）*/
+            } else if (it->st != 3 &&
+                       dx >= -POFV_POWER_BOX_HALF_W && dx <= POFV_POWER_BOX_HALF_W &&
+                       dy >= -POFV_POWER_BOX_HALF_H && dy <= POFV_POWER_BOX_HALF_H) {
+                it->st = 3;                                   /* 进吸引矩形（一手 state 5）*/
+                if (it->mspd < POFV_POWER_MAG_SPEED0) it->mspd = POFV_POWER_MAG_SPEED0;
             }
-        } else if (it->lr <= 0.0f) {
-            it->y += POFV_POWER_FALL;            /* 没有自机（单测 / 过场）：飞散完只飘落 */
+        }
+
+        switch (it->st) {
+        case 0:                                              /* 飞散（无重力）*/
+            it->x += it->dx * it->lr;
+            it->y += it->dy * it->lr;
+            it->lr -= POFV_POWER_DECEL;
+            if (it->lr <= 0.0f) { it->lr = 0.0f; it->st = 1; it->vy = 0.0f; }
+            break;
+        case 1:                                              /* ★ 飘落（加速下落 + 封顶）*/
+            it->vy += POFV_POWER_GRAVITY;
+            if (it->vy > POFV_POWER_FALL_MAX) it->vy = POFV_POWER_FALL_MAX;
+            it->y += it->vy;                                 /* `vy ≥ 0 ⇒ vx = 0`：只动 y */
+            break;
+        case 2:                                              /* 过回收线：朝自机 6.0/帧 */
+            if (player) {
+                float dx = player[0] - it->x, dy = player[1] - it->y;
+                float m = (dx < 0.0f ? -dx : dx), ay = (dy < 0.0f ? -dy : dy);
+                if (ay > m) m = ay;
+                if (m > 0.0001f) { it->x += dx / m * POFV_POWER_LINE_SPEED;
+                                   it->y += dy / m * POFV_POWER_LINE_SPEED; }
+            } else { it->st = 1; }                           /* 没有自机（单测/过场）：回去飘落 */
+            break;
+        default:                                             /* 吸引：每帧加速、上限 12.0 */
+            if (player) {
+                float dx = player[0] - it->x, dy = player[1] - it->y;
+                float m = (dx < 0.0f ? -dx : dx), ay = (dy < 0.0f ? -dy : dy);
+                it->mspd += POFV_POWER_MAG_ACCEL;
+                if (it->mspd > POFV_POWER_MAG_SPEED_MAX) it->mspd = POFV_POWER_MAG_SPEED_MAX;
+                if (ay > m) m = ay;
+                if (m > 0.0001f) { it->x += dx / m * it->mspd; it->y += dy / m * it->mspd; }
+            } else { it->st = 1; }
+            break;
+        }
+
+        /* ★ 一手：出界 = y **472** / |x| **200** ⇒ 释放（比寿命更早、更符合原版）。*/
+        if (it->y > POFV_POWER_OUT_Y || it->x < -POFV_POWER_OUT_X || it->x > POFV_POWER_OUT_X) {
+            it->active = 0; --p->live; ++p->expired; continue;
         }
         if (it->age >= it->life) { it->active = 0; --p->live; ++p->expired; }
     }

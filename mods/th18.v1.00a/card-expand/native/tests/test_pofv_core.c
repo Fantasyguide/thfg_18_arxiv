@@ -32,6 +32,15 @@
 static int s_fail, s_pass;
 #define CHECK(cond) do { if (cond) ++s_pass; else { ++s_fail; printf("  FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); } } while (0)
 
+/* ★ 2026-10-01（owner：「动态这块按照季节点做就行」）：一手 TH16 的消弹道具出生时
+ *   `item+0xc50 = 6` ⇒ **待发射 6 帧、这 6 帧里什么都不做**。所有「出生后应立刻动」的老断言
+ *   都要先跳过这段延时 —— 这个 helper 就是干这个的（顺带把「延时里不动」本身检查一遍）。*/
+static void power_wait_launch(pofv_power_pool_t *q, const float *pp, int32_t *pts)
+{
+    int k;
+    for (k = 0; k < POFV_POWER_LAUNCH_DELAY; ++k) pofv_power_tick(q, pp, pts);
+}
+
 int main(void)
 {
     pofv_state_t st;
@@ -459,24 +468,31 @@ int main(void)
         /* 收取：在收取半径内 ⇒ 点入账、槽当场释放 */
         pofv_power_pool_init(&pool);
         pofv_power_spawn(&pool, 100.0f, 200.0f, 30, POFV_POWER_SRC_KILL);
+        power_wait_launch(&pool, pp, &pts);              /* 一手：待发射 6 帧 */
         CHECK(pofv_power_tick(&pool, pp, &pts) == 1);
         CHECK(pts == 30 && pool.live == 0 && pool.absorbed == 1);
 
         /* 磁吸：圈内（MAG_R 内、ABSORB_R 外）朝自机走 ⇒ 有限帧内必被收 */
         pofv_power_pool_init(&pool);
-        pofv_power_spawn(&pool, 100.0f + POFV_POWER_MAG_R * 0.5f, 200.0f, 10, POFV_POWER_SRC_AURA);
-        { float x0 = pool.s[0].x; pofv_power_tick(&pool, pp, &pts); CHECK(pool.s[0].x < x0); }
+        pofv_power_spawn(&pool, 100.0f + POFV_POWER_BOX_HALF_W * 0.5f, 200.0f, 10, POFV_POWER_SRC_AURA);
+        { float x0;
+          power_wait_launch(&pool, pp, &pts);
+          x0 = pool.s[0].x; pofv_power_tick(&pool, pp, &pts); CHECK(pool.s[0].x < x0); }
         n = 0;
         while (pool.live > 0 && n < 200) { pofv_power_tick(&pool, pp, &pts); ++n; }
         CHECK(pool.live == 0 && pts >= 10);
 
         /* 圈外：只飘落（y 增），不磁吸、不收取 */
         pofv_power_pool_init(&pool);
-        pofv_power_spawn(&pool, 100.0f + POFV_POWER_MAG_R * 4.0f, 200.0f, 10, POFV_POWER_SRC_AURA);
+        /* ★ 2026-10-01：站位要**在场地内**（一手出界判据 |x| ≤ 200）—— 旧站位 `100 + MAG_R*4 = 324`
+         *   一出生就被出界释放了；改成「刚出吸引盒、仍在场内」。*/
+        pofv_power_spawn(&pool, 100.0f + (POFV_POWER_BOX_HALF_W + 20.0f), 200.0f, 10, POFV_POWER_SRC_AURA);
         {
-            float x0 = pool.s[0].x, y0 = pool.s[0].y;
-            /* ★ 2026-10-01：出生先飞散（方向由表给）⇒ 只断言「动了」，不再断言「一定往下」
-             *   —— 旧断言是「圈外只飘落」，那是**改造前**的动态。*/
+            float x0, y0;
+            /* ★ 2026-10-01：出生先**待发射 6 帧**、再飞散（方向随机）⇒ 只断言「动了」，
+             *   不再断言「一定往下」—— 旧断言是「圈外只飘落」，那是**改造前**的动态。*/
+            power_wait_launch(&pool, pp, &pts);
+            x0 = pool.s[0].x; y0 = pool.s[0].y;
             pofv_power_tick(&pool, pp, &pts);
             CHECK(pool.s[0].x != x0 || pool.s[0].y != y0);
             CHECK(pts == 0 && pool.live == 1);
@@ -487,7 +503,9 @@ int main(void)
         pofv_power_spawn(&pool, 0.0f, 0.0f, 10, POFV_POWER_SRC_AURA);
         /* 同上：出生那几帧是**飞散**（待发射 + 直线飞散），断言「动了」而不是「往下」*/
         {
-            float x0 = pool.s[0].x, y0 = pool.s[0].y;
+            float x0, y0;
+            power_wait_launch(&pool, 0, &pts);
+            x0 = pool.s[0].x; y0 = pool.s[0].y;
             CHECK(pofv_power_tick(&pool, 0, &pts) == 0 && pts == 0);
             CHECK(pool.s[0].x != x0 || pool.s[0].y != y0);
         }
@@ -496,23 +514,36 @@ int main(void)
             pofv_power_pool_t q;
             pofv_power_pool_init(&q);
             CHECK(q.seq == 0);
+            /* ★ 2026-10-01（owner：「动态这块按照季节点做就行」）：待发射 = **统一 6 帧**
+             *   （一手 TH16 消弹池出生 `item+0xc50 = 6`）—— 不再是旧的 `& 3` 错帧。*/
             pofv_power_spawn(&q, 0.0f, 0.0f, 1, POFV_POWER_SRC_AURA);
-            CHECK(q.s[0].delay == 0);                 /* 第 1 颗：seq=0 ⇒ & 3 = 0 */
+            CHECK(q.s[0].delay == POFV_POWER_LAUNCH_DELAY);
+            CHECK(q.s[0].st == 0);                    /* 出生在「飞散」态 */
             pofv_power_spawn(&q, 0.0f, 0.0f, 1, POFV_POWER_SRC_AURA);
-            CHECK(q.s[1].delay == 1);                 /* 第 2 颗：seq=1 ⇒ & 3 = 1（错帧）*/
-            pofv_power_spawn(&q, 0.0f, 0.0f, 1, POFV_POWER_SRC_AURA);
-            CHECK(q.s[2].delay == 2);
-            pofv_power_spawn(&q, 0.0f, 0.0f, 1, POFV_POWER_SRC_AURA);
-            CHECK(q.s[3].delay == 3);
-            pofv_power_spawn(&q, 0.0f, 0.0f, 1, POFV_POWER_SRC_AURA);
-            CHECK(q.s[4].delay == 0);                 /* 第 5 颗：回到 0（& 3）*/
-            CHECK(q.s[0].lr == POFV_POWER_SCATTER_SPEED);
+            CHECK(q.s[1].delay == POFV_POWER_LAUNCH_DELAY);
+            /* ★ 一手初速 = `rand×1.9 + 0.2` ⇒ 必须落在 0.2..2.1；方向 = 64 向表的单位向量 */
+            {
+                int k; int seen_lo = 0, seen_hi = 0;
+                for (k = 0; k < 64; ++k) {
+                    float sp = q.s[k < 2 ? k : 0].lr;   /* 只看已生成的这两颗 */
+                    (void)sp;
+                }
+                (void)seen_lo; (void)seen_hi;
+                CHECK(q.s[0].lr >= POFV_POWER_SPEED_MIN - 1e-6f
+                      && q.s[0].lr <= POFV_POWER_SPEED_MIN + POFV_POWER_SPEED_SCALE + 1e-6f);
+                CHECK(q.s[1].lr >= POFV_POWER_SPEED_MIN - 1e-6f
+                      && q.s[1].lr <= POFV_POWER_SPEED_MIN + POFV_POWER_SPEED_SCALE + 1e-6f);
+                { float L = q.s[0].dx * q.s[0].dx + q.s[0].dy * q.s[0].dy;
+                  CHECK(L > 0.98f && L < 1.02f); }     /* 方向是单位向量 */
+            }
             /* 待发射那一帧不动 */
             { float x0 = q.s[1].x, y0 = q.s[1].y;
               pofv_power_tick(&q, 0, &pts);
-              CHECK(q.s[1].x == x0 && q.s[1].y == y0); }   /* seq=1 ⇒ delay 1 → 本帧还在等 */
-            /* 飞散：剩余速度每帧 −0.03（一手 TH16 `item+0xc20`）*/
-            { float l0 = q.s[0].lr;
+              CHECK(q.s[1].x == x0 && q.s[1].y == y0); }   /* delay 6 → 本帧还在等 */
+            /* 飞散：剩余速度每帧 −0.03（一手 TH16 `item+0xc20`）——先过待发射 */
+            { float l0;
+              power_wait_launch(&q, 0, &pts);
+              l0 = q.s[0].lr;
               pofv_power_tick(&q, 0, &pts);
               CHECK(q.s[0].lr < l0);
               { float d = l0 - q.s[0].lr;
@@ -1002,6 +1033,74 @@ int main(void)
     }
 
     
+    /* ==================== O. 灵力道具的**下落动态**（一手 TH16 季节道具）====================
+     * owner 实跑：「**下落动态不对**」＋「动态这块按照季节点做就行」⇒ 逐条对一手：
+     * 重力 0.03/`vy` 上限 2.0/`vy≥0 ⇒ 只动 y`；回收线 128 ⇒ 速度 6.0；吸引矩形 ⇒ 起步 2.0、+0.2、上限 12。*/
+    {
+        pofv_power_pool_t q;
+        pofv_power_t *it;
+        float pp2[2] = { 0.0f, 400.0f };              /* 自机在下方很远 ⇒ 不触发回收线/吸引 */
+        int32_t pts = 0, k;
+        pofv_power_pool_init(&q);
+        pofv_power_spawn(&q, 0.0f, 0.0f, 10, POFV_POWER_SRC_KILL);
+        it = &q.s[0];
+        /* 待发射 6 帧 */
+        power_wait_launch(&q, pp2, &pts);
+        CHECK(it->delay == 0);
+        /* 飞散期：速度每帧 −0.03、**竖直速度 vy 保持 0（无重力）** */
+        CHECK(it->st == 0 && it->vy == 0.0f);
+        pofv_power_tick(&q, pp2, &pts);
+        CHECK(it->vy == 0.0f);
+        /* 飞到速度耗尽 ⇒ 转「飘落」 */
+        for (k = 0; k < 200 && it->st == 0; ++k) pofv_power_tick(&q, pp2, &pts);
+        CHECK(it->st == 1);
+        /* ★★ 一手飘落：**每帧 vy += 0.03**、**上限 2.0**、**只有 y 在动** */
+        {
+            float x0 = it->x, v0 = it->vy;
+            pofv_power_tick(&q, pp2, &pts);
+            CHECK(it->x == x0);                                  /* `vy ≥ 0 ⇒ vx = 0` */
+            CHECK(it->vy > v0);
+            CHECK(it->vy < v0 + POFV_POWER_GRAVITY + 1e-5f);
+        }
+        for (k = 0; k < 400; ++k) pofv_power_tick(&q, pp2, &pts);
+        CHECK(it->vy <= POFV_POWER_FALL_MAX + 1e-6f);             /* 封顶 2.0 */
+
+        /* 过回收线（一手：`player.y < 128`）⇒ 朝自机飞、速度 = `sht+8` = 6.0 */
+        pofv_power_pool_init(&q);
+        pofv_power_spawn(&q, 0.0f, 300.0f, 10, POFV_POWER_SRC_KILL);
+        { float pu[2] = { 0.0f, 100.0f };                        /* y=100 < 128 ⇒ 回收线内 */
+          power_wait_launch(&q, pu, &pts);
+          pofv_power_tick(&q, pu, &pts);
+          CHECK(q.s[0].st == 2);
+          { float y0 = q.s[0].y;
+            pofv_power_tick(&q, pu, &pts);
+            CHECK(q.s[0].y < y0); } }                            /* 朝自机（上）走 */
+
+        /* 吸引矩形（一手 `item_attract_box_*`）⇒ 起步 2.0、每帧 +0.2、上限 12.0 */
+        pofv_power_pool_init(&q);
+        pofv_power_spawn(&q, POFV_POWER_BOX_HALF_W * 0.5f, 300.0f, 10, POFV_POWER_SRC_KILL);
+        { float pu[2] = { 0.0f, 300.0f };                        /* 同高、横向在盒内 ⇒ state 5 */
+          power_wait_launch(&q, pu, &pts);
+          pofv_power_tick(&q, pu, &pts);
+          CHECK(q.s[0].st == 3);
+          CHECK(q.s[0].mspd >= POFV_POWER_MAG_SPEED0 - 1e-6f);
+          { float m0 = q.s[0].mspd;
+            pofv_power_tick(&q, pu, &pts);
+            CHECK(q.s[0].mspd > m0); }                           /* 每帧 +0.2 */
+          for (k = 0; k < 200; ++k) pofv_power_tick(&q, pu, &pts);
+          CHECK(q.s[0].mspd <= POFV_POWER_MAG_SPEED_MAX + 1e-6f); }
+
+        /* 出界（一手：y 472 / |x| 200）⇒ 释放而不是等到寿命 */
+        pofv_power_pool_init(&q);
+        pofv_power_spawn(&q, 0.0f, POFV_POWER_OUT_Y - 1.0f, 10, POFV_POWER_SRC_KILL);
+        /* ⚠ 自机必须**远离**（否则会被吸引盒抓住、朝上飞走而不是坠出界）：
+         *   y = 200 ⇒ 既 ≥ 回收线 128，又离道具 (471) 有 271 px > 盒半高 120 ✓ */
+        { float far[2] = { 0.0f, 200.0f };
+          for (k = 0; k < 400 && q.live > 0; ++k) pofv_power_tick(&q, far, &pts); }
+        CHECK(q.live == 0);
+        CHECK(q.expired >= 1);
+    }
+
     /* ==================== N. 逐弹归属（C3/C4 的自伤源用）====================
      * 集合逐条来自 `assets/ecl/pofv109_boss.ecl.txt` 的 `etSprite` 调用。*/
     {

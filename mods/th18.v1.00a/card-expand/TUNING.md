@@ -10548,7 +10548,7 @@ ufo: BOUNTY equivalence published for other cards - P .. / money .. / big faith 
 - ⚠ **连带删掉卡侧每帧的 `ce_anm_set_scale`**：脚本现在自己 owning 缩放（`scaleTime`），
   两边都写会打架（`sdk.h` 的 `ce_anm_set_scale` 注释）；原 P 点版是靠卡侧写 1.0 收尾的，那套不适用了。
 
-### ③ 灵力道具「**动态不对**」—— 差距清单（**待做，本轮未改**）
+### ③ ✅ 灵力道具「**动态不对**」→ **改成一手 TH16 季节道具的状态机**（owner：「动态这块按照季节点做就行」）
 
 一手（`engine/season/th16/01-season-data-and-tables.md` §4 的状态机）vs 我现在的实现：
 
@@ -10564,3 +10564,26 @@ ufo: BOUNTY equivalence published for other cards - P .. / money .. / big faith 
 | 待发射 | 消弹池出生 `item+0xc50 = 6`（**6 帧**）| `seq & 3`（0..3 帧错开）| 🟡 近似 |
 
 ⇒ **③ 是下一轮的第一件事**（要动 `pofv_core.c` 的 `pofv_power_tick`/`spawn` + 常量 + 单测）。
+**最终实现**（`pofv_core.{h,c}`，逐条对 `engine/season/th16/01-season-data-and-tables.md` §4）：
+
+| 阶段 | 一手 | 本实现 |
+| --- | --- | --- |
+| **待发射** | 消弹池出生 `item+0xc50 = 6` | `POFV_POWER_LAUNCH_DELAY = 6`（**6 帧里什么都不做**）|
+| **出生角** | `randf_minus_pi_to_pi()`（±π 随机）| ★ **64 向单位向量表取随机下标**（≈5.6° 一档；本层禁 libm ⇒ 算不了 cos/sin）|
+| **出生速度** | `rand×1.9 + 0.2` ⇒ **0.2..2.1** | `POFV_POWER_SPEED_SCALE/MIN` + xorshift32 的 `[0,1)` ✓ |
+| **飞散**（state 3）| 角度不变、速度 **−0.03/帧**、**无重力** | ✓ 同（`POFV_POWER_DECEL`）|
+| ★★ **飘落**（state 1）| **重力 0.03**、**`vy > 2.0 → 2.0`**、**`vy ≥ 0 ⇒ vx = 0`** | ✓ 同（`POFV_POWER_GRAVITY`/`_FALL_MAX`；只动 y）|
+| **过回收线**（state 4）| `player.y < 128` ⇒ 速度 = `sht+8` | ✓ `POFV_POWER_COLLECT_Y = 128`、`_LINE_SPEED = 6.0`（**实读零售 `pl00.sht` 的 `+8`**）|
+| **吸引**（state 5）| 进**矩形** ⇒ 速度 `sht+8/3`、**每帧 +0.2、上限 12.0** | ✓ `_MAG_SPEED0 = 2.0` / `_ACCEL = 0.2` / `_SPEED_MAX = 12.0`；矩形半宽/半高 **❓ 自定**（56 / 120，一手只写「矩形」未给值）|
+| **出界** | y **472** / \|x\| **200** ⇒ 释放 | ✓（比寿命更早、更贴原版）|
+
+★ **owner 投诉的那一条**（「下落动态不对」）：原来写的是 **固定 0.5 px/帧 的匀速下落** ✗，
+一手是 **从 0 起每帧 +0.03、约 67 帧后封顶 2.0 的加速下落** ✓ —— 手感从「慢慢飘」变成「先慢后快地坠」。
+
+**唯一的近似（登记）**：本层禁 libm ⇒ 「朝自机」的方向用 **Chebyshev 归一**（除以 |dx|,|dy| 的较大者），
+不是单位向量 —— 走向正确，但斜向会略快 ✓ 可接受。
+
+**单测**：`test_pofv_core` **864** 断言（+16），新增一节专门盯下落：待发射 6 帧不动 / 飞散期 `vy == 0`
+（无重力）/ 转飘落后 **每帧 +0.03、封顶 2.0、只有 y 在动** / 回收线 ⇒ `st == 2` 且朝自机上行 /
+吸引 ⇒ `st == 3`、起步 ≥ 2.0、每帧增、封顶 12.0 / 出界 ⇒ 释放（`expired` 计数）。
+⚠ 顺带修了 4 处**旧断言**：它们默认「spawn 后立刻动」，而一手有 6 帧待发射 ⇒ 加了 `power_wait_launch()`。
