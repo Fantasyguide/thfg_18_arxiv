@@ -60,7 +60,7 @@
 #define GW_PEAK_FRAMES        60       /* 顶点（= 死亡结算）在发动后第几帧 */
 #define GW_DEATH_DELAY        GW_PEAK_FRAMES
 #define GW_RAYS_LIFE          92       /* 脚本 400：92 帧后自己删 */
-#define GW_TINT_LIFE         118       /* 脚本 401（全屏白）：60 顶点 + 4 平台 + 10 + 14 + 36 → 124 删 */
+#define GW_TINT_LIFE         358       /* 脚本 401（全屏白）：60 + 4 平台 + 8 + 12 + **280 长尾** = 364 删 */
 #define GW_FLASH_LIFE        144       /* 脚本 397：60 顶点 + 8 停留 + 12 + 70 长缓出 → 150 删 */
 #define GW_CARD_SE          0x4d       /* 发动音：0x4d se_release（与杰拉 / 鞘翅重锤同）*/
 #define GW_ENEMY_HIT_H      44.0f
