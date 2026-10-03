@@ -416,7 +416,13 @@ int32_t pofv_power_value_cancel(int32_t n_white, int32_t chain);
  * ⚠ 池是**文件级**还是卡内由卡侧决定（本文件只给纯逻辑）；`pofv_power_clear()` 必须被
  *   `on_delete` 调到（METHOD 铁律：长持续效果删卡要收干净 —— 这里没有 VM，清了池就没有残留）。 */
 
-#define POFV_POWER_MAX               48     /* ❓ 自定（同屏上限）*/
+/* ★★ 2026-10-01（owner：「**池满可以开大**」「**你得按连锁**」）：同屏上限 48 → **192**。
+ *   理由：击破掉落改成**按连破档**（一颗 → `chain` 颗）后，一波清场的同屏道具量会翻几倍，
+ *   48 会频繁「池满丢弃」（`pofv_power_spawn_packed` 里 `dropped +=`）⇒ **连破越高反而掉得越少** ✗。
+ *   ⇒ 开大到 192（每颗只是一小组 float + 一个 VM id，成本线性、扫一遍 O(192) 很便宜）。*/
+#define POFV_POWER_MAX              192     /* ★ 见上（原 48）*/
+/* ★ 一次击破**同一帧**最多撒几颗（防一次清场瞬间把池子吃光；面值仍守恒 —— 多出来的并进第一颗）。*/
+#define POFV_POWER_KILL_SPAWN_MAX     8
 #define POFV_POWER_PTS_CANCEL        10     /* ❓ 自定（消弹源 1 颗的基准面值 = 旧「消弹 +10」）*/
 #define POFV_POWER_PTS_KILL          20     /* ❓ 自定（击破源 = 旧「击破 +20」）*/
 #define POFV_POWER_PTS_AURA           5     /* ❓ 自定（结界碰弹源；口径 6）*/

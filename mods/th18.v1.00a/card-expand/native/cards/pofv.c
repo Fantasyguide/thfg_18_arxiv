@@ -205,6 +205,14 @@ static uint32_t s_bossatk_scan_rot;
 #define POFV_STORM_VM_LAYER        6
 #define POFV_FIELD_RGBA_STORM 0xa04080ffu   /* 暴风 = 蓝（代码里一直叫它「蓝圈」）*/
 #define POFV_FIELD_RGBA_CA    0xa0ff4040u   /* 蓄力攻击红圈 = 红（一手就叫红圈）*/
+/* ★★ 2026-10-01（owner：「把连锁UI做出来」）：连破 UI 的位置/配色/保持帧。
+ *   坐标是 **640×480 屏幕空间**（`ce_hud_number_set`/`ce_hud_text` 都收这个空间）。
+ *   位置取**左上角**（owner 记的 TH19 位置）；配色取暖橙（与 TH19 的计数器同族的暖色）。*/
+#define POFV_CHAIN_UI_X         52.0f
+#define POFV_CHAIN_UI_Y         40.0f
+#define POFV_CHAIN_UI_DX        22.0f   /* 数字字距 */
+#define POFV_CHAIN_UI_HOLD      90     /* 最后一次连破之后还显示多少帧（1.5 s）*/
+#define POFV_CHAIN_UI_BGRA 0xff40a0ffu /* 暖橙（AARRGGBB）*/
 #define POFV_FIELD_HALF_W      192.0f
 #define POFV_FIELD_H         448.0f
 #define POFV_DMG_CAP           300
@@ -262,6 +270,11 @@ typedef struct {
     pofv_bossatk_t bossatk;     /* ★ boss attack（C3/C4；见 pofv_core.h §I）*/
     ce_option_t opt;            /* ★ 发射口（自己申请的**一格子机**）*/
     int32_t     bossatk_logged; /* 「boss attack 起手」只记一行 */
+    /* ★★ 2026-10-01（owner：「**把连锁UI做出来**」/「th19 左上角是有连锁UI的」）：
+     *   左上角的**连破档**显示（`ce_hud_number_t` = 用 ANM 图元画的数字，TH18 原生 font 2 字形；
+     *   文本标签走 `ce_hud_text`）。 */
+    ce_hud_number_t chain_num;
+    int32_t     chain_ui_on;    /* 上一帧是否在显示（用于「关掉时清一次」）*/
 } pofv_card_t;
 
 _Static_assert(sizeof(pofv_card_t) <= 496 - 16, "ce_state 用户区上限 496 字节");
@@ -1242,7 +1255,13 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
     }
     /* ★ 2026-10-01（口径 5）：击破 ⇒ 在**原位**掉一把灵力道具（充能的那笔账从直加点改成经道具）。
      * O(1)（一次线性找空槽，≤ `POFV_POWER_MAX` 次比较）—— 清场帧 100–300 次也够便宜。*/
-    if (pofv_power_spawn(&s_power, ev->x, ev->y, POFV_POWER_PTS_KILL, POFV_POWER_SRC_KILL) < 0) {
+    /* ★★ 2026-10-01（owner：「**你得按连锁**」）：击破掉落改成**按连破档** —— 连破 `chain` ⇒ 掉 `chain` 颗
+     *   （此前是**一颗**，与连破无关 ⇒ 「连破应当掉吧」的那条）。
+     *   · 面值：`chain × POFV_POWER_PTS_KILL`（`spawn_packed` 内部按颗摊平、**总面值守恒** ✓）；
+     *   · 颗数上限 `POFV_POWER_KILL_SPAWN_MAX`（同一帧清场时不至于一次吃光池子；吃不下会并入第一颗）✓。
+     *   ★ 与**消弹**那一路同口径：`pofv_power_value_cancel(1, chain)` 早就是 ×连爆档 ⇒ 现在两路一致了。*/
+    if (pofv_power_spawn_packed(&s_power, ev->x, ev->y, chain, POFV_POWER_PTS_KILL,
+                                POFV_POWER_KILL_SPAWN_MAX, POFV_POWER_SRC_KILL, 0) < 0) {
         if (!s->power_logged) {
             ce_log("pofv: power pool full (%d) — power item dropped", POFV_POWER_MAX);
             s->power_logged = 1;
@@ -1337,6 +1356,28 @@ static int on_tick_2(ce_card_t *c)
     ++s_frame;
     ce_dup_publish((uint32_t)ce_card_id(c), (int)s_power.live);
     if (ce_dup_should_run(&s_dup_seen)) pofv_dup_run();
+
+    /* ══ ★★ 2026-10-01（owner：「**把连锁UI做出来**」）连破 UI：左上角 ══════════════════════
+     *   owner 记的出处：「**th19 左上角是有连锁UI的**」。
+     *   ⚠ 如实登记：TH19 那个 UI 的**精确图元我这次没定位到**（exe 里没有 `CHAIN`/`連鎖` 字符串；
+     *     `front.anm` 解出来的 11 张图里也没有连锁字样）⇒ 这里用**本仓既有的 HUD 手段**做等价物：
+     *       · **数字 = `ce_hud_number_set`**（ANM 图元画的数字，走 TH18 原生 **font 2** 字形；
+     *         TH19 的计数器用的也是同一套字体系统）；
+     *       · **标签 = `ce_hud_text("CHAIN")`**（ASCII 文字；TH18 的 ascii 字体没有汉字 ⇒ 不用「連破」）。
+     *   显示条件：**最近 `POFV_CHAIN_UI_HOLD` 帧内有过击破**（`st.last_kill_frame`）且档 ≥ 2 ——
+     *   连破 1（普通击破）不显示，免得一直挂在屏幕上。关掉时清一次数字 VM。*/
+    if (s->st.chain_kills >= 2 && s->st.last_kill_frame >= 0 &&
+        s_frame - s->st.last_kill_frame < POFV_CHAIN_UI_HOLD) {
+        if (!s->chain_ui_on) {
+            ce_hud_text(POFV_CHAIN_UI_X, POFV_CHAIN_UI_Y - 13.0f, POFV_CHAIN_UI_BGRA, "CHAIN");
+            s->chain_ui_on = 1;
+        }
+        ce_hud_number_set(&s->chain_num, POFV_CHAIN_UI_X, POFV_CHAIN_UI_Y,
+                          POFV_CHAIN_UI_DX, (int)s->st.chain_kills, 2, 0, "pofv109");
+    } else if (s->chain_ui_on) {
+        ce_hud_number_clear(&s->chain_num);
+        s->chain_ui_on = 0;
+    }
 
     /* 对话中：蓄力打断、不发动（照 117 的处理）；商店里 AbilityManager 整个冻着，进不到这里。
      * 无敌窗口也在对话里冻结（引擎自己的计时器同样不走）。*/

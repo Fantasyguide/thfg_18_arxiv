@@ -10633,3 +10633,34 @@ ufo: BOUNTY equivalence published for other cards - P .. / money .. / big faith 
 ⇒ 重排成 **① 弹型 → ② 位置（覆盖区）→ ③ 方向 → ④ 发散 → 然后才动手**（置免撞 + 建伤害源）✓。
 ⚠ 另：`do_storm_frame()` 因为塞了 4 个新局部，寄存器压力顶到 `ce_cancel_radius()` 的内联汇编上限
 （`inline assembly requires more registers than available`）⇒ 把裁剪段**拆成独立函数**解决 ✓。
+## ★★ 2026-10-01 owner 追加口径：**池满可以开大** + **掉落按连锁** + **把连锁 UI 做出来**
+
+### ① 灵力道具池 **48 → 192** ✅
+
+理由：击破掉落改成**按连破档**（1 颗 → `chain` 颗）之后，一波清场的同屏道具量会翻几倍 ⇒
+48 会频繁「池满丢弃」（`spawn_packed` 里 `dropped +=`）⇒ **连破越高反而掉得越少** ✗（本末倒置）。
+⇒ 开到 **192**（每颗只是一小组 float + 一个 VM id，扫一遍 O(192) 很便宜）。
+
+### ② 击破掉落 **按连破档** ✅
+
+`on_enemy_death()` 原来**一律掉 1 颗**（与连破无关）✗ ⇒ 改成 `pofv_power_spawn_packed(..., chain, ...)`：
+连破 `chain` ⇒ **掉 `chain` 颗**（面值 `chain × POFV_POWER_PTS_KILL`，`spawn_packed` 内部按颗摊平、
+**总面值守恒** ✓）；同帧颗数上限 `POFV_POWER_KILL_SPAWN_MAX = 8`（清场时不至于一次吃光池子）。
+★ 这下与**消弹**那一路同口径了 —— `pofv_power_value_cancel(1, chain)` 本来就是 ×连爆档 ✓，
+「连破应当掉」那条到此落实。
+
+### ③ 连锁 UI（左上角）✅ —— 但**明确登记了一处近似**
+
+owner 出处：「**th19 左上角是有连锁UI的**」。
+⚠ **如实登记**：TH19 那个 UI 的**精确图元我这次没定位到** ——
+  · TH19 exe 里**没有** `CHAIN` / `連鎖` 字符串（只有一处无关的 `funcChainInf`）；
+  · `front.anm` 解出来的 11 张图（`front00/gameset/lifebar/ename/...`）里**也没有**连锁字样；
+  · `ascii_big2.png` 那张预览是全白（字形可能在 alpha 通道），没继续追。
+⇒ 用**本仓既有的 HUD 手段**做等价物（**功能到位、外观待 owner 认**）：
+  · **数字** = `ce_hud_number_set`（ANM 图元画的数字，走 TH18 原生 **font 2** 字形；
+    TH19 的计数器用的是同一套字体系统 ✓）；
+  · **标签** = `ce_hud_text("CHAIN")`（ASCII 文字；TH18 的 ascii 字体没有汉字 ⇒ 不用「連破」）；
+  · **位置** = 左上角 `(52, 40)`（640×480 屏幕空间）；配色暖橙 `0xff40a0ff`；
+  · **显示条件** = 最近 `POFV_CHAIN_UI_HOLD = 90` 帧（1.5 s）内有过击破**且连破档 ≥ 2**
+    （连破 1 = 普通击破，不显示，免得常驻）；关掉时 `ce_hud_number_clear()` 一次 ✓。
+⏳ 若 owner 要的是 TH19 那个**原样外观**（图标/字体/位置），我需要再挖一次（线索已记在上面）。
