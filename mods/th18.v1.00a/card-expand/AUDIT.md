@@ -28855,3 +28855,25 @@ owner 两条：「不对，我刚才测试的时候是**瞬间就所有人死了
 `GW_TINT_LIFE = 64`、`GW_FLASH_LIFE = 100`（都取在脚本 `delete()` 之内 ⇒ 清句柄安全）。
 
 **回归**：`make check` rc=0（cards-check 49 张 / anm-verify / capcheck / dllx87 / check-docs 420 文件）。
+
+#### §BE 详录 #219 追加 8（2026-10-03）：**老老实实复刻威光** —— `ins_614` 就是那片扇，渐变 = 两路顶点色
+
+owner：「特效完全不对啊。**我们先不搞复杂了，先复刻威光**」「威光的是**扇形**，甚至还有**渐变**，
+你这个还是**长方形**」「这个渐变是**空间渐变**」。
+
+**根因**：我上一版用 `drawRect(1,1)` 代替原生的 `ins_614(...)` ⇒ 画出来是**长方形** ✗。而原生那支在
+`native/build/tex-ability/spec.txt` 里是 `ins_614(640.0f, 1.0f)` —— 反编译器（`thanm -d`）**不认识 opcode 614**，
+原样印成 `ins_*`，我误当成「细长条」自己拿矩形替了。
+
+**修正**：脚本 **399 改回原生 script48 的逐条照抄**（`ins_614(640.0f, 1.0f)`、`alpha2(16)`、`anchor(2,0)`、
+随机角度、`scaleTime(30,0,1.0,%F0)` 全保留），只把两色改成金。**本仓工具链能直接汇编 `ins_614(...)`**（实测通过）。
+
+**空间渐变的一手**：VM 有**两路顶点色**（`color()`→`color_1`、`color2()`→`color_2`；`alpha`/`alpha2` 同理），
+图元按顶点栅格化（`02-render-stages.md` §3 的 `DrawPrimitive` / `(v*3+h)*4`）⇒ 两路色落在**不同顶点**上
+= 沿形状**空间**过渡（原生就是「根部蓝紫 → 外缘品红、外缘 alpha 16 淡出」）。图元族操作码表 + 614/615 这两条
+无名 opcode + 该机制已回流 [`engine/anm/th18/02-render-stages.md`](../../../engine/anm/th18/02-render-stages.md) §6。
+
+**同时按 owner「先不搞复杂了」**：两个全屏圆盘（397/398）**暂时不挂**（脚本留着，ORDER append-only），
+`on_activate` 里那两行 spawn 注释掉即可恢复。**死亡延迟保留**（第 60 帧 = 1 s 才 `gw_resolve()`）。
+
+**回归**：`make check` rc=0（cards-check 49 张 / anm-verify / capcheck / dllx87 / check-docs）。

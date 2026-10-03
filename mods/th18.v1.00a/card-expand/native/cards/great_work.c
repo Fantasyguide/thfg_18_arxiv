@@ -426,23 +426,18 @@ static int on_activate(ce_card_t *c)
     /* 金色演出（同一帧起、都以释放点为心 —— owner 的"几乎同时"）：
      *   · 光线总控（脚本 400，层 6）—— 最先出来的那 100 支金色光刃（总控 92 帧后删，
      *     子 VM 各自 90 帧自毁）；
-     *   · 圆形扩张的乘法金色滤镜（脚本 398）与加法金色闪光（脚本 397），层 19 ——
-     *     慢段 42 帧 + 快段 18 帧 = **第 60 帧（1 s）顶点**：纯白 + alpha 255 + 半径 640 同帧到顶。*/
+     *   （圆盘 397/398 暂时不挂 —— owner「先复刻威光」，见下面的注释块。）*/
     s->fx_rays_id = ce_anm_spawn(CE_ABILITY_ANM(), GW_RAYS_SCRIPT, GW_RAYS_LAYER);
     if (s->fx_rays_id) {
         ce_anm_set_pos(s->fx_rays_id, release[0], release[1], release[2]);
         s->fx_rays_left = GW_RAYS_LIFE;
     }
-    s->fx_tint_id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_GREAT_WORK_TINT, GW_FLASH_LAYER);
-    if (s->fx_tint_id) {
-        ce_anm_set_pos(s->fx_tint_id, release[0], release[1], release[2]);
-        s->fx_tint_left = GW_TINT_LIFE;
-    }
-    s->fx_flash_id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_GREAT_WORK_FLASH, GW_FLASH_LAYER);
-    if (s->fx_flash_id) {
-        ce_anm_set_pos(s->fx_flash_id, release[0], release[1], release[2]);
-        s->fx_flash_left = GW_FLASH_LIFE;
-    }
+    /* ★ owner 2026-10-03：「**特效完全不对啊。我们先不搞复杂了，先复刻威光**」
+     *   ⇒ 暂时**不挂**那两个全屏圆盘（脚本 397/398 留着不删 —— ORDER 是 append-only），
+     *     只留**威光**：总控 400（照原生 script47）+ 光扇 399（照原生 script48，颜色改金）。
+     *   旧代码在这里 spawn 397/398（乘法滤镜 + 加法闪光），要恢复就取消下面两行注释。*/
+    /* s->fx_tint_id = ...GREAT_WORK_TINT...; */
+    /* s->fx_flash_id = ...GREAT_WORK_FLASH...; */
 
     ce_log("great_work: 发动（顶点演出 1 s）—— 场上 %d 弹 / %lld 血 / %d 道具 / %d 信仰点，"
            "冷却已定 %d 帧；**结算延迟到第 %d 帧**",
