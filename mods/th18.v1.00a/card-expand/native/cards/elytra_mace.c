@@ -254,7 +254,17 @@ static int on_tick_2(ce_card_t *c)
         em_set_player(s->home_x, s->home_y);         /* ★ 回到原位 */
         em_kill(&s->ham_id);
         em_kill(&s->wing_id);
-        ce_log("elytra_mace: smash done - back home (%.1f, %.1f)", (double)s->home_x, (double)s->home_y);
+        /* ★★ 2026-10-03 owner：「鞘翅重锤应当能**连续作用**」⇒ core 砸完回 AIM 连段；
+         *   但**时机条 VM 是在 HIT 那一帧被删掉的**（见上面的 EM_EV_HIT）⇒ 这里必须**重建**，
+         *   否则第二锤起就没有条可看（玩家只能盲按）✗。光标 VM 不删，core 会把光标位置重置到左端。*/
+        if (!s->bar_id) {
+            s->bar_id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_ELYTRA_MACE_BAR, EM_CARD_BAR_LAYER);
+            if (s->bar_id) {
+                ce_anm_set_pos(s->bar_id, EM_CARD_BAR_X, EM_CARD_BAR_Y, 0.0f);
+                ce_anm_set_color(s->bar_id, 0xffffffffu);
+            }
+        }
+        ce_log("elytra_mace: smash done - back home (%.1f, %.1f) ⇒ 回 AIM 连段", (double)s->home_x, (double)s->home_y);
         break;
     case EM_EV_DONE:
         em_kill_fx(s);

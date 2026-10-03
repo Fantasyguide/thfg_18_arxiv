@@ -93,9 +93,18 @@ int em_tick(em_state_t *s, int has_target, int c_edge)
 
     case EM_SMASH:
         s->frames++;
-        if (s->frames >= EM_SMASH_FRAMES) {          /* 砸完 ⇒ 送回原位，然后进缓冲 */
-            s->state = EM_EXIT;
+        if (s->frames >= EM_SMASH_FRAMES) {
+            /* ★★ 2026-10-03 owner：「鞘翅重锤应当能**连续作用**」⇒ 砸完**回到 AIM 继续连段**，
+             *   而不是直接进 EXIT 收尾（原来一次只能一锤）。
+             *   · 卡侧照旧收到 `EM_EV_RETURN`（把自机送回原位）；
+             *   · 新一轮 AIM 的**光标从头开始**、`no_target` 清零；
+             *   · 退出仍走原来的三条：**3 s 没有可攻击的敌人 / 错过窗口 / 瞄准预算到** ⇒ 进 EXIT 缓冲。
+             *   ⇒ 只要场上还有敌人、节奏卡得准，就能一锤接一锤（无敌全程声明不断）。*/
+            s->state = EM_AIM;
             s->frames = 0;
+            s->no_target = 0;
+            s->cursor = -EM_BAR_HALF;
+            s->dir = 1.0f;
             return EM_EV_RETURN;
         }
         return EM_EV_NONE;

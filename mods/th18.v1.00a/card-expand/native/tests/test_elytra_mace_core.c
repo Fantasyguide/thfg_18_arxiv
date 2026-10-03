@@ -81,8 +81,15 @@ static void test_hit_and_miss(void)
         }
         ev = em_tick(&s, 0, 0);
         CHECK(ev == EM_EV_RETURN, "砸完那一帧该 RETURN，得到 %d", ev);
+        /* ★ 2026-10-03 owner「连续作用」：砸完回 AIM 连段（不再直接进 EXIT）*/
+        CHECK(s.state == EM_AIM, "RETURN 之后该回到 AIM 继续连段（得到 %d）", (int)s.state);
         saw_return = 1;
-        CHECK(s.state == EM_EXIT, "RETURN 之后该进 EXIT");
+        /* 连段之后：让它在 AIM 里超时（没有目标）⇒ 仍要能进 EXIT 收尾 */
+        for (i = 0; i < EM_NO_TARGET_FRAMES + 2; ++i) {
+            if (s.state != EM_AIM) break;
+            (void)em_tick(&s, 0, 0);
+        }
+        CHECK(s.state == EM_EXIT, "AIM 里 3s 没敌人该进 EXIT（得到 %d）", (int)s.state);
         for (i = 1; i < EM_EXIT_INVULN; ++i) em_tick(&s, 0, 0);
         ev = em_tick(&s, 0, 0);
         CHECK(ev == EM_EV_DONE && s.state == EM_IDLE, "缓冲走完该 DONE + IDLE（得到 %d）", ev);
@@ -154,7 +161,10 @@ static void test_invuln_monotone(void)
     CHECK(em_tick(&s, 1, 1) == EM_EV_HIT, "该 HIT");
     CHECK(em_invuln_left(&s) >= EM_EXIT_INVULN, "SMASH 第一帧的声明该含缓冲（得到 %d）",
           em_invuln_left(&s));
-    for (i = 0; i < EM_SMASH_FRAMES + EM_EXIT_INVULN + 4; ++i) em_tick(&s, 0, 0);
+    /* ★ 2026-10-03「连续作用」：砸完回 AIM 连段 ⇒ 得先让 AIM 超时（3s 没敌人）再进 EXIT 缓冲，
+       走完那一段之后声明才该归 0（原来直接 SMASH→EXIT 所以几步就归零）。*/
+    for (i = 0; i < EM_SMASH_FRAMES + EM_NO_TARGET_FRAMES + EM_EXIT_INVULN + 8; ++i) em_tick(&s, 0, 0);
+    CHECK(s.state == EM_IDLE, "连段超时 + 缓冲走完该回 IDLE（得到 %d）", (int)s.state);
     CHECK(em_invuln_left(&s) == 0, "全走完该是 0");
 }
 
