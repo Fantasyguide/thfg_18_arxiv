@@ -981,14 +981,16 @@ YOUKAI_FAM_TRAIL  ability/youkai_familiar/YOUKAI_FAM_TRAIL.png  16x16
 # 109 的「灵力道具」= ★ **TH16 季节道具那一格**（`sprite519` = `(224,0,16,16)`，16×16）——
 #   owner 实跑反馈「样式不对」后从 P 点（32×32）换过来；画法见 scripts/374。
 POFV109_POWER_P  ability/pofv109_power/POWER_P.png  16x16
-# 109 的「灵」（灵魂）本体：★ **TH09 原版幽霊**（`data/stgenm/enemy.png` 的 sprite 84–87，各 64×64）
-#   —— owner 实跑反馈「灵魂没有任何贴图」后，从程序化图元占位换成**真贴图**。
-#   切图脚本 = `assets/ability/make_pofv109_spirit_art.py`（构建时用 thanm -x9 现取 TH09 原图）。
+# 109 的「灵」（灵魂）本体：★ **TH19 原版動物霊**（`enemy/animal_spirits.png` 的 sprite 344–347，各 48×32）
+#   —— owner 两轮实跑反馈：「灵魂没有任何贴图」→ 换成真贴图；再「**怎么上来有个莉莉白在靠近，
+#     灵不长这样**」→ 我第一次认错了图（TH09 enemy.anm 的 sprite 84–87 是大妖精样，不是灵）✗，
+#     改用 TH19 的動物霊（本卡 109 = 花映塚 × 獣王園，灵这个概念来自 TH19；TH19 里動物霊是真机制）。
+#   切图脚本 = `assets/ability/make_pofv109_spirit_art.py`（构建时用 thanm -x19 现取 TH19 原图）。
 #   画法 = `assets/ability/scripts/372_spirit109.anm.txt`（4 帧循环，@6 帧/帧）。
-POFV109_SPIRIT_0  ability/pofv109_spirit/SPIRIT_0.png  64x64
-POFV109_SPIRIT_1  ability/pofv109_spirit/SPIRIT_1.png  64x64
-POFV109_SPIRIT_2  ability/pofv109_spirit/SPIRIT_2.png  64x64
-POFV109_SPIRIT_3  ability/pofv109_spirit/SPIRIT_3.png  64x64
+POFV109_SPIRIT_0  ability/pofv109_spirit/SPIRIT_0.png  48x32
+POFV109_SPIRIT_1  ability/pofv109_spirit/SPIRIT_1.png  48x32
+POFV109_SPIRIT_2  ability/pofv109_spirit/SPIRIT_2.png  48x32
+POFV109_SPIRIT_3  ability/pofv109_spirit/SPIRIT_3.png  48x32
 # ★★ 2026-10-02b（87 天顶剑 → 按泰拉瑞亚的**弹幕本体**还原）：天顶剑每一挥甩出的**剑阵**用的剑贴图。
 #   ⚠ 这张图集**同时**供跟班（逐把轮播，见 script378）与剑刃（每把随机）用 —— 原先给跟班单开的
 #     单图 entry（`ZENITH_SWORD`）同日撤掉（它的唯一消费者改走本图集的第 21 个成员），

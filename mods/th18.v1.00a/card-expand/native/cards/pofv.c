@@ -82,6 +82,10 @@
 /* 两个跟随 VM 的**绘制层**（❓ 自定；层号在 `CE_ANM_VM_LAYER`，脚本里那两条都故意不写 `layer()`）：
  * 结界在**灵**之下（结界是地面上的场、灵站在场里）、两者都在自机之下。*/
 #define POFV_AURA_VM_LAYER         5
+/* ★★ 2026-10-01：灵一旦**没拿到跟随 VM** 就每这么多帧重试一次（见 `ghost_vm_sync` 里那段）。
+ *   原来只试一次、失败即永久放弃 ⇒ owner 看到「场上在掉**不可见**的灵」。取 8 帧
+ *   （≈0.13 s 一次，灵通常活几百帧 ⇒ 有足够机会补上）。*/
+#define POFV_GHOST_VM_RETRY        8
 #define POFV_GHOST_VM_LAYER        6
 /* ★ 一手（2026-10-01）：**收取音** —— TH16 季节道具收进时播 `se_item00`（`0x25`），
  *   116 `season.c` 的 `SEASON_SE_GET` 就是它（一手 `th16:0x42fea5` / `0x42feae`）。
@@ -125,7 +129,13 @@
  *     - 新值 `_MAX = 16 × _DMG = 5` = **80/帧 ≤ 90** ⇒ **一帧都不浪费、也不触发截断** ✓；
  *     - 敌人压在弹幕里一般重叠 1–4 格 ⇒ **5–20/帧**（手感量级与暴风的 40/帧 同阶，偏轻）。
  *   ⚠ 仍是占位（owner 说等实跑）——但它现在**处在一手的约束边界内**，不是随手写的数。*/
-#define POFV_BOSSATK_DMG         5       /* ★ 见上：与 `_MAX` 一起把每帧总量压在 90 以内 */
+/* ★★★ 2026-10-01 三改（owner 实跑：「**无缘无故怎么有暴风，都死了？**」）：
+ *   原来 `_DMG = 5` × 最多 16 格 ⇒ 敌人压在弹幕里约 **5–20/帧** ⇒ **屏幕上所有敌人秒死** ⇒
+ *   每只都触发一次暴风（`on_enemy_death` 里「击破 ⇒ 起暴风」）⇒ 看着就是「无缘无故到处爆、都死了」。
+ *   ⇒ **降到 1**：每帧约 **1–4/帧**（= 重叠格数），小妖精（数百 HP）要几十秒、boss 更久 ✓；
+ *     总量上限 16/帧，远低于一手天花板 90 ⇒ 仍然「一帧都不浪费」✓。
+ *   ⚠ 仍是占位（owner 说等实跑）——但方向明确：**这一档是「持续伤害」不是「爆发」**。*/
+#define POFV_BOSSATK_DMG         1
 #define POFV_BOSSATK_DMG_W     384.0f    /* 覆盖宽（= 场地宽 384，一手 `arcadeRegionSize`）*/
 #define POFV_BOSSATK_DMG_H     320.0f    /* 覆盖高（自锚点往上）*/
 #define POFV_BOSSATK_DMG_LIFE    2       /* 源存活帧（照风暴那一支的量级）*/
@@ -188,6 +198,15 @@ static uint32_t s_bossatk_scan_rot;
 
 /* 蓝圈的「有攻击力」：照 Remilia `0x40f478` / season.c 的矩形伤害源写法。
  * ❓ 自定（TODO(th09)：原版爆风伤害未逆到）+ 抬每帧上限（照 Remilia 写 300）。*/
+/* ★★ 2026-10-01（owner：「暴风会伤害到屏幕外」）：**场地的世界坐标范围** —— 伤害矩形要裁到这里面。
+ *   一手（`engine/player/th18/01-position-and-state-timers.md`）：弹幕区 x ∈ ±192、y ∈ [0,448]
+ *   （玩家自己内缩到 ±184 / [32,432]）。*/
+/* 场的视觉（脚本 402）画在第几层 + 两种场的染色（`ce_anm_set_color` 是 **AARRGGBB**）。*/
+#define POFV_STORM_VM_LAYER        6
+#define POFV_FIELD_RGBA_STORM 0xa04080ffu   /* 暴风 = 蓝（代码里一直叫它「蓝圈」）*/
+#define POFV_FIELD_RGBA_CA    0xa0ff4040u   /* 蓄力攻击红圈 = 红（一手就叫红圈）*/
+#define POFV_FIELD_HALF_W      192.0f
+#define POFV_FIELD_H         448.0f
 #define POFV_DMG_CAP           300
 #define POFV_BLAST_DMG           40
 #define POFV_BLAST_DMG_LIFE       2
@@ -221,6 +240,8 @@ static pofv_storm_pool_t  s_storm;
 static pofv_power_pool_t  s_power;      /* ★ 2026-10-01（口径 5）：灵力道具池（自建实体，非原生道具）*/
 static pofv_ghost_pool_t  s_ghost;      /* ★ 2026-10-01（口径 8/9/10）：灵的**句柄池**（本体是真敌人）*/
 static int32_t            s_ghost_vm[POFV_GHOST_MAX];   /* 每只灵的**跟随 VM** id（0 = 没有）*/
+/* ★ 每个**场**（暴风 / CA 红圈）的跟随 VM id（0 = 没有）；驱动在 `storm_vm_sync()`。*/
+static int32_t            s_storm_vm[POFV_STORM_MAX];
 static int32_t            s_frame;      /* 游玩帧计数（连爆窗口的帧源；只在 on_tick_2 前进）*/
 /* 诊断账（都在 `clear_card()` 里清；`verify.py` 的场景吃这几行）。*/
 static int32_t            s_power_got;  /* 本次段累计收取的灵力道具颗数 */
@@ -553,44 +574,40 @@ static void bossatk_damage(void)
     for (i = 0; i < CE_BM_BULLET_COUNT; ++i) {
         uint8_t *b = bm + CE_BM_BULLETS + (size_t)i * CE_BULLET_STRIDE;
         uint16_t state = *(const uint16_t *)(b + CE_BULLET_STATE);
-        if (is_our_barrage(b)) continue;      /* ★ 我们自己发的 C3/C4 弹幕：三种清弹都不吃 */
-        uint32_t rec = *(const uint32_t *)(b + CE_BULLET_TYPE_REC);
+        uint32_t rec;
         uint32_t type;
-        float bx, by;
+        float bx, by, vx, vy;
         float pos[3];
 
         if (state != 1 && state != 2) continue;
+        rec = *(const uint32_t *)(b + CE_BULLET_TYPE_REC);
         if (rec < CE_BULLET_TYPE_TABLE) continue;                  /* 还没建/不合法 */
         if ((rec - CE_BULLET_TYPE_TABLE) % CE_BULLET_TYPE_STRIDE) continue;   /* 不在表上（对齐校验）*/
         type = (rec - CE_BULLET_TYPE_TABLE) / CE_BULLET_TYPE_STRIDE;
-        if (!pofv_bossatk_bullet_type_ours(type)) continue;         /* 不是我们 ECL 用到的类型 */
-        /* ★ 第三道过滤：**只认「往上飞」的**。载体在版底往上发（`velocity.y < 0`），
-         *   而原生敌人的弹在同一个覆盖区里多半是**往下**飞的 ⇒ 方向是最强的区分器，
-         *   少了它会把「路过这个区域的原生弹」也一起置成免撞（那才是真事故）。*/
-        {
-            const float vx = *(const float *)(b + CE_BULLET_VELOCITY);
-            const float vy = *(const float *)(b + CE_BULLET_VELOCITY + 4);
-            if (vy >= 0.0f) continue;                       /* 只认往上飞的（我们的弹幕朝上）*/
-            /* ★★ 再加一道「**从锚点向外发散**」：载体在锚点放射状发弹 ⇒ 速度方向与
-             *   「(弹位 − 锚点)」同向（点积 > 0）。这一条把「**原生敌人也往上发、恰好路过**
-             *   这片区域**」的弹挡在外面（只按类型 + 区域 + 方向还不够严）。
-             *   ⚠ 刚出生的弹在锚点附近（点积 ≈ 0）⇒ 允许一小段（`+8.0f` 容差）；
-             *   那几帧它在锚点下方（低于自机）⇒ 打不到自机，不影响安全。*/
-            if ((bx - POFV_BOSSATK_ANCHOR_X) * vx + (by - POFV_BOSSATK_ANCHOR_Y) * vy
-                < -8.0f) continue;
-        }
+        if (!pofv_bossatk_bullet_type_ours(type)) continue;         /* ① 弹型属于我们 ECL 用到的集合 */
 
-        /* ★★ 置「跳过碰撞判定」⇒ 这颗弹**打不到自机**（见 `POFV_BOSSATK_NO_HIT` 的长注释）。*/
-        *(uint32_t *)(b + CE_BULLET_FLAGS) |= POFV_BOSSATK_NO_HIT;
+        /* ★★★ 2026-10-01 **重排（修两个真 bug）**：四道过滤必须在**施加任何效果之前**全部跑完。
+         *   ① 原实现把「置免撞位」写在覆盖区判定**之前** ⇒ **任何**「弹型撞上我们那 8 个之一 + 往上飞」
+         *      的弹（**包括原生敌人的弹**）都会被打上免撞 ⇒ **原生弹变无害** ✗；
+         *   ② 原「从锚点发散」那道判定用的 `bx/by` **当帧还没赋值**（读栈上垃圾）⇒ 过滤不可预测 ✗。
+         *   ⇒ 现在顺序：① 弹型 → ② 位置（覆盖区）→ ③ 方向 → ④ 发散 → **然后才动手**。*/
         bx = *(const float *)(b + CE_BULLET_POS);
         by = *(const float *)(b + CE_BULLET_POS + 4);
-        if (bx < -POFV_BOSSATK_HALF_W || bx > POFV_BOSSATK_HALF_W) continue;  /* 覆盖区：世界 x ∈ ±192 */
-        if (by > POFV_BOSSATK_ANCHOR_Y + 8.0f) continue;            /* 覆盖区：不能低于锚点 */
-        if (by < POFV_BOSSATK_ANCHOR_Y - POFV_BOSSATK_DMG_H) continue;  /* 覆盖区：往上一个高 */
+        if (bx < -POFV_BOSSATK_HALF_W || bx > POFV_BOSSATK_HALF_W) continue;  /* ② 世界 x ∈ ±192 */
+        if (by > POFV_BOSSATK_ANCHOR_Y + 8.0f) continue;            /* ② 不能低于锚点 */
+        if (by < POFV_BOSSATK_ANCHOR_Y - POFV_BOSSATK_DMG_H) continue;  /* ② 往上一个高 */
+        vx = *(const float *)(b + CE_BULLET_VELOCITY);
+        vy = *(const float *)(b + CE_BULLET_VELOCITY + 4);
+        if (vy >= 0.0f) continue;                                   /* ③ 只认往上飞的 */
+        if ((bx - POFV_BOSSATK_ANCHOR_X) * vx + (by - POFV_BOSSATK_ANCHOR_Y) * vy < -8.0f)
+            continue;                                               /* ④ 从锚点向外发散 */
+
+        /* ── 到这里才确认「这颗是我们的弹」⇒ 施加两个效果 ─────────────────────────────── */
+        /* ★★ 置「跳过碰撞判定」⇒ 这颗弹**打不到自机**（见 `POFV_BOSSATK_NO_HIT` 的长注释）。*/
+        *(uint32_t *)(b + CE_BULLET_FLAGS) |= POFV_BOSSATK_NO_HIT;
         pos[0] = bx; pos[1] = by; pos[2] = 0.0f;
         ce_damage_rect(pos, 0.0f, POFV_BOSSATK_DMG_LIFE, POFV_BOSSATK_DMG,
-                       POFV_BOSSATK_DMG_CELL, POFV_BOSSATK_DMG_CELL);
-        if (++made >= POFV_BOSSATK_DMG_MAX) break;                  /* 每帧上限（别把源池刷爆）*/
+                       POFV_BOSSATK_DMG_CELL, POFV_BOSSATK_DMG_CELL);        if (++made >= POFV_BOSSATK_DMG_MAX) break;                  /* 每帧上限（别把源池刷爆）*/
     }
     s_bossatk_scan_rot = (s_bossatk_scan_rot + POFV_BOSSATK_DMG_MAX) % CE_BM_BULLET_COUNT;
 }
@@ -643,7 +660,15 @@ static void bossatk_fire(ce_card_t *c, pofv_card_t *s)
     uint8_t *o;
 
     if (!pofv_bossatk_tick(&s->bossatk)) {
-        bossatk_carrier_stop();                         /* ★ 打完了 ⇒ 喊载体走（别留孤儿敌人）*/
+        bossatk_carrier_stop();
+
+    /* ★ 场的 VM 也要收干净（长持续效果纪律：删卡/换关/重开那一刻 tick 全停，只有这里跑得到）。*/
+    {
+        int vi;
+        for (vi = 0; vi < POFV_STORM_MAX; ++vi) {
+            if (s_storm_vm[vi]) { ce_anm_delete((uint32_t)s_storm_vm[vi]); s_storm_vm[vi] = 0; }
+        }
+    }                         /* ★ 打完了 ⇒ 喊载体走（别留孤儿敌人）*/
         return;
     }
     /* ★★ 2026-10-01（owner 定的**混合路线**）：**C1/C2 = sht 自机弹**（原生伤敌机 + 自机狙打敌机）；
@@ -825,6 +850,65 @@ static void ca_invuln_grant(pofv_card_t *s, int level)
  *   ≈ 妖精速度**（owner 2026-10-01：「连锁爆破在敌人链条上的移动速度和敌人链条本身移动的速度相当」）。
  *   ⇒ 连锁由妖精的到场率决定，不再是一个 30 帧窗口的节拍器（用户：「连锁不该这么快」）。
  *   每帧的成本闸 = `POFV_STORM_SCANS_PER_FRAME`（整池扫弹的次数；伤害源那一条很便宜，不做闸）。 */
+/* ★★ 2026-10-01（owner：「**暴风缺少UI**」）：场池的**视觉** —— 每个活着的场一台跟随 VM。
+ *
+ *   此前暴风**完全没有画面**（只有伤害 + 消弹）⇒ 玩家看到「无缘无故掉血/敌人死」。
+ *   本函数每帧：活着的场 ⇒ 补 VM（没有就起一台）+ 写坐标 + **写 scale = 当前半径** + 按 kind 染色；
+ *   槽空了 ⇒ 删 VM。半径 = `r0 + dr × age`（与判定/消弹用的是**同一个** r ⇒ **判定 = 绘制** ✓，
+ *   照结界那套一手口径）。
+ *   ❓ 颜色自定见脚本 402 的注释（暴风 = 蓝、CA 红圈 = 红）。*/
+static void storm_vm_sync(void)
+{
+    int i;
+    for (i = 0; i < POFV_STORM_MAX; ++i) {
+        const pofv_storm_t *bl = pofv_storm_slot(&s_storm, i);
+        if (!bl || !bl->active) {
+            if (s_storm_vm[i]) { ce_anm_delete((uint32_t)s_storm_vm[i]); s_storm_vm[i] = 0; }
+            continue;
+        }
+        if (!s_storm_vm[i])
+            s_storm_vm[i] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
+                                                  CE_ANM_ABILITY_SCRIPT_POFV109_FIELD,
+                                                  POFV_STORM_VM_LAYER);
+        if (!s_storm_vm[i]) continue;                      /* anm 还没就绪：下一帧再补 */
+        {
+            float r = bl->r0 + bl->dr * (float)bl->age;
+            ce_anm_set_pos((uint32_t)s_storm_vm[i], bl->x, bl->y, 0.0f);
+            ce_anm_set_scale((uint32_t)s_storm_vm[i], r, r);
+            ce_anm_set_color((uint32_t)s_storm_vm[i],
+                             bl->kind == POFV_STORM_KIND_CA ? POFV_FIELD_RGBA_CA
+                                                            : POFV_FIELD_RGBA_STORM);
+        }
+    }
+}
+
+/* ★★★ 2026-10-01（owner 实跑：「**暴风会伤害到屏幕外**」「大部分都是**无缘无故一进屏幕就死了**」）：
+ *   场的伤害矩形原来是 `r*2 × r*2`（以场心为中心）⇒ 场心靠边/靠上时矩形**溢出场地**，
+ *   把**还没进屏**的敌人（`y < 0` 或 `|x| > 192`）也一起打死 ✗ —— 这正是「一进屏幕就死」。
+ *
+ *   ⇒ **先把矩形裁到场地内**：求「场心 ± r」与场地矩形（世界 x ∈ ±192、y ∈ [0,448]）的**交集**；
+ *     空了就**不放伤害源**；否则以交集为矩形。这样屏外的敌人**永远**吃不到这个场 ✓。
+ *
+ *   ⚠ 拆成独立函数是**故意的**：这段有 4 个额外浮点局部，塞回 `do_storm_frame()` 会让那个函数
+ *     的寄存器压力顶到 `ce_cancel_radius()`（`sdk.h`）那串内联汇编的上限 ⇒ 编译报
+ *     `inline assembly requires more registers than available`（我本轮就撞了一次）。*/
+static void storm_damage_clipped(const pofv_storm_t *bl, float r)
+{
+    float x0 = bl->x - r, x1 = bl->x + r;
+    float y0 = bl->y - r, y1 = bl->y + r;
+    float pos[3];
+    if (x0 < -POFV_FIELD_HALF_W) x0 = -POFV_FIELD_HALF_W;
+    if (x1 >  POFV_FIELD_HALF_W) x1 =  POFV_FIELD_HALF_W;
+    if (y0 < 0.0f) y0 = 0.0f;
+    if (y1 > POFV_FIELD_H) y1 = POFV_FIELD_H;
+    if (x1 <= x0 || y1 <= y0) return;                 /* 交集空（场整个在屏外）⇒ 不打 */
+    pos[0] = (x0 + x1) * 0.5f;
+    pos[1] = (y0 + y1) * 0.5f;
+    pos[2] = 0.0f;
+    ce_raise_damage_cap(POFV_DMG_CAP);
+    ce_damage_rect(pos, 0.0f, POFV_STORM_DMG_LIFE, POFV_BLAST_DMG, x1 - x0, y1 - y0);
+}
+
 static void do_storm_frame(pofv_card_t *s, const pofv_storm_t *bl, int *scan_budget)
 {
     float pos[3], r;
@@ -871,10 +955,7 @@ static void do_storm_frame(pofv_card_t *s, const pofv_storm_t *bl, int *scan_bud
      * ★ 场每帧都放一个：这就是「妖精飞进来才被点着」的那只手（旧实现只放 2 帧）。
      * ★★ 2026-10-01（owner 第四条「th09 暴风可以直接打死 th09 幽灵」/ 第五条「th19 没有暴风连锁，
      *   只是暴风消弹」）：**伤害源只在「能打死幽灵」的那一档放** —— 早苗（TH19）档**只消弹**。*/
-    if (s_storm_prof.kills_ghosts) {
-        ce_raise_damage_cap(POFV_DMG_CAP);
-        ce_damage_rect(pos, 0.0f, POFV_STORM_DMG_LIFE, POFV_BLAST_DMG, r * 2.0f, r * 2.0f);
-    }
+    if (s_storm_prof.kills_ghosts) storm_damage_clipped(bl, r);
 
     /* ★★ 2026-10-01（口径 10）：**旧的自建活化灵池已整条撤掉** —— 灵现在是**真敌人**
      *   （`ce_spawn_enemy` + `CESpirit109`），与普通敌机一样吃上面这个 `ce_damage_rect`
@@ -954,11 +1035,13 @@ static void do_boss_attack(pofv_card_t *s)
 #define POFV_GHOST_HOMING_SPEED   0.8f  /* ❓ 自定（索敌：每帧朝自机飘多少 px）*/
 #define POFV_GHOST_SPAWN_DX     -40.0f  /* ❓ 自定（出生点相对自机的偏移：左上方一点）*/
 #define POFV_GHOST_SPAWN_DY     -80.0f
-/* ★ 2026-10-01 改：脚本 372 现在画的是 **TH09 原版幽霊贴图**（64×64 的一格，图内实体约 52 px），
- *   而灵的判定是 **20×20**（`spirit109.ecl.txt` 的 `setHurtbox(20,20)`）⇒ 取 **0.4** 让
- *   视觉（≈21 px）与判定（20 px）**对得上**（旧值 1.0 是配「半径 1 的单位圆」的，
- *   换成真贴图后必须同步改，否则会画成一个 64 px 的巨灵）。*/
-#define POFV_GHOST_VM_SCALE      0.4f
+/* ★★ 2026-10-01 二改：脚本 372 现在画的是 **TH19 原版動物霊贴图**（`animal_spirits.png` 的
+ *   `sprite344–347`，各 **48×32**）—— 第一次换成 TH09 的图被 owner 打回（「怎么上来有个莉莉白
+ *   在靠近，灵不长这样」：那是大妖精样、不是灵）。
+ *   ⇒ 缩放取 **0.6**：48×32 × 0.6 ≈ **29×19 px**，与灵的判定 **20×20**
+ *     （`spirit109.ecl.txt` 的 `setHurtbox(20,20)`）大致对得上。
+ *   ⚠ **换贴图必须同步改这里**（旧值 0.4 是配 64×64 那版的）。*/
+#define POFV_GHOST_VM_SCALE      0.6f
 
 /* boss 判据（口径 9 方案甲）：`mgr+0x48` 的 `int[4]` boss enemy_id（一手 `get_boss_enemy_full`
  * `0x4237f0` 就是按它走链表找），逐个问「还在不在」。任何 boss（含道中）在场 ⇒ 不撒灵。 */
@@ -1089,6 +1172,14 @@ static void ghost_tick(pofv_card_t *s)
                 ce_log("pofv: ghost %d calmed by the barrier at (%d,%d)",
                        (int)g->enemy_id, (int)g->x, (int)g->y);
             }
+        }
+        /* ★★ 2026-10-01（owner 实跑：「**场上似乎在掉不可见的灵**」）：**没 VM 就重试**。
+         *   原来只在出生那一刻试一次（`ghost_vm_spawn` 失败只记一条日志
+         *   ——原文就是 `"ghost stays invisible"`）⇒ 那一刻能力 anm 还没加载好 / VM 池恰好满，
+         *   那只灵就**一辈子不可见** ✗。⇒ 每 `POFV_GHOST_VM_RETRY` 帧补一次。*/
+        if (!s_ghost_vm[i]) {
+            if ((s_frame % POFV_GHOST_VM_RETRY) == 0) ghost_vm_spawn(s, i, g->x, g->y);
+            if (!s_ghost_vm[i]) continue;                 /* 还没补上：这帧先跳过 */
         }
         ce_anm_set_pos((uint32_t)s_ghost_vm[i], g->x, g->y, 0.0f);
     }
@@ -1307,6 +1398,9 @@ static int on_tick_2(ce_card_t *c)
     }
     /* 推进放在后面：本帧出生/本帧结算过的场，age 从这一帧开始算（寿命 = 该档的 `R_k / dr` 帧）。*/
     pofv_storm_tick(&s_storm);
+
+    /* ★★ 2026-10-01：**场的视觉**（owner：「暴风缺少UI」）—— 每帧跟一遍场池（起/挪/缩放/染色/删）。*/
+    storm_vm_sync();
 
     /* ★ 2026-10-01（口径 4 + 6）：**固灵结界**（常驻）——
      *   碰敌弹 ⇒ 掉灵力道具（每颗弹只算一次 + 每帧上限 + **打包面值守恒**）。
