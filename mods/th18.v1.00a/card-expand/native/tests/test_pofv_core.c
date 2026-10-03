@@ -1033,6 +1033,30 @@ int main(void)
     }
 
     
+    /* ==================== P. コンボ（连続撃破）====================
+     * 一手：`engine/versus/th19/04-manual-spec.md` §5「連爆に巻き込んだ敵や敵弾はコンボになります」
+     *   ＋「combo 满 100 → kind 9」（kind 9 = 霊力アイテム）。*/
+    {
+        pofv_state_t st;
+        pofv_state_init(&st);
+        CHECK(st.combo == 0 && st.combo_drops == 0);
+        CHECK(pofv_combo_add(&st, 30) == 0 && st.combo == 30);
+        CHECK(pofv_combo_add(&st, 30) == 0 && st.combo == 60);
+        CHECK(pofv_combo_add(&st, 50) == 1 && st.combo == 10);   /* 满一次 ⇒ 保留余数 10 */
+        CHECK(st.combo_drops == 1);
+        CHECK(pofv_combo_add(&st, 0) == 0);                       /* 0 不加 */
+        CHECK(pofv_combo_add(&st, 250) == 2 && st.combo == 60);   /* 一次跨两格 */
+        CHECK(st.combo_drops == 3);
+        CHECK(pofv_combo_add(&st, -5) == 0);                      /* 负数忽略 */
+        /* 一手：被连爆消掉的**弹**也算コンボ ⇒ 走 `pofv_account_blast()` 那条路 */
+        st.combo = 0;
+        pofv_account_blast(&st, POFV_COMBO_MAX / POFV_COMBO_PER_CANCEL, 1);
+        CHECK(st.combo == 0 && st.combo_drops == 4);              /* 恰好满一格 ⇒ 掉一颗 */
+        pofv_state_init(&st);
+        pofv_account_blast(&st, 3, 1);
+        CHECK(st.combo == 3 * POFV_COMBO_PER_CANCEL);
+    }
+
     /* ==================== O. 灵力道具的**下落动态**（一手 TH16 季节道具）====================
      * owner 实跑：「**下落动态不对**」＋「动态这块按照季节点做就行」⇒ 逐条对一手：
      * 重力 0.03/`vy` 上限 2.0/`vy≥0 ⇒ 只动 y`；回收线 128 ⇒ 速度 6.0；吸引矩形 ⇒ 起步 2.0、+0.2、上限 12。*/

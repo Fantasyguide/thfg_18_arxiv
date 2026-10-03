@@ -442,6 +442,9 @@ void pofv_account_blast(pofv_state_t *st, int32_t n_white, int32_t chain)
     st->white_cancelled += n_white;
     st->any_cancelled += n_white;
     st->sp += n_white * POFV_SP_PER_WHITE_CANCEL;
+    /* ★★ 2026-10-01（一手 TH19 §5：「連爆に巻き込んだ敵**や敵弾**は**コンボ**になります」）：
+     *   被连爆消掉的弹**也算コンボ** ⇒ 这里累加（满 100 的掉落在卡侧统一处理）。*/
+    (void)pofv_combo_add(st, n_white * POFV_COMBO_PER_CANCEL);
     /* ★ 2026-10-01（口径 5）：**不再直接加气** —— 充能一律经灵力道具（卡侧撒 / 收取）。 */
 }
 
@@ -1079,4 +1082,24 @@ int pofv_bossatk_bullet_type_ours(uint32_t type)
     for (i = 0; i < sizeof ours / sizeof ours[0]; ++i)
         if (type == ours[i]) return 1;
     return 0;
+}
+
+/* ---------------------------------------------------------------- コンボ（连続撃破）
+
+ * 一手（`engine/versus/th19/04-manual-spec.md` §5 + 第 7 行）：
+ *   「ザコ敵を倒すと爆発します…連爆に巻き込んだ敵や敵弾はコンボになります」
+ *   ★「combo 满 100 → kind 9」（kind 9 = 霊力アイテム）。
+ * ⇒ 攒满 `POFV_COMBO_MAX` 就掉一颗（返回值 = 满的次数，调用方据此撒道具）并保留余数。
+ * ⚠ 增量值一手没逆到（同文档第 75 行：combo 的写点只有 2 处、都是清零）⇒ 见头文件的 ❓ 常量。*/
+int32_t pofv_combo_add(pofv_state_t *st, int32_t n)
+{
+    int32_t full;
+    if (!st || n <= 0) return 0;
+    st->combo += n;
+    full = st->combo / POFV_COMBO_MAX;
+    if (full > 0) {
+        st->combo -= full * POFV_COMBO_MAX;      /* 保留余数（不是清零，超出的部分不浪费）*/
+        st->combo_drops += full;
+    }
+    return full;
 }
