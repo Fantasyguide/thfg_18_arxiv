@@ -208,6 +208,8 @@ static uint32_t s_bossatk_scan_rot;
 /* ★★ 2026-10-01（owner：「把连锁UI做出来」）：连破 UI 的位置/配色/保持帧。
  *   坐标是 **640×480 屏幕空间**（`ce_hud_number_set`/`ce_hud_text` 都收这个空间）。
  *   位置取**左上角**（owner 记的 TH19 位置）；配色取暖橙（与 TH19 的计数器同族的暖色）。*/
+/* ★ 一手：TH19 那个计数器 UI 的**显示门槛 = 10**（`0x51d84e cmpl $0xa` / `0x51d855 jl`）。*/
+#define POFV_HITS_UI_MIN          10
 #define POFV_CHAIN_UI_X         52.0f
 #define POFV_CHAIN_UI_Y         40.0f
 #define POFV_CHAIN_UI_DX        22.0f   /* 数字字距 */
@@ -1361,7 +1363,10 @@ static int on_tick_2(ce_card_t *c)
      *     `front.anm` 解出的 11 张图里也没有）⇒ 用本仓既有 HUD 手段做等价物：
      *       · 数字 = `ce_hud_number_set`（ANM 图元，TH18 原生 **font 2** 字形）；
      *       · 标签 = `ce_hud_text("HITS")`（ASCII；TH18 的 ascii 字体没有汉字）。*/
-    if (s->st.hits > 0) {
+    /* ★★ 2026-10-01（一手）：**这个 UI 只在计数 ≥ 10 时才出现** ——
+     *   `th19:0x51d84e cmpl $0xa, 0x22bc(%ecx)` / `0x51d855 jl skip`（读的是 `PlayerInf+0x22bc`）。
+     *   ⇒ 门槛取 10（不是 `> 0`）✓。*/
+    if (s->st.hits >= POFV_HITS_UI_MIN) {
         if (!s->chain_ui_on) {
             ce_hud_text(POFV_CHAIN_UI_X, POFV_CHAIN_UI_Y - 13.0f, POFV_CHAIN_UI_BGRA, "HITS");
             s->chain_ui_on = 1;
