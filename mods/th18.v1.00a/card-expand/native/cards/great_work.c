@@ -61,7 +61,7 @@
 #define GW_DEATH_DELAY        GW_PEAK_FRAMES
 #define GW_RAYS_LIFE          92       /* 脚本 400：92 帧后自己删 */
 #define GW_TINT_LIFE         100       /* 脚本 401（平白盘）：60 + 8 + 6 + 30 → 104 删 */
-#define GW_FLASH_LIFE        100       /* 脚本 397：60 顶点 + 8 停留 + 6 快落 + 30 长尾 → 104 删 */
+#define GW_FLASH_LIFE        144       /* 脚本 397：60 顶点 + 8 停留 + 12 + 70 长缓出 → 150 删 */
 #define GW_CARD_SE          0x4d       /* 发动音：0x4d se_release（与杰拉 / 鞘翅重锤同）*/
 #define GW_ENEMY_HIT_H      44.0f
 
@@ -447,9 +447,9 @@ static int on_activate(ce_card_t *c)
         ce_anm_set_pos(s->fx_flash_id, release[0], release[1], release[2]);
         s->fx_flash_left = GW_FLASH_LIFE;
     }
-    /* ⚠ **定位版**（owner 2026-10-03「我一按 C 就全白了」）：第 2 层（平白盘 401，"黑变白"那步）
-     *   这一轮**先不挂** —— 先确认第 1 层（中心渐变盘）本身的表现，再决定怎么加回来。
-     *   要恢复：把下面两行取消注释即可。*/
+    /* 第 2 层（平白盘 401，"黑色变白"那一步）：owner 2026-10-03「**算了**，你把 scale max 开大点就行了」
+     *   ⇒ **不挂**。脚本 401 留着（已经改成"RGB 从黑升到白"那套 = 起步绝不白，见该文件注释）；
+     *   想接回来只需把下面注释去掉。*/
     /* s->fx_tint_id = ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_GREAT_WORK_WHITE, GW_FLASH_LAYER);
     if (s->fx_tint_id) {
         ce_anm_set_pos(s->fx_tint_id, release[0], release[1], release[2]);
