@@ -1255,22 +1255,13 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
     }
     /* ★ 2026-10-01（口径 5）：击破 ⇒ 在**原位**掉一把灵力道具（充能的那笔账从直加点改成经道具）。
      * O(1)（一次线性找空槽，≤ `POFV_POWER_MAX` 次比较）—— 清场帧 100–300 次也够便宜。*/
-    /* ★★★ 2026-10-01（owner 订正：「**不是连锁，我说错了，是连续击破**」）——
-     *   掉落**不再**按「每杀掉 N 颗」，而是照一手 TH19 §5 的**コンボ**规则：
-     *     「連爆に巻き込んだ敵や敵弾は**コンボ**になります」＋「**combo 满 100 → kind 9**」
-     *     （kind 9 = **霊力アイテム**）⇒ **攒满 `POFV_COMBO_MAX` 就掉 1 颗**，余数保留 ✓。
-     *   · 击破的贡献 = `POFV_COMBO_PER_KILL × 连爆档`（连爆越深攒得越快，这就是 owner 说的「按连锁」）；
-     *   · 消弹的贡献在 `pofv_account_blast()` 里（弹也算コンボ ✓）。*/
-    {
-        int32_t full = pofv_combo_add(&s->st, POFV_COMBO_PER_KILL * chain);
-        while (full-- > 0) {
-            if (pofv_power_spawn(&s_power, ev->x, ev->y, POFV_POWER_PTS_KILL, POFV_POWER_SRC_KILL) < 0) {
-                if (!s->power_logged) {
-                    ce_log("pofv: power pool full (%d) — combo drop lost", POFV_POWER_MAX);
-                    s->power_logged = 1;
-                }
-                break;
-            }
+    /* ★ 2026-10-01（owner：连破/击中数那条**改由 hits 计数器**管，见下面的 `on_bullet_hit`）：
+     *   击破本身**仍然掉一颗**（这是本卡原来的口径，owner 没让改）。
+     *   另外每满 `POFV_HITS_PER_DROP` 次**命中**额外掉一颗（一手 TH19「满 100 → 霊力アイテム」）。*/
+    if (pofv_power_spawn(&s_power, ev->x, ev->y, POFV_POWER_PTS_KILL, POFV_POWER_SRC_KILL) < 0) {
+        if (!s->power_logged) {
+            ce_log("pofv: power pool full (%d) — power item dropped", POFV_POWER_MAX);
+            s->power_logged = 1;
         }
     }
 
@@ -1364,23 +1355,19 @@ static int on_tick_2(ce_card_t *c)
     ce_dup_publish((uint32_t)ce_card_id(c), (int)s_power.live);
     if (ce_dup_should_run(&s_dup_seen)) pofv_dup_run();
 
-    /* ══ ★★ 2026-10-01（owner：「**把连锁UI做出来**」→ 订正：「**不是连锁，我说错了，是连续击破**」）
-     *   ⇒ 左上角显示的是 **コンボ**（`st.combo`，0..`POFV_COMBO_MAX`），不是暴风连爆档 ✓。
-     *   owner 出处：「th19 左上角是有连锁UI的」；一手（`engine/versus/th19/04-manual-spec.md` §4）
-     *   也确认 TH19 的画面元件里有「**連爆**」（= 这个计数器）。
-     *   ⚠ 如实登记：TH19 那个 UI 的**精确图元我没定位到**（exe 里没有 `CHAIN`/`連鎖`；`front.anm`
-     *     解出的 11 张图里也没有）⇒ 用本仓既有 HUD 手段做等价物：
-     *       · 数字 = `ce_hud_number_set`（ANM 图元、TH18 原生 **font 2** 字形；TH19 用的是同一套字体系统）；
-     *       · 标签 = `ce_hud_text("COMBO")`（ASCII；TH18 的 ascii 字体没有汉字 ⇒ 写不了「連続撃破」）。
-     *   显示条件：`combo > 0` 且**最近有过击破/消弹**（免得空着常驻）；关掉时清一次数字 VM。*/
-    if (s->st.combo > 0 && s->st.last_kill_frame >= 0 &&
-        s_frame - s->st.last_kill_frame < POFV_CHAIN_UI_HOLD) {
+    /* ══ ★★★ 2026-10-01（owner：「**th19 有一个多少 hits 的 UI**」）击中数 UI：左上角 ══════
+     *   显示 `st.hits`（累计击中数），只在 > 0 时出现。
+     *   ⚠ 如实登记：TH19 那个 UI 的**精确图元我没定位到**（exe 里没有 `HITS`/`連爆` 字符串；
+     *     `front.anm` 解出的 11 张图里也没有）⇒ 用本仓既有 HUD 手段做等价物：
+     *       · 数字 = `ce_hud_number_set`（ANM 图元，TH18 原生 **font 2** 字形）；
+     *       · 标签 = `ce_hud_text("HITS")`（ASCII；TH18 的 ascii 字体没有汉字）。*/
+    if (s->st.hits > 0) {
         if (!s->chain_ui_on) {
-            ce_hud_text(POFV_CHAIN_UI_X, POFV_CHAIN_UI_Y - 13.0f, POFV_CHAIN_UI_BGRA, "COMBO");
+            ce_hud_text(POFV_CHAIN_UI_X, POFV_CHAIN_UI_Y - 13.0f, POFV_CHAIN_UI_BGRA, "HITS");
             s->chain_ui_on = 1;
         }
         ce_hud_number_set(&s->chain_num, POFV_CHAIN_UI_X, POFV_CHAIN_UI_Y,
-                          POFV_CHAIN_UI_DX, (int)s->st.combo, 3, 0, "pofv109");
+                          POFV_CHAIN_UI_DX, (int)s->st.hits, 4, 0, "pofv109");
     } else if (s->chain_ui_on) {
         ce_hud_number_clear(&s->chain_num);
         s->chain_ui_on = 0;
@@ -1595,6 +1582,31 @@ static int on_ctor(ce_card_t *c)
 }
 
 static void on_run_reset(ce_card_t *c) { clear_card(c); }
+/* ★★★ 2026-10-01（owner：「**th19 有一个多少 hits 的 UI**」）：**击中数**计数。
+ *
+ *   一手（`sdk/public.h`）：站点 `ce_bullet_hit`（`0x45f466`）= 「**一发自机弹 × 一个敌机**」的命中；
+ *   一手（`engine/versus/th19/04-manual-spec.md` 第 7 行）：**「combo 满 100 → kind 9」**
+ *     （kind 9 = **霊力アイテム**）⇒ **每满 100 hits 掉一颗灵力道具** ✓。
+ *
+ *   ⚠ 回调纪律（照 108）：**只做最少的活**（累加 + 偶尔掉一颗道具），别在这里扫池/建 VM
+ *     —— 它会以「一发自机弹 × 一个敌机」的颗粒度被调（大连爆一帧可能几十次）。*/
+static void on_bullet_hit(ce_card_t *c, const ce_bullet_hit_t *ev)
+{
+    pofv_card_t *s = st(c);
+    int32_t full;
+    if (!s || !ev) return;
+    full = pofv_hits_add(&s->st, 1);
+    while (full-- > 0) {                       /* 每跨过 100 次命中：在命中点掉一颗 */
+        if (pofv_power_spawn(&s_power, ev->x, ev->y, POFV_POWER_PTS_KILL, POFV_POWER_SRC_KILL) < 0) {
+            if (!s->power_logged) {
+                ce_log("pofv: power pool full (%d) — hits drop lost", POFV_POWER_MAX);
+                s->power_logged = 1;
+            }
+            break;
+        }
+    }
+}
+
 static void on_delete(ce_card_t *c)    { clear_card(c); }
 
 /* ★ 合成卡（owner 2026-09-28）：**没有** `.on_native_shot_suppress` —— Z 是纯原生的。
@@ -1603,6 +1615,7 @@ CE_CARD(109,
         .ctor = on_ctor,
         .on_death_before_deathbomb = on_death_before_deathbomb,   /* ★ 抵挡护盾（救援层最早那一层）*/
         .on_enemy_death = on_enemy_death,
+        .on_bullet_hit = on_bullet_hit,   /* ★ 击中数（TH19 那个 hits UI 的来源）*/
         .on_tick_2 = on_tick_2,
         .on_run_reset = on_run_reset,
         .on_delete = on_delete);

@@ -442,9 +442,6 @@ void pofv_account_blast(pofv_state_t *st, int32_t n_white, int32_t chain)
     st->white_cancelled += n_white;
     st->any_cancelled += n_white;
     st->sp += n_white * POFV_SP_PER_WHITE_CANCEL;
-    /* ★★ 2026-10-01（一手 TH19 §5：「連爆に巻き込んだ敵**や敵弾**は**コンボ**になります」）：
-     *   被连爆消掉的弹**也算コンボ** ⇒ 这里累加（满 100 的掉落在卡侧统一处理）。*/
-    (void)pofv_combo_add(st, n_white * POFV_COMBO_PER_CANCEL);
     /* ★ 2026-10-01（口径 5）：**不再直接加气** —— 充能一律经灵力道具（卡侧撒 / 收取）。 */
 }
 
@@ -1084,22 +1081,21 @@ int pofv_bossatk_bullet_type_ours(uint32_t type)
     return 0;
 }
 
-/* ---------------------------------------------------------------- コンボ（连続撃破）
+/* ---------------------------------------------------------------- 击中数 hits
 
- * 一手（`engine/versus/th19/04-manual-spec.md` §5 + 第 7 行）：
- *   「ザコ敵を倒すと爆発します…連爆に巻き込んだ敵や敵弾はコンボになります」
- *   ★「combo 满 100 → kind 9」（kind 9 = 霊力アイテム）。
- * ⇒ 攒满 `POFV_COMBO_MAX` 就掉一颗（返回值 = 满的次数，调用方据此撒道具）并保留余数。
- * ⚠ 增量值一手没逆到（同文档第 75 行：combo 的写点只有 2 处、都是清零）⇒ 见头文件的 ❓ 常量。*/
-int32_t pofv_combo_add(pofv_state_t *st, int32_t n)
+ * 一手：① `sdk/public.h` 的 `ce_bullet_hit`（`0x45f466`）=「**一发自机弹 × 一个敌机**」的命中；
+ *       ② `engine/versus/th19/04-manual-spec.md` 第 7 行「**combo 满 100 → kind 9**」（= 霊力アイテム）。
+ * ⇒ `hits` 累计；**每跨过一个 100 就返回 1**（调用方据此掉一颗灵力道具）✓。*/
+int32_t pofv_hits_add(pofv_state_t *st, int32_t n)
 {
-    int32_t full;
+    int32_t before, after;
     if (!st || n <= 0) return 0;
-    st->combo += n;
-    full = st->combo / POFV_COMBO_MAX;
-    if (full > 0) {
-        st->combo -= full * POFV_COMBO_MAX;      /* 保留余数（不是清零，超出的部分不浪费）*/
-        st->combo_drops += full;
+    before = st->hits / POFV_HITS_PER_DROP;
+    st->hits += n;
+    after = st->hits / POFV_HITS_PER_DROP;
+    if (after > before) {
+        st->hits_drops += after - before;
+        return after - before;
     }
-    return full;
+    return 0;
 }

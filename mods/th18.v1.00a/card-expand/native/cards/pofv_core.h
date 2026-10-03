@@ -91,14 +91,14 @@ typedef struct {
     int32_t any_cancelled;  /* 本局消掉的全部弹数（含不可消；红圈的账）*/
     int32_t attacks;        /* 本局 SP 档触发的「boss attack」次数 */
     int32_t shield;         /* ★ オートパリア：1 = **有効**（挡 1 发）；0 = 无（见 §H）*/
-    /* ★★★ 2026-10-01（owner 订正：「**不是连锁，我说错了，是连续击破**」）—— **コンボ**。
-     *   一手（`engine/versus/th19/04-manual-spec.md` §5「連爆とコンボ」）：
-     *     「ザコ敵を倒すと**爆発**します…連爆に巻き込んだ敵や敵弾は**コンボ**になります」
-     *     ＋ 同文档第 7 行：**「combo 满 100 → kind 9」**（kind 9 = **霊力アイテム**）。
-     *   ⇒ 本卡据此：`combo` 0..`POFV_COMBO_MAX`，**攒满就掉一颗灵力道具并保留余数** ✓
-     *     （我上一版「按暴风连锁、每杀掉 N 颗就掉」是**错的**，已撤）。*/
-    int32_t combo;          /* コンボ（连続撃破）0..POFV_COMBO_MAX：满 ⇒ 掉一颗灵力道具 */
-    int32_t combo_drops;    /* 满了几次（= 掉了多少颗「满格掉落」；日志/调参）*/
+    /* ★★★ 2026-10-01（owner：「**th19 有一个多少 hits 的 UI**」）—— **击中数（hits）**。
+     *   一手（`sdk/public.h` 的 `ce_bullet_hit` 条目）：断点 `0x45f466` =
+     *     「**一发自机弹 × 一个敌机**」的命中（弹的 tick 每帧把位置同步进源槽）。
+     *   ＋ 一手（`engine/versus/th19/04-manual-spec.md` 第 7 行）：**「combo 满 100 → kind 9」**
+     *     （kind 9 = **霊力アイテム**）⇒ 本卡据此：**每满 100 hits 掉一颗灵力道具** ✓。
+     *   ⇒ `hits` 是**累计**计数（TH19 那个 UI 就是一直往上加的），掉落在 100 的整数倍处发生。*/
+    int32_t hits;           /* 击中数（累计；每 100 的整数倍掉一颗灵力道具）*/
+    int32_t hits_drops;     /* 已经因 hits 掉了几颗（日志/调参）*/
 } pofv_state_t;
 
 void pofv_state_init(pofv_state_t *st);
@@ -154,14 +154,11 @@ void pofv_gauge_add_points(pofv_state_t *st, int32_t pts);
  *   也不会被置「免撞」位 ⇒ **会打到自机**）。
  * ⚠ **单靠类型不足以归属**（`0`/`2` 之类的原生敌人也在用）⇒ 调用方必须**再叠一层覆盖区过滤**
  *   （见 `pofv.c` 的 `bossatk_damage()`）。本函数只做「类型在不在集合里」这一件事，**便于单测**。*/
-/* ★★ 2026-10-01（一手：TH19 §5 + 「combo 满 100 → kind 9」）：コンボ 的上限与增量。
- *   上限 100 是**一手**（`engine/versus/th19/04-manual-spec.md` 第 7 行）；
- *   增量没逆到（同文档第 75 行：combo 的写点只有 2 处、都是清零）⇒ ❓ 占位。*/
-#define POFV_COMBO_MAX           100
-#define POFV_COMBO_PER_KILL       10     /* ❓ 自定：一只敌机进コンボ算多少 */
-#define POFV_COMBO_PER_CANCEL      1     /* ❓ 自定：一颗被连爆消掉的弹算多少 */
-/* 加 combo；**返回加满的次数**（>0 ⇒ 调用方要掉对应颗数的灵力道具）。纯逻辑、可单测。*/
-int32_t pofv_combo_add(pofv_state_t *st, int32_t n);
+/* ★★ 2026-10-01（一手：TH19 第 7 行「**combo 满 100 → kind 9**」= 霊力アイテム）：
+ *   每满 100 **hits** 掉一颗灵力道具（上限/间隔 100 是**一手**）。*/
+#define POFV_HITS_PER_DROP       100
+/* 加 hits；**返回这一次跨过了几个 100**（>0 ⇒ 调用方要掉对应颗数的灵力道具）。纯逻辑、可单测。*/
+int32_t pofv_hits_add(pofv_state_t *st, int32_t n);
 
 int pofv_bossatk_bullet_type_ours(uint32_t type);
 
