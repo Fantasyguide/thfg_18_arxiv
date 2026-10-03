@@ -8,20 +8,30 @@
 ## 为什么是这一格（一手）
 
 owner 2026-10-01：「**灵力道具得按照类季节道具做，动态什么的一模一样**」＋
-「**完全类似与信仰点、P点等**」。⇒ 外观取 **TH18 原生的 P 点**，不自己画。
+「**完全类似与信仰点、P点等**」。
+★ 同日实跑反馈：「**灵力道具动态不对，样式不对！**」⇒ 第一版取的 **P 点（`sprite504` = `(0,0,32,32)`）
+是错的**：① 尺寸不对（32×32 vs 一手的 16×16）；② 更糟的是它**就是原版 P 道具本身** ⇒
+玩家分不清「灵力道具」和普通 P 点。⇒ 本版改取 **`sprite519` = `(224,0,16,16)` = 季节点**。
 
 一手链（全部在 TH18 自己的样本里，**不跨代借图**）：
 
 | 步 | 出处 |
 | --- | --- |
 | ① `bullet.anm` 的 **entry3** 就是道具图集 | `local/th18.v1.00a/anm/bullet/bullet.anm.txt` 的 `entry entry3 { name: "bullet/item.png" }` |
-| ② 它的 sprite 表里 **`sprite504 = {x:0, y:0, w:32, h:32}`** 是那张红 **P** 方块 | 同一份 `.txt` 的 sprite 表（见下） |
-| ③ ★ **原版就是用它画 P 点的**：`script114` = `sprite(sprite504); originMode(1); type(1); angleVel(0,0,0.7853982f); scale(0.5f,0.5f); scaleTime(16,0,1.0f,1.0f);` | `bullet.anm.txt` 里 `script114` |
-| ④ 该图集是 **256×64**（8 列 × 4 行的 32×32 网格 + 右上角 16×16 的小格族）| `Image.open(...).size` |
+| ② ★ **季节点 = `sprite519`**，TH18 自己的图集里就有：`sprite519: { x: 224, y: 0, w: 16, h: 16 }` | 同一份 `.txt` 的 sprite 表（第 4171 行）|
+| ③ ★ **原版画它的配方** = `script129`（见下）—— 这就是本卡脚本 374 逐条照抄的对象 | `engine/season/th16/01-season-data-and-tables.md` §4（一手逐字节）＋ `bullet.anm` |
+| ④ 该图集是 **256×64** | `Image.open(...).size` |
 
-⇒ 「P 点 = `(0,0,32,32)`」**不是我挑的**，是 TH18 的 `script114` 自己引用的那格。
-⇒ 109 的脚本（`assets/ability/scripts/374_pofv109_power.anm.txt`）据此照抄 `script114` 的**画法**
-（`scale 0.5 → 1.0` 用 16 帧 + `angleVel` 自旋），**只改画在哪**（本卡的 VM 跟着道具走）。
+**一手 `script129`（TH16 季节道具的出场动画，逐条）**：
+
+```
+-1:  sprite(519); blendMode(1);                     // 加算
+     alpha(0); alphaTime(10, 0, 255);                // 10 帧淡入
+     scale(2.0, 2.0); scaleTime(16, 0, 1.0, 1.0);    // 16 帧从 2 倍缩到 1 倍
+ 0:  rotate(0,0,%RANDRAD); fsetMul(%F0,%RANDF2,0.08726646); angleVel(0,0,%F0);   // 随机自转 ±5°/帧
++16: scaleTime(300, 0, 0.7, 0.7); alphaTime(300, 0, 128);   // 之后 300 帧缩到 0.7、淡到 alpha128
++20: blendMode(0); stop();
+```
 
 ## 纪律
 
@@ -40,9 +50,10 @@ REPO = HERE.parents[4]                           # 仓库根
 #: TH18 原版道具图集（由 `tooling/thtk/unpack.py th18.v1.00a` 解出）
 SRC_ITEM = REPO / "local/th18.v1.00a/anm/bullet/bullet/item.png"
 
-#: (产物名, 源图集上的矩形) —— 一手：`sprite504 = (0,0,32,32)`，TH18 `script114` 就是用它画 P 点。
+#: (产物名, 源图集上的矩形) —— 一手：**`sprite519 = (224,0,16,16)` = 季节点**
+#: （TH16 `script129` 就是用它画季节道具；TH18 自己的 `bullet.anm` 里 `sprite519` 同格同号 ✓）
 POWER_CELLS = (
-    ("POWER_P", 0, 0, 32, 32),
+    ("POWER_P", 224, 0, 16, 16),
 )
 
 

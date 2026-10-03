@@ -158,10 +158,12 @@ static uint32_t s_bossatk_scan_rot;
  *   本卡的语义对照：**充能升档**（气槽实心格 +1）⇒ 借同一个音（借做法已登记 `AUDIT` §BE #166）。*/
 #define POFV_POWER_SE_LEVEL     0x3f
 #define POFV_POWER_VM_LAYER        7    /* 灵力道具在最上（要一眼可判「捡得到」）*/
-#define POFV_POWER_VM_SCALE      1.0f   /* ★ 一手（2026-10-01）：画的是 TH18 原版 P 点
-                                          *   （`bullet/item.png` 的 (0,0,32,32)，见 `make_pofv109_power_art.py`），
-                                          *   原版 `script114` 的终值就是 `scale(1.0f,1.0f)` = **原生 32 px**
-                                          *   （出场那 16 帧由脚本的 `scaleTime` 从 0.5 长上来，卡侧让开）。*/
+/* ⚠ 2026-10-01 已**废弃**（保留一行说明，免得下一个人再找它）：
+ *   灵力道具的贴图从「TH18 原版 P 点 `(0,0,32,32)`」换成了「**TH16 季节点 `sprite519` = (224,0,16,16)`**」
+ *   （owner 实跑「样式不对」），画法也改成逐条照抄 TH16 `script129`
+ *   ⇒ **缩放整个交给脚本 374 owning**（16 帧 2.0→1.0、之后 300 帧 1.0→0.7），
+ *   卡侧**不再每帧写 `ce_anm_set_scale`**（会与 `scaleTime` 打架）。
+ *   ⇒ 原 `POFV_POWER_VM_SCALE` 已删；`power_vm_sync()` 里那一行现在什么都不写。*/
 
 /* 消弹调用的 max_count（照 Tenshi 的 0x1869f 量级；本卡两处都不想被截断）。*/
 /* ★ 2026-10-01（owner 甜头口径「抵挡护盾」）：`th18:0x45d590` = `Player__cancel_impending_death`
@@ -686,7 +688,10 @@ static void power_vm_sync(void)
                                                       POFV_POWER_VM_LAYER);
             if (s_power_vm[i]) {
                 ce_anm_set_pos((uint32_t)s_power_vm[i], it->x, it->y, 0.0f);
-                ce_anm_set_scale((uint32_t)s_power_vm[i], POFV_POWER_VM_SCALE, POFV_POWER_VM_SCALE);
+                /* ★ 2026-10-01：**不再每帧写 scale** —— 脚本 374 现在自己 owning 缩放
+                 *   （照 TH16 `script129`：16 帧 2.0→1.0、之后 300 帧 1.0→0.7）；
+                 *   卡侧再写会与 `scaleTime` 打架（`sdk.h` 的 `ce_anm_set_scale` 注释）。*/
+                (void)0;
             }
         } else if (s_power_vm[i]) {
             ce_anm_delete((uint32_t)s_power_vm[i]);
@@ -949,7 +954,11 @@ static void do_boss_attack(pofv_card_t *s)
 #define POFV_GHOST_HOMING_SPEED   0.8f  /* ❓ 自定（索敌：每帧朝自机飘多少 px）*/
 #define POFV_GHOST_SPAWN_DX     -40.0f  /* ❓ 自定（出生点相对自机的偏移：左上方一点）*/
 #define POFV_GHOST_SPAWN_DY     -80.0f
-#define POFV_GHOST_VM_SCALE      1.0f   /* ❓ 自定（脚本画的是单位圆 ⇒ 缩放 = 视觉半径系数）*/
+/* ★ 2026-10-01 改：脚本 372 现在画的是 **TH09 原版幽霊贴图**（64×64 的一格，图内实体约 52 px），
+ *   而灵的判定是 **20×20**（`spirit109.ecl.txt` 的 `setHurtbox(20,20)`）⇒ 取 **0.4** 让
+ *   视觉（≈21 px）与判定（20 px）**对得上**（旧值 1.0 是配「半径 1 的单位圆」的，
+ *   换成真贴图后必须同步改，否则会画成一个 64 px 的巨灵）。*/
+#define POFV_GHOST_VM_SCALE      0.4f
 
 /* boss 判据（口径 9 方案甲）：`mgr+0x48` 的 `int[4]` boss enemy_id（一手 `get_boss_enemy_full`
  * `0x4237f0` 就是按它走链表找），逐个问「还在不在」。任何 boss（含道中）在场 ⇒ 不撒灵。 */
