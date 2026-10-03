@@ -32,7 +32,10 @@
 
 /* —— 本卡旋钮（❓ 自定） —— */
 #define EM_BAR_HALF          80.0f    /* 时机条半宽（px，640×480 空间；贴图 160 宽 ⇒ 与之一致）*/
-#define EM_WINDOW            15.0f    /* 判定窗口半宽（px）—— 与贴图中间那条亮带同宽 */
+#define EM_WINDOW            22.0f    /* 判定窗口半宽（px）—— 与贴图中间那条亮带同宽。
+                                       * ★ 2026-10-03 owner 实跑：光标离中心 **16 px** 被判 MISS
+                                       *   （窗口只有 ±15）⇒「差 1px 就没了」✗ ⇒ 15 → 22
+                                       *   （≈0.23 s 的窗口；美术 `make_bar_art.py` 同步加宽到 22）。*/
 #define EM_CURSOR_SPEED      3.2f     /* 光标速度（px/帧；单程 160/3.2 = 50 帧）*/
 #define EM_SMASH_FRAMES      18       /* 砸下 → 起身的动画帧数（这期间自机在敌人身上）*/
 #define EM_EXIT_INVULN       30       /* 退出后的缓冲无敌帧（0.5 s）*/

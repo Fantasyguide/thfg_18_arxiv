@@ -18,7 +18,8 @@ OUT = os.path.join(HERE, "_src")
 
 BAR_W, BAR_H = 160, 14
 CUR_W, CUR_H = 6, 18
-WINDOW_HALF = 15          # = EM_WINDOW（px）；条半宽 80 ⇒ 亮带 30 px
+WINDOW_HALF = 22          # = EM_WINDOW（px）；条半宽 80 ⇒ 亮带 44 px
+                          # ★ 2026-10-03：15 → 22（owner 实测 16 px 被判 MISS ✗）——两边必须同值
 
 TRACK      = (14, 14, 18, 190)     # 轨道（半透黑）
 TRACK_EDGE = (208, 208, 216, 235)  # 轨道描边（浅灰）
