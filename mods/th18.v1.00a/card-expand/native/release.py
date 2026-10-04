@@ -87,7 +87,29 @@ def sh(*args, cwd=None, check=True):
 EXCLUDE = {x for x in os.environ.get("YK_FILES_EXCLUDE", "").split(",") if x}
 
 
+def _gate_contract():
+    """★★★ 2026-10-04 **硬闸**（血的教训）：发布前必须过 JSON/行为契约预检。
+
+    为什么必须在这儿拦（而不是只靠 `make check`）：
+      · 契约不过时**实跑会 `FAIL: sdk: …` 并「禁用全部新卡」**（contract_check 的原文）；
+      · 那一状态下，新卡的**解锁位保护（`unlocked.c` 的 BP_ce_unlock_write）不会生效** ✗
+        ⇒ 引擎按原样写 `zScoreFile.unlocked_cards + card_id`，而那个数组**只有 57 字节**
+        ⇒ 我们的新卡 id 是 106–117 ⇒ **越界写**，落点正是 **`+0x5f608` = 初始卡组区**
+        ⇒ 玩家实报「**悬置的卡号把我存档搞坏了，初始 slot 又消失了**」✓。
+      · 而 `release.py` 过去**不跑这个检查** ⇒ 违反契约的构建照样能发出去 ✗（本次事故的直接原因 ✓）。
+    ⇒ 所以：**契约不过 = 拒绝发布** ✓。
+    """
+    r = subprocess.run([sys.executable, os.path.join(HERE, "tools", "contract_check.py")],
+                       cwd=HERE, text=True, capture_output=True)
+    if r.returncode != 0:
+        sys.stderr.write("\n❌ 契约预检不过 —— **拒绝发布**（实跑会禁用全部新卡并可能写坏存档 ✗）\n")
+        sys.stderr.write(r.stdout + r.stderr + "\n")
+        raise SystemExit(3)
+    print("契约预检 ✅（category ⟺ 主动行为）")
+
+
 def main():
+    _gate_contract()
     push = os.environ.get("PUSH") == "1"
     if not NO_GIT and not os.path.isdir(os.path.join(MODKIT, ".git")):
         raise SystemExit("找不到发布仓库：%s\n先 git clone https://github.com/Renko6626/th18_modkit.git 到 local/vendor/" % MODKIT)
