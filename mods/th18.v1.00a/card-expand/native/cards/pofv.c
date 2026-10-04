@@ -279,6 +279,25 @@ static int32_t            s_storm_vm[POFV_STORM_MAX];
  *   闩锁 —— 场上**真出现过敌人**之后才置 1；在那之前一只灵都不撒（开局不再凭空冒灵 ✗）。
  *   ⚠ 声明必须在 `clear_card()`（它会清零）之前 ⇒ 放在这一组静态量里。*/
 static int32_t            s_ghost_wave_seen;
+/* ★★ 2026-10-01（owner：「**灵的贴图不对，狼灵怎么横着跑**」）：TH19 的动物霊贴图是**侧视**的
+ *   （狼/绿兽/蓝鸟都朝左右 ✓，见 `pofv109_spirit/SPIRIT*_0.png`）⇒ 必须**按移动方向旋转** ✓。
+ *   这里存每个槽**上一帧的位置**用来求方向（不往 core 的结构里加字段，免得动单测/ABI ✓）。*/
+static float              s_ghost_last[POFV_GHOST_MAX][2];
+
+/* ★★★★ 2026-10-01 最要命的一条（owner 报的「暴风**位置完全错位**」「同一个灵画在**两个错位的地方**」
+ *   「**缺少罩子**」**同一个根因**）：
+ *   `sdk.h` 对 `ce_anm_spawn` 写得很明白 —— **挂 world 列表，实体坐标 (0,0,0) = 场地正中** ✓。
+ *   而敌人的世界坐标是：**x ∈ ±192（已经以 0 为中心 ✓）**、**y ∈ [0,448]（以 224 为中心 ✗）**。
+ *   ⇒ 把世界坐标搬到 VM 上必须换成 **`x_vm = x_world`、`y_vm = y_world − 224`** ✓。
+ *   ⚠ 我此前**一直没减这个 224** ✗ ⇒ 暴风高了 224 px（＝「完全错位」）、灵被引擎画一份（对）＋ 我们的 VM
+ *     又画一份（高 224 px）＝「同一只灵在两个错位的地方」、罩子被画到离自机 224 px 外（＝「缺少罩子」）✗✗。
+ *   ★ 教训：**凡是从世界坐标（敌人/道具/自机位置）喂给 anm VM 的，都要过这个转换**。*/
+#define POFV_FIELD_CENTER_Y      224.0f
+
+static void vm_set_world_pos(uint32_t id, float wx, float wy)
+{
+    ce_anm_set_pos(id, wx, wy - POFV_FIELD_CENTER_Y, 0.0f);
+}
 static uint32_t           s_hits_vm[POFV_HITS_UI_VMS];
 static int32_t            s_frame;      /* 游玩帧计数（连爆窗口的帧源；只在 on_tick_2 前进）*/
 /* 诊断账（都在 `clear_card()` 里清；`verify.py` 的场景吃这几行）。*/
@@ -500,7 +519,7 @@ static void aura_update(void)
                                           POFV_AURA_VM_LAYER);
     if (s_aura_vm) {
         float sc = s_aura_r > 0.0f ? s_aura_r : 0.0f;
-        ce_anm_set_pos((uint32_t)s_aura_vm, s_aura_cx, s_aura_cy, 0.0f);
+        vm_set_world_pos((uint32_t)s_aura_vm, s_aura_cx, s_aura_cy);
         ce_anm_set_scale((uint32_t)s_aura_vm, sc, sc);   /* ★ 判定 = 绘制 */
     }
 }
@@ -526,11 +545,11 @@ static void shield_vm_update(const pofv_card_t *s)
                                             POFV_SHIELD_VM_LAYER);
     if (s_shield_vm2) {
         float sc2 = up ? POFV_SHIELD_VM_SCALE * POFV_SHIELD_GLOW_SCALE : 0.0f;
-        ce_anm_set_pos((uint32_t)s_shield_vm2, pp[0], pp[1], 0.0f);
+        vm_set_world_pos((uint32_t)s_shield_vm2, pp[0], pp[1]);
         ce_anm_set_scale((uint32_t)s_shield_vm2, sc2, sc2);
     }
     if (!s_shield_vm) return;
-    ce_anm_set_pos((uint32_t)s_shield_vm, pp[0], pp[1], 0.0f);
+    vm_set_world_pos((uint32_t)s_shield_vm, pp[0], pp[1]);
     ce_anm_set_scale((uint32_t)s_shield_vm, up ? POFV_SHIELD_VM_SCALE : 0.0f,
                      up ? POFV_SHIELD_VM_SCALE : 0.0f);
     if (!up && s_shield_broken_log) {            /* 从「有」掉到「无」的那一帧：破盾一闪 */
@@ -778,7 +797,7 @@ static void power_vm_sync(void)
                                                       CE_ANM_ABILITY_SCRIPT_POFV109_POWER,
                                                       POFV_POWER_VM_LAYER);
             if (s_power_vm[i]) {
-                ce_anm_set_pos((uint32_t)s_power_vm[i], it->x, it->y, 0.0f);
+                vm_set_world_pos((uint32_t)s_power_vm[i], it->x, it->y);
                 /* ★ 2026-10-01：**不再每帧写 scale** —— 脚本 374 现在自己 owning 缩放
                  *   （照 TH16 `script129`：16 帧 2.0→1.0、之后 300 帧 1.0→0.7）；
                  *   卡侧再写会与 `scaleTime` 打架（`sdk.h` 的 `ce_anm_set_scale` 注释）。*/
@@ -951,7 +970,7 @@ static void storm_vm_sync(void)
              *   卡侧的 `r0/dr/寿命` 只用于**判定**（消弹/伤害半径）✓。
              *   ❓ 待实跑比对：一手脚本的 `scale` 是 13–14（≈13 px），而判定半径按一手节点长到 56 px
              *     —— 两者差得较多，**下一轮要核实「判定半径那条节点」是否与视觉同源**。*/
-            ce_anm_set_pos((uint32_t)s_storm_vm[i], bl->x, bl->y, 0.0f);
+            vm_set_world_pos((uint32_t)s_storm_vm[i], bl->x, bl->y);
             if (bl->life - bl->age == POFV_STORM_FADE_FRAMES)
                 ce_anm_interrupt((uint32_t)s_storm_vm[i], 1);
             ce_anm_set_color((uint32_t)s_storm_vm[i],
@@ -1177,7 +1196,8 @@ static void ghost_vm_spawn(pofv_card_t *s, int slot, float x, float y)
         return;
     }
     s_ghost_vm[slot] = (int32_t)id;
-    ce_anm_set_pos(id, x, y, 0.0f);
+    vm_set_world_pos(id, x, y);
+    if (slot >= 0 && slot < POFV_GHOST_MAX) { s_ghost_last[slot][0] = x; s_ghost_last[slot][1] = y; }
     ce_anm_set_scale(id, POFV_GHOST_VM_SCALE, POFV_GHOST_VM_SCALE);
 }
 
@@ -1278,7 +1298,20 @@ static void ghost_tick(pofv_card_t *s)
             if ((s_frame % POFV_GHOST_VM_RETRY) == 0) ghost_vm_spawn(s, i, g->x, g->y);
             if (!s_ghost_vm[i]) continue;                 /* 还没补上：这帧先跳过 */
         }
-        ce_anm_set_pos((uint32_t)s_ghost_vm[i], g->x, g->y, 0.0f);
+        vm_set_world_pos((uint32_t)s_ghost_vm[i], g->x, g->y);
+        /* ★ 侧视贴图 ⇒ 朝**移动方向**转（`ce_anm_set_rotation` 的 z 分量；单位 = 弧度 ✓）。
+         *   用「本帧 − 上帧」求方向（引擎的 ECL 在推它 ✓）；位移太小时不动（免得抖动）。*/
+        {
+            float dx = g->x - s_ghost_last[i][0];
+            float dy = g->y - s_ghost_last[i][1];
+            if (dx * dx + dy * dy > 0.25f) {
+                float ang = 0.0f;
+                pofv_atan2(dy, dx, &ang);            /* 屏幕 y 向下 ⇒ 直接用 atan2(dy, dx) ✓ */
+                ce_anm_set_rotation((uint32_t)s_ghost_vm[i], 0.0f, 0.0f, ang);
+            }
+            s_ghost_last[i][0] = g->x;
+            s_ghost_last[i][1] = g->y;
+        }
         /* ★★ 2026-10-01（owner：「**五种灵都做了吗**」）：**按种类选行、按帧轮播** ——
          *   5 种各一行 4 帧（`ORDER.txt` 里 20 条连续 ⇒ `SPIRIT0_0 + kind*4 + frame` ✓）。
          *   anm 脚本里写死一行换不了种类 ✗ ⇒ **由卡侧每帧写 sprite**（脚本 372 已简化成静态默认帧）✓。*/
