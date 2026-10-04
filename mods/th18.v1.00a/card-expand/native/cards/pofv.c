@@ -944,11 +944,16 @@ static void storm_vm_sync(void)
              *   卡侧的 `r0/dr/寿命` 只用于**判定**（消弹/伤害半径 = 那张逐帧扩张的场）✓ ——
              *   两者分工：**判定按一手节点扩张**、**画面按一手脚本呼吸** ✓。
              *   寿命将尽时发 **interrupt 1** ⇒ 脚本的 `case(1)` 淡出 10 帧再删 ✓。*/
-            /* ★★ 2026-10-01 九改：视觉回到 **TH09 原版贴图**（TH19 那个在代码里，anm 抄不到）；
-             *   scale = `半径 / POFV_STORM_SPRITE_R(31)`（贴图 62×62 ⇒ 自身半径 31）✓。*/
-            float sc = (bl->r0 + bl->dr * (float)bl->age) / POFV_STORM_SPRITE_R;
+            /* ★★★ 2026-10-01 十改（代码链定音）：**暴风 = TH19 `ghost.anm` script 0x14(=20)**
+             *   —— 见 `engine/versus/th19/05-four-mechanics.md` 的完整链（0x50ca06 → 0x417280 →
+             *   类 0x5a8a68 → 0x53b920 → `push $0x14` → call 0x4cb960；与结界的 `push $1` 对照）。
+             *   ⇒ **大小/呼吸/自转全由脚本自己管** ⇒ 卡侧**只写位置** ✗（写 scale 会把呼吸盖掉）。
+             *   卡侧的 `r0/dr/寿命` 只用于**判定**（消弹/伤害半径）✓。
+             *   ❓ 待实跑比对：一手脚本的 `scale` 是 13–14（≈13 px），而判定半径按一手节点长到 56 px
+             *     —— 两者差得较多，**下一轮要核实「判定半径那条节点」是否与视觉同源**。*/
             ce_anm_set_pos((uint32_t)s_storm_vm[i], bl->x, bl->y, 0.0f);
-            ce_anm_set_scale((uint32_t)s_storm_vm[i], sc, sc);
+            if (bl->life - bl->age == POFV_STORM_FADE_FRAMES)
+                ce_anm_interrupt((uint32_t)s_storm_vm[i], 1);
             ce_anm_set_color((uint32_t)s_storm_vm[i],
                              bl->kind == POFV_STORM_KIND_CA ? POFV_FIELD_RGBA_CA
                                                             : POFV_FIELD_RGBA_STORM);
