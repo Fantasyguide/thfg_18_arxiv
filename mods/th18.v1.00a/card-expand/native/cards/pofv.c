@@ -208,6 +208,8 @@ static uint32_t s_bossatk_scan_rot;
 /* 场的视觉（脚本 402）画在第几层 + 两种场的染色（`ce_anm_set_color` 是 **AARRGGBB**）。*/
 /* ★ TH09 暴风贴图（`POFV109_STORM`）的**自身半径**：62×62 的图 ⇒ 31 px。
  *   卡侧写 scale = `场半径 / 这个值` ⇒ 贴图边缘正好落在判定半径上（**判定 = 绘制**）✓。*/
+/* ★ 暴风收尾淡出的触发点：寿命剩这么多帧时给 VM 发 interrupt 1（脚本 402 的 `case(1)`）。*/
+#define POFV_STORM_FADE_FRAMES     10
 #define POFV_STORM_SPRITE_R      31.0f
 #define POFV_STORM_VM_LAYER        6
 #define POFV_FIELD_RGBA_STORM 0xa04080ffu   /* 暴风 = 蓝（代码里一直叫它「蓝圈」）*/
@@ -936,12 +938,15 @@ static void storm_vm_sync(void)
                                                   POFV_STORM_VM_LAYER);
         if (!s_storm_vm[i]) continue;                      /* anm 还没就绪：下一帧再补 */
         {
-            /* ★★ 2026-10-01：场的视觉改成 **TH09 贴图**（`POFV109_STORM`，62×62 ⇒ 自身半径 31）
-             *   ⇒ scale = `半径 / 31`（**判定 = 绘制** 的口径不变 ✓）。*/
-            float r = bl->r0 + bl->dr * (float)bl->age;
-            float sc = r / POFV_STORM_SPRITE_R;
+            /* ★★ 2026-10-01 八改（owner：「我还是不甘心，你反编译 th19 吧」）：场的视觉**照抄 TH19
+             *   `ghost.anm` script20**（12 边形 + 减去混合 + 自转 + **13↔14↔12 呼吸**）⇒
+             *   **大小由脚本自己管** ⇒ 这里**只写位置、不再写 scale** ✗（一写就把呼吸盖掉）。
+             *   卡侧的 `r0/dr/寿命` 只用于**判定**（消弹/伤害半径 = 那张逐帧扩张的场）✓ ——
+             *   两者分工：**判定按一手节点扩张**、**画面按一手脚本呼吸** ✓。
+             *   寿命将尽时发 **interrupt 1** ⇒ 脚本的 `case(1)` 淡出 10 帧再删 ✓。*/
             ce_anm_set_pos((uint32_t)s_storm_vm[i], bl->x, bl->y, 0.0f);
-            ce_anm_set_scale((uint32_t)s_storm_vm[i], sc, sc);
+            if (bl->life - bl->age == POFV_STORM_FADE_FRAMES)
+                ce_anm_interrupt((uint32_t)s_storm_vm[i], 1);
             ce_anm_set_color((uint32_t)s_storm_vm[i],
                              bl->kind == POFV_STORM_KIND_CA ? POFV_FIELD_RGBA_CA
                                                             : POFV_FIELD_RGBA_STORM);
