@@ -52,12 +52,55 @@
 // · 子程序名 `CESpirit109` 必须**不与原生 `default.ecl` 重名**（合并脚本会当场报错）。
 // =====================================================================================
 
+// ## ★★★★ 2026-10-01 owner：「**动物灵有自己的运动模式在 th19 里面**」＋「**水獭灵应当斜着奔跑着下来**」
+//   ＋「**你别重点是水獭，你其他的也抄过来**」⇒ 五种入场运动**逐字照抄 TH19 `default.ecl`** ✓
+//   （一手在各个 `Ghost*Enable()` 里；`moveVel` 的 op 号 TH18/TH19 **同为 404** ✓ 所以能直接抄）：
+//
+//   | kind | 一手函数 | 一手入场（照抄值）|
+//   | --- | --- | --- |
+//   | 0 **狼** | `GhostWolfEnable` | `moveVel(1.5707964f, 1.1~1.5)` ⇒ **正下方 ~1.2** |
+//   | 1 **水獭** | `GhostOtterEnable` | ★ `moveVel(0.3926991f…)` ↔ `moveVel(2.7488935f…)` **逐帧交替**、速度 **1.5** |
+//   |   |   | `0.3926991 = +22.5°`、`2.7488935 = +157.5°` ⇒ **左下/右下交替着斜跑下来** ✓✓ |
+//   | 2 **鷲** | `GhostEagleEnable` | 先 `moveVel(+π/2, 0)` 定住 → `moveVelTime(60,0,+π/2,3.5)` ⇒ **更快地向下** |
+//   | 3 **ピュア霊** | `GhostPureEnable` | `moveVel(1.5707964f, 1.5f)` ⇒ **正下方 1.5** |
+//   | 4 ❓ | （一手未定音）| 暂用与ピュア霊同值 ⇒ 登记 ❓ |
+//
+//   ★ 通道：卡侧把**种类**写进 **`$I1`**（`CE_ENEMY_ECL_I0 + 4` ✓）。
+//   ★ 沈静化（`$I0 = 1`）：一手 `GhostDisableMove` = `moveVel(-1.5707964f, 0.02f)` +
+//     `moveVelTime(200, 3, -1.5707964f, 2.0f)` ⇒ **缓慢上浮** ✓（本支取前者 ✓）。
+//
 void CESpirit109()
 {
     anmSelect(2);
     anmSetSprite(0, -1);
     setHurtbox(20.0f, 20.0f);
     setHitbox(12.0f, 12.0f);
+    // ★ 入场运动分派（照抄 TH19 的 `Ghost*Enable`，见文件头的表）
+    unless ($I1 != 1) goto CESpirit109_otter @ 0;
+    unless ($I1 != 2) goto CESpirit109_eagle @ 0;
+    unless ($I1 != 3) goto CESpirit109_pure @ 0;
+    // kind 0（狼，默认）：正下方 ~1.2
+    moveVel(1.5707964f, 1.2f);
+    goto CESpirit109_100 @ 0;
+CESpirit109_otter:
+    // ★ 水獭：+22.5° ↔ +157.5° **逐帧交替**（一手连发四次 `ins_404`）⇒「斜着奔跑着下来」✓
+    moveVel(0.3926991f, 1.5f);
++1: //1
+    moveVel(2.7488935f, 1.5f);
++1: //1
+    moveVel(0.3926991f, 1.5f);
++1: //1
+    moveVel(2.7488935f, 1.5f);
++1: //1
+    goto CESpirit109_otter @ 0;
+CESpirit109_eagle:
+    moveVel(1.5707964f, 0.0f);
++1: //1
+    moveVelTime(60, 0, 1.5707964f, 3.5f);
+    goto CESpirit109_100 @ 0;
+CESpirit109_pure:
+    // kind 3/4：正下方 1.5（一手 `GhostPureEnable`）
+    moveVel(1.5707964f, 1.5f);
 CESpirit109_100:
     unless ($I0 != 999) goto CESpirit109_leave @ 0;
     unless ($I0 != 1) goto CESpirit109_calm @ 0;
@@ -66,6 +109,7 @@ CESpirit109_100:
     goto CESpirit109_100 @ 0;
 CESpirit109_calm:
     lifeSet(50);
+    moveVel(-1.5707964f, 0.02f);   /* ★ 一手 `GhostDisableMove`：沈静化 = **缓慢上浮** ✓ */
 CESpirit109_calm_100:
     unless ($I0 != 999) goto CESpirit109_leave @ 0;
 +1: //1

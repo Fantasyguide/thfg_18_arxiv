@@ -1227,7 +1227,12 @@ static int ghost_spawn(pofv_card_t *s, int32_t kind)
     ((float *)(spawn + CE_SPAWN_ECL_F))[3] = sp[1]; /* %F3 */
 
     e = (uint8_t *)ce_spawn_enemy(POFV_GHOST_ECL_NAME, spawn);
-    if (!e) return -1;                              /* spawner 拒绝（池满 / ECL 没加载）*/
+    if (!e) return -1;
+    /* ★ 2026-10-01（owner：「**动物灵有自己的运动模式在 th19 里面**」＋「其他也抄过来」）：
+     *   把**种类**写进 `$I1`（= `CE_ENEMY_ECL_I0 + 4`）⇒ ECL 侧按种类选**一手入场运动**
+     *   （照抄 TH19 `default.ecl` 的 `GhostWolfEnable`/`GhostOtterEnable`/`GhostEagleEnable`/
+     *     `GhostPureEnable`，见 `assets/ecl/spirit109.ecl.txt` 文件头的表）✓ */
+    *(int32_t *)(e + CE_ENEMY_ECL_I0 + 4) = kind;                              /* spawner 拒绝（池满 / ECL 没加载）*/
     id = *(int32_t *)(e + CE_ENEMY_ID);
     slot = pofv_ghost_register(&s_ghost, id, kind);
     if (slot < 0) {
