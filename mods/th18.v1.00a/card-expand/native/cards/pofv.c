@@ -86,7 +86,9 @@
  *   原来只试一次、失败即永久放弃 ⇒ owner 看到「场上在掉**不可见**的灵」。取 8 帧
  *   （≈0.13 s 一次，灵通常活几百帧 ⇒ 有足够机会补上）。*/
 /* ★ 灵贴图的帧保持帧数：4 帧轮播、每帧停这么多（≈0.1 s，与其它 sprite 动画同节奏）。*/
-#define POFV_GHOST_FRAME_HOLD      6
+/* ★ 2026-10-01（owner：「**各个灵的图在抽搐**」）：6 → **12**（≈5 Hz）—— 4 帧贴图每帧姿态位置略差，
+ *   10 Hz 跳变看着像抽搐 ✗；放慢一半先看观感（同时把写进去的 sprite 号打进日志，便于核对 ✓）。*/
+#define POFV_GHOST_FRAME_HOLD      12
 #define POFV_GHOST_VM_RETRY        8
 #define POFV_GHOST_VM_LAYER        6
 /* ★ 一手（2026-10-01）：**收取音** —— TH16 季节道具收进时播 `se_item00`（`0x25`），
@@ -210,6 +212,10 @@ static uint32_t s_bossatk_scan_rot;
  *   卡侧写 scale = `场半径 / 这个值` ⇒ 贴图边缘正好落在判定半径上（**判定 = 绘制**）✓。*/
 /* ★ 暴风收尾淡出的触发点：寿命剩这么多帧时给 VM 发 interrupt 1（脚本 402 的 `case(1)`）。*/
 #define POFV_STORM_FADE_FRAMES     10
+/* ★ 每个场 = 一手的三连组台数（`ghost.anm` 20/21/22 与 23/24/25 ✓）。*/
+/* ★ 卷好的 CA 环贴图（`CA_RING_WRAP.png` 256×256）的**外半径** ⇒ `scale = 判定半径 / 它` ✓。*/
+#define POFV_CA_RING_R           120.0f
+#define POFV_FIELD_VM_PARTS        3
 #define POFV_STORM_SPRITE_R      31.0f
 #define POFV_STORM_VM_LAYER        6
 #define POFV_FIELD_RGBA_STORM 0xa04080ffu   /* 暴风 = 蓝（代码里一直叫它「蓝圈」）*/
@@ -273,7 +279,10 @@ static pofv_power_pool_t  s_power;      /* ★ 2026-10-01（口径 5）：灵力
 static pofv_ghost_pool_t  s_ghost;      /* ★ 2026-10-01（口径 8/9/10）：灵的**句柄池**（本体是真敌人）*/
 static int32_t            s_ghost_vm[POFV_GHOST_MAX];   /* 每只灵的**跟随 VM** id（0 = 没有）*/
 /* ★ 每个**场**（暴风 / CA 红圈）的跟随 VM id（0 = 没有）；驱动在 `storm_vm_sync()`。*/
-static int32_t            s_storm_vm[POFV_STORM_MAX];
+/* ★★★★ 2026-10-01（一手）：**每个场 = 3 台 VM** —— TH19 的 `0x53b920` 就是循环 3 次起同一脚本、
+ *   各给一个旋转/缩放（π / 2.0 / 3.0 / −π / 1.9375）✓；而 `ghost.anm` 的脚本正是**三连一组**：
+ *   蓝组（暴风）= 20/21/22、**红组（消弹圈）= 23/24/25** ✓ ⇒ 本表第二维 = 3。*/
+static int32_t            s_storm_vm[POFV_STORM_MAX][POFV_FIELD_VM_PARTS];
 /* ★ 109 自己的 hits UI 字形 VM（4 标签 + 4 数字；见 `hits_ui_sync()`）。*/
 /* ★★ 2026-10-01（owner：「**至少等到第一波怪出现再从场外出灵吧**」）：
  *   闩锁 —— 场上**真出现过敌人**之后才置 1；在那之前一只灵都不撒（开局不再凭空冒灵 ✗）。
@@ -283,6 +292,8 @@ static int32_t            s_ghost_wave_seen;
  *   （狼/绿兽/蓝鸟都朝左右 ✓，见 `pofv109_spirit/SPIRIT*_0.png`）⇒ 必须**按移动方向旋转** ✓。
  *   这里存每个槽**上一帧的位置**用来求方向（不往 core 的结构里加字段，免得动单测/ABI ✓）。*/
 static float              s_ghost_last[POFV_GHOST_MAX][2];
+/* ★ debug：上一帧写过的 sprite 号（只在变化时打日志 ✓）。*/
+static uint32_t           s_ghost_sprite_log[POFV_GHOST_MAX];
 
 /* ★★★★ 2026-10-01 最要命的一条（owner 报的「暴风**位置完全错位**」「同一个灵画在**两个错位的地方**」
  *   「**缺少罩子**」**同一个根因**）：
@@ -547,17 +558,9 @@ static void shield_vm_update(const pofv_card_t *s)
      *   ⇒ 黄光在**下**、白圆在**上** ✓；两台的坐标相同、黄的那台**放大一圈** ✓。
      *   ⚠ 为什么不用 TH19 那种一条指令的双色圆：那是 **`ins_617`**，**TH18 的 anm 解释器不认得** ✗
      *     （与早先 ECL 在 609+ 上两作编号不同同一类坑）⇒ 用两台 TH18 原生 `drawPoly` 等价实现 ✓。*/
-    if (!s_shield_vm2)
-        s_shield_vm2 = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_SHIELD_GLOW,
-                                             POFV_SHIELD_VM_LAYER);
     if (!s_shield_vm)
         s_shield_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_SHIELD,
                                             POFV_SHIELD_VM_LAYER);
-    if (s_shield_vm2) {
-        float sc2 = up ? POFV_SHIELD_VM_SCALE * POFV_SHIELD_GLOW_SCALE : 0.0f;
-        vm_set_world_pos((uint32_t)s_shield_vm2, pp[0], pp[1]);
-        ce_anm_set_scale((uint32_t)s_shield_vm2, sc2, sc2);
-    }
     if (!s_shield_vm) return;
     vm_set_world_pos((uint32_t)s_shield_vm, pp[0], pp[1]);
     ce_anm_set_scale((uint32_t)s_shield_vm, up ? POFV_SHIELD_VM_SCALE : 0.0f,
@@ -759,9 +762,10 @@ static void bossatk_fire(ce_card_t *c, pofv_card_t *s)
 
     /* ★ 场的 VM 也要收干净（长持续效果纪律：删卡/换关/重开那一刻 tick 全停，只有这里跑得到）。*/
     {
-        int vi;
+        int vi, vp;
         for (vi = 0; vi < POFV_STORM_MAX; ++vi) {
-            if (s_storm_vm[vi]) { ce_anm_delete((uint32_t)s_storm_vm[vi]); s_storm_vm[vi] = 0; }
+            for (vp = 0; vp < POFV_FIELD_VM_PARTS; ++vp)
+                if (s_storm_vm[vi][vp]) { ce_anm_delete((uint32_t)s_storm_vm[vi][vp]); s_storm_vm[vi][vp] = 0; }
         }
     }                         /* ★ 打完了 ⇒ 喊载体走（别留孤儿敌人）*/
         return;
@@ -954,38 +958,59 @@ static void ca_invuln_grant(pofv_card_t *s, int level)
  *   ❓ 颜色自定见脚本 402 的注释（暴风 = 蓝、CA 红圈 = 红）。*/
 static void storm_vm_sync(void)
 {
-    int i;
+    int i, p;
     for (i = 0; i < POFV_STORM_MAX; ++i) {
         const pofv_storm_t *bl = pofv_storm_slot(&s_storm, i);
+        int is_ca;
+        float sc;
         if (!bl || !bl->active) {
-            if (s_storm_vm[i]) { ce_anm_delete((uint32_t)s_storm_vm[i]); s_storm_vm[i] = 0; }
+            for (p = 0; p < POFV_FIELD_VM_PARTS; ++p)
+                if (s_storm_vm[i][p]) { ce_anm_delete((uint32_t)s_storm_vm[i][p]); s_storm_vm[i][p] = 0; }
             continue;
         }
-        if (!s_storm_vm[i])
-            s_storm_vm[i] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
-                                                  CE_ANM_ABILITY_SCRIPT_POFV109_FIELD,
-                                                  POFV_STORM_VM_LAYER);
-        if (!s_storm_vm[i]) continue;                      /* anm 还没就绪：下一帧再补 */
-        {
-            /* ★★ 2026-10-01 八改（owner：「我还是不甘心，你反编译 th19 吧」）：场的视觉**照抄 TH19
-             *   `ghost.anm` script20**（12 边形 + 减去混合 + 自转 + **13↔14↔12 呼吸**）⇒
-             *   **大小由脚本自己管** ⇒ 这里**只写位置、不再写 scale** ✗（一写就把呼吸盖掉）。
-             *   卡侧的 `r0/dr/寿命` 只用于**判定**（消弹/伤害半径 = 那张逐帧扩张的场）✓ ——
-             *   两者分工：**判定按一手节点扩张**、**画面按一手脚本呼吸** ✓。
-             *   寿命将尽时发 **interrupt 1** ⇒ 脚本的 `case(1)` 淡出 10 帧再删 ✓。*/
-            /* ★★★ 2026-10-01 十改（代码链定音）：**暴风 = TH19 `ghost.anm` script 0x14(=20)**
-             *   —— 见 `engine/versus/th19/05-four-mechanics.md` 的完整链（0x50ca06 → 0x417280 →
-             *   类 0x5a8a68 → 0x53b920 → `push $0x14` → call 0x4cb960；与结界的 `push $1` 对照）。
-             *   ⇒ **大小/呼吸/自转全由脚本自己管** ⇒ 卡侧**只写位置** ✗（写 scale 会把呼吸盖掉）。
-             *   卡侧的 `r0/dr/寿命` 只用于**判定**（消弹/伤害半径）✓。
-             *   ❓ 待实跑比对：一手脚本的 `scale` 是 13–14（≈13 px），而判定半径按一手节点长到 56 px
-             *     —— 两者差得较多，**下一轮要核实「判定半径那条节点」是否与视觉同源**。*/
-            vm_set_world_pos((uint32_t)s_storm_vm[i], bl->x, bl->y);
+        is_ca = (bl->kind == POFV_STORM_KIND_CA);
+        sc = bl->r0 + bl->dr * (float)bl->age;   /* 判定半径 = 画面缩放（单位圆 ⇒ scale = 半径）*/
+        /* ★★★★ 2026-10-01 定案（owner：「红圈是**蓄力攻击**的，而且是 **th09**」＋「**贴图被贴到圆环上**」）：
+         *   · **CA（红圈）** = TH09 `etama.anm` script91/92/93 的 `sprite224`（`etama3.png` 的 16×128 带子，
+         *     引擎**绕环平铺 6 圈** ✓）⇒ 本卡按 owner 指定的**方案 A**把「卷」离线做掉
+         *     （`make_pofv109_ca_ring_art.py` ⇒ `CA_RING_WRAP.png` 256×256 ✓，纹理仍是一手的 ✓）
+         *     ⇒ **一台 VM**（脚本 407 ✓）+ `scale = 半径 / POFV_CA_RING_R` ✓；
+         *   · **暴风** = TH19 `ghost.anm` 的三连组（404/405/406 ✓）+ `scale = 半径`（单位圆 ✓）。
+         *   ⚠ 一手 CA 是 `blendAdditiveSet(1)`（加算 ✓）—— 已在脚本 407 里 ✓。*/
+        if (is_ca) {
+            if (!s_storm_vm[i][0])
+                s_storm_vm[i][0] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
+                                     CE_ANM_ABILITY_SCRIPT_POFV109_CA_RING, POFV_STORM_VM_LAYER);
+            if (s_storm_vm[i][0]) {
+                float k = sc / POFV_CA_RING_R;
+                vm_set_world_pos((uint32_t)s_storm_vm[i][0], bl->x, bl->y);
+                ce_anm_set_scale((uint32_t)s_storm_vm[i][0], k, k);
+                if (bl->life - bl->age == POFV_STORM_FADE_FRAMES)
+                    ce_anm_interrupt((uint32_t)s_storm_vm[i][0], 1);
+            }
+            for (p = 1; p < POFV_FIELD_VM_PARTS; ++p)
+                if (s_storm_vm[i][p]) { ce_anm_delete((uint32_t)s_storm_vm[i][p]); s_storm_vm[i][p] = 0; }
+            continue;
+        }
+        for (p = 0; p < POFV_FIELD_VM_PARTS; ++p) {
+            /* ★★★★ 2026-10-01（照 owner 要求「**先照着一手找**」后的一手落地）：
+             *   一手 `0x53b920`：**同一脚本起 3 台**（各一个旋转/缩放）；
+             *   一手 `ghost.anm`：脚本是**三连一组** ——
+             *     · 蓝组（**暴风**）= `script20`(减去·暗芯) + `21`(**加算**·亮圈) + `22`(淡出)
+             *     · ★ 红组（**消弹圈**）= `script23` + **`24`（加算红圈 `color2(255,0,0)`）** + `25`
+             *   ⇒ 本卡把这两组逐条抄成 `403..405`（蓝）/ `406..408`（红）✓，这里按 `kind` 选组、起 3 台 ✓。
+             *   ⚠ **颜色全在脚本里**（一手原值 ✓）⇒ 卡侧**不再 `ce_anm_set_color`** ✗
+             *     （上一版按自己的配色写，与一手不符 —— owner：「**先照着我说的去一手找**」✓）。*/
+            /* CA 已在上面单独处理（一台卷好的环 ✓）⇒ 这里只会是**暴风**的蓝三连组 ✓。*/
+            int script = CE_ANM_ABILITY_SCRIPT_POFV109_STORM_A + p;
+            if (!s_storm_vm[i][p])
+                s_storm_vm[i][p] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), script,
+                                                         POFV_STORM_VM_LAYER + p);
+            if (!s_storm_vm[i][p]) continue;          /* anm 还没就绪：下一帧再补 */
+            vm_set_world_pos((uint32_t)s_storm_vm[i][p], bl->x, bl->y);
+            ce_anm_set_scale((uint32_t)s_storm_vm[i][p], sc, sc);
             if (bl->life - bl->age == POFV_STORM_FADE_FRAMES)
-                ce_anm_interrupt((uint32_t)s_storm_vm[i], 1);
-            ce_anm_set_color((uint32_t)s_storm_vm[i],
-                             bl->kind == POFV_STORM_KIND_CA ? POFV_FIELD_RGBA_CA
-                                                            : POFV_FIELD_RGBA_STORM);
+                ce_anm_interrupt((uint32_t)s_storm_vm[i][p], 1);
         }
     }
 }
@@ -1215,7 +1240,6 @@ static void ghost_vm_spawn(pofv_card_t *s, int slot, float x, float y)
 static int ghost_spawn(pofv_card_t *s, int32_t kind)
 {
     uint8_t spawn[CE_SPAWN_SIZE];
-    const float *pp = ce_player_pos();
     float *sp;
     uint8_t *e;
     int32_t id;
@@ -1334,6 +1358,14 @@ static void ghost_tick(pofv_card_t *s)
             uint32_t sp = (uint32_t)CE_ANM_ABILITY_SPRITE_POFV109_SPIRIT0_0
                         + (uint32_t)((g->kind % POFV_GHOST_KIND_MAX) * 4)
                         + (uint32_t)((s_frame / POFV_GHOST_FRAME_HOLD) % 4);
+            /* ★ debug（owner：「好好 debug 一下」）：sprite 号**只在变化时**打日志 ⇒ 日志里能看到
+             *   每只灵实际画的是哪一帧（4 帧轮播 / 有没有跳回 / 有没有互相打架）✓。*/
+            if (sp != s_ghost_sprite_log[i]) {
+                s_ghost_sprite_log[i] = sp;
+                ce_log("pofv: ghost vm slot %d kind %d -> sprite %u (frame %d)",
+                       (int)i, (int)g->kind, (unsigned)sp,
+                       (int)((s_frame / POFV_GHOST_FRAME_HOLD) % 4));
+            }
             ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_ghost_vm[i], sp);
         }
     }
@@ -1813,6 +1845,8 @@ static int on_ctor(ce_card_t *c)
      *   ⚠ 必须放在 `clear_card()` **之后**（那函数会把 `st.shield` 清 0）。
      *   走的是同一个入口 `pofv_shield_arm()`（档位传「能起盾的最低档」✓ 一手：只有阶段 3/4 回复，
      *   见 `0x40b420`）—— 不另开一条写字段的路。*/
+    ce_log("pofv: shield visual = ONE two-color drawPoly (inner white alpha150 / outer yellow alpha120), "
+           "scale %.2f, layer %d", POFV_SHIELD_VM_SCALE, POFV_SHIELD_VM_LAYER);
     if (pofv_shield_arm(&s->st, POFV_SHIELD_ARM_LEVEL))
         ce_log("pofv: card acquired → one barrier (罩子) granted");
     ce_log("pofv: ctor (T = %.1f white-bullet radius; charge on hold-C, no Z suppression; "

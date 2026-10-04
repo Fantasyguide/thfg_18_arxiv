@@ -1011,6 +1011,9 @@ POFV109_SPIRIT4_3  ability/pofv109_spirit/SPIRIT4_3.png  48x32
 #   ＝ 蓝色的刺环（正是卡里一直叫的「蓝圈」）。切图 = `make_pofv109_storm_art.py`。
 #   画法 = `scripts/402_pofv109_field.anm.txt`（一个 sprite，卡侧按 `半径 / 31` 写 scale）。
 POFV109_STORM  ability/pofv109_storm/STORM.png  62x62
+# ★★ 蓄力消弹圈（红圈）：一手 = TH09 `etama.anm` script91/92/93 的 `sprite224`（`etama3.png` 里 16×128 的带子，引擎**绕环平铺 6 圈** = 表里的 768 ✓）。
+#   这里把那次「卷」**离线做掉**（`make_pofv109_ca_ring_art.py`，方案 A ✓，纹理仍是一手的 ✓）。
+POFV109_CA_RING  ability/pofv109_storm/CA_RING_WRAP.png  256x256
 POFV109_HITS_D0  ability/pofv109_hits/D0.png  32x37
 POFV109_HITS_D0_EDGE  ability/pofv109_hits/D0_EDGE.png  32x37
 POFV109_HITS_D1  ability/pofv109_hits/D1.png  32x37

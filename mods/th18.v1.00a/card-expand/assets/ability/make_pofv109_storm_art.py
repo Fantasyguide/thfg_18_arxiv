@@ -46,7 +46,11 @@ THANM = REPO / "local/vendor/thtk/build/thanm/thanm"
 ANMMAP = REPO / "local/vendor/eclmap/anmmap/v2.anmm"   # TH09 的 anm 头版本 = 3 ⇒ v2.anmm
 
 #: 一手：`sprite192 = { x: 193, y: 177, w: 62, h: 62 }`（`etama2.png` 那一行最右）
-CELL = ("STORM", 193, 177, 62, 62)
+#: ★★ 2026-10-01 owner：「我说的**红色消弹圈**是**蓄力攻击**的那个，而且是 **th09**！」＋「那个是**有复杂花纹**的」
+#:   ⇒ 全看了 TH09 六张 `etama*.png`，**红+复杂花纹的圆环 = `etama2.png` 的 `sprite214 = {1,176,63,63}`** ✓
+#:     （同排另有 `sprite218`(0,112,64×64) 暗红放射花纹、`sprite196` 栗色六芒星环 —— 都登记为备选 ✓）。
+CELLS = [("STORM", 193, 177, 62, 62),
+         ("CA_RING", 1, 176, 63, 63)]
 EXPECT_SIZE = (256, 256)
 
 
@@ -68,10 +72,10 @@ def main():
         atlas = Image.open(png).convert("RGBA")
         if atlas.size != EXPECT_SIZE:
             raise SystemExit(f"TH09 etama2 尺寸变了：{atlas.size}（期望 {EXPECT_SIZE}）")
-        name, x, y, w, h = CELL
         OUT.mkdir(exist_ok=True)
-        atlas.crop((x, y, x + w, y + h)).save(OUT / f"{name}.png")
-        print(f"  {name}.png  {w}x{h}  ← etama2.png ({x},{y})  [TH09 sprite192 = 蓝刺环]")
+        for name, x, y, w, h in CELLS:
+            atlas.crop((x, y, x + w, y + h)).save(OUT / f"{name}.png")
+            print(f"  {name}.png  {w}x{h}  ← etama2.png ({x},{y})")
         print(f"→ {OUT}")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

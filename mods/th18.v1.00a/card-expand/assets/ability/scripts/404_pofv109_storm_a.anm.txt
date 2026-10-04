@@ -1,0 +1,29 @@
+script script404 {
+    // ★ 照抄 TH19 `ghost.anm` script20（STORM_A）—— 一手三连组之一 ✓（见 TUNING 的说明）
+    sprite(-1);
+    layer(28);
+    blendMode(2);
+    drawPoly(1.0f, 12);
+    color(128, 128, 255);
+    color2(64, 64, 64);
+    angleVel(0.017453292f, 0.0f, 0.017453292f);
+    alpha(200);
+    alpha2(40);
+    scale(13.0f, 13.0f);
+offset152:
+    scaleTime(20, 0, 14.0f, 14.0f);
++20: // 20
+    scaleTime(20, 0, 12.0f, 12.0f);
++20: // 40
+    jmp(offset152, 0);
+    interruptLabel(1);
+    alphaTime(10, 0, 0);
+    alpha2Time(10, 0, 0);
++10:
+    delete();
+    interruptLabel(1);
+    alphaTime(10, 0, 0);
+    alpha2Time(10, 0, 0);
++10:
+    delete();
+}
