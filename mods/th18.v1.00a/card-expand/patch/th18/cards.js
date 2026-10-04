@@ -402,6 +402,7 @@
       "碰到的灵被沈静化，击破它掉一把。",
       "蓝圈只吃白弹，红圈吃掉圈内一切。"
     ],
+    "category": 0,
     "internal_name": "POFV_BLAST",
     "initial_unlocked": 1,
     "price_tier": 10,

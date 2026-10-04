@@ -218,6 +218,9 @@ static uint32_t s_bossatk_scan_rot;
 /* ★ 2026-10-01 修：暴风只留**两段实物**（404 暗芯 + 405 加算亮圈 ✓）——
  *   TH19 的「第三台」是个**启动器**（`scriptNew` 指向 TH19 的脚本号 ✗）⇒ 照抄会召唤无关特效 ✗
  *   （owner：「暴风画在了最左上角贼大」＋「全乱套了」✓）。*/
+/* ★ 主动卡的「充能时长」（帧）。⚠ 因为 `on_activate` **每次都 REFUSED**（按 C 无作用 ✓），
+ *   这个值只决定引擎眼里「这张主动卡的冷却有多长」⇒ 取一个常规值即可 ❓ 自定。*/
+#define POFV_ACTIVE_RECHARGE        60
 #define POFV_FIELD_VM_PARTS        2
 #define POFV_STORM_SPRITE_R      31.0f
 #define POFV_STORM_VM_LAYER        6
@@ -1858,6 +1861,19 @@ static int on_ctor(ce_card_t *c)
     return 0;
 }
 
+/* ★★★ 2026-10-04（owner 口径）：**本卡是「主动卡」** ——
+ *   「只有当**切换到本卡**时，按 C 才有用；作为主动卡**必须写上去的按 C 实际没有作用、即刻 return**」 ✓。
+ *   ⇒ 声明 `.active_recharge`（SDK：非 0 ⟺ 主动卡；`category == 0` ⟺ `active_recharge != 0` ✓），
+ *     并提供 `.on_activate`：**立刻返回 `CE_ACTIVATE_REFUSED`** ✓ ——
+ *     SDK 的 `ce_sdk_c_press`（`sdk.c`）收到 REFUSED 会**把刚装填的充能原样退回、不进释放态** ✓
+ *     ⇒ 「按 C 什么都不发生」✓，而**真正的蓄力仍由卡侧自己读键时长驱动**（不走 SDK 的发动路径 ✓）。
+ *   ★ 这样做的意义：让引擎/UI 把 109 认成**主动卡**（要切到它才谈得上「按 C」✓）。*/
+static int on_activate(ce_card_t *c)
+{
+    (void)c;
+    return CE_ACTIVATE_REFUSED;      /* 占位：不做任何事 ✓ */
+}
+
 static void on_run_reset(ce_card_t *c) { clear_card(c); }
 /* ★★★ 2026-10-01（owner：「**th19 有一个多少 hits 的 UI**」）：**击中数**计数。
  *
@@ -1889,6 +1905,10 @@ static void on_delete(ce_card_t *c)    { clear_card(c); }
 /* ★ 合成卡（owner 2026-09-28）：**没有** `.on_native_shot_suppress` —— Z 是纯原生的。
  *   （旧值 `on_native_shot_suppress = on_native_shot_suppress` 已删；见本文件头的键位段。）*/
 CE_CARD(109,
+        /* ★ 主动卡（owner 口径）：.active_recharge 非 0 ⇒ 引擎按「主动卡」对待；
+         *   .on_activate 立刻 REFUSED ⇒ **按 C 无任何作用** ✓（充能退回 ✓）。*/
+        .active_recharge = POFV_ACTIVE_RECHARGE,
+        .on_activate = on_activate,
         .ctor = on_ctor,
         .on_death_before_deathbomb = on_death_before_deathbomb,   /* ★ 抵挡护盾（救援层最早那一层）*/
         .on_enemy_death = on_enemy_death,
