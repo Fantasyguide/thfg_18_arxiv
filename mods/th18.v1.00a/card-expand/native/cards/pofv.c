@@ -266,6 +266,10 @@ static int32_t            s_ghost_vm[POFV_GHOST_MAX];   /* 每只灵的**跟随 
 /* ★ 每个**场**（暴风 / CA 红圈）的跟随 VM id（0 = 没有）；驱动在 `storm_vm_sync()`。*/
 static int32_t            s_storm_vm[POFV_STORM_MAX];
 /* ★ 109 自己的 hits UI 字形 VM（4 标签 + 4 数字；见 `hits_ui_sync()`）。*/
+/* ★★ 2026-10-01（owner：「**至少等到第一波怪出现再从场外出灵吧**」）：
+ *   闩锁 —— 场上**真出现过敌人**之后才置 1；在那之前一只灵都不撒（开局不再凭空冒灵 ✗）。
+ *   ⚠ 声明必须在 `clear_card()`（它会清零）之前 ⇒ 放在这一组静态量里。*/
+static int32_t            s_ghost_wave_seen;
 static uint32_t           s_hits_vm[POFV_HITS_UI_VMS];
 static int32_t            s_frame;      /* 游玩帧计数（连爆窗口的帧源；只在 on_tick_2 前进）*/
 /* 诊断账（都在 `clear_card()` 里清；`verify.py` 的场景吃这几行）。*/
@@ -696,6 +700,8 @@ static void bossatk_fire(ce_card_t *c, pofv_card_t *s)
     if (!pofv_bossatk_tick(&s->bossatk)) {
         bossatk_carrier_stop();
 
+    s_ghost_wave_seen = 0;      /* ★ 换关/重来：重新等第一波怪 */
+
     /* ★ hits UI 的字形 VM（长持续效果纪律）。*/
     hits_ui_kill();
 
@@ -1070,15 +1076,20 @@ static void do_boss_attack(pofv_card_t *s)
 
 #define POFV_GHOST_ECL_NAME     "CESpirit109"   /* 必须与 `assets/ecl/spirit109.ecl.txt` 的子程序名一致 */
 #define POFV_GHOST_HOMING_SPEED   0.8f  /* ❓ 自定（索敌：每帧朝自机飘多少 px）*/
-#define POFV_GHOST_SPAWN_DX     -40.0f  /* ❓ 自定（出生点相对自机的偏移：左上方一点）*/
-#define POFV_GHOST_SPAWN_DY     -80.0f
+/* ★★ 2026-10-01（owner：「**开头依旧有一只灵直接出现，很奇怪，至少等到第一波怪出现再从场外出灵吧**」）：
+ *   ① **等第一波怪**：`s_ghost_wave_seen` 闩锁 —— 直到「场上真出现过敌人」才允许第一次撒（见 tick）；
+ *   ② **从场外出灵**：出生点改成**场地外**（世界 x ∈ ±192、y ∈ [0,448] 之外），
+ *      由灵自己的索敌（ECL 里朝 `%F2/%F3` 飘）把它带进场 ✓ —— 不再在自机旁边凭空冒出来 ✗。*/
+#define POFV_GHOST_OUT_X      -220.0f  /* ❓ 自定：场外出生点（世界 x = −220，在左边界 −192 之外）*/
+#define POFV_GHOST_OUT_Y       -40.0f  /* ❓ 自定：场外出生点（世界 y = −40，在顶边 0 之上）*/
 /* ★★ 2026-10-01 二改：脚本 372 现在画的是 **TH19 原版動物霊贴图**（`animal_spirits.png` 的
  *   `sprite344–347`，各 **48×32**）—— 第一次换成 TH09 的图被 owner 打回（「怎么上来有个莉莉白
  *   在靠近，灵不长这样」：那是大妖精样、不是灵）。
  *   ⇒ 缩放取 **0.6**：48×32 × 0.6 ≈ **29×19 px**，与灵的判定 **20×20**
  *     （`spirit109.ecl.txt` 的 `setHurtbox(20,20)`）大致对得上。
  *   ⚠ **换贴图必须同步改这里**（旧值 0.4 是配 64×64 那版的）。*/
-#define POFV_GHOST_VM_SCALE      0.6f
+/* ★★ 2026-10-01（owner：「**灵贴图的大小应当是大一倍**」）：0.6 → **1.2**（正好一倍）。*/
+#define POFV_GHOST_VM_SCALE      1.2f
 
 /* boss 判据（口径 9 方案甲）：`mgr+0x48` 的 `int[4]` boss enemy_id（一手 `get_boss_enemy_full`
  * `0x4237f0` 就是按它走链表找），逐个问「还在不在」。任何 boss（含道中）在场 ⇒ 不撒灵。 */
@@ -1136,8 +1147,10 @@ static int ghost_spawn(pofv_card_t *s, int32_t kind)
 
     memset(spawn, 0, sizeof spawn);
     sp = (float *)(spawn + CE_SPAWN_POS);
-    sp[0] = (pp ? pp[0] : 0.0f) + POFV_GHOST_SPAWN_DX;
-    sp[1] = (pp ? pp[1] : 0.0f) + POFV_GHOST_SPAWN_DY;
+    /* ★ 2026-10-01（owner：「**从场外出灵**」）：出生点 = **场地外**（左上角外侧），
+     *   让它自己飘进场 —— 不再跟着自机出生 ✗。横坐标按槽位错开一点，免得几只叠在同一个点。*/
+    sp[0] = POFV_GHOST_OUT_X + (float)((int)(s_ghost.spawned % 4) * 24);
+    sp[1] = POFV_GHOST_OUT_Y;
     sp[2] = 0.0f;
     *(int32_t *)(spawn + CE_SPAWN_SCORE) = 0;
     *(int32_t *)(spawn + CE_SPAWN_MAIN_DROP) = 0;   /* 奖励全走卡侧的灵力道具（口径 5）*/
@@ -1233,10 +1246,25 @@ static void ghost_tick(pofv_card_t *s)
                (int)s_ghost.s[k].enemy_id, POFV_GHOST_CALM_FRAMES);
     }
 
-    /* ③ 循环撒（口径 9）：600 帧一只 / boss 在场不撒 / 同屏 ≤ 4 —— 三道门都在 core 里。*/
+    /* ★★ 2026-10-01（owner：「**至少等到第一波怪出现再从场外出灵吧**」）：闩锁 ——
+     *   扫到**任何一只活着的敌人**就把 `s_ghost_wave_seen` 置 1（只扫到置上为止，之后不再扫）。*/
+    if (!s_ghost_wave_seen) {
+        uint8_t *em0 = CE_ENEMY_MGR();
+        uint8_t *e0 = 0;                     /* ★ 宏会把 e0 赋值 ⇒ 必须先声明 */
+        if (em0) {
+            CE_ENEMY_FOREACH(em0, e0) {
+                (void)e0;
+                s_ghost_wave_seen = 1;
+                break;
+            }
+        }
+    }
+
+    /* ③ 循环撒（口径 9）：600 帧一只 / boss 在场不撒 / 同屏 ≤ 4 —— 三道门都在 core 里。
+     *   ★ 外加 owner 那道门：**第一波怪出现之前一只都不撒**（见上面的闩锁）。*/
     {
         int32_t kind = 0;
-        if (pofv_ghost_cycle_tick(&s_ghost, boss_enemy_present(), &kind)) {
+        if (s_ghost_wave_seen && pofv_ghost_cycle_tick(&s_ghost, boss_enemy_present(), &kind)) {
             if (ghost_spawn(s, kind) < 0) {
                 if (!s->ghost_logged) {
                     ce_log("pofv: ghost spawn failed (spawner refused) — skipped this cycle");
@@ -1658,6 +1686,13 @@ static int on_ctor(ce_card_t *c)
     pofv_card_t *s = st(c);
     if (!s) return 0;
     clear_card(c);                          /* 新对象 / 每关重挂：清成初始态（含文件级池）*/
+    /* ★★ 2026-10-01（owner：「**特别地，获取109这张卡自动赠送一个罩子**」）：
+     *   拿到卡的这一刻**直接给一个罩子**（= 蓄力到 C3/C4 才会有的那个抵挡盾）。
+     *   ⚠ 必须放在 `clear_card()` **之后**（那函数会把 `st.shield` 清 0）。
+     *   走的是同一个入口 `pofv_shield_arm()`（档位传「能起盾的最低档」✓ 一手：只有阶段 3/4 回复，
+     *   见 `0x40b420`）—— 不另开一条写字段的路。*/
+    if (pofv_shield_arm(&s->st, POFV_SHIELD_ARM_LEVEL))
+        ce_log("pofv: card acquired → one barrier (罩子) granted");
     ce_log("pofv: ctor (T = %.1f white-bullet radius; charge on hold-C, no Z suppression; "
            "power items = self-built pool; ghosts = real enemies via %s)",
            POFV_WHITE_R_MAX, POFV_GHOST_ECL_NAME);

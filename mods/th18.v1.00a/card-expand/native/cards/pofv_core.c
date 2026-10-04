@@ -344,6 +344,9 @@ int32_t pofv_storm_life_for_chain(int32_t chain)
     pofv_blast_radius(c, &r1);
     if (POFV_STORM_DR <= 0.0f) return 1;
     life = (int32_t)((r1 - POFV_STORM_R0) / POFV_STORM_DR + 0.5f);   /* 四舍五入 */
+    /* ★ 2026-10-01（owner：「暴风的**持续时间**太大了导致过大」）：寿命乘系数 ⇒ 半径同比缩小。
+     *   ⚠ ❓ 自定（见 `POFV_STORM_LIFE_SCALE` 的注释）。*/
+    life = (int32_t)((float)life * POFV_STORM_LIFE_SCALE + 0.5f);
     if (life < 1) life = 1;
     return life;
 }

@@ -244,6 +244,12 @@ int32_t pofv_invuln_left(const pofv_invuln_t *w);
  *     于是档只决定「这个场最终能长到多大」——`R_k` 仍用一手锚定的 176/224/272/320
  *     （档 1 = 176 是一手：CA 释放节点 `16 + 20×8`，`th09:0x41e875`）。*/
 #define POFV_STORM_R0               0.0f /* ★ 一手：「自机弹命中」节点的 r0 = 0 */
+/* ★★ 2026-10-01（owner：「**暴风的持续时间太大了导致过大**」）：
+ *   半径 = `dr × 寿命` ⇒ **寿命太长 ⇒ 半径太大** ✗。这里给寿命乘一个系数收一收。
+ *   ⚠ ❓ **自定**：一手的「档 → 半径」（`pofv_blast_radius`）与「dr=1.6」没动，
+ *     只把**寿命**缩短 ⇒ 最终半径同比缩小（两者本来就是同一个数算出来的）。
+ *     owner 实跑再嫌大/嫌小就调这一个系数。*/
+#define POFV_STORM_LIFE_SCALE     0.5f
 #define POFV_STORM_DR               1.6f /* ★ 一手：同一个节点的 dr = 1.6 px/帧（= 连锁前沿速度）*/
 #define POFV_STORM_SCANS_PER_FRAME  4    /* ❓ 自定：每帧最多几次**整池扫弹**（O(弹池) 的预算闸）*/
 #define POFV_STORM_DMG_LIFE         2    /* ❓ 自定（伤害源寿命；与旧 `POFV_BLAST_DMG_LIFE` 同值）*/

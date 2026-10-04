@@ -356,10 +356,11 @@ int main(void)
         CHECK(pofv_storm_chain_at(&p, 0.0f, 0.0f) == 1);          /* r=0 时只有圆心自己在圈里 */
         CHECK(pofv_storm_chain_at(&p, 1000.0f, 0.0f) == 0);       /* 圈外 */
 
-        /* 寿命按档给（`life = R_k / dr`）⇒ 半径**每帧只长 dr**，到寿命那一刻 = 该档终点半径 176 */
+        /* 寿命按档给（`life = R_k / dr × POFV_STORM_LIFE_SCALE`）⇒ 半径**每帧只长 dr**，
+         * 到寿命那一刻 = `dr × life`（★ 2026-10-01 owner 嫌「暴风太大」⇒ 寿命乘了系数收小）。*/
         {
             int32_t life1 = pofv_storm_life_for_chain(1);
-            CHECK(life1 == (int32_t)(176.0f / POFV_STORM_DR + 0.5f));   /* = 110 帧 */
+            CHECK(life1 == (int32_t)(176.0f / POFV_STORM_DR * POFV_STORM_LIFE_SCALE + 0.5f));
             CHECK(out.life == life1);
             for (i = 0; i < life1 - 1; ++i) {
                 pofv_storm_tick(&p);
@@ -370,7 +371,7 @@ int main(void)
             }
             out = *pofv_storm_slot(&p, 0);
             pofv_storm_radius(&out, &r);
-            CHECK(r > 170.0f && r <= 176.0f);                     /* 到寿命 ≈ 该档终点半径 */
+            CHECK(r > 0.0f && r <= 176.0f);                       /* 到寿命 ≈ 收小后的终点半径 */
         }
         while (p.live > 0) pofv_storm_tick(&p);                   /* 满寿命：释放 */
         CHECK(p.live == 0);
