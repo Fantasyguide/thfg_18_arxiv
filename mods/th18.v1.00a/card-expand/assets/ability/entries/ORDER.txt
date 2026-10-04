@@ -981,21 +981,30 @@ YOUKAI_FAM_TRAIL  ability/youkai_familiar/YOUKAI_FAM_TRAIL.png  16x16
 # 109 的「灵力道具」= ★ **TH16 季节道具那一格**（`sprite519` = `(224,0,16,16)`，16×16）——
 #   owner 实跑反馈「样式不对」后从 P 点（32×32）换过来；画法见 scripts/374。
 POFV109_POWER_P  ability/pofv109_power/POWER_P.png  16x16
-# 109 的「灵」（灵魂）本体：★ **TH19 原版動物霊**（`enemy/animal_spirits.png` 的 sprite 344–347，各 48×32）
-#   —— owner 两轮实跑反馈：「灵魂没有任何贴图」→ 换成真贴图；再「**怎么上来有个莉莉白在靠近，
-#     灵不长这样**」→ 我第一次认错了图（TH09 enemy.anm 的 sprite 84–87 是大妖精样，不是灵）✗，
-#     改用 TH19 的動物霊（本卡 109 = 花映塚 × 獣王園，灵这个概念来自 TH19；TH19 里動物霊是真机制）。
-#   切图脚本 = `assets/ability/make_pofv109_spirit_art.py`（构建时用 thanm -x19 现取 TH19 原图）。
-#   画法 = `assets/ability/scripts/372_spirit109.anm.txt`（4 帧循环，@6 帧/帧）。
-POFV109_SPIRIT_0  ability/pofv109_spirit/SPIRIT_0.png  48x32
-POFV109_SPIRIT_1  ability/pofv109_spirit/SPIRIT_1.png  48x32
-POFV109_SPIRIT_2  ability/pofv109_spirit/SPIRIT_2.png  48x32
-POFV109_SPIRIT_3  ability/pofv109_spirit/SPIRIT_3.png  48x32
-# 109 的 **hits UI 字形**：★ **TH19 原版字体**（owner 给两张图 + 「一手有黑描边」）。
-#   白字 = `ascii/ascii_big.png`（首格 sprite320 = 空格 ASCII32、16 格/行、x 步 32、y 步 40、高 37）；
-#   描边 = `ascii/ascii_bigf.png`（**同布局**、首格 sprite418）—— 卡侧把描边那套**染黑画在下面** ✓。
-#   14 个字形（0-9 + H I T S）× (白 + 描边) = **28 张**；切图 = `make_pofv109_hits_art.py`；
-#   画法 = 复用 `scripts/105_hud_number.anm.txt`（单 sprite VM，卡侧 `ce_anm_set_sprite` / `ce_anm_set_color`）。
+# 109 的「灵」本体：★ **TH19 原版動物霊 5 种**（`enemy/animal_spirits.png`，每种一行 4 帧 48×32）。
+#   ★ 2026-10-01 owner：「**五种灵都做了吗**」⇒ 此前只切了第 1 行 ✗；现在 **5 行全切**（20 张）。
+#   一手：5 种 = TH19 敵人 kind **2..6**（`engine/versus/th19/04-manual-spec.md` 第 244 行）。
+#   卡侧按种类选行、按帧轮播（`hits_ui_sync` 之外的 `ghost_vm_sync`）；切图 = `make_pofv109_spirit_art.py`。
+POFV109_SPIRIT0_0  ability/pofv109_spirit/SPIRIT0_0.png  48x32
+POFV109_SPIRIT0_1  ability/pofv109_spirit/SPIRIT0_1.png  48x32
+POFV109_SPIRIT0_2  ability/pofv109_spirit/SPIRIT0_2.png  48x32
+POFV109_SPIRIT0_3  ability/pofv109_spirit/SPIRIT0_3.png  48x32
+POFV109_SPIRIT1_0  ability/pofv109_spirit/SPIRIT1_0.png  48x32
+POFV109_SPIRIT1_1  ability/pofv109_spirit/SPIRIT1_1.png  48x32
+POFV109_SPIRIT1_2  ability/pofv109_spirit/SPIRIT1_2.png  48x32
+POFV109_SPIRIT1_3  ability/pofv109_spirit/SPIRIT1_3.png  48x32
+POFV109_SPIRIT2_0  ability/pofv109_spirit/SPIRIT2_0.png  48x32
+POFV109_SPIRIT2_1  ability/pofv109_spirit/SPIRIT2_1.png  48x32
+POFV109_SPIRIT2_2  ability/pofv109_spirit/SPIRIT2_2.png  48x32
+POFV109_SPIRIT2_3  ability/pofv109_spirit/SPIRIT2_3.png  48x32
+POFV109_SPIRIT3_0  ability/pofv109_spirit/SPIRIT3_0.png  48x32
+POFV109_SPIRIT3_1  ability/pofv109_spirit/SPIRIT3_1.png  48x32
+POFV109_SPIRIT3_2  ability/pofv109_spirit/SPIRIT3_2.png  48x32
+POFV109_SPIRIT3_3  ability/pofv109_spirit/SPIRIT3_3.png  48x32
+POFV109_SPIRIT4_0  ability/pofv109_spirit/SPIRIT4_0.png  48x32
+POFV109_SPIRIT4_1  ability/pofv109_spirit/SPIRIT4_1.png  48x32
+POFV109_SPIRIT4_2  ability/pofv109_spirit/SPIRIT4_2.png  48x32
+POFV109_SPIRIT4_3  ability/pofv109_spirit/SPIRIT4_3.png  48x32
 POFV109_HITS_D0  ability/pofv109_hits/D0.png  32x37
 POFV109_HITS_D0_EDGE  ability/pofv109_hits/D0_EDGE.png  32x37
 POFV109_HITS_D1  ability/pofv109_hits/D1.png  32x37

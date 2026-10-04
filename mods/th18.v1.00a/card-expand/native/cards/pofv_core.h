@@ -789,7 +789,8 @@ typedef enum {
     POFV_GHOST_KIND_OTTER = 1,   /* 獺 */
     POFV_GHOST_KIND_EAGLE = 2,   /* 鷲 */
     POFV_GHOST_KIND_HYZ   = 3,   /* TH09 的霊（口径 8：两种都自建）*/
-    POFV_GHOST_KIND_MAX   = 4
+    POFV_GHOST_KIND_PURE  = 4,   /* ★ TH19 的**ピュア霊**（Manual：「最初はピュア霊が送られます」）*/
+    POFV_GHOST_KIND_MAX   = 5    /* ★ 2026-10-01：一手 **5 种**（TH19 敵人 kind 2..6，见 04-manual-spec 第 244 行）*/
 } pofv_ghost_kind_t;
 
 typedef struct {

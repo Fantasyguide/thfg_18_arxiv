@@ -85,6 +85,8 @@
 /* ★★ 2026-10-01：灵一旦**没拿到跟随 VM** 就每这么多帧重试一次（见 `ghost_vm_sync` 里那段）。
  *   原来只试一次、失败即永久放弃 ⇒ owner 看到「场上在掉**不可见**的灵」。取 8 帧
  *   （≈0.13 s 一次，灵通常活几百帧 ⇒ 有足够机会补上）。*/
+/* ★ 灵贴图的帧保持帧数：4 帧轮播、每帧停这么多（≈0.1 s，与其它 sprite 动画同节奏）。*/
+#define POFV_GHOST_FRAME_HOLD      6
 #define POFV_GHOST_VM_RETRY        8
 #define POFV_GHOST_VM_LAYER        6
 /* ★ 一手（2026-10-01）：**收取音** —— TH16 季节道具收进时播 `se_item00`（`0x25`），
@@ -1239,6 +1241,15 @@ static void ghost_tick(pofv_card_t *s)
             if (!s_ghost_vm[i]) continue;                 /* 还没补上：这帧先跳过 */
         }
         ce_anm_set_pos((uint32_t)s_ghost_vm[i], g->x, g->y, 0.0f);
+        /* ★★ 2026-10-01（owner：「**五种灵都做了吗**」）：**按种类选行、按帧轮播** ——
+         *   5 种各一行 4 帧（`ORDER.txt` 里 20 条连续 ⇒ `SPIRIT0_0 + kind*4 + frame` ✓）。
+         *   anm 脚本里写死一行换不了种类 ✗ ⇒ **由卡侧每帧写 sprite**（脚本 372 已简化成静态默认帧）✓。*/
+        {
+            uint32_t sp = (uint32_t)CE_ANM_ABILITY_SPRITE_POFV109_SPIRIT0_0
+                        + (uint32_t)((g->kind % POFV_GHOST_KIND_MAX) * 4)
+                        + (uint32_t)((s_frame / POFV_GHOST_FRAME_HOLD) % 4);
+            ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_ghost_vm[i], sp);
+        }
     }
 
     /* ② 成佛（沈静化满 `POFV_GHOST_CALM_FRAMES`）：喊 ECL 走（$I0 = 999 ⇒ 飞离自删）+ 收槽 + 删 VM。

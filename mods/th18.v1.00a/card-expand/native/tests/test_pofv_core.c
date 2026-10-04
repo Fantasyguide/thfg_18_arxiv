@@ -743,7 +743,7 @@ int main(void)
     CHECK(POFV_GHOST_CYCLE_FRAMES > 0);
     CHECK(POFV_GHOST_CALM_FRAMES > 0);
     CHECK(POFV_GHOST_HP > POFV_GHOST_HP_CALM);               /* 沈静化 = 耐久骤降（一手 TH19） */
-    CHECK(POFV_GHOST_KIND_MAX == 4);                         /* 狼 / 獺 / 鷲 / TH09 的霊 */
+    CHECK(POFV_GHOST_KIND_MAX == 5);                         /* ★ 一手：狼 / 獺 / 鷲 / TH09 霊 / ピュア霊 */
     {
         pofv_ghost_pool_t g;
         int32_t kind = -1, slots[POFV_GHOST_MAX];
@@ -752,18 +752,20 @@ int main(void)
         pofv_ghost_pool_init(&g);
         CHECK(g.live == 0 && g.cycle == 0 && g.next_kind == POFV_GHOST_KIND_WOLF);
 
-        /* 循环撒的节拍 + 四族轮转（狼 → 獺 → 鷲 → 霊 → 狼）：每撒一只后要等满一个周期。
+        /* 循环撒的节拍 + **五族**轮转（狼 → 獺 → 鷲 → 霊 → ピュア霊 → 狼）：每撒一只后要等满一个周期。
          * 前 3 只登记进池（留一个空位给下面的满员测试）。 */
         {
-            const int32_t expect[4] = { POFV_GHOST_KIND_WOLF, POFV_GHOST_KIND_OTTER,
-                                        POFV_GHOST_KIND_EAGLE, POFV_GHOST_KIND_HYZ };
-            for (j = 0; j < 4; ++j) {
+            const int32_t expect[5] = { POFV_GHOST_KIND_WOLF, POFV_GHOST_KIND_OTTER,
+                                        POFV_GHOST_KIND_EAGLE, POFV_GHOST_KIND_HYZ,
+                                        POFV_GHOST_KIND_PURE };
+            for (j = 0; j < 5; ++j) {
                 n = 0;
                 while (pofv_ghost_cycle_tick(&g, 0, &kind) == 0 && n < POFV_GHOST_CYCLE_FRAMES * 2) ++n;
                 CHECK(kind == expect[j]);
                 CHECK(n == (j == 0 ? 0 : POFV_GHOST_CYCLE_FRAMES - 1));   /* 首帧即撒；之后满一周期 */
                 if (j < 3) CHECK(pofv_ghost_register(&g, 100 + j, kind) == j);
-                else CHECK(g.next_kind == POFV_GHOST_KIND_WOLF);          /* 轮转回第一族 */
+                if (j == POFV_GHOST_KIND_MAX - 1)                         /* 五族轮完 ⇒ 回第一族 */
+                    CHECK(g.next_kind == POFV_GHOST_KIND_WOLF);
             }
         }
         CHECK(g.live == 3);

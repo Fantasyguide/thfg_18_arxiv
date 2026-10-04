@@ -20,14 +20,10 @@ script script372 {
     alpha(240);
     alpha2(200);
 offset0:
-    sprite(@POFV109_SPIRIT_0);
-+6: //6
-    sprite(@POFV109_SPIRIT_1);
-+6: //12
-    sprite(@POFV109_SPIRIT_2);
-+6: //18
-    sprite(@POFV109_SPIRIT_3);
-+6: //24
-    jmp(offset0, 0);
+        // ★★ 2026-10-01（owner：「**五种灵都做了吗**」）：**动画改由卡侧每帧写 sprite** ——
+    //   因为要按「种类」选行（5 种各一行 4 帧），而 anm 脚本里写死一行就换不了种类 ✗。
+    //   ⇒ 这里只画第 0 种的第 0 帧（默认值），卡侧 `ghost_vm_sync()` 每帧
+    //     `ce_anm_set_sprite(vm, SPIRIT<kind>_<frame>)` 覆盖它 ✓。
+    sprite(@POFV109_SPIRIT0_0);
     stop();
 }

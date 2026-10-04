@@ -52,9 +52,13 @@ ANMMAP = REPO / "local/vendor/eclmap/anmmap/v8.anmm"   # TH19 的 anm 头版本 
 THDAT = REPO / "local/vendor/thtk/build/thdat/thdat"
 SRC_DAT = REPO / "local/th19.v1.10c/th19.dat"
 
-#: 一手：動物霊一種 = 4 帧 48×32；第 1 行（红） = sprite 344–347，起点 (0, 0)，格步 48。
+#: 一手：動物霊**一種 = 一行 4 帧 48×32**；第 1 行从 sprite **344** 起（x 步 48、y 步 32）。
+#: ★★ 2026-10-01 owner：「**五种灵都做了吗**」⇒ 没有（此前只切了第 1 行）✗ ⇒ 现在切 **5 行**：
+#:   TH19 的 5 种 = 敵人 kind **2..6**（仓库 `engine/versus/th19/04-manual-spec.md` 第 244 行：
+#:   「kind 2/3/4 → ghost kind 1；5 → kind 3、6 → kind 4」⇒ 共 5 档 ✓）。
 GHOST_X0, GHOST_Y0, GHOST_W, GHOST_H, GHOST_DX = 0, 0, 48, 32, 48
-GHOST_FRAMES = 4                                 # 取一行 4 帧做循环
+GHOST_FRAMES = 4                                 # 每行 4 帧
+GHOST_ROWS = 5                                   # ★ 5 种（kind 0..4）
 
 #: 期望尺寸（TH19 animal_spirits.png）
 EXPECT_SIZE = (256, 256)
@@ -99,12 +103,14 @@ def main():
         if atlas.size != EXPECT_SIZE:
             raise SystemExit(f"TH09 敌人图集尺寸变了：{atlas.size}（期望 {EXPECT_SIZE}；sprite 表随之要重核）")
         OUT.mkdir(exist_ok=True)
-        for k in range(GHOST_FRAMES):
-            x = GHOST_X0 + k * GHOST_DX            # 344,345,346,347 = 第一行四帧
-            y = GHOST_Y0
-            cell = atlas.crop((x, y, x + GHOST_W, y + GHOST_H))
-            cell.save(OUT / f"SPIRIT_{k}.png")
-            print(f"  SPIRIT_{k}.png  {GHOST_W}x{GHOST_H}  ← animal_spirits.png ({x},{y})  [sprite {344 + k}]")
+        for r in range(GHOST_ROWS):
+            for k in range(GHOST_FRAMES):
+                x = GHOST_X0 + k * GHOST_DX
+                y = GHOST_Y0 + r * GHOST_H
+                cell = atlas.crop((x, y, x + GHOST_W, y + GHOST_H))
+                cell.save(OUT / f"SPIRIT{r}_{k}.png")
+                print(f"  SPIRIT{r}_{k}.png  {GHOST_W}x{GHOST_H}  ← animal_spirits.png ({x},{y})"
+                      f"  [sprite {344 + r * 4 + k}]")
         print(f"→ {OUT}")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
