@@ -1309,8 +1309,25 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
     s->st.chain_kills = chain;
     s->st.last_kill_frame = s_frame;
     pofv_account_kill(&s->st);
-    if (pofv_storm_spawn(&s_storm, ev->x, ev->y, chain) < 0) {
-        if (!s->cap_logged) { ce_log("pofv: blast queue full — storm pool full, chain storm dropped"); s->cap_logged = 1; }
+    /* ★★ 2026-10-01（owner：「**th19 一手是灵的消弹半径是杂鱼消弹半径的可能两倍**」）：
+     *   死的是**我们自己撒的灵**时，起的那一下**半径取两倍**（= `dr × 寿命` 里的寿命 ×2 ✓，
+     *   `dr` 与一手的档→半径表都不动）。⇒ 用「任意场」入口显式给寿命，杂鱼那条路不变。*/
+    {
+        int gslot_early = pofv_ghost_find(&s_ghost, (int32_t)ev->id);
+        int ok;
+        if (gslot_early >= 0) {
+            int32_t life2 = pofv_storm_life_for_chain(chain) * POFV_GHOST_CANCEL_MUL;
+            ok = pofv_storm_spawn_field(&s_storm, ev->x, ev->y, POFV_STORM_R0, POFV_STORM_DR,
+                                        life2, POFV_STORM_KIND_STORM) >= 0;
+        } else {
+            ok = pofv_storm_spawn(&s_storm, ev->x, ev->y, chain) >= 0;
+        }
+        if (!ok) {
+            if (!s->cap_logged) {
+                ce_log("pofv: blast queue full — storm pool full, chain storm dropped");
+                s->cap_logged = 1;
+            }
+        }
     }
     /* ★ 2026-10-01（口径 5）：击破 ⇒ 在**原位**掉一把灵力道具（充能的那笔账从直加点改成经道具）。
      * O(1)（一次线性找空槽，≤ `POFV_POWER_MAX` 次比较）—— 清场帧 100–300 次也够便宜。*/

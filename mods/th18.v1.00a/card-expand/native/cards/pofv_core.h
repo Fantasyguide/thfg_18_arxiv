@@ -249,7 +249,11 @@ int32_t pofv_invuln_left(const pofv_invuln_t *w);
  *   ⚠ ❓ **自定**：一手的「档 → 半径」（`pofv_blast_radius`）与「dr=1.6」没动，
  *     只把**寿命**缩短 ⇒ 最终半径同比缩小（两者本来就是同一个数算出来的）。
  *     owner 实跑再嫌大/嫌小就调这一个系数。*/
-#define POFV_STORM_LIFE_SCALE     0.5f
+/* ★ owner 第二轮：「**最大扩张的半径都大了**」⇒ 0.5 → **0.3**（再收一档；❓ 自定）。*/
+/* ★★ 2026-10-01（owner：「**th19 一手是灵的消弹半径是杂鱼消弹半径的可能两倍**」）：
+ *   灵死时起的那一下，半径（= dr×寿命）取**两倍**。*/
+#define POFV_GHOST_CANCEL_MUL       2
+#define POFV_STORM_LIFE_SCALE     0.3f
 #define POFV_STORM_DR               1.6f /* ★ 一手：同一个节点的 dr = 1.6 px/帧（= 连锁前沿速度）*/
 #define POFV_STORM_SCANS_PER_FRAME  4    /* ❓ 自定：每帧最多几次**整池扫弹**（O(弹池) 的预算闸）*/
 #define POFV_STORM_DMG_LIFE         2    /* ❓ 自定（伤害源寿命；与旧 `POFV_BLAST_DMG_LIFE` 同值）*/
