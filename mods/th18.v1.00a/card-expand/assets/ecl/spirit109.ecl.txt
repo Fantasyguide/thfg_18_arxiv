@@ -104,7 +104,11 @@ CESpirit109_pure:
 CESpirit109_100:
     unless ($I0 != 999) goto CESpirit109_leave @ 0;
     unless ($I0 != 1) goto CESpirit109_calm @ 0;
-    movePosTime(1, 1, %F2, %F3);
+    // ★★★★ 2026-10-01 修（实跑日志定案）：这里原来每帧 `movePosTime(1,1,%F2,%F3)` = 追着卡侧写的目标
+    //   ⇒ **把入场那段一手的 `moveVel` 每帧覆盖掉** ✗✗ ⇒ 水獭实测「几乎直着下来」
+    //     （日志：spawn (-96,16) → killed (-83,212)，Δx 只有 **+13** ✗）。
+    //   ⇒ 一手 TH19 的动物霊**不追自机**（它们按自己的 `ins_404` 方向跑、攻击才瞄自机）✓
+    //     ⇒ **去掉追踪**，速度只在入场时设一次（各 kind 的 `moveVel` ✓）。
 +1: //1
     goto CESpirit109_100 @ 0;
 CESpirit109_calm:
