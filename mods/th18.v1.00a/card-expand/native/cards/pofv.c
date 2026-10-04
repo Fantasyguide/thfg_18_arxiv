@@ -944,9 +944,11 @@ static void storm_vm_sync(void)
              *   卡侧的 `r0/dr/寿命` 只用于**判定**（消弹/伤害半径 = 那张逐帧扩张的场）✓ ——
              *   两者分工：**判定按一手节点扩张**、**画面按一手脚本呼吸** ✓。
              *   寿命将尽时发 **interrupt 1** ⇒ 脚本的 `case(1)` 淡出 10 帧再删 ✓。*/
+            /* ★★ 2026-10-01 九改：视觉回到 **TH09 原版贴图**（TH19 那个在代码里，anm 抄不到）；
+             *   scale = `半径 / POFV_STORM_SPRITE_R(31)`（贴图 62×62 ⇒ 自身半径 31）✓。*/
+            float sc = (bl->r0 + bl->dr * (float)bl->age) / POFV_STORM_SPRITE_R;
             ce_anm_set_pos((uint32_t)s_storm_vm[i], bl->x, bl->y, 0.0f);
-            if (bl->life - bl->age == POFV_STORM_FADE_FRAMES)
-                ce_anm_interrupt((uint32_t)s_storm_vm[i], 1);
+            ce_anm_set_scale((uint32_t)s_storm_vm[i], sc, sc);
             ce_anm_set_color((uint32_t)s_storm_vm[i],
                              bl->kind == POFV_STORM_KIND_CA ? POFV_FIELD_RGBA_CA
                                                             : POFV_FIELD_RGBA_STORM);

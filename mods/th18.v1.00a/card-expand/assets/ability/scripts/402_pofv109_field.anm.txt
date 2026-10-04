@@ -37,25 +37,17 @@ script script402 {
     blendMode(2);
     type(1);
 0:
-    sprite(-1);
-    drawPoly(1.0f, 12);
-    color(128, 128, 255);
-    color2(64, 64, 64);
-    angleVel(0.017453292f, 0.0f, 0.017453292f);
-    alpha(200);
-    alpha2(40);
-    scale(13.0f, 13.0f);
-breathe:
-    scaleTime(20, 0, 14.0f, 14.0f);
-+20: // 20
-    scaleTime(20, 0, 12.0f, 12.0f);
-+20: // 40
-    jmp(breathe, 10);
+    // ═══★ 2026-10-01 九改（owner：「**没有自转啊——它是个圆怎么自转**」）═══════════════════
+    //   ★ owner 这句是**判定性反驳** ✓：一个极小的 `drawPoly(1,12)` 在版面上就是**一个圆**，
+    //     自转**看不出来** ⇒ **我找错了东西** ✗ —— `ghost.anm` script20/23/26/29 是
+    //     「**灵自己身上那圈光**」（`ghost.anm` 正是灵的美术，「极小 + 呼吸」正合灵的 aura）✗，
+    //     **不是連爆的暴风**。
+    //   ⇒ 我又去反编译連爆那条链（`FUN_0050c6d0`）—— **里面没有起特效 VM 的调用** ✗
+    //     ⇒ 再次印证：**TH19 的暴风是代码画的，不在 anm 里** ✓（与 hits 计数器同类）。
+    //   ⇒ 于是按 owner **先前给的授权**落地：「**如果 th18 里面没有对应函数，那就换成 th09 的暴风样式**」
+    //     —— 用 **TH09 原版那一格贴图**（owner 指认：`etama2.png` 倒数第二行最右侧
+    //     ＝ `sprite192 = {193,177,62,62}`，蓝色刺环）✓，切图见 `make_pofv109_storm_art.py` ✓。
+    sprite(@POFV109_STORM);
+    alpha(255);
     stop();
-    // ★ 收尾（卡侧在寿命将尽时发 interrupt 1，见 `POFV_STORM_FADE_FRAMES`）：淡出 10 帧再删。
-    interruptLabel(1);
-    alphaTime(10, 0, 0);
-    alpha2Time(10, 0, 0);
-+10:
-    delete();
 }
