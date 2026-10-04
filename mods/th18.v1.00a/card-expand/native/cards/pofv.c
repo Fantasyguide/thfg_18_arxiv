@@ -184,6 +184,8 @@ static uint32_t s_bossatk_scan_rot;
 #define POFV_FN_CANCEL_IMPENDING_DEATH  0x45d590
 
 /* 护盾的**跟随 VM** 尺寸与层（❓ 自定；层与结界同一档、在它上面一点）。 */
+/* ★ 外层黄光相对内层白圆的缩放（❓ 自定：外发光比本体大一圈 ⇒ 1.25）。*/
+#define POFV_SHIELD_GLOW_SCALE    1.25f
 #define POFV_SHIELD_VM_LAYER        8
 #define POFV_SHIELD_VM_SCALE     48.0f
 
@@ -423,7 +425,8 @@ static pofv_storm_profile_t s_storm_prof;   /* ★ 本帧的暴风档案（按�
  * 懒建：第一帧 tick 时起（`on_ctor` 发生在商店里，ANM 那边不一定就绪）；
  * `clear_card()` 里删（删卡那一刻 tick 停着 ⇒ 必须自己收，METHOD 铁律）。*/
 static int32_t s_aura_vm;
-static int32_t s_shield_vm;             /* ★ 护盾的跟随 VM（0 = 没起；见 §H）*/
+static int32_t s_shield_vm;             /* ★ 护盾**内层白圆**的跟随 VM（0 = 没起；见 §H）*/
+static int32_t s_shield_vm2;            /* ★ 护盾**外层黄光**的跟随 VM（先起 ⇒ 画在下面）*/
 static int32_t s_shield_broken_log;     /* 破盾那一发只打一行日志 */
 
 /* 每帧一次：选档案 → 推 Shift 蓄力 → 算圆心/半径 → 同步 VM。之后再拿这份状态去判弹与灵。 */
@@ -505,9 +508,22 @@ static void shield_vm_update(const pofv_card_t *s)
     int up = pofv_shield_up(&s->st);
 
     if (!pp) return;
+    /* ★★★ 2026-10-01（owner：「罩子的指示是一个白色半透明的圆形，**外面是黄色的外发光**」＋
+     *   「**缺少罩子**」）：**两层 VM** —— 外层黄光（脚本 403）**先起** ⇒ 引擎「后起者画在上面」
+     *   ⇒ 黄光在**下**、白圆在**上** ✓；两台的坐标相同、黄的那台**放大一圈** ✓。
+     *   ⚠ 为什么不用 TH19 那种一条指令的双色圆：那是 **`ins_617`**，**TH18 的 anm 解释器不认得** ✗
+     *     （与早先 ECL 在 609+ 上两作编号不同同一类坑）⇒ 用两台 TH18 原生 `drawPoly` 等价实现 ✓。*/
+    if (!s_shield_vm2)
+        s_shield_vm2 = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_SHIELD_GLOW,
+                                             POFV_SHIELD_VM_LAYER);
     if (!s_shield_vm)
         s_shield_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_SHIELD,
                                             POFV_SHIELD_VM_LAYER);
+    if (s_shield_vm2) {
+        float sc2 = up ? POFV_SHIELD_VM_SCALE * POFV_SHIELD_GLOW_SCALE : 0.0f;
+        ce_anm_set_pos((uint32_t)s_shield_vm2, pp[0], pp[1], 0.0f);
+        ce_anm_set_scale((uint32_t)s_shield_vm2, sc2, sc2);
+    }
     if (!s_shield_vm) return;
     ce_anm_set_pos((uint32_t)s_shield_vm, pp[0], pp[1], 0.0f);
     ce_anm_set_scale((uint32_t)s_shield_vm, up ? POFV_SHIELD_VM_SCALE : 0.0f,
@@ -1088,7 +1104,11 @@ static void do_boss_attack(pofv_card_t *s)
  *   ⇒ 出生点改成**顶边之上、横向在场地内**；灵自己的索敌（ECL 朝 `%F2/%F3` = 自机）把它**带下来**，
  *     正好就是「从上方落下 + 会朝你来」的观感 ✓。
  *   （另：owner 说「单人没有对方场地可送 ⇒ 两种灵都只能**自动生成**」⇒ 卡里那套 600 帧循环撒 ✓ 不动。）*/
-#define POFV_GHOST_OUT_Y       -40.0f  /* ★ 顶边之上（世界 y=0 之上）—— 从上方落下 ✓ */
+/* ★★ 2026-10-01 owner：「**在场外消失时引擎特性没办法**」＋「**把它们在版顶内部生成的动画做出来吧**」
+ *   ⇒ 不再放到场外（`y = −40` ✗ 会被引擎当越界**瞬间删掉** ⇒ 五只灵一只都看不见 ✓ 根因就是它）。
+ *   ⇒ 改成**版顶内部**（世界 y = 16，场地 y∈[0,448] 之内 ✓、又在自机可动范围 [32,432] 之上 ✓），
+ *     并用**生成动画**（脚本 372 的淡入 `alphaTime`）补上「从上方出现」的观感 ✓。*/
+#define POFV_GHOST_SPAWN_Y      16.0f
 #define POFV_GHOST_OUT_DX      48.0f   /* ❓ 自定：横向散布（每只错开一点，别叠成一条竖线）*/
 /* ★★ 2026-10-01 二改：脚本 372 现在画的是 **TH19 原版動物霊贴图**（`animal_spirits.png` 的
  *   `sprite344–347`，各 **48×32**）—— 第一次换成 TH09 的图被 owner 打回（「怎么上来有个莉莉白
@@ -1159,7 +1179,7 @@ static int ghost_spawn(pofv_card_t *s, int32_t kind)
      *   出生点 = **顶边之上**（世界 y = −40）、横向在场地内**错开散布** ⇒ 灵从**上方**落进场 ✓。
      *   （上一版从左边 `(−220,−40)` 进来 ✗ 已撤；「场外」在这里就是「版面上方」✓。）*/
     sp[0] = (float)((int)(s_ghost.spawned % 7) - 3) * POFV_GHOST_OUT_DX;
-    sp[1] = POFV_GHOST_OUT_Y;
+    sp[1] = POFV_GHOST_SPAWN_Y;
     sp[2] = 0.0f;
     *(int32_t *)(spawn + CE_SPAWN_SCORE) = 0;
     *(int32_t *)(spawn + CE_SPAWN_MAIN_DROP) = 0;   /* 奖励全走卡侧的灵力道具（口径 5）*/
@@ -1682,6 +1702,7 @@ static void clear_card(ce_card_t *c)
     /* ★ 结界的跟随 VM：同样必须在这里删（删卡那一刻 tick 停着，画面上的环不会自己走）。*/
     if (s_aura_vm) { ce_anm_delete((uint32_t)s_aura_vm); s_aura_vm = 0; }
     if (s_shield_vm) { ce_anm_delete((uint32_t)s_shield_vm); s_shield_vm = 0; }
+    if (s_shield_vm2) { ce_anm_delete((uint32_t)s_shield_vm2); s_shield_vm2 = 0; }
     s_shield_broken_log = 0;
     if (s->opt.ptr) ce_option_drop(c, &s->opt);   /* ★ 发射口（子机槽）必须收干净 */
     pofv_bossatk_stop(&s->bossatk);

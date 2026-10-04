@@ -348,7 +348,10 @@ int main(void)
         /* ★★ 2026-10-01：改用一手 TH09「自机弹命中」节点（r0 = 0 / dr = 1.6 / 寿命 6）
          *    ⇒ 出生帧 age = 0 ⇒ 半径 = r₀ = **0**（旧版是一手 etama 的 16）。*/
         CHECK(POFV_STORM_R0 == 0.0f);
-        CHECK(POFV_STORM_DR == 1.6f);                             /* ★ 一手 = 连锁前沿速度 */
+        /* ★★★ 2026-10-01 一手核实：节点构造函数 `0x41d050` 里 `fmuls 0x490f54`，
+     *   而 [0x490f54] = **0.5f** ⇒ 节点存的 **dr = 1.6 × 0.5 = 0.8 px/帧** ✓
+     *   （我此前直接用 push 的 1.6 = 张开速度快了一倍 ✗ = owner 的「速度不对」）。*/
+    CHECK(POFV_STORM_DR == 0.8f);                             /* ★ 一手 = 连锁前沿速度 */
         CHECK(pofv_storm_slot(&p, 0) != NULL);
         out = *pofv_storm_slot(&p, 0);
         pofv_storm_radius(&out, &r);
@@ -397,7 +400,7 @@ int main(void)
             CHECK(r > prev);
             prev = r;
             /* ★★★ 2026-10-01 一手核实（`th09:0x41fe93`）后**订正**：暴风寿命**与档无关** ——
-             *   一手只有那一条节点（dr 1.6 / 寿命 70 / 终点 112）。
+             *   一手只有那一条节点（dr **0.8** / 寿命 70 / 终点 **56**）。
              *   （旧断言「档把寿命拉长」来自我把 **CA 释放节点**的半径表用错在这里 ✗。）*/
             CHECK(pofv_storm_life_for_chain(i) == POFV_STORM_LIFE_FRAMES);
             prevlife = pofv_storm_life_for_chain(i);
