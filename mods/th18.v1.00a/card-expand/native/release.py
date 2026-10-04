@@ -99,6 +99,27 @@ def _gate_contract():
       · 而 `release.py` 过去**不跑这个检查** ⇒ 违反契约的构建照样能发出去 ✗（本次事故的直接原因 ✓）。
     ⇒ 所以：**契约不过 = 拒绝发布** ✓。
     """
+    # ★★ 2026-10-04 追加：**dist 必须与 patch 同步** —— 本次事故的第二层原因 ✗：
+    #   我改了 `patch/th18/cards.js`（category 2→0）却**没先 `make dist`** ⇒ 发出去的是**旧的 dist** ✗
+    #   ⇒ modkit 里那份 `cards.js` 仍然没有 category ⇒ 实跑依旧「契约不过 + 禁用全部新卡」✗。
+    #   ⇒ 这里直接比 `patch/` 与 `dist/` 的那份 JSON，不一致就拒绝发布 ✓。
+    import json as _json
+    for rel in ("th18/cards.js",):
+        src = os.path.join(HERE, "..", "patch", rel)
+        dst = os.path.join(DIST, "patch-step3", rel)
+        if not (os.path.exists(src) and os.path.exists(dst)):
+            continue
+        try:
+            a = _json.load(open(src, encoding="utf-8"))
+            b = _json.load(open(dst, encoding="utf-8"))
+        except Exception as e:                      # noqa: BLE001
+            sys.stderr.write("\n❌ 读 %s 失败：%s\n" % (rel, e)); raise SystemExit(4)
+        if a != b:
+            sys.stderr.write(
+                "\n❌ **dist 过期**：`patch/%s` 与 `dist/patch-step3/%s` 不一致 ⇒ 拒绝发布。\n"
+                "   先跑 `make dist` 再发布（本次存档事故就是漏了这一步 ✗）。\n" % (rel, rel))
+            raise SystemExit(4)
+
     r = subprocess.run([sys.executable, os.path.join(HERE, "tools", "contract_check.py")],
                        cwd=HERE, text=True, capture_output=True)
     if r.returncode != 0:
