@@ -742,7 +742,7 @@ int main(void)
 
     /* ==================== I. 灵（自制真敌人）的句柄池与循环撒节拍 ====================
      * owner 口径 8/9/10：灵都自建、按周期循环撒、任何 boss 在场就不撒、同屏上限 4（一手 TH09）。 */
-    CHECK(POFV_GHOST_MAX == 4);                              /* ★ 一手 TH09 的槽数 */
+    CHECK(POFV_GHOST_MAX == 5);                              /* ★ owner 实跑：同屏能到 5 */
     CHECK(POFV_GHOST_CYCLE_FRAMES > 0);
     CHECK(POFV_GHOST_CALM_FRAMES > 0);
     CHECK(POFV_GHOST_HP > POFV_GHOST_HP_CALM);               /* 沈静化 = 耐久骤降（一手 TH19） */
@@ -778,9 +778,10 @@ int main(void)
         CHECK(pofv_ghost_cycle_tick(&g, 1, &kind) == 0);
         CHECK(g.cycle == 0);                                 /* boss 一走立刻就能撒（不被罚一个周期）*/
         CHECK(pofv_ghost_cycle_tick(&g, 0, &kind) == 1 && g.cycle == POFV_GHOST_CYCLE_FRAMES);
-        CHECK(pofv_ghost_register(&g, 103, kind) == 3);      /* 第 4 只 ⇒ 满员 */
+        CHECK(pofv_ghost_register(&g, 103, kind) == 3);      /* 第 4 只 */
+        CHECK(pofv_ghost_register(&g, 104, kind) == 4);      /* 第 5 只 ⇒ 满员（owner：能到 5）*/
 
-        /* 同屏上限（一手 TH09 = 4）：满员时即使节拍到点也不撒 */
+        /* 同屏总数上限（owner 实跑 = 5）：满员时即使节拍到点也不撒 */
         CHECK(g.live == POFV_GHOST_MAX);
         g.cycle = 0;
         CHECK(pofv_ghost_register(&g, 999, 0) == -1);        /* 池满 */

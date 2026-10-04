@@ -784,8 +784,16 @@ int  pofv_bossatk_is_boss(const pofv_bossatk_t *b);
  *   · 成佛计时 = **160** 帧 —— 🟡 一手 TH19 `GhostPureOrinDisable` 的 `wait(100)` + `wait(60)`
  *     （⚠ 一手**没有**自毁指令，见 `06` §10.4；本卡把它当「自然成佛」的时长，登记 ❓）。*/
 
-#define POFV_GHOST_MAX              4      /* ★ 一手 TH09 的槽数 = 4（同屏上限）*/
-#define POFV_GHOST_CYCLE_FRAMES   600      /* ❓ 自定（owner 2026-10-01 拍）*/
+/* ★★ 2026-10-01 owner（实跑观测 + 要我照一手核）：
+ *   「同屏来讲，**动物灵可能不超过 1-3 只**；**纯净灵和幽灵一般还很多，能到 5 只**」
+ *   ＋「这涉及到**召唤量**，目前肯定不够」。
+ *   ⚠ 一手核对结果：ghost 构造函数 `0x51d4e0` 的**两个调用点**（`0x41ea17` / `0x50c436`）里，
+ *     `0x50c436` 那处按 `EnemyInf+0x63A0 & 0x700000` 分派成 **kind 3 / kind 4**（对上仓库记的
+ *     「5→kind 3、6→kind 4」✓）；上限**没在构造函数里**（`0x41e9e9` 那个 `cmpl $0,0x124(%esi)` 是
+ *     「有预算才撒」的判断 ✗ 不是同屏上限）⇒ **同屏上限未定音**，按 owner 的实跑观测落地 ✓。*/
+#define POFV_GHOST_MAX              5      /* ★ owner：同屏总数（纯净灵/幽灵能到 5）*/
+#define POFV_GHOST_ANIMAL_MAX       3      /* ★ owner：**动物灵**同屏不超过 1–3 只 */
+#define POFV_GHOST_CYCLE_FRAMES   180      /* ❓ owner：「**召唤量肯定不够**」⇒ 600 → 180（3 秒一只）*/
 #define POFV_GHOST_CALM_FRAMES    160      /* 🟡 一手 TH19 的 wait(100)+wait(60) */
 #define POFV_GHOST_HP             400      /* ❓ 本卡取值（TH19 enable 侧 400 + I0*400，I0 = 0）*/
 #define POFV_GHOST_HP_CALM         50      /* ✅ 一手 TH19 沈静化后 50 + I0*10（I0 = 0）*/

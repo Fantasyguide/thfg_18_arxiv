@@ -947,9 +947,26 @@ int pofv_ghost_cycle_tick(pofv_ghost_pool_t *p, int boss_present, int32_t *out_k
     if (p->cycle > 0) --p->cycle;
     if (p->cycle > 0) return 0;
     if (boss_present) return 0;                     /* 口径 9：任何 boss 在场就不撒（不重置）*/
-    if (p->live >= POFV_GHOST_MAX) return 0;        /* 同屏上限（一手 TH09 = 4）*/
+    if (p->live >= POFV_GHOST_MAX) return 0;        /* 同屏总数上限（owner：能到 5）*/
+    /* ★★ 2026-10-01（owner：「**动物灵可能不超过 1-3 只**；纯净灵和幽灵…能到 5 只」）：
+     *   先数同屏**动物灵**（kind 0/1/2 = 狼/獺/鷲）—— 满了就把这一只**改撒纯净灵** ✓
+     *   （不是跳过：owner 说纯净灵/幽灵「还很多」⇒ 要保证它们能持续来 ✓）。*/
+    {
+        int i, animals = 0;
+        for (i = 0; i < POFV_GHOST_MAX; ++i) {
+            if (!p->s[i].active) continue;
+            if (p->s[i].kind == POFV_GHOST_KIND_WOLF || p->s[i].kind == POFV_GHOST_KIND_OTTER ||
+                p->s[i].kind == POFV_GHOST_KIND_EAGLE) ++animals;
+        }
+        if (out_kind) {
+            int32_t k = p->next_kind;
+            int is_animal = (k == POFV_GHOST_KIND_WOLF || k == POFV_GHOST_KIND_OTTER ||
+                             k == POFV_GHOST_KIND_EAGLE);
+            if (is_animal && animals >= POFV_GHOST_ANIMAL_MAX) k = POFV_GHOST_KIND_PURE;
+            *out_kind = k;
+        }
+    }
     p->cycle = POFV_GHOST_CYCLE_FRAMES;             /* 撒成功才重新计时 */
-    if (out_kind) *out_kind = p->next_kind;
     p->next_kind = (p->next_kind + 1) % POFV_GHOST_KIND_MAX;
     return 1;
 }
