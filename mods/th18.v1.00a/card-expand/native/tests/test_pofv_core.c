@@ -360,7 +360,9 @@ int main(void)
          * 到寿命那一刻 = `dr × life`（★ 2026-10-01 owner 嫌「暴风太大」⇒ 寿命乘了系数收小）。*/
         {
             int32_t life1 = pofv_storm_life_for_chain(1);
-            CHECK(life1 == (int32_t)(176.0f / POFV_STORM_DR * POFV_STORM_LIFE_SCALE + 0.5f));
+            /* ★★★ 2026-10-01 一手核实（`th09:0x41fe93`）：暴风那条节点 = dr 1.6 **寿命 70**
+             *   ⇒ 终点半径 112 —— 与连爆档**无关**（我把 CA 释放节点 176 那套用错在这里过 ✗）。*/
+            CHECK(life1 == POFV_STORM_LIFE_FRAMES);
             CHECK(out.life == life1);
             for (i = 0; i < life1 - 1; ++i) {
                 pofv_storm_tick(&p);
@@ -394,12 +396,15 @@ int main(void)
             pofv_storm_final_radius(i, &r);
             CHECK(r > prev);
             prev = r;
-            /* ★ owner「连爆档只放大范围」：dr 恒定 ⇒ 档只把**寿命**拉长 */
-            CHECK(pofv_storm_life_for_chain(i) > prevlife);
+            /* ★★★ 2026-10-01 一手核实（`th09:0x41fe93`）后**订正**：暴风寿命**与档无关** ——
+             *   一手只有那一条节点（dr 1.6 / 寿命 70 / 终点 112）。
+             *   （旧断言「档把寿命拉长」来自我把 **CA 释放节点**的半径表用错在这里 ✗。）*/
+            CHECK(pofv_storm_life_for_chain(i) == POFV_STORM_LIFE_FRAMES);
             prevlife = pofv_storm_life_for_chain(i);
         }
-        CHECK(pofv_storm_life_for_chain(0) == pofv_storm_life_for_chain(1));      /* 越界钳 */
-        CHECK(pofv_storm_life_for_chain(99) == pofv_storm_life_for_chain(POFV_BLAST_CHAIN_MAX));
+        (void)prevlife;
+        CHECK(pofv_storm_life_for_chain(0) == POFV_STORM_LIFE_FRAMES);            /* 与档无关 */
+        CHECK(pofv_storm_life_for_chain(99) == POFV_STORM_LIFE_FRAMES);
         pofv_storm_final_radius(1, &r);
         CHECK(r == 176.0f);
     }

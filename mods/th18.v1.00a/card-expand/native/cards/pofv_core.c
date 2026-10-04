@@ -337,18 +337,13 @@ void pofv_storm_profile_for(int character, pofv_storm_profile_t *out)
 
 int32_t pofv_storm_life_for_chain(int32_t chain)
 {
-    float r1;
-    int32_t c, life;
-
-    c = clamp_i32(chain, 1, POFV_BLAST_CHAIN_MAX);
-    pofv_blast_radius(c, &r1);
-    if (POFV_STORM_DR <= 0.0f) return 1;
-    life = (int32_t)((r1 - POFV_STORM_R0) / POFV_STORM_DR + 0.5f);   /* 四舍五入 */
-    /* ★ 2026-10-01（owner：「暴风的**持续时间**太大了导致过大」）：寿命乘系数 ⇒ 半径同比缩小。
-     *   ⚠ ❓ 自定（见 `POFV_STORM_LIFE_SCALE` 的注释）。*/
-    life = (int32_t)((float)life * POFV_STORM_LIFE_SCALE + 0.5f);
-    if (life < 1) life = 1;
-    return life;
+    /* ★★★ 2026-10-01 一手核实（`th09:0x41fe93`）：暴风那条节点 = r0 0 / dr 1.6 / **寿命 70**
+     *   ⇒ 终点半径 = **112 px** ✓。**与连爆档无关**（一手只有这一条节点）。
+     *   ⚠ 本函数此前用「档 → 半径」表（176/224/272/320，那是 **CA 释放节点** `0x41e875` 的值 ✗）
+     *     反推寿命 ⇒ 暴风被放大了近 3 倍 ✗（owner：「暴风没那么大」）。
+     *   `chain` 形参保留只为**接口稳定**（日志/单测仍传档），本函数不再用它。*/
+    (void)chain;
+    return POFV_STORM_LIFE_FRAMES;
 }
 
 void pofv_storm_final_radius(int32_t chain, float *out)
