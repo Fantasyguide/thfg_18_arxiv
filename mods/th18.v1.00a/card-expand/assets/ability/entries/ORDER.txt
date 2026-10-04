@@ -1005,6 +1005,12 @@ POFV109_SPIRIT4_0  ability/pofv109_spirit/SPIRIT4_0.png  48x32
 POFV109_SPIRIT4_1  ability/pofv109_spirit/SPIRIT4_1.png  48x32
 POFV109_SPIRIT4_2  ability/pofv109_spirit/SPIRIT4_2.png  48x32
 POFV109_SPIRIT4_3  ability/pofv109_spirit/SPIRIT4_3.png  48x32
+# 109 的**暴风**贴图：★ **TH09 原版**那一格（owner 指认「etama2.png 倒数第二行最右侧」＋
+#   「如果 th18 里面没有对应函数，那就换成 th09 的暴风样式」）。
+#   一手：`th09.dat` 的 `etama.anm` entry1 = `etama2.png`，**sprite192 = {193,177,62,62}**（图集右边缘）
+#   ＝ 蓝色的刺环（正是卡里一直叫的「蓝圈」）。切图 = `make_pofv109_storm_art.py`。
+#   画法 = `scripts/402_pofv109_field.anm.txt`（一个 sprite，卡侧按 `半径 / 31` 写 scale）。
+POFV109_STORM  ability/pofv109_storm/STORM.png  62x62
 POFV109_HITS_D0  ability/pofv109_hits/D0.png  32x37
 POFV109_HITS_D0_EDGE  ability/pofv109_hits/D0_EDGE.png  32x37
 POFV109_HITS_D1  ability/pofv109_hits/D1.png  32x37

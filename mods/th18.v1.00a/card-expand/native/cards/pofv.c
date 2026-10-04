@@ -206,6 +206,9 @@ static uint32_t s_bossatk_scan_rot;
  *   一手（`engine/player/th18/01-position-and-state-timers.md`）：弹幕区 x ∈ ±192、y ∈ [0,448]
  *   （玩家自己内缩到 ±184 / [32,432]）。*/
 /* 场的视觉（脚本 402）画在第几层 + 两种场的染色（`ce_anm_set_color` 是 **AARRGGBB**）。*/
+/* ★ TH09 暴风贴图（`POFV109_STORM`）的**自身半径**：62×62 的图 ⇒ 31 px。
+ *   卡侧写 scale = `场半径 / 这个值` ⇒ 贴图边缘正好落在判定半径上（**判定 = 绘制**）✓。*/
+#define POFV_STORM_SPRITE_R      31.0f
 #define POFV_STORM_VM_LAYER        6
 #define POFV_FIELD_RGBA_STORM 0xa04080ffu   /* 暴风 = 蓝（代码里一直叫它「蓝圈」）*/
 #define POFV_FIELD_RGBA_CA    0xa0ff4040u   /* 蓄力攻击红圈 = 红（一手就叫红圈）*/
@@ -933,9 +936,12 @@ static void storm_vm_sync(void)
                                                   POFV_STORM_VM_LAYER);
         if (!s_storm_vm[i]) continue;                      /* anm 还没就绪：下一帧再补 */
         {
+            /* ★★ 2026-10-01：场的视觉改成 **TH09 贴图**（`POFV109_STORM`，62×62 ⇒ 自身半径 31）
+             *   ⇒ scale = `半径 / 31`（**判定 = 绘制** 的口径不变 ✓）。*/
             float r = bl->r0 + bl->dr * (float)bl->age;
+            float sc = r / POFV_STORM_SPRITE_R;
             ce_anm_set_pos((uint32_t)s_storm_vm[i], bl->x, bl->y, 0.0f);
-            ce_anm_set_scale((uint32_t)s_storm_vm[i], r, r);
+            ce_anm_set_scale((uint32_t)s_storm_vm[i], sc, sc);
             ce_anm_set_color((uint32_t)s_storm_vm[i],
                              bl->kind == POFV_STORM_KIND_CA ? POFV_FIELD_RGBA_CA
                                                             : POFV_FIELD_RGBA_STORM);
