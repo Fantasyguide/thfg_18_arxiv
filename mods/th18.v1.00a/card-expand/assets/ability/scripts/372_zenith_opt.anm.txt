@@ -1,0 +1,44 @@
+script script372 {
+    // 天顶剑（id 87）的**跟班本体** —— 由 `Player__allocate_option` 起（脚本号当它的最后一个栈参）。
+    // 骨架照原生子机脚本 script2 / script16 与本 mod 的 script88（破损核心）/ script102（豌豆射手）：
+    // interruptLabel(2) 出场、(3) 进店收起、(1) 销毁 —— 三个都是引擎发的，卡不自己发。
+    // 贴图 = Terraria 原版「天顶剑」**物品本体**（`ZENITH_BLADE_ZENITH` = Item_4956，56×56；图集
+    // `ATLAS_ZENITH_BLADE` 的第 21 个成员，见 entries/ORDER.txt 末段）—— 这里只是**默认值**：
+    // C 每 ZN_FAM_PERIOD 帧用 `ce_anm_set_sprite` 换成同一图集里的下一把（owner：「跟班也轮流显示整组 21 把」）。
+    // 场上约 24 px（scale 0.42，56×0.42 = 23.5）；站位（右前方）由 C 写 option+0x64/0x6c，脚本不碰 pos。
+-1:
+    layer(13);
+    blendMode(1);
+    type(1);
+    zWriteDisable(1);
+0:
+    interruptLabel(2);
+    sprite(@RETIRED_BLANK);   // ★ 2026-10-03 owner：「天顶剑似乎并没有压在自机身下」——
+                              //   原来这里挂剑的贴图、靠 C 写透明色去藏，但 option VM 的
+                              //   **颜色/位置归引擎的 option tick 管**，写进去会被覆写 ⇒ 剑照样露在自机身上。
+                              //   改成挂 **1×1 全透明** 贴图（ORDER 里现成的 `RETIRED_BLANK`）：
+                              //   引擎爱怎么写颜色/位置都画不出东西，VM 只剩"定位锚"身份（剑刃从它坐标出发）。
+                              //   要改成"**露在自机身下**"（能看见一点）就把这行换回剑的贴图 + `layer(6)`。
+    scale(0.0f, 0.0f);
+    scaleTime(10, 4, 0.42f, 0.42f);
+    angleVel(0.0f, 0.0f, 0.01308997f);   // 每帧 0.75°：极慢自转（活着，但不抢视线）
+    alpha(255);
++10: // 10
+    blendMode(0);
+breathe:
+    alphaTime(20, 4, 190);
++20: // 30
+    alphaTime(20, 4, 255);
++20: // 50
+    jmp(breathe, 10);
+    stop();
+    interruptLabel(3);
+    scaleTime(20, 4, 0.0f, 0.0f);
++20:
+    stop();
+    interruptLabel(1);
+    blendMode(1);
+    scaleTime(20, 4, 0.0f, 3.0f);
++20:
+    delete();
+}

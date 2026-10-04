@@ -1,0 +1,15 @@
+script script380 {
+    // 鞘翅重锤的**锤子**（`ELYTRA_MACE_HAMMER` = Minecraft 的 mace，16×16）。
+    // C 在砸击那 18 帧里每帧写 pos / rotation.z（从右上抡到左下），scale 4 ⇒ 场上 64×64。
+    // layer 22：压在场地与自机之上（❓ 自定；实跑若被自机盖住就把这里改大）。
+-1:
+    layer(22);
+    sprite(@ELYTRA_MACE_HAMMER);
+    type(1);
+    blendMode(1);
+    zWriteDisable(1);
+    scale(4.0f, 4.0f);
+    alpha(255);
+0:
+    stop();
+}

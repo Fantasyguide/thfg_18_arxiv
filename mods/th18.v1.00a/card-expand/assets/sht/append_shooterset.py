@@ -1945,90 +1945,6 @@ def _youkai_tier_sets(target_file: str, anm_ids: dict) -> list:
     return out
 
 
-def _pofv109_bossatk_sets(anm_ids: dict) -> list:
-    """→ 4 组：109「花映塚 × 獣王園」的**蓄力攻击弹幕**（C1/C2/C3/C4，密度递进）。
-
-    ## 一手：TH09 的蓄力阶梯（`0x41fb42`–`0x41fbd8` 那条松手支，三档完全同形）
-    每一档 = **送攻击 + 扣蓄力 + 8 帧计时 + 消弹圈**：
-
-    | 档 | 门槛 | 送攻击 | 扣蓄力 | 消弹圈 |
-    | --- | --- | --- | :-: | --- |
-    | 0 | ≥200 | `0x403e50(0,0,0,名字)` | 100 | L1 `0x403c30` = 0 / 4.0 / 48 → 192 |
-    | 1 | ≥300 | `0x403e50(1,1,0,名字)` | 200 | L2 `0x403c90` = 0 / 4.0 / 64 → 256 |
-    | 2 | ≥400 且无 kind-3 boss | `0x403e50(2,2,0,名字)` | 300 | L3 `0x403cf0` = 0 / 3.5 / 128 → 448 |
-
-    「送攻击」往里走 = `0x4a00c0[档]` 的载体 → `0x440c80` → **`0x40f1d0`**（在对方 `EnemyManager`
-    生成敌机，type = 档号）。
-
-    ## 单机化（owner 口径）
-    ★ owner：「**C1 和 C2 本来就是自己攻击己方敌人的呀**」＋「自己会额外发射如对战作送到对面的
-    攻击，但是这些攻击**是会对敌人造成伤害的**」＋「这些弹幕得**往"上"打**」
-    ＋「**也可以画在自己这边，但是是对敌人造成伤害**」。
-    ⇒ 四档都做成**从自机往上打的原生自机弹幕**（打的就是自己场上的敌人），密度/单发伤害按档递进
-      —— 与一手的「档越高：扣得越多、消弹圈越大」同向。
-    ★★ 观感（owner「最好观感一致」＋「伤敌弹幕除非是自机弹样式就必须上额外透明度、50% 起步」）：
-      `anm` = **`CE_ANM_ABILITY_SCRIPT_POFV109_BOSSATK`（script 376）** ——
-      **形状照敌弹**（同 `bullet.anm` script2 的 `sprite(-1)` + `drawPoly(8.0f, 32)`，半径 8 与行的
-      `hit_w/hit_h = 16` 一致）＋ **`alpha(112)`（≈56% 透明，过 50% 那条线）**。
-      ⇒ **观感与 boss 的弹同族，但半透明 = 一眼知道是自己打出去的**。
-    """
-    # ★★ owner 2026-10-01 把四档的**取向**分开了：「**C1 主要是打伤害，C2 也算是打伤害，
-    #   C3 C4 是打对面**」。⇒ 本表照这个取向配：
-    #   · **C1 / C2 = 伤害取向**：**少而重**（路数少、单发重、节奏慢）；
-    #   · **C3 / C4 = 打对面取向**：**多而密**（路数多、扇面宽、节奏快 = 符卡/非符的观感）。
-        # ★★★ 2026-10-01 重做（owner 实跑订正 #3）：**四档都是「环」**。
-    #   一手（`engine/card/th09/03` §4.5）：TH09 三角色的符卡用的都是 `etRing` / `etRingAway`
-    #   （名字从**同代** th08 的手工 eclmap 借来：opcode 99 = `etRing`、101 = `etRingAway`）：
-    #     · 灵梦 = 两种环各两组、颗数 **2 与 15**、两侧不对称；
-    #     · 魔理沙 = 环的**基准角 3π/4 与 π/4**（斜向）；
-    #     · 咲夜 = 速度实参 **2.0f**（比另两位的 0.5f 快 4 倍）＋ `shoot_offset` ＋ 子敌人。
-    #   ⇒ 本表把「一颗子弹 = 一行」堆成**整圈**（N 行 = N 颗环），四档的差别照一手取在
-    #     **颗数 / 圈数 / 速度**上：
-    #       C1 = 1 圈 6 颗（≈ 灵梦那圈「少」的）
-    #       C2 = 1 圈 12 颗
-    #       C3 = 2 圈（12 + 12，第二圈整圈偏 15°≈ 魔理沙那种「斜基准角」）
-    #       C4 = 1 圈 12 颗但**速度 ×1.5**（≈ 咲夜那圈「快 4 倍」的方向；我们的速度空间另算，
-    #            取 24 = 16×1.5，别直接搬一手的 2.0f）
-    #   ⚠ 方向：环是**整圈**（360°），所以「由下至上」体现为**环心在自机、环整体向上推进** ——
-    #     owner「版底 boss 位、180° 反转、往上发」在「整圈」这种形态下就是**环本身**。
-    U = -1.5707964
-
-    def arc(n, spread=math.pi, speed=16.0, rate=5, dmg=12, phase=0.0):
-        """n 颗**以正上方为中心**的扇形（`spread` = 总张角；默认 π = 上半圈）。
-
-        ★★ 为什么是「朝上的扇形」而不是「整圈」（owner 2026-10-01 的最终模型）：
-          「自机都是从下往上打，上面是 boss……把**另一侧的场地拉过来，并且 180° 反转**！
-           也就是说，在**我们的版底生成一个 boss**……你发弹得按照**我是 boss 往上发**」
-          ⇒ 发射锚点在**版底**（`cards/pofv.c` 的 `POFV_BOSSATK_ANCHOR_X/Y` = (192, 440)）。
-          一手 TH09 的 `etRing` 是**整圈**，但那是「boss 在对手场地的**上方**」时发的；
-          把对手场地 180° 反转搬到我们版底后，那个「朝向对手」的半圈 = **我们的上半圈**
-          （朝下的半圈会当场出屏）⇒ 这里只发**朝上的那一半**。
-        """
-        rows = []
-        for k in range(n):
-            t = (k / (n - 1) - 0.5) if n > 1 else 0.0
-            rows.append((0.0, U + t * spread + phase, speed, rate, dmg))
-        return rows
-
-    specs = [
-        ("POFV109_BOSSATK_C1", arc(6,  speed=16.0, rate=6, dmg=14)),             # 6 颗：上半圈
-        ("POFV109_BOSSATK_C2", arc(12, speed=16.0, rate=5, dmg=11)),             # 12 颗：上半圈
-        ("POFV109_BOSSATK_C3", arc(12, speed=16.0, rate=5, dmg=10)               # 两层上半圈（错 15°）
-                               + arc(12, speed=16.0, rate=5, dmg=10, phase=math.pi / 12.0)),
-        ("POFV109_BOSSATK_C4", arc(12, speed=24.0, rate=3, dmg=10)),             # 12 颗、速度 ×1.5
-    ]
-    out = []
-    for i, (_key, rows) in enumerate(opt_specs):
-        rs = [_marisa_opt_row(_key[0], rate, dmg, ang) for rate, dmg, ang in rows]
-        out.append((f"MARISA_OPT_{i:02d}",
-                    b"".join(pack_shooter(r, anm_ids) for r in rs) + TERMINATOR))
-    for i, (dmg, _elem) in enumerate(main_specs):
-        rs = _marisa_main_rows(dmg)
-        out.append((f"MARISA_MAIN_{i:02d}",
-                    b"".join(pack_shooter(r, anm_ids) for r in rs) + TERMINATOR))
-    return out
-
-
 def marisa_layout_maps() -> tuple:
     """给 `write_ids_h` 用的 `(opt_map, main_map)`（绝对槽号 / −1）。"""
     _o, _m, opt_map, main_map = _marisa_layout()
@@ -2525,106 +2441,6 @@ def _youkai_tier_sets(target_file: str, anm_ids: dict) -> list:
     return out
 
 
-def _pofv109_bossatk_sets(anm_ids: dict) -> list:
-    """→ 4 组：109「花映塚 × 獣王園」的**蓄力攻击弹幕**（C1/C2/C3/C4，密度递进）。
-
-    ## 一手：TH09 的蓄力阶梯（`0x41fb42`–`0x41fbd8` 那条松手支，三档完全同形）
-    每一档 = **送攻击 + 扣蓄力 + 8 帧计时 + 消弹圈**：
-
-    | 档 | 门槛 | 送攻击 | 扣蓄力 | 消弹圈 |
-    | --- | --- | --- | :-: | --- |
-    | 0 | ≥200 | `0x403e50(0,0,0,名字)` | 100 | L1 `0x403c30` = 0 / 4.0 / 48 → 192 |
-    | 1 | ≥300 | `0x403e50(1,1,0,名字)` | 200 | L2 `0x403c90` = 0 / 4.0 / 64 → 256 |
-    | 2 | ≥400 且无 kind-3 boss | `0x403e50(2,2,0,名字)` | 300 | L3 `0x403cf0` = 0 / 3.5 / 128 → 448 |
-
-    「送攻击」往里走 = `0x4a00c0[档]` 的载体 → `0x440c80` → **`0x40f1d0`**（在对方 `EnemyManager`
-    生成敌机，type = 档号）。
-
-    ## 单机化（owner 口径）
-    ★ owner：「**C1 和 C2 本来就是自己攻击己方敌人的呀**」＋「自己会额外发射如对战作送到对面的
-    攻击，但是这些攻击**是会对敌人造成伤害的**」＋「这些弹幕得**往"上"打**」
-    ＋「**也可以画在自己这边，但是是对敌人造成伤害**」。
-    ⇒ 四档都做成**从自机往上打的原生自机弹幕**（打的就是自己场上的敌人），密度/单发伤害按档递进
-      —— 与一手的「档越高：扣得越多、消弹圈越大」同向。
-    ★★ 观感（owner「最好观感一致」＋「伤敌弹幕除非是自机弹样式就必须上额外透明度、50% 起步」）：
-      `anm` = **`CE_ANM_ABILITY_SCRIPT_POFV109_BOSSATK`（script 376）** ——
-      **形状照敌弹**（同 `bullet.anm` script2 的 `sprite(-1)` + `drawPoly(8.0f, 32)`，半径 8 与行的
-      `hit_w/hit_h = 16` 一致）＋ **`alpha(112)`（≈56% 透明，过 50% 那条线）**。
-      ⇒ **观感与 boss 的弹同族，但半透明 = 一眼知道是自己打出去的**。
-    """
-    # ★★ owner 2026-10-01 把四档的**取向**分开了：「**C1 主要是打伤害，C2 也算是打伤害，
-    #   C3 C4 是打对面**」。⇒ 本表照这个取向配：
-    #   · **C1 / C2 = 伤害取向**：**少而重**（路数少、单发重、节奏慢）；
-    #   · **C3 / C4 = 打对面取向**：**多而密**（路数多、扇面宽、节奏快 = 符卡/非符的观感）。
-        # ★★★ 2026-10-01 重做（owner 实跑订正 #3）：**四档都是「环」**。
-    #   一手（`engine/card/th09/03` §4.5）：TH09 三角色的符卡用的都是 `etRing` / `etRingAway`
-    #   （名字从**同代** th08 的手工 eclmap 借来：opcode 99 = `etRing`、101 = `etRingAway`）：
-    #     · 灵梦 = 两种环各两组、颗数 **2 与 15**、两侧不对称；
-    #     · 魔理沙 = 环的**基准角 3π/4 与 π/4**（斜向）；
-    #     · 咲夜 = 速度实参 **2.0f**（比另两位的 0.5f 快 4 倍）＋ `shoot_offset` ＋ 子敌人。
-    #   ⇒ 本表把「一颗子弹 = 一行」堆成**整圈**（N 行 = N 颗环），四档的差别照一手取在
-    #     **颗数 / 圈数 / 速度**上：
-    #       C1 = 1 圈 6 颗（≈ 灵梦那圈「少」的）
-    #       C2 = 1 圈 12 颗
-    #       C3 = 2 圈（12 + 12，第二圈整圈偏 15°≈ 魔理沙那种「斜基准角」）
-    #       C4 = 1 圈 12 颗但**速度 ×1.5**（≈ 咲夜那圈「快 4 倍」的方向；我们的速度空间另算，
-    #            取 24 = 16×1.5，别直接搬一手的 2.0f）
-    #   ⚠ 方向：环是**整圈**（360°），所以「由下至上」体现为**环心在自机、环整体向上推进** ——
-    #     owner「版底 boss 位、180° 反转、往上发」在「整圈」这种形态下就是**环本身**。
-    U = -1.5707964
-
-    def arc(n, spread=math.pi, speed=16.0, rate=5, dmg=12, phase=0.0):
-        """n 颗**以正上方为中心**的扇形（`spread` = 总张角；默认 π = 上半圈）。
-
-        ★★ 为什么是「朝上的扇形」而不是「整圈」（owner 2026-10-01 的最终模型）：
-          「自机都是从下往上打，上面是 boss……把**另一侧的场地拉过来，并且 180° 反转**！
-           也就是说，在**我们的版底生成一个 boss**……你发弹得按照**我是 boss 往上发**」
-          ⇒ 发射锚点在**版底**（`cards/pofv.c` 的 `POFV_BOSSATK_ANCHOR_X/Y` = (192, 440)）。
-          一手 TH09 的 `etRing` 是**整圈**，但那是「boss 在对手场地的**上方**」时发的；
-          把对手场地 180° 反转搬到我们版底后，那个「朝向对手」的半圈 = **我们的上半圈**
-          （朝下的半圈会当场出屏）⇒ 这里只发**朝上的那一半**。
-        ⚠ **DPS 待重定**（owner 2026-10-01：「向上发的『华丽』弹幕 —— dps 还得重新考虑，
-          可以先填占位」）⇒ 本表里的 `dmg` / `rate` / `speed` 一律**占位**，登记在 `TUNING.md`。
-        """
-        rows = []
-        for k in range(n):
-            t = (k / (n - 1) - 0.5) if n > 1 else 0.0
-            rows.append((0.0, U + t * spread + phase, speed, rate, dmg, 0))
-        return rows
-
-    def aimed(k, speed=18.0, rate=6, dmg=12):
-        """k 条**自机狙**行（`func_on_init = 5`）。
-
-        ★ 一手（`engine/sht/th18/02-shooter-record.md` §5 + §3 的函数表）：
-          行填 `func_on_init = 5` ⇒ 建弹时 `0x4612d0` 会读 `PLAYER + 0x479cc` 的**瞄准角**
-          覆写 `bullet+0x64`（= 出膛方向）⇒ **发射瞬间定向**（不是追踪）。
-          卡侧负责把「版底锚点 → 最近可锁定敌人」的角度写进那个字段（`pofv.c` 的 `bossatk_aim()`）。
-          owner 2026-10-01：「最好是**除了透明度之外完全复刻符卡**，**包括对于敌机的「自机狙」**等等」。
-        ⚠ 这几行是**占位数值**（与 arc 同档）。
-        """
-        return [(0.0, U, speed, rate, dmg, 5) for _ in range(k)]
-
-    # ★★ 2026-10-01（owner 定的混合路线）：**C3/C4 已改走 ECL**（`assets/ecl/pofv109_boss.ecl.txt`
-    #   的伪 boss 载体）⇒ 本表**只留 C1/C2**（自机弹：原生伤敌机 + 自机狙打敌机）。
-    #   C3/C4 那两组的行**整组撤掉**（它们是过渡态）。本组在槽序最后 ⇒ 撤两个槽不影响别的卡。
-    specs = [
-        ("POFV109_BOSSATK_C1", arc(6,  speed=16.0, rate=6, dmg=14) + aimed(2)),
-        ("POFV109_BOSSATK_C2", arc(12, speed=16.0, rate=5, dmg=11) + aimed(2)),
-    ]
-
-    out = []
-    for name, rows in specs:
-        rs = [dict(fire_rate=rate, start_delay=0, damage=dmg, hit_w=16.0, hit_h=16.0,
-                   spawn_dx=dx, spawn_dy=0.0, angle=ang, speed=spd, opt_slot=0, mode=0,
-                   anm="CE_ANM_ABILITY_SCRIPT_POFV109_BOSSATK", sfx=-1, hit_fx=-1,
-                   fire_rate2=0, start_delay2=0, func_on_init=init, func_on_tick=0,
-                   func_on_draw=0, func_on_hit=0) for dx, ang, spd, rate, dmg, init in rows]
-        for r in rs:
-            pass
-        out.append((name, b"".join(pack_shooter(r, anm_ids) for r in rs) + TERMINATOR))
-    return out
-
-
 def sets_for_file(target_file: str, anm_ids: dict) -> list:
     # ★ **顺序即槽号**（`N_RETAIL + 序号`）⇒ 111 的五组必须排在最后：插在中间会让
     #   117 的 WOLF/EAGLE 十个槽整体移位（`animal_core.h` 的槽号是写死的 ⇒ 静默错弹）。
@@ -2636,9 +2452,7 @@ def sets_for_file(target_file: str, anm_ids: dict) -> list:
             # ★ 2026-09-22：妖侧的 15 组**排在最末**（下标 = 槽号 ⇒ 插在中间会把 111 的
             #   `MARISA_OPT_*` 与 117 的 WOLF/EAGLE 整体移位，那是静默错弹）。
             + _youkai_tier_sets(target_file, anm_ids)
-            # ★ 2026-10-01：109 的 boss attack 两组**接在最末**（新组只能往末尾加 ——
-            #   插在中间会把 117 的 WOLF/EAGLE 槽号整体顶掉，那是静默错弹）。
-            + _pofv109_bossatk_sets(anm_ids))
+            )
 
 
 def _alloc_names(sets: list) -> list:

@@ -1,0 +1,19 @@
+script script373 {
+    // 天顶剑（id 87）的**剑刃** —— C 用 `ce_anm_spawn` 起，每帧写 pos / rotation.z / color（淡入淡出）。
+    // ★ 纪律同炎魔火球 script92：**脚本里不许碰 rotate / pos / color**（会盖掉 C 每帧写的值）；
+    //   本脚本只钉 layer / 混合 / 初始 sprite 与 scale，之后一律由 C 驱动。
+    // **sprite 由 C 每帧前用 `ce_anm_set_sprite` 从 `ATLAS_ZENITH_BLADE` 的 12 把剑里随机挑一把**
+    //   （照 Terraria `FinalFractalHelper.GetRandomProfileIndex()`；一手见 entries/ORDER.txt 末段）。
+    //   这里写 `@ZENITH_BLADE_ZENITH` 只是占位（图集第 0 个成员之外的任一成员都能当默认）。
+    // scale 0.55：剑的原始贴图 32–68 px ⇒ 场上约 18–37 px（弹幕区 384×448，自机约 32 px）。
+-1:
+    layer(13);
+    sprite(@ZENITH_BLADE_ZENITH);
+    type(1);
+    blendMode(1);
+    zWriteDisable(1);
+    scale(0.55f, 0.55f);
+    alpha(255);
+0:
+    stop();
+}

@@ -392,24 +392,6 @@
     "sprite_large": 168,
     "sprite_small": 169
   },
-  "109": {
-    "name": "花映塚",
-    "desc": [
-      "花映塚 × 獣王園：消弹与击破掉灵力道具，",
-      "拾取攒攻击槽；按住 C 蓄力，松手放攻击。",
-      "蓄力分四档，后两档是 BOSS 攻击。",
-      "固灵结界常驻：碰敌弹化为灵力道具，",
-      "碰到的灵被沈静化，击破它掉一把。",
-      "蓝圈只吃白弹，红圈吃掉圈内一切。"
-    ],
-    "category": 0,
-    "internal_name": "POFV_BLAST",
-    "initial_unlocked": 1,
-    "price_tier": 10,
-    "weight": 2,
-    "sprite_large": 170,
-    "sprite_small": 171
-  },
   "110": {
     "name": "风神录",
     "desc": [
@@ -424,8 +406,8 @@
     "initial_unlocked": 1,
     "price_tier": 10,
     "weight": 2,
-    "sprite_large": 172,
-    "sprite_small": 173
+    "sprite_large": 170,
+    "sprite_small": 171
   },
   "111": {
     "name": "地灵殿",
@@ -442,8 +424,8 @@
     "category": 0,
     "price_tier": 10,
     "weight": 2,
-    "sprite_large": 174,
-    "sprite_small": 175
+    "sprite_large": 172,
+    "sprite_small": 173
   },
   "112": {
     "name": "星莲船",
@@ -458,8 +440,8 @@
     "initial_unlocked": 1,
     "price_tier": 10,
     "weight": 2,
-    "sprite_large": 176,
-    "sprite_small": 177
+    "sprite_large": 174,
+    "sprite_small": 175
   },
   "113": {
     "name": "神灵庙",
@@ -476,8 +458,8 @@
     "initial_unlocked": 1,
     "price_tier": 10,
     "weight": 2,
-    "sprite_large": 178,
-    "sprite_small": 179
+    "sprite_large": 176,
+    "sprite_small": 177
   },
   "114": {
     "name": "辉针城",
@@ -492,8 +474,8 @@
     "initial_unlocked": 1,
     "price_tier": 10,
     "weight": 2,
-    "sprite_large": 180,
-    "sprite_small": 181
+    "sprite_large": 178,
+    "sprite_small": 179
   },
   "115": {
     "name": "绀珠传",
@@ -508,8 +490,8 @@
     "initial_unlocked": 1,
     "price_tier": 10,
     "weight": 2,
-    "sprite_large": 182,
-    "sprite_small": 183
+    "sprite_large": 180,
+    "sprite_small": 181
   },
   "116": {
     "name": "天空璋",
@@ -526,8 +508,8 @@
     "initial_unlocked": 1,
     "price_tier": 10,
     "weight": 2,
-    "sprite_large": 184,
-    "sprite_small": 185
+    "sprite_large": 182,
+    "sprite_small": 183
   },
   "117": {
     "name": "鬼形兽",
@@ -543,8 +525,8 @@
     "initial_unlocked": 1,
     "price_tier": 10,
     "weight": 2,
-    "sprite_large": 186,
-    "sprite_small": 187
+    "sprite_large": 184,
+    "sprite_small": 185
   },
   "118": {
     "name": "挑战・十二合一",
@@ -559,8 +541,8 @@
     "initial_unlocked": 1,
     "price_tier": 10,
     "weight": 1,
-    "sprite_large": 188,
-    "sprite_small": 189
+    "sprite_large": 186,
+    "sprite_small": 187
   },
   "200": {
     "name": "测试卡 200",
@@ -593,8 +575,8 @@
     "hud_show": 0,
     "price_tier": 0,
     "weight": 2,
-    "sprite_large": 190,
-    "sprite_small": 191
+    "sprite_large": 188,
+    "sprite_small": 189
   },
   "82": {
     "name": "阳光戒指",
@@ -607,8 +589,8 @@
     "initial_unlocked": 1,
     "price_tier": 9,
     "weight": 2,
-    "sprite_large": 192,
-    "sprite_small": 193
+    "sprite_large": 190,
+    "sprite_small": 191
   },
   "83": {
     "name": "火球术",
@@ -623,8 +605,8 @@
     "initial_unlocked": 1,
     "price_tier": 10,
     "weight": 2,
-    "sprite_large": 194,
-    "sprite_small": 195
+    "sprite_large": 192,
+    "sprite_small": 193
   },
   "84": {
     "name": "向日葵",
@@ -640,8 +622,8 @@
     "initial_unlocked": 1,
     "price_tier": 9,
     "weight": 2,
-    "sprite_large": 196,
-    "sprite_small": 197
+    "sprite_large": 194,
+    "sprite_small": 195
   },
   "85": {
     "name": "金盏花",
@@ -657,8 +639,8 @@
     "initial_unlocked": 1,
     "price_tier": 10,
     "weight": 2,
-    "sprite_large": 198,
-    "sprite_small": 199
+    "sprite_large": 196,
+    "sprite_small": 197
   },
   "86": {
     "name": "东尼的悲恸",
@@ -674,8 +656,8 @@
     "initial_unlocked": 1,
     "price_tier": 9,
     "weight": 2,
-    "sprite_large": 200,
-    "sprite_small": 201
+    "sprite_large": 198,
+    "sprite_small": 199
   },
   "87": {
     "name": "天顶剑",
@@ -691,8 +673,8 @@
     "initial_unlocked": 1,
     "price_tier": 8,
     "weight": 2,
-    "sprite_large": 202,
-    "sprite_small": 203
+    "sprite_large": 200,
+    "sprite_small": 201
   },
   "88": {
     "name": "杰拉",
@@ -708,8 +690,8 @@
     "initial_unlocked": 1,
     "price_tier": 10,
     "weight": 2,
-    "sprite_large": 204,
-    "sprite_small": 205
+    "sprite_large": 202,
+    "sprite_small": 203
   },
   "89": {
     "name": "星星炮",
@@ -726,8 +708,8 @@
     "initial_unlocked": 1,
     "price_tier": 10,
     "weight": 2,
-    "sprite_large": 206,
-    "sprite_small": 207
+    "sprite_large": 204,
+    "sprite_small": 205
   },
   "90": {
     "name": "冰淇淋",
@@ -742,8 +724,8 @@
     "initial_unlocked": 1,
     "price_tier": 9,
     "weight": 2,
-    "sprite_large": 208,
-    "sprite_small": 209
+    "sprite_large": 206,
+    "sprite_small": 207
   },
   "91": {
     "name": "鞘翅重锤",
@@ -761,18 +743,18 @@
     "price_tier": 10,
     "weight": 2,
     "active_recharge": 2400,
-    "sprite_large": 210,
-    "sprite_small": 211
+    "sprite_large": 208,
+    "sprite_small": 209
   },
   "92": {
     "name": "伟大之作",
     "desc": [
-          "主动（C 键）：把场上所有弹幕与敌人",
-          "变成金钱道具；敌人按剩余血量换出",
-          "多枚，boss 期间则直接击破一个阶段。",
-          "冷却按转换的弹幕数与该敌人血量等",
-          "比例计算（不转换就不消耗）。",
-          "致敬・Noita。"
+      "主动（C 键）：把场上所有弹幕与敌人",
+      "变成金钱道具；敌人按剩余血量换出",
+      "多枚，boss 期间则直接击破一个阶段。",
+      "冷却按转换的弹幕数与该敌人血量等",
+      "比例计算（不转换就不消耗）。",
+      "致敬・Noita。"
     ],
     "internal_name": "GREAT_WORK",
     "category": 0,
@@ -780,7 +762,7 @@
     "price_tier": 10,
     "weight": 2,
     "active_recharge": 600,
-    "sprite_large": 212,
-    "sprite_small": 213
+    "sprite_large": 210,
+    "sprite_small": 211
   }
 }

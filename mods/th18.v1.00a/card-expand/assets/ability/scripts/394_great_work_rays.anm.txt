@@ -1,0 +1,19 @@
+script script394 {
+    // 伟大之作（id 92）发动 —— **金色威光的总控**（owner：「威光的光线最先出来，**几乎同时**圆盘长出来开始」）。
+    // 一手 = 原生 `ability.anm` **script47**（逐条照抄，只把 `scriptNew(script48)` 换成我们的金色光线 399；
+    //   原生在这里还 `scriptNew(script49)` 起了一支"实心盘爆闪"，那一支由**卡侧**的 397/398 承担）：
+    //   20 批 × 5 支，每 2 帧一批（= 100 支光线，铺满 40 帧），92 帧后总控自己删。
+    //   ⚠ 光线是**独立子 VM**（`scriptNew` 出来），各自 90 帧自毁 ⇒ 总控删了不影响它们。
+    layer(6);
+    iset($I4, 20);
+offset40:
+    scriptNew(script393);
+    scriptNew(script393);
+    scriptNew(script393);
+    scriptNew(script393);
+    scriptNew(script393);
++2:
+    jmpDec($I4, offset40, 0);
++90:
+    delete();
+}

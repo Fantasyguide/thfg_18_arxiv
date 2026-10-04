@@ -1,0 +1,22 @@
+script script387 {
+    // 东尼的悲恸（id 86）触发时，**BOSS 身上浮起的卡面虚影**（owner 2026-10-03：「触发的时候 BOSS 身上
+    // 出现一个**卡面的虚影**」）。贴图 = `TONY_GRIEF_CARD_GHOST`（128×181，从 owner 的卡面截图里裁
+    // **主体卡长方形**再缩下来 —— 左上那个能量球画在卡框外，按外接框摆会整体偏，见 make_card_ghost.py）。
+    // C 只在**触发那一刻**写一次 pos（BOSS 坐标）；位移/淡入淡出都在这里 ⇒ 卡侧零簿记、脚本自毁。
+-1:
+    layer(14);
+    sprite(@TONY_GRIEF_CARD_GHOST);
+    type(1);
+    blendMode(0);
+    zWriteDisable(1);
+    scale(0.75f, 0.75f);
+    alpha(0);
+0:
+    alphaTime(6, 4, 200);        // 6 帧淡入到 200（半透明 = 虚影）
+    scaleTime(6, 4, 0.82f, 0.82f);
+    posTime(360, 1, 0.0f, -70.0f, 0.0f);  // 边往上飘边淡出（owner 2026-10-03：**6 s** ⇒ 70 px / 360 帧）
++6:
+    alphaTime(354, 4, 0);        // ★ owner「虚影持续 6s」⇒ 6(淡入) + 354 = **360 帧 = 6 s** 淡到 0
++354:
+    delete();
+}

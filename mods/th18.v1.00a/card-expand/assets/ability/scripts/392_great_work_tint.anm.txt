@@ -1,0 +1,28 @@
+script script392 {
+    // 伟大之作（id 92）发动 —— **圆形扩张的乘法金色滤镜 → 顶点纯白**（与 397 同一时序、同一实心盘）。
+    // `blendMode(5)` = `DESTCOLOR/ZERO` ⇒ `rgb′ = src × dst`；几何遮罩（drawPoly 只栅格化盘内像素）
+    //   ⇒ 金色像波一样扩出去，盘外一点不动。
+    // 颜色：0→24 帧**慢慢**从白变成金 (255,206,110)；24→34 帧再**慢慢**回到纯白 ⇒ **顶点 = 纯白**。
+    //   ⚠ 乘法模式下"纯白 = 乘 1 = 完全不做滤镜"，所以顶点之后直接删掉不会有任何跳变
+    //     （乘法的 RGB **不吃 alpha**，淡化只能走 colorTime —— 见
+    //      engine/anm/th18/07-blendmode-rgb-only-alpha-is-sa.md §5.1）。
+-1:
+    layer(19);
+    sprite(-1);
+    zWriteDisable(1);
+    blendMode(5);
+    drawPoly(1.0f, 32);
+    color(255, 255, 255);
+    alpha(255);
+    scale(0.0f, 0.0f);
+0:
+    scaleTime(42, 0, 90.0f, 90.0f);      // 慢段 42 帧
+    colorTime(42, 0, 255, 206, 110);     // 慢慢变金
++42:
+    scaleTime(18, 0, 640.0f, 640.0f);    // 快段 18 帧
+    colorTime(18, 0, 255, 255, 255);     // 顶点 = 纯白
++18:
+    colorTime(8, 0, 255, 255, 255);      // 顶点停留（保持纯白）
++8:
+    delete();
+}

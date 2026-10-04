@@ -1,0 +1,16 @@
+script script386 {
+    // 星星炮（id 89）**子机槽的定位锚**（只有坐标，不画任何东西）。
+    // 为什么要它：炮身画面由卡**自绘**（脚本 381 的 VM，旋转/灰白全归我们写）；而 option 自己那个 VM
+    // 的颜色/位置归**引擎的 option tick** 管 —— 之前试过写 `color = 0` 去"藏"它，结果引擎只让 alpha 生效、
+    // RGB 留 0 ⇒ 屏幕上是一个**黑色剪影**在按脚本的呼吸闪烁（owner 实测：「一直有一个闪烁的星星炮黑色虚影」）。
+    // ⇒ 与天顶剑同款解法：锚挂 **1×1 全透明**贴图（ORDER 的 `RETIRED_BLANK`），引擎爱怎么写都画不出东西。
+-1:
+    layer(13);
+    sprite(@RETIRED_BLANK);
+    type(1);
+    blendMode(0);
+    zWriteDisable(1);
+    alpha(0);
+0:
+    stop();
+}

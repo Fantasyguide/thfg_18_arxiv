@@ -26,8 +26,6 @@ REPO = MOD.parents[2]
 VERSION = "18"
 FRAGMENT = HERE / "ufo.ecl.txt"               # 112 的 9 个 UFO 子程序（入库）
 GREEN_FRAGMENT = HERE / "green_extra.ecl.txt"  # ★ 110 的「绿妖精」载体 1 个子程序（入库）
-SPIRIT_FRAGMENT = HERE / "spirit109.ecl.txt"   # ★ 109 合成卡的「灵」真敌人载体 1 个子程序（入库）
-BOSS_FRAGMENT = HERE / "pofv109_boss.ecl.txt"   # ★ 109 合成卡的「伪 boss 载体」（C3/C4 的 ECL 侧；入库）
 OUT = MOD / "native" / "build" / "ecl" / "default.ecl"
 DAT = REPO / "local" / "th18.v1.00a" / "dat"
 ECLMAP = REPO / "local" / "vendor" / "eclmap" / "eclmap" / "th18.eclm"
@@ -43,8 +41,6 @@ OURS_GREEN = ["CEGreenFairy"]
 # ★ 2026-10-01：再加 **109 合成卡的「灵」载体**（owner 口径 8/9/10：灵 = 自建真敌人）。
 #   同上：必须并进同一个合并步 —— 各写一次 build/ecl/default.ecl 会互相覆盖，
 #   而 `make dist` 只跑 `ecl-ufo` 这一个目标。
-OURS_SPIRIT = ["CESpirit109"]
-OURS_BOSS = ["CEPofvBoss109"]   # ★ 109 的伪 boss 载体（C3/C4 的 ECL 侧）
 
 _SUB_RE = re.compile(r"^void (\w+)\(\)\n\{\n.*?^\}\n", re.S | re.M)
 _BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.S)
@@ -118,49 +114,8 @@ def main():
         g_extra = sorted(set(green) - set(OURS_GREEN))
         raise SystemExit("green_extra.ecl.txt 里有多余子程序：%s" % ", ".join(g_extra))
 
-    if not SPIRIT_FRAGMENT.is_file():
-        raise SystemExit("没有 %s" % SPIRIT_FRAGMENT)
-    spirit = subs(SPIRIT_FRAGMENT.read_text(**ENC))
-    s_missing = [n for n in OURS_SPIRIT if n not in spirit]
-    if s_missing:
-        raise SystemExit("spirit109.ecl.txt 少了子程序：%s" % ", ".join(s_missing))
-    if len(spirit) != len(OURS_SPIRIT):
-        s_extra = sorted(set(spirit) - set(OURS_SPIRIT))
-        raise SystemExit("spirit109.ecl.txt 里有多余子程序：%s" % ", ".join(s_extra))
-    # ★★ 硬闸（2026-10-01）：**我们 ECL 里 `etSprite` 用到的「弹型」必须与 C 侧那份名单逐条一致**。
-    #   来由：卡侧靠「弹型」认自己的弹（逐弹伤害 + 置「免撞」位）；**漏一个类型** ⇒ 那几颗弹
-    #   既**不会伤敌机**、也不会被置免撞位 ⇒ **会打到自机**。我加早苗（TH19）的支时就漏了 1 / 18
-    #   （她的 C4 用 (11,8) (1,8) (18,1)）—— 正是这个闸要抓的东西。
-    #   ⚠ 必须先**剥注释**：文件头引用了原生示例 `etSprite(0, 7, 2)`，不剥会把 7 当成真用法。
-    import re as _re2
-    _boss_src = BOSS_FRAGMENT.read_text(**ENC)
-    _boss_src = _re2.sub(r"/\*.*?\*/", "", _boss_src, flags=_re2.S)      # 块注释
-    _boss_src = "\n".join(l for l in _boss_src.split("\n") if not l.strip().startswith("//"))
-    _ecl_types = sorted({int(m.group(1)) for m in
-                         _re2.finditer(r"etSprite\(\s*[^,]+,\s*([0-9]+)\s*,", _boss_src)})
-    _core = (MOD / "native" / "cards" / "pofv_core.c").read_text(**ENC)
-    _m = _re2.search(r"static const uint32_t ours\[\] = \{([^}]*)\}", _core)
-    if not _m:
-        raise SystemExit("pofv_core.c 里找不到 `static const uint32_t ours[]`（弹型名单）")
-    _c_types = sorted({int(x) for x in _re2.findall(r"[0-9]+", _m.group(1))})
-    if _ecl_types != _c_types:
-        raise SystemExit(
-            "★ 弹型名单不一致（会漏置「免撞」位 ⇒ 那几颗弹会打到自机）：\n"
-            "   ECL 用到: %s\n   C 侧名单: %s" % (_ecl_types, _c_types))
-
-    if not BOSS_FRAGMENT.is_file():
-        raise SystemExit("没有 %s" % BOSS_FRAGMENT)
-    boss = subs(BOSS_FRAGMENT.read_text(**ENC))
-    b_missing = [n for n in OURS_BOSS if n not in boss]
-    if b_missing:
-        raise SystemExit("pofv109_boss.ecl.txt 少了子程序：%s" % ", ".join(b_missing))
-    if len(boss) != len(OURS_BOSS):
-        b_extra = sorted(set(boss) - set(OURS_BOSS))
-        raise SystemExit("pofv109_boss.ecl.txt 里有多余子程序：%s" % ", ".join(b_extra))
-    frag.update(green)
-    frag.update(spirit)
-    frag.update(boss)
-    ALL_OURS = OURS + OURS_GREEN + OURS_SPIRIT + OURS_BOSS
+    frag.update(green)          # ★ 绿妖精的子程序也并进同一张表（原样保留 ✓）
+    ALL_OURS = OURS + OURS_GREEN
 
     # 原生 default.ecl 走的是**已解包**的那份（与 make_dev_ecl.py 同一口径）
     raw = DAT / "default.ecl"
@@ -230,8 +185,8 @@ def main():
                              % (n, len(ops_src), len(ops_back)))
 
     n_subs = len(retail) + len(ALL_OURS)
-    print("原生 %d 子 + 我们 %d 子（UFO %d + 绿妖精 %d + 灵 %d）= %d 子；无重名 ✓"
-          % (len(retail), len(ALL_OURS), len(OURS), len(OURS_GREEN), len(OURS_SPIRIT), n_subs))
+    print("原生 %d 子 + 我们 %d 子（UFO %d + 绿妖精 %d）= %d 子；无重名 ✓"
+          % (len(retail), len(ALL_OURS), len(OURS), len(OURS_GREEN), n_subs))
     print("往返：编回 → 再编一次，二进制字节一致 ✓（%d B）；我们 %d 个子程序的指令行数不变 ✓"
           % (built.stat().st_size, len(ALL_OURS)))
 

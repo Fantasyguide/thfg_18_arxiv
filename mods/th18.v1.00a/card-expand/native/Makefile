@@ -269,8 +269,6 @@ test-host:
 	./tests/build/test_th06rank_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_youkai_core tests/test_youkai_core.c cards/youkai_core.c
 	./tests/build/test_youkai_core
-	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_pofv_core tests/test_pofv_core.c cards/pofv_core.c
-	./tests/build/test_pofv_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_signal_core tests/test_signal_core.c cards/signal_core.c cards/faith_core.c cards/mof_core.c
 	./tests/build/test_signal_core
 ## test_faith_hud_core —— ★★ 组合 UI（110/111 共用那一块）的纯逻辑 + **与 111 自己那份实现的逐值对账**

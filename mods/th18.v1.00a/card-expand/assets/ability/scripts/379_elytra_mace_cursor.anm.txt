@@ -1,0 +1,14 @@
+script script379 {
+    // 鞘翅重锤的**光标**（`ELYTRA_MACE_CURSOR`，6×18）：C 每帧写它的 x（在条上左右扫）。
+    // layer 25 = 条（24）之上；判定窗口内外由 C 决定要不要染色（命中窗口里染暖黄，外面纯白）。
+-1:
+    layer(25);
+    sprite(@ELYTRA_MACE_CURSOR);
+    type(1);
+    blendMode(1);
+    zWriteDisable(1);
+    scale(1.0f, 1.0f);
+    alpha(255);
+0:
+    stop();
+}

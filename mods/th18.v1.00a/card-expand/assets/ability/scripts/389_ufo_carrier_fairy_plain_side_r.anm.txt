@@ -1,0 +1,34 @@
+script script389 {
+    // 112 星莲船 —— **UFO 令牌宿主：杂鱼妖精皮（普通黄 = 非辉光妖精用）**
+    //   ★ 为什么有两套皮（owner 2026-10-03 实跑口径）：「**辉光黄妖精当且仅当辉光妖精**」
+    //     —— 辉光那一套（原生 `enemy_g.png` 的四行）在原版里是**一组**：只有本来就是**辉光妖精**
+    //     的那种妖精（原生脚本 **184/189/194/199** = 蓝/红/绿/黄辉光）才发辉光。
+    //     我们第一版在所有关卡都给宿主穿辉光黄 ⇒ 非辉光妖精却发着辉光（错）。
+    //     ⇒ 现在**两套**：本文件 = **普通黄**（`enemy.png` y=416 行），
+    //       `33x_ufo_carrier_fairy*_glow*` = 辉光黄（`enemy_g.png` y=416 行）；
+    //       C 侧按宿主表新加的 `glow` 字段挑（`gen_ufo_carrier_table.py` 从宿主**自己那支脚本**
+    //       引用的 sprite 行现算：⊂ 220..267 ⇒ 辉光）。
+    //   一手（`local/th18.v1.00a/anm/enemy/enemy.anm.txt`，两行结构逐位平行）：
+    //     普通黄 sprite**36..47**（正面 script15 = 36..39；转身 script16/17 = 40..47；侧 script18/19）
+    //     辉光黄 sprite**256..267**（= 普通 +220 sprite / +184 script）
+    //   ⚠ 帧的**时序**仍是本卡原来的（12 步），只有**图**换了；要照原生时序（转身 7 帧 263,262,261,260,256,257,258）
+    //     说一声我改。
+    layer(8);
+    sprite(@CARRIER_FAIRY_PLAIN_4@);   /* 普通黄（enemy.png y=416 行 = sprite36..47）*/
++4: // 4
+    sprite(@CARRIER_FAIRY_PLAIN_5@);   /* 普通黄（enemy.png y=416 行 = sprite36..47）*/
++4: // 8
+    sprite(@CARRIER_FAIRY_PLAIN_6@);   /* 普通黄（enemy.png y=416 行 = sprite36..47）*/
++4: // 12
+    sprite(@CARRIER_FAIRY_PLAIN_7@);   /* 普通黄（enemy.png y=416 行 = sprite36..47）*/
++5: // 17
+offset60:
+    sprite(@CARRIER_FAIRY_PLAIN_8@);   /* 普通黄（enemy.png y=416 行 = sprite36..47）*/
++5: // 22
+    sprite(@CARRIER_FAIRY_PLAIN_9@);   /* 普通黄（enemy.png y=416 行 = sprite36..47）*/
++5: // 27
+    sprite(@CARRIER_FAIRY_PLAIN_10@);   /* 普通黄（enemy.png y=416 行 = sprite36..47）*/
++5: // 32
+    sprite(@CARRIER_FAIRY_PLAIN_11@);   /* 普通黄（enemy.png y=416 行 = sprite36..47）*/
+    jmp(offset60, 12);
+}

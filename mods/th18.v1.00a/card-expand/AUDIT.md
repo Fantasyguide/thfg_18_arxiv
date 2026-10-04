@@ -4847,6 +4847,7 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 > 每次**动到别人的卡**（含**共享件/共享脚本**导致的行为变化），都在这里逐条记：`文件 → 改了什么 → 为什么 → 谁改的 → 怎么验的`，
 > 并主动请对方复核。规则原文见 [`CLAUDE.md`](../../../CLAUDE.md) 的「协作纪律」。
 
+| 2026-10-04 | **删除 109 卡全部代码**（含别人的文件：脚本编号前移 / sht 生成器）| 见下方小节「§BE-109 删除记录」|
 | 日期 | 别人的卡 | 文件 | 改了什么 | 为什么 | 验证 |
 | --- | --- | --- | --- | --- | --- |
 | 2026-09-26 | **112 星莲船（UFO 载体皮）** | `assets/ability/scripts/352_ufo_carrier_fairy.anm.txt`、`356_ufo_carrier_fairy_side_r.anm.txt`、`357_ufo_carrier_fairy_side_l.anm.txt` | 三支脚本的贴图从本卡自己的 `@CARRIER_FAIRY_0..11@`（TH12 妖精切图）换成 **TH18 原生 `enemy_g.png` 倒数第二行**那支**黄色辉光妖精**的 sprite **256..267**（正面 256..259、转身 260..267；帧**时序未动**）| **owner 2026-09-26 逐字指示**：「3 面…圣域…妖精种类特殊，贴图外面有一层辉光…**包括 112 改的黄色妖精也得改成这里面倒数第二行的**」| `make anm` 追加脚本检查全过、`make check` 全绿；**实跑待 112 那条线复核**（他们的载体皮判据/掉落逻辑一行未动，只换图）|
@@ -4866,6 +4867,29 @@ UI 列表尾插、组内后生成者后画（§2b.4）。
 | 2026-09-13 | **117 鬼形兽**（咆哮） | 见下方「§BE 详录 #10」 |
 | 2026-09-13 | **所有卡（共享件，追加式）** | 见下方「§BE 详录 #11」 |
 | 2026-09-13 | **所有卡（共享件，追加式）** | 见下方「§BE 详录 #12」 |
+#### §BE-109 删除记录（2026-10-04，owner 口径「你只删」）
+
+**删掉的**（109 自己的）：
+- `native/cards/pofv.c`、`pofv_core.{c,h}`、`tests/test_pofv_core.c`
+- `assets/ecl/{pofv109_boss,spirit109}.ecl.txt`
+- `assets/ability/scripts/{372–377,402–406}_*.anm.txt`（11 个）
+- `assets/ability/make_pofv109_*.py`（5 个）+ `pofv109_{hits,power,spirit,storm}/`（4 个图目录）
+- `assets/cards/POFV_BLAST_{min,max}.png` + `_art/POFV_BLAST.png`
+- `assets/ability/entries/ORDER.txt` 里的 `POFV109_*`（51 行）
+- `patch/th18/cards.js` 的 `"109"` 条目
+- `assets/cards/ORDER.txt` 的 `POFV_BLAST` 卡面条目 ⇒ ★ **副作用**：卡面图集里它后面的卡**各前移 2 个 sprite**
+  ⇒ `cards.js` 里 **21 张卡**的 `sprite_large/sprite_small` 一并更正（按 `make anm` 报出的期望值机械改 ✓）
+
+**改到的别人的文件**（本次删除的副作用，已在别处无引用前逐条核对）：
+- `assets/ability/scripts/378–401_*.anm.txt` → **整体前移 6 位 = 372–395**（构建闸要求编号连续；
+  脚本靠**名字**引用 ⇒ 机械安全）+ 同步其中的 `scriptNew(scriptNNN)` 形参编号；
+- `assets/sht/append_shooterset.py`：删 `_pofv109_bossatk_sets`（两个重复定义）+ 调用点；
+- `assets/ecl/make_ufo_ecl.py`：删 109 的 fragment / etSprite 闸（**保留**绿妖精那条）；
+- `native/tools/{capcheck,verify}.py`：删 109 的检查项；
+- `native/Makefile`：删 109 的单测两行。
+
+**验证**：`make check` 全绿（421 文档）+ `make ecl-ufo` / `make sht` 重生成无残留 ✓。
+
 
 | 2026-09-14 | **所有卡（共享件，行为中性）** | 见下方「§BE 详录 #13」 |
 

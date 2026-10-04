@@ -1,0 +1,17 @@
+script script384 {
+    // 天顶剑的**尘埃**（另半个方向：往右上飘）。见 script389 的注 —— 两支各占一半，凑出原版那种四散的星火。
+-1:
+    layer(14);
+    sprite(@ZENITH_SPARKLE);
+    type(1);
+    blendMode(1);
+    zWriteDisable(1);
+    scale(0.15f, 0.15f);
+    alpha(200);
+0:
+    posTime(12, 1, 3.0f, -5.0f, 0.0f);
+    alphaTime(12, 0, 0);
+    scaleTime(12, 0, 0.04f, 0.04f);
++12:
+    delete();
+}
