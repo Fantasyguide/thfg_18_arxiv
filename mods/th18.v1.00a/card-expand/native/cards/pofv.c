@@ -296,7 +296,17 @@ static float              s_ghost_last[POFV_GHOST_MAX][2];
 
 static void vm_set_world_pos(uint32_t id, float wx, float wy)
 {
-    ce_anm_set_pos(id, wx, wy - POFV_FIELD_CENTER_Y, 0.0f);
+    /* ★★★★ 2026-10-01 **订正（我上一版错了）**：owner 两条实跑报告 + 一个跑得通的卡共同证明
+     *   —— **世界坐标直接写即可，不需要减 224** ✗：
+     *     · owner：「罩子画在了角色**正上方大概半个屏幕高**」（= 224 ✓）→ 是我**多减**了 ✗；
+     *     · owner：「**暴风完全看不见了**」→ 死亡点在版面上部时 `y − 224` 直接被推出画面 ✗；
+     *     · 铁证：`cards/animal.c:3348` 用 **`pp[1] - 80.0f`**（世界坐标**直接减 80** ✓），
+     *       而它的 VM 位置 `ce_anm_set_pos(id, t->x, t->y, t->z)` 是**原样的世界坐标** ✓
+     *       `cards/animal.c:1591` —— 所以 `ce_anm_set_pos` 吃的就是世界坐标 ✓。
+     *   （`sdk.h` 里「实体坐标 (0,0,0) = 场地正中」说的是**VM 的实体**默认位置，
+     *     不是「`set_pos` 的参数要相对场地正中」—— 我上一版把它读错了 ✗。）
+     *   ⇒ 本函数保留只为**命名统一**（以后要加换算只改这一处 ✓），现在**透传** ✓。*/
+    ce_anm_set_pos(id, wx, wy, 0.0f);
 }
 static uint32_t           s_hits_vm[POFV_HITS_UI_VMS];
 static int32_t            s_frame;      /* 游玩帧计数（连爆窗口的帧源；只在 on_tick_2 前进）*/
