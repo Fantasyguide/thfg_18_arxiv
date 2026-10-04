@@ -215,7 +215,10 @@ static uint32_t s_bossatk_scan_rot;
 /* ★ 每个场 = 一手的三连组台数（`ghost.anm` 20/21/22 与 23/24/25 ✓）。*/
 /* ★ 卷好的 CA 环贴图（`CA_RING_WRAP.png` 256×256）的**外半径** ⇒ `scale = 判定半径 / 它` ✓。*/
 #define POFV_CA_RING_R           120.0f
-#define POFV_FIELD_VM_PARTS        3
+/* ★ 2026-10-01 修：暴风只留**两段实物**（404 暗芯 + 405 加算亮圈 ✓）——
+ *   TH19 的「第三台」是个**启动器**（`scriptNew` 指向 TH19 的脚本号 ✗）⇒ 照抄会召唤无关特效 ✗
+ *   （owner：「暴风画在了最左上角贼大」＋「全乱套了」✓）。*/
+#define POFV_FIELD_VM_PARTS        2
 #define POFV_STORM_SPRITE_R      31.0f
 #define POFV_STORM_VM_LAYER        6
 #define POFV_FIELD_RGBA_STORM 0xa04080ffu   /* 暴风 = 蓝（代码里一直叫它「蓝圈」）*/

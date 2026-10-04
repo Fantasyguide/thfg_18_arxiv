@@ -1,5 +1,14 @@
 script script404 {
-    // ★ 照抄 TH19 `ghost.anm` script20（STORM_A）—— 一手三连组之一 ✓（见 TUNING 的说明）
+    // 暴风 · **第一段（暗芯）** —— 一手 = TH19 `ghost.anm` script20 ✓（`th19:0x53b920` 起 3 台里的第一台）。
+    //
+    // ⚠⚠ 2026-10-01 修：上一版我**盲目照抄**了整个三连组，闯了两个祸 ✗：
+    //   ① 第三段（TH19 的 script22）其实是 `scriptNew(script24); scriptNew(script23);` —— 一个**启动器**，
+    //      而那些是 **TH19 的脚本号** ✗ ⇒ 在本卡的 `ability.anm` 里 23/24 是**别的卡的特效**
+    //      ⇒ 暴风**召唤无关特效**（owner：「**暴风画在了最左上角贼大**」＋「**全乱套了**」✓✓）
+    //      ⇒ **删掉第三台** ✗，只留两段实物 ✓。
+    //   ② 脚本里残留一手的 `scaleTime` 呼吸循环 ✗ ⇒ 和**卡侧每帧写的 scale 打架** ✗
+    //      ⇒ 删掉 ✓（**大小由卡侧**给：`scale = 判定半径` ✓）。
+    //   ③ 尾巴重复了两遍 ✗ ⇒ 已清 ✓。
     sprite(-1);
     layer(28);
     blendMode(2);
@@ -9,18 +18,7 @@ script script404 {
     angleVel(0.017453292f, 0.0f, 0.017453292f);
     alpha(200);
     alpha2(40);
-    scale(13.0f, 13.0f);
-offset152:
-    scaleTime(20, 0, 14.0f, 14.0f);
-+20: // 20
-    scaleTime(20, 0, 12.0f, 12.0f);
-+20: // 40
-    jmp(offset152, 0);
-    interruptLabel(1);
-    alphaTime(10, 0, 0);
-    alpha2Time(10, 0, 0);
-+10:
-    delete();
+    stop();
     interruptLabel(1);
     alphaTime(10, 0, 0);
     alpha2Time(10, 0, 0);

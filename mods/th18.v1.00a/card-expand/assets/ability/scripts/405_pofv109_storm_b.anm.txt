@@ -1,5 +1,6 @@
 script script405 {
-    // ★ 照抄 TH19 `ghost.anm` script21（STORM_B）—— 一手三连组之一 ✓（见 TUNING 的说明）
+    // 暴风 · **第二段（加算亮圈）** —— 一手 = TH19 `ghost.anm` script21 ✓（同一条 3 台里的第二台）。
+    //   ⚠ 上一版照抄时它自带的 `scale(20,20)` + `scaleTime` 与卡侧打架 ✗ ⇒ 已删 ✓（大小由卡侧给 ✓）。
     sprite(-1);
     layer(28);
     blendMode(1);
@@ -9,18 +10,7 @@ script script405 {
     angleVel(0.017453292f, 0.0f, 0.017453292f);
     alpha(255);
     alpha2(0);
-    scale(20.0f, 20.0f);
-offset152:
-    scaleTime(20, 0, 18.0f, 18.0f);
-+20: // 20
-    scaleTime(20, 0, 22.0f, 22.0f);
-+20: // 40
-    jmp(offset152, 0);
-    interruptLabel(1);
-    alphaTime(10, 0, 0);
-    alpha2Time(10, 0, 0);
-+10:
-    delete();
+    stop();
     interruptLabel(1);
     alphaTime(10, 0, 0);
     alpha2Time(10, 0, 0);
