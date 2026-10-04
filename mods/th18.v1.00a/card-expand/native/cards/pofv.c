@@ -220,6 +220,8 @@ static uint32_t s_bossatk_scan_rot;
  *   （owner：「暴风画在了最左上角贼大」＋「全乱套了」✓）。*/
 /* ★ 主动卡的「充能时长」（帧）。⚠ 因为 `on_activate` **每次都 REFUSED**（按 C 无作用 ✓），
  *   这个值只决定引擎眼里「这张主动卡的冷却有多长」⇒ 取一个常规值即可 ❓ 自定。*/
+/* ★ 暴风内层（红褐那圈）相对判定半径的缩放 ⇒ 红褐只占内圈 ✓（❓ 自定，观感不对就调这一个数）。*/
+#define POFV_STORM_INNER_SCALE      0.7f
 #define POFV_ACTIVE_RECHARGE        60
 #define POFV_FIELD_VM_PARTS        2
 #define POFV_STORM_SPRITE_R      31.0f
@@ -1013,8 +1015,15 @@ static void storm_vm_sync(void)
                 s_storm_vm[i][p] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), script,
                                                          POFV_STORM_VM_LAYER + p);
             if (!s_storm_vm[i][p]) continue;          /* anm 还没就绪：下一帧再补 */
-            vm_set_world_pos((uint32_t)s_storm_vm[i][p], bl->x, bl->y);
-            ce_anm_set_scale((uint32_t)s_storm_vm[i][p], sc, sc);
+            /* ★ 2026-10-04（owner 口径 §2.3）：暴风 = **外黑 / 中红褐 / 芯透** 三段观感
+             *   ⇒ 两段 `drawPoly` 叠出来：`p = 0` 外层（白 ⇒ 减成黑 ✓）、
+             *     `p = 1` 内层（暖橙 ⇒ 减成红褐 ✓，scale × `POFV_STORM_INNER_SCALE` ⇒ 只占内圈 ✓）。
+             *   两段的 `color/alpha` 内芯都是 0（透明 ✓）⇒ 叠起来正好三段 ✓。*/
+            {
+                float k = (p == 1) ? sc * POFV_STORM_INNER_SCALE : sc;
+                vm_set_world_pos((uint32_t)s_storm_vm[i][p], bl->x, bl->y);
+                ce_anm_set_scale((uint32_t)s_storm_vm[i][p], k, k);
+            }
             if (bl->life - bl->age == POFV_STORM_FADE_FRAMES)
                 ce_anm_interrupt((uint32_t)s_storm_vm[i][p], 1);
         }
