@@ -1249,6 +1249,12 @@ static int on_tick_2(ce_card_t *c)
                                       pofv_spirit_body_sprite(s_spirit_kind[z], s_spirit_level[z],
                                                               (int)s_spirit_dis[z],
                                                               (int)(s_spirit_age[z] / 6)));
+                    if (!(s_card_frames % 60))   /* ★ 每 60 帧打一次：判幽灵图号是否正确 ✓ */
+                        ce_log("pofv: [spr] 槽%d kind=%d level=%d dis=%d frame=%d â sprite=%d",
+                               z, (int)s_spirit_kind[z], (int)s_spirit_level[z], (int)s_spirit_dis[z],
+                               (int)(s_spirit_age[z] / 6),
+                               pofv_spirit_body_sprite(s_spirit_kind[z], s_spirit_level[z],
+                                                       (int)s_spirit_dis[z], (int)(s_spirit_age[z] / 6)));
                     /* ★★★ 2026-10-06 owner：「**它是碰到边上之后折返**」✓ ⇒ 水獭的**左右折返**由卡侧翻 `$I3`：
                      *   ECL 的獭支是个每帧重读 `$I3` 的 loop（`spirit109.ecl.txt` ✓）⇒
                      *   **碰左沿 ⇒ `$I3 = 0`（改向右斜 22.5°）** / **碰右沿 ⇒ `$I3 = 1`（改向左斜 157.5°）** ✓。
