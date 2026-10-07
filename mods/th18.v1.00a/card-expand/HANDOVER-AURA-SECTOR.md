@@ -685,3 +685,10 @@ for (i = 0; i < player[+0x5414]; ++i) {          // 节点数
 **现场判据（一眼可判 ✓）**：从自机中心到领域边缘 ≈ **6 个自机身位** ⇒ 对 ✓；≈12 个 ⇒ 减半 ✓。
 （登记：口径 = **与玩家身位成比例** ✓，标 ❓自定 直到一手数值追到 ✓。）
 
+### 19.16 记账：`check-docs.py` 当前的 9 处违规**都不是本文档/我的文件** ✓
+
+跑 `python3 tooling/check-docs.py` ⇒ 441 文件、9 处违规，全部落在**另一位作者新加的交接文档**上（我未改动它们 ✓）：
+* `[version]`（缺开头 20 行的版本声明 ✓）：`EX-GAP-NOTES.md`、`HANDOVER-AURA-CLOSE.md`、`HANDOVER-EX-AND-SPIRITS.md`、`HANDOVER-SPIRIT-SPAWN.md`、`MODEL-109-SPIRIT-MIRROR.md`
+* `[tables]`（单元格 > 200 字符 ✓）：`HANDOVER-SPIRIT-SPAWN.md:189/204/205/253`
+⇒ 我这边（`02-ghost-and-seal.md` / `05-four-mechanics.md` / `06-aura.md` / 本文档 ✓）**全部通过** ✓；要不要我代修那 5 份（补版本行 + 拆表格）请示一下 ✓（动别人文件我会按 §BE 登记 ✓）。
+

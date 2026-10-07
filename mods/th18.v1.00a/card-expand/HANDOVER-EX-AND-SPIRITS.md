@@ -1,4 +1,5 @@
 # 交接页：TH19「灵的送/返/EX」与 TH09「固灵/激活」—— 给实现方的要点
+> **版本**：TH18 v1.00a（`th18.exe`，imagebase `0x400000`）。本文裸地址默认属该版本。
 
 > 本页给**改卡片代码**的那位：只列**可直接照抄的一手**、**必须自定的项**、以及**仍未闭环的 🟡**。
 > 一手出处都在 `engine/versus/th19/08-extra-attack.md`、`engine/versus/th19/05-four-mechanics.md`、

@@ -733,8 +733,9 @@ static void do_storm_frame(const pofv_storm_t *bl)
                                                  idx, (int)bl->age, (int)r, (int)bl->dmg, r * 2.0f, r * 2.0f); }
         else if (bl->age <= 1) ce_log("pofv: dmgsrc FAILED age %d r %d (r<=0 或整场在屏外)", (int)bl->age, (int)r);
     }
-    if (n > 0)
+    if (n > 0) {   /* 补括号：消除 -Wmisleading-indentation，语义不变 */
         ce_log("pofv: storm age %d/%d r %d cancelled %d", (int)bl->age, (int)bl->life, (int)r, n);
+    }
         /* ★★★ 一手（owner 已核 · `engine/versus/th09/02-ghost-and-seal.md` §2.3）：
          *   **幽灵是从「暴风/连爆」里产生的** —— `FUN_0041dff0` 里爆风节点 `state ∈ {2,3}` + 命中
          *   （且 `enemy+0x10c0 == 0`）⇒ 送出 **`enemy.ecl Sub0` = 绿幽灵、level 1**（`+0xa4=0, +0xa6=1`）。
@@ -1577,8 +1578,9 @@ static int on_tick_2(ce_card_t *c)
     if (s_ex_cool > 0)  --s_ex_cool;
     /* ★ 诊断心跳（2026-10-06）：把「Shift 有没有被读到 / R 是多少」每 60 帧曝光一次 ✓
      *   —— 与「结界出生」那行合用，可分开判断「没按到键 ✗」与「按到了但没生成/看不见 ✗」。*/
-    if (s_aura_charge > 0.0f && !(s_card_frames % 60))
+    if (s_aura_charge > 0.0f && !(s_card_frames % 60)) {
         ce_log("pofv: **结界心跳** kind=%d charge=%.0f R=%.1f vm=%d", (int)s_aura_kind, (double)s_aura_charge, (double)s_aura_r, (int)s_aura_vm);
+        }
         {   /* â 2026-10-08 ownerï¼版顶一只朝右的狼灵、无碰撞箱、只是 VM â
              *   ⇒ 对账日志无「残留」â ⇒ 把**所有活的 body VM**逐个列出 ⇒ 一眼看出它属谁 ✓。*/
             int iz; int nbody = 0;
