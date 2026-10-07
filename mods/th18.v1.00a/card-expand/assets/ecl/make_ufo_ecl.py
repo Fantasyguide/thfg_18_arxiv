@@ -26,6 +26,7 @@ REPO = MOD.parents[2]
 VERSION = "18"
 FRAGMENT = HERE / "ufo.ecl.txt"               # 112 的 9 个 UFO 子程序（入库）
 GREEN_FRAGMENT = HERE / "green_extra.ecl.txt"  # ★ 110 的「绿妖精」载体 1 个子程序（入库）
+SPIRIT_FRAGMENT = HERE / "spirit109.ecl.txt"   # ★ 109 的「灵」载体 `CESpirit109`（owner 2026-10-05 改题：灵改 ECL 驱动）
 OUT = MOD / "native" / "build" / "ecl" / "default.ecl"
 DAT = REPO / "local" / "th18.v1.00a" / "dat"
 ECLMAP = REPO / "local" / "vendor" / "eclmap" / "eclmap" / "th18.eclm"
@@ -38,6 +39,7 @@ OURS = ["UFO_EtBreak", "UFO_EtBreak2", "UFO_Red", "UFO_Blue", "UFO_Green", "UFO_
 #   放在同一个合并步里是**必须的**：两个脚本各写一次 `build/ecl/default.ecl` 会互相覆盖，
 #   而 `make dist` 只跑 `ecl-ufo` 这一个目标 ⇒ 漏掉谁都是「发布出去少一支子程序」。
 OURS_GREEN = ["CEGreenFairy"]
+OURS_SPIRIT = ["CESpirit109"]          # ★ 109 灵（上一版有、已恢复）
 # ★ 2026-10-01：再加 **109 合成卡的「灵」载体**（owner 口径 8/9/10：灵 = 自建真敌人）。
 #   同上：必须并进同一个合并步 —— 各写一次 build/ecl/default.ecl 会互相覆盖，
 #   而 `make dist` 只跑 `ecl-ufo` 这一个目标。
@@ -114,8 +116,20 @@ def main():
         g_extra = sorted(set(green) - set(OURS_GREEN))
         raise SystemExit("green_extra.ecl.txt 里有多余子程序：%s" % ", ".join(g_extra))
 
+    # ★ 109 的「灵」片段（第三段，照绿妖精那块同款校验）
+    if not SPIRIT_FRAGMENT.is_file():
+        raise SystemExit("没有 %s" % SPIRIT_FRAGMENT)
+    spirit = subs(SPIRIT_FRAGMENT.read_text(**ENC))
+    s_missing = [n for n in OURS_SPIRIT if n not in spirit]
+    if s_missing:
+        raise SystemExit("spirit109.ecl.txt 少了子程序：%s" % ", ".join(s_missing))
+    if len(spirit) != len(OURS_SPIRIT):
+        s_extra = sorted(set(spirit) - set(OURS_SPIRIT))
+        raise SystemExit("spirit109.ecl.txt 里有多余子程序：%s" % ", ".join(s_extra))
+
     frag.update(green)          # ★ 绿妖精的子程序也并进同一张表（原样保留 ✓）
-    ALL_OURS = OURS + OURS_GREEN
+    frag.update(spirit)         # ★ 109 灵的子程序同样并进（追加在末尾 ⇒ 既有 index 不变）
+    ALL_OURS = OURS + OURS_GREEN + OURS_SPIRIT
 
     # 原生 default.ecl 走的是**已解包**的那份（与 make_dev_ecl.py 同一口径）
     raw = DAT / "default.ecl"

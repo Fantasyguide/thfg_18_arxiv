@@ -1,0 +1,19 @@
+script script400 {
+    // 109 灵的**本体（静态族：純霊 / TH09 幽灵）** —— 一手配方
+    //   TH09 幽灵 = `enemy.anm` script20（一手）：**只有 sprite 循环、无 rotateAuto**，帧间隔 **4**。：`REPORT-109-AURA-AND-SPIRITS.md` §2.2「動物霊（狼/獺/鷲）常态 enemy.anm 265/266/267」：
+    //   `rotateAuto(1);    //   + `scale(2.0f,2.0f); scaleTime(8,0,1.0f,1.0f);`（8 帧 linear：2× → 1× 登场收束）
+    //   + 身体帧「每 6 帧一换」。
+    // ★ 贴图 = **原生切图**：`ATLAS_SPIRIT_BODY`（狼/獺/鷲/純霊）与 `ATLAS_SPIRIT_GHOST`（幽灵绿/黄/红）的成员。
+    // ★ sprite **由卡侧每 6 帧换**（`ce_anm_set_sprite`），起始给狼第 0 帧；kind→成员表见 `cards/pofv.c`。
+    sprite(@SPIRIT_WOLF_0);
+    type(1);
+    alpha(0);
+    alphaTime(8, 0, 255);
+    scale(2.0f, 2.0f);
+    scaleTime(8, 0, 1.0f, 1.0f);
+    stop();
+    interruptLabel(1);
+    alphaTime(20, 0, 0);
++20: // 20
+    delete();
+}

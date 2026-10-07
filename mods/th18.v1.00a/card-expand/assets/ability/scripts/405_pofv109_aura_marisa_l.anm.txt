@@ -1,0 +1,15 @@
+script script405 {
+    // 魔理沙套 · **左半竖带** —— 逐字复刻一手 `pl01.anm` `script17` ✓
+    sprite(-1);
+    layer(6);
+    anchor(1, 1);
+    drawRectGrad(1.0f, 448.0f);
+    color(0, 32, 128);
+    color2(64, 192, 255);
+    alpha(128);
+    alpha2(160);
+    stop();
+    interruptLabel(1);
++20: // 20
+    delete();
+}

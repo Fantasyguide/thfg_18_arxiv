@@ -28928,3 +28928,152 @@ TH16 `09-drawing.md` §3.3：外顶点恒 `color_1`、内顶点在 `(flags_lo & 
 `colorMode` 的 2/3 只给**横/竖**渐变（§6 那张表），做不了径向。
 
 **回归**：`make check` rc=0（cards-check 49 张 / anm-verify（重烤了 GREAT_WORK_GLOW）/ capcheck / dllx87 / check-docs）。
+
+## §BE-164 共享件改动：`assets/ecl/make_ufo_ecl.py` 增第三片段（109 的「灵」载体）
+
+- **文件**：`assets/ecl/make_ufo_ecl.py`（共享件，`AUDIT.md` §BE 已标共享；112/110/108 都用它）；
+  新增（入库，不共享）：`assets/ecl/spirit109.ecl.txt`（109 自己的片段，子程序 **`CESpirit109`**）。
+- **改了什么**：照 `GREEN_FRAGMENT` 那块**同款**加第三段 —— `SPIRIT_FRAGMENT` / `OURS_SPIRIT = ["CESpirit109"]`
+  + 同三条校验（存在性、缺项、多余项）+ `frag.update(spirit)` + `ALL_OURS = OURS + OURS_GREEN + OURS_SPIRIT`。
+  **并进同一个合并步**（`:39` 注释的硬要求：各写一次 `build/ecl/default.ecl` 会互相覆盖）；
+  片段**追加在末尾** ⇒ 既有子程序的 `subroutine_index` **不变** ✓，`default.ecl` 由 20676 B → **21720 B**。
+- **为什么**：owner 2026-10-05 改题 —— 灵改 **ECL 驱动**（把移动/朝向/寿命/成佛交回一手 ECL，
+  替掉卡侧手写的速度积分与 `ce_anm_set_rotation(…,π/2)`，即「幽灵不移动 / 贴图转 90°」两个病根）。
+- **谁改的**：DSH agent（本轮），owner 指示「加 ECL 这件 112 就已经干了」+ 只读核实报告 `PLAN-109-SPIRITS.md` §16。
+- **怎么验证的**（已跑）：
+  1. `cd native && make ecl-ufo` ⇒ **rc=0**，自洽打印「往返二进制字节一致 ✓（21720 B）；我们 12 个子程序的指令行数不变 ✓」；
+  2. **人工回读**（构建 rc 不可信 —— `thecl` 对未知 opcode 只 warning）：
+     `thecl -d 18 -m th18.eclm build/ecl/default.ecl` ⇒ `^void CESpirit109` **计数 1** ✓、
+     `ins_(1027|1040|1042)(` **计数 0** ✓（TH19 独有 opcode 一个都没有）；
+  3. `make check` rc=0（172 项单测）、`check-docs` 427 ✓。
+- **影响面 / 回归**：ECL 是**数据文件**、零新增站点；112/110/108 的子程序**原样保留、序号不变**；
+  发布链未改（`Makefile:342` + `release.py:33` 已有映射）。⚠ **`deploy.py` 不带 ECL** ⇒ 只能 `make dist` + `make release`。
+
+## §BE-165 共享资源追加：`assets/ability/entries/ORDER.txt` 加 entry107 `ATLAS_SPIRIT_CALM`
+
+- **文件**：`assets/ability/entries/ORDER.txt`（**共享**：ability 图集表，所有卡共用）、
+  `CAPACITY.md`（登记）、新增 `assets/ability/spirit/SPIRIT_CALM{G,Y,R}_{0..7}.png` + `ATLAS_SPIRIT_CALM.png`。
+- **改了什么**：**只追加**（`ORDER.txt` 末尾加 1 个 ATLAS 段、24 个成员 ⇒ entry **107**、sprite **672–695**）；
+  `CAPACITY.md` 按字母序加一行 `CE_ANM_ABILITY_ATLAS_ATLAS_SPIRIT_CALM`。**既有 entry 编号/sprite 号一个未动** ✓。
+- **为什么**：109 的 TH09 幽灵**沈静化**要有「鸟形 → 火焰/光球态」（一手 `enemy.anm` script23/24/25、
+  sprite 52–59 / 64–71 / 76–83，对应 level 1/2/3 各 8 帧）。
+- **谁改的**：DSH agent（owner 指示做「幽灵沈静化外观」）。
+- **怎么验证的**：`make anm` rc=0（自检报「画布 512×128，24 个 sprite」）⇒ 生成
+  `CE_ANM_ABILITY_ATLAS_ATLAS_SPIRIT_CALM = 107`、`CE_ANM_ABILITY_SPRITE_SPIRIT_CALMG_0 = 672`；
+  `make check` rc=0（237 项）；`check-docs` 427 ✓；四份 DLL 同 md5。
+- **影响面 / 回归**：图集表是**追加**语义 ⇒ 其它卡的脚本/宏**不受影响** ✓；
+  ability.anm 随 `make release` 一起出（已跑 ✓）。
+
+
+### BE-166 · `assets/ability/scripts/401_pofv109_spirit_body_animal.anm.txt`（共享面 · 2026-10-06）
+
+- **文件**：`mods/th18.v1.00a/card-expand/assets/ability/scripts/401_pofv109_spirit_body_animal.anm.txt`
+- **改了什么**：脚本体开头补一行 **`sprite(@SPIRIT_WOLF_0);`**（此前**完全没有 sprite 语句** ✗ —— 只在注释里出现过 ✗）。
+- **为什么**：owner 实跑「**依旧没有看见任何动物灵**」✓ 的**根因** —— 没有 sprite 的 ANM VM **不渲染任何东西** ✗ ⇒ 動物霊族（狼/獺/鷲）全不可见 ✓；静态族脚本 `400` **有** `sprite(@SPIRIT_WOLF_0);` ✓ 作对照 ✓（卡侧每 6 帧 `ce_anm_set_sprite` 只负责**换帧** ✓，**首个 sprite 必须由脚本给** ✓）。
+- **谁改的**：DSH agent（109 卡负责人）。
+- **影响面**：该脚本**仅**被 109 卡使用（`cards/pofv.c` 的 `CE_ANM_ABILITY_SCRIPT_POFV109_SPIRIT_BODY_ANIMAL` = 401 ✓，grep 无其它引用 ✓）⇒ 对其它卡**无影响** ✓；但该目录属共享面 ⇒ 按规矩在此登记 ✓。
+- **怎么验证**：`make dist` 重打包后，在 `dist/patch-step3/th18/ability.anm` 与 modkit 部署副本里均可见 `sprite(@SPIRIT_WOLF_0)` 进入 401 的脚本体 ✓；实跑应能看到狼/獺/鷲（含 `rotateAuto(1)` 的自转 ✓）。
+
+
+### BE-167 · 新增純霊固化切图 `SPIRIT_DISP4_0..7.png`（共享面 · 2026-10-06）
+
+- **文件**：`mods/th18.v1.00a/card-expand/assets/ability/spirit/SPIRIT_DISP4_0..7.png`（新增 8 个，64×64）。
+- **改了什么**：把 TH19 一手的「**純霊固化**」8 帧 **原生切图**落进本卡资产（此前 `ATLAS_SPIRIT_DISABLE` 只有狼/獭/鹫 三档 D1/D2/D3，**纯霊档缺失** ✗）。
+- **为什么**：owner 2026-10-06 固化口径「**固化的时候 sprite 也会变**」✓ ＋ 核实方查实一手是「**每族一档**」（Wolf 268 / Otter 269 / Eagle 270 / **純霊 106** ✓）。
+- **来源（一手，可复现）**：`local/th19.v1.10c/anm/enemy/enemy/enemy.png`（由 `python3 tooling/thtk/unpack.py th19.v1.10c` 从 TH19 样本解出 ✓）；
+  帧序取自 `local/th19.v1.10c/_ext/enemy.txt` 的 `script41/script42`（`sprite100→101→102→103`（各 +4）→ `104→105→106→107`（各 +5）循环 ✓）；
+  UV：`(256,448) (320,448) (384,448) (448,448) (384,320) (448,320) (384,384) (448,384)`，全部 64×64 ✓。
+- **谁改的**：DSH agent（109 卡负责人）。
+- **影响面**：只**新增**文件 ⇒ 对其它卡**零影响** ✓；后续还要（下一轮）在 `assets/ability/entries/ORDER.txt` 注册 + 扩 `ATLAS_SPIRIT_DISABLE` + `native/anm_ids.h` 加号段 + 接进 `pofv_spirit_body_sprite()` 的 `disabled` 支 ⇒ 那些改动**会**进入共享容器 `ability.anm`（整包重发 ✓，其它卡 script id/内容不变 ✓）。
+- **⚠ 2026-10-06 修正（同日）**：**第一次切图切错了 entry** ✗ —— `_ext/enemy.txt` 里 sprite100–107 的 UV 属于该文件的**另一个 entry**（`enemy.txt` 含 **8 个 entry**：`enemy.png`/`enemy2.png`/… ✓），我按 `enemy.png` 的 512×512 切出来的第 6 帧**是彩色角色、不是純霊** ✗（目视确认 ✓）⇒ **8 张错图已删除** ✗（`SPIRIT_DISP4_*.png` 现为 0 个 ✓），**尚未进任何构建** ✓。
+- **下一步（待做）**：先用 `thanm -l`/`grep` 定位 sprite100–107 **所属的 entry 名**（即 TH19 `enemy.anm` 里 `GhostPureDisable` 用哪张 entry 贴图 ✓），再按那张图切 8 帧、重新登记 ✓。
+- **怎么验证（待重做）**：切出的 8 张**目视必须是純霊（白球/圆弧族 ✓）**，尺寸 64×64 ✓，非全透明 ✓。
+
+
+### BE-168 · 新增固灵结界可视脚本 `402/403/404_pofv109_aura*.anm.txt`（共享面 · 2026-10-06）
+
+- **文件**：`mods/th18.v1.00a/card-expand/assets/ability/scripts/402_pofv109_aura.anm.txt`、`403_pofv109_aura_core.anm.txt`、`404_pofv109_aura_ring.anm.txt`（新增）。
+- **改了什么**：把一手 TH19 **除霊オーラ的可视**（`effect.anm` 的 script1/2/3 ✓）**逐字复刻**成我们自己的三支脚本（402 = 父、403 = 黄环、404 = 青圈 ✓）；一手是 `drawPoly`/`ins_615` **程序化多边形**（**无贴图** ✓）⇒ **不新增任何图片资源、不自绘** ✓。
+- **为什么**：owner 2026-10-06「**固灵结界——按 shift**」✓；一手出处 `engine/versus/th19/06-aura.md:12`（除霊オーラ）+ `05-four-mechanics.md:476`（「结界 = `effect.anm` script1」✓）；原文取自 `local/th19.v1.10c/_ext/effect.txt`（`tooling/thtk/unpack.py` 解出 ✓）。
+- **与一手的两处**有意**不同**（都已注明 ✓）：① **脚本号**用 402/403/404 ✗（共享 anm 里不能占 `script1/2/3` ✓）；② 一手 `script1` 的 `-1:` 段有 `layer(7)`、`type(0)`、`sprite(-1)` ✓ —— 原样保留 ✓。
+- **谁改的**：DSH agent（109 卡负责人）。
+- **影响面**：**只新增脚本**，不占用既有号（`script402+` 之前不存在 ✓；已 `grep` 确认 ✓）；打包后 `ability.anm` 会变大一点、其余卡脚本号/内容不变 ✓。
+- **怎么验证**：`make anm` 通过（脚本被 thecl/打包器接受 ✓）；实跑按住 Shift 应在自机处出现「白/黄/青」三层多边形圈、10 帧缩放淡入 ✓。
+
+- **⚠ 2026-10-06 同日更正（重要 ✗）**：**来源换对了** —— 一手 `06-aura.md` §9.0 明确「画オーラ区域的文件 = 角色自己的 **`plXX.anm`**，**不是** `ability.anm` / **`effect.anm`**」✗ ⇒ 我最初照 `effect.anm` script1 的复刻**来源错误** ✗（`05` 那句「结界 = effect.anm script1」指的不是区域本体 ✗）。
+  ⇒ 现按 **`pl00.anm` 的 `script15`**（= Reimu 那套：**圆** `drawPoly(1.0f,64)`、1 台 VM ✓，原文在 `local/th19.v1.10c/_ext/pl00.txt` ✓）**逐字复刻**，并**删掉**多余的 `403/404`（Reimu 只有 1 台 VM ✗）。
+  新增的差异只有两处**登记过**的：① 脚本号 402（共享 anm 不能占 `script15` ✗）；② 半径 = 卡侧每帧写的 sprite 缩放（一手由蓄力驱动、本卡无蓄力槽 ⇒ 固定等效值 `R=80.0f`，❓ 待 owner）✓。
+
+
+### BE-169 · 新增咲夜（TH09）固灵结界脚本 `406_pofv109_aura_sakuya.anm.txt`（共享面 · 2026-10-06）
+
+- **文件**：`assets/ability/scripts/406_pofv109_aura_sakuya.anm.txt`（新增 1 支）。
+- **改了什么**：把一手 TH19 `pl02.anm` `script15`（= **咲夜**的低速领域绘制 ✓，truanm 复核于 `engine/versus/th19/06-aura.md:719` ✓）复刻成我们的脚本：**32 边形**、`color(32,32,128)`→`color2(255,255,32)`、`alpha(0)`/`alpha2(255)`、`blendMode(0)` ✓。
+- **为什么**：owner 2026-10-06 定「**咲夜走 TH09 那套**」✓ ＋「归另一个 agent 是你不需要核，你只需要做」✓；形状/律出处：`engine/versus/th09/02-ghost-and-seal.md:493`（圆 × 扇形 ✓）＋ TUNING #3 定案（半张角 **每帧 +3°→90°** ✓、方向 **0.25/帧缓动** ✓）。
+- **与一手的两处差异（登记 ✓）**：① 脚本号 406（共享 anm 不能占 `script15` ✗）；② **不含 `scaleTime(90,1,600,600)`** ✗ —— 一手那张是**引擎每帧写缩放**（槽 3 ✓），本卡同理由卡侧写 `R = 1+(600−1)×f` ✓（两端都写会打架 ✗）。
+- **谁改的**：DSH agent（109 卡负责人）。
+- **影响面**：**只新增脚本**（`script406` 之前不存在 ✓）；`ability.anm` 变大一点，其余卡脚本号/内容不变 ✓。
+- **怎么验证**：`make anm` 通过 ✓；实跑咲夜按住 Shift ⇒ 出现**黄蓝 32 边形**扇区、90 帧内从 1 长到 600 ✓，方向朝移动方向缓动 ✓，判定 = 圆 × 扇形（半张角 3°/帧→90°）✓。
+
+
+#### BE-167 更正（2026-10-06 晚，owner 给出的一手链 ✓）
+
+- **根因**：`ins_303(0, **106**)` 的 **106 是 anm「脚本号」，不是 sprite 号** ✗ ——
+  opcode 303 →（解释器 `0x4fecc0` 的 case 2）→ `FUN_004fe980` → `FUN_004cb960(&vm, …, arg1, 0, 0, *(enemy+0x28c)+7, 2, 0)` ✓
+  ⇒ **第 3 参 = 脚本号** ✓（与光环同机制：`FUN_004cb960(…, 0xf, …)` = `pl00.anm` **script15** ✓）。
+- ⇒ **純霊固化 = `enemy.anm` 的 `script106`** ✓（`ghost.anm` 只有 32 条脚本、装不下 106 ✗），它用的 sprite = **144–148** ✓，
+  位置 = **`enemy.anm` entry#1 = `enemy/enemy2.png`**，`y = 96`，**32×32 × 5 帧** ✓。
+- **修正动作** ✓：删除旧的 8 帧（我按「球/环」区误切的 ✗），从 `local/th19.v1.10c/anm/enemy/enemy/enemy2.png` 按
+  `x = 0/32/64/96/128, y = 96, 32×32` **重切 5 帧** ⇒ `SPIRIT_DISP4_0..4` ✓；`ORDER.txt` 的 `ATLAS_SPIRIT_DISABLE_PURE` 由 `128x64`（8 帧）改 **`160x32`（5 帧）** ✓；
+  卡侧 `pofv_spirit_body_sprite()` 的纯灵固化支由「8 帧连续」改 **`% 5`** ✓；`anm_ids.h` 号段现为 **672–676** ✓。
+- **教训（登记）**：`ins_303(…, N)` 的 N 是**脚本号** ✗，我此前一直当 sprite 号找、两次切错 ✓ ⇒ 以后遇 `ins_303/ins_302` 先按脚本号解 ✓。
+
+
+#### BE-170 · 固化大鹫切图**顺时针旋转 90°**（= 鸟头朝下 ✓）（共享面 · 2026-10-06）
+
+- **文件**：`assets/ability/spirit/SPIRIT_DISD3_0..3.png`（改内容 ✓）＋ `assets/ability/entries/ORDER.txt`（`SPIRIT_DISD3_*` 由 `@0/32/64/96,48,32x48` 改 **`@0/48/96/144,48,48x32`** ✓）。
+- **为什么**：owner 实跑三次：「**固化大鹫灵需要顺时针 90°**」✗，运行时 `ce_anm_set_rotation` 与负 x 缩放**都不生效** ✗ ⇒ 改为**在切图阶段烘焙 90°**（最可靠 ✓），owner 明说目标 = 「**鸟头朝下**」✓。
+- **谁改的**：DSH agent（109 卡负责人）。
+- **影响面**：**只动 109 自己的固化鹫 4 张图与其在 `ATLAS_SPIRIT_DISABLE` 里的矩形** ✓；其它卡/其它档（D1 狼 / D2 獭）**不受影响** ✓；图集画布仍 256×256 ✓（新矩形全在界内 ✓）。
+- **怎么验证**：`make anm` 通过（打包器矩形校验 ✓）；实跑固化大鹫应呈「鸟头朝下」✓。
+
+
+#### BE-171 · 固化狼切图**逆时针旋转 90°**（共享面 · 2026-10-06）
+
+- **文件**：`assets/ability/spirit/SPIRIT_DISD1_0..3.png`（内容改 ✓）＋ `ORDER.txt`（`SPIRIT_DISD1_*` 由 `@0/32/64/96,0,32x48` 改 **`@0/48/96/144,0,48x32`** ✓）。
+- **为什么**：owner「**狼也这么弄**」✓（与 `§BE-170` 固化鹫同因：本机 **`ce_anm_set_rotation` 与负 x 缩放对本卡本体 VM 都不生效** ✗ ⇒ 一律**切图烘焙** ✓）；狼的方向 = **逆时针 90°** ✓（owner 早先定 ✓）。
+- **影响面**：只动 109 自己的固化狼 4 张图与其矩形 ✓；鹫（D3）已在 `§BE-170` 处理 ✓；獭（D2）不动 ✓；画布仍 256×256 ✓。
+- **怎么验证**：`make anm` 通过 ✓；实跑固化狼朝向符合 owner 预期 ✓。
+
+
+#### BE-172 · 灵圆三台脚本恢复一手 **減算**（共享面 · 2026-10-06）
+
+- **文件**：`assets/ability/scripts/397_pofv109_spirit_ring.anm.txt`、`398_..._green`、`399_..._red`（各 **1 行变更**：`blendMode(0)` → `blendMode(2)` ＋ 注释说明 ✓）。
+- **为什么**：owner：「**按照一手做，它应当看起来是一个蓝色的圆**」✓ —— 一手 271/272/273 就是**減算** ✓（`blendMode(2)` = 減算，出处 `engine/player/th16/02-season-release-and-bombs.md:193-194` ✓）；**減算把黄系色减掉、剩下的正是蓝** ✓ ⇒ 无需改颜色/alpha（仍照一手 ✓）。会话早先我曾因 owner 报「附属圆看不见」而改成普通 α ✗（文件里留有那段说明 ✓）⇒ 现按一手**改回減算** ✓。
+- **谁改的**：DSH agent（109 卡负责人）。
+- **影响面**：**只动 109 自己的三台灵圆脚本** ✓（其它卡不引用 397/398/399 ✓）；**未改颜色/alpha/scale/层** ✓；`make anm` 通过 ✓ 表示图集/脚本校验一致 ✓。
+- **怎么验证**：实跑固化/沈静化灵 ⇒ 圆应呈**蓝色** ✓；❓ 若"几乎看不见" ⇒ 下一根杠杆是 **alpha** ✗（不是混合模式 ✓），已写在文件注释里 ✓。
+
+
+#### BE-173 · 咲夜领域改「单色扇形」＋ **TH18 不支持 601/602 的实测结论** ✗→保底 ✓（共享面 · 2026-10-06）
+
+- **实测结论（新 ✓，钉死）**：在 `406_pofv109_aura_sakuya.anm.txt` 里写 `textureArcEven(32)` ⇒ `make anm` 报
+  **`thanm:spec.txt:16936,23: unknown mnemonic: textureArcEven`** ✗ ⇒ **TH18 的 anm 方言不认 `601/602`（textureArc / textureArcEven）** ✓
+  —— 与「TH16/TH18 原生从未用过」一致 ✓ ⇒ 那条"真扇形"路在本作**走不通** ✓。
+- **保底落地** ✓：owner「用**单色扇形**先画」⇒ 改用 **`drawPoly(1.0f, 3)`（三角形楔形 ✓，TH18 原生在用 ✓）**；
+  `sprite(-1)`、`blendMode(2)` 減算、颜色/alpha 照一手 ✓；朝向由**卡侧**写 `rotation.z`（= 一手 `+0x80` 的 8 向缓动 ✓）。
+- **文件**：`assets/ability/scripts/406_pofv109_aura_sakuya.anm.txt`（1 行图元变更 ＋ 说明 ✓）。
+- **谁改的**：DSH agent（109 卡负责人）。
+- **影响面**：只动 109 自己的 406 ✓（其它卡不引用 ✓）。
+- **怎么验证**：`make anm` 通过 ✓；实跑按住 Shift ⇒ 应看到**单色（藍系）楔形** ✓；❓ 要"宽扇形/平滑弧"⇒ 需多片三角堆叠（待 owner 定 ✓）。
+
+### §BE-175 —— 新增图集 entry `ATLAS_SAKUYA_FIELD`（共享面：`assets/ability/entries/ORDER.txt` ＋ `CAPACITY.md`）
+
+- **文件**：`assets/ability/entries/ORDER.txt`（新增 `ATLAS ATLAS_SAKUYA_FIELD 32x128` ＋ 成员 `SAKUYA_FIELD_STRIP @0,0,32x128`）、`CAPACITY.md`（按现有**宏名清单**格式登记 `CE_ANM_ABILITY_ATLAS_ATLAS_SAKUYA_FIELD`）、新增图 `assets/ability/spirit/SAKUYA_FIELD_STRIP.png`（**32×128 纯白 α=255**，技术性 ramp）。
+- **改了什么/为什么**：109 咲夜领域用 `texArcEven`(601) 画实心扇形。一手弧族的 **V 从"贴图页顶部"起算** ⇒ 贴图若登记在图集中段（曾放 `ATLAS_SPIRIT_DISABLE @0,128`）会**扫到别的 sprite（"丝"）与空白（中间断开）** ✗。⇒ 必须**独占 entry 且矩形在 `@0,0`** ✓。
+- **谁改的**：109 卡的作者（本会话）。**怎么验证的**：`make anm` rc=0、`make check` rc=0（312 ＋ capcheck 全绿）、`make release` 后四份 DLL 同 md5；**实跑确认**「干净的深蓝色、不透」✓。
+- **对既有卡的影响面**：仅**追加**一条图集 entry（不动任何既有 entry 的坐标/尺寸 ✓）；`anm_ids.h` 里新增宏 ✅；其余卡不引用它 ⇒ **无回归风险** ✓。回归跑了全套 `make check` ✓。
+
+### §BE-176 —— `ORDER.txt` 事故修复（同批，登记备查）
+
+本会话抢救过程中曾误用 `git checkout`/`ORDER.frozen.txt` ⇒ 一度丢失 `ATLAS_SPIRIT_DISABLE_PURE`（`SPIRIT_DISP4_*` 5 条 ✓）并使 `SPIRIT_DISD1/DISD3` 的矩形与**当前原图**不符（`32x48` ✗ ↔ 实际 `48x32` ✓）。**已全部修复** ✓：补回 PURE 段 5 条（`@0/32/64/96/128,0,32x32` ✓）、DISD1 改回 `@…,96,48x32` ✓、DISD3 改回 `@…,48,48x32` ✓。验证同上（打包/测试全绿 ✓）。

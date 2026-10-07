@@ -1,0 +1,20 @@
+script script401 {
+    // 109 灵本体（**動物霊族**：狼 / 獺 / 鷲）—— 一手 `REPORT` §2.2「動物霊常态 265/266/267」：
+    //   `rotateAuto(1);    sprite(@SPIRIT_WOLF_0);
+    rotateAuto(1);
+    // ★★★ 2026-10-06 修（owner：「依旧没有看见任何动物灵」✓ → 根因）：本脚本**原先完全没有 `sprite(...)`
+    //   语句** ✗（注释里那行 `sprite(@SPIRIT_WOLF_0);` 只是**注释** ✗）⇒ 没有 sprite 的 ANM VM **什么都不画** ✗
+    //   ⇒ 動物霊族（狼/獺/鷲）全部**不可见** ✓✓（`ATLAS_SPIRIT_BODY` 的成员由卡侧每 6 帧 `ce_anm_set_sprite` 换 ✓，
+    //   但**首个 sprite 必须由脚本给出** ✓ —— 与 400（静态族 ✓）保持一致 ✓）。详见 `AUDIT.md` §BE 与 `TUNING.md` ✓。
+    sprite(@SPIRIT_WOLF_0);
+    type(1);
+    alpha(0);
+    alphaTime(8, 0, 255);
+    scale(2.0f, 2.0f);
+    scaleTime(8, 0, 1.0f, 1.0f);
+    stop();
+    interruptLabel(1);
+    alphaTime(20, 0, 0);
++20:
+    delete();
+}

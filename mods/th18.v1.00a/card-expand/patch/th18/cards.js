@@ -392,6 +392,24 @@
     "sprite_large": 168,
     "sprite_small": 169
   },
+  "109": {
+    "name": "花映塚",
+    "desc": [
+      "花映塚 × 獣王園：消弹与击破掉灵力道具，",
+      "拾取攒攻击槽；按住 C 蓄力，松手放攻击。",
+      "蓄力分四档，后两档是 BOSS 攻击。",
+      "固灵结界常驻：碰敌弹化为灵力道具，",
+      "碰到的灵被沈静化，击破它掉一把。",
+      "蓝圈只吃白弹，红圈吃掉圈内一切。"
+    ],
+    "category": 0,
+    "internal_name": "POFV_BLAST",
+    "initial_unlocked": 1,
+    "price_tier": 10,
+    "weight": 2,
+    "sprite_large": 212,
+    "sprite_small": 213
+  },
   "110": {
     "name": "风神录",
     "desc": [

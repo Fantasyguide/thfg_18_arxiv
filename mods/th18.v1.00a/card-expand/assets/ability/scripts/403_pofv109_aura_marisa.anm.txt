@@ -1,0 +1,18 @@
+script script403 {
+    // 109 卡固灵结界（除霊オーラ）· **魔理沙套**主 VM —— 逐字复刻一手 TH19 `pl01.anm` 的 `script15` ✓
+    //   一手出处：`engine/versus/th19/06-aura.md` §9.3（Marisa (1) = `pl01.anm` `15` + 子 `16`/`17`，
+    //   「主 VM `alpha(0)` + 两条 `drawRectGrad(1,448)`（竖带）」✓）；原文：`local/th19.v1.10c/_ext/pl01.txt` ✓
+    //   形状 = **竖向无限带**（判定 §7.3 `AuraMarisaInf`：`|px-cx| < r`，**无 y 项** ✓）；半径 K = **14.0** ✓（§7.2）
+    //   ⚠ 与一手只差：脚本号（共享 anm 用自己的号 ✗）＋ 半径由卡侧每帧写（一手由蓄力驱动 ✓，本卡无蓄力槽 ❓）
+    sprite(-1);
+    layer(6);
+    alpha(0);
+    scriptNew(script404);
+    scriptNew(script405);
+    scale(16.0f, 1.0f);
+    stop();
+    interruptLabel(1);
+    scaleTime(20, 4, 0.0f, 1.0f);
++20: // 20
+    delete();
+}

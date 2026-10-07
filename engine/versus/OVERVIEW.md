@@ -35,6 +35,8 @@ TH19 的官方口径是「**画面构成大体基于 TH09，但重构了系统**
 | 有「追加攻击（ExAttack）」层，按角色 × 难度给上限 | ✅（24 型表）| ✅（`ExtraAttack*` 族）| th09 §5 C 链；th19 §4 |
 | 有分数 | ✅（`side+0x1c` 比分块）| ❌（登记称取消分数；`SmallScoreInf` 只剩构造函数）| th09 §2；th19 INDEX §3 |
 | 有 Replay | ✅（DPlay 同步）| ❌（`ReplayInf` 只剩构造函数）| th09 §7 U8；th19 INDEX §3 |
+| **敌人被击破时的「通用圈」** | ❓（未核）| ✅ **程序画**：`enemy.anm` `script271/272/273`（`sprite(-1)` + `drawPoly(1.2f,12)` + `blendMode(2)` 减法 + `scale(0)→24` 用 8 帧）| `th19/07-enemy-death-and-cancel.md` §7 |
+| **该圈的「TH18 没有」可机械判定** | — | ✅ TH18 与 TH19 同名 anm 逐脚本号对差：`enemy.anm` TH19 独有 13 条，其中「无贴图+缩放扩张+减/覆盖」**只有 271/272/273** | 同上 §7 |
 
 > **图例**：✅ 该版本一手验过 · 🟡 单源/推断 · ❌ 已知不同/不存在 · ❓ 存疑。
 
@@ -48,6 +50,7 @@ TH19 的官方口径是「**画面构成大体基于 TH09，但重构了系统**
 | 灵力/清弹 | 符卡 + 充能攻击 | **霊撃 == Bomb**（同一资源字段 `S+0x68`！）|
 | 卡牌/能力层 | 无 | **沿用 TH18/TH18.5 的卡牌系统**：`AbilityCardInf` 23 槽 ≈ TH18 的 21 槽 + 2 个新钩子 |
 | 模式 | Story / Extra / Match（参数级差异）| Story（19 角色解锁）/ VS / 规则菜单（`GameRuleTaskInf`）|
+| **击破通用特效** | ❓ | ★ **同号脚本内容完全不同**：TH19 `effect.anm` 34/38/42/46 是**贴图**（`sprite(25..28)`=`eff_deadcircle`）；TH18 同号是**程序画** `drawPoly(1.0f,50)`+screen。「TH19 独有」的程序画圈见 `07-enemy-death-and-cancel.md` §7 |
 
 ## 对本仓（TH18 宿主）的含义
 

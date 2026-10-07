@@ -1,0 +1,2163 @@
+/* 花映塚 × 獣王園 合成卡（card-expand id 109）—— 卡侧接线。
+ *
+ * ★★★ 重建进度（owner 口径「从零、一点一点」）：
+ *   ① 卡面美术 + 描述 + **主动卡**身份（`active_recharge` + `on_activate` ⇒ REFUSED，按 C 无作用）✅
+ *   ② **暴风（連爆）** —— ★ 一手改用 **TH19**（owner 2026-10-04 口径）✅
+ *   其余（消弹场 CA / 罩子 / 固灵结界 / 灵 / 灵力道具 / BOSS 态 / hits UI）**一行都还没接**。
+ *
+ * ══ ② 暴风（消弹场）· 一手 = **TH19 的「連爆触发」+「Bomb 族的扩张圈形状」** ═════════
+ * ★★ 2026-10-04 定音（全部一手，见 `engine/versus/th19/05-four-mechanics.md` §9–§14）：
+ *   · **触发**：TH19 的連爆 = **ECL 指令 `0x60`**（分派器 `FUN_004fecc0`，195 个 case 覆盖 0..195），
+ *     它只做一件事：把敌人身上那两张**逐 kind 计数表**（`obj+0x502c` A / `obj+0x5080` B，
+ *     各 21×4B，1-based）沿椭圆冲刷成实体（`FUN_0040f880` → `FUN_0050c6d0`）。
+ *     ⇒ 全 exe 找不到硬编码的「小兵死了就炸」，因为**触发在 ECL 数据里** ✓（本卡用 `on_enemy_death` 等价表达）。
+ *   · **形状**：TH19 里「扩张的消弹圈」的合法主人是 **Bomb / 攻击族**（逐字见于 `BombSanaeInf` 的 tick）：
+ *     `entity+0xc8` 的 tween（`FUN_00402c30`）→ **半径**；同一个值写进 `vm+0x54`（VM 的 scale.x）
+ *     ⇒ **判定 = 绘制**是这套的天然性质 ✓；然后
+ *       `FUN_004ee770(pos, 半径, …)`（半径消弹）+ `FUN_00530c60(pos, …, **1**)`（半径命中，参数 1）
+ *       + `FUN_005200f0(…, 10)`（生成物）。
+ *     ⇒ 本卡的 `do_storm_frame()` 与它**同形**：半径消弹（本仓判据）+ `dmg = 1` 的半径命中，
+ *       且 `storm_vm_sync()` 用**同一个半径**写 VM 的 scale ⇒ 判定=绘制 ✓
+ *   · ⚠ **还没对上的一处（标 ❓）**：Bomb 那条 tween 的**键值与时长**没取到
+ *     （`entity+0xc8/+0xf0/+0xf4` 不是立即数初始化，来自逐 Bomb 的参数/模板）⇒ **本卡的半径律
+ *     仍借用 TH09 的节点值**（`r0 0 / dr 1.6 / 寿命 70 ⇒ 112`，一手 `th09:0x41fe93`，已逐指令核过），
+ *     拿到 Bomb 的键值后要换。
+ *   · **过滤**：owner 口径「th18 不存在白弹，用本仓那套」⇒ 弹半径 `+0x658 ≤ 4.0`（`pofv_is_white_bullet`），
+ *     不照搬 TH19 的 `+0x1044 ∈ {1,2}`（TH18 无此字段）。
+ *
+ * ── 以下为 TH09 侧的对照（半径律的**临时**出处）─────────────────────────────────
+ * ⚠⚠ **下面这一整段（2026-10-04 的「TH19 没有这条链」结论）已于 2026-10-05 被
+ *   [`HANDOFF-109-STORM.md`](./HANDOFF-109-STORM.md) 推翻**（对象 = `ghost.anm` 16→17，
+ *   触发 = `0x50c1f0` → `0x51d4e0` → `0x51cc70`）。**保留原文仅作教训**，不要照它实现。
+ * 原文：**TH19 侧已核死：没有「击破小兵 → 消弹圈」这条链**（2026-10-04，全链见
+ *   `engine/versus/th19/05-four-mechanics.md` §9.5–§9.8b）：
+ *   · TH19 的**連爆**（`FUN_0050c1f0` → `FUN_0050c6d0`）= 20 类道具扇形撒布 + 逐个**通知能力卡**
+ *     （容器 `FUN_004dda60` 加载 `ability.anm`/`abcard.anm`/`abmenu.anm`）—— **它不消弹**；
+ *   · TH19 的「击破特效」（那个大气泡）= `enemy.anm` script 33/37/41/45/49/50/51，**贴图型**；
+ *   · TH19 的**消弹**是**能力卡**的行为（半径 40 / 128 / 640）——`@MAMIZOU2` 的卡面文字
+ *     「バリア破壊時に敵弾破壊」正对上半径 128 那处调用点 ✓；
+ *   · 之前误当成「暴风」的 `0x53b920`（3 台 VM / 寿命 45 / 轨道 0→64 / 每台半径 64 / 死后 128→192）
+ *     是**一个死基类 vtable 的槽** ⇒ **整组作废**。
+ *   ⇒ 能照抄的「逐帧扩张的消弹场」只有 **TH09**（= `HANDOFF-109.md` §2.2 的表）：
+ *     节点 = (圆心, r0, dr, 寿命)；本卡用「自机弹命中」那条 `th09:0x41fe93` =
+ *     `r0 0 / dr **1.6** / 寿命 70` ⇒ 终点 **112 px**。
+ *     ⚠ **2026-10-04 订正**：HANDOFF §2.2 曾说「构造函数 `0x41d050` 里有 `fmuls [0x490f54] = ×0.5`」
+ *       —— 反汇编 `0x41d050` 后**证否**：它是 `mov [eax+8],r0 / mov [eax+0xc],dr` **直接存、无乘法**
+ *       （`[0x490f54] = 0.5f` 存在但不在这条路上）。三路互证见 `pofv_core.h` 文件头。
+ *   · **触发** = owner 口径「**杂鱼死掉时创建**」（boss 不算）—— 与 TH19 的連爆触发点同源
+ *     （都挂在敌人死亡处理上）。
+ *   · **消弹** = 本仓设计的**可消弹判据**（弹半径 ≤ 4.0；TH18 没有 TH19 那套「小弹」字段）。
+ *   · **画面**（2026-10-04 已核到一手，结论是**没有脚本可抄**）：TH09 那一下的视觉是
+ *     **代码逐点拼出来的卷环** —— `th09:0x41fcd0` 并排起「判定节点」与
+ *     `FUN_0040cd70(..., effect id **0x22**, pos, 6, -1)`，而 0x22 的回调 `0x444a20`/`0x444af0`
+ *     是「按角迭代 + `FUN_00441890`（cos/sin 极坐标）+ `AnmManager__flush_sprites`」⇒ **不走 anm**
+ *     （详见 `engine/card/th09/01-pofv-charge-and-cancel-fields.md` §5）。
+ *     ⇒ 本卡**没法「复刻脚本」**，只能用 anm 的 `drawPoly` 做**观感近似**：
+ *     `layer(6)` 两段（script 396 外层黑边/芯透 + 397 内层褐 ×0.7），观感按 owner 口径
+ *     （从外到内 = 黑边 + 褐色 + 透明，不带亮边/彩虹）；大小由卡侧每帧写（`scale = 场半径`），
+ *     脚本里不写 `scale`。★ **注释里一律写「近似」，不许写成「复刻」**（`METHOD.md` 铁律）。
+ *
+ * ══ 长持续效果纪律（CLAUDE.md / METHOD.md 铁律）════════════════════════════════════
+ *   本卡跨帧留下的东西 = **暴风场池** + **每场 3 台跟随 VM**。
+ *   两条删卡路（倒吊人 / 原版空白卡弃整副牌）**都发生在商店里**，那一刻 `on_tick_2` 停摆 ⇒
+ *   全部在 `clear_card()`（`on_run_reset` / `on_delete` 共用）里收 —— **完全不依赖 tick** ✓。
+ */
+#include "sdk.h"
+#include "pofv_core.h"
+
+/* ============================================================ 常量 */
+
+/* ★ 主动卡的「充能时长」（帧）。⚠ `on_activate` **每次都 REFUSED**（按 C 无作用），
+ * 这个值只决定引擎眼里「这张主动卡的冷却有多长」⇒ 取一个常规值即可 ❓ 自定。 */
+#define POFV_ACTIVE_RECHARGE        60
+
+/* 画面：脚本里写死 `layer(28)`，卡侧传同一支（TH19 三台同层）。 */
+/* ★★ 层号必须是**世界层 3–19**（24+ = UI 层、1 单位 = 1 表面 px；且 `layer(20..32)` 会派生
+ * `resolutionMode` 模式 1 ⇒ 位置三分量 ×2 —— 旧版 `layer(28)` 就是这样把暴风画偏的）。
+ * 取 **6**（一手 `effect.anm` script20 的层号同支）。脚本里也写 `layer(6)`，两边一致。 */
+#define POFV_STORM_VM_LAYER          6
+
+/* 一次消弹最多认几颗（原版 `FUN_004ee770` 传 99999）。 */
+#define POFV_CANCEL_MAX          99999
+
+/* ★★ 消弹：**不用** `ce_cancel_radius`（引擎 `0x429370` 的「带保护位就跳过」那种半径消弹），
+ *   因为 **TH18 的弹上没有 TH19 那套「小弹」字段**（owner 口径：「th18 不存在白弹，所以用我之前
+ *   设计过的能消那些弹的判据」）⇒ 自己扫弹池、按 `pofv_is_white_bullet()`（弹半径 ≤ 4.0）逐颗筛、
+ *   逐颗调 `Bullet__cancel(b, mode)`。判据与出处见 `pofv_core.h` 的「可消弹的判据」。 */
+#define POFV_FN_BULLET_CANCEL   0x428e90
+typedef void (__attribute__((thiscall)) *pofv_fn_bullet_cancel_t)(void *bullet, int mode);
+
+/* `0x658` = `zBullet.radius`（出生时从弹种表 `0x4c5f90` stride `0x118` 的 `+0x104` 拷入：
+ *   一手 asm `0x425998 movss xmm0,[eax+0x4c6094]` → `0x4259a8 movss [edi+0x658],xmm0`）。 */
+#define POFV_BULLET_RADIUS_OFF  0x658
+
+/* 消掉的可消弹走 `mode = 1`：引擎 `0x4290e0` 会**加分 + 掉点道具**
+ *   （原版「被消的白弹投到对手场地」在单机没有对应 ⇒ 用户口径改成转成分）。 */
+#define POFV_BULLET_CANCEL_MODE     1
+
+/* ★★ 伤害：一手 = `0x53b7ef movss xmm2,[0x5aa368]`（**64.0**）+ `push 1` → `FUN_00530c60(blob, 64.0, 1)`，
+ *   而 `FUN_00530c60` 把 `xmm2` 与最后的 `1` 转给每个目标的 `vft+0x30(pos, 64.0, 0, 1)`
+ *   ⇒ **TH19 的暴风没有「扁平伤害数」**：它是「每帧、每台、半径 64 的一次命中、参数 = 1」，
+ *     结算交给目标自己的处理。
+ *   ⇒ TH18 侧落成「每帧每台一个半径 64 的矩形伤害源、`dmg = 1`、活 1 帧」（活 1 帧 ⇒ 当帧结算一次，
+ *     下一帧重建 ⇒ 与一手的「每帧都判」同形）。 */
+/* 伤害常量统一在 `pofv_core.h`（`POFV_STORM_HIT_DMG` / `POFV_SPIRIT_HIT_DMG`）——卡侧不再重复定义
+ * （曾因重复定义导致「重新设计的 10」被旧的 6 盖掉）。 */
+#define POFV_STORM_HIT_LIFE          2    /* ★ 伤害源寿命（帧）。本仓既有值一律 2：`bomb10.h` 的
+                                           * `BOMB10_DMG_SRC_LIFE`、`broken_core.c` 的 `BC_HIT_LIFE`
+                                           * （注释原文：「2 帧是给结算留的余量」）—— 取 1 会让源在敌人侧
+                                           * 结算（`0x45f0f0`）轮到之前就消失 ⇒ **伤害落不下去**（实跑就是如此）。 */
+
+/* ★ 场地的世界坐标范围（一手：弹幕区 x ∈ ±192、y ∈ [0,448]）⇒ 伤害矩形要裁到这里面，
+ * 否则场心靠边时矩形溢出场地，会把**还没进屏**的敌人打死（owner 报过的真 bug）。*/
+#define POFV_FIELD_HALF_W        192.0f
+/* ★ 2026-10-06：灵的**横向钳位**（一手：`FUN_0051b6c0` 把灵 x 钳在 [-140,+140] ✓）——
+ *   水獭「碰边折返」必须用**这个**阈值（不是场地半宽 192 ✗）；❓ 一手精确钳位/余量待核 ✓ */
+#define POFV_SPIRIT_X_CLAMP      140.0f
+#define POFV_FIELD_H             448.0f
+
+/* ============================================================ 池（文件级） */
+
+/* ⚠ 池是**文件级静态**（不是 `ce_state`）—— 一张卡的 `ce_state` 只有 496 B，装不下 16 个场
+ *   × 3 台 VM；照 116 / 117 的先例（`animal.c` 的 `s_tok`）。
+ *   代价：所有清理必须**不依赖 tick** ⇒ 全在 `clear_card()` 里。 */
+static pofv_storm_pool_t s_storm;
+/* ★★ A 路（owner 2026-10-05 选）：灵 = **引擎真敌机**（`ce_spawn_enemy`，108 使魔/112 令牌同款原语）。
+ *   ⚠ SDK 明令：**禁止在敌人死亡栈里调** `ce_spawn_enemy`（DEATH §2.4 重入）⇒
+ *     死亡回调里**只入队**（`s_spirit_q`），真正的生成放在 `on_tick_2`。 */
+#define POFV_SPIRIT_Q_MAX 4
+static float   s_spirit_q[POFV_SPIRIT_Q_MAX][2];
+static int32_t s_spirit_q_kind[POFV_SPIRIT_Q_MAX];
+static int32_t s_spirit_q_level[POFV_SPIRIT_Q_MAX];
+static uint8_t s_spirit_q_inc[POFV_SPIRIT_Q_MAX];   /* ★ Q4 队列侧来源标志（1 = incoming）*/
+static int   s_spirit_q_n;
+static int   s_point_q;
+#define POFV_PURE_SPAWN_INTERVAL 180   /* ❓ 純霊自动生成节拍（一手只说「只能自动生成」）*/
+#define POFV_GHOST_SEND_COOL 30   /* ❓ 送出冷却（一手是「每次命中且 state 2/3」，未给频度）*/
+static int   s_ghost_cool;
+static int   s_pure_kill_n;
+/* ★ ⑥ 比赛时长 → cap：本仓 SDK 没有时间口 ⇒ 用**卡自己的帧计数**换算秒（per-frame tick ✓）。
+ *   一手：每侧上限按比赛 60/120/180 s 分档 ⇒ **60 / 80 / 999**（`pofv_spirit_cap_for()` 已实现且单测覆盖）。
+ *   ❓ 用「本卡在场帧数」近似「比赛时长」（换卡再切回来会从头算）。 */
+static int32_t s_card_frames;
+static int32_t s_aura_stamp = -1;   /* ★ 固灵结界的「按住 C」时间戳（定义在下方 `pofv_active_tick`）*/
+static int32_t s_aura_vm;            /* ★ 固灵结界的**可视 VM**（一手 `effect.anm` script1 的复刻 402 ✓）*/
+/* ★ 咲夜扇形：**7 片三角**（407-413 ✓，owner「多片三角 + 多片三角来做渐变」✓；每片自带朝向与颜色 ✓）*/
+#define POFV_AURA_PIECES 7
+static int32_t  s_aura_piece[POFV_AURA_PIECES];
+static float   s_aura_r;              /* ★ 本帧的结界半径（= 缩放 ✓，一手「槽 3 写缩放=半径」✓）*/
+static float   s_aura_charge;         /* ★ Shift 蓄力（0..200 ✓ = 结界动态的唯一驱动 ✓）*/
+static float   s_aura_k;              /* ★ 本帧的 K（灵梦 64 / 魔理沙 14 / 咲夜 ? / 早苗 128 ✓）*/
+/* ★ #2 追赶动画层（TUNING 判「原版有 ⇒ 建议补」✓，一手 `06-aura.md` §10 ✓）：
+ *   `半径(f) = 初值 + (目标 − 初值) × ease(模式, f)`，`f = 已过帧 / 时长`；走完保持目标 ✓；
+ *   初值 = `+0x6c` = **1.0** ✓；时长/模式逐类：灵梦/魔理沙 **20 / 4**（`1−(1−f)²` ✓）、早苗 **60 / 2**（`f³` ✓）。*/
+static int     s_aura_anim_f;         /* 本段张开的已过帧 ✓ */
+/* ★ 咲夜（TH09 ✓）专有状态：半张角（度 ✓，每帧 +3 上限 90 ✓）、方向参考（**向量** ✓，朝 8 方向 0.25/帧缓动 ✓）、
+ *   上一帧自机位置（求移动方向用 ✓，不引 libm ✗）。*/
+static float   s_aura_sec_deg;
+static float   s_aura_dir_x, s_aura_dir_y;
+static int32_t s_aura_dir8i;           /* 最近 8 向索引（仅用于**取目标角** ✓）*/
+static float   s_aura_mid_ang;
+static int32_t s_aura_dir_snap;        /* ★ 新激活首帧：中线角**直接吸附到目标** ✓（否则从上次朝向绕圈 ✗）*/
+static int32_t s_aura_close;
+static float   s_aura_close_ang;         /* ★ 领域中线角（**连续缓动** ✓；owner：8 向瞬跳 ✗ 不合格 ✓）*/
+static float   s_aura_px, s_aura_py;
+static float   s_aura_anim_cur;       /* 上一帧的实际半径（追赶的起点 ✓）*/
+static int     s_aura_kind;           /* ★ 0=灵梦 1=魔理沙 2=咲夜(TH09) 3=早苗 ✓ */
+/* ★★★ 2026-10-06 goal ②③：**自维持定位用的四类计数** ＋ **安全阀** ✓（owner：「**我不要自维持**」✓）：
+ *   · 计数：送出(`take54`/`take30`) / 回程到达 / §4.5 白给 / 击破 ✓ ⇒ 每 300 帧打一行（含两侧在场数 ✓）；
+ *   · 安全阀（**❓自定，阈值先取 20**，待 owner 定 ✓）：本侧在场 ≥ `POFV_SPIRIT_SPILL_MAX` ⇒ **暂停送出** ✓
+ *     （保证「一手绝不会到的数量」时不再继续堆 ✓）。*/
+static int pofv_spirit_live_count_fam(int fam);   /* ★ 前向声明（定义在后 ✓）*/
+#define POFV_SPIRIT_SPILL_MAX 20
+static int s_cnt_send54, s_cnt_send30, s_cnt_arrive, s_cnt_gift, s_cnt_kill;
+/* ★★★ 2026-10-06 EX 骨架（依据：一手 `08-extra-attack.md` §6/§8.1/§8.2 ＋ 社区「攻撃ランク」✓）：
+ *   · `s_ex_gauge` = **本侧**那本「攻撃ランク」（0..200 ✓、**1P/2P 独立** ✓、与 X 蓄力 `s_aura_charge` **分开** ✓）；
+ *   · 判据（`§8.2` 一手 ✓）：「**击破动物灵 ⇒ 返还一只灵给对面；若本侧此刻「EX 可发」⇒ 这次产出改为该角色的 EX 攻击（不回程）**」✓；
+ *   · 「EX 可发」= `s_ex_gauge >= 阈值表[s_ex_level]` ✓ ⇒ `s_ex_gauge -= 阈值` ✓（**不清零** ✓ 一手 ✓）；
+ *     阈值表 = **一张** `[75,65,65,55,50,45,45,40]` ✓（`0x59dcc8` ✓，**按等级索引** ✓ —— 我先前"18 张"的说法是错的 ✗ 已纠正 ✓）；
+ *   · 增长来源（社区 ✓ 单源 🟡）：**消弹 / 消動物灵** ⇒ 上涨 ✓，每侧独立 ✓、0..200 ✓。
+ *   ❓ 自定（登记 `TUNING` ✓）：① 每次增长步长 `POFV_EX_GAUGE_STEP`（社区未给 ✗）；
+ *     ② 等级 `s_ex_level` 的取法（一手是引擎全局 `DAT_0062b250` 0..7 ✓；我们暂取 0 ❓）；
+ *     ③ **EX 敌人本体（`ExAttack` / `ExAttackW/O/E`，HP 200/2400/4000 ✓）尚未实现** ✗ —— 缺它的敌机名/ECL ❓。*/
+#define POFV_EX_GAUGE_MAX   200
+#define POFV_EX_GAUGE_STEP  15       /* ★ 一手配方（`EX-GAP-NOTES.md` §11.1 ✓，不再自定 ✓）：
+                                      *   击破（死亡类别 1 ✓）且**未在冷却**（`holder+0x34 == 0` ✓）⇒ `*(holder+0x20) += 15` ✓ */
+#define POFV_EX_FIRE_AT     100      /* ★ 一手：`> 99` ⇒ 发射 EX（即 **≥100** ✓）*/
+#define POFV_EX_COOL        60       /* ★ 一手：发射后冷却 `+0x34 = 60` 帧 ✓（期间不再积累 ✓）*/
+/* ★★★ 2026-10-06 一手 `08-extra-attack.md` §8.38 ✓：「**40**」= 实体**进入状态域 1 的次数**（≈ 被击破/被收的灵数 ✓），
+ *   **每侧各自 40** ✓、**每局重置** ✓、**局内单调** ✓（无重置点 ✓）⇒ **到 40 之后本局该类通路永久不再送灵** ✓（真的能脱离循环 ✓）。
+ *   ⚠ 注意：脱离循环只指**双方不再互送灵** ✓ —— 对面仍可能吃到 **EX** ✓（§8.36 ✓）。*/
+#define POFV_SEND40_LIMIT   40
+static int32_t s_send40;             /* ★ 本侧「进入状态域 1」的计数 ✓（≈ 我方灵被击破/收掉数 ✓）*/
+static const int32_t s_ex_thr[8] = { 75, 65, 65, 55, 50, 45, 45, 40 };   /* ★ 一手 `0x59dcc8` ✓（等级 0..7 ✓）*/
+static int32_t s_ex_gauge;
+static int32_t s_ex_cool;            /* ★ 一手：发射后冷却 60 帧 ✓（`holder+0x34` ✓）*/
+static int32_t s_ex_level;           /* ★ §8.24 订正 ✓：`DAT_0062b250` **不是随时间涨** ✗ —— 它是
+                                      *   **每局开局的设定值**（实测出现 1 与 3 ✓；社区难度上限 EASY10/NORM60/HARD80/LUNATIC100 ✓
+                                      *   只对应"起点/上限" ✓）⇒ 卡侧应**每局设定一次** ✓；❓ 难度→索引(0..7) 的映射待定 ✓，
+                                      *   现暂取 0 ❓（"局内再升"属**自定** ✗ 一手无 ✓）。*/
+
+static int pofv_spirit_spill_stop(void)
+{
+    /* ★★★ 2026-10-06 owner 裁定（两侧语义 ✓）：
+     *   · **本侧发 EX ⇒ 暂时不会给对面灵** ✓ ⇒ 本函数**同时**把「出循环」当成停送条件 ✓
+     *     （`pofv_foe_spirit_loop_exit_any` ✓）—— 这样两条阈值送出都被挡住 ✓；
+     *     对面侧的「暴风/§4.5 直接 spawn」由**模型自己的 `spawn` 拒绝** ✓（出循环 ⇒ 不产生灵 ✓）。
+     *   · **对侧发 EX ⇒ 不会返回来灵** ✓ ⇒ 由模型 `mirror_kill` 跳过 `loop_exit` 项 + `spawn` 拒绝共同保证 ✓。
+     *   ⚠ 「出循环」的**触发条件**仍待重做 ✗ ⇒ 卡侧**只留接口**（`pofv_foe_spirit_loop_exit()`）✓，暂不调用 ✓。*/
+    const int live = pofv_spirit_live_count_fam(POFV_FAM_TH19) + pofv_spirit_live_count_fam(POFV_FAM_TH09);
+    /* ★ TODO（下一轮 ✓）：owner 裁定「**本侧发 EX ⇒ 暂时不给对面灵**」⇒ 这里还应加
+     *   `if (pofv_foe_spirit_loop_exit_any(s_foe, POFV_FOE_SPIRIT_MAX)) return 1;` ✓
+     *   ⚠ 但 `s_foe` 的声明在**本函数之后** ✗ ⇒ 直接引用编译不过 ✓（我试过 ✓）
+     *   ⇒ 下一轮把 `s_foe` 的声明**前移**（或给本函数加一个访问口 ✓）再接 ✓，避免半截改动 ✗。*/    if (live >= POFV_SPIRIT_SPILL_MAX) {
+        if (!(s_card_frames % 60)) ce_log("pofv: 【安全阀】本侧在场 %d ≥ %d ⇒ **暂停送出** ✓（❓阈值待 owner）", live, POFV_SPIRIT_SPILL_MAX);
+        return 1;
+    }
+    return 0;
+}
+static int     s_aura_role_logged;    /* ★ 只为「钉死 0x4cccf4 的角色映射」打一次日志 ✓（核实建议 ✓）*/
+static int     s_aura_is_marisa;      /* ★ 本帧走哪套（❓ 角色读取点未定 ⇒ 现恒 0 = 灵梦 ✓）*/
+static int s_ex_pending;
+/* ★★★ W6 消费端（第一件）：把镜像事件**真送出去** —— 按 `pofv_mirror_emit()` 的三条硬口径：
+ *   ① 己方弹幕（我们自己 spawn 的 VM ⇒ 天然符合）② **从版顶长出** ③ **50% 透明度起步**（非己方样式）。
+ *   ❓ 载体暂时用现成的「附属圆」脚本当「送过去的东西」（形似而非弹幕）；做成真弹幕要另找载体。 */
+
+static int32_t s_pure_kill_n_abs;
+/* ★★★ 对面侧模型（owner 定稿：纯数据、无可见物 —— `pofv_core` 的原语） */
+static pofv_foe_spirit_t  s_foe[POFV_FOE_SPIRIT_MAX];
+/* ★★★ MODEL §1-3 / §7-3「容量 60/80/999（TH19）· 25/10（TH09）；**满了不生成、折算成计数**（不是丢包 ✗）」
+ *   ⇒ 对面模型的**唯一**生成入口 ✓（卡侧所有送出都走这里 ✓） */
+static int pofv_foe_spawn_gated(float x, float y, int32_t kind, int32_t level)
+{
+    /* ★★★ 核实报告整改（2026-10-05）：①**分族计数**（原用全局 count ⇒ 一族占满会堵死另一族 ✗）
+     *   ②**cap 大于池容量（64）时也必须折算**（原 raw spawn 返回 −1 ⇒ 真丢包 ✗）*/
+    int fam = (kind == POFV_SPIRIT_KIND_GHOST_TH09) ? POFV_FAM_TH09 : POFV_FAM_TH19;
+    int cap = pofv_spirit_cap_for(fam, s_card_frames / 60);
+    int i, live = 0, n = POFV_FOE_SPIRIT_MAX;
+    for (i = 0; i < n; ++i) {
+        if (!s_foe[i].active) continue;
+        if (pofv_spirit_family_of(s_foe[i].type) == fam) ++live;      /* ★ 只数**本族** ✓ */
+    }
+    /* ★★★ 撤回（2026-10-05，核实复核）：上一版我按文档 `:46` 的「我→对面 也该配一个 10」在这里加了
+     *   落地门，**但两条门数的是同一个 `live`（本族在场数）** ⇒ `10 < 25` ⇒ 对 TH09 而言 **10 永远先生效、
+     *   `25`（在场灵数门）成为死门** ✗ —— 与文档 `:43`「25 = 收件方**在场灵数** / 10 = 收件方的
+     *   **落地·寄存**」的两种语义不符 ✗。
+     *   ⇒ **撤回**（先让**在场灵数门 25** 照文档生效 ✓）；「10 = 落地/寄存」该数**哪一个计数器**
+     *     （在途/寄存数？）文档未给 ⇒ 标 ❓ **等 owner 一句**，我不猜 ✗（`POFV_TH09_LANDING_CAP` 常量保留 ✓）。*/
+    if (pofv_spirit_room(live, cap)) {
+        if (pofv_foe_spirit_spawn(s_foe, n, x, y, kind, level) >= 0) return 0;
+    }
+    ++s_point_q;                 /* ★ 满（含 cap>池 的溢出）⇒ **折算成计数**（不丢包 ✓）*/
+    ce_log("pofv: 对面模型满（fam %d live %d / cap %d / 池 %d）⇒ 折算成计数（不丢包 ✓）", fam, live, cap, n);
+    return -1;
+}
+static pofv_foe_incoming_t s_inc[POFV_FOE_INCOMING_MAX];
+/* ★ MODEL §5-1：**出生位置 = 版顶随机**（与 TH19 同口径 ✓；TH09 幽灵同样 ✓，不再用我方击破点 ✗）*/
+static float pofv_top_x(void) { return ((float)(ce_rand() % 321) - 160.0f); }
+static float pofv_top_y(void) { return 16.0f + (float)(ce_rand() % 33); }
+
+/* ★ 連撃/破坏累积（owner 一手：两档阈值 + 保余数）＋「最近一次破坏位置」（一手 `+0x58`/`+0x60` ✓）*/
+static pofv_acc_t s_acc;
+/* ★ HUD「hits」（一手 §9.8）：当前值 `+0x22b4` / 锁存 `+0x22b8` / 寿命 120 / `+0x227c<1` 时 6 帧闪灰 ✓
+ *   ⚠ 按 owner 结论：**只接 hit 这一条**（两作同源 ✓），**SP 不并进 Hits** ✗ ⇒ 这里不碰 SP ✓ */
+static pofv_hits_t s_hits;
+/* ★★★ MODEL-109-SPIRIT-MIRROR.md §4.5 / §4.6（owner 2026-10-05 追加）—— 这两个是**独立事件源** ✓：
+ *  §4.5 **周期生成**：除 boss 外，每 **30 s**（=1800 帧）尝试在**两侧各**生成 1 只（幽灵/纯净灵，种类**各自随机** ✓）
+ *        ⇒ 这是**本侧的首个生成入口** ✓（解开「本侧恒 0 只」的 bootstrap 死锁 ✓）
+ *  §4.6 **对面灵的自然击杀**：每个对面灵**每 30 帧**判定一次，概率 p = 1/120（⇒ 平均 60 s 被杀一次 ✓）
+ *        ⇒ **按【镜像击破】记账** ✓（= 「并非镜像的镜像击破」✓），作用 = **润滑链条、腾槽位** ✓ */
+#define POFV_PERIOD_SPAWN_FRAMES 1800    /* 30 s ✓ */
+#define POFV_NATKILL_EVERY 30            /* 每 30 帧判一次 ✓ */
+#define POFV_NATKILL_DEN 120             /* p = 1/120 ✓（期望 1/60 s ✓，owner 推导待确认 🟡）*/
+static int32_t s_period_timer;
+static int   s_boss_prev;   /* ★ owner 2026-10-05：boss 表 0→1 的**边沿**（进 boss 清屏一次 ✓）*/
+/* ★ HUD（owner：「**HUD 只需要本侧即可**」✓ ⇒ 只一套 ✓）：数字走 `ce_hud_number_set`（ANM 图元 ✓）、
+ *   标签 `hits` 走 `ce_hud_vm_text_set`（原生 font2 字形 + 可带颜色 ⇒ 黄/灰闪 ✓）
+ * ❓ 位置：一手 `y = 32.0`、`x = …(296 比例) + 16.0`（**引擎坐标系** ⇒ 本卡 UI 空间换算未核 ⇒ 先取 32/… 近似，登记 TUNING）
+ * ❓ 颜色字节序：一手是 `0xffffff00`(黄)/`0xff808080`(灰)；本口参数名是 `bgra` ⇒ 先按同字节序传，实跑若反了调换 ✓ */
+#define POFV_HUD_HITS_X 16.0f
+#define POFV_HUD_HITS_Y 32.0f
+static ce_hud_number_t  s_hud_hits_num;
+static ce_hud_vm_text_t s_hud_hits_lbl;
+/* ★★★ 2026-10-05 owner：**调试 UI** —— ① 镜像事件列表（镜像暴风**延迟**显示；镜像击破/固灵**停 3 s**再消失）
+ *   ② 镜像幽灵列表（**只写「有什么」**，不涉及位置 ✓）。文字一律走**切贴图**（`ce_hud_vm_text_set` ✓，owner 规矩 ✓）*/
+#define POFV_UI_EV_MAX 5
+#define POFV_UI_EV_TTL 180        /* 3 s @60fps ✓（owner：镜像击破/固灵停 3 s）*/
+#define POFV_UI_STORM_DELAY 60    /* ❓ 镜像暴风的「延迟」= 1 s（owner 未给数值）*/
+static struct { int32_t what; int32_t ttl; } s_ui_ev[POFV_UI_EV_MAX];
+static ce_hud_vm_text_t s_ui_ev_vm[POFV_UI_EV_MAX];
+static ce_hud_vm_text_t s_ui_gh_vm;
+/* 事件种类（UI 文本用）*/
+enum { POFV_UI_EV_STORM = 0, POFV_UI_EV_KILL = 1, POFV_UI_EV_SEAL = 2, POFV_UI_EV_SPAWN = 3 };
+/* ⚠ `POFV_UI_EV_SPAWN`（=3）是**死枚举**：全文件**从未设置/使用** ✗（核实 2026-10-05）；
+ *   保留占位以免后续枚举值移位（`POFV_UI_EV_MAX` 的数组大小不受影响 ✓）。*/
+
+static float s_acc_last_x, s_acc_last_y;   /* ❓ 待生成的 EX 数（触发走 pofv_ex_ready 的门限，计数源暂用純霊击破数）*/                  /* 超限欠下的「100 分」笔数（延后到 tick 发）*/
+
+/* ★★★ 灵的「送到对面」= **暂存**（一手：`modkit/MECHANICS-109.md` §6.1「灵的『送到对面』= 暂存」）：
+ *   纯灵被击破 ⇒ **进入暂存一段时间** ⇒ 送回来时**变成動物霊**。
+ *   ⚠ 同一份文件写明「**已删除**：用一个不可见的**虚拟对手位**占位 —— owner 明确说不是这个意思」✗
+ *     ⇒ 这里**没有对手位**，只有「等一会儿再在本侧长出来」。 */
+#define POFV_SPIRIT_STASH_MAX     4
+#define POFV_SPIRIT_STASH_FRAMES 180     /* ❓ 暂存时长（一手只说「一段时间」；与 owner 提的「180 帧/只」节拍同值，待定音）*/
+static float   s_stash[POFV_SPIRIT_STASH_MAX][2];
+static int32_t s_stash_kind[POFV_SPIRIT_STASH_MAX];
+static int32_t s_stash_ttl[POFV_SPIRIT_STASH_MAX];
+#define POFV_STORM_VM_PARTS          1    /* ★ 一手：TH19 的圈是**一台 VM**（`drawPoly(1.0,64)` 两段顶点色）*/
+static int32_t           s_storm_vm[POFV_STORM_MAX][POFV_STORM_VM_PARTS];
+static int32_t           s_cap_logged;      /* 「池满丢弃」只记一行（防刷屏）*/
+
+/* ============================ 本卡的「灵」账 ============================
+ * owner 2026-10-05：「**只有本卡召唤的才是灵**」（TH17 的動物霊与 TH19 的灵「设定上是一个东西、
+ *   游戏上完全不是一回事」）⇒ 灵档（半径 80 / 40 帧 / 伤害 10）**只对这张卡自己召唤的灵**用。
+ * 做法：召唤灵时（`TODO(灵)` 的本体落地处）调一次 `pofv_note_spirit(敌人 id)`，死亡回调里查这张表。
+ * 一手依据：TH19 的爆风圈半径/寿命来自**死亡敌人的 `ins_1028`/`ins_1031`**，而灵档（80/40）与杂鱼档
+ *   （30/50）不同 ⇒ 必须知道「死的是不是我们的灵」；而 TH18 侧没有可用的敌人种类标记
+ *   （`ce_enemy_death_t` 只有 id/kind/flags/x/y/enemy/…）⇒ 用**自己的账**最干净，也不碰别人的卡。
+ * ⚠ 按 enemy id（`ce_enemy_death_t.id` = `enemy+0x6830`，单调递增）记，**不存敌人指针**（同帧 sweep 会删）。
+ * ⚠ 无淘汰机制：满 32 格就覆盖最旧一格（灵很少，够用；已登记 TUNING）。 */
+#define POFV_SPIRIT_MAX 32
+static uint32_t s_spirit_id[POFV_SPIRIT_MAX];
+static uint8_t  s_spirit_from_incoming[POFV_SPIRIT_MAX];   /* ★ Q4 账侧来源标志（1 = 经 incoming 落下）*/
+static int32_t  s_spirit_kind[POFV_SPIRIT_MAX];   /* ★ W3：0 = 純霊、1..3 = 動物霊（狼/獭/鷲）*/
+/* ★ 2026-10-05：灵一旦生成，就给它配一台**我方 VM** 画「附属圆」（一手 `enemy.anm` 271，
+ *   逐字见 `assets/ability/scripts/397_pofv109_spirit_ring.anm.txt`）——真敌机本体是惰性壳，
+ *   看不见；这一层先让它有东西。索引与灵账同一格。 */
+static int32_t  s_spirit_vm[POFV_SPIRIT_MAX];
+/* ★ 灵**本体**的 VM（一手 §2.2：本体与附属圆是两台；本体 layer(9)、圆 layer(8)）。 */
+static int32_t  s_spirit_body[POFV_SPIRIT_MAX];
+/* ★ 入场运动用：每只灵的**出生帧计数**与**獺的 L/R 选择**（速度由 `entry_vel_at` 按 age 算，不存速度）。 */
+static int32_t  s_spirit_age[POFV_SPIRIT_MAX];
+static int32_t  s_spirit_lr[POFV_SPIRIT_MAX];
+/* ★ TH09 幽灵的 level（1 绿 / 2 黄 / 3 红）—— 一手 §2：击破 level 1/2 ⇒ 新灵 `+0xa6 = min(level+1,3)`。 */
+static int32_t  s_spirit_level[POFV_SPIRIT_MAX];
+/* ★ W4 固化（沈静化）：一手 = 敌人标志 600000 被固灵结界立起 ⇒ ①停住 + **缓慢上浮**
+ *   （`GhostDisableMove` = `ins_404(-1.5707964f, 0.02f)`）②`lifeSet(50)` 耐久骤降 ③换沈静化外观（图集 106）。
+ *   ❓ 触发临时口：灵进入**自机周围**（$R=48$ 的近似「吸灵领域」）即沈静化 —— 等领域本体到位再换真触发器。
+ *   ❓ 耐久那半**未落**（要先按 ExpHP 查准敌人 life 字段，不盲写）。 */
+static int32_t  s_spirit_dis[POFV_SPIRIT_MAX];
+/* ★ W4 自然成佛（一手：沈静化「满一定帧数**自然成佛**（**不算击破**）」；
+ *   镜像表又说成仏 ⇒ **变動物霊送出去**（不是消失））⇒ 做法：
+ *   ① 清灵账条目（死亡回调 take() 返回 −1 ⇒ 不产暴风/不返还 = 不算击破）
+ *   ② 入暂存（一会儿回来变動物霊）③ 让敌人消失（写 life = 0）。帧数 ❓。 */
+static int32_t  s_spirit_dis_age[POFV_SPIRIT_MAX];
+/* ★★★ W7 EX 的载体（在卡内能做的半边）：EX 也是「从版顶长出的一只真敌机」，但它
+ *   ① **50% 透明度起步**（一手 ⑤）⇒ 卡侧用 `ce_anm_set_color(body, 0xFFFFFF80)` 写 α=128 ✓
+ *   ② **免疫己方系统**（一手 ④）⇒ 本卡的吸灵领域/沈静化**跳过**它（`s_spirit_ex[]`）✓
+ *   ❓ 未做：③ 己方伤害（要它真的打自机 ⇒ 得让它发射，超出本轮）、① 180° 旋转（等外观定）、⑥ 独立量纲（纯逻辑已备）。 */
+static int32_t  s_spirit_ex[POFV_SPIRIT_MAX];
+#define POFV_EX_ALPHA_RGBA 0xFFFFFF80u   /* 一手 ⑤：50% 透明起步（α = 0x80）*/
+/* ★ 2026-10-06 一手定死（`engine/versus/th09/02-ghost-and-seal.md` §3.7 ✓，写点 `0x411f1a`）：
+ *   `manager+0x2ac44c = (*(*(manager+0x320)+0x20) == 5) ? 160 : 200` ✓
+ *   ⇒ **只有 TH19 角色号 5 用 160，其余一律 200** ✓；本卡四自机对应 TH19 的 **0/1/2**（灵梦/魔理沙/早苗 ✓）
+ *     ⇒ **全用 200** ✓（原写 160 ✗ 已改 ✓）。*/
+#define POFV_DISABLE_JOUMON_FRAMES 500   /* ★ 2026-10-06 与对侧同口径（一手总时长 100+200+200 = 500 ✓，原 200 ✗）*/
+#define POFV_SPIRIT_AURA_R2  2304.0f   /* 48²（旧 ❓ 半径；只作兜底）*/
+/* ★ 2026-10-06 照一手重算（owner：「**照一手重做可视和判定**」✓）：
+ *   一手（`06-aura.md` §7.2/§9.3）取一套 = **Reimu**：`K = 64.0` ✓、形状 = 圆 ✓（1 台 VM ✓）、
+ *   半径 `= clamp(S+0x8c, 0, 200) × K / 100` ✓。本卡**无蓄力槽** ⇒ 取等效蓄力值 `S+0x8c = 125`
+ *   （一手自己举的例：`@AUN2` 给 `S+0x8c = 125` ✓）⇒ **R = 125 × 64 / 100 = 80.0f** ✓。
+ *   ❓ 待 owner：是否改按 TH18 当前角色映射 TH19 各套（Reimu 64 / Marisa 14 / Sanae 128 … ✓）。*/
+#define POFV_AURA_R          80.0f
+/* ★ 魔理沙那套（一手 §7.2：`K = 14.0` ✓、形状 = **竖向带** ✓）⇒ 同样取 `S+0x8c = 125`：
+ *   `R = 125 × 14 / 100 = 17.5f` ✓ */
+#define POFV_AURA_R_MARISA   17.5f
+/* ★★★ 2026-10-06 owner：「**shift 蓄力完全从属于固灵系统**」✓、且「结界大小 = 蓄力值」✓
+ *   ⇒ 卡侧自建 Shift 蓄力 `s_aura_charge`（0..200 ✓，一手 `clamp(S+0x8c,0,200)` ✓）：
+ *   · **增长**：一手 §7.2 的动画器参数 `+0x94`（量）/`+0x98`（帧数）⇒ 本卡取「**每 `+0x98` 帧增长 `+0x94`**」
+ *     （灵梦/魔理沙都是 `20/4` ⇒ **+5/帧** ✓）⇒ 满蓄力约 **40 帧** ✓；❓ 参数语义一手未坐实（owner truanm 可定死 ✓）；
+ *   · **收束**：一手脚本 `interruptLabel(1) ⇒ scaleTime(20, 4, 0.0f, 0.0f) ⇒ +20: delete()` ✓
+ *     ⇒ 松开后 **20 帧内收到 0** 再删 VM ✓（SDK 无 interrupt 口 ✗ ⇒ 由卡每帧写缩放复现，与一手「槽 3 写缩放」同形 ✓）；
+ *   · **半径**：`R = clamp(蓄力,0,200) × K / 100` ✓（K：灵梦 64 ✓ / 魔理沙 14 ✓）。*/
+#define POFV_AURA_K_REIMU      64.0f   /* 一手 §7.2 ✓ */
+#define POFV_AURA_K_MARISA     14.0f   /* 一手 §7.2 ✓ */
+#define POFV_AURA_K_SANAE      128.0f   /* 一手 `06-aura.md` §7.2（Sanae）✓ ⇒ 满格 256 ✓ */
+#define POFV_AURA_K_SAKUYA   64.0f   /* ★ owner：「半径感觉不够大」⇒ K 32 → **64**（R=64 ⇒ 直径 128 ✓）*/
+#define POFV_AURA_CHARGE_MAX   200.0f
+#define POFV_AURA_TARGET_CHARGE 100.0f   /* ★ owner 实跑定：满值取 100 ⇒ 灵梦 64（= 原 128 的一半 ✓）、早苗 128 ✓ */
+/* ⚠ 2026-10-06 核实订正（我上一版把两处出处标错 ✗）：
+ *   · 一手**蓄力槽**是 `AuraCtrlInf+0x94`（**另一个结构体的同偏移** ✗），速率 = `clamp(S+0x88,0,200) × 10 / 100`
+ *     （`06-aura.md:37` ✓；满 `S+0x88=200` ⇒ **20/帧**）⇒ 本卡取 `5.0f`（等价 `S+0x88=50`，≈40 帧蓄满）
+ *     属 **❓自定**（owner：「结界大小 = 蓄力值」✓ 未定速率 ✓）；
+ *   · `aura+0x94`（**动画器**）= **时长 20 帧** ✓、`aura+0x98` = **模式 4**（= ease-out `1−(1−f)²` ✓）
+ *     —— 与「蓄力步长」**无关** ✗（`06-aura.md` §7.1/§10.2/§534 ✓）。
+ *   · 一手的半径是**两层**：`+0x6c`（初值 1.0）⇒ 动画器（时长 `+0x94`=20 / 模式 `+0x98`=4）⇒ `+0x9c`（判定真用 ✓）。
+ *     本卡按 owner「大小 = 蓄力」做**直接映射**（`R = 蓄力×K/100`）⇒ 起点/两层 ease 这层被略去 **❓**（已登记 ✓）。*/
+/* ★★★ 2026-10-06 owner：「**蓄力速率按照核出来是什么是什么**」✓ ⇒ 照一手公式（**不再自定** ✓）：
+ *   一手（`06-aura.md:37` ✓）蓄力槽 `AuraCtrlInf+0x94` 的唯一涨点 `0x4e7d29`，
+ *   速率 = **`clamp(S+0x88, 0, 200) × 10 / 100`** ✓；`S+0x88` 是**蓄力速度**（`:36`：`@AUN1` けしかける狛犬 →
+ *   `S+0x88 = 125` ✓ ⇒ 仓里唯一有出处的取值 ✓）⇒ 本卡取同值 ⇒ 速率 = **12.5 / 帧** ⇒ **16 帧蓄满** ✓。
+ *   ❓ 仅剩「本卡该用哪个 `S+0x88`」：一手未记**基值**（125 只出自能力接线 ✓）⇒ 先取 125 ✓ 并标 ❓。*/
+/* ⚠ 2026-10-06 订正：一手**没有**「每帧涨多少」这个速率用于本卡 ✗ —— 见下面 `s_aura_charge` 处的说明 ✓。
+ *   原 `S+0x88`（蓄力速度）只被两张阿吽卡写（置 125 ✓），本卡不采用 ✗。*/
+#define POFV_AURA_CHARGE_SPEED  125.0f   /* ❓ 保留仅作存档：一手 `S+0x88`（`:36`）✓，本卡不用 ✗ */
+#define POFV_AURA_CHARGE_STEP   (POFV_AURA_CHARGE_SPEED * 10.0f / 100.0f)   /* = 12.5/帧 ✓（一手指令 ✓）*/
+
+/* ★★★ 2026-10-06 角色分派 —— owner 已定「**灵梦按照 TH19 做，魔理沙按照 TH19 做**」✓，
+ *   但**「当前自机是哪个角色」的读取点在本仓查不到** ✗（`sdk.h`/`engine.h` 无角色字段；
+ *   `engine/player/th18/01` 的 zPlayer 字段图只有坐标；`engine/anm/th18/04` 的 `N→文件` 槽表
+ *   只覆盖 bullet/effect/enemy/stage；`engine/anm/th18/06` 的 AnmLoaded/sprite 表无文件名；
+ *   其它卡也都没判过角色）⇒ 按 goal 的兜底**先只接灵梦**（其余角色亦显灵梦 ✓）。
+ *   `player+0x10` = 当前自机 anm（`engine.h:588` ✓）虽是载体，但 TH18 的 `plXX.anm` 里
+ *   **没有** TH19 的オーラ配方 ✗（已实读 local/th18.v1.00a/anm/ 下 pl00 与 pl01 的 anm 文本 ✓）
+ *   ⇒ 无法靠「从自机 anm 起 VM」绕过角色判定 ✗。
+ *   ❓ **等 owner 一句**：TH18 机型/角色 id 在 `PLAYER+0x???`，或「槽→文件名」的读取口；
+ *      答了之后**只改这一个函数**即可让魔理沙走 403/404/405 + 竖带判定 ✓。*/
+/* ★★★ 角色读取点（**一手，2026-10-06 找到** ✓）：`engine/sht/th18/01-file-layout-and-shooterset-index.md` §1
+ *   「装载：`Player__initialize` `0x45a7a0`」原文：
+ *     `buf = load_file(sht_name_table[DAT_004cccf8 + DAT_004cccf4]);   // 名字表 0x4b7088：pl00/01/02/03.sht`
+ *   ＋同节注：「文件名表 `0x4b7088`（4 × char*），下标 = `0x4cccf8`（自机 B/A 之类）＋ **`0x4cccf4`（角色）**」
+ *   ⇒ **`0x4cccf4` = 角色下标**（0 = `pl00` 灵梦 / 1 = `pl01` 魔理沙 ✓，与 `engine/sht/th17/02:175` 的
+ *     「`pl00/pl01/pl02/pl03 = 60/67/75/57`」四角色一致 ✓）。
+ *   ⚠ 按纪律**不写进 `engine.h`**（共享面 ✗）⇒ 就近定义 ✓；读一个 DWORD，安全 ✓。*/
+#define POFV_ADDR_PLAYER_CHAR 0x4cccf4u
+
+/* ★★★ 2026-10-06 owner 实指正：「四名自机**全都核完了**，你却只接了灵梦魔理沙」✗ ⇒ 改成四角色分派 ✓：
+ *   `0x4cccf4`（一手角色下标 ✓）= TH18 的 **pl00 灵梦 / pl01 魔理沙 / pl02 咲夜 / pl03 早苗** ✓
+ *   （对照 `engine/sht/th17/02-hyper-shot-groups.md:176`：「`pl02`/`pl03` 在 TH18 是咲夜/早苗」✓）。
+ *   各自的**一手体系**（owner 定 ✓）：
+ *   · **灵梦** ⇒ TH19 灵梦套：圆 `drawPoly(1.0,64)`（我方脚本 402 = 一手 `pl00:script15` 逐字 ✓）、`K=64`、过渡 20/4 ✓；
+ *   · **魔理沙** ⇒ TH19 魔理沙套：两条 `drawRectGrad(1,448)` 竖带（403+404+405 = 一手 `pl01:script15/16/17` 逐字 ✓）、`K=14`、过渡 20/4 ✓；
+ *   · **咲夜** ⇒ **TH09 套** ✓（一手 `th09/02:493`：**圆 ∩ 扇形**，半径 `+0x7c`、方向 `+0x80`、半张角 `+0x84` ✓；逐角色 type 表 `0x4a1a10` 的 pl02 → type **17**、anm script **88** ✓）——
+ *     ⚠ 她的领域 **anm 脚本我还没解出来** ✗（下一步：解 `local/th09.v1.50a/dat/pl02.anm` 的 script88 ✓）；在此之前她**暂用圆** ✓ 并标 ❓；
+ *   · **早苗** ⇒ TH19 早苗套：**同圆**（一手 `pl02:script16` 与灵梦 script15 **逐字相同** ✓ ⇒ 复用 402 ✓）、`K=128`（⇒ 满格 **256** ✓）、过渡 **60/2** ✓（先慢后快 ⇒ 蓄力感 ✓）。
+ *   ❓ 待 owner：咲夜的「张开律」（`th09/02:497/508` 仍 🟡）+ 早苗/咲夜的**过渡层**要不要现在补。*/
+static int pofv_aura_kind(void)
+{
+    const int32_t c = *(const int32_t *)POFV_ADDR_PLAYER_CHAR;
+    if (c == 1) return 1;      /* 魔理沙 ⇒ TH19 竖带 ✓ */
+    if (c == 2) return 2;      /* 咲夜   ⇒ TH09 圆∩扇形（暂圆 ❓）✓ */
+    if (c == 3) return 3;      /* 早苗   ⇒ TH19 圆、K=128、60/2 ✓ */
+    return 0;                  /* 灵梦（含未知值）⇒ TH19 圆、K=64、20/4 ✓ */
+}
+
+static int pofv_aura_marisa(void) { return pofv_aura_kind() == 1; }   /* 兼容旧调用 ✓ */
+
+/* ★★★ 2026-10-06 咲夜的判定入口（owner：「**继续接**」✓）：一手 `th09/02:493` 的形状 = **圆 × 扇形** ✓
+ *   ⇒ 本卡把「命中判定」收成一个入口：**咲夜走扇形** ✓（`ux/uy` = 方向参考向量 ✓、`half_deg` = 半张角 ✓）、
+ *     其余角色走各自的形状（魔理沙 = 竖带 ✓ / 灵梦·早苗 = 圆 ✓），`pad` 一律由调用方给（§9.15 ✓）。*/
+static int pofv_aura_hit_here(float dx, float dy, float pad)
+{
+    if (s_aura_kind == 2)
+        return pofv_aura_contains_sector(dx, dy, s_aura_r, pad,
+                                         /* ★★ owner：「**判定贴合领域**」✓ —— 视觉的朝向是
+                                          *   `s_aura_mid_ang` = **运动向量的反向**（再 0.25/帧缓动 ✓）
+                                          *   ⇒ 判定必须用**同一个方向** ✓（先前传的是运动向量本身 ✗ ⇒ 差 180° ✗）。
+                                          *   ⇒ 这里取 `-s_aura_dir_x/-s_aura_dir_y` ✓ = 与视觉同向 ✓
+                                          *     （视觉有指数滞后 ⇒ 转身瞬间有极小偏差，属预期 ✓）。*/
+                                         -s_aura_dir_x, -s_aura_dir_y,
+                                         /* ★★★ 2026-10-06 核实订正（`th09/02` §3.9–§3.14 ✓）：`+3°/帧`、上限 90° 是
+                                          *   **全张角** ✓ ⇒ **半张角 = 全/2 ≤ 45°** ✓；我原先直接把它当半张角用 ✗（**错一倍** ✓）。
+                                          *   判定接口收的是**半张角**（度 ✓）⇒ 这里传一半 ✓。*/
+                                         (int)(s_aura_sec_deg * 0.5f));
+    return pofv_aura_contains_ex(dx, dy, s_aura_r, pad,
+                                 (s_aura_kind == 1) ? POFV_AURA_SHAPE_BAND : POFV_AURA_SHAPE_CIRCLE);
+}
+#define POFV_AURA_SLOW       0.5f     /* ❓ 结界内敌人/敌弹的减速系数（一手只说「变慢」）*/     /* ★ 固灵结界半径（❓ 一手「形状随角色」⇒ 本卡先统一用一个圆）*/
+#define POFV_GHOST_LEVEL_MAX 3
+/* ★ 幽灵寿命：一手 TH09 `enemy.ecl Sub0` 末尾是 **`+5000: enemy_delete()`** ⇒ **5000 帧** ✓
+ *   （⚠ spawn 的 `life` 字段必须 <1000 ⇒ 只能在**卡侧按 age 计时** ✓）
+ *   ❓ 与一手的差别：一手是**瞬时** `enemy_delete()`；我们走 ECL 的离场支（飞向正上方 → `+60: delete()`）✓ */
+#define POFV_GHOST_LIFE_FRAMES 5000
+/* ★ 宽限：`ce_enemy_by_id` 单帧查不到**不算死**（新生成/链表切换时可能闪一次）——连续失败才收圆。
+ *   这是「附属圆看不见」的一个高度可疑原因（旧版一次查不到就立刻发事件 1 淡出）。 */
+static int32_t  s_spirit_miss[POFV_SPIRIT_MAX];
+#define POFV_SPIRIT_MISS_MAX 8
+
+/* 敌人身上的两个「位置」字段（都以 SDK/本仓一手为据，**不是盲写**）：
+ *   · `0x12b4` = `zEnemyData.abs_pos`（`sdk.h` 的 `CE_SPAWN_POS` 注释：「float3 出生世界坐标 → enemy+0x12b4」）
+ *   · `0x1270` = 死亡事件报的那对「世界坐标」（`sdk/public.h` 里 `x,y` 的注释指的就是 `enemy+0x1270 / +0x1274`）
+ * 两个都推进（❓ 若实跑发现只有一个生效/打架，再收敛到一个并登记）。 */
+#define POFV_ENEMY_ABS_POS  0x12b4
+/* ★★★ 2026-10-05 一手（ExpHP `th18.v1.00a/type-structs-own.json`）：
+ *   `zEnemyData+0x88 = abs_pos`（类型 **`zPosVel`**），而 `zPosVel` 的布局是
+ *     `+0x00 pos`(zFloat3) · `+0x18 vel_norm/circle_angular_velocity` · `+0x20 circle_radius` ·
+ *     `+0x24 circle_radial_speed` · **`+0x34 __field_34__maybe_velocity`(zFloat3)** · `+0x40 flags`
+ *   ⇒ **速度在 `abs_pos + 0x34`**（= 敌人 `0x12b4 + 0x34 = 0x12e8`）。
+ *   ⇒ 引擎每帧用**速度**积分位置 ⇒ **只写速度**（写位置会被覆盖，这就是「灵不移动」的真因）。 */
+/* ★★★ W4 耐久骤降（一手 `lifeSet(50)`）：敌人 life = `zEnemyData + 0x4ff4`（类型 **`zEnemyLife`**，ExpHP 的一手字段图），
+ *   其内部：`+0x00 current` · `+0x04 maximum` · `+0x08 remaining_for_cur_attack` · `+0x14 total_damage_including_ignored` · `+0x18 is_spell`。
+ *   ⇒ `lifeSet(50)` = 把 **current 与 maximum 都写 50**（不盲写：偏移与语义都出自一手结构体图）。 */
+#define POFV_ENEMY_LIFE     0x4ff4
+#define POFV_SPIRIT_DIS_HP  50
+#define POFV_ENEMY_WORLD    0x1270
+static int      s_spirit_next;
+
+/* ★★ W2 + owner 定盘：还活着的灵有几只 —— 遍历灵账、`ce_enemy_by_id` 看还在不在（账是环，不删条目）。
+ *   `fam < 0` ⇒ 数全部；否则**只数该族**（owner：「判上限 **09 算 09、19 算 19**」）——
+ *   族由 kind 决定（`pofv_spirit_family_of()`），**存储与流程不分族**。 */
+/* ★ kind + 帧号 ⇒ 本体成员号（贴图 = 原生切图的两个图集；各 family 成员号连续）。
+ *   純霊 8 帧、其余 4 帧（一手「身体帧每 6 帧一换」⇒ 调用方传 `age / 6`）。
+ *   ❓ 幽灵一档现在只用**绿**（level 1）；黄/红（level 2/3）随 level 记账接。 */
+static int pofv_spirit_body_sprite(int32_t kind, int32_t level, int disabled, int frame)
+{
+    static const int base[POFV_SPIRIT_KIND__COUNT] = {
+        CE_ANM_ABILITY_SPRITE_SPIRIT_PURE_0,
+        CE_ANM_ABILITY_SPRITE_SPIRIT_WOLF_0,
+        CE_ANM_ABILITY_SPRITE_SPIRIT_OTTER_0,
+        CE_ANM_ABILITY_SPRITE_SPIRIT_EAGLE_0,
+        CE_ANM_ABILITY_SPRITE_SPIRIT_GHOSTG_0
+    };
+    int k = (kind >= 0 && kind < POFV_SPIRIT_KIND__COUNT) ? (int)kind : (int)POFV_SPIRIT_KIND_PURE;
+    int n = (k == (int)POFV_SPIRIT_KIND_PURE) ? 8 : 4;
+    if (frame < 0) frame = 0;
+    /* ★★★ owner 2026-10-06：「**固化的时候 sprite 也会变**」✓ ＋ 核实方：一手**每族一档** ✓
+     *   ⇒ 补上此前缺失的**純霊档**（`ATLAS_SPIRIT_DISABLE_PURE` ✓，8 帧 = 一手 TH19 `enemy.anm`
+     *     `sprite112–119` 的「4 帧实心球 + 4 帧空心环」✓；来源与 UV 见 `AUDIT.md` §BE-167 ✓）。*/
+    if (disabled && k == (int)POFV_SPIRIT_KIND_PURE) {
+        /* ★★★ owner 2026-10-06 修正（一手链 ✓）：`ins_303(0, 106)` 的 **106 是 anm「脚本号」而非 sprite 号** ✗
+         *   —— opcode 303 → `FUN_004fe980` → `FUN_004cb960(&vm, …, arg1(脚本号), …, *(enemy+0x28c)+7, 2, 0)` ✓
+         *   （与光环同机制：`FUN_004cb960(…, 0xf, …)` = `pl00.anm` **script15** ✓）。
+         *   ⇒ **純霊固化 = `enemy.anm` script106** ✓，其 sprite = **144–148**（`enemy2.png`，y=96，**32×32、5 帧** ✓）
+         *   ⇒ 本卡的 `SPIRIT_DISP4_0..4` 即按此重切 ✓（旧的 8 帧「球/环」是切错来源 ✗，已删）。*/
+        int b = (int)CE_ANM_ABILITY_SPRITE_SPIRIT_DISP4_0;
+        return b + ((frame < 0 ? 0 : frame) % 5);   /* 5 帧循环 ✓ */
+    }
+    if (disabled && (k == (int)POFV_SPIRIT_KIND_WOLF || k == (int)POFV_SPIRIT_KIND_OTTER ||
+                     k == (int)POFV_SPIRIT_KIND_EAGLE)) {
+        /* ★ W4：沈静化外观 = 图集 106（`ATLAS_SPIRIT_DISABLE`，D1/D2/D3 各 4 帧 32×48）。 */
+        int d = (k == (int)POFV_SPIRIT_KIND_WOLF) ? 0 : (k == (int)POFV_SPIRIT_KIND_OTTER) ? 1 : 2;
+        int base2 = (d == 0) ? (int)CE_ANM_ABILITY_SPRITE_SPIRIT_DISD1_0
+                  : (d == 1) ? (int)CE_ANM_ABILITY_SPRITE_SPIRIT_DISD2_0
+                             : (int)CE_ANM_ABILITY_SPRITE_SPIRIT_DISD3_0;
+        return base2 + (frame % 4);
+    }
+    if (disabled && k == (int)POFV_SPIRIT_KIND_GHOST_TH09) {
+        /* ★★ TH09 幽灵**被固化** ⇒ 一手「鸟形 → 火焰/光球态」（`enemy.anm` script23/24/25 = level 1/2/3 各 8 帧 ✓）
+         *   ⇒ 用图集 107（`ATLAS_SPIRIT_CALM`，sprite 672-695）✓ */
+        int lvl = (level >= 1 && level <= 3) ? (int)level : 1;
+        int base3 = (lvl == 1) ? (int)CE_ANM_ABILITY_SPRITE_SPIRIT_CALMG_0
+                  : (lvl == 2) ? (int)CE_ANM_ABILITY_SPRITE_SPIRIT_CALMY_0
+                               : (int)CE_ANM_ABILITY_SPRITE_SPIRIT_CALMR_0;
+        return base3 + (frame % 8);
+    }
+    if (k == (int)POFV_SPIRIT_KIND_GHOST_TH09) {
+        /* ★ 一手：幽灵的 level 就是颜色（1 绿 / 2 黄 / 3 红），图集 105 里 G/Y/R 各 4 帧连续排。 */
+        int lvl = (level >= 1 && level <= POFV_GHOST_LEVEL_MAX) ? (int)level : 1;
+        return base[k] + (lvl - 1) * 4 + (frame % 4);
+    }
+    return base[k] + (frame % n);
+}
+
+static int pofv_spirit_live_count_fam(int fam)
+{
+    uint8_t *em = CE_ENEMY_MGR();
+    int i, n = 0;
+    if (!em) return 0;
+    for (i = 0; i < POFV_SPIRIT_MAX; ++i) {
+        if (!s_spirit_id[i]) continue;
+        if (fam >= 0 && pofv_spirit_family_of(s_spirit_kind[i]) != fam) continue;
+        if (ce_enemy_by_id(em, (int32_t)s_spirit_id[i])) ++n;
+    }
+    return n;
+}
+
+/* ★ 记账并**返回它写的那条槽**（调用方据此挂本体/附属圆的 VM ⇒ 结构上不可能再错位）。 */
+static int pofv_spirit_slot_free(void)
+{
+    int i;
+    for (i = 0; i < POFV_SPIRIT_MAX; ++i) if (!s_spirit_id[i]) return 1;
+    return 0;
+}
+
+static int pofv_note_spirit(uint32_t enemy_id, int32_t kind)
+{
+    int i, sl = -1;
+    /* ★★★ 2026-10-06 owner：「**满了就别创建了**」✓ ⇒ **取消「覆盖最旧」** ✗：
+     *   改成**找空格**；一个都没有就返回 **-1**（调用方在生成口已先判满 ✓ ⇒ 正常不会走到这里 ✓）。
+     *   （旧策略「满 32 格覆盖最旧」会造成：被顶掉的灵**还在场上却没户口** ⇒ 卡侧不再给它写旋转/贴图
+     *     ⇒ 实跑看到的「**旋转 90° 全消失**」＋「**黄色 overplot 在灵上面**」两个症状 ✓ —— 一并消灭 ✓。）*/
+    for (i = 0; i < POFV_SPIRIT_MAX; ++i) {
+        sl = (s_spirit_next + i) % POFV_SPIRIT_MAX;
+        if (!s_spirit_id[sl]) break;
+    }
+    if (i == POFV_SPIRIT_MAX) { ce_log("pofv: 灵账已满 %d 格 ⇒ **拒绝记账**（不该发生，生成口应先判满 ✓）", POFV_SPIRIT_MAX); return -1; }
+    if (s_spirit_vm[sl])   { ce_anm_delete((uint32_t)s_spirit_vm[sl]);   s_spirit_vm[sl]   = 0; }
+    if (s_spirit_body[sl]) { ce_anm_delete((uint32_t)s_spirit_body[sl]); s_spirit_body[sl] = 0; }
+    s_spirit_id[sl] = enemy_id;
+    s_spirit_kind[sl] = kind;
+    s_spirit_next = (sl + 1) % POFV_SPIRIT_MAX;
+    ce_log("pofv: note spirit id=%u kind=%d (slot %d)", (unsigned)enemy_id, (int)kind, sl);
+    return sl;
+}
+
+/* ★ W3：从账里**取走**（取到 ⇒ 返回它的 kind 并清条目 ⇒ 同一 id 不会二次触发）。取不到 = 不是我们的灵。 */
+static int pofv_spirit_take(uint32_t enemy_id, int32_t *out_level, int *out_incoming)
+{
+    int i;
+    if (out_level) *out_level = -1;
+    if (out_incoming) *out_incoming = 0;
+    if (!enemy_id) return -1;
+    for (i = 0; i < POFV_SPIRIT_MAX; ++i)
+        if (s_spirit_id[i] == enemy_id) {
+            if (out_incoming) *out_incoming = s_spirit_from_incoming[i];   /* ★ Q4：清账前带出来源 ✓ */
+            int32_t k = s_spirit_kind[i];
+            if (out_level) *out_level = s_spirit_level[i];
+            s_spirit_id[i] = 0; s_spirit_kind[i] = -1; s_spirit_level[i] = 0;
+            return (int)k;
+        }
+    return -1;
+}
+
+static int pofv_spirit_is_ours(uint32_t enemy_id)
+{
+    int i;
+    if (!enemy_id) return 0;
+    for (i = 0; i < POFV_SPIRIT_MAX; ++i)
+        if (s_spirit_id[i] == enemy_id) return 1;
+    return 0;
+}
+
+
+/* VM 吃**世界坐标**（`ce_anm_set_pos` 就是世界坐标，铁证 `cards/animal.c:1591`）。 */
+static void vm_set_world_pos(uint32_t id, float wx, float wy)
+{
+    ce_anm_set_pos(id, wx, wy, 0.0f);
+}
+
+/* ============================ 消弹（自己扫池，只吃可消弹） ============================
+ * 一手（TH19）：`FUN_004ee770(pos, 64.0f, 0, 99999, 0)` = 「半径内消弹」原语，**每帧每台一次**。
+ * ⚠ 它的判据（弹类型 `+0x1044 ∈ {1,2}` 且 `+0x14 == 0`）是 **TH19 的字段**，TH18 的弹上没有对应物
+ *   （owner：「th18 不存在白弹」）⇒ 这里用本仓设计的那套：**弹半径 `+0x658` ≤ 4.0 的可消**
+ *   （`pofv_is_white_bullet()`），命中判据逐字照抄引擎 `0x429370`：
+ *   `state ∈ {1,2}`、`dist² ≤ (弹半径 × 0.5 + R)²`（判定式里的弹半径用**这颗弹自己的**）。
+ * 成本：2000 槽 × 一次比较（早停于 max_count）——每帧最多 3 台（暴风的 3 个圈）。 */
+static int cancel_white_in_circle(const float *pos, float r, int max_count, int mode)
+{
+    uint8_t *bm = CE_BULLET_MGR();
+    uint32_t i;
+    int n = 0;
+
+    if (!bm || !pos || r <= 0.0f || max_count <= 0) return 0;
+    for (i = 0; i < CE_BM_BULLET_COUNT; ++i) {
+        uint8_t *b = bm + CE_BM_BULLETS + (size_t)i * CE_BULLET_STRIDE;
+        uint16_t state = *(const uint16_t *)(b + CE_BULLET_STATE);
+        float br, dx, dy, rr;
+        if (state != 1 && state != 2) continue;        /* 0 = 空槽；3 / 4 = 别的状态 */
+        br = *(const float *)(b + POFV_BULLET_RADIUS_OFF);
+        if (!pofv_is_white_bullet(br)) continue;       /* ★ 可消弹判据（哨兵弹种在这里被跳掉）*/
+        dx = *(const float *)(b + CE_BULLET_POS) - pos[0];
+        dy = *(const float *)(b + CE_BULLET_POS + 4) - pos[1];
+        rr = br * 0.5f + r;                            /* 照 0x429370 的判定式 */
+        if (dx * dx + dy * dy > rr * rr) continue;
+        ((pofv_fn_bullet_cancel_t)POFV_FN_BULLET_CANCEL)(b, mode);
+        if (++n >= max_count) break;
+    }
+    return n;
+}
+
+/* ============================ 伤害（一手：每帧每台一次半径 64 的命中、参数 = 1） ============================
+ * 矩形**先裁到场地内**（否则场心靠边时会把还没进屏的敌人打死）。 */
+static int storm_hit_clipped(float cx, float cy, float r, int dmg)
+{
+    float x0 = cx - r, x1 = cx + r;
+    float y0 = cy - r, y1 = cy + r;
+    float pos[3];
+    if (x0 < -POFV_FIELD_HALF_W) x0 = -POFV_FIELD_HALF_W;
+    if (x1 >  POFV_FIELD_HALF_W) x1 =  POFV_FIELD_HALF_W;
+    if (y0 < 0.0f) y0 = 0.0f;
+    if (y1 > POFV_FIELD_H) y1 = POFV_FIELD_H;
+    if (x1 <= x0 || y1 <= y0) return 0;             /* 交集空（整个在屏外）⇒ 不打 */
+    pos[0] = (x0 + x1) * 0.5f;
+    pos[1] = (y0 + y1) * 0.5f;
+    pos[2] = 0.0f;
+    return ce_damage_rect(pos, 0.0f, POFV_STORM_HIT_LIFE, dmg, x1 - x0, y1 - y0);
+}
+
+/* ============================ 画面：每场 1 台 VM（世界层 6）============================
+ * ★ 一手（TH19）：圈是**一台 VM** —— 脚本 `sprite(-1); layer(6); drawPoly(1.0f, 64);
+ *   color/color2; alpha/alpha2; angleVel(-1°/帧); stop();`，**尺寸与位置全部由外部每帧写**：
+ *   一手 `0x416ea0/0x416ea5: movss [vm+0x54]/[vm+0x58], 半径` +
+ *   `0x416edd: movq [vm+0x614], 玩家坐标`。本卡照这套：**位置 = 场的圆心、scale = 场半径**。
+ * ⇒ **判定 = 绘制**（同一个半径值）✓；半径的律见 `pofv_core.h`（TH19 的 ease-out 二次扩张）。
+ * 场到寿命 ⇒ 发**事件 1**（脚本 `scaleTime(20,4,0,0)` 缩到 0 再自删），随后丢掉句柄。
+ */
+static void storm_vm_sync(void)
+{
+    int i, p;
+    for (i = 0; i < POFV_STORM_MAX; ++i) {
+        const pofv_storm_t *bl = pofv_storm_slot(&s_storm, i);
+        float sc = 0.0f;
+        if (bl && bl->active) pofv_storm_radius(bl, &sc);
+        if (!bl || !bl->active || sc <= 0.0f) {
+            for (p = 0; p < POFV_STORM_VM_PARTS; ++p) {
+                if (!s_storm_vm[i][p]) continue;
+                /* ★★ 场到期 ⇒ **发事件 1 让它淡出**（一手 `ghost.anm` script17 的收尾逐字是
+                 *   `stop(); interruptLabel(1); alphaTime(10,0,0); alpha2Time(10,0,0); +10: delete();`
+                 *   ⇒ 收到事件 1 后 **10 帧淡出**，然后**脚本自己 `delete()`**）。
+                 *   ⚠ 旧版这里走的是 `ce_anm_delete`（硬删）—— 但场在 `pofv_storm_tick` 里
+                 *   `active` 已被清掉 ⇒ 那一支**恰好**永远命中硬删 ⇒ **淡出根本没跑**。
+                 *   ⇒ 现在统一发事件 1、**只丢句柄**；**硬删只留在 `clear_card()`**（删卡/重置）。 */
+                ce_anm_interrupt((uint32_t)s_storm_vm[i][p], 1);
+                s_storm_vm[i][p] = 0;
+            }
+            continue;
+        }
+        for (p = 0; p < POFV_STORM_VM_PARTS; ++p) {
+            float k = sc;
+            if (!s_storm_vm[i][p])
+                s_storm_vm[i][p] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(),
+                                     CE_ANM_ABILITY_SCRIPT_POFV109_STORM, POFV_STORM_VM_LAYER);
+            if (!s_storm_vm[i][p]) continue;        /* anm 还没就绪：下一帧再补 */
+            /* ★★ 一手（`HANDOFF-109-STORM.md` §2）：半径由**引擎每帧写 VM 的 scale（`vm+0x54`）**
+             *   —— `FUN_004044b0(vm+0x1f8, 时长=ins_1031, mode=5, from=vm+0x54(=1.0), to=ins_1028)`。
+             *   ⇒ 卡侧每帧写 **位置 + scale(= 当前半径)**；脚本自己 `stop()` 不再动 scale。
+             *   ⚠ 判定半径与绘制半径**同源**（一手里 tick 后写进伤害源 `+0x18` 的就是同一个值）。 */
+            vm_set_world_pos((uint32_t)s_storm_vm[i][p], bl->x, bl->y);
+            ce_anm_set_scale((uint32_t)s_storm_vm[i][p], k, k);
+        }
+    }
+}
+
+/* ============================ 每帧：一个场 ============================
+ * 一手（TH09 节点律）：场**停在原地**、每帧半径 `r += dr`、到寿命释放。
+ *   · **消弹**：半径内**本仓可消弹**（半径 ≤ 4.0，见 `pofv_core.h`）逐颗 `Bullet__cancel`；
+ *   · **伤害**：覆盖圈面的矩形伤害源，**先裁到场地内**（否则场心靠边会把还没进屏的敌人打死）。
+ * ❓ 伤害量：一手 TH09 没逆到；这里取「每帧 1 点、活 1 帧」的占位（登记 `TUNING.md`）。 */
+static void do_storm_frame(const pofv_storm_t *bl)
+{
+    float pos[3], r;
+    int n;
+
+    if (!bl || !bl->active) return;
+    pofv_storm_radius(bl, &r);
+    if (r <= 0.0f) return;
+    pos[0] = bl->x; pos[1] = bl->y; pos[2] = 0.0f;
+
+    n = cancel_white_in_circle(pos, r, POFV_CANCEL_MAX, POFV_BULLET_CANCEL_MODE);
+    /* ★ 伤害：每帧每场一个矩形源（判定 = 绘制同半径）。日志只在「出生帧」与「起不来」时打，避免刷屏。 */
+    {
+        int idx = storm_hit_clipped(bl->x, bl->y, r, bl->dmg);
+        if (idx > 0) { if (bl->age <= 1) ce_log("pofv: dmgsrc slot %d age %d r %d dmg %d size %.0fx%.0f",
+                                                 idx, (int)bl->age, (int)r, (int)bl->dmg, r * 2.0f, r * 2.0f); }
+        else if (bl->age <= 1) ce_log("pofv: dmgsrc FAILED age %d r %d (r<=0 或整场在屏外)", (int)bl->age, (int)r);
+    }
+    if (n > 0)
+        ce_log("pofv: storm age %d/%d r %d cancelled %d", (int)bl->age, (int)bl->life, (int)r, n);
+        /* ★★★ 一手（owner 已核 · `engine/versus/th09/02-ghost-and-seal.md` §2.3）：
+         *   **幽灵是从「暴风/连爆」里产生的** —— `FUN_0041dff0` 里爆风节点 `state ∈ {2,3}` + 命中
+         *   （且 `enemy+0x10c0 == 0`）⇒ 送出 **`enemy.ecl Sub0` = 绿幽灵、level 1**（`+0xa4=0, +0xa6=1`）。
+         *   本卡映射：**暴风的「后半段」**（≈ state 2/3）那一帧若**消到了弹**（= 命中）⇒ 送一只 TH09 幽灵。
+         *   ❓ 只取那一帧（`age == life/2`）⇒ 一场暴风最多送一只；位置取暴风位置。 */
+        if (n > 0 && bl->life > 1 && (int)bl->age * 2 >= (int)bl->life && --s_ghost_cool <= 0) {
+            s_ghost_cool = POFV_GHOST_SEND_COOL;
+            if (s_spirit_q_n < POFV_SPIRIT_Q_MAX) {
+                s_spirit_q[s_spirit_q_n][0] = bl->x;
+                s_spirit_q[s_spirit_q_n][1] = bl->y;
+                /* ★★★ owner 铁律：「**我方击破 ⇒ 生成到对面模型**」✓ ⇒ 暴风命中（我方事件）⇒ 进**模型** ✗本侧 */
+                pofv_foe_spawn_gated(pofv_top_x(), pofv_top_y(),
+                                      POFV_SPIRIT_KIND_GHOST_TH09, 1);
+                ce_log("pofv: 暴风命中 ⇒ 送出 TH09 幽灵 **只进对面模型**（§2.3；level 1 绿）✗无回程");
+            }
+        }
+}
+
+/* ============================ 清理（删卡 / 换关 / 重开） ============================ */
+static void clear_card(ce_card_t *c)
+{
+    int i, k;
+    (void)c;
+    for (i = 0; i < POFV_STORM_MAX; ++i)
+        for (k = 0; k < POFV_STORM_VM_PARTS; ++k)
+            if (s_storm_vm[i][k]) { ce_anm_delete((uint32_t)s_storm_vm[i][k]); s_storm_vm[i][k] = 0; }
+    pofv_storm_pool_init(&s_storm);
+    s_spirit_q_n = 0;                  /* 灵（真敌机）的待生成队列 */
+    s_point_q = 0;
+    pofv_acc_init(&s_acc); s_acc_last_x = 0.0f; s_acc_last_y = 0.0f;
+    pofv_hits_init(&s_hits);
+    /* ★ MODEL `:104-107`（owner 新增「跨面 ⇒ **全清**」）：清单含「各类**冷却**·队列·**待生成项**」✓
+     *   ⇒ 下面 5 个原先**漏复位** ✗（核实复核指出）：冷却 `s_ghost_cool`、击破计数 `s_pure_kill_n`、
+     *     絕对计数 `s_pure_kill_n_abs`、待生成项 `s_ex_pending`、光环戳 `s_aura_stamp` ✓ */
+    s_ghost_cool = 0; s_pure_kill_n = 0; s_pure_kill_n_abs = 0; s_ex_pending = 0;
+    /* ★ 核实（2026-10-05）：`s_aura_stamp` 声明是 **`-1`**、用法 `held = (s_aura_stamp == s_card_frames)`
+     *   ⇒ 复位成 0 会让跨面后的**第 0 帧假判「按住 C」**（展开结界 / 放道具 / 触发镜像固化）✗
+     *   ⇒ 复位成 **`-1`**（与声明同值 ✓）*/
+    s_aura_stamp = -1;
+    if (s_aura_vm) { ce_anm_delete((uint32_t)s_aura_vm); s_aura_vm = 0; }   /* ★ 铁律：长持续效果在删卡/跨面时收干净 ✓ */
+    {   int ip4; for (ip4 = 0; ip4 < POFV_AURA_PIECES; ++ip4)          /* ★ 铁律：咲夜那 **7 片**也要一起收干净 ✓ */
+            if (s_aura_piece[ip4]) { ce_anm_delete((uint32_t)s_aura_piece[ip4]); s_aura_piece[ip4] = 0; }
+    }
+    s_aura_charge = 0.0f; s_aura_r = 0.0f;   /* ★ Shift 蓄力随卡清零 ✓ */
+    s_aura_role_logged = 0;                  /* ★ 下次激活再打一次角色日志 ✓ */
+    s_cnt_send54 = s_cnt_send30 = s_cnt_arrive = s_cnt_gift = s_cnt_kill = 0;   /* ★ goal ②：计数随卡清零 ✓ */
+    s_ex_gauge = 0; s_ex_level = 0; s_ex_cool = 0; s_send40 = 0;   /* ★ EX/送灵计数：随卡清零 ✓（铁律 ✓）*/
+    s_period_timer = 0;
+    /* ★ 核实裁定 Q3（2026-10-05）：MODEL §95 说两表阈值随**对局时间**下降，而原来 `s_card_frames` **跨局累计** ✗
+     *   ⇒ 换局/重开时一并清零 ✓（❓ 另一说 MODEL:122 指一手分档用**全局时钟** `DAT_0062b260`
+     *     —— 若 owner 要「全局」语义，把这一行删掉即可回到跨局累计 ✓，两读法已登记 TUNING ✓）*/
+    s_card_frames = 0;
+    /* ★★★ 仓库铁律 + 核实裁定（2026-10-05）：这几套 HUD/文字 VM 的句柄**归卡所有** —— SDK 的
+     *   `ce_hud_number_clear()`（`sdk.c:742-746`）与 `ce_hud_vm_text_clear()`（`sdk.c:951-956`）
+     *   才是**硬删**；**手动把 id[] 清零 = orphan 泄漏** ✗（`_set` 只回收「已经死掉」的 id，`sdk.c:763-764`）✓。
+     *   ⇒ 三套（命中数字 / 命中标签 / UI 事件与幽灵文字，后者原**只清了 `id[0]`** ✗）全部改用 `_clear` ✓。*/
+    { int i3; for (i3 = 0; i3 < POFV_UI_EV_MAX; ++i3) { s_ui_ev[i3].what = 0; s_ui_ev[i3].ttl = 0;
+        ce_hud_vm_text_clear(&s_ui_ev_vm[i3]); }
+      ce_hud_vm_text_clear(&s_ui_gh_vm); }
+    ce_hud_number_clear(&s_hud_hits_num);
+    ce_hud_vm_text_clear(&s_hud_hits_lbl);
+    pofv_foe_spirit_init(s_foe, POFV_FOE_SPIRIT_MAX);
+    pofv_foe_incoming_init(s_inc, POFV_FOE_INCOMING_MAX);
+    /* ★★★ 仓库铁律「长持续效果的卡必须交代『被删掉会怎样』」：灵的两批**自建 VM**（附属圆 `s_spirit_vm`、
+     *   本体 `s_spirit_body`，spawn 见 `:1178`/`:1187`）在原版里**必须硬删** ✗ —— 原来只把句柄清零 ⇒
+     *   删卡 / 换局时**泄漏**（dangling）✗，也与本文件 `:477` 自己的口径「硬删只留在 `clear_card()`」相矛盾 ×。
+     *   ⇒ 与上面 `s_storm_vm` 同法真删 ✓（`on_delete` / `on_run_reset` 共用本函数 ✓，不依赖 tick ✓）。*/
+    { int z; for (z = 0; z < POFV_SPIRIT_MAX; ++z) {
+        if (s_spirit_vm[z])   ce_anm_delete((uint32_t)s_spirit_vm[z]);
+        if (s_spirit_body[z]) ce_anm_delete((uint32_t)s_spirit_body[z]);
+        s_spirit_vm[z] = 0; s_spirit_body[z] = 0; s_spirit_age[z] = 0; s_spirit_lr[z] = 0; s_spirit_miss[z] = 0; } }
+    { int z; for (z = 0; z < POFV_SPIRIT_STASH_MAX; ++z) s_stash_ttl[z] = 0; }
+    { int z; for (z = 0; z < POFV_SPIRIT_MAX; ++z) { s_spirit_id[z] = 0; s_spirit_kind[z] = -1; s_spirit_level[z] = 0; s_spirit_from_incoming[z] = 0; s_spirit_dis[z] = 0; s_spirit_dis_age[z] = 0; s_spirit_ex[z] = 0; } s_spirit_next = 0; }
+    s_cap_logged = 0;
+    /* （原来的重复尾巴循环已删：上面那行 `s_spirit_id/z` 与 `s_spirit_next` 已同处清零 ✓）*/
+}
+
+/* ============================ 生命周期 ============================ */
+static int on_ctor(ce_card_t *c)
+{
+    (void)c;
+    clear_card(c);
+    ce_log("pofv: ctor (109: card art + active identity + storm[TH19]; nothing else yet)");
+    return 0;
+}
+
+/* ★ 触发 —— **一手 + owner 口径**：
+ *   · TH19：敌人死亡处理 `FUN_0050c1f0` 在 `0x50c3c2` 调 **`FUN_0050c6d0(pos)` = 連爆本体**
+ *     （20 类道具扇形撒布 + 链节点 `vft+0x34` ⇒ 生成消弹/命中的对象）；
+ *   · owner 口径（`engine/versus/th19/05-four-mechanics.md` §8.1）：**「杂鱼死掉时创建」**
+ *     ⇒ **boss 不算**（`CE_ENEMY_FLAG_BOSS` = `enemy+0x635c` bit23 = ECL `setBoss`）。
+ *   ⚠ `on_enemy_death` 在**清场帧一帧会被调 100–300 次** ⇒ 这里只准做 O(1) 的一件事
+ *     （一次线性找空槽），真正的消弹/命中在 `on_tick_2` 里做。 */
+/* ★★★ 2026-10-06 owner：「**对侧不再执行距离规则，改为随机**」✓
+ *   ⇒ 我方送到**对面模型**的那只灵，种类**随机**取动物三档（狼/獭/鹫 ✓），不再按击破点到自机的距离² ✓。
+ *   （純霊走的是另一张表 `+0x54` ✓，不在这里 ✓。）*/
+static int32_t pofv_spirit_kind_random_animal(void)
+{
+    static const int32_t k3[3] = { POFV_SPIRIT_KIND_WOLF, POFV_SPIRIT_KIND_OTTER, POFV_SPIRIT_KIND_EAGLE };
+    return k3[ce_rand() % 3];
+}
+
+static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
+{
+    (void)c;
+    if (!ev) return;
+    if (ev->kind != CE_EDEATH_KILLED) {
+        /* ★★★★ 2026-10-06 owner 实跑两条症状（「**黄色 VM 糊在灵上**」＋「**旋转 90° 全消失**」）✗
+         *   ⇒ 根因（本轮定位 ✓）：**非击破的死法我原来直接 `return` 了** ✗ —— 尤其是
+         *     **`CE_EDEATH_ECL_DIE`**（= ECL 自己 `delete()` ✓，正是我们 `CESpirit109_leave` 那条 ✓）
+         *     ⇒ 灵的 **VM 不收、账格不释放** ✗ ⇒ 残留 VM（可能是 level-2 幽灵的**黄** `CALMY` ✓）留在原地 ✓
+         *     ＋ 后续新灵复用同格 ⇒ 旋转/贴图写到新 VM 上、眼前却是旧 VM 的残留 ✓ —— 两条症状同源 ✓。
+         *   ⇒ 铁律「长持续效果必须交代『被删掉会怎样』」✓：**离场也要收干净** ✓（下面这段）。*/
+        int lv2 = 0, inc2 = 0;
+        int z2 = pofv_spirit_take(ev->id, &lv2, &inc2);     /* 认得出是我们的灵才收 ✓ */
+        if (z2 >= 0) {
+            if (s_spirit_vm[z2])   { ce_anm_delete((uint32_t)s_spirit_vm[z2]);   s_spirit_vm[z2]   = 0; }
+            if (s_spirit_body[z2]) { ce_anm_delete((uint32_t)s_spirit_body[z2]); s_spirit_body[z2] = 0; }
+            s_spirit_dis[z2] = 0; s_spirit_dis_age[z2] = 0; s_spirit_ex[z2] = 0;
+            ce_log("pofv: 灵 id=%u **离场**（kind=%d）⇒ 已收 VM ＋ 释放账格 ✓",
+                   (unsigned)ev->id, (int)ev->kind);
+        }
+        return;                                             /* 离场**不算击破** ✓（不喂累计器 ✓）*/
+    }
+    if (!(ev->flags & CE_EDEATH_F_REAL)) return;           /* 真敌人（哨兵/特殊对象不算）*/
+    if (ev->enemy &&
+        (*(const uint32_t *)((const uint8_t *)ev->enemy + CE_ENEMY_FLAGS) & CE_ENEMY_FLAG_BOSS))
+        return;                                            /* ★ 杂鱼口径：boss 不起暴风 */
+    /* ★ 档位（owner 2026-10-05）：
+     *   · **默认 = 小妖精 B**（半径 50 / 50 帧 / 伤害 6）；
+     *   · **灵档 = 80 / 40 帧 / 伤害 10** —— 只对「**本卡自己召唤的灵**」用
+     *     （owner 原话：TH17 的動物霊与 TH19 的灵「**设定意义上是一个东西，游戏上完全不是一个意义的玩意**，
+     *      相当于**只有本卡召唤的才是灵**」⇒ **不读别人的卡、不判敌人种类**，
+     *      只看 `ev->id` 在不在**我们自己的灵账**里）。
+     *   ⇒ 灵账在下面 `pofv_note_spirit()`；召唤灵的地方调它一次即可（灵的功能本体还没做，见 §TODO(灵)）。 */
+    /* ★★ W2/W3（一手：`REPORT` §3.1 / 镜像表）：
+     *   · **击破純霊 ⇒ 送動物霊**，种类 = **死亡点到自机距离²**（4624 狼 / 16384 獭 / 更远 鷲）；
+     *   · **击破動物霊 ⇒ 返还**一只（**同 kind**）；
+     *   两者都走同一条「**死亡栈只入队**」的路（SDK 禁止在死亡栈里建敌机）。 */
+    {
+        int32_t lv = -1;
+        int inc = 0;
+        int k = pofv_spirit_take(ev->id, &lv, &inc);
+        /* ★ 一手（owner）：純霊的扳机挂**玩家射击/命中** ⇒ 每次击破攒一格，够数就交一只（见 tick 的交付段）。 */
+        /* ★★★ 2026-10-05 owner 实跑定案：「你实现的是**我击破一个，在我自己这边直接生成下一个**」✗
+         *   ⇒ 按一手 §9.1：純霊的**生成侧 = `1 - *(源+0x98)` = 对面** ✓ ⇒ 我方击破 ⇒ **生成到对面模型** ✓
+         *   （不是本侧直接冒 ✗）。⇒ 本侧看到的純霊应当来自**对面（模型）那边的生成** ✓ = 镜像回程 ✓
+         *   ❓ 本侧純霊的**来源**（模型侧何时生成、经哪条路回来）待 owner 确认 ⇒ 现在**先不本侧生成** ✗ */
+        if (++s_pure_kill_n >= POFV_PURE_SPAWN_INTERVAL) {
+            s_pure_kill_n = 0;
+            pofv_foe_spawn_gated(pofv_top_x(), pofv_top_y(),
+                                  POFV_SPIRIT_KIND_PURE, 0);
+            ce_log("pofv: 純霊生成 ⇒ **送进对面模型**（一手 `生成侧 = 对面` ✓；本侧不再直接冒 ✗）");
+        }
+        /* ★ W7 EX 触发（一手门限 149/200/300）：❓ 计数源暂用同一击破计数，难度取 1（Normal = 200）。 */
+        if (pofv_ex_ready(s_pure_kill_n_abs++, 1)) { ++s_ex_pending; }
+        /* ★★★ 2026-10-06 **owner 指到 `TUNING` 第 6 条（一手订正）**：`+15` 来自**通用敌机死亡处理器**
+         *   `FUN_0050c1f0`（全 exe 5 个调用者）⇒ **妖精的死亡同样加计数器** ✓ ⇒ 卡里原先只在「我方灵被击破」
+         *   那支喂 ⇒ **妖精完全不喂** ✗ ⇒ 累计器爬不动 ⇒ 阈值不开 ⇒ 「没有 level 1」✓ ⇒ 现**上移到每次真实击破** ✓。
+         *   ✅ 2026-10-06 已改（owner 裁定「TH09/TH19 独立运行」）：TH09 族**不再**用 TH19 的步长/阈值 ✗
+         *   ⇒ 见下面 TH09 那两行（`POFV_ACC09_STEP2C/STEP30` ✓）与 `pofv_acc_take30(&s_acc, diff)` ✓
+         *   （核实复核：全文件 `pofv_acc_*` 只出现在 `:660-691`，无任何交叉 ✓ —— 原「仍待 owner 定」是与新代码
+         *    矛盾的过期文字 ✗，现订正 ✓）*/
+            { int32_t i3; for (i3 = POFV_UI_EV_MAX - 1; i3 > 0; --i3) s_ui_ev[i3] = s_ui_ev[i3 - 1];
+              s_ui_ev[0].what = POFV_UI_EV_KILL; s_ui_ev[0].ttl = POFV_UI_EV_TTL; }   /* 镜像击破：停 3 s ✓ */
+            pofv_acc_add50(&s_acc, 15);          /* TH19 一手：大块口径（死亡分发）✓ */
+            pofv_acc_add54(&s_acc, 15);          /* TH19 一手 ✓ */
+            /* ★★★ owner 2026-10-06：「**th09 和 th19 独立运行**，按一手 + **真实难度**」⇒
+             *   TH09 是**另一套**（步长 = 一手 `param_2`/`param_3` ✓，阈值吃难度不吃时间 ✓）⇒ **不混用** ✗ */
+            pofv_acc_add2c(&s_acc, POFV_ACC09_STEP2C);
+            pofv_acc_add30(&s_acc, POFV_ACC09_STEP30);
+            pofv_hits_bump(&s_hits, 1);          /* ★ hit（連爆数）＋1（灵侧口径 ✓，owner 图 ✓）*/
+            ++s_cnt_kill;                        /* ★ goal ②：击破计数（定位自维持用 ✓）*/
+            ++s_send40;                                 /* ★ §8.38：进入状态域 1 的次数 +1 ✓（本侧 ✓）*/
+            if (s_ex_cool <= 0) {                       /* ★ 一手：冷却中（`+0x34 != 0`）**不积累** ✓ */
+                s_ex_gauge += POFV_EX_GAUGE_STEP;       /* ★ 击破 ⇒ **+15** ✓（一手 §11.1 ✓）*/
+                if (s_ex_gauge > POFV_EX_GAUGE_MAX) s_ex_gauge = POFV_EX_GAUGE_MAX;
+            }
+            s_acc_last_x = ev->x; s_acc_last_y = ev->y;
+            /* ★★★ owner 2026-10-06：**两套独立**、各自判阈值 ⇒ 「**一次暴风可以同时送出一只純霊 + 一只幽灵**」✓
+             *   · TH19 那套：阈值 `150−t/2` / `120−t/5`（吃**对局时间** ✓）⇒ `+0x54` = **純霊** ✓
+             *   · TH09 那套：阈值 `(30−難度)×4` / `60−難度×1.5`（吃**真实难度** ✓）⇒ `+0x30` = **幽灵族** ✓（带 `<25` 收件门 ✓）*/
+            {
+                const int32_t diff = ce_difficulty();   /* ★ 真实难度（一手 `CE_ADDR_DIFFICULTY 0x4ccd00`，`engine.h:14`：0=E/1=N/2=H/3=L/4=EX）*/
+            if (pofv_spirit_spill_stop()) { /* ★ 安全阀：不送 ✓（也不消费累计器 ✓）*/
+            } else if (pofv_acc_take54(&s_acc, s_card_frames / 60)) {
+                ++s_cnt_send54;
+                ce_log("pofv: 連撃累积过阈值（破坏时判）⇒ 送出（a50=%d a54=%d t=%d）",
+                       (int)s_acc.a50, (int)s_acc.a54, (int)s_card_frames);
+                pofv_foe_spawn_gated(pofv_top_x(), pofv_top_y(), POFV_SPIRIT_KIND_PURE, 0);   /* ★ 一手：`+0x54` = 純霊 ✓ */
+                pofv_foe_incoming_push(s_inc, POFV_FOE_INCOMING_MAX,
+                                       pofv_top_x(), pofv_top_y(),
+                                       POFV_SPIRIT_KIND_PURE, 0,                        /* 镜像面同载荷 ✓ */
+                                       (int32_t)((ce_rand() % 101) + 60 + (ce_rand() % 101)));
+            }
+                if (pofv_spirit_spill_stop()) { ++s_cnt_send30; /* ★ 安全阀：TH09 也不送 ✓ */
+                } else if (pofv_acc_take30(&s_acc, diff)) {    /* ★ TH09 那套（独立 ✓）*/
+                    ce_log("pofv: 【TH09】越阈值（a2c=%d a30=%d 難度=%d）⇒ 送出**幽灵** level 1（收件门 <25 ✓）",
+                           (int)s_acc.a2c, (int)s_acc.a30, (int)diff);
+                    pofv_foe_spawn_gated(pofv_top_x(), pofv_top_y(),
+                                          POFV_SPIRIT_KIND_GHOST_TH09, 1);          /* ★ 一手：TH09 生成类型 = `side+3` = 幽灵族 ✓ */
+                    pofv_foe_incoming_push(s_inc, POFV_FOE_INCOMING_MAX,
+                                           pofv_top_x(), pofv_top_y(),
+                                           POFV_SPIRIT_KIND_GHOST_TH09, 1,          /* 镜像面同载荷 ✓ */
+                                           (int32_t)((ce_rand() % 101) + 60 + (ce_rand() % 101)));
+                }
+            }        if (k >= 0) {
+            /* ★★ 2026-10-05 owner：「灵缺少击杀暴风」—— 暴风原先挂在 `pofv_spirit_is_ours(ev->id)` 上，
+             *   但那条在 `take()` **之后**（条目已取走）⇒ 永远为假 ⇒ 暴风从不生成。
+             *   改为**用 take 的返回值**决定：认出是我们的灵 ⇒ 起**灵档暴风（80 / 40 帧 / 伤害 10）**。 */
+            /* ★★ ② 我方灵被击破 ⇒ **在对面模型里记一条**（owner：「送回来只能是镜像击破事件」⇒ 这里是「送去对面」那一步）✓
+             *   位置 = **我方击破点**（owner 口径：「是我打死我这侧灵的 xy」✓）；type/level 取这只灵 ✓ */
+            /* ★ 一手：**死亡分发**每次破坏 ⇒ 两档各 **+15** ✓；并记「最近一次破坏位置」（`+0x58`/`+0x60` ✓）*/
+            /* ★★ ⑤ 第二条触发路径：**在破坏这一刻**判阈值（一手：事件驱动 ✓，**不是**每帧 ✗）
+             *   两档独立：`+0x50`（150 − t/2，clamp 1400）· `+0x54`（純霊，120 − t/5，clamp 700）✓
+             *   ❓ 一手的 `t` = 全局计时器 `DAT_0062b260`；我们暂用 `s_card_frames` 等价 ✓ */
+            /* ★★★ MODEL §4.4（owner 2026-10-05 新增）：「两条出口同时开 ⇒ 打死 20 只会送 20 多只 ✗ ⇒
+             *   **只保留「阈值」这条**，把「破坏即送」那条去掉」✓ 且 §4.4-107/109：TH19 的「送」只由 **`+0x54`** 负责
+             *   （`+0x50` = 「另一条（未定名）」⇒ **不作**送扳机 ✗，只继续累积 ✓）*/
+            /* ★★★ 2026-10-05 **实跑日志抓到的自维持根因**（owner：「门控这块一定有问题」✓）：
+             *   `pofv_acc_take54/take50` 的 `t` 口径是**秒**（`thr54 = 120 − t/5` ✓，与容量分档
+             *   `pofv_spirit_cap_for(fam, s_card_frames / 60)` **同一口径** ✓），而这里原先传的是
+             *   **帧** `s_card_frames` ✗ ⇒ `t` 被放大 **60 倍** ⇒ `thr54 = 120 − t/5` 变负 ⇒
+             *   被 `if (thr < 0) thr = 0` 钳成 **0** ⇒ `a54 < 0` 恒假 ⇒ **每一次击破都判「过阈值」** ✗
+             *   ⇒ 送出一只 ⇒ 模型侧必然（镜像击破 / §4.6）送回一只 ⇒ 再被击破 ⇒ **自维持不衰减** ✗✓。
+             *   （日志指纹：`a50=1400 a54=700` 顶死在钳位 + 每击破一条「送出」✓。）⇒ 改传**秒** ✓ */
+            /* ★ MODEL §4.4：**「破坏即送」已删** ✗（只保留阈值出口 ✓）*/
+            /* ★★★ ⑤ **本侧暴风送出**（owner 定案 ①：TH19 = **破坏即判定** ✓ + 連撃阈值另一条路径）
+             *   ⇒ 「送出」那一刻**同时**两个效果（owner 原话）：
+             *     ① **同时给对面槽位送一个 level 1** ⇒ `foe_spirit_spawn(…, 幽灵, 1)`（无延迟 ✓）
+             *     ② **我这边延迟 0-100 帧随机 ＋ 动画随机帧**收到一个 level 1 ⇒ `foe_incoming_push` ✓
+             *   ❓ 連撃阈值那条路径**未接**（阈值/重置口径 owner 未给 ⇒ 按纪律只留 ❓，不写实现 ✗）*/
+            /* ★ MODEL §4.4：**「破坏即送」整条出口（含这发 incoming）已删** ✗
+             *   ⇒ 本侧「送出」**只由阈值那条**（`if (pofv_acc_take54(...))`，其内已有本体 + 镜像面 ✓）负责 ✓ */
+            /* ★★★ ③ **镜像击破事件**：对面「打死它那边**离我方击破点最近**的那只」⇒ **送回来**
+             *   ⇒ 回来那只按 owner 口径用「**自机位置**（= 对面位置）」算距离²定档 ⇒ 放回一隻動物霊 ✓（纯数据）*/
+            {
+                int32_t ot = 0; float ox = 0.0f, oy = 0.0f;
+                /* ★ MODEL:159：**只有 level-2 incoming 才禁镜像** ✓（本地升级出的 level-2 不禁 ✓）*/
+                if (!(inc && lv == 2) &&
+                    pofv_foe_spirit_mirror_kill(s_foe, POFV_FOE_SPIRIT_MAX, (uint32_t)ce_rand(), ev->x, ev->y, &ot, &ox, &oy)) {
+                    const float *pp = ce_player_pos();
+                    float d2 = pp ? (ox - pp[0]) * (ox - pp[0]) + (oy - pp[1]) * (oy - pp[1]) : -1.0f;
+                    int32_t back = (int32_t)pofv_spirit_kind_random_animal();
+                    /* ★★★ 2026-10-05 owner：「我击破一个，**在我自己这边**直接生成下一个」✗
+                     *   ⇒ 方向错：按 §9.1 `生成侧 = 对面` ✓ ⇒ 送回的那只**也进对面模型** ✓（不在本侧冒 ✗）。
+                     *   ❓ 本侧要看到东西，只能来自**模型侧事件**的镜像回程（待 owner 定那条路）✓ */
+                    /* ★★★ 回程 = **模型 → 本侧**，且**走载体延迟** ✓（owner：不是「本侧立刻冒下一只」✗）
+                     *   ⇒ 用既有的「延迟到达」队列 ✓：delay = 60 + rand(0..100) + rand(0..100)（同一手口径 ✓）*/
+                    /* ★★★★ 2026-10-06 owner：「**你只管"我要发EX"了，你不要管 EX 是什么**」✓
+                     *   ⇒ 这里只做**发射决定** ✓，不生成任何 EX 本体 ✗（本体归外部/后续 ✓）。
+                     *   判据（一手 `08-extra-attack.md` §8.2 ＋ §8.1 ✓）：
+                     *     `s_ex_gauge >= s_ex_thr[level]` ⇒ **扣减**（`-=`，**不清零** ✓）⇒ 本次**改为 EX**。
+                     *   「改为 EX」在本卡的可落地语义 = **此次不回程** ✓ ＋ **循环终止** ✓（owner 裁定「触发 EX = 出循环」✓）。*/
+                    {   const int lvi = (s_ex_level >= 0 && s_ex_level <= 7) ? s_ex_level : 0;
+                        if (s_ex_gauge >= POFV_EX_FIRE_AT) {             /* ★ 一手 §11.1：`> 99` ⇒ 发射 ✓ */
+                            s_ex_gauge -= POFV_EX_FIRE_AT;               /* 扣减、不清零 ✓ */
+                            s_ex_cool = POFV_EX_COOL;                    /* ★ 一手：冷却 60 帧 ✓ */
+                            (void)lvi;
+                            pofv_foe_spirit_loop_exit(s_foe, POFV_FOE_SPIRIT_MAX);   /* 循环在此终止 ✓ */
+                            ce_log("pofv: **本侧发 EX**（gauge %d − %d ⇒ %d）⇒ 本次**不回程** ✓（EX 本体不归本卡 ✗ owner 口径 ✓）",
+                                   (int)s_ex_gauge + (int)s_ex_thr[lvi], (int)s_ex_thr[lvi], (int)s_ex_gauge);
+                        } else if (s_send40 >= POFV_SEND40_LIMIT) {
+                            /* ★ §8.38 ✓：本侧已满 **40** ⇒ 该类通路**本局永久不再送灵** ✓（真的脱离循环 ✓）*/
+                            if (!(s_card_frames % 300))
+                                ce_log("pofv: 本侧送灵已达上限 %d ⇒ **本局不再送灵** ✓（§8.38；对面仍可能吃 EX ✓）", POFV_SEND40_LIMIT);
+                        } else {
+                            pofv_foe_incoming_push(s_inc, POFV_FOE_INCOMING_MAX, ox, oy, back, 0,
+                                                   (int32_t)((ce_rand() % 101) + 60 + (ce_rand() % 101)));
+                        }
+                    }
+                    ce_log("pofv: 镜像击破 ⇒ 模型侧收回一隻（type %d）⇒ 按距离²定档 kind %d d2=%.0f ⇒ **延迟回程**（本侧落 ✓）",
+                           (int)ot, (int)back, d2);
+                }
+            }
+            { int32_t i3; for (i3 = POFV_UI_EV_MAX - 1; i3 > 0; --i3) s_ui_ev[i3] = s_ui_ev[i3 - 1];
+              s_ui_ev[0].what = POFV_UI_EV_STORM;
+              s_ui_ev[0].ttl = POFV_UI_EV_TTL + POFV_UI_STORM_DELAY; }   /* ★ 镜像暴风：**延迟** ✓（先等 delay 再显示）*/
+            if (pofv_storm_spawn_tier(&s_storm, ev->x, ev->y,
+                                      POFV_SPIRIT_R_TARGET, POFV_SPIRIT_TWEEN_FRAMES,
+                                      POFV_SPIRIT_HIT_DMG) < 0) {
+                ce_log("pofv: 灵档暴风池满（%d）⇒ 丢弃", POFV_STORM_MAX);
+            }
+            int32_t nk = k;
+            if (k == POFV_SPIRIT_KIND_PURE) {
+                const float *pp = ce_player_pos();
+                float d2 = (pp ? (ev->x - pp[0]) * (ev->x - pp[0]) + (ev->y - pp[1]) * (ev->y - pp[1]) : -1.0f);
+                int q;
+                nk = (int32_t)pofv_spirit_kind_random_animal();
+                ce_log("pofv: 純霊被击破 d2=%.0f ⇒ **送去对面 = 暂存** %d 帧后回来变動物霊 kind=%d",
+                       d2, POFV_SPIRIT_STASH_FRAMES, (int)nk);
+                for (q = 0; q < POFV_SPIRIT_STASH_MAX; ++q)
+                    if (s_stash_ttl[q] <= 0) {
+                        s_stash[q][0] = ev->x; s_stash[q][1] = ev->y;
+                        s_stash_kind[q] = nk; s_stash_ttl[q] = POFV_SPIRIT_STASH_FRAMES;
+                        break;
+                    }
+                return;                   /* ★ 純霊：**不立刻生成**，走暂存 */
+            }
+            /* ★ owner 指出：日志把 TH09 幽灵写成「動物霊」会**误导因果**（以为幽灵生動物霊）。
+             *   一手口径：**動物霊只从純霊来**（純霊击破 ⇒ 暂存 ⇒ 回来时按距离² 变動物霊）；
+             *   幽灵(kind 4) 属 TH09 那一族 ⇒ 它死了就**返还一只幽灵**（同族），与動物霊无关。 */
+            if (k == POFV_SPIRIT_KIND_GHOST_TH09) {
+                /* ★ 一手 §2 level 链：`+0xa4=min(level,2)`、`+0xa6=min(level+1,3)` ⇒ 绿→黄→红，到 3 不升。 */
+                int32_t a4 = 0, a6 = 0;
+                pofv_mirror_level_gain(lv, &a4, &a6);
+                ce_log("pofv: TH09 幽灵(level %d)被击破 ⇒ 返还 level %d（一手 min(level+1,3)）", (int)lv, (int)a6);
+                lv = a6;
+            }
+            ce_log("pofv: %s被击破 ⇒ **只记账，不本地生成**（回程只由镜像那条产生 ✓ owner 2026-10-06）",
+                   (k == POFV_SPIRIT_KIND_GHOST_TH09) ? "TH09 幽灵(kind=4)"
+                   : (k == POFV_SPIRIT_KIND_WOLF) ? "動物霊·狼(kind=1)"
+                   : (k == POFV_SPIRIT_KIND_OTTER) ? "動物霊·獺(kind=2)"
+                   : (k == POFV_SPIRIT_KIND_EAGLE) ? "動物霊·鷲(kind=3)"
+                   : "灵");
+            /* ★★★ MODEL §1-3/§7-3：本侧生成口**也要过上限门** ✓（核实报告：这处原先无门 ✗，会绕过 cap）
+             *   满 ⇒ **折算成计数**（`++s_point_q`），**不是**丢包 ✗ */
+            /* ★★★★ 2026-10-06 owner（日志实锤后裁定）：「**击杀 ⇒ 本地排一只同族 —— 肯定去掉啊！**」✗
+             *   直接删掉 ✓（原代码就在此由 `s_spirit_q` **本地生成一只同族** ✗ ⇒ **不消耗对面模型条目**
+             *   ⇒ 正是 owner 铁律禁止的「不消耗条目的回程」＝自维持 ✓；日志原文：
+             *   `pofv: 動物霊·狼(kind=1)被击破 ⇒ 返还一只同族（与動物霊无关…）` ✓）。
+             *   ⇒ 现在**回程只由**「镜像击破 ⇒ 模型侧收回一隻（消耗条目 ✓）⇒ 延迟回程」那条产生 ✓
+             *     （日志里那条运行正常 ✓）⇒ 闭环断开 ✓。
+             *   ⚠ 原本挂在被删 `if` 后面的 `else { ++s_point_q; … }`（本地生成口的"队满折算"兜底 ✓）
+             *     也**一并删除** ✓ —— 本地生成口整个不存在了 ✓，兜底自然无从谈起 ✓。*/
+            return;                       /* 我们的灵：**不再**走下面那条临时生成口 */
+        }
+    }
+    if (pofv_spirit_is_ours(ev->id)) {
+        if (pofv_storm_spawn_tier(&s_storm, ev->x, ev->y,
+                                  POFV_SPIRIT_R_TARGET, POFV_SPIRIT_TWEEN_FRAMES,
+                                  POFV_SPIRIT_HIT_DMG) < 0) { /* 池满：下面是统一的日志 */ }
+    } else if (pofv_storm_spawn(&s_storm, ev->x, ev->y, POFV_STORM_LIFE_FRAMES) < 0) {
+        if (!s_cap_logged) {
+            ce_log("pofv: storm pool full (%d) — storm dropped", POFV_STORM_MAX);
+            s_cap_logged = 1;
+        }
+    }
+}
+
+static int on_tick_2(ce_card_t *c)
+{
+    int i;
+    (void)c;
+    /* ★★ A 路：出队**生成真敌机灵**（安全上下文 = 这里；死亡栈里只入过队）。
+     *   生成后把它的 enemy_id 记进本卡的灵账 ⇒ 它**自然死亡**时 `on_enemy_death` 会认出来，
+     *   走**灵档**（80 / 40 帧 / 伤害 10）—— 验收点。 */
+    {   /* ★ 灵圆跟随：账里每个 id 查一次敌机（不缓存指针），活着就跟、死了就淡出 */
+        uint8_t *em = CE_ENEMY_MGR();
+        int z;
+        for (z = 0; z < POFV_SPIRIT_MAX; ++z) {
+            uint8_t *e;
+            if (!s_spirit_vm[z]) continue;
+            e = (em && s_spirit_id[z]) ? ce_enemy_by_id(em, (int32_t)s_spirit_id[z]) : 0;
+            if (e) { s_spirit_miss[z] = 0; }
+            if (e) {
+                /* ★ 入场运动：按 kind / age 取速度并推进（一手 `ins_404` + `ins_405`）*/
+                if (!s_spirit_dis[z] && !s_spirit_ex[z]) {   /* ★ 免疫己方系统：EX 不吃固灵结界 */
+                    /* ★★★ goal 第 25 轮：真触发 = **按住 C 展开的固灵结界**（一手 §3.5）。
+                     *   `held` = 本帧 active 回调打了时间戳（= 按住 C ✓）；形状用 `pofv_aura_contains()` ✓。 */
+                    const float *pp = ce_player_pos();
+                    /* ★★★ owner 2026-10-06：「**固灵结界——按 shift**」✓ ⇒ 直接读键（不再依赖那个
+                     *   「时间戳」变量：核实发现它**只有读、没有写** ✗ ⇒ 结界从来没亮过 ✓，这就是「该做结界了」的根因 ✓）。
+                     *   `ce_key_down(CE_VK_SHIFT)`（`sdk.h:832`；别的卡也用 `CE_VK_SHIFT` ✓，不自己造键值 ✗）。*/
+                    const int held = ce_key_down(CE_VK_SHIFT) ? 1 : 0;
+                    if (pp && held) {
+                        float ddx = *(const float *)(e + POFV_ENEMY_ABS_POS) - pp[0];
+                        float ddy = *(const float *)(e + POFV_ENEMY_ABS_POS + 4) - pp[1];
+                        if (pofv_aura_hit_here(ddx, ddy, *(const float *)(e + 0x110) * 0.5f)) {
+                            s_spirit_dis[z] = 1;
+                            /* ★★★ 目标 ③ 收口：改走 **ECL 通道** —— 卡侧只把 `$I0` 写成 **1**（沈静化），
+                             *   耐久/停住/缓慢上浮全部交给 ECL 的 `CESpirit109_calm`（一手 `lifeSet(50)` +
+                             *   `GhostDisableMove` 的 `moveVel(-1.5707964f, 0.02f)`）✓
+                             *   （`$I0..$I7` = `enemy+0x14b8` 起，见 `engine.h`）*/
+                            *(int32_t *)(e + CE_ENEMY_ECL_I0) = 1;
+                            /* ★★ ④ **镜像固化事件**：对面「固化它那边**离我方事件点最近的未固化**的那只」✓
+                             *   （owner：「固化不会固化已固化的，这个跳过」✓；`sealed` 后 **160 帧**消失、期间缓慢上浮 ✓）*/
+                            { int32_t i3; for (i3 = POFV_UI_EV_MAX - 1; i3 > 0; --i3) s_ui_ev[i3] = s_ui_ev[i3 - 1];
+                              s_ui_ev[0].what = POFV_UI_EV_SEAL; s_ui_ev[0].ttl = POFV_UI_EV_TTL; }  /* 镜像固灵：停 3 s ✓ */
+                            pofv_foe_spirit_seal(s_foe, POFV_FOE_SPIRIT_MAX,
+                                                 *(const float *)(e + POFV_ENEMY_ABS_POS),
+                                                 *(const float *)(e + POFV_ENEMY_ABS_POS + 4));
+                            /* ★ 一手 §3.5 ③「**霊力アイテムを放出**」：结界罩到灵的那一刻放一个灵力道具。
+                             *   ❓ 用现成的道具口（`ce_money_pocket`）；一手 §5 的道具另有掉率口径（每 100 hits），
+                             *     那条属于「掉落」这一支，等那一支落地时再合并（现在只做「结界放道具」这条 ✓）。 */
+                            /* ⏸ **占位**（owner 2026-10-06：「**灵力道具先留口搁置**」✓）：
+                             *   一手勘误（`06-aura.md:68`）说「オーラ消弹本身**不掉道具**」✗，真掉落来自**敌/灵死亡侧** ✓；
+                             *   而 §5 又定「✅ 做（**落点待定**）」⇒ 目标是**接本仓 116 的季节道具/碎片骨架** ✓。
+                             *   ⇒ 这里先用现成口占位、**等 owner 解搁** ✗（不动 116 任何文件 ✓）。*/
+                            ce_money_pocket(1);
+                            ce_log("pofv: 结界放出灵力道具（一手 §3.5 ③）");
+                        ce_log("pofv: 灵 id=%u 被吸灵领域罩到 ⇒ 沈静化（停住 + 缓慢上浮 + 耐久骤降到 %d，一手 GhostDisableMove / lifeSet）",
+                                   (unsigned)s_spirit_id[z], POFV_SPIRIT_DIS_HP);
+                        }
+                    }
+                }
+                if (s_spirit_dis[z]) {
+                    /* ★★ 固化态角度（放这里最稳：本块**只在固化时为真** ✓，不受外层作用域影响 ✗）：
+                     *   狼 = 逆时针 90°（`+π/2` ✓）、鹫 = 顺时针 90°（`−π/2` ✓）—— owner 2026-10-06 实跑定案 ✓。*/
+                    if (s_spirit_body[z]) {
+                        const int32_t kd2 = s_spirit_kind[z];
+                        if (kd2 == (int)POFV_SPIRIT_KIND_WOLF)
+                            ce_anm_set_rotation((uint32_t)s_spirit_body[z], 0.0f, 0.0f, 1.5707964f);
+                        else if (kd2 == (int)POFV_SPIRIT_KIND_EAGLE)
+                            ce_anm_set_rotation((uint32_t)s_spirit_body[z], 0.0f, 0.0f, -1.5707964f);
+                    }
+                    /* 一手 `GhostDisableMove`（`moveVel(-1.5707964f, 0.02f)` = 缓慢上浮）已交给 **ECL 的
+                     *   `CESpirit109_calm`** ⇒ 卡侧不再手写速度（原文 `vx = 0; vy = -0.02f;` 已删）✓ */
+                    /* ★ W4 自然成佛：满帧数 ⇒ ①清账（不算击破）②入暂存（成仏 = 变動物霊送出去）③ life = 0 让它消失。 */
+                    if (++s_spirit_dis_age[z] >= POFV_DISABLE_JOUMON_FRAMES) {
+                        const float *pp2 = ce_player_pos();
+                        float dd2 = (pp2 ? (*(const float *)(e + POFV_ENEMY_ABS_POS) - pp2[0]) *
+                                           (*(const float *)(e + POFV_ENEMY_ABS_POS) - pp2[0]) +
+                                           (*(const float *)(e + POFV_ENEMY_ABS_POS + 4) - pp2[1]) *
+                                           (*(const float *)(e + POFV_ENEMY_ABS_POS + 4) - pp2[1]) : -1.0f);
+                        int q2;
+                        ce_log("pofv: 灵 id=%u 沈静化满 %d 帧 ⇒ **自然成佛（不算击破）⇒ 直接消失**（固化**永不回返** ✓）",
+                               (unsigned)s_spirit_id[z], POFV_DISABLE_JOUMON_FRAMES);
+                        s_spirit_id[z] = 0; s_spirit_kind[z] = -1;   /* ① 清账 ⇒ 死亡不再算击破 */
+                        /* ★★★ 2026-10-06 owner 铁律：「**只要被固化，这个灵一定不会再回来了**」✓✗
+                         *   ⇒ 这里原来「入暂存 ⇒ 一会儿变動物霊送出去」**正是自维持的闭环** ✗
+                         *     （固化 ⇒ 成佛 ⇒ 送回 ⇒ 再固化 ⇒ …）⇒ **掐掉送回** ✓，只保留「清账 + 消失」✓。
+                         *   （`if (0)` 是**死代码开关**：留着原逻辑便于对照，运行时**绝不执行** ✓。）*/
+                        if (0) for (q2 = 0; q2 < POFV_SPIRIT_STASH_MAX; ++q2)
+                            if (s_stash_ttl[q2] <= 0) {              /* ② 入暂存（回来时变動物霊）*/
+                                s_stash[q2][0] = *(const float *)(e + POFV_ENEMY_ABS_POS);
+                                s_stash[q2][1] = *(const float *)(e + POFV_ENEMY_ABS_POS + 4);
+                                s_stash_kind[q2] = (int32_t)pofv_spirit_kind_random_animal();
+                                s_stash_ttl[q2] = POFV_SPIRIT_STASH_FRAMES;
+                                break;
+                            }
+                        *(int32_t *)(e + CE_ENEMY_ECL_I0) = 999;   /* ③ 喊走：ECL 飞向正上方 `delete()` ⇒ **离场不算击破** ✓（不再由卡侧写 life=0）*/
+                        continue;
+                    }
+                }
+                /* ★★★ §18-1：**结界减速改走 ECL 通道 `$I2`**（一手 §3.5 ②「敌人/敌弹减速」）。
+                 *   卡侧**只发状态**（0 = 正常 / 1 = 在结界内 ⇒ ECL 侧换一档慢的 `moveVel`，ECL 消费下一轮加）；
+                 *   原来那段「卡侧直接乘速度和位置」已随运动移交成为**死代码** ⇒ 已删 ✓ */
+                {
+                    const float *pp3 = ce_player_pos();
+                    int32_t in_aura = 0;
+                    if (pp3 && ce_key_down(CE_VK_SHIFT)) {   /* ★ owner：「固灵结界——按 shift」✓ */
+                        float adx = *(const float *)(e + POFV_ENEMY_ABS_POS) - pp3[0];
+                        float ady = *(const float *)(e + POFV_ENEMY_ABS_POS + 4) - pp3[1];
+                        in_aura = pofv_aura_hit_here(adx, ady, *(const float *)(e + 0x110) * 0.5f);
+                    }
+                    *(int32_t *)(e + CE_ENEMY_ECL_I0 + 8) = in_aura;   /* `$I2` = 结界内?(慢) */
+                }
+                /* ★★★ 2026-10-05 owner 实跑（ECL 驱动后）：**依旧 90°** ⇒ 证明当年那行补偿**方向是对的**，
+                 *   我上一版按「一手脚本里没有旋转」把它删了是**误删** ✗ ⇒ 现在**重新加回**（只给新月形的幽灵；
+                 *   純霊是球、动物不是新月 ⇒ 只幽灵需要 ✓）。❓ 方向若反了改成 −1.5707964f。 */
+                /* ★★★ 2026-10-06 owner 实跑：「**狼灵和大鹫灵的贴图得顺时针转 90°**」✓ ⇒ 按族分角度：
+                 *   · **幽灵**（新月形 ✓）：保持 **+π/2**（= 1.5707964 ✓，此前你确认过 ✓）；
+                 *   · **狼 / 鹫**：**顺时针 90°** ⇒ **−π/2**（= −1.5707964 ✓）；
+                 *   · **水獭 / 純霊**：不转 ✓（水獭那条「运动」另说 ⇒ ❓ 见 `TUNING` 待确认 ✓）。
+                 *   ⚠ 若某族方向反了 ⇒ 只改对应那一行符号即可 ✓（EX 档另有 π 覆盖 ✓）。*/
+                if (s_spirit_body[z]) {
+                    const int32_t kk = s_spirit_kind[z];
+                    if (kk == POFV_SPIRIT_KIND_GHOST_TH09)
+                        ce_anm_set_rotation((uint32_t)s_spirit_body[z], 0.0f, 0.0f, 1.5707964f);   /* 幽灵 +90° ✓ */
+                    /* ★★★ owner 2026-10-06：「**固化大鹫需要顺时针转 90°**」✗ ⇒ 固化态单独一个角度：
+                     *   正常态是 +90°（上一轮按「180° 反了」定的 ✓），**固化态取 −90°（顺时针 ✓）**。*/
+                    /* ★★★ owner 2026-10-06 实跑两条定案：
+                     *   ①「**固化狼灵需要逆时针旋转 90°**」✓ ⇒ 固化态狼 = `+π/2`（CCW ✓）；
+                     *   ②「**固化大鹫灵需要顺时针旋转 90°**」✓ ⇒ 固化态鹫 = `−π/2`（CW ✓）。*/
+                    else if (s_spirit_dis[z] && kk == (int)POFV_SPIRIT_KIND_WOLF)
+                        ce_anm_set_rotation((uint32_t)s_spirit_body[z], 0.0f, 0.0f, 1.5707964f);    /* 固化狼：逆时针 90° ✓ */
+                    else if (s_spirit_dis[z] && kk == (int)POFV_SPIRIT_KIND_EAGLE)
+                        ce_anm_set_rotation((uint32_t)s_spirit_body[z], 0.0f, 0.0f, -1.5707964f);
+                    /* ★★★ 2026-10-06 owner 实跑（第二次）：「**固化大鹫依旧头朝右、固化狼依旧要逆时针**」✗
+                     *   ⇒ 根因：固化角度我写在上面 `if (s_spirit_dis[z])` 块里 ✓，但**下面这条正常态分支同一帧又执行**
+                     *     并把它**覆盖**成 `+π/2` ✗ ⇒ 所以固化态永远显示 +90° ✓（我上两次都白改 ✗）。
+                     *   ⇒ 给正常分支加「**非固化**」条件 ✓（固化态角度只由上面那一处负责 ✓）。*/
+                    else if (!s_spirit_dis[z] && (kk == POFV_SPIRIT_KIND_WOLF || kk == POFV_SPIRIT_KIND_EAGLE))
+                        /* ★★★ owner 2026-10-06 实跑订正：「**大鹫灵 180° 反了**、狼灵那可能也是 180° 反了」✗
+                         *   ⇒ 上一版是 **顺时针 90°（−π/2）** ✗，实跑看是**倒的** ⇒ 再翻 180° ⇒ 取 **+π/2** ✓
+                         *   （= 幽灵同角度 ✓；两族若仍有个别反向，只需改这一行符号 ✓）。*/
+                        ce_anm_set_rotation((uint32_t)s_spirit_body[z], 0.0f, 0.0f, 1.5707964f);
+                }
+                /* ★★ 次要项③：**幽灵寿命 5000 帧**（一手 `+5000: enemy_delete()`）——
+                 *   到点发 `$I0 = 999` ⇒ 走 ECL 离场支（**离场不算击破** ✓，与「成佛」同一条路 ✓）*/
+                if (s_spirit_kind[z] == POFV_SPIRIT_KIND_GHOST_TH09 &&
+                    s_spirit_age[z] >= POFV_GHOST_LIFE_FRAMES) {
+                    *(int32_t *)(e + CE_ENEMY_ECL_I0) = 999;
+                    ce_log("pofv: 幽灵满 %d 帧（一手 +5000: enemy_delete）⇒ 喊走（不算击破）",
+                           POFV_GHOST_LIFE_FRAMES);
+                }
+                ++s_spirit_age[z];
+                ce_anm_set_pos((uint32_t)s_spirit_vm[z],
+                               *(const float *)(e + POFV_ENEMY_ABS_POS),
+                               *(const float *)(e + POFV_ENEMY_ABS_POS + 4), 0.0f);
+                if (s_spirit_body[z]) {          /* ★ 本体：跟随 + **每 6 帧**换一帧（一手）*/
+                    ce_anm_set_pos((uint32_t)s_spirit_body[z],
+                                   *(const float *)(e + POFV_ENEMY_ABS_POS),
+                                   *(const float *)(e + POFV_ENEMY_ABS_POS + 4), 0.0f);
+                    /* ★★★ 2026-10-06 owner：「**它是碰到边上之后折返**」✓ ⇒ 水獭的**左右折返**由卡侧翻 `$I3`：
+                     *   ECL 的獭支是个每帧重读 `$I3` 的 loop（`spirit109.ecl.txt` ✓）⇒
+                     *   **碰左沿 ⇒ `$I3 = 0`（改向右斜 22.5°）** / **碰右沿 ⇒ `$I3 = 1`（改向左斜 157.5°）** ✓。
+                     *   ❓ 折返 x = ±180（自定；一手边界未核 ⇒ 已登记 TUNING ✓），场地半宽按 192 ✓。*/
+                    if (s_spirit_kind[z] == POFV_SPIRIT_KIND_OTTER) {
+                        const float ox2 = *(const float *)(e + POFV_ENEMY_ABS_POS);
+                        /* ★★★ owner 2026-10-06 实跑：「**水獭在后撤步，然后没有折返**」✗ ⇒ 根因：
+                         *   引擎的**灵控制器把位置钳在 ±140**（核实方一手：`FUN_0051b6c0`，常量 `0x5aa52c=-140` / `0x5aa3ac=+140` ✓）
+                         *   ⇒ 灵**永远到不了**场地半宽 192 ✗ ⇒ 我上一轮用 `POFV_FIELD_HALF_W(192)` 当折返阈值 ⇒ **永不触发** ✗
+                         *     （表现就是「贴着看不见的墙滑动、不折返」✓）。
+                         *   ⇒ 改为**钳位处**触发：阈值取 **±140**（并在注释里留 ❓：一手钳位精确值/余量待核 ✓）。*/
+                        if (ox2 >= POFV_SPIRIT_X_CLAMP)       *(int32_t *)(e + CE_ENEMY_ECL_I0 + 12) = 1;  /* 到右钳位 ⇒ 折向左 ✓ */
+                        else if (ox2 <= -POFV_SPIRIT_X_CLAMP) *(int32_t *)(e + CE_ENEMY_ECL_I0 + 12) = 0;  /* 到左钳位 ⇒ 折向右 ✓ */
+                    }
+                    if (s_spirit_ex[z]) {
+                        ce_anm_set_color((uint32_t)s_spirit_body[z], POFV_EX_ALPHA_RGBA);   /* 一手 ⑤ 50% 起步 */
+                        /* ★ 一手 ①「**旋转 180°**」（本地同一 EX 样式转过来）⇒ 绕 Z 转 π。
+                         *   SDK 有 `ce_anm_set_rotation(id, rx, ry, rz)` ✓（⚠ 脚本里不能同时跑 rotate 插值 ——
+                         *   我们的本体脚本 400/401 没跑插值 ⇒ 安全 ✓）。 */
+                        ce_anm_set_rotation((uint32_t)s_spirit_body[z], 0.0f, 0.0f, 3.1415927f);
+                    }
+                    /* ★★★ owner 2026-10-06：「**后撤步还有一个意思是运动方向和动画方向相反**」✗
+                     *   ⇒ 水獭要按**移动方向**翻面（一手侧是两张图 `GhostOtterR`/`GhostOtterL` ✓；本卡只有一张 ⇒ 用负 x 缩放当翻转 ✓）。
+                     *   方向来源 = 卡侧写进 `$I3` 的「出生半场、朝内」+ 边缘折返（`pofv.c` 的 OTTER 分支 ✓）：
+                     *   `$I3 == 0` ⇒ **向右**（+22.5°）⇒ 不翻 ✓；`$I3 == 1` ⇒ **向左**（+157.5°）⇒ 翻 ✓。
+                     *   ⚠ 本体脚本 401 开头 8 帧有 `scaleTime`（会覆盖 scale ✓）⇒ 那 8 帧后本写入稳定 ✓（每帧都写 ✓）。*/
+                    if (s_spirit_kind[z] == POFV_SPIRIT_KIND_OTTER) {
+                        const int32_t lr = *(const int32_t *)(e + CE_ENEMY_ECL_I0 + 12);
+                        ce_anm_set_scale((uint32_t)s_spirit_body[z], (lr == 0) ? 1.0f : -1.0f, 1.0f);
+                    }
+                    ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_spirit_body[z],
+                                      pofv_spirit_body_sprite(s_spirit_kind[z], s_spirit_level[z], s_spirit_dis[z],
+                                      s_spirit_age[z] / ((s_spirit_kind[z] == POFV_SPIRIT_KIND_WOLF ||
+                                                          s_spirit_kind[z] == POFV_SPIRIT_KIND_OTTER ||
+                                                          s_spirit_kind[z] == POFV_SPIRIT_KIND_EAGLE) ? 6 : 4)));
+                    /* XXXX owner: rotation not effective on this VM -> use NEGATIVE X SCALE flip (proven by otter flip) */
+                    if (s_spirit_body[z]) {
+                        const int32_t kF = s_spirit_kind[z];
+                        float sxF = 1.0f;
+                        if (kF == (int)POFV_SPIRIT_KIND_EAGLE && s_spirit_dis[z]) sxF = -1.0f;   /* sealed eagle -> flip (CW-90 look) */
+                        else if (kF == (int)POFV_SPIRIT_KIND_OTTER) sxF = (*(const int32_t *)(e + CE_ENEMY_ECL_I0 + 12) == 0) ? 1.0f : -1.0f;  /* otter keeps its flip */
+                        ce_anm_set_scale((uint32_t)s_spirit_body[z], sxF, 1.0f);
+                    }
+                }
+            }
+            else {
+                if (++s_spirit_miss[z] > POFV_SPIRIT_MISS_MAX) {
+                    ce_log("pofv: 灵 id=%u 连续 %d 帧查不到 ⇒ 收圆 vm=%d",
+                           (unsigned)s_spirit_id[z], (int)s_spirit_miss[z], (int)s_spirit_vm[z]);
+                    ce_anm_interrupt((uint32_t)s_spirit_vm[z], 1);
+                    if (s_spirit_body[z]) { ce_anm_interrupt((uint32_t)s_spirit_body[z], 1); s_spirit_body[z] = 0; }
+                    s_spirit_vm[z] = 0; s_spirit_miss[z] = 0;
+                }
+            }
+        }
+    }
+    /* ★ 对面侧模型：每帧走一格（一手运动 + age++；sealed 时缓慢上浮）—— **纯数据** ✓ */
+    pofv_foe_spirit_tick(s_foe, POFV_FOE_SPIRIT_MAX);
+    /* ★ §4.5 周期生成（30 s，两侧各试一只；种类各自随机 ✓）—— 本侧这只就是**首个生成入口** ✓ */
+    /* ★★★ owner 2026-10-05 新需求：**进道中 / 关底 boss 时的「全体清屏」** ——
+     *   ① 被清掉的灵**不算被击破** ✗（不加累计器、不计 hits、不给分、不触发镜像击破 / 自然击杀 ✓）；
+     *   ② **对称槽位（对面模型）也要清空** ✓（连在途的到达队列一起 ✓）。
+     *   触发 = 引擎 boss 表 **0→1 的边沿** ✓（`engine.h:149 CE_EM_BOSS_IDS` ✓，与 §4.5 同一判据 ✓）。*/
+    {
+        uint8_t *emb = CE_ENEMY_MGR();
+        int bnow = 0, bi2;
+        if (emb) {
+            const int32_t *bids2 = (const int32_t *)(emb + CE_EM_BOSS_IDS);
+            for (bi2 = 0; bi2 < CE_EM_BOSS_SLOTS; ++bi2) if (bids2[bi2]) { bnow = 1; break; }
+        }
+        if (bnow && !s_boss_prev) {
+            int z3;
+            for (z3 = 0; z3 < POFV_SPIRIT_MAX; ++z3) {        /* ① 本侧：**只收 VM、清账** ⇒ 无击破记账 ✓ */
+                if (s_spirit_vm[z3])   { ce_anm_delete((uint32_t)s_spirit_vm[z3]);   s_spirit_vm[z3] = 0; }
+                if (s_spirit_body[z3]) { ce_anm_delete((uint32_t)s_spirit_body[z3]); s_spirit_body[z3] = 0; }
+                s_spirit_id[z3] = 0; s_spirit_kind[z3] = -1; s_spirit_level[z3] = 0;
+                s_spirit_from_incoming[z3] = 0; s_spirit_dis[z3] = 0; s_spirit_dis_age[z3] = 0;
+                s_spirit_ex[z3] = 0; s_spirit_age[z3] = 0; s_spirit_lr[z3] = 0; s_spirit_miss[z3] = 0;
+            }
+            s_spirit_next = 0;
+            s_spirit_q_n = 0;                                 /* 在途待生成一并清 ✓ */
+            pofv_foe_spirit_init(s_foe, POFV_FOE_SPIRIT_MAX);     /* ② 对称槽位：对面模型全清 ✓ */
+            pofv_foe_incoming_init(s_inc, POFV_FOE_INCOMING_MAX); /* ② 连在途到达队列 ✓ */
+            ce_log("pofv: **进 boss ⇒ 全体清屏** ⇒ 本侧灵只收 VM、**不计击破** ✗；对面模型 + 在途队列一并清空 ✓");
+        }
+        s_boss_prev = bnow;
+    }
+    if (++s_period_timer >= POFV_PERIOD_SPAWN_FRAMES) {
+    /* ★ MODEL §4.5：「**除 boss 外**，每 30 s 两侧各试生成 1 只」⇒ 用**引擎自己的 boss 判据** ✓
+     *   （一手：`engine.h:149 CE_EM_BOSS_IDS 0x48` = 管理器的 boss enemy_id 表；`engine.h:659
+     *    CE_ENEMY_OWN_BOSS_ID 0x636c` = `zEnemyData.own_boss_id`（非 0 = 关底/道中 boss））*/
+    {
+        uint8_t *em0 = CE_ENEMY_MGR();
+        int boss_on = 0, bi;
+        if (em0) {
+            const int32_t *bids = (const int32_t *)(em0 + CE_EM_BOSS_IDS);
+            for (bi = 0; bi < CE_EM_BOSS_SLOTS; ++bi) if (bids[bi]) { boss_on = 1; break; }
+        }
+        if (boss_on) { s_period_timer = 0; goto pofv_period_skip; }   /* boss 在场 ⇒ 本周期不生成 ✓ */
+    }
+        int32_t i4;
+        s_period_timer = 0;
+        for (i4 = 0; i4 < 2; ++i4) {                       /* 0 = 本侧 ✓ / 1 = 对面模型 ✓ */
+            int32_t kd = (ce_rand() % 2) ? POFV_SPIRIT_KIND_GHOST_TH09 : POFV_SPIRIT_KIND_PURE;
+            float px = ((float)(ce_rand() % 321) - 160.0f);
+            float py = 16.0f + (float)(ce_rand() % 33);
+            if (i4 == 0) {                                  /* 本侧：走既有生成口 ✓ */
+                if (s_spirit_q_n < POFV_SPIRIT_Q_MAX &&
+                    pofv_spirit_room(pofv_spirit_live_count_fam((kd == POFV_SPIRIT_KIND_GHOST_TH09) ? POFV_FAM_TH09 : POFV_FAM_TH19),
+                                     pofv_spirit_cap_for((kd == POFV_SPIRIT_KIND_GHOST_TH09) ? POFV_FAM_TH09 : POFV_FAM_TH19,
+                                                         s_card_frames / 60))) {
+                    s_spirit_q[s_spirit_q_n][0] = px; s_spirit_q[s_spirit_q_n][1] = py;
+                    s_spirit_q_kind[s_spirit_q_n] = kd; s_spirit_q_level[s_spirit_q_n] = 1;
+                    s_spirit_q_inc[s_spirit_q_n] = 0;   /* ★ Q4：§4.5 本侧 ⇒ 非 incoming ✓ */
+                    ++s_spirit_q_n;
+                    ce_log("pofv: §4.5 周期生成 ⇒ **本侧** kind %d（30 s 周期 ✓）", (int)kd); ++s_cnt_gift;   /* ★ goal ②：§4.5 白给计数 ✓ */
+                                } else ce_log("pofv: §4.5 本侧生成口满 ⇒ 跳过（核实裁定 Q2：不折算 ✓）");
+            } else {                                        /* 对面模型 ✓ */
+                pofv_foe_spawn_gated(pofv_top_x(), pofv_top_y(), kd, 1);
+                ce_log("pofv: §4.5 周期生成 ⇒ **对面模型** kind %d（30 s 周期 ✓）", (int)kd); ++s_cnt_gift;   /* ★ goal ②：§4.5 白给计数 ✓ */
+            }
+        }
+    }
+    pofv_period_skip:;
+    /* ★ MODEL §4.6（判据 `:27` + `:147`）：**每 30 帧一次判定**，命中概率 `p = 1/120`
+     *   ⇒ 平均 **60 s 一只** ✓；**击杀对象 = 对面槽位里「纯粹随机一只」** ✓（原来「每只各 roll」✗
+     *   ⇒ 一帧可杀 0..N 只、总速率随在场数漂移 ✗）。
+     *   ⇒ 记账按【镜像击破】✓：移出模型 + 幽灵按 `pofv_mirror_level_gain()` 升级 + 经延迟回程落回本侧 ✓；
+     *     **level 3 永不返还**（§6-1）⇒ 候选里排除 ✓；无候选 ⇒ 不采样（这不是「送」⇒ 无折算义务 ✓）。*/
+    /* ★★★ MODEL §4.6（**owner 2026-10-05 裁定**）：**每一个**对面灵**每 30 帧各自独立判定一次**，
+     *   单只命中概率 `p = 1/120` ⇒ **平均一个灵 60 s 被击杀一次** ✓（**不是**「全槽一次判定 + 随机挑一只」✗
+     *   —— 那是我上一版的误读，已按 owner 口径改回 ✓）。
+     *   记账仍按【镜像击破】✓：移出模型 + 幽灵 `pofv_mirror_level_gain()` 升级 + 经到达口延迟回程 ✓；
+     *   **level 3 永不返还**（§6-1）⇒ 逐只跳过 ✓。*/
+    if ((s_card_frames % 300) == 0) {        /* ★ goal ②：四类计数 + 两侧在场数 一行汇总 ✓ */
+        {   int i9, used9 = 0, dis9 = 0;   /* ★ 2026-10-06：把「账本占用 / 固化数」也打出来 ✓
+                                                   *   ⇒ owner 报的「黄糊 + 旋转乱」若只在账本接近满时出现 ✓，这里一眼能对上 ✓
+                                                   *     （我已核实：生成口闸门与记账紧邻 ⇒ `note_spirit` 的 −1 在单线程下**不可达** ✗，
+                                                   *      对侧 `pofv_foe_spirit_spawn` 的返回也有 `>= 0` 防护 ✓ ⇒ 越界说**未证实** ✗）。*/
+        for (i9 = 0; i9 < POFV_SPIRIT_MAX; ++i9) if (s_spirit_id[i9]) { ++used9; if (s_spirit_dis[i9]) ++dis9; }
+        /* ★★★ 2026-10-06 owner：「版顶有一只**不动的狼灵**（贴图朝右、无动作）」✗
+         *   ⇒ 这行是**户口对账**：把「**有 VM 却没户口**」（id=0 但 vm/body 非 0 ⇒ 残留 ✗，正是那只狼灵的样子 ✓）
+         *     与「有户口却没 VM ✗」两类**逐个槽**打出来 ✓ ⇒ 我自己读日志即可定死成因 ✓（不再猜 ✗）。*/
+        for (i9 = 0; i9 < POFV_SPIRIT_MAX; ++i9) {
+            if (!s_spirit_id[i9] && (s_spirit_vm[i9] || s_spirit_body[i9]))
+                ce_log("pofv: [对账] **残留** 槽%d id=0 但 vm=%d body=%d kind=%d（⇒ 孤儿 VM ✓ 铁律漏收 ✗）",
+                       i9, (int)s_spirit_vm[i9], (int)s_spirit_body[i9], (int)s_spirit_kind[i9]);
+            else if (s_spirit_id[i9] && !s_spirit_body[i9])
+                ce_log("pofv: [对账] **缺 VM** 槽%d id=%u kind=%d（⇒ 本体没挂上 ✗）",
+                       i9, (unsigned)s_spirit_id[i9], (int)s_spirit_kind[i9]);
+        }
+        ce_log("pofv: [计数] 击破=%d 送54=%d 送30=%d 回程=%d 白给=%d ｜ 本侧TH19=%d TH09=%d 对面模型=%d ｜ 账本=%d/%d 固化=%d ｜ EX表=%d/%d 送40=%d/%d",
+               s_cnt_kill, s_cnt_send54, s_cnt_send30, s_cnt_arrive, s_cnt_gift,
+               pofv_spirit_live_count_fam(POFV_FAM_TH19), pofv_spirit_live_count_fam(POFV_FAM_TH09),
+               pofv_foe_spirit_count(s_foe, POFV_FOE_SPIRIT_MAX), used9, POFV_SPIRIT_MAX, dis9,
+               (int)s_ex_gauge, POFV_EX_FIRE_AT, (int)s_send40, POFV_SEND40_LIMIT);
+    }
+    }
+    if ((s_card_frames % POFV_NATKILL_EVERY) == 0) {
+        int32_t i5;
+        for (i5 = 0; i5 < POFV_FOE_SPIRIT_MAX; ++i5) {
+            if (!s_foe[i5].active) continue;
+            if (s_foe[i5].level >= 3) continue;              /* ★ §6-1：level 3 永不返还 ✓ */
+            /* ★ owner 2026-10-06：「**只要被固化，这个灵一定不会再回来了**」✓ ⇒ 自然击杀也跳 `sealed` ✗ */
+            if (s_foe[i5].sealed) continue;                 /* 固化中 ⇒ 走「活化/静止 ⇒ 离场」✓，不回来 ✓ */
+            if ((ce_rand() % POFV_NATKILL_DEN) != 0) continue;   /* ★ 每只各自 p = 1/120 ✓ */
+            {
+                int32_t lv_nk = s_foe[i5].level;
+                if (s_foe[i5].type == POFV_SPIRIT_KIND_GHOST_TH09) {
+                    int32_t a4 = 0, a6 = 0;
+                    pofv_mirror_level_gain(lv_nk, &a4, &a6);   /* 一手：升级后送回去 ✓ */
+                    lv_nk = a6;
+                }
+                pofv_foe_incoming_push(s_inc, POFV_FOE_INCOMING_MAX, s_foe[i5].x, s_foe[i5].y,
+                                       s_foe[i5].type, lv_nk,
+                                       (int32_t)((ce_rand() % 101) + 60 + (ce_rand() % 101)));
+                ce_log("pofv: §4.6 自然击杀（idx %d kind %d）⇒ 按镜像击破记账、延迟回程 ✓",
+                       (int)i5, (int)s_foe[i5].type);
+                s_foe[i5].active = 0; s_foe[i5].type = -1; s_foe[i5].sealed = 0;
+            }
+        }
+    }
+    /* ★★★ owner 2026-10-06：「**固灵结界——按 shift**」✓ ⇒ 按住时在自机处显示结界本体
+     *   （可视 = 一手 `effect.anm` script1 的逐字复刻 `POFV109_AURA`(402) ✓；程序化多边形、零贴图 ✓）。
+     *   松开 ⇒ 收掉 ✓；换卡/跨面 ⇒ `clear_card` 里 delete ✓（铁律 ✓）。*/
+    /* ★★★ 2026-10-06 owner：「**shift 蓄力完全从属于固灵系统**」✓ ⇒ 按住 Shift 蓄力、结界半径=蓄力 ✓；
+     *   松开 ⇒ 按一手脚本的 `scaleTime(20,4,0,0)` 收束 20 帧再删 ✓（`sdk.h` 无 interrupt 口 ✗ ⇒ 卡侧复现缩放 ✓）。*/
+    s_aura_is_marisa = pofv_aura_marisa();                     /* 0 = 灵梦 / 1 = 魔理沙 ✓（一手字段 `0x4cccf4` ✓）*/
+    s_aura_kind = pofv_aura_kind();
+    s_aura_k = (s_aura_kind == 1) ? POFV_AURA_K_MARISA
+             : (s_aura_kind == 3) ? POFV_AURA_K_SANAE
+             : (s_aura_kind == 2) ? POFV_AURA_K_SAKUYA
+                                 : POFV_AURA_K_REIMU;
+    /* ★ ⑤-② 注记（owner 曾问"早苗没有自己的领域脚本"❓）⇒ **不是遗漏** ✓：
+     *   一手（`06-aura.md` §9.3 ✓）：早苗那支（TH19 `pl02` script16）与灵梦 script15 **逐字相同** ✓
+     *   ⇒ 本卡让早苗**复用 402（灵梦那支）就是一手行为** ✓，只是 K 不同（早苗 K=128 ⇒ 半径 = 其它自机的 2 倍 ✓）。
+     *   她那支的**过渡**也不同（60 帧 / 模式 2 先慢后快 ✓，见下面 ease 分支 ✓）—— 所以"脚本共用、参数不同"是**有意的** ✓。*/
+    if (s_aura_kind == 2) {                                    /* ★ 咲夜（TH09 ✓）状态推进 */
+        const float *pp5 = ce_player_pos();
+        if (pp5) {
+            const float mx = pp5[0] - s_aura_px, my = pp5[1] - s_aura_py;
+            s_aura_px = pp5[0]; s_aura_py = pp5[1];
+            if (mx * mx + my * my > 0.01f) {                   /* 有移动 ⇒ 取最近 8 方向（只比点积，免 sqrt ✓）*/
+                static const float d8[8][2] = { {1.0f,0.0f},{0.70710678f,0.70710678f},{0.0f,1.0f},{-0.70710678f,0.70710678f},
+                                                {-1.0f,0.0f},{-0.70710678f,-0.70710678f},{0.0f,-1.0f},{0.70710678f,-0.70710678f} };
+                int i, best = 0; float bs = -9.0e9f;
+                for (i = 0; i < 8; ++i) { const float d = mx * d8[i][0] + my * d8[i][1]; if (d > bs) { bs = d; best = i; } }
+                s_aura_dir_x += (d8[best][0] - s_aura_dir_x) * 0.25f;   /* ★ 一手：方向 0.25/帧 缓动 ✓ */
+                s_aura_dir_y += (d8[best][1] - s_aura_dir_y) * 0.25f;
+                s_aura_dir8i = best;      /* ★ 记下索引 ⇒ 下面写领域朝向 ✓ */
+            }
+            if (s_aura_sec_deg < 90.0f) {                      /* ★ 一手：**全张角**每帧 +3°（`0x4915e4` ✓）、上限 90°（`0x48e450` ✓）⇒ 半张角 ≤45° ✓ */
+                s_aura_sec_deg += 3.0f;
+                if (s_aura_sec_deg > 90.0f) s_aura_sec_deg = 90.0f;
+            }
+        }
+    }
+    if (ce_key_down(CE_VK_SHIFT)) {
+        if (!s_aura_role_logged) {                             /* ★ 一次性：把角色全局的真实取值打出来 ✓ */
+            s_aura_role_logged = 1;                            /*   （核实：`0x4cccf4` 确是角色下标 ✓，但「1=魔理沙」未逐值核 🟡
+                                                                *    ⇒ 实跑各开一次灵梦/魔理沙，把这行日志对一下即可钉死 ✓）*/
+            ce_log("pofv: 结界角色 [0x4cccf4]=%d（本卡判为 %s）",
+                   (int)(*(const int32_t *)POFV_ADDR_PLAYER_CHAR),
+                   pofv_aura_marisa() ? "魔理沙套(403/404/405 竖带)" : "灵梦套(402 圆)");
+        }
+        /* ★★★ 2026-10-06 owner：「**他妈的一手是什么就是什么**」✓ ⇒ **删掉我自造的蓄力累加** ✗：
+         *   一手（`06-aura.md` §9.17 定案 ✓）那个「蓄力」**不是**随时间涨的条 ✗，而是**能力卡设的一个数值**
+         *   （`S+0x8c`，两张阿吽卡把它置 **125** ✓，其余角色**无写点** ⇒ 恒定 ✓）；§10.3 的算例直接写
+         *   「**满蓄力 ⇒ 128**」✓ = `200 × K / 100` ✓ ⇒ 所以**目标半径 = 2K**（灵梦 128 / 魔理沙 28 / 早苗 256 ✓），
+         *   而**可见的长大全部来自张开动画**（槽 3 每帧写缩放 ✓，灵梦/魔理沙 20 帧、早苗 60、咲夜 90 ✓）。
+         *   ⇒ 本卡照此：按住 Shift ⇒ 目标取**满值** ✓（不再累加 ✗），开合全交给下面的追赶层 ✓。*/
+        /* ★★★ owner 2026-10-06 实跑：「**灵梦的固灵结界没这么大，得是现在的一半大**」✓
+         *   ⇒ 取下限的一半：一手公式是 `clamp(蓄力,0,200) × K / 100` ✓，我原先取满值 **200** ⇒ 灵梦 **128** ✗；
+         *     改成 **100** ⇒ 灵梦 **64** ✓（正好一半 ✓），且四名自机**等比**：魔理沙 **14** / 咲夜（TH09 另算 ✓）/ 早苗 **128** ✓。
+         *   ★ owner 2026-10-06 给全的表（`目标 = clamp(电荷,0,200) × K / 100` ✓）：
+         *     电荷 **200**（clamp 上限，一手理论最大）⇒ 灵梦 128 / 魔理沙 28 / 早苗 256 —— **我先前误取它** ✗（就是你看到的「大一倍」✓）；
+         *     电荷 **125**（一手**唯一实际写入值**，Aun 两张卡 ✓）⇒ 灵梦 **80** / 魔理沙 **17.5** / 早苗 **160** ✓；
+         *     电荷 **100**（**owner 实跑裁定** ✓）⇒ 灵梦 **64** / 魔理沙 **14** / 早苗 **128** —— **现源码取这个** ✓。*/
+        s_aura_charge = POFV_AURA_TARGET_CHARGE;               /* = 100 ✓ ⇒ 半径减半 ✓ */
+    } else if (s_aura_charge > 0.0f) {
+        /* ★★★ 2026-10-06 核实订正：`ce_anm_interrupt` **存在** ✓（`sdk.h:391`，本卡 `:550/:1053` 已在用 ✓）
+         *   ⇒ 收束**完全交回脚本**：`interrupt(1)` ⇒ 脚本自己的
+         *     `stop(); interruptLabel(1); scaleTime(20, 4, 0.0f, 0.0f); +20: delete();` ✓
+         *     （一手 `pl00.txt:464-479` ✓：**ease-out**（模式 4）+ 20 帧后**脚本自删** ✓）
+         *   ⇒ 卡侧**不再手写缩放**（否则与脚本 `scaleTime` 打架 ✗）、也**不代删**（交脚本 ✓）。*/
+        /* ★★★ owner 实测：「没按 Shift 时**依然有一条细缝**」✗ ⇒ 根因：`interrupt` 后**两条子带没有缩放动画** ✗
+         *   ⇒ 要等各自 `+20: delete()` 才消失 ⇒ 那 20 帧就是细缝 ✓ ⇒ 改成**松手即删** ✓（不给残留窗口 ✓，
+         *   与本仓「长持续必须收干净」铁律一致 ✓；❓ 因此丢掉一手的 20 帧收束动画，已登记 ✓）。*/
+        /* ★★★ 验收定位（2026-10-06）：**「松手瞬删」就是这一行** ✗（验收 ②：`:1379` ⇒ 立即 delete）
+         *   ⇒ 改成 `interrupt` ✓：脚本自己 `interruptLabel(1) ⇒ scaleTime(20,4,0,0) ⇒ +20: delete()` ✓（`pl00.txt:464-479` ✓）
+         *     ⇒ 拿回一手 **20 帧收束** ✓；句柄随即清 0（交脚本自删 ✓）；`R=0` ⇒ 卡侧不再写缩放 ✓。
+         *   ⚠ 遗留 ❓：魔理沙两条子带（`404/405`）一手只有 `+20: delete()`、**无缩放动画** ⇒ 那 20 帧仍有"细缝"感 ✓
+         *     ⇒ 要彻底无缝得给子带加动画（**共享面** ⇒ 需 `AUDIT §BE` ✓）；先按 owner 已裁的取舍 ✓。*/
+        if (s_aura_kind == 2) {
+            int ip3; for (ip3 = 0; ip3 < POFV_AURA_PIECES; ++ip3)
+                if (s_aura_piece[ip3]) { ce_anm_interrupt((uint32_t)s_aura_piece[ip3], 1); s_aura_piece[ip3] = 0; }
+        }
+        if (s_aura_vm && s_aura_kind == 2) {
+            /* ★★ 复核定案（HANDOVER-AURA-SECTOR §18 ✓）：松手**不进 `charge>0` 分支** ⇒ 卡侧自然
+             *   停写 ✓（= 其它三人为什么能收束的原因 ✓）；张角收缩由**下面新增的收束分支**每帧写 ✓；
+             *   同时补**一手**的 10 帧 α 淡出（`etama` script91：`+38: alphaTime(10,0,0)` ⇒ `+10: delete` ✓）。
+             *   ⇒ 单边拥有：**卡侧删 + 清句柄** ✓（不 interrupt ✗）。*/
+            s_aura_close = 20;                               /* 张角收缩 20 帧（❓自定，借队友时长 ✓）*/
+            {   float a0 = (float)s_aura_anim_f * 0.05235988f;
+                if (a0 > 1.5707964f) a0 = 1.5707964f;
+                s_aura_close_ang = a0; }
+        } else if (s_aura_vm) { ce_anm_interrupt((uint32_t)s_aura_vm, 1); s_aura_vm = 0; }
+        if (0) {
+            /* ★★ 照其它三人的设计 ✓：卡侧**发 interrupt**（触发脚本 `406` 的 `rotateTime(20,…)` 收束 ✓）
+             *   ＋ **立刻忘句柄** ✓（⇒ 下次激活会 spawn **新** VM ⇒ 治"VM 死那/不重生"✗）。
+             *   ⚠ 先写一次 `rz = π/2` ✓ ⇒ 脚本收束时 rz 目标与当前相同 ⇒ **不再乱转半圈** ✗→✓ */
+            /* å²å¤ï¼**ä¸ interrupt âãä¸æ¸å¥æ â** â ç±æ¶æåæ¯æ¯å¸§åå¼ è§ âï¼åè¾¹æ¥æ âï¼*/
+        }
+        /* ★★ 咲夜也要**发 interrupt** ✓ —— 这正是其它三人的做法（`402/404/405`：interrupt ⇒ 脚本
+         *   `scaleTime(20,4,0,0)` ⇒ 收束 ✓）⇒ 我们用它触发 `406` 的 `rotateTime(20,4,rx=0,…)` ✓
+         *   （先前我让咲夜走 `s_aura_close` 分支 ⇒ **脚本的收束支永不执行** ✗ = 你看到的"瞬间消失"✓）。*/
+        
+        s_aura_anim_f = 0;                 /* ★ 下一段张开从初值 1.0 重新演 ✓ */
+        if (s_aura_kind != 2) s_aura_vm = 0;   /* 咲夜留着收束 ✓ */
+        /* 旧注：交脚本自删 ⇒ 立刻忘掉句柄（`clear_card` 便不会二次删 ✓）*/
+        s_aura_charge = 0.0f; s_aura_r = 0.0f;
+    }
+    {
+        const float target = s_aura_charge * s_aura_k / 100.0f;    /* ★ 一手 `clamp(S+0x8c,0,200) × K / 100` ✓（目标）*/
+        const float dur = (s_aura_kind == 3) ? 60.0f : 20.0f;      /* ★ 逐类时长：早苗 60 ✓ / 其余 20 ✓（咲夜 TH09 另算 ✓）*/
+        float f, e;
+        /* ★★★ 2026-10-06 owner 实跑：「**灵梦的张开缺少张开动画，变成瞬间张开**」✗ ⇒ 根因：
+         *   这个计数器原来**每帧都自增** ✗（结界关着时也在涨 ✓）⇒ 等你按 Shift 时 `f` 早已 ≥1 ⇒ 直接跳到目标 ✗。
+         *   ⇒ 改成：**VM 不在（= 新的一段张开）⇒ 计时与起点清零 ✓；VM 在 ⇒ 才推进 ✓**。*/
+        /* ★★★ owner 日志一锤定音（2026-10-06 ✓）：`**结界心跳** kind=2 charge=100 R=0.0 vm=0` ✗
+         *   ⇒ 根因 = 我先前"防细缝"补丁把动画计数器改成「**只有 VM 存在时才推进**」✗ ⇒ **死锁** ✓：
+         *     没 VM ⇒ 计数不动 ⇒ e=0 ⇒ 咲夜 R = 3.0×20×e = **0** ⇒ 永远生不出 VM ✓
+         *     （灵梦靠 R 的初值 1.0 侥幸能生 ✓ —— 日志里正是 `kind=0 … R=1.0` ✓）。
+         *   ⇒ 改成**按"有没有蓄力"推进** ✓：无蓄力（= 没按 Shift，结界关着）⇒ 计数归零 ✓；
+         *     有蓄力 ⇒ 每帧推进 ✓ ⇒ **第一帧就能算出 R>0 ⇒ 生成** ✓（细缝仍不会出现：没蓄力时 R 由下面那行强制为 0 ✓）。*/
+        if (s_aura_charge <= 0.0f) { s_aura_anim_f = 0; s_aura_anim_cur = 1.0f; }
+        else                       { ++s_aura_anim_f; }
+        f = (dur > 0.0f) ? (float)s_aura_anim_f / dur : 1.0f;
+        if (f > 1.0f) f = 1.0f;                                    /* ★ 走完保持在目标 ✓ */
+        e = (s_aura_kind == 3) ? (f * f * f)                       /* ★ 模式 2 = f³ ✓（早苗、先慢后快）*/
+                               : (1.0f - (1.0f - f) * (1.0f - f)); /* ★ 模式 4 = 1−(1−f)² ✓（灵梦/魔理沙）*/
+        s_aura_anim_cur = 1.0f + (target - 1.0f) * e;              /* ★ 一手定律（逐字）✓ */
+        if (s_aura_kind == 2 && s_aura_charge > 0.0f) {
+            /* ★★★ owner 2026-10-06 裁定：「**咲夜半径走一手 —— 她是 TH09 模型，和其他的不一样**」✓
+             *   一手（`th09/02` §3.9–§3.14 ✓）：半径 `+0x7c` 由**每角色 anm 脚本**给 ——
+             *     · 咲夜 = **3.0**（`etama.anm` sid17 的 `ins_7(3.0, 3.0)` ✓）；
+             *     · 灵梦 = 长到 **96.0**（她的回调 `0x440ce0` ＋ 上限 `0x48e3d4` ✓）；
+             *     · **初值 0** ✓（对象创建时整块清零 ✓，脚本没写该通道 ✓）。
+             *   ⇒ 撤掉 TH19 光环的 `scaleTime(90, 1, 600.0, 600.0)` ✗（那是 **TH19** 咲夜**光环**的配方 ✗，
+             *     与 **TH09** 领域不是一回事 ✓）。
+             *   ❓ 她的**张开时长/缓动**一手未给（`+0x7c` 由引擎回调长 ✓）⇒ 暂借其它自机的 ease（20 帧模式 4 ✓）
+             *     朝 **3.0** 长 ✓；❓ 3.0 的**量纲**（渲染尺度 vs 像素半径）待一手补 ✓。*/
+            /* ★★★ owner 2026-10-06 实跑：「**咲夜的领域不存在**」✗ ⇒ 根因（本轮定位 ✓）：
+             *   一手那个 `+0x7c = 3.0` 被我们当成**像素半径**直接用 ✗ ⇒ 而她的脚本是 `drawPoly(1.0f, 32)`
+             *   （**半径 1 像素**的多边形 ✓）⇒ 缩放 3.0 ⇒ **3 像素的点** ⇒ 看不见 ✓✓。
+             *   ⇒ 一手 3.0 的**量纲不明** ❓（很可能是"相对基准尺寸的倍率"✗，不是像素 ✓）
+             *     ⇒ 暂乘一个换算 `POFV_AURA_SAKUYA_UNIT`（❓自定，取 20 ⇒ 约 **60 像素**的圆 ✓，与其它自机同级可见 ✓）；
+             *     待一手的真实换算到位 ⇒ **改这一个常量**即可 ✓。*/
+            s_aura_anim_cur = POFV_AURA_K_SAKUYA * e;   /* 0 → 3.0×20 = 60 ✓ */
+        }
+        s_aura_r = s_aura_anim_cur;
+        /* ★★ 只有**咲夜**用它（owner 明确：「总之是你就改咲夜的，其他别动」✓）：
+         *   一手（`engine/versus/th09/02-ghost-and-seal.md` §3.6e ✓）：领域扇节点 = `EffectSys` sid 7
+         *   ⇒ `etama.anm` **script91** ⇒ `scale(24.0f, 24.0f)`（opcode 7 ✓）⇒ 写进 `VM+0x288`
+         *   ⇒ `EffectSys__operator_new` 在 `0x40d49a` **只拷一次** ⇒ `node+0x7c = 24`（**静态** ✓）
+         *   ⇒ **半径 = 24 游戏单位 ≈ 48px** ✓，且 **所有角色同值** ✓（随角色变的是**半张角** `+0x84` ✗）。
+         *   ⇒ 所以咲夜用**固定 48px** ✓（不再是 `charge × K/100` 的 ❓ 自定 ✗）；其他角色维持原样 ✓ 不动 ✗。*/
+        /* â 2026-10-07 owner：「一手核的不对」✗ ⇒ **撤回固定 48px** ✗，回到 `charge × K/100`（K=64 ⇒ 满蓄力 64px ✓）；半径真值等另一位核完再定 ❓（现为 ❓ 自定）*/
+        /* ââ 2026-10-08 owner 定口径（`HANDOVER-AURA-SECTOR.md` §19.15 ✓）：
+         *   「相对**玩家身位**保持一致」✓（场地宽只是量尺 â）：
+         *   一手 TH09：自机身位 = 24 单位（`pl02.ecl` 的 `enemy_set_hitbox(24,24)` ✓）、
+         *   领域半径 = **144 单位** ⇒ **= 6 身位** ✓；两作同为 640×480 且**同一套角色美术**（自机像素尺寸一致 ✓）
+         *   ⇒ **TH18 目标半径 ≈ 6 身位 ≈ 144 屏幕 px** ✓（我们原来只有 64px â ⇒ 小 2.25 倍 ✓）。
+         *   → **只给咲夜** ✓（owner：其他三人的 TH19/TH18 跨代问题在此处不存在 â）。
+         *   ❓ 单位换算：若卡里的 `aura_r` 是**世界单位（2 表面 px）** ⇒ 应填 **72** ✓；若就是**屏幕 px** ⇒ 填 **144** ✓。
+         *   本卡现用 144（与其他三人同一套量纲 ✓ ⇒ 实测一眼可判：半径≈6 身位就对 ✓）。*/
+        if (s_aura_kind == 2) s_aura_r = 144.0f;                                /* 视觉 = 判定 = 同一个值 ✓ */
+    }
+    /* ★★★★ 2026-10-06 owner 实跑关键更正：「**不是松手后的细缝，是我从来没按 shift 就有一个细缝挂着**」✗
+     *   ⇒ 根因：没按 Shift 时 `蓄力 = 0` ⇒ 目标 = 0 ✓，但**追赶层的初值是 1.0** ✗ ⇒ `R = 1.0 > 0` ✓
+     *     ⇒ **一开始就生成了一台 scale=1 的带** ✓ = 那条"细缝" ✓✓（我先前以为是收束残留 ✗，治错了地方 ✗）。
+     *   ⇒ 修法：**没蓄力（没按 Shift）⇒ R 直接归 0** ✓（不 spawn、判定半径也是 0 ✓）。*/
+    /* ★ 一手 §11.1：holder 每帧回调 ⇒ 蓄力 `+0x20` **每帧 −1**（衰减 ✓）、冷却 `+0x34` 每帧 −1 ✓ */
+    if (s_ex_gauge > 0) --s_ex_gauge;
+    if (s_ex_cool > 0)  --s_ex_cool;
+    /* ★ 诊断心跳（2026-10-06）：把「Shift 有没有被读到 / R 是多少」每 60 帧曝光一次 ✓
+     *   —— 与「结界出生」那行合用，可分开判断「没按到键 ✗」与「按到了但没生成/看不见 ✗」。*/
+    if (s_aura_charge > 0.0f && !(s_card_frames % 60))
+        ce_log("pofv: **结界心跳** kind=%d charge=%.0f R=%.1f vm=%d", (int)s_aura_kind, (double)s_aura_charge, (double)s_aura_r, (int)s_aura_vm);
+        {   /* â 2026-10-08 ownerï¼版顶一只朝右的狼灵、无碰撞箱、只是 VM â
+             *   ⇒ 对账日志无「残留」â ⇒ 把**所有活的 body VM**逐个列出 ⇒ 一眼看出它属谁 ✓。*/
+            int iz; int nbody = 0;
+            for (iz = 0; iz < POFV_SPIRIT_MAX; ++iz) if (s_spirit_body[iz]) ++nbody;
+            {   /* â owner 新报：②「用灵梦测试 ⇒ **完全没有 VM 的敌人**」â ③「**再也没见过 TH09 幽灵**」â
+                 *   ⇒ 光看 body 不够 ✗ ⇒ 把**灵圆 VM**也算进来 ✓（两个数一对照就知道是“本体没建”还是“圆没建”✗）。*/
+                int nring = 0;
+                for (iz = 0; iz < POFV_SPIRIT_MAX; ++iz) if (s_spirit_vm[iz]) ++nring;
+                ce_log("pofv: [VM] body å­æ´»=%d 个 ｜ 灵圆 VM å­活=%d 个", nbody, nring);
+            }
+            /* ââ 2026-10-08 ååºæ¶å²ï¼ownerï¼版顶一只不动的狼灵 â）：
+             *   实æµ发现有槽位「**id è¿å¨ãVM è¿å¨、但敌机早已不在**」
+             *   （某些移除路径**不发死亡事件** â）⇒ 这里每 300 帧用
+             *   `ce_enemy_by_id()` **直接查敌机是否还在** ⇒ 不在就**强制收** ✓（不靠超时猜 â）。*/
+            {   uint8_t *em2 = CE_ENEMY_MGR();
+                if (em2) { int iz2;
+                    for (iz2 = 0; iz2 < POFV_SPIRIT_MAX; ++iz2) {
+                        /* ★★★★ 2026-10-08 实测日志定位（**版顶那只狼灵** ✓）：
+                         *   `槽5 vm=… id=0 kind=-1` ＋ `槽7 vm=… id=0 kind=-1` ⇒ **有 VM、无户口** = 孤儿本体 ✓✓
+                         *   ⇒ 我原来的收割**只遍历 `id != 0` 的槽** ✗ ⇒ **整类孤儿被跳过** ✗✓
+                         *   ⇒ 现在**两类都收**：① `id==0 && body!=0`（无户口孤儿 ✓）② `id!=0` 但敌机已不在 ✓。*/
+                        if (!s_spirit_id[iz2]) {
+                            if (s_spirit_body[iz2] || s_spirit_vm[iz2]) {
+                                ce_log("pofv: [收] 槽%d **无户口孤儿**（VM=%d/%d kind=%d）⇒ 强制收 ✓",
+                                       iz2, (int)s_spirit_vm[iz2], (int)s_spirit_body[iz2], (int)s_spirit_kind[iz2]);
+                                if (s_spirit_body[iz2]) { ce_anm_delete((uint32_t)s_spirit_body[iz2]); s_spirit_body[iz2] = 0; }
+                                if (s_spirit_vm[iz2])   { ce_anm_delete((uint32_t)s_spirit_vm[iz2]);   s_spirit_vm[iz2] = 0; }
+                                s_spirit_kind[iz2] = -1; s_spirit_dis[iz2] = 0; s_spirit_dis_age[iz2] = 0;
+                            }
+                            continue;
+                        }
+                        if (ce_enemy_by_id(em2, (int32_t)s_spirit_id[iz2])) continue;
+                        ce_log("pofv: [æ¶] æ§½%d id=%u **敌机已不在** â 强制收（VM=%d kind=%d）",
+                               iz2, (unsigned)s_spirit_id[iz2], (int)s_spirit_body[iz2], (int)s_spirit_kind[iz2]);
+                        if (s_spirit_body[iz2]) { ce_anm_delete((uint32_t)s_spirit_body[iz2]); s_spirit_body[iz2] = 0; }
+                        if (s_spirit_vm[iz2])   { ce_anm_delete((uint32_t)s_spirit_vm[iz2]);   s_spirit_vm[iz2] = 0; }
+                        s_spirit_id[iz2] = 0; s_spirit_kind[iz2] = -1;
+                        s_spirit_dis[iz2] = 0; s_spirit_dis_age[iz2] = 0;
+                    }
+                }
+            }
+            for (iz = 0; iz < POFV_SPIRIT_MAX; ++iz)
+                if (s_spirit_body[iz])
+                    {   /* â owner：依旧有版顶狼灵 â ⇒ 判「**槽里的 id 对应的敌机到底是不是同一只**」✗
+                         *   （`ce_enemy_by_id` 找得到 ⇒ 引擎里确有该 id 的敌机 â；但可能是**旧 id 被别的敌机复用**）
+                         *   ⇒ 把敌机的**坐标**一起打出来 ✓ ⇒ 与 VM 位置对比即可判死 ✓。*/
+                        uint8_t *em3 = CE_ENEMY_MGR();
+                        uint8_t *e3 = em3 ? ce_enemy_by_id(em3, (int32_t)s_spirit_id[iz]) : 0;
+                        const float *ep = e3 ? ce_enemy_pos(e3) : 0;
+                        ce_log("pofv: [VM]   æ§½%d vm=%d id=%u kind=%d level=%d | 敌机=æ å标=(%.0f,%.0f)",
+                               iz, (int)s_spirit_body[iz], (unsigned)s_spirit_id[iz], (int)s_spirit_kind[iz],
+                               (int)s_spirit_level[iz], (double)(ep ? ep[0] : -9999.0f), (double)(ep ? ep[1] : -9999.0f));
+                    }
+        }
+        if (s_aura_vm) {   /* ★ 2026-10-07 另一路诊断 ✓：一次定论「透明到底出自哪一路」——
+                            *   `csel`(+0x52c) = 渲染器**真正画出去**的快照那一路 ✓（A 在最高字节 ✓ 一手 07-…md:47,90 ✓）；
+                            *   判读：`csel` 的 A **不是 0xFF** ⇒ 快照早于卡侧写入 ⇒ 脚本必须 `alpha(255)` ✓；
+                            *         `csel` 的 A **是 0xFF** ⇒ 透明另有其人 ⇒ 转查父 VM / blend / 渲染阶段 ✓。*/
+            uint8_t *vmd = (uint8_t *)ce_anm_get_vm((uint32_t)s_aura_vm);
+            if (vmd) {
+                /* ★★ 2026-10-07：`+0x52c` 被证伪 ✗（加了 colorMode 仍是 0）⇒ 把颜色/α 区整段打出来 ✓，
+                 *   用**多条 ce_log**（本仓没有 ce_snprintf ✗）⇒ 每行 4 个 dword，字段由原始数据来定 ✓。*/
+                ce_log("pofv: aura520 %08x %08x %08x %08x",
+                       *(uint32_t *)(vmd + 0x520), *(uint32_t *)(vmd + 0x524),
+                       *(uint32_t *)(vmd + 0x528), *(uint32_t *)(vmd + 0x52c));
+                ce_log("pofv: aura530 %08x %08x %08x %08x",
+                       *(uint32_t *)(vmd + 0x530), *(uint32_t *)(vmd + 0x534),
+                       *(uint32_t *)(vmd + 0x538), *(uint32_t *)(vmd + 0x53c));
+                ce_log("pofv: aura540 %08x %08x %08x %08x",
+                       *(uint32_t *)(vmd + 0x540), *(uint32_t *)(vmd + 0x544),
+                       *(uint32_t *)(vmd + 0x548), *(uint32_t *)(vmd + 0x54c));
+                /* ★★ 2026-10-07 验收结论 ✓：「两路 A 都是 ff ⇒ `Sa=1` ⇒ **透不是 α 造成的** ✓」⇒
+                 *   那就要看**几何量的运行真值** ✓：张角（`rotation.x`，弧度 ✓）× 缩放（`scale` ✓）
+                 *   —— 若张角实际接近 0 ⇒ 画出来是**一条细缝** ✓ = 观感上的"很浅/很透" ✓。
+                 *   （宏名以 `sdk.h` 为准 ✓；rotation 3 个 float、scale 2 个 float ✓，按 dword 打十六进制 ✓。）*/
+                {   const float *r3 = (const float *)(vmd + CE_ANM_VM_ROTATION);
+                    const float *s2 = (const float *)(vmd + CE_ANM_VM_SCALE);
+                    ce_log("pofv: aurageom rotx=%d roty=%d rotz=%d scalex=%d scaley=%d",
+                           (int)(r3[0] * 1000.0f), (int)(r3[1] * 1000.0f), (int)(r3[2] * 1000.0f),
+                           (int)(s2[0] * 1000.0f), (int)(s2[1] * 1000.0f));
+                }
+            }
+        }
+    if (s_aura_charge <= 0.0f) { s_aura_r = 0.0f; s_aura_anim_f = 0; }
+    if (s_aura_r > 0.0f) {
+        const float *pp4 = ce_player_pos();
+        if (pp4) {
+            const int is_marisa = s_aura_is_marisa;
+            const float aura_r  = s_aura_r;
+            if (!s_aura_vm) {
+                /* 一手 §9.3：灵梦 = `pl00` script15（圆）/ 魔理沙 = `pl01` script15+16/17（竖带）✓ */
+                const int scr = (s_aura_kind == 1) ? CE_ANM_ABILITY_SCRIPT_POFV109_AURA_MARISA
+                              : (s_aura_kind == 2) ? CE_ANM_ABILITY_SCRIPT_POFV109_AURA_SAKUYA
+                                                   : CE_ANM_ABILITY_SCRIPT_POFV109_AURA;
+                s_aura_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), scr, 11);
+                s_aura_close = 0; s_aura_close_ang = 0.0f;   s_aura_dir_snap = 1;   /* ★ owner：不张开时往右走、再张开 ⇒ 应从**目标侧直接开始** ✓（一手如此 ✓），不该"从右转圈回左"✗ */   /* ★ 新激活清零收束状态 ✓（owner：再按 Shift 会"先缩到 0 再张开"✗ = 残留 ✓）*/
+                /* ★★ 2026-10-07 **换层实验** ✓（那位定的单刀 ✓）：层 **6–11 → RT surface 1** ✓、
+                 *   **12–19 → surface 0** ✓（一手层表 ✓）⇒ 8 落在 surface 1 ⇒ 一直"透" ✗
+                 *   ⇒ 试 **12**（surface 0 ✓）：若**实心** ⇒ 定案「surface 1 的合成在压 α」✓ ⇒ 就用 12 收工 ✓。*/
+                /* ★ 2026-10-07 日志定案 ✓：**层 6 在这台 ability-anm 上渲染不出来** ✗（TH19 一手的 `layer(6)` 照搬无效 ✓）
+                 *   ⇒ 改成 **8**，与「**能渲染的圆/灵**」同层 ✓（本卡 `:1922` 早就写过这条结论 ✓）。*/
+                /* ★★★ owner 连续两次「**没有扇形**」✗ ⇒ 先把"到底走了哪一支"曝光出来 ✓
+                 *   （若是角色号判错 ⇒ 会给咲夜挂上灵梦的**整圆** 402 ✗ ⇒ 当然"没有扇形" ✓）。
+                 *   日志：kind（0 灵梦/1 魔理沙/2 咲夜/3 早苗 ✓）、char（引擎读到的角色号 ✓）、script、R ✓。*/
+                ce_log("pofv: **结界出生** kind=%d script=%d R=%.1f（kind 期望：0灵梦/1魔理沙/**2咲夜**/3早苗 ✓；咲夜应为 script=%d ✓）",
+                       (int)s_aura_kind, (int)scr, (double)s_aura_r, (int)CE_ANM_ABILITY_SCRIPT_POFV109_AURA_SAKUYA);
+            }
+            if (s_aura_vm) {
+                /* ★★★ owner 2026-10-06：「**魔理沙只有人物屁股后面**」✗ ⇒ 根因：她的两条带是
+                 *   `drawRectGrad(1.0f, 448.0f)` 且 `anchor(2,1)`/`anchor(1,1)`（**底下对齐** ✓）
+                 *   ⇒ 我若把 VM 放在**自机位置**，那 448 高只有「从自机往上」一截在屏内 ⇒ 看着只有"身后" ✓。
+                 *   ⇒ **竖带（魔理沙）把 y 放到场地中线**（`POFV_FIELD_H/2 = 224` ✓）⇒ 正好铺满场地 ✓；
+                 *     其余形状仍跟随自机 ✓（圆的中心就该在自机身上 ✓）。*/
+                ce_anm_set_pos((uint32_t)s_aura_vm, pp4[0],
+                               (s_aura_kind == 1) ? 0.0f : pp4[1], 0.0f);
+                /* ★★★★ 2026-10-07 owner 实跑抓到我的破坏 ✗：「**灵梦的领域没了，魔理沙的领域瞬间张开**」
+                 *   ⇒ 根因：这句**共用的** `set_scale` 被我前面几次正则改**误删**了 ✗（grep 计数 = 0 ✓）
+                 *     ⇒ 灵梦的缩放停在 1（单位圆 ⇒ 看不见 ✗）、魔理沙的竖带也失去每帧缩放（一次铺满 ⇒ "瞬张" ✗）。
+                 *   ⇒ 恢复，并按族给对形状 ✓（一手：槽 3 每帧写**位置 + 缩放（= 半径）** ✓，视觉半径 ≡ 判定半径 ✓）：
+                 *     · 灵梦/早苗（圆 ✓）：`(R, R)`；· 魔理沙（竖带 ✓）：`(R, 1)`（y 保持 1 ✓）；
+                 *     · 咲夜（扇形 ✓）：`(2R, R)` ⇒ 由 `texArcEven` 的几何 `r_in = scale.y − scale.x/2 = 0` ⇒ **实心** ✓。*/
+                ce_anm_set_scale((uint32_t)s_aura_vm,
+                                 /* ★★★ 2026-10-07 owner：「**判定贴合领域**」＋「半径两边一致?」✓
+                                  *   弧族几何（`th16/09-drawing.md:231-232`）：`r_out = scale.y + scale.x/2`、
+                                  *   `r_in = scale.y − scale.x/2`。
+                                  *   判定用的是 `s_aura_r`（咲夜 = 一手 **48px** ✓）。
+                                  *   ⇒ 要 `r_out = s_aura_r` 且实心 ⇒ **`scale = (R, R/2)`** ✓
+                                  *     （先前写 `(2R, R)` ⇒ `r_out = 2R` = **96** ✗ ⇒ 视觉半径是判定的 2 倍 ✗）。*/
+                                 (s_aura_kind == 2) ? aura_r : aura_r,
+                                 (s_aura_kind == 2) ? (aura_r * 0.5f) : ((s_aura_kind == 1) ? 1.0f : aura_r));
+                if (s_aura_kind == 2) {
+                    /* ★★ owner 两项（2026-10-07）：② **拖拽** ✓（= 一手 `+0x80`：朝自机方向以 **0.25/帧**缓动 ✓，
+                     *   方向就用卡里已有的 8 向索引 `s_aura_dir8i` ✓）；同时把**张角**也由卡侧一次给全 ✓
+                     *   （`ce_anm_set_rotation` **一次写全三分量** ✗ ⇒ 脚本的 `rotateTime` 会被覆盖 ✗
+                     *    ⇒ 所以张角同样由卡侧按 +3°/帧、上限 90° 来驱动 ✓ = 一手 `th09/02:545-548` ✓）。*/
+                    float ang = (float)s_aura_anim_f * 0.05235988f;      /* 张角 = +3°/帧 ✓、上限 π/2 ✓ */
+                    float tgt, d;
+                    if (ang > 1.5707964f) ang = 1.5707964f;
+                    {   /* ★★ owner 两条（2026-10-07）：①「**朝着运动方向——反了**」✗ ⇒ 目标取**反向**（+180° ✓）；
+                         *   ②「**转动速度跟无穷大似的、最后只有八个方向**」✗ ⇒ 我原来直接写 `idx × 45°`
+                         *      = **整数索引** ⇒ 瞬跳 + 8 向 ✗ ⇒ 改成**连续缓动** ✓（最短弧 × **0.25/帧** ✓ = 一手 ✓）。*/
+                        /* ★★ owner：「**恰好是移动方向 ⇒ 差一个负号**」✗ ⇒ 屏幕 **y 向下** ⇒ 我加的 +π 被镜像抵消 ✓
+                         *   ⇒ 本表 **y 取负** ✓ ⇒ 这样下面的 `+ π` 才是真正的"运动方向的反向"（拖在后面 ✓）。*/
+                        /* ★★ owner：「**左右挡在身前、上下拖在身后**」✗ ⇒ 只剩**左右**反 ⇒ 再**把 x 也取负** ✓
+                         *   （= 相对上一版做一次**关于竖轴的镜像** ✓）⇒ 左右、上下都落在"身后" ✓。*/
+                        static const float d8b[8][2] = { {-1,0},{-0.70710678f,-0.70710678f},{0,-1},{0.70710678f,-0.70710678f},
+                                                        {1,0},{0.70710678f,0.70710678f},{0,1},{-0.70710678f,0.70710678f} };
+                        int bi = 0, i8; float bs = 1e9f;
+                        for (i8 = 0; i8 < 8; ++i8) {   /* 点积**最小** ⇒ 最接近**反向** ✓ */
+                            const float dp = s_aura_dir_x * d8b[i8][0] + s_aura_dir_y * d8b[i8][1];
+                            if (dp < bs) { bs = dp; bi = i8; }
+                        }
+                        tgt = (float)bi * 0.78539816f + 3.14159265f;   /* 反向 = 目标角 + π ✓ */
+                        d = tgt - s_aura_mid_ang;
+                        while (d >  3.14159265f) d -= 6.28318531f;      /* 最短弧 ✓ */
+                        while (d < -3.14159265f) d += 6.28318531f;
+                        if (s_aura_dir_snap) { s_aura_mid_ang = tgt; s_aura_dir_snap = 0; }   /* ★ 首帧吸附 ✓（不绕圈 ✗）*/
+                        else s_aura_mid_ang += d * 0.25f;                                        /* 之后照一手 0.25/帧缓动 ✓ */                    /* ★ 一手：方向 0.25/帧缓动 ✓ */
+                    }
+                    /* ★★ owner：「看看其他自机的领域怎么写的」✓ ⇒ 收束**交脚本**（`406` 的 interrupt 支
+                     *   = `rotateTime(20,4,0,0,0)` ⇒ 张角归零 ✓，与 402 的 `scaleTime(20,4,0,0)` 同构 ✓）
+                     *   ⇒ 所以**蓄力结束后卡侧不再写 rotation** ✗（否则每帧把它压回去 ✗）。
+                     *   ⚠ 我先前那套卡侧收束（`s_aura_close`）作废 ✗ —— 保留变量以免动太多 ✗。*/
+                    {   /* æ¶ææä¹ç§å â ââ ç¨ç¼©å°çè§ + åä¸æå â ä¸ä¹±è½¬ â */
+                        float wang = (s_aura_close > 0)
+                                   ? (s_aura_close_ang * ((float)s_aura_close / 20.0f)) : ang;
+                        ce_anm_set_rotation((uint32_t)s_aura_vm, wang, 0.0f, s_aura_mid_ang);
+                        if (s_aura_close > 0 && --s_aura_close <= 0) {
+                            ce_anm_delete((uint32_t)s_aura_vm); s_aura_vm = 0; s_aura_close = 0;   /* å½é¶ â å  + æ¸å¥æ â */
+                        }
+                    }
+                }
+                if (s_aura_kind == 2) {
+                    /* ★★★★ owner 实跑判定（乙）：「**像一块半透明的布、能透出后面**」✗ ⇒ α 真的低 ✓
+                     *   ⇒ 说明几何图元的 α **不是**脚本 `alpha/alpha2` 那对给的 ✗（`color/color2` 是 RGB 端 ✓）
+                     *   ⇒ **由卡侧显式写 RGBA** ✓：`ce_anm_set_color(id, 0xRRGGBBAA)`（一手同款用法：
+                     *     本卡 EX 就用 `0xFFFFFF80` 写 α=128 ✓）⇒ 取**亮蓝 + α=FF（全不透明）** ✓。*/
+                    /* ★★ 一手：弧族取色看 `flags_lo & 0x60000` ⇒ 可能读 **color_2** ✗（本仓 `sdk.h:300` 已有
+                     *   `ce_anm_set_color2` ✓）⇒ **两个寄存器都写、且保持同一渐变对** ✓ ⇒ 无论引擎读哪个都对 ✓。*/
+                    /* ⚠ owner 实跑：「**扇形没了**」✗ ⇒ 卡侧写 `color_2`（`CE_ANM_VM_COLOR2 = +0x528` ✓ SDK 注释给的）
+                     *   很可能是**错偏移** ✗ ⇒ 写坏 VM ⇒ 什么都不画 ✓ ⇒ **本步回退** ✗（回到"看得见、只是透"那版 ✓）；
+                     *   颜色仍由**脚本**的 `color/color2` 给 ✓（引擎读哪个寄存器都有一份 ✓）。*/
+                    /* ★★★★ 2026-10-07 **真凶定案** ✗→✓：`vm+0x524 color_1` 是 **D3DCOLOR `0xAARRGGBB`** ✓
+                     *   （一手 `engine/anm/th18/01-vm-instantiate.md:56` ✓）—— **A 在最高字节** ✗ 不是最低 ✓！
+                     *   我先前几版全写成了 `0xRRGGBBAA` ✗ ⇒ A 被当成了别的通道 ⇒ 症状完全对上 ✓：
+                     *     · `0x64C0FFFF` ⇒ A=0x64(100) ⇒ ~39% ⇒ **「固有半透明」** ✓
+                     *     · `0x003280FF` ⇒ A=0x00 ⇒ 触发早退（`color_1.A==0 && color_2.A==0 ⇒ 整台 VM 不画` ✓
+                     *       `engine/anm/th18/07-blendmode-rgb-only-alpha-is-sa.md:50` ✓）⇒ **「扇形没了」** ✓
+                     *   ⇒ 本版按 **AARRGGBB** 写：`0xFF64C0FF` = A=FF、R=64、G=C0、B=FF（亮蓝·不透明 ✓）。*/
+                    /* ★ owner 实跑：「**依旧很浅**」✗ ⇒ A=FF 已解决"透" ✓，问题在 **RGB 太浅** ✗
+                     *   （`64 C0 FF` = 淡青蓝 ✓）⇒ 本步**只改 RGB 一个变量** ✓：`00 32 80` = 深蓝 ✓。*/
+                    ce_anm_set_color((uint32_t)s_aura_vm, 0x80FFFFFFu   /* ★ A=0x80(128) 白 ✓ —— 我先前把 alpha 写进了 **Blue** 通道 ✗（0xFFFFFF80 ⇒ R=G=FF、B=80 ⇒ 偏黄 ✓ 与实跑一致 ✓）*/);   /* ★ 白(RGB 让贴图渐变显色 ✓) + A=0x80=128 ✓ 与其它三人一致 ✓ */    /* A=FF、深蓝 (0,50,128) ✓ */
+                    ce_anm_set_color2((uint32_t)s_aura_vm, 0x80FFFFFFu   /* ★ A=0x80(128) 白 ✓ —— 我先前把 alpha 写进了 **Blue** 通道 ✗（0xFFFFFF80 ⇒ R=G=FF、B=80 ⇒ 偏黄 ✓ 与实跑一致 ✓）*/);  /* 同值 ✓ */   /* ★ 与 color_1 同为深蓝 ⇒ 走哪路都不淡 ✓ */   /* 同格式 ✓；默认 colorMode 下不参与 ⇒ 写法无害 ✓ */
+                }   /* ★ owner：「只延伸到中线」✗ ⇒ 从场地**顶端**铺满 0..448 ✓ */
+                /* ★ 照一手「槽 3 每帧写**位置 + 缩放（= 半径）**」✓ ⇒ 视觉半径 ≡ 判定半径 ✓
+                 *   （脚本里是**单位圆** `drawPoly(1.0f,64)` ✓ ⇒ 缩放就是像素半径 ✓）。*/
+                if (s_aura_kind == 2) {
+                    /* ★ owner 2026-10-06：「**依旧 scale**」✗ ⇒ 根因：卡侧每帧写 `scale` ⇒ 把"张开"变成了缩放 ✓；
+                     *   而卡侧写 `rotation` 又**不生效** ✗（多次实测 ✓）
+                     *   ⇒ 咲夜的**形状与张角全部交给脚本** ✓（`406` 里 `texArcEven` + `rotateTime(30…)` ✓），
+                     *     卡侧**只写位置** ✓（下面的 `set_pos` 在共同路径里 ✓）—— 不要在这里写 scale/rotation ✗。*/
+                    /* ★★ owner：「扇形的**中线**… ⇒ **拖拽感**来源」✓
+                     *   ⇒ 方向用卡里**已经在算**的那套（`:1417` ✓ 按自机位移取最近 8 向 ＋ **0.25/帧缓动** ✓，
+                     *     即一手 `th09/02:557` 的 `+0x80` ✓；"拖在后面"= 这层滞后本身 ✓）。
+                     *   ⇒ 这里只把索引换成角度写进领域朝向 ✓（`idx × 45°` ✓，无 libm ✓）。*/
+                    /* ★★★ 验收定位（2026-10-06 ✓）：「**没有扇形**」的真根因 = 上一版我在这里写 `rx = 0` ✗
+                     *   —— `ce_anm_set_rotation` **一次写全三分量**（`sdk.h:287-294` ✓）⇒ **每帧把脚本
+                     *     `rotateTime` 正在生长的张角压回 0** ✗ ⇒ 弧角恒 0 ⇒ 画不出扇形 ✓。
+                     *   ⇒ 正解：**卡侧一次给全**（`rx` = 张角 ✓、`rz` = 朝向 ✓）⇒ 脚本就**不再动 rotation** ✗：
+                     *     · `rx` = 张角 = 全张角（弧度 ✓，由 `+3°/帧` 累积到 90° ✓，与判定同源 ✓）
+                     *     · `rz` = 朝向 = 已有的 8 向索引 × 45° ✓（0.25/帧滞后 = 一手"拖后"✓）
+                     *   ⇒ 并**恢复卡侧写 scale**（`scale=(2R, R)` ⇒ `r_in = 0` = **实心扇** ✓，且视觉半径≡判定半径 ✓）。
+                     *     （验收：`scale.x` 只是"环宽" ✓、`rotation.x` 才是张角 ✓ —— 出处 `th16/09-drawing.md:243-247` ✓）*/
+                    /* ★ owner：「**先解决有无的问题**」✓ ⇒ 本版咲夜**卡侧一行都不写** ✗
+                     *   （`ce_anm_set_rotation` 会**一次写全三分量** ⇒ 每帧把脚本的 `rotate(π,0,π/2)` 覆盖掉 ✗；
+                     *    `set_scale` 同理覆盖 `scale(6,59)` ✗ ⇒ 先让脚本**原样**跑，确认 112 的观感能出来 ✓）。*/
+                    (void)0;
+                    (void)aura_r;
+                }
+                if (s_aura_kind == 2) {
+                    /* ★ 7 片一起跟随 ✓：**每片重心沿自己的朝向往外挪**（挪到半径中段 ✓）
+                     *   —— 因为 `drawPoly(1.0f,3)` 画的是"以中心为中心"的整三角 ✗（owner 实跑：一堆中心重合的正三角 ✓）
+                     *   ⇒ 把每片的位置按它的 θ 偏移 `0.5R × 0.55` ⇒ 7 片拼起来才像**扇面** ✓。
+                     *   θ 与脚本 `rotate` 一一对应（−45°…+45° 每 15° ✓）；(cos,sin) 用**离线表** ✓（本仓无 libm ✗）。*/
+                    static const float cs7[POFV_AURA_PIECES][2] = { {0.70710678f, 0.70710678f}, {0.86602540f, 0.50000000f}, {0.96592583f, 0.25881905f}, {1.00000000f, -0.00000000f}, {0.96592583f, -0.25881905f}, {0.86602540f, -0.50000000f}, {0.70710678f, -0.70710678f} };   /* ★ y 取负：游戏 y **向下** ✓（owner：偏移方向反了 ✗）*/
+                    const float off7 = aura_r * 0.5f * 0.55f;      /* ❓自定：重心落点系数 ✓ */
+                    int ip2;
+                    for (ip2 = 0; ip2 < POFV_AURA_PIECES; ++ip2) if (s_aura_piece[ip2]) {
+                        ce_anm_set_pos((uint32_t)s_aura_piece[ip2],
+                                       pp4[0] + cs7[ip2][0] * off7,
+                                       pp4[1] + cs7[ip2][1] * off7, 0.0f);
+                        ce_anm_set_scale((uint32_t)s_aura_piece[ip2], aura_r, aura_r);
+                    }
+                }
+                /* ★ 一手：缩放 = 半径 ✓；魔理沙的主 VM 是「带」（`scale(16.0f, 1.0f)` ⇒ y 保持 1 ✓）*/
+            }
+        }
+    } else if (s_aura_close > 0) {
+        /* ★★★ 收束分支（复核 Q2 指定的位置 ✓：与 `charge>0` 同级、在 `:1726` 之前 ⇒ **每帧都会走到** ✓）
+         *   只写 `rx`（张角收缩 ✓）＋ `rz` 沿用卡侧维护的朝向 ✓（⇒ 不瞬跳、不乱转 ✓）；
+         *   最后 10 帧按**一手**做 α 淡出（`alphaTime(10,0,0)` 的等价：A 线性 255→0 ✓）。*/
+        if (s_aura_vm) {
+            float k = (float)s_aura_close / 20.0f;
+            ce_anm_set_rotation((uint32_t)s_aura_vm, s_aura_close_ang * k, 0.0f, s_aura_mid_ang);
+            if (--s_aura_close <= 0) { ce_anm_delete((uint32_t)s_aura_vm); s_aura_vm = 0; s_aura_close = 0; }
+        }
+    } else if (s_aura_vm && s_aura_kind != 2) {                   /* ★ 咲夜不在此处删 ✗（脚本 rotateTime 收束后自删 ✓） ✓（一手 `+20: delete()` ✓）*/
+        ce_anm_delete((uint32_t)s_aura_vm); s_aura_vm = 0;
+    }
+    pofv_hits_tick(&s_hits);                     /* ★ HUD hits：锁存 + 寿命递减（一手 120 帧 ✓）*/
+    /* ★★ 调试 UI（owner）：事件列表（暴风延迟 ✓ / 击破·固灵 3 s ✓）+ 幽灵列表（只有内容、无位置 ✓）*/
+    {
+        int32_t i2, j2;
+        for (i2 = 0; i2 < POFV_UI_EV_MAX; ++i2) {
+            if (s_ui_ev[i2].ttl > 0) --s_ui_ev[i2].ttl;
+            if (s_ui_ev[i2].ttl > 0) {   /* ★ owner 2026-10-05：「**显示 TTL 后消失**」⇒ 活着才显示 ✓（原来条件反了 ✗：空闲槽会常驻显示 nm[0] ✗）*/
+                /* ★ owner：「镜像事件列表我要**文字，是条目**」⇒ 每条一句描述 ✓ */
+                static const char *nm[4] = { "storm -> foe (delayed)",
+                                             "kill -> foe+1, foe -> back",
+                                             "seal -> foe nearest (3s)",
+                                             "pure -> foe" };
+                char buf[40]; int L = 0; const char *q;
+                for (q = nm[s_ui_ev[i2].what & 3]; *q && L < 38; ++q) buf[L++] = *q;
+                buf[L] = 0;
+                ce_hud_vm_text_set(&s_ui_ev_vm[i2], POFV_HUD_HITS_X, POFV_HUD_HITS_Y + 24.0f + (float)i2 * 16.0f,
+                                   0xFFFFFFFFu, 1, 1.0f, buf, "pofv109");
+            } else {
+                ce_hud_vm_text_set(&s_ui_ev_vm[i2], 0.0f, 0.0f, 0, 1, 1.0f, "", "pofv109");
+            }
+        }
+        /* 幽灵列表：只写「有什么」（按 kind 计数 ✓，**不涉及位置** ✓）*/
+        {
+            int32_t c[POFV_SPIRIT_KIND__COUNT]; char buf[40]; int L = 0; const char *q;
+            for (j2 = 0; j2 < (int32_t)POFV_SPIRIT_KIND__COUNT; ++j2) c[j2] = 0;
+            for (j2 = 0; j2 < POFV_FOE_SPIRIT_MAX; ++j2) if (s_foe[j2].active) {
+                int32_t k2 = s_foe[j2].type;
+                if (k2 >= 0 && k2 < (int32_t)POFV_SPIRIT_KIND__COUNT) ++c[k2];
+            }
+            for (q = "foe: w"; *q; ++q) buf[L++] = *q;
+            { int32_t v = c[POFV_SPIRIT_KIND_WOLF]; buf[L++] = (char)('0' + (v > 9 ? 9 : v)); }
+            for (q = " o"; *q; ++q) buf[L++] = *q;
+            { int32_t v = c[POFV_SPIRIT_KIND_OTTER]; buf[L++] = (char)('0' + (v > 9 ? 9 : v)); }
+            for (q = " e"; *q; ++q) buf[L++] = *q;
+            { int32_t v = c[POFV_SPIRIT_KIND_EAGLE]; buf[L++] = (char)('0' + (v > 9 ? 9 : v)); }
+            for (q = " p"; *q; ++q) buf[L++] = *q;
+            { int32_t v = c[POFV_SPIRIT_KIND_PURE]; buf[L++] = (char)('0' + (v > 9 ? 9 : v)); }
+            for (q = " g"; *q; ++q) buf[L++] = *q;
+            { int32_t v = c[POFV_SPIRIT_KIND_GHOST_TH09]; buf[L++] = (char)('0' + (v > 9 ? 9 : v)); }
+            buf[L] = 0;
+            ce_hud_vm_text_set(&s_ui_gh_vm, POFV_HUD_HITS_X, POFV_HUD_HITS_Y + 24.0f + (float)POFV_UI_EV_MAX * 16.0f,
+                               0xFF80FFFFu, 1, 1.0f, buf, "pofv109");
+        }
+    }
+    /* ★ HUD 绘制（只本侧 ✓）：一手 —— 只有 `latch != 0` 才画 ✓；数字 + `hits` 标签 ✓；
+     *   `active < 1` 时按寿命 %6 在**黄 ↔ 灰**切换（6 帧周期 ✓）*/
+    if (pofv_hits_visible(&s_hits)) {
+        uint32_t col = pofv_hits_is_gray(&s_hits) ? 0xFF808080u : 0xFFFFFF00u;
+        ce_hud_number_set(&s_hud_hits_num, POFV_HUD_HITS_X, POFV_HUD_HITS_Y, 7.0f,
+                          (int)s_hits.latch, 4, 0, "pofv109");
+        /* ★ 诊断（每 30 帧一条，owner 实跑「看不见 HUD」用）：照出这条路径是否走到、口是否成功
+         *   （`id[0] != 0` = 数字 VM 起成功了 ✓；`lbl.id[0]` 同理 ✓）*/
+        if ((s_card_frames % 30) == 0) {
+            ce_log("pofv: HUD hits 绘制 latch=%d gray=%d num_vm=%u lbl_vm=%u at (%.0f,%.0f)",
+                   (int)s_hits.latch, pofv_hits_is_gray(&s_hits),
+                   (unsigned)s_hud_hits_num.id[0], (unsigned)s_hud_hits_lbl.id[0],
+                   POFV_HUD_HITS_X, POFV_HUD_HITS_Y);
+        }
+        ce_hud_vm_text_set(&s_hud_hits_lbl, POFV_HUD_HITS_X + 34.0f, POFV_HUD_HITS_Y,
+                           col, 1, 1.0f, "hits", "pofv109");
+    } else {
+        ce_hud_number_clear(&s_hud_hits_num);
+        ce_hud_vm_text_set(&s_hud_hits_lbl, 0.0f, 0.0f, 0, 1, 1.0f, "", "pofv109");
+    }
+    /* ⚠ 2026-10-05 **已修正**：阈值判定**不能每帧跑** ✗ —— 阈值 `150 − t/2` 在 `t > 300` 后降到 0 ⇒ `a >= 0` 恒真
+     *   ⇒ 每帧触发一次（实跑爆出巨量 level 1 ✗✗）。一手是**在「破坏」事件上判**（每次破坏判一次 ✓）
+     *   ⇒ 判定已移到下方**破坏处**（`add50/add54` 之后）✓ */
+    /* ★ 暴风效果②：延迟到达 ⇒ 到点在本侧落一个 level 1（走既有生成路 ✓）*/
+    {
+        int32_t at = 0, al = 0; float ax = 0.0f, ay = 0.0f;
+        while (pofv_foe_incoming_tick(s_inc, POFV_FOE_INCOMING_MAX, &at, &al, &ax, &ay)) {
+            ++s_cnt_arrive;                 /* ★ goal ②：**回程到达**计数（每次落地 ✓）*/
+            if (s_spirit_q_n < POFV_SPIRIT_Q_MAX) {
+                /* ★★ owner 口径：「光点**只提供初速，不提供出生位置**」⇒ 到达时**按顶部带随机**落位 ✓
+                 *   （x = 场地宽内随机、y = 16..64 的顶部带；与 TH19 灵的出生规则一致 ✓）*/
+                s_spirit_q[s_spirit_q_n][0] = ((float)(ce_rand() % 321) - 160.0f);
+                s_spirit_q[s_spirit_q_n][1] = 16.0f + (float)(ce_rand() % 49);
+                (void)ax; (void)ay;                      /* 光点带的位置**不用**（只用它的到达时刻 ✓）*/
+                /* ★★★ 2026-10-05 owner：「你似乎也没有加生成上限」✗ ⇒ 本侧**每个**生成口都要过**分族上限门** ✓
+                 *   （幽灵 ⇒ TH09 族；其余 ⇒ TH19 族 ✓；超限 ⇒ 不生成 ✓）*/
+                {
+                    int32_t fam = (at == POFV_SPIRIT_KIND_GHOST_TH09) ? POFV_FAM_TH09 : POFV_FAM_TH19;
+                    /* ★ MODEL §1-3：TH09 是**两档**「送 25 / **落地 10**」⇒ **到达（落地）这一口用 10** ✓
+                     *   （核实报告 #4：「落地 10」此前无消费者 ✗）*/
+                    int32_t capL = (fam == POFV_FAM_TH09) ? POFV_TH09_LANDING_CAP
+                                                           : pofv_spirit_cap_for(fam, s_card_frames / 60);
+                    if (!pofv_spirit_room(pofv_spirit_live_count_fam(fam), capL)) {
+                        ce_log("pofv: 回程到达但**该族已到上限** ⇒ 不生成（fam=%d live=%d）",
+                               (int)fam, (int)pofv_spirit_live_count_fam(fam));
+                        ++s_point_q;                 /* ★ §7-3：到达满 ⇒ **折算成计数**（不丢包 ✓，核实报告第 3 条）*/
+                    continue;
+                    }
+                }
+                s_spirit_q_kind[s_spirit_q_n] = at;
+                s_spirit_q_level[s_spirit_q_n] = al;
+                s_spirit_q_inc[s_spirit_q_n] = 1;   /* ★ Q4：**唯一** incoming ✓ */
+                ++s_spirit_q_n;
+                ce_log("pofv: 暴风效果②到达 ⇒ 本侧落 level %d（type %d）", (int)al, (int)at);
+            } else {
+                ++s_point_q;                 /* ★ §7-3：**队满也要折算**（不丢包 ✓，核实报告 #3）*/
+                ce_log("pofv: 暴风效果②到达但**生成队列满**（%d）⇒ **折算成计数**（不丢包 ✓）", POFV_SPIRIT_Q_MAX);
+            }
+        }
+    }
+    ++s_card_frames;                     /* ★ ⑥ 比赛时长（帧 → 秒）：驱动上限分档 60/80/999 */
+    {   /* ★ 暂存倒计时：到点 ⇒ 回到本侧变成動物霊（入生成队列）*/
+        int z;
+        for (z = 0; z < POFV_SPIRIT_STASH_MAX; ++z) {
+            if (s_stash_ttl[z] <= 0) continue;
+            if (--s_stash_ttl[z] > 0) continue;
+            /* ⚠ 2026-10-05 owner：「如果不是一手的就别搞」⇒ **撤掉**「动物灵同屏 ≤3」那道门
+             *   （那是 owner 实跑**观察**，一手未定音）。灵现在只受**一手那条**约束：每侧 60/80/999。 */
+            if (s_spirit_q_n < POFV_SPIRIT_Q_MAX) {
+                s_spirit_q[s_spirit_q_n][0] = s_stash[z][0];
+                s_spirit_q[s_spirit_q_n][1] = s_stash[z][1];
+                /* ★★★ owner 铁律：我方事件 ⇒ 进**对面模型** ✓（这条「暂存回来」是我自造的路 ✗）
+                 *   ⇒ 改成进模型；本侧的灵只能来自**对面事件**的镜像 ✓ */
+                pofv_foe_spawn_gated(pofv_top_x(), pofv_top_y(),
+                                      s_stash_kind[z], 0);
+                ce_log("pofv: 暂存到期 ⇒ **进对面模型**（kind=%d）", (int)s_stash_kind[z]);
+            }
+            s_stash_ttl[z] = 0;
+        }
+    }
+    if (s_point_q > 0) {                     /* ★ W2：超限补偿（一手：改给 100 分）❓道具口径待核 */
+        ce_money_pocket(1);
+        ce_log("pofv: 灵超限 ⇒ 改给分（欠 %d 笔，本帧发 1）", s_point_q);
+        --s_point_q;
+    }
+    if (s_spirit_q_n > 0) {
+        uint8_t sp[CE_SPAWN_SIZE];
+        const float *pp = ce_player_pos();
+        int q;
+        { int z; for (z = 0; z < CE_SPAWN_SIZE; ++z) sp[z] = 0; }
+        /* ★★ 一手（`modkit/MECHANICS-109.md` §4「出场」）：「**场外会被引擎瞬删** ✗（owner 确认是引擎特性）
+         *   ⇒ 只能在**版内顶边**出生 + 做生成动画」。
+         *   ⇒ 出生点不再用死亡点：**x 夹进场内、y 压到顶边内侧**。
+         *   ❓ 内侧余量 16（自定）；⚠ 入场运动（照抄 TH19 `default.ecl` 的 `Ghost*Enable`，`moveVel` op 404）
+         *     还没接 —— 现在灵是「顶边原地出现」。 */
+        {
+            /* ★★ 2026-10-05 按 owner 的一手订正（`HANDOVER-SPIRIT-SPAWN.md` A2 第 7 轮）：
+             *   **纯霊的出生位置 = 发射体的当前位置**（发射体会移动：`0x51aff3` 推 `+0x24`、
+             *   `0x51b373/98/bd` 推 `+0x10` 的向量）✗ 不是随机撒点。
+             *   ⇒ 本卡的「发射体」= **自机**（因为扳机就挂在你身上：停枪 ⇒ 没有灵 ✓）⇒ **出生位置取自机位置** ✓。
+             *   侧 = 发射体的 `+0x98`（对手侧）；单人宿主下按 §6.1「对面 = 又回到本侧」⇒ 就落在我们这边 ✓。
+             *   ❓ 一手在两侧对称时「对手侧」会翻到对面半场；单人没有对面半场 ⇒ 仍落本侧（观感近似）。 */
+            float sx, sy;
+            /* ★★★ 2026-10-05 owner 定案（`HANDOVER-SPIRIT-SPAWN.md` A2 + `engine/versus/th19/05-four-mechanics.md` §9.2）：
+             *   **两套分开** ——
+             *   · **TH19 的灵**（純霊/狼/獺/鷲）：出生 = **顶部横带随机**（`FUN_00413d10`：x 按场地宽、y 按 ≈64 的带宽）
+             *     ⇒ **与击破点无关** ✓；
+             *   · **TH09 的幽灵**：出生 = **载体落点**（`0x40dae5` 的参数 = 载体 `+0x18`）⇒ 本卡里「载体」= **暴风**
+             *     ⇒ 用队列里带的那个位置（送它出来的那一发暴风的位置）✓。 */
+            /* ★★★ 2026-10-05 owner 实跑更正：「幽灵生成位置 y 不对，应当在**最上面附近**，有生成过于靠下的」
+             *   ⇒ 一手口径以 owner 的 `HANDOVER-SPIRIT-SPAWN.md` §0.10 / A2 为准：**TH09 幽灵与 TH19 同类**
+             *     ⇒ 出生 = **顶部带内随机** ✓（我先前按旧读法用「载体落点 = 暴风位置」⇒ 暴风在低处时幽灵就出得低 ✗）*/
+            if (0) {
+            } else {
+                sx = ((float)(ce_rand() % 321) - 160.0f);       /* x = 场地宽内随机（±160 ❓ 尺度）*/
+                sy = 16.0f + (float)(ce_rand() % 33);           /* y = **最上面附近**（16..48 ✓，owner：别出得太低 ✓）*/
+            }
+            (void)s_spirit_q;  /* ⚠ 旧「载体落点」读法作废 ✗（保留队列位置只做日志 ✓）*/
+            if (sx < -POFV_FIELD_HALF_W + 16.0f) sx = -POFV_FIELD_HALF_W + 16.0f;
+            if (sx >  POFV_FIELD_HALF_W - 16.0f) sx =  POFV_FIELD_HALF_W - 16.0f;
+            if (sy < 16.0f) sy = 16.0f;                         /* ⚠ 场外会被引擎瞬删 ⇒ 一律夹进版内顶边以下 */
+            s_spirit_q[0][0] = sx; s_spirit_q[0][1] = sy;
+        }
+        *(float   *)(sp + CE_SPAWN_POS + 0) = s_spirit_q[0][0];
+        *(float   *)(sp + CE_SPAWN_POS + 4) = s_spirit_q[0][1];
+        *(float   *)(sp + CE_SPAWN_POS + 8) = 0.0f;
+        *(int32_t *)(sp + CE_SPAWN_SCORE)     = 0;          /* 灵不给分（超限那 100 分是另一件事）*/
+        *(int32_t *)(sp + CE_SPAWN_MAIN_DROP) = 0;          /* 纯灵：不掉道具 */
+        *(int32_t *)(sp + CE_SPAWN_LIFE)      = POFV_SPIRIT_LIFE;   /* 必须 < 1000 */
+        /* ★★ 目标 ③ ECL 通道：`$I0` = 状态（0 正常 / 1 沈静化 / 999 喊走）、`$I1` = kind。
+         *   一手：`spawn+0x20`（`CE_SPAWN_ECL_I`）起是 `$I0..$I7`（`engine.h`）。 */
+        *(int32_t *)(sp + CE_SPAWN_ECL_I)     = 0;                    /* $I0 = 正常 */
+        /* ★★★ 2026-10-05 修（核实报告）：ECL 的 kind 枚举与 core **相反** ✗
+         *   ECL（`spirit109.ecl.txt` 分派）= `1 獭 / 2 鹫 / 3 纯 / 4 幽灵`，**默认 = 狼**（无狼分支 ✓）；
+         *   core（`pofv_core.h`）= `0 纯 / 1 狼 / 2 獭 / 3 鹫 / 4 幽灵` ⇒ **写 `$I1` 前必须转换** ✓ */
+        {
+            int32_t kc = s_spirit_q_kind[0];
+            int32_t ke = 0;                                  /* 0 = ECL 默认 = 狼 ✓ */
+            if (kc == POFV_SPIRIT_KIND_OTTER)            ke = 1;
+            else if (kc == POFV_SPIRIT_KIND_EAGLE)       ke = 2;
+            else if (kc == POFV_SPIRIT_KIND_PURE)        ke = 3;
+            else if (kc == POFV_SPIRIT_KIND_GHOST_TH09)  ke = 4;
+            *(int32_t *)(sp + CE_SPAWN_ECL_I + 4) = ke;      /* $I1 = **ECL 口径** ✓ */
+            /* ★ 2026-10-06：**水獭的左右**（一手 `PLAN:226`「π/8 与 7π/8（两只，L/R）✓」）
+             *   ⇒ `$I3`（`+0x2c`）给 0/1 ⇒ ECL 的獭支据此选**一个固定角度** ✓
+             *   （原先「逐帧交替」会让 x 抵消 ⇒ 变成慢速直落 ✗，owner 实跑抓到 ✓）。*/
+            /* ★★★ owner 2026-10-06 裁定（核实方在 `engine/versus/th19/05-four-mechanics.md` §9.12 给出的反汇编 ✓）：
+             *   水獭的**方向由出生位置决定、朝内** —— 一手分派器 `FUN_0051b480` 的水獭分支（`0x51b60a`）：
+             *   `0x59adf4` = `GhostOtterR` **当 `0 > 参数`**（左半场）⇒ 左半场用 **R**（向右＝向内 ✓）；
+             *   否则 `0x59ae00` = `GhostOtterL` ⇒ 右半场用 **L**（向左＝向内 ✓）。**不是摇随机** ✗。
+             *   ⇒ 本卡出生位置是**版顶随机 x**（`[-160,160]` ✓）⇒ 按其半场定朝向：**左半 ⇒ `$I3=0`（+22.5° 右斜）✓ / 右半 ⇒ `$I3=1`（+157.5° 左斜）✓**
+             *     （读取该灵**自己的**出生 x = `sp + CE_SPAWN_POS` ✓，避免依赖局部变量名 ✓）。*/
+            *(int32_t *)(sp + CE_SPAWN_ECL_I + 12) =
+                (*(const float *)(sp + CE_SPAWN_POS) < 0.0f) ? 0 : 1;
+        }
+        /* ★★★ owner 2026-10-06：「**满了就别创建了**」✓ ⇒ 账本没空格就**根本不生成这只灵** ✓
+         *   （30/32 格起就停 ✓，避免「没户口的灵 ⇒ 旋转/贴图不再被写 + 附属 VM 糊在别的灵上」✗）。*/
+        if (!pofv_spirit_slot_free()) {
+            ce_log("pofv: 灵账已满(%d) ⇒ **不创建**（owner 口径 ✓）", POFV_SPIRIT_MAX);
+        } else
+        {   uint8_t *e = (uint8_t *)ce_spawn_enemy("CESpirit109", sp);
+            if (e) {
+                uint32_t id = *(const uint32_t *)(e + CE_ENEMY_ID);
+                /* ★★ 2026-10-05 收口：**先记账拿到槽**，再用它挂两台 VM ——
+                 *   旧版这里**从来没调 `pofv_note_spirit()`**（账永远是空 ⇒ 圆/本体挂到 id=0 的空槽 ⇒
+                 *   9 帧后被收 ⇒ 实跑「啥也看不见」；灵死时也认不出是我们的灵）。 */
+                {   int sl;
+                    int ring = (s_spirit_q_kind[0] == POFV_SPIRIT_KIND_PURE)
+                             ? CE_ANM_ABILITY_SCRIPT_POFV109_SPIRIT_RING
+                             : CE_ANM_ABILITY_SCRIPT_POFV109_SPIRIT_RING_GREEN;
+                    uint32_t vmid;
+                    sl = pofv_note_spirit(id, s_spirit_q_kind[0]);
+                    /* ★★★★ 2026-10-06 owner：「灵数超限**依旧**出现 90°/黄色」✗ ⇒ 真因（我 grep 到的事实）：
+                     *   全卡**只有这一处**生成口与记账调用 ✓，但 `pofv_note_spirit()` 满员时返回 **−1** ✗，
+                     *   而**没有任何 `sl < 0` 防护** ✗ ⇒ 下面用 `sl` 当槽号写 `s_spirit_*[]` ⇒ **越界写** ✓
+                     *   ⇒ 表现就是「黄色 VM 糊在别的灵上」＋「旋转/贴图乱」✓（= 账本静默错的**另一种**成因 ✓）。
+                     *   ⇒ 先加**无害诊断** ✓（不改逻辑 ✓），并把"满员"曝光出来 ✓；下一轮据此把整块改成
+                     *     「`sl < 0` ⇒ 不挂 VM（并删掉刚生成的敌机 ✓）」，彻底杜绝越界 ✓。*/
+                    if (sl < 0) ce_log("pofv: **账本拒绝记账**（满 %d）⇒ sl=-1 ✗ 旧代码会越界 ✓", POFV_SPIRIT_MAX);
+                    s_spirit_age[sl] = 0;
+                    s_spirit_lr[sl] = (s_spirit_q_kind[0] == POFV_SPIRIT_KIND_OTTER) ? (sl & 1) : 0;
+                    s_spirit_miss[sl] = 0;
+                    s_spirit_level[sl] = s_spirit_q_level[0];
+                    s_spirit_from_incoming[sl] = s_spirit_q_inc[0];   /* ★ Q4 落账 */
+                    s_spirit_dis[sl] = 0;
+                    s_spirit_dis_age[sl] = 0;
+                    s_spirit_ex[sl] = (s_ex_pending > 0) ? (--s_ex_pending, 1) : 0;
+                    if (s_spirit_ex[sl]) {
+                        /* ★★★ 一手 ③ **己方伤害**：EX 是**敌机** ⇒ 让自机受伤走引擎自己的**敌人 hitbox**
+                         *   （`zEnemyData+0x118 hitbox_size`，zFloat2 —— ExpHP 一手字段图，不是盲写）。
+                         *   ⇒ 接触自机即照常受伤（引擎结算），我们不必自己写玩家伤害。 ❓ 尺寸自定 24×24。 */
+                        float *hb = (float *)(e + CE_ENEMY_DATA + 0x118);
+                        hb[0] = 24.0f; hb[1] = 24.0f;
+                        ce_log("pofv: EX 装上 hitbox 24×24 ⇒ 接触自机会致伤（一手 ③ 己方伤害）");
+                    }
+                    s_spirit_vm[sl] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), ring, 8);
+                    /* ★★★ owner 2026-10-06：「**th09 幽灵实际上没有这个晕光，所以得去掉**」✓
+                     *   ⇒ 幽灵（kind=4）**不挂灵圆** ✓：刚挂上的那台立刻收掉并把句柄清 0 ✓（不让它留在场上 ✓）。*/
+                    if (s_spirit_q_kind[0] == POFV_SPIRIT_KIND_GHOST_TH09) {
+                        if (s_spirit_vm[sl]) { ce_anm_delete((uint32_t)s_spirit_vm[sl]); s_spirit_vm[sl] = 0; }
+                    }
+                    /* ★ 一族一支脚本：**動物霊**（狼/獺/鷲）用 401（一手有 `rotateAuto(1)`），
+                     *   **純霊 / TH09 幽灵**用 400（一手 script20 无 rotateAuto）✓ */
+                    {
+                        int bodysc = (s_spirit_q_kind[0] == POFV_SPIRIT_KIND_WOLF ||
+                                      s_spirit_q_kind[0] == POFV_SPIRIT_KIND_OTTER ||
+                                      s_spirit_q_kind[0] == POFV_SPIRIT_KIND_EAGLE)
+                                   ? CE_ANM_ABILITY_SCRIPT_POFV109_SPIRIT_BODY_ANIMAL
+                                   : CE_ANM_ABILITY_SCRIPT_POFV109_SPIRIT_BODY;
+                        s_spirit_body[sl] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), bodysc, 8);   /* ★ 与**能渲染的圆**同层（上一版：脚本不写 layer，层由卡侧给 ✓）*/
+                    }
+                    /* ★★★ 2026-10-05 修：这里原先把脚本号**写死成 400** ✗（我看日志时被它误导过一次 ✗）
+                     *   ⇒ 改成**真值**：实际 `bodysc`（400 = 静态族 / **401 = 動物霊族**）+ 该 kind 的**首帧 sprite**
+                     *     + **ECL 口径 kind**（`$I1`，`1 獭 / 2 鹫 / 3 纯 / 4 幽灵 / 0 = 默认狼` ✓）
+                     *   ⇒ 下次实跑就能直接判「动物灵到底走了哪支、贴图 id 是多少」✓ */
+                    ce_log("pofv: 灵 VM spawn 槽 %d：kind(core) %d level %d ⇒ 圆 script %d → %d / 本体 script %d → %d / 首帧 sprite %d / ECL kind($I1) %d（0 = 失败）",
+                           sl, (int)s_spirit_q_kind[0], (int)s_spirit_q_level[0],
+                           (int)ring, (int)s_spirit_vm[sl],
+                           (int)((s_spirit_q_kind[0] == POFV_SPIRIT_KIND_WOLF ||
+                                  s_spirit_q_kind[0] == POFV_SPIRIT_KIND_OTTER ||
+                                  s_spirit_q_kind[0] == POFV_SPIRIT_KIND_EAGLE)
+                                 ? CE_ANM_ABILITY_SCRIPT_POFV109_SPIRIT_BODY_ANIMAL
+                                 : CE_ANM_ABILITY_SCRIPT_POFV109_SPIRIT_BODY),
+                           (int)s_spirit_body[sl],
+                           pofv_spirit_body_sprite(s_spirit_q_kind[0], s_spirit_q_level[0], 0, 0),
+                           (int)((s_spirit_q_kind[0] == POFV_SPIRIT_KIND_OTTER) ? 1
+                               : (s_spirit_q_kind[0] == POFV_SPIRIT_KIND_EAGLE) ? 2
+                               : (s_spirit_q_kind[0] == POFV_SPIRIT_KIND_PURE) ? 3
+                               : (s_spirit_q_kind[0] == POFV_SPIRIT_KIND_GHOST_TH09) ? 4 : 0));
+                    vmid = *(const uint32_t *)(e + CE_ENEMY_DATA + 0x124);
+                    ce_log("pofv: spirit(真敌机) id=%u kind=%d at (%.0f,%.0f) life %d | enemy anm VM id=%u",
+                           (unsigned)id, (int)s_spirit_q_kind[0], s_spirit_q[0][0], s_spirit_q[0][1],
+                           POFV_SPIRIT_LIFE, (unsigned)vmid);
+                }
+            } else {
+                ce_log("pofv: spirit 生成失败（ce_spawn_enemy 返回 NULL）");
+            }
+        }
+        for (q = 1; q < s_spirit_q_n; ++q) {
+            s_spirit_q[q-1][0] = s_spirit_q[q][0]; s_spirit_q[q-1][1] = s_spirit_q[q][1];
+            s_spirit_q_kind[q-1] = s_spirit_q_kind[q];
+            s_spirit_q_level[q-1] = s_spirit_q_level[q];
+            s_spirit_q_inc[q-1] = s_spirit_q_inc[q];   /* ★ Q4：移位必须带标志 ✓ */
+        }
+        --s_spirit_q_n;
+    }
+    for (i = 0; i < POFV_STORM_MAX; ++i) {
+        const pofv_storm_t *bl = pofv_storm_slot(&s_storm, i);
+        if (bl && bl->active) do_storm_frame(bl);
+    }
+    pofv_storm_tick(&s_storm);
+    storm_vm_sync();
+    return 0;
+}
+
+static void on_run_reset(ce_card_t *c) { clear_card(c); }
+static void on_delete(ce_card_t *c)    { clear_card(c); }
+
+/* ★★★ 主动卡（owner 口径）：「只有当**切换到本卡**时，按 C 才有用；作为主动卡**必须写上去的
+ *   按 C 实际没有作用、即刻 return**」。`.active_recharge` 非 0 ⇒ 引擎/UI 把 109 认成主动卡
+ *   （`category == 0` ⟺ `active_recharge != 0`，`tools/contract_check.py` 硬闸）；
+ *   `.on_activate` 立刻 `CE_ACTIVATE_REFUSED` ⇒ `ce_sdk_c_press` 把刚装填的充能原样退回、
+ *   不进释放态 ⇒ **按 C 什么都不发生** ✓。真正的蓄力（按住 C 的电平）以后由卡侧自己读键驱动。 */
+static int on_activate(ce_card_t *c)
+{
+    (void)c;
+    return CE_ACTIVATE_REFUSED;      /* 占位：不做任何事 */
+}
+
+/* ★★★ 固灵结界的**输入**（一手 §3.5：长按 CHARGE 展开，与蓄力同时）。
+ *   先例：`cards/blue_eyes.c` 用 `.on_active_tick(ce_card_t*, uint32_t elapsed)` —— 引擎在**按住**期间每帧调它
+ *   ⇒ 这正是「按住 C」的入口 ✓（本卡按权威件 §1 要求注册主动回调，但**不在回调里做别的**）。
+ *   ❓ 先按帧打时间戳：`held = (s_aura_stamp == s_card_frames)`（避免 tick 顺序影响判定）。 */
+static int32_t s_aura_stamp;
+static int32_t pofv_active_tick(ce_card_t *c, uint32_t elapsed)
+{
+    (void)c; (void)elapsed;
+    s_aura_stamp = s_card_frames;      /* 本帧「按着 C」*/
+    return 0;                          /* 回调本身不做事（真正的逻辑在 tick 里）*/
+}
+
+CE_CARD(109, .on_active_tick = pofv_active_tick,
+        .active_recharge = POFV_ACTIVE_RECHARGE,
+        .on_activate = on_activate,
+        .ctor = on_ctor,
+        .on_enemy_death = on_enemy_death,
+        .on_tick_2 = on_tick_2,
+        .on_run_reset = on_run_reset,
+        .on_delete = on_delete);

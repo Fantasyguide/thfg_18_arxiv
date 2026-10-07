@@ -1,0 +1,24 @@
+script script402 {
+    // 109 卡**固灵结界**（除霊オーラ）区域的绘制 —— **逐字复刻一手** TH19 `pl00.anm` 的 `script15` ✓
+    //   一手出处：`engine/versus/th19/06-aura.md` §9.0/§9.3（「画オーラ区域的文件 = 角色自己的 `plXX.anm`，
+    //   **不是** `ability.anm`/`effect.anm`」✓ ⇒ 取一套 = **Reimu** 那套：圆、1 台 VM ✓）
+    //   原文：`local/th19.v1.10c/_ext/pl00.txt` 的 `script script15 { … }`（TH19 样本，`tooling/thtk/unpack.py` 解出 ✓）
+    //   ⚠ 与一手只有两处**不可避免**的差异（都已登记 ✓，不是自定配方 ✗）：
+    //     ① 脚本号：一手 `script15`（在 `pl00.anm` 里）⇒ 我们住共享 `ability.anm`，**必须用自己的号 402** ✗；
+    //     ② 半径：一手由**蓄力值**驱动（`clamp(S+0x8c,0,200)×K/100`，K=64 ✓）⇒ 本卡无蓄力槽 ⇒ 卡侧给**固定等效半径**
+    //        （现取 `S+0x8c=125` ⇒ `R = 125×64/100 = 80.0f` ✓，❓ 待 owner 定/或按 TH18 角色映射）；
+    //        因此脚本里的形状是**单位圆** `drawPoly(1.0f, 64)` ✓，**半径 = 卡侧每帧写的 sprite 缩放** ✓（照一手「槽 3 写缩放」✓）。
+    sprite(-1);
+    layer(6);
+    drawPoly(1.0f, 64);
+    color(0, 32, 128);
+    color2(64, 192, 255);
+    angleVel(-0.017453292f, 0.0f, -0.017453292f);
+    alpha(128);
+    alpha2(160);
+    stop();
+    interruptLabel(1);
+    scaleTime(20, 4, 0.0f, 0.0f);
++20: // 20
+    delete();
+}

@@ -1083,3 +1083,92 @@ GREAT_WORK_GLOW       ability/great_work/GREAT_WORK_GLOW.png      128x128
 
 # 伟大之作（id 92）「全部发亮」：第 1 层 397（径向亮度渐变盘 @GREAT_WORK_GLOW，内白外黑）
 #   + 第 2 层 401（平白盘，alpha 渐入 ⇒ "黑色变白"）—— 两层同几何、同加和、同顶点（第 60 帧 = 1 s）。
+
+# 109 灵本体图集（2026-10-05）：TH19 animal_spirits.png/enemy2.png + TH09 enemy.png 的成员副本；
+#   矩形全部由**一手 sprite 号**反查（狼344- 獺348- 鷲352- /純霊120- /幽灵绿48- 黄60- 红72-）。
+ATLAS ATLAS_SPIRIT_BODY 256x256
+SPIRIT_WOLF_0          ability/spirit/SPIRIT_WOLF_0.png   @0,0,48x32
+SPIRIT_WOLF_1          ability/spirit/SPIRIT_WOLF_1.png   @48,0,48x32
+SPIRIT_WOLF_2          ability/spirit/SPIRIT_WOLF_2.png   @96,0,48x32
+SPIRIT_WOLF_3          ability/spirit/SPIRIT_WOLF_3.png   @144,0,48x32
+SPIRIT_OTTER_0         ability/spirit/SPIRIT_OTTER_0.png  @192,0,48x32
+SPIRIT_OTTER_1         ability/spirit/SPIRIT_OTTER_1.png  @0,32,48x32
+SPIRIT_OTTER_2         ability/spirit/SPIRIT_OTTER_2.png  @48,32,48x32
+SPIRIT_OTTER_3         ability/spirit/SPIRIT_OTTER_3.png  @96,32,48x32
+SPIRIT_EAGLE_0         ability/spirit/SPIRIT_EAGLE_0.png  @144,32,48x32
+SPIRIT_EAGLE_1         ability/spirit/SPIRIT_EAGLE_1.png  @192,32,48x32
+SPIRIT_EAGLE_2         ability/spirit/SPIRIT_EAGLE_2.png  @0,64,48x32
+SPIRIT_EAGLE_3         ability/spirit/SPIRIT_EAGLE_3.png  @48,64,48x32
+SPIRIT_PURE_0          ability/spirit/SPIRIT_PURE_0.png   @96,64,32x32
+SPIRIT_PURE_1          ability/spirit/SPIRIT_PURE_1.png   @128,64,32x32
+SPIRIT_PURE_2          ability/spirit/SPIRIT_PURE_2.png   @160,64,32x32
+SPIRIT_PURE_3          ability/spirit/SPIRIT_PURE_3.png   @192,64,32x32
+SPIRIT_PURE_4          ability/spirit/SPIRIT_PURE_4.png   @224,64,32x32
+SPIRIT_PURE_5          ability/spirit/SPIRIT_PURE_5.png   @0,96,32x32
+SPIRIT_PURE_6          ability/spirit/SPIRIT_PURE_6.png   @32,96,32x32
+SPIRIT_PURE_7          ability/spirit/SPIRIT_PURE_7.png   @64,96,32x32
+
+# 109 TH09 三种幽灵（绿/黄/红 = level 1/2/3，一手 `enemy.ecl Sub0/1/2`→script20/21/22）：
+#   sprite 48-51 / 60-63 / 72-75 的矩形反查自 TH09 `enemy.anm`；贴图 `data/stgenm/enemy.png` 的副本。
+ATLAS ATLAS_SPIRIT_GHOST 256x256
+SPIRIT_GHOSTG_0        ability/spirit/SPIRIT_GHOSTG_0.png   @0,0,32x32
+SPIRIT_GHOSTG_1        ability/spirit/SPIRIT_GHOSTG_1.png   @32,0,32x32
+SPIRIT_GHOSTG_2        ability/spirit/SPIRIT_GHOSTG_2.png   @64,0,32x32
+SPIRIT_GHOSTG_3        ability/spirit/SPIRIT_GHOSTG_3.png   @96,0,32x32
+SPIRIT_GHOSTY_0        ability/spirit/SPIRIT_GHOSTY_0.png   @128,0,40x40
+SPIRIT_GHOSTY_1        ability/spirit/SPIRIT_GHOSTY_1.png   @168,0,40x40
+SPIRIT_GHOSTY_2        ability/spirit/SPIRIT_GHOSTY_2.png   @208,0,40x40
+SPIRIT_GHOSTY_3        ability/spirit/SPIRIT_GHOSTY_3.png   @0,40,40x40
+SPIRIT_GHOSTR_0        ability/spirit/SPIRIT_GHOSTR_0.png   @40,40,48x48
+SPIRIT_GHOSTR_1        ability/spirit/SPIRIT_GHOSTR_1.png   @88,40,48x48
+SPIRIT_GHOSTR_2        ability/spirit/SPIRIT_GHOSTR_2.png   @136,40,48x48
+SPIRIT_GHOSTR_3        ability/spirit/SPIRIT_GHOSTR_3.png   @184,40,48x48
+
+# 109 灵的**沈静化（被固灵）**三态贴图（W4 用）：TH19 `animal_spirits.png` 的 356–367（32×48，发光格）。
+ATLAS ATLAS_SPIRIT_DISABLE 256x256
+SPIRIT_DISD1_0         ability/spirit/SPIRIT_DISD1_0.png   @0,96,48x32
+SPIRIT_DISD1_1         ability/spirit/SPIRIT_DISD1_1.png   @48,96,48x32
+SPIRIT_DISD1_2         ability/spirit/SPIRIT_DISD1_2.png   @96,96,48x32
+SPIRIT_DISD1_3         ability/spirit/SPIRIT_DISD1_3.png   @144,96,48x32
+SPIRIT_DISD2_0         ability/spirit/SPIRIT_DISD2_0.png   @128,0,32x48
+SPIRIT_DISD2_1         ability/spirit/SPIRIT_DISD2_1.png   @160,0,32x48
+SPIRIT_DISD2_2         ability/spirit/SPIRIT_DISD2_2.png   @192,0,32x48
+SPIRIT_DISD2_3         ability/spirit/SPIRIT_DISD2_3.png   @224,0,32x48
+SPIRIT_DISD3_0         ability/spirit/SPIRIT_DISD3_0.png   @0,48,48x32
+SPIRIT_DISD3_1         ability/spirit/SPIRIT_DISD3_1.png   @48,48,48x32
+SPIRIT_DISD3_2         ability/spirit/SPIRIT_DISD3_2.png   @96,48,48x32
+SPIRIT_DISD3_3         ability/spirit/SPIRIT_DISD3_3.png   @144,48,48x32
+# 109 TH09 幽灵的**沈静化形态**（鸟形→火焰/光球）：`enemy.anm` script23/24/25 的 sprite 52-59/64-71/76-83 ✓
+ATLAS ATLAS_SPIRIT_CALM 512x128
+SPIRIT_CALMG_0         ability/spirit/SPIRIT_CALMG_0.png   @0,0,32x32
+SPIRIT_CALMG_1         ability/spirit/SPIRIT_CALMG_1.png   @32,0,32x32
+SPIRIT_CALMG_2         ability/spirit/SPIRIT_CALMG_2.png   @64,0,32x32
+SPIRIT_CALMG_3         ability/spirit/SPIRIT_CALMG_3.png   @96,0,32x32
+SPIRIT_CALMG_4         ability/spirit/SPIRIT_CALMG_4.png   @128,0,32x32
+SPIRIT_CALMG_5         ability/spirit/SPIRIT_CALMG_5.png   @160,0,32x32
+SPIRIT_CALMG_6         ability/spirit/SPIRIT_CALMG_6.png   @192,0,32x32
+SPIRIT_CALMG_7         ability/spirit/SPIRIT_CALMG_7.png   @224,0,32x32
+SPIRIT_CALMY_0         ability/spirit/SPIRIT_CALMY_0.png   @256,0,40x40
+SPIRIT_CALMY_1         ability/spirit/SPIRIT_CALMY_1.png   @296,0,40x40
+SPIRIT_CALMY_2         ability/spirit/SPIRIT_CALMY_2.png   @336,0,40x40
+SPIRIT_CALMY_3         ability/spirit/SPIRIT_CALMY_3.png   @376,0,40x40
+SPIRIT_CALMY_4         ability/spirit/SPIRIT_CALMY_4.png   @416,0,40x40
+SPIRIT_CALMY_5         ability/spirit/SPIRIT_CALMY_5.png   @456,0,40x40
+SPIRIT_CALMY_6         ability/spirit/SPIRIT_CALMY_6.png   @0,40,40x40
+SPIRIT_CALMY_7         ability/spirit/SPIRIT_CALMY_7.png   @40,40,40x40
+SPIRIT_CALMR_0         ability/spirit/SPIRIT_CALMR_0.png   @80,40,48x48
+SPIRIT_CALMR_1         ability/spirit/SPIRIT_CALMR_1.png   @128,40,48x48
+SPIRIT_CALMR_2         ability/spirit/SPIRIT_CALMR_2.png   @176,40,48x48
+SPIRIT_CALMR_3         ability/spirit/SPIRIT_CALMR_3.png   @224,40,48x48
+SPIRIT_CALMR_4         ability/spirit/SPIRIT_CALMR_4.png   @272,40,48x48
+SPIRIT_CALMR_5         ability/spirit/SPIRIT_CALMR_5.png   @320,40,48x48
+SPIRIT_CALMR_6         ability/spirit/SPIRIT_CALMR_6.png   @368,40,48x48
+SPIRIT_CALMR_7         ability/spirit/SPIRIT_CALMR_7.png   @416,40,48x48
+ATLAS ATLAS_SPIRIT_DISABLE_PURE 160x32
+SPIRIT_DISP4_0         ability/spirit/SPIRIT_DISP4_0.png            @0,0,32x32
+SPIRIT_DISP4_1         ability/spirit/SPIRIT_DISP4_1.png            @32,0,32x32
+SPIRIT_DISP4_2         ability/spirit/SPIRIT_DISP4_2.png            @64,0,32x32
+SPIRIT_DISP4_3         ability/spirit/SPIRIT_DISP4_3.png            @96,0,32x32
+SPIRIT_DISP4_4         ability/spirit/SPIRIT_DISP4_4.png            @128,0,32x32
+ATLAS ATLAS_SAKUYA_FIELD 32x128
+SAKUYA_FIELD_STRIP      ability/spirit/SAKUYA_FIELD_STRIP.png   @0,0,32x128
