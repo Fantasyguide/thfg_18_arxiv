@@ -878,6 +878,18 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
     {
         int32_t lv = -1;
         int inc = 0;
+        /* ★★★★ 2026-10-08 owner 实跑定位（「把那只**看不见的灵**打死 ⇒ 上面的就消失」✓）：
+         *   本支**取了户口却从来没删 VM** ✗（对比击破純霊那支有删 ✓）⇒ 每走一次就留下一台
+         *   **常驻本体 VM**（= 「版顶一只朝右的狼灵、无碰撞箱、只是 VM」✓）。
+         *   ⇒ 修法：**先按 id 记住槽号**（`take` 会把 id 清掉 ✗），**删掉 VM**，再交给 `take` ✓。*/
+        {   int sl_pre = -1, ipre;
+            for (ipre = 0; ipre < POFV_SPIRIT_MAX; ++ipre)
+                if (s_spirit_id[ipre] == ev->id) { sl_pre = ipre; break; }
+            if (sl_pre >= 0) {
+                if (s_spirit_vm[sl_pre])   { ce_anm_delete((uint32_t)s_spirit_vm[sl_pre]);   s_spirit_vm[sl_pre]   = 0; }
+                if (s_spirit_body[sl_pre]) { ce_anm_delete((uint32_t)s_spirit_body[sl_pre]); s_spirit_body[sl_pre] = 0; }
+            }
+        }
         int k = pofv_spirit_take(ev->id, &lv, &inc);
         /* ★ 一手（owner）：純霊的扳机挂**玩家射击/命中** ⇒ 每次击破攒一格，够数就交一只（见 tick 的交付段）。 */
         /* ★★★ 2026-10-05 owner 实跑定案：「你实现的是**我击破一个，在我自己这边直接生成下一个**」✗
