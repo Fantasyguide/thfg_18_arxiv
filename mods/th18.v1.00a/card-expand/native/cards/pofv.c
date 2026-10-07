@@ -1424,7 +1424,11 @@ static int on_tick_2(ce_card_t *c)
         int32_t i4;
         s_period_timer = 0;
         for (i4 = 0; i4 < 2; ++i4) {                       /* 0 = 本侧 ✓ / 1 = 对面模型 ✓ */
-            int32_t kd = (ce_rand() % 2) ? POFV_SPIRIT_KIND_GHOST_TH09 : POFV_SPIRIT_KIND_PURE;
+            int32_t kd = POFV_SPIRIT_KIND_PURE;   /* ★ 一手（子智能体 `f27b135c` ✓）：**level 0 不产幽灵** ✗
+                                                   *   ⇒ §4.5 周期生成**不该出 TH09 幽灵** ✓（幽灵只能来自
+                                                   *     seed 路 ⇒ 绿 ✓ / 击破连锁 ⇒ 黄·红 ✓）。
+                                                   *   ❓ §4.5 原本的种类分布（是否轮换 TH19 四种）未核 ⇒
+                                                   *     本卡先前只随机 純霊/幽灵 ⇒ 现改为**固定純霊** ✓，分布待一手。*/
             float px = ((float)(ce_rand() % 321) - 160.0f);
             float py = 16.0f + (float)(ce_rand() % 33);
             if (i4 == 0) {                                  /* 本侧：走既有生成口 ✓ */
