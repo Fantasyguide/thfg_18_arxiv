@@ -964,7 +964,10 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
                  *   ⇒ 链：**绿 →（打它）→ 黄 →（打它）→ 红** ✓。*/
                 if (k == (int)POFV_SPIRIT_KIND_GHOST_TH09 && ev->enemy && ev->kind == CE_EDEATH_KILLED) {
                     const int gl = (int)(((*(const int32_t *)((const uint8_t *)ev->enemy + 0x3380)) >> 6) & 7);
-                    if (gl >= 1 && gl <= 2 && s_cnt_send30 < 0x19) {
+                    if (gl >= 1 && gl <= 2) {   /* â ownerï¼**å¹½çµ(TH09)ä¸ç´é/å¨ç©çµ(TH19)æ¯ä¸¤ä¸ªç¬ç«ç³»ç»** â
+                     *   â æååç¨ `s_cnt_send30`ï¼TH19 é£å¥çå®å¨é âï¼æ¯**äº¤å** â â å·²æï¼TH09 é¾æ¡ä¸å TH19 çè®¡æ° âï¼ï¼
+                     *   éé¢ç± **TH09 èªå·±çåºçå£/æé**æ§å¶ âï¼`POFV_FAM_TH09` âï¼ã*/
+
                         const int nl = (gl + 1 > 3) ? 3 : (gl + 1);
                         ce_log("pofv: 【TH09 连锁】击破 level %d 幽灵 ⇒ 送出 level %d（黄/红 ✓ 一手 §2.3）", gl, nl);
                         pofv_foe_spawn_gated(pofv_top_x(), pofv_top_y(), POFV_SPIRIT_KIND_GHOST_TH09, nl);
