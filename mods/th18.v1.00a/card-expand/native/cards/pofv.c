@@ -1008,6 +1008,15 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
                             s_ex_cool = POFV_EX_COOL;                    /* ★ 一手：冷却 60 帧 ✓ */
                             (void)lvi;
                             pofv_foe_spirit_loop_exit(s_foe, POFV_FOE_SPIRIT_MAX);   /* 循环在此终止 ✓ */
+                            /* ★★★★ 2026-10-08 **owner 口径**（原话）：「是**触发 EX 的通路**，**正常给发灵**（有 **40** 上限）
+                             *   但**同时**还会**在对面向对面发射 EX 攻击**，**EX 攻击别接留个口**」✓
+                             *   ⇒ 所以 EX 这一支要**同时**做两件：
+                             *     ① **照常送灵** ✓（但仍受 §8.38 的**每侧 40** 限制 ✓ —— 到 40 就不送 ✓）；
+                             *     ② **对侧 EX 攻击** = `pofv_foe_spirit_loop_exit()` **占位/留口** ✓（不实现实体 ✗）。
+                             *   ⚠ 我先前自己发明的「EX 灵（免疫结界 ✗／接触致伤 ✗）」**已全部拆掉** ✓。*/
+                            if (s_send40 < POFV_SEND40_LIMIT)
+                                pofv_foe_incoming_push(s_inc, POFV_FOE_INCOMING_MAX, ox, oy, back, 0,
+                                                       (int32_t)((ce_rand() % 101) + 60 + (ce_rand() % 101)));
                             ce_log("pofv: **本侧发 EX**（gauge %d − %d ⇒ %d）⇒ 本次**不回程** ✓（EX 本体不归本卡 ✗ owner 口径 ✓）",
                                    (int)s_ex_gauge + (int)s_ex_thr[lvi], (int)s_ex_thr[lvi], (int)s_ex_gauge);
                         } else if (s_send40 >= POFV_SEND40_LIMIT) {
