@@ -1105,7 +1105,7 @@ static int on_tick_2(ce_card_t *c)
             if (e) { s_spirit_miss[z] = 0; }
             if (e) {
                 /* ★ 入场运动：按 kind / age 取速度并推进（一手 `ins_404` + `ins_405`）*/
-                if (!s_spirit_dis[z] && !s_spirit_ex[z]) {   /* ★ 免疫己方系统：EX 不吃固灵结界 */
+                if (!s_spirit_dis[z]) {   /* ★ EX 不再免疫结界 ✗（我发明的那套已拆 ✓）*/   /* ★ 免疫己方系统：EX 不吃固灵结界 */
                     /* ★★★ goal 第 25 轮：真触发 = **按住 C 展开的固灵结界**（一手 §3.5）。
                      *   `held` = 本帧 active 回调打了时间戳（= 按住 C ✓）；形状用 `pofv_aura_contains()` ✓。 */
                     const float *pp = ce_player_pos();
@@ -1270,7 +1270,7 @@ static int on_tick_2(ce_card_t *c)
                      *   ⇒ 于是**每帧写 ≥1** 即可关掉体术 ✓（引擎自有机能 ✓；**不碰 `flags_lo`** ✗
                      *     ⇒ 不影响被自机弹命中/锁定/计数 ✓；也不用去动 `setHitbox` ✗ —— owner 指出：
                      *     体术判据是"距离 ≤ 双方盒之和" ⇒ 把敌人盒设 0 **永远得不到"无判定"** ✓）。*/
-                    *(int32_t *)(e + 0x6334) = s_spirit_ex[z] ? 0 : 2;   /* ★ EX 例外：EX 一手③ 要致伤 ⇒ 写 0（允许）✓；其余灵 = 2（跳过体术）✓ */
+                    *(int32_t *)(e + 0x6334) = 2;   /* ★★ owner 定：**所有灵都没有体术判定** ✓（我先前发明的"EX 例外"是错的 ✗ 已拆）*/
                     if (!(s_card_frames % 60)) {   /* ★ 运行时 hitbox 实值（owner：所有灵都有体术判定 ✗）*/
                         const float *hb2 = (const float *)(e + CE_ENEMY_DATA + 0x118);
                         const float *hu2 = (const float *)(e + CE_ENEMY_DATA + 0x110);
@@ -2123,7 +2123,6 @@ static int on_tick_2(ce_card_t *c)
                          *   ä¸æï¼EX è¦è´ä¼¤ â **`no_hitbox_timer = 0`**ï¼`e+0x6334` âï¼ï¼
                          *   **`flags_lo` ä¸å¸¦ `0x22`**ï¼`e+0x635c` âï¼ââ ä¸¤èç±ä¸é¢/summary é£è¡æ¯å¸§ç»´æ¤ âã*/
                         *(int32_t *)(e + 0x635c) &= ~0x22;   /* æ¸æä¼¤å®³é¸ç bit1/bit5 â åè®¸ä½æ¯è´ä¼¤ â */
-                        ce_log("pofv: EX â ä½æ¯è´ä¼¤å·²å¯ç¨ï¼no_hitbox_timer=0 â + flags_lo æ¸ 0x22 âï¼");
                         ce_log("pofv: EX 装上 hitbox 24×24 ⇒ 接触自机会致伤（一手 ③ 己方伤害）");
                     }
                     s_spirit_vm[sl] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), ring, 8);
