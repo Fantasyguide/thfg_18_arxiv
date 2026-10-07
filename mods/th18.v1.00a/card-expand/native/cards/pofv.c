@@ -1261,6 +1261,13 @@ static int on_tick_2(ce_card_t *c)
                                       pofv_spirit_body_sprite(s_spirit_kind[z], s_spirit_level[z],
                                                               (int)s_spirit_dis[z],
                                                               (int)(s_spirit_age[z] / 6)));
+                    if (!(s_card_frames % 60)) {   /* ★ 运行时 hitbox 实值（owner：所有灵都有体术判定 ✗）*/
+                        const float *hb2 = (const float *)(e + CE_ENEMY_DATA + 0x118);
+                        const float *hu2 = (const float *)(e + CE_ENEMY_DATA + 0x110);
+                        ce_log("pofv: [hb] 槽%d kind=%d ex=%d hitbox=(%.0f,%.0f) hurtbox=(%.0f,%.0f)",
+                               z, (int)s_spirit_kind[z], (int)s_spirit_ex[z],
+                               (double)hb2[0], (double)hb2[1], (double)hu2[0], (double)hu2[1]);
+                    }
                     if (!(s_card_frames % 60))   /* ★ 每 60 帧打一次：判幽灵图号是否正确 ✓ */
                         ce_log("pofv: [spr] 槽%d kind=%d level=%d dis=%d frame=%d â sprite=%d",
                                z, (int)s_spirit_kind[z], (int)s_spirit_level[z], (int)s_spirit_dis[z],
