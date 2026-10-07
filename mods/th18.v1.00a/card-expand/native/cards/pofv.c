@@ -1261,6 +1261,16 @@ static int on_tick_2(ce_card_t *c)
                                       pofv_spirit_body_sprite(s_spirit_kind[z], s_spirit_level[z],
                                                               (int)s_spirit_dis[z],
                                                               (int)(s_spirit_age[z] / 6)));
+                    /* ★★★★ 2026-10-08 只读调查定案（子智能体 `2509318b` ✓）：**灵不该有体术判定** ✓。
+                     *   一手（`engine/player/th18/03-player-hit-gate.md:164-171` ✓）：体术段前置闸在
+                     *   `EnemyData__step_game_logic 0x42ed40` 的 `0x42f51c`：
+                     *     `zEnemyData+0x5108 > 0`（= **`no_hitbox_timer.current`** ✓，
+                     *      绝对偏移 `zEnemy + 0x122c(CE_ENEMY_DATA) + 0x5108` = **`e + 0x6334`** ✓）
+                     *     ⇒ **非 0 ⇒ 跳过接触致伤判定** ✓。
+                     *   ⇒ 于是**每帧写 ≥1** 即可关掉体术 ✓（引擎自有机能 ✓；**不碰 `flags_lo`** ✗
+                     *     ⇒ 不影响被自机弹命中/锁定/计数 ✓；也不用去动 `setHitbox` ✗ —— owner 指出：
+                     *     体术判据是"距离 ≤ 双方盒之和" ⇒ 把敌人盒设 0 **永远得不到"无判定"** ✓）。*/
+                    *(int32_t *)(e + 0x6334) = 2;
                     if (!(s_card_frames % 60)) {   /* ★ 运行时 hitbox 实值（owner：所有灵都有体术判定 ✗）*/
                         const float *hb2 = (const float *)(e + CE_ENEMY_DATA + 0x118);
                         const float *hu2 = (const float *)(e + CE_ENEMY_DATA + 0x110);
