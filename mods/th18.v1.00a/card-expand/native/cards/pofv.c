@@ -1239,6 +1239,18 @@ static int on_tick_2(ce_card_t *c)
                 ce_anm_set_pos((uint32_t)s_spirit_vm[z],
                                *(const float *)(e + POFV_ENEMY_ABS_POS),
                                *(const float *)(e + POFV_ENEMY_ABS_POS + 4), 0.0f);
+                if (s_spirit_id[z] && !s_spirit_body[z]) {
+                    /* ââ 2026-10-08 owner：「依旧无本体（狼灵）」â
+                     *   ⇒ 生成那一帧 `ce_anm_spawn` 可能返回 **0**（anm 未就绪/池满 â）而代码**从不重试** â
+                     *   ⇒ 每帧补建（有敌机、无本体 ⇒ 重试）✓；成功后下一帧就走上面的跟随支 ✓。*/
+                    int bs2 = (s_spirit_kind[z] == POFV_SPIRIT_KIND_WOLF ||
+                               s_spirit_kind[z] == POFV_SPIRIT_KIND_OTTER ||
+                               s_spirit_kind[z] == POFV_SPIRIT_KIND_EAGLE)
+                              ? (int)CE_ANM_ABILITY_SCRIPT_POFV109_SPIRIT_BODY_ANIMAL
+                              : (int)CE_ANM_ABILITY_SCRIPT_POFV109_SPIRIT_BODY;
+                    s_spirit_body[z] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), bs2, 8);
+                }
+
                 if (s_spirit_body[z]) {          /* ★ 本体：跟随 + **每 6 帧**换一帧（一手）*/
                     ce_anm_set_pos((uint32_t)s_spirit_body[z],
                                    *(const float *)(e + POFV_ENEMY_ABS_POS),
