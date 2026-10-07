@@ -955,6 +955,25 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
                                            (int32_t)((ce_rand() % 101) + 60 + (ce_rand() % 101)));
                 }
             }        if (k >= 0) {
+                /* ★★★★ 2026-10-08 **TH09 幽灵的黄/红 = 击破连锁**（只读子智能体 `f27b135c` 一手定案 ✓）：
+                 *   一手（`engine/versus/th09/02-ghost-and-seal.md:126-131` ✓）：幽灵颜色 = 生成的是 `Sub0/1/2` 哪一个 ✓，
+                 *   由载体 `+0xa4` 决定 ⇒ **seed 路（玩家自己送）`+0xa4 = 0` ⇒ 绿** ✓（上面那支写死 1 = 绿，**本来就是对的** ✓）；
+                 *   **击破连锁** ⇒ `+0xa4 = min(level,2)` ⇒ **黄/红** ✓，其中 level = **被击破幽灵自己的 charge level**
+                 *   （`(enemy+0x3380 >> 6) & 7` ✓，bits 6–8 ✓）；闸门 = `level ∈ {1,2}` ∧ **自机弹击破**（一手 `param_1 < 2` ✓
+                 *   ⇒ 本卡 = `ev->kind == CE_EDEATH_KILLED` ✓）∧ 对手计数 < 0x19 ✓。
+                 *   ⇒ 链：**绿 →（打它）→ 黄 →（打它）→ 红** ✓。*/
+                if (k == (int)POFV_SPIRIT_KIND_GHOST_TH09 && ev->enemy && ev->kind == CE_EDEATH_KILLED) {
+                    const int gl = (int)(((*(const int32_t *)((const uint8_t *)ev->enemy + 0x3380)) >> 6) & 7);
+                    if (gl >= 1 && gl <= 2 && s_cnt_send30 < 0x19) {
+                        const int nl = (gl + 1 > 3) ? 3 : (gl + 1);
+                        ce_log("pofv: 【TH09 连锁】击破 level %d 幽灵 ⇒ 送出 level %d（黄/红 ✓ 一手 §2.3）", gl, nl);
+                        pofv_foe_spawn_gated(pofv_top_x(), pofv_top_y(), POFV_SPIRIT_KIND_GHOST_TH09, nl);
+                        pofv_foe_incoming_push(s_inc, POFV_FOE_INCOMING_MAX,
+                                               pofv_top_x(), pofv_top_y(),
+                                               POFV_SPIRIT_KIND_GHOST_TH09, nl,
+                                               (int32_t)((ce_rand() % 101) + 60 + (ce_rand() % 101)));
+                    }
+                }
             /* ★★ 2026-10-05 owner：「灵缺少击杀暴风」—— 暴风原先挂在 `pofv_spirit_is_ours(ev->id)` 上，
              *   但那条在 `take()` **之后**（条目已取走）⇒ 永远为假 ⇒ 暴风从不生成。
              *   改为**用 take 的返回值**决定：认出是我们的灵 ⇒ 起**灵档暴风（80 / 40 帧 / 伤害 10）**。 */
@@ -1109,7 +1128,16 @@ static int on_tick_2(ce_card_t *c)
         int z;
         for (z = 0; z < POFV_SPIRIT_MAX; ++z) {
             uint8_t *e;
-            if (!s_spirit_vm[z]) continue;
+            /* ★★★ 2026-10-08 bug 修复（owner 实跑：「幽灵再也不出现」＋「版顶正中一只**朝右的狼灵**，
+             *   同时出现一个没有任何 VM 的敌人，打死这个敌人后版顶狼灵消失」）——根因就是这一行：
+             *   · TH09 幽灵按 owner 口径**不挂灵圆**（`:2140` 生成后立刻删圆、`s_spirit_vm[sl] = 0` ✓）；
+             *   · 而这里**只认灵圆** ⇒ 幽灵的槽**每帧都被 continue 跳过** ✗ ⇒ 它的本体 VM
+             *     既不跟随敌机、也不换图 ⇒ 停在出生点 (0,0) = **版顶正中**，用脚本 400 的**默认狼图** ✓
+             *     ⇒ 实跑看到的就是那只"朝右的狼灵" ✓；
+             *   · 打死那台敌机 ⇒ 死亡清理删掉本体 ⇒ "狼灵消失" ✓ —— 与"幽灵再也不出现"是**同一个 bug** ✓。
+             *   ⇒ 判存活改成「**灵圆 或 本体**」（纯灵/动物灵两件都有 ⇒ 它们的路径行为不变 ✓；
+             *     灵圆相关的调用都自带 `id==0` 保护 ✓ 见 `sdk.h` 的 `ce_anm_set_pos`/`ce_anm_interrupt` ✓）。*/
+            if (!s_spirit_vm[z] && !s_spirit_body[z]) continue;
             e = (em && s_spirit_id[z]) ? ce_enemy_by_id(em, (int32_t)s_spirit_id[z]) : 0;
             if (e) { s_spirit_miss[z] = 0; }
             if (e) {
