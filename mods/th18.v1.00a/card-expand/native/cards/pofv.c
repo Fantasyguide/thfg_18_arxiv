@@ -1243,6 +1243,12 @@ static int on_tick_2(ce_card_t *c)
                     ce_anm_set_pos((uint32_t)s_spirit_body[z],
                                    *(const float *)(e + POFV_ENEMY_ABS_POS),
                                    *(const float *)(e + POFV_ENEMY_ABS_POS + 4), 0.0f);
+                    /* 卡侧从没给本体写 sprite ✗ ⇒ 幽灵被画成狼（脚本 400 写死 SPIRIT_WOLF_0）✗
+                     * ⇒ 每帧按 kind/level/固化/帧号写正确 sprite ✓（每 6 帧一帧，跟脚本节奏 ✓）。*/
+                    ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_spirit_body[z],
+                                      pofv_spirit_body_sprite(s_spirit_kind[z], s_spirit_level[z],
+                                                              (int)s_spirit_dis[z],
+                                                              (int)(s_spirit_age[z] / 6)));
                     /* ★★★ 2026-10-06 owner：「**它是碰到边上之后折返**」✓ ⇒ 水獭的**左右折返**由卡侧翻 `$I3`：
                      *   ECL 的獭支是个每帧重读 `$I3` 的 loop（`spirit109.ecl.txt` ✓）⇒
                      *   **碰左沿 ⇒ `$I3 = 0`（改向右斜 22.5°）** / **碰右沿 ⇒ `$I3 = 1`（改向左斜 157.5°）** ✓。
