@@ -120,6 +120,29 @@ def _gate_contract():
                 "   先跑 `make dist` 再发布（本次存档事故就是漏了这一步 ✗）。\n" % (rel, rel))
             raise SystemExit(4)
 
+    # ★★★ 2026-10-08 **第三道闸**（本次事故 ✗）：**dist 的构建产物必须与 native/build 的一致** ——
+    #   来由：我在 `spirit109.ecl.txt` 里写了 `moveVel($F0, 1.0f)` ✗，thecl 的**往返**把它反编译成
+    #   `[-nanf]` ⇒ `make dist` 的 `ecl-ufo` **一直失败** ✗ ⇒ 我那些 `make dist >/dev/null 2>&1 && release.py`
+    #   的链子**静默跳过**了重建 ⇒ **dist 里的 ability.anm 一直停在 17:00 的旧件** ✗
+    #   ⇒ owner 连续多轮报「**没有区别**」「依旧没有动」✓（我改的全在 anm 里：anchor / resolutionMode / scale ✗）。
+    #   ⇒ 这条把「DLL/anm 与 native/build 不一致」直接变成**拒绝发布** ✓。
+    for rel, built in (("patch-step3/th18/ability.anm", "build/ability.anm"),
+                       ("patch-step3/th18/abcard.anm", "build/abcard.anm"),
+                       ("bin/th18_card_expand.dll",     os.path.join("..", "th18_card_expand.dll"))):
+        d = os.path.join(DIST, rel)
+        b = os.path.join(HERE, built)
+        if not (os.path.exists(d) and os.path.exists(b)):
+            continue
+        import hashlib as _h
+        hd = _h.md5(open(d, "rb").read()).hexdigest()
+        hb = _h.md5(open(b, "rb").read()).hexdigest()
+        if hd != hb:
+            sys.stderr.write(
+                "\n❌ **dist 里的 %s 与 native/%s 不一致** ⇒ 拒绝发布。\n"
+                "   先跑 `make dist`（**并看它的输出** —— 它可能正在失败 ✗；本次事故就是它失败了却被 `>/dev/null` 吞了）。\n"
+                "   dist=%s  build=%s\n" % (rel, built, hd[:8], hb[:8]))
+            raise SystemExit(5)
+
     r = subprocess.run([sys.executable, os.path.join(HERE, "tools", "contract_check.py")],
                        cwd=HERE, text=True, capture_output=True)
     if r.returncode != 0:
