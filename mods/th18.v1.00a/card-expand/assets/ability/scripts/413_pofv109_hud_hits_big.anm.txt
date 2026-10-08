@@ -5,6 +5,17 @@ script script413 {
     //   取字：r4='abcdefghijklmno ⇒ h=列8 i=列9；r5=pqrstuvwxyz ⇒ s=列3 t=列4 ✓（已放大目视确认 ✓）
     sprite(@HUD_HITS_BIG@);
     layer(25);
+    /* ★★★ 2026-10-08（owner：「你得看 **112 113 114** 这些卡」✓ —— 那条铁律「先找已经存在的那套」✓）：
+     *   112 的 HUD 面板（`304_ufo_hud_panel.anm.txt` ✓，实跑正常 ✓）逐字是：
+     *     `pos(1056, 576); sprite(...); resampleMode(1); **layer(25)**; **resolutionMode(2)**;
+     *      scale(0); scaleTime(20, 0, **2.0, 2.0**);` ✓
+     *   ⇒ ★ 两个我们**漏掉**的关键：
+     *     ① **`resolutionMode(2)`** = 「值以 **2x 设计空间（1280×960）** 为准」
+     *        （112 脚本头的 Δ6 注释 ✓；卡侧写 640 空间的值、引擎按 2× 解释 ✓）；
+     *     ② **`scale(2.0, 2.0)`** = 把**像素画放大到原生大小**（不被 2× 空间缩掉 ✓）。
+     *   ⇒ 本脚本照抄这两行 ✓（层 25 与 `resampleMode(1)` 我们本来就对 ✓）。*/
+    resolutionMode(2);
+    scale(2.0f, 2.0f);
     /* ★★ 2026-10-08（owner：「th09 的框和数字也像是**插值缩放**导致的」✗ ⇒ ✓）：
      *   照本仓 TH07 HUD 那次的修法（`AUDIT.md` 306/307/308 三支 ✓）补 **`resampleMode(1)` = 最近邻** ✓。
      *   一手：**`resampleMode` = opcode 311 → `flags_hi` bit11**（0 = 线性 / 1 = 最近邻；

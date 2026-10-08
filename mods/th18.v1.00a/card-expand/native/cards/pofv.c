@@ -2238,6 +2238,22 @@ static int on_tick_2(ce_card_t *c)
             }
         }
         if (s_hud_sp_frame_vm) ce_anm_set_pos((uint32_t)s_hud_sp_frame_vm, POFV_HUD_SP_X, POFV_HUD_SP_Y, 0.0f);
+        /* ★★★ 2026-10-08 诊断（owner：「没有区别」✗ ⇒ 先确认运行时真值 ✓）：
+         *   每 60 帧打一次 HUD 的**实际**位置/贴图/句柄 ⇒ 日志里就能看出卡侧到底写了什么 ✓。
+         *   （这一招前几轮屡次直接定位问题 ✓；HUD 没有别的可观测面 ✗。）*/
+        if (!(s_card_frames % 60)) {
+            ce_log("pofv: [HUD] frame vm=%d pos=(%.1f,%.1f) | digits[0]=%d pos=(%.1f,%.1f) | hitlbl=%d pos=(%.1f,%.1f) | sp[0]=%d pos=(%.1f,%.1f)",
+                   (int)s_hud_sp_frame_vm, POFV_HUD_SP_X, POFV_HUD_SP_Y,
+                   (int)s_hud_hit_digit_vm[0],
+                   POFV_HUD_SP_X + POFV_HUD_HIT_X,
+                   POFV_HUD_SP_Y + POFV_HUD_SP_DY,
+                   (int)s_hud_sp_hit_vm,
+                   POFV_HUD_SP_X + POFV_HUD_HITLABEL_DX,
+                   POFV_HUD_SP_Y + POFV_HUD_SP_DY,
+                   (int)s_hud_sp_digit_vm[0],
+                   POFV_HUD_SP_X + POFV_HUD_SPNUM_DX,
+                   POFV_HUD_SP_Y + POFV_HUD_SP_DY);
+        }
         if (s_hud_sp_hit_vm) {
             /* ★ owner：「第一行数字 **+ Hit**」都乘红 ✓ ⇒ 这个标签（一手 `front.anm` sprite18 = 同一行的
              *   「Hit」字形 ✓）也 `color(red)` ⇒ 白芯变红、黑描边保留 ✓。*/
