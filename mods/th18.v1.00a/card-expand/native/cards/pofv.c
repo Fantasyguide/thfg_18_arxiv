@@ -2498,6 +2498,12 @@ static int on_tick_2(ce_card_t *c)
                                            (uint32_t)ce_rand(), (uint32_t)ce_rand(), &ang);
                 }
                 *(float *)(sp + CE_SPAWN_ECL_F) = ang;   /* = ECL 的 %F0 ✓ */
+                /* ★★★ 2026-10-08 诊断（owner：「依旧朝右……建议你打印一下初始速度，包括其他灵的
+                 *   （他们正常）」✓）：把所有灵**写进 spawn 的角度**都打出来 ⇒ 一眼看出是
+                 *   「卡侧没算对」还是「ECL 没读到」✗。kind 4 = TH09 幽灵（目标档 ✓）。*/
+                ce_log("pofv: [VEL] kind=%d(kc=%d) spawnF0=%.4f rad (%.1f deg)%s",
+                       (int)ke, (int)kc, (double)ang, (double)(ang * 57.29578f),
+                       (kc == POFV_SPIRIT_KIND_GHOST_TH09) ? "  <= 幽灵(TH09)" : "");
             }
         }
         /* ★★★ owner 2026-10-06：「**满了就别创建了**」✓ ⇒ 账本没空格就**根本不生成这只灵** ✓
@@ -2508,6 +2514,15 @@ static int on_tick_2(ce_card_t *c)
         {   uint8_t *e = (uint8_t *)ce_spawn_enemy("CESpirit109", sp);
             if (e) {
                 uint32_t id = *(const uint32_t *)(e + CE_ENEMY_ID);
+                /* ★★★ 2026-10-08 诊断（owner 建议 ✓）：**读回敌机侧的 ECL 浮点全局**，看 spawn 的
+                 *   `+0x40` 到底有没有落进运行时的 `%F0`（`CE_ENEMY_ECL_F0` = `+0x14c8` ✓）。
+                 *   同时**直写一次**（双保险：即便 spawn 通道不通，ECL 的 `moveVel(%F0,…)` 在首帧才跑 ✓，
+                 *   这里写进去也来得及 ✓）。*/
+                ce_log("pofv: [VEL] enemy+0x14c8(%F0) = %.4f rad (%.1f deg) | spawn.wanted = %.4f",
+                       (double)*(const float *)(e + CE_ENEMY_ECL_F0),
+                       (double)(*(const float *)(e + CE_ENEMY_ECL_F0) * 57.29578f),
+                       (double)*(const float *)(sp + CE_SPAWN_ECL_F));
+                *(float *)(e + CE_ENEMY_ECL_F0) = *(const float *)(sp + CE_SPAWN_ECL_F);
                 /* ★★ 2026-10-05 收口：**先记账拿到槽**，再用它挂两台 VM ——
                  *   旧版这里**从来没调 `pofv_note_spirit()`**（账永远是空 ⇒ 圆/本体挂到 id=0 的空槽 ⇒
                  *   9 帧后被收 ⇒ 实跑「啥也看不见」；灵死时也认不出是我们的灵）。 */
