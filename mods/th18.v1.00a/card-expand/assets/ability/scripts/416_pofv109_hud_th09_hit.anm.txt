@@ -2,6 +2,12 @@ script script416 {
     // 109 的 TH09 **Hit 标签** —— **切自原作** ✓（th09 front.png sprite18 (400,32,16x10) ✓，对照图确认字面 = Hit ✓）
     sprite(@TH09_HIT@);
     layer(25);
+    /* ★★ 2026-10-08（owner：「th09 的框和数字也像是**插值缩放**导致的」✗ ⇒ ✓）：
+     *   照本仓 TH07 HUD 那次的修法（`AUDIT.md` 306/307/308 三支 ✓）补 **`resampleMode(1)` = 最近邻** ✓。
+     *   一手：**`resampleMode` = opcode 311 → `flags_hi` bit11**（0 = 线性 / 1 = 最近邻；
+     *   `engine/anm/th16/06-settings.md` §3.5 ✓）。TH09 的 HUD 图是小像素图、在 TH18 里被放大 ⇒
+     *   默认**线性过滤会糊** ✗（先例：`146_aura_wolf` / `154_slot_soul` / `211_mof_faith_digit` ✓）。*/
+    resampleMode(1);
     stop();
     interruptLabel(1);
 +20: // 20
