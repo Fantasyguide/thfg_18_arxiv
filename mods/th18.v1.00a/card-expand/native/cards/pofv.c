@@ -507,6 +507,8 @@ static int32_t  s_spirit_age[POFV_SPIRIT_MAX];
 static int32_t  s_spirit_lr[POFV_SPIRIT_MAX];
 /* ★ TH09 幽灵的 level（1 绿 / 2 黄 / 3 红）—— 一手 §2：击破 level 1/2 ⇒ 新灵 `+0xa6 = min(level+1,3)`。 */
 static int32_t  s_spirit_level[POFV_SPIRIT_MAX];
+/* ★★★ 2026-10-08 owner：「冲着人飞的幽灵，也得**转到那个方向**」✓ ⇒ 记下出生角，本体按它转 ✓ */
+static float    s_spirit_entry_ang[POFV_SPIRIT_MAX];
 /* ★ W4 固化（沈静化）：一手 = 敌人标志 600000 被固灵结界立起 ⇒ ①停住 + **缓慢上浮**
  *   （`GhostDisableMove` = `ins_404(-1.5707964f, 0.02f)`）②`lifeSet(50)` 耐久骤降 ③换沈静化外观（图集 106）。
  *   ❓ 触发临时口：灵进入**自机周围**（$R=48$ 的近似「吸灵领域」）即沈静化 —— 等领域本体到位再换真触发器。
@@ -1504,7 +1506,11 @@ static int on_tick_2(ce_card_t *c)
                 if (s_spirit_body[z]) {
                     const int32_t kk = s_spirit_kind[z];
                     if (kk == POFV_SPIRIT_KIND_GHOST_TH09)
-                        ce_anm_set_rotation((uint32_t)s_spirit_body[z], 0.0f, 0.0f, 1.5707964f);   /* 幽灵 +90° ✓ */
+                        /* ★★★ 2026-10-08 owner：「**冲着人飞的幽灵，也得转到那个方向**」✓ ——
+                         *   原来写死 +π/2（= 只有正下方直落是对的 ✗）；现在用**出生角** ✓
+                         *   （本引擎角度约定 0=+x、π/2=+y 正下方 ✓ ⇒ 精灵自然朝向 = +x ⇒ 转 `ang` 即朝向飞行方向 ✓）。
+                         *   ⇒ 直落时 `ang ≈ π/2` ⇒ 与原来**完全一致** ✓；斜飞（约 1/5）时就**朝向自机** ✓。*/
+                        ce_anm_set_rotation((uint32_t)s_spirit_body[z], 0.0f, 0.0f, s_spirit_entry_ang[z]);
                     /* ★★★ owner 2026-10-06：「**固化大鹫需要顺时针转 90°**」✗ ⇒ 固化态单独一个角度：
                      *   正常态是 +90°（上一轮按「180° 反了」定的 ✓），**固化态取 −90°（顺时针 ✓）**。*/
                     /* ★★★ owner 2026-10-06 实跑两条定案：
@@ -2725,6 +2731,9 @@ static int on_tick_2(ce_card_t *c)
                              : CE_ANM_ABILITY_SCRIPT_POFV109_SPIRIT_RING_GREEN;
                     uint32_t vmid;
                     sl = pofv_note_spirit(id, s_spirit_q_kind[0]);
+                    /* ★ 出生角：直接从**生成参数**里读回（`CE_SPAWN_ECL_F` = 刚写进去的 `%F0` ✓）
+                     *   —— 比跨块传变量稳（不依赖作用域 ✓）。*/
+                    if (sl >= 0) s_spirit_entry_ang[sl] = *(const float *)(sp + CE_SPAWN_ECL_F);
                     /* ★★★★ 2026-10-06 owner：「灵数超限**依旧**出现 90°/黄色」✗ ⇒ 真因（我 grep 到的事实）：
                      *   全卡**只有这一处**生成口与记账调用 ✓，但 `pofv_note_spirit()` 满员时返回 **−1** ✗，
                      *   而**没有任何 `sl < 0` 防护** ✗ ⇒ 下面用 `sl` 当槽号写 `s_spirit_*[]` ⇒ **越界写** ✓
