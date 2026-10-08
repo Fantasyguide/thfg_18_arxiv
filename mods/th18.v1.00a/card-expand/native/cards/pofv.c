@@ -279,8 +279,17 @@ static pofv_acc_t s_acc;
  *   連擊槽**漏空** ⇒ **SP 归零** ✓（「漏空 ⇒ SP 归零」这条一手无争议 ✓；**怎么漏**的指令仍未定位 🟡）。
  *   ⇒ 本卡实现：**距上次命中的帧数** ≥ 105 ⇒ `a2c = 0`（⇒ 既有的「a2c ≤ 0 ⇒ SP 归零」自然生效 ✓）。
  *   ❓ 一手的「逐帧漏」vs「到点清空」未逐字核 ⇒ **本处取「到点清空」＝❓自定** ✓（不许写成复刻 ✗）。*/
-#define POFV_COMBO_TIMEOUT_FRAMES 105
-static int32_t s_combo_idle;
+/* ★★★★ 2026-10-08 **一手全链结案**（owner 转来 ✓，`engine/versus/th09/02-ghost-and-seal.md` §3.34 ✓）：
+ *   · **連擊槽 tA**（一手块 `+0x20`）：**每帧 −1** ✓；击破 ⇒ **分档加长**：
+ *       `<30 ⇒ +30` / `<50 ⇒ +5` / `<60 ⇒ +2` / `≥60 ⇒ +0` ⇒ **上限 60** ✓；
+ *     漏空（tA = 0）⇒ 清 **連爆数**（一手 `+0x38` ✓，送量 `min(,100)×10` 用的是它 ✓）✓。
+ *   · **SP 寿命 tB**（一手块 `+0x14`）：击破 ⇒ **`tB := tA + 45`** ✓；每帧 −1 ✓；
+ *     漏空 ⇒ **清 SP**（一手 `+0x10` = `player+0x30420`，归零指令 `0x41d7cf` ✓）✓。
+ *   ⇒ **「105 帧」的出处 = 槽上限 60 + SP 寿命偏移 45** ✓（观感两段式：停手 ≈1s 槽漏空 ⇒ 再 ≈0.75s SP 归零 ✓）。
+ *   ⚠ 作废我上一版的「105 帧到点清空」❓自定 ✗（那是我在一手未明时的近似 ✓，现按一手改逐帧 ✓）。*/
+static int32_t s_combo_blasts;  /* = 一手連爆数 `+0x38`（送量来源 ✓，清空时归零 ✓）*/
+static int32_t s_sp_life;       /* = 一手 SP 寿命 tB `+0x14`（漏空 ⇒ SP = 0 ✓）*/
+#define POFV_COMBO_CAP 60
 /* ★ HUD「hits」（一手 §9.8）：当前值 `+0x22b4` / 锁存 `+0x22b8` / 寿命 120 / `+0x227c<1` 时 6 帧闪灰 ✓
  *   ⚠ 按 owner 结论：**只接 hit 这一条**（两作同源 ✓），**SP 不并进 Hits** ✗ ⇒ 这里不碰 SP ✓ */
 static pofv_hits_t s_hits;
@@ -892,6 +901,7 @@ static void clear_card(ce_card_t *c)
     s_spirit_q_n = 0;                  /* 灵（真敌机）的待生成队列 */
     s_point_q = 0;
     pofv_acc_init(&s_acc); s_acc_last_x = 0.0f; s_acc_last_y = 0.0f;
+    s_combo_blasts = 0; s_sp_life = 0;   /* ★ 一手的連爆数/SP 寿命 ✓ */
     pofv_hits_init(&s_hits);
     /* ★ MODEL `:104-107`（owner 新增「跨面 ⇒ **全清**」）：清单含「各类**冷却**·队列·**待生成项**」✓
      *   ⇒ 下面 5 个原先**漏复位** ✗（核实复核指出）：冷却 `s_ghost_cool`、击破计数 `s_pure_kill_n`、
@@ -1063,7 +1073,17 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
             pofv_acc_add54(&s_acc, 15);          /* TH19 一手 ✓ */
             /* ★★★ owner 2026-10-06：「**th09 和 th19 独立运行**，按一手 + **真实难度**」⇒
              *   TH09 是**另一套**（步长 = 一手 `param_2`/`param_3` ✓，阈值吃难度不吃时间 ✓）⇒ **不混用** ✗ */
-            pofv_acc_add2c(&s_acc, POFV_ACC09_STEP2C); s_combo_idle = 0;   /* ★ 命中 ⇒ 連擊计时器重置 ✓ */
+            /* ★★★ 2026-10-08 一手（§3.34 ✓）：击破 ⇒ **連擊槽分档加长**（不是「加固定值」✗）：
+             *   `<30 ⇒ +30` / `<50 ⇒ +5` / `<60 ⇒ +2` / `≥60 ⇒ +0` ⇒ **上限 60** ✓。*/
+            {
+                int32_t *ta = &s_acc.a2c;
+                if      (*ta < 30) *ta += 30;
+                else if (*ta < 50) *ta += 5;
+                else if (*ta < 60) *ta += 2;
+                if (*ta > POFV_COMBO_CAP) *ta = POFV_COMBO_CAP;
+                ++s_combo_blasts;                       /* 一手：連爆数 `+0x38` 随击破递增 ✓ */
+                s_sp_life = *ta + 45;                   /* ★ 一手：`tB := tA + 45` ✓ */
+            }
             pofv_acc_add30(&s_acc, POFV_ACC09_STEP30);
             pofv_hits_bump(&s_hits, 1);          /* ★ hit（連爆数）＋1（灵侧口径 ✓，owner 图 ✓）*/
             ++s_cnt_kill;                        /* ★ goal ②：击破计数（定位自维持用 ✓）*/
@@ -1095,14 +1115,14 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
                 if (pofv_spirit_spill_stop()) { ++s_cnt_send30; /* ★ 安全阀：TH09 也不送 ✓ */
                 } else if (pofv_acc_take30(&s_acc, diff)) {    /* ★ TH09 那套（独立 ✓）*/
                     {   /* ★ TH09 SP 累加（一手 §4.4 ✓）：送量 = min(連爆数,100)×10 ✓、取整到 10 的倍数 ✓ */
-                        int32_t sendv = (s_acc.a2c > 100) ? 1000 : (int32_t)(s_acc.a2c * 10);
+                        int32_t sendv = (s_combo_blasts > 100) ? 1000 : (int32_t)(s_combo_blasts * 10);   /* ★ 一手：送量用**連爆数** ✓（不是槽 tA ✗）*/
                         int32_t gain  = (int32_t)((POFV_SP_RATE * (float)sendv) / 10.0f) + sendv;
                         if (s_sp + gain > POFV_SP_MAX) s_sp = POFV_SP_MAX; else s_sp += gain;
                         s_sp = (s_sp / 10) * 10;                       /* 取整到 10 的倍数 ✓ */
                     }
-                    /* ★★★ 2026-10-08（核查 ✓）：`pofv_acc_take2c` **全仓零调用** ✗ ⇒ a2c 只涨不掉 ✓。
-                     *   一手：TH09 越阈值**送**时扣（**保余数** ✓，函数本体已是这个语义 ✓）⇒ 在此接上 ✓。*/
-                    pofv_acc_take2c(&s_acc, diff);
+                    /* ⚠ 2026-10-08 订正：**不在这里扣 `a2c`** ✗ —— 一手结案说清 `a2c` = **連擊槽计时器**
+                     *   （每帧 −1 ✓、击破分档加长 ✓），**不被"送"消费** ✗；送量来源是**連爆数** ✓。
+                     *   ⇒ 先前接在这儿的 `pofv_acc_take2c` 已撤 ✓（`pofv_acc_take2c` 本体仍留作 TH19 口径备件 ✓）。*/
                     ce_log("pofv: 【TH09】越阈值（a2c=%d a30=%d 難度=%d）⇒ 送出**幽灵** level 1（收件门 <25 ✓）",
                            (int)s_acc.a2c, (int)s_acc.a30, (int)diff);
                     pofv_foe_spawn_gated(pofv_top_x(), pofv_top_y(),
@@ -2159,13 +2179,17 @@ static int on_tick_2(ce_card_t *c)
          *   「連擃槽**æ¶失（清空）⇒ **SP 归零**」â
          *   ï¼一手的**衰减律**写作 `+= 難度×4 â 120` â 量纲可疑 ❓ â **本卡不实现衰减律** â，
          *    但「清空⇒SP 归零」这条**无争议** â ⇒ 本处落地 â。）*/
-        /* ★★★ 2026-10-08 一手衰减（見 `s_combo_idle` 的注释 ✓）：105 帧没命中 ⇒ 連擊槽漏空 ✓ */
-        if (++s_combo_idle >= POFV_COMBO_TIMEOUT_FRAMES) {
-            if (s_acc.a2c != 0) {
-                ce_log("pofv: 【TH09】連擊槽漏空（%d 帧无命中）⇒ a2c %d → 0（❓自定：一手漏法未定位 ✓）",
-                       POFV_COMBO_TIMEOUT_FRAMES, (int)s_acc.a2c);
-            }
-            s_acc.a2c = 0;
+        /* ★★★★ 2026-10-08 **一手逐帧衰减**（§3.34 ✓，作废我上一版的「105 帧到点清空」✗）：
+         *   · **連擊槽 tA**（`s_acc.a2c` ✓）：**每帧 −1**（下限 0）✓；漏空 ⇒ **清連爆数** ✓；
+         *   · **SP 寿命 tB**（`s_sp_life` ✓）：**每帧 −1**（下限 0）✓；漏空 ⇒ **SP = 0** ✓（一手 `0x41d7cf` ✓）。
+         *   ⇒ 观感正是**两段式**：停手 ≈1 s 槽先漏空（連爆数归零）⇒ 再 ≈0.75 s（45 帧）SP 归零 ✓。*/
+        if (s_acc.a2c > 0 && --s_acc.a2c == 0 && s_combo_blasts != 0) {
+            ce_log("pofv: 【TH09】連擊槽漏空 ⇒ 連爆数 %d → 0（一手 `+0x38` 清零 ✓）", (int)s_combo_blasts);
+            s_combo_blasts = 0;
+        }
+        if (s_sp_life > 0 && --s_sp_life == 0 && s_sp != 0) {
+            ce_log("pofv: 【TH09】SP 寿命漏空 ⇒ SP %d → 0（一手 `0x41d7cf` 清 `+0x10` ✓）", (int)s_sp);
+            s_sp = 0;
         }
         if (s_acc.a2c <= 0 && s_sp != 0) {
             s_sp = 0;                                  /* ★ 連擃槽清空 â SP 归零 â */
