@@ -2115,6 +2115,16 @@ static int on_tick_2(ce_card_t *c)
     } else if (s_aura_vm && s_aura_kind != 2) {                   /* ★ 咲夜不在此处删 ✗（脚本 rotateTime 收束后自删 ✓） ✓（一手 `+20: delete()` ✓）*/
         ce_anm_delete((uint32_t)s_aura_vm); s_aura_vm = 0;
     }
+    /* ★★★ 2026-10-08（结案 ✓）：**hits 的第二条归零路 = 暴风结束** ✓ ——
+     *   一手没有直接「读暴风窗口去清 hits」的指令 ✗（结案已诚实标注 ✓）⇒ 代码层等价物 =
+     *   「**暴风已经不存在**」✓（观感窗口 ≈ 30 帧 ✓ 一手归一化 ✓）。*/
+    {   int q; int any = 0;
+        for (q = 0; q < POFV_STORM_MAX; ++q) if (s_storm.s[q].active) { any = 1; break; }
+        if (!any && s_hits.cur != 0) {
+            ce_log("pofv: 【TH09】暴风结束 ⇒ hits %d 归零（结案：等价物 = 暴风不存在 ✓）", (int)s_hits.cur);
+            s_hits.cur = 0; s_hits.latch = 0; s_hits.life = 0;
+        }
+    }
     pofv_hits_tick(&s_hits);                     /* ★ HUD hits：锁存 + 寿命递减（一手 120 帧 ✓）*/
     /* ★★ 调试 UI（owner）：事件列表（暴风延迟 ✓ / 击破·固灵 3 s ✓）+ 幽灵列表（只有内容、无位置 ✓）*/
     {
@@ -2193,9 +2203,13 @@ static int on_tick_2(ce_card_t *c)
          *   · **連擊槽 tA**（`s_acc.a2c` ✓）：**每帧 −1**（下限 0）✓；漏空 ⇒ **清連爆数** ✓；
          *   · **SP 寿命 tB**（`s_sp_life` ✓）：**每帧 −1**（下限 0）✓；漏空 ⇒ **SP = 0** ✓（一手 `0x41d7cf` ✓）。
          *   ⇒ 观感正是**两段式**：停手 ≈1 s 槽先漏空（連爆数归零）⇒ 再 ≈0.75 s（45 帧）SP 归零 ✓。*/
-        if (s_acc.a2c > 0 && --s_acc.a2c == 0 && s_combo_blasts != 0) {
-            ce_log("pofv: 【TH09】連擊槽漏空 ⇒ 連爆数 %d → 0（一手 `+0x38` 清零 ✓）", (int)s_combo_blasts);
-            s_combo_blasts = 0;
+        if (s_acc.a2c > 0 && --s_acc.a2c == 0) {
+            if (s_combo_blasts != 0) {
+                ce_log("pofv: 【TH09】連擊槽漏空 ⇒ 連爆数 %d → 0（一手 `+0x38` 清零 ✓）", (int)s_combo_blasts);
+                s_combo_blasts = 0;
+            }
+            /* ★★★ 2026-10-08（结案 ✓）：**hits 也在此归零** ✓（hits 的两条归零路之一 ✓）。*/
+            s_hits.cur = 0; s_hits.latch = 0; s_hits.life = 0;
         }
         if (s_sp_life > 0 && --s_sp_life == 0 && s_sp != 0) {
             ce_log("pofv: 【TH09】SP 寿命漏空 ⇒ SP %d → 0（一手 `0x41d7cf` 清 `+0x10` ✓）", (int)s_sp);
@@ -2285,8 +2299,18 @@ static int on_tick_2(ce_card_t *c)
                     ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_hud_hit_digit_vm[i9],
                                       CE_ANM_ABILITY_SPRITE_TH09_SP_0 + (uint32_t)digit);   /* ★ 第一行灰数字 ✓ */
                     /* 前导格**留空**（alpha 0 ⇒ 不画 ✓，不是画 0 ✗）；其余 = 乘红 ✓（AARRGGBB ✓）*/
-                    ce_anm_set_color((uint32_t)s_hud_hit_digit_vm[i9],
-                                     blank ? 0x00000000u : POFV_HUD_COL_HIT);
+                    /* ★★★ 2026-10-08（结案 ✓）：**数字奇偶帧闪烁 + 槽 <20/消失转灰** ✓ ——
+                     *   一手：闪光（奇偶帧）+ 槽 `<20` 或消失时转**灰** ✓。
+                     *   ❓ 灰色的具体值与闪烁的两色未逐字给 ⇒ 取灰 `(128,128,128)`（= 一手 SP 用的灰度 ✓）
+                     *     与柔红 `(192,128,128)` ↔ 白 交替 ✓，标 **❓自定**（待 owner 按观感校 ✓）。*/
+                    {
+                        uint32_t tint;
+                        if (s_acc.a2c < 20)      tint = 0xFF808080u;                     /* 槽低/消失 ⇒ 灰 ✓ */
+                        else if (s_card_frames & 1) tint = POFV_HUD_COL_HIT;             /* 奇帧 ⇒ 柔红 ✓ */
+                        else                     tint = 0xFFFFFFFFu;                     /* 偶帧 ⇒ 白 ✓ */
+                        ce_anm_set_color((uint32_t)s_hud_hit_digit_vm[i9],
+                                         blank ? 0x00000000u : tint);
+                    }
                     ce_anm_set_pos((uint32_t)s_hud_hit_digit_vm[i9], x, POFV_HUD_SP_Y + POFV_HUD_SP_DY, 0.0f);
                 }
             }
