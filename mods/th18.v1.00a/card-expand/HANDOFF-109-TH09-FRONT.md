@@ -52,12 +52,21 @@ thanm -l 9 front.anm
 2. `assets/ability/entries/ORDER.txt` **文件末尾追加**（⚠ 仓规：**不许插已定稿段** —— 插行会平移所有 sprite 号，DLL 与 `ability.anm` 必须同批 ✓）：
 
 ```
-# 109 TH09 左上角 HUD（front.png 直裁；rect 见 engine/versus/th09/01-versus-loop.md §2.11）
+# 109 TH09 左上角 HUD（front.png 直裁 ✓，34 张；rect 依据 engine/versus/th09/01-versus-loop.md §2.11）
 ATLAS ATLAS_TH09_HUD 512x512
-TH09_HUD_SPELLBOX    ability/th09front/spellbox.png    @0,0,80x32
-TH09_HUD_DIGIT_G0    ability/th09front/digit_g0.png    @0,0,8x11
-TH09_HUD_DIGIT_G1    ability/th09front/digit_g1.png    @8,0,8x11
-…（G2..G9 依次 @16,0 / @24,0 …；R0..R9；SLASH；ICON0..4）
+TH09_HUD_SIDE_L       ability/th09front/TH09_HUD_SIDE_L.png       @0,0,16x448
+TH09_HUD_SIDE_R       ability/th09front/TH09_HUD_SIDE_R.png       @16,0,16x448
+TH09_HUD_PANEL        ability/th09front/TH09_HUD_PANEL.png        @32,0,32x448
+TH09_HUD_SPELLBOX     ability/th09front/TH09_HUD_SPELLBOX.png     @384,0,80x32
+TH09_HUD_DIGIT_G0     ability/th09front/TH09_HUD_DIGIT_G0.png     @384,32,8x11
+…（G1..G9 依次 @392,32 / @400,32 … @456,32）
+TH09_HUD_DIGIT_R0     ability/th09front/TH09_HUD_DIGIT_R0.png     @384,48,8x11
+…（R1..R9 依次 @392,48 … @456,48）
+TH09_HUD_SLASH        ability/th09front/TH09_HUD_SLASH.png        @384,64,16x10
+TH09_HUD_ICON0        ability/th09front/TH09_HUD_ICON0.png        @400,64,16x16
+…（ICON1..4：@416,64 / @432,64 / @448,64 / @464,64）
+TH09_HUD_BAR_TOP0     ability/th09front/TH09_HUD_BAR_TOP0.png     @64,448,320x16
+…（BAR_TOP1..3：@64,464 / @64,480 / @64,496）
 ```
 3. 生成器会把这批写成 `native/anm_ids.h` 的 `CE_ANM_ABILITY_SPRITE_TH09_HUD_*` ✓（卡里用这个宏，不写裸号 ✓）。
 
@@ -82,3 +91,29 @@ TH09_HUD_DIGIT_G1    ability/th09front/digit_g1.png    @8,0,8x11
 * 只**追加** `ORDER.txt` ✓；改完必须 `make anm`（重建 `ability.anm`）⇒ **DLL 与 `ability.anm` 同批发布** ✓（`local/DLL-SYNC.md` ✓）；
 * 数值/几何若与一手不同（例如你决定改淡入帧数、改步进），必须在注释里标 **❓自定** ✓，不许写成"复刻" ✗；
 * 切完请回报：新 sprite 号（`anm_ids.h` 里的 `CE_ANM_ABILITY_SPRITE_TH09_HUD_*` ✓）＋ 是否与 `ability.anm` 同批 ✓。
+
+## 5. 卡侧接线（**现成可贴**，给卡 109 的 agent；本文件作者没动任何卡代码 ✓）
+
+```c
+/* ① 框：脚本 136 = 单 sprite 的 HUD 字形 VM（ce_hud_vm_text_set 用的就是它 ✓，这里手起一台） */
+static ce_hud_vm_text_t s_frame;          /* 只借它的 id[0] 槽，或自己存 uint32_t 也行 */
+uint32_t fv = ce_anm_spawn_ui(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_HUD_GLYPH /* 136 */, 0);
+ce_anm_set_sprite(fv, CE_ANM_ABILITY_SPRITE_TH09_HUD_SPELLBOX);   /* 生成后 anm_ids.h 里的宏 ✓ */
+ce_anm_set_pos(fv, UI_X, UI_Y, 0.0f);                            /* 640×480 空间 ✓ */
+
+/* ② 数字：现成的逐位 VM（脚本 105 = HUD_NUMBER ✓），间距 8 px = TH09 原版步进 ✓ */
+ce_hud_number_set(&s_num, UI_X + 5.0f, UI_Y + 13.0f, 8.0f, value, 5, 0, "109");
+
+/* ③ 顺序：**先 spawn 框、后 set 数字** ✓（后起的画在上面 ✓，原版就是框在底、数字在框里 ✓） */
+```
+
+* 原版几何（一手 ✓）：框 `pos(-144, 0)`（80×32 ✓）、数字起点 `(-139, 13)` 步进 **8** ✓、单位符 `(-121, 13)` ✓、色调 `color(192,128,128)` ✓、**60 帧淡入**（`alpha(0)` → `alphaTime(60,0,255)` ✓）；
+* 卡里坐标是 **640×480** ✓ ⇒ 上面 `UI_X/UI_Y` 就是按这个空间给的起点（🟡 单人宿主下的锚点偏移建议先按"左上留边 ≈16 px"起手，实机对一次 ✓）；
+* 要做淡入：`ce_anm_set_color(fv, ...)` / 卡里自己推 alpha（`ce_anm_set_alpha` 若有 ✓）或直接照 60 帧计数 ✓ —— 若改帧数属 **❓自定**，注释里必须写明 ✓。
+
+## 6. 切图进度（**已完成 ✓**）
+
+* 34 张已切好并**逐像素核对**（与 `front.png` 的源 rect 完全相同 ✓）：
+  `assets/ability/th09front/TH09_HUD_{SIDE_L,SIDE_R,PANEL,SPELLBOX,DIGIT_G0..G9,DIGIT_R0..R9,SLASH,ICON0..4,BAR_TOP0..3}.png` ✓；
+* 源：`local/th09.v1.50a/th09.dat` → `front.anm` entry0 = `data/front/front.png`（512×512 ✓）；
+* **待卡 agent 做**：把 §2 的 ORDER 块**追加到 `entries/ORDER.txt` 末尾** ⇒ `make anm` ⇒ 与 DLL 同批发布 ✓（`local/DLL-SYNC.md` ✓）。

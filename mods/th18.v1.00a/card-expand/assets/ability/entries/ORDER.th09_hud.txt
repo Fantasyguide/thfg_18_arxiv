@@ -1,0 +1,40 @@
+# 卡 109 左上角 HUD 的 **TH09 `front.anm` 素材**（`data/front/front.png` 512×512，1:1 直裁）
+#   生成器 = assets/ability/make_th09_front_art.py（rect 从 `thanm -l 9 front.anm` 现读 + 断死尺寸/关键 rect）
+#   owner 2026-10-08：「th09 左上角的都在 …\data\ANM\data\front\front.png 里面」「1:1 抠图是我要的」
+#   一手画法（框/数字的位置·步进·颜色·60 帧淡入）见 engine/versus/th09/01-versus-loop.md §2.11
+#   ★ 本块 **append 在 ORDER.txt 最末尾**（行序 = sprite 号，插中间会平移全库）
+ATLAS ATLAS_TH09_HUD 512x512
+TH09_HUD_SIDE_L      ability/th09front/TH09_HUD_SIDE_L.png   @0,0,16x448
+TH09_HUD_SIDE_R      ability/th09front/TH09_HUD_SIDE_R.png   @16,0,16x448
+TH09_HUD_PANEL       ability/th09front/TH09_HUD_PANEL.png   @32,0,32x448
+TH09_HUD_SPELLBOX    ability/th09front/TH09_HUD_SPELLBOX.png   @384,0,80x32
+TH09_HUD_DIGIT_G0    ability/th09front/TH09_HUD_DIGIT_G0.png   @384,32,8x11
+TH09_HUD_DIGIT_G1    ability/th09front/TH09_HUD_DIGIT_G1.png   @392,32,8x11
+TH09_HUD_DIGIT_G2    ability/th09front/TH09_HUD_DIGIT_G2.png   @400,32,8x11
+TH09_HUD_DIGIT_G3    ability/th09front/TH09_HUD_DIGIT_G3.png   @408,32,8x11
+TH09_HUD_DIGIT_G4    ability/th09front/TH09_HUD_DIGIT_G4.png   @416,32,8x11
+TH09_HUD_DIGIT_G5    ability/th09front/TH09_HUD_DIGIT_G5.png   @424,32,8x11
+TH09_HUD_DIGIT_G6    ability/th09front/TH09_HUD_DIGIT_G6.png   @432,32,8x11
+TH09_HUD_DIGIT_G7    ability/th09front/TH09_HUD_DIGIT_G7.png   @440,32,8x11
+TH09_HUD_DIGIT_G8    ability/th09front/TH09_HUD_DIGIT_G8.png   @448,32,8x11
+TH09_HUD_DIGIT_G9    ability/th09front/TH09_HUD_DIGIT_G9.png   @456,32,8x11
+TH09_HUD_DIGIT_R0    ability/th09front/TH09_HUD_DIGIT_R0.png   @384,48,8x11
+TH09_HUD_DIGIT_R1    ability/th09front/TH09_HUD_DIGIT_R1.png   @392,48,8x11
+TH09_HUD_DIGIT_R2    ability/th09front/TH09_HUD_DIGIT_R2.png   @400,48,8x11
+TH09_HUD_DIGIT_R3    ability/th09front/TH09_HUD_DIGIT_R3.png   @408,48,8x11
+TH09_HUD_DIGIT_R4    ability/th09front/TH09_HUD_DIGIT_R4.png   @416,48,8x11
+TH09_HUD_DIGIT_R5    ability/th09front/TH09_HUD_DIGIT_R5.png   @424,48,8x11
+TH09_HUD_DIGIT_R6    ability/th09front/TH09_HUD_DIGIT_R6.png   @432,48,8x11
+TH09_HUD_DIGIT_R7    ability/th09front/TH09_HUD_DIGIT_R7.png   @440,48,8x11
+TH09_HUD_DIGIT_R8    ability/th09front/TH09_HUD_DIGIT_R8.png   @448,48,8x11
+TH09_HUD_DIGIT_R9    ability/th09front/TH09_HUD_DIGIT_R9.png   @456,48,8x11
+TH09_HUD_SLASH       ability/th09front/TH09_HUD_SLASH.png   @384,64,16x10
+TH09_HUD_ICON0       ability/th09front/TH09_HUD_ICON0.png   @400,64,16x16
+TH09_HUD_ICON1       ability/th09front/TH09_HUD_ICON1.png   @416,64,16x16
+TH09_HUD_ICON2       ability/th09front/TH09_HUD_ICON2.png   @432,64,16x16
+TH09_HUD_ICON3       ability/th09front/TH09_HUD_ICON3.png   @448,64,16x16
+TH09_HUD_ICON4       ability/th09front/TH09_HUD_ICON4.png   @464,64,16x16
+TH09_HUD_BAR_TOP0    ability/th09front/TH09_HUD_BAR_TOP0.png   @64,448,320x16
+TH09_HUD_BAR_TOP1    ability/th09front/TH09_HUD_BAR_TOP1.png   @64,464,320x16
+TH09_HUD_BAR_TOP2    ability/th09front/TH09_HUD_BAR_TOP2.png   @64,480,320x16
+TH09_HUD_BAR_TOP3    ability/th09front/TH09_HUD_BAR_TOP3.png   @64,496,320x16

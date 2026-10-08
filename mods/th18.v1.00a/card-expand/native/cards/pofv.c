@@ -291,16 +291,33 @@ static int   s_boss_prev;   /* ★ owner 2026-10-05：boss 表 0→1 的**边沿
                               *   本值仅用于**我自己四行的间距** ✓（原 24 与 SP/連擊槽 行距太挤 ✓）。*/
 #define POFV_HUD_C2_Y 76.0f   /* ★ SP 下一行 ✓ */   /* ★ 重排：連擊槽行 y=46 ✓（原 36 ⇒ 条在 44 与 hits 撞 ✗）*/   /* ★ TH09 連擊槽（SP 正下方 ✓，一手 §2.1 ✓）*/
 static int32_t s_sp;               /* 本侧 SP（0..999990 ✓）*/
+/* ★★★ 2026-10-08（交接 HANDOFF-109-HUD-STATE §3 的唯一 P0）：**HUD 的 VM 必须起在「UI 列表」** ✓
+ *   —— 世界列表版（`ce_anm_spawn`）是给**场上效果**的 ✗；我原先用错了 ⇒ 整组 HUD 落在**屏幕中间** ✗
+ *   （owner 实跑：「框的左边线在大致屏幕的中线位置」✓）。
+ *   一手：`native/sdk.h:245-254` —— `ce_anm_spawn_ui()`（`0x409670`）＝ **UI 列表**版本 ✓。
+ *   ★ 两套坐标空间（见 `HUD-LAYOUT.md` §1.1）：`ce_hud_*`（数字/文本）= **640×480 字面量** ✓；
+ *     **UI 列表 VM = 表面 px = 640 值 × 2** ✓ ⇒ 本助手吃 **640 值**、内部 ×2 ✓（调用点就不用手写 ×2 了）。
+ *   传初值位置还能顺带免掉「起完到第一帧之间闪在 (0,0)」✗。*/
+static uint32_t hud_vm_spawn(int script, float x640, float y640)
+{
+    float p[3];
+    p[0] = x640 * 2.0f;
+    p[1] = y640 * 2.0f;
+    p[2] = 0.0f;
+    return ce_anm_spawn_ui(CE_ABILITY_ANM(), script, p);
+}
+
 static ce_hud_number_t s_hud_sp_num;
 static ce_hud_number_t s_hud_c2_num;   /* ★ TH09 連擊槽显示句柄（数字 ❓自定 ✓）*/
 static ce_hud_number_t s_hud_ag_num;   /* ★ TH19 攻撃ランク数字句柄 ✓ */   /* ★ 由 32 → 44：避让 110/111 信仰块（y≤30）✓ */
 static ce_hud_number_t  s_hud_hits_num;
 static int32_t s_hud_c2_vm, s_hud_ag_vm;
+static int32_t s_hud_c2_fill_vm;   /* ★ TH09 連擊槽的**内芯**（一手原图 s41 ✓；框 = s_hud_c2_vm）*/
 static int32_t s_hud_hits_vm;
 static int32_t s_hud_hitsf_vm;
 static int32_t s_hud_sp_frame_vm, s_hud_sp_digit_vm[6], s_hud_sp_hit_vm;   /* TH09 SP row: frame 720 / digits 709+d / Hit 719 */   /* TH19 hits black outline (ascii_bigf, cut) */
 static int ipow10(int n) { int v = 1; while (n-- > 0) v *= 10; return v; }
-static int32_t s_hud_bonus_vm;
+static int32_t s_hud_bonus_vm;   /* ★ TH09 `Bonus!`（一手原图 th09 ascii.anm sprite107 ✓）*/
 static int32_t s_hud_ag_fill_vm, s_hud_ag_dot_vm[4];   /* TH19 gauge fill + 4 threshold markers (original art) */   /* TH19 Bonus label (cut from original art) */   /* ★ TH19 hits 标签（**切自原作字体** ✓ ascii.png y=56 行 ✓）*/   /* ★ TH09 連擊槽条 / TH19 攻击槽条（卡自建 VM ⇒ 必须在 clear_card 里真删 ✓ 铁律）*/
 static ce_hud_vm_text_t s_hud_hits_lbl;
 /* ★★★ 2026-10-05 owner：**调试 UI** —— ① 镜像事件列表（镜像暴风**延迟**显示；镜像击破/固灵**停 3 s**再消失）
@@ -828,6 +845,7 @@ static void clear_card(ce_card_t *c)
      *   ⇒ 与 `s_storm_vm` 同法**真删** ✓（`on_delete` / `on_run_reset` 共用本函数 ✓）；
      *   ⚠ 我先前把句柄写成**块内 static** ✗ ⇒ `clear_card` 看不到 ⇒ 会泄漏 ✗ ⇒ 已提到文件作用域 ✓。*/
     if (s_hud_c2_vm) { ce_anm_delete((uint32_t)s_hud_c2_vm); s_hud_c2_vm = 0; }
+    if (s_hud_c2_fill_vm) { ce_anm_delete((uint32_t)s_hud_c2_fill_vm); s_hud_c2_fill_vm = 0; }
     if (s_hud_ag_vm) { ce_anm_delete((uint32_t)s_hud_ag_vm); s_hud_ag_vm = 0; }
     if (s_hud_ag_fill_vm) { ce_anm_delete((uint32_t)s_hud_ag_fill_vm); s_hud_ag_fill_vm = 0; }
     { int i9; for (i9 = 0; i9 < 4; ++i9) if (s_hud_ag_dot_vm[i9]) { ce_anm_delete((uint32_t)s_hud_ag_dot_vm[i9]); s_hud_ag_dot_vm[i9] = 0; } }
@@ -836,7 +854,7 @@ static void clear_card(ce_card_t *c)
     if (s_hud_sp_frame_vm) { ce_anm_delete((uint32_t)s_hud_sp_frame_vm); s_hud_sp_frame_vm = 0; }
     if (s_hud_sp_hit_vm) { ce_anm_delete((uint32_t)s_hud_sp_hit_vm); s_hud_sp_hit_vm = 0; }
     { int i9; for (i9 = 0; i9 < 6; ++i9) if (s_hud_sp_digit_vm[i9]) { ce_anm_delete((uint32_t)s_hud_sp_digit_vm[i9]); s_hud_sp_digit_vm[i9] = 0; } }
-    if (s_hud_bonus_vm) { ce_anm_delete((uint32_t)s_hud_bonus_vm); s_hud_bonus_vm = 0; }
+    if (s_hud_bonus_vm) { ce_anm_delete((uint32_t)s_hud_bonus_vm); s_hud_bonus_vm = 0; }   /* Bonus! ✓ */
     ce_hud_vm_text_clear(&s_hud_hits_lbl);
     pofv_foe_spirit_init(s_foe, POFV_FOE_SPIRIT_MAX);
     pofv_foe_incoming_init(s_inc, POFV_FOE_INCOMING_MAX);
@@ -2027,7 +2045,11 @@ static int on_tick_2(ce_card_t *c)
         int32_t c2thr = pofv_acc_thr2c(s_card_frames / 60);
         float c2r;
         if (!s_hud_c2_vm)
-            s_hud_c2_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_HUD_COMBO, 25);
+            s_hud_c2_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_POFV109_TH09_BAR_FRAME,
+                                                POFV_HUD_SP_X + 84.0f, POFV_HUD_C2_Y);
+        if (!s_hud_c2_fill_vm)
+            s_hud_c2_fill_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_POFV109_TH09_BAR_FILL,
+                                                     POFV_HUD_SP_X + 84.0f + 16.0f, POFV_HUD_C2_Y);
         c2r = (c2thr > 0) ? ((float)s_acc.a2c / (float)c2thr) : 0.0f;
         /* ââ ä¸æï¼`01-versus-loop.md` §2.1 â，æ äºè®®çé£æ¡）：
          *   「連擃槽**æ¶失（清空）⇒ **SP 归零**」â
@@ -2039,16 +2061,21 @@ static int on_tick_2(ce_card_t *c)
         }
         if (c2r > 1.0f) c2r = 1.0f;
         if (c2r < 0.0f) c2r = 0.0f;
-        if (s_hud_c2_vm) {
-            ce_anm_set_pos((uint32_t)s_hud_c2_vm, (POFV_HUD_SP_X + 84.0f) * 2.0f, POFV_HUD_C2_Y * 2.0f, 0.0f);   /* ★ 表面 px = 640×2 ✓ */   /* ❓ 位置待实跑校 ✓ */
-            ce_anm_set_scale((uint32_t)s_hud_c2_vm, 192.0f * c2r, 1.0f);   /* ★ 表面 px ✓（640 的 96 ×2）*/                        /* 长度 96px × 比例 ✓ */
+        if (s_hud_c2_vm) {   /* 框：一手原图，静态 ✓ */
+            ce_anm_set_pos((uint32_t)s_hud_c2_vm, (POFV_HUD_SP_X + 84.0f) * 2.0f, POFV_HUD_C2_Y * 2.0f, 0.0f);
+        }
+        if (s_hud_c2_fill_vm) {   /* ★ 内芯：一手原图 **256 px** ⇒ scale.x = 256 × 比例 ✓（不再自定 96/192 ✗）*/
+            ce_anm_set_pos((uint32_t)s_hud_c2_fill_vm, (POFV_HUD_SP_X + 84.0f + 16.0f) * 2.0f, POFV_HUD_C2_Y * 2.0f, 0.0f);
+            ce_anm_set_scale((uint32_t)s_hud_c2_fill_vm, 256.0f * c2r, 1.0f);
         }
     }
     {   /* ââ TH19 **hits æ ç­¾**ÿ08**åèªåä½å­ä½** âï¼TH19 `ascii.png` ç 14Ã14 å­å½¢ âï¼å·²ç®è§ç¡®è®¤ y=56 è¡ = `hijklmnopqrstuvwxy` â）*/
         if (!s_hud_hits_vm)
-            s_hud_hits_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_HUD_HITS_BIG, 25);   /* fill (ascii_big) */
+            s_hud_hits_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_POFV109_HUD_HITS_BIG,
+                                               POFV_HUD_HITS_X + 30.0f, POFV_HUD_HITS_Y);   /* fill (ascii_big) */
         if (!s_hud_hitsf_vm)
-            s_hud_hitsf_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_HUD_HITS_BIGF, 25);
+            s_hud_hitsf_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_POFV109_HUD_HITS_BIGF,
+                                                POFV_HUD_HITS_X + 30.0f, POFV_HUD_HITS_Y);
         if (s_hud_hitsf_vm) {
             ce_anm_set_color((uint32_t)s_hud_hitsf_vm, 0xFF000000u);   /* black outline (AARRGGBB) */
             ce_anm_set_pos((uint32_t)s_hud_hitsf_vm, (POFV_HUD_HITS_X + 30.0f) * 2.0f, POFV_HUD_HITS_Y * 2.0f, 0.0f);
@@ -2066,14 +2093,16 @@ static int on_tick_2(ce_card_t *c)
         if (!s_hud_ag_vm)
             /* == ORIGINAL ART ==  (was: self-drawn geometry bar; now TH19 front/lifebar sprite165,
              *    script copies the original recipe script330: scale(8,112) + rotate Z=-pi/2) */
-            s_hud_ag_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_HUD_GAUGE_BODY, 25);
+            s_hud_ag_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_POFV109_HUD_GAUGE_BODY,
+                                                 POFV_HUD_SP_X + 84.0f, POFV_HUD_C2_Y + 12.0f);
         agr = (float)s_ex_gauge / 200.0f;                  /* ❓ 本卡量纲 0..200（一手 2500 ✗ 未解出阈值 ✗）*/
         if (agr > 1.0f) agr = 1.0f;
         if (agr < 0.0f) agr = 0.0f;
         if (s_hud_ag_vm) {
             ce_anm_set_pos((uint32_t)s_hud_ag_vm, (POFV_HUD_SP_X + 84.0f) * 2.0f, (POFV_HUD_C2_Y + 12.0f) * 2.0f, 0.0f);
             if (!s_hud_ag_fill_vm)
-                s_hud_ag_fill_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_HUD_GAUGE_FILL, 25);
+                s_hud_ag_fill_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_POFV109_HUD_GAUGE_FILL,
+                                                      POFV_HUD_SP_X + 84.0f, POFV_HUD_C2_Y + 12.0f);
             if (s_hud_ag_fill_vm)
                 ce_anm_set_pos((uint32_t)s_hud_ag_fill_vm, (POFV_HUD_SP_X + 84.0f) * 2.0f, (POFV_HUD_C2_Y + 12.0f) * 2.0f, 0.0f);
             {   static const int32_t thr4[4] = { 500, 1000, 1700, 2500 };   /* one-hand defaults */
@@ -2081,7 +2110,8 @@ static int on_tick_2(ce_card_t *c)
                 for (i9 = 0; i9 < 4; ++i9) {
                     float off = ((float)thr4[i9] / 2500.0f) * 224.0f - 112.0f;   /* one-hand: thr*224/2500 - 224/2 */
                     if (!s_hud_ag_dot_vm[i9])
-                        s_hud_ag_dot_vm[i9] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_HUD_GAUGE_DOT, 25);
+                        s_hud_ag_dot_vm[i9] = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_POFV109_HUD_GAUGE_DOT,
+                                                          POFV_HUD_SP_X + 84.0f + off, POFV_HUD_C2_Y + 12.0f);
                     if (s_hud_ag_dot_vm[i9])
                         ce_anm_set_pos((uint32_t)s_hud_ag_dot_vm[i9],
                                        ((POFV_HUD_SP_X + 84.0f) + off) * 2.0f, (POFV_HUD_C2_Y + 12.0f) * 2.0f, 0.0f);
@@ -2104,22 +2134,53 @@ static int on_tick_2(ce_card_t *c)
          *    equivalent of the one-hand front.anm script7/script9 (frame under, digits above). */
         int i9;
         if (!s_hud_sp_frame_vm)
-            s_hud_sp_frame_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_HUD_TH09_SPELLPOINT, 25);
+            s_hud_sp_frame_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_POFV109_HUD_TH09_SPELLPOINT,
+                                                   POFV_HUD_SP_X + 28.0f, POFV_HUD_SP_Y - 8.0f);
         if (!s_hud_sp_hit_vm)
-            s_hud_sp_hit_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_HUD_TH09_HIT, 25);
+            s_hud_sp_hit_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_POFV109_HUD_TH09_HIT,
+                                                 POFV_HUD_SP_X + 104.0f, POFV_HUD_SP_Y);
         for (i9 = 0; i9 < 6; ++i9) {
             int digit;
             if (!s_hud_sp_digit_vm[i9])
-                s_hud_sp_digit_vm[i9] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_HUD_TH09_SP, 25);
+                s_hud_sp_digit_vm[i9] = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_POFV109_HUD_TH09_SP,
+                                                              POFV_HUD_SP_X + 54.0f + (float)i9 * 8.0f, POFV_HUD_SP_Y);
             digit = (s_sp / (int)ipow10(5 - i9)) % 10;
             if (s_hud_sp_digit_vm[i9]) {
-                ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_hud_sp_digit_vm[i9], CE_ANM_ABILITY_SPRITE_TH09_SP_0 + digit);
+                /* ★★ 2026-10-08（P2 完成）：TH09 的 SP 有**灰 / 红两套**数字 ✓
+                 *   一手（`engine/versus/th09/01-versus-loop.md`）：SP `< 100000` 与 `≥` 用**不同样式参数** ⇒
+                 *   就是这两套 ✓（灰 = `ATLAS_TH09_SP_DIGIT` 709+d；红 = `ATLAS_TH09_SP_DIGIT_R` 721+d ✓）。
+                 *   ⇒ 按当前 SP 切套 ✓。*/
+                uint32_t base = (s_sp >= 100000)
+                                ? CE_ANM_ABILITY_SPRITE_TH09_SPR_0      /* 红套 721..730 ✓ */
+                                : CE_ANM_ABILITY_SPRITE_TH09_SP_0;      /* 灰套 709..718 ✓ */
+                ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_hud_sp_digit_vm[i9], base + (uint32_t)digit);
                 ce_anm_set_pos((uint32_t)s_hud_sp_digit_vm[i9],
                                (POFV_HUD_SP_X + 54.0f + (float)i9 * 8.0f) * 2.0f, POFV_HUD_SP_Y * 2.0f, 0.0f);
             }
         }
         if (s_hud_sp_frame_vm) ce_anm_set_pos((uint32_t)s_hud_sp_frame_vm, (POFV_HUD_SP_X + 28.0f) * 2.0f, (POFV_HUD_SP_Y - 8.0f) * 2.0f, 0.0f);
         if (s_hud_sp_hit_vm)  ce_anm_set_pos((uint32_t)s_hud_sp_hit_vm,  (POFV_HUD_SP_X + 104.0f) * 2.0f, POFV_HUD_SP_Y * 2.0f, 0.0f);
+    }
+    {   /* ★★★ 2026-10-08（P1 完成）：TH09 的 **`Bonus!`** 提示 —— 一手原图 ✓
+         *   一手（`engine/versus/th09/01-versus-loop.md`）：**SP 满（`999990`）⇒ 提示** ✓；
+         *   观感：**常态灰 `(0x80,0x80,0xd0)`**、满时**闪白 ↔ 红** ✓ ⇒ 照此在卡侧染 ✓。
+         *   贴图 = th09 `ascii.anm` `sprite107`(80,248,40×8) ✓（原图自带金褐色 ⇒ **必须染色** ✓）。*/
+        if (!s_hud_bonus_vm)
+            s_hud_bonus_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_POFV109_TH09_BONUS,
+                                                   POFV_HUD_SP_X + 132.0f, POFV_HUD_SP_Y);
+        if (s_hud_bonus_vm) {
+            int full = (s_sp >= 999990);
+            ce_anm_set_pos((uint32_t)s_hud_bonus_vm, (POFV_HUD_SP_X + 132.0f) * 2.0f, POFV_HUD_SP_Y * 2.0f, 0.0f);
+            if (!full) {
+                ce_anm_set_color((uint32_t)s_hud_bonus_vm, 0x00000000u);   /* 未满 ⇒ alpha 0 = 不显示 ✓（无 set_alpha，走 color 的 AARRGGBB 高位 ✓）*/
+            } else {
+                /* 满：闪白 ↔ 红（6 帧周期 ✓ 照本卡既有 hits 的闪法 ✓）+ 常态灰底 ✓ */
+                uint32_t c;
+                if ((s_card_frames / 6) % 2) c = 0xFFFF4040u;    /* 红 ✓ */
+                else                          c = 0xFFFFFFFFu;    /* 白 ✓ */
+                ce_anm_set_color((uint32_t)s_hud_bonus_vm, c);   /* c 已含 alpha=0xFF ✓ */
+            }
+        }
     }
     if (pofv_hits_visible(&s_hits)) {
         /* old ce_hud_number_set pile REMOVED (owner: "左上角的那一堆数字还在") --

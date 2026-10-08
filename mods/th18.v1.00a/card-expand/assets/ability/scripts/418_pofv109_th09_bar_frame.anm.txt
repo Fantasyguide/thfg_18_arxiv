@@ -1,0 +1,19 @@
+script script418 {
+    // 109 · TH09 **連擊槽的条**（外框）—— ★ 一手原图（2026-10-08 用「按形状筛」找到的 ✓）
+    //
+    //   出处：th09 v1.50a `front.anm` entry0 = `data/front/front.png` 的
+    //   **`sprite40` = (0,160,288×8)** ✓（前人只查 `s0..3`(320×16)/`s4..6`(16×448) 就判定
+    //   「都是绿色底纹」而放弃 ✗ ⇒ 按「细长条」筛矩形表才捞到它 ✓）。
+    //   同一对的**内芯** = `sprite41` = (16,168,256×8) ✓（见脚本 419）。
+    //
+    //   锚点照本仓**能跑的条形脚本** `157_hyper_bar_frame`（`anchor(0,0)` = 从左往右长 ✓）。
+    sprite(@POFV109_TH09_BAR_FRAME);
+    layer(25);
+    type(1);
+    anchor(0, 0);
+    resolutionMode(2);
+    zWriteDisable(1);
+    blendMode(0);
+    alpha(255);
+    stop();
+}

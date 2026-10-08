@@ -1,0 +1,16 @@
+script script419 {
+    // 109 · TH09 **連擊槽的条**（内芯 / 填充）—— 一手原图 `sprite41` = (16,168,256×8) ✓
+    //
+    //   卡侧每帧写 `scale.x = 256 × 比例`（比例 = `a2c / thr2c` ✓ 本卡既有算法 ✓）；
+    //   锚点 `anchor(0,0)` ⇒ **从左往右长** ✓（照本仓能跑的 `157` ✓）。
+    //   ⚠ 原图内芯只有 **256 px**（外框 288 px，左侧留了 16 px 起头 ✓）⇒ 这里不再自定 96/192 那种宽度 ✗。
+    sprite(@POFV109_TH09_BAR_FILL);
+    layer(25);
+    type(1);
+    anchor(0, 0);
+    resolutionMode(2);
+    zWriteDisable(1);
+    blendMode(0);
+    alpha(255);
+    stop();
+}

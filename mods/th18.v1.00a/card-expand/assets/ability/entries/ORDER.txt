@@ -1215,3 +1215,15 @@ TH09_ICON_1            ability/spirit/TH09_ICON_1.png             @16,0,16x16
 TH09_ICON_2            ability/spirit/TH09_ICON_2.png             @32,0,16x16
 TH09_ICON_3            ability/spirit/TH09_ICON_3.png             @0,16,16x16
 TH09_ICON_4            ability/spirit/TH09_ICON_4.png             @16,16,16x16
+
+# ★★ 2026-10-08（P1 完成：TH09 **連擊槽的条**原图 —— 用「按形状筛」找到的 ✓）：
+#   前人只查了 `s0..3`(320×16)/`s4..6`(16×448) 判定「都是绿色底纹」就放弃了 ✗；
+#   按「细长条」筛矩形表 ⇒ **`s40`(0,160,288×8) = 框 + `s41`(16,168,256×8) = 内芯**（一对 ✓）。
+#   出处：th09 v1.50a `front.anm` entry0 = `data/front/front.png` ✓。
+POFV109_TH09_BAR_FRAME  ability/th09bars/BAR_FRAME.png  288x8
+POFV109_TH09_BAR_FILL   ability/th09bars/BAR_FILL.png   256x8
+# ★★★ 2026-10-08（P1 完成：TH09 的 `Bonus!` 提示 —— 一手原图 ✓）
+#   出处：th09 v1.50a **`ascii.anm`** 的 **`sprite107` = (80,248,40×8) = 字面「BONUS!」** ✓
+#   （前人在 **TH19** 的 ascii 里找 ✗ ⇒ 找不到 ✓；TH09 的 ascii 里它是**第 107 号**、紧跟 `Boss`(108) ✓）。
+#   原图自带金褐色 ⇒ 一手的「闪白↔红 / 常态灰 (0x80,0x80,0xd0)」由**卡侧染色** ✓。
+POFV109_TH09_BONUS  ability/th09bars/BONUS.png  40x8
