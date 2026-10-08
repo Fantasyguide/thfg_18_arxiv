@@ -297,7 +297,8 @@ static ce_hud_number_t s_hud_ag_num;   /* ★ TH19 攻撃ランク数字句柄 �
 static ce_hud_number_t  s_hud_hits_num;
 static int32_t s_hud_c2_vm, s_hud_ag_vm;
 static int32_t s_hud_hits_vm;
-static int32_t s_hud_bonus_vm;   /* TH19 Bonus label (cut from original art) */   /* ★ TH19 hits 标签（**切自原作字体** ✓ ascii.png y=56 行 ✓）*/   /* ★ TH09 連擊槽条 / TH19 攻击槽条（卡自建 VM ⇒ 必须在 clear_card 里真删 ✓ 铁律）*/
+static int32_t s_hud_bonus_vm;
+static int32_t s_hud_ag_fill_vm, s_hud_ag_dot_vm[4];   /* TH19 gauge fill + 4 threshold markers (original art) */   /* TH19 Bonus label (cut from original art) */   /* ★ TH19 hits 标签（**切自原作字体** ✓ ascii.png y=56 行 ✓）*/   /* ★ TH09 連擊槽条 / TH19 攻击槽条（卡自建 VM ⇒ 必须在 clear_card 里真删 ✓ 铁律）*/
 static ce_hud_vm_text_t s_hud_hits_lbl;
 /* ★★★ 2026-10-05 owner：**调试 UI** —— ① 镜像事件列表（镜像暴风**延迟**显示；镜像击破/固灵**停 3 s**再消失）
  *   ② 镜像幽灵列表（**只写「有什么」**，不涉及位置 ✓）。文字一律走**切贴图**（`ce_hud_vm_text_set` ✓，owner 规矩 ✓）*/
@@ -825,6 +826,8 @@ static void clear_card(ce_card_t *c)
      *   ⚠ 我先前把句柄写成**块内 static** ✗ ⇒ `clear_card` 看不到 ⇒ 会泄漏 ✗ ⇒ 已提到文件作用域 ✓。*/
     if (s_hud_c2_vm) { ce_anm_delete((uint32_t)s_hud_c2_vm); s_hud_c2_vm = 0; }
     if (s_hud_ag_vm) { ce_anm_delete((uint32_t)s_hud_ag_vm); s_hud_ag_vm = 0; }
+    if (s_hud_ag_fill_vm) { ce_anm_delete((uint32_t)s_hud_ag_fill_vm); s_hud_ag_fill_vm = 0; }
+    { int i9; for (i9 = 0; i9 < 4; ++i9) if (s_hud_ag_dot_vm[i9]) { ce_anm_delete((uint32_t)s_hud_ag_dot_vm[i9]); s_hud_ag_dot_vm[i9] = 0; } }
     if (s_hud_hits_vm) { ce_anm_delete((uint32_t)s_hud_hits_vm); s_hud_hits_vm = 0; }
     if (s_hud_bonus_vm) { ce_anm_delete((uint32_t)s_hud_bonus_vm); s_hud_bonus_vm = 0; }
     ce_hud_vm_text_clear(&s_hud_hits_lbl);
@@ -2056,6 +2059,21 @@ static int on_tick_2(ce_card_t *c)
         if (agr < 0.0f) agr = 0.0f;
         if (s_hud_ag_vm) {
             ce_anm_set_pos((uint32_t)s_hud_ag_vm, (POFV_HUD_SP_X + 84.0f) * 2.0f, (POFV_HUD_C2_Y + 12.0f) * 2.0f, 0.0f);
+            if (!s_hud_ag_fill_vm)
+                s_hud_ag_fill_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_HUD_GAUGE_FILL, 25);
+            if (s_hud_ag_fill_vm)
+                ce_anm_set_pos((uint32_t)s_hud_ag_fill_vm, (POFV_HUD_SP_X + 84.0f) * 2.0f, (POFV_HUD_C2_Y + 12.0f) * 2.0f, 0.0f);
+            {   static const int32_t thr4[4] = { 500, 1000, 1700, 2500 };   /* one-hand defaults */
+                int i9;
+                for (i9 = 0; i9 < 4; ++i9) {
+                    float off = ((float)thr4[i9] / 2500.0f) * 224.0f - 112.0f;   /* one-hand: thr*224/2500 - 224/2 */
+                    if (!s_hud_ag_dot_vm[i9])
+                        s_hud_ag_dot_vm[i9] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_HUD_GAUGE_DOT, 25);
+                    if (s_hud_ag_dot_vm[i9])
+                        ce_anm_set_pos((uint32_t)s_hud_ag_dot_vm[i9],
+                                       ((POFV_HUD_SP_X + 84.0f) + off) * 2.0f, (POFV_HUD_C2_Y + 12.0f) * 2.0f, 0.0f);
+                }
+            }
             ce_anm_set_scale((uint32_t)s_hud_ag_vm, 192.0f * agr, 1.0f);
         }
         ce_hud_number_set(&s_hud_ag_num, POFV_HUD_SP_X, POFV_HUD_C2_Y + 16.0f, 6.0f,
