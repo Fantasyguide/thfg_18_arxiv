@@ -1312,6 +1312,11 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
          *   根因：这一整段喂食（`+15` / 連擊槽分档 / 連爆数 / hits）原先**放在 1064 那个「灵专属」块里** ✗
          *   ⇒ **妖精/小怪打死完全不喂** ✓ ⇒ 只有灵能启动连击 ✓。
          *   ⇒ **上移到「每次真实击破」这一层** ✓（一手 `FUN_0050c1f0` 对妖精死亡同样计数 ✓）。*/
+        /* ★★★ 2026-10-08 诊断（owner：「现在好像变成只有**固化灵**才能开了」✗ ⇒ 先确认真值 ✓）：
+         *   打在喂食点 ⇒ 每次真实击破都该出现；kind 字段顺带告诉我们**是哪条路走到这** ✓。*/
+        ce_log("pofv: [FEED] 击破喂连击：id=%u flags=%#x ours=%d a2c=%d cur=%d",
+               (unsigned)ev->id, (unsigned)ev->flags,
+               (int)pofv_spirit_is_ours(ev->id), (int)s_acc.a2c, (int)s_hits.cur);
         pofv_acc_add50(&s_acc, 15);          /* TH19 一手：大块口径（死亡分发）✓ */
         pofv_acc_add54(&s_acc, 15);          /* TH19 一手 ✓ */
         /* ★★★ owner 2026-10-06：「**th09 和 th19 独立运行**，按一手 + **真实难度**」⇒
