@@ -303,7 +303,7 @@ static int32_t s_sp_life;       /* = 一手 SP 寿命 tB `+0x14`（漏空 ⇒ SP
  *       `Sub0/1/2` 的 `anm_death_effects(0/1/2)` ✓）
  *     · **動物霊** 狼/獺/鷲 class **2** ⇒ **44 帧** ✓（owner「像幽灵的感觉 ⇒ 按 level 2」✓ = **❓自定** ✓）
  *   ⚠ **别和充能等级混** ✗：那是 `(enemy[0x3380]>>6)&7`（决定投喂块 `+0x2c` 的量 ✓），两个轴 ✓。*/
-#define POFV_HITS_CHAIN_X_DEFAULT 36
+#define POFV_HITS_CHAIN_X_DEFAULT 72   /* ★ owner 2026-10-08：「门控都 ×2」⇒ 36×2 ✓ */
 static int32_t s_chain_storm_age;
 static int32_t s_chain_window = POFV_HITS_CHAIN_X_DEFAULT;
 /* ★★★ 2026-10-08（owner 判断 ✓）：「**当根本没有连击条的时候，它也认为我连击条没了**」✗ ——
@@ -318,7 +318,8 @@ static int32_t pofv_hits_chain_x_for(int32_t kind, int32_t level)
     if (kind == POFV_SPIRIT_KIND_GHOST_TH09)      cls = (level >= 1 && level <= 3) ? (level - 1) : 0;  /* 绿/黄/红 ✓ */
     else if (kind == POFV_SPIRIT_KIND_PURE)       cls = 0;                                            /* 妖精位 ✓ */
     else                                         cls = 2;                                            /* 動物霊 ❓自定 ✓ */
-    return (cls + 9) * 4;
+    /* ★ owner：「门控都 ×2」⇒ 一手 `(class+9)×4` 的结果**翻倍**（36/40/44 → 72/80/88 ✓）*/
+    return (cls + 9) * 4 * 2;
 }
 /* ★ HUD「hits」（一手 §9.8）：当前值 `+0x22b4` / 锁存 `+0x22b8` / 寿命 120 / `+0x227c<1` 时 6 帧闪灰 ✓
  *   ⚠ 按 owner 结论：**只接 hit 这一条**（两作同源 ✓），**SP 不并进 Hits** ✗ ⇒ 这里不碰 SP ✓ */
@@ -2174,7 +2175,8 @@ static int on_tick_2(ce_card_t *c)
     if (s_chain_storm_age < s_chain_window) {
         ++s_chain_storm_age;
     }
-    /* ★★★★ 2026-10-08 **日志定案后的修法**（owner：「我搞不懂了，大部分情况下都是 0」✗）：
+    /* （上一版撤了这条、本版按 owner「门控都 ×2」恢复并按倍数放宽 —— 见下面的分支 ✓）
+     * ★★★★ 2026-10-08 **日志定案**（owner：「我搞不懂了，大部分情况下都是 0」✗）：
      *   日志证据：① `[FEED]` 每次击破都有 ✓（妖精也能启动 ✓）；② **每行 `cur=0`** ✗；
      *   ③ `连锁暴风窗口过（36 帧）⇒ hits 1 归零` **反复出现** ✗。
      *   ⇒ 机制忠实地在跑 ✓，但 **X = 36 帧（0.6 s）对"我们的击杀节奏（≈每 1 秒一只）"太紧** ✗
@@ -2183,7 +2185,14 @@ static int on_tick_2(ce_card_t *c)
      *     （= 一手 **HUD 显示层**的口径 ✓：「值变大重设 119/120 帧、**不动计数** ✓」⇒ 停手后约 2 s 才消失 ✓）。
      *   ⚠ 这是 **owner 口径 > 一手细节** 的又一次取舍 ✓（X 与 class 表仍留在 `s_chain_window` ✓，
      *     ❓ 若之后要"紧"的手感，把上面那个 else 分支恢复即可 ✓ —— 已在 TUNING 登记 ✓）。*/
-    if (s_chain_seen && s_hits.cur == 0) s_chain_seen = 0;   /* 只在值已自然归零时撤门 ✓ */
+    /* ★★★ 2026-10-08（owner：「门控都 ×2」✓）⇒ **恢复这条清空**（上一版我撤掉了 ✗）——
+     *   恢复后门控才真的起作用 ✓，而 ×2 后的窗口（72/80/88 帧 ≈ 1.2–1.5 s ✓）比一手宽松一倍 ✓。*/
+    if (s_chain_seen && s_hits.cur != 0 && s_chain_storm_age >= s_chain_window) {
+        ce_log("pofv: 【TH09】连锁暴风窗口过（%d 帧 ≥ X=%d）⇒ hits %d 归零 ✓",
+               (int)s_chain_storm_age, (int)s_chain_window, (int)s_hits.cur);
+        s_hits.cur = 0; s_hits.latch = 0; s_hits.life = 0;
+        s_chain_seen = 0;
+    }
     /* ★★★★ 2026-10-08（owner：「即使有暴风，这个值也固定是 0」✗ ⇒ 真因 ✓）：
      *   `pofv_hits_tick` 的锁存门里有 **`0 < h->active`** ✓，而 **`active` 从来没人置 1** ✗
      *   ⇒ **latch 永远不更新** ⇒ HUD 显示（读 `latch` ✓）**恒 0** ✓。
