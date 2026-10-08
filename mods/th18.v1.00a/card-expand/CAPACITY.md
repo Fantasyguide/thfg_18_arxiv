@@ -795,7 +795,7 @@ CE_ANM_ABILITY_ATLAS_ATLAS_SPIRIT_DISABLE_PURE      # ★ 2026-10-06 新增：10
 CE_ANM_ABILITY_ATLAS_ATLAS_SPIRIT_GHOST
 CE_ANM_ABILITY_ATLAS_ATLAS_SAKUYA_FIELD      # ★ 2026-10-07 新增：109 咲夜领域条带（32×128 ✓，成员 @0,0 ✓）—— 弧族(texArcEven)的 V 从**贴图页顶部**起算 ⇒ 必须独占 entry ✓
 CE_ANM_ABILITY_ATLAS_ATLAS_HUD_HITS   # 109 TH19「hits」标签条（**切自 TH19 ascii.png** ✓ 56x14，sprite 702 ✓）
-CE_ANM_ABILITY_ATLAS_ATLAS_HUD_BONUS   # 109 TH19「Bonus」标签条（**切自 TH19 ascii.png** ✓ 70x14，sprite 703 ✓）
+CE_ANM_ABILITY_ATLAS_ATLAS_HUD_BONUS   # ⚠️ 已退休（错源 ✗）：`Bonus!` 是 **TH09** 的元素，不在 TH19 ⇒ 正确件见 `ATLAS_TH09_BONUS`/`POFV109_TH09_BONUS`
 CE_ANM_ABILITY_ATLAS_ATLAS_HUD_GAUGE   # 109 TH19 攻击槽（**切自原作 front.anm / front/lifebar.png** ✓ 32x32：8x32 槽体/4x32 填充/6x12 标记 ✓）
 CE_ANM_ABILITY_ATLAS_ATLAS_HUD_HITS_BIG   # 109 TH19 hits 大字（**切自原作 ascii_big(.f)** ✓ 128x32：实心/f 描边 ✓）
 CE_ANM_ABILITY_ATLAS_ATLAS_HUD_HITS_BIGF   # 109 TH19 hits 大字（**切自原作 ascii_big(.f)** ✓ 128x32：实心/f 描边 ✓）

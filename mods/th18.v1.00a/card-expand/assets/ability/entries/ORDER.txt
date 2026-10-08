@@ -1174,6 +1174,10 @@ ATLAS ATLAS_SAKUYA_FIELD 32x128
 SAKUYA_FIELD_STRIP      ability/spirit/SAKUYA_FIELD_STRIP.png   @0,0,32x128
 ATLAS ATLAS_HUD_HITS 56x14
 HUD_HITS_STRIP          ability/spirit/HUD_HITS_STRIP.png            @0,0,56x14
+# ⚠️ **本 entry 已退休（2026-10-08）** —— 错源 ✗：`Bonus!` **是 TH09 的元素**（一手：SP 满 `999990` ⇒ `FUN_0040f860(…,5000)` ✓），
+#   **TH19 没有这个提示** ✗；而且当时连像素也切错了 ✗（不是字）。
+#   ★ 正确的已在 **`POFV109_TH09_BONUS`**（th09 `ascii.anm` `sprite107` = (80,248,40×8) ✓，见本文件末尾那段 ✓）。
+#   ⚠ 这里**只退休、不删行**：删行会平移其后所有 sprite 号（构建器有重排检测 ✗）⇒ 原位标注 ✓。
 ATLAS ATLAS_HUD_BONUS 70x14
 HUD_BONUS_STRIP         ability/spirit/HUD_BONUS_STRIP.png          @0,0,70x14
 ATLAS ATLAS_HUD_GAUGE 20x32
