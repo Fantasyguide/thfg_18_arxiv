@@ -286,7 +286,9 @@ static int   s_boss_prev;   /* ★ owner 2026-10-05：boss 表 0→1 的**边沿
 #define POFV_SP_MAX   999990
 #define POFV_SP_RATE  1.0f    /* ❓ 一手 `0x4a7e44` 常量值未解出 ⇒ 暂取 1.0 并登记 TUNING ✓ */
 #define POFV_HUD_SP_X 16.0f
-#define POFV_HUD_SP_Y 34.0f   /* ★ 重排：原 24 压住 110/111 信仰块（x0..94/y0..30）✗ ⇒ 34 ✓ */
+#define POFV_HUD_SP_Y 34.0f   /* ★ 重排说明（订正 ✓）：110/111 是**左下角**块（`HUD-LAYOUT.md:1/13`：整套是"左下角系统卡"、锚点表面 (257,924)）
+                              *   ⇒ **不是左上** ✗ ⇒ 原本"避让 110/111"的理由**不成立** ✓（owner 指出 ✓）；
+                              *   本值仅用于**我自己四行的间距** ✓（原 24 与 SP/連擊槽 行距太挤 ✓）。*/
 #define POFV_HUD_C2_Y 46.0f   /* ★ 重排：連擊槽行 y=46 ✓（原 36 ⇒ 条在 44 与 hits 撞 ✗）*/   /* ★ TH09 連擊槽（SP 正下方 ✓，一手 §2.1 ✓）*/
 static int32_t s_sp;               /* 本侧 SP（0..999990 ✓）*/
 static ce_hud_number_t s_hud_sp_num;
