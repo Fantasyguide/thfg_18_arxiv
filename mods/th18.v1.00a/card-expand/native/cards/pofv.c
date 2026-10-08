@@ -2002,6 +2002,14 @@ static int on_tick_2(ce_card_t *c)
         if (!s_hud_c2_vm)
             s_hud_c2_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_HUD_COMBO, 25);
         c2r = (c2thr > 0) ? ((float)s_acc.a2c / (float)c2thr) : 0.0f;
+        /* ââ ä¸æï¼`01-versus-loop.md` §2.1 â，æ äºè®®çé£æ¡）：
+         *   「連擃槽**æ¶失（清空）⇒ **SP 归零**」â
+         *   ï¼一手的**衰减律**写作 `+= 難度×4 â 120` â 量纲可疑 ❓ â **本卡不实现衰减律** â，
+         *    但「清空⇒SP 归零」这条**无争议** â ⇒ 本处落地 â。）*/
+        if (s_acc.a2c <= 0 && s_sp != 0) {
+            s_sp = 0;                                  /* ★ 連擃槽清空 â SP 归零 â */
+            if (!(s_card_frames % 60)) ce_log("pofv: [SP] 連擃槽清空 â SP 归零 â（一手 §2.1）");
+        }
         if (c2r > 1.0f) c2r = 1.0f;
         if (c2r < 0.0f) c2r = 0.0f;
         if (s_hud_c2_vm) {
