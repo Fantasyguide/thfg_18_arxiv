@@ -2168,6 +2168,11 @@ static int on_tick_2(ce_card_t *c)
         s_hits.cur = 0; s_hits.latch = 0; s_hits.life = 0;
         s_chain_seen = 0;                            /* 清一次就撤门 ✓ */
     }
+    /* ★★★★ 2026-10-08（owner：「即使有暴风，这个值也固定是 0」✗ ⇒ 真因 ✓）：
+     *   `pofv_hits_tick` 的锁存门里有 **`0 < h->active`** ✓，而 **`active` 从来没人置 1** ✗
+     *   ⇒ **latch 永远不更新** ⇒ HUD 显示（读 `latch` ✓）**恒 0** ✓。
+     *   ⇒ 本卡在场时把它置 1 即可（一手 `+0x227c` 的 active 门 ✓；这里没有"濒死"概念 ⇒ 恒 1 ✓）。*/
+    s_hits.active = 1;
     pofv_hits_tick(&s_hits);                     /* ★ HUD hits：锁存 + 寿命递减（一手 120 帧 ✓）*/
     /* ★★ 调试 UI（owner）：事件列表（暴风延迟 ✓ / 击破·固灵 3 s ✓）+ 幽灵列表（只有内容、无位置 ✓）*/
     {
@@ -2355,9 +2360,13 @@ static int on_tick_2(ce_card_t *c)
                          *     ↔ 稍亮红 `(230,150,150)` ✓（仍是红系 ⇒ 描边照旧是黑 ✓）。
                          *   槽 `<20` / 消失 ⇒ **灰** `(128,128,128)` ✓（一手 ✓）。*/
                         uint32_t tint;
-                        if (s_acc.a2c < 20)         tint = 0xFF808080u;        /* 槽低/消失 ⇒ 灰 ✓ */
-                        else if (s_card_frames & 1) tint = POFV_HUD_COL_HIT;   /* 奇帧 ⇒ 柔红 ✓ */
-                        else                        tint = 0xFFE69696u;        /* 偶帧 ⇒ 亮红 ✓（❓自定）*/
+                        /* ★★★ 2026-10-08 订正（owner：「当没闪烁的时候，它还是**黑白的**，只有有暴风时是红的」✗）：
+                         *   **"黑白"就是那个灰** `(128,128,128)` ✓ —— 灰芯 + 黑描边 = 看着像黑白 ✓；
+                         *   而「有暴风时是红的」= 那一瞬 `a2c ≥ 20` ⇒ 走了红分支 ✓。
+                         *   ⇒ owner 要的是**一直红黑**（以前的样子 ✓）⇒ **去掉灰分支** ✓
+                         *     （一手有「槽 <20 转灰」✓，但 owner 口径优先 ✓ ⇒ 已在 TUNING 登记偏差 ✓）。*/
+                        if (s_card_frames & 1) tint = POFV_HUD_COL_HIT;   /* 奇帧 ⇒ 柔红 ✓ */
+                        else                   tint = 0xFFE69696u;        /* 偶帧 ⇒ 亮红 ✓（❓自定）*/
                         ce_anm_set_color((uint32_t)s_hud_hit_digit_vm[i9],
                                          blank ? 0x00000000u : tint);
                     }

@@ -503,8 +503,11 @@ void pofv_hits_bump(pofv_hits_t *h, int32_t n)
 void pofv_hits_tick(pofv_hits_t *h)
 {
     if (!h) return;
-    /* 一手：`1 < cur && latch < cur && 0 < active` ⇒ 锁存并重置寿命 120 ✓ */
-    if (1 < h->cur && h->latch < h->cur && 0 < h->active) {
+    /* 一手：`1 < cur && latch < cur && 0 < active` ⇒ 锁存并重置寿命 120 ✓
+     * ★★★ 2026-10-08 owner 口径（实跑：「即使我认定帧是 1 帧那我也应当能看见连击是 1」✓）：
+     *   ⇒ **门放宽到 `0 < cur`** ✓（一手是 `1 < cur` ✗ ⇒ 连击 = 1 永远锁不上 ⇒ 看不见 ✓）。
+     *   ⚠ 这是**有意的偏差**（owner 口径 > 一手细节 ✓），已在 TUNING 登记 ✓。*/
+    if (0 < h->cur && h->latch < h->cur && 0 < h->active) {
         h->latch = h->cur;
         h->life = POFV_HITS_LIFE;
     } else if (h->life > 0) {

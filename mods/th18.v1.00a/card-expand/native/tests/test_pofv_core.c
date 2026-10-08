@@ -484,7 +484,9 @@ static void check_hits(void)
     pofv_hits_init(&h);
     CHECK(pofv_hits_visible(&h) == 0);                       /* latch=0 ⇒ 不画 ✓ */
     pofv_hits_bump(&h, 1); pofv_hits_tick(&h);
-    CHECK(h.latch == 0);                                     /* 一手：`1 < cur` ⇒ 1 不锁存 ✓ */
+    /* ★★★ 2026-10-08 **owner 口径**（实跑：「即使我认定帧是 1 帧那我也应当能看见连击是 1」✓）：
+     *   门从一手的 `1 < cur` **放宽到 `0 < cur`** ⇒ **连击 = 1 也要锁存** ✓（有意的偏差，已登记 TUNING ✓）。*/
+    CHECK(h.latch == 1);
     pofv_hits_bump(&h, 2);                                   /* cur = 3 */
     pofv_hits_tick(&h);
     CHECK(h.latch == 3 && h.life == POFV_HITS_LIFE);          /* 锁存 + 寿命 120 ✓ */
