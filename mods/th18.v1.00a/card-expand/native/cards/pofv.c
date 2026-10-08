@@ -297,7 +297,9 @@ static ce_hud_number_t s_hud_ag_num;   /* ★ TH19 攻撃ランク数字句柄 �
 static ce_hud_number_t  s_hud_hits_num;
 static int32_t s_hud_c2_vm, s_hud_ag_vm;
 static int32_t s_hud_hits_vm;
-static int32_t s_hud_hitsf_vm;   /* TH19 hits black outline (ascii_bigf, cut) */
+static int32_t s_hud_hitsf_vm;
+static int32_t s_hud_sp_frame_vm, s_hud_sp_digit_vm[6], s_hud_sp_hit_vm;   /* TH09 SP row: frame 720 / digits 709+d / Hit 719 */   /* TH19 hits black outline (ascii_bigf, cut) */
+static int ipow10(int n) { int v = 1; while (n-- > 0) v *= 10; return v; }
 static int32_t s_hud_bonus_vm;
 static int32_t s_hud_ag_fill_vm, s_hud_ag_dot_vm[4];   /* TH19 gauge fill + 4 threshold markers (original art) */   /* TH19 Bonus label (cut from original art) */   /* ★ TH19 hits 标签（**切自原作字体** ✓ ascii.png y=56 行 ✓）*/   /* ★ TH09 連擊槽条 / TH19 攻击槽条（卡自建 VM ⇒ 必须在 clear_card 里真删 ✓ 铁律）*/
 static ce_hud_vm_text_t s_hud_hits_lbl;
@@ -831,6 +833,9 @@ static void clear_card(ce_card_t *c)
     { int i9; for (i9 = 0; i9 < 4; ++i9) if (s_hud_ag_dot_vm[i9]) { ce_anm_delete((uint32_t)s_hud_ag_dot_vm[i9]); s_hud_ag_dot_vm[i9] = 0; } }
     if (s_hud_hits_vm) { ce_anm_delete((uint32_t)s_hud_hits_vm); s_hud_hits_vm = 0; }
     if (s_hud_hitsf_vm) { ce_anm_delete((uint32_t)s_hud_hitsf_vm); s_hud_hitsf_vm = 0; }
+    if (s_hud_sp_frame_vm) { ce_anm_delete((uint32_t)s_hud_sp_frame_vm); s_hud_sp_frame_vm = 0; }
+    if (s_hud_sp_hit_vm) { ce_anm_delete((uint32_t)s_hud_sp_hit_vm); s_hud_sp_hit_vm = 0; }
+    { int i9; for (i9 = 0; i9 < 6; ++i9) if (s_hud_sp_digit_vm[i9]) { ce_anm_delete((uint32_t)s_hud_sp_digit_vm[i9]); s_hud_sp_digit_vm[i9] = 0; } }
     if (s_hud_bonus_vm) { ce_anm_delete((uint32_t)s_hud_bonus_vm); s_hud_bonus_vm = 0; }
     ce_hud_vm_text_clear(&s_hud_hits_lbl);
     pofv_foe_spirit_init(s_foe, POFV_FOE_SPIRIT_MAX);
@@ -2094,6 +2099,29 @@ static int on_tick_2(ce_card_t *c)
      *   => unhooked here; TH09 art to be located in TH09 front.png (owner pointer:
      *      first big row, right part = TH09 hit + SP UI).
      */
+    {   /* == TH09 SP row, ORIGINAL ART ==  (digits 709+d gray / 720 frame / 719 Hit)
+         *    cut from th09 front.anm/front.png sprites 8..17 (gray digits), 7 (Spell Point frame),
+         *    18 (the 16x10 glyph at 400,32 reads "Hit" at x10). Geometry is the card-side
+         *    equivalent of the one-hand front.anm script7/script9 (frame under, digits above). */
+        int i9;
+        if (!s_hud_sp_frame_vm)
+            s_hud_sp_frame_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_HUD_TH09_SPELLPOINT, 25);
+        if (!s_hud_sp_hit_vm)
+            s_hud_sp_hit_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_HUD_TH09_HIT, 25);
+        for (i9 = 0; i9 < 6; ++i9) {
+            int digit;
+            if (!s_hud_sp_digit_vm[i9])
+                s_hud_sp_digit_vm[i9] = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_HUD_TH09_SP, 25);
+            digit = (s_sp / (int)ipow10(5 - i9)) % 10;
+            if (s_hud_sp_digit_vm[i9]) {
+                ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_hud_sp_digit_vm[i9], CE_ANM_ABILITY_SPRITE_TH09_SP_0 + digit);
+                ce_anm_set_pos((uint32_t)s_hud_sp_digit_vm[i9],
+                               (POFV_HUD_SP_X + 54.0f + (float)i9 * 8.0f) * 2.0f, POFV_HUD_SP_Y * 2.0f, 0.0f);
+            }
+        }
+        if (s_hud_sp_frame_vm) ce_anm_set_pos((uint32_t)s_hud_sp_frame_vm, (POFV_HUD_SP_X + 28.0f) * 2.0f, (POFV_HUD_SP_Y - 8.0f) * 2.0f, 0.0f);
+        if (s_hud_sp_hit_vm)  ce_anm_set_pos((uint32_t)s_hud_sp_hit_vm,  (POFV_HUD_SP_X + 104.0f) * 2.0f, POFV_HUD_SP_Y * 2.0f, 0.0f);
+    }
     if (pofv_hits_visible(&s_hits)) {
         uint32_t col = pofv_hits_is_gray(&s_hits) ? 0xFF808080u : 0xFFFFFF00u;
         ce_hud_number_set(&s_hud_sp_num, POFV_HUD_SP_X, POFV_HUD_SP_Y, 8.0f,
