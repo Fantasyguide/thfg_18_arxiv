@@ -329,7 +329,7 @@ static int   s_boss_prev;   /* ★ owner 2026-10-05：boss 表 0→1 的**边沿
 #define POFV_HUD_SP_X 144.5f   /* = 128.5（HUD 左边界）+ 16（owner 标定）✓ */
 #define POFV_HUD_SP_Y 64.0f    /* = 36 + 28（owner 标定）✓ */
 #define POFV_HUD_SP_DX        5.0f   /* ★ 一手：框内数字/字相对框 (+5, +13) ✓（front.anm script9 ✓）*/
-#define POFV_HUD_SP_DY       18.0f   /* = 一手 +13 → owner「上 8px」的现值 ✓（13×2−8 ✓）*/
+#define POFV_HUD_SP_DY        5.0f   /* ★ owner 2026-10-08：全部文字**上 13px** ⇒ 18 − 13 = 5 ✓ */   /* = 一手 +13 → owner「上 8px」的现值 ✓（13×2−8 ✓）*/
 /* ★★★ 2026-10-08 owner 标定的**关键推论** ✓：他量到「一个数字 **12px**」✓、且「下一个数字会**遮住**上一个
  *   数字的 **6px**」✗ ⇒ 当时的**步距只有 6px** ⇒ ★ **HUD 里 1 单位 = 1 px**（不是 2 ✗）⇒
  *   **一手 `front.anm` 那套 640 空间的值要整体 ×2** 才等价 ✓（实测框 ≈160 表面 px = 160 单位也印证 ✓）。
@@ -346,9 +346,10 @@ static int   s_boss_prev;   /* ★ owner 2026-10-05：boss 表 0→1 的**边沿
  *     script8        → 「Hit」标签：**+23** ✓          color (192,128,128) ✓
  *     script12..17   → **SP 6 位**：+37/+43/+49/+55/+61/+67 ✓  color **(128,128,128)**（**灰度** ✓ owner 提到 ✓）
  *   步进一律 **6** ✓；最右 +67+6 = **+73 < 80** ⇒ **全在 `sprite7` 框内** ✓（owner：「宽框就是那个 Spell Point 的框」✓）。*/
-#define POFV_HUD_HIT_X      10.0f   /* = 一手 +5 × 2 ✓ */    /* ★ 2026-10-08 owner 标定：「文字整体向左」⇒ 5 → 2 ✓（一手为 +5 ✗ 按实跑调 ✓）*/
-#define POFV_HUD_HITLABEL_DX 52.0f   /* ★ owner 2026-10-08：「Hit 偏左，向右 6px」⇒ 46 → 52 ✓ */   /* = 10 + 3×12 ✓（一手 +23 ×2 ✓）*/   /* ★ 一手原值：script8 的「Hit」在 +23 ✓ */
-#define POFV_HUD_SPNUM_DX    74.0f   /* ★ 跟着 Hit 一起 +6 ✓（一手：SP 紧接在 Hit 之后 ✓）*/   /* = 一手 +37 × 2 ✓ */   /* ★ 一手原值：script12 的 SP 起 +37 ✓ */
+#define POFV_HUD_HIT_X     -62.0f   /* ★ owner：全部文字**左 72px** ⇒ 10 − 72 = −62 ✓ */   /* = 一手 +5 × 2 ✓ */    /* ★ 2026-10-08 owner 标定：「文字整体向左」⇒ 5 → 2 ✓（一手为 +5 ✗ 按实跑调 ✓）*/
+#define POFV_HUD_HITLABEL_DX -18.0f   /* ★ 52 − 72（左 72）+ 2（Hit 单独右 2）= −18 ✓ */   /* ★ owner 2026-10-08：「Hit 偏左，向右 6px」⇒ 46 → 52 ✓ */   /* = 10 + 3×12 ✓（一手 +23 ×2 ✓）*/   /* ★ 一手原值：script8 的「Hit」在 +23 ✓ */
+#define POFV_HUD_SPNUM_DX     2.0f   /* ★ 74 − 72 = 2 ✓ */   /* ★ 跟着 Hit 一起 +6 ✓（一手：SP 紧接在 Hit 之后 ✓）*/   /* = 一手 +37 × 2 ✓ */   /* ★ 一手原值：script12 的 SP 起 +37 ✓ */
+#define POFV_HUD_HITLABEL_DY  4.0f   /* ★ Hit 单独**上 1px** ⇒ SP_DY 5 − 1 = 4 ✓ */
 #define POFV_HUD_COL_HIT    0xFFC08080u   /* ★ 一手 `color(192,128,128)` ✓（命中 + Hit）*/
 #define POFV_HUD_COL_SP     0xFF808080u   /* ★ 一手 `color(128,128,128)` ✓（SP 六位，owner：「乘了一个灰度」✓）*/
 /* ★ 连击条 = 屏幕**最下方**的白色长方形 ✓（参图 ✓）*/
@@ -2195,7 +2196,7 @@ static int on_tick_2(ce_card_t *c)
         if (!s_hud_sp_hit_vm)
             s_hud_sp_hit_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_POFV109_HUD_TH09_HIT,
                                                     POFV_HUD_SP_X + POFV_HUD_HITLABEL_DX,
-                                                    POFV_HUD_SP_Y + POFV_HUD_SP_DY);
+                                                    POFV_HUD_SP_Y + POFV_HUD_HITLABEL_DY);
 
         /* ① **红色命中数**：固定 3 格、右对齐、**前导留空** ✓（owner：不是 000000 ✗）*/
         {
@@ -2273,7 +2274,7 @@ static int on_tick_2(ce_card_t *c)
             ce_anm_set_color((uint32_t)s_hud_sp_hit_vm, POFV_HUD_COL_HIT);   /* ★ 一手 `script8` ✓ */
             ce_anm_set_pos((uint32_t)s_hud_sp_hit_vm,
                            POFV_HUD_SP_X + POFV_HUD_HITLABEL_DX,
-                           POFV_HUD_SP_Y + POFV_HUD_SP_DY, 0.0f);
+                           POFV_HUD_SP_Y + POFV_HUD_HITLABEL_DY, 0.0f);
         }
     }
     {   /* ★★★ 2026-10-08（P1 完成）：TH09 的 **`Bonus!`** 提示 —— 一手原图 ✓
