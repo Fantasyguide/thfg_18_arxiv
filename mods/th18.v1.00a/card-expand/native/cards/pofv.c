@@ -2306,9 +2306,15 @@ static int on_tick_2(ce_card_t *c)
         }
         if (c2r > 1.0f) c2r = 1.0f;
         if (c2r < 0.0f) c2r = 0.0f;
-        if (s_hud_c2_vm) {   /* ★ 白色长方形：长度 = 满宽 × 比例 ✓（脚本是 1×6 的纯几何矩形 ✓
+        /* ★★★★ 2026-10-08 owner 实跑：「**撞弹之后，连击条再也没有出现过**」✗ ⇒
+         *   典型**陈旧句柄**：撞弹（死亡/复活链）会把 HUD 的 VM 收走 ✗，而句柄还是非 0
+         *   ⇒ `if (!s_hud_c2_vm)` 永远不成立 ⇒ **再也不重建** ✓。
+         *   ⇒ 照本仓 `animal.c` 的先例**自愈**：`ce_anm_set_pos` 返回 0 ⇒ 清句柄 ⇒ 下一帧重建 ✓。*/
+        if (s_hud_c2_vm && !ce_anm_set_pos((uint32_t)s_hud_c2_vm, POFV_HUD_BAR_X, POFV_HUD_BAR_Y, 0.0f)) {
+            s_hud_c2_vm = 0;   /* ★ 陈旧 ⇒ 下一帧重建 ✓ */
+        }
+        if (s_hud_c2_vm) {   /* ★ 白色长方形：长度 = 满宽 × 比例 ✓（脚本是 1×N 的纯几何矩形 ✓
                               *   ⇒ scale.x 就是**像素长度** ✓，与 `animal.c` 的条同一个口径 ✓）*/
-            ce_anm_set_pos((uint32_t)s_hud_c2_vm, POFV_HUD_BAR_X, POFV_HUD_BAR_Y, 0.0f);
             ce_anm_set_scale((uint32_t)s_hud_c2_vm, POFV_HUD_BAR_W * c2r, 1.0f);
         }
         if (s_hud_c2_fill_vm) { ce_anm_delete((uint32_t)s_hud_c2_fill_vm); s_hud_c2_fill_vm = 0; }
@@ -2336,6 +2342,17 @@ static int on_tick_2(ce_card_t *c)
      *   => unhooked here; TH09 art to be located in TH09 front.png (owner pointer:
      *      first big row, right part = TH09 hit + SP UI).
      */
+    /* ★★★★ 2026-10-08 owner 实跑：「**撞弹之后，连击条再也没有出现过**」✗ ⇒ 撞弹/复活的死亡链会把
+     *   HUD 的 VM 收走 ✗，而句柄仍非 0 ⇒ 下面各处的 `if (!vm)` **永远不成立** ⇒ 再也不重建 ✓。
+     *   ⇒ 每个 HUD 帧先做一次**句柄体检**：`ce_anm_get_vm` 查不到 ⇒ 清 0 ⇒ 自然重建 ✓（本仓 `animal.c` 先例 ✓）。*/
+    {
+        int32_t *hs[16]; int nh = 0, ih;
+        hs[nh++] = &s_hud_c2_vm; hs[nh++] = &s_hud_sp_frame_vm; hs[nh++] = &s_hud_sp_hit_vm;
+        for (ih = 0; ih < 6; ++ih) hs[nh++] = &s_hud_sp_digit_vm[ih];
+        for (ih = 0; ih < 3; ++ih) hs[nh++] = &s_hud_hit_digit_vm[ih];
+        for (ih = 0; ih < nh; ++ih)
+            if (*hs[ih] && !ce_anm_get_vm((uint32_t)*hs[ih])) *hs[ih] = 0;
+    }
     {   /* ★★★ TH09 SP 行 —— **owner 给的格式原文**（2026-10-08）✓：
          *   「Hit 得是**红色**的，格式不是 000000 而是**一个红色的 `<3 格右对齐、前导空格>` 数字 + `Hit`**，
          *     **后面紧跟着是六位 SP**」✓
@@ -2426,7 +2443,8 @@ static int on_tick_2(ce_card_t *c)
                                POFV_HUD_SP_Y + POFV_HUD_SP_DY, 0.0f);
             }
         }
-        if (s_hud_sp_frame_vm) ce_anm_set_pos((uint32_t)s_hud_sp_frame_vm, POFV_HUD_SP_X, POFV_HUD_SP_Y, 0.0f);
+        if (s_hud_sp_frame_vm && !ce_anm_set_pos((uint32_t)s_hud_sp_frame_vm, POFV_HUD_SP_X, POFV_HUD_SP_Y, 0.0f))
+            s_hud_sp_frame_vm = 0;   /* ★ 自愈（同上 ✓）*/
         /* ★★★ 2026-10-08 诊断（owner：「没有区别」✗ ⇒ 先确认运行时真值 ✓）：
          *   每 60 帧打一次 HUD 的**实际**位置/贴图/句柄 ⇒ 日志里就能看出卡侧到底写了什么 ✓。
          *   （这一招前几轮屡次直接定位问题 ✓；HUD 没有别的可观测面 ✗。）*/
