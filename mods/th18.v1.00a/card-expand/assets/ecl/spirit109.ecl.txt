@@ -117,89 +117,13 @@ CESpirit109_eagle:
     moveVelTime(60, 0, 1.5707964f, 3.5f);
     goto CESpirit109_100 @ 0;
 CESpirit109_ghost:
-    // ★★★ 2026-10-08：**出生角量化成 16 档**（一手：约 1/5 朝自机 ±22.5°、其余正下方 ✓）——
-    //   卡侧算好方向写 `$I2`（`CE_SPAWN_ECL_I + 8` ✓）；`moveVel` 只吃立即数 ✗ ⇒ 16 个定点分支 ✓。
-    //   档位步长 = 2π/16 = **π/8 = 22.5°** ✓（正好是一手的粒度 ✓）；4 档 = π/2 = 正下方 ✓。
-    unless ($I2 != 0) goto CESpirit109_ghost_d0 @ 0;
-    unless ($I2 != 1) goto CESpirit109_ghost_d1 @ 0;
-    unless ($I2 != 2) goto CESpirit109_ghost_d2 @ 0;
-    unless ($I2 != 3) goto CESpirit109_ghost_d3 @ 0;
-    unless ($I2 != 4) goto CESpirit109_ghost_d4 @ 0;
-    unless ($I2 != 5) goto CESpirit109_ghost_d5 @ 0;
-    unless ($I2 != 6) goto CESpirit109_ghost_d6 @ 0;
-    unless ($I2 != 7) goto CESpirit109_ghost_d7 @ 0;
-    unless ($I2 != 8) goto CESpirit109_ghost_d8 @ 0;
-    unless ($I2 != 9) goto CESpirit109_ghost_d9 @ 0;
-    unless ($I2 != 10) goto CESpirit109_ghost_d10 @ 0;
-    unless ($I2 != 11) goto CESpirit109_ghost_d11 @ 0;
-    unless ($I2 != 12) goto CESpirit109_ghost_d12 @ 0;
-    unless ($I2 != 13) goto CESpirit109_ghost_d13 @ 0;
-    unless ($I2 != 14) goto CESpirit109_ghost_d14 @ 0;
-    unless ($I2 != 15) goto CESpirit109_ghost_d15 @ 0;
-    moveVel(1.5707964f, 1.0f);   // 兜底（$I2 越界）⇒ 正下方 ✓
-    goto CESpirit109_100 @ 0;
-CESpirit109_ghost_d0:
-    moveVel(0.0000000f, 1.0f);
-    goto CESpirit109_100 @ 0;
-
-CESpirit109_ghost_d1:
-    moveVel(0.3926991f, 1.0f);
-    goto CESpirit109_100 @ 0;
-
-CESpirit109_ghost_d2:
-    moveVel(0.7853982f, 1.0f);
-    goto CESpirit109_100 @ 0;
-
-CESpirit109_ghost_d3:
-    moveVel(1.1780972f, 1.0f);
-    goto CESpirit109_100 @ 0;
-
-CESpirit109_ghost_d4:
-    moveVel(1.5707963f, 1.0f);
-    goto CESpirit109_100 @ 0;
-
-CESpirit109_ghost_d5:
-    moveVel(1.9634954f, 1.0f);
-    goto CESpirit109_100 @ 0;
-
-CESpirit109_ghost_d6:
-    moveVel(2.3561945f, 1.0f);
-    goto CESpirit109_100 @ 0;
-
-CESpirit109_ghost_d7:
-    moveVel(2.7488936f, 1.0f);
-    goto CESpirit109_100 @ 0;
-
-CESpirit109_ghost_d8:
-    moveVel(3.1415926f, 1.0f);
-    goto CESpirit109_100 @ 0;
-
-CESpirit109_ghost_d9:
-    moveVel(3.5342917f, 1.0f);
-    goto CESpirit109_100 @ 0;
-
-CESpirit109_ghost_d10:
-    moveVel(3.9269908f, 1.0f);
-    goto CESpirit109_100 @ 0;
-
-CESpirit109_ghost_d11:
-    moveVel(4.3196899f, 1.0f);
-    goto CESpirit109_100 @ 0;
-
-CESpirit109_ghost_d12:
-    moveVel(4.7123890f, 1.0f);
-    goto CESpirit109_100 @ 0;
-
-CESpirit109_ghost_d13:
-    moveVel(5.1050880f, 1.0f);
-    goto CESpirit109_100 @ 0;
-
-CESpirit109_ghost_d14:
-    moveVel(5.4977871f, 1.0f);
-    goto CESpirit109_100 @ 0;
-
-CESpirit109_ghost_d15:
-    moveVel(5.8904862f, 1.0f);
+    // ★★★★ 2026-10-08（owner 给一手 §3.31 ✓）：**出生角由卡侧抽好、写在浮点全局 `%F0`** ✓ ——
+    //   一手「斜不是幽灵自己的运动，是**出生那一刻引擎给它抽的角度**」✓：
+    //     `u = rng % (4或5)`；`u == 0`（约 1/5）⇒ `atan2(自机 − 幽灵) ± π/8`（斜飞、朝自机拐 ✓）；
+    //     其余 ⇒ `π/2 ± π/200`（≈正下方 ✓）。
+    //   ★ 语法要点：**`%F0` = 浮点全局**（`$F0` 是**局部** ✗，写成 `$F0` 会被 thecl 往返破坏 ⇒ make dist 挂 ✗）。
+    //     一手先例：`green_extra.ecl.txt` 的注释里就是这个 `moveVel(%F0, %F1)` 用法 ✓。
+    moveVel(%F0, 1.0f);          // 速度照一手 **1.0** ✓（≠ 纯灵的 1.5 ✓）
     goto CESpirit109_100 @ 0;
 CESpirit109_pure:
     // kind 3：正下方 1.5（一手 `GhostPureEnable`）

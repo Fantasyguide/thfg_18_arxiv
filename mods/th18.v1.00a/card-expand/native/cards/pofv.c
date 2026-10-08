@@ -2481,36 +2481,23 @@ static int on_tick_2(ce_card_t *c)
             *(int32_t *)(sp + CE_SPAWN_ECL_I + 12) =
                 (*(const float *)(sp + CE_SPAWN_POS) < 0.0f) ? 0 : 1;
 
-            /* ★★★ 2026-10-08（owner 给一手：`engine/versus/th09/02-ghost-and-seal.md` §3.31 ✓）：
-             *   **TH09 幽灵出生那一刻引擎抽一次角度** ✓ ——
-             *     `u = rng % (4或5)`；`u == 0`（约 1/5）⇒ `atan2(自机 − 幽灵) ± π/8`（**斜飞、朝你拐** ✓）；
-             *     其余 ⇒ `π/2 ± π/200`（**看着就是正下方直落** ✓）。
-             *   ⇒ 本卡照此：**在生成口抽一次**，写进 `$F0`（`CE_SPAWN_ECL_F` = `spawn+0x40` ✓，
-             *     一手 `engine.h`：「生成时可由 `CE_SPAWN_ECL_F` 填初值」✓），
-             *     由 **ECL 的 `moveVel($F0, 1.0f)`** 消费 —— 角度交给**引擎的初速通道** ✓（不是卡侧自己那套速度 ✓）。*/
+            /* ★★★★ 2026-10-08（owner 给一手 §3.31 ✓ + 本轮定案）：**幽灵出生角** ——
+             *   一手：出生抽一次，约 **1/5 朝自机 ±22.5°**、其余 **正下方 ±0.9°** ✓。
+             *   ★★ 通道 = **ECL 的浮点全局 `%F0`**（`green_extra.ecl.txt` 的注释里就有
+             *     `moveVel(%F0,%F1)` 这个一手用法 ✓）—— **`%F0` 是全局、`$F0` 是局部** ✗，
+             *     我先前写成 `$F0` ⇒ thecl 往返出 `[-nanf]` ⇒ `make dist` 失败 ✗（教训 ✓）。
+             *   ⇒ 卡侧写 `CE_SPAWN_ECL_F`（= 运行时的 `%F0` ✓，一手 `engine.h`：「生成时可填初值」✓），
+             *     由 ECL 的 **`moveVel(%F0, 1.0f)`** 消费 ✓ —— 角度交给**引擎的初速通道** ✓。*/
             {
-                /* ★★★ 2026-10-08（owner：「幽灵 1/5 概率斜着飞似乎我没有看到」✗ ⇒ 现在真做 ✓）：
-                 *   一手 = 出生抽一次角度（约 1/5 朝自机 ±22.5°、其余正下方 ±0.9° ✓）。
-                 *   ⚠ `moveVel` 的**参数只吃立即数** ✗（格式表 `404 ff` ✓）⇒ 变量进不去 ✗，
-                 *     先前用 `$F0` 的路子还被 thecl 往返破坏 ✗ ⇒ 改为**量化成 16 档**（π/8 = 22.5° ✓
-                 *     —— 正好是一手的粒度 ✓）：卡侧算好方向，写 `$I2`（`CE_SPAWN_ECL_I + 8` ✓），
-                 *     ECL 用 16 个**定点分支**消费 ✓。索引 = `round(角度 / (2π/16)) mod 16` ✓，
-                 *     其中 4 = 正下方（π/2 ✓）。*/
-                int32_t dir = 4;                         /* 默认 4 = π/2 = 正下方 ✓ */
+                float ang = 1.5707964f;                  /* 默认 = 一手三色 ECL 的基角 π/2 ✓ */
                 if (kc == POFV_SPIRIT_KIND_GHOST_TH09) {
                     const float *pp = ce_player_pos();
-                    float ang = 1.5707964f;
-                    float idx;
                     pofv_ghost_spawn_angle(*(const float *)(sp + CE_SPAWN_POS),
                                            *(const float *)(sp + CE_SPAWN_POS + 4),
                                            pp ? pp[0] : 0.0f, pp ? pp[1] : 0.0f,
                                            (uint32_t)ce_rand(), (uint32_t)ce_rand(), &ang);
-                    idx = ang / 0.39269908f;             /* 2π/16 = π/8 = 0.3926991 ✓ */
-                    idx = (idx < 0.0f) ? (idx - 0.5f) : (idx + 0.5f);
-                    dir = (int32_t)idx;
-                    dir %= 16; if (dir < 0) dir += 16;
                 }
-                *(int32_t *)(sp + CE_SPAWN_ECL_I + 8) = dir;   /* $I2 = 方向档 ✓ */
+                *(float *)(sp + CE_SPAWN_ECL_F) = ang;   /* = ECL 的 %F0 ✓ */
             }
         }
         /* ★★★ owner 2026-10-06：「**满了就别创建了**」✓ ⇒ 账本没空格就**根本不生成这只灵** ✓
