@@ -306,6 +306,11 @@ static int32_t s_sp_life;       /* = 一手 SP 寿命 tB `+0x14`（漏空 ⇒ SP
 #define POFV_HITS_CHAIN_X_DEFAULT 36
 static int32_t s_chain_storm_age;
 static int32_t s_chain_window = POFV_HITS_CHAIN_X_DEFAULT;
+/* ★★★ 2026-10-08（owner 判断 ✓）：「**当根本没有连击条的时候，它也认为我连击条没了**」✗ ——
+ *   我的清除逻辑**没有门** ✗：从没起过连锁也会按「连锁结束」去清 hits ✓。
+ *   ⇒ 加 `s_chain_seen`：**只有真的起过连锁（击破/起暴风）之后，才允许清** ✓；
+ *     清一次就归 0 ⇒ 中间那些"无事发生"的帧不会再动 hits ✓。*/
+static int32_t s_chain_seen;
 /* class → 窗口（`(class+9)×4` ✓）*/
 static int32_t pofv_hits_chain_x_for(int32_t kind, int32_t level)
 {
@@ -1110,6 +1115,7 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
                 s_sp_life = *ta + 45;                   /* ★ 一手：`tB := tA + 45` ✓ */
             }
             pofv_acc_add30(&s_acc, POFV_ACC09_STEP30);
+            s_chain_seen = 1;                    /* ★ 真有连锁了 ⇒ 允许之后清 hits ✓ */
             pofv_hits_bump(&s_hits, 1);          /* ★ hit（連爆数）＋1（灵侧口径 ✓，owner 图 ✓）*/
             ++s_cnt_kill;                        /* ★ goal ②：击破计数（定位自维持用 ✓）*/
             ++s_send40;                                 /* ★ §8.38：进入状态域 1 的次数 +1 ✓（本侧 ✓）*/
@@ -2156,10 +2162,11 @@ static int on_tick_2(ce_card_t *c)
      *   ⚠ 上一版我用的「暴风池为空」是**近似** ✗ ⇒ 已换成**计时器 + X** ✓。*/
     if (s_chain_storm_age < s_chain_window) {
         ++s_chain_storm_age;
-    } else if (s_hits.cur != 0) {
+    } else if (s_chain_seen && s_hits.cur != 0) {   /* ★ 门：**只有起过连锁才清** ✓（owner 判断 ✓）*/
         ce_log("pofv: 【TH09】连锁暴风窗口过（%d 帧 > X=%d）⇒ hits %d 归零 ✓",
                (int)s_chain_storm_age, (int)s_chain_window, (int)s_hits.cur);
         s_hits.cur = 0; s_hits.latch = 0; s_hits.life = 0;
+        s_chain_seen = 0;                            /* 清一次就撤门 ✓ */
     }
     pofv_hits_tick(&s_hits);                     /* ★ HUD hits：锁存 + 寿命递减（一手 120 帧 ✓）*/
     /* ★★ 调试 UI（owner）：事件列表（暴风延迟 ✓ / 击破·固灵 3 s ✓）+ 幽灵列表（只有内容、无位置 ✓）*/
