@@ -1,0 +1,10 @@
+script script414 {
+    // 109 的 TH19 **hits 大字·黑描边底** —— **切自原作** ✓（ascii_bigf.png ✓）
+    //   owner ✓：f 版「垫在底下加 color 充当黑色描边」⇒ 卡侧把它染黑、画在实心版**下面** ✓
+    sprite(@HUD_HITS_BIGF@);
+    layer(25);
+    stop();
+    interruptLabel(1);
++20: // 20
+    delete();
+}

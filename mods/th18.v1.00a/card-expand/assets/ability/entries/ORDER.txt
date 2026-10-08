@@ -1180,3 +1180,7 @@ ATLAS ATLAS_HUD_GAUGE 20x32
 HUD_GAUGE_BODY         ability/spirit/HUD_GAUGE_BODY.png          @0,0,8x32
 HUD_GAUGE_FILL         ability/spirit/HUD_GAUGE_FILL.png          @8,0,4x32
 HUD_GAUGE_DOT          ability/spirit/HUD_GAUGE_DOT.png           @14,0,6x12
+ATLAS ATLAS_HUD_HITS_BIG 128x32
+HUD_HITS_BIG           ability/spirit/HUD_HITS_BIG.png             @0,0,128x32
+ATLAS ATLAS_HUD_HITS_BIGF 128x32
+HUD_HITS_BIGF          ability/spirit/HUD_HITS_BIGF.png            @0,0,128x32

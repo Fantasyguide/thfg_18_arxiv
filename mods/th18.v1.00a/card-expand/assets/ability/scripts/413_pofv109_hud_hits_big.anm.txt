@@ -1,0 +1,12 @@
+script script413 {
+    // 109 的 TH19 **hits 大字·实心** —— **切自原作** ✓
+    //   来源 local/th19.v1.10c/anm/ascii/ascii/ascii_big.png（512x288 ✓，32px 列距 ✓）
+    //   owner 指正 ✓：「hits 的图 = ascii_big.png（实心）+ ascii_bigf.png（垫在底下加 color 当黑描边）」
+    //   取字：r4='abcdefghijklmno ⇒ h=列8 i=列9；r5=pqrstuvwxyz ⇒ s=列3 t=列4 ✓（已放大目视确认 ✓）
+    sprite(@HUD_HITS_BIG@);
+    layer(25);
+    stop();
+    interruptLabel(1);
++20: // 20
+    delete();
+}
