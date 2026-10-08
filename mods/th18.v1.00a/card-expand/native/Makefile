@@ -269,7 +269,8 @@ test-host:
 	./tests/build/test_th06rank_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_youkai_core tests/test_youkai_core.c cards/youkai_core.c
 	./tests/build/test_youkai_core
-	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_pofv_core tests/test_pofv_core.c cards/pofv_core.c
+	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_pofv_core tests/test_pofv_core.c cards/pofv_core.c cards/broken_core_core.c -lm   # ★ -lm：2026-10-08 起 pofv_core 用了 sinf/cosf（对称幽灵的出生角 ✓）；
+	#   broken_core_core.c 提供 bc_atan2f（纯 SSE 确定性 atan2 ✓，与 animal.c 同一先例 ✓）
 	./tests/build/test_pofv_core
 	$(HOSTCC) -std=c11 -Wall -Wextra -Werror -o tests/build/test_signal_core tests/test_signal_core.c cards/signal_core.c cards/faith_core.c cards/mof_core.c
 	./tests/build/test_signal_core

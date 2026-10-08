@@ -142,6 +142,18 @@ void pofv_spirit_entry_motion(int32_t kind, int lr, float *dir, float *spd);
  *   出参 `*vx` / `*vy` = 每帧位移（世界单位）。`lr` 只对獺有意义（0 = π/8 左、1 = 7π/8 右）。 */
 void pofv_spirit_entry_vel(int32_t kind, int lr, float *vx, float *vy);
 
+/* ★★★ 2026-10-08（owner 给一手）：**TH09 幽灵出生那一刻的角度抽取** —— 真幽灵与**对称幽灵**共用本函数 ✓
+ *   一手（`FUN_0040d9e0`，owner 转述 `engine/versus/th09/02-ghost-and-seal.md` §3.31 ✓）：
+ *     `u = rng % ((对手机体 != pl07) + 4)` ⇒ **0..3 或 0..4**；
+ *     · `u == 0`（约 1/4~1/5）⇒ `角度 = atan2(自机 − 幽灵) ± π/8`（**±22.5° 散射** ⇒ 斜飞、且会朝自机拐 ✓）
+ *     · 其余 ⇒ `角度 = π/2 ± π/200`（**±0.9°** ⇒ 看着就是正下方直落 ✓）
+ *   ⚠ 角度约定 = 本引擎的 `moveVel(角度, 速度)`：**0 = +x、π/2 = +y（正下方）** ✓（ECL 一手 ✓）。
+ *   ❓ `pl07` 是哪台机体**未对上** ⇒ 本卡取**分母 5**（= `!=pl07` 那一支 ✓）并登记 ❓。
+ *   ❓ 两个 `rand_neg_x_to_x` 的一手分布未逐字核 ⇒ 这里取 **均匀 ±**（`r2` 映射到 [−1,1] ✓）。
+ *   纯函数（无全局/无浮点副作用）⇒ **主机可单测** ✓。*/
+void pofv_ghost_spawn_angle(float sx, float sy, float tx, float ty,
+                            uint32_t r1, uint32_t r2, float *out_angle);
+
 /* ★ 带时间的入场速度（一手 `ins_405(帧数, 延迟, 方向, 终速)` 的**加速段**）：
  *   鷲 = `ins_405(60, 0, π/2, 3.5)` ⇒ age ∈ [0,60] 线性从 0 涨到 3.5，之后恒 3.5；
  *   純霊 = `ins_405(30, 0, π/2, 1.5)` ⇒ 同形（终速 1.5，30 帧）；
@@ -307,6 +319,11 @@ typedef struct {
      *   本字段 = 「出循环」标记：置位后 ⇒ ① `mirror_kill` **不再选它**（不回程 ✓）
      *     ② `spawn` **直接拒绝**（不再产生灵 ✓）。❓ 触发条件/门限/外观**待重做** ✗ ⇒ 卡侧暂不调用 ✓。*/
     int32_t loop_exit;
+    /* ★★★ 2026-10-08（owner 给一手 §3.31）：**幽灵出生角**（真幽灵与对称幽灵共用一条规则 ✓）。
+     *   一手：斜飞不来自幽灵自己的 ECL ✗，来自**生成那一刻抽的角度** ✓（约 1/5 朝自机 ±22.5°、
+     *   其余正下方 ±0.9°）。真幽灵走 `$F0` → ECL `moveVel($F0, 1.0)` ✓；对称幽灵走这两个字段 ✓。*/
+    float   entry_ang;   /* ★ 抽中的角度（本引擎约定：0 = +x、π/2 = +y（正下方）✓）*/
+    int32_t has_ang;     /* ★ 1 = 按 `entry_ang` 匀速运动（覆盖 `entry_vel_at` 的一手匀速支 ✓）*/
 } pofv_foe_spirit_t;
 
 void pofv_foe_spirit_init(pofv_foe_spirit_t *p, int32_t n);
@@ -314,6 +331,10 @@ void pofv_foe_spirit_init(pofv_foe_spirit_t *p, int32_t n);
 int  pofv_foe_spirit_spawn(pofv_foe_spirit_t *p, int32_t n, float x, float y, int32_t type, int32_t level);
 /* 每帧推进那只灵自己：按一手运动走一格 + `age++`（**不产生任何「送回」** ✓）。 */
 void pofv_foe_spirit_tick(pofv_foe_spirit_t *p, int32_t n);
+
+/* ★★★ 2026-10-08：给**对称幽灵**设出生角 —— 与真幽灵**同一条一手规则** ✓
+ *   （`pofv_ghost_spawn_angle` ✓；速度照一手幽灵 **1.0** ✓）。idx = `spawn` 的返回值 ✓。*/
+void pofv_foe_spirit_set_ghost_angle(pofv_foe_spirit_t *p, int32_t n, int32_t idx, float ang);
 /* ★★ **镜像击破事件**：在对面模型里挑一只（**最近的、且未固化**）⇒ 移出并交出它的数据（= 送回来那只）✓。
  *   ★★★ 2026-10-06 owner 消歧（重要 ✓）：**参考点 = 「被击破的那只灵的位置」** ✓（不是自机位置 ✗）。
  *     · **镜像击破** ⇒ 用**被击破灵**的位置 `(x0,y0)` 做最近邻 ✓（卡侧传 `ev->x/ev->y` ✓）；

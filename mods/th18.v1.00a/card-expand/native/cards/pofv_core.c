@@ -1,6 +1,8 @@
 /* pofv_core.c —— 见 pofv_core.h。纯 C11，无平台依赖，无浮点返回值（`make dllx87`）。 */
 #include <string.h>
+#include <math.h>
 #include "pofv_core.h"
+#include "broken_core_core.h"   /* ★ bc_atan2f：纯 SSE 确定性 atan2 ✓（`sdk.h:577` 说的 pofv_atan2 已不存在 ✗）*/
 
 static int32_t clamp_i32(int32_t v, int32_t lo, int32_t hi)
 {
@@ -216,10 +218,20 @@ int pofv_foe_spirit_spawn(pofv_foe_spirit_t *p, int32_t n, float x, float y, int
         if (!p[i].active) {
             p[i].x = x; p[i].y = y; p[i].type = type; p[i].level = level;
             p[i].age = 0; p[i].sealed = 0; p[i].sealed_timer = 0; p[i].active = 1;
+            p[i].entry_ang = 0.0f; p[i].has_ang = 0;      /* ★ 幽灵出生角：默认未抽（见 set_ghost_angle ✓）*/
             pofv_spirit_entry_vel(type, 0, &p[i].vx, &p[i].vy);   /* 一手初速 ✓ */
             return (int)i;
         }
     return -1;
+}
+
+void pofv_foe_spirit_set_ghost_angle(pofv_foe_spirit_t *p, int32_t n, int32_t idx, float ang)
+{
+    if (!p || idx < 0 || idx >= n) return;
+    p[idx].entry_ang = ang;
+    p[idx].has_ang = 1;
+    p[idx].vx = cosf(ang) * 1.0f;      /* ★ 立刻生效（下一帧 tick 还会再写一次 ✓）*/
+    p[idx].vy = sinf(ang) * 1.0f;
 }
 
 static float foe_sealed_vy(int32_t type, int32_t el);   /* ★ 前向声明（定义在文件后半 ✓）*/
@@ -233,6 +245,12 @@ void pofv_foe_spirit_tick(pofv_foe_spirit_t *p, int32_t n)
         nvx = p[i].vx; nvy = p[i].vy;
         if (p[i].sealed) {
             nvx = 0.0f; nvy = foe_sealed_vy(p[i].type, POFV_FOE_SEAL_FRAMES - p[i].sealed_timer);   /* ★ 按族：幽灵上浮 / TH19 静止（owner 2026-10-06 ✓）*/
+        } else if (p[i].has_ang) {
+            /* ★★★ 2026-10-08（一手 §3.31 ✓）：**对称幽灵**照真幽灵同一条规则 ——
+             *   角度在出生时抽一次（`pofv_ghost_spawn_angle` ✓）、速度恒 **1.0** ✓（≠ 纯灵 1.5 ✓）
+             *   ⇒ 不再走 `entry_vel_at` 的「正下 1.0」匀速支 ✗。*/
+            nvx = cosf(p[i].entry_ang) * 1.0f;
+            nvy = sinf(p[i].entry_ang) * 1.0f;
         } else {
             pofv_spirit_entry_vel_at(p[i].type, p[i].age & 1, p[i].age, &nvx, &nvy);   /* 獺交替 / 鷲加速 ✓ */
         }
@@ -659,6 +677,25 @@ void pofv_spirit_entry_vel(int32_t kind, int lr, float *vx, float *vy)
     }
     if (vx) *vx = x;
     if (vy) *vy = y;
+}
+
+void pofv_ghost_spawn_angle(float sx, float sy, float tx, float ty,
+                            uint32_t r1, uint32_t r2, float *out_angle)
+{
+    /* ⚠ **出参而不是返回值**：本 DLL 的 `dllx87` 铁律 —— 导出函数**返回 float 会走 x87
+     *   （`flds` ∈ st(0)）** ✗（实测本函数原先就吃了 2 条 ✗）。仓库同族助手（`pofv_spirit_entry_vel`
+     *   / `pofv_storm_radius` …）一律是 `void` + 出参 ✓ ⇒ 照它们写 ✓。*/
+    const float PI      = 3.14159265f;
+    const float HALF_PI = 1.5707964f;
+    float j;                                  /* ∈ [−1, 1] 均匀（❓一手分布未逐字核 ✓）*/
+    if (!out_angle) return;
+    j = ((float)(r2 % 2001u) / 1000.0f) - 1.0f;
+    if (r1 % 5u == 0u) {                      /* ★ 抽中「瞄准」支（一手 u == 0 ✓）*/
+        float dx = tx - sx, dy = ty - sy;     /* ★ 角度约定：0 = +x、π/2 = +y（正下方）✓ */
+        *out_angle = bc_atan2f(dy, dx) + j * (PI / 8.0f);          /* 朝自机 ± 22.5° ✓ */
+        return;
+    }
+    *out_angle = HALF_PI + j * (PI / 200.0f);                      /* 正下方 ± 0.9° ✓ */
 }
 
 void pofv_spirit_entry_vel_at(int32_t kind, int lr, int32_t age, float *vx, float *vy)

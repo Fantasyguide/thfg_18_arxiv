@@ -246,7 +246,22 @@ static int pofv_foe_spawn_gated(float x, float y, int32_t kind, int32_t level)
      *   ⇒ **撤回**（先让**在场灵数门 25** 照文档生效 ✓）；「10 = 落地/寄存」该数**哪一个计数器**
      *     （在途/寄存数？）文档未给 ⇒ 标 ❓ **等 owner 一句**，我不猜 ✗（`POFV_TH09_LANDING_CAP` 常量保留 ✓）。*/
     if (pofv_spirit_room(live, cap)) {
-        if (pofv_foe_spirit_spawn(s_foe, n, x, y, kind, level) >= 0) return 0;
+        {
+            int32_t fi = pofv_foe_spirit_spawn(s_foe, n, x, y, kind, level);
+            if (fi >= 0) {
+                /* ★★★ 2026-10-08（owner 一手 §3.31 ✓）：**对称幽灵**与真幽灵**同一条规则** ——
+                 *   出生抽一次角度（约 1/5 朝自机 ±22.5°、其余正下方 ±0.9° ✓）。
+                 *   ❓ 对面的「自机」本卡没有实体 ⇒ 取**本侧自机**（镜像口径；owner 未逐字给 ⇒ 标 ❓ ✓）。*/
+                if (kind == POFV_SPIRIT_KIND_GHOST_TH09) {
+                    const float *pp = ce_player_pos();
+                    float ang = 1.5707964f;
+                    pofv_ghost_spawn_angle(x, y, pp ? pp[0] : 0.0f, pp ? pp[1] : 0.0f,
+                                           (uint32_t)ce_rand(), (uint32_t)ce_rand(), &ang);
+                    pofv_foe_spirit_set_ghost_angle(s_foe, n, fi, ang);
+                }
+                return 0;
+            }
+        }
     }
     ++s_point_q;                 /* ★ 满（含 cap>池 的溢出）⇒ **折算成计数**（不丢包 ✓）*/
     ce_log("pofv: 对面模型满（fam %d live %d / cap %d / 池 %d）⇒ 折算成计数（不丢包 ✓）", fam, live, cap, n);
@@ -303,9 +318,14 @@ static int   s_boss_prev;   /* ★ owner 2026-10-05：boss 表 0→1 的**边沿
 #define POFV_HUD_SP_DX        5.0f   /* ★ 一手：框内数字/字相对框 (+5, +13) ✓（front.anm script9 ✓）*/
 #define POFV_HUD_SP_DY       13.0f
 #define POFV_HUD_SP_STEP      8.0f   /* ★ 一手：每位 8 px ✓ */
-#define POFV_HUD_SP_UNIT_DX  58.0f   /* ★ 框内「Hit」标签（参图：命中数在它**左边** ✓）*/
-#define POFV_HUD_HITS_DIGITS  6      /* 命中数位数（参图显示 1–2 位 ✓；补零由卡侧裁 ✓）*/
-#define POFV_HUD_SPNUM_DX    92.0f   /* ★ 参图：SP 数字在**框右侧** ✓ */
+/* ★★★ 2026-10-08 owner 给的**格式原文**：「Hit 得是**红色**的，格式不是 000000 而是
+ *   **一个红色的 `<3 格右对齐、前导空格>` 数字 + `Hit`**，**后面紧跟着是六位 SP**」✓
+ *   ⇒ 框内下行 = `⟨3 格红命中，前导留空⟩` + `Hit` + `⟨6 位 SP，紧接⟩` ✓（都在 80×32 框内 ✓）。*/
+#define POFV_HUD_HIT_SLOTS    3      /* ★ 命中数**固定 3 格**（前导空格 ✓，不是 0 ✗）*/
+#define POFV_HUD_SP_SLOTS     6      /* ★ SP **6 位**（紧接在 Hit 之后 ✓）*/
+#define POFV_HUD_HIT_X       5.0f    /* ★ 红命中 3 格的起点（框内下行 ✓，一手数字起 +5 ✓）*/
+#define POFV_HUD_HITLABEL_DX 29.0f   /* ★ 「Hit」：3 格之后（= 5 + 3×8 ✓）*/
+#define POFV_HUD_SPNUM_DX   45.0f    /* ★ SP 6 位：**紧接**在「Hit」之后（= 29 + 16 ✓，owner 原话 ✓）*/
 /* ★ 连击条 = 屏幕**最下方**的白色长方形 ✓（参图 ✓）*/
 #define POFV_HUD_BAR_X       132.0f
 #define POFV_HUD_BAR_Y       438.0f
@@ -348,7 +368,7 @@ static int32_t s_hud_c2_fill_vm;   /* ★ TH09 連擊槽的**内芯**（一手�
 static int32_t s_hud_hits_vm;
 static int32_t s_hud_hitsf_vm;
 static int32_t s_hud_sp_frame_vm, s_hud_sp_digit_vm[6], s_hud_sp_hit_vm;
-static int32_t s_hud_hit_digit_vm[6];   /* ★ TH09 的 **红色 hits 数字**（红套 721–730 ✓ owner 口径）*/   /* TH09 SP row: frame 720 / digits 709+d / Hit 719 */   /* TH19 hits black outline (ascii_bigf, cut) */
+static int32_t s_hud_hit_digit_vm[3];   /* ★ 固定 **3 格**（前导留空 ✓ owner 格式 ✓）*/   /* ★ TH09 的 **红色 hits 数字**（红套 721–730 ✓ owner 口径）*/   /* TH09 SP row: frame 720 / digits 709+d / Hit 719 */   /* TH19 hits black outline (ascii_bigf, cut) */
 static int ipow10(int n) { int v = 1; while (n-- > 0) v *= 10; return v; }
 static int32_t s_hud_bonus_vm;   /* ★ TH09 `Bonus!`（一手原图 th09 ascii.anm sprite107 ✓）*/
 static int32_t s_hud_ag_fill_vm, s_hud_ag_dot_vm[4];   /* TH19 gauge fill + 4 threshold markers (original art) */   /* TH19 Bonus label (cut from original art) */   /* ★ TH19 hits 标签（**切自原作字体** ✓ ascii.png y=56 行 ✓）*/   /* ★ TH09 連擊槽条 / TH19 攻击槽条（卡自建 VM ⇒ 必须在 clear_card 里真删 ✓ 铁律）*/
@@ -887,7 +907,7 @@ static void clear_card(ce_card_t *c)
     if (s_hud_sp_frame_vm) { ce_anm_delete((uint32_t)s_hud_sp_frame_vm); s_hud_sp_frame_vm = 0; }
     if (s_hud_sp_hit_vm) { ce_anm_delete((uint32_t)s_hud_sp_hit_vm); s_hud_sp_hit_vm = 0; }
     { int i9; for (i9 = 0; i9 < 6; ++i9) if (s_hud_sp_digit_vm[i9]) { ce_anm_delete((uint32_t)s_hud_sp_digit_vm[i9]); s_hud_sp_digit_vm[i9] = 0; } }
-    { int i9; for (i9 = 0; i9 < 6; ++i9) if (s_hud_hit_digit_vm[i9]) { ce_anm_delete((uint32_t)s_hud_hit_digit_vm[i9]); s_hud_hit_digit_vm[i9] = 0; } }
+    { int i9; for (i9 = 0; i9 < 3; ++i9) if (s_hud_hit_digit_vm[i9]) { ce_anm_delete((uint32_t)s_hud_hit_digit_vm[i9]); s_hud_hit_digit_vm[i9] = 0; } }
     if (s_hud_bonus_vm) { ce_anm_delete((uint32_t)s_hud_bonus_vm); s_hud_bonus_vm = 0; }   /* Bonus! ✓ */
     ce_hud_vm_text_clear(&s_hud_hits_lbl);
     pofv_foe_spirit_init(s_foe, POFV_FOE_SPIRIT_MAX);
@@ -2076,7 +2096,7 @@ static int on_tick_2(ce_card_t *c)
          *   （与本卡 `404/405` 同手法 ✓，已实跑证明可渲染 ✓）。
          *   ❓ 一手的"条怎么画"未定位 ð¡ ⇒ 本处 = **❓自定**（纯几何白条 ✓）；位置/锚点也标 ❓，待实跑校正 ✓。
          *   比例 = `a2c / thr2c(難度)` ✓（难度取法照本卡现有写法 `s_card_frames/60` ✓ ❓）。*/
-        int32_t c2thr = pofv_acc_thr2c(s_card_frames / 60);
+        int32_t c2thr = pofv_acc_thr2c(s_card_frames / 60);   /* （保留：連擊那条的一手口径仍在 ✓）*/
         float c2r;
         /* ★★★ 连击条 = **屏幕最下方的白色长方形** ✓（owner：「其中连击条就是一个白色长方形」✓
          *   + TH09 参照图：两栏底部都有一条白色长条 ✓）⇒ 恢复上一位写的 `POFV109_HUD_COMBO`
@@ -2086,7 +2106,14 @@ static int on_tick_2(ce_card_t *c)
         if (!s_hud_c2_vm)
             s_hud_c2_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_POFV109_HUD_COMBO,
                                                 POFV_HUD_BAR_X, POFV_HUD_BAR_Y);
-        c2r = (c2thr > 0) ? ((float)s_acc.a2c / (float)c2thr) : 0.0f;
+        /* ★★★ 2026-10-08 owner：「底下的白色横线（连击条）**不随时间降低**，为什么？」✗
+         *   ⇒ 因为驱动源用错了 ✗：那条**一手本来就是「充能槽」**（`engine/versus/th09/01-versus-loop.md` §2.1 ✓）——
+         *     **外层 = 充能容量** `zPlayer+0x30388`（0..400，击杀喂 / 发射 −100/200/300 ✓）、
+         *     **内层 = 当前充能量** `zPlayer+0x30384`（**按住 charge 才涨** `+= dt×(sht+0x24)` ✓；
+         *     `GuiSide::on_tick` `0x418a90` 用 `scale.x = 值 × 0.0025f` 各画一条 ✓）。
+         *   而我先前吃的是 `a2c`（**連擊计数器** ✓：只被击破喂大 ✗、**没有每帧衰减** ✗）⇒ **只涨不掉** ✓。
+         *   ⇒ 改吃**充能量**：本卡的 `s_aura_charge`（0..200 ✓，Shift 蓄力 ✓；松手自然衰减 ✓）✓。*/
+        c2r = s_aura_charge / POFV_AURA_CHARGE_MAX;
         /* ââ ä¸æï¼`01-versus-loop.md` §2.1 â，æ äºè®®çé£æ¡）：
          *   「連擃槽**æ¶失（清空）⇒ **SP 归零**」â
          *   ï¼一手的**衰减律**写作 `+= 難度×4 â 120` â 量纲可疑 ❓ â **本卡不实现衰减律** â，
@@ -2127,34 +2154,60 @@ static int on_tick_2(ce_card_t *c)
      *   => unhooked here; TH09 art to be located in TH09 front.png (owner pointer:
      *      first big row, right part = TH09 hit + SP UI).
      */
-    {   /* == TH09 SP row, ORIGINAL ART ==  (digits 709+d gray / 720 frame / 719 Hit)
-         *    cut from th09 front.anm/front.png sprites 8..17 (gray digits), 7 (Spell Point frame),
-         *    18 (the 16x10 glyph at 400,32 reads "Hit" at x10). Geometry is the card-side
-         *    equivalent of the one-hand front.anm script7/script9 (frame under, digits above). */
+    {   /* ★★★ TH09 SP 行 —— **owner 给的格式原文**（2026-10-08）✓：
+         *   「Hit 得是**红色**的，格式不是 000000 而是**一个红色的 `<3 格右对齐、前导空格>` 数字 + `Hit`**，
+         *     **后面紧跟着是六位 SP**」✓
+         *   ⇒ 框内下行 = `⟨3 格红命中（前导**留空** ✗不是 0）⟩` + `Hit` + `⟨6 位 SP，紧接⟩` ✓。
+         *   贴图 = 一手 TH09 `front.anm`/`front.png`：
+         *     · 框 = `sprite7`（80×32「Spell Point」✓，标题在图上、下面那行空白是数字位 ✓）；
+         *     · 灰数字 = `sprite8..17`（→ 我们 709–718 ✓）／**红数字 = `sprite25..34`（→ 721–730 ✓）**；
+         *     · `Hit` 标签 = `sprite18`（16×10 ✓，放大 ×10 逐字确认 ✓）。
+         *   几何 = 一手 `script7/8/9` 的**相对位移**（框为锚、`anchorTopLeft()` ✓）：数字起 `+5`、每位 `+8` ✓。*/
         int i9;
         if (!s_hud_sp_frame_vm)
             s_hud_sp_frame_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_POFV109_HUD_TH09_SPELLPOINT,
-                                                   POFV_HUD_SP_X, POFV_HUD_SP_Y);
+                                                      POFV_HUD_SP_X, POFV_HUD_SP_Y);
         if (!s_hud_sp_hit_vm)
             s_hud_sp_hit_vm = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_POFV109_HUD_TH09_HIT,
-                                                 POFV_HUD_SP_X + POFV_HUD_SP_UNIT_DX,
-                                                 POFV_HUD_SP_Y + POFV_HUD_SP_DY);
-        for (i9 = 0; i9 < 6; ++i9) {
-            int digit;
+                                                    POFV_HUD_SP_X + POFV_HUD_HITLABEL_DX,
+                                                    POFV_HUD_SP_Y + POFV_HUD_SP_DY);
+
+        /* ① **红色命中数**：固定 3 格、右对齐、**前导留空** ✓（owner：不是 000000 ✗）*/
+        {
+            int hv = s_hits.latch;
+            int nd = 1;                       /* 实际位数（≥1 ✓）*/
+            if (hv < 0) hv = 0;
+            if (hv > 999) hv = 999;
+            {   int t = hv; while (t >= 10) { t /= 10; ++nd; } }
+            for (i9 = 0; i9 < POFV_HUD_HIT_SLOTS; ++i9) {
+                int slot = POFV_HUD_HIT_SLOTS - 1 - i9;      /* i9=0 ⇒ 最左格 ✓ */
+                float x = POFV_HUD_SP_X + POFV_HUD_HIT_X + (float)i9 * POFV_HUD_SP_STEP;
+                int digit = (slot < nd) ? (hv / (int)ipow10(slot)) % 10 : 0;
+                int blank = (slot >= nd);                    /* ★ 前导空格 ✓ */
+                if (!s_hud_hit_digit_vm[i9])
+                    s_hud_hit_digit_vm[i9] = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_POFV109_HUD_TH09_SP,
+                                                                   x, POFV_HUD_SP_Y + POFV_HUD_SP_DY);
+                if (s_hud_hit_digit_vm[i9]) {
+                    ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_hud_hit_digit_vm[i9],
+                                      CE_ANM_ABILITY_SPRITE_TH09_SPR_0 + (uint32_t)digit);   /* ★ 红套 ✓ */
+                    /* ★ 前导格**留空**（alpha 0 ⇒ 不画 ✓，不是画 0 ✗）——`ce_anm_set_color` 的 AARRGGBB 高位 ✓ */
+                    ce_anm_set_color((uint32_t)s_hud_hit_digit_vm[i9],
+                                     blank ? 0x00000000u : 0xFFFFFFFFu);
+                    ce_anm_set_pos((uint32_t)s_hud_hit_digit_vm[i9], x, POFV_HUD_SP_Y + POFV_HUD_SP_DY, 0.0f);
+                }
+            }
+        }
+        /* ② **6 位 SP**：**紧接在 `Hit` 之后** ✓（owner 原话 ✓）*/
+        for (i9 = 0; i9 < POFV_HUD_SP_SLOTS; ++i9) {
+            int digit = (s_sp / (int)ipow10(POFV_HUD_SP_SLOTS - 1 - i9)) % 10;
             if (!s_hud_sp_digit_vm[i9])
                 s_hud_sp_digit_vm[i9] = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_POFV109_HUD_TH09_SP,
                                                               POFV_HUD_SP_X + POFV_HUD_SPNUM_DX + (float)i9 * POFV_HUD_SP_STEP,
                                                               POFV_HUD_SP_Y + POFV_HUD_SP_DY);
-            digit = (s_sp / (int)ipow10(5 - i9)) % 10;
             if (s_hud_sp_digit_vm[i9]) {
-                /* ★★ 2026-10-08（P2 完成）：TH09 的 SP 有**灰 / 红两套**数字 ✓
-                 *   一手（`engine/versus/th09/01-versus-loop.md`）：SP `< 100000` 与 `≥` 用**不同样式参数** ⇒
-                 *   就是这两套 ✓（灰 = `ATLAS_TH09_SP_DIGIT` 709+d；红 = `ATLAS_TH09_SP_DIGIT_R` 721+d ✓）。
-                 *   ⇒ 按当前 SP 切套 ✓。*/
-                uint32_t base = (s_sp >= 100000)
-                                ? CE_ANM_ABILITY_SPRITE_TH09_SPR_0      /* 红套 721..730 ✓ */
-                                : CE_ANM_ABILITY_SPRITE_TH09_SP_0;      /* 灰套 709..718 ✓ */
-                ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_hud_sp_digit_vm[i9], base + (uint32_t)digit);
+                ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_hud_sp_digit_vm[i9],
+                                  CE_ANM_ABILITY_SPRITE_TH09_SP_0 + (uint32_t)digit);   /* 灰套 ✓ */
+                ce_anm_set_color((uint32_t)s_hud_sp_digit_vm[i9], 0xFFFFFFFFu);
                 ce_anm_set_pos((uint32_t)s_hud_sp_digit_vm[i9],
                                POFV_HUD_SP_X + POFV_HUD_SPNUM_DX + (float)i9 * POFV_HUD_SP_STEP,
                                POFV_HUD_SP_Y + POFV_HUD_SP_DY, 0.0f);
@@ -2162,31 +2215,8 @@ static int on_tick_2(ce_card_t *c)
         }
         if (s_hud_sp_frame_vm) ce_anm_set_pos((uint32_t)s_hud_sp_frame_vm, POFV_HUD_SP_X, POFV_HUD_SP_Y, 0.0f);
         if (s_hud_sp_hit_vm)  ce_anm_set_pos((uint32_t)s_hud_sp_hit_vm,
-                                             POFV_HUD_SP_X + POFV_HUD_SP_UNIT_DX,
+                                             POFV_HUD_SP_X + POFV_HUD_HITLABEL_DX,
                                              POFV_HUD_SP_Y + POFV_HUD_SP_DY, 0.0f);
-        /* ★★★ TH09 的 **红色 hits 数字**（owner 口径「缺少 Hits 的红色数字 —— Hits 得是红色的」✗⇒✓）：
-         *   一手：TH09 有**灰/红两套**小数字（`front.anm` sprite 8..17 = 灰 / 25..34 = 红 ✓），
-         *   红套就是给 **Hit 计数**用的 ✓。这里用 TH09 SP 数字那支脚本（单 sprite VM ✓）换红套贴图，
-         *   放在「Hit」标签**右侧** ✓（`POFV_HUD_HITS_NUM_DX`，❓自定 ✓）。*/
-        {
-            int hv = s_hits.latch;
-            if (hv < 0) hv = 0;
-            if (hv > 999999) hv = 999999;
-            for (i9 = 0; i9 < 6; ++i9) {
-                int digit = (hv / (int)ipow10(5 - i9)) % 10;
-                if (!s_hud_hit_digit_vm[i9])
-                    s_hud_hit_digit_vm[i9] = (int32_t)hud_vm_spawn(CE_ANM_ABILITY_SCRIPT_POFV109_HUD_TH09_SP,
-                                                                   POFV_HUD_SP_X + POFV_HUD_SP_UNIT_DX - 2.0f - (float)(POFV_HUD_HITS_DIGITS - i9) * POFV_HUD_SP_STEP,
-                                                                   POFV_HUD_SP_Y + POFV_HUD_SP_DY);
-                if (s_hud_hit_digit_vm[i9]) {
-                    ce_anm_set_sprite(CE_ABILITY_ANM(), (uint32_t)s_hud_hit_digit_vm[i9],
-                                      CE_ANM_ABILITY_SPRITE_TH09_SPR_0 + (uint32_t)digit);   /* ★ 红套 ✓ */
-                    ce_anm_set_pos((uint32_t)s_hud_hit_digit_vm[i9],
-                                   POFV_HUD_SP_X + POFV_HUD_SP_UNIT_DX - 2.0f - (float)(POFV_HUD_HITS_DIGITS - i9) * POFV_HUD_SP_STEP,
-                                   POFV_HUD_SP_Y + POFV_HUD_SP_DY, 0.0f);
-                }
-            }
-        }
     }
     {   /* ★★★ 2026-10-08（P1 完成）：TH09 的 **`Bonus!`** 提示 —— 一手原图 ✓
          *   一手（`engine/versus/th09/01-versus-loop.md`）：**SP 满（`999990`）⇒ 提示** ✓；
@@ -2368,6 +2398,26 @@ static int on_tick_2(ce_card_t *c)
              *     （读取该灵**自己的**出生 x = `sp + CE_SPAWN_POS` ✓，避免依赖局部变量名 ✓）。*/
             *(int32_t *)(sp + CE_SPAWN_ECL_I + 12) =
                 (*(const float *)(sp + CE_SPAWN_POS) < 0.0f) ? 0 : 1;
+
+            /* ★★★ 2026-10-08（owner 给一手：`engine/versus/th09/02-ghost-and-seal.md` §3.31 ✓）：
+             *   **TH09 幽灵出生那一刻引擎抽一次角度** ✓ ——
+             *     `u = rng % (4或5)`；`u == 0`（约 1/5）⇒ `atan2(自机 − 幽灵) ± π/8`（**斜飞、朝你拐** ✓）；
+             *     其余 ⇒ `π/2 ± π/200`（**看着就是正下方直落** ✓）。
+             *   ⇒ 本卡照此：**在生成口抽一次**，写进 `$F0`（`CE_SPAWN_ECL_F` = `spawn+0x40` ✓，
+             *     一手 `engine.h`：「生成时可由 `CE_SPAWN_ECL_F` 填初值」✓），
+             *     由 **ECL 的 `moveVel($F0, 1.0f)`** 消费 —— 角度交给**引擎的初速通道** ✓（不是卡侧自己那套速度 ✓）。*/
+            {
+                float ang = 1.5707964f;                  /* 默认 = 一手三色 ECL 的基角 π/2 ✓ */
+                if (kc == POFV_SPIRIT_KIND_GHOST_TH09) {
+                    const float *pp = ce_player_pos();
+                    float tx = pp ? pp[0] : 0.0f;
+                    float ty = pp ? pp[1] : 0.0f;
+                    pofv_ghost_spawn_angle(*(const float *)(sp + CE_SPAWN_POS),
+                                           *(const float *)(sp + CE_SPAWN_POS + 4),
+                                           tx, ty, (uint32_t)ce_rand(), (uint32_t)ce_rand(), &ang);
+                }
+                *(float *)(sp + CE_SPAWN_ECL_F) = ang;   /* $F0 ✓ */
+            }
         }
         /* ★★★ owner 2026-10-06：「**满了就别创建了**」✓ ⇒ 账本没空格就**根本不生成这只灵** ✓
          *   （30/32 格起就停 ✓，避免「没户口的灵 ⇒ 旋转/贴图不再被写 + 附属 VM 糊在别的灵上」✗）。*/
