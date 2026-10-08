@@ -296,8 +296,25 @@ static int32_t s_sp_life;       /* = 一手 SP 寿命 tB `+0x14`（漏空 ⇒ SP
  *   ⚠ 我上一版拿「玩家蓄力暴风」那族（48/64/128/90/120 ✗）当 X ⇒ **作废** ✗（结案已标为另一个系统 ✓）。
  *   「断」的判定（一手 `FUN_004102b0` 入口 ✓）：`param_1 != 0`（这一击**不属于当前连锁**）⇒ 清連爆数 +
  *   归零槽 Timer ✓ ⇒ 代码层等价物 = **距上次连锁暴风 > X** ✓（就是我们这条计时器 ✓）。*/
-#define POFV_HITS_CHAIN_X 36
+/* ★★★ 2026-10-08 owner 口径（class 表 ✓）：「不动暴风 ✓，只按不同 class 的 TH09 口径取
+ *   **暴风认定结束的持续时长**」✓ ⇒ 窗口 = **`(class + 9) × 4`** 帧 ✓：
+ *     · **純霊**（= 妖精位 ✓）class **0** ⇒ **36 帧** ✓（owner「妖精按最小」✓）
+ *     · **幽霊** 绿/黄/红 class **0/1/2** ⇒ **36 / 40 / 44 帧** ✓（owner「幽灵按一手做」✓ =
+ *       `Sub0/1/2` 的 `anm_death_effects(0/1/2)` ✓）
+ *     · **動物霊** 狼/獺/鷲 class **2** ⇒ **44 帧** ✓（owner「像幽灵的感觉 ⇒ 按 level 2」✓ = **❓自定** ✓）
+ *   ⚠ **别和充能等级混** ✗：那是 `(enemy[0x3380]>>6)&7`（决定投喂块 `+0x2c` 的量 ✓），两个轴 ✓。*/
+#define POFV_HITS_CHAIN_X_DEFAULT 36
 static int32_t s_chain_storm_age;
+static int32_t s_chain_window = POFV_HITS_CHAIN_X_DEFAULT;
+/* class → 窗口（`(class+9)×4` ✓）*/
+static int32_t pofv_hits_chain_x_for(int32_t kind, int32_t level)
+{
+    int32_t cls;
+    if (kind == POFV_SPIRIT_KIND_GHOST_TH09)      cls = (level >= 1 && level <= 3) ? (level - 1) : 0;  /* 绿/黄/红 ✓ */
+    else if (kind == POFV_SPIRIT_KIND_PURE)       cls = 0;                                            /* 妖精位 ✓ */
+    else                                         cls = 2;                                            /* 動物霊 ❓自定 ✓ */
+    return (cls + 9) * 4;
+}
 /* ★ HUD「hits」（一手 §9.8）：当前值 `+0x22b4` / 锁存 `+0x22b8` / 寿命 120 / `+0x227c<1` 时 6 帧闪灰 ✓
  *   ⚠ 按 owner 结论：**只接 hit 这一条**（两作同源 ✓），**SP 不并进 Hits** ✗ ⇒ 这里不碰 SP ✓ */
 static pofv_hits_t s_hits;
@@ -1243,8 +1260,15 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
             { int32_t i3; for (i3 = POFV_UI_EV_MAX - 1; i3 > 0; --i3) s_ui_ev[i3] = s_ui_ev[i3 - 1];
               s_ui_ev[0].what = POFV_UI_EV_STORM;
               s_ui_ev[0].ttl = POFV_UI_EV_TTL + POFV_UI_STORM_DELAY; }   /* ★ 镜像暴风：**延迟** ✓（先等 delay 再显示）*/
-            s_chain_storm_age = 0;   /* ★ 连锁暴风 ⇒ hits 窗口计时器归零 ✓（X=36 ✓）*/
+            /* ★ 连锁暴风 ⇒ hits 窗口计时器归零 + **按这只灵的 class 取窗口** ✓（owner 口径 ✓）*/
             s_chain_storm_age = 0;
+            /* kind 用本块已有的 `k` ✓；level 直接**从被击破敌人身上读回**（= 我们生成时写的
+             * charge level `+0x3380` bits 6–8 ✓，比另找局部变量可靠 ✓）。*/
+            {
+                int32_t lvl = 0;
+                if (ev->enemy) lvl = (int32_t)(((*(const int32_t *)((const uint8_t *)ev->enemy + 0x3380)) >> 6) & 7);
+                s_chain_window = pofv_hits_chain_x_for(k, lvl);
+            }
             if (pofv_storm_spawn_tier(&s_storm, ev->x, ev->y,
                                       POFV_SPIRIT_R_TARGET, POFV_SPIRIT_TWEEN_FRAMES,
                                       POFV_SPIRIT_HIT_DMG) < 0) {
@@ -1299,8 +1323,8 @@ static void on_enemy_death(ce_card_t *c, const ce_enemy_death_t *ev)
         if (pofv_storm_spawn_tier(&s_storm, ev->x, ev->y,
                                   POFV_SPIRIT_R_TARGET, POFV_SPIRIT_TWEEN_FRAMES,
                                   POFV_SPIRIT_HIT_DMG) < 0) { /* 池满：下面是统一的日志 */ }
-    s_chain_storm_age = 0;   /* ★ 连锁暴风 ⇒ hits 窗口计时器归零 ✓（X=36 ✓）*/
-            s_chain_storm_age = 0;
+    s_chain_storm_age = 0;                                  /* ★ 小怪/妖精档 ⇒ class 0 ⇒ 36 帧 ✓ */
+            s_chain_window = POFV_HITS_CHAIN_X_DEFAULT;
             } else if (pofv_storm_spawn(&s_storm, ev->x, ev->y, POFV_STORM_LIFE_FRAMES) < 0) {
         if (!s_cap_logged) {
             ce_log("pofv: storm pool full (%d) — storm dropped", POFV_STORM_MAX);
@@ -2130,11 +2154,11 @@ static int on_tick_2(ce_card_t *c)
     /* ★★★ 2026-10-08 **hits 的第二条归零路 = 连锁暴风窗口 X = 36 帧** ✓（订正后 ✓）——
      *   「距上次连锁暴风 > X」⇒ hits 归零 ✓（一手 `FUN_004102b0` 入口的「不属于当前连锁」等价物 ✓）。
      *   ⚠ 上一版我用的「暴风池为空」是**近似** ✗ ⇒ 已换成**计时器 + X** ✓。*/
-    if (s_chain_storm_age < POFV_HITS_CHAIN_X) {
+    if (s_chain_storm_age < s_chain_window) {
         ++s_chain_storm_age;
     } else if (s_hits.cur != 0) {
         ce_log("pofv: 【TH09】连锁暴风窗口过（%d 帧 > X=%d）⇒ hits %d 归零 ✓",
-               (int)s_chain_storm_age, POFV_HITS_CHAIN_X, (int)s_hits.cur);
+               (int)s_chain_storm_age, (int)s_chain_window, (int)s_hits.cur);
         s_hits.cur = 0; s_hits.latch = 0; s_hits.life = 0;
     }
     pofv_hits_tick(&s_hits);                     /* ★ HUD hits：锁存 + 寿命递减（一手 120 帧 ✓）*/
