@@ -400,9 +400,14 @@ static int   s_boss_prev;   /* ★ owner 2026-10-05：boss 表 0→1 的**边沿
 #define POFV_HUD_COL_HIT    0xFFC08080u   /* ★ 一手 `color(192,128,128)` ✓（命中 + Hit）*/
 #define POFV_HUD_COL_SP     0xFF808080u   /* ★ 一手 `color(128,128,128)` ✓（SP 六位，owner：「乘了一个灰度」✓）*/
 /* ★ 连击条 = 屏幕**最下方**的白色长方形 ✓（参图 ✓）*/
-#define POFV_HUD_BAR_X       144.5f   /* ★ 与 SP 框同一 x ✓（左上 ✓）*/
-#define POFV_HUD_BAR_Y        36.0f   /* ★ owner：「位置在左下角而不是左上角」✗ ⇒ 移到**左上**（SP 框上方 ✓）*/
-#define POFV_HUD_BAR_W       188.0f   /* ★ owner：「长度比正确长度长了一倍」✗ ⇒ 376 → 188 ✓ */   /* 游玩区宽 384 − 内缩 ✓ */
+/* ★★★ 2026-10-08 owner（「连击槽位置不对：偏右、偏上，宽度至少宽了一倍；它应当在**框的正下方**、
+ *   满长度**和框一致**」✗⇒✓）：
+ *   ⚠ 关键：**框的 VM 是「中心锚」** ✗ ⇒ 它的**可见矩形** = `[SP_X−80, SP_X+80] × [SP_Y−32, SP_Y+32]`
+ *     （精灵 80×32 ✓ × `scale 2.0` ✓ ⇒ 160×64 ✓，半宽/半高 = 80/32 ✓）。
+ *   ⇒ 条必须按**可见矩形**对齐（先前我按 SP_X/SP_Y 直接对齐 ⇒ 恰好偏右 80、偏上 60 ✓）。*/
+#define POFV_HUD_BAR_X       (POFV_HUD_SP_X - 80.0f)   /* = 框的**可见左边缘** ✓ */
+#define POFV_HUD_BAR_Y       (POFV_HUD_SP_Y + 40.0f)
+#define POFV_HUD_BAR_W       160.0f                    /* = 框的**可见宽度** ✓（80px 精灵 × scale2 ✓）*/   /* = 框**正下方** ✓（半高 32 + 8 间距 ✓）*/
 /* ★ 事件文本行（连爆/生成 提示 ✓）—— 沿用旧名字，锚点归到 SP 框下方 ✓（❓自定）*/
 #define POFV_HUD_HITS_X      POFV_HUD_BAR_X
 #define POFV_HUD_HITS_Y      (POFV_HUD_SP_Y + 40.0f)
