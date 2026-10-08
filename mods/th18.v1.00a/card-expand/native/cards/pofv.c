@@ -347,8 +347,8 @@ static int   s_boss_prev;   /* ★ owner 2026-10-05：boss 表 0→1 的**边沿
  *     script12..17   → **SP 6 位**：+37/+43/+49/+55/+61/+67 ✓  color **(128,128,128)**（**灰度** ✓ owner 提到 ✓）
  *   步进一律 **6** ✓；最右 +67+6 = **+73 < 80** ⇒ **全在 `sprite7` 框内** ✓（owner：「宽框就是那个 Spell Point 的框」✓）。*/
 #define POFV_HUD_HIT_X      10.0f   /* = 一手 +5 × 2 ✓ */    /* ★ 2026-10-08 owner 标定：「文字整体向左」⇒ 5 → 2 ✓（一手为 +5 ✗ 按实跑调 ✓）*/
-#define POFV_HUD_HITLABEL_DX 46.0f   /* = 10 + 3×12 ✓（一手 +23 ×2 ✓）*/   /* ★ 一手原值：script8 的「Hit」在 +23 ✓ */
-#define POFV_HUD_SPNUM_DX    74.0f   /* = 一手 +37 × 2 ✓ */   /* ★ 一手原值：script12 的 SP 起 +37 ✓ */
+#define POFV_HUD_HITLABEL_DX 52.0f   /* ★ owner 2026-10-08：「Hit 偏左，向右 6px」⇒ 46 → 52 ✓ */   /* = 10 + 3×12 ✓（一手 +23 ×2 ✓）*/   /* ★ 一手原值：script8 的「Hit」在 +23 ✓ */
+#define POFV_HUD_SPNUM_DX    74.0f   /* ★ 跟着 Hit 一起 +6 ✓（一手：SP 紧接在 Hit 之后 ✓）*/   /* = 一手 +37 × 2 ✓ */   /* ★ 一手原值：script12 的 SP 起 +37 ✓ */
 #define POFV_HUD_COL_HIT    0xFFC08080u   /* ★ 一手 `color(192,128,128)` ✓（命中 + Hit）*/
 #define POFV_HUD_COL_SP     0xFF808080u   /* ★ 一手 `color(128,128,128)` ✓（SP 六位，owner：「乘了一个灰度」✓）*/
 /* ★ 连击条 = 屏幕**最下方**的白色长方形 ✓（参图 ✓）*/
