@@ -296,7 +296,8 @@ static ce_hud_number_t s_hud_c2_num;   /* ★ TH09 連擊槽显示句柄（数�
 static ce_hud_number_t s_hud_ag_num;   /* ★ TH19 攻撃ランク数字句柄 ✓ */   /* ★ 由 32 → 44：避让 110/111 信仰块（y≤30）✓ */
 static ce_hud_number_t  s_hud_hits_num;
 static int32_t s_hud_c2_vm, s_hud_ag_vm;
-static int32_t s_hud_hits_vm;   /* ★ TH19 hits 标签（**切自原作字体** ✓ ascii.png y=56 行 ✓）*/   /* ★ TH09 連擊槽条 / TH19 攻击槽条（卡自建 VM ⇒ 必须在 clear_card 里真删 ✓ 铁律）*/
+static int32_t s_hud_hits_vm;
+static int32_t s_hud_bonus_vm;   /* TH19 Bonus label (cut from original art) */   /* ★ TH19 hits 标签（**切自原作字体** ✓ ascii.png y=56 行 ✓）*/   /* ★ TH09 連擊槽条 / TH19 攻击槽条（卡自建 VM ⇒ 必须在 clear_card 里真删 ✓ 铁律）*/
 static ce_hud_vm_text_t s_hud_hits_lbl;
 /* ★★★ 2026-10-05 owner：**调试 UI** —— ① 镜像事件列表（镜像暴风**延迟**显示；镜像击破/固灵**停 3 s**再消失）
  *   ② 镜像幽灵列表（**只写「有什么」**，不涉及位置 ✓）。文字一律走**切贴图**（`ce_hud_vm_text_set` ✓，owner 规矩 ✓）*/
@@ -825,6 +826,7 @@ static void clear_card(ce_card_t *c)
     if (s_hud_c2_vm) { ce_anm_delete((uint32_t)s_hud_c2_vm); s_hud_c2_vm = 0; }
     if (s_hud_ag_vm) { ce_anm_delete((uint32_t)s_hud_ag_vm); s_hud_ag_vm = 0; }
     if (s_hud_hits_vm) { ce_anm_delete((uint32_t)s_hud_hits_vm); s_hud_hits_vm = 0; }
+    if (s_hud_bonus_vm) { ce_anm_delete((uint32_t)s_hud_bonus_vm); s_hud_bonus_vm = 0; }
     ce_hud_vm_text_clear(&s_hud_hits_lbl);
     pofv_foe_spirit_init(s_foe, POFV_FOE_SPIRIT_MAX);
     pofv_foe_incoming_init(s_inc, POFV_FOE_INCOMING_MAX);
@@ -2056,6 +2058,19 @@ static int on_tick_2(ce_card_t *c)
         }
         ce_hud_number_set(&s_hud_ag_num, POFV_HUD_SP_X, POFV_HUD_C2_Y + 16.0f, 6.0f,
                           (int)s_ex_gauge, 3, 0, "pofv109");   /* 「攻撃ランク」数字 ✓（字母画不出 ✗ ⇒ 纯数字 ✓）*/
+    }
+    {   /* == TH19 "Bonus" label: CUT FROM ORIGINAL ART ==
+         *    source: TH19 ascii.png, the five 14x14 tiles listed in the original anm sprite table
+         *            (ascii.anm.txt entry0: x=0/14/28/42/56, y=238) => 70x14 strip.
+         *    shown only when SP is full (999990); otherwise parked off-screen (VM kept). */
+        if (!s_hud_bonus_vm)
+            s_hud_bonus_vm = (int32_t)ce_anm_spawn(CE_ABILITY_ANM(), CE_ANM_ABILITY_SCRIPT_POFV109_HUD_BONUS, 25);
+        if (s_hud_bonus_vm) {
+            const int sp_full = (s_sp >= POFV_SP_MAX);
+            ce_anm_set_pos((uint32_t)s_hud_bonus_vm,
+                           sp_full ? (POFV_HUD_SP_X + 60.0f) * 2.0f : -2000.0f,
+                           sp_full ? (POFV_HUD_SP_Y + 12.0f) * 2.0f : -2000.0f, 0.0f);
+        }
     }
     if (pofv_hits_visible(&s_hits)) {
         uint32_t col = pofv_hits_is_gray(&s_hits) ? 0xFF808080u : 0xFFFFFF00u;

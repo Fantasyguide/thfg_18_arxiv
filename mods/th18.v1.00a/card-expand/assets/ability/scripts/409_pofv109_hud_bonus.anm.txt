@@ -1,0 +1,14 @@
+script script409 {
+    // 109 的 **`Bonus` 标签** —— **切自原作** ✓（TH19 ascii 字体图集 ✓）：
+    //   来源 `local/th19.v1.10c/anm/ascii/ascii/ascii.png` ✓，坐标取自**原作 anm 的矩形表** ✓
+    //   （`ascii.anm.txt` entry0 的 sprite 表 ✓：y=238 处 x=0/14/28/42/56 的 5 个 14×14 tile ✓
+    //     = 五字母标签 ✓，已裁图放大目视确认 ✓）⇒ 拼成 70×14 条 ✓
+    //   用途：**SP 满 999990** 时贴在 SP 处 ✓（一手：满则 `FUN_0040f860(…,5000)` ⇒ wiki 的 `Bonus!` ✓）
+    //   layer 25 = HUD 层 ✓
+    sprite(@HUD_BONUS_STRIP@);
+    layer(25);
+    stop();
+    interruptLabel(1);
++20: // 20
+    delete();
+}
